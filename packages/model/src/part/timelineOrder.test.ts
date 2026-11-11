@@ -17,7 +17,7 @@ import type {
   SketchFaceFeature,
   SketchProjectedCurveFeature,
 } from '../sketch/types.js';
-import { createEmptyPartDocument } from './createPartDocument.js';
+import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from './createPartDocument.js';
 import { resolvePart } from './resolvePart.js';
 import {
   buildTimeline,
@@ -308,6 +308,30 @@ describe('履歴の依存グラフ(FR-507、FR-504)', () => {
     expect([...graph.keys()].sort()).toEqual(
       ['extrude-1', 'extrude-2', 'fillet-1', 'hole-1', 'referencePlane-1'].sort(),
     );
+  });
+
+  it('既定の自己辺除去を保ち、再計算の指定では同じ走査から自己辺を返す', () => {
+    const document: PartDocument = { ...createEmptyPartDocument(), references: [{ ...WORK_PLANE,
+      plane: { kind: 'workPlane', planeId: WORK_PLANE.id, offset: ev(0) } }] };
+    expect(historyDependencies(document).get(WORK_PLANE.id)).toEqual([]);
+    expect(dependenciesOf(document, WORK_PLANE.id)).toEqual([]);
+    expect(historyDependencies(document, { includeSelf: false })).toEqual(historyDependencies(document));
+    expect(historyDependencies(document, { includeSelf: true }).get(WORK_PLANE.id)).toEqual([WORK_PLANE.id]);
+  });
+
+  it('基本形状の相対原点は別bodyの依存を持ち、参照先より前への移動を拒否する', () => {
+    const initial = createEmptyPartDocument(), source = createPrimitiveFeature(initial, 'box');
+    const base = appendSolid(initial, source), dependent = createPrimitiveFeature(base, 'box');
+    const ref: SubShapeRef = { bodyFeatureId: source.id, index: 0, fingerprint: { kind: 'vertex', position: [10, 10, 10] } };
+    const document = appendSolid(base, { ...dependent, origin: { kind: 'coordinate', value: { mode: 'relative',
+      base: { kind: 'subShape', ref }, dx: ev(0), dy: ev(0), dz: ev(0) } } });
+    expect(historyDependencies(document).get(dependent.id)).toEqual([source.id]);
+    expect(canMoveHistoryItem(document, dependent.id, 0).ok).toBe(false);
+    const self: PartDocument = { ...document, solids: document.solids.map(feature => feature.id === dependent.id && feature.kind === 'primitive'
+      ? { ...feature, origin: { kind: 'coordinate', value: { mode: 'relative', base: { kind: 'subShape',
+        ref: { ...ref, bodyFeatureId: dependent.id } }, dx: ev(0), dy: ev(0), dz: ev(0) } } } : feature) };
+    expect(historyDependencies(self).get(dependent.id)).toEqual([]);
+    expect(historyDependencies(self, { includeSelf: true }).get(dependent.id)).toEqual([dependent.id]);
   });
 
   it('履歴に無い id の依存は空', () => {
@@ -1285,5 +1309,125 @@ describe('消費しないが上流を指す種類の依存(P5 タスク45)', () 
   it('切断は対象より前へ動かせない(並べ替えの判定、FR-507)', () => {
     const cut = cutOn({ kind: 'workPlane', planeId: 'xy', offset: ev(5) });
     expect(canMoveHistoryItem(withUpstream(cut), 'cut-1', 1).ok).toBe(false);
+  });
+});
+
+/*
+ * EX04 押し出しの「対象を貫く」終端の依存(closed-profile-cut-parametric-r1。UNEXECUTED until Root runs it)。
+ * 対象は消費しないが上流を指すので、切断の押し出しを対象より前へ動かすことは断り(FR-507)、
+ * 対象より後ろのままの移動は許す。旧の終端(距離)には同じ依存が無い。
+ */
+describe('押し出しの「対象を貫く」終端の依存(EX04)', () => {
+  /** 押し出し1(対象)→ 押し出し2(押し出し1 を貫く)→ 押し出し9(無関係)。参照は無し。 */
+  function throughDocument(end: ExtrudeFeature['end']): PartDocument {
+    const fixture = createFixture();
+    const extrude1 = fixture.document.solids[0];
+    const extrude2 = fixture.document.solids[3];
+    if (extrude2.kind !== 'extrude') throw new Error('テストの前提が壊れている: 押し出し2 が押し出しでない');
+    const cutter: ExtrudeFeature = end === undefined ? extrude2 : { ...extrude2, end };
+    const unrelated: ExtrudeFeature = { ...extrude2, id: 'extrude-9', name: '押し出し9' };
+    return { ...fixture.document, references: [], solids: [extrude1, cutter, unrelated] };
+  }
+
+  it('対象の立体に依存し、対象より前へは動かせない(旧の距離の終端は依存せず動かせる)', () => {
+    const through = throughDocument({ kind: 'throughTarget', targetFeatureId: 'extrude-1' });
+    expect(dependenciesOf(through, 'extrude-2')).toEqual(['extrude-1']);
+    const targetIndex = timelineIndexOf(through, 'extrude-1');
+    if (targetIndex === null) throw new Error('押し出し1 が帯にありません');
+    const refused = canMoveHistoryItem(through, 'extrude-2', targetIndex);
+    expect(refused.ok).toBe(false);
+    // blockingFeatureId identifies the dependent whose ordering would be invalid, not its target dependency.
+    expect(refused.ok ? null : refused.blockingFeatureId).toBe('extrude-2');
+    expect(refused.ok ? null : refused.reason).toBe(
+      '押し出し2は押し出し1を使っているので、押し出し1より後ろでなければなりません。',
+    );
+    expect(moveHistoryItem(through, 'extrude-2', targetIndex).ok).toBe(false);
+
+    const plain = throughDocument(undefined);
+    expect(dependenciesOf(plain, 'extrude-2')).toEqual([]);
+    expect(canMoveHistoryItem(plain, 'extrude-2', targetIndex).ok).toBe(true);
+  });
+
+  it('対象より後ろのままの並べ替えは許す(無関係の押し出しを先頭へ、切断を末尾へ)', () => {
+    const through = throughDocument({ kind: 'throughTarget', targetFeatureId: 'extrude-1' });
+    expect(canMoveHistoryItem(through, 'extrude-9', 0).ok).toBe(true);
+    const last = timelineIndexOf(through, 'extrude-9');
+    if (last === null) throw new Error('押し出し9 が帯にありません');
+    expect(canMoveHistoryItem(through, 'extrude-2', last).ok).toBe(true);
+  });
+
+  it('履歴に無い対象の id は依存にならない(解決が理由つきで断る側)', () => {
+    const missing = throughDocument({ kind: 'throughTarget', targetFeatureId: 'extrude-404' });
+    expect(dependenciesOf(missing, 'extrude-2')).toEqual([]);
+  });
+});
+
+
+describe('surface-face sewing dependencies', () => {
+  it('keeps every source before sewing and changes its key when a parent changes', () => {
+    const fixture = createFixture();
+    const first = fixture.document.solids[0];
+    const second = fixture.document.solids[3];
+    if (first.kind !== 'extrude') throw new Error('Expected extrusion fixture');
+    const document: PartDocument = { ...fixture.document, solids: [first, second, {
+      id: 'sew-surface', name: 'Surface sew', kind: 'sew', suppressed: false, faces: [], tolerance: ev(0.01),
+      surfaceFaces: [topFaceRef(first.id), topFaceRef(second.id)],
+    }] };
+    expect(dependenciesOf(document, 'sew-surface')).toEqual([first.id, second.id]);
+    expect(historyDependencies(document).get('sew-surface')).toEqual([first.id, second.id]);
+    for (const source of [first, second]) {
+      const index = timelineIndexOf(document, source.id);
+      if (index === null) throw new Error('Missing parent in timeline');
+      expect(canMoveHistoryItem(document, 'sew-surface', index).ok).toBe(false);
+    }
+    const changed: PartDocument = { ...document, solids: document.solids.map(feature => feature.id === first.id
+      ? { ...first, distance: ev(12) } : feature) };
+    const before = resolvePart(document), after = resolvePart(changed);
+    expect(before.errors).toEqual([]);
+    expect(after.errors).toEqual([]);
+    expect(after.steps.find(step => step.featureId === 'sew-surface')?.key)
+      .not.toBe(before.steps.find(step => step.featureId === 'sew-surface')?.key);
+    expect(after.steps.find(step => step.featureId === second.id)?.key)
+      .toBe(before.steps.find(step => step.featureId === second.id)?.key);
+  });
+});
+
+/*
+ * EX-04 W3 閉じた輪郭の切断の残す側の対(UNEXECUTED until Root runs it)。対の結び(`pairedWith`)は依存では
+ * ない(平面の切断の `pairedWith` と同じ)。対の各ブーリアンは、結びの無い差と同じく対象と相手(輪郭の押し出し)
+ * だけに依存する。
+ */
+describe('閉じた輪郭の切断の対の依存(EX-04 W3)', () => {
+  /** 押し出し1(対象)+ 押し出し2(相手)→ 差(外側)と、それを指す積(内側)の対。 */
+  function pairDocument(): PartDocument {
+    const fixture = createFixture();
+    const extrude1 = fixture.document.solids[0];
+    const extrude2 = fixture.document.solids[3];
+    const outside: BooleanFeature = {
+      id: 'subtract-1', name: '差1', suppressed: false, kind: 'boolean', operation: 'subtract',
+      targetFeatureId: 'extrude-1', toolFeatureId: 'extrude-2', requireRemoval: true,
+    };
+    const inside: BooleanFeature = { ...outside, id: 'intersect-1', name: '積1', operation: 'intersect',
+      pairedWith: outside.id };
+    return { ...fixture.document, references: [], solids: [extrude1, extrude2, outside, inside] };
+  }
+
+  it('対の各ブーリアンは対象と相手だけに依存し、対の相手には依存しない(結びの無い差と同じ)', () => {
+    const document = pairDocument();
+    expect(dependenciesOf(document, 'subtract-1')).toEqual(['extrude-1', 'extrude-2']);
+    expect(dependenciesOf(document, 'intersect-1')).toEqual(['extrude-1', 'extrude-2']);
+    expect(historyDependencies(document).get('intersect-1')).toEqual(['extrude-1', 'extrude-2']);
+  });
+
+  it('対の 2 つは互いの前後へ動かせ、対象・相手より前へは動かせない(FR-507)', () => {
+    const document = pairDocument();
+    const outsideIndex = timelineIndexOf(document, 'subtract-1');
+    const toolIndex = timelineIndexOf(document, 'extrude-2');
+    if (outsideIndex === null || toolIndex === null) throw new Error('帯に段がありません');
+    const moved = moveHistoryItem(document, 'intersect-1', outsideIndex);
+    if (!moved.ok) throw new Error(`動かせませんでした: ${moved.reason}`);
+    expect(moved.document.solids.map((feature) => feature.id))
+      .toEqual(['extrude-1', 'extrude-2', 'intersect-1', 'subtract-1']);
+    expect(canMoveHistoryItem(document, 'intersect-1', toolIndex).ok).toBe(false);
   });
 });

@@ -12,7 +12,7 @@ import { savePart } from './scriptsFlow.js';
 import { uiMessage } from './uiMessages.js';
 
 /*
- * GR-24 (scratchpad/claude/plans/geomref-plan.md §4(h)): the tool "図形の測定値" on the real screen, the real
+ * GR-24 (mathGeometryFixture.ts): the tool "図形の測定値" on the real screen, the real
  * kernel and the real calculation Worker. Every flow takes the page and, for real Electron (GR-24e), the
  * application, so the same steps run in Chromium, Firefox and Electron. Values, labels and saved documents are
  * compared with what the product shows and stores; labels come from the product catalogs (uiMessage). The
@@ -181,7 +181,7 @@ async function expectQuantityLabelInset(page: Page): Promise<void> {
  * panel's fixed, scrollable frame (`.pcad-panel__body`) photographed black under the status bar. If the
  * section still does not fit inside that frame at 1440 x 1100, it is photographed in two pieces instead:
  * from the section's own heading first, then the frame scrolled down for the second piece (2026-09-25
- * coordinator decision, GR-24/GR-24e). This runs the same way in Electron too (the removed w37a branch
+ * coordinator decision, GR-24/GR-24e). This runs the same way in Electron too (the removed old branch
  * used to skip photographing there); only the photograph itself (`captureManualDetail`, sourced from the
  * Web project) is skipped for Electron, while the resize/scroll/fit-in-view behaviour is still checked.
  */

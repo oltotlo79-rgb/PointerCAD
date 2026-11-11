@@ -1,4 +1,8 @@
-import { readUnresolvedMathProblems } from '@pointercad/model';
+import { parseFailure as fail } from './codedFailure.js';
+import { readOptionalBeamAnalysisInputs, serializeBeamAnalysisInputs } from './codecs/beamAnalysis.js';
+import { readComponentSource } from './codecs/componentSource.js';
+import { findSteelProduct, steelLength } from '@pointercad/model';
+import { readUnresolvedMathProblems, readPatternSlotHighWater, retainPatternSlotHighWater } from '@pointercad/model';
 import { missingHistoryTarget } from './codecs/historyTargets.js';
 import { readFeatureFolders, serializeFeatureFolders } from './codecs/featureFolders.js';
 import { readFeatureNotes, serializeFeatureNotes } from './codecs/featureNotes.js';
@@ -62,7 +66,7 @@ import {
   type Checked,
   checkRecord,
   fieldProblem,
-  type FieldProblem,
+  fieldFailure as failField,
   isRecord,
   readLiteral,
   readNumber,
@@ -90,6 +94,7 @@ import {
 } from '@pointercad/model';
 
 import { readSheetUnfolds, serializeSheetUnfold } from './codecs/sheetUnfold.js';
+import { assertReferenceOriginVersion } from './referenceOriginVersion.js';
 
 export { serializeExpression } from './codecs/fields.js';
 export { serializeRevolveAxis } from './codecs/shapeReferences.js';
@@ -102,7 +107,35 @@ export { readSubShapeRef } from './codecs/shapeReferences.js';
 export { readParameter } from './codecs/parameters.js';
 export { readAppearanceSpec } from './codecs/appearance.js';
 
+/** Validate the saved fields; preserve revisions for the resolver's typed rejection. */
+function readSteelStockSource(value: unknown, path: string): Checked<NonNullable<PartDocument['steelStockSource']>> {
+  const source = readComponentSource({ steelStockSource: value }, 'steelStockSource', path);
+  if (!source.ok) return source;
+  if (source.value.kind !== 'standardPart' || findSteelProduct(source.value.catalog, source.value.size, source.value.options) === undefined
+    || steelLength(source.value.options.length ?? '1000') === null) return fieldProblem(`${path}.steelStockSource`, 'type');
+  return { ok: true, value: source.value };
+}
+
 function serializePartDocument(document: PartDocument): PartDocument {
+  // Optional source metadata uses the current additive contract; never label new inputs as a legacy file.
+  if (document.schemaVersion < 22 && document.solids.some(feature => feature.kind === 'sweep' && feature.steelBend !== undefined)) {
+    throw new RangeError('Authored steel bend inputs require document schema 22');
+  }
+  if (document.schemaVersion < 22 && document.sketches.some(sketch =>
+    sketchConstraints(sketch).some(constraint => constraint.kind === 'horizontalDistance'
+      || constraint.kind === 'verticalDistance' || constraint.kind === 'midpoint' || constraint.kind === 'pointOnCurve'))) {
+    throw new RangeError('Extended sketch constraints require document schema22');
+  }
+  if (document.steelStockSource !== undefined && document.schemaVersion < 19) {
+    throw new RangeError('Purchased steel provenance requires document schema 19');
+  }
+  const steelStockSource = document.steelStockSource === undefined ? undefined
+    : readSteelStockSource(document.steelStockSource, 'document');
+  if (steelStockSource !== undefined && !steelStockSource.ok) throw new RangeError('Invalid steel stock provenance');
+  if (document.schemaVersion < 18 && (document.patternSlotHighWater !== undefined
+    || document.solids.some((feature) => feature.kind === 'pattern' && feature.placement.kind === 'points'))) {
+    throw new RangeError('Point-slot issuance requires document schema 18');
+  }
   if (document.mathGeometry !== undefined && document.schemaVersion < 17) {
     throw new RangeError('図形を測る定義を保存するには保存形式の版17が必要です。');
   }
@@ -112,10 +145,30 @@ function serializePartDocument(document: PartDocument): PartDocument {
   if (document.mathParameterSerial !== undefined && (!Number.isSafeInteger(document.mathParameterSerial) || document.mathParameterSerial < 0)) {
     throw new RangeError('係数の参照番号が不正です。');
   }
+  if (document.beamAnalysisInputs !== undefined && document.schemaVersion < 20) {
+    throw new RangeError('Persisted beam inputs require document schema 20');
+  }
+  // 円筒の側面の穴(EX05)は版20で入った欄。版19以前(v1.0.2 は版17)と名乗るファイルに書くと、古い読み手が
+  // 欄を捨てて高さ・角度を失うので書かない。読むときは断らない(移行した古い入力の既知の欄は保つ)。
+  if (document.schemaVersion < 20
+    && document.solids.some((feature) => (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.cylindrical !== undefined)) {
+    throw new RangeError('円筒の側面の穴を保存するには保存形式の版20が必要です。');
+  }
+  // 新しい任意配置を、対応前の文書版を名乗って書き出さない。
+  if (document.schemaVersion < 22 && document.solids.some(feature =>
+    (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar !== undefined)) {
+    throw new RangeError('面内X・Yの穴を保存するには保存形式の版22が必要です。');
+  }
+  const normalizedIssuance = retainPatternSlotHighWater(document).patternSlotHighWater;
   const serialized: PartDocument = {
+    ...(document.beamAnalysisInputs === undefined ? {} : {
+      beamAnalysisInputs: serializeBeamAnalysisInputs(document.beamAnalysisInputs, document.id, 'part'),
+    }),
+    ...(steelStockSource?.ok ? { steelStockSource: steelStockSource.value } : {}),
     ...(document.mathGeometry === undefined ? {} : { mathGeometry: serializeMathGeometry(document.mathGeometry, document.id) }),
     ...(document.unresolvedMathProblems === undefined ? {} : { unresolvedMathProblems: readUnresolvedMathProblems(document.unresolvedMathProblems) }),
     ...(document.mathParameterSerial === undefined ? {} : { mathParameterSerial: document.mathParameterSerial }),
+    ...(normalizedIssuance === undefined ? {} : { patternSlotHighWater: readPatternSlotHighWater(normalizedIssuance) }),
     ...(document.featureNotes === undefined ? {} : { featureNotes: serializeFeatureNotes(document.featureNotes) }),
     ...(document.featureFolders === undefined ? {} : { featureFolders: serializeFeatureFolders(document.featureFolders) }),
     id: document.id,
@@ -137,7 +190,7 @@ function serializePartDocument(document: PartDocument): PartDocument {
     activeConfigurationId: document.activeConfigurationId,
   };
   if (missingHistoryTarget(serialized, 'document') !== null) throw new RangeError('設計メモまたはフォルダの対象が見つからないため保存できません。');
-  return serialized;
+  return retainPatternSlotHighWater(serialized);
 }
 
 export interface SerializeOptions {
@@ -182,6 +235,7 @@ function serializeToolDefaults(toolDefaults: PcadToolDefaults): PcadToolDefaults
  * 同じ文書からは必ず同じ文字列ができる(欄を決まった順で組み立てるため)。
  */
 export function serializeDocument(document: PartDocument, options: SerializeOptions = {}): string {
+  assertReferenceOriginVersion(document, document.schemaVersion);
   const envelope: PcadEnvelope = {
     // 封筒の版は文書の版と同じ値を書く(統括の決定④)。
     schema: document.schemaVersion,
@@ -225,6 +279,14 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!sketches.ok) {
     return sketches;
   }
+  if (findDuplicateId(sketches.value.map((sketch) => sketch.id)) !== null) {
+    return fieldProblem(`${path}.sketches`, 'type');
+  }
+  for (const [index, sketch] of sketches.value.entries()) {
+    if (findDuplicateId(sketch.features.map((feature) => feature.id)) !== null) {
+      return fieldProblem(`${path}.sketches[${String(index)}].features`, 'type');
+    }
+  }
   const activeSketchId = readString(record.value, 'activeSketchId', path);
   if (!activeSketchId.ok) {
     return activeSketchId;
@@ -236,6 +298,9 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   const solids = readList(record.value, 'solids', path, readSolidFeature);
   if (!solids.ok) {
     return solids;
+  }
+  if (findDuplicateId(solids.value.map((feature) => feature.id)) !== null) {
+    return fieldProblem(`${path}.solids`, 'type');
   }
   const parameters = readParameters(record.value, path);
   if (!parameters.ok) {
@@ -268,6 +333,17 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
     try { unresolvedMathProblems = readUnresolvedMathProblems(record.value.unresolvedMathProblems); }
     catch { return fieldProblem(`${path}.unresolvedMathProblems`, 'type'); }
   }
+  let patternSlotHighWater: PartDocument['patternSlotHighWater'];
+  if (Object.hasOwn(record.value, 'patternSlotHighWater')) {
+    try { patternSlotHighWater = readPatternSlotHighWater(record.value.patternSlotHighWater); }
+    catch { return fieldProblem(`${path}.patternSlotHighWater`, 'type'); }
+    for (const feature of solids.value) {
+      if (feature.kind === 'pattern' && feature.placement.kind === 'points'
+        && (Object.hasOwn(patternSlotHighWater, feature.id) ? patternSlotHighWater[feature.id] ?? 1 : 1) < feature.placement.nextSlotSerial) {
+        return fieldProblem(`${path}.patternSlotHighWater`, 'type');
+      }
+    }
+  }
   const mathParameterSerial = record.value.mathParameterSerial;
   if (Object.hasOwn(record.value, 'mathParameterSerial') && (typeof mathParameterSerial !== 'number'
     || !Number.isSafeInteger(mathParameterSerial) || mathParameterSerial < 0)) {
@@ -275,12 +351,20 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   }
   const mathGeometry = readMathGeometry(Object.hasOwn(record.value, 'mathGeometry') ? record.value.mathGeometry : [], id.value, `${path}.mathGeometry`);
   if (!mathGeometry.ok) return mathGeometry;
+  const beamAnalysisInputs = readOptionalBeamAnalysisInputs(record.value, id.value, 'part', path);
+  if (!beamAnalysisInputs.ok) return beamAnalysisInputs;
+  const steelStockSource = Object.hasOwn(record.value, 'steelStockSource')
+    ? readSteelStockSource(record.value.steelStockSource, path) : undefined;
+  if (steelStockSource !== undefined && !steelStockSource.ok) return steelStockSource;
   const document: PartDocument = {
+      ...(beamAnalysisInputs.value === undefined ? {} : { beamAnalysisInputs: beamAnalysisInputs.value }),
+      ...(steelStockSource?.ok ? { steelStockSource: steelStockSource.value } : {}),
       ...(Object.hasOwn(record.value, 'mathGeometry') ? { mathGeometry: mathGeometry.value } : {}),
       ...(unresolvedMathProblems === undefined ? {} : { unresolvedMathProblems }),
       ...(Object.hasOwn(record.value, 'featureNotes') ? { featureNotes: featureNotes.value } : {}),
       ...(Object.hasOwn(record.value, 'featureFolders') ? { featureFolders: featureFolders.value } : {}),
       ...(typeof mathParameterSerial === 'number' ? { mathParameterSerial } : {}),
+      ...(patternSlotHighWater === undefined ? {} : { patternSlotHighWater }),
       id: id.value,
       name: name.value,
       schemaVersion: schemaVersion.value,
@@ -297,7 +381,7 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
       ...configurations.value,
   };
   const missing = missingHistoryTarget(document, path);
-  return missing === null ? { ok: true, value: document } : fieldProblem(missing, 'type');
+  return missing === null ? { ok: true, value: retainPatternSlotHighWater(document) } : fieldProblem(missing, 'type');
 }
 
 // ---------------------------------------------------------------------------
@@ -351,17 +435,6 @@ export type ParseDocumentResult =
   | { readonly ok: false; readonly error: ParseError };
 
 const NOT_PCAD_MESSAGE = 'PointerCAD の部品ファイルではないようです。';
-
-function fail(code: ParseErrorCode, message: string): ParseDocumentResult {
-  return { ok: false, error: { code, message } };
-}
-
-/** 欄の不備を、場所を添えた日本語にする。 */
-function failField(problem: FieldProblem): ParseDocumentResult {
-  return problem.reason === 'missing'
-    ? fail('missingField', `ファイルの中身が壊れています(${problem.path} が見つかりません)。`)
-    : fail('invalidField', `ファイルの中身が壊れています(${problem.path} の形が違います)。`);
-}
 
 function parseJsonText(text: string): Checked<unknown> {
   try {
@@ -654,6 +727,15 @@ function decodeFile(raw: unknown): ParseDocumentResult {
   const schema = readNumber(raw, 'schema', '');
   if (!schema.ok) {
     return fail('notPcad', NOT_PCAD_MESSAGE);
+  }
+  if (schema.value < 22 && isRecord(raw['document'])) {
+    const sketches = raw['document']['sketches'];
+    if (Array.isArray(sketches) && sketches.some((sketch: unknown) => {
+      if (!isRecord(sketch) || !Array.isArray(sketch['constraints'])) return false;
+      return sketch['constraints'].some((constraint: unknown) => isRecord(constraint)
+        && (constraint['kind'] === 'horizontalDistance' || constraint['kind'] === 'verticalDistance'
+          || constraint['kind'] === 'midpoint' || constraint['kind'] === 'pointOnCurve'));
+    })) return fail('notPcad', 'Extended sketch constraints require document schema22');
   }
   if (schema.value > PCAD_SCHEMA_VERSION) {
     return fail(

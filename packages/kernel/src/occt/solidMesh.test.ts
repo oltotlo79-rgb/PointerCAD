@@ -6,6 +6,9 @@ import { makeBox } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeExtrudeSolid } from './makeSolidSweep.js';
 import { buildSolidBodyMesh, hasSolid, isValidShape, measureArea, measureVolume } from './solidMesh.js';
+import { tessellate } from './tessellate.js';
+import { extractEdges } from './extractEdges.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 const BOX: BoxParameters = { dx: 10, dy: 20, dz: 30 };
 /** 10 × 20 × 30 = 6000 mm³。手計算した期待値で、実測に合わせて動かさない。 */
@@ -63,6 +66,86 @@ describe('ソリッドの体積・妥当性・表示用データのまとめ取�
 
   beforeAll(async () => {
     oc = await loadOcctForNode();
+  });
+
+  it('an internal explicit frame does not change the world-coordinate body builder', () => {
+    const box = makeBox(oc, BOX);
+    try {
+      const before = buildSolidBodyMesh(oc, 'box-before', box.shape);
+      const frame: MeshCoordinateFrame = { origin: [5, 10, 15], maximumFloat32ErrorMm: 0.01 };
+      tessellate(oc, box.shape, {}, undefined, frame);
+      extractEdges(oc, box.shape, {}, frame);
+      const after = buildSolidBodyMesh(oc, 'box-after', box.shape);
+      expect(after.positions).toEqual(before.positions);
+      expect(after.edgePositions).toEqual(before.edgePositions);
+      expect(after.normals).toEqual(before.normals);
+      expect(after.indices).toEqual(before.indices);
+    } finally {
+      box.delete();
+    }
+  });
+
+  it('body builder gives surfaces and edges one frame and rejects an uncertified prepared surface', () => {
+    const box = makeBox(oc, BOX);
+    try {
+      const world = buildSolidBodyMesh(oc, 'world', box.shape);
+      const frame: MeshCoordinateFrame = { origin: [5, 10, 15], maximumFloat32ErrorMm: 0.01 };
+      const local = buildSolidBodyMesh(oc, 'local', box.shape, {}, [], true,
+        undefined, undefined, undefined, frame);
+      expect(local.coordinateFrame).toEqual({ space: 'local', ...frame });
+      expect(local.indices).toEqual(world.indices);
+      expect(local.normals).toEqual(world.normals);
+      for (let index = 0; index < world.positions.length; index += 1) {
+        expect(local.positions[index] + frame.origin[index % 3]).toBeCloseTo(world.positions[index], 5);
+      }
+      for (let index = 0; index < world.edgePositions.length; index += 1) {
+        expect(local.edgePositions[index] + frame.origin[index % 3]).toBeCloseTo(world.edgePositions[index], 5);
+      }
+      const preparedWorld = tessellate(oc, box.shape);
+      expect(() => buildSolidBodyMesh(oc, 'bad', box.shape, {}, [], true,
+        undefined, undefined, preparedWorld, frame)).toThrow(/prepared surface/);
+    } finally {
+      box.delete();
+    }
+  });
+
+  it('passes one memory admission through edges and sub-shapes before growing their arrays', () => {
+    const box = makeBox(oc, BOX);
+    try {
+      let edges = 0;
+      let entries = 0;
+      const mesh = buildSolidBodyMesh(oc, 'admitted', box.shape, { jsAdmission: {
+        admitEdges: (segments, count) => { edges = Math.max(edges, segments, count); },
+        admitSubShapes: (count) => { entries = Math.max(entries, count); },
+      } });
+      expect(edges).toBeGreaterThan(0);
+      expect(entries).toBe(mesh.faces.length + mesh.edges.length + mesh.vertices.length);
+      expect(() => buildSolidBodyMesh(oc, 'rejected', box.shape, { jsAdmission: {
+        admitEdges: () => {},
+        admitSubShapes: (count) => { if (count > 0) throw new RangeError('sub-shape budget'); },
+      } })).toThrow('sub-shape budget');
+      expect(buildSolidBodyMesh(oc, 'retry', box.shape).positions).toEqual(mesh.positions);
+    } finally {
+      box.delete();
+    }
+  });
+
+  it('rejects an insufficient face array admission before the final TypedArrays and permits retry', () => {
+    const box = makeBox(oc, BOX);
+    try {
+      const surface = tessellate(oc, box.shape);
+      const surfaceBytes = surface.positions.byteLength + surface.normals.byteLength
+        + surface.indices.byteLength + surface.faceRanges.length * 64;
+      expect(() => buildSolidBodyMesh(oc, 'face-rejected', box.shape, { admission: {
+        remainingTriangles: surface.triangleCount,
+        remainingJsBytes: surfaceBytes - 1,
+        checkDeadline: () => {},
+      } })).toThrow();
+      const retry = buildSolidBodyMesh(oc, 'face-retry', box.shape);
+      expect(retry.positions).toEqual(surface.positions);
+    } finally {
+      box.delete();
+    }
   });
 
   it('10 × 20 × 30 mm の箱の体積が 6000 mm³ になる', () => {

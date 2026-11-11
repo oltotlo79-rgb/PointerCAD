@@ -16,7 +16,7 @@ export interface TextFeatureInput {
   readonly plane: WorkPlane;
   readonly outlineText: (text: string, sizeMm: number) => OutlinedText;
 }
-export type TextFeatureResult = {
+type TextFeatureResult = {
   readonly ok: true;
   readonly features: readonly (SketchLineFeature | SketchSplineFeature)[];
   readonly contours: readonly { readonly featureIds: readonly string[]; readonly signedArea: number }[];

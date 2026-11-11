@@ -85,7 +85,7 @@ import { isRecord } from './guards.js';
  * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
 /** 版14: 数学定義と係数ID。旧アプリが式を落としてキャッシュだけで作図することを防ぐ。 */
-export const PCAD_SCHEMA_VERSION = 17;
+export const PCAD_SCHEMA_VERSION = 22;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -187,22 +187,6 @@ export interface PcadToolDefaults {
   /** スケッチの円の半径(mm、FR-302)。 */
   readonly circleRadius: string;
 }
-
-/**
- * 道具の既定値の欄の名前(5 つ)。読み手はこの一覧の欄だけを読み、書き手はこの順に書く
- * (**同じ中身から同じバイト列**の約束。`pcadFile.ts` 冒頭)。
- *
- * `keyof PcadToolDefaults` を要素の型にしてあるので、**欄を足して一覧に書き忘れると
- * 読み手が黙って落とす**のではなく、この一覧を使う側(`documentJson.ts`)が全欄を
- * 読めなくなる形で気づける。上の注記のとおり、正本は model 側にある。
- */
-export const PCAD_TOOL_DEFAULT_KEYS: readonly (keyof PcadToolDefaults)[] = [
-  'extrudeDistance',
-  'holeDiameter',
-  'filletRadius',
-  'chamferDistance',
-  'circleRadius',
-];
 
 /** `document.json` の中身(封筒)。ここに書いたものだけを保存し、それ以外は保存しない。 */
 export interface PcadEnvelope {
@@ -457,6 +441,10 @@ function migrateAssemblyDocumentToV8(
 }
 
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
+  21: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 22, document: { ...raw['document'], schemaVersion: 22 } };
+  },
   2: (raw) => {
     if (!isRecord(raw)) {
       return raw;
@@ -643,5 +631,25 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
   16: (raw) => {
     if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
     return { ...raw, schema: 17, document: { ...raw['document'], schemaVersion: 17 } };
+  },
+  /** 版17→18: 意味起点と下絵補正は旧文書へ捏造せず、版だけを揃える。 */
+  17: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 18, document: { ...raw['document'], schemaVersion: 18 } };
+  },
+  /** Version18 to19: retain old inputs; never fabricate purchased-steel provenance. */
+  18: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 19, document: { ...raw['document'], schemaVersion: 19 } };
+  },
+  /** Version19 to20: retain existing fields; never fabricate analysis inputs or results. */
+  19: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 20, document: { ...raw['document'], schemaVersion: 20 } };
+  },
+  /** Version20 to21: preserve legacy absence and all stored fields; never invent occurrence provenance. */
+  20: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 21, document: { ...raw['document'], schemaVersion: 21 } };
   },
 };

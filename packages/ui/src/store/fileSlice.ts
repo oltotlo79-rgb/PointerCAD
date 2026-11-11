@@ -3,10 +3,12 @@
  * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
  */
 
-import type { AutoSaver } from '@pointercad/io';
+import type { AutoSaver, SaveDocumentEncoder } from '@pointercad/io';
 import type { PartDocument } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { FileGateway } from '../file/fileGateway.js';
+import type { ThumbnailCapture } from '../file/thumbnail.js';
+import { encodePcadInWorker } from '../file/pcadSaveWorker.js';
 import type { MessageKey } from '../i18n/t.js';
 import type { AppState } from './appState.js';
 
@@ -21,6 +23,23 @@ import type { AppState } from './appState.js';
 export interface FileMessage {
   readonly key: MessageKey;
   readonly failed: boolean;
+  readonly detail?: string;
+}
+
+export interface DocumentSaveOperation {
+  readonly id: string;
+  readonly documentId: string;
+  readonly gateway: FileGateway;
+  readonly stage: 'preparing' | 'compressing' | 'writing' | 'settling' | 'complete' | 'cancelled';
+  readonly fileName: string | null;
+  readonly cancel: (() => void) | null;
+}
+
+export interface RecoverySaveState {
+  readonly documentId: string;
+  readonly saver: AutoSaver;
+  readonly stage: 'pending' | 'preparing' | 'compressing' | 'writing' | 'saved' | 'failed';
+  readonly detail?: string;
 }
 
 /**
@@ -42,13 +61,13 @@ export interface RestorePrompt {
 }
 
 /**
- * 保存していない変更を失う操作の前の確認で選ばれた答え(w91a)。デスクトップ版の窓を閉じる前の
+ * 保存していない変更を失う操作の前の確認で選ばれた答え(NFR-UX-3)。デスクトップ版の窓を閉じる前の
  * 確認(`unsavedChangesGuard.ts` の `CloseChoice`)と同じ 3 つにそろえる。
  */
 export type DiscardChoice = 'save' | 'discard' | 'cancel';
 
 /**
- * 画面の中に出している確認(w91a)。ブラウザー標準の `confirm` はデスクトップ版で英語の
+ * 画面の中に出している確認(NFR-UX-3)。ブラウザー標準の `confirm` はデスクトップ版で英語の
  * OK/Cancel になり、日本語の画面から浮くので使わない(lint が拒否する)。
  */
 export interface DiscardConfirmRequest {
@@ -58,8 +77,35 @@ export interface DiscardConfirmRequest {
   readonly resolve: (choice: DiscardChoice) => void;
 }
 
+/** A legacy ID cannot establish lineage; approval belongs to this exact request. */
+export interface PartSourceConfirmRequest {
+  readonly requestId: string;
+  readonly sourceName: string;
+  readonly fileName: string;
+  readonly occurrenceCount: number;
+  readonly countComplete: boolean;
+  readonly isCurrent: () => boolean;
+  readonly resolve: (approved: boolean) => void;
+}
+
+export { SecurePartIdentityError, createPartLineageId, createSecureUuid, PreparedDocumentSession,
+  prepareDocumentSession, documentSessionId } from './documentIdentity.js';
+
+/** An external owner predicate cannot authorize replacement by throwing. */
+export function partSourceRequestIsCurrent(request: Pick<PartSourceConfirmRequest, 'isCurrent'>): boolean {
+  try { return request.isCurrent(); } catch { return false; }
+}
+
 /** ファイルのスライスが持つ欄と操作。 */
 export interface FileSlice {
+  readonly partSourceConfirm: PartSourceConfirmRequest | null;
+  readonly requestPartSourceConfirm: (request: Omit<PartSourceConfirmRequest, 'resolve'>) => Promise<boolean>;
+  readonly answerPartSourceConfirm: (requestId: string, approved: boolean) => void;
+  /** 実行環境から注入する保存口。製品はWorker、headless単体だけ明示注入した実IOを使う。 */
+  readonly saveDocumentEncoder: SaveDocumentEncoder;
+  /** 文書へ保存しない処理の状態。表示側でも文書ID/gatewayを照合する。 */
+  readonly documentSaveOperation: DocumentSaveOperation | null;
+  readonly recoverySaveState: RecoverySaveState | null;
   /**
    * ファイルの読み書きの口(§2.10)。既定はブラウザ用で、デスクトップ版が
    * `setFileGateway` で差し替える(UI から `apps/` を import できないため)。
@@ -76,7 +122,7 @@ export interface FileSlice {
    * いまの絵をサムネイルの PNG にする手立て(§0.a-0.18)。ビューポートが自分を
    * 差し出し、片付けで null へ戻す。用意できていなければサムネイルなしで保存する。
    */
-  readonly captureThumbnail: (() => Uint8Array | null) | null;
+  readonly captureThumbnail: ThumbnailCapture | null;
   /**
    * いまの絵を**印刷用の 1 コマ**(PNG の data URL)にする手立て(FR-810、FR-908、
    * P6 §2.11、タスク33)。`captureThumbnail` と同じくビューポートが差し出し、
@@ -101,7 +147,7 @@ export interface FileSlice {
   /** 起動時の復元の案内(§0.a-0.12)。出すものが無ければ null。 */
   readonly restorePrompt: RestorePrompt | null;
   /**
-   * 答えを待っている確認(w91a)。無ければ null。**文書を作り直しても消さない**(確認を出した
+   * 答えを待っている確認(NFR-UX-3)。無ければ null。**文書を作り直しても消さない**(確認を出した
    * 手続きが答えを待っているため)。確認は 1 つずつで、新しい確認が来たら前の確認は「戻る」で終える。
    */
   readonly discardConfirm: DiscardConfirmRequest | null;
@@ -114,7 +160,7 @@ export interface FileSlice {
   /** 開いているファイルの名前と、最後に保存した文書を差し替える。 */
   readonly setFileState: (fileName: string | null, savedDocument: PartDocument | null) => void;
   /** サムネイルの作り手を差し出す・取り下げる(ビューポートが呼ぶ)。 */
-  readonly setCaptureThumbnail: (capture: (() => Uint8Array | null) | null) => void;
+  readonly setCaptureThumbnail: (capture: ThumbnailCapture | null) => void;
   /** 印刷用の 1 コマの作り手を差し出す・取り下げる(FR-810。ビューポートが呼ぶ)。 */
   readonly setCapturePrintFrame: (capture: (() => string | null) | null) => void;
   /** ファイル操作の結果を帯へ出す・消す。 */
@@ -123,7 +169,7 @@ export interface FileSlice {
   readonly setAutoSaver: (saver: AutoSaver | null) => void;
   /** 復元の案内を出す・閉じる。 */
   readonly setRestorePrompt: (prompt: RestorePrompt | null) => void;
-  /** 画面の中の確認を出し、選ばれた答えを返す(w91a)。前の確認が残っていれば「戻る」で終える。 */
+  /** 画面の中の確認を出し、選ばれた答えを返す(NFR-UX-3)。前の確認が残っていれば「戻る」で終える。 */
   readonly requestDiscardConfirm: (messageKey: MessageKey) => Promise<DiscardChoice>;
   /** 出している確認に答えて閉じる。確認が無ければ何もしない。 */
   readonly answerDiscardConfirm: (choice: DiscardChoice) => void;
@@ -161,6 +207,27 @@ export const createFileSlice: StateCreator<
   [],
   Omit<FileSlice, keyof FileInitialState>
 > = (set, get) => ({
+  partSourceConfirm: null,
+  requestPartSourceConfirm: (request) => new Promise<boolean>((resolve) => {
+    const previous = get().partSourceConfirm;
+    if (previous !== null) {
+      // Clear before settlement; subscribers may synchronously install a newer owner.
+      if (get().partSourceConfirm === previous) set({ partSourceConfirm: null });
+      previous.resolve(false);
+    }
+    const current = partSourceRequestIsCurrent(request);
+    if (!current || get().partSourceConfirm !== null) { resolve(false); return; }
+    set({ partSourceConfirm: { ...request, resolve } });
+  }),
+  answerPartSourceConfirm: (requestId, approved) => {
+    const pending = get().partSourceConfirm;
+    if (pending === null || pending.requestId !== requestId) return;
+    set({ partSourceConfirm: null });
+    pending.resolve(approved && partSourceRequestIsCurrent(pending));
+  },
+  saveDocumentEncoder: encodePcadInWorker,
+  documentSaveOperation: null,
+  recoverySaveState: null,
   discardConfirm: null,
   requestDiscardConfirm: (messageKey) => new Promise<DiscardChoice>((resolve) => {
     // 同時に 2 つは出さない。前の確認を待っている手続きは「戻る」を受け取り、何も失わずに止まる。

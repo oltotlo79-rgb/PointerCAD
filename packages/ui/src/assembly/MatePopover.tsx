@@ -1,3 +1,4 @@
+import { isCompositionKey } from '../commands/compositionKey.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
@@ -42,7 +43,7 @@ export function MatePopover(): React.JSX.Element | null {
       aria-label={t(titleKey)}
       style={{ right: 12, top: 12, maxWidth: 'calc(100% - 24px)', maxHeight: 'calc(100% - 24px)', overflow: 'auto' }}
       onKeyDown={(event) => {
-        if (handleMateKey(event.key, event.nativeEvent.isComposing)) {
+        if (handleMateKey(event.key, isCompositionKey(event.nativeEvent))) {
           event.preventDefault(); event.stopPropagation();
         }
       }}>
@@ -59,7 +60,9 @@ export function MatePopover(): React.JSX.Element | null {
         }}>
           {ASSEMBLY_MATE_TOOLS.map((item) => {
             const readiness = mateKindReadiness(state, item.kind);
-            return <option key={item.kind} value={item.kind} disabled={!readiness.ready}>{t(item.labelKey)}</option>;
+            return <option key={item.kind} value={item.kind} disabled={!readiness.ready}>
+              {!readiness.ready && readiness.reasonKey !== null ? `${t(item.labelKey)} — ${t(readiness.reasonKey)}` : t(item.labelKey)}
+            </option>;
           })}
         </select>
       </label> : <label className="pcad-field">

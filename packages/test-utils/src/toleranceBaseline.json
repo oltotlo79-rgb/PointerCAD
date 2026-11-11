@@ -1,0 +1,553 @@
+{
+  "packages/drawing/src/dimension/arcLengthGeometry.ts": {
+    "Math.abs(a[0] * b[1] - a[1] * b[0]) <= 1e-12 * firstRadius * secondRadius": 1,
+    "Math.abs(Math.abs(input.sweep) - Math.PI * 2) < 1e-7": 1
+  },
+  "packages/drawing/src/dimension/autoDimension.ts": {
+    "Math.abs(candidate[0].radius - circle.radius) <= TOLERANCE": 1,
+    "Math.abs(component(candidate[0], 1) - component(center, 1)) <= TOLERANCE": 1,
+    "Math.abs(component(candidate, 0) - component(center, 0)) <= TOLERANCE": 1
+  },
+  "packages/drawing/src/dimension/geometry.ts": {
+    "Math.abs(first[0] * second[1] - first[1] * second[0]) < 1e-12": 1
+  },
+  "packages/drawing/src/layout/clipRegion.ts": {
+    "Math.abs(value - (all[index - 1] ?? value)) > EPSILON": 2,
+    "Math.abs(Math.hypot(a[0] - curve.center[0], a[1] - curve.center[1]) - curve.radius) <= EPSILON": 1
+  },
+  "packages/drawing/src/render/bezierArc.ts": {
+    "Math.abs(Math.abs(sweep) - 2 * Math.PI) <= 1e-12": 1
+  },
+  "packages/expression/src/math/functionCurvePeriodicity.ts": {
+    "Math.abs(approximate - sampled) <= 1e-9 * Math.max(1, Math.abs(sampled))": 1
+  },
+  "packages/expression/src/math/functionDirectionContract.ts": {
+    "Math.abs(distance - options.length) > 4 * tolerance + Number.EPSILON * 8 * Math.max(distance, options.length)": 1
+  },
+  "packages/expression/src/math/smoothFunctionCurve.ts": {
+    "Math.abs(junction[axis] - sample[axis]) <= allowed": 1
+  },
+  "packages/fem/src/assemblyTetraMesh.ts": {
+    "Math.abs(Math.hypot(...value.rotation) - 1) <= QUATERNION_TOLERANCE": 1
+  },
+  "packages/fem/src/beamBoltContact.ts": {
+    "Math.abs(actual - expected) <= 1e-9 * Math.max(Math.abs(expected), 1e-300)": 1,
+    "Math.abs(x - action[key][i]) > 1e-8": 1,
+    "Math.abs(Number(row[key]) - action[key]) > 1e-9 * Math.max(1, Math.abs(action[key]))": 1
+  },
+  "packages/fem/src/beamFibreStress.ts": {
+    "Math.abs(outline - value) <= relative * value": 1
+  },
+  "packages/fem/src/beamImpactInterior.ts": {
+    "Math.abs(value - block[j][i]) > 1e-9 * scale": 1
+  },
+  "packages/fem/src/beamImpactResults.ts": {
+    "Math.abs(a / scale - b / scale) <= tolerance * (Math.abs(reference) / scale)": 1,
+    "Math.abs(sample.energyJ / energyScale - initialEnergy / energyScale)\n    > 1e-8 * (sample.energyJ / energyScale + initialEnergy / energyScale)": 1,
+    "Math.abs(contact.gapM / scale - expected) > 1e-9": 1
+  },
+  "packages/fem/src/beamImpactTranslation.ts": {
+    "Math.abs(Math.hypot(...directionUnit) - 1) > 1e-12": 1
+  },
+  "packages/fem/src/beamJointInitialStrain.ts": {
+    "Math.abs(actual - expected) <= 1e-9 * Math.max(Math.abs(expected), 1e-300)": 1
+  },
+  "packages/fem/src/beamWeldContact.ts": {
+    "Math.abs(Math.hypot(...normal) - 1) > 1e-10": 1,
+    "Math.abs(Math.hypot(...along) - 1) > 1e-10": 1,
+    "Math.abs(v - other[key][i]) > 1e-10": 1,
+    "Math.abs(energy - expected.elasticEnergyJ) > 1e-9 * Math.max(expected.elasticEnergyJ, 1e-300)": 1
+  },
+  "packages/fem/src/beamWeldSpan.ts": {
+    "Math.abs(dot(v, v) - 1) > 1e-10": 1,
+    "Math.abs(f.lengthM - length) > 1e-9 * length": 1,
+    "Math.abs(Math.abs(dot(axis, patch.along)) - 1) > 1e-10": 1
+  },
+  "packages/fem/src/beamWeldSpanContact.ts": {
+    "Math.abs(actual - expected) > 1e-8 * Math.max(Math.abs(actual), Math.abs(expected), scale, 1e-300)": 1
+  },
+  "packages/fem/src/boltPreloadStages.ts": {
+    "Math.abs(shorteningM - requiredShorteningM) > 1e-9 * Math.max(shorteningM, requiredShorteningM)": 1
+  },
+  "packages/fem/src/bucklingResults.ts": {
+    "Math.abs(amplitude - 1) > 1e-10": 1
+  },
+  "packages/fem/src/cadShellAnalysis.ts": {
+    "Math.abs(norm(n) - 1) <= 1e-9": 1
+  },
+  "packages/fem/src/cadSolidContact.ts": {
+    "Math.abs(mesh.volumeMm3 - context.body.volume) <= context.body.volume * 1e-10": 1
+  },
+  "packages/fem/src/cadTetraMesh.ts": {
+    "Math.abs(Math.hypot(...normal) - 1) > 1e-9": 1,
+    "Math.abs(Math.hypot(...before.normal) - 1) <= 1e-9": 1,
+    "Math.abs(completion.result.volumeMm3 - latest.body.volume) > latest.body.volume * 1e-10": 1
+  },
+  "packages/fem/src/fatigue.ts": {
+    "Math.abs(a.value - b.value) < Math.abs(b.value - c.value)": 1
+  },
+  "packages/fem/src/fatiguePiecewise.ts": {
+    "Math.abs(expected - segment.fromCycles) <= FATIGUE_PIECEWISE_CONTINUITY_TOLERANCE * segment.fromCycles": 1
+  },
+  "packages/fem/src/fatigueTensor.ts": {
+    "Math.abs(Math.abs(largest) - Math.abs(smallest)) <= PRINCIPAL_TIE_TOLERANCE * Math.max(Math.abs(largest), Math.abs(smallest))": 1
+  },
+  "packages/fem/src/frictionContactResults.ts": {
+    "Math.abs(actual - expected) <= 64 * Number.EPSILON * scale": 1
+  },
+  "packages/fem/src/modalResults.ts": {
+    "Math.abs(raw.totalMassKg - expectedMass) > expectedMass * 1e-10": 1,
+    "Math.abs(mode.frequencyHz - Math.sqrt(mode.eigenvaluePerSecondSquared) / (2 * Math.PI)) > mode.frequencyHz * 1e-12": 1,
+    "Math.abs(maximum - 1) > 1e-10": 1
+  },
+  "packages/fem/src/nativeBoltPreload.ts": {
+    "Math.abs(value - expected) > 1e-9 * Math.abs(expected) + 64 * Number.EPSILON * Math.abs(scale)": 1,
+    "Math.abs(lengthM - length) > 1e-12 * length": 1,
+    "Math.abs(dot(a, a) - 1) > 1e-10": 1,
+    "Math.abs(a - delta[j] / length) > 1e-10": 1,
+    "Math.abs(v - z[j]) > 1e-10": 1,
+    "Math.abs(v - normal[i]) > 1e-10": 1,
+    "Math.abs(left - right) > 1e-10 * length": 1
+  },
+  "packages/fem/src/solidAnalysisResults.ts": {
+    "Math.abs(actual - expected) <= tolerance * Math.max(1e-300, scale)": 1
+  },
+  "packages/fem/src/solidBucklingResults.ts": {
+    "Math.abs(amplitude - 1) > 1e-10": 1
+  },
+  "packages/fem/src/solidContactBinding.ts": {
+    "Math.abs(Math.hypot(...normal) - 1) > 1e-12": 1,
+    "Math.abs(Math.abs(dot(faceNormal(masterPoints), normal)) - 1) > 1e-12": 1,
+    "Math.abs(Math.abs(dot(faceNormal(slavePoints), normal)) - 1) > 1e-12": 1,
+    "Math.abs(weight - 1) <= 1e-10": 1,
+    "Math.abs(a - b) <= 1e-10 * Math.max(1, Math.abs(a), Math.abs(b))": 1
+  },
+  "packages/fem/src/solidContactModel.ts": {
+    "Math.abs(Math.hypot(...sample.normal) - 1) > SOLID_CONTACT_LIMITS.unitNormalTolerance": 1
+  },
+  "packages/fem/src/solidContactSearch.ts": {
+    "Math.abs(Math.hypot(...normal) - 1) > SOLID_CONTACT_LIMITS.unitNormalTolerance": 1
+  },
+  "packages/fem/src/solidContactUpdate.ts": {
+    "Math.abs(entry - (i === j ? 1 : 0)) > FRAME_TOLERANCE": 1,
+    "Math.abs(determinant - 1) > FRAME_TOLERANCE": 1,
+    "Math.abs(Math.hypot(...normal) - 1) > SOLID_CONTACT_LIMITS.unitNormalTolerance": 1,
+    "Math.abs(barycentric[0] + barycentric[1] + barycentric[2] - 1) > FRAME_TOLERANCE": 1
+  },
+  "packages/fem/src/solidFiniteResults.ts": {
+    "Math.abs(actual - planned) <= 1e-12 * Math.max(1, Math.abs(planned))": 2
+  },
+  "packages/fem/src/solidModalResults.ts": {
+    "Math.abs(totalMassT - expectedMass) <= expectedMass * 1e-10": 1,
+    "Math.abs(frequencyHz - Math.sqrt(eigenvaluePerSecondSquared) / (2 * Math.PI)) <= frequencyHz * 1e-12": 1
+  },
+  "packages/fem/src/solidPlasticResults.ts": {
+    "Math.abs(displacementMm[p.node][axis] - expected) > 1e-12 * Math.max(1, Math.abs(expected))": 1
+  },
+  "packages/fem/src/staticCapacity.ts": {
+    "Math.abs(torsionM4 - analysed.iyM4 - analysed.izM4) > 1e-6 * torsionM4": 1
+  },
+  "packages/fem/src/tetraMesh.ts": {
+    "Math.abs(volumeMm3 - geometry.volume) <= geometry.volume * 1e-10": 1
+  },
+  "packages/fem/src/transientResults.ts": {
+    "Math.abs(sample.loadFactor - factor) > 1e-12 * Math.max(1, Math.abs(factor))": 1,
+    "Math.abs(sampled - value) > 1e-12 * value": 1
+  },
+  "packages/fem/src/transientTranslation.ts": {
+    "Math.abs(time - last.timeS) <= Math.abs(last.timeS) * 1e-12": 1
+  },
+  "packages/fem/src/weldThroatStress.ts": {
+    "Math.abs(dot(n, n) - 1) > 2e-10": 1,
+    "Math.abs(dot(s, s) - 1) > 2e-10": 1,
+    "Math.abs(energy - wrench.elasticEnergyJ) > 1e-9 * Math.max(energy, 1e-300)": 1
+  },
+  "packages/io/src/dxf/readDxf.ts": {
+    "Math.abs(firstLength - secondLength) > SIMILARITY_TOLERANCE * Math.max(firstLength, secondLength)": 1
+  },
+  "packages/kernel/src/occt/analysisFreeformBound.ts": {
+    "Math.abs(coverage - 1) > 64 * Number.EPSILON * pieces": 1
+  },
+  "packages/kernel/src/occt/classifyFunctionSurface.ts": {
+    "Math.abs(volume - expected) > Math.max(1e-8, expected * 1e-9)": 1
+  },
+  "packages/kernel/src/occt/compareMaterialRegions.ts": {
+    "Math.abs(whole - parts) <= Math.max(1e-9, Math.abs(whole) * 1e-6)": 1
+  },
+  "packages/kernel/src/occt/cylinderDisplayBasis.ts": {
+    "Math.abs(Math.abs(scale) - 1) > 1e-12": 1,
+    "Math.abs(zLength - 1) > 1e-9": 1,
+    "Math.abs(xLength - 1) > 1e-9": 1
+  },
+  "packages/kernel/src/occt/cylindricalFaceSpan.ts": {
+    "Math.abs(interval[0] - end) > tolerance": 1,
+    "Math.abs(end - high) <= tolerance": 1,
+    "Math.abs(length - PERIOD) <= tolerance": 1,
+    "Math.abs(a[1] - b[1]) > vTolerance": 1,
+    "Math.abs(a[1] - vLow) <= vTolerance": 1,
+    "Math.abs(b[1] - vLow) <= vTolerance": 1,
+    "Math.abs(a[1] - vHigh) <= vTolerance": 1,
+    "Math.abs(b[1] - vHigh) <= vTolerance": 1
+  },
+  "packages/kernel/src/occt/functionCurveSpline.ts": {
+    "Math.abs(junction - sample[axis]) <= allowed": 1
+  },
+  "packages/kernel/src/occt/hlrProvenance.ts": {
+    "Math.abs(sweep - (last - first)) < 1e-8": 1
+  },
+  "packages/kernel/src/occt/loftSurface.testSupport.ts": {
+    "Math.abs(end.Z() - start.Z()) < 99": 1
+  },
+  "packages/kernel/src/occt/makeHole.ts": {
+    "Math.abs(Math.abs(scale) - 1) > 1e-12": 1,
+    "Math.abs(Math.abs(dot(outward, radial)) - 1) > 1e-9": 1
+  },
+  "packages/kernel/src/occt/makeProjection.ts": {
+    "Math.abs(curve.endAngle - curve.startAngle) >= TAU - FULL_TURN_EPSILON": 1
+  },
+  "packages/kernel/src/occt/makeSheetMetalBase.ts": {
+    "Math.abs(Math.abs(alignment) - 1) <= 1e-10": 1,
+    "Math.abs(Math.hypot(...normal) - 1) > 1e-10": 1,
+    "Math.abs(Math.abs(normal.reduce((sum, value, index) => sum + value * frame.normal[index], 0)) - 1) > 1e-10": 1,
+    "Math.abs(intersectionVolume - toolVolume) > Math.max(1e-9, toolVolume * 1e-8)": 1
+  },
+  "packages/kernel/src/occt/makeSheetMetalBend.ts": {
+    "Math.abs(dot(axis, axis) - 1) > 1e-10": 1,
+    "Math.abs(dot(cross, n) - 1) > 1e-10": 1
+  },
+  "packages/kernel/src/occt/makeSheetMetalBody.ts": {
+    "Math.abs(volume - totalVolume) > Math.max(1e-7, totalVolume * 1e-10)": 1
+  },
+  "packages/kernel/src/occt/makeSweep.ts": {
+    "Math.abs(volume - expectedVolume) > expectedVolume * SWEPT_LENGTH_TOLERANCE": 1
+  },
+  "packages/kernel/src/occt/makeThruSections.ts": {
+    "Math.abs(curve.endAngle - curve.startAngle) < FULL_TURN - FULL_TURN_EPSILON": 1
+  },
+  "packages/kernel/src/occt/meshCoordinateFrame.ts": {
+    "Math.abs(rounded - value) > maximumError": 1
+  },
+  "packages/kernel/src/occt/moveSolidHole.ts": {
+    "Math.abs(cap.area - (capArea - Math.PI * hole.radius ** 2)) > SIGNATURE_TOLERANCE": 1,
+    "Math.abs(before.hole.radius - after.hole.radius) > SIGNATURE_TOLERANCE": 1,
+    "Math.abs(before.hole.depth - after.hole.depth) > SIGNATURE_TOLERANCE": 1,
+    "Math.abs(side.area - other.area) <= SIGNATURE_TOLERANCE": 1
+  },
+  "packages/kernel/src/occt/rectilinearBend.ts": {
+    "Math.abs(curve.from[0] - curve.to[0]) > AXIS_TOLERANCE_MM": 1,
+    "Math.abs(curve.from[1] - curve.to[1]) > AXIS_TOLERANCE_MM": 1,
+    "Math.abs(volume - expected) > Math.max(1e-7, expected * 1e-10)": 1
+  },
+  "packages/kernel/src/occt/rotateSolidFace.ts": {
+    "Math.abs(Math.abs(handedness) - 1) > ANGULAR_TOLERANCE": 1,
+    "Math.abs(volume - expected) <= expected * VOLUME_RELATIVE_TOLERANCE": 2
+  },
+  "packages/kernel/src/occt/sheetMetalJoin.ts": {
+    "Math.abs(joined.volume - totalVolume) > Math.max(1e-7, totalVolume * 1e-10)": 1
+  },
+  "packages/kernel/src/occt/subShapes.ts": {
+    "Math.abs(Math.hypot(...axis) - 1) > 1e-9": 1
+  },
+  "packages/kernel/src/occt/sweepGuide.ts": {
+    "Math.abs(fine - coarse) > fine * 1e-6": 1
+  },
+  "packages/kernel/src/occt/unifySheetFlat.ts": {
+    "Math.abs(volume - expectedVolume) > Math.max(1e-7, expectedVolume * 1e-10)": 1
+  },
+  "packages/kernel/src/worker/kernelApi.ts": {
+    "Math.abs((time.epochMs - previous.epochMs) - (time.monoMs - previous.monoMs)) > 1000": 1
+  },
+  "packages/model/src/analysis/beamInputs.ts": {
+    "Math.abs(magnitude - 1) > 1e-10": 1
+  },
+  "packages/model/src/analysis/fatiguePiecewiseInput.ts": {
+    "Math.abs(expected - segment.fromCycles) <= FATIGUE_SAVED_PIECEWISE_LIMITS.continuityTolerance * segment.fromCycles": 1
+  },
+  "packages/model/src/analysis/solidContactInput.ts": {
+    "Math.abs(Math.hypot(...vector) - 1) > SOLID_CONTACT_LIMITS.unitNormalTolerance": 1
+  },
+  "packages/model/src/assembly/constraints/mateTargets.ts": {
+    "Math.abs(length - full) <= CIRCLE_LENGTH_TOLERANCE_RATIO * full": 1
+  },
+  "packages/model/src/assembly/fastening/bindHoleSelection.ts": {
+    "Math.abs(Math.abs(dotVec3(unitA, b)) - 1) <= FASTENING_DIRECTION_TOLERANCE": 1,
+    "Math.abs(wall.radius - radius) > FASTENING_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(at - span[0]) <= FASTENING_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(at - span[1]) <= FASTENING_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(2 * radius - diameter) <= FASTENING_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(offset - length) <= FASTENING_LENGTH_TOLERANCE_MM": 1
+  },
+  "packages/model/src/assembly/fastening/frames.ts": {
+    "Math.abs(size - 1) > FASTENING_DIRECTION_TOLERANCE": 1,
+    "Math.abs(lengthVec3(into) - 1) > FASTENING_DIRECTION_TOLERANCE": 1,
+    "Math.abs(size - 1) <= PLACEMENT_QUATERNION_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/fastening/planBoltedJoint.ts": {
+    "Math.abs(explicit.pitch - thread.pitch) > FASTENING_LENGTH_TOLERANCE_MM": 1
+  },
+  "packages/model/src/assembly/fastening/selectFastener.ts": {
+    "Math.abs(metricThreadPitch(row, series) - pitch) <= FASTENING_LENGTH_TOLERANCE_MM": 1
+  },
+  "packages/model/src/assembly/jointOccurrence.ts": {
+    "Math.abs(Math.hypot(...placement.rotation) - 1) <= PLACEMENT_QUATERNION_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/jointOccurrenceSelection.ts": {
+    "Math.abs(value - (solved.position[index] ?? NaN)) <= FASTENING_LENGTH_TOLERANCE_MM": 1
+  },
+  "packages/model/src/assembly/joints/crossLevelCam.ts": {
+    "Math.abs(child.driven.actual - target) > CROSS_LEVEL_CAM_TOLERANCE_MM": 1
+  },
+  "packages/model/src/assembly/joints/crossLevelCamLifecycle.ts": {
+    "Math.abs(child.driven.actual - target) > CROSS_LEVEL_CAM_TOLERANCE_MM": 1
+  },
+  "packages/model/src/assembly/joints/crossLevelGear.ts": {
+    "Math.abs(child.driven.actual - target) > CROSS_LEVEL_GEAR_TOLERANCE_DEG": 1
+  },
+  "packages/model/src/assembly/joints/crossLevelGearFollow.ts": {
+    "Math.abs(value - (b.position[axis] ?? Number.NaN)) <= CROSS_LEVEL_RELATIVE_POSE_TOLERANCE": 1,
+    "Math.abs(value - sign * (qb[index] ?? Number.NaN)) <= CROSS_LEVEL_RELATIVE_POSE_TOLERANCE": 1,
+    "Math.abs(child.driven.actual - target) > CROSS_LEVEL_GEAR_TOLERANCE_DEG": 1
+  },
+  "packages/model/src/assembly/joints/jointFrames.ts": {
+    "Math.abs(lengthVec3(v) - 1) <= JOINT_FRAME_TOLERANCE": 1,
+    "Math.abs(dotVec3(crossVec3(x, y), z) - 1) <= JOINT_FRAME_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/joints/mechanismCoupling.ts": {
+    "Math.abs(fixedRoot - required) > ANGLE_EPSILON_DEG": 1,
+    "Math.abs(previous - current.value) > ANGLE_EPSILON_DEG": 1
+  },
+  "packages/model/src/assembly/placementMath.ts": {
+    "Math.abs(dot(x, x) - 1) > tolerance": 1,
+    "Math.abs(dot(y, y) - 1) > tolerance": 1,
+    "Math.abs(dot(z, z) - 1) > tolerance": 1
+  },
+  "packages/model/src/assembly/standard/steelBend.ts": {
+    "Math.abs(stockLength.value - plan.geometry.centrelineLengthMm)\n    > 1e-9 * Math.max(1, stockLength.value, plan.geometry.centrelineLengthMm)": 1
+  },
+  "packages/model/src/assembly/standard/steelFinishedLength.ts": {
+    "Math.abs(a - b) <= 1e-9 * Math.max(1, scale)": 1
+  },
+  "packages/model/src/assembly/welding/circularFilletWeldSource.ts": {
+    "Math.abs(Math.hypot(...f.axis) - 1) > 1e-9": 1
+  },
+  "packages/model/src/assembly/welding/circularWeldContact.ts": {
+    "Math.abs(Math.abs(dotVec3(n, e.normal)) - 1) > D": 1,
+    "Math.abs(band.radius - e.radiusMm) > L": 1,
+    "Math.abs(Math.abs(dotVec3(band.axis, e.normal)) - 1) > D": 1
+  },
+  "packages/model/src/assembly/welding/curvedWeldPath.ts": {
+    "Math.abs(lengthVec3(axis) - 1) > WELD_DIRECTION_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/welding/cylindricalWeld.ts": {
+    "Math.abs(lengthVec3(axis) - 1) > WELD_DIRECTION_TOLERANCE": 2,
+    "Math.abs(lengthVec3(transformedAxis) - 1) > WELD_DIRECTION_TOLERANCE": 1,
+    "Math.abs(distance - radius) > WELD_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(radius - cylinder.radius) > WELD_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(Math.abs(dotVec3(cylinder.axis, frame.zAxis)) - 1) > WELD_DIRECTION_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/welding/planCircularFilletWeld.ts": {
+    "Math.abs(Math.hypot(...q) - 1) > WELD_DIRECTION_TOLERANCE": 1,
+    "Math.abs(v - b.position[axis]) <= WELD_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(v - sign * b.rotation[axis]) <= WELD_DIRECTION_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/welding/planFilletWeld.ts": {
+    "Math.abs(size - 1) > WELD_DIRECTION_TOLERANCE": 1,
+    "Math.abs(lengthVec3(normal) - 1) > WELD_DIRECTION_TOLERANCE": 1,
+    "Math.abs(Math.abs(dotVec3(along, zAxis)) - 1) > WELD_DIRECTION_TOLERANCE": 1,
+    "Math.abs(candidateAngle.degrees - interiorAngle.degrees) <= WELD_DIRECTION_TOLERANCE": 1,
+    "Math.abs(options.contactLength - contactLength) > WELD_LENGTH_TOLERANCE_MM": 1
+  },
+  "packages/model/src/assembly/welding/weldContact.ts": {
+    "Math.abs(Math.abs(dotVec3(axis, rectangle.normal)) / size - 1) <= WELD_DIRECTION_TOLERANCE": 1
+  },
+  "packages/model/src/drawing/dimensionAngle.ts": {
+    "Math.abs(parameter - 0.5) <= 1e-12": 1
+  },
+  "packages/model/src/drawing/dimensionTarget.ts": {
+    "Math.abs(edge.length - 2 * Math.PI * edge.radius) <= GEOMETRY_TOLERANCE * Math.max(1, edge.length)": 1
+  },
+  "packages/model/src/drawing/gdt.ts": {
+    "Math.abs(edge.length - 2 * Math.PI * edge.radius) <= 1e-7 * Math.max(1, edge.length)": 1
+  },
+  "packages/model/src/drawing/gdtAttachment.ts": {
+    "Math.abs(a.nominalSizeMm - b.nominalSizeMm) > 1e-7": 1,
+    "Math.abs(item.value - original.nominalSizeMm) > 1e-7": 1
+  },
+  "packages/model/src/drawing/holeSchedule.ts": {
+    "Math.abs(lengthVec3(frame.x) - 1) < 1e-10": 1,
+    "Math.abs(lengthVec3(frame.y) - 1) < 1e-10": 1,
+    "Math.abs(dotVec3(crossVec3(basis.xAxis, basis.yAxis), basis.normal) - 1) > 1e-9": 1
+  },
+  "packages/model/src/drawing/linkedWeld.ts": {
+    "Math.abs(a - b) <= WELD_LENGTH_TOLERANCE_MM": 1
+  },
+  "packages/model/src/drawing/machiningSymbols.ts": {
+    "Math.abs(angle - 45) < 1e-9": 1
+  },
+  "packages/model/src/drawing/projectionCenterMarks.ts": {
+    "Math.abs(curve.endAngle - curve.startAngle) >= Math.PI * 2 - 1e-7": 1,
+    "Math.abs(ax * by - ay * bx) > 1e-7 * lengthA * lengthB": 1
+  },
+  "packages/model/src/exchange/drawingToDxf.ts": {
+    "Math.abs(value - dash[index]) < 1e-9": 1,
+    "Math.abs(sx - sy) > 1e-9": 1,
+    "Math.abs(transform[0] * transform[3] - transform[1] * transform[2]) > 1e-12": 1
+  },
+  "packages/model/src/exchange/sketchToDxf.ts": {
+    "Math.abs(alignment - 1) <= PLANE_ALIGNMENT_TOLERANCE": 1
+  },
+  "packages/model/src/kernelBridge/readMaterialComparison.ts": {
+    "Math.abs(whole - first - second) <= Math.max(1e-9, whole * 1e-6)": 1
+  },
+  "packages/model/src/kernelBridge.ts": {
+    "Math.abs((wall - previous.epochMs) - (mono - previous.monoMs)) > 1000": 1
+  },
+  "packages/model/src/measure/mathGeometry.ts": {
+    "Math.abs(Math.PI / 2 - angle) <= request.tolerance.angularRadians": 1
+  },
+  "packages/model/src/measure/mathGeometryCongruence.ts": {
+    "Math.abs(first.turns[i] - second.turns[vertex]) > tolerance.angularRadians": 1,
+    "Math.abs(scaled(first.lengths[i], first) - scaled(second.lengths[edge], second)) > tolerance.linearMm": 1,
+    "Math.abs(first.length - second.length) <= tolerance.linearMm": 1,
+    "Math.abs(first.sweep - second.sweep) <= tolerance.angularRadians": 1,
+    "Math.abs(first.radius - second.radius) <= tolerance.linearMm": 1
+  },
+  "packages/model/src/part/resolvePart.ts": {
+    "Math.abs(2 * radius - size.diameter) > THREAD_SHAFT_DIAMETER_TOLERANCE_MM": 1
+  },
+  "packages/model/src/part/subShapeCache.ts": {
+    "Math.abs(a[0] - b[0]) <= SAME_VALUE_EPSILON": 1,
+    "Math.abs(a[1] - b[1]) <= SAME_VALUE_EPSILON": 1,
+    "Math.abs(a[2] - b[2]) <= SAME_VALUE_EPSILON": 1
+  },
+  "packages/model/src/sheetMetal/circleCurveCuts.ts": {
+    "Math.abs(lengthVec3(normal) - 1) > 1e-10": 1,
+    "Math.abs(curve.radius - radius) <= 1e-7": 1
+  },
+  "packages/model/src/sheetMetal/connectLineBendRegions.ts": {
+    "Math.abs(point[1] - y) > TOLERANCE": 1
+  },
+  "packages/model/src/sheetMetal/cylinderUnfold.ts": {
+    "Math.abs(dot(axis, axis) - 1) > 1e-10": 1,
+    "Math.abs(dot(startRadius, startRadius) - 1) > 1e-10": 1
+  },
+  "packages/model/src/sheetMetal/flatHoleSchedule.ts": {
+    "Math.abs(curve.radius - first.radius) > 1e-7": 1,
+    "Math.abs(turn - 2 * Math.PI) > 1e-9": 1
+  },
+  "packages/model/src/sheetMetal/panelGeometry.ts": {
+    "Math.abs(lengthVec3(axis) - 1) <= 1e-10": 1,
+    "Math.abs(dotVec3(crossVec3(x, y), n) - 1) <= 1e-10": 1,
+    "Math.abs(lengthVec3(panel.normal) - 1) > 1e-10": 1
+  },
+  "packages/model/src/sheetMetal/panelGraph.ts": {
+    "Math.abs(firstLength - secondLength) > 1e-7": 1
+  },
+  "packages/model/src/sheetMetal/partitionLineBend.ts": {
+    "Math.abs(lengthVec3(normal) - 1) > 1e-10": 1
+  },
+  "packages/model/src/sheetMetal/profileFlange.ts": {
+    "Math.abs(distanceVec3(baseline.from, baseline.to) - width) > 1e-7": 1
+  },
+  "packages/model/src/sheetMetal/reliefIntersections.ts": {
+    "Math.abs(lengthVec3(offset) - curve.radius) > TOLERANCE": 1
+  },
+  "packages/model/src/sheetMetal/reliefProfile.ts": {
+    "Math.abs(lengthVec3(normal) - 1) > 1e-10": 1
+  },
+  "packages/model/src/sheetMetal/splitCurveAtPlane.ts": {
+    "Math.abs(lengthVec3(plane.normal) - 1) > 1e-10": 1,
+    "Math.abs(lengthVec3(curve.normal) - 1) > 1e-10": 1,
+    "Math.abs(lengthVec3(axis) - 1) > 1e-10": 1
+  },
+  "packages/model/src/sheetMetal/unfoldSheetBody.ts": {
+    "Math.abs(lengthVec3(normal) - 1) > 1e-10": 1,
+    "Math.abs(lengthVec3(yAxis) - 1) > 1e-10": 1
+  },
+  "packages/model/src/sketch/constraints/dragTranslationSeed.ts": {
+    "Math.abs(a[0] * b[1] - a[1] * b[0]) > Math.sqrt(Number.EPSILON)": 1,
+    "Math.abs((next - old) - shift) >= tolerance": 1,
+    "Math.abs(placed[0] - pin[1][0]) >= tolerance": 1,
+    "Math.abs(placed[1] - pin[1][1]) >= tolerance": 1
+  },
+  "packages/model/src/sketch/constraints/solveSketch.ts": {
+    "Math.abs(uv[0] - initial[0]) <= CONSTRAINT_TOLERANCE": 1,
+    "Math.abs(uv[1] - initial[1]) <= CONSTRAINT_TOLERANCE": 1
+  },
+  "packages/model/src/sketch/inferConstraints.ts": {
+    "Math.abs(au * bv - av * bu) <= dot * ANGLE_TOLERANCE_TANGENT": 1,
+    "Math.abs(distance - circle.radius) > toleranceMm": 1
+  },
+  "packages/model/src/sketch/intersectionMath.ts": {
+    "Math.abs(arc.endAngle - arc.startAngle) >= FULL_TURN - FULL_TURN_EPSILON": 1,
+    "Math.abs(ellipse.endAngle - ellipse.startAngle) >= FULL_TURN - FULL_TURN_EPSILON": 1,
+    "Math.abs(Math.hypot(px, py) - arc.radius) > INTERSECTION_TOLERANCE_MM": 1,
+    "distance < Math.abs(first.radius - second.radius)": 1
+  },
+  "packages/model/src/sketch/resolveSketch.ts": {
+    "Math.abs(u2 - u1) <= SKETCH_TOLERANCE_MM": 1,
+    "Math.abs(v2 - v1) <= SKETCH_TOLERANCE_MM": 1,
+    "Math.abs(endAngle - startAngle) <= FULL_TURN_EPSILON": 1,
+    "Math.abs(endAzimuth - startAzimuth) <= FULL_TURN_EPSILON": 1
+  },
+  "packages/model/src/sketch/shiftCoordinate.ts": {
+    "Math.abs(Math.abs(coefficient) - 1) > AXIS_EPSILON": 1
+  },
+  "packages/model/src/sketch/textFeature.ts": {
+    "Math.abs(dot(axis, axis) - 1) > 1e-8": 1,
+    "Math.abs(value - normal[index]) > 1e-8": 1
+  },
+  "packages/model/src/sketch/trimExtend.ts": {
+    "Math.abs(known - ratio) > RATIO_EPSILON": 1
+  },
+  "packages/test-utils/src/processMemorySamples.ts": {
+    "Math.abs((window['qpcEnd'] - window['qpcStart']) * 1000 / window['qpcFrequency'] - (ended - started)) > 1": 1,
+    "Math.abs(window['epochAnchorMs'] + (window['qpcStart'] - window['qpcAnchor']) * 1000 / window['qpcFrequency'] - started) > 1": 1,
+    "Math.abs(window['epochAnchorMs'] + (window['qpcEnd'] - window['qpcAnchor']) * 1000 / window['qpcFrequency'] - ended) > 1": 1
+  },
+  "packages/ui/src/commands/attachRadialMenuGesture.ts": {
+    "Math.abs(geometry.center.x - previous.center.x) < 0.5": 1,
+    "Math.abs(geometry.center.y - previous.center.y) < 0.5": 1
+  },
+  "packages/ui/src/settings/settings.ts": {
+    "Math.abs(step - target) < Math.abs(nearest - target)": 1
+  },
+  "packages/ui/src/sketch/copyCommands.ts": {
+    "Math.abs(coefficientU - 1) < AXIS_COMPONENT_TOLERANCE": 1,
+    "Math.abs(coefficientV - 1) < AXIS_COMPONENT_TOLERANCE": 1
+  },
+  "packages/ui/src/sketch/featureSummary.ts": {
+    "Math.abs(a[0] - b[0]) <= SOLVED_COORDINATE_EPSILON_MM": 1,
+    "Math.abs(a[1] - b[1]) <= SOLVED_COORDINATE_EPSILON_MM": 1,
+    "Math.abs(a[2] - b[2]) <= SOLVED_COORDINATE_EPSILON_MM": 1
+  },
+  "packages/ui/src/sketch/numericInputPresentation.ts": {
+    "Math.abs(steps - rounded) > FRACTIONAL_INCH_STEP_TOLERANCE": 1
+  },
+  "packages/ui/src/solid/planarHoleInput.ts": {
+    "Math.abs(Math.hypot(...axis) - 1) > 1e-9": 1,
+    "Math.abs(component - v[index]) <= 1e-9": 1
+  },
+  "packages/ui/src/solidAnalysis/cadSolidBuckling.ts": {
+    "Math.abs(area - prepared.loadedAreaMm2) <= 1e-9 * Math.max(area, prepared.loadedAreaMm2)": 1
+  },
+  "packages/ui/src/tutorial/tutorialProgress.ts": {
+    "Math.abs(parameter.value.value - 3) < 1e-9": 1,
+    "Math.abs(height - 3) < 1e-3": 1,
+    "Math.abs(parameter.value.value - 6) >= 1e-9": 1,
+    "Math.abs(height - 6) >= 1e-3": 1
+  },
+  "packages/ui/src/viewcube/ViewCube.tsx": {
+    "Math.abs(grid * ratio - Math.round(grid * ratio)) > 1e-6": 1
+  },
+  "packages/ui/src/viewport/cylinderBasisGuide.ts": {
+    "Math.abs(Math.hypot(...axis) - 1) > 1e-9": 1,
+    "Math.abs(Math.hypot(...zeroDirection) - 1) > 1e-9": 1
+  },
+  "packages/kernel/src/occt/nearlyEqual.ts": {
+    "Math.abs(a - b) <= Math.max(LINEAR_TOLERANCE_MM, Math.abs(scale) * RELATIVE_TOLERANCE)": 1
+  },
+  "packages/kernel/src/math/splineInterpolation.ts": {
+    "Math.abs(knots[last] - value) < 1e-12": 1
+  }
+}

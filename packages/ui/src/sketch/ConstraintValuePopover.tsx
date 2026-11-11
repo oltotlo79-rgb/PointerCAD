@@ -36,9 +36,12 @@ const VALUE_TOOLTIP_KEYS: Readonly<Record<'distance' | 'angle' | 'radius' | 'dia
     diameter: 'constraint.value.diameterTooltip',
   };
 
-/** 数値を聞く 4 種のときだけ説明の鍵を返す(それ以外はこの部品が開かない)。 */
+/** 数値を聞く 6 種のときだけ説明の鍵を返す(それ以外はこの部品が開かない)。 */
 function tooltipKeyOf(kind: SketchConstraintKind): MessageKey {
   switch (kind) {
+    case 'horizontalDistance':
+    case 'verticalDistance':
+      return 'constraint.value.axisDistanceTooltip';
     case 'distance':
     case 'angle':
     case 'radius':

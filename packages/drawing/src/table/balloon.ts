@@ -5,7 +5,7 @@ import type { SymbolText } from '../annotation/symbols.js';
 import type { SemanticTextMetrics } from '../render/types.js';
 
 export interface BalloonCircle { readonly center: Point2; readonly radius: number }
-export interface BalloonInput {
+interface BalloonInput {
   readonly itemNumber: number;
   /** 解決済みの部品表。表示順から番号を付け直さない。 */
   readonly bomNumbers: ReadonlySet<number>;

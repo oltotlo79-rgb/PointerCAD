@@ -46,9 +46,9 @@ import {
 
 /**
  * 変数の上限(§2.2)。超えたら解かずに断る(判定はタスク7。ここでは数え上げるだけ)。
- * 400 は点 200 個ぶんで、`JᵀJ` のガウス消去が 400³/3 ≒ 2.1×10⁷ 回になる大きさ。
+ * 2000 は点 1000 個ぶん。大規模な連立と階数診断は疎な経路を使う。
  */
-export const MAX_CONSTRAINT_VARIABLES = 400;
+export const MAX_CONSTRAINT_VARIABLES = 2000;
 
 /** 半径の種類。円・円弧は 1 つ、楕円は長半径・短半径の 2 つを持つ(§2.2 の表)。 */
 export type RadiusKind = 'radius' | 'major' | 'minor';
@@ -129,6 +129,9 @@ export interface ImplicitCircleEquation {
 }
 
 export interface VariableSet {
+  /** Actual supported geometry on this plane; endpoint aliases alone do not prove a line. */
+  readonly constraintCurves: ReadonlyMap<string, 'line' | 'circle'>;
+  readonly constraintPoints: ReadonlySet<string>;
   /** 決め打ちの順(履歴順 → start / end / center → u, v)。ソルバーの列の順でもある。 */
   readonly variables: readonly ConstraintVariable[];
   /** 初期値(拘束を無視した解決から取る)。`variables` と同じ並び。 */
@@ -214,6 +217,8 @@ interface Slot {
 
 /** 組み立ての途中の状態。関数の間で持ち回る。 */
 interface Builder {
+  readonly planeFeatureIds: ReadonlySet<string>;
+  readonly constraintPoints: Set<string>;
   readonly plane: WorkPlane;
   readonly slots: Slot[];
   readonly aliases: Map<string, string>;
@@ -300,6 +305,9 @@ function addPoint(
   if (input !== null && input.mode !== 'absolute') {
     builder.followsBase.add(pointKey);
   }
+  if (builder.planeFeatureIds.has(featureId) && distanceToPlane(builder.plane, world) <= SKETCH_TOLERANCE_MM) {
+    builder.constraintPoints.add(pointKey);
+  }
   const [u, v] = worldToPlane(builder.plane, world);
   builder.slots.push({
     variable: { kind: 'u', pointKey },
@@ -385,6 +393,8 @@ export function collectVariables(
   plane: WorkPlane,
 ): VariableSet {
   const builder: Builder = {
+    planeFeatureIds: new Set(document.features.filter(feature => feature.planeId === plane.id).map(feature => feature.id)),
+    constraintPoints: new Set<string>(),
     plane,
     slots: [],
     aliases: new Map<string, string>(),
@@ -422,6 +432,7 @@ export function collectVariables(
   }
   /** 円弧の端点の暗黙の式。変数が決まってから、定数だけの式を落とす。 */
   const implicit: ImplicitCircleEquation[] = [];
+  const constraintCurves = new Map<string, 'line' | 'circle'>();
 
   for (const feature of document.features) {
     const onPlane = !isFreeWorkPlaneId(feature.planeId) && feature.planeId === plane.id;
@@ -450,6 +461,8 @@ export function collectVariables(
         if (segment === undefined) {
           break;
         }
+        if (onPlane && distanceToPlane(plane, segment.from) <= SKETCH_TOLERANCE_MM
+          && distanceToPlane(plane, segment.to) <= SKETCH_TOLERANCE_MM) constraintCurves.set(id, 'line');
         addPoint(
           builder,
           id,
@@ -490,6 +503,9 @@ export function collectVariables(
         // 書き戻し(タスク8)では、動いた端点から開始角・終了角を逆算する。
         // 全周の円は端点を持たない(始点と終点が同じ点)ので、変数にせず定数のままにする。
         const fullCircle = isFullCircle(arc);
+        if (onPlane && fullCircle && distanceToPlane(plane, arc.center) <= SKETCH_TOLERANCE_MM) {
+          constraintCurves.set(id, 'circle');
+        }
         const endpointReason = (world: Vec3): FrozenReason | null =>
           fullCircle ? 'derived' : onPlaneReason(plane, onPlane, world);
         addPoint(builder, id, vertexKey(id, 'start'), start, endpointReason(start));
@@ -609,6 +625,8 @@ export function collectVariables(
 
   return {
     variables,
+    constraintCurves,
+    constraintPoints: builder.constraintPoints,
     initial,
     index,
     frozen,

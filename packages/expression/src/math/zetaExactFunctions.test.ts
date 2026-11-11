@@ -7,7 +7,7 @@ import type { MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { ZETA_DERIVATIVE_REFERENCES } from './zetaDerivativeReferences.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 let backend:MathExecutionBackend;
 beforeAll(()=>{backend=createMathBackend();});
 const D=Decimal.clone({precision:330,rounding:Decimal.ROUND_HALF_EVEN});

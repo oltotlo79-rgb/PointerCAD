@@ -1,0 +1,9 @@
+/home/yuya/pcad-oofem-rebuild-20261011-2136/xbuildenv/file__home_yuya_pcad-oofem-rebuild-20261011-2136_dl_xbuildenv-0_29_3_tar_bz2/emsdk/upstream/emscripten/emcc
+/home/yuya/pcad-oofem-rebuild-20261011-2136/xbuildenv/file__home_yuya_pcad-oofem-rebuild-20261011-2136_dl_xbuildenv-0_29_3_tar_bz2/emsdk/upstream/emscripten/em++
+emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 4.0.9 (bbf1caa6e24f64fca9eb6a13a9e02d3f42123e77)
+Copyright (C) 2025 the Emscripten authors (see AUTHORS.txt)
+This is free and open source software under the MIT license.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+clang version 21.0.0git (https:/github.com/llvm/llvm-project 2f05451198e2f222ec66cec4892ada0509519290)
+v24.19.0

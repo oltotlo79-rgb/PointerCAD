@@ -36,6 +36,8 @@ import {
   type SolidFeatureBase,
 } from './solidBase.js';
 import {
+  allocatePatternPointSlots,
+  type PatternPointSlot,
   type MirrorPlane,
   type PatternDirection,
   type PatternPlacement,
@@ -118,7 +120,8 @@ function serializePatternPlacement(placement: PatternPlacement): PatternPlacemen
       };
     case 'points':
       // 点の集まりへ複製(FR-425、P5 タスク43)。個数・間隔の欄は無く、点の並びだけ。
-      return { kind: 'points', points: placement.points.map(serializePointReference) };
+      return { kind: 'points', nextSlotSerial: placement.nextSlotSerial,
+        points: placement.points.map((slot) => ({ slotId: slot.slotId, reference: serializePointReference(slot.reference) })) };
   }
 }
 
@@ -185,6 +188,16 @@ function readPatternDirection(
 }
 
 /** パターンの並べ方(直線・円形、§2.7)を読む。 */
+function readPatternPointSlot(value: unknown, path: string): Checked<PatternPointSlot> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  if (Object.keys(record.value).some((key) => key !== 'slotId' && key !== 'reference')) return fieldProblem(path, 'type');
+  const slotId = readString(record.value, 'slotId', path);
+  if (!slotId.ok) return slotId;
+  const reference = readPointReference(record.value, 'reference', path);
+  return reference.ok ? { ok: true, value: { slotId: slotId.value, reference: reference.value } } : reference;
+}
+
 function readPatternPlacement(value: unknown, path: string): Checked<PatternPlacement> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -253,11 +266,22 @@ function readPatternPlacement(value: unknown, path: string): Checked<PatternPlac
     }
     case 'points': {
       // 点の集まりへ複製(FR-425、P5 タスク43)。個数・間隔の欄は無い。
-      const points = readList(record.value, 'points', path, readPointReferenceItem);
-      if (!points.ok) {
-        return points;
+      if (record.value['nextSlotSerial'] === undefined) {
+        // Old input is allocated once at this document-read boundary and saved canonically.
+        const points = readList(record.value, 'points', path, readPointReferenceItem);
+        return points.ok ? { ok: true, value: allocatePatternPointSlots(points.value) } : points;
       }
-      return { ok: true, value: { kind: 'points', points: points.value } };
+      const nextSlotSerial = record.value['nextSlotSerial'];
+      if (typeof nextSlotSerial !== 'number' || !Number.isSafeInteger(nextSlotSerial) || nextSlotSerial < 1) {
+        return fieldProblem(joinPath(path, 'nextSlotSerial'), 'type');
+      }
+      const points = readList(record.value, 'points', path, readPatternPointSlot);
+      if (!points.ok) return points;
+      try {
+        return { ok: true, value: allocatePatternPointSlots(points.value, undefined, nextSlotSerial) };
+      } catch {
+        return fieldProblem(joinPath(path, 'points'), 'type');
+      }
     }
   }
 }

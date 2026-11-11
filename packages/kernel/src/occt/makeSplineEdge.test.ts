@@ -36,28 +36,30 @@ function distance(a: Vec3Tuple, b: Vec3Tuple): number {
 }
 
 /**
- * 辺の曲線から、与えた点までの最短距離(mm)。
- * 「その点を通っているか」を、パラメータを当てずっぽうに決めずに測るための道具。
- *
- * `Extrema_ExtPC` は曲線の途中の最寄り点しか返さないので、端点は別に比べる
- * (端の外側にある点は極値として現れないため)。NbExt() の戻り型
- * `Graphic3d_ZLayerId` は型定義に無いので `Number()` で整数へ直す(§1.3)。
+ * 辺から与えた点までの最短距離(mm)。
+ * 実 native の頂点対辺の距離を使い、曲線の途中と端点の両方を測る。
+ * makeSplineEdge やその補間式を再利用せず、独立した OCCT の計算で比べる。
  */
 function distanceToEdge(oc: OpenCascadeInstance, edge: TopoDS_Edge, target: Vec3Tuple): number {
-  const adaptor = new oc.BRepAdaptor_Curve_2(edge);
-  const point = new oc.gp_Pnt_3(target[0], target[1], target[2]);
-  const extrema = new oc.Extrema_ExtPC_3(point, adaptor, 1e-12);
-  let best = Math.min(distance(target, edgeStart(oc, edge)), distance(target, edgeEnd(oc, edge)));
-  if (extrema.IsDone()) {
-    const count = Number(extrema.NbExt());
-    for (let index = 1; index <= count; index += 1) {
-      best = Math.min(best, Math.sqrt(extrema.SquareDistance(index)));
-    }
+  const { keep, release } = createAllocations();
+  try {
+    const point = keep(new oc.gp_Pnt_3(target[0], target[1], target[2]));
+    const vertexMaker = keep(new oc.BRepBuilderAPI_MakeVertex(point));
+    const vertex = keep(vertexMaker.Vertex());
+    const extrema = keep(new oc.BRepExtrema_DistShapeShape_1());
+    extrema.SetDeflection(1e-12);
+    extrema.LoadS1(vertex);
+    extrema.LoadS2(edge);
+    extrema.Perform(keep(new oc.Message_ProgressRange_1()));
+    expect(extrema.IsDone()).toBe(true);
+    expect(Number(extrema.NbSolution())).toBeGreaterThan(0);
+    const value = extrema.Value();
+    expect(Number.isFinite(value)).toBe(true);
+    expect(value).toBeGreaterThanOrEqual(0);
+    return value;
+  } finally {
+    release();
   }
-  extrema.delete();
-  point.delete();
-  adaptor.delete();
-  return best;
 }
 
 /** 閉じた辺から平面の面を張り、その面積(mm²)を測る。 */

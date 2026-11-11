@@ -8,7 +8,7 @@
  * (docs/報告記録.md 2026-09-02 14:50 の④と同じ理由)。
  */
 
-import {
+import { encodeSaveDocument, type SaveEncodingControl,
   AUTO_SAVE_INTERVAL_MS,
   PCAD_DOCUMENT_ENTRY,
   createAutoSaver,
@@ -330,7 +330,42 @@ function crcMismatchRecord(): AutoSaveRecord {
 }
 
 beforeEach(() => {
-  useAppStore.setState(createInitialDocumentState());
+  useAppStore.setState({ ...createInitialDocumentState(), saveDocumentEncoder: encodeSaveDocument, recoverySaveState: null });
+});
+
+describe('復元用保存の進行状態', () => {
+  it.each(['edit', 'switch', 'detach'])('圧縮中の%sを過去の成功で最新の控えありにしない', async kind => {
+    useAppStore.setState({ assembly: null, drawing: null, activeDocumentId: crypto.randomUUID() });
+    const storage = createMemoryAutoSaveStorage();
+    let control: SaveEncodingControl | undefined;
+    let finish: () => Promise<void> = () => Promise.resolve();
+    const detach = startAutoSave({ storage, encodeSave: (input, current) => {
+      control = current; current?.onProgress?.('compressing');
+      return new Promise<Uint8Array>((resolve, reject) => {
+        finish = async () => { try { resolve(await encodeSaveDocument(input)); } catch (error) { reject(error instanceof Error ? error : new Error(String(error))); } };
+      });
+    } });
+    try {
+      const original = partWithPoint(); useAppStore.getState().applyDocument(original);
+      expect(useAppStore.getState().recoverySaveState?.stage).toBe('pending');
+      const saving = useAppStore.getState().autoSaver?.saveNow(createPartDocumentBundle(original));
+      expect(useAppStore.getState().recoverySaveState?.stage).toBe('compressing');
+      if (kind === 'edit') useAppStore.getState().applyDocument({ ...original, name: '追加編集' });
+      else if (kind === 'switch') useAppStore.getState().resetDocument(createEmptyPartDocument());
+      else detach();
+      const after = useAppStore.getState().recoverySaveState;
+      control?.onProgress?.('compressing'); await finish(); await saving;
+      if (kind === 'edit') {
+        expect(useAppStore.getState().recoverySaveState?.stage).toBe('pending');
+        const records = await storage.listRecords(); expect(records).toHaveLength(1);
+        expect(readPcadFile(records[0].bytes)).toMatchObject({ ok: true, document: original });
+      } else {
+        expect(control?.signal?.aborted).toBe(true);
+        expect(useAppStore.getState().recoverySaveState).toBe(after);
+        expect(await storage.listRecords()).toHaveLength(0);
+      }
+    } finally { detach(); }
+  });
 });
 
 describe('保管庫を選ぶ(§0.a-0.11)', () => {
@@ -660,11 +695,14 @@ describe('案内の返事', () => {
     const saver = createTestSaver(recording.storage, timer);
     useAppStore.getState().setRestorePrompt({ savedAt: SAVED_AT, documentName: '部品1' });
 
+    const before = useAppStore.getState().document;
+
     await restoreAutoSave(saver);
 
     const state = useAppStore.getState();
     expect(state.restorePrompt).toBeNull();
-    expect(state.document).toEqual(createEmptyPartDocument());
+    expect(state.document).toBe(before);
+    expect(state.document).toEqual({ ...createEmptyPartDocument(), id: before.id });
   });
 
   it('読めない控えに復元を試しても消さず、復元不可の案内を保つ', async () => {
@@ -1042,4 +1080,191 @@ describe('保存間隔の変更は現在の文書の保存キューへ接続す�
       expect(opened.bundle.document).toEqual(edited);
     } finally { detach(); useAppStore.getState().setDisplaySettings(previousSettings); }
   });
+});
+
+it('fresh autosave module import requires no entropy and failed start has no saver or storage effects', async () => {
+  // Keep the real already-created store while isolating only module lifetime identity.
+  const store = useAppStore;
+  const storage = createMemoryAutoSaveStorage();
+  const listRecords = vi.spyOn(storage, 'listRecords');
+  const write = vi.spyOn(storage, 'write');
+  const createSaver = vi.fn((options: Parameters<typeof createAutoSaver>[0]) => createAutoSaver(options));
+  const before = store.getState();
+  vi.resetModules();
+  vi.doMock('../store/useAppStore.js', () => ({ useAppStore: store }));
+  vi.stubGlobal('crypto', {});
+  try {
+    const fresh = await import('./attachAutoSave.js');
+    expect(store.getState()).toBe(before);
+    expect(store.getState()).toEqual(before);
+    expect(listRecords).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    const stop = fresh.startAutoSave({ storage, createSaver });
+    expect(createSaver).not.toHaveBeenCalled();
+    expect(listRecords).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(store.getState()).toEqual({ ...before, fileMessage: {
+      key: 'autoSave.failed', failed: true, detail: 'Secure document identity is unavailable' } });
+    const failed = store.getState();
+    stop();
+    expect(store.getState()).toBe(failed);
+    expect(createSaver).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+    vi.doUnmock('../store/useAppStore.js');
+    vi.resetModules();
+  }
+});
+
+it('actual autosave restore failure retains old authored/runtime owner, recovery bytes and storage', async () => {
+  const recovered = partWithPoint();
+  const storage = createMemoryAutoSaveStorage();
+  await storage.write(recordOf(recovered, 'Recovery source'));
+  const saver = createTestSaver(storage, createManualTimer());
+  await loadAutoSavePrompt(saver, { record: firstRecord(await storage.listRecords()) });
+  const records = await storage.listRecords();
+  const before = useAppStore.getState();
+  const clearSaveTarget = vi.fn();
+  useAppStore.setState({ fileGateway: { ...before.fileGateway, clearSaveTarget } });
+  const owner = useAppStore.getState();
+  vi.stubGlobal('crypto', {});
+  try {
+    await restoreAutoSave(saver);
+    expect(clearSaveTarget).not.toHaveBeenCalled();
+    expect(useAppStore.getState()).toEqual({ ...owner, fileMessage: {
+      key: 'autoSave.failed', failed: true, detail: 'Secure document identity is unavailable' } });
+    expect(await storage.listRecords()).toEqual(records);
+    expect(useAppStore.getState().restorePrompt).toBe(owner.restorePrompt);
+    expect(useAppStore.getState().recoveryRecord).toBe(owner.recoveryRecord);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof recoveryReadHost>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
+});
+
+import * as recoveryReadHost from './pcadReadWorker.js';
+import type { PcadReadRequest } from './pcadReadProtocol.js';
+
+function recoveryReadHarness() {
+  const probes: { port: recoveryReadHost.PcadReadWorkerPort; request: PcadReadRequest | null;
+    late: recoveryReadHost.PcadReadWorkerPort['onmessage']; terminate: ReturnType<typeof vi.fn> }[] = [];
+  const read = recoveryReadHost.createPcadFileReader(() => {
+    const terminate = vi.fn();
+    const probe: (typeof probes)[number] = { request: null, late: null, terminate,
+      port: { onmessage: null, onerror: null, onmessageerror: null, terminate, postMessage: (request, transfer) => {
+        probe.request = structuredClone(request, { transfer }); probe.late = probe.port.onmessage;
+      } } };
+    probes.push(probe); return probe.port;
+  });
+  const spy = vi.spyOn(recoveryReadHost, 'readPcadInWorker').mockImplementation(read);
+  return { spy, async posted(index = 0) {
+    await vi.waitFor(() => { expect(probes[index]?.request).toBeTruthy(); });
+    return probes[index];
+  } };
+}
+function retainedRecoveryState() {
+  const s = useAppStore.getState();
+  return [s.activeDocumentId, s.document, s.undoStack, s.assembly, s.assemblyLibrary, s.assemblyUndoStack,
+    s.drawing, s.drawingSources, s.drawingUndoStack, s.importedShapes, s.importedMeshes, s.canvases, s.drawingImportedShapes,
+    s.fileName, s.savedDocument, s.assemblyFileName, s.savedAssembly, s.drawingFileName, s.savedDrawing, s.fileGateway];
+}
+function expectRetainedRecoveryState(expected: ReturnType<typeof retainedRecoveryState>): void {
+  retainedRecoveryState().forEach((value, index) => expect(value).toBe(expected[index]));
+}
+async function lifecycleRecoveryRecord(kind: 'part' | 'assembly' | 'drawing'): Promise<AutoSaveRecord> {
+  const io = await import('@pointercad/io'), model = await import('@pointercad/model');
+  const part = { ...model.createEmptyPartDocument(), name: 'recovered' };
+  if (kind === 'part') return { kind, savedAt: SAVED_AT, documentName: 'recovered', bytes: io.writePcadFile(part) };
+  if (kind === 'assembly') return { kind, savedAt: SAVED_AT, documentName: 'recovered', bytes:
+    await io.writeDocumentBundle(model.createAssemblyDocumentBundle(model.createAssemblyDocument('recovered'))) };
+  const source = { sourceKind: 'part' as const, document: part };
+  const embedded = await model.embedDrawingSource(model.emptyDrawingSourceLibrary(), source, 'source.pcad', '');
+  return { kind, savedAt: SAVED_AT, documentName: 'recovered', bytes: await io.writeDrawingBundle(
+    model.createDrawingDocument('recovered', embedded.source), { source }) };
+}
+async function recoveryLifecycleReply(request: PcadReadRequest) {
+  const io = await import('@pointercad/io');
+  return { id: request.id, kind: request.kind, result: request.kind === 'part' ? io.readPcadFile(request.bytes)
+    : request.kind === 'assembly' ? await io.readDocumentBundle(request.bytes, 'assembly') : await io.readDrawingBundle(request.bytes) };
+}
+
+describe('E04 recovery lifecycle through the real asynchronous host', () => {
+  for (const kind of ['part', 'assembly', 'drawing'] as const) {
+    for (const event of ['normal', 'edit', 'switch', 'discard', 'dispose', 'newRead', 'error', 'failure', 'terminate'] as const) {
+      it(`${kind}: ${event} owns prompt/restore reads and never applies a cancelled or late result`, async () => {
+        const record = await lifecycleRecoveryRecord(kind), original = record.bytes.slice(), harness = recoveryReadHarness();
+        const clearSaveTarget = vi.fn(), confirmSaveTarget = vi.fn(() => Promise.resolve());
+        useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(null), savePcad: () => Promise.resolve(null),
+          hasSaveTarget: () => true, clearSaveTarget, confirmSaveTarget } });
+        useAppStore.getState().applyDocument({ ...useAppStore.getState().document, name: 'old' });
+        useAppStore.getState().addImportedAttachments(new Map([['old-shape', Uint8Array.of(7, 8)]]), new Map());
+        const discard = vi.fn(() => Promise.resolve());
+        const saver: AutoSaver = { markDirty: () => undefined, saveNow: () => Promise.resolve(), stop: () => undefined,
+          readLatest: () => Promise.resolve(record), discard };
+        let stop: (() => void) | null = null;
+        try {
+          const prompting = event === 'dispose' ? null : loadAutoSavePrompt(saver, { record });
+          if (event === 'dispose') stop = startAutoSave({ saver });
+          const prompt = await harness.posted();
+          if (prompt.request === null) throw new Error('Prompt read missing');
+          prompt.port.onmessage?.(new MessageEvent('message', { data: await recoveryLifecycleReply(prompt.request) }));
+          if (prompting !== null) await prompting;
+          else await vi.waitFor(() => { expect(useAppStore.getState().restorePrompt).not.toBeNull(); });
+          expect(prompt.terminate).toHaveBeenCalledTimes(1);
+          let applications = 0;
+          const unsubscribe = useAppStore.subscribe((next, previous) => {
+            if (kind === 'part' ? next.document !== previous.document : kind === 'assembly'
+              ? next.assembly !== previous.assembly : next.drawing !== previous.drawing) applications += 1;
+          });
+          try {
+            const restoring = restoreAutoSave(saver), probe = await harness.posted(1);
+            if (probe.request === null) throw new Error('Restore read missing');
+            const reply = await recoveryLifecycleReply(probe.request);
+            let expected = retainedRecoveryState();
+            if (event === 'edit') {
+              useAppStore.getState().applyDocument({ ...useAppStore.getState().document, name: 'edited while restoring' });
+              expected = retainedRecoveryState(); applications = 0;
+            } else if (event === 'switch') {
+              useAppStore.getState().resetDocument(createEmptyPartDocument()); expected = retainedRecoveryState(); applications = 0;
+            } else if (event === 'discard') { await discardAutoSave(saver); expected = retainedRecoveryState(); }
+            else if (event === 'dispose') { stop?.(); stop = null; }
+            else if (event === 'newRead') {
+              const nextRestoring = restoreAutoSave(saver), next = await harness.posted(2);
+              if (next.request === null) throw new Error('Next restore read missing');
+              next.port.onmessage?.(new MessageEvent('message', { data: await recoveryLifecycleReply(next.request) }));
+              await nextRestoring; expected = retainedRecoveryState();
+              expect(next.terminate).toHaveBeenCalledTimes(1);
+            } else if (event === 'error') probe.port.onmessageerror?.(new MessageEvent('messageerror'));
+            else if (event === 'failure') probe.port.onmessage?.(new MessageEvent('message', { data: {
+              id: probe.request.id, kind, result: { ok: false, error: { code: 'notZip', message: 'bad recovery ZIP' } },
+            } }));
+            else {
+              if (event === 'terminate') probe.terminate.mockImplementation(() => { throw new Error('termination failed'); });
+              probe.port.onmessage?.(new MessageEvent('message', { data: reply }));
+            }
+            await restoring;
+            if (event === 'normal') expected = retainedRecoveryState();
+            expect(probe.terminate).toHaveBeenCalledTimes(1);
+            const promptAfter = useAppStore.getState().restorePrompt, recordAfter = useAppStore.getState().recoveryRecord;
+            probe.late?.(new MessageEvent('message', { data: reply }));
+            expectRetainedRecoveryState(expected);
+            expect(useAppStore.getState().restorePrompt).toBe(promptAfter); expect(useAppStore.getState().recoveryRecord).toBe(recordAfter);
+            expect(applications).toBe(event === 'normal' || event === 'newRead' ? 1 : 0);
+            expect(confirmSaveTarget).not.toHaveBeenCalled();
+            if (event !== 'normal' && event !== 'newRead' && event !== 'switch') expect(clearSaveTarget).not.toHaveBeenCalled();
+            if (event === 'failure') expect(promptAfter?.unrecoverable).toBe(true);
+            if (event === 'discard') { expect(discard).toHaveBeenCalledOnce(); expect(promptAfter).toBeNull(); }
+            expect(record.bytes.byteLength).toBe(original.length); expect(record.bytes).toEqual(original);
+          } finally { unsubscribe(); }
+        } finally { stop?.(); harness.spy.mockRestore(); }
+      });
+    }
+  }
 });

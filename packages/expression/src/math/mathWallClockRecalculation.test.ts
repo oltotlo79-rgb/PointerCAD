@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest, type ExactMathEngine } from './exactMathWorkExecution.js';
@@ -9,8 +10,7 @@ import * as preparation from './prepareMathCalculation.js';
 afterEach(() => { vi.restoreAllMocks(); });
 
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'wall-clock', documentVersion: 1, editorId: 'input', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'wall-clock', documentVersion: 1, editorId: 'input', inputRevision: 1 } });
 }
 /** A synchronous answer never reaches the exact engine. */
 const unused: ExactMathEngine = { evaluate: () => Promise.reject(new Error('The exact engine must not run')) };

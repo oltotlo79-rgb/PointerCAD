@@ -1,5 +1,6 @@
 /** 部品の差し替えを予告してから一度に適用する純関数(FR-614、P7 §2.11)。 */
-import { rematchSubShapeRef, type SolidBody } from '../kernelBridge.js';
+import { resolveReplacementSubShapeReference, type SolidBody, type SubShapeReferenceResolution } from '../kernelBridge.js';
+import { fingerprintKeyText, type SubShapeRef } from '../geometry/subShapeRef.js';
 import { replaceComponent as replaceComponentRecord } from './assemblyEdit.js';
 import type {
   AssemblyDocument, ComponentSource, Joint, Mate, MateTarget,
@@ -29,10 +30,12 @@ interface RematchedTarget {
   readonly matched: boolean;
 }
 
+type ResolveReplacementReference = (reference: SubShapeRef) => SubShapeReferenceResolution;
+
 function rematchTarget(
   target: MateTarget,
   componentId: string,
-  bodies: readonly SolidBody[],
+  resolveReference: ResolveReplacementReference,
 ): RematchedTarget {
   if (target.componentId !== componentId) {
     return { target, affected: false, matched: true };
@@ -40,19 +43,19 @@ function rematchTarget(
   if (target.kind === 'origin') {
     return { target, affected: true, matched: true };
   }
-  const ref = rematchSubShapeRef(bodies, target.ref);
-  return ref === null
+  const resolution = resolveReference(target.ref);
+  return resolution.status !== 'matched'
     ? { target, affected: true, matched: false }
-    : { target: { ...target, ref }, affected: true, matched: true };
+    : { target: { ...target, ref: resolution.match.reference }, affected: true, matched: true };
 }
 
 function rematchMate(
   item: Mate,
   componentId: string,
-  bodies: readonly SolidBody[],
+  resolveReference: ResolveReplacementReference,
 ): { readonly item: Mate; readonly affected: boolean; readonly matched: boolean } {
-  const a = rematchTarget(item.a, componentId, bodies);
-  const b = rematchTarget(item.b, componentId, bodies);
+  const a = rematchTarget(item.a, componentId, resolveReference);
+  const b = rematchTarget(item.b, componentId, resolveReference);
   return {
     item: a.target === item.a && b.target === item.b ? item : { ...item, a: a.target, b: b.target },
     affected: a.affected || b.affected,
@@ -63,10 +66,10 @@ function rematchMate(
 function rematchJoint(
   item: Joint,
   componentId: string,
-  bodies: readonly SolidBody[],
+  resolveReference: ResolveReplacementReference,
 ): { readonly item: Joint; readonly affected: boolean; readonly matched: boolean } {
-  const a = rematchTarget(item.a, componentId, bodies);
-  const b = rematchTarget(item.b, componentId, bodies);
+  const a = rematchTarget(item.a, componentId, resolveReference);
+  const b = rematchTarget(item.b, componentId, resolveReference);
   return {
     item: a.target === item.a && b.target === item.b ? item : { ...item, a: a.target, b: b.target },
     affected: a.affected || b.affected,
@@ -87,6 +90,15 @@ export function planReplacement(
   const component = assembly.components.find((candidate) => candidate.id === componentId);
   if (component === undefined) return null;
 
+  const references = new Map<string, SubShapeReferenceResolution>();
+  const resolveReference: ResolveReplacementReference = (reference) => {
+    const key = fingerprintKeyText(reference), cached = references.get(key);
+    if (cached !== undefined) return { ...cached, originalReference: reference };
+    const resolution = resolveReplacementSubShapeReference(resolved.bodies, reference);
+    references.set(key, resolution);
+    return resolution;
+  };
+
   let matchedCount = 0;
   let unmatchedCount = 0;
   const unresolvedIds: string[] = [];
@@ -99,12 +111,12 @@ export function planReplacement(
     }
   };
   const mates = assembly.mates.map((mate) => {
-    const result = rematchMate(mate, componentId, resolved.bodies);
+    const result = rematchMate(mate, componentId, resolveReference);
     count(mate.id, result.affected, result.matched);
     return result.item;
   });
   const joints = assembly.joints.map((joint) => {
-    const result = rematchJoint(joint, componentId, resolved.bodies);
+    const result = rematchJoint(joint, componentId, resolveReference);
     count(joint.id, result.affected, result.matched);
     return result.item;
   });

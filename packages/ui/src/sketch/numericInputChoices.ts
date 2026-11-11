@@ -529,6 +529,9 @@ function surfaceOperationChoice(): NumericChoice {
  * 切断面の決め方(FR-432、§0.a-0.56)。基準の 3 面・選んだ面・3 点・点と辺・点と軸の 7 つ。
  * 値は model の `PlaneSpec` の種類(と作業平面の id)へそのまま読み替えられる言葉にしてある。
  * 既定は XY 面——何も選ばなくても切れる唯一の決め方だから(NFR-UX-4)。
+ *
+ * EX-04 W1 で、X / Y / Z 軸に垂直な面(位置は式)・選んだ作業平面・辺を含む面の 5 つを足した
+ * (既存の 7 つと閉じた輪郭の値・並び・既定は変えない。読み替えは cutCommands.ts)。
  */
 function cutPlaneKindChoice(): NumericChoice {
   return {
@@ -539,10 +542,30 @@ function cutPlaneKindChoice(): NumericChoice {
       { value: 'xy', labelKey: 'numericInput.cutPlaneKind.xy' },
       { value: 'xz', labelKey: 'numericInput.cutPlaneKind.xz' },
       { value: 'yz', labelKey: 'numericInput.cutPlaneKind.yz' },
+      { value: 'axisX', labelKey: 'numericInput.cutPlaneKind.axisX' },
+      { value: 'axisY', labelKey: 'numericInput.cutPlaneKind.axisY' },
+      { value: 'axisZ', labelKey: 'numericInput.cutPlaneKind.axisZ' },
+      { value: 'workPlane', labelKey: 'numericInput.cutPlaneKind.workPlane' },
       { value: 'face', labelKey: 'numericInput.cutPlaneKind.face' },
       { value: 'threePoints', labelKey: 'numericInput.cutPlaneKind.threePoints' },
       { value: 'pointAndEdge', labelKey: 'numericInput.cutPlaneKind.pointAndEdge' },
+      { value: 'pointAndEdgeContaining', labelKey: 'numericInput.cutPlaneKind.pointAndEdgeContaining' },
       { value: 'pointAndAxis', labelKey: 'numericInput.cutPlaneKind.pointAndAxis' },
+      // 平面ではなく、選んだ閉じた輪郭で貫いて切る(EX04。cutCommands.ts の PROFILE_CUT_KIND)。
+      { value: 'profile', labelKey: 'numericInput.cutPlaneKind.profile' },
+    ],
+  };
+}
+
+/** 従来の点選択を既定にし、平面内指定への切替を明示する。 */
+function holePlacementChoice(): NumericChoice {
+  return {
+    key: 'holePlacement',
+    labelKey: 'numericInput.choice.holePlacement',
+    value: 'points',
+    options: [
+      { value: 'points', labelKey: 'numericInput.holePlacement.points' },
+      { value: 'plane-face', labelKey: 'numericInput.holePlacement.planeFace' },
     ],
   };
 }
@@ -610,7 +633,7 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
     case 'revolveAngle':
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
     case 'threadSize':
-      return [threadDesignationChoice(), threadSeriesChoice()];
+      return [threadDesignationChoice(), threadSeriesChoice(), holePlacementChoice()];
     case 'chamferSize':
       return [chamferModeChoice()];
     case 'linearPattern':
@@ -650,7 +673,24 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
       薄板にする＝切)では距離 1 つのままである。
     */
     case 'extrudeDistance':
-      return [extrudeEndChoice(), thicknessSideChoice()];
+      return [
+        extrudeEndChoice(), thicknessSideChoice(),
+        // 結果(新しい立体・結合・切り抜き)。相手の立体が無ければ新しい立体だけ。
+        { key: 'extrudeOperation', labelKey: 'numericInput.choice.extrudeOperation', value: 'new',
+          options: [
+            { value: 'new', labelKey: 'numericInput.extrudeOperation.new' },
+            ...((options.extrudeTargets?.length ?? 0) > 0 ? [
+              { value: 'join', labelKey: 'numericInput.extrudeOperation.join' as const },
+              { value: 'cut', labelKey: 'numericInput.extrudeOperation.cut' as const },
+            ] : []),
+          ] },
+        // 相手の立体は利用者が名前で明示して選ぶ(選択の順番や先頭から勝手に決めない)。
+        { key: 'extrudeTarget', labelKey: 'numericInput.choice.extrudeTarget', value: '',
+          presentation: 'menu', options: [
+            { value: '', labelKey: 'numericInput.extrudeTarget.none' },
+            ...(options.extrudeTargets ?? []),
+          ] },
+      ];
     case 'mirrorPlane':
       return [mirrorPlaneChoice()];
     // 回す軸は回転・円形パターン・ばねと同じ選択肢を使い回す(§0.a-0.16)。既定も同じ Z。
@@ -660,7 +700,7 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
       return [ribSideChoice()];
     // 穴(FR-405、FR-422)。タスク50 で入口の広げ方をここへ畳んだ。
     case 'holeSize':
-      return [holeEntryChoice()];
+      return [holeEntryChoice(), holePlacementChoice()];
     // 呼びと系列はねじ穴とまったく同じ表を使う(規格表を 2 か所に持たない、FR-406)。
     case 'threadShaftSize':
       return [threadDesignationChoice(), threadSeriesChoice(), threadShaftEndChoice()];

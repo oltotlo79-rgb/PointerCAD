@@ -123,9 +123,3 @@ export function clipCurves(curves: readonly ClipCurve[], region: ClipRegion): re
     return segments;
   });
 }
-
-export function regionContainsAnyCurvePoint(curves: readonly ClipCurve[], region: ClipRegion): boolean {
-  return curves.some((curve) => curve.kind === 'segment' ? pointInside(curve.from, region) || pointInside(curve.to, region)
-    : curve.kind === 'polyline' ? curve.points.some((point) => pointInside(point, region))
-      : pointInside([curve.center[0] + curve.radius * Math.cos(curve.startAngle), curve.center[1] + curve.radius * Math.sin(curve.startAngle)], region));
-}

@@ -8,6 +8,7 @@ import {
   findComponent,
 } from '@pointercad/model';
 
+import { refreshPartReadiness, startRefreshPartSource } from '../assembly/replaceActions.js';
 import { t } from '../i18n/t.js';
 import {
   deleteAssemblyComponents,
@@ -98,8 +99,8 @@ interface RowMenuState {
  * 一覧の高さと幅の見込み(画素)。項目は複製・削除・固定・表示・抑制の 5 つ。
  * 画面の端との余白は `FeatureTree` と同じ値にそろえる。
  */
-const ROW_MENU_HEIGHT = 168;
-const ROW_MENU_WIDTH = 132;
+const ROW_MENU_HEIGHT = 268;
+const ROW_MENU_WIDTH = 280;
 const ROW_MENU_GAP = 4;
 const ROW_MENU_MARGIN = 8;
 
@@ -162,6 +163,30 @@ export function assemblyMateRowDetails(rowId: string, view: AssemblyView | null 
  * 開いているかどうか・一覧を出しているかどうかは見た目だけの一時状態なのでコンポーネントに
  * 持つ(`FeatureTree` と同じ)。形の正本はストアの `assembly` だけ。
  */
+/** One focusable explicit source-update entry, shared by the actual row menu and tests. */
+export function AssemblyPartRefreshItem(props: {
+  readonly componentId: string; readonly close: () => void;
+}): React.JSX.Element {
+  const state = useAppStore(current => current);
+  const readiness = refreshPartReadiness(state, props.componentId);
+  return <>
+    <button type="button" role="menuitem" className="pcad-button pcad-menu__item"
+      aria-disabled={!readiness.ready} aria-describedby="assembly-refresh-source-reason"
+      title={t('assembly.refresh.hint')}
+      data-help-topic="replace-subassembly"
+      onClick={() => {
+        if (!refreshPartReadiness(useAppStore.getState(), props.componentId).ready) return;
+        void startRefreshPartSource(props.componentId);
+        props.close();
+      }}>
+      {t('assembly.refresh.action')}
+    </button>
+    <p id="assembly-refresh-source-reason">
+      {readiness.reasonKey === null ? t('assembly.refresh.sharedSource') : t(readiness.reasonKey)}
+    </p>
+  </>;
+}
+
 export function AssemblyTree(): React.JSX.Element {
   const searchReveal = useRevealNamedTreeRow();
   const assembly = useAppStore(activeAssemblyDocument);
@@ -483,7 +508,9 @@ export function AssemblyTree(): React.JSX.Element {
             }
           }}
         >
-          {menuComponent === undefined ? null : <><button title={t('controlGuide.button.assemblyDuplicate')}
+          {menuComponent === undefined ? null : <>
+          <AssemblyPartRefreshItem componentId={menu.rowId} close={() => setMenu(null)} />
+          <button title={t('controlGuide.button.assemblyDuplicate')}
             type="button"
             role="menuitem"
             className="pcad-button pcad-menu__item"

@@ -1,0 +1,70 @@
+{
+  "format": "pointercad-capture-provenance/1",
+  "releaseCertified": false,
+  "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+  "adoptedAt": "2026-11-10T03:03:16.577Z",
+  "scripts": {
+    "e2e/tests/p8-drawing.spec.ts": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c"
+  },
+  "captures": [
+    {
+      "name": "quad-four-views",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:59:24.181Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "viewport-performance",
+        "sourceTest": "4分割の実描画性能・区画ごとの立体選択と1画面復帰(FR-113)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "quad-four-views-fixture.json",
+          "sha256": "7b10d585ed29d023fdb9968107aba179e629e428af4aaf987f641c9c4ccb291b"
+        },
+        "screen": {
+          "filename": "quad-four-views-screen.png",
+          "sha256": "34e2a16770ebbc0065fdb42b6af9984ad819d2f7dc82e99b5d41a4dc9a1d26ca"
+        },
+        "detail": {
+          "filename": "quad-four-views-detail.png",
+          "sha256": "82d90b6efed7a6949d7d853be8d6319822d0ac79c9cb0f56c96fde2c70b9abeb"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 15,
+          "lastCompletedAtMs": 3347.7999999523163
+        },
+        "dialogBounds": {
+          "x": 240,
+          "y": 68.5,
+          "width": 920,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "quad"
+      }
+    }
+  ]
+}

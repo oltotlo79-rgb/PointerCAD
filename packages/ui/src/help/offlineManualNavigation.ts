@@ -1,4 +1,4 @@
-import { OFFLINE_MANUAL_NAVIGATION, OFFLINE_MANUAL_EDITION_QUERY, isPreparedOfflineCacheName } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { OFFLINE_MANUAL_NAVIGATION, OFFLINE_MANUAL_EDITION_QUERY, isPreparedOfflineCacheName } from '../settings/offlineProtocol.mjs';
 
 /** Explicit edition handoff also works in browsers without FetchEvent.replacesClientId.
  * Only manual links are handled. CAD documents, external links and downloads keep their normal actions.

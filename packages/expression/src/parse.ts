@@ -27,8 +27,8 @@ export function parse(source: string): Node {
     return index < tokens.length ? tokens[index] : null;
   }
 
-  function parseAddExpr(): Node {
-    let left = parseMulExpr();
+  function parseAddExpression(): Node {
+    let left = parseMulExpression();
     for (;;) {
       const token = peek();
       if (token === null || token.type !== 'operator') {
@@ -39,13 +39,13 @@ export function parse(source: string): Node {
       }
       const operator = token.text === '+' ? '+' : '-';
       index += 1;
-      const right = parseMulExpr();
+      const right = parseMulExpression();
       left = { kind: 'binary', operator, left, right, position: token.position };
     }
   }
 
-  function parseMulExpr(): Node {
-    let left = parseUnaryExpr();
+  function parseMulExpression(): Node {
+    let left = parseUnaryExpression();
     for (;;) {
       const token = peek();
       if (token === null) {
@@ -72,7 +72,7 @@ export function parse(source: string): Node {
         // 構文としてはここで受ける。受けないと「式の後ろに余分なものがあります」という
         // 原因の分かりにくい断り方になるため(NFR-UX-5)。
         index += 1;
-        const exponent = parseUnaryExpr();
+        const exponent = parseUnaryExpression();
         left = { kind: 'binary', operator: '^', left, right: exponent, position: token.position };
         continue;
       }
@@ -84,29 +84,29 @@ export function parse(source: string): Node {
       }
       const operator = token.text === '*' ? '*' : '/';
       index += 1;
-      const right = parseUnaryExpr();
+      const right = parseUnaryExpression();
       left = { kind: 'binary', operator, left, right, position: token.position };
     }
   }
 
-  function parseUnaryExpr(): Node {
+  function parseUnaryExpression(): Node {
     const token = peek();
     if (token !== null && token.type === 'operator' && (token.text === '+' || token.text === '-')) {
       const operator = token.text === '+' ? '+' : '-';
       index += 1;
-      const operand = parseUnaryExpr();
+      const operand = parseUnaryExpression();
       return { kind: 'unary', operator, operand, position: token.position };
     }
-    return parsePowExpr();
+    return parsePowExpression();
   }
 
-  function parsePowExpr(): Node {
+  function parsePowExpression(): Node {
     const base = parsePrimary();
     const token = peek();
     if (token !== null && token.type === 'operator' && token.text === '^') {
       index += 1;
       // 指数側を単項式にすることで 2^-3 が書け、2^3^2 が右結合になる。
-      const exponent = parseUnaryExpr();
+      const exponent = parseUnaryExpression();
       return {
         kind: 'binary',
         operator: '^',
@@ -130,13 +130,13 @@ export function parse(source: string): Node {
     }
 
     if (token.type === 'operator' && token.text === '√') {
-      const operand = parseUnaryExpr();
+      const operand = parseUnaryExpression();
       // √x は sqrt(x) と同じ節にする。節の種類を増やさないため(§2.1)。
       return { kind: 'call', name: 'sqrt', args: [operand], position: token.position };
     }
 
     if (token.type === 'leftParenthesis') {
-      const inner = parseAddExpr();
+      const inner = parseAddExpression();
       const closing = peek();
       if (closing === null) {
         throw new ExpressionFailure(expressionError('unclosedParenthesis', '', token.position));
@@ -181,7 +181,7 @@ export function parse(source: string): Node {
       return args;
     }
     for (;;) {
-      args.push(parseAddExpr());
+      args.push(parseAddExpression());
       const token = peek();
       if (token === null) {
         throw new ExpressionFailure(expressionError('unclosedParenthesis', '', openPosition));
@@ -198,7 +198,7 @@ export function parse(source: string): Node {
     }
   }
 
-  const node = parseAddExpr();
+  const node = parseAddExpression();
   const rest = peek();
   if (rest !== null) {
     throw new ExpressionFailure(expressionError('unexpectedTrailing', rest.text, rest.position));

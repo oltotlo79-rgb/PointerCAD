@@ -19,7 +19,7 @@ import { useAppStore } from '../store/useAppStore.js';
  * `document.documentElement` の一部だけを使うので、検査では DOM 全体を用意せずに
  * この形を満たす偽物を渡せる。
  */
-export interface ThemeRootElement {
+interface ThemeRootElement {
   dataset: { theme?: string; uiScale?: string };
   readonly style: { setProperty: (property: string, value: string) => void };
 }

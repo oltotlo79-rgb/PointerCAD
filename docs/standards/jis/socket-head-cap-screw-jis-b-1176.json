@@ -29,7 +29,8 @@
   "notes": [
     "M18・M22・M27 は JIS B 1176:2014 では規定されていない(2000年版から削除された)。M18 の行はメーカー一覧に載っていた値(DIN 912 相当とみられる)を要確認として残した。M22 は値が得られなかったので null。",
     "M14 は第2選択。ミスミ・三木プーリの 2 件が完全に一致した。",
-    "M3〜M20 はミスミと三木プーリの 2 件が一致。M24 はミスミと三和ファスナーの 2 件が dk/k/s で一致。"
+    "M3〜M20 はミスミと三木プーリの 2 件が一致。M24 はミスミと三和ファスナーの 2 件が dk/k/s で一致。",
+    "実行時カタログ packages/model/src/assembly/standard/fasteners.ts の六角穴付きボルトの表 SOCKET_HEAD_CAP_SCREW_TABLE に付けていた出典 SOCKET_HEAD_CAP_SCREW_SOURCE の値(製品のどこからも読まれていなかったので、値を変えずにここへ移した): standard「JIS B 1176」、edition「2014」、title「六角穴付きボルト」、scope「並目ねじ・鋼製（ローレットなし）」、verified=false、sourceUrls: https://jp.misumi-ec.com/tech-info/categories/technical_data/td01/a0196.html https://www.mikipulley.co.jp/jp/resources/standards-hex-socket-head-cap-screw https://sanwa-fastener.com/specs"
   ],
   "rows": [
     {

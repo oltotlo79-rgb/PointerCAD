@@ -36,17 +36,11 @@ import { readPrintabilityFlag, type AppearanceSpec, type PrintabilityReport } fr
 import type { FaceGroup } from '../appearance/buildFaceGroups.js';
 
 /** 点検の間の材質の並び。既定(外観を無視した素の色)。 */
-export const PRINTABILITY_DEFAULT_MATERIAL_INDEX = 0;
+const PRINTABILITY_DEFAULT_MATERIAL_INDEX = 0;
 /** しきい値より薄い三角形(赤)。 */
-export const PRINTABILITY_THIN_MATERIAL_INDEX = 1;
+const PRINTABILITY_THIN_MATERIAL_INDEX = 1;
 /** 支持が要る(せり出している)三角形(橙)。 */
-export const PRINTABILITY_OVERHANG_MATERIAL_INDEX = 2;
-
-/**
- * 点検の間の 1 ボディの材質の数(§0.53)。**P5 の上限 8 に触れない。**
- * `printabilityAppearances` が返す配列の長さと必ず一致する(下の検査で固定)。
- */
-export const PRINTABILITY_MATERIAL_COUNT = 3;
+const PRINTABILITY_OVERHANG_MATERIAL_INDEX = 2;
 
 /** 立体 1 つぶんの三角形の枚数(点検を頼んだ順に並べる)。 */
 export interface PrintabilityBodyTriangles {

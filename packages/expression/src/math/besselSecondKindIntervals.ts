@@ -6,7 +6,7 @@ import { roundBesselRational } from './besselIntegerRounding.js';
 import { BESSEL_FIXED_SCALE as S, type BesselFixedRange } from './besselFixedRange.js';
 import { secondKindSequence, type SecondBesselKind } from './besselSecondKindNumeric.js';
 import { exponentialRange } from './exponentialIntervals.js';
-import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, nextFloat,
+import { isFiniteInterval, intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, nextFloat,
   type MathInterval, type IntervalValue } from './mathInterval.js';
 
 type Range=MathInterval|null;
@@ -19,7 +19,7 @@ const divide=(a:Range,b:Range):Range=>a===null||b===null?null:unpack(intervalDiv
 const magnitude=(a:MathInterval):number=>Math.max(Math.abs(a.lower),Math.abs(a.upper));
 const proceed=()=>undefined;
 function finite(value:Range):Range {
-  return value!==null&&Number.isFinite(value.lower)&&Number.isFinite(value.upper)&&value.lower<=value.upper?value:null;
+  return value!==null&&isFiniteInterval(value)?value:null;
 }
 function doubleRange(value:BesselFixedRange):Range {
   const seed=Number(roundBesselRational({numerator:value.lower+value.upper,denominator:2n*S}));

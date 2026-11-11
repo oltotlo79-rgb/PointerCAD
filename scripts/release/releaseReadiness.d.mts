@@ -1,3 +1,4 @@
+import type { DedicatedPerformanceEvidence } from './dedicatedPerformanceEvidence.mjs';
 import type { CaptureRegistry } from '../manual/captureRegistry.mjs';
 import type { OfflineAssetInput } from '../vite/offlineAssets.mjs';
 import type { ReleaseCandidateInput, ReleaseManifestInput } from './releaseManifest.mjs';
@@ -94,6 +95,7 @@ export interface CaptureFreshnessResult {
 export type CaptureFreshnessHook = (request: CaptureFreshnessRequest) => CaptureFreshnessResult | Promise<CaptureFreshnessResult>;
 
 export interface PreReleaseInput {
+  readonly dedicatedPerformanceEvidence?: DedicatedPerformanceEvidence | null;
   readonly mode: 'pre-release';
   /** Omitted: all. */
   readonly scope?: ReleaseReadinessScope;
@@ -103,7 +105,13 @@ export interface PreReleaseInput {
   /** null when the part could not be read; readErrors gives the reason and the dependent checks fail. */
   readonly sourceCommit: string | null;
   readonly sourceInputs: ReleaseManifestInput['sourceInputs'] | null;
-  readonly candidates: readonly ReleaseCandidateInput[] | null;
+  /**
+   * executableNotices: the byte copies of LICENSE.electron.txt and LICENSES.chromium.html that package-desktop.mjs's
+   * afterPack kept in dist/<stage>/executable-notices/ (bytes null when unreadable). Absent: the SBOM check fails.
+   */
+  readonly candidates: readonly (ReleaseCandidateInput & {
+    readonly executableNotices?: readonly { readonly name: string; readonly bytes: Uint8Array | null }[];
+  })[] | null;
   readonly webFiles: readonly OfflineAssetInput[] | null;
   readonly releaseManifest: Uint8Array | null;
   readonly sbom: Uint8Array | null;
@@ -166,6 +174,8 @@ export interface ReleaseReadinessOptions {
   readonly downloadUrl?: string;
   readonly manual?: string;
   readonly report?: string;
+  readonly performanceEvidence?: string;
+  readonly performanceEvidenceSha256?: string;
 }
 export interface ReadmeReleaseLinkRow {
   readonly kind: 'windows-installer' | 'windows-portable' | 'linux-appimage' | 'manual' | 'web-app';
@@ -184,7 +194,9 @@ export const RELEASE_READINESS_EXIT: {
   readonly ready: 0; readonly failed: 1; readonly pending: 2; readonly notImplemented: 3; readonly usage: 64; readonly internal: 70;
 };
 export const RELEASE_READINESS_CHECK_IDS: readonly string[];
-/** The manual checks: manual mode runs only these; pre-release mode runs them among its fourteen. */
+/** Mandatory in both pre-release scopes; pending until actual dedicated evidence has a verified adapter. */
+export const DEDICATED_MEASUREMENT_CHECK_IDS: readonly string[];
+/** The manual checks: manual mode runs only these; pre-release mode also requires the dedicated measurements. */
 export const MANUAL_CHECK_IDS: readonly string[];
 export const PAGES_MAX_FILES: number;
 export const PAGES_MAX_FILE_BYTES: number;

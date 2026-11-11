@@ -6,9 +6,10 @@ import {
   createProjectionCache,
   projectionCacheKey,
   PROJECTION_CACHE_CAPACITY,
-  type ProjectionKeyMaterial,
 } from './projectionMath.js';
 import type { ResolvedCurve } from './types.js';
+
+type ProjectionKeyMaterial = Parameters<typeof projectionCacheKey>[0];
 
 const FACE: SubShapeRef = {
   bodyFeatureId: 'extrude-1',

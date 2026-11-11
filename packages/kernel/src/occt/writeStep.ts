@@ -65,7 +65,7 @@ import { buildXcafDocument } from './xcafDocument.js';
  * `STYLED_ITEM` は**色を割り当てた相手の数**、`COLOUR_RGB` は**色の種類の数**で、
  * 同じ色を何面へ付けても色は 1 つに束ねられる(`xcafFaceColors.ts` の実測の表)。
  */
-export type StepWriteEntry = XcafShapeEntry;
+type StepWriteEntry = XcafShapeEntry;
 
 /** 書き出しの細かい指定。 */
 export interface StepWriteOptions {

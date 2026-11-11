@@ -1,3 +1,4 @@
+import { dotVec3 as dot } from '../sketch/vec3.js';
 /** 展開図の曲げ線と製造指示を共通IRへ追加する。位置と縮尺を変えても実角度/Rは変えない。 */
 import { breakDrawingCurve, clipCurves, drawingViewBasis, LINE_WIDTHS_MM,
   type DrawingDocument, type DrawingRenderCurve, type DrawingRenderElement, type Point2, type Vector3 } from '@pointercad/drawing';
@@ -5,7 +6,6 @@ import type { SheetFlatBendLine } from '../sheetMetal/flatBendLines.js';
 import type { ResolvedDrawingView } from './resolveDrawing.js';
 import type { ConstructedDrawingView } from './viewConstruction.js';
 
-const dot = (a: Vector3, b: Vector3): number => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
 const valueText = (value: number): string => Number(value.toPrecision(10)).toString();
 export function addSheetBendDecorations(document: DrawingDocument, views: readonly ResolvedDrawingView[],
   frames: ReadonlyMap<string, ConstructedDrawingView>, sourceCenter: Vector3,

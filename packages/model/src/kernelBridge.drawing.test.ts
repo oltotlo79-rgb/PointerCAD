@@ -1,9 +1,9 @@
 /** 投影平面の法線と「見る向き」の逆転を実OCCTで検査する(P8-25/41)。 */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { THIRD_ANGLE_DIRECTIONS, type DrawingDocument, type DrawingView } from '@pointercad/drawing';
-import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
-import { makeBox } from '../../kernel/src/occt/makeBox.js';
-import { hiddenLineView } from '../../kernel/src/occt/makeHiddenLineViews.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { makeBox } from '@pointercad/kernel';
+import { hiddenLineView } from '@pointercad/kernel';
 import { createDrawingDocument } from './drawing/createDrawingDocument.js';
 import { resolveDrawing, type DrawingResolveKernel, type DrawingProjectionCurve } from './drawing/resolveDrawing.js';
 import { resolveDrawingDimensions } from './drawing/dimensionTarget.js';

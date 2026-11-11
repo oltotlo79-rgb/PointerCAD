@@ -6,6 +6,22 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./package.json": "./package.json",
+    "./testing-assets/cas_equation_systems_test.py": "./src/math/exactRuntime/cas_equation_systems_test.py",
+    "./testing-assets/cas_equations_test.py": "./src/math/exactRuntime/cas_equations_test.py",
+    "./testing-assets/cas_fourier_series_test.py": "./src/math/exactRuntime/cas_fourier_series_test.py",
+    "./testing-assets/cas_integrals_test.py": "./src/math/exactRuntime/cas_integrals_test.py",
+    "./testing-assets/cas_probability_test.py": "./src/math/exactRuntime/cas_probability_test.py",
+    "./testing-assets/cas_region_integrals_test.py": "./src/math/exactRuntime/cas_region_integrals_test.py",
+    "./testing-assets/cas_transforms_test.py": "./src/math/exactRuntime/cas_transforms_test.py",
+    "./testing/geometry": {
+      "types": "./dist/testing/geometry.testSupport.d.ts",
+      "default": "./src/testing/geometry.testSupport.ts"
+    },
+    "./testing/exact-runtime": {
+      "types": "./dist/testing/exactRuntime.testSupport.d.ts",
+      "default": "./src/testing/exactRuntime.testSupport.ts"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
@@ -25,7 +41,52 @@
     "./math/geometry": {
       "types": "./dist/math/publicGeometry.d.ts",
       "default": "./src/math/publicGeometry.ts"
-    }
+    },
+    "./math/exact-runtime/cas_mappings.py": "./src/math/exactRuntime/cas_mappings.py",
+    "./math/exact-runtime/cas_limit_bounds.py": "./src/math/exactRuntime/cas_limit_bounds.py",
+    "./math/exact-runtime/cas_sets.py": "./src/math/exactRuntime/cas_sets.py",
+    "./math/exact-runtime/cas_equation_systems.py": "./src/math/exactRuntime/cas_equation_systems.py",
+    "./math/exact-runtime/cas_ode_input.py": "./src/math/exactRuntime/cas_ode_input.py",
+    "./math/exact-runtime/cas_ode.py": "./src/math/exactRuntime/cas_ode.py",
+    "./math/exact-runtime/cas_equations.py": "./src/math/exactRuntime/cas_equations.py",
+    "./math/exact-runtime/cas_fourier_series.py": "./src/math/exactRuntime/cas_fourier_series.py",
+    "./math/exact-runtime/cas_transforms.py": "./src/math/exactRuntime/cas_transforms.py",
+    "./math/exact-runtime/cas_fourier.py": "./src/math/exactRuntime/cas_fourier.py",
+    "./math/exact-runtime/cas_gamma_functions.py": "./src/math/exactRuntime/cas_gamma_functions.py",
+    "./math/exact-runtime/cas_error_functions.py": "./src/math/exactRuntime/cas_error_functions.py",
+    "./math/exact-runtime/cas_bessel_functions.py": "./src/math/exactRuntime/cas_bessel_functions.py",
+    "./math/exact-runtime/cas_airy_functions.py": "./src/math/exactRuntime/cas_airy_functions.py",
+    "./math/exact-runtime/cas_elliptic_functions.py": "./src/math/exactRuntime/cas_elliptic_functions.py",
+    "./math/exact-runtime/cas_zeta_functions.py": "./src/math/exactRuntime/cas_zeta_functions.py",
+    "./math/exact-runtime/cas_lambert_functions.py": "./src/math/exactRuntime/cas_lambert_functions.py",
+    "./math/exact-runtime/cas_taylor.py": "./src/math/exactRuntime/cas_taylor.py",
+    "./math/exact-runtime/cas_input.py": "./src/math/exactRuntime/cas_input.py",
+    "./math/exact-runtime/cas_result.py": "./src/math/exactRuntime/cas_result.py",
+    "./math/exact-runtime/cas_evaluate.py": "./src/math/exactRuntime/cas_evaluate.py",
+    "./math/exact-runtime/cas_linear.py": "./src/math/exactRuntime/cas_linear.py",
+    "./math/exact-runtime/cas_decompositions.py": "./src/math/exactRuntime/cas_decompositions.py",
+    "./math/exact-runtime/cas_spectral.py": "./src/math/exactRuntime/cas_spectral.py",
+    "./math/exact-runtime/cas_discrete.py": "./src/math/exactRuntime/cas_discrete.py",
+    "./math/exact-runtime/cas_limits.py": "./src/math/exactRuntime/cas_limits.py",
+    "./math/exact-runtime/cas_integrals.py": "./src/math/exactRuntime/cas_integrals.py",
+    "./math/exact-runtime/cas_derivatives.py": "./src/math/exactRuntime/cas_derivatives.py",
+    "./math/exact-runtime/cas_vector_calculus.py": "./src/math/exactRuntime/cas_vector_calculus.py",
+    "./math/exact-runtime/cas_vector_products.py": "./src/math/exactRuntime/cas_vector_products.py",
+    "./math/exact-runtime/cas_line_integrals.py": "./src/math/exactRuntime/cas_line_integrals.py",
+    "./math/exact-runtime/cas_box_domain.py": "./src/math/exactRuntime/cas_box_domain.py",
+    "./math/exact-runtime/cas_region_integrals.py": "./src/math/exactRuntime/cas_region_integrals.py",
+    "./math/exact-runtime/cas_sequences.py": "./src/math/exactRuntime/cas_sequences.py",
+    "./math/exact-runtime/cas_sequence_ranges.py": "./src/math/exactRuntime/cas_sequence_ranges.py",
+    "./math/exact-runtime/cas_integer.py": "./src/math/exactRuntime/cas_integer.py",
+    "./math/exact-runtime/cas_probability.py": "./src/math/exactRuntime/cas_probability.py",
+    "./math/exact-runtime/cas_probability_laws.py": "./src/math/exactRuntime/cas_probability_laws.py",
+    "./math/exact-runtime/cas_probability_domain.py": "./src/math/exactRuntime/cas_probability_domain.py",
+    "./math/exact-runtime/cas_extended_dispatch.py": "./src/math/exactRuntime/cas_extended_dispatch.py",
+    "./math/exact-runtime/cas_cardinality.py": "./src/math/exactRuntime/cas_cardinality.py",
+    "./math/exact-runtime/cas_vector_projection.py": "./src/math/exactRuntime/cas_vector_projection.py",
+    "./math/exact-runtime/cas_matrix_constructors.py": "./src/math/exactRuntime/cas_matrix_constructors.py",
+    "./math/exact-runtime/cas_set_relations.py": "./src/math/exactRuntime/cas_set_relations.py",
+    "./math/exact-runtime/cas_logic_extended.py": "./src/math/exactRuntime/cas_logic_extended.py"
   },
   "scripts": {
     "test": "vitest run"

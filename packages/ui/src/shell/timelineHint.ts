@@ -12,7 +12,7 @@
  */
 
 /** 案内を出し始める段数。1 段では戻す先が無いので、2 段になってから知らせる。 */
-export const TIMELINE_HINT_MIN_SOLIDS = 2;
+const TIMELINE_HINT_MIN_SOLIDS = 2;
 
 /**
  * いま案内を出すべきか(FR-507)。

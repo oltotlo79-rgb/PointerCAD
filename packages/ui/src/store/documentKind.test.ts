@@ -1,10 +1,9 @@
 /**
  * 文書の種類の判定(P7 §0.a-0.10、計画書タスク5)の検査。
  *
- * ここで固定するのは 3 つ。
+ * ここで固定するのは 2 つ。
  * ①種類の判定が 3 つの状態を正しく返す(`part` / `assembly` / `empty`)。
  * ②**アセンブリを開くと部品は読めなくなる**(1 つの窓で 2 つの文書を開かない)。
- * ③種類ごとの `key` は**種類が違えば必ず食い違う**(`rules/06` 10.9 の兄弟の鍵の重なり)。
  *
  * ストアそのものを動かす検査(新規で閉じる・開くと切り替わる)は
  * `useAppStore.test.ts` の側にある。
@@ -21,7 +20,6 @@ import {
   activeDrawingDocument,
   activePartDocument,
   type DocumentKind,
-  documentSectionKey,
 } from './documentKind.js';
 
 const part = createEmptyPartDocument();
@@ -92,31 +90,5 @@ describe('いま開いている文書の種類(P7 タスク5)', () => {
     expect(activeDrawingDocument(state)).toBe(drawing);
     expect(activePartDocument(state)).toBeNull();
     expect(activeAssemblyDocument(state)).toBeNull();
-  });
-});
-
-describe('文書の種類つきの key(rules/06 10.9)', () => {
-  const KINDS: readonly DocumentKind[] = ['part', 'assembly', 'drawing', 'empty'];
-
-  it('同じ id でも種類が違えば必ず食い違う', () => {
-    const keys = KINDS.map((kind) => documentSectionKey(kind, 'component-1'));
-    expect(new Set(keys).size).toBe(KINDS.length);
-  });
-
-  it('id をそのまま key にしたものとは重ならない', () => {
-    // 木とプロパティでは、文書の id・フィーチャーの id がそのまま key に使われている。
-    for (const kind of KINDS) {
-      expect(documentSectionKey(kind, 'component-1')).not.toBe('component-1');
-      expect(documentSectionKey(kind, 'extrude-1')).not.toBe('extrude-1');
-    }
-  });
-
-  it('PropertyPanel の既にある接頭辞とも重ならない', () => {
-    // 外観・基本形状・つなぎ方・切断・案内線・測定・質量の 7 つ(P5 まで)。
-    const existing = ['appearance:', 'primitive:', 'ruled:', 'cut:', 'sphereGrid:', 'measure:', 'mass:'];
-    for (const kind of KINDS) {
-      const key = documentSectionKey(kind, 'x');
-      expect(existing.some((prefix) => key.startsWith(prefix))).toBe(false);
-    }
   });
 });

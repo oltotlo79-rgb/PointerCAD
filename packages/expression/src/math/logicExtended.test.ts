@@ -1,8 +1,9 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 import { CANDIDATE_MATH_OPERATIONS } from './mathOperations.js';
 import { parseMathText } from './mathTextSyntax.js';
 import type { MathExecutionBackend, MathExecutionReply } from './mathWorkExecution.js';
@@ -45,8 +46,7 @@ let results: readonly unknown[];
 let publicReplies: readonly MathExecutionReply[];
 let backend: MathExecutionBackend;
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'logic-extended', documentVersion: 1, editorId: 'value', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'logic-extended', documentVersion: 1, editorId: 'value', inputRevision: 1 } });
 }
 const context = () => ({ operationsById: backend.operationsById, coefficientIds: new Set<string>(), declaredIds: new Set<string>() });
 beforeAll(async () => {

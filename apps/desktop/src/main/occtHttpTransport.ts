@@ -1,0 +1,358 @@
+import { net } from 'electron';
+import type { Session } from 'electron';
+import { createServer } from 'node:http';
+import type { Server, IncomingMessage, ServerResponse } from 'node:http';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { gunzip, gunzipSync } from 'node:zlib';
+import { DESKTOP_OCCT_TRANSPORT_ORIGIN, desktopOcctTransportOrigin, desktopOcctTransportUrl,
+  type DesktopOcctTransportReply } from '@pointercad/ui/desktop-occt-transport';
+
+const TIMEOUT_MS = 25000;
+const MAX_BYTES = 256 * 1024 * 1024;
+const APP_ORIGIN = 'app://pointercad';
+
+type TransportMark = (phase: string, byteLength?: number) => void;
+const ignoreTransportMark: TransportMark = () => undefined;
+
+/** 診断を明示した起動だけ、待ちを含む壁時間とmain全体のCPU時間を記録する。 */
+function createTransportTrace(): { mark: TransportMark; flush: () => void } {
+  if (process.env['PCAD_OCCT_TRANSPORT_TRACE'] !== '1') {
+    return { mark: ignoreTransportMark, flush: () => undefined };
+  }
+  const started = performance.now();
+  const startedAtEpochMs = performance.timeOrigin + started;
+  const cpu = process.cpuUsage();
+  const events: {
+    phase: string;
+    elapsedMs: number;
+    userCpuUs: number;
+    systemCpuUs: number;
+    byteLength?: number;
+  }[] = [];
+  return {
+    mark: (phase, byteLength) => {
+      try {
+        const elapsedMs = performance.now() - started;
+        const used = process.cpuUsage(cpu);
+        events.push({ phase, elapsedMs, userCpuUs: used.user, systemCpuUs: used.system,
+          ...(byteLength === undefined ? {} : { byteLength }) });
+      } catch { /* 診断の失敗で検証結果を変えない。 */ }
+    },
+    flush: () => {
+      try {
+        console.info('[pcad:occt-http-phases] ' + JSON.stringify({
+          version: 1, pid: process.pid, startedAtEpochMs, events,
+        }));
+      } catch { /* 診断の出力失敗で取得の成否を変えない。 */ }
+    },
+  };
+}
+
+const endpoint = new URL(DESKTOP_OCCT_TRANSPORT_ORIGIN);
+const sha = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+function header(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? (value.length === 1 ? value[0] : undefined) : value;
+}
+function record(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Invalid OCCT metadata');
+  return Object.fromEntries(Object.entries(value));
+}
+function hash(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new Error('Invalid OCCT hash');
+  return value;
+}
+function length(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0 || value > MAX_BYTES) {
+    throw new Error('Invalid OCCT byte length');
+  }
+  return value;
+}
+export interface OcctHttpAsset { sha256: string; byteLength: number; gzip: Buffer; transportSha256: string }
+
+/** Only build-produced fixed names are accepted; metadata cannot choose arbitrary paths. */
+export async function readOcctHttpAsset(rendererRoot: string): Promise<OcctHttpAsset> {
+  return readObservedOcctHttpAsset(rendererRoot, ignoreTransportMark);
+}
+
+/** 元の資産検証を保ち、読取り・復号・照合の区間だけを記録する。 */
+async function readObservedOcctHttpAsset(
+  rendererRoot: string, mark: TransportMark, verifyDecoded = true,
+): Promise<OcctHttpAsset> {
+  mark('manifest-start');
+  const manifest = record(JSON.parse(await readFile(join(rendererRoot, 'occt/manifest.json'), 'utf8')));
+  const stream = record(manifest['stream']);
+  const sha256 = hash(manifest['sha256']);
+  const byteLength = length(manifest['byteLength']);
+  const transportSha256 = hash(stream['transportSha256']);
+  const transportLength = length(stream['transportByteLength']);
+  const parts = manifest['parts'];
+  if (!Array.isArray(parts) || parts.length !== 1) throw new Error('Invalid OCCT gzip parts');
+  const part = record(parts[0]);
+  if (part['order'] !== 0 || part['file'] !== `opencascade.full-${sha256.slice(0, 16)}.bin`
+      || part['byteLength'] !== transportLength) throw new Error('OCCT gzip part metadata mismatch');
+  const file = `stream/opencascade.full-${sha256}.wasm`;
+  if (manifest['compression'] !== 'gzip' || stream['compression'] !== 'gzip' || stream['file'] !== file
+      || stream['decodedSha256'] !== sha256 || stream['decodedByteLength'] !== byteLength) {
+    throw new Error('OCCT transport metadata differs from decoded asset');
+  }
+  mark('manifest-validated');
+  const gzip = await readFile(join(rendererRoot, 'occt', file));
+  mark('gzip-read', gzip.length);
+  if (gzip.length !== transportLength || sha(gzip) !== transportSha256) throw new Error('Corrupt OCCT gzip asset');
+  mark('transport-verified', gzip.length);
+  if (!verifyDecoded) return { sha256, byteLength, gzip, transportSha256 };
+  const decoded = gunzipSync(gzip, { maxOutputLength: byteLength });
+  mark('decoded-inflated', decoded.length);
+  if (decoded.length !== byteLength || sha(decoded) !== sha256) throw new Error('Corrupt decoded OCCT asset');
+  mark('decoded-verified', decoded.length);
+  return { sha256, byteLength, gzip, transportSha256 };
+}
+
+/** The cache is not evidence about bundled gzip. Both independent checks must finish. */
+function verifyBundledDecodedAsset(asset: OcctHttpAsset, mark: TransportMark, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      if (error === undefined) resolve(); else reject(error);
+    };
+    const onAbort = (): void => { finish(new Error('OCCT decode aborted')); };
+    const timer = setTimeout(() => { finish(new Error('OCCT decode timeout')); }, TIMEOUT_MS);
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) { onAbort(); return; }
+    try {
+      // 検証済みの長さ+1を出力容量にして、正常時の分割往復と連結コピーを避ける。
+      // 上限超過は従来どおりmaxOutputLengthで拒否し、余分な1byteを許容しない。
+      gunzip(asset.gzip, {
+        maxOutputLength: asset.byteLength, chunkSize: Math.max(64, asset.byteLength + 1),
+      }, (error, decoded) => {
+        if (settled) return;
+        if (error !== null) { finish(error); return; }
+        mark('decoded-inflated', decoded.length);
+        if (decoded.length !== asset.byteLength || sha(decoded) !== asset.sha256) {
+          finish(new Error('Corrupt decoded OCCT asset')); return;
+        }
+        mark('decoded-verified', decoded.length);
+        finish();
+      });
+    } catch (error: unknown) {
+      finish(error instanceof Error ? error : new Error('OCCT decode failed', { cause: error }));
+    }
+  });
+}
+
+export function serveOcctHttpAsset(
+  asset: OcctHttpAsset, request: IncomingMessage, response: ServerResponse, transportOrigin = DESKTOP_OCCT_TRANSPORT_ORIGIN,
+): void {
+  const origin = request.headers.origin;
+  const target = new URL(desktopOcctTransportUrl(asset.sha256, transportOrigin));
+  const expectedPath = target.pathname;
+  const count = (name: string): number => request.rawHeaders.filter((_, index) =>
+    index % 2 === 0 && request.rawHeaders[index]?.toLowerCase() === name).length;
+  if (request.method !== 'GET' || request.url !== expectedPath || request.headers.host !== target.host
+      || request.headers['transfer-encoding'] !== undefined
+      || (request.headers['content-length'] !== undefined && request.headers['content-length'] !== '0')
+      || count('host') !== 1 || count('origin') > 1 || (origin !== undefined && origin !== APP_ORIGIN)) {
+    response.writeHead(403, { 'Cache-Control': 'no-store' });
+    response.end();
+    return;
+  }
+  response.writeHead(200, {
+    'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip',
+    'Content-Length': asset.gzip.length, 'Cache-Control': 'public, max-age=31536000, immutable',
+    'Access-Control-Allow-Origin': APP_ORIGIN, 'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Expose-Headers': 'Content-Encoding',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+    'X-Content-Type-Options': 'nosniff', ETag: `"${asset.transportSha256}"`,
+  });
+  response.end(asset.gzip);
+}
+
+/** request.close is diagnostic only. Only response.end plus full decoded integrity accepts. */
+export function readSessionOcctCache(targetSession: Session, url: string, asset: OcctHttpAsset): Promise<'hit' | 'miss'> {
+  return readObservedSessionOcctCache(targetSession, url, asset, ignoreTransportMark);
+}
+
+/** 本文終端までの照合とmiss・破損の区別を保って記録する。 */
+function readObservedSessionOcctCache(
+  targetSession: Session, url: string, asset: OcctHttpAsset, mark: TransportMark, signal?: AbortSignal,
+): Promise<'hit' | 'miss'> {
+  mark('cache-start');
+  return new Promise((resolve, reject) => {
+    const request = net.request({ session: targetSession, url, method: 'GET', credentials: 'include',
+      cache: 'only-if-cached', redirect: 'error' });
+    let settled = false;
+    let ended = false;
+    let receivedResponse = false;
+    const finish = (error?: Error, result?: 'hit' | 'miss'): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      if (error !== undefined) {
+        mark('cache-rejected');
+        reject(error);
+      } else if (result !== undefined) {
+        mark(result === 'hit' ? 'cache-hit' : 'cache-miss');
+        resolve(result);
+      }
+    };
+    const onAbort = (): void => { finish(new Error('OCCT cache-only aborted')); request.abort(); };
+    const timer = setTimeout(() => { finish(new Error('OCCT cache-only timeout')); request.abort(); }, TIMEOUT_MS);
+    request.on('error', error => {
+      if (!receivedResponse && /(?:^|\s|:)net::ERR_CACHE_MISS(?:\s|$)/.test(error.message)) finish(undefined, 'miss');
+      else finish(error);
+    });
+    request.on('abort', () => { finish(new Error('OCCT cache-only aborted')); });
+    request.on('close', () => { console.info('[pcad:occt-http] cache-only request closed'); });
+    request.on('response', response => {
+      receivedResponse = true;
+      mark('cache-headers');
+      const digest = createHash('sha256');
+      let bytes = 0;
+      response.on('data', (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > asset.byteLength) { finish(new Error('Oversized cached OCCT body')); request.abort(); return; }
+        digest.update(chunk);
+      });
+      response.on('error', error => { finish(error); });
+      response.on('aborted', () => { finish(new Error('Cached OCCT response aborted')); });
+      // Electron narrows on/addListener overloads; its declared Node EventEmitter base retains close.
+      const responseEvents: NodeJS.EventEmitter = response;
+      responseEvents.addListener('close', () => { if (!ended) finish(new Error('Cached OCCT response incomplete')); });
+      response.on('end', () => {
+        ended = true;
+        mark('cache-body-end', bytes);
+        if (response.statusCode !== 200 || header(response.headers['content-type']) !== 'application/wasm'
+            || header(response.headers['content-encoding']) !== 'gzip'
+            || header(response.headers['content-length']) !== String(asset.gzip.length)
+            || bytes !== asset.byteLength || digest.digest('hex') !== asset.sha256) {
+          finish(new Error('Cached OCCT response integrity mismatch'));
+        } else finish(undefined, 'hit');
+      });
+    });
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort(); else request.end();
+  });
+}
+
+/**
+ * `ephemeralPort` is for unpackaged automated launches only (occtHttpPolicy.ts): this server binds port 0 itself
+ * and keeps it, so no other process chooses or reserves the number. The product passes false and owns the fixed port.
+ */
+export function createOcctHttpTransport(rendererRoot: string, targetSession: Session, ephemeralPort = false): {
+  prepare: () => Promise<DesktopOcctTransportReply>; close: () => Promise<void>;
+} {
+  let owned: Server | undefined;
+  let pending: Promise<DesktopOcctTransportReply> | undefined;
+  let closed = false;
+  const preparationAbort = new AbortController();
+  async function prepare(mark: TransportMark): Promise<DesktopOcctTransportReply> {
+    mark('prepare-start');
+    if (closed) throw new Error('OCCT transport closed');
+    const asset = await readObservedOcctHttpAsset(rendererRoot, mark, false);
+    if (closed) throw new Error('OCCT transport closed');
+    // Binding is ownership only. No asset is served until both verifications succeed.
+    let ready = false;
+    let transportOrigin = DESKTOP_OCCT_TRANSPORT_ORIGIN;
+    const server = createServer((request, response) => {
+      if (!ready || closed) { response.writeHead(503, { 'Cache-Control': 'no-store' }); response.end(); return; }
+      serveOcctHttpAsset(asset, request, response, transportOrigin);
+    });
+    server.requestTimeout = TIMEOUT_MS;
+    server.headersTimeout = TIMEOUT_MS;
+    server.setTimeout(TIMEOUT_MS, socket => { socket.destroy(); });
+    const listenerAbort = new AbortController();
+    mark('listener-start');
+    const listening = await new Promise<boolean>((resolve, reject) => {
+      const timer = setTimeout(() => { listenerAbort.abort(); reject(new Error('OCCT listener timeout')); }, TIMEOUT_MS);
+      server.once('error', error => {
+        clearTimeout(timer);
+        // Both codes mean this process cannot own the fixed port. Windows can report
+        // a reserved or exclusively bound port as EACCES. Other listener errors still reject.
+        const code = 'code' in error ? error.code : undefined;
+        if (code === 'EACCES') mark('listener-denied');
+        if (code === 'EADDRINUSE' || code === 'EACCES') resolve(false);
+        else reject(error);
+      });
+      server.listen({ port: ephemeralPort ? 0 : Number(endpoint.port), host: endpoint.hostname, signal: listenerAbort.signal },
+        () => { clearTimeout(timer); resolve(true); });
+    });
+    if (!listening) {
+      await verifyBundledDecodedAsset(asset, mark, preparationAbort.signal);
+      if (closed) throw new Error('OCCT transport closed');
+      mark('prepare-direct-port-unavailable');
+      return { kind: 'direct', reason: 'port-unavailable' };
+    }
+    mark('listener-ready');
+    owned = server;
+    server.unref();
+    if (closed) { await close(); throw new Error('OCCT transport closed'); }
+    if (ephemeralPort) {
+      // The number this server already owns; Host, cache, fill and the reply all use this one origin.
+      const address = server.address();
+      if (address === null || typeof address === 'string' || address.address !== endpoint.hostname) {
+        throw new Error('OCCT listener address mismatch');
+      }
+      transportOrigin = desktopOcctTransportOrigin(address.port);
+    }
+    const url = desktopOcctTransportUrl(asset.sha256, transportOrigin);
+    const [, cache] = await Promise.all([
+      verifyBundledDecodedAsset(asset, mark, preparationAbort.signal),
+      readObservedSessionOcctCache(targetSession, url, asset, mark, preparationAbort.signal),
+    ]);
+    if (closed) throw new Error('OCCT transport closed');
+    ready = true;
+    if (cache === 'miss') {
+      mark('fill-start');
+      const response = await targetSession.fetch(url, { credentials: 'include', redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) });
+      mark('fill-headers');
+      // Electron session.fetch wraps the response; its URL is empty even on success.
+      // The requested URL is fixed above and redirects are forbidden.
+      if (!response.ok || response.headers.get('content-type') !== 'application/wasm'
+          || response.headers.get('content-encoding') !== 'gzip'
+          || response.headers.get('content-length') !== String(asset.gzip.length)) {
+        throw new Error('OCCT HTTP response metadata mismatch');
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      mark('fill-body-end', bytes.length);
+      if (bytes.length !== asset.byteLength || sha(bytes) !== asset.sha256) throw new Error('OCCT HTTP body mismatch');
+      mark('fill-verified', bytes.length);
+    }
+    if (closed) throw new Error('OCCT transport closed');
+    mark('prepare-http');
+    return { kind: 'http', url, sha256: asset.sha256, byteLength: asset.byteLength };
+  }
+  async function close(): Promise<void> {
+    closed = true;
+    preparationAbort.abort();
+    const server = owned;
+    owned = undefined;
+    if (server === undefined) return;
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { reject(new Error('OCCT listener close timeout')); }, TIMEOUT_MS);
+      server.close(error => { clearTimeout(timer); if (error) reject(error); else resolve(); });
+    });
+  }
+  return { prepare: () => {
+    if (closed) return Promise.reject(new Error('OCCT transport closed'));
+    if (pending === undefined) {
+      const trace = createTransportTrace();
+      pending = prepare(trace.mark).catch(async (error: unknown) => {
+        trace.mark('prepare-rejected');
+        await close();
+        throw error;
+      }).finally(() => {
+        trace.mark('prepare-settled');
+        trace.flush();
+      });
+    }
+    return pending;
+  }, close };
+}

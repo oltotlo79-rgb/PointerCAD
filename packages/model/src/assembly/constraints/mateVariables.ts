@@ -36,7 +36,7 @@ import type { MateTargetKind } from './mateTargets.js';
 export const MATE_VARIABLES_PER_COMPONENT = 6;
 
 /**
- * 変数の上限(§0.a-0.17)。超えたら解かずに断る(判定は P7 タスク15。ここでは印を立てるだけ)。
+ * 1 回の連立で解く変数の上限(§0.a-0.17)。solveMates は合致・ジョイント・歯車/カムでつながった群ごとに判定し、超えた群だけを解かずに断る(固定部品だけを共有する独立した群は別々に数える)。
  *
  * 600 は動かせる部品 100 個ぶんで、`JᵀJ` のガウス消去が 600³/3 = 7.2×10⁷ 回になる大きさ。
  * これを超えると 1 反復が NFR-PF-2(単一操作 500ms)を割り込む(§2.13-1 の見積り)。
@@ -118,7 +118,7 @@ export interface MateVariableSet {
   readonly movableComponentIds: readonly string[];
   /** 変数にしなかった部品 → その理由。 */
   readonly frozen: ReadonlyMap<string, FrozenComponentReason>;
-  /** 変数が上限(`MAX_ASSEMBLY_VARIABLES`)を超えた。真なら解かずに断る(§0.a-0.17)。 */
+  /** この集合の変数が上限(`MAX_ASSEMBLY_VARIABLES`)を超えた印。解くかどうかは群ごとに solveMates が決める(§0.a-0.17)。 */
   readonly tooMany: boolean;
   /** その部品のその軸は何列目か。動かせない部品・知らない部品なら `null`。 */
   readonly columnOf: (componentId: string, axis: MateVariableAxis) => number | null;
@@ -475,6 +475,7 @@ export function mateComponentGroups(
   variableSet: MateVariableSet,
   mates: readonly Mate[],
   joints: readonly Joint[],
+  couplings: readonly { readonly jointAId: string; readonly jointBId: string; readonly suppressed: boolean }[] = [],
 ): readonly MateComponentGroup[] {
   const nodes = variableSet.movableComponentIds;
   const nodeOf = new Map<string, number>(
@@ -498,6 +499,17 @@ export function mateComponentGroups(
   }
   for (const joint of joints) {
     connect(joint);
+  }
+
+  // Ground edges do not connect movable gears; explicit coupling links must.
+  const jointById = new Map(joints.map(joint => [joint.id, joint]));
+  for (const coupling of couplings) {
+    if (coupling.suppressed) continue;
+    const a = jointById.get(coupling.jointAId), b = jointById.get(coupling.jointBId);
+    if (a === undefined || b === undefined || a.suppressed || b.suppressed) continue;
+    const nodes = [a.a.componentId, a.b.componentId, b.a.componentId, b.b.componentId]
+      .flatMap(id => { const node = nodeOf.get(id); return node === undefined ? [] : [node]; });
+    for (const node of nodes.slice(1)) unite(parent, nodes[0], node);
   }
 
   /** 根の節 → その塊。`components` の順に積むので、塊の並びも中の並びも文書の順になる。 */

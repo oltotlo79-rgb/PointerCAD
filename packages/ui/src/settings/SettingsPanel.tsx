@@ -1,3 +1,4 @@
+import { CameraControlSettingsForm } from './CameraControlSettingsForm.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { t, type MessageKey } from '../i18n/t.js';
@@ -217,6 +218,7 @@ export function SettingsPanel(): React.JSX.Element {
 
           <button type="button" className="pcad-button" data-help-topic="tutorial" title={t('tutorial.startHint')}
             onClick={() => { setOpen(false); openTutorial(); }}>{t('tutorial.start')}</button>
+          <CameraControlSettingsForm />
           <AutoSaveIntervalForm />
           <ToolDefaultsForm />
           <ShortcutSettingsForm />

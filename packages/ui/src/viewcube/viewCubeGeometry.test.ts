@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { createRegionGeometry, createViewCubeGeometry, VIEW_CUBE_BEVEL } from './viewCubeGeometry.js';
+import { createRegionGeometry, createViewCubeGeometry } from './viewCubeGeometry.js';
 import { regionFromLocalPoint } from './viewCubeMath.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const VIEW_CUBE_BEVEL = 0.12;
 
 describe('view cube bevel and hover surfaces', () => {
   it('is closed, outward-facing and uses only 44 triangles and one material', () => {

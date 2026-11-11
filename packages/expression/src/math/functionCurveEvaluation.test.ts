@@ -6,7 +6,9 @@ import { compileFunctionScalar } from './compileFunctionScalar.js';
 import { createScalarSampler } from './scalarMathTape.js';
 import { createScalarCurveCurvature } from './scalarCurveCurvature.js';
 import { createFunctionCurveEvaluator } from './functionCurveEvaluation.js';
-import { sampleFunctionCurve, type FunctionCurveOptions } from './adaptiveFunctionCurve.js';
+import { sampleFunctionCurve } from './adaptiveFunctionCurve.js';
+
+type FunctionCurveOptions = Parameters<typeof sampleFunctionCurve>[1];
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

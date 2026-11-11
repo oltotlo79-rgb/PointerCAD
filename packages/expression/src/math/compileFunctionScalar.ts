@@ -29,7 +29,7 @@ export function compileFunctionScalar(definition: unknown, inputs: readonly Scal
   const scalarContext: PreparedScalarMathContext = { ...context, angleUnit: stored.angleUnit };
   const substitutedSource = substituteCoefficientExpressions(stored.expression, coefficientExpressionMap(current, stored.angleUnit));
   const ode = context.backend.prepareOdeFunction?.(substitutedSource, scalarContext);
-  const numerical = resolveNumericalRoots(ode?.expression ?? substitutedSource, stored.expression, scalarContext);
+  const numerical = resolveNumericalRoots(ode?.expression ?? substitutedSource, stored.expression, scalarContext, evaluatePreparedScalarMath);
   if (numerical.evaluation !== undefined) throw new MathInputProblem('domain', '解の区間から使う上下限を明示してください。');
   const substituted = numerical.expression;
   // Check invalid constant operands before any rewrite. Dynamic roots stay in the tape: the

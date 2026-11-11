@@ -49,7 +49,7 @@ export interface StepAssemblyDefinition {
 }
 
 /** 読み込んだ XCAF アセンブリ。 */
-export interface StepAssemblyReadResult {
+interface StepAssemblyReadResult {
   readonly name: string | null;
   readonly definitions: readonly StepAssemblyDefinition[];
   readonly children: readonly ShapeAssemblyNode[];
@@ -142,8 +142,8 @@ export function readStepAssembly(
     const { keep, release } = createAllocations();
     try {
       const format = keep(new oc.TCollection_ExtendedString_2(STEP_STORAGE_FORMAT, false));
-      const doc = new oc.TDocStd_Document(format);
-      const handle = keep(new oc.Handle_TDocStd_Document_2(doc));
+      const xcafDocument = new oc.TDocStd_Document(format);
+      const handle = keep(new oc.Handle_TDocStd_Document_2(xcafDocument));
       const reader = keep(new oc.STEPCAFControl_Reader_1());
       reader.SetColorMode(withColors);
       reader.SetNameMode(true);
@@ -152,7 +152,7 @@ export function readStepAssembly(
         throw new Error(STEP_READ_FAILED_MESSAGE);
       }
       const unitNames = readStepUnitNames(oc, reader, keep);
-      const main = keep(doc.Main());
+      const main = keep(xcafDocument.Main());
       const shapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
       const colorTool: XCAFDoc_ColorTool = keep(oc.XCAFDoc_DocumentTool.ColorTool(main)).get();
       const free = keep(new oc.TDF_LabelSequence_1());

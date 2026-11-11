@@ -2,6 +2,7 @@ import type { TitleBlockFieldDefinition } from './paper/titleBlock.js';
 import type { DrawingViewConstruction } from './view/construction.js';
 import type { DatumDefinition, GeometricToleranceFrame } from './gdt/types.js';
 import type { WeldSymbol } from './welding/types.js';
+import type { SubShapeOrigin } from './subShapeOrigin.js';
 
 /** 図面の用紙座標(mm)。左下が原点で、上が +v(FR-701、§0.58)。 */
 export type Point2 = readonly [number, number];
@@ -59,6 +60,7 @@ export interface DrawingSubShapeRef {
   readonly bodyFeatureId: string;
   readonly index: number;
   readonly fingerprint: DrawingSubShapeFingerprint;
+  readonly origin?: SubShapeOrigin;
 }
 
 /** P10: 抱き込んだ元部品から展開を導出する入力。 */

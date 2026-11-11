@@ -52,7 +52,7 @@ export interface FaceGroupPlan {
 export const MAX_MATERIALS_PER_BODY = 8;
 
 /** 1 ボディのまとまりの数の上限(§2.5.2。= ボディ 1 つのドローコールの上限)。 */
-export const MAX_GROUPS_PER_BODY = 32;
+const MAX_GROUPS_PER_BODY = 32;
 
 /** 数値を鍵の一部にする。`-0` と `0` を同じ文字にするため `String` を通す。 */
 function numberKeyText(value: number): string {

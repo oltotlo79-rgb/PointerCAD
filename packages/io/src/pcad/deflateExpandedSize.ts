@@ -8,8 +8,10 @@ class Bits {
   position = 0;
   constructor(readonly bytes: Uint8Array) {}
   peek(count: number): number {
-    const offset = Math.floor(this.position / 8), shift = this.position % 8;
-    const word = (this.bytes[offset] ?? 0) | ((this.bytes[offset + 1] ?? 0) << 8) | ((this.bytes[offset + 2] ?? 0) << 16);
+    // Keep the byte offset as a number: shifting the full position would wrap large inputs.
+    const shift = this.position & 7, offset = (this.position - shift) / 8;
+    // Bitwise conversion pads a missing lookahead byte with zero; consumption still checks the real boundary.
+    const word = this.bytes[offset] | (this.bytes[offset + 1] << 8) | (this.bytes[offset + 2] << 16);
     return (word >>> shift) & ((1 << count) - 1);
   }
   read(count: number): number {
@@ -55,7 +57,9 @@ function huffman(lengths: readonly number[], mode: 'codes' | 'literals' | 'dista
 function symbol(bits: Bits, table: Huffman): number {
   const entry = table.lookup[bits.peek(table.width)], length = entry & 15;
   if (length === 0) throw new DeflateSizeError('invalidDeflate');
-  bits.read(length); return entry >>> 4;
+  // The lookup already read these bits; only consume them after checking the actual input boundary.
+  if (bits.position + length > bits.bytes.length * 8) throw new DeflateSizeError('invalidDeflate');
+  bits.position += length; return entry >>> 4;
 }
 const FIXED_LITERALS = huffman(Array.from({ length: 288 }, (_, index) => index < 144 ? 8 : index < 256 ? 9 : index < 280 ? 7 : 8), 'literals');
 const FIXED_DISTANCES = huffman(Array<number>(32).fill(5), 'distances');
@@ -100,9 +104,25 @@ export function deflateExpandedSize(data: Uint8Array, maximum: number): number {
     }
     if (type === 3) throw new DeflateSizeError('invalidDeflate');
     const [literals, distances] = type === 1 ? [FIXED_LITERALS, FIXED_DISTANCES] : dynamicTables(bits);
+    const lookup = literals.lookup, tableWidth = literals.width, mask = (1 << tableWidth) - 1, inputBits = data.length * 8;
+    let cursor = bits.position, produced = expanded, word = 0, buffered = 0;
     for (;;) {
-      const item = symbol(bits, literals);
-      if (item < 256) { append(1); continue; }
+      // Reuse lookahead across literals. Missing view bytes only pad lookup, never consumption.
+      if (buffered < tableWidth) {
+        const shift = cursor & 7, offset = (cursor - shift) / 8;
+        word = (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> shift;
+        buffered = 32 - shift;
+      }
+      const entry = lookup[word & mask], width = entry & 15;
+      if (width === 0 || cursor + width > inputBits) throw new DeflateSizeError('invalidDeflate');
+      cursor += width; word >>>= width; buffered -= width;
+      const item = entry >>> 4;
+      if (item < 256) {
+        if (produced >= maximum) throw new DeflateSizeError('expandedLimit');
+        produced += 1; continue;
+      }
+      // EOB and the less frequent length/distance path share the original checked state.
+      bits.position = cursor; expanded = produced;
       if (item === 256) break;
       if (item > 285) throw new DeflateSizeError('invalidDeflate');
       const index = item - 257, length = LENGTH_BASE[index] + bits.read(LENGTH_BITS[index]);
@@ -111,6 +131,7 @@ export function deflateExpandedSize(data: Uint8Array, maximum: number): number {
       const distance = DISTANCE_BASE[distanceCode] + bits.read(DISTANCE_BITS[distanceCode]);
       if (distance > expanded) throw new DeflateSizeError('invalidDeflate');
       append(length);
+      cursor = bits.position; produced = expanded; buffered = 0;
     }
   } while (!final);
   if (Math.ceil(bits.position / 8) !== data.length) throw new DeflateSizeError('invalidDeflate');

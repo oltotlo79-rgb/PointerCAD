@@ -1,265 +1,261 @@
-/**
- * ホバー・選択中の部分形状(面・辺・頂点)を、重ね描き用の並びへ組み立てる
- * (計画書 docs/plans/P3-加工フィーチャー.md タスク22、§0.a-0.7、§0.a-0.23-⑩、§2.3.2)。
- *
- * 対応要件: FR-105(表示スタイル)、FR-106(ホバー・選択の強調)、NFR-PF-1(60fps)。
- *
- * three.js にも DOM にも触れない純関数だけを置く(Node で検査できる。
- * `docs/報告記録.md` 2026-09-02 23:09「操作の判断は純関数へ切り出して検査する」)。
- * 組み立てた結果は `createSolidLayer.ts` の `updateSubShapes` が three.js の入れ物へ流し込む。
- *
- * **ボディの面メッシュはここでは組み替えない。** 強調する面の三角形だけを取り出した別の
- * 並びを作り(§0.a-0.7 の重ね描き)、元のボディの `positions` / `indices` はそのまま
- * `createSolidLayer.ts` の本体メッシュが使い続ける。
- */
-
+/** Pure construction of face, edge and vertex overlays in each body's coordinate frame. */
 import type { Vec3 } from '@pointercad/model';
-
-import { parseSubShapeId } from '../solid/subShapeSelection.js';
+import { parseSubShapeId, subShapeFrameOrigin } from '../solid/subShapeSelection.js';
 import type { SolidEdgeEntry, SolidFaceEntry } from '../solid/subShapeSelection.js';
+import { notifyAllocatedBacking, type SolidBodyWithSubShapes } from './buildSolidGeometry.js';
 
-import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
-
-/** 強調の度合い。部分形状はボディと違い「無強調」を描く理由が無いので 2 つだけ。 */
 export type SubShapeEmphasis = 'hovered' | 'selected';
 
-/** 強調して描くもの 1 まとまり。位置の並びは three.js へそのまま渡せる形。 */
-export interface SubShapeHighlight {
-  readonly emphasis: SubShapeEmphasis;
-  /** 面の三角形(位置・法線・頂点番号)。三角形どうしで頂点を共有しない(1 枚 9 個 × 三角形数)。無ければ長さ 0。 */
+/** All arrays belong to exactly one body and one double-precision origin. */
+export interface SubShapeHighlightBatch {
+  readonly featureId: string;
+  readonly origin: Vec3;
   readonly facePositions: Float32Array;
   readonly faceNormals: Float32Array;
   readonly faceIndices: Uint32Array;
-  /** 辺の線分。1 本あたり 6 個(始点 xyz + 終点 xyz)。 */
   readonly edgePositions: Float32Array;
-  /** 頂点。1 個あたり 3 個。同じ座標は重複させない(§0.a-0.23-⑩)。 */
   readonly vertexPositions: Float32Array;
 }
-
+export interface SubShapeHighlight {
+  readonly emphasis: SubShapeEmphasis;
+  readonly batches: readonly SubShapeHighlightBatch[];
+}
 export interface SubShapeHighlightBundle {
   readonly hovered: SubShapeHighlight;
   readonly selected: SubShapeHighlight;
-  /** ホバー・選択を合わせた強調中の三角形の合計(目視確認と将来の実測用)。 */
   readonly faceTriangleCount: number;
   readonly edgeCount: number;
   readonly vertexCount: number;
 }
 
-const EMPTY_FLOAT32 = new Float32Array(0);
-const EMPTY_UINT32 = new Uint32Array(0);
+/**
+ * A local display budget for the overlay copies. Hovered and selected copies are counted
+ * together and refused before any typed array is allocated. `reservedBytes` already holds the
+ * kernel baseline and every other live UI copy; this builder adds only its own new arrays.
+ */
+export interface SubShapeOverlayBudget {
+  readonly limitBytes: number;
+  readonly reservedBytes: number;
+}
 
-const EMPTY_HOVERED_HIGHLIGHT: SubShapeHighlight = {
-  emphasis: 'hovered',
-  facePositions: EMPTY_FLOAT32,
-  faceNormals: EMPTY_FLOAT32,
-  faceIndices: EMPTY_UINT32,
-  edgePositions: EMPTY_FLOAT32,
-  vertexPositions: EMPTY_FLOAT32,
-};
-
-const EMPTY_SELECTED_HIGHLIGHT: SubShapeHighlight = {
-  emphasis: 'selected',
-  facePositions: EMPTY_FLOAT32,
-  faceNormals: EMPTY_FLOAT32,
-  faceIndices: EMPTY_UINT32,
-  edgePositions: EMPTY_FLOAT32,
-  vertexPositions: EMPTY_FLOAT32,
-};
-
-/** 何も強調していないとき。起動直後と、ホバー・選択のどちらも部分形状でないときに使う。 */
+const EMPTY_HOVERED_HIGHLIGHT: SubShapeHighlight = { emphasis: 'hovered', batches: [] };
+const EMPTY_SELECTED_HIGHLIGHT: SubShapeHighlight = { emphasis: 'selected', batches: [] };
 export const EMPTY_SUB_SHAPE_HIGHLIGHT: SubShapeHighlightBundle = {
-  hovered: EMPTY_HOVERED_HIGHLIGHT,
-  selected: EMPTY_SELECTED_HIGHLIGHT,
-  faceTriangleCount: 0,
-  edgeCount: 0,
-  vertexCount: 0,
+  hovered: EMPTY_HOVERED_HIGHLIGHT, selected: EMPTY_SELECTED_HIGHLIGHT,
+  faceTriangleCount: 0, edgeCount: 0, vertexCount: 0,
 };
 
-/** 組み立て中の下書き。emphasis ごとに 1 つ持つ。 */
-interface Accumulator {
-  readonly facePositions: number[];
-  readonly faceNormals: number[];
-  readonly faceIndices: number[];
-  /** `faceIndices` の次の番号(三角形どうしで頂点を共有しないので、積むたびに増やすだけ)。 */
-  nextFaceIndex: number;
-  readonly edgePositions: number[];
-  readonly vertexPositions: number[];
-  /** 頂点の重複を除くための鍵(§0.a-0.23-⑩「重複を除いて」)。 */
-  readonly vertexKeys: Set<string>;
-}
+const FLOAT32_MAX = 3.4028234663852886e38;
+const OVERLAY_BUDGET_MESSAGE = 'Local sub-shape overlay exceeds the live-byte budget';
 
-function createAccumulator(): Accumulator {
-  return {
-    facePositions: [],
-    faceNormals: [],
-    faceIndices: [],
-    nextFaceIndex: 0,
-    edgePositions: [],
-    vertexPositions: [],
-    vertexKeys: new Set<string>(),
-  };
+/**
+ * One body's overlay plan. The count pass records which faces, edges and vertices contribute
+ * and how many corners/segments they add; the fill pass re-applies exactly the same filters
+ * to definite-length typed arrays. No intermediate number[] holds the copied coordinates.
+ */
+interface BatchPlan {
+  readonly featureId: string;
+  readonly origin: Vec3;
+  readonly body: SolidBodyWithSubShapes;
+  readonly faces: SolidFaceEntry[];
+  readonly edges: SolidEdgeEntry[];
+  readonly vertices: Vec3[];
+  faceCorners: number;
+  edgeSegments: number;
 }
-
-/** 一覧から通し番号の合う 1 件を引く。`subShapeSelection.ts` の `entryAt` と同じ考え方。 */
-function findByIndex<T extends { readonly index: number }>(
-  entries: readonly T[],
-  index: number,
-): T | null {
+function createPlan(featureId: string, origin: Vec3, body: SolidBodyWithSubShapes): BatchPlan {
+  return { featureId, origin, body, faces: [], edges: [], vertices: [], faceCorners: 0, edgeSegments: 0 };
+}
+function findByIndex<T extends { readonly index: number }>(entries: readonly T[], index: number): T | null {
   const direct = entries[index];
-  if (direct !== undefined && direct.index === index) {
-    return direct;
-  }
-  return entries.find((entry) => entry.index === index) ?? null;
+  return direct !== undefined && direct.index === index
+    ? direct : entries.find((entry) => entry.index === index) ?? null;
 }
-
-/** 頂点 1 つを積む。同じ座標が既にあれば足さない(重複を除く)。 */
-function addVertex(acc: Accumulator, position: Vec3): void {
-  const key = `${position[0]},${position[1]},${position[2]}`;
-  if (acc.vertexKeys.has(key)) {
-    return;
-  }
-  acc.vertexKeys.add(key);
-  acc.vertexPositions.push(position[0], position[1], position[2]);
+function localVertex(plan: BatchPlan, world: Vec3): readonly [number, number, number] {
+  return [world[0] - plan.origin[0], world[1] - plan.origin[1], world[2] - plan.origin[2]];
 }
-
-/**
- * 面 1 枚の三角形を積む。`face.triangleOffset` / `triangleCount` の範囲を、
- * ボディの `indices` / `positions` / `normals` から切り出す。
- *
- * 範囲表が並びの外を指していても落ちないよう、必ず配列の中へ丸める
- * (`pickSubShape.ts` の辺の扱いと同じ考え方。上流が変わって三角形が減った直後など)。
- */
-function addFace(acc: Accumulator, body: SolidBodyWithSubShapes, face: SolidFaceEntry): void {
-  const { positions, normals, indices } = body.mesh;
+function planVertex(plan: BatchPlan, world: Vec3, keys: Set<string>): void {
+  const key = `${world[0]},${world[1]},${world[2]}`;
+  if (keys.has(key)) return;
+  if (!localVertex(plan, world).every((value) => Number.isFinite(value) && Math.abs(value) <= FLOAT32_MAX)) return;
+  keys.add(key);
+  plan.vertices.push(world);
+}
+function faceRange(body: SolidBodyWithSubShapes, face: SolidFaceEntry): readonly [number, number] {
   const begin = Math.max(0, face.triangleOffset * 3);
-  const end = Math.min(begin + Math.max(0, face.triangleCount) * 3, indices.length);
-  for (let offset = begin; offset < end; offset += 1) {
-    const vertexIndex = indices[offset];
-    const base = vertexIndex * 3;
-    if (base + 2 >= positions.length || base + 2 >= normals.length) {
-      continue;
-    }
-    acc.facePositions.push(positions[base], positions[base + 1], positions[base + 2]);
-    acc.faceNormals.push(normals[base], normals[base + 1], normals[base + 2]);
-    acc.faceIndices.push(acc.nextFaceIndex);
-    acc.nextFaceIndex += 1;
-  }
+  return [begin, Math.min(begin + Math.max(0, face.triangleCount) * 3, body.mesh.indices.length)];
 }
-
-/**
- * 辺 1 本の線分を積む。`includeEndpoints` のときだけ両端を頂点として積む
- * (選択の辺だけに端点を出す。§0.a-0.23-⑩「ホバー中の辺は端点の点を出さない」)。
- */
-function addEdge(
-  acc: Accumulator,
-  body: SolidBodyWithSubShapes,
-  edge: SolidEdgeEntry,
-  includeEndpoints: boolean,
-): void {
-  const positions = body.mesh.edgePositions;
+/** The one corner predicate shared by the count and fill passes. */
+function usableCorner(body: SolidBodyWithSubShapes, offset: number): boolean {
+  const { positions, normals, indices } = body.mesh;
+  const base = indices[offset] * 3;
+  return base + 2 < positions.length && base + 2 < normals.length
+    && [positions[base], positions[base + 1], positions[base + 2],
+      normals[base], normals[base + 1], normals[base + 2]].every(Number.isFinite);
+}
+function edgeRange(body: SolidBodyWithSubShapes, edge: SolidEdgeEntry): readonly [number, number] {
   const begin = Math.max(0, edge.segmentOffset * 6);
-  const end = Math.min(begin + Math.max(0, edge.segmentCount) * 6, positions.length);
-  for (let offset = begin; offset + 5 < end; offset += 6) {
-    for (let component = 0; component < 6; component += 1) {
-      acc.edgePositions.push(positions[offset + component]);
-    }
-  }
+  return [begin, Math.min(begin + Math.max(0, edge.segmentCount) * 6, body.mesh.edgePositions.length)];
+}
+/** The one segment predicate shared by the count and fill passes. */
+function usableSegment(positions: Float32Array, offset: number): boolean {
+  return [0, 1, 2, 3, 4, 5].every((component) => Number.isFinite(positions[offset + component]));
+}
+function planFace(plan: BatchPlan, face: SolidFaceEntry): void {
+  const [begin, end] = faceRange(plan.body, face);
+  let corners = 0;
+  for (let offset = begin; offset < end; offset += 1) if (usableCorner(plan.body, offset)) corners += 1;
+  plan.faces.push(face);
+  plan.faceCorners += corners;
+}
+function planEdge(plan: BatchPlan, edge: SolidEdgeEntry, includeEndpoints: boolean, keys: Set<string>): void {
+  const positions = plan.body.mesh.edgePositions;
+  const [begin, end] = edgeRange(plan.body, edge);
+  let segments = 0;
+  for (let offset = begin; offset + 5 < end; offset += 6) if (usableSegment(positions, offset)) segments += 1;
+  plan.edges.push(edge);
+  plan.edgeSegments += segments;
   if (includeEndpoints) {
-    addVertex(acc, edge.start);
-    addVertex(acc, edge.end);
+    planVertex(plan, edge.start, keys);
+    planVertex(plan, edge.end, keys);
   }
 }
-
-/** 1 つの要素 id を、見つかったボディ・部分形状に応じて積む。見つからなければ黙って飛ばす。 */
-function addElement(
-  bodies: readonly SolidBodyWithSubShapes[],
-  elementId: string,
-  acc: Accumulator,
-  includeEndpoints: boolean,
+function planElement(
+  bodies: readonly SolidBodyWithSubShapes[], elementId: string,
+  plans: Map<string, BatchPlan>, keys: Set<string>, includeEndpoints: boolean,
 ): void {
   const parsed = parseSubShapeId(elementId);
-  if (parsed === null) {
-    return;
-  }
-  const body = bodies.find((candidate) => candidate.featureId === parsed.bodyFeatureId);
-  if (body === undefined) {
-    return;
+  if (parsed === null) return;
+  const matches = bodies.filter((body) => body.featureId === parsed.bodyFeatureId);
+  if (matches.length !== 1) return;
+  const body = matches[0];
+  const origin = subShapeFrameOrigin(body);
+  if (origin === null || body.isValid === false) return;
+  let plan = plans.get(body.featureId);
+  if (plan === undefined) {
+    plan = createPlan(body.featureId, origin, body);
+    plans.set(body.featureId, plan);
   }
   switch (parsed.kind) {
     case 'face': {
       const face = findByIndex(body.faces ?? [], parsed.index);
-      if (face !== null) {
-        addFace(acc, body, face);
-      }
-      return;
+      if (face !== null) planFace(plan, face);
+      break;
     }
     case 'edge': {
       const edge = findByIndex(body.edges ?? [], parsed.index);
-      if (edge !== null) {
-        addEdge(acc, body, edge, includeEndpoints);
-      }
-      return;
+      if (edge !== null) planEdge(plan, edge, includeEndpoints, keys);
+      break;
     }
     case 'vertex': {
       const vertex = findByIndex(body.vertices ?? [], parsed.index);
-      if (vertex !== null) {
-        addVertex(acc, vertex.position);
-      }
-      return;
+      if (vertex !== null) planVertex(plan, vertex.position, keys);
+      break;
     }
   }
 }
-
-function finalize(emphasis: SubShapeEmphasis, acc: Accumulator): SubShapeHighlight {
-  if (acc.facePositions.length === 0 && acc.edgePositions.length === 0 && acc.vertexPositions.length === 0) {
-    return emphasis === 'hovered' ? EMPTY_HOVERED_HIGHLIGHT : EMPTY_SELECTED_HIGHLIGHT;
-  }
-  return {
-    emphasis,
-    facePositions: Float32Array.from(acc.facePositions),
-    faceNormals: Float32Array.from(acc.faceNormals),
-    faceIndices: Uint32Array.from(acc.faceIndices),
-    edgePositions: Float32Array.from(acc.edgePositions),
-    vertexPositions: Float32Array.from(acc.vertexPositions),
-  };
+function contributes(plan: BatchPlan): boolean {
+  return plan.faceCorners > 0 || plan.edgeSegments > 0 || plan.vertices.length > 0;
 }
-
-/**
- * ホバーと選択の部分形状を、描くための並びへ組み立てる(§0.a-0.7)。
- *
- * - 番号が範囲の外の参照(上流が変わって面が減った等)は**黙って飛ばす**。
- * - スケッチ要素の id(`point-1#3`)や、部分形状でないボディの id は `parseSubShapeId` が
- *   null を返すのでそのまま飛ばされる。
- * - **選択とホバーが同じものを指していたら、選択だけに入れる**(二重描きを避ける)。
- * - 端点の点(§0.a-0.23-⑩)は**選択の辺だけ**に付け、ホバーの辺には付けない。
- */
+/** Exact typed bytes of one planned batch: positions/normals 12B and index 4B per corner, 24B per segment, 12B per vertex. */
+function planBytes(plan: BatchPlan): number {
+  return plan.faceCorners * 28 + plan.edgeSegments * 24 + plan.vertices.length * 12;
+}
+function fill(plan: BatchPlan, allocated?: (buffer: ArrayBufferLike) => void): SubShapeHighlightBatch {
+  const { positions, normals, indices, edgePositions: edgeSource } = plan.body.mesh;
+  const facePositions = new Float32Array(plan.faceCorners * 3);
+  notifyAllocatedBacking(allocated, facePositions.buffer);
+  const faceNormals = new Float32Array(plan.faceCorners * 3);
+  notifyAllocatedBacking(allocated, faceNormals.buffer);
+  const faceIndices = new Uint32Array(plan.faceCorners);
+  notifyAllocatedBacking(allocated, faceIndices.buffer);
+  let corner = 0;
+  for (const face of plan.faces) {
+    const [begin, end] = faceRange(plan.body, face);
+    for (let offset = begin; offset < end; offset += 1) {
+      if (!usableCorner(plan.body, offset)) continue;
+      if (corner >= plan.faceCorners) throw new RangeError('Sub-shape overlay count changed while filling');
+      const base = indices[offset] * 3;
+      for (let axis = 0; axis < 3; axis += 1) {
+        facePositions[corner * 3 + axis] = positions[base + axis];
+        faceNormals[corner * 3 + axis] = normals[base + axis];
+      }
+      faceIndices[corner] = corner;
+      corner += 1;
+    }
+  }
+  const edgePositions = new Float32Array(plan.edgeSegments * 6);
+  notifyAllocatedBacking(allocated, edgePositions.buffer);
+  let segment = 0;
+  for (const edge of plan.edges) {
+    const [begin, end] = edgeRange(plan.body, edge);
+    for (let offset = begin; offset + 5 < end; offset += 6) {
+      if (!usableSegment(edgeSource, offset)) continue;
+      if (segment >= plan.edgeSegments) throw new RangeError('Sub-shape overlay count changed while filling');
+      edgePositions.set(edgeSource.subarray(offset, offset + 6), segment * 6);
+      segment += 1;
+    }
+  }
+  if (corner !== plan.faceCorners || segment !== plan.edgeSegments) {
+    throw new RangeError('Sub-shape overlay count changed while filling');
+  }
+  const vertexPositions = new Float32Array(plan.vertices.length * 3);
+  notifyAllocatedBacking(allocated, vertexPositions.buffer);
+  plan.vertices.forEach((world, index) => {
+    const local = localVertex(plan, world);
+    for (let axis = 0; axis < 3; axis += 1) vertexPositions[index * 3 + axis] = local[axis];
+  });
+  return { featureId: plan.featureId, origin: plan.origin, facePositions, faceNormals, faceIndices,
+    edgePositions, vertexPositions };
+}
+function finalize(emphasis: SubShapeEmphasis, plans: readonly BatchPlan[], allocated?: (buffer: ArrayBufferLike) => void): SubShapeHighlight {
+  const batches = plans.map(plan => fill(plan, allocated));
+  if (batches.length === 0) return emphasis === 'hovered' ? EMPTY_HOVERED_HIGHLIGHT : EMPTY_SELECTED_HIGHLIGHT;
+  return { emphasis, batches };
+}
+/** Exact bytes of every typed array a highlight bundle owns (hovered and selected together). */
+export function subShapeOverlayBytes(bundle: SubShapeHighlightBundle): number {
+  let bytes = 0;
+  for (const batch of [...bundle.hovered.batches, ...bundle.selected.batches]) {
+    bytes += batch.facePositions.byteLength + batch.faceNormals.byteLength + batch.faceIndices.byteLength
+      + batch.edgePositions.byteLength + batch.vertexPositions.byteLength;
+  }
+  return bytes;
+}
 export function buildSubShapeGeometry(
-  bodies: readonly SolidBodyWithSubShapes[],
-  hoveredElementId: string | null,
-  selection: readonly string[],
+  bodies: readonly SolidBodyWithSubShapes[], hoveredElementId: string | null, selection: readonly string[],
+  budget?: SubShapeOverlayBudget,
+  allocated?: (buffer: ArrayBufferLike) => void,
 ): SubShapeHighlightBundle {
-  const selectedAcc = createAccumulator();
-  for (const elementId of selection) {
-    addElement(bodies, elementId, selectedAcc, true);
-  }
-
-  const hoveredAcc = createAccumulator();
+  const selectedPlans = new Map<string, BatchPlan>();
+  const selectedKeys = new Set<string>();
+  for (const elementId of selection) planElement(bodies, elementId, selectedPlans, selectedKeys, true);
+  const hoveredPlans = new Map<string, BatchPlan>();
   if (hoveredElementId !== null && !selection.includes(hoveredElementId)) {
-    addElement(bodies, hoveredElementId, hoveredAcc, false);
+    planElement(bodies, hoveredElementId, hoveredPlans, new Set<string>(), false);
   }
-
-  const hovered = finalize('hovered', hoveredAcc);
-  const selected = finalize('selected', selectedAcc);
-
-  if (hovered === EMPTY_HOVERED_HIGHLIGHT && selected === EMPTY_SELECTED_HIGHLIGHT) {
+  const hovered = [...hoveredPlans.values()].filter(contributes);
+  const selected = [...selectedPlans.values()].filter(contributes);
+  if (budget !== undefined) {
+    const { limitBytes, reservedBytes } = budget;
+    if (!Number.isSafeInteger(limitBytes) || limitBytes <= 0 || !Number.isSafeInteger(reservedBytes)
+      || reservedBytes < 0) throw new RangeError(OVERLAY_BUDGET_MESSAGE);
+    let required = reservedBytes;
+    for (const plan of [...hovered, ...selected]) {
+      required += planBytes(plan);
+      if (!Number.isSafeInteger(required) || required > limitBytes) throw new RangeError(OVERLAY_BUDGET_MESSAGE);
+    }
+  }
+  const hoveredHighlight = finalize('hovered', hovered, allocated);
+  const selectedHighlight = finalize('selected', selected, allocated);
+  if (hoveredHighlight === EMPTY_HOVERED_HIGHLIGHT && selectedHighlight === EMPTY_SELECTED_HIGHLIGHT) {
     return EMPTY_SUB_SHAPE_HIGHLIGHT;
   }
-
+  const batches = [...hoveredHighlight.batches, ...selectedHighlight.batches];
   return {
-    hovered,
-    selected,
-    faceTriangleCount: (hovered.faceIndices.length + selected.faceIndices.length) / 3,
-    edgeCount: (hovered.edgePositions.length + selected.edgePositions.length) / 6,
-    vertexCount: (hovered.vertexPositions.length + selected.vertexPositions.length) / 3,
+    hovered: hoveredHighlight, selected: selectedHighlight,
+    faceTriangleCount: batches.reduce((count, batch) => count + batch.faceIndices.length / 3, 0),
+    edgeCount: batches.reduce((count, batch) => count + batch.edgePositions.length / 6, 0),
+    vertexCount: batches.reduce((count, batch) => count + batch.vertexPositions.length / 3, 0),
   };
 }

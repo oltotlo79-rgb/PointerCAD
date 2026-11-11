@@ -4,6 +4,8 @@ import { contentSecurityPolicyFor } from '@pointercad/ui/security-policy';
 import { offlineAssetRequestUrl } from './offlineNetwork.js';
 import { OFFLINE_CACHE_PREFIX, OFFLINE_READY_FORMAT } from './offlinePreparation.js';
 import { loadPreparedOfflineResponder } from './offlineServing.js';
+import { createHash } from 'node:crypto';
+import { offlineManifestBody } from '../../../../scripts/vite/offlineProtocol.mjs';
 
 function fixture(base = new URL('https://pointercad.test/app/'), edition = 'old') {
   const files = [{ path: 'index.html', text: edition }, { path: 'worker.js', text: edition + '-worker' },
@@ -37,6 +39,50 @@ function fixture(base = new URL('https://pointercad.test/app/'), edition = 'old'
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('起動後も同じ版の検証済みファイルだけを画面と計算部へ返す', () => {
+  it('v2の復号済みstreamを起動・配信で照合し、保存後の同長改変とencoding混入を拒否する', async () => {
+    const streamSha = createHash('sha256').update('hello').digest('hex');
+    const streamUrl = `occt/stream/opencascade.full-${streamSha}.wasm`;
+    const assets = [
+      { url: 'index.html', byteLength: 5, sha256: streamSha },
+      { url: streamUrl, byteLength: 5, sha256: streamSha,
+        transport: { encoding: 'gzip' as const, byteLength: 3, sha256: 'b'.repeat(64) } },
+    ];
+    const body = { format: 'pointercad-offline-assets/2' as const, entry: 'index.html' as const,
+      totalBytes: 10, required: assets.map(asset => asset.url), assets };
+    const manifest = { ...body, buildId: createHash('sha256').update(JSON.stringify(offlineManifestBody(body))).digest('hex') };
+    const base = new URL('https://pointercad.test/app/');
+    const cacheName = `${OFFLINE_CACHE_PREFIX}${manifest.buildId}-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee`;
+    let changed = false, encoded = false;
+    const storage = { match: (url: string, options: { readonly cacheName: string }) => {
+      expect(options.cacheName).toBe(cacheName);
+      if (url.endsWith('offline-assets.json')) return Promise.resolve(new Response(JSON.stringify({
+        format: OFFLINE_READY_FORMAT, cacheName, manifest,
+      }), { headers: { 'Content-Type': 'application/json' } }));
+      if (url === new URL('index.html', base).href) {
+        const response = new Response('hello', { headers: { 'Content-Type': 'text/html',
+          'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp',
+          'Content-Security-Policy': contentSecurityPolicyFor('/index.html') } });
+        Object.defineProperties(response, { url: { value: base.href }, type: { value: 'basic' } });
+        return Promise.resolve(response);
+      }
+      if (url === new URL(streamUrl, base).href) {
+        const response = new Response(changed ? 'HELLO' : 'hello', {
+          headers: { 'Content-Type': 'application/wasm', 'Content-Encoding': encoded ? 'gzip, gzip' : 'gzip' },
+        });
+        Object.defineProperties(response, { url: { value: url }, type: { value: 'basic' } });
+        return Promise.resolve(response);
+      }
+      return Promise.resolve(undefined);
+    } };
+    const responder = await loadPreparedOfflineResponder(base, cacheName, storage, new AbortController().signal);
+    expect(await (await responder.respond(new URL(streamUrl, base), new AbortController().signal)).text()).toBe('hello');
+    changed = true;
+    await expect(responder.respond(new URL(streamUrl, base), new AbortController().signal))
+      .rejects.toMatchObject({ reason: 'changed' });
+    changed = false; encoded = true;
+    await expect(responder.respond(new URL(streamUrl, base), new AbortController().signal))
+      .rejects.toMatchObject({ reason: 'changed' });
+  });
   it.each(['https://pointercad.test/', 'https://pointercad.test/app/'])(
     '%sで公開用の短いURLとHTML名を同じ保存内容へ対応させる', async address => {
       const f = fixture(new URL(address)), reader = await f.load();

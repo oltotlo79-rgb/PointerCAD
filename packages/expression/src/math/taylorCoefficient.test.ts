@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -7,7 +8,7 @@ import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import type { MathNode } from './mathInputContract.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 const script = fileURLToPath(new URL('./exactRuntime/cas_taylor_test.py', import.meta.url));
@@ -22,8 +23,7 @@ const engine = { evaluate(expression: MathNode, angleUnit: 'degree' | 'radian'):
   return Promise.resolve(values[0]);
 } };
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'coefficient', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'coefficient', documentVersion: 1, editorId: 'X', inputRevision: 1 } });
 }
 beforeAll(() => { backend = createMathBackend(); });
 

@@ -18,7 +18,11 @@ import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
  */
 contextBridge.exposeInMainWorld('pointercadDesktop', {
   platform: process.platform,
-  saveExport: (name: string, kind: string, bytes: Uint8Array): Promise<unknown> => ipcRenderer.invoke('pcad:saveExport', name, kind, bytes),
+  prepareOcctTransport: (): Promise<unknown> => ipcRenderer.invoke('pcad:prepareOcctTransport'),
+  saveExport: (name: string, kind: string, bytes: Uint8Array, requestId?: string): Promise<unknown> =>
+    requestId === undefined ? ipcRenderer.invoke('pcad:saveExport', name, kind, bytes)
+      : ipcRenderer.invoke('pcad:saveExport', name, kind, bytes, requestId),
+  cancelExportSave: (requestId: string): Promise<unknown> => ipcRenderer.invoke('pcad:cancelExportSave', requestId),
   openExport: (token: string): Promise<unknown> => ipcRenderer.invoke('pcad:openExport', token),
   openCamTool: (tool: string): Promise<unknown> => ipcRenderer.invoke('pcad:openCamTool', tool),
   /** 「開く」。答えは `{ name, bytes, saveTargetToken }` か null。token に実パスは含めない。 */
@@ -44,8 +48,9 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
    * 種類を選んで「書き出す」。答えは書けたかどうかの真偽で、**名前もパスも返さない**
    * (NFR-SE-1)。呼ぶたびに名前を訊く(上書き先を覚えない。§0.a-0.4)。
    */
-  saveFileAs: (fileName: string, kind: string, bytes: Uint8Array): Promise<unknown> =>
-    ipcRenderer.invoke('pcad:saveAs', fileName, kind, bytes),
+  saveFileAs: (fileName: string, kind: string, bytes: Uint8Array, requestId?: string): Promise<unknown> =>
+    requestId === undefined ? ipcRenderer.invoke('pcad:saveAs', fileName, kind, bytes)
+      : ipcRenderer.invoke('pcad:saveAs', fileName, kind, bytes, requestId),
   /**
    * 印刷する(P6 計画書 タスク29)。渡すのは PNG のバイト列だけで、
    * 答えは印刷できたかどうかの真偽(取り消しは false)。**名前もパスも渡さない**(NFR-SE-1)。

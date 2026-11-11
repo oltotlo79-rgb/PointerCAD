@@ -17,10 +17,11 @@ import {
   evaluatePrintCheckDraft,
   runPrintCheck,
   type PartInspector,
-  type PrintCheckBody,
-  type PartInspectorDeps,
 } from './printCheckCommands.js';
 import type { FieldUnits } from '../shell/propertyFieldUnits.js';
+
+type PartInspectorDeps = Parameters<typeof createPartInspector>[0];
+type PrintCheckBody = Parameters<typeof printCheckTargets>[0][number];
 
 const DOCUMENT: PartDocument = createEmptyPartDocument();
 

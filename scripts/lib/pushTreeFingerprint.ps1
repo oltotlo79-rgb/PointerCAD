@@ -11,7 +11,14 @@ function Read-GitSnapshotMetadata {
     $start.RedirectStandardError = $true
     $start.StandardOutputEncoding = [Text.UTF8Encoding]::new($false, $true)
     $start.StandardErrorEncoding = [Text.UTF8Encoding]::new($false, $true)
-    foreach ($name in $script:PointerCadInheritedGitEnvNames) { $start.EnvironmentVariables.Remove($name) }
+    # Use the CLR getter directly: PowerShell's adapted property returned null
+    # on the actual Windows PowerShell host. Never omit Git isolation on null.
+    $processEnvironment = $start.get_EnvironmentVariables()
+    if ($null -eq $processEnvironment) { throw 'Cannot obtain the Git child environment' }
+    foreach ($name in $script:PointerCadInheritedGitEnvNames) {
+        $processEnvironment.Remove($name)
+        if ($processEnvironment.ContainsKey($name)) { throw "Cannot remove inherited Git variable: $name" }
+    }
     $allArguments = @('-C', $Root, '-c', ('safe.directory=' + ([IO.Path]::GetFullPath($Root).Replace('\', '/'))),
         '-c', 'core.quotepath=false') + $Arguments
     if ($null -ne $start.PSObject.Properties['ArgumentList']) {

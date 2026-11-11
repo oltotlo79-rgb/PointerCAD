@@ -6,7 +6,7 @@ export interface SheetPanelConnection {
   /** 同じ指定線で穴の左右に分かれた帯。既存経路も同じ群で座標が一致した場合だけ重複接続を許す。 */
   readonly parallelGroupId?: string;
 }
-export interface SheetPanelGraph {
+interface SheetPanelGraph {
   readonly panelIds: readonly string[]; readonly connections: readonly SheetPanelConnection[];
   readonly fixedPanelId: string; readonly seamConnectionIds: readonly string[];
 }

@@ -55,7 +55,7 @@ import { selectedSubShapeRefs, type SubShapeBody } from './subShapeSelection.js'
  * `SolidToolId`(`numericInput.ts` が正本)から基本形状だけに絞った型で、model の
  * `PrimitiveShapeKind` とまったく同じ語にしてある(道具 id がそのまま形の種類になる)。
  */
-export type PrimitiveToolId = PrimitiveShapeKind;
+type PrimitiveToolId = PrimitiveShapeKind;
 
 /** 基本形状のコマンドが必要とする文脈。 */
 export interface PrimitiveContext {

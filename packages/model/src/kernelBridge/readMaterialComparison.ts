@@ -1,6 +1,6 @@
+import { isRecord as record } from '../valueGuards.js';
 import type { MaterialComparisonResult, MaterialDifferenceRegion } from './materialComparisonContracts.js';
 
-const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const nonnegative = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const invalid = (): MaterialComparisonResult => ({ kind: 'failed', message: '形の比較結果を確認できませんでした。再度お試しください。' });
 
@@ -13,7 +13,7 @@ export function readMaterialComparison(value: unknown): MaterialComparisonResult
   if (value.kind !== 'compared' || !record(value.result)) return invalid();
   const result = value.result;
   if (!nonnegative(result.beforeVolume) || !nonnegative(result.afterVolume)) return invalid();
-  let triangleTotal = 0;
+  let totalTriangleCount = 0;
   function region(item: unknown): MaterialDifferenceRegion | null {
     if (!record(item)) return null;
     if (item.kind === 'empty') return item.volume === 0 && item.mesh === null ? { kind: 'empty', volume: 0, mesh: null } : null;
@@ -21,7 +21,7 @@ export function readMaterialComparison(value: unknown): MaterialComparisonResult
     const { positions, normals, indices, triangleCount } = item.mesh;
     if (!(positions instanceof Float32Array) || !(normals instanceof Float32Array) || !(indices instanceof Uint32Array)
       || typeof triangleCount !== 'number' || !Number.isInteger(triangleCount) || triangleCount <= 0
-      || triangleCount > 2_000_000 || (triangleTotal += triangleCount) > 2_000_000
+      || triangleCount > 2_000_000 || (totalTriangleCount += triangleCount) > 2_000_000
       || indices.length !== triangleCount * 3 || positions.length < 9 || positions.length % 3 !== 0
       || positions.length > 18_000_000 || normals.length !== positions.length) return null;
     for (const coordinate of positions) if (!Number.isFinite(coordinate)) return null;

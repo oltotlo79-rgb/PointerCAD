@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -6,7 +7,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'component(gradientat(x^2*y,[x,y],[2,3]),1)', value: 12 },
@@ -42,8 +43,7 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 const script = fileURLToPath(new URL('./exactRuntime/cas_vector_calculus_test.py', import.meta.url));
 function request(source: string, unit: 'degree' | 'radian' = 'degree'): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: unit, coefficients: [],
-    identity: { documentId: 'vector-at', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: unit, identity: { documentId: 'vector-at', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 function native(args: readonly string[], input?: string): string {
   const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {

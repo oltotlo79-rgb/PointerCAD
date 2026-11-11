@@ -7,8 +7,8 @@
  *
  * **すべて純関数で、OCCT にも three にも触れない**(Node の Vitest だけで検査できる)。
  * kernel の `RigidTransformSpec` へは model 側の `RigidTransform`(`part/resolvePart.ts`)
- * を経由して渡す。model は `kernelBridge.ts` 以外から `@pointercad/kernel` を輸入しない
- * 約束(rules/04-設計の規律.md の依存方向)なので、ここは model の型だけを使う。
+ * を経由して渡す。共有する有限判定だけは `vec3.ts` と `kernelBridge/vectorMath.ts` の限定入口を
+ * 経由する。型と純粋な算術だけを使い、kernel の index や OCCT は読み込まない。
  *
  * **四元数の規約**(§2.4): `q = (x, y, z, w)`、`w = cos(θ/2)`、`(x, y, z) = 軸 × sin(θ/2)`。
  * `q` と `−q` は同じ回転なので、**`w >= 0` へ符号を揃える**(§0.54 の決定性。同じ文書を
@@ -21,7 +21,7 @@
  */
 
 import type { RigidTransform } from '../part/resolvePart.js';
-import { addVec3, cleanZeroVec3, ORIGIN, type Vec3 } from '../sketch/vec3.js';
+import { addVec3, cleanZeroVec3, crossVec3, dotVec3 as dot, isFiniteQuaternion, ORIGIN, type Vec3 } from '../sketch/vec3.js';
 
 /**
  * 向きを表す四元数 `(qx, qy, qz, qw)`。**長さ 1・`w >= 0`** に揃えたものだけを持ち回る
@@ -75,15 +75,6 @@ function cleanZeroQuaternion(rotation: Quaternion): Quaternion {
     rotation[2] === 0 ? 0 : rotation[2],
     rotation[3] === 0 ? 0 : rotation[3],
   ];
-}
-
-function isFiniteQuaternion(rotation: Quaternion): boolean {
-  return (
-    Number.isFinite(rotation[0]) &&
-    Number.isFinite(rotation[1]) &&
-    Number.isFinite(rotation[2]) &&
-    Number.isFinite(rotation[3])
-  );
 }
 
 /**
@@ -150,6 +141,39 @@ export function quaternionFromAxisAngle(axis: Vec3, angleRadians: number): Quate
   const half = angleRadians / 2;
   const scale = Math.sin(half) / size;
   return normalizeQuaternion([axis[0] * scale, axis[1] * scale, axis[2] * scale, Math.cos(half)]);
+}
+
+/**
+ * 正規直交の右手系 `(x, y, z)` (部品の局所 X/Y/Z 軸が組立でどちらを向くか)から四元数を作る。
+ * 回転行列の列がこの 3 本になる向きを返す(Shepperd の方法。分母は最も大きい対角成分から選ぶ)。
+ * 長さ 1・直交・右手系のどれかが `tolerance` を超えて崩れていれば `null`(黙って近い回転へ寄せない)。
+ */
+export function quaternionFromBasis(x: Vec3, y: Vec3, z: Vec3, tolerance: number): Quaternion | null {
+  const all = [...x, ...y, ...z];
+  if (!all.every((value) => Number.isFinite(value))) return null;
+  const cross: Vec3 = crossVec3(x, y);
+  if (Math.abs(dot(x, x) - 1) > tolerance || Math.abs(dot(y, y) - 1) > tolerance || Math.abs(dot(z, z) - 1) > tolerance
+    || Math.abs(dot(x, y)) > tolerance || Math.abs(dot(y, z)) > tolerance || Math.abs(dot(z, x)) > tolerance
+    || dot(cross, z) < 1 - tolerance) return null;
+  const [m00, m10, m20] = x;
+  const [m01, m11, m21] = y;
+  const [m02, m12, m22] = z;
+  const trace = m00 + m11 + m22;
+  let q: Quaternion;
+  if (trace > 0) {
+    const s = Math.sqrt(trace + 1) * 2;
+    q = [(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, s / 4];
+  } else if (m00 > m11 && m00 > m22) {
+    const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
+    q = [s / 4, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s];
+  } else if (m11 > m22) {
+    const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
+    q = [(m01 + m10) / s, s / 4, (m12 + m21) / s, (m02 - m20) / s];
+  } else {
+    const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
+    q = [(m02 + m20) / s, (m12 + m21) / s, s / 4, (m10 - m01) / s];
+  }
+  return normalizeQuaternion(q);
 }
 
 /**

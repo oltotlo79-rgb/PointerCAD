@@ -37,6 +37,7 @@ import type {
 
 import type { Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
+import { dotVec } from './sketchCorner.js';
 import { measureArea } from './solidMesh.js';
 import { computeVolumeProperties } from './volumeProperties.js';
 
@@ -207,10 +208,7 @@ export function angleBetween(
     if (directionA === null || directionB === null) {
       return null;
     }
-    const dot =
-      directionA[0] * directionB[0] +
-      directionA[1] * directionB[1] +
-      directionA[2] * directionB[2];
+    const dot = dotVec(directionA, directionB);
     // 丸め誤差で |dot| が 1 をわずかに超えると acos が NaN になるので、そこだけ抑える。
     const clamped = Math.min(1, Math.abs(dot));
     return (Math.acos(clamped) * 180) / Math.PI;

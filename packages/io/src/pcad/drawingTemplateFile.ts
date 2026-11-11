@@ -1,12 +1,20 @@
 import type { DrawingTemplate } from '@pointercad/model';
-import { strToU8, zipSync } from 'fflate';
-import { FIXED_ENTRY_MTIME, PCAD_DOCUMENT_ENTRY } from './pcadFile.js';
+import { strToU8, zipSync, type Zippable } from 'fflate';
+import { FIXED_ENTRY_MTIME, PCAD_DOCUMENT_ENTRY, type PcadZipEntries } from './pcadFile.js';
 import { readArchive } from './readArchive.js';
 import { parseDrawingTemplate, serializeDrawingTemplate, type ParseDrawingTemplateResult } from './drawingTemplateJson.js';
 
 /** 参照モデルを抱き込まない、設定1エントリだけの.pcadt。 */
+export function drawingTemplateEntries(template: DrawingTemplate, savedAt: string): PcadZipEntries {
+  return new Map([[PCAD_DOCUMENT_ENTRY, [strToU8(serializeDrawingTemplate(template, savedAt)), { level: 6, mtime: FIXED_ENTRY_MTIME }]]]);
+}
+
 export function writeDrawingTemplateFile(template: DrawingTemplate, savedAt: string): Uint8Array {
-  return zipSync({ [PCAD_DOCUMENT_ENTRY]: [strToU8(serializeDrawingTemplate(template, savedAt)), { level: 6, mtime: FIXED_ENTRY_MTIME }] });
+  const entries: Zippable = {};
+  for (const [name, [bytes, options]] of drawingTemplateEntries(template, savedAt)) {
+    entries[name] = [bytes, { ...options }];
+  }
+  return zipSync(entries);
 }
 
 export type ReadDrawingTemplateFileResult = ParseDrawingTemplateResult

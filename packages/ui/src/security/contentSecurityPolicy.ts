@@ -19,6 +19,15 @@ export const KERNEL_CONTENT_SECURITY_POLICY = [
   "default-src 'none'", "script-src 'self' 'unsafe-eval'", "connect-src 'self'", "worker-src 'none'",
 ].join('; ');
 
+/** Only the fixed owned FEM Worker may execute the verified local Pyodide glue. */
+export const FEM_WORKER_CONTENT_SECURITY_POLICY = [
+  "default-src 'none'", "script-src 'self' blob: 'unsafe-eval'", "connect-src 'self'", "worker-src 'none'",
+].join('; ');
+
+export function isFemWorkerAsset(pathname: string): boolean {
+  return pathname === '/fem/worker.js';
+}
+
 /** Standalone manuals embed their verified font so the same files also work without a server. */
 export const MANUAL_CONTENT_SECURITY_POLICY = [
   "default-src 'none'", "script-src 'self'", "style-src 'self'", "img-src 'self'", "font-src 'self' data:",
@@ -33,6 +42,7 @@ export function isKernelWorkerAsset(pathname: string): boolean {
 
 export function contentSecurityPolicyFor(pathname: string): string {
   if (pathname === '/manual' || pathname.startsWith('/manual/')) return MANUAL_CONTENT_SECURITY_POLICY;
+  if (isFemWorkerAsset(pathname)) return FEM_WORKER_CONTENT_SECURITY_POLICY;
   return isKernelWorkerAsset(pathname) ? KERNEL_CONTENT_SECURITY_POLICY : APP_CONTENT_SECURITY_POLICY;
 }
 
@@ -59,6 +69,7 @@ export function appendCloudflareSecurityHeaders(base: string): string {
     '', '/licenses/*', `  Content-Security-Policy: ${APP_CONTENT_SECURITY_POLICY}`,
     '', '/manual', `  Content-Security-Policy: ${MANUAL_CONTENT_SECURITY_POLICY}`,
     '', '/manual/*', `  Content-Security-Policy: ${MANUAL_CONTENT_SECURITY_POLICY}`,
+    '', '/fem/worker.js', `  Content-Security-Policy: ${FEM_WORKER_CONTENT_SECURITY_POLICY}`,
     '', '/assets/kernel.worker-*.js', `  Content-Security-Policy: ${KERNEL_CONTENT_SECURITY_POLICY}`, '',
   ].join('\n');
 }

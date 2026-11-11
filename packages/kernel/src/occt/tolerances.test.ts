@@ -2,13 +2,26 @@ import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.j
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOcctForNode } from './loadOcct.node.js';
+import { R22_THIN_SOLIDS } from './geometryAcceptanceFixtures.js';
 import {
-  DEFAULT_SEWING_REPAIR_TOLERANCE_MM,
   GEOMETRIC_CONFUSION_MM,
-  MAXIMUM_SEWING_REPAIR_TOLERANCE_MM,
-  THRU_SECTIONS_APPROXIMATION_TOLERANCE_MM,
+  APPROXIMATION_TOLERANCE_MM,
   validateToleranceMm,
 } from './tolerances.js';
+
+/** R22 の近接の入力(booleanOp.test.ts と同じ値。もとは geometryAcceptanceFixtures.ts の検査用の値)。 */
+const R22_NEAR_CONTACT = {
+  overlapMm: 1e-4,
+  intersectionVolumeMm3: 0.04,
+  subtractVolumeMm3: 7999.96,
+  unionVolumeMm3: 15999.96,
+} as const;
+
+/** 面の縫合で隙間を修復する幅の既定値(mm)。model の既定値 0.01 mm と同じ。 */
+const DEFAULT_SEWING_REPAIR_TOLERANCE_MM = 0.01;
+
+/** 修復幅の上限(mm)。製品の値と同じ 1 を、拒む文言と境目(1 は受理、1 を少し超えると拒む)で確かめる。 */
+const MAXIMUM_SEWING_REPAIR_TOLERANCE_MM = 1;
 
 describe('用途別の許容誤差', () => {
   let oc: OpenCascadeInstance;
@@ -17,16 +30,26 @@ describe('用途別の許容誤差', () => {
     oc = await loadOcctForNode();
   });
 
-  it('幾何一致・縫合修復・近似曲面の値を別々に保つ', () => {
+  it('幾何一致と近似曲面の値を分け、文書の修復幅上限を守る', () => {
     expect(GEOMETRIC_CONFUSION_MM).toBe(1e-7);
-    expect(DEFAULT_SEWING_REPAIR_TOLERANCE_MM).toBe(0.01);
-    expect(THRU_SECTIONS_APPROXIMATION_TOLERANCE_MM).toBe(1e-6);
-    expect(MAXIMUM_SEWING_REPAIR_TOLERANCE_MM).toBe(1);
+    expect(APPROXIMATION_TOLERANCE_MM).toBe(1e-6);
+    expect(APPROXIMATION_TOLERANCE_MM).not.toBe(GEOMETRIC_CONFUSION_MM);
+    expect(APPROXIMATION_TOLERANCE_MM).not.toBe(DEFAULT_SEWING_REPAIR_TOLERANCE_MM);
+    expect(() => validateToleranceMm(1.000001)).toThrow('つなぎ目の許容量は 1 mm 以下にしてください。');
   });
 
   it('固定 OCCT WASM の幾何一致と角度の実測値に一致する', () => {
     expect(oc.Precision.Confusion()).toBe(GEOMETRIC_CONFUSION_MM);
     expect(oc.Precision.Angular()).toBe(1e-12);
+  });
+
+  it('R22 の近接・薄板・短辺は修復幅へ丸めず、幾何一致幅と別の寸法として保つ', () => {
+    expect(R22_NEAR_CONTACT.overlapMm / GEOMETRIC_CONFUSION_MM).toBeCloseTo(1000, 9);
+    expect(R22_THIN_SOLIDS[0].size[2]).toBe(0.001);
+    expect(R22_THIN_SOLIDS[1].size[0]).toBe(0.0001);
+    expect(R22_THIN_SOLIDS[0].size[2]).toBeLessThan(DEFAULT_SEWING_REPAIR_TOLERANCE_MM);
+    expect(R22_THIN_SOLIDS[1].size[0]).toBeLessThan(DEFAULT_SEWING_REPAIR_TOLERANCE_MM);
+    expect(R22_THIN_SOLIDS[1].size[0]).toBeGreaterThan(GEOMETRIC_CONFUSION_MM);
   });
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -0.01])(

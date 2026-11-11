@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateExpression, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import type { FunctionDefinition } from './functionDefinitionTypes.js';
-import { resolveFunctionRanges, type FunctionRangeContext } from './resolveFunctionRanges.js';
+import { resolveFunctionRanges } from './resolveFunctionRanges.js';
+
+type FunctionRangeContext = Parameters<typeof resolveFunctionRanges>[1];
 
 function input(source: string, variables = new Map([['width', 10]])): ExpressionValue {
   const result = evaluateExpression(source, { variables });

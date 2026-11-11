@@ -7,6 +7,16 @@ import { currentPcadAttachments } from '../store/attachKernel.js';
 import { flattenAssemblyGeometry } from '../viewport/createAssemblyLayer.js';
 import type { SheetMetalPreview } from '../store/sheetMetalSlice.js';
 
+/** The ordinary drawing switch increments documentVersion while preserving the embedded owner part. */
+function retainParameterGuideOnDrawingOpen(beforeDocument: ReturnType<typeof useAppStore.getState>['document'],
+  beforeVersion: number): void {
+  const current = useAppStore.getState(), session = current.tutorialSession;
+  if (session?.course === 'parameterToExport' && session.documentId === beforeDocument.id
+      && session.documentVersion === beforeVersion && current.document === beforeDocument) {
+    current.setTutorialSession({ ...session, documentVersion: current.documentVersion });
+  }
+}
+
 /** 現在の部品または組立と原本一式を抱き込み、配置済みの形から三面図を作る。 */
 export async function createDrawingFromCurrentPart(template?: DrawingTemplate, flatPreview?: SheetMetalPreview): Promise<boolean> {
   const state = useAppStore.getState();
@@ -46,6 +56,7 @@ export async function createDrawingFromCurrentPart(template?: DrawingTemplate, f
       const created = drawingFromTemplate(template, `${source.document.name} - ${template.name}`, embedded.source);
       if (!created.ok) throw new Error(t('drawing.template.invalid'));
       state.openDrawing(created.document, { sources: embedded.library, importedShapes: state.importedShapes });
+      retainParameterGuideOnDrawingOpen(state.document, state.documentVersion);
       return true;
     }
     const minimum = [Infinity, Infinity, Infinity], maximum = [-Infinity, -Infinity, -Infinity];
@@ -73,6 +84,7 @@ export async function createDrawingFromCurrentPart(template?: DrawingTemplate, f
       state.openDrawing({ ...drawing, name: `${source.document.name} - ${t('sheetMetal.flatDrawing')}`, sheet: { ...drawing.sheet, scale }, views: [view] }, {
         sources: embedded.library, importedShapes: state.importedShapes,
       });
+      retainParameterGuideOnDrawingOpen(state.document, state.documentVersion);
       return true;
     }
     const layout = thirdAngleLayout({ extents, scale, gap: 30, sheet: { ...frame.inner, bottom: frame.inner.bottom + DEFAULT_TITLE_BLOCK_HEIGHT_MM } });
@@ -84,6 +96,7 @@ export async function createDrawingFromCurrentPart(template?: DrawingTemplate, f
     state.openDrawing({ ...drawing, sheet: { ...drawing.sheet, scale }, views }, {
       sources: embedded.library, importedShapes: state.importedShapes,
     });
+    retainParameterGuideOnDrawingOpen(state.document, state.documentVersion);
     return true;
   } catch (error) {
     const current = useAppStore.getState();

@@ -172,3 +172,8 @@ export function analyzeSketchCorner(line1: SegmentSpec, line2: SegmentSpec): Ske
     sinAngle,
   };
 }
+
+/** Euclidean distance; preserve component order and subtraction. */
+export function distanceVec(a: Vec3Tuple, b: Vec3Tuple): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}

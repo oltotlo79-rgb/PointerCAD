@@ -1,6 +1,6 @@
 import { OfflineRouter } from '../src/pwa/offlineRouting.js';
 import { createServiceWorkerCleanup } from './cleanup.js';
-import { OFFLINE_MANUAL_NAVIGATION } from '../../../scripts/vite/offlineProtocol.mjs';
+import { OFFLINE_MANUAL_NAVIGATION } from '@pointercad/ui/offline-protocol';
 
 declare const self: ServiceWorkerGlobalScope;
 const base = new URL(self.registration.scope);

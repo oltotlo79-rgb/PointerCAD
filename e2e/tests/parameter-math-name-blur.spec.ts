@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
  * 「数式で入力」ボタンを押すと、ボタンの押下で窓の showModal が焦点を奪い、
  * 名前欄の blur が確定処理(改名)を走らせる。改名が終わって文書が差し替わると、
  * MathExpressionDialog の購読が「別の文書になった」と判定し、開いたばかりの
- * 窓をすぐ閉じてしまう(w104a の報告、配布物の検査 (d-2) で確認)。
+ * 窓をすぐ閉じてしまう(焦点移動の再現検証、配布物の検査 (d-2) で確認)。
  */
 test.use({ viewport: { width: 1440, height: 900 } });
 

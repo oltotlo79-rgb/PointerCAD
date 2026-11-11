@@ -9,8 +9,11 @@ import { loadOcctForNode } from './loadOcct.node.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeBox } from './makeBox.js';
 import { makePrimitive } from './makePrimitive.js';
-import { tessellate } from './tessellate.js';
+import { readStl } from './readStl.js';
+import { TESSELLATION_ADMISSION_MESSAGE, tessellate } from './tessellate.js';
 import { makeCompound } from './transformShape.js';
+import { writeStl } from './writeStl.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 /** 20³ の箱(検証表の 1 行目)。makeBox は原点を角にするので中心は (10, 10, 10)。 */
 const BOX_SIZE = 20;
@@ -132,6 +135,20 @@ describe('書き出し用の三角形の作り直し(FR-803、タスク11)', () 
     oc = await loadOcctForNode();
   });
 
+  it('explicit local tessellation does not enter the world-coordinate export builder', () => {
+    const box = makeBox(oc, { dx: 20, dy: 20, dz: 20 });
+    try {
+      const frame: MeshCoordinateFrame = { origin: [10, 10, 10], maximumFloat32ErrorMm: 0.01 };
+      tessellate(oc, box.shape, {}, undefined, frame);
+      const exported = buildExportMesh(oc, box.shape, 0.1);
+      expect(Math.min(...exported.positions)).toBe(0);
+      expect(Math.max(...exported.positions)).toBe(20);
+      expect(exported.triangleCount).toBe(12);
+    } finally {
+      box.delete();
+    }
+  });
+
   /** `makePlanarFace` が事前に断る自己交差面を、書き出し境界の検査用に直に作る。 */
   function makeSelfIntersectingFace(): OcctShapeHandle {
     const { keep, release } = createAllocations();
@@ -178,6 +195,8 @@ describe('書き出し用の三角形の作り直し(FR-803、タスク11)', () 
       expect(() => buildExportMesh(oc, handle.shape, 0)).toThrow(/書き出しの品質/);
       expect(() => buildExportMesh(oc, handle.shape, -0.1)).toThrow(/書き出しの品質/);
       expect(() => buildExportMesh(oc, handle.shape, Number.NaN)).toThrow(/書き出しの品質/);
+      expect(() => buildExportMesh(oc, handle.shape, Number.POSITIVE_INFINITY)).toThrow(/書き出しの品質/);
+      expect(() => buildExportMesh(oc, handle.shape, Number.NEGATIVE_INFINITY)).toThrow(/書き出しの品質/);
     } finally {
       handle.delete();
     }
@@ -413,6 +432,96 @@ describe('書き出し用の三角形の作り直し(FR-803、タスク11)', () 
       console.log(
         `[実測] 画面用 ${String(before.triangleCount)} 枚 → 書き出し(偏差 0.005)${String(exported.triangleCount)} 枚 → 画面用 ${String(after.triangleCount)} 枚`,
       );
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('詳細指定 0.005 / 0.05 / 0.5 mm を実際に分割し、STL 保存再読後も元形状を汚さない', () => {
+    const handle = makePrimitive(oc, primitiveAt({ kind: 'sphere', radius: 10 }));
+    try {
+      const displayBefore = tessellate(oc, handle.shape);
+      const counts: number[] = [];
+      for (const deviationMm of [0.5, 0.05, 0.005]) {
+        const mesh = buildExportMesh(oc, handle.shape, deviationMm, {
+          angularDeflectionRad: 0.5,
+          admission: { remainingTriangles: 1_000_000, remainingJsBytes: 512 * 1024 * 1024,
+            checkDeadline: () => undefined },
+        });
+        const saved = writeStl([mesh], { ascii: false });
+        const reopened = readStl(oc, saved.bytes);
+        expect(reopened.triangleCount).toBe(saved.triangleCount);
+        expect(saved.triangleCount + saved.droppedTriangleCount).toBe(mesh.triangleCount);
+        expect(saved.bytes.length).toBe(84 + 50 * saved.triangleCount);
+        counts.push(mesh.triangleCount);
+        const displayAfter = tessellate(oc, handle.shape);
+        expect(displayAfter.triangleCount).toBe(displayBefore.triangleCount);
+        expect(displayAfter.positions).toEqual(displayBefore.positions);
+      }
+      expect(counts[1]).toBeGreaterThan(counts[0]);
+      expect(counts[2]).toBeGreaterThan(counts[1]);
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('25.4 mm の箱を STL に保存して読み直しても 1 inch 相当の三辺を保つ', () => {
+    const handle = makeBox(oc, { dx: 25.4, dy: 50.8, dz: 76.2 });
+    try {
+      const mesh = buildExportMesh(oc, handle.shape, 0.05);
+      const saved = writeStl([mesh], { ascii: false });
+      const reopened = readStl(oc, saved.bytes);
+      expect(reopened.triangleCount).toBe(saved.triangleCount);
+      const minimum = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+      const maximum = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+      for (let index = 0; index < reopened.positions.length; index += 3) {
+        for (let axis = 0; axis < 3; axis += 1) {
+          const coordinate = reopened.positions[index + axis];
+          minimum[axis] = Math.min(minimum[axis], coordinate);
+          maximum[axis] = Math.max(maximum[axis], coordinate);
+        }
+      }
+      for (const [axis, expectedMm] of [25.4, 50.8, 76.2].entries()) {
+        expect(maximum[axis] - minimum[axis]).toBeCloseTo(expectedMm, 5);
+      }
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('実メッシュの残り三角形・配列容量・期限を増分確保前に確認する', () => {
+    const handle = makeBox(oc, { dx: 10, dy: 20, dz: 30 });
+    try {
+      const reference = buildExportMesh(oc, handle.shape, 0.05);
+      const arrayBytes = reference.positions.byteLength + reference.normals.byteLength
+        + reference.indices.byteLength + (reference.faceRanges?.length ?? 0) * 64;
+      let deadlineChecks = 0;
+      const admitted = buildExportMesh(oc, handle.shape, 0.05, { admission: {
+        remainingTriangles: reference.triangleCount,
+        remainingJsBytes: arrayBytes,
+        checkDeadline: () => { deadlineChecks += 1; },
+      } });
+      expect(admitted.triangleCount).toBe(reference.triangleCount);
+      expect(admitted.positions).toEqual(reference.positions);
+      expect(admitted.normals).toEqual(reference.normals);
+      expect(admitted.indices).toEqual(reference.indices);
+      expect(admitted.faceRanges).toEqual(reference.faceRanges);
+      expect(deadlineChecks).toBeGreaterThan(2);
+      expect(() => buildExportMesh(oc, handle.shape, 0.05, { admission: {
+        remainingTriangles: reference.triangleCount - 1,
+        remainingJsBytes: arrayBytes,
+        checkDeadline: () => undefined,
+      } })).toThrow(TESSELLATION_ADMISSION_MESSAGE);
+      expect(() => buildExportMesh(oc, handle.shape, 0.05, { admission: {
+        remainingTriangles: reference.triangleCount,
+        remainingJsBytes: arrayBytes - 1,
+        checkDeadline: () => undefined,
+      } })).toThrow(TESSELLATION_ADMISSION_MESSAGE);
+      expect(() => buildExportMesh(oc, handle.shape, 0.05, { admission: {
+        remainingTriangles: reference.triangleCount,
+        remainingJsBytes: arrayBytes,
+        checkDeadline: () => { throw new Error('期限切れ'); },
+      } })).toThrow('期限切れ');
     } finally {
       handle.delete();
     }

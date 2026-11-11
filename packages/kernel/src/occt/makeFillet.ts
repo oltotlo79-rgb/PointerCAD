@@ -5,12 +5,15 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { ConstantFilletStepSpec, SubShapeQuery } from '../types.js';
+import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { matchEdge, matchVertex } from './matchSubShape.js';
+import { resolveEdgeReference, resolveVertexReference } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, edgeAt, edgesTouchingVertex } from './subShapes.js';
+import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
+import { semanticOperationOrigins } from './semanticOperationOrigins.js';
 
 /**
  * R 面取り(FR-407、計画書 P3 §2.6、タスク7)。
@@ -84,8 +87,8 @@ export function isFilletShape(value: unknown): value is ChFi3d_FilletShape {
 /**
  * 指紋 1 つを、丸める辺の通し番号(0 本以上)へ直す。
  *
- * - 辺の指紋は `matchEdge` でそのまま選び直す。
- * - 頂点の指紋は `matchVertex` で頂点を選び直してから、
+ * - 辺の指紋は `resolveEdgeReference` でそのまま選び直す。
+ * - 頂点の指紋は `resolveVertexReference` で頂点を選び直してから、
  *   その頂点に集まる辺(`edgesTouchingVertex`)へ展開する(§0.a-0.17)。
  *   OCCT に「頂点を球状に丸める」API は無く、集まる辺を同じ半径で丸めるのが
  *   利用者の言う「角を丸める」に当たるため。
@@ -106,12 +109,12 @@ function resolveOneTarget(
   scale: number,
 ): readonly number[] {
   if (query.kind === 'edge') {
-    const match = matchEdge(tables.edges, query, scale);
-    return match === null ? [] : [match.index];
+    const match = resolveEdgeReference(tables.edges, query, scale, tables.origins);
+    return match.status !== 'matched' ? [] : [match.match.index];
   }
   if (query.kind === 'vertex') {
-    const match = matchVertex(tables.vertices, query, scale);
-    return match === null ? [] : edgesTouchingVertex(oc, shape, match.index);
+    const match = resolveVertexReference(tables.vertices, query, scale, tables.origins);
+    return match.status !== 'matched' ? [] : edgesTouchingVertex(oc, shape, match.match.index);
   }
   return [];
 }
@@ -201,6 +204,7 @@ export function makeFillet(
   spec: ConstantFilletStepSpec,
   target: TopoDS_Shape,
   tables: SubShapeTables,
+  semantic?: { readonly featureId: string; readonly origins: CurrentOriginIndex },
 ): OcctShapeHandle {
   if (!Number.isFinite(spec.radius) || spec.radius <= 0) {
     throw new Error(RADIUS_MESSAGE);
@@ -269,7 +273,17 @@ export function makeFillet(
       throw new Error(NOT_SOLID_MESSAGE);
     }
 
-    return { shape, delete: release };
+    let origins: CurrentOriginIndex | undefined;
+    if (semantic?.origins.state === 'tracked') {
+      try {
+        const history = extractSubShapeHistory(oc, maker, [{ sourceId: 'target', shape: target }], shape);
+        origins = semanticOperationOrigins(semantic.featureId,
+          [{ sourceId: 'target', origins: semantic.origins }], history,
+          { operation: 'fillet', selectedEdgeIndices: edgeIndices });
+      } catch (error) { origins = { version: 1, state: 'untracked',
+        reason: error instanceof OriginHistoryLimitError ? 'limit' : 'missing-native-map' }; }
+    }
+    return { shape, ...(origins === undefined ? {} : { origins }), delete: release };
   } catch (error) {
     release();
     throw error;

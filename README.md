@@ -4,7 +4,7 @@
 
 PointerCADは、**「前の点から右へ40mm」「板厚の2倍の位置」など、作りたい形の決め方をそのまま入力できる3D CAD**です。座標・相対距離・角度・数式を使って描き、マウスで形を確かめながら立体や加工を加えられます。機械部品の設計、DIY、3Dプリントに向けて、部品作成から組み立て、データの受け渡しまで扱います。
 
-Web版とデスクトップ版を無料で公開しています(ライセンス: Apache-2.0)。**デスクトップ版(Windows・Linux)を先行して正式公開しており、Web版は後日あらためて公開します。**
+デスクトップ版(Windows・Linux)を無料で公開しています(ライセンス: Apache-2.0)。公開済みの版と入手方法は、下の「入手方法・取扱説明書」にまとめています。**Web版は後日あらためて公開します。**
 
 不具合の報告、修正の確認と提出は[開発への参加](CONTRIBUTING.md)にまとめています。
 
@@ -175,19 +175,21 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 
 ## 入手方法・取扱説明書
 
-デスクトップ版を先行して公開します。デスクトップ版はGitHubのReleaseから入手できます。Web版は後日公開し、公開時にここへリンクを掲載します。配布物は未署名で、確かめ方は取扱説明書「導入・画面操作・ファイル」の「正式な入手元と、未署名の配布物への警告・確認方法」の章にあります。
+デスクトップ版の公開状況は[GitHubのリリース一覧](https://github.com/oltotlo79-rgb/PointerCAD/releases)で確認できます。リリース一覧に未掲載の版のファイルは、まだ取得できません。v1.0.2は公開済みで、[GitHubのv1.0.2リリース](https://github.com/oltotlo79-rgb/PointerCAD/releases/tag/v1.0.2)から入手できます。Web版は後日公開し、公開時にここへリンクを掲載します。配布物は未署名で、確かめ方は取扱説明書「導入・画面操作・ファイル」の「正式な入手元と、未署名の配布物への警告・確認方法」の章にあります。
+
+**v1.0.3の配布先**（リリース一覧に掲載された後に取得できます）
 
 <!-- pointercad:release-links:start -->
 | 利用方法 | 公開先 |
 |---|---|
-| Windows版のインストーラーをダウンロード | [PointerCAD-1.0.2-windows-x64-setup.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-windows-x64-setup.exe) |
-| Windowsポータブル版をダウンロード（1つの.exe） | [PointerCAD-1.0.2-windows-x64-portable.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-windows-x64-portable.exe) |
-| Linux版のAppImageをダウンロード | [PointerCAD-1.0.2-linux-x64.AppImage](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-linux-x64.AppImage) |
-| 取扱説明書（PDF 全7巻。アプリ内のヘルプ〔F1〕でも同じ内容を読めます） | [導入・画面操作・ファイル](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-getting-started.pdf) ・ [スケッチ・座標・関数](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-sketch-and-functions.pdf) ・ [立体・外観・測定](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-solid-and-measurement.pdf) ・ [アセンブリ・部品表](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-assembly.pdf) ・ [図面・寸法・製図記号](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-drawing.pdf) ・ [板金・自動作図・加工連携](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-sheet-and-scripting.pdf) ・ [設定・履歴・表示](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-settings-and-history.pdf) |
+| Windows版のインストーラーをダウンロード | [PointerCAD-1.0.3-windows-x64-setup.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-windows-x64-setup.exe) |
+| Windowsポータブル版をダウンロード（1つの.exe） | [PointerCAD-1.0.3-windows-x64-portable.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-windows-x64-portable.exe) |
+| Linux版のAppImageをダウンロード | [PointerCAD-1.0.3-linux-x64.AppImage](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-linux-x64.AppImage) |
+| 取扱説明書（PDF 全7巻。アプリ内のヘルプ〔F1〕でも同じ内容を読めます） | [導入・画面操作・ファイル](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-manual-getting-started.pdf) ・ [スケッチ・座標・関数](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-manual-sketch-and-functions.pdf) ・ [立体・外観・測定](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-manual-solid-and-measurement.pdf) ・ [アセンブリ・部品表](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-manual-assembly.pdf) ・ [図面・寸法・製図記号](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-manual-drawing.pdf) ・ [板金・自動作図・加工連携](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-manual-sheet-and-scripting.pdf) ・ [設定・履歴・表示](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.3/PointerCAD-1.0.3-manual-settings-and-history.pdf) |
 | Webアプリ版をブラウザで使う | 後日公開（公開したらここにリンクを掲載します） |
 <!-- pointercad:release-links:end -->
 
-[リリースの公開状況](https://github.com/oltotlo79-rgb/PointerCAD/releases) · [機能別ヘルプ](packages/help-content/docs/ja/)
+[リリースの公開状況](https://github.com/oltotlo79-rgb/PointerCAD/releases) · [v1.0.2のSHA256SUMS](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/SHA256SUMS) · [機能別ヘルプ](packages/help-content/docs/ja/)
 
 説明書は、必要な操作を探しやすいように**7分冊**にまとめ、アプリ内のF1ヘルプと同じ本文・画面の呼び方で、章ごとにも通しても読める構成にしています。ヘルプの検索は端末の中で行い、検索語を外部へ送りません。実画面の説明とPDFを含む配布一式は、内容の整合を確認したうえで配布物に同梱しています。[分冊と章の目録](packages/help-content/src/manualManifest.ts) · [ヘルプの使い方](packages/help-content/docs/ja/help-reader.md)
 

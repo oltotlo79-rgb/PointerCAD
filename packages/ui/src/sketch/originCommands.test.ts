@@ -24,8 +24,9 @@ import {
   originNoticeText,
   originPickFor,
   treeRowTakesOrigin,
-  type OriginCommandState,
 } from './originCommands.js';
+
+type OriginCommandState = Parameters<typeof originChangeFor>[0];
 
 function expr(source: string): ExpressionValue {
   const result = evaluateExpression(source);

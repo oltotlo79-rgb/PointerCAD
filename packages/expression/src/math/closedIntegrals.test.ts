@@ -1,11 +1,10 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CLOSED_CURVE_OPEN, CLOSED_CURVE_UNPROVED, CLOSED_INTEGRAL_BASES, CLOSED_INTEGRAL_FINITE, CLOSED_INTEGRAL_UNDEFINED,
-  CLOSED_SURFACE_OPEN, CLOSED_SURFACE_UNPROVED, LOWERINGS } from './closedIntegrals.js';
+import { CLOSED_CURVE_OPEN, CLOSED_CURVE_UNPROVED, CLOSED_INTEGRAL_BASES, CLOSED_SURFACE_OPEN, LOWERINGS } from './closedIntegrals.js';
 import { createMathBackend } from './createMathBackend.js';
 import { decodeMathJson } from './decodeMathJson.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { formatMathText } from './formatMathText.js';
 import { CLOSED_INTEGRAL_UNAVAILABLE } from './lineIntegrals.js';
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
@@ -18,6 +17,12 @@ import { type MathExecutionReply } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { prepareExactMathCalculation } from './prepareMathCalculation.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const CLOSED_INTEGRAL_FINITE = '閉じた曲線・曲面の積分（∮・∯）には、有限の下限と上限を指定してください。';
+const CLOSED_INTEGRAL_UNDEFINED = '曲線または曲面の座標が媒介変数の範囲の端で定まらないため、閉じていることを確かめられません。';
+const CLOSED_SURFACE_UNPROVED = '曲面の媒介変数の長方形で、向かい合う辺が一致すること、または1点につぶれることを厳密に確かめられないため、'
+  + '閉じた曲面の積分（∯）として計算しません。値が近いだけでは閉じているとみなしません。辺の座標が厳密な値になる範囲（例 球なら 0〜180 度と 0〜360 度）で指定してください。';
 
 const names = { axes: new Set<never>(), parameters: new Set<never>(), declared: [], coefficients: [] };
 const parse = (source: string): MathNode => parseMathText(source, { names, operations: CANDIDATE_MATH_OPERATIONS });

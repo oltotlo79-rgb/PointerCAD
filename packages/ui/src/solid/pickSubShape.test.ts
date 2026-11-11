@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { Vec3 } from '@pointercad/model';
+import type { SolidBody, Vec3 } from '@pointercad/model';
 
 import { PICK_RADIUS_PIXELS } from '../sketch/pickMath.js';
+import { bodyFor } from '../store/testing/createTestStore.js';
 
 import {
   faceIndexOfTriangle,
   pickSolidSubShape,
   SUB_SHAPE_PICK_RADIUS_PIXELS,
 } from './pickSubShape.js';
+import { subShapeRefOf } from './subShapeSelection.js';
 import type { SolidEdgeEntry, SolidFaceEntry, SubShapeBody } from './subShapeSelection.js';
 
 /** 画面座標は x・y をそのまま使う(奥行き z は捨てる = 深度を見ない、§0.a-0.27)。 */
@@ -93,6 +95,112 @@ const PIN: SubShapeBody = {
 const BODIES: readonly SubShapeBody[] = [BOX, PIN];
 
 describe('立体の部分形状の当たり判定(FR-106、§2.3.2)', () => {
+  it('円筒ring/seam/2頂点を別座標でpickし8role現表の保存参照へ結ぶ', () => {
+    const featureId = 'cylinder-pick';
+    const base = bodyFor(featureId);
+    const cylinder: SolidBody = {
+      ...base, volume: 2000 * Math.PI,
+      mesh: { ...base.mesh, edgePositions: new Float32Array([
+        0, 10, 0, 10, 0, 0,
+        0, 10, 20, 10, 0, 20,
+        10, 0, 0, 10, 0, 20,
+      ]) },
+      faces: [
+        { index: 0, surfaceKind: 'plane', area: 100 * Math.PI, centroid: [0, 0, 0],
+          axis: [0, 0, -1], radius: null, triangleOffset: 0, triangleCount: 2 },
+        { index: 1, surfaceKind: 'plane', area: 100 * Math.PI, centroid: [0, 0, 20],
+          axis: [0, 0, 1], radius: null, triangleOffset: 2, triangleCount: 2 },
+        { index: 2, surfaceKind: 'cylinder', area: 400 * Math.PI, centroid: [0, 0, 10],
+          axis: [0, 0, 1], radius: 10, triangleOffset: 4, triangleCount: 4 },
+      ],
+      edges: [
+        { index: 0, curveKind: 'line', length: 20, midpoint: [10, 0, 10],
+          start: [10, 0, 0], end: [10, 0, 20], axis: [0, 0, 1], radius: null,
+          segmentOffset: 2, segmentCount: 1 },
+        { index: 1, curveKind: 'circle', length: 20 * Math.PI, midpoint: [0, 0, 0],
+          start: [10, 0, 0], end: [10, 0, 0], axis: [0, 0, -1], radius: 10,
+          segmentOffset: 0, segmentCount: 1 },
+        { index: 2, curveKind: 'circle', length: 20 * Math.PI, midpoint: [0, 0, 20],
+          start: [10, 0, 20], end: [10, 0, 20], axis: [0, 0, 1], radius: 10,
+          segmentOffset: 1, segmentCount: 1 },
+      ],
+      vertices: [{ index: 0, position: [10, 0, 20] }, { index: 1, position: [10, 0, 0] }],
+      origins: { version: 1, state: 'tracked', bindings: [
+        { origin: { version: 1, shapeKind: 'face', identity: {
+          kind: 'cylinder-face', featureId, role: 'side' } }, state: 'unique', current: { kind: 'face', index: 2 } },
+        { origin: { version: 1, shapeKind: 'face', identity: {
+          kind: 'cylinder-face', featureId, role: 'start' } }, state: 'unique', current: { kind: 'face', index: 0 } },
+        { origin: { version: 1, shapeKind: 'face', identity: {
+          kind: 'cylinder-face', featureId, role: 'end' } }, state: 'unique', current: { kind: 'face', index: 1 } },
+        { origin: { version: 1, shapeKind: 'edge', identity: {
+          kind: 'cylinder-edge', featureId, role: 'start-ring' } }, state: 'unique', current: { kind: 'edge', index: 1 } },
+        { origin: { version: 1, shapeKind: 'edge', identity: {
+          kind: 'cylinder-edge', featureId, role: 'end-ring' } }, state: 'unique', current: { kind: 'edge', index: 2 } },
+        { origin: { version: 1, shapeKind: 'edge', identity: {
+          kind: 'cylinder-edge', featureId, role: 'seam' } }, state: 'unique', current: { kind: 'edge', index: 0 } },
+        { origin: { version: 1, shapeKind: 'vertex', identity: {
+          kind: 'cylinder-vertex', featureId, role: 'seam-start' } }, state: 'unique', current: { kind: 'vertex', index: 1 } },
+        { origin: { version: 1, shapeKind: 'vertex', identity: {
+          kind: 'cylinder-vertex', featureId, role: 'seam-end' } }, state: 'unique', current: { kind: 'vertex', index: 0 } },
+      ] },
+    };
+    const projectXZ = (point: Vec3): readonly [number, number] => [point[0], point[2]];
+    const picks = [
+      { at: [0, 0], mode: 'edge', kind: 'edge', index: 1, role: 'start-ring', radius: 10 },
+      { at: [0, 20], mode: 'edge', kind: 'edge', index: 2, role: 'end-ring', radius: 10 },
+      { at: [10, 10], mode: 'edge', kind: 'edge', index: 0, role: 'seam', radius: null },
+      { at: [10, 0], mode: 'vertex', kind: 'vertex', index: 1, role: 'seam-start', radius: null },
+      { at: [10, 20], mode: 'vertex', kind: 'vertex', index: 0, role: 'seam-end', radius: null },
+    ] as const;
+    for (const { at, mode, kind, index, role, radius } of picks) {
+      const picked = pickSolidSubShape([cylinder], projectXZ, at, mode);
+      expect(picked).toEqual({ elementId: `${featureId}#${kind}:${index}`, kind, distance: 0 });
+      if (picked === null) throw new Error(`${role}を選べませんでした`);
+      const saved = subShapeRefOf([cylinder], picked.elementId);
+      expect(saved).toMatchObject({ bodyFeatureId: featureId, index,
+        origin: { version: 1, shapeKind: kind, identity: {
+          kind: kind === 'edge' ? 'cylinder-edge' : 'cylinder-vertex', featureId, role } },
+        fingerprint: kind === 'edge' ? { kind, radius,
+          length: role === 'seam' ? 20 : 20 * Math.PI } : { kind, position: [10, 0, role === 'seam-start' ? 0 : 20] },
+      });
+      expect(subShapeRefOf([{ ...cylinder, featureId: 'foreign-body' }], picked.elementId)).toBeNull();
+    }
+    for (const [triangle, index, role] of [[0, 0, 'start'], [2, 1, 'end'], [5, 2, 'side']] as const) {
+      expect(faceIndexOfTriangle(cylinder.faces, triangle)).toBe(index);
+      expect(subShapeRefOf([cylinder], `${featureId}#face:${index}`)).toMatchObject({
+        origin: { shapeKind: 'face', identity: { kind: 'cylinder-face', featureId, role } },
+      });
+    }
+  });
+
+  it('projects local edges through each double world origin without translating world vertices twice', () => {
+    const body: SubShapeBody = {
+      ...BOX, featureId: 'far',
+      coordinateFrame: { space: 'local', origin: [1e9, -1e9, 0], maximumFloat32ErrorMm: 0.001 },
+      mesh: { edgePositions: Float32Array.from([0.125, 0, 0, 100.125, 0, 0]) },
+      edges: [lineEdge(0, 0, [1e9 + 0.125, -1e9, 0], [1e9 + 100.125, -1e9, 0])],
+      vertices: [{ index: 0, position: [1e9 + 0.125, -1e9, 0] }],
+    };
+    expect(pickSolidSubShape([body], project, [1e9 + 50.125, -1e9], 'edge')).toEqual({
+      elementId: 'far#edge:0', kind: 'edge', distance: 0,
+    });
+    expect(pickSolidSubShape([body], project, [1e9 + 0.125, -1e9], 'edge')).toEqual({
+      elementId: 'far#vertex:0', kind: 'vertex', distance: 0,
+    });
+  });
+
+  it('skips a malformed local origin rather than projecting local values as world values', () => {
+    const sparse: [number, number, number] = [1e9, 0, 0];
+    Reflect.deleteProperty(sparse, '1');
+    const body: SubShapeBody = {
+      ...BOX, coordinateFrame: { space: 'local', origin: sparse, maximumFloat32ErrorMm: 0.001 },
+    };
+    expect(pickSolidSubShape([body], project, [50, 0], 'edge')).toBeNull();
+  });
+
+  it('does not pick either body when their feature id is ambiguous', () => {
+    expect(pickSolidSubShape([BOX, { ...BOX }], project, [50, 0], 'edge')).toBeNull();
+  });
   it('判定の半径はスケッチ要素と同じ 6px', () => {
     expect(SUB_SHAPE_PICK_RADIUS_PIXELS).toBe(PICK_RADIUS_PIXELS);
     expect(SUB_SHAPE_PICK_RADIUS_PIXELS).toBe(6);

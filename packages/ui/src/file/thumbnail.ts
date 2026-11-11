@@ -53,7 +53,7 @@ export const PRINT_BACKGROUND: CanvasBackground = { top: '#ffffff', bottom: '#ff
  * **検査から偽物を渡して塗られた色を確かめられるようにする**ため
  * (`packages/ui/src/file/fileGateway.ts` が偽の `globalThis` を受けるのと同じ考え方)。
  */
-export interface BackgroundFillTarget {
+interface BackgroundFillTarget {
   fillStyle: string | CanvasGradient | CanvasPattern;
   createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient;
   fillRect(x: number, y: number, width: number, height: number): void;
@@ -157,12 +157,64 @@ export function dataUrlToBytes(dataUrl: string): Uint8Array | null {
  * その間に描画バッファが捨てられてしまうため、canvas から canvas へ直接写す。
  * 用意ができていない・2D の下地が作れない・書き出しに失敗したときは null を返す。
  */
+export type ThumbnailCaptureResult = Uint8Array | null | Promise<Uint8Array | null>;
+export type ThumbnailCapture = () => ThumbnailCaptureResult;
+
+/** Await only the already-started capture. Cancellation releases the save queue even if its provider stalls. */
+export function awaitThumbnailCapture(result: Promise<Uint8Array | null>, signal: AbortSignal): Promise<Uint8Array | null> {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (value: Uint8Array | null): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', abort);
+      resolve(value);
+    };
+    const abort = (): void => { finish(null); };
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    void result.then(value => { finish(signal.aborted ? null : value); }, () => { finish(null); });
+  });
+}
+
+export type ThumbnailCaptureReasonSink = (reason: string) => void;
+const thumbnailCaptureObservers = new Map<object, ThumbnailCaptureReasonSink>();
+/** Diagnostic callbacks cannot affect capture results or exceptions. */
+export function reportThumbnailCaptureReason(reason: string, sink?: ThumbnailCaptureReasonSink): void {
+  if (sink !== undefined) {
+    try { sink(reason); } catch { /* Observation only. */ }
+    return;
+  }
+  for (const observer of [...thumbnailCaptureObservers.values()]) {
+    try { observer(reason); } catch { /* Observation only. */ }
+  }
+}
+export function observeThumbnailCaptureReasons(sink: ThumbnailCaptureReasonSink): () => void {
+  const token = {};
+  thumbnailCaptureObservers.set(token, sink);
+  return () => { thumbnailCaptureObservers.delete(token); };
+}
+export function createThumbnailCaptureReasonJournal() {
+  let sequence = 0;
+  let dropped = 0;
+  const entries: { sequence: number; reason: string }[] = [];
+  return {
+    record: (reason: string): void => {
+      if (entries.length === 64) { entries.shift(); dropped += 1; }
+      entries.push({ sequence: ++sequence, reason: reason.slice(0, 120) });
+    },
+    snapshot() { return { sequence, dropped, entries: entries.map(entry => ({ ...entry })) }; },
+  };
+}
+
 export function captureThumbnailPng(
   source: HTMLCanvasElement,
   size: number = THUMBNAIL_SIZE,
+  reasonSink?: ThumbnailCaptureReasonSink,
 ): Uint8Array | null {
   const rect = thumbnailFitRect(source.width, source.height, size);
   if (rect === null) {
+    reportThumbnailCaptureReason('png:fit-null', reasonSink);
     return null;
   }
   try {
@@ -171,12 +223,16 @@ export function captureThumbnailPng(
     target.height = size;
     const context = target.getContext('2d');
     if (context === null) {
+      reportThumbnailCaptureReason('png:context-null', reasonSink);
       return null;
     }
     fillCanvasBackground(context, size, size, THUMBNAIL_BACKGROUND);
     context.drawImage(source, rect.x, rect.y, rect.width, rect.height);
-    return dataUrlToBytes(target.toDataURL('image/png'));
+    const result = dataUrlToBytes(target.toDataURL('image/png'));
+    reportThumbnailCaptureReason(result === null ? 'png:encoding-null' : 'png:success', reasonSink);
+    return result;
   } catch {
+    reportThumbnailCaptureReason('png:exception', reasonSink);
     return null;
   }
 }

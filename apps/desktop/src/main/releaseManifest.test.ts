@@ -11,7 +11,7 @@ import { CAPTURE_REGISTRY_PATH, PUBLICATION_LIMITS, createPublicationManifest, m
   from '../../../../scripts/release/publicationManifest.mjs';
 import type { PublicationManifestInput } from '../../../../scripts/release/publicationManifest.mjs';
 import { PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES } from '../../../../scripts/release/releaseReadiness.mjs';
-import { assembleSbomDocument } from '../../../../scripts/release/sbom.mjs';
+import { assembleSbomDocument, electronComponentFromPackage } from '../../../../scripts/release/sbom.mjs';
 import type { SbomComponentInput } from '../../../../scripts/release/sbom.mjs';
 import { bytes, files, fixture, hash, inputs, json } from './distributionTestFixture.js';
 import { sourceFileHash } from '../../../../scripts/release/desktopFileInventory.mjs';
@@ -240,10 +240,18 @@ interface PublicationOptions {
   readonly sbom?: (components: SbomComponentInput[]) => SbomComponentInput[];
   readonly sbomVersion?: string;
   readonly sbomCommit?: string;
+  /** Bytes of the runtime notice inside both desktop renderers; null leaves it out. Default: the Web notice bytes. */
+  readonly desktopNotice?: Uint8Array | null;
 }
-function runtimeComponents(): SbomComponentInput[] {
+const electronLicense = bytes('Copyright (c) Electron contributors\n\nPermission is hereby granted, free of charge, to any person obtaining\n'
+  + 'a copy of this software and associated documentation files (the\n"Software"), to deal in the Software without restriction.\n\n'
+  + 'The above copyright notice and this permission notice shall be\nincluded in all copies or substantial portions of the Software.\n\n'
+  + 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,\nEXPRESS OR IMPLIED.\n');
+/** electronVersion: the value the fixture's desktop candidates actually recorded in desktop-package.json. */
+function runtimeComponents(electronVersion: string): SbomComponentInput[] {
   const mit = [{ license: { id: 'MIT' } }];
   return [
+    electronComponentFromPackage({ name: 'electron', version: electronVersion, license: 'MIT' }, electronLicense),
     { type: 'library', name: 'opencascade.js', version: '2.0.0-beta.b5ff984', licenses: [{ license: { id: 'LGPL-2.1-only' } }],
       properties: [{ name: 'pointercad:distributedFile', value: noticePath + '|' + hash(noticeBytes) }] },
     { type: 'library', name: 'Pyodide 314.0.6', licenses: [{ license: { id: 'MPL-2.0' } }] },
@@ -267,9 +275,13 @@ async function publicationFixture(options: PublicationOptions = {}): Promise<Pub
     ['renderer/assets/opencascade.full-example.wasm', options.desktopOcct ?? occtWasm],
     ['renderer/exact-math/runtime/pyodide.asm.wasm', pyodideWasm], ['renderer/assets/quickjs-pcad-example.wasm', quickjsWasm],
   ]);
+  // The desktop renderer ships the same notices as the Web edition (same Vite notice plugins).
+  if (options.desktopNotice !== null) desktop.set('renderer/' + noticePath, options.desktopNotice ?? noticeBytes);
   const release = releaseFixture(sourceCommit, { sourceCommit, dirtySources: false }, { web, desktop });
   const releaseManifestBytes = bytes(JSON.stringify(await createReleaseManifest(release), null, 2) + '\n');
-  const components = options.sbom === undefined ? runtimeComponents() : options.sbom(runtimeComponents());
+  const packaged = JSON.parse(new TextDecoder().decode(release.candidates[0].packageManifestBytes)) as { electronVersion: string };
+  const runtime = runtimeComponents(packaged.electronVersion);
+  const components = options.sbom === undefined ? runtime : options.sbom(runtime);
   const sbom = assembleSbomDocument({ components }, { rootPackageVersion: options.sbomVersion ?? version,
     sourceCommit: options.sbomCommit ?? sourceCommit, generatedAt: '2026-09-27T00:00:00.000Z' });
   return { release, releaseManifestBytes, sbomBytes: json(sbom),
@@ -344,6 +356,33 @@ describe('公開manifest(publication)は公開一覧・SBOM・撮影の登録簿
   it('SBOMから計算部の版を読めないと拒否する', async () => {
     const input = await publicationFixture({ sbom: components => components.filter(component => !component.name.startsWith('mpmath')) });
     await expect(createPublicationManifest(input)).rejects.toThrow('Missing SBOM runtime version: mpmath');
+  });
+  it('SBOMのElectronの版が、desktop候補が実際に記録したelectronVersionと違うと拒否する', async () => {
+    const input = await publicationFixture({ sbom: components => components.map(component =>
+      component.name === 'electron' ? { ...component, version: mismatchedVersion } : component) });
+    await expect(createPublicationManifest(input)).rejects.toThrow('SBOM Electron version differs from the win32 desktop candidate');
+  });
+  it('SBOMにElectronの部品が無いと拒否する', async () => {
+    const input = await publicationFixture({ sbom: components => components.filter(component => component.name !== 'electron') });
+    await expect(createPublicationManifest(input)).rejects.toThrow('Missing SBOM Electron component');
+  });
+  it('SBOMのElectronに導入済みpackageの許諾原文(LICENSE)の記録が無いと拒否する', async () => {
+    const input = await publicationFixture({ sbom: components => components.map(component => component.name === 'electron'
+      ? { ...component, properties: component.properties?.filter(entry => entry.name !== 'pointercad:installedPackageLicense') } : component) });
+    await expect(createPublicationManifest(input)).rejects.toThrow('SBOM Electron license file record missing: electron/LICENSE');
+  });
+  it('SBOMのElectronに実行ファイル横の原文(LICENSES.chromium.html)の記録が無いと拒否する', async () => {
+    const input = await publicationFixture({ sbom: components => components.map(component => component.name === 'electron'
+      ? { ...component, properties: component.properties?.filter(entry => entry.value !== 'LICENSES.chromium.html') } : component) });
+    await expect(createPublicationManifest(input)).rejects.toThrow('SBOM Electron executable notice record missing: LICENSES.chromium.html');
+  });
+  it('SBOMが記録した原文がdesktop候補の同梱一覧(renderer)に無いと拒否する', async () => {
+    const input = await publicationFixture({ desktopNotice: null });
+    await expect(createPublicationManifest(input)).rejects.toThrow('Desktop package (win32) is missing SBOM files: dist/renderer/' + noticePath);
+  });
+  it('desktop候補の同梱一覧(renderer)の原文がSBOMの記録と違うと拒否する', async () => {
+    const input = await publicationFixture({ desktopNotice: bytes('another license text') });
+    await expect(createPublicationManifest(input)).rejects.toThrow('Desktop package (win32) file hash differs from SBOM: dist/renderer/' + noticePath);
   });
   it.each([
     ['occt/manifest.json', 'Missing Web kernel asset: occt/manifest.json'],

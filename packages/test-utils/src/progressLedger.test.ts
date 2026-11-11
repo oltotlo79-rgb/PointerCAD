@@ -50,7 +50,8 @@ describe('プロジェクト進捗台帳の重複防止(rules/06 10.23)', () => 
     if (ledger === null) throw new Error('進捗台帳の根はオブジェクトである必要があります。');
 
     // ADD-1〜28: 交点接続と、大学数学/関数作図27件。将来見積115件は除外しない。
-    expect(requiredNumber(ledger, 'totalTasks')).toBe(580);
+    // 598 = 要件1.16時点の580 + 後から利用者が依頼したEX-01〜18の18件(phase EX)。
+    expect(requiredNumber(ledger, 'totalTasks')).toBe(598);
     expect(requiredNumber(ledger, 'futureEstimateTasks')).toBe(115);
     const baseline = requiredNumber(ledger, 'completedBeforeTrackedPhases');
     const reported = requiredNumber(ledger, 'reportedCompleted');
@@ -81,5 +82,7 @@ describe('プロジェクト進捗台帳の重複防止(rules/06 10.23)', () => 
     expect(duplicateIds(allCompleted)).toEqual([]);
     expect(baseline + trackedCompleted).toBe(reported);
     expect(reported).toBeLessThanOrEqual(requiredNumber(ledger, 'totalTasks'));
+    // 総数は、追跡前の完了数と全phaseの予定idの合計に一致する(予定を足して総数を直し忘れない)。
+    expect(baseline + allPlanned.length).toBe(requiredNumber(ledger, 'totalTasks'));
   });
 });

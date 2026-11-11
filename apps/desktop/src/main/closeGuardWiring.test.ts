@@ -110,7 +110,7 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
 
   /**
    * `playwright._electron.launch(` を直接呼ぶ所を全て洗い、それぞれが未保存の確認(R03)の窓へ必ず答える
-   * ことを確かめる(w84a: 確認を省く印 CLOSE_GUARD_TEST_BYPASS_ENV は launchDesktop の外へ効かないため、
+   * ことを確かめる(終了確認の配線点検: 確認を省く印 CLOSE_GUARD_TEST_BYPASS_ENV は launchDesktop の外へ効かないため、
    * launchDesktop を経由しない起動は自分で確認へ答えないと配布物の起動の検査が窓で止まる)。
    * 新しく直接呼ぶ所が増えても、launchDesktop の利用も終了の確認への答え方も持たなければここで落ちる。
    */
@@ -127,7 +127,7 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
     for (const caller of callers) {
       const source = read(caller);
       const usesLaunchDesktop = /\blaunchDesktop\s*\(/u.test(source);
-      // 終了の確認への答え方: dialog.showMessageBox を上書きする補助(w84a の answerCloseConfirmWithDiscard
+      // 終了の確認への答え方: dialog.showMessageBox を上書きする補助(answerCloseConfirmWithDiscard
       // と同じ形)を定義し、定義した名前を定義以外の場所でも呼んでいる(定義だけで未使用なら答えていない)。
       const assignAt = source.indexOf('dialog.showMessageBox = ');
       const helperName = assignAt === -1 ? undefined

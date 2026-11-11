@@ -67,16 +67,18 @@ function keysOf(set: VariableSet): string[] {
 }
 
 describe('拘束の型(FR-313、P4b タスク4)', () => {
-  it('種類は 14 で、寸法 4 種と幾何 9 種に「固定」を足したもの', () => {
-    expect(SKETCH_CONSTRAINT_KINDS).toHaveLength(14);
-    // 寸法拘束 4 種(FR-313 の注記)。
+  it('種類は 18 で、寸法 6 種と幾何 11 種に「固定」を足したもの', () => {
+    expect(SKETCH_CONSTRAINT_KINDS).toHaveLength(18);
+    // 寸法拘束 6 種(従来の4種と符号付きの横距離・縦距離)。
     expect(SKETCH_CONSTRAINT_KINDS).toEqual(
-      expect.arrayContaining(['distance', 'angle', 'radius', 'diameter']),
+      expect.arrayContaining(['horizontalDistance', 'verticalDistance', 'distance', 'angle', 'radius', 'diameter']),
     );
-    // 幾何拘束 9 種。
+    // 幾何拘束 11 種。
     expect(SKETCH_CONSTRAINT_KINDS).toEqual(
       expect.arrayContaining([
         'coincident',
+        'midpoint',
+        'pointOnCurve',
         'horizontal',
         'vertical',
         'parallel',
@@ -98,6 +100,8 @@ describe('拘束の型(FR-313、P4b タスク4)', () => {
   it('拘束ごとの式の数は §2.2 の表のとおり(固定だけ 0 本)', () => {
     expect(CONSTRAINT_EQUATION_COUNTS).toEqual({
       coincident: 2,
+      midpoint: 2,
+      pointOnCurve: 1,
       horizontal: 1,
       vertical: 1,
       parallel: 1,
@@ -108,6 +112,8 @@ describe('拘束の型(FR-313、P4b タスク4)', () => {
       symmetric: 2,
       // 固定は式を足さず変数を 2 つ減らす。ここで 2 本と数えると自由度を二重に引く。
       fix: 0,
+      horizontalDistance: 1,
+      verticalDistance: 1,
       distance: 1,
       angle: 1,
       radius: 1,
@@ -655,17 +661,17 @@ describe('初期値は作図面の上の (u, v)(worldToPlane)', () => {
 });
 
 describe('変数の数え上げの上限(§2.2)', () => {
-  it('上限は 400(点 200 個ぶん)', () => {
-    expect(MAX_CONSTRAINT_VARIABLES).toBe(400);
+  it('上限は 2000(点 1000 個ぶん)', () => {
+    expect(MAX_CONSTRAINT_VARIABLES).toBe(2000);
   });
 
-  it('点 201 個は変数 402 個(上限を超えても切り捨てずに数える。判定はタスク7)', () => {
+  it('点 1001 個は変数 2002 個(上限を超えても切り捨てずに数える。判定はタスク7)', () => {
     const features: SketchFeature[] = [];
-    for (let n = 0; n < 201; n += 1) {
+    for (let n = 0; n < 1001; n += 1) {
       features.push(pointOf(`point-${n}`, absoluteCoordinate(n, 0, 0)));
     }
     const set = variablesOf(documentOf(features));
-    expect(set.variables).toHaveLength(402);
+    expect(set.variables).toHaveLength(2002);
     expect(set.variables.length).toBeGreaterThan(MAX_CONSTRAINT_VARIABLES);
   });
 });
@@ -878,5 +884,19 @@ describe('自由度の数え方(FR-313「足りない拘束の数を示し」)',
       excess: 1,
       dangling: [],
     });
+  });
+});
+
+
+describe('1000-point public variable boundary', () => {
+  it('keeps all 2000 coordinates in history/u/v order without truncation', () => {
+    const document = documentOf(Array.from({ length: 1000 }, (_, i) =>
+      pointOf(`capacity-${i}`, absoluteCoordinate(i, -i - 1, 0))));
+    const first = variablesOf(document);
+    expect(first.variables).toHaveLength(2000);
+    expect(first.initial).toEqual(Array.from({ length: 1000 }, (_, i) => [i, -i - 1]).flat());
+    expect(keysOf(first)).toEqual(Array.from({ length: 1000 }, (_, i) =>
+      [`capacity-${i}.u`, `capacity-${i}.v`]).flat());
+    expect(keysOf(variablesOf(document))).toEqual(keysOf(first));
   });
 });

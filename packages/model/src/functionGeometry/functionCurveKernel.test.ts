@@ -7,9 +7,9 @@ import {
 
 
 import { makeFunctionCurve, createAllocations, isValidShape, type Vec3Tuple, type FunctionClipBox } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { FunctionPlotBounds } from './functionPlotBounds.js';
-import { sampleExplicitFunctionCurve, type ExplicitFunctionCurveFormula } from './sampleExplicitFunctionCurve.js';
+import { sampleExplicitFunctionCurve, type ExplicitFunctionCurveFormula } from './sampleExplicitFunctionCurve.testSupport.js';
 import type { ResolvedFunctionRanges } from './resolveFunctionRanges.js';
 
 let backend: MathExecutionBackend, oc: Awaited<ReturnType<typeof loadOcctForNode>>;

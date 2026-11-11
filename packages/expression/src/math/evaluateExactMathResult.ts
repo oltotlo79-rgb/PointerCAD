@@ -6,7 +6,7 @@ import { exactMathBoolean } from './pruneMathPiecewise.js';
 import { type StoredMathContext } from './decodeStoredMath.js';
 import { MathInputProblem, type MathEvaluation, type MathNode } from './mathInputContract.js';
 
-export interface ExactMathEvaluationContext extends PreparedScalarMathContext {
+interface ExactMathEvaluationContext extends PreparedScalarMathContext {
   readonly references: Pick<StoredMathContext, 'coefficientIds' | 'declaredIds'>;
   readonly resolve: MathCalculationContext['resolve'];
 }

@@ -1,13 +1,19 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { sourceFileHash } from '../../../../scripts/release/desktopFileInventory.mjs';
-import { captureWebBuildSources } from '../../../../scripts/vite/webBuildSources.mjs';
+import { listWebBuildSourceNames, selectBuildSourceNames } from '../../../../scripts/vite/webBuildSources.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+function workspace(): string {
+  return execFileSync('python', ['-B', '-X', 'utf8', join(root, 'scripts/lib/task_workspace.py'), 'font-source-boundary'],
+    { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+}
 
 interface FontRecord {
   readonly name: string;
@@ -192,8 +198,8 @@ describe('説明書だけで使う字体(Noto Sans・Noto Sans Math)の版と許
     expect(css).toContain('code, pre { font-family: "PointerCAD Manual", "PointerCAD Manual Latin", "PointerCAD Manual Math", monospace; }');
   });
 
-  it('アプリの入力(撮影の版の識別子の元)に入らない場所に置き、アプリの字体の置き場所へ写していない', async () => {
-    const inputs = Object.keys(await captureWebBuildSources(root));
+  it('アプリの入力(撮影の版の識別子の元)に入らない場所に置き、アプリの字体の置き場所へ写していない', () => {
+    const inputs = listWebBuildSourceNames(root);
     expect(inputs.length).toBeGreaterThan(0);
     expect(inputs.filter((path) => path.startsWith('scripts/manual/'))).toEqual([]);
     for (const font of notices.fonts) {
@@ -201,4 +207,25 @@ describe('説明書だけで使う字体(Noto Sans・Noto Sans Math)の版と許
       expect(existsSync(join(root, 'apps/desktop/resources/fonts', font.file))).toBe(false);
     }
   });
+});
+
+it('配布入力の実選別が小さい実ディレクトリの包含・除外・削除と重複を区別する', () => {
+  const folder = workspace();
+  console.info('font-source-boundary workspace:', folder);
+  const files = ['apps/web/src/main.tsx', 'apps/desktop/src/main.ts', 'packages/ui/src/app.ts',
+    'scripts/vite/build.mjs', 'scripts/release/pack.mjs', 'scripts/lib/helper.mjs', 'vendor/data.bin',
+    'docs/standards/licenses/OFL.txt', 'scripts/manual/fonts/font.otf', 'scripts/manual/fonts/OFL.txt',
+    'scripts/manualOther/font.otf', 'apps/webx/src/not-app.ts', 'docs/report.md', 'package.json'];
+  for (const name of files) {
+    const file = join(folder, name); mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, name);
+  }
+  const names = readdirSync(folder, { encoding: 'utf8', recursive: true })
+    .filter((name) => statSync(join(folder, name)).isFile()).map((name) => name.replaceAll('\\', '/'));
+  const web = selectBuildSourceNames([...names, 'apps/web/src/main.tsx'], new Set(['packages/ui/src/app.ts']), false);
+  expect(web).toEqual(['apps/web/src/main.tsx', 'docs/standards/licenses/OFL.txt', 'package.json',
+    'scripts/lib/helper.mjs', 'scripts/release/pack.mjs', 'scripts/vite/build.mjs', 'vendor/data.bin']);
+  expect(selectBuildSourceNames(names, new Set(), true)).toEqual([
+    'apps/desktop/src/main.ts', 'docs/standards/licenses/OFL.txt', 'package.json', 'packages/ui/src/app.ts',
+    'scripts/lib/helper.mjs', 'scripts/release/pack.mjs', 'scripts/vite/build.mjs', 'vendor/data.bin',
+  ]);
 });

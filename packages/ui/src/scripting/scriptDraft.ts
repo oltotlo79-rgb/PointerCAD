@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { createScriptFile, type ScriptFile, type ScriptIcon } from '@pointercad/model/scripting';
 
 export interface ScriptDraft {
@@ -10,7 +11,7 @@ export function draftFromScript(file: ScriptFile): ScriptDraft {
     seed: String(file.seed), time: new Date(file.timeMs).toISOString() };
 }
 export function newScriptDraft(): ScriptDraft {
-  return { scriptId: crypto.randomUUID(), name: '', icon: 'code', source: '', modules: [], seed: '1', time: new Date().toISOString() };
+  return { scriptId: createDocumentElementId(), name: '', icon: 'code', source: '', modules: [], seed: '1', time: new Date().toISOString() };
 }
 export function fileFromDraft(draft: ScriptDraft) {
   const parsed = Date.parse(draft.time);

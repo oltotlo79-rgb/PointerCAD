@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 /** MC-31c: a component/tensor-element selection evaluates every listed value, not only the selected
  * one, so it cannot silently return a value next to one that numeric evaluation proves undefined. */
 import { describe, expect, it } from 'vitest';
@@ -8,8 +9,7 @@ import type { MathWorkRequest } from './mathWorkRequest.js';
 
 const backend = createMathBackend();
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'unselected-element-domain', documentVersion: 1, editorId: 'component', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'unselected-element-domain', documentVersion: 1, editorId: 'component', inputRevision: 1 } });
 }
 function evaluate(source: string) {
   return executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request: request(source) }, backend).evaluation;

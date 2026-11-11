@@ -30,6 +30,8 @@
  * (タスク24・26)の仕事(計画書 §0.a-0.33)。
  */
 
+import { ellipseParameterToAzimuth } from '@pointercad/model';
+
 import { DXF_UNSUPPORTED_FORMAT_MESSAGE } from './dxfTags.js';
 
 /** 作図面の上の 2 次元の点(mm)。 */
@@ -303,34 +305,6 @@ function toRadians(degrees: number): number {
 }
 
 /**
- * ELLIPSE の媒介変数を、長軸から測った方位角(ラジアン)へ直す。
- *
- * ## 導出
- *
- * 楕円上の点は媒介変数 `t` で `(a·cos t, b·sin t)`(`a` = 長半径、`b` = 短半径)と書ける。
- * この点を中心から見た**方位角**は `atan2(b·sin t, a·cos t)` で、`a ≠ b` のときは
- * `t` と一致しない(円のときだけ一致する)。`model` の
- * `resolveSketch.ts` の `azimuthToEllipseParameter`(方位角 → 媒介変数)の逆にあたる。
- *
- * `t` が `2π` を超えていても掃過量を失わないよう、**回った周回数を先に外し**、
- * 畳んだ `[0, 2π)` の中で方位角を求めてから周回数を戻す。こうすると
- * `t = 2π` がちょうど `2π` に戻り、全周の楕円で「終了角 − 開始角 = 360 度」が
- * 誤差なく成り立つ(`SketchEllipseFeature` の全周の判定に効く)。
- */
-function ellipseParameterToAzimuth(
-  parameter: number,
-  majorRadius: number,
-  minorRadius: number,
-): number {
-  const fullTurn = 2 * Math.PI;
-  const turns = Math.floor(parameter / fullTurn);
-  const folded = parameter - turns * fullTurn;
-  const base = Math.atan2(minorRadius * Math.sin(folded), majorRadius * Math.cos(folded));
-  const positive = base < 0 ? base + fullTurn : base;
-  return positive + turns * fullTurn;
-}
-
-/**
  * ELLIPSE(グループ 10/20 = 中心、11/21 = 中心からの相対の長軸の端、40 = 短軸比、
  * 41/42 = 開始・終了の媒介変数(ラジアン))から楕円(弧)を起こす。
  *
@@ -339,7 +313,8 @@ function ellipseParameterToAzimuth(
  * - **長半径** `a = |(11, 21)|`(中心から長軸の端までの距離)。
  * - **短半径** `b = a × 40`(グループ 40 は「短軸半径 ÷ 長軸半径」の比)。
  * - **傾き** `= atan2(21, 11)`(第1軸から長軸まで)。
- * - **開始角・終了角**は媒介変数を方位角へ直したもの(`ellipseParameterToAzimuth`)。
+ * - **開始角・終了角**は媒介変数を方位角へ直したもの(model の `ellipseParameterToAzimuth`。
+ *   DXF の書き出し(`sketchToDxf.ts`)と同じ 1 か所の換算を呼ぶ)。
  *
  * @param center グループ 10/20。
  * @param majorEnd グループ 11/21。**中心からの相対**であることに注意。

@@ -205,4 +205,45 @@ describe('図面寸法の確定・選択・移動(P8-28)', () => {
     expect(dimensions().map((dimension) => dimension.id)).toEqual(['dim-1']);
     state().undo(); expect(dimensions()).toHaveLength(2);
   });
+  it.each(['table', 'balloon', 'mixed'] as const)('表・風船の共通削除（%s）は1回のUndo/RedoでIDと参照を保つ', (selection) => {
+    pickDrawingTarget(edgeTarget()); commitDrawingDimension();
+    const current = state().drawing;
+    if (current === null) throw new Error('drawing');
+    const document = { ...current,
+      tables: [{ id: 'table-1', kind: 'revision' as const, position: [30, 200] as const,
+        columns: ['revision', 'date', 'description', 'approvedBy'], rows: [['A', '', 'change', '']],
+        options: {}, layerId: current.layers[0].id }],
+      balloons: [{ id: 'balloon-1', itemNumber: 1, componentIds: ['component-1'],
+        position: [180, 150] as const, leader: [[100, 100] as const], layerId: current.layers[0].id }],
+    };
+    state().openDrawing(document);
+    state().selectDrawingIds(selection === 'table' ? ['table-1'] : selection === 'balloon' ? ['balloon-1']
+      : ['dim-1', 'table-1', 'balloon-1']);
+    const version = state().documentVersion;
+    let documentUpdates = 0;
+    const unsubscribe = useAppStore.subscribe((next, previous) => { if (next.drawing !== previous.drawing) documentUpdates++; });
+    expect(deleteSelectedDrawingElements()).toBe(true);
+    unsubscribe(); expect(documentUpdates).toBe(1);
+    const deleted = state().drawing;
+    expect(deleted?.tables).toHaveLength(selection === 'balloon' ? 1 : 0);
+    expect(deleted?.balloons).toHaveLength(selection === 'table' ? 1 : 0);
+    expect(deleted?.dimensions).toHaveLength(selection === 'mixed' ? 0 : 1);
+    expect(deleted?.views).toBe(document.views); expect(deleted?.layers).toBe(document.layers);
+    expect(state().documentVersion).toBe(version + 1);
+    state().undo(); expect(state().drawing).toBe(document); expect(state().canUndo).toBe(false);
+    state().redo(); expect(state().drawing).toBe(deleted);
+  });
+  it('空選択・図とレイヤーだけ・計算中・閉じた図面では共通削除が文書を変えない', () => {
+    pickDrawingTarget(edgeTarget()); commitDrawingDimension();
+    const document = state().drawing, version = state().documentVersion;
+    state().selectDrawingIds([]); expect(deleteSelectedDrawingElements()).toBe(false);
+    expect(state().drawingMessage).toBeNull();
+    state().selectDrawingIds([front.id, 'layer-1']); expect(deleteSelectedDrawingElements()).toBe(false);
+    expect(state().drawingMessage).toBe('投影図とレイヤーは Delete・Backspace では削除しません。レイヤーはレイヤーの設定の「レイヤーを削除」から消します。');
+    state().selectDrawingIds(['dim-1']); useAppStore.setState({ drawingBusy: true });
+    expect(deleteSelectedDrawingElements()).toBe(false);
+    expect(state().drawing).toBe(document); expect(state().documentVersion).toBe(version);
+    useAppStore.setState({ drawing: null, drawingBusy: false });
+    expect(deleteSelectedDrawingElements()).toBe(false); expect(state().documentVersion).toBe(version);
+  });
 });

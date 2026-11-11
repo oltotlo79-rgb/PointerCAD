@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createBrowserMathWorker, MATH_WORKER_STARTUP_TIMEOUT_MS } from './browserMathWorker.js';
+import { createBrowserMathWorker } from './browserMathWorker.js';
 import { createMathWorkerGroup } from './mathWorkerGroup.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const MATH_WORKER_STARTUP_TIMEOUT_MS = 15_000;
 
 class WorkerEvents extends EventTarget {
   ended = 0;

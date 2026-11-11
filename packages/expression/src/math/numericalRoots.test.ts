@@ -1,9 +1,11 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { resolveNumericalRoots } from './numericalRoots.js';
+import { evaluatePreparedScalarMath } from './evaluatePreparedScalarMath.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { createFunctionMathSource } from './functionMathSource.js';
@@ -16,8 +18,7 @@ import { exactDouble } from './exactDoubleInterval.js';
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'numerical-roots', documentVersion: 2, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'numerical-roots', documentVersion: 2, editorId: 'X', inputRevision: 1 } });
 }
 function calculate(source: string, changes: Partial<MathWorkRequest> = {}) {
   const input = { ...request(source), ...changes }, raw = executeMathWorkRequest(createMathWorkEnvelope(1, input), backend);
@@ -133,10 +134,20 @@ describe('数値で解を探す式・範囲・精度と判定できない領域�
     const sample = createScalarSampler(tape);
     expect(sample([0])).toBe(2); expect(sample([3])).toBe(5);
   });
+  it('nested root evaluation uses the explicit evaluator with the same context', () => {
+    const source = calculate('numericroots(x^2-2,x,-2,2,1e-6)').raw.expression;
+    if (source === null) throw new Error('Missing source');
+    const context = { backend, angleUnit: 'radian' as const, shouldStop: () => undefined };
+    const evaluate = vi.fn(evaluatePreparedScalarMath);
+    const result = resolveNumericalRoots(source, source, context, evaluate);
+    expect(result.evaluation).toMatchObject({ status: 'value', kind: 'root-intervals' });
+    expect(evaluate).toHaveBeenCalled();
+    for (const [, , received] of evaluate.mock.calls) expect(received).toBe(context);
+  });
   it.each(['cancelled', 'deadline'] as const)('%sでは途中の根を返さない', reason => {
     const source = calculate('numericroots(x^2-2,x,-2,2,1e-6)').raw.expression;
     if (source === null) throw new Error('原式がありません');
-    const result = resolveNumericalRoots(source, source, { backend, angleUnit: 'radian', shouldStop: () => reason });
+    const result = resolveNumericalRoots(source, source, { backend, angleUnit: 'radian', shouldStop: () => reason }, evaluatePreparedScalarMath);
     expect(result).toEqual({ evaluation: { status: 'stopped', reason } });
   });
   it('追加の計算部を起動せずに区間を確認する', async () => {

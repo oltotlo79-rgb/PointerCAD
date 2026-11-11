@@ -3,7 +3,7 @@ import { createArrowTriangle, shouldUseOutwardArrows, type ArrowTriangle } from 
 import { DIMENSION_EXTENSION_GAP_MM, DIMENSION_EXTENSION_OVER_MM } from '../style/jisStyle.js';
 import type { DimensionLineSegment } from './geometry.js';
 
-export interface ArcLengthDimensionInput {
+interface ArcLengthDimensionInput {
   readonly center: Point2;
   /** 円の始点方向と接線方向の半径を紙面へ投影した2本。斜めの図では楕円になる。 */
   readonly axes: readonly [Point2, Point2];

@@ -1,3 +1,5 @@
+import { withBeamAnalysisInputs } from '../analysis/beamInputs.js';
+import { beamMetadataInputs } from '../analysis/beamMetadata.testSupport.js';
 import { describe, expect, it } from 'vitest';
 import { expressionValueFromNumber, evaluateExpression } from '@pointercad/expression';
 import { createEmptyPartDocument, createPrimitiveFeature } from '../part/createPartDocument.js';
@@ -94,5 +96,36 @@ describe('二文書の定義は種類・所属と原式を保って比較する'
   });
   it('同じ種類・所属のIDが重複している入力を黙って上書きしない', () => {
     expect(() => compareDocuments(part(['same', 'same']), part(), options)).toThrow('識別子が重複');
+  });
+  it('slot issuance alone is not an authored definition change, but a changed solid remains visible', () => {
+    const before = part(), after = { ...before, patternSlotHighWater: { 'pattern-1': 7 } };
+    expect(compareDocuments(before, after, options).changes).toEqual([]);
+    expect(solids(before, { ...after, solids: [box('box-1', '30')] })).toHaveLength(1);
+  });
+});
+
+describe('beam analysis input metadata is retained by document comparison', () => {
+  it('reports attachment addition, a signed load edit and removal without mutating either document', () => {
+    const before = part();
+    const added = withBeamAnalysisInputs(before, beamMetadataInputs(before.id, 10));
+    const edited = withBeamAnalysisInputs(added, beamMetadataInputs(before.id, -20));
+    const originals = [before, added, edited].map(value => JSON.stringify(value));
+    const addition = compareDocuments(before, added, options);
+    expect(addition.changes).toHaveLength(1);
+    expect(addition.changes[0]).toMatchObject({ group: 'document', status: 'changed' });
+    expect(addition.changes[0].differences[0]).toMatchObject({ path: ['beamAnalysisInputs'], before: 'undefined' });
+    expect(addition.changes[0].differences[0].after).toContain('pointercad-beam-inputs/1');
+    const update = compareDocuments(added, edited, options);
+    expect(update.changes).toHaveLength(1);
+    expect(update.changes[0].differences).toEqual([{
+      path: ['beamAnalysisInputs', 'analyses', '1', 'document', 'loads', '1', 'force', '1'],
+      kind: 'value', before: '10', after: '-20',
+    }]);
+    const removal = compareDocuments(edited, before, options);
+    expect(removal.changes).toHaveLength(1);
+    expect(removal.changes[0].differences[0]).toMatchObject({ path: ['beamAnalysisInputs'], after: 'undefined' });
+    expect(removal.changes[0].differences[0].before).toContain('pointercad-beam-inputs/1');
+    expect([addition, update, removal].every(value => value.geometryCompared === false)).toBe(true);
+    expect([before, added, edited].map(value => JSON.stringify(value))).toEqual(originals);
   });
 });

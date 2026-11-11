@@ -6,7 +6,7 @@ import { nextFloat, intervalAdd, intervalSubtract, intervalMultiply, intervalSqu
   type MathInterval, type IntervalValue } from './mathInterval.js';
 
 type Range=MathInterval|null;
-type Pair={value:MathInterval;first:MathInterval};
+interface Pair {value:MathInterval;first:MathInterval}
 const point=(x:number):MathInterval=>({lower:x,upper:x});
 const unpack=(x:IntervalValue):Range=>x.status==='range'?x.interval:null;
 const add=(a:Range,b:Range):Range=>a===null||b===null?null:unpack(intervalAdd(a,b));

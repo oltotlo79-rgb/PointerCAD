@@ -3,6 +3,7 @@
 import {
   type Checked,
   checkRecord,
+  fieldProblem,
   joinPath,
   readLiteral,
   readNumber,
@@ -35,6 +36,7 @@ import {
   type SubShapeKind,
   type SubShapeRef,
 } from '@pointercad/model';
+import { readSubShapeOrigin, serializeSubShapeOrigin } from './subShapeOrigin.js';
 
 const REVOLVE_AXIS_KINDS: readonly RevolveAxis['kind'][] = ['world', 'line', 'reference'];
 
@@ -109,10 +111,14 @@ function serializeSubShapeFingerprint(fingerprint: SubShapeFingerprint): SubShap
 }
 
 export function serializeSubShapeRef(reference: SubShapeRef): SubShapeRef {
+  if (reference.origin !== undefined && reference.origin.shapeKind !== reference.fingerprint.kind) {
+    throw new RangeError('Subshape origin kind differs from its fingerprint');
+  }
   return {
     bodyFeatureId: reference.bodyFeatureId,
     index: reference.index,
     fingerprint: serializeSubShapeFingerprint(reference.fingerprint),
+    ...(reference.origin === undefined ? {} : { origin: serializeSubShapeOrigin(reference.origin) }),
   };
 }
 
@@ -378,12 +384,20 @@ export function readSubShapeRef(value: unknown, path: string): Checked<SubShapeR
   if (!fingerprint.ok) {
     return fingerprint;
   }
+  const origin = 'origin' in record.value
+    ? readSubShapeOrigin(record.value['origin'], joinPath(path, 'origin'))
+    : null;
+  if (origin !== null && !origin.ok) return origin;
+  if (origin !== null && origin.value.shapeKind !== fingerprint.value.kind) {
+    return fieldProblem(joinPath(path, 'origin.shapeKind'), 'type');
+  }
   return {
     ok: true,
     value: {
       bodyFeatureId: bodyFeatureId.value,
       index: index.value,
       fingerprint: fingerprint.value,
+      ...(origin === null ? {} : { origin: origin.value }),
     },
   };
 }

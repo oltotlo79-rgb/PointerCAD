@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { formatMathText } from './formatMathText.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';

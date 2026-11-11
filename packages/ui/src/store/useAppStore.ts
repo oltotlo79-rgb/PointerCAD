@@ -6,6 +6,18 @@
  * 分ける前と 1 文字も変わらない。
  */
 import { create } from 'zustand';
+import { registerPendingFieldContext } from '../sketch/numericMathValues.js';
+import { pendingFieldVariables } from '../shell/pendingFieldVariables.js';
+import { createBeamSlice } from './beamSlice.js';
+import { createSolidAnalysisSlice } from './solidAnalysisSlice.js';
+import { createSolidPlasticSlice } from './solidPlasticSlice.js';
+import { createSolidFiniteSlice } from './solidFiniteSlice.js';
+import { createShellAnalysisSlice } from './shellAnalysisSlice.js';
+import { createPlasticBarSlice } from './plasticBarSlice.js';
+import { createFatigueSlice } from './fatigueSlice.js';
+import { createFatigueStrainSlice } from './fatigueStrainSlice.js';
+import { createFatigueLocalCycleSlice } from './fatigueLocalCycleSlice.js';
+import { createAssemblyOccurrenceDriveSlice } from './assemblyOccurrenceDriveSlice.js';
 
 import type { AppState } from './appState.js';
 import { createInitialDocumentState } from './initialDocumentState.js';
@@ -44,6 +56,16 @@ export type { DrawingSlice } from './drawingSlice.js';
 
 /** Shared with the ownership checks: a new slice cannot disappear from their registry. */
 export const STORE_SLICE_CREATORS = {
+  solidAnalysisSlice: createSolidAnalysisSlice,
+  solidPlasticSlice: createSolidPlasticSlice,
+  solidFiniteSlice: createSolidFiniteSlice,
+  shellAnalysisSlice: createShellAnalysisSlice,
+  beamSlice: createBeamSlice,
+  plasticBarSlice: createPlasticBarSlice,
+  fatigueSlice: createFatigueSlice,
+  fatigueStrainSlice: createFatigueStrainSlice,
+  fatigueLocalCycleSlice: createFatigueLocalCycleSlice,
+  assemblyOccurrenceDriveSlice: createAssemblyOccurrenceDriveSlice,
   viewSlice: createViewSlice,
   canvasSlice: createCanvasSlice,
   exchangeSlice: createExchangeSlice,
@@ -65,6 +87,16 @@ export const STORE_SLICE_CREATORS = {
 
 export const useAppStore = create<AppState>()((...args) => ({
   ...createInitialDocumentState(),
+  ...STORE_SLICE_CREATORS.solidAnalysisSlice(...args),
+  ...STORE_SLICE_CREATORS.solidPlasticSlice(...args),
+  ...STORE_SLICE_CREATORS.solidFiniteSlice(...args),
+  ...STORE_SLICE_CREATORS.shellAnalysisSlice(...args),
+  ...STORE_SLICE_CREATORS.beamSlice(...args),
+  ...STORE_SLICE_CREATORS.plasticBarSlice(...args),
+  ...STORE_SLICE_CREATORS.fatigueSlice(...args),
+  ...STORE_SLICE_CREATORS.fatigueStrainSlice(...args),
+  ...STORE_SLICE_CREATORS.fatigueLocalCycleSlice(...args),
+  ...STORE_SLICE_CREATORS.assemblyOccurrenceDriveSlice(...args),
   ...STORE_SLICE_CREATORS.viewSlice(...args),
   ...STORE_SLICE_CREATORS.canvasSlice(...args),
   ...STORE_SLICE_CREATORS.exchangeSlice(...args),
@@ -83,3 +115,12 @@ export const useAppStore = create<AppState>()((...args) => ({
   ...STORE_SLICE_CREATORS.scriptSlice(...args),
   ...STORE_SLICE_CREATORS.functionPlotSlice(...args),
 }));
+
+// 評価の下層からストアを import すると設定の初期化と循環する。読む関数だけを登録し、
+// 状態は複製しない。呼出し時に現在のストアと計算待ちの集合を読む。
+registerPendingFieldContext(() => {
+  const state = useAppStore.getState();
+  return { document: state.document, variables: state.parameterAnalysis.variables,
+    pendingVariables: pendingFieldVariables(state) };
+});
+

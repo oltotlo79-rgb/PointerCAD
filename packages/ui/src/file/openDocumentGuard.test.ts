@@ -6,6 +6,7 @@
  * 足す。待たせない限り実物と同じに動く。
  */
 
+import { encodeSaveDocument } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addComponent, createAssemblyDocument, createComponentFor, createDrawingDocument, createEmptyPartDocument,
@@ -17,6 +18,8 @@ import { useAppStore } from '../store/useAppStore.js';
 import { activeHasUnsavedChanges, openAssembly } from './assemblyFile.js';
 import type { FileGateway, PickedFile } from './fileGateway.js';
 import { openPart, savePart, type PartFileDeps } from './partFile.js';
+import type * as ImportedIoTypes from '@pointercad/io';
+import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
 
 const readGate = vi.hoisted(() => ({
   hold: null as Promise<void> | null,
@@ -24,7 +27,7 @@ const readGate = vi.hoisted(() => ({
 }));
 
 vi.mock('@pointercad/io', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@pointercad/io')>();
+  const actual = await importOriginal<typeof ImportedIoTypes>();
   async function gate(): Promise<void> {
     readGate.entered += 1;
     if (readGate.hold !== null) await readGate.hold;
@@ -81,7 +84,8 @@ function gateway() {
 }
 
 function depsWith(confirmDiscard: PartFileDeps['confirmDiscard']): PartFileDeps {
-  return { captureThumbnail: () => null, confirmDiscard, recentFilesStorage: null };
+  // WorkerのないNodeでも、保存バイトは実IOで生成する。
+  return { captureThumbnail: () => null, confirmDiscard, recentFilesStorage: null, encodeSave: encodeSaveDocument };
 }
 
 /** 部品を 1 つ置いた組立を保存し、その組立を開いたままにする。 */
@@ -255,4 +259,13 @@ describe('保存の完了の知らせ(同じ型: 版の番号だけの照合)', 
     await saving;
     expect(useAppStore.getState().fileMessage).toBeNull();
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

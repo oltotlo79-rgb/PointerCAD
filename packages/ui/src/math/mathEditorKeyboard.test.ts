@@ -12,13 +12,16 @@
 import { createElement, isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { attachMathField, type MathFieldHostOptions, type StructuredMathField } from './mathFieldHost.js';
+import { attachMathField, type StructuredMathField } from './mathFieldHost.js';
 import { mathEditorLabels } from './mathEditorLabels.js';
 import type { MathEditorInput } from './mathEditorSession.js';
 import {
-  MathEditorSurface, type MathEditorSurfaceProps, type MathEditorViewController, type MathInsertGroup,
+  MathEditorSurface, type MathEditorViewController, type MathInsertGroup,
 } from './MathEditorSurface.js';
 import type { MathPaletteItem } from './mathPalette.js';
+
+type MathEditorSurfaceProps = Parameters<typeof MathEditorSurface>[0];
+type MathFieldHostOptions = Parameters<typeof attachMathField>[2];
 
 interface KeyModifiers {
   readonly ctrlKey?: boolean;

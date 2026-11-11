@@ -41,6 +41,9 @@ export async function mathTaylorFlow(page: Page, info: TestInfo, app?: ElectronA
   await expect(apply).toBeDisabled();
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
   await expect(dialog.locator('math-field')).toBeFocused();
+  // The switch converts, then re-evaluates after 120 ms: the result shrinks to one line and grows back, and the
+  // centred modal dialog moves the palette above it. Clicking before that ends can miss (CI run 40061868900).
+  await expectResult(result).toContainText('P4(x)');
   const palette = dialog.locator('summary').filter({ hasText: '記号と演算を探す' });
   await palette.click();
   await dialog.getByRole('searchbox', { name: '名前・記号で検索', exact: true }).fill('Taylor');

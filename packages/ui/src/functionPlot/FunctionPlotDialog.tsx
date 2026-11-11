@@ -21,6 +21,31 @@ type ValidatedPreview = { readonly draft: FunctionPlotDraft; readonly document: 
   { readonly kind: 'curve'; readonly feature: SketchFunctionCurveFeature; readonly curves: readonly ResolvedSpline[] }
   | { readonly kind: 'surface'; readonly feature: FunctionSurfaceFeature; readonly body: SolidBody });
 
+/** Wait for an already-running document recompute without taking or cancelling its mesh reservation. */
+function waitForPreviewRecompute(signal: AbortSignal, isCurrent: () => boolean): Promise<'ready' | 'failed' | 'cancelled'> | null {
+  const initial = useAppStore.getState();
+  if (!signal.aborted && isCurrent() && !initial.isComputing && initial.requestedGeneration === initial.completedGeneration) return null;
+  return new Promise(resolve => {
+    let settled = false;
+    let unsubscribe: () => void = () => undefined;
+    const finish = (status: 'ready' | 'failed' | 'cancelled'): void => {
+      if (settled) return;
+      settled = true; unsubscribe(); signal.removeEventListener('abort', onAbort); resolve(status);
+    };
+    const onAbort = (): void => { finish('cancelled'); };
+    const check = (): void => {
+      if (signal.aborted || !isCurrent()) { finish('cancelled'); return; }
+      const state = useAppStore.getState();
+      if (state.isComputing || state.requestedGeneration !== state.completedGeneration) return;
+      if (state.lastOutcome === 'failed' || state.lastOutcome === 'cancelled') { finish('failed'); return; }
+      finish('ready');
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    unsubscribe = useAppStore.subscribe(check);
+    check();
+  });
+}
+
 export function FunctionPlotDialog({ featureId, onClose }: {
   readonly featureId?: string; readonly onClose: () => void;
 }): React.JSX.Element {
@@ -63,6 +88,12 @@ export function FunctionPlotDialog({ featureId, onClose }: {
       // resolve instead of the whole document looking like a syntax error. The "計算中" busy state above
       // already covers this wait; a still-pending measurement surfaces as evaluateFunctionPlotDraft's own
       // one-message failure (`math geometry pending`) rather than a per-field parser error.
+      const pending = waitForPreviewRecompute(abort.signal, current);
+      if (pending !== null) {
+        const ready = await pending;
+        if (!current() || ready === 'cancelled') return;
+        if (ready === 'failed') { setIssues(new Map([['form', t('functionPlot.previewFailed')]])); return; }
+      }
       const geometry = await waitForMathEditorGeometry(prepared, abort.signal, current, () => undefined);
       if (!current()) return;
       const result = await evaluateFunctionPlotDraft(prepared, owner.documentVersion, draft, client, abort.signal, current, geometry);
@@ -155,7 +186,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
             const axis = event.target.value; if (axis === 'X' || axis === 'Y' || axis === 'Z') change({ ...draft, ...(surface ? { dependent: axis } : { independent: axis }) });
           }}>{FUNCTION_AXES.map(axis => <option key={axis}>{axis}</option>)}</select></label> : null}
           {/*
-            式の欄の名前は画面に見えている「Y =」そのもの(w91a)。見た目と読み上げ名が違うと、説明書も
+            式の欄の名前は画面に見えている「Y =」そのもの。見た目と読み上げ名が違うと、説明書も
             音声での操作も 1 つの名前で欄を指せない。何の式かは囲みの見出し「関数の式」が伝える。
           */}
           {activeFunctionOutputs(draft).map(axis => <div key={axis} className="pcad-function-equation"
@@ -206,8 +237,8 @@ export function FunctionPlotDialog({ featureId, onClose }: {
         <div className="pcad-function-actions">
           <button title={t('functionPlot.control.help')} type="button" onClick={() => useAppStore.getState().openHelpTopic(surface ? 'function-surface' : 'function-curve')}>{t(surface ? 'functionPlot.surfaceHelp' : 'functionPlot.help')}</button>
           <button title={t('functionPlot.control.cancelPlot')} type="button" onClick={close}>{t('math.cancel')}</button>
-          {busy ? <button title={t('functionPlot.control.stopPlot')} type="button" onClick={() => { running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
-            : <button title={t('functionPlot.control.previewPlot')} type="submit">{t('functionPlot.preview')}</button>}
+          {busy ? <button key="stop" title={t('functionPlot.control.stopPlot')} type="button" onClick={event => { event.preventDefault(); running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
+            : <button key="submit" title={t('functionPlot.control.previewPlot')} type="submit">{t('functionPlot.preview')}</button>}
           <button title={t('functionPlot.control.applyPlot')} type="button" disabled={busy || !displayed || preview === null || preview.draft !== draft} onClick={() => {
             if (!displayed || preview === null || preview.draft !== draft || !isCurrent()) return;
             useAppStore.getState().applyDocument(preview.document); close();

@@ -35,21 +35,21 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
   const spend = (): void => {
     if (++work > 4096) throw new MathInputProblem('budget', '微分後の式が複雑すぎます。式を分けてください。');
   };
-  const op = (operation: string, ...operands: MathNode[]): MathNode => {
+  const makeOperation = (operation: string, ...operands: MathNode[]): MathNode => {
     spend(); return { kind: 'operation', operation, operands };
   };
   const add = (...values: MathNode[]): MathNode => {
     const terms = values.filter(value => !literal(value, '0'));
-    return terms.length === 0 ? ZERO : terms.length === 1 ? terms[0] : op('add', ...terms);
+    return terms.length === 0 ? ZERO : terms.length === 1 ? terms[0] : makeOperation('add', ...terms);
   };
   const mul = (...values: MathNode[]): MathNode => {
     if (values.some(value => literal(value, '0'))) return ZERO;
     const terms = values.filter(value => !literal(value, '1'));
-    return terms.length === 0 ? ONE : terms.length === 1 ? terms[0] : op('multiply', ...terms);
+    return terms.length === 0 ? ONE : terms.length === 1 ? terms[0] : makeOperation('multiply', ...terms);
   };
-  const neg = (value: MathNode): MathNode => literal(value, '0') ? ZERO : op('negate', value);
-  const div = (a: MathNode, b: MathNode): MathNode => op('divide', a, b);
-  const square = (value: MathNode): MathNode => op('square', value);
+  const neg = (value: MathNode): MathNode => literal(value, '0') ? ZERO : makeOperation('negate', value);
+  const div = (a: MathNode, b: MathNode): MathNode => makeOperation('divide', a, b);
+  const square = (value: MathNode): MathNode => makeOperation('square', value);
   const angle = angleUnit === 'degree' ? div({ kind: 'constant', name: 'pi' }, { kind: 'number', decimal: '180' }) : ONE;
   function piecewise(node: Extract<MathNode, { kind: 'operation' }>, transform: (branch: MathNode) => MathNode,
     interior: boolean): MathNode {
@@ -67,11 +67,11 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
       // Use unsimplified zero products: invalid intermediates must survive, but
       // guards in unselected branches must never invalidate the chosen branch.
       obligations.push(condition, captured.length === 0 ? ZERO
-        : op('add', ZERO, ...captured.map(guard => op('multiply', ZERO, guard))));
+        : makeOperation('add', ZERO, ...captured.map(guard => makeOperation('multiply', ZERO, guard))));
     }
     const operation = interior || node.operation === 'which-derivative' ? 'which-derivative' : 'which';
-    if (guarded) guards.push(op(operation, ...obligations));
-    return op(operation, ...operands);
+    if (guarded) guards.push(makeOperation(operation, ...obligations));
+    return makeOperation(operation, ...operands);
   }
   function differentiate(expression: MathNode, variable: ScalarInput): MathNode {
     const memo = new Map<MathNode, MathNode>();
@@ -115,7 +115,7 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
       if(node.operation==='zetaderivative') {
         const order=node.operands.length===2?zetaDerivativeOrder(node.operands[0]):null;
         if(order===null)throw new MathInputProblem('budget','ゼータ関数の微分の次数を確定できません。');
-        const value=derivative(op(order===0?'zeta':`zeta-derivative:${String(order)}`,node.operands[1]));
+        const value=derivative(makeOperation(order===0?'zeta':`zeta-derivative:${String(order)}`,node.operands[1]));
         memo.set(node,value);return value;
       }
       const [a, b] = node.operands;
@@ -125,11 +125,11 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
       const zeta=zetaOrder(node.operation);
       if(zeta!==null) {
         if(zeta>=17)throw new MathInputProblem('budget','ゼータ関数の微分の次数が上限を越えました。');
-        value=mul(op(`zeta-derivative:${String(zeta+1)}`,a),da);
+        value=mul(makeOperation(`zeta-derivative:${String(zeta+1)}`,a),da);
       } else if(elliptic!==null) {
         value=add(...node.operands.map((operand,index)=>{
           const inner=derivative(operand);
-          return literal(inner,'0')?ZERO:mul(op(ellipticPartialOperation(elliptic,index),...node.operands),inner);
+          return literal(inner,'0')?ZERO:mul(makeOperation(ellipticPartialOperation(elliptic,index),...node.operands),inner);
         }));
       } else switch (node.operation) {
         case 'add': value = add(...node.operands.map(derivative)); break;
@@ -148,23 +148,23 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
             else if (n === d) value = da;
             else {
               const remaining = div({ kind: 'number', decimal: String(n-d) }, { kind: 'number', decimal: String(d) });
-              value = mul(b, op('power', a, remaining), da);
+              value = mul(b, makeOperation('power', a, remaining), da);
               // Noninteger powers with an even denominator lack a two-sided real
               // neighbourhood at zero, even when their right derivative is finite.
               if (d % 2n === 0n) guards.push(div(ONE, a));
             }
-          } else value = mul(node, add(mul(derivative(b), op('natural-log', a)), div(mul(b, da), a)));
+          } else value = mul(node, add(mul(derivative(b), makeOperation('natural-log', a)), div(mul(b, da), a)));
           break;
         }
-        case 'root': value = derivative(op('power', a, div(ONE, b))); break;
+        case 'root': value = derivative(makeOperation('power', a, div(ONE, b))); break;
         case 'exponential': value = mul(node, da); break;
-        case 'airyai': value = mul(op('airyaiprime', a), da); break;
-        case 'airybi': value = mul(op('airybiprime', a), da); break;
-        case 'airyaiprime': value = mul(mul(a, op('airyai', a)), da); break;
-        case 'airybiprime': value = mul(mul(a, op('airybi', a)), da); break;
+        case 'airyai': value = mul(makeOperation('airyaiprime', a), da); break;
+        case 'airybi': value = mul(makeOperation('airybiprime', a), da); break;
+        case 'airyaiprime': value = mul(mul(a, makeOperation('airyai', a)), da); break;
+        case 'airybiprime': value = mul(mul(a, makeOperation('airybi', a)), da); break;
         case 'lambertw': {
           realLambertBranch(a);
-          value = mul(div(op('exponential', neg(node)), add(ONE, node)), derivative(b));
+          value = mul(div(makeOperation('exponential', neg(node)), add(ONE, node)), derivative(b));
           break;
         }
         case 'besselj': case 'bessely': case 'besseli': case 'besselk': {
@@ -172,54 +172,54 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
           if (order === null || order.denominator !== 1n || order.numerator <= -128n || order.numerator >= 128n) {
             throw new MathInputProblem('unsupported', 'Bessel関数の式の微分では、生成される次数も-128から128以内にしてください。');
           }
-          const left = op(node.operation, { kind: 'number', decimal: String(order.numerator-1n) }, b);
-          const right = op(node.operation, { kind: 'number', decimal: String(order.numerator+1n) }, b);
+          const left = makeOperation(node.operation, { kind: 'number', decimal: String(order.numerator-1n) }, b);
+          const right = makeOperation(node.operation, { kind: 'number', decimal: String(order.numerator+1n) }, b);
           const sum = add(left, node.operation === 'besselj' || node.operation === 'bessely' ? neg(right) : right);
           value = mul(div(node.operation === 'besselk' ? neg(sum) : sum, TWO), derivative(b));
           break;
         }
         case 'beta': {
-          const psiSum = op('polygamma', ZERO, add(a, b));
-          value = mul(node, add(mul(add(op('polygamma', ZERO, a), neg(psiSum)), da),
-            mul(add(op('polygamma', ZERO, b), neg(psiSum)), derivative(b))));
+          const psiSum = makeOperation('polygamma', ZERO, add(a, b));
+          value = mul(node, add(mul(add(makeOperation('polygamma', ZERO, a), neg(psiSum)), da),
+            mul(add(makeOperation('polygamma', ZERO, b), neg(psiSum)), derivative(b))));
           break;
         }
-        case 'gamma': value = mul(node, op('polygamma', ZERO, a), da); break;
+        case 'gamma': value = mul(node, makeOperation('polygamma', ZERO, a), da); break;
         case 'polygamma': {
           const order = rationalOfExpression(a);
           if (order === null || order.denominator !== 1n || order.numerator < 0n || order.numerator >= BigInt(MAX_POLYGAMMA_ORDER)) {
             throw new MathInputProblem('unsupported', 'Gamma関数の微分の次数を上限内で確定できません。');
           }
-          value = mul(op('polygamma', { kind: 'number', decimal: String(order.numerator+1n) }, b), derivative(b));
+          value = mul(makeOperation('polygamma', { kind: 'number', decimal: String(order.numerator+1n) }, b), derivative(b));
           break;
         }
         case 'erf': case 'erfc': {
-          const slope = div(mul(TWO, op('exponential', neg(square(a)))), op('sqrt', { kind: 'constant', name: 'pi' }));
+          const slope = div(mul(TWO, makeOperation('exponential', neg(square(a)))), makeOperation('sqrt', { kind: 'constant', name: 'pi' }));
           value = mul(node.operation === 'erf' ? slope : neg(slope), da); break;
         }
         case 'natural-log': value = div(da, a); break;
-        case 'log-two': case 'log-ten': value = div(da, mul(a, op('natural-log',
+        case 'log-two': case 'log-ten': value = div(da, mul(a, makeOperation('natural-log',
           { kind: 'number', decimal: node.operation === 'log-two' ? '2' : '10' }))); break;
-        case 'log-base': value = derivative(div(op('natural-log', a), op('natural-log', b))); break;
-        case 'sin': value = mul(angle, op('cos', a), da); break;
-        case 'cos': value = neg(mul(angle, op('sin', a), da)); break;
-        case 'tan': value = div(mul(angle, da), square(op('cos', a))); break;
-        case 'cot': value = neg(div(mul(angle, da), square(op('sin', a)))); break;
-        case 'sec': value = mul(angle, node, op('tan', a), da); break;
-        case 'csc': value = neg(mul(angle, node, op('cot', a), da)); break;
+        case 'log-base': value = derivative(div(makeOperation('natural-log', a), makeOperation('natural-log', b))); break;
+        case 'sin': value = mul(angle, makeOperation('cos', a), da); break;
+        case 'cos': value = neg(mul(angle, makeOperation('sin', a), da)); break;
+        case 'tan': value = div(mul(angle, da), square(makeOperation('cos', a))); break;
+        case 'cot': value = neg(div(mul(angle, da), square(makeOperation('sin', a)))); break;
+        case 'sec': value = mul(angle, node, makeOperation('tan', a), da); break;
+        case 'csc': value = neg(mul(angle, node, makeOperation('cot', a), da)); break;
         case 'arcsin': case 'arccos': {
-          const slope = div(da, mul(angle, op('sqrt', add(ONE, neg(square(a))))));
+          const slope = div(da, mul(angle, makeOperation('sqrt', add(ONE, neg(square(a))))));
           value = node.operation === 'arcsin' ? slope : neg(slope); break;
         }
         case 'arctan': value = div(da, mul(angle, add(ONE, square(a)))); break;
-        case 'sinh': value = mul(op('cosh', a), da); break;
-        case 'cosh': value = mul(op('sinh', a), da); break;
-        case 'tanh': value = div(da, square(op('cosh', a))); break;
-        case 'arsinh': value = div(da, op('sqrt', add(square(a), ONE))); break;
-        case 'arcosh': value = div(da, mul(op('sqrt', add(a, neg(ONE))), op('sqrt', add(a, ONE)))); break;
+        case 'sinh': value = mul(makeOperation('cosh', a), da); break;
+        case 'cosh': value = mul(makeOperation('sinh', a), da); break;
+        case 'tanh': value = div(da, square(makeOperation('cosh', a))); break;
+        case 'arsinh': value = div(da, makeOperation('sqrt', add(square(a), ONE))); break;
+        case 'arcosh': value = div(da, mul(makeOperation('sqrt', add(a, neg(ONE))), makeOperation('sqrt', add(a, ONE)))); break;
         case 'artanh': value = div(da, add(ONE, neg(square(a)))); break;
         case 'absolute':
-          guards.push(div(ONE, a)); value = mul(op('sign', a), da); break;
+          guards.push(div(ONE, a)); value = mul(makeOperation('sign', a), da); break;
         case 'sign':
           guards.push(div(ONE, a)); value = ZERO; break;
         default: throw new MathInputProblem('unsupported', `演算「${node.operation}」の作図用の導関数はまだ確定できません。`);

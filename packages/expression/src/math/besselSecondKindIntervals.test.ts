@@ -1,15 +1,14 @@
+import { exactDoubleDecimal } from './exactDoubleDecimal.testSupport.js';
 import Decimal from 'decimal.js';
 import { describe, expect, it } from 'vitest';
 import { BESSEL_SECOND_REFERENCES } from './besselSecondKindReferences.js';
 import { secondBesselRanges } from './besselSecondKindIntervals.js';
-import { exactDouble } from './exactDoubleInterval.js';
 import { nextFloat, type MathInterval } from './mathInterval.js';
 import { MathInputProblem } from './mathInputContract.js';
 
 const D=Decimal.clone({precision:320});
 function double(value:number):Decimal {
-  const exact=exactDouble(value);if(exact===null)throw new Error('Finite interval required');
-  return new D(exact.numerator.toString()).div(exact.denominator.toString());
+  return exactDoubleDecimal(value, D, 'Finite interval required');
 }
 function contains(range:MathInterval|null,value:string):void {
   expect(range).not.toBeNull();if(range===null)throw new Error('Missing enclosure');

@@ -2,6 +2,7 @@ import { createEmptyPartDocument } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 import { readSheetUnfolds, serializeSheetUnfold } from './codecs/sheetUnfold.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
+import { PCAD_SCHEMA_VERSION } from './schema.js';
 
 const definition = { sourceFeatureId: 'flange-1', fixedPanelId: 'panel-2', seamConnectionIds: ['seam-a'] };
 describe('板金の展開定義の保存と移行', () => {
@@ -18,7 +19,7 @@ describe('板金の展開定義の保存と移行', () => {
     const old = { schema: 11, kind: 'part', app: 'PointerCAD', savedAt: '2026-09-11T00:00:00Z',
       document: { ...document, schemaVersion: 11, sheetUnfolds: undefined } };
     const migrated = parseDocument(JSON.stringify(old)); if (!migrated.ok) throw new Error(JSON.stringify(migrated.error));
-    expect(migrated.document.sheetUnfolds).toEqual([]); expect(migrated.document.schemaVersion).toBe(17);
+    expect(migrated.document.sheetUnfolds).toEqual([]); expect(migrated.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
     expect(parseDocument(JSON.stringify({ ...old, schema: 12, document: { ...old.document, schemaVersion: 12 } })).ok).toBe(false);
     expect(parseDocument(JSON.stringify({ ...old, document: { ...old.document, sheetUnfolds: null } })).ok).toBe(false);
   });

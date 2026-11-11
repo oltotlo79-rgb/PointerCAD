@@ -6,6 +6,10 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./testing/release-performance": {
+      "types": "./dist/releasePerformance.d.ts",
+      "default": "./src/releasePerformance.ts"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"

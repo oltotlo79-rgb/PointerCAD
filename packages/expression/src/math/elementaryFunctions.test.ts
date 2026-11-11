@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
+import { evaluateMathInput } from './mathEvaluation.testSupport.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
@@ -9,9 +10,7 @@ beforeAll(() => { backend = createMathBackend(); });
 function evaluate(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
   const request = { source, angleUnit, notation: 'text' as const, coefficients: [],
     identity: { documentId: 'elementary', documentVersion: 1, editorId: 'coordinate', inputRevision: 1 } };
-  const output = executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request }, backend);
-  return decodeMathWorkReply(output, request, { operationsById: CANDIDATE_MATH_BY_ID,
-    coefficientIds: new Set(), declaredIds: new Set() }).result.evaluation;
+  return evaluateMathInput(request, backend).evaluation;
 }
 
 describe('初等数学を同じ定義域と角度規約で座標へ渡す', () => {

@@ -28,11 +28,13 @@ import { MassPropertiesSection } from '../solid/MeasurementSections.js';
 import { bodyFor, extrudeFeature, partWithPoint, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { evaluateFieldSource, pendingFieldVariables } from './propertyFieldUnits.js';
+import type * as ImportedJsxRuntimeTypes from 'react/jsx-runtime';
+import type * as ImportedJsxDevRuntimeTypes from 'react/jsx-dev-runtime';
 
 // The real consumers, local state, evaluation, store and event handlers run.
 const rendered = vi.hoisted(() => ({ tags: [] as { tag: string; props: Record<string, unknown> }[] }));
 vi.mock('react/jsx-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxRuntimeTypes>();
   const capture = (factory: typeof runtime.jsx): typeof runtime.jsx => (type, props, key) => {
     if (typeof type === 'string' && props !== null && typeof props === 'object') {
       rendered.tags.push({ tag: type, props: props as Record<string, unknown> });
@@ -43,7 +45,7 @@ vi.mock('react/jsx-runtime', async importOriginal => {
 });
 
 vi.mock('react/jsx-dev-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-dev-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxDevRuntimeTypes>();
   const jsxDEV: typeof runtime.jsxDEV = (type, props, key, isStatic, source, self) => {
     if (typeof type === 'string' && props !== null && typeof props === 'object') {
       rendered.tags.push({ tag: type, props: props as Record<string, unknown> });

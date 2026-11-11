@@ -53,9 +53,12 @@ export async function recomputeFunctionSurfaces(document: PartDocument, analysis
       if (sampled.status !== 'ready') throw new Error(sampled.status === 'empty'
         ? '指定したXYZ範囲内に面がありません。'
         : '指定した精度で面を計算しきれませんでした。範囲や精度を見直してください。');
+      // A certified C1 spline, when the Worker could prove one, is what CAD builds; the certified mesh it was tied to
+      // stays in the plan. A declined spline is not an error: the certified triangles are the surface, as before.
       const plan: FunctionSurfacePlan = { kind: 'functionSurface', inputSignature,
         geometry: { vertices: sampled.vertices.map(vertex => vertex.point), triangles: sampled.triangles,
-          bounds: { minimum: request.minimum, maximum: request.maximum } } };
+          bounds: { minimum: request.minimum, maximum: request.maximum },
+          ...(sampled.spline === undefined ? {} : { spline: sampled.spline }) } };
       context.surfacePlans?.set(plan);
       plans.set(feature.id, plan);
     } catch (error) {

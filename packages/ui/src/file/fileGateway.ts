@@ -1,3 +1,4 @@
+import { isObject } from '../valueGuards.js';
 /**
  * ファイルの読み書きの口(計画書 docs/plans/P2-ソリッド基礎.md タスク23、§2.10、§0.a-0.10。
  * 種類つきの出し入れは docs/plans/P6-入出力.md §2.2、§0.a-0.4、タスク4)。
@@ -38,6 +39,8 @@ export { PCAD_EXTENSION, PCADA_EXTENSION, PCADD_EXTENSION, type SaveFileKind } f
 
 import { t } from '../i18n/t.js';
 import { readBrowserFile, type BrowserReadableFile } from './readBrowserFile.js';
+import type { DrawingPrintOptions as TypeDrawingPrintOptions } from '@pointercad/drawing';
+
 
 /** 開いたファイル 1 つぶん(§2.10)。 */
 export interface PickedFile {
@@ -55,6 +58,24 @@ export interface PickedTypedFile {
   /** 拡張子を含むファイル名。 */
   readonly fileName: string;
   readonly bytes: Uint8Array;
+}
+
+/** Parameter CSV is deliberately separate from CAD FileKind and cannot become a save target. */
+export interface PickedParameterCsvFile {
+  readonly fileName: string;
+  readonly bytes: Uint8Array;
+}
+
+const PARAMETER_CSV_BYTE_LIMIT = 1024 * 1024;
+
+/** One export attempt; never transfer this callback or signal across desktop IPC. */
+export interface ExportSaveControl {
+  readonly signal: AbortSignal;
+  readonly isCurrent: () => boolean;
+}
+
+function mayContinueExport(control?: ExportSaveControl): boolean {
+  return control === undefined || (!control.signal.aborted && control.isCurrent());
 }
 
 export interface FileGateway {
@@ -87,14 +108,15 @@ export interface FileGateway {
    * 壊さないため。省略された口へは `openFileThrough` がブラウザ用の実装で答える。
    */
   openFile?(kinds: readonly FileKind[]): Promise<PickedTypedFile | null>;
+  openParameterCsv?(): Promise<PickedParameterCsvFile | null>;
   /**
    * 名前を訊いて書き出す(FR-803、FR-812、FR-814)。書けたら true、取り消されたら false。
    * **呼ぶたびに名前を訊く**(上書き先を覚えない。§0.a-0.4)。
    * 省略できる理由は `openFile` と同じ。
    */
-  saveFileAs?(fileName: string, kind: SaveFileKind, bytes: Uint8Array): Promise<boolean>;
+  saveFileAs?(fileName: string, kind: SaveFileKind, bytes: Uint8Array, control?: ExportSaveControl): Promise<boolean>;
   /** Desktopの書出し成功1回に対応する札。パスは本体側だけが持つ。nullは取消。 */
-  saveExport?(fileName: string, kind: CamFormat, bytes: Uint8Array): Promise<ExportReceipt | null>;
+  saveExport?(fileName: string, kind: CamFormat, bytes: Uint8Array, control?: ExportSaveControl): Promise<ExportReceipt | null>;
   openExport?(token: string): Promise<boolean>;
   openCamTool?(tool: CamTool): Promise<boolean>;
   /**
@@ -105,7 +127,7 @@ export interface FileGateway {
    * ここへ実装を置かない(口があるかどうかが「デスクトップ版か」の判断になる。
    * 使い分けは `printView.ts` の `desktopPrintOf`)。
    */
-  print?(bytes: Uint8Array, options?: import('@pointercad/drawing').DrawingPrintOptions): Promise<boolean>;
+  print?(bytes: Uint8Array, options?: TypeDrawingPrintOptions): Promise<boolean>;
 }
 
 export function withPcaddExtension(name: string): string {
@@ -265,16 +287,46 @@ interface WritableFile {
   close(): Promise<void>;
 }
 
+function canAbort(value: WritableFile): value is WritableFile & { abort(): Promise<unknown> } {
+  return 'abort' in value && typeof value.abort === 'function';
+}
+
+/** 書込みの元の失敗を保ったまま、未確定の内容を破棄する。abortが無い旧実装も受ける。 */
+async function abortWritable(writable: WritableFile): Promise<void> {
+  if (canAbort(writable)) {
+    try {
+      await writable.abort();
+    } catch {
+      // A failed cleanup cannot restore or change an already committed file.
+    }
+  }
+}
+
+async function writeAndClose(writable: WritableFile, bytes: Uint8Array, control?: ExportSaveControl): Promise<boolean> {
+  try {
+    if (!mayContinueExport(control)) {
+      await abortWritable(writable);
+      return false;
+    }
+    await writable.write(bytes);
+    if (!mayContinueExport(control)) {
+      await abortWritable(writable);
+      return false;
+    }
+    await writable.close();
+    return true;
+  } catch (error) {
+    await abortWritable(writable);
+    throw error;
+  }
+}
+
 /** 読み出したファイルの中身。 */
 type ReadableFile = BrowserReadableFile;
 
 /** 名前つきの中身(`<input type="file">` が渡してくるファイル)。 */
 interface NamedReadableFile extends ReadableFile {
   readonly name: string;
-}
-
-function isObject(value: unknown): value is object {
-  return typeof value === 'object' && value !== null;
 }
 
 /**
@@ -473,7 +525,8 @@ function downloadBytes(scope: object, name: string, mimeType: string, bytes: Uin
  * ファイル選択の窓で開く。取り消しは `cancel` の知らせで拾う。
  * 拾えない古いブラウザでは、選ぶまで待ち続ける(その間も画面の操作は止まらない)。
  */
-function pickFileWithInput(accept: string, scope: object): Promise<PickedFile | null> {
+function pickFileWithInput(accept: string, scope: object, byteLimit?: number,
+  expectedExtension?: string): Promise<PickedFile | null> {
   return new Promise<PickedFile | null>((resolve, reject) => {
     if (!hasDocument(scope)) {
       reject(new Error(t('file.openFailed')));
@@ -511,7 +564,10 @@ function pickFileWithInput(accept: string, scope: object): Promise<PickedFile | 
       if (file.name.toLowerCase().endsWith('.dwg')) {
         input.remove(); reject(new Error(t('exchange.dwgGuide'))); return;
       }
-      readBrowserFile(file, file.name.toLowerCase().endsWith('.pcadscript') ? SCRIPT_FILE_LIMITS.bytes : undefined).then(
+      if (expectedExtension !== undefined && !file.name.toLowerCase().endsWith(expectedExtension)) {
+        input.remove(); reject(new Error(t('file.openFailed'))); return;
+      }
+      readBrowserFile(file, byteLimit ?? (file.name.toLowerCase().endsWith('.pcadscript') ? SCRIPT_FILE_LIMITS.bytes : undefined)).then(
         (bytes) => {
           finish({ name: file.name, bytes, saveTargetToken: null });
         },
@@ -525,6 +581,30 @@ function pickFileWithInput(accept: string, scope: object): Promise<PickedFile | 
     scope.document.body.append(input);
     input.click();
   });
+}
+
+export async function openParameterCsvInBrowser(scope: object = globalThis): Promise<PickedParameterCsvFile | null> {
+  if (!hasOpenPicker(scope)) {
+    const picked = await pickFileWithInput('.csv', scope, PARAMETER_CSV_BYTE_LIMIT, '.csv');
+    if (picked === null) return null;
+    if (!picked.name.toLowerCase().endsWith('.csv')) throw new Error(t('file.openFailed'));
+    return { fileName: picked.name, bytes: picked.bytes };
+  }
+  let picked: unknown;
+  try {
+    picked = await scope.showOpenFilePicker({ multiple: false, types: [fileTypeOf('csv')] });
+  } catch (error) {
+    if (isAbortError(error)) return null;
+    throw error;
+  }
+  if (!isUnknownArray(picked) || picked.length === 0) return null;
+  const handle = picked[0];
+  if (!isReadableFileHandle(handle) || !handle.name.toLowerCase().endsWith('.csv')) {
+    throw new Error(t('file.openFailed'));
+  }
+  const file = await handle.getFile();
+  if (!isReadableFile(file)) throw new Error(t('file.openFailed'));
+  return { fileName: handle.name, bytes: await readBrowserFile(file, PARAMETER_CSV_BYTE_LIMIT) };
 }
 
 // ---------------------------------------------------------------------------
@@ -599,9 +679,12 @@ export async function saveFileAsInBrowser(
   kind: SaveFileKind,
   bytes: Uint8Array,
   scope: object = globalThis,
+  control?: ExportSaveControl,
 ): Promise<boolean> {
+  if (!mayContinueExport(control)) return false;
   if (!hasSavePicker(scope)) {
     // 場所は選べないので、名前を添えてダウンロードする(§0.a-0.10)。
+    if (!mayContinueExport(control)) return false;
     downloadBytes(scope, fileName, primaryMimeTypeOf(kind), bytes);
     return true;
   }
@@ -617,16 +700,19 @@ export async function saveFileAsInBrowser(
     }
     throw error;
   }
+  if (!mayContinueExport(control)) return false;
   if (!isWritableFileHandle(picked)) {
     throw new Error(t('file.saveFailed'));
   }
   const writable = await picked.createWritable();
+  if (!mayContinueExport(control)) {
+    if (isWritableFile(writable)) await abortWritable(writable);
+    return false;
+  }
   if (!isWritableFile(writable)) {
     throw new Error(t('file.saveFailed'));
   }
-  await writable.write(bytes);
-  await writable.close();
-  return true;
+  return writeAndClose(writable, bytes, control);
 }
 
 /**
@@ -640,16 +726,22 @@ export function openFileThrough(
   return gateway.openFile === undefined ? openFileInBrowser(kinds) : gateway.openFile(kinds);
 }
 
+export function openParameterCsvThrough(gateway: FileGateway): Promise<PickedParameterCsvFile | null> {
+  return gateway.openParameterCsv === undefined ? openParameterCsvInBrowser() : gateway.openParameterCsv();
+}
+
 /** 差し込まれた口を通して書き出す。口が `saveFileAs` を持たないときの扱いは上と同じ。 */
 export function saveFileAsThrough(
   gateway: FileGateway,
   fileName: string,
   kind: SaveFileKind,
   bytes: Uint8Array,
+  control?: ExportSaveControl,
 ): Promise<boolean> {
   return gateway.saveFileAs === undefined
-    ? saveFileAsInBrowser(fileName, kind, bytes)
-    : gateway.saveFileAs(fileName, kind, bytes);
+    ? saveFileAsInBrowser(fileName, kind, bytes, globalThis, control)
+    : control === undefined ? gateway.saveFileAs(fileName, kind, bytes)
+      : gateway.saveFileAs(fileName, kind, bytes, control);
 }
 
 // ---------------------------------------------------------------------------
@@ -745,8 +837,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       if (!isWritableFile(writable)) {
         throw new Error(t('file.saveFailed'));
       }
-      await writable.write(bytes);
-      await writable.close();
+      await writeAndClose(writable, bytes);
       if (revision !== targetRevision) return null;
       saveTarget = target;
       pendingSaveTarget = null;
@@ -777,8 +868,12 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       return openFileInBrowser(kinds, scope);
     },
 
-    saveFileAs(fileName, kind, bytes): Promise<boolean> {
-      return saveFileAsInBrowser(fileName, kind, bytes, scope);
+    openParameterCsv(): Promise<PickedParameterCsvFile | null> {
+      return openParameterCsvInBrowser(scope);
+    },
+
+    saveFileAs(fileName, kind, bytes, control): Promise<boolean> {
+      return saveFileAsInBrowser(fileName, kind, bytes, scope, control);
     },
   };
 }

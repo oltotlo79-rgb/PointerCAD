@@ -1,7 +1,9 @@
 /// <reference lib="dom" />
 import { RECOMPUTE_TIMEOUT_MS } from '../../packages/test-utils/src/releasePerformance.js';
 import { expect, type Page } from '@playwright/test';
+import { EXACT_MATH_ENGINE_LIMITS } from '../../packages/expression/src/math/publicClient.js';
 import { recomputeTerminalOutcome } from '../../packages/test-utils/src/recomputeState.js';
+import type { RecomputeStats } from '../../packages/ui/src/app/PointerCadApp.js';
 
 /**
  * E2E の再計算待ちを 1 か所にまとめる(P7 タスク52、rules/06 10.18・10.19)。
@@ -13,40 +15,23 @@ import { recomputeTerminalOutcome } from '../../packages/test-utils/src/recomput
 /** 初回読み込みを含む、画面検査の再計算待ちの上限。 */
 export const KERNEL_TIMEOUT_MS = RECOMPUTE_TIMEOUT_MS;
 
-export type RecomputeOutcome =
-  | 'idle'
-  | 'success'
-  | 'failed'
-  | 'cancelled'
-  | 'workerBroken';
+/** Only exact-math document reopen uses the math engine preparation/calculation contract. */
+export type RecomputeWaitKind = 'kernel' | 'exact-math';
 
-export interface RecomputeStats {
-  readonly cacheHits: number;
-  readonly isComputing: boolean;
-  readonly requestedGeneration: number;
-  readonly completedGeneration: number;
-  readonly lastOutcome: RecomputeOutcome;
-  /**
-   * いま応答待ちの計算部呼び出し(kernelBridge の RPC)の件数(PointerCadApp.tsx の
-   * `pcadRecomputeStats` が返す実際の値には元からあったが、この型には無かった)。
-   * `isComputing`・世代は再計算スライスだけの帳簿で、ドラッグに伴う測定・印刷確認などの
-   * 個別呼び出しは数えない。撮影直前の比較が動かないことを保証するには、この件数も
-   * 0 まで落ち着くのを待つ必要がある(w94a、rules/06 記録予定)。
-   */
-  readonly pendingWaiters: number;
-}
+/*
+ * 検査専用の口 `pcadRecomputeStats` の形と結末の種類は、アプリの実物(PointerCadApp.tsx の
+ * `RecomputeStats` と recomputeSlice.ts の `RecomputeOutcome`)を型だけ import して使う。
+ * 以前はここに古い写しがあり、アプリ側に欄(`activeDocumentKind`)が増えても気付けず、
+ * 同じ `Window` の口の宣言が食い違った(TS2717)。`pendingWaiters` などの意味は正本の注釈を見る。
+ * 型だけの import なので、実行時にアプリの部品は読み込まない。
+ */
+export type { RecomputeOutcome } from '../../packages/ui/src/store/recomputeSlice.js';
+export type { RecomputeStats };
 
 /** `beginRecompute` が操作前に控える世代と時刻。 */
 export interface RecomputeToken {
   readonly requestedGeneration: number;
   readonly startedAtMs: number;
-}
-
-declare global {
-  interface Window {
-    /** `PointerCadApp.tsx` が差し出す検査専用の読み取り口。 */
-    pcadRecomputeStats?: () => RecomputeStats;
-  }
 }
 
 /** 検査専用の口から、いまの再計算の状態を読む。 */
@@ -122,16 +107,20 @@ async function readSnapshot(page: Page): Promise<RecomputeSnapshot> {
  * `token` を省いた既存の呼び出しは、呼び出した時点の requestedGeneration を対象にする。
  * 失敗時はロードを含む待機時間・最後に見えた進捗・世代・結末を 1 つのメッセージへ出す。
  */
-export async function waitForRecompute(page: Page, token?: RecomputeToken): Promise<void> {
-  await waitForRecomputeOutcome(page, token, 'success');
+export async function waitForRecompute(
+  page: Page, token?: RecomputeToken, waitKind: RecomputeWaitKind = 'kernel',
+): Promise<void> {
+  await waitForRecomputeOutcome(page, token, 'success', waitKind);
 }
 
 /** 期待した失敗も、成功と同じ有限上限・世代・途中経過の確認で待つ。 */
 export async function waitForRecomputeOutcome(
   page: Page,
   token: RecomputeToken | undefined,
-  outcome: 'success' | 'failed',
+  outcome: 'success' | 'failed' | 'cancelled',
+  waitKind: RecomputeWaitKind = 'kernel',
 ): Promise<void> {
+  const timeoutMs = waitKind === 'exact-math' ? EXACT_MATH_ENGINE_LIMITS.totalMs : KERNEL_TIMEOUT_MS;
   const current = token === undefined ? await readRecomputeStats(page) : null;
   const baseline = token?.requestedGeneration ?? (current?.requestedGeneration ?? 0) - 1;
   const startedAtMs = token?.startedAtMs ?? Date.now();
@@ -146,26 +135,71 @@ export async function waitForRecomputeOutcome(
           if (last.progress !== '') {
             lastProgress = last.progress;
           }
-          return recomputeTerminalOutcome(last.stats, baseline);
+          if (outcome === 'cancelled' && last.stats !== null && isSettled(last.stats)
+            && last.stats.completedGeneration > baseline && last.stats.lastOutcome === 'cancelled') {
+            return 'cancelled';
+          }
+          const terminal = recomputeTerminalOutcome(last.stats, baseline);
+          // Pending kernel calls may still change the document after a successful generation.
+          return terminal === 'success' && last.stats?.pendingWaiters !== 0 ? 'waiting' : terminal;
         },
         {
-          timeout: KERNEL_TIMEOUT_MS,
+          timeout: timeoutMs,
           message: `操作後の最新世代の再計算が ${outcome} で完了すること`,
         },
       )
       .not.toBe('waiting');
     expect(last.stats?.lastOutcome, '最新世代の結末が期待と異なる場合は上限まで待たず知らせる').toBe(outcome);
     const elapsedMs = Date.now() - startedAtMs;
-    if (elapsedMs > 60_000) console.log(`[実測] 初回読み込みを含む再計算待ち: ${elapsedMs}ms / 上限${KERNEL_TIMEOUT_MS}ms`);
+    if (elapsedMs > 60_000) console.log(`[実測] 初回読み込みを含む再計算待ち: ${elapsedMs}ms / 上限${timeoutMs}ms`);
   } catch (error: unknown) {
     const stats = last.stats;
     const reason = error instanceof Error ? error.message : String(error);
+    let assemblyGates: string;
+    try {
+      const observed = await page.evaluate(() => {
+        const reader: unknown = Reflect.get(window, 'pcadAssemblyRecomputeGates');
+        if (typeof reader !== 'function') return { status: 'unavailable' };
+        const value: unknown = Reflect.apply(reader, window, []);
+        if (typeof value !== 'object' || value === null || !('events' in value) || !Array.isArray(value.events)) {
+          return { status: 'invalid-diagnostic' };
+        }
+        const events: readonly unknown[] = value.events;
+        return { status: 'status' in value ? value.status : 'unknown', events: events.slice(-12),
+          dropped: 'dropped' in value ? value.dropped : null,
+          observerFailures: 'observerFailures' in value ? value.observerFailures : null };
+      });
+      assemblyGates = JSON.stringify(observed);
+    } catch (diagnosticError: unknown) {
+      assemblyGates = diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError);
+    }
+    let meshLedger: string;
+    try {
+      meshLedger = JSON.stringify(await page.evaluate(() => {
+        const reader: unknown = Reflect.get(window, 'pcadMeshLedgerDiagnostics');
+        if (typeof reader !== 'function') return { status: 'unavailable' };
+        const value: unknown = Reflect.apply(reader, window, []);
+        if (typeof value !== 'object' || value === null) return { status: 'invalid-diagnostic' };
+        const host: unknown = 'host' in value ? value.host : null;
+        const hostObject = typeof host === 'object' && host !== null ? host : null;
+        return { host: hostObject === null ? null : {
+          epoch: 'epoch' in hostObject ? hostObject.epoch : null,
+          changes: 'changes' in hostObject && Array.isArray(hostObject.changes) ? hostObject.changes.slice(-24) : null,
+          dropped: 'dropped' in hostObject ? hostObject.dropped : null,
+          failures: 'failures' in hostObject ? hostObject.failures : null },
+          validations: 'validations' in value && Array.isArray(value.validations) ? value.validations.slice(-8) : null,
+          dropped: 'dropped' in value ? value.dropped : null,
+          failures: 'failures' in value ? value.failures : null };
+      }));
+    } catch (diagnosticError: unknown) {
+      meshLedger = diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError);
+    }
     throw new Error(
       `再計算待ち失敗: 期待=${outcome}, ロード/待機時間=${String(Date.now() - startedAtMs)}ms, ` +
         `操作前requestedGeneration=${String(baseline)}, ` +
         `最後のrequestedGeneration=${stats === null ? '未取得' : String(stats.requestedGeneration)}, ` +
         `completedGeneration=${stats === null ? '未取得' : String(stats.completedGeneration)}, ` +
-        `lastOutcome=${stats?.lastOutcome ?? '未取得'}, 最後の進捗=${lastProgress}\n${reason}`,
+        `lastOutcome=${stats?.lastOutcome ?? '未取得'}, 最後の進捗=${lastProgress}\n${reason}\nAssembly recompute gates: ${assemblyGates}\nMesh ledger: ${meshLedger}`,
       { cause: error },
     );
   }

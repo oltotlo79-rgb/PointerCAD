@@ -23,7 +23,7 @@ export const EMPTY_SPLINE_DRAFT: SplineDraft = {
   closed: false,
 };
 
-export type SplineDraftOutcome =
+type SplineDraftOutcome =
   | { readonly ok: true; readonly draft: SplineDraft }
   /** 断った理由。文言は限界値を差し込むのでここで組み立てる(`describeRange` と同じ事情)。 */
   | { readonly ok: false; readonly reason: string };
@@ -37,11 +37,6 @@ export function appendSplinePoint(draft: SplineDraft, point: CoordinateInput): S
     };
   }
   return { ok: true, draft: { ...draft, points: [...draft.points, point] } };
-}
-
-/** 最後に置いた点を取り消す。点が無ければ同じ下書きをそのまま返す。 */
-export function removeLastSplinePoint(draft: SplineDraft): SplineDraft {
-  return draft.points.length === 0 ? draft : { ...draft, points: draft.points.slice(0, -1) };
 }
 
 export type SplineDraftCheck =

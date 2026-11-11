@@ -379,6 +379,55 @@ class RecordTimeGuardTests(unittest.TestCase):
                 except OSError:
                     pass
 
+    # --- rules/06 §10.461 (2)(cl-v103-enforcement-2-1107): 統括の連絡 orchestrator-message*.md も時刻の検査の対象 ---
+    MESSAGE = "scratchpad/claude/agents/record-time-guard-selftest-fixture/orchestrator-message.md"
+
+    def test_orchestrator_message_future_time_denied(self):
+        # 事故の形: 統括が実時刻より 3 分先の時刻を連絡に書いた。Write・Edit(PreToolUse)と、シェルで書いた後の
+        # PostToolUse の走査の両方で止める(走査は本物の木と重ならない一時の根で確かめる)。
+        ahead = (datetime.now() + timedelta(minutes=3)).strftime("%Y-%m-%d %H:%M")
+        self.deny(invoke(path=self.MESSAGE, content=f"# 統括からの連絡\n\n- {ahead}: 統括の画面検査が実行中。\n"))
+        self.deny(invoke(path=self.MESSAGE.replace("orchestrator-message.md", "orchestrator-message-2.md"),
+                         content=f"{self.future} 再開の指示\n"))
+        self.deny(invoke(tool="Edit", path=self.MESSAGE, old_string="x", new_string=f"- {self.future}: 追記"))
+        temp_root = ROOT / "scratchpad/temp" / f"record-time-guard-selftest-root-{uuid.uuid4().hex[:8]}"
+        created_ancestors = []
+        node = temp_root
+        while not node.exists():
+            created_ancestors.append(node)
+            node = node.parent
+        folder = temp_root / "scratchpad/claude/agents/fixture"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "orchestrator-message.md"
+        try:
+            path.write_bytes(f"# 統括からの連絡\n\n- {self.past}: 準備\n- {self.future}: 先の時刻\n".encode("utf-8"))
+            self.assertIn(path, guard.candidates(root=temp_root))
+            payload = {"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {}}
+            output = guard.hook(payload, datetime.now(), root=temp_root)
+            self.assertIsNotNone(output)
+            self.assertEqual(output["decision"], "block")
+            self.assertIn("scratchpad/claude/agents/fixture/orchestrator-message.md", output["reason"])
+            self.assertIn("(行4)", output["reason"])
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+            for created in created_ancestors[1:]:
+                try:
+                    created.rmdir()
+                except OSError:
+                    pass
+
+    def test_orchestrator_message_past_and_forecast_allowed_and_only_message_names_match(self):
+        self.allow(invoke(path=self.MESSAGE, content=f"# 統括からの連絡\n\n- {self.past}: 画面検査が実行中。\n"))
+        self.allow(invoke(path=self.MESSAGE, content=f"- {self.past}: 再開は {self.future} の見込み\n"))
+        now = datetime(2026, 11, 7, 3, 0, 30)
+        self.assertEqual(guard.future_times(ROOT / self.MESSAGE, "- 2026-11-07 03:00: 同じ分は可\n", now), [])
+        self.assertEqual(guard.future_times(ROOT / self.MESSAGE, "- 2026-11-07 03:03: 3 分先\n", now),
+                         [(1, "2026-11-07 03:03")])
+        self.assertEqual(guard.kind(ROOT / self.MESSAGE), "message")
+        self.assertIsNone(guard.kind(ROOT / "scratchpad/claude/agents/x/orchestrator-notes.md"))
+        self.assertIsNone(guard.kind(ROOT / "scratchpad/claude/agents/x/sub/orchestrator-message.md"))
+        self.assertIsNone(guard.kind(ROOT / "scratchpad/claude/agents/x/orchestrator-message.json"))
+
 
 if __name__ == "__main__":
     unittest.main()

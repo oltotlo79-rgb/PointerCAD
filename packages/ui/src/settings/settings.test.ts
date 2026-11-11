@@ -18,8 +18,6 @@ import {
   hasLocalStorage,
   LENGTH_UNIT_LABEL_KEYS,
   loadSettings,
-  MAX_UI_SCALE,
-  MIN_UI_SCALE,
   nearestUiScaleStep,
   nextLengthUnit,
   nextThemeIndex,
@@ -29,6 +27,10 @@ import {
   type DisplaySettings,
   type SettingsStorage,
 } from './settings.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const MAX_UI_SCALE = 150;
+const MIN_UI_SCALE = 90;
 
 /** `Map` を裏に持つ、検査用の最小限の `localStorage` 相当品。 */
 function createFakeStorage(initial: Readonly<Record<string, string>> = {}): SettingsStorage {

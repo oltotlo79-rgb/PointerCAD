@@ -27,6 +27,7 @@ import type {
   MateKind,
   MateTarget,
 } from '@pointercad/model';
+import { rigidGroupsOf } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 
@@ -56,8 +57,10 @@ export type AssemblyRowKind =
  * - `suppressed`: 抑制した部品・合致(FR-503)。**置かなかったことにする**。
  * - `unresolved`: 指し先がいま引けない(§0.a-0.40。消えた部品を指す合致など)。
  * - `conflicting`: ほかの合致と同時には成り立たない(§0.a-0.20 の診断)。
+ * - `fastened`: ボルト締結などで他の部品と互いに固定した組の部品(追加要件6)。組ごと動く。
+ *   全体の固定(`fixed`)とは別の印。解くのは「組む」の「締結を外す」。
  */
-export type AssemblyRowBadge = 'fixed' | 'hidden' | 'suppressed' | 'unresolved' | 'conflicting';
+export type AssemblyRowBadge = 'fixed' | 'fastened' | 'hidden' | 'suppressed' | 'unresolved' | 'conflicting';
 
 /** 木の行 1 つ。部品・合致・ジョイント・分解ステップを同じ形で並べる。 */
 export interface AssemblyTreeRow {
@@ -95,7 +98,7 @@ export interface AssemblyTreeSection {
  * 同じ)。**まだ解いていないときは省ける**——省くと、文書だけから分かること
  * (固定・非表示・抑制・指し先の無い合致)だけが印になる。
  */
-export interface AssemblyTreeDiagnosis {
+interface AssemblyTreeDiagnosis {
   /**
    * インスタンスの id → 部品の鍵。**中身を引けたインスタンスだけ**が入る
    * (`ResolvedAssembly.partKeys`)。抑制した部品も入らない。
@@ -153,6 +156,7 @@ const STEP_KIND_LABEL_KEYS: Readonly<Record<'explode' | 'jointStep', MessageKey>
  */
 export const ASSEMBLY_BADGE_LABEL_KEYS: Readonly<Record<AssemblyRowBadge, MessageKey>> = {
   fixed: 'assembly.tree.fixed',
+  fastened: 'assembly.tree.fastened',
   hidden: 'assembly.tree.hidden',
   suppressed: 'featureTree.suppressed',
   unresolved: 'assembly.tree.unresolved',
@@ -162,6 +166,7 @@ export const ASSEMBLY_BADGE_LABEL_KEYS: Readonly<Record<AssemblyRowBadge, Messag
 /** 印にマウスを乗せたときの説明(FR-904)。 */
 export const ASSEMBLY_BADGE_TOOLTIP_KEYS: Readonly<Record<AssemblyRowBadge, MessageKey>> = {
   fixed: 'assembly.tree.fixedTooltip',
+  fastened: 'assembly.tree.fastenedTooltip',
   hidden: 'assembly.tree.hiddenTooltip',
   suppressed: 'assembly.tree.suppressedTooltip',
   unresolved: 'assembly.tree.unresolvedTooltip',
@@ -317,18 +322,6 @@ export function assemblyTreeRows(
   ];
 }
 
-/**
- * 木に出る行の数。**束の見出しも 1 行として数える**(見出しは畳むために押せる行なので、
- * 「木に何行あるか」を数えるときに外すと画面と食い違う)。
- */
-export function assemblyTreeRowCount(sections: readonly AssemblyTreeSection[]): number {
-  const countRows = (rows: readonly AssemblyTreeRow[]): number => rows.reduce(
-    (total, row) => total + 1 + countRows(row.children ?? []),
-    0,
-  );
-  return sections.reduce((total, section) => total + 1 + countRows(section.rows), 0);
-}
-
 function componentRowsOf(
   assembly: AssemblyDocument,
   diagnosis: AssemblyTreeDiagnosis | undefined,
@@ -338,11 +331,16 @@ function componentRowsOf(
   for (const error of diagnosis?.errors ?? []) {
     if (!messages.has(error.componentId)) messages.set(error.componentId, error.message);
   }
+  // 2 部品以上がそろった組だけを締結の印にする(1 つだけ残った組は何も固定していない)。
+  const groups = rigidGroupsOf(assembly);
   return assembly.components.map((component) => {
     const path = prefix === '' ? component.id : `${prefix}/${component.id}`;
     const resolved = component.suppressed || diagnosis === undefined || diagnosis.partKeys.has(component.id);
     const badges: AssemblyRowBadge[] = [];
     if (component.fixed) badges.push('fixed');
+    if (!component.suppressed && component.rigidGroupId !== undefined && groups.has(component.rigidGroupId)) {
+      badges.push('fastened');
+    }
     if (!component.visible) badges.push('hidden');
     if (component.suppressed) badges.push('suppressed');
     if (!resolved) badges.push('unresolved');

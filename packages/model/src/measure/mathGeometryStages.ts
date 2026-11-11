@@ -1,19 +1,19 @@
 /**
- * 段階再計算の段取り(GR-06。計画書 `scratchpad/claude/plans/geomref-plan.md` §4(d)、利用者の回答
- * Q7=O1「測る形は、その値を係数経由で使う形より履歴の前。連なりは最大8段」)。
+ * 段階再計算の段取り。利用者仕様では、測る形を係数経由で使う形より履歴の前に置き、
+ * 連なりを最大8段とする（docs/requirements.md の FR-210/FR-211 注記）。
  *
  * 測った値を係数へ渡し、その係数で別の形を作るには、1 回の再計算の中で「形を作る → 測る → 係数を
  * 決める → 形を作る」を依存の深さだけ繰り返す。ここには OCCT も数学の計算部も呼ばない部分だけを置く
  * (形を作る・測るのは `part/recomputePart.ts`)。
  *
- * - 段取り(`planMathGeometryStages`): GR-02 の依存解析(`analyzeMathGeometryDependencies`)から、
+ * - 段取り(`planMathGeometryStages`): 依存解析(`analyzeMathGeometryDependencies`)から、
  *   段 k(1〜stageCount)の形を作った後で測る定義と、計算させない係数の理由(循環・循環の値・段数超過・
  *   順序違反)を作る。図形由来の係数が無い文書では null を返し、再計算は今までと同じ 1 回だけの経路を
  *   通る(`recomputeSolids` の呼出し回数・順序・結果を変えない)。
  * - 途中の段で測るのは、その段の定義のうち、計算させない係数以外の係数が使うものだけ。どの係数も
  *   使わない定義、循環とその下流、上限を超えた段の定義は、最後の段(全部の定義を測る段)でだけ測る。
  * - 測った値はこの再計算の中でだけ持ち回る(`known`)。未解決も「未解決」として渡し、古い値や
- *   別の値で代用しない(申し送り §6.2-4)。
+ *   別の値で代用しない。
  */
 import type { PartDocument } from '../part/types.js';
 import { analyzeMathGeometryDependencies } from './mathGeometryDependencies.js';

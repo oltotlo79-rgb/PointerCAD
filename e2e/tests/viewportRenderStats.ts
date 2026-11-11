@@ -5,6 +5,7 @@ interface ViewportRenderStats {
   readonly lastCompletedAtMs: number;
   readonly totalSceneRenderMs: number;
   readonly totalDrawListenerMs: number;
+  readonly cleanupStatus: 'active' | 'complete' | 'pending';
 }
 
 declare global {

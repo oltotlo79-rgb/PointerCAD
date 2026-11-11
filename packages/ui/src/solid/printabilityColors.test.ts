@@ -17,11 +17,18 @@ import {
   printabilityMatchesDisplayMeshes,
   printabilityTriangleOffsets,
   rememberPrintabilityDisplayMeshes,
-  PRINTABILITY_DEFAULT_MATERIAL_INDEX,
-  PRINTABILITY_MATERIAL_COUNT,
-  PRINTABILITY_OVERHANG_MATERIAL_INDEX,
-  PRINTABILITY_THIN_MATERIAL_INDEX,
 } from './printabilityColors.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const PRINTABILITY_DEFAULT_MATERIAL_INDEX = 0;
+const PRINTABILITY_OVERHANG_MATERIAL_INDEX = 2;
+const PRINTABILITY_THIN_MATERIAL_INDEX = 1;
+
+/**
+ * 点検の間の 1 ボディの材質の数(§0.53)。**P5 の上限 8 に触れない。**
+ * `printabilityAppearances` が返す配列の長さと必ず一致する(下の検査で固定)。
+ */
+const PRINTABILITY_MATERIAL_COUNT = 3;
 
 /** 三角形の番号の一覧を、カーネルと同じ「下位ビットから」の詰め方でビット列にする。 */
 function bitsOf(triangleCount: number, marked: readonly number[]): Uint8Array {

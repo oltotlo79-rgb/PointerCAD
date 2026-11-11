@@ -5,6 +5,11 @@ import type { FunctionFormula } from '../functionGeometry/functionDefinitionType
 import type { FunctionExpressionScope } from '../functionGeometry/readFunctionDefinition.js';
 import type { PartDocument } from './types.js';
 
+/** Parent scope of a non-scalar formula; callers with fewer callback arguments remain compatible. */
+export type DocumentFunctionOwner =
+  | { readonly kind: 'sketchFeature'; readonly sketchId: string; readonly ownerName: string }
+  | { readonly kind: 'solid' | 'mathProblem'; readonly ownerName: string };
+
 export function functionExpressionScope(formula: FunctionFormula): FunctionExpressionScope {
   switch (formula.kind) {
     case 'coordinate-curve': return { axes: [formula.independent], parameters: [] };
@@ -17,14 +22,16 @@ export function functionExpressionScope(formula: FunctionFormula): FunctionExpre
 }
 
 export function mapDocumentFunctionExpressions(document: PartDocument,
-  map: (definition: StoredMathExpression, ownerId: string, scope: FunctionExpressionScope) => StoredMathExpression): PartDocument {
+  map: (definition: StoredMathExpression, ownerId: string, scope: FunctionExpressionScope,
+    owner: DocumentFunctionOwner) => StoredMathExpression): PartDocument {
   let changed = false;
   const sketches = document.sketches.map(sketch => {
     let sketchChanged = false;
     const features = sketch.features.map(feature => {
       if (feature.kind !== 'functionCurve') return feature;
       const scope = functionExpressionScope(feature.definition.formula);
-      const definition = mapFunctionDefinition(feature.definition, value => value, formula => map(formula, feature.id, scope));
+      const definition = mapFunctionDefinition(feature.definition, value => value, formula =>
+        map(formula, feature.id, scope, { kind: 'sketchFeature', sketchId: sketch.id, ownerName: feature.name }));
       if (definition === feature.definition) return feature;
       sketchChanged = true;
       return { ...feature, definition };
@@ -35,7 +42,8 @@ export function mapDocumentFunctionExpressions(document: PartDocument,
   const solids = document.solids.map(feature => {
     if (feature.kind !== 'functionSurface') return feature;
     const scope = functionExpressionScope(feature.definition.formula);
-    const definition = mapFunctionDefinition(feature.definition, value => value, formula => map(formula, feature.id, scope));
+    const definition = mapFunctionDefinition(feature.definition, value => value, formula =>
+      map(formula, feature.id, scope, { kind: 'solid', ownerName: feature.name }));
     if (definition === feature.definition) return feature;
     changed = true;
     return { ...feature, definition };
@@ -45,14 +53,16 @@ export function mapDocumentFunctionExpressions(document: PartDocument,
 
 /** Visit formulas used for references/renaming without evaluating them as scalar coordinates. */
 export function mapDocumentNonScalarExpressions(document: PartDocument,
-  map: (definition: StoredMathExpression, ownerId: string, scope: FunctionExpressionScope | undefined) => StoredMathExpression): PartDocument {
+  map: (definition: StoredMathExpression, ownerId: string, scope: FunctionExpressionScope | undefined,
+    owner: DocumentFunctionOwner) => StoredMathExpression): PartDocument {
   const result = mapDocumentFunctionExpressions(document, map);
   if (result.unresolvedMathProblems === undefined) return result;
   let changed = false;
   const unresolvedMathProblems = result.unresolvedMathProblems.map(problem => {
     // A saved unresolved formula has its own declared symbols. It is not a
     // geometry function, whose scope deliberately rejects free declarations.
-    const definition = map(problem.definition, problem.id, undefined);
+    const definition = map(problem.definition, problem.id, undefined,
+      { kind: 'mathProblem', ownerName: problem.name });
     if (definition === problem.definition) return problem;
     changed = true;
     return { ...problem, definition };

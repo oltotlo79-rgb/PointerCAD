@@ -1,0 +1,109 @@
+{
+  "schema": "pointercad-netgen-rebuild-pins/1",
+  "netgenTop": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806",
+  "pybindTop": "pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9",
+  "zlibTop": "zlib-1.3.1",
+  "inputs": {
+    "netgenTar": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+    "pybind11Tar": "e84c2929c340a59eef985dc31e309f290982de8617d9aeb7b77c123c4bb044a4",
+    "zlibTar": "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c",
+    "sdkZconf": "77304005ceb5f0d03ad4c37eb8386a10866e4ceeb204f7c3b6599834c7319541",
+    "recipeZip": "a5e6ff23a1c8f300b6955074701bc9229f5187d0fee0f09a20a165c044b2f761"
+  },
+  "recipeMembers": {
+    "pyproject.toml": "9120cfdb6591788808d98b2e914becbb631d120e93d625784b4ec8613c8b92cd",
+    "target_linkage.py": "73c1d91fdb7b371bc1dd8e15c308559b4fc824eaa90193916d67358959c89c95",
+    "wrapper-settings.json": "f552793d8a003669ee53ea5e11b01d31f7fed37ceca538dd40924555f71c7f9d",
+    "audit.py": "c531d3d96e60f64dc934830ff9b46bb86d07d55beaaae174ab09cecda59b5f36",
+    "build.sh": "1ba46ae17d5356b8e08f3d00b2e9b6350e9523db0cbcb0c9afa1d078862a0fd5",
+    "inputs.json": "266b1edd3dd8f353d2985a9420f5056cd70a03f835afdea014fb3194e5621121"
+  },
+  "upstreamPyprojectSha256": "d266ad41ebd0a9e1de87aedabc5f6020528f88e2606e9ee01d5db3fe71d3d3cf",
+  "nativeLinkSourcePins": {
+    "ng/CMakeLists.txt": "e7512177cceee339ec926c77f1d4977412e840854ab8f87c52a018ea4451b024",
+    "nglib/CMakeLists.txt": "36ee6c0a1794cb1042c6e64745eb32614b7efc76a8a710cb7b7493852f53561e",
+    "ng/netgenpy.cpp": "cf4f7134c3d629094cea248b72e5fd87595a8af0bbc5120b674874afa9f13beb"
+  },
+  "ngLinkPatch": {
+    "old": "    target_link_libraries( ngpy PRIVATE ${CMAKE_THREAD_LIBS_INIT} ${JPEG_LIBRARIES} ${MKL_LIBRARIES} ${ZLIB_LIBRARIES} occ_libs netgen_cgns )\n",
+    "new": "    target_link_libraries( ngpy PRIVATE ${CMAKE_THREAD_LIBS_INIT} ${JPEG_LIBRARIES} ${MKL_LIBRARIES} occ_libs netgen_cgns )\n    # The Emscripten side module imports zlib through its nglib owner.\n    # Do not enumerate an unused second static archive as ngpy exports.\n    if(NOT EMSCRIPTEN)\n        target_link_libraries(ngpy PRIVATE ${ZLIB_LIBRARIES})\n    endif()\n",
+    "afterSha256": "32ccd931b1eb3f528b04699148d31e91b133affc63f4b4bb2e09820246f1e562",
+    "from": "recipe target_linkage.py OLD_LINK/NEW_LINK"
+  },
+  "upstreamZconfSha256": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+  "targetZconfSha256": "77304005ceb5f0d03ad4c37eb8386a10866e4ceeb204f7c3b6599834c7319541",
+  "marker": {
+    "file": "libsrc/core/python_ngcore_export.cpp",
+    "token": "pointercad-netgen-replacement-marker-r86",
+    "beforeSha256": "cfc516c839449c154ba64e3a1e1f0f774f01ac8b403a8d9a669cb1f4a1f0673e",
+    "afterSha256": "f7426a1ad5e81d504a6b7f4d012ecafc5686e550beafb2f65664caa300002f31",
+    "change": "one pybind11 module attribute string in pyngcore; meshing code unchanged"
+  },
+  "cmakeDefinitions": {
+    "USE_SUPERBUILD": "OFF",
+    "USE_OCC": "OFF",
+    "USE_GUI": "OFF",
+    "USE_MPI": "OFF",
+    "USE_MPI_WRAPPER": "OFF",
+    "USE_NATIVE_ARCH": "OFF",
+    "USE_PYTHON": "ON",
+    "USE_SPDLOG": "OFF",
+    "USE_NUMA": "OFF",
+    "USE_JPEG": "OFF",
+    "USE_MPEG": "OFF",
+    "USE_CGNS": "OFF",
+    "USE_CCACHE": "OFF",
+    "BUILD_STUB_FILES": "OFF",
+    "ENABLE_UNIT_TESTS": "OFF",
+    "BUILD_FOR_CONDA": "ON",
+    "PREFER_SYSTEM_PYBIND11": "OFF",
+    "NG_INSTALL_DIR_PYTHON": ".",
+    "NG_INSTALL_DIR_LIB": ".",
+    "NETGEN_VERSION_GIT": "v6.2.2606-5-g654ed121",
+    "NETGEN_VERSION_PYTHON": "6.2.2606.post5.dev0",
+    "BUILD_ZLIB": "OFF",
+    "ZLIB_INCLUDE_DIRS": "@OUT@/target/include",
+    "ZLIB_LIBRARIES": "@OUT@/target/lib/libz.a",
+    "ZLIB_USE_STATIC_LIBS": "ON",
+    "CMAKE_BUILD_TYPE": "Release"
+  },
+  "wrapperSettings": {
+    "exports": "requested",
+    "ldflags": "-O2 -g0  -L/home/yuya/pcad-oofem-rebuild-20261011-2136/xbuildenv/file__home_yuya_pcad-oofem-rebuild-20261011-2136_dl_xbuildenv-0_29_3_tar_bz2/xbuildenv/pyodide-root/cpython/installs/python-3.13.2/lib/ -s WASM_BIGINT -fwasm-exceptions -sSUPPORT_LONGJMP -s SIDE_MODULE=1 ",
+    "cflags": "-O2 -g0 -fPIC -fwasm-exceptions -sSUPPORT_LONGJMP -I/home/yuya/pcad-oofem-rebuild-20261011-2136/xbuildenv/file__home_yuya_pcad-oofem-rebuild-20261011-2136_dl_xbuildenv-0_29_3_tar_bz2/xbuildenv/pyodide-root/cpython/installs/python-3.13.2/include/python3.13 ",
+    "cxxflags": "-O2 -g0 -fPIC -fwasm-exceptions -sSUPPORT_LONGJMP ",
+    "abi": "2025_0",
+    "pkgname": ""
+  },
+  "historicalXbuildenvVersionDir": "/home/yuya/pcad-oofem-rebuild-20261011-2136/xbuildenv/file__home_yuya_pcad-oofem-rebuild-20261011-2136_dl_xbuildenv-0_29_3_tar_bz2",
+  "wheelName": "netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+  "shippedWheel": {
+    "sha256": "3f0d507e8daa11b5a26654d904c529d6c1338e9a3a4c7d7728152f3596954ba3",
+    "bytes": 2809006
+  },
+  "modules": [
+    {
+      "member": "libngcore.so",
+      "needed": []
+    },
+    {
+      "member": "libnglib.so",
+      "needed": [
+        "libngcore.so"
+      ]
+    },
+    {
+      "member": "netgen/libngpy.so",
+      "needed": [
+        "libnglib.so",
+        "libngcore.so"
+      ]
+    },
+    {
+      "member": "pyngcore/pyngcore.so",
+      "needed": [
+        "libngcore.so"
+      ]
+    }
+  ]
+}

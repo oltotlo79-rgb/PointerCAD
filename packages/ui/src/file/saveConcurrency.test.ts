@@ -1,11 +1,15 @@
-import { createEmptyPartDocument } from '@pointercad/model';
-import { readPcadFile, type AutoSaver } from '@pointercad/io';
+import { createAssemblyDocument, createEmptyPartDocument } from '@pointercad/model';
+import { encodeSaveDocument, readArchive, readDocumentBundle, readPcadFile, type AutoSaver } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { createBrowserFileGateway, type FileGateway } from './fileGateway.js';
 import { hasUnsavedChanges, savePart, type PartFileDeps } from './partFile.js';
 import { SAVE_RECOVERY_COPY_MARKER } from './saveFailure.js';
+import { cancelDocumentSaves, queueDocumentSave, type DocumentSaveControl } from './documentSaveQueue.js';
+import { PcadSaveWorkerError } from './pcadSaveWorker.js';
+import { copySaveSnapshot } from './pcadSaveSnapshot.js';
+import { currentPcadAttachments } from '../store/attachKernel.js';
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => { throw new Error('未初期化'); };
@@ -28,10 +32,88 @@ function delayedGateway() {
 
 beforeEach(() => {
   useAppStore.setState({ ...createInitialDocumentState(), assembly: null, drawing: null,
+    saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null,
     activeDocumentId: crypto.randomUUID(), fileName: null, savedDocument: null, fileMessage: null, autoSaver: null });
 });
 
 describe('保存の完了を開始した文書へ結び付ける（レビュー R02）', () => {
+  it('書込みへ移った後の古い取消ボタンと、完了後の古い進捗を採用しない', async () => {
+    let control: DocumentSaveControl | undefined;
+    await queueDocumentSave(useAppStore.getState(), (_isCurrent, current) => {
+      control = current;
+      const oldCancel = useAppStore.getState().documentSaveOperation?.cancel;
+      expect(current.beginWriting()).toBe(true); oldCancel?.();
+      current.onProgress?.('compressing');
+      expect(current.signal.aborted).toBe(false); expect(useAppStore.getState().documentSaveOperation?.stage).toBe('writing');
+      return Promise.resolve();
+    });
+    expect(useAppStore.getState().documentSaveOperation).toBeNull();
+    control?.onProgress?.('compressing'); expect(control?.beginWriting()).toBe(false);
+    expect(useAppStore.getState().documentSaveOperation).toBeNull();
+  });
+  it('実際のUndoとRedoの間で転送保存しても、現在文書と履歴が利用する原本・meshの全バイトを保持する', async () => {
+    const shape = Uint8Array.of(1, 2, 3, 4), positions = new Float32Array([1, 2, 3]);
+    const normals = new Float32Array([0, 0, 1]), indices = new Uint32Array([0]);
+    const originals = [shape, positions, normals, indices];
+    const previousBytes = originals.map(value => Uint8Array.from(new Uint8Array(value.buffer)));
+    const state = useAppStore.getState();
+    state.setImportedAttachments(new Map([['original', shape]]), new Map([['mesh', { positions, normals, indices }]]));
+    state.applyDocument({ ...state.document, name: 'Undoで戻す文書' });
+    state.applyDocument({ ...useAppStore.getState().document, name: 'Redoで戻す文書' });
+    useAppStore.getState().undo();
+    const current = useAppStore.getState().document, undo = useAppStore.getState().undoStack;
+    const write = vi.fn((_name: string, bytes: Uint8Array) => {
+      expect(readPcadFile(bytes)).toMatchObject({ ok: true, document: current }); return Promise.resolve('undo.pcad');
+    });
+    useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false, savePcad: write } });
+    await savePart({ ...deps, attachmentsOf: currentPcadAttachments, encodeSave: async input => {
+      const copied = await copySaveSnapshot(input);
+      return encodeSaveDocument(structuredClone(copied.input, { transfer: copied.transfer }));
+    } }, false);
+    expect(useAppStore.getState().document).toBe(current); expect(useAppStore.getState().undoStack).toBe(undo);
+    useAppStore.getState().redo(); expect(useAppStore.getState().document.name).toBe('Redoで戻す文書');
+    for (const [i, value] of originals.entries()) {
+      expect(value.byteLength).toBe(previousBytes[i].byteLength);
+      expect(new Uint8Array(value.buffer)).toEqual(previousBytes[i]);
+    }
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+  it.each(['cancel', 'switch', 'dispose'])('圧縮中の%sは進行中と待機中を止め、遅い返信からファイルを作らない', async kind => {
+    const started = deferred<void>(), finished = deferred<Uint8Array>();
+    const write = vi.fn(() => Promise.resolve('saved.pcad')), discard = vi.fn(() => Promise.resolve());
+    const gateway: FileGateway = { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false, savePcad: write };
+    const original = useAppStore.getState().document;
+    let signal: AbortSignal | undefined;
+    useAppStore.setState({ fileGateway: gateway, autoSaver: saver(discard), saveDocumentEncoder: (_input, control) => {
+      signal = control?.signal; control?.onProgress?.('compressing'); started.resolve(); return finished.promise;
+    } });
+    const first = savePart(deps, false); await started.promise;
+    const second = savePart(deps, false);
+    if (kind === 'cancel') useAppStore.getState().documentSaveOperation?.cancel?.();
+    else if (kind === 'switch') useAppStore.setState({ activeDocumentId: crypto.randomUUID(), fileMessage: null });
+    else cancelDocumentSaves(gateway);
+    expect(signal?.aborted).toBe(true);
+    finished.resolve(await encodeSaveDocument({ kind: 'part', document: original, options: {} }));
+    await Promise.all([first, second]);
+    expect(write).not.toHaveBeenCalled(); expect(discard).not.toHaveBeenCalled();
+    expect(useAppStore.getState().savedDocument).toBeNull(); expect(useAppStore.getState().document).toBe(original);
+    useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument });
+    await savePart(deps, false); expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it('Worker失敗を理由付きで表示し、正常な文書と控えを残して再保存できる', async () => {
+    const discard = vi.fn(() => Promise.resolve()), write = vi.fn(() => Promise.resolve('retry.pcad'));
+    const gateway: FileGateway = { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false, savePcad: write };
+    const original = useAppStore.getState().document;
+    useAppStore.setState({ fileGateway: gateway, autoSaver: saver(discard),
+      saveDocumentEncoder: () => Promise.reject(new PcadSaveWorkerError('crashed', 'worker process stopped')) });
+    await savePart(deps, false);
+    expect(useAppStore.getState().fileMessage).toEqual({ key: 'file.saveEncodingFailed', failed: true, detail: 'worker process stopped' });
+    expect(useAppStore.getState().document).toBe(original); expect(useAppStore.getState().savedDocument).toBeNull();
+    expect(discard).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled();
+    useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument });
+    await savePart(deps, false); expect(useAppStore.getState().fileName).toBe('retry.pcad');
+  });
   it.each(['success', 'failure'])('保存待機中に開いた別文書の名前・保存状態・控えを変えない（%s）', async (outcome) => {
     const delayed = delayedGateway();
     const pending = savePart(deps, false);
@@ -187,4 +269,54 @@ describe('ブラウザの保存先も古い非同期完了で戻さない（レ�
     await gateway.savePcad('B.pcad', Uint8Array.of(2), false);
     expect(written).toEqual(['A.pcad', 'B.pcad']);
   });
+});
+
+describe('the save snapshot and its deferred viewport image keep the same document owner', () => {
+  for (const kind of ['part', 'assembly'] as const) {
+    it.each(['success', 'edit', 'cancel', 'switch', 'reject'] as const)(`${kind}: %s while image ownership is pending`, async change => {
+      const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='), char => char.charCodeAt(0));
+      if (kind === 'assembly') useAppStore.getState().openAssembly(createAssemblyDocument('original'));
+      else useAppStore.getState().applyDocument({ ...useAppStore.getState().document, name: 'original' });
+      const writes: Uint8Array[] = [];
+      const write = vi.fn((_name: string, bytes: Uint8Array) => { writes.push(bytes); return Promise.resolve(`saved.${kind === 'part' ? 'pcad' : 'pcada'}`); });
+      const encode = vi.fn(encodeSaveDocument), thumbnail = deferred<Uint8Array | null>();
+      useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false, savePcad: write } });
+      const before = useAppStore.getState();
+      const pending = savePart({ ...deps, captureThumbnail: () => thumbnail.promise, encodeSave: encode }, false);
+      await vi.waitFor(() => { expect(useAppStore.getState().documentSaveOperation?.stage).toBe('preparing'); });
+      expect(encode).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled();
+      if (change === 'edit') {
+        if (kind === 'part') useAppStore.getState().applyDocument({ ...before.document, name: 'edited' });
+        else if (before.assembly !== null) useAppStore.getState().applyAssembly({ ...before.assembly, name: 'edited' });
+      }
+      if (change === 'cancel') useAppStore.getState().documentSaveOperation?.cancel?.();
+      if (change === 'switch') useAppStore.setState({ activeDocumentId: crypto.randomUUID(), document: { ...before.document, name: 'new session' } });
+      if (change === 'cancel' || change === 'switch') {
+        // The queue must finish before the stalled producer. Its eventual bytes cannot write a file.
+        await pending;
+        expect(encode).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled();
+        thumbnail.resolve(png); await Promise.resolve();
+        expect(write).not.toHaveBeenCalled();
+        return;
+      }
+      if (change === 'reject') thumbnail.reject(new Error('native ownership refresh refused'));
+      else thumbnail.resolve(png);
+      await pending;
+      expect(encode).toHaveBeenCalledTimes(1); expect(write).toHaveBeenCalledTimes(1);
+      const archive = readArchive(writes[0], { shouldExtract: () => true });
+      if (!archive.ok) throw new Error('actual saved ZIP missing');
+      expect(archive.entries.get('thumbnail.png')).toEqual(change === 'success' ? png : undefined);
+      if (kind === 'part') {
+        const loaded = readPcadFile(writes[0]);
+        if (!loaded.ok) throw new Error('actual saved part invalid');
+        expect(loaded.document).toEqual(before.document);
+        expect(useAppStore.getState().document.name).toBe(change === 'edit' ? 'edited' : 'original');
+      } else {
+        const loaded = await readDocumentBundle(writes[0], 'assembly');
+        if (!loaded.ok || loaded.bundle.kind !== 'assembly') throw new Error('actual saved assembly invalid');
+        expect(loaded.bundle.document).toEqual(before.assembly);
+        expect(useAppStore.getState().assembly?.name).toBe(change === 'edit' ? 'edited' : 'original');
+      }
+    });
+  }
 });

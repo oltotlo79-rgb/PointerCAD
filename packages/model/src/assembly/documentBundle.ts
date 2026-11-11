@@ -21,8 +21,6 @@ export interface EmbeddedAssemblyDocumentBundle {
   readonly document: AssemblyDocument;
 }
 
-export type EmbeddedDocumentBundle = PartDocumentBundle | EmbeddedAssemblyDocumentBundle;
-
 export interface AssemblyDocumentBundle {
   readonly kind: 'assembly';
   readonly document: AssemblyDocument;

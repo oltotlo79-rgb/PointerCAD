@@ -1,0 +1,320 @@
+"""Fixed OOFEM214b161 ltrspace/IsoLE static linear elasticity, N-mm-MPa.
+
+OOFEM native element matrices and native Skyline/LDLT solve; no dense global K,
+NumPy solver or replacement constitutive engine. Native success alone is not a
+singularity test: ldltfact.C returns CR_CONVERGED unconditionally. Check the
+factorized, equilibrated matrix's D pivots and the original element residuals.
+"""
+import json
+import math
+from importlib.metadata import version
+
+
+def _finite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError('solid-numeric: finite number required')
+    return float(value)
+
+
+def _node_order(plan):
+    """Deterministic RCM of tet adjacency; retain natural order if profile is smaller.
+
+    Only native node numbers change. Input identity and element/local-node order
+    stay original; forces and decoded displacement remain indexed by original ID.
+    """
+    count = len(plan['input']['nodes'])
+    adjacency = [set() for _ in range(count)]
+    for element in plan['input']['elements']:
+        for node in element['nodes']:
+            adjacency[node].update(other for other in element['nodes'] if other != node)
+    degree = [len(row) for row in adjacency]
+    seen = [False] * count
+    order = []
+    for root in sorted(range(count), key=lambda node: (degree[node], node)):
+        if seen[root]:
+            continue
+        queue = [root]
+        seen[root] = True
+        cursor = 0
+        while cursor < len(queue):
+            node = queue[cursor]
+            cursor += 1
+            for other in sorted(adjacency[node], key=lambda item: (degree[item], item)):
+                if not seen[other]:
+                    seen[other] = True
+                    queue.append(other)
+        order.extend(reversed(queue))
+
+    def profile(candidate):
+        equations = [[0, 0, 0] for _ in range(count)]
+        number = 0
+        for node in candidate:
+            for axis in range(3):
+                if not plan['fixed'][node][axis]:
+                    number += 1
+                    equations[node][axis] = number
+        minima = list(range(1, number + 1))
+        for element in plan['input']['elements']:
+            location = [eq for node in element['nodes'] for eq in equations[node] if eq]
+            if location:
+                first = min(location)
+                for eq in location:
+                    minima[eq - 1] = min(minima[eq - 1], first)
+        return 0 if not number else 1 + sum(i + 2 - start for i, start in enumerate(minima))
+
+    natural = list(range(count))
+    if profile(natural) <= profile(order):
+        order = natural
+    if sorted(order) != natural:
+        raise ValueError('solid-native: node permutation is not bijective')
+    native_numbers = [0] * count
+    for number, original in enumerate(order, 1):
+        native_numbers[original] = number
+    return order, native_numbers
+
+
+def _prescribed(plan):
+    count = len(plan['input']['nodes'])
+    if 'prescribedMm' not in plan:
+        return [[0.0, 0.0, 0.0] for _ in range(count)]
+    rows = plan['prescribedMm']
+    if not isinstance(rows, list) or len(rows) != count:
+        raise ValueError('solid-input: inconsistent prescribed translations')
+    values = []
+    for node, row in enumerate(rows):
+        if not isinstance(row, list) or len(row) != 3:
+            raise ValueError('solid-input: exactly three prescribed translations required')
+        vector = [_finite(value) for value in row]
+        if any(value != 0 and not plan['fixed'][node][axis] for axis, value in enumerate(vector)):
+            raise ValueError('solid-input: prescribed translation on an unrestrained axis')
+        values.append(vector)
+    return values
+
+
+def _deck(plan, node_order, native_numbers):
+    data = plan['input']
+    materials = {row['id']: i + 1 for i, row in enumerate(data['materials'])}
+    prescribed = _prescribed(plan)
+    boundary_values = {0.0: 1}
+    for row in prescribed:
+        for value in row:
+            if value not in boundary_values:
+                boundary_values[value] = len(boundary_values) + 1
+    lines = ['/pcad_fem/solid.out', 'PointerCAD tet4; coherent N, mm, MPa',
+             'LinearStatic nsteps 1 nmodules 0', 'domain 3d', 'OutputManager',
+             f"ndofman {len(data['nodes'])} nelem {len(data['elements'])} "
+             f"ncrosssect {len(materials)} nmat {len(materials)} nbc {len(boundary_values)} nltf 1 nic 0"]
+    for number, original in enumerate(node_order, 1):
+        point, fixed = data['nodes'][original], plan['fixed'][original]
+        lines.append(f'node {number} coords 3 ' + ' '.join(str(_finite(v)) for v in point)
+                     + ' bc 3 ' + ' '.join(str(boundary_values[prescribed[original][axis]]) if v else '0'
+                                          for axis, v in enumerate(fixed)))
+    for number, element in enumerate(data['elements'], 1):
+        material = materials[element['materialId']]
+        lines.append(f'ltrspace {number} nodes 4 ' + ' '.join(str(native_numbers[i]) for i in element['nodes'])
+                     + f' mat {material} crosssect {material}')
+    for number in range(1, len(materials) + 1):
+        lines.append(f'SimpleCS {number} material {number}')
+    for number, material in enumerate(data['materials'], 1):
+        # Static stiffness has no density contribution. d=0 is not a supplied
+        # physical density and must never be reported as a mass prediction.
+        lines.append(f"IsoLE {number} d 0 E {_finite(material['youngMPa'])} "
+                     f"n {_finite(material['poisson'])} tAlpha 0.0")
+    lines += [f'BoundaryCondition {number} loadTimeFunction 1 prescribedValue {value}'
+              for value, number in boundary_values.items()]
+    lines += ['PeakFunction 1 t 1.0 f(t) 1.0', '']
+    return '\n'.join(lines)
+
+
+def _native_matrix(fem, element, step):
+    matrix = fem.FloatMatrix()
+    element.giveCharacteristicMatrix(matrix, fem.CharType.TangentStiffnessMatrix, step)
+    values = [[_finite(matrix[i, j]) for j in range(12)] for i in range(12)]
+    scale = max(abs(value) for row in values for value in row)
+    if not scale > 0 or any(abs(values[i][j] - values[j][i]) > 1e-11 * scale
+                           for i in range(12) for j in range(12)):
+        raise ValueError('solid-native: invalid element stiffness symmetry')
+    return matrix, values
+
+
+def run_solid_analysis():
+    import oofem as fem
+    if version('oofem') != '3.1.dev5+g214b161ed':
+        raise ValueError('solid-native: unexpected OOFEM distribution')
+    with open('/pcad_fem/solid-input.json', encoding='utf-8') as stream:
+        plan = json.load(stream)
+    data = plan['input']
+    if (plan['schema'] != 'pointercad-solid-tet4-plan/1' or data['schema'] != 'pointercad-solid-tet4/1'
+            or data['units'] != 'N-mm-MPa' or not 4 <= len(data['nodes']) <= 10000
+            or not 1 <= len(data['elements']) <= 50000):
+        raise ValueError('solid-input: invalid bounded plan')
+    count, element_count = len(data['nodes']), len(data['elements'])
+    budget = data['numericBudgetBytes']
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget <= 0:
+        raise ValueError('solid-budget: explicit integer reservation required')
+    # Conservative simultaneous numeric payload: owned input/plan, native
+    # model fields, indices, decoded result, native vectors and loop temporaries.
+    # Counts numbers at eight bytes, including integer indices; not a claim
+    # about interpreter object/header overhead, GC, OS, or the WASM runtime.
+    base_numbers = (count * 96 + element_count * 96 + len(data['materials']) * 12
+                    + len(data['nodalLoads']) * 8 + len(data['surfaceLoads']) * 14 + 4096)
+    if base_numbers * 8 > budget:
+        raise ValueError('solid-budget: input/native/result numeric reservation exceeded')
+    if len(plan['forcesN']) != count or len(plan['fixed']) != count:
+        raise ValueError('solid-input: inconsistent node fields')
+    forces = [[_finite(v) for v in row] for row in plan['forcesN']]
+    if any(len(row) != 3 for row in forces) or any(len(row) != 3 or any(type(v) is not bool for v in row)
+                                                  for row in plan['fixed']):
+        raise ValueError('solid-input: exactly three translations required')
+    # Adjacency <=12 indices/tet; bounded traversal/profile temporaries <=32/node.
+    # Check before constructing the ordering workspace; no global matrix yet.
+    if (base_numbers + 12 * element_count + 32 * count) * 8 > budget:
+        raise ValueError('solid-budget: node ordering workspace exceeds reservation')
+    node_order, native_numbers = _node_order(plan)
+    # The graph/profile workspace has been released; two bijection arrays persist.
+    base_numbers += 2 * count
+    with open('/pcad_fem/solid.in', 'w', encoding='utf-8') as stream:
+        stream.write(_deck(plan, node_order, native_numbers))
+    problem = None
+    primary = None
+    try:
+        problem = fem.InstanciateProblem(fem.OOFEMTXTDataReader('/pcad_fem/solid.in'),
+                                        fem.problemMode.processor, 0, None, False)
+        if problem is None or problem.checkProblemConsistency() != 1:
+            raise ValueError('solid-native: inconsistent native model')
+        # TXT instantiation already postInitialize'd the exact native model.
+        # Explicit sparse solve does not start EngngModel's solveYourself timer.
+        problem.giveTimer().startTimer(fem.EngngModelTimerType.EMTT_AnalysisTimer)
+        problem.init()
+        step = problem.giveNextStep()
+        problem.forceEquationNumbering()
+        domain = problem.giveDomain(1)
+        numbering = fem.EModelDefaultEquationNumbering()
+        equations = int(problem.giveNumberOfDomainEquations(1, numbering))
+        if not 0 <= equations <= count * 3:
+            raise ValueError('solid-native: invalid equation count')
+        ids = (fem.DofIDItem.D_u, fem.DofIDItem.D_v, fem.DofIDItem.D_w)
+        node_equations = [[int(numbering.giveDofEquationNumber(domain.giveDofManager(native_numbers[i]).giveDofWithID(dof)))
+                           for dof in ids] for i in range(count)]
+        observed = []
+        for i, row in enumerate(node_equations):
+            for axis, equation in enumerate(row):
+                if (plan['fixed'][i][axis] and equation != 0) or (not plan['fixed'][i][axis] and not 1 <= equation <= equations):
+                    raise ValueError('solid-native: restraint/numbering mismatch')
+                if equation:
+                    observed.append(equation)
+        if sorted(observed) != list(range(1, equations + 1)):
+            raise ValueError('solid-native: non-bijective equation numbering')
+        # Exact skyline profile, same algorithm as skyline.C::buildInternalStructure.
+        # No native global matrix exists before this check; no speculative dense allocation.
+        minima = list(range(1, equations + 1))
+        for element in data['elements']:
+            location = [eq for node in element['nodes'] for eq in node_equations[node] if eq]
+            if location:
+                first = min(location)
+                for eq in location:
+                    minima[eq - 1] = min(minima[eq - 1], first)
+        skyline_numbers = 0 if equations == 0 else 1 + sum(i + 1 - start + 1 for i, start in enumerate(minima))
+        reserved = (base_numbers + skyline_numbers + 4 * (equations + 1)) * 8
+        if reserved > budget:
+            raise ValueError('solid-budget: actual native skyline profile exceeds reservation')
+        diagonal = [0.0] * equations
+        expected_mask = [int(dof) for dof in ids]
+        for i, row in enumerate(data['elements']):
+            element = domain.giveElement(i + 1)
+            mask = fem.IntArray()
+            element.giveDofManDofIDMask(1, mask)
+            if list(mask) != expected_mask:
+                raise ValueError('solid-native: unexpected tet4 DOF order')
+            for local, node in enumerate(row['nodes'], 1):
+                if element.giveDofManagerNumber(local) != native_numbers[node]:
+                    raise ValueError('solid-native: element/node association changed')
+            _, values = _native_matrix(fem, element, step)
+            location = [eq for node in row['nodes'] for eq in node_equations[node]]
+            for local, eq in enumerate(location):
+                if eq:
+                    diagonal[eq - 1] += values[local][local]
+        if any(not math.isfinite(v) or v <= 0 for v in diagonal):
+            raise ValueError('solid-mechanism: nonpositive restrained diagonal')
+        scaling = [1 / math.sqrt(v) for v in diagonal]
+        displacement = _prescribed(plan)
+        minimum_pivot = 1.0
+        if equations:
+            matrix = fem.skyline()
+            matrix.buildInternalStructure(problem, 1, numbering)
+            if matrix.giveNumberOfRows() != equations:
+                raise ValueError('solid-native: matrix extent mismatch')
+            rhs = [0.0] * equations
+            for node, row in enumerate(node_equations):
+                for axis, eq in enumerate(row):
+                    if eq:
+                        rhs[eq - 1] = _finite(forces[node][axis] * scaling[eq - 1])
+            for i, row in enumerate(data['elements']):
+                element = domain.giveElement(i + 1)
+                native, values = _native_matrix(fem, element, step)
+                location = fem.IntArray()
+                element.giveLocationArray(location, numbering, None)
+                expected = [eq for node in row['nodes'] for eq in node_equations[node]]
+                if list(location) != expected:
+                    raise ValueError('solid-native: native location differs from reserved profile')
+                # The reduced native solve needs K_ff*u_f = f_f - K_fc*u_c.
+                # Keep constrained values exact; equation/node numbering is unchanged.
+                if 'prescribedMm' in plan:
+                    local_u = [value for node in row['nodes'] for value in displacement[node]]
+                    for a, eq_a in enumerate(expected):
+                        if eq_a:
+                            shift = math.fsum(values[a][b] * local_u[b] for b, eq_b in enumerate(expected) if not eq_b)
+                            rhs[eq_a - 1] = _finite(rhs[eq_a - 1] - shift * scaling[eq_a - 1])
+                for a, eq_a in enumerate(expected):
+                    for b, eq_b in enumerate(expected):
+                        native[a, b] = values[a][b] * (scaling[eq_a - 1] if eq_a else 0) * (scaling[eq_b - 1] if eq_b else 0)
+                matrix.assemble(location, native)
+            right, solved = fem.FloatArray(tuple(rhs)), fem.FloatArray()
+            solver = fem.ldltfactorization(domain, problem)
+            reason = solver.solve(matrix, right, solved)
+            if reason != fem.ConvergedReason.CR_CONVERGED or len(list(solved)) != equations:
+                raise ValueError('solid-native: sparse solve failed')
+            # at is 1-based and returns the actual storage slot. AFTER solve,
+            # Skyline::factorized has overwritten diagonal slots with D pivots.
+            pivots = [_finite(matrix.at(i, i)) for i in range(1, equations + 1)]
+            minimum_pivot = min(pivots)
+            if minimum_pivot <= 1e-12 or max(pivots) > 1 + 1e-10:
+                raise ValueError('solid-mechanism: nonpositive or numerically unresolved scaled LDL pivot')
+            for node, row in enumerate(node_equations):
+                for axis, eq in enumerate(row):
+                    if eq:
+                        displacement[node][axis] = _finite(float(solved[eq - 1]) * scaling[eq - 1])
+        internal = [[0.0, 0.0, 0.0] for _ in range(count)]
+        actions = []
+        # Re-evaluate original native element K, never multiply by factorized K.
+        for i, row in enumerate(data['elements']):
+            _, stiffness = _native_matrix(fem, domain.giveElement(i + 1), step)
+            local_u = [v for node in row['nodes'] for v in displacement[node]]
+            force = [_finite(math.fsum(k * u for k, u in zip(values, local_u, strict=True))) for values in stiffness]
+            actions.append(force)
+            for local, node in enumerate(row['nodes']):
+                for axis in range(3):
+                    internal[node][axis] = _finite(internal[node][axis] + force[3 * local + axis])
+        load_scale = max(1e-300, max(abs(v) for row in forces for v in row), max(abs(v) for row in internal for v in row))
+        residual = max((abs(internal[node][axis] - forces[node][axis]) / load_scale
+                        for node in range(count) for axis in range(3) if not plan['fixed'][node][axis]), default=0.0)
+        if not math.isfinite(residual) or residual > 1e-8:
+            raise ValueError('solid-equilibrium: native sparse residual exceeds 1e-8')
+        reactions = [[_finite(internal[node][axis] - forces[node][axis]) if plan['fixed'][node][axis] else 0.0
+                      for axis in range(3)] for node in range(count)]
+        return json.dumps({'schema': 'pointercad-solid-tet4-native/1', 'source': data['source'],
+                           'displacementMm': displacement, 'elementForcesN': actions,
+                           'reactionsN': reactions,
+                           'reservedNumericBytes': reserved, 'minimumScaledPivot': minimum_pivot}, allow_nan=False)
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if problem is not None:
+            try:
+                problem.terminateAnalysis()
+            except BaseException as cleanup:
+                if primary is not None:
+                    primary.add_note('Additional native termination error: ' + repr(cleanup))
+                else:
+                    raise

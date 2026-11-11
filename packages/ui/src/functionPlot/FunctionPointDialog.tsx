@@ -100,7 +100,7 @@ export function FunctionPointDialog({parent,pointId,onClose}:{readonly parent:Fu
           body={parentBody} curves={parentCurves} candidates={search.candidates} selected={selected} onSelect={setSelected}/>:null}
         <div className="pcad-function-actions">
           <button title={t('functionPlot.control.cancelPoint')} type="button" onClick={close}>{t('math.cancel')}</button>
-            {busy?<button title={t('functionPlot.control.stopPoint')} type="button" onClick={()=>{running.current?.abort();setBusy(false);}}>{t('functionPlot.stop')}</button>:<button title={t('functionPlot.control.searchPoint')} type="submit" disabled={coordinateCount===0}>{t('functionPoint.search')}</button>}
+            {busy?<button key="stop" title={t('functionPlot.control.stopPoint')} type="button" onClick={event=>{event.preventDefault();running.current?.abort();setBusy(false);}}>{t('functionPlot.stop')}</button>:<button key="submit" title={t('functionPlot.control.searchPoint')} type="submit" disabled={coordinateCount===0}>{t('functionPoint.search')}</button>}
             <button title={t('functionPlot.control.applyPoint')} type="button" disabled={busy||!search||!selected||!search.exhaustive||search.unresolved!==0} onClick={()=>{
             if(!isCurrent()||busy||!search||!selected)return;
             try{useAppStore.getState().applyDocument(applyFunctionPointChoice(search,selected,pointId));close();}

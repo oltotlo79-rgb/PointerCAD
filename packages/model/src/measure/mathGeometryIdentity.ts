@@ -1,10 +1,10 @@
 /**
- * One place for every math-geometry identity concern (GR-01, `scratchpad/claude/plans/geomref-plan.md`
- * §5.2 GR-01): the coefficient-ID namespace, the shared name-collision rule, the default comparison
- * tolerance (Q5=T1), extracting `coef("name")` references out of a stored expression, finding where a
- * definition is used, and branching on a quantity's kind to list what it targets. GR-09〜GR-11 add new
- * quantity kinds later; they extend `mathGeometryTargetsOf` here instead of re-deriving the same switch
- * elsewhere (§5.2 GR-01, §4(d)).
+ * 図形の測定値の係数ID・名前・比較幅の既定値・式からの参照抽出・使用先・測定対象を集約する。
+ * 測定値と通常の係数は `coef("名前")` のラベルを共有するため、名前衝突の規則も共通にする。
+ * 比較幅の既定値は1e-6mm・1e-6radで、定義ごとの編集は `mathGeometryDefinitions.ts` が扱う
+ * （docs/requirements.md の FR-210/FR-211 注記）。比較幅を計算の誤差保証とはしない。
+ * 量の種類ごとの参照先は `mathGeometryTargetsOf` だけで分岐する。量を追加するときもここを更新し、
+ * 依存解析や参照の選び直しで同じ分岐を重複させない。
  */
 import { collectMathCoefficients, type StoredMathExpression } from '@pointercad/expression';
 import { checkNewParameterName, type NewParameterNameIssue } from '../parameters/parameterTable.js';

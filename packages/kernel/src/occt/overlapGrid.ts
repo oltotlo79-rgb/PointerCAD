@@ -7,10 +7,10 @@
  */
 
 export type TrianglePoint = readonly [number, number, number];
-export type Triangle3 = readonly [TrianglePoint, TrianglePoint, TrianglePoint];
+type Triangle3 = readonly [TrianglePoint, TrianglePoint, TrianglePoint];
 
 /** 法線は交差判定に使わないため、位置と添字だけを受け取る。 */
-export interface TriangleMeshData {
+interface TriangleMeshData {
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
 }
@@ -426,8 +426,8 @@ function buildCellRanges(facts: MeshFacts, plan: GridPlan): Int32Array {
 }
 
 function buildGrid(facts: MeshFacts, ranges: Int32Array, plan: GridPlan): PackedGrid {
-  const cellTotal = plan.nx * plan.ny * plan.nz;
-  const counts = new Int32Array(cellTotal);
+  const gridCellCount = plan.nx * plan.ny * plan.nz;
+  const counts = new Int32Array(gridCellCount);
   for (let triangle = 0; triangle < facts.count; triangle += 1) {
     if (facts.degenerate[triangle] !== 0) continue;
     const offset = triangle * 6;
@@ -439,12 +439,12 @@ function buildGrid(facts: MeshFacts, ranges: Int32Array, plan: GridPlan): Packed
       }
     }
   }
-  const cellStart = new Int32Array(cellTotal + 1);
-  for (let cell = 0; cell < cellTotal; cell += 1) {
+  const cellStart = new Int32Array(gridCellCount + 1);
+  for (let cell = 0; cell < gridCellCount; cell += 1) {
     cellStart[cell + 1] = cellStart[cell] + counts[cell];
   }
-  const items = new Int32Array(cellStart[cellTotal]);
-  const cursor = cellStart.slice(0, cellTotal);
+  const items = new Int32Array(cellStart[gridCellCount]);
+  const cursor = cellStart.slice(0, gridCellCount);
   for (let triangle = 0; triangle < facts.count; triangle += 1) {
     if (facts.degenerate[triangle] !== 0) continue;
     const offset = triangle * 6;

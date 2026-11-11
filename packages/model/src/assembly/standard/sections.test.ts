@@ -8,15 +8,15 @@ import {
 const ALL_SECTIONS = [...EQUAL_ANGLE_TABLE, ...CHANNEL_TABLE, ...H_BEAM_TABLE];
 
 describe('JIS structural-section dimension tables', () => {
-  it('keeps every approved section: 26 angles, 8 channels, and 7 wide-flange H beams', () => {
-    expect(EQUAL_ANGLE_TABLE).toHaveLength(26);
-    expect(CHANNEL_TABLE).toHaveLength(8);
-    expect(H_BEAM_TABLE).toHaveLength(7);
+  it('keeps every approved section: 40 angles, 16 channels, and 53 H beams', () => {
+    expect(EQUAL_ANGLE_TABLE).toHaveLength(40);
+    expect(CHANNEL_TABLE).toHaveLength(16);
+    expect(H_BEAM_TABLE).toHaveLength(53);
   });
 
-  it('has 41 unique stable row and size keys', () => {
-    expect(new Set(ALL_SECTIONS.map((row) => row.size)).size).toBe(41);
-    expect(new Set(ALL_SECTIONS.map((row) => row.key)).size).toBe(41);
+  it('has 109 unique stable row and size keys', () => {
+    expect(new Set(ALL_SECTIONS.map((row) => row.size)).size).toBe(109);
+    expect(new Set(ALL_SECTIONS.map((row) => row.key)).size).toBe(109);
   });
 
   it('fixes the reference L 50x50x6 dimensions', () => {

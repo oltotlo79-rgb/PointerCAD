@@ -6,7 +6,7 @@ import {
 } from '../../packages/model/src/index.js';
 
 /**
- * The document of plan appendix D (scratchpad/claude/plans/geomref-plan.md, GR-24): box 1 (20 x 30 x 40 at the
+ * Shared document for mathGeometryReferenceFlow.ts (GR-24): box 1 (20 x 30 x 40 at the
  * origin), box 2 (width = coefficient 幅B, 10 x 10, at x = 100) and one XY sketch with a 0 degree and a 0.5 degree
  * segment. Only the history is stored; the real kernel measures every value during the screen test.
  */

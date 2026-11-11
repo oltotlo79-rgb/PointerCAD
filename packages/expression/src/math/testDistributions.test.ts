@@ -1,3 +1,4 @@
+import { specialMathTestRequest } from './mathRequest.testSupport.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
@@ -5,14 +6,14 @@ import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import { testDistributionDecimal } from './testDistributionsNumeric.js';
+import { betaKernel, DistributionDecimal } from './gammaBetaNumeric.js';
 import { exact } from './statisticsData.js';
 import { MathInputProblem } from './mathInputContract.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 function input(source: string): MathWorkRequest {
-  return { source, angleUnit: 'degree', notation: 'text', coefficients: [],
-    identity: { documentId: 'chi-t-f', documentVersion: 1, editorId: 'coordinate', inputRevision: 1 } };
+  return specialMathTestRequest(source, 'degree', 'chi-t-f');
 }
 function evaluate(request: MathWorkRequest) {
   return decodeMathWorkReply(executeMathWorkRequest(createMathWorkEnvelope(1, request), backend), request,
@@ -221,6 +222,15 @@ const reference: readonly (readonly [string, number])[] = [
 describe('χ²・t・F分布を自由度と確率の意味を保って利用する', () => {
   it.each(reference)('%sを別の90桁計算と相対誤差で照合する', (source, expected) => {
     expect(Math.abs(number(source)/expected-1)).toBeLessThan(4e-13);
+  });
+  it('Beta(a,1)の閉形式を補側の安全境界と微小裾の両側で保つ', () => {
+    for (const [shape, point] of [['50','0.9'],['50','0.95'],['50','0.97'],['500','0.95']]) {
+      const a = new DistributionDecimal(shape), x = new DistributionDecimal(point);
+      const parts = betaKernel(a, new DistributionDecimal(1), () => {}).at(x);
+      const expected = x.pow(a); // I_x(a,1) = x^a, independently of either beta series.
+      expect(parts.lower.sub(expected).abs().div(expected).lt('1e-50'), `${shape},${point}`).toBe(true);
+      expect(parts.lower.add(parts.upper).eq(1), `${shape},${point}`).toBe(true);
+    }
   });
   it.each(['chisquarepdf(3.5,0.2)','chisquarecdf(3.5,0.2)','chisquarequantile(3.5,0.5)',
     'tpdf(2.5,-0.02)','tcdf(2.5,-0.02)','tquantile(2.5,0.4)',

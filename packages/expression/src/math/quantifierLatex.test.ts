@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { createMathLatexCodec } from './mathLatexCodec.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';

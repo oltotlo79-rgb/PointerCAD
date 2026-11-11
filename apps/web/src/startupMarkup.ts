@@ -1,1 +1,1 @@
-export { renderStartupMessages } from '../../../packages/ui/src/shell/startupMarkup.js';
+export { renderStartupMessages } from '@pointercad/ui/startup-markup';

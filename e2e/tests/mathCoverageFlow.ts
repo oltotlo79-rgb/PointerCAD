@@ -10,7 +10,7 @@ import { savePart } from './scriptsFlow.js';
 import { uiMessage } from './uiMessages.js';
 
 /*
- * MC-21 (scratchpad/claude/plans/math-add-coverage.md §7.2, items 19-02 and 28-06): the notations of the second math
+ * MC-21 (second-wave items 19-02 and 28-06): the notations of the second math
  * wave on the real screen, the real calculation Worker and the real exact runtime. They are entered in the ordinary
  * editor, used in a coefficient and in point coordinates, then saved, reopened, edited, undone and explained by F1.
  * The same steps run in Chromium, Firefox and real Electron. Labels come from the product catalogs (uiMessage) and the

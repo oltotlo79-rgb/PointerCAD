@@ -29,6 +29,11 @@ export interface WeldSymbol {
   readonly closedTail?: boolean;
   /** 折れ矢の折点は基線始点からの紙上mm。移動で対象形体を変えない。 */
   readonly arrowBendOffset?: Point2;
+  /**
+   * 組立の溶接へ明示して結び付けた時の溶接の id(`weldSegmentsOf` の鍵)。寸法は図面へ写さず、抱き込んだ元の組立から
+   * 毎回読み直して照合する。無ければ溶接と照合しない独立した記号。
+   */
+  readonly weldId?: string;
   readonly position: Point2;
   readonly height: number;
   readonly layerId: string;

@@ -1,4 +1,5 @@
-import { drawingDimensionContext } from '@pointercad/model';
+import { dotVec3 as dot } from '@pointercad/model/vec3';
+import { createSubShapeReference, crossVec2, drawingDimensionContext } from '@pointercad/model';
 import { drawingRegionContainsPoint, drawingViewBasis, type DimensionTarget, type DrawingDocument, type Point2, type Vector3 } from '@pointercad/drawing';
 import { applyPlacementToPoint, drawingTargetFromProjection, resolveDimensionTarget, resolvedDimensionView, unfoldDrawingPick, drawingSectionRetainsPoint,
   type DrawingSourceResolution, type ResolvedDrawingCurve, type ResolvedDrawingView } from '@pointercad/model';
@@ -40,13 +41,17 @@ export function pickDrawingGeometry(document: DrawingDocument, source: DrawingSo
       const target = drawingTargetFromProjection(item, view.viewId, document.source.sourceRef, instances);
       if (target === null || target.kind !== 'subShape') continue;
       if (candidateDistance < distance) { nearest = target; distance = candidateDistance; }
-      const instance = instances.find((entry) => entry.body.featureId === target.ref.bodyFeatureId && entry.componentId === target.componentId);
+      const matching = instances.filter((entry) => entry.sourceRef === target.sourceRef
+        && entry.body.featureId === target.ref.bodyFeatureId && entry.componentId === target.componentId);
+      const instance = matching.length === 1 ? matching[0] : undefined;
       const edge = instance?.body.edges.find((entry) => entry.index === target.ref.index);
       if (instance === undefined || edge === undefined || edge.curveKind !== 'line') continue;
       for (const vertex of instance.body.vertices) {
         if (![edge.start, edge.end].some((end) => Math.hypot(...end.map((value, axis) => value - vertex.position[axis])) < 1e-7)) continue;
-        const candidate: DimensionTarget = { ...target, ref: { bodyFeatureId: target.ref.bodyFeatureId, index: vertex.index,
-          fingerprint: { kind: 'vertex', position: vertex.position } } };
+        const ref = instance.body.origins?.state === 'tracked' ? createSubShapeReference(instance.body, 'vertex', vertex.index)
+          : { bodyFeatureId: instance.body.featureId, index: vertex.index, fingerprint: { kind: 'vertex' as const, position: vertex.position } };
+        if (ref === null) continue;
+        const candidate: DimensionTarget = { ...target, ref };
         const resolved = resolveDimensionTarget(candidate, document, context);
         if (resolved?.kind !== 'point' || distanceToDrawingCurve(resolved.paperPoint, item.curve) > 1e-7) continue;
         const currentDistance = Math.hypot(point[0] - resolved.paperPoint[0], point[1] - resolved.paperPoint[1]);
@@ -68,7 +73,6 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
     const hit = unfoldDrawingPick(point, projected.viewId, document, context); if (hit === null) continue;
     const frame = source.viewFrames?.get(projected.viewId), center = frame?.modelCenter ?? source.center;
     const scale = view.scale ?? document.sheet.scale;
-    const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     let nearest: DimensionTarget | null = null, depth = Infinity;
     const originCoordinate = (axis: number): number => center[axis]
       + (hit[0] - view.position[0]) / scale * basis.x[axis] + (hit[1] - view.position[1]) / scale * basis.y[axis];
@@ -80,8 +84,11 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
       const relative: Vector3 = [area.point[0] - origin[0], area.point[1] - origin[1], area.point[2] - origin[2]];
       depth = Math.min(depth, dot(relative, area.normal) / denominator);
     }
-    for (const instance of source.dimensionInstances ?? []) {
+    const instances = source.dimensionInstances ?? [];
+    for (const instance of instances) {
       if (instance.sourceRef !== document.source.sourceRef) continue;
+      if (instances.filter((other) => other.sourceRef === instance.sourceRef
+        && other.body.featureId === instance.body.featureId && other.componentId === instance.componentId).length !== 1) continue;
       const mesh = instance.body.mesh;
       const vertices: { readonly point: Point2; readonly depth: number; readonly world: Vector3 }[] = [];
       for (let offset = 0; offset < mesh.positions.length; offset += 3) {
@@ -93,7 +100,7 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
         for (let triangle = face.triangleOffset; triangle < face.triangleOffset + face.triangleCount; triangle++) {
           const a = vertices[mesh.indices[triangle * 3]], b = vertices[mesh.indices[triangle * 3 + 1]], c = vertices[mesh.indices[triangle * 3 + 2]];
           if (a === undefined || b === undefined || c === undefined) continue;
-          const cross = (x: Point2, y: Point2, z: Point2): number => (y[0] - x[0]) * (z[1] - x[1]) - (y[1] - x[1]) * (z[0] - x[0]);
+          const cross = (x: Point2, y: Point2, z: Point2): number => crossVec2([y[0] - x[0], y[1] - x[1]], [z[0] - x[0], z[1] - x[1]]);
           const area = cross(a.point, b.point, c.point);
           if (Math.abs(area) < 1e-10) continue;
           const u = cross(hit, b.point, c.point) / area, v = cross(hit, c.point, a.point) / area, w = 1 - u - v;
@@ -103,11 +110,14 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
           const coordinate = (axis: number): number => u * a.world[axis] + v * b.world[axis] + w * c.world[axis];
           const world: Vector3 = [coordinate(0), coordinate(1), coordinate(2)];
           if (!drawingSectionRetainsPoint(world, frame?.section)) continue;
+          const ref = instance.body.origins?.state === 'tracked' ? createSubShapeReference(instance.body, 'face', face.index)
+            : { bodyFeatureId: instance.body.featureId, index: face.index, fingerprint: { kind: 'face' as const, surfaceKind: face.surfaceKind,
+              area: face.area, position: face.centroid, axis: face.axis, radius: face.radius } };
+          if (ref === null) continue;
           depth = currentDepth;
           nearest = { kind: 'subShape', viewId: view.id, sourceRef: instance.sourceRef,
             ...(instance.componentId === undefined ? {} : { componentId: instance.componentId }),
-            ref: { bodyFeatureId: instance.body.featureId, index: face.index, fingerprint: { kind: 'face', surfaceKind: face.surfaceKind,
-              area: face.area, position: face.centroid, axis: face.axis, radius: face.radius } } };
+            ref };
         }
       }
     }

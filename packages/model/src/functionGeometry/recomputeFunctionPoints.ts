@@ -12,7 +12,7 @@ import type {FunctionRecomputeContext} from './recomputeFunctionCurves.js';
 import {functionDirectionSource} from './functionDirectionSource.js';
 
 /** Shown on the point's owner when its calculation did not finish in time (not a wrong choice, range or accuracy). */
-export const POINT_DEADLINE_MESSAGE='関数上の点の計算が時間内に終わりませんでした。もう一度計算してください。';
+const POINT_DEADLINE_MESSAGE='関数上の点の計算が時間内に終わりませんでした。もう一度計算してください。';
 
 export async function recomputeFunctionPoints(document:PartDocument,analysis:ParameterAnalysis|undefined,
   math:DocumentMathContext|undefined,context:FunctionRecomputeContext|undefined,

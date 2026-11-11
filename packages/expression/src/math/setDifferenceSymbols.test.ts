@@ -1,9 +1,10 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 import type { MathNode } from './mathInputContract.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import type { MathExecutionReply } from './mathWorkExecution.js';
@@ -15,7 +16,7 @@ import { decodeMathWorkReply } from './mathWorkReply.js';
 // right set might coincide with it. {1, k} minus {k} silently became {1}, which is
 // wrong when k = 1 (the true difference is then empty); a sum over k = 1..3 of
 // "is 1 in {1,k} minus {k}" wrongly totalled 3 instead of 2
-// (scratchpad/claude/agents/w14b-mc12-cardinality/probe_setminus.py). The fix lives in
+// (see the unknown-element regression in cas_sets_test.py). The fix lives in
 // cas_sets.py (set-minus) and cas_set_relations.py (complement, the same construction
 // under an explicit universe); see cas_sets_test.py/cas_set_relations_test.py for the
 // Python-level cases.
@@ -44,7 +45,7 @@ const examples = [
   { source: 'element(1,setminus(set(1,2,3),set(2)))', kind: 'boolean', expected: boolean(true) },
   { source: 'element(2,setminus(set(1,2,3),set(2)))', kind: 'boolean', expected: boolean(false) },
   { source: 'complement(set(2),set(1,2,3))', kind: 'set', expected: operation('set', number(1), number(3)) },
-  // probe_setminus.py (w14b-mc12-cardinality): before the fix this summed to the
+  // probe_setminus.py (集合差記号の再現検証): before the fix this summed to the
   // wrong value 3 ("1 in {1,k} minus {k}" was always true). The whole indexed
   // family is decoded once with a symbolic index (see cas_input.py's binder), so
   // the same unevaluated guard that protects a single set-minus also keeps this
@@ -54,8 +55,7 @@ const examples = [
 ] as const;
 
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'set-difference-symbols', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'set-difference-symbols', documentVersion: 1, editorId: 'X', inputRevision: 1 } });
 }
 const backend = createMathBackend();
 const engine = sharedExactEngine(exactRuntimeBatch(script, 60_000));

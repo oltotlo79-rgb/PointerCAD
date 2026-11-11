@@ -93,7 +93,7 @@ export type TrimErrorKey =
   /** 延長の先にぶつかる曲線が無い。 */
   | 'noBoundary';
 
-export type TrimOutcome =
+type TrimOutcome =
   | { readonly ok: true; readonly document: SketchDocument }
   | { readonly ok: false; readonly reason: TrimErrorKey; readonly message: string };
 
@@ -461,8 +461,13 @@ function prepareTarget(
   return targetOf(exploded.document, resolveSketch(exploded.document, options), pieceId);
 }
 
-/** 並んだ曲線のうち、指した点にいちばん近い 1 本の位置。 */
-function nearestCurveIndex(curves: readonly ResolvedCurve[], point: Vec3): number {
+/**
+ * 並んだ曲線のうち、指した点にいちばん近い 1 本の位置。
+ * ui のトリム・延長の予告(`packages/ui/src/sketch/trimPreview.ts` の `targetCurveAt`)も
+ * この関数をそのまま呼ぶ(予告で強調する 1 本と実際に切る 1 本がここ 1 か所で決まる。
+ * 以前は ui に同じ本体の写しがあった。P12 で解消)。
+ */
+export function nearestCurveIndex(curves: readonly ResolvedCurve[], point: Vec3): number {
   let best = 0;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (let index = 0; index < curves.length; index += 1) {
@@ -491,8 +496,12 @@ function allCurves(resolved: ResolvedSketch): readonly ResolvedCurve[] {
  * 開いた曲線では、端ちょうど(0 と 1)で交わっても区間が分かれないので落とす。
  * **輪になった曲線(全周の円)では端が曲線の途中**なので、0 も切る場所として数える
  * (1 は 0 と同じ位置なので 0 へ寄せる)。
+ *
+ * ui のトリムの予告(`packages/ui/src/sketch/trimPreview.ts` の `cutRatiosOf`)も
+ * この関数をそのまま呼ぶ。予告と実際のトリムの区切りは、ここ 1 か所で決まる
+ * (以前は ui に同じ本体の写しがあった。P12 で解消)。
  */
-function cutRatios(
+export function cutRatios(
   target: ResolvedCurve,
   resolved: ResolvedSketch,
   closed: boolean,
@@ -674,8 +683,12 @@ export function trimCurve(
  * 延長
  * ------------------------------------------------------------------ */
 
-/** 伸ばす向きを試す長さ(mm)。スケッチ全体を確実に覆う長さにする。 */
-function probeLength(resolved: ResolvedSketch, from: Vec3): number {
+/**
+ * 伸ばす向きを試す長さ(mm)。スケッチ全体を確実に覆う長さにする。
+ * ui の延長の予告(`trimPreview.ts` の `extendPreviewAt`)もこの関数をそのまま呼ぶ
+ * (以前は ui に同じ本体の写しがあった。P12 で解消)。
+ */
+export function probeLength(resolved: ResolvedSketch, from: Vec3): number {
   let far = 1;
   for (const curve of allCurves(resolved)) {
     far = Math.max(far, distanceVec3(from, curveStart(curve)), distanceVec3(from, curveEnd(curve)));
@@ -689,8 +702,12 @@ function probeLength(resolved: ResolvedSketch, from: Vec3): number {
   return far * 2 + 1;
 }
 
-/** 線分を、指定した端の外側へ伸ばした「試しの線分」。 */
-function probeSegment(
+/**
+ * 線分を、指定した端の外側へ伸ばした「試しの線分」。
+ * ui の延長の予告(`trimPreview.ts` の `extendPreviewAt`)もこの関数をそのまま呼ぶ
+ * (以前は ui に同じ本体の写しがあった。P12 で解消)。
+ */
+export function probeSegment(
   segment: ResolvedSegment,
   end: 'start' | 'end',
   length: number,

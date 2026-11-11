@@ -1,3 +1,4 @@
+import { exactDoubleDecimal } from './exactDoubleDecimal.testSupport.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import Decimal from 'decimal.js';
 import { createMathBackend } from './createMathBackend.js';
@@ -11,7 +12,6 @@ import { createScalarDifferential } from './scalarDifferential.js';
 import { BESSEL_INTEGER_REFERENCES } from './besselIntegerReferences.js';
 import { BESSEL_SECOND_REFERENCES } from './besselSecondKindReferences.js';
 import type { MathInterval } from './mathInterval.js';
-import { exactDouble } from './exactDoubleInterval.js';
 
 const D = Decimal.clone({ precision: 300 });
 
@@ -24,8 +24,7 @@ function tape(source: string, angleUnit: 'degree' | 'radian' = 'radian') {
 function contains(range: MathInterval | null, expected: string): void {
   expect(range).not.toBeNull(); if (range === null) throw new Error('Missing enclosure');
   const exact = (value: number) => {
-    const rational = exactDouble(value); if (rational === null) throw new Error('Non-finite enclosure');
-    return new D(rational.numerator.toString()).div(rational.denominator.toString());
+    return exactDoubleDecimal(value, D, 'Non-finite enclosure');
   };
   expect(exact(range.lower).lte(expected)).toBe(true); expect(exact(range.upper).gte(expected)).toBe(true);
 }

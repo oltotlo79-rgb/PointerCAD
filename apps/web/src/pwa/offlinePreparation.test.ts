@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { createOfflineAssetManifest } from '../../../../scripts/vite/offlineAssets.mjs';
 import { APP_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
 import { OFFLINE_CACHE_PREFIX, prepareOfflineEdition } from './offlinePreparation.js';
@@ -83,6 +85,65 @@ async function fixture() {
 }
 
 describe('全ファイルを確認して最後に完了を記録し、旧版を保持する', () => {
+  it('v2 streamは復号済み本文とgzip宣言を保存し、markerを最後に発行する', async () => {
+    const decoded = new TextEncoder().encode('small wasm');
+    const hash = (value: Uint8Array) => createHash('sha256').update(value).digest('hex');
+    const compressed = new Uint8Array(gzipSync(decoded)), decodedSha = hash(decoded);
+    const streamPath = `occt/stream/opencascade.full-${decodedSha}.wasm`;
+    const legacyPath = `occt/opencascade.full-${decodedSha.slice(0, 16)}.bin`;
+    const occt = new TextEncoder().encode(JSON.stringify({ byteLength: decoded.byteLength, sha256: decodedSha,
+      compression: 'gzip', parts: [{ order: 0, file: legacyPath.slice('occt/'.length), byteLength: compressed.byteLength }],
+      stream: { file: streamPath.slice('occt/'.length), compression: 'gzip', transportByteLength: compressed.byteLength,
+        transportSha256: hash(compressed), decodedByteLength: decoded.byteLength, decodedSha256: decodedSha } }));
+    const inputs = [...files, { path: legacyPath, bytes: compressed }, { path: streamPath, bytes: compressed },
+      { path: 'occt/manifest.json', bytes: occt }];
+    const inventory = createOfflineAssetManifest(inputs, inputs.map(item => item.path));
+    const storage = new TestStorage(), locks = new TestLocks();
+    const order: string[] = [];
+    storage.beforePut = url => { order.push(url); return Promise.resolve(); };
+    const fetchResponse: typeof fetch = input => {
+      const url = input instanceof Request ? input.url : String(input);
+      const entry = inputs.find(item => (item.path === 'index.html' ? base.href : new URL(item.path, base).href) === url);
+      if (entry === undefined) return Promise.reject(new Error('Unexpected asset'));
+      const headers: Record<string, string> = { 'Content-Type': entry.path === 'index.html' ? 'text/html'
+        : entry.path === streamPath ? 'application/wasm' : entry.path.endsWith('.js') ? 'text/javascript'
+          : entry.path.endsWith('.json') ? 'application/json'
+          : 'application/octet-stream' };
+      if (entry.path === 'index.html') {
+        headers['Cross-Origin-Opener-Policy'] = 'same-origin';
+        headers['Cross-Origin-Embedder-Policy'] = 'require-corp';
+        headers['Content-Security-Policy'] = APP_CONTENT_SECURITY_POLICY;
+      }
+      if (entry.path === streamPath) {
+        headers['Content-Encoding'] = 'gzip'; headers['Content-Length'] = String(compressed.byteLength);
+      }
+      return Promise.resolve(networkResponse(url, entry.path === streamPath ? decoded : entry.bytes, headers));
+    };
+    const edition = await prepareOfflineEdition({ baseUrl: base, manifest: inventory, storage, locks,
+      signal: new AbortController().signal, progress: () => undefined, fetchResponse });
+    const saved = await storage.caches.get(edition.cacheName)?.match(new URL(streamPath, base).href);
+    expect(saved?.headers.get('Content-Encoding')).toBe('gzip');
+    expect(saved?.headers.get('Content-Length')).toBe(String(compressed.byteLength));
+    expect(await saved?.text()).toBe('small wasm');
+    expect(order.at(-1)).toBe(new URL('offline-assets.json', base).href);
+    storage.beforePut = url => url.endsWith('.wasm')
+      ? Promise.reject(new DOMException('Quota full', 'QuotaExceededError')) : Promise.resolve();
+    await expect(prepareOfflineEdition({ baseUrl: base, manifest: inventory, storage, locks,
+      signal: new AbortController().signal, progress: () => undefined, fetchResponse }))
+      .rejects.toMatchObject({ reason: 'storage', cleanupIncomplete: false });
+    expect(storage.caches.has(edition.cacheName)).toBe(true);
+    expect([...storage.caches.values()].filter(cache => cache.entries.has(new URL('offline-assets.json', base).href)))
+      .toHaveLength(1);
+    storage.beforePut = () => Promise.resolve();
+    const interrupted = new AbortController();
+    await expect(prepareOfflineEdition({ baseUrl: base, manifest: inventory, storage, locks,
+      signal: interrupted.signal, fetchResponse, progress: value => {
+        if (value.receivedBytes > inventory.totalBytes - decoded.byteLength) interrupted.abort();
+      } })).rejects.toMatchObject({ reason: 'cancelled', cleanupIncomplete: false });
+    expect(storage.caches.has(edition.cacheName)).toBe(true);
+    expect([...storage.caches.values()].filter(cache => cache.entries.has(new URL('offline-assets.json', base).href)))
+      .toHaveLength(1);
+  });
   it('最後の書込みまで準備完了を返さず、元の応答条件も保存する', async () => {
     const f = await fixture(), marker = new URL('offline-assets.json', base).href;
     const entered = deferred(), finish = deferred();

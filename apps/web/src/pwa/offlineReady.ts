@@ -1,5 +1,5 @@
-import { OFFLINE_MAX_MANIFEST_BYTES, readOfflineAssetManifest } from '../../../../scripts/vite/offlineProtocol.mjs';
-import type { OfflineAssetManifest } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { OFFLINE_MAX_MANIFEST_BYTES, readOfflineAssetManifest } from '@pointercad/ui/offline-protocol';
+import type { OfflineAssetManifest } from '@pointercad/ui/offline-protocol';
 import { offlineAssetRequestUrl, readBoundedOfflineBody } from './offlineNetwork.js';
 import { OFFLINE_CACHE_PREFIX, OFFLINE_READY_FORMAT } from './offlinePreparation.js';
 import { verifyOfflineAssetResponse } from './offlineTransfer.js';

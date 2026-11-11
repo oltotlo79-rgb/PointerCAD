@@ -83,7 +83,7 @@ test('P8 100フィーチャー・三面図・50寸法を開き、字体と寸法
   const stopOpeningProfile = await startDrawingCpuProfile(page, testInfo);
   try {
     const opening = page.waitForEvent('filechooser'); await page.keyboard.press('Control+o');
-    // 箱が保存していない変更なので、画面の中の確認(w91a)に「保存せずに続ける」で答えてから選ぶ窓が開く。
+    // 箱が保存していない変更なので、画面の中の確認(NFR-UX-3)に「保存せずに続ける」で答えてから選ぶ窓が開く。
     await page.getByRole('alertdialog', { name: '保存していない変更があります' })
       .getByRole('button', { name: '保存せずに続ける', exact: true }).click();
     await (await opening).setFiles({ name: '100フィーチャー.pcadd', mimeType: 'application/zip', buffer: Buffer.from(fixture) });

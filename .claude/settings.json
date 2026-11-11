@@ -1,6 +1,10 @@
 {
+  "env": {
+    "GIT_OPTIONAL_LOCKS": "0"
+  },
   "hooks": {
     "PreToolUse": [
+      {"matcher": "Bash|PowerShell|Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": "python", "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/workers_pause_guard.py"], "timeout": 5}]},
       {
         "matcher": "Bash|PowerShell",
         "hooks": [
@@ -84,6 +88,13 @@
       {
         "matcher": "Agent",
         "hooks": [
+          {"type": "command", "command": "python", "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate_launch_guard.py"], "timeout": 5},
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/sonnet_launch_guard.py"],
+            "timeout": 5
+          },
           {
             "type": "command",
             "command": "python",
@@ -110,6 +121,17 @@
             "type": "command",
             "command": "python",
             "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/heredoc_backslash_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/git_optional_locks_guard.py"],
             "timeout": 5
           }
         ]

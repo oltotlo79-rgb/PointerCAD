@@ -1,9 +1,10 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 import type { MathNode } from './mathInputContract.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import type { MathExecutionReply } from './mathWorkExecution.js';
@@ -115,8 +116,7 @@ const examples = [
 ] as const;
 
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'set-relations', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'set-relations', documentVersion: 1, editorId: 'X', inputRevision: 1 } });
 }
 const backend = createMathBackend();
 const engine = sharedExactEngine(exactRuntimeBatch(script, 60_000));

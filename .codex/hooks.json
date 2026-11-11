@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\oltot\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -B -X utf8 \"C:\\Users\\oltot\\Documents\\git-projects\\PointerCAD\\.codex\\hooks\\stop_guard.py\"",
+            "commandWindows": "\"C:\\Users\\oltot\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -B -X utf8 \"C:\\Users\\oltot\\Documents\\git-projects\\PointerCAD\\.codex\\hooks\\stop_guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { holeTable, type HoleTableInput } from './holeTable.js';
+import { holeTable } from './holeTable.js';
 import { revisionTable } from './revisionTable.js';
+
+type HoleTableInput = Parameters<typeof holeTable>[0];
 
 const input: HoleTableInput = {
   position: [20, 200], bounds: { left: 10, bottom: 10, right: 410, top: 287 },

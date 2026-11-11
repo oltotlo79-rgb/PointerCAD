@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ExpressionField } from './ExpressionField.js';
 import { createNumericInput, evaluateNumericInput, reduceNumericInput, type NumericInputState } from './numericInput.js';
+import { useAppStore } from '../store/useAppStore.js';
 
 function render(state: NumericInputState): string {
   const result = evaluateNumericInput(state, new Map(), { lengthUnit: 'inch' });
@@ -40,12 +41,29 @@ describe('数値欄の原式と単位表示', () => {
     expect(clicked).toContain('class="pcad-field__unit">mm</span>'); expect(clicked).toContain('= 2 in');
   });
 
-  it('分数インチで打った長さは、欄の下に小数と分数インチを並べて出す(FR-814、w91a)', () => {
+  it('分数インチで打った長さは、欄の下に小数と分数インチを並べて出す(FR-814)', () => {
     const typed = reduceNumericInput(createNumericInput('circle', 'circleRadius', 'absolute'),
       { type: 'edit', index: 0, source: '3/8"' });
     const markup = render(typed);
     expect(markup).toContain('value="3/8&quot;"');
     expect(markup).toContain('= 0.375 in (3/8&quot;)');
     expect(typed.fields[0].source).toBe('3/8"');
+  });
+
+  it('焦点のある入力だけ原式の明示単位を案内し、評価と保存sourceを変えない', () => {
+    const before = useAppStore.getState();
+    const typed = reduceNumericInput(createNumericInput('circle', 'circleRadius', 'absolute'),
+      { type: 'edit', index: 0, source: '1in*2' });
+    const evaluated = evaluateNumericInput(typed, new Map(), { lengthUnit: 'inch' });
+    const markup = renderToStaticMarkup(createElement(ExpressionField, {
+      field: typed.fields[0], result: evaluated.results[0], lengthUnit: 'inch', focused: true,
+      onChange: () => {}, onFocus: () => {},
+    }));
+    expect(markup).toContain('value="1in*2"');
+    expect(markup).toContain('式に書かれた単位: in');
+    expect(evaluated.results[0].value?.value).toBe(50.8);
+    expect(typed.fields[0].source).toBe('1in*2');
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
   });
 });

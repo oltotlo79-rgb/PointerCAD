@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -6,7 +7,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'derivativeat(t^3,t,2)', value: 12 },
@@ -39,8 +40,8 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 const script = fileURLToPath(new URL('./exactRuntime/cas_derivatives_test.py', import.meta.url));
 function request(example: typeof examples[number]): MathWorkRequest {
-  return { source: example.source, notation: 'text', angleUnit: 'unit' in example ? example.unit : 'degree', coefficients: [],
-    identity: { documentId: 'derivative', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(example.source, { notation: 'text', angleUnit: 'unit' in example ? example.unit : 'degree',
+    identity: { documentId: 'derivative', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 function native(args: readonly string[], input?: string): string {
   const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {

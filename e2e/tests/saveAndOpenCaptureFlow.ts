@@ -17,7 +17,7 @@ const AUTO_SAVE_SAVED_AT = '2026-09-24T04:00:00.000Z';
  * 2) save-and-open-restore: 自動保存の控えから「前回の作業が残っています」の案内(§自動保存)。
  * 3) save-and-open-file-error: 壊れたファイルを開こうとしたときの赤い帯(§開けなかったとき)。
  *
- * 「保存していない変更は失われます。続けますか。」の確認は、w91aでブラウザ既定の`window.confirm`
+ * 「保存していない変更は失われます。続けますか。」の確認は、NFR-UX-3に対応し、ブラウザ既定の`window.confirm`
  * から画面内の確認窓(`role="alertdialog"`、`packages/ui/src/shell/AppShell.tsx`の
  * `DiscardConfirmDialog`)へ差し替わったが、この flow では未保存の変更を失う操作(新規・開く・
  * ひな形から新規など)を行わないため、いまも登場しない。この章の3枚目は同じ節が扱う

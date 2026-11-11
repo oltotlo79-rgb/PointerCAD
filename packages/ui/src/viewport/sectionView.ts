@@ -20,6 +20,7 @@
 
 import {
   cleanZeroVec3,
+  dotVec3,
   lengthVec3,
   scaleVec3,
   type ResolvedPlane,
@@ -125,7 +126,7 @@ export function toThreePlane(
   // 単位でない法線が来ても正しく切れるよう、ここで長さ 1 に揃える。
   // 法線を 1/length 倍すると n · p も同じ 1/length 倍になるので、constant も同じ縮尺で揃う。
   const unit: Vec3 = length === 1 ? normal : scaleVec3(normal, 1 / length);
-  const distance = unit[0] * origin[0] + unit[1] * origin[1] + unit[2] * origin[2];
+  const distance = dotVec3(unit, origin);
   const constant = -distance - offsetMm;
   const sign = flipped ? -1 : 1;
   return {

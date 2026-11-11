@@ -46,6 +46,90 @@ describe('条件と出典を持つ材料値', () => {
     expect(material('s45c-normalized-reference').yieldStress).toMatchObject({ mpa: '345', basis: 'reference' });
     expect(material('s45c-quenched-tempered-reference').yieldStress).toMatchObject({ mpa: '490', basis: 'reference' });
   });
+  // Independently transcribed table 3, PDF7 / printed p3, G3101 draft PDF SHA-256:
+  // 797fe421e44bfce54f53b6b89073e4ce488343f59d733288ca9996a26db44893.
+  // Transcription JSON SHA-256: 7a1545c41f5730cedebf234d4a8b57be796d5dbb1394b2fc8913685f258696b4.
+  // Freeze the printed strings here so the test also runs without the working scratchpad.
+  it.each([
+    ['ss400-plate-0-16', 0, 16, '16 以下', '245', '245 以上', 'G3101-T3-SS400-Y1'],
+    ['ss400-plate-16-40', 16, 40, '16 超え40 以下', '235', '235 以上', 'G3101-T3-SS400-Y2'],
+    ['ss400-plate-40-100', 40, 100, '40 超え100 以下', '215', '215 以上', 'G3101-T3-SS400-Y3'],
+  ] as const)('%sの規格原案の印刷文字列・単位・範囲を完全一致で固定する',
+    (id, lower, upper, thicknessPrinted, minimum, yieldPrinted, yieldRowId) => {
+      const row = material(id);
+      expect(row.grade).toBe('SS400');
+      expect(row.product).toBe('plate');
+      expect(row.condition).toBe('圧延鋼板（熱処理の指定なし）');
+      expect(row.temperature).toBe('not-specified');
+      expect(row.thicknessMm).toEqual({ greaterThan: lower, atMost: upper });
+      expect(row.thicknessPrinted).toBe(thicknessPrinted);
+      expect(row.yieldStress).toEqual({ mpa: minimum, sourceId: 'jisf-g3101-draft', basis: 'minimum',
+        sourceValue: { printed: yieldPrinted, unit: 'N/mm2', rowId: yieldRowId } });
+      expect(row.tensileStrength).toEqual({ mpa: '400', maximumMpa: '510', sourceId: 'jisf-g3101-draft', basis: 'minimum',
+        sourceValue: { printed: '400～510', unit: 'N/mm2', rowId: 'G3101-T3-SS400-T1' } });
+      // Table note equates N/mm2 to MPa. Only the minimum is a calculation input.
+      expect(strengthMaterialSources(row).get('yieldStress')).toBe(minimum);
+      expect(checkStrengthMaterialCondition(row, lower).ok).toBe(false);
+      expect(checkStrengthMaterialCondition(row, lower + 0.001).ok).toBe(true);
+      expect(checkStrengthMaterialCondition(row, upper).ok).toBe(true);
+      expect(checkStrengthMaterialCondition(row, upper + 0.001).ok).toBe(false);
+    });
+  it('一次の原案と供給者の抜粋を区別し、版・頁・表・PDFの指紋を固定する', () => {
+    expect(STRENGTH_SOURCES['jisf-g3101-draft']).toEqual({
+      url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3101_20230726.pdf',
+      publisher: '日本鉄鋼連盟',
+      locator: 'PDF7ページ・印刷3ページ、表3（鋼板）。注記: 1 N/mm2 = 1 MPa。注a: 上降伏点ReH、現れない場合は0.2%耐力Rp0.2。最終規格票との差は未確認',
+      checkedDate: '2026-10-25', standard: 'JIS G 3101',
+      standardEdition: 'JIS G 3101:9999（案）、JISF 2022年度第2回鋼材規格三者委員会 資料4、ファイル日付2023-07-26、更新2024-02-19',
+      evidence: 'standard-draft',
+      sha256: '797fe421e44bfce54f53b6b89073e4ce488343f59d733288ca9996a26db44893',
+    });
+    expect(STRENGTH_SOURCES['nippon-ss400']).toEqual({
+      url: 'https://www.nipponsteel.com/product/plate/list/machinery/pdf/kyouken.pdf',
+      publisher: '日本製鉄', locator: 'CORSPACE資料、PDF9ページ、表4-1（SS400と同じと記載された機械的性質）',
+      checkedDate: '2026-09-11', standard: 'JIS G 3101', standardEdition: null, evidence: 'supplier-excerpt',
+      sha256: 'aa11597e13f303f2fbe0b7b401906d9834ed8e80ce9e15b9f5fcc0b268d56a13',
+    });
+  });
+  it('SS400以外の全4材料条件を変更前のUTF-8バイト列と照合する', () => {
+    const steelElasticReference = {
+      youngModulus: { mpa: '205000', sourceId: 'jfe-steel-elastic', basis: 'reference' },
+      shearModulus: { mpa: '79000', sourceId: 'jfe-steel-elastic', basis: 'reference' },
+    };
+    const before = [
+      {
+        id: 's45c-normalized-reference', densityMaterialId: 'steel', grade: 'S45C', condition: '焼ならし・適用寸法未指定の参考値',
+        product: 'general', thicknessMm: null, temperature: 'not-specified',
+        yieldStress: { mpa: '345', sourceId: 'tsubaki-s45c', basis: 'reference' },
+        tensileStrength: { mpa: '570', sourceId: 'tsubaki-s45c', basis: 'reference' },
+        ...steelElasticReference,
+      },
+      {
+        id: 's45c-quenched-tempered-reference', densityMaterialId: 'steel', grade: 'S45C', condition: '焼入焼戻・適用寸法未指定の参考値',
+        product: 'general', thicknessMm: null, temperature: 'not-specified',
+        yieldStress: { mpa: '490', sourceId: 'tsubaki-s45c', basis: 'reference' },
+        tensileStrength: { mpa: '690', sourceId: 'tsubaki-s45c', basis: 'reference' },
+        ...steelElasticReference,
+      },
+      {
+        id: 'sus304-solution-cold-rolled', densityMaterialId: 'stainless', grade: 'SUS304', condition: '冷延鋼板・固溶化処理',
+        product: 'cold-rolled-sheet', thicknessMm: null, temperature: 'not-specified',
+        yieldStress: { mpa: '205', sourceId: 'nippon-sus304', basis: 'minimum' },
+        tensileStrength: { mpa: '520', sourceId: 'nippon-sus304', basis: 'minimum' },
+        youngModulus: { mpa: '193000', sourceId: 'nippon-sus304', basis: 'reference' }, shearModulus: null,
+      },
+      {
+        id: 'a5052p-h34-0.2-1.3', densityMaterialId: 'aluminum', grade: 'A5052P', condition: 'H34',
+        product: 'plate', thicknessMm: { greaterThan: 0.2, atMost: 1.3, lowerInclusive: true }, temperature: 'not-specified',
+        yieldStress: { mpa: '180', sourceId: 'jaa-a5052-h34', basis: 'minimum' },
+        tensileStrength: { mpa: '235', sourceId: 'jaa-a5052-h34', basis: 'minimum' },
+        youngModulus: null, shearModulus: null,
+      },
+    ];
+    const utf8 = new TextEncoder();
+    expect(utf8.encode(JSON.stringify(STRENGTH_MATERIALS.filter(row => row.grade !== 'SS400'))))
+      .toEqual(utf8.encode(JSON.stringify(before)));
+  });
 });
 describe('呼び面積と近似式を区別する', () => {
   it('独立の表値M10x1.5は58、近似式は未丸めの別の値になる', () => {

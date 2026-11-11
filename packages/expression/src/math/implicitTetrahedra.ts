@@ -1,3 +1,4 @@
+import { subtractVec3 as subtract, crossVec3 as cross, dotVec3 as dot } from './floatVec3.js';
 /** Freudenthal tetrahedra share diagonals and indexed edge roots across neighbouring grid cells. */
 import type { FunctionPoint } from './functionGeometryBounds.js';
 import type { ImplicitGridCell } from './implicitGrid.js';
@@ -11,9 +12,6 @@ const FACES = [[0,1,2],[0,1,3],[0,2,3],[1,2,3]] as const;
 export interface ImplicitMesh { readonly vertices: readonly FunctionPoint[]; readonly triangles: readonly (readonly [number,number,number])[] }
 export type ImplicitMeshResult = {readonly status:'ready'; readonly mesh:ImplicitMesh; readonly maximumCoverageDistance:number}
   | {readonly status:'stopped';readonly reason:'cancelled'|'deadline'|'vertices'|'triangles'|'singular'|'roundoff'|'unresolved'};
-function subtract(a: FunctionPoint,b: FunctionPoint): FunctionPoint { return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
-function cross(a: FunctionPoint,b: FunctionPoint): FunctionPoint { return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]; }
-function dot(a: FunctionPoint,b: FunctionPoint): number { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
 export function meshImplicitTetrahedra(cells: readonly ImplicitGridCell[], options: ImplicitCoverageOptions & {
   readonly maximumVertices:number; readonly maximumTriangles:number;
 }): ImplicitMeshResult {

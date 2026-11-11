@@ -27,6 +27,7 @@ import {
 import {
   type SolidFeatureBase,
 } from './solidBase.js';
+import { readComponentSource } from './componentSource.js';
 import {
   DEFAULT_RULED_SPHERE_SEGMENTS,
   type RibSide,
@@ -34,7 +35,63 @@ import {
   type RuledSection,
   type RuledSphereSegments,
   type SolidFeature,
+  type SweepFeature,
 } from '@pointercad/model';
+
+type SteelBendInput = NonNullable<SweepFeature['steelBend']>;
+
+/** Additive source-only recipe. Absent on older sweeps; never reconstruct it from their geometry. */
+function readSteelBendInput(value: unknown, path: string): Checked<SteelBendInput> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) return id;
+  const generatorRevision = readString(record.value, 'generatorRevision', path);
+  if (!generatorRevision.ok) return generatorRevision;
+  const productKey = readString(record.value, 'productKey', path);
+  if (!productKey.ok) return productKey;
+  for (const [key, text] of [['id', id.value], ['generatorRevision', generatorRevision.value], ['productKey', productKey.value]]) {
+    if (text.length === 0) return fieldProblem(joinPath(path, key), 'type');
+  }
+  const stockSource = readComponentSource(record.value, 'stockSource', path);
+  if (!stockSource.ok) return stockSource;
+  if (stockSource.value.kind !== 'standardPart') return fieldProblem(joinPath(path, 'stockSource'), 'type');
+  const radiusConvention = readLiteral(record.value, 'radiusConvention', path, ['inside', 'outside']);
+  if (!radiusConvention.ok) return radiusConvention;
+  const legDimension = readLiteral(record.value, 'legDimension', path, ['tangent', 'inside', 'outside']);
+  if (!legDimension.ok) return legDimension;
+  const radius = readExpression(record.value, 'radius', path);
+  if (!radius.ok) return radius;
+  const angleDegrees = readExpression(record.value, 'angleDegrees', path);
+  if (!angleDegrees.ok) return angleDegrees;
+  const firstLeg = readExpression(record.value, 'firstLeg', path);
+  if (!firstLeg.ok) return firstLeg;
+  const secondLeg = readExpression(record.value, 'secondLeg', path);
+  if (!secondLeg.ok) return secondLeg;
+  const directionDegrees = Object.hasOwn(record.value, 'directionDegrees') ? readExpression(record.value, 'directionDegrees', path) : undefined;
+  if (directionDegrees !== undefined && !directionDegrees.ok) return directionDegrees;
+  return { ok: true, value: { id: id.value, generatorRevision: generatorRevision.value, productKey: productKey.value,
+    stockSource: stockSource.value, radiusConvention: radiusConvention.value, legDimension: legDimension.value,
+    radius: radius.value, angleDegrees: angleDegrees.value, firstLeg: firstLeg.value, secondLeg: secondLeg.value,
+    ...(directionDegrees === undefined ? {} : { directionDegrees: directionDegrees.value }) } };
+}
+
+function serializeSteelBendInput(input: SteelBendInput): SteelBendInput {
+  const source = input.stockSource;
+  const saved: SteelBendInput = {
+    id: input.id, generatorRevision: input.generatorRevision, productKey: input.productKey,
+    stockSource: { kind: 'standardPart', catalog: source.catalog, size: source.size,
+      options: Object.fromEntries(Object.entries(source.options).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)),
+      catalogRevision: source.catalogRevision, generatorRevision: source.generatorRevision },
+    radiusConvention: input.radiusConvention, legDimension: input.legDimension,
+    radius: serializeExpression(input.radius), angleDegrees: serializeExpression(input.angleDegrees),
+    firstLeg: serializeExpression(input.firstLeg), secondLeg: serializeExpression(input.secondLeg),
+    ...(input.directionDegrees === undefined ? {} : { directionDegrees: serializeExpression(input.directionDegrees) }),
+  };
+  const checked = readSteelBendInput(saved, 'steelBend');
+  if (!checked.ok) throw new RangeError(`Invalid steel bend input: ${checked.problem.path}`);
+  return saved;
+}
 
 /** リブの厚みを付ける側(FR-420)。 */
 const RIB_SIDES: readonly RibSide[] = ['both', 'positive', 'negative'];
@@ -212,11 +269,14 @@ export function readSweepFeature(
   if (!frenet.ok) {
     return frenet;
   }
+  const steelBend = Object.hasOwn(record, 'steelBend') ? readSteelBendInput(record.steelBend, joinPath(path, 'steelBend')) : undefined;
+  if (steelBend !== undefined && !steelBend.ok) return steelBend;
   return {
     ok: true,
     value: {
       ...base,
       kind: 'sweep',
+      ...(steelBend === undefined ? {} : { steelBend: steelBend.value }),
       profile: profile.value,
       path: sweepPath.value,
       ...(guide === undefined ? {} : { guide: guide.value }),
@@ -338,6 +398,7 @@ export function serializeSweepFeature(feature: Extract<SolidFeature, { readonly 
   return {
     id: feature.id,
     kind: 'sweep',
+    ...(feature.steelBend === undefined ? {} : { steelBend: serializeSteelBendInput(feature.steelBend) }),
     name: feature.name,
     suppressed: feature.suppressed,
     profile: serializeFaceRef(feature.profile),

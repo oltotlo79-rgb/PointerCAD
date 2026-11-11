@@ -1,0 +1,547 @@
+{
+ "schema": "pointercad-oofem-replay-environment-distribution/1",
+ "derivedFrom": {
+  "file": "r15 replay-environment.json",
+  "sha256": "f85cf9f65cd76b0e1de0e1cacf942663751c7b334a220babd06791a17d200199",
+  "omitted": "local file paths of the build machine (sdist file URIs, toolchain folder, pip cache bodies)"
+ },
+ "status": "NEW replay environment, not executed; no success, byte identity or legal clearance is claimed",
+ "relationToExecutedBuild": "The 13 wheelhouse files are the exact bytes the executed build's pip cache holds; 6 were downloaded during step 50, 7 are inferred (pip did not record the isolated environment). The historic isolated environment itself is not reproduced byte-for-byte and is not claimed.",
+ "classes": {
+  "historicalDownloadsStep50": [
+   "cmake",
+   "iniconfig",
+   "ninja",
+   "pybind11",
+   "pytest",
+   "scikit-build-core"
+  ],
+  "inferredFromExecutedCache": [
+   "packaging",
+   "pathspec",
+   "pluggy",
+   "pygments",
+   "setuptools",
+   "setuptools-scm",
+   "vcs-versioning"
+  ],
+  "replayPins": [
+   "cmake",
+   "iniconfig",
+   "ninja",
+   "packaging",
+   "pathspec",
+   "pluggy",
+   "pybind11",
+   "pygments",
+   "pytest",
+   "scikit-build-core",
+   "setuptools",
+   "setuptools-scm",
+   "vcs-versioning"
+  ],
+  "meaning": {
+   "historicalDownloadsStep50": "fetched by the executed build's isolated environment during step 50 (pip cache mtime and simple-index queries)",
+   "inferredFromExecutedCache": "not logged by pip; the executed build's cache holds exactly one version and step 50 downloaded no other",
+   "replayPins": "the NEW replay environment: all 13 pinned by version (constraints) and SHA-256 (wheelhouse-SHA256SUMS)"
+  }
+ },
+ "host": {
+  "machine": "aarch64",
+  "os": "Ubuntu 24.04.1 LTS (WSL2)",
+  "evidence": "logs/00-uname.stdout 4b02a214...",
+  "note": "cmake and ninja wheels are manylinux aarch64 only; another architecture needs a different, separately pinned wheelhouse"
+ },
+ "archives": [
+  {
+   "path": "dl/cpython-3.13.2+20250317-aarch64-unknown-linux-gnu-install_only.tar.gz",
+   "sha256": "9c67260446fee6ea706dad577a0b32936c63f449c25d66e4383d5846b2ab2e36",
+   "origin": "https://github.com/astral-sh/python-build-standalone/releases/download/20250317/cpython-3.13.2%2B20250317-aarch64-unknown-linux-gnu-install_only.tar.gz"
+  },
+  {
+   "path": "dl/xbuildenv-0.29.3.tar.bz2",
+   "sha256": "1c676e37c04b0f438ee2ad2a1a51bf85313287ee53220345d0103c7797bf9b9a",
+   "origin": "https://github.com/pyodide/pyodide/releases/download/0.29.3/xbuildenv-0.29.3.tar.bz2"
+  }
+ ],
+ "toolchain": {
+  "emsdkHead": "35ff8a6d150541276abbc6bae512ca90bcfbe220",
+  "emscripten": "4.0.9 (bbf1caa6e24f64fca9eb6a13a9e02d3f42123e77)",
+  "llvm": "2f05451198e2f222ec66cec4892ada0509519290",
+  "node": "24.19.0",
+  "prerequisite": "emsdk 35ff8a6d with Emscripten 4.0.9 installed by pyodide xbuildenv install-emscripten (network: git clone + emsdk downloads); its archives were not retained"
+ },
+ "venv": [
+  {
+   "project": "annotated-doc",
+   "version": "0.0.5",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101"
+  },
+  {
+   "project": "annotated-types",
+   "version": "0.8.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0"
+  },
+  {
+   "project": "anyio",
+   "version": "4.15.1",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101"
+  },
+  {
+   "project": "auditwheel-emscripten",
+   "version": "0.2.5",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "c76a2c26f6c731c00d97a59d384d55033c7b2a5f4612c7c454f259ae8c2543aa"
+  },
+  {
+   "project": "build",
+   "version": "1.2.2.post1",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "1d61c0887fa860c01971625baae8bdd338e517b836a2f70dd1f7aa3a6b2fc5b5"
+  },
+  {
+   "project": "certifi",
+   "version": "2026.7.22",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+  },
+  {
+   "project": "charset-normalizer",
+   "version": "3.5.2",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "849df64e889b2e17230d58410a03dba311a65b163508fd33679b2b737d4b7858"
+  },
+  {
+   "project": "click",
+   "version": "8.3.1",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6"
+  },
+  {
+   "project": "distlib",
+   "version": "0.4.3",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "4b0ce306c966eb73bc3a7b6abad017c556dadd92c44701562cd528ac7fde4d5b"
+  },
+  {
+   "project": "filelock",
+   "version": "4.1.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "2ce9818e3e2d8f284c1a964414447ef148d42a5fd5e2a477a7118e574b293ec1"
+  },
+  {
+   "project": "h11",
+   "version": "0.16.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+  },
+  {
+   "project": "httpcore",
+   "version": "1.0.9",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+  },
+  {
+   "project": "httpx",
+   "version": "0.28.1",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+  },
+  {
+   "project": "idna",
+   "version": "3.20",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c"
+  },
+  {
+   "project": "leb128",
+   "version": "1.0.9",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "fef16ef20aca33dfdd2f4841d8004ec4acb7ed8545b63a7bc1183292c9a3e594"
+  },
+  {
+   "project": "markdown-it-py",
+   "version": "4.2.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a"
+  },
+  {
+   "project": "mdurl",
+   "version": "0.1.2",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"
+  },
+  {
+   "project": "packaging",
+   "version": "26.3",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+  },
+  {
+   "project": "pathspec",
+   "version": "1.1.1",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189"
+  },
+  {
+   "project": "pip",
+   "version": "24.3.1",
+   "source": "CPython ensurepip bundled wheel",
+   "sha256": "3790624780082365f47549d032f3770eeb2b1e8bd1f7b2e02dace1afa361b4ed"
+  },
+  {
+   "project": "platformdirs",
+   "version": "4.13.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "3dbcf4cd708f21cf876c4eaa90e58412bc4f033d87143f41b1493ff77c25b7e1"
+  },
+  {
+   "project": "pydantic",
+   "version": "2.14.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "15fab1bea6f1dc5003b54fc2ecab230c1fd1dbade2acd4addc52d81e32416d4b"
+  },
+  {
+   "project": "pydantic-core",
+   "version": "2.50.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "d1d084e92d0f4a096a5155b23d1ac603db8073ef98a3d1384badf1455e5ae742"
+  },
+  {
+   "project": "pygments",
+   "version": "2.21.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9"
+  },
+  {
+   "project": "pyodide-build",
+   "version": "0.31.1",
+   "source": "wheel built locally by pip from the retained sdist (step 21)",
+   "sha256": "d8cb49ce8dfe8dbeeeb13d91219f3668180e4886c1f2c3bd730ca1a91445ad4c",
+   "sdist": {
+    "filename": "pyodide-build-0eb494ffb3536971da3309d98ac56f6515f985a4.tar.gz",
+    "sha256": "fa1d5dae93e997ac3f4a8659e81e94f157fbb55cbe2a43b4f9f0dec095155168"
+   }
+  },
+  {
+   "project": "pyodide-cli",
+   "version": "0.5.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "24c02736f1d6c99396f5e9330fd30bd98db88cf49ef059b62b025fa1f5f6e29c"
+  },
+  {
+   "project": "pyodide-lock",
+   "version": "0.1.3",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "71d3e8ef72cc020e45eabd35cb36480437d2639bc756392f02ca3bd709504103"
+  },
+  {
+   "project": "pyproject-hooks",
+   "version": "1.3.3",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "5fc53fdac9f7bd63fbcdc868fb5f90b4784d78a53a3d3388cd738b807441a20b"
+  },
+  {
+   "project": "python-discovery",
+   "version": "1.6.2",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "f0c697f95a3aaec4174a6e5e58f5885e25768684bafc76f1afde384709ebdcf2"
+  },
+  {
+   "project": "requests",
+   "version": "2.34.2",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+  },
+  {
+   "project": "resolvelib",
+   "version": "1.2.1",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "fb06b66c8da04172d9e72a21d7d06186d8919e32ae5ab5cdf5b9d920be805ac2"
+  },
+  {
+   "project": "rich",
+   "version": "15.0.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb"
+  },
+  {
+   "project": "ruamel-yaml",
+   "version": "0.19.1",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93"
+  },
+  {
+   "project": "scikit-build-core",
+   "version": "0.11.6",
+   "source": "wheel built locally by pip from the retained sdist (step 21)",
+   "sha256": "1a59bc11ff430eb9f7efa43b369b0c5e8782164af4f3e1b27aa81178f53a4b71",
+   "sdist": {
+    "filename": "scikit_build_core-0.11.6.tar.gz",
+    "sha256": "5982ccd839735be99cfd3b92a8847c6c196692f476c215da84b79d2ad12f9f1b"
+   }
+  },
+  {
+   "project": "shellingham",
+   "version": "1.5.4",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686"
+  },
+  {
+   "project": "typer",
+   "version": "0.25.1",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "75caa44ed46a03fb2dab8808753ffacdbfea88495e74c85a28c5eefcf5f39c89"
+  },
+  {
+   "project": "typing-inspection",
+   "version": "0.4.4",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147"
+  },
+  {
+   "project": "typing-extensions",
+   "version": "4.16.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+  },
+  {
+   "project": "unearth",
+   "version": "0.18.3",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "306773b7a792af7d44b3b2a3bea21ba63a0b947546ad8ee793194fd09a6ae020"
+  },
+  {
+   "project": "urllib3",
+   "version": "2.8.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3"
+  },
+  {
+   "project": "virtualenv",
+   "version": "21.14.6",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "eb1a20c5878569b69667f6a1af03458a8512b3afa7be771a2dafe92fdca05bb9"
+  },
+  {
+   "project": "wheel",
+   "version": "0.48.0",
+   "source": "PyPI wheel cached by the executed acquisition",
+   "sha256": "3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab"
+  }
+ ],
+ "wheelhouse": [
+  {
+   "project": "cmake",
+   "version": "4.4.4",
+   "filename": "cmake-4.4.4-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+   "sha256": "b3029f586853e01ddf2824c1ff124a1c5284f8ae897994758e9c4eeb45903b58",
+   "bytes": 30300845,
+   "tags": [
+    "py3-none-manylinux_2_17_aarch64",
+    "py3-none-manylinux2014_aarch64"
+   ],
+   "requiredBy": "scikit-build-core dynamic build requirement (no host cmake)",
+   "executedBuildEvidence": "downloadedInStep50",
+   "pypiUrl": "https://files.pythonhosted.org/packages/76/0a/f6c1119b24ca4b81476f9398e90f3f8175756dfe16e082c691b12992c991/cmake-4.4.4-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+   "pypiUploadTime": "2026-10-04T09:09:12.830409Z"
+  },
+  {
+   "project": "iniconfig",
+   "version": "2.3.1",
+   "filename": "iniconfig-2.3.1-py3-none-any.whl",
+   "sha256": "9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7",
+   "bytes": 7552,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": [
+    "pytest 9.1.1"
+   ],
+   "executedBuildEvidence": "downloadedInStep50",
+   "pypiUrl": "https://files.pythonhosted.org/packages/56/43/4ca9e49d27a1fcf6bece6f6aec0ea46bb9112489b93d4b688fb415457bdb/iniconfig-2.3.1-py3-none-any.whl",
+   "pypiUploadTime": "2026-10-06T22:48:36.959685Z"
+  },
+  {
+   "project": "ninja",
+   "version": "1.13.2",
+   "filename": "ninja-1.13.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+   "sha256": "d775a5e43e9088f507a6250d57fcf5678eb31268c545feb5064ffeee33735622",
+   "bytes": 177180,
+   "tags": [
+    "py3-none-manylinux_2_17_aarch64",
+    "py3-none-manylinux2014_aarch64"
+   ],
+   "requiredBy": "scikit-build-core dynamic build requirement (no host ninja)",
+   "executedBuildEvidence": "downloadedInStep50",
+   "pypiUrl": "https://files.pythonhosted.org/packages/35/54/7368ce188625e39acc03ee362bb86cc9bfa6ad15e25c50889ae36e2889b3/ninja-1.13.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+   "pypiUploadTime": "2026-08-30T15:49:29.590314Z"
+  },
+  {
+   "project": "packaging",
+   "version": "26.3",
+   "filename": "packaging-26.3-py3-none-any.whl",
+   "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+   "bytes": 129956,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": [
+    "pytest 9.1.1",
+    "scikit_build_core 0.11.6",
+    "setuptools-scm 10.3.4",
+    "vcs-versioning 2.6.0"
+   ],
+   "executedBuildEvidence": "resolvedFromCacheInferred",
+   "pypiUrl": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+   "pypiUploadTime": "2026-08-04T18:15:27.159957Z"
+  },
+  {
+   "project": "pathspec",
+   "version": "1.1.1",
+   "filename": "pathspec-1.1.1-py3-none-any.whl",
+   "sha256": "a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189",
+   "bytes": 57328,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": [
+    "scikit_build_core 0.11.6"
+   ],
+   "executedBuildEvidence": "resolvedFromCacheInferred",
+   "pypiUrl": "https://files.pythonhosted.org/packages/f1/d9/7fb5aa316bc299258e68c73ba3bddbc499654a07f151cba08f6153988714/pathspec-1.1.1-py3-none-any.whl",
+   "pypiUploadTime": "2026-04-27T01:46:07.060850Z"
+  },
+  {
+   "project": "pluggy",
+   "version": "1.6.0",
+   "filename": "pluggy-1.6.0-py3-none-any.whl",
+   "sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746",
+   "bytes": 20538,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": [
+    "pytest 9.1.1"
+   ],
+   "executedBuildEvidence": "resolvedFromCacheInferred",
+   "pypiUrl": "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl",
+   "pypiUploadTime": "2025-05-15T12:30:06.134003Z"
+  },
+  {
+   "project": "pybind11",
+   "version": "3.1.0",
+   "filename": "pybind11-3.1.0-py3-none-any.whl",
+   "sha256": "b8488090f8acffbcb6b5d6a85571a6827a0a2981ffb75e5a0b27b87c4a6b7dd0",
+   "bytes": 319402,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": "pyproject build-system.requires",
+   "executedBuildEvidence": "downloadedInStep50",
+   "pypiUrl": "https://files.pythonhosted.org/packages/33/fd/8762f7ee3e4e4be6d1d846cffb4916dd9bb02b2f800d3603718a0efe494c/pybind11-3.1.0-py3-none-any.whl",
+   "pypiUploadTime": "2026-08-06T23:32:59.047135Z"
+  },
+  {
+   "project": "pygments",
+   "version": "2.21.0",
+   "filename": "pygments-2.21.0-py3-none-any.whl",
+   "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+   "bytes": 1250147,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": [
+    "pytest 9.1.1"
+   ],
+   "executedBuildEvidence": "resolvedFromCacheInferred",
+   "pypiUrl": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+   "pypiUploadTime": "2026-08-17T08:02:44.912148Z"
+  },
+  {
+   "project": "pytest",
+   "version": "9.1.1",
+   "filename": "pytest-9.1.1-py3-none-any.whl",
+   "sha256": "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c",
+   "bytes": 386536,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": "pyproject build-system.requires",
+   "executedBuildEvidence": "downloadedInStep50",
+   "pypiUrl": "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl",
+   "pypiUploadTime": "2026-06-19T10:58:31.347074Z"
+  },
+  {
+   "project": "scikit-build-core",
+   "version": "0.11.6",
+   "filename": "scikit_build_core-0.11.6-py3-none-any.whl",
+   "sha256": "ce6d8fe64e6b4c759ea0fb95d2f8a68f60d2df31c2989838633b8ec930736360",
+   "bytes": 185764,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": "pyproject build-system.requires (constraint ==0.11.6)",
+   "executedBuildEvidence": "downloadedInStep50",
+   "pypiUrl": "https://files.pythonhosted.org/packages/43/49/ec16b3db6893db788ae35f98506ff5a9c25dca7eb18cc38ada8a4c1dc944/scikit_build_core-0.11.6-py3-none-any.whl",
+   "pypiUploadTime": "2025-08-22T22:11:52.438766Z"
+  },
+  {
+   "project": "setuptools",
+   "version": "84.0.0",
+   "filename": "setuptools-84.0.0-py3-none-any.whl",
+   "sha256": "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670",
+   "bytes": 818216,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": [
+    "setuptools-scm 10.3.4"
+   ],
+   "executedBuildEvidence": "resolvedFromCacheInferred",
+   "pypiUrl": "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl",
+   "pypiUploadTime": "2026-08-08T18:27:56.719708Z"
+  },
+  {
+   "project": "setuptools-scm",
+   "version": "10.3.4",
+   "filename": "setuptools_scm-10.3.4-py3-none-any.whl",
+   "sha256": "82f34c3e3084fc2b57d397200637cc13f2338004052d2fee47baa5f0e902464e",
+   "bytes": 33366,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": "pyproject tool.scikit-build metadata.version.provider = scikit_build_core.metadata.setuptools_scm",
+   "executedBuildEvidence": "resolvedFromCacheInferred",
+   "pypiUrl": "https://files.pythonhosted.org/packages/da/f5/54538a1f17ea753c42b0928dc2e62986d463f8c393340b9a1e602f2d4dd9/setuptools_scm-10.3.4-py3-none-any.whl",
+   "pypiUploadTime": "2026-09-23T19:21:41.607429Z"
+  },
+  {
+   "project": "vcs-versioning",
+   "version": "2.6.0",
+   "filename": "vcs_versioning-2.6.0-py3-none-any.whl",
+   "sha256": "f8bebd1302ebc12e67ceb30fc7dd698ec969414b6fa43b30c3f14ac9b1e72c41",
+   "bytes": 123154,
+   "tags": [
+    "py3-none-any"
+   ],
+   "requiredBy": [
+    "setuptools-scm 10.3.4"
+   ],
+   "executedBuildEvidence": "resolvedFromCacheInferred",
+   "pypiUrl": "https://files.pythonhosted.org/packages/73/1d/ad4064bf12f4503bf61e65d74c93c523672776d25ee0a06aaf42ae09ef3f/vcs_versioning-2.6.0-py3-none-any.whl",
+   "pypiUploadTime": "2026-10-06T22:21:53.267565Z"
+  }
+ ],
+ "observedInExecutedBuild": {
+  "scikitBuildCoreLine": "*** scikit-build-core 0.11.6 using CMake 4.4.4 (wheel)",
+  "pybind11CMakeLine": "-- pybind11 v3.0.1",
+  "cmakeVersionLine": "2026-10-11 22:13:33,307 - scikit_build_core - INFO - CMake version: 4.4.4",
+  "ninjaVersionLine": "2026-10-11 22:13:33,358 - scikit_build_core - INFO - Ninja version: 1.13.2",
+  "implementationLine": "2026-10-11 22:13:33,308 - scikit_build_core - INFO - Implementation: cpython linux on aarch64"
+ },
+ "wheelhouseSha256Sums": "cb39d706813630fa34ca471525a46275f589feb2bd00e89c77a0cce0b86978dc"
+}

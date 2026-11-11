@@ -109,11 +109,20 @@ export function deleteSelectedDrawingElements(): boolean {
   const annotations = drawing.annotations.filter((item) => !ids.has(item.id));
   const datums = drawing.datums.filter((item) => !ids.has(item.id)), gdtFrames = drawing.gdtFrames.filter((item) => !ids.has(item.id));
   const weldSymbols = drawing.weldSymbols.filter((item) => !ids.has(item.id));
+  const tables = drawing.tables.filter((item) => !ids.has(item.id));
+  const balloons = drawing.balloons.filter((item) => !ids.has(item.id));
+  // 投影図とレイヤーは共通削除の対象外。選んでいる時は理由を1件出す。
+  const protectedSelection = drawing.views.some((item) => ids.has(item.id)) || drawing.layers.some((item) => ids.has(item.id));
   if (dimensions.length === drawing.dimensions.length && annotations.length === drawing.annotations.length
-    && datums.length === drawing.datums.length && gdtFrames.length === drawing.gdtFrames.length && weldSymbols.length === drawing.weldSymbols.length) return false;
+    && datums.length === drawing.datums.length && gdtFrames.length === drawing.gdtFrames.length && weldSymbols.length === drawing.weldSymbols.length
+    && tables.length === drawing.tables.length && balloons.length === drawing.balloons.length) {
+    if (protectedSelection) state.setDrawingMessage(t('drawing.delete.protected'));
+    return false;
+  }
   // 参照する公差枠は残す。基準削除後に未解決として修正でき、Undoで同じIDへ戻る。
-  state.applyDrawing({ ...drawing, dimensions, annotations, datums, gdtFrames, weldSymbols });
+  state.applyDrawing({ ...drawing, dimensions, annotations, datums, gdtFrames, weldSymbols, tables, balloons });
   state.setDrawingTool('select');
+  if (protectedSelection) state.setDrawingMessage(t('drawing.delete.protected'));
   return true;
 }
 

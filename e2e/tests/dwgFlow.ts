@@ -1,12 +1,19 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
-import { readRecomputeStats } from './recompute.js';
+import { readRecomputeStats, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { captureManualDetail } from './captureManualDetail.js';
 
 export async function dwgFlow(page: Page, info: TestInfo): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect.poll(() => page.evaluate(() => typeof window.pcadRecomputeStats)).toBe('function');
-  const before = await readRecomputeStats(page);
+  // Finish startup before measuring whether the DWG guide itself requests work.
+  await waitForRecompute(page);
+  const before = await waitForSettledRecompute(page);
+  expect(before.lastOutcome).toBe('success');
+  expect(before.isComputing).toBe(false);
+  expect(before.requestedGeneration).toBeGreaterThan(0);
+  expect(before.completedGeneration).toBe(before.requestedGeneration);
+  expect(before.pendingWaiters).toBe(0);
   let chooserCount = 0;
   const opened = (): void => { chooserCount += 1; };
   page.on('filechooser', opened);

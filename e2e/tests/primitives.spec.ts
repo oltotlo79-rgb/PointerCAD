@@ -1,5 +1,10 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { disableFilePickers } from './filePickers.js';
+import { openToolMenu, toolMenuPanel } from './toolMenus.js';
+import { fillFields, popover, popoverInputs } from './popoverFields.js';
+import { worldToCanvas, type WorldPoint } from './homeViewProjection.js';
 
 /**
  * 基本形状 5 種(FR-429)・面をつなぐ立体(FR-430)・測る(FR-1101、FR-1102)を、
@@ -43,36 +48,6 @@ const BOX_SIZE_MM = 20;
 /** 既定の箱の体積。中心が原点なので各軸 −10〜+10 に広がる。 */
 const BOX_VOLUME = BOX_SIZE_MM ** 3;
 
-/** コンソールのエラーとページの例外を集める。最後に 0 件であることを確かめる。 */
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
-/**
- * File System Access API を無いことにしてから頁を開く(§0.a-0.10)。
- * ヘッドレスでは窓を出せないので、ダウンロードとファイル選択の代替経路へ落とす。
- */
-async function disableFilePickers(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
-      Object.defineProperty(globalThis, name, {
-        configurable: true,
-        writable: true,
-        value: undefined,
-      });
-    }
-  });
-}
-
 /** ツールバーの「スケッチ」区画の道具。 */
 function sketchTool(page: Page, label: string): Locator {
   return page
@@ -90,53 +65,13 @@ async function chooseShapeTool(page: Page, label: string): Promise<void> {
     .click();
 }
 
-/** ツールバーの畳んだ一覧(「作る」「合わせる」「加工」「見た目」)の引き金。 */
-function toolMenuTrigger(page: Page, menu: string): Locator {
-  return page
-    .locator('.pcad-toolbar')
-    .getByRole('button', { name: new RegExp(`^${menu}`) })
-    .first();
-}
-
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-
-async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) {
-    await toolMenuTrigger(page, menu).click();
-  }
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
-}
-
 /** 開いた一覧の中の道具。 */
 function menuTool(page: Page, menu: string, label: string): Locator {
   return toolMenuPanel(page, menu).getByRole('button', { name: label, exact: true });
 }
 
-/** その場数値入力のポップアップ。 */
-function popover(page: Page): Locator {
-  return page.locator('.pcad-popover');
-}
-
 function popoverTitle(page: Page): Locator {
   return page.locator('.pcad-popover__title');
-}
-
-function popoverInputs(page: Page): Locator {
-  return page.locator('.pcad-popover input.pcad-field__input');
-}
-
-/** ポップアップの欄を埋める。null を渡した欄は既定値のままにする(NFR-UX-4)。 */
-async function fillFields(page: Page, sources: readonly (string | null)[]): Promise<void> {
-  await expect(popover(page)).toBeVisible();
-  const inputs = popoverInputs(page);
-  for (const [index, source] of sources.entries()) {
-    if (source === null) {
-      continue;
-    }
-    await inputs.nth(index).fill(source);
-  }
 }
 
 /** Enter で決定する(§2.9)。 */
@@ -213,58 +148,6 @@ async function chooseAppearance(page: Page, label: string, option: string): Prom
 /* ------------------------------------------------------------------ *
  * ビューポートの当たり判定(ホーム視点のまま押す)
  * ------------------------------------------------------------------ */
-
-type WorldPoint = readonly [number, number, number];
-
-/*
- * ホーム視点の見え方。数値は `packages/ui/src/viewport/cameraMath.ts` の `HOME_ORBIT` と
- * `VERTICAL_FIELD_OF_VIEW` そのままで、写し方は `createViewportScene.ts` の `worldToScreen`
- * と同じ。**この検査では視点を一度も動かさない。**
- */
-// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
-
-function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
-function dotPoints(a: WorldPoint, b: WorldPoint): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
-function normalizePoint(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
-}
-
-const CAMERA_EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-const CAMERA_Z = normalizePoint(CAMERA_EYE);
-const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
-
-function worldToCanvas(
-  world: WorldPoint,
-  widthPixels: number,
-  heightPixels: number,
-): readonly [number, number] {
-  const view = subtractPoints(world, CAMERA_EYE);
-  const depth = -dotPoints(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
-  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
-  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
-}
 
 /** ビューポートの上で、ワールド座標の点が見えている場所を押す(FR-106)。 */
 async function clickWorldPoint(page: Page, world: WorldPoint, shift = false): Promise<void> {

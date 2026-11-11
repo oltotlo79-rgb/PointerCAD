@@ -8,6 +8,7 @@
  * 触れないので、Node の検査からそのまま呼べる(`createSolidLayer.test.ts` と同じ流儀)。
  * 実際の見え方(色・前後関係)は目視と E2E で確かめる。
  */
+import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   DEFAULT_APPEARANCE,
   DEFAULT_COMPONENT_PLACEMENT,
@@ -21,22 +22,336 @@ import {
 } from '@pointercad/model';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import * as THREE from 'three';
+import { ViewportResourceInitializationFailure } from './viewportLifetime.js';
 import { describe, expect, it, vi } from 'vitest';
+import type { PatternTextureSource } from '../appearance/createAppearanceMaterial.js';
 
 import {
   buildAssemblyGeometry,
   assemblyAppearanceSpecs,
-  createAssemblyLayer,
+  createAssemblyLayer as createLayer,
   EMPTY_ASSEMBLY_GEOMETRY,
   type AssemblyGeometryBundle,
   type AssemblyGeometryInput,
+  type AssemblyLayerOptions,
 } from './createAssemblyLayer.js';
+import { AssemblyUiBackingLedger } from './assemblyMeshAdmission.js';
 import { DEFAULT_THEME_COLORS } from './themeColors.js';
 import type { AppearanceInput } from './buildSolidGeometry.js';
 import { assemblyTargetId } from '../assembly/mateCommands.js';
 import { subShapeRefOf } from '../solid/subShapeSelection.js';
+import { createGpuMeshBudget } from './solidMeshAdmission.js';
+
+function createAssemblyLayer(patterns?: PatternTextureSource, options: AssemblyLayerOptions = {}) {
+  return createLayer(patterns, { uiBackings: new AssemblyUiBackingLedger(), ...options });
+}
 
 describe('合致の面pickと強調の回帰', () => {
+  it('retains local patterned UV phase through the shared assembly geometry and disposes it once', () => {
+    const source = makeBody('patterned-part');
+    const positions = Float32Array.from([19.99, 0, 0, 20.01, 0, 0, 19.99, 1, 0]);
+    const body: SolidBody = { ...source, mesh: { ...source.mesh, positions },
+      coordinateFrame: { space: 'local', origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01 } };
+    const preset = appearanceFromPreset('expandedMetal');
+    if (preset.pattern.kind === 'none') throw new Error('expected patterned preset');
+    const patterned: AppearanceSpec = { ...preset, pattern: {
+      ...preset.pattern, spacing: expressionValueFromNumber(20),
+    } };
+    const appearance: AppearanceInput = { defaultAppearance: DEFAULT_APPEARANCE,
+      byBody: new Map([['patterned-part', {
+        bodyAppearance: patterned, faceAppearances: new Map(),
+      }]]),
+    };
+    const bundle: AssemblyGeometryBundle = {
+      parts: [{ partKey: 'patterned-key', bodies: [body], appearances: appearance }],
+      instances: [{ componentId: 'patterned-component', partKey: 'patterned-key', visible: true,
+        emphasis: 'none', placement: placementAt(0) }],
+    };
+    let sourceDisposals = 0;
+    const patterns: PatternTextureSource = {
+      create: () => ({ texture: new THREE.Texture(), alphaTexture: new THREE.Texture() }),
+      disposeAll: () => { sourceDisposals += 1; },
+    };
+    const layer = createAssemblyLayer(patterns);
+    try {
+      layer.update(bundle, 'shadedWithEdges');
+      const meshes: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>[] = [];
+      layer.group.traverse((object) => {
+        if (isPartMesh(object) && object.geometry.getAttribute('uv') !== undefined) meshes.push(object);
+      });
+      expect(meshes).toHaveLength(1);
+      const mesh = meshes[0];
+      const uv: unknown = mesh.geometry.getAttribute('uv');
+      if (!(uv instanceof THREE.BufferAttribute)) throw new Error('missing assembly patterned UV');
+      expect(Math.abs((Number(uv.array[0]) + Number(uv.array[2])) / 2 - 20)).toBeLessThan(2e-5);
+      expect(mesh.geometry.getIndex()?.count).toBe(3);
+      const material: unknown = mesh.material;
+      if (!(material instanceof THREE.MeshStandardMaterial)) throw new Error('missing patterned material');
+      expect(material.map?.repeat.x).toBe(material.alphaMap?.repeat.x);
+      let geometryDisposals = 0;
+      mesh.geometry.addEventListener('dispose', () => { geometryDisposals += 1; });
+      layer.update({ parts: [], instances: [] }, 'shadedWithEdges');
+      expect(geometryDisposals).toBe(1);
+      expect(Array.from(positions)).toEqual([
+        Math.fround(19.99), 0, 0, Math.fround(20.01), 0, 0, Math.fround(19.99), 1, 0,
+      ]);
+    } finally { layer.dispose(); }
+    expect(sourceDisposals).toBe(1);
+  });
+  it('applies the local result mesh-byte limit through public assembly update', () => {
+    const source = makeBody('assembly-budget');
+    const mesh = source.mesh;
+    const required = mesh.positions.byteLength + mesh.normals.byteLength
+      + mesh.indices.byteLength + mesh.edgePositions.byteLength + mesh.indices.length * 36;
+    const appearance: AppearanceInput = {
+      defaultAppearance: DEFAULT_APPEARANCE,
+      byBody: new Map([['assembly-budget', {
+        bodyAppearance: appearanceFromPreset('expandedMetal'), faceAppearances: new Map(),
+      }]]),
+    };
+    for (const [limit, shouldPass] of [[required - 1, false], [required, true]] as const) {
+      const body: SolidBody = { ...source, coordinateFrame: {
+        space: 'local', origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01,
+        maximumLiveMeshBytes: limit,
+      } };
+      const bundle: AssemblyGeometryBundle = {
+        parts: [{ partKey: 'budget-part', bodies: [body], appearances: appearance }],
+        instances: [{ componentId: 'budget-component', partKey: 'budget-part', visible: true,
+          emphasis: 'none', placement: placementAt(0) }],
+      };
+      const layer = createAssemblyLayer();
+      try {
+        if (shouldPass) {
+          expect(() => layer.update(bundle, 'shadedWithEdges')).not.toThrow();
+          expect(geometriesOf(layer.group).size).toBeGreaterThan(0);
+        } else {
+          expect(() => layer.update(bundle, 'shadedWithEdges')).toThrow(/live-byte budget/);
+          expect(layer.group.children).toHaveLength(0);
+        }
+      } finally { layer.dispose(); }
+    }
+  });
+  it.each([0, -1e6, 1e9])('keeps two face batches separate near world X=%s', (x) => {
+    const bodies: SolidBody[] = ['a', 'b'].map((id, index): SolidBody => ({
+      ...makeBody(id),
+      coordinateFrame: { space: 'local', origin: [x + index * 100, 0, 0], maximumFloat32ErrorMm: 0.001 },
+    }));
+    const bundle: AssemblyGeometryBundle = {
+      parts: [{ partKey: 'part-1', bodies }],
+      instances: [{ componentId: 'component-1', partKey: 'part-1', visible: true, emphasis: 'none',
+        placement: placementAt(5), subShapes: { hovered: null, selected: ['a#face:0', 'b#face:0'] } }],
+    };
+    const layer = createAssemblyLayer();
+    try {
+      layer.update(bundle, 'shadedWithEdges');
+      const overlay = layer.group.getObjectByName('assembly-mate-highlight:component-1');
+      expect(overlay?.children.map((child) => child.position.x)).toEqual([x, x + 100]);
+      expect(overlay?.children.every((child) => child.children.length === 1)).toBe(true);
+    } finally { layer.dispose(); }
+  });
+
+  it('uses component × body Double origins for both batches and CPU face picks', () => {
+    const origins = [1e9, -1e9];
+    const bodies = origins.map((x, index): SolidBody => ({ ...makeBody(`body-${String(index)}`),
+      coordinateFrame: { space: 'local', origin: [x, 0, 0], maximumFloat32ErrorMm: 0.001 } }));
+    const layer = createAssemblyLayer();
+    try {
+      layer.update({ parts: [{ partKey: 'part-1', bodies }], instances: [{
+        componentId: 'component-1', partKey: 'part-1', visible: true, emphasis: 'none',
+        placement: { position: [7, 8, 0], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] },
+      }] }, 'shadedWithEdges');
+      const faces = faceBatchesOf(layer);
+      const edges = layer.group.children.filter((object): object is THREE.LineSegments<THREE.InstancedBufferGeometry, THREE.LineBasicMaterial> =>
+        isPartEdges(object) && object.geometry instanceof THREE.InstancedBufferGeometry);
+      expect(faces).toHaveLength(2);
+      expect(edges).toHaveLength(2);
+      for (const [index, x] of origins.entries()) {
+        const worldX = 7;
+        const worldY = 8 + x;
+        expect(faces[index].matrix.elements[12]).toBeCloseTo(worldX, 6);
+        expect(faces[index].matrix.elements[13]).toBeCloseTo(worldY, 6);
+        expect(edges[index].matrix.elements[12]).toBeCloseTo(worldX, 6);
+        expect(edges[index].matrix.elements[13]).toBeCloseTo(worldY, 6);
+        const instanceMatrix = new THREE.Matrix4();
+        faces[index].getMatrixAt(0, instanceMatrix);
+        expect(instanceMatrix.elements[12]).toBe(0);
+        expect(instanceMatrix.elements[13]).toBe(0);
+        const bounds = new THREE.Box3().setFromObject(faces[index]);
+        expect(bounds.min.x).toBeCloseTo(6, 6);
+        expect(bounds.max.y).toBeCloseTo(worldY + 1, 6);
+        const ray = new THREE.Raycaster(new THREE.Vector3(6.8, worldY + 0.2, 5), new THREE.Vector3(0, 0, -1));
+        expect(layer.pickMateFace(ray)).toEqual({ componentId: 'component-1', partKey: 'part-1',
+          bodyFeatureId: `body-${String(index)}`, faceIndex: 0 });
+      }
+      const plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+      layer.setSectionPlanes([plane]);
+      expect(faces.every((face) => isPartMesh(face) && face.material.clippingPlanes?.[0] === plane)).toBe(true);
+    } finally { layer.dispose(); }
+  });
+
+  it('keeps 50 local instances in one precise batch and falls back only for a distant slot', () => {
+    const body: SolidBody = { ...makeBody('local'), coordinateFrame: {
+      space: 'local', origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.001,
+    } };
+    const input = sameParts(MANY_INSTANCES);
+    const bodies = [body];
+    const layer = createAssemblyLayer();
+    try {
+      layer.update(buildAssemblyGeometry({ ...input, bodies: new Map([['part-1', bodies]]) }), 'shadedWithEdges');
+      expect(faceBatchesOf(layer)).toHaveLength(1);
+      expect(faceBatchesOf(layer)[0].count).toBe(MANY_INSTANCES);
+      expect(firstEdges(layer).geometry.instanceCount).toBe(MANY_INSTANCES);
+      const regular = new THREE.Raycaster(new THREE.Vector3(1e9 + 490.2, 0.2, 5), new THREE.Vector3(0, 0, -1));
+      expect(layer.pickMateFace(regular)?.componentId).toBe('component-50');
+      const placements = new Map(input.placements);
+      placements.set('component-50', placementAt(1e9 + 0.125));
+      layer.update(buildAssemblyGeometry({ ...input, placements, bodies: new Map([['part-1', bodies]]) }), 'shadedWithEdges');
+      expect(faceBatchesOf(layer)[0].count).toBe(MANY_INSTANCES - 1);
+      expect(firstEdges(layer).geometry.instanceCount).toBe(MANY_INSTANCES - 1);
+      const fallback = layer.group.children.find((object): object is THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> =>
+        isPartMesh(object) && !(object instanceof THREE.InstancedMesh));
+      if (fallback === undefined) throw new Error('missing local-frame fallback');
+      expect(fallback.matrix.elements[12]).toBe(2e9 + 0.125);
+      const distant = new THREE.Raycaster(new THREE.Vector3(2e9 + 0.325, 0.2, 5), new THREE.Vector3(0, 0, -1));
+      expect(layer.pickMateFace(distant)).toEqual({ componentId: 'component-50', partKey: 'part-1',
+        bodyFeatureId: 'local', faceIndex: 0 });
+    } finally { layer.dispose(); }
+  });
+
+  it('rejects a sparse local frame rather than drawing it as world coordinates', () => {
+    const origin: [number, number, number] = [1e9, 0, 0];
+    Reflect.deleteProperty(origin, '0');
+    const body: SolidBody = { ...makeBody('invalid'), coordinateFrame: {
+      space: 'local', origin, maximumFloat32ErrorMm: 0.001,
+    } };
+    const layer = createAssemblyLayer();
+    try {
+      expect(() => layer.update({ parts: [{ partKey: 'part-1', bodies: [body] }], instances: [{
+        componentId: 'component-1', partKey: 'part-1', visible: true, emphasis: 'none',
+        placement: placementAt(0),
+      }] }, 'shadedWithEdges')).toThrow(RangeError);
+      expect(layer.group.children).toHaveLength(0);
+    } finally { layer.dispose(); }
+  });
+
+  it('retains two local body shapes through 100 placement changes and releases each once', () => {
+    const bodies: SolidBody[] = [1e9, -1e9].map((x, index): SolidBody => ({
+      ...makeBody(`lifetime-${String(index)}`),
+      coordinateFrame: { space: 'local', origin: [x, 0, 0], maximumFloat32ErrorMm: 0.001 },
+    }));
+    const layer = createAssemblyLayer();
+    const bundleAt = (x: number): AssemblyGeometryBundle => ({
+      parts: [{ partKey: 'part-1', bodies }],
+      instances: [{ componentId: 'component-1', partKey: 'part-1', visible: true,
+        emphasis: 'none', placement: placementAt(x) }],
+    });
+    try {
+      layer.update(bundleAt(0), 'shadedWithEdges');
+      const shapes = geometriesOf(layer.group);
+      expect(shapes.size).toBe(4);
+      const disposals = [...shapes].map((shape) => {
+        const disposed = vi.fn();
+        shape.addEventListener('dispose', disposed);
+        return disposed;
+      });
+      for (let update = 1; update <= 100; update += 1) {
+        layer.update(bundleAt(update * 0.125), 'shadedWithEdges');
+        expect(geometriesOf(layer.group)).toEqual(shapes);
+        expect(layer.group.children).toHaveLength(4);
+      }
+      layer.update({ parts: [], instances: [] }, 'shadedWithEdges');
+      expect(layer.group.children).toHaveLength(0);
+      for (const disposed of disposals) expect(disposed).toHaveBeenCalledTimes(1);
+      layer.dispose();
+      for (const disposed of disposals) expect(disposed).toHaveBeenCalledTimes(1);
+    } finally { layer.dispose(); }
+  });
+
+  it('keeps face, edge and vertex overlay geometry local to each body under component rotation', () => {
+    const framed = (id: string, x: number): SolidBody => {
+      const source = makeBody(id);
+      return {
+        ...source,
+        coordinateFrame: { space: 'local', origin: [x, 0, 0], maximumFloat32ErrorMm: 0.001 },
+        edges: [{ index: 0, curveKind: 'line', length: 1, midpoint: [x + 0.5, 0, 0],
+          start: [x, 0, 0], end: [x + 1, 0, 0], axis: null, radius: null,
+          segmentOffset: 0, segmentCount: 1 }],
+        vertices: [{ index: 0, position: [x + 0.125, 0, 0] }],
+      };
+    };
+    const bodies = [framed('positive', 1e6), framed('negative', -1e9)];
+    const instance: AssemblyGeometryBundle['instances'][number] = {
+      componentId: 'component-1', partKey: 'part-1', visible: true, emphasis: 'none',
+      placement: { position: [7, 8, 0], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] },
+      subShapes: { hovered: null, selected: [
+        'positive#face:0', 'positive#edge:0', 'positive#vertex:0',
+        'negative#face:0', 'negative#edge:0', 'negative#vertex:0',
+      ] },
+    };
+    const bundle: AssemblyGeometryBundle = { parts: [{ partKey: 'part-1', bodies }], instances: [instance] };
+    const layer = createAssemblyLayer();
+    try {
+      layer.update(bundle, 'shadedWithEdges');
+      const overlay = layer.group.getObjectByName('assembly-mate-highlight:component-1');
+      if (overlay === undefined) throw new Error('missing assembly overlay');
+      expect(overlay.children.map((body) => body.name)).toEqual([
+        'assembly-mate-body:positive', 'assembly-mate-body:negative',
+      ]);
+      for (const [index, x] of [1e6, -1e9].entries()) {
+        const bodyGroup = overlay.children[index];
+        expect(bodyGroup.position.x).toBe(x);
+        expect(bodyGroup.children).toHaveLength(3);
+        const face = bodyGroup.children.find((entry) => entry instanceof THREE.Mesh);
+        const edge = bodyGroup.children.find((entry) => entry instanceof THREE.LineSegments);
+        const point = bodyGroup.children.find((entry) => entry instanceof THREE.Points);
+        if (!(face instanceof THREE.Mesh) || !(edge instanceof THREE.LineSegments)
+          || !(point instanceof THREE.Points)
+          || !(face.geometry instanceof THREE.BufferGeometry)
+          || !(edge.geometry instanceof THREE.BufferGeometry)
+          || !(point.geometry instanceof THREE.BufferGeometry)) throw new Error('missing overlay kind');
+        const facePosition: unknown = face.geometry.getAttribute('position');
+        const edgePosition: unknown = edge.geometry.getAttribute('position');
+        const pointPosition: unknown = point.geometry.getAttribute('position');
+        if (!(facePosition instanceof THREE.BufferAttribute)
+          || !(edgePosition instanceof THREE.BufferAttribute)
+          || !(pointPosition instanceof THREE.BufferAttribute)) throw new Error('missing overlay position');
+        expect([...facePosition.array.slice(0, 3)]).toEqual([0, 0, 0]);
+        expect([...edgePosition.array.slice(0, 3)]).toEqual([0, 0, 0]);
+        expect([...pointPosition.array]).toEqual([0, 0, 0, 1, 0, 0, 0.125, 0, 0]);
+        expect(face.geometry.getIndex()?.count).toBe(3);
+        bodyGroup.updateWorldMatrix(true, true);
+        const world = bodyGroup.localToWorld(new THREE.Vector3(0.125, 0, 0));
+        expect(world.x).toBeCloseTo(7, 6);
+        expect(world.y).toBeCloseTo(8 + x + 0.125, 6);
+      }
+      const firstFace = overlay.children[0].children[0];
+      if (!(firstFace instanceof THREE.Mesh) || !(firstFace.material instanceof THREE.MeshBasicMaterial)
+        || !(firstFace.geometry instanceof THREE.BufferGeometry)) {
+        throw new Error('missing face material or geometry');
+      }
+      const geometry = firstFace.geometry;
+      const material = firstFace.material;
+      const geometryDisposed = vi.fn();
+      const materialDisposed = vi.fn();
+      geometry.addEventListener('dispose', geometryDisposed);
+      material.addEventListener('dispose', materialDisposed);
+      const plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+      layer.setSectionPlanes([plane]);
+      layer.setThemeColors({ ...DEFAULT_THEME_COLORS, selected: 0x123456 });
+      layer.update({ ...bundle }, 'shadedWithEdges');
+      expect(material.clippingPlanes?.[0]).toBe(plane);
+      expect(material.color.getHex()).toBe(0x123456);
+      for (let cycle = 0; cycle < 100; cycle += 1) {
+        layer.update({ ...bundle }, 'shadedWithEdges');
+        expect(layer.group.getObjectByName(overlay.name)).toBe(overlay);
+      }
+      layer.update({ ...bundle, instances: [{ ...instance, subShapes: undefined }] }, 'shadedWithEdges');
+      expect(geometryDisposed).toHaveBeenCalledTimes(1);
+      expect(materialDisposed).toHaveBeenCalledTimes(1);
+      layer.update(bundle, 'shadedWithEdges');
+      expect(layer.group.getObjectByName(overlay.name)).not.toBe(overlay);
+    } finally { layer.dispose(); }
+  });
   it('同距離のglass fallbackでもcomponent pickと同じ部品を選ぶ', () => {
     const layer = createAssemblyLayer();
     try {
@@ -90,7 +405,8 @@ describe('合致の面pickと強調の回帰', () => {
       const shape = faceBatchesOf(layer)[0].geometry;
       const overlay = layer.group.getObjectByName('assembly-mate-highlight:component-2');
       expect(overlay?.matrix.elements[12]).toBe(10);
-      const mesh = overlay?.children.find((object) => object instanceof THREE.Mesh);
+      const mesh = overlay?.children.flatMap((bodyGroup) => bodyGroup.children)
+        .find((object) => object instanceof THREE.Mesh);
       if (mesh === undefined) throw new Error('face overlay');
       const geometry: unknown = mesh.geometry;
       const material: unknown = mesh.material;
@@ -668,6 +984,60 @@ describe('createAssemblyLayer(表示スタイルと強調、FR-105、FR-106)', (
 });
 
 describe('createAssemblyLayer(当たり判定、FR-106)', () => {
+  it('picks independent hole walls at A=0 and B=60 through selection/hover updates before any render', () => {
+    // Analytic fixture mesh, actual Three ray intersections: no mocked hit or renderer.
+    // This isolates the proposed pre-render matrix failure; it does not reproduce native E2E ownership.
+    const holeWall = (featureId: string): SolidBody => {
+      const geometry = new THREE.CylinderGeometry(3, 3, 10, 32, 1, true);
+      try {
+        geometry.rotateX(Math.PI / 2);
+        geometry.translate(20, 15, 5);
+        const positions = Float32Array.from(geometry.getAttribute('position').array);
+        const normals = Float32Array.from(geometry.getAttribute('normal').array, value => -value);
+        const index = geometry.getIndex();
+        if (index === null) throw new Error('Indexed hole-wall fixture required');
+        const indices = Uint32Array.from(index.array);
+        for (let at = 0; at < indices.length; at += 3) {
+          const previous = indices[at]; indices[at] = indices[at + 2]; indices[at + 2] = previous;
+        }
+        const triangleCount = indices.length / 3;
+        return { ...makeBody(featureId), mesh: { positions, normals, indices,
+          edgePositions: new Float32Array(), triangleCount },
+          faces: [{ index: 0, surfaceKind: 'cylinder', area: 60 * Math.PI, centroid: [20, 15, 5],
+            axis: [0, 0, 1], axisOrigin: [20, 15, 0], radius: 3, triangleOffset: 0, triangleCount }] };
+      } finally { geometry.dispose(); }
+    };
+    const a = holeWall('hole-A'), b = holeWall('hole-B');
+    const parts = [{ partKey: 'saved-part-A', bodies: [a] }, { partKey: 'saved-part-B', bodies: [b] }];
+    expect(a.mesh.positions).not.toBe(b.mesh.positions);
+    const first = { componentId: 'component-A', partKey: parts[0].partKey, visible: true,
+      emphasis: 'none' as const, placement: placementAt(0) };
+    const second = { componentId: 'component-B', partKey: parts[1].partKey, visible: true,
+      emphasis: 'none' as const, placement: placementAt(60) };
+    const eye = new THREE.Vector3(200 / Math.sqrt(3), -200 / Math.sqrt(3), 200 / Math.sqrt(3));
+    const inset = 3 * Math.SQRT1_2;
+    const rayAt = (x: number): THREE.Raycaster => new THREE.Raycaster(eye.clone(),
+      new THREE.Vector3(x - inset, 15 + inset, 9).sub(eye).normalize());
+    const layer = createAssemblyLayer();
+    const scene = new THREE.Scene();
+    scene.matrixAutoUpdate = false;
+    scene.add(layer.group);
+    try {
+      layer.update({ parts, instances: [first, second] }, 'shadedWithEdges');
+      expect(layer.pickMateFace(rayAt(20))).toEqual({ componentId: first.componentId,
+        partKey: first.partKey, bodyFeatureId: a.featureId, faceIndex: 0 });
+      // The actual A-select -> B-hover transition rebuilds overlays but must retain B's placement/face map.
+      layer.update({ parts, instances: [
+        { ...first, subShapes: { hovered: null, selected: ['hole-A#face:0'] } },
+        { ...second, subShapes: { hovered: 'hole-B#face:0', selected: [] } },
+      ] }, 'shadedWithEdges');
+      expect(layer.pickMateFace(rayAt(80))).toEqual({ componentId: second.componentId,
+        partKey: second.partKey, bodyFeatureId: b.featureId, faceIndex: 0 });
+      expect(layer.pickMateFace(rayAt(20))).toEqual({ componentId: first.componentId,
+        partKey: first.partKey, bodyFeatureId: a.featureId, faceIndex: 0 });
+    } finally { layer.dispose(); }
+  });
+
   it('面合致のpickはinstance・part・body・faceを同じ交点から返す', () => {
     const layer = createAssemblyLayer();
     layer.update(buildAssemblyGeometry(sameParts(2)), 'shadedWithEdges');
@@ -954,6 +1324,7 @@ describe('createAssemblyLayer(描き直しの所要、§1.5-23、NFR-PF-1)', () 
     console.log(
       `[実測] 部品 ${String(MANY_INSTANCES)} 個の配置の書き換え: ${elapsed.toFixed(3)} ms / 回`,
     );
+    process.stdout.write(`[PG3b measure] instances=${MANY_INSTANCES} rounds=${MEASURE_ROUNDS} averageMs=${elapsed.toFixed(6)} practicalLimitMs=100\n`);
     expectWithinBudget(elapsed, FRAME_BUDGET_MS, 'アセンブリの層の書き換え');
     layer.dispose();
   });
@@ -1576,5 +1947,681 @@ describe('createAssemblyLayer(バッチの可視 slot・描画経路・寿命)',
       expect(layer.pickComponent(rayAt(0.002, 0.002))).toBe('component-1');
       expect(layer.pickComponent(rayAt(1_000_000.002, 0.002))).toBe('component-2');
     } finally { layer.dispose(); }
+  });
+});
+
+describe('assembly shared backing reservations and update transactions', () => {
+  const down = new THREE.Vector3(0, 0, -1);
+  const rayAt = (x: number, y = 0.2, z = 5): THREE.Raycaster => new THREE.Raycaster(new THREE.Vector3(x, y, z), down);
+  it.each(['rejected', 'published'] as const)('does not skip actual asset returns when finally registration fails after %s publication', outcome => {
+    const ledger = new AssemblyUiBackingLedger(), pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { uiBackings: ledger, gpuMeshBudget: pool });
+    const input = sameParts(2), oldBundle = buildAssemblyGeometry(input);
+    layer.update(oldBundle, 'shadedWithEdges');
+    const oldChildren = [...layer.group.children], before = layer.meshReservation();
+    const oldPick = layer.pickComponent(rayAt(0.002, 0.002));
+    const borrower = new Float32Array(6), oldGeometries = new Set<object>();
+    for (const child of oldChildren) if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+      const geometry: unknown = child.geometry;
+      if (!(geometry instanceof THREE.BufferGeometry)) throw new Error('Actual published geometry required');
+      oldGeometries.add(geometry);
+    }
+    let registrationFails = false;
+    const adopt = ledger.adopt.bind(ledger);
+    const registration = vi.spyOn(ledger, 'adopt').mockImplementation(buffers => {
+      const actual = [...buffers];
+      if (registrationFails && actual.includes(borrower.buffer)) throw new Error('actual final backing registration refused');
+      adopt(actual);
+    });
+    const add = layer.group.add.bind(layer.group);
+    const acquired = new Set<object>();
+    const publication = vi.spyOn(layer.group, 'add').mockImplementation((...objects) => {
+      add(...objects);
+      for (const object of objects) if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
+        const geometry: unknown = object.geometry;
+        if (!(geometry instanceof THREE.BufferGeometry)) throw new Error('Actual acquired geometry required');
+        acquired.add(geometry);
+        if (object instanceof THREE.Mesh && geometry.getAttribute('uv') !== undefined) {
+          geometry.setAttribute('uv', new THREE.BufferAttribute(borrower, 2));
+        }
+      }
+      registrationFails = true;
+      if (outcome === 'rejected') throw new Error('actual publication rejected after add');
+      return layer.group;
+    });
+    const returns = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose');
+    const next = buildAssemblyGeometry({ ...input, bodies: new Map([['part-1', [makeBody('new-finally-owner')]]]) });
+    try {
+      if (outcome === 'rejected') {
+        expect(() => layer.update(next, 'shadedWithEdges')).toThrow('actual publication rejected after add');
+        expect(layer.group.children).toEqual(oldChildren);
+        expect(layer.pickComponent(rayAt(0.002, 0.002))).toBe(oldPick);
+        expect(layer.meshReservation()).toEqual(before);
+        expect([...acquired].every(geometry => returns.mock.contexts.includes(geometry))).toBe(true);
+        expect([...oldGeometries].every(geometry => !returns.mock.contexts.includes(geometry))).toBe(true);
+      } else {
+        expect(() => layer.update(next, 'shadedWithEdges')).not.toThrow();
+        expect(layer.group.children.some(child => oldChildren.includes(child))).toBe(false);
+        expect([...oldGeometries].every(geometry => returns.mock.contexts.includes(geometry))).toBe(true);
+        expect([...acquired].every(geometry => !returns.mock.contexts.includes(geometry))).toBe(true);
+      }
+      expect(acquired.size).toBeGreaterThan(0);
+      expect(layer.meshReservation().cleanupStatus).toBe('complete');
+      expect(pool.reservedBytes()).toBe(layer.meshReservation().gpuMeshBytes);
+      expect(ledger.pending()).toBe(0); expect(ledger.known()).toBe(false);
+      expect(borrower.buffer.byteLength).toBe(24);
+      expect(() => ledger.reserve({}, 0, 0, 100000)).toThrow('registration is unknown');
+      registrationFails = false; publication.mockRestore();
+      ledger.retryRegistration();
+      expect(ledger.known()).toBe(true); expect(ledger.buffers()).toContain(borrower.buffer);
+      expect(() => layer.update(oldBundle, 'shadedWithEdges')).not.toThrow();
+      layer.dispose();
+      expect(ledger.pending()).toBe(0); expect(pool.reservedBytes()).toBe(0);
+      expect(ledger.bytes()).toBeGreaterThanOrEqual(borrower.buffer.byteLength);
+    } finally { registrationFails = false; publication.mockRestore(); registration.mockRestore(); returns.mockRestore(); layer.dispose(); }
+  });
+
+  it('keeps the historical world source union path distinct from supplied unknown budget evidence', () => {
+    let unknown = false;
+    const layer = createAssemblyLayer(undefined, { readBudget: () => unknown ? null : undefined });
+    try {
+      const bundle = buildAssemblyGeometry(sameParts(2));
+      layer.update(bundle, 'shadedWithEdges');
+      const before = layer.meshReservation(), children = [...layer.group.children];
+      expect(before.sourceBackingBytes).toBeGreaterThan(0);
+      unknown = true;
+      expect(() => layer.update(bundle, 'shadedWithEdges')).toThrow('receipt is unknown');
+      expect(layer.meshReservation()).toEqual(before);
+      expect(layer.group.children).toEqual(children);
+      unknown = false;
+      expect(() => layer.update(bundle, 'shadedWithEdges')).not.toThrow();
+    } finally { layer.dispose(); }
+  });
+
+  it('keeps exact registered rollback backings across 100 updates and restores a failed capacity growth with borrowers alive', () => {
+    const ledger = new AssemblyUiBackingLedger(), pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { uiBackings: ledger, gpuMeshBudget: pool });
+    const input = sameParts(2);
+    layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+    const first = ledger.buffers(), bytes = ledger.bytes();
+    const face = layer.group.children.find(child => child instanceof THREE.InstancedMesh);
+    if (!(face instanceof THREE.InstancedMesh)) throw new Error('Actual instanced face');
+    const borrower = face.instanceMatrix.array;
+    const add = layer.group.add.bind(layer.group);
+    let refuse = true;
+    const publication = vi.spyOn(layer.group, 'add').mockImplementation((...objects) => {
+      add(...objects);
+      if (refuse) throw new Error('Actual capacity publication refused');
+      return layer.group;
+    });
+    try {
+      for (let cycle = 0; cycle < 100; cycle += 1) {
+        layer.update(buildAssemblyGeometry({ ...sameParts(2, cycle), bodies: input.bodies }), 'shadedWithEdges');
+        expect(ledger.buffers()).toEqual(first);
+        expect(ledger.bytes()).toBe(bytes);
+        expect(ledger.pending()).toBe(0);
+      }
+      const before = layer.meshReservation(), children = [...layer.group.children];
+      const values = Array.from(borrower);
+      const setMatrix = face.setMatrixAt.bind(face);
+      const mutation = vi.spyOn(face, 'setMatrixAt').mockImplementation((...args) => {
+        setMatrix(...args);
+        throw new Error('Actual in-place matrix update refused');
+      });
+      try {
+        expect(() => layer.update(buildAssemblyGeometry({ ...sameParts(2, 200), bodies: input.bodies }), 'shadedWithEdges'))
+          .toThrow('Actual in-place matrix update refused');
+        expect(Array.from(borrower)).toEqual(values);
+        expect(layer.group.children).toEqual(children);
+        expect(layer.meshReservation()).toEqual(before);
+        expect(ledger.buffers()).toEqual(first);
+        expect(ledger.pending()).toBe(0);
+      } finally { mutation.mockRestore(); }
+      expect(() => layer.update(buildAssemblyGeometry({ ...sameParts(5), bodies: input.bodies }), 'shadedWithEdges'))
+        .toThrow('Actual capacity publication refused');
+      expect(layer.group.children).toEqual(children);
+      expect(layer.meshReservation()).toEqual(before);
+      expect(Array.from(borrower)).toEqual(values);
+      expect(ledger.buffers()).toContain(borrower.buffer);
+      expect(ledger.bytes()).toBeGreaterThan(bytes);
+      expect(ledger.pending()).toBe(0);
+      refuse = false;
+      layer.update(buildAssemblyGeometry({ ...sameParts(5), bodies: input.bodies }), 'shadedWithEdges');
+      layer.dispose();
+      expect(pool.reservedBytes()).toBe(0);
+      expect(ledger.pending()).toBe(0);
+      expect(ledger.buffers()).toContain(borrower.buffer);
+      expect(ledger.bytes()).toBeGreaterThan(0);
+    } finally { refuse = false; publication.mockRestore(); layer.dispose(); }
+  });
+
+  it('rolls back initial publication when actual rollback storage cannot be reserved', () => {
+    const input = sameParts(2), probe = createAssemblyLayer(undefined, { uiBackings: new AssemblyUiBackingLedger() });
+    probe.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+    const reading = probe.meshReservation();
+    probe.dispose();
+    const ledger = new AssemblyUiBackingLedger(), pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { uiBackings: ledger, gpuMeshBudget: pool,
+      limitBytes: Math.max(reading.sourceBackingBytes + reading.displayCopyBytes + reading.instanceBytes, reading.gpuMeshBytes) });
+    const acquired = vi.spyOn(layer.group, 'add');
+    try {
+      expect(() => layer.update(buildAssemblyGeometry(input), 'shadedWithEdges')).toThrow(/live-byte budget/);
+      expect(acquired.mock.calls.flat().some(child => child instanceof THREE.InstancedMesh)).toBe(true);
+      expect(acquired.mock.calls.flat().some(child => child instanceof THREE.LineSegments)).toBe(true);
+      expect(layer.group.children).toHaveLength(0);
+      expect(layer.meshReservation().gpuMeshBytes).toBe(0);
+      expect(pool.reservedBytes()).toBe(0);
+      expect(ledger.pending()).toBe(0);
+      expect(ledger.bytes()).toBeGreaterThan(0);
+    } finally { acquired.mockRestore(); layer.dispose(); }
+  });
+
+  it('checks the shared actual attribute reservations of another Layer against a smaller fresh limit', () => {
+    const pool = createGpuMeshBudget(100000), ledger = new AssemblyUiBackingLedger();
+    let limit = 100000;
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool, uiBackings: ledger, readBudget: () => ({
+      limitBytes: limit, baselineBytes: 0, isCurrent: () => true }) });
+    const peer = createAssemblyLayer(undefined, { gpuMeshBudget: pool, uiBackings: ledger });
+    try {
+      const bundle = buildAssemblyGeometry(sameParts(2));
+      layer.update(bundle, 'shadedWithEdges');
+      peer.update(buildAssemblyGeometry(sameParts(1)), 'shadedWithEdges');
+      const total = pool.reservedBytes(), before = layer.meshReservation(), children = [...layer.group.children];
+      const admittedBound = Math.max(total, ledger.bytes());
+      expect(total).toBeGreaterThan(before.gpuMeshBytes);
+      limit = admittedBound - 1;
+      expect(() => layer.update(bundle, 'shadedWithEdges')).toThrow('live-byte budget');
+      expect(pool.reservedBytes()).toBe(total);
+      expect(layer.meshReservation()).toEqual(before);
+      expect(layer.group.children).toEqual(children);
+      limit = admittedBound;
+      expect(() => layer.update(bundle, 'shadedWithEdges')).not.toThrow();
+    } finally { peer.dispose(); layer.dispose(); }
+  });
+
+  it('independently returns all assets when actual group.clear throws, retaining only failed detach for retry', () => {
+    const pool = createGpuMeshBudget(100000), ledger = new AssemblyUiBackingLedger();
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool, uiBackings: ledger });
+    layer.update(buildAssemblyGeometry(sameParts(2)), 'shadedWithEdges');
+    const before = pool.reservedBytes(), children = [...layer.group.children];
+    const clear = layer.group.clear.bind(layer.group);
+    let refuse = true;
+    const detach = vi.spyOn(layer.group, 'clear').mockImplementation(() => {
+      if (refuse) throw new Error('actual Assembly detach refused');
+      return clear();
+    });
+    const returns = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose');
+    try {
+      expect(() => layer.dispose()).not.toThrow();
+      expect(returns.mock.contexts.length).toBeGreaterThan(0);
+      const released = [...returns.mock.contexts];
+      expect(new Set(released).size).toBe(released.length);
+      expect(layer.meshReservation().cleanupStatus).toBe('pending');
+      expect(pool.reservedBytes()).toBe(before);
+      expect(layer.group.children).toEqual(children);
+      refuse = false;
+      layer.dispose();
+      expect(detach).toHaveBeenCalledTimes(2);
+      expect(returns.mock.contexts).toEqual(released);
+      expect(layer.group.children).toHaveLength(0);
+      expect(layer.meshReservation().cleanupStatus).toBe('complete');
+      expect(pool.reservedBytes()).toBe(0);
+      expect(ledger.pending()).toBe(0);
+    } finally { detach.mockRestore(); returns.mockRestore(); layer.dispose(); }
+  });
+
+  it.each(['before', 'after'] as const)('keeps candidate resources reachable when actual group.add throws %s mutation', position => {
+    const pool = createGpuMeshBudget(100000), layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    const input = sameParts(2), oldBundle = buildAssemblyGeometry(input);
+    layer.update(oldBundle, 'shadedWithEdges');
+    const children = [...layer.group.children], before = layer.meshReservation();
+    const pick = layer.pickComponent(rayAt(0.002, 0.002));
+    const add = layer.group.add.bind(layer.group);
+    const publication = vi.spyOn(layer.group, 'add').mockImplementation((...objects) => {
+      if (position === 'before') throw new Error('actual Assembly publication add refused');
+      add(...objects);
+      throw new Error('actual Assembly publication add refused');
+    });
+    let refuseReturn = true;
+    const failed: THREE.BufferGeometry[] = [];
+    const returned = new Set<THREE.BufferGeometry>();
+    const original = Reflect.get(THREE.BufferGeometry.prototype, 'dispose');
+    const release = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose').mockImplementation(function (this: THREE.BufferGeometry): void {
+      if (failed.length === 0) failed.push(this);
+      if (refuseReturn && this === failed[0]) throw new Error('actual new geometry return refused');
+      expect(returned.has(this)).toBe(false);
+      original.call(this); returned.add(this);
+    });
+    try {
+      const next = buildAssemblyGeometry({ ...input, bodies: new Map([['part-1', [makeBody('next-published')]]]) });
+      expect(() => layer.update(next, 'shadedWithEdges')).toThrow('publication add refused');
+      expect(layer.group.children).toEqual(children);
+      expect(children.every(child => child.parent === layer.group)).toBe(true);
+      expect(layer.pickComponent(rayAt(0.002, 0.002))).toBe(pick);
+      expect(release.mock.contexts.length).toBeGreaterThan(0);
+      expect(layer.meshReservation().cleanupStatus).toBe('pending');
+      expect(pool.reservedBytes()).toBeGreaterThanOrEqual(before.gpuMeshBytes);
+      refuseReturn = false; publication.mockRestore();
+      layer.update(oldBundle, 'shadedWithEdges');
+      expect(layer.meshReservation().cleanupStatus).toBe('complete');
+      expect(pool.reservedBytes()).toBe(before.gpuMeshBytes);
+      expect(release.mock.contexts.filter(value => value === failed[0])).toHaveLength(2);
+    } finally { publication.mockRestore(); release.mockRestore(); layer.dispose(); }
+  });
+
+  it('reads one fresh baseline and limit even when the published bundle is offered again', () => {
+    let baseline = 0, limit = 100000, epoch = 1;
+    const layer = createAssemblyLayer(undefined, { readBudget: () => {
+      const capturedEpoch = epoch;
+      return { baselineBytes: baseline, limitBytes: limit, isCurrent: () => epoch === capturedEpoch };
+    } });
+    try {
+      const bundle = buildAssemblyGeometry(sameParts(2));
+      layer.update(bundle, 'shadedWithEdges');
+      const children = [...layer.group.children], reservation = layer.meshReservation();
+      baseline = limit;
+      expect(() => layer.update(bundle, 'shadedWithEdges')).toThrow('live-byte budget');
+      expect(layer.group.children).toEqual(children);
+      expect(layer.meshReservation()).toEqual(reservation);
+      baseline = 0; limit = 1;
+      expect(() => layer.update(bundle, 'shadedWithEdges')).toThrow('live-byte budget');
+      expect(layer.group.children).toEqual(children);
+      limit = 100000; epoch += 1;
+      expect(() => layer.update(bundle, 'shadedWithEdges')).not.toThrow();
+    } finally { layer.dispose(); }
+  });
+
+  it('rejects unknown, throwing and invalid fresh receipts before changing the old display', () => {
+    let refusal: 'none' | 'unknown' | 'throw' | 'invalid' = 'none';
+    const layer = createAssemblyLayer(undefined, { readBudget: () => {
+      if (refusal === 'unknown') return null;
+      if (refusal === 'throw') throw new Error('receipt getter refused');
+      return { baselineBytes: refusal === 'invalid' ? NaN : 0, limitBytes: 100000, isCurrent: () => true };
+    } });
+    try {
+      const input = sameParts(2), bundle = buildAssemblyGeometry(input);
+      layer.update(bundle, 'shadedWithEdges');
+      const children = [...layer.group.children], reservation = layer.meshReservation();
+      for (const kind of ['unknown', 'throw', 'invalid'] as const) {
+        refusal = kind;
+        expect(() => layer.update(buildAssemblyGeometry(input), 'shadedWithEdges')).toThrow();
+        expect(layer.group.children).toEqual(children);
+        expect(layer.meshReservation()).toEqual(reservation);
+      }
+      refusal = 'none';
+      expect(() => layer.update(buildAssemblyGeometry(input), 'shadedWithEdges')).not.toThrow();
+    } finally { layer.dispose(); }
+  });
+
+  it('refuses an epoch change at the first actual candidate allocation and restores old pick targets', () => {
+    let checks = 0, invalidate = false;
+    const pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool, readBudget: () => ({
+      baselineBytes: 0, limitBytes: 100000,
+      isCurrent: () => !invalidate || ++checks < 2,
+    }) });
+    try {
+      const input = sameParts(2);
+      layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+      const children = [...layer.group.children], reservation = layer.meshReservation();
+      const oldPick = layer.pickComponent(rayAt(0.002, 0.002));
+      invalidate = true;
+      expect(() => layer.update(buildAssemblyGeometry({ ...input,
+        bodies: new Map([['part-1', [makeBody('changed')]]]) }), 'shadedWithEdges')).toThrow('owner changed');
+      expect(layer.group.children).toEqual(children);
+      expect(layer.meshReservation()).toEqual(reservation);
+      expect(layer.pickComponent(rayAt(0.002, 0.002))).toBe(oldPick);
+      invalidate = false;
+      expect(() => layer.update(buildAssemblyGeometry(input), 'shadedWithEdges')).not.toThrow();
+    } finally { layer.dispose(); }
+  });
+
+  it('hands successful factory materials to the controller without disposing them', () => {
+    const returned: THREE.LineBasicMaterial[] = [];
+    const original = Reflect.get(THREE.LineBasicMaterial.prototype, 'setValues');
+    const acquire = vi.spyOn(THREE.LineBasicMaterial.prototype, 'setValues').mockImplementation(function (
+      this: THREE.LineBasicMaterial, values: Parameters<THREE.Material['setValues']>[0],
+    ): void { original.call(this, values); returned.push(this); });
+    const release = vi.spyOn(THREE.Material.prototype, 'dispose');
+    try {
+      const layer = createAssemblyLayer();
+      expect(returned).toHaveLength(4);
+      expect(release).not.toHaveBeenCalled();
+      layer.dispose(); layer.dispose();
+      for (const material of returned) expect(release.mock.contexts.filter(context => context === material)).toHaveLength(1);
+    } finally { acquire.mockRestore(); release.mockRestore(); }
+  });
+
+  it('returns every earlier material after a later constructor throws and keeps only failed release', () => {
+    const createPattern = vi.fn(() => null), disposePatterns = vi.fn();
+    const patterns: PatternTextureSource = { create: createPattern, disposeAll: disposePatterns };
+    const returned: THREE.LineBasicMaterial[] = [];
+    const original = Reflect.get(THREE.LineBasicMaterial.prototype, 'setValues');
+    const acquire = vi.spyOn(THREE.LineBasicMaterial.prototype, 'setValues').mockImplementation(function (
+      this: THREE.LineBasicMaterial, values: Parameters<THREE.Material['setValues']>[0],
+    ): void {
+      if (returned.length === 2) throw new Error('later assembly material constructor');
+      original.call(this, values); returned.push(this);
+    });
+    let refuse = true;
+    const dispose = Reflect.get(THREE.Material.prototype, 'dispose');
+    const release = vi.spyOn(THREE.Material.prototype, 'dispose').mockImplementation(function (this: THREE.Material): void {
+      if (this === returned[0] && refuse) throw new Error('retained assembly material');
+      dispose.call(this);
+    });
+    try {
+      let failure: ViewportResourceInitializationFailure | null = null;
+      try { createAssemblyLayer(patterns); }
+      catch (error) { if (error instanceof ViewportResourceInitializationFailure) failure = error; else throw error; }
+      expect(failure).not.toBeNull();
+      expect(returned).toHaveLength(2);
+      expect(failure?.cleanup.pendingCount).toBe(1);
+      expect(release.mock.contexts.filter(context => context === returned[1])).toHaveLength(1);
+      expect(createPattern).not.toHaveBeenCalled();
+      expect(disposePatterns).not.toHaveBeenCalled();
+      refuse = false;
+      failure?.cleanup.dispose(); failure?.cleanup.dispose();
+      expect(failure?.cleanup.pendingCount).toBe(0);
+      expect(release.mock.contexts.filter(context => context === returned[0])).toHaveLength(2);
+      expect(release.mock.contexts.filter(context => context === returned[1])).toHaveLength(1);
+      acquire.mockRestore();
+      const fresh = createAssemblyLayer(); fresh.dispose();
+    } finally { acquire.mockRestore(); release.mockRestore(); }
+  });
+
+  it('keeps a published generation when retirement throws, tries every release and retries retained debt', () => {
+    const input = sameParts(2), pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    try {
+      layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+      const oldFace = faceBatchesOf(layer)[0], oldEdge = firstEdges(layer).geometry;
+      const otherReleased = vi.fn();
+      oldEdge.addEventListener('dispose', otherReleased);
+      const refusal = () => { throw new Error('old geometry release refused'); };
+      oldFace.geometry.addEventListener('dispose', refusal);
+      const next = buildAssemblyGeometry({ ...input, bodies: new Map([['part-1', [makeBody('new-body')]]]) });
+      expect(() => layer.update(next, 'shadedWithEdges')).not.toThrow();
+      const newFace = faceBatchesOf(layer)[0];
+      expect(newFace).not.toBe(oldFace);
+      expect(otherReleased).toHaveBeenCalledTimes(1);
+      expect(layer.meshReservation().cleanupStatus).toBe('pending');
+      expect(layer.meshReservation().cleanupReservedCpuBytes).toBeGreaterThan(0);
+      expect(layer.meshReservation().uncovered).toContain('retiredResources');
+      expect(pool.reservedBytes()).toBe(layer.meshReservation().gpuMeshBytes);
+      // Rendering the committed bundle needs no new allocation and remains usable.
+      expect(() => layer.update(next, 'shadedWithEdges')).not.toThrow();
+      const replacement = buildAssemblyGeometry({ ...input, bodies: new Map([['part-1', [makeBody('third-body')]]]) });
+      expect(() => layer.update(replacement, 'shadedWithEdges')).toThrow(/cleanup is pending/);
+      expect(faceBatchesOf(layer)[0]).toBe(newFace);
+      oldFace.geometry.removeEventListener('dispose', refusal);
+      layer.update(replacement, 'shadedWithEdges');
+      expect(layer.meshReservation().cleanupStatus).toBe('complete');
+      expect(layer.meshReservation().cleanupReservedCpuBytes).toBe(0);
+      expect(pool.reservedBytes()).toBe(layer.meshReservation().gpuMeshBytes);
+    } finally { layer.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
+  });
+
+  it('restores the old display before a rollback material release fails and still disposes all new geometry', () => {
+    const input = sameParts(2), pool = createGpuMeshBudget(100000);
+    let rejectPublication = false, checks = 0;
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool,
+      isCurrent: () => !rejectPublication || ++checks === 1 });
+    try {
+      layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+      const oldChildren = [...layer.group.children], oldFace = faceBatchesOf(layer)[0];
+      const oldReleased = vi.fn(); oldFace.geometry.addEventListener('dispose', oldReleased);
+      const replacement = buildAssemblyGeometry({ ...input,
+        bodies: new Map([['part-1', [makeBody('extrude-1')]]]),
+        appearances: new Map([['part-1', { defaultAppearance: appearanceFromPreset('plastic'), byBody: new Map() }]]) });
+      const materialFailure = vi.spyOn(THREE.MeshStandardMaterial.prototype, 'dispose').mockImplementation(() => {
+        throw new Error('candidate material release refused');
+      });
+      const geometryRelease = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose');
+      const meshRelease = vi.spyOn(THREE.InstancedMesh.prototype, 'dispose');
+      rejectPublication = true;
+      try {
+        expect(() => layer.update(replacement, 'shadedWithEdges')).toThrow('Assembly display owner changed');
+        expect(layer.group.children).toEqual(oldChildren);
+        expect(faceBatchesOf(layer)[0]).toBe(oldFace);
+        expect(oldReleased).not.toHaveBeenCalled();
+        expect(geometryRelease.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(meshRelease).toHaveBeenCalled();
+        expect(layer.meshReservation().cleanupStatus).toBe('pending');
+        expect(layer.meshReservation().cleanupReservedCpuBytes).toBeGreaterThan(0);
+        expect(pool.reservedBytes()).toBe(layer.meshReservation().gpuMeshBytes);
+        expect(() => layer.update(replacement, 'shadedWithEdges')).toThrow(/cleanup is pending/);
+        expect(layer.group.children).toEqual(oldChildren);
+      } finally { rejectPublication = false; materialFailure.mockRestore(); geometryRelease.mockRestore(); meshRelease.mockRestore(); }
+      layer.update(replacement, 'shadedWithEdges');
+      expect(oldReleased).toHaveBeenCalledTimes(1);
+      expect(layer.meshReservation().cleanupStatus).toBe('complete');
+      expect(layer.meshReservation().cleanupReservedCpuBytes).toBe(0);
+      expect(pool.reservedBytes()).toBe(layer.meshReservation().gpuMeshBytes);
+    } finally { layer.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
+  });
+
+  it('keeps both GPU generations reserved while old geometry is retired', () => {
+    const input = sameParts(2), pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    try {
+      layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+      const before = pool.reservedBytes();
+      const duringRetirement: number[] = [];
+      faceBatchesOf(layer)[0].geometry.addEventListener('dispose', () => duringRetirement.push(pool.reservedBytes()));
+      layer.update(buildAssemblyGeometry({ ...input, bodies: new Map([['part-1', [makeBody('new-generation')]]]) }), 'shadedWithEdges');
+      expect(duringRetirement).toHaveLength(1);
+      expect(duringRetirement[0]).toBeGreaterThanOrEqual(before + layer.meshReservation().gpuMeshBytes);
+      expect(pool.reservedBytes()).toBe(layer.meshReservation().gpuMeshBytes);
+    } finally { layer.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
+  });
+
+  it('returns partial overlay reservations after failure and recovers without replacing shared geometry', () => {
+    const input = sameParts(2), pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    try {
+      const initial = buildAssemblyGeometry(input);
+      layer.update(initial, 'shadedWithEdges');
+      const children = [...layer.group.children], before = layer.meshReservation();
+      const ref = subShapeRefOf(initial.parts[0].bodies, 'extrude-1#face:0');
+      if (ref === null) throw new Error('fixture needs face reference');
+      const selected = buildAssemblyGeometry({ ...input,
+        selectedTargetIds: [assemblyTargetId({ componentId: 'component-1', kind: 'subShape', ref })] });
+      const injection = vi.spyOn(THREE.BufferGeometry.prototype, 'setAttribute').mockImplementationOnce(() => {
+        throw new Error('overlay attribute allocation failed');
+      });
+      try { expect(() => layer.update(selected, 'shadedWithEdges')).toThrow('overlay attribute allocation failed'); }
+      finally { injection.mockRestore(); }
+      expect(layer.group.children).toEqual(children);
+      expect(layer.meshReservation()).toEqual(before);
+      expect(pool.reservedBytes()).toBe(before.gpuMeshBytes);
+      layer.update(selected, 'shadedWithEdges');
+      expect(faceBatchesOf(layer)[0].geometry).toBe((children.find(isPartMesh) as THREE.Mesh).geometry);
+      expect(layer.meshReservation().displayCopyBytes).toBeGreaterThan(before.displayCopyBytes);
+      layer.update(initial, 'shadedWithEdges');
+      expect(layer.meshReservation()).toEqual(before);
+    } finally { layer.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
+  });
+
+  it('keeps exact integer subsets through the IEEE boundary and rejects overflowing or cancelling sums', () => {
+    // A separate shader calculation supplies the boundary oracle; no implementation helper is called.
+    for (const [offset, expectedCount] of [[2 ** 24 - 2, 2], [2 ** 24 - 1, 2],
+      [2 ** 24, 1], [2 ** 24 + 1, 1], [-(2 ** 24), 2], [-(2 ** 24) - 2, 1]] as const) {
+      const input = sameParts(2);
+      const matrix = new THREE.Matrix4().makeTranslation(offset, 0, 0);
+      const point = new THREE.Vector3(1, 0, 0);
+      const error = Math.abs(float32Transform(point, matrix).x - (offset + 1));
+      expect(error === 0).toBe(expectedCount === 2);
+      const layer = createAssemblyLayer();
+      try {
+        layer.update(buildAssemblyGeometry({ ...input,
+          placements: new Map([['component-1', placementAt(0)], ['component-2', placementAt(offset)]]) }), 'shadedWithEdges');
+        expect(faceBatchesOf(layer).map(face => face.count)).toEqual([expectedCount]);
+      } finally { layer.dispose(); }
+    }
+    const first = Math.fround(2 ** 24), last = Math.fround(-(2 ** 24));
+    expect(Math.fround(Math.fround(first + 1) + last)).toBe(0);
+    expect(first + 1 + last).toBe(1);
+    const input = sameParts(2), body = makeBody('cancellation');
+    const positions = new Float32Array([2 ** 24, 1, 0, 2 ** 24, 2, 0, 2 ** 24 - 2, 1, 0]);
+    const halfAngle = Math.PI / 8;
+    const rotation: RigidPlacement['rotation'] = [0, 0, Math.sin(halfAngle), Math.cos(halfAngle)];
+    const rotated = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().fromArray(rotation));
+    const vertex = new THREE.Vector3().fromArray(positions);
+    expect(float32Transform(vertex, rotated).distanceTo(vertex.clone().applyMatrix4(rotated))).toBeGreaterThan(1e-7);
+    const layer = createAssemblyLayer();
+    try {
+      layer.update(buildAssemblyGeometry({ ...input,
+        bodies: new Map([['part-1', [{ ...body, mesh: { ...body.mesh, positions, edgePositions: positions } }]]]),
+        placements: new Map([['component-1', { position: [0, 0, 0], rotation }],
+          ['component-2', { position: [-(2 ** 24), 0, 0], rotation }]]) }), 'shadedWithEdges');
+      expect(faceBatchesOf(layer)).toHaveLength(0);
+    } finally { layer.dispose(); }
+  });
+
+  it('counts shared source backings once, with capacity and distinct GPU attributes', () => {
+    const base = makeBody('shared-backing');
+    const backing = new ArrayBuffer(4096);
+    const positions = new Float32Array(backing, 0, 9), normals = new Float32Array(backing, 36, 9);
+    positions.set(base.mesh.positions); normals.set(base.mesh.normals);
+    const body = { ...base, mesh: { ...base.mesh, positions, normals } };
+    const input = sameParts(50);
+    const pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    try {
+      layer.update(buildAssemblyGeometry({ ...input, bodies: new Map([['part-1', [body]]]) }), 'shadedWithEdges');
+      const reading = layer.meshReservation();
+      expect(reading.sourceBackingBytes).toBe(4096 + 12 + 48);
+      expect(reading.displayCopyBytes).toBe(24);
+      expect(reading.instanceBytes).toBe(64 * (16 + 16 + 3) * 4);
+      // Mesh attributes 156B, edge batch's separate position attribute 48B, instance attrs 8960B.
+      expect(reading.gpuMeshBytes).toBe(156 + 48 + 8960);
+      expect(pool.reservedBytes()).toBe(reading.gpuMeshBytes);
+      expect(reading.uncovered).toContain('native');
+      expect(reading.uncovered).toContain('pmrem');
+      expect(Array.from(positions)).toEqual(Array.from(base.mesh.positions));
+      expect(Array.from(normals)).toEqual(Array.from(base.mesh.normals));
+    } finally { layer.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
+    expect(layer.meshReservation().sourceBackingBytes).toBe(0);
+    expect(layer.meshReservation().displayCopyBytes).toBe(0);
+    expect(layer.meshReservation().instanceBytes).toBe(0);
+  });
+
+  it('refuses capacity growth before allocation and leaves published objects and pick unchanged', () => {
+    const input = sameParts(2), pool = createGpuMeshBudget(156 + 48 + 2 * 140);
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    try {
+      layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+      const face = faceBatchesOf(layer)[0], edge = firstEdges(layer);
+      const oldChildren = [...layer.group.children], oldMatrices = Array.from(face.instanceMatrix.array);
+      const before = layer.meshReservation(), reserved = pool.reservedBytes();
+      const setMatrix = vi.spyOn(THREE.InstancedMesh.prototype, 'setMatrixAt');
+      try {
+        expect(() => layer.update(buildAssemblyGeometry({ ...sameParts(5), bodies: input.bodies }), 'shadedWithEdges'))
+          .toThrow(/live-byte budget/);
+        expect(setMatrix).not.toHaveBeenCalled();
+      } finally { setMatrix.mockRestore(); }
+      expect(layer.group.children).toEqual(oldChildren);
+      expect(faceBatchesOf(layer)[0]).toBe(face); expect(firstEdges(layer)).toBe(edge);
+      expect(Array.from(face.instanceMatrix.array)).toEqual(oldMatrices);
+      expect(layer.meshReservation()).toEqual(before); expect(pool.reservedBytes()).toBe(reserved);
+      expect(layer.pickComponent(new THREE.Raycaster(new THREE.Vector3(10.2, 0.2, 5), new THREE.Vector3(0, 0, -1))))
+        .toBe('component-2');
+    } finally { layer.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
+  });
+
+  it('restores shared shapes after geometry construction throws, then accepts the independent retry', () => {
+    const input = sameParts(2), pool = createGpuMeshBudget(100000);
+    const layer = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    try {
+      layer.update(buildAssemblyGeometry(input), 'shadedWithEdges');
+      const children = [...layer.group.children], shapes = geometriesOf(layer.group);
+      const oldReservation = layer.meshReservation(), oldPool = pool.reservedBytes();
+      const disposals = [...shapes].map(shape => { const disposed = vi.fn(); shape.addEventListener('dispose', disposed); return disposed; });
+      const replacement = buildAssemblyGeometry({ ...input, bodies: new Map([['part-1', [makeBody('replacement')]]]) });
+      const injection = vi.spyOn(THREE.BufferGeometry.prototype, 'setAttribute').mockImplementationOnce(() => {
+        throw new Error('injected assembly normal failure');
+      });
+      try { expect(() => layer.update(replacement, 'shadedWithEdges')).toThrow('injected assembly normal failure'); }
+      finally { injection.mockRestore(); }
+      expect(layer.group.children).toEqual(children); expect(geometriesOf(layer.group)).toEqual(shapes);
+      for (const disposed of disposals) expect(disposed).not.toHaveBeenCalled();
+      expect(layer.meshReservation()).toEqual(oldReservation); expect(pool.reservedBytes()).toBe(oldPool);
+      layer.update(replacement, 'shadedWithEdges');
+      for (const disposed of disposals) expect(disposed).toHaveBeenCalledTimes(1);
+      expect(pool.reservedBytes()).toBe(layer.meshReservation().gpuMeshBytes);
+    } finally { layer.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
+  });
+
+  it('restores instance writes after a mid-update exception without modifying source geometry', () => {
+    const input = sameParts(2), layer = createAssemblyLayer();
+    try {
+      const initial = buildAssemblyGeometry(input);
+      layer.update(initial, 'shadedWithEdges');
+      const face = faceBatchesOf(layer)[0], matrices = Array.from(face.instanceMatrix.array);
+      const injection = vi.spyOn(THREE.InstancedMesh.prototype, 'setMatrixAt').mockImplementationOnce(function (this: THREE.InstancedMesh) {
+        this.instanceMatrix.array[0] = 123456;
+        throw new Error('injected instance write failure');
+      });
+      const changed = buildAssemblyGeometry({ ...sameParts(2, 3), bodies: input.bodies });
+      try { expect(() => layer.update(changed, 'shadedWithEdges')).toThrow('injected instance write failure'); }
+      finally { injection.mockRestore(); }
+      expect(Array.from(face.instanceMatrix.array)).toEqual(matrices);
+      expect(faceBatchesOf(layer)[0]).toBe(face);
+      layer.update(changed, 'shadedWithEdges');
+      expect(Array.from(face.instanceMatrix.array)).not.toEqual(matrices);
+      expect(initial.parts[0].bodies).toBe(changed.parts[0].bodies);
+      expect(Array.from(initial.parts[0].bodies[0].mesh.positions)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    } finally { layer.dispose(); }
+  });
+
+  it('returns reservations through 100 placement/highlight updates and leaves an independent owner live', () => {
+    const input = sameParts(2), pool = createGpuMeshBudget(100000);
+    const first = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    const second = createAssemblyLayer(undefined, { gpuMeshBudget: pool });
+    try {
+      const initial = buildAssemblyGeometry(input);
+      first.update(initial, 'shadedWithEdges'); second.update(initial, 'shadedWithEdges');
+      const observedGeometries = new Set<THREE.BufferGeometry>(), releasedGeometries = new Set<THREE.BufferGeometry>();
+      const observedMeshes = new Set<THREE.InstancedMesh>(), releasedMeshes = new Set<THREE.InstancedMesh>();
+      const observe = () => {
+        for (const geometry of geometriesOf(first.group)) if (!observedGeometries.has(geometry)) {
+          observedGeometries.add(geometry);
+          geometry.addEventListener('dispose', () => releasedGeometries.add(geometry));
+        }
+        for (const mesh of faceBatchesOf(first)) if (!observedMeshes.has(mesh)) {
+          observedMeshes.add(mesh);
+          mesh.addEventListener('dispose', () => releasedMeshes.add(mesh));
+        }
+      };
+      observe();
+      const independent = second.meshReservation().gpuMeshBytes;
+      const shape = faceBatchesOf(first)[0].geometry, geometryDisposed = vi.fn();
+      shape.addEventListener('dispose', geometryDisposed);
+      const ref = subShapeRefOf(initial.parts[0].bodies, 'extrude-1#face:0');
+      if (ref === null) throw new Error('fixture needs a face reference');
+      const highlightId = assemblyTargetId({ componentId: 'component-1', kind: 'subShape', ref });
+      for (let cycle = 0; cycle < 100; cycle += 1) {
+        const bundle = buildAssemblyGeometry({ ...sameParts(2, cycle), bodies: input.bodies,
+          selectedTargetIds: cycle % 2 === 0 ? [highlightId] : [] });
+        first.update(bundle, 'shadedWithEdges');
+        observe();
+        expect(faceBatchesOf(first)[0].geometry).toBe(shape);
+        expect(pool.reservedBytes()).toBe(first.meshReservation().gpuMeshBytes + independent);
+      }
+      first.update(EMPTY_ASSEMBLY_GEOMETRY, 'shadedWithEdges');
+      expect(geometryDisposed).toHaveBeenCalledTimes(1);
+      expect(first.meshReservation()).toMatchObject({ sourceBackingBytes: 0, displayCopyBytes: 0, instanceBytes: 0, gpuMeshBytes: 0 });
+      expect(pool.reservedBytes()).toBe(independent);
+      expect(releasedGeometries).toEqual(observedGeometries);
+      expect(releasedMeshes).toEqual(observedMeshes);
+    } finally { first.dispose(); second.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
   });
 });

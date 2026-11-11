@@ -1,3 +1,8 @@
+import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
+import type { FaceOrigin, CurrentOriginIndex } from '../subShapeOrigin.js';
+import { surfacePrismSubShapeOrigins, type NativeSurfaceLine } from './subShapeOrigins.js';
+import { surfaceArcAnchorValid, surfaceArcPrismOrigins } from './surfaceArcOrigins.js';
+import { makeTrackedPlanarFace, planarSurfaceAnchorRefusal, planarSurfaceSubShapeOrigins } from './planarSurfaceOrigins.js';
 /**
  * 曲面(面だけの形、FR-428)。計画書 P5 §0.a-0.45、タスク41。
  *
@@ -50,6 +55,7 @@
 import type {
   OpenCascadeInstance,
   TopoDS_Shape,
+  TopoDS_Edge,
   TopoDS_Wire,
 } from 'opencascade.js/dist/opencascade.full.js';
 
@@ -60,9 +66,10 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
+import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './pickSubShape.js';
 import { measureArea } from './solidMesh.js';
-import { OPEN_FACES_NOT_SUPPORTED, shapeBodyKind } from './shapeBodyKind.js';
+import { shapeBodyKind } from './shapeBodyKind.js';
 import type { SubShapeTables } from './subShapes.js';
 
 /** つなぐには断面が 2 つ要る(`makeThruSections.ts` と同じ決め)。 */
@@ -71,8 +78,6 @@ const MINIMUM_SECTION_COUNT = 2;
 /** これ以下(mm²)の面積は「面ができなかった」とみなす。体積の下限(1e-9)と桁を揃える。 */
 const MIN_SURFACE_AREA_MM2 = 1e-9;
 
-/** ロフトの面のつなぎ目の許容量(mm)。`makeThruSections.ts` の `pres3d` と同じ値。 */
-const SECTION_TOLERANCE = 1.0e-6;
 
 /** 回転角の上限(ラジアン)。`makeSolidSweep.ts` と同じく、丸めの揺れぶんだけ余裕を持たせる。 */
 const MAX_REVOLVE_ANGLE = 2 * Math.PI + 1e-9;
@@ -121,17 +126,6 @@ const OFFSET_DISTANCE_MESSAGE = '面をずらす距離は 0 以外の数にし�
 const OFFSET_FAILED_MESSAGE = '面をずらせませんでした。距離を小さくしてください。';
 
 /**
- * 面だけの形(`bodyKind === 'shell'`)には掛けられない加工の断り(FR-504、NFR-RE-1)。
- *
- * **この文言を実際に使うのはタスク42。** フィレット(`makeFillet.ts`)・面取り
- * (`makeChamfer.ts`)・穴(`makeHole.ts`)などの加工は、中身の詰まった立体があって
- * はじめて意味を持つ。曲面の段(この `makeSurface.ts`)が `bodyKind: 'shell'` の
- * ボディを作れるようになったので、加工の段はその形を受け取ったら**掛ける前に断る**
- * 必要がある。判定は `isShellShape`、文言はこれを使う(同じ文言を各所へ散らさない)。
- */
-export const SHELL_NOT_SUPPORTED_MESSAGE = OPEN_FACES_NOT_SUPPORTED;
-
-/**
  * 面だけの形か(= `SolidBodyMesh.bodyKind` が `'shell'` になるか)。
  *
  * 判定は表示と共通のshapeBodyKindで行い、開面と立体が混在する形も加工前に断る。
@@ -155,6 +149,8 @@ export type SurfaceInput =
   | {
       readonly kind: 'extrude';
       readonly profile: readonly CurveSpec[];
+      readonly curveProfileOrigin?: Extract<FaceOrigin, { readonly kind: 'surface-curve-side' }>['profile'];
+      readonly profileOrigins?: readonly Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][];
       readonly direction: Vec3Tuple;
       readonly distance: number;
     }
@@ -166,8 +162,15 @@ export type SurfaceInput =
       readonly axisDirection: Vec3Tuple;
       readonly angle: number;
     }
-  /** 閉じた輪郭から張った平らな面 1 枚。 */
-  | { readonly kind: 'planar'; readonly profile: readonly CurveSpec[] }
+  /**
+   * 閉じた輪郭から張った平らな面 1 枚。`profileOrigins` は輪郭の各線の保存された持ち主(線分だけの輪郭のとき
+   * だけ model が付ける)。あれば面・辺・頂点に追跡できる名前を付ける(`planarSurfaceOrigins.ts`)。
+   */
+  | {
+      readonly kind: 'planar';
+      readonly profile: readonly CurveSpec[];
+      readonly profileOrigins?: readonly Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][];
+    }
   /** 輪郭どうしをつないだ面(ロフトの面版)。ふたを張らないので殻のまま残る。 */
   | {
       readonly kind: 'loft';
@@ -198,15 +201,6 @@ export interface SurfaceResult extends OcctShapeHandle {
   readonly area: number;
 }
 
-/** 向きを長さ 1 に揃える。長さが 0 のときや数でないときは null(`makeSolidSweep.ts` と同じ)。 */
-function normalizeDirection(vector: Vec3Tuple): Vec3Tuple | null {
-  const [x, y, z] = vector;
-  const length = Math.hypot(x, y, z);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [x / length, y / length, z / length];
-}
 
 /** 3 つとも実数か(NaN と無限大を弾く)。 */
 function isFinitePoint(point: Vec3Tuple): boolean {
@@ -224,13 +218,22 @@ function makeProfileWire(
   oc: OpenCascadeInstance,
   curves: readonly CurveSpec[],
   keep: Allocations['keep'],
+  lines?: NativeSurfaceLine[],
+  anchors?: Extract<SurfaceInput, { kind: 'extrude' }>['profileOrigins'],
+  arcEdges?: TopoDS_Edge[],
 ): TopoDS_Wire {
   if (curves.length === 0) {
     throw new Error(NO_CURVE_MESSAGE);
   }
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
+  let index = 0;
   for (const curve of continuousCurvePieces(curves)) {
     wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
+    if (lines !== undefined && anchors !== undefined && wireMaker.IsDone()) {
+      lines.push({ edge: keep(wireMaker.Edge()), anchor: anchors[index] });
+    }
+    if (arcEdges !== undefined && wireMaker.IsDone()) arcEdges.push(keep(wireMaker.Edge()));
+    index += 1;
   }
   if (!wireMaker.IsDone()) {
     throw new Error(DISCONNECTED_MESSAGE);
@@ -248,6 +251,7 @@ function extrudeProfile(
   oc: OpenCascadeInstance,
   keep: Allocations['keep'],
   input: Extract<SurfaceInput, { kind: 'extrude' }>,
+  semantic?: { readonly featureId: string; origins?: CurrentOriginIndex },
 ): TopoDS_Shape {
   const direction = normalizeDirection(input.direction);
   if (direction === null) {
@@ -257,7 +261,14 @@ function extrudeProfile(
     throw new Error(DISTANCE_MESSAGE);
   }
 
-  const wire = makeProfileWire(oc, input.profile, keep);
+  const lines: NativeSurfaceLine[] = [];
+  const anchors = semantic !== undefined && input.profileOrigins?.length === input.profile.length
+    && input.profile.every(curve => curve.kind === 'segment') ? input.profileOrigins : undefined;
+  const arcEdges: TopoDS_Edge[] = [];
+  const arcOrigin = semantic !== undefined && surfaceArcAnchorValid(input.profile, input.curveProfileOrigin)
+    ? input.curveProfileOrigin : undefined;
+  const wire = makeProfileWire(oc, input.profile, keep, anchors === undefined ? undefined : lines, anchors,
+    arcOrigin === undefined ? undefined : arcEdges);
   const vector = keep(
     new oc.gp_Vec_4(
       direction[0] * input.distance,
@@ -270,7 +281,48 @@ function extrudeProfile(
   if (!maker.IsDone()) {
     throw new Error(SURFACE_FAILED_MESSAGE);
   }
-  return keep(maker.Shape());
+  const shape = keep(maker.Shape());
+  if (semantic !== undefined && anchors !== undefined) {
+    semantic.origins = surfacePrismSubShapeOrigins(oc, maker, wire, shape, lines, semantic.featureId);
+  }
+  if (semantic !== undefined && input.curveProfileOrigin !== undefined) {
+    const arc = input.profile[0];
+    semantic.origins = arcOrigin !== undefined && arcEdges.length === 1 && arc.kind === 'arc'
+      ? surfaceArcPrismOrigins(oc, maker, wire, shape, arcEdges[0], arc, arcOrigin, semantic.featureId)
+      : { version: 1, state: 'untracked', reason: 'unsupported-profile-piece' };
+  }
+  return shape;
+}
+
+/**
+ * 閉じた輪郭から平らな面を 1 枚張る(§0.a-0.45 の `planar`)。
+ *
+ * 保存された線の持ち主(`profileOrigins`)が付いていて、線分だけの閉じた輪郭(3〜32 本)のときだけ、
+ * 線ごとに実際にワイヤへ入った辺を控えて面・辺・頂点へ名前を付ける(`planarSurfaceOrigins.ts`)。
+ * 持ち主の無い輪郭、円・円弧・曲線を含む輪郭は従来どおり `makePlanarFace` で張り、名前を付けない
+ * (同じ追跡性を装わない)。閉じていない・自己交差・非平面の断りの文言はどちらの道でも同じ。
+ */
+function planarProfile(
+  oc: OpenCascadeInstance,
+  keep: Allocations['keep'],
+  input: Extract<SurfaceInput, { kind: 'planar' }>,
+  options: TessellationOptions,
+  semantic?: { readonly featureId: string; origins?: CurrentOriginIndex },
+): TopoDS_Shape {
+  const anchors = input.profileOrigins;
+  if (semantic !== undefined && anchors !== undefined) {
+    const refusal = planarSurfaceAnchorRefusal(input.profile, anchors, semantic.featureId);
+    if (refusal === null) {
+      const tracked = makeTrackedPlanarFace(oc, keep, input.profile);
+      semantic.origins = planarSurfaceSubShapeOrigins(oc, tracked.face, tracked.insertedEdges, anchors,
+        semantic.featureId);
+      return tracked.face;
+    }
+    semantic.origins = { version: 1, state: 'untracked', reason: refusal };
+  }
+  // 閉じていない・自己交差・非平面は makePlanarFace が理由つきで断り、
+  // その文言がそのまま呼び出し側へ伝わる(`makeSolidSweep.ts` と同じ)。
+  return keep(makePlanarFace(oc, input.profile, options)).face;
 }
 
 /**
@@ -322,7 +374,7 @@ function loftProfiles(
   if (input.sections.length < MINIMUM_SECTION_COUNT) {
     throw new Error(TOO_FEW_SECTIONS_MESSAGE);
   }
-  const maker = keep(new oc.BRepOffsetAPI_ThruSections(false, input.ruled, SECTION_TOLERANCE));
+  const maker = keep(new oc.BRepOffsetAPI_ThruSections(false, input.ruled, APPROXIMATION_TOLERANCE_MM));
   // 辺の数と向きを揃える(`makeThruSections.ts` と同じ。輪郭ごとに稜線の数が違ってもよい)。
   maker.CheckCompatibility(true);
   for (const section of input.sections) {
@@ -428,9 +480,7 @@ function buildSurfaceShape(
     case 'revolve':
       return revolveProfile(oc, keep, input);
     case 'planar':
-      // 閉じていない・自己交差・非平面は makePlanarFace が理由つきで断り、
-      // その文言がそのまま呼び出し側へ伝わる(`makeSolidSweep.ts` と同じ)。
-      return keep(makePlanarFace(oc, input.profile, options)).face;
+      return planarProfile(oc, keep, input, options);
     case 'loft':
       return loftProfiles(oc, keep, input);
     case 'face':
@@ -460,10 +510,15 @@ export function makeSurface(
   target: TopoDS_Shape | null = null,
   tables: SubShapeTables | null = null,
   options: TessellationOptions = {},
+  featureId?: string,
 ): SurfaceResult {
   const { keep, release } = createAllocations();
   try {
-    const shape = buildSurfaceShape(oc, keep, input, target, tables, options);
+    const semantic: { readonly featureId: string; origins?: CurrentOriginIndex } | undefined =
+      featureId === undefined ? undefined : { featureId };
+    const shape = input.kind === 'extrude' ? extrudeProfile(oc, keep, input, semantic)
+      : input.kind === 'planar' ? planarProfile(oc, keep, input, options, semantic)
+      : buildSurfaceShape(oc, keep, input, target, tables, options);
 
     // ここが「体積 0 は失敗」の裏返しにあたる 2 つの検査(§0.a-0.45)。
     // ① 立体ができていたら断る。曲面の段はソリッドを作らないので、
@@ -478,7 +533,8 @@ export function makeSurface(
       throw new Error(SURFACE_FAILED_MESSAGE);
     }
 
-    return { shape, area: Math.abs(area), delete: release };
+    return { shape, area: Math.abs(area), delete: release,
+      ...(semantic?.origins === undefined ? {} : { origins: semantic.origins }) };
   } catch (error) {
     release();
     // OCCT の C++ 例外は数値で飛んでくる(`makeThruSections.ts` / `makeFillet.ts` と同じ)。

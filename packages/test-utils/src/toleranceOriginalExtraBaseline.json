@@ -1,0 +1,367 @@
+{
+  "packages/drawing/src/dimension/arcLengthGeometry.ts": {
+    "Math.abs(input.sweep) > Math.PI * 2 + 1e-7": 1
+  },
+  "packages/drawing/src/dimension/numberText.ts": {
+    "Math.abs(value) < threshold": 1
+  },
+  "packages/drawing/src/layout/clipRegion.ts": {
+    "Math.abs(cross) <= EPSILON * Math.max(1, Math.hypot(dx, dy))": 1,
+    "Math.abs(denominator) <= EPSILON": 1,
+    "Math.abs(sweep) <= EPSILON": 1
+  },
+  "packages/drawing/src/layout/validatePolygon.ts": {
+    "Math.abs(cross(a, b, p)) <= EPSILON": 1,
+    "Math.abs(cross(a, b, c)) <= EPSILON": 1,
+    "Math.abs(twiceArea) <= EPSILON": 1
+  },
+  "packages/drawing/src/table/balloon.ts": {
+    "Math.abs(across) > sum": 1
+  },
+  "packages/expression/src/math/besselIntegerIntervals.ts": {
+    "Math.abs(order) <= BESSEL_INTEGER_ORDER_LIMIT": 1
+  },
+  "packages/expression/src/math/besselIntegerNumeric.ts": {
+    "Math.abs(order) > BESSEL_INTEGER_ORDER_LIMIT": 1
+  },
+  "packages/expression/src/math/besselIntegerSeries.ts": {
+    "Math.abs(order) > BESSEL_INTEGER_ORDER_LIMIT + 2": 1
+  },
+  "packages/expression/src/math/closedIntegrals.ts": {
+    "Math.abs(power) > EXPONENT_LIMIT": 1
+  },
+  "packages/expression/src/math/mathInputContract.ts": {
+    "Math.abs(exponent) > MATH_INPUT_LIMITS.decimalExponent": 1
+  },
+  "packages/fem/src/beamWeldContact.ts": {
+    "Math.abs(station) <= radius + 32 * Number.EPSILON * roundoffScale": 1
+  },
+  "packages/fem/src/beamWeldSpan.ts": {
+    "Math.abs(station) <= radius + rounding": 1
+  },
+  "packages/fem/src/contactModel.ts": {
+    "Math.abs(factor) > MAX_LOAD_FACTOR": 1,
+    "Math.abs(gap) > tolerance * gapScale": 1
+  },
+  "packages/fem/src/curvedPlcBound.ts": {
+    "Math.abs(surface.semiAngle) < Math.PI / 2": 1
+  },
+  "packages/fem/src/fatigue.ts": {
+    "Math.abs(cycle.meanMpa) > FATIGUE_REVERSED_MEAN_TOLERANCE * largest": 1,
+    "Math.abs(stress) >= correction.yieldStrengthMpa": 1
+  },
+  "packages/fem/src/fatigueAxial.ts": {
+    "Math.abs(converted) > MAX_FATIGUE_STRESS_MPA": 1
+  },
+  "packages/fem/src/fatigueDetail.ts": {
+    "Math.abs(point) > MAX_FATIGUE_DETAIL_FORCE_N": 1
+  },
+  "packages/fem/src/fatigueLocalCycle.ts": {
+    "Math.abs(number) > limit": 1
+  },
+  "packages/fem/src/fatigueModel.ts": {
+    "Math.abs(point) > MAX_FATIGUE_STRESS_MPA": 1
+  },
+  "packages/fem/src/fatigueStrainHistory.ts": {
+    "Math.abs(point) > MAX_STRAIN_HISTORY_ABS_STRAIN": 1
+  },
+  "packages/fem/src/fatigueStrainLife.ts": {
+    "Math.abs(meanStressMpa) > MAX_FATIGUE_STRESS_MPA": 1
+  },
+  "packages/fem/src/fatigueStrainStressHistory.ts": {
+    "Math.abs(strain) > MAX_STRAIN_HISTORY_ABS_STRAIN": 1,
+    "Math.abs(stressMpa) > MAX_FATIGUE_STRESS_MPA": 1
+  },
+  "packages/fem/src/fatigueTensor.ts": {
+    "Math.abs(component) > MAX_FATIGUE_STRESS_MPA": 1,
+    "Math.abs(largest) > Math.abs(smallest)": 1,
+    "Math.abs(stress) <= MAX_FATIGUE_STRESS_MPA": 1
+  },
+  "packages/fem/src/solidModalResults.ts": {
+    "Math.abs(dot(motion, action.mass)) <= tolerance * norm": 1
+  },
+  "packages/fem/src/plasticBar.ts": {
+    "Math.abs(trial) > plasticBarYieldStressPa(plan.material, kappa)": 1
+  },
+  "packages/fem/src/solidPlasticResults.ts": {
+    "Math.abs(v) > SOLID_PLASTIC_LIMITS.maximumStrain": 1
+  },
+  "packages/fem/src/staticCapacity.ts": {
+    "Math.abs(matrix[a][b]) > Math.abs(matrix[p][q])": 1,
+    "Math.abs(matrix[p][q]) <= Number.EPSILON": 1
+  },
+  "packages/fem/src/tetraMesh.ts": {
+    "Math.abs(total) >= Math.abs(value)": 1
+  },
+  "packages/io/src/dxf/dxfCurves.ts": {
+    "Math.abs(sweepDegrees) >= FULL_TURN_DEGREES": 1
+  },
+  "packages/io/src/dxf/readDxf.ts": {
+    "Math.abs(dot) > SIMILARITY_TOLERANCE * firstLength * secondLength": 1
+  },
+  "packages/io/src/dxf/writeDxf.ts": {
+    "Math.abs(sweep) >= FULL_TURN_DEGREES - FULL_TURN_EPSILON": 2
+  },
+  "packages/kernel/src/occt/analysisFreeformBound.ts": {
+    "Math.abs(reference[0]) >= Math.abs(reference[1])": 1,
+    "Math.abs(reference[0]) >= Math.abs(reference[2])": 1,
+    "Math.abs(reference[1]) >= Math.abs(reference[2])": 1
+  },
+  "packages/kernel/src/occt/analysisSurfaceCertificate.ts": {
+    "Math.abs(angle) >= Math.PI / 2": 2
+  },
+  "packages/kernel/src/occt/analyticChartCoverR3.ts": {
+    "Math.abs(n[1]) > HALF_PI_BELOW": 1
+  },
+  "packages/kernel/src/occt/analyticChartInjectivity.ts": {
+    "Math.abs(surface.semiAngle) < HALF_PI_BELOW": 1
+  },
+  "packages/kernel/src/occt/editSolidFace.ts": {
+    "Math.abs(dot(neighbour.direction, normal)) <= ANGULAR_TOLERANCE": 1,
+    "Math.abs(input.offset) < MIN_FACE_OFFSET_MM": 1
+  },
+  "packages/kernel/src/occt/makeChamfer.ts": {
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
+  },
+  "packages/kernel/src/occt/makeDraft.ts": {
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
+  },
+  "packages/kernel/src/occt/makeEmboss.ts": {
+    "Math.abs(dot(profilePlane.normal, frame.normal)) < PARALLEL_DOT": 1
+  },
+  "packages/kernel/src/occt/makeFillet.ts": {
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
+  },
+  "packages/kernel/src/occt/makePrimitive.ts": {
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
+  },
+  "packages/kernel/src/occt/makeRib.ts": {
+    "Math.abs(measureVolume(oc, chunk)) < MIN_SOLID_VOLUME": 1,
+    "Math.abs(measureVolume(oc, wall)) < MIN_SOLID_VOLUME": 1
+  },
+  "packages/kernel/src/occt/makeSectionShape.ts": {
+    "Math.abs(dot(offset, plane.normal)) <= PLANE_TOLERANCE": 1
+  },
+  "packages/kernel/src/occt/makeSheetMetalBase.ts": {
+    "Math.abs(offset) <= GEOMETRY_TOLERANCE_MM": 1
+  },
+  "packages/kernel/src/occt/makeShell.ts": {
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
+  },
+  "packages/kernel/src/occt/makeSolidSweep.ts": {
+    "Math.abs(measureVolume(oc, subShape)) < MIN_SOLID_VOLUME": 1,
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME": 3
+  },
+  "packages/kernel/src/occt/makeSpring.ts": {
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
+  },
+  "packages/kernel/src/occt/makeSurface.ts": {
+    "Math.abs(area) <= MIN_SURFACE_AREA_MM2": 1
+  },
+  "packages/kernel/src/occt/makeSurfaceCut.ts": {
+    "Math.abs(distance) > tolerance": 1
+  },
+  "packages/kernel/src/occt/makeThinExtrude.ts": {
+    "Math.abs(measureVolume(oc, firstSolid)) >= Math.abs(measureVolume(oc, secondSolid))": 1,
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME": 1
+  },
+  "packages/kernel/src/occt/makeThruSections.ts": {
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
+  },
+  "packages/kernel/src/occt/makeVariableFillet.ts": {
+    "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
+  },
+  "packages/kernel/src/occt/meshCoordinateFrame.ts": {
+    "Math.abs(value) > FLOAT32_MAX": 1
+  },
+  "packages/kernel/src/occt/moveSolidHole.ts": {
+    "Math.abs(dot(plane.normal, hole.direction)) <= SIGNATURE_TOLERANCE": 1,
+    "Math.abs(dot(side.normal, other.normal)) > SIGNATURE_TOLERANCE": 1,
+    "Math.abs(dot(delta, hole.direction)) > SIGNATURE_TOLERANCE": 1
+  },
+  "packages/kernel/src/occt/rotateSolidFace.ts": {
+    "Math.abs(dot(n, m)) > ANGULAR_TOLERANCE": 1,
+    "Math.abs(dot(h, n)) > ANGULAR_TOLERANCE": 1,
+    "Math.abs(dot(h, m)) > ANGULAR_TOLERANCE": 1,
+    "Math.abs(angleRad) >= Math.PI / 2": 1,
+    "Math.abs(lift) >= MIN_EDGE_TRAVEL_MM": 1
+  },
+  "packages/kernel/src/occt/sweepGuide.ts": {
+    "Math.abs(dot(offset, tangent)) > CONTACT_TOLERANCE": 1
+  },
+  "packages/model/src/analysis/beamInputs.ts": {
+    "Math.abs(factor) > MAX_CONTACT_FACTOR": 1
+  },
+  "packages/model/src/analysis/cadWeldLayer.ts": {
+    "Math.abs(axial) > BEAM_CONNECTION_TOLERANCE_MM": 1
+  },
+  "packages/model/src/analysis/fatigueInput.ts": {
+    "Math.abs(stress) > LIMITS.maximumStressMpa": 1
+  },
+  "packages/model/src/analysis/fatigueLocalCycleInput.ts": {
+    "Math.abs(number) > limit": 1
+  },
+  "packages/model/src/analysis/fatigueStrainInput.ts": {
+    "Math.abs(value) > LIMITS.maximumAbsStrain": 1,
+    "Math.abs(strain) > LIMITS.maximumAbsStrain": 1,
+    "Math.abs(stressMpa) > LIMITS.maximumAbsStressMpa": 1
+  },
+  "packages/model/src/analysis/fatigueTensorInput.ts": {
+    "Math.abs(value) > FATIGUE_SAVED_LIMITS.maximumStressMpa": 1,
+    "Math.abs(stress) <= FATIGUE_SAVED_LIMITS.maximumStressMpa": 1
+  },
+  "packages/model/src/assembly/constraints/mateDrag.ts": {
+    "Math.abs(row.value) < tolerance": 1
+  },
+  "packages/model/src/assembly/constraints/solveMates.ts": {
+    "Math.abs(row.value) >= rigidRowTolerance(row, options)": 1,
+    "Math.abs(residual) < tolerance": 1
+  },
+  "packages/model/src/assembly/constraints/solveRigid.ts": {
+    "Math.abs(row.value) < tolerance": 1
+  },
+  "packages/model/src/assembly/fastening/bindHoleSelection.ts": {
+    "Math.abs(offset) <= FASTENING_LENGTH_TOLERANCE_MM": 1
+  },
+  "packages/model/src/assembly/fastening/existingConstraints.ts": {
+    "Math.abs(row.value) >= tolerance": 2
+  },
+  "packages/model/src/assembly/joints/camFollower.ts": {
+    "Math.abs(dotVec3(camFrame.z, axis)) > IN_LINE_TOLERANCE": 1,
+    "Math.abs(signed) <= tolerance": 1
+  },
+  "packages/model/src/assembly/joints/jointFrames.ts": {
+    "Math.abs(v) <= JOINT_FRAME_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/joints/mechanismCoupling.ts": {
+    "Math.abs(coefficient) <= scaleEpsilon": 1,
+    "Math.abs(constant) > ANGLE_EPSILON_DEG": 1
+  },
+  "packages/model/src/assembly/placementMath.ts": {
+    "Math.abs(dot(x, y)) > tolerance": 1,
+    "Math.abs(dot(y, z)) > tolerance": 1,
+    "Math.abs(dot(z, x)) > tolerance": 1
+  },
+  "packages/model/src/assembly/welding/circularWeldContact.ts": {
+    "Math.abs(value) <= size": 1
+  },
+  "packages/model/src/assembly/welding/curvedWeldPath.ts": {
+    "Math.abs(dotVec3(xAxis, yAxis)) > WELD_DIRECTION_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/welding/planFilletWeld.ts": {
+    "Math.abs(cosine) <= WELD_DIRECTION_TOLERANCE": 1,
+    "Math.abs(offFirst) > WELD_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(dotVec3(along, a.normal)) > WELD_DIRECTION_TOLERANCE": 1,
+    "Math.abs(offSecond) > WELD_LENGTH_TOLERANCE_MM": 1,
+    "Math.abs(dotVec3(along, b.normal)) > WELD_DIRECTION_TOLERANCE": 1
+  },
+  "packages/model/src/assembly/welding/types.ts": {
+    "Math.abs(cos) <= WELD_DIRECTION_TOLERANCE": 1
+  },
+  "packages/model/src/drawing/drawingSurfaceAnchor.ts": {
+    "Math.abs(signed) <= EPS": 1,
+    "Math.abs(area) <= EPS": 1,
+    "Math.abs(fullArea) <= EPS": 1
+  },
+  "packages/model/src/exchange/sketchToDxf.ts": {
+    "Math.abs(alignment + 1) <= PLANE_ALIGNMENT_TOLERANCE": 1
+  },
+  "packages/model/src/measure/massProperties.ts": {
+    "Math.abs(grams) >= GRAMS_PER_KILOGRAM": 1,
+    "Math.abs(millimeters) >= MM_PER_METER": 1
+  },
+  "packages/model/src/measure/mathGeometryCongruence.ts": {
+    "Math.abs(dotVec3(point, normal)) > width": 1
+  },
+  "packages/model/src/part/directFaceEdit.ts": {
+    "Math.abs(offset) < MIN_FACE_OFFSET_MM": 1
+  },
+  "packages/model/src/part/resolvePart.ts": {
+    "Math.abs(denominator) <= EXTRUDE_TO_FACE_EPSILON": 1
+  },
+  "packages/model/src/part/resolveReferences.ts": {
+    "Math.abs(slope) <= DIRECTION_EPSILON": 1
+  },
+  "packages/model/src/sheetMetal/connectLineBendRegions.ts": {
+    "Math.abs(point[2]) > TOLERANCE": 1
+  },
+  "packages/model/src/sheetMetal/cylinderUnfold.ts": {
+    "Math.abs(angle) <= Number.EPSILON": 1,
+    "Math.abs(angle) >= Math.PI": 1
+  },
+  "packages/model/src/sheetMetal/flatBendLines.ts": {
+    "Math.abs(dotVec3(relative, up)) <= EPSILON": 1
+  },
+  "packages/model/src/sheetMetal/panelGeometry.ts": {
+    "Math.abs(area) <= TOLERANCE_MM ** 2": 1,
+    "Math.abs(signed) <= TOLERANCE_MM ** 2": 1
+  },
+  "packages/model/src/sheetMetal/reliefIntersections.ts": {
+    "Math.abs(dotVec3(offset, curve.normal)) > TOLERANCE": 1
+  },
+  "packages/model/src/sheetMetal/sheetCurveLoops.ts": {
+    "Math.abs(area) > TOLERANCE_MM ** 2": 1
+  },
+  "packages/model/src/sheetMetal/splitCurveAtPlane.ts": {
+    "Math.abs(value) <= TOLERANCE_MM": 1,
+    "Math.abs(offset) > amplitude": 1,
+    "Math.abs(sweep) <= Number.EPSILON": 2
+  },
+  "packages/model/src/sketch/canvasHomography.ts": {
+    "Math.abs(rows[row]?.[column] ?? 0) > Math.abs(rows[pivot]?.[column] ?? 0)": 1,
+    "Math.abs(pivotValue) < MIN_PIVOT": 1,
+    "Math.abs(denominator) < MIN_DENOMINATOR": 1,
+    "Math.abs(cross(a, b, c)) <= MIN_TRIANGLE_CROSS": 1
+  },
+  "packages/model/src/sketch/constraints/diagnose.ts": {
+    "Math.abs(weight) <= threshold": 1,
+    "Math.abs(dependent.mismatch) > tolerance * (1 + dependent.scale)": 1,
+    "Math.abs(entry.row.value) > tolerance": 1
+  },
+  "packages/model/src/sketch/constraints/dragTranslationSeed.ts": {
+    "Math.abs(row.value) >= tolerance": 1,
+    "Math.abs(row.value) < tolerance": 1
+  },
+  "packages/model/src/sketch/constraints/sparseRank.ts": {
+    "Math.abs(weight) <= largest * relativeTolerance": 1
+  },
+  "packages/model/src/sketch/constraints/sparseSolve.ts": {
+    "Math.abs(product) >= Math.abs(term)": 1,
+    "Math.abs(previous) >= Math.abs(term)": 1,
+    "Math.abs(sum) >= Math.abs(term)": 1
+  },
+  "packages/model/src/sketch/intersectionMath.ts": {
+    "Math.abs(span) <= FULL_TURN_EPSILON": 1,
+    "Math.abs(denominator) <= DENOMINATOR_EPSILON": 1,
+    "Math.abs(z0) > PLANE_TOLERANCE_MM": 1,
+    "Math.abs(z1) > PLANE_TOLERANCE_MM": 1,
+    "Math.abs(gap) <= DENOMINATOR_EPSILON": 1,
+    "Math.abs(cz) > PLANE_TOLERANCE_MM": 1
+  },
+  "packages/model/src/sketch/offsetMath.ts": {
+    "Math.abs(projection) <= SKETCH_TOLERANCE_MM": 1
+  },
+  "packages/model/src/sketch/resolveSketch.ts": {
+    "Math.abs(sweep) <= FULL_TURN_EPSILON": 1
+  },
+  "packages/model/src/sketch/shiftCoordinate.ts": {
+    "Math.abs(coefficient) < AXIS_EPSILON": 1
+  },
+  "packages/ui/src/drawing/drawingPick.ts": {
+    "Math.abs(sweep) >= turn - 1e-9": 1
+  },
+  "packages/ui/src/sketch/copyCommands.ts": {
+    "Math.abs(coefficientU) < AXIS_COMPONENT_TOLERANCE": 1,
+    "Math.abs(coefficientV) < AXIS_COMPONENT_TOLERANCE": 1
+  },
+  "packages/ui/src/sketch/trackMath.ts": {
+    "Math.abs(denominator) <= PARALLEL_DOT_EPSILON": 2
+  },
+  "packages/ui/src/viewport/buildSubShapeGeometry.ts": {
+    "Math.abs(value) <= FLOAT32_MAX": 1
+  },
+  "packages/kernel/src/math/splineInterpolation.ts": {
+    "Math.abs(work[row][column]) > Math.abs(work[pivot][column])": 1,
+    "Math.abs(work[pivot][column]) < MIN_PIVOT": 1
+  }
+}

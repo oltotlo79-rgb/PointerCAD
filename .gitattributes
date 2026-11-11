@@ -18,6 +18,7 @@ scripts/hooks/commit-msg text eol=lf
 # 異なるため、保存時も取り出し時もGitの改行変換を適用しない。
 # 同梱フォント(Web/デスクトップ)の許諾原文(LICENSES.txt)も同じ方針の対象に含める。
 docs/standards/licenses/*.txt -text
+/vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/LICENSE -text
 apps/web/public/fonts/LICENSES.txt -text
 apps/desktop/resources/fonts/LICENSES.txt -text
 scripts/manual/fonts/*.txt -text
@@ -30,3 +31,73 @@ scripts/manual/fonts/*.txt -text
 # CRLFになり、生成側(LF)と一致しなくなる(2026-09-27、c3の全体検査で判明)。
 # 常にLFで取り出すことで、Windows上の新規取り出し(CIのwindows-latest含む)でも一致させる。
 packages/help-content/docs/ja/math-symbols.md text eol=lf
+# FEM source-index comparisons require identical LF bytes on every Git checkout.
+/packages/fem/src/beamAnalysis.py text eol=lf
+/packages/fem/src/protocol.ts text eol=lf
+/packages/fem/src/client.ts text eol=lf
+/packages/fem/src/runtime.ts text eol=lf
+/packages/fem/src/offlineBrowser.ts text eol=lf
+/packages/fem/src/worker.ts text eol=lf
+/packages/fem/src/bucklingModel.ts text eol=lf
+/packages/fem/src/bucklingTranslation.ts text eol=lf
+/packages/fem/src/bucklingResults.ts text eol=lf
+/packages/fem/src/buckling.test.ts text eol=lf
+/packages/fem/src/buckling.testSupport.ts text eol=lf
+/packages/fem/src/bucklingNative.testSupport.ts text eol=lf
+/packages/fem/src/index.ts text eol=lf
+/packages/fem/src/assets.ts text eol=lf
+/packages/fem/src/buckling.package.test.ts text eol=lf
+/packages/fem/vitest.config.ts text eol=lf
+
+# Native impact fixtures pin these source, harness and capture bytes by SHA-256.
+# Keep their canonical LF bytes on Windows even with core.autocrlf=true.
+/packages/fem/src/beamImpact.py text eol=lf
+/packages/fem/src/beamImpactRuntime.ts text eol=lf
+/packages/fem/src/beamImpactNativeInterior.harness.mjs text eol=lf
+/packages/fem/src/beamImpactNativeInterior.test.py text eol=lf
+/packages/fem/src/fixtures/beamImpactNativeCurrentFixture.json text eol=lf
+/packages/fem/src/fixtures/beamImpactNativeFixture.json text eol=lf
+
+# Preserve every pinned runtime asset, generated inventory and upstream notice verbatim.
+/packages/fem/runtime/** -text
+
+# These source programs have canonical LF bytes fixed by beamWeldSpanAssets.ts.
+/packages/fem/src/beamContact.py text eol=lf
+/packages/fem/src/beamWeldSpan.py text eol=lf
+/packages/fem/src/beamWeldSpanContact.py text eol=lf
+
+# Preserve the exact captured native input/result bytes used by their SHA-256 oracles.
+/packages/fem/src/fixtures/friction-native/input.json -text
+/packages/fem/src/fixtures/friction-native/newton-raw.json -text
+/packages/fem/src/fixtures/friction-native/nsgs-raw.json -text
+/packages/fem/src/nativeBoltPreload.input.fixture.json -text
+/packages/fem/src/nativeBoltPreload.result.fixture.json -text
+
+# The shipped linear-solid program must match its reviewed source bytes on both OS.
+
+# Preserve source bytes identical to pinned FEM runtime assets on every checkout.
+/packages/fem/src/beamAnalysis.py -text
+/packages/fem/src/beamBoltContact.py -text
+/packages/fem/src/beamContact.py -text
+/packages/fem/src/beamFrictionContact.py -text
+/packages/fem/src/beamFrictionRuntime.py -text
+/packages/fem/src/beamImpact.py -text
+/packages/fem/src/beamJointContact.py -text
+/packages/fem/src/beamJointInitialStrain.py -text
+/packages/fem/src/beamProof.py -text
+/packages/fem/src/beamWeldContact.py -text
+/packages/fem/src/beamWeldSpan.py -text
+/packages/fem/src/beamWeldSpanContact.py -text
+/packages/fem/src/netgenMesher.py -text
+/packages/fem/src/plasticBarAnalysis.py -text
+/packages/fem/src/shellAnalysis.py -text
+/packages/fem/src/solidAnalysis.py -text
+/packages/fem/src/solidBuckling.py -text
+/packages/fem/src/solidContact.py -text
+/packages/fem/src/solidContactDriver.py -text
+/packages/fem/src/solidContactFriction.py -text
+/packages/fem/src/solidContactSolver.py -text
+/packages/fem/src/solidFiniteEquilibrium.py -text
+/packages/fem/src/solidFiniteMaterial.py -text
+/packages/fem/src/solidModal.py -text
+/packages/fem/src/solidPlasticAnalysis.py -text

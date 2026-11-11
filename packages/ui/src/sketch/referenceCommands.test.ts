@@ -22,9 +22,10 @@ import {
   resolveReferencesOf,
   resolveWorkPlaneOf,
   workPlaneEntries,
-  type ReferenceCommitContext,
-  type ReferenceCommitOutcome,
 } from './referenceCommands.js';
+
+type ReferenceCommitContext = Parameters<typeof commitReferenceInput>[1];
+type ReferenceCommitOutcome = ReturnType<typeof commitReferenceInput>;
 
 /** 位置・向きの突き合わせに使う許容量。回転の丸めぶんだけ緩める。 */
 const TOLERANCE = 1e-9;

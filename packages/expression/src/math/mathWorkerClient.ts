@@ -1,12 +1,11 @@
 /** Scalar-input adapter for the shared bounded, cancellable calculation queue. */
 import type { MathWorkResult } from './mathWorkReply.js';
 import { decodeMathWorkRequest, createMathWorkEnvelope, type MathRequestIdentity, type MathWorkRequest } from './mathWorkRequest.js';
-import { BoundedCalculationClient, type CalculationCompletion, type CalculationClientOptions } from './boundedCalculationClient.js';
+import { BoundedCalculationClient, type CalculationClientOptions } from './boundedCalculationClient.js';
 import { EXACT_MATH_ENGINE_LIMITS } from './exactMathEngineClient.js';
 import { createMathWorkProgressReceiver, type MathWorkProgress } from './mathWorkProgress.js';
 export type { MathRequestIdentity, MathWorkRequest } from './mathWorkRequest.js';
 export type { CalculationWorkerPort as MathWorkerPort } from './boundedCalculationClient.js';
-export type MathWorkCompletion = CalculationCompletion<MathWorkResult>;
 export type MathWorkerClientOptions = Pick<CalculationClientOptions<MathWorkRequest, MathWorkResult>, 'createWorker' | 'decodeReply'>;
 
 export class MathWorkerClient extends BoundedCalculationClient<MathWorkRequest, MathWorkResult> {

@@ -1,3 +1,4 @@
+import { isRecord } from './mathRecord.js';
 import { isMappingSource } from './mathMappings.js';
 import { decodeEquationSystem, type EquationSystemSolutions } from './equationSystems.js';
 import { decodeOdeSolutions, type OdeSolutions } from './differentialEquations.js';
@@ -45,8 +46,8 @@ const SETS = new Set(['real-numbers', 'complex-numbers', 'integers', 'naturals',
 type Shape = 'scalar' | 'boolean' | 'vector' | 'matrix' | 'set' | 'interval' | 'function';
 function invalid(): never { throw new MathInputProblem('syntax', '数式の厳密な計算結果の形式が不正です。'); }
 function record(value: unknown): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return invalid();
-  return value as Record<string, unknown>;
+  if (!isRecord(value)) return invalid();
+  return value;
 }
 
 /** Bound the whole message, including conditions, before reconstructing any expression. */

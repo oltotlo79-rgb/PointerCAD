@@ -35,8 +35,11 @@ import { withVirtualFileInput } from './virtualFile.js';
  * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1、-12、-7):**
  *
  * - `oc.RWObj_CafReader` / `oc.RWGltf_CafReader` / `oc.RWMesh_CafReader` は実行時に関数
- *   (`.test.ts` の 1 件目が毎回確かめる)。`RWObj_CafWriter` / `RWGltf_CafWriter` も同様に
- *   実在する(書き出しはタスク13 の担当)。
+ *   (`.test.ts` の 1 件目が毎回確かめる)。**`RWObj_CafWriter` / `RWGltf_CafWriter` は、採用した
+ *   closed 版 OCCT(`vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677`)には
+ *   無い**(実行時に `undefined`。2026-10-24 に確認。旧レジストリ版にはあった)。OBJ / glTF の
+ *   書き出しは OCCT の書き手を使わず、自前の純関数 `writeCafMesh.ts` で行う(統括の決定
+ *   2026-09-06 と 2026-10-24)。
  * - **§1.5-12 の答え: `SetDocument` を呼ばずに `Perform` は成功する。** 文書を渡さない
  *   まま `Perform` が `true` を返し、`SingleShape()` が中身のある形を返した。
  *   **XCAF の文書(タスク7)は読み込みには要らない。**
@@ -218,6 +221,7 @@ function writeFaceMesh(
   indices: Uint32Array,
   triangleOffset: number,
 ): void {
+  const temporary = createAllocations();
   const { keep, release } = createAllocations();
   try {
     const triangulation = source.handle.get();
@@ -225,40 +229,38 @@ function writeFaceMesh(
     const transformation = identity ? null : keep(source.location.Transformation());
 
     for (let index = 1; index <= source.nodeCount; index += 1) {
-      const node = triangulation.Node(index);
-      const base = (nodeOffset + index - 1) * 3;
-      if (transformation === null) {
-        positions[base] = node.X();
-        positions[base + 1] = node.Y();
-        positions[base + 2] = node.Z();
-        node.delete();
-      } else {
-        const moved = node.Transformed(transformation);
-        positions[base] = moved.X();
-        positions[base + 1] = moved.Y();
-        positions[base + 2] = moved.Z();
-        node.delete();
-        moved.delete();
-      }
+      try {
+        const node = temporary.keep(triangulation.Node(index));
+        const base = (nodeOffset + index - 1) * 3;
+        if (transformation === null) {
+          positions[base] = node.X();
+          positions[base + 1] = node.Y();
+          positions[base + 2] = node.Z();
+        } else {
+          const moved = temporary.keep(node.Transformed(transformation));
+          positions[base] = moved.X();
+          positions[base + 1] = moved.Y();
+          positions[base + 2] = moved.Z();
+        }
+      } finally { temporary.release(); }
     }
 
     if (source.hasNormals) {
       for (let index = 1; index <= source.nodeCount; index += 1) {
-        const direction = triangulation.Normal_1(index);
-        const base = (nodeOffset + index - 1) * 3;
-        if (transformation === null) {
-          normals[base] = direction.X();
-          normals[base + 1] = direction.Y();
-          normals[base + 2] = direction.Z();
-          direction.delete();
-        } else {
-          const moved = direction.Transformed(transformation);
-          normals[base] = moved.X();
-          normals[base + 1] = moved.Y();
-          normals[base + 2] = moved.Z();
-          direction.delete();
-          moved.delete();
-        }
+        try {
+          const direction = temporary.keep(triangulation.Normal_1(index));
+          const base = (nodeOffset + index - 1) * 3;
+          if (transformation === null) {
+            normals[base] = direction.X();
+            normals[base + 1] = direction.Y();
+            normals[base + 2] = direction.Z();
+          } else {
+            const moved = temporary.keep(direction.Transformed(transformation));
+            normals[base] = moved.X();
+            normals[base + 1] = moved.Y();
+            normals[base + 2] = moved.Z();
+          }
+        } finally { temporary.release(); }
       }
     }
 
@@ -269,16 +271,17 @@ function writeFaceMesh(
     // (rules/06 10.13 の ③。忘れると読み込みのたびに溜まって目に見えて遅くなる)。
     const triangles = keep(triangulation.Triangles());
     for (let index = 1; index <= source.triangleCount; index += 1) {
-      const triangle = triangles.Value(index);
-      const base = (triangleOffset + index - 1) * 3;
-      // OCCT の配列は 1 始まり、three.js の頂点番号は 0 始まりなので 1 を引く。
-      const a = nodeOffset + triangle.Value(1) - 1;
-      const b = nodeOffset + triangle.Value(2) - 1;
-      const c = nodeOffset + triangle.Value(3) - 1;
-      indices[base] = reversed ? b : a;
-      indices[base + 1] = reversed ? a : b;
-      indices[base + 2] = c;
-      triangle.delete();
+      try {
+        const triangle = temporary.keep(triangles.Value(index));
+        const base = (triangleOffset + index - 1) * 3;
+        // OCCT の配列は 1 始まり、three.js の頂点番号は 0 始まりなので 1 を引く。
+        const a = nodeOffset + triangle.Value(1) - 1;
+        const b = nodeOffset + triangle.Value(2) - 1;
+        const c = nodeOffset + triangle.Value(3) - 1;
+        indices[base] = reversed ? b : a;
+        indices[base + 1] = reversed ? a : b;
+        indices[base + 2] = c;
+      } finally { temporary.release(); }
     }
   } finally {
     release();

@@ -1,0 +1,157 @@
+{
+ "schema": "pointercad-oofem-portable-packet/2",
+ "status": "portable recipe UNEXECUTED as a whole unless replay-status.json (written by the integration generator from Root's guarded receipt) says otherwise; it is not the executed build",
+ "packet": {
+  "sources/native-rebuild/portable/acquisition-request.json": {
+   "sha256": "3651317c63deb56ba201d1737bc12a038e579fb6986ae619b38717fc3a23eaff",
+   "bytes": 10875,
+   "kind": "native-rebuild-portable-environment"
+  },
+  "sources/native-rebuild/portable/rebuild-oofem-pyodide.sh": {
+   "sha256": "1eb34343d9d97ac5d9dab563f359d8e63f56f8ec6ef9e0b3c62ce138b81684aa",
+   "bytes": 18976,
+   "kind": "native-rebuild-portable-recipe"
+  },
+  "sources/native-rebuild/portable/replay-environment.json": {
+   "sha256": "848889fd05036769ed9acc44047844cef6115f328bb4ab18d8d4b21a50ab179e",
+   "bytes": 20212,
+   "kind": "native-rebuild-portable-environment"
+  },
+  "sources/native-rebuild/portable/replay_controls.py": {
+   "sha256": "a97112c074ea011808855589170b7357bcd436536601dc91f715be7ba46d89ac",
+   "bytes": 9426,
+   "kind": "native-rebuild-portable-test"
+  },
+  "sources/native-rebuild/portable/smoke_test.py": {
+   "sha256": "1039fb041d58274e1095b08eb67740e597691646505c5989ed8b5caf19351a4b",
+   "bytes": 6445,
+   "kind": "native-rebuild-portable-test"
+  },
+  "sources/native-rebuild/portable/step_regression.py": {
+   "sha256": "2d7dbe5e79364c106d6690b492a6dc599ebfe378bdb20c636778b880d1fb524a",
+   "bytes": 4065,
+   "kind": "native-rebuild-portable-test"
+  },
+  "sources/native-rebuild/portable/venv-requirements.txt": {
+   "sha256": "08fa224c1e0b98b60743ffee62a1989e34899f4ccfa3ec739bc4cdcd9b19f528",
+   "bytes": 988,
+   "kind": "native-rebuild-portable-requirements"
+  },
+  "sources/native-rebuild/portable/wheelhouse-SHA256SUMS": {
+   "sha256": "cb39d706813630fa34ca471525a46275f589feb2bd00e89c77a0cce0b86978dc",
+   "bytes": 1375,
+   "kind": "native-rebuild-portable-requirements"
+  }
+ },
+ "generatedByIntegration": [
+  "sources/native-rebuild/portable/replay-status.json"
+ ],
+ "supersedes": {
+  "sources/native-rebuild/portable/rebuild-oofem-pyodide.sh": "c01caebab43eb78d39def3d8046f0840f63b9bac55e5139aa5c4bef5e0d7c0c4",
+  "sources/native-rebuild/portable/build-requirements.txt": "75ae26109c450305193b6ffef4c9bdf4dd11fc7999a0dcee485eb17a2647eecd",
+  "sources/native-rebuild/portable/smoke_test.py": "a56125f812401f5c04b0486434633084357de65bd012f1eb385f805441b34900",
+  "sources/native-rebuild/portable/packet-inventory.json": "4af133fe2408a0d160ceb5e57f3400fb8554dc98f882ae869a8391e9bd88243d"
+ },
+ "removed": {
+  "sources/native-rebuild/portable/build-requirements.txt": "its pybind11/pytest/iniconfig/pluggy proposals were not the executed versions; replaced by wheelhouse-SHA256SUMS + replay-environment.json + the recipe's constraints"
+ },
+ "packetOrigin": {
+  "peerPortable2Sha256Sums": "44ae21360a3b80ea7f567e920c29494c33dee7849231332167991fb9d07b8821",
+  "recipeParent": "bdf4987a7d7fc6316f3328cd1c9af7a99e0507df7ac62f6ed015b294c551f2a2",
+  "recipeCorrection": "step() runs each step function in ( set -Eeuo pipefail; \"$@\" ) so a failing command stops the step (r14)",
+  "r15Freeze": "28971c7bc73bb32ded8854cac968ce754c32e01f14dffadb2519028e760d50d2"
+ },
+ "sourceInputs": {
+  "oofemSource": {
+   "bundlePath": "sources/051-oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+   "sha256": "4688f06a4b0235dcb30b79e0ca086df5b271cd3206ab6dbce869ebe6b708b6c5",
+   "in": "sources/upstream-source-materials.zip"
+  },
+  "pybind11Source": {
+   "bundlePath": "sources/026-pybind11-d6ae0e163a6fb414c81c7f4a98291460e5a18bfe.tar.gz",
+   "sha256": "e171d6cd4f855f65e7e12129d4a594999310b7549a737d80aa1ebf3adee32e9b",
+   "in": "sources/upstream-source-materials.zip"
+  },
+  "timerPatch": {
+   "bundlePath": "sources/native-rebuild/oofem-051-timer.patch",
+   "sha256": "12a365db2c908fff736f2bd6ac606bafbfdc6fd82686c3f6c9b761d533eaa2f6"
+  },
+  "utilPatch": {
+   "bundlePath": "sources/native-rebuild/oofem-util.py.diff",
+   "sha256": "1b0cc4f061c46070f1967ef019991e96f38b2409068435365db964b2402f48fd"
+  }
+ },
+ "executedBuild": {
+  "note": "the build Root actually executed on 2026-10-11; separate from the portable recipe",
+  "script": {
+   "bundlePath": "sources/native-rebuild/native-build-reviewed-2206.sh",
+   "sha256": "c81700984c85fb1a54444ded5ad6bd361d84a956a0ac123ba1e6e20409afea50"
+  },
+  "provenance": {
+   "bundlePath": "sources/native-rebuild/build-provenance.json",
+   "sha256": "8b16eed584a19010d08bf1c99f7985543e45d40018fcb947a33c990c29e23ee2"
+  },
+  "exportReceipt": {
+   "bundlePath": "sources/native-rebuild/build-receipt.json",
+   "sha256": "cac9d1bdd1fab2810b40d28310a326117be8b25e047d315996035068f5a935cd"
+  },
+  "wheel": {
+   "shippedAs": "assets/oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+   "sha256": "aaff729b15e1cec2ef90c9c0bb2d3594b3997b523d35344b18ba9f64d4d1a7e4"
+  },
+  "moduleSha256": "0a303738b74366788f227437e08fe4cbcac54efdd6b6e65eaf34342e8fa540f9"
+ },
+ "relationships": [
+  {
+   "from": "executedBuild.wheel",
+   "relation": "built-by",
+   "to": "executedBuild.script"
+  },
+  {
+   "from": "executedBuild.wheel",
+   "relation": "built-from",
+   "to": [
+    "sourceInputs.oofemSource",
+    "sourceInputs.pybind11Source",
+    "sourceInputs.timerPatch",
+    "sourceInputs.utilPatch"
+   ]
+  },
+  {
+   "from": "packet:rebuild-oofem-pyodide.sh",
+   "relation": "portable-restatement-of (unexecuted)",
+   "to": "executedBuild.script"
+  },
+  {
+   "from": "packet:rebuild-oofem-pyodide.sh",
+   "relation": "consumes",
+   "to": [
+    "sourceInputs.oofemSource",
+    "sourceInputs.pybind11Source",
+    "sourceInputs.timerPatch",
+    "sourceInputs.utilPatch"
+   ]
+  },
+  {
+   "from": "packet:wheelhouse-SHA256SUMS",
+   "relation": "pins (replay environment)",
+   "to": "packet:rebuild-oofem-pyodide.sh step 10w-wheelhouse"
+  },
+  {
+   "from": "packet:replay-environment.json",
+   "relation": "classifies",
+   "to": [
+    "historicalDownloadsStep50",
+    "inferredFromExecutedCache",
+    "replayPins"
+   ]
+  }
+ ],
+ "knownGaps": [
+  "The replay environment is NEW: 6 of 13 wheels are proven step-50 downloads, 7 are inferred; no byte identity with the executed wheel is required or claimed.",
+  "emsdk/Emscripten 4.0.9 needs network bootstrap (git clone of emsdk + emsdk downloads) on a fresh host; its archives are not shipped.",
+  "Host must be Linux aarch64: the pinned cmake/ninja wheels are manylinux aarch64 only.",
+  "The wheels themselves, CPython and the xbuildenv are not shipped; they are identified by SHA-256 and upstream URL only.",
+  "Flags (correspondingSourceComplete, nativeRebuildExecuted, legalClearance, unresolved) are unchanged and remain Root's decision."
+ ]
+}

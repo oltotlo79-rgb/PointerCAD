@@ -17,7 +17,7 @@ export interface FunctionCurveEvaluator {
   /** Optional proved chord-deviation bound, e.g. from second derivatives. A sample residual is not a proof. */
   readonly chordErrorBound?: (lower: number, upper: number) => number | null;
 }
-export interface FunctionCurveOptions {
+interface FunctionCurveOptions {
   readonly lower: number;
   readonly upper: number;
   readonly minimum: FunctionCurvePoint;

@@ -4,14 +4,13 @@
 import {compileFunctionScalar} from './compileFunctionScalar.js';
 import {createScalarDirectionalJet} from './scalarCurveCurvature.js';
 import {isCurvePointInput,isSurfacePointInput,type PointCalculationRequest,type PointCalculationCandidate} from './pointCalculationContract.js';
-import {intervalAdd,intervalSubtract,intervalMultiply,intervalDivide,intervalSquare,intervalSqrt,nextFloat,type MathInterval,type IntervalValue} from './mathInterval.js';
+import {isZero as zero,intervalAdd,intervalSubtract,intervalMultiply,intervalDivide,intervalSquare,intervalSqrt,nextFloat,type MathInterval,type IntervalValue} from './mathInterval.js';
 import type {PreparedScalarMathContext} from './evaluatePreparedScalarMath.js';
 import type {FunctionPointDirectionKind} from './functionDirectionContract.js';
 type Vector=readonly [MathInterval,MathInterval,MathInterval];
 type Range=MathInterval|null;
 const ZERO:MathInterval={lower:0,upper:0};
 const unpack=(value:IntervalValue):Range=>value.status==='range'&&Number.isFinite(value.interval.lower)&&Number.isFinite(value.interval.upper)?value.interval:null;
-const zero=(value:MathInterval)=>value.lower===0&&value.upper===0;
 const add=(a:Range,b:Range):Range=>a===null||b===null?null:zero(a)?b:zero(b)?a:unpack(intervalAdd(a,b));
 const subtract=(a:Range,b:Range):Range=>a===null||b===null?null:zero(b)?a:unpack(intervalSubtract(a,b));
 const multiply=(a:Range,b:Range):Range=>a===null||b===null?null:zero(a)||zero(b)?ZERO:unpack(intervalMultiply(a,b));

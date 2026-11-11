@@ -1,12 +1,9 @@
 /** P7-18: camera-plane input is pure; the document and the numerical solve live elsewhere. */
-import { planeFromNormal, type Vec3, type WorkPlane } from '@pointercad/model';
+import { finiteDragVector, planeFromNormal, type Vec3, type WorkPlane } from '@pointercad/model';
 
+/** 成分の検査(長さ・穴・継承・非有限の拒否)は model の `finiteDragVector`(mateDrag.ts)をそのまま使う。 */
 export function finiteComponentDragVector(value: readonly number[], size: number): boolean {
-  if (!Array.isArray(value) || value.length !== size) return false;
-  for (let axis = 0; axis < size; axis += 1) {
-    if (!Object.hasOwn(value, axis) || !Number.isFinite(value[axis])) return false;
-  }
-  return true;
+  return finiteDragVector(value, size);
 }
 
 /** Freeze the plane through the component origin, perpendicular to the initial view. */

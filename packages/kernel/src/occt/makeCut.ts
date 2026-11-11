@@ -1,3 +1,4 @@
+import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { Vec3Tuple } from '../types.js';
@@ -91,22 +92,7 @@ function isFiniteVec3(value: Vec3Tuple): boolean {
 }
 
 /** -0 を +0 へ揃える(subShapes.ts と同じ理由)。 */
-function normalizeZero(value: number): number {
-  return value === 0 ? 0 : value;
-}
 
-/** 長さ 1 へ揃える。長さが取れない(0・非数)ときは null。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const length = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [
-    normalizeZero(value[0] / length),
-    normalizeZero(value[1] / length),
-    normalizeZero(value[2] / length),
-  ];
-}
 
 /** 境界箱の低い隅と高い隅(mm)。 */
 interface BoundingCorners {
@@ -380,6 +366,8 @@ export function makeCut(
   try {
     // ⑥ 積。
     result = intersectWithHalfSpace(oc, target, halfSpace);
+    // Reclaim the pending result if releasing its temporary tool fails.
+    try { release(); } catch (error) { result.delete(); throw error; }
   } finally {
     // 積の結果は自分の中に形を持つので、工具(半空間)はここで解放してよい
     // (makeHole.ts が工具を解放するのと同じ。2026-09-05 に実測)。

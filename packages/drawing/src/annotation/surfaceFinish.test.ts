@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { surfaceFinish, type SurfaceFinishInput } from './surfaceFinish.js';
+import { surfaceFinish } from './surfaceFinish.js';
+
+type SurfaceFinishInput = Parameters<typeof surfaceFinish>[0];
+
 const input: SurfaceFinishInput = { process: 'basic', parameter: 'Ra', value: 3.2, position: [10, 20] };
 
 describe('表面性状(P8-34)', () => {

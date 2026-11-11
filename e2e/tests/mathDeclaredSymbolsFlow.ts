@@ -39,6 +39,11 @@ export async function mathDeclaredSymbolsFlow(page: Page, info: TestInfo, app?: 
   await apply.click(); await expect(dialog).toHaveCount(0);
   await expect(panel).toContainText('未指定の長さ');
   const saved = await savePart(page, info, 'symbols-saved.pcad', app);
+  const problemId = saved.unresolvedMathProblems?.[0].id;
+  const declarationId = saved.unresolvedMathProblems?.[0].definition.declarations?.[0].id;
+  expect(problemId).toMatch(/^math-problem:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+  expect(declarationId).toMatch(/^symbol:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+  expect(problemId).not.toBe(declarationId);
   expect(saved.unresolvedMathProblems?.[0].definition.declarations).toMatchObject([{ label: 'a_1', meaning: '未指定の長さ', type: 'real' }]);
   expect(saved.parameters).toEqual(initial.parameters); expect(saved.sketches).toEqual(initial.sketches);
   await reopenPart(page, info, 'symbols-saved.pcad', app);
@@ -55,6 +60,11 @@ export async function mathDeclaredSymbolsFlow(page: Page, info: TestInfo, app?: 
   await editing.getByRole('button', { name: '定義を更新', exact: true }).click();
   await expect(apply).toBeEnabled(); await apply.click(); await expect(dialog).toHaveCount(0);
   await expect(panel).toContainText('編集した長さの説明');
+  const edited = await savePart(page, info, 'symbols-edited.pcad', app);
+  expect(edited.unresolvedMathProblems).toHaveLength(1);
+  expect(edited.unresolvedMathProblems?.[0].id).toBe(problemId);
+  expect(edited.unresolvedMathProblems?.[0].definition.declarations).toEqual(
+    saved.unresolvedMathProblems?.[0].definition.declarations?.map(value => ({ ...value, meaning: '編集した長さの説明' })));
   await page.locator('canvas.pcad-viewport__canvas').focus(); await page.keyboard.press('Control+z');
   await expect(panel).toContainText('未指定の長さ');
   const undone = await savePart(page, info, 'symbols-undone.pcad', app);

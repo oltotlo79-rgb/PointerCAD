@@ -1,0 +1,35 @@
+{
+  "oofemTarball": {
+    "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/source/oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+    "sha256": "4688f06a4b0235dcb30b79e0ca086df5b271cd3206ab6dbce869ebe6b708b6c5",
+    "topDir": "oofem-oofem-214b161"
+  },
+  "files": {
+    "src/core/timer.h": {
+      "parentSha256": "8532eb86b5dbd3a89e079c33cae0abbb6bfcb9648f3e616470ef6f62954e7bfb",
+      "patchedSha256": "d00caf0752d9df49dd5fb755f746d707e795f03fc94657849bb1a7673e9b82ae"
+    },
+    "src/core/timer.C": {
+      "parentSha256": "ceb5190500dc5fceed79058bb80419f8245319bec0c4b22ec123e006f9914cfc",
+      "patchedSha256": "deb3c9a78fd35885fa7f35b5fabff461def1bd69daef7eb6c68d041e9fab5db2"
+    },
+    "src/core/engngm.C": {
+      "parentSha256": "c64727ff7dfd4ef70760b0ce94ee952ba3c780e3493683383f70ffad9ae9b069",
+      "patchedSha256": "94979bcb2e1acbcfca619a4ea7a64e947f1a393b3f41f3164df8637946ad8fa1"
+    },
+    "src/core/outputexportmodule.C": {
+      "parentSha256": "3e990965a60d2f53ea87c05e3829a30ae0a7bd89945e346c2fcfa9e8140aba2f",
+      "patchedSha256": "36040e5b7fdd2e8ef67d0ac3af7f71f589ae3ac1e4161dbe0420b8257d93d104"
+    },
+    "src/core/solutionstatusexportmodule.C": {
+      "parentSha256": "a3164db32e77add24ba9913e36fb00c96d008d6bac317b1b8f7356e76fa7b665",
+      "patchedSha256": "3ccb1dd7932cb1fdbfa53e0b8ea16cbf92e8c5b64114344a628bd0f10626d32a"
+    }
+  },
+  "patch": {
+    "file": "oofem-051-timer.patch",
+    "sha256": "12a365db2c908fff736f2bd6ac606bafbfdc6fd82686c3f6c9b761d533eaa2f6",
+    "bytes": 8668,
+    "apply": "cd <src>/oofem-oofem-214b161 && git apply --check P && git apply P (-p1)"
+  }
+}

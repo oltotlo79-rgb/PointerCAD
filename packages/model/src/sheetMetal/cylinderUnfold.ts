@@ -1,7 +1,8 @@
+import { dotVec3 as dot, crossVec3 as cross } from '../sketch/vec3.js';
 /** P10-15/16。平面の剛体展開と共有する接線座標へ写す。 */
 export type SheetPoint3 = readonly [number, number, number];
 export type SheetPoint2 = readonly [number, number];
-export interface CylindricalBendFrame {
+interface CylindricalBendFrame {
   /** 曲げ開始接線の円筒軸上の点。 */
   readonly center: SheetPoint3;
   readonly axis: SheetPoint3;
@@ -15,8 +16,6 @@ export interface CylindricalBendFrame {
 }
 export type CylindricalPointResult = { readonly ok: true; readonly point: SheetPoint2 }
   | { readonly ok: false; readonly error: 'frame' | 'outsideThickness' | 'outsideBend' };
-const dot = (a: SheetPoint3, b: SheetPoint3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: SheetPoint3, b: SheetPoint3): SheetPoint3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 /** 厚み方向は中立面へ投影し、軸距離と角距離を維持する。塑性変形の予測ではない。 */
 export function unfoldCylindricalPoint(point: SheetPoint3, frame: CylindricalBendFrame, toleranceMm = 1e-7): CylindricalPointResult {

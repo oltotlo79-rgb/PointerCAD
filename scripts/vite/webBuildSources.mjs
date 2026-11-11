@@ -6,17 +6,29 @@ import { offlineAssetUrl } from './offlineProtocol.mjs';
 import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
 import { sourceFileHash } from '../release/desktopFileInventory.mjs';
 
-/** Capture the complete build source set, including additions and deletions before a commit. */
-async function captureBuildSources(root, desktop) {
+/** The same path selection is used by capture and by callers checking its boundary. */
+export function selectBuildSourceNames(names, deleted, desktop) {
+  return [...new Set(names)].filter(name => !deleted.has(name) && (
+    (/^(?:packages\/|scripts\/(?:vite|release|lib)\/|vendor\/|docs\/standards\/licenses\/)/u.test(name)
+      || (desktop ? name.startsWith('apps/desktop/') : name.startsWith('apps/web/')))
+    || ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json', 'LICENSE', 'NOTICE'].includes(name))).sort();
+}
+
+/** List exactly the names that capture will hash, without reading their contents. */
+function listBuildSourceNames(root, desktop) {
   const git = args => execFileSync('git', ['-c', 'safe.directory=' + realpathSync(root).replaceAll('\\', '/'),
     'ls-files', '-z', ...args],
     { cwd: root, env: localGitEnvironment(), encoding: 'utf8', maxBuffer: 16_777_216,
       windowsHide: true }).split('\0').filter(Boolean);
   const deleted = new Set(git(['--deleted']));
-  const names = [...new Set(git(['--cached', '--others', '--exclude-standard']))].filter(name => !deleted.has(name) && (
-    (/^(?:packages\/|scripts\/(?:vite|release|lib)\/|vendor\/|docs\/standards\/licenses\/)/u.test(name)
-      || (desktop ? name.startsWith('apps/desktop/') : name.startsWith('apps/web/')))
-    || ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json', 'LICENSE', 'NOTICE'].includes(name))).sort();
+  return selectBuildSourceNames(git(['--cached', '--others', '--exclude-standard']), deleted, desktop);
+}
+
+export const listWebBuildSourceNames = root => listBuildSourceNames(root, false);
+
+/** Capture the complete build source set, including additions and deletions before a commit. */
+async function captureBuildSources(root, desktop) {
+  const names = listBuildSourceNames(root, desktop);
   const inputs = {};
   for (const name of names) {
     offlineAssetUrl(name);

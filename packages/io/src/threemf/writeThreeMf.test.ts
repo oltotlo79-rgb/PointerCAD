@@ -2,6 +2,7 @@ import { DEFAULT_APPEARANCE } from '@pointercad/model';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
+import { ThreeMfExportLimitError } from './threeMfAdmission.js';
 
 import {
   DEFAULT_THREE_MF_COLOR,
@@ -16,6 +17,33 @@ import {
   type ThreeMfFaceRange,
   type ThreeMfMeshInput,
 } from './writeThreeMf.js';
+
+describe('3MF serializer の事前上限と期限', () => {
+  it('100万1三角形は XML 行や巨大配列を作る前に拒否する', () => {
+    const indices = new Proxy<number[]>([], { get(_target, key) {
+      return key === 'length' ? 3_000_003 : 0;
+    } });
+    expect(() => writeThreeMf([{ name: null, color: null,
+      positions: new Float32Array([0, 0, 0]), indices }])).toThrowError(ThreeMfExportLimitError);
+  });
+
+  it('残り期限0は ZIP を組まずに拒否し、通常の小さなZIP byteは不変', () => {
+    const mesh: ThreeMfMeshInput = { name: 'small', color: null,
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      indices: new Uint32Array([0, 1, 2]) };
+    expect(() => writeThreeMf([mesh], { remainingMs: 0 })).toThrowError(ThreeMfExportLimitError);
+    expect(writeThreeMf([mesh], { remainingMs: 25_000 })).toEqual(writeThreeMf([mesh]));
+  });
+
+  it('顔色1行が安全範囲外の巨大三角形範囲を要求したら material Map 生成前に断る', () => {
+    const mesh: ThreeMfMeshInput = { name: 'small', color: null,
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      indices: new Uint32Array([0, 1, 2]),
+      faceColors: new Map([[0, [1, 0, 0] as const]]),
+      faceRanges: [{ triangleOffset: 0, triangleCount: Number.MAX_SAFE_INTEGER }] };
+    expect(() => writeThreeMf([mesh])).toThrowError(ThreeMfExportLimitError);
+  });
+});
 
 /*
  * 3MF の書き出し(計画書 docs/plans/P6-入出力.md §2.6 の検証表とタスク14 の検証表)。

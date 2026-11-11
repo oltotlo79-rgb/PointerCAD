@@ -2,6 +2,7 @@
 
 import {
   type Checked,
+  fieldProblem,
   joinPath,
   readBoolean,
   readExpression,
@@ -21,6 +22,7 @@ import {
   readFaceRef,
   readFaceRefItem,
   readRevolveAxis,
+  readSubShapeRef,
   readSubShapeRefField,
   serializeFaceRef,
   serializeRevolveAxis,
@@ -52,6 +54,8 @@ const EXTRUDE_END_KINDS: readonly ExtrudeEnd['kind'][] = [
   'symmetric',
   'toFace',
   'toNext',
+  // EX04 の輪郭による貫通切断だけが書く(対象の立体の id を持つ)。
+  'throughTarget',
 ];
 
 /** 薄板押し出しの厚みの向き(FR-416、§0.a-0.46)。カーネルの `ThinExtrudeSide` と同じ3値。 */
@@ -72,6 +76,8 @@ function serializeExtrudeEnd(end: ExtrudeEnd): ExtrudeEnd {
       return { kind: end.kind };
     case 'toFace':
       return { kind: 'toFace', face: serializeSubShapeRef(end.face) };
+    case 'throughTarget':
+      return { kind: 'throughTarget', targetFeatureId: end.targetFeatureId };
   }
 }
 
@@ -106,6 +112,17 @@ function readExtrudeEnd(
         return face;
       }
       return { ok: true, value: { kind: 'toFace', face: face.value } };
+    }
+    case 'throughTarget': {
+      // 対象の id は空でない文字列だけ。空文字列は「どの立体も指さない」ので壊れた欄として断る。
+      const targetFeatureId = readString(found.value, 'targetFeatureId', endPath);
+      if (!targetFeatureId.ok) {
+        return targetFeatureId;
+      }
+      if (targetFeatureId.value.length === 0) {
+        return fieldProblem(joinPath(endPath, 'targetFeatureId'), 'type');
+      }
+      return { ok: true, value: { kind: 'throughTarget', targetFeatureId: targetFeatureId.value } };
     }
   }
 }
@@ -222,13 +239,21 @@ export function readSewFeature(
   if (!faces.ok) {
     return faces;
   }
+  const surfaceFaces = record.surfaceFaces === undefined
+    ? { ok: true as const, value: undefined }
+    : readList(record, 'surfaceFaces', path, readSubShapeRef);
+  if (!surfaceFaces.ok) return surfaceFaces;
+  if (faces.value.length > 0 && (surfaceFaces.value?.length ?? 0) > 0) {
+    return fieldProblem(joinPath(path, 'surfaceFaces'), 'type');
+  }
   const tolerance = readExpression(record, 'tolerance', path);
   if (!tolerance.ok) {
     return tolerance;
   }
   return {
     ok: true,
-    value: { ...base, kind: 'sew', faces: faces.value, tolerance: tolerance.value },
+    value: { ...base, kind: 'sew', faces: faces.value, tolerance: tolerance.value,
+      ...(surfaceFaces.value === undefined ? {} : { surfaceFaces: surfaceFaces.value }) },
   };
 }
 
@@ -249,6 +274,21 @@ export function readBooleanFeature(
   if (!toolFeatureId.ok) {
     return toolFeatureId;
   }
+  // 「何も削れない差」の断り(EX04)。欄が無ければ従来の差。書くのは true だけなので、
+  // true 以外(false や真偽値でない値)は壊れた欄として断る。
+  const requireRemoval = readOptionalBoolean(record, 'requireRemoval', path);
+  if (!requireRemoval.ok) {
+    return requireRemoval;
+  }
+  if (requireRemoval.value === false) {
+    return fieldProblem(joinPath(path, 'requireRemoval'), 'type');
+  }
+  // 閉じた輪郭の切断の「反対側も残す」で積んだ 2 つ目が 1 つ目を指す(EX-04 W3)。欄が無ければ単独
+  // (以前のファイルはすべてこれ)。空でない文字列だけを受け付け、空文字列・文字列でない値は壊れた欄として断る。
+  const pairedWith = readOptionalPairedWith(record, path);
+  if (!pairedWith.ok) {
+    return pairedWith;
+  }
   return {
     ok: true,
     value: {
@@ -257,8 +297,24 @@ export function readBooleanFeature(
       operation: operation.value,
       targetFeatureId: targetFeatureId.value,
       toolFeatureId: toolFeatureId.value,
+      ...(requireRemoval.value === true ? { requireRemoval: true } : {}),
+      ...(pairedWith.value === undefined ? {} : { pairedWith: pairedWith.value }),
     },
   };
+}
+
+/** ブーリアンの任意の欄 `pairedWith`(EX-04 W3)を読む。欄が無ければ `undefined`。 */
+function readOptionalPairedWith(record: Record<string, unknown>, path: string): Checked<string | undefined> {
+  if (!('pairedWith' in record)) {
+    return { ok: true, value: undefined };
+  }
+  const pairedWith = readString(record, 'pairedWith', path);
+  if (!pairedWith.ok) {
+    return pairedWith;
+  }
+  return pairedWith.value.length === 0
+    ? fieldProblem(joinPath(path, 'pairedWith'), 'type')
+    : { ok: true, value: pairedWith.value };
 }
 
 /** extrude の保存欄。解決値を足さず、元の式と参照を保持する。 */
@@ -313,6 +369,7 @@ export function serializeSewFeature(feature: Extract<SolidFeature, { readonly ki
     name: feature.name,
     suppressed: feature.suppressed,
     faces: feature.faces.map(serializeFaceRef),
+    ...(feature.surfaceFaces === undefined ? {} : { surfaceFaces: feature.surfaceFaces.map(serializeSubShapeRef) }),
     tolerance: serializeExpression(feature.tolerance),
   };
 }
@@ -327,5 +384,8 @@ export function serializeBooleanFeature(feature: Extract<SolidFeature, { readonl
     operation: feature.operation,
     targetFeatureId: feature.targetFeatureId,
     toolFeatureId: feature.toolFeatureId,
+    ...(feature.requireRemoval === true ? { requireRemoval: true } : {}),
+    // 欄があるときだけ書く(単独のブーリアンは以前と同じ JSON のまま往復する。EX-04 W3)。
+    ...(feature.pairedWith === undefined ? {} : { pairedWith: feature.pairedWith }),
   };
 }

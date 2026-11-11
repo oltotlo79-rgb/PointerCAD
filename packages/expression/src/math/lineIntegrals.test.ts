@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -6,7 +7,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'lineintegral(1,[x,y],[3*t,4*t],t,0,1)', value: 5 },
@@ -39,8 +40,7 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 const script = fileURLToPath(new URL('./exactRuntime/cas_line_integrals_test.py', import.meta.url));
 function request(source: string, unit: 'degree' | 'radian' = 'degree'): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: unit, coefficients: [],
-    identity: { documentId: 'line-integrals', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: unit, identity: { documentId: 'line-integrals', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 function native(args: readonly string[], input?: string): string {
   const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {

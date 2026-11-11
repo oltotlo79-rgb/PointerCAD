@@ -4,6 +4,7 @@ import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { tessellate } from './tessellate.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -147,6 +148,26 @@ const PLANE_CASES: readonly PlaneCase[] = [
 ];
 
 describe('平面の面(FR-309)', () => {
+  it('explicit common frame applies to the boundary while the native face stays in world space', () => {
+    const frame: MeshCoordinateFrame = { origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01 };
+    const curves = squareCurves([[1e9, 0, 0], [1e9 + 10, 0, 0],
+      [1e9 + 10, 10, 0], [1e9, 10, 0]]);
+    const handle = makePlanarFace(oc, curves, {}, undefined, frame);
+    try {
+      expect(handle.boundaryEdgeCount).toBe(4);
+      expect(handle.boundaryPositions.length).toBe(24);
+      const localX = [...handle.boundaryPositions].filter((_, index) => index % 3 === 0);
+      expect(Math.min(...localX)).toBe(0);
+      expect(Math.max(...localX)).toBe(10);
+      const worldMesh = tessellate(oc, handle.face);
+      const localMesh = tessellate(oc, handle.face, {}, undefined, frame);
+      expect(worldMesh.positions[0]).toBe(1e9);
+      expect(Math.max(...localMesh.positions.filter((_, index) => index % 3 === 0))).toBe(10);
+      expect(localMesh.indices).toEqual(worldMesh.indices);
+    } finally {
+      handle.delete();
+    }
+  });
   for (const plane of PLANE_CASES) {
     it(`${plane.id} 平面の 10×10 の正方形は 2 三角形・4 頂点・面積 100 で法線が (${plane.normal.join(',')})`, () => {
       const handle = makePlanarFace(oc, squareCurves(plane.corners));

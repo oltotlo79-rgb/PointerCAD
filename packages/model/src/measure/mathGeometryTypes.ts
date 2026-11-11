@@ -12,9 +12,9 @@ export type MathGeometryPoint =
 export type MathGeometryCurve =
   | { readonly kind: 'sketch-curve'; readonly sketchId: string; readonly featureId: string }
   | { readonly kind: 'edge'; readonly reference: MathSubShapeReference<'edge'> };
-export type MathGeometryFrame = { readonly kind: 'reference'; readonly featureId: string };
-export type MathGeometryBody = { readonly kind: 'body'; readonly featureId: string };
-export type MathGeometryFace = { readonly kind: 'face'; readonly reference: MathSubShapeReference<'face'> };
+export interface MathGeometryFrame { readonly kind: 'reference'; readonly featureId: string }
+export interface MathGeometryBody { readonly kind: 'body'; readonly featureId: string }
+export interface MathGeometryFace { readonly kind: 'face'; readonly reference: MathSubShapeReference<'face'> }
 export type MathGeometryShape = MathGeometryBody | MathGeometryFace
   | Extract<MathGeometryCurve, { readonly kind: 'edge' }> | Extract<MathGeometryPoint, { readonly kind: 'vertex' }>;
 

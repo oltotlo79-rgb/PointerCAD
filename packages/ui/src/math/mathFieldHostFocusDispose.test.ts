@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { attachMathField, type MathFieldHostOptions, type StructuredMathField } from './mathFieldHost.js';
+import { attachMathField, type StructuredMathField } from './mathFieldHost.js';
+
+type MathFieldHostOptions = Parameters<typeof attachMathField>[2];
 
 /**
  * MC-27d: dispose() must blur the field before removing it from the document. Firefox does not fire a

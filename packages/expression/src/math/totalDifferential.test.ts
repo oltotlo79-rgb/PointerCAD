@@ -5,7 +5,7 @@ import { compileFunctionScalar } from './compileFunctionScalar.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { evaluateExactMathResult } from './evaluateExactMathResult.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { MathInputProblem, type MathEvaluation, type MathNode } from './mathInputContract.js';
 import { CANDIDATE_MATH_OPERATIONS } from './mathOperations.js';
 import { sameMathMeaning } from './mathNotationConversion.js';

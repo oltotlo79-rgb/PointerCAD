@@ -6,7 +6,8 @@ export function inspectDesktopEntry(name, bytes) {
   const parsed = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   if (parsed.parseDiagnostics.length !== 0) throw new Error('Malformed desktop entry: ' + name);
   const allowed = new Set(name === 'preload/preload.cjs' ? ['electron']
-    : ['electron', 'node:path', 'node:url', 'node:fs', 'node:crypto']);
+    : ['electron', 'node:path', 'node:url', 'node:fs', 'node:crypto',
+      'node:http', 'node:zlib', 'node:fs/promises']);
   const references = new Set();
   const accept = node => {
     if (!node || !ts.isStringLiteralLike(node) || !allowed.has(node.text)) {

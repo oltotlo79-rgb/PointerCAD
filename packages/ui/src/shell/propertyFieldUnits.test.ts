@@ -384,3 +384,50 @@ describe('GR-20b 定義からの由来の判定', () => {
     expect(evaluateFieldSource('P', 'mm', false, { ...unitsNow(), ...state.parameterAnalysis, pendingVariables: pending })).toEqual(pendingResult());
   });
 });
+
+describe('純粋な判定と初期化の境界', () => {
+  it('旧公開名と下位判定は同じ関数とcacheを使う', async () => {
+    const current = await import('../math/currentMathGeometry.js');
+    const pending = await import('./pendingFieldVariables.js');
+    expect(currentMathGeometry).toBe(current.currentMathGeometry);
+    expect(pendingFieldVariables).toBe(pending.pendingFieldVariables);
+    const state = { ...useAppStore.getState(), document: partWithDerived(), mathGeometryResult: null };
+    expect(currentMathGeometry(state)).toBe(current.currentMathGeometry(state));
+    expect(pendingFieldVariables(state)).toBe(pending.pendingFieldVariables(state));
+  });
+
+  it('store単独の初期化で現在値のreaderを登録し、UI読込で再登録しない', async () => {
+    vi.resetModules();
+    const numeric = await import('../sketch/numericMathValues.js');
+    const register = vi.spyOn(numeric, 'registerPendingFieldContext');
+    const pure = await import('./pendingFieldVariables.js');
+    expect(numeric.pendingFieldContext()).toBeUndefined();
+    expect(register).not.toHaveBeenCalled();
+    const { useAppStore: store } = await import('../store/useAppStore.js');
+    expect(register).toHaveBeenCalledTimes(1);
+    const state = store.getState();
+    const context = numeric.pendingFieldContext();
+    expect(context?.document).toBe(state.document);
+    expect(context?.variables).toBe(state.parameterAnalysis.variables);
+    expect(context?.pendingVariables).toBe(pure.pendingFieldVariables(state));
+    const previous = context?.document;
+    store.setState({ document: partWithDerived(), mathGeometryResult: null });
+    const changed = store.getState();
+    expect(numeric.pendingFieldContext()?.document).not.toBe(previous);
+    expect(numeric.pendingFieldContext()?.document).toBe(changed.document);
+    expect(numeric.pendingFieldContext()?.pendingVariables).toBe(pure.pendingFieldVariables(changed));
+    const { create } = await import('zustand');
+    const { createExchangeSlice } = await import('../store/exchangeSlice.js');
+    const other = create<typeof changed>()((...args) => ({ ...changed, ...createExchangeSlice(...args) }));
+    other.setState({ document: partWithPoint() });
+    expect(other.getState().document).not.toBe(changed.document);
+    expect(numeric.pendingFieldContext()?.document).toBe(changed.document);
+    expect(numeric.pendingFieldContext()?.variables).toBe(changed.parameterAnalysis.variables);
+    expect(register).toHaveBeenCalledTimes(1);
+    const ui = await import('./propertyFieldUnits.js');
+    expect(ui.pendingFieldVariables).toBe(pure.pendingFieldVariables);
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(numeric.pendingFieldContext()?.document).toBe(changed.document);
+    register.mockRestore();
+  });
+});

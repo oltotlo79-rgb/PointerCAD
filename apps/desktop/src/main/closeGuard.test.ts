@@ -13,9 +13,10 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CLOSE_GUARD_TEST_BYPASS_ENV } from './closeGuard.js';
 
-const native = vi.hoisted(() => {
+const native = await vi.hoisted(async () => {
+  const { EventEmitter } = await import('node:events');
   type Listener = (...args: unknown[]) => void;
-  const appListeners = new Map<string, Listener[]>();
+  const appListeners = new EventEmitter();
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const windows: FakeWindow[] = [];
   function emitTo(listeners: Map<string, Listener[]>, name: string, args: unknown[]): void {
@@ -62,7 +63,7 @@ const native = vi.hoisted(() => {
     constructor(readonly options: { webPreferences: Record<string, unknown> }) {
       windows.push(this);
       // Electron は窓を作るたびに app の browser-window-created を出す。
-      emitTo(appListeners, 'browser-window-created', [preventable(), this]);
+      appListeners.emit('browser-window-created', preventable(), this);
     }
     emit(name: string, ...args: unknown[]): void { emitTo(this.listeners, name, args); }
     static getAllWindows() { return windows; }
@@ -71,17 +72,19 @@ const native = vi.hoisted(() => {
     FakeWindow, windows, handlers, appListeners, preventable,
     showMessageBox: vi.fn<(window: unknown, options: { buttons: string[]; message: string; detail?: string;
       cancelId?: number; defaultId?: number }) => Promise<{ response: number; checkboxChecked: boolean }>>(),
-    emitApp: (name: string, ...args: unknown[]) => { emitTo(appListeners, name, args); },
+    emitApp: (name: string, ...args: unknown[]) => { appListeners.emit(name, ...args); },
+    prepareOcctTransport: vi.fn(() => Promise.resolve({ kind: 'direct', reason: 'port-unavailable' })),
+    closeOcctTransport: vi.fn(() => Promise.resolve()),
   };
 });
 
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
+    commandLine: { getSwitchValue: vi.fn(() => ''), appendSwitch: vi.fn() },
     whenReady: () => Promise.resolve(),
-    on: (name: string, listener: (...args: unknown[]) => void) => {
-      native.appListeners.set(name, [...(native.appListeners.get(name) ?? []), listener]);
-    },
+    on: (name: string, listener: (...args: unknown[]) => void) => { native.appListeners.on(name, listener); },
+    once: (name: string, listener: (...args: unknown[]) => void) => { native.appListeners.once(name, listener); },
     quit: vi.fn(),
   },
   BrowserWindow: native.FakeWindow,
@@ -98,6 +101,9 @@ vi.mock('./appProtocol.js', () => ({
 }));
 vi.mock('./pcadDialogs.js', () => ({ PCAD_PRINT_CHANNEL: 'pcad:print', registerPcadIpc: vi.fn() }));
 vi.mock('./sessionPermissions.js', () => ({ denyBrowserPermissions: vi.fn() }));
+vi.mock('./occtHttpTransport.js', () => ({ createOcctHttpTransport: () => ({
+  prepare: native.prepareOcctTransport, close: native.closeOcctTransport,
+}) }));
 vi.mock('./drawingPrintDocument.js', () => ({ drawingPrintDocument: vi.fn() }));
 
 type Window = InstanceType<typeof native.FakeWindow>;
@@ -308,7 +314,10 @@ describe('デスクトップ版の窓を閉じるときの未保存の確認(R03
     const window = await readyWindow(true);
     // 印が無い: app.quit() が出す before-quit の後の close も止めて問い合わせる。
     vi.stubEnv(CLOSE_GUARD_TEST_BYPASS_ENV, '0');
+    expect(native.appListeners.listenerCount('before-quit')).toBe(2);
     native.emitApp('before-quit', native.preventable());
+    expect(native.appListeners.listenerCount('before-quit')).toBe(1);
+    expect(native.closeOcctTransport).toHaveBeenCalledOnce();
     expect(pressClose(window)).toBe(true);
     expect(window.webContents.send).toHaveBeenCalledOnce();
     expect(await invoke('pcad:closeAnswer', window, lastRequest(window), false)).toBe(true);
@@ -317,6 +326,8 @@ describe('デスクトップ版の窓を閉じるときの未保存の確認(R03
     expect(pressClose(window)).toBe(true);
     expect(await invoke('pcad:closeAnswer', window, lastRequest(window), false)).toBe(true);
     native.emitApp('before-quit', native.preventable());
+    expect(native.appListeners.listenerCount('before-quit')).toBe(1);
+    expect(native.closeOcctTransport).toHaveBeenCalledOnce();
     expect(pressClose(window)).toBe(false);
     expect(window.webContents.send).toHaveBeenCalledTimes(2);
   });

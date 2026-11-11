@@ -8,11 +8,14 @@ Web版ではアプリのフォルダー、デスクトップ版ではresources/a
 - licenses/runtime/index.html: 実行時に利用するJavaScript部品の原文と版
 - licenses/index.html: 数学入力と数式用字体
 - licenses/exact-math/index.html: 追加計算部の原文と関連ソース
+- licenses/script-runtime/index.html: 自動作図の実行部（QuickJS-ngと組込みの実行用コード）の原文
+- licenses/fem/index.html: はり解析の計算部の利用部品・原文・ソースと、確認が残る配布条件
 - fonts/LICENSES.txt: 画面・図面用の字体
 
 デスクトップ版の実行ファイルと同じフォルダー:
 - LICENSE.electron.txt（またはLICENSE）: Electron
 - LICENSES.chromium.html: Chromiumと同梱部品
 
-上記の一覧に原文が同梱されていない部品はありません。liblzma・SQLite由来の部品は原文を同梱済みですが、許諾の種類の識別子は未分類のままです。
+はり解析の計算部を除き、上記の一覧に原文が同梱されていない部品はありません。SQLiteの原文はSPDXのblessingの条文と一致し、liblzmaの原文（XZ Utilsの公有宣言）はSPDXの識別子に当たらないため、その本文を名前付きの許諾として記録しています。
+はり解析の計算部は、静的に含まれる部品・NumPyの内包部品と原文の完全な対応、ソース提供の配布条件と法的確認が完了していません（licenses/fem/index.htmlの「確認が残る配布条件」）。一部の部品は許諾の種類の識別子も未分類です。
 開発中の配布候補の作成だけで正式公開可能と認定しません。

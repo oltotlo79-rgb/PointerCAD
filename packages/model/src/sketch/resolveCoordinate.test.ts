@@ -1,5 +1,6 @@
 import { expressionValueFromNumber as num } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
+import { expectVec3CloseTo } from '../testing/vec3Assertions.testSupport.js';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { WORK_PLANES } from './planeMath.js';
@@ -46,9 +47,7 @@ function expectOk(outcome: ResolveOutcome<Vec3>): Vec3 {
 
 /** 三成分をそれぞれ許容誤差つきで見る。sin・cos は厳密な 0 や 1 にならないため。 */
 function expectCloseTo(actual: Vec3, expected: Vec3, digits = 12): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
+  expectVec3CloseTo(actual, expected, digits);
 }
 
 describe('座標の解決(FR-301〜303)', () => {

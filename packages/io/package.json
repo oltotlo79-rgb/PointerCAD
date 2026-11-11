@@ -6,6 +6,8 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./testing/ui-fixtures": {"types": "./dist/testing/uiFixtures.testSupport.d.ts", "default": "./src/testing/uiFixtures.testSupport.ts"},
+    "./testing/read-archive": {"types": "./dist/pcad/readArchive.d.ts", "default": "./src/pcad/readArchive.ts"},
     "./limits": { "types": "./dist/limits.d.ts", "default": "./src/limits.ts" },
     ".": {
       "types": "./dist/index.d.ts",
@@ -20,6 +22,8 @@
     "fflate": "catalog:"
   },
   "devDependencies": {
+    "@pointercad/expression": "workspace:*",
+    "@pointercad/kernel": "workspace:*",
     "@pointercad/test-utils": "workspace:*",
     "vitest": "catalog:"
   }

@@ -1,17 +1,22 @@
-/** Turn certified piecewise-linear samples into CAD edges, then clip the actual geometry. */
+/** Turn certified samples (piecewise-linear, or their certified C1 cubic) into CAD edges, then clip the actual geometry. */
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import type { Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { makeCompound } from './transformShape.js';
 import { makeSplineEdge } from './makeSplineEdge.js';
 import { clipFunctionShape, validateFunctionClipBox, type FunctionClipBox, type FunctionClipResult } from './clipFunctionShape.js';
+import { checkedFunctionCurveSpline, makeFunctionCurveSplineEdge, separatedKnots, type FunctionCurveSplineSpec } from './functionCurveSpline.js';
 
 export interface FunctionCurveGeometrySpec {
   readonly components: readonly (readonly Vec3Tuple[])[];
   /** An exact polynomial whose whole control hull lies inside the XYZ box. */
   readonly bezier?: readonly [Vec3Tuple, Vec3Tuple, Vec3Tuple, Vec3Tuple];
+  /** Certified C1 cubic for each component, in the same order; the components stay the certified samples. */
+  readonly splines?: readonly FunctionCurveSplineSpec[];
   readonly bounds: FunctionClipBox;
 }
+/** Shared with the linear route: smooth poles count against the same point budget. */
+const SPLINE_POLE_LIMIT = 200_000;
 export type FunctionCurveGeometryResult = FunctionClipResult | { readonly status: 'cancelled' };
 function array(value: unknown): value is readonly unknown[] { return Array.isArray(value); }
 
@@ -31,12 +36,12 @@ function checkedBezier(spec: FunctionCurveGeometrySpec): readonly Vec3Tuple[] | 
 }
 
 /** Before allocating any WASM object. A large sample buffer cannot bypass the Worker's point budget. */
-function checkedComponents(spec: FunctionCurveGeometrySpec): readonly (readonly Vec3Tuple[])[] {
+function checkedComponents(spec: FunctionCurveGeometrySpec): { readonly components: readonly (readonly Vec3Tuple[])[]; readonly sources: readonly number[] } {
   validateFunctionClipBox(spec.bounds);
   if (!array(spec.components) || spec.components.length > 4096) throw new Error('関数曲線の成分数が上限を超えています。');
   let count = 0;
-  const components: Vec3Tuple[][] = [];
-  for (const input of spec.components) {
+  const components: Vec3Tuple[][] = [], sources: number[] = [];
+  for (const [source, input] of spec.components.entries()) {
     if (!array(input) || input.length < 2 || (count += input.length) > 200_000) throw new Error('関数曲線の点数を確認してください。');
     const points: Vec3Tuple[] = [];
     for (const entry of input) {
@@ -48,23 +53,54 @@ function checkedComponents(spec: FunctionCurveGeometrySpec): readonly (readonly 
       // Only exact duplicate positions are removed. A geometric tolerance must not swallow a short feature.
       if (previous === undefined || previous[0] !== x || previous[1] !== y || previous[2] !== z) points.push([x, y, z]);
     }
-    if (points.length >= 2) components.push(points);
+    if (points.length >= 2) { components.push(points); sources.push(source); }
   }
-  return components;
+  return { components, sources };
 }
 
-/** Degree-one B-splines preserve the certified chords in O(n), without an O(n³) global interpolator. */
+/**
+ * Smooth components arrive with their certified samples. Each spline must match its own component, so a
+ * smooth reply cannot add, merge or bridge components. Returns one entry per kept component: the spline, or
+ * null where knots are too close for OCCT and the certified polyline is used instead.
+ */
+function checkedSplines(spec: FunctionCurveGeometrySpec): (FunctionCurveSplineSpec | null)[] | undefined {
+  if (spec.splines === undefined) return undefined;
+  if (spec.bezier !== undefined || !array(spec.splines) || spec.splines.length !== spec.components.length) {
+    throw new Error('関数曲線の滑らかな成分数が標本と一致しません。');
+  }
+  let poles = 0;
+  return spec.splines.map((value, index) => {
+    const component: unknown = spec.components[index];
+    if (!array(component)) throw new Error('関数曲線の点数を確認してください。');
+    const spline = checkedFunctionCurveSpline(value, component);
+    if ((poles += spline.poles.length) > SPLINE_POLE_LIMIT) throw new Error('関数曲線の制御点数が上限を超えています。');
+    return separatedKnots(spline.knots) ? spline : null;
+  });
+}
+
+/**
+ * Certified smooth components become native C1 cubic B-splines; otherwise degree-one B-splines preserve the
+ * certified chords. Both are O(n), without an O(n³) global interpolator.
+ */
 export function makeFunctionCurve(oc: OpenCascadeInstance, spec: FunctionCurveGeometrySpec,
   isCancelled: () => boolean = () => false): FunctionCurveGeometryResult {
   if (isCancelled()) return { status: 'cancelled' };
-  const components = checkedComponents(spec), bezier = checkedBezier(spec);
+  const { components, sources } = checkedComponents(spec), bezier = checkedBezier(spec), splines = checkedSplines(spec);
   if (components.length === 0 && bezier === undefined) return { status: 'empty' };
   const { keep, release } = createAllocations();
   try {
     const edges: TopoDS_Shape[] = [];
     if (bezier !== undefined) edges.push(keep(makeSplineEdge(oc, { mode: 'control', points: bezier, closed: false })).edge);
-    for (const points of components) {
+    for (const [component, points] of components.entries()) {
       if (isCancelled()) { release(); return { status: 'cancelled' }; }
+      // A component whose samples were all one position was dropped above, together with its spline.
+      const spline = splines?.[sources[component]] ?? null;
+      if (spline !== null) {
+        const edge = makeFunctionCurveSplineEdge(oc, spline, keep, isCancelled);
+        if (edge === null) { release(); return { status: 'cancelled' }; }
+        edges.push(edge);
+        continue;
+      }
       const poles = keep(new oc.TColgp_Array1OfPnt_2(1, points.length));
       const knots = keep(new oc.TColStd_Array1OfReal_2(1, points.length));
       const multiplicities = keep(new oc.TColStd_Array1OfInteger_2(1, points.length));

@@ -4,9 +4,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { CurveSpec } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
-import type { ThinExtrudeInput } from './makeThinExtrude.js';
 import { makeThinExtrude } from './makeThinExtrude.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
+
+type ThinExtrudeInput = Parameters<typeof makeThinExtrude>[1];
 
 /**
  * 薄板押し出し(FR-416、FR-504、NFR-RE-1)の検査。計画書 P5 タスク53 の検証表。

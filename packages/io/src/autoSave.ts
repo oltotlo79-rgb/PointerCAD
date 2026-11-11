@@ -78,7 +78,12 @@ export interface DocumentAutoSaveStorage extends AutoSaveStorage {
   listRecords(): Promise<readonly AutoSaveRecord[]>;
 }
 
-function recordIdentity(record: AutoSaveRecord): AutoSaveIdentity {
+/**
+ * 控えの1件が指す文書・窓の識別子。3欄(kind・documentId・sessionId)がそろわない旧控えは
+ * 既定の部品の控え(`DEFAULT_AUTO_SAVE_IDENTITY`)を指す。保管庫の鍵と、ui の復元・破棄が
+ * 同じ控えを指すよう、判断はここ 1 か所に置く(以前は ui に同じ本体の写しがあった。P12 で解消)。
+ */
+export function autoSaveRecordIdentity(record: AutoSaveRecord): AutoSaveIdentity {
   if (record.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined) {
     return { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId };
   }
@@ -88,7 +93,7 @@ function recordIdentity(record: AutoSaveRecord): AutoSaveIdentity {
 function sortedRecords(records: readonly AutoSaveRecord[]): readonly AutoSaveRecord[] {
   return [...records].sort((left, right) =>
     right.savedAt.localeCompare(left.savedAt) ||
-    autoSaveRecordKey(recordIdentity(left)).localeCompare(autoSaveRecordKey(recordIdentity(right))),
+    autoSaveRecordKey(autoSaveRecordIdentity(left)).localeCompare(autoSaveRecordKey(autoSaveRecordIdentity(right))),
   );
 }
 
@@ -116,7 +121,7 @@ export function createMemoryAutoSaveStorage(): DocumentAutoSaveStorage {
     read: (identity) => Promise.resolve(stored.get(autoSaveRecordKey(identity)) ?? null),
     write: (record) => {
       if (!isAutoSaveRecord(record)) return Promise.reject(new AutoSaveStorageError('error'));
-      stored.set(autoSaveRecordKey(recordIdentity(record)), record);
+      stored.set(autoSaveRecordKey(autoSaveRecordIdentity(record)), record);
       return Promise.resolve();
     },
     clear: (identity) => {
@@ -138,14 +143,17 @@ export function createMemoryAutoSaveStorage(): DocumentAutoSaveStorage {
  * ブラウザの実装がこれらのメソッドを持つことは信頼してよい契約とみなす(OCCT の embind バインディ
  * ングと同じ扱い)。読み書きする中身(AutoSaveRecord)だけは isAutoSaveRecord で実際に検査する。
  */
+// Only install handlers; the host supplies its own event/this types. No event is inspected or dispatched here.
+type MinimalIDBHandler = (...events: never[]) => void;
+
 interface MinimalIDBRequest<T> {
   readonly result: T;
   readonly error?: unknown;
-  onsuccess: (() => void) | null;
-  onerror: (() => void) | null;
+  onsuccess: MinimalIDBHandler | null;
+  onerror: MinimalIDBHandler | null;
 }
 interface MinimalIDBOpenDBRequest extends MinimalIDBRequest<MinimalIDBDatabase> {
-  onupgradeneeded: (() => void) | null;
+  onupgradeneeded: MinimalIDBHandler | null;
 }
 interface MinimalIDBObjectStore {
   getAll(): MinimalIDBRequest<unknown>;
@@ -155,9 +163,9 @@ interface MinimalIDBObjectStore {
 }
 interface MinimalIDBTransaction {
   readonly error?: unknown;
-  oncomplete: (() => void) | null;
-  onabort: (() => void) | null;
-  onerror: (() => void) | null;
+  oncomplete: MinimalIDBHandler | null;
+  onabort: MinimalIDBHandler | null;
+  onerror: MinimalIDBHandler | null;
   objectStore(name: string): MinimalIDBObjectStore;
 }
 interface MinimalIDBObjectStoreNames {
@@ -335,7 +343,7 @@ export function createIndexedDbAutoSaveStorage(
     },
     async write(record) {
       if (!isAutoSaveRecord(record)) throw new AutoSaveStorageError('error');
-      const key = autoSaveRecordKey(recordIdentity(record));
+      const key = autoSaveRecordKey(autoSaveRecordIdentity(record));
       await withObjectStore(dbName, storeName, 'readwrite', (store) => {
         // 旧控えの置換と新しい控えの保存も、同じtransactionでまとめて確定する。
         if (key === autoSaveRecordKey()) store.delete(LEGACY_RECORD_KEY);
@@ -355,7 +363,7 @@ export function createIndexedDbAutoSaveStorage(
       const records = new Map<string, AutoSaveRecord>();
       for (const value of values) {
         if (!isAutoSaveRecord(value)) continue;
-        const key = autoSaveRecordKey(recordIdentity(value));
+        const key = autoSaveRecordKey(autoSaveRecordIdentity(value));
         const previous = records.get(key);
         if (previous === undefined || value.savedAt > previous.savedAt) records.set(key, value);
       }
@@ -408,6 +416,9 @@ function defaultCancelFn(handle: AutoSaveTimerHandle): void {
 }
 
 export interface AutoSaverOptions {
+  /** UIは専用Workerを注入する。省略時は従来のIO単独の動作を維持する。 */
+  readonly encode?: (bundle: AutoSaveBundle, savedAt: string, signal: AbortSignal) => Promise<Uint8Array>;
+  readonly onWriting?: () => void;
   /** readLatest/discardを最初のmarkDirtyより前に呼ぶときの文書種別。 */
   readonly kind?: AutoSaveBundle['kind'];
   /** 文書を開いている間安定したID。未指定の束ではdocument.idを使う。 */
@@ -449,7 +460,7 @@ export interface AutoSaver {
   markDirty(document: AutoSaveDocument): void;
   /** 間隔を待たず、いま渡した文書をすぐ書く(変更の有無を問わない)。 */
   saveNow(document: AutoSaveDocument): Promise<void>;
-  /** 以後の自動保存(間隔ごとの書き込み)を止める。進行中の書き込みは止めない。 */
+  /** 以後の自動保存を止める。注入したエンコーダーは中止する。開始済みの保管庫書込みは待つ。 */
   stop(): void;
   /** 起動時の復元候補を読む。 */
   readLatest(identity?: AutoSaveIdentity): Promise<AutoSaveRecord | null>;
@@ -489,6 +500,7 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
   let lastSavedDocument: AutoSaveDocument | null = null;
   /** 進行中の書き込み。null なら空いている。 */
   let writeInFlight: Promise<void> | null = null;
+  let encodingController: AbortController | null = null;
   let stopped = false;
   let timerHandle: AutoSaveTimerHandle = null;
 
@@ -519,28 +531,44 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
       // 書き込み中の重複を避ける: 新しい依頼は今動いている書き込みへ相乗りする。
       return writeInFlight;
     }
+    const controller = new AbortController();
+    encodingController = controller;
+    let bundle: AutoSaveBundle;
+    let encoded: Promise<Uint8Array> | undefined;
+    const savedAt = new Date(now()).toISOString();
+    try {
+      // 文書と添付は同じ時点で採る。エンコードの待機中に現文書の添付を読み直さない。
+      bundle = 'kind' in document ? document : createPartDocumentBundle(document, options.attachmentsOf?.(document));
+      encoded = options.encode?.(bundle, savedAt, controller.signal);
+    } catch (error) {
+      encodingController = null;
+      onError?.(error);
+      return Promise.resolve();
+    }
     const attempt = Promise.resolve()
       .then(async () => {
-        const savedAt = new Date(now()).toISOString();
         // ZIP 化も書き込みと同じ失敗経路へ入れる。失敗時は成功済みの文書を更新せず、
         // dirty のまま保つので次の周期で再試行される。
-        const bundle = 'kind' in document ? document
-          : createPartDocumentBundle(document, options.attachmentsOf?.(document));
-        const bytes = bundle.kind === 'drawing'
+        const bytes = encoded !== undefined ? await encoded
+          : bundle.kind === 'drawing'
           ? await writeDrawingBundle(bundle.document, { source: bundle.source, savedAt })
           : await writeDocumentBundle(bundle, { savedAt });
+        controller.signal.throwIfAborted();
         const identity = identityOf(document);
+        options.onWriting?.();
         return storage.write({ savedAt, bytes, documentName: bundle.document.name, ...identity });
       })
       .then(() => {
+        if (controller.signal.aborted) return;
         lastSavedDocument = document;
         onSuccess?.();
       })
       .catch((error: unknown) => {
-        onError?.(error);
+        if (!controller.signal.aborted) onError?.(error);
       })
       .finally(() => {
         writeInFlight = null;
+        if (encodingController === controller) encodingController = null;
       });
     writeInFlight = attempt;
     return attempt;
@@ -587,6 +615,7 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
         return;
       }
       stopped = true;
+      if (options.encode !== undefined) encodingController?.abort();
       if (timerHandle !== null) {
         cancelFn(timerHandle);
         timerHandle = null;
@@ -595,8 +624,11 @@ export function createAutoSaver(options: AutoSaverOptions): DocumentAutoSaver {
     readLatest(identity) {
       return storage.read(identity ?? latestIdentity());
     },
-    discard(identity) {
-      return storage.clear(identity ?? latestIdentity());
+    async discard(identity) {
+      const target = identity ?? latestIdentity();
+      // 完了後に遅い控えが復活しないよう、既に始めた書込みまで待ってから消す。
+      await writeInFlight;
+      await storage.clear(target);
     },
     async listRecords() {
       if (storage.listRecords !== undefined) return storage.listRecords();

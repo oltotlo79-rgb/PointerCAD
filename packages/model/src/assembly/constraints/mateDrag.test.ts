@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from '../createAssemblyDocument.js';
 import { IDENTITY_PLACEMENT, quaternionFromAxisAngle, type RigidPlacement } from '../placementMath.js';
-import type { AssemblyComponent, Mate } from '../types.js';
+import type { AssemblyComponent, AssemblyDocument, Joint, Mate } from '../types.js';
+import { createJointFrame } from '../joints/jointFrames.js';
+import { joinRigidGroup } from '../rigidGroups.js';
 import type { Vec3 } from '../../sketch/vec3.js';
 import type { MateResidualTargetPair } from './mateResiduals.js';
 import { prepareMateDrag, solveMateDrag, type MateDragOptions } from './solveMates.js';
@@ -40,6 +42,48 @@ function position(result: ReturnType<typeof solveMateDrag>): Vec3 {
   if (p === undefined) throw new Error('missing moving placement');
   return p.position;
 }
+
+describe('camera-plane drag of a revolute wheel and radial slider', () => {
+  it.each([
+    { degrees: 12, radius: 50, grouped: false }, { degrees: -12, radius: 50, grouped: false },
+    { degrees: 12, radius: 1e-5, grouped: false }, { degrees: -12, radius: 1e-5, grouped: false },
+    { degrees: 12, radius: 50, grouped: true }, { degrees: -12, radius: 50, grouped: true },
+  ])('settles reachable XY or refuses unresolved weak motion ($degrees degrees, radius $radius, grouped $grouped)', ({ degrees, radius, grouped }) => {
+    const targetId = (componentId: string, element: 'x' | 'z') => ({ kind: 'origin', componentId, element } as const);
+    const joint = (id: string, kind: Joint['kind'], a: string, b: string, axis: 'x' | 'z'): Joint => ({
+      id, name: id, kind, a: targetId(a, axis), b: targetId(b, axis), minValue: null, maxValue: null, suppressed: false,
+    });
+    let assembly: AssemblyDocument = { ...createAssemblyDocument('camera drag'),
+      components: [component('ground', true), component('wheel'), component('moving'), component('other')],
+      joints: [joint('turn', 'revolute', 'wheel', 'ground', 'z'), joint('slide', 'slider', 'moving', 'wheel', 'x')] };
+    if (grouped) assembly = joinRigidGroup({ ...assembly, joints: assembly.joints.slice(0, 1) }, ['wheel', 'moving']);
+    const initial = new Map<string, RigidPlacement>(assembly.components.map(c => [c.id, IDENTITY_PLACEMENT]));
+    initial.set('moving', { ...IDENTITY_PLACEMENT, position: [radius, 0, 0] });
+    const turn = createJointFrame([0, 0, 0], [0, 0, 1]), slide = createJointFrame([0, 0, 0], [1, 0, 0]);
+    if (turn === null || slide === null) throw new Error('fixture frames');
+    const prepared = prepareMateDrag(assembly, new Map(), initial, 'moving',
+      { jointFrames: new Map([['turn', { a: turn, b: turn }], ['slide', { a: slide, b: slide }]]) });
+    if (!prepared.ok) throw new Error(prepared.reason);
+    if (grouped) expect(prepared.drag.variableComponentId).toBe('wheel');
+    const x = radius * Math.cos(degrees * Math.PI / 180), y = radius * Math.sin(degrees * Math.PI / 180);
+    // Plane through (radius,0,0), normal (1,-1,1). Group members also require the wheel's angular arm.
+    const result = solveMateDrag(prepared.drag, [x, y, radius - x + y], { phase: 'release' });
+    expect(result.hardSatisfied).toBe(true);
+    expect(result.counts.totalIterations).toBeLessThanOrEqual(50);
+    const xyError = Math.max(...position(result).map((value, axis) => Math.abs(value - [x, y, 0][axis])));
+    // The tiny lever detects false stationary success; it does not promise convergence within the unchanged budget.
+    if (radius === 1e-5 && xyError >= 1e-9) {
+      expect(result.committable).toBe(false);
+      expect(['iterationLimit', 'stalled', 'dampingLimit']).toContain(result.stop);
+    } else {
+      expect(result.committable).toBe(true);
+      expect(result.stop).toBe('stationary');
+      expect(xyError).toBeLessThan(1e-9);
+    }
+    expect(result.placements.get('ground')).toEqual(initial.get('ground'));
+    expect(result.placements.get('other')).toEqual(initial.get('other'));
+  });
+});
 
 describe('P7-18 一時位置目標と hard 成立の契約', () => {
   it.each([0.1, 100, 1e5])('L=%s: 振幅0.01・目的係数0.0001をscaleで相殺しない', (length) => {
@@ -176,13 +220,41 @@ describe('P7-18 境界と準備snapshot', () => {
       }
     }
   });
-  it.each([99, 100, 101])('全assembly %s部品の上限を対象1部品への切出しで迂回しない', (count) => {
+  // The approved cap is600 variables per connected group, before gauge removal.
+  // Keep the complete assembly at the public entry; a selected target must not hide its connected neighbours.
+  it.each([99, 100, 101])('connected%s components retain the600-variable cap without target extraction', (count) => {
     const data = fixture();
     data.assembly.components = Array.from({ length: count }, (_, index) => component(index === 0 ? 'moving' : String(index)));
     data.placements = new Map(data.assembly.components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    data.assembly.mates = data.assembly.components.slice(1).map((c, index): Mate => ({
+      id: `chain-${index}`, name: `chain-${index}`, kind: 'coincident',
+      a: { kind: 'origin', componentId: data.assembly.components[index].id, element: 'origin' },
+      b: { kind: 'origin', componentId: c.id, element: 'origin' },
+      value: expressionValueFromNumber(0), flipped: false, suppressed: false,
+    }));
+    for (const mate of data.assembly.mates) data.targets.set(mate.id, {
+      a: { kind: 'point', point: [0, 0, 0], direction: null, radius: null },
+      b: { kind: 'point', point: [0, 0, 0], direction: null, radius: null },
+    });
     const ready = prepareMateDrag(data.assembly, data.targets, data.placements, 'moving');
     expect(ready.ok).toBe(count <= 100);
     if (!ready.ok) expect(ready.reason).toBe('variableLimit');
+    else {
+      expect(ready.drag.variableSet.variables).toHaveLength(count * 6);
+      expect(ready.drag.initial.size).toBe(count);
+    }
+  });
+  it.each([99, 100, 101])('independent%s components are admitted while preserving the complete assembly snapshot', (count) => {
+    const data = fixture();
+    data.assembly.components = Array.from({ length: count }, (_, index) => component(index === 0 ? 'moving' : String(index)));
+    data.placements = new Map(data.assembly.components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    const before = structuredClone(data);
+    const ready = prepareMateDrag(data.assembly, data.targets, data.placements, 'moving');
+    expect(ready.ok).toBe(true);
+    if (!ready.ok) throw new Error(ready.reason);
+    expect(ready.drag.variableSet.variables).toHaveLength(6);
+    expect(ready.drag.initial.size).toBe(count);
+    expect(data).toEqual(before);
   });
   it.each([5, 6, 7])('gauge前の成分6変数と上限%sを比較する', (maximum) => {
     const data = fixture();
@@ -342,5 +414,58 @@ describe('P7-18 境界と準備snapshot', () => {
         });
       }
     }
+  });
+});
+
+describe('締結した自由組のドラッグは全員同じ並進', () => {
+  function freeBoltedGroup() {
+    const ids = ['plateA', 'plateB', 'bolt', 'nut'];
+    // 40×30×10 の二枚の板、中心 (20,15) の通し穴、M8×40 の締結後配置。
+    const points: readonly Vec3[] = [[0, 0, 0], [40, 0, 20], [20, 15, 0], [20, 15, 20]];
+    const initial = new Map<string, RigidPlacement>(ids.map((id, index) => [id, {
+      position: points[index], rotation: index === 1 ? [0, 1, 0, 0] : [0, 0, 0, 1],
+    }]));
+    const assembly = joinRigidGroup({ ...createAssemblyDocument('free bolted group'), components: ids.map(id => component(id)) }, ids);
+    return { assembly, initial, ids };
+  }
+  it.each(['plateA', 'plateB', 'bolt', 'nut'])('%sを引いても向きと相対配置を保つ', (selected) => {
+    const { assembly, initial, ids } = freeBoltedGroup();
+    const before = structuredClone({ assembly, initial });
+    const ready = prepareMateDrag(assembly, new Map(), initial, selected);
+    if (!ready.ok) throw new Error(ready.reason);
+    const origin = initial.get(selected);
+    if (origin === undefined) throw new Error('fixture origin');
+    let warm = ready.drag.initial;
+    // 実画面の位置を期待に写さず、固定入力 (10,10,0) とその反対を用いる。
+    for (const sign of [1, -1]) {
+      for (let step = 1; step <= 8; step += 1) {
+        const delta: Vec3 = [sign * 10 * step / 8, sign * 10 * step / 8, 0];
+        const target: Vec3 = [origin.position[0] + delta[0], origin.position[1] + delta[1], origin.position[2]];
+        const frame = solveMateDrag(ready.drag, target, { phase: 'frame', placements: warm });
+        expect(frame.hardSatisfied).toBe(true);
+        expect(frame.counts.totalIterations).toBeLessThanOrEqual(5);
+        warm = frame.placements;
+        const result = step === 8 ? solveMateDrag(ready.drag, target, { phase: 'release', placements: warm }) : frame;
+        if (step === 8) expect(result.committable).toBe(true);
+        expect(result.driverError).toBeLessThan(1e-9);
+        for (const id of ids) {
+          const start = initial.get(id), moved = result.placements.get(id);
+          if (start === undefined || moved === undefined) throw new Error('fixture placement');
+          moved.position.forEach((value, axis) => expect(value - start.position[axis]).toBeCloseTo(delta[axis], 4));
+          moved.rotation.forEach((value, axis) => expect(value).toBeCloseTo(start.rotation[axis], 6));
+        }
+      }
+    }
+    expect({ assembly, initial }).toEqual(before);
+    const cancelled = solveMateDrag(ready.drag, [50, 10, 20], { phase: 'release', shouldCancel: () => true });
+    expect(cancelled.stop).toBe('cancelled');
+    expect(cancelled.committable).toBe(false);
+    expect(cancelled.placements).toEqual(ready.drag.initial);
+    expect(cancelled.counts.totalIterations).toBe(0);
+  });
+  it('一人でも固定なら自由組として準備しない', () => {
+    const { assembly, initial } = freeBoltedGroup();
+    const fixed = { ...assembly, components: assembly.components.map(c => c.id === 'plateA' ? { ...c, fixed: true } : c) };
+    expect(prepareMateDrag(fixed, new Map(), initial, 'plateB')).toEqual({ ok: false, reason: 'unavailableComponent' });
   });
 });

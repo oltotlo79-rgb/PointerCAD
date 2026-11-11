@@ -1,0 +1,47 @@
+{
+  "format": "pointercad-netgen-native-replacement-evidence/1",
+  "shippedWheelSha256": "3f0d507e8daa11b5a26654d904c529d6c1338e9a3a4c7d7728152f3596954ba3",
+  "sourceSha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+  "rebuild": {
+    "passed": true,
+    "wheelSha256": "fc9275fa37c4c84b682e34b0467892a758dd53cd65791f16e957fb0cef9be4b3",
+    "receiptSha256": "c12603d2c59eb4a63036cd5b7dea3f9867ddbe9ea8b7187f487de48a1a8caf90"
+  },
+  "replacement": {
+    "wheelSha256": "fc9275fa37c4c84b682e34b0467892a758dd53cd65791f16e957fb0cef9be4b3",
+    "receiptSha256": "eb906d994aa09ccc5e0413bda55ab7666814300fa566dfd3627d8bdcd21390cd",
+    "cases": [
+      {
+        "id": "modified-accepted",
+        "passed": true,
+        "title": "作り直した宣言で、変えた Netgen wheel を実Workerが受け入れて 2×3×4 mm の箱を体積 24 mm³ で分割する",
+        "project": "functional",
+        "startedAt": "2026-11-09T15:40:36.754Z",
+        "durationMs": 7651
+      },
+      {
+        "id": "original-refused",
+        "passed": true,
+        "title": "同じアプリで、元の Netgen wheel は長さか SHA-256 の違いで断る",
+        "project": "functional",
+        "startedAt": "2026-11-09T15:40:45.303Z",
+        "durationMs": 1556
+      },
+      {
+        "id": "tampered-refused",
+        "passed": true,
+        "title": "同じアプリで、同じ長さで1バイトだけ変えた Netgen wheel は SHA-256 の違いで断る",
+        "project": "functional",
+        "startedAt": "2026-11-09T15:40:46.870Z",
+        "durationMs": 2152
+      }
+    ]
+  },
+  "inputs": {
+    "provenanceSha256": "f07a1f890a8033daa3cf25182df7b5732f4a5517b78d38b58386b2fe89528793",
+    "stageReceiptSha256": "73684eea2b9a447ee185f2ff6f2f167d62108e851b069dcf055e7935107b1a2a",
+    "loaderCommandReceiptSha256": "426320ba5217eb12f365de11c347b7dda9890715ee0945201eceeae02573b2aa",
+    "loaderExitCode": 0
+  },
+  "generatedAt": "2026-11-09T15:41:30.246419+00:00"
+}

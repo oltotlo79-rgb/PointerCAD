@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { HELP_IMAGES, HELP_LOADERS } from './helpContent.js';
 import { DRAWING_TOOL_GROUPS } from '../drawing/drawingToolbarItems.js';
 import { createHelpLibrary, resolveHelpLink } from './helpLibrary.js';
-import { SHORTCUT_TABLE_MARKER } from '../commands/shortcutMarkdown.js';
 import { validateShortcutAssignments } from '../commands/shortcutAssignments.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SHORTCUT_TABLE_MARKER = '<!-- pointercad:current-shortcuts -->';
 
 describe('同梱ヘルプの本文と検索', () => {
   it('現在のキーを本文と同じ形で検索し、割当を戻すと古い検索結果を使わない', async () => {

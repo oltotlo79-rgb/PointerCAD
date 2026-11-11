@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -7,7 +8,7 @@ import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'mapping(2*x+1,x,ℝ,ℝ)', kind: 'function' },
@@ -42,8 +43,7 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 const script = fileURLToPath(new URL('./exactRuntime/cas_mappings_test.py', import.meta.url));
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'mappings', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'mappings', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 function native(args: readonly string[], input?: string): string {
   const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {

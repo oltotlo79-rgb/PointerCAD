@@ -37,6 +37,7 @@ import { DEFAULT_APPEARANCE, WOOD_SPECIES, type AppearancePattern, type Appearan
 import * as THREE from 'three';
 
 import { appearanceKeyText } from './buildFaceGroups.js';
+import { createViewportLifetime, type ViewportLifetime } from '../viewport/viewportLifetime.js';
 import {
   createPatternTexture,
   disposePatternTextures,
@@ -58,13 +59,13 @@ export function themedAppearance(spec: AppearanceSpec, solidColor: number): Appe
 }
 
 /** ガラスの屈折率(§2.5.3、§0.a-0.10)。three.js の既定も 1.5 だが、意図として明示する。 */
-export const GLASS_IOR = 1.5;
+const GLASS_IOR = 1.5;
 
 /** ガラスの厚み(mm 相当、§2.5.3、§0.a-0.10)。three.js の既定は 0 なので必ず入れる。 */
-export const GLASS_THICKNESS = 2;
+const GLASS_THICKNESS = 2;
 
 /** 柄の抜き(エキスパンドメタルの穴)のしきい値(§0.a-0.8)。 */
-export const PATTERN_ALPHA_TEST = 0.5;
+const PATTERN_ALPHA_TEST = 0.5;
 
 /**
  * 環境マップ(映り込み)が要ると見なす境目(§0.a-0.9「鏡・ガラスを 1 つも使わない文書では
@@ -135,6 +136,7 @@ export interface AppearanceMaterialStore {
 interface MaterialEntry {
   readonly material: THREE.MeshStandardMaterial;
   readonly clonedTextures: readonly THREE.Texture[];
+  cleanup?: ViewportLifetime;
 }
 
 /** 百分率(0〜100)を three.js の 0〜1 へ。範囲外と非数は 0〜1 に収める。 */
@@ -283,10 +285,13 @@ function createMaterialEntry(spec: AppearanceSpec, patterns: PatternTextureSourc
 
 /** 材質と、その材質だけが持つテクスチャを捨てる。 */
 function disposeEntry(entry: MaterialEntry): void {
-  entry.material.dispose();
-  for (const texture of entry.clonedTextures) {
-    texture.dispose();
+  if (entry.cleanup === undefined) {
+    entry.cleanup = createViewportLifetime();
+    entry.cleanup.register('appearance material', () => { entry.material.dispose(); });
+    for (const texture of new Set(entry.clonedTextures)) entry.cleanup.register('appearance texture', () => { texture.dispose(); });
   }
+  entry.cleanup.dispose();
+  if (entry.cleanup.pendingCount !== 0) throw new Error(entry.cleanup.errors.join('; '));
 }
 
 /**
@@ -300,6 +305,21 @@ export function createAppearanceMaterialStore(
   patterns: PatternTextureSource = DEFAULT_PATTERN_TEXTURE_SOURCE,
 ): AppearanceMaterialStore {
   const entries = new Map<string, MaterialEntry>();
+  const retired = new Set<MaterialEntry>();
+  let patternCleanup: ViewportLifetime | null = null;
+
+  function releaseRetired(): void {
+    const errors: string[] = [];
+    for (const entry of retired) {
+      try { disposeEntry(entry); retired.delete(entry); }
+      catch (error) { errors.push(error instanceof Error ? error.message : 'Appearance cleanup failed'); }
+    }
+    if (patternCleanup !== null) {
+      patternCleanup.dispose();
+      errors.push(...patternCleanup.errors);
+    }
+    if (errors.length !== 0) throw new Error(errors.join('; '));
+  }
 
   /**
    * 環境マップを材質へ入れる。`envMap` の有無はシェーダーの作り直しを伴うので、
@@ -315,6 +335,10 @@ export function createAppearanceMaterialStore(
 
   return {
     materialFor(spec, environment) {
+      if (patternCleanup !== null) {
+        if (patternCleanup.pendingCount !== 0) throw new Error('Pattern resources remain pending cleanup');
+        patternCleanup = null;
+      }
       const key = appearanceKeyText(spec);
       let entry = entries.get(key);
       if (entry === undefined) {
@@ -333,16 +357,19 @@ export function createAppearanceMaterialStore(
         if (keep.has(key)) {
           continue;
         }
-        disposeEntry(entry);
         entries.delete(key);
+        retired.add(entry);
       }
+      releaseRetired();
     },
     dispose() {
-      for (const entry of entries.values()) {
-        disposeEntry(entry);
-      }
+      for (const entry of entries.values()) retired.add(entry);
       entries.clear();
-      patterns.disposeAll();
+      if (patternCleanup === null) {
+        patternCleanup = createViewportLifetime();
+        patternCleanup.register('pattern texture source', () => { patterns.disposeAll(); });
+      }
+      releaseRetired();
     },
   };
 }

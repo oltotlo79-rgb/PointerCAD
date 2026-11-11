@@ -9,6 +9,7 @@ import { STIRLING_COEFFICIENTS } from './gammaStirlingCoefficients.js';
 export const DistributionDecimal = Decimal.clone({ precision: 80, rounding: Decimal.ROUND_HALF_EVEN });
 const D = DistributionDecimal, ONE = new D(1), HALF_LOG_TWO_PI = D.acos(-1).mul(2).ln().div(2);
 const TOLERANCE = new D('1e-60'), LOG_TOLERANCE = new D('1e-65');
+const COMPLEMENT_SAFE_LOG = new D('1e-4').ln();
 export function distributionBudget(): never {
   throw new MathInputProblem('budget', '分布の計算が回数または桁数の上限に達しました。条件を小さくするか、端から離して確認してください。');
 }
@@ -107,8 +108,17 @@ export function betaKernel(a: Decimal, b: Decimal, check: () => void): {
   return { logBeta, at: (x: Decimal, y = ONE.sub(x)): ProbabilityParts => {
     check();
     if (x.lte(0) || y.lte(0) || x.gt(1) || y.gt(1)) return distributionBudget();
-    const density = a.sub(1).mul(x.ln()).add(b.sub(1).mul(y.ln())).sub(logBeta).exp();
-    const lowerSide = x.lte(pivot), small = lowerSide ? betaSeries(a, b, x, y, logBeta, check) : betaSeries(b, a, y, x, logBeta, check);
+    const logX = x.ln(), logY = y.ln();
+    const density = a.sub(1).mul(logX).add(b.sub(1).mul(logY)).sub(logBeta).exp();
+    let lowerSide = x.lte(pivot);
+    if (lowerSide && x.gt('0.9')) {
+      // I_x(a,b) >= x^a * min(1,y^(b-1)) / (a*B(a,b)).
+      // The bound >1e-4 keeps complement subtraction far above the 1e-60
+      // series error, preserving the inverse's 1e-50 relative residual.
+      const lowerBoundLog = a.mul(logX).add(D.max(b.sub(1), 0).mul(logY)).sub(a.ln()).sub(logBeta);
+      if (lowerBoundLog.gt(COMPLEMENT_SAFE_LOG)) lowerSide = false;
+    }
+    const small = lowerSide ? betaSeries(a, b, x, y, logBeta, check) : betaSeries(b, a, y, x, logBeta, check);
     return { lower: lowerSide ? small : ONE.sub(small), upper: lowerSide ? ONE.sub(small) : small, density };
   } };
 }

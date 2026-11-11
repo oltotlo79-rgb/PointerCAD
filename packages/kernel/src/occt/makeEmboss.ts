@@ -1,3 +1,5 @@
+import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
+import { dotVec as dot } from './sketchCorner.js';
 import type {
   OpenCascadeInstance,
   TopoDS_Face,
@@ -10,7 +12,7 @@ import { createAllocations } from './allocations.js';
 import type { BooleanResult } from './booleanOp.js';
 import { booleanOp } from './booleanOp.js';
 import { makePlanarFace } from './makePlanarFace.js';
-import { matchFace } from './matchSubShape.js';
+import { resolveFaceReference } from './matchSubShape.js';
 import { measureArea, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
@@ -103,26 +105,7 @@ export interface EmbossInput {
 }
 
 /** -0 を +0 へ揃える(subShapes.ts と同じ理由: 値を揺らさない)。 */
-function normalizeZero(value: number): number {
-  return value === 0 ? 0 : value;
-}
 
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-/** 長さ 1 へ揃える。長さが取れない(0・非数)ときは null。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const length = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [
-    normalizeZero(value[0] / length),
-    normalizeZero(value[1] / length),
-    normalizeZero(value[2] / length),
-  ];
-}
 
 /** 面の平面(法線と平面上の 1 点)。 */
 interface PlaneFrame {
@@ -251,19 +234,19 @@ function resolvePlanarFaceIndex(
     // 利用者への直し方は同じ(面を選び直す)なので言い分けない。
     throw new Error(MISSING_FACE_MESSAGE);
   }
-  const match = matchFace(tables.faces, query, scale);
-  if (match === null) {
+  const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
+  if (match.status !== 'matched') {
     throw new Error(MISSING_FACE_MESSAGE);
   }
   // 一覧は通し番号の順で来る約束だが、番号で引き直して並びに依存しないようにする。
-  const info = tables.faces.find((candidate) => candidate.index === match.index);
+  const info = tables.faces.find((candidate) => candidate.index === match.match.index);
   if (info === undefined) {
     throw new Error(MISSING_FACE_MESSAGE);
   }
   if (info.surfaceKind !== 'plane') {
     throw new Error(NOT_PLANAR_MESSAGE);
   }
-  return match.index;
+  return match.match.index;
 }
 
 /**
@@ -401,6 +384,8 @@ export function makeEmboss(
       if (!changed) {
         throw new Error(NO_CHANGE_MESSAGE);
       }
+      // Complete tool cleanup before transferring result ownership to the caller.
+      release();
       return result;
     } catch (error) {
       result.delete();

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { expectWithinBudget } from '@pointercad/test-utils';
-import { calculateStrength, type StrengthCalculationInput } from './strengthCalculation.js';
+import { calculateStrength } from './strengthCalculation.js';
+
+type StrengthCalculationInput = Parameters<typeof calculateStrength>[0];
 
 const beam: StrengthCalculationInput = {
   calculation: { kind: 'beam', section: 'rectangle', support: 'cantilever' },

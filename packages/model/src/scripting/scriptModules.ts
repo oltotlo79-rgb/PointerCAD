@@ -1,3 +1,4 @@
+import { sha256Hex } from '../sha256.js';
 import { scriptUtf8Bytes } from './scriptBytes.js';
 import { SCRIPT_API_VERSION, SCRIPT_LIMITS, type ScriptProgram } from './scriptTypes.js';
 
@@ -18,8 +19,7 @@ export type ScriptProgramCheck = { readonly ok: true }
   | { readonly ok: false; readonly reason: 'version' | 'bytes' | 'count' | 'name' | 'duplicate' | 'hash'; readonly module: string | null };
 
 export async function sha256ScriptSource(source: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
-  return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(new TextEncoder().encode(source));
 }
 
 /** Typed values are still rechecked on a Worker message boundary. File decoding supplies this shape. */

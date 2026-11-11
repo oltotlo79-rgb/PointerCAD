@@ -19,7 +19,6 @@ import type {
 import { subShapeElementId } from '../solid/subShapeSelection.js';
 import {
   mathGeometrySelection,
-  MATH_GEOMETRY_SELECTION_LIMIT,
   type MathGeometryCandidateReason,
 } from './mathGeometrySelection.js';
 
@@ -130,6 +129,21 @@ function vertexId(bodyFeatureId: string, index = 0): string {
  * ------------------------------------------------------------------------- */
 
 describe('1 つ選んだときの候補', () => {
+  it('tracked辺は現在bodyのoriginを量の参照へ保持し、曖昧と別bodyは候補を作らない', () => {
+    const origin = { version: 1, shapeKind: 'edge', identity: {
+      kind: 'box-edge', featureId: 'body-1', role: 'top-front' } } as const;
+    const first = solidBody('body-1', { origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current: { kind: 'edge', index: 0 } }] } });
+    const captured = mathGeometrySelection([edgeId('body-1', 0)], SKETCH_ID, emptySketch(), [first]);
+    expect(captured.candidates).toMatchObject([{ kind: 'length', curve: { kind: 'edge', reference: { origin } } }]);
+    expect(first.origins).toMatchObject({ bindings: [{ origin }] });
+    const split = { ...first, origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'split', candidates: [{ kind: 'edge', index: 0 }, { kind: 'edge', index: 1 }] }] } as const };
+    expect(mathGeometrySelection([edgeId('body-1', 0)], SKETCH_ID, emptySketch(), [split]).candidates).toEqual([]);
+    expect(mathGeometrySelection([edgeId('body-1', 0)], SKETCH_ID, emptySketch(), [
+      solidBody('other', { origins: first.origins })]).candidates).toEqual([]);
+  });
+
   it('スケッチの点は X/Y/Z の 3 つの座標', () => {
     const sketch = emptySketch({ points: [point('point-1', [1, 2, 3])] });
     const result = mathGeometrySelection(['point-1'], SKETCH_ID, sketch, []);
@@ -475,7 +489,9 @@ describe('3 点を選んだときの候補(GR-22、Q8=G1)', () => {
   });
 
   it('MATH_GEOMETRY_SELECTION_LIMIT は 3 のまま(4 つ以上は選びすぎ)', () => {
-    expect(MATH_GEOMETRY_SELECTION_LIMIT).toBe(3);
+    // 3 つまでは選びすぎにしない(4 つは「4 つ以上選ぶと選びすぎ」が確かめる)。
+    const sketch = emptySketch({ points: [point('p1'), point('p2'), point('p3')] });
+    expect(mathGeometrySelection(['p1', 'p2', 'p3'], SKETCH_ID, sketch, []).reason).not.toBe('tooMany');
   });
 });
 

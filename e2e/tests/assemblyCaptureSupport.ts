@@ -1,7 +1,8 @@
 /// <reference lib="dom" />
 import { expect, type Locator, type Page } from '@playwright/test';
 import { boxPartFile, chooseToolMenuItem, installAssemblyFileGateway } from './assemblyTestSupport.js';
-import { beginRecompute, waitForRecompute } from './recompute.js';
+import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
+import { waitForStartupReady } from './startupHealth.js';
 
 /**
  * 説明書アセンブリ組(G4-a: assembly-place・standard-parts・mate・joint、G4-b:
@@ -35,6 +36,10 @@ async function chooseFileMenu(page: Page, name: string): Promise<void> {
 
 /** 空のアセンブリを新規に始める(ページは既定の部品文書から遷移する)。 */
 export async function startNewAssemblyCapture(page: Page): Promise<void> {
+  // Do not switch document kind while the initial part still owns a kernel call.
+  await waitForStartupReady(page);
+  const initial = await waitForSettledRecompute(page);
+  expect(initial.lastOutcome, '初期文書の実計算が成功してから新しい組立を始める').toBe('success');
   const token = await beginRecompute(page);
   await chooseFileMenu(page, '新しいアセンブリ');
   await waitForRecompute(page, token);

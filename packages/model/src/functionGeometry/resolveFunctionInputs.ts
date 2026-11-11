@@ -19,7 +19,7 @@ import { resolveFunctionRanges } from './resolveFunctionRanges.js';
  * the draft editor shows before confirming, instead of silently rewriting to "A-(B)": which side becomes F is a
  * modeling choice the user makes, not one this fix can guess.
  */
-export const IMPLICIT_EQUATION_EQUALS_MESSAGE =
+const IMPLICIT_EQUATION_EQUALS_MESSAGE =
   '陰関数は「=」を含む式を計算できません。F=0の左辺Fだけを入力してください。例: X^2+Y^2=1ではなく、X^2+Y^2-1と入力します。';
 
 function implicitEquationRootHasEquals(definition: FunctionDefinition): boolean {

@@ -1,4 +1,4 @@
-import { expressionValueFromNumber } from '@pointercad/expression';
+import { evaluateExpression, expressionValueFromNumber } from '@pointercad/expression';
 import {
   absoluteCoordinate,
   appendFeature,
@@ -6,8 +6,12 @@ import {
   createEmptyPartDocument,
   createPointFeature,
   DEFAULT_WORK_PLANE_ID,
+  createUndoStack,
   findSolid,
+  pushUndo,
+  redo,
   replaceSketch,
+  undo,
   type ExtrudeFeature,
   type HoleFeature,
   type PartDocument,
@@ -25,6 +29,8 @@ import {
   commitPattern,
   commitThreadHole,
   DEFAULT_CHAMFER_DISTANCE,
+  DEFAULT_CYLINDER_HOLE_ANGLE,
+  DEFAULT_CYLINDER_HOLE_HEIGHT,
   DEFAULT_FILLET_RADIUS,
   DEFAULT_HOLE_DEPTH,
   DEFAULT_HOLE_DIAMETER,
@@ -822,10 +828,7 @@ describe('machiningToolReadiness(NFR-UX-5)', () => {
       bodies: [makeBody('extrude-1', { faces: [makeFace(0)] })],
       selection: [subShapeElementId('extrude-1', 'face', 0)],
     };
-    expect(machiningToolReadiness(context, 'threadHole')).toEqual({
-      ready: false,
-      reasonKey: 'machiningError.noCenterPoint',
-    });
+    expect(machiningToolReadiness(context, 'threadHole')).toEqual({ ready: true, reasonKey: null });
   });
 
   it('fillet: 辺があれば ready', () => {
@@ -1051,4 +1054,450 @@ describe('穴と R 面取りへ畳んだ欄(P5 タスク50)', () => {
     const feature = requireFeature(outcome.document, outcome.featureId);
     expect(feature.kind === 'fillet' ? feature.radiusEnd?.value : null).toBe(5);
   });
+});
+
+describe('円筒の側面の穴を作る(EX05)', () => {
+  /** 半径 10・高さ 40 の円筒の側面(指紋は面の素性から作られる。曲面の種類だけが判定に効く)。 */
+  const CYLINDER_SIDE = makeFace(1, { surfaceKind: 'cylinder', area: 2513.2741228718346, centroid: [0, 0, 20], axis: [0, 0, 1], radius: 10 });
+  const HEIGHT_12 = expressionValueFromNumber(12);
+  const ANGLE_90 = expressionValueFromNumber(90);
+
+  function commit(overrides: Partial<SolidInputCommit>): SolidInputCommit {
+    return { kind: 'solid', tool: 'hole', step: 'holeSize', values: {}, flags: {}, ...overrides };
+  }
+
+  function cylinderContext(extraSelection: readonly string[] = [], document = documentWithBodies(['extrude-1'])): MachiningContext {
+    return {
+      document,
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0), CYLINDER_SIDE] })],
+      selection: [subShapeElementId('extrude-1', 'face', 1), ...extraSelection],
+    };
+  }
+
+  it('「円筒の側面に」で、入れた高さ・角度の式のまま位置 1 つの穴を作る(中心の点は使わない)', () => {
+    const context = cylinderContext();
+    const outcome = commitMachiningInput(context, commit({
+      values: { diameter: DIAMETER_6, depth: DEPTH_10, holeCylinderHeight: HEIGHT_12, holeCylinderAngle: ANGLE_90 },
+      flags: { cylinderFace: true },
+    }));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const created = requireFeature(outcome.document, outcome.featureId);
+    if (created.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(created.face.fingerprint).toMatchObject({ kind: 'face', surfaceKind: 'cylinder', radius: 10 });
+    expect(created.centers).toEqual([]);
+    expect(created.cylindrical).toEqual({ kind: 'cylinder-face', locations: [{ height: HEIGHT_12, angle: ANGLE_90 }] });
+    expect(created.depth).toEqual({ kind: 'blind', depth: DEPTH_10 });
+    expect('entry' in created).toBe(false);
+  });
+
+  it('高さ・角度を入れずに確定すると既定(10 mm・0 度)を使う', () => {
+    const outcome = commitMachiningInput(cylinderContext(), commit({ flags: { cylinderFace: true, through: true } }));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const created = requireFeature(outcome.document, outcome.featureId);
+    if (created.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(DEFAULT_CYLINDER_HOLE_HEIGHT.value).toBe(10);
+    expect(DEFAULT_CYLINDER_HOLE_ANGLE.value).toBe(0);
+    expect(created.cylindrical?.locations).toEqual([{ height: DEFAULT_CYLINDER_HOLE_HEIGHT, angle: DEFAULT_CYLINDER_HOLE_ANGLE }]);
+    expect(created.depth).toEqual({ kind: 'through' });
+  });
+
+  it('円筒座ぐりの高さ・角度と入口寸法を同時に確定し、もとの文書を変えない', () => {
+    const context = cylinderContext();
+    const diameter = expressionValueFromNumber(8);
+    const depth = expressionValueFromNumber(2);
+    const outcome = commitMachiningInput(context, commit({
+      flags: { cylinderFace: true, through: true }, shapeChoices: { holeEntry: 'counterbore' },
+      values: { diameter: DIAMETER_6, counterboreDiameter: diameter, counterboreDepth: depth,
+        holeCylinderHeight: HEIGHT_12, holeCylinderAngle: ANGLE_90 },
+    }));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    const created = requireFeature(outcome.document, outcome.featureId);
+    if (created.kind !== 'hole') throw new Error('穴のはず');
+    expect(created.entry).toEqual({ kind: 'counterbore', diameter, depth });
+    expect(created.cylindrical).toEqual({ kind: 'cylinder-face', locations: [{ height: HEIGHT_12, angle: ANGLE_90 }] });
+    expect(created.depth).toEqual({ kind: 'through' });
+    expect(created.centers).toEqual([]);
+    expect(context.document.solids).toHaveLength(1);
+    expect(outcome.document.solids).toHaveLength(2);
+  });
+
+  it('円筒でない面・点との同時指定・皿もみは、作る前に断って文書を変えない', () => {
+    const base = documentWithBodies(['extrude-1']);
+    const { document, pointId } = withPoint(base);
+    const planeContext: MachiningContext = {
+      document,
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0), CYLINDER_SIDE] })],
+      selection: [subShapeElementId('extrude-1', 'face', 0)],
+    };
+    const cases: readonly [MachiningContext, SolidInputCommit, string][] = [
+      [planeContext, commit({ flags: { cylinderFace: true } }), 'machiningError.cylinderHoleNotCylinder'],
+      [cylinderContext([pointId], document), commit({ flags: { cylinderFace: true } }), 'machiningError.cylinderHoleWithPoints'],
+      [cylinderContext([], document), commit({ flags: { cylinderFace: true }, shapeChoices: { holeEntry: 'countersink' } }),
+        'machiningError.cylinderHoleEntry'],
+    ];
+    for (const [context, input, reasonKey] of cases) {
+      expect(commitMachiningInput(context, input)).toEqual({ ok: false, reasonKey });
+    }
+    expect(document.solids).toHaveLength(1);
+  });
+
+  it('「円筒の側面に」を入れなければ今までどおり点が要り、点の穴には欄を作らない', () => {
+    expect(commitMachiningInput(cylinderContext(), commit({}))).toEqual({ ok: false, reasonKey: 'machiningError.noCenterPoint' });
+    const base = documentWithBodies(['extrude-1']);
+    const { document, pointId } = withPoint(base);
+    const outcome = commitHole({
+      document,
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0)] })],
+      selection: [subShapeElementId('extrude-1', 'face', 0), pointId],
+    }, HOLE_PARAMS);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect('cylindrical' in requireFeature(outcome.document, outcome.featureId)).toBe(false);
+  });
+
+  it('穴とねじ穴は面だけでも配置入力を開け、点モードの確定には中心点が要る', () => {
+    expect(machiningToolReadiness(cylinderContext(), 'hole')).toEqual({ ready: true, reasonKey: null });
+    // ねじ穴も円筒の側面に作れる(EX05、task208/209)。点が無くても道具を押せる。
+    expect(machiningToolReadiness(cylinderContext(), 'threadHole')).toEqual({ ready: true, reasonKey: null });
+    const planeOnly: MachiningContext = {
+      document: documentWithBodies(['extrude-1']),
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0)] })],
+      selection: [subShapeElementId('extrude-1', 'face', 0)],
+    };
+    expect(machiningToolReadiness(planeOnly, 'hole')).toEqual({ ready: true, reasonKey: null });
+    expect(machiningToolReadiness(planeOnly, 'threadHole')).toEqual({ ready: true, reasonKey: null });
+    for (const tool of ['hole', 'threadHole']) {
+      if (tool !== 'hole' && tool !== 'threadHole') throw new Error('Unexpected tool');
+      const commit: SolidInputCommit = { kind: 'solid', tool,
+        step: tool === 'hole' ? 'holeSize' : 'threadSize', values: {}, flags: {} };
+      expect(commitMachiningInput(planeOnly, commit))
+        .toEqual({ ok: false, reasonKey: 'machiningError.noCenterPoint' });
+    }
+  });
+});
+
+describe('円筒の側面のねじ穴を作る(EX05)', () => {
+  /** 半径 10・高さ 40 の円筒の側面(穴の EX05 の試験と同じ素性)。 */
+  const CYLINDER_SIDE = makeFace(1, { surfaceKind: 'cylinder', area: 2513.2741228718346, centroid: [0, 0, 20], axis: [0, 0, 1], radius: 10 });
+  const HEIGHT_12 = expressionValueFromNumber(12);
+  const ANGLE_90 = expressionValueFromNumber(90);
+
+  function commit(overrides: Partial<SolidInputCommit>): SolidInputCommit {
+    return { kind: 'solid', tool: 'threadHole', step: 'threadSize', values: {}, flags: {}, ...overrides };
+  }
+
+  function cylinderContext(extraSelection: readonly string[] = [], document = documentWithBodies(['extrude-1'])): MachiningContext {
+    return {
+      document,
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0), CYLINDER_SIDE] })],
+      selection: [subShapeElementId('extrude-1', 'face', 1), ...extraSelection],
+    };
+  }
+
+  const RADIAL = { values: { depth: DEPTH_10, holeCylinderHeight: HEIGHT_12, holeCylinderAngle: ANGLE_90 }, flags: { cylinderFace: true } };
+
+  it('「円筒の側面に」で、入れた高さ・角度の式のまま M6 のめねじ穴を作る(中心の点は使わない)', () => {
+    const context = cylinderContext();
+    const outcome = commitMachiningInput(context, commit(RADIAL));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    const created = requireFeature(outcome.document, outcome.featureId);
+    if (created.kind !== 'threadHole') throw new Error('ねじ穴のはず');
+    expect(created.face.fingerprint).toMatchObject({ kind: 'face', surfaceKind: 'cylinder', radius: 10 });
+    expect(created.centers).toEqual([]);
+    expect(created.cylindrical).toEqual({ kind: 'cylinder-face', locations: [{ height: HEIGHT_12, angle: ANGLE_90 }] });
+    expect(created.depth).toEqual({ kind: 'blind', depth: DEPTH_10 });
+    expect(created.designation).toBe('M6');
+    // めねじの下穴(D1)は呼び径 6 より細い。軸に切る外ねじ(threadShaft)ではない。
+    expect(created.drillDiameter.value).toBeLessThan(6);
+    expect(context.document.solids).toHaveLength(1);
+    expect(outcome.document.solids).toHaveLength(2);
+  });
+
+  it('円筒でない面・点との同時指定は作る前に断り、「円筒の側面に」が切なら今までどおり点が要る', () => {
+    const base = documentWithBodies(['extrude-1']);
+    const { document, pointId } = withPoint(base);
+    const planeContext: MachiningContext = {
+      document,
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0), CYLINDER_SIDE] })],
+      selection: [subShapeElementId('extrude-1', 'face', 0)],
+    };
+    expect(commitMachiningInput(planeContext, commit({ flags: { cylinderFace: true } })))
+      .toEqual({ ok: false, reasonKey: 'machiningError.cylinderHoleNotCylinder' });
+    expect(commitMachiningInput(cylinderContext([pointId], document), commit({ flags: { cylinderFace: true } })))
+      .toEqual({ ok: false, reasonKey: 'machiningError.cylinderHoleWithPoints' });
+    expect(commitMachiningInput(cylinderContext(), commit({}))).toEqual({ ok: false, reasonKey: 'machiningError.noCenterPoint' });
+    expect(document.solids).toHaveLength(1);
+  });
+
+  it('作ったねじ穴は Undo で前の文書へ正確に戻り、Redo で同じ文書へ戻る', () => {
+    const context = cylinderContext();
+    const outcome = commitMachiningInput(context, commit(RADIAL));
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    const stack = pushUndo(createUndoStack(context.document), outcome.document);
+    expect(undo(stack).present).toBe(context.document);
+    expect(redo(undo(stack)).present).toBe(outcome.document);
+    expect(redo(undo(stack)).present.solids.find((feature) => feature.id === outcome.featureId))
+      .toEqual(requireFeature(outcome.document, outcome.featureId));
+  });
+});
+
+
+import { beforeAll } from 'vitest';
+import { t } from '../i18n/t.js';
+import { applySolidCommit } from '../sketch/commitToStore.js';
+import { initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
+import { nativeHistoryHarness } from './holeThreadHistory.testSupport.js';
+import { resetTestStore } from '../store/testing/createTestStore.js';
+import { useAppStore } from '../store/useAppStore.js';
+import {
+  chooseNumericInput, commitNumericInput, createNumericInput, reduceNumericInput, toggleNumericInput,
+} from '../sketch/numericInput.js';
+import type { SolidFaceEntry as ModelSolidFaceEntry } from '@pointercad/model';
+
+describe('EX05 creation boundary and unchanged history', () => {
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
+
+  it.each(['hole', 'counterbore', 'threadHole'] as const)('%s: current height and angle sources reach the saved feature without changing other inputs', kind => {
+    const tool = kind === 'threadHole' ? 'threadHole' : 'hole';
+    let state = toggleNumericInput(createNumericInput(tool, tool === 'hole' ? 'holeSize' : 'threadSize'), 'cylinderFace');
+    if (kind === 'counterbore') state = chooseNumericInput(state, 'holeEntry', 'counterbore');
+    if (tool === 'threadHole') {
+      state = chooseNumericInput(state, 'threadDesignation', 'M10');
+      state = chooseNumericInput(state, 'threadSeries', 'fine');
+      state = toggleNumericInput(state, 'modeledThread');
+    }
+    const context: MachiningContext = { document: documentWithBodies(['extrude-1']),
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0, { surfaceKind: 'cylinder' })] })],
+      selection: [subShapeElementId('extrude-1', 'face', 0)] };
+    const saved = (input: typeof state) => {
+      const transition = commitNumericInput(input);
+      if (transition.kind !== 'solidCommitted') throw new Error('Expected valid numeric input');
+      const outcome = commitMachiningInput(context, transition.commit);
+      if (!outcome.ok) throw new Error(outcome.reasonKey);
+      const feature = requireFeature(outcome.document, outcome.featureId);
+      if (feature.kind !== 'hole' && feature.kind !== 'threadHole') throw new Error('Expected hole');
+      return feature;
+    };
+    const before = saved(state);
+    for (const [key, member, source, value] of [
+      ['holeCylinderHeight', 'height', '2 * 9 + 1', 19],
+      ['holeCylinderAngle', 'angle', '-720 - 15', -735],
+    ] as const) {
+      const next = saved(reduceNumericInput(state, { type: 'edit', index: state.fields.findIndex(field => field.key === key), source }));
+      const position = next.cylindrical?.locations[0];
+      expect(position?.[member].source).toBe(source);
+      expect(position?.[member].value).toBe(value);
+      expect(next).toEqual({ ...before, cylindrical: { kind: 'cylinder-face', locations: [
+        { ...before.cylindrical?.locations[0], [member]: position?.[member] },
+      ] } });
+    }
+  });
+
+  it('creation guidance names the supported surfaces and cylinder restrictions', () => {
+    for (const key of ['toolbar.machining.holeTooltip', 'toolbar.machining.threadHoleTooltip'] as const) {
+      for (const text of ['平面', '円筒の外面・内面', '円錐・球・自由曲面', '傾斜穴・皿もみには対応していません']) {
+        expect(t(key)).toContain(text);
+      }
+    }
+    expect(t('numericInput.tooltip.holeCylinderHeight')).toContain('下側の端');
+    expect(t('numericInput.tooltip.holeCylinderAngle')).toContain('面の X 方向');
+    expect(t('numericInput.tooltip.holeCylinderAngle')).toContain('右手');
+  });
+
+  it.each(['hole', 'threadHole'] as const)('%s: a plane opens the explicit placement chooser; cylinder rejects mixed points', tool => {
+    const { document, pointId } = withPoint(documentWithBodies(['extrude-1']));
+    for (const surfaceKind of ['plane', 'cylinder', 'cone', 'sphere', 'other'] as const) {
+      for (const withCenter of [false, true]) {
+        const context: MachiningContext = { document,
+          bodies: [makeBody('extrude-1', { faces: [makeFace(0, { surfaceKind })] })],
+          selection: [subShapeElementId('extrude-1', 'face', 0), ...(withCenter ? [pointId] : [])] };
+        const readiness = machiningToolReadiness(context, tool);
+        expect(readiness.ready).toBe(surfaceKind === 'plane' || surfaceKind === 'cylinder' && !withCenter);
+        if (!readiness.ready) {
+          expect(readiness.reasonKey).not.toBeNull();
+          if (readiness.reasonKey !== null) expect(t(readiness.reasonKey)).not.toBe(readiness.reasonKey);
+        }
+      }
+    }
+  });
+
+  it.each(['hole', 'threadHole'] as const)('%s: point mixing, wrong surface, nonfinite input and unsupported entry preserve document and history', async tool => {
+    resetTestStore();
+    const harness = await nativeHistoryHarness('cylinder');
+    harness.dispose();
+    for (const invalid of ['points', 'plane', 'heightNaN', 'angleInfinity', 'diameterNaN', 'depthNaN', 'countersink'] as const) {
+      const input = harness.begin(tool === 'hole' ? 'blind' : 'thread');
+      let commit = input;
+      if (invalid === 'points') useAppStore.getState().setSelection([...useAppStore.getState().selection, 'hole-center']);
+      if (invalid === 'plane') {
+        const planar = useAppStore.getState().bodies[0].faces.find(face => face.surfaceKind === 'plane');
+        if (planar === undefined) throw new Error('Expected planar end face');
+        useAppStore.getState().setSelection([subShapeElementId('stock', 'face', planar.index)]);
+      }
+      const bad = { source: '1 / 0', value: invalid === 'angleInfinity' ? Infinity : NaN, display: 'bad' };
+      if (invalid === 'heightNaN') commit = { ...input, values: { ...input.values, holeCylinderHeight: bad } };
+      if (invalid === 'angleInfinity') commit = { ...input, values: { ...input.values, holeCylinderAngle: bad } };
+      if (invalid === 'diameterNaN') commit = { ...input, values: { ...input.values,
+        ...(tool === 'hole' ? { diameter: bad } : { threadLength: bad }) } };
+      if (invalid === 'depthNaN') commit = { ...input, values: { ...input.values, depth: bad } };
+      if (invalid === 'countersink') commit = { ...input, shapeChoices: { holeEntry: 'countersink' } };
+      const before = useAppStore.getState();
+      expect(applySolidCommit(commit), invalid).toBe(false);
+      const after = useAppStore.getState();
+      expect(after.document, invalid).toBe(before.document);
+      expect(after.undoStack, invalid).toBe(before.undoStack);
+      expect(after.numericInput, invalid).toBe(before.numericInput);
+      expect(after.bodies, invalid).toBe(before.bodies);
+      expect(after.solidErrorKey, invalid).not.toBeNull();
+      if (after.solidErrorKey !== null) expect(t(after.solidErrorKey)).not.toBe(after.solidErrorKey);
+    }
+  }, 180_000);
+
+  it('direct cylinder creation rejects tilt before appending a feature', () => {
+    const context: MachiningContext = { document: documentWithBodies(['extrude-1']),
+      bodies: [makeBody('extrude-1', { faces: [makeFace(0, { surfaceKind: 'cylinder' })] })],
+      selection: [subShapeElementId('extrude-1', 'face', 0)] };
+    const cylindrical = { height: expressionValueFromNumber(12), angle: expressionValueFromNumber(30) };
+    for (const key of ['tiltAngle', 'tiltAzimuth'] as const) {
+      const params = { ...HOLE_PARAMS, cylindrical, [key]: expressionValueFromNumber(15) };
+      expect(commitHole(context, params).ok).toBe(false);
+      expect(commitThreadHole(context, { ...params, designation: 'M6', series: 'coarse',
+        threadLength: DEPTH_10, representation: 'simplified' }).ok).toBe(false);
+    }
+    expect(context.document.solids).toHaveLength(1);
+  });
+});
+
+describe('EX05 explicit planar creation adapter', () => {
+  const basis: NonNullable<ModelSolidFaceEntry['planarBasis']> = {
+    origin: [11, -7, 5], xAxis: [0.6, 0.8, 0], normal: [-0.48, 0.36, 0.8], yAxis: [-0.64, 0.48, -0.6],
+  };
+  function planarContext(): MachiningContext {
+    const face = { ...makeFace(0), planarBasis: basis };
+    return { document: documentWithBodies(['extrude-1']),
+      bodies: [{ ...makeBody('extrude-1'), isValid: true, faces: [face] }],
+      selection: [subShapeElementId('extrude-1', 'face', 0)] };
+  }
+  it('stores original signed XY, empty centers and one feature/history increment', () => {
+    const context = planarContext();
+    const x = { ...expressionValueFromNumber(6), source: '2 * 3' };
+    const y = { ...expressionValueFromNumber(-4), source: '-2 * 2' };
+    const outcome = commitHole(context, { ...HOLE_PARAMS, planar: { x, y } });
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    const feature = requireFeature(outcome.document, outcome.featureId);
+    if (feature.kind !== 'hole') throw new Error('Expected hole');
+    expect(feature.planar).toEqual({ kind: 'plane-face', locations: [{ x, y }] });
+    expect(feature.planar?.locations[0]?.x).toBe(x);
+    expect(feature.centers).toEqual([]);
+    expect(feature.cylindrical).toBeUndefined();
+    expect(outcome.document.solids.length).toBe(context.document.solids.length + 1);
+    const history = pushUndo(createUndoStack(context.document), outcome.document);
+    expect(history.past).toHaveLength(1);
+    expect(undo(history).present).toBe(context.document);
+    expect(redo(undo(history)).present).toBe(outcome.document);
+  });
+  it('does not silently convert points mode, synthesize missing basis, accept empty/nonfinite XY or mixed modes', () => {
+    const context = planarContext(), before = context.document;
+    expect(commitHole(context, HOLE_PARAMS)).toEqual({ ok: false, reasonKey: 'machiningError.noCenterPoint' });
+    const planar = { x: expressionValueFromNumber(6), y: expressionValueFromNumber(-4) };
+    const missing = { ...context, bodies: [{ ...makeBody('extrude-1', { faces: [makeFace(0)] }), isValid: true }] };
+    expect(commitHole(missing, { ...HOLE_PARAMS, planar })).toEqual({ ok: false, reasonKey: 'numericInput.error.planarHoleBasis' });
+    for (const x of [{ ...planar.x, source: '' }, { ...planar.x, value: Infinity }]) {
+      expect(commitHole(context, { ...HOLE_PARAMS, planar: { ...planar, x } }).ok).toBe(false);
+      expect(context.document).toBe(before);
+    }
+    expect(commitHole(context, { ...HOLE_PARAMS, planar, cylindrical: { height: ZERO, angle: ZERO } }))
+      .toEqual({ ok: false, reasonKey: 'numericInput.error.planarHoleConflict' });
+  });
+});
+
+describe('EX05 numeric planar commit producer/consumer', () => {
+  it.each(['hole', 'threadHole'])('%s: explicit choice reaches planar expression fields; unknown/missing/conflicting choice refuses', tool => {
+    if (tool !== 'hole' && tool !== 'threadHole') throw new Error('Unexpected tool');
+    const planarBasis: NonNullable<ModelSolidFaceEntry['planarBasis']> = {
+      origin: [11, -7, 5], xAxis: [0.6, 0.8, 0], yAxis: [-0.64, 0.48, -0.6], normal: [-0.48, 0.36, 0.8],
+    };
+    const face = { ...makeFace(0), planarBasis };
+    const context: MachiningContext = { document: documentWithBodies(['extrude-1']),
+      bodies: [{ ...makeBody('extrude-1'), isValid: true, faces: [face] }],
+      selection: [subShapeElementId('extrude-1', 'face', 0)] };
+    const x = { ...expressionValueFromNumber(6), source: '2 * 3' };
+    const y = { ...expressionValueFromNumber(-4), source: '-2 * 2' };
+    const commit: SolidInputCommit = { kind: 'solid', tool, step: tool === 'hole' ? 'holeSize' : 'threadSize',
+      values: { diameter: DIAMETER_6, depth: DEPTH_10, threadLength: DEPTH_10, holePlanarX: x, holePlanarY: y },
+      flags: {}, shapeChoices: { holePlacement: 'plane-face' } };
+    const result = commitMachiningInput(context, commit);
+    if (!result.ok) throw new Error(result.reasonKey);
+    const feature = requireFeature(result.document, result.featureId);
+    if (feature.kind !== 'hole' && feature.kind !== 'threadHole') throw new Error('Expected machining feature');
+    expect(feature.planar).toEqual({ kind: 'plane-face', locations: [{ x, y }] });
+    expect(feature.centers).toEqual([]);
+    expect(feature.cylindrical).toBeUndefined();
+    const noXY = { ...commit, values: {} };
+    expect(commitMachiningInput(context, noXY)).toEqual({ ok: false, reasonKey: 'numericInput.error.planarHoleInput' });
+    expect(commitMachiningInput(context, { ...commit, shapeChoices: { holePlacement: 'unknown' } }))
+      .toEqual({ ok: false, reasonKey: 'shapeError.unknownChoice' });
+    expect(commitMachiningInput(context, { ...commit, flags: { cylinderFace: true } }))
+      .toEqual({ ok: false, reasonKey: 'numericInput.error.planarHoleConflict' });
+  });
+});
+
+describe('自動生成するねじ下穴径の厳密な保存値', () => {
+  const cases = [
+    { designation: 'M6', diameter: 6, pitch: 1, display: '4.91746824527' },
+    { designation: 'M8', diameter: 8, pitch: 1.25, display: '6.64683530659' },
+  ];
+  for (const size of cases) {
+    for (const placement of ['plane', 'cylinder'] as const) {
+      it.each([false, true])(`${size.designation} ${placement} through=%s は元倍精度とsourceを保ち表示だけ丸める`, through => {
+        const base = documentWithBodies(['extrude-1']);
+        const { document, pointId } = withPoint(base);
+        const faces = [makeFace(0), makeFace(1, { surfaceKind: 'cylinder', radius: 10,
+          centroid: [0, 0, 20], area: 2513.2741228718346 })];
+        const context: MachiningContext = { document,
+          bodies: [makeBody('extrude-1', { faces })],
+          selection: placement === 'plane'
+            ? [subShapeElementId('extrude-1', 'face', 0), pointId]
+            : [subShapeElementId('extrude-1', 'face', 1)] };
+        const threadLength = { ...DEPTH_10, source: '2 * 5' };
+        const commit: SolidInputCommit = { kind: 'solid', tool: 'threadHole', step: 'threadSize',
+          threadDesignation: size.designation, threadSeries: 'coarse',
+          values: { depth: DEPTH_10, threadLength,
+            holeCylinderHeight: expressionValueFromNumber(12), holeCylinderAngle: expressionValueFromNumber(90) },
+          flags: { through, cylinderFace: placement === 'cylinder' } };
+        const outcome = commitMachiningInput(context, commit);
+        if (!outcome.ok) throw new Error(outcome.reasonKey);
+        const feature = requireFeature(outcome.document, outcome.featureId);
+        if (feature.kind !== 'threadHole') throw new Error('Expected a thread hole');
+        // ISO基本山形 H=sqrt(3)P/2、D1=D−5H/4。製品の計算関数から期待を得ない。
+        const expected = size.diameter - (5 * Math.sqrt(3) / 8) * size.pitch;
+        expect(feature.drillDiameter.value).toBe(expected);
+        expect(feature.drillDiameter.source).toBe(String(expected));
+        const reloaded = evaluateExpression(feature.drillDiameter.source);
+        if (!reloaded.ok) throw new Error('Generated source must evaluate');
+        expect(reloaded.value.value).toBe(expected);
+        expect(feature.drillDiameter.display).toBe(size.display);
+        expect(reloaded.value.display).toBe(size.display);
+        expect(feature.pitch).toEqual({ source: String(size.pitch), value: size.pitch, display: String(size.pitch) });
+        expect(feature.threadLength).toBe(threadLength);
+        expect(feature.depth).toEqual(through ? { kind: 'through' } : { kind: 'blind', depth: DEPTH_10 });
+        expect(document.solids).toHaveLength(1);
+        expect(outcome.document.solids).toHaveLength(2);
+      });
+    }
+  }
 });

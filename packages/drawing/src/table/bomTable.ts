@@ -11,7 +11,7 @@ export interface DrawingBomRow {
   readonly massEach: number | null;
 }
 export type BomColumnId = 'number' | 'name' | 'quantity' | 'material' | 'mass' | 'configuration';
-export interface BomTableInput extends Omit<TableLayoutInput, 'rows' | 'columns'> {
+interface BomTableInput extends Omit<TableLayoutInput, 'rows' | 'columns'> {
   readonly rows: readonly DrawingBomRow[];
   readonly columns?: readonly BomColumnId[];
   readonly headings: Readonly<Record<BomColumnId, string>>;

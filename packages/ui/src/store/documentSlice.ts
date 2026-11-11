@@ -11,9 +11,6 @@ import {
   findSketch,
   type ParameterAnalysis,
   type PartDocument,
-  pruneDocumentAppearance,
-  pruneRemovedFeatureNotes,
-  pruneRemovedFolderMembers,
   pushUndo,
   redo as redoStep,
   replaceSketch,
@@ -27,26 +24,29 @@ import {
   type WorkPlaneId,
 } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
-import { placeNewFeatures } from '../shell/timelineMove.js';
 import { EMPTY_REFERENCE_DRAFT } from '../sketch/referenceCommands.js';
 import { EMPTY_SHAPE_DRAFT } from '../sketch/shapeCommands.js';
 import type { OrbitState } from '../viewport/cameraMath.js';
 import type { CanvasPixelSize } from '../viewport/canvasLayer.js';
 import type { AppState, DocumentStateUpdate } from './appState.js';
 import { activeDocumentKind } from './documentKind.js';
+import { documentSessionId, prepareDocumentSession, type PreparedDocumentSession } from './documentIdentity.js';
 import {
   constraintSummaryPatch,
+  documentEditPatch,
   documentPatch,
   NO_CONSTRAINT_SUMMARIES,
   NO_CONSTRAINT_TARGETS,
+  prepareDocumentEdit,
   referencePatch,
-  timelineNoticeFor,
+  rememberTimelineHintShown,
   workPlaneForOrbit,
   workPlaneOfSketch,
 } from './documentDerived.js';
 
 /** 文書を差し替えるときの添え物(§0.a-0.4、§0.a-0.13)。 */
 export interface ApplyDocumentOptions {
+  readonly preparedSession?: PreparedDocumentSession;
   /**
    * 同じ鍵の変更が続いたら Undo の 1 段にまとめる(§0.a-0.13)。
    * 鍵があるときは「打っている途中」とみなし、計算中の札も立てない
@@ -68,6 +68,19 @@ export interface ApplyDocumentOptions {
    * 古い下書きが残ってしまうため、この数の変化を見て下書きを捨てる。
    */
   readonly replacesDocument?: boolean;
+  /**
+   * 別の文書を開く呼び出しか(ファイル・最近使ったファイルを開く、図面だけの冷再開で元の
+   * 部品を開く)。true なら `replacesDocument` と同じ扱いに加えて、**Undo の履歴を作り直し**、
+   * 前の文書の選択・取りかけを持ち越さない(`freshDocumentSession`)。新規・ひな形・復元の
+   * `resetDocument`、組立・図面を開く `openAssembly`・`openDrawing` と同じ約束にそろえる。
+   *
+   * 開いた直後の Undo で前の文書へ戻ると、帯の名前と上書き先は開いたファイルのまま中身だけが
+   * 前の文書になり、上書き保存で開いたファイルを前の文書の中身で壊す(2026-10-05 の不具合)。
+   * 開く前の確認も「変更を捨てて続ける」(NFR-UX-3 の復元不能な操作の確認)であり、捨てた
+   * 文書へ Undo で戻れる約束とは食い違っていた。名前付き保存点の復元(同じ文書の時をまたぐ
+   * 差し替え)は `replacesDocument` だけを使い、Undo 1 回で戻せるままにする。
+   */
+  readonly opensDocument?: boolean;
 }
 
 /** 文書・履歴・つまみのスライスが持つ欄と操作。 */
@@ -179,7 +192,7 @@ export interface DocumentSlice {
    * **履歴のスタックを作り直す**ので、新規の前へは戻れない。取りかけの操作・選択・
    * 断りの理由も持ち越さない(NFR-UX-3)。
    */
-  readonly resetDocument: (next: PartDocument) => void;
+  readonly resetDocument: (next: PartDocument, session?: PreparedDocumentSession) => void;
 }
 
 /**
@@ -239,123 +252,41 @@ export const createDocumentSlice: StateCreator<
     });
   },
   applyDocument: (incoming, options) => {
+    // 別の文書を開くのは、丸ごとの差し替えに「履歴と選択を作り直す」を足したもの。
+    const opens = options?.opensDocument === true;
+    const replaces = opens || options?.replacesDocument === true;
     // アセンブリ中の部品編集は行わない。開く等の明示的な文書切替だけを受ける。
-    if (activeDocumentKind(get()) === 'assembly' && options?.replacesDocument !== true) return;
+    if (activeDocumentKind(get()) === 'assembly' && !replaces) return;
     const update: DocumentStateUpdate = (state) => {
       if (incoming === state.document) {
         return {};
       }
-      /*
-       * タイムラインのつまみ(FR-507、タスク19・20)の面倒を見る。
-       *
-       * ①文書をまるごと差し替えたとき(開く)は、つまみを末尾へ戻す。前の部品のつまみを
-       *   持ち越さないため(§0.a-0.19「開いた直後は常に末尾」)。
-       * ②途中まで戻したまま履歴が伸びたときは、**つまみの位置へ差し込む**(タスク20)。
-       *   末尾へ積んだままだと戻した画面に作ったものが出てこないので、差し込んだうえで
-       *   つまみをその段へ進めて見せる。止めて断ることはしない
-       *   (rules/04-設計の規律.md「操作をブロックするゲートも作らない」)。
-       * ③それ以外(名前の変更・削除・順序の入れ替え)は、つまみをそのままにする。
-       *
-       * 差し込みは `placeNewFeatures` が行い、差し込んだ後の文書を以降でそのまま使う
-       * (Undo に積むのも保存されるのも差し込んだ後の並び)。
-       */
-      const placement =
-        options?.replacesDocument === true
-          ? { document: incoming, timelineIndex: null, inserted: false }
-          : placeNewFeatures(state.document, incoming, state.timelineIndex);
-      /*
-       * フィーチャーが消えたときは、そのボディを指す外観の割り当ても一緒に落とす
-       * (FR-1106、model の `pruneDocumentAppearance`)。押し出しを消したのに色の割り当て
-       * だけが文書に残ると、保存したファイルに行き先の無い割り当てが溜まっていく。
-       *
-       * **履歴が短くなったときだけ掃除する。** 掃除の判定材料は「いま画面に出るボディ」
-       * なので、抑制(一時的に外す)やブーリアンで消費された立体もそのままでは対象に
-       * 入ってしまう。どちらも元へ戻せる操作で、そこで割り当てを捨てると戻したときに
-       * 色が失われる。消えたことが確かなとき(段の数が減ったとき)だけに限る。
-       * 文書を丸ごと差し替える経路(新規・開く・復元)も対象外にする(読み込んだ文書の
-       * 割り当てを、まだ計算していない段階で削らない)。
-       *
-       * 掃除は取り消しに積む前に行うので、**取り消し 1 回で立体も色も一緒に戻る**
-       * (NFR-UX-3)。
-       */
-      const placed = options?.replacesDocument === true ? placement.document
-        : pruneRemovedFolderMembers(state.document, pruneRemovedFeatureNotes(state.document, placement.document));
-      const next =
-        options?.replacesDocument !== true && placed.solids.length < state.document.solids.length
-          ? pruneDocumentAppearance(placed)
-          : placed;
+      // つまみへの差し込みと掃除(FR-507、FR-1106)は `prepareDocumentEdit` の 1 か所。
+      // 押し出しの確定前の段階計算も同じ整えを通る(documentDerived.ts の注釈)。
+      const prepared = prepareDocumentEdit(state, incoming, replaces);
+      const next = prepared.document;
       const coalesceKey = options?.coalesceKey;
       const stack =
-        options?.undoable === false
+        opens
+          ? // 別の文書は新しい履歴から始める(前の文書へ Undo で戻らない。`opensDocument`)。
+            createUndoStack(next)
+          : options?.undoable === false
           ? // 段は増やさないが、present は常に document と同じものにしておく。
             { ...state.undoStack, present: next }
           : pushUndo(state.undoStack, next, { coalesceKey, coalesceMode: options?.coalesceMode });
       return {
-        // 丸ごとの差し替え(開く・復元)では 3D スケッチも降ろす(タスク22b-(i))。
-        ...documentPatch(state, next, stack, options?.replacesDocument === true),
-        // 文書をまるごと差し替える呼び出し(開く等)のときだけ進める(§0.a-0.1〜)。
-        documentVersion:
-          options?.replacesDocument === true ? state.documentVersion + 1 : state.documentVersion,
-        timelineIndex: placement.timelineIndex,
-        // 知らせは「差し込みました」か、つまみの初回の案内(タスク22b-(a))か、無しの 3 通り。
-        timelineNoticeKey: timelineNoticeFor(state, next, placement.inserted),
-        // 順序の入れ替えの断りは、形が変われば用済み(FR-504)。
-        timelineRefusal: null,
-        // 束ねる変更(プロパティ欄の 1 文字ごと)では計算中の札を立てない。立てると
-        // 打つたびに札が点滅する。再計算は attachPartRecompute が拾い、終わり次第
-        // そのまま形が動く(NFR-PF-1)。
-        //
-        // **形に影響しない変更(外観の割り当てだけ、FR-1106〜1110)でも立てない**
-        // (P5 §2.3.2)。下の `attachPartRecompute` の購読も `affectsShape` を見て
-        // 再計算を投げないので、ここで立てると誰も下ろせない札が残る。要件§4.12の
-        // 「外観を変えても再計算は起きず、描画だけが変わる」はこの 2 か所で守られる。
-        isComputing:
-          coalesceKey === undefined && affectsShape(state.document, next)
-            ? true
-            : state.isComputing,
-        // 形が変わったら「保存しました」等の知らせは用済み(FR-806)。
-        fileMessage: null,
-        // 中止の知らせも、次の計算が始まる時点で用済み(NFR-PF-4)。
-        recomputeCancelled: false,
-        // 古い「面/立体/図形を作れませんでした」の断りも文書が変われば用済み(§0.a-0.23 ⑦)。
-        faceErrorKey: null,
-        solidErrorKey: null,
-        editErrorKey: null,
-        appearanceErrorKey: null,
-        // 「測れませんでした」の断りも、文書が変われば用済み(FR-1102、タスク32)。
-        measureErrorKey: null,
-        editNoticeKey: null,
-        shapeErrorMessage: null,
-        referenceErrorMessage: null,
-        // 拘束の断りも文書が変われば用済み(FR-504、タスク13)。
-        constraintErrorMessage: null,
-        // 引っぱれなかった理由も、形が変われば用済み(タスク14)。
-        dragRefusalKey: null,
-        // 原点を移した知らせも、次に形が変われば用済み(FR-331、タスク35b)。
-        // 原点の再設定そのものは applyDocument のあとで setOriginNotice を呼んで立て直す。
-        originNoticeMessage: null,
-        // トリム・延長の予告は「いまの形」の上の区間なので、形が変われば描き直し
-        // (次にマウスが動いたときに出し直す。タスク22)。
-        editPreview: null,
-        // 測定は**形が変わったときだけ**消す(FR-1102「モデルを変更するまで残る」、
-        // §0.a-0.29。外観だけの変更では形が 1 ミリも動かないので測った値は正しいまま)。
-        measurement: affectsShape(state.document, next) ? null : state.measurement,
-        // 質量特性も測定と同じ条件で消す(体積・重心は形そのものの値なので、
-        // 形が変われば測り直し。外観だけの変更では材料が変わっても残る)。
-        massProperties: affectsShape(state.document, next) ? null : state.massProperties,
+        // 差し替えの欄(つまみ・知らせ・計算中の札・古い断りと測定)は
+        // `documentEditPatch` の 1 か所で決める(段階計算の採用も同じ差分を使う)。
+        ...documentEditPatch(state, prepared, stack, replaces, coalesceKey),
+        // 別の文書を開いたら、前の文書の選択・取りかけ・断りを持ち越さない(新規と同じ)。
+        // 添付の表は `documentPatch` が開いた文書の参照だけへ絞る(先に入れた添付を消さない)。
+        ...(opens ? freshDocumentSession() : {}),
       };
     };
-    if (options?.replacesDocument === true) get().resetAssembly(update);
+    if (replaces) get().resetAssembly(update, options?.preparedSession);
     else set(update);
-    /*
-      つまみの初回の案内を出したら、二度と出さないよう端末に覚える(P4b タスク22b-(a)、
-      利用者の決定①)。`set` の中は副作用を持たない純粋な差分にしたいので、
-      `localStorage` への書き込みはここで 1 回だけ行う。
-    */
-    const after = get();
-    if (after.timelineNoticeKey === 'timeline.hint' && !after.displaySettings.timelineHintSeen) {
-      after.setDisplaySettings({ ...after.displaySettings, timelineHintSeen: true });
-    }
+    // つまみの初回の案内の既読は、set の外で 1 回だけ端末に覚える(documentDerived.ts)。
+    rememberTimelineHintShown(get());
   },
   setActiveSketch: (sketchId) => {
     const state = get();
@@ -476,7 +407,9 @@ export const createDocumentSlice: StateCreator<
   setFreeSketchPlane: (freeSketchPlane) => {
     set({ freeSketchPlane });
   },
-  resetDocument: (next) => {
+  resetDocument: (next, session) => {
+    const prepared = session === undefined ? prepareDocumentSession() : session;
+    documentSessionId(prepared);
     if (activeDocumentKind(get()) === 'assembly') get().fileGateway.clearSaveTarget?.();
     get().resetAssembly((state) => ({
       // 新規・復元は丸ごとの差し替え(タスク22b-(i))。3D スケッチのままなら XY へ戻す。
@@ -489,25 +422,7 @@ export const createDocumentSlice: StateCreator<
       timelineRefusal: null,
       isComputing: true,
       // 新しい部品に、前の部品の取りかけ・選択・断りの理由を持ち越さない(NFR-UX-3)。
-      activeTool: 'select',
-      selectionKind: 'body',
-      selection: [],
-      hoveredElementId: null,
-      numericInput: null,
-      numericInputAnchor: null,
-      pendingStart: null,
-      shapeDraft: EMPTY_SHAPE_DRAFT,
-      shapeErrorMessage: null,
-      referenceDraft: EMPTY_REFERENCE_DRAFT,
-      referenceErrorMessage: null,
-      freeSketchPlane: null,
-      // 断面表示も持ち越さない(FR-111、P6 タスク35)。切る面の指定が前の部品の面を
-      // 指したままになり、新しい部品では解けない面で切ろうとすることになるため。
-      sectionView: null,
-      // 点検の結果も持ち越さない(FR-815、P6 タスク42・43・46)。三角形の並びは形ごとに
-      // 変わるので、前の部品の結果を新しい部品の三角形に当てると別の場所が色づく。
-      printability: null,
-      printabilityOffsets: null,
+      ...freshDocumentSession(),
       /*
         下絵も持ち越さない(FR-332、P6 タスク39)。画像の鍵(`imageId`)は文書ごとに
         `canvas-1` から振り直されるので、前の部品の画像が新しい部品の別物の同じ鍵に
@@ -524,47 +439,83 @@ export const createDocumentSlice: StateCreator<
       */
       importedShapes: new Map<string, Uint8Array>(),
       importedMeshes: new Map<string, ImportedMeshBytes>(),
-      canvasScale: null,
-      canvasMessage: null,
-      snapIndicator: null,
-      trackIndicator: null,
-      inferredConstraints: null,
-      editPreview: null,
-      // 拘束まわりの一時状態も持ち越さない(FR-313、タスク13)。診断は次の計算で入り直す。
-      constraintDiagnosis: null,
-      constraintSummaries: NO_CONSTRAINT_SUMMARIES,
-      activeConstraintKind: null,
-      constraintTargets: NO_CONSTRAINT_TARGETS,
-      constraintErrorMessage: null,
-      constraintPrompt: null,
-      selectedConstraintId: null,
-      // 引っぱりの途中で新しい部品に切り替わっても、掴んだ点を持ち越さない(タスク14)。
-      sketchDrag: null,
-      dragResolved: null,
-      dragRefusalKey: null,
-      faceErrorKey: null,
-      solidErrorKey: null,
-      editErrorKey: null,
-      appearanceErrorKey: null,
-      editNoticeKey: null,
-      originNoticeMessage: null,
-      // 前の部品で測った値は、別の部品には当てはまらない(FR-1102、タスク31・32)。
-      measurement: null,
-      massProperties: null,
-      measureErrorKey: null,
-      errorMessage: null,
-      fileMessage: null,
-      recomputeCancelled: false,
-      /*
-        新しい部品を作ったら、開いていたアセンブリは閉じる(P7 §0.a-0.10、タスク5)。
-        1 つの窓で開く文書は 1 つだけなので、ここを残したままにすると
-        `activeDocumentKind` がアセンブリのままになり、作ったばかりの部品が画面に出ない。
-      */
-      assembly: null,
-      drawing: null,
-      savedDrawing: null,
-      drawingFileName: null,
-      drawingInitialName: null,
-    }));
+    }), prepared);
   },
 });
+
+/**
+ * 別の文書へ切り替えたときに、前の文書から持ち越さない取りかけ・選択・断り(NFR-UX-3)。
+ *
+ * 新規・ひな形・復元(`resetDocument`)と、別の文書を開く(`applyDocument` の
+ * `opensDocument`)が**同じ 1 か所**を使う。片方にだけ欄を足すと、開き方によって前の
+ * 文書の選択や取りかけが残る(2026-10-05、開いた後も前の文書の選択が残っていた)。
+ * 下絵・読み込んだ形の表はここに含めない。新規・復元は空にしてから入れ直し、開く経路は
+ * 先に入れた添付を `documentPatch` が開いた文書の参照だけへ絞るため、扱いが違う。
+ */
+function freshDocumentSession(): Partial<AppState> {
+  return {
+    activeTool: 'select',
+    selectionKind: 'body',
+    selection: [],
+    // 選んだ点の出所(R29 の2点接続・R30 の面)も前の文書のものなので捨てる。
+    connectionSelection: null,
+    hoveredElementId: null,
+    numericInput: null,
+    numericInputAnchor: null,
+    pendingStart: null,
+    shapeDraft: EMPTY_SHAPE_DRAFT,
+    shapeErrorMessage: null,
+    referenceDraft: EMPTY_REFERENCE_DRAFT,
+    referenceErrorMessage: null,
+    freeSketchPlane: null,
+    // 断面表示も持ち越さない(FR-111、P6 タスク35)。切る面の指定が前の部品の面を
+    // 指したままになり、新しい部品では解けない面で切ろうとすることになるため。
+    sectionView: null,
+    // 点検の結果も持ち越さない(FR-815、P6 タスク42・43・46)。三角形の並びは形ごとに
+    // 変わるので、前の部品の結果を新しい部品の三角形に当てると別の場所が色づく。
+    printability: null,
+    printabilityOffsets: null,
+    canvasScale: null,
+    canvasRectification: null,
+    canvasMessage: null,
+    snapIndicator: null,
+    trackIndicator: null,
+    inferredConstraints: null,
+    editPreview: null,
+    // 拘束まわりの一時状態も持ち越さない(FR-313、タスク13)。診断は次の計算で入り直す。
+    constraintDiagnosis: null,
+    constraintSummaries: NO_CONSTRAINT_SUMMARIES,
+    activeConstraintKind: null,
+    constraintTargets: NO_CONSTRAINT_TARGETS,
+    constraintErrorMessage: null,
+    constraintPrompt: null,
+    selectedConstraintId: null,
+    // 引っぱりの途中で新しい部品に切り替わっても、掴んだ点を持ち越さない(タスク14)。
+    sketchDrag: null,
+    dragResolved: null,
+    dragRefusalKey: null,
+    faceErrorKey: null,
+    solidErrorKey: null,
+    editErrorKey: null,
+    appearanceErrorKey: null,
+    editNoticeKey: null,
+    originNoticeMessage: null,
+    // 前の部品で測った値は、別の部品には当てはまらない(FR-1102、タスク31・32)。
+    measurement: null,
+    massProperties: null,
+    measureErrorKey: null,
+    errorMessage: null,
+    fileMessage: null,
+    recomputeCancelled: false,
+    /*
+      新しい部品を作ったら・開いたら、開いていたアセンブリと図面は閉じる(P7 §0.a-0.10、
+      タスク5)。1 つの窓で開く文書は 1 つだけなので、ここを残したままにすると
+      `activeDocumentKind` がアセンブリ・図面のままになり、部品が画面に出ない。
+    */
+    assembly: null,
+    drawing: null,
+    savedDrawing: null,
+    drawingFileName: null,
+    drawingInitialName: null,
+  };
+}

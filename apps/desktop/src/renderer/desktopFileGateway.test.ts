@@ -10,6 +10,41 @@ function deferred<T>() {
 }
 
 describe('デスクトップ画面の保存先キャッシュ（レビュー R02）', () => {
+  it('通常saveAsにもcontrolを渡しpicker中取消の旧成功を採らない', async () => {
+    const pending = deferred<boolean>();
+    const api = {
+      openPcad: () => Promise.resolve(null), confirmSaveTarget: () => Promise.resolve(true),
+      clearSaveTarget: () => Promise.resolve(undefined), savePcad: () => Promise.resolve(null),
+      hasSaveTarget: () => Promise.resolve(false),
+      openFile: () => Promise.resolve(null), saveFileAs: vi.fn<(
+        name: string, kind: string, bytes: Uint8Array, requestId?: string,
+      ) => Promise<boolean>>(() => pending.promise),
+      cancelExportSave: vi.fn(() => Promise.resolve(true)),
+    };
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    if (gateway?.saveFileAs === undefined) throw new Error('saveAs口なし');
+    const controller = new AbortController();
+    const saving = gateway.saveFileAs('part.3mf', '3mf', Uint8Array.of(1),
+      { signal: controller.signal, isCurrent: () => !controller.signal.aborted });
+    const requestId: unknown = api.saveFileAs.mock.calls[0]?.[3];
+    expect(requestId).toMatch(/^[\da-f-]{36}$/i);
+    controller.abort();
+    expect(api.cancelExportSave).toHaveBeenCalledExactlyOnceWith(requestId);
+    pending.resolve(true);
+    expect(await saving).toBe(false);
+    expect(gateway.hasSaveTarget()).toBe(false);
+  });
+  it('旧preloadに取消口がないときcontrol付き通常saveAsは開始しない', async () => {
+    const api = { openPcad: () => Promise.resolve(null), confirmSaveTarget: () => Promise.resolve(true),
+      clearSaveTarget: () => Promise.resolve(undefined), savePcad: () => Promise.resolve(null),
+      hasSaveTarget: () => Promise.resolve(false), openFile: () => Promise.resolve(null),
+      saveFileAs: vi.fn(() => Promise.resolve(true)) };
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    const controller = new AbortController();
+    expect(await gateway?.saveFileAs?.('part.stl', 'stl', Uint8Array.of(1),
+      { signal: controller.signal, isCurrent: () => true })).toBe(false);
+    expect(api.saveFileAs).not.toHaveBeenCalled();
+  });
   it('解除後に古い保存が返っても上書き先ありに戻さない', async () => {
     const saved = deferred<string>();
     const gateway = createDesktopFileGateway({ pointercadDesktop: {
@@ -131,5 +166,35 @@ describe('「開く」の大きさ関連の失敗をWeb版と同じ鍵で画面�
     const gateway = createDesktopFileGateway({ pointercadDesktop: api });
     if (gateway === null) throw new Error('gateway が必要');
     await expect(gateway.openPcad('part')).rejects.toThrow('permission denied');
+  });
+});
+
+describe('パラメータCSVの画面側口', () => {
+  const base = (openFile: () => Promise<unknown>) => ({
+    openPcad: () => Promise.resolve(null), confirmSaveTarget: () => Promise.resolve(true),
+    clearSaveTarget: () => Promise.resolve(undefined), savePcad: () => Promise.resolve(null),
+    hasSaveTarget: () => Promise.resolve(true), openFile, saveFileAs: () => Promise.resolve(false),
+  });
+
+  it('CSV専用の依頼を送り、取消と異種応答を分け、保存先を変えない', async () => {
+    const openFile = vi.fn(() => Promise.resolve<unknown>({ name: '係数.csv', kind: 'csv', bytes: Uint8Array.of(1) }));
+    const gateway = createDesktopFileGateway({ pointercadDesktop: base(openFile) });
+    if (gateway?.openParameterCsv === undefined) throw new Error('CSV口が必要');
+    expect(await gateway.openParameterCsv()).toEqual({ fileName: '係数.csv', bytes: Uint8Array.of(1) });
+    expect(openFile).toHaveBeenCalledWith(['csv']);
+    expect(gateway.hasSaveTarget()).toBe(true);
+    const cancelled = createDesktopFileGateway({ pointercadDesktop: base(() => Promise.resolve(null)) });
+    expect(await cancelled?.openParameterCsv?.()).toBeNull();
+    const wrong = createDesktopFileGateway({ pointercadDesktop: base(() => Promise.resolve({
+      name: '係数.csv', kind: 'step', bytes: Uint8Array.of(1),
+    })) });
+    await expect(wrong?.openParameterCsv?.()).rejects.toThrow('file.openFailed');
+  });
+
+  it('IPC後の1MiB超過を拒否する', async () => {
+    const gateway = createDesktopFileGateway({ pointercadDesktop: base(() => Promise.resolve({
+      name: '係数.csv', kind: 'csv', bytes: new Uint8Array(1024 * 1024 + 1),
+    })) });
+    await expect(gateway?.openParameterCsv?.()).rejects.toThrow('file.error.tooLarge');
   });
 });

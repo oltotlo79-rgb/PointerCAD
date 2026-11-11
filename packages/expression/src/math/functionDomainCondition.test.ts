@@ -4,14 +4,16 @@ import { createFunctionMathSource } from './functionMathSource.js';
 import { compileFunctionScalar } from './compileFunctionScalar.js';
 import { createFunctionCurveEvaluator } from './functionCurveEvaluation.js';
 import { createFunctionSurfaceEvaluator } from './functionSurfaceEvaluation.js';
-import { sampleFunctionCurve, type FunctionCurveOptions, type FunctionCurveSamplingResult } from './adaptiveFunctionCurve.js';
-import { sampleFunctionSurface, type FunctionSurfaceEvaluator, type FunctionSurfaceOptions,
-  type FunctionSurfaceSamplingResult } from './adaptiveFunctionSurface.js';
+import { sampleFunctionCurve, type FunctionCurveSamplingResult } from './adaptiveFunctionCurve.js';
+import { sampleFunctionSurface, type FunctionSurfaceEvaluator, type FunctionSurfaceSamplingResult } from './adaptiveFunctionSurface.js';
 import { executeFunctionSurfaceWorkRequest } from './functionSurfaceWorkExecution.js';
 import { createFunctionSurfaceWorkEnvelope, decodeFunctionSurfaceWorkRequest } from './functionSurfaceWorkRequest.js';
 import { MathInputProblem } from './mathInputContract.js';
 import type { ScalarCondition, ScalarInput } from './scalarMathTape.js';
 import type { MathExecutionBackend } from './mathWorkExecution.js';
+
+type FunctionCurveOptions = Parameters<typeof sampleFunctionCurve>[1];
+type FunctionSurfaceOptions = Parameters<typeof sampleFunctionSurface>[1];
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

@@ -12,6 +12,10 @@ import { createEmptyPartDocument } from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { beginDocumentRequest } from './documentRequest.js';
+import { captureDocumentIdentity, compareDocumentIdentity } from './documentRequest.js';
+import { beginDocumentRequest as beginDocumentRequestCore, captureDocumentIdentity as captureDocumentIdentityCore,
+  compareDocumentIdentity as compareDocumentIdentityCore } from './documentRequestCore.js';
+
 import { resetTestStore } from './testing/createTestStore.js';
 import { useAppStore } from './useAppStore.js';
 
@@ -112,17 +116,17 @@ const SHARED_GUARD = /\b(?:beginDocumentRequest|compareDocumentIdentity|beginOpe
  * 共通の判定(`beginDocumentRequest`)を使わずに、待ちをはさんで文書を差し替える
  * ファイルの一覧。**1 件ずつ読んで、待ちの後に文書・組立・図面の参照で照合している
  * (または待ちの後に差し替えない)ことを確かめたもの**だけを理由とともに載せる
- * (2026-09-28 w83a の点検)。新しいファイルを足すときは共通の判定を使うこと。
+ * (2026-09-28の文書差替え点検)。新しいファイルを足すときは共通の判定を使うこと。
  */
 const REVIEWED_WITHOUT_SHARED_GUARD: Readonly<Record<string, string>> = {
   'assembly/placeComponentActions.ts': '要求ID・activeDocumentId・assembly の参照で照合',
   'assembly/replaceActions.ts': '要求ID・activeDocumentId・assembly と部品ライブラリの参照で照合',
   'drawing/arrangeDimensionCommands.ts': '字体の待ちの後に drawing・参照元・選択の参照で照合',
   'drawing/autoDimensionCommands.ts': '字体の待ちの後に drawing・参照元・解決結果の参照で照合',
+  'drawing/closeDrawing.ts': '確認の待ちと参照元の検証の待ちの後に activeDocumentId・drawing・参照元・document・版・案内の参照で2回照合し、変われば閉じない',
   'drawing/createDrawingCommands.ts': 'document・assembly・部品ライブラリ・activeDocumentId の参照で照合',
   'drawing/dimensionSeriesCommands.ts': '字体の待ちの後に drawing・編集中の欄・対象の参照で照合',
   'drawing/DrawingCanvas.tsx': '待ち(字体)は表示だけ。applyDrawing は同期の操作の中',
-  'drawing/drawingTemplateActions.ts': 'document・assembly・drawing・部品ライブラリ・activeDocumentId の参照で照合',
   'drawing/refreshDrawingSource.ts': 'activeDocumentId・版・drawing・参照元の参照で照合',
   'functionPlot/FunctionDirectionDialog.tsx': 'document の参照と版で照合し、変われば窓を閉じる',
   'functionPlot/FunctionPlotDialog.tsx': 'document の参照と版で照合し、変われば窓を閉じる',
@@ -132,15 +136,16 @@ const REVIEWED_WITHOUT_SHARED_GUARD: Readonly<Record<string, string>> = {
   'math/PropertyMathField.tsx': 'document の参照と版で照合',
   'parameters/mathConfigurationActions.ts': '版と部品文書の参照で照合',
   'parameters/mathParameterActions.ts': '版と部品文書の参照で照合',
+  'parameters/parameterCsvActions.ts': '数式の検査の待ちの後は isCurrent(document の参照・版・形状入力)で照合し、差し替える applyParameterCsvPreview は待たず owner の参照と版で照合して1回だけ使う',
   'parameters/ParameterMathDialog.tsx': 'document の参照と版で照合',
   'parameters/ParameterPanel.tsx': '待ちの後の差し替えは mathParameterActions 側で照合済み',
   'scripting/scriptActions.ts': 'document・activeDocumentId・版・添付などの参照で照合',
   'sheetMetal/sheetCreationActions.ts': '道具の状態・activeDocumentId・document の参照で照合',
   'sheetMetal/sheetUnfoldActions.ts': '道具の状態・activeDocumentId・document の参照で照合',
-  'shell/menus/fileToolbarActions.tsx': 'ひな形の新規: activeDocumentId・版・document・assembly・drawing の参照で照合',
   'sketch/textCommands.ts': '字体の待ちの後に document・sketch の参照で照合',
+  'viewport/ViewportCanvas.tsx': 'scene.setSketch is synchronous display work; repair preview completion only requests a redraw',
+  'store/beamSlice.ts': '待ちの後は提案・確認状態だけ更新。文書反映は別の同期操作で、文書・library・開く単位・計算世代をbeamSourceIsCurrentで照合',
   'store/assemblySlice.ts': '待ち(干渉の解析)の後は結果の表示だけを更新し、文書は差し替えない',
-  'viewport/ViewportCanvas.tsx': '待ち(画像の復号)の後は表示だけ。setSketch は描画の口',
 };
 
 /** 版の番号だけの照合(documentVersion は通常の編集で増えない)を見つける。 */
@@ -187,5 +192,46 @@ describe('待ちをはさむ文書操作の見張り', () => {
     expect(REFERENCE_COMPARISON.test(versionOnly)).toBe(false);
     expect(REFERENCE_COMPARISON.test('current.document !== before.document')).toBe(true);
     expect(DOCUMENT_MUTATION.test('before.openAssembly(result.bundle.document, library)')).toBe(true);
+  });
+});
+
+describe('状態readerと共有channelの境界', () => {
+  it('wrapperとcoreの同じchannelが両方向に先行依頼を失効させる', () => {
+    const first = beginDocumentRequest('test.core.shared');
+    const second = beginDocumentRequestCore('test.core.shared', useAppStore.getState);
+    expect(first.status()).toBe('superseded');
+    expect(second.status()).toBe('current');
+    const third = beginDocumentRequest('test.core.shared');
+    expect(second.status()).toBe('superseded');
+    second.accept();
+    expect(second.status()).toBe('superseded');
+    expect(third.status()).toBe('current');
+  });
+
+  it('accept時と待機後に指定storeだけを読み、別storeの控えを受け入れない', async () => {
+    const singleton = useAppStore.getState();
+    let local = { ...singleton, activeDocumentId: 'local-opening', document: { ...singleton.document, name: 'local' } };
+    const request = beginDocumentRequestCore('test.core.local', () => local);
+    expect(request.status()).toBe('current');
+    const foreign = beginDocumentRequestCore('test.core.foreign', () => local, singleton);
+    expect(foreign.status()).toBe('switched');
+    local = { ...local, document: { ...local.document, name: 'edited local' } };
+    expect(request.status()).toBe('changed');
+    request.accept();
+    expect(request.status()).toBe('current');
+    const afterAccept = local;
+    renamePart('singleton-only edit');
+    await Promise.resolve();
+    expect(request.status()).toBe('current');
+    expect(local).toBe(afterAccept);
+    local = { ...local, activeDocumentId: 'next-local-opening' };
+    await Promise.resolve();
+    expect(request.status()).toBe('switched');
+    expect(useAppStore.getState().document.name).toBe('singleton-only edit');
+  });
+
+  it('旧公開のidentity関数は同じleafの実体を再exportする', () => {
+    expect(captureDocumentIdentity).toBe(captureDocumentIdentityCore);
+    expect(compareDocumentIdentity).toBe(compareDocumentIdentityCore);
   });
 });

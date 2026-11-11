@@ -189,10 +189,10 @@ export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
 ];
 
 /**
- * 「拘束」の一覧(FR-313、P4b タスク13)。幾何拘束 10 種 → 寸法拘束 4 種の 14 種を並べる。
+ * 「拘束」の一覧(FR-313、P4b タスク13)。幾何拘束と固定の12種 → 寸法拘束6種の18種を並べる。
  *
  * **区画は増やさず、畳んだ一覧を 1 つ足すだけ**にする(統括の決定 2026-09-05)。
- * 溝の幅は畳んだボタン 1 つぶん(31 画素)しか増えず、一覧の中に 14 種を入れても
+ * 溝の幅は畳んだボタン 1 つぶん(31 画素)しか増えず、一覧の中に18種を入れても
  * ツールバーの高さは 1 段(68.5 画素)のまま(`segmentedWidthPixels` の注釈)。
  *
  * 並びは `constraintCommands.ts` の `CONSTRAINT_KIND_ORDER` と同じにする。あちらが画面の
@@ -204,6 +204,18 @@ export const CONSTRAINT_MENU_ITEMS: readonly ToolMenuItem<SketchConstraintKind>[
     id: 'coincident',
     labelKey: 'constraint.kind.coincident',
     tooltipKey: 'toolbar.constraint.coincidentTooltip',
+    Icon: CoincidentConstraintIcon,
+  },
+  {
+    id: 'midpoint',
+    labelKey: 'constraint.kind.midpoint',
+    tooltipKey: 'toolbar.constraint.midpointTooltip',
+    Icon: SymmetricConstraintIcon,
+  },
+  {
+    id: 'pointOnCurve',
+    labelKey: 'constraint.kind.pointOnCurve',
+    tooltipKey: 'toolbar.constraint.pointOnCurveTooltip',
     Icon: CoincidentConstraintIcon,
   },
   {
@@ -259,6 +271,18 @@ export const CONSTRAINT_MENU_ITEMS: readonly ToolMenuItem<SketchConstraintKind>[
     labelKey: 'constraint.kind.fix',
     tooltipKey: 'toolbar.constraint.fixTooltip',
     Icon: FixConstraintIcon,
+  },
+  {
+    id: 'horizontalDistance',
+    labelKey: 'constraint.kind.horizontalDistance',
+    tooltipKey: 'toolbar.constraint.horizontalDistanceTooltip',
+    Icon: HorizontalConstraintIcon,
+  },
+  {
+    id: 'verticalDistance',
+    labelKey: 'constraint.kind.verticalDistance',
+    tooltipKey: 'toolbar.constraint.verticalDistanceTooltip',
+    Icon: VerticalConstraintIcon,
   },
   {
     id: 'distance',

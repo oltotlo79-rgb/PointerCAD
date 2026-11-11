@@ -1,0 +1,11 @@
+diff --git a/libsrc/core/python_ngcore_export.cpp b/libsrc/core/python_ngcore_export.cpp
+--- a/libsrc/core/python_ngcore_export.cpp
++++ b/libsrc/core/python_ngcore_export.cpp
+@@ -16,6 +16,7 @@
+ 
+ PYBIND11_MODULE(pyngcore, m) // NOLINT
+ {
++  m.attr("_pointercad_replacement_marker") = "pointercad-netgen-replacement-marker-r86";
+   try
+     {
+       auto numpy = py::module::import("numpy");

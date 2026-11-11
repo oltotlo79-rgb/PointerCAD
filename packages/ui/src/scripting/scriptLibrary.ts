@@ -1,6 +1,6 @@
 import { SCRIPT_FILE_LIMITS, SCRIPT_LIMITS, readScriptFileValue, scriptUtf8Bytes, type ScriptFile } from '@pointercad/model/scripting';
 
-export interface ScriptLibraryStorage { getItem(key: string): string | null; setItem(key: string, value: string): void }
+interface ScriptLibraryStorage { getItem(key: string): string | null; setItem(key: string, value: string): void }
 export const SCRIPT_LIBRARY_KEY = 'pointercad.script-tools.v1';
 export type ScriptLibraryRead = { readonly ok: true; readonly tools: readonly ScriptFile[] }
   | { readonly ok: false };

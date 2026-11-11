@@ -53,6 +53,41 @@ describe('自動寸法の操作と更新(P8-40)', () => {
     expect(next.dimensions).toHaveLength(2);
     expect(resolveDrawingDimensions(next, { instances: source.dimensionInstances ?? [], modelCenter: source.center }).map((item) => item.value)).toEqual([100, 60]);
   });
+  it('自動寸法の現頂点に意味起点を保存し、追跡不能点を裸参照で補わない', () => {
+    const instance = source.dimensionInstances?.[0];
+    if (instance === undefined) throw new Error('図面instanceなし');
+    const roles = ['bottom-front-left', 'bottom-front-right', 'top-front-right', 'top-front-left'] as const;
+    const bindings = roles.map((role, index) => ({ origin: { version: 1 as const, shapeKind: 'vertex' as const,
+      identity: { kind: 'box-vertex' as const, featureId: 'plate', role } },
+      state: 'unique' as const, current: { kind: 'vertex' as const, index } }));
+    const first = bindings[0];
+    if (first === undefined) throw new Error('起点なし');
+    const tracked: SolidBody = { ...body, origins: { version: 1, state: 'tracked', bindings } };
+    const current: DrawingSourceResolution = { ...source, dimensionInstances: [{ ...instance, body: tracked }] };
+    const next = generateDrawingAutoDimensions(initial, current, [view], outline);
+    expect(next?.dimensions).toHaveLength(2);
+    const refs = next?.dimensions.flatMap((dimension) => dimension.targets.flatMap((target) => target.kind === 'subShape' ? [target.ref] : []));
+    expect(refs?.length).toBeGreaterThan(0);
+    expect(refs?.every((ref) => ref.origin?.shapeKind === 'vertex')).toBe(true);
+    const split: SolidBody = { ...tracked, origins: { version: 1, state: 'tracked', bindings: [
+      { origin: first.origin, state: 'split', candidates: [{ kind: 'vertex', index: 0 }, { kind: 'vertex', index: 9 }] },
+      ...bindings.slice(1),
+    ] } };
+    const without = generateDrawingAutoDimensions(initial,
+      { ...current, dimensionInstances: [{ ...instance, body: split }] }, [view], outline);
+    expect(without).not.toBeNull();
+    expect(without?.dimensions.flatMap((dimension) => dimension.targets.flatMap((target) =>
+      target.kind === 'subShape' ? [target.ref.index] : []))).not.toContain(0);
+    expect(initial.dimensions).toHaveLength(0);
+  });
+  it('同名bodyの別sourceや重複instanceを自動寸法へ混ぜない', () => {
+    const instance = source.dimensionInstances?.[0];
+    if (instance === undefined) throw new Error('図面instanceなし');
+    const wrong = { ...source, dimensionInstances: [{ ...instance, sourceRef: 'other' }] };
+    expect(generateDrawingAutoDimensions(initial, wrong, [view], outline)).toBeNull();
+    expect(generateDrawingAutoDimensions(initial,
+      { ...source, dimensionInstances: [instance, instance] }, [view], outline)).toBeNull();
+  });
   it('再実行でも同じIDと順序になり自動寸法が増殖しない', () => {
     const once = generate(); expect(generate(once)).toEqual(once);
   });

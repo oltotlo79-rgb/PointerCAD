@@ -17,6 +17,7 @@
  */
 
 import { expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
+import { extrudeOperationSelection } from './extrudeOperation.js';
 import { deriveSpringValue } from './springExpressions.js';
 import {
   appendSolid,
@@ -35,6 +36,7 @@ import {
   nextSolidId,
   nextSolidName,
   replaceSketch,
+  subShapeKindOf,
   type BooleanOperation,
   type ExtrudeEnd,
   type ExtrudeFeature,
@@ -91,7 +93,7 @@ import {
   selectedSphereFeature,
 } from '../sketch/sketchCommands.js';
 import { findSketchFeatureAt } from './sketchRefs.js';
-import { selectedSubShapeRefs, type SubShapeBody } from './subShapeSelection.js';
+import { parseSubShapeId, selectedSubShapeRefs, subShapeRefOf, type SubShapeBody } from './subShapeSelection.js';
 
 /** 縫合に要る面の最小枚数(§0.a-0.7)。 */
 const MIN_SEW_FACES = 2;
@@ -110,7 +112,7 @@ export const DEFAULT_EXTRUDE_DISTANCE: ExpressionValue = expressionValueFromNumb
 /** 回転角度の既定値(§0.a-0.9)。 */
 export const DEFAULT_REVOLVE_ANGLE: ExpressionValue = expressionValueFromNumber(360);
 /** 回転軸の既定値。world の Z 軸(§0.a-0.9)。 */
-export const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
+const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 /**
  * 押し出しの側面の傾き・薄板の厚みの既定値(FR-401、FR-416。P5 タスク50 で押し出しの段へ
  * 畳んだぶん)。model の定数を式へ直したもので、同じ数を 2 か所に書かない。
@@ -144,7 +146,7 @@ export const DEFAULT_SPRING_TURNS: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SPRING_TURNS_COUNT,
 );
 /** ばねの軸の既定値。world の Z 軸(§0.a-0.29)。 */
-export const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
+const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 /** ばねの巻き方向の既定値(§0.a-0.33)。 */
 export const DEFAULT_SPRING_HANDEDNESS: SpringHandedness = 'right';
 /** 全長・ピッチ・巻数のうち計算で求める欄の既定値(§0.a-0.30)。 */
@@ -400,7 +402,7 @@ function resolveSpringLengthFields(
  * ばねを 1 つ作る(FR-414、§0.a-0.29〜0.36)。対象ボディを持たず、消費もしない
  * 「作る」フィーチャー(§0.a-0.36)。始点の参照先が無ければ `noOriginPoint` で断る。
  *
- * `params.length` / `pitch` / `turns` は 3 つとも渡すが、`derived` が指す 1 つは
+ * `parameters.length` / `pitch` / `turns` は 3 つとも渡すが、`derived` が指す 1 つは
  * `resolveSpringLengthFields` が他の 2 つから自動生成した式で必ず上書きする。
  *
  * `variables` はパラメータ表(FR-207)の変数表(任意引数、P4b タスク22a で追加。呼び出し側の
@@ -408,7 +410,7 @@ function resolveSpringLengthFields(
  */
 export function commitSpring(
   document: PartDocument,
-  params: {
+  parameters: {
     readonly origin: SketchPointRef;
     readonly axis: RevolveAxis;
     readonly tiltAngle: ExpressionValue;
@@ -424,14 +426,14 @@ export function commitSpring(
   variables?: ReadonlyMap<string, number>,
   options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidCommandOutcome {
-  if (!pointRefExists(document, params.origin)) {
+  if (!pointRefExists(document, parameters.origin)) {
     return { ok: false, reasonKey: 'springError.noOriginPoint' };
   }
   const { length, pitch, turns } = resolveSpringLengthFields(
-    params.derived,
-    params.length,
-    params.pitch,
-    params.turns,
+    parameters.derived,
+    parameters.length,
+    parameters.pitch,
+    parameters.turns,
     variables,
     options,
   );
@@ -441,17 +443,17 @@ export function commitSpring(
     name: nextSolidName(document, 'spring'),
     suppressed: false,
     kind: 'spring',
-    origin: params.origin,
-    axis: params.axis,
-    tiltAngle: params.tiltAngle,
-    tiltAzimuth: params.tiltAzimuth,
+    origin: parameters.origin,
+    axis: parameters.axis,
+    tiltAngle: parameters.tiltAngle,
+    tiltAzimuth: parameters.tiltAzimuth,
     length,
     pitch,
     turns,
-    derived: params.derived,
-    coilDiameter: params.coilDiameter,
-    wireDiameter: params.wireDiameter,
-    handedness: params.handedness,
+    derived: parameters.derived,
+    coilDiameter: parameters.coilDiameter,
+    wireDiameter: parameters.wireDiameter,
+    handedness: parameters.handedness,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
@@ -466,7 +468,7 @@ export function commitSpring(
  */
 export function commitExtrude(
   document: PartDocument,
-  params: {
+  parameters: {
     readonly profile: SketchFaceRef;
     readonly distance: ExpressionValue;
     readonly reversed: boolean;
@@ -481,7 +483,7 @@ export function commitExtrude(
     readonly thicknessSide?: ThicknessSide;
   },
 ): SolidCommandOutcome {
-  if (!faceRefExists(document, params.profile)) {
+  if (!faceRefExists(document, parameters.profile)) {
     return { ok: false, reasonKey: 'solidError.noFace' };
   }
   const id = nextSolidId(document, 'extrude');
@@ -490,15 +492,15 @@ export function commitExtrude(
     name: nextSolidName(document, 'extrude'),
     suppressed: false,
     kind: 'extrude',
-    profile: params.profile,
-    distance: params.distance,
-    reversed: params.reversed,
-    symmetric: params.symmetric,
-    ...(params.end === undefined ? {} : { end: params.end }),
-    ...(params.taperAngle === undefined ? {} : { taperAngle: params.taperAngle }),
-    ...(params.taperOutward === undefined ? {} : { taperOutward: params.taperOutward }),
-    ...(params.thickness === undefined ? {} : { thickness: params.thickness }),
-    ...(params.thicknessSide === undefined ? {} : { thicknessSide: params.thicknessSide }),
+    profile: parameters.profile,
+    distance: parameters.distance,
+    reversed: parameters.reversed,
+    symmetric: parameters.symmetric,
+    ...(parameters.end === undefined ? {} : { end: parameters.end }),
+    ...(parameters.taperAngle === undefined ? {} : { taperAngle: parameters.taperAngle }),
+    ...(parameters.taperOutward === undefined ? {} : { taperOutward: parameters.taperOutward }),
+    ...(parameters.thickness === undefined ? {} : { thickness: parameters.thickness }),
+    ...(parameters.thicknessSide === undefined ? {} : { thicknessSide: parameters.thicknessSide }),
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
@@ -550,14 +552,14 @@ function thicknessSideOf(
 /** 回転を 1 つ作る(FR-402)。面の参照先が無ければ noFace で断る。 */
 export function commitRevolve(
   document: PartDocument,
-  params: {
+  parameters: {
     readonly profile: SketchFaceRef;
     readonly axis: RevolveAxis;
     readonly angle: ExpressionValue;
     readonly reversed: boolean;
   },
 ): SolidCommandOutcome {
-  if (!faceRefExists(document, params.profile)) {
+  if (!faceRefExists(document, parameters.profile)) {
     return { ok: false, reasonKey: 'solidError.noFace' };
   }
   const id = nextSolidId(document, 'revolve');
@@ -566,35 +568,71 @@ export function commitRevolve(
     name: nextSolidName(document, 'revolve'),
     suppressed: false,
     kind: 'revolve',
-    profile: params.profile,
-    axis: params.axis,
-    angle: params.angle,
-    reversed: params.reversed,
+    profile: parameters.profile,
+    axis: parameters.axis,
+    angle: parameters.angle,
+    reversed: parameters.reversed,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
 
-/** 縫合を 1 つ作る(FR-403)。面が 2 枚未満なら needTwoFaces、参照先が無ければ noFace。 */
+interface SewFacesInput {
+  readonly faces: readonly SketchFaceRef[];
+  readonly surfaceFaces?: readonly SubShapeRef[];
+}
+
+function sewFacesError(document: PartDocument, input: SewFacesInput): MessageKey | null {
+  if ((input.surfaceFaces?.length ?? 0) > 0) {
+    if (input.faces.length > 0) return 'solidError.noFace';
+    if ((input.surfaceFaces?.length ?? 0) < MIN_SEW_FACES) return 'solidError.needTwoFaces';
+    const live = new Set(liveBodyIds(document));
+    for (const face of input.surfaceFaces ?? []) {
+      if (subShapeKindOf(face) !== 'face' || !live.has(face.bodyFeatureId)) return 'solidError.noFace';
+    }
+    return null;
+  }
+  if (input.faces.length < MIN_SEW_FACES) return 'solidError.needTwoFaces';
+  return input.faces.every(face => faceRefExists(document, face)) ? null : 'solidError.noFace';
+}
+
+/** 面入力では選択を間引かない。現在の面から参照を作れない選択は全体を断る。 */
+function selectedSewFaces(
+  document: PartDocument,
+  selection: readonly string[],
+  bodies: readonly SubShapeBody[],
+): { readonly ok: true; readonly input: SewFacesInput } | { readonly ok: false; readonly reasonKey: MessageKey } {
+  if (!selection.some(id => parseSubShapeId(id) !== null)) {
+    const selected = selectedFaceRefs(document, selection);
+    return selected.ok ? { ok: true, input: { faces: selected.refs } } : selected;
+  }
+  const surfaceFaces: SubShapeRef[] = [];
+  for (const id of selection) {
+    if (parseSubShapeId(id)?.kind !== 'face') return { ok: false, reasonKey: 'solidError.noFace' };
+    const face = subShapeRefOf(bodies, id);
+    if (face === null) return { ok: false, reasonKey: 'solidError.noFace' };
+    surfaceFaces.push(face);
+  }
+  const input: SewFacesInput = { faces: [], surfaceFaces };
+  const reasonKey = sewFacesError(document, input);
+  return reasonKey === null ? { ok: true, input } : { ok: false, reasonKey };
+}
+
+/** 縫合を 1 つ作る(FR-403)。旧スケッチ面と既存の面の入力を混在させない。 */
 export function commitSew(
   document: PartDocument,
-  params: { readonly faces: readonly SketchFaceRef[]; readonly tolerance: ExpressionValue },
+  parameters: SewFacesInput & { readonly tolerance: ExpressionValue },
 ): SolidCommandOutcome {
-  if (params.faces.length < MIN_SEW_FACES) {
-    return { ok: false, reasonKey: 'solidError.needTwoFaces' };
-  }
-  for (const face of params.faces) {
-    if (!faceRefExists(document, face)) {
-      return { ok: false, reasonKey: 'solidError.noFace' };
-    }
-  }
+  const reasonKey = sewFacesError(document, parameters);
+  if (reasonKey !== null) return { ok: false, reasonKey };
   const id = nextSolidId(document, 'sew');
   const feature: SewFeature = {
     id,
     name: nextSolidName(document, 'sew'),
     suppressed: false,
     kind: 'sew',
-    faces: params.faces,
-    tolerance: params.tolerance,
+    faces: parameters.faces,
+    ...(parameters.surfaceFaces === undefined ? {} : { surfaceFaces: parameters.surfaceFaces }),
+    tolerance: parameters.tolerance,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
@@ -605,28 +643,28 @@ export function commitSew(
  */
 export function commitBoolean(
   document: PartDocument,
-  params: {
+  parameters: {
     readonly operation: BooleanOperation;
     readonly targetFeatureId: string;
     readonly toolFeatureId: string;
   },
 ): SolidCommandOutcome {
-  if (params.targetFeatureId === params.toolFeatureId) {
+  if (parameters.targetFeatureId === parameters.toolFeatureId) {
     return { ok: false, reasonKey: 'solidError.sameBody' };
   }
   const live = new Set(liveBodyIds(document));
-  if (!live.has(params.targetFeatureId) || !live.has(params.toolFeatureId)) {
+  if (!live.has(parameters.targetFeatureId) || !live.has(parameters.toolFeatureId)) {
     return { ok: false, reasonKey: 'solidError.noBody' };
   }
-  const id = nextSolidId(document, params.operation);
+  const id = nextSolidId(document, parameters.operation);
   const feature: BooleanFeature = {
     id,
-    name: nextSolidName(document, params.operation),
+    name: nextSolidName(document, parameters.operation),
     suppressed: false,
     kind: 'boolean',
-    operation: params.operation,
-    targetFeatureId: params.targetFeatureId,
-    toolFeatureId: params.toolFeatureId,
+    operation: parameters.operation,
+    targetFeatureId: parameters.targetFeatureId,
+    toolFeatureId: parameters.toolFeatureId,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
@@ -644,7 +682,7 @@ const READY: SolidToolReadiness = { ready: true, reasonKey: null };
  * カーネルの立体一覧(タスク20 の `SubShapeBody`)。**タスク26 がツールバー側から実際の
  * 一覧を渡すまでの間、既存の呼び出し(`Toolbar.tsx`)が3引数のままでも型検査が壊れないよう
  * 任意引数にし、既定を空配列にした**(計画書は4引数目を明記していないので、判断に迷った
- * 点として報告する)。押し出し・回転・縫合・和・差・積・ばねは `bodies` を使わない。
+ * 点として報告する)。縫合は選んだ既存の面を参照にするためにも使う。押し出し・回転・和・差・積・ばねは `bodies` を使わない。
  */
 export function solidToolReadiness(
   document: PartDocument,
@@ -659,7 +697,7 @@ export function solidToolReadiness(
       return face.ok ? READY : { ready: false, reasonKey: face.reasonKey };
     }
     case 'sew': {
-      const faces = selectedFaceRefs(document, selection);
+      const faces = selectedSewFaces(document, selection, bodies);
       return faces.ok ? READY : { ready: false, reasonKey: faces.reasonKey };
     }
     case 'union':
@@ -740,6 +778,9 @@ export function solidToolReadiness(
       「押せるのに断られる」が起きる)。
     */
     case 'draft':
+    case 'faceOffset':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
@@ -788,6 +829,7 @@ export function commitSolidInput(
   bodies: readonly SubShapeBody[] = [],
   variables?: ReadonlyMap<string, number>,
   options: Omit<EvaluateOptions, 'variables'> = {},
+  resolvedSketches?: CutContext['resolvedSketches'],
 ): SolidCommandOutcome {
   switch (commit.tool) {
     /*
@@ -811,7 +853,12 @@ export function commitSolidInput(
       }
       const tapered = commit.flags.tapered === true;
       const thinWalled = commit.flags.thinWalled === true;
-      return commitExtrude(document, {
+      // 結合・切り抜きは明示した相手を先に確かめる(断るときは文書に何も足さない)。
+      const operation = extrudeOperationSelection(
+        document, commit.shapeChoices?.extrudeOperation, commit.shapeChoices?.extrudeTarget,
+      );
+      if (!operation.ok) return operation;
+      const extruded = commitExtrude(document, {
         profile: face.ref,
         distance: commit.values.distance ?? DEFAULT_EXTRUDE_DISTANCE,
         reversed: commit.flags.reversed ?? false,
@@ -830,6 +877,14 @@ export function commitSolidInput(
             }
           : {}),
       });
+      // 新しい立体は従来の押し出しの文書そのまま。結合・切り抜きは同じ文書へブーリアンを足す
+      // (履歴は押し出しとブーリアンの 2 段。確定は 1 回の採用・取り消し 1 段)。
+      if (!extruded.ok || operation.operation === 'new') return extruded;
+      return commitBoolean(extruded.document, {
+        operation: operation.operation,
+        targetFeatureId: operation.targetFeatureId,
+        toolFeatureId: extruded.featureId,
+      });
     }
     case 'revolve': {
       const face = selectedFaceRef(document, selection);
@@ -844,12 +899,12 @@ export function commitSolidInput(
       });
     }
     case 'sew': {
-      const faces = selectedFaceRefs(document, selection);
+      const faces = selectedSewFaces(document, selection, bodies);
       if (!faces.ok) {
         return { ok: false, reasonKey: faces.reasonKey };
       }
       return commitSew(document, {
-        faces: faces.refs,
+        ...faces.input,
         tolerance: commit.values.tolerance ?? DEFAULT_SEW_TOLERANCE,
       });
     }
@@ -941,6 +996,9 @@ export function commitSolidInput(
       (`as` を使わずに `ShapeEditToolId` へ絞る)。
     */
     case 'draft':
+    case 'faceOffset':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
@@ -962,7 +1020,7 @@ export function commitSolidInput(
     // 平面による切断(FR-432、タスク27e)。「反対側も残す」では履歴を 2 段積む。
     case 'cut': {
       const context: CutContext = { document, selection, bodies };
-      return commitCutInput(context, commit);
+      return commitCutInput({ ...context, resolvedSketches }, commit);
     }
   }
 }

@@ -14,6 +14,7 @@ import {
   PrintIcon,
   RecentFileIcon,
   SaveAsIcon,
+  SavePointIcon,
   TemplateNewIcon,
   TemplateSaveIcon,
 } from '../icons.js';
@@ -46,6 +47,7 @@ export type FileMenuActionId =
   | 'newAssembly'
   | 'saveAs'
   | 'compareDocuments'
+  | 'savePoints'
   | 'exportShape'
   | 'importShape'
   | 'saveAsTemplate'
@@ -64,6 +66,7 @@ export type FileMenuActionId =
  * 画面を見るだけで見つかる(NFR-UX-7)。Shift 押しと Ctrl+Shift+S はそのまま残す。
  */
 export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
+  { id: 'savePoints', labelKey: 'toolbar.history.savePoints', tooltipKey: 'toolbar.history.savePointsTooltip', Icon: SavePointIcon },
   { id: 'compareDocuments', labelKey: 'documentDiff.title', tooltipKey: 'documentDiff.tooltip', Icon: DocumentCompareIcon },
   { id: 'newDrawingFromPart', labelKey: 'drawing.file.fromPart', tooltipKey: 'drawing.file.fromPart', Icon: DrawingSheetIcon },
   { id: 'newDrawingFromTemplate', labelKey: 'drawing.template.new', tooltipKey: 'drawing.template.newTooltip', Icon: DrawingTemplateIcon },
@@ -136,10 +139,10 @@ export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
  * 兄弟の `key` に種類の接頭辞を付けるのは `rules/06` 10.9 の対策でもある——ひな形の名前が
  * たまたま `'print'` でも、行の id は `'template:print'` になって決まった操作と食い違う。
  */
-export const STORED_TEMPLATE_MENU_PREFIX = 'template:';
+const STORED_TEMPLATE_MENU_PREFIX = 'template:';
 
 /** 最近使ったファイルの行の id の接頭辞(FR-807)。理由は上と同じ。 */
-export const RECENT_FILE_MENU_PREFIX = 'recentFile:';
+const RECENT_FILE_MENU_PREFIX = 'recentFile:';
 
 /** 保存したひな形の行の id。 */
 export type StoredTemplateMenuId = `${typeof STORED_TEMPLATE_MENU_PREFIX}${string}`;
@@ -202,7 +205,7 @@ export function fileMenuItems(
 ): readonly ToolMenuItem<FileMenuItemId>[] {
   // 図面作成は部品と組立の両方で使う。部品用ひな形と図面用ひな形は分ける。
   const rows: ToolMenuItem<FileMenuItemId>[] = documentKind === 'assembly'
-    ? FILE_MENU_ITEMS.filter((item) => item.id === 'newAssembly' || item.id === 'saveAs'
+    ? FILE_MENU_ITEMS.filter((item) => item.id === 'newAssembly' || item.id === 'saveAs' || item.id === 'savePoints'
       || item.id === 'newDrawingFromPart' || item.id === 'newDrawingFromTemplate')
       .map((item) => item.id === 'newDrawingFromPart'
         ? { ...item, labelKey: 'drawing.file.fromAssembly', tooltipKey: 'drawing.file.fromAssembly' } : item)

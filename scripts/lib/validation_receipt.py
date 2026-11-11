@@ -184,7 +184,7 @@ def git_tool_inputs(selected: Path) -> tuple[Path, list[Path]]:
     return runtime.resolve(strict=True), shipped
 
 
-def capture(root: Path, tools: dict[str, str]) -> dict:
+def capture(root: Path, tools: dict[str, str], environment_keys: dict | None = None) -> dict:
     root = root.resolve(strict=True)
     if set(tools) != {'node', 'pnpm', 'git', 'shell', 'node_runtime', 'pnpm_runtime'}:
         raise ValueError('Required runtime tool paths are missing')
@@ -239,6 +239,8 @@ def capture(root: Path, tools: dict[str, str]) -> dict:
     environment = {key: value for key, value in os.environ.items()
                    if re.match(r'^(NODE_|PNPM_|npm_config_|COREPACK_|PLAYWRIGHT_|ELECTRON_|VITE_|PCAD_|POINTERCAD_|CI$|TZ$|LANG$|LC_|DISPLAY$)', key, re.I)
                    and key.upper() != 'POINTERCAD_PERF_STRICT'}
+    if environment_keys is not None:
+        environment_keys.update({key: digest(value) for key, value in environment.items()})
     outputs = [root / 'apps/web/dist', root / 'apps/desktop/dist']
     for package in packages:
         if package.is_dir():
@@ -269,6 +271,7 @@ def capture(root: Path, tools: dict[str, str]) -> dict:
 
 
 def eligible(receipt: dict, current: dict, phase: str, parent: str, now: float, monotonic: float, repeats: int) -> bool:
+    receipt = receipt_for_comparison(receipt)
     if set(receipt) != {'version', 'state', 'at', 'monotonic', 'repeats', 'phase', 'token'} or receipt['version'] != VERSION:
         return False
     age = now - receipt['at']
@@ -285,6 +288,31 @@ def eligible(receipt: dict, current: dict, phase: str, parent: str, now: float, 
         return (receipt['phase'] == 'commit' and parent == before['head'] and current['head'] != before['head']) or (
             receipt['phase'] == 'prepared' and current['head'] == before['head'])
     return False
+
+
+
+def receipt_for_comparison(record: dict) -> dict:
+    """Optional sealed diagnostics never replace any original eligibility input."""
+    if 'environmentKeys' not in record:
+        return record
+    keys = record['environmentKeys']
+    if not isinstance(keys, dict) or any(not isinstance(name, str) or not isinstance(value, str)
+                                        or re.fullmatch(r'[0-9a-f]{64}', value) is None
+                                        for name, value in keys.items()):
+        raise ValueError('Invalid environment key diagnostics')
+    return {name: value for name, value in record.items() if name != 'environmentKeys'}
+
+
+def environment_change_reason(record: dict, current_keys: dict) -> str:
+    """Key names only; values and their hashes are never printed in a refusal."""
+    receipt_for_comparison(record)
+    if 'environmentKeys' not in record:
+        return '; environment keys: unavailable (older record)'
+    before = record['environmentKeys']
+    changed = sorted(name for name in before.keys() | current_keys.keys()
+                     if before.get(name) != current_keys.get(name))
+    return '; environment keys: ' + (json.dumps(changed, ensure_ascii=True) if changed
+                                     else 'none (other environment inputs changed)')
 
 
 def storage(root: Path) -> Path:
@@ -335,19 +363,23 @@ def operate(action: str, root: Path, tools: dict[str, str], phase: str, token: s
     # A missing or modified receipt cannot be reused. Reject it before hashing
     # every installed dependency and browser; valid receipts still compare all inputs.
     reuse_receipt = read_record(receipt_path, key) if action == 'reuse' else None
-    current = capture(root, tools)
+    environment_keys = {}
+    current = capture(root, tools, environment_keys)
     if action == 'start':
         token = secrets.token_hex(24)
-        write_record(running_path, {'state': current, 'token': token, 'repeats': repeats}, key)
+        write_record(running_path, {'state': current, 'token': token, 'repeats': repeats,
+                                    'environmentKeys': environment_keys}, key)
         return {'ok': True, 'token': token}
     if action == 'finish':
         before = read_record(running_path, key)
         changed = [name for name in current if name != 'outputs' and before['state'].get(name) != current[name]]
         if before['token'] != token or before['repeats'] != repeats or changed:
             # Categories only: never print environment values or private file contents.
-            raise ValueError('The full check no longer matches its starting inputs; changed: ' + ', '.join(changed))
+            detail = environment_change_reason(before, environment_keys) if 'environment' in changed else ''
+            raise ValueError('The full check no longer matches its starting inputs; changed: ' + ', '.join(changed) + detail)
         write_record(receipt_path, {'version': VERSION, 'state': current, 'at': time.time(), 'monotonic': time.monotonic(),
-                                   'repeats': repeats, 'phase': 'prepared', 'token': token}, key)
+                                   'repeats': repeats, 'phase': 'prepared', 'token': token,
+                                   'environmentKeys': environment_keys}, key)
         running_path.unlink(); return {'ok': True}
     if action != 'reuse':
         raise ValueError('Unknown receipt operation')
@@ -376,7 +408,8 @@ def operate(action: str, root: Path, tools: dict[str, str], phase: str, token: s
             changed += ['tool:' + name for name, value in current['tools'].items() if before.get('tools', {}).get(name) != value]
         # Report categories only. Paths, environment values and local configuration
         # may contain private information and are never dumped for diagnostics.
-        raise ValueError('Receipt is stale or belongs to different inputs or an already used operation; changed: ' + ', '.join(changed))
+        detail = environment_change_reason(receipt, environment_keys) if 'environment' in changed else ''
+        raise ValueError('Receipt is stale or belongs to different inputs or an already used operation; changed: ' + ', '.join(changed) + detail)
     if phase == 'Commit':
         receipt['phase'] = 'commit'; write_record(receipt_path, receipt, key)
     else:

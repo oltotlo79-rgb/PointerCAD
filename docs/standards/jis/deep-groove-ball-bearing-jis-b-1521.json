@@ -24,7 +24,8 @@
     "57 行すべて、NSK の製品ページ(1件ずつ)と hayamihyou.net の一覧の 2 件が d・D・B で完全に一致した(確認済み)。",
     "面取寸法 rMin は NSK の 1 件のみだが、JIS B 1521 の規定値と同じはず。",
     "呼び番号の読み方(JIS B 1513): 1桁目 6=単列深溝玉軸受、2桁目 直径系列(0/2/3)、3〜4桁目 内径番号(00=10, 01=12, 02=15, 03=17、04以降は番号×5)。",
-    "URL は 6000 の 1 件だけを載せた。他の呼び番号は https://www.nsk.com/jp-ja/engineering/<呼び番号>-apn.html で同じ形。"
+    "URL は 6000 の 1 件だけを載せた。他の呼び番号は https://www.nsk.com/jp-ja/engineering/<呼び番号>-apn.html で同じ形。",
+    "実行時カタログ packages/model/src/assembly/standard/bearings.ts の深溝玉軸受の表 DEEP_GROOVE_BALL_BEARINGS に付けていた出典 DEEP_GROOVE_BALL_BEARING_SOURCE の値(製品のどこからも読まれていなかったので、値を変えずにここへ移した): standard「JIS B 1521 / JIS B 1513」、edition「2012 / 1995」、title「転がり軸受―深溝玉軸受 / 転がり軸受の呼び番号」、scope「6000・6200・6300系列、内径10〜50mm」、verified=true、sourceUrls: https://www.nsk.com/jp-ja/engineering/6000-apn.html https://hayamihyou.net/bearing/ https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1521:2012"
   ],
   "rows": [
     {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { intervalUnion, unionDivide } from './mathIntervalUnion.js';
-import { sampleFunctionCurve, type FunctionCurveEvaluator, type FunctionCurveOptions } from './adaptiveFunctionCurve.js';
+import { sampleFunctionCurve, type FunctionCurveEvaluator } from './adaptiveFunctionCurve.js';
+
+type FunctionCurveOptions = Parameters<typeof sampleFunctionCurve>[1];
 
 const options: FunctionCurveOptions = { lower: -2, upper: 2, minimum: [-3, -5, -1], maximum: [3, 5, 1],
   tolerance: 0.01, maximumSamples: 20_000, maximumCells: 40_000, maximumDepth: 40 };

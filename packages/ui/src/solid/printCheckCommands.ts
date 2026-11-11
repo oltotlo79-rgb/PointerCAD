@@ -17,7 +17,6 @@
  */
 
 import {
-  DISPLAY_MESH_QUALITY,
   type LengthUnit,
   type PartDocument,
   type PrintabilityOutcome,
@@ -103,7 +102,7 @@ export type PartInspector = (
 ) => Promise<PrintabilityOutcome>;
 
 /** `createPartInspector` に渡すもの。解くのに要るものは測定・書き出しと共通。 */
-export interface PartInspectorDeps extends CachedResolveDeps {
+interface PartInspectorDeps extends CachedResolveDeps {
   /** 形を点検する口(`KernelBridge.inspectPrintability`)。 */
   readonly inspectPrintability: (
     steps: readonly ResolvedSolidStep[],
@@ -132,7 +131,7 @@ export function createPartInspector(deps: PartInspectorDeps): PartInspector {
  * 点検する立体 1 つ。**ストアの `SolidBody` がそのまま満たす形**にしてある
  * (`MeasureBody` と同じ流儀。ui はカーネルの結果をそのまま渡せる)。
  */
-export interface PrintCheckBody {
+interface PrintCheckBody {
   /** 立体を作ったフィーチャーの id(= ボディの id)。 */
   readonly featureId: string;
   /** 画面に出ている三角形。枚数だけを見る(色を塗る単位が三角形だから)。 */
@@ -243,9 +242,3 @@ export async function runPrintCheck(input: PrintCheckInput): Promise<PrintCheckO
     offsets: printabilityTriangleOffsets(triangleCountsOf(targets)),
   };
 }
-
-/**
- * 従来の点検依頼が省略時に使う細かさの対。値は互換のため残すが、Worker は実際の
- * 表示メッシュを直接点検するため再メッシュ化には使わない。
- */
-export const PRINT_CHECK_MESH_QUALITY = DISPLAY_MESH_QUALITY;

@@ -56,9 +56,11 @@ export function serializeConstraint(constraint: SketchConstraint): SketchConstra
   const base = { id: constraint.id, name: constraint.name };
   switch (constraint.kind) {
     case 'coincident':
+    case 'midpoint':
+    case 'pointOnCurve':
       return {
         ...base,
-        kind: 'coincident',
+        kind: constraint.kind,
         a: serializeConstraintTarget(constraint.a),
         b: serializeConstraintTarget(constraint.b),
       };
@@ -98,10 +100,12 @@ export function serializeConstraint(constraint: SketchConstraint): SketchConstra
       };
     case 'fix':
       return { ...base, kind: 'fix', target: serializeConstraintTarget(constraint.target) };
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
       return {
         ...base,
-        kind: 'distance',
+        kind: constraint.kind,
         a: serializeConstraintTarget(constraint.a),
         b: serializeConstraintTarget(constraint.b),
         length: serializeExpression(constraint.length),
@@ -207,7 +211,9 @@ function readConstraint(value: unknown, path: string): Checked<SketchConstraint>
   }
   const base = { id: id.value, name: name.value };
   switch (kind.value) {
-    case 'coincident': {
+    case 'coincident':
+    case 'midpoint':
+    case 'pointOnCurve': {
       const a = readConstraintTarget(record.value, 'a', path);
       if (!a.ok) {
         return a;
@@ -216,7 +222,7 @@ function readConstraint(value: unknown, path: string): Checked<SketchConstraint>
       if (!b.ok) {
         return b;
       }
-      return { ok: true, value: { ...base, kind: 'coincident', a: a.value, b: b.value } };
+      return { ok: true, value: { ...base, kind: kind.value, a: a.value, b: b.value } };
     }
     case 'horizontal':
     case 'vertical': {
@@ -290,6 +296,8 @@ function readConstraint(value: unknown, path: string): Checked<SketchConstraint>
       }
       return { ok: true, value: { ...base, kind: 'fix', target: target.value } };
     }
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance': {
       const a = readConstraintTarget(record.value, 'a', path);
       if (!a.ok) {
@@ -303,7 +311,7 @@ function readConstraint(value: unknown, path: string): Checked<SketchConstraint>
       if (!length.ok) {
         return length;
       }
-      return { ok: true, value: { ...base, kind: 'distance', a: a.value, b: b.value, length: length.value } };
+      return { ok: true, value: { ...base, kind: kind.value, a: a.value, b: b.value, length: length.value } };
     }
     case 'angle': {
       const a = readConstraintTarget(record.value, 'a', path);

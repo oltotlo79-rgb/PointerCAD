@@ -3,7 +3,7 @@ import type {MathWorkerPort} from '@pointercad/expression/math/client';
 /** Initial module/backend loading took about 6.5s under load before a 13ms result.
  * Keep a finite 15s first-request allowance; warm calculations retain their caller deadline.
  */
-export const MATH_WORKER_STARTUP_TIMEOUT_MS = 15_000;
+const MATH_WORKER_STARTUP_TIMEOUT_MS = 15_000;
 export function browserMathWorker(worker:Worker):MathWorkerPort {
   let terminated=false, received=false, retire=false;
   const port:MathWorkerPort={onmessage:null,onerror:null,onmessageerror:null,

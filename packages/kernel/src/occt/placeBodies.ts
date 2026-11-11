@@ -28,6 +28,7 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { PlacementSpec, QuaternionTuple, Vec3Tuple } from '../types.js';
+import { isFiniteQuaternion } from '../math/vectorArithmetic.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
@@ -61,15 +62,6 @@ export interface OcctBoxHandle {
 
 function isFiniteTuple(value: Vec3Tuple): boolean {
   return Number.isFinite(value[0]) && Number.isFinite(value[1]) && Number.isFinite(value[2]);
-}
-
-function isFiniteQuaternion(value: QuaternionTuple): boolean {
-  return (
-    Number.isFinite(value[0]) &&
-    Number.isFinite(value[1]) &&
-    Number.isFinite(value[2]) &&
-    Number.isFinite(value[3])
-  );
 }
 
 /**

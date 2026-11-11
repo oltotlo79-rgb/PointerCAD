@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -7,7 +8,7 @@ import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'fourier(exp(-x^2),x,k)', kind: 'transform' },
@@ -45,8 +46,7 @@ function native(args: readonly string[], input?: string): string {
   return result.stdout;
 }
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'degree', coefficients: [],
-    identity: { documentId: 'transforms', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'degree', identity: { documentId: 'transforms', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 beforeAll(() => {
   backend = createMathBackend();

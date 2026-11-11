@@ -4,7 +4,9 @@ import {makeFunctionSurfaceBodies} from './makeFunctionSurfaceBodies.js';
 import {createAllocations} from './allocations.js';
 import {hasSolid,isValidShape,measureArea,measureVolume} from './solidMesh.js';
 import {FUNCTION_CLIP_BOUND_TOLERANCE,type FunctionClipBox} from './clipFunctionShape.js';
-import type {FunctionSurfacePrimitive,FunctionSurfacePrimitiveSpec} from './functionSurfacePrimitiveSpec.js';
+import type {FunctionSurfacePrimitiveSpec, checkedFunctionSurfacePrimitive} from './functionSurfacePrimitiveSpec.js';
+
+type FunctionSurfacePrimitive = Parameters<typeof checkedFunctionSurfacePrimitive>[0]['primitive'];
 
 let oc:Awaited<ReturnType<typeof loadOcctForNode>>;
 beforeAll(async()=>{oc=await loadOcctForNode();},180_000);

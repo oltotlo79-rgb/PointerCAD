@@ -19,9 +19,9 @@ import { expandPlusMinus, MAX_PLUS_MINUS_CANDIDATES } from './plusMinus.js';
 import { prepareMathCalculation } from './prepareMathCalculation.js';
 import { exactMathBoolean, pruneMathPiecewise } from './pruneMathPiecewise.js';
 
-export const NON_SQUARE_ABSOLUTE_MESSAGE = '正方行列でない行列の |A| は行列式にできません。'
+const NON_SQUARE_ABSOLUTE_MESSAGE = '正方行列でない行列の |A| は行列式にできません。'
   + '全成分の2乗の和の平方根（ノルム）を使う場合は、全成分を並べた norm([…]) と書いてください。';
-export const INFINITE_CARDINALITY_MESSAGE = '無限集合（区間・数の集合など）の要素数は数えられません。'
+const INFINITE_CARDINALITY_MESSAGE = '無限集合（区間・数の集合など）の要素数は数えられません。'
   + '要素を並べた有限集合 {…} を指定してください。区間の長さを使う場合は、上端−下端を書いてください。';
 
 const SET_OPERATIONS: ReadonlySet<string> = new Set(['set', 'interval', 'union', 'intersection', 'set-minus',

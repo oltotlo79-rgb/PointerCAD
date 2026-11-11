@@ -56,7 +56,7 @@ param(
     # 対象原因の調査専用。前提projectを省いた結果を通常ゲート・CIへ使用しない。
     [switch]$E2ENoDependencies,
     # 診断用: 指定パッケージの指定ユニットテストだけを実行する。最終ゲートの代用にはしない。
-    [ValidateSet("", "desktop", "web", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content", "expression")]
+    [ValidateSet("", "desktop", "web", "drawing", "kernel", "model", "io", "ui", "test-utils", "help-content", "expression", "fem")]
     [string]$UnitPackage = "",
     [string[]]$UnitTests = @(),
     # 実装途中の診断専用。既定・pre-commit・pre-pushの必須段数は変えない。
@@ -327,7 +327,8 @@ try {
         exit 1
     }
     foreach ($unitTest in $UnitTests) {
-        if ($unitTest -notmatch '^src/[A-Za-z0-9_./-]+\.test\.tsx?$' -or $unitTest.Contains('..')) {
+        $integrationPath = $UnitPackage -eq 'ui' -and $unitTest -match '^integration/[A-Za-z0-9_-]+\.test\.ts$'
+        if (($unitTest -notmatch '^src/[A-Za-z0-9_./-]+\.test\.tsx?$' -and -not $integrationPath) -or $unitTest.Contains('..')) {
             Write-Host "[NG] ユニット診断には src/ 配下のテストファイルを指定してください" -ForegroundColor Red
             exit 1
         }
@@ -455,7 +456,7 @@ try {
                 $scopeJson = & python @scopeArgs
                 if ($LASTEXITCODE -ne 0) { throw 'Local scope inspection failed' }
                 $candidateScope = ($scopeJson -join "`n") | ConvertFrom-Json
-                $allowedPackages = @('desktop', 'web', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression')
+                $allowedPackages = @('desktop', 'web', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression', 'fem')
                 if ($candidateScope.mode -eq 'targeted' -and @($candidateScope.packages).Count -gt 0 -and
                     @($candidateScope.packages | Where-Object { $allowedPackages -notcontains $_ }).Count -eq 0) {
                     $localScope = $candidateScope
@@ -614,7 +615,11 @@ try {
                 Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
                 Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
                 if ($null -ne $localScope) { Invoke-LocalPackageChecks -Packages @($localScope.packages) }
-                else { Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test") }
+                else {
+                    Invoke-Check "(3/$totalChecks) i18n precheck" pnpm @('--filter', '@pointercad/ui', 'exec', 'vitest', 'run', 'src/i18n/i18n.test.ts', '--maxWorkers=1')
+                    Invoke-Check "(3/$totalChecks) help precheck" pnpm @('--filter', '@pointercad/help-content', 'exec', 'vitest', 'run', 'src/topics.test.ts', '--maxWorkers=1')
+                    Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
+                }
                 Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             }
             finally {
@@ -650,9 +655,24 @@ try {
         $totalChecks = if ($StaticOnly) { 2 } elseif ($E2EOnly) { 1 } elseif ($runE2E -or $ciStageRequested) { 5 } else { 4 }
         # 自己試験はCIでは前段(Front)で1回だけ行う。単体の先行分・画面検査の段は同じ版の前段に任せる。
         if (-not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and $CIStage -in @('', 'Front')) {
-            Invoke-Check "(0) 品質ゲート自身の自己試験" (Get-Process -Id $PID).Path @(
-                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "scripts/check.selftest.ps1"))
-            $ciStageSteps.Add('selftest')
+            # 2026-10-05 15:0x 利用者の指示「検査が多過ぎるし長すぎる」: 手元の軽い検査(-Scope Local、CIではない)で、
+            # 品質ゲートの道具(scripts/・.githooks・.claude/hooks とその設定)が比較の基点から変わっていなければ
+            # 自己試験を省く(約12分)。変わった・判定できない時は今までどおり流す。両OSのCIは常に流す。
+            $skipSelftestUnchanged = $false
+            if ($localLight -and -not $isRunningOnCI -and $CIStage -eq '') {
+                $toolChange = Test-GateToolsChanged -Root $root -Base $localLightBase
+                if ($toolChange.Changed) {
+                    Write-Host "[検査] 品質ゲート自身の自己試験を流します: $($toolChange.Reason)" -ForegroundColor Cyan
+                } else {
+                    $skipSelftestUnchanged = $true
+                    Write-Host "[省略] (0) 品質ゲート自身の自己試験を省きます: $($toolChange.Reason)(基点 $localLightBase)。道具が変わった時と両OSのCIでは流します(利用者の指示 2026-10-05)。" -ForegroundColor Yellow
+                }
+            }
+            if (-not $skipSelftestUnchanged) {
+                Invoke-Check "(0) 品質ゲート自身の自己試験" (Get-Process -Id $PID).Path @(
+                    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "scripts/check.selftest.ps1"))
+                $ciStageSteps.Add('selftest')
+            }
         }
         if ($runE2E) {
             # Initial downloads change the dependencies/browsers protected by B3.
@@ -700,8 +720,16 @@ try {
                     $UnitTests += $requiredUnitTest
                 }
             }
-            $unitArgs = @("--filter", "@pointercad/$UnitPackage", "exec", "vitest", "run") + $UnitTests
-            Invoke-Check "ユニット診断: $UnitPackage" pnpm $unitArgs
+            $integrationTests = @($UnitTests | Where-Object { $_.StartsWith('integration/') })
+            $sourceTests = @($UnitTests | Where-Object { -not $_.StartsWith('integration/') })
+            if ($sourceTests.Count -gt 0) {
+                $unitArgs = @("--filter", "@pointercad/$UnitPackage", "exec", "vitest", "run") + $sourceTests
+                Invoke-Check "ユニット診断: $UnitPackage" pnpm $unitArgs
+            }
+            if ($integrationTests.Count -gt 0) {
+                $integrationArgs = @('--filter', '@pointercad/ui', 'exec', 'vitest', 'run', '--config', 'vitest.integration.config.ts') + $integrationTests
+                Invoke-Check 'UI integration diagnostic' pnpm $integrationArgs
+            }
         }
         elseif ($E2EOnly) {
             Write-Host "[診断] E2Eだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
@@ -711,7 +739,9 @@ try {
         }
         elseif ($CIStage -eq 'UnitLead') {
             Write-Host "[CIの段] 単体の先行分だけを行います(ルートのtestの前半。後半は前段が行います)。" -ForegroundColor Cyan
-            Invoke-Check "(3/$totalChecks) 単体の先行分: $($ciStageUnitSplit.leadCommand)" pnpm @($ciStageUnitSplit.lead)
+            foreach ($unitCommand in $ciStageUnitSplit.leadCommands) {
+                Invoke-Check "(3/$totalChecks) 単体の先行分: $($unitCommand.command)" pnpm @($unitCommand.args)
+            }
             $ciStageSteps.Add('unit-lead')
         }
         elseif ($CIStage -eq 'Front') {
@@ -720,7 +750,9 @@ try {
             $ciStageSteps.Add('typecheck')
             Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
             $ciStageSteps.Add('lint')
-            Invoke-Check "(3/$totalChecks) 単体の残り: $($ciStageUnitSplit.restCommand)" pnpm @($ciStageUnitSplit.rest)
+            foreach ($unitCommand in $ciStageUnitSplit.restCommands) {
+                Invoke-Check "(3/$totalChecks) 単体の残り: $($unitCommand.command)" pnpm @($unitCommand.args)
+            }
             $ciStageSteps.Add('unit-rest')
             Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             $ciStageSteps.Add('build')
@@ -730,7 +762,11 @@ try {
             Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
             if (-not $StaticOnly) {
                 if ($null -ne $localScope) { Invoke-LocalPackageChecks -Packages @($localScope.packages) }
-                else { Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test") }
+                else {
+                    Invoke-Check "(3/$totalChecks) i18n precheck" pnpm @('--filter', '@pointercad/ui', 'exec', 'vitest', 'run', 'src/i18n/i18n.test.ts', '--maxWorkers=1')
+                    Invoke-Check "(3/$totalChecks) help precheck" pnpm @('--filter', '@pointercad/help-content', 'exec', 'vitest', 'run', 'src/topics.test.ts', '--maxWorkers=1')
+                    Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
+                }
                 Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             }
         }

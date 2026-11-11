@@ -23,3 +23,12 @@ describe('実ファイルを別々に読んだ比較結果を画面へ返す', (
       { kind: 'inspect', bytes: writePcadFile(createEmptyPartDocument(), { kind: PCAD_TEMPLATE_KIND }) }]) expect((await executeDefinitionDiffWork(request)).kind).toBe('failed');
   });
 });
+
+describe('文書の種類の指定', () => {
+  it('不明な種類は失敗にし、種類の違うファイルを組立・図面として読まない', async () => {
+    const bytes = writePcadFile(createEmptyPartDocument());
+    for (const documentKind of ['sheet', 'assembly', 'drawing']) {
+      expect((await executeDefinitionDiffWork({ kind: 'compare', before: bytes, after: bytes, relationship: 'versions', documentKind })).kind).toBe('failed');
+    }
+  });
+});

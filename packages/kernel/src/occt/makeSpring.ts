@@ -1,3 +1,4 @@
+import { unitDirection as toUnit } from './normalizeDirection.js';
 /**
  * ばね(コイルばね、FR-414、計画書 P3 §2.7b.4、タスク9b)。
  *
@@ -67,14 +68,6 @@ const SWEEP_FAILED_MESSAGE = 'ばねの形を作れませんでした。コイ�
 /** 掃引はできたが、結果が立体になっていないとき。 */
 const NOT_SOLID_MESSAGE = 'ばねが立体になりませんでした。線径を小さくするか、ピッチを大きくしてください。';
 
-/** 長さが取れない(0・非数)ときは null。makeHelix.ts の toUnit と同じ考え。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const size = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(size) || size <= 0) {
-    return null;
-  }
-  return [value[0] / size, value[1] / size, value[2] / size];
-}
 
 /** 値を確かめる。断るときは日本語の Error(§2.7b.4 の断り方の表)。 */
 function checkSpringSpec(spec: SpringStepSpec): void {

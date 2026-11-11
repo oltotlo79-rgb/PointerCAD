@@ -7,7 +7,7 @@
  * 組は残る」の 2 つを、画面と文書のあいだの写し取りの側から固定する。
  */
 
-import { createSelectionSet, type SelectionSet } from '@pointercad/model';
+import { createSelectionSet, type SelectionSet, type SolidBody } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
@@ -18,12 +18,14 @@ import {
   selectionSetElementIds,
   selectionSetRefusalMessageKey,
 } from './selectionSetCommands.js';
-import { subShapeElementId, type SubShapeBody } from './subShapeSelection.js';
+import { subShapeElementId } from './subShapeSelection.js';
+import { bodyFor } from '../store/testing/createTestStore.js';
 
 /** 面 3 枚・辺 1 本・頂点 1 つを持つ立体。番号は `TopExp` の並びと同じ 0 始まり。 */
-const BOX: SubShapeBody = {
-  featureId: 'extrude-1',
-  mesh: { edgePositions: new Float32Array([0, 0, 0, 10, 0, 0]) },
+const BOX: SolidBody = {
+  ...bodyFor('extrude-1'),
+  mesh: { ...bodyFor('extrude-1').mesh, positions: new Float32Array([0, 0, 0, 10, 10, 10]),
+    edgePositions: new Float32Array([0, 0, 0, 10, 0, 0]) },
   faces: [
     {
       index: 0,
@@ -89,9 +91,8 @@ const BOX: SubShapeBody = {
 };
 
 /** 面を 1 枚だけ持つ別の立体(立体をまたぐ組を作るのに使う)。 */
-const CYLINDER: SubShapeBody = {
-  featureId: 'revolve-2',
-  mesh: { edgePositions: new Float32Array([]) },
+const CYLINDER: SolidBody = {
+  ...bodyFor('revolve-2'),
   faces: [
     {
       index: 0,
@@ -108,7 +109,7 @@ const CYLINDER: SubShapeBody = {
   vertices: [],
 };
 
-const BODIES: readonly SubShapeBody[] = [BOX, CYLINDER];
+const BODIES: readonly SolidBody[] = [BOX, CYLINDER];
 
 /** 検査で使う組を 1 つ作る(model の採番と同じ道を通す)。 */
 function setOf(elementIds: readonly string[], name = '上面'): SelectionSet {
@@ -234,11 +235,75 @@ describe('selectionMembersOf(画面 → 文書)', () => {
 });
 
 describe('selectionSetElementIds(文書 → 画面)', () => {
+  it('tracked面を保存し、寸法と番号が変わっても元originを残して現在番号を選ぶ', () => {
+    const origin = { version: 1, shapeKind: 'face', identity: {
+      kind: 'box-face', featureId: 'extrude-1', role: 'top' } } as const;
+    const first: SolidBody = { ...BOX, origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current: { kind: 'face', index: 0 } }] } };
+    const members = selectionMembersOf([first], ['extrude-1#face:0']);
+    expect(members).toMatchObject([{ kind: 'face', ref: { origin } }]);
+    const saved = createSelectionSet([], 'tracked', members);
+    if (!saved.ok) throw new Error('set');
+    const current: SolidBody = { ...first, faces: [{ ...BOX.faces[0], index: 10, area: 100000,
+      centroid: [900, 800, 700] }], origins: { version: 1, state: 'tracked', bindings: [
+        { origin, state: 'unique', current: { kind: 'face', index: 10 } }] } };
+    const result = selectionSetElementIds([current], saved.set);
+    expect(result.elementIds).toEqual(['extrude-1#face:10']);
+    expect(result.references[0].originalReference).toBe(members[0].kind === 'body' ? undefined : members[0].ref);
+    expect(result.references[0].matchedReference).toMatchObject({ index: 10, origin,
+      fingerprint: { area: 100000 } });
+    expect(saved.set.members).toEqual(members);
+    expect(selectionSetElementIds([{ ...current, featureId: 'other' }], saved.set).missingCount).toBe(1);
+    expect(selectionSetElementIds([{ ...current, origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'split', candidates: [{ kind: 'face', index: 10 }, { kind: 'face', index: 11 }] }] } }],
+    saved.set).missingCount).toBe(1);
+  });
+
+  it('returns the original and uniquely matched current face without changing the saved set', () => {
+    const set = setOf(['extrude-1#face:0']);
+    const before = structuredClone(set);
+    const current = { ...BOX, faces: BOX.faces.map(face => ({ ...face, index: face.index + 10 })) };
+    const result = selectionSetElementIds([current], set);
+    expect(result.elementIds).toEqual(['extrude-1#face:10']);
+    expect(result.missingCount).toBe(0);
+    expect(result.references).toHaveLength(1);
+    const member = set.members[0];
+    if (member.kind === 'body') throw new Error('face');
+    expect(result.references[0].originalReference).toBe(member.ref);
+    expect(result.references[0].matchedReference).toEqual({ ...member.ref, index: 10 });
+    expect(set).toEqual(before);
+  });
+  it('does not accept an unrelated vertex merely because the old index still exists', () => {
+    const set = setOf(['extrude-1#vertex:1']);
+    const current = { ...BOX, vertices: [{ index: 1, position: [1000, 2000, 3000] as const },
+      { index: 9, position: [10, 0, 0] as const }] };
+    expect(selectionSetElementIds([current], set)).toEqual({ elementIds: [], missingCount: 1, references: [] });
+    expect(set.members[0]).toMatchObject({ ref: { index: 1, fingerprint: { position: [10, 0, 0] } } });
+  });
+  it('counts each missing and ambiguous member while preserving the set and the successful body', () => {
+    const set = setOf(['extrude-1#vertex:1', 'revolve-2#face:0', 'extrude-1']);
+    const vertex = BOX.vertices[1];
+    const current = { ...BOX, vertices: [vertex, { ...vertex }] };
+    expect(selectionSetElementIds([current], set)).toEqual({ elementIds: ['extrude-1'], missingCount: 2, references: [] });
+    expect(set.members).toHaveLength(3);
+  });
+  it('uses a supplied original vertex fingerprint without recapturing the current index', () => {
+    const original = selectionMembersOf(BODIES, ['extrude-1#vertex:1'])[0];
+    if (original.kind !== 'vertex') throw new Error('vertex');
+    const current = { ...BOX, vertices: [{ index: 1, position: [99, 88, 77] as const }] };
+    expect(selectionMembersOf([current], ['extrude-1#vertex:1'], new Map([['extrude-1#vertex:1', original.ref]])))
+      .toEqual([original]);
+    expect(selectionMembersOf([current], ['extrude-1#vertex:1'], new Map())).toEqual([]);
+  });
   it('覚えた 3 枚の面をそのまま選び直せる', () => {
     const set = setOf(['extrude-1#face:0', 'extrude-1#face:1', 'extrude-1#face:2']);
     expect(selectionSetElementIds(BODIES, set)).toEqual({
       elementIds: ['extrude-1#face:0', 'extrude-1#face:1', 'extrude-1#face:2'],
       missingCount: 0,
+      references: set.members.flatMap(member => member.kind === 'body' ? [] : [{
+        elementId: subShapeElementId(member.ref.bodyFeatureId, member.kind, member.ref.index),
+        originalReference: member.ref, matchedReference: member.ref,
+      }]),
     });
   });
 
@@ -252,7 +317,7 @@ describe('selectionSetElementIds(文書 → 画面)', () => {
   it('面が消えたときはその 1 件だけが引けず、組は残る(§2.13、FR-504)', () => {
     const set = setOf(['extrude-1#face:0', 'extrude-1#face:2']);
     // 面が 1 枚だけになった立体(番号 2 の面がもう無い)。
-    const shrunk: SubShapeBody = { ...BOX, faces: [BOX.faces[0]] };
+    const shrunk: SolidBody = { ...BOX, faces: [BOX.faces[0]] };
     const outcome = selectionSetElementIds([shrunk, CYLINDER], set);
     expect(outcome.elementIds).toEqual(['extrude-1#face:0']);
     expect(outcome.missingCount).toBe(1);
@@ -272,13 +337,17 @@ describe('selectionSetElementIds(文書 → 画面)', () => {
     expect(selectionSetElementIds(BODIES, set)).toEqual({
       elementIds: ['extrude-1#edge:1', 'extrude-1#vertex:1', 'extrude-1#face:2'],
       missingCount: 0,
+      references: set.members.flatMap(member => member.kind === 'body' ? [] : [{
+        elementId: subShapeElementId(member.ref.bodyFeatureId, member.kind, member.ref.index),
+        originalReference: member.ref, matchedReference: member.ref,
+      }]),
     });
   });
 
   it('辺が減ったときはその 1 件だけが引けず、組は残る(§2.13、FR-504)', () => {
     const set = setOf(['extrude-1#edge:0', 'extrude-1#edge:1']);
     // 円の辺(番号 1)が消えた立体。
-    const shrunk: SubShapeBody = { ...BOX, edges: [BOX.edges[0]] };
+    const shrunk: SolidBody = { ...BOX, edges: [BOX.edges[0]] };
     const outcome = selectionSetElementIds([shrunk, CYLINDER], set);
     expect(outcome.elementIds).toEqual(['extrude-1#edge:0']);
     expect(outcome.missingCount).toBe(1);
@@ -288,14 +357,14 @@ describe('selectionSetElementIds(文書 → 画面)', () => {
   it('種類ごとに別の一覧を見る(面が減っても同じ番号の辺は引ける)', () => {
     const set = setOf(['extrude-1#face:1', 'extrude-1#edge:1', 'extrude-1#vertex:1']);
     // 面だけ 1 枚に減らす。番号 1 の面は無いが、番号 1 の辺と頂点は残っている。
-    const shrunk: SubShapeBody = { ...BOX, faces: [BOX.faces[0]] };
+    const shrunk: SolidBody = { ...BOX, faces: [BOX.faces[0]] };
     const outcome = selectionSetElementIds([shrunk, CYLINDER], set);
     expect(outcome.elementIds).toEqual(['extrude-1#edge:1', 'extrude-1#vertex:1']);
     expect(outcome.missingCount).toBe(1);
   });
 
   it('空の組を選んでも何も選ばれない(断らない)', () => {
-    expect(selectionSetElementIds(BODIES, setOf([]))).toEqual({ elementIds: [], missingCount: 0 });
+    expect(selectionSetElementIds(BODIES, setOf([]))).toEqual({ elementIds: [], missingCount: 0, references: [] });
   });
 });
 

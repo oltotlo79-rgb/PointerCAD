@@ -1,0 +1,30 @@
+.pcad-named-save-points {
+  box-sizing: border-box;
+  width: min(calc(720px * var(--pcad-scale)), calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: calc(18px * var(--pcad-scale));
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  color: var(--pcad-text);
+  background: var(--pcad-surface);
+  font: inherit;
+}
+.pcad-named-save-points::backdrop { background: rgb(0 0 0 / 45%); }
+.pcad-named-save-points header, .pcad-named-save-points__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.pcad-named-save-points header { justify-content: space-between; }
+.pcad-named-save-points h2 { margin: 0; font-size: 1.25em; }
+.pcad-named-save-points button, .pcad-named-save-points input { font: inherit; }
+.pcad-named-save-points button { color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-border); padding: 6px 10px; }
+.pcad-named-save-points button:disabled { opacity: .5; }
+.pcad-named-save-points > input { display: block; width: min(100%, 360px); margin: 6px 0 12px; }
+.pcad-named-save-points ul { padding: 0; list-style: none; max-height: min(42dvh, 360px); overflow: auto; }
+.pcad-named-save-points li { display: flex; justify-content: space-between; gap: 12px; padding: 8px; border-bottom: 1px solid var(--pcad-border); }
+.pcad-named-save-points li label { overflow-wrap: anywhere; }
+.pcad-named-save-points time { white-space: nowrap; }
+.pcad-named-save-points [role="alert"] { color: var(--pcad-danger-text); }

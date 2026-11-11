@@ -1,5 +1,5 @@
 import { expectWithinBudget } from '@pointercad/test-utils';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
@@ -13,6 +13,7 @@ import type {
 } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { checkSphereSegments, makeThruSections } from './makeThruSections.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
@@ -443,7 +444,6 @@ describe('makeThruSections(立体の面を輪郭にする。§0.a-0.73、タス�
     // 同じ判定を typeof で書く(loadOcct.node.test.ts の書き方に合わせる)。
     console.log(
       `BRepTools.OuterWire: ${typeof oc.BRepTools.OuterWire} / ` +
-        `ShapeAnalysis.OuterWire: ${typeof oc.ShapeAnalysis.OuterWire} / ` +
         `BRepTools.IsReallyClosed: ${typeof oc.BRepTools.IsReallyClosed} / ` +
         `BRep_Tool.Degenerated: ${typeof oc.BRep_Tool.Degenerated}`,
     );
@@ -559,5 +559,40 @@ describe('makeThruSections(球へつなぐ分割数 sphereSegments。§0.a-0.74)
         handle.delete();
       }
     }
+  });
+});
+
+
+describe('実OCCTへ渡す近似許容差', () => {
+  it('ロフトの実体積を保ち、ThruSectionsに正本の許容差を渡す', () => {
+    const Original = oc.BRepOffsetAPI_ThruSections;
+    const observed: number[] = [];
+    const spy = vi.spyOn(oc, 'BRepOffsetAPI_ThruSections').mockImplementation(function (...args: ConstructorParameters<typeof Original>) {
+      observed.push(args[2]);
+      return new Original(...args);
+    });
+    try {
+      const volume = withSolid(spec([curvesSection(rectangle(40, 30, 0)), curvesSection(rectangle(20, 15, 10))]),
+        shape => measureVolume(oc, shape));
+      expect(volume).toBeCloseTo(7000, 6);
+      expect(observed.length).toBeGreaterThan(0);
+      for (const value of observed) expect(value).toBe(APPROXIMATION_TOLERANCE_MM);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('球への実縫合の体積を保ち、Sewingに同じ正本の許容差を渡す', () => {
+    const Original = oc.BRepBuilderAPI_Sewing;
+    const observed: number[] = [];
+    const spy = vi.spyOn(oc, 'BRepBuilderAPI_Sewing').mockImplementation(function (...args: ConstructorParameters<typeof Original>) {
+      observed.push(args[0]);
+      return new Original(...args);
+    });
+    try {
+      const volume = withSolid(spec([sphereSection([0, 0, 0], 10), curvesSection(circle([0, 0, -30], 20))]),
+        shape => measureVolume(oc, shape));
+      expect(Math.abs(volume - AXIAL_SPHERE_VOLUME) / AXIAL_SPHERE_VOLUME).toBeLessThan(0.001);
+      expect(observed.length).toBeGreaterThan(0);
+      for (const value of observed) expect(value).toBe(APPROXIMATION_TOLERANCE_MM);
+    } finally { spy.mockRestore(); }
   });
 });

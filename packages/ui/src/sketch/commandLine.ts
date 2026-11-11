@@ -158,9 +158,9 @@ export type CommandLineOutcome =
   | { readonly kind: 'error'; readonly message: string; readonly suggestions: readonly string[] };
 
 // ---------------------------------------------------------------------------
-// 全角の正規化(§2.5。normalizeExpressionSource は @pointercad/expression の公開 API に
-// 無い(index.ts が輸出していない、内部の作りを隠す方針)ため、同じ考えでこのファイルの中に
-// 1 つだけ持つ。数字・演算子の正規化は evaluateExpression 自身がもう一度行うので二重になるが、
+// 全角の正規化(§2.5)。式の共通正規化に加え、構造判定用の @ ＜ ＝ も扱うため、
+// このファイルの中に専用の表を持つ。数字・演算子の正規化は evaluateExpression 自身が
+// もう一度行うので二重になるが、
 // この関数の役目は「道具の語か座標か欄名かを見分けるための、ここでの構造判定」であり、
 // その判定より前に @ ＜ ＝ を半角へ直しておく必要がある(§2.5 の「2 文字だけ足す」を、
 // 欄名の＝も同じ理由で 1 つ足して 3 文字にした)。

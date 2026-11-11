@@ -12,6 +12,8 @@ import {
 } from '../../sketch/numericInput.js';
 import { ruledSelectionHasSphere } from '../../solid/ruledCommands.js';
 import { selectedCurvePath } from '../../solid/shapeEditCommands.js';
+import { extrudeTargetCandidates } from '../../solid/extrudeOperation.js';
+import { cancelExtrusion } from '../../solid/extrudePreview.js';
 import { sweepGuideCandidates } from '../../solid/sweepGuideChoices.js';
 import {
   commitBooleanFromSelection,
@@ -46,6 +48,8 @@ function solidAnchor(): readonly [number, number] {
  */
 function openSolidInput(tool: SolidToolId): void {
   const store = useAppStore.getState();
+  // 前の押し出しの確かめた形・古い確定の知らせを、新しい入力の窓へ持ち越さない(EX-14)。
+  if (tool === 'extrude' || tool === 'holeTranslate' || tool === 'faceRotate') cancelExtrusion();
   store.setActiveTool(tool);
   const axisLine = tool === 'revolve' ? selectedLineRef(store.document, store.selection) : undefined;
   /*
@@ -64,6 +68,7 @@ function openSolidInput(tool: SolidToolId): void {
   store.openNumericInput(
     createNumericInput(tool, SOLID_TOOL_STEPS[tool], undefined, {
       ...(axisLine === undefined ? {} : { axisLine }),
+      ...(tool === 'extrude' ? { extrudeTargets: extrudeTargetCandidates(store.document) } : {}),
       ...(ruledHasSphere === undefined ? {} : { ruledHasSphere }),
       ...(tool === 'sweep' ? { sweepGuides: sweepGuideCandidates(store.document, selectedCurvePath(store.document, store.selection) ?? undefined) } : {}),
     }),
@@ -102,6 +107,9 @@ export function runSolidTool(id: SolidToolId, readiness: SolidToolReadiness): vo
   }
   const store = useAppStore.getState();
   store.setActiveTool(id);
+  // Start by picking a face, while retaining an already chosen face/hinge pair.
+  if (id === 'holeTranslate' || (id === 'faceRotate'
+    && store.selectionKind !== 'face' && store.selectionKind !== 'edge')) store.setSelectionKind('face');
   store.setSolidError(readiness.reasonKey);
 }
 

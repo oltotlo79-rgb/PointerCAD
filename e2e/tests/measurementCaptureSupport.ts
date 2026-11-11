@@ -1,4 +1,5 @@
 /// <reference lib="dom" />
+import { worldToCanvas } from './homeViewProjection.js';
 import { expect, type Locator, type Page } from '@playwright/test';
 import { openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
 import { commitPopover, popover, popoverInputs, popoverTitle, treeRow } from './solidCaptureSupport.js';
@@ -20,8 +21,7 @@ export async function closePopoverIfOpen(page: Page): Promise<void> {
  * G3-d(測定・点検: select-subshape・measure・mass-properties・print-check)と
  * G7-a(履歴とビュー: timeline・selection・section-view)の撮影の流れで共通に使う補助。
  *
- * `solidCaptureSupport.ts`(w37b の未コミット分、編集禁止)は面・辺の3Dクリックに
- * Shift 修飾を持たないため、2点選ぶ測定(2026-09-28 追加)にはここへ書き写した版を使う。
+ * 2点選ぶ測定(2026-09-28 追加)には、Shift 修飾に対応した面・辺の3Dクリック処理をここへ置く。
  * 写した式・視点は `solidCaptureSupport.ts` および `e2e/tests/primitives.spec.ts` の
  * ワールド→画面変換(ホーム視点・1440×900専用)と同じ。
  */
@@ -89,47 +89,12 @@ export async function runMeasure(page: Page): Promise<void> {
 
 export type WorldPoint = readonly [number, number, number];
 
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
-
-function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-function dotPoints(a: WorldPoint, b: WorldPoint): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-function normalizePoint(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
-}
-const CAMERA_EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-const CAMERA_Z = normalizePoint(CAMERA_EYE);
-const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
-
-function worldToCanvas(world: WorldPoint, widthPixels: number, heightPixels: number): readonly [number, number] {
-  const view = subtractPoints(world, CAMERA_EYE);
-  const depth = -dotPoints(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
-  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
-  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
-}
 
 /**
  * ビューポートの上で、ワールド座標の点が見えている場所を押す。既定(ホーム)視点・1440×900専用。
  *
  * 押し出し等の直後は再計算が終わるまで面・辺の位置が定まらないため、クリックの前に
- * `waitForSettledRecompute` で落ち着くのを待つ(w99a: 待たずに3Dで選ぶ台本が同じ所で
+ * `waitForSettledRecompute` で落ち着くのを待つ(再計算の待機確認: 待たずに3Dで選ぶ台本が同じ所で
  * 落ちていた)。各台本が個別に置く `waitForRecompute` はここでは消さない。
  */
 export async function clickWorldPoint(page: Page, world: WorldPoint, shift = false): Promise<void> {

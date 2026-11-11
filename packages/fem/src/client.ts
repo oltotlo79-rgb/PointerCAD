@@ -1,0 +1,791 @@
+import { translateSolidFinite, solidFiniteInputSha256 } from './solidFiniteTranslation.js';
+import { decodeSolidFiniteWireResult, type SolidFiniteWireResult } from './solidFiniteBinding.js';
+import { translateBeamFrictionContact } from './frictionContactTranslation.js';
+import { readSolidContactAnalysisInput, decodeSolidContactResult, type SolidContactInput, type SolidContactResult } from './solidContactBinding.js';
+import { readFrictionSolveOptions } from './frictionContactRuntime.js';
+import { frictionContactResultMatches, type FrictionContactResult, type FrictionSolveOptions } from './frictionContactResults.js';
+import { frictionContactInputSha256 } from './frictionContactBinding.js';
+import { translateBeamWeldSpanContact, beamWeldSpanContactInputSha256 } from './beamWeldSpanContact.js';
+import { isBeamWeldSpanContactResult, beamWeldSpanContactResultMatches, type BeamWeldSpanContactResult } from './beamWeldSpanContactBinding.js';
+import { readNativeBoltPreloadWireInput, prepareNativeBoltPreloadJob, nativeBoltPreloadOwnedMatches, type NativeBoltPreloadOwnedResult } from './nativeBoltPreloadBinding.js';
+import { FEM_PROTOCOL, isBeamProof, isIdentity, isReply, sameIdentity, type BeamProofResult,
+  type FemFailure, type FemIdentity, type FemPhase, type FemRequest, type FemResult } from './protocol.js';
+import type { BeamAnalysisResult, BeamModalResult } from './analysisModel.js';
+import type { BeamBucklingResult } from './bucklingModel.js';
+import { bucklingInputSha256, translateBeamBuckling } from './bucklingTranslation.js';
+import { bucklingResultMatches } from './bucklingResults.js';
+import type { BeamTransientResult } from './transientModel.js';
+import { transientInputSha256, translateBeamTransient } from './transientTranslation.js';
+import { transientResultMatches } from './transientResults.js';
+import { plasticBarInputSha256, translatePlasticBar } from './plasticBarTranslation.js';
+import { plasticBarResultMatches, type PlasticBarResult } from './plasticBarResults.js';
+import { contactInputSha256, translateBeamContact } from './contactTranslation.js';
+import { contactResultMatches, type BeamContactAnalysisResult } from './contactResults.js';
+import { beamBoltContactInputSha256, translateBeamBoltContact, type BeamBoltContactResult } from './beamBoltContact.js';
+import { beamBoltContactResultMatches } from './beamBoltContactBinding.js';
+import { readFrameBoltContact, frameBoltContactInputSha256 } from './beamBoltContact.js';
+import { frameBoltContactResultMatches, type FrameBoltContactResult } from './frameBoltContactBinding.js';
+import { beamWeldContactInputSha256, translateBeamWeldContact, type BeamWeldContactResult } from './beamWeldContact.js';
+import { beamWeldContactResultMatches } from './beamWeldContactBinding.js';
+import { beamJointContactInputSha256, translateBeamJointContact, type BeamJointContactResult } from './beamJointContact.js';
+import { beamJointContactResultMatches } from './beamJointContactBinding.js';
+import { beamJointInitialStrainInputSha256, translateBeamJointInitialStrain, type BeamJointInitialStrainResult } from './beamJointInitialStrain.js';
+import { beamJointInitialStrainResultMatches } from './beamJointInitialStrainBinding.js';
+import type { BeamImpactResult } from './beamImpactModel.js';
+import { impactInputSha256, translateBeamImpact } from './beamImpactTranslation.js';
+import { beamImpactResultMatches } from './beamImpactBinding.js';
+import { beamResultMatches } from './analysisResults.js';
+import { modalResultMatches } from './modalResults.js';
+import { translateBeamModal } from './modalTranslation.js';
+import { beamInputSha256, translateBeamAnalysis } from './analysisTranslation.js';
+import { diagnoseTetraMeshQuality, readTetraMeshQualityLimits, type TetraMeshQuality, type TetraMeshQualityLimits } from './tetraMeshQuality.js';
+import { readTetraMeshInput, tetraMeshInputSha256, tetraMeshResultMatches, type TetraMeshResult } from './tetraMesh.js';
+import type { SolidAnalysisResult } from './solidAnalysisModel.js';
+import { solidInputSha256, translateSolidAnalysis } from './solidAnalysisTranslation.js';
+import { solidResultMatches } from './solidAnalysisResults.js';
+import { solidPlasticInputSha256, translateSolidPlastic } from './solidPlasticTranslation.js';
+import { solidPlasticResultMatches, type SolidPlasticResult } from './solidPlasticPublicResult.js';
+import type { SolidModalResult } from './solidModalModel.js';
+import { solidModalInputSha256, translateSolidModal } from './solidModalTranslation.js';
+import { solidModalResultMatches } from './solidModalPublicResult.js';
+import type { SolidBucklingResult } from './solidBucklingModel.js';
+import { solidBucklingInputSha256, translateSolidBuckling } from './solidBucklingTranslation.js';
+import { solidBucklingResultMatches } from './solidBucklingPublicResult.js';
+import { translateShellAnalysis } from './shellTranslation.js';
+import { shellNativeWireMatches, shellPlanSha256, type ShellNativeWireResult } from './shellBinding.js';
+
+import { analyzeFatigue } from './fatigue.js';
+import { readFatigueSnCurve, type FatigueResult } from './fatigueModel.js';
+import { readSolidFatigueSelection, solidFatigueInput, type SolidFatigueAdaptation } from './fatigueSolid.js';
+import { FEM_RUNTIME_LIMITS } from './runtime.js';
+
+export interface FemWorkerPort {
+  postMessage(message: FemRequest): void;
+  terminate(): void;
+  onmessage: ((event: MessageEvent<unknown>) => void) | null;
+  onerror: ((event: ErrorEvent) => void) | null;
+  onmessageerror: ((event: MessageEvent<unknown>) => void) | null;
+}
+export type FemCompletion<R extends FemResult = BeamProofResult> = { readonly kind: 'result'; readonly identity: FemIdentity; readonly result: R }
+  | { readonly kind: 'failed'; readonly identity: FemIdentity; readonly failure: FemFailure }
+  | { readonly kind: 'cancelled'; readonly identity: FemIdentity; readonly reason: 'abort' | 'superseded' | 'disposed' };
+export type TetraMeshQualityCompletion = Exclude<FemCompletion<TetraMeshResult>, { readonly kind: 'result' }>
+  | (Extract<FemCompletion<TetraMeshResult>, { readonly kind: 'result' }> & { readonly quality: TetraMeshQuality });
+export type SolidFatigueAnalysis = Exclude<SolidFatigueAdaptation, { readonly ok: true }>
+  | (Extract<SolidFatigueAdaptation, { readonly ok: true }> & { readonly result: FatigueResult });
+/** Native completion is unchanged; only fatigue.ok:true represents a successful fatigue analysis. */
+export type SolidFatigueCompletion = Exclude<FemCompletion<SolidAnalysisResult>, { readonly kind: 'result' }>
+  | (Extract<FemCompletion<SolidAnalysisResult>, { readonly kind: 'result' }> & { readonly fatigue: SolidFatigueAnalysis });
+
+interface Active {
+  readonly identity: FemIdentity;
+  readonly worker: FemWorkerPort;
+  readonly cancel: (reason: 'superseded' | 'disposed') => void;
+}
+export interface FemOptions { readonly signal?: AbortSignal; readonly onPhase?: (phase: FemPhase) => void }
+
+/** A client-owned one-shot reservation; no caller-supplied generation can authorize dispatch. */
+ interface FemSolidContactPreparation {
+  readonly signal: AbortSignal;
+  readonly cancellation: () => 'abort' | 'superseded' | 'disposed' | null;
+  readonly analyzeSolidContact: (value: unknown) => Promise<FemCompletion<SolidContactResult>>;
+  readonly release: () => void;
+}
+
+/** Two separately terminated Workers under one CAD reservation: exactly one mesh, then one finite solve. */
+export interface FemSolidFinitePreparation {
+  readonly signal: AbortSignal;
+  readonly cancellation: () => 'abort' | 'superseded' | 'disposed' | null;
+  readonly meshTetrahedra: FemClient['meshTetrahedra'];
+  readonly analyzeSolidFinite: (value: unknown) => Promise<FemCompletion<SolidFiniteWireResult>>;
+  readonly release: () => void;
+}
+
+/** Mesh-only projection of the existing client-owned CAD reservation. */
+ type FemTetraMeshPreparation = Pick<FemSolidFinitePreparation,
+  'signal' | 'cancellation' | 'meshTetrahedra' | 'release'>;
+
+/** Same capability surface, but sequential meshes belong to one assembly invocation. */
+const assemblyMeshPreparationBrand = Symbol('FemAssemblyTetraMeshPreparation');
+export type FemAssemblyTetraMeshPreparation = FemTetraMeshPreparation & {
+  readonly [assemblyMeshPreparationBrand]: true;
+};
+const assemblyMeshPreparationClients = new WeakMap<FemAssemblyTetraMeshPreparation, FemClient>();
+
+/** One interpreter per request. Termination remains effective during native WASM. The single active slot holds at most
+ * FEM_RUNTIME_LIMITS.workersPerClient Worker: every new request settles and terminates the previous one first. */
+export class FemClient {
+  private generation = 0;
+  private active: Active | null = null;
+  private disposed = false;
+  private preparation: { cancel(reason: 'abort' | 'superseded' | 'disposed'): void } | null = null;
+  constructor(private readonly createWorker: () => FemWorkerPort) {}
+
+  /** Reserve ownership before CAD hashing; later solvers and invalid requests cancel this reservation too. */
+  beginSolidContactPreparation(options: FemOptions = {}): FemSolidContactPreparation {
+    this.cancel('superseded');
+    const generation = ++this.generation, controller = new AbortController();
+    let reason: 'abort' | 'superseded' | 'disposed' | null = null, dispatched = false;
+    const owner = { cancel: (next: 'abort' | 'superseded' | 'disposed'): void => {
+      if (reason === null) { reason = next; controller.abort(); }
+    } };
+    this.preparation = owner;
+    const abort = (): void => owner.cancel('abort');
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (this.disposed) owner.cancel('disposed');
+    else if (options.signal?.aborted) abort();
+    const executeOptions = { ...options, signal: controller.signal };
+    return Object.freeze({ signal: controller.signal, cancellation: () => reason,
+      analyzeSolidContact: (value: unknown): Promise<FemCompletion<SolidContactResult>> => {
+        let input: SolidContactInput;
+        try { input = readSolidContactAnalysisInput(value); }
+        catch (error) { return Promise.reject(error instanceof Error ? error : new Error('Invalid solid contact input', { cause: error })); }
+        const identity = { documentId: input.source.documentId, revision: input.source.revision,
+          generation, requestId: `fem-${generation}` };
+        if (!isIdentity(identity)) return Promise.reject(new Error('Invalid FEM document identity'));
+        if (reason !== null) return Promise.resolve({ kind: 'cancelled', identity, reason });
+        if (dispatched) return Promise.reject(new Error('Solid contact preparation was already dispatched'));
+        dispatched = true;
+        return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-contact', identity, input }, executeOptions,
+          async result => result.kind === 'solid-contact-analysis' ? decodeSolidContactResult(result, input) : null);
+      },
+      release: (): void => {
+        options.signal?.removeEventListener('abort', abort);
+        if (this.preparation === owner) this.preparation = null;
+        owner.cancel('abort');
+      },
+    });
+  }
+
+  /** Reserve both CAD stages before boundary awaits. Other solvers invalidate this same preparation slot. */
+  beginSolidFinitePreparation(options: FemOptions = {}): FemSolidFinitePreparation {
+    const previousPreparation = this.preparation, previousActive = this.active;
+    const generation = ++this.generation, controller = new AbortController(), callerSignal = options.signal;
+    let reason: 'abort' | 'superseded' | 'disposed' | null = null, meshed = false, solved = false;
+    let mesh: { readonly source: { readonly documentId: string; readonly revision: number };
+      readonly coordinates: readonly number[]; readonly tetrahedra: readonly number[] } | null = null;
+    const owner = { cancel: (next: 'abort' | 'superseded' | 'disposed'): void => {
+      if (reason === null) { reason = next; controller.abort(); }
+    } };
+    // Publish ownership before notifying old listeners: a reentrant newer solver must be able to cancel this lease.
+    this.preparation = owner;
+    previousActive?.cancel('superseded');
+    previousPreparation?.cancel('superseded');
+    const abort = (): void => owner.cancel('abort');
+    callerSignal?.addEventListener('abort', abort, { once: true });
+    if (this.disposed) owner.cancel('disposed');
+    else if (callerSignal?.aborted) abort();
+    const identityFor = (source: { readonly documentId: string; readonly revision: number }, stage: string): FemIdentity => {
+      const identity = { documentId: source.documentId, revision: source.revision, generation, requestId: `fem-${generation}-${stage}` };
+      if (!isIdentity(identity)) throw new Error('Invalid FEM document identity');
+      return identity;
+    };
+    const executeOptions = { ...options, signal: controller.signal };
+    return Object.freeze({ signal: controller.signal, cancellation: () => reason,
+      meshTetrahedra: async (value: unknown, stageOptions: FemOptions = {}): Promise<FemCompletion<TetraMeshResult>> => {
+        const input = readTetraMeshInput(value), identity = identityFor(input.source, 'mesh');
+        if (reason !== null) return { kind: 'cancelled', identity, reason };
+        if (meshed) throw new Error('Finite CAD mesh was already dispatched');
+        meshed = true;
+        const expectedHash = tetraMeshInputSha256(input).catch(() => null);
+        const signal = stageOptions.signal === undefined ? controller.signal : AbortSignal.any([controller.signal, stageOptions.signal]);
+        const completion = await this.execute({ protocol: FEM_PROTOCOL, kind: 'mesh-cad-convex-tetra', identity, input },
+          { ...executeOptions, ...stageOptions, signal }, async result => {
+            const hash = await expectedHash;
+            if (hash === null || !tetraMeshResultMatches(result, input, hash)) return null;
+            if (input.meshing !== undefined && !diagnoseTetraMeshQuality(result, input.meshing.quality).meetsRequestedLimits)
+              throw new Error('tetra-mesh: native result does not meet the explicit meshing quality target');
+            return result;
+          });
+        if (completion.kind === 'cancelled') owner.cancel(completion.reason);
+        if (completion.kind === 'result' && reason === null) {
+          // Private copies bind to the accepted bytes, even if a caller later mutates the returned mesh object.
+          mesh = { source: { documentId: input.source.documentId, revision: input.source.revision },
+            coordinates: Array.from(completion.result.coordinates), tetrahedra: Array.from(completion.result.tetrahedra) };
+        }
+        return completion;
+      },
+      analyzeSolidFinite: (value: unknown): Promise<FemCompletion<SolidFiniteWireResult>> => {
+        const input = translateSolidFinite(value).input, identity = identityFor(input.source, 'finite');
+        if (reason !== null) return Promise.resolve({ kind: 'cancelled', identity, reason });
+        if (solved || mesh === null) return Promise.reject(new Error('Finite CAD solve needs its successful unused mesh stage'));
+        if (input.source.documentId !== mesh.source.documentId || input.source.revision !== mesh.source.revision)
+          return Promise.reject(new Error('Finite CAD solve belongs to another mesh source'));
+        const acceptedMesh = mesh;
+        if (input.plan.nodes.length * 3 !== acceptedMesh.coordinates.length
+          || input.plan.elements.length * 4 !== acceptedMesh.tetrahedra.length
+          || input.plan.nodes.some((point, node) => point.some((coordinate, axis) => coordinate !== acceptedMesh.coordinates[3 * node + axis]))
+          || input.plan.elements.some((element, index) => element.some((node, local) => node !== acceptedMesh.tetrahedra[4 * index + local])))
+          return Promise.reject(new Error('Finite CAD plan nodes or tetrahedra differ from the accepted mesh'));
+        solved = true;
+        const expectedHash = solidFiniteInputSha256(input).catch(() => null);
+        return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-finite-j2', identity, input }, executeOptions,
+          async result => {
+            const hash = await expectedHash;
+            return hash === null || result.kind !== 'oofem-finite-j2-equilibrium' ? null : decodeSolidFiniteWireResult(result, input, hash);
+          });
+      },
+      release: (): void => {
+        callerSignal?.removeEventListener('abort', abort);
+        if (this.preparation === owner) this.preparation = null;
+        owner.cancel('abort');
+      },
+    });
+  }
+
+  /** Reserve before planar CAD extraction. The existing reservation owns dispatch and all cancellation reasons. */
+  beginTetraMeshPreparation(options: FemOptions = {}): FemTetraMeshPreparation {
+    const preparation = this.beginSolidFinitePreparation(options);
+    return Object.freeze({ signal: preparation.signal, cancellation: preparation.cancellation,
+      meshTetrahedra: preparation.meshTetrahedra, release: preparation.release });
+  }
+
+  /** Sequential part meshes under one assembly generation, with a fresh terminated Worker per part. */
+  beginAssemblyTetraMeshPreparation(options: FemOptions = {}): FemAssemblyTetraMeshPreparation {
+    const previousPreparation = this.preparation, previousActive = this.active;
+    const generation = ++this.generation, controller = new AbortController(), callerSignal = options.signal;
+    let reason: 'abort' | 'superseded' | 'disposed' | null = null, inFlight = false, sequence = 0;
+    const owner = { cancel: (next: 'abort' | 'superseded' | 'disposed'): void => {
+      if (reason === null) { reason = next; controller.abort(); }
+    } };
+    this.preparation = owner;
+    previousActive?.cancel('superseded');
+    previousPreparation?.cancel('superseded');
+    const abort = (): void => owner.cancel('abort');
+    callerSignal?.addEventListener('abort', abort, { once: true });
+    if (this.disposed) owner.cancel('disposed');
+    else if (callerSignal?.aborted) abort();
+    const preparation = Object.freeze<FemAssemblyTetraMeshPreparation>({
+      [assemblyMeshPreparationBrand]: true, signal: controller.signal, cancellation: () => reason,
+      meshTetrahedra: async (value: unknown, stageOptions: FemOptions = {}): Promise<FemCompletion<TetraMeshResult>> => {
+        const input = readTetraMeshInput(value);
+        const identity = { documentId: input.source.documentId, revision: input.source.revision,
+          generation, requestId: `fem-${generation}-assembly-mesh-${++sequence}` };
+        if (!isIdentity(identity)) throw new Error('Invalid FEM document identity');
+        if (reason !== null) return { kind: 'cancelled', identity, reason };
+        if (inFlight) throw new Error('Assembly meshes must be dispatched sequentially');
+        inFlight = true;
+        try {
+          const expectedHash = tetraMeshInputSha256(input).catch(() => null);
+          const signal = stageOptions.signal === undefined ? controller.signal : AbortSignal.any([controller.signal, stageOptions.signal]);
+          const completion = await this.execute({ protocol: FEM_PROTOCOL, kind: 'mesh-cad-convex-tetra', identity, input },
+            { ...options, ...stageOptions, signal }, async result => {
+              const hash = await expectedHash;
+              if (hash === null || !tetraMeshResultMatches(result, input, hash)) return null;
+              if (input.meshing !== undefined && !diagnoseTetraMeshQuality(result, input.meshing.quality).meetsRequestedLimits)
+                throw new Error('tetra-mesh: native result does not meet the explicit meshing quality target');
+              return result;
+            });
+          if (completion.kind === 'cancelled') owner.cancel(completion.reason);
+          return completion;
+        } finally { inFlight = false; }
+      },
+      release: (): void => {
+        callerSignal?.removeEventListener('abort', abort);
+        if (this.preparation === owner) this.preparation = null;
+        owner.cancel('abort');
+      },
+    });
+    assemblyMeshPreparationClients.set(preparation, this);
+    return preparation;
+  }
+
+  /** Only the issuing client can authorize a borrowed assembly parent; structural copies are not leases. */
+  ownsAssemblyTetraMeshPreparation(preparation: FemAssemblyTetraMeshPreparation): boolean {
+    return assemblyMeshPreparationClients.get(preparation) === this;
+  }
+
+
+  /** Fixed-facet solid contact, using the existing one-shot cancellation owner. */
+  analyzeSolidContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<SolidContactResult>> {
+    let input: SolidContactInput;
+    try { input = readSolidContactAnalysisInput(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid solid contact input', { cause: error })); }
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-contact', identity, input }, options,
+      async result => result.kind === 'solid-contact-analysis' ? decodeSolidContactResult(result, input) : null);
+  }
+
+  /** Internal finite-strain J2 history; every request owns a fresh one-shot Worker. No CAD/UI certification. */
+  analyzeSolidFinite(value: unknown, options: FemOptions = {}): Promise<FemCompletion<SolidFiniteWireResult>> {
+    let prepared: ReturnType<typeof translateSolidFinite>;
+    try { prepared = translateSolidFinite(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid finite-equilibrium input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    const expectedHash = solidFiniteInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-finite-j2', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash === null || result.kind !== 'oofem-finite-j2-equilibrium' ? null
+          : decodeSolidFiniteWireResult(result, input, hash);
+      });
+  }
+
+  /** Native small-strain J2 tet4 history. Uses the same one-shot owner as every other mode. */
+  analyzeSolidPlastic(value: unknown, options: FemOptions = {}): Promise<FemCompletion<SolidPlasticResult>> {
+    let prepared: ReturnType<typeof translateSolidPlastic>;
+    try { prepared = translateSolidPlastic(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid solid-plastic input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    const expectedHash = solidPlasticInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-plastic-tet4', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && solidPlasticResultMatches(result, input, hash) ? result : null;
+      });
+  }
+
+  /** Linear-elastic tet4 free vibration (consistent mass). Same one-shot owner, abort, supersession and deadlines;
+   * a reply for another revision, mesh, material or digest is refused by re-decoding it against this input. */
+  analyzeSolidModal(value: unknown, options: FemOptions = {}): Promise<FemCompletion<SolidModalResult>> {
+    let prepared: ReturnType<typeof translateSolidModal>;
+    try { prepared = translateSolidModal(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid solid modal input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    const expectedHash = solidModalInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-modal-tet4', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && solidModalResultMatches(result, input, hash) ? result : null;
+      });
+  }
+
+  /** Linear prestress buckling of a tet4 solid about its own static reference state. Same one-shot owner, abort,
+   * supersession and deadlines; a reply for another revision, mesh, load set or digest is refused by re-decoding. */
+  analyzeSolidBuckling(value: unknown, options: FemOptions = {}): Promise<FemCompletion<SolidBucklingResult>> {
+    let prepared: ReturnType<typeof translateSolidBuckling>;
+    try { prepared = translateSolidBuckling(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid solid buckling input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.reference.source.documentId, input.reference.source.revision);
+    const expectedHash = solidBucklingInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-buckling-tet4', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && solidBucklingResultMatches(result, input, hash) ? result : null;
+      });
+  }
+
+  /** Solve the current native linear solid, then import one exactly bound element into the existing fatigue path.
+   * Conversion stays inside execute's accepted-reply lifetime, retaining abort/supersession and one-shot ownership.
+   * No new Worker request or result protocol is invented; fatigue is a local derived calculation, not saved data. */
+  async analyzeSolidFatigue(value: unknown, selection: unknown, curve: unknown,
+    options: FemOptions = {}): Promise<SolidFatigueCompletion> {
+    let input: ReturnType<typeof translateSolidAnalysis>['input'];
+    let chosen: ReturnType<typeof readSolidFatigueSelection>;
+    let ownedCurve: ReturnType<typeof readFatigueSnCurve>;
+    try {
+      input = translateSolidAnalysis(value).input;
+      chosen = readSolidFatigueSelection(selection);
+      ownedCurve = readFatigueSnCurve(curve);
+      if ('ok' in chosen) throw new RangeError(`${chosen.code}: ${chosen.path}`);
+      if ('ok' in ownedCurve) throw new RangeError(`${ownedCurve.code}: ${ownedCurve.path}`);
+    } catch (error) { this.cancel('superseded'); throw error; }
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    const expectedHash = solidInputSha256(input).catch(() => null);
+    let fatigue: SolidFatigueAnalysis | null = null;
+    const completion = await this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-tet4', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        if (hash === null || !solidResultMatches(result, input, hash)) return null;
+        const adapted = await solidFatigueInput(input, result, chosen, ownedCurve);
+        if (!adapted.ok) fatigue = adapted;
+        else {
+          const analyzed = analyzeFatigue(adapted.input);
+          fatigue = analyzed.ok ? { ...adapted, result: analyzed.result } : analyzed;
+        }
+        return result;
+      });
+    if (completion.kind !== 'result') return completion;
+    if (this.disposed || options.signal?.aborted || identity.generation !== this.generation) {
+      return { kind: 'cancelled', identity, reason: this.disposed ? 'disposed' : options.signal?.aborted ? 'abort' : 'superseded' };
+    }
+    if (fatigue === null) return { kind: 'failed', identity,
+      failure: { code: 'invalid-protocol', message: 'Solid fatigue derivation missing after accepted native reply' } };
+    return { ...completion, fatigue };
+  }
+
+  /** Actual native tet4 linear elasticity; uses this client's existing one-shot
+   * ownership and deadlines. Explicit supports do not imply contact/weld ties. */
+  analyzeSolid(value: unknown, options: FemOptions = {}): Promise<FemCompletion<SolidAnalysisResult>> {
+    let prepared: ReturnType<typeof translateSolidAnalysis>;
+    try { prepared = translateSolidAnalysis(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid solid input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    const expectedHash = solidInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-tet4', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && solidResultMatches(result, input, hash) ? result : null;
+      });
+  }
+
+  /** Native TR_SHELL02 linear static shell through the same one-shot owner, abort, supersession and 60s/180s
+   * deadlines. The input is owned by translateShellAnalysis before any Worker exists. The accepted reply is the raw
+   * native answer bound to this plan's digest, source (document, revision, meshKey) and node/element counts; it is
+   * not decoded here. Its numerical checks run once, in decodeShellAnalysis at the consumer (decodeCadShellAnalysis). */
+  analyzeShell(value: unknown, options: FemOptions = {}): Promise<FemCompletion<ShellNativeWireResult>> {
+    let prepared: ReturnType<typeof translateShellAnalysis>;
+    try { prepared = translateShellAnalysis(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid shell input', { cause: error })); }
+    const { input, plan } = prepared;
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    const expectedHash = shellPlanSha256(plan).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-shell-tr-shell02', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash === null ? null : shellNativeWireMatches(result, input, hash);
+      });
+  }
+
+  /** Reuses the same one-shot ownership, abort, supersession and 60s/180s deadlines as analysis. */
+  meshTetrahedra(value: unknown, options: FemOptions = {}): Promise<FemCompletion<TetraMeshResult>> {
+    let input: ReturnType<typeof readTetraMeshInput>;
+    try { input = readTetraMeshInput(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid CAD mesh input', { cause: error })); }
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    const expectedHash = tetraMeshInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'mesh-cad-convex-tetra', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        if (hash === null || !tetraMeshResultMatches(result, input, hash)) return null;
+        if (input.meshing !== undefined && !diagnoseTetraMeshQuality(result, input.meshing.quality).meetsRequestedLimits)
+          throw new Error('tetra-mesh: native result does not meet the explicit meshing quality target');
+        return result;
+      });
+  }
+
+  /** Explicit geometric diagnostics; the existing meshing contract and failure/cancel variants are unchanged. */
+  async meshTetrahedraWithQuality(value: unknown, requested: TetraMeshQualityLimits,
+    options: FemOptions = {}): Promise<TetraMeshQualityCompletion> {
+    let limits: TetraMeshQualityLimits;
+    try { limits = readTetraMeshQualityLimits(requested); }
+    catch (error) { this.cancel('superseded'); throw error; }
+    const completion = await this.meshTetrahedra(value, options);
+    if (completion.kind !== 'result') return completion;
+    return { ...completion, quality: diagnoseTetraMeshQuality(completion.result, limits) };
+  }
+
+  async qualify(documentId: string, revision: number, options: FemOptions = {}): Promise<FemCompletion> {
+    const identity=this.nextIdentity(documentId,revision);
+    return this.execute({protocol:FEM_PROTOCOL,kind:'qualify-oofem-beam',identity},options,
+      result=>Promise.resolve(isBeamProof(result)?result:null));
+  }
+  analyze(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamAnalysisResult>> {
+    // Translation validates and owns fresh values before the caller can mutate them.
+    let prepared: ReturnType<typeof translateBeamAnalysis>;
+    try {
+      prepared=translateBeamAnalysis(value);
+      if (prepared.document.modal !== undefined) throw new Error('Static analysis requires schema 1');
+    }
+    catch(error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid static beam input', { cause: error })); }
+    const document=prepared.document;
+    const identity=this.nextIdentity(document.source.documentId,document.revision);
+    // Attach failure handling immediately even if the Worker is cancelled first.
+    const expectedHash=beamInputSha256(document).catch(()=>null);
+    return this.execute({protocol:FEM_PROTOCOL,kind:'analyze-beam-3d',identity,document},options,
+      async result=>{
+        const hash=await expectedHash;
+        return hash!==null&&beamResultMatches(result,document,hash)?result:null;
+      });
+  }
+  analyzeModal(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamModalResult>> {
+    let prepared: ReturnType<typeof translateBeamModal>;
+    try { prepared = translateBeamModal(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid modal beam input', { cause: error })); }
+    const document = prepared.document;
+    const identity = this.nextIdentity(document.source.documentId, document.revision);
+    const expectedHash = beamInputSha256(document).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-modal-3d', identity, document }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && modalResultMatches(result, document, hash) ? result : null;
+      });
+  }
+  analyzeBuckling(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamBucklingResult>> {
+    let prepared: ReturnType<typeof translateBeamBuckling>;
+    try { prepared = translateBeamBuckling(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid buckling input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.geometry.source.documentId, input.geometry.revision);
+    const expectedHash = bucklingInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-buckling-3d', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && bucklingResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** Undamped linear response from rest. A newer request supersedes this one; its late reply is ignored. */
+  analyzeTransient(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamTransientResult>> {
+    let prepared: ReturnType<typeof translateBeamTransient>;
+    try { prepared = translateBeamTransient(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid transient input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.geometry.source.documentId, input.geometry.revision);
+    const expectedHash = transientInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-transient-3d', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && transientResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** Native OOFEM MisesMat member under end-displacement control. Supersedes any earlier request; a result for
+   * another plan, digest or document revision is rejected, and abort/dispose terminate the Worker. */
+  analyzePlasticBar(value: unknown, options: FemOptions = {}): Promise<FemCompletion<PlasticBarResult>> {
+    let prepared: ReturnType<typeof translatePlasticBar>;
+    try { prepared = translatePlasticBar(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid plastic-bar input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    const expectedHash = plasticBarInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-plastic-bar-1d', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && plasticBarResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** Frictionless unilateral node-plane / node-pair contact on the native Beam3d stiffness (explicit NumPy
+   * complementarity solve, not an OOFEM contact engine). Supersedes any earlier request; a result for another
+   * plan, digest or document revision is rejected, and abort/dispose terminate the Worker. */
+  analyzeContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamContactAnalysisResult>> {
+    let prepared: ReturnType<typeof translateBeamContact>;
+    try { prepared = translateBeamContact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid contact input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.geometry.source.documentId, input.geometry.revision);
+    const expectedHash = contactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-contact-3d', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && contactResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** Same one-shot owner, cancellation, identity and deadlines as the existing contact solve. */
+  analyzeBoltContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamBoltContactResult>> {
+    let prepared: ReturnType<typeof translateBeamBoltContact>;
+    try { prepared = translateBeamBoltContact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid bolt-contact input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.contact.geometry.source.documentId, input.contact.geometry.revision);
+    const expectedHash = beamBoltContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-bolt-contact', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && beamBoltContactResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  analyzeWeldContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamWeldContactResult>> {
+    let prepared: ReturnType<typeof translateBeamWeldContact>;
+    try { prepared = translateBeamWeldContact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid weld-contact input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.contact.geometry.source.documentId, input.contact.geometry.revision);
+    const expectedHash = beamWeldContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-weld-contact', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && beamWeldContactResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** Own input and solver settings before digest or Worker dispatch; retain execute's cancellation and deadlines. */
+  analyzeFrictionContact(value: unknown, solverOptions: FrictionSolveOptions, options: FemOptions = {}): Promise<FemCompletion<FrictionContactResult>> {
+    let input: ReturnType<typeof translateBeamFrictionContact>['input'], owned: FrictionSolveOptions;
+    try { input = translateBeamFrictionContact(value).input; owned = readFrictionSolveOptions(solverOptions); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid friction-contact input', { cause: error })); }
+    const identity = this.nextIdentity(input.geometry.source.documentId, input.geometry.revision);
+    const runOptions: FemOptions = { signal: options.signal, onPhase: options.onPhase };
+    const expectedHash = frictionContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-friction-contact', identity, input, solverOptions: owned }, runOptions,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && frictionContactResultMatches(result, input, hash, owned) ? result : null;
+      });
+  }
+  /** Dedicated span input and identity are owned synchronously; acceptance remains inside execute's lifetime. */
+  analyzeWeldSpanContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamWeldSpanContactResult>> {
+    let prepared: ReturnType<typeof translateBeamWeldSpanContact>;
+    try { prepared = translateBeamWeldSpanContact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid weld-span-contact input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.contact.geometry.source.documentId, input.contact.geometry.revision);
+    const expectedHash = beamWeldSpanContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-weld-span-contact', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && isBeamWeldSpanContactResult(result)
+          && await beamWeldSpanContactResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** 専用frame入力を先に所有し、既存executeの取消・期限・4値identity照合を共有する。 */
+  analyzeFrameBoltContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<FrameBoltContactResult>> {
+    let prepared: ReturnType<typeof readFrameBoltContact>;
+    try { prepared = readFrameBoltContact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid frame-bolt input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.contact.geometry.source.documentId, input.contact.geometry.revision);
+    const expectedHash = frameBoltContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-frame-bolt-contact', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && frameBoltContactResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** Both connector families share this one request, input digest, owner and cancellation lifecycle. */
+  analyzeJointContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamJointContactResult>> {
+    let prepared: ReturnType<typeof translateBeamJointContact>;
+    try { prepared = translateBeamJointContact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid mixed joint-contact input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.contact.geometry.source.documentId, input.contact.geometry.revision);
+    const expectedHash = beamJointContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-joint-contact', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && beamJointContactResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** Explicit numeric-plan source ownership; no CAD provenance is inferred by this low-level entry. */
+  analyzeNativeBoltPreload(value: unknown, options: FemOptions = {}): Promise<FemCompletion<NativeBoltPreloadOwnedResult>> {
+    let wire: ReturnType<typeof readNativeBoltPreloadWireInput>;
+    try { wire = readNativeBoltPreloadWireInput(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error ? error : new Error('Invalid native preload input', { cause: error })); }
+    // Reserve this generation before asynchronous hashing, so older preparation cannot supersede a newer request.
+    const identity = this.nextIdentity(wire.source.documentId, wire.source.revision);
+    return prepareNativeBoltPreloadJob(wire).then<FemCompletion<NativeBoltPreloadOwnedResult>>(job => {
+      if (this.disposed || options.signal?.aborted || identity.generation !== this.generation) {
+        return { kind: 'cancelled', identity, reason: this.disposed ? 'disposed' : options.signal?.aborted ? 'abort' : 'superseded' };
+      }
+      // Only plain source/plan data crosses the Worker boundary; no prepared/verified WeakSet token.
+      return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-native-bolt-preload', identity,
+        input: { source: job.source, plan: job.prepared.plan } }, options,
+        result => Promise.resolve(nativeBoltPreloadOwnedMatches(result, job)));
+    });
+  }
+  /** Initial strain is part of the same owned request and digest, independent of the external load factor. */
+  analyzeJointInitialStrain(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamJointInitialStrainResult>> {
+    let prepared: ReturnType<typeof translateBeamJointInitialStrain>;
+    try { prepared = translateBeamJointInitialStrain(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid joint initial-strain input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.joint.contact.geometry.source.documentId, input.joint.contact.geometry.revision);
+    const expectedHash = beamJointInitialStrainInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-joint-initial-strain', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && beamJointInitialStrainResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  /** Elastic frictionless normal fixed-plane impact; the reply must re-decode exactly for this input and digest. */
+  analyzeBeamImpact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamImpactResult>> {
+    let prepared: ReturnType<typeof translateBeamImpact>;
+    try { prepared = translateBeamImpact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid beam impact input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.geometry.source.documentId, input.geometry.revision);
+    const expectedHash = impactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-impact-3d', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && beamImpactResultMatches(result, input, hash) ? result : null;
+      });
+  }
+  private nextIdentity(documentId:string,revision:number):FemIdentity {
+    this.cancel('superseded');
+    const identity = { documentId, revision, generation: ++this.generation, requestId: `fem-${this.generation}` };
+    if (!isIdentity(identity)) throw new Error('Invalid FEM document identity');
+    return identity;
+  }
+  private execute<R extends FemResult>(request:FemRequest, options:FemOptions,
+    accept:(result:FemResult)=>Promise<R|null>):Promise<FemCompletion<R>> {
+    const identity=request.identity;
+    if (this.disposed || options.signal?.aborted) return Promise.resolve({ kind: 'cancelled', identity,
+      reason: this.disposed ? 'disposed' : 'abort' });
+    let worker: FemWorkerPort;
+    try { worker = this.createWorker(); }
+    catch (error) { return Promise.resolve({ kind: 'failed', identity, failure: { code: 'worker-failed',
+      message: error instanceof Error ? error.message.slice(0, 4096) : 'Worker creation failed' } }); }
+    return new Promise(resolve => {
+      let finished = false;
+      let solving = false;
+      let solvingTimer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (completion: FemCompletion<R>): void => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(totalTimer);
+        if (solvingTimer !== undefined) clearTimeout(solvingTimer);
+        options.signal?.removeEventListener('abort', abort);
+        worker.onmessage = null; worker.onerror = null; worker.onmessageerror = null;
+        try { worker.terminate(); }
+        finally { if (this.active?.identity === identity) this.active = null; resolve(completion); }
+      };
+      const fail = (code: FemFailure['code'], message: string): void => finish({ kind: 'failed', identity,
+        failure: { code, message: message.slice(0, 4096) || 'FEM runtime failed' } });
+      const abort = (): void => finish({ kind: 'cancelled', identity, reason: 'abort' });
+      const { totalDeadlineMs, solveDeadlineMs } = FEM_RUNTIME_LIMITS;
+      const totalTimer = setTimeout(() => fail('deadline', `FEM initialization/analysis exceeded ${String(totalDeadlineMs)} ms`), totalDeadlineMs);
+      this.active = { identity, worker, cancel: reason=>finish({kind:'cancelled',identity,reason}) };
+      worker.onmessage = event => {
+        if (finished || this.active?.identity !== identity) return;
+        if (!isReply(event.data)) { fail('invalid-protocol', 'Invalid FEM response or numerical assertion'); return; }
+        if (!sameIdentity(event.data.identity, identity)) {
+          fail('invalid-protocol', 'FEM response does not match the current document, revision, generation and request'); return;
+        }
+        if (event.data.kind === 'phase') {
+          if (event.data.phase === 'solving' && !solving) {
+            solving = true;
+            solvingTimer = setTimeout(() => fail('deadline', `FEM solve exceeded ${String(solveDeadlineMs)} ms`), solveDeadlineMs);
+          }
+          try { options.onPhase?.(event.data.phase); }
+          catch (error) { fail('worker-failed', error instanceof Error ? error.message : 'FEM phase observer failed'); }
+        } else if (event.data.kind === 'failure') finish({ kind: 'failed', identity, failure: event.data.failure });
+        else void accept(event.data.result).then(result=>{
+          if(finished || this.active?.identity!==identity) return;
+          if(result===null) fail('invalid-protocol','Analysis kind, input digest, source revision or result association differs');
+          else finish({kind:'result',identity,result});
+        }).catch((error:unknown)=>fail('invalid-protocol',error instanceof Error?error.message:'Result validation failed'));
+      };
+      worker.onerror = event => fail('worker-failed', event.message || 'FEM Worker error');
+      worker.onmessageerror = () => fail('invalid-protocol', 'FEM Worker response cannot be decoded');
+      options.signal?.addEventListener('abort', abort, { once: true });
+      // Covers an abort between the first check and installing the listener.
+      if (options.signal?.aborted) { abort(); return; }
+      try { worker.postMessage(request); }
+      catch (error) { fail('worker-failed', error instanceof Error ? error.message : 'FEM request failed'); }
+    });
+  }
+  private cancel(reason: 'superseded' | 'disposed'): void {
+    const preparation = this.preparation;
+    this.preparation = null;
+    const active = this.active;
+    // Settle the Worker with the public reason before aborting preparation's signal.
+    if (active !== null) active.cancel(reason);
+    preparation?.cancel(reason);
+  }
+  dispose(): void { this.disposed = true; this.cancel('disposed'); }
+}

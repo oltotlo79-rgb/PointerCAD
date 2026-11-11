@@ -109,7 +109,7 @@ export interface InferenceElements {
   readonly arcs?: readonly ResolvedArc[];
 }
 
-export interface InferConstraintsOptions {
+interface InferConstraintsOptions {
   /** 描いている作図面。既存の要素はこの面の上にあるものだけを相手にする。 */
   readonly plane: WorkPlane;
   /** 画面の縮尺(1mm が何画素か)。一致の判定を画面上 6 画素で行うために要る。 */

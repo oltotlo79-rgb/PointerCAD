@@ -1,8 +1,9 @@
 import { net, protocol } from 'electron';
-import { contentSecurityPolicyFor } from '@pointercad/ui/security-policy';
+import { APP_META_CONTENT_SECURITY_POLICY, contentSecurityPolicyFor } from '@pointercad/ui/security-policy';
 import { join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { injectStartupShell } from './startupHtml.js';
+import { desktopAppContentSecurityPolicy } from '../occtHttpPolicy.js';
 
 /** 画面の配信に使う独自スキーム。Web 版と同じ「http のような」条件を再現する。 */
 export const APP_SCHEME = 'app';
@@ -20,6 +21,8 @@ export function registerAppScheme(): void {
       scheme: APP_SCHEME,
       privileges: {
         standard: true,
+        // Custom schemes must opt in to Chromium's managed code cache.
+        codeCache: true,
         secure: true,
         supportFetchAPI: true,
         corsEnabled: true,
@@ -29,8 +32,21 @@ export function registerAppScheme(): void {
   ]);
 }
 
-/** app.whenReady() の後に呼ぶ。rendererRoot の外へは出さない。 */
-export function handleAppScheme(rendererRoot: string): void {
+/** Only an explicitly owned test listener changes the built primary document's CSP meta. */
+function indexHtmlWithOwnedTransport(html: string, occtOrigin: string | undefined): string {
+  if (occtOrigin === undefined) return html;
+  const meta = (policy: string): string => `<meta http-equiv="Content-Security-Policy" content="${
+    policy.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')}">`;
+  const expected = meta(desktopAppContentSecurityPolicy(APP_META_CONTENT_SECURITY_POLICY));
+  const tags = html.match(/<meta\b[^>]*\bhttp-equiv\s*=\s*["']Content-Security-Policy["'][^>]*>/giu) ?? [];
+  // This exact shape comes from Vite's generated renderer/index.html. Do not
+  // silently retain a second policy or succeed when the emitted shape changed.
+  if (tags.length !== 1 || tags[0] !== expected) throw new Error('Unexpected built Desktop CSP meta');
+  return html.replace(expected, meta(desktopAppContentSecurityPolicy(APP_META_CONTENT_SECURITY_POLICY, occtOrigin)));
+}
+
+/** app.whenReady() の後に呼ぶ。rendererRoot の外へは出さない。occtOrigin は主文書の connect-src に足す OCCT の送信先(省略時は製品の固定値)。 */
+export function handleAppScheme(rendererRoot: string, occtOrigin?: string): void {
   const root = normalize(rendererRoot);
 
   protocol.handle(APP_SCHEME, async (request) => {
@@ -56,7 +72,9 @@ export function handleAppScheme(rendererRoot: string): void {
 
     const response = await net.fetch(pathToFileURL(filePath).toString());
     const headers = new Headers(response.headers);
-    headers.set('Content-Security-Policy', contentSecurityPolicyFor(url.pathname));
+    const policy = contentSecurityPolicyFor(url.pathname);
+    headers.set('Content-Security-Policy', relativePath === '/index.html'
+      ? desktopAppContentSecurityPolicy(policy, occtOrigin) : policy);
     headers.set('X-Frame-Options', 'DENY');
     headers.set('Referrer-Policy', 'no-referrer');
     // Web 版(apps/web/public/_headers)と同じ隔離状態を作る(FR-1003)。
@@ -65,7 +83,7 @@ export function handleAppScheme(rendererRoot: string): void {
     headers.set('Cross-Origin-Resource-Policy', 'same-origin');
 
     if (relativePath === '/index.html' && response.ok) {
-      const html = injectStartupShell(await response.text());
+      const html = injectStartupShell(indexHtmlWithOwnedTransport(await response.text(), occtOrigin));
       headers.delete('Content-Length');
       return new Response(html, { status: response.status, headers });
     }

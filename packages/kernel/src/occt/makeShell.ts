@@ -11,7 +11,7 @@ import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { matchFace } from './matchSubShape.js';
+import { resolveFaceReference } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
@@ -112,7 +112,7 @@ function isJoinType(value: unknown): value is GeomAbs_JoinType {
 }
 
 /** くり抜き 1 段の依頼(計画書 §2.12)。 */
-export interface ShellInput {
+interface ShellInput {
   /**
    * 開ける面の指紋。**0 枚でもよい**(そのときは外から見た形が変わらない、
    * 中だけが空の立体になる)。同じ面を 2 度指しても 1 度だけ数える。
@@ -146,11 +146,11 @@ function resolveOpenFaces(
       // 面以外の指紋が来るのは model 側の取り違えだが、利用者への直し方は同じ。
       throw new Error(MISSING_FACE_MESSAGE);
     }
-    const match = matchFace(tables.faces, query, scale);
-    if (match === null) {
+    const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
+    if (match.status !== 'matched') {
       throw new Error(MISSING_FACE_MESSAGE);
     }
-    found.add(match.index);
+    found.add(match.match.index);
   }
   return [...found].sort((left, right) => left - right);
 }

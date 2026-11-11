@@ -6,21 +6,45 @@ import type {
 import type {
   EdgeCurveKind,
   FaceSurfaceKind,
+  SurfaceCutFailureReason,
 } from '../part/types.js';
 import type {
   Vec3,
 } from '../sketch/vec3.js';
+import type { CurrentOriginIndex } from '../geometry/subShapeOrigin.js';
 import type {
   SolidBodyMeshData,
 } from './sketchContracts.js';
 
 
+/** 現在のnative面から導く基準。保存する指紋には含めない。 */
+export interface NativePlanarBasis {
+  readonly origin: Vec3;
+  readonly xAxis: Vec3;
+  readonly yAxis: Vec3;
+  readonly normal: Vec3;
+}
 /**
  * 面 1 枚の素性(計画書 P3 §2.2、§2.8)。部分形状の当たり判定・強調・指紋の材料になる。
  * kernel の `SolidFaceInfo` と同じ形だが、model は kernel の型を再輸出しないので
  * この場に自分の型として持つ(P0 §0.11)。
  */
 export interface SolidFaceEntry {
+  /** Complete nonempty current native face boundary, including inner wires; seam edges occur once.
+   * Omitted on incomplete mapping or the adjacency limit. Runtime only, never saved identity. */
+  readonly boundaryEdgeIndices?: readonly number[];
+  readonly planarBasis?: NativePlanarBasis;
+  /** Current native cylindrical placement basis, display only; never a saved fingerprint.
+   * axis = Position.Direction (not flipped by face Orientation); zeroDirection = Position.XDirection.
+   * Height h is origin + (axialRange[0] + h) * axis. Positive angles turn about axis by the right-hand rule. */
+  readonly cylinderBasis?: { readonly origin: Vec3; readonly axis: Vec3;
+    readonly zeroDirection: Vec3; readonly axialRange: readonly [number, number] };
+  /** Derived native primitive; its axis is not reversed with the material face. Not saved identity or trim evidence. */
+  readonly analyticSurface?:
+    | { readonly kind: 'cone'; readonly origin: Vec3; readonly axis: Vec3;
+        readonly referenceRadius: number; readonly semiAngle: number }
+    | { readonly kind: 'torus'; readonly origin: Vec3; readonly axis: Vec3;
+        readonly majorRadius: number; readonly minorRadius: number };
   /** `TopExp.MapShapes_2` の順で数えた 0 始まりの通し番号。 */
   readonly index: number;
   readonly surfaceKind: FaceSurfaceKind;
@@ -32,6 +56,18 @@ export interface SolidFaceEntry {
   readonly axis: Vec3 | null;
   /** 円筒・円錐の解析軸上点または球の解析中心(mm、部品座標)。面積重心とは別物。旧fixtureでは省略可。 */
   readonly axisOrigin?: Vec3 | null;
+  /** 全周の円筒帯だけ。axisOriginからaxisに沿う両端の距離(mm)。未確認/部分面はnullまたは省略。保存指紋には含めない。 */
+  readonly cylinderSpan?: readonly [number, number] | null;
+  /** 円筒の面(部分の面を含む)の今の軸方向範囲。全周の証明ではなく、通常の穴の結び付けには使わない。保存指紋には含めない。 */
+  readonly cylinderAxialExtent?: readonly [number, number] | null;
+  /**
+   * 今の B-rep で辺を共有する他の面の通し番号(昇順・重複なし)。実行時だけで、保存指紋には含めない。
+   * 面の種類に依らず全ての面が持つ(実らせんの壁の小片と溝の閉じた鎖の確認用)。無い面は証明に使わない。
+   * 数え上げが上限を超えた形では、どの面も持たない(証明に使わない)。
+   */
+  readonly adjacentFaces?: readonly number[];
+  /** Current native material normal points away from the cylinder axis. Not a saved fingerprint. */
+  readonly cylinderExterior?: boolean;
   /** 円柱・円錐・球の半径(mm)。平面では null。 */
   readonly radius: number | null;
   /** この面の三角形が mesh.indices の何番目から何枚あるか。 */
@@ -41,6 +77,17 @@ export interface SolidFaceEntry {
 
 /** 辺 1 本の素性。並びは面と同じく通し番号の順(計画書 P3 §2.2、§2.8)。 */
 export interface SolidEdgeEntry {
+  /** Current native circle parameter basis in part coordinates, not a saved fingerprint.
+   * Original increasing range (radians); orientation does not swap legacy start/end.
+   * Omitted for non-circles, unknown orientation or invalid/degenerate geometry. */
+  readonly circleBasis?: {
+    readonly origin: Vec3;
+    readonly xAxis: Vec3;
+    readonly yAxis: Vec3;
+    readonly normal: Vec3;
+    readonly parameterRange: readonly [number, number];
+    readonly orientation: 1 | -1;
+  };
   readonly index: number;
   readonly curveKind: EdgeCurveKind;
   /** 長さ(mm)。 */
@@ -126,6 +173,14 @@ export interface AppearanceMatchEntry {
 export interface SolidBody {
   readonly featureId: string;
   readonly mesh: SolidBodyMeshData;
+  /** Absent means legacy world coordinates; local arrays always carry this metadata. */
+  readonly coordinateFrame?: {
+    readonly space: 'local';
+    readonly origin: Vec3;
+    readonly maximumFloat32ErrorMm: number;
+    /** Request limit carried by local results; absent on earlier local fixtures. */
+    readonly maximumLiveMeshBytes?: number;
+  };
   /** 体積(mm³)。プロパティ欄に出す(FR-501)。 */
   readonly volume: number;
   /**
@@ -166,10 +221,13 @@ export interface SolidBody {
   readonly vertices: readonly SolidVertexEntry[];
   /** ねじの簡略表示の印(§0.a-0.15)。無ければ空配列。 */
   readonly threadMarks: readonly ThreadMarkEntry[];
+  /** Runtime proof table; current bridge population is a later stage. */
+  readonly origins?: CurrentOriginIndex;
 }
 
 /** 立体を 1 つ作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
 export interface SolidBodyFailure {
+  readonly code?: SurfaceCutFailureReason;
   /** 作れなかったフィーチャーの id。 */
   readonly featureId: string;
   readonly message: string;
@@ -209,6 +267,83 @@ export interface SolidRecomputeOutcome {
    * (取り消した計算でも入る)。Worker が壊れたときの結果や偽物の橋では省く。
    */
   readonly kernelMemory?: KernelMemoryReading;
+  /** Dispatch-bound JS reservation; independent of WASM readings and unavailable on legacy replies. */
+  readonly meshJsAccounting?: MeshJsAccountingReceipt;
+}
+
+/** Model-owned contract: cache snapshot precedes display-token rotation; clone is already reserved. */
+export type MeshJsAccountingReading =
+  | {
+      readonly status: 'known';
+      readonly limitBytes: number;
+      readonly cacheActiveBytes: number;
+      readonly cacheRetiredBytes: number;
+      /** Subset of active plus retired; never an additional term. */
+      readonly cacheProtectedBytes: number;
+      /** Worker reply, potential IPC clone arrays, and metadata reservation; not measured retention. */
+      readonly retainedReplyBytes: number;
+      /** Includes cache/reply reservation and the finite tessellation allowance, not an actual peak. */
+      readonly requestPeakReservedBytes: number;
+    }
+  | {
+      readonly status: 'unknown';
+      readonly limitBytes: number;
+      readonly reason: 'callback-missing' | 'callback-error' | 'missing-counts'
+        | 'invalid-byte-count' | 'overflow';
+    };
+
+/**
+ * Model-owned post-token Worker reading, separate from the pre-result reservation: sampled after
+ * the kernel released the request token. Whole backing buffers of the cache, every part's
+ * display meshes and this reply are counted once each; the reply clone is a separate future
+ * owner reported beside the retained union. Not RSS, WASM, native, GPU or a peak.
+ */
+export type MeshJsFinalAccountingReading =
+  | {
+      readonly status: 'known';
+      readonly limitBytes: number;
+      readonly cacheActiveBytes: number;
+      readonly cacheRetiredBytes: number;
+      /** Subset of active plus retired; never an additional term. */
+      readonly cacheProtectedBytes: number;
+      /** May overlap the cache and the reply. */
+      readonly displayBackingBytes: number;
+      /** Whole hidden-lease buffers; may overlap cache, display and reply. */
+      readonly hiddenBackingBytes: number;
+      /** May overlap the cache and the display meshes. */
+      readonly replyBackingBytes: number;
+      /** Cache, display, hidden and reply buffers, each ArrayBuffer once. */
+      readonly retainedBackingBytes: number;
+      /** Equals the reply's whole buffers; outside retainedBackingBytes. */
+      readonly replyCloneReservedBytes: number;
+    }
+  | {
+      readonly status: 'unknown';
+      readonly limitBytes: number;
+      readonly reason: 'callback-missing' | 'callback-error' | 'invalid-byte-count' | 'overflow';
+    };
+
+/** Provenance comes from the corresponding dispatch closure, not from a wire assertion. */
+export interface MeshJsAccountingReceipt {
+  readonly partId: string;
+  readonly generation: number;
+  readonly reading: MeshJsAccountingReading;
+  /**
+   * Known post-token reading whose retained union plus reply clone fits the dispatch limit.
+   * Every receipt converted from a kernel reply carries it; it is optional only so that
+   * hand-built historical receipts remain representable.
+   */
+  readonly final?: Extract<MeshJsFinalAccountingReading, { readonly status: 'known' }>;
+}
+
+/** Optional only for the historical three-argument conversion entry. */
+export interface SolidRecomputeContext {
+  readonly partId: string;
+  readonly generation: number;
+  readonly localMesh?: {
+    readonly maximumFloat32ErrorMm: number;
+    readonly maximumLiveMeshBytes: number;
+  };
 }
 
 /** 計算の進み具合(NFR-PF-4)。kernel の SolidProgress を model の言葉へ写したもの。 */
@@ -258,10 +393,28 @@ export interface SolidRecomputeOptions {
    * 面の一覧に元から入っている)ので、`appearance` を渡してもここは真にならない。
    */
   readonly measureAreas?: boolean;
+  /** Display-only local Float32 opt-in. Normal UI calls omit it and receive world coordinates. */
+  readonly localMesh?: {
+    readonly maximumFloat32ErrorMm: number;
+    readonly maximumLiveMeshBytes: number;
+  };
 }
 
 /**
  * 再計算で得た合致用の幾何。保存する指紋に解析軸上点を添えた実行時だけの値。
  * SubShapeRef・schema・鍵には足さず、古い文書も現在の面・辺から解析点を取り直す。
  */
-export type MateSubShapeGeometry = SubShapeFingerprint & { readonly axisOrigin?: Vec3 };
+export type MateSubShapeGeometry = SubShapeFingerprint & {
+  /** Complete nonempty current native face boundary, including inner wires; seam edges occur once.
+   * Omitted on incomplete mapping or the adjacency limit. Runtime only, never saved identity. */
+  readonly boundaryEdgeIndices?: readonly number[];
+  /** Current circle only; never populated from the saved fingerprint. */
+  readonly circleBasis?: SolidEdgeEntry['circleBasis'];
+  readonly planarBasis?: NativePlanarBasis;
+  readonly axisOrigin?: Vec3;
+  /** 現在の全周円筒面だけが持つ軸方向範囲。保存指紋から復元しない。 */
+  readonly cylinderSpan?: readonly [number, number];
+  /** 現在の円筒の部分の面の軸方向範囲(全周の証明ではない)。保存指紋から復元しない。 */
+  readonly cylinderAxialExtent?: readonly [number, number];
+  readonly cylinderExterior?: boolean;
+};

@@ -1,3 +1,5 @@
+import { unitDirection as toUnit } from './normalizeDirection.js';
+import { subVec as subtract, dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /**
  * スイープ(経路に沿った押し出し、FR-409)。計画書 P5 §2.9、タスク37。
  *
@@ -197,30 +199,6 @@ export interface SweepInput {
   readonly guide?: readonly CurveSpec[];
 }
 
-function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-}
-
-/** 長さが取れない(0・非数)ときは null。他の make*.ts の toUnit と同じ考え。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const size = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(size) || size <= 0) {
-    return null;
-  }
-  return [value[0] / size, value[1] / size, value[2] / size];
-}
 
 /**
  * つながった曲線の並びから 1 本のワイヤを作る。

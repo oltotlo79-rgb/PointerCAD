@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { containsLengthUnit } from '@pointercad/expression';
 import type { WeldLengthValue, WeldSideSpec, WeldSymbol } from '@pointercad/drawing';
-import { drawingDimensionContext, resolveGdtFeature } from '@pointercad/model';
+import { drawingDimensionContext, linkableWeldIds, resolveGdtFeature } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { drawingCreationLayer } from './drawingCreationLayer.js';
@@ -12,8 +12,8 @@ const kinds = ['fillet', 'squareButt', 'vButt', 'bevelButt', 'uButt', 'jButt', '
 const modes = ['arrow', 'opposite', 'both', 'center'] as const;
 const contours = ['none', 'flush', 'convex', 'concave'] as const;
 const finishes = ['none', 'grind', 'machine', 'chip', 'polish'] as const;
-const expr = (source: string) => ({ source, value: 0, display: source });
-const lengthValue = (source: string, unit: WeldLengthValue['unit']): WeldLengthValue => ({ expression: expr(source), unit });
+const makeExpression = (source: string) => ({ source, value: 0, display: source });
+const lengthValue = (source: string, unit: WeldLengthValue['unit']): WeldLengthValue => ({ expression: makeExpression(source), unit });
 const initial = (source: string, side: WeldSideSpec['side'] = 'arrow'): WeldSideSpec => ({ kind: side === 'center' ? 'spot' : 'fillet', side,
   size: { kind: side === 'center' ? 'diameter' : 'leg', value: lengthValue(source, 'mm') }, contour: 'none', finish: 'none' });
 const number = (source: string): number => source.trim() === '' ? NaN : Number(source);
@@ -50,11 +50,11 @@ function WeldSideEditor({ value, defaultSource, onChange }: { readonly value: We
           value: lengthValue(event.target.value, unit) } })} /></label>
     {value.kind === 'spot' ? null : inputLength('length')}
     <label title={t('drawing.weld.count.controlHint')}>{t('drawing.weld.count')}<input value={value.count?.source ?? ''} onChange={(event) => onChange({ ...value,
-      count: event.target.value.trim() === '' ? undefined : expr(event.target.value) })} /></label>
+      count: event.target.value.trim() === '' ? undefined : makeExpression(event.target.value) })} /></label>
     {inputLength('pitch')}
     {groove ? <>{inputLength('rootGap')}{inputLength('grooveDepth')}{value.kind === 'squareButt' ? null : <label>{t('drawing.weld.grooveAngle')}
       <input title={t('drawing.controlHint.weldAngle')} value={value.grooveAngle?.source ?? ''} onChange={(event) => onChange({ ...value,
-        grooveAngle: event.target.value.trim() === '' ? undefined : expr(event.target.value) })} /></label>}</> : null}
+        grooveAngle: event.target.value.trim() === '' ? undefined : makeExpression(event.target.value) })} /></label>}</> : null}
     {value.side === 'center' ? null : <>
       <label title={t('drawing.weld.contour.controlHint')}>{t('drawing.weld.contour')}<select aria-label={t('drawing.weld.contour')} value={value.contour} onChange={(event) => {
         const contour = contours.find((entry) => entry === event.target.value); if (contour !== undefined) onChange({ ...value, contour, finish: contour === 'none' ? 'none' : value.finish });
@@ -77,6 +77,11 @@ export function DrawingWeldPanel({ symbol }: { readonly symbol?: WeldSymbol }): 
   const [bendY, setBendY] = useState(String(symbol?.arrowBendOffset?.[1] ?? -10));
   const [height, setHeight] = useState(() => symbol === undefined ? defaults.number('weldHeight') : String(symbol.height));
   const [x, setX] = useState(symbol === undefined ? '' : String(symbol.position[0])), [y, setY] = useState(symbol === undefined ? '' : String(symbol.position[1]));
+  // 溶接へ結び付けるかは利用者が明示して選ぶ(既定は結び付けない)。元の組立から消えた溶接も、黙って外さずに選んだまま見せる。
+  const library = useAppStore((state) => state.drawingSources);
+  const [weldId, setWeldId] = useState(symbol?.weldId ?? '');
+  const linkable = document === null ? [] : linkableWeldIds(document, library);
+  const weldOptions = weldId === '' || linkable.includes(weldId) ? linkable : [...linkable, weldId];
   const target = targets.length > 0 ? targets.length === 1 ? targets[0] : undefined : symbol?.target;
   const resolved = target?.kind !== 'subShape' || target.ref.fingerprint.kind === 'vertex' || document === null || source === null ? null
     : resolveGdtFeature({ kind: target.ref.fingerprint.kind === 'face' ? 'surface' : 'line', target }, document, drawingDimensionContext(source));
@@ -89,11 +94,14 @@ export function DrawingWeldPanel({ symbol }: { readonly symbol?: WeldSymbol }): 
       const layerId = symbol?.layerId ?? drawingCreationLayer(document, 'layer-5'); if (layerId === null) return;
       commitDrawingWeld({ system: 'B', target, sides, allAround, fieldWeld, tail, closedTail, layerId, height: number(height),
         position: [x.trim() === '' ? resolved.paperPoint[0] + 20 : number(x), y.trim() === '' ? resolved.paperPoint[1] + 20 : number(y)],
-        ...(bend ? { arrowBendOffset: [number(bendX), number(bendY)] as const } : {}), ...(symbol?.style === undefined ? {} : { style: symbol.style }) }, symbol);
+        ...(bend ? { arrowBendOffset: [number(bendX), number(bendY)] as const } : {}), ...(weldId === '' ? {} : { weldId }), ...(symbol?.style === undefined ? {} : { style: symbol.style }) }, symbol);
     }}>
     <strong>{t('drawing.weld.title')}</strong><p>{t('drawing.weld.pick')}</p><p>{t('drawing.weld.unitsHint')}</p>
     <fieldset disabled={busy}>
       {symbol === undefined ? null : <button title={t('drawing.controlHint.retargetAnnotation')} type="button" className="pcad-button" onClick={() => startDrawingWeld(symbol.id)}>{t('drawing.gdt.retarget')}</button>}
+      <label title={t('drawing.weld.link.controlHint')}>{t('drawing.weld.link')}<select aria-label={t('drawing.weld.link')} value={weldId}
+        onChange={(event) => setWeldId(event.target.value)}><option value="">{t('drawing.weld.link.none')}</option>
+        {weldOptions.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>
       <label title={t('drawing.weld.side.controlHint')}>{t('drawing.weld.side')}<select aria-label={t('drawing.weld.side')} value={sides.length === 2 ? 'both' : sides[0].side} onChange={(event) => {
         const mode = modes.find((entry) => entry === event.target.value); if (mode === undefined) return;
         setSides((mode === 'both' ? ['arrow', 'opposite'] as const : [mode]).map((side) => sides.find((entry) => entry.side === side) ?? initial(defaults.source('weldSize'), side)));

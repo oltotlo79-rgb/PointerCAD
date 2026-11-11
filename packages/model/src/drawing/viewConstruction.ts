@@ -1,3 +1,4 @@
+import { dotVec3 as dot } from '../sketch/vec3.js';
 import { drawingViewBasis, validateDrawingPolygon, type BreakSpec, type ClipRegion, type DrawingDocument, type DrawingExpressionValue,
   type DrawingPlaneDefinition, type DrawingView, type Point2, type Vector3 } from '@pointercad/drawing';
 import { evaluateExpression } from '@pointercad/expression';
@@ -18,7 +19,6 @@ export interface ConstructedDrawingView {
 export type DrawingConstructionResult = { readonly ok: true; readonly views: ReadonlyMap<string, ConstructedDrawingView> }
   | { readonly ok: false; readonly viewId: string; readonly message: string };
 
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const planeDependencies = (plane: DrawingPlaneDefinition): readonly string[] => plane.kind === 'viewLine' ? [plane.sourceViewId]
   : plane.kind === 'face' ? [plane.target.viewId] : plane.kind === 'threePoints' ? plane.points.map((point) => point.viewId) : [];
 

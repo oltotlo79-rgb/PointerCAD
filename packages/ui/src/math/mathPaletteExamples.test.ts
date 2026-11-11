@@ -1,3 +1,4 @@
+import { publicAssetUrl } from '../testing/publicAssetUrl.testSupport.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -22,8 +23,7 @@ import {
 } from '@pointercad/expression/math/contracts';
 
 import {
-  MATH_PALETTE_DRAFT, MATH_PALETTE_HELP_TOPIC, mathPaletteAvailability,
-  type MathPaletteArgumentType, type MathPaletteCatalogItem, type MathPaletteExample,
+  MATH_PALETTE_DRAFT, MATH_PALETTE_HELP_TOPIC, type MathPaletteArgumentType, type MathPaletteCatalogItem, type MathPaletteExample,
 } from './mathPalette.js';
 import { MATH_PALETTE_BASIC } from './mathPaletteBasic.js';
 import { MATH_PALETTE_BASIC_EXAMPLES } from './mathPaletteBasicExamples.js';
@@ -32,6 +32,13 @@ import { MATH_PALETTE_CALCULUS_EXAMPLES } from './mathPaletteCalculusExamples.js
 import { MATH_PALETTE_SETS_LOGIC } from './mathPaletteSetsLogic.js';
 import { MATH_PALETTE_SETS_LOGIC_EXAMPLES } from './mathPaletteSetsLogicExamples.js';
 import { MATH_INPUT_PALETTE, MATH_PALETTE_EXAMPLES, mathPaletteExampleSource } from './mathPaletteExamples.js';
+import type { MathPaletteItem } from './mathPaletteGroups.js';
+
+function mathPaletteAvailability(entry: MathPaletteItem, verifiedOperations: ReadonlySet<string>,
+  passedAcceptanceIds: ReadonlySet<string>): boolean {
+  return entry.acceptanceIds.length > 0 && entry.acceptanceIds.every(id => passedAcceptanceIds.has(id))
+    && entry.requiredOperations.every(id => verifiedOperations.has(id));
+}
 
 /** Drafts with a calculation but without a public example. MC-19b published derivative and partial with plotting examples. */
 const DRAFT_EXECUTION_PROBES: readonly MathPaletteExample[] = [];
@@ -52,6 +59,7 @@ function paletteRequest(example: typeof MATH_PALETTE_EXAMPLES[number]) {
     ...(example.functionContext === undefined ? {} : { functionScope: { axes: example.functionContext.axes, parameters: example.functionContext.parameters } }) };
 }
 beforeAll(async () => {
+  const setupStarted = performance.now();
   backend = createMathBackend();
   // Reject missing placeholders and wrong notation before starting any exact runtime.
   for (const example of ALL_PROBES) {
@@ -70,18 +78,32 @@ beforeAll(async () => {
     }).then(reply => { exactResults.set(example.id, reply); });
   });
   const started = performance.now(); let batches = 0;
+  // Each runner call pays its own start-up and imports, and neighbouring palette rows are the same kind of
+  // calculation (the Fourier and transform rows, the closed integrals), so consecutive slices put a run of
+  // heavy rows into one call. Deal the queue round-robin into calls of at most 18 requests instead.
+  const batchCount = Math.ceil(queue.length / 18);
+  const batchMilliseconds: number[] = [], calculationMilliseconds: number[] = [];
   try {
     // Every request still runs through the real runtime and the public reply decoder.
-    // Eight requests amortize imports while retaining the existing 30-second subprocess bound.
-    for (let start = 0; start < queue.length; start += 8) {
-      const batch = queue.slice(start, start + 8);
-      const script = fileURLToPath(new URL('../../../expression/src/math/exactRuntime/cas_probability_test.py', import.meta.url));
+    // Each call stays below the runner's 100-request bound.
+    // Keep every real calculation and the existing 30-second subprocess bound.
+    for (let first = 0; first < batchCount; first++) {
+      const batch = queue.filter((_, index) => index % batchCount === first);
+      const script = fileURLToPath(publicAssetUrl('@pointercad/expression/testing-assets/cas_probability_test.py'));
+      const batchStarted = performance.now();
       const result = spawnSync('python', ['-B', '-X', 'utf8', script, '--batch'], {
         input: JSON.stringify(batch.map(({ expression, angleUnit }) => ({ expression, angleUnit }))),
         encoding: 'utf8', timeout: 30_000, maxBuffer: 1_000_000,
         env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
       });
-      if (result.status !== 0 || result.error !== undefined) throw new Error(result.stderr || result.error?.message);
+      const milliseconds = Math.round(performance.now() - batchStarted);
+      batchMilliseconds.push(milliseconds);
+      if (result.status !== 0 || result.error !== undefined) {
+        throw new Error(`束${first + 1}/${batchCount}（${batch.length}件・${milliseconds}ms）: ${result.error?.message ?? `exit ${String(result.status)}`}\n${result.stderr}`);
+      }
+      // The runner reports each case's own seconds; the rest of a call is its start-up and imports.
+      calculationMilliseconds.push(Math.round(1000 * [...result.stderr.matchAll(/Probability case finish: \d+ \/ ([\d.]+)/gu)]
+        .reduce((sum, match) => sum + Number(match[1]), 0)));
       const replies: unknown = JSON.parse(result.stdout);
       if (!Array.isArray(replies) || replies.length !== batch.length) throw new Error('計算の返信数が不正です。');
       batch.forEach((request, index) => request.resolve(replies[index]));
@@ -93,7 +115,8 @@ beforeAll(async () => {
     await Promise.allSettled(pending);
     throw error;
   }
-  console.log('[実測] 数学パレットの実計算', JSON.stringify({ requests: queue.length, batches, milliseconds: performance.now() - started }));
+  console.log('[実測] 数学パレットの実計算', JSON.stringify({ requests: queue.length, batches, milliseconds: performance.now() - started,
+    batchMilliseconds, calculationMilliseconds, setupMilliseconds: Math.round(performance.now() - setupStarted) }));
 }, 180_000);
 /** ±・∓ の status:'multiple' 候補（各候補は独立に評価済みの数値の式）を実数へ変換する。分数・符号反転を含む。 */
 function candidateNumber(node: MathNode): number {

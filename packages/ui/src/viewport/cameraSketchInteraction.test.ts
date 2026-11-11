@@ -1,3 +1,4 @@
+import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -37,11 +38,16 @@ describe('視点を動かす間の作図入力の所有権', () => {
         worldToScreen: project,
         screenToPlanePoint: (x: number, y: number) => [x, y, 0] as const,
       } as unknown as ViewportScene;
-      const controls = attachCameraControls(canvas, () => {});
+      // Explicitly configured replacement keeps this legacy gesture regression meaningful.
+      const settings: CameraControlSettings = mode.altKey && mode.shiftKey ? {
+        ...DEFAULT_CAMERA_CONTROLS,
+        pan: [{ input: 'left', alt: true, shift: true, ctrl: false, meta: false }, DEFAULT_CAMERA_CONTROLS.pan[0]],
+      } : DEFAULT_CAMERA_CONTROLS;
+      const controls = attachCameraControls(canvas, () => {}, undefined, undefined, () => settings);
       const sketch = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging());
       const send = (type: string, props: object = {}): void => {
         canvas.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), {
-          pointerId: 1, pointerType: 'mouse', button: mode.button, buttons: type === 'pointerup' ? 0 : mode.button === 2 ? 2 : 0,
+          pointerId: 1, pointerType: 'mouse', button: mode.button, buttons: type === 'pointerup' ? 0 : mode.button === 2 ? 2 : mode.button === 1 ? 4 : 1,
           clientX: 0, clientY: 0, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false, ...props,
         }));
       };

@@ -1,5 +1,11 @@
 /** Conservative scalar ranges for domain subdivision; not a universal function-error certificate. */
 export interface MathInterval { readonly lower: number; readonly upper: number }
+/** Exactly zero endpoints, retaining signed-zero equality semantics. */
+export const isZero=(value:MathInterval):boolean=>value.lower===0&&value.upper===0;
+/** An ordered interval with finite endpoints. */
+export function isFiniteInterval(value: MathInterval): boolean {
+  return Number.isFinite(value.lower) && Number.isFinite(value.upper) && value.lower <= value.upper;
+}
 export type IntervalValue =
   | { readonly status: 'range'; readonly interval: MathInterval }
   | { readonly status: 'outside-domain' }

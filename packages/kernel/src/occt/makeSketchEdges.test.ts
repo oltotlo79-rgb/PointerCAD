@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOcctForNode } from './loadOcct.node.js';
 import { discretizeEdge, makeArcEdge, makeCurveEdge, makeSegmentEdge } from './makeSketchEdges.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -27,6 +28,21 @@ beforeAll(async () => {
 });
 
 describe('スケッチの線分の稜線(FR-304)', () => {
+  it('explicit frame keeps a small segment at a large world coordinate', () => {
+    const frame: MeshCoordinateFrame = { origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01 };
+    const handle = makeSegmentEdge(oc, [1e9, 0, 0], [1e9 + 0.03, 0, 0]);
+    try {
+      const world = discretizeEdge(oc, handle.edge);
+      const local = discretizeEdge(oc, handle.edge, {}, frame);
+      expect(world[0]).toBe(world[3]);
+      expect(local[0]).toBe(0);
+      expect(local[3]).toBeGreaterThan(0.029);
+      expect(local[3]).toBeLessThan(0.031);
+      expect([...discretizeEdge(oc, handle.edge)]).toEqual([...world]);
+    } finally {
+      handle.delete();
+    }
+  });
   it('線分は始点と終点の 2 点だけの折れ線になる', () => {
     const handle = makeSegmentEdge(oc, [0, 0, 0], [10, 0, 0]);
     try {
@@ -66,6 +82,19 @@ describe('スケッチの線分の稜線(FR-304)', () => {
 });
 
 describe('スケッチの円弧の稜線(FR-305、中心+半径+開始角+終了角)', () => {
+  it('uses the same explicit frame for a translated curved edge', () => {
+    const frame: MeshCoordinateFrame = { origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01 };
+    const handle = makeArcEdge(oc, { kind: 'arc', center: [1e9, 0, 0], normal: [0, 0, 1],
+      xAxis: [1, 0, 0], radius: 10, startAngle: 0, endAngle: Math.PI / 2 });
+    try {
+      const local = toPoints(discretizeEdge(oc, handle.edge, {}, frame));
+      expect(local.length).toBeGreaterThan(2);
+      expect(local[0][0]).toBeCloseTo(10, 5);
+      expect(local[local.length - 1][1]).toBeCloseTo(10, 5);
+    } finally {
+      handle.delete();
+    }
+  });
   it('90 度の円弧は (10,0,0) から (0,10,0) へ回り、全点が半径 10 の円周に乗る', () => {
     const handle = makeArcEdge(oc, {
       kind: 'arc',

@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { fillFields, popover, popoverInputs } from './popoverFields.js';
 
 /**
  * 要件§9 P1 の完了条件「座標入力で 2D/3D の下書きが描け、面が張れる」を、実際のブラウザで
@@ -16,20 +18,6 @@ const KERNEL_TIMEOUT_MS = 60_000;
 /** √2*10 の表示(有効数字 12 桁、計画書 §2.4 と §0.a-0.7)。 */
 const SQRT2_TIMES_TEN = '14.1421356237';
 
-/** コンソールのエラーとページの例外を集める。最後に 0 件であることを確かめる。 */
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
 /**
  * ツールバーの「スケッチ」区画の道具。
  * 表示スタイルにも「面」という名前のボタンがあるので、区画で絞ってから名前で引く。
@@ -38,16 +26,6 @@ function sketchTool(page: Page, label: string): Locator {
   return page
     .getByRole('group', { name: 'スケッチ' })
     .getByRole('button', { name: label, exact: true });
-}
-
-/** その場数値入力のポップアップ。開いていないときは 0 件になる。 */
-function popover(page: Page): Locator {
-  return page.locator('.pcad-popover');
-}
-
-/** ポップアップの式の欄。並びは指定方法ごとに X/Y/Z、ΔX/ΔY/ΔZ、距離/角度/仰角。 */
-function popoverInputs(page: Page): Locator {
-  return page.locator('.pcad-popover input.pcad-field__input');
 }
 
 /** 欄の下の 1 行。妥当なら評価値、間違いなら理由が出る(FR-202、FR-204)。 */
@@ -78,18 +56,6 @@ function treeRow(page: Page, name: string): Locator {
 /** モデルブラウザに並んでいる要素の数。「増えていない」を数で確かめるのに使う。 */
 function treeItems(page: Page): Locator {
   return page.locator('.pcad-tree__children > li');
-}
-
-/** ポップアップの欄を埋める。null を渡した欄は既定値のままにする(NFR-UX-4)。 */
-async function fillFields(page: Page, sources: readonly (string | null)[]): Promise<void> {
-  await expect(popover(page)).toBeVisible();
-  const inputs = popoverInputs(page);
-  for (const [index, source] of sources.entries()) {
-    if (source === null) {
-      continue;
-    }
-    await inputs.nth(index).fill(source);
-  }
 }
 
 /** Enter で決定する(§2.9)。焦点は必ずポップアップの欄に置いてから押す。 */

@@ -1,7 +1,7 @@
 /** Merge only exactly coplanar, convex adjacent triangle pairs; never change their point set. */
 import type { FunctionSurfaceGeometrySpec } from './functionSurfaceGeometrySpec.js';
 
-type Dyadic = { readonly coefficient: bigint; readonly exponent: number };
+interface Dyadic { readonly coefficient: bigint; readonly exponent: number }
 type IntegerPoint = readonly [bigint, bigint, bigint];
 export type FunctionSurfacePolygon = readonly [number, number, number] | readonly [number, number, number, number];
 

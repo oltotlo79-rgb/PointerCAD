@@ -18,10 +18,20 @@ import file from './ja/file.json';
 import view from './ja/view.json';
 import parameters from './ja/parameters.json';
 import assembly from './ja/assembly.json';
+import steelBend from './ja/steelBend.json';
 import drawing from './ja/drawing.json';
 import help from './ja/help.json';
 import sheetMetal from './ja/sheetMetal.json';
 import strength from './ja/strength.json';
+import beam from './ja/beam.json';
+import plasticBar from './ja/plasticBar.json';
+import fatigue from './ja/fatigue.json';
+import fatigueStrain from './ja/fatigueStrain.json';
+import fatigueLocalCycle from './ja/fatigueLocalCycle.json';
+import solidAnalysis from './ja/solidAnalysis.json';
+import solidPlastic from './ja/solidPlastic.json';
+import solidFinite from './ja/solidFinite.json';
+import shellAnalysis from './ja/shellAnalysis.json';
 import script from './ja/script.json';
 import math from './ja/math.json';
 import mathGeometry from './ja/mathGeometry.json';
@@ -32,6 +42,7 @@ import commands from './ja/commands.json';
 
 /** 機能ごとの表を 1 つに合わせたもの。鍵の型(`MessageKey`)はここから導く。 */
 export const ja = {
+  ...steelBend,
   // その場入力(道具ごとの段・欄・つまみ・選択肢)
   ...numericInput,
   // プロパティ区画
@@ -61,6 +72,15 @@ export const ja = {
   ...help,
   ...sheetMetal,
   ...strength,
+  ...beam,
+  ...plasticBar,
+  ...fatigue,
+  ...fatigueStrain,
+  ...fatigueLocalCycle,
+  ...solidAnalysis,
+  ...solidPlastic,
+  ...solidFinite,
+  ...shellAnalysis,
   ...script,
   ...math,
   ...mathGeometry,
@@ -89,9 +109,19 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['view', view],
   ['parameters', parameters],
   ['assembly', assembly],
+  ['steelBend', steelBend],
   ['drawing', drawing],
   ['help', help],
   ['sheetMetal', sheetMetal],
   ['strength', strength],
+  ['beam', beam],
+  ['plasticBar', plasticBar],
+  ['fatigue', fatigue],
+  ['fatigueStrain', fatigueStrain],
+  ['fatigueLocalCycle', fatigueLocalCycle],
+  ['solidAnalysis', solidAnalysis],
+  ['solidPlastic', solidPlastic],
+  ['solidFinite', solidFinite],
+  ['shellAnalysis', shellAnalysis],
   ['commands', commands],
 ];

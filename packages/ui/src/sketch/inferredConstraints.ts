@@ -47,7 +47,7 @@ import type { ProjectToScreen } from './snapMath.js';
  * **絞りは model の判定を厳しくしない**(ここで落ちた要素は最初から相手にならないだけで、
  * 残った要素の判定は 1 つも変わらない)。
  */
-export const INFERENCE_NEARBY_RADIUS_PIXELS = 120;
+const INFERENCE_NEARBY_RADIUS_PIXELS = 120;
 
 /** 予告の印の id に付ける接頭辞。実在の拘束の id(`c1` など)と混ざらないようにする。 */
 export const INFERRED_MARK_ID_PREFIX = 'inferred:';
@@ -191,7 +191,7 @@ export function inferredConstraintMarks(
 }
 
 /** `inferredConstraintPreview` に渡す材料。画面に触れるものは関数で受ける。 */
-export interface InferencePreviewInput {
+interface InferencePreviewInput {
   /** いま解けているスケッチ(近くの要素を絞る元)。 */
   readonly resolved: ResolvedSketch;
   /** 既にある拘束を見るための文書。同じ拘束は 2 つ推定しない。 */

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { note, type NoteInput } from './note.js';
+import { note } from './note.js';
+
+type NoteInput = Parameters<typeof note>[0];
 
 const input: NoteInput = {
   text: 'abc', position: [20, 40],

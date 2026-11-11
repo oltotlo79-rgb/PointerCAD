@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createProjectedArcLengthDimensionGeometry, type ArcLengthDimensionInput } from './arcLengthGeometry.js';
+import { createProjectedArcLengthDimensionGeometry } from './arcLengthGeometry.js';
+
+type ArcLengthDimensionInput = Parameters<typeof createProjectedArcLengthDimensionGeometry>[0];
 
 const input: ArcLengthDimensionInput = { center: [20, 30], axes: [[10, 0], [0, 10]], sweep: Math.PI / 2 };
 describe('弧長寸法の配置', () => {

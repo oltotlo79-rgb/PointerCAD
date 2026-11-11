@@ -1,3 +1,4 @@
+import { subVec as sub, dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /** FR-435: 案内線との長さ比の対応と、案内線上の点に追従する断面を作る。 */
 import type { BRepAdaptor_CompCurve, BRepOffsetAPI_MakePipeShell, OpenCascadeInstance, TopoDS_Wire } from 'opencascade.js/dist/opencascade.full.js';
 import type { Vec3Tuple } from '../types.js';
@@ -18,9 +19,6 @@ export interface SweepGuidePlan {
   readonly maxScale: number;
   readonly closed: boolean;
 }
-const sub = (a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: Vec3Tuple, b: Vec3Tuple): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 function unit(value: Vec3Tuple): Vec3Tuple {
   const length = Math.hypot(...value); if (!Number.isFinite(length) || length < LENGTH_TOLERANCE) throw new Error(DEGENERATE);
   return [value[0] / length, value[1] / length, value[2] / length];

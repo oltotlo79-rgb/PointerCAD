@@ -1,24 +1,18 @@
 /**
- * GR-19d (w15a's e2e finding, `scratchpad/claude/instructions/w19a-gr19d-list-headings.md`): two
- * product bugs found while writing the math-geometry panel's e2e script.
+ * 図形の測定値の一覧で、長い値による見出しの消失と「測る量」の左余白の欠落を防ぐ。
  *
- * 1. The list row's headings (測る量・参照先・値・比べる幅) never appeared: `.pcad-properties`'s
- *    shared grid (`minmax(0, 1fr) auto`, `packages/ui/src/shell/appShell.css`) sizes the value column
- *    to its content and lets the heading column shrink all the way to 0 once a value is long enough.
- *    GR-19d protected only the math-geometry list through `.pcad-parameter__properties`.
- *    P102 extends the same protection to the shared grid after mass-property headings disappeared
- *    beside long inertia values. Sheet-metal and strength layouts retain their own overrides.
- * 2. The "測る量" quantity-to-add label sat flush against the panel's left edge: `.pcad-field` (its
- *    own grid) carries no horizontal padding, and every ancestor up to `.pcad-section` also has none
- *    (`.pcad-parameters__fields { padding: 0 }`, shared with `ParameterPanel`) — unlike every sibling
- *    control in the panel, which supplies its own left/right padding (`.pcad-panel__note`,
- *    `.pcad-parameters__list`, `.pcad-parameters__footer`). Fixed with a dedicated class on just that
- *    field (`.pcad-parameters__quantity-field`).
+ * 1. `.pcad-properties` (`packages/ui/src/shell/appShell.css`) の `minmax(0, 1fr) auto` は
+ *    値の幅を優先し、見出しの列を0まで縮めていた。まず `.pcad-parameter__properties` で
+ *    測定値の一覧を保護した。長い慣性値で質量特性の見出しも消えたため、P102で共有gridにも
+ *    保護を広げた。板金と強度のレイアウトは独自の上書きを保つ。
+ * 2. 「測る量」の `.pcad-field` と `.pcad-section` までの祖先には横余白がない。
+ *    `ParameterPanel` と共有する `.pcad-parameters__fields { padding: 0 }` は変えず、
+ *    専用 `.pcad-parameters__quantity-field` で余白を付ける。他の欄は
+ *    `.pcad-panel__note`・`.pcad-parameters__list`・`.pcad-parameters__footer` が余白を持つ。
  *
- * Vitest's `environment: 'node'` cannot lay out a real CSS grid, so this file checks what a unit test
- * can: the fixed rules' text no longer lets the heading column collapse and lets a long value wrap
- * instead of overflowing. `MeasurementSections.test.ts` and `MathGeometryPanel.test.ts` verify the
- * real components use these rules. Actual pixel dimensions still require a browser screen check.
+ * NodeのVitestは実CSS gridを配置できないため、見出しが潰れず長い値が折り返す規則の本文を検査する。
+ * 実コンポーネントの適用は `MeasurementSections.test.ts` / `MathGeometryPanel.test.ts`、
+ * 実際の画素寸法はブラウザー画面で確認する。
  */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';

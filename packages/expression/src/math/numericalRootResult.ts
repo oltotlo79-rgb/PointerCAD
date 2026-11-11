@@ -1,3 +1,4 @@
+import { isRecord } from './mathRecord.js';
 /** Numerical root enclosures are not exact scalar roots. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { nextFloat, type MathInterval } from './mathInterval.js';
@@ -28,11 +29,11 @@ export function numericalRootFunction(source: MathNode): Extract<MathNode, { kin
   return fn;
 }
 function record(value: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return invalid();
+  if (!isRecord(value)) return invalid();
   const prototype: unknown = Object.getPrototypeOf(value), descriptors = Object.getOwnPropertyDescriptors(value);
   if ((prototype !== Object.prototype && prototype !== null) || Reflect.ownKeys(value).length !== keys.length
     || keys.some(key => !Object.hasOwn(descriptors, key) || !Object.hasOwn(descriptors[key], 'value'))) return invalid();
-  return value as Record<string, unknown>;
+  return value;
 }
 function finite(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) ? value : invalid(); }
 function interval(value: unknown): MathInterval {

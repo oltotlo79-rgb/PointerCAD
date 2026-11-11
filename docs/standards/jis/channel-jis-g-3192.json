@@ -25,7 +25,8 @@
   "notes": [
     "標準断面寸法・断面積・単位質量は日本鉄鋼連盟(JISF)が公開している JIS G 3192 の原案 PDF(表番号つき)から写した。",
     "JSA の書誌では現行版は JIS G 3192:2024。JISF の PDF は改正原案(2020年)で、表の値がそのまま現行版と同じかは確かめていない。",
-    "16 行すべて、JISF の PDF と ranoblog の一覧が全列で完全に一致した(確認済み)。"
+    "16 行すべて、JISF の PDF と ranoblog の一覧が全列で完全に一致した(確認済み)。",
+    "実行時カタログ packages/model/src/assembly/standard/sections.ts の等辺山形鋼・溝形鋼・H形鋼の3表に共通で付けていた出典 STRUCTURAL_SECTION_SOURCE の値(製品のどこからも読まれていなかったので、値を変えずにここへ移した。この JSON の版・題名・範囲・verified と表記が違っても調停せず、実行時の原値のまま記す。この JSON の数値と verified は変えていない): standard「JIS G 3192」、edition「2024 (dimension values checked against the JISF 2020 amendment draft)」、title「熱間圧延形鋼の形状・寸法・質量及びその許容差」、scope「等辺山形鋼26種・溝形鋼8種・H形鋼広幅系列7種」、verified=false、sourceUrls: https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai004_jis02G3192_20201202.pdf https://ranoblog.org/angle-yamagata-steel-%E2%85%BC-standard-size-cross-section-weight/ https://ranoblog.org/channel-steel-material-c-standard-size-cross-sectional-area-weight-jis-g-3192/ https://hayamihyou.net/h-beam/"
   ],
   "rows": [
     {

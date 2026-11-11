@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { placeRadialMenu, radialMenuSlotAt, radialMenuSlotPoint, type RadialMenuSlot } from './radialMenuGeometry.js';
+import { placeRadialMenu, radialMenuSlotAt, type RadialMenuSlot, type ScreenPoint, type RadialMenuGeometry } from './radialMenuGeometry.js';
+
+function radialMenuSlotPoint(slot: RadialMenuSlot, geometry: RadialMenuGeometry): ScreenPoint {
+  const angle = slot * Math.PI / 4;
+  const radius = (geometry.cancelRadius + geometry.outerRadius) / 2;
+  return { x: geometry.center.x + Math.sin(angle) * radius, y: geometry.center.y - Math.cos(angle) * radius };
+}
 
 const geometry = { center: { x: 200, y: 200 }, cancelRadius: 28, outerRadius: 116 };
 describe('8方向のメニューの位置と取消領域', () => {

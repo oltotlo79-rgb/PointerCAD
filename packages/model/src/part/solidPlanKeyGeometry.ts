@@ -57,11 +57,16 @@ export function toKeyCurve(curve: ResolvedCurve): KeyCurve {
         endAngle: curve.endAngle,
       };
     case 'spline':
+      // Degree and explicit knots are part of the shape: the same points read as a uniform cubic, a certified
+      // polyline (degree 1) or a smooth function curve (degree 3 with knots) are three different curves.
+      // Uniform splines omit both, so their keys are unchanged.
       return {
         kind: 'spline',
         mode: curve.mode,
         points: curve.points.map((point) => toKeyVec3(point)),
         closed: curve.closed,
+        ...(curve.degree === undefined ? {} : { degree: curve.degree }),
+        ...(curve.knots === undefined ? {} : { knots: [...curve.knots] }),
       };
   }
 }
@@ -125,6 +130,8 @@ export function toKeyExtrudeEnd(end: ExtrudeEndPlan): ExtrudeEndKeyMaterial {
       return { kind: 'toFace', distance: end.distance };
     case 'toNext':
       return { kind: 'toNext' };
+    case 'throughTarget':
+      return { kind: 'throughTarget' };
   }
 }
 

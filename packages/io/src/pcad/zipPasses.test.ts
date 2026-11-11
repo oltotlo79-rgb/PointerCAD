@@ -13,7 +13,7 @@ import * as fflate from 'fflate';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('fflate', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('fflate')>();
+  const actual = await importOriginal<typeof fflate>();
   return { ...actual, zipSync: vi.fn(actual.zipSync), inflateSync: vi.fn(actual.inflateSync), unzipSync: vi.fn(actual.unzipSync) };
 });
 

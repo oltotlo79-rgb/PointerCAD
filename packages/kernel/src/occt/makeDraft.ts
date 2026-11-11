@@ -1,3 +1,4 @@
+import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import type {
   OpenCascadeInstance,
   TopoDS_Face,
@@ -9,7 +10,7 @@ import type { SubShapeQuery, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { matchFace } from './matchSubShape.js';
+import { resolveFaceReference } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
@@ -84,27 +85,12 @@ export interface DraftInput {
 }
 
 /** -0 を +0 へ揃える(subShapes.ts と同じ理由)。 */
-function normalizeZero(value: number): number {
-  return value === 0 ? 0 : value;
-}
 
-/** 長さ 1 へ揃える。長さが取れない(0・非数)ときは null。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const length = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [
-    normalizeZero(value[0] / length),
-    normalizeZero(value[1] / length),
-    normalizeZero(value[2] / length),
-  ];
-}
 
 /**
  * 指紋 1 つから平らな面 1 枚を選び直す。
  *
- * 面以外(辺・頂点)の指紋、しきい値 0.6 に届かない指紋、平面でない面は、
+ * 面以外(辺・頂点)の指紋、旧参照でしきい値 0.6 に届かない指紋、平面でない面は、
  * それぞれの理由で断る。文言は呼び出し側が渡す(中立面と対象の面で言葉が違うため)。
  */
 function resolveFaceIndex(
@@ -117,11 +103,11 @@ function resolveFaceIndex(
     // 面以外の指紋が来るのは model 側の取り違えだが、利用者への直し方は同じ(面を選び直す)。
     throw new Error(missingMessage);
   }
-  const match = matchFace(tables.faces, query, scale);
-  if (match === null) {
+  const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
+  if (match.status !== 'matched') {
     throw new Error(missingMessage);
   }
-  return match.index;
+  return match.match.index;
 }
 
 /**

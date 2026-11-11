@@ -10,7 +10,7 @@ import {
 
 import { makeFunctionSurface, createAllocations, isValidShape, hasSolid, measureArea,
   type Vec3Tuple, type FunctionClipBox, type FunctionSurfaceGeometrySpec } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { functionSurfaceRequest } from './functionSurfaceRequest.js';
 import { FunctionPlotBounds } from './functionPlotBounds.js';
 

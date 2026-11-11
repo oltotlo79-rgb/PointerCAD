@@ -150,8 +150,9 @@ describe('createAssemblyDocument', () => {
       configurations: true, id: true, name: true, namedViews: true, parameters: true,
       references: true, schemaVersion: true, selectionSets: true, sheetUnfolds: true,
       sketches: true, solids: true,
-      mathParameterSerial: 'optional', unresolvedMathProblems: 'optional', mathGeometry: 'optional',
-      featureNotes: 'optional', featureFolders: 'optional',
+      mathParameterSerial: 'optional', patternSlotHighWater: 'optional', unresolvedMathProblems: 'optional', mathGeometry: 'optional',
+      steelStockSource: 'optional', featureNotes: 'optional', featureFolders: 'optional',
+      beamAnalysisInputs: 'optional',
     } satisfies Record<keyof PartDocument, true | 'optional'>;
     expect(Object.keys(createEmptyPartDocument()).sort()).toEqual(
       Object.entries(savedFields).filter(([, presence]) => presence === true).map(([field]) => field).sort(),
@@ -282,8 +283,11 @@ describe('種類の一覧', () => {
     expect(new Set(JOINT_KINDS).size).toBe(JOINT_KINDS.length);
   });
 
-  it('規格部品は 9 種で、重複が無い(§0.a-0.32)', () => {
-    expect(STANDARD_CATALOG_IDS).toHaveLength(10);
+  it('規格部品は従来10種・鋼材3種・溶接のビード1種の14種で重複が無い(§0.a-0.32)', () => {
+    // 13 のカタログに、すみ肉溶接のビードの区間を1つ足した。
+    expect(STANDARD_CATALOG_IDS).toHaveLength(14);
+    expect(STANDARD_CATALOG_IDS).toContain('filletWeld');
+    expect(STANDARD_CATALOG_IDS.slice(-3)).toEqual(['flatBar', 'roundBar', 'steelPipe']);
     expect(new Set(STANDARD_CATALOG_IDS).size).toBe(STANDARD_CATALOG_IDS.length);
     expect(STANDARD_CATALOG_IDS).toContain('hexBolt');
     expect(STANDARD_CATALOG_IDS).toContain('deepGrooveBallBearing');

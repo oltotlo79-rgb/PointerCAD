@@ -5,7 +5,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { evaluateFieldSource, isPendingFieldError, useFieldUnits } from '../shell/propertyFieldUnits.js';
 import type { PartMeasureReadiness } from '../sketch/sketchMeasure.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { measureKindLabel } from './measure.js';
+import { measureKindLabel, measurementProvenanceLabel } from './measure.js';
 import {
   defaultDensityMaterialId, densityOf, describeMeasureKinds, describeMeasureTargets,
   formatMeasurePoint, formatMeasureValue, formatMoments, isValidDensity, massPropertiesView,
@@ -41,8 +41,8 @@ const DENSITY_MATERIAL_LABEL_KEYS: Readonly<Record<string, MessageKey>> = {
   'wood-maple': 'material.wood-maple',
 };
 
-/** 材料の見出しキー。知らない id は既定の材料(鋼)の見出しにする。 */
-function densityMaterialLabelKey(id: string): MessageKey {
+/** 材料の見出しキー。知らない id は既定の材料(鋼)の見出しにする。溶接のビードの材質の選択(`FilletWeldPopover`)も使う。 */
+export function densityMaterialLabelKey(id: string): MessageKey {
   return DENSITY_MATERIAL_LABEL_KEYS[id] ?? 'material.steel';
 }
 
@@ -90,6 +90,11 @@ export function MeasureSection({
           <dd className="pcad-properties__value">{measurement.targetNames.join(' / ')}</dd>
         </>}
       </dl>
+      {measurement !== null && <p className="pcad-panel__note" data-measure-provenance={measurement.result.provenance ?? 'unknown'}>
+        {t('measureProvenance.label')}: {measurementProvenanceLabel(measurement.result.provenance)}
+      </p>}
+      <p className="pcad-panel__note">{t('propertyPanel.measurePrecisionSource')}</p>
+      <p className="pcad-panel__note">{t('propertyPanel.measurePrecisionLimits')}</p>
       {request !== null && <p className="pcad-panel__note" role="status">{t('propertyPanel.measurePending')}</p>}
       <div className="pcad-appearance__actions">
         {request !== null && <button type="button" className="pcad-button"
@@ -202,7 +207,10 @@ export function MassPropertiesSection({
       </div>
       {massProperties === null || otherTarget ? (
         <p className="pcad-panel__note">{t(otherTarget ? 'propertyPanel.massOtherTarget' : 'propertyPanel.massNotYet')}</p>
-      ) : (
+      ) : (<>
+        <p className="pcad-panel__note" data-measure-provenance={massProperties.provenance ?? 'unknown'}>
+          {t('measureProvenance.label')}: {measurementProvenanceLabel(massProperties.provenance)}
+        </p>
         <dl className="pcad-properties">
           <dt className="pcad-properties__key">{t('propertyPanel.massVolume')}</dt>
           <dd className="pcad-properties__value">
@@ -221,7 +229,7 @@ export function MassPropertiesSection({
           <dt className="pcad-properties__key">{t('propertyPanel.massInertia')}</dt>
           <dd className="pcad-properties__value">{view === null ? t('propertyPanel.massUncomputed') : formatMoments(view.moments)}</dd>
         </dl>
-      )}
+      </>)}
       {density === null && <p className="pcad-panel__note" role="status">
         {t(pending ? 'mathGeometry.status.pending' : 'propertyPanel.massDensityInvalid')}
       </p>}

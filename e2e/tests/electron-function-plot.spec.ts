@@ -1,3 +1,4 @@
+import { functionSplineCurveFlow } from './functionSplineSurfaceFlow.js';
 import { functionOdeCurveFlow, ODE_CURVE_SCENARIO_TIMEOUT_MS } from './functionOdeCurveFlow.js';
 import { FUNCTION_DIRECTION_SCENARIOS } from './functionDirectionScenarios.js';
 import { functionDerivativesFlow } from './functionDerivativesFlow.js';
@@ -166,5 +167,14 @@ test('ADD-26 微分方程式の解曲線・点と法線・条件の保存再編�
   try {
     const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await functionOdeCurveFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('SMOOTH-CURVE real CAD sweep, save reopen, stale preview, update and Undo', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await functionSplineCurveFlow(page, info, app); expect(errors).toEqual([]);
   } finally { await app.close(); }
 });

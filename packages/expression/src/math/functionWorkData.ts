@@ -1,3 +1,4 @@
+import { isRecord as record } from './mathRecord.js';
 /** Strict, immutable data shared by function-curve and function-surface Workers. */
 import { MathInputProblem, type StoredMathExpression } from './mathInputContract.js';
 import { decodeStoredMathStructure } from './decodeStoredMath.js';
@@ -5,7 +6,7 @@ import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { validFunctionWorldBounds, type FunctionPoint } from './functionGeometryBounds.js';
 import type { SurfaceParameter } from './surfaceParameterGrid.js';
 
-function record(value: unknown): value is Record<string,unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+
 export function functionWorkRecord(value: unknown, keys: readonly string[]): Record<string,unknown> {
   if (!record(value) || Object.keys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value,key))) {
     throw new MathInputProblem('syntax','関数の計算データの項目を確認できません。');

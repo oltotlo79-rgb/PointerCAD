@@ -4,7 +4,7 @@ import {functionWorkCounter,functionWorkRecord} from './functionWorkData.js';
 import {decodeFunctionPointContinuationWorkRequest,type FunctionPointContinuationWorkResult} from './functionPointContinuationWork.js';
 import {continueImplicitFunctionPoint} from './continueImplicitFunctionPoint.js';
 import {applyFunctionPointDirection} from './applyFunctionPointDirection.js';
-import {geometryCalculationClock,type MathExecutionBackend} from './mathWorkExecution.js';
+import {geometryCalculationClock,type MathExecutionBackend} from './geometryCalculationClock.js';
 
 export function executeFunctionPointContinuationWork(value:unknown,backend:MathExecutionBackend) {
   const raw=functionWorkRecord(value,['kind','serial','request']);

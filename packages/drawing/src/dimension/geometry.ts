@@ -1,3 +1,4 @@
+import { dotPoint2 as dot } from '../point2Math.js';
 import type { Point2 } from '../types.js';
 import {
   DIMENSION_EXTENSION_GAP_MM,
@@ -31,9 +32,6 @@ function subtract(a: Point2, b: Point2): Point2 {
   return [a[0] - b[0], a[1] - b[1]];
 }
 
-function dot(a: Point2, b: Point2): number {
-  return a[0] * b[0] + a[1] * b[1];
-}
 
 function normalized(vector: Point2): Point2 | null {
   const length = Math.hypot(vector[0], vector[1]);

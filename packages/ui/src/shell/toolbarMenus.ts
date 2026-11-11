@@ -19,21 +19,10 @@ export {
   triggerItemOf,
   rememberRecentTool,
   nextHighlightIndex,
-  ICON_BUTTON_WIDTH_PIXELS,
-  MENU_TRIGGER_WIDTH_PIXELS,
-  segmentedWidthPixels,
-  BASIC_SKETCH_TOOL_COUNT,
-  SKETCH_MENU_COUNT,
-  SOLID_MENU_COUNT,
-  SINGLE_MENU_COUNT,
-  FILE_ACTION_ICON_COUNT,
-  FILE_MENU_COUNT,
 } from './menus/menuItem.js';
 export type { ToolMenuItem } from './menus/menuItem.js';
 export {
   FILE_MENU_ITEMS,
-  STORED_TEMPLATE_MENU_PREFIX,
-  RECENT_FILE_MENU_PREFIX,
   isStoredTemplateMenuId,
   isRecentFileMenuId,
   storedTemplateIdOf,
@@ -58,4 +47,4 @@ export {
 } from './menus/solidMenuItems.js';
 export { PROJECTION_MENU_ITEMS, LOOK_MENU_ITEMS } from './menus/lookMenuItems.js';
 export type { LookToolId, CanvasActionId, PrintCheckActionId } from './menus/lookMenuItems.js';
-export { ASSEMBLY_MENU_ITEMS, MATE_MENU_ITEMS } from './menus/AssemblyGroup.js';
+export { ASSEMBLY_MENU_ITEMS, MATE_MENU_ITEMS } from './menus/assemblyMenuItems.js';

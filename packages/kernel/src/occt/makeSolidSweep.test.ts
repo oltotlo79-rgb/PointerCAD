@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { CurveSpec, ExtrudeStepSpec, RevolveStepSpec } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { booleanOp } from './booleanOp.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import type { ExtrudeEndSpec } from './makeSolidSweep.js';
 import { makeExtrudeSolid, makeRevolveSolid } from './makeSolidSweep.js';
@@ -779,7 +780,128 @@ describe('押し出しのテーパ角(FR-401)', () => {
   it('テーパと押し出しの終端に使う OCCT の道具が実行時にある(計画書 §1.5-1・§1.5-3)', () => {
     // §1.5-1: テーパは BRepOffsetAPI_DraftAngle_2 で作る(§0.a-0.34・0.35)。
     expect(typeof oc.BRepOffsetAPI_DraftAngle_2).toBe('function');
-    // §1.5-3: BRepFeat_MakePrism_2 も実在するが、採らなかった理由は実測にある(報告記録)。
-    expect(typeof oc.BRepFeat_MakePrism_2).toBe('function');
+    // 製品の押し出しで採用したクラスを確かめる。DraftAngle の確認も残す。
+    expect(typeof oc.BRepPrimAPI_MakePrism_1).toBe('function');
+  });
+});
+
+/*
+ * EX04 「対象を貫く」終端(closed-profile-cut-parametric-r1。UNEXECUTED until Root runs it)。
+ * 期待値は形だけから決める: 底面 10 × 10 の箱を z = bottom から高さ height だけ積み、半径 3 の円の輪郭で
+ * 貫くと、削れる量は π·3²·(輪郭の筒が箱の中を通る長さ)。境界箱から決める長さそのものは確かめない
+ * (実装を写さない)。確かめるのは「箱を必ず貫く」こと(削れる量と、筒が箱の上下より外まで出ていること)。
+ */
+describe('対象を両側へ貫く押し出しの終端(EX04、throughTarget)', () => {
+  let oc: OpenCascadeInstance;
+
+  beforeAll(async () => {
+    oc = await loadOcctForNode();
+  });
+
+  /** 底面 (minX..minX+10, minY..minY+10) の箱を z = bottom から height だけ積む。 */
+  function box10(minX: number, minY: number, bottom: number, height: number): ReturnType<typeof makeExtrudeSolid> {
+    return makeExtrudeSolid(oc, {
+      kind: 'extrude',
+      profile: rectangleAt(bottom, minX, minX + 10, minY, minY + 10),
+      direction: [0, 0, 1],
+      distance: height,
+    });
+  }
+
+  /** 中心 (x, y, z)、半径 3 の円 1 周の輪郭を +Z 向きに押し出す依頼(長さは終端が決める)。 */
+  function circleTool(x: number, y: number, z: number): ExtrudeStepSpec {
+    return {
+      kind: 'extrude',
+      profile: [{ kind: 'arc', center: [x, y, z], normal: [0, 0, 1], xAxis: [1, 0, 0], radius: 3,
+        startAngle: 0, endAngle: 2 * Math.PI }],
+      direction: [0, 0, 1],
+      distance: 1,
+    };
+  }
+
+  /** 対象から筒を引いた残りの体積と、筒の z の範囲。 */
+  function cutBy(target: TopoDS_Shape, tool: ReturnType<typeof makeExtrudeSolid>): {
+    readonly volume: number; readonly toolZ: readonly [number, number];
+  } {
+    const cut = booleanOp(oc, 'subtract', target, tool.shape);
+    try {
+      return { volume: cut.volume, toolZ: edgeRangeZ(buildSolidBodyMesh(oc, 'through-tool', tool.shape).edgePositions) };
+    } finally {
+      cut.delete();
+    }
+  }
+
+  it('旧の固定長(確定時の ±34.5)は、上流で高さ 100 に伸びた箱を途中までしか切れない(旧経路の失敗の対照)', () => {
+    const target = box10(0, 0, 0, 100);
+    // freeze-3 の確定時の長さ: 10 × 10 × 10 の箱では ceil(4H) = 69 を両側へ半分ずつ。
+    const tool = makeExtrudeSolid(oc, circleTool(5, 5, 0), {}, { end: { kind: 'symmetric', forward: 34.5, backward: 34.5 } });
+    try {
+      const { volume } = cutBy(target.shape, tool);
+      // 筒が箱の中を通るのは z = 0..34.5 だけ。削れるのは π·9·34.5 で、貫いた 900π には届かない。
+      expect(volume).toBeCloseTo(10000 - Math.PI * 9 * 34.5, 6);
+      expect(10000 - volume).toBeLessThan(Math.PI * 9 * 100);
+    } finally {
+      tool.delete();
+      target.delete();
+    }
+  });
+
+  it('対象を貫く終端は、高さ 100 に伸びた箱も全長貫く(新経路。削れる量 900π)', () => {
+    const target = box10(0, 0, 0, 100);
+    const tool = makeExtrudeSolid(oc, circleTool(5, 5, 0), {}, { end: { kind: 'throughTarget' }, target: target.shape });
+    try {
+      const { volume, toolZ } = cutBy(target.shape, tool);
+      expect(volume).toBeCloseTo(10000 - Math.PI * 9 * 100, 6);
+      // 筒は箱の下面(z = 0、輪郭と同じ平面)より下と、上面(z = 100)より上まで出ている(端の面が重ならない)。
+      expect(toolZ[0]).toBeLessThan(0);
+      expect(toolZ[1]).toBeGreaterThan(100);
+      expect(isValidShape(oc, tool.shape)).toBe(true);
+    } finally {
+      tool.delete();
+      target.delete();
+    }
+  });
+
+  it('輪郭の平面が箱の外(z = −20)にあっても、向きの先の箱を全長貫く(削れる量 90π)', () => {
+    const target = box10(0, 0, 0, 10);
+    const tool = makeExtrudeSolid(oc, circleTool(5, 5, -20), {}, { end: { kind: 'throughTarget' }, target: target.shape });
+    try {
+      const { volume, toolZ } = cutBy(target.shape, tool);
+      expect(volume).toBeCloseTo(1000 - Math.PI * 9 * 10, 6);
+      expect(toolZ[1]).toBeGreaterThan(10);
+    } finally {
+      tool.delete();
+      target.delete();
+    }
+  });
+
+  it('原点を中心にした箱(各軸 −5..5)と中心の円でも同じく 90π 削れる(角が原点という前提に頼らない)', () => {
+    const target = box10(-5, -5, -5, 10);
+    const tool = makeExtrudeSolid(oc, circleTool(0, 0, 0), {}, { end: { kind: 'throughTarget' }, target: target.shape });
+    try {
+      const { volume, toolZ } = cutBy(target.shape, tool);
+      expect(volume).toBeCloseTo(1000 - Math.PI * 9 * 10, 6);
+      expect(toolZ[0]).toBeLessThan(-5);
+      expect(toolZ[1]).toBeGreaterThan(5);
+    } finally {
+      tool.delete();
+      target.delete();
+    }
+  });
+
+  it('対象の形が無ければ理由をつけて断る(何も作らない)', () => {
+    expect(() => makeExtrudeSolid(oc, circleTool(5, 5, 0), {}, { end: { kind: 'throughTarget' }, target: null }))
+      .toThrow('押し出す先に立体がありません。');
+  });
+
+  it('ほかの終端は対象を渡しても従来どおり(両側 5/5 の体積は 40·30·10 のまま)', () => {
+    const target = box10(0, 0, 0, 100);
+    const handle = makeExtrudeSolid(oc, EXTRUDE_UP, {}, { end: { kind: 'symmetric', forward: 5, backward: 5 }, target: target.shape });
+    try {
+      expect(measureVolume(oc, handle.shape)).toBeCloseTo(12000, 6);
+    } finally {
+      handle.delete();
+      target.delete();
+    }
   });
 });

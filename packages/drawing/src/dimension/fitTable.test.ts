@@ -1,7 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { fitTolerance, formatFit, FIT_SYMBOLS } from './fitTable.js';
+import { fitTolerance, FIT_SYMBOLS } from './fitTable.js';
 import { FIT_ROWS } from './fitTableData.js';
+import { formatDimension } from './format.js';
+import { signedDimensionNumberText } from './numberText.js';
+
+/** はめあい記号と、必要時だけ上下許容差を併記する。 */
+function formatFit(sizeMm: number, symbol: string, showDeviation = false, decimals = 2): string | null {
+  const tolerance = fitTolerance(sizeMm, symbol);
+  if (tolerance === null) return null;
+  const text = `${formatDimension({ value: sizeMm, kind: 'diameter', decimals })}${symbol}`;
+  // js6の半µmも消さない。寸法本体の桁数とは別の、原表の精度で表示する。
+  return showDeviation ? `${text}(${signedDimensionNumberText(tolerance.upper, 4)} / ${signedDimensionNumberText(tolerance.lower, 4)})` : text;
+}
 
 describe('供給されたはめあい表の単位・境界・大文字小文字', () => {
   it('13区分14種類の全182組が供給JSONと一致する', () => {

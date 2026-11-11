@@ -1,3 +1,4 @@
+import { subVec3 as subtract } from '@pointercad/model/vec3';
 /**
  * 「測る」の道具の組み立て(計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク32、
  * §2.10、§0.a-0.29〜0.32、§0.a-0.68、§0.a-0.69)。
@@ -51,6 +52,7 @@ import {
   measureRejectionMessageKey,
   MEASURE_FAILED_MESSAGE_KEY,
   type LocalMeasureResult,
+  type MeasurementProvenance,
   type MeasureBody,
   type MeasureKind,
   type MeasureReadiness,
@@ -243,9 +245,6 @@ export function formatMoments(moments: readonly [number, number, number]): strin
  * 画面へ出す 1 件を組み立てる(§2.10.3)
  * ------------------------------------------------------------------------- */
 
-function subtract(a: Vec3, b: Vec3): Vec3 {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
 
 function norm(a: Vec3): number {
   return Math.hypot(a[0], a[1], a[2]);
@@ -446,6 +445,7 @@ export function measurementFromDistance(
     value: distance,
     unit: 'mm',
     segment: [pointA, pointB],
+    provenance: 'brep',
   };
   return { result, text: formatMeasure(result, unit), angle: null, anchor: null };
 }
@@ -463,6 +463,7 @@ export function measurementFromDistance(
  * model の 1 か所)。
  */
 export interface MassPropertiesResult {
+  readonly provenance?: MeasurementProvenance;
   /** 測った立体を作ったフィーチャーの id(= ボディの id)。 */
   readonly bodyFeatureId: string;
   /** 体積(mm³)。 */
@@ -628,7 +629,14 @@ export interface MeasureContext {
 export async function runMeasure(context: MeasureContext): Promise<MeasureOutcomeView> {
   const ready = partMeasureReadiness(context.selection, context.bodies, context.sketch, context.lengthUnit);
   const targetNames = measureTargetNames(context.document, context.selection);
-  if ('source' in ready) return { ok: true, measurement: { ...ready.measurement, targetNames }, massProperties: null };
+  if ('source' in ready) {
+    const includesBrepVertex = ready.targets.some(target =>
+      target.kind === 'vertex' && !context.sketch?.points.some(point => point.id === target.elementId)
+      && parseSubShapeId(target.elementId)?.kind === 'vertex');
+    const provenance: MeasurementProvenance = includesBrepVertex ? 'sketch-brep' : 'sketch';
+    return { ok: true, measurement: { ...ready.measurement, targetNames,
+      result: { ...ready.measurement.result, provenance } }, massProperties: null };
+  }
   const readiness = ready;
   if (!readiness.ready || readiness.kind === null) {
     return { ok: false, reasonKey: measureRejectionKeyOf(readiness) };
@@ -711,6 +719,7 @@ async function measureMassProperties(
   }
   return {
     bodyFeatureId: first.bodyFeatureId,
+    provenance: 'brep',
     volume: outcome.volume,
     area: outcome.area,
     centreOfMass: outcome.centreOfMass,

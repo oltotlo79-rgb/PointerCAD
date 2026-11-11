@@ -6,7 +6,7 @@ import { decodeMathJson } from './decodeMathJson.js';
 import { decodeStoredMath } from './decodeStoredMath.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { executeExactMathWorkRequest, type ExactMathEngine } from './exactMathWorkExecution.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 import { formatMathText } from './formatMathText.js';
 import { MATH_INPUT_FORMAT, MathInputProblem, type MathNode, type StoredMathExpression } from './mathInputContract.js';
 import { decodeMathExpressionStorage } from './mathExpressionStorage.js';
@@ -20,6 +20,7 @@ import { LOWERINGS as TOTAL_DIFFERENTIAL_LOWERINGS } from './totalDifferential.j
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
+import type * as ImportedMathExtendedOperationsTypes from './mathExtendedOperations.js';
 
 /** Registry entries before MC-10 (2026-09-24). Saved documents depend on these IDs and heads. */
 const EXISTING_OPERATIONS = `
@@ -363,7 +364,7 @@ describe('新規演算の結果の型から「·」「×」の意味を決める
   it('実装済みにした演算だけが結果の型で「·」「×」を決め、形が合わなければ推測しない', async () => {
     vi.resetModules();
     vi.doMock('./mathExtendedOperations.js', async importOriginal => {
-      const actual = await importOriginal<typeof import('./mathExtendedOperations.js')>();
+      const actual = await importOriginal<typeof ImportedMathExtendedOperationsTypes>();
       return { ...actual, EXTENDED_OPERATION_DEFINITIONS: actual.EXTENDED_OPERATION_DEFINITIONS
         .map(value => ({ ...value, status: 'implemented' as const })) };
     });
@@ -479,7 +480,7 @@ describe('TypeScriptで計算する後続タスクの接続口', () => {
   async function preparation(implemented: boolean): Promise<typeof prepareMathCalculation> {
     vi.resetModules();
     vi.doMock('./mathExtendedOperations.js', async importOriginal => {
-      const actual = await importOriginal<typeof import('./mathExtendedOperations.js')>();
+      const actual = await importOriginal<typeof ImportedMathExtendedOperationsTypes>();
       return { ...actual, EXTENDED_OPERATION_DEFINITIONS: actual.EXTENDED_OPERATION_DEFINITIONS.map(value =>
         value.id === 'total-differential-at' ? { ...value, status: implemented ? 'implemented' as const : 'pending' as const } : value) };
     });

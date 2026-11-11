@@ -33,12 +33,3 @@ export function interferenceRows(
     volumeText: formatInterferenceVolume(pair.volume),
   })).sort((a, b) => b.pair.volume - a.pair.volume || a.key.localeCompare(b.key));
 }
-
-export function selectedInterferencePair(
-  report: Pick<AssemblyInterferenceReport, 'pairs'> | null,
-  key: string | null,
-): AssemblyInterferencePair | null {
-  if (report === null || key === null) return null;
-  return report.pairs.find((pair) =>
-    interferencePairKey(pair.aComponentId, pair.bComponentId) === key) ?? null;
-}

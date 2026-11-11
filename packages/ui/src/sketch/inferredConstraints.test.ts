@@ -29,14 +29,14 @@ import { constraintKindSymbol } from './constraintSummary.js';
 import {
   applyInferredConstraints,
   inferredConstraintPreview,
-  INFERENCE_NEARBY_RADIUS_PIXELS,
   nearbyInferenceElements,
   pixelsPerMillimetreAt,
   sameInferredPreview,
   screenDistanceToSegment,
-  type InferencePreviewInput,
 } from './inferredConstraints.js';
 import type { ProjectToScreen } from './snapMath.js';
+
+type InferencePreviewInput = Parameters<typeof inferredConstraintPreview>[0];
 
 /** 検査に使う作図面。XY 面(u = X、v = Y)。 */
 const PLANE = WORK_PLANES.xy;
@@ -353,6 +353,10 @@ describe('NFR-PF-1: pointermove 1 回の所要', () => {
   });
 
   it('絞り込みの広さは定数 1 か所で決まる', () => {
-    expect(INFERENCE_NEARBY_RADIUS_PIXELS).toBeGreaterThan(0);
+    // 既定の広さは 120 画素(= 30mm): 29mm 先の線は拾い、31mm 先の線は拾わない。
+    const near = lineAt(createEmptySketchDocument(), 'line-1', [0, 29], [100, 29]);
+    const far = lineAt(createEmptySketchDocument(), 'line-1', [0, 31], [100, 31]);
+    expect(nearbyInferenceElements(resolvedOf(near), project, [[0, 0]]).segments).toHaveLength(1);
+    expect(nearbyInferenceElements(resolvedOf(far), project, [[0, 0]]).segments).toHaveLength(0);
   });
 });

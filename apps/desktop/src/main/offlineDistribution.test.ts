@@ -1,8 +1,41 @@
-import { bytes, json, fixture } from './distributionTestFixture.js';
+import { bytes, hash, inputs, json, fixture } from './distributionTestFixture.js';
 import { describe, expect, it } from 'vitest';
 import { readOfflineAssetManifest } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { gzipSync } from 'node:zlib';
+
+function attachStream(f: ReturnType<typeof fixture>): void {
+  const decoded = bytes('small wasm'), compressed = new Uint8Array(gzipSync(decoded)), decodedSha = hash(decoded);
+  const legacy = `occt/opencascade.full-${decodedSha.slice(0, 16)}.bin`;
+  const streamed = `occt/stream/opencascade.full-${decodedSha}.wasm`;
+  f.web.set(legacy, compressed); f.web.set(streamed, compressed);
+  f.web.set('occt/manifest.json', json({ byteLength: decoded.byteLength, sha256: decodedSha,
+    compression: 'gzip', parts: [{ order: 0, file: legacy.slice('occt/'.length), byteLength: compressed.byteLength }],
+    stream: { file: streamed.slice('occt/'.length), compression: 'gzip',
+      transportByteLength: compressed.byteLength, transportSha256: hash(compressed),
+      decodedByteLength: decoded.byteLength, decodedSha256: decodedSha } }));
+  refreshWebBuild(f);
+}
+function refreshWebBuild(f: ReturnType<typeof fixture>): void {
+  f.web.set('web-build.json', json({ format: 'pointercad-web-build/1', inputs,
+    outputs: Object.fromEntries([...f.web].filter(([name]) => name !== 'web-build.json')
+      .map(([name, value]) => [name, hash(value)])) }));
+}
 
 describe('同じ版の本体・説明書・全PDF巻を揃えてから通信なしの一式を作る', () => {
+  it('OCCT streamを含む実Web出力をv2に組み立て、全物理ファイル数も確認する', async () => {
+    const f = fixture(); attachStream(f);
+    const result = f.assemble();
+    expect(result.manifest.format).toBe('pointercad-offline-assets/2');
+    await expect(readOfflineAssetManifest(JSON.parse(new TextDecoder().decode(result.files.get('offline-assets.json')))))
+      .resolves.toEqual(result.manifest);
+    let index = 0;
+    while (f.web.size + f.manual.size + f.pdf.size + 1 <= 1000) {
+      f.web.set(`extra/file-${String(index).padStart(4, '0')}.txt`, bytes('x'));
+      index += 1;
+    }
+    refreshWebBuild(f);
+    expect(() => f.assemble()).toThrow('physical file limits');
+  });
   it('全出力を指紋一覧へ含め、HTMLの版とPDF全巻の対応を保つ', async () => {
     const f = fixture(), result = f.assemble();
     expect(result.pdfVolumes).toBe(2); expect(result.releaseCertified).toBe(false);

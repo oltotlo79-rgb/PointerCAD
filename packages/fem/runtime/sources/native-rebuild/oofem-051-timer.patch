@@ -1,0 +1,226 @@
+--- a/src/core/timer.h
++++ b/src/core/timer.h
+@@ -45,14 +45,14 @@
+  */
+ class OOFEM_EXPORT Timer
+ {
+-    /// Wall clock time markers.
+-    std :: chrono :: time_point< std :: chrono :: high_resolution_clock >start_wtime, end_wtime;
++    /// Wall clock time markers (value-initialized: a timer that was never started reads as zero elapsed time).
++    std :: chrono :: time_point< std :: chrono :: high_resolution_clock >start_wtime {}, end_wtime {};
+     /// User time.
+-    std :: chrono :: duration< double >start_utime, end_utime;
++    std :: chrono :: duration< double >start_utime {}, end_utime {};
+     /// Accumulated wtime and utime (in seconds) from start.
+-    std :: chrono :: duration< double >elapsedWTime, elapsedUTime;
++    std :: chrono :: duration< double >elapsedWTime {}, elapsedUTime {};
+     /// Flag indicating whether timer is running.
+-    bool running;
++    bool running = false;
+ 
+ public:
+     Timer();
+@@ -64,7 +64,7 @@
+     void initTimer();
+     bool isRunning() { return running; }
+ 
+-    /// Returns total user time elapsed in seconds
++    /// Returns total user time elapsed in seconds; NaN (not measured) where the platform has no CPU-time source.
+     double getUtime();
+     /// Returns total elapsed wall clock time in seconds
+     double getWtime();
+@@ -75,8 +75,11 @@
+      * @param[out] nmin Number of minutes.
+      * @param[out] nsec Number of seconds.
+      * @param[in] tsec Total time in seconds.
++     * All three outputs are -1 (not available) unless tsec is finite and in [0, 3600 * INT_MAX).
+      */
+     static void convert2HMS(int &nhrs, int &nmin, int &nsec, double tsec);
++    /// Writes "HHHh:MMm:SSs", or "not available" when any field is negative (see convert2HMS); returns buff.
++    static const char *formatHMS(char *buff, std :: size_t size, int nhrs, int nmin, int nsec);
+ 
+     /// Prints receiver state into a string.
+     void toString(char *buff);
+--- a/src/core/timer.C
++++ b/src/core/timer.C
+@@ -35,6 +35,7 @@
+ #include "timer.h"
+ 
+ #include <cstdio>
++#include <limits>
+ 
+ #ifndef _WIN32 //_MSC_VER and __MINGW32__ included
+ //for getrusage - user time reporting
+@@ -46,7 +47,12 @@
+ namespace oofem {
+ void Timer :: getUtime(std :: chrono :: duration< double > &answer)
+ {
+-#ifdef _WIN32 //_MSC_VER and __MINGW32__ included
++#if defined( __EMSCRIPTEN__ )
++    // No process CPU-time source: Emscripten's __syscall_getrusage is a stub returning constants, and it clears
++    // sizeof(struct rusage) bytes from the partial pointer musl's getrusage passes to it. getrusage is therefore not
++    // called; user time is reported as not measured (NaN), never as a measured constant.
++    answer = std :: chrono :: duration< double >( std :: numeric_limits< double > :: quiet_NaN() );
++#elif defined( _WIN32 ) //_MSC_VER and __MINGW32__ included
+     clock_t utime = clock();
+     answer = std :: chrono :: seconds(utime / CLOCKS_PER_SEC);
+ #else
+@@ -82,10 +88,18 @@
+ 
+ void Timer :: pauseTimer()
+ {
++    // Only a running timer has an interval to add. Pausing or stopping a timer that was never started or is already
++    // paused/stopped changes nothing (it used to add end - start of indeterminate or stale markers).
++    if ( !running ) {
++        return;
++    }
+     this->getTime(end_wtime);
+     this->getUtime(end_utime);
++    elapsedWTime += end_wtime - start_wtime;
++    elapsedUTime += end_utime - start_utime;
++    start_wtime = end_wtime;
++    start_utime = end_utime;
+     running = false;
+-    this->updateElapsedTime();
+ }
+ 
+ void Timer :: resumeTimer()
+@@ -105,7 +119,12 @@
+ double Timer :: getUtime()
+ {
+     this->updateElapsedTime();
++#if defined( __EMSCRIPTEN__ )
++    // Not measured on this platform, whether or not the timer ever ran (an unstarted timer is not a measured 0).
++    return std :: numeric_limits< double > :: quiet_NaN();
++#else
+     return elapsedUTime.count();
++#endif
+ }
+ 
+ double Timer :: getWtime()
+@@ -116,20 +135,26 @@
+ 
+ void Timer :: convert2HMS(int &nhrs, int &nmin, int &nsec, double tsec)
+ {
+-    long int _nsec = ( long int ) tsec;
+-    nhrs = 0;
+-    nmin = 0;
+-    if ( _nsec > 60 ) {
+-        nmin = _nsec / 60;
+-        _nsec %= 60;
++    // Not measured (NaN), infinite, negative or more hours than int holds: not available (-1), never a cast of an
++    // unrepresentable double (which on wasm32, where long is 32-bit, printed INT_MIN seconds).
++    if ( !( tsec >= 0. && tsec < 3600. * std :: numeric_limits< int > :: max() ) ) {
++        nhrs = nmin = nsec = -1;
++        return;
+     }
++    long long _nsec = ( long long ) tsec;
++    nhrs = ( int ) ( _nsec / 3600 );
++    nmin = ( int ) ( _nsec % 3600 / 60 );
++    nsec = ( int ) ( _nsec % 60 );
++}
+ 
+-    if ( nmin > 60 ) {
+-        nhrs = nmin / 60;
+-        nmin %= 60;
++const char *Timer :: formatHMS(char *buff, std :: size_t size, int nhrs, int nmin, int nsec)
++{
++    if ( nhrs < 0 || nmin < 0 || nsec < 0 ) {
++        std :: snprintf(buff, size, "not available");
++    } else {
++        std :: snprintf(buff, size, "%03dh:%02dm:%02ds", nhrs, nmin, nsec);
+     }
+-
+-    nsec = _nsec;
++    return buff;
+ }
+ 
+ void Timer :: toString(char *buff)
+@@ -139,16 +164,12 @@
+ 
+ void Timer :: updateElapsedTime()
+ {
++    // Bring a running timer's totals up to now and keep it running from that same instant; the totals of a timer
++    // that is not running are already complete.
+     if ( running ) {
+         pauseTimer();
+-        resumeTimer();
++        running = true;
+     }
+-
+-    elapsedWTime += end_wtime - start_wtime;
+-    elapsedUTime += end_utime - start_utime;
+-
+-    start_utime = end_utime;
+-    start_wtime = end_wtime;
+ }
+ 
+ double EngngModelTimer :: getUtime(EngngModelTimer :: EngngModelTimerType t)
+--- a/src/core/engngm.C
++++ b/src/core/engngm.C
+@@ -2023,23 +2023,26 @@
+ {
+     int rsec = 0, rmin = 0, rhrs = 0;
+     int usec = 0, umin = 0, uhrs = 0;
++    char rtext [ 32 ], utext [ 32 ];
+     time_t endTime = time(NULL);
+     this->timer.stopTimer(EngngModelTimer :: EMTT_AnalysisTimer);
+ 
+ 
+     // compute real time consumed
+     this->giveAnalysisTime(rhrs, rmin, rsec, uhrs, umin, usec);
++    Timer :: formatHMS(rtext, sizeof( rtext ), rhrs, rmin, rsec);
++    Timer :: formatHMS(utext, sizeof( utext ), uhrs, umin, usec);
+ 
+     if(!suppressOutput) {
+         FILE *out = this->giveOutputStream();
+         fprintf(out, "\nFinishing analysis on: %s\n", ctime(& endTime) );
+-        fprintf(out, "Real time consumed: %03dh:%02dm:%02ds\n", rhrs, rmin, rsec);
+-        fprintf(out, "User time consumed: %03dh:%02dm:%02ds\n\n\n", uhrs, umin, usec);
++        fprintf(out, "Real time consumed: %s\n", rtext);
++        fprintf(out, "User time consumed: %s\n\n\n", utext);
+     }
+ 
+     OOFEM_LOG_FORCED("\n\nANALYSIS FINISHED\n\n\n");
+-    OOFEM_LOG_FORCED("Real time consumed: %03dh:%02dm:%02ds\n", rhrs, rmin, rsec);
+-    OOFEM_LOG_FORCED("User time consumed: %03dh:%02dm:%02ds\n", uhrs, umin, usec);
++    OOFEM_LOG_FORCED("Real time consumed: %s\n", rtext);
++    OOFEM_LOG_FORCED("User time consumed: %s\n", utext);
+     exportModuleManager.terminate();
+ }
+ 
+--- a/src/core/outputexportmodule.C
++++ b/src/core/outputexportmodule.C
+@@ -102,13 +102,14 @@
+ {
+     FILE *out = this->giveOutputStream();
+     int rhrs, rmin, rsec, uhrs, umin, usec;
++    char rtext [ 32 ], utext [ 32 ];
+     time_t endTime = time(NULL);
+ 
+     emodel->giveAnalysisTime(rhrs, rmin, rsec, uhrs, umin, usec);
+ 
+     fprintf(out, "\nFinishing analysis on: %s\n", ctime(& endTime) );
+-    fprintf(out, "Real time consumed: %03dh:%02dm:%02ds\n", rhrs, rmin, rsec);
+-    fprintf(out, "User time consumed: %03dh:%02dm:%02ds\n\n\n", uhrs, umin, usec);
++    fprintf(out, "Real time consumed: %s\n", Timer :: formatHMS(rtext, sizeof( rtext ), rhrs, rmin, rsec));
++    fprintf(out, "User time consumed: %s\n\n\n", Timer :: formatHMS(utext, sizeof( utext ), uhrs, umin, usec));
+ }
+ 
+ } // end namespace oofem
+--- a/src/core/solutionstatusexportmodule.C
++++ b/src/core/solutionstatusexportmodule.C
+@@ -141,10 +141,11 @@
+   // get overall time consumed
+   int rsec = 0, rmin = 0, rhrs = 0;
+   int usec = 0, umin = 0, uhrs = 0;
++  char rtext [ 32 ], utext [ 32 ];
+   this->emodel->giveAnalysisTime(rhrs, rmin, rsec, uhrs, umin, usec);
+ 
+-  fprintf(outputFile, "Real time consumed: %03dh:%02dm:%02ds\n", rhrs, rmin, rsec);
+-  fprintf(outputFile, "User time consumed: %03dh:%02dm:%02ds\n\n", uhrs, umin, usec);
++  fprintf(outputFile, "Real time consumed: %s\n", Timer :: formatHMS(rtext, sizeof( rtext ), rhrs, rmin, rsec));
++  fprintf(outputFile, "User time consumed: %s\n\n", Timer :: formatHMS(utext, sizeof( utext ), uhrs, umin, usec));
+   
+   int nw, ne;
+   oofem_logger.getNumberOfWarningsAndErrors(nw, ne);

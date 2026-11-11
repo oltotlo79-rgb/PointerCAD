@@ -6,12 +6,14 @@ import { makeBox, type OcctShapeHandle } from './makeBox.js';
 import {
   readStepAssembly,
   STEP_ASSEMBLY_COMPONENT_MESSAGE,
-  type StepAssemblyReadResult,
 } from './readStepAssembly.js';
 import { STEP_READ_FAILED_MESSAGE } from './readStep.js';
 import { measureVolume } from './solidMesh.js';
 import { writeStep } from './writeStep.js';
-import { writeStepAssembly, type XcafAssemblyDefinition } from './xcafAssembly.js';
+import { writeStepAssembly } from './xcafAssembly.js';
+
+type StepAssemblyReadResult = ReturnType<typeof readStepAssembly>;
+type XcafAssemblyDefinition = Parameters<typeof writeStepAssembly>[1]['definitions'][number];
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 

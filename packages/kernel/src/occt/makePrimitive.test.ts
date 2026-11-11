@@ -21,8 +21,9 @@ import {
   PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE,
   type AxesFrame,
 } from './makePrimitive.js';
+import { resolveVertexReference, scoreVertex, SUB_SHAPE_MATCH_THRESHOLD } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureArea, measureVolume } from './solidMesh.js';
-import { collectSubShapes, type SubShapeTables } from './subShapes.js';
+import { boundingDiagonal, collectSubShapes, type SubShapeTables } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
@@ -346,6 +347,23 @@ describe('基本形状 5 種(FR-429、計画書 §2.7、タスク13)', () => {
     } finally {
       handle.delete();
     }
+  });
+
+  it.each([
+    { radius: 5, height: 20, origin: [0, 0, 0] as const, axis: [0, 0, 1] as const },
+    { radius: 50, height: 30, origin: [500, 500, 0] as const, axis: [0, 0, -1] as const },
+    { radius: 10, height: 40, origin: [-1e6, 1e6, 9] as const, axis: [1, 0, 0] as const },
+  ])('円筒 r=$radius h=$height は作成直後にnative全8起点を持つ', ({ radius, height, origin, axis }) => {
+    const handle = makePrimitive(oc, primitiveSpec({ kind: 'cylinder', radius, height }, { origin, axis }), 'cylinder');
+    try {
+      expect(handle.origins?.state).toBe('tracked');
+      if (handle.origins?.state !== 'tracked') return;
+      expect(handle.origins.bindings).toHaveLength(8);
+      expect(handle.origins.bindings.every(binding => binding.state === 'unique'
+        && binding.origin.identity.featureId === 'cylinder')).toBe(true);
+      expect(countSubShapes(oc, handle.shape)).toEqual({ faces: 3, edges: 3, vertices: 2 });
+      expect(measureVolume(oc, handle.shape)).toBeCloseTo(Math.PI * radius * radius * height, 5);
+    } finally { handle.delete(); }
   });
 
   it('軸を X にした円柱 r=10 h=20 は +X 方向へ伸びる', () => {
@@ -726,6 +744,68 @@ describe('基本形状 5 種(FR-429、計画書 §2.7、タスク13)', () => {
         );
         expectPointNear(origin, [10, 10, 15]);
       });
+    });
+
+    it('実Box保存頂点は寸法と位置が変わっても意味で選び、offset後の基準形状を独立に測る', () => {
+      const oldSpec = primitiveSpec({ kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+      const largeSpec = primitiveSpec({ kind: 'box', sizeX: 200, sizeY: 200, sizeZ: 30 },
+        { origin: [500, 500, 0] });
+      const old = makePrimitive(oc, oldSpec, 'vertex-source');
+      const current = makePrimitive(oc, largeSpec, 'vertex-source');
+      const other = makePrimitive(oc, largeSpec, 'other-source');
+      try {
+        if (old.origins?.state !== 'tracked' || current.origins?.state !== 'tracked'
+          || other.origins?.state !== 'tracked') throw new Error('実Box起点がありません');
+        function tables(shape: TopoDS_Shape): SubShapeTables {
+          const surface = tessellate(oc, shape);
+          const edges = extractEdges(oc, shape);
+          return collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges);
+        }
+        const oldTables = tables(old.shape);
+        const corner = vertexAtPoint(oldTables.vertices, [10, 10, 10]);
+        const binding = old.origins.bindings.find(item => item.state === 'unique'
+          && item.current.kind === 'vertex' && item.current.index === corner.index);
+        if (binding?.state !== 'unique' || binding.origin.shapeKind !== 'vertex') {
+          throw new Error('旧Box頂点の実native起点がありません');
+        }
+        const saved = { ...vertexQuery(corner), origin: binding.origin };
+        const savedJson = JSON.stringify(saved);
+        const currentTables = tables(current.shape);
+        const scale = boundingDiagonal(oc, current.shape) * 0.5;
+        const match = resolveVertexReference(currentTables.vertices, saved, scale, current.origins);
+        expect(match.status).toBe('matched');
+        if (match.status !== 'matched') throw new Error('現Box頂点を解決できません');
+        const score = scoreVertex(match.match.candidate, saved, scale).total;
+        expect(score).toBeLessThan(SUB_SHAPE_MATCH_THRESHOLD);
+        console.log(`Primitive保存頂点の実幾何score: ${score}`);
+        const origin = resolvePrimitiveOrigin(oc, saved, [3, 4, 5], current.shape,
+          currentTables.vertices, current.origins);
+        expectPointNear(origin, [603, 604, 20]);
+        const placed = makePrimitive(oc, primitiveSpec(
+          { kind: 'sphere', radius: 3 }, { origin }));
+        try {
+          expect(measureVolume(oc, placed.shape)).toBeCloseTo((4 / 3) * Math.PI * 27, 6);
+          const box = boundingBox(oc, placed.shape);
+          expectPointNear(box.min, [600, 601, 17]);
+          expectPointNear(box.max, [606, 607, 23]);
+        } finally {
+          placed.delete();
+        }
+        const high = { ...vertexQuery(match.match.candidate), origin: saved.origin };
+        expect(() => resolvePrimitiveOrigin(oc, high, [3, 4, 5], other.shape,
+          tables(other.shape).vertices, other.origins)).toThrow(MISSING_PRIMITIVE_VERTEX_MESSAGE);
+        for (const origins of [undefined,
+          { version: 1 as const, state: 'untracked' as const, reason: 'unsupported-operation' as const }]) {
+          expect(() => resolvePrimitiveOrigin(oc, high, [3, 4, 5], current.shape,
+            currentTables.vertices, origins)).toThrow(MISSING_PRIMITIVE_VERTEX_MESSAGE);
+        }
+        expect(measureVolume(oc, current.shape)).toBeCloseTo(1_200_000, 6);
+        expect(JSON.stringify(saved)).toBe(savedJson);
+      } finally {
+        other.delete();
+        current.delete();
+        old.delete();
+      }
     });
 
     it('番号も位置も外れた頂点の指紋は、選び直しを促して断る(FR-504)', () => {

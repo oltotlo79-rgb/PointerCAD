@@ -9,6 +9,8 @@ import {
 } from './errors.js';
 import { lengthUnitFactor } from './lengthUnits.js';
 import { parse } from './parse.js';
+import type { ExpressionError as TypeExpressionError } from './errors.js';
+
 
 /**
  * 内部の演算桁数(計画書 docs/plans/P1-式とスケッチ.md §2.4、§0.a-0.7)。
@@ -112,7 +114,7 @@ export interface ExactExpressionValue {
 /** exact な変数を受け取れる式評価の結果。失敗の形は既存の式評価と同じ。 */
 export type ExactExpressionResult =
   | { readonly ok: true; readonly value: ExactExpressionValue }
-  | { readonly ok: false; readonly error: import('./errors.js').ExpressionError };
+  | { readonly ok: false; readonly error: TypeExpressionError };
 
 /** 既定の空の変数表。呼び出しごとに Map を作らない。 */
 const NO_VARIABLES: ReadonlyMap<string, number> = new Map<string, number>();

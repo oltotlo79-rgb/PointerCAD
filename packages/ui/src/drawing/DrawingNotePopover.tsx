@@ -1,3 +1,4 @@
+import { isCompositionKey } from '../commands/compositionKey.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useState } from 'react';
 import type { Annotation, Point2 } from '@pointercad/drawing';
@@ -33,7 +34,7 @@ export function DrawingNotePopover({ annotation, position = [80, 200], anchor, i
     style={anchor === undefined ? undefined : { position: 'fixed', right: 'auto',
       left: Math.max(8, Math.min(anchor[0] + 12, window.innerWidth - 280)), top: Math.max(8, Math.min(anchor[1] + 12, window.innerHeight - 430)),
       maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }}
-    onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation();
+    onKeyDown={(event) => { if (isCompositionKey(event.nativeEvent)) return; if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation();
       const state = useAppStore.getState(); state.setDrawingTool('select'); state.selectDrawingIds([]); } }}
     onSubmit={(event) => { event.preventDefault(); apply(); }}>
     <DraggableWindowTitle as="strong" enabled={!inline}>{t('drawing.note.title')}</DraggableWindowTitle>

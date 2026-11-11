@@ -16,7 +16,6 @@ import {
   createNumericInput,
   reduceNumericInput,
   toggleNumericInput,
-  type NumericChoiceKey,
   type NumericInputCommit,
   type NumericInputState,
   type NumericInputStep,
@@ -39,8 +38,10 @@ import {
   EMPTY_SHAPE_DRAFT,
   resolveShapePoints,
   twoPointArcGeometry,
-  type ShapeCommitContext,
 } from './shapeCommands.js';
+
+type NumericChoiceKey = Parameters<typeof chooseNumericInput>[1];
+type ShapeCommitContext = Parameters<typeof commitShapeInput>[1];
 
 const XY = WORK_PLANES.xy;
 

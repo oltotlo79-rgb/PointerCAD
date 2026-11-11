@@ -125,8 +125,15 @@ export function carriesColor(format: ExportFormat): boolean {
  * 書き出しに使う三角形分割の逸脱(mm)。三角形を使わない形式では `null`(品質は無視される)。
  * **品質 → mm の表は `EXPORT_DEVIATION_MM` の 1 か所だけ**にある(§0.a-0.20)。
  */
-export function exportDeviationMm(kind: FileKind, quality: ExportQuality): number | null {
-  return usesTriangles(kind) ? EXPORT_DEVIATION_MM[quality] : null;
+export function exportDeviationMm(
+  kind: FileKind,
+  quality: ExportQuality,
+  customDeviationMm?: number,
+): number | null {
+  if (customDeviationMm !== undefined && (!Number.isFinite(customDeviationMm) || customDeviationMm <= 0)) {
+    throw new RangeError();
+  }
+  return usesTriangles(kind) ? customDeviationMm ?? EXPORT_DEVIATION_MM[quality] : null;
 }
 
 /**
@@ -139,8 +146,16 @@ export function exportDeviationMm(kind: FileKind, quality: ExportQuality): numbe
 export function exportMeshQuality(
   kind: FileKind,
   quality: ExportQuality,
+  customDeviationMm?: number,
 ): ExportMeshQuality | null {
-  return usesTriangles(kind) ? EXPORT_MESH_QUALITY[quality] : null;
+  if (customDeviationMm !== undefined && (!Number.isFinite(customDeviationMm) || customDeviationMm <= 0)) {
+    throw new RangeError();
+  }
+  if (!usesTriangles(kind)) return null;
+  const preset = EXPORT_MESH_QUALITY[quality];
+  return customDeviationMm === undefined
+    ? preset
+    : { deviationMm: customDeviationMm, angularDeflectionRad: preset.angularDeflectionRad };
 }
 
 /**
@@ -179,6 +194,10 @@ export function selectExportBodies(
   bodies: readonly SolidBody[],
   request: ExportRequest,
 ): ExportOutcome {
+  if (request.customDeviationMm !== undefined &&
+    (!Number.isFinite(request.customDeviationMm) || request.customDeviationMm <= 0)) {
+    throw new RangeError();
+  }
   const scoped = request.scope === 'all'
     ? bodies
     : bodies.filter((body) => request.selectedFeatureIds.includes(body.featureId));
@@ -215,8 +234,8 @@ export function selectExportBodies(
     ok: true,
     selection: {
       featureIds,
-      deviationMm: exportDeviationMm(request.format, request.quality),
-      meshQuality: exportMeshQuality(request.format, request.quality),
+      deviationMm: exportDeviationMm(request.format, request.quality, request.customDeviationMm),
+      meshQuality: exportMeshQuality(request.format, request.quality, request.customDeviationMm),
       warnings,
     },
   };

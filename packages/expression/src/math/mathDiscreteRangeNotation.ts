@@ -1,22 +1,6 @@
 /** Preserve a discrete step when the default sigma/product formatter omits it. */
 import type { ParsedMathJson as MathJsonExpression } from './mathLatexTokens.js';
-import { MathInputProblem, MATH_INPUT_LIMITS } from './mathInputContract.js';
-import type { DisplayMathJson } from './mathNotationConversion.js';
-
-export function displaySteppedRanges(expression: DisplayMathJson): DisplayMathJson {
-  let remaining = MATH_INPUT_LIMITS.nodes;
-  function visit(value: DisplayMathJson, depth: number): DisplayMathJson {
-    if (--remaining < 0 || depth > MATH_INPUT_LIMITS.depth) {
-      throw new MathInputProblem('budget', '表示する数式が複雑すぎます。');
-    }
-    if (typeof value === 'string' || 'num' in value || 'str' in value) return value;
-    const head = value[0], operands = value.slice(1).map(child => visit(child, depth + 1));
-    const stepped = (head === 'Sum' || head === 'Product')
-      && operands.slice(1).some(range => Array.isArray(range) && range[0] === 'Tuple' && range.length === 5);
-    return [stepped ? head === 'Sum' ? 'PcadSteppedSum' : 'PcadSteppedProduct' : head, ...operands];
-  }
-  return visit(expression, 0);
-}
+import { MathInputProblem } from './mathInputContract.js';
 
 export function parseSteppedRanges(operation: 'Sum' | 'Product', args: readonly MathJsonExpression[] | null): MathJsonExpression {
   if (args === null || args.length < 2 || args.length > 16) {

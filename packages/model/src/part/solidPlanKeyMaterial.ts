@@ -2,6 +2,7 @@
 import type { SheetSolidPlan } from '../sheetMetal/resolveSheetGeometry.js';
 import type { SolidStepKeyMaterial } from './cacheKey.js';
 import type { SolidStepPlan } from './resolvePart.js';
+import { directEditKeyMaterial } from './directEditOperations.js';
 import { fingerprintKeyText } from './subShapeRef.js';
 import { importedShapeOf } from './types.js';
 import {
@@ -9,6 +10,15 @@ import {
   toKeyPrimitiveShape, toKeySurfaceShape, toKeyThruSection,
   toKeyTransform, toKeyVec3,
 } from './solidPlanKeyGeometry.js';
+
+/** 穴・ねじ穴で共通の配置材料。省略された配置は鍵にも載せない。 */
+function holePlacementKeyMaterial(plan: Extract<SolidStepPlan, { readonly kind: 'hole' | 'thread' }>) {
+  return {
+    centers: plan.centers.map(toKeyVec3),
+    ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
+    ...(plan.planar === undefined ? {} : { planar: plan.planar }),
+  };
+}
 
 /** 1段ぶんの鍵の材料(§0.a-0.20)。名前・抑制・色は混ぜない(形が変わらないため)。 */
 export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): SolidStepKeyMaterial {
@@ -45,6 +55,11 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
       return {
         kind: 'sew',
         profiles: plan.profiles.map((profile) => profile.map(toKeyCurve)),
+        ...(plan.faces === undefined ? {} : {
+          faces: plan.faces.map(face => ({
+            targetKey: face.targetKey, query: fingerprintKeyText(face.query),
+          })),
+        }),
         tolerance: plan.tolerance,
       };
     case 'boolean':
@@ -54,13 +69,18 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         operation: plan.operation,
         targetKey: plan.targetKey,
         toolKey: plan.toolKey,
+        // 立てた差だけ材料に入る。欄が無ければ鍵の文字列は以前と同じ(既存のキャッシュはそのまま当たる)。
+        ...(plan.requireRemoval === true ? { requireRemoval: true } : {}),
       };
     case 'hole':
       return {
         kind: 'hole',
+        ...(plan.centerAnchors === undefined ? {} : { centerAnchors: plan.centerAnchors }),
+        ...(plan.placementRoles === undefined ? {} : { placementRoles: plan.placementRoles }),
+        ...(plan.pointPlacementReferences === undefined ? {} : { pointPlacementReferences: plan.pointPlacementReferences }),
         targetKey: plan.targetKey,
         face: fingerprintKeyText(plan.face),
-        centers: plan.centers.map(toKeyVec3),
+        ...holePlacementKeyMaterial(plan),
         diameter: plan.diameter,
         depth: plan.depth,
         tiltAngle: plan.tiltAngle,
@@ -72,9 +92,12 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
     case 'thread':
       return {
         kind: 'thread',
+        // 下穴の面の名前は形の結果(由来)に入るので鍵に混ぜる。欄が無ければ鍵の文字列は以前と同じ。
+        ...(plan.centerAnchors === undefined ? {} : { centerAnchors: plan.centerAnchors }),
+        ...(plan.placementRoles === undefined ? {} : { placementRoles: plan.placementRoles }),
         targetKey: plan.targetKey,
         face: fingerprintKeyText(plan.face),
-        centers: plan.centers.map(toKeyVec3),
+        ...holePlacementKeyMaterial(plan),
         drillDiameter: plan.drillDiameter,
         // 外径とねじ部の長さは印(必ず作る)から取る。実らせんの有無で欠けることがない。
         majorDiameter: plan.mark.majorDiameter,
@@ -231,6 +254,16 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
       };
     case 'functionSurface':
       return { kind: 'functionSurface', inputSignature: plan.inputSignature };
+    case 'holeTranslate': case 'faceRotate':
+      return directEditKeyMaterial(plan);
+    case 'faceOffset':
+      // 対象を消費する。面は指紋の鍵文字列、距離は評価済みの mm を混ぜる(式を変えれば鍵が変わる)。
+      return {
+        kind: 'faceOffset',
+        targetKey: plan.targetKey,
+        face: fingerprintKeyText(plan.face),
+        offset: plan.offset,
+      };
     case 'surface':
       // 面を借りる作り方(face / offset)でも消費しないが targetKey は必ず混ぜる
       // (混ぜないと上流を編集しても鍵が変わらず古い面の形が返る。NFR-PF-3)。
@@ -247,6 +280,16 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         openFaces: plan.openFaces.map(fingerprintKeyText),
         thickness: plan.thickness,
         outward: plan.outward,
+      };
+    case 'surfaceCut':
+      return {
+        kind: 'surfaceCut', targetKey: plan.targetKey, keepPositive: plan.keepPositive,
+        blade: plan.blade.kind === 'extrusion'
+          ? { ...plan.blade, profile: plan.blade.profile.map(toKeyCurve),
+            planeOrigin: toKeyVec3(plan.blade.planeOrigin), planeNormal: toKeyVec3(plan.blade.planeNormal) }
+          : plan.blade.kind === 'plane'
+            ? { kind: 'plane', origin: toKeyVec3(plan.blade.origin), normal: toKeyVec3(plan.blade.normal) }
+            : plan.blade,
       };
     case 'cut':
       /*

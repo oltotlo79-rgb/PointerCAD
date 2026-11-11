@@ -264,10 +264,12 @@ function rebuildFeature(feature: SketchFeature, map: ValueMapper): SketchFeature
   }
 }
 
-/** 拘束14種のうち、目標値の式を持つ4種(距離・角度・半径・直径)を写す(FR-313、§2.2)。 */
+/** 拘束18種のうち、目標値の式を持つ6種(横距離・縦距離・距離・角度・半径・直径)を写す(FR-313、§2.2)。 */
 function rebuildConstraint(constraint: SketchConstraint, map: ValueMapper): SketchConstraint {
   switch (constraint.kind) {
     case 'coincident':
+    case 'midpoint':
+    case 'pointOnCurve':
     case 'horizontal':
     case 'vertical':
     case 'parallel':
@@ -279,6 +281,8 @@ function rebuildConstraint(constraint: SketchConstraint, map: ValueMapper): Sket
     case 'fix':
       // 幾何拘束と「固定」は目標値を持たない(指す先だけ)。
       return constraint;
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
       return { ...constraint, length: map(constraint.length) };
     case 'angle':

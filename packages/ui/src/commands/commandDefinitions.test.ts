@@ -98,4 +98,11 @@ describe('command definitions', () => {
     expect(resolveShortcut(input(' '), context({ documentKind: 'assembly' }))?.commandId).toBe('commandLine.focus');
     expect(resolveShortcut(input('3'), context({ documentKind: 'drawing' }))).toBeNull();
   });
+  it.each(['Delete', 'Backspace'])('%sは共通図面削除だけに届き、入力・IME・メニューでは届かない', key => {
+    expect(resolveShortcut(input(key), context({ documentKind: 'drawing' }))?.commandId).toBe('drawing.deleteSelection');
+    for (const blocked of [{ textEntry: true }, { composing: true }, { insideMenu: true }, { insideDialog: true }]) {
+      expect(resolveShortcut(input(key), context({ documentKind: 'drawing', ...blocked }))).toBeNull();
+    }
+    expect(resolveShortcut(input(key), context({ documentKind: 'part' }))).toBeNull();
+  });
 });

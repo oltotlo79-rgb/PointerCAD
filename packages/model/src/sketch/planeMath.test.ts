@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  baseWorkPlane, computedNormal, DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane,
+  baseWorkPlane, DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane,
   distanceToPlane, isBaseWorkPlaneId, planeAxesFor, planeToWorld, polarOffset, projectOntoPlane,
   radiansToDegrees, tiltedDirection, WORK_PLANE_IDS, WORK_PLANES, WORLD_AXIS_DIRECTIONS,
-  worldToPlane,
+  worldToPlane, type WorkPlane,
 } from './planeMath.js';
 import { crossVec3, type Vec3 } from './vec3.js';
+
+/** 3 平面の定義が右手系であること(U × V = N)を確かめるための計算。テストで使う。 */
+function computedNormal(plane: WorkPlane): Vec3 {
+  return crossVec3(plane.axisU, plane.axisV);
+}
 
 describe('作図面(要件§4.3、§0.3)', () => {
   it('既定は XY 平面で、3 面すべてが右手系(U × V = N)', () => {

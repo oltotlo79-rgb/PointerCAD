@@ -13,7 +13,7 @@ import {
 
 import type { MathWorkRequest } from '@pointercad/expression/math/client';
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type KernelBridge } from '../kernelBridge.js';
 import { absoluteCoordinate, createPointFeature } from '../sketch/createSketchDocument.js';
 import { createEmptyPartDocument } from './createPartDocument.js';

@@ -1,10 +1,10 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { INFINITE_CARDINALITY_MESSAGE, interpretAbsoluteValues, NON_SQUARE_ABSOLUTE_MESSAGE, planMathCandidates } from './absoluteValueCandidates.js';
+import { interpretAbsoluteValues, planMathCandidates } from './absoluteValueCandidates.js';
 import { createMathBackend } from './createMathBackend.js';
 import { rationalOfExpression } from './exactRational.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { formatMathText } from './formatMathText.js';
 import type { MathDeclaration } from './mathDeclarations.js';
 import { coordinateFromMath, MathInputProblem, type MathEvaluation, type MathNode } from './mathInputContract.js';
@@ -14,6 +14,12 @@ import { parseMathText } from './mathTextSyntax.js';
 import { executeMathWorkRequest, type MathExecutionReply } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const INFINITE_CARDINALITY_MESSAGE = '無限集合（区間・数の集合など）の要素数は数えられません。'
+  + '要素を並べた有限集合 {…} を指定してください。区間の長さを使う場合は、上端−下端を書いてください。';
+const NON_SQUARE_ABSOLUTE_MESSAGE = '正方行列でない行列の |A| は行列式にできません。'
+  + '全成分の2乗の和の平方根（ノルム）を使う場合は、全成分を並べた norm([…]) と書いてください。';
 
 const names = { axes: new Set<never>(), parameters: new Set<never>(), coefficients: [],
   declared: [{ role: 'declared' as const, id: 'a', label: 'a' }] };

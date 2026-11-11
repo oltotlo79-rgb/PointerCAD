@@ -22,6 +22,7 @@ import {
   canvasSizeFromScale,
   planeToWorld,
   scaleFromTwoPoints,
+  type CanvasHomography,
   type CanvasPixelPoint,
   type ScaleFromTwoPointsResult,
   type SketchCanvas,
@@ -31,6 +32,10 @@ import {
 import * as THREE from 'three';
 
 import type { DecodedCanvasImage } from '../file/canvasFile.js';
+import { attachCanvasProjectiveMapping, type CanvasProjectiveMapping } from './canvasProjectiveMaterial.js';
+
+/** 補正欄のない旧下絵は出力矩形と原画像の同じ位置を結ぶ。 */
+const IDENTITY_HOMOGRAPHY: CanvasHomography = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 // ---------------------------------------------------------------------------
 // 作図面の上での置き方(純関数。three.js に触れない)
@@ -261,6 +266,8 @@ export interface CanvasDraw {
   readonly placement: CanvasPlacement;
   /** 不透明度 0〜1(`SketchCanvas.opacity` の評価値そのまま。§2.14)。 */
   readonly opacity: number;
+  /** 出力矩形から原画像へ。補正欄なしはidentity。 */
+  readonly homography?: CanvasHomography;
 }
 
 export interface CanvasLayer {
@@ -284,6 +291,7 @@ interface CanvasEntry {
   readonly positions: Float32Array;
   /** いま貼っている画像。差し替えを見分けるために覚えておく。 */
   image: DecodedCanvasImage;
+  readonly projectiveMapping: CanvasProjectiveMapping;
 }
 
 /**
@@ -309,10 +317,11 @@ function createCanvasEntry(image: DecodedCanvasImage, opacity: number): CanvasEn
     depthWrite: false,
     side: THREE.DoubleSide,
   });
+  const projectiveMapping = attachCanvasProjectiveMapping(material);
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.renderOrder = CANVAS_RENDER_ORDER;
-  return { mesh, positions, image };
+  return { mesh, positions, image, projectiveMapping };
 }
 
 /**
@@ -370,6 +379,7 @@ export function createCanvasLayer(): CanvasLayer {
         entry.mesh.geometry.getAttribute('position').needsUpdate = true;
         // 面が動くと包む球も変わる。作り直さないと視錐台の外と誤判定されて消える。
         entry.mesh.geometry.computeBoundingSphere();
+        entry.projectiveMapping.setHomography(draw.homography ?? IDENTITY_HOMOGRAPHY);
         entry.mesh.material.opacity = draw.opacity;
       }
       for (const [id, entry] of entries) {

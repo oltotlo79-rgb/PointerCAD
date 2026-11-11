@@ -32,6 +32,51 @@ function context(document: PartDocument): DocumentMathContext {
   } };
 }
 describe('数式入力を開く準備は未確定の文書へ閉じ込める', () => {
+  it.each([
+    { source: '-2*2', initial: 'Multiply(Negate(2),2)', coordinate: -4 },
+    { source: '-3', initial: 'Negate(3)', coordinate: -3 },
+    { source: '2*3', initial: 'Multiply(2,3)', coordinate: 6 },
+    { source: '-(1+4)', initial: 'Negate(Add(1,4))', coordinate: -5 },
+  ])('旧短式$sourceは演算の表記へ変換して開き、保存原式と文書を変更しない', async ({ source, initial, coordinate }) => {
+    const value = row('input', source).value;
+    const document = createEmptyPartDocument(), before = JSON.stringify(document), beforeValue = JSON.stringify(value);
+    const channel = context(document);
+    const input = await prepareDocumentMathEditor(document, value, channel);
+    expect(value.mathDefinition).toBeUndefined();
+    expect(input.source).toBe(initial);
+    expect(input.notation).toBe('text');
+    expect(input.angleUnit).toBe('degree');
+    const completion = await channel.client.evaluate({
+      identity: { documentId: document.id, documentVersion: 1, editorId: 'legacy-opening', inputRevision: 1 },
+      source: input.source, notation: input.notation, angleUnit: input.angleUnit, coefficients: input.coefficients,
+    }, 1_000);
+    if (completion.status !== 'result') throw new Error('数式の計算結果がありません');
+    const scalar = mathScalarExpression(completion.result);
+    if (!scalar.ok) throw new Error(scalar.message);
+    expect(scalar.value.value).toBe(coordinate);
+    expect(JSON.stringify(value)).toBe(beforeValue);
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
+  it('数式入力で確定した式は旧短式として再変換せず元の入力表記で開く', async () => {
+    const document = createEmptyPartDocument(), before = JSON.stringify(document), channel = context(document);
+    const completion = await channel.client.evaluate({
+      identity: { documentId: document.id, documentVersion: 1, editorId: 'structured-opening', inputRevision: 1 },
+      source: '-2*2', notation: 'text', angleUnit: 'degree', coefficients: [],
+    }, 1_000);
+    if (completion.status !== 'result') throw new Error('数式の計算結果がありません');
+    const scalar = mathScalarExpression(completion.result);
+    if (!scalar.ok) throw new Error(scalar.message);
+    expect(scalar.value.mathDefinition).toMatchObject({ source: '-2*2', inputNotation: 'text' });
+    const beforeValue = JSON.stringify(scalar.value);
+    const input = await prepareDocumentMathEditor(document, scalar.value, channel);
+    expect(input.source).toBe('-2*2');
+    expect(input.notation).toBe('text');
+    expect(scalar.value.value).toBe(-4);
+    expect(JSON.stringify(scalar.value)).toBe(beforeValue);
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
   it.each(['Gamma・Beta分布の値', '板゠厚', 'かな゛幅'])('%sを含む文書でも入力を開き、候補を同じ値として挿入できる', async label => {
     const document = { ...createEmptyPartDocument(), parameters: [row(label, '3')] }, before = JSON.stringify(document);
     const prepared = await prepareDocumentMathEditor(document, row('input', label).value, context(document));

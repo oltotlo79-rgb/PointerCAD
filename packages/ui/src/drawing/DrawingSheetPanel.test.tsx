@@ -6,10 +6,12 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { DrawingSheetPanel } from './DrawingSheetPanel.js';
 import { t } from '../i18n/t.js';
+import type * as ImportedJsxRuntimeTypes from 'react/jsx-runtime';
+import type * as ImportedJsxDevRuntimeTypes from 'react/jsx-dev-runtime';
 
 const rendered = vi.hoisted(() => ({ tags: [] as { tag: string; props: Record<string, unknown> }[] }));
 vi.mock('react/jsx-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxRuntimeTypes>();
   const capture = (factory: typeof runtime.jsx): typeof runtime.jsx => (type, props, key) => {
     if (typeof type === 'string' && props !== null && typeof props === 'object') {
       rendered.tags.push({ tag: type, props: props as Record<string, unknown> });
@@ -19,7 +21,7 @@ vi.mock('react/jsx-runtime', async importOriginal => {
   return { ...runtime, jsx: capture(runtime.jsx), jsxs: capture(runtime.jsxs) };
 });
 vi.mock('react/jsx-dev-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-dev-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxDevRuntimeTypes>();
   const jsxDEV: typeof runtime.jsxDEV = (type, props, key, isStatic, source, self) => {
     if (typeof type === 'string' && props !== null && typeof props === 'object') {
       rendered.tags.push({ tag: type, props: props as Record<string, unknown> });

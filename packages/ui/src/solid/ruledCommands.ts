@@ -286,7 +286,7 @@ export function ruledToolOf(tool: string): RuledToolId | null {
  */
 export function commitRuled(
   context: RuledContext,
-  params: {
+  parameters: {
     readonly twist: ExpressionValue;
     readonly sphereSegments: RuledSphereSegments;
   },
@@ -296,7 +296,7 @@ export function commitRuled(
   if (rejection !== null) {
     return { ok: false, reasonKey: rejection };
   }
-  const twistRejection = ruledTwistRejection(params.twist);
+  const twistRejection = ruledTwistRejection(parameters.twist);
   if (twistRejection !== null) {
     return { ok: false, reasonKey: twistRejection };
   }
@@ -313,8 +313,8 @@ export function commitRuled(
     kind: 'ruled',
     first,
     second,
-    twist: params.twist,
-    sphereSegments: params.sphereSegments,
+    twist: parameters.twist,
+    sphereSegments: parameters.sphereSegments,
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -325,14 +325,14 @@ export function commitRuled(
  */
 export function commitLoft(
   context: RuledContext,
-  params: { readonly twist: ExpressionValue; readonly smooth?: boolean },
+  parameters: { readonly twist: ExpressionValue; readonly smooth?: boolean },
 ): SolidCommandOutcome {
   const sections = ruledSectionsOf(context);
   const rejection = loftSectionsRejection(sections);
   if (rejection !== null) {
     return { ok: false, reasonKey: rejection };
   }
-  const twistRejection = ruledTwistRejection(params.twist);
+  const twistRejection = ruledTwistRejection(parameters.twist);
   if (twistRejection !== null) {
     return { ok: false, reasonKey: twistRejection };
   }
@@ -342,9 +342,9 @@ export function commitLoft(
     name: nextSolidName(context.document, 'loft'),
     suppressed: false,
     kind: 'loft',
-    smooth: params.smooth ?? false,
+    smooth: parameters.smooth ?? false,
     sections,
-    twist: params.twist,
+    twist: parameters.twist,
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }

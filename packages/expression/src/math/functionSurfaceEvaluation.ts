@@ -2,7 +2,7 @@
 import { compileFunctionScalar } from './compileFunctionScalar.js';
 import { createScalarSampler, type ScalarInput } from './scalarMathTape.js';
 import { createScalarIntervalSampler } from './scalarMathIntervals.js';
-import { createScalarDirectionalJet } from './scalarCurveCurvature.js';
+import { createScalarDirectionalJets } from './scalarCurveCurvature.js';
 import { intervalAdd, intervalSubtract, intervalMultiply, type MathInterval, type IntervalValue } from './mathInterval.js';
 import type { PreparedScalarMathContext } from './evaluatePreparedScalarMath.js';
 import type { FunctionSurfaceEvaluator } from './adaptiveFunctionSurface.js';
@@ -41,7 +41,7 @@ export function createFunctionSurfaceEvaluator(outputs: readonly [unknown, unkno
   context: Omit<PreparedScalarMathContext, 'angleUnit'>): FunctionSurfaceEvaluator {
   const tapes = context.backend.withinDeadline(() => outputs.map(output => compileFunctionScalar(output, independent, coefficients, context)));
   const points = tapes.map(createScalarSampler), intervals = tapes.map(createScalarIntervalSampler);
-  const curvature = tapes.map(tape => [[1,0],[0,1],[1,1]].map(direction => createScalarDirectionalJet(tape, direction)));
+  const curvature = tapes.map(tape => createScalarDirectionalJets(tape, [[1,0],[0,1],[1,1]]));
   return {
     point: parameters => {
       const x = points[0](parameters), y = points[1](parameters), z = points[2](parameters);
@@ -53,7 +53,7 @@ export function createFunctionSurfaceEvaluator(outputs: readonly [unknown, unkno
     },
     interpolationErrorBound: (lower, upper) => {
       const box = lower.map((value, axis) => ({ lower: value, upper: upper[axis] }));
-      return triangleBound(curvature.map(directions => directions.map(direction => direction(box).second)), lower, upper);
+      return triangleBound(curvature.map(evaluate => evaluate(box).map(jet => jet.second)), lower, upper);
     },
   };
 }

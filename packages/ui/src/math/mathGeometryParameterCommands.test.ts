@@ -1,5 +1,4 @@
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import { collectMathCoefficients, expressionValueFromNumber } from '@pointercad/expression';
 import { analyzeParameters, createAssemblyDocument, createDrawingDocument, createEmptyPartDocument,
   DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryDerivedParameters, mathGeometryParameterDraft,
@@ -244,9 +243,7 @@ function evaluated(document: PartDocument): ParameterAnalysis {
 }
 
 function renderPanel(): string {
-  const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-  try { return renderToStaticMarkup(createElement(ParameterPanel)); }
-  finally { snapshot.mockRestore(); }
+  return renderCurrentStore(ParameterPanel);
 }
 
 describe('係数行の図形由来と現在値（GR-31）', () => {

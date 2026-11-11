@@ -11,13 +11,12 @@ import {
   emptyEmbeddedPartAttachments,
   setFixed,
 } from '@pointercad/model';
-import { readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
+import { encodeSaveDocument, readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { saveAssembly } from '../file/assemblyFile.js';
 import type { FileGateway } from '../file/fileGateway.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
-import type { PlaceComponentDeps } from './placeComponentActions.js';
 import {
   cancelPlaceComponent,
   commitPlaceComponent,
@@ -29,6 +28,8 @@ import {
   updatePlaceComponentSource,
 } from './placeComponentActions.js';
 import { placementFromSources } from './placeComponent.js';
+
+type PlaceComponentDeps = NonNullable<Parameters<typeof startPlaceComponent>[0]>;
 
 const attachments = emptyEmbeddedPartAttachments();
 
@@ -264,7 +265,8 @@ describe('部品配置の非同期入口', () => {
     useAppStore.setState({ fileGateway: gateway });
     await startPlaceComponent();
     if (place) await commitPlaceComponent();
-    await saveAssembly({ captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true) }, false);
+    // NodeにはWorkerがないため、実IOを公開された注入口へ明示する。
+    await saveAssembly({ captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true), encodeSave: encodeSaveDocument }, false);
     expect(useAppStore.getState().fileGateway).toBe(gateway);
     expect(reachedTargets).toEqual(['assembly-save-target-1']);
     expect(targetIdentity).toBe('assembly-save-target-1');

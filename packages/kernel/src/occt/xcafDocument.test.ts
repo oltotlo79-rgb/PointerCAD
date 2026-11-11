@@ -59,7 +59,6 @@ describe('XCAF の文書の組み立て(P6 タスク7)', () => {
     expect(oc.Quantity_Color_3).toBeTypeOf('function');
     expect(oc.TDataStd_Name).toBeTypeOf('function');
     expect(oc.STEPCAFControl_Writer_1).toBeTypeOf('function');
-    expect(oc.TColStd_IndexedDataMapOfStringString_1).toBeTypeOf('function');
     expect(oc.Message_ProgressRange_1).toBeTypeOf('function');
     // 静的メソッドは値として渡さない(@typescript-eslint/unbound-method)ので typeof で判定する。
     expect(typeof oc.XCAFDoc_DocumentTool.ShapeTool).toBe('function');

@@ -1,3 +1,4 @@
+import { exactDoubleDecimal } from './exactDoubleDecimal.testSupport.js';
 import Decimal from 'decimal.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -11,7 +12,6 @@ import { createScalarDifferential } from './scalarDifferential.js';
 import { LAMBERT_W_DERIVATIVES } from './lambertWDerivativeReferences.js';
 import { lambertWValueRange } from './lambertWIntervals.js';
 import type { MathInterval } from './mathInterval.js';
-import { exactDouble } from './exactDoubleInterval.js';
 
 const D=Decimal.clone({precision:150});
 let backend:MathExecutionBackend;
@@ -23,8 +23,7 @@ function tape(source:string) {
 function contains(range:MathInterval|null,expected:string):void {
   expect(range).not.toBeNull();if(range===null)throw new Error('Missing enclosure');
   const exact=(value:number)=>{
-    const rational=exactDouble(value);if(rational===null)throw new Error('Non-finite enclosure');
-    return new D(rational.numerator.toString()).div(rational.denominator.toString());
+    return exactDoubleDecimal(value, D, 'Non-finite enclosure');
   };
   expect(exact(range.lower).lte(expected)).toBe(true);expect(exact(range.upper).gte(expected)).toBe(true);
 }

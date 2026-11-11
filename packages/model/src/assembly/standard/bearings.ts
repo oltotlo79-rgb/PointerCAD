@@ -1,19 +1,6 @@
 import type {
-  BearingSeries, DeepGrooveBallBearingRow, StandardTableSource,
+  BearingSeries, DeepGrooveBallBearingRow,
 } from './types.js';
-
-export const DEEP_GROOVE_BALL_BEARING_SOURCE = {
-  standard: 'JIS B 1521 / JIS B 1513',
-  edition: '2012 / 1995',
-  title: '転がり軸受―深溝玉軸受 / 転がり軸受の呼び番号',
-  scope: '6000・6200・6300系列、内径10〜50mm',
-  sourceUrls: [
-    'https://www.nsk.com/jp-ja/engineering/6000-apn.html',
-    'https://hayamihyou.net/bearing/',
-    'https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1521:2012',
-  ],
-  verified: true,
-} as const satisfies StandardTableSource;
 
 /** docs/standards/jis/deep-groove-ball-bearing-jis-b-1521.json の確認済み行から採った15行。 */
 export const DEEP_GROOVE_BALL_BEARINGS = [

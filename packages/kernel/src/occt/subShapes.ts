@@ -1,5 +1,8 @@
+import { crossVec, dotVec as dot } from './sketchCorner.js';
+import { readNativePlanarBasis } from './planarFaceBasis.js';
 import type {
   OpenCascadeInstance,
+  gp_Circ,
   TopoDS_Edge,
   TopoDS_Face,
   TopoDS_Shape,
@@ -16,8 +19,11 @@ import type {
   SolidVertexInfo,
   Vec3Tuple,
 } from '../types.js';
+import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { cylindricalFaceAxialExtent, cylindricalFaceSpan } from './cylindricalFaceSpan.js';
+import { readCylinderDisplayBasis } from './cylinderDisplayBasis.js';
 import type { EdgeSegmentRange } from './extractEdges.js';
 import type { FaceTriangleRange } from './tessellate.js';
 
@@ -31,6 +37,8 @@ export interface SubShapeTables {
   readonly faces: readonly SolidFaceInfo[];
   readonly edges: readonly SolidEdgeInfo[];
   readonly vertices: readonly SolidVertexInfo[];
+  /** Current body only. A query with origin fails closed when this table is absent. */
+  readonly origins?: CurrentOriginIndex;
 }
 
 /**
@@ -72,6 +80,12 @@ function directionToTuple(direction: gp_Dir, reverse: boolean): Vec3Tuple | null
 
 /** 面の下地の曲面から取れる素性(種類・軸・半径)。 */
 interface FaceGeometry {
+  readonly planarBasis?: SolidFaceInfo['planarBasis'];
+  readonly cylinderBasis?: SolidFaceInfo['cylinderBasis'];
+  readonly analyticSurface?: SolidFaceInfo['analyticSurface'];
+  readonly cylinderSpan?: readonly [number, number] | null;
+  readonly cylinderAxialExtent?: readonly [number, number] | null;
+  readonly cylinderExterior?: boolean;
   readonly surfaceKind: FaceSurfaceKind;
   readonly axis: Vec3Tuple | null;
   readonly axisOrigin: Vec3Tuple | null;
@@ -117,7 +131,9 @@ function readFaceGeometry(
     const plane = keep(adaptor.Plane());
     const axis = keep(plane.Axis());
     const direction = keep(axis.Direction());
-    return { surfaceKind: 'plane', axis: directionToTuple(direction, reversed), axisOrigin: null, radius: null };
+    const planarBasis = readNativePlanarBasis(oc, face, keep);
+    return { surfaceKind: 'plane', axis: directionToTuple(direction, reversed), axisOrigin: null, radius: null,
+      ...(planarBasis === null ? {} : { planarBasis }) };
   }
   if (surfaceType === kinds.GeomAbs_Cylinder) {
     const cylinder = keep(adaptor.Cylinder());
@@ -126,11 +142,23 @@ function readFaceGeometry(
     // Location() は独立した gp_Pnt の複製(2026-09-07 実測: 別ptr・変更非波及)。
     // adaptor が形の Location を適用済みなので、ここで変換を重ねない。
     const origin = keep(cylinder.Location());
+    const orientedAxis = directionToTuple(direction, reversed);
+    const axisOrigin = pointToTuple(origin);
+    const radius = normalizeZero(cylinder.Radius());
     return {
       surfaceKind: 'cylinder',
-      axis: directionToTuple(direction, reversed),
-      axisOrigin: pointToTuple(origin),
-      radius: normalizeZero(cylinder.Radius()),
+      axis: orientedAxis,
+      cylinderBasis: readCylinderDisplayBasis(oc, face, allocations),
+      axisOrigin,
+      radius,
+      cylinderSpan: cylindricalFaceSpan(oc, face, axisOrigin, orientedAxis, radius, allocations),
+      // Patch extent without the full-circumference proof (split / helically trimmed walls). Not a fingerprint.
+      cylinderAxialExtent: cylindricalFaceAxialExtent(oc, face, axisOrigin, orientedAxis, radius, allocations),
+      // dU cross dV is radial for a direct cylinder and inward for an indirect cylinder.
+      // Material orientation reverses that normal; the already-oriented axis is not a normal.
+      ...(face.Orientation_1() === oc.TopAbs_Orientation.TopAbs_FORWARD
+        || face.Orientation_1() === oc.TopAbs_Orientation.TopAbs_REVERSED
+        ? { cylinderExterior: cylinder.Direct() !== reversed } : {}),
     };
   }
   if (surfaceType === kinds.GeomAbs_Cone) {
@@ -140,6 +168,8 @@ function readFaceGeometry(
     // Axis() とその Location() はそれぞれ複製。基準断面の中心は解析軸上にあり、
     // 部分円錐でも面重心に依らない(2026-09-07 の所有権・配置の実測)。
     const origin = keep(axis.Location());
+    const analyticAxis = directionToTuple(direction, false);
+    if (analyticAxis === null) throw new Error('Native cone has no finite axis');
     // 円錐の半径は場所によって変わるので、基準の平面での半径(RefRadius)を採る。
     // 同じ形なら常に同じ値になり、円錐どうしを見分ける材料になる。
     return {
@@ -147,6 +177,8 @@ function readFaceGeometry(
       axis: directionToTuple(direction, reversed),
       axisOrigin: pointToTuple(origin),
       radius: normalizeZero(cone.RefRadius()),
+      analyticSurface: { kind: 'cone', origin: pointToTuple(origin), axis: analyticAxis,
+        referenceRadius: normalizeZero(cone.RefRadius()), semiAngle: cone.SemiAngle() },
     };
   }
   if (surfaceType === kinds.GeomAbs_Sphere) {
@@ -158,19 +190,45 @@ function readFaceGeometry(
     const torus = keep(adaptor.Torus());
     const axis = keep(torus.Axis());
     const direction = keep(axis.Direction());
-    return { surfaceKind: 'torus', axis: directionToTuple(direction, reversed), axisOrigin: null, radius: null };
+    const origin = keep(torus.Location());
+    const analyticAxis = directionToTuple(direction, false);
+    if (analyticAxis === null) throw new Error('Native torus has no finite axis');
+    return { surfaceKind: 'torus', axis: directionToTuple(direction, reversed), axisOrigin: null, radius: null,
+      analyticSurface: { kind: 'torus', origin: pointToTuple(origin), axis: analyticAxis,
+        majorRadius: torus.MajorRadius(), minorRadius: torus.MinorRadius() } };
   }
   return { surfaceKind: 'other', axis: null, axisOrigin: null, radius: null };
 }
 
 /** 辺の下地の曲線から取れる素性(種類・軸・半径・両端)。 */
 interface EdgeGeometry {
+  readonly circleBasis?: SolidEdgeInfo['circleBasis'];
   readonly curveKind: EdgeCurveKind;
   readonly axis: Vec3Tuple | null;
   readonly axisOrigin: Vec3Tuple | null;
   readonly radius: number | null;
   readonly start: Vec3Tuple;
   readonly end: Vec3Tuple;
+}
+
+/** Native parameter basis, with owned OCCT copies and no inferred or normalized axes. */
+function readCircleBasis(oc: OpenCascadeInstance, edge: TopoDS_Edge, circle: gp_Circ,
+  parameterRange: readonly [number, number], origin: Vec3Tuple, allocations: Allocations): SolidEdgeInfo['circleBasis'] {
+  const orientation = edge.Orientation_1();
+  if (orientation !== oc.TopAbs_Orientation.TopAbs_FORWARD && orientation !== oc.TopAbs_Orientation.TopAbs_REVERSED) return undefined;
+  const [first, last] = parameterRange, radius = circle.Radius();
+  if (![...origin, first, last, radius].every(Number.isFinite) || radius <= 0 || !(last > first)
+    || !Number.isFinite((last - first) * radius)) return undefined;
+  const { keep } = allocations;
+  const position = keep(circle.Position()), x = keep(position.XDirection()), y = keep(position.YDirection()), z = keep(position.Direction());
+  const xAxis: Vec3Tuple = [x.X(), x.Y(), x.Z()], yAxis: Vec3Tuple = [y.X(), y.Y(), y.Z()], normal: Vec3Tuple = [z.X(), z.Y(), z.Z()];
+  const cross = crossVec(xAxis, yAxis);
+  if (![...xAxis, ...yAxis, ...normal].every(Number.isFinite)
+    || [xAxis, yAxis, normal].some(axis => Math.abs(Math.hypot(...axis) - 1) > 1e-9)
+    || Math.abs(dot(xAxis, yAxis)) > 1e-9 || Math.abs(dot(xAxis, normal)) > 1e-9 || Math.abs(dot(yAxis, normal)) > 1e-9
+    || Math.hypot(cross[0] - normal[0], cross[1] - normal[1], cross[2] - normal[2]) > 1e-9) return undefined;
+  return { origin, xAxis, yAxis, normal, parameterRange: [first, last],
+    orientation: orientation === oc.TopAbs_Orientation.TopAbs_FORWARD ? 1 : -1 };
 }
 
 /**
@@ -214,7 +272,9 @@ function readEdgeGeometry(
     // 全周でない円弧も中心は Location() から取れる。戻りは複製なので keep する。
     // 2026-09-07 実測: 点を書き換えても円へ波及せず、配置済みの中心を返す。
     const origin = keep(circle.Location());
+    const circleBasis = readCircleBasis(oc, edge, circle, [curve.FirstParameter(), curve.LastParameter()], pointToTuple(origin), allocations);
     return {
+      ...(circleBasis === undefined ? {} : { circleBasis }),
       curveKind: 'circle',
       axis: directionToTuple(direction, false),
       axisOrigin: pointToTuple(origin),
@@ -232,6 +292,53 @@ function readEdgeGeometry(
     return { curveKind: 'ellipse', axis: directionToTuple(direction, false), axisOrigin: null, radius: null, start, end };
   }
   return { curveKind: 'other', axis: null, axisOrigin: null, radius: null, start, end };
+}
+
+/** 隣の面の数え上げの上限(面と辺の組の総数)。超えた形では隣の面を持たせない(形の計算は続ける)。 */
+const ADJACENCY_LINK_LIMIT = 400_000;
+
+/** 面の辺の通し番号(`collectSubShapes` の形全体の並び)。seam の辺も1度だけ数える。 */
+function faceEdgeIndices(
+  oc: OpenCascadeInstance,
+  face: TopoDS_Face,
+  subShapes: { FindIndex(shape: TopoDS_Shape): number },
+  edgeIndexByPosition: ReadonlyMap<number, number>,
+  allocations: Allocations,
+): { readonly indices: readonly number[]; readonly complete: boolean } {
+  const own = allocations.keep(new oc.TopTools_IndexedMapOfShape_1());
+  oc.TopExp.MapShapes_2(face, own, true, true);
+  const result: number[] = [];
+  let complete = true;
+  for (let position = 1; position <= own.Size(); position += 1) {
+    const member = allocations.keep(own.FindKey(position));
+    if (member.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_EDGE) continue;
+    const edge = edgeIndexByPosition.get(subShapes.FindIndex(member));
+    if (edge !== undefined) result.push(edge);
+    else complete = false;
+  }
+  // Do not promote a partial map or an unproved empty boundary to complete evidence.
+  return { indices: result, complete: complete && result.length > 0
+    && result.every(edge => Number.isSafeInteger(edge) && edge >= 0 && edge < edgeIndexByPosition.size)
+    && new Set(result).size === result.length };
+}
+
+/** 全ての面へ、今の辺を共有する他の面を付ける(実行時だけ。溝の平面の端も鎖の証拠に使うため種類で選ばない)。 */
+function attachAdjacency(faces: SolidFaceInfo[], faceEdges: readonly (readonly number[])[]): void {
+  if (faceEdges.length !== faces.length) return;
+  const incident = new Map<number, number[]>();
+  for (const [faceIndex, edgesOfFace] of faceEdges.entries()) {
+    for (const edge of edgesOfFace) {
+      const found = incident.get(edge) ?? [];
+      found.push(faceIndex); incident.set(edge, found);
+    }
+  }
+  for (const [faceIndex, info] of faces.entries()) {
+    const neighbours = new Set<number>();
+    for (const edge of faceEdges[faceIndex] ?? []) {
+      for (const other of incident.get(edge) ?? []) if (other !== faceIndex) neighbours.add(other);
+    }
+    faces[faceIndex] = { ...info, adjacentFaces: [...neighbours].sort((a, b) => a - b) };
+  }
 }
 
 /** 面 1 枚の素性を組み立てる。 */
@@ -252,8 +359,14 @@ function buildFaceInfo(
   return {
     index,
     surfaceKind: geometry.surfaceKind,
+    ...(geometry.planarBasis === undefined ? {} : { planarBasis: geometry.planarBasis }),
+    ...(geometry.cylinderBasis === undefined ? {} : { cylinderBasis: geometry.cylinderBasis }),
+    ...(geometry.analyticSurface === undefined ? {} : { analyticSurface: geometry.analyticSurface }),
     area: normalizeZero(properties.Mass()),
     centroid: pointToTuple(centre),
+    ...(geometry.cylinderSpan === undefined ? {} : { cylinderSpan: geometry.cylinderSpan }),
+    ...(geometry.cylinderAxialExtent === undefined ? {} : { cylinderAxialExtent: geometry.cylinderAxialExtent }),
+    ...(geometry.cylinderExterior === undefined ? {} : { cylinderExterior: geometry.cylinderExterior }),
     axis: geometry.axis,
     axisOrigin: geometry.axisOrigin,
     radius: geometry.radius,
@@ -291,6 +404,7 @@ function buildEdgeInfo(
   return {
     index,
     curveKind: geometry.curveKind,
+    ...(geometry.circleBasis === undefined || !(Number.isFinite(length) && length > 0) ? {} : { circleBasis: geometry.circleBasis }),
     length,
     midpoint,
     start: geometry.start,
@@ -333,10 +447,12 @@ export function collectSubShapes(
   edgeRanges: readonly EdgeSegmentRange[],
   // 所有権の検査で確保・解放を数える口。各部分形状の寿命は既定と同じに保つ。
   allocationsFactory: () => Allocations = createAllocations,
+  admitEntries?: (entries: number) => void,
 ): SubShapeTables {
   const faces: SolidFaceInfo[] = [];
   const edges: SolidEdgeInfo[] = [];
   const vertices: SolidVertexInfo[] = [];
+  admitEntries?.(0);
 
   const shared = allocationsFactory();
 
@@ -355,17 +471,21 @@ export function collectSubShapes(
     const facePositions: number[] = [];
     const edgePositions: number[] = [];
     const vertexPositions: number[] = [];
+    let entryCount = 0;
     for (let position = 1; position <= subShapeCount; position += 1) {
       const subShape = subShapes.FindKey(position);
-      const shapeType = subShape.ShapeType();
-      if (shapeType === faceType) {
-        facePositions.push(position);
-      } else if (shapeType === edgeType) {
-        edgePositions.push(position);
-      } else if (shapeType === vertexType) {
-        vertexPositions.push(position);
+      try {
+        const shapeType = subShape.ShapeType();
+        if (shapeType === faceType || shapeType === edgeType || shapeType === vertexType) {
+          admitEntries?.(entryCount + 1);
+          entryCount += 1;
+          if (shapeType === faceType) facePositions.push(position);
+          else if (shapeType === edgeType) edgePositions.push(position);
+          else vertexPositions.push(position);
+        }
+      } finally {
+        subShape.delete();
       }
-      subShape.delete();
     }
 
     if (facePositions.length !== faceRanges.length) {
@@ -381,14 +501,31 @@ export function collectSubShapes(
 
     // 2 周目: 素性を読む。1 つぶんの確保はその場で作った順の逆に返し、
     // 面が数百枚ある形でも控えが伸び続けないようにする。
+    const edgeIndexByPosition = new Map<number, number>(edgePositions.map((position, index) => [position, index]));
+    const faceEdges: (readonly number[])[] = [];
+    const completeBoundaries: boolean[] = [];
+    let adjacencyLinks = 0;
     for (const [index, position] of facePositions.entries()) {
       const perItem = allocationsFactory();
       try {
         const subShape = perItem.keep(subShapes.FindKey(position));
         const face = perItem.keep(oc.TopoDS.Face_1(subShape));
         faces.push(buildFaceInfo(oc, face, index, faceRanges[index], perItem));
+        if (adjacencyLinks <= ADJACENCY_LINK_LIMIT) {
+          const edgesOfFace = faceEdgeIndices(oc, face, subShapes, edgeIndexByPosition, perItem);
+          adjacencyLinks += edgesOfFace.indices.length;
+          faceEdges.push(edgesOfFace.indices);
+          completeBoundaries.push(edgesOfFace.complete);
+        }
       } finally {
         perItem.release();
+      }
+    }
+    if (adjacencyLinks <= ADJACENCY_LINK_LIMIT) {
+      attachAdjacency(faces, faceEdges);
+      for (const [index, face] of faces.entries()) {
+        if (completeBoundaries[index]) faces[index] = { ...face,
+          boundaryEdgeIndices: Object.freeze([...faceEdges[index]]) };
       }
     }
 
@@ -437,25 +574,59 @@ function findSubShapeAt(
     return null;
   }
 
-  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
+  const inputs = createAllocations();
+  const returned = createAllocations();
   try {
-    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
-    const subShapeCount = subShapes.Size();
-    let found = 0;
-    for (let position = 1; position <= subShapeCount; position += 1) {
-      const subShape = subShapes.FindKey(position);
-      if (matches(subShape)) {
-        if (found === index) {
-          // 見つかったものだけは解放せずに返す(解放は呼び出し側の責任)。
-          return subShape;
+    let selected: TopoDS_Shape | null = null;
+    try {
+      const subShapes = inputs.keep(new oc.TopTools_IndexedMapOfShape_1());
+      oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+      const subShapeCount = subShapes.Size();
+      let found = 0;
+      for (let position = 1; position <= subShapeCount; position += 1) {
+        const candidate = createAllocations();
+        let transferred = false;
+        try {
+          const subShape = candidate.keep(subShapes.FindKey(position));
+          if (matches(subShape)) {
+            if (found === index) {
+              selected = returned.keep(subShape);
+              transferred = true;
+              break;
+            }
+            found += 1;
+          }
+        } finally {
+          if (!transferred) candidate.release();
         }
-        found += 1;
       }
-      subShape.delete();
+    } finally {
+      inputs.release();
     }
-    return null;
-  } finally {
-    subShapes.delete();
+    // The caller receives ownership only after the native map was released.
+    return selected;
+  } catch (error) {
+    returned.release();
+    throw error;
+  }
+}
+
+/** A typed copy is transferred only if its source wrapper was released successfully. */
+function castFoundShape<T extends TopoDS_Shape>(found: TopoDS_Shape, cast: (shape: TopoDS_Shape) => T): T {
+  const inputs = createAllocations();
+  const returned = createAllocations();
+  inputs.keep(found);
+  try {
+    let result: T;
+    try {
+      result = returned.keep(cast(found));
+    } finally {
+      inputs.release();
+    }
+    return result;
+  } catch (error) {
+    returned.release();
+    throw error;
   }
 }
 
@@ -470,11 +641,7 @@ export function faceAt(
   if (found === null) {
     return null;
   }
-  try {
-    return oc.TopoDS.Face_1(found);
-  } finally {
-    found.delete();
-  }
+  return castFoundShape(found, shape => oc.TopoDS.Face_1(shape));
 }
 
 /** 通し番号から辺の実体を取り出す。範囲の外なら null。呼び出し側が delete() する。 */
@@ -488,11 +655,7 @@ export function edgeAt(
   if (found === null) {
     return null;
   }
-  try {
-    return oc.TopoDS.Edge_1(found);
-  } finally {
-    found.delete();
-  }
+  return castFoundShape(found, shape => oc.TopoDS.Edge_1(shape));
 }
 
 /** 通し番号から頂点の実体を取り出す。範囲の外なら null。呼び出し側が delete() する。 */
@@ -511,11 +674,7 @@ export function vertexAt(
   if (found === null) {
     return null;
   }
-  try {
-    return oc.TopoDS.Vertex_1(found);
-  } finally {
-    found.delete();
-  }
+  return castFoundShape(found, shape => oc.TopoDS.Vertex_1(shape));
 }
 
 /**

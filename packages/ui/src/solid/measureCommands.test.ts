@@ -581,3 +581,53 @@ describe('測定の札が表示の単位で出る(P6 タスク3 の配線、FR-8
     );
   });
 });
+
+
+describe('R21 provenance captured by the actual measurement branch', () => {
+  it.each([
+    ['mesh', 'triangles'], ['solid', 'brep'], ['shell', 'brep'], ['mixed', 'brep'], [undefined, undefined],
+  ] as const)('records the actual volume source for bodyKind %s', async (bodyKind, provenance) => {
+    const body: MeasureBody = { featureId: 'imported-1', mesh: NO_MESH, volume: 16387.064,
+      faces: [], edges: [], vertices: [], ...(bodyKind === undefined ? {} : { bodyKind }) };
+    const outcome = await runMeasure({ document: DOCUMENT, selection: ['imported-1'],
+      bodies: [body], measurer: null, lengthUnit: 'inch' });
+    expect(outcome).toMatchObject({ ok: true, measurement: { result: { value: 16387.064 }, text: '1.000 in³' } });
+    expect(outcome.ok && outcome.measurement.result.provenance).toBe(provenance);
+  });
+  it('keeps the kernel distance source through display-unit conversion', async () => {
+    const { measurer, calls } = fakeMeasurer({ kind: 'distance', distance: 50.8,
+      pointA: [0, 0, 0], pointB: [50.8, 0, 0], inner: false });
+    const outcome = await runMeasure({ document: DOCUMENT, selection: ['extrude-1', 'extrude-2'],
+      bodies: BODIES, measurer, lengthUnit: 'inch' });
+    expect(outcome).toMatchObject({ ok: true, measurement: {
+      result: { value: 50.8, provenance: 'brep' }, text: '2.000 in',
+    } });
+    expect(calls.map(call => call.kind)).toEqual(['distance']);
+  });
+
+  it('records B-rep mass properties without altering the returned values', async () => {
+    const { measurer, calls } = fakeMeasurer({ kind: 'massProperties', volume: 12000, area: 3400,
+      centreOfMass: [20, 15, 5], principalMoments: [1, 2, 3],
+      principalAxes: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] });
+    const outcome = await runMeasure({ document: DOCUMENT, selection: ['extrude-1'],
+      bodies: BODIES.map(body => ({ ...body, bodyKind: 'solid' })), measurer });
+    expect(outcome).toMatchObject({ ok: true, measurement: { result: { value: 12000, provenance: 'brep' } },
+      massProperties: { provenance: 'brep', volume: 12000, area: 3400,
+        centreOfMass: [20, 15, 5], principalMoments: [1, 2, 3] } });
+    expect(calls.map(call => call.kind)).toEqual(['massProperties']);
+  });
+
+  it('distinguishes sketch-only coordinates from a sketch and B-rep vertex pair', async () => {
+    const empty = createEmptyPartDocument();
+    const first = createPointFeature(empty.sketches[0], absoluteCoordinate(0, 0, 0));
+    const onePoint = appendFeature(empty.sketches[0], first);
+    const second = createPointFeature(onePoint, absoluteCoordinate(25.4, 0, 0));
+    const sketchDocument = appendFeature(onePoint, second);
+    const sketch = resolveSketch(sketchDocument), document = replaceSketch(empty, sketchDocument);
+    const pure = await runMeasure({ document, sketch, selection: [first.id, second.id], bodies: BODIES, measurer: null });
+    expect(pure).toMatchObject({ ok: true, measurement: { result: { value: 25.4, provenance: 'sketch' } } });
+    const mixed = await runMeasure({ document, sketch, selection: [second.id, 'extrude-1#vertex:0'], bodies: BODIES, measurer: null });
+    expect(mixed).toMatchObject({ ok: true, measurement: { result: { value: 25.4, provenance: 'sketch-brep' } } });
+    expect(pure.ok && pure.measurement.result.provenance).toBe('sketch');
+  });
+});

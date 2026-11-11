@@ -507,7 +507,7 @@ export function draftValue(draft: ShapeDraft, key: string): ExpressionValue | un
  * 段の確定を下書きと履歴へ反映する
  * ------------------------------------------------------------------------- */
 
-export interface ShapeCommitContext {
+interface ShapeCommitContext {
   readonly document: SketchDocument;
   readonly planeId: WorkPlaneId;
   /**

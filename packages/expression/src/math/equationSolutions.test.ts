@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { createMathBackend } from './createMathBackend.js';
@@ -6,7 +7,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'solve(x^2=1,x,ℝ)', kind: 'set' },
@@ -45,8 +46,7 @@ function native(args: readonly string[], input?: string): string {
   return result.stdout;
 }
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'degree', coefficients: [],
-    identity: { documentId: 'equations', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'degree', identity: { documentId: 'equations', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 beforeAll(() => {
   backend = createMathBackend();

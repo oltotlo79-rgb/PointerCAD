@@ -32,6 +32,17 @@ function firstFrame(value: ReturnType<typeof raw>): Record<string, unknown> {
   return frames[0];
 }
 describe('版11の製作指示と旧図面の移行', () => {
+  it('データム・幾何公差・溶接の面参照に意味起点を保存する', () => {
+    const base = document();
+    const ref = { ...feature.target.ref, origin: { version: 1 as const, shapeKind: 'face' as const,
+      identity: { kind: 'box-face' as const, featureId: 'cylinder', role: 'top' as const } } };
+    const changed: DrawingDocument = { ...base,
+      datums: [{ ...base.datums[0], feature: { ...feature, target: { ...feature.target, ref } } }],
+      gdtFrames: [{ ...base.gdtFrames[0], feature: { ...feature, target: { ...feature.target, ref } } }],
+      weldSymbols: [{ ...base.weldSymbols[0], target: { ...feature.target, ref } }],
+    };
+    expect(parseDrawing(serializeDrawing(changed))).toMatchObject({ ok: true, document: changed });
+  });
   it('開先深さ・研磨P・閉じた尾・折れ矢も式と相対位置を完全往復する', () => {
     const original = document(), weld = original.weldSymbols[0];
     const source = { ...original, weldSymbols: [{ ...weld, closedTail: true, arrowBendOffset: [-10, 15] as const,

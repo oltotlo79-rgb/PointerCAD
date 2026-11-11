@@ -1,16 +1,18 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  CAPTURE_REGISTRY_FORMAT, CaptureRegistryError, applicationInputDigest, assessCaptureImages, auditCaptureRegistry, buildCaptureRegistry,
-  classifyCaptureViewport, collectChapterImageReferences, formatCaptureRegistry, parseCaptureRegistry, readCaptureFolder,
-  readCaptureRegistry, readCaptureScripts, readPngSize, validateCaptureRegistry, type CaptureFile, type CaptureRegistry,
+  CAPTURE_PROVENANCE_FORMAT, CAPTURE_REGISTRY_FORMAT, CaptureRegistryError, applicationInputDigest, assessCaptureImages,
+  auditCaptureRegistry, buildCaptureRegistry, classifyCaptureViewport, collectChapterImageReferences, formatCaptureRegistry,
+  inspectAdoptableCapture, parseCaptureRegistry, readCaptureFolder, readCaptureRegistry, readCaptureScripts, readPngSize,
+  validateCaptureRegistry, type CaptureFile, type CaptureRegistry,
 } from '../../../scripts/manual/captureRegistry.mjs';
 import { localGitEnvironment } from '../../../scripts/lib/gitEnvironment.mjs';
 import { sourceFileHash } from '../../../scripts/release/desktopFileInventory.mjs';
+import { captureWebBuildSources } from '../../../scripts/vite/webBuildSources.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 /** A new folder inside the project's scratchpad (scripts/lib/task_workspace.py refuses places outside the project). */
@@ -72,9 +74,9 @@ const legacy = (name: string, image: Uint8Array, viewport: readonly [number, num
   kind: 'actual-application-screenshot', edited: false,
 });
 const details = (name: string, image: Uint8Array, options: { readonly height?: number; readonly buildId?: string;
-  readonly scriptSha256?: string } = {}) => json(`${name}-capture-details.json`, {
+  readonly scriptSha256?: string; readonly script?: string } = {}) => json(`${name}-capture-details.json`, {
   format: 1, releaseCertified: false,
-  captures: [{ name, script: 'e2e/tests/exampleFlow.ts', capture: {
+  captures: [{ name, script: options.script ?? 'e2e/tests/exampleFlow.ts', capture: {
     format: 'pointercad-manual-detail/1', releaseCertified: false, applicationBuildId: options.buildId ?? null,
     project: 'functional', sourceTest: '例の撮影', scriptSha256: options.scriptSha256 ?? 'a'.repeat(64),
     fixture: { filename: `${name}-fixture.json`, sha256: 'b'.repeat(64) },
@@ -143,12 +145,13 @@ describe('撮影の登録簿（capture-manifest.json）と実際の画像・章'
       && entry.applicationBuildId !== 'build-under-test').map(entry => entry.file));
     // No image has the placeholder build, so every checked image is either of unknown or of another build.
     expect([...report.buildUnknown, ...report.buildMismatch].sort()).toEqual(images.map(entry => entry.name).sort());
-    // Compare the recorded script hashes with the current scripts independently.
-    const scripts = new Set(readdirSync(new URL('../../../e2e/tests/', import.meta.url)).map(name => `e2e/tests/${name}`));
+    // Compare the recorded script hashes with the current scripts independently. A recorded script may sit in a
+    // subfolder of e2e/tests/ (e.g. e2e/tests/flows/), so look up each recorded path instead of listing one folder.
+    const exists = (script: string) => existsSync(new URL(`../../../${script}`, import.meta.url));
     const hashed = registry.images.flatMap(entry => (entry.script !== null && entry.scriptSha256 !== null
       ? [{ file: entry.file, script: entry.script, scriptSha256: entry.scriptSha256 }] : []));
-    expect(report.scriptMissing).toEqual(hashed.filter(entry => !scripts.has(entry.script)).map(entry => entry.file));
-    expect(report.scriptChanged).toEqual(hashed.filter(entry => scripts.has(entry.script)
+    expect(report.scriptMissing).toEqual(hashed.filter(entry => !exists(entry.script)).map(entry => entry.file));
+    expect(report.scriptChanged).toEqual(hashed.filter(entry => exists(entry.script)
       && lfSha(readFileSync(new URL(`../../../${entry.script}`, import.meta.url))) !== entry.scriptSha256).map(entry => entry.file));
     // "current" needs every image to be of the given build; an image of another build is not current either
     // (once every image is adopted, buildUnknown is empty but buildMismatch still lists all of them here).
@@ -364,5 +367,245 @@ describe('アプリの入力の指紋（applicationInputDigest）', () => {
     // アプリのソース(説明書の外)を1バイトでも変えると値が変わる。
     writeFileSync(source, 'export const value = 2;\n');
     expect(await applicationInputDigest(folder)).not.toBe(before);
+  });
+
+  const runtimePrefix = 'packages/fem/runtime/';
+  const runtimeManifest = runtimePrefix + 'manifest.json';
+  const archive = 'sources/pointercad-beam-application-source.zip';
+  const index = 'evidence/application-source-index.json';
+  const record = (value: unknown): Record<string, unknown> => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Expected fixture object');
+    return value as Record<string, unknown>;
+  };
+  const runtimeFixture = () => {
+    const folder = digestWorkspace();
+    git(folder, 'init', '--quiet');
+    const write = (path: string, bytes: string | Uint8Array) => {
+      const absolute = join(folder, path);
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, bytes);
+    };
+    // Use the current runtime manifest, preserving all fields outside the two regenerated pins.
+    const manifest = record(JSON.parse(readFileSync(join(root, runtimeManifest), 'utf8')));
+    const files = record(manifest.files);
+    const regenerate = (capture: string) => {
+      const capturePath = 'packages/help-content/docs/ja/images/example-capture-details.json';
+      write(capturePath, capture);
+      mkdirSync(join(folder, runtimePrefix, 'sources'), { recursive: true });
+      execFileSync('python', ['-B', '-X', 'utf8', '-c',
+        'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1], "w"); z.writestr(sys.argv[2], sys.argv[3]); z.close()',
+        join(folder, runtimePrefix, archive), capturePath, capture], { cwd: folder, windowsHide: true });
+      const archiveBytes = readFileSync(join(folder, runtimePrefix, archive));
+      write(runtimePrefix + index, JSON.stringify({ files: [{ path: capturePath, sha256: sha(Buffer.from(capture)) }],
+        archiveSha256: sha(archiveBytes) }) + '\n');
+      for (const path of [archive, index]) {
+        const bytes = readFileSync(join(folder, runtimePrefix, path));
+        files[path] = { ...record(files[path]), sha256: sha(bytes), bytes: bytes.length };
+      }
+      write(runtimeManifest, JSON.stringify(manifest, null, 2) + '\n');
+    };
+    const appInputs = {
+      'packages/example/src/main.ts': 'export const value = 1;\n',
+      'packages/example/src/view.tsx': 'export const view = <div />;\n',
+      'packages/example/src/style.css': 'body { color: red; }\n',
+      'packages/example/src/i18n/ja.json': '{"label":"first"}\n',
+      'packages/fem/runtime/assets/runtime.py': 'value = 1\n',
+      'packages/fem/runtime/assets/runtime.wasm': Buffer.from([0, 97, 115, 109]),
+      'packages/fem/runtime/assets/runtime.whl': Buffer.from([0, 80, 75, 1]),
+      'packages/fem/runtime/assets/runtime.js': 'export const runtime = 1;\n',
+      'packages/fem/runtime/evidence/other.json': '{"evidence":1}\n',
+      'packages/fem/runtime/sources/other.zip': Buffer.from([0, 80, 75, 2]),
+      'packages/fem/runtime/notices/example.txt': 'notice\n',
+      'packages/fem/runtime/evidence/application-source-index.json.extra': 'nearby index\n',
+      'packages/fem/runtime/sources/pointercad-beam-application-source.zip.extra': 'nearby archive\n',
+    };
+    for (const [path, bytes] of Object.entries(appInputs)) write(path, bytes);
+    regenerate('{"capture":1}');
+    git(folder, 'add', '.');
+    return { folder, manifest, files, write, regenerate, appInputs,
+      saveManifest: () => write(runtimeManifest, JSON.stringify(manifest, null, 2) + '\n') };
+  };
+
+  it('撮影JSONからソース控えと2 pinを再生成しても撮影版は一定で、完全なWeb入力は変わる', async () => {
+    const fixture = runtimeFixture();
+    try {
+      const before = await applicationInputDigest(fixture.folder);
+      const completeBefore = await captureWebBuildSources(fixture.folder);
+      fixture.regenerate('{"capture":2,"image":"new.png"}');
+      expect(await applicationInputDigest(fixture.folder)).toBe(before);
+      expect(await captureWebBuildSources(fixture.folder)).not.toEqual(completeBefore);
+      fixture.regenerate('{"capture":3,"image":"new.png"}');
+      expect(await applicationInputDigest(fixture.folder)).toBe(before);
+      // JSON and ordinary sources have the same identity in LF and CRLF checkouts.
+      for (const path of [runtimeManifest, runtimePrefix + index, 'packages/example/src/main.ts']) {
+        const text = readFileSync(join(fixture.folder, path), 'utf8');
+        fixture.write(path, text.replaceAll('\n', '\r\n'));
+      }
+      expect(await applicationInputDigest(fixture.folder)).toBe(before);
+    } finally { rmSync(fixture.folder, { recursive: true, force: true }); }
+  });
+
+  it('実行ソース・資産・他の証拠と近似名の変更、追加、削除を引き続き検出する', async () => {
+    const fixture = runtimeFixture();
+    try {
+      const before = await applicationInputDigest(fixture.folder);
+      for (const [path, original] of Object.entries(fixture.appInputs)) {
+        fixture.write(path, Buffer.concat([typeof original === 'string' ? Buffer.from(original) : original, Buffer.from('changed')]));
+        expect(await applicationInputDigest(fixture.folder), path).not.toBe(before);
+        fixture.write(path, original);
+        rmSync(join(fixture.folder, path));
+        expect(await applicationInputDigest(fixture.folder), path).not.toBe(before);
+        fixture.write(path, original);
+      }
+      fixture.write('packages/fem/runtime/evidence/added.json', '{}');
+      expect(await applicationInputDigest(fixture.folder)).not.toBe(before);
+    } finally { rmSync(fixture.folder, { recursive: true, force: true }); }
+  });
+
+  it('manifestの他field、他pin、2 pinの追加属性を射影から落とさない', async () => {
+    const fixture = runtimeFixture();
+    try {
+      const before = await applicationInputDigest(fixture.folder);
+      const otherPath = Object.keys(fixture.files).find(path => path !== archive && path !== index);
+      if (otherPath === undefined) throw new Error('Current manifest needs another runtime pin');
+      const mutations = [
+        () => { fixture.manifest.extraCaptureRegression = true; },
+        () => { record(fixture.manifest.applicationSource).completeRuntimeCorrespondingSourceClaim = true; },
+        () => { record(record(fixture.manifest.files)[otherPath]).sha256 = 'a'.repeat(64); },
+        () => { record(record(fixture.manifest.files)[archive]).extraCaptureRegression = true; },
+        () => { delete fixture.manifest.applicationSource; },
+      ];
+      for (const mutate of mutations) {
+        const original = JSON.stringify(fixture.manifest);
+        mutate(); fixture.saveManifest();
+        try { expect(await applicationInputDigest(fixture.folder)).not.toBe(before); }
+        catch (error) { expect(String(error)).toContain('Invalid capture application source:'); }
+        for (const key of Object.keys(fixture.manifest)) delete fixture.manifest[key];
+        Object.assign(fixture.manifest, record(JSON.parse(original)));
+        fixture.saveManifest();
+      }
+    } finally { rmSync(fixture.folder, { recursive: true, force: true }); }
+  });
+
+  it.each(['manifest', 'archive', 'index', 'archive-pin', 'index-pin', 'manifest-json', 'index-json',
+    'sha-string', 'sha-type', 'sha-missing', 'bytes-string', 'bytes-negative', 'bytes-zero', 'bytes-fraction', 'bytes-unsafe', 'bytes-missing',
+    'archive-reference', 'index-reference'].flatMap(invalid => [archive, index].map(pinPath => [invalid, pinPath] as const)))(
+    'ソース控えの欠落や不正な入力を隠さない: %s (%s)', async (invalid, pinPath) => {
+    const fixture = runtimeFixture();
+    try {
+      if (invalid === 'manifest') rmSync(join(fixture.folder, runtimeManifest));
+      else if (invalid === 'archive' || invalid === 'index') rmSync(join(fixture.folder, runtimePrefix, invalid === 'archive' ? archive : index));
+      else if (invalid === 'manifest-json' || invalid === 'index-json') fixture.write(invalid === 'manifest-json' ? runtimeManifest : runtimePrefix + index, '{');
+      else {
+        if (invalid === 'archive-pin' || invalid === 'index-pin') delete fixture.files[invalid === 'archive-pin' ? archive : index];
+        else if (invalid.endsWith('-reference')) record(fixture.manifest.applicationSource)[invalid === 'archive-reference' ? 'archive' : 'index'] = 'evidence/other.json';
+        else {
+          const pin = record(fixture.files[pinPath]);
+          if (invalid === 'sha-string') pin.sha256 = 'invalid';
+          if (invalid === 'sha-type') pin.sha256 = 64;
+          if (invalid === 'sha-missing') delete pin.sha256;
+          if (invalid === 'bytes-string') pin.bytes = '1';
+          if (invalid === 'bytes-negative') pin.bytes = -1;
+          if (invalid === 'bytes-zero') pin.bytes = 0;
+          if (invalid === 'bytes-fraction') pin.bytes = 1.5;
+          if (invalid === 'bytes-unsafe') pin.bytes = Number.MAX_SAFE_INTEGER + 1;
+          if (invalid === 'bytes-missing') delete pin.bytes;
+        }
+        fixture.saveManifest();
+      }
+      await expect(applicationInputDigest(fixture.folder)).rejects.toThrow('Invalid capture application source:');
+    } finally { rmSync(fixture.folder, { recursive: true, force: true }); }
+  });
+});
+
+describe('Current capture script provenance must exist when scripts are checked', () => {
+  it.each(['script', 'scriptSha256', 'both'])('rejects a valid partial registry with missing %s', missing => {
+    const image = png(720, 540, 24), script = encoder.encode('capture script');
+    const registry = buildCaptureRegistry([file('m-detail.png', image),
+      details('m', image, { buildId: 'build-1', scriptSha256: sha(script) })]);
+    const entry = registry.images[0];
+    const missingPath = missing !== 'scriptSha256', missingHash = missing !== 'script';
+    const partial = validateCaptureRegistry({ ...registry, images: [{ ...entry,
+      script: missingPath ? null : entry.script,
+      scriptSha256: missingHash ? null : entry.scriptSha256,
+      unknown: { ...entry.unknown,
+        ...(missingPath ? { script: 'no-script-path' } : {}),
+        ...(missingHash ? { scriptSha256: 'image-source-no-hash' } : {}) },
+    }] });
+    const scripts = new Map([['e2e/tests/exampleFlow.ts', script]]);
+    expect(assessCaptureImages(registry, [file('m-detail.png', image)],
+      { applicationBuildId: 'build-1', scripts })).toMatchObject({ scriptMissing: [], current: true });
+    expect(assessCaptureImages(partial, [file('m-detail.png', image)],
+      { applicationBuildId: 'build-1', scripts })).toMatchObject({
+      checked: 1, mismatched: [], buildUnknown: [], buildMismatch: [],
+      scriptMissing: ['m-detail.png'], current: false,
+    });
+  });
+});
+
+describe('撮影の台本のパスは e2e/tests/ の下のフォルダーを受け付け、不正なパスを拒否する', () => {
+  /** The real producer: e2e/tests/flows/extrudeOperationFlow.ts passes its own module URL to captureManualDetail. */
+  const FLOW = 'e2e/tests/flows/extrudeOperationFlow.ts';
+  const backslash = String.fromCharCode(0x5c);
+  const accepted = ['e2e/tests/exampleFlow.ts', FLOW, 'e2e/tests/flows/nested/exampleFlow.ts'];
+  const rejected = [
+    '/e2e/tests/exampleFlow.ts', 'C:/e2e/tests/exampleFlow.ts', `C:${backslash}e2e${backslash}tests${backslash}exampleFlow.ts`,
+    'e2e/tests/../exampleFlow.ts', 'e2e/tests/flows/../../../package.ts', 'e2e/tests/flows/../exampleFlow.ts',
+    'e2e/tests/./exampleFlow.ts', 'e2e/tests/.hidden/exampleFlow.ts', 'e2e/tests//exampleFlow.ts', 'e2e/tests/flows//exampleFlow.ts',
+    `e2e/tests/flows${backslash}exampleFlow.ts`, `e2e${backslash}tests${backslash}exampleFlow.ts`, 'e2e/tests/flows/exampleFlow.js',
+    'e2e/tests/flows/', 'e2e/tests/flows/.ts', 'e2e/testsx/exampleFlow.ts', 'scripts/other.ts', `${FLOW}\n`, '',
+    // A trailing line terminator of any kind: the end of the path has to be the true end of the string.
+    `${FLOW}\r\n`, `${FLOW}${String.fromCharCode(0x2028)}`, `${FLOW}${String.fromCharCode(0x2029)}`,
+  ];
+
+  it.each(accepted)('受け付けて登録簿に残す: %s', script => {
+    const image = png(720, 540, 26);
+    const registry = buildCaptureRegistry([file('m-detail.png', image), details('m', image, { script })]);
+    expect(registry.images[0]).toMatchObject({ script, viewportSource: 'capture-details',
+      records: [{ kind: 'capture-details', file: 'm-capture-details.json', name: 'm', image: 'detail' }] });
+    expect(parseCaptureRegistry(formatCaptureRegistry(registry))).toEqual(registry);
+  });
+
+  it.each(rejected)('撮影の記録からも登録簿からも拒否する: %j', script => {
+    const image = png(720, 540, 27);
+    expect(() => buildCaptureRegistry([file('m-detail.png', image), details('m', image, { script })]))
+      .toThrow('the capture name or script is not recorded');
+    const edited = editable(buildCaptureRegistry([file('m-detail.png', image), details('m', image)]));
+    edited.images[0].script = script;
+    expect(() => validateCaptureRegistry(edited)).toThrow('invalid script');
+  });
+
+  it('flows/ の台本で撮った押し出しの画面を採用でき、来歴の束から登録する。不正なパスの撮影は採用も登録もしない', () => {
+    const name = 'solid-basics-cut-preview', build = 'e'.repeat(64);
+    const scriptSha256 = sha(encoder.encode('// the extrude flow\n'));
+    const fixture = { operation: 'cut', before: 1 };
+    const screen = png(1440, 900, 28), detail = png(260, 576, 29);
+    // The fields captureManualDetail writes, with the screen, recompute and script values of the real cut preview record.
+    const capture = {
+      format: 'pointercad-manual-detail/1', releaseCertified: false, capturedAt: '2026-11-09T19:56:06.272Z', applicationBuildId: build,
+      project: 'functional', sourceTest: 'Extrude cut: real preview cancel atomic Undo and saved geometry', script: FLOW, scriptSha256,
+      fixture: { filename: `${name}-fixture.json`, sha256: sha(encoder.encode(JSON.stringify(fixture))) },
+      screen: { filename: `${name}-screen.png`, sha256: sha(screen) }, detail: { filename: `${name}-detail.png`, sha256: sha(detail) },
+      recompute: { pendingWaiters: 0, activeDocumentKind: 'part', cacheHits: 1, isComputing: false, requestedGeneration: 15,
+        completedGeneration: 15, lastOutcome: 'success' },
+      viewportRender: { completedRenders: 102, lastCompletedAtMs: 18511.66 },
+      screenState: { width: 1440, height: 900, deviceScaleFactor: 1, fontStatus: 'loaded', url: 'http://127.0.0.1:4173/',
+        theme: 'dark', uiScale: '100' },
+      viewportClass: 'standard',
+    };
+    expect(inspectAdoptableCapture(capture, name)).toEqual([]);
+    const bundle = { format: CAPTURE_PROVENANCE_FORMAT, releaseCertified: false, applicationBuildId: build,
+      adoptedAt: '2026-11-10T06:00:00.000Z', scripts: { [FLOW]: scriptSha256 },
+      captures: [{ name, selectedImage: 'screen', script: FLOW, capture, fixture }] };
+    const registry = buildCaptureRegistry([file(`${name}-screen.png`, screen), json('example-capture-details.json', bundle)]);
+    expect(registry.images[0]).toMatchObject({ file: `${name}-screen.png`, sha256: sha(screen), script: FLOW, scriptSha256,
+      applicationBuildId: build, records: [{ kind: 'capture-details', file: 'example-capture-details.json', name, image: 'screen' }] });
+    for (const script of rejected) {
+      expect(inspectAdoptableCapture({ ...capture, script }, name), script).toEqual(['the capture script path is not recorded']);
+      const invalid = { ...bundle, scripts: { [script]: scriptSha256 },
+        captures: [{ ...bundle.captures[0], script, capture: { ...capture, script } }] };
+      expect(() => buildCaptureRegistry([file(`${name}-screen.png`, screen), json('example-capture-details.json', invalid)]), script)
+        .toThrow('scripts must map sorted script paths to their SHA-256');
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { publicAssetUrl } from '../testing/publicAssetUrl.testSupport.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -25,7 +26,7 @@ describe('方程式の実結果を解集合と重複度で示す', () => {
       source, notation: 'text' as const, angleUnit: 'degree' as const, coefficients: [] };
     const raw = await executeExactMathWorkRequest({ kind: 'evaluate-math', serial: 1, request }, {
       backend, shouldStop: () => undefined, engine: { evaluate: (expression, angleUnit) => {
-        const script = fileURLToPath(new URL('../../../expression/src/math/exactRuntime/cas_equations_test.py', import.meta.url));
+        const script = fileURLToPath(publicAssetUrl('@pointercad/expression/testing-assets/cas_equations_test.py'));
         const output = spawnSync('python', ['-B', '-X', 'utf8', script, '--batch'], {
           input: JSON.stringify([{ expression, angleUnit }]), encoding: 'utf8', timeout: 30_000, maxBuffer: 1_000_000,
           env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },

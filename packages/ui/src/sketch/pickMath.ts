@@ -9,6 +9,8 @@
 
 import type { ResolvedSketch, Vec3 } from '@pointercad/model';
 
+import type { SelectionFilter } from '../solid/selectionFilter.js';
+
 import { sampleCurve } from './sampleCurve.js';
 import type { ProjectToScreen } from './snapMath.js';
 
@@ -25,6 +27,20 @@ export interface PickResult {
 export const PICK_RADIUS_PIXELS = 6;
 
 type Screen = readonly [number, number];
+
+/** Restrict candidates before picking or collecting selection-hover snaps; keep the all-on path unchanged. */
+export function sketchForSelection(sketch: ResolvedSketch, filter: SelectionFilter): ResolvedSketch {
+  if (filter.vertex && filter.edge && filter.face) return sketch;
+  return {
+    ...sketch,
+    points: filter.vertex ? sketch.points : [],
+    segments: filter.edge ? sketch.segments : [],
+    arcs: filter.edge ? sketch.arcs : [],
+    ellipses: filter.edge ? sketch.ellipses : [],
+    splines: filter.edge ? sketch.splines : [],
+    faces: filter.face ? sketch.faces : [],
+  };
+}
 
 /** 画面座標での点と線分の距離。線分の外側では近い方の端点までの距離になる。 */
 export function distanceToSegment2d(point: Screen, from: Screen, to: Screen): number {

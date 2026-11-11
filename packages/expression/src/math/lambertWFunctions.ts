@@ -7,13 +7,8 @@ import { compileScalarMath } from './scalarMathTape.js';
 import { createScalarIntervalSampler } from './scalarMathIntervals.js';
 import { exactDouble, exactDoubleInterval } from './exactDoubleInterval.js';
 
-export function realLambertBranch(node: MathNode): RealLambertBranch {
-  const branch=rationalOfExpression(node);
-  if(branch===null||branch.denominator!==1n||(branch.numerator!==0n&&branch.numerator!==-1n)) {
-    throw new MathInputProblem('unsupported','実数のLambert Wの枝は0または-1で指定してください。');
-  }
-  return branch.numerator===0n?0:-1;
-}
+import { realLambertBranch } from './specialFunctionKinds.js';
+export { realLambertBranch } from './specialFunctionKinds.js';
 const number=(decimal:string):MathNode=>({kind:'number',decimal});
 function isE(node:MathNode):boolean { return node.kind==='constant'&&node.name==='e'; }
 function equals(node:MathNode,value:bigint):boolean {

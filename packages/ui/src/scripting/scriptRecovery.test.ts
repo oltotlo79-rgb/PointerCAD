@@ -1,19 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAutoSaver, createMemoryAutoSaveStorage, readDocumentBundle, type AutoSaver } from '@pointercad/io';
+import { encodeSaveDocument, createAutoSaver, createMemoryAutoSaveStorage, readDocumentBundle, type AutoSaver } from '@pointercad/io';
 import { createEmptyPartDocument } from '@pointercad/model';
-import { applyScriptCommands } from '../../../model/src/scripting/scriptCommands.js';
+import { applyScriptCommands } from '@pointercad/model/testing/io-operations';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachPartRecompute } from '../store/attachKernel.js';
 import { createFakeRecompute, resetTestStore, resultFor, tick } from '../store/testing/createTestStore.js';
 import { loadAutoSavePrompt, restoreAutoSave, startAutoSave } from '../file/attachAutoSave.js';
 import { runScript } from './scriptActions.js';
+import type * as ImportedPcadReadWorkerTypes from '../file/pcadReadWorker.js';
 
 describe('自動作図の成功だけを通常の控えへ保存して復元する', () => {
   it('構成・式・立体を控えから復元し、失敗した次の処理では控えを失わない', async () => {
     resetTestStore(); useAppStore.getState().cancelScript();
     const storage = createMemoryAutoSaveStorage(), pending = new Map<number, () => void>(), savers: AutoSaver[] = [];
     let serial = 0, now = Date.parse('2026-09-11T00:00:00Z');
-    const detach = startAutoSave({ storage, sessionId: 'script-recovery', createSaver: options => {
+    // WorkerのないNodeでも、控えの保存内容は実IOで検査する。
+    const detach = startAutoSave({ storage, sessionId: 'script-recovery', encodeSave: encodeSaveDocument, createSaver: options => {
       const saver = createAutoSaver({ ...options, now: () => now,
         setTimeout: callback => { const id = ++serial; pending.set(id, callback); return id; },
         clearTimeout: id => { if (typeof id === 'number') pending.delete(id); } });
@@ -54,4 +56,13 @@ describe('自動作図の成功だけを通常の控えへ保存して復元す�
       expect(await storage.listRecords()).toEqual([record]);
     } finally { detach(); detachKernel(); useAppStore.getState().cancelScript(); }
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('../file/pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

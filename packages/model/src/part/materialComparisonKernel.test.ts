@@ -1,9 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { expressionValueFromNumber as value } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
-import type { CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
+import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
 import { createDirectMaterialComparisonBridge } from '../kernelBridge.js';
 import { absoluteCoordinate } from '../sketch/createSketchDocument.js';
 import { createEmptyPartDocument, createPrimitiveFeature } from './createPartDocument.js';

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { expect, type ElectronApplication, type Page, type Request, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { HELP_TOPICS } from '../../packages/help-content/src/topics.js';
 import { savePart } from './scriptsFlow.js';
 import { uiMessage } from './uiMessages.js';
@@ -27,24 +28,40 @@ export async function helpReaderFlow(page: Page, info: TestInfo, app?: ElectronA
     const topics = contents.locator('button.pcad-help__topic');
     await expect(topics).toHaveCount(HELP_TOPICS.length);
     let imageCount = 0;
+    const chapterProof: { readonly id: string; readonly title: string; readonly sourceSha256: string; readonly renderedHeading: string; readonly images: number }[] = [];
     for (const topic of HELP_TOPICS) {
       await contents.getByRole('button', { name: topic.title, exact: true }).click();
-      await expect(article).toHaveAttribute('data-help-topic', topic.id);
-      await expect(article).toHaveAttribute('aria-busy', 'false');
-      await expect(article.getByRole('alert')).toHaveCount(0);
-      await expect(article.locator('h1')).toHaveCount(1);
-      expect((await article.innerText()).trim().length, topic.id).toBeGreaterThan(20);
-      await expect(article.locator('script, iframe, object, embed, [onclick], [onerror]')).toHaveCount(0);
-      const images = article.locator('img.pcad-help__image');
       const source = await readFile(new URL('../../packages/help-content/' + topic.path, import.meta.url), 'utf8');
       const expectedImages = [...source.matchAll(/!\[[^\]]*\]\([^\s)]+\)/gu)].length;
-      await expect(images, topic.id).toHaveCount(expectedImages);
-      for (let index = 0; index < await images.count(); index += 1) {
+      // Read one chapter snapshot per poll instead of serial browser round trips for each field.
+      let renderedHeading = '';
+      await expect.poll(async () => {
+        const observed = await article.evaluate(element => {
+          if (!(element instanceof HTMLElement)) throw new Error('Help article is not an HTML element');
+          return ({
+        topic: element.getAttribute('data-help-topic'), busy: element.getAttribute('aria-busy'),
+        alerts: element.querySelectorAll('[role="alert"]').length,
+        headings: element.querySelectorAll('h1').length,
+        heading: element.querySelector('h1')?.innerText.trim() ?? '',
+        hasText: element.innerText.trim().length > 20,
+        unsafe: element.querySelectorAll('script, iframe, object, embed, [onclick], [onerror]').length,
+        images: element.querySelectorAll('img.pcad-help__image').length,
+          });
+        });
+        renderedHeading = observed.heading;
+        return observed;
+      }, topic.id).toEqual({ topic: topic.id, busy: 'false', alerts: 0, headings: 1,
+        heading: topic.title, hasText: true, unsafe: 0, images: expectedImages });
+      chapterProof.push({ id: topic.id, title: topic.title,
+        sourceSha256: createHash('sha256').update(source).digest('hex'),
+        renderedHeading, images: expectedImages });
+      const images = article.locator('img.pcad-help__image');
+      for (let index = 0; index < expectedImages; index += 1) {
         const image = images.nth(index);
+        // Lazy images still enter the viewport individually; no request or decoding is bypassed.
         await image.scrollIntoViewIfNeeded();
-        await expect(image, topic.id).toHaveJSProperty('complete', true);
-        expect(await image.evaluate(element => element instanceof HTMLImageElement && element.naturalWidth > 0
-          && element.naturalHeight > 0), topic.id).toBe(true);
+        await expect.poll(() => image.evaluate(element => element instanceof HTMLImageElement
+          && element.complete && element.naturalWidth > 0 && element.naturalHeight > 0), topic.id).toBe(true);
         imageCount += 1;
       }
     }
@@ -75,6 +92,6 @@ export async function helpReaderFlow(page: Page, info: TestInfo, app?: ElectronA
     expect(await savePart(page, info, 'help-after-reading.pcad', app)).toEqual(original);
     expect(errors).toEqual([]); expect(external).toEqual([]);
     await info.attach('help-reader-coverage', { body: JSON.stringify({ topicIds: HELP_TOPICS.map(topic => topic.id),
-      imageCount, numericInputPreserved: true, savedDocumentPreserved: true, externalRequests: external }), contentType: 'application/json' });
+      imageCount, numericInputPreserved: true, savedDocumentPreserved: true, externalRequests: external, chapterProof, sameSourceCaptureCertified: false, osImeCertified: false }), contentType: 'application/json' });
   } finally { page.off('pageerror', onError); page.off('request', onRequest); }
 }

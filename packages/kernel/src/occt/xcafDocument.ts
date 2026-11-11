@@ -32,13 +32,19 @@ import { applyFaceColors, checkExportColor, checkFaceColors } from './xcafFaceCo
  *
  * ---
  *
- * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1):**
+ * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1。
+ * 採用した closed 版でも 2026-10-24 に確認):**
  * `TDocStd_Document` / `Handle_TDocStd_Document_2` / `TCollection_ExtendedString_2` /
  * `XCAFDoc_DocumentTool` / `XCAFDoc_ShapeTool` / `XCAFDoc_ColorTool` / `Quantity_Color_3` /
- * `TDataStd_Name` / `STEPCAFControl_Writer_1` / `TColStd_IndexedDataMapOfStringString_1` /
- * `Message_ProgressRange_1` は**すべて実行時に関数として束縛されている**(`.test.ts` の 1 件目)。
+ * `TDataStd_Name` / `STEPCAFControl_Writer_1` / `Message_ProgressRange_1` は
+ * **すべて実行時に関数として束縛されている**(`.test.ts` の 1 件目)。
  * 列挙の入れ物 `Quantity_TypeOfColor` / `XCAFDoc_ColorType` も実行時に存在し、
  * それぞれ `values` を含む鍵を持つ(値の中身は空のオブジェクト)。
+ * **旧レジストリ版にあった `TColStd_IndexedDataMapOfStringString_1`(OBJ / glTF の書き手の
+ * `Perform` が受け取るファイル情報の表)は、closed 版
+ * (`vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677`)には無い**(実行時に
+ * `undefined`)。この組み立ては使っておらず、OBJ / glTF は OCCT の書き手を使わない自前の
+ * 純関数(`writeCafMesh.ts`。統括の決定 2026-09-06 と 2026-10-24)で書くので、影響は無い。
  *
  * **⚠️ 解放の実測(2026-09-06。ここを間違えると WASM の記憶が壊れる):**
  * 1. **`XCAFDoc_DocumentTool.ShapeTool(...).get()` が返す道具は借り物で、`delete()` してはいけない。**
@@ -143,7 +149,7 @@ const NO_SHAPE_MESSAGE = '書き出せる立体がありません。';
  * `makeSweep.ts` に続く 5 か所目。着手時に Grep で数えた既存は 4 ファイル・5 関数
  * —— `makeFillet.ts` の `isFilletShape`、`makeOffsetWire.ts` の `isJoinType`、
  * `makeShell.ts` の `isOffsetMode` / `isJoinType`、`makeSweep.ts` の `isTransitionMode`)。
- * `as` / `any` / `@ts-ignore` / `eslint-disable` は 1 つも使っていない。
+ * 型の断定(`as`)・`any`・型検査や lint を黙らせる指示コメントは 1 つも使っていない。
  *
  * **なぜ要るか:** 色を作れるのは `Quantity_Color_3(c1, c2, c3, theType: Quantity_TypeOfColor)`
  * だけで(`_4` は JavaScript から作れない `NCollection_Vec3<float>` を要求する)、色を載せるのは
@@ -240,17 +246,17 @@ export function createXcafDocumentBuilder(
   try {
     const format = keep(new oc.TCollection_ExtendedString_2(STORAGE_FORMAT, false));
     // 文書そのものは控えへ積まない。Handle が唯一の持ち主になる(冒頭の注釈 2)。
-    const doc = new oc.TDocStd_Document(format);
+    const xcafDocument = new oc.TDocStd_Document(format);
     const handle = (() => {
       try {
-        return keep(new oc.Handle_TDocStd_Document_2(doc));
+        return keep(new oc.Handle_TDocStd_Document_2(xcafDocument));
       } catch (error) {
         // Handle の生成前に失敗したときだけ、まだ唯一の持ち主である文書をここで返す。
-        doc.delete();
+        xcafDocument.delete();
         throw error;
       }
     })();
-    const main = keep(doc.Main());
+    const main = keep(xcafDocument.Main());
     // `.get()` は借り物。builder のメソッドからだけ使い、delete/keep しない。
     const shapeTool: XCAFDoc_ShapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
     const colorTool: XCAFDoc_ColorTool = keep(oc.XCAFDoc_DocumentTool.ColorTool(main)).get();

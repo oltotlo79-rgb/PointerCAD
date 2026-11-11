@@ -1,0 +1,64 @@
+{
+  "format": "pointercad-oofem-native-replacement-evidence/1",
+  "scope": "Technical evidence that the shipped oofem wheel's retained source, patches and recipe rebuild a modified native module that the product loader accepts only through rebuilt declarations. It is not a legal clearance, does not qualify any other FEM component and does not make the modified build shippable.",
+  "shippedWheelSha256": "aaff729b15e1cec2ef90c9c0bb2d3594b3997b523d35344b18ba9f64d4d1a7e4",
+  "shippedModuleSha256": "0a303738b74366788f227437e08fe4cbcac54efdd6b6e65eaf34342e8fa540f9",
+  "inputs": {
+    "oofemCommit": "214b161ed3acb471f2d0104b004c37fd73bafaa2",
+    "oofemSourceSha256": "4688f06a4b0235dcb30b79e0ca086df5b271cd3206ab6dbce869ebe6b708b6c5",
+    "pybind11SourceSha256": "e171d6cd4f855f65e7e12129d4a594999310b7549a737d80aa1ebf3adee32e9b",
+    "patches": [
+      { "file": "oofem-051-timer.patch", "sha256": "12a365db2c908fff736f2bd6ac606bafbfdc6fd82686c3f6c9b761d533eaa2f6" },
+      { "file": "oofem-util.py.diff", "sha256": "1b0cc4f061c46070f1967ef019991e96f38b2409068435365db964b2402f48fd" }
+    ],
+    "recipeSha256": "29333e135edaaf8edfc73cd08aedbd6f5cbf86ad7cb0c13198aab30f941260b8",
+    "modification": "One marker added to src/core/timer.C after the shipped timer patch (patched deb3c9a78fd35885fa7f35b5fabff461def1bd69daef7eb6c68d041e9fab5db2, marked efc2fdd35c157ed5ebaf238c305755de642671856c2b071b08fa2b1e20e860f5).",
+    "environment": "The recorded historical WSL build environment of the shipped wheel (venv, Pyodide xbuildenv 0.29.3 and its emsdk under /home/yuya/pcad-oofem-rebuild-20261011-2136). The emsdk revision is recorded, not pinned, as build-provenance.json states."
+  },
+  "rebuild": {
+    "passed": true,
+    "started": "2026-10-21T10:32:06.811951+09:00",
+    "finished": "2026-10-21T10:37:06.725176+09:00",
+    "wheelSha256": "0a138ea93b877bbac0fbb79a06057c2f17fd7b849651b0d8fbf7b34267f4737a",
+    "wheelBytes": 2621087,
+    "moduleSha256": "ee3b1e0f924e6006033c24751e2dec2f49450ee11e510299bfce555c838ec2d7",
+    "moduleBytes": 11581685,
+    "memberNamesIdentical": true,
+    "membersWithDifferentBytes": ["oofem-3.1.dev5+g214b161ed.dist-info/RECORD", "oofem/oofempy.so"],
+    "receiptSha256": "370724716e942f8af4eec1b838dc8285c235a26d901803dffe821efdc4c61ca7",
+    "rebuildProvenanceSha256": "d4f914886d38cdf254c76cb15ca7d56a5ab758e423f263ea770cf6e2beff53f9"
+  },
+  "replacement": {
+    "wheelSha256": "0a138ea93b877bbac0fbb79a06057c2f17fd7b849651b0d8fbf7b34267f4737a",
+    "moduleSha256": "ee3b1e0f924e6006033c24751e2dec2f49450ee11e510299bfce555c838ec2d7",
+    "stageReceiptSha256": "a012f7befe92a848517e005ddeec0144d789db4216a86b87913d17327ea8b446",
+    "modifiedSmokeSha256": "660dfd87f1d7cb8b21ea6679576ae670e5130835d6dfb1094b72dc6c09ae43fd",
+    "shippedSmokeSha256": "fe5596b98f7628908c2f7077f30ff2f9bab0cf8c6295cd954f5a8b0c02b264ef",
+    "markerCount": { "modified": 1, "shipped": 0 },
+    "receiptSha256": "d8593c2018854887c4170217b89ad9a8f7e3d226f913ee8d4b97f4785dd0bb40",
+    "run": "20261021-112956-root-fem-replacement-r221-static",
+    "specSha256": "be17ee713c778f1fb1784a303f9d5558748025e12ccff66eacc32dcf449ffcbf",
+    "rebuiltDeclarations": {
+      "packages/fem/runtime/manifest.json": "27c0ea5490d8fdcc0d3498b39f49d1fddfe6388b59148fb49fbf2f97ca292ec3",
+      "packages/fem/src/assets.ts": "01918f9ff0e117b63eec04440bbbcf2a26a169a4b2bd7417e00cb3f8b30d460a"
+    },
+    "cases": [
+      { "id": "modified-accepted", "title": "作り直した宣言で、変えた wheel を実Workerが受け入れて棒の弾塑性の基準値を1e-8で解く", "passed": true },
+      { "id": "original-refused", "title": "同じアプリで、元の wheel は長さの違い(size)で断る", "passed": true },
+      { "id": "same-size-refused", "title": "同じアプリで、同じ長さで1バイトだけ変えた wheel は SHA-256 の違いで断る", "passed": true }
+    ],
+    "cleanupErrors": []
+  },
+  "portableReplay": {
+    "statusFile": "sources/native-rebuild/portable/replay-status.json",
+    "wheelSha256": "853e97eaf2a4ef45254e3c527e6306f3b1cfe646d3b96b2dfba49d641b0ccfd8",
+    "byteIdenticalToShipped": false
+  },
+  "limits": [
+    "Neither the modified rebuild nor the portable replay is byte-identical to the shipped wheel; the shipped bytes keep their existing native and browser qualification.",
+    "The modified rebuild used the recorded historical environment of the shipped build, not a newly pinned toolchain.",
+    "The replacement run used rebuilt manifest and assets.ts declarations in an isolated qualification copy; the product still pins only the shipped wheel.",
+    "The Root build, stage, smoke and qualification receipts are retained outside the product; this record carries their SHA-256 values only.",
+    "No legal clearance, IML licensing, whole-source correspondence or other component closure is implied."
+  ]
+}

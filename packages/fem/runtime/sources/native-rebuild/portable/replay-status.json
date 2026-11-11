@@ -1,0 +1,62 @@
+{
+  "schema": "pointercad-oofem-portable-replay-status/2",
+  "status": "recompiled-by-root",
+  "recipeSha256": "1eb34343d9d97ac5d9dab563f359d8e63f56f8ec6ef9e0b3c62ce138b81684aa",
+  "wheelhouseSha256Sums": "cb39d706813630fa34ca471525a46275f589feb2bd00e89c77a0cce0b86978dc",
+  "controls": {
+    "receipt": {
+      "path": "scratchpad/claude/inspections/v103-portable-r15-controls-0054.json",
+      "sha256": "18fc0b79d8515fe9910bf5d95cb28350e7ac62d7cd637d22960a1abc191b94e9"
+    },
+    "started": "2026-10-12T00:54:16.618947+09:00",
+    "finished": "2026-10-12T00:54:23.729637+09:00",
+    "cases": [
+      "E-new failing file_uri stops before any step",
+      "E-old (negative control) r14 continued into 00-host",
+      "W0 exact wheelhouse passes the source stage",
+      "W1 wheelhouse refused before 11-venv",
+      "W2 wheelhouse refused before 11-venv",
+      "W3 wheelhouse refused before 11-venv",
+      "W4 wheelhouse refused before 11-venv",
+      "W5 wheelhouse refused before 11-venv",
+      "W6 (negative control) r14 accepted a wheelhouse missing a required wheel",
+      "C-new failed cache count stops the step",
+      "C-old (negative control) r14 step passed despite the failed count",
+      "S step() byte-identical (Root's passed step regression applies)"
+    ],
+    "allPassed": true
+  },
+  "build": {
+    "receipt": {
+      "path": "scratchpad/claude/inspections/v103-portable-r15-build-0056.json",
+      "sha256": "ea61b88735cb712524778fb4a58dd5b8a5bd11e4d75df1766b2399d7c149644b"
+    },
+    "started": "2026-10-12T00:56:29.315218+09:00",
+    "finished": "2026-10-12T01:00:37.697598+09:00",
+    "done": "REBUILD OK 2026-10-12T01:00:37+09:00"
+  },
+  "runners": [
+    {
+      "path": "scratchpad/claude/instructions/v103-root-portable-r15-controls-owned.py",
+      "sha256": "f00e97a465fe465bd90e2178db00a47385d84816a3b64b65a26d6ec3b25f90c0"
+    },
+    {
+      "path": "scratchpad/claude/instructions/v103-root-portable-r15-linux-v2.py",
+      "sha256": "80420faa5d3b6bc0ab2a2fb3615333e3d33a46a48b3ee31311a4e97d54d95a7a"
+    }
+  ],
+  "replayWheel": {
+    "name": "oofem-3.1.dev5+g214b161ed-cp313-cp313-pyodide_2025_0_wasm32.whl",
+    "sha256": "853e97eaf2a4ef45254e3c527e6306f3b1cfe646d3b96b2dfba49d641b0ccfd8",
+    "bytes": 2621253,
+    "byteIdenticalToShipped": false,
+    "shipped": false,
+    "numericallyQualified": false
+  },
+  "shippedWheel": {
+    "manifestPath": "assets/oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+    "sha256": "aaff729b15e1cec2ef90c9c0bb2d3594b3997b523d35344b18ba9f64d4d1a7e4",
+    "evidence": "existing native/browser qualification stays bound to these shipped bytes"
+  },
+  "note": "corresponding-source recompilation only; it does not replace or qualify any shipped byte and is not a legal clearance"
+}

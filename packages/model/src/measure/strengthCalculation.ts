@@ -5,7 +5,7 @@ import type { LengthUnit } from '../units/length.js';
 import { calculateExactStrength, type StrengthCalculation } from './strengthExact.js';
 import { readStrengthInputs, type StrengthInputField, type StrengthInputValue } from './strengthInputs.js';
 
-export interface StrengthCalculationInput {
+interface StrengthCalculationInput {
   readonly calculation: StrengthCalculation;
   readonly sources: ReadonlyMap<string, string>;
   readonly parameters: readonly Parameter[];

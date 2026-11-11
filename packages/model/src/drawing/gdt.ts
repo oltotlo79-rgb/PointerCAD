@@ -1,6 +1,7 @@
+import { dotVec3 as dot, subVec3 as subtract } from '../sketch/vec3.js';
 import type { DrawingDocument, GdtFeature, GdtShapeTarget, Point2, Vector3 } from '@pointercad/drawing';
 import { applyPlacementToDirection, applyPlacementToPoint } from '../assembly/placementMath.js';
-import { rematchSubShapeRef, type SolidEdgeEntry, type SolidFaceEntry } from '../kernelBridge.js';
+import { resolveSubShapeReference, type SolidEdgeEntry, type SolidFaceEntry } from '../kernelBridge.js';
 import { drawingModelPointToPaper, resolvedDimensionView, type DimensionResolveContext, type DrawingDimensionInstance } from './dimensionTarget.js';
 import { createDrawingSurfaceAnchor } from './drawingSurfaceAnchor.js';
 
@@ -29,8 +30,10 @@ function match(target: GdtShapeTarget, document: DrawingDocument, context: Dimen
   const candidates = context.instances.filter((instance) => instance.sourceRef === target.sourceRef
     && instance.componentId === target.componentId && instance.body.featureId === target.ref.bodyFeatureId);
   if (candidates.length !== 1) return null;
-  const instance = candidates[0], ref = rematchSubShapeRef([instance.body], target.ref);
-  if (ref === null || ref.fingerprint.kind === 'vertex') return null;
+  const instance = candidates[0], resolution = resolveSubShapeReference(instance.body, target.ref);
+  if (resolution.status !== 'matched') return null;
+  const ref = resolution.match.reference;
+  if (ref.fingerprint.kind === 'vertex') return null;
   const key = JSON.stringify([target.sourceRef, target.componentId ?? null, instance.body.featureId, ref.fingerprint.kind, ref.index]);
   if (ref.fingerprint.kind === 'face') {
     const face = instance.body.faces.find((item) => item.index === ref.index);
@@ -44,8 +47,6 @@ function unit(value: Vector3): Vector3 | null {
   const length = Math.hypot(...value);
   return Number.isFinite(length) && length > 1e-12 ? [value[0] / length, value[1] / length, value[2] / length] : null;
 }
-const subtract = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /** 軸は解析曲面/円の軸、中心平面は実際に離れた平行二面から解く。紙面の線から推測しない。 */
 export function resolveGdtFeature(feature: GdtFeature, document: DrawingDocument, context: DimensionResolveContext): ResolvedGdtFeature | null {

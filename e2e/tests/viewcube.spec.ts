@@ -7,7 +7,18 @@ import { readPcadFile } from '../../packages/io/src/index.js';
 import { VIEW_CUBE_CAMERA_DISTANCE, VIEW_CUBE_FIELD_OF_VIEW } from '../../packages/ui/src/viewcube/viewCubeCamera.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
 
-test.use({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1.5 });
+test.use({
+  viewport: { width: 1440, height: 1000 },
+  deviceScaleFactor: 1.5,
+  // Match math-high-dpi.spec.ts: Firefox can retain the host density despite
+  // the context override. Set real browser density and preserve graphics prefs.
+  launchOptions: async ({ browserName, launchOptions }, use) => {
+    await use(browserName === 'firefox' ? {
+      ...launchOptions,
+      firefoxUserPrefs: { ...launchOptions.firefoxUserPrefs, 'layout.css.devPixelsPerPx': '1.5' },
+    } : launchOptions);
+  },
+});
 
 async function settleView(page: Page, previousRenders: number): Promise<void> {
   await expect.poll(() => page.evaluate(previous => {

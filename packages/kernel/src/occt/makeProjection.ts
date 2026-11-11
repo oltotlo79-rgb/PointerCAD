@@ -1,3 +1,4 @@
+import { dotVec as dot3, crossVec as cross3 } from './sketchCorner.js';
 /**
  * 立体の面・辺を作図面へ投影する(FR-325、計画書 P4 §2.7・タスク26)。
  *
@@ -150,18 +151,6 @@ function normalizeZero(value: number): number {
 
 function isFiniteVec3(value: Vec3Tuple): boolean {
   return Number.isFinite(value[0]) && Number.isFinite(value[1]) && Number.isFinite(value[2]);
-}
-
-function dot3(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function cross3(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
 }
 
 /** 作図面の 3 本の軸(単位ベクトル)と原点。planeBasisOf が作る。 */

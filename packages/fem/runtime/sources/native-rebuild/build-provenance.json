@@ -1,0 +1,85 @@
+{
+  "schema": "pointercad-oofem-native-build-provenance/1",
+  "originalSource": {
+    "oofemTarballSha256": "4688f06a4b0235dcb30b79e0ca086df5b271cd3206ab6dbce869ebe6b708b6c5",
+    "commit": "214b161ed3acb471f2d0104b004c37fd73bafaa2",
+    "pybind11TarballSha256": "e171d6cd4f855f65e7e12129d4a594999310b7549a737d80aa1ebf3adee32e9b",
+    "pybind11Commit": "d6ae0e163a6fb414c81c7f4a98291460e5a18bfe"
+  },
+  "patches": [
+    {
+      "file": "oofem-051-timer.patch",
+      "sha256": "12a365db2c908fff736f2bd6ac606bafbfdc6fd82686c3f6c9b761d533eaa2f6",
+      "strip": 1,
+      "files": {
+        "src/core/timer.h": {
+          "parentSha256": "8532eb86b5dbd3a89e079c33cae0abbb6bfcb9648f3e616470ef6f62954e7bfb",
+          "patchedSha256": "d00caf0752d9df49dd5fb755f746d707e795f03fc94657849bb1a7673e9b82ae"
+        },
+        "src/core/timer.C": {
+          "parentSha256": "ceb5190500dc5fceed79058bb80419f8245319bec0c4b22ec123e006f9914cfc",
+          "patchedSha256": "deb3c9a78fd35885fa7f35b5fabff461def1bd69daef7eb6c68d041e9fab5db2"
+        },
+        "src/core/engngm.C": {
+          "parentSha256": "c64727ff7dfd4ef70760b0ce94ee952ba3c780e3493683383f70ffad9ae9b069",
+          "patchedSha256": "94979bcb2e1acbcfca619a4ea7a64e947f1a393b3f41f3164df8637946ad8fa1"
+        },
+        "src/core/outputexportmodule.C": {
+          "parentSha256": "3e990965a60d2f53ea87c05e3829a30ae0a7bd89945e346c2fcfa9e8140aba2f",
+          "patchedSha256": "36040e5b7fdd2e8ef67d0ac3af7f71f589ae3ac1e4161dbe0420b8257d93d104"
+        },
+        "src/core/solutionstatusexportmodule.C": {
+          "parentSha256": "a3164db32e77add24ba9913e36fb00c96d008d6bac317b1b8f7356e76fa7b665",
+          "patchedSha256": "3ccb1dd7932cb1fdbfa53e0b8ea16cbf92e8c5b64114344a628bd0f10626d32a"
+        }
+      }
+    },
+    {
+      "file": "oofem-util.py.diff",
+      "sha256": "1b0cc4f061c46070f1967ef019991e96f38b2409068435365db964b2402f48fd",
+      "strip": 1,
+      "files": {
+        "bindings/python/oofem/util.py": {
+          "parentSha256": "448e766badcbcda63f9481e124e9f5d3d7fb02511ed2f8817640831812a09323",
+          "patchedSha256": "d443986373a3a2aca6cd903e464941d417236607eceb66991f41f2224868e692"
+        }
+      }
+    }
+  ],
+  "configuration": {
+    "USE_IML": "OFF",
+    "cmakeCache": [
+      "CMAKE_BUILD_TYPE:STRING=Release",
+      "CMAKE_CXX_COMPILER:STRING=/home/yuya/pcad-oofem-rebuild-20261011-2136/src/oofem-oofem-214b161/.pyodide_build/pywasmcross_symlinks/c++",
+      "USE_DSS:BOOL=OFF",
+      "USE_FM:BOOL=1",
+      "USE_IML:BOOL=OFF",
+      "USE_MPM:BOOL=1",
+      "USE_OOFEM_EXE:BOOL=0",
+      "USE_PYBIND_BINDINGS:BOOL=1",
+      "USE_SHARED_LIB:BOOL=0",
+      "USE_SM:BOOL=1",
+      "USE_TM:BOOL=1"
+    ]
+  },
+  "toolchain": {
+    "emsdkHead": "35ff8a6d150541276abbc6bae512ca90bcfbe220",
+    "emsdkProvenanceStdoutSha256": "410ef3580c3a1a0bacd5a8300fa065eb3925b5215bba366025889fe54a3d7f0f",
+    "emccVersionStdoutSha256": "fdc1e1c6ee7707c1ae57cf84e812771b19980202b63a8928d5756bc4e243681a",
+    "buildToolchainRecordSha256": "58a80a6d67e1a467cf56d68d5358b846e5e276a84359184f4972446848b364ee",
+    "venvFreezeSha256": "25737c373b413d5b2a7b442e495e53ff10b4a49df4eda4d0f101597680a8f772",
+    "preRepairVenvFreezeSha256": "e5059912be4febaae9b0d104ad5b8077dc89e97daee4d765f1f8744b568966fe",
+    "buildLogStdoutSha256": "886446810c25f0bebb278d0536da8481b3283c6b43a24b05056dc3dcfafbd281",
+    "buildLogStderrSha256": "1f48dc868c587d257bbeeda5b3b8dc7d1d649be1e99f74d105fbd3f543fd883e"
+  },
+  "output": {
+    "wheel": "oofem-3.1.dev5+g214b161ed-cp313-cp313-pyodide_2025_0_wasm32.whl",
+    "wheelSha256": "aaff729b15e1cec2ef90c9c0bb2d3594b3997b523d35344b18ba9f64d4d1a7e4",
+    "moduleSha256": "0a303738b74366788f227437e08fe4cbcac54efdd6b6e65eaf34342e8fa540f9"
+  },
+  "limits": [
+    "emsdk revision is the default branch cloned by pyodide-build (recorded, not pinned)",
+    "isolated build-environment packages are recorded only in the step 50 log",
+    "USE_IML=OFF and these patches are not a whole-source legal clearance"
+  ]
+}

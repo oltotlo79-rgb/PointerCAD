@@ -1,3 +1,4 @@
+import { specialMathTestRequest } from './mathRequest.testSupport.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
@@ -9,8 +10,7 @@ import { sameMathMeaning } from './mathNotationConversion.js';
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 function input(source: string): MathWorkRequest {
-  return { source, angleUnit: 'degree', notation: 'text', coefficients: [],
-    identity: { documentId: 'distributions', documentVersion: 1, editorId: 'coordinate', inputRevision: 1 } };
+  return specialMathTestRequest(source, 'degree', 'distributions');
 }
 function evaluate(request: MathWorkRequest) {
   return decodeMathWorkReply(executeMathWorkRequest(createMathWorkEnvelope(1, request), backend), request,

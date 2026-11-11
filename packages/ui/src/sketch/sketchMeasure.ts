@@ -10,8 +10,8 @@ export interface SketchMeasureReadiness extends Omit<MeasureReadiness, 'targets'
   readonly measurement: MeasurementState;
 }
 export type PartMeasureReadiness = MeasureReadiness | SketchMeasureReadiness;
-type Point = { readonly kind: 'vertex'; readonly elementId: string; readonly point: Vec3; readonly sketch: boolean };
-type Line = { readonly kind: 'edge'; readonly elementId: string; readonly from: Vec3; readonly to: Vec3; readonly sketch: true };
+interface Point { readonly kind: 'vertex'; readonly elementId: string; readonly point: Vec3; readonly sketch: boolean }
+interface Line { readonly kind: 'edge'; readonly elementId: string; readonly from: Vec3; readonly to: Vec3; readonly sketch: true }
 type Target = Point | Line;
 const finitePoint = (point: Vec3): boolean => point.every(Number.isFinite);
 

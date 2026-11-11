@@ -1,4 +1,5 @@
 /** 部品 JSON: 立体フィーチャーの振り分け。documentJson.ts への逆向きの依存を持たない。 */
+import { readDirectEditFeature, serializeDirectEditFeature } from './directEditOperations.js';
 import { readSheetBaseFeature, readSheetFlangeFeature, readSheetBendFeature, readSheetReliefFeature, serializeSheetMetalFeature } from './sheetMetal.js';
 import { readFunctionSurfaceFeature, serializeFunctionSurfaceFeature } from './functionSurface.js';
 
@@ -37,12 +38,16 @@ import {
 import {
   readChamferFeature,
   readCutFeature,
+  readSurfaceCutFeature,
   readDraftFeature,
+  readFaceOffsetFeature,
   readFilletFeature,
   readShellFeature,
   serializeChamferFeature,
   serializeCutFeature,
+  serializeSurfaceCutFeature,
   serializeDraftFeature,
+  serializeFaceOffsetFeature,
   serializeFilletFeature,
   serializeShellFeature,
 } from './solidModify.js';
@@ -100,6 +105,8 @@ export function serializeSolidFeature(feature: SolidFeature): SolidFeature {
     case 'ruled': return serializeRuledFeature(feature);
     case 'loft': return serializeLoftFeature(feature);
     case 'draft': return serializeDraftFeature(feature);
+    case 'holeTranslate': case 'faceRotate': return serializeDirectEditFeature(feature);
+    case 'faceOffset': return serializeFaceOffsetFeature(feature);
     case 'mirror': return serializeMirrorFeature(feature);
     case 'transform': return serializeTransformFeature(feature);
     case 'scale': return serializeScaleFeature(feature);
@@ -110,6 +117,7 @@ export function serializeSolidFeature(feature: SolidFeature): SolidFeature {
     case 'surface': return serializeSurfaceFeature(feature);
     case 'functionSurface': return serializeFunctionSurfaceFeature(feature);
     case 'shell': return serializeShellFeature(feature);
+    case 'surfaceCut': return serializeSurfaceCutFeature(feature);
     case 'cut': return serializeCutFeature(feature);
     case 'importedSolid': return serializeImportedSolidFeature(feature);
     case 'importedMesh': return serializeImportedMeshFeature(feature);
@@ -163,6 +171,11 @@ export function readSolidFeature(value: unknown, path: string): Checked<SolidFea
     // P5 の Should 群 9 種(§2.11、タスク43)。
     case 'draft':
       return readDraftFeature(record.value, path, base.value);
+    case 'holeTranslate': case 'faceRotate':
+      return readDirectEditFeature(record.value, path, base.value, kind.value);
+    // 平らな面の移動(EX-18 の限られた一段)。保存の版は上げない(種類の追加だけ)。
+    case 'faceOffset':
+      return readFaceOffsetFeature(record.value, path, base.value);
     case 'mirror':
       return readMirrorFeature(record.value, path, base.value);
     case 'transform':
@@ -185,6 +198,8 @@ export function readSolidFeature(value: unknown, path: string): Checked<SolidFea
     case 'shell':
       return readShellFeature(record.value, path, base.value);
     // 平面による切断(FR-432、§2.9b、タスク27c)。
+    case 'surfaceCut':
+      return readSurfaceCutFeature(record.value, path, base.value);
     case 'cut':
       return readCutFeature(record.value, path, base.value);
     // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。

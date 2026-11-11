@@ -1,4 +1,5 @@
 import { DocumentDiffDialog } from '../diff/DocumentDiffDialog.js';
+import { SavePointsDialogHost } from './SavePointsButton.js';
 import { executeCommand } from '../commands/commandRegistry.js';
 import { toolbarCommandId } from '../commands/toolbarCommandCatalog.js';
 import { currentCommandLabel } from '../commands/commandLabels.js';
@@ -58,6 +59,7 @@ import {
   runFileMenuAction,
 } from './menus/fileToolbarActions.js';
 import { LookGroup } from './menus/LookGroup.js';
+import { AnalysisGroup } from './menus/AnalysisGroup.js';
 import { ImportFormatPanel } from '../file/ImportFormatPanel.js';
 import { AssemblyGroup } from './menus/AssemblyGroup.js';
 import { PlaneMenu } from './menus/PlaneMenu.js';
@@ -304,6 +306,7 @@ export function Toolbar(): React.JSX.Element {
           >
             <RedoIcon />
           </button>
+
         </div>
       </div>
 
@@ -441,6 +444,8 @@ export function Toolbar(): React.JSX.Element {
       </div>
       </> : <><AssemblyGroup /><LookGroup document={partDocument} bodies={subShapeBodies}
         selection={selection} selectionKind={selectionKind} matches={appearanceMatches} activeTool={activeTool} /></>}
+
+      <AnalysisGroup />
 
       <span className="pcad-toolbar__spacer" />
 
@@ -640,6 +645,7 @@ export function Toolbar(): React.JSX.Element {
       */}
       <SettingsPanel />
       <HelpButton />
+      <SavePointsDialogHost />
     </header>
   );
 }

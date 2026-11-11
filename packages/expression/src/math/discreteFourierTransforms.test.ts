@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -6,7 +7,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 're(component(dft([1,2,3,4]),2))', value: -2 },
@@ -46,8 +47,7 @@ function native(args: readonly string[], input?: string): string {
   return result.stdout;
 }
 function request(source: string, angleUnit: 'degree' | 'radian' = 'degree'): MathWorkRequest {
-  return { source, notation: 'text', angleUnit, coefficients: [],
-    identity: { documentId: 'fourier', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: angleUnit, identity: { documentId: 'fourier', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 beforeAll(() => {
   backend = createMathBackend();

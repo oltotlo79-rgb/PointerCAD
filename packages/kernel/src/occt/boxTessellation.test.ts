@@ -7,6 +7,8 @@ import { makeBox } from './makeBox.js';
 import { makeExtrudeSolid, makeRevolveSolid } from './makeSolidSweep.js';
 import type { SurfaceMesh } from './tessellate.js';
 import { tessellate } from './tessellate.js';
+import { transformShape } from './transformShape.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 const BOX = { dx: 10, dy: 20, dz: 30 } as const;
 
@@ -105,6 +107,26 @@ describe('10 x 20 x 30 mm の箱のテッセレーション', () => {
       expect(max[2]).toBeCloseTo(BOX.dz, 6);
     } finally {
       handle.delete();
+    }
+  });
+
+  it('shared explicit frame keeps the translated box edge endpoints and ranges', () => {
+    const source = makeBox(oc, BOX);
+    try {
+      const moved = transformShape(oc, source.shape, { translation: [1e9, 0, 0],
+        rotationOrigin: [0, 0, 0], rotationAxis: [0, 0, 1], rotationAngle: 0 });
+      try {
+        const world = extractEdges(oc, moved.shape);
+        const frame: MeshCoordinateFrame = { origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01 };
+        const local = extractEdges(oc, moved.shape, {}, frame);
+        expect(boundingBox(local.positions)).toEqual({ min: [0, 0, 0], max: [10, 20, 30] });
+        expect(local.edgeRanges).toEqual(world.edgeRanges);
+        expect([...extractEdges(oc, moved.shape).positions]).toEqual([...world.positions]);
+      } finally {
+        moved.delete();
+      }
+    } finally {
+      source.delete();
     }
   });
 });

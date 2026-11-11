@@ -54,6 +54,11 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
+/** 検査の独立した期待文字列は翻訳対象ではない。製品の .tsx だけを点検する。 */
+function hasHardcodedComponentJapanese(file: string, source: string): boolean {
+  return !file.endsWith('.test.tsx') && containsJapanese(stripComments(source));
+}
+
 describe('UI 文字列リソース(NFR-MA-5)', () => {
   it('キーが 1 件以上あり、すべて空でない文字列を返す', () => {
     expect(MESSAGE_KEYS.length).toBeGreaterThan(0);
@@ -235,19 +240,29 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
   it('コンポーネント(.tsx)へ日本語を直書きしていない', () => {
     const offenders: string[] = [];
     for (const file of listFiles(sourceRoot, '.tsx')) {
-      if (containsJapanese(stripComments(readFileSync(file, 'utf8')))) {
+      if (hasHardcodedComponentJapanese(file, readFileSync(file, 'utf8'))) {
         offenders.push(file);
       }
     }
     expect(offenders, 'ja.json へ移してください').toEqual([]);
   });
+
+  it.each([
+    ['MaterialPanel.tsx', 'const label = "規格の原案";', true],
+    ['MaterialPanel.tsx', 'const value = <span>参考値</span>;', true],
+    ['MaterialPanel.tsx', '// 表示は翻訳を参照\nconst label = t("material.label");', false],
+    ['MaterialPanel.test.tsx', 'expect(label).toBe("規格の原案");', false],
+    ['MaterialPanel.test.tsx', 'input.onChange({ value: "１６" });', false],
+  ])('製品と試験の翻訳対象を分ける: %s / %s', (file, source, expected) => {
+    expect(hasHardcodedComponentJapanese(file, source)).toBe(expected);
+  });
 });
 
 /**
- * 製品のコードからも説明書(`{{ui:鍵}}`)からも引かれていない文言の鍵(w91a で見つけた時点の残り)。
+ * 製品のコードからも説明書(`{{ui:鍵}}`)からも引かれていない文言の鍵(未使用として確認した時点の残り)。
  * **ここへ足さない。** 新しく使われなくなった鍵は表から消す。ここにある鍵を使い始めたか消したら、
  * この一覧からも消す(一覧は減るだけ)。見た目に出ない文言は、翻訳や点検の手間だけを増やし、
- * 説明書の照合で「画面に無い文言」として紛れる(未使用の `exchange.dwgType` の点検、w65b §3-A)。
+ * 説明書の照合で「画面に無い文言」として紛れる(未使用の `exchange.dwgType` の点検)。
  */
 const KNOWN_UNUSED_MESSAGE_KEYS: readonly string[] = [
   'commandLine.error.toolNotHere',
@@ -325,7 +340,7 @@ function usedMessageKeys(): { readonly literals: ReadonlySet<string>; readonly p
 }
 
 /**
- * モデルブラウザの「⋮」一覧(部品・アセンブリの木)の項目の、名前と説明(title)の抜けを探す(w91a)。
+ * モデルブラウザの「⋮」一覧(部品・アセンブリの木)の項目の、名前と説明(title)の抜けを探す。
  * 説明を「押せないときだけ」付ける書き方(`title={cond ? undefined : …}`)も抜けとして数える。
  */
 function menuItemsWithoutDescription(file: string, text: string): string[] {
@@ -352,7 +367,7 @@ function menuItemsWithoutDescription(file: string, text: string): string[] {
   return problems;
 }
 
-describe('モデルブラウザの「⋮」一覧の項目は名前と説明を持つ(w91a、FR-904)', () => {
+describe('モデルブラウザの「⋮」一覧の項目は名前と説明を持つ(FR-904)', () => {
   it.each(['shell/FeatureTree.tsx', 'shell/AssemblyTree.tsx', 'shell/PropertyPanel.tsx'])('%s', (file) => {
     const path = join(sourceRoot, file);
     expect(menuItemsWithoutDescription(path, readFileSync(path, 'utf8'))).toEqual([]);
@@ -368,7 +383,7 @@ describe('モデルブラウザの「⋮」一覧の項目は名前と説明を�
   });
 });
 
-describe('使われていない文言の鍵を残さない(w91a)', () => {
+describe('使われていない文言の鍵を残さない', () => {
   it('どの鍵も製品のコードか説明書から引かれている(見つけた時点の残りは一覧のとおりで、増やさない)', () => {
     const { literals, prefixes } = usedMessageKeys();
     const unused = MESSAGE_KEYS.filter((key) => !literals.has(key) && !prefixes.some((prefix) => key.startsWith(prefix)));

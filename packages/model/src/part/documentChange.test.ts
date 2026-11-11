@@ -1,3 +1,5 @@
+import { withBeamAnalysisInputs } from '../analysis/beamInputs.js';
+import { beamMetadataInputs } from '../analysis/beamMetadata.testSupport.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
@@ -117,5 +119,24 @@ describe('affectsShape', () => {
   it('版だけを変えても形に影響しない', () => {
     const before = boxDocument();
     expect(affectsShape(before, { ...before, schemaVersion: 99 })).toBe(false);
+  });
+  it('slot issuance alone does not recompute geometry, but an authored solid change still does', () => {
+    const before = boxDocument(), after = { ...before, patternSlotHighWater: { 'pattern-1': 7 } };
+    expect(affectsShape(before, after)).toBe(false);
+    expect(affectsShape(before, appendSolid(after, extrude('extrude-2')))).toBe(true);
+  });
+});
+
+describe('analysis attachment does not invalidate CAD geometry', () => {
+  it('addition, load edit and removal preserve geometry; a concurrent solid edit still invalidates it', () => {
+    const before = boxDocument();
+    const added = withBeamAnalysisInputs(before, beamMetadataInputs(before.id, 10));
+    const edited = withBeamAnalysisInputs(added, beamMetadataInputs(before.id, -20));
+    expect(affectsShape(before, added)).toBe(false);
+    expect(affectsShape(added, edited)).toBe(false);
+    expect(affectsShape(edited, before)).toBe(false);
+    expect(added.solids).toBe(before.solids);
+    expect(edited.sketches).toBe(before.sketches);
+    expect(affectsShape(edited, appendSolid(edited, extrude('additional-solid')))).toBe(true);
   });
 });

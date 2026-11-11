@@ -1,3 +1,4 @@
+import { MathDeadlineExceeded as ClockDeadlineExceeded, geometryCalculationClock as directGeometryClock, GEOMETRY_CALCULATION_MS as DIRECT_GEOMETRY_MS } from './geometryCalculationClock.js';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { createFunctionMathSource } from './functionMathSource.js';
@@ -65,8 +66,8 @@ function surface(): SurfacePointWorkRequest {
     coefficients: [], lower: [-4, -4], upper: [4, 4], minimum: [-10, -10, -10], maximum: [10, 10, 10], tolerance: 1e-7,
     budget: FUNCTION_SURFACE_LIMITS, known: [{ axis: 'X', value: 3 }, { axis: 'Y', value: 1 }] });
 }
-type Result = { readonly status: string; readonly reason?: string };
-type Stop = { readonly status: 'stopped'; readonly reason: 'budget' };
+interface Result { readonly status: string; readonly reason?: string }
+interface Stop { readonly status: 'stopped'; readonly reason: 'budget' }
 /** Runs before the calculation with its context; a returned stop replaces the calculation. */
 type Before = (context: { readonly backend: MathExecutionBackend }) => Stop | undefined;
 interface Kind {
@@ -113,6 +114,14 @@ const kinds: readonly Kind[] = [
 ];
 
 describe('入力欄の通常の式は200ms、図形を作る計算は利用者が決めた2000msで区切る', () => {
+  it('reexports the same clock and deadline class instances', () => {
+    expect(geometryCalculationClock).toBe(directGeometryClock);
+    expect(MathDeadlineExceeded).toBe(ClockDeadlineExceeded);
+    expect(GEOMETRY_CALCULATION_MS).toBe(DIRECT_GEOMETRY_MS);
+    expect(new ClockDeadlineExceeded()).toBeInstanceOf(MathDeadlineExceeded);
+    expect(new MathDeadlineExceeded()).toBeInstanceOf(ClockDeadlineExceeded);
+  });
+
   it('図形を作る計算の期限は2000ms（点の計算の既存の値）', () => { expect(GEOMETRY_CALCULATION_MS).toBe(2000); });
 
   it('通常の区画は200msを超えると時間の上限で止まる', () => {

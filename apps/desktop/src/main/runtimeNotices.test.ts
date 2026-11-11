@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { collectRuntimeNotices, assertRuntimeNoticesPublishable } from '../../../../scripts/vite/runtimeNotices.mjs';
 import { installedRuntimeDependencies, verifyRuntimeDependencyInventory } from '../../../../scripts/vite/runtimeDependencyInventory.mjs';
+import { readFemDistributionGaps } from '../../../../scripts/vite/femRuntimeAssets.mjs';
 import { runtimeDependencySelection } from '../../../../scripts/vite/runtimeDependencySelection.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -19,6 +20,12 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
     const select = runtimeDependencySelection(folder);
     expect(select({ name: 'mathlive', version: '0.110.0', dependencies: { '@cortex-js/compute-engine': '0.58.0', kept: '1' } })).toEqual(['kept']);
     expect(() => select({ name: 'mathlive', version: '0.111.0', dependencies: { '@cortex-js/compute-engine': '0.58.0' } })).toThrow('changed mathematics editor');
+    for (const key of ["'mathlive@0.110.0>@cortex-js/compute-engine'", 'mathlive@0.110.0>@cortex-js/compute-engine']) {
+      reset();
+      writeFileSync(join(folder, 'pnpm-lock.yaml'), `overrides:\n  ${key}: '-'\n`);
+      expect(runtimeDependencySelection(folder)({ name: 'mathlive', version: '0.110.0',
+        dependencies: { '@cortex-js/compute-engine': '0.58.0', kept: '1' } })).toEqual(['kept']);
+    }
     for (const file of ['pnpm-workspace.yaml', 'pnpm-lock.yaml']) {
       reset();
       writeFileSync(join(folder, file), readFileSync(join(folder, file), 'utf8').replace('overrides:', 'ignored-removal:'));
@@ -60,11 +67,20 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
       readFileSync(new URL('../../../../docs/standards/licenses/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt', import.meta.url)),
     );
   });
-  it('未確認の部品を除いた実依存は公開可能とし、未確認が再混入した場合は公開を拒否する', () => {
+  it('既存の原文確認を保持し、現在の具体的な配布条件に未完了がなければ公開を許可する', () => {
     const distribution = collectRuntimeNotices(root);
+    expect(readFemDistributionGaps(join(root, 'packages/fem/runtime'))).toEqual([]);
     expect(distribution.unresolved).toEqual([]);
     expect(() => assertRuntimeNoticesPublishable(distribution)).not.toThrow();
-    expect(() => assertRuntimeNoticesPublishable({ ...distribution, unresolved: ['@arnog/colors@0.7.0'] })).toThrow('Unresolved runtime notices');
+  });
+  it.each([
+    ['native rebuild', 'FEM: native rebuild evidence is absent or not pinned'],
+    ['corresponding source closure', 'FEM: oofem required covered-source inventory differs'],
+    ['other dependency', '@arnog/colors@0.7.0'],
+  ])('%s の未完了を明示した配布は公開を拒否する', (_condition, gap) => {
+    const distribution = collectRuntimeNotices(root);
+    expect(() => assertRuntimeNoticesPublishable({ ...distribution, unresolved: [gap] }))
+      .toThrow('Unresolved runtime notices: ' + gap);
   });
   it('保存前の写しでも元のプロジェクト内の実依存を検査し', () => {
     const folder = execFileSync('python', ['-B', '-X', 'utf8', join(root, 'scripts/lib/task_workspace.py'), 'runtime-notice-shadow'],

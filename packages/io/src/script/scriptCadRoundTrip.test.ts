@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createConfiguration, createEmptyPartDocument, type PartDocument } from '@pointercad/model';
-import { applyScriptCommands } from '../../../model/src/scripting/scriptCommands.js';
+import { applyScriptCommands } from '@pointercad/model/testing/io-operations';
 import { parseDocument, serializeDocument } from '../pcad/documentJson.js';
 
 function setParameter(document: PartDocument, name: string, source: string): PartDocument {

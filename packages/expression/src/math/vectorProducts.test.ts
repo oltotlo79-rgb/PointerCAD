@@ -8,7 +8,7 @@ import { decodeMathWorkReply } from './mathWorkReply.js';
 import { decodeStoredMathStructure } from './decodeStoredMath.js';
 import { executeMathWorkRequest } from './mathWorkExecution.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const script = fileURLToPath(new URL('./exactRuntime/cas_vector_products_test.py', import.meta.url));
 const values = [

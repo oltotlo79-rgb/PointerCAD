@@ -1,11 +1,11 @@
+import { dotVec3 as dot } from '../sketch/vec3.js';
 import { breakDrawingCurve, createArrowTriangle, drawingViewBasis, formatDrawingScale, LINE_WIDTHS_MM,
   type DrawingDocument, type DrawingRenderCurve, type DrawingRenderElement, type Point2, type Vector3 } from '@pointercad/drawing';
 import type { ResolvedDrawingView } from './resolveDrawing.js';
 import type { ConstructedDrawingView } from './viewConstruction.js';
 import { createCuttingLine } from './sectionSpec.js';
 
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-type Bounds = { readonly left: number; readonly right: number; readonly bottom: number; readonly top: number };
+interface Bounds { readonly left: number; readonly right: number; readonly bottom: number; readonly top: number }
 function viewBounds(view: ResolvedDrawingView): Bounds {
   let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity;
   for (const curve of [...view.visible.map((item) => item.curve), ...view.cuttingCurves]) {

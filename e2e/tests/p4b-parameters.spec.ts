@@ -1,7 +1,10 @@
 /// <reference lib="dom" />
+import { volumeNumber } from './workPlaneCaptureSupport.js';
 import { statSync } from 'node:fs';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { fillFields, popover, popoverInputs } from './popoverFields.js';
 
 /**
  * P4b(スケッチの仕上げ)完了済み機能のうち、**パラメータ表**(FR-207、FR-201、FR-502)を
@@ -22,21 +25,8 @@ const KERNEL_TIMEOUT_MS = 60_000;
  * 補助関数(sketch-extended.spec.ts と同じ作り)
  * ========================================================================== */
 
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
 async function acceptConfirms(page: Page): Promise<void> {
-  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  // 画面の中の確認(NFR-UX-3。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
   await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
     await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });
@@ -65,16 +55,8 @@ function fileAction(page: Page, label: string): Locator {
   return page.getByRole('group', { name: 'ファイル' }).getByRole('button', { name: label, exact: true });
 }
 
-function popover(page: Page): Locator {
-  return page.locator('.pcad-popover');
-}
-
 function popoverTitle(page: Page): Locator {
   return page.locator('.pcad-popover__title');
-}
-
-function popoverInputs(page: Page): Locator {
-  return page.locator('.pcad-popover input.pcad-field__input');
 }
 
 function featureTree(page: Page): Locator {
@@ -93,28 +75,12 @@ function treeRow(page: Page, name: string): Locator {
   return featureTree(page).getByRole('button', { name, exact: true });
 }
 
-function propertyValue(page: Page, key: string): Locator {
-  return propertyPanel(page)
-    .locator('dt.pcad-properties__key', { hasText: key })
-    .locator('xpath=following-sibling::dd[1]');
-}
 
 function propertyField(page: Page, label: string): Locator {
   return propertyPanel(page)
     .locator('.pcad-field')
     .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
     .locator('input.pcad-field__input');
-}
-
-async function fillFields(page: Page, sources: readonly (string | null)[]): Promise<void> {
-  await expect(popover(page)).toBeVisible();
-  const inputs = popoverInputs(page);
-  for (const [index, source] of sources.entries()) {
-    if (source === null) {
-      continue;
-    }
-    await inputs.nth(index).fill(source);
-  }
 }
 
 async function commitPopover(page: Page): Promise<void> {
@@ -196,13 +162,6 @@ async function extrudeFace(page: Page, faceName: string, distanceSource: string)
   await expect(popover(page)).toHaveCount(0);
 }
 
-async function volumeNumber(page: Page): Promise<number> {
-  const cell = propertyValue(page, '体積');
-  if ((await cell.count()) === 0) {
-    return Number.NaN;
-  }
-  return Number.parseFloat(await cell.innerText());
-}
 
 async function expectVolume(page: Page, expected: number, toleranceMm3 = 0.01): Promise<void> {
   await expect

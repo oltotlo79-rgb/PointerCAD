@@ -260,6 +260,25 @@ export const MACHINING_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
     tooltipKey: 'toolbar.machining.draftTooltip',
     Icon: DraftIcon,
   },
+  // 平らな面の移動(EX-18 の限られた一段)。木の行と同じ押し出しの絵を借りる(FeatureTree)。
+  {
+    id: 'holeTranslate',
+    labelKey: 'toolbar.machining.holeTranslate',
+    tooltipKey: 'toolbar.machining.holeTranslateTooltip',
+    Icon: ExtrudeIcon,
+  },
+  {
+    id: 'faceRotate',
+    labelKey: 'toolbar.machining.faceRotate',
+    tooltipKey: 'toolbar.machining.faceRotateTooltip',
+    Icon: ExtrudeIcon,
+  },
+  {
+    id: 'faceOffset',
+    labelKey: 'toolbar.machining.faceOffset',
+    tooltipKey: 'toolbar.machining.faceOffsetTooltip',
+    Icon: ExtrudeIcon,
+  },
   {
     id: 'shell',
     labelKey: 'toolbar.machining.shell',

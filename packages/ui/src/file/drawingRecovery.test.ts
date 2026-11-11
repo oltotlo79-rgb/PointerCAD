@@ -1,4 +1,4 @@
-import { createAutoSaver, createMemoryAutoSaveStorage, readDrawingBundle, type AutoSaveRecord, type AutoSaveStorage } from '@pointercad/io';
+import { encodeSaveDocument, createAutoSaver, createMemoryAutoSaveStorage, readDrawingBundle, type AutoSaveRecord, type AutoSaveStorage } from '@pointercad/io';
 import { createDrawingDocument, createEmptyPartDocument, embedDrawingSource, emptyDrawingSourceLibrary,
   type DrawingDocument, type GdtFeature, type ToleranceCharacteristic } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,11 +7,13 @@ import { useAppStore } from '../store/useAppStore.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { attachAutoSave, exportAutoSave, loadAutoSavePrompt, restoreAutoSave, startAutoSave } from './attachAutoSave.js';
 import { savePart, type PartFileDeps } from './partFile.js';
+import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
 
 const cleanup: (() => void)[] = [];
 beforeEach(resetTestStore);
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); });
-const deps: PartFileDeps = { captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null };
+// NodeにはWorkerがないため、通常保存と自動保存の両方へ実IOを明示する。
+const deps: PartFileDeps = { encodeSave: encodeSaveDocument, captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null };
 const kinds: readonly ToleranceCharacteristic[] = ['straightness', 'flatness', 'roundness', 'cylindricity', 'lineProfile', 'surfaceProfile',
   'parallelism', 'perpendicularity', 'angularity', 'position', 'coaxiality', 'symmetry', 'circularRunout', 'totalRunout'];
 
@@ -36,7 +38,7 @@ async function fixture() {
 }
 
 function start(storage: AutoSaveStorage, sessionId = 'new-window') {
-  const stop = startAutoSave({ storage, sessionId }); cleanup.push(stop);
+  const stop = startAutoSave({ storage, sessionId, encodeSave: encodeSaveDocument }); cleanup.push(stop);
   const saver = useAppStore.getState().autoSaver; if (saver === null) throw new Error('図面の自動保存が接続されていない');
   return saver;
 }
@@ -113,4 +115,13 @@ describe('製作指示を含む図面の自動保存・異常終了からの復�
     const restoring = restoreAutoSave(saver); const next = await fixture(); resolve(record); await restoring;
     expect(useAppStore.getState().drawing).toBe(next.document);
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

@@ -1,5 +1,5 @@
-import type { DatumDefinition, DimensionTarget, DrawingDocument, GdtFeature, GdtShapeTarget, GeometricToleranceFrame, Point2 } from '@pointercad/drawing';
-import { drawingDimensionContext, drawingMedianPlaneFeature, duplicateDrawingGdt, moveDrawingManufacturing, putDrawingDatum, putDrawingGdtFrame,
+import type { DatumDefinition, DimensionTarget, DrawingDocument, GdtFeature, GdtShapeTarget, GeometricToleranceFrame } from '@pointercad/drawing';
+import { drawingDimensionContext, drawingMedianPlaneFeature, duplicateDrawingGdt, putDrawingDatum, putDrawingGdtFrame,
   type DimensionResolveContext, type DrawingGdtEditResult } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -40,13 +40,6 @@ export function commitDrawingGdtFrame(candidate: Omit<GeometricToleranceFrame, '
   const state = useAppStore.getState();
   if (state.drawing === null || state.drawingSourceResolution === null || state.drawingBusy || !canEdit(expected?.id)) return false;
   return finish(putDrawingGdtFrame(state.drawing, candidate, drawingDimensionContext(state.drawingSourceResolution), expected));
-}
-export function moveSelectedDrawingGdt(offset: Point2): boolean {
-  const state = useAppStore.getState();
-  if (state.drawing === null || state.drawingBusy) return false;
-  const next = moveDrawingManufacturing(state.drawing, new Set(state.drawingSelectedIds), offset);
-  if (next === state.drawing) return false;
-  state.applyDrawing(next); return true;
 }
 export function duplicateSelectedDrawingGdt(): boolean {
   const state = useAppStore.getState();

@@ -1,6 +1,6 @@
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type React from 'react';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import {
   addComponent, createAssemblyDocument, createComponentFor, resolveAssembly,
   type JointFrame,
@@ -11,6 +11,7 @@ import {
   AssemblyPropertyPanel, assemblyMatePropertyState, assemblyPropertyKey,
 } from './AssemblyPropertyPanel.js';
 import { AssemblyMotionControls } from './AssemblyMotionControls.js';
+import { t } from '../i18n/t.js';
 
 const FRAME: JointFrame = { origin: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
 
@@ -30,8 +31,7 @@ function publishJoint(): void {
 }
 
 function markup(component: () => React.JSX.Element | null): string {
-  const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-  try { return renderToStaticMarkup(createElement(component)); } finally { snapshot.mockRestore(); }
+  return renderCurrentStore(component);
 }
 
 beforeEach(resetTestStore);
@@ -66,5 +66,30 @@ describe('P7-22 joint sliders in both existing UI regions', () => {
     expect(assemblyMatePropertyState('unresolved', false, diagnosis)).toBe('assembly.property.unresolved');
     expect(assemblyMatePropertyState('resolved', false, diagnosis)).toBe('assembly.property.resolved');
     expect(assemblyMatePropertyState('suspected', true, diagnosis)).toBe('assembly.property.unresolved');
+  });
+});
+
+describe('task113 pending cooperative joint drive in the motion controls', () => {
+  function pendingOn(jointId: string): void {
+    const state = useAppStore.getState();
+    if (state.assembly === null) throw new Error('fixture has no assembly');
+    useAppStore.setState({ assemblyJointDrive: { generation: 1, documentId: state.activeDocumentId,
+      document: state.assembly, jointId, coordinate: 'angle', value: 42 } });
+  }
+  it('shows the requested value, the coordinate being solved and a cancel button for the pending joint', () => {
+    publishJoint();
+    pendingOn('joint-1');
+    const html = markup(AssemblyMotionControls);
+    expect(html).toContain('value="42"');
+    expect(html).toContain(t('assembly.motion.cancel'));
+    expect(html).toContain(t('assembly.motion.pending').replace('{coordinate}', t('assembly.motion.angle')));
+    expect(html).not.toContain(t('assembly.motion.failed'));
+  });
+  it('does not show another joint as pending', () => {
+    publishJoint();
+    pendingOn('joint-other');
+    const html = markup(AssemblyMotionControls);
+    expect(html).not.toContain(t('assembly.motion.cancel'));
+    expect(html).not.toContain('value="42"');
   });
 });

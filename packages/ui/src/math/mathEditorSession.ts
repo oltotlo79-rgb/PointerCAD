@@ -38,6 +38,7 @@ function copyInput(input: MathEditorInput): MathEditorInput {
   return Object.freeze({...input,identity:Object.freeze({...input.identity}),
     ...(input.declarations === undefined ? {} : { declarations: decodeMathDeclarations(input.declarations) })});
 }
+let observedSession = 0;
 export class MathEditorSession {
   private readonly options: MathEditorSessionOptions;
   private current: MathEditorInput;
@@ -46,6 +47,15 @@ export class MathEditorSession {
   private active: AbortController | null = null;
   private applyRevision: number | null = null;
   private disposed = false;
+  private observationId: number | null = null;
+  private observe(event: string, input: MathEditorInput): void {
+    try {
+      if (Reflect.get(globalThis, Symbol.for('pcad.w22.completion-observer')) !== true) return;
+      this.observationId ??= ++observedSession;
+      console.debug('[pcad:math-editor]', JSON.stringify({ event, session: this.observationId,
+        identity: input.identity, timeOrigin: performance.timeOrigin, at: performance.now() }));
+    } catch { /* Observation failure must not prevent abort, discard or apply. */ }
+  }
   constructor(options: MathEditorSessionOptions) {
     this.options=options;this.current=copyInput(options.initial);this.state={status:'editing',input:this.current};
     this.schedule();
@@ -57,6 +67,7 @@ export class MathEditorSession {
   }
   private cancelWork(): void {
     if(this.timer!==null){clearTimeout(this.timer);this.timer=null;}
+    if (this.active !== null) this.observe('abort', this.current);
     this.active?.abort();this.active=null;
   }
   /** A notation conversion owns the same input and client; do not queue its scalar evaluation twice. */
@@ -91,6 +102,7 @@ export class MathEditorSession {
   requestApply(): void {
     if(this.disposed||!this.options.isCurrentDocument(this.current.identity))return;
     if(this.state.status==='evaluated'&&this.state.canApply&&sameInput(this.state.input,this.current)) {
+      this.observe('apply', this.current);
       this.options.onApply(this.state.output);return;
     }
     this.applyRevision=this.current.identity.inputRevision;
@@ -109,7 +121,7 @@ export class MathEditorSession {
     try {
       const output=await this.options.calculate(input,controller.signal);
       if(this.disposed||controller.signal.aborted||this.active!==controller||!sameInput(this.current,input)
-        ||!this.options.isCurrentDocument(input.identity))return;
+        ||!this.options.isCurrentDocument(input.identity)){this.observe('discard',input);return;}
       this.active=null;
       const definition=output.definition;
       if(!sameInput(output.input,input)||(definition!==null&&(definition.source!==input.source
@@ -123,10 +135,11 @@ export class MathEditorSession {
       // A parent state listener may have closed or changed the dialog while publishing.
       if(!this.disposed&&canApply&&this.applyRevision===input.identity.inputRevision&&sameInput(this.current,input)
         &&this.options.isCurrentDocument(input.identity)) {
+        this.observe('apply', input);
         this.applyRevision=null;this.options.onApply(output);
       }
     } catch {
-      if(this.disposed||controller.signal.aborted||this.active!==controller||!sameInput(this.current,input))return;
+      if(this.disposed||controller.signal.aborted||this.active!==controller||!sameInput(this.current,input)){this.observe('discard',input);return;}
       this.active=null;this.applyRevision=null;this.publish({status:'rejected',input,reason:'worker'});
     }
   }

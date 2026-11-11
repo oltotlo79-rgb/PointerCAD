@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { attachWindowDrag, containWindow, fitWindowPlacement, type WindowBounds, type WindowPoint } from './draggableWindow.js';
+import { attachWindowDrag, containWindow, fitWindowPlacement, type WindowBounds } from './draggableWindow.js';
+
+type WindowPoint = Parameters<typeof containWindow>[0];
 
 const area: WindowBounds = { left: 108, top: 58, width: 784, height: 584 };
 const size = { width: 260, height: 220 };

@@ -1,3 +1,4 @@
+import { createAllocations } from './allocations.js';
 import { countSolidShapes } from './solidTopology.js';
 import { shapeBodyKind, measureClosedBodyVolume } from './shapeBodyKind.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
@@ -9,8 +10,14 @@ import type {
   ThreadMarkInfo,
 } from '../types.js';
 import { extractEdges } from './extractEdges.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 import { collectSubShapes } from './subShapes.js';
-import { tessellate, type SurfaceMesh } from './tessellate.js';
+import { tessellate, type SurfaceMesh, type TessellationAdmission } from './tessellate.js';
+
+export interface SolidMeshJsAdmission {
+  readonly admitEdges: (segments: number, edges: number) => void;
+  readonly admitSubShapes: (entries: number) => void;
+}
 import { computeVolumeProperties } from './volumeProperties.js';
 
 /**
@@ -32,12 +39,14 @@ import { computeVolumeProperties } from './volumeProperties.js';
  * 閉じていない形では 0 に近い値や負の値が出るので、呼び出し側が妥当性も見る。
  */
 export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape, knownPlanar = false): number {
-  const properties = new oc.GProp_GProps_1();
+  const { keep, release } = createAllocations();
   try {
-    computeVolumeProperties(oc, shape, properties, knownPlanar);
+    const properties = keep(new oc.GProp_GProps_1());
+    // この口はMassだけを返す。重心/慣性のcallerは従来の完全測定を使う。
+    computeVolumeProperties(oc, shape, properties, knownPlanar, true);
     return properties.Mass();
   } finally {
-    properties.delete();
+    release();
   }
 }
 
@@ -54,12 +63,13 @@ export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape, know
  * 「shell の段だけ体積 0 を通して面積 > 0 を確かめる」の材料)。
  */
 export function measureArea(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
-  const properties = new oc.GProp_GProps_1();
+  const { keep, release } = createAllocations();
   try {
+    const properties = keep(new oc.GProp_GProps_1());
     oc.BRepGProp.SurfaceProperties_1(shape, properties, false, false);
     return properties.Mass();
   } finally {
-    properties.delete();
+    release();
   }
 }
 
@@ -70,11 +80,12 @@ export function measureArea(oc: OpenCascadeInstance, shape: TopoDS_Shape): numbe
  * (IsValid_1(S) は部分形状を指定する版なので使わない)。
  */
 export function isValidShape(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
-  const analyzer = new oc.BRepCheck_Analyzer(shape, true, false);
+  const { keep, release } = createAllocations();
   try {
+    const analyzer = keep(new oc.BRepCheck_Analyzer(shape, true, false));
     return analyzer.IsValid_2();
   } finally {
-    analyzer.delete();
+    release();
   }
 }
 
@@ -132,20 +143,30 @@ export function buildSolidBodyMesh(
   oc: OpenCascadeInstance,
   id: string,
   shape: TopoDS_Shape,
-  options: TessellationOptions = {},
+  options: TessellationOptions & { readonly admission?: TessellationAdmission;
+    readonly jsAdmission?: SolidMeshJsAdmission } = {},
   threadMarks: readonly ThreadMarkInfo[] = [],
   measureAreas = true,
   knownVolume?: number,
   knownArea?: number,
   preparedSurface?: SurfaceMesh,
+  frame?: MeshCoordinateFrame,
 ): SolidBodyMesh {
-  const surface = preparedSurface ?? tessellate(oc, shape, options);
-  const edges = extractEdges(oc, shape, options);
-  const subShapes = collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges);
+  // SurfaceMesh has no frame certificate. Reusing a prepared world (or differently
+  // translated) surface for a local edge array would corrupt the display silently.
+  if (frame !== undefined && preparedSurface !== undefined) {
+    throw new RangeError('A prepared surface cannot prove the requested mesh frame');
+  }
+  const surface = preparedSurface ?? tessellate(oc, shape, options, undefined, frame);
+  const edges = extractEdges(oc, shape, options, frame, options.jsAdmission?.admitEdges);
+  const subShapes = collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges,
+    undefined, options.jsAdmission?.admitSubShapes);
   const bodyKind: SolidBodyKind = shapeBodyKind(oc, shape);
 
   return {
     id,
+    ...(frame === undefined ? {} : { coordinateFrame: { space: 'local' as const,
+      origin: frame.origin, maximumFloat32ErrorMm: frame.maximumFloat32ErrorMm } }),
     positions: surface.positions,
     normals: surface.normals,
     indices: surface.indices,

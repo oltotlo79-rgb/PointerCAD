@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 /** MC-31c (MC-24 の残り): a "which" branch condition built only from ≈/∀/∃ can never resolve to
  * true/false inside prepareMathCalculation.ts's own pruneMathPiecewise pass (they need the exact
  * runtime's own comparison/enumeration), so the whole request must defer to the exact runtime instead
@@ -7,7 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { executeMathWorkRequest } from './mathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { coordinateFromMath, type MathEvaluation } from './mathInputContract.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
@@ -25,8 +26,7 @@ const sources = [
   ['which(approxequal(0.3,0.2,0.1),7,true,1/0)', 7],
 ] as const;
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'exact-only-conditions', documentVersion: 1, editorId: 'which', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'exact-only-conditions', documentVersion: 1, editorId: 'which', inputRevision: 1 } });
 }
 let evaluations: MathEvaluation[];
 beforeAll(async () => {

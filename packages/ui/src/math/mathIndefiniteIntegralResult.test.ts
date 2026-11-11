@@ -1,3 +1,4 @@
+import { publicAssetUrl } from '../testing/publicAssetUrl.testSupport.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -18,9 +19,9 @@ import { t } from '../i18n/t.js';
  * (a lambda over the integral's own variable). Every value below comes from the real exact runtime's
  * reply, not from a hand-written node, so the display is checked on what the runtime actually returns.
  */
-const script = fileURLToPath(new URL('../../../expression/src/math/exactRuntime/cas_integrals_test.py', import.meta.url));
-type Pending = { readonly input: { readonly expression: MathNode; readonly angleUnit: 'degree' | 'radian' };
-  readonly resolve: (value: unknown) => void; readonly reject: (reason: Error) => void };
+const script = fileURLToPath(publicAssetUrl('@pointercad/expression/testing-assets/cas_integrals_test.py'));
+interface Pending { readonly input: { readonly expression: MathNode; readonly angleUnit: 'degree' | 'radian' };
+  readonly resolve: (value: unknown) => void; readonly reject: (reason: Error) => void }
 /** Like the product engine, one prepared runtime serves every request made in the same turn. */
 function batchEngine(): { readonly evaluate: (expression: MathNode, angleUnit: 'degree' | 'radian') => Promise<unknown> } {
   let pending: Pending[] = [];

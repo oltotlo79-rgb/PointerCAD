@@ -20,7 +20,7 @@ import type { SettingsStorage } from '../settings/settings.js';
  * 履歴 1 件。**この 2 欄しか持たない**(パスを足さない、NFR-SE-1)。
  * 欄が増えると「名前と時刻だけ」という約束が読む人に見えなくなるので、ここで閉じる。
  */
-export interface RecentFile {
+interface RecentFile {
   /** 拡張子を含むファイル名。フォルダは含まない(`fileNameOf` で落とす)。 */
   readonly name: string;
   /** 開いた・保存した時刻。ISO 8601(`Date` の `toISOString`)。 */
@@ -28,7 +28,7 @@ export interface RecentFile {
 }
 
 /** 覚えておく件数(§0.a-0.38 の既定)。これより古いものは落ちる。 */
-export const MAX_RECENT_FILES = 10;
+const MAX_RECENT_FILES = 10;
 
 /** `localStorage` に持つ唯一の鍵。値は `RecentFile[]` の JSON。 */
 const RECENT_FILES_STORAGE_KEY = 'pointercad.recentFiles';

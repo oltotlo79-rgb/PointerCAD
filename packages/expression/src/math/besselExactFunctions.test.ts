@@ -7,7 +7,7 @@ import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { BESSEL_INTEGER_REFERENCES } from './besselIntegerReferences.js';
 import { BESSEL_SECOND_REFERENCES } from './besselSecondKindReferences.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend=createMathBackend(); });

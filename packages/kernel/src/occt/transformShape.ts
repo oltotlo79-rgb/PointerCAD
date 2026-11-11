@@ -1,3 +1,5 @@
+import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
+import { crossVec, dotVec } from './sketchCorner.js';
 /**
  * 剛体変換と、形をまとめるコンパウンド(計画書 P3 §2.7、タスク9)。
  *
@@ -20,7 +22,7 @@
  */
 
 import type {
-  OpenCascadeInstance,
+  BRepBuilderAPI_Transform, OpenCascadeInstance,
   TopoDS_Shape,
   gp_Trsf,
 } from 'opencascade.js/dist/opencascade.full.js';
@@ -82,22 +84,7 @@ function normalizeZero(value: number): number {
   return value === 0 ? 0 : value;
 }
 
-function length(value: Vec3Tuple): number {
-  return Math.hypot(value[0], value[1], value[2]);
-}
 
-/** 長さ 1 へ揃える。長さが取れない(0・非数)ときは null。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const size = length(value);
-  if (!Number.isFinite(size) || size <= 0) {
-    return null;
-  }
-  return [
-    normalizeZero(value[0] / size),
-    normalizeZero(value[1] / size),
-    normalizeZero(value[2] / size),
-  ];
-}
 
 /**
  * 変換の値を確かめる。回転角が 0 のときは軸を見ない(平行移動だけなので軸が要らない)。
@@ -188,12 +175,8 @@ function rotate(spec: RigidTransformSpec, value: Vec3Tuple): Vec3Tuple {
   }
   const cos = Math.cos(spec.rotationAngle);
   const sin = Math.sin(spec.rotationAngle);
-  const dot = axis[0] * value[0] + axis[1] * value[1] + axis[2] * value[2];
-  const cross: Vec3Tuple = [
-    axis[1] * value[2] - axis[2] * value[1],
-    axis[2] * value[0] - axis[0] * value[2],
-    axis[0] * value[1] - axis[1] * value[0],
-  ];
+  const dot = dotVec(axis, value);
+  const cross: Vec3Tuple = crossVec(axis, value);
   return [
     value[0] * cos + cross[0] * sin + axis[0] * dot * (1 - cos),
     value[1] * cos + cross[1] * sin + axis[1] * dot * (1 - cos),
@@ -253,6 +236,7 @@ export function transformShape(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   spec: RigidTransformSpec,
+  onBuilt?: (maker: BRepBuilderAPI_Transform, output: TopoDS_Shape) => void,
 ): OcctShapeHandle {
   const { keep, release } = createAllocations();
   try {
@@ -265,6 +249,7 @@ export function transformShape(
     }
     // Shape() は maker の中の実体を指すので、控えへ maker の後に積む(解放は逆順)。
     const moved = keep(maker.Shape());
+    onBuilt?.(maker, moved);
     return { shape: moved, delete: release };
   } catch (error) {
     release();
@@ -318,6 +303,7 @@ export function mirrorShape(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   plane: MirrorPlaneSpec,
+  onBuilt?: (maker: BRepBuilderAPI_Transform, output: TopoDS_Shape) => void,
 ): OcctShapeHandle {
   const { keep, release } = createAllocations();
   try {
@@ -328,6 +314,8 @@ export function mirrorShape(
       throw new Error(TRANSFORM_FAILED_MESSAGE);
     }
     const mirrored = keep(maker.Shape());
+    // 鏡像も BRepBuilderAPI_Transform の履歴なので、移動(transformShape)と同じく出どころの写しに渡す。
+    onBuilt?.(maker, mirrored);
     return { shape: mirrored, delete: release };
   } catch (error) {
     release();
@@ -368,6 +356,7 @@ export function scaleShape(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   spec: ScaleSpec,
+  onBuilt?: (maker: BRepBuilderAPI_Transform, output: TopoDS_Shape) => void,
 ): OcctShapeHandle {
   if (!isFiniteTuple(spec.origin)) {
     throw new Error(PLACE_NOT_FINITE_MESSAGE);
@@ -386,7 +375,9 @@ export function scaleShape(
       if (!maker.IsDone()) {
         throw new Error(TRANSFORM_FAILED_MESSAGE);
       }
-      return { shape: keep(maker.Shape()), delete: release };
+      const scaled = keep(maker.Shape());
+      onBuilt?.(maker, scaled);
+      return { shape: scaled, delete: release };
     }
 
     const perAxis = spec.perAxis;
@@ -412,6 +403,8 @@ export function scaleShape(
       ),
     );
     const gtrsf = keep(new oc.gp_GTrsf_3(matrix, shift));
+    // 軸ごとの倍率は onBuilt を呼ばない。BRepBuilderAPI_GTransform は解析曲面(円筒・平面など)を
+    // BSpline へ変えるので、面の種類と役割の素性を一対一とは示せない。結果は出どころ無し(untracked)のまま。
     const maker = keep(new oc.BRepBuilderAPI_GTransform_2(shape, gtrsf, true));
     if (!maker.IsDone()) {
       throw new Error(TRANSFORM_FAILED_MESSAGE);

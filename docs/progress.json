@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "totalTasks": 580,
+  "totalTasks": 598,
   "futureEstimateTasks": 115,
   "completedBeforeTrackedPhases": 305,
-  "reportedCompleted": 543,
+  "reportedCompleted": 558,
   "phases": [
     {
       "id": "ADD",
@@ -588,6 +588,47 @@
       ],
       "completedTaskIds": [
         "P13-1"
+      ]
+    },
+    {
+      "id": "EX",
+      "plannedTaskCount": 18,
+      "plannedTaskIds": [
+        "EX-01",
+        "EX-02",
+        "EX-03",
+        "EX-04",
+        "EX-05",
+        "EX-06",
+        "EX-07",
+        "EX-08",
+        "EX-09",
+        "EX-10",
+        "EX-11",
+        "EX-12",
+        "EX-13",
+        "EX-14",
+        "EX-15",
+        "EX-16",
+        "EX-17",
+        "EX-18"
+      ],
+      "completedTaskIds": [
+        "EX-01",
+        "EX-02",
+        "EX-03",
+        "EX-04",
+        "EX-05",
+        "EX-06",
+        "EX-07",
+        "EX-08",
+        "EX-09",
+        "EX-10",
+        "EX-11",
+        "EX-12",
+        "EX-13",
+        "EX-14",
+        "EX-18"
       ]
     }
   ]

@@ -20,8 +20,11 @@
 import type { AppearanceSpec } from '../appearance/types.js';
 import { nextSerialName } from '../sketch/createSketchDocument.js';
 
+import { expressionValueFromNumber } from '@pointercad/expression';
+
 import { DEFAULT_COMPONENT_PLACEMENT, nextComponentId } from './createAssemblyDocument.js';
-import { normalizeQuaternion } from './placementMath.js';
+import { composePlacement, normalizeQuaternion, type RigidPlacement } from './placementMath.js';
+import { relativePlacement, rigidGroupMemberIds } from './rigidGroups.js';
 import type {
   AssemblyComponent,
   AssemblyDocument,
@@ -148,8 +151,8 @@ export function replaceComponent(
 }
 
 /** 合致・ジョイントの対象が、この部品を指しているか。 */
-function targetsComponent(target: MateTarget, componentId: string): boolean {
-  return target.componentId === componentId;
+function targetsComponent(target: MateTarget, componentIds: ReadonlySet<string>): boolean {
+  return componentIds.has(target.componentId);
 }
 
 /**
@@ -158,17 +161,17 @@ function targetsComponent(target: MateTarget, componentId: string): boolean {
  */
 function stepWithoutComponent(
   step: PresentationStep,
-  componentId: string,
+  removedComponentIds: ReadonlySet<string>,
   removedJointIds: ReadonlySet<string>,
 ): PresentationStep | null {
   if (step.body.kind === 'joint') {
     // ジョイントを駆動するステップは、そのジョイントが消えたら意味を失う。
     return removedJointIds.has(step.body.jointId) ? null : step;
   }
-  if (!step.body.componentIds.includes(componentId)) {
+  if (!step.body.componentIds.some(id => removedComponentIds.has(id))) {
     return step;
   }
-  const componentIds = step.body.componentIds.filter((id) => id !== componentId);
+  const componentIds = step.body.componentIds.filter((id) => !removedComponentIds.has(id));
   // 残りの部品があるなら**ステップは残す**(1 つ消えただけで、他の部品の分解まで失わない)。
   return componentIds.length === 0 ? null : { ...step, body: { ...step.body, componentIds } };
 }
@@ -192,11 +195,30 @@ export function removeComponent(
   if (findComponent(document, componentId) === undefined) {
     return document;
   }
+  // A connection owns its generated hardware, not the other real source owner
+  // or every member of its rigid group. Compute the finite deletion closure
+  // before changing any arrays; shared generated IDs cannot cause recursion.
+  const removedComponentIds = new Set([componentId]);
+  const connections = document.jointOccurrenceConnections ?? [];
+  const removedConnections = new Set<number>();
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const [index, connection] of connections.entries()) {
+      if (removedConnections.has(index)) continue;
+      if (!removedComponentIds.has(connection.firstPath[0])
+          && !removedComponentIds.has(connection.secondPath[0])
+          && !connection.componentIds.some(id => removedComponentIds.has(id))) continue;
+      removedConnections.add(index);
+      for (const id of connection.componentIds) removedComponentIds.add(id);
+      expanded = true;
+    }
+  }
   // 消えるジョイントの id を控えながら絞る。分解のステップがそれを駆動していたら
   // そのステップも消すので、2 回数え直さずにここで集めておく。
   const removedJointIds = new Set<string>();
   const joints = document.joints.filter((joint) => {
-    if (targetsComponent(joint.a, componentId) || targetsComponent(joint.b, componentId)) {
+    if (targetsComponent(joint.a, removedComponentIds) || targetsComponent(joint.b, removedComponentIds)) {
       removedJointIds.add(joint.id);
       return false;
     }
@@ -204,19 +226,27 @@ export function removeComponent(
   });
   const presentation: PresentationStep[] = [];
   for (const step of document.presentation) {
-    const next = stepWithoutComponent(step, componentId, removedJointIds);
+    const next = stepWithoutComponent(step, removedComponentIds, removedJointIds);
     if (next !== null) {
       presentation.push(next);
     }
   }
   return {
     ...document,
-    components: document.components.filter((component) => component.id !== componentId),
+    components: document.components.filter((component) => !removedComponentIds.has(component.id)),
     mates: document.mates.filter(
-      (mate) => !targetsComponent(mate.a, componentId) && !targetsComponent(mate.b, componentId),
+      (mate) => !targetsComponent(mate.a, removedComponentIds) && !targetsComponent(mate.b, removedComponentIds),
     ),
     joints,
     presentation,
+    ...(removedConnections.size === 0 ? {} : {
+      jointOccurrenceConnections: connections.filter((_connection, index) => !removedConnections.has(index)),
+    }),
+    // A flat bolted joint record goes with its plates or hardware (an edit would refer to missing parts).
+    ...(document.boltedJoints === undefined ? {} : {
+      boltedJoints: document.boltedJoints.filter((record) => !removedComponentIds.has(record.first.componentId)
+        && !removedComponentIds.has(record.second.componentId) && !record.componentIds.some((id) => removedComponentIds.has(id))),
+    }),
   };
 }
 
@@ -349,8 +379,42 @@ export function moveComponent(
   if (component === undefined) {
     return document;
   }
-  return replaceComponent(document, componentId, {
-    ...component,
-    placement: normalizedPlacement(placement),
-  });
+  const next = normalizedPlacement(placement);
+  const followers = component.suppressed ? []
+    : rigidGroupMemberIds(document, componentId).filter((id) => id !== componentId);
+  if (followers.length === 0) {
+    return replaceComponent(document, componentId, { ...component, placement: next });
+  }
+  // 互いに固定した組(rigidGroups.ts)は、保存された相対姿勢のまま組ごと動かす。
+  // 組の中の別の部品が固定なら、組は動かせないので何もしない(Undo に空の段を作らない)。
+  if (followers.some((id) => findComponent(document, id)?.fixed === true)) {
+    return document;
+  }
+  const before = rigidOf(component.placement);
+  const after = rigidOf(next);
+  const moved = new Map<string, Placement>([[componentId, next]]);
+  for (const id of followers) {
+    const member = findComponent(document, id);
+    if (member === undefined) continue;
+    const target = composePlacement(after, relativePlacement(before, rigidOf(member.placement)));
+    moved.set(id, {
+      position: [expressionValueFromNumber(target.position[0]), expressionValueFromNumber(target.position[1]),
+        expressionValueFromNumber(target.position[2])],
+      rotation: normalizeQuaternion(target.rotation),
+    });
+  }
+  return {
+    ...document,
+    components: document.components.map((entry) => {
+      const placementOfEntry = moved.get(entry.id);
+      return placementOfEntry === undefined ? entry : { ...entry, placement: placementOfEntry };
+    }),
+  };
+}
+
+function rigidOf(placement: Placement): RigidPlacement {
+  return {
+    position: [placement.position[0].value, placement.position[1].value, placement.position[2].value],
+    rotation: placement.rotation,
+  };
 }

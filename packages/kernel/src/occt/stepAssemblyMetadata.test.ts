@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ASSEMBLY_METADATA_WRITE_MESSAGE,
   decodeStepAssemblyOccurrenceName,
   normalizeStepAssemblyMetadata,
   stepAssemblyOccurrenceName,
 } from './stepAssemblyMetadata.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const ASSEMBLY_METADATA_WRITE_MESSAGE = 'アセンブリの部品名を STEP ファイルへ書き込めませんでした。';
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes);

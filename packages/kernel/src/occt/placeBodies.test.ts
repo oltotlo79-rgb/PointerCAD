@@ -5,6 +5,7 @@ import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/open
 import type { PlacementSpec, QuaternionTuple, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { expectTuple } from './pointAssertions.testSupport.js';
 import { makeBox } from './makeBox.js';
 import {
   IDENTITY_PLACEMENT,
@@ -28,12 +29,6 @@ const TURN_Z_90: QuaternionTuple = [0, 0, Math.SQRT1_2, Math.SQRT1_2];
 
 function placement(overrides: Partial<PlacementSpec>): PlacementSpec {
   return { ...IDENTITY_PLACEMENT, ...overrides };
-}
-
-function expectTuple(actual: Vec3Tuple, expected: Vec3Tuple, digits = 9): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
 }
 
 /**

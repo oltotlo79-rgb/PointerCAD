@@ -28,6 +28,8 @@
 # 終了コード: 0 合格(-Scope Desktop では[後回し]を除く全項目) / 1 不合格 / 2 保留(未接続の条件がある) / 3 公開後モードの全体は未実装
 #           / 64 引数の誤り / 70 内部の誤り
 
+# W21/W22 dedicated evidence remains mandatory in All and Desktop pre-release modes.
+# Its acceptance adapter is unconnected: candidate-only, pending/nonzero, never publication-ready.
 [CmdletBinding()]
 param(
     [ValidateSet('PreRelease', 'PostRelease', 'Manual')]
@@ -42,7 +44,9 @@ param(
     [string]$WebUrl = '',
     [string]$DownloadUrl = '',
     [string]$Manual = '',
-    [string]$ReportPath = ''
+    [string]$ReportPath = '',
+    [string]$PerformanceEvidence = '',
+    [string]$PerformanceEvidenceSha256 = ''
 )
 
 Set-StrictMode -Version Latest
@@ -70,7 +74,8 @@ if ($Scope -eq 'Desktop') {
 }
 $pairs = @(
     @('--windows', $Windows), @('--linux', $Linux), @('--web', $Web), @('--release', $Release), @('--sbom', $Sbom),
-    @('--web-url', $WebUrl), @('--download-url', $DownloadUrl), @('--manual', $Manual), @('--report', $ReportPath)
+    @('--web-url', $WebUrl), @('--download-url', $DownloadUrl), @('--manual', $Manual), @('--report', $ReportPath),
+    @('--performance-evidence', $PerformanceEvidence), @('--performance-evidence-sha256', $PerformanceEvidenceSha256)
 )
 foreach ($pair in $pairs) {
     if ($pair[1] -ne '') {

@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'vitest';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 describe('追加計算部の行列基本演算を独立な等式で照合する', () => {
   it('転置・随伴・逆・trace・detの恒等式と非正方・特異・記号成分の拒否を通す', () => {

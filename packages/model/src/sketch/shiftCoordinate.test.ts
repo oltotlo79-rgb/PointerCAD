@@ -9,11 +9,12 @@ import {
   planeShiftAxes,
   shiftCoordinateInput,
   worldShiftAxes,
-  type CoordinateShift,
   type OriginShift,
   type ShiftAxes,
 } from './shiftCoordinate.js';
 import type { CoordinateInput } from './types.js';
+
+type CoordinateShift = Parameters<typeof shiftCoordinateInput>[1];
 
 function expr(source: string): ExpressionValue {
   const result = evaluateExpression(source);

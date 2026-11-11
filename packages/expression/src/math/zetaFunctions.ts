@@ -7,15 +7,8 @@ import { compileScalarMath } from './scalarMathTape.js';
 import { createScalarIntervalSampler } from './scalarMathIntervals.js';
 import { exactDoubleInterval } from './exactDoubleInterval.js';
 
-export function zetaOrder(operation:string):number|null {
-  if(operation==='zeta')return 0;
-  const match=/^zeta-derivative:([1-9][0-9]?)$/u.exec(operation);
-  if(match===null)return null;const order=Number(match[1]);return order<=17?order:null;
-}
-export function zetaDerivativeOrder(node:MathNode):number|null {
-  const value=rationalOfExpression(node);
-  return value!==null&&value.denominator===1n&&value.numerator>=0n&&value.numerator<=17n?Number(value.numerator):null;
-}
+import { zetaDerivativeOrder } from './specialFunctionKinds.js';
+export { zetaOrder, zetaDerivativeOrder } from './specialFunctionKinds.js';
 export function normalizeZetaFunction(node:MathNode,angleUnit:'degree'|'radian'):MathNode {
   if(node.kind!=='operation')return node;
   if(node.operation==='zetaderivative') {

@@ -9,6 +9,7 @@ import { FILE_MENU_ITEMS } from '../shell/menus/fileMenuItems.js';
 import { SHAPE_MENU_ITEMS, EDIT_MENU_ITEMS, CONSTRAINT_MENU_ITEMS } from '../shell/menus/sketchMenuItems.js';
 import { CREATE_MENU_ITEMS, COMBINE_MENU_ITEMS, MACHINING_MENU_ITEMS } from '../shell/menus/solidMenuItems.js';
 import { PROJECTION_MENU_ITEMS, LOOK_MENU_ITEMS } from '../shell/menus/lookMenuItems.js';
+import { ANALYSIS_MENU_ITEMS } from '../shell/menus/analysisMenuItems.js';
 import { ASSEMBLY_MENU_ITEMS, MATE_MENU_ITEMS } from '../shell/menus/assemblyMenuItems.js';
 
 export type ToolbarCommandGroup =
@@ -23,6 +24,7 @@ export type ToolbarCommandGroup =
   | 'solidMachining'
   | 'projection'
   | 'look'
+  | 'analysis'
   | 'assembly'
   | 'mate'
   | 'sheetMetal'
@@ -60,12 +62,14 @@ export function toolbarCommandId(group: ToolbarCommandGroup, sourceId: string): 
     if (sourceId === 'save') return 'file.save';
   }
   if (group === 'fileMenu' && sourceId === 'saveAs') return 'file.saveAs';
+  if (group === 'drawing' && sourceId === 'savePoints') return toolbarCommandId('fileMenu', 'savePoints');
   return `toolbar.${group}.${sourceId}`;
 }
 
 function toolbarDocumentKinds(group: ToolbarCommandGroup, id: string): readonly ('part' | 'assembly' | 'drawing')[] {
-  if (group === 'file' || (group === 'fileMenu' && id === 'saveAs')) return ['part', 'assembly', 'drawing'];
+  if (group === 'file' || (group === 'fileMenu' && (id === 'saveAs' || id === 'savePoints'))) return ['part', 'assembly', 'drawing'];
   if (group === 'drawing') return ['drawing'];
+  if (group === 'analysis') return ANALYSIS_MENU_ITEMS.find(item => item.id === id)?.documentKinds ?? [];
   if (group === 'view') return ['section', 'chaining', 'snap', 'matchWorkPlane'].includes(id) ? ['part'] : ['part', 'assembly'];
   if (group === 'assembly' || group === 'mate' || group === 'assemblyUtility') return ['assembly'];
   if (group === 'projection' || (group === 'look' && id === 'strength')) return ['part', 'assembly'];
@@ -75,6 +79,7 @@ function toolbarDocumentKinds(group: ToolbarCommandGroup, id: string): readonly 
 
 function toolbarHelpTopic(group: ToolbarCommandGroup, id: string): string {
   if (group === 'assemblyUtility') return id;
+  if (group === 'analysis') return 'strength';
   if (group === 'reference') return id.startsWith('referencePlane') ? 'work-plane-custom' : 'reference-geometry';
   if (group === 'view' && id === 'section') return 'section-view';
   if (group === 'view' && id === 'snap') return 'snap';
@@ -115,6 +120,7 @@ function toolbarHelpTopic(group: ToolbarCommandGroup, id: string): string {
     'look.mathGeometry': 'math-input',
     'assembly.placeStandardPart': 'standard-parts', 'assembly.placeSubAssembly': 'replace-subassembly',
     'assembly.replacePart': 'replace-subassembly',
+    'assembly.toggleFixed': 'assembly',
   };
   const exact = specific[`${group}.${id}`];
   if (exact !== undefined) return exact;
@@ -137,7 +143,7 @@ function toolbarHelpTopic(group: ToolbarCommandGroup, id: string): string {
   const fallback: Readonly<Record<ToolbarCommandGroup, string>> = {
     file: 'save-and-open', fileMenu: 'save-and-open', sketch: 'sketch-tools', shape: 'shapes', edit: 'edit-curves',
     constraint: 'constraints', solidCreate: 'solid-basics', solidCombine: 'solid-combine', solidMachining: 'shape-edit',
-    projection: 'viewport', look: 'appearance-color', assembly: 'assembly-place', mate: 'mate',
+    projection: 'viewport', look: 'appearance-color', analysis: 'strength', assembly: 'assembly-place', mate: 'mate',
     sheetMetal: 'sheet-metal', script: 'scripts', drawing: 'drawing',
     view: 'viewport', plane: 'work-plane', reference: 'reference-geometry', snap: 'snap', assemblyUtility: 'assembly',
   };
@@ -172,11 +178,12 @@ function createToolbarCommandCatalog(): readonly ToolbarCommandCatalogEntry[] {
     ...entries('solidMachining', MACHINING_MENU_ITEMS),
     ...entries('projection', PROJECTION_MENU_ITEMS),
     ...entries('look', LOOK_MENU_ITEMS),
+    ...entries('analysis', ANALYSIS_MENU_ITEMS),
     ...entries('assembly', ASSEMBLY_MENU_ITEMS),
     ...entries('mate', MATE_MENU_ITEMS),
     ...entries('sheetMetal', SHEET_METAL_MENU_ITEMS),
     ...entries('script', SCRIPT_MENU_ITEMS),
-    ...DRAWING_TOOL_GROUPS.flatMap(group => entries('drawing', group.items.filter(item => !['open', 'save', 'saveAs'].includes(item.id)))),
+    ...DRAWING_TOOL_GROUPS.flatMap(group => entries('drawing', group.items.filter(item => !['open', 'save', 'saveAs', 'savePoints'].includes(item.id)))),
     ...entries('drawing', DRAWING_TABLE_ACTIONS),
     ...entries('view', VIEW_COMMAND_ITEMS),
     ...entries('assemblyUtility', ASSEMBLY_UTILITY_ITEMS),

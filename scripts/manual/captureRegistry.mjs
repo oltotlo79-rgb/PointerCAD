@@ -75,7 +75,14 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const IMAGE_NAME = /^[a-zA-Z0-9_-]+\.png$/u;
 const IMAGE_LINK = /!\[[^\]]*\]\(([^\s)]+)\)/gu;
 const CAPTURE_NAME = /^[a-z][a-z0-9-]*$/u;
-const SCRIPT_PATH = /^e2e\/tests\/[A-Za-z0-9_.-]+\.ts$/u;
+/**
+ * A capture script under e2e/tests/, directly or in a subfolder: e2e/tests/captureManualDetail.ts records the
+ * producer's own module URL, e.g. e2e/tests/flows/extrudeOperationFlow.ts. Each folder name starts with a letter,
+ * digit, `_` or `-`, so `.` and `..`, hidden folders and empty segments never match; an absolute path, a drive
+ * letter and a backslash never match either. The file name rule is the one direct children always had.
+ * `(?![\s\S])` is the true end of the string, so a trailing line break (LF, CRLF, U+2028, U+2029) never matches.
+ */
+const SCRIPT_PATH = /^e2e\/tests\/(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)*[A-Za-z0-9_.-]+\.ts(?![\s\S])/u;
 const DETAILS_FILE = /^[a-z0-9][a-z0-9-]*-capture-details\.json$/u;
 const IMAGE_SOURCES_FILE = /^[a-z0-9][a-z0-9-]*-image-sources\.json$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/u;
@@ -106,6 +113,46 @@ export function sha256Hex(bytes) {
  */
 const MANUAL_DOCS_PREFIX = 'packages/help-content/docs/';
 
+/** The source-copy cycle is projected only for capture identity, never for distribution checks. */
+const FEM_RUNTIME_MANIFEST = 'packages/fem/runtime/manifest.json';
+const FEM_APPLICATION_SOURCE_PATHS = [
+  'sources/pointercad-beam-application-source.zip',
+  'evidence/application-source-index.json',
+];
+const FEM_RUNTIME_PREFIX = 'packages/fem/runtime/';
+const APPLICATION_SOURCE_MARKER = 'pointercad-capture-application-source-content/1';
+
+async function projectCaptureApplicationSource(root, inputs) {
+  const paths = FEM_APPLICATION_SOURCE_PATHS.map(path => FEM_RUNTIME_PREFIX + path);
+  const hasManifest = Object.hasOwn(inputs, FEM_RUNTIME_MANIFEST);
+  if (!hasManifest && paths.every(path => !Object.hasOwn(inputs, path))) return;
+  const reject = detail => { throw new Error(`Invalid capture application source: ${detail}`); };
+  if (!hasManifest || paths.some(path => !Object.hasOwn(inputs, path))) reject('manifest and both source files are required');
+  const readJson = async path => {
+    try { return JSON.parse(utf8.decode(await readFile(join(root, path)))); }
+    catch { return reject(`invalid JSON: ${path}`); }
+  };
+  const manifest = await readJson(FEM_RUNTIME_MANIFEST);
+  const index = await readJson(paths[1]);
+  if (!isObject(index)) reject('source index must be an object');
+  if (!isObject(manifest) || !isObject(manifest.files) || !isObject(manifest.applicationSource)) {
+    reject('manifest files and applicationSource must be objects');
+  }
+  if (manifest.applicationSource.archive !== FEM_APPLICATION_SOURCE_PATHS[0]
+    || manifest.applicationSource.index !== FEM_APPLICATION_SOURCE_PATHS[1]) reject('source references do not match the fixed paths');
+  for (const path of FEM_APPLICATION_SOURCE_PATHS) {
+    const pin = manifest.files[path];
+    if (!isObject(pin) || !isSha256(pin.sha256) || !Number.isSafeInteger(pin.bytes) || pin.bytes <= 0) {
+      reject(`invalid or missing source pin: ${path}`);
+    }
+    // Keep each entry and all its other fields; do not derive exclusions from manifest references.
+    pin.sha256 = APPLICATION_SOURCE_MARKER;
+    pin.bytes = APPLICATION_SOURCE_MARKER;
+    inputs[FEM_RUNTIME_PREFIX + path] = APPLICATION_SOURCE_MARKER;
+  }
+  inputs[FEM_RUNTIME_MANIFEST] = sha256Hex(new globalThis.TextEncoder().encode(JSON.stringify(manifest)));
+}
+
 /**
  * A stable fingerprint of the Web app's own build inputs, for `e2e/tests/captureManualDetail.ts` to
  * record as `applicationBuildId` (instead of a Git commit id: committing a new screenshot and its
@@ -120,13 +167,17 @@ const MANUAL_DOCS_PREFIX = 'packages/help-content/docs/';
  * packages/help-content/docs/ja/images/ and capture-manifest.json) would change this digest and mark
  * every other already-registered image as stale again.
  *
- * The per-file digests come straight from `captureWebBuildSources` (unmodified); only the combining
- * step is this function's own, and it always joins with a single `'\n'` (never the host OS's line
+ * Capture identity additionally projects only the two fixed FEM application source-copy contents
+ * and their manifest sha256/bytes pins to stable markers, retaining names, existence and all
+ * other manifest fields. Invalid or partial source-copy metadata is rejected. Full Web input
+ * capture and distribution byte/pin checks remain unchanged. The combining step always
+ * joins with a single `'\n'` (never the host OS's line
  * separator), the same way Git's own plumbing commands (e.g. `git ls-files`) always emit LF-separated
  * output regardless of platform. That keeps the result identical across machines and checkouts.
  */
 export async function applicationInputDigest(root) {
   const inputs = await captureWebBuildSources(root);
+  await projectCaptureApplicationSource(root, inputs);
   const manifest = Object.entries(inputs)
     .filter(([path]) => !path.startsWith(MANUAL_DOCS_PREFIX))
     .sort(([left], [right]) => compare(left, right))
@@ -716,7 +767,11 @@ export function assessCaptureImages(registry, images, { applicationBuildId, scri
     if (sha256Hex(bytes) !== entry.sha256) report.mismatched.push(name);
     if (entry.applicationBuildId === null) report.buildUnknown.push(name);
     else if (entry.applicationBuildId !== applicationBuildId) report.buildMismatch.push(name);
-    if (scripts !== undefined && entry.script !== null && entry.scriptSha256 !== null) {
+    if (scripts !== undefined) {
+      if (entry.script === null || entry.scriptSha256 === null) {
+        report.scriptMissing.push(name);
+        continue;
+      }
       const script = scripts.get(entry.script);
       if (script === undefined) report.scriptMissing.push(name);
       else if (sourceFileHash(script) !== entry.scriptSha256) report.scriptChanged.push(name);

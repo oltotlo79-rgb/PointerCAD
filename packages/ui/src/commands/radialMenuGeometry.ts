@@ -58,9 +58,3 @@ export function radialMenuSlotAt(point: ScreenPoint, geometry: RadialMenuGeometr
   // Eight explicit results keep an unchecked numeric cast out of the execution boundary.
   return ([0, 1, 2, 3, 4, 5, 6, 7] as const)[index] ?? null;
 }
-
-export function radialMenuSlotPoint(slot: RadialMenuSlot, geometry: RadialMenuGeometry): ScreenPoint {
-  const angle = slot * Math.PI / 4;
-  const radius = (geometry.cancelRadius + geometry.outerRadius) / 2;
-  return { x: geometry.center.x + Math.sin(angle) * radius, y: geometry.center.y - Math.cos(angle) * radius };
-}

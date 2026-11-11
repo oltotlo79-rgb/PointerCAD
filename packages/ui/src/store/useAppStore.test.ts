@@ -16,6 +16,8 @@ import {
   appendSolid,
   assignBodyAppearance,
   findSketch,
+  replaceSketch,
+  type SketchFeature,
   type AppearanceMatchEntry,
 } from '@pointercad/model';
 import {
@@ -524,3 +526,275 @@ describe('外観の変更(FR-1106、要件§4.12)', () => {
  * `appearance/appearanceCommands.ts` の検査で固定してあるので、ここでは
  * 「ストアが確定を `applyDocument` に通しているか」「断りを帯へ置くか」だけを見る。
  */
+
+
+import { beforeAll } from 'vitest';
+import { initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
+import { applyNumericTransition } from '../sketch/commitToStore.js';
+import { documentSha, historyFormula, nativeHistoryHarness, shapeSha } from '../solid/holeThreadHistory.testSupport.js';
+
+describe('EX-05 cancelled and superseded native machining results', () => {
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
+  it.each(['blind', 'thread'] as const)('%s: Escape during a pending native confirmation adds no history and preserves the previous shape', async operation => {
+    const harness = await nativeHistoryHarness(operation === 'blind' ? 'plane' : 'cylinder');
+    try {
+      const commit = harness.begin(operation), before = useAppStore.getState();
+      const sha = documentSha(before.document), shape = shapeSha();
+      harness.holdNext();
+      harness.confirm(commit);
+      expect(harness.held).toHaveLength(1);
+      const pending = harness.held[0];
+      const native = await pending.result;
+      expect(native.errors).toEqual([]);
+      expect(native.cancelled).toBe(false);
+      expect(native.bodies[0].volume).toBeLessThan(before.bodies[0].volume);
+      // The same transition is returned by the numeric input reducer for Escape.
+      applyNumericTransition({ kind: 'cancelled' });
+      expect(pending.options.shouldCancel?.()).toBe(true);
+      expect(useAppStore.getState().numericInput).toBeNull();
+      await pending.release();
+      await tick();
+      expect(documentSha(useAppStore.getState().document)).toBe(sha);
+      expect(useAppStore.getState().document).toEqual(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      expect(useAppStore.getState().bodies).toBe(before.bodies);
+      expect(shapeSha()).toBe(shape);
+      expect(useAppStore.getState().stagedSolid).toBeNull();
+    } finally { harness.dispose(); }
+  }, 180_000);
+
+  it('a successful old diameter arriving after a newer confirmation cannot be adopted into its document', async () => {
+    const harness = await nativeHistoryHarness('cylinder');
+    try {
+      const oldCommit = harness.begin('blind'), before = useAppStore.getState();
+      const beforeSha = documentSha(before.document), beforeShape = shapeSha();
+      harness.holdNext();
+      harness.confirm(oldCommit);
+      expect(harness.held).toHaveLength(1);
+      const oldRequest = harness.held[0], oldResult = await oldRequest.result;
+      expect(oldResult.errors).toEqual([]);
+      expect(oldResult.cancelled).toBe(false);
+      const newer = { ...oldCommit, values: { ...oldCommit.values, diameter: historyFormula('2*4', 8) } };
+      // Same tool, target and feature ID, different actual numeric input and generation.
+      const input = useAppStore.getState().numericInput;
+      if (input === null) throw new Error('Pending input unexpectedly closed');
+      useAppStore.getState().updateNumericInput({ ...input, fields: input.fields.map(field =>
+        field.key === 'diameter' ? { ...field, source: '2*4' } : field) });
+      harness.confirm(newer);
+      expect(oldRequest.options.shouldCancel?.()).toBe(true);
+      expect(documentSha(useAppStore.getState().document)).toBe(beforeSha);
+      expect(shapeSha()).toBe(beforeShape);
+      await oldRequest.release();
+      await harness.committed();
+      const state = useAppStore.getState(), feature = state.document.solids.at(-1);
+      if (feature?.kind !== 'hole') throw new Error('Missing newer hole');
+      expect(feature.diameter).toEqual(newer.values.diameter);
+      expect(state.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      expect(state.bodies[0].volume).toBeLessThan(oldResult.bodies[0].volume);
+      expect(state.completedGeneration).toBeGreaterThan(oldResult.generation);
+      expect(state.document).not.toBe(oldRequest.document);
+      const adopted = structuredClone(state.document), shape = shapeSha();
+      await tick();
+      expect(useAppStore.getState().document).toEqual(adopted);
+      expect(shapeSha()).toBe(shape);
+    } finally { harness.dispose(); }
+  }, 180_000);
+});
+
+
+it('面の道具へ切り替えても実失敗入力の関数曲線を保ち、面・立体だけを除外し文書と履歴を変えない', () => {
+  resetTestStore();
+  const part = partWithMixedFeatures();
+  const curve: SketchFeature = {
+    id: 'functionCurve-1',
+    kind: 'functionCurve',
+    name: '関数曲線1',
+    planeId: 'free',
+    construction: false,
+    definition: {
+      format: 'pointercad-function/1',
+      bounds: {
+        X: {
+          min: {
+            source: '0',
+            value: 0,
+            display: '0',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '0',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '0',
+              },
+            },
+          },
+          max: {
+            source: '10',
+            value: 10,
+            display: '10',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '10',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '10',
+              },
+            },
+          },
+        },
+        Y: {
+          min: {
+            source: '0',
+            value: 0,
+            display: '0',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '0',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '0',
+              },
+            },
+          },
+          max: {
+            source: '12',
+            value: 12,
+            display: '12',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '12',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '12',
+              },
+            },
+          },
+        },
+        Z: {
+          min: {
+            source: '0',
+            value: 0,
+            display: '0',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '0',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '0',
+              },
+            },
+          },
+          max: {
+            source: '1',
+            value: 1,
+            display: '1',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '1',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '1',
+              },
+            },
+          },
+        },
+      },
+      formula: {
+        kind: 'coordinate-curve',
+        independent: 'X',
+        outputs: {
+          Y: {
+            format: 'pointercad-math/1',
+            source: 'X^2/10+1',
+            inputNotation: 'text',
+            angleUnit: 'degree',
+            expression: {
+              kind: 'operation',
+              operation: 'add',
+              operands: [
+                {
+                  kind: 'operation',
+                  operation: 'divide',
+                  operands: [
+                    {
+                      kind: 'operation',
+                      operation: 'power',
+                      operands: [
+                        {
+                          kind: 'symbol',
+                          reference: {
+                            role: 'axis',
+                            name: 'X',
+                          },
+                        },
+                        {
+                          kind: 'number',
+                          decimal: '2',
+                        },
+                      ],
+                    },
+                    {
+                      kind: 'number',
+                      decimal: '10',
+                    },
+                  ],
+                },
+                {
+                  kind: 'number',
+                  decimal: '1',
+                },
+              ],
+            },
+          },
+          Z: {
+            format: 'pointercad-math/1',
+            source: '0',
+            inputNotation: 'text',
+            angleUnit: 'degree',
+            expression: {
+              kind: 'number',
+              decimal: '0',
+            },
+          },
+        },
+      },
+      tolerance: {
+        source: '0.01',
+        value: 0.01,
+        display: '0.01',
+        mathDefinition: {
+          format: 'pointercad-math/1',
+          source: '0.01',
+          inputNotation: 'text',
+          angleUnit: 'degree',
+          expression: {
+            kind: 'number',
+            decimal: '0.01',
+          },
+        },
+      },
+    },
+  };
+  const document = replaceSketch(part, { ...part.sketches[0], features: [...part.sketches[0].features, curve] });
+  useAppStore.getState().applyDocument(document, { undoable: false });
+  useAppStore.getState().setSelection([curve.id, 'line-1', 'face-1', 'extrude-1']);
+  const before = useAppStore.getState();
+  useAppStore.getState().setActiveTool('face');
+  const after = useAppStore.getState();
+  expect(after.selection).toEqual([curve.id, 'line-1']);
+  expect(after.document).toBe(before.document);
+  expect(after.undoStack).toBe(before.undoStack);
+  resetTestStore();
+});

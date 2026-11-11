@@ -161,6 +161,8 @@ export function pickConstraintTarget(
  */
 export const CONSTRAINT_TARGET_COUNTS: Readonly<Record<SketchConstraintKind, number>> = {
   coincident: 2,
+  midpoint: 2,
+  pointOnCurve: 2,
   horizontal: 1,
   vertical: 1,
   parallel: 2,
@@ -170,6 +172,8 @@ export const CONSTRAINT_TARGET_COUNTS: Readonly<Record<SketchConstraintKind, num
   equal: 2,
   symmetric: 3,
   fix: 1,
+  horizontalDistance: 2,
+  verticalDistance: 2,
   distance: 2,
   angle: 2,
   radius: 1,
@@ -211,6 +215,9 @@ export function orderConstraintTargets(
   targets: readonly ConstraintTarget[],
   resolved: ResolvedSketch,
 ): readonly ConstraintTarget[] {
+  if ((kind === 'midpoint' || kind === 'pointOnCurve') && targets.length === 2) {
+    return targets[0].kind === 'curve' ? [targets[1], targets[0]] : targets;
+  }
   if (kind === 'tangent' && targets.length === 2) {
     const lineFirst = isSegmentTarget(resolved, targets[0]);
     return lineFirst ? targets : [targets[1], targets[0]];
@@ -306,20 +313,20 @@ export interface ConstraintMark {
  * 印の大きさ(`createConstraintLayer.ts` の `MARK_SIZE_PIXELS` = 16)より少し広く取り、
  * 隣り合った記号がくっついて 1 文字に見えないようにする。
  */
-export const MARK_SPREAD_PIXELS = 18;
+const MARK_SPREAD_PIXELS = 18;
 
 /**
  * 点に付く印を上へ逃がす量(画素。t14 の申し送り)。一致・固定・距離の端のように
  * **点そのものを指す印**は、そのまま描くと点の真上に出て掴み(ドラッグ)と競合する。
  * 印の大きさ(16px)の半分 + 点の当たり判定(6px)ぶんだけ上げれば重ならない。
  */
-export const MARK_POINT_LIFT_PIXELS = 14;
+const MARK_POINT_LIFT_PIXELS = 14;
 
 /**
  * 印の当たり判定の半径(画素)。印そのものの大きさ(`createConstraintLayer.ts` の
  * `MARK_SIZE_PIXELS` = 14)の半分より少し広くして、狙って押せば必ず当たるようにする。
  */
-export const CONSTRAINT_MARK_RADIUS_PIXELS = 9;
+const CONSTRAINT_MARK_RADIUS_PIXELS = 9;
 
 /**
  * 一覧の行(`ConstraintSummary`)を 3D の印へ開く。1 つの拘束が指し先の数だけ印を持つ

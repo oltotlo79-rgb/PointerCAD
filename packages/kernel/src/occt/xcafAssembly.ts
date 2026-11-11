@@ -8,8 +8,7 @@
 import type { OpenCascadeInstance, TDF_Label } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { ShapeAssemblyNode } from '../types.js';
-import type { Allocations } from './allocations.js';
-import type { OcctShapeHandle } from './makeBox.js';
+import { createAllocations, type Allocations } from './allocations.js';
 import { makeCompound } from './transformShape.js';
 import type { StepWriteOptions, StepWriteResult } from './writeStep.js';
 import { writeXcafStepDocument } from './writeStep.js';
@@ -28,14 +27,14 @@ export const ASSEMBLY_MISSING_DEFINITION_MESSAGE = '配置が参照する部品�
 export const ASSEMBLY_EMPTY_DEFINITION_MESSAGE = '形を持たない部品定義は書き出せません。';
 export const ASSEMBLY_EMPTY_NODE_MESSAGE = '空のサブアセンブリは書き出せません。';
 /** OCCT の形を持つ、製品内の部品定義 1 つ。 */
-export interface XcafAssemblyDefinition {
+interface XcafAssemblyDefinition {
   readonly id: string;
   readonly name: string | null;
   readonly bodies: readonly XcafShapeEntry[];
 }
 
 /** XCAF 文書へ渡すアセンブリ全体。 */
-export interface XcafAssemblySpec {
+interface XcafAssemblySpec {
   readonly name: string | null;
   readonly definitions: readonly XcafAssemblyDefinition[];
   readonly children: readonly ShapeAssemblyNode[];
@@ -100,7 +99,11 @@ export function writeStepAssembly(
     withColors: options.withColors,
     allocations: options.allocations,
   });
-  const compounds: OcctShapeHandle[] = [];
+  const compounds = createAllocations();
+  const owner = createAllocations();
+  // The document borrows compounds; close it before releasing their wrappers.
+  owner.keep({ delete: compounds.release });
+  owner.keep(builder);
   const occurrences: StepAssemblyOccurrenceName[] = [];
   try {
     const labels = new Map<string, TDF_Label>();
@@ -111,8 +114,7 @@ export function writeStepAssembly(
         labels.set(definition.id, builder.addShape({ ...only, name: definition.name }, false, false));
         continue;
       }
-      const compound = makeCompound(oc, definition.bodies.map((body) => body.shape));
-      compounds.push(compound);
+      const compound = compounds.keep(makeCompound(oc, definition.bodies.map((body) => body.shape)));
       labels.set(definition.id, builder.addShape({
         shape: compound.shape,
         name: definition.name,
@@ -150,14 +152,6 @@ export function writeStepAssembly(
       bytes: normalizeStepAssemblyMetadata(written.bytes, occurrences),
     };
   } finally {
-    // 文書が compound を参照している間は元の形を返さない。文書を先に閉じた後、
-    // 複数ボディ用にこの関数が作った wrapper を逆順に返す。
-    try {
-      builder.delete();
-    } finally {
-      for (let index = compounds.length - 1; index >= 0; index -= 1) {
-        compounds[index]?.delete();
-      }
-    }
+    owner.release();
   }
 }

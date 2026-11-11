@@ -1,0 +1,11 @@
+.pcad-beam { display: flex; flex-direction: column; gap: 0.7rem; overflow: auto; }
+.pcad-beam fieldset { min-width: 0; margin: 0; padding: 0.6rem; border: 1px solid var(--pcad-border); }
+.pcad-beam__occurrence, .pcad-beam__confirmation { display: block; padding: 0.3rem 0; }
+.pcad-beam__member { display: flex; flex-direction: column; gap: 0.6rem; }
+.pcad-beam__numbers { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.3rem; }
+.pcad-beam__source { display: flex; flex-direction: column; gap: 0.4rem; }
+.pcad-beam__source label { display: flex; flex-direction: column; gap: 0.2rem; }
+.pcad-beam select, .pcad-beam textarea { max-width: 100%; }
+.pcad-beam__actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.pcad-beam__results dd { margin: 0 0 0.5rem; overflow-wrap: anywhere; }
+.pcad-beam__results dt { font-weight: 600; }

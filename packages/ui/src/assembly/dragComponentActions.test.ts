@@ -171,3 +171,62 @@ describe('P7-18 B03/B04/B07/B10/B13/B14: 実dragと一時store', () => {
     expect(useAppStore.getState().assemblyDrag).toBeNull();
   });
 });
+
+describe('component drag request ownership', () => {
+  it.each(['move', 'finish'] as const)('stale %s cannot cancel a new public drag begun by the supported clock callback', (operation) => {
+    const f = storeFixture();
+    expect(f.begin()).toBe(true);
+    const oldToken = useAppStore.getState().assemblyDrag?.token;
+    const replacement: { state: ReturnType<typeof useAppStore.getState> | null } = { state: null };
+    const now = (): number => {
+      if (replacement.state === null) {
+        actions.cancelComponentDrag();
+        expect(f.begin()).toBe(true);
+        expect(actions.moveComponentDrag([20, 0, 0])?.hardSatisfied).toBe(true);
+        replacement.state = useAppStore.getState();
+      }
+      return 0;
+    };
+    const result = operation === 'move'
+      ? actions.moveComponentDrag([10, 0, 0], { maxTimeMs: 1000, now })
+      : actions.finishComponentDrag([10, 0, 0], { maxTimeMs: 1000, now });
+    expect(result).toBe(operation === 'move' ? null : false);
+    const current = replacement.state;
+    if (current === null) throw new Error('supported clock must run');
+    expect(current.assemblyDrag?.token).not.toBe(oldToken);
+    expect(useAppStore.getState().assemblyDrag).toBe(current.assemblyDrag);
+    expect(useAppStore.getState().assemblyDragOverlay).toBe(current.assemblyDragOverlay);
+    expect(useAppStore.getState().assemblyDragNotice).toBe(current.assemblyDragNotice);
+    expect(useAppStore.getState().assemblyOccurrenceDrives).toBe(current.assemblyOccurrenceDrives);
+    expect(useAppStore.getState().assembly).toBe(f.document);
+    expect(useAppStore.getState().assemblyUndoStack).toBe(f.initial.assemblyUndoStack);
+    expect(actions.finishComponentDrag([20, 0, 0])).toBe(true);
+    expect(useAppStore.getState().assembly?.components[1].placement.position[0].value).toBeCloseTo(20, 9);
+    expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+  });
+
+  it.each(['move', 'finish'] as const)('a thrown stale %s clock cannot cancel the new session either', (operation) => {
+    const f = storeFixture();
+    expect(f.begin()).toBe(true);
+    const replacement: { state: ReturnType<typeof useAppStore.getState> | null } = { state: null };
+    const now = (): number => {
+      actions.cancelComponentDrag();
+      expect(f.begin()).toBe(true);
+      replacement.state = useAppStore.getState();
+      throw new Error('clock interrupted after a new input operation');
+    };
+    const result = operation === 'move'
+      ? actions.moveComponentDrag([10, 0, 0], { maxTimeMs: 1000, now })
+      : actions.finishComponentDrag([10, 0, 0], { maxTimeMs: 1000, now });
+    expect(result).toBe(operation === 'move' ? null : false);
+    const current = replacement.state;
+    if (current === null) throw new Error('supported clock must run');
+    expect(useAppStore.getState().assemblyDrag).toBe(current.assemblyDrag);
+    expect(useAppStore.getState().assemblyDragOverlay).toBe(current.assemblyDragOverlay);
+    expect(useAppStore.getState().assemblyDragNotice).toBe(current.assemblyDragNotice);
+    actions.cancelComponentDrag();
+    expect(useAppStore.getState().assemblyDrag).toBeNull();
+    expect(useAppStore.getState().assembly).toBe(f.document);
+    expect(useAppStore.getState().assemblyUndoStack).toBe(f.initial.assemblyUndoStack);
+  });
+});

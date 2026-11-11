@@ -22,7 +22,7 @@ const continuation:Pick<PointContinuationWorkerClient,'evaluate'>={evaluate:requ
   if(!isCurvePointContinuation(request))throw new Error('Expected curve continuation');
   return Promise.resolve({status:'result',identity:request.identity,result:executeCurvePointContinuationWork({kind:'continue-curve-point',serial:1,request},backend).result});
 }};
-type Stop={readonly status:'stopped';readonly reason:'deadline'|'budget'};
+interface Stop{readonly status:'stopped';readonly reason:'deadline'|'budget'}
 /** The Worker's own stop (a result) or the window's bounded client (5 seconds) ending the calculation. */
 type Ending=Stop|'deadline';
 function curve():{readonly document:PartDocument;readonly parent:{readonly kind:'curve';readonly sketchId:string;readonly featureId:string}} {

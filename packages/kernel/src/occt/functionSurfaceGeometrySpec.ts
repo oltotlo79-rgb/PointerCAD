@@ -1,6 +1,9 @@
 /** Resource and topology preflight, completed before allocating OCCT handles. */
 import type { Vec3Tuple } from '../types.js';
 import { validateFunctionClipBox, type FunctionClipBox } from './clipFunctionShape.js';
+import type { FunctionSurfaceSplineSpec as TypeFunctionSurfaceSplineSpec } from './functionSurfaceSpline.js';
+import type { FunctionSurfacePrimitiveSpec as TypeFunctionSurfacePrimitiveSpec } from './functionSurfacePrimitiveSpec.js';
+
 
 export const MAX_FUNCTION_SURFACE_FACES = 100_000;
 export const MAX_FUNCTION_SURFACE_VERTICES = 100_000;
@@ -8,8 +11,13 @@ export interface FunctionSurfaceGeometrySpec {
   readonly vertices: readonly Vec3Tuple[];
   readonly triangles: readonly (readonly [number, number, number])[];
   readonly bounds: FunctionClipBox;
+  /**
+   * Certified C1 bicubic over the whole parameter rectangle (functionSurfaceSpline.ts). When present, CAD builds
+   * this native surface instead of the planar triangles; the triangles remain the certified mesh it was tied to.
+   */
+  readonly spline?: TypeFunctionSurfaceSplineSpec;
 }
-export type FunctionSurfaceInput=FunctionSurfaceGeometrySpec|import('./functionSurfacePrimitiveSpec.js').FunctionSurfacePrimitiveSpec;
+export type FunctionSurfaceInput=FunctionSurfaceGeometrySpec|TypeFunctionSurfacePrimitiveSpec;
 function array(value: unknown): value is readonly unknown[] { return Array.isArray(value); }
 export function checkedFunctionSurface(spec: FunctionSurfaceGeometrySpec): FunctionSurfaceGeometrySpec {
   validateFunctionClipBox(spec.bounds);

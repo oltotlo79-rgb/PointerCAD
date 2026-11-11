@@ -1,9 +1,15 @@
 import react from '@vitejs/plugin-react';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { defineConfig } from 'vite';
-import { APP_META_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
+import { APP_META_CONTENT_SECURITY_POLICY, FEM_WORKER_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
+import { desktopAppContentSecurityPolicy } from './src/occtHttpPolicy.js';
+import { parseOcctAssetManifest } from '../../packages/kernel/src/occt/occtAssetManifest.js';
 import { runtimeNotices } from '../../scripts/vite/runtimeNotices.mjs';
 import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
 import { exactMathAssets } from '../../scripts/vite/exactMathAssets.mjs';
+import { femRuntimeAssets } from '../../scripts/vite/femRuntimeAssets.mjs';
 import { startupGuard } from '../../scripts/vite/startupGuard.mjs';
 
 /** WASM の並列実行に必要な隔離状態を作る(FR-1003)。配信時は app:// の応答ヘッダーで付ける。 */
@@ -74,16 +80,51 @@ function manualChunks(id: string): string | undefined {
   return undefined;
 }
 
+// Resolve the same installed package that supplies the direct ?url asset.
+// Vite inherits define in Worker builds, so both owners verify the same bytes.
+const occtBytes = readFileSync(new URL('../../packages/kernel/node_modules/opencascade.js/dist/opencascade.full.wasm', import.meta.url));
+const occtSha256 = createHash('sha256').update(occtBytes).digest('hex');
+
+/** Package compression once; neither cold nor warm application startup compresses WASM. */
+export function desktopOcctAssets(bytes: Uint8Array) {
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const compressed = gzipSync(bytes);
+  const partFile = `opencascade.full-${sha256.slice(0, 16)}.bin`;
+  const streamFile = `stream/opencascade.full-${sha256}.wasm`;
+  const manifest = parseOcctAssetManifest({
+    sha256, byteLength: bytes.byteLength, compression: 'gzip',
+    parts: [{ order: 0, file: partFile, byteLength: compressed.byteLength }],
+    stream: { file: streamFile, compression: 'gzip', transportByteLength: compressed.byteLength,
+      transportSha256: createHash('sha256').update(compressed).digest('hex'),
+      decodedByteLength: bytes.byteLength, decodedSha256: sha256 },
+  });
+  return { manifest, compressed, partFile, streamFile };
+}
+
 export default defineConfig({
+  define: {
+    __PCAD_DESKTOP_OCCT_IDENTITY__: JSON.stringify({
+      sha256: occtSha256, byteLength: occtBytes.byteLength,
+    }),
+  },
   // 資産の場所を相対で書き出す。独自スキーム app:// の下でも正しく解決される。
   base: './',
   // Webと同じ字体を通常の静的資産として配り、JSへバイト列を埋め込まない。
   publicDir: 'resources',
-  plugins: [react(), mathNotices(), runtimeNotices(), exactMathAssets(), startupGuard(), {
+  plugins: [react(), mathNotices(), runtimeNotices(), exactMathAssets(), femRuntimeAssets(FEM_WORKER_CONTENT_SECURITY_POLICY), startupGuard(), {
+    name: 'pointercad-desktop-occt-gzip',
+    apply: 'build',
+    generateBundle() {
+      const asset = desktopOcctAssets(occtBytes);
+      this.emitFile({ type: 'asset', fileName: `occt/${asset.partFile}`, source: asset.compressed });
+      this.emitFile({ type: 'asset', fileName: `occt/${asset.streamFile}`, source: asset.compressed });
+      this.emitFile({ type: 'asset', fileName: 'occt/manifest.json', source: JSON.stringify(asset.manifest) });
+    },
+  }, {
     name: 'pointercad-renderer-security-policy',
     apply: 'build',
     transformIndexHtml: { order: 'post', handler: () => [{
-      tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: APP_META_CONTENT_SECURITY_POLICY },
+      tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: desktopAppContentSecurityPolicy(APP_META_CONTENT_SECURITY_POLICY) },
       injectTo: 'head-prepend',
     }] },
   }],

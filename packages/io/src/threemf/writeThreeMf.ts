@@ -36,6 +36,8 @@ import {
   type ThreeMfFaceRange,
 } from './baseMaterials.js';
 import { escapeXmlAttribute, formatXmlNumber } from './xmlText.js';
+import { admitThreeMf, checkThreeMfDeadline, threeMfDeadline,
+  THREE_MF_EXPORT_BYTE_LIMIT, ThreeMfExportLimitError } from './threeMfAdmission.js';
 
 /**
  * 色と面ごとの三角形の範囲の型は `baseMaterials.ts` に置いてあるが、**取り込み口はここのまま**
@@ -106,6 +108,8 @@ export interface WriteThreeMfOptions {
    * `<object>` にも材質の指定を付けない(形だけの 3MF になる)。
    */
   readonly withColors?: boolean;
+  /** Remaining computation time after upstream meshing and owned copying. Never raises the 25s cap. */
+  readonly remainingMs?: number;
 }
 
 /** 3MF Core の名前空間(§2.6)。 */
@@ -169,12 +173,13 @@ function resolveName(name: string | null, index: number): string {
 }
 
 /** 頂点の行を書き出す。長さの検査もここで行う。 */
-function pushVertices(lines: string[], positions: ArrayLike<number>): number {
+function pushVertices(lines: string[], positions: ArrayLike<number>, deadlineAt: number): number {
   if (positions.length % 3 !== 0) {
     throw new Error(THREE_MF_INVALID_POSITIONS_MESSAGE);
   }
   const vertexCount = positions.length / 3;
   for (let index = 0; index < vertexCount; index += 1) {
+    if ((index & 1023) === 0) checkThreeMfDeadline(deadlineAt);
     const x = formatXmlNumber(positions[index * 3]);
     const y = formatXmlNumber(positions[index * 3 + 1]);
     const z = formatXmlNumber(positions[index * 3 + 2]);
@@ -206,12 +211,14 @@ function pushTriangles(
   vertexCount: number,
   triangleColors: ReadonlyMap<number, number> | null,
   materialIndices: readonly number[],
+  deadlineAt: number,
 ): void {
   if (indices.length % 3 !== 0) {
     throw new Error(THREE_MF_INVALID_INDICES_MESSAGE);
   }
   const triangleCount = indices.length / 3;
   for (let index = 0; index < triangleCount; index += 1) {
+    if ((index & 1023) === 0) checkThreeMfDeadline(deadlineAt);
     const v1 = checkIndex(indices[index * 3], vertexCount);
     const v2 = checkIndex(indices[index * 3 + 1], vertexCount);
     const v3 = checkIndex(indices[index * 3 + 2], vertexCount);
@@ -240,11 +247,12 @@ interface PartMaterials {
  * タスク14 と同じ「立体の添字」のままで、面の色が増えても `<object>` の行が動かない
  * (複数の立体でも `<basematerials>` は 1 つ、という §2.6 の形も崩さない)。
  */
-function assignMaterials(parts: readonly ThreeMfMeshInput[]): PartMaterials[] {
+function assignMaterials(parts: readonly ThreeMfMeshInput[], deadlineAt: number): PartMaterials[] {
   const assigned: PartMaterials[] = [];
   // 面の色は立体の色(parts.length 行)の後ろから始まる。
   let nextFaceIndex = parts.length;
   for (const part of parts) {
+    checkThreeMfDeadline(deadlineAt);
     const materials = buildBaseMaterials(
       part.color ?? DEFAULT_THREE_MF_COLOR,
       part.faceColors,
@@ -256,6 +264,7 @@ function assignMaterials(parts: readonly ThreeMfMeshInput[]): PartMaterials[] {
       nextFaceIndex += 1;
     }
     assigned.push({ materials, materialIndices });
+    checkThreeMfDeadline(deadlineAt);
   }
   return assigned;
 }
@@ -269,9 +278,9 @@ function assignMaterials(parts: readonly ThreeMfMeshInput[]): PartMaterials[] {
  * `<triangle>` に `p1` を付ける**(組み替えは `baseMaterials.ts`)。立体の色の並び
  * (立体の順 = 添字の順)は崩さないので、面の色があってもなくても `<object>` の行は同じになる。
  */
-function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean): string {
+function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean, deadlineAt: number): string {
   // 色を書かないときは面の色も見ない(形だけの 3MF に `p1` を混ぜない)。
-  const assigned = withColors ? assignMaterials(parts) : null;
+  const assigned = withColors ? assignMaterials(parts, deadlineAt) : null;
   const lines: string[] = [];
   lines.push('<?xml version="1.0" encoding="UTF-8"?>');
   lines.push(`<model unit="${MODEL_UNIT}" xml:lang="en-US" xmlns="${MODEL_NAMESPACE}">`);
@@ -281,12 +290,14 @@ function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean):
   if (assigned !== null && parts.length > 0) {
     lines.push(`    <basematerials id="${String(BASE_MATERIALS_ID)}">`);
     parts.forEach((part, index) => {
+      checkThreeMfDeadline(deadlineAt);
       const name = escapeXmlAttribute(resolveName(part.name, index));
       const color = formatDisplayColor(part.color ?? DEFAULT_THREE_MF_COLOR);
       lines.push(`      <base name="${name}" displaycolor="${color}"/>`);
     });
     // 面の色は立体の色を全部書いた後ろへ足す(立体の `pindex` を動かさないため)。
     parts.forEach((part, index) => {
+      checkThreeMfDeadline(deadlineAt);
       const colors = assigned[index].materials.colors;
       const bodyName = resolveName(part.name, index);
       for (let slot = 1; slot < colors.length; slot += 1) {
@@ -299,6 +310,7 @@ function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean):
   }
 
   parts.forEach((part, index) => {
+    checkThreeMfDeadline(deadlineAt);
     const objectId = FIRST_OBJECT_ID + index;
     const material = assigned === null
       ? ''
@@ -308,7 +320,7 @@ function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean):
     lines.push(`    <object id="${String(objectId)}" type="model"${material}${name}>`);
     lines.push('      <mesh>');
     lines.push('        <vertices>');
-    const vertexCount = pushVertices(lines, part.positions);
+    const vertexCount = pushVertices(lines, part.positions, deadlineAt);
     lines.push('        </vertices>');
     lines.push('        <triangles>');
     const partMaterials = assigned === null ? null : assigned[index];
@@ -318,6 +330,7 @@ function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean):
       vertexCount,
       partMaterials === null ? null : partMaterials.materials.triangleColors,
       partMaterials === null ? [] : partMaterials.materialIndices,
+      deadlineAt,
     );
     lines.push('        </triangles>');
     lines.push('      </mesh>');
@@ -332,7 +345,10 @@ function buildModelXml(parts: readonly ThreeMfMeshInput[], withColors: boolean):
   lines.push('  </build>');
   lines.push('</model>');
   lines.push('');
-  return lines.join('\n');
+  checkThreeMfDeadline(deadlineAt);
+  const xml = lines.join('\n');
+  checkThreeMfDeadline(deadlineAt);
+  return xml;
 }
 
 /**
@@ -352,8 +368,12 @@ export function writeThreeMf(
   options: WriteThreeMfOptions = {},
 ): Uint8Array {
   const withColors = options.withColors ?? true;
-  const modelXml = buildModelXml(parts, withColors);
+  const deadlineAt = threeMfDeadline(options.remainingMs ?? 25_000);
+  admitThreeMf(parts, { withColors });
+  checkThreeMfDeadline(deadlineAt);
+  const modelXml = buildModelXml(parts, withColors, deadlineAt);
   // エントリの並びも固定する(決定性)。3MF の読み手は名前で引くので、並びは自由に決めてよい。
+  checkThreeMfDeadline(deadlineAt);
   const entries: Zippable = {
     [THREE_MF_CONTENT_TYPES_ENTRY]: [
       strToU8(CONTENT_TYPES_XML),
@@ -362,5 +382,9 @@ export function writeThreeMf(
     [THREE_MF_RELS_ENTRY]: [strToU8(RELS_XML), { level: XML_LEVEL, mtime: FIXED_ENTRY_MTIME }],
     [THREE_MF_MODEL_ENTRY]: [strToU8(modelXml), { level: XML_LEVEL, mtime: FIXED_ENTRY_MTIME }],
   };
-  return zipSync(entries);
+  checkThreeMfDeadline(deadlineAt);
+  const bytes = zipSync(entries);
+  checkThreeMfDeadline(deadlineAt);
+  if (bytes.byteLength > THREE_MF_EXPORT_BYTE_LIMIT) throw new ThreeMfExportLimitError('bytes');
+  return bytes;
 }

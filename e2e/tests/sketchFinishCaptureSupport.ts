@@ -1,4 +1,7 @@
 /// <reference lib="dom" />
+import { openToolMenu, toolMenuPanel } from './toolMenus.js';
+export { openToolMenu } from './toolMenus.js';
+import { worldToCanvas } from './homeViewProjection.js';
 import { expect, type Locator, type Page } from '@playwright/test';
 import { waitForSettledRecompute } from './recompute.js';
 
@@ -101,16 +104,6 @@ export async function choosePlaneMenuItem(page: Page, label: string): Promise<vo
 // 同名の関数と同じ作り。
 // ---------------------------------------------------------------------------
 
-function toolMenuTrigger(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('button', { name: new RegExp(`^${menu}`) }).first();
-}
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-export async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) await toolMenuTrigger(page, menu).click();
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
-}
 /** 矩形を1つかく(対角の2点を世界座標(X,Y)で入れる。Zは0)。 */
 export async function drawRectangle(page: Page, corner1: readonly [string, string], corner2: readonly [string, string]): Promise<void> {
   await chooseShapeTool(page, '矩形');
@@ -146,41 +139,6 @@ export async function extrudeFace(page: Page, faceName: string, distance: string
 
 export type WorldPoint = readonly [number, number, number];
 
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
-
-function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-function dotPoints(a: WorldPoint, b: WorldPoint): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-function normalizePoint(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
-}
-const CAMERA_EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-const CAMERA_Z = normalizePoint(CAMERA_EYE);
-const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
-
-function worldToCanvas(world: WorldPoint, widthPixels: number, heightPixels: number): readonly [number, number] {
-  const view = subtractPoints(world, CAMERA_EYE);
-  const depth = -dotPoints(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
-  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
-  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
-}
 /** ビューポートの上で、ワールド座標の点が見えている場所を押す。既定(ホーム)視点・1440×900専用。 */
 export async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
   await waitForSettledRecompute(page);

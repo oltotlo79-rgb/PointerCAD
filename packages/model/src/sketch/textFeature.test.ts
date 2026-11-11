@@ -2,9 +2,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createFontStore, DRAWING_FONT_ASSET } from '@pointercad/drawing';
 import { evaluateExpression, expressionValueFromNumber as num } from '@pointercad/expression';
-import { textFeature, type TextFeatureInput, type TextFeatureResult } from './textFeature.js';
+import { textFeature, type TextFeatureInput } from './textFeature.js';
 import { WORK_PLANES } from './planeMath.js';
 import type { CoordinateInput } from './types.js';
+
+type TextFeatureResult = ReturnType<typeof textFeature>;
 
 const root = new URL('../../../../', import.meta.url);
 if (!existsSync(new URL('pnpm-workspace.yaml', root))) throw new Error('文字検査の起点が違います。');

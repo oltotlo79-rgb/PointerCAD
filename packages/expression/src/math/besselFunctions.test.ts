@@ -1,6 +1,13 @@
+import { specialMathTestRequest } from './mathRequest.testSupport.js';
+import * as specialKinds from './specialFunctionKinds.js';
+import { airyFunction } from './airyFunctions.js';
+import { besselKind } from './besselFunctions.js';
+import { realLambertBranch } from './lambertWFunctions.js';
+import { zetaOrder, zetaDerivativeOrder } from './zetaFunctions.js';
 import Decimal from 'decimal.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
+import { evaluateMathInput } from './mathEvaluation.testSupport.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
@@ -12,12 +19,11 @@ const D = Decimal.clone({ precision: 300, rounding: Decimal.ROUND_HALF_EVEN });
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 function request(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
-  return { source, angleUnit, notation: 'text' as const, coefficients: [],
-    identity: { documentId: 'bessel-functions', documentVersion: 1, editorId: 'coordinate', inputRevision: 1 } };
+  return specialMathTestRequest(source, angleUnit, 'bessel-functions');
 }
 function evaluate(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
-  const input = request(source, angleUnit), raw = executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request: input }, backend);
-  return decodeMathWorkReply(raw, input, { operationsById: CANDIDATE_MATH_BY_ID, coefficientIds: new Set(), declaredIds: new Set() }).result;
+  const input = request(source, angleUnit);
+  return evaluateMathInput(input, backend);
 }
 function value(source: string): number {
   const result = evaluate(source).evaluation;
@@ -28,6 +34,13 @@ const references = [...BESSEL_INTEGER_REFERENCES, ...BESSEL_SECOND_REFERENCES]
   .filter(([, , , text]) => Number.isFinite(Number(text)) && Number(text) !== 0);
 
 describe('四種類のBesselの次数と引数を通常入力へ接続する', () => {
+  it('reexports the same special function classifiers', () => {
+    expect(airyFunction).toBe(specialKinds.airyFunction);
+    expect(besselKind).toBe(specialKinds.besselKind);
+    expect(realLambertBranch).toBe(specialKinds.realLambertBranch);
+    expect(zetaOrder).toBe(specialKinds.zetaOrder);
+    expect(zetaDerivativeOrder).toBe(specialKinds.zetaDerivativeOrder);
+  });
   it.each(references)('%s_%s(%s)を独立した確認値へ渡す', (kind, n, x, expected) => {
     const source = `bessel${kind.toLowerCase()}(${n},${x})`;
     expect(Math.abs(value(source)/Number(expected)-1)).toBeLessThan(5e-14);

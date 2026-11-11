@@ -1,3 +1,4 @@
+import { publicAssetUrl } from '../testing/publicAssetUrl.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createEmptyPartDocument, DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryCoefficientId, mathGeometryOperationMessage,
@@ -6,12 +7,12 @@ import type { ExpressionValue } from '@pointercad/expression';
 import { createMathBackend, executeExactMathWorkRequest, executeMathWorkRequest, type MathExecutionBackend } from '@pointercad/expression/math/worker';
 import { decodeMathWorkReply } from '@pointercad/expression/math/contracts';
 import type { MathWorkRequest } from '@pointercad/expression/math/client';
-import { exactRuntimeBatch, sharedExactEngine } from '../../../expression/src/math/exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from '@pointercad/expression/testing/exact-runtime';
 import { mathGeometryEditorCandidate, mathGeometryEditorProblem, prepareDocumentMathEditor, prepareDocumentMathEnvironment } from './prepareDocumentMathEditor.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
-const engine = sharedExactEngine(exactRuntimeBatch(fileURLToPath(new URL('../../../expression/src/math/exactRuntime/cas_region_integrals_test.py', import.meta.url)), 15_000));
+const engine = sharedExactEngine(exactRuntimeBatch(fileURLToPath(publicAssetUrl('@pointercad/expression/testing-assets/cas_region_integrals_test.py')), 15_000));
 const coefficients = [{ id: mathGeometryCoefficientId('g'), label: 'G', decimal: '10' }, { id: 'coefficient:1', label: 'R', decimal: '10' }];
 function request(source: string): MathWorkRequest {
   return { source, coefficients, notation: 'text', angleUnit: 'degree',

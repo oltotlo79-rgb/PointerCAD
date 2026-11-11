@@ -3,7 +3,7 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRequest, type MathExecutionBackend } from '@pointercad/expression/math/worker';
 import { createFunctionCurveWorkEnvelope, decodeFunctionCurveWorkReply } from '@pointercad/expression/math/contracts';
 import { createKernelApi, hasSolid, isValidShape, makeSweep, measureVolume, type FunctionClipBox } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, toCurveSpec } from '../kernelBridge.js';
 import { FunctionPlotBounds } from './functionPlotBounds.js';
 import { sampleFunctionCurveGeometry } from './sampleFunctionCurveGeometry.js';

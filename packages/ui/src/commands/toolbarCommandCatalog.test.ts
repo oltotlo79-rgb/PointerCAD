@@ -5,9 +5,40 @@ import { COMMAND_DEFINITIONS, commandDefinition } from './commandDefinitions.js'
 
 describe('toolbar command catalog', () => {
   it('部品・組立・板金・図面の操作を登録し、保存の別入口を二重に割り当てない', () => {
-    const originalGroups = TOOLBAR_COMMAND_CATALOG.filter(entry => !['sheetMetal', 'script', 'drawing', 'view', 'plane', 'reference', 'snap', 'assemblyUtility'].includes(entry.group));
+    const expandedGroups = TOOLBAR_COMMAND_CATALOG.filter(entry => !['sheetMetal', 'script', 'drawing', 'view', 'plane', 'reference', 'snap', 'assemblyUtility', 'analysis'].includes(entry.group));
+    // The ninth assembly item is circular weld; keep all pre-existing count partitions below.
+    expect(expandedGroups.filter(entry => entry.sourceId === 'circularFilletWeld')).toEqual([{
+      id: 'toolbar.assembly.circularFilletWeld', group: 'assembly', sourceId: 'circularFilletWeld',
+      labelKey: 'assembly.circularFilletWeld.title', tooltipKey: 'assembly.circularFilletWeld.pickPlane',
+      documentKinds: ['assembly'], helpTopic: 'assembly-place',
+    }]);
+    const originalGroups = expandedGroups.filter(entry => entry.id !== 'toolbar.assembly.circularFilletWeld');
     // GR-30 が「見た目」へ「図形の測定値」を1行足したので 109 → 110(Q1=A4)。
-    expect(originalGroups).toHaveLength(110);
+    // R16 adds exactly one shared save-point command; drawing aliases it.
+    // 追加要件6 が「組む」へ「ボルトで締結」「締結を外す」の2項目を足したので 111 → 113。
+    // 溶接(weld-beads-r1)が「組む」へ「すみ肉溶接」の1項目を足したので 113 → 114。
+    // 面の移動は加工へ1項目だけ追加し、既存114項目を保つ。
+    // EX-13 adds midpoint, point-on-curve and the two signed axis distances: 115 -> 119.
+    const addedConstraints = ['midpoint', 'pointOnCurve', 'horizontalDistance', 'verticalDistance'];
+    expect(originalGroups).toHaveLength(121);
+    const directEdits = ['holeTranslate', 'faceRotate'];
+    expect(originalGroups.filter(entry => directEdits.includes(entry.sourceId))).toMatchObject(directEdits.map(sourceId =>
+      ({ id: toolbarCommandId('solidMachining', sourceId), sourceId, group: 'solidMachining',
+        labelKey: `toolbar.machining.${sourceId}`, helpTopic: 'shape-edit' })));
+    expect(originalGroups.filter(entry => !directEdits.includes(entry.sourceId))).toHaveLength(119);
+    expect(originalGroups.filter(entry => entry.group === 'constraint' && addedConstraints.includes(entry.sourceId)))
+      .toMatchObject(addedConstraints.map(sourceId => ({
+        id: toolbarCommandId('constraint', sourceId), group: 'constraint', sourceId,
+        labelKey: `constraint.kind.${sourceId}`, tooltipKey: `toolbar.constraint.${sourceId}Tooltip`, helpTopic: 'constraints',
+      })));
+    const previousGroups = originalGroups.filter(entry => !directEdits.includes(entry.sourceId)
+      && (entry.group !== 'constraint' || !addedConstraints.includes(entry.sourceId)));
+    expect(previousGroups).toHaveLength(115);
+    expect(previousGroups.filter(entry => entry.sourceId !== 'faceOffset')).toHaveLength(114);
+    expect(originalGroups.filter(entry => entry.sourceId === 'faceOffset')).toEqual([
+      expect.objectContaining({ id: toolbarCommandId('solidMachining', 'faceOffset'),
+        group: 'solidMachining', labelKey: 'toolbar.machining.faceOffset' }),
+    ]);
     expect(new Set(TOOLBAR_COMMAND_CATALOG.map((entry) => entry.id)).size).toBe(TOOLBAR_COMMAND_CATALOG.length);
     expect(TOOLBAR_COMMAND_CATALOG.filter(item => item.group === 'sheetMetal')).toHaveLength(5);
     expect(TOOLBAR_COMMAND_CATALOG.filter(item => item.group === 'drawing').length).toBeGreaterThan(35);
@@ -18,6 +49,11 @@ describe('toolbar command catalog', () => {
   it('keeps generated IDs stable while reusing descriptor source IDs', () => {
     expect(toolbarCommandId('shape', 'rectangle')).toBe('toolbar.shape.rectangle');
     expect(toolbarCommandId('solidCombine', 'subtract')).toBe('toolbar.solidCombine.subtract');
+  });
+
+  it('固定するは組み立ての固定操作の説明を開く', () => {
+    expect(commandDefinition(toolbarCommandId('assembly', 'toggleFixed'))?.helpTopic).toBe('assembly');
+    expect(findHelpTopic('assembly')).toBeDefined();
   });
 
   it.each([
@@ -38,4 +74,27 @@ describe('toolbar command catalog', () => {
     expect(toolbarCommandId('drawing', 'saveAs')).toBe('file.saveAs');
     expect(toolbarCommandId('drawing', 'open')).toBe('file.open');
   });
+});
+
+it('保存点は部品・組立・図面で同じcommand IDと説明を使い、二重登録しない', () => {
+  const id = toolbarCommandId('fileMenu', 'savePoints');
+  expect(toolbarCommandId('drawing', 'savePoints')).toBe(id);
+  expect(TOOLBAR_COMMAND_CATALOG.filter(entry => entry.id === id)).toHaveLength(1);
+  expect(commandDefinition(id)?.documentKinds).toEqual(['part', 'assembly', 'drawing']);
+  expect(commandDefinition(id)?.helpTopic).toBe('save-and-open');
+});
+
+it('registers nine analysis entries separately while preserving the original command partitions', () => {
+  const entries = TOOLBAR_COMMAND_CATALOG.filter(entry => entry.group === 'analysis');
+  expect(entries.map(entry => [entry.sourceId, entry.documentKinds])).toEqual([
+    ['beam', ['assembly']], ['plasticBar', ['part', 'assembly']], ['fatigue', ['part', 'assembly']],
+    ['fatigueStrain', ['part', 'assembly']], ['fatigueLocalCycle', ['part', 'assembly']],
+    ['solidAnalysis', ['part']], ['solidPlastic', ['part']], ['solidFinite', ['part']], ['shellAnalysis', ['part']],
+  ]);
+  for (const entry of entries) {
+    expect(entry.id).toBe(`toolbar.analysis.${entry.sourceId}`);
+    expect(commandDefinition(entry.id)).toMatchObject({ labelKey: entry.labelKey, documentKinds: entry.documentKinds, helpTopic: 'strength' });
+    expect(findHelpTopic(entry.helpTopic)?.path).toBe('docs/ja/strength.md');
+  }
+  expect(commandDefinition('toolbar.look.strength')?.helpTopic).toBe('strength');
 });

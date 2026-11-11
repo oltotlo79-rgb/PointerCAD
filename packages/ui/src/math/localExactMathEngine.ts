@@ -1,52 +1,53 @@
-import mappingsSource from '../../../expression/src/math/exactRuntime/cas_mappings.py?raw';
-import limitBoundsSource from '../../../expression/src/math/exactRuntime/cas_limit_bounds.py?raw';
-import setsSource from '../../../expression/src/math/exactRuntime/cas_sets.py?raw';
-import equationSystemsSource from '../../../expression/src/math/exactRuntime/cas_equation_systems.py?raw';
-import odeInputSource from '../../../expression/src/math/exactRuntime/cas_ode_input.py?raw';
-import odeSource from '../../../expression/src/math/exactRuntime/cas_ode.py?raw';
-import equationsSource from '../../../expression/src/math/exactRuntime/cas_equations.py?raw';
-import fourierSeriesSource from '../../../expression/src/math/exactRuntime/cas_fourier_series.py?raw';
-import transformsSource from '../../../expression/src/math/exactRuntime/cas_transforms.py?raw';
+import { isRecord as object } from '../valueGuards.js';
+import mappingsSource from '@pointercad/expression/math/exact-runtime/cas_mappings.py?raw';
+import limitBoundsSource from '@pointercad/expression/math/exact-runtime/cas_limit_bounds.py?raw';
+import setsSource from '@pointercad/expression/math/exact-runtime/cas_sets.py?raw';
+import equationSystemsSource from '@pointercad/expression/math/exact-runtime/cas_equation_systems.py?raw';
+import odeInputSource from '@pointercad/expression/math/exact-runtime/cas_ode_input.py?raw';
+import odeSource from '@pointercad/expression/math/exact-runtime/cas_ode.py?raw';
+import equationsSource from '@pointercad/expression/math/exact-runtime/cas_equations.py?raw';
+import fourierSeriesSource from '@pointercad/expression/math/exact-runtime/cas_fourier_series.py?raw';
+import transformsSource from '@pointercad/expression/math/exact-runtime/cas_transforms.py?raw';
 /** Fixed local program and structured data; user input never becomes Python source. */
 import { EXACT_MATH_ENGINE_LIMITS, type ExactMathEnginePhase } from '@pointercad/expression/math/client';
 import type { ExactMathEngine } from '@pointercad/expression/math/worker';
-import fourierSource from '../../../expression/src/math/exactRuntime/cas_fourier.py?raw';
-import gammaSource from '../../../expression/src/math/exactRuntime/cas_gamma_functions.py?raw';
-import errorFunctionsSource from '../../../expression/src/math/exactRuntime/cas_error_functions.py?raw';
-import besselSource from '../../../expression/src/math/exactRuntime/cas_bessel_functions.py?raw';
-import airySource from '../../../expression/src/math/exactRuntime/cas_airy_functions.py?raw';
-import ellipticSource from '../../../expression/src/math/exactRuntime/cas_elliptic_functions.py?raw';
-import zetaSource from '../../../expression/src/math/exactRuntime/cas_zeta_functions.py?raw';
-import lambertSource from '../../../expression/src/math/exactRuntime/cas_lambert_functions.py?raw';
-import taylorSource from '../../../expression/src/math/exactRuntime/cas_taylor.py?raw';
-import inputSource from '../../../expression/src/math/exactRuntime/cas_input.py?raw';
-import resultSource from '../../../expression/src/math/exactRuntime/cas_result.py?raw';
-import evaluationSource from '../../../expression/src/math/exactRuntime/cas_evaluate.py?raw';
-import linearSource from '../../../expression/src/math/exactRuntime/cas_linear.py?raw';
-import decompositionSource from '../../../expression/src/math/exactRuntime/cas_decompositions.py?raw';
-import spectralSource from '../../../expression/src/math/exactRuntime/cas_spectral.py?raw';
-import discreteSource from '../../../expression/src/math/exactRuntime/cas_discrete.py?raw';
-import limitSource from '../../../expression/src/math/exactRuntime/cas_limits.py?raw';
-import integralSource from '../../../expression/src/math/exactRuntime/cas_integrals.py?raw';
-import derivativeSource from '../../../expression/src/math/exactRuntime/cas_derivatives.py?raw';
-import vectorCalculusSource from '../../../expression/src/math/exactRuntime/cas_vector_calculus.py?raw';
-import vectorProductsSource from '../../../expression/src/math/exactRuntime/cas_vector_products.py?raw';
-import lineIntegralsSource from '../../../expression/src/math/exactRuntime/cas_line_integrals.py?raw';
+import fourierSource from '@pointercad/expression/math/exact-runtime/cas_fourier.py?raw';
+import gammaSource from '@pointercad/expression/math/exact-runtime/cas_gamma_functions.py?raw';
+import errorFunctionsSource from '@pointercad/expression/math/exact-runtime/cas_error_functions.py?raw';
+import besselSource from '@pointercad/expression/math/exact-runtime/cas_bessel_functions.py?raw';
+import airySource from '@pointercad/expression/math/exact-runtime/cas_airy_functions.py?raw';
+import ellipticSource from '@pointercad/expression/math/exact-runtime/cas_elliptic_functions.py?raw';
+import zetaSource from '@pointercad/expression/math/exact-runtime/cas_zeta_functions.py?raw';
+import lambertSource from '@pointercad/expression/math/exact-runtime/cas_lambert_functions.py?raw';
+import taylorSource from '@pointercad/expression/math/exact-runtime/cas_taylor.py?raw';
+import inputSource from '@pointercad/expression/math/exact-runtime/cas_input.py?raw';
+import resultSource from '@pointercad/expression/math/exact-runtime/cas_result.py?raw';
+import evaluationSource from '@pointercad/expression/math/exact-runtime/cas_evaluate.py?raw';
+import linearSource from '@pointercad/expression/math/exact-runtime/cas_linear.py?raw';
+import decompositionSource from '@pointercad/expression/math/exact-runtime/cas_decompositions.py?raw';
+import spectralSource from '@pointercad/expression/math/exact-runtime/cas_spectral.py?raw';
+import discreteSource from '@pointercad/expression/math/exact-runtime/cas_discrete.py?raw';
+import limitSource from '@pointercad/expression/math/exact-runtime/cas_limits.py?raw';
+import integralSource from '@pointercad/expression/math/exact-runtime/cas_integrals.py?raw';
+import derivativeSource from '@pointercad/expression/math/exact-runtime/cas_derivatives.py?raw';
+import vectorCalculusSource from '@pointercad/expression/math/exact-runtime/cas_vector_calculus.py?raw';
+import vectorProductsSource from '@pointercad/expression/math/exact-runtime/cas_vector_products.py?raw';
+import lineIntegralsSource from '@pointercad/expression/math/exact-runtime/cas_line_integrals.py?raw';
 
-import boxDomainSource from '../../../expression/src/math/exactRuntime/cas_box_domain.py?raw';
-import regionIntegralsSource from '../../../expression/src/math/exactRuntime/cas_region_integrals.py?raw';
-import sequencesSource from '../../../expression/src/math/exactRuntime/cas_sequences.py?raw';
-import sequenceRangesSource from '../../../expression/src/math/exactRuntime/cas_sequence_ranges.py?raw';
-import integerSource from '../../../expression/src/math/exactRuntime/cas_integer.py?raw';
-import probabilitySource from '../../../expression/src/math/exactRuntime/cas_probability.py?raw';
-import probabilityLawsSource from '../../../expression/src/math/exactRuntime/cas_probability_laws.py?raw';
-import probabilityDomainSource from '../../../expression/src/math/exactRuntime/cas_probability_domain.py?raw';
-import extendedDispatchSource from '../../../expression/src/math/exactRuntime/cas_extended_dispatch.py?raw';
-import cardinalitySource from '../../../expression/src/math/exactRuntime/cas_cardinality.py?raw';
-import vectorProjectionSource from '../../../expression/src/math/exactRuntime/cas_vector_projection.py?raw';
-import matrixConstructorsSource from '../../../expression/src/math/exactRuntime/cas_matrix_constructors.py?raw';
-import setRelationsSource from '../../../expression/src/math/exactRuntime/cas_set_relations.py?raw';
-import logicExtendedSource from '../../../expression/src/math/exactRuntime/cas_logic_extended.py?raw';
+import boxDomainSource from '@pointercad/expression/math/exact-runtime/cas_box_domain.py?raw';
+import regionIntegralsSource from '@pointercad/expression/math/exact-runtime/cas_region_integrals.py?raw';
+import sequencesSource from '@pointercad/expression/math/exact-runtime/cas_sequences.py?raw';
+import sequenceRangesSource from '@pointercad/expression/math/exact-runtime/cas_sequence_ranges.py?raw';
+import integerSource from '@pointercad/expression/math/exact-runtime/cas_integer.py?raw';
+import probabilitySource from '@pointercad/expression/math/exact-runtime/cas_probability.py?raw';
+import probabilityLawsSource from '@pointercad/expression/math/exact-runtime/cas_probability_laws.py?raw';
+import probabilityDomainSource from '@pointercad/expression/math/exact-runtime/cas_probability_domain.py?raw';
+import extendedDispatchSource from '@pointercad/expression/math/exact-runtime/cas_extended_dispatch.py?raw';
+import cardinalitySource from '@pointercad/expression/math/exact-runtime/cas_cardinality.py?raw';
+import vectorProjectionSource from '@pointercad/expression/math/exact-runtime/cas_vector_projection.py?raw';
+import matrixConstructorsSource from '@pointercad/expression/math/exact-runtime/cas_matrix_constructors.py?raw';
+import setRelationsSource from '@pointercad/expression/math/exact-runtime/cas_set_relations.py?raw';
+import logicExtendedSource from '@pointercad/expression/math/exact-runtime/cas_logic_extended.py?raw';
 
 interface Runtime {
   readonly FS: {
@@ -65,9 +66,6 @@ interface Loader {
     readonly lockFileURL: string; readonly packages: readonly string[];
   }) => Promise<unknown>;
 }
-function object(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 function isLoader(value: unknown): value is Loader {
   return object(value) && typeof value.loadPyodide === 'function';
 }
@@ -77,7 +75,38 @@ function isRuntime(value: unknown): value is Runtime {
     && typeof value.globals.set === 'function' && typeof value.globals.delete === 'function'
     && typeof value.runPython === 'function';
 }
-async function initialize(notify: (phase: ExactMathEnginePhase) => void): Promise<Runtime> {
+type InitializationProfile = (stage: 'metadata' | 'sympy-import' | 'cas-evaluate-import',
+  boundary: 'start' | 'end', atMs: number) => void;
+
+/** Fixed initialization only: no expression or user-controlled Python reaches diagnostics. */
+export function initializeFixedMathPython(runtime: Pick<Runtime, 'runPython'>, profile?: InitializationProfile): void {
+  const metadata = `
+import sys
+import importlib.metadata as _pcad_metadata
+assert _pcad_metadata.version('sympy') == '1.14.0'
+assert _pcad_metadata.version('mpmath') == '1.3.0'
+sys.path.insert(0, '/pcad_exact')
+`;
+  const calculationImport = 'from cas_evaluate import calculate_exact_json as _pcad_calculate_exact\n';
+  if (profile === undefined) {
+    runtime.runPython(metadata + calculationImport);
+    return;
+  }
+  const report = (stage: Parameters<InitializationProfile>[0], boundary: Parameters<InitializationProfile>[1]): void => {
+    try { profile(stage, boundary, performance.now()); }
+    catch { /* Diagnostic recording must not turn valid preparation into a failure. */ }
+  };
+  const run = (stage: Parameters<InitializationProfile>[0], source: string): void => {
+    report(stage, 'start');
+    runtime.runPython(source);
+    report(stage, 'end');
+  };
+  run('metadata', metadata);
+  run('sympy-import', 'import sympy\n');
+  run('cas-evaluate-import', calculationImport);
+}
+
+async function initialize(notify: (phase: ExactMathEnginePhase) => void, profile?: InitializationProfile): Promise<Runtime> {
   notify('runtime-loading');
   // Production Workers are emitted in assets/ in both distributions. Development
   // serves the identical verified runtime at the configured application's base.
@@ -110,14 +139,7 @@ async function initialize(notify: (phase: ExactMathEnginePhase) => void): Promis
     runtime.FS.writeFile('/pcad_exact/' + name, source);
   }
   notify('symbolic-import');
-  runtime.runPython(`
-import sys
-import importlib.metadata as _pcad_metadata
-assert _pcad_metadata.version('sympy') == '1.14.0'
-assert _pcad_metadata.version('mpmath') == '1.3.0'
-sys.path.insert(0, '/pcad_exact')
-from cas_evaluate import calculate_exact_json as _pcad_calculate_exact
-`);
+  initializeFixedMathPython(runtime, profile);
   return runtime;
 }
 
@@ -126,6 +148,7 @@ from cas_evaluate import calculate_exact_json as _pcad_calculate_exact
 export function createLocalExactMathEngine(options: {
   readonly onPhase: (phase: ExactMathEnginePhase) => void;
   readonly retire: () => void;
+  readonly onInitializationProfile?: InitializationProfile;
 }): ExactMathEngine {
   let initialization: Promise<Runtime> | null = null;
   let busy = false, uses = 0;
@@ -137,7 +160,8 @@ export function createLocalExactMathEngine(options: {
     try {
       const payloads = inputs.map(input => JSON.stringify(input));
       if (payloads.reduce((size, payload) => size + payload.length, 0) > 1_048_576) throw new Error('Structured input exceeds its limit');
-      initialization ??= initialize(options.onPhase);
+      initialization ??= initialize(options.onPhase,
+        import.meta.env.VITE_PCAD_E2E === '1' ? options.onInitializationProfile : undefined);
       runtime = await initialization;
       options.onPhase('calculating');
       const results: unknown[] = [];

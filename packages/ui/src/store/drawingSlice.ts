@@ -1,13 +1,15 @@
 import type { DimensionSeriesInput, DimensionTarget, DrawingDocument, DrawingTable, DrawingViewConstruction } from '@pointercad/drawing';
-import { createUndoStack, emptyDrawingSourceLibrary, pushUndo, undo, redo,
+import { createUndoStack, drawingSourceInputOf, emptyDrawingSourceLibrary, pushUndo, undo, redo,
   type DrawingSourceLibrary, type DrawingSourceResolution, type DrawingRefreshResult,
   type SuggestedDimensionKind, type UndoStack, type ImportedShapeBytes } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 
 import type { AppState } from './appState.js';
 import { emptySheetMetalTool } from './sheetMetalSlice.js';
+import { documentSessionId, type PreparedDocumentSession } from './documentIdentity.js';
 
 export interface OpenDrawingOptions {
+  readonly preparedSession?: PreparedDocumentSession;
   readonly preserveSaveTarget?: boolean;
   readonly fileName?: string | null;
   readonly saved?: boolean;
@@ -18,6 +20,31 @@ export interface OpenDrawingOptions {
 export interface DrawingSnapshot {
   readonly document: DrawingDocument;
   readonly sources: DrawingSourceLibrary;
+  readonly importedShapes: ImportedShapeBytes;
+}
+
+function sameDrawingSource(left: DrawingDocument, right: DrawingDocument): boolean {
+  return left.source.sourceRef === right.source.sourceRef
+    && left.source.contentHash === right.source.contentHash
+    && left.source.sourceKind === right.source.sourceKind;
+}
+
+function drawingShapesForSnapshot(
+  previous: DrawingSnapshot, document: DrawingDocument, sources: DrawingSourceLibrary,
+): ImportedShapeBytes {
+  const matches = sources.sources.filter((entry) => entry.metadata.sourceRef === document.source.sourceRef
+    && entry.metadata.contentHash === document.source.contentHash
+    && entry.metadata.sourceKind === document.source.sourceKind);
+  if (matches.length > 1) return new Map<string, Uint8Array>();
+  const match = matches[0];
+  if (match !== undefined) {
+    const input = drawingSourceInputOf(match);
+    if (input === null || input.sourceKind !== document.source.sourceKind || input.sourceKind === 'assembly') {
+      return new Map<string, Uint8Array>();
+    }
+    if (input.attachments?.shapes !== undefined) return input.attachments.shapes;
+  }
+  return sameDrawingSource(previous.document, document) ? previous.importedShapes : new Map<string, Uint8Array>();
 }
 export type DrawingTool = 'select' | 'dimension' | 'dimensionSeries' | 'annotation' | 'note' | 'balloon' | 'datum' | 'gdt' | 'weld';
 /** 作成フォームの表示だけを管理する。文書や保存データには含めない。 */
@@ -78,8 +105,10 @@ export function createDrawingInitialState(): DrawingInitialState {
 
 export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlice, keyof DrawingInitialState>> = (set, get) => ({
   openDrawing: (drawing, options) => {
+    const activeDocumentId = documentSessionId(options?.preparedSession);
     if (options?.preserveSaveTarget !== true) get().fileGateway.clearSaveTarget?.();
     const sources = options?.sources ?? emptyDrawingSourceLibrary();
+    const importedShapes: ImportedShapeBytes = options?.importedShapes ?? new Map<string, Uint8Array>();
     set((state) => ({
       ...createDrawingInitialState(),
       strengthSession: null,
@@ -87,17 +116,18 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
       exportHandoffAttempt: null,
       drawing,
       drawingSources: sources,
-      drawingImportedShapes: options?.importedShapes ?? new Map(),
-      drawingUndoStack: createUndoStack({ document: drawing, sources }),
+      drawingImportedShapes: importedShapes,
+      drawingUndoStack: createUndoStack({ document: drawing, sources, importedShapes }),
       savedDrawing: options?.saved === true ? drawing : null,
       savedDrawingSources: options?.saved === true ? sources : null,
       drawingFileName: options?.fileName ?? null,
       drawingInitialName: drawing.name,
       assembly: null,
-      activeDocumentId: crypto.randomUUID(),
+      activeDocumentId,
       ...emptySheetMetalTool(),
       documentVersion: state.documentVersion + 1,
       selection: [],
+      connectionSelection: null,
       hoveredElementId: null,
       activeTool: 'select',
       canUndo: false,
@@ -110,8 +140,9 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
     if (current.drawing === null || current.drawingUndoStack === null
       || (current.drawing === drawing && (sources === undefined || sources === current.drawingSources))) return;
     const drawingSources = sources ?? current.drawingSources;
-    const stack = pushUndo(current.drawingUndoStack, { document: drawing, sources: drawingSources });
-    set((state) => ({ drawing, drawingSources, drawingUndoStack: stack, canUndo: stack.past.length > 0, canRedo: false,
+    const drawingImportedShapes = drawingShapesForSnapshot(current.drawingUndoStack.present, drawing, drawingSources);
+    const stack = pushUndo(current.drawingUndoStack, { document: drawing, sources: drawingSources, importedShapes: drawingImportedShapes });
+    set((state) => ({ drawing, drawingSources, drawingImportedShapes, drawingUndoStack: stack, canUndo: stack.past.length > 0, canRedo: false,
       documentVersion: state.documentVersion + 1, fileMessage: null, drawingMessage: null }));
   },
   undoDrawing: () => {
@@ -119,7 +150,8 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
     if (current.drawing === null || current.drawingUndoStack === null) return;
     const stack = undo(current.drawingUndoStack);
     if (stack === current.drawingUndoStack) return;
-    set((state) => ({ drawing: stack.present.document, drawingSources: stack.present.sources, drawingUndoStack: stack,
+    set((state) => ({ drawing: stack.present.document, drawingSources: stack.present.sources,
+      drawingImportedShapes: stack.present.importedShapes, drawingUndoStack: stack,
       canUndo: stack.past.length > 0, canRedo: stack.future.length > 0, documentVersion: state.documentVersion + 1,
       drawingSelectedIds: [], drawingTargets: [], drawingTool: 'select', drawingEditor: null, drawingRequestedDimension: null, drawingMessage: null }));
   },
@@ -128,7 +160,8 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
     if (current.drawing === null || current.drawingUndoStack === null) return;
     const stack = redo(current.drawingUndoStack);
     if (stack === current.drawingUndoStack) return;
-    set((state) => ({ drawing: stack.present.document, drawingSources: stack.present.sources, drawingUndoStack: stack,
+    set((state) => ({ drawing: stack.present.document, drawingSources: stack.present.sources,
+      drawingImportedShapes: stack.present.importedShapes, drawingUndoStack: stack,
       canUndo: stack.past.length > 0, canRedo: stack.future.length > 0, documentVersion: state.documentVersion + 1,
       drawingSelectedIds: [], drawingTargets: [], drawingTool: 'select', drawingEditor: null, drawingRequestedDimension: null, drawingMessage: null }));
   },
@@ -159,10 +192,11 @@ export const createDrawingSlice: StateCreator<AppState, [], [], Omit<DrawingSlic
   setDrawingFileState: (drawingFileName, savedDrawing, sources) => set({ drawingFileName, savedDrawing,
     savedDrawingSources: savedDrawing === null ? null : sources ?? get().drawingSources }),
   closeDrawing: () => {
+    const activeDocumentId = documentSessionId();
     get().fileGateway.clearSaveTarget?.();
     set((state) => ({
       ...createDrawingInitialState(),
-      activeDocumentId: crypto.randomUUID(),
+      activeDocumentId,
       documentVersion: state.documentVersion + 1,
       canUndo: state.undoStack.past.length > 0,
       canRedo: state.undoStack.future.length > 0,

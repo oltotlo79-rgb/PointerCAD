@@ -1,7 +1,5 @@
 import type { MathWorkerPort } from '@pointercad/expression/math/client';
 import {
-  CurvePointWorkerClient,
-  CurvePointContinuationWorkerClient,
   FunctionCurveWorkerClient,
   FunctionImplicitCurveWorkerClient,
   FunctionImplicitWorkerClient,
@@ -17,12 +15,6 @@ import { createBrowserMathWorker } from './browserMathWorker.js';
 
 export function createBrowserFunctionPointClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): PointCalculationWorkerClient {
   return new PointCalculationWorkerClient({createWorker});
-}
-export function createBrowserCurvePointClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): CurvePointWorkerClient {
-  return new CurvePointWorkerClient({createWorker});
-}
-export function createBrowserCurvePointContinuationClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): CurvePointContinuationWorkerClient {
-  return new CurvePointContinuationWorkerClient({createWorker});
 }
 export function createBrowserFunctionPointContinuationClient(createWorker: () => MathWorkerPort = createBrowserMathWorker): PointContinuationWorkerClient {
   return new PointContinuationWorkerClient({createWorker});

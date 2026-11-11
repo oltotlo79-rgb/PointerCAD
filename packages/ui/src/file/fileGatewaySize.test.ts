@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createBrowserFileGateway, openFileInBrowser } from './fileGateway.js';
+import { createBrowserFileGateway, openFileInBrowser, openParameterCsvInBrowser } from './fileGateway.js';
 
 function pickedFile(size: unknown, name = '部品.pcad') {
   const arrayBuffer = vi.fn(() => Promise.resolve(new ArrayBuffer(3)));
@@ -18,6 +18,35 @@ function inputScope(file: unknown) {
 }
 
 describe('Web読み込み全入口の確保前検査（R07）', () => {
+  it('パラメータCSVは1MiB境界を読取前後で確認し、保存先を持たない', async () => {
+    const maximum = 1024 * 1024;
+    const bytes = new Uint8Array(maximum);
+    const arrayBuffer = vi.fn(() => Promise.resolve(bytes.buffer));
+    const file = { size: maximum, arrayBuffer };
+    const scope = { showOpenFilePicker: () => Promise.resolve([
+      { name: '係数.CSV', getFile: () => Promise.resolve(file) },
+    ]) };
+    expect(await openParameterCsvInBrowser(scope)).toEqual({ fileName: '係数.CSV', bytes });
+    expect(arrayBuffer).toHaveBeenCalledTimes(1);
+    const oversized = { size: maximum + 1, arrayBuffer };
+    await expect(openParameterCsvInBrowser({ showOpenFilePicker: () => Promise.resolve([
+      { name: '係数.csv', getFile: () => Promise.resolve(oversized) },
+    ]) })).rejects.toThrow();
+    expect(arrayBuffer).toHaveBeenCalledTimes(1);
+    const grown = { size: maximum, arrayBuffer: () => Promise.resolve(new ArrayBuffer(maximum + 1)) };
+    await expect(openParameterCsvInBrowser({ showOpenFilePicker: () => Promise.resolve([
+      { name: '係数.csv', getFile: () => Promise.resolve(grown) },
+    ]) })).rejects.toThrow();
+    expect(await openParameterCsvInBrowser({ showOpenFilePicker: () => Promise.resolve([]) })).toBeNull();
+    expect(await openParameterCsvInBrowser({ showOpenFilePicker: () => Promise.reject(
+      Object.assign(new Error('cancelled'), { name: 'AbortError' }),
+    ) })).toBeNull();
+    const wrong = pickedFile(3, '係数.txt');
+    const input = inputScope(wrong.file);
+    await expect(openParameterCsvInBrowser(input.scope)).rejects.toThrow();
+    expect(wrong.arrayBuffer).not.toHaveBeenCalled();
+    expect(input.remove).toHaveBeenCalledTimes(1);
+  });
   it('DWGを選ぶだけならファイル選択を開かず、誤選択しても本文を取得しない', async () => {
     const { file, arrayBuffer } = pickedFile(3, '図面.DWG');
     const getFile = vi.fn(() => Promise.resolve(file));

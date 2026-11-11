@@ -148,6 +148,8 @@ export interface ExportRequest {
   readonly selectedFeatureIds: readonly string[];
   /** 三角形のなめらかさ。三角形を使わない形式(STEP)では無視される。 */
   readonly quality: ExportQuality;
+  /** 詳細指定の線形偏差(mm)。省略時は quality の既存の値を使う。 */
+  readonly customDeviationMm?: number;
   /** 色を書き出すか(§0.a-0.22。既定は `true`)。色を持てない形式(STL)では警告になる。 */
   readonly withColors: boolean;
   /** STL を文字で書くか(§0.a-0.14)。STL 以外では意味を持たない。既定はバイナリ(`false`)。 */
@@ -200,6 +202,7 @@ export interface ExportRequestOptions {
   readonly scope?: ExportScope;
   readonly selectedFeatureIds?: readonly string[];
   readonly quality?: ExportQuality;
+  readonly customDeviationMm?: number;
   readonly withColors?: boolean;
   readonly ascii?: boolean;
 }
@@ -212,11 +215,16 @@ export function createExportRequest(
   format: ExportFormat,
   options: ExportRequestOptions = {},
 ): ExportRequest {
+  if (options.customDeviationMm !== undefined &&
+    (!Number.isFinite(options.customDeviationMm) || options.customDeviationMm <= 0)) {
+    throw new RangeError();
+  }
   return {
     format,
     scope: options.scope ?? DEFAULT_EXPORT_SCOPE,
     selectedFeatureIds: options.selectedFeatureIds ?? [],
     quality: options.quality ?? DEFAULT_EXPORT_QUALITY,
+    ...(options.customDeviationMm === undefined ? {} : { customDeviationMm: options.customDeviationMm }),
     withColors: options.withColors ?? DEFAULT_EXPORT_WITH_COLORS,
     ascii: options.ascii ?? DEFAULT_EXPORT_ASCII,
   };

@@ -70,8 +70,8 @@ export function FunctionSectionDialog({ parentId, edit, onClose }: {
         {message ? <p role="alert">{message}</p> : null}
         {busy ? <p role="status">{t('functionSection.calculating')}</p> : null}
         <div className="pcad-function-actions"><button title={t('functionPlot.control.cancelSection')} type="button" onClick={close}>{t('math.cancel')}</button>
-          {busy ? <button title={t('functionPlot.control.stopSection')} type="button" onClick={() => { running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
-            : <button title={t('functionPlot.control.applySection')} type="submit">{t(edit ? 'functionSection.update' : 'functionSection.apply')}</button>}
+          {busy ? <button key="stop" title={t('functionPlot.control.stopSection')} type="button" onClick={event => { event.preventDefault(); running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
+            : <button key="submit" title={t('functionPlot.control.applySection')} type="submit">{t(edit ? 'functionSection.update' : 'functionSection.apply')}</button>}
         </div>
       </form>
     </dialog>

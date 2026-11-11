@@ -19,7 +19,10 @@ import type {
   SolidStepRequest,
 } from '../types.js';
 import { createKernelApi } from './kernelApi.js';
-import { OCCT_HEAP_LIMIT_BYTES, readKernelMemory, withKernelMemory } from './kernelMemory.js';
+import { readKernelMemory, withKernelMemory } from './kernelMemory.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const OCCT_HEAP_LIMIT_BYTES = 4_294_901_760;
 
 const GIB = 1024 ** 3;
 

@@ -1,13 +1,6 @@
 import { createCenterMarks, type CenterMark, type CenterMarkSource, type DrawingView, type Point2 } from '@pointercad/drawing';
 import type { DrawingProjectionCurve, ResolvedDrawingCurve } from './resolveDrawing.js';
 
-/** 元の辺・輪郭の識別を使い、用紙に投影した円と円柱の側線から中心線を作る。 */
-export function projectionCenterMarks(view: DrawingView, visible: readonly DrawingProjectionCurve[], toPaper: (point: Point2) => Point2, scale: number,
-  cylinderFaceIds: ReadonlySet<string> = new Set()): readonly ResolvedDrawingCurve[] {
-  return projectionCenterMarkGroups(view, visible, toPaper, scale, cylinderFaceIds)
-    .flatMap((mark) => mark.lines.map((line) => ({ kind: 'segment' as const, ...line })));
-}
-
 export function projectionCenterMarkGroups(view: DrawingView, visible: readonly DrawingProjectionCurve[], toPaper: (point: Point2) => Point2, scale: number,
   cylinderFaceIds: ReadonlySet<string> = new Set()): readonly CenterMark[] {
   const sources = new Map<string, CenterMarkSource>();

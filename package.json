@@ -1,6 +1,6 @@
 {
   "name": "pointercad",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",
@@ -9,8 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc --build --pretty",
-    "lint": "eslint .",
-    "test": "pnpm --filter @pointercad/expression run test && pnpm --recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test",
+    "lint": "node scripts/lint.mjs",
+    "test": "pnpm --filter @pointercad/test-utils run test && pnpm --filter @pointercad/expression run test && pnpm --filter @pointercad/fem run test && pnpm --recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test",
     "build": "pnpm --recursive --if-present run build",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "validation:runtime": "node scripts/lib/validationRuntime.mjs",
@@ -19,7 +19,9 @@
   "devDependencies": {
     "@eslint/js": "catalog:",
     "@playwright/test": "catalog:",
+    "@pointercad/kernel": "workspace:*",
     "@types/node": "catalog:",
+    "comlink": "catalog:",
     "electron-builder": "catalog:",
     "eslint": "catalog:",
     "eslint-plugin-react-hooks": "catalog:",

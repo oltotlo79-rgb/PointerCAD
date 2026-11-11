@@ -1,7 +1,28 @@
 /// <reference lib="dom" />
+import { volumeNumber } from './workPlaneCaptureSupport.js';
+/**
+ * ホーム視点の見え方。数値は `packages/ui/src/viewport/cameraMath.ts` の `HOME_ORBIT` と
+ * `VERTICAL_FIELD_OF_VIEW` そのままで、写し方は `createViewportScene.ts` の
+ * `worldToScreen`(three.js の PerspectiveCamera + lookAt)と同じ。
+ *
+ * **この検査では視点を一度も動かさない**ので、ワールド座標から画面座標への写しを共有補助で
+ * 組み立て直せる。面は光線(`pickFaceAt`)、辺・頂点は画面上 6px(`pickSolidSubShape`)で
+ * 拾われるため、押す場所をワールド座標で決められると、立体のどこを選んだのかが
+ * 検査の側でも確かめられる。
+ */
+// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
+
+/** ビューポートの上で、ワールド座標の点が見えている場所を押す(FR-106)。 */
+import { clickWorldPoint, worldToCanvas } from './homeViewProjection.js';
 import { readFileSync, statSync } from 'node:fs';
 
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { disableFilePickers } from './filePickers.js';
+import { openToolMenu, toolMenuPanel, toolMenuTrigger } from './toolMenus.js';
+import { fillFields, popover, popoverInputs } from './popoverFields.js';
+import { updateHoleWallMatePhi8Scenario, inspectFreshNativeHoleWallMatePhi8, reopenHoleWallMatePhi8Scenario, createHoleWallMateScenario, inspectFreshNativeHoleWallMate, reopenHoleWallMateScenario, createCylinderColdScenario, createImportedHoleScenario, inspectFreshNativeCylinderOrigins,
+  reopenCylinderColdScenario, reopenImportedHoleScenario, type CylinderColdOperation } from './cylinderSubshapeColdFlow.js';
 
 /**
  * 要件§9 P2 の完了条件「簡単な部品を作って保存・再編集できる」を、実際のブラウザで
@@ -127,22 +148,8 @@ declare global {
   }
 }
 
-/** コンソールのエラーとページの例外を集める。最後に 0 件であることを確かめる。 */
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
 /**
- * 保存していない変更の確認(画面の中の日本語の3択。w91a)に「保存せずに続ける」で答え、
+ * 保存していない変更の確認（画面内の日本語3択）に「保存せずに続ける」で答え、
  * 聞かれた文言を控える(NFR-UX-3)。
  *
  * 「新規」「開く」の後の次の操作・確かめの前に答えるよう、**押す前に**用意しておく。
@@ -151,36 +158,12 @@ function collectErrors(page: Page): readonly string[] {
  */
 async function acceptConfirms(page: Page): Promise<readonly string[]> {
   const messages: string[] = [];
-  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  // 画面の中の確認(NFR-UX-3。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
   await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
     messages.push(await dialog.locator('p').innerText());
     await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });
   return messages;
-}
-
-/**
- * File System Access API を無いことにしてから頁を開く(§0.a-0.10)。
- *
- * Playwright の Chromium には `showSaveFilePicker` / `showOpenFilePicker` があるが、
- * ヘッドレスでは窓を出せないので保存も読込も進まない。これらを `undefined` で上書きすると
- * `hasFileSystemAccess()` が偽になり、アプリはダウンロード(`<a download>`)と
- * ファイル選択(`<input type="file">`)の代替経路へ落ちる。どちらも Playwright が拾える。
- * File System Access API そのものの経路は実機で統括が確かめる(計画書 §5)。
- *
- * `delete` では消えない。この 2 つは `Window.prototype` 側にあるので、頁自身の
- * 持ち物として `undefined` を被せて隠す。
- */
-async function disableFilePickers(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
-      Object.defineProperty(globalThis, name, {
-        configurable: true,
-        writable: true,
-        value: undefined,
-      });
-    }
-  });
 }
 
 /**
@@ -206,34 +189,6 @@ function solidTool(page: Page, label: string): Locator {
 }
 
 /**
- * ツールバーの畳んだ一覧(「作る」「合わせる」「加工」)を開く(P5 タスク51、§0.a-0.51)。
- *
- * ソリッドと加工の図柄ボタンは、この一覧の中へ移った(ツールバーを 1440 画素で 1 段に
- * 保つため)。**検査の中身は 1 つも変えていない**: 押せる/押せない、ツールチップの
- * 「名前: 理由」、押した結果はそのままで、道具に届くまでに一覧を開く手順が 1 つ増えただけ。
- *
- * 畳んだボタンの読み上げ名は、最後に使った道具があると「加工: 穴」のように後ろが付くので
- * 頭の一致で引く。開いた一覧そのものは、区画と同じ名前(「作る」など)の group になる。
- */
-function toolMenuTrigger(page: Page, menu: string): Locator {
-  return page
-    .locator('.pcad-toolbar')
-    .getByRole('button', { name: new RegExp(`^${menu}`) })
-    .first();
-}
-
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-
-async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) {
-    await toolMenuTrigger(page, menu).click();
-  }
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
-}
-
-/**
  * 開いた一覧を閉じる。開いた一覧はビューポートに重なるので、**道具を押さずに
  * 押せる/押せないを確かめただけのとき**は、次のクリックを奪われないよう閉じてから進む
  * (道具を押した場合は一覧が自分で閉じるので、これを呼ぶ必要はない)。
@@ -252,19 +207,9 @@ function fileAction(page: Page, label: string): Locator {
     .getByRole('button', { name: label, exact: true });
 }
 
-/** その場数値入力のポップアップ。開いていないときは 0 件になる。 */
-function popover(page: Page): Locator {
-  return page.locator('.pcad-popover');
-}
-
 /** ポップアップの表題。 */
 function popoverTitle(page: Page): Locator {
   return page.locator('.pcad-popover__title');
-}
-
-/** ポップアップの式の欄。並びは指定方法ごとに X/Y/Z、ΔX/ΔY/ΔZ、距離。 */
-function popoverInputs(page: Page): Locator {
-  return page.locator('.pcad-popover input.pcad-field__input');
 }
 
 /** 欄の下の 1 行。妥当なら評価値、間違いなら理由が出る(FR-202、FR-204)。 */
@@ -411,18 +356,6 @@ function propertyValue(page: Page, key: string): Locator {
 /** プロパティの式の欄(距離・角度など)。立体を選んでいるときは 1 つだけ出る。 */
 function propertyInputs(page: Page): Locator {
   return propertyPanel(page).locator('input.pcad-field__input');
-}
-
-/** ポップアップの欄を埋める。null を渡した欄は既定値のままにする(NFR-UX-4)。 */
-async function fillFields(page: Page, sources: readonly (string | null)[]): Promise<void> {
-  await expect(popover(page)).toBeVisible();
-  const inputs = popoverInputs(page);
-  for (const [index, source] of sources.entries()) {
-    if (source === null) {
-      continue;
-    }
-    await inputs.nth(index).fill(source);
-  }
 }
 
 /** Enter で決定する(§2.9)。焦点は必ずポップアップの欄に置いてから押す。 */
@@ -704,6 +637,47 @@ test('点→線→面→押し出し→保存→再読込→編集ができる(�
   expect(confirms).toEqual(['保存していない変更は失われます。続けますか。']);
 
   expect(errors).toEqual([]);
+});
+
+for (const operation of ['hole', 'threadShaft'] as const satisfies readonly CylinderColdOperation[]) {
+  test(`実PCAD ZIPの円柱A/B所有と${operation}を新しいWeb画面で再開する`, async ({ page, context }, info) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+    await page.goto('/');
+    const saved = await createCylinderColdScenario(page, info, operation);
+    await page.close();
+    await inspectFreshNativeCylinderOrigins(saved);
+    const fresh = await context.newPage();
+    try {
+      const freshErrors = collectErrors(fresh);
+      await disableFilePickers(fresh);
+      await fresh.goto('/');
+      await reopenCylinderColdScenario(fresh, info, saved);
+      expect(errors).toEqual([]);
+      expect(freshErrors).toEqual([]);
+    } finally {
+      await fresh.close();
+    }
+  });
+}
+
+test('実PCAD ZIPの輸入形状(履歴なし)の穴は指紋補助の参照のまま新しいWeb画面で再開する', async ({ page, context }, info) => {
+  const errors = collectErrors(page);
+  await disableFilePickers(page);
+  await page.goto('/');
+  const saved = await createImportedHoleScenario(page, info);
+  await page.close();
+  const fresh = await context.newPage();
+  try {
+    const freshErrors = collectErrors(fresh);
+    await disableFilePickers(fresh);
+    await fresh.goto('/');
+    await reopenImportedHoleScenario(fresh, info, saved);
+    expect(errors).toEqual([]);
+    expect(freshErrors).toEqual([]);
+  } finally {
+    await fresh.close();
+  }
 });
 
 test('立体どうしを組み合わせられる(FR-404)', async ({ page }) => {
@@ -1089,80 +1063,6 @@ test('式の欄に焦点があっても Ctrl+S で保存される(§0.a-0.23 ⑪
 type WorldPoint = readonly [number, number, number];
 
 /**
- * ホーム視点の見え方。数値は `packages/ui/src/viewport/cameraMath.ts` の `HOME_ORBIT` と
- * `VERTICAL_FIELD_OF_VIEW` そのままで、写し方は `createViewportScene.ts` の
- * `worldToScreen`(three.js の PerspectiveCamera + lookAt)と同じ。
- *
- * **この検査では視点を一度も動かさない**ので、ワールド座標から画面座標への写しをここで
- * 組み立て直せる。面は光線(`pickFaceAt`)、辺・頂点は画面上 6px(`pickSolidSubShape`)で
- * 拾われるため、押す場所をワールド座標で決められると、立体のどこを選んだのかが
- * 検査の側でも確かめられる。
- */
-// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
-
-function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
-function dotPoints(a: WorldPoint, b: WorldPoint): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-}
-
-function normalizePoint(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
-}
-
-/** カメラの位置(`cameraPosition(HOME_ORBIT)`)。注視点は原点。 */
-const CAMERA_EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-/** カメラの向き。three.js の `Matrix4.lookAt` と同じ組み立て(上方向は +Z)。 */
-const CAMERA_Z = normalizePoint(CAMERA_EYE);
-const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
-
-/** ワールド座標を canvas の左上を原点とした画素へ写す。 */
-function worldToCanvas(
-  world: WorldPoint,
-  widthPixels: number,
-  heightPixels: number,
-): readonly [number, number] {
-  const view = subtractPoints(world, CAMERA_EYE);
-  // カメラは自分の -Z を見るので、前にあるものの深さは正になる。
-  const depth = -dotPoints(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
-  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
-  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
-}
-
-/** ビューポートの上で、ワールド座標の点が見えている場所を押す(FR-106)。 */
-async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
-  const canvas = page.locator('canvas.pcad-viewport__canvas');
-  const box = await canvas.boundingBox();
-  if (box === null) {
-    throw new Error('ビューポートの canvas の位置と大きさが取れませんでした。');
-  }
-  const [x, y] = worldToCanvas(world, box.width, box.height);
-  await page.mouse.click(box.x + x, box.y + y);
-}
-
-/**
  * 40 × 30 の板の上面の中央を押す位置(§2.3.2 の順序表、タスク30 不具合(c) の修正)。
  *
  * 選ぶものの種類が `face` のときは、スケッチ要素の当たり判定そのものを飛ばして立体の面だけを
@@ -1221,15 +1121,6 @@ function propertyMenu(page: Page, label: string): Locator {
     .filter({ has: page.locator('.pcad-choice__label', { hasText: new RegExp(`^${label}$`) }) });
 }
 
-/** プロパティに出ている体積を数で読む。まだ出ていなければ NaN。 */
-async function volumeNumber(page: Page): Promise<number> {
-  const cell = propertyValue(page, '体積');
-  if ((await cell.count()) === 0) {
-    return Number.NaN;
-  }
-  // 「11717.2566612 mm³」の形。単位の前で切れるので parseFloat でそのまま読める。
-  return Number.parseFloat(await cell.innerText());
-}
 
 /**
  * 体積が期待値どおりであることを、許容差(mm³)つきで確かめる。
@@ -1672,16 +1563,24 @@ test.describe('P3 加工フィーチャー', () => {
     );
     await expect(solidRows(page)).toHaveCount(1);
 
-    // 2) 立体の上面の中央を押す(押し出したもとのスケッチ面より立体の面が優先して当たる、
-    //    タスク30 不具合(c) の修正)。今度は中心の点が無いという理由に変わる。
+    // 2) 面だけでも位置の指定方法を選ぶために入力を開ける。
+    //    既定の「点を選ぶ」のまま確定すると、中心の点が無い理由で作成を断る。
     await clickWorldPoint(page, topFaceCenter(10));
     await openToolMenu(page, '加工');
-    await expect(holeButton).toHaveAttribute('title', '穴: 穴の中心にする点が選ばれていません。');
-    await holeButton.click({ force: true });
+    await expect(holeButton).toBeEnabled();
+    await expect(holeButton).toHaveAttribute('title',
+      '穴: 平面では面と中心の点を、円筒の外面・内面では面だけを選んで穴・ざぐりをあけます。円錐・球・自由曲面、円筒の傾斜穴・皿もみには対応していません');
+    await holeButton.click();
+    await expect(popoverTitle(page)).toHaveText('穴をあける');
+    await expect(popover(page).getByRole('group', { name: '平面での穴の位置の指定' })
+      .getByRole('button', { name: '点を選ぶ', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await commitPopover(page);
     await expect(statusText(page)).toHaveText(
       `${SOLID_ERROR_PREFIX} 穴の中心にする点が選ばれていません。`,
     );
     await expect(solidRows(page)).toHaveCount(1);
+    await expect(popover(page)).toBeVisible();
+    await cancelPopover(page);
 
     // 3) 穴でない立体を選んで「直線パターン」(§0.a-0.20 の「対象は穴とねじ穴だけ」)。
     await page.keyboard.press('4');
@@ -1905,4 +1804,142 @@ test.describe('P3 加工フィーチャー', () => {
 
     expect(errors).toEqual([]);
   });
+});
+
+/** Same project renderer/device/action limits; runner owns tracing even in these real owned processes. */
+async function withR18ColdPage<T>(browser: Browser, info: TestInfo, run: (page: Page) => Promise<T>): Promise<T> {
+  const use = info.project.use;
+  const context = await browser.newContext({ baseURL: use.baseURL, viewport: use.viewport, userAgent: use.userAgent,
+    deviceScaleFactor: use.deviceScaleFactor, isMobile: use.isMobile, hasTouch: use.hasTouch,
+    locale: use.locale, colorScheme: use.colorScheme, acceptDownloads: use.acceptDownloads });
+  try {
+    context.setDefaultTimeout(use.actionTimeout ?? 0); context.setDefaultNavigationTimeout(use.navigationTimeout ?? 0);
+    const page = await context.newPage();
+    const startupErrors = collectErrors(page);
+    await disableFilePickers(page);
+    await page.goto('/');
+    const result = await run(page);
+    expect(startupErrors).toEqual([]);
+    return result;
+  } finally { await context.close(); }
+}
+
+test('R18 actual new hole walls concentric mate survives PCADA full Web process restart', async ({ playwright, browserName }, info) => {
+  const use = info.project.use;
+  const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+    ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+  const first = await launch();
+  let scenario: Awaited<ReturnType<typeof createHoleWallMateScenario>>;
+  try { scenario = await withR18ColdPage(first, info, async page => {
+    const errors = collectErrors(page);
+    const saved = await createHoleWallMateScenario(page, info, undefined, false, true);
+    expect(errors).toEqual([]);
+    return saved;
+  }); } finally { await first.close(); }
+  expect(first.isConnected()).toBe(false);
+  await inspectFreshNativeHoleWallMate(scenario);
+  const second = await launch();
+  try { await withR18ColdPage(second, info, async fresh => {
+    const freshErrors = collectErrors(fresh);
+    await reopenHoleWallMateScenario(fresh, info, scenario);
+    expect(freshErrors).toEqual([]);
+  }); } finally { await second.close(); }
+});
+
+test('R18 same hole phi6 to expression phi8 preserves old mate refs, one Undo and actual process-cold ZIP', async ({ playwright, browserName }, info) => {
+  const use = info.project.use;
+  const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+    ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+  const first = await launch();
+  let updated: Awaited<ReturnType<typeof updateHoleWallMatePhi8Scenario>>;
+  try { updated = await withR18ColdPage(first, info, async page => {
+    const errors = collectErrors(page);
+    const scenario = await createHoleWallMateScenario(page, info);
+    const result = await updateHoleWallMatePhi8Scenario(page, info, scenario);
+    expect(errors).toEqual([]);
+    return result;
+  }); } finally { await first.close(); }
+  expect(first.isConnected()).toBe(false);
+  await inspectFreshNativeHoleWallMatePhi8(updated);
+  const second = await launch();
+  try { await withR18ColdPage(second, info, async page => {
+    const errors = collectErrors(page);
+    await reopenHoleWallMatePhi8Scenario(page, info, updated);
+    expect(errors).toEqual([]);
+  }); } finally { await second.close(); }
+});
+
+test('R18 legacy native confirmation Escape Cancel doubleclick and phi6 to expression phi8 preserves old mate refs, one Undo and actual process-cold ZIP', async ({ playwright, browserName }, info) => {
+  const use = info.project.use;
+  const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+    ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+  const first = await launch();
+  let updated: Awaited<ReturnType<typeof updateHoleWallMatePhi8Scenario>>;
+  try { updated = await withR18ColdPage(first, info, async page => {
+    const errors = collectErrors(page);
+    const scenario = await createHoleWallMateScenario(page, info, undefined, true);
+    const result = await updateHoleWallMatePhi8Scenario(page, info, scenario, undefined, true);
+    expect(errors).toEqual([]);
+    return result;
+  }); } finally { await first.close(); }
+  expect(first.isConnected()).toBe(false);
+  await inspectFreshNativeHoleWallMatePhi8(updated);
+  const second = await launch();
+  try { await withR18ColdPage(second, info, async page => {
+    const errors = collectErrors(page);
+    await reopenHoleWallMatePhi8Scenario(page, info, updated);
+    expect(errors).toEqual([]);
+  }); } finally { await second.close(); }
+});
+import { createHoleRimScenario, inspectFreshNativeHoleRim, reopenHoleRimScenario, updateHoleRimPhi8Scenario } from './cylinderSubshapeColdFlow.js';
+
+for (const operation of ['R面取り', 'C面取り'] as const) {
+  test(`R18 actual hole rim ${operation} native semantic owner and expression UndoRedo survive full Web process-cold ZIP`, async ({ playwright, browserName }, info) => {
+    const use = info.project.use;
+    const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+      ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+    const first = await launch();
+    let saved: Awaited<ReturnType<typeof createHoleRimScenario>>;
+    try { saved = await withR18ColdPage(first, info, page => createHoleRimScenario(page, info, operation)); }
+    finally { await first.close(); }
+    expect(first.isConnected()).toBe(false);
+    await inspectFreshNativeHoleRim(saved, info);
+    const second = await launch();
+    let updated: Awaited<ReturnType<typeof updateHoleRimPhi8Scenario>>;
+    try { updated = await withR18ColdPage(second, info, async page => {
+      await reopenHoleRimScenario(page, info, saved);
+      return updateHoleRimPhi8Scenario(page, info, saved);
+    }); } finally { await second.close(); }
+    expect(second.isConnected()).toBe(false);
+    await inspectFreshNativeHoleRim(updated, info);
+    const third = await launch();
+    try { await withR18ColdPage(third, info, page => reopenHoleRimScenario(page, info, updated)); }
+    finally { await third.close(); }
+    expect(third.isConnected()).toBe(false);
+  });
+}
+
+import { updateIndependentHoleWallMatePhi8Scenario, inspectIndependentHoleWallMatePhi8, reopenIndependentHoleWallMatePhi8Scenario } from './cylinderSubshapeColdFlow.js';
+
+test('R18 independent A phi6 to expression phi8 preserves old mate refs, one Undo and actual process-cold ZIP', async ({ playwright, browserName }, info) => {
+  const use = info.project.use;
+  const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+    ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+  const first = await launch();
+  let updated: Awaited<ReturnType<typeof updateIndependentHoleWallMatePhi8Scenario>>;
+  try { updated = await withR18ColdPage(first, info, async page => {
+    const errors = collectErrors(page);
+    const scenario = await createHoleWallMateScenario(page, info, undefined, false, true);
+    const result = await updateIndependentHoleWallMatePhi8Scenario(page, info, scenario);
+    expect(errors).toEqual([]);
+    return result;
+  }); } finally { await first.close(); }
+  expect(first.isConnected()).toBe(false);
+  await inspectIndependentHoleWallMatePhi8(updated);
+  const second = await launch();
+  try { await withR18ColdPage(second, info, async page => {
+    const errors = collectErrors(page);
+    await reopenIndependentHoleWallMatePhi8Scenario(page, info, updated);
+    expect(errors).toEqual([]);
+  }); } finally { await second.close(); }
 });

@@ -12,7 +12,7 @@ import type { SubShapeQueryPlan } from '../part/resolvePart.js';
  * `as` は使わず、種類ごとに手で組む(fingerprint.kind で分岐し、各節を return で閉じる)。
  */
 export function toSubShapeQuery(reference: SubShapeQueryPlan): SubShapeQuery {
-  const { index, fingerprint } = reference;
+  const { index, fingerprint, origin } = reference;
   switch (fingerprint.kind) {
     case 'face':
       return {
@@ -23,6 +23,7 @@ export function toSubShapeQuery(reference: SubShapeQueryPlan): SubShapeQuery {
         position: fingerprint.position,
         axis: fingerprint.axis,
         radius: fingerprint.radius,
+        ...(origin === undefined ? {} : { origin }),
       };
     case 'edge':
       return {
@@ -33,8 +34,10 @@ export function toSubShapeQuery(reference: SubShapeQueryPlan): SubShapeQuery {
         position: fingerprint.position,
         axis: fingerprint.axis,
         radius: fingerprint.radius,
+        ...(origin === undefined ? {} : { origin }),
       };
     case 'vertex':
-      return { kind: 'vertex', index, position: fingerprint.position };
+      return { kind: 'vertex', index, position: fingerprint.position,
+        ...(origin === undefined ? {} : { origin }) };
   }
 }

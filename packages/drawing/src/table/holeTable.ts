@@ -13,7 +13,7 @@ export interface DrawingHoleRow {
   readonly depth: number | null;
 }
 export type HoleColumnId = 'symbol' | 'x' | 'y' | 'diameter' | 'depth';
-export interface HoleTableInput extends Omit<TableLayoutInput, 'rows' | 'columns'> {
+interface HoleTableInput extends Omit<TableLayoutInput, 'rows' | 'columns'> {
   readonly rows: readonly DrawingHoleRow[];
   readonly headings: Readonly<Record<HoleColumnId, string>>;
   readonly formatLength: (value: number) => string;

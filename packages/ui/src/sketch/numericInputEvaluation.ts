@@ -24,6 +24,11 @@ export interface NumericInputEvaluation {
 /** 範囲外を表す識別子(packages/expression の ExpressionErrorCode、P3 §0.a-0.23 ①)。 */
 const RANGE_ERROR_CODE = 'outOfRange';
 
+/** 打った文字そのものの読み取りに失敗した code。表示用の単位の包みで位置がずれうる。 */
+const SYNTAX_ERROR_CODES: ReadonlySet<string> = new Set([
+  'unexpectedCharacter', 'unexpectedToken', 'unexpectedEnd', 'unclosedParenthesis', 'unexpectedTrailing',
+]);
+
 /**
  * 範囲外の理由文を組み立てる。
  * 限界値を差し込んだ文になるので ja.json のキー1つでは組み立てられない
@@ -160,9 +165,15 @@ export function evaluateNumericField(field: NumericField, variables: ReadonlyMap
       position: -1, message: '数式を変更したため再確認が必要です。「数式で入力」を開いてください。' } };
     return evaluateNumericMath(field.mathValue, variables, display.exactVariables, display.pendingVariables ?? pendingVariablesFor(variables));
   }
-  return evaluatePendingExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
-    variables, nonLengthVariables: display.nonLengthVariables, exactVariables: display.exactVariables,
-  }, display.pendingVariables ?? pendingVariablesFor(variables));
+  const options = { variables, nonLengthVariables: display.nonLengthVariables, exactVariables: display.exactVariables };
+  const pending = display.pendingVariables ?? pendingVariablesFor(variables);
+  const expression = fieldExpression(field, display.lengthUnit ?? 'mm');
+  const result = evaluatePendingExpression(expression, options, pending);
+  if (result.ok || expression === field.source || !SYNTAX_ERROR_CODES.has(result.error.code)) return result;
+  // The inch display wrapper `(...)in` shifts positions and can change which syntax error is
+  // reported. Explain a syntax error against what the user actually typed.
+  const typed = evaluatePendingExpression(field.source, options, pending);
+  return !typed.ok && SYNTAX_ERROR_CODES.has(typed.error.code) ? typed : result;
 }
 
 /** 評価できた値だけを順に取り出す。決定のときに使う。 */

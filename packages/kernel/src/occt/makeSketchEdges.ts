@@ -6,9 +6,11 @@ import {
   type TessellationOptions,
   type Vec3Tuple,
 } from '../types.js';
+import { createAllocations } from './allocations.js';
 import { makeEllipseEdge } from './makeEllipseEdge.js';
 import { makeSplineEdge } from './makeSplineEdge.js';
 import { curveSampleCoordinates } from './curveSampleCoordinates.js';
+import { localFloat32Coordinates, type MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 /** OCCT の稜線と、そのために確保した領域の解放手続き。 */
 export interface OcctEdgeHandle {
@@ -26,25 +28,18 @@ export function makeSegmentEdge(
   from: Vec3Tuple,
   to: Vec3Tuple,
 ): OcctEdgeHandle {
-  const start = new oc.gp_Pnt_3(from[0], from[1], from[2]);
-  const end = new oc.gp_Pnt_3(to[0], to[1], to[2]);
-  const maker = new oc.BRepBuilderAPI_MakeEdge_3(start, end);
-  if (!maker.IsDone()) {
-    maker.delete();
-    end.delete();
-    start.delete();
-    throw new Error('線分の稜線を作れませんでした。2 点が重なっている可能性があります。');
+  const { keep, release } = createAllocations();
+  try {
+    const start = keep(new oc.gp_Pnt_3(from[0], from[1], from[2]));
+    const end = keep(new oc.gp_Pnt_3(to[0], to[1], to[2]));
+    const maker = keep(new oc.BRepBuilderAPI_MakeEdge_3(start, end));
+    if (!maker.IsDone()) { throw new Error('線分の稜線を作れませんでした。2 点が重なっている可能性があります。'); }
+    const edge = keep(maker.Edge());
+    return { edge, delete: release };
+  } catch (error) {
+    release();
+    throw error;
   }
-  const edge = maker.Edge();
-  return {
-    edge,
-    delete(): void {
-      edge.delete();
-      maker.delete();
-      end.delete();
-      start.delete();
-    },
-  };
 }
 
 /**
@@ -59,42 +54,26 @@ export function makeArcEdge(oc: OpenCascadeInstance, arc: ArcSpec): OcctEdgeHand
   if (!(arc.radius > 0)) {
     throw new Error(`円弧の半径は正の数である必要があります: ${String(arc.radius)}`);
   }
-  const center = new oc.gp_Pnt_3(arc.center[0], arc.center[1], arc.center[2]);
-  const normal = new oc.gp_Dir_4(arc.normal[0], arc.normal[1], arc.normal[2]);
-  const xAxis = new oc.gp_Dir_4(arc.xAxis[0], arc.xAxis[1], arc.xAxis[2]);
-  const axis = new oc.gp_Ax2_2(center, normal, xAxis);
-  const circle = new oc.gp_Circ_2(axis, arc.radius);
-
-  const sweep = Math.abs(arc.endAngle - arc.startAngle);
-  const maker =
-    sweep >= FULL_TURN - FULL_TURN_EPSILON
+  const { keep, release } = createAllocations();
+  try {
+    const center = keep(new oc.gp_Pnt_3(arc.center[0], arc.center[1], arc.center[2]));
+    const normal = keep(new oc.gp_Dir_4(arc.normal[0], arc.normal[1], arc.normal[2]));
+    const xAxis = keep(new oc.gp_Dir_4(arc.xAxis[0], arc.xAxis[1], arc.xAxis[2]));
+    const axis = keep(new oc.gp_Ax2_2(center, normal, xAxis));
+    const circle = keep(new oc.gp_Circ_2(axis, arc.radius));
+    const sweep = Math.abs(arc.endAngle - arc.startAngle);
+    const maker = keep(sweep >= FULL_TURN - FULL_TURN_EPSILON
       ? new oc.BRepBuilderAPI_MakeEdge_8(circle)
-      : new oc.BRepBuilderAPI_MakeEdge_9(circle, Math.min(arc.startAngle, arc.endAngle), Math.max(arc.startAngle, arc.endAngle));
-
-  const cleanup = (): void => {
-    maker.delete();
-    circle.delete();
-    axis.delete();
-    xAxis.delete();
-    normal.delete();
-    center.delete();
-  };
-
-  if (!maker.IsDone()) {
-    cleanup();
-    throw new Error('円弧の稜線を作れませんでした。半径か角度を確かめてください。');
+      : new oc.BRepBuilderAPI_MakeEdge_9(circle, Math.min(arc.startAngle, arc.endAngle), Math.max(arc.startAngle, arc.endAngle)));
+    if (!maker.IsDone()) { throw new Error('円弧の稜線を作れませんでした。半径か角度を確かめてください。'); }
+    const edge = keep(maker.Edge());
+    // Create an ascending interval, then reverse topology for a clockwise arc.
+    if (arc.endAngle < arc.startAngle) edge.Reverse();
+    return { edge, delete: release };
+  } catch (error) {
+    release();
+    throw error;
   }
-  const edge = maker.Edge();
-  // OCCTの周期曲線は降順の径数を一周分繰り上げる。区間を昇順で作り、
-  // 位相の向きだけを反転して、時計回りを反対側の弧へ変えない。
-  if (arc.endAngle < arc.startAngle) edge.Reverse();
-  return {
-    edge,
-    delete(): void {
-      edge.delete();
-      cleanup();
-    },
-  };
 }
 
 /**
@@ -122,6 +101,8 @@ export function discretizeEdge(
   oc: OpenCascadeInstance,
   edge: TopoDS_Edge,
   options: TessellationOptions = {},
+  frame?: MeshCoordinateFrame,
 ): Float32Array {
-  return new Float32Array(curveSampleCoordinates(oc, edge, options));
+  const coordinates = curveSampleCoordinates(oc, edge, options);
+  return frame === undefined ? new Float32Array(coordinates) : localFloat32Coordinates(coordinates, frame);
 }

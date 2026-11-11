@@ -1,19 +1,14 @@
 /** Validate the original real Airy input before algebra can discard it. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
-import { AIRY_ARGUMENT_LIMIT, type AiryKind } from './airyNumeric.js';
+import { AIRY_ARGUMENT_LIMIT } from './airyNumeric.js';
 import { rationalOfExpression } from './exactRational.js';
 import { resolveTypedMathProduct } from './mathProductTypes.js';
 import { compileScalarMath } from './scalarMathTape.js';
 import { createScalarIntervalSampler } from './scalarMathIntervals.js';
 import { exactDoubleInterval } from './exactDoubleInterval.js';
 
-export function airyFunction(operation:string):{family:AiryKind;prime:boolean}|null {
-  switch(operation) {
-    case 'airyai':return {family:'Ai',prime:false};case 'airybi':return {family:'Bi',prime:false};
-    case 'airyaiprime':return {family:'Ai',prime:true};case 'airybiprime':return {family:'Bi',prime:true};
-    default:return null;
-  }
-}
+import { airyFunction } from './specialFunctionKinds.js';
+export { airyFunction } from './specialFunctionKinds.js';
 export function normalizeAiryFunction(node:MathNode,angleUnit:'degree'|'radian'):MathNode {
   if(node.kind!=='operation'||airyFunction(node.operation)===null)return node;
   if(node.operands.length!==1)throw new MathInputProblem('syntax','Airy関数には引数を一つ指定してください。');

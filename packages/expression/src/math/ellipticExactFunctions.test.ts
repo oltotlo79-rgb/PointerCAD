@@ -6,7 +6,7 @@ import type { MathExecutionBackend } from './mathWorkExecution.js';
 import type { MathNode } from './mathInputContract.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend:MathExecutionBackend;
 beforeAll(()=>{backend=createMathBackend();});

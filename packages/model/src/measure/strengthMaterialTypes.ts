@@ -6,11 +6,14 @@ export interface StrengthSource {
   readonly checkedDate: string;
   readonly standard: string | null;
   readonly standardEdition: string | null;
-  readonly evidence: 'supplier-excerpt' | 'manufacturer-reference' | 'measured-reference';
+  readonly evidence: 'supplier-excerpt' | 'manufacturer-reference' | 'measured-reference' | 'standard-draft';
   readonly sha256: string;
 }
 export interface StrengthMaterialProperty {
+  /** Minimum or reference value in MPa; a printed upper limit is kept separately. */
   readonly mpa: string;
+  readonly maximumMpa?: string;
+  readonly sourceValue?: { readonly printed: string; readonly unit: 'N/mm2'; readonly rowId: string };
   readonly sourceId: string;
   readonly basis: 'minimum' | 'reference';
 }
@@ -21,6 +24,7 @@ export interface StrengthMaterialPreset {
   readonly condition: string;
   readonly product: 'plate' | 'cold-rolled-sheet' | 'general';
   readonly thicknessMm: { readonly greaterThan: number; readonly atMost: number; readonly lowerInclusive?: boolean } | null;
+  readonly thicknessPrinted?: string;
   readonly temperature: 'room' | 'not-specified';
   readonly yieldStress: StrengthMaterialProperty;
   readonly tensileStrength: StrengthMaterialProperty;

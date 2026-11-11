@@ -8,14 +8,14 @@ import { implicitMonotoneExtrema, proveImplicitRegionEmpty } from './implicitEmp
 import { implicitBoxDistance } from './implicitPoint.js';
 import { hasRegularImplicitAxis, refinedImplicitPartials } from './implicitRegularity.js';
 
-export interface ImplicitGridOptions extends FunctionSurfaceBudget {
+interface ImplicitGridOptions extends FunctionSurfaceBudget {
   readonly minimum: FunctionPoint; readonly maximum: FunctionPoint; readonly tolerance: number;
   readonly fixed?: {readonly axis:0|1|2; readonly coordinate:number};
   readonly shouldStop?: () => 'cancelled' | 'deadline' | undefined;
 }
 export interface ImplicitGridPoint { readonly key: string; readonly point: FunctionPoint; readonly value: number }
 export interface ImplicitGridCell { readonly points: readonly ImplicitGridPoint[]; readonly needsCoverage?: boolean }
-export type ImplicitGridResult = {
+type ImplicitGridResult = {
   readonly status: 'ready'; readonly cells: readonly ImplicitGridCell[];
   /** Conservative geometric diameter, not a value residual or an estimate of curvature. */
   readonly maximumCellDiameter: number; readonly samples: number; readonly visited: number;

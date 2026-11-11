@@ -6,12 +6,15 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { ChamferSizeSpec, ChamferStepSpec } from '../types.js';
+import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { resolveFilletEdges } from './makeFillet.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, edgeAt, faceAt, facesTouchingEdge } from './subShapes.js';
+import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
+import { semanticOperationOrigins } from './semanticOperationOrigins.js';
 
 /**
  * C 面取り(FR-408、計画書 P3 §2.6、タスク8)。
@@ -216,6 +219,7 @@ export function makeChamfer(
   spec: ChamferStepSpec,
   target: TopoDS_Shape,
   tables: SubShapeTables,
+  semantic?: { readonly featureId: string; readonly origins: CurrentOriginIndex },
 ): OcctShapeHandle {
   validateSize(spec.size);
 
@@ -257,7 +261,17 @@ export function makeChamfer(
       throw new Error(NOT_SOLID_MESSAGE);
     }
 
-    return { shape, delete: release };
+    let origins: CurrentOriginIndex | undefined;
+    if (semantic?.origins.state === 'tracked') {
+      try {
+        const history = extractSubShapeHistory(oc, maker, [{ sourceId: 'target', shape: target }], shape);
+        origins = semanticOperationOrigins(semantic.featureId,
+          [{ sourceId: 'target', origins: semantic.origins }], history,
+          { operation: 'chamfer', selectedEdgeIndices: edgeIndices });
+      } catch (error) { origins = { version: 1, state: 'untracked',
+        reason: error instanceof OriginHistoryLimitError ? 'limit' : 'missing-native-map' }; }
+    }
+    return { shape, ...(origins === undefined ? {} : { origins }), delete: release };
   } catch (error) {
     release();
     throw error;

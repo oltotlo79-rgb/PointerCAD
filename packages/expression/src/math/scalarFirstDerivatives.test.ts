@@ -6,10 +6,11 @@ import { createScalarDirectionalJet, createScalarFirstDerivatives } from './scal
 import * as arithmetic from './mathInterval.js';
 import type { MathInterval } from './mathInterval.js';
 import type { MathExecutionBackend } from './mathWorkExecution.js';
+import type * as ImportedScalarMathIntervalsTypes from './scalarMathIntervals.js';
 
 const calls = vi.hoisted(() => ({ intervals: 0 }));
 vi.mock('./scalarMathIntervals.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./scalarMathIntervals.js')>();
+  const actual = await importOriginal<typeof ImportedScalarMathIntervalsTypes>();
   return { ...actual, createScalarIntervalEvaluation: (...args: Parameters<typeof actual.createScalarIntervalEvaluation>) => {
     const evaluation = actual.createScalarIntervalEvaluation(...args);
     return { ...evaluation, evaluate: (...inputs: Parameters<typeof evaluation.evaluate>) => {

@@ -15,13 +15,15 @@ import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   acceptedWordOf,
-  COMMAND_HISTORY_LIMIT,
   commandSuggestions,
   nextFieldLabels,
   pushCommandHistory,
   stepCommandHistory,
   submitCommandLine,
 } from './commandLineActions.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const COMMAND_HISTORY_LIMIT = 20;
 
 beforeEach(() => {
   useAppStore.setState({ ...createInitialDocumentState(), viewportSize: [1200, 800] });

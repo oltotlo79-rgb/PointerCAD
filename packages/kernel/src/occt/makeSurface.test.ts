@@ -1,19 +1,22 @@
 import { expectWithinBudget } from '@pointercad/test-utils';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { CurveSpec, SolidBodyKind, SolidFaceInfo, SubShapeQuery, Vec3Tuple } from '../types.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { makeBox } from './makeBox.js';
 import { makeCut } from './makeCut.js';
 import { makeExtrudeSolid } from './makeSolidSweep.js';
 import type { SurfaceInput } from './makeSurface.js';
-import { isShellShape, makeSurface, SHELL_NOT_SUPPORTED_MESSAGE } from './makeSurface.js';
+import { isShellShape, makeSurface } from './makeSurface.js';
 import { buildSolidBodyMesh, hasSolid, measureArea, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { solidFaceQuery } from './solidFaceQuery.testSupport.js';
+import { OPEN_FACES_NOT_SUPPORTED } from './shapeBodyKind.js';
 
 /**
  * 曲面(面だけの形、FR-428)の検査。計画書 P5 タスク41 の検証表。
@@ -135,6 +138,59 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
     oc = await loadOcctForNode();
   });
 
+  it.each([1, 2])('binds every actual open sweep face to its saved line (%i lines)', count => {
+    const allLines: readonly CurveSpec[] = [
+      { kind: 'segment', from: [0, 0, 0], to: [20, 0, 0] },
+      { kind: 'segment', from: [20, 0, 0], to: [20, 15, 0] },
+    ];
+    const profile = allLines.slice(0, count);
+    const profileOrigins = profile.map((_, index) => ({ sketchId: 'saved-sketch',
+      lineFeatureId: `saved-line-${index}`, role: 'whole-line' as const }));
+    const handle = makeSurface(oc, { kind: 'extrude', profile, profileOrigins,
+      direction: [0, 0, 1], distance: 10 }, null, null, {}, 'saved-surface');
+    try {
+      expect(hasSolid(oc, handle.shape)).toBe(false);
+      expect(handle.area).toBeCloseTo(count === 1 ? 200 : 350, 8);
+      const faces = collectTables(handle.shape).faces;
+      expect(faces).toHaveLength(count);
+      expect(handle.origins?.state).toBe('tracked');
+      if (handle.origins?.state !== 'tracked') throw new Error('Actual native origins missing');
+      expect(handle.origins.bindings).toHaveLength(count);
+      expect(new Set(handle.origins.bindings.flatMap(binding => binding.state === 'unique'
+        ? [binding.current.index] : [])).size).toBe(count);
+      for (const binding of handle.origins.bindings) {
+        expect(binding.origin.identity.featureId).toBe('saved-surface');
+        if (binding.state !== 'unique' || binding.origin.identity.kind !== 'surface-side') {
+          throw new Error('Expected an actual unique surface side');
+        }
+        const face = faces.find(value => value.index === binding.current.index);
+        expect(face).toBeDefined();
+        const first = binding.origin.identity.profile.lineFeatureId === 'saved-line-0';
+        expect(face?.area).toBeCloseTo(first ? 200 : 150, 8);
+        for (const [axis, coordinate] of (first ? [10, 0, 5] : [20, 7.5, 5]).entries()) {
+          expect(face?.centroid[axis]).toBeCloseTo(coordinate, 8);
+        }
+        expect(binding.origin.identity.profile).toEqual(profileOrigins[first ? 0 : 1]);
+      }
+    } finally { handle.delete(); }
+  });
+
+  it('does not assign semantic faces to duplicate source IDs or an unsupported profile', () => {
+    const duplicate = { sketchId: 'sketch', lineFeatureId: 'same', role: 'whole-line' as const };
+    const handle = makeSurface(oc, { kind: 'extrude', profile: [
+      { kind: 'segment', from: [0, 0, 0], to: [20, 0, 0] },
+      { kind: 'segment', from: [20, 0, 0], to: [20, 15, 0] },
+    ], profileOrigins: [duplicate, duplicate], direction: [0, 0, 1], distance: 10 }, null, null, {}, 'surface');
+    try {
+      expect(handle.area).toBeCloseTo(350, 8);
+      expect(handle.origins?.state).toBe('untracked');
+    } finally { handle.delete(); }
+    const legacy = makeSurface(oc, { kind: 'extrude', profile: SEGMENT_PROFILE,
+      direction: [0, 0, 1], distance: 10 });
+    try { expect(legacy.origins).toBeUndefined(); expect(legacy.area).toBeCloseTo(400, 8); }
+    finally { legacy.delete(); }
+  });
+
   /** tessellate / extractEdges と同じ形から一覧を作る(実際の使われ方と同じ順序)。 */
   function collectTables(shape: TopoDS_Shape): SubShapeTables {
     const surface = tessellate(oc, shape);
@@ -144,15 +200,7 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
 
   /** 一覧の面 1 枚から、文書が保存するのと同じ形の指紋を作る。 */
   function faceQuery(face: SolidFaceInfo): SubShapeQuery {
-    return {
-      kind: 'face',
-      index: face.index,
-      surfaceKind: face.surfaceKind,
-      area: face.area,
-      position: face.centroid,
-      axis: face.axis,
-      radius: face.radius,
-    };
+    return solidFaceQuery(face);
   }
 
   /**
@@ -350,6 +398,22 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
   });
 
   describe('ロフトの面', () => {
+    it('実ロフトの面積を保ち、ThruSectionsに正本の許容差を渡す', () => {
+      const Original = oc.BRepOffsetAPI_ThruSections;
+      const observed: number[] = [];
+      const spy = vi.spyOn(oc, 'BRepOffsetAPI_ThruSections').mockImplementation(function (...args: ConstructorParameters<typeof Original>) {
+        observed.push(args[2]);
+        return new Original(...args);
+      });
+      try {
+        const handle = makeSurface(oc, { kind: 'loft', sections: [rectangle(40, 30, 0), rectangle(20, 15, 10)], ruled: true });
+        try { expect(handle.area).toBeCloseTo(LOFT_SIDE_AREA, 6); }
+        finally { handle.delete(); }
+        expect(observed.length).toBeGreaterThan(0);
+        for (const value of observed) expect(value).toBe(APPROXIMATION_TOLERANCE_MM);
+      } finally { spy.mockRestore(); }
+    });
+
     it('40 × 30 → 20 × 15(高さ 10)をつなぐと、側面 4 枚の殻になる', () => {
       const measured = measureSurface({
         kind: 'loft',
@@ -768,7 +832,7 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
     it('面だけの形に加工を掛けさせない文言が用意されている', () => {
       // 実際に断りを足すのはタスク42(makeFillet.ts / makeHole.ts など)。
       // ここでは判定と文言が 1 か所にまとまっていることだけを固定する。
-      expect(SHELL_NOT_SUPPORTED_MESSAGE).toContain('閉じていない面を含む形には使えません');
+      expect(OPEN_FACES_NOT_SUPPORTED).toContain('閉じていない面を含む形には使えません');
     });
 
     it('作った面の面積は測り直さなくても結果に添えて返る', () => {

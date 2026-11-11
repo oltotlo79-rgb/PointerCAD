@@ -9,8 +9,8 @@ import { lstat, mkdir, rename, writeFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { collectDesktopFiles } from './desktopFileInventory.mjs';
-import { desktopJson, verifyDesktopDistribution } from './desktopDistribution.mjs';
-import { prepareDesktopInstallerResources, writeDesktopUninstallFiles } from './desktopInstallerResources.mjs';
+import { desktopJson, sealDesktopBuilderDownloadConfig, verifyDesktopDistribution } from './desktopDistribution.mjs';
+import { keepElectronExecutableNotices, prepareDesktopInstallerResources, writeDesktopUninstallFiles } from './desktopInstallerResources.mjs';
 import { desktopPackagePlan, verifyDesktopPackageArtifacts } from './desktopPackageTargets.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..'), args = argv.slice(2);
@@ -46,11 +46,21 @@ await prepareDesktopInstallerResources(root, resources);
 const { build, Arch, Platform } = await import('electron-builder');
 const target = platform === 'win32' ? Platform.WINDOWS : Platform.LINUX;
 const plan = desktopPackagePlan(platform, manifest.version);
+const builderRequire = createRequire(require.resolve('electron-builder'));
+const { getConfig } = builderRequire('app-builder-lib/out/util/config/config');
+const requestedConfig = { extends: join(root, 'apps/desktop/electron-builder.yml'), electronVersion: manifest.electronVersion,
+  directories: { app, output: builderOutput, buildResources: resources },
+  electronDownload: { cache: env.ELECTRON_CACHE, strictSSL: true, isVerifyChecksum: true },
+  // Both platforms: keep the notices next to the executable (LICENSE.electron.txt, LICENSES.chromium.html) in the candidate.
+  // Windows only: the NSIS uninstall list.
+  afterPack: async context => {
+    await keepElectronExecutableNotices(root, context.appOutDir, staged);
+    if (platform === 'win32') await writeDesktopUninstallFiles(root, context.appOutDir, resources);
+  } };
+const effectiveConfig = await getConfig(app, null, requestedConfig);
+const config = sealDesktopBuilderDownloadConfig(effectiveConfig, env.ELECTRON_CACHE);
 const artifacts = await build({ projectDir: app, publish: 'never',
-  targets: target.createTarget(plan.map(item => item.target), Arch.x64),
-  config: { extends: join(root, 'apps/desktop/electron-builder.yml'), electronVersion: manifest.electronVersion,
-    directories: { app, output: builderOutput, buildResources: resources },
-    afterPack: platform === 'win32' ? context => writeDesktopUninstallFiles(root, context.appOutDir, resources) : undefined } });
+  targets: target.createTarget(plan.map(item => item.target), Arch.x64), config });
 const unpacked = join(builderOutput, platform === 'win32' ? 'win-unpacked' : 'linux-unpacked', 'resources/app');
 const verified = verifyDesktopDistribution(await collectDesktopFiles(root, unpacked), manifestBytes);
 const assets = [];

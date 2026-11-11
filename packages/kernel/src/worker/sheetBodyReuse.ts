@@ -3,6 +3,7 @@ import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.j
 import type { CurveSpec, SolidStepSpec, Vec3Tuple } from '../types.js';
 import { transformShape, IDENTITY_TRANSFORM } from '../occt/transformShape.js';
 import type { BooleanResult } from '../occt/booleanOp.js';
+import { createAllocations } from '../occt/allocations.js';
 import type { CachedSolid } from './recomputeSolids.js';
 import type { ShapeCache } from './shapeCache.js';
 
@@ -70,8 +71,15 @@ export function createSheetBodyReuse(oc: OpenCascadeInstance, cache: ShapeCache<
       const cached = cache.get(prototype.key); if (cached === undefined) return null;
       const translation: Vec3Tuple = [local.origin[0]-prototype.origin[0], local.origin[1]-prototype.origin[1], local.origin[2]-prototype.origin[2]];
       if (!translation.every(Number.isFinite)) return null;
-      const copy = transformShape(oc, cached.shape, { ...IDENTITY_TRANSFORM, translation });
-      return { shape: copy.shape, volume: cached.mesh.volume, delete: () => copy.delete() };
+      const { keep, release } = createAllocations();
+      try {
+        // cached.shape is borrowed. Only the newly transformed handle is transferred here.
+        const copy = keep(transformShape(oc, cached.shape, { ...IDENTITY_TRANSFORM, translation }));
+        return { shape: copy.shape, volume: cached.mesh.volume, delete: release };
+      } catch (error) {
+        release();
+        throw error;
+      }
     },
   };
 }

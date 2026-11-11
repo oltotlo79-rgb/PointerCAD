@@ -7,8 +7,21 @@ import { executeCommand } from './commandRegistry.js';
 import { toolbarCommandId } from './toolbarCommandCatalog.js';
 import { resolveAssignedShortcut, validateShortcutAssignments } from './shortcutAssignments.js';
 
-beforeEach(resetTestStore);
-afterEach(resetTestStore);
+// The shared document reset does not close these two independent analysis sessions.
+function resetAnalysisTestStore(): void {
+  const current = useAppStore.getState();
+  if (current.solidAnalysisSession !== null) current.closeSolidAnalysis();
+  if (current.solidPlasticSession !== null) current.closeSolidPlastic();
+  if (current.solidFiniteSession !== null) current.closeSolidFinite();
+  if (current.shellAnalysisSession !== null) current.closeShellAnalysis();
+  resetTestStore();
+}
+beforeEach(() => {
+  resetAnalysisTestStore();
+  expect(useAppStore.getState().solidAnalysisSession).toBeNull();
+  expect(useAppStore.getState().solidPlasticSession).toBeNull();
+});
+afterEach(resetAnalysisTestStore);
 const state = () => useAppStore.getState();
 const run = (id: string) => executeCommand(id);
 
@@ -108,5 +121,39 @@ describe('ボタンと割当キーは同じ文書と入力へ接続する', () =
     expect(state().utilityPanel).toBe('drawingExport');
     state().setUtilityPanelOpen('export', false); expect(state().utilityPanel).toBe('drawingExport');
     expect(state().drawing).toBe(original); expect(state().canUndo).toBe(false);
+  });
+});
+
+describe('analysis commands use the existing panels and refusal channel', () => {
+  const panels = [
+    ['beam', 'beamSession'], ['plasticBar', 'plasticBarSession'], ['fatigue', 'fatigueSession'],
+    ['fatigueStrain', 'fatigueStrainSession'], ['fatigueLocalCycle', 'fatigueLocalCycleSession'],
+    ['solidAnalysis', 'solidAnalysisSession'], ['solidPlastic', 'solidPlasticSession'], ['solidFinite', 'solidFiniteSession'],
+    ['shellAnalysis', 'shellAnalysisSession'],
+  ] as const;
+  it.each(panels)('%s opens its actual session through the command registry', (id, field) => {
+    if (id === 'beam') state().openAssembly(createAssemblyDocument('Assembly'));
+    expect(state().strengthSession).toBeNull();
+    expect(run(toolbarCommandId('analysis', id)).status).toBe('executed');
+    expect(state().strengthSession).not.toBeNull(); expect(state()[field]).not.toBeNull();
+  });
+
+  it('reports an explicit refusal while retaining another panel and its edited input', () => {
+    expect(run(toolbarCommandId('analysis', 'plasticBar')).status).toBe('executed');
+    state().editPlasticBar({ kind: 'value', field: 'length', source: '147mm' });
+    const before = state();
+    expect(run(toolbarCommandId('analysis', 'fatigue'))).toMatchObject({ status: 'disabled', reasonKey: 'toolbar.analysis.closeCurrent' });
+    expect(state().plasticBarSession).toBe(before.plasticBarSession);
+    expect(state().strengthSession).toBe(before.strengthSession);
+    expect(state().fatigueSession).toBeNull(); expect(state().document).toBe(before.document);
+    expect(state().fileMessage).toEqual({ key: 'toolbar.analysis.closeCurrent', failed: true });
+  });
+
+  it('refuses all seven commands in a drawing without creating a parent session', () => {
+    openDrawing(); const before = state();
+    for (const [id] of panels) {
+      expect(run(toolbarCommandId('analysis', id))).toMatchObject({ status: 'disabled', reasonKey: 'command.unavailable.document' });
+      expect(state().drawing).toBe(before.drawing); expect(state().strengthSession).toBeNull();
+    }
   });
 });

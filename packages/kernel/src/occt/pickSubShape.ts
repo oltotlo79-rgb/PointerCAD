@@ -15,7 +15,7 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { SubShapeQuery } from '../types.js';
-import { matchEdge, matchFace, matchVertex } from './matchSubShape.js';
+import { resolveEdgeReference, resolveFaceReference, resolveVertexReference } from './matchSubShape.js';
 import { boundingDiagonal, edgeAt, faceAt, vertexAt, type SubShapeTables } from './subShapes.js';
 
 /**
@@ -42,16 +42,16 @@ export function pickSubShape(
   const scale = boundingDiagonal(oc, shape) * 0.5;
   switch (query.kind) {
     case 'face': {
-      const match = matchFace(tables.faces, query, scale);
-      return match === null ? null : faceAt(oc, shape, match.index);
+      const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
+      return match.status !== 'matched' ? null : faceAt(oc, shape, match.match.index);
     }
     case 'edge': {
-      const match = matchEdge(tables.edges, query, scale);
-      return match === null ? null : edgeAt(oc, shape, match.index);
+      const match = resolveEdgeReference(tables.edges, query, scale, tables.origins);
+      return match.status !== 'matched' ? null : edgeAt(oc, shape, match.match.index);
     }
     case 'vertex': {
-      const match = matchVertex(tables.vertices, query, scale);
-      return match === null ? null : vertexAt(oc, shape, match.index);
+      const match = resolveVertexReference(tables.vertices, query, scale, tables.origins);
+      return match.status !== 'matched' ? null : vertexAt(oc, shape, match.match.index);
     }
   }
 }

@@ -1,6 +1,33 @@
 import { defineConfig, devices } from '@playwright/test';
 import { FIREFOX_GRAPHICS_PREFS } from './firefoxLaunch.js';
 
+// Dedicated measurements require the existing owned-input runners, never ordinary CI.
+const MEASUREMENT_FILES = {
+  w21: ['occt-compile-reuse-solid.spec.ts', 'electron-occt-compile-reuse.spec.ts'],
+  w22: ['math-pace-slow-function-plot.spec.ts', 'electron-math-pace-slow.spec.ts'],
+  ex12host: ['assembly-1000-host.spec.ts', 'electron-assembly-1000-host.spec.ts'],
+} as const;
+const measurementMode = process.env.PCAD_DEDICATED_MEASUREMENT;
+if (measurementMode !== undefined && measurementMode !== 'w21' && measurementMode !== 'w22' && measurementMode !== 'ex12host') {
+  throw new Error('Unknown dedicated measurement mode');
+}
+// Manual screenshots isolate cold mathematics preparation; ordinary CI keeps its two workers.
+const manualCapture = process.env.PCAD_MANUAL_CAPTURE;
+if (manualCapture !== undefined && manualCapture !== '1') {
+  throw new Error('Unknown manual capture mode');
+}
+if (manualCapture === '1' && (process.env.CI !== undefined || measurementMode !== undefined)) {
+  throw new Error('Manual capture cannot run in CI or dedicated measurement mode');
+}
+const selectedMeasurement = measurementMode === undefined ? null : MEASUREMENT_FILES[measurementMode];
+const requestedSpecs = process.argv.filter(value => value.endsWith('.spec.ts')).map(value => value.split(/[\\/]/u).at(-1));
+if (selectedMeasurement !== null && requestedSpecs.some(name => !selectedMeasurement.some(file => file === name))) {
+  throw new Error('Dedicated measurement mode and explicit spec disagree');
+}
+const dedicatedFiles = Object.values(MEASUREMENT_FILES).flat();
+const dedicatedMatch = (electron: boolean) => selectedMeasurement?.filter(name => name.startsWith('electron-') === electron)
+  .map(name => `**/${name}`);
+
 const ELECTRON_TEST_FILE = /electron-[\w-]+\.spec\.ts$/u;
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
@@ -60,7 +87,9 @@ export default defineConfig({
     },
     {
       name: 'functional',
-      testIgnore: [ELECTRON_TEST_FILE, FIREFOX_GRAPHICS_TEST],
+      ...(manualCapture === '1' ? { workers: 1 } : {}),
+      testIgnore: [ELECTRON_TEST_FILE, FIREFOX_GRAPHICS_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
+      ...(selectedMeasurement === null ? {} : { testMatch: dedicatedMatch(false) }),
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       dependencies: ['viewport-performance'],
     },
@@ -71,10 +100,12 @@ export default defineConfig({
     {
       name: 'firefox',
       // Electron専用ケースの末尾がWebの名前と重なっても、Firefox枠へ混入させない。
-      testIgnore: [ELECTRON_TEST_FILE, WEB_STARTUP_TEST],
+      testIgnore: [ELECTRON_TEST_FILE, WEB_STARTUP_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
       // 実カーネル・保存再読込・復元・製作図・F1・CSPを既存の同じ操作で検査する。
       // 板金の操作検査は分割した新ファイルも自動的に対象へ入れる。
-      testMatch: /(?:smoke|solid|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|name-search|auto-save-settings|command-registry|tutorial|shortcut-settings|radial-menu|offline-routing|offline-editions|function-plot|sheet-[\w-]+)\.spec\.ts$/u,
+      // 名前はパスの区切りの直後からファイル名の全体で一致させ、末尾だけの一致で別の spec が増えないようにする。板金は sheet- で始まる名前だけ。
+      testMatch: /(?:^|[\\/])(?:smoke|solid|solid-finite-worker|solid-finite-authoring|solid-finite-field|analysis-entry|analysis-result-binding|analysis-static-connections|analysis-connections-persistence|analysis-bolt-persistence|analysis-advanced|analysis-plastic-persistence|plastic-bar-plateau|analysis-fatigue-native|analysis-resources|shell-analysis-connections|solid-boundary-authoring|extrude-operation|direct-edit-operations|bolted-joint|fillet-weld|circular-weld|steel-editable-stock|assembly-coupled-drag|assembly-flexible-motion|steel-bend|steel-bend-stock|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|named-save-points|name-search|parameter-search-csv|auto-save-settings|command-registry|tutorial|shortcut-settings|camera-controls-settings|camera-controls-presets|radial-menu|connect-points|canvas|drawing-delete-elements|drawing-navigation|reference-ambiguity|usability-keyboard|offline-routing|offline-editions|function-plot|function-spline-surface|memory-highwater|impact-browser|machining-surface|sheet-[\w-]+|a-math-input|draggable-input-solid|drawing-sheet-expressions|ex18-routes-solid|ex18-surface-sew-solid|expression-math-input|face-offset-solid|fatigue-local-cycle-strength|fatigue-paired-strength|geometry-math-input|named-view-unavailable-smoke|pg5a-solid|planar-machining-surface|properties-input-layout-smoke|startup-failed-overlay-smoke|startup-navigation-smoke|tool-defaults-auto-save-settings|tree-name-search|z-math-input|appearance|assembly|bolt-preload|bolted-joint-tapped|bolted-joint-through-thread|combined-weld-stress|context-reference-cycle-open|context-reference-repair|context-reference-route5|cut-plane-materials|drawing-source-refresh|ex18-math-bracket|ex18-sew-bracket|exchange|fatigue-detail-browser|file-open-rejection|friction-browser|friction-cancel-browser|gdt-all|gdt-position|local-data|math-keyboard|measurement-printcheck-fix02|p4b-command-line|p4b-constraints|p4b-parameters|p4b-timeline|p4b-tracking|p5-cut-mirror|p5-primitive-pick|p6-view|p7-standard-parts|p8-drawing|parameter-math-name-blur|primitives|semantic-origin-reopen|sketch-connected-1000|sketch-corner-boundary|sketch-extended|sketch|solid-material-authoring|status-guidance|thread|unsaved-reload|viewcube|weld-layer-browser|weld-span-author|welding|workplane-3d)\.spec\.ts$/u,
+      ...(selectedMeasurement === null ? {} : { testMatch: dedicatedMatch(false) }),
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       use: FIREFOX_USE,
       dependencies: ['viewport-performance', 'startup-firefox'],
@@ -85,7 +116,8 @@ export default defineConfig({
     },
     {
       name: 'electron',
-      testMatch: ELECTRON_TEST_FILE, testIgnore: ELECTRON_STARTUP_TEST,
+      testMatch: dedicatedMatch(true) ?? ELECTRON_TEST_FILE,
+      testIgnore: [ELECTRON_STARTUP_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
       workers: 1,
       dependencies: ['viewport-performance', 'startup-electron'],
     },

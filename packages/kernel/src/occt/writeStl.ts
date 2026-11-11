@@ -23,9 +23,14 @@ import type { ExportMesh } from './exportMesh.js';
  * `oc`(OpenCascadeInstance)は要らない。**この関数は純関数**で、同じ `ExportMesh` からは
  * 必ず同じバイト列が出る(§0.a-0.62 の決定性)。仮想ファイル(§2.2)も経由しない。
  *
- * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1):**
- * `oc.StlAPI` は実行時に関数で、`StlAPI.Write` も関数として存在する(`.test.ts` の 1 件目が
- * 毎回確かめる)。**実在は記録するだけで、この実装は使わない**(上の 4 つの理由)。
+ * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1)と、
+ * 採用した closed 版での確認(2026-10-24):** 旧レジストリ版では `oc.StlAPI` は実行時に関数で、
+ * `StlAPI.Write` も関数として存在したが、**closed 版 OCCT
+ * (`vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677`)には `oc.StlAPI` も
+ * `oc.StlAPI_Writer` も無い**(実行時に `undefined`)。この実装は元から使わず、書き出しは
+ * 自前の純関数で行う(上の 4 つの理由。統括の決定 2026-09-06 と 2026-10-24)ので、影響は無い。
+ * `.test.ts` の 1 件目は、採用した共通の三角形から ASCII とバイナリの STL を書き出せることを
+ * 確かめる。
  *
  * ## バイナリ STL の構造(§2.4)
  *

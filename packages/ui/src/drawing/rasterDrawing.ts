@@ -3,7 +3,7 @@ export type RasterDrawingFormat = 'png' | 'jpg';
 export type RasterDrawingFailure = 'invalidSize' | 'tooLarge' | 'imageFailed' | 'canvasFailed';
 export type RasterDrawingResult = { readonly ok: true; readonly bytes: Uint8Array; readonly width: number; readonly height: number }
   | { readonly ok: false; readonly reason: RasterDrawingFailure };
-export const DRAWING_JPEG_QUALITY = 0.92;
+const DRAWING_JPEG_QUALITY = 0.92;
 /** 600dpi A3(69,605,736画素)を含む。実ブラウザの実測後に正式値を確定する。 */
 export const DRAWING_RASTER_LIMITS = { dimension: 16_384, pixels: 75_000_000 } as const;
 

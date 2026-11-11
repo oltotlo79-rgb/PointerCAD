@@ -9,8 +9,10 @@ import {
 
 
 import type { MathAxis, MathParameter } from '@pointercad/expression/math/contracts';
-import { FunctionDefinitionProblem, readFunctionDefinition, type FunctionDefinitionReader } from './readFunctionDefinition.js';
+import { FunctionDefinitionProblem, readFunctionDefinition } from './readFunctionDefinition.js';
 import { FUNCTION_DEFINITION_FORMAT } from './functionDefinitionTypes.js';
+
+type FunctionDefinitionReader = Parameters<typeof readFunctionDefinition>[1];
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

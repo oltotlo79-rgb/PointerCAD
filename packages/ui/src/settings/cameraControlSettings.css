@@ -1,0 +1,6 @@
+.pcad-camera-settings fieldset { min-width: 0; border: 1px solid var(--pcad-border); }
+.pcad-camera-settings__binding { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-block: 0.4rem; }
+.pcad-camera-settings__binding select { max-width: 100%; }
+.pcad-camera-settings > label { display: flex; align-items: center; gap: 0.4rem; }
+.pcad-camera-settings input[type="number"] { width: 5rem; }
+.pcad-camera-settings__actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }

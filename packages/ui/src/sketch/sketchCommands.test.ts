@@ -44,8 +44,9 @@ import {
   sphereGridTargetSphere,
   subShapeCoordinate,
   toElementRef,
-  type CommitContext,
 } from './sketchCommands.js';
+
+type CommitContext = Parameters<typeof commitSketchInput>[1];
 
 /** 欄へ数字を打ってから決定する。ポップアップと同じ道筋を通す。 */
 function commitOf(state: NumericInputState, sources: readonly string[]): NumericInputCommit {

@@ -109,8 +109,52 @@ def _segment_is_diag_wait(tokens: list[str]) -> bool:
     return False
 
 
-def count_diag_wait_segments(command: str) -> int:
-    return sum(1 for segment in _segments(command) if _segment_is_diag_wait(_tokens(segment)))
+LOOP_STARTS = {"for", "while", "until", "select", "foreach"}
+LOOP_ANYWHERE = {"foreach-object", "%", "xargs", "parallel"}
+
+
+def _is_loop_head(tokens: list[str]) -> bool:
+    """bashのfor/while/until、PowerShellのforeach/ForEach-Object、xargsなど、
+    本体を繰り返し実行する書き方の頭。"""
+    if not tokens:
+        return False
+    if tokens[0].lower().lstrip("({") in LOOP_STARTS:
+        return True
+    return any(token.lower() in LOOP_ANYWHERE for token in tokens)
+
+
+def count_diag_wait_segments(command: str, _depth: int = 0) -> int:
+    """`diag.py wait` の実行回数の見積り。繰り返し(for/while/until・foreach・
+    ForEach-Object・xargs)の中の wait は、1回しか書かれていなくても2回と数える
+    (2026-10-01 cl-v102-calc-deadline の `for r in A B; do ... diag.py wait ...; done` が
+    本文の wait が1つのため通り、600秒を超えた。2026-10-05 R27 で穴と確定)。
+    bash -c "..." / pwsh -Command "..." のように引用符の中へ入れた本文も再帰して数える。"""
+    total = 0
+    loop_depth = 0   # bashのfor..doneの入れ子
+    ps_loop = False  # PowerShellの波括弧の繰り返しは終わりを数えず、最後まで続くと見なす
+    for segment in _segments(command):
+        tokens = _tokens(segment)
+        if not tokens:
+            continue
+        head = tokens[0].lower()
+        if head == "done":
+            loop_depth = max(0, loop_depth - 1)
+            continue
+        loop_head = _is_loop_head(tokens)
+        if loop_head:
+            if head in ("foreach", "(foreach") or any(t.lower() in ("foreach-object", "%") for t in tokens):
+                ps_loop = True
+            else:
+                loop_depth += 1
+        weight = 2 if (loop_depth > 0 or ps_loop or loop_head) else 1
+        if _segment_is_diag_wait(tokens):
+            total += weight
+        elif _depth < 3:
+            for token in tokens:
+                if " " in token and "diag.py" in token:
+                    inner = count_diag_wait_segments(token, _depth + 1)
+                    total += inner * (2 if (loop_depth > 0 or ps_loop) else 1)
+    return total
 
 
 def hook(payload: object) -> dict | None:

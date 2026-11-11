@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
+import secrets
 import unittest
 from unittest.mock import patch
 from lib.isolated_checkout_preflight import checked_root, check_fixture_path, inspect, push_checked, git_environment
@@ -14,13 +14,55 @@ ROOT = Path(__file__).resolve().parents[1]
 PROJECT = configure_project_temp(ROOT).parent.parent
 
 
+def create_fixture_checkout(project: Path) -> Path:
+    # Four random hex characters keep the real nested-check budget below 240
+    # in c4. mkdir is exclusive; collisions never reuse or remove an old run.
+    for _ in range(128):
+        checkout = project / 'scratchpad' / secrets.token_hex(2)
+        if check_fixture_path(checkout) >= 240:
+            raise ValueError('Nested check path is too long for selftest fixture')
+        try:
+            checkout.mkdir()
+        except FileExistsError:
+            continue
+        return checkout
+    raise FileExistsError('No unused short selftest fixture name after 128 attempts')
+
+
+class FixturePathBudgetTests(unittest.TestCase):
+    def test_c4_length_fits_and_creation_is_exclusive(self):
+        project = Path('C:/Users/oltot/Documents/git-projects/PointerCAD/scratchpad/claude/delivery-checkouts/c4')
+        with patch('secrets.token_hex', return_value='abcd'), patch.object(Path, 'mkdir') as mkdir:
+            checkout = create_fixture_checkout(project)
+        self.assertEqual(checkout, project / 'scratchpad/abcd')
+        self.assertLess(check_fixture_path(checkout), 240)
+        mkdir.assert_called_once_with()
+
+    def test_insufficient_budget_rejects_before_any_git_or_creation(self):
+        project = Path('C:/Users/oltot/Documents/git-projects/PointerCAD') / ('x' * 100)
+        with patch('secrets.token_hex', return_value='abcd'), patch.object(Path, 'mkdir') as mkdir:
+            with patch.object(subprocess, 'check_output') as git:
+                with self.assertRaisesRegex(ValueError, 'too long'):
+                    create_fixture_checkout(project)
+        mkdir.assert_not_called()
+        git.assert_not_called()
+
+    def test_collision_does_not_reuse_existing_directory(self):
+        project = Path('C:/Users/oltot/Documents/git-projects/PointerCAD')
+        with patch('secrets.token_hex', side_effect=['abcd', 'ef01']):
+            with patch.object(Path, 'mkdir', side_effect=[FileExistsError(), None]) as mkdir:
+                checkout = create_fixture_checkout(project)
+        self.assertEqual(checkout, project / 'scratchpad/ef01')
+        self.assertEqual(mkdir.call_count, 2)
+
+
 class IndependentCheckoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.area = Path(tempfile.mkdtemp(prefix='ic-', dir=PROJECT / 'scratchpad'))
+        cls.area = PROJECT / 'scratchpad'
 
     def setUp(self):
-        self.checkout = Path(tempfile.mkdtemp(prefix='r-', dir=self.area))
+        self.checkout = create_fixture_checkout(PROJECT)
         self.env = git_environment()
         def git(*args):
             return subprocess.check_output(['git', '-C', str(self.checkout), *args], env=self.env,
@@ -61,7 +103,8 @@ class IndependentCheckoutTests(unittest.TestCase):
             result = inspect(PROJECT, self.checkout, self.commit)
         self.assertEqual(result['runtimePackages'], [{'name': 'fixture-runtime', 'version': '1.0.0'}])
         self.assertEqual(before, {name: (self.checkout / '.git' / name).read_bytes() for name in before})
-        remote = self.area / ('remote-' + self.checkout.name + '.git')
+        remote = self.checkout.with_name(self.checkout.name + '-remote.git')
+        remote.mkdir()
         self.git('init', '--bare', '--quiet', str(remote))
         push_checked(PROJECT, self.checkout, self.commit, str(remote), 'refs/heads/main')
         self.assertEqual((self.checkout / 'hook-ran').read_text(), 'checked')
@@ -94,8 +137,8 @@ class IndependentCheckoutTests(unittest.TestCase):
         self.assertIn(b"Cannot find module 'fixture-runtime'", failure.exception.output)
         metadata.parent.rmdir()
         link = metadata.parent
-        target = self.area / 'foreign-package'
-        target.mkdir(exist_ok=True)
+        target = self.checkout.with_name(self.checkout.name + '-foreign-package')
+        target.mkdir()
         if os.name == 'nt':
             quote = lambda value: "'" + str(value).replace("'", "''") + "'"
             subprocess.run(['powershell.exe', '-NoProfile', '-Command',

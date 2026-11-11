@@ -1,9 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import { assembleDesktopDistribution, verifyDesktopDistribution } from '../../../../scripts/release/desktopDistribution.mjs';
+import * as desktopDistribution from '../../../../scripts/release/desktopDistribution.mjs';
 import type { DesktopPackageMetadata } from '../../../../scripts/release/desktopDistribution.mjs';
 import { inspectDesktopEntry } from '../../../../scripts/release/desktopEntryReferences.mjs';
 import { desktopFileHash, sourceFileHash, sourceText } from '../../../../scripts/release/desktopFileInventory.mjs';
 import { bytes, files, fixture, hash, inputs, json } from './distributionTestFixture.js';
+
+describe('配布時の Electron 取得では共有 HTTP 応答キャッシュを許さない', () => {
+  const guard: unknown = Reflect.get(desktopDistribution, 'sealDesktopBuilderDownloadConfig');
+  if (typeof guard !== 'function') throw new Error('Missing desktop download policy');
+  const cache = 'C:/pointercad/artifact-cache';
+  const download = { cache, strictSSL: true, isVerifyChecksum: true };
+  const config = { extends: 'electron-builder.yml', electronDownload: download };
+  const seal = (candidate: unknown): unknown => {
+    const result: unknown = Reflect.apply(guard, undefined, [candidate, cache]);
+    return result;
+  };
+
+  it('ファイルキャッシュ、TLS 検証、checksum を維持した設定を固定する', () => {
+    expect(seal(config)).toEqual({ ...config, extends: null });
+  });
+  it.each([
+    { downloadOptions: { cache: new Map() } },
+    { mirrorOptions: {} },
+    { strictSSL: false },
+    { isVerifyChecksum: false },
+    { cache: 'C:/other-cache' },
+  ])('HTTP キャッシュ注入や検証の無効化を拒否する: %j', alteration => {
+    expect(() => seal({ ...config, electronDownload: { ...download, ...alteration } })).toThrow('download policy differs');
+  });
+  it('非列挙 mirrorOptions による builder の取得分岐切替も拒否する', () => {
+    const hidden = { ...download };
+    Object.defineProperty(hidden, 'mirrorOptions', { value: { mirror: 'https://example.invalid/' } });
+    expect(() => seal({ ...config, electronDownload: hidden })).toThrow('download policy differs');
+  });
+});
 
 function desktopFixture() {
   const manual = fixture();
@@ -80,12 +111,24 @@ describe('配布する本体から開発PCの依存を読み込まない', () =>
   it('Electronと使っているNode標準機能だけを許す', () => {
     expect(inspectDesktopEntry('main/main.cjs', bytes("require('electron');require('node:fs');"))).toEqual(['electron', 'node:fs']);
   });
+  it('実main生成物のOCCTローカルHTTP転送が使う標準依存を同梱不要と判定する', () => {
+    const dependencies = ['electron', 'node:crypto', 'node:fs', 'node:fs/promises',
+      'node:http', 'node:path', 'node:url', 'node:zlib'];
+    const source = dependencies.map(name => `require('${name}');`).join('');
+    expect(inspectDesktopEntry('main/main.cjs', bytes(source))).toEqual(dependencies);
+  });
   it.each(["require('unbundled');", 'require(name);', "import('unbundled');", "import(name);", "import x from 'unbundled';",
     "export {x} from 'unbundled';", "require('electron', 'extra');", 'function ('])('未同梱・動的・壊れた参照 %s を拒否する', source => {
     expect(() => inspectDesktopEntry('main/main.cjs', bytes("require('electron');" + source))).toThrow();
   });
   it('隔離した読み込み口へ不要なNode機能を足せない', () => {
     expect(() => inspectDesktopEntry('preload/preload.cjs', bytes("require('electron');require('node:fs');"))).toThrow();
+  });
+  it.each(['node:http', 'node:zlib', 'node:fs/promises'])('main専用の%sはpreloadへ追加できない', dependency => {
+    expect(() => inspectDesktopEntry('preload/preload.cjs', bytes(`require('electron');require('${dependency}');`))).toThrow();
+  });
+  it.each(['http', 'node:http2', 'node:zlib/extra', 'node:fs/promises/extra', 'node:child_process'])('%sを標準依存の近似名や任意機能として許可しない', dependency => {
+    expect(() => inspectDesktopEntry('main/main.cjs', bytes(`require('electron');require('${dependency}');`))).toThrow();
   });
 });
 

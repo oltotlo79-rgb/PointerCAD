@@ -1,7 +1,8 @@
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_RECOVERY_COPY_MARKER } from '@pointercad/ui/save-errors';
-import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openPcadDialog, savePcadDialog } from './pcadDialogs.js';
+import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openAnyDialog, openPcadDialog, savePcadDialog } from './pcadDialogs.js';
+import type * as ImportedNodeFsTypes from 'node:fs';
 
 const memory = vi.hoisted(() => {
   const removed: string[] = [];
@@ -12,6 +13,7 @@ const memory = vi.hoisted(() => {
   openPath: null as string | null,
   statSize: null as number | null,
   readBytes: null as Uint8Array | null,
+  readFileBuffer: null as Buffer | null,
   statCalls: 0,
   readFileCalls: 0,
   };
@@ -30,7 +32,7 @@ vi.mock('electron', () => ({
 }));
 vi.mock('./appSender.js', () => ({ validateAppSender: () => true }));
 vi.mock('node:fs', async (importOriginal) => {
-  const original = await importOriginal<typeof import('node:fs')>();
+  const original = await importOriginal<typeof ImportedNodeFsTypes>();
   return { ...original, promises: {
     writeFile(path: string, bytes: Uint8Array) { memory.files.set(path, bytes.slice()); return Promise.resolve(); },
     rename(source: string, destination: string) {
@@ -68,6 +70,7 @@ vi.mock('node:fs', async (importOriginal) => {
     },
     readFile() {
       memory.readFileCalls += 1;
+      if (memory.readFileBuffer !== null) return Promise.resolve(memory.readFileBuffer);
       const bytes = memory.readBytes;
       if (bytes === null) return Promise.reject(new Error('ENOENT'));
       return Promise.resolve(Buffer.from(bytes));
@@ -84,7 +87,7 @@ beforeEach(() => {
   memory.files.clear(); memory.files.set(destination, originalBytes.slice()); memory.removed.length = 0;
   memory.failRename = false; memory.failBackup = false; memory.failReplace = false;
   memory.failRestore = false; memory.failCleanup = false;
-  memory.openPath = null; memory.statSize = null; memory.readBytes = null;
+  memory.openPath = null; memory.statSize = null; memory.readBytes = null; memory.readFileBuffer = null;
   memory.statCalls = 0; memory.readFileCalls = 0;
 });
 
@@ -172,10 +175,100 @@ describe('デスクトップ「開く」の確保前サイズ確認（R07・P12-
     expect(memory.readFileCalls).toBe(1);
   });
 
+  it('readFileの完全な非共有領域は全バイトを保ち複製もdetachもしない', async () => {
+    const backing = new ArrayBuffer(5);
+    const contents = Buffer.from(backing);
+    contents.set([0, 255, 9, 8, 7]);
+    memory.openPath = openPath;
+    memory.statSize = contents.byteLength;
+    memory.readFileBuffer = contents;
+    const opened = await openPcadDialog(null, 'part');
+    expect(opened?.bytes).toEqual(Uint8Array.of(0, 255, 9, 8, 7));
+    expect(opened?.bytes.buffer).toBe(backing);
+    expect(opened?.bytes.byteOffset).toBe(0);
+    expect(opened?.bytes.byteLength).toBe(5);
+    expect(backing.byteLength).toBe(5);
+    expect([...contents]).toEqual([0, 255, 9, 8, 7]);
+  });
+
+  it('非ゼロoffsetの部分領域は前後sentinelを含めず独立コピーする', async () => {
+    const backing = new ArrayBuffer(6);
+    const whole = Buffer.from(backing);
+    whole.set([91, 92, 9, 8, 7, 93]);
+    const contents = whole.subarray(2, 5);
+    memory.openPath = openPath;
+    memory.statSize = contents.byteLength;
+    memory.readFileBuffer = contents;
+    const opened = await openPcadDialog(null, 'part');
+    expect(opened?.bytes).toEqual(Uint8Array.of(9, 8, 7));
+    expect(opened?.bytes.buffer).not.toBe(backing);
+    expect(opened?.bytes.byteOffset).toBe(0);
+    expect(opened?.bytes.buffer.byteLength).toBe(3);
+    opened?.bytes.fill(0);
+    expect(backing.byteLength).toBe(6);
+    expect([...whole]).toEqual([91, 92, 9, 8, 7, 93]);
+  });
+
+  it('offsetが0でも末尾が範囲外なら独立コピーする', async () => {
+    const backing = new ArrayBuffer(4);
+    const whole = Buffer.from(backing);
+    whole.set([9, 8, 7, 93]);
+    memory.openPath = openPath;
+    memory.statSize = 3;
+    memory.readFileBuffer = whole.subarray(0, 3);
+    const opened = await openPcadDialog(null, 'part');
+    expect(opened?.bytes).toEqual(Uint8Array.of(9, 8, 7));
+    expect(opened?.bytes.buffer).not.toBe(backing);
+    expect(opened?.bytes.buffer.byteLength).toBe(3);
+    expect([...whole]).toEqual([9, 8, 7, 93]);
+  });
+
+  it('完全な共有領域も非共有の独立領域へコピーする', async () => {
+    const backing = new SharedArrayBuffer(3);
+    const contents = Buffer.from(backing);
+    contents.set([9, 8, 7]);
+    memory.openPath = openPath;
+    memory.statSize = contents.byteLength;
+    memory.readFileBuffer = contents;
+    const opened = await openPcadDialog(null, 'part');
+    expect(opened?.bytes).toEqual(Uint8Array.of(9, 8, 7));
+    expect(opened?.bytes.buffer).toBeInstanceOf(ArrayBuffer);
+    expect(opened?.bytes.buffer).not.toBe(backing);
+    expect(opened?.bytes.buffer.byteLength).toBe(3);
+    opened?.bytes.fill(0);
+    expect(backing.byteLength).toBe(3);
+    expect([...contents]).toEqual([9, 8, 7]);
+  });
+
   it('窓を取り消したらnull(statもreadFileも呼ばない)', async () => {
     memory.openPath = null;
     expect(await openPcadDialog(null, 'part')).toBeNull();
     expect(memory.statCalls).toBe(0);
+    expect(memory.readFileCalls).toBe(0);
+  });
+});
+
+describe('パラメータCSVのデスクトップ読込', () => {
+  it('1MiBを許可し、+1バイトはstat段階と読込後の両方で拒否する', async () => {
+    memory.openPath = resolve('memory-only', '係数.csv');
+    memory.statSize = 1024 * 1024;
+    memory.readBytes = new Uint8Array(1024 * 1024);
+    expect((await openAnyDialog(null, ['csv']))?.bytes.byteLength).toBe(1024 * 1024);
+    memory.statSize += 1;
+    await expect(openAnyDialog(null, ['csv'])).rejects.toThrow(READ_TOO_LARGE_REASON_MARKER);
+    expect(memory.readFileCalls).toBe(1);
+    memory.statSize -= 1;
+    memory.readBytes = new Uint8Array(1024 * 1024 + 1);
+    await expect(openAnyDialog(null, ['csv'])).rejects.toThrow(READ_SIZE_CHANGED_REASON_MARKER);
+    expect(memory.readFileCalls).toBe(2);
+  });
+
+  it('CSV以外の選択を拒否し、取消時は一切読まない', async () => {
+    memory.openPath = resolve('memory-only', '係数.txt');
+    await expect(openAnyDialog(null, ['csv'])).rejects.toThrow();
+    expect(memory.statCalls).toBe(0);
+    memory.openPath = null;
+    expect(await openAnyDialog(null, ['csv'])).toBeNull();
     expect(memory.readFileCalls).toBe(0);
   });
 });

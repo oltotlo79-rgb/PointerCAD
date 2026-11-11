@@ -10,19 +10,19 @@ import { jsonDecimal, numberJson as N } from './nativeMathNumber.js';
 type Pair = readonly [EngineMathJson, EngineMathJson];
 type Complex = readonly [Decimal, Decimal];
 const HEADS = new Set(['Sqrt', 'Ln', 'Log', 'Power', 'Arcsin', 'Arccos', 'Arctan', 'Arsinh', 'Arcosh', 'Artanh']);
-const op = (head: string, ...args: EngineMathJson[]): EngineMathJson => [head, ...args];
+const createOperationNode = (head: string, ...args: EngineMathJson[]): EngineMathJson => [head, ...args];
 
 /** Entire functions are expanded before rounding, retaining e^(i*pi) exactly. */
 export function entireComplexOperation(head: string, [a, b]: Pair): EngineMathJson | null {
   switch (head) {
-    case 'Exp': return op('Complex', op('Multiply', op('Exp', a), op('Cos', b)), op('Multiply', op('Exp', a), op('Sin', b)));
-    case 'Sin': return op('Complex', op('Multiply', op('Sin', a), op('Cosh', b)), op('Multiply', op('Cos', a), op('Sinh', b)));
-    case 'Cos': return op('Complex', op('Multiply', op('Cos', a), op('Cosh', b)), op('Negate', op('Multiply', op('Sin', a), op('Sinh', b))));
-    case 'Sinh': return op('Complex', op('Multiply', op('Sinh', a), op('Cos', b)), op('Multiply', op('Cosh', a), op('Sin', b)));
-    case 'Cosh': return op('Complex', op('Multiply', op('Cosh', a), op('Cos', b)), op('Multiply', op('Sinh', a), op('Sin', b)));
-    case 'Tan': case 'Cot': return op('Divide', op(head === 'Tan' ? 'Sin' : 'Cos', op('Complex', a, b)), op(head === 'Tan' ? 'Cos' : 'Sin', op('Complex', a, b)));
-    case 'Sec': case 'Csc': return op('Divide', N(1), op(head === 'Sec' ? 'Cos' : 'Sin', op('Complex', a, b)));
-    case 'Tanh': return op('Divide', op('Sinh', op('Complex', a, b)), op('Cosh', op('Complex', a, b)));
+    case 'Exp': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Exp', a), createOperationNode('Cos', b)), createOperationNode('Multiply', createOperationNode('Exp', a), createOperationNode('Sin', b)));
+    case 'Sin': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Sin', a), createOperationNode('Cosh', b)), createOperationNode('Multiply', createOperationNode('Cos', a), createOperationNode('Sinh', b)));
+    case 'Cos': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Cos', a), createOperationNode('Cosh', b)), createOperationNode('Negate', createOperationNode('Multiply', createOperationNode('Sin', a), createOperationNode('Sinh', b))));
+    case 'Sinh': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Sinh', a), createOperationNode('Cos', b)), createOperationNode('Multiply', createOperationNode('Cosh', a), createOperationNode('Sin', b)));
+    case 'Cosh': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Cosh', a), createOperationNode('Cos', b)), createOperationNode('Multiply', createOperationNode('Sinh', a), createOperationNode('Sin', b)));
+    case 'Tan': case 'Cot': return createOperationNode('Divide', createOperationNode(head === 'Tan' ? 'Sin' : 'Cos', createOperationNode('Complex', a, b)), createOperationNode(head === 'Tan' ? 'Cos' : 'Sin', createOperationNode('Complex', a, b)));
+    case 'Sec': case 'Csc': return createOperationNode('Divide', N(1), createOperationNode(head === 'Sec' ? 'Cos' : 'Sin', createOperationNode('Complex', a, b)));
+    case 'Tanh': return createOperationNode('Divide', createOperationNode('Sinh', createOperationNode('Complex', a, b)), createOperationNode('Cosh', createOperationNode('Complex', a, b)));
     default: return null;
   }
 }
@@ -60,9 +60,38 @@ export function principalComplexOperation(head: string, pair: Pair, other?: Pair
     const imaginary = radius.sub(a).div(2).sqrt().mul(b.isNegative() ? -1 : 1);
     return [b.div(imaginary.mul(2)), imaginary];
   };
+  const smallAngleAtan = (t: Decimal): Decimal | null => {
+    // For |t| < 1e-25, each alternating term shrinks by at least 1e-50.
+    // The first omitted term bounds the remainder; precision <= 512 needs at most 11 terms.
+    const square = t.mul(t), limit = t.abs().mul(new D(`1e-${precision + 10}`));
+    let power = t, sum = t;
+    for (let denominator = 3; denominator <= 25; denominator += 2) {
+      power = power.mul(square);
+      const term = power.div(denominator);
+      if (term.abs().lte(limit)) return sum;
+      sum = denominator % 4 === 3 ? sum.sub(term) : sum.add(term);
+    }
+    return null;
+  };
+  const nearAxisAtan = (numerator: Decimal, denominator: Decimal): Decimal | null => {
+    if (denominator.isZero() || !numerator.abs().lt(denominator.abs().mul('1e-25'))) return null;
+    const slope = numerator.div(denominator);
+    return slope.isFinite() ? smallAngleAtan(slope) : null;
+  };
   const log = ([a, b]: Complex): Complex => {
     if (a.isZero() && b.isZero()) throw new MathInputProblem('domain', '0の複素対数は有限になりません。');
-    return [a.mul(a).add(b.mul(b)).ln().div(2), b.isZero() && a.isNegative() ? pi : D.atan2(b, a)];
+    let angle: Decimal;
+    if (b.isZero() && a.isNegative()) angle = pi;
+    else {
+      const nearReal = nearAxisAtan(b, a);
+      if (nearReal !== null) angle = a.gt(0) ? nearReal : (b.gt(0) ? pi : pi.neg()).add(nearReal);
+      else {
+        const nearImaginary = nearAxisAtan(a, b);
+        angle = nearImaginary === null ? D.atan2(b, a)
+          : (b.gt(0) ? pi : pi.neg()).div(2).sub(nearImaginary);
+      }
+    }
+    return [a.mul(a).add(b.mul(b)).ln().div(2), angle];
   };
   const exp = ([a, b]: Complex): Complex => [a.exp().mul(b.cos()), a.exp().mul(b.sin())];
   const unit: Complex = [one, zero], imaginary: Complex = [zero, one];
@@ -97,5 +126,5 @@ export function principalComplexOperation(head: string, pair: Pair, other?: Pair
     default: return null;
   }
   if (result.some(value => !value.isFinite())) throw new MathInputProblem('domain', '有限の複素数の結果を求められません。');
-  return op('Complex', ...result.map(value => N(value.toSignificantDigits(40).toString())));
+  return createOperationNode('Complex', ...result.map(value => N(value.toSignificantDigits(40).toString())));
 }

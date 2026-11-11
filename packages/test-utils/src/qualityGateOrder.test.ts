@@ -11,12 +11,32 @@ function readRootFile(path: string): string {
   return readFileSync(new URL(path, rootUrl), 'utf8');
 }
 
+/** Only the accepted frozen 120 s and current 300 s windows, with their matching whole-test limits. */
+function expectHostInterferenceWindow(source: string, specs: readonly string[]): void {
+  const window = /^const INTERFERENCE_FOLLOW_MS = (120_000|300_000);$/mu.exec(source)?.[1];
+  expect(window, 'accepted finite interference window').toBeDefined();
+  if (window === '120_000') {
+    for (const spec of specs) {
+      expect(spec).toContain('const HOST_1000_TEST_TIMEOUT_MS = 900_000');
+      expect(spec).toContain('test.setTimeout(HOST_1000_TEST_TIMEOUT_MS + 5 * (120_000 - 60_000))');
+      expect(spec).not.toContain('test.setTimeout(ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS)');
+    }
+  } else if (window === '300_000') {
+    expect(source).toContain('export const ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS = 600_000 + INTERFERENCE_RUNS * INTERFERENCE_FOLLOW_MS');
+    for (const spec of specs) {
+      expect(spec).toMatch(/import \{[^}]*\bASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS\b[^}]*\} from '\.\/assembly1000HostFlow\.js'/u);
+      expect(spec).toContain('test.setTimeout(ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS)');
+      expect(spec).not.toMatch(/test\.setTimeout\(HOST_1000_TEST_TIMEOUT_MS \+/u);
+    }
+  }
+}
+
 describe('品質ゲートのテスト実行順', () => {
-  it('数学を先行し、失敗なら後続を止め、成功時も数学を二重実行しない', () => {
+  it('共通検査・数学・FEMを順に先行し、失敗なら後続を止め、各packageを二重実行しない', () => {
     const packageJson = JSON.parse(readRootFile('package.json')) as RootPackageJson;
 
     expect(packageJson.scripts?.test).toBe(
-      'pnpm --filter @pointercad/expression run test && pnpm --recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test',
+      'pnpm --filter @pointercad/test-utils run test && pnpm --filter @pointercad/expression run test && pnpm --filter @pointercad/fem run test && pnpm --recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test',
     );
   });
 
@@ -163,14 +183,159 @@ describe('品質ゲートのテスト実行順', () => {
     const recompute = readRootFile('e2e/tests/recompute.ts');
     const reopen = readRootFile('e2e/tests/reopenPart.ts');
     expect(recompute).toContain('export const KERNEL_TIMEOUT_MS = RECOMPUTE_TIMEOUT_MS');
-    expect(recompute).toContain('timeout: KERNEL_TIMEOUT_MS');
+    expect(recompute).toContain("waitKind: RecomputeWaitKind = 'kernel'");
+    expect(recompute).toContain("const timeoutMs = waitKind === 'exact-math' ? EXACT_MATH_ENGINE_LIMITS.totalMs : KERNEL_TIMEOUT_MS");
+    expect(recompute).toContain('timeout: timeoutMs');
     expect(recompute).toContain(".not.toBe('waiting')");
     expect(recompute).toContain("expect(last.stats?.lastOutcome,");
     expect(recompute).toContain(".toBe(outcome)");
-    expect(recompute).toContain("waitForRecomputeOutcome(page, token, 'success')");
-    expect(reopen).toContain('waitForRecompute(page, before)');
+    expect(recompute).toContain("waitForRecomputeOutcome(page, token, 'success', waitKind)");
+    expect(reopen).toContain("app?: ElectronApplication, waitKind: RecomputeWaitKind = 'exact-math'");
+    expect(reopen).toContain('waitForRecompute(page, before, waitKind)');
     const policy = readRootFile('packages/test-utils/src/releasePerformance.ts');
     expect(policy).toContain('export const RECOMPUTE_TIMEOUT_MS = 150_000');
+    const exactMathPolicy = readRootFile('packages/expression/src/math/exactMathEngineClient.ts');
+    expect(exactMathPolicy).toContain('totalMs: 225_000');
     expect(policy).not.toMatch(/process\.env|import\.meta\.env/u);
+  });
+});
+
+describe('1000点スケッチの機能優先と時間観測の境界', () => {
+  it('100msは全描画と最終previewの参考値とし、取消・有限待機・幾何・保存の判定は保持する', () => {
+    const source = readRootFile('e2e/tests/sketchConnected1000Flow.ts');
+    expect(source).toContain("import { observeDuration } from '../../packages/test-utils/src/releasePerformance.js'");
+    expect(source).toContain('observeDuration(row.renderedAtMs - row.eventAtMs, 100,');
+    expect(source).toContain('observeDuration(finalPreview.renderedAtMs - finalPreview.eventAtMs, 100,');
+    expect(source).not.toMatch(/expect\((?:row|finalPreview)\.renderedAtMs\s*-\s*(?:row|finalPreview)\.eventAtMs\)\.toBeLessThan/u);
+    expect(source).toContain('durationObservations.push(observeDuration(');
+    expect(source).toContain("attachJsonEvidence(info, 'sketch-duration-observations.json'");
+    expect(source).toContain("decisionUse: 'observation', samples: durationObservations");
+    expect(source).toContain("await writeFile(path, JSON.stringify(value), { flag: 'wx' })");
+    expect(source).toContain("await info.attach(name, { path, contentType: 'application/json' })");
+    expect(source).toContain("attachJsonEvidence(info, 'sketch-input-scene-render.json'");
+    expect(source).toContain('expect(cancelTiming.renderedAtMs - cancelTiming.eventAtMs).toBeLessThanOrEqual(1000)');
+    expect(source).toContain("{ polling: 'raf', timeout: 30_000 }");
+    expect(source).toContain("expect(timing.boundary).toBe('scene-render-return')");
+    expect(source).toContain('expect(timing.clockValid).toBe(true)');
+    expect(source).toContain('expect(timing.overflow).toBe(0)');
+    expect(source).toContain('!Number.isFinite(row.eventAtMs) || !Number.isFinite(row.renderedAtMs)');
+    expect(source).toContain('row.eventAtMs < 0 || row.renderedAtMs < 0');
+    expect(source).toContain('expect(position,');
+    expect(source).toContain('.toBeLessThanOrEqual(SKETCH_TOLERANCE_MM)');
+    expect(source).toContain('.toBeLessThanOrEqual(CONSTRAINT_TOLERANCE)');
+    expect(source).toContain('const TARGET_TOLERANCE_MM = 1');
+    expect(source).toContain('expect(afterCancel.document).toEqual(beforeCancel.document)');
+    expect(source).toContain('await waitForRecompute(page, commit)');
+    expect(source).toContain('expect(sketch.constraints).toEqual(writtenConstraints)');
+    expect(source).toContain('const translation = expectRigidTranslation(sketch)');
+    expect(source).toContain('await expect(undoButton(page)).toBeEnabled()');
+    expect(source).toContain("attachJsonEvidence(info, 'sketch-connected-1000-final-observation.json'");
+  });
+});
+
+describe('OCCT起動の機能優先と比較観測の境界', () => {
+  it('比率だけのhard assertionを拒否し、5組・実形状・cleanupと生JSON保存を保持する', () => {
+    const source = readRootFile('e2e/tests/occtCompileReuseFlow.ts');
+    const start = source.indexOf('export async function assertFiveOcctPairs(');
+    expect(start).toBeGreaterThan(0);
+    const judge = source.slice(start);
+    const hardComparison = /expect\s*\([^;]*?\)\s*\.\s*(?:toBeLessThan(?:OrEqual)?|toBeGreaterThan(?:OrEqual)?|toBeCloseTo)\s*\(/u;
+    expect(judge).not.toMatch(hardComparison);
+    expect(judge).not.toMatch(/expect\s*\([^;]*(?:cold|warm|ratio|meetsTarget|referenceRatio)[^;]*?\)\s*\.\s*(?:toBe|toEqual|toBeTruthy)\s*\(/u);
+    expect('expect(warm).toBeLessThanOrEqual(cold * 0.8);').toMatch(hardComparison);
+    expect('expect(observation.ratio).toBeLessThanOrEqual(0.8);').toMatch(hardComparison);
+    expect(judge).not.toMatch(/\b(?:if|throw)\b[^;]*(?:ratio|meetsTarget|referenceRatio|0\.8)/u);
+    expect(judge).toContain('observeStartupReuse(');
+    expect(judge).toContain('pairs.map(pair => pair.cold.startupMs)');
+    expect(judge).toContain('pairs.map(pair => pair.warm.startupMs)');
+    expect(judge).toContain('expect(pairs).toHaveLength(5)');
+    expect(judge).toContain('new Set(pairs.map(pair => pair.profile)).size).toBe(5)');
+    expect(judge).toContain('toEqual([1, 2, 3, 4, 5])');
+    expect(judge).toContain("persistOcctEvidence(info, 'five-pair-raw-measurements'");
+    expect(judge).toContain("persistOcctEvidence(info, 'five-pair-medians'");
+    expect(source).toContain("await writeFile(path, JSON.stringify(value, null, 2), { flag: 'wx' })");
+    expect(source).toContain("await info.attach(name, { path, contentType: 'application/json' })");
+    for (const kept of ['expect(warm.sha256).toBe(cold.sha256)', 'await sampler?.stop()',
+      'await context?.close()', 'await app?.close()', 'expect(starts).toHaveLength(2)',
+      'expect(ready).toHaveLength(2)', "waitForRecompute(page, token)"]) expect(source).toContain(kept);
+    for (const path of ['e2e/tests/occt-compile-reuse-solid.spec.ts', 'e2e/tests/electron-occt-compile-reuse.spec.ts']) {
+      const spec = readRootFile(path);
+      expect(spec).toContain('for (const offline of [false, true])');
+      expect(spec).toContain('index <= 5');
+      expect(spec).toContain('if (index === 5) await assertFiveOcctPairs(pairs, info)');
+    }
+  });
+});
+
+describe('1000部品の参考4観測と安全・機能条件の境界', () => {
+  it('open/save/reopen/FPSだけのhard再混入を拒否し、有限待機と全機能を維持する', () => {
+    const source = readRootFile('e2e/tests/assembly1000HostFlow.ts');
+    expect(source).toContain('observePositiveDuration(actualMs, targetMs, label)');
+    expect(source).toContain('observeViewportRate(fps,');
+    expect(source).not.toMatch(/judge\('(open|save|reopen|fps)'/u);
+    expect(source).not.toMatch(/reportViewportRate\(/u);
+    expect(source).not.toMatch(/expect\([^;]*(?:openToDrawnMs|reopenToDrawnMs|saveMs|fps\.fps)[^;]*\)\.toBe(?:LessThan|GreaterThan)/u);
+    expect(source).not.toMatch(/expect\([^;]*(?:meetsTarget|referenceTargetFps)[^;]*\)\.(?:toBe|toEqual)/u);
+    expect("judge('open', () => reportDuration(openToDrawnMs, HOST_LOAD_TARGET_MS, 'open'));").toMatch(/judge\('(open|save|reopen|fps)'/u);
+    for (const name of ['open', 'save', 'reopen']) expect(source).toContain(`'${name}',`);
+    expect(source).toContain('const HOST_LOAD_TARGET_MS = 5_000');
+    expect(source).toContain('const HOST_SAVE_TARGET_MS = 5_000');
+    expect(source).toContain("attachHostObservation(info, `assembly-1000-${name}-duration.json`");
+    expect(source).toContain("attachHostObservation(info, 'assembly-1000-fps-raw.json', fps)");
+    expect(source).toContain("attachHostObservation(info, 'assembly-1000-observations.json'");
+    expect(source).toContain("await writeFile(path, JSON.stringify(value, null, 2), { flag: 'wx' })");
+    expect(source).toContain("await info.attach(name, { path, contentType: 'application/json' })");
+    for (const token of ['const INTERFERENCE_RUNS = 5',
+      'const HOST_CANCEL_TARGET_MS = 200', "judge('cancel', () => reportDuration(cancelMs, HOST_CANCEL_TARGET_MS,",
+      "HOST_INTERFERENCE_TARGET_MS, '異なる1,000定義の組立の干渉（全経路）')", 'expectSavedFile(new Uint8Array(savedBytes), shown)',
+      'await expectLoaded(page,', 'driveTwoGroups(page, initial)', 'HOST_TOTAL - driven.size',
+      'RING_VOLUME_MM3.toFixed(3)', "expect(runs.some((run) => run.progressSeen)", 'expect(errors).toEqual([])',
+      "expect(judgements,"]) expect(source).toContain(token);
+    expect(source).toContain('for (let run = 0; run < INTERFERENCE_RUNS; run += 1)');
+    expect(source).toContain("judge('interference completion', () => requireCompletedInterferenceRuns(runs, INTERFERENCE_RUNS))");
+    expect(source).toContain("timeout: INTERFERENCE_FOLLOW_MS, message: 'interference result painted'");
+    expect(source).toContain("await page.locator('.pcad-interference__close').click()");
+    expect(source).toContain("completed: false, progressSeen, rows: [], summary: '', error: null");
+    expect(source).toContain('if (measured.completed)');
+    const specs = ['assembly-1000-host.spec.ts', 'electron-assembly-1000-host.spec.ts']
+      .map((spec) => readRootFile(`e2e/tests/${spec}`));
+    expectHostInterferenceWindow(source, specs);
+    // Reject the original stale window, an unapproved extension and mismatched per-spec limits.
+    expect(() => expectHostInterferenceWindow(source.replace(/INTERFERENCE_FOLLOW_MS = [0-9_]+/u,
+      'INTERFERENCE_FOLLOW_MS = 60_000'), specs)).toThrow();
+    expect(() => expectHostInterferenceWindow(source.replace(/INTERFERENCE_FOLLOW_MS = [0-9_]+/u,
+      'INTERFERENCE_FOLLOW_MS = 600_000'), specs)).toThrow();
+    for (let index = 0; index < specs.length; index += 1) {
+      expect(() => expectHostInterferenceWindow(source, specs.map((spec, i) => i === index
+        ? spec.replace(/test\.setTimeout\([^)]*\)/gu, 'test.setTimeout(900_000)') : spec))).toThrow();
+    }
+    expect(readRootFile('e2e/tests/recompute.ts')).toContain('export const KERNEL_TIMEOUT_MS = RECOMPUTE_TIMEOUT_MS');
+  });
+});
+
+describe('曲面返信の複合窓の参考値と機能上限の境界', () => {
+  it('転用100msの必須判定を再導入せず、取消・有限待機・全機能を保持する', () => {
+    const source = readRootFile('packages/expression/src/math/functionSurfaceReplyResponse.test.ts');
+    expect(source).toContain("import { observeDuration } from '../../../test-utils/src/releasePerformance.js'");
+    expect(source).toContain('const LONG_TASK_REFERENCE_MS = 100');
+    expect(source).toContain('observeDuration(record?.blockedMs ?? Number.NaN, LONG_TASK_REFERENCE_MS,');
+    expect(source).toContain('observeDuration(record?.longestGapMs ?? Number.NaN, LONG_TASK_REFERENCE_MS,');
+    expect(source).toContain('observeDuration(receivingGapMs, LONG_TASK_REFERENCE_MS,');
+    expect(source).toContain('observeDuration(wholeGapMs, LONG_TASK_REFERENCE_MS,');
+    const hardTiming = /expect\s*\([^;]*?(?:blockedMs|longestGapMs|receivingGapMs|wholeGapMs)[^;]*?\)\s*\.toBeLessThan(?:OrEqual)?\s*\(/u;
+    expect(source).not.toMatch(hardTiming);
+    expect('expect(record?.longestGapMs ?? Infinity).toBeLessThanOrEqual(100);').toMatch(hardTiming);
+    for (const kept of ['const CANCEL_DELIVERY_LIMIT_MS = 1_000', 'const RUN_LIMIT_MS = 60_000',
+      'await client.evaluate(input, 30_000, abort.signal)',
+      'expect(record?.cancelDeliveryMs ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(CANCEL_DELIVERY_LIMIT_MS)',
+      "expect(record?.status).toBe('cancelled')", "expect(completion.status).toBe('cancelled')",
+      "status: 'rejected', reason: 'budget'", "status: 'rejected', reason: 'overlap'",
+      "status: 'rejected', reason: 'coverage'", 'work: 3_997_696', 'coveredCells: 16_384',
+      'client.dispose(); await port.close()', 'Number.isFinite(record.totalMs)',
+      'expect(record.totalMs).toBeGreaterThanOrEqual(0)',
+      "expect((await stale.evaluate(input, 30_000)).status).toBe('worker-error')"]) expect(source).toContain(kept);
+    const requirements = readRootFile('docs/requirements.md');
+    expect(requirements).toContain('曲面返信のNode Worker準備・通信・OS待ち・受信検査を含む複合窓');
+    expect(requirements).toContain('100msは全実測と達否を保持する参考値');
   });
 });

@@ -7,6 +7,7 @@ import { makePrimitive } from '../occt/makePrimitive.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
+import { solidFaceQuery as faceQuery } from '../occt/solidFaceQuery.testSupport.js';
 import type {
   ChamferStepSpec,
   CurveSpec,
@@ -352,18 +353,6 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
     const mesh = tessellate(oc, shape);
     const lines = extractEdges(oc, shape);
     return collectSubShapes(oc, shape, mesh.faceRanges, lines.edgeRanges);
-  }
-
-  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return {
-      kind: 'face',
-      index: info.index,
-      surfaceKind: info.surfaceKind,
-      area: info.area,
-      position: info.centroid,
-      axis: info.axis,
-      radius: info.radius,
-    };
   }
 
   function edgeQuery(info: SolidEdgeInfo): Extract<SubShapeQuery, { kind: 'edge' }> {

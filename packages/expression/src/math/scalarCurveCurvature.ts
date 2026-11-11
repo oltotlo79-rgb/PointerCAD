@@ -7,7 +7,7 @@ import { ellipticPartialRanges } from './ellipticPartials.js';
 import type { ScalarTape } from './scalarMathTape.js';
 import type { IntervalUnion } from './mathIntervalUnion.js';
 import { createScalarConditionIntervalSampler, createScalarIntervalEvaluation, scalarIntervalTape, withScalarIntervalTapes } from './scalarMathIntervals.js';
-import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, intervalSqrt, intervalSquare,
+import { isZero, intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, intervalSqrt, intervalSquare,
   type MathInterval, type IntervalValue } from './mathInterval.js';
 import { trigonometricInterval } from './trigonometricIntervals.js';
 import { hyperbolicRange } from './hyperbolicIntervals.js';
@@ -30,7 +30,7 @@ const DEGREE: MathInterval = { lower: 0.01745329251994329, upper: 0.017453292519
 const UNKNOWN: Jet = { first: null, second: null };
 const CONSTANT: Jet = { first: ZERO, second: ZERO };
 function unpack(value: IntervalValue): Range { return value.status === 'range' ? value.interval : null; }
-function zero(value: Range): boolean { return value !== null && value.lower === 0 && value.upper === 0; }
+function zero(value: Range): boolean { return value !== null && isZero(value); }
 function add(a: Range, b: Range): Range {
   if (a === null || b === null) return null;
   return zero(a) ? b : zero(b) ? a : unpack(intervalAdd(a, b));
@@ -266,6 +266,17 @@ function directionalJet(tape: ScalarTape, direction: readonly number[],
 export function createScalarDirectionalJet(tape: ScalarTape, direction: readonly number[]): (inputs: readonly MathInterval[]) => ScalarIntervalJet {
   const intervals = createScalarIntervalEvaluation(tape), evaluate = directionalJet(tape, direction, intervals, true);
   return inputs => evaluate(intervals.evaluate(inputs), inputs);
+}
+
+/** Up to three second-order directions share one value evaluation; derivative arithmetic stays independent. */
+export function createScalarDirectionalJets(tape: ScalarTape, directions: readonly (readonly number[])[]): (inputs: readonly MathInterval[]) => readonly ScalarIntervalJet[] {
+  if (directions.length < 1 || directions.length > 3) throw new RangeError('二次微分には1つから3つの方向を指定してください。');
+  const intervals = createScalarIntervalEvaluation(tape);
+  const derivatives = directions.map(direction => directionalJet(tape, direction, intervals, true));
+  return inputs => {
+    const result = intervals.evaluate(inputs);
+    return derivatives.map(evaluate => evaluate(result, inputs));
+  };
 }
 
 /** Up to three coordinate directions share one value evaluation and do not calculate unused second derivatives. */

@@ -4,6 +4,7 @@ import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import { tessellate } from './tessellate.js';
 import { extractEdges } from './extractEdges.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 beforeAll(async () => { oc = await loadOcctForNode(); }, 180_000);
@@ -27,6 +28,28 @@ function observeReadShapes(control: { failType: boolean }): AcquiredShape[] {
 }
 
 describe('描画の実OCCT走査は読み取った全ての形を所有し、終了時に返す', () => {
+  it.each(['surface', 'fixed-surface', 'edges'] as const)(
+    '%s: invalid explicit frame releases every acquired native subshape', operation => {
+      const box = makeBox(oc, { dx: 10, dy: 20, dz: 30 });
+      let acquired: AcquiredShape[] = [];
+      try {
+        acquired = observeReadShapes({ failType: false });
+        const frame: MeshCoordinateFrame = { origin: [0, 0, 0], maximumFloat32ErrorMm: Number.NaN };
+        const run = () => operation === 'edges'
+          ? extractEdges(oc, box.shape, {}, frame)
+          : tessellate(oc, box.shape, operation === 'fixed-surface'
+            ? { admission: { remainingTriangles: 100, remainingJsBytes: 1e6,
+              checkDeadline: () => {} } } : {}, undefined, frame);
+        expect(run).toThrow(RangeError);
+        expect(acquired.length).toBeGreaterThan(0);
+        expect(acquired.map(record => record.deleted)).toEqual(acquired.map(() => 1));
+      } finally {
+        vi.restoreAllMocks();
+        for (const record of acquired) if (record.deleted === 0) record.dispose();
+        box.delete();
+      }
+    },
+  );
   for (const operation of ['surface', 'edges'] as const) {
     it.each(['success', 'shape-type', 'downstream'] as const)(`${operation}: %sでも対象外の形と処理中の形を残さない`, mode => {
       const box = makeBox(oc, { dx: 10, dy: 20, dz: 30 });

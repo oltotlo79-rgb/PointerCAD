@@ -1,9 +1,10 @@
 import { evaluateExpression, type ExpressionError, type ExpressionValue } from '@pointercad/expression';
 import {
   assemblyExpressionContext,
+  dotVec3,
   findComponent,
   resolveMateTarget,
-  selectMateTargetGeometry,
+  resolveSubShapeReference,
   nextMateId,
   nextJointId,
   type AssemblyDocument,
@@ -35,13 +36,6 @@ export interface AssemblyMateDraft {
   readonly minSource: string;
   /** 空欄は上限なし。入力した式は再編集できるよう原文を保存する。 */
   readonly maxSource: string;
-}
-
-export interface MateFacePick {
-  readonly componentId: string;
-  readonly partKey: string;
-  readonly bodyFeatureId: string;
-  readonly faceIndex: number;
 }
 
 export type MateCommandOutcome =
@@ -122,7 +116,8 @@ export function resolveCurrentMateTarget(document: AssemblyDocument, view: Assem
   if (component === undefined || component.suppressed) return { ok: false, code: 'missingComponent', message: t('assembly.mate.targetMissing') };
   return resolveMateTarget(target, view.resolved, { subShape: (partKey, reference) => {
     const body = view.bodies.get(partKey)?.find((item) => item.featureId === reference.bodyFeatureId);
-    return body === undefined ? null : selectMateTargetGeometry(body, reference);
+    const resolution = body === undefined ? null : resolveSubShapeReference(body, reference);
+    return resolution?.status === 'matched' ? resolution.match.geometry : null;
   } });
 }
 
@@ -138,7 +133,7 @@ export function refreshMateDraft(document: AssemblyDocument, view: AssemblyView,
     ? [a.target.direction, b.target.direction] : [];
   const [na, nb] = normals;
   const flipped = kind === 'coincident' && !draft.alignmentChosen && na != null && nb != null
-    ? na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2] >= 0 : draft.flipped;
+    ? dotVec3(na, nb) >= 0 : draft.flipped;
   return { ...draft, kind, targetKinds, flipped, source: kind === draft.kind ? draft.source : defaultMateSource(kind) };
 }
 

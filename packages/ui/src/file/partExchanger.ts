@@ -21,6 +21,7 @@
  * 依頼と結果の言葉はすべて model の型(`ShapeExportOptions` / `ShapeImportOutcome`)である。
  */
 
+import { admitThreeMf } from '@pointercad/io';
 import {
   bodyColorsFor,
   faceColorsFor,
@@ -54,13 +55,13 @@ import type {
  * 返っている面の通し番号で、面ごとの色を組むのに要る(`faceColorsFor`。照合をここで
  * やり直さない、§2.5.1)。
  */
-export interface PartExchangeSnapshot {
+interface PartExchangeSnapshot {
   readonly document: PartDocument;
   readonly appearanceMatches: readonly AppearanceMatchEntry[];
 }
 
 /** `createPartExchanger` に渡すもの。覚え書きは再計算・測定と同じものを持ち回る(NFR-PF-2)。 */
-export interface PartExchangerDeps extends CachedResolveDeps {
+interface PartExchangerDeps extends CachedResolveDeps {
   /** 今の文書と外観の照合を読む(ストアの値をそのまま返す)。 */
   readonly snapshot: () => PartExchangeSnapshot;
   /** 形を書き出す口(`KernelBridge.exportShapes`)。 */
@@ -129,12 +130,21 @@ export function exportBodiesFor(
 export function toExchangeExportOutcome(outcome: ShapeExportOutcome): ExchangeExportOutcome {
   switch (outcome.kind) {
     case 'files':
-      return { files: outcome.files, droppedTriangleCount: outcome.droppedTriangleCount };
-    case 'meshes':
+      return { files: outcome.files, droppedTriangleCount: outcome.droppedTriangleCount,
+        ...(outcome.files.length > 0 && outcome.triangleCount !== undefined
+          && Number.isSafeInteger(outcome.triangleCount) && outcome.triangleCount >= 0
+          ? { triangleCount: outcome.triangleCount } : {}) };
+    case 'meshes': {
       // 三角形は落としていないので 0(落とす判定はファイルを書く段にある)。
-      return { files: [], droppedTriangleCount: 0, meshes: outcome.bodies };
+      const admitted = outcome.bodies.length === 0 ? null : admitThreeMf(outcome.bodies);
+      const exactTriples = outcome.bodies.every(body => body.indices.length % 3 === 0);
+      return { files: [], droppedTriangleCount: 0, meshes: outcome.bodies,
+        ...(admitted !== null && exactTriples ? { triangleCount: admitted.triangleCount } : {}) };
+    }
     case 'failed':
       throw new Error(outcome.message);
+    case 'cancelled':
+      throw new DOMException('Export cancelled', 'AbortError');
   }
 }
 
@@ -172,6 +182,7 @@ export function createPartExchanger(deps: PartExchangerDeps): ExchangeKernel {
       const steps = resolveCachedSteps(snapshot.document, deps);
       const outcome = await deps.exportShapes(steps, {
         format: request.format,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
         bodies: exportBodiesFor(snapshot, steps, request.featureIds, request.withColors),
         meshQuality: request.meshQuality,
         withColors: request.withColors,

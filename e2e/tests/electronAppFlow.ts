@@ -31,7 +31,7 @@ const ELECTRON_PROFILE_ROOT = join(root, 'scratchpad', 'temp', 'e');
 // the full path to 263 when userData lived under Playwright's per-test output directory
 // (nested under this project's diagnostic tool's per-run folder plus the test's own long
 // Japanese title) -- Node had already created the shorter LOCK/LOG files alongside it, so
-// only the longer names failed (scratchpad/claude/agents/w8d-p13-5-electron/progress.md,
+// only the longer names failed (R12, electron-flows.spec.ts, observed on
 // 2026-09-24 07:35). Walking a real profile from this fix's own verification run found an
 // even deeper entry: "\Code Cache\electron-preload\<64-hex>-<64-hex>.cache" reaches 164
 // characters, rounded up to DEEPEST_CHROMIUM_INTERNAL_PATH below, so USER_DATA_PATH_BUDGET
@@ -118,6 +118,17 @@ async function sweepStaleElectronProfiles(): Promise<void> {
  */
 export const CLOSE_CONFIRM_BYPASS_ENV = 'PCAD_E2E_QUIT_WITHOUT_CLOSE_CONFIRM';
 
+/**
+ * 製品(`apps/desktop/src/occtHttpPolicy.ts` の `OCCT_TRANSPORT_TEST_PORT_ENV`)が未パッケージの起動でだけ読む印。
+ * 値 `0` で、製品の OCCT の HTTP サーバー自身が OS の選ぶ loopback の番号を bind して持ち続ける(検査側は番号を選ばない)。
+ */
+const OCCT_TRANSPORT_PORT_ENV = 'PCAD_E2E_OCCT_TRANSPORT_PORT';
+
+/** `launchDesktop` の entry.cjs に足す行。省略時は空で、entry.cjs は従来とバイト単位で同じ。 */
+function occtTransportEntryLine(ephemeralPort: boolean | undefined): string {
+  return ephemeralPort === true ? `process.env[${JSON.stringify(OCCT_TRANSPORT_PORT_ENV)}] = '0';\n` : '';
+}
+
 export async function openTarget(app: ElectronApplication, path: string): Promise<void> {
   await app.evaluate(({ dialog }, filePath) => {
     dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [filePath] });
@@ -142,9 +153,11 @@ export async function diskFile(path: string): Promise<Buffer> {
  * By default, return only after the startup screen has finished (the same condition as the web
  * waitForStartupHealth): the app is inert under it, so an earlier focus() or key press is ignored.
  * `waitForStartup: false` keeps the raw launch for specs that inspect the startup itself.
+ * `occtTransportEphemeralPort: true` makes the product's own OCCT HTTP server bind port 0 and keep it;
+ * when omitted, entry.cjs is byte-identical to before and the product keeps its fixed port.
  */
 export async function launchDesktop(playwright: PlaywrightWorkerArgs['playwright'], info: TestInfo,
-  options: { readonly waitForStartup?: boolean } = {}) {
+  options: { readonly waitForStartup?: boolean; readonly occtTransportEphemeralPort?: boolean } = {}) {
   const executable: unknown = requireDesktop('electron');
   if (typeof executable !== 'string') throw new Error('Electron実行ファイルなし');
   const directory = info.outputPath('native');
@@ -164,7 +177,7 @@ require('node:fs').writeFileSync(${JSON.stringify(join(directory, 'bootstrap.jso
 app.setPath('userData', ${JSON.stringify(profile)});
 // The test's own app.close() quits the app; skip only that quit's unsaved-changes confirmation.
 process.env[${JSON.stringify(CLOSE_CONFIRM_BYPASS_ENV)}] = '1';
-// Native desktop input must not enter an automated test window.
+${occtTransportEntryLine(options.occtTransportEphemeralPort)}// Native desktop input must not enter an automated test window.
 // Playwright sends input directly to webContents; the real window still renders.
 app.on('browser-window-created', (_event, window) => {
   window.setFocusable(false);

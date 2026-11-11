@@ -26,7 +26,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 // Node で OCCT を読み込む口。`@pointercad/kernel` の入口(index.ts)からは輸出しない
 // (`opencascade.js/dist/node.js` は Node 専用で、ブラウザの組み立てへ混ぜられないため)。
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import {
   createDirectKernelBridge,
   type KernelBridge,

@@ -2,9 +2,11 @@ import type { CenterMark, DrawingDocument, DrawingRenderElement, DrawingSource, 
 import { applyBreak, breakDrawingCurve, checkedHatchArea, clipCurves, drawingViewBasis, hatchStyle, sectionBoundaryLoops, type ClipRegion } from '@pointercad/drawing';
 import { resolvePlaneSpec, type PlaneResolveContext, type PlaneSpec, type ResolvedPlane } from '../geometry/planeSpec.js';
 import { resolveAuxiliaryDirection } from './viewDirection.js';
+import { dotVec3 } from '../sketch/vec3.js';
 import { validateSectionSpec, type SectionSpec } from './sectionSpec.js';
 import type { RigidPlacement } from '../assembly/placementMath.js';
 import type { DrawingDimensionInstance } from './dimensionTarget.js';
+import type { SteelStockList } from '../assembly/standard/steelStockList.js';
 import type { BomRow } from '../assembly/bom.js';
 import type { HoleScheduleResult } from './holeSchedule.js';
 import { resolveViewConstructions, type ConstructedDrawingView } from './viewConstruction.js';
@@ -36,6 +38,7 @@ export interface DrawingSourceResolution {
   readonly sheetFlat?: { readonly geometry: SheetFlatGeometry; readonly outline: SheetFlatOutline; readonly bends: readonly SheetFlatBendLine[] };
   readonly viewFrames?: ReadonlyMap<string, ConstructedDrawingView>;
   readonly bomRows?: readonly BomRow[];
+  readonly steelStockList?: SteelStockList;
   readonly holeTables?: ReadonlyMap<string, HoleScheduleResult>;
   readonly dimensionInstances?: readonly DrawingDimensionInstance[];
   readonly bodyIds: readonly string[];
@@ -357,11 +360,5 @@ function projectedCenter(center: Vector3, view: DrawingView): Point2 {
   // DrawingView.directionは見る向き。OCCTの投影平面法線はその反対。
   const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
   if (basis === null) throw new Error('この向きでは図を作れません。');
-  const dot = (axis: Vector3): number => axis[0] * center[0] + axis[1] * center[1] + axis[2] * center[2];
-  return [dot(basis.x), dot(basis.y)];
-}
-
-/** テスト・文書破棄時に、そのカーネルの投影記憶だけを捨てる。 */
-export function clearDrawingProjectionCache(kernel: DrawingResolveKernel): void {
-  projectionCaches.delete(kernel);
+  return [dotVec3(basis.x, center), dotVec3(basis.y, center)];
 }

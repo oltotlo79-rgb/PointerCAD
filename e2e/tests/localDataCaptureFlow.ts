@@ -20,6 +20,15 @@ const AUTO_SAVE_SAVED_AT = '2026-09-03T09:30:00.000Z';
  * (`e2e/tests/solid.spec.ts` の「前回の作業の控えから復元でき…」検査と同じ作り方で控えを書く)。
  */
 export async function localDataCaptureFlow(page: Page, info: TestInfo): Promise<void> {
+  await runLocalDataRestore(page, info, true);
+}
+
+/** 撮影を行わず、同じ保存・復元・再計算を検証する。 */
+export async function localDataRestoreFlow(page: Page, info: TestInfo): Promise<void> {
+  await runLocalDataRestore(page, info, false);
+}
+
+async function runLocalDataRestore(page: Page, info: TestInfo, capture: boolean): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await waitForStartupHealth(page, info);
   await expect(restoreCard(page)).toHaveCount(0);
@@ -45,12 +54,25 @@ export async function localDataCaptureFlow(page: Page, info: TestInfo): Promise<
   await waitForStartupHealth(page, info);
 
   await expect(restoreCard(page)).toContainText('前回の作業が残っています');
-  await captureManualDetail(page, info, {
-    name: 'local-data-restore', dialog: restoreCard(page),
-    fixture: { savedAt: AUTO_SAVE_SAVED_AT, savedByteLength: savedBytes.byteLength }, script: new URL(import.meta.url),
-  });
+  if (capture) {
+    await captureManualDetail(page, info, {
+      name: 'local-data-restore', dialog: restoreCard(page),
+      fixture: { savedAt: AUTO_SAVE_SAVED_AT, savedByteLength: savedBytes.byteLength }, script: new URL(import.meta.url),
+    });
+  }
 
   // 後片付け: 復元して通常の画面へ戻す(このあとの誤り検査に影響を残さない)。
+  const restoring = await beginRecompute(page);
   await restoreCard(page).getByRole('button', { name: '復元する', exact: true }).click();
+  await waitForRecompute(page, restoring);
   await expect(restoreCard(page)).toHaveCount(0);
+  // The original default box is 20 x 20 x 20 mm; card dismissal alone is not recovery.
+  const restoredBox = page.locator('.pcad-tree__select').filter({ hasText: /^箱1$/u });
+  await expect(restoredBox).toHaveCount(1);
+  await restoredBox.click();
+  for (const label of ['X の長さ', 'Y の長さ', 'Z の長さ']) {
+    await expect(page.locator('.pcad-panel--right').getByRole('textbox', { name: label, exact: true })).toHaveValue('20');
+  }
+  await expect.poll(async () => Number.parseFloat(await page.locator('.pcad-panel--right dt.pcad-properties__key')
+    .filter({ hasText: /^体積$/u }).locator('xpath=following-sibling::dd[1]').innerText())).toBe(8000);
 }

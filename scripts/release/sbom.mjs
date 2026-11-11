@@ -11,22 +11,25 @@
  * free-form `properties[]` maps onto that shape directly. SPDX's document/package/relationship
  * graph and mandatory SPDX license-expression IDs would force guessing an identifier for a
  * component whose bundled original text does not itself state one - something task rules
- * forbid ("ライセンスの判断が要るものは推測で埋めない"). Two exact-math components
- * ("liblzma from XZ 5.2.2", "SQLite 3.39.0") are exactly that case and stay
- * `licenseStatus: 'unclassified'` below (see EXACT_MATH_LICENSES' doc comment for why). The
- * other 32 previously-unclassified components (P13-6b) now carry an SPDX id/expression
+ * forbid ("ライセンスの判断が要るものは推測で埋めない"). The exact-math component
+ * "liblzma from XZ 5.2.2" carries no SPDX id: its own bundled public-domain declaration is
+ * recorded by name with its exact text (see EXACT_MATH_NAMED_LICENSES). SQLite's original text matches SPDX blessing. The
+ * other previously-unclassified components carry a confirmed SPDX id/expression
  * confirmed against their own bundled notice text - see script-runtime-notices.json's
  * `license` fields and this file's EXACT_MATH_LICENSES table for the evidence trail. No new
  * dependency is added: this file hand-serializes plain JSON that follows the CycloneDX 1.6
  * JSON shape.
  */
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 import { collectRuntimeNotices } from '../vite/runtimeNotices.mjs';
 import { collectMathNotices } from '../vite/mathNotices.mjs';
 import { collectExactMathAssets } from '../vite/exactMathAssets.mjs';
+import { assertFemApplicationBuildInputs, collectFemRuntimeAssets, femDistributionObligationGaps } from '../vite/femRuntimeAssets.mjs';
 
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const EXACT_MATH_SOURCE_PART_BYTES = 16 * 1024 * 1024; // Mirrors scripts/vite/exactMathAssets.mjs; files above this are split for Pages.
@@ -166,15 +169,14 @@ function scriptRuntimeComponents(root) {
 /**
  * SPDX id/expression for each vendor/exact-math/manifest.json `components` group, confirmed by
  * reading that group's own bundled notice file(s) (vendor/exact-math/notices) against the
- * standard SPDX text they match - never guessed. Two groups are deliberately absent and stay
- * `unclassified` because their bundled original text does not reproduce a standard license:
- * "liblzma from XZ 5.2.2" (its COPYING.txt gives its own prose summary - "liblzma is in the
- * public domain" - not the CC0-1.0 or Unlicense legal text), and "SQLite 3.39.0" (its
- * LICENSE.txt is SQLite's well-known public-domain "blessing" dedication, but that short text
- * names no license and there is no other bundled or already-approved-in-repo copy to confirm
- * the exact SPDX id against without network access).
+ * standard SPDX text they match - never guessed. "liblzma from XZ 5.2.2" has no SPDX id:
+ * COPYING.txt gives its own public-domain summary, not the CC0-1.0 or Unlicense text, so it is
+ * recorded by name in EXACT_MATH_NAMED_LICENSES below instead. SQLite's complete bundled LICENSE.txt matches the official
+ * https://spdx.org/licenses/blessing.html text after whitespace and bullet formatting
+ * are normalized; its original notice remains bundled and hash-verified.
  */
 const EXACT_MATH_LICENSES = {
+  'SQLite 3.39.0': 'blessing',
   // "Mozilla Public License Version 2.0" full text (numbered Definitions 1.1-1.7 etc.), verbatim.
   'Pyodide 314.0.6': 'MPL-2.0',
   'Hiwire 6a1e67280a15d929ebeceee54a6358c9c8d5f697': 'MPL-2.0', // byte-identical to the Pyodide MPL-2.0 file above.
@@ -209,6 +211,29 @@ const EXACT_MATH_LICENSES = {
   'mpmath 1.3.0': 'BSD-3-Clause', // a/b/c 3-clause conditions, "Neither the name of the copyright holder...".
 };
 
+/**
+ * A complete grant in the component's own pinned notice that equals no SPDX License List text is recorded as a
+ * CycloneDX non-SPDX named licence carrying that exact text (`pointercad:licenseStatus` = `named-non-spdx`). This is
+ * a valid named licence, distinct from `unclassified` (grant not yet confirmed). XZ Utils' COPYING.txt says
+ * "liblzma is in the public domain." and "If you find public domain legally problematic, take the previous sentence
+ * as a license grant." - neither CC0-1.0 nor Unlicense, which are never substituted. Not a legal determination.
+ */
+const EXACT_MATH_NAMED_LICENSES = {
+  'liblzma from XZ 5.2.2': { notice: 'notices/xz-5.2.2-COPYING.txt', name: 'XZ Utils public domain declaration (liblzma)' },
+};
+/** The named entry, only when its notice belongs to the component and its bytes equal the vendor pin. */
+function namedLicenseEntry(vendorRoot, manifest, componentName, noticeFiles) {
+  const named = EXACT_MATH_NAMED_LICENSES[componentName];
+  if (!named) return undefined;
+  const pin = manifest.files[named.notice];
+  if (!noticeFiles.map((file) => `notices/${file}`).includes(named.notice) || !pin) {
+    throw new Error('Named licence notice is not this component\'s pinned notice: ' + componentName);
+  }
+  const bytes = readFileSync(join(vendorRoot, named.notice));
+  if (bytes.byteLength !== pin.bytes || sha256(bytes) !== pin.sha256) throw new Error('Named licence text changed: ' + named.notice);
+  return { license: { name: named.name, text: { contentType: 'text/plain', content: bytes.toString('utf8') } } };
+}
+
 /** Pyodide/SymPy/mpmath and the ~20 C libraries they are built from; validated by the existing, heavier collector. */
 function exactMathComponents(root) {
   // collectExactMathAssets() has no root parameter of its own (unlike the other collectors): it
@@ -225,7 +250,8 @@ function exactMathComponents(root) {
   const groupedNoticeFiles = new Set();
   for (const [componentName, noticeFiles] of Object.entries(manifest.components)) {
     const license = EXACT_MATH_LICENSES[componentName];
-    const properties = license ? [] : [property('pointercad:licenseStatus', 'unclassified')];
+    const named = license ? undefined : namedLicenseEntry(vendorRoot, manifest, componentName, noticeFiles);
+    const properties = license ? [] : [property('pointercad:licenseStatus', named ? 'named-non-spdx' : 'unclassified')];
     for (const file of noticeFiles) {
       const name = `notices/${file}`;
       groupedNoticeFiles.add(name);
@@ -234,7 +260,7 @@ function exactMathComponents(root) {
       const path = distributedPath(name, pin.bytes);
       if (path) properties.push(distributedFile(path, pin.sha256));
     }
-    components.push({ type: 'library', name: componentName, licenses: license ? [licenseEntry(license)] : undefined, properties });
+    components.push({ type: 'library', name: componentName, licenses: license ? [licenseEntry(license)] : named ? [named] : undefined, properties });
   }
   for (const [name, pin] of Object.entries(manifest.files)) {
     if (groupedNoticeFiles.has(name)) continue;
@@ -307,6 +333,261 @@ function manualFontComponents(root) {
 }
 
 /**
+ * SPDX id for a FEM wheel component, only when every shipped notice was compared word by word with the SPDX License
+ * List text and template and the wheel's own METADATA declares the same licence. Bound to the exact version, the
+ * source-index wheel file, the shipped wheel SHA-256 and every notice SHA-256; anything else stays `unclassified`.
+ * The runtime ships only oofem, numpy and Pyodide (the numerical drivers need only numpy). The 19 entries recorded
+ * for the former matplotlib/pytest dependency closure were removed together with those wheels; their evidence stays
+ * outside the distribution. oofem, numpy and Pyodide stay `unclassified`: numpy's custom BSD-style variants do not
+ * match the SPDX templates and its compiled-in component notices are not yet proved complete, so neither an SPDX id
+ * nor a named licence is recorded. This is an SBOM licence-id record only: source correspondence, native rebuild and
+ * legal review stay unresolved.
+ */
+const FEM_LICENSES = new Map();
+/** The confirmed SPDX id only when every bound fact of the recorded evidence equals the distributed inventory. */
+function femLicense(item, source, files) {
+  const confirmed = FEM_LICENSES.get(item.name);
+  if (!confirmed || !source || confirmed.version !== item.version || source.version !== item.version || source.file !== confirmed.wheel) return undefined;
+  if (files['assets/' + source.file]?.sha256 !== confirmed.wheelSha256) return undefined;
+  const notices = [...item.notices].sort();
+  if (notices.length !== confirmed.notices.length || notices.some((name, at) => name !== confirmed.notices[at])) return undefined;
+  return confirmed.notices.every((name) => files[name]?.sha256 === name.slice('notices/'.length, -'.txt'.length)) ? confirmed.license : undefined;
+}
+
+/**
+ * Code compiled into the oofem native module from a separately versioned upstream source, as its own component.
+ * Only source-index facts are used: the recorded pybind11 gitlink, the single source archive at that commit and the
+ * notice texts recorded from that archive, which oofem already ships. Nothing here classifies a licence.
+ */
+function femEmbeddedComponents(manifest, sourceIndex, facts) {
+  const oofem = manifest.components.find(item => item.name === 'oofem');
+  if (!oofem) return [];
+  const commit = sourceIndex.buildEvidence?.pybind11Gitlink;
+  const materials = (sourceIndex.materials ?? []).filter(item => (item.components ?? []).includes('pybind11')
+    && String(item.url).endsWith('/' + commit));
+  if (!COMMIT_PATTERN.test(commit ?? '') || materials.length !== 1 || !String(materials[0].url).endsWith('/' + commit)
+    || !HASH_PATTERN.test(materials[0].sha256 ?? '') || typeof materials[0].bundlePath !== 'string') {
+    throw new Error('FEM embedded component source missing: pybind11');
+  }
+  const [material] = materials;
+  const notices = (sourceIndex.noticeEntries ?? []).filter(entry => entry.source === material.path).map(entry => entry.bundlePath);
+  if (notices.length === 0 || notices.some(name => !oofem.notices.includes(name))) {
+    throw new Error('FEM embedded component notice missing: pybind11');
+  }
+  return [{ type: 'library', name: 'FEM: pybind11', version: commit,
+    properties: [property('pointercad:licenseStatus', 'unclassified'),
+      property('pointercad:femEmbeddedIn', 'FEM: oofem'),
+      property('pointercad:femSourceEvidence', 'licenses/fem/evidence/source-index.json'),
+      property('pointercad:femSourceArchive', material.bundlePath + '|' + material.sha256),
+      ...notices.flatMap(facts)] }];
+}
+
+/** Exact retained Netgen dependency records; unresolved rights remain unclassified. */
+function netgenEmbeddedComponents(manifest, readMetadata, facts) {
+  const mapPath = 'evidence/netgen-build-source-map.json';
+  const map = readMetadata(mapPath);
+  const wheelName = 'assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl';
+  const wheel = manifest.files[wheelName];
+  const members = ['libngcore.so', 'libnglib.so', 'netgen/libngpy.so', 'pyngcore/pyngcore.so'];
+  const names = ['FEM: Netgen pybind11', 'FEM: Netgen zlib', 'FEM: Netgen concurrentqueue', 'FEM: Netgen gzstream', 'FEM: Netgen mpi4py header'];
+  if (map.schema !== 'pcad-netgen-shipped-source-map/2' || !wheel
+    || map.wheel?.sha256 !== wheel.sha256 || map.wheel?.bytes !== wheel.bytes
+    || !Array.isArray(map.modules) || map.modules.length !== members.length
+    || members.some(name => map.modules.filter(row => row.member === name).length !== 1)
+    || map.modules.some(row => !HASH_PATTERN.test(row.sha256 ?? '') || !Number.isSafeInteger(row.bytes) || row.bytes <= 0
+      || !Array.isArray(row.needed) || row.needed.some(name => !members.some(member => member.split('/').at(-1) === name)))
+    || !Array.isArray(map.embeddedDependencies) || map.embeddedDependencies.length !== names.length
+    || names.some(name => map.embeddedDependencies.filter(row => row.name === name).length !== 1)
+    || typeof map.legalClearance !== 'boolean' || typeof map.sourceReplacementExecuted !== 'boolean') {
+    throw new Error('FEM Netgen retained module/dependency evidence differs');
+  }
+  return map.embeddedDependencies.map(item => {
+    const source = item.source, pin = manifest.files[source?.path];
+    const header = item.type === 'file';
+    if (!pin || source.sha256 !== pin.sha256 || source.bytes !== pin.bytes
+      || !['library', 'file'].includes(item.type) || !Array.isArray(item.notices)
+      || (!header && item.notices.length === 0) || typeof item.relationship !== 'string'
+      || (item.version !== undefined && typeof item.version !== 'string')) {
+      throw new Error('FEM Netgen dependency source/notice evidence differs');
+    }
+    if (item.sourceMember && (!HASH_PATTERN.test(item.sourceMember.sha256 ?? '')
+      || item.sourceMember.byteIdentical !== true
+      || !map.headerSourceCorrespondence?.some(row => JSON.stringify(row) === JSON.stringify(item.sourceMember)))) {
+      throw new Error('FEM Netgen shipped header/source evidence differs');
+    }
+    if (header) {
+      const proof = item.sourceMember?.permissionEvidence;
+      const expected = {"referenceTag": "4.0.0", "referenceIsUniqueOriginVersion": false, "headerUrl": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/src/mpi4py/include/mpi4py/pycapi.h", "licenseUrl": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/LICENSE.rst", "observedOn": "2026-10-24", "method": "UTF-8 splitlines; discard blank lines; strip leading/trailing whitespace only; retain order and every other character", "nonemptyLines": 208, "normalizedSha256": "1316b5a0642ce6ed627cb7d5d42f14a3c9a31c541bc8dfbbbfd59024ab220e70", "localHeaderSha256": "022ec87d2a2dc2bcf0bc1961560477f3d532eff33df6ba2f8edd48f4abf39cb8", "licenseExpression": "BSD-3-Clause", "notice": "notices/915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6.txt", "noticeSha256": "915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6", "limit": "Complete normalized source correspondence to the named upstream reference, not raw upstream byte equality or proof of the original build version. No MPI runtime inclusion claim."};
+      if (item.name !== 'FEM: Netgen mpi4py header'
+        || item.sourceMember.sha256 !== expected.localHeaderSha256
+        || item.sourceMember.permissionStatus !== "Complete normalized header correspondence to mpi4py 4.0.0 reference; BSD-3-Clause notice retained; unique original version not asserted."
+        || JSON.stringify(proof) !== JSON.stringify(expected)
+        || item.notices.length !== 1 || item.notices[0] !== expected.notice
+        || manifest.files[expected.notice]?.sha256 !== expected.noticeSha256) {
+        throw new Error('FEM Netgen mpi4py permission correspondence differs');
+      }
+    }
+    return { type: item.type, name: item.name, ...(item.version === undefined ? {} : { version: item.version }),
+      ...(header ? { licenses: [{ license: { id: 'BSD-3-Clause' } }] } : {}),
+      ...(item.sourceMember ? { hashes: [{ alg: 'SHA-256', content: item.sourceMember.sha256 }] } : {}),
+      properties: [property('pointercad:licenseStatus', header ? 'classified' : 'unclassified'),
+        property('pointercad:femEmbeddedIn', 'FEM: netgen-mesher'),
+        property('pointercad:femDependencyEvidence', mapPath),
+        property('pointercad:femDependencyRelationship', item.relationship),
+        ...(item.sourceMember ? [property('pointercad:femSourceMember', JSON.stringify(item.sourceMember))] : []),
+        ...facts(mapPath), ...facts(source.path), ...item.notices.flatMap(facts)] };
+  });
+}
+
+
+/** Recheck concrete FEM obligations against the actual emitted recipient bytes, not diagnostic history. */
+export function femDistributionGapsFromDistribution(distribution) {
+  const raw = distribution.assets.get('licenses/fem/manifest.json');
+  if (!raw) throw new Error('FEM SBOM distribution manifest absent');
+  const manifest = JSON.parse(raw.toString('utf8')), files = new Map();
+  for (const [name, pin] of Object.entries(manifest.files)) {
+    if (!Array.isArray(pin.parts) || pin.parts.length === 0) throw new Error('FEM SBOM file mapping missing: ' + name);
+    const chunks = pin.parts.map(part => {
+      const bytes = distribution.assets.get(part.file);
+      if (!bytes || bytes.byteLength !== part.bytes || sha256(bytes) !== part.sha256) throw new Error('FEM SBOM distributed bytes differ: ' + name);
+      return bytes;
+    });
+    const bytes = Buffer.concat(chunks);
+    if (bytes.byteLength !== pin.bytes || sha256(bytes) !== pin.sha256) throw new Error('FEM SBOM distributed bytes differ: ' + name);
+    files.set(name, bytes);
+  }
+  return femDistributionObligationGaps(manifest, files);
+}
+
+/** Map the existing verified FEM distribution, without inventing SPDX or native source qualification. */
+export function femComponentsFromDistribution(distribution) {
+  const assets = distribution.assets;
+  const manifestPath = 'licenses/fem/manifest.json';
+  const manifest = JSON.parse(assets.get(manifestPath).toString('utf8'));
+  const sourceIndex = JSON.parse(assets.get('licenses/fem/evidence/source-index.json').toString('utf8'));
+  const components = [];
+  const facts = (name) => {
+    const file = manifest.files[name];
+    if (!file || !Array.isArray(file.parts) || file.parts.length === 0) throw new Error('FEM SBOM file mapping missing: ' + name);
+    return file.parts.map(part => {
+      const bytes = assets.get(part.file);
+      if (!bytes || bytes.byteLength !== part.bytes || sha256(bytes) !== part.sha256) throw new Error('FEM SBOM distributed bytes differ: ' + name);
+      return distributedFile(part.file, part.sha256);
+    });
+  };
+  // The platform is not a wheel source-index record. Bind its displayed tuple to the actual pinned metadata,
+  // and keep the package-index label separate: it can predate the JavaScript runtime without being its version.
+  const readMetadata = name => {
+    facts(name);
+    const pin = manifest.files[name], bytes = Buffer.concat(pin.parts.map(part => assets.get(part.file)));
+    if (bytes.byteLength !== pin.bytes || sha256(bytes) !== pin.sha256) throw new Error('FEM SBOM distributed bytes differ: ' + name);
+    return JSON.parse(bytes.toString('utf8'));
+  };
+  const platform = manifest.components.filter(item => item.name === 'Pyodide');
+  if (platform.length !== 1) throw new Error('FEM platform component mapping missing: Pyodide');
+  const metadata = readMetadata('assets/package.json'), info = readMetadata('assets/pyodide-lock.json')?.info;
+  const emscripten = /^emscripten_(\d+)_(\d+)_(\d+)$/u.exec(info?.platform ?? '');
+  if (metadata?.name !== 'pyodide' || typeof metadata.version !== 'string' || !VERSION_PATTERN.test(metadata.version)
+    || typeof info?.python !== 'string' || !/^\d+\.\d+\.\d+$/u.test(info.python) || !emscripten
+    || typeof info.version !== 'string' || info.version.length === 0) throw new Error('FEM platform metadata mapping missing: Pyodide');
+  const expectedPlatform = `${metadata.version} / CPython ${info.python} / Emscripten ${emscripten.slice(1).join('.')}`;
+  if (platform[0].version !== expectedPlatform) throw new Error('FEM platform version differs from shipped metadata: Pyodide');
+  const platformProperties = [property('pointercad:femPlatformVersion', metadata.version),
+    property('pointercad:femPythonVersion', info.python),
+    property('pointercad:femEmscriptenVersion', emscripten.slice(1).join('.')),
+    property('pointercad:femPackageIndexVersion', info.version),
+    ...['assets/package.json', 'assets/pyodide-lock.json', 'assets/pyodide.mjs', 'assets/pyodide.asm.js',
+      'assets/pyodide.asm.wasm', 'assets/python_stdlib.zip'].flatMap(facts)];
+  for (const item of manifest.components) {
+    const source = sourceIndex.components.find(record => record.name === item.name);
+    if (item.name !== 'Pyodide' && (!source || source.version !== item.version || !manifest.files['assets/' + source.file])) {
+      throw new Error('FEM SBOM component/source mapping missing: ' + item.name);
+    }
+    const license = femLicense(item, source, manifest.files);
+    components.push({ type: 'library', name: 'FEM: ' + item.name, version: item.version,
+      licenses: license ? [licenseEntry(license)] : undefined,
+      properties: [...(license ? [] : [property('pointercad:licenseStatus', 'unclassified')]),
+        ...(item.name === 'Pyodide' ? platformProperties : []),
+        property('pointercad:femManifest', manifestPath),
+        property('pointercad:femSourceEvidence', 'licenses/fem/evidence/source-index.json'),
+        ...(source ? [property('pointercad:femSourceRecord', JSON.stringify(source)), ...facts('assets/' + source.file)] : []),
+        ...item.notices.flatMap(facts)] });
+  }
+  components.push(...femEmbeddedComponents(manifest, sourceIndex, facts));
+  components.push(...netgenEmbeddedComponents(manifest, readMetadata, facts));
+  // Every distributed wheel needs a visible component and its exact source-index identity.
+  for (const name of Object.keys(manifest.files).filter(path => path.startsWith('assets/') && path.endsWith('.whl'))) {
+    const sources = sourceIndex.components.filter(item => 'assets/' + item.file === name);
+    if (sources.length !== 1 || manifest.components.filter(item => item.name === sources[0].name && item.version === sources[0].version).length !== 1) {
+      throw new Error('FEM wheel component/source mapping missing: ' + name);
+    }
+  }
+  for (const [name, pin] of Object.entries(manifest.files)) {
+    components.push({ type: 'file', name: 'FEM file: ' + name,
+      hashes: [{ alg: 'SHA-256', content: pin.sha256 }],
+      properties: [property('pointercad:licenseStatus', 'see-related-components'),
+        property('pointercad:femRuntimePath', 'packages/fem/runtime/' + name), ...facts(name)] });
+  }
+  for (const name of [manifestPath, 'licenses/fem/index.html']) {
+    const bytes = assets.get(name);
+    if (!bytes) throw new Error('FEM SBOM generated mapping absent: ' + name);
+    components.push({ type: 'file', name: 'FEM distribution: ' + name,
+      hashes: [{ alg: 'SHA-256', content: sha256(bytes) }],
+      properties: [property('pointercad:licenseStatus', 'see-related-components'), distributedFile(name, sha256(bytes))] });
+  }
+  return components;
+}
+
+/**
+ * Electron (with the Chromium and Node.js it embeds) ships inside both desktop executables, but it is neither a Web
+ * asset nor part of the runtime-notices closure, so it gets its own component. The version is read from the package
+ * apps/desktop actually installed - the same `createRequire(apps/desktop/package.json)('electron/package.json')` that
+ * assemble-desktop.mjs records as each desktop candidate's `electronVersion` - and publicationManifest.mjs requires
+ * both candidates to carry exactly this version. The MIT id is recorded only when the installed package declares it
+ * and its own LICENSE file contains the MIT grant and disclaimer. electron-builder writes LICENSE.electron.txt (the
+ * Electron licence) and LICENSES.chromium.html (Chromium and its bundled parts) next to the executable from the
+ * Electron archive of the same version; those two names are recorded as `pointercad:desktopExecutableNotice` without
+ * a hash, because no repository record pins the archive's bytes. They are never `pointercad:distributedFile` facts,
+ * which are matched against the Web and desktop renderer inventories.
+ */
+export const ELECTRON_COMPONENT = 'electron';
+export const ELECTRON_EXECUTABLE_NOTICES = Object.freeze(['LICENSE.electron.txt', 'LICENSES.chromium.html']);
+const ELECTRON_LICENSE_FACT = 'pointercad:installedPackageLicense';
+const ELECTRON_NOTICE_FACT = 'pointercad:desktopExecutableNotice';
+const MIT_SENTENCES = ['Permission is hereby granted, free of charge, to any person obtaining a copy of this software',
+  'The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.',
+  'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND'];
+
+/** Pure half of the Electron component: the installed package.json and its LICENSE bytes (undefined when the file is absent). */
+export function electronComponentFromPackage(installed, licenseBytes) {
+  if (installed?.name !== ELECTRON_COMPONENT || typeof installed.version !== 'string' || !VERSION_PATTERN.test(installed.version)) {
+    throw new Error('Installed Electron package identity is invalid');
+  }
+  if (!(licenseBytes instanceof Uint8Array) || licenseBytes.byteLength === 0) {
+    throw new Error('Installed Electron license file is missing: electron/LICENSE');
+  }
+  if (installed.license !== 'MIT') throw new Error('Installed Electron license differs from MIT: ' + String(installed.license));
+  const text = Buffer.from(licenseBytes).toString('utf8').replace(/\s+/gu, ' ');
+  if (MIT_SENTENCES.some((sentence) => !text.includes(sentence))) {
+    throw new Error('Installed Electron license file is not the MIT text: electron/LICENSE');
+  }
+  const origin = repositoryUrl(installed.repository);
+  return {
+    type: 'library', name: ELECTRON_COMPONENT, version: installed.version, licenses: [{ license: { id: 'MIT' } }],
+    externalReferences: origin ? [{ type: 'vcs', url: origin }] : undefined,
+    properties: [property('pointercad:distributionScope', 'desktop'),
+      property(ELECTRON_LICENSE_FACT, `electron/LICENSE|${sha256(licenseBytes)}`),
+      ...ELECTRON_EXECUTABLE_NOTICES.map((name) => property(ELECTRON_NOTICE_FACT, name))],
+  };
+}
+
+function electronComponent(root) {
+  const manifestPath = createRequire(join(root, 'apps/desktop/package.json')).resolve('electron/package.json');
+  const licensePath = join(dirname(manifestPath), 'LICENSE');
+  return electronComponentFromPackage(readJson(manifestPath), existsSync(licensePath) ? readFileSync(licensePath) : undefined);
+}
+
+/**
  * Collect every component this SBOM tracks, reusing the existing per-system collectors for
  * hash/inventory verification. Never throws for a *documented* gap (an unresolved runtime
  * notice, or a component with no recorded SPDX id) - those are returned for the caller to
@@ -315,6 +596,9 @@ function manualFontComponents(root) {
  */
 export function collectSbomComponents(root = repositoryRoot) {
   const { components: runtime, unresolved } = runtimeLibraryComponents(root);
+  const fem = collectFemRuntimeAssets(join(root, 'packages/fem/runtime'));
+  assertFemApplicationBuildInputs(fem, new Map(['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']
+    .map(name => [name, readFileSync(join(root, name))])));
   const components = [
     ...runtime.values(),
     ...mathComponents(root, runtime),
@@ -322,6 +606,8 @@ export function collectSbomComponents(root = repositoryRoot) {
     ...exactMathComponents(root),
     ...screenFontComponents(root),
     ...manualFontComponents(root),
+    ...femComponentsFromDistribution(fem),
+    electronComponent(root),
   ];
   const seen = new Set();
   for (const component of components) {
@@ -329,7 +615,7 @@ export function collectSbomComponents(root = repositoryRoot) {
     if (seen.has(key)) throw new Error('Duplicate SBOM component: ' + key);
     seen.add(key);
   }
-  return { components, unresolvedNotices: unresolved };
+  return { components, unresolvedNotices: [...new Set([...unresolved, ...femDistributionGapsFromDistribution(fem)])] };
 }
 
 function validateComponent(component) {
@@ -400,7 +686,7 @@ export function findSbomGaps(sbom) {
   return { unresolvedNotices, unclassifiedLicenses, noLicenseInformation };
 }
 
-/** Hard-fails only on a genuine compliance gap (missing original text); unclassified SPDX ids are advisory. */
+/** Hard-fails on concrete notice/source/access/replacement gaps; historical warranty flags and unclassified SPDX ids are advisory. */
 export function assertSbomPublishable(sbom) {
   const gaps = findSbomGaps(sbom);
   if (gaps.unresolvedNotices.length > 0) throw new Error('Unresolved SBOM notices: ' + gaps.unresolvedNotices.join(', '));
@@ -424,6 +710,11 @@ export function matchSbomToReleaseManifest(sbom, releaseManifest) {
     if (typeof file.path !== 'string' || !HASH_PATTERN.test(file.sha256)) throw new Error('Invalid release manifest file entry');
     files.set(file.path, file.sha256);
   }
+  return matchDistributedFiles(sbom, files, '');
+}
+
+/** Every `pointercad:distributedFile` fact looked up at `prefix + path` in one path -> SHA-256 inventory. */
+function matchDistributedFiles(sbom, files, prefix) {
   const missing = [], mismatched = [];
   let checked = 0;
   for (const component of sbom.components) {
@@ -431,12 +722,66 @@ export function matchSbomToReleaseManifest(sbom, releaseManifest) {
       if (entry.name !== 'pointercad:distributedFile') continue;
       const [path, expected] = String(entry.value).split('|');
       checked += 1;
-      const actual = files.get(path);
+      const actual = files.get(prefix + path);
       if (actual === undefined) missing.push({ path, component: component.name });
       else if (actual !== expected) mismatched.push({ path, component: component.name, expected, actual });
     }
   }
   return { checked, missing, mismatched };
+}
+
+/** Where a desktop candidate's packaged inventory (desktop-package.json `files`) keeps the renderer. */
+export const DESKTOP_RENDERER_PREFIX = 'dist/renderer/';
+
+/**
+ * The desktop renderer is built with the same notice plugins as the Web edition (apps/desktop/vite.renderer.config.ts),
+ * so every `pointercad:distributedFile` fact must also be in a desktop candidate's packaged inventory - the
+ * desktop-package.json `files` list that verifyDesktopDistribution byte-checks against the staged and unpacked app -
+ * at `dist/renderer/<path>` with the same SHA-256. This compares the SBOM with that inventory directly instead of
+ * relying only on the shared build inputs. `missing[].path`/`mismatched[].path` are the SBOM paths (without the prefix).
+ */
+export function matchSbomToDesktopPackage(sbom, desktopPackage) {
+  if (typeof sbom !== 'object' || sbom === null || !Array.isArray(sbom.components)) throw new Error('Invalid SBOM document');
+  if (typeof desktopPackage !== 'object' || desktopPackage === null || !Array.isArray(desktopPackage.files)) {
+    throw new Error('Invalid desktop package inventory');
+  }
+  const files = new Map();
+  for (const file of desktopPackage.files) {
+    if (typeof file?.path !== 'string' || !HASH_PATTERN.test(file.sha256)) throw new Error('Invalid desktop package file entry');
+    files.set(file.path, file.sha256);
+  }
+  return matchDistributedFiles(sbom, files, DESKTOP_RENDERER_PREFIX);
+}
+
+/** Throwing counterpart of matchSbomToDesktopPackage; `label` names the candidate (for example its platform). */
+export function assertSbomMatchesDesktopPackage(sbom, desktopPackage, label) {
+  const result = matchSbomToDesktopPackage(sbom, desktopPackage);
+  const paths = (items) => items.map((item) => DESKTOP_RENDERER_PREFIX + item.path).join(', ');
+  if (result.missing.length > 0) throw new Error(`Desktop package (${label}) is missing SBOM files: ${paths(result.missing)}`);
+  if (result.mismatched.length > 0) throw new Error(`Desktop package (${label}) file hash differs from SBOM: ${paths(result.mismatched)}`);
+  return result;
+}
+
+/**
+ * The single Electron component of a saved SBOM with its licence-file records. Refuses a missing or duplicated
+ * component, an invalid version, a missing installed-package LICENSE record, and a missing executable notice name.
+ */
+export function sbomElectronComponent(sbom) {
+  if (typeof sbom !== 'object' || sbom === null || !Array.isArray(sbom.components)) throw new Error('Invalid SBOM document');
+  const found = sbom.components.filter((component) => component?.type === 'library' && component.name === ELECTRON_COMPONENT);
+  if (found.length !== 1) throw new Error((found.length === 0 ? 'Missing' : 'Ambiguous') + ' SBOM Electron component');
+  const [electron] = found;
+  if (typeof electron.version !== 'string' || !VERSION_PATTERN.test(electron.version)) throw new Error('Invalid SBOM Electron version');
+  const values = (name) => (Array.isArray(electron.properties) ? electron.properties : [])
+    .filter((entry) => entry?.name === name).map((entry) => String(entry.value));
+  const license = values(ELECTRON_LICENSE_FACT);
+  if (license.length !== 1 || !/^electron\/LICENSE\|[a-f0-9]{64}$/u.test(license[0])) {
+    throw new Error('SBOM Electron license file record missing: electron/LICENSE');
+  }
+  const notices = values(ELECTRON_NOTICE_FACT);
+  const absent = ELECTRON_EXECUTABLE_NOTICES.filter((name) => !notices.includes(name));
+  if (absent.length > 0) throw new Error('SBOM Electron executable notice record missing: ' + absent.join(', '));
+  return { version: electron.version, licenseFile: license[0], executableNotices: [...ELECTRON_EXECUTABLE_NOTICES] };
 }
 
 /** Throwing counterpart, for a future release-gate script; never silently passes on a missing or tampered file. */

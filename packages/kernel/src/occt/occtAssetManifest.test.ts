@@ -45,6 +45,43 @@ function fixture(): {
 }
 
 describe('OCCT 圧縮資産の復元と検証', () => {
+  it('旧 manifest と hash64 の stream 付き manifest を読み分ける', () => {
+    const data = fixture();
+    expect(parseOcctAssetManifest(data.manifest).stream).toBeUndefined();
+    const first = data.manifest.parts[0];
+    if (first === undefined) throw new Error('検査用の片がありません。');
+    const singlePartManifest = { ...data.manifest, parts: [first] };
+    const stream = {
+      file: `stream/opencascade.full-${data.manifest.sha256}.wasm`,
+      compression: 'gzip',
+      transportByteLength: data.downloaded[0]?.data.byteLength ?? 0,
+      transportSha256: 'a'.repeat(64),
+      decodedByteLength: data.manifest.byteLength,
+      decodedSha256: data.manifest.sha256,
+    };
+    expect(parseOcctAssetManifest({ ...singlePartManifest, stream }).stream).toEqual(stream);
+    for (const file of [
+      `stream/opencascade.full-${data.manifest.sha256}.wasm?x=1`,
+      `stream/%6fpencascade.full-${data.manifest.sha256}.wasm`,
+      `stream/../opencascade.full-${data.manifest.sha256}.wasm`,
+      `https://elsewhere.example/stream/opencascade.full-${data.manifest.sha256}.wasm`,
+      `stream/opencascade.full-${'0'.repeat(64)}.wasm`,
+    ]) {
+      expect(() => parseOcctAssetManifest({ ...singlePartManifest, stream: { ...stream, file } })).toThrow('stream');
+    }
+    expect(() => parseOcctAssetManifest({ ...singlePartManifest, stream: {
+      ...stream, decodedByteLength: 64 * 1024 * 1024 + 1,
+    } })).toThrow('stream');
+    expect(() => parseOcctAssetManifest({ ...singlePartManifest, stream: {
+      ...stream, decodedSha256: '0'.repeat(64),
+    } })).toThrow('stream');
+    expect(() => parseOcctAssetManifest({
+      ...singlePartManifest,
+      parts: [{ ...first, byteLength: 25 * 1024 * 1024 + 1 }],
+      stream: { ...stream, transportByteLength: 25 * 1024 * 1024 + 1 },
+    })).toThrow('stream');
+  });
+
   it('manifest 順に gzip の片を連結して元のバイト列を返す', async () => {
     const data = fixture();
     const restored = await decompressAndVerifyOcctAsset(data.manifest, data.downloaded);
@@ -71,6 +108,28 @@ describe('OCCT 圧縮資産の復元と検証', () => {
     await expect(decompressAndVerifyOcctAsset(manifest, data.downloaded)).rejects.toThrow('SHA-256');
   });
 
+  it('stream 付き manifest の旧 bin でも圧縮輸送 SHA-256 を照合する', async () => {
+    const bytes = new TextEncoder().encode('same decoded bytes');
+    const compressed = toArrayBuffer(gzipSync(bytes));
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const manifest = parseOcctAssetManifest({
+      byteLength: bytes.byteLength,
+      sha256,
+      compression: 'gzip',
+      parts: [{ order: 0, file: 'asset.bin', byteLength: compressed.byteLength }],
+      stream: {
+        file: `stream/opencascade.full-${sha256}.wasm`,
+        compression: 'gzip',
+        transportByteLength: compressed.byteLength,
+        transportSha256: '0'.repeat(64),
+        decodedByteLength: bytes.byteLength,
+        decodedSha256: sha256,
+      },
+    });
+    await expect(decompressAndVerifyOcctAsset(manifest, [{ order: 0, data: compressed }]))
+      .rejects.toThrow('圧縮輸送 SHA-256');
+  });
+
   it('復元後の byteLength が一致しない結果を拒む', async () => {
     const data = fixture();
     const manifest: OcctAssetManifest = {
@@ -80,6 +139,15 @@ describe('OCCT 圧縮資産の復元と検証', () => {
     await expect(decompressAndVerifyOcctAsset(manifest, data.downloaded)).rejects.toThrow(
       '復元後 byteLength',
     );
+  });
+
+  it('旧 gzip でも復号途中に宣言長を超えたら拒む', async () => {
+    const data = fixture();
+    const manifest: OcctAssetManifest = { ...data.manifest, byteLength: data.manifest.byteLength - 1 };
+    await expect(decompressAndVerifyOcctAsset(manifest, data.downloaded)).rejects.toThrow('上限');
+    expect(() => parseOcctAssetManifest({
+      ...data.manifest, byteLength: 64 * 1024 * 1024 + 1,
+    })).toThrow('byteLength');
   });
 
   it('圧縮した片の byteLength が一致しない結果を拒む', async () => {

@@ -1,3 +1,5 @@
+import { evaluateMathInput } from './mathEvaluation.testSupport.js';
+import { specialMathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -12,18 +14,16 @@ import { createScalarIntervalSampler } from './scalarMathIntervals.js';
 import { createScalarDirectionalJet } from './scalarCurveCurvature.js';
 import { lowerLegendrePolynomial } from './legendrePolynomial.js';
 import type { MathNode } from './mathInputContract.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 function request(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
-  return { source, angleUnit, notation: 'text' as const, coefficients: [],
-    identity: { documentId: 'legendre', documentVersion: 1, editorId: 'coordinate', inputRevision: 1 } };
+  return specialMathTestRequest(source, angleUnit, 'legendre');
 }
 function evaluate(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
-  const input = request(source, angleUnit), raw = executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request: input }, backend);
-  return decodeMathWorkReply(raw, input, { operationsById: CANDIDATE_MATH_BY_ID,
-    coefficientIds: new Set(), declaredIds: new Set() }).result;
+  const input = request(source, angleUnit);
+  return evaluateMathInput(input, backend);
 }
 function value(source: string) {
   const result = evaluate(source).evaluation;

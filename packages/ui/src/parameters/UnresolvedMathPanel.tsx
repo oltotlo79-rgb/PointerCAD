@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { useId, useState } from 'react';
 import { removeUnresolvedMathProblem, setUnresolvedMathProblem,
   UNRESOLVED_MATH_PROBLEM_LIMIT, type PartDocument, type UnresolvedMathProblem } from '@pointercad/model';
@@ -23,7 +24,7 @@ export function UnresolvedMathPanel(): React.JSX.Element {
     let serial = 1;
     while (problems.some(problem => problem.name === `${t('math.problem.defaultName')}${serial}`)) serial++;
     setTarget({ document, documentVersion, ...(existing === undefined ? {} : { existing }),
-      id: existing?.id ?? `math-problem:${crypto.randomUUID()}`,
+      id: existing?.id ?? createDocumentElementId('math-problem:'),
       name: existing?.name ?? `${t('math.problem.defaultName')}${serial}` });
   };
   return <section aria-labelledby={`${id}-title`} data-help-topic="math-input" className="pcad-section pcad-unresolved-problems">

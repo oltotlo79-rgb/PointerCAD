@@ -92,6 +92,11 @@ export const STANDARD_CATALOG_IDS: readonly StandardCatalogId[] = [
   'equalAngle',
   'channel',
   'hBeam',
+  // 溶接のビードの区間(assembly/welding)。鋼材のカタログの並びを変えないよう、その前に置く。
+  'filletWeld',
+  'flatBar',
+  'roundBar',
+  'steelPipe',
 ];
 
 /** 部品表の列の一覧(FR-611 の 4 列 + 質量。§0.a-0.38)。並びが既定の列順でもある。 */

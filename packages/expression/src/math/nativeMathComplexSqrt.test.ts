@@ -5,7 +5,7 @@ import { complexOperation } from './nativeMathComplex.js';
 import { numberJson, rationalJson } from './nativeMathNumber.js';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { createMathWorkEnvelope } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';

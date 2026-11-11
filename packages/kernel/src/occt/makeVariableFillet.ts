@@ -78,7 +78,7 @@ export interface VariableFilletTarget {
 }
 
 /** 半径の変わる R 面取り 1 段の依頼。 */
-export interface VariableFilletInput {
+interface VariableFilletInput {
   /** 丸める辺の一覧。1 本以上。同じ辺を 2 度指したときは**先に書いたほうの半径**を使う。 */
   readonly targets: readonly VariableFilletTarget[];
 }

@@ -108,6 +108,8 @@ export function toShapeExportOutcome(
         kind: 'files',
         files: result.files,
         droppedTriangleCount: result.droppedTriangleCount,
+        ...(result.files.length > 0 && Number.isSafeInteger(result.triangleCount) && result.triangleCount >= 0
+          ? { triangleCount: result.triangleCount } : {}),
       };
     case 'mesh':
       // 並びは依頼のままなので、名前・色・面ごとの色は同じ位置の依頼から取れる(kernel の約束)。

@@ -1,6 +1,7 @@
 import type {
   BRepAlgoAPI_BooleanOperation, Message_ProgressRange, OpenCascadeInstance, TopoDS_Shape,
 } from 'opencascade.js/dist/opencascade.full.js';
+import { conditionEllipseBoolean, type BooleanHistory } from './ellipseBoolean.js';
 import type { BooleanOperation } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
 
@@ -29,7 +30,11 @@ function createBooleanMaker(
 export function buildBooleanShape(
   oc: OpenCascadeInstance, operation: BooleanOperation, target: TopoDS_Shape,
   tools: readonly TopoDS_Shape[], range: Message_ProgressRange, allocations: Allocations,
+  onBuilt?: (maker: BooleanHistory, shape: TopoDS_Shape) => void,
 ): TopoDS_Shape {
+  const conditioning = conditionEllipseBoolean(oc, [target, ...tools], allocations);
+  const actualTarget = conditioning?.inputs[0] ?? target;
+  const actualTools = conditioning?.inputs.slice(1) ?? tools;
   const maker = allocations.keep(createBooleanMaker(oc, operation));
   const inputs = createAllocations();
   try {
@@ -37,8 +42,8 @@ export function buildBooleanShape(
     const toolsList = inputs.keep(new oc.TopTools_ListOfShape_1());
     // Append_1 は入力と別のラッパーを返す(2026-09-07 固定 WASM 実測)。
     // その戻りも解放するが、target / tool の所有は移さない。
-    inputs.keep(argumentsList.Append_1(target));
-    for (const tool of tools) inputs.keep(toolsList.Append_1(tool));
+    inputs.keep(argumentsList.Append_1(actualTarget));
+    for (const tool of actualTools) inputs.keep(toolsList.Append_1(tool));
     maker.SetArguments(argumentsList);
     maker.SetTools(toolsList);
     // Build より前に立て、許容値や pcurve の更新をキャッシュの入力へ書き戻させない。
@@ -56,6 +61,12 @@ export function buildBooleanShape(
   }
 
   const shape = allocations.keep(maker.Shape());
+  if (conditioning !== null) {
+    const restored = conditioning.finish(maker, shape);
+    onBuilt?.(restored.history, restored.shape);
+    return restored.shape;
+  }
+  onBuilt?.(maker, shape);
 
   return shape;
 }

@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 it('Lambert Wの元の境界を0倍や成分選択で消さず、定数の境界値とは区別する',()=>{
   const script=fileURLToPath(new URL('./exactRuntime/cas_lambert_functions_test.py',import.meta.url));

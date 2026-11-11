@@ -45,7 +45,7 @@ export async function prepareDrawingOutput(): Promise<PreparedDrawingOutput | nu
   const tables = displayDrawingTables(drawing, source, drawingFont.outline);
   if (tables.unresolved.length > 0) throw new Error(t('drawing.table.unresolved'));
   const manufacturing = [...displayDrawingGdt(drawing, resolveDrawingGdt(drawing, drawingDimensionContext(source)), displays, drawingFont.outline),
-    ...displayDrawingWelds(drawing, resolveDrawingWelds(drawing, drawingDimensionContext(source)), drawingFont.outline)];
+    ...displayDrawingWelds(drawing, resolveDrawingWelds(drawing, drawingDimensionContext(source)), drawingFont.outline, state.drawingSources)];
   const unresolved = manufacturing.filter((item) => item.unresolved);
   if (unresolved.length > 0) throw new Error(`${t('drawing.manufacturing.outputUnresolved')}\n${unresolved.map((item) => `${item.id}: ${item.messages.join(' ')}`).join('\n')}`);
   const rendered = renderDrawing({ document: drawing, views: drawingProjectionRenderViews(resolution.projection.views),

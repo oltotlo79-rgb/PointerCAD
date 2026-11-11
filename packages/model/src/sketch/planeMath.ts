@@ -202,8 +202,3 @@ export function directionInPlane(plane: WorkPlane, azimuthDegrees: number): Vec3
     scaleVec3(plane.axisV, Math.sin(azimuth)),
   );
 }
-
-/** 3 平面の定義が右手系であること(U × V = N)を確かめるための計算。テストで使う。 */
-export function computedNormal(plane: WorkPlane): Vec3 {
-  return crossVec3(plane.axisU, plane.axisV);
-}

@@ -1,0 +1,1545 @@
+{
+  "passed": true,
+  "nativeCalls": [
+    {
+      "plan": {
+        "schema": "pointercad-oofem-contact-plan/1",
+        "originalNodeCount": 2,
+        "nodes": [
+          {
+            "number": 1,
+            "positionM": [
+              0.0,
+              2.0,
+              3.0
+            ],
+            "restrained": [
+              true,
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "load": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "number": 2,
+            "positionM": [
+              1.0,
+              2.0,
+              3.0
+            ],
+            "restrained": [
+              false,
+              true,
+              true,
+              false,
+              true,
+              true
+            ],
+            "load": [
+              40.0,
+              0.0,
+              0.0,
+              26.666666666666668,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "materials": [
+          {
+            "number": 1,
+            "youngPa": 1000.0,
+            "poisson": 0.25,
+            "densityKgM3": 1.0
+          }
+        ],
+        "sections": [
+          {
+            "number": 1,
+            "areaM2": 1.0,
+            "iyM4": 1.0,
+            "izM4": 1.0,
+            "torsionM4": 1.0,
+            "shearFactor": 1.0
+          }
+        ],
+        "members": [
+          {
+            "number": 1,
+            "nodes": [
+              1,
+              2
+            ],
+            "material": 1,
+            "section": 1,
+            "frame": {
+              "x": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "y": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "z": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "lengthM": 1.0
+            }
+          }
+        ],
+        "contacts": [
+          {
+            "id": "stop",
+            "kind": "node-plane",
+            "node": 2,
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "gapM": 0.0005
+          }
+        ],
+        "loadFactors": [
+          0.2,
+          1.0,
+          -1.0,
+          0.0,
+          1.0
+        ]
+      },
+      "response": {
+        "schema": "pointercad-joint-contact-result/1",
+        "contact": {
+          "schema": "pointercad-oofem-contact-result/1",
+          "method": "murty-least-index-lcp-on-native-beam3d-stiffness",
+          "freeDofs": 2,
+          "meshNodes": 2,
+          "meshElements": 1,
+          "momentLengthM": 1.0,
+          "pivotLimit": 20,
+          "states": [
+            {
+              "loadFactor": 0.2,
+              "pivots": 0,
+              "nodes": [
+                {
+                  "number": 1,
+                  "displacementM": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                {
+                  "number": 2,
+                  "displacementM": [
+                    0.000186046511627907,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.00016632016632016637,
+                    0.0,
+                    0.0
+                  ]
+                }
+              ],
+              "contacts": [
+                {
+                  "id": "stop",
+                  "state": "open",
+                  "normalReactionN": 0.0,
+                  "gapM": 0.00031395348837209304
+                }
+              ],
+              "forceScaleN": 13.5,
+              "gapScaleM": 0.00031395348837209304,
+              "equilibriumResidual": 4.618806972100063e-17,
+              "penetration": 0.0,
+              "tension": 0.0,
+              "complementarity": 0.0
+            },
+            {
+              "loadFactor": 1.0,
+              "pivots": 1,
+              "nodes": [
+                {
+                  "number": 1,
+                  "displacementM": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                {
+                  "number": 2,
+                  "displacementM": [
+                    0.0005,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.0008316008316008318,
+                    0.0,
+                    0.0
+                  ]
+                }
+              ],
+              "contacts": [
+                {
+                  "id": "stop",
+                  "state": "closed",
+                  "normalReactionN": 18.5,
+                  "gapM": 0.0
+                }
+              ],
+              "forceScaleN": 48.07401700618652,
+              "gapScaleM": 0.0011180003954927098,
+              "equilibriumResidual": 0.0,
+              "penetration": 0.0,
+              "tension": 0.0,
+              "complementarity": 0.0
+            },
+            {
+              "loadFactor": -1.0,
+              "pivots": 0,
+              "nodes": [
+                {
+                  "number": 1,
+                  "displacementM": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                {
+                  "number": 2,
+                  "displacementM": [
+                    -0.0009302325581395349,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    -0.0008316008316008318,
+                    0.0,
+                    0.0
+                  ]
+                }
+              ],
+              "contacts": [
+                {
+                  "id": "stop",
+                  "state": "open",
+                  "normalReactionN": 0.0,
+                  "gapM": 0.001430232558139535
+                }
+              ],
+              "forceScaleN": 61.5,
+              "gapScaleM": 0.001430232558139535,
+              "equilibriumResidual": 0.0,
+              "penetration": 0.0,
+              "tension": 0.0,
+              "complementarity": 0.0
+            },
+            {
+              "loadFactor": 0.0,
+              "pivots": 0,
+              "nodes": [
+                {
+                  "number": 1,
+                  "displacementM": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                {
+                  "number": 2,
+                  "displacementM": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                }
+              ],
+              "contacts": [
+                {
+                  "id": "stop",
+                  "state": "open",
+                  "normalReactionN": 0.0,
+                  "gapM": 0.0005
+                }
+              ],
+              "forceScaleN": 21.5,
+              "gapScaleM": 0.0005,
+              "equilibriumResidual": 0.0,
+              "penetration": 0.0,
+              "tension": 0.0,
+              "complementarity": 0.0
+            },
+            {
+              "loadFactor": 1.0,
+              "pivots": 1,
+              "nodes": [
+                {
+                  "number": 1,
+                  "displacementM": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                {
+                  "number": 2,
+                  "displacementM": [
+                    0.0005,
+                    0.0,
+                    0.0
+                  ],
+                  "rotationRad": [
+                    0.0008316008316008318,
+                    0.0,
+                    0.0
+                  ]
+                }
+              ],
+              "contacts": [
+                {
+                  "id": "stop",
+                  "state": "closed",
+                  "normalReactionN": 18.5,
+                  "gapM": 0.0
+                }
+              ],
+              "forceScaleN": 48.07401700618652,
+              "gapScaleM": 0.0011180003954927098,
+              "equilibriumResidual": 0.0,
+              "penetration": 0.0,
+              "tension": 0.0,
+              "complementarity": 0.0
+            }
+          ]
+        },
+        "states": [
+          {
+            "loadFactor": 0.2,
+            "bolts": [
+              {
+                "id": "shank",
+                "extensionM": 0.000186046511627907,
+                "axialForceN": 0.372093023255814,
+                "forceOnAN": [
+                  0.372093023255814,
+                  0.0,
+                  0.0
+                ],
+                "forceOnBN": [
+                  -0.372093023255814,
+                  -0.0,
+                  -0.0
+                ]
+              }
+            ],
+            "welds": [
+              {
+                "id": "interval-0",
+                "forceOnAN": [
+                  3.72093023255814,
+                  2.220446049250313e-16,
+                  -0.9979209979209981
+                ],
+                "momentOnANm": [
+                  2.6334026334026346,
+                  0.9979209979209979,
+                  2.790697674418605
+                ],
+                "forceOnBN": [
+                  -3.72093023255814,
+                  -2.220446049250313e-16,
+                  0.9979209979209981
+                ],
+                "momentOnBNm": [
+                  -2.6334026334026346,
+                  4.440892098500626e-16,
+                  -2.790697674418605
+                ],
+                "elasticEnergyJ": 0.0005651270268768744
+              },
+              {
+                "id": "interval-1",
+                "forceOnAN": [
+                  3.72093023255814,
+                  2.220446049250313e-16,
+                  0.9979209979209982
+                ],
+                "momentOnANm": [
+                  2.633402633402635,
+                  -0.9979209979209986,
+                  -2.7906976744186047
+                ],
+                "forceOnBN": [
+                  -3.72093023255814,
+                  -2.220446049250313e-16,
+                  -0.9979209979209982
+                ],
+                "momentOnBNm": [
+                  -2.633402633402635,
+                  4.440892098500626e-16,
+                  2.790697674418605
+                ],
+                "elasticEnergyJ": 0.0005651270268768745
+              }
+            ]
+          },
+          {
+            "loadFactor": 1.0,
+            "bolts": [
+              {
+                "id": "shank",
+                "extensionM": 0.0005,
+                "axialForceN": 1.0,
+                "forceOnAN": [
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                "forceOnBN": [
+                  -1.0,
+                  -0.0,
+                  -0.0
+                ]
+              }
+            ],
+            "welds": [
+              {
+                "id": "interval-0",
+                "forceOnAN": [
+                  10.0,
+                  8.881784197001252e-16,
+                  -4.989604989604991
+                ],
+                "momentOnANm": [
+                  13.16701316701317,
+                  4.98960498960499,
+                  7.5
+                ],
+                "forceOnBN": [
+                  -10.0,
+                  -8.881784197001252e-16,
+                  4.989604989604991
+                ],
+                "momentOnBNm": [
+                  -13.16701316701317,
+                  8.881784197001252e-16,
+                  -7.5
+                ],
+                "elasticEnergyJ": 0.007974849549693627
+              },
+              {
+                "id": "interval-1",
+                "forceOnAN": [
+                  10.0,
+                  8.881784197001252e-16,
+                  4.989604989604991
+                ],
+                "momentOnANm": [
+                  13.167013167013172,
+                  -4.989604989604992,
+                  -7.499999999999998
+                ],
+                "forceOnBN": [
+                  -10.0,
+                  -8.881784197001252e-16,
+                  -4.989604989604991
+                ],
+                "momentOnBNm": [
+                  -13.167013167013172,
+                  8.881784197001252e-16,
+                  7.5
+                ],
+                "elasticEnergyJ": 0.007974849549693627
+              }
+            ]
+          },
+          {
+            "loadFactor": -1.0,
+            "bolts": [
+              {
+                "id": "shank",
+                "extensionM": -0.0009302325581395349,
+                "axialForceN": -1.86046511627907,
+                "forceOnAN": [
+                  -1.86046511627907,
+                  -0.0,
+                  -0.0
+                ],
+                "forceOnBN": [
+                  1.86046511627907,
+                  0.0,
+                  0.0
+                ]
+              }
+            ],
+            "welds": [
+              {
+                "id": "interval-0",
+                "forceOnAN": [
+                  -18.6046511627907,
+                  -8.881784197001252e-16,
+                  4.989604989604991
+                ],
+                "momentOnANm": [
+                  -13.16701316701317,
+                  -4.989604989604988,
+                  -13.953488372093023
+                ],
+                "forceOnBN": [
+                  18.6046511627907,
+                  8.881784197001252e-16,
+                  -4.989604989604991
+                ],
+                "momentOnBNm": [
+                  13.16701316701317,
+                  -3.552713678800501e-15,
+                  13.953488372093023
+                ],
+                "elasticEnergyJ": 0.01412817567192186
+              },
+              {
+                "id": "interval-1",
+                "forceOnAN": [
+                  -18.6046511627907,
+                  -8.881784197001252e-16,
+                  -4.989604989604991
+                ],
+                "momentOnANm": [
+                  -13.167013167013172,
+                  4.989604989604993,
+                  13.953488372093023
+                ],
+                "forceOnBN": [
+                  18.6046511627907,
+                  8.881784197001252e-16,
+                  4.989604989604991
+                ],
+                "momentOnBNm": [
+                  13.167013167013172,
+                  -3.552713678800501e-15,
+                  -13.953488372093023
+                ],
+                "elasticEnergyJ": 0.01412817567192186
+              }
+            ]
+          },
+          {
+            "loadFactor": 0.0,
+            "bolts": [
+              {
+                "id": "shank",
+                "extensionM": 0.0,
+                "axialForceN": 0.0,
+                "forceOnAN": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "forceOnBN": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ]
+              }
+            ],
+            "welds": [
+              {
+                "id": "interval-0",
+                "forceOnAN": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ],
+                "momentOnANm": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ],
+                "forceOnBN": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ],
+                "momentOnBNm": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ],
+                "elasticEnergyJ": 0.0
+              },
+              {
+                "id": "interval-1",
+                "forceOnAN": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ],
+                "momentOnANm": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ],
+                "forceOnBN": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ],
+                "momentOnBNm": [
+                  -0.0,
+                  -0.0,
+                  -0.0
+                ],
+                "elasticEnergyJ": 0.0
+              }
+            ]
+          },
+          {
+            "loadFactor": 1.0,
+            "bolts": [
+              {
+                "id": "shank",
+                "extensionM": 0.0005,
+                "axialForceN": 1.0,
+                "forceOnAN": [
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                "forceOnBN": [
+                  -1.0,
+                  -0.0,
+                  -0.0
+                ]
+              }
+            ],
+            "welds": [
+              {
+                "id": "interval-0",
+                "forceOnAN": [
+                  10.0,
+                  8.881784197001252e-16,
+                  -4.989604989604991
+                ],
+                "momentOnANm": [
+                  13.16701316701317,
+                  4.98960498960499,
+                  7.5
+                ],
+                "forceOnBN": [
+                  -10.0,
+                  -8.881784197001252e-16,
+                  4.989604989604991
+                ],
+                "momentOnBNm": [
+                  -13.16701316701317,
+                  8.881784197001252e-16,
+                  -7.5
+                ],
+                "elasticEnergyJ": 0.007974849549693627
+              },
+              {
+                "id": "interval-1",
+                "forceOnAN": [
+                  10.0,
+                  8.881784197001252e-16,
+                  4.989604989604991
+                ],
+                "momentOnANm": [
+                  13.167013167013172,
+                  -4.989604989604992,
+                  -7.499999999999998
+                ],
+                "forceOnBN": [
+                  -10.0,
+                  -8.881784197001252e-16,
+                  -4.989604989604991
+                ],
+                "momentOnBNm": [
+                  -13.167013167013172,
+                  8.881784197001252e-16,
+                  7.5
+                ],
+                "elasticEnergyJ": 0.007974849549693627
+              }
+            ]
+          }
+        ]
+      },
+      "error": null,
+      "jointPlan": {
+        "schema": "pointercad-joint-contact-plan/1",
+        "contact": {
+          "schema": "pointercad-oofem-contact-plan/1",
+          "originalNodeCount": 2,
+          "nodes": [
+            {
+              "number": 1,
+              "positionM": [
+                0.0,
+                2.0,
+                3.0
+              ],
+              "restrained": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "load": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "number": 2,
+              "positionM": [
+                1.0,
+                2.0,
+                3.0
+              ],
+              "restrained": [
+                false,
+                true,
+                true,
+                false,
+                true,
+                true
+              ],
+              "load": [
+                40.0,
+                0.0,
+                0.0,
+                26.666666666666668,
+                0.0,
+                0.0
+              ]
+            }
+          ],
+          "materials": [
+            {
+              "number": 1,
+              "youngPa": 1000.0,
+              "poisson": 0.25,
+              "densityKgM3": 1.0
+            }
+          ],
+          "sections": [
+            {
+              "number": 1,
+              "areaM2": 1.0,
+              "iyM4": 1.0,
+              "izM4": 1.0,
+              "torsionM4": 1.0,
+              "shearFactor": 1.0
+            }
+          ],
+          "members": [
+            {
+              "number": 1,
+              "nodes": [
+                1,
+                2
+              ],
+              "material": 1,
+              "section": 1,
+              "frame": {
+                "x": [
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                "y": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "z": [
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "lengthM": 1.0
+              }
+            }
+          ],
+          "contacts": [
+            {
+              "id": "stop",
+              "kind": "node-plane",
+              "node": 2,
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "gapM": 0.0005
+            }
+          ],
+          "loadFactors": [
+            0.2,
+            1.0,
+            -1.0,
+            0.0,
+            1.0
+          ]
+        },
+        "bolts": [
+          {
+            "id": "shank",
+            "nodeA": 1,
+            "nodeB": 2,
+            "youngPa": 2000.0,
+            "areaM2": 1.0
+          }
+        ],
+        "welds": [
+          {
+            "id": "interval-0",
+            "nodeA": 1,
+            "nodeB": 2,
+            "centerM": [
+              1.0,
+              1.25,
+              3.0
+            ],
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "along": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "widthM": 1.0,
+            "lengthM": 4.0,
+            "thicknessM": 0.2,
+            "youngPa": 1000.0,
+            "poisson": 0.25
+          },
+          {
+            "id": "interval-1",
+            "nodeA": 1,
+            "nodeB": 2,
+            "centerM": [
+              1.0,
+              2.75,
+              3.0
+            ],
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "along": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "widthM": 1.0,
+            "lengthM": 4.0,
+            "thicknessM": 0.2,
+            "youngPa": 1000.0,
+            "poisson": 0.25
+          }
+        ]
+      }
+    }
+  ],
+  "unitTests": {
+    "run": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "cases": [
+    {
+      "id": "joint_tests.JointContactTests.test_eccentric_weld_and_axial_shank_obey_independent_six_dof_equilibrium_and_energy",
+      "status": "passed"
+    },
+    {
+      "id": "joint_tests.JointContactTests.test_invalid_mixed_inputs_cannot_fall_back_to_one_connector",
+      "status": "passed"
+    },
+    {
+      "id": "joint_tests.JointContactTests.test_parallel_branches_share_one_open_closed_reversed_zero_contact_solution",
+      "status": "passed"
+    }
+  ],
+  "coupled": {
+    "schema": "pointercad-joint-contact-result/1",
+    "contact": {
+      "schema": "pointercad-oofem-contact-result/1",
+      "method": "murty-least-index-lcp-on-native-beam3d-stiffness",
+      "freeDofs": 2,
+      "meshNodes": 2,
+      "meshElements": 1,
+      "momentLengthM": 1.0,
+      "pivotLimit": 20,
+      "states": [
+        {
+          "loadFactor": 0.2,
+          "pivots": 0,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                0.000186046511627907,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.00016632016632016637,
+                0.0,
+                0.0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "stop",
+              "state": "open",
+              "normalReactionN": 0.0,
+              "gapM": 0.00031395348837209304
+            }
+          ],
+          "forceScaleN": 13.5,
+          "gapScaleM": 0.00031395348837209304,
+          "equilibriumResidual": 4.618806972100063e-17,
+          "penetration": 0.0,
+          "tension": 0.0,
+          "complementarity": 0.0
+        },
+        {
+          "loadFactor": 1.0,
+          "pivots": 1,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                0.0005,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.0008316008316008318,
+                0.0,
+                0.0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "stop",
+              "state": "closed",
+              "normalReactionN": 18.5,
+              "gapM": 0.0
+            }
+          ],
+          "forceScaleN": 48.07401700618652,
+          "gapScaleM": 0.0011180003954927098,
+          "equilibriumResidual": 0.0,
+          "penetration": 0.0,
+          "tension": 0.0,
+          "complementarity": 0.0
+        },
+        {
+          "loadFactor": -1.0,
+          "pivots": 0,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                -0.0009302325581395349,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                -0.0008316008316008318,
+                0.0,
+                0.0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "stop",
+              "state": "open",
+              "normalReactionN": 0.0,
+              "gapM": 0.001430232558139535
+            }
+          ],
+          "forceScaleN": 61.5,
+          "gapScaleM": 0.001430232558139535,
+          "equilibriumResidual": 0.0,
+          "penetration": 0.0,
+          "tension": 0.0,
+          "complementarity": 0.0
+        },
+        {
+          "loadFactor": 0.0,
+          "pivots": 0,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "stop",
+              "state": "open",
+              "normalReactionN": 0.0,
+              "gapM": 0.0005
+            }
+          ],
+          "forceScaleN": 21.5,
+          "gapScaleM": 0.0005,
+          "equilibriumResidual": 0.0,
+          "penetration": 0.0,
+          "tension": 0.0,
+          "complementarity": 0.0
+        },
+        {
+          "loadFactor": 1.0,
+          "pivots": 1,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                0.0005,
+                0.0,
+                0.0
+              ],
+              "rotationRad": [
+                0.0008316008316008318,
+                0.0,
+                0.0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "stop",
+              "state": "closed",
+              "normalReactionN": 18.5,
+              "gapM": 0.0
+            }
+          ],
+          "forceScaleN": 48.07401700618652,
+          "gapScaleM": 0.0011180003954927098,
+          "equilibriumResidual": 0.0,
+          "penetration": 0.0,
+          "tension": 0.0,
+          "complementarity": 0.0
+        }
+      ]
+    },
+    "states": [
+      {
+        "loadFactor": 0.2,
+        "bolts": [
+          {
+            "id": "shank",
+            "extensionM": 0.000186046511627907,
+            "axialForceN": 0.372093023255814,
+            "forceOnAN": [
+              0.372093023255814,
+              0.0,
+              0.0
+            ],
+            "forceOnBN": [
+              -0.372093023255814,
+              -0.0,
+              -0.0
+            ]
+          }
+        ],
+        "welds": [
+          {
+            "id": "interval-0",
+            "forceOnAN": [
+              3.72093023255814,
+              2.220446049250313e-16,
+              -0.9979209979209981
+            ],
+            "momentOnANm": [
+              2.6334026334026346,
+              0.9979209979209979,
+              2.790697674418605
+            ],
+            "forceOnBN": [
+              -3.72093023255814,
+              -2.220446049250313e-16,
+              0.9979209979209981
+            ],
+            "momentOnBNm": [
+              -2.6334026334026346,
+              4.440892098500626e-16,
+              -2.790697674418605
+            ],
+            "elasticEnergyJ": 0.0005651270268768744
+          },
+          {
+            "id": "interval-1",
+            "forceOnAN": [
+              3.72093023255814,
+              2.220446049250313e-16,
+              0.9979209979209982
+            ],
+            "momentOnANm": [
+              2.633402633402635,
+              -0.9979209979209986,
+              -2.7906976744186047
+            ],
+            "forceOnBN": [
+              -3.72093023255814,
+              -2.220446049250313e-16,
+              -0.9979209979209982
+            ],
+            "momentOnBNm": [
+              -2.633402633402635,
+              4.440892098500626e-16,
+              2.790697674418605
+            ],
+            "elasticEnergyJ": 0.0005651270268768745
+          }
+        ]
+      },
+      {
+        "loadFactor": 1.0,
+        "bolts": [
+          {
+            "id": "shank",
+            "extensionM": 0.0005,
+            "axialForceN": 1.0,
+            "forceOnAN": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "forceOnBN": [
+              -1.0,
+              -0.0,
+              -0.0
+            ]
+          }
+        ],
+        "welds": [
+          {
+            "id": "interval-0",
+            "forceOnAN": [
+              10.0,
+              8.881784197001252e-16,
+              -4.989604989604991
+            ],
+            "momentOnANm": [
+              13.16701316701317,
+              4.98960498960499,
+              7.5
+            ],
+            "forceOnBN": [
+              -10.0,
+              -8.881784197001252e-16,
+              4.989604989604991
+            ],
+            "momentOnBNm": [
+              -13.16701316701317,
+              8.881784197001252e-16,
+              -7.5
+            ],
+            "elasticEnergyJ": 0.007974849549693627
+          },
+          {
+            "id": "interval-1",
+            "forceOnAN": [
+              10.0,
+              8.881784197001252e-16,
+              4.989604989604991
+            ],
+            "momentOnANm": [
+              13.167013167013172,
+              -4.989604989604992,
+              -7.499999999999998
+            ],
+            "forceOnBN": [
+              -10.0,
+              -8.881784197001252e-16,
+              -4.989604989604991
+            ],
+            "momentOnBNm": [
+              -13.167013167013172,
+              8.881784197001252e-16,
+              7.5
+            ],
+            "elasticEnergyJ": 0.007974849549693627
+          }
+        ]
+      },
+      {
+        "loadFactor": -1.0,
+        "bolts": [
+          {
+            "id": "shank",
+            "extensionM": -0.0009302325581395349,
+            "axialForceN": -1.86046511627907,
+            "forceOnAN": [
+              -1.86046511627907,
+              -0.0,
+              -0.0
+            ],
+            "forceOnBN": [
+              1.86046511627907,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "welds": [
+          {
+            "id": "interval-0",
+            "forceOnAN": [
+              -18.6046511627907,
+              -8.881784197001252e-16,
+              4.989604989604991
+            ],
+            "momentOnANm": [
+              -13.16701316701317,
+              -4.989604989604988,
+              -13.953488372093023
+            ],
+            "forceOnBN": [
+              18.6046511627907,
+              8.881784197001252e-16,
+              -4.989604989604991
+            ],
+            "momentOnBNm": [
+              13.16701316701317,
+              -3.552713678800501e-15,
+              13.953488372093023
+            ],
+            "elasticEnergyJ": 0.01412817567192186
+          },
+          {
+            "id": "interval-1",
+            "forceOnAN": [
+              -18.6046511627907,
+              -8.881784197001252e-16,
+              -4.989604989604991
+            ],
+            "momentOnANm": [
+              -13.167013167013172,
+              4.989604989604993,
+              13.953488372093023
+            ],
+            "forceOnBN": [
+              18.6046511627907,
+              8.881784197001252e-16,
+              4.989604989604991
+            ],
+            "momentOnBNm": [
+              13.167013167013172,
+              -3.552713678800501e-15,
+              -13.953488372093023
+            ],
+            "elasticEnergyJ": 0.01412817567192186
+          }
+        ]
+      },
+      {
+        "loadFactor": 0.0,
+        "bolts": [
+          {
+            "id": "shank",
+            "extensionM": 0.0,
+            "axialForceN": 0.0,
+            "forceOnAN": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "forceOnBN": [
+              -0.0,
+              -0.0,
+              -0.0
+            ]
+          }
+        ],
+        "welds": [
+          {
+            "id": "interval-0",
+            "forceOnAN": [
+              -0.0,
+              -0.0,
+              -0.0
+            ],
+            "momentOnANm": [
+              -0.0,
+              -0.0,
+              -0.0
+            ],
+            "forceOnBN": [
+              -0.0,
+              -0.0,
+              -0.0
+            ],
+            "momentOnBNm": [
+              -0.0,
+              -0.0,
+              -0.0
+            ],
+            "elasticEnergyJ": 0.0
+          },
+          {
+            "id": "interval-1",
+            "forceOnAN": [
+              -0.0,
+              -0.0,
+              -0.0
+            ],
+            "momentOnANm": [
+              -0.0,
+              -0.0,
+              -0.0
+            ],
+            "forceOnBN": [
+              -0.0,
+              -0.0,
+              -0.0
+            ],
+            "momentOnBNm": [
+              -0.0,
+              -0.0,
+              -0.0
+            ],
+            "elasticEnergyJ": 0.0
+          }
+        ]
+      },
+      {
+        "loadFactor": 1.0,
+        "bolts": [
+          {
+            "id": "shank",
+            "extensionM": 0.0005,
+            "axialForceN": 1.0,
+            "forceOnAN": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "forceOnBN": [
+              -1.0,
+              -0.0,
+              -0.0
+            ]
+          }
+        ],
+        "welds": [
+          {
+            "id": "interval-0",
+            "forceOnAN": [
+              10.0,
+              8.881784197001252e-16,
+              -4.989604989604991
+            ],
+            "momentOnANm": [
+              13.16701316701317,
+              4.98960498960499,
+              7.5
+            ],
+            "forceOnBN": [
+              -10.0,
+              -8.881784197001252e-16,
+              4.989604989604991
+            ],
+            "momentOnBNm": [
+              -13.16701316701317,
+              8.881784197001252e-16,
+              -7.5
+            ],
+            "elasticEnergyJ": 0.007974849549693627
+          },
+          {
+            "id": "interval-1",
+            "forceOnAN": [
+              10.0,
+              8.881784197001252e-16,
+              4.989604989604991
+            ],
+            "momentOnANm": [
+              13.167013167013172,
+              -4.989604989604992,
+              -7.499999999999998
+            ],
+            "forceOnBN": [
+              -10.0,
+              -8.881784197001252e-16,
+              -4.989604989604991
+            ],
+            "momentOnBNm": [
+              -13.167013167013172,
+              8.881784197001252e-16,
+              7.5
+            ],
+            "elasticEnergyJ": 0.007974849549693627
+          }
+        ]
+      }
+    ]
+  },
+  "nativeCaseIdentities": [
+    {
+      "case": "mixed-open-closed-reversed-zero-repeat",
+      "boltIds": [
+        "shank"
+      ],
+      "weldIds": [
+        "interval-0",
+        "interval-1"
+      ],
+      "loadFactors": [
+        0.2,
+        1.0,
+        -1.0,
+        0.0,
+        1.0
+      ]
+    }
+  ]
+}

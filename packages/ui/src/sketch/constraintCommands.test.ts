@@ -7,26 +7,69 @@ import {
   resolveConstrainedSketch,
   sketchConstraints,
   type CoordinateInput,
-  type SketchDocument,
+  type SketchDocument, type SketchConstraintKind,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import {
-  applicableConstraintKinds,
   commitAddConstraint,
   commitConstraintFromSelection,
   commitRemoveConstraint,
   commitRemoveConstraints,
   commitSetConstraintValue,
   constraintContextOf,
-  constraintCountOf,
   constraintKindLabel,
   constraintNeedsValue,
   constraintReadiness,
   constraintsReferencing,
-  constraintValueUnit,
-  CONSTRAINT_KIND_ORDER,
+  constraintValueUnit, type ConstraintContext,
 } from './constraintCommands.js';
+
+/**
+ * 一覧に並べる順(ツールバーの並び。タスク13)。幾何拘束と固定の 12 種 → 寸法拘束 6 種の順で、
+ * 幾何は「点を合わせる」→「向きをそろえる」→「大きさをそろえる」の並びにする。
+ * model の `SKETCH_CONSTRAINT_KINDS` と同じ並びだが、あちらは保存形の網羅表で、
+ * こちらは画面の並びなので別に持つ(画面の都合で並べ替えても保存形は動かない)。
+ */
+const CONSTRAINT_KIND_ORDER: readonly SketchConstraintKind[] = [
+  'coincident',
+  'midpoint',
+  'pointOnCurve',
+  'horizontal',
+  'vertical',
+  'parallel',
+  'perpendicular',
+  'tangent',
+  'concentric',
+  'equal',
+  'symmetric',
+  'fix',
+  'horizontalDistance',
+  'verticalDistance',
+  'distance',
+  'angle',
+  'radius',
+  'diameter',
+];
+
+/**
+ * いま選んでいる要素に付けられる拘束の一覧(ツールバーの活性に使う)。
+ * 18 種を順に下見して、付けられるものだけを `CONSTRAINT_KIND_ORDER` の順で返す。
+ */
+function applicableConstraintKinds(
+  document: SketchDocument,
+  elementIds: readonly string[],
+  context: ConstraintContext = constraintContextOf(document),
+): readonly SketchConstraintKind[] {
+  return CONSTRAINT_KIND_ORDER.filter(
+    (kind) => constraintReadiness(document, elementIds, kind, context).ready,
+  );
+}
+
+/** いま付いている拘束の数(帯・一覧の見出しに出す)。 */
+function constraintCountOf(document: SketchDocument): number {
+  return sketchConstraints(document).length;
+}
 
 /* --- 検査に使う文書 ------------------------------------------------------ */
 
@@ -366,11 +409,13 @@ describe('applicableConstraintKinds(ツールバーの活性)', () => {
     ]);
   });
 
-  it('線分 1 本のときは水平・垂直・固定・距離が並ぶ', () => {
+  it('線分 1 本のときは水平・垂直・固定・横距離・縦距離・距離が並ぶ', () => {
     expect(applicableConstraintKinds(oneLine(), ['line-1'])).toEqual([
       'horizontal',
       'vertical',
       'fix',
+      'horizontalDistance',
+      'verticalDistance',
       'distance',
     ]);
   });
@@ -381,12 +426,6 @@ describe('applicableConstraintKinds(ツールバーの活性)', () => {
 
   it('何も選んでいなければ 1 つも並ばない', () => {
     expect(applicableConstraintKinds(twoLines(), [])).toEqual([]);
-  });
-
-  it('一覧の並びは 14 種の決め打ちの順', () => {
-    expect(CONSTRAINT_KIND_ORDER).toHaveLength(14);
-    expect(CONSTRAINT_KIND_ORDER[0]).toBe('coincident');
-    expect(CONSTRAINT_KIND_ORDER[13]).toBe('diameter');
   });
 });
 

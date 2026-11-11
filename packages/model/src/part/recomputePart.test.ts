@@ -11,6 +11,7 @@ import {
   type AppearanceFaceRequest,
   type KernelBridge,
   type MeasureOutcome,
+  type MeshLedgerOwner,
   type PartProgress,
   type SketchOffsetContour,
   type SketchOffsetResult,
@@ -53,6 +54,8 @@ import { DEFAULT_APPEARANCE } from '../appearance/materialPresets.js';
 import { affectsShape } from './documentChange.js';
 import { recomputePart, type PartRecomputeOptions } from './recomputePart.js';
 import { createSubShapeCache } from './subShapeCache.js';
+import { historyDependencies, recomputeHistoryDependencies } from './timelineOrder.js';
+import { sketchProfileFeatureIds } from './solidSketchReferences.js';
 import { resolvePart, type ResolvedSolidStep, type SubShapeQueryPlan } from './resolvePart.js';
 import type {
   BooleanFeature,
@@ -843,6 +846,7 @@ describe('段の詰め替え', () => {
 
     expect(request.step.kind).toBe('sew');
     if (request.step.kind === 'sew') {
+      if (!('profiles' in request.step)) throw new Error('平面の縫合には profiles が必要です。');
       expect(request.step.profiles).toHaveLength(2);
       expect(request.step.profiles[0]).toHaveLength(4);
       expect(request.step.tolerance).toBe(0.01);
@@ -992,6 +996,21 @@ describe('段の詰め替え', () => {
       tiltAzimuth: 0.2,
       transforms: [],
     });
+  });
+
+  it('ねじ穴の段は、下穴の名前の材料を計画にある時だけ載せる(無ければ欄を作らない)', () => {
+    const anchors = [{ sketchId: 'sketch-1', producer: { kind: 'point' as const, featureId: 'point-1' } }];
+    const named = toSolidStepRequest({ featureId: 'threadHole-1', name: 'ねじ穴1', key: 'key-thread-1', visible: true,
+      plan: { kind: 'thread', centerAnchors: anchors, placementRoles: [], targetKey: 'key-extrude-1', face: faceRef(3),
+        centers: [[10, 10, 10]], drillDiameter: 4.917468, pitch: 1, depth: null, tiltAngle: 0, tiltAzimuth: 0,
+        transforms: [], thread: null, mark: { majorDiameter: 6, length: 10 } } });
+    expect(named.step).toMatchObject({ kind: 'thread', centerAnchors: anchors, placementRoles: [] });
+    const plain = toSolidStepRequest({ featureId: 'threadHole-1', name: 'ねじ穴1', key: 'key-thread-1', visible: true,
+      plan: { kind: 'thread', targetKey: 'key-extrude-1', face: faceRef(3), centers: [[10, 10, 10]],
+        drillDiameter: 4.917468, pitch: 1, depth: null, tiltAngle: 0, tiltAzimuth: 0, transforms: [],
+        thread: null, mark: { majorDiameter: 6, length: 10 } } });
+    expect('centerAnchors' in plain.step).toBe(false);
+    expect('placementRoles' in plain.step).toBe(false);
   });
 
   it('貫通穴は depth が null のまま渡る(§0.a-0.12)', () => {
@@ -1532,6 +1551,192 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
 });
 
 /*
+ * 穴・ねじ穴・R/C面取り・くり抜きは対象のボディを消費するので、参照元(押し出し1)は表示ボディに残らない。
+ * 面・辺はkernelが指紋で選び直すため作図のaskedSubShapesにも入らない。それでも参照の修復が現在形状と
+ * 照合できるよう、同じ再計算のhidden読取りで参照元を返す(正常な加工で「参照元の現在形状を取得
+ * できません」と出た手戻りの回帰検査。種類ごとの選び方は recomputePart.ts の kernelReselectedReferences)。
+ *
+ * 返り値の契約(readReferenceBodies.ts の現物): 187行目が現在の失敗していない段の表示bodyを最初に置き、
+ * 192行目がhiddenで読んだ参照元を後ろへ足し、217行目が読めなかったidを除く。したがって referenceBodies は
+ * 「表示 machined ＋ hidden extrude-1」の 2 つで、hidden だけの配列ではない。
+ */
+describe('参照の修復が照合する加工の参照元(kernelが選び直す面・辺)', () => {
+  const face: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 3,
+    fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1200, position: [20, 15, 10], axis: [0, 0, 1], radius: null },
+  };
+  const edge: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 0,
+    fingerprint: { kind: 'edge', curveKind: 'line', length: 40, position: [20, 0, 10], axis: [1, 0, 0], radius: null },
+  };
+  const otherEdge: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 1,
+    fingerprint: { kind: 'edge', curveKind: 'line', length: 30, position: [40, 15, 10], axis: [0, 1, 0], radius: null },
+  };
+
+  type MachiningKind = 'hole' | 'threadHole' | 'fillet' | 'chamfer' | 'shell' | 'transform';
+
+  function machined(kind: MachiningKind, targets: readonly SubShapeRef[] = [edge]): PartDocument {
+    const { document } = oneExtrude();
+    const sketch = document.sketches[0];
+    const point = sketch.features.find((feature) => feature.kind === 'point');
+    if (point === undefined) {
+      throw new Error('テストの前提が壊れている: 中心にする点がありません');
+    }
+    const centers = [{ sketchId: sketch.id, pointFeatureId: point.id }];
+    const base = { id: 'machined', name: kind, suppressed: false, targetFeatureId: 'extrude-1' };
+    const feature: SolidFeature =
+      kind === 'hole'
+        ? { ...base, kind, face, centers, diameter: expr('6'), depth: { kind: 'through' },
+          tiltAngle: expr('0'), tiltAzimuth: expr('0') }
+        : kind === 'threadHole'
+          ? { ...base, kind, face, centers, designation: 'M6', series: 'coarse', pitch: expr('1'),
+            drillDiameter: expr('6-1.0825317547305482'), threadLength: expr('1'), representation: 'simplified',
+            depth: { kind: 'through' }, tiltAngle: expr('0'), tiltAzimuth: expr('0') }
+          : kind === 'fillet'
+            ? { ...base, kind, targets, radius: expr('1') }
+            : kind === 'chamfer'
+              ? { ...base, kind, targets, size: { kind: 'equal', distance: expr('2') }, swapReferenceFace: false }
+              : kind === 'shell'
+                ? { ...base, kind, openFaces: [face], thickness: expr('1'), outward: false }
+                : { ...base, kind, translation: [expr('5'), expr('0'), expr('0')], rotationAxis: null, rotationAngle: expr('0') };
+    return withSolids(document, feature);
+  }
+
+  /**
+   * hidden読取りの返り値の配列(同一性)にだけ所有者を発行し、解放を記録する偽の台帳の口。
+   * ReferenceMeshScope は 4 口(meshLedgerOwner・captureCurrentMeshLedger・currentMeshLedgerReceipt・
+   * releaseReferenceMeshLease)がそろうときだけ current になる(readReferenceBodies.ts の constructor)。
+   */
+  function ledgerKernel(reply: SolidRecomputeOutcome) {
+    const display = solidBody('machined');
+    const owner: MeshLedgerOwner = {
+      dispatchId: 'hidden-read-1', partId: 'part:current', generation: 5, kind: 'hidden',
+      steps: [{ id: 'extrude-1', key: 'extrude-1-step' }],
+    };
+    const readCachedBodies = vi.fn<NonNullable<KernelBridge['readCachedBodies']>>(() => Promise.resolve(reply));
+    const meshLedgerOwner = vi.fn<NonNullable<KernelBridge['meshLedgerOwner']>>((bodies) =>
+      bodies === reply.bodies ? owner : null);
+    const releaseReferenceMeshLease = vi.fn<NonNullable<KernelBridge['releaseReferenceMeshLease']>>(() =>
+      Promise.resolve({ released: true }));
+    const bridge = fakeBridge({
+      recomputeSolids: () => Promise.resolve({ ...EMPTY_SOLID_OUTCOME, bodies: [display] }),
+      readCachedBodies,
+      meshLedgerOwner,
+      releaseReferenceMeshLease,
+      captureCurrentMeshLedger: (input) =>
+        Promise.resolve({ status: 'unknown' as const, observationId: input.observationId, reason: 'recompute does not capture' }),
+      currentMeshLedgerReceipt: () => false,
+    });
+    return { bridge, display, owner, readCachedBodies, meshLedgerOwner, releaseReferenceMeshLease };
+  }
+
+  it.each(['hole', 'threadHole', 'fillet', 'chamfer', 'shell'] as const)(
+    '作図参照の無い%sでも、消費した参照元を同じ再計算のhidden読取りで1回だけ読み、表示bodyの後ろに返す',
+    async (kind) => {
+      const source = solidBody('extrude-1');
+      const reply: SolidRecomputeOutcome = { ...EMPTY_SOLID_OUTCOME, bodies: [source], cacheHits: 1 };
+      const kernel = ledgerKernel(reply);
+      const result = await recomputePart(machined(kind), kernel.bridge, { generation: 5 });
+      const scope = result.referenceMeshScope;
+      try {
+        expect(result.errors).toEqual([]);
+        expect(result.bodies).toHaveLength(1);
+        expect(result.bodies[0]).toBe(kernel.display);
+        expect(result.bodies).not.toContain(source);
+        expect(kernel.readCachedBodies.mock.calls.map((call) => call[1])).toEqual([['extrude-1']]);
+        // 表示(readReferenceBodies.ts:187)が先、hiddenの参照元(:192)が後。重複も欠落も無い。
+        expect(result.referenceBodies?.map((body) => body.featureId)).toEqual(['machined', 'extrude-1']);
+        expect(result.referenceBodies?.[0]).toBe(kernel.display);
+        expect(result.referenceBodies?.[1]).toBe(source);
+        // 所有者は読取りの返り値の配列にだけ発行され、表示bodyは hidden の控えとして登録されない。
+        expect(kernel.meshLedgerOwner).toHaveBeenCalledTimes(1);
+        expect(kernel.meshLedgerOwner.mock.calls[0][0]).toBe(reply.bodies);
+        if (scope === undefined) {
+          throw new Error('同じ再計算の hidden 読取りの Scope が結果に渡っていません');
+        }
+        expect(scope.current).toBe(true);
+        expect(scope.owners).toHaveLength(1);
+        expect(scope.owners[0]).toBe(kernel.owner);
+        expect(scope.referenceBodyCurrent(source)).toBe(true);
+        expect(scope.referenceBodyCurrent(kernel.display)).toBe(false);
+        expect(kernel.releaseReferenceMeshLease).not.toHaveBeenCalled();
+      } finally {
+        await scope?.close();
+      }
+      // 解放は結果の持ち主が閉じたときに 1 回だけ、発行された所有者に対して行う。
+      expect(kernel.releaseReferenceMeshLease).toHaveBeenCalledTimes(1);
+      expect(kernel.releaseReferenceMeshLease.mock.calls[0][0]).toBe(kernel.owner);
+      expect(scope?.owners).toEqual([]);
+      expect(scope?.referenceBodyCurrent(source)).toBe(false);
+    },
+  );
+
+  it('同じ参照元の辺を2本参照しても、hidden読取りは1回で、参照元は1つだけ返す', async () => {
+    const source = solidBody('extrude-1');
+    const reply: SolidRecomputeOutcome = { ...EMPTY_SOLID_OUTCOME, bodies: [source], cacheHits: 1 };
+    const kernel = ledgerKernel(reply);
+    const result = await recomputePart(machined('fillet', [edge, otherEdge]), kernel.bridge, { generation: 5 });
+    const scope = result.referenceMeshScope;
+    try {
+      expect(result.errors).toEqual([]);
+      expect(kernel.readCachedBodies.mock.calls.map((call) => call[1])).toEqual([['extrude-1']]);
+      expect(result.referenceBodies?.map((body) => body.featureId)).toEqual(['machined', 'extrude-1']);
+      expect(result.referenceBodies?.[0]).toBe(kernel.display);
+      expect(result.referenceBodies?.[1]).toBe(source);
+      expect(scope?.owners).toEqual([kernel.owner]);
+    } finally {
+      await scope?.close();
+    }
+    expect(kernel.releaseReferenceMeshLease).toHaveBeenCalledTimes(1);
+  });
+
+  it('参照元の読取りに失敗したら、参照元を作らず表示bodyだけを返し、発行された所有者は閉じるときに解放する', async () => {
+    const reply: SolidRecomputeOutcome = {
+      ...EMPTY_SOLID_OUTCOME,
+      bodies: [],
+      failures: [{ featureId: 'extrude-1', message: '形状キャッシュから読めませんでした。' }],
+    };
+    const kernel = ledgerKernel(reply);
+    const result = await recomputePart(machined('chamfer'), kernel.bridge, { generation: 5 });
+    const scope = result.referenceMeshScope;
+    try {
+      expect(result.errors).toEqual([]);
+      expect(kernel.readCachedBodies.mock.calls.map((call) => call[1])).toEqual([['extrude-1']]);
+      expect(result.referenceBodies).toHaveLength(1);
+      expect(result.referenceBodies?.[0]).toBe(kernel.display);
+      expect(kernel.meshLedgerOwner.mock.calls.map((call) => call[0])).toEqual([reply.bodies]);
+    } finally {
+      await scope?.close();
+    }
+    expect(kernel.meshLedgerOwner.mock.results).toEqual([{ type: 'return', value: kernel.owner }]);
+    expect(kernel.releaseReferenceMeshLease).toHaveBeenCalledTimes(1);
+    expect(kernel.releaseReferenceMeshLease.mock.calls[0][0]).toBe(kernel.owner);
+    expect(scope?.owners).toEqual([]);
+  });
+
+  it('面・辺を参照しない移動では、消費した参照元を読まない(全bodyを読まない)', async () => {
+    const kernel = ledgerKernel({ ...EMPTY_SOLID_OUTCOME, bodies: [solidBody('extrude-1')] });
+    const result = await recomputePart(machined('transform'), kernel.bridge, { generation: 5 });
+    const scope = result.referenceMeshScope;
+    try {
+      expect(result.errors).toEqual([]);
+      expect(kernel.readCachedBodies).not.toHaveBeenCalled();
+      expect(kernel.meshLedgerOwner).not.toHaveBeenCalled();
+      expect(result.referenceBodies).toHaveLength(1);
+      expect(result.referenceBodies?.[0]).toBe(kernel.display);
+      expect(scope?.owners).toEqual([]);
+    } finally {
+      await scope?.close();
+    }
+    expect(kernel.releaseReferenceMeshLease).not.toHaveBeenCalled();
+  });
+});
+
+/*
  * オフセット(FR-321、タスク15・21)は resolvePart 単体では完結せず、`recomputePart` が
  * `resolvePart` → カーネルで形を作る → `resolvePart` をやり直す、の2段で埋める
  * (`recomputeSketch.ts` の同名の2段構成と同じ考え方)。resolvePart / recomputeSketch は
@@ -1779,6 +1984,28 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
       recomputeSolids, projectSketchCurves,
     };
   }
+
+  it('returns only the final receipt from two solid passes and never adds their reservations', async () => {
+    const document = projectionChain(2);
+    const cached = bridgeWithShapeCache();
+    let calls = 0;
+    const final = { status: 'known' as const, limitBytes: 1000, cacheActiveBytes: 130,
+      cacheRetiredBytes: 110, cacheProtectedBytes: 240, retainedReplyBytes: 300, requestPeakReservedBytes: 1000 };
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(async (steps, options) => {
+      const outcome = await cached.bridge.recomputeSolids(steps, options);
+      calls += 1;
+      return { ...outcome, meshJsAccounting: { partId: 'chain', generation: 7,
+        reading: calls === 1 ? { ...final, cacheActiveBytes: 13, cacheRetiredBytes: 11,
+          cacheProtectedBytes: 24, retainedReplyBytes: 30, requestPeakReservedBytes: 100 } : final } };
+    });
+    const result = await recomputePart(document, fakeBridge({ ...cached.bridge, recomputeSolids }), {
+      partId: 'chain', generation: 7,
+      localMesh: { maximumFloat32ErrorMm: 0.01, maximumLiveMeshBytes: 1000 },
+    });
+    expect(recomputeSolids).toHaveBeenCalledTimes(2);
+    expect(result.errors).toEqual([]);
+    expect(result.meshJsAccounting).toEqual({ documentId: document.id, partId: 'chain', generation: 7, reading: final });
+  });
 
   it('三段連鎖を空のキャッシュから1回で解決し、温かいキャッシュと同じ形・エラーになる', async () => {
     const document = projectionChain();
@@ -2493,6 +2720,145 @@ describe('外観の橋渡し(FR-1106、タスク4)', () => {
   });
 });
 
+describe('request-local JS accounting follows only the completed solid pass', () => {
+  const budget = { maximumFloat32ErrorMm: 0.01, maximumLiveMeshBytes: 1000 };
+  const reading: NonNullable<SolidRecomputeOutcome['meshJsAccounting']>['reading'] = {
+    status: 'known', limitBytes: 1000, cacheActiveBytes: 130, cacheRetiredBytes: 110,
+    cacheProtectedBytes: 240, retainedReplyBytes: 300, requestPeakReservedBytes: 1000,
+  };
+  const receipt = { partId: 'part:A', generation: 7, reading };
+
+  it('forwards an explicit budget and stamps the document without adding clone or cache terms', async () => {
+    const { document } = oneExtrude();
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: document.id },
+    }));
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids }), {
+      partId: document.id, generation: 7, localMesh: budget,
+    });
+    expect(recomputeSolids.mock.calls[0][1]).toMatchObject({
+      partId: document.id, generation: 7, localMesh: budget,
+    });
+    expect(result.meshJsAccounting).toEqual({ ...receipt, partId: document.id, documentId: document.id });
+    expect(result.meshJsAccounting?.reading).toBe(reading);
+    expect(result.kernelMemory).toBeUndefined();
+  });
+
+  it('carries the post-token final union with the receipt unchanged and unsummed', async () => {
+    const { document } = oneExtrude();
+    const final = { status: 'known' as const, limitBytes: 1000, cacheActiveBytes: 130,
+      cacheRetiredBytes: 0, cacheProtectedBytes: 130, hiddenBackingBytes: 0, displayBackingBytes: 60, replyBackingBytes: 60,
+      retainedBackingBytes: 190, replyCloneReservedBytes: 60 };
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids: () => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: document.id, final },
+    }) }), { partId: document.id, generation: 7, localMesh: budget });
+    expect(result.meshJsAccounting).toEqual({ ...receipt, partId: document.id, documentId: document.id, final });
+    expect(result.meshJsAccounting?.final).toBe(final);
+    expect(result.meshJsAccounting?.reading).toBe(reading);
+    expect(Object.isFrozen(result.meshJsAccounting)).toBe(true);
+  });
+
+  it('requests accounting for an empty local part while the world empty shortcut stays intact', async () => {
+    const document = createEmptyPartDocument();
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: document.id },
+    }));
+    const bridge = fakeBridge({ recomputeSolids });
+    const world = await recomputePart(document, bridge);
+    expect(recomputeSolids).not.toHaveBeenCalled();
+    expect(world.meshJsAccounting).toBeUndefined();
+    const local = await recomputePart(document, bridge, { partId: document.id, generation: 7, localMesh: budget });
+    expect(recomputeSolids).toHaveBeenCalledTimes(1);
+    expect(recomputeSolids.mock.calls[0][0]).toEqual([]);
+    expect(local.meshJsAccounting?.documentId).toBe(document.id);
+  });
+
+  it('discards a cancelled receipt while preserving the existing WASM cancellation contract', async () => {
+    const { document } = oneExtrude();
+    const kernelMemory = { usedBytes: 91, limitBytes: 100 };
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({ ...EMPTY_SOLID_OUTCOME, cancelled: true,
+        kernelMemory, meshJsAccounting: receipt }),
+    }), { partId: document.id, generation: 7, localMesh: budget });
+    expect(result.cancelled).toBe(true);
+    expect(result.meshJsAccounting).toBeUndefined();
+    expect(result.kernelMemory).toEqual(kernelMemory);
+  });
+
+  it('keeps a session partId independent of documentId and captures options before asynchronous work', async () => {
+    const { document } = oneExtrude();
+    const options = { partId: 'session:A', generation: 7, localMesh: { ...budget } };
+    let announce: () => void = () => { throw new Error('dispatch wait not initialized'); };
+    const reached = new Promise<void>(resolve => { announce = resolve; });
+    let settle: ((outcome: SolidRecomputeOutcome) => void) | undefined;
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() => {
+      announce();
+      return new Promise<SolidRecomputeOutcome>(resolve => { settle = resolve; });
+    });
+    const pending = recomputePart(document, fakeBridge({ recomputeSolids }), options);
+    await reached;
+    options.partId = 'session:B'; options.generation = 8; options.localMesh.maximumLiveMeshBytes = 999;
+    expect(recomputeSolids.mock.calls[0][1]).toMatchObject({ partId: 'session:A', generation: 7, localMesh: budget });
+    if (settle === undefined) throw new Error('dispatch resolver missing');
+    settle({ ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: 'session:A' } });
+    const result = await pending;
+    expect(result.meshJsAccounting?.partId).toBe('session:A');
+    expect(result.meshJsAccounting?.generation).toBe(7);
+    expect(result.meshJsAccounting?.documentId).toBe(document.id);
+    const empty = createEmptyPartDocument();
+    const defaultPart = await recomputePart(empty, fakeBridge({ recomputeSolids: () => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: 'part:current' },
+    }) }), { generation: 7, localMesh: budget });
+    expect(defaultPart.meshJsAccounting?.partId).toBe('part:current');
+    expect(defaultPart.meshJsAccounting?.documentId).toBe(empty.id);
+  });
+
+  it.each(['part', 'generation', 'unknown', 'failure'] as const)('rejects a final %s receipt before document stamping', async scenario => {
+    const { document } = oneExtrude();
+    const candidate: NonNullable<SolidRecomputeOutcome['meshJsAccounting']> = {
+      ...receipt, partId: scenario === 'part' ? 'other' : document.id,
+      generation: scenario === 'generation' ? 6 : 7,
+      reading: scenario === 'unknown' ? { status: 'unknown', limitBytes: 1000, reason: 'missing-counts' } : reading,
+    };
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({ ...EMPTY_SOLID_OUTCOME, meshJsAccounting: candidate,
+        failures: scenario === 'failure' ? [{ featureId: 'extrude-1', message: 'failed' }] : [] }),
+    }), { partId: document.id, generation: 7, localMesh: budget });
+    expect(result.meshJsAccounting).toBeUndefined();
+  });
+
+  it('does not synthesize a zero receipt for missing, rejected or pre-cancelled results', async () => {
+    const { document } = oneExtrude();
+    const plain = await recomputePart(document, fakeBridge(), { localMesh: budget });
+    const failed = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.reject(new Error('invalid accounting')),
+    }), { localMesh: budget });
+    const neverCalled = vi.fn<KernelBridge['recomputeSolids']>(() => Promise.resolve(EMPTY_SOLID_OUTCOME));
+    const cancelled = await recomputePart(document, fakeBridge({ recomputeSolids: neverCalled }), {
+      localMesh: budget, shouldCancel: () => true,
+    });
+    expect(plain.meshJsAccounting).toBeUndefined();
+    expect(failed.meshJsAccounting).toBeUndefined();
+    expect(failed.errors).toHaveLength(1);
+    expect(cancelled.meshJsAccounting).toBeUndefined();
+    expect(neverCalled).not.toHaveBeenCalled();
+  });
+
+  it('returns no receipt when the mathematical input stage stops before solids', async () => {
+    const fixture = oneExtrude();
+    const document: PartDocument = { ...fixture.document, parameters: [{ name: 'input', unit: 'mm',
+      description: '', value: { ...expr('1'), mathDefinition: { format: 'pointercad-math/1', source: '1',
+        inputNotation: 'text', angleUnit: 'degree', expression: { kind: 'number', decimal: '1' } } } }] };
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() => Promise.resolve(EMPTY_SOLID_OUTCOME));
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids }), { generation: 7, localMesh: budget });
+    expect(result.cancelled).toBe(false);
+    expect(result.errors).toEqual([{ featureId: document.id, code: 'invalidValue',
+      message: '数学計算部を準備できません。数式の再計算後に作図してください。' }]);
+    expect(result.meshJsAccounting).toBeUndefined();
+    expect(recomputeSolids).not.toHaveBeenCalled();
+  });
+});
+
 describe('形状計算部のメモリの量を素通しする(NFR-PF-6、P12-28)', () => {
   /** 上限(約 4GB)の 4 分の 3 を超えた量を模擬する。実物の量は kernel の検査で確かめる。 */
   const memory = { wasmHeapBytes: 3_300_000_000, wasmHeapLimitBytes: 4_294_901_760 };
@@ -2536,5 +2902,346 @@ describe('形状計算部のメモリの量を素通しする(NFR-PF-6、P12-28)
     );
     expect(failed.errors).toHaveLength(1);
     expect('kernelMemory' in failed).toBe(false);
+  });
+});
+
+describe('imported triangle display bodies', () => {
+  function cube() {
+    return { positions: new Float32Array([0, 0, 0, 20, 0, 0, 20, 20, 0, 0, 20, 0,
+      0, 0, 20, 20, 0, 20, 20, 20, 20, 0, 20, 20]), normals: new Float32Array(24),
+      indices: new Uint32Array([0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4,
+        1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]) };
+  }
+  function importedDocument(): PartDocument {
+    return { ...createEmptyPartDocument(), solids: [{ id: 'mesh-1', name: 'cube', kind: 'importedMesh',
+      meshRef: 'payload', suppressed: false, triangleCount: 12, volume: 123,
+      source: { format: 'stl', fileName: 'cube.stl', unit: 'mm', byteLength: 684 } }] };
+  }
+  it('derives the independent 20 cubed volume from real triangles, not saved volume', async () => {
+    const source = cube();
+    const result = await recomputePart(importedDocument(), fakeBridge(), { importedMeshes: new Map([['payload', source]]) });
+    expect(result.errors).toEqual([]);
+    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0].bodyKind).toBe('mesh');
+    expect(result.bodies[0].mesh.triangleCount).toBe(12);
+    expect(result.bodies[0].volume).toBe(8000);
+    expect(result.bodies[0].mesh.positions).toEqual(source.positions);
+    expect(result.bodies[0].mesh.positions).not.toBe(source.positions);
+    expect(result.mainMeshBacking?.retainedBackingBytes).toBe(672);
+  });
+  it.each(['missing', 'index', 'normal', 'coordinate', 'count'] as const)('refuses %s attachment without a fabricated body', async kind => {
+    const source = cube();
+    if (kind === 'index') source.indices[0] = 99;
+    if (kind === 'normal') source.normals[0] = Number.NaN;
+    if (kind === 'coordinate') source.positions[0] = Number.POSITIVE_INFINITY;
+    const document = importedDocument();
+    const actual = kind === 'count' ? { ...document, solids: document.solids.map(feature =>
+      feature.kind === 'importedMesh' ? { ...feature, triangleCount: 11 } : feature) } : document;
+    const result = await recomputePart(actual, fakeBridge(), {
+      importedMeshes: kind === 'missing' ? new Map() : new Map([['payload', source]]),
+    });
+    expect(result.bodies).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+  });
+  it('captures values before awaiting the real recompute boundary and reserves separate main bytes', async () => {
+    const source = cube();
+    let dispatch: SolidRecomputeOutcome | undefined;
+    const bridge = fakeBridge({ recomputeSolids: (_steps, options) => {
+      expect(options?.localMesh?.maximumLiveMeshBytes).toBe(10000 - 672);
+      source.positions.fill(0);
+      dispatch = EMPTY_SOLID_OUTCOME;
+      return Promise.resolve(dispatch);
+    } });
+    const result = await recomputePart(importedDocument(), bridge, { importedMeshes: new Map([['payload', source]]),
+      localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 10000 } });
+    expect(dispatch).toBe(EMPTY_SOLID_OUTCOME);
+    expect(result.bodies[0].volume).toBe(8000);
+    expect(result.mainMeshBacking?.limitBytes).toBe(10000);
+  });
+  it('deduplicates shared input backings and repeated references before reserving copies', async () => {
+    const original = cube();
+    const backing = new ArrayBuffer(336);
+    const source = { positions: new Float32Array(backing, 0, 24), normals: new Float32Array(backing, 96, 24),
+      indices: new Uint32Array(backing, 192, 36) };
+    source.positions.set(original.positions); source.indices.set(original.indices);
+    const document = importedDocument();
+    const feature = document.solids[0];
+    const result = await recomputePart({ ...document, solids: [feature, { ...feature, id: 'mesh-2' }] },
+      fakeBridge(), { importedMeshes: new Map([['payload', source]]) });
+    expect(result.bodies.map(body => body.volume)).toEqual([8000, 8000]);
+    expect(result.mainMeshBacking?.retainedBackingBytes).toBe(672);
+    expect(result.mainMeshBacking?.buffers).toHaveLength(4);
+    expect(result.bodies[0].mesh.positions).toBe(result.bodies[1].mesh.positions);
+  });
+  it('refuses the main reservation before allocating or issuing a zero Worker allowance', async () => {
+    const result = await recomputePart(importedDocument(), fakeBridge(), {
+      importedMeshes: new Map([['payload', cube()]]),
+      localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 672 } });
+    expect(result.bodies).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.mainMeshBacking).toBeUndefined();
+  });
+  it('keeps a separately returned native body alongside an imported mesh', async () => {
+    const native = solidBody('native', 12000);
+    const document = importedDocument();
+    const mixed: PartDocument = { ...document, solids: [...document.solids, { id: 'native', name: 'native',
+      kind: 'importedSolid', suppressed: false, shapeRef: 'brep', bodyKind: 'solid',
+      source: { format: 'step', fileName: 'native.step', unit: 'mm', byteLength: 1 } }] };
+    const result = await recomputePart(mixed, fakeBridge({ recomputeSolids: () =>
+      Promise.resolve({ ...EMPTY_SOLID_OUTCOME, bodies: [native] }) }), {
+      importedShapes: new Map([['brep', Uint8Array.of(1)]]), importedMeshes: new Map([['payload', cube()]]) });
+    expect(result.errors).toEqual([]);
+    expect(result.bodies).toHaveLength(2);
+    expect(result.bodies[0]).toBe(native);
+    expect(result.bodies[1].bodyKind).toBe('mesh');
+    expect(result.bodies[1].volume).toBe(8000);
+  });
+  it('does not publish imported geometry after cancellation', async () => {
+    let cancelled = false;
+    const result = await recomputePart(importedDocument(), fakeBridge({ recomputeSolids: () => {
+      cancelled = true; return Promise.resolve(EMPTY_SOLID_OUTCOME);
+    } }), { importedMeshes: new Map([['payload', cube()]]), shouldCancel: () => cancelled,
+      localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 10000 } });
+    expect(result.cancelled).toBe(true);
+    expect(result.bodies).toEqual([]);
+    expect(result.mainMeshBacking).toBeUndefined();
+  });
+});
+
+describe('FR330 same-sketch current-body dependency closure', () => {
+  const top = [[0, 0, 10], [40, 0, 10], [40, 30, 10]] as const;
+  function fixture() {
+    const original = createFixture();
+    const sketch = original.document.sketches[0];
+    const faceIndex = sketch.features.findIndex(feature => feature.id === original.faceA.faceFeatureId);
+    const points: SketchFeature[] = top.map((position, index) => ({
+      id: `top-point-${String(index)}`, name: `top-point-${String(index)}`, kind: 'point', planeId: 'free',
+      at: { mode: 'relative', base: { kind: 'subShape', ref: { bodyFeatureId: 'extrude-1', index,
+        fingerprint: { kind: 'vertex', position } } }, dx: expr('0'), dy: expr('0'), dz: expr('0') },
+    }));
+    const face: SketchFaceFeature = { id: 'top-face', name: 'top-face', kind: 'face', planeId: 'free',
+      boundary: points.map(point => ({ featureId: point.id })), color: DEFAULT_FACE_COLOR };
+    const document = withSolids(replaceSketch(original.document, { ...sketch,
+      features: [...sketch.features.slice(0, faceIndex + 1), ...points, face] }),
+    extrudeFeature('extrude-1', original.faceA),
+    extrudeFeature('extrude-2', { sketchId: sketch.id, faceFeatureId: face.id }, { distance: '5' }));
+    return { document, original };
+  }
+  function bridge(mode: 'current' | 'missing' | 'ambiguous' = 'current') {
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(steps => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, bodies: steps.map(step => ({ ...solidBody(step.featureId,
+        step.featureId === 'extrude-1' ? 12000 : 3000), vertices: step.featureId !== 'extrude-1' || mode === 'missing' ? []
+          : [...top.map((position, index) => ({ index, position: mode === 'ambiguous' && index === 0 ? [0, -1, 10] as const : position })),
+            ...(mode === 'ambiguous' ? [{ index: 0, position: [0, 1, 10] as const }] : [])] })),
+    }));
+    return { kernel: fakeBridge({ recomputeSolids }), recomputeSolids };
+  }
+  it('does not make an unused later section a dependency of the original profile', async () => {
+    const { document } = fixture(), sketch = document.sketches[0], b = bridge();
+    const changed = replaceSketch(document, { ...sketch, features: [...sketch.features,
+      { id: 'unused-section', name: 'section', kind: 'planeSection', planeId: 'xy',
+        targetFeatureId: 'extrude-1', construction: false }] });
+    const result = await recomputePart(changed, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference')).toEqual([]);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['extrude-1', 'extrude-2']);
+    expect(historyDependencies(changed, { includeSelf: true }).get('extrude-1')).toContain('extrude-1');
+    expect(recomputeHistoryDependencies(changed).get('extrude-1')).toEqual([]);
+  });
+  it('retains offset, copy and constraint-connected construction dependencies transitively', () => {
+    const { document } = fixture(), sketch = document.sketches[0];
+    const features: SketchFeature[] = [
+      { id: 'section', name: 'section', kind: 'planeSection', planeId: 'xy', targetFeatureId: 'extrude-1', construction: false },
+      { id: 'offset', name: 'offset', kind: 'offset', planeId: 'xy', source: [{ featureId: 'section' }],
+        distance: expr('1'), side: 'outside', corner: 'sharp', construction: false },
+      { id: 'copy', name: 'copy', kind: 'copy', planeId: 'xy', source: [{ featureId: 'offset' }],
+        placement: { kind: 'translate', delta: absoluteCoordinate(1, 0, 0) }, construction: false },
+      { id: 'face', name: 'face', kind: 'face', planeId: 'xy', boundary: [{ featureId: 'copy' }], color: DEFAULT_FACE_COLOR },
+      { id: 'connected', name: 'connected', kind: 'point', planeId: 'xy', at: absoluteCoordinate(0, 0, 0) },
+      { id: 'unrelated', name: 'unrelated', kind: 'point', planeId: 'xy', at: absoluteCoordinate(9, 9, 0) },
+    ];
+    const linked = { ...sketch, features, constraints: [{ id: 'link', name: 'link', kind: 'pointOnCurve' as const,
+      a: { kind: 'point' as const, pointId: 'connected' }, b: { kind: 'curve' as const, element: { featureId: 'copy' } } }] };
+    expect([...sketchProfileFeatureIds(linked, 'face')].sort()).toEqual(['connected', 'copy', 'face', 'offset', 'section']);
+    const changed = withSolids(replaceSketch({ ...document, solids: [] }, linked), extrudeFeature('extrude-1', { sketchId: sketch.id, faceFeatureId: 'face' }));
+    expect(recomputeHistoryDependencies(changed).get('extrude-1')).toEqual(['section', 'extrude-1']);
+  });
+  it('retains an external previous base but not the internal second coordinate of a line', () => {
+    const { document } = fixture(), sketch = document.sketches[0];
+    const previous = { mode: 'relative' as const, base: { kind: 'previous' as const }, dx: expr('1'), dy: expr('0'), dz: expr('0') };
+    const features: SketchFeature[] = [
+      { id: 'prior', name: 'prior', kind: 'point', planeId: 'free', at: absoluteCoordinate(0, 0, 0) },
+      { id: 'line', name: 'line', kind: 'line', planeId: 'free', from: absoluteCoordinate(0, 0, 0), to: previous, construction: false },
+      { id: 'point', name: 'point', kind: 'point', planeId: 'free', at: previous },
+    ];
+    expect([...sketchProfileFeatureIds({ ...sketch, features }, 'line')]).toEqual(['line']);
+    expect([...sketchProfileFeatureIds({ ...sketch, features }, 'point')].sort()).toEqual(['line', 'point', 'prior']);
+  });
+  it('keeps the original 40x30x10 body and resolves three current top vertices into the 5mm triangular extrusion', async () => {
+    const { document } = fixture(), original = JSON.stringify(document), b = bridge();
+    const result = await recomputePart(document, b.kernel);
+    expect(result.errors).toEqual([]);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['extrude-1', 'extrude-2']);
+    const steps = b.recomputeSolids.mock.calls.at(-1)?.[0];
+    expect(steps?.map(step => step.featureId)).toEqual(['extrude-1', 'extrude-2']);
+    const first = steps?.[0].plan, second = steps?.[1].plan;
+    if (first?.kind !== 'extrude' || second?.kind !== 'extrude') throw new Error('missing extrusion plans');
+    expect(first.distance).toBe(10); expect(second.distance).toBe(5);
+    expect(first.profile).toHaveLength(4); expect(second.profile).toHaveLength(3);
+    expect(first.profile.map(curve => curve.kind === 'segment' ? curve.from : null))
+      .toEqual([[0, 0, 0], [40, 0, 0], [40, 30, 0], [0, 30, 0]]);
+    expect(second.profile.map(curve => curve.kind === 'segment' ? curve.from : null)).toEqual(top);
+    // Analytic plan expectations; the fake bridge is not evidence of native volume.
+    expect(40 * 30 * first.distance).toBe(12000);
+    expect(40 * 30 / 2 * second.distance).toBe(3000);
+    expect(JSON.stringify(document)).toBe(original);
+  });
+  it.each(['missing', 'ambiguous'] as const)('does not substitute saved coordinates for a %s current vertex', async mode => {
+    const b = bridge(mode), result = await recomputePart(fixture().document, b.kernel);
+    expect(result.errors.some(error => error.featureId === 'top-point-0')).toBe(true);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['extrude-1']);
+    expect(b.recomputeSolids.mock.calls.at(-1)?.[0].map(step => step.featureId)).toEqual(['extrude-1']);
+  });
+  it.each(['self', 'mutual'] as const)('still blocks a real %s cycle and its downstream body', async mode => {
+    const { document } = fixture(), sketch = document.sketches[0];
+    const changed = replaceSketch(document, { ...sketch, features: sketch.features.map((feature, index) =>
+      index === 0 && feature.kind === 'point' ? { ...feature, at: { mode: 'relative',
+        base: { kind: 'subShape', ref: { bodyFeatureId: mode === 'self' ? 'extrude-1' : 'extrude-2', index: 0,
+          fingerprint: { kind: 'vertex', position: [0, 0, 0] } } }, dx: expr('0'), dy: expr('0'), dz: expr('0') } } : feature) });
+    const downstream = appendSolid(changed, extrudeFeature('extrude-3', { sketchId: sketch.id, faceFeatureId: 'top-face' }));
+    const b = bridge(), result = await recomputePart(downstream, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference').map(error => error.featureId))
+      .toEqual(expect.arrayContaining(mode === 'self' ? ['extrude-1'] : ['extrude-1', 'extrude-2']));
+    expect(result.bodies).toEqual([]);
+    expect(b.recomputeSolids.mock.calls.every(([steps]) => steps.length === 0)).toBe(true);
+  });
+});
+
+describe('revolve profile current-body dependency closure', () => {
+  function unusedFixture(kind: 'point' | 'section') {
+    const fixture = createFixture();
+    const sketch = fixture.document.sketches[0];
+    const unused: SketchFeature = kind === 'point'
+      ? { id: 'later-point', name: 'later-point', kind: 'point', planeId: 'free',
+        at: { mode: 'relative', base: { kind: 'subShape', ref: { bodyFeatureId: 'revolve-1', index: 0,
+          fingerprint: { kind: 'vertex', position: [1, 2, 3] } } }, dx: expr('0'), dy: expr('0'), dz: expr('0') } }
+      : { id: 'later-section', name: 'later-section', kind: 'planeSection', planeId: 'xy',
+        targetFeatureId: 'revolve-1', construction: false };
+    const document = withSolids(replaceSketch(fixture.document, { ...sketch, features: [...sketch.features, unused] }),
+      revolveFeature('revolve-1', fixture.faceA, fixture.axisLine));
+    return { document, fixture };
+  }
+  function fakeCurrentBridge() {
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(steps => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, bodies: steps.map(step => ({ ...solidBody(step.featureId),
+        vertices: [{ index: 0, position: [1, 2, 3] as const }] })),
+    }));
+    return { kernel: fakeBridge({ recomputeSolids }), recomputeSolids };
+  }
+  it.each(['point', 'section'] as const)('does not cycle the existing revolve on a later unused %s', async kind => {
+    const { document } = unusedFixture(kind), before = JSON.stringify(document), b = fakeCurrentBridge();
+    const result = await recomputePart(document, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference')).toEqual([]);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['revolve-1']);
+    expect(recomputeHistoryDependencies(document).get('revolve-1')).not.toContain('revolve-1');
+    expect(historyDependencies(document, { includeSelf: true }).get('revolve-1')).toContain('revolve-1');
+    expect(JSON.stringify(document)).toBe(before);
+  });
+  const SOURCE_FACE: SubShapeRef = { bodyFeatureId: 'source-body', index: 4,
+    fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1200, position: [20, 15, 10], axis: [0, 0, 1], radius: null } };
+  it('preserves the exact profile and axis plan with a separate axis sketch and unused later references', async () => {
+    const { document, fixture } = unusedFixture('point');
+    const sketch = document.sketches[0];
+    const axis = sketch.features.find(feature => feature.id === fixture.axisLine.lineFeatureId);
+    if (axis?.kind !== 'line') throw new Error('axis fixture is missing');
+    const axisSketch: SketchDocument = { ...sketch, id: 'axis-sketch', name: 'axis-sketch',
+      features: [{ ...axis, id: 'axis-other' }, { id: 'axis-unused', name: 'axis-unused', kind: 'planeSection',
+        planeId: 'xy', targetFeatureId: 'revolve-1', construction: false }], constraints: [] };
+    const feature = revolveFeature('revolve-1', fixture.faceA, { sketchId: 'axis-sketch', lineFeatureId: 'axis-other' });
+    const changed = withSolids(addSketch({ ...document, solids: [] }, axisSketch), feature), b = fakeCurrentBridge();
+    const result = await recomputePart(changed, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference')).toEqual([]);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['revolve-1']);
+    const plan = b.recomputeSolids.mock.calls.at(-1)?.[0].find(step => step.featureId === 'revolve-1')?.plan;
+    if (plan?.kind !== 'revolve') throw new Error('missing revolve plan');
+    expect(plan.profile).toHaveLength(4);
+    expect(plan.axisOrigin).toEqual([1, 2, 3]);
+    expect(plan.axisDirection[0]).toBeCloseTo(0.6, 12);
+    expect(plan.axisDirection[1]).toBeCloseTo(0.8, 12);
+    expect(plan.angle).toBeCloseTo(Math.PI, 12);
+  });
+  it.each(['same', 'separate'] as const)('tracks a used projected curve in the %s sketch axis closure', mode => {
+    const fixture = createFixture(), sketch = fixture.document.sketches[0];
+    const axis = sketch.features.find(feature => feature.id === fixture.axisLine.lineFeatureId);
+    if (axis?.kind !== 'line') throw new Error('axis fixture is missing');
+    const projection: SketchFeature = { id: 'axis-projection', name: 'axis-projection', kind: 'projectedCurve',
+      planeId: 'xy', construction: false, source: SOURCE_FACE };
+    const axisLine: SketchLineFeature = { ...axis, id: 'selected-axis', from: { mode: 'relative',
+      base: { kind: 'vertex', featureId: projection.id, vertex: 'start' }, dx: expr('0'), dy: expr('0'), dz: expr('0') } };
+    const extra = [projection, axisLine];
+    const axisSketch = mode === 'same' ? { ...sketch, features: [...sketch.features, ...extra] }
+      : { ...sketch, id: 'axis-sketch', name: 'axis-sketch', features: extra, constraints: [] };
+    const document = mode === 'same' ? replaceSketch(fixture.document, axisSketch) : addSketch(fixture.document, axisSketch);
+    const feature = revolveFeature('revolve-1', fixture.faceA, { sketchId: axisSketch.id, lineFeatureId: axisLine.id });
+    const changed = withSolids(document, extrudeFeature('source-body', fixture.faceB), feature);
+    expect(recomputeHistoryDependencies(changed).get('revolve-1')).toEqual(expect.arrayContaining(['axis-projection', 'source-body']));
+  });
+  it('tracks a used projected curve in the profile closure', () => {
+    const fixture = createFixture(), sketch = fixture.document.sketches[0];
+    const projection: SketchFeature = { id: 'profile-projection', name: 'profile-projection', kind: 'projectedCurve',
+      planeId: 'xy', construction: false, source: SOURCE_FACE };
+    const face: SketchFaceFeature = { id: 'projected-face', name: 'projected-face', kind: 'face', planeId: 'xy',
+      boundary: [{ featureId: projection.id }], color: DEFAULT_FACE_COLOR };
+    const changed = withSolids(replaceSketch(fixture.document, { ...sketch, features: [...sketch.features, projection, face] }),
+      extrudeFeature('source-body', fixture.faceB), revolveFeature('revolve-1', { sketchId: sketch.id, faceFeatureId: face.id }, fixture.axisLine));
+    expect(recomputeHistoryDependencies(changed).get('revolve-1')).toEqual(expect.arrayContaining(['profile-projection', 'source-body']));
+  });
+  it.each(['current', 'missing', 'ambiguous'] as const)('resolves the axis from the %s current body without saved-coordinate fallback', async mode => {
+    const fixture = createFixture(), sketch = fixture.document.sketches[0];
+    const features = sketch.features.map(feature => feature.id === fixture.axisLine.lineFeatureId && feature.kind === 'line'
+      ? { ...feature, from: { mode: 'relative' as const, base: { kind: 'subShape' as const,
+        ref: { bodyFeatureId: 'source-body', index: 0,
+          fingerprint: { kind: 'vertex' as const, position: [0, 0, 10] as const } } },
+        dx: expr('0'), dy: expr('0'), dz: expr('0') } } : feature);
+    const document = withSolids(replaceSketch(fixture.document, { ...sketch, features }),
+      extrudeFeature('source-body', fixture.faceB), revolveFeature('revolve-1', fixture.faceA, fixture.axisLine));
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(steps => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, bodies: steps.map(step => ({ ...solidBody(step.featureId),
+        vertices: step.featureId !== 'source-body' || mode === 'missing' ? []
+          : mode === 'current' ? [{ index: 0, position: [0, 0, 10] as const }]
+            : [{ index: 0, position: [0, -1, 10] as const }, { index: 0, position: [0, 1, 10] as const }] })),
+    }));
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids }));
+    if (mode === 'current') {
+      expect(result.bodies.map(body => body.featureId)).toEqual(['source-body', 'revolve-1']);
+      const plan = recomputeSolids.mock.calls.at(-1)?.[0].find(step => step.featureId === 'revolve-1')?.plan;
+      if (plan?.kind !== 'revolve') throw new Error('missing revolve plan');
+      expect(plan.axisOrigin).toEqual([0, 0, 10]);
+    } else {
+      expect(result.errors.some(error => error.featureId === fixture.axisLine.lineFeatureId)).toBe(true);
+      expect(result.bodies.map(body => body.featureId)).toEqual(['source-body']);
+    }
+  });
+  it.each(['self', 'mutual'] as const)('still rejects a real %s cycle', async mode => {
+    const fixture = createFixture(), sketch = fixture.document.sketches[0];
+    const firstFace = sketch.features.find(feature => feature.id === fixture.faceA.faceFeatureId);
+    if (firstFace?.kind !== 'face') throw new Error('face fixture is missing');
+    const pointId = firstFace.boundary[0].featureId;
+    const features = sketch.features.map(feature => feature.id === pointId && feature.kind === 'point'
+      ? { ...feature, at: { mode: 'relative' as const, base: { kind: 'subShape' as const,
+        ref: { bodyFeatureId: mode === 'self' ? 'revolve-1' : 'extrude-2', index: 0,
+          fingerprint: { kind: 'vertex' as const, position: [1, 2, 3] as const } } },
+        dx: expr('0'), dy: expr('0'), dz: expr('0') } } : feature);
+    const axis = revolveFeature('revolve-1', fixture.faceA, fixture.axisLine);
+    const point: SketchFeature = { id: 'dependent-point', name: 'dependent-point', kind: 'point', planeId: 'free',
+      at: { mode: 'relative', base: { kind: 'subShape', ref: { bodyFeatureId: 'revolve-1', index: 0,
+        fingerprint: { kind: 'vertex', position: [1, 2, 3] } } }, dx: expr('0'), dy: expr('0'), dz: expr('0') } };
+    const face: SketchFaceFeature = { id: 'dependent-face', name: 'dependent-face', kind: 'face', planeId: 'free',
+      boundary: [{ featureId: point.id }], color: DEFAULT_FACE_COLOR };
+    const document = withSolids(replaceSketch(fixture.document, { ...sketch, features: [...features, point, face] }),
+      axis, extrudeFeature('extrude-2', { sketchId: sketch.id, faceFeatureId: face.id }));
+    const b = fakeCurrentBridge(), result = await recomputePart(document, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference').map(error => error.featureId))
+      .toEqual(expect.arrayContaining(mode === 'self' ? ['revolve-1'] : ['revolve-1', 'extrude-2']));
+    expect(result.bodies).toEqual([]);
   });
 });

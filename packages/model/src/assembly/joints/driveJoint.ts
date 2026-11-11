@@ -1,4 +1,5 @@
 /** P7 §2.6/タスク20。角度の履歴と限界は呼出しの一時入力。文書と配置を変更しない。 */
+import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { crossVec3, dotVec3, scaleVec3, subVec3 } from '../../sketch/vec3.js';
 import type { RigidPlacement } from '../placementMath.js';
@@ -52,7 +53,6 @@ export type JointDriveRowsResult = JointDriveFailure | {
 
 const NO_VARIABLES: MateVariableSet = { variables: [], initial: [], movableComponentIds: [], frozen: new Map(),
   tooMany: false, columnOf: () => null, componentOf: () => null };
-const finite = (value: number): boolean => typeof value === 'number' && Number.isFinite(value);
 const canonicalZero = (value: number): number => value === 0 ? 0 : value;
 
 /** (-180,180]の最短差。ちょうど半回転は正方向を選ぶ。 */

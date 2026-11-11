@@ -12,12 +12,12 @@
 import type { StructuredMathField } from './mathFieldHost.js';
 
 /** The id MathLive gives its shared suggestion list element. */
-export const SUGGESTION_LIST_ID = 'mathlive-suggestion-popover';
+const SUGGESTION_LIST_ID = 'mathlive-suggestion-popover';
 /** MathLive's LaTeX for an empty placeholder atom. */
 const PLACEHOLDER_LATEX = String.raw`\placeholder{}`;
 
 /** The public MathLive members that the caret correction reads and sets. */
-export type CompletedField = Pick<StructuredMathField, 'mode' | 'position' | 'selection' | 'lastOffset' | 'getElementInfo'>;
+type CompletedField = Pick<StructuredMathField, 'mode' | 'position' | 'selection' | 'lastOffset' | 'getElementInfo'>;
 
 /**
  * Moves the list into the open dialog that contains the field, so it is drawn above the dialog and receives the

@@ -94,13 +94,13 @@ interface StlHeader {
   readonly triangleCount: number;
 }
 
-/** バイト列が `solid` で始まるか。 */
-function startsWithSolid(bytes: Uint8Array): boolean {
-  if (bytes.length < ASCII_SOLID_BYTES.length) {
+/** バイト列が指定の並びで始まるか(STL の `solid` の判定と、model の画像の署名の判定 `canvas.ts` が共用する)。 */
+export function startsWithBytes(bytes: Uint8Array, signature: readonly number[]): boolean {
+  if (bytes.length < signature.length) {
     return false;
   }
-  for (let index = 0; index < ASCII_SOLID_BYTES.length; index += 1) {
-    if (bytes[index] !== ASCII_SOLID_BYTES[index]) {
+  for (let index = 0; index < signature.length; index += 1) {
+    if (bytes[index] !== signature[index]) {
       return false;
     }
   }
@@ -130,7 +130,7 @@ function inspectHeader(bytes: Uint8Array): StlHeader {
   const triangleCount = view.getUint32(BINARY_TRIANGLE_COUNT_OFFSET, true);
   const sizedAsBinary =
     BINARY_HEADER_LENGTH + BINARY_TRIANGLE_LENGTH * triangleCount === bytes.length;
-  const binary = sizedAsBinary || !startsWithSolid(bytes);
+  const binary = sizedAsBinary || !startsWithBytes(bytes, ASCII_SOLID_BYTES);
   if (binary) {
     if (triangleCount > MESH_MAX_TRIANGLE_COUNT) {
       throw new Error(meshTooLargeMessage(triangleCount));
@@ -189,27 +189,31 @@ export function readStl(
       }
 
       const positions = new Float32Array(nodeCount * 3);
+      const nodeOwner = createAllocations();
       for (let index = 1; index <= nodeCount; index += 1) {
-        const node = triangulation.Node(index);
-        const base = (index - 1) * 3;
-        positions[base] = node.X();
-        positions[base + 1] = node.Y();
-        positions[base + 2] = node.Z();
-        node.delete();
+        try {
+          const node = nodeOwner.keep(triangulation.Node(index));
+          const base = (index - 1) * 3;
+          positions[base] = node.X();
+          positions[base + 1] = node.Y();
+          positions[base + 2] = node.Z();
+        } finally { nodeOwner.release(); }
       }
 
       const indices = new Uint32Array(triangleCount * 3);
       // `Triangles()` は `const T&` を返すので embind の複製。使い終わったら解放が要る
       // (rules/06 10.13 の ③。忘れると読み込みのたびに溜まって目に見えて遅くなる)。
       const triangles = keep(triangulation.Triangles());
+      const triangleOwner = createAllocations();
       for (let index = 1; index <= triangleCount; index += 1) {
-        const triangle = triangles.Value(index);
-        const base = (index - 1) * 3;
-        // OCCT の配列は 1 始まり、three.js の頂点番号は 0 始まりなので 1 を引く。
-        indices[base] = triangle.Value(1) - 1;
-        indices[base + 1] = triangle.Value(2) - 1;
-        indices[base + 2] = triangle.Value(3) - 1;
-        triangle.delete();
+        try {
+          const triangle = triangleOwner.keep(triangles.Value(index));
+          const base = (index - 1) * 3;
+          // OCCT の配列は 1 始まり、three.js の頂点番号は 0 始まりなので 1 を引く。
+          indices[base] = triangle.Value(1) - 1;
+          indices[base + 1] = triangle.Value(2) - 1;
+          indices[base + 2] = triangle.Value(3) - 1;
+        } finally { triangleOwner.release(); }
       }
 
       return {

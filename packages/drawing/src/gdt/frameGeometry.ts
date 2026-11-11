@@ -18,7 +18,7 @@ export interface GdtFrameGeometry {
   readonly rowWidths: readonly number[];
   readonly compartmentWidths: readonly (readonly number[])[];
 }
-type MeasuredToken = { readonly token: GdtToken; readonly width: number; readonly metrics: SemanticTextMetrics | null };
+interface MeasuredToken { readonly token: GdtToken; readonly width: number; readonly metrics: SemanticTextMetrics | null }
 export type MeasureGdtText = (text: string, sizeMm: number) => SemanticTextMetrics | null;
 
 export function measureGdtTokens(tokens: readonly GdtToken[], height: number, measure: MeasureGdtText): readonly MeasuredToken[] | null {

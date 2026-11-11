@@ -40,9 +40,6 @@ export interface UnloadTarget {
   removeEventListener(type: 'beforeunload', listener: (event: UnloadEvent) => void): void;
 }
 
-/** 本体の窓で選ばれた答え。 */
-export type CloseChoice = 'save' | 'discard' | 'cancel';
-
 /** 本体の確認の窓に出す文言(ja.json の `file.closeGuard.*`)。 */
 export interface CloseGuardTexts {
   readonly message: string;

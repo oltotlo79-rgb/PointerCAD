@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
 
 /**
  * P4b(スケッチの仕上げ)完了済み機能のうち、**コマンドライン入力**(FR-208)を
@@ -12,21 +13,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * 書き写す。選択子は role / aria / class で引く。**ヘッドレスで実行する。**
  */
 
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
 async function acceptConfirms(page: Page): Promise<void> {
-  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  // 画面の中の確認(NFR-UX-3。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
   await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
     await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });

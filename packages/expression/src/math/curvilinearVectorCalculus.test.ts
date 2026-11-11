@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -10,9 +11,9 @@ import { executeMathWorkRequest, type MathExecutionBackend, type MathExecutionRe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 
-type Example = {
+interface Example {
   readonly operation: 'gradient' | 'divergence' | 'curl' | 'laplacian';
   readonly body: string;
   readonly system: 0 | 1 | 2;
@@ -21,7 +22,7 @@ type Example = {
   readonly pointText: string;
   readonly point: readonly [number, number, number];
   readonly angleUnit?: 'degree' | 'radian';
-};
+}
 const cylindrical = { system: 1, pointText: '[2,3,4]', point: [2, 3, 4] } as const;
 const spherical = { system: 2, pointText: '[2,π/2,π/4]', point: [2, Math.PI / 2, Math.PI / 4] } as const;
 const sphericalField = { system: 2, pointText: '[2,π/2,1]', point: [2, Math.PI / 2, 1] } as const;
@@ -71,8 +72,7 @@ function source(example: Example, at: boolean): string {
   return example.component === undefined ? input : `component(${input},${String(example.component)})`;
 }
 function request(source: string, angleUnit: 'degree' | 'radian' = 'radian'): MathWorkRequest {
-  return { source, notation: 'text', angleUnit, coefficients: [],
-    identity: { documentId: 'curvilinear', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: angleUnit, identity: { documentId: 'curvilinear', documentVersion: 1, editorId: 'X', inputRevision: 1 } });
 }
 function exampleRequest(example: Example): MathWorkRequest {
   return { ...request(source(example, true), example.angleUnit), presentationNotation: 'latex' };

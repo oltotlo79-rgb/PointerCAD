@@ -38,18 +38,21 @@ function readTarget(value: unknown, path: string): Checked<Target> {
   }
   const location = joinPath(path, 'reference'), reference = readSubShapeRef(record.value.reference, location);
   if (!reference.ok) return reference;
-  const { bodyFeatureId, index, fingerprint } = reference.value;
+  const { bodyFeatureId, index, fingerprint, origin } = reference.value;
   if (!identifier(bodyFeatureId) || !Number.isSafeInteger(index) || index < 0 || fingerprint.kind !== kind.value) {
     return fieldProblem(location, 'type');
   }
   switch (fingerprint.kind) {
-    case 'vertex': return { ok: true, value: { kind: 'vertex', reference: { bodyFeatureId, index, fingerprint } } };
+    case 'vertex': return { ok: true, value: { kind: 'vertex', reference: { bodyFeatureId, index, fingerprint,
+      ...(origin === undefined ? {} : { origin }) } } };
     case 'edge':
       if (fingerprint.length < 0 || (fingerprint.radius !== null && fingerprint.radius < 0)) return fieldProblem(location, 'type');
-      return { ok: true, value: { kind: 'edge', reference: { bodyFeatureId, index, fingerprint } } };
+      return { ok: true, value: { kind: 'edge', reference: { bodyFeatureId, index, fingerprint,
+        ...(origin === undefined ? {} : { origin }) } } };
     case 'face':
       if (fingerprint.area < 0 || (fingerprint.radius !== null && fingerprint.radius < 0)) return fieldProblem(location, 'type');
-      return { ok: true, value: { kind: 'face', reference: { bodyFeatureId, index, fingerprint } } };
+      return { ok: true, value: { kind: 'face', reference: { bodyFeatureId, index, fingerprint,
+        ...(origin === undefined ? {} : { origin }) } } };
   }
 }
 

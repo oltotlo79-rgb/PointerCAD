@@ -1,3 +1,4 @@
+import { dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
 import { createAngleDimensionGeometry, createDiameterDimensionGeometry, createLinearDimensionGeometry,
   createRadiusDimensionGeometry, createArrowTriangle, drawingViewBasis, formatDimension, layoutDimensionTolerance,
   type ArrowTriangle, type DrawingDocument, type DrawingRenderCurve, type DrawingRenderElement,
@@ -16,8 +17,6 @@ export interface DimensionDisplay {
 }
 export type OutlineDrawingText = (text: string, sizeMm: number) => OutlinedText;
 const subtract = (a: Point2, b: Point2): Point2 => [a[0] - b[0], a[1] - b[1]];
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vector3, b: Vector3): Vector3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 function normalized(a: Point2): Point2 { const length = Math.hypot(...a); return length > 1e-9 ? [a[0] / length, a[1] / length] : [1, 0]; }
 
 function center(target: ResolvedDimensionTarget): Point2 {

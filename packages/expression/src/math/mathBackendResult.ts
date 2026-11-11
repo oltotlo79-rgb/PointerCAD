@@ -9,7 +9,7 @@ const CONSTANTS:ReadonlyMap<string,Extract<MathNode,{kind:'constant'}>['name']>=
   ['True','true'],['False','false'],['RealNumbers','real-numbers'],['ComplexNumbers','complex-numbers'],
   ['Integers','integers'],['NonNegativeIntegers','naturals'],['RationalNumbers','rationals'],['EmptySet','empty-set'],
 ]);
-function op(operation:string,...operands:MathNode[]):MathNode{return {kind:'operation',operation,operands};}
+function makeOperation(operation:string,...operands:MathNode[]):MathNode{return {kind:'operation',operation,operands};}
 export function mathResultSymbols(source:MathNode):ReadonlyMap<string,MathSymbolReference> {
   const symbols=new Map<string,MathSymbolReference>(),pending=[source];let remaining=MATH_INPUT_LIMITS.nodes;
   while(pending.length>0) {
@@ -45,7 +45,7 @@ export function decodeMathBackendNode(value:unknown,operations:ReadonlyMap<strin
     }
     if(typeof raw==='string') {
       const constant=CONSTANTS.get(raw);if(constant)return {kind:'constant',name:constant};
-      if(raw==='Half')return op('divide',number('1'),number('2'));
+      if(raw==='Half')return makeOperation('divide',number('1'),number('2'));
       const reference=symbols.get(raw);if(reference)return {kind:'symbol',reference};
       throw new MathInputProblem('unsupported','未評価の記号が結果に残っています。');
     }
@@ -76,16 +76,16 @@ export function decodeMathBackendNode(value:unknown,operations:ReadonlyMap<strin
       if(a.denominator!==1n||b.denominator!==1n||b.numerator===0n) {
         throw new MathInputProblem('domain','有理数の分子・分母を確認できません。');
       }
-      return op('divide',numerator,denominator);
+      return makeOperation('divide',numerator,denominator);
     }
-    if(raw[0]==='Open'&&endpoint&&raw.length===2)return op('open-endpoint',visit(raw[1],depth+1));
+    if(raw[0]==='Open'&&endpoint&&raw.length===2)return makeOperation('open-endpoint',visit(raw[1],depth+1));
     const operation=operations.get(raw[0]);
     if(!operation||operation.structural||['sum','product','integrate','differentiate','limit','for-all','exists','lambda'].includes(operation.id)) {
       throw new MathInputProblem('unsupported','未評価の演算が結果に残っています。');
     }
     const count=raw.length-1;
     if(count<operation.minimumArguments||count>operation.maximumArguments)throw new MathInputProblem('syntax','計算結果の引数が不正です。');
-    return op(operation.id,...raw.slice(1).map(child=>visit(child,depth+1,operation.id==='interval')));
+    return makeOperation(operation.id,...raw.slice(1).map(child=>visit(child,depth+1,operation.id==='interval')));
   }
   return visit(value,0);
 }

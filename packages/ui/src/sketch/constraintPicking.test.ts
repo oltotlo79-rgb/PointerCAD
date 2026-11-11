@@ -21,14 +21,11 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import {
-  CONSTRAINT_MARK_RADIUS_PIXELS,
   CONSTRAINT_PICK_RADIUS_PIXELS,
   CONSTRAINT_TARGET_COUNTS,
   constraintMarkAt,
   constraintMarksOf,
   constraintTargetCount,
-  MARK_POINT_LIFT_PIXELS,
-  MARK_SPREAD_PIXELS,
   orderConstraintTargets,
   pickConstraintTarget,
   sameConstraintTarget,
@@ -37,8 +34,10 @@ import {
   vertexAt,
   type ConstraintMark,
 } from './constraintPicking.js';
-import type { ConstraintAnchor, ConstraintSummary } from './constraintSummary.js';
+import type { ConstraintSummary, constraintSummary } from './constraintSummary.js';
 import type { ProjectToScreen } from './snapMath.js';
+
+type ConstraintAnchor = ReturnType<typeof constraintSummary>['anchors'][number];
 
 /** 作図面(XY)の x, y をそのまま画素にする写し方。奥行きは捨てる。 */
 const project: ProjectToScreen = (point: Vec3) => [point[0], point[1]];
@@ -257,13 +256,16 @@ describe('印の当たり判定(描画・当たり判定・選択の 3 つをそ
     ]);
     // 3 個なら中央ぞろえで −18 / 0 / +18。
     expect(marks.map((mark) => mark.offset[0])).toEqual([-18, 0, 18]);
-    expect(MARK_SPREAD_PIXELS).toBe(18);
+    // 2 個なら 18px の半分ずつ −9 / +9。
+    expect(constraintMarksOf([summaryWith('d1', [anchorAt([7, 0, 0])]), summaryWith('d2', [anchorAt([7, 0, 0])])])
+      .map((mark) => mark.offset[0])).toEqual([-9, 9]);
   });
 
   it('点に付く印は点から 14px 上へ逃げる(掴みと競合させない、t14 の申し送り)', () => {
     const marks = constraintMarksOf([summaryWith('c1', [anchorAt([5, 0, 0], true)])]);
     expect(marks[0].offset).toEqual([0, -14]);
-    expect(MARK_POINT_LIFT_PIXELS).toBe(14);
+    // 点でない所に付く印は持ち上げない。
+    expect(constraintMarksOf([summaryWith('c2', [anchorAt([5, 0, 0])])])[0].offset).toEqual([0, 0]);
   });
 
   it('ずらした印は、ずらした先で当たり判定する(描画と当たり判定をそろえる)', () => {
@@ -281,7 +283,9 @@ describe('印の当たり判定(描画・当たり判定・選択の 3 つをそ
     expect(constraintMarkAt(marks, project, [3, 3])).toBe('c1');
     expect(constraintMarkAt(marks, project, [41, 0])).toBe('c2');
     expect(constraintMarkAt(marks, project, [20, 0])).toBeNull();
-    expect(CONSTRAINT_MARK_RADIUS_PIXELS).toBe(9);
+    // 判定半径は 9px(ちょうど 9px 離れた所は外)。
+    expect(constraintMarkAt(marks, project, [8.9, 0])).toBe('c1');
+    expect(constraintMarkAt(marks, project, [9, 0])).toBeNull();
   });
 
   it('重なっているときは近いほうを選ぶ', () => {

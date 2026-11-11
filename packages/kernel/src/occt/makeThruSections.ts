@@ -1,3 +1,5 @@
+import { unitDirection as toUnit } from './normalizeDirection.js';
+import { lengthVec as magnitude, subVec as subtract, dotVec as dot } from './sketchCorner.js';
 /**
  * 面と面をつなぐ立体(罫線面、FR-430)とロフト(FR-410)。計画書 P5 §2.9、タスク24。
  *
@@ -112,6 +114,7 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
+import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { pickSubShape } from './pickSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { tangentConeThroughCircle, tangentPointOnSphere } from './sphereTangent.js';
@@ -123,8 +126,6 @@ const MINIMUM_SECTION_COUNT = 2;
 /** これ未満の体積(mm³)は「立体にならなかった」とみなす(他の make*.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
 
-/** 縫合のつなぎ目とみなす許容量(mm)。`ThruSections` の `pres3d` と同じ値に揃える。 */
-const SEWING_TOLERANCE = 1.0e-6;
 
 /** 幾何の判定に使う許容誤差。長さ 0 のベクトル・平面でない輪郭を見分けるのに使う。 */
 const TOLERANCE = 1e-9;
@@ -198,26 +199,7 @@ export const MISSING_SECTION_FACE_MESSAGE =
 export const UNUSABLE_SECTION_FACE_MESSAGE =
   'つなぐ面は平らな面か、縁が 1 本につながる面にしてください。';
 
-function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
 
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function magnitude(value: Vec3Tuple): number {
-  return Math.hypot(value[0], value[1], value[2]);
-}
-
-/** 長さが取れない(0・非数)ときは null。他の make*.ts の toUnit と同じ考え。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const size = magnitude(value);
-  if (!Number.isFinite(size) || size <= 0) {
-    return null;
-  }
-  return [value[0] / size, value[1] / size, value[2] / size];
-}
 
 /** 球面上の 2 つの向きの間を、球面に沿って補間する(球冠の輪を作るのに使う)。 */
 function slerp(from: Vec3Tuple, to: Vec3Tuple, ratio: number): Vec3Tuple {
@@ -461,19 +443,32 @@ function findShell(oc: OpenCascadeInstance, shape: TopoDS_Shape): TopoDS_Shell |
   if (shape.ShapeType() === shellType) {
     return oc.TopoDS.Shell_1(shape);
   }
-  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
+  const inputs = createAllocations();
+  const returned = createAllocations();
   try {
-    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
-    const count = Number(subShapes.Size());
-    for (let index = 1; index <= count; index += 1) {
-      const subShape = subShapes.FindKey(index);
-      if (subShape.ShapeType() === shellType) {
-        return oc.TopoDS.Shell_1(subShape);
+    let selected: TopoDS_Shell | null = null;
+    try {
+      const subShapes = inputs.keep(new oc.TopTools_IndexedMapOfShape_1());
+      oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+      const count = Number(subShapes.Size());
+      for (let index = 1; index <= count; index += 1) {
+        const candidate = createAllocations();
+        try {
+          const subShape = candidate.keep(subShapes.FindKey(index));
+          if (subShape.ShapeType() === shellType) {
+            selected = returned.keep(oc.TopoDS.Shell_1(subShape));
+            break;
+          }
+        } finally { candidate.release(); }
       }
+    } finally {
+      inputs.release();
     }
-    return null;
-  } finally {
-    subShapes.delete();
+    // No return is pending while either the source wrapper or its map is released.
+    return selected;
+  } catch (error) {
+    returned.release();
+    throw error;
   }
 }
 
@@ -489,7 +484,7 @@ function sewToSolid(
   keep: Allocations['keep'],
 ): TopoDS_Shape {
   // 第 2〜第 5 引数は OCCT の既定の組み合わせ(sewSolid.ts と同じ)。
-  const sewing = keep(new oc.BRepBuilderAPI_Sewing(SEWING_TOLERANCE, true, true, true, false));
+  const sewing = keep(new oc.BRepBuilderAPI_Sewing(APPROXIMATION_TOLERANCE_MM, true, true, true, false));
   for (const part of parts) {
     sewing.Add(part);
   }
@@ -743,7 +738,7 @@ function makeGeneralSphereSolid(
 
   // 罫線の殻。輪郭の点と接点が同じ数・同じ並びなので、対応の付け直しは要らない
   // (`CheckCompatibility` を呼ぶと余計な分割が起きて遅くなる。2026-09-05 実測)。
-  const lateral = keep(new oc.BRepOffsetAPI_ThruSections(false, true, SEWING_TOLERANCE));
+  const lateral = keep(new oc.BRepOffsetAPI_ThruSections(false, true, APPROXIMATION_TOLERANCE_MM));
   // OCCT enables compatibility correction by default. The two polygons were
   // constructed point-for-point, so keep that correspondence explicitly.
   lateral.CheckCompatibility(false);
@@ -755,7 +750,7 @@ function makeGeneralSphereSolid(
   }
 
   // 球冠を張る殻。接点の列を球面に沿って帽の中心へ寄せた輪を挟み、頂点で閉じる。
-  const cap = keep(new oc.BRepOffsetAPI_ThruSections(false, false, SEWING_TOLERANCE));
+  const cap = keep(new oc.BRepOffsetAPI_ThruSections(false, false, APPROXIMATION_TOLERANCE_MM));
   // Keep OCCT's compatibility correction for the smooth cap: it contributes
   // to the fitted surface, unlike the point-for-point ruled lateral shell.
   cap.AddWire(tangentPolygon);
@@ -894,7 +889,7 @@ function makePlainThruSections(
   profiles: readonly SectionSource[],
   keep: Allocations['keep'],
 ): TopoDS_Shape {
-  const maker = keep(new oc.BRepOffsetAPI_ThruSections(spec.closed, spec.ruled, SEWING_TOLERANCE));
+  const maker = keep(new oc.BRepOffsetAPI_ThruSections(spec.closed, spec.ruled, APPROXIMATION_TOLERANCE_MM));
   // FR-435: 既存の罫線面/ロフトは変更せず、明示したロフトだけ近似を平滑化する。
   // これはロフト内部の指定であり、借りた断面の隣接面へのG1接続を保証しない。
   if (!spec.ruled && spec.smooth) maker.SetSmoothing(true);

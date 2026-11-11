@@ -22,7 +22,6 @@ import {
   cornerNear,
   cornerPreview,
   cornerSegments,
-  facesUseCorner,
 } from './cornerCommands.js';
 import type { EditInputCommit } from './numericInput.js';
 
@@ -426,28 +425,10 @@ describe('面の境界の検出と、つなげられない境界の拒否', () =
       boundary: [{ featureId: 'line1' }, { featureId: 'line2' }],
       color: DEFAULT_FACE_COLOR,
     });
-    expect(facesUseCorner(document, ['line1', 'line2'])).toBe(true);
     const outcome = commitSketchFillet(document, ['line1', 'line2'], filletCommit(5));
     expect(outcome).toEqual({ ok: false, reasonKey: 'corner.error.faceBoundary' });
     expect(document.features).toHaveLength(3);
     expect(resolveSketch(document).segments[0].to).toEqual([20, 0, 0]);
-  });
-
-  it('面が無ければ案内は出さない', () => {
-    expect(facesUseCorner(lShapeDocument(), ['line1', 'line2'])).toBe(false);
-  });
-
-  it('面が矩形の全周を境界にしていれば、その矩形の辺を丸めるときも案内を出す', () => {
-    const document = appendFeature(rectangleDocument(), {
-      id: 'face1',
-      name: '面1',
-      planeId: 'xy',
-      kind: 'face',
-      // index を省いた参照は「そのフィーチャーの全周」(§0.a-0.8)。
-      boundary: [{ featureId: 'rect1' }],
-      color: DEFAULT_FACE_COLOR,
-    });
-    expect(facesUseCorner(document, ['rect1#0', 'rect1#1'])).toBe(true);
   });
 });
 

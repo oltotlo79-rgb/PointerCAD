@@ -1,5 +1,4 @@
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import type { PrintabilityReport } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
@@ -17,9 +16,7 @@ function reportOf(thickness = 0.8, angle = 45, cancelled = false): PrintabilityR
 }
 
 function render(): string {
-  const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-  try { return renderToStaticMarkup(createElement(PrintCheckSection)); }
-  finally { snapshot.mockRestore(); }
+  return renderCurrentStore(PrintCheckSection);
 }
 
 beforeEach(() => {
@@ -64,8 +61,11 @@ describe('FIX-02 print check panel and store', () => {
     expect(inspector).not.toHaveBeenCalled();
     expect(useAppStore.getState().isInspectingPrint).toBe(false);
   });
-  it('keeps the criteria used for a cancelled result distinct from edits for the next check', () => {
-    useAppStore.getState().setPrintability(reportOf(0.8, 45, true));
+  it('keeps the criteria used for a cancelled result distinct from edits for the next check', async () => {
+    useAppStore.setState({ bodies: [bodyFor('box')], partInspector: () =>
+      Promise.resolve({ kind: 'inspected', report: reportOf(0.8, 45, true) }) });
+    useAppStore.getState().inspectPrintability();
+    await vi.waitFor(() => { expect(useAppStore.getState().isInspectingPrint).toBe(false); });
     useAppStore.getState().setPrintCheckDraft({ ...DEFAULT_PRINT_CHECK_DRAFT, minThicknessSource: '1/2', overhangAngleSource: '30+30' });
     const markup = render();
     expect(markup).toContain(t('propertyPanel.printCheckCancelled'));

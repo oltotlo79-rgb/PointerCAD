@@ -1,3 +1,4 @@
+import { functionSplineCurveFlow } from './functionSplineSurfaceFlow.js';
 import { functionOdeCurveFlow, ODE_CURVE_SCENARIO_TIMEOUT_MS } from './functionOdeCurveFlow.js';
 import { FUNCTION_DIRECTION_SCENARIOS } from './functionDirectionScenarios.js';
 import { functionDerivativesFlow } from './functionDerivativesFlow.js';
@@ -20,7 +21,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 // math-input.spec.tsと同じ理由(CIの3分割はrequireFile単位で1塊のtestGroupを
 // 作るため、直列のままだと24件がまとめて同じ組へ入る)。各テストは`page`を
 // 個別に開くだけで共有状態が無いため、parallelモードでテストごとに別groupへ
-// 分け、shardの境界を任意の位置で切れるようにする(w95a)。
+// 分け、shardの境界を任意の位置で切れるようにする(検査の分割方針)。
 test.describe.configure({ mode: 'parallel' });
 
 test('ADD-23 勾配とヘッセ行列の成分を曲線と曲面に使い、保存再開・ラプラシアンへ編集・Undo・F1を通す', async ({ page }, info) => {
@@ -163,4 +164,12 @@ test('ADD-26 微分方程式の解曲線・点と法線・条件の保存再編�
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
   });
   await page.goto('/'); await functionOdeCurveFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('SMOOTH-CURVE real CAD sweep, save reopen, stale preview, update and Undo', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await functionSplineCurveFlow(page, info); expect(errors).toEqual([]);
 });

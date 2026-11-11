@@ -3,8 +3,10 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Allocations, OcctDeletable } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { loadOcctForNode } from './loadOcct.node.js';
-import type { AssemblyProbeReadResult, ProbeOccurrence } from './xcafAssemblyProbe.js';
 import { readAssemblyProbe, writeAssemblyProbe } from './xcafAssemblyProbe.js';
+
+type AssemblyProbeReadResult = ReturnType<typeof readAssemblyProbe>;
+type ProbeOccurrence = ReturnType<typeof readAssemblyProbe>['occurrences'][number];
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 

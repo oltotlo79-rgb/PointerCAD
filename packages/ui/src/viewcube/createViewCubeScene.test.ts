@@ -14,7 +14,7 @@ const renderer = vi.hoisted(() => ({
   setDrawingBufferSize: vi.fn(), dispose: vi.fn(),
 }));
 vi.mock('three', async importOriginal => ({
-  ...await importOriginal<typeof import('three')>(),
+  ...await importOriginal<typeof THREE>(),
   WebGLRenderer: class {
     render = renderer.render;
     setDrawingBufferSize = renderer.setDrawingBufferSize;

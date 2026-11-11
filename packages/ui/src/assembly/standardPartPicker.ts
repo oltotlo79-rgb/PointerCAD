@@ -4,6 +4,8 @@ import {
   type FastenerDimensionSeries, HEX_BOLT_TABLE, HEX_NUT_TABLE, H_BEAM_TABLE, CHANNEL_TABLE,
   PAN_HEAD_SCREW_TABLE, PLAIN_WASHER_TABLE, SOCKET_HEAD_CAP_SCREW_TABLE,
   SPRING_WASHER_TABLE, type StandardCatalogId, type StandardPartSource, type ThreadSeries,
+  STEEL_MATERIAL_GRADES, STEEL_PRODUCTS, steelLength, steelProductOptions, steelProducts,
+  type SteelMaterialGrade, type SteelProduct, type SteelSectionCatalog,
 } from '@pointercad/model';
 
 export type StandardPartCategory =
@@ -24,6 +26,7 @@ export interface StandardPartChoice {
   readonly verified: boolean;
   readonly note: string;
   readonly requiresLength: boolean;
+  readonly steelProduct?: SteelProduct;
 }
 
 export interface StandardPartPickerDefaults {
@@ -91,6 +94,66 @@ const CHOICES: Readonly<Record<StandardPartCategory, readonly StandardPartChoice
   ],
 };
 
+function steelChoice(row: SteelProduct): StandardPartChoice {
+  return { key: `steel:${row.key}`, catalog: row.catalog, size: row.size,
+    verified: true, note: '', requiresLength: true, steelProduct: row };
+}
+
+export function steelPartChoices(material: SteelMaterialGrade,
+  catalog?: SteelSectionCatalog): readonly StandardPartChoice[] {
+  return steelProducts(material, catalog).map(steelChoice);
+}
+
+export interface SteelPartDimensionGroup {
+  readonly value: number;
+  readonly choices: readonly StandardPartChoice[];
+}
+export interface SteelPartDimensionGroups {
+  readonly dimension: 'thickness' | 'diameter';
+  readonly groups: readonly SteelPartDimensionGroup[];
+}
+
+/** Group a large single material/family without losing product identity or manufacturing condition. */
+export function steelPartDimensionGroups(choices: readonly StandardPartChoice[]): SteelPartDimensionGroups | null {
+  const first = choices[0]?.steelProduct;
+  if (choices.length <= 100 || first === undefined
+    || (first.catalog !== 'flatBar' && first.catalog !== 'roundBar')) return null;
+  const dimension = first.catalog === 'flatBar' ? 'thickness' : 'diameter';
+  const grouped = new Map<number, StandardPartChoice[]>();
+  for (const choice of choices) {
+    const row = choice.steelProduct;
+    const value = row?.dimensions?.[dimension];
+    if (row?.catalog !== first.catalog || row.materialGrade !== first.materialGrade
+      || value === undefined || !Number.isFinite(value) || value <= 0) return null;
+    const group = grouped.get(value) ?? [];
+    group.push(choice);
+    grouped.set(value, group);
+  }
+  return { dimension, groups: [...grouped].sort(([a], [b]) => a - b).map(([value, group]) => ({
+    value, choices: group.sort((a, b) => (a.steelProduct?.dimensions?.width ?? 0)
+      - (b.steelProduct?.dimensions?.width ?? 0)),
+  })) };
+}
+
+/** Keep the current width/condition when it exists at the new thickness; reject unknown input. */
+export function steelPartChoiceAtDimension(choices: readonly StandardPartChoice[], currentKey: string,
+  value: string): StandardPartChoice | undefined {
+  const grouping = steelPartDimensionGroups(choices);
+  const group = grouping?.groups.find((candidate) => String(candidate.value) === value);
+  if (group === undefined) return undefined;
+  const current = choices.find((candidate) => candidate.key === currentKey)?.steelProduct;
+  return group.choices.find((candidate) => candidate.steelProduct?.dimensions?.width === current?.dimensions?.width
+    && candidate.steelProduct?.condition === current?.condition) ?? group.choices[0];
+}
+
+/** Explicitly keep unassigned legacy rows selectable without inventing a steel grade. */
+export const STRUCTURAL_MATERIAL_CHOICES = [...STEEL_MATERIAL_GRADES, 'unspecified'] as const;
+export type StructuralMaterialChoice = typeof STRUCTURAL_MATERIAL_CHOICES[number];
+export function structuralPartChoices(material: StructuralMaterialChoice,
+  catalog?: SteelSectionCatalog): readonly StandardPartChoice[] {
+  return material === 'unspecified' ? CHOICES.structuralSection : steelPartChoices(material, catalog);
+}
+
 const DEFAULT_DIMENSION_SERIES: FastenerDimensionSeries = 'annexJA';
 const DEFAULT_THREAD_SERIES: ThreadSeries = 'coarse';
 const defaultBoltChoices = CHOICES.hexBolt.filter(
@@ -135,10 +198,17 @@ export function findStandardPartChoice(
   choiceKey: string,
   dimensionSeries: FastenerDimensionSeries = DEFAULT_DIMENSION_SERIES,
 ): StandardPartChoice | undefined {
+  if (category === 'structuralSection' && choiceKey.startsWith('steel:')) {
+    const row = STEEL_PRODUCTS.find((candidate) => `steel:${candidate.key}` === choiceKey);
+    return row === undefined ? undefined : steelChoice(row);
+  }
   return standardPartChoices(category, dimensionSeries).find((choice) => choice.key === choiceKey);
 }
 
 function partName(choice: StandardPartChoice, length: string): string {
+  if (choice.steelProduct !== undefined) {
+    return `${choice.steelProduct.materialGrade} ${choice.size} 長さ${length}`;
+  }
   switch (choice.catalog) {
     case 'hexBolt': return `\u516d\u89d2\u30dc\u30eb\u30c8 ${choice.size}\u00d7${length}`;
     case 'hexNut': return `\u516d\u89d2\u30ca\u30c3\u30c8 ${choice.size}`;
@@ -147,9 +217,14 @@ function partName(choice: StandardPartChoice, length: string): string {
     case 'socketHeadCapScrew': return `\u516d\u89d2\u7a74\u4ed8\u304d\u30dc\u30eb\u30c8 ${choice.size}\u00d7${length}`;
     case 'panHeadScrew': return `\u5341\u5b57\u7a74\u4ed8\u304d\u306a\u3079\u5c0f\u306d\u3058 ${choice.size}\u00d7${length}`;
     case 'deepGrooveBallBearing': return `\u6df1\u6e9d\u7389\u8ef8\u53d7 ${choice.size}`;
+    // 溶接のビード(filletWeld)はこの選択画面に出さない(溶接の操作だけが作る)。種類を網羅するために下の組に置く。
     case 'equalAngle':
     case 'channel':
     case 'hBeam':
+    case 'flatBar':
+    case 'roundBar':
+    case 'steelPipe':
+    case 'filletWeld':
       return `${choice.size} \u9577\u3055${length}`;
   }
 }
@@ -164,12 +239,16 @@ export function commitStandardPartChoice(
 ): StandardPartCommitResult {
   const choice = findStandardPartChoice(category, choiceKey, dimensionSeries);
   if (choice === undefined) return { ok: false, reason: 'unknownChoice' };
+  if (choice.steelProduct !== undefined && steelLength(lengthSource) === null) {
+    return { ok: false, reason: 'invalidLength' };
+  }
   const length = choice.requiresLength ? evaluateExpression(lengthSource) : null;
   if (length !== null && (!length.ok || length.value.value <= 0)) {
     return { ok: false, reason: 'invalidLength' };
   }
   const normalizedLength = length?.ok === true ? length.value.source : '30';
-  const options: Record<string, string> = {};
+  const options: Record<string, string> = choice.steelProduct === undefined
+    ? {} : { ...steelProductOptions(choice.steelProduct) };
   if (choice.requiresLength || choice.catalog === 'hexBolt'
     || choice.catalog === 'socketHeadCapScrew' || choice.catalog === 'panHeadScrew') {
     options.length = normalizedLength;

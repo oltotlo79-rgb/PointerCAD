@@ -1,6 +1,8 @@
+import { specialMathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
+import { evaluateMathInput } from './mathEvaluation.testSupport.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
@@ -8,17 +10,16 @@ import { sameMathMeaning } from './mathNotationConversion.js';
 import { GAMMA_FUNCTION_REFERENCES } from './gammaFunctionReferences.js';
 import { POLYGAMMA_REFERENCES } from './polygammaReferences.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 function request(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
-  return { source, angleUnit, notation: 'text' as const, coefficients: [],
-    identity: { documentId: 'gamma-functions', documentVersion: 1, editorId: 'coordinate', inputRevision: 1 } };
+  return specialMathTestRequest(source, angleUnit, 'gamma-functions');
 }
 function evaluate(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
-  const input = request(source, angleUnit), raw = executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request: input }, backend);
-  return decodeMathWorkReply(raw, input, { operationsById: CANDIDATE_MATH_BY_ID, coefficientIds: new Set(), declaredIds: new Set() }).result;
+  const input = request(source, angleUnit);
+  return evaluateMathInput(input, backend);
 }
 function value(source: string) {
   const result = evaluate(source).evaluation;

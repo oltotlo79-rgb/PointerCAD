@@ -19,6 +19,7 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
   const busy = useAppStore((state) => state.drawingBusy);
   const paper = drawing === null ? undefined : paperSizeOf(drawing.sheet.paperSizeId);
   const [kind, setKind] = useState<DrawingTable['kind']>(table?.kind ?? initialKind ?? (drawing?.source.sourceKind === 'assembly' ? 'bom' : 'hole'));
+  const [stockList, setStockList] = useState(table?.options.stockList === true);
   const [x, setX] = useState(String(table?.position[0] ?? 20));
   const [y, setY] = useState(String(table?.position[1] ?? (paper === undefined ? 270 : createPaperFrame(paper).inner.top - 10)));
   const [rowHeight, setRowHeight] = useState(() => table === undefined ? defaults.number('tableRowHeight')
@@ -38,6 +39,7 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
   const submit = (): void => {
     const options: Record<string, string | number | boolean> = { ...table?.options, rowHeight: Number(rowHeight), textHeight: Number(textHeight) };
     if (kind === 'bom') {
+      options.stockList = stockList;
       options.direction = direction;
       options.sortBy = sortBy; options.sortDescending = sortDescending;
       for (const id of BOM_COLUMN_IDS) {
@@ -61,6 +63,9 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
     <label title={t('drawing.table.rowHeight.controlHint')}>{t('drawing.table.rowHeight')}<input className="pcad-field__input" aria-label={t('drawing.table.rowHeight')} inputMode="decimal" value={rowHeight} onChange={(event) => setRowHeight(event.target.value)} /></label>
     <label title={t('drawing.table.textHeight.controlHint')}>{t('drawing.table.textHeight')}<input className="pcad-field__input" aria-label={t('drawing.table.textHeight')} inputMode="decimal" value={textHeight} onChange={(event) => setTextHeight(event.target.value)} /></label>
     {kind === 'bom' ? <>
+      <label><input type="checkbox" title={t('assembly.steel.stockScope')} checked={stockList}
+        onChange={(event) => setStockList(event.target.checked)} />{t('assembly.steel.stockList')}</label>
+      {!stockList ? <>
       <fieldset><legend>{t('drawing.table.columns')}</legend>{BOM_COLUMN_IDS.map((id) => <label key={id}>
         <input title={t('drawing.controlHint.bomColumn')} type="checkbox" checked={columns.includes(id)} onChange={(event) => setColumns(event.target.checked ? [...columns, id] : columns.filter((entry) => entry !== id))} />{t(columnsLabels[id])}
       </label>)}
@@ -80,6 +85,7 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
         {(['number', 'name', 'quantity', 'mass'] as const).map((id) => <option key={id} value={id}>{t(columnsLabels[id])}</option>)}
       </select></label>
       <label><input title={t('drawing.controlHint.bomDescending')} type="checkbox" checked={sortDescending} onChange={(event) => setSortDescending(event.target.checked)} />{t('drawing.table.sortDescending')}</label>
+      </> : null}
     </> : null}
     {kind === 'hole' ? <>
       <label title={t('drawing.table.view.controlHint')}>{t('drawing.table.view')}<select className="pcad-field__input" aria-label={t('drawing.table.view')} value={viewId} onChange={(event) => setViewId(event.target.value)}>

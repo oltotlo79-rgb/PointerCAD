@@ -34,9 +34,10 @@ import {
   reselectMathGeometry,
   runMathGeometryRename,
   type MathGeometryCommandResult,
-  type MathGeometryCommandState,
 } from './mathGeometryCommands.js';
 import { mathGeometrySelection } from './mathGeometrySelection.js';
+
+type MathGeometryCommandState = Parameters<typeof createMathGeometryFromSelection>[0];
 
 const TOLERANCE = DEFAULT_MATH_GEOMETRY_TOLERANCE;
 const LENGTH: MathGeometryQuantity = { kind: 'length', curve: { kind: 'sketch-curve', sketchId: 'sketch-1', featureId: 'line-1' } };

@@ -1,3 +1,5 @@
+import { sha256Hex } from '../sha256.js';
+import { isRecord } from '../valueGuards.js';
 /**
  * アセンブリが抱き込んだ部品文書の出し入れと内容ハッシュ
  * (計画書 docs/plans/P7-アセンブリ.md §2.3、タスク4。FR-601、要件§8)。
@@ -195,10 +197,6 @@ function canonicalAttachmentsBytes(
   鍵を並べ替えるだけの写しなら、欄が増えても自動で対象に入る。
 */
 
-/** `Record<string, unknown>` かどうか(配列と `null` は除く)。`unknown` から `any` へ落とさない。 */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /** 読み取り専用の配列かどうか。`Array.isArray` の絞り込みが `any[]` になるのを避ける。 */
 function isArray(value: unknown): value is readonly unknown[] {
@@ -213,7 +211,7 @@ function isArray(value: unknown): value is readonly unknown[] {
  * - `undefined` の欄は書かない(`JSON.stringify` と同じ扱い。省略できる欄がある)。
  * - 数値は `JSON.stringify` に任せる(`-0` は `0`、往復できる最短の表記で機種に依らない)。
  */
-function canonicalTextOf(value: unknown): string {
+export function canonicalTextOf(value: unknown): string {
   if (value === null) {
     return 'null';
   }
@@ -249,15 +247,6 @@ export function canonicalPartDocumentText(document: PartDocument): string {
   return canonicalTextOf(document);
 }
 
-/** バイト列を 16 進の小文字にする。 */
-function hexTextOf(bytes: Uint8Array): string {
-  let text = '';
-  for (const byte of bytes) {
-    text += byte.toString(16).padStart(2, '0');
-  }
-  return text;
-}
-
 /**
  * 部品文書の内容ハッシュ(要件§8)。SHA-256 の 16 進 64 文字。
  *
@@ -275,19 +264,14 @@ function hexTextOf(bytes: Uint8Array): string {
  */
 export async function contentHashOf(document: PartDocument): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalPartDocumentText(document));
-  const digest = await crypto.subtle.digest(CONTENT_HASH_ALGORITHM, bytes);
-  return hexTextOf(new Uint8Array(digest));
+  return sha256Hex(bytes);
 }
 
 /** 文書とは別に持つ添付の SHA-256。参照名・種類・バイト列のどれが変わっても変化する。 */
 export async function attachmentsDigestOf(
   attachments: EmbeddedPartAttachments,
 ): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    CONTENT_HASH_ALGORITHM,
-    canonicalAttachmentsBytes(attachments),
-  );
-  return hexTextOf(new Uint8Array(digest));
+  return sha256Hex(canonicalAttachmentsBytes(attachments));
 }
 
 /** 次に抱き込む部品の `ref`。既存の最大連番 + 1 で、**消しても番号を再利用しない**(§0.a-0.19)。 */

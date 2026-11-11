@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { decodeStoredMathStructure } from './decodeStoredMath.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { formatMathText } from './formatMathText.js';
 import { coordinateFromMath, type MathEvaluation, type MathNode } from './mathInputContract.js';

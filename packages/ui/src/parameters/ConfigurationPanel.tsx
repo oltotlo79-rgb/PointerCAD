@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { focusByAriaLabelIn } from './focusRestore.js';
 import { type ConfigurationAction, type ConfigurationActionResult } from './configurationActions.js';
 import { runMathConfigurationAction } from './mathConfigurationActions.js';
 
@@ -11,6 +12,9 @@ const ERROR_KEYS: Readonly<Record<Extract<ConfigurationActionResult, { readonly 
   partRequired: 'configuration.error.partRequired',
 };
 
+/** 操作の間は欄が無効になり焦点が文書の外へ落ちるため、操作の前に焦点のあった欄(aria-label)を覚え、終わったら戻す。親の再描画で作り直されても戻せるよう、部品の外に持つ。 */
+let restoreFocusLabel: string | null = null;
+
 /** 既存パラメータ区画の先頭に置く。親がdocumentVersionをkeyにして下書きをリセットする。 */
 export function ConfigurationPanel(): React.JSX.Element {
   const document = useAppStore((state) => state.document);
@@ -18,10 +22,18 @@ export function ConfigurationPanel(): React.JSX.Element {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pending = useRef<AbortController | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (busy || restoreFocusLabel === null) return;
+    const label = restoreFocusLabel;
+    if (focusByAriaLabelIn(sectionRef.current, label)) restoreFocusLabel = null;
+  }, [busy, document]);
   useEffect(() => () => { pending.current?.abort(); pending.current = null; }, []);
   const active = document.activeConfigurationId;
   const run = (action: ConfigurationAction): void => {
     pending.current?.abort();
+    const focused = globalThis.document.activeElement;
+    restoreFocusLabel = focused instanceof HTMLElement && sectionRef.current?.contains(focused) === true ? focused.getAttribute('aria-label') : null;
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
@@ -34,7 +46,7 @@ export function ConfigurationPanel(): React.JSX.Element {
       if (result.ok) setName('');
     });
   };
-  return <section aria-label={t('configuration.label')} className="pcad-section">
+  return <section ref={sectionRef} aria-label={t('configuration.label')} className="pcad-section">
     <label className="pcad-field">
       <span className="pcad-field__label">{t('configuration.label')}</span>
       <select title={t('controlGuide.configuration.choose')} disabled={busy} className="pcad-field__input" aria-label={t('configuration.label')} value={active ?? ''}

@@ -11,7 +11,7 @@ export type DrawingToleranceInput =
   | { readonly kind: 'deviation'; readonly upper: string; readonly lower: string }
   | { readonly kind: 'fit'; readonly symbol: string; readonly showDeviation: boolean };
 
-export interface DrawingDimensionPresentation {
+interface DrawingDimensionPresentation {
   readonly prefix: string;
   readonly suffix: string;
   readonly reference: boolean;

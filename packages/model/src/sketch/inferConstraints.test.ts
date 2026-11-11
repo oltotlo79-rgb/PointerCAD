@@ -12,13 +12,14 @@ import {
   INFER_COINCIDENT_RADIUS_PIXELS,
   MAX_INFERRED_CONSTRAINTS,
   type DraftSegment,
-  type InferConstraintsOptions,
   type InferenceElements,
   type InferredConstraint,
   type InferredConstraintKind,
 } from './inferConstraints.js';
 import { degreesToRadians, WORK_PLANES } from './planeMath.js';
 import type { ResolvedArc, ResolvedPoint, ResolvedSegment, SketchDocument } from './types.js';
+
+type InferConstraintsOptions = Parameters<typeof inferConstraints>[2];
 
 /**
  * タスク40 の検査(計画書 docs/plans/P6-入出力.md §2.15 の表と「タスク40」の検証表)。

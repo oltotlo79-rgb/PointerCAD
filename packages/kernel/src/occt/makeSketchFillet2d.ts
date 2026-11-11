@@ -79,7 +79,7 @@ const NOT_ON_PLANE_MESSAGE =
  * (`packages/model/src/sketch/resolveSketch.ts` の arc の節)。基準の軸を受け取らずに
  * 角度を返すと、model 側がその角度をどの向きから測ればよいか決められない。
  */
-export interface SketchFilletPlaneSpec {
+interface SketchFilletPlaneSpec {
   readonly origin: Vec3Tuple;
   /** 面の法線。円弧の法線になる。 */
   readonly normal: Vec3Tuple;

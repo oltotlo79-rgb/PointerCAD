@@ -2,6 +2,7 @@ import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPa
   resolveAssembly, resolvePart, type PartDocument, type SolidBody } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachAssemblyInteraction, mateTargetFromFaceHit, pickAssemblyMateTarget } from './attachAssemblyInteraction.js';
+import { assemblyTargetId } from '../assembly/mateCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { commitMateDraft, editAssemblyMate, mateKindReadiness, startMate } from '../assembly/mateActions.js';
@@ -21,6 +22,22 @@ function body(): SolidBody {
 }
 
 describe('アセンブリ面pickから保存参照への変換', () => {
+  it('currentの一意な面originをcomponentと組にして保存し、曖昧/重複bodyは拒否する', () => {
+    const origin = { version: 1, shapeKind: 'face', identity: {
+      kind: 'box-face', featureId: 'box', role: 'top' } } as const;
+    const front = { version: 1, shapeKind: 'face', identity: {
+      kind: 'box-face', featureId: 'box', role: 'front' } } as const;
+    const source: SolidBody = { ...body(), origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current: { kind: 'face', index: 3 } }] } };
+    const hit = { componentId: 'component-2', bodyFeatureId: 'box', faceIndex: 3 };
+    expect(mateTargetFromFaceHit(hit, [source])).toMatchObject({ kind: 'subShape', componentId: 'component-2',
+      ref: { origin, index: 3 } });
+    expect(mateTargetFromFaceHit(hit, [source, { ...source }])).toBeNull();
+    expect(mateTargetFromFaceHit(hit, [{ ...source, isValid: false }])).toBeNull();
+    expect(mateTargetFromFaceHit(hit, [{ ...source, origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'merged', current: { kind: 'face', index: 3 }, coOrigins: [origin, front] }] } }])).toBeNull();
+  });
+
   it('instance idと部品内指紋を組にする', () => {
     expect(mateTargetFromFaceHit({ componentId: 'component-2', bodyFeatureId: 'box', faceIndex: 3 }, [body()]))
       .toMatchObject({ kind: 'subShape', componentId: 'component-2', ref: { bodyFeatureId: 'box', index: 3,
@@ -31,7 +48,7 @@ describe('アセンブリ面pickから保存参照への変換', () => {
     { componentId: 'component-1', bodyFeatureId: 'missing', faceIndex: 3 },
     { componentId: 'component-1', bodyFeatureId: 'box', faceIndex: 2 },
     { componentId: 'component-1', bodyFeatureId: 'box', faceIndex: -1 },
-  ])('存在しないbody/faceは対象を捏造しない', (hit) => {
+  ])('存在しないbody/faceは対象を捏造しない(%#)', (hit) => {
     expect(mateTargetFromFaceHit(hit, [body()])).toBeNull();
   });
 
@@ -283,14 +300,20 @@ describe('assemblyの実listener', () => {
   it.each(['vertex', 'edge'] as const)('%sは配置を一度だけ適用して拾い、保存指紋は局所のまま', (kind) => {
     const f = interactionFixture();
     try {
+      const origin = kind === 'vertex'
+        ? { version: 1, shapeKind: 'vertex', identity: { kind: 'box-vertex', featureId: 'box', role: 'top-front-left' } } as const
+        : { version: 1, shapeKind: 'edge', identity: { kind: 'box-edge', featureId: 'box', role: 'top-front' } } as const;
       const source: SolidBody = { ...body(), vertices: [{ index: 0, position: [2, 3, 0] }],
         edges: [{ index: 0, curveKind: 'line', length: 10, midpoint: [5, 0, 0], start: [0, 0, 0], end: [10, 0, 0], axis: [1, 0, 0], radius: null, segmentOffset: 0, segmentCount: 1 }],
-        mesh: { ...body().mesh, edgePositions: new Float32Array([0, 0, 0, 10, 0, 0]) } };
+        mesh: { ...body().mesh, edgePositions: new Float32Array([0, 0, 0, 10, 0, 0]) },
+        origins: { version: 1, state: 'tracked', bindings: [
+          { origin, state: 'unique', current: { kind, index: 0 } }] } };
       const view = { ...f.view, bodies: new Map([['part', [source]]]), resolved: { ...f.view.resolved,
         placements: new Map([['component-2', { position: [100, 20, 0] as const, rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] as const }]]) } };
       const point: readonly [number, number] = kind === 'vertex' ? [97, 22] : [100, 29];
       const hit = pickAssemblyMateTarget(f.document, view, f.scene, point, kind);
-      expect(hit).toMatchObject({ kind: 'subShape', componentId: 'component-2', ref: { fingerprint: { kind, position: kind === 'vertex' ? [2, 3, 0] : [5, 0, 0] } } });
+      expect(hit).toMatchObject({ kind: 'subShape', componentId: 'component-2', ref: { origin,
+        fingerprint: { kind, position: kind === 'vertex' ? [2, 3, 0] : [5, 0, 0] } } });
     } finally { f.interaction.detach(); }
   });
 
@@ -303,4 +326,633 @@ describe('assemblyの実listener', () => {
       expect(pickAssemblyMateTarget(document, view, f.scene, [0, 0], 'face')).toBeNull();
     } finally { f.interaction.detach(); }
   });
+});
+
+describe('bolted joint composition keys at the real viewport listener', () => {
+  it.each([
+    { key: 'Enter', isComposing: true }, { key: 'Escape', isComposing: true },
+    { key: 'Enter', keyCode: 229 }, { key: 'Escape', keyCode: 229 }, { key: 'Process' },
+  ])('does not commit/cancel or consume browser defaults for %j', properties => {
+    const f = interactionFixture();
+    try {
+      expect(useAppStore.getState().beginBoltedJoint()).toBe(true);
+      const before = useAppStore.getState();
+      const commit = vi.spyOn(before, 'commitBoltedJoint');
+      const cancel = vi.spyOn(before, 'cancelBoltedJoint');
+      try {
+        const event = f.send('keydown', properties);
+        expect(commit).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+        expect(f.downstream).toHaveBeenCalledExactlyOnceWith(event);
+        const after = useAppStore.getState();
+        expect(after.assembly).toBe(before.assembly); expect(after.document).toBe(before.document);
+        expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+        expect(after.assemblyBoltedJointDraft).toBe(before.assemblyBoltedJointDraft);
+      } finally { commit.mockRestore(); cancel.mockRestore(); }
+    } finally { f.interaction.detach(); }
+  });
+  it('the next normal Enter reaches commit once, and normal Escape still cancels', () => {
+    const f = interactionFixture();
+    try {
+      useAppStore.getState().beginBoltedJoint();
+      const before = useAppStore.getState();
+      const commit = vi.spyOn(before, 'commitBoltedJoint').mockReturnValue(false);
+      try {
+        f.send('keydown', { key: 'Enter', keyCode: 229 });
+        expect(commit).not.toHaveBeenCalled();
+        expect(f.send('keydown', { key: 'Enter', keyCode: 13 }).defaultPrevented).toBe(true);
+        expect(commit).toHaveBeenCalledOnce();
+      } finally { commit.mockRestore(); }
+      expect(f.send('keydown', { key: 'Escape', keyCode: 27 }).defaultPrevented).toBe(true);
+      expect(useAppStore.getState().assemblyBoltedJointDraft).toBeNull();
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { f.interaction.detach(); }
+  });
+});
+
+describe('締結の穴の枠だけで、実らせんの壁の当たりを組の選択にする(実listener)', () => {
+  const wall = { kind: 'hole-face', featureId: 'thread', center: { sketchId: 'sketch', producer: { kind: 'point', featureId: 'c' } },
+    placement: { kind: 'original' }, stage: 'bore', role: 'wall' } as const;
+  const plane = (index: number, z: number, adjacentFaces: readonly number[]) => ({ index, surfaceKind: 'plane' as const, area: 100,
+    centroid: [5, 5, z] as [number, number, number], axis: [0, 0, 1] as [number, number, number], radius: null,
+    triangleOffset: 0, triangleCount: 1, adjacentFaces });
+  const piece = (index: number, extent: readonly [number, number], adjacentFaces: readonly number[]) => ({ index,
+    surfaceKind: 'cylinder' as const, area: 10, centroid: [0, 0, 14] as [number, number, number],
+    axis: [0, 0, 1] as [number, number, number], axisOrigin: [0, 0, 20] as [number, number, number], cylinderSpan: null,
+    cylinderAxialExtent: extent, radius: 2.5, triangleOffset: 0, triangleCount: 1, adjacentFaces });
+  // 0〜2 は無関係な面。3・4 が壁の小片(z 8〜15・14〜20)、5 が溝、6 が入口の平面(z 20)、7 が底(z 8)。
+  const threaded = (): SolidBody => ({ ...body(), faces: [plane(0, 30, []), plane(1, 31, []), plane(2, 32, []),
+    piece(3, [-12, -5], [4, 5, 7]), piece(4, [-6, 0], [3, 5, 6]),
+    { index: 5, surfaceKind: 'other', area: 1, centroid: [2, 0, 14], axis: null, radius: null, triangleOffset: 0, triangleCount: 1,
+      adjacentFaces: [3, 4, 6] }, plane(6, 20, [4, 5]), plane(7, 8, [3])],
+  origins: { version: 1, state: 'tracked', bindings: [
+    { origin: { version: 1, shapeKind: 'face', identity: wall }, state: 'split',
+      candidates: [{ kind: 'face', index: 3 }, { kind: 'face', index: 4 }] },
+    { origin: { version: 1, shapeKind: 'face', identity: { ...wall, stage: 'thread', role: 'groove' } }, state: 'unique',
+      current: { kind: 'face', index: 5 } },
+  ] } });
+
+  it('穴Aの枠では組になり、合わせ面の枠や普通の選択では split の面を断る', () => {
+    const f = interactionFixture();
+    try {
+      const view = { ...f.view, bodies: new Map([['part', [threaded()]]]) };
+      useAppStore.setState({ assemblyView: view });
+      expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face')).toBeNull();
+      expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face', undefined, true)).toEqual({
+        kind: 'modeledThreadGroup', componentId: 'component-1', group: { bodyFeatureId: 'box', origin: wall, hitFaceIndex: 3 } });
+      expect(useAppStore.getState().beginBoltedJoint()).toBe(true);
+      f.send('pointerdown');
+      expect(useAppStore.getState().assemblyBoltedJointDraft?.picks).toEqual([
+        { kind: 'modeledThreadGroup', componentId: 'component-1', group: { bodyFeatureId: 'box', origin: wall, hitFaceIndex: 3 } }]);
+      const before = useAppStore.getState().assemblyBoltedJointDraft;
+      f.send('pointerdown');
+      expect(useAppStore.getState().assemblyBoltedJointDraft).toBe(before);
+      expect(useAppStore.getState().assembly?.mates).toEqual(f.document.mates);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('pointermove: 穴の枠では組の今の面を hover し、合わせ面の枠・取消後・普通の選択では split の面を hover しない', () => {
+    const f = interactionFixture();
+    try {
+      const view = { ...f.view, bodies: new Map([['part', [threaded()]]]) };
+      useAppStore.setState({ assemblyView: view, hoveredElementId: null });
+      // 期待の id は既存の面の対象(同じボディ・番地)から既存の関数で作る。
+      const faceId = assemblyTargetId({ kind: 'subShape', componentId: 'component-1', ref: { bodyFeatureId: 'box', index: 3,
+        fingerprint: { kind: 'face', surfaceKind: 'cylinder', area: 10, position: [0, 0, 14], axis: [0, 0, 1], radius: 2.5 } } });
+      f.send('pointermove');
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      expect(useAppStore.getState().beginBoltedJoint()).toBe(true);
+      expect(() => f.send('pointermove')).not.toThrow();
+      expect(useAppStore.getState().hoveredElementId).toBe(faceId);
+      f.send('pointerdown');
+      f.send('pointermove');
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      useAppStore.getState().cancelBoltedJoint();
+      f.send('pointermove');
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      expect(useAppStore.getState().assembly?.mates).toEqual(f.document.mates);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('同じ id のボディが2つあれば、穴の枠でも組にならない(同じ中身・片方が壊れた形、どちらの順でも)', () => {
+    const f = interactionFixture();
+    try {
+      const good = threaded();
+      const broken: SolidBody = { ...good, faces: good.faces.map((face) => face.index === 5
+        ? { index: 5, surfaceKind: 'other' as const, area: 1, centroid: [2, 0, 14] as [number, number, number], axis: null,
+          radius: null, triangleOffset: 0, triangleCount: 1 } : face) };
+      for (const bodies of [[good, threaded()], [good, broken], [broken, good]]) {
+        const view = { ...f.view, bodies: new Map([['part', bodies]]) };
+        expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face', undefined, true)).toBeNull();
+      }
+    } finally { f.interaction.detach(); }
+  });
+
+  it('無効なボディは、穴の枠でも組にならない(当たりの番地と由来が同じでも)', () => {
+    const f = interactionFixture();
+    try {
+      const view = { ...f.view, bodies: new Map([['part', [{ ...threaded(), isValid: false }]]]) };
+      expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face', undefined, true)).toBeNull();
+    } finally { f.interaction.detach(); }
+  });
+
+  it('溝の隣の一覧が無い形では、穴の枠でも組にならない', () => {
+    const f = interactionFixture();
+    try {
+      const damaged = threaded();
+      const view = { ...f.view, bodies: new Map([['part', [{ ...damaged, faces: damaged.faces.map((face) => face.index === 5
+        ? { index: 5, surfaceKind: 'other' as const, area: 1, centroid: [2, 0, 14] as [number, number, number], axis: null,
+          radius: null, triangleOffset: 0, triangleCount: 1 } : face) }]]]) };
+      expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face', undefined, true)).toBeNull();
+    } finally { f.interaction.detach(); }
+  });
+});
+
+describe('deferred component input keeps its owning pointer', () => {
+  function deferredBodyInput() {
+    const f = interactionFixture();
+    f.interaction.detach();
+    useAppStore.setState({ selectionKind: 'body', selection: [] });
+    let settle: (ready: boolean) => void = () => { throw new Error('pending refresh missing'); };
+    const ready = new Promise<boolean>(resolve => { settle = resolve; });
+    const interaction = attachAssemblyInteraction(f.canvas, f.scene, {
+      viewDirection: () => [0, 0, 1], prepareMateInput: () => ready,
+    });
+    const send = (type: string, properties: object = {}) => f.send(type,
+      { pointerId: 7, buttons: type === 'pointerup' ? 0 : 1, ...properties });
+    return { ...f, interaction, send, settle };
+  }
+
+  it.each(['pointercancel', 'lostpointercapture', 'pointermove'] as const)(
+    'a different pointer %s cannot discard the original click', async kind => {
+      const f = deferredBodyInput();
+      try {
+        const before = useAppStore.getState();
+        f.send('pointerdown');
+        f.send(kind, { pointerId: 8, clientX: 100 });
+        f.send('pointerup'); f.send('pointerup');
+        expect(useAppStore.getState().selection).toEqual([]);
+        f.scene.pickComponent.mockClear();
+        f.settle(true); await Promise.resolve(); await Promise.resolve();
+        expect(useAppStore.getState().selection).toEqual(['component-1']);
+        expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        await Promise.resolve(); f.send('pointerup');
+        expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
+      } finally { f.interaction.detach(); }
+    });
+
+  // Refusal path of the split rule: this fixture has no capture and no drag plane, so no drag can start and every
+  // owning-pointer end or move still discards. The draggable path is in 'deferred component input held through ...'.
+  it.each(['pointercancel', 'lostpointercapture', 'pointermove'] as const)(
+    'the owning pointer %s still discards the pending input when no drag can start', async kind => {
+      const f = deferredBodyInput();
+      try {
+        const before = useAppStore.getState();
+        f.send('pointerdown'); f.send(kind, { clientX: 100 });
+        f.scene.pickComponent.mockClear();
+        f.settle(true); await Promise.resolve(); await Promise.resolve();
+        expect(useAppStore.getState().selection).toEqual([]);
+        expect(f.scene.pickComponent).not.toHaveBeenCalled();
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      } finally { f.interaction.detach(); }
+    });
+});
+
+describe('deferred component input held through the ownership refresh', () => {
+  // The P7-18 drag fixture (grab offset, frames, capture) with every ownership refresh still open at its press.
+  // manualRefresh: the refresh is a thenable whose fulfilment the test calls itself, so an error thrown while adopting
+  // reaches the test directly (with a real Promise it would only surface as a rejected promise).
+  function heldDeferredDrag(options: { readonly echoLostCapture?: boolean; readonly manualRefresh?: boolean } = {}) {
+    const f = interactionFixture();
+    f.interaction.detach();
+    useAppStore.setState({ selectionKind: 'body', selection: [] });
+    const settles: ((ready: boolean) => void)[] = [];
+    const adopters: ((ready: boolean) => unknown)[] = [];
+    const callbacks = new Map<number, () => void>();
+    let nextFrame = 0;
+    const requestFrame = vi.fn((callback: () => void) => { nextFrame += 1; callbacks.set(nextFrame, callback); return nextFrame; });
+    const cancelFrame = vi.fn((id: number) => { callbacks.delete(id); });
+    let rect = { left: 40, top: 20 };
+    const canvas = Object.assign(f.canvas, { setPointerCapture: vi.fn(),
+      // A browser may deliver lostpointercapture while releasePointerCapture is still running (re-entry).
+      releasePointerCapture: vi.fn((pointerId: number) => { if (options.echoLostCapture === true) f.send('lostpointercapture', { pointerId }); }),
+      getBoundingClientRect: () => rect });
+    const scene = { ...f.scene, screenToPlanePoint: vi.fn((x: number, y: number): readonly [number, number, number] | null => [x, y, 0]) };
+    scene.pickComponent.mockReturnValue('component-2');
+    const interaction = attachAssemblyInteraction(canvas, scene, {
+      viewDirection: () => [0, 0, 1], requestFrame, cancelFrame,
+      prepareMateInput: () => options.manualRefresh === true
+        ? Object.assign(new Promise<boolean>(() => undefined), {
+          then: (onReady: (ready: boolean) => unknown) => { adopters.push(onReady); return Promise.resolve(); } })
+        : new Promise<boolean>(resolve => { settles.push(resolve); }),
+    });
+    const send = (type: string, properties: object = {}) => f.send(type,
+      { pointerId: 7, buttons: type === 'pointerup' ? 0 : 1, clientX: 43, clientY: 25, ...properties });
+    const flush = () => { const queued = [...callbacks.values()]; callbacks.clear(); for (const callback of queued) callback(); };
+    const refreshed = async (value: boolean) => {
+      for (const settle of settles.splice(0)) settle(value);
+      await Promise.resolve(); await Promise.resolve();
+    };
+    const moveCanvas = (left: number) => { rect = { left, top: 20 }; };
+    const overlayX = () => useAppStore.getState().assemblyDragOverlay?.placements.get('component-2')?.position[0];
+    return { ...f, canvas, scene, interaction, send, flush, refreshed, moveCanvas, overlayX, callbacks, requestFrame, adopters };
+  }
+
+  it('a press still held when the refresh is applied starts the drag from the original press point', async () => {
+    const f = heldDeferredDrag();
+    try {
+      const before = useAppStore.getState();
+      f.send('pointerdown');
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(useAppStore.getState().selection).toEqual([]);
+      expect(f.canvas.setPointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+      await f.refreshed(true);
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyDrag?.grab).toEqual([3, 5, 0]);
+      expect(f.canvas.setPointerCapture.mock.calls).toEqual([[7], [7]]);
+      expect(f.canvas.releasePointerCapture).not.toHaveBeenCalled();
+      f.send('pointermove', { clientX: 70 }); f.flush();
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(f.overlayX()).toBeCloseTo(27, 6);
+      f.send('pointerup', { clientX: 73 });
+      expect(useAppStore.getState().assembly?.components[1].placement.position[0].value).toBeCloseTo(30, 6);
+      expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('held moves while waiting are kept: at ready the drag starts at the original press and takes the latest position', async () => {
+    const f = heldDeferredDrag();
+    try {
+      const before = useAppStore.getState();
+      f.send('pointerdown'); f.send('pointermove', { clientX: 50 }); f.send('pointermove', { clientX: 60 });
+      expect(useAppStore.getState().selection).toEqual([]);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(f.requestFrame).not.toHaveBeenCalled();
+      f.scene.pickComponent.mockClear();
+      await f.refreshed(true);
+      expect(f.scene.pickComponent).toHaveBeenCalledExactlyOnceWith(3, 5);
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyDrag?.grab).toEqual([3, 5, 0]);
+      expect(f.callbacks.size).toBe(1);
+      f.flush();
+      expect(f.overlayX()).toBeCloseTo(17, 6);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      f.send('pointermove', { clientX: 70 }); f.flush();
+      expect(f.overlayX()).toBeCloseTo(27, 6);
+      f.send('pointerup', { clientX: 73 });
+      expect(useAppStore.getState().assembly?.components[1].placement.position[0].value).toBeCloseTo(30, 6);
+      expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+      const document = useAppStore.getState().assembly;
+      f.send('pointerup', { clientX: 100 }); f.flush();
+      expect(useAppStore.getState().assembly).toBe(document);
+      expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('with a drag possible, the owning pointer pointermove with the left button held is kept for the drag', async () => {
+    const f = heldDeferredDrag();
+    try {
+      f.send('pointerdown'); f.send('pointermove', { clientX: 100 });
+      f.scene.pickComponent.mockClear();
+      await f.refreshed(true);
+      expect(f.scene.pickComponent).toHaveBeenCalledExactlyOnceWith(3, 5);
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyDrag?.grab).toEqual([3, 5, 0]);
+      f.flush();
+      expect(f.overlayX()).toBeCloseTo(57, 6);
+    } finally { f.interaction.detach(); }
+  });
+
+  it.each(['pointercancel', 'lostpointercapture'] as const)(
+    'with a drag possible, the owning pointer %s still discards the pending input', async kind => {
+      const f = heldDeferredDrag();
+      try {
+        const before = useAppStore.getState();
+        f.send('pointerdown'); f.send(kind, { clientX: 100 });
+        f.scene.pickComponent.mockClear();
+        await f.refreshed(true);
+        expect(useAppStore.getState().selection).toEqual([]);
+        expect(f.scene.pickComponent).not.toHaveBeenCalled();
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      } finally { f.interaction.detach(); }
+    });
+
+  it('another pointer cannot release, discard or steer the held press', async () => {
+    const f = heldDeferredDrag();
+    try {
+      f.send('pointerdown'); f.send('pointermove', { clientX: 60 });
+      f.send('pointermove', { pointerId: 8, clientX: 100 }); f.send('pointerup', { pointerId: 8, clientX: 100 });
+      f.send('pointercancel', { pointerId: 8 }); f.send('lostpointercapture', { pointerId: 8 });
+      await f.refreshed(true);
+      expect(useAppStore.getState().assemblyDrag?.grab).toEqual([3, 5, 0]);
+      expect(f.canvas.releasePointerCapture).not.toHaveBeenCalled();
+      f.flush();
+      expect(f.overlayX()).toBeCloseTo(17, 6);
+    } finally { f.interaction.detach(); }
+  });
+
+  it.each([false, true])('a press released unmoved before the refresh only selects and never drags (capture echo %s)', async echo => {
+    const f = heldDeferredDrag({ echoLostCapture: echo });
+    try {
+      const before = useAppStore.getState();
+      f.send('pointerdown'); f.send('pointerup');
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+      await f.refreshed(true);
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(f.canvas.setPointerCapture).toHaveBeenCalledTimes(1);
+      f.send('pointermove', { clientX: 70 }); f.flush(); f.send('pointerup', { clientX: 73 });
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(f.callbacks.size).toBe(0);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('a held press that moved and was released before the refresh neither drags nor selects afterwards', async () => {
+    const f = heldDeferredDrag();
+    try {
+      const before = useAppStore.getState();
+      f.send('pointerdown'); f.send('pointermove', { clientX: 70 }); f.send('pointerup', { clientX: 73 });
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+      f.scene.pickComponent.mockClear();
+      await f.refreshed(true);
+      expect(useAppStore.getState().selection).toEqual([]);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+      expect(f.canvas.setPointerCapture).toHaveBeenCalledTimes(1);
+      f.send('pointermove', { clientX: 90 }); f.flush();
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(useAppStore.getState().assemblyDragOverlay).toBe(before.assemblyDragOverlay);
+    } finally { f.interaction.detach(); }
+  });
+
+  // The temporary capture is what delivers these to the canvas in a browser when the pointer is outside it.
+  it.each(['pointerup', 'pointercancel', 'lostpointercapture'] as const)(
+    'a held press dragged out of the canvas and ended there by %s before the refresh leaves no drag behind', async kind => {
+      const f = heldDeferredDrag();
+      try {
+        const before = useAppStore.getState();
+        f.send('pointerdown'); f.send('pointermove', { clientX: 2000, clientY: -300 });
+        f.send(kind, { clientX: 2000, clientY: -300 });
+        await f.refreshed(true);
+        expect(useAppStore.getState().selection).toEqual([]);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+        f.send('pointermove', { clientX: 60, buttons: 0 }); f.flush();
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(f.callbacks.size).toBe(0);
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      } finally { f.interaction.detach(); }
+    });
+
+  it.each([false, true])('when the temporary capture is refused, a held move still discards and an unmoved press only selects (moved %s)',
+    async moved => {
+      const f = heldDeferredDrag();
+      try {
+        f.canvas.setPointerCapture.mockImplementation(() => { throw new Error('capture'); });
+        const before = useAppStore.getState();
+        f.send('pointerdown');
+        if (moved) f.send('pointermove', { clientX: 70 });
+        await f.refreshed(true);
+        expect(useAppStore.getState().selection).toEqual(moved ? [] : ['component-2']);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(f.canvas.setPointerCapture).toHaveBeenCalledTimes(1);
+        expect(f.canvas.releasePointerCapture).not.toHaveBeenCalled();
+        f.send('pointermove', { clientX: 80 }); f.flush(); f.send('pointerup', { clientX: 90 });
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+        expect(f.callbacks.size).toBe(0);
+      } finally { f.interaction.detach(); }
+    });
+
+  it.each([
+    { press: {}, move: { buttons: 0 } }, { press: {}, move: { altKey: true } }, { press: { shiftKey: true }, move: {} },
+  ])('a waiting press %j that cannot be held for a drag is discarded when it moves (no selection, no drag)', async ({ press, move }) => {
+    const f = heldDeferredDrag();
+    try {
+      const before = useAppStore.getState();
+      f.send('pointerdown', press); f.send('pointermove', { clientX: 70, ...move });
+      f.scene.pickComponent.mockClear();
+      await f.refreshed(true);
+      expect(useAppStore.getState().selection).toEqual([]);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes('shiftKey' in press ? 0 : 1);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { f.interaction.detach(); }
+  });
+
+  it.each(['not-ready', 'stale', 'draft', 'document', 'generation', 'projection', 'camera', 'canvasRect', 'escape', 'detach'] as const)(
+    'a held, moved press is not adopted after %s and returns its temporary capture', async kind => {
+      const f = heldDeferredDrag();
+      try {
+        const before = useAppStore.getState();
+        f.send('pointerdown'); f.send('pointermove', { clientX: 60 });
+        if (kind === 'stale') useAppStore.setState({ selection: ['component-1'] });
+        if (kind === 'draft') startMate('coincident');
+        if (kind === 'document') useAppStore.setState({ activeDocumentId: 'another-document' });
+        if (kind === 'generation') useAppStore.setState(state => ({ requestedGeneration: state.requestedGeneration + 1 }));
+        if (kind === 'projection') useAppStore.setState({ projection: 'orthographic' });
+        if (kind === 'camera') f.interaction.cancelDrag();
+        if (kind === 'canvasRect') f.moveCanvas(41);
+        if (kind === 'escape') f.send('keydown', { key: 'Escape' });
+        if (kind === 'detach') f.interaction.detach();
+        await f.refreshed(kind !== 'not-ready');
+        expect(useAppStore.getState().selection).toEqual(kind === 'stale' ? ['component-1'] : []);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(f.canvas.setPointerCapture).toHaveBeenCalledTimes(1);
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+        expect(f.callbacks.size).toBe(0);
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      } finally { f.interaction.detach(); }
+    });
+
+  it('the lostpointercapture echo of a returned capture cancels neither the next press nor its drag', async () => {
+    const f = heldDeferredDrag({ echoLostCapture: true });
+    try {
+      f.send('pointerdown'); f.send('keydown', { key: 'Escape' }); f.send('pointerup');
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+      f.send('pointerdown'); f.send('pointermove', { clientX: 60 });
+      await f.refreshed(true);
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyDrag?.grab).toEqual([3, 5, 0]);
+      f.flush();
+      expect(f.overlayX()).toBeCloseTo(17, 6);
+      f.send('pointerup', { clientX: 73 });
+      expect(useAppStore.getState().assembly?.components[1].placement.position[0].value).toBeCloseTo(30, 6);
+      expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes(2);
+    } finally { f.interaction.detach(); }
+  });
+
+  // rev64: the end conditions of a held press. Same and different position x buttons 0 / Alt, one-sided capture methods,
+  // and a throw while adopting are fixed here as negatives (the earlier tests mostly moved the pointer).
+  it.each([
+    { clientX: 43, buttons: 0 }, { clientX: 43, altKey: true }, { clientX: 70, buttons: 0 }, { clientX: 70, altKey: true },
+  ])('a held press whose owning pointer moves with %j (43 is the press point) ends: no pick, drag or Undo, capture returned', async move => {
+    const f = heldDeferredDrag();
+    try {
+      const before = useAppStore.getState();
+      f.send('pointerdown'); f.send('pointermove', move);
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+      f.scene.pickComponent.mockClear();
+      await f.refreshed(true);
+      expect(useAppStore.getState().selection).toEqual([]);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+      expect(f.canvas.setPointerCapture).toHaveBeenCalledTimes(1);
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+      // A later held move and release of the same pointer cannot revive the old press.
+      f.send('pointermove', { clientX: 70 }); f.flush(); f.send('pointerup', { clientX: 73 });
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(f.callbacks.size).toBe(0);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { f.interaction.detach(); }
+  });
+
+  it.each([
+    { missing: 'releasePointerCapture', moved: false }, { missing: 'releasePointerCapture', moved: true },
+    { missing: 'setPointerCapture', moved: false }, { missing: 'setPointerCapture', moved: true },
+  ] as const)('a canvas with only one capture method %j takes no temporary capture: unmoved only selects, moved is discarded',
+    async ({ missing, moved }) => {
+      const f = heldDeferredDrag();
+      try {
+        const { setPointerCapture, releasePointerCapture } = f.canvas;
+        expect(Reflect.deleteProperty(f.canvas, missing)).toBe(true);
+        const before = useAppStore.getState();
+        f.send('pointerdown');
+        if (moved) f.send('pointermove', { clientX: 70 });
+        f.scene.pickComponent.mockClear();
+        await f.refreshed(true);
+        expect(useAppStore.getState().selection).toEqual(moved ? [] : ['component-2']);
+        expect(f.scene.pickComponent).toHaveBeenCalledTimes(moved ? 0 : 1);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(setPointerCapture).not.toHaveBeenCalled();
+        expect(releasePointerCapture).not.toHaveBeenCalled();
+        f.send('pointermove', { clientX: 80 }); f.flush(); f.send('pointerup', { clientX: 90 });
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+        expect(f.callbacks.size).toBe(0);
+      } finally { f.interaction.detach(); }
+    });
+
+  it.each([false, true])('a throw while adopting the held press is not hidden and still returns its temporary capture once (capture echo %s)',
+    echo => {
+      const f = heldDeferredDrag({ echoLostCapture: echo, manualRefresh: true });
+      try {
+        const before = useAppStore.getState();
+        const error = new Error('pick');
+        f.send('pointerdown'); f.send('pointermove', { clientX: 60 });
+        f.scene.pickComponent.mockImplementation(() => { throw error; });
+        expect(f.adopters).toHaveLength(1);
+        expect(() => f.adopters[0](true)).toThrow(error);
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+        expect(useAppStore.getState().selection).toEqual([]);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(f.callbacks.size).toBe(0);
+        // A second settle and every later end of the same press finish nothing again.
+        expect(() => f.adopters[0](true)).not.toThrow();
+        f.send('pointerup', { clientX: 73 }); f.send('lostpointercapture'); f.send('keydown', { key: 'Escape' });
+        expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes(1);
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+        // The next press is cancelled neither by the old capture nor by its echo, and drags and commits once.
+        f.scene.pickComponent.mockImplementation(() => 'component-2');
+        f.send('pointerdown'); f.send('pointermove', { clientX: 60 });
+        expect(f.adopters).toHaveLength(2);
+        f.adopters[1](true);
+        expect(useAppStore.getState().assemblyDrag?.grab).toEqual([3, 5, 0]);
+        f.flush();
+        expect(f.overlayX()).toBeCloseTo(17, 6);
+        f.send('pointerup', { clientX: 73 });
+        expect(useAppStore.getState().assembly?.components[1].placement.position[0].value).toBeCloseTo(30, 6);
+        expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes(2);
+      } finally { f.interaction.detach(); }
+    });
+
+  it('the capture handed over to the adopted drag is returned once even when its first held move cancels the drag', async () => {
+    const f = heldDeferredDrag({ echoLostCapture: true });
+    try {
+      const before = useAppStore.getState();
+      f.send('pointerdown'); f.send('pointermove', { clientX: 60 });
+      // The grab at the original press still hits the drag plane; the first held move does not.
+      f.scene.screenToPlanePoint.mockReturnValueOnce([3, 5, 0]).mockReturnValueOnce(null);
+      await f.refreshed(true);
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(f.canvas.setPointerCapture.mock.calls).toEqual([[7], [7]]);
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+      expect(f.callbacks.size).toBe(0);
+      f.send('pointerup', { clientX: 73 });
+      expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { f.interaction.detach(); }
+  });
+
+  // rev65: the adopted drag's own setPointerCapture throws right after the held press handed its temporary capture over.
+  // From the hand-over the capture belongs to the drag, so it is returned exactly once (rev64 returned it twice), also when
+  // that release throws and when it re-enters with lostpointercapture; the next press of the same pointer still drags.
+  it.each([
+    { echo: false, releaseThrows: false }, { echo: false, releaseThrows: true },
+    { echo: true, releaseThrows: false }, { echo: true, releaseThrows: true },
+  ])('when the adopted drag cannot take the capture %j, the handed-over capture is returned once and the next press drags',
+    async ({ echo, releaseThrows }) => {
+      const f = heldDeferredDrag({ echoLostCapture: echo });
+      try {
+        const before = useAppStore.getState();
+        f.send('pointerdown'); f.send('pointermove', { clientX: 60 });
+        f.canvas.setPointerCapture.mockImplementationOnce(() => { throw new Error('capture'); });
+        if (releaseThrows) {
+          f.canvas.releasePointerCapture.mockImplementationOnce((pointerId: number) => {
+            if (echo) f.send('lostpointercapture', { pointerId });
+            throw new Error('release');
+          });
+        }
+        await f.refreshed(true);
+        expect(useAppStore.getState().selection).toEqual(['component-2']);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(useAppStore.getState().assemblyDragNotice).toBe('failed');
+        expect(f.canvas.setPointerCapture.mock.calls).toEqual([[7], [7]]);
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+        expect(f.callbacks.size).toBe(0);
+        // Every later end of the same press releases nothing again and writes nothing.
+        f.send('pointermove', { clientX: 70 }); f.flush();
+        f.send('pointerup', { clientX: 73 }); f.send('lostpointercapture'); f.send('keydown', { key: 'Escape' });
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes(1);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        expect(f.callbacks.size).toBe(0);
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+        // The next press of the same pointer is not cancelled by the old capture, and drags and commits once.
+        f.send('pointerdown'); f.send('pointermove', { clientX: 60 });
+        await f.refreshed(true);
+        expect(useAppStore.getState().assemblyDrag?.grab).toEqual([3, 5, 0]);
+        f.flush();
+        expect(f.overlayX()).toBeCloseTo(17, 6);
+        f.send('pointerup', { clientX: 73 });
+        expect(useAppStore.getState().assembly?.components[1].placement.position[0].value).toBeCloseTo(30, 6);
+        expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
+        expect(f.canvas.setPointerCapture).toHaveBeenCalledTimes(4);
+        expect(f.canvas.releasePointerCapture).toHaveBeenCalledTimes(2);
+      } finally { f.interaction.detach(); }
+    });
 });

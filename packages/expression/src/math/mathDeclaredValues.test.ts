@@ -9,7 +9,7 @@ import { decodeMathDeclarations, type MathDeclaration } from './mathDeclarations
 import { originalCoefficientExpression } from './mathCoefficientExpression.js';
 import { mathScalarExpression } from './mathScalarExpression.js';
 import type { MathNode } from './mathInputContract.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 const identity = { documentId: 'part', documentVersion: 2, editorId: 'value', inputRevision: 1 };

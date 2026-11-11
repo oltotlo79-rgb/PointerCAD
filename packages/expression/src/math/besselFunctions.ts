@@ -6,14 +6,8 @@ import { compileScalarMath } from './scalarMathTape.js';
 import { createScalarIntervalSampler } from './scalarMathIntervals.js';
 import { exactDoubleInterval } from './exactDoubleInterval.js';
 
-export type BesselKind = 'J' | 'Y' | 'I' | 'K';
-export function besselKind(operation: string): BesselKind | null {
-  switch (operation) {
-    case 'besselj': return 'J'; case 'bessely': return 'Y';
-    case 'besseli': return 'I'; case 'besselk': return 'K';
-    default: return null;
-  }
-}
+import { besselKind } from './specialFunctionKinds.js';
+export { besselKind, type BesselKind } from './specialFunctionKinds.js';
 export function normalizeBesselFunction(node: MathNode, angleUnit: 'degree' | 'radian'): MathNode {
   if (node.kind !== 'operation') return node;
   const kind = besselKind(node.operation); if (kind === null) return node;

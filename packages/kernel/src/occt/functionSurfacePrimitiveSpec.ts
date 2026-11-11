@@ -1,7 +1,7 @@
 import type {Vec3Tuple} from '../types.js';
 import {validateFunctionClipBox,type FunctionClipBox} from './clipFunctionShape.js';
 
-export type FunctionSurfacePrimitive={readonly kind:'sphere';readonly center:Vec3Tuple;readonly radius:number}
+type FunctionSurfacePrimitive={readonly kind:'sphere';readonly center:Vec3Tuple;readonly radius:number}
   |{readonly kind:'torus';readonly axis:0|1|2;readonly majorRadius:number;readonly minorRadius:number};
 export interface FunctionSurfacePrimitiveSpec {readonly primitive:FunctionSurfacePrimitive;readonly bounds:FunctionClipBox}
 function positive(value:unknown):value is number{return typeof value==='number' && Number.isFinite(value) && value>0;}

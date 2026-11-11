@@ -65,7 +65,7 @@ export async function templateCaptureFlow(page: Page, info: TestInfo, app?: Elec
   await newFromTemplateButton.click();
   // いまの部品は保存済み扱いではないので、選ぶと先に画面内の確認窓(`role="alertdialog"`、
   // 名前「保存していない変更があります」、「保存して続ける・保存せずに続ける・戻る」の3択。
-  // w91aでブラウザ既定の`window.confirm`から差し替え済み)が開く。撮影は最終状態だけなので、
+  // NFR-UX-3に対応し、ブラウザ既定の`window.confirm`から差し替え済み)が開く。撮影は最終状態だけなので、
   // 「保存せずに続ける」を選んで閉じる。
   await page.getByRole('alertdialog', { name: '保存していない変更があります' })
     .getByRole('button', { name: '保存せずに続ける', exact: true }).click();

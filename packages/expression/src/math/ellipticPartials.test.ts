@@ -1,12 +1,11 @@
+import { exactDoubleDecimal } from './exactDoubleDecimal.testSupport.js';
 import Decimal from 'decimal.js';
 import { describe,expect,it } from 'vitest';
 import { ellipticOperation,ellipticPartialOperation,ellipticPartialValue,ellipticPartialRanges } from './ellipticPartials.js';
-import { exactDouble } from './exactDoubleInterval.js';
 import { type Range,point } from './ellipticJetArithmetic.js';
 const D=Decimal.clone({precision:100});
 function number(value:number) {
-  const exact=exactDouble(value);if(exact===null)throw new Error('Nonfinite enclosure');
-  return new D(exact.numerator.toString()).div(exact.denominator.toString());
+  return exactDoubleDecimal(value, D, 'Nonfinite enclosure');
 }
 function contains(range:Range|null,value:Decimal):void {
   expect(range).not.toBeNull();if(range===null)throw new Error('Missing partial');

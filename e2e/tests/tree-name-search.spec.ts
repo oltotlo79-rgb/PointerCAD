@@ -44,6 +44,10 @@ test('FIX-10 部品の⋮をキーで巡回し、名前と選択セットの変�
     await expect(item('timeline.moveDown')).toBeDisabled();
     await page.keyboard.press('ArrowDown');
     await expect(item('featureTree.rename')).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(item('featureTree.suppress')).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(item('featureTree.rename')).toBeFocused();
     await page.keyboard.press('End');
     await expect(item('featureTree.delete')).toBeFocused();
     await page.keyboard.press('ArrowDown');
@@ -103,35 +107,75 @@ test('FIX-10 組立の⋮を上下/Home/End/Enterで操作し、Escで同じ行�
     const trigger = row.getByRole('button', { name: view('featureTree.menuTooltip'), exact: true });
     const menu = page.getByRole('menu');
     const items = menu.getByRole('menuitem');
+    const assemblyItem = (key: string) => menu.getByRole('menuitem', { name: uiMessage('assembly', key), exact: true });
+    const refresh = assemblyItem('assembly.refresh.action');
+    const duplicate = assemblyItem('assembly.tool.duplicate');
+    const remove = assemblyItem('assembly.tool.delete');
+    const unfix = assemblyItem('assembly.tree.unfix');
+    const hide = menu.getByRole('menuitem', { name: view('featureTree.hide'), exact: true });
+    const suppress = menu.getByRole('menuitem', { name: view('featureTree.suppress'), exact: true });
     const before = (await readAssemblyStats(page)).components.find(component => component.id === 'component-1');
     expect(before).toBeDefined();
+    // twoBoxAssemblyFile embeds a saved part and fixes its first occurrence.
+    expect(before?.sourceKind).toBe('part');
+    expect(before?.fixed).toBe(true);
     await openWithKeyboard(trigger);
-    await expect(items).toHaveCount(5);
-    await expect(items.nth(0)).toBeFocused();
+    await expect(items).toHaveText([
+      uiMessage('assembly', 'assembly.refresh.action'),
+      uiMessage('assembly', 'assembly.tool.duplicate'),
+      uiMessage('assembly', 'assembly.tool.delete'),
+      uiMessage('assembly', 'assembly.tree.unfix'),
+      view('featureTree.hide'),
+      view('featureTree.suppress'),
+    ]);
+    // The fixture has both the source document and partFiles provenance; after
+    // openFixture's successful recompute, refreshPartReadiness must allow it.
+    await expect(refresh).toHaveAttribute('aria-disabled', 'false');
+    for (const enabled of [refresh, duplicate, remove, unfix, hide, suppress]) {
+      await expect(enabled).toBeEnabled();
+    }
+    await expect(refresh).toBeFocused();
     await page.keyboard.press('ArrowUp');
-    await expect(items.nth(4)).toBeFocused();
+    await expect(suppress).toBeFocused();
     await page.keyboard.press('Home');
-    await expect(items.nth(0)).toBeFocused();
+    await expect(refresh).toBeFocused();
     await page.keyboard.press('End');
-    await expect(items.nth(4)).toBeFocused();
+    await expect(suppress).toBeFocused();
     await page.keyboard.press('ArrowDown');
-    await expect(items.nth(0)).toBeFocused();
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('ArrowDown');
-    await expect(items.nth(2)).toBeFocused();
-    await expect(items.nth(2)).toHaveText(uiMessage('assembly', before?.fixed === true ? 'assembly.tree.unfix' : 'assembly.tool.fixComponent'));
-    const token = await beginRecompute(page);
-    await page.keyboard.press('Enter');
+    await expect(refresh).toBeFocused();
+    for (const next of [duplicate, remove, unfix, hide, suppress, refresh]) {
+      await page.keyboard.press('ArrowDown');
+      await expect(next).toBeFocused();
+    }
+    for (const previous of [suppress, hide, unfix, remove, duplicate, refresh]) {
+      await page.keyboard.press('ArrowUp');
+      await expect(previous).toBeFocused();
+    }
+    await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
-    await waitForRecompute(page, token);
-    expect((await readAssemblyStats(page)).components.find(component => component.id === 'component-1')?.fixed).toBe(!before?.fixed);
+    await expect(trigger).toBeFocused();
+
+    // Exercise both actions by name, independently of their place in the menu.
+    for (const [key, fixed] of [['assembly.tree.unfix', false], ['assembly.tool.fixComponent', true]] as const) {
+      await openWithKeyboard(trigger);
+      const toggle = assemblyItem(key);
+      await expect(toggle).toBeEnabled();
+      await toggle.focus();
+      await expect(toggle).toBeFocused();
+      const token = await beginRecompute(page);
+      await page.keyboard.press('Enter');
+      await expect(menu).toHaveCount(0);
+      await waitForRecompute(page, token);
+      expect((await readAssemblyStats(page)).components.find(component => component.id === 'component-1')?.fixed).toBe(fixed);
+    }
     await openWithKeyboard(trigger);
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await row.locator('.pcad-tree__select').click({ button: 'right' });
-    await expect(items.nth(0)).toBeFocused();
+    await expect(refresh).toBeFocused();
     await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
     await expect(trigger).toBeFocused();
     expect(errors).toEqual([]);
   } finally { await resetAssemblyFileGateway(page); }

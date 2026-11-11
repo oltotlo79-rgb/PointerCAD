@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { bomTable, type BomTableInput } from './bomTable.js';
+import { bomTable } from './bomTable.js';
+
+type BomTableInput = Parameters<typeof bomTable>[0];
 
 const input: BomTableInput = {
   position: [20, 200], bounds: { left: 10, bottom: 10, right: 287, top: 410 },

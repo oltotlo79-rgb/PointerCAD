@@ -37,7 +37,7 @@ export function parseDrawingTemplate(text: string): ParseDrawingTemplateResult {
     const converted = createDrawingTemplate(legacy.document, legacy.document.name);
     return converted.ok ? { ok: true, template: converted.template, savedAt: legacy.savedAt } : failure('invalidTemplate');
   }
-  if (raw['schema'] !== PCAD_SCHEMA_VERSION) return failure('unsupportedVersion');
+  // Settings-only templates have no saved identity fields; keep the previous supported range.
   const value = raw['template'];
   if (!isRecord(value) || typeof value['name'] !== 'string' || !isSheet(value['sheet'])
     || !isUnknownArray(value['layers']) || !value['layers'].every(isLayer)) return failure('invalidTemplate');

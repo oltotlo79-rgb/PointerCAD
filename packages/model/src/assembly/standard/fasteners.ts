@@ -1,25 +1,13 @@
 import type {
   FastenerDimensionSeries, HexBoltRow, HexNutRow, PanHeadScrewRow, PlainWasherRow,
-  SocketHeadCapScrewRow, SpringWasherRow, StandardTableSource,
+  SocketHeadCapScrewRow, SpringWasherRow,
 } from './types.js';
 
 /*
  * 数値の調査記録は docs/standards/jis/*.json。ここは P7 が使う M3〜M20 の実行時カタログで、
  * 本体規格の系列を採る。verified=false と note は調査記録から落とさない。
+ * 表の出典(規格・版・題名・範囲・URL)も調査記録の JSON が正本で、ここには写さない。
  */
-
-export const HEX_BOLT_SOURCE = {
-  standard: 'JIS B 1180', edition: '2014', title: '六角ボルト',
-  scope: '\u672c\u4f53\u898f\u683c\u3068\u9644\u5c5e\u66f8JA\u306e2\u5bf8\u6cd5\u7cfb\u3001\u4e26\u76ee\u30fb\u7d30\u76ee\u306d\u3058',
-  sourceUrls: [
-    'https://jp.misumi-ec.com/tech-info/categories/machine_design/md05/a0041.html',
-    'http://www.fasteners.eu/standards/ISO/4014/',
-    'https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1180:2014',
-    'https://www.yura-sansyo.co.jp/handbook/handbookV8-1-59.pdf',
-    'https://www.asahi55.co.jp/oyakudati/hexagon_bolt',
-  ],
-  verified: false,
-} as const satisfies StandardTableSource;
 
 export const HEX_BOLT_TABLE = [
   { key: 'JIS-B-1180:2014:M3:P0.5:main', dimensionSeries: 'main', size: 'M3', d: 3, pitch: 0.5, s: 5.5, k: 2, b1: 12, verified: true, note: '' },
@@ -49,18 +37,6 @@ export const HEX_BOLT_NOMINAL_LENGTHS = [
   12, 16, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 80, 90, 100, 110, 120, 130, 140, 150,
 ] as const;
 
-export const HEX_NUT_SOURCE = {
-  standard: 'JIS B 1181', edition: '2014', title: '六角ナット',
-  scope: '\u672c\u4f53\u898f\u683c\u30b9\u30bf\u30a4\u30eb1\u3068\u9644\u5c5e\u66f8JA 1\u7a2e\u3001\u4e26\u76ee\u30fb\u7d30\u76ee\u306d\u3058',
-  sourceUrls: [
-    'https://www.yura-sansyo.co.jp/handbook/handbookV8-3-42.pdf',
-    'https://jp.misumi-ec.com/tech-info/categories/machine_design/md05/a0042.html',
-    'https://www.khkgears.co.jp/gear_technology/gear_reference/KHK494_2.html',
-    'https://www.linex.co.jp/products/jis/parts05/',
-  ],
-  verified: false,
-} as const satisfies StandardTableSource;
-
 export const HEX_NUT_TABLE = [
   { key: 'JIS-B-1181:2014:M3:P0.5:main', dimensionSeries: 'main', size: 'M3', d: 3, pitch: 0.5, s: 5.5, mMax: 2.4, mMin: 2.15, verified: true, note: '' },
   { key: 'JIS-B-1181:2014:M4:P0.7:main', dimensionSeries: 'main', size: 'M4', d: 4, pitch: 0.7, s: 7, mMax: 3.2, mMin: 2.9, verified: true, note: '' },
@@ -81,16 +57,6 @@ export const HEX_NUT_TABLE = [
   { key: 'JIS-B-1181:2014:M20:P2.5:annexJA', dimensionSeries: 'annexJA', size: 'M20', d: 20, pitch: 2.5, s: 30, mMax: 16, mMin: null, verified: true, note: '\u9644\u5c5e\u66f8JA\u306e\u516c\u958b\u8868\u306f\u4e0b\u9650\u5024\u3092\u8f09\u305b\u3066\u3044\u306a\u3044\u3002' },
 ] as const satisfies readonly HexNutRow[];
 
-export const PLAIN_WASHER_SOURCE = {
-  standard: 'JIS B 1256', edition: '2008', title: '平座金',
-  scope: '並形・部品等級A（本体規格）',
-  sourceUrls: [
-    'https://www.yura-sansyo.co.jp/handbook/handbookV8-5-08.pdf',
-    'https://hayamihyou.net/washer/',
-  ],
-  verified: false,
-} as const satisfies StandardTableSource;
-
 /** 旧JIS系列との食い違いがあるため全行を「要確認」のまま保持する。 */
 export const PLAIN_WASHER_TABLE = [
   { key: 'JIS-B-1256:2008:M3', size: 'M3', d: 3, d1: 3.2, d2: 7, thickness: 0.5, verified: false, note: '公開表1件のみ。旧JIS系列と食い違うため要確認。' },
@@ -106,15 +72,6 @@ export const PLAIN_WASHER_TABLE = [
   { key: 'JIS-B-1256:2008:M20', size: 'M20', d: 20, d1: 21, d2: 37, thickness: 3, verified: false, note: '公開表1件のみ。旧JIS系列と食い違うため要確認。' },
 ] as const satisfies readonly PlainWasherRow[];
 
-export const SPRING_WASHER_SOURCE = {
-  standard: 'JIS B 1251', edition: '2018', title: 'ばね座金', scope: '2号（一般用）',
-  sourceUrls: [
-    'https://www.yura-sansyo.co.jp/handbook/handbookV8-5-20.pdf',
-    'https://hayamihyou.net/washer/',
-  ],
-  verified: true,
-} as const satisfies StandardTableSource;
-
 export const SPRING_WASHER_TABLE = [
   { key: 'JIS-B-1251:2018:M3', size: 'M3', d: 3, insideDiameter: 3.1, outsideDiameter: 5.9, width: 1.1, thickness: 0.7, verified: true, note: '外径だけは公開資料1件。' },
   { key: 'JIS-B-1251:2018:M4', size: 'M4', d: 4, insideDiameter: 4.1, outsideDiameter: 7.6, width: 1.4, thickness: 1, verified: true, note: '外径だけは公開資料1件。' },
@@ -129,17 +86,6 @@ export const SPRING_WASHER_TABLE = [
   { key: 'JIS-B-1251:2018:M20', size: 'M20', d: 20, insideDiameter: 20.2, outsideDiameter: 33.8, width: 6.1, thickness: 5.1, verified: true, note: '外径だけは公開資料1件。' },
 ] as const satisfies readonly SpringWasherRow[];
 
-export const SOCKET_HEAD_CAP_SCREW_SOURCE = {
-  standard: 'JIS B 1176', edition: '2014', title: '六角穴付きボルト',
-  scope: '並目ねじ・鋼製（ローレットなし）',
-  sourceUrls: [
-    'https://jp.misumi-ec.com/tech-info/categories/technical_data/td01/a0196.html',
-    'https://www.mikipulley.co.jp/jp/resources/standards-hex-socket-head-cap-screw',
-    'https://sanwa-fastener.com/specs',
-  ],
-  verified: false,
-} as const satisfies StandardTableSource;
-
 export const SOCKET_HEAD_CAP_SCREW_TABLE = [
   { key: 'JIS-B-1176:2014:M3:P0.5', size: 'M3', d: 3, pitch: 0.5, headDiameter: 5.5, headHeight: 3, socketWidth: 2.5, socketDepth: 1.3, available: true, verified: true, note: '' },
   { key: 'JIS-B-1176:2014:M4:P0.7', size: 'M4', d: 4, pitch: 0.7, headDiameter: 7, headHeight: 4, socketWidth: 3, socketDepth: 2, available: true, verified: true, note: '' },
@@ -153,17 +99,6 @@ export const SOCKET_HEAD_CAP_SCREW_TABLE = [
   { key: 'JIS-B-1176:2014:M18:P2.5', size: 'M18', d: 18, pitch: 2.5, headDiameter: 27, headHeight: 18, socketWidth: 14, socketDepth: null, available: false, verified: false, note: '現行JISの規定外で六角穴深さも欠測。選択不可。' },
   { key: 'JIS-B-1176:2014:M20:P2.5', size: 'M20', d: 20, pitch: 2.5, headDiameter: 30, headHeight: 20, socketWidth: 17, socketDepth: 10, available: true, verified: true, note: '' },
 ] as const satisfies readonly SocketHeadCapScrewRow[];
-
-export const PAN_HEAD_SCREW_SOURCE = {
-  standard: 'JIS B 1111', edition: '2017', title: '\u5341\u5b57\u7a74\u4ed8\u304d\u306a\u3079\u5c0f\u306d\u3058',
-  scope: '\u9644\u5c5e\u66f8\u5bf8\u6cd5\u306eM3\u301cM8\u3001\u4e26\u76ee\u30fb\u7d30\u76ee\u306d\u3058',
-  sourceUrls: [
-    'https://www.yura-sansyo.co.jp/handbook/handbookV8-6.pdf',
-    'https://www.onoue1950.co.jp/products/koneji/jujikoneji/1667/',
-    'https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1111:2017',
-  ],
-  verified: false,
-} as const satisfies StandardTableSource;
 
 export const PAN_HEAD_SCREW_TABLE = [
   { key: 'JIS-B-1111:2017:M3', size: 'M3', d: 3.0, pitch: 0.5, headDiameter: 5.5, headHeight: 2, recessNumber: 2, verified: false, note: '\u9644\u5c5e\u66f8(\u65e7JIS)\u306e\u5024\u3002\u672c\u4f53\u898f\u683c\u306e\u5024\u3068\u98df\u3044\u9055\u3046\u53ef\u80fd\u6027\u304c\u3042\u308b\u3002\u8981\u78ba\u8a8d\u3002' },

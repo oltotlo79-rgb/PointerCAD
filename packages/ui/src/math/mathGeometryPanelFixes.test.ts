@@ -1,7 +1,7 @@
 /**
- * GR-19c: regression tests for three product bugs `w15a` found while writing the math-geometry panel's
- * e2e script (`scratchpad/claude/plans/geomref-plan.md` §5.2 GR-19c,
- * `scratchpad/claude/instructions/w17b-gr19c-panel-fixes.md`).
+ * GR-19c: regression tests for three product bugs found while writing the math-geometry panel's
+ * screen script (e2e/tests/mathGeometryReferenceFlow.ts). The independent cases below
+ * retain the original usage-count, comparison-margin and accessible-name regressions.
  *
  * 1. The panel's "使用中" (usage) count and its delete refusal double-counted a coefficient's own
  *    current value against the active configuration's mirrored copy of that same formula
@@ -36,9 +36,12 @@ import {
   mathGeometryToleranceFields, readMathGeometryTolerance, resolveMathGeometryTolerance,
   type MathGeometryToleranceFields,
 } from './mathGeometryTolerance.js';
+import type * as ImportedReactTypes from 'react';
+import type * as ImportedJsxRuntimeTypes from 'react/jsx-runtime';
+import type * as ImportedJsxDevRuntimeTypes from 'react/jsx-dev-runtime';
 
 vi.mock('react', async importOriginal => {
-  const react = await importOriginal<typeof import('react')>();
+  const react = await importOriginal<typeof ImportedReactTypes>();
   return { ...react, useState: vi.fn(react.useState) };
 });
 interface Control {
@@ -49,7 +52,7 @@ interface Control {
 }
 const rendered = vi.hoisted(() => ({ controls: [] as Control[] }));
 vi.mock('react/jsx-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxRuntimeTypes>();
   const capture = (factory: typeof runtime.jsx): typeof runtime.jsx => (type, props, key) => {
     if (type === 'button' && props !== null && typeof props === 'object') rendered.controls.push(props);
     return factory(type, props, key);
@@ -57,7 +60,7 @@ vi.mock('react/jsx-runtime', async importOriginal => {
   return { ...runtime, jsx: capture(runtime.jsx), jsxs: capture(runtime.jsxs) };
 });
 vi.mock('react/jsx-dev-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-dev-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxDevRuntimeTypes>();
   const jsxDEV: typeof runtime.jsxDEV = (type, props, key, isStatic, source, self) => {
     if (type === 'button' && props !== null && typeof props === 'object') rendered.controls.push(props);
     return runtime.jsxDEV(type, props, key, isStatic, source, self);
@@ -176,7 +179,7 @@ describe('bug 1: usage counting must match parameterUsageCounts (skip the active
       message: 'この測定値は幅Bで使われています。先にそちらを直してください。' });
   });
 
-  it('the panel row shows one usage, not two, and names only the real usage (w15a\'s e2e expectation)', () => {
+  it('the panel row shows one usage, not two, and names only the real usage (the e2e expectation)', () => {
     const document = documentWithMirroredUsage();
     installDocument(document);
     const row = mathGeometryRows(useAppStore.getState())[0];

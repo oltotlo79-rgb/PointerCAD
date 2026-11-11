@@ -186,13 +186,11 @@ describe('原式・係数・作図座標の非同期再計算を一括で成立�
 });
 
 /**
- * GR-19d (w15a's e2e finding, `scratchpad/claude/instructions/w19a-gr19d-list-headings.md`): a legacy
- * (name-referencing, no `mathDefinition`) formula naming an already-failed coefficient must relay that
- * coefficient's own reason, not claim the name is undefined. Before this fix, referencing a coefficient
- * that failed for any reason (not just GR-02's geometry cycle; see the sibling test in
- * `evaluateDocumentMathGeometry.test.ts` for that one) always produced `決まっていない名前です`
- * (`packages/expression/src/errors.ts`, code `unknownVariable`), because the legacy evaluator's
- * `variables`/`exactVariables` maps never receive an entry for a coefficient that failed to evaluate.
+ * 旧形式の式(名前参照、`mathDefinition` なし)にも、参照する係数の失敗理由を伝える。
+ * 循環だけでなく、どの理由で係数が失敗しても、定義済みの名前を未定義と扱ってはいけない。
+ * 修正前は失敗した係数が `variables` / `exactVariables` に入らず、
+ * `packages/expression/src/errors.ts` の `unknownVariable`「決まっていない名前です」になった。
+ * 図形由来の循環は `evaluateDocumentMathGeometry.test.ts` でも検査する。
  */
 describe('GR-19d: 旧式の式が失敗済みの係数を名前で使うとき、決まっていない名前ではなく元の理由を示す', () => {
   it('循環する係数(数学定義)を旧式の名前参照で使うと、循環の理由を含む', async () => {

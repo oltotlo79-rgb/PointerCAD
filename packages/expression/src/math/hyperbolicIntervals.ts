@@ -7,7 +7,7 @@ import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, interv
 import { exponentialRange } from './exponentialIntervals.js';
 import { logarithmicPositiveRange } from './logarithmicIntervals.js';
 
-export type HyperbolicOperation = 'sinh' | 'cosh' | 'tanh' | 'arsinh' | 'arcosh' | 'artanh';
+type HyperbolicOperation = 'sinh' | 'cosh' | 'tanh' | 'arsinh' | 'arcosh' | 'artanh';
 type Range = MathInterval | null;
 const point = (value: number): MathInterval => ({ lower: value, upper: value });
 const ZERO = point(0), ONE = point(1), TWO = point(2);

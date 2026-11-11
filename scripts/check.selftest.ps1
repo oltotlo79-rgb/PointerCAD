@@ -504,6 +504,10 @@ try {
         Assert-True ($LASTEXITCODE -eq 1 -and $emptyIndexOutput.Contains("stage 済みの変更がありません")) "空indexのCommit検査はpnpm起動前に拒否する"
         foreach ($badArgs in @(
             @('-UnitPackage', 'kernel'),
+            @('-UnitPackage', 'model', '-UnitTests', 'integration/example.test.ts'),
+            @('-UnitPackage', 'ui', '-UnitTests', 'integration/../escape.test.ts'),
+            @('-UnitPackage', 'ui', '-UnitTests', 'integration/nested/example.test.ts'),
+            @('-UnitPackage', 'ui', '-UnitTests', '--config=other.test.ts'),
             @('-UnitPackage', 'kernel', '-UnitTests', 'src/../escape.test.ts'),
             @('-UnitTests', 'src/example.test.ts'),
             @('-UnitPackage', 'kernel', '-UnitTests', 'src/example.test.ts', '-E2EOnly')
@@ -685,7 +689,7 @@ if ($null -ne $perfModeShellCommand) {
             New-Item -ItemType Directory -Path $folder -Force | Out-Null
         }
         $utf8 = [Text.UTF8Encoding]::new($false)
-        $rootTest = 'pnpm --filter @pointercad/expression run test && pnpm --recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test'
+        $rootTest = 'pnpm --filter @pointercad/test-utils run test && pnpm --filter @pointercad/expression run test && pnpm --filter @pointercad/fem run test && pnpm --recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test'
         [IO.File]::WriteAllText((Join-Path $fixture 'package.json'), (@{ scripts = [ordered]@{
             typecheck = 'fixture'; lint = 'fixture'; test = $rootTest; build = 'fixture'; 'test:e2e' = 'fixture' } } | ConvertTo-Json -Depth 3), $utf8)
         [IO.File]::WriteAllText((Join-Path $fixture 'pnpm-lock.yaml'), "lockfileVersion: fixture`n", $utf8)
@@ -739,26 +743,82 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
             if ($code -ne 0) { Write-Host "[記録] check.ps1 $($Arguments -join ' ') の終了コード $code の出力の末尾: $($output.Substring([Math]::Max(0, $output.Length - 1500)))" }
             return [pscustomobject]@{ Code = $code; Output = $output; Calls = $calls }
         }
-        $restCall = '--recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test'
+        # Cross-layer integration uses its fixed config; mandatory UI contracts run first.
+        foreach ($relative in @('packages/ui/integration/example.test.ts', 'packages/ui/src/i18n/i18n.test.ts', 'packages/ui/src/i18n/jaMessages.test.ts')) {
+            $destination = Join-Path $fixture $relative
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            [IO.File]::WriteAllText($destination, '// fixture', $utf8)
+        }
+        Remove-Item Env:CI -ErrorAction SilentlyContinue
+        $integrationResult = Invoke-StageFixture @('-Level', 'Push', '-UnitPackage', 'ui', '-UnitTests', 'integration/example.test.ts')
+        $contractsCall = '--filter @pointercad/ui exec vitest run src/i18n/i18n.test.ts src/i18n/jaMessages.test.ts'
+        $integrationCall = '--filter @pointercad/ui exec vitest run --config vitest.integration.config.ts integration/example.test.ts'
+        Assert-True ($integrationResult.Code -eq 0 -and ($integrationResult.Calls -join '|') -ceq "$contractsCall|$integrationCall") 'Integration diagnostic retains mandatory UI contracts and uses only the fixed integration config'
+        $env:PCAD_STAGE_FAIL = $integrationCall
+        $integrationFailed = Invoke-StageFixture @('-Level', 'Push', '-UnitPackage', 'ui', '-UnitTests', 'integration/example.test.ts')
+        Assert-True ($integrationFailed.Code -ne 0) 'Integration failure cannot become diagnostic success'
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        # Normal all-unit branch: the same fixture pnpm records the fast i18n check and failure stop.
+        $i18nCall = '--filter @pointercad/ui exec vitest run src/i18n/i18n.test.ts --maxWorkers=1'
+        $helpCall = '--filter @pointercad/help-content exec vitest run src/topics.test.ts --maxWorkers=1'
+        $fixturePackagePath = Join-Path $fixture 'package.json'
+        $fixturePackageBefore = [IO.File]::ReadAllText($fixturePackagePath, $utf8)
+        try {
+            $noE2EPackage = $fixturePackageBefore | ConvertFrom-Json
+            $noE2EPackage.scripts.PSObject.Properties.Remove('test:e2e')
+            [IO.File]::WriteAllText($fixturePackagePath, ($noE2EPackage | ConvertTo-Json -Depth 3), $utf8)
+            $normalUnit = Invoke-StageFixture @('-Level', 'Push')
+            Assert-True ($normalUnit.Code -eq 0 -and ($normalUnit.Calls -join '|') -ceq "run typecheck|run lint|$i18nCall|$helpCall|run test|run build") 'Normal full-unit run checks i18n and help with one worker and retains full test and build'
+            $env:PCAD_STAGE_FAIL = $i18nCall
+            $failedI18n = Invoke-StageFixture @('-Level', 'Push')
+            Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+            Assert-True ($failedI18n.Code -ne 0 -and ($failedI18n.Calls -join '|') -ceq "run typecheck|run lint|$i18nCall") 'i18n failure prevents full test and build'
+            $env:PCAD_STAGE_FAIL = $helpCall
+            $failedHelp = Invoke-StageFixture @('-Level', 'Push')
+            Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+            Assert-True ($failedHelp.Code -ne 0 -and ($failedHelp.Calls -join '|') -ceq "run typecheck|run lint|$i18nCall|$helpCall") 'Help failure stops before full unit and build'
+            $staticUnit = Invoke-StageFixture @('-Level', 'Push', '-StaticOnly')
+            Assert-True ($staticUnit.Code -eq 0 -and ($staticUnit.Calls -join '|') -ceq 'run typecheck|run lint') 'StaticOnly skips the i18n precheck'
+        } finally {
+            Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+            [IO.File]::WriteAllText($fixturePackagePath, $fixturePackageBefore, $utf8)
+        }
+        $env:CI = 'true'
+        $utilitiesCall = '--filter @pointercad/test-utils run test'
+        $expressionCall = '--filter @pointercad/expression run test'
+        $femCall = '--filter @pointercad/fem run test'
+        $restCall = '--recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test'
         $env:PCAD_STAGE_FAIL = 'run lint'
         $failedFront = Invoke-StageFixture @('-CIStage', 'Front', '-StageEvidence', $evidence)
         Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
         Assert-True ($failedFront.Code -ne 0 -and -not (Test-Path -LiteralPath $evidence)) '段の途中で失敗したら記録を作らない'
         Assert-True (($failedFront.Calls -join '|') -ceq 'run typecheck|run lint') '失敗した段は後の命令へ進まない'
 
+        $env:PCAD_STAGE_FAIL = $utilitiesCall
+        $failedUtilities = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        Assert-True ($failedUtilities.Code -ne 0 -and -not (Test-Path -LiteralPath $evidence)) 'test-utils failure must not write success evidence'
+        Assert-True (($failedUtilities.Calls -join '|') -ceq $utilitiesCall) 'test-utils failure must stop before expression and fem'
+
+        $env:PCAD_STAGE_FAIL = $femCall
+        $failedFem = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        Assert-True ($failedFem.Code -ne 0 -and -not (Test-Path -LiteralPath $evidence)) 'FEM単体の失敗で段の成功記録を作らない'
+        Assert-True (($failedFem.Calls -join '|') -ceq "$utilitiesCall|$expressionCall|$femCall") 'FEM単体が失敗したら先行分の成功記録を作らない'
+
         $front = Invoke-StageFixture @('-CIStage', 'Front', '-StageEvidence', $evidence)
         Assert-True ($front.Code -eq 0) '前段(自己試験・型・lint・単体の残り・ビルド)が成功する'
-        Assert-True (($front.Calls -join '|') -ceq ("run typecheck|run lint|$restCall|run build")) "前段は型・lint・単体の残り・ビルドだけを呼び、画面検査を呼ばない: $($front.Calls -join ' | ')"
+        Assert-True (($front.Calls -join '|') -ceq ("run typecheck|run lint|$restCall|run build")) "前段は型・lint・残りの再帰単体・ビルドだけを順に呼ぶ: $($front.Calls -join ' | ')"
         Assert-True ($front.Output.Contains('=== (0) 品質ゲート自身の自己試験 ===')) '前段は品質ゲートの自己試験を行う'
         $unitLead = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
-        Assert-True ($unitLead.Code -eq 0 -and ($unitLead.Calls -join '|') -ceq '--filter @pointercad/expression run test') "単体の先行分は先行の包の単体だけを呼ぶ: $($unitLead.Calls -join ' | ')"
+        Assert-True ($unitLead.Code -eq 0 -and ($unitLead.Calls -join '|') -ceq "$utilitiesCall|$expressionCall|$femCall") "単体の先行分は3包を順に呼ぶ: $($unitLead.Calls -join ' | ')"
         Assert-True (-not $unitLead.Output.Contains('品質ゲート自身の自己試験')) '単体の先行分は自己試験を繰り返さない'
         foreach ($shard in 1..3) {
             $e2e = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', "$shard/3", '-StageEvidence', $evidence)
             Assert-True ($e2e.Code -eq 0 -and ($e2e.Calls -join '|') -ceq "$browserCall|--filter @pointercad/desktop exec install-electron|run test:e2e --shard=$shard/3") "画面検査の組 $shard/3 は準備と画面検査だけを呼ぶ: $($e2e.Calls -join ' | ')"
         }
-        $unitCalls = @('--filter @pointercad/expression run test', $restCall)
-        Assert-True (('pnpm ' + $unitCalls[0] + ' && pnpm ' + $unitCalls[1]) -ceq $rootTest) '単体の先行分と残りをつなぐとルートのtestと一致する(単体の欠落が無い)'
+        $unitCalls = @($utilitiesCall, $expressionCall, $femCall, $restCall)
+        Assert-True ((($unitCalls | ForEach-Object { 'pnpm ' + $_ }) -join ' && ') -ceq $rootTest) '単体の先行分と残りをつなぐとルートのtestと一致する(単体の欠落が無い)'
         $written = @(Get-ChildItem -LiteralPath $evidence -File | ForEach-Object { $_.Name } | Sort-Object)
         $osPrefix = $env:RUNNER_OS.ToLowerInvariant()
         Assert-True (($written -join ',') -ceq (@("$osPrefix-e2e-1of3.json", "$osPrefix-e2e-2of3.json", "$osPrefix-e2e-3of3.json", "$osPrefix-front.json", "$osPrefix-unit-lead.json") -join ',')) "5段の記録がそろう: $($written -join ',')"
@@ -938,6 +998,10 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
 
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/record_time_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) '記録時刻のフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/gate_launch_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) 'gate の間の担当の起動を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/workers_pause_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '統括の印の間の担当のシェル・編集を拒否するフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/opus_concurrency_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) 'Opus 同時実行のフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/subagent_background_guard.selftest.py')
@@ -952,7 +1016,54 @@ Assert-True ($LASTEXITCODE -eq 0) '見えない文字・特殊な空白を拒否
 Assert-True ($LASTEXITCODE -eq 0) 'main統合(gh pr create/ready/merge・git push・main上でのmerge/rebase)を判定記録なしで拒否するフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/chained_diag_wait_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) '1回の命令で diag.py wait を連ねる・待ちの合計が上限を超える命令を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/git_optional_locks_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '担当の git の読み取りに --no-optional-locks も GIT_OPTIONAL_LOCKS=0 も無い命令を拒否するフックを自己試験する'
 
+
+# 2026-10-05 利用者の指示: 手元の軽い検査で、品質ゲートの道具が基点から変わっていない時は自己試験を省き、
+# 変わった時は流す(Test-GateToolsChanged)。専用の一時リポジトリで2つの対照と、失敗側へ倒す場合を確かめる。
+$toolRepo = Join-Path ([IO.Path]::GetTempPath()) ("pointercad-gatetools-" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path (Join-Path $toolRepo 'scripts') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $toolRepo 'packages') -Force | Out-Null
+try {
+    & git -C $toolRepo init --quiet 2>$null | Out-Null
+    & git -C $toolRepo config user.email "selftest@example.invalid" | Out-Null
+    & git -C $toolRepo config user.name "check.selftest" | Out-Null
+    & git -C $toolRepo config core.autocrlf false | Out-Null
+    Set-Content -LiteralPath (Join-Path $toolRepo 'scripts/tool.ps1') -Value 'one' -NoNewline -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $toolRepo 'packages/product.ts') -Value 'one' -NoNewline -Encoding UTF8
+    & git -C $toolRepo add -A | Out-Null
+    & git -C $toolRepo commit --quiet -m "base" | Out-Null
+    $toolBase = (& git -C $toolRepo rev-parse HEAD).Trim()
+
+    $unchangedTools = Test-GateToolsChanged -Root $toolRepo -Base $toolBase
+    Assert-True (-not $unchangedTools.Changed) '品質ゲートの道具が基点から変わっていなければ自己試験を省ける(変更なし)'
+
+    Set-Content -LiteralPath (Join-Path $toolRepo 'packages/product.ts') -Value 'two' -NoNewline -Encoding UTF8
+    $productOnly = Test-GateToolsChanged -Root $toolRepo -Base $toolBase
+    Assert-True (-not $productOnly.Changed) '製品のコードだけが変わっても自己試験は省ける(対照1: 道具は変わっていない)'
+
+    Set-Content -LiteralPath (Join-Path $toolRepo 'scripts/tool.ps1') -Value 'two' -NoNewline -Encoding UTF8
+    $toolEdited = Test-GateToolsChanged -Root $toolRepo -Base $toolBase
+    Assert-True ($toolEdited.Changed -and @($toolEdited.Paths) -contains 'scripts/tool.ps1') '道具(scripts/)が変わったら自己試験を流す(対照2: 変更を見つけて報告する)'
+
+    Set-Content -LiteralPath (Join-Path $toolRepo 'scripts/tool.ps1') -Value 'one' -NoNewline -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $toolRepo 'scripts/new-tool.ps1') -Value 'new' -NoNewline -Encoding UTF8
+    $toolAdded = Test-GateToolsChanged -Root $toolRepo -Base $toolBase
+    Assert-True ($toolAdded.Changed) '未追跡の新しい道具があれば自己試験を流す'
+    Remove-Item -LiteralPath (Join-Path $toolRepo 'scripts/new-tool.ps1') -Force
+
+    Assert-True ((Test-GateToolsChanged -Root $toolRepo -Base '').Changed) '比較の基点が無ければ自己試験を流す(失敗側に倒す)'
+    Assert-True ((Test-GateToolsChanged -Root $toolRepo -Base ('0' * 40)).Changed) '比較の基点のコミットが無ければ自己試験を流す(失敗側に倒す)'
+}
+finally {
+    $verifiedToolRepo = [IO.Path]::GetFullPath($toolRepo)
+    if ((Split-Path -Leaf $verifiedToolRepo) -match '^pointercad-gatetools-[a-f0-9]{32}$' -and (Test-Path -LiteralPath $verifiedToolRepo)) {
+        Get-ChildItem -LiteralPath $verifiedToolRepo -Recurse -Force -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Attributes = 'Normal' }
+        Remove-Item -LiteralPath $verifiedToolRepo -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red

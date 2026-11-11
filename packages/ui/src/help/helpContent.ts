@@ -3,6 +3,7 @@ import { createHelpLibrary, type HelpLoader } from './helpLibrary.js';
 import { ja } from '../i18n/ja.js';
 
 const markdown = import.meta.glob<string>('../../../help-content/docs/ja/*.md', { query: '?raw', import: 'default' });
+export { markdown as HELP_RAW_MARKDOWN };
 const images = import.meta.glob<string>('../../../help-content/docs/ja/images/*.png', { query: '?url', import: 'default', eager: true });
 export const HELP_IMAGES: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(images).flatMap(([path, url]) => {
   const relative = path.slice('../../../help-content/docs/ja/'.length);

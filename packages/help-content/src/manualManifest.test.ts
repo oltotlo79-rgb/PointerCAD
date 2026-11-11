@@ -18,7 +18,7 @@ describe('ヘルプと分冊の単一目録', () => {
     const first = MANUAL_VOLUMES[0];
     expect(() => buildManualManifest(HELP_TOPICS, [{ ...first, topics: [...first.topics, first.topics[0]] }, ...MANUAL_VOLUMES.slice(1)])).toThrow('duplicate');
   });
-  it('第1巻は導入と起動の確認のすぐ後に「初めての作図」を置き、画面・保存の章より前にする(w91a)', () => {
+  it('第1巻は導入と起動の確認のすぐ後に「初めての作図」を置き、画面・保存の章より前にする', () => {
     const first = MANUAL_VOLUMES[0].topics;
     expect(first.slice(0, 4)).toEqual(['desktop-install', 'web-version', 'startup-checks', 'tutorial']);
     for (const later of ['viewport', 'help-reader', 'save-and-open', 'offline-use', 'local-data']) {

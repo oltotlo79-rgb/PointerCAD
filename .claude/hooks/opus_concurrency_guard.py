@@ -37,6 +37,67 @@ def last_record(path: Path) -> dict:
         return json.loads(stream.read(end - position - 1).decode("utf-8"))
 
 
+def tail_records(path: Path, count: int = 12) -> list[dict]:
+    """末尾から最大 count 件の記録を古い順に返す(巨大な1行でも、必要な行数が揃うまで
+    後ろから読み足す。先頭の欠けた行は捨てる)。"""
+    with path.open("rb") as stream:
+        stream.seek(0, 2)
+        size = stream.tell()
+        chunk, start = 65536, size
+        data = b""
+        while start > 0 and data.count(b"\n") <= count:
+            start = max(0, start - chunk)
+            stream.seek(start)
+            data = stream.read(size - start)
+            chunk *= 2
+    lines = data.split(b"\n")
+    if start > 0:
+        lines = lines[1:]
+    records = []
+    for line in lines:
+        if line.strip():
+            try:
+                records.append(json.loads(line.decode("utf-8")))
+            except ValueError:
+                continue
+    return records[-count:]
+
+
+def is_complete(records: list[dict]) -> bool:
+    """担当の完了判定。次のどれかなら完了:
+    1. 最後の意味のある記録が assistant の stop_reason == end_turn(従来)。
+    2. SubagentHandback の tool_use が最後の assistant 記録で、その後に続くのが
+       その tool_use_id の tool_result だけ(attachment 等の付随記録は無視する)。
+       この形で終わる担当は、末尾が end_turn にならず従来の判定では稼働中と数えられた
+       (2026-10-05 cl-v103-ledger・cl-v103-ci-sharding・cl-v103-w09-drawing)。
+    SendMessage で再開された担当は末尾が新しい user の依頼になるので、完了と見なさない。"""
+    meaningful = [r for r in records if r.get("type") in ("assistant", "user")]
+    if not meaningful:
+        return False
+    last = meaningful[-1]
+    message = last.get("message", {})
+    if last.get("type") == "assistant" and message.get("stop_reason") == "end_turn":
+        return True
+
+    def blocks(record: dict) -> list[dict]:
+        content = record.get("message", {}).get("content")
+        return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+
+    def handback_ids(record: dict) -> set[str]:
+        if record.get("type") != "assistant":
+            return set()
+        return {str(b.get("id")) for b in blocks(record)
+                if b.get("type") == "tool_use" and b.get("name") == "SubagentHandback"}
+
+    if last.get("type") == "assistant":
+        return bool(handback_ids(last))
+    if len(meaningful) >= 2:
+        ids = handback_ids(meaningful[-2])
+        results = {str(b.get("tool_use_id")) for b in blocks(last) if b.get("type") == "tool_result"}
+        return bool(ids & results)
+    return False
+
+
 def agents(transcript: str, now: datetime) -> list[dict]:
     transcript_path = Path(transcript)
     directory = transcript_path.with_suffix("") / "subagents"
@@ -50,8 +111,7 @@ def agents(transcript: str, now: datetime) -> list[dict]:
         if not conversation.is_file():
             continue
         updated = datetime.fromtimestamp(conversation.stat().st_mtime)
-        last = last_record(conversation)
-        complete = last.get("type") == "assistant" and last.get("message", {}).get("stop_reason") == "end_turn"
+        complete = is_complete(tail_records(conversation))
         result.append({
             "id": agent_id, "description": str(meta.get("description", "")),
             "updated": updated, "active": not complete and now - updated <= STALE,

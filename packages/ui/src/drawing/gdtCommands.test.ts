@@ -1,14 +1,22 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { DatumDefinition, Dimension, DimensionTarget, GdtFeature, GdtFrameSegment, GdtShapeTarget, GeometricToleranceFrame, OutlinedText } from '@pointercad/drawing';
+import type { DatumDefinition, Dimension, DimensionTarget, GdtFeature, GdtFrameSegment, GdtShapeTarget, GeometricToleranceFrame, OutlinedText, Point2 } from '@pointercad/drawing';
 import { compatibleGdtSizeDimensions, createDrawingDocument, drawingDimensionContext, IDENTITY_PLACEMENT, resolveDrawingDimensions,
-  resolveDrawingGdt, type SolidBody, type SolidEdgeEntry, type SolidFaceEntry } from '@pointercad/model';
+  resolveDrawingGdt, type SolidBody, type SolidEdgeEntry, type SolidFaceEntry, moveDrawingManufacturing } from '@pointercad/model';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { commitDrawingDatum, commitDrawingGdtFrame, drawingGdtFeature, duplicateSelectedDrawingGdt, moveSelectedDrawingGdt, startDrawingGdt } from './gdtCommands.js';
+import { commitDrawingDatum, commitDrawingGdtFrame, drawingGdtFeature, duplicateSelectedDrawingGdt, startDrawingGdt } from './gdtCommands.js';
 import { deleteSelectedDrawingElements, pickDrawingTarget } from './dimensionCommands.js';
 import { displayDrawingGdt } from './gdtDisplay.js';
 import { displayDrawingDimension } from './dimensionDisplay.js';
 import { t } from '../i18n/t.js';
+
+function moveSelectedDrawingGdt(offset: Point2): boolean {
+  const state = useAppStore.getState();
+  if (state.drawing === null || state.drawingBusy) return false;
+  const next = moveDrawingManufacturing(state.drawing, new Set(state.drawingSelectedIds), offset);
+  if (next === state.drawing) return false;
+  state.applyDrawing(next); return true;
+}
 
 const metadata = { sourceRef: 'source', sourceKind: 'part' as const, fileName: 'part.pcad', path: '', contentHash: '', importedAt: '' };
 const faces: readonly SolidFaceEntry[] = [

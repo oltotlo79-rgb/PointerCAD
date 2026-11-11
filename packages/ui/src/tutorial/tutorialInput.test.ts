@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createNumericInput, nextNumericInput, reduceNumericInput } from '../sketch/numericInput.js';
-import { tutorialInput } from './tutorialInput.js';
+import { parameterNumericDraft, parameterTutorialInput, restoreParameterNumericDraft, tutorialInput } from './tutorialInput.js';
 
 describe('案内の入力だけを一回で終え、通常の連続作図と打ちかけを保つ', () => {
   it('点は一回で閉じ、通常の点は連続作図の設定に従う', () => {
@@ -30,5 +30,39 @@ describe('案内の入力だけを一回で終え、通常の連続作図と打�
     const input = tutorialInput('hole');
     expect(input?.fields.find(field => field.key === 'diameter')?.source).toBe('10mm');
     expect(input?.toggles.find(toggle => toggle.key === 'through')?.value).toBe(true);
+  });
+});
+
+describe('パラメータ化する案内は通常の数値入力を使う', () => {
+  it('同じ座標・輪郭の入力欄を使い、押出し原式だけを板厚名へ結び付ける', () => {
+    const point = parameterTutorialInput('pointCoordinates');
+    const outline = parameterTutorialInput('outline');
+    const extrude = parameterTutorialInput('extrude');
+    expect(point.fields.map(field => field.source)).toEqual(['0mm', '0mm', '0mm']);
+    expect(outline.fields.map(field => field.source)).toEqual(['-30mm', '-20mm', '0mm']);
+    expect(extrude.fields.map(field => field.source)).toEqual(['板厚']);
+    expect(extrude.repeatAfterCommit).toBe(false);
+    expect(tutorialInput('extrude')?.fields.map(field => field.source)).toEqual(['8mm']);
+  });
+  it('通常の矩形第1角から第2角へ進んでも両段の全原式と焦点を復元する', () => {
+    let first = parameterTutorialInput('outline');
+    for (const [index, source] of ['-31mm', '-21mm', '1mm'].entries()) {
+      first = reduceNumericInput(first, { type: 'edit', index, source });
+    }
+    first = reduceNumericInput(first, { type: 'focus', index: 1 });
+    let second = nextNumericInput(first, true);
+    if (second === null) throw new Error('second corner missing');
+    for (const [index, source] of ['61mm', '41mm', '0mm'].entries()) {
+      second = reduceNumericInput(second, { type: 'edit', index, source });
+    }
+    const draft = parameterNumericDraft(second, first);
+    if (draft?.kind !== 'numeric') throw new Error('numeric draft missing');
+    expect(draft.previousStage?.fields.map(field => field.source)).toEqual(['-31mm', '-21mm', '1mm']);
+    expect(draft.previousStage?.focusedKey).toBe(first.fields[1]?.key);
+    expect(draft.fields.map(field => field.source)).toEqual(['61mm', '41mm', '0mm']);
+    expect(restoreParameterNumericDraft(draft, true)?.fields.map(field => field.source))
+      .toEqual(['-31mm', '-21mm', '1mm']);
+    expect(restoreParameterNumericDraft(draft)?.fields.map(field => field.source))
+      .toEqual(['61mm', '41mm', '0mm']);
   });
 });

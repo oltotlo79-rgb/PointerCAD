@@ -4,10 +4,11 @@ import { fetchOfflineInventory } from './offlineInventory.js';
 import { prepareOfflineEdition, OfflinePreparationError } from './offlinePreparation.js';
 import { inspectPreparedOfflineEdition } from './offlineReady.js';
 import { createOfflineAssetManifest } from '../../../../scripts/vite/offlineAssets.mjs';
+import type * as ImportedOfflinePreparationTypes from './offlinePreparation.js';
 
 vi.mock('./offlineInventory.js', () => ({ fetchOfflineInventory: vi.fn() }));
 vi.mock('./offlinePreparation.js', async importOriginal => ({
-  ...await importOriginal<typeof import('./offlinePreparation.js')>(), prepareOfflineEdition: vi.fn(),
+  ...await importOriginal<typeof ImportedOfflinePreparationTypes>(), prepareOfflineEdition: vi.fn(),
 }));
 vi.mock('./offlineReady.js', () => ({ inspectPreparedOfflineEdition: vi.fn() }));
 

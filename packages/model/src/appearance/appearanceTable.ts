@@ -11,6 +11,7 @@
  */
 
 import { isSameSubShape } from '../geometry/subShapeRef.js';
+import { integerSerial, nextSerialValue } from '../serialValue.js';
 import type { AppearanceEntry, AppearanceSpec, AppearanceTable, AppearanceTarget } from './types.js';
 
 /** 割り当ての id の接頭辞。採番は「同じ接頭辞の既存 id の最大連番 + 1」(§0.a-0.19 と同じ規則)。 */
@@ -50,17 +51,7 @@ function targetBodyFeatureId(target: AppearanceTarget): string {
  * 残りの最大連番の次になるので他の割り当てと重複しない。
  */
 export function nextAppearanceId(table: AppearanceTable): string {
-  let max = 0;
-  for (const entry of table.entries) {
-    if (!entry.id.startsWith(APPEARANCE_ID_PREFIX)) {
-      continue;
-    }
-    const serial = Number(entry.id.slice(APPEARANCE_ID_PREFIX.length));
-    if (Number.isInteger(serial) && serial > max) {
-      max = serial;
-    }
-  }
-  return `${APPEARANCE_ID_PREFIX}${String(max + 1)}`;
+  return nextSerialValue(table.entries.map((entry) => entry.id), APPEARANCE_ID_PREFIX, integerSerial);
 }
 
 /**

@@ -3,6 +3,7 @@ import { formatDisplayLength } from '@pointercad/model';
 import { withCount } from '../shell/propertySectionText.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { currentPrintabilityReport } from '../store/exchangeSlice.js';
 import { useFieldUnits } from '../shell/propertyFieldUnits.js';
 import { evaluatePrintCheckDraft } from './printCheckCommands.js';
 
@@ -15,7 +16,8 @@ import { evaluatePrintCheckDraft } from './printCheckCommands.js';
  * 数の意味は model の `PrintabilitySummary` の注釈のとおり。
  */
 export function PrintCheckSection(): React.JSX.Element {
-  const report = useAppStore((state) => state.printability);
+  const report = useAppStore(currentPrintabilityReport);
+  const error = useAppStore((state) => state.printCheckErrorMessage);
   const draft = useAppStore(state => state.printCheckDraft);
   const running = useAppStore(state => state.isInspectingPrint);
   const units = useFieldUnits();
@@ -64,9 +66,11 @@ export function PrintCheckSection(): React.JSX.Element {
           {t(running ? 'propertyPanel.printCheckCancel' : report === null ? 'propertyPanel.printCheckRun' : 'propertyPanel.printCheckAgain')}
         </button>
       </div>
-      {running && report !== null && <p className="pcad-panel__note" role="status">{t('propertyPanel.printCheckRunning')}</p>}
+      {running && <p className="pcad-panel__note" role="status">{t('propertyPanel.printCheckRunning')}</p>}
       {report === null ? (
-        <p className="pcad-panel__note">{t('propertyPanel.printCheckNotYet')}</p>
+        <p className="pcad-panel__note" role={error === null ? undefined : 'alert'}>
+          {error ?? t('propertyPanel.printCheckNotYet')}
+        </p>
       ) : (
         <dl className="pcad-properties">
           <dt className="pcad-properties__key">{t('propertyPanel.printCheckUsedThickness')}</dt>

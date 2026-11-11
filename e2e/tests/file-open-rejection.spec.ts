@@ -15,8 +15,7 @@ import { beginRecompute, waitForRecompute } from './recompute.js';
  * 圧縮爆弾・虚偽サイズ・CRC不一致の各件で済んでいるので、ここでは画面から見える結果
  * (理由が出る・今の文書が残る)だけを確かめる。
  *
- * 共有の撮影補助(`fileCaptureSupport.ts` 等)はまだコミットされていない別担当(w37b)の
- * 作業中の台本なので使わず、この spec だけで完結させる(統括 2026-09-27 の指示)。
+ * ファイル拒否経路の操作と確認は撮影補助へ依存させず、この spec だけで完結させる（NFR-RE-1）。
  */
 test('P12-26 中身が壊れた.pcadを開いても理由が出て、今の文書は変わらない', async ({ page }, info) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
@@ -47,8 +46,8 @@ test('P12-26 中身が壊れた.pcadを開いても理由が出て、今の文�
   await expect(pointRow).toBeVisible();
   await expect(page.locator('.pcad-statusbar__file')).toContainText('*');
 
-  // 壊れた .pcad を開こうとする。保存していない変更があるので、開く前の確認(画面の中の
-  // 日本語の3択。w91a)に「保存せずに続ける」で答える(NFR-UX-3。答えるまで選ぶ窓は開かない)。
+  // 壊れた .pcad を開こうとする。保存していない変更があるので、開く前の確認（画面内の
+  // 日本語3択）に「保存せずに続ける」で答える(NFR-UX-3。答えるまで選ぶ窓は開かない)。
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('group', { name: 'ファイル', exact: true }).getByRole('button', { name: '開く', exact: true }).click();
   const discardConfirm = page.getByRole('alertdialog', { name: '保存していない変更があります' });

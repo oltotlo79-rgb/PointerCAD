@@ -11,7 +11,8 @@ import { DEFAULT_WORK_PLANE_ID, isBaseWorkPlaneId, type PlaneSpec } from '@point
 import type { StateCreator } from 'zustand';
 import { type DisplaySettings, loadSettings, saveSettings } from '../settings/settings.js';
 import type { AppState } from './appState.js';
-import type { TutorialSession } from '../tutorial/tutorialProgress.js';
+import type { ParameterTutorialEvidence, TutorialSession } from '../tutorial/tutorialProgress.js';
+import type { TutorialCheckpointFailure, TutorialCheckpointStorage, TutorialDraft } from '../tutorial/tutorialCheckpoint.js';
 import type { ViewCameraController } from '../viewport/namedCamera.js';
 import { orbitFromNamedCamera } from '../viewport/namedCamera.js';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
@@ -44,14 +45,26 @@ export interface SectionViewState {
 }
 
 /** 表示のスライスが持つ欄と操作。 */
-export type UtilityPanel = 'export' | 'import' | 'comparison' | 'functionPlot' | 'drawingPrint' | 'drawingExport';
+export type UtilityPanel = 'export' | 'import' | 'comparison' | 'functionPlot' | 'drawingPrint' | 'drawingExport' | 'savePoints';
 
 export interface ViewSlice {
   readonly tutorialOpen: boolean;
   readonly tutorialSession: TutorialSession | null;
   readonly setTutorialOpen: (open: boolean) => void;
   readonly setTutorialSession: (session: TutorialSession | null) => void;
+  readonly tutorialCheckpointStorage: TutorialCheckpointStorage | null;
+  readonly setTutorialCheckpointStorage: (storage: TutorialCheckpointStorage | null) => void;
+  readonly tutorialCheckpointFailure: TutorialCheckpointFailure | null;
+  readonly setTutorialCheckpointFailure: (failure: TutorialCheckpointFailure | null) => void;
+  readonly tutorialDraft: TutorialDraft | null;
+  readonly setTutorialDraft: (draft: TutorialDraft | null) => void;
+  readonly tutorialDrawingProof: ParameterTutorialEvidence['drawingProof'] | null;
+  readonly setTutorialDrawingProof: (proof: ParameterTutorialEvidence['drawingProof'] | null) => void;
+  readonly tutorialExports: NonNullable<ParameterTutorialEvidence['exports']>;
+  readonly setTutorialExports: (exports: NonNullable<ParameterTutorialEvidence['exports']>) => void;
   readonly utilityPanel: UtilityPanel | null;
+  /** The menu admission borrows the current document session and gateway; it owns neither. */
+  readonly savePointsOwner: Pick<AppState, 'activeDocumentId' | 'fileGateway'> | null;
   readonly setUtilityPanelOpen: (panel: UtilityPanel, open: boolean) => void;
   readonly templateListRevision: number;
   readonly refreshTemplateEntries: () => void;
@@ -180,12 +193,28 @@ export const createViewSlice: StateCreator<
   tutorialSession: null,
   setTutorialOpen: tutorialOpen => set({ tutorialOpen }),
   setTutorialSession: tutorialSession => set({ tutorialSession }),
+  tutorialCheckpointStorage: (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })(),
+  setTutorialCheckpointStorage: tutorialCheckpointStorage => set({ tutorialCheckpointStorage }),
+  tutorialCheckpointFailure: null,
+  setTutorialCheckpointFailure: tutorialCheckpointFailure => set({ tutorialCheckpointFailure }),
+  tutorialDraft: null,
+  setTutorialDraft: tutorialDraft => set({ tutorialDraft }),
+  tutorialDrawingProof: null,
+  setTutorialDrawingProof: tutorialDrawingProof => set({ tutorialDrawingProof }),
+  tutorialExports: {},
+  setTutorialExports: tutorialExports => set({ tutorialExports }),
   utilityPanel: null,
+  savePointsOwner: null,
   setUtilityPanelOpen: (panel, open) => set(state => {
     const utilityPanel = open ? panel : state.utilityPanel === panel ? null : state.utilityPanel;
     // A document-bound editor may close from inside a store notification.
     // Returning the same state for repeated closure prevents recursive notifications.
-    return utilityPanel === state.utilityPanel ? state : { utilityPanel };
+    const sameOwner = state.savePointsOwner?.activeDocumentId === state.activeDocumentId
+      && state.savePointsOwner.fileGateway === state.fileGateway;
+    if (utilityPanel === state.utilityPanel && !(panel === 'savePoints' && open && !sameOwner)) return state;
+    const savePointsOwner = utilityPanel === 'savePoints'
+      ? { activeDocumentId: state.activeDocumentId, fileGateway: state.fileGateway } : null;
+    return { utilityPanel, savePointsOwner };
   }),
   templateListRevision: 0,
   refreshTemplateEntries: () => set(state => ({ templateListRevision: state.templateListRevision + 1 })),

@@ -1,6 +1,6 @@
 /** G1 comparison of current geometry. These transient dimensions are never persisted. */
 import type { ResolvedCurve, ResolvedSegment } from '../sketch/types.js';
-import { addVec3, crossVec3, distanceVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
+import { isFiniteVec3 as finite, addVec3, crossVec3, distanceVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import { validateMathGeometryTolerance } from './mathGeometryDefinitions.js';
 import type { MathGeometryTolerance } from './mathGeometryTypes.js';
 
@@ -9,12 +9,11 @@ export type MathGeometryComparisonShape =
   | { readonly kind: 'circular'; readonly radius: number; readonly sweep: number }
   | { readonly kind: 'polygon'; readonly curves: readonly ResolvedCurve[] };
 
-type Problem = { readonly ok: false; readonly reason: 'unsupported' | 'failed-geometry' | 'invalid-request'; readonly message: string };
+interface Problem { readonly ok: false; readonly reason: 'unsupported' | 'failed-geometry' | 'invalid-request'; readonly message: string }
 type Result<T> = { readonly ok: true; readonly value: T } | Problem;
 const unsupported = (message: string): Problem => ({ ok: false, reason: 'unsupported', message });
 const invalidGeometry = (): Problem => ({ ok: false, reason: 'failed-geometry', message: '合同・相似を比べる図形の寸法を正しく取得できませんでした。' });
 const degenerate = (): Problem => unsupported('比べる幅以下の長さや退化した図形では合同・相似を判定できません。');
-const finite = (point: Vec3): boolean => point.every(Number.isFinite);
 
 interface Polygon {
   /** Edge i leaves vertex i; turn i is at vertex i, retaining the sign of a concave corner. */

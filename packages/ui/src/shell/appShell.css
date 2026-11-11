@@ -672,6 +672,19 @@
   box-shadow: var(--pcad-shadow-soft);
 }
 
+/* Keep drawing reasons readable beside the controls without a forced extra row. */
+.pcad-toolbar--drawing {
+  align-items: center;
+  padding-block: var(--pcad-space-1);
+}
+
+.pcad-drawing-toolbar__reasons {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .pcad-toolbar__brand {
   display: flex;
   gap: var(--pcad-space-2);
@@ -804,7 +817,7 @@
 
 /* 1280pxではF1も同じ段へ置く。26pxの押下領域を保ち、区画間の余白だけを詰める。 */
 @media (min-width: 1200px) and (max-width: 1299px) {
-  .pcad-toolbar { --pcad-toolbar-gap: calc(2px * var(--pcad-scale, 1)); }
+  .pcad-toolbar { --pcad-toolbar-gap: calc(1px * var(--pcad-scale, 1)); }
 }
 
 /*
@@ -1436,6 +1449,11 @@
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--pcad-border-strong) transparent;
+}
+
+/* Keep the final property section clear of fractional scrollport edges. */
+.pcad-panel--right > div.pcad-panel__body {
+  padding-block-end: var(--pcad-space-2);
 }
 
 .pcad-property-list {
@@ -2116,6 +2134,41 @@ button.pcad-tree__row:focus-visible {
   background: var(--pcad-accent-soft-hover);
 }
 
+/*
+  参照の修復の節(solid/referenceRepairPanel.ts)。説明文と一覧を節の見出しと同じ左右の余白に収め、
+  参照ごとの行の押しボタンは狭い右欄でも文字を切らずに折り返す(押しボタンの既定は折り返さない)。
+*/
+.pcad-reference-repair > p,
+.pcad-reference-repair > ul {
+  margin-inline: var(--pcad-space-3);
+}
+
+.pcad-reference-repair li > .pcad-button {
+  height: auto;
+  min-height: 26px;
+  padding-block: 3px;
+  text-align: start;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/*
+  組立のジョイントの節に置く段をまたぐ連動の入力(AssemblyCrossLevelGearForm・AssemblyCrossLevelCamForm)。
+  見出しが長いので .pcad-field の見出しの固定幅(3.2em)へ押し込まず、見出しを 1 行目、欄と単位を 2 行目に置く
+  (sheetMetal.css・strength.css と同じ並べ方)。左右の余白も節の見出しにそろえる。
+*/
+.pcad-coupling-form {
+  padding: 0 var(--pcad-space-3);
+}
+
+.pcad-coupling-form .pcad-field {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.pcad-coupling-form .pcad-field > span:first-child {
+  grid-column: 1 / -1;
+}
+
 /* 長い慣性モーメントや関数式でも見出しを潰さず、値を残りの幅で折り返す。 */
 .pcad-properties {
   display: grid;
@@ -2451,6 +2504,11 @@ button.pcad-tree__row:focus-visible {
   background: linear-gradient(180deg, var(--pcad-viewport-top) 0%, var(--pcad-viewport-bottom) 100%);
 }
 
+/* The circular weld form can overlap a side panel; keep its controls clickable. */
+.pcad-viewport:has(.pcad-popover--circular-weld) {
+  z-index: 2;
+}
+
 .pcad-viewport__canvas {
   position: absolute;
   z-index: 0;
@@ -2692,7 +2750,7 @@ button.pcad-tree__row:focus-visible {
   inset: 0;
   display: grid;
   place-items: center;
-  overflow: auto;
+  overflow: hidden;
   background: var(--pcad-color-canvas, #d9dde3);
 }
 
@@ -2706,6 +2764,7 @@ button.pcad-tree__row:focus-visible {
   border: 1px solid #727984;
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
   touch-action: none;
+  transform-origin: 0 0;
 }
 
 .pcad-drawing-svg { width: 100%; }
@@ -2765,6 +2824,17 @@ button.pcad-tree__row:focus-visible {
   box-shadow: var(--pcad-shadow-soft-raised);
 }
 
+/* Keep the active fastening and weld forms above the persistent assembly timeline (z-index: 2). */
+.pcad-popover--bolted-joint,
+.pcad-popover--fillet-weld {
+  z-index: 3;
+}
+
+/* Three translated weld actions must stay inside the narrow form. */
+.pcad-popover--circular-weld .pcad-popover__actions {
+  flex-wrap: wrap;
+}
+
 .pcad-tree__branch-toggle {
   display: inline-flex;
   flex: none;
@@ -2792,6 +2862,7 @@ button.pcad-tree__row:focus-visible {
 }
 
 .pcad-popover--standard-part {
+  z-index: 3;
   top: 16px;
   left: 16px;
   width: min(340px, calc(100% - 32px));
@@ -3753,6 +3824,11 @@ button.pcad-tree__row:focus-visible {
   display: flex;
   gap: var(--pcad-space-1);
   padding: var(--pcad-space-1) var(--pcad-space-3) 0;
+}
+
+/* Canvas rows have four or five actions instead of the appearance pair. */
+.pcad-appearance__actions--canvas {
+  flex-wrap: wrap;
 }
 
 .pcad-appearance__actions .pcad-button {

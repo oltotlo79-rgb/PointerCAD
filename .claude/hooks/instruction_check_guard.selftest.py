@@ -2174,13 +2174,21 @@ class ReportContractTests(NewChecksBase):
         reason = result["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("影響の列挙が無い", reason)
 
-    def test_hook_allows_warning_only_instruction(self):
+    def test_hook_denies_warning_only_instruction(self):
+        # 2026-11-11(rules/06 §10.485 の誤り A)に期待を「通す」から「拒否」へ直した(旧名 test_hook_allows_warning_only_instruction)。
+        # 外れ 0・警告 1 の指示書の起動は、警告の文を理由に出して拒否する。
         body = "## 2. 合格条件（数値）\n\n1. 表示は「面による切断」になる。\n"
         self.materialize(make_instruction("packages/model/src/part/foo.ts", body))
         self.write("scratchpad/claude/instructions/warn.md", make_instruction("packages/model/src/part/foo.ts", body))
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
             "prompt": "`scratchpad/claude/instructions/warn.md` を読む。", "description": "t"}}
-        self.assertIsNone(guard.hook(payload, self.now, root=self.root))
+        result = guard.hook(payload, self.now, root=self.root)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertTrue(reason.startswith(guard.WARNING_DENY_HEAD), reason)
+        self.assertIn("警告: ", reason)
+        self.assertIn("面による切断", reason)
 
     def test_crlf_instruction_is_parsed_like_lf(self):
         body = impact_section("SweepFeature")
@@ -2194,7 +2202,14 @@ class ReportContractTests(NewChecksBase):
         path.write_bytes(text.encode("utf-8"))
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
             "prompt": "`scratchpad/claude/instructions/crlf.md` を読む。", "description": "t"}}
-        self.assertIsNone(guard.hook(payload, self.now, root=self.root))
+        # 2026-11-11(rules/06 §10.485 の誤り A)に期待を「通す」から「拒否」へ直した: 外れは 0 件のまま(CRLF でも LF と同じに
+        # 読めた)で、参照 0 件の警告 1 件だけで起動を拒否する。
+        result = guard.hook(payload, self.now, root=self.root)
+        self.assertIsNotNone(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertTrue(reason.startswith(guard.WARNING_DENY_HEAD), reason)
+        self.assertNotIn("外れがあります", reason)
+        self.assertIn("0 件", reason)
 
 
 # ---------------------------------------------------------------------------
@@ -2688,6 +2703,113 @@ class ProductScanOnceTests(NewChecksBase):
         self.assertTrue(complete)
         self.assertEqual(ui, {"packages/ui/src/a/alpha.ts": ["packages/ui/src/a/alpha.test.ts"],
                               "packages/ui/src/a/beta.ts": ["packages/ui/src/z/beta.test.tsx"]})
+
+
+# ---------------------------------------------------------------------------
+# 2026-11-11 cl-v103-enforcement-integration-1111(rules/06 §10.485 の誤り A): 統括が --check の警告 1 件の残る指示書で
+# 担当を起動した。起動の条件は「外れ 0・警告 0」なので、起動のフックも警告を 1 件でも拒否する。--check の出力は変えない
+# (CliTests.test_cli_prints_warning_count_and_keeps_exit0 が従来どおり成功することで確かめる)。
+# ---------------------------------------------------------------------------
+
+
+class WarningDenyAtLaunchTests(NewChecksBase):
+    SCOPE = "packages/model/src/part/foo.ts"
+    WARN_BODY = "## 2. 合格条件（数値）\n\n1. 表示は「面による切断」になる。\n"
+    CLEAN_BODY = "## 2. 合格条件\n\n1. 足した試験が全件成功する。\n"
+
+    def launch(self, name: str, text: str, prompt: str | None = None):
+        self.materialize(text)
+        self.write(f"scratchpad/claude/instructions/{name}", text)
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
+            "prompt": prompt if prompt is not None else f"`scratchpad/claude/instructions/{name}` を読む。",
+            "description": "t"}}
+        return guard.hook(payload, self.now, root=self.root)
+
+    def reason(self, result) -> str:
+        self.assertIsNotNone(result)
+        self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+        return result["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_one_warning_and_zero_violations_is_denied_with_the_warning_text(self):
+        text = make_instruction(self.SCOPE, self.WARN_BODY)
+        errors, warnings = self.report(text)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(warnings), 1, warnings)
+        reason = self.reason(self.launch("w1.md", text))
+        self.assertTrue(reason.startswith(guard.WARNING_DENY_HEAD), reason)
+        self.assertIn("警告: scratchpad/claude/instructions/w1.md 行", reason)
+        self.assertIn("期待値の引用「面による切断」", reason)
+        self.assertNotIn("外れがあります", reason)
+
+    def test_zero_warnings_and_zero_violations_passes(self):
+        text = make_instruction(self.SCOPE, self.CLEAN_BODY)
+        self.assertEqual(self.report(text), ([], []))
+        self.assertIsNone(self.launch("clean.md", text))
+
+    def test_violation_only_is_denied_exactly_as_before(self):
+        (self.root / "already.txt").write_text("x", encoding="utf-8")
+        text = make_instruction(self.SCOPE, "新規 `already.txt`\n" + self.CLEAN_BODY)
+        errors, warnings = self.report(text)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertEqual(warnings, [])
+        reason = self.reason(self.launch("bad.md", text))
+        self.assertEqual(
+            reason, "起動の依頼文が指す指示書に外れがあります(OPS-12): "
+            "scratchpad/claude/instructions/bad.md 行7: 新規と書かれた `already.txt` が既に存在する")
+
+    def test_violation_with_warning_is_denied_and_lists_the_warning_after_the_violation(self):
+        (self.root / "already.txt").write_text("x", encoding="utf-8")
+        text = make_instruction(self.SCOPE, "新規 `already.txt`\n" + self.WARN_BODY)
+        reason = self.reason(self.launch("both.md", text))
+        self.assertTrue(reason.startswith("起動の依頼文が指す指示書に外れがあります(OPS-12): "), reason)
+        violation = reason.index("`already.txt` が既に存在する")
+        warning = reason.index("警告: ")
+        self.assertLess(violation, warning)
+        self.assertIn("面による切断", reason[warning:])
+
+    def test_prompt_that_names_no_instruction_passes_as_before(self):
+        text = make_instruction(self.SCOPE, self.WARN_BODY)
+        self.assertIsNone(self.launch("w2.md", text, prompt="指示書は後で渡す。まず CLAUDE.md を読む。"))
+
+    def test_scan_that_runs_out_of_the_hook_window_is_a_warning_and_denies(self):
+        text = make_instruction(self.SCOPE, impact_section("SweepFeature") + self.CLEAN_BODY)
+        original = guard.find_references
+
+        def unfinished(root, identifiers, seconds, invocation="auto", use_cache=True):
+            return {name: [] for name in identifiers}, False
+
+        guard.find_references = unfinished
+        try:
+            reason = self.reason(self.launch("slow.md", text))
+        finally:
+            guard.find_references = original
+        self.assertTrue(reason.startswith(guard.WARNING_DENY_HEAD), reason)
+        self.assertIn("走査が", reason)
+        self.assertIn("--check なら長い枠で走査する", reason)
+
+    def test_main_prints_the_deny_json_for_a_warning_and_exits_0(self):
+        import contextlib
+        import io
+        from unittest import mock
+        text = make_instruction(self.SCOPE, self.WARN_BODY)
+        self.materialize(text)
+        self.write("scratchpad/claude/instructions/w3.md", text)
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
+            "prompt": "`scratchpad/claude/instructions/w3.md` を読む。", "description": "t"}}
+        out = io.StringIO()
+        saved_root = guard._ROOT_CACHE
+        guard._ROOT_CACHE = self.root
+        try:
+            with mock.patch.object(sys, "argv", [str(HOOK)]), \
+                    mock.patch.object(sys, "stdin", io.StringIO(json.dumps(payload, ensure_ascii=False))), \
+                    contextlib.redirect_stdout(out):
+                code = guard.main()
+        finally:
+            guard._ROOT_CACHE = saved_root
+        self.assertEqual(code, 0)
+        decision = json.loads(out.getvalue())["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertTrue(decision["permissionDecisionReason"].startswith(guard.WARNING_DENY_HEAD))
 
 
 if __name__ == "__main__":

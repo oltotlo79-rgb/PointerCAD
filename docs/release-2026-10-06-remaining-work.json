@@ -19774,7 +19774,7 @@
   },
   "completed_since_previous_forecast": [],
   "current_progress": {
-    "recorded_at": "2026-11-10T19:29:54+09:00",
+    "recorded_at": "2026-11-12T00:01:57+09:00",
     "source_count": 3193,
     "e2e_count": 429,
     "R18": {
@@ -20158,21 +20158,21 @@
       ]
     },
     "task_ledger": {
-      "recorded_at": "2026-11-10T19:29:54+09:00",
+      "recorded_at": "2026-11-12T00:01:57+09:00",
       "schema": "pointercad-task-ledger-summary/1",
       "meaning": "全327件のタスク台帳の完了と残りの数（台帳が正本でこの節はその写し）。current_progress の他のキーは、この節を足した更新では変えていない。更新前の current_progress は actual_progress_history の末尾に保全してある。",
       "ledger": {
         "path": "scratchpad/claude/root-runtime/ledger/ledger.json",
-        "sha256": "7e0a8495e630f309479dfdc8dfdeb22c8c5661b8b54f818a6527c9d2a64c426e"
+        "sha256": "fda0c112f991269b7fede15dc28435bcaac5bd8a9ec9e2bb29cf2b7ab08e61d5"
       },
       "listing": {
         "path": "docs/公開までの残タスク一覧.md",
-        "sha256": "e4bcbbba8ed1b0cd79d6c6f8fb6096ca9495c08a45c296d3a4dcaf5fa7778aaa"
+        "sha256": "20cadbc3937aa9d3702ff1b38f0e9c6c65d1f3aada1b3cccf95dd79d0aa89c33"
       },
       "total": 333,
-      "completed": 286,
-      "remaining": 47,
-      "remaining_pending": 47,
+      "completed": 289,
+      "remaining": 44,
+      "remaining_pending": 44,
       "remaining_unassessed_implementation_or_proof": 0,
       "previous": {
         "label": "2026-10-26 05:58 時点（今回直前の完了164・残169）",
@@ -20181,8 +20181,8 @@
         "remaining": 169
       },
       "delta": {
-        "completed": 122,
-        "remaining": -122,
+        "completed": 125,
+        "remaining": -125,
         "added": 0
       },
       "original21": {
@@ -20196,7 +20196,7 @@
         "operation": 7,
         "manual": 0,
         "distribution": 26,
-        "quality": 14
+        "quality": 11
       },
       "completed_ids": [
         "PG5A.origin-zero",
@@ -20218,10 +20218,13 @@
         "QA.WEB-BUILD",
         "QA.DESKTOP-BUILD",
         "QA.E2E-COVERAGE",
+        "QA.INDEPENDENT-COPY",
         "DELIVERY.PRESERVE",
         "DELIVERY.ROOT-FF",
         "DELIVERY.C3",
         "DELIVERY.SNAPSHOT",
+        "DELIVERY.GATE",
+        "DELIVERY.PUSH",
         "EX-01.UI",
         "EX-01.DOC",
         "EX-02.UI",
@@ -20496,41 +20499,15 @@
       ],
       "completed_this_update": [
         {
-          "id": "QA.LINT",
-          "accepted_at": "2026-11-10T19:29:53+09:00",
+          "id": "DELIVERY.PUSH",
+          "accepted_at": "2026-11-12T00:01:56+09:00",
           "accepted_by": "Root 統括",
-          "work_ja": "製品全体のコード規約確認",
+          "work_ja": "検査済みの製品変更をコミット・送信",
           "evidence": [
             {
-              "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-10-accept-1929/QA.LINT/accepted-receipt.json",
-              "sha256": "12daaf2563d0298e29e6a357f892b045ca882bf8d3b72f8ca994aeac9ba2693e",
-              "summary": "全製品のコード規則検査が同じ最終版で成功。全体検査の終了と送信先の一致を確認。。RUN の無い受入（文書・設計）: Root reviewed terminal native deliver/Actions originals; these producers do not create diag RUNs. No fabricated RUN.。確かめていない範囲: This argv is preparation only. Existing accept.py authority, readable-description, item SHA, referenced-RUN and current-ledger checks remain mandatory. CI.MAIN and unrelated rows are excluded.。根拠ファイル 7 件の写しと RUN の SHA を受入原票に固定。"
-            }
-          ]
-        },
-        {
-          "id": "QA.WEB-BUILD",
-          "accepted_at": "2026-11-10T19:29:53+09:00",
-          "accepted_by": "Root 統括",
-          "work_ja": "公開用Web版を生成",
-          "evidence": [
-            {
-              "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-10-accept-1929/QA.WEB-BUILD/accepted-receipt.json",
-              "sha256": "b422b7dda599748cd3156bc2a77110dba0870956bfe1c947bd82ec6214d336f9",
-              "summary": "Web版の生成が同じ最終版で成功。全体検査の終了と送信先の一致を確認。。RUN の無い受入（文書・設計）: Root reviewed terminal native deliver/Actions originals; these producers do not create diag RUNs. No fabricated RUN.。確かめていない範囲: This argv is preparation only. Existing accept.py authority, readable-description, item SHA, referenced-RUN and current-ledger checks remain mandatory. CI.MAIN and unrelated rows are excluded.。根拠ファイル 7 件の写しと RUN の SHA を受入原票に固定。"
-            }
-          ]
-        },
-        {
-          "id": "QA.DESKTOP-BUILD",
-          "accepted_at": "2026-11-10T19:29:53+09:00",
-          "accepted_by": "Root 統括",
-          "work_ja": "公開用デスクトップ版を生成",
-          "evidence": [
-            {
-              "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-10-accept-1929/QA.DESKTOP-BUILD/accepted-receipt.json",
-              "sha256": "85bc8d893c8230724a7635f560a08b17518c71883b1d03769e4ba0d8346f8f5e",
-              "summary": "デスクトップ版の生成が同じ最終版で成功。全体検査の終了と送信先の一致を確認。。RUN の無い受入（文書・設計）: Root reviewed terminal native deliver/Actions originals; these producers do not create diag RUNs. No fabricated RUN.。確かめていない範囲: This argv is preparation only. Existing accept.py authority, readable-description, item SHA, referenced-RUN and current-ledger checks remain mandatory. CI.MAIN and unrelated rows are excluded.。根拠ファイル 7 件の写しと RUN の SHA を受入原票に固定。"
+              "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-12-accept-0001-3/DELIVERY.PUSH/accepted-receipt.json",
+              "sha256": "d5f1eac5786e71bc9c58b0bfbfcb6cf32b7de1bd1e6fd5e9a524b14338372286",
+              "summary": "DELIVERY.PUSH: 正規終端成功。delivery 20261111-213648、送信commit 888f67bf3f92234c1c84ba95380b9a1f6fd1ce8b。。RUN の無い受入（文書・設計）: 正規Task Schedulerの終端原票を使用。prepared main統合・state・runner・ログのSHAを保存し、架空RUNは作らない。。確かめていない範囲: 手元gateの根拠に限定。同一commitの両OS CI・配布・公開・最終独立レビューは別途必要。。根拠ファイル 8 件の写しと RUN の SHA を受入原票に固定。"
             }
           ]
         }
@@ -20540,8 +20517,8 @@
         "historicalTotal": 333,
         "excluded": 7,
         "requiredTotal": 326,
-        "requiredCompleted": 286,
-        "requiredRemaining": 40,
+        "requiredCompleted": 289,
+        "requiredRemaining": 37,
         "excludedIDs": [
           "PG4.PROBE",
           "PG4.RESIDENT",
@@ -125034,6 +125011,2324 @@
         "workers": "Two private scopes sealed and canonically done; new complex scoped judgments use Astra, mechanical scopes Sol."
       },
       "before_sha256": "3466726bc0f5cfabb36e291e8751e1ed2ba67fe660524087d4ac672776a62094"
+    },
+    {
+      "saved_at": "2026-11-12T00:01:54+09:00",
+      "previous_progress": {
+        "recorded_at": "2026-11-10T19:29:54+09:00",
+        "source_count": 3193,
+        "e2e_count": 429,
+        "R18": {
+          "semantic17_adopted": true,
+          "type_native4_and_lint2_adopted": true,
+          "native8_adopted": true,
+          "native8_receipt_sha256": "7949a7bd6e7c4fc45704ddd8399613742ea8a6ccaf051b2aa457d5f94ef67f3c",
+          "latest_typecheck": {
+            "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-typecheck-20261007-065244-f0e5c8b1d22b4cdebefd4bed31e662a0/receipt.json",
+            "sha256": "8a5879179af9dbc1f8abb2825ed08e8e8dbbaff7bfc77b69f20cd8f9dfb2f6ac",
+            "actual_exit": 0,
+            "pass": true,
+            "run_id": "20261007-065247-orchestrator-fixtures-r20-help-typecheck-typecheck",
+            "finished_at": "2026-10-07T06:53:03.825614+09:00"
+          },
+          "previous_lint": {
+            "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-lint-20261007-065408-1c421d7365fa43769007efe13836c012/receipt.json",
+            "sha256": "99792e9870b64fca1581ceae0ab8ac497cba9ccf10c276dd557995cfbd133dc4",
+            "actual_exit": 1,
+            "pass": false,
+            "run_id": "20261007-065411-orchestrator-fixtures-r20-help-lint-lint",
+            "finished_at": "2026-10-07T06:54:31.145273+09:00"
+          },
+          "latest_UI": "461/461 PASS,86.812seconds",
+          "latest_kernel": "extruded-board saved-query regression51/51 actual PASS",
+          "model_origin_boundary": "4PASS14.125s; DTO boundary only",
+          "production_atomic8": "adopted; current actual TYPE/lint/UI461 PASS; native acceptance pending",
+          "independent_negative9": "adopted and contained in actual461 PASS",
+          "native_type3": "actual API fixes/rootComlink locked+installed, TYPE PASS",
+          "extra_identity_implementation_allowance_removed": true,
+          "original_five": "original5/5 actualPASS; separate exchange(a) actualPASS within partial33 run; Native3 notaccepted, first current flow advanced beyond corrected label then stalled on giant binary diff; finite strict-byte guard now adopted, thumbnail112pixels difference unresolved",
+          "original_five_evidence": {
+            "path": "scratchpad/claude/inspections/v103-original-five-reforecast-20261007-033653-640315f2e9d24a088201e20d80867c6f/actual-five-cause.json",
+            "sha256": "87c55b480ff9914b3b23d7b358727583add5c8019d24101d179e9eee0cc22543"
+          },
+          "saved_notice": "adopted2, TYPE/lint/statusText+StatusBar208/208 PASS",
+          "latest_native_run": "20261007-035924-orchestrator-r16-r18-thirteen-e2e",
+          "entry_and_binary_guard": {
+            "cylinderSubshapeColdFlow_sha256": "0f8883aca0ef7975b30445b2aea17d0add3eb320537f6ffe75e82b2b05336e96",
+            "namedSavePointsFlow_sha256": "b593c0223c7285d7b0ba87ef43c45532db400e79fa0f1c8864e52e432d4f9536",
+            "actual_partial_run": "24PASS,9 unresolved,33 expected; do not use maximum index25 as count",
+            "all_original_conditions_kept": true
+          },
+          "current_native_guard": {
+            "cylinderSubshapeColdFlow_sha256": "fb4a10e98dc3a8f1d87d8c3fa7b7b33cec0706d22f70fb39209cef3cea77f373",
+            "new_real_E2E_executed": false,
+            "all_original_conditions_kept": true
+          }
+        },
+        "R17": {
+          "drawing_fixture_unit9_pass": true,
+          "preview_B_live_adopted": true,
+          "preview_B_QA": "Actual UI preview/scene67PASS and model references19PASS; all native/gpu/512/cold acceptance not certified",
+          "new_native_E2E4_adopted": true,
+          "new_native_E2E_run": "unexecuted; minimum legacy native3env next, preview4 remains distinct",
+          "latest_native_six": {
+            "receipt_sha256": "69a0a9b29cf5cd97d5d0711705a56f15f6b5bf49c549e01e043a7fdef33d5a05",
+            "actual_passed": 6,
+            "original_acceptance_complete": false,
+            "remaining": "Assembly3 and original Part oracle mapping remain; no full release gate claim."
+          },
+          "readonly_implementation_accepted": true,
+          "implementation_credit_minutes": [
+            15,
+            45
+          ],
+          "mandatory_native_condition_closed": true,
+          "latest_native": "Original Assembly3 exact currentSource passed20:00:09. Part/Drawing6 currentKernel and final original condition admission remain.",
+          "actual_assembly_three_environment_pass": true,
+          "known_repair_accepted": true,
+          "repair_credit_minutes": [
+            15,
+            60
+          ],
+          "actual_part_drawing_six_pass": true,
+          "valid_confirm_native_part_assembly_proof": "missing; independent expected ref and real confirm1 test construction allocated6/12",
+          "native_confirm_test_construction_adopted": true,
+          "current_original_native_nine_actual_pass": true,
+          "native_validation_credit_minutes": [
+            10,
+            30
+          ],
+          "original_condition_admission_closed": true,
+          "original_condition_admission_credit_minutes": [
+            8,
+            18
+          ],
+          "original_condition_matrix": {
+            "path": "scratchpad/claude/inspections/v103-r17-original-admission-credit-20261008-213330-10d387bd5d5f4c6e9fc61864db30e9a9/original-condition-admission.md",
+            "sha256": "9f362fd50c8c25005be568772c42ad64044804f08d9811bc974db67e42a33008"
+          }
+        },
+        "R20": {
+          "latest_actual_run_id": "20261006-153003-orchestrator-r20-three-env-pixel-e2e",
+          "terminal": "FAIL/exit-1; selected Chromium passes, Firefox/Electron startup dependencies fail before target",
+          "all_environments_accepted": false
+        },
+        "operations": {
+          "cadence_violation_report": 213,
+          "monitor_owner": 27472,
+          "monitor_nonce": "a42d40713e32b903b17572a499c731fa",
+          "latest_personal_ack_receipt_sha256": "37cbffba6930c320d7a3a3cb939d847bce4b53da7408fafb0205847d88fed013",
+          "latest_ack_at": "2026-10-07T07:01:12.854318+09:00",
+          "monitor_expiry_estimate": "2026-10-07T10:29:56+09:00 finite planned lifetime; actual lease required",
+          "latest_report_number": 275,
+          "permission_probe_receipt_sha256": "e06c03691fb230471ec50e1ddad4901da820a52e62c285bd7831313b0168571a",
+          "git_write_probe": ".git exclusive temporary write/read/delete succeeded; index/ref/config unchanged",
+          "ordinary_Git_network": "ls-remote succeeded; old network/read-only failure is historical",
+          "new_WIP_commits_pushed": 0,
+          "new_WIP_push_state": "Normal independent status2 commit239f1cd complete; ordinary pre-push session9220 running, remote result pending. No main update confirmed.",
+          "verified_restart_checkpoint": "05:03 verified647files/delete1 checkpoint predates latest adoptions; adopted source before/candidate bytes and immutable journals preserved. New full verified checkpoint pending.",
+          "GPU_resident": "actual TDH60purePASS and5503structuralcomplete/unresolved0; owned broker34pure/x64ABI PASS only; actual app capture/initialcensus/physical512MiB unknown",
+          "ORI3": "Continue unchanged, no foreign process stop",
+          "latest_GPU_capability_receipt_sha256": "e3b2c0b4b1505a9a1f64e4351db351706610cd726c6bdf473b16b0d68aed3615",
+          "workers": "Three current GPT6.1Sol SDK scopes strictly accepted07:03:24 and separate mirror GO delivered: ASM actual R20 entrances, MEAS owned app GPU runner2, SEM help lint1 and material registration2.",
+          "delivery": "Normal independent two-file commit done, normal push pending. Whole current WIP delivery proof not complete; not a release."
+        },
+        "limits": "Actual progress is separate from immutable planning/history. No all-review, GPU or independent90 closure; no elapsed-only credits.",
+        "R16": {
+          "entry_adopted": true,
+          "actual_functional_modes_passed": 9,
+          "required_environment_modes": 9,
+          "remaining_notaccepted": 0,
+          "all_environment_entry_condition_complete": true,
+          "entry_acceptance_audit_sha256": "cf668fc754156ffae291736412f5d199ebef0b38366496d146a489d766b6d70e",
+          "remaining_actual_conditions": [
+            "Actual100point/512MiB limit refusal and no automatic deletion: helper28 only asserts displayed explanation, not reaching a limit",
+            "Nonempty Assembly shared assets and retained save-point reference lifetime: helper106-128/257-272 intentionally empty Assembly",
+            "Cancellation full document/attachments and exact history invariance across kinds: no such full oracle in entire428line helper",
+            "External transmission0: no network-request recording/refusal oracle in current helper"
+          ]
+        },
+        "GPU": {
+          "posttrace3_adopted": true,
+          "posttrace_unit_actual": "57/57 PASS",
+          "broker_v4_actual": "34/34 pure boundary and x64ABI PASS; native0",
+          "broker_receipt_sha256": "bc12bd536a757988ff653dec1c16e4f632af719178ec67d8f96862e5e4c15a48",
+          "runtime_phase_scope6": "Runtime6 production phases and E2E native integration adopted; kernel96/model156/TYPE actualPASS; current real app ETL/100feature phases still unexecuted.",
+          "physical_resident_pass": false,
+          "resident_peak_bytes": null,
+          "initial_census_complete": null,
+          "controller_path_repair": {
+            "wrapper_sha256": "9eff765cd2a4a3cc483864fae5382071f78d57a87a67d7f8071d2bde697e573d",
+            "System32_prepare_only_exit": 0,
+            "actual_elevated_run_result": null
+          }
+        },
+        "current_verification": {
+          "adoption8_receipt_sha256": "01ce3c40786e109a97e647591818d0725ba21865c3f726663da6885eb1c86e8a",
+          "adoption_source_changes": 6,
+          "adoption_e2e_changes": 2,
+          "all_old_scopes_closed_before_QA": true,
+          "kernel_actual_passed": 96,
+          "model_actual_passed": 156,
+          "checks": {
+            "unit-kernel": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-kernel-20261007-065013-cb9b30040d5b4bb88629248d20d9885c/receipt.json",
+              "sha256": "22305835d89c59cb421bbbab529ad2d38d7d9fe0fe3dd27b0b41b4b998aa712c",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065017-orchestrator-fixtures-r20-help-unit-kernel-unit",
+              "finished_at": "2026-10-07T06:50:48.520129+09:00"
+            },
+            "unit-model": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-model-20261007-065013-ae943feea61844bc8c9a8878b4fb462a/receipt.json",
+              "sha256": "d407b0f382647e401ec8df167a0872f59a46e95771b11a9601cf652e8ada1feb",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065017-orchestrator-fixtures-r20-help-unit-model-unit",
+              "finished_at": "2026-10-07T06:50:53.893020+09:00"
+            },
+            "unit-help": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-help-20261007-065244-0d60eb81fdc24e4dab3643079d30cd6a/receipt.json",
+              "sha256": "e16f3a8aa55c99b8064f417bba9f07df0c19286deb68375877f3c366a56d4c43",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065247-orchestrator-fixtures-r20-help-unit-help-unit",
+              "finished_at": "2026-10-07T06:52:52.561898+09:00"
+            },
+            "typecheck": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-typecheck-20261007-065244-f0e5c8b1d22b4cdebefd4bed31e662a0/receipt.json",
+              "sha256": "8a5879179af9dbc1f8abb2825ed08e8e8dbbaff7bfc77b69f20cd8f9dfb2f6ac",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065247-orchestrator-fixtures-r20-help-typecheck-typecheck",
+              "finished_at": "2026-10-07T06:53:03.825614+09:00"
+            },
+            "lint": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-lint-20261007-065408-1c421d7365fa43769007efe13836c012/receipt.json",
+              "sha256": "99792e9870b64fca1581ceae0ab8ac497cba9ccf10c276dd557995cfbd133dc4",
+              "actual_exit": 1,
+              "pass": false,
+              "run_id": "20261007-065411-orchestrator-fixtures-r20-help-lint-lint",
+              "finished_at": "2026-10-07T06:54:31.145273+09:00"
+            }
+          },
+          "lint_remaining": "Two no-unsafe-assignment errors in uiReferences.test.ts; separate two-line worker candidate received, not yet adopted.",
+          "whole_release_quality_pass": false
+        },
+        "R18_RIM": {
+          "current_native_six_pass": true,
+          "overall_fifteen_pass": false,
+          "original_condition_closed": true,
+          "mandatory_native_validation_credit_minutes": [
+            5,
+            15
+          ],
+          "negative_origin_admission_pending": false,
+          "actual_validation": {
+            "path": "scratchpad/claude/inspections/v103-rim-native-credit-20261008-221510-bfa6ce7a63de4a8c83cee6019fe5ee8d/actual-root-rim-validation-assessment.json",
+            "sha256": "1ff693a0627d79a51f57ba22630a8938a10e01229c52f8a30e72737bab62a2b7"
+          },
+          "remaining_condition_admission_removed_minutes": [
+            15,
+            45
+          ],
+          "condition_matrix": {
+            "path": "scratchpad/claude/inspections/v103-rim-original-admission-credit-20261008-222517-e9b5ea2a5f86486cbd647411c7011067/original-condition-admission.md",
+            "sha256": "bf509846d27544d310176a2f51f44e68f04cf1df5c793905e86d2c2d9b7fdf64"
+          },
+          "negative_origin_unit": {
+            "path": "scratchpad/claude/inspections/v103-rim-original-admission-credit-20261008-222517-e9b5ea2a5f86486cbd647411c7011067/actual-negative-origin-unit-receipt.json",
+            "sha256": "e4e631276b3d0288d453ac4a032ba13c3d55447356cbdf156a0e7f53aed03b7f"
+          }
+        },
+        "R18_WALL_MATE": {
+          "current_native_three_pass": true,
+          "original_condition_closed": true,
+          "implementation_and_validation_credit_minutes": [
+            10,
+            30
+          ],
+          "original_intermittent_firefox_cause": "unconfirmed",
+          "repair_and_admission_remaining_minutes": [
+            0,
+            0
+          ],
+          "actual_validation": {
+            "path": "scratchpad/claude/inspections/v103-wall-completed-phase-credit-20261009-012050-3b5d469ee68f45d2b9aefc11e53c3073/actual-root-wall-completed-phase-assessment.json",
+            "sha256": "17eb52aaf6dcc40484c118c445c9b5cbc5c6b1872d5aa5522409139432169ada"
+          },
+          "remaining_phase_credit_minutes": [
+            10,
+            35
+          ],
+          "original_condition_accepted_at": "2026-10-09T07:52:18.000680+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-wall-original-acceptance-20261009-075216-d4b0bd0e8f9c46b59a1384d8e643886c/current-root-evidence-acceptance.json",
+            "sha256": "b020e9da2f2be1246bd569b7345362d493f0c380329ea8f90692bb1e7cdd8e66"
+          }
+        },
+        "R18_RED5_EXCHANGE": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            35,
+            90
+          ],
+          "original_condition_accepted_at": "2026-10-09T08:37:02.188128+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-red5-original-acceptance-20261009-083701-d838e146c3964599865be78154ce84c9/current-root-evidence-acceptance.json",
+            "sha256": "5b33725c1d95fba63496c8af609e70988447371f7ce1b6af5e3d5c18dd7e7647"
+          },
+          "current_original_six_native_pass": true,
+          "current_native_receipt": {
+            "sha256": "f3bf378ca29776b552d0c75e1809fb3d9b8343b9afe9ea461a0343808255bc57",
+            "path": "scratchpad/claude/inspections/v103-red5-current-six-20261009-083050-2f075cf44e32474d9a1e5e4771749017/receipt.json"
+          },
+          "historical_whole_runs_pass": false,
+          "historical_exchange_stall_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R20_COLD": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            20,
+            60
+          ],
+          "original_condition_accepted_at": "2026-10-09T09:07:57.770158+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/current-root-evidence-acceptance.json",
+            "sha256": "1da58fc640b51c7b48a1efc854c91b6fe2b78b1853100aea64b7a21a7ec26398"
+          },
+          "current_original_nine_native_pass": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/inspections/v103-r20-cold9-current-20261009-085547-f19544632ce543ea984ab5bd5aed8344/receipt.json",
+            "sha256": "5e9988387fbc9b05910034be7c19635b278f3a29a15e53f44a1c846c543dc0fc"
+          },
+          "historical_whole_runs_pass": false,
+          "historical_cold_stall_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R16_ACTUAL": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            23,
+            63
+          ],
+          "original_condition_accepted_at": "2026-10-09T17:35:29.440279+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e/current-root-evidence-acceptance.json",
+            "sha256": "92d8735154ae32062e25420e81ed44122e46b63bc9ce9748b89cbe6d095f30ef"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_capacity_stall_astra/candidate/r16-final-acceptance/evidence.json",
+            "sha256": "778c410db16910d8b61c325c81328b0ccb0db95140c6be13b152c4722556b9c3"
+          },
+          "mixed_historical_whole_runs_pass": false,
+          "historical_failures_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "W19": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            35,
+            100
+          ],
+          "original_condition_accepted_at": "2026-10-10T00:27:58.258652+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-w19-original-acceptance-20261010-002757-da0b24f7a0aa46a480da2df4a0579ea9/current-root-evidence-acceptance.json",
+            "sha256": "25b61fdebf465ac7b6f286555aa64e02d8cdd9497a4df37a169c4c30986a7fc8"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_sheet_import_astra/candidate/gpu-requirement-audit/w19-final-acceptance/evidence.json",
+            "sha256": "1b823a73769a85974a21c1884bb36238b3af945a6f92de2b325975b49c12e4b3"
+          },
+          "current_whole_runs_pass": true,
+          "driver_physical_resident_certified": false,
+          "manual_image_adoption_certified_by_this_acceptance": false,
+          "historical_failures_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R20_HELP": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            45,
+            112
+          ],
+          "original_condition_accepted_at": "2026-10-10T01:10:45.977836+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r20-help-original-acceptance-20261010-011044-58c291531ba14b668bf0fe33b4627f74/current-root-evidence-acceptance.json",
+            "sha256": "3c3049edb88fab7e812ab74213093168b2779d8636c7cdbb5d613b95d764c122"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_actual_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_manual_text_sol/candidate/distribution-readiness/r20-help-acceptance/evidence.json",
+            "sha256": "f4042398e9413b989865affae3f4b2876903a5f9e23f0dd2146d02d7db5e68b0"
+          },
+          "current_whole_runs_pass": true,
+          "historical_failures_retained": true
+        },
+        "R20_KEYS": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            40,
+            95
+          ],
+          "original_condition_accepted_at": "2026-10-10T11:23:15.268809+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r20-keys-original-acceptance-20261010-112314-64411905e5ad4ae99ea8120f7b031474/current-root-evidence-acceptance.json",
+            "sha256": "2ebd6d5d44290d766ae54f478e7bfa82d650ab20bbe328441daf9d25197d218c"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_actual_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_r20_qa_sol/candidate/ledger-acceptance/evidence.json",
+            "sha256": "bb8771b8ea11520ea9f2400b41eda64941c352c4c219661fdf463cdd4a607739"
+          },
+          "current_whole_runs_pass": true,
+          "historical_failures_retained": true
+        },
+        "W07": {
+          "original_condition_closed": true,
+          "root_decision": {
+            "path": "scratchpad/claude/instructions/v103-root-w07-original-accepted-r1.json",
+            "sha256": "1ebc0bb585d84d13839d0b14014615750145fcbf823c589a572a1429b82ef18d"
+          },
+          "completion_credit_minutes": [
+            0,
+            0
+          ]
+        },
+        "task_ledger": {
+          "recorded_at": "2026-11-10T19:29:54+09:00",
+          "schema": "pointercad-task-ledger-summary/1",
+          "meaning": "全327件のタスク台帳の完了と残りの数（台帳が正本でこの節はその写し）。current_progress の他のキーは、この節を足した更新では変えていない。更新前の current_progress は actual_progress_history の末尾に保全してある。",
+          "ledger": {
+            "path": "scratchpad/claude/root-runtime/ledger/ledger.json",
+            "sha256": "7e0a8495e630f309479dfdc8dfdeb22c8c5661b8b54f818a6527c9d2a64c426e"
+          },
+          "listing": {
+            "path": "docs/公開までの残タスク一覧.md",
+            "sha256": "e4bcbbba8ed1b0cd79d6c6f8fb6096ca9495c08a45c296d3a4dcaf5fa7778aaa"
+          },
+          "total": 333,
+          "completed": 286,
+          "remaining": 47,
+          "remaining_pending": 47,
+          "remaining_unassessed_implementation_or_proof": 0,
+          "previous": {
+            "label": "2026-10-26 05:58 時点（今回直前の完了164・残169）",
+            "total": 333,
+            "completed": 164,
+            "remaining": 169
+          },
+          "delta": {
+            "completed": 122,
+            "remaining": -122,
+            "added": 0
+          },
+          "original21": {
+            "complete": 13,
+            "remaining": 8
+          },
+          "remaining_by_category": {
+            "shape": 0,
+            "materials": 0,
+            "analysis": 0,
+            "operation": 7,
+            "manual": 0,
+            "distribution": 26,
+            "quality": 14
+          },
+          "completed_ids": [
+            "PG5A.origin-zero",
+            "PG5A.origin-million",
+            "PG5A.origin-billion",
+            "PG5A.stl-limits",
+            "W21.CHROMIUM",
+            "W21.FIREFOX",
+            "W21.ELECTRON",
+            "W21.REVIEW",
+            "WM.FREEZE",
+            "WM.CENSUS",
+            "WM.CAPTURE",
+            "WM.REGISTRY",
+            "WM.HTML",
+            "WM.PDF",
+            "QA.TYPE",
+            "QA.LINT",
+            "QA.WEB-BUILD",
+            "QA.DESKTOP-BUILD",
+            "QA.E2E-COVERAGE",
+            "DELIVERY.PRESERVE",
+            "DELIVERY.ROOT-FF",
+            "DELIVERY.C3",
+            "DELIVERY.SNAPSHOT",
+            "EX-01.UI",
+            "EX-01.DOC",
+            "EX-02.UI",
+            "EX-02.DOC",
+            "EX-03.GAP",
+            "EX-03.01.ORACLE",
+            "EX-03.02.ORACLE",
+            "EX-03.03.ORACLE",
+            "EX-03.04.ORACLE",
+            "EX-03.PERSIST",
+            "EX-03.UNDO",
+            "EX-03.UI",
+            "EX-03.DOC",
+            "EX-04.GAP",
+            "EX-04.01.AUTHOR",
+            "EX-04.01.ORACLE",
+            "EX-04.02.AUTHOR",
+            "EX-04.02.ORACLE",
+            "EX-04.03.AUTHOR",
+            "EX-04.03.ORACLE",
+            "EX-04.04.AUTHOR",
+            "EX-04.04.ORACLE",
+            "EX-04.PERSIST",
+            "EX-04.UNDO",
+            "EX-04.UI",
+            "EX-04.DOC",
+            "EX-05.GAP",
+            "EX-05.01.AUTHOR",
+            "EX-05.01.ORACLE",
+            "EX-05.02.AUTHOR",
+            "EX-05.02.ORACLE",
+            "EX-05.03.AUTHOR",
+            "EX-05.03.ORACLE",
+            "EX-05.04.AUTHOR",
+            "EX-05.04.ORACLE",
+            "EX-05.PERSIST",
+            "EX-05.UNDO",
+            "EX-05.UI",
+            "EX-05.DOC",
+            "EX-06.PERSIST",
+            "EX-06.UNDO",
+            "EX-06.UI",
+            "EX-06.DOC",
+            "EX-07.GAP",
+            "EX-07.01.AUTHOR",
+            "EX-07.01.ORACLE",
+            "EX-07.02.AUTHOR",
+            "EX-07.02.ORACLE",
+            "EX-07.03.AUTHOR",
+            "EX-07.03.ORACLE",
+            "EX-07.04.AUTHOR",
+            "EX-07.04.ORACLE",
+            "EX-07.PERSIST",
+            "EX-07.UNDO",
+            "EX-07.UI",
+            "EX-07.DOC",
+            "EX-08.PERSIST",
+            "EX-08.UNDO",
+            "EX-08.UI",
+            "EX-08.DOC",
+            "EX-09.GAP",
+            "EX-09.01.AUTHOR",
+            "EX-09.01.ORACLE",
+            "EX-09.02.AUTHOR",
+            "EX-09.02.ORACLE",
+            "EX-09.03.AUTHOR",
+            "EX-09.03.ORACLE",
+            "EX-09.04.AUTHOR",
+            "EX-09.04.ORACLE",
+            "EX-09.05.AUTHOR",
+            "EX-09.05.ORACLE",
+            "EX-09.06.AUTHOR",
+            "EX-09.06.ORACLE",
+            "EX-09.07.AUTHOR",
+            "EX-09.07.ORACLE",
+            "EX-09.09.AUTHOR",
+            "EX-09.09.ORACLE",
+            "EX-09.PERSIST",
+            "EX-09.UNDO",
+            "EX-09.UI",
+            "EX-09.DOC",
+            "EX-10.GAP",
+            "EX-10.04.AUTHOR",
+            "EX-10.04.ORACLE",
+            "EX-10.PERSIST",
+            "EX-10.UNDO",
+            "EX-10.UI",
+            "EX-10.DOC",
+            "EX-12.GAP",
+            "EX-12.01.AUTHOR",
+            "EX-12.01.ORACLE",
+            "EX-12.02.AUTHOR",
+            "EX-12.02.ORACLE",
+            "EX-12.03.AUTHOR",
+            "EX-12.03.ORACLE",
+            "EX-12.04.AUTHOR",
+            "EX-12.04.ORACLE",
+            "EX-12.05.AUTHOR",
+            "EX-12.05.ORACLE",
+            "EX-12.PERSIST",
+            "EX-12.UNDO",
+            "EX-12.UI",
+            "EX-12.DOC",
+            "EX-13.GAP",
+            "EX-13.01.AUTHOR",
+            "EX-13.01.ORACLE",
+            "EX-13.02.AUTHOR",
+            "EX-13.02.ORACLE",
+            "EX-13.03.AUTHOR",
+            "EX-13.03.ORACLE",
+            "EX-13.04.AUTHOR",
+            "EX-13.04.ORACLE",
+            "EX-13.PERSIST",
+            "EX-13.UNDO",
+            "EX-13.UI",
+            "EX-13.DOC",
+            "EX-14.04.ORACLE",
+            "EX-14.UI",
+            "EX-14.DOC",
+            "EX-15.GAP",
+            "EX-15.01.AUTHOR",
+            "EX-15.01.ORACLE",
+            "EX-16.GAP",
+            "EX-16.01.AUTHOR",
+            "EX-16.01.ORACLE",
+            "EX-16.02.AUTHOR",
+            "EX-16.02.ORACLE",
+            "EX-16.03.AUTHOR",
+            "EX-16.03.ORACLE",
+            "EX-17.GAP",
+            "EX-17.01.AUTHOR",
+            "EX-17.01.ORACLE",
+            "EX-17.02.AUTHOR",
+            "EX-17.02.ORACLE",
+            "EX-18.GAP",
+            "EX-18.01.AUTHOR",
+            "EX-18.01.ORACLE",
+            "EX-18.02.AUTHOR",
+            "EX-18.02.ORACLE",
+            "EX-18.03.AUTHOR",
+            "EX-18.03.ORACLE",
+            "EX-18.04.AUTHOR",
+            "EX-18.04.ORACLE",
+            "EX-18.05.AUTHOR",
+            "EX-18.05.ORACLE",
+            "EX-18.06.AUTHOR",
+            "EX-18.06.ORACLE",
+            "EX-18.PERSIST",
+            "EX-18.UNDO",
+            "EX-18.UI",
+            "EX-18.DOC",
+            "EX-09.WP-materials-data",
+            "EX-09.WP-mesh-and-idealization",
+            "EX-09.WP-linear-static",
+            "EX-09.WP-contact-and-connections",
+            "EX-09.WP-plastic-large-deformation",
+            "EX-09.WP-buckling",
+            "EX-09.WP-vibration",
+            "EX-09.WP-impact",
+            "EX-09.WP-fatigue",
+            "EX-09.WP-web-desktop-delivery",
+            "EX-09.WP-postprocess-verification",
+            "EX-09.CONTACT-FIXTURES",
+            "WAIT.QUEUE",
+            "WAIT.INSTALL",
+            "WAIT.PRIVILEGE",
+            "WAIT.DATA-LICENSE",
+            "W22.PAIR.firefox.hemisphere",
+            "W22.PAIR.electron.input",
+            "W22.PAIR.electron.ADD-23",
+            "W22.PAIR.electron.ADD-17",
+            "W22.PAIR.electron.hemisphere",
+            "W22.PAIR.functional.input",
+            "W22.PAIR.functional.ADD-23",
+            "W22.PAIR.functional.ADD-17",
+            "W22.PAIR.functional.hemisphere",
+            "W22.PAIR.firefox.input",
+            "W22.PAIR.firefox.ADD-23",
+            "W22.REVIEW",
+            "R16-ENTRY.ACCEPTED",
+            "R16-ACTUAL.ACCEPTED",
+            "R18-RED5-EXCHANGE.ACCEPTED",
+            "R18-RIM.ACCEPTED",
+            "R18-WALL-MATE.ACCEPTED",
+            "R20-COLD.ACCEPTED",
+            "R20-KEYS-DISABLED.ACCEPTED",
+            "R17-W12b.ACCEPTED",
+            "W19-performance.ACCEPTED",
+            "W07-export.ACCEPTED",
+            "R20-HELP.ACCEPTED",
+            "EX-11.ACCEPTED",
+            "PG4.CHUNKS",
+            "W21.BUNDLE",
+            "SEC.ALERTS",
+            "SEC.LOCK",
+            "SEC.DISPOSITION",
+            "EX-01.GAP",
+            "EX-01.01.AUTHOR",
+            "EX-01.01.ORACLE",
+            "EX-01.02.AUTHOR",
+            "EX-01.02.ORACLE",
+            "EX-01.03.AUTHOR",
+            "EX-01.03.ORACLE",
+            "EX-01.PERSIST",
+            "EX-01.UNDO",
+            "EX-02.GAP",
+            "EX-02.01.AUTHOR",
+            "EX-02.01.ORACLE",
+            "EX-02.02.AUTHOR",
+            "EX-02.02.ORACLE",
+            "EX-02.03.AUTHOR",
+            "EX-02.03.ORACLE",
+            "EX-02.PERSIST",
+            "EX-02.UNDO",
+            "EX-03.01.AUTHOR",
+            "EX-03.02.AUTHOR",
+            "EX-03.03.AUTHOR",
+            "EX-03.04.AUTHOR",
+            "EX-06.GAP",
+            "EX-06.01.AUTHOR",
+            "EX-06.01.ORACLE",
+            "EX-06.02.AUTHOR",
+            "EX-06.02.ORACLE",
+            "EX-06.03.AUTHOR",
+            "EX-06.03.ORACLE",
+            "EX-06.04.AUTHOR",
+            "EX-06.04.ORACLE",
+            "EX-08.GAP",
+            "EX-08.01.AUTHOR",
+            "EX-08.01.ORACLE",
+            "EX-08.02.AUTHOR",
+            "EX-08.02.ORACLE",
+            "EX-08.03.AUTHOR",
+            "EX-08.03.ORACLE",
+            "EX-09.08.AUTHOR",
+            "EX-09.08.ORACLE",
+            "EX-10.01.AUTHOR",
+            "EX-10.01.ORACLE",
+            "EX-10.02.AUTHOR",
+            "EX-10.02.ORACLE",
+            "EX-10.03.AUTHOR",
+            "EX-10.03.ORACLE",
+            "EX-14.GAP",
+            "EX-14.01.AUTHOR",
+            "EX-14.01.ORACLE",
+            "EX-14.02.AUTHOR",
+            "EX-14.02.ORACLE",
+            "EX-14.03.AUTHOR",
+            "EX-14.03.ORACLE",
+            "EX-14.04.AUTHOR",
+            "EX-14.PERSIST",
+            "EX-14.UNDO",
+            "EX-09.CONTACT-SOURCE",
+            "EX-09.CONTACT-BUILD",
+            "EX-09.CONTACT-REVIEW",
+            "EX-09.CONTACT-PHYSICAL",
+            "W22.PAIR.firefox.ADD-17",
+            "OPS.DISK-CLEANUP",
+            "CODE.CONSISTENCY",
+            "EX-18.16.DESIGN",
+            "BUG.VIEW-PICK-NULL",
+            "EX-03.S2.COVERAGE",
+            "BUG.MESH-OWNERS-128"
+          ],
+          "added_ids": [
+            "OPS.DISK-CLEANUP",
+            "CODE.CONSISTENCY",
+            "EX-18.16.DESIGN",
+            "BUG.VIEW-PICK-NULL",
+            "EX-03.S2.COVERAGE",
+            "BUG.MESH-OWNERS-128"
+          ],
+          "completed_this_update": [
+            {
+              "id": "QA.LINT",
+              "accepted_at": "2026-11-10T19:29:53+09:00",
+              "accepted_by": "Root 統括",
+              "work_ja": "製品全体のコード規約確認",
+              "evidence": [
+                {
+                  "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-10-accept-1929/QA.LINT/accepted-receipt.json",
+                  "sha256": "12daaf2563d0298e29e6a357f892b045ca882bf8d3b72f8ca994aeac9ba2693e",
+                  "summary": "全製品のコード規則検査が同じ最終版で成功。全体検査の終了と送信先の一致を確認。。RUN の無い受入（文書・設計）: Root reviewed terminal native deliver/Actions originals; these producers do not create diag RUNs. No fabricated RUN.。確かめていない範囲: This argv is preparation only. Existing accept.py authority, readable-description, item SHA, referenced-RUN and current-ledger checks remain mandatory. CI.MAIN and unrelated rows are excluded.。根拠ファイル 7 件の写しと RUN の SHA を受入原票に固定。"
+                }
+              ]
+            },
+            {
+              "id": "QA.WEB-BUILD",
+              "accepted_at": "2026-11-10T19:29:53+09:00",
+              "accepted_by": "Root 統括",
+              "work_ja": "公開用Web版を生成",
+              "evidence": [
+                {
+                  "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-10-accept-1929/QA.WEB-BUILD/accepted-receipt.json",
+                  "sha256": "b422b7dda599748cd3156bc2a77110dba0870956bfe1c947bd82ec6214d336f9",
+                  "summary": "Web版の生成が同じ最終版で成功。全体検査の終了と送信先の一致を確認。。RUN の無い受入（文書・設計）: Root reviewed terminal native deliver/Actions originals; these producers do not create diag RUNs. No fabricated RUN.。確かめていない範囲: This argv is preparation only. Existing accept.py authority, readable-description, item SHA, referenced-RUN and current-ledger checks remain mandatory. CI.MAIN and unrelated rows are excluded.。根拠ファイル 7 件の写しと RUN の SHA を受入原票に固定。"
+                }
+              ]
+            },
+            {
+              "id": "QA.DESKTOP-BUILD",
+              "accepted_at": "2026-11-10T19:29:53+09:00",
+              "accepted_by": "Root 統括",
+              "work_ja": "公開用デスクトップ版を生成",
+              "evidence": [
+                {
+                  "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-10-accept-1929/QA.DESKTOP-BUILD/accepted-receipt.json",
+                  "sha256": "85bc8d893c8230724a7635f560a08b17518c71883b1d03769e4ba0d8346f8f5e",
+                  "summary": "デスクトップ版の生成が同じ最終版で成功。全体検査の終了と送信先の一致を確認。。RUN の無い受入（文書・設計）: Root reviewed terminal native deliver/Actions originals; these producers do not create diag RUNs. No fabricated RUN.。確かめていない範囲: This argv is preparation only. Existing accept.py authority, readable-description, item SHA, referenced-RUN and current-ledger checks remain mandatory. CI.MAIN and unrelated rows are excluded.。根拠ファイル 7 件の写しと RUN の SHA を受入原票に固定。"
+                }
+              ]
+            }
+          ],
+          "limits": "完了の件数と根拠の写しであり、公開見込みの再計算ではない。release_estimate・completed_since_previous_forecast・accepted_remaining_subtask_credits は変えていない。GAP の行の受入は現状と不足を特定した調査の提出の受入で、AUTHOR の行の受入は実装の存在と検査での確認であり、どちらも製品全体の合格や公開の認定ではない。",
+          "release_scope": {
+            "historicalTotal": 333,
+            "excluded": 7,
+            "requiredTotal": 326,
+            "requiredCompleted": 286,
+            "requiredRemaining": 40,
+            "excludedIDs": [
+              "PG4.PROBE",
+              "PG4.RESIDENT",
+              "PG4.ALLOCATED",
+              "PG4.ATTRIBUTION",
+              "PG4B.chromium",
+              "PG4B.firefox",
+              "PG4B.electron"
+            ]
+          }
+        }
+      },
+      "previous_next_action": {
+        "Root": "Root accepted the single W21-W22 parent covering R25 and R26; original21 is 13 complete / 8 remaining. 333 task IDs/states/allocations and forecast bounds unchanged; no time credit. Final manual/screenshots and whole correctness/release checks remain open.",
+        "workers": "Two private scopes sealed and canonically done; new complex scoped judgments use Astra, mechanical scopes Sol."
+      },
+      "before_sha256": "3cbb6df0b0089bbebb17845758b7ef4d2be9072b3c5f88a944109653e8455522"
+    },
+    {
+      "saved_at": "2026-11-12T00:01:56+09:00",
+      "previous_progress": {
+        "recorded_at": "2026-11-12T00:01:54+09:00",
+        "source_count": 3193,
+        "e2e_count": 429,
+        "R18": {
+          "semantic17_adopted": true,
+          "type_native4_and_lint2_adopted": true,
+          "native8_adopted": true,
+          "native8_receipt_sha256": "7949a7bd6e7c4fc45704ddd8399613742ea8a6ccaf051b2aa457d5f94ef67f3c",
+          "latest_typecheck": {
+            "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-typecheck-20261007-065244-f0e5c8b1d22b4cdebefd4bed31e662a0/receipt.json",
+            "sha256": "8a5879179af9dbc1f8abb2825ed08e8e8dbbaff7bfc77b69f20cd8f9dfb2f6ac",
+            "actual_exit": 0,
+            "pass": true,
+            "run_id": "20261007-065247-orchestrator-fixtures-r20-help-typecheck-typecheck",
+            "finished_at": "2026-10-07T06:53:03.825614+09:00"
+          },
+          "previous_lint": {
+            "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-lint-20261007-065408-1c421d7365fa43769007efe13836c012/receipt.json",
+            "sha256": "99792e9870b64fca1581ceae0ab8ac497cba9ccf10c276dd557995cfbd133dc4",
+            "actual_exit": 1,
+            "pass": false,
+            "run_id": "20261007-065411-orchestrator-fixtures-r20-help-lint-lint",
+            "finished_at": "2026-10-07T06:54:31.145273+09:00"
+          },
+          "latest_UI": "461/461 PASS,86.812seconds",
+          "latest_kernel": "extruded-board saved-query regression51/51 actual PASS",
+          "model_origin_boundary": "4PASS14.125s; DTO boundary only",
+          "production_atomic8": "adopted; current actual TYPE/lint/UI461 PASS; native acceptance pending",
+          "independent_negative9": "adopted and contained in actual461 PASS",
+          "native_type3": "actual API fixes/rootComlink locked+installed, TYPE PASS",
+          "extra_identity_implementation_allowance_removed": true,
+          "original_five": "original5/5 actualPASS; separate exchange(a) actualPASS within partial33 run; Native3 notaccepted, first current flow advanced beyond corrected label then stalled on giant binary diff; finite strict-byte guard now adopted, thumbnail112pixels difference unresolved",
+          "original_five_evidence": {
+            "path": "scratchpad/claude/inspections/v103-original-five-reforecast-20261007-033653-640315f2e9d24a088201e20d80867c6f/actual-five-cause.json",
+            "sha256": "87c55b480ff9914b3b23d7b358727583add5c8019d24101d179e9eee0cc22543"
+          },
+          "saved_notice": "adopted2, TYPE/lint/statusText+StatusBar208/208 PASS",
+          "latest_native_run": "20261007-035924-orchestrator-r16-r18-thirteen-e2e",
+          "entry_and_binary_guard": {
+            "cylinderSubshapeColdFlow_sha256": "0f8883aca0ef7975b30445b2aea17d0add3eb320537f6ffe75e82b2b05336e96",
+            "namedSavePointsFlow_sha256": "b593c0223c7285d7b0ba87ef43c45532db400e79fa0f1c8864e52e432d4f9536",
+            "actual_partial_run": "24PASS,9 unresolved,33 expected; do not use maximum index25 as count",
+            "all_original_conditions_kept": true
+          },
+          "current_native_guard": {
+            "cylinderSubshapeColdFlow_sha256": "fb4a10e98dc3a8f1d87d8c3fa7b7b33cec0706d22f70fb39209cef3cea77f373",
+            "new_real_E2E_executed": false,
+            "all_original_conditions_kept": true
+          }
+        },
+        "R17": {
+          "drawing_fixture_unit9_pass": true,
+          "preview_B_live_adopted": true,
+          "preview_B_QA": "Actual UI preview/scene67PASS and model references19PASS; all native/gpu/512/cold acceptance not certified",
+          "new_native_E2E4_adopted": true,
+          "new_native_E2E_run": "unexecuted; minimum legacy native3env next, preview4 remains distinct",
+          "latest_native_six": {
+            "receipt_sha256": "69a0a9b29cf5cd97d5d0711705a56f15f6b5bf49c549e01e043a7fdef33d5a05",
+            "actual_passed": 6,
+            "original_acceptance_complete": false,
+            "remaining": "Assembly3 and original Part oracle mapping remain; no full release gate claim."
+          },
+          "readonly_implementation_accepted": true,
+          "implementation_credit_minutes": [
+            15,
+            45
+          ],
+          "mandatory_native_condition_closed": true,
+          "latest_native": "Original Assembly3 exact currentSource passed20:00:09. Part/Drawing6 currentKernel and final original condition admission remain.",
+          "actual_assembly_three_environment_pass": true,
+          "known_repair_accepted": true,
+          "repair_credit_minutes": [
+            15,
+            60
+          ],
+          "actual_part_drawing_six_pass": true,
+          "valid_confirm_native_part_assembly_proof": "missing; independent expected ref and real confirm1 test construction allocated6/12",
+          "native_confirm_test_construction_adopted": true,
+          "current_original_native_nine_actual_pass": true,
+          "native_validation_credit_minutes": [
+            10,
+            30
+          ],
+          "original_condition_admission_closed": true,
+          "original_condition_admission_credit_minutes": [
+            8,
+            18
+          ],
+          "original_condition_matrix": {
+            "path": "scratchpad/claude/inspections/v103-r17-original-admission-credit-20261008-213330-10d387bd5d5f4c6e9fc61864db30e9a9/original-condition-admission.md",
+            "sha256": "9f362fd50c8c25005be568772c42ad64044804f08d9811bc974db67e42a33008"
+          }
+        },
+        "R20": {
+          "latest_actual_run_id": "20261006-153003-orchestrator-r20-three-env-pixel-e2e",
+          "terminal": "FAIL/exit-1; selected Chromium passes, Firefox/Electron startup dependencies fail before target",
+          "all_environments_accepted": false
+        },
+        "operations": {
+          "cadence_violation_report": 213,
+          "monitor_owner": 27472,
+          "monitor_nonce": "a42d40713e32b903b17572a499c731fa",
+          "latest_personal_ack_receipt_sha256": "37cbffba6930c320d7a3a3cb939d847bce4b53da7408fafb0205847d88fed013",
+          "latest_ack_at": "2026-10-07T07:01:12.854318+09:00",
+          "monitor_expiry_estimate": "2026-10-07T10:29:56+09:00 finite planned lifetime; actual lease required",
+          "latest_report_number": 275,
+          "permission_probe_receipt_sha256": "e06c03691fb230471ec50e1ddad4901da820a52e62c285bd7831313b0168571a",
+          "git_write_probe": ".git exclusive temporary write/read/delete succeeded; index/ref/config unchanged",
+          "ordinary_Git_network": "ls-remote succeeded; old network/read-only failure is historical",
+          "new_WIP_commits_pushed": 0,
+          "new_WIP_push_state": "Normal independent status2 commit239f1cd complete; ordinary pre-push session9220 running, remote result pending. No main update confirmed.",
+          "verified_restart_checkpoint": "05:03 verified647files/delete1 checkpoint predates latest adoptions; adopted source before/candidate bytes and immutable journals preserved. New full verified checkpoint pending.",
+          "GPU_resident": "actual TDH60purePASS and5503structuralcomplete/unresolved0; owned broker34pure/x64ABI PASS only; actual app capture/initialcensus/physical512MiB unknown",
+          "ORI3": "Continue unchanged, no foreign process stop",
+          "latest_GPU_capability_receipt_sha256": "e3b2c0b4b1505a9a1f64e4351db351706610cd726c6bdf473b16b0d68aed3615",
+          "workers": "Three current GPT6.1Sol SDK scopes strictly accepted07:03:24 and separate mirror GO delivered: ASM actual R20 entrances, MEAS owned app GPU runner2, SEM help lint1 and material registration2.",
+          "delivery": "Normal independent two-file commit done, normal push pending. Whole current WIP delivery proof not complete; not a release."
+        },
+        "limits": "Actual progress is separate from immutable planning/history. No all-review, GPU or independent90 closure; no elapsed-only credits.",
+        "R16": {
+          "entry_adopted": true,
+          "actual_functional_modes_passed": 9,
+          "required_environment_modes": 9,
+          "remaining_notaccepted": 0,
+          "all_environment_entry_condition_complete": true,
+          "entry_acceptance_audit_sha256": "cf668fc754156ffae291736412f5d199ebef0b38366496d146a489d766b6d70e",
+          "remaining_actual_conditions": [
+            "Actual100point/512MiB limit refusal and no automatic deletion: helper28 only asserts displayed explanation, not reaching a limit",
+            "Nonempty Assembly shared assets and retained save-point reference lifetime: helper106-128/257-272 intentionally empty Assembly",
+            "Cancellation full document/attachments and exact history invariance across kinds: no such full oracle in entire428line helper",
+            "External transmission0: no network-request recording/refusal oracle in current helper"
+          ]
+        },
+        "GPU": {
+          "posttrace3_adopted": true,
+          "posttrace_unit_actual": "57/57 PASS",
+          "broker_v4_actual": "34/34 pure boundary and x64ABI PASS; native0",
+          "broker_receipt_sha256": "bc12bd536a757988ff653dec1c16e4f632af719178ec67d8f96862e5e4c15a48",
+          "runtime_phase_scope6": "Runtime6 production phases and E2E native integration adopted; kernel96/model156/TYPE actualPASS; current real app ETL/100feature phases still unexecuted.",
+          "physical_resident_pass": false,
+          "resident_peak_bytes": null,
+          "initial_census_complete": null,
+          "controller_path_repair": {
+            "wrapper_sha256": "9eff765cd2a4a3cc483864fae5382071f78d57a87a67d7f8071d2bde697e573d",
+            "System32_prepare_only_exit": 0,
+            "actual_elevated_run_result": null
+          }
+        },
+        "current_verification": {
+          "adoption8_receipt_sha256": "01ce3c40786e109a97e647591818d0725ba21865c3f726663da6885eb1c86e8a",
+          "adoption_source_changes": 6,
+          "adoption_e2e_changes": 2,
+          "all_old_scopes_closed_before_QA": true,
+          "kernel_actual_passed": 96,
+          "model_actual_passed": 156,
+          "checks": {
+            "unit-kernel": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-kernel-20261007-065013-cb9b30040d5b4bb88629248d20d9885c/receipt.json",
+              "sha256": "22305835d89c59cb421bbbab529ad2d38d7d9fe0fe3dd27b0b41b4b998aa712c",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065017-orchestrator-fixtures-r20-help-unit-kernel-unit",
+              "finished_at": "2026-10-07T06:50:48.520129+09:00"
+            },
+            "unit-model": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-model-20261007-065013-ae943feea61844bc8c9a8878b4fb462a/receipt.json",
+              "sha256": "d407b0f382647e401ec8df167a0872f59a46e95771b11a9601cf652e8ada1feb",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065017-orchestrator-fixtures-r20-help-unit-model-unit",
+              "finished_at": "2026-10-07T06:50:53.893020+09:00"
+            },
+            "unit-help": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-help-20261007-065244-0d60eb81fdc24e4dab3643079d30cd6a/receipt.json",
+              "sha256": "e16f3a8aa55c99b8064f417bba9f07df0c19286deb68375877f3c366a56d4c43",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065247-orchestrator-fixtures-r20-help-unit-help-unit",
+              "finished_at": "2026-10-07T06:52:52.561898+09:00"
+            },
+            "typecheck": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-typecheck-20261007-065244-f0e5c8b1d22b4cdebefd4bed31e662a0/receipt.json",
+              "sha256": "8a5879179af9dbc1f8abb2825ed08e8e8dbbaff7bfc77b69f20cd8f9dfb2f6ac",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065247-orchestrator-fixtures-r20-help-typecheck-typecheck",
+              "finished_at": "2026-10-07T06:53:03.825614+09:00"
+            },
+            "lint": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-lint-20261007-065408-1c421d7365fa43769007efe13836c012/receipt.json",
+              "sha256": "99792e9870b64fca1581ceae0ab8ac497cba9ccf10c276dd557995cfbd133dc4",
+              "actual_exit": 1,
+              "pass": false,
+              "run_id": "20261007-065411-orchestrator-fixtures-r20-help-lint-lint",
+              "finished_at": "2026-10-07T06:54:31.145273+09:00"
+            }
+          },
+          "lint_remaining": "Two no-unsafe-assignment errors in uiReferences.test.ts; separate two-line worker candidate received, not yet adopted.",
+          "whole_release_quality_pass": false
+        },
+        "R18_RIM": {
+          "current_native_six_pass": true,
+          "overall_fifteen_pass": false,
+          "original_condition_closed": true,
+          "mandatory_native_validation_credit_minutes": [
+            5,
+            15
+          ],
+          "negative_origin_admission_pending": false,
+          "actual_validation": {
+            "path": "scratchpad/claude/inspections/v103-rim-native-credit-20261008-221510-bfa6ce7a63de4a8c83cee6019fe5ee8d/actual-root-rim-validation-assessment.json",
+            "sha256": "1ff693a0627d79a51f57ba22630a8938a10e01229c52f8a30e72737bab62a2b7"
+          },
+          "remaining_condition_admission_removed_minutes": [
+            15,
+            45
+          ],
+          "condition_matrix": {
+            "path": "scratchpad/claude/inspections/v103-rim-original-admission-credit-20261008-222517-e9b5ea2a5f86486cbd647411c7011067/original-condition-admission.md",
+            "sha256": "bf509846d27544d310176a2f51f44e68f04cf1df5c793905e86d2c2d9b7fdf64"
+          },
+          "negative_origin_unit": {
+            "path": "scratchpad/claude/inspections/v103-rim-original-admission-credit-20261008-222517-e9b5ea2a5f86486cbd647411c7011067/actual-negative-origin-unit-receipt.json",
+            "sha256": "e4e631276b3d0288d453ac4a032ba13c3d55447356cbdf156a0e7f53aed03b7f"
+          }
+        },
+        "R18_WALL_MATE": {
+          "current_native_three_pass": true,
+          "original_condition_closed": true,
+          "implementation_and_validation_credit_minutes": [
+            10,
+            30
+          ],
+          "original_intermittent_firefox_cause": "unconfirmed",
+          "repair_and_admission_remaining_minutes": [
+            0,
+            0
+          ],
+          "actual_validation": {
+            "path": "scratchpad/claude/inspections/v103-wall-completed-phase-credit-20261009-012050-3b5d469ee68f45d2b9aefc11e53c3073/actual-root-wall-completed-phase-assessment.json",
+            "sha256": "17eb52aaf6dcc40484c118c445c9b5cbc5c6b1872d5aa5522409139432169ada"
+          },
+          "remaining_phase_credit_minutes": [
+            10,
+            35
+          ],
+          "original_condition_accepted_at": "2026-10-09T07:52:18.000680+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-wall-original-acceptance-20261009-075216-d4b0bd0e8f9c46b59a1384d8e643886c/current-root-evidence-acceptance.json",
+            "sha256": "b020e9da2f2be1246bd569b7345362d493f0c380329ea8f90692bb1e7cdd8e66"
+          }
+        },
+        "R18_RED5_EXCHANGE": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            35,
+            90
+          ],
+          "original_condition_accepted_at": "2026-10-09T08:37:02.188128+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-red5-original-acceptance-20261009-083701-d838e146c3964599865be78154ce84c9/current-root-evidence-acceptance.json",
+            "sha256": "5b33725c1d95fba63496c8af609e70988447371f7ce1b6af5e3d5c18dd7e7647"
+          },
+          "current_original_six_native_pass": true,
+          "current_native_receipt": {
+            "sha256": "f3bf378ca29776b552d0c75e1809fb3d9b8343b9afe9ea461a0343808255bc57",
+            "path": "scratchpad/claude/inspections/v103-red5-current-six-20261009-083050-2f075cf44e32474d9a1e5e4771749017/receipt.json"
+          },
+          "historical_whole_runs_pass": false,
+          "historical_exchange_stall_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R20_COLD": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            20,
+            60
+          ],
+          "original_condition_accepted_at": "2026-10-09T09:07:57.770158+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/current-root-evidence-acceptance.json",
+            "sha256": "1da58fc640b51c7b48a1efc854c91b6fe2b78b1853100aea64b7a21a7ec26398"
+          },
+          "current_original_nine_native_pass": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/inspections/v103-r20-cold9-current-20261009-085547-f19544632ce543ea984ab5bd5aed8344/receipt.json",
+            "sha256": "5e9988387fbc9b05910034be7c19635b278f3a29a15e53f44a1c846c543dc0fc"
+          },
+          "historical_whole_runs_pass": false,
+          "historical_cold_stall_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R16_ACTUAL": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            23,
+            63
+          ],
+          "original_condition_accepted_at": "2026-10-09T17:35:29.440279+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e/current-root-evidence-acceptance.json",
+            "sha256": "92d8735154ae32062e25420e81ed44122e46b63bc9ce9748b89cbe6d095f30ef"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_capacity_stall_astra/candidate/r16-final-acceptance/evidence.json",
+            "sha256": "778c410db16910d8b61c325c81328b0ccb0db95140c6be13b152c4722556b9c3"
+          },
+          "mixed_historical_whole_runs_pass": false,
+          "historical_failures_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "W19": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            35,
+            100
+          ],
+          "original_condition_accepted_at": "2026-10-10T00:27:58.258652+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-w19-original-acceptance-20261010-002757-da0b24f7a0aa46a480da2df4a0579ea9/current-root-evidence-acceptance.json",
+            "sha256": "25b61fdebf465ac7b6f286555aa64e02d8cdd9497a4df37a169c4c30986a7fc8"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_sheet_import_astra/candidate/gpu-requirement-audit/w19-final-acceptance/evidence.json",
+            "sha256": "1b823a73769a85974a21c1884bb36238b3af945a6f92de2b325975b49c12e4b3"
+          },
+          "current_whole_runs_pass": true,
+          "driver_physical_resident_certified": false,
+          "manual_image_adoption_certified_by_this_acceptance": false,
+          "historical_failures_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R20_HELP": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            45,
+            112
+          ],
+          "original_condition_accepted_at": "2026-10-10T01:10:45.977836+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r20-help-original-acceptance-20261010-011044-58c291531ba14b668bf0fe33b4627f74/current-root-evidence-acceptance.json",
+            "sha256": "3c3049edb88fab7e812ab74213093168b2779d8636c7cdbb5d613b95d764c122"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_actual_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_manual_text_sol/candidate/distribution-readiness/r20-help-acceptance/evidence.json",
+            "sha256": "f4042398e9413b989865affae3f4b2876903a5f9e23f0dd2146d02d7db5e68b0"
+          },
+          "current_whole_runs_pass": true,
+          "historical_failures_retained": true
+        },
+        "R20_KEYS": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            40,
+            95
+          ],
+          "original_condition_accepted_at": "2026-10-10T11:23:15.268809+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r20-keys-original-acceptance-20261010-112314-64411905e5ad4ae99ea8120f7b031474/current-root-evidence-acceptance.json",
+            "sha256": "2ebd6d5d44290d766ae54f478e7bfa82d650ab20bbe328441daf9d25197d218c"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_actual_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_r20_qa_sol/candidate/ledger-acceptance/evidence.json",
+            "sha256": "bb8771b8ea11520ea9f2400b41eda64941c352c4c219661fdf463cdd4a607739"
+          },
+          "current_whole_runs_pass": true,
+          "historical_failures_retained": true
+        },
+        "W07": {
+          "original_condition_closed": true,
+          "root_decision": {
+            "path": "scratchpad/claude/instructions/v103-root-w07-original-accepted-r1.json",
+            "sha256": "1ebc0bb585d84d13839d0b14014615750145fcbf823c589a572a1429b82ef18d"
+          },
+          "completion_credit_minutes": [
+            0,
+            0
+          ]
+        },
+        "task_ledger": {
+          "recorded_at": "2026-11-12T00:01:54+09:00",
+          "schema": "pointercad-task-ledger-summary/1",
+          "meaning": "全327件のタスク台帳の完了と残りの数（台帳が正本でこの節はその写し）。current_progress の他のキーは、この節を足した更新では変えていない。更新前の current_progress は actual_progress_history の末尾に保全してある。",
+          "ledger": {
+            "path": "scratchpad/claude/root-runtime/ledger/ledger.json",
+            "sha256": "4e484254ecc4b1caf23ab8ac82acb2bd439e43729b097af67481625426b85fb5"
+          },
+          "listing": {
+            "path": "docs/公開までの残タスク一覧.md",
+            "sha256": "d3ab4c69ef1e4afbb448c720c60e3fabc617d47e1b093a8ba16cb602874aadf9"
+          },
+          "total": 333,
+          "completed": 287,
+          "remaining": 46,
+          "remaining_pending": 46,
+          "remaining_unassessed_implementation_or_proof": 0,
+          "previous": {
+            "label": "2026-10-26 05:58 時点（今回直前の完了164・残169）",
+            "total": 333,
+            "completed": 164,
+            "remaining": 169
+          },
+          "delta": {
+            "completed": 123,
+            "remaining": -123,
+            "added": 0
+          },
+          "original21": {
+            "complete": 13,
+            "remaining": 8
+          },
+          "remaining_by_category": {
+            "shape": 0,
+            "materials": 0,
+            "analysis": 0,
+            "operation": 7,
+            "manual": 0,
+            "distribution": 26,
+            "quality": 13
+          },
+          "completed_ids": [
+            "PG5A.origin-zero",
+            "PG5A.origin-million",
+            "PG5A.origin-billion",
+            "PG5A.stl-limits",
+            "W21.CHROMIUM",
+            "W21.FIREFOX",
+            "W21.ELECTRON",
+            "W21.REVIEW",
+            "WM.FREEZE",
+            "WM.CENSUS",
+            "WM.CAPTURE",
+            "WM.REGISTRY",
+            "WM.HTML",
+            "WM.PDF",
+            "QA.TYPE",
+            "QA.LINT",
+            "QA.WEB-BUILD",
+            "QA.DESKTOP-BUILD",
+            "QA.E2E-COVERAGE",
+            "QA.INDEPENDENT-COPY",
+            "DELIVERY.PRESERVE",
+            "DELIVERY.ROOT-FF",
+            "DELIVERY.C3",
+            "DELIVERY.SNAPSHOT",
+            "EX-01.UI",
+            "EX-01.DOC",
+            "EX-02.UI",
+            "EX-02.DOC",
+            "EX-03.GAP",
+            "EX-03.01.ORACLE",
+            "EX-03.02.ORACLE",
+            "EX-03.03.ORACLE",
+            "EX-03.04.ORACLE",
+            "EX-03.PERSIST",
+            "EX-03.UNDO",
+            "EX-03.UI",
+            "EX-03.DOC",
+            "EX-04.GAP",
+            "EX-04.01.AUTHOR",
+            "EX-04.01.ORACLE",
+            "EX-04.02.AUTHOR",
+            "EX-04.02.ORACLE",
+            "EX-04.03.AUTHOR",
+            "EX-04.03.ORACLE",
+            "EX-04.04.AUTHOR",
+            "EX-04.04.ORACLE",
+            "EX-04.PERSIST",
+            "EX-04.UNDO",
+            "EX-04.UI",
+            "EX-04.DOC",
+            "EX-05.GAP",
+            "EX-05.01.AUTHOR",
+            "EX-05.01.ORACLE",
+            "EX-05.02.AUTHOR",
+            "EX-05.02.ORACLE",
+            "EX-05.03.AUTHOR",
+            "EX-05.03.ORACLE",
+            "EX-05.04.AUTHOR",
+            "EX-05.04.ORACLE",
+            "EX-05.PERSIST",
+            "EX-05.UNDO",
+            "EX-05.UI",
+            "EX-05.DOC",
+            "EX-06.PERSIST",
+            "EX-06.UNDO",
+            "EX-06.UI",
+            "EX-06.DOC",
+            "EX-07.GAP",
+            "EX-07.01.AUTHOR",
+            "EX-07.01.ORACLE",
+            "EX-07.02.AUTHOR",
+            "EX-07.02.ORACLE",
+            "EX-07.03.AUTHOR",
+            "EX-07.03.ORACLE",
+            "EX-07.04.AUTHOR",
+            "EX-07.04.ORACLE",
+            "EX-07.PERSIST",
+            "EX-07.UNDO",
+            "EX-07.UI",
+            "EX-07.DOC",
+            "EX-08.PERSIST",
+            "EX-08.UNDO",
+            "EX-08.UI",
+            "EX-08.DOC",
+            "EX-09.GAP",
+            "EX-09.01.AUTHOR",
+            "EX-09.01.ORACLE",
+            "EX-09.02.AUTHOR",
+            "EX-09.02.ORACLE",
+            "EX-09.03.AUTHOR",
+            "EX-09.03.ORACLE",
+            "EX-09.04.AUTHOR",
+            "EX-09.04.ORACLE",
+            "EX-09.05.AUTHOR",
+            "EX-09.05.ORACLE",
+            "EX-09.06.AUTHOR",
+            "EX-09.06.ORACLE",
+            "EX-09.07.AUTHOR",
+            "EX-09.07.ORACLE",
+            "EX-09.09.AUTHOR",
+            "EX-09.09.ORACLE",
+            "EX-09.PERSIST",
+            "EX-09.UNDO",
+            "EX-09.UI",
+            "EX-09.DOC",
+            "EX-10.GAP",
+            "EX-10.04.AUTHOR",
+            "EX-10.04.ORACLE",
+            "EX-10.PERSIST",
+            "EX-10.UNDO",
+            "EX-10.UI",
+            "EX-10.DOC",
+            "EX-12.GAP",
+            "EX-12.01.AUTHOR",
+            "EX-12.01.ORACLE",
+            "EX-12.02.AUTHOR",
+            "EX-12.02.ORACLE",
+            "EX-12.03.AUTHOR",
+            "EX-12.03.ORACLE",
+            "EX-12.04.AUTHOR",
+            "EX-12.04.ORACLE",
+            "EX-12.05.AUTHOR",
+            "EX-12.05.ORACLE",
+            "EX-12.PERSIST",
+            "EX-12.UNDO",
+            "EX-12.UI",
+            "EX-12.DOC",
+            "EX-13.GAP",
+            "EX-13.01.AUTHOR",
+            "EX-13.01.ORACLE",
+            "EX-13.02.AUTHOR",
+            "EX-13.02.ORACLE",
+            "EX-13.03.AUTHOR",
+            "EX-13.03.ORACLE",
+            "EX-13.04.AUTHOR",
+            "EX-13.04.ORACLE",
+            "EX-13.PERSIST",
+            "EX-13.UNDO",
+            "EX-13.UI",
+            "EX-13.DOC",
+            "EX-14.04.ORACLE",
+            "EX-14.UI",
+            "EX-14.DOC",
+            "EX-15.GAP",
+            "EX-15.01.AUTHOR",
+            "EX-15.01.ORACLE",
+            "EX-16.GAP",
+            "EX-16.01.AUTHOR",
+            "EX-16.01.ORACLE",
+            "EX-16.02.AUTHOR",
+            "EX-16.02.ORACLE",
+            "EX-16.03.AUTHOR",
+            "EX-16.03.ORACLE",
+            "EX-17.GAP",
+            "EX-17.01.AUTHOR",
+            "EX-17.01.ORACLE",
+            "EX-17.02.AUTHOR",
+            "EX-17.02.ORACLE",
+            "EX-18.GAP",
+            "EX-18.01.AUTHOR",
+            "EX-18.01.ORACLE",
+            "EX-18.02.AUTHOR",
+            "EX-18.02.ORACLE",
+            "EX-18.03.AUTHOR",
+            "EX-18.03.ORACLE",
+            "EX-18.04.AUTHOR",
+            "EX-18.04.ORACLE",
+            "EX-18.05.AUTHOR",
+            "EX-18.05.ORACLE",
+            "EX-18.06.AUTHOR",
+            "EX-18.06.ORACLE",
+            "EX-18.PERSIST",
+            "EX-18.UNDO",
+            "EX-18.UI",
+            "EX-18.DOC",
+            "EX-09.WP-materials-data",
+            "EX-09.WP-mesh-and-idealization",
+            "EX-09.WP-linear-static",
+            "EX-09.WP-contact-and-connections",
+            "EX-09.WP-plastic-large-deformation",
+            "EX-09.WP-buckling",
+            "EX-09.WP-vibration",
+            "EX-09.WP-impact",
+            "EX-09.WP-fatigue",
+            "EX-09.WP-web-desktop-delivery",
+            "EX-09.WP-postprocess-verification",
+            "EX-09.CONTACT-FIXTURES",
+            "WAIT.QUEUE",
+            "WAIT.INSTALL",
+            "WAIT.PRIVILEGE",
+            "WAIT.DATA-LICENSE",
+            "W22.PAIR.firefox.hemisphere",
+            "W22.PAIR.electron.input",
+            "W22.PAIR.electron.ADD-23",
+            "W22.PAIR.electron.ADD-17",
+            "W22.PAIR.electron.hemisphere",
+            "W22.PAIR.functional.input",
+            "W22.PAIR.functional.ADD-23",
+            "W22.PAIR.functional.ADD-17",
+            "W22.PAIR.functional.hemisphere",
+            "W22.PAIR.firefox.input",
+            "W22.PAIR.firefox.ADD-23",
+            "W22.REVIEW",
+            "R16-ENTRY.ACCEPTED",
+            "R16-ACTUAL.ACCEPTED",
+            "R18-RED5-EXCHANGE.ACCEPTED",
+            "R18-RIM.ACCEPTED",
+            "R18-WALL-MATE.ACCEPTED",
+            "R20-COLD.ACCEPTED",
+            "R20-KEYS-DISABLED.ACCEPTED",
+            "R17-W12b.ACCEPTED",
+            "W19-performance.ACCEPTED",
+            "W07-export.ACCEPTED",
+            "R20-HELP.ACCEPTED",
+            "EX-11.ACCEPTED",
+            "PG4.CHUNKS",
+            "W21.BUNDLE",
+            "SEC.ALERTS",
+            "SEC.LOCK",
+            "SEC.DISPOSITION",
+            "EX-01.GAP",
+            "EX-01.01.AUTHOR",
+            "EX-01.01.ORACLE",
+            "EX-01.02.AUTHOR",
+            "EX-01.02.ORACLE",
+            "EX-01.03.AUTHOR",
+            "EX-01.03.ORACLE",
+            "EX-01.PERSIST",
+            "EX-01.UNDO",
+            "EX-02.GAP",
+            "EX-02.01.AUTHOR",
+            "EX-02.01.ORACLE",
+            "EX-02.02.AUTHOR",
+            "EX-02.02.ORACLE",
+            "EX-02.03.AUTHOR",
+            "EX-02.03.ORACLE",
+            "EX-02.PERSIST",
+            "EX-02.UNDO",
+            "EX-03.01.AUTHOR",
+            "EX-03.02.AUTHOR",
+            "EX-03.03.AUTHOR",
+            "EX-03.04.AUTHOR",
+            "EX-06.GAP",
+            "EX-06.01.AUTHOR",
+            "EX-06.01.ORACLE",
+            "EX-06.02.AUTHOR",
+            "EX-06.02.ORACLE",
+            "EX-06.03.AUTHOR",
+            "EX-06.03.ORACLE",
+            "EX-06.04.AUTHOR",
+            "EX-06.04.ORACLE",
+            "EX-08.GAP",
+            "EX-08.01.AUTHOR",
+            "EX-08.01.ORACLE",
+            "EX-08.02.AUTHOR",
+            "EX-08.02.ORACLE",
+            "EX-08.03.AUTHOR",
+            "EX-08.03.ORACLE",
+            "EX-09.08.AUTHOR",
+            "EX-09.08.ORACLE",
+            "EX-10.01.AUTHOR",
+            "EX-10.01.ORACLE",
+            "EX-10.02.AUTHOR",
+            "EX-10.02.ORACLE",
+            "EX-10.03.AUTHOR",
+            "EX-10.03.ORACLE",
+            "EX-14.GAP",
+            "EX-14.01.AUTHOR",
+            "EX-14.01.ORACLE",
+            "EX-14.02.AUTHOR",
+            "EX-14.02.ORACLE",
+            "EX-14.03.AUTHOR",
+            "EX-14.03.ORACLE",
+            "EX-14.04.AUTHOR",
+            "EX-14.PERSIST",
+            "EX-14.UNDO",
+            "EX-09.CONTACT-SOURCE",
+            "EX-09.CONTACT-BUILD",
+            "EX-09.CONTACT-REVIEW",
+            "EX-09.CONTACT-PHYSICAL",
+            "W22.PAIR.firefox.ADD-17",
+            "OPS.DISK-CLEANUP",
+            "CODE.CONSISTENCY",
+            "EX-18.16.DESIGN",
+            "BUG.VIEW-PICK-NULL",
+            "EX-03.S2.COVERAGE",
+            "BUG.MESH-OWNERS-128"
+          ],
+          "added_ids": [
+            "OPS.DISK-CLEANUP",
+            "CODE.CONSISTENCY",
+            "EX-18.16.DESIGN",
+            "BUG.VIEW-PICK-NULL",
+            "EX-03.S2.COVERAGE",
+            "BUG.MESH-OWNERS-128"
+          ],
+          "completed_this_update": [
+            {
+              "id": "QA.INDEPENDENT-COPY",
+              "accepted_at": "2026-11-12T00:01:53+09:00",
+              "accepted_by": "Root 統括",
+              "work_ja": "独立したコピーで全体検査",
+              "evidence": [
+                {
+                  "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-12-accept-0001/QA.INDEPENDENT-COPY/accepted-receipt.json",
+                  "sha256": "383305f188d0c79e550a4e2ce07261896e258b97eb3763df43bf9e2a66bf44c5",
+                  "summary": "QA.INDEPENDENT-COPY: 正規終端成功。delivery 20261111-213648、送信commit 888f67bf3f92234c1c84ba95380b9a1f6fd1ce8b。。RUN の無い受入（文書・設計）: 正規Task Schedulerの終端原票を使用。prepared main統合・state・runner・ログのSHAを保存し、架空RUNは作らない。。確かめていない範囲: 手元gateの根拠に限定。同一commitの両OS CI・配布・公開・最終独立レビューは別途必要。。根拠ファイル 8 件の写しと RUN の SHA を受入原票に固定。"
+                }
+              ]
+            }
+          ],
+          "limits": "完了の件数と根拠の写しであり、公開見込みの再計算ではない。release_estimate・completed_since_previous_forecast・accepted_remaining_subtask_credits は変えていない。GAP の行の受入は現状と不足を特定した調査の提出の受入で、AUTHOR の行の受入は実装の存在と検査での確認であり、どちらも製品全体の合格や公開の認定ではない。",
+          "release_scope": {
+            "historicalTotal": 333,
+            "excluded": 7,
+            "requiredTotal": 326,
+            "requiredCompleted": 287,
+            "requiredRemaining": 39,
+            "excludedIDs": [
+              "PG4.PROBE",
+              "PG4.RESIDENT",
+              "PG4.ALLOCATED",
+              "PG4.ATTRIBUTION",
+              "PG4B.chromium",
+              "PG4B.firefox",
+              "PG4B.electron"
+            ]
+          }
+        }
+      },
+      "previous_next_action": {
+        "Root": "Root accepted the single W21-W22 parent covering R25 and R26; original21 is 13 complete / 8 remaining. 333 task IDs/states/allocations and forecast bounds unchanged; no time credit. Final manual/screenshots and whole correctness/release checks remain open.",
+        "workers": "Two private scopes sealed and canonically done; new complex scoped judgments use Astra, mechanical scopes Sol."
+      },
+      "before_sha256": "db775e7fbe05b905a774be3bfcbdb6d02947e416db3e4d820247f8cd3b5966a1"
+    },
+    {
+      "saved_at": "2026-11-12T00:01:57+09:00",
+      "previous_progress": {
+        "recorded_at": "2026-11-12T00:01:56+09:00",
+        "source_count": 3193,
+        "e2e_count": 429,
+        "R18": {
+          "semantic17_adopted": true,
+          "type_native4_and_lint2_adopted": true,
+          "native8_adopted": true,
+          "native8_receipt_sha256": "7949a7bd6e7c4fc45704ddd8399613742ea8a6ccaf051b2aa457d5f94ef67f3c",
+          "latest_typecheck": {
+            "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-typecheck-20261007-065244-f0e5c8b1d22b4cdebefd4bed31e662a0/receipt.json",
+            "sha256": "8a5879179af9dbc1f8abb2825ed08e8e8dbbaff7bfc77b69f20cd8f9dfb2f6ac",
+            "actual_exit": 0,
+            "pass": true,
+            "run_id": "20261007-065247-orchestrator-fixtures-r20-help-typecheck-typecheck",
+            "finished_at": "2026-10-07T06:53:03.825614+09:00"
+          },
+          "previous_lint": {
+            "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-lint-20261007-065408-1c421d7365fa43769007efe13836c012/receipt.json",
+            "sha256": "99792e9870b64fca1581ceae0ab8ac497cba9ccf10c276dd557995cfbd133dc4",
+            "actual_exit": 1,
+            "pass": false,
+            "run_id": "20261007-065411-orchestrator-fixtures-r20-help-lint-lint",
+            "finished_at": "2026-10-07T06:54:31.145273+09:00"
+          },
+          "latest_UI": "461/461 PASS,86.812seconds",
+          "latest_kernel": "extruded-board saved-query regression51/51 actual PASS",
+          "model_origin_boundary": "4PASS14.125s; DTO boundary only",
+          "production_atomic8": "adopted; current actual TYPE/lint/UI461 PASS; native acceptance pending",
+          "independent_negative9": "adopted and contained in actual461 PASS",
+          "native_type3": "actual API fixes/rootComlink locked+installed, TYPE PASS",
+          "extra_identity_implementation_allowance_removed": true,
+          "original_five": "original5/5 actualPASS; separate exchange(a) actualPASS within partial33 run; Native3 notaccepted, first current flow advanced beyond corrected label then stalled on giant binary diff; finite strict-byte guard now adopted, thumbnail112pixels difference unresolved",
+          "original_five_evidence": {
+            "path": "scratchpad/claude/inspections/v103-original-five-reforecast-20261007-033653-640315f2e9d24a088201e20d80867c6f/actual-five-cause.json",
+            "sha256": "87c55b480ff9914b3b23d7b358727583add5c8019d24101d179e9eee0cc22543"
+          },
+          "saved_notice": "adopted2, TYPE/lint/statusText+StatusBar208/208 PASS",
+          "latest_native_run": "20261007-035924-orchestrator-r16-r18-thirteen-e2e",
+          "entry_and_binary_guard": {
+            "cylinderSubshapeColdFlow_sha256": "0f8883aca0ef7975b30445b2aea17d0add3eb320537f6ffe75e82b2b05336e96",
+            "namedSavePointsFlow_sha256": "b593c0223c7285d7b0ba87ef43c45532db400e79fa0f1c8864e52e432d4f9536",
+            "actual_partial_run": "24PASS,9 unresolved,33 expected; do not use maximum index25 as count",
+            "all_original_conditions_kept": true
+          },
+          "current_native_guard": {
+            "cylinderSubshapeColdFlow_sha256": "fb4a10e98dc3a8f1d87d8c3fa7b7b33cec0706d22f70fb39209cef3cea77f373",
+            "new_real_E2E_executed": false,
+            "all_original_conditions_kept": true
+          }
+        },
+        "R17": {
+          "drawing_fixture_unit9_pass": true,
+          "preview_B_live_adopted": true,
+          "preview_B_QA": "Actual UI preview/scene67PASS and model references19PASS; all native/gpu/512/cold acceptance not certified",
+          "new_native_E2E4_adopted": true,
+          "new_native_E2E_run": "unexecuted; minimum legacy native3env next, preview4 remains distinct",
+          "latest_native_six": {
+            "receipt_sha256": "69a0a9b29cf5cd97d5d0711705a56f15f6b5bf49c549e01e043a7fdef33d5a05",
+            "actual_passed": 6,
+            "original_acceptance_complete": false,
+            "remaining": "Assembly3 and original Part oracle mapping remain; no full release gate claim."
+          },
+          "readonly_implementation_accepted": true,
+          "implementation_credit_minutes": [
+            15,
+            45
+          ],
+          "mandatory_native_condition_closed": true,
+          "latest_native": "Original Assembly3 exact currentSource passed20:00:09. Part/Drawing6 currentKernel and final original condition admission remain.",
+          "actual_assembly_three_environment_pass": true,
+          "known_repair_accepted": true,
+          "repair_credit_minutes": [
+            15,
+            60
+          ],
+          "actual_part_drawing_six_pass": true,
+          "valid_confirm_native_part_assembly_proof": "missing; independent expected ref and real confirm1 test construction allocated6/12",
+          "native_confirm_test_construction_adopted": true,
+          "current_original_native_nine_actual_pass": true,
+          "native_validation_credit_minutes": [
+            10,
+            30
+          ],
+          "original_condition_admission_closed": true,
+          "original_condition_admission_credit_minutes": [
+            8,
+            18
+          ],
+          "original_condition_matrix": {
+            "path": "scratchpad/claude/inspections/v103-r17-original-admission-credit-20261008-213330-10d387bd5d5f4c6e9fc61864db30e9a9/original-condition-admission.md",
+            "sha256": "9f362fd50c8c25005be568772c42ad64044804f08d9811bc974db67e42a33008"
+          }
+        },
+        "R20": {
+          "latest_actual_run_id": "20261006-153003-orchestrator-r20-three-env-pixel-e2e",
+          "terminal": "FAIL/exit-1; selected Chromium passes, Firefox/Electron startup dependencies fail before target",
+          "all_environments_accepted": false
+        },
+        "operations": {
+          "cadence_violation_report": 213,
+          "monitor_owner": 27472,
+          "monitor_nonce": "a42d40713e32b903b17572a499c731fa",
+          "latest_personal_ack_receipt_sha256": "37cbffba6930c320d7a3a3cb939d847bce4b53da7408fafb0205847d88fed013",
+          "latest_ack_at": "2026-10-07T07:01:12.854318+09:00",
+          "monitor_expiry_estimate": "2026-10-07T10:29:56+09:00 finite planned lifetime; actual lease required",
+          "latest_report_number": 275,
+          "permission_probe_receipt_sha256": "e06c03691fb230471ec50e1ddad4901da820a52e62c285bd7831313b0168571a",
+          "git_write_probe": ".git exclusive temporary write/read/delete succeeded; index/ref/config unchanged",
+          "ordinary_Git_network": "ls-remote succeeded; old network/read-only failure is historical",
+          "new_WIP_commits_pushed": 0,
+          "new_WIP_push_state": "Normal independent status2 commit239f1cd complete; ordinary pre-push session9220 running, remote result pending. No main update confirmed.",
+          "verified_restart_checkpoint": "05:03 verified647files/delete1 checkpoint predates latest adoptions; adopted source before/candidate bytes and immutable journals preserved. New full verified checkpoint pending.",
+          "GPU_resident": "actual TDH60purePASS and5503structuralcomplete/unresolved0; owned broker34pure/x64ABI PASS only; actual app capture/initialcensus/physical512MiB unknown",
+          "ORI3": "Continue unchanged, no foreign process stop",
+          "latest_GPU_capability_receipt_sha256": "e3b2c0b4b1505a9a1f64e4351db351706610cd726c6bdf473b16b0d68aed3615",
+          "workers": "Three current GPT6.1Sol SDK scopes strictly accepted07:03:24 and separate mirror GO delivered: ASM actual R20 entrances, MEAS owned app GPU runner2, SEM help lint1 and material registration2.",
+          "delivery": "Normal independent two-file commit done, normal push pending. Whole current WIP delivery proof not complete; not a release."
+        },
+        "limits": "Actual progress is separate from immutable planning/history. No all-review, GPU or independent90 closure; no elapsed-only credits.",
+        "R16": {
+          "entry_adopted": true,
+          "actual_functional_modes_passed": 9,
+          "required_environment_modes": 9,
+          "remaining_notaccepted": 0,
+          "all_environment_entry_condition_complete": true,
+          "entry_acceptance_audit_sha256": "cf668fc754156ffae291736412f5d199ebef0b38366496d146a489d766b6d70e",
+          "remaining_actual_conditions": [
+            "Actual100point/512MiB limit refusal and no automatic deletion: helper28 only asserts displayed explanation, not reaching a limit",
+            "Nonempty Assembly shared assets and retained save-point reference lifetime: helper106-128/257-272 intentionally empty Assembly",
+            "Cancellation full document/attachments and exact history invariance across kinds: no such full oracle in entire428line helper",
+            "External transmission0: no network-request recording/refusal oracle in current helper"
+          ]
+        },
+        "GPU": {
+          "posttrace3_adopted": true,
+          "posttrace_unit_actual": "57/57 PASS",
+          "broker_v4_actual": "34/34 pure boundary and x64ABI PASS; native0",
+          "broker_receipt_sha256": "bc12bd536a757988ff653dec1c16e4f632af719178ec67d8f96862e5e4c15a48",
+          "runtime_phase_scope6": "Runtime6 production phases and E2E native integration adopted; kernel96/model156/TYPE actualPASS; current real app ETL/100feature phases still unexecuted.",
+          "physical_resident_pass": false,
+          "resident_peak_bytes": null,
+          "initial_census_complete": null,
+          "controller_path_repair": {
+            "wrapper_sha256": "9eff765cd2a4a3cc483864fae5382071f78d57a87a67d7f8071d2bde697e573d",
+            "System32_prepare_only_exit": 0,
+            "actual_elevated_run_result": null
+          }
+        },
+        "current_verification": {
+          "adoption8_receipt_sha256": "01ce3c40786e109a97e647591818d0725ba21865c3f726663da6885eb1c86e8a",
+          "adoption_source_changes": 6,
+          "adoption_e2e_changes": 2,
+          "all_old_scopes_closed_before_QA": true,
+          "kernel_actual_passed": 96,
+          "model_actual_passed": 156,
+          "checks": {
+            "unit-kernel": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-kernel-20261007-065013-cb9b30040d5b4bb88629248d20d9885c/receipt.json",
+              "sha256": "22305835d89c59cb421bbbab529ad2d38d7d9fe0fe3dd27b0b41b4b998aa712c",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065017-orchestrator-fixtures-r20-help-unit-kernel-unit",
+              "finished_at": "2026-10-07T06:50:48.520129+09:00"
+            },
+            "unit-model": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-model-20261007-065013-ae943feea61844bc8c9a8878b4fb462a/receipt.json",
+              "sha256": "d407b0f382647e401ec8df167a0872f59a46e95771b11a9601cf652e8ada1feb",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065017-orchestrator-fixtures-r20-help-unit-model-unit",
+              "finished_at": "2026-10-07T06:50:53.893020+09:00"
+            },
+            "unit-help": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-unit-help-20261007-065244-0d60eb81fdc24e4dab3643079d30cd6a/receipt.json",
+              "sha256": "e16f3a8aa55c99b8064f417bba9f07df0c19286deb68375877f3c366a56d4c43",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065247-orchestrator-fixtures-r20-help-unit-help-unit",
+              "finished_at": "2026-10-07T06:52:52.561898+09:00"
+            },
+            "typecheck": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-typecheck-20261007-065244-f0e5c8b1d22b4cdebefd4bed31e662a0/receipt.json",
+              "sha256": "8a5879179af9dbc1f8abb2825ed08e8e8dbbaff7bfc77b69f20cd8f9dfb2f6ac",
+              "actual_exit": 0,
+              "pass": true,
+              "run_id": "20261007-065247-orchestrator-fixtures-r20-help-typecheck-typecheck",
+              "finished_at": "2026-10-07T06:53:03.825614+09:00"
+            },
+            "lint": {
+              "receipt": "scratchpad/claude/inspections/v103-fixtures-r20-help-check-lint-20261007-065408-1c421d7365fa43769007efe13836c012/receipt.json",
+              "sha256": "99792e9870b64fca1581ceae0ab8ac497cba9ccf10c276dd557995cfbd133dc4",
+              "actual_exit": 1,
+              "pass": false,
+              "run_id": "20261007-065411-orchestrator-fixtures-r20-help-lint-lint",
+              "finished_at": "2026-10-07T06:54:31.145273+09:00"
+            }
+          },
+          "lint_remaining": "Two no-unsafe-assignment errors in uiReferences.test.ts; separate two-line worker candidate received, not yet adopted.",
+          "whole_release_quality_pass": false
+        },
+        "R18_RIM": {
+          "current_native_six_pass": true,
+          "overall_fifteen_pass": false,
+          "original_condition_closed": true,
+          "mandatory_native_validation_credit_minutes": [
+            5,
+            15
+          ],
+          "negative_origin_admission_pending": false,
+          "actual_validation": {
+            "path": "scratchpad/claude/inspections/v103-rim-native-credit-20261008-221510-bfa6ce7a63de4a8c83cee6019fe5ee8d/actual-root-rim-validation-assessment.json",
+            "sha256": "1ff693a0627d79a51f57ba22630a8938a10e01229c52f8a30e72737bab62a2b7"
+          },
+          "remaining_condition_admission_removed_minutes": [
+            15,
+            45
+          ],
+          "condition_matrix": {
+            "path": "scratchpad/claude/inspections/v103-rim-original-admission-credit-20261008-222517-e9b5ea2a5f86486cbd647411c7011067/original-condition-admission.md",
+            "sha256": "bf509846d27544d310176a2f51f44e68f04cf1df5c793905e86d2c2d9b7fdf64"
+          },
+          "negative_origin_unit": {
+            "path": "scratchpad/claude/inspections/v103-rim-original-admission-credit-20261008-222517-e9b5ea2a5f86486cbd647411c7011067/actual-negative-origin-unit-receipt.json",
+            "sha256": "e4e631276b3d0288d453ac4a032ba13c3d55447356cbdf156a0e7f53aed03b7f"
+          }
+        },
+        "R18_WALL_MATE": {
+          "current_native_three_pass": true,
+          "original_condition_closed": true,
+          "implementation_and_validation_credit_minutes": [
+            10,
+            30
+          ],
+          "original_intermittent_firefox_cause": "unconfirmed",
+          "repair_and_admission_remaining_minutes": [
+            0,
+            0
+          ],
+          "actual_validation": {
+            "path": "scratchpad/claude/inspections/v103-wall-completed-phase-credit-20261009-012050-3b5d469ee68f45d2b9aefc11e53c3073/actual-root-wall-completed-phase-assessment.json",
+            "sha256": "17eb52aaf6dcc40484c118c445c9b5cbc5c6b1872d5aa5522409139432169ada"
+          },
+          "remaining_phase_credit_minutes": [
+            10,
+            35
+          ],
+          "original_condition_accepted_at": "2026-10-09T07:52:18.000680+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-wall-original-acceptance-20261009-075216-d4b0bd0e8f9c46b59a1384d8e643886c/current-root-evidence-acceptance.json",
+            "sha256": "b020e9da2f2be1246bd569b7345362d493f0c380329ea8f90692bb1e7cdd8e66"
+          }
+        },
+        "R18_RED5_EXCHANGE": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            35,
+            90
+          ],
+          "original_condition_accepted_at": "2026-10-09T08:37:02.188128+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-red5-original-acceptance-20261009-083701-d838e146c3964599865be78154ce84c9/current-root-evidence-acceptance.json",
+            "sha256": "5b33725c1d95fba63496c8af609e70988447371f7ce1b6af5e3d5c18dd7e7647"
+          },
+          "current_original_six_native_pass": true,
+          "current_native_receipt": {
+            "sha256": "f3bf378ca29776b552d0c75e1809fb3d9b8343b9afe9ea461a0343808255bc57",
+            "path": "scratchpad/claude/inspections/v103-red5-current-six-20261009-083050-2f075cf44e32474d9a1e5e4771749017/receipt.json"
+          },
+          "historical_whole_runs_pass": false,
+          "historical_exchange_stall_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R20_COLD": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            20,
+            60
+          ],
+          "original_condition_accepted_at": "2026-10-09T09:07:57.770158+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/current-root-evidence-acceptance.json",
+            "sha256": "1da58fc640b51c7b48a1efc854c91b6fe2b78b1853100aea64b7a21a7ec26398"
+          },
+          "current_original_nine_native_pass": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/inspections/v103-r20-cold9-current-20261009-085547-f19544632ce543ea984ab5bd5aed8344/receipt.json",
+            "sha256": "5e9988387fbc9b05910034be7c19635b278f3a29a15e53f44a1c846c543dc0fc"
+          },
+          "historical_whole_runs_pass": false,
+          "historical_cold_stall_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R16_ACTUAL": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            23,
+            63
+          ],
+          "original_condition_accepted_at": "2026-10-09T17:35:29.440279+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e/current-root-evidence-acceptance.json",
+            "sha256": "92d8735154ae32062e25420e81ed44122e46b63bc9ce9748b89cbe6d095f30ef"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_capacity_stall_astra/candidate/r16-final-acceptance/evidence.json",
+            "sha256": "778c410db16910d8b61c325c81328b0ccb0db95140c6be13b152c4722556b9c3"
+          },
+          "mixed_historical_whole_runs_pass": false,
+          "historical_failures_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "W19": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            35,
+            100
+          ],
+          "original_condition_accepted_at": "2026-10-10T00:27:58.258652+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-w19-original-acceptance-20261010-002757-da0b24f7a0aa46a480da2df4a0579ea9/current-root-evidence-acceptance.json",
+            "sha256": "25b61fdebf465ac7b6f286555aa64e02d8cdd9497a4df37a169c4c30986a7fc8"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_native_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_sheet_import_astra/candidate/gpu-requirement-audit/w19-final-acceptance/evidence.json",
+            "sha256": "1b823a73769a85974a21c1884bb36238b3af945a6f92de2b325975b49c12e4b3"
+          },
+          "current_whole_runs_pass": true,
+          "driver_physical_resident_certified": false,
+          "manual_image_adoption_certified_by_this_acceptance": false,
+          "historical_failures_retained": true,
+          "complete_descendant_cleanup_certified": false
+        },
+        "R20_HELP": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            45,
+            112
+          ],
+          "original_condition_accepted_at": "2026-10-10T01:10:45.977836+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r20-help-original-acceptance-20261010-011044-58c291531ba14b668bf0fe33b4627f74/current-root-evidence-acceptance.json",
+            "sha256": "3c3049edb88fab7e812ab74213093168b2779d8636c7cdbb5d613b95d764c122"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_actual_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_manual_text_sol/candidate/distribution-readiness/r20-help-acceptance/evidence.json",
+            "sha256": "f4042398e9413b989865affae3f4b2876903a5f9e23f0dd2146d02d7db5e68b0"
+          },
+          "current_whole_runs_pass": true,
+          "historical_failures_retained": true
+        },
+        "R20_KEYS": {
+          "original_condition_closed": true,
+          "remaining_phase_credit_minutes": [
+            40,
+            95
+          ],
+          "original_condition_accepted_at": "2026-10-10T11:23:15.268809+09:00",
+          "original_condition_acceptance": {
+            "path": "scratchpad/claude/inspections/v103-r20-keys-original-acceptance-20261010-112314-64411905e5ad4ae99ea8120f7b031474/current-root-evidence-acceptance.json",
+            "sha256": "2ebd6d5d44290d766ae54f478e7bfa82d650ab20bbe328441daf9d25197d218c"
+          },
+          "original_conditions_evidence_accepted": true,
+          "current_actual_receipt": {
+            "path": "scratchpad/claude/agents/cx_v103_r20_qa_sol/candidate/ledger-acceptance/evidence.json",
+            "sha256": "bb8771b8ea11520ea9f2400b41eda64941c352c4c219661fdf463cdd4a607739"
+          },
+          "current_whole_runs_pass": true,
+          "historical_failures_retained": true
+        },
+        "W07": {
+          "original_condition_closed": true,
+          "root_decision": {
+            "path": "scratchpad/claude/instructions/v103-root-w07-original-accepted-r1.json",
+            "sha256": "1ebc0bb585d84d13839d0b14014615750145fcbf823c589a572a1429b82ef18d"
+          },
+          "completion_credit_minutes": [
+            0,
+            0
+          ]
+        },
+        "task_ledger": {
+          "recorded_at": "2026-11-12T00:01:56+09:00",
+          "schema": "pointercad-task-ledger-summary/1",
+          "meaning": "全327件のタスク台帳の完了と残りの数（台帳が正本でこの節はその写し）。current_progress の他のキーは、この節を足した更新では変えていない。更新前の current_progress は actual_progress_history の末尾に保全してある。",
+          "ledger": {
+            "path": "scratchpad/claude/root-runtime/ledger/ledger.json",
+            "sha256": "5af61f79671539a172567c80ddea67e68311a4c6997b805d6ec0168c8b925d25"
+          },
+          "listing": {
+            "path": "docs/公開までの残タスク一覧.md",
+            "sha256": "109533446f37fe42c62e1755238d320a86a9d92c85e347a08e125dac84d7cf38"
+          },
+          "total": 333,
+          "completed": 288,
+          "remaining": 45,
+          "remaining_pending": 45,
+          "remaining_unassessed_implementation_or_proof": 0,
+          "previous": {
+            "label": "2026-10-26 05:58 時点（今回直前の完了164・残169）",
+            "total": 333,
+            "completed": 164,
+            "remaining": 169
+          },
+          "delta": {
+            "completed": 124,
+            "remaining": -124,
+            "added": 0
+          },
+          "original21": {
+            "complete": 13,
+            "remaining": 8
+          },
+          "remaining_by_category": {
+            "shape": 0,
+            "materials": 0,
+            "analysis": 0,
+            "operation": 7,
+            "manual": 0,
+            "distribution": 26,
+            "quality": 12
+          },
+          "completed_ids": [
+            "PG5A.origin-zero",
+            "PG5A.origin-million",
+            "PG5A.origin-billion",
+            "PG5A.stl-limits",
+            "W21.CHROMIUM",
+            "W21.FIREFOX",
+            "W21.ELECTRON",
+            "W21.REVIEW",
+            "WM.FREEZE",
+            "WM.CENSUS",
+            "WM.CAPTURE",
+            "WM.REGISTRY",
+            "WM.HTML",
+            "WM.PDF",
+            "QA.TYPE",
+            "QA.LINT",
+            "QA.WEB-BUILD",
+            "QA.DESKTOP-BUILD",
+            "QA.E2E-COVERAGE",
+            "QA.INDEPENDENT-COPY",
+            "DELIVERY.PRESERVE",
+            "DELIVERY.ROOT-FF",
+            "DELIVERY.C3",
+            "DELIVERY.SNAPSHOT",
+            "DELIVERY.GATE",
+            "EX-01.UI",
+            "EX-01.DOC",
+            "EX-02.UI",
+            "EX-02.DOC",
+            "EX-03.GAP",
+            "EX-03.01.ORACLE",
+            "EX-03.02.ORACLE",
+            "EX-03.03.ORACLE",
+            "EX-03.04.ORACLE",
+            "EX-03.PERSIST",
+            "EX-03.UNDO",
+            "EX-03.UI",
+            "EX-03.DOC",
+            "EX-04.GAP",
+            "EX-04.01.AUTHOR",
+            "EX-04.01.ORACLE",
+            "EX-04.02.AUTHOR",
+            "EX-04.02.ORACLE",
+            "EX-04.03.AUTHOR",
+            "EX-04.03.ORACLE",
+            "EX-04.04.AUTHOR",
+            "EX-04.04.ORACLE",
+            "EX-04.PERSIST",
+            "EX-04.UNDO",
+            "EX-04.UI",
+            "EX-04.DOC",
+            "EX-05.GAP",
+            "EX-05.01.AUTHOR",
+            "EX-05.01.ORACLE",
+            "EX-05.02.AUTHOR",
+            "EX-05.02.ORACLE",
+            "EX-05.03.AUTHOR",
+            "EX-05.03.ORACLE",
+            "EX-05.04.AUTHOR",
+            "EX-05.04.ORACLE",
+            "EX-05.PERSIST",
+            "EX-05.UNDO",
+            "EX-05.UI",
+            "EX-05.DOC",
+            "EX-06.PERSIST",
+            "EX-06.UNDO",
+            "EX-06.UI",
+            "EX-06.DOC",
+            "EX-07.GAP",
+            "EX-07.01.AUTHOR",
+            "EX-07.01.ORACLE",
+            "EX-07.02.AUTHOR",
+            "EX-07.02.ORACLE",
+            "EX-07.03.AUTHOR",
+            "EX-07.03.ORACLE",
+            "EX-07.04.AUTHOR",
+            "EX-07.04.ORACLE",
+            "EX-07.PERSIST",
+            "EX-07.UNDO",
+            "EX-07.UI",
+            "EX-07.DOC",
+            "EX-08.PERSIST",
+            "EX-08.UNDO",
+            "EX-08.UI",
+            "EX-08.DOC",
+            "EX-09.GAP",
+            "EX-09.01.AUTHOR",
+            "EX-09.01.ORACLE",
+            "EX-09.02.AUTHOR",
+            "EX-09.02.ORACLE",
+            "EX-09.03.AUTHOR",
+            "EX-09.03.ORACLE",
+            "EX-09.04.AUTHOR",
+            "EX-09.04.ORACLE",
+            "EX-09.05.AUTHOR",
+            "EX-09.05.ORACLE",
+            "EX-09.06.AUTHOR",
+            "EX-09.06.ORACLE",
+            "EX-09.07.AUTHOR",
+            "EX-09.07.ORACLE",
+            "EX-09.09.AUTHOR",
+            "EX-09.09.ORACLE",
+            "EX-09.PERSIST",
+            "EX-09.UNDO",
+            "EX-09.UI",
+            "EX-09.DOC",
+            "EX-10.GAP",
+            "EX-10.04.AUTHOR",
+            "EX-10.04.ORACLE",
+            "EX-10.PERSIST",
+            "EX-10.UNDO",
+            "EX-10.UI",
+            "EX-10.DOC",
+            "EX-12.GAP",
+            "EX-12.01.AUTHOR",
+            "EX-12.01.ORACLE",
+            "EX-12.02.AUTHOR",
+            "EX-12.02.ORACLE",
+            "EX-12.03.AUTHOR",
+            "EX-12.03.ORACLE",
+            "EX-12.04.AUTHOR",
+            "EX-12.04.ORACLE",
+            "EX-12.05.AUTHOR",
+            "EX-12.05.ORACLE",
+            "EX-12.PERSIST",
+            "EX-12.UNDO",
+            "EX-12.UI",
+            "EX-12.DOC",
+            "EX-13.GAP",
+            "EX-13.01.AUTHOR",
+            "EX-13.01.ORACLE",
+            "EX-13.02.AUTHOR",
+            "EX-13.02.ORACLE",
+            "EX-13.03.AUTHOR",
+            "EX-13.03.ORACLE",
+            "EX-13.04.AUTHOR",
+            "EX-13.04.ORACLE",
+            "EX-13.PERSIST",
+            "EX-13.UNDO",
+            "EX-13.UI",
+            "EX-13.DOC",
+            "EX-14.04.ORACLE",
+            "EX-14.UI",
+            "EX-14.DOC",
+            "EX-15.GAP",
+            "EX-15.01.AUTHOR",
+            "EX-15.01.ORACLE",
+            "EX-16.GAP",
+            "EX-16.01.AUTHOR",
+            "EX-16.01.ORACLE",
+            "EX-16.02.AUTHOR",
+            "EX-16.02.ORACLE",
+            "EX-16.03.AUTHOR",
+            "EX-16.03.ORACLE",
+            "EX-17.GAP",
+            "EX-17.01.AUTHOR",
+            "EX-17.01.ORACLE",
+            "EX-17.02.AUTHOR",
+            "EX-17.02.ORACLE",
+            "EX-18.GAP",
+            "EX-18.01.AUTHOR",
+            "EX-18.01.ORACLE",
+            "EX-18.02.AUTHOR",
+            "EX-18.02.ORACLE",
+            "EX-18.03.AUTHOR",
+            "EX-18.03.ORACLE",
+            "EX-18.04.AUTHOR",
+            "EX-18.04.ORACLE",
+            "EX-18.05.AUTHOR",
+            "EX-18.05.ORACLE",
+            "EX-18.06.AUTHOR",
+            "EX-18.06.ORACLE",
+            "EX-18.PERSIST",
+            "EX-18.UNDO",
+            "EX-18.UI",
+            "EX-18.DOC",
+            "EX-09.WP-materials-data",
+            "EX-09.WP-mesh-and-idealization",
+            "EX-09.WP-linear-static",
+            "EX-09.WP-contact-and-connections",
+            "EX-09.WP-plastic-large-deformation",
+            "EX-09.WP-buckling",
+            "EX-09.WP-vibration",
+            "EX-09.WP-impact",
+            "EX-09.WP-fatigue",
+            "EX-09.WP-web-desktop-delivery",
+            "EX-09.WP-postprocess-verification",
+            "EX-09.CONTACT-FIXTURES",
+            "WAIT.QUEUE",
+            "WAIT.INSTALL",
+            "WAIT.PRIVILEGE",
+            "WAIT.DATA-LICENSE",
+            "W22.PAIR.firefox.hemisphere",
+            "W22.PAIR.electron.input",
+            "W22.PAIR.electron.ADD-23",
+            "W22.PAIR.electron.ADD-17",
+            "W22.PAIR.electron.hemisphere",
+            "W22.PAIR.functional.input",
+            "W22.PAIR.functional.ADD-23",
+            "W22.PAIR.functional.ADD-17",
+            "W22.PAIR.functional.hemisphere",
+            "W22.PAIR.firefox.input",
+            "W22.PAIR.firefox.ADD-23",
+            "W22.REVIEW",
+            "R16-ENTRY.ACCEPTED",
+            "R16-ACTUAL.ACCEPTED",
+            "R18-RED5-EXCHANGE.ACCEPTED",
+            "R18-RIM.ACCEPTED",
+            "R18-WALL-MATE.ACCEPTED",
+            "R20-COLD.ACCEPTED",
+            "R20-KEYS-DISABLED.ACCEPTED",
+            "R17-W12b.ACCEPTED",
+            "W19-performance.ACCEPTED",
+            "W07-export.ACCEPTED",
+            "R20-HELP.ACCEPTED",
+            "EX-11.ACCEPTED",
+            "PG4.CHUNKS",
+            "W21.BUNDLE",
+            "SEC.ALERTS",
+            "SEC.LOCK",
+            "SEC.DISPOSITION",
+            "EX-01.GAP",
+            "EX-01.01.AUTHOR",
+            "EX-01.01.ORACLE",
+            "EX-01.02.AUTHOR",
+            "EX-01.02.ORACLE",
+            "EX-01.03.AUTHOR",
+            "EX-01.03.ORACLE",
+            "EX-01.PERSIST",
+            "EX-01.UNDO",
+            "EX-02.GAP",
+            "EX-02.01.AUTHOR",
+            "EX-02.01.ORACLE",
+            "EX-02.02.AUTHOR",
+            "EX-02.02.ORACLE",
+            "EX-02.03.AUTHOR",
+            "EX-02.03.ORACLE",
+            "EX-02.PERSIST",
+            "EX-02.UNDO",
+            "EX-03.01.AUTHOR",
+            "EX-03.02.AUTHOR",
+            "EX-03.03.AUTHOR",
+            "EX-03.04.AUTHOR",
+            "EX-06.GAP",
+            "EX-06.01.AUTHOR",
+            "EX-06.01.ORACLE",
+            "EX-06.02.AUTHOR",
+            "EX-06.02.ORACLE",
+            "EX-06.03.AUTHOR",
+            "EX-06.03.ORACLE",
+            "EX-06.04.AUTHOR",
+            "EX-06.04.ORACLE",
+            "EX-08.GAP",
+            "EX-08.01.AUTHOR",
+            "EX-08.01.ORACLE",
+            "EX-08.02.AUTHOR",
+            "EX-08.02.ORACLE",
+            "EX-08.03.AUTHOR",
+            "EX-08.03.ORACLE",
+            "EX-09.08.AUTHOR",
+            "EX-09.08.ORACLE",
+            "EX-10.01.AUTHOR",
+            "EX-10.01.ORACLE",
+            "EX-10.02.AUTHOR",
+            "EX-10.02.ORACLE",
+            "EX-10.03.AUTHOR",
+            "EX-10.03.ORACLE",
+            "EX-14.GAP",
+            "EX-14.01.AUTHOR",
+            "EX-14.01.ORACLE",
+            "EX-14.02.AUTHOR",
+            "EX-14.02.ORACLE",
+            "EX-14.03.AUTHOR",
+            "EX-14.03.ORACLE",
+            "EX-14.04.AUTHOR",
+            "EX-14.PERSIST",
+            "EX-14.UNDO",
+            "EX-09.CONTACT-SOURCE",
+            "EX-09.CONTACT-BUILD",
+            "EX-09.CONTACT-REVIEW",
+            "EX-09.CONTACT-PHYSICAL",
+            "W22.PAIR.firefox.ADD-17",
+            "OPS.DISK-CLEANUP",
+            "CODE.CONSISTENCY",
+            "EX-18.16.DESIGN",
+            "BUG.VIEW-PICK-NULL",
+            "EX-03.S2.COVERAGE",
+            "BUG.MESH-OWNERS-128"
+          ],
+          "added_ids": [
+            "OPS.DISK-CLEANUP",
+            "CODE.CONSISTENCY",
+            "EX-18.16.DESIGN",
+            "BUG.VIEW-PICK-NULL",
+            "EX-03.S2.COVERAGE",
+            "BUG.MESH-OWNERS-128"
+          ],
+          "completed_this_update": [
+            {
+              "id": "DELIVERY.GATE",
+              "accepted_at": "2026-11-12T00:01:54+09:00",
+              "accepted_by": "Root 統括",
+              "work_ja": "送信前の最終検査",
+              "evidence": [
+                {
+                  "path": "scratchpad/claude/agents/cl-v103-ledger-update/receipts/2026-11-12-accept-0001-2/DELIVERY.GATE/accepted-receipt.json",
+                  "sha256": "0efebd42f86cc62a8ca1f8b1c3eab80147fbb12fb74766ea65189e003acdcf79",
+                  "summary": "DELIVERY.GATE: 正規終端成功。delivery 20261111-213648、送信commit 888f67bf3f92234c1c84ba95380b9a1f6fd1ce8b。。RUN の無い受入（文書・設計）: 正規Task Schedulerの終端原票を使用。prepared main統合・state・runner・ログのSHAを保存し、架空RUNは作らない。。確かめていない範囲: 手元gateの根拠に限定。同一commitの両OS CI・配布・公開・最終独立レビューは別途必要。。根拠ファイル 8 件の写しと RUN の SHA を受入原票に固定。"
+                }
+              ]
+            }
+          ],
+          "limits": "完了の件数と根拠の写しであり、公開見込みの再計算ではない。release_estimate・completed_since_previous_forecast・accepted_remaining_subtask_credits は変えていない。GAP の行の受入は現状と不足を特定した調査の提出の受入で、AUTHOR の行の受入は実装の存在と検査での確認であり、どちらも製品全体の合格や公開の認定ではない。",
+          "release_scope": {
+            "historicalTotal": 333,
+            "excluded": 7,
+            "requiredTotal": 326,
+            "requiredCompleted": 288,
+            "requiredRemaining": 38,
+            "excludedIDs": [
+              "PG4.PROBE",
+              "PG4.RESIDENT",
+              "PG4.ALLOCATED",
+              "PG4.ATTRIBUTION",
+              "PG4B.chromium",
+              "PG4B.firefox",
+              "PG4B.electron"
+            ]
+          }
+        }
+      },
+      "previous_next_action": {
+        "Root": "Root accepted the single W21-W22 parent covering R25 and R26; original21 is 13 complete / 8 remaining. 333 task IDs/states/allocations and forecast bounds unchanged; no time credit. Final manual/screenshots and whole correctness/release checks remain open.",
+        "workers": "Two private scopes sealed and canonically done; new complex scoped judgments use Astra, mechanical scopes Sol."
+      },
+      "before_sha256": "2a3174ce02e72ddc4b09676863d85d596c26748a9258521822ea10c22ab3860f"
     }
   ],
   "accepted_remaining_subtask_credits": [

@@ -54,7 +54,7 @@ class ReceiptHookTests(unittest.TestCase):
         self.env['PSModulePath'] = str(self.base / 'unavailable-parent-edition-modules')
         for relative in ('check.ps1', 'check-commit-batch.ps1', 'hooks/pre-commit', 'hooks/pre-push',
                          'lib/gitTreeGuard.ps1', 'lib/pushTreeFingerprint.ps1', 'lib/directoryLinks.ps1',
-                         'lib/commitBatchGuard.ps1', 'lib/validationReceipt.ps1',
+                         'lib/commitBatchGuard.ps1', 'lib/validationReceipt.ps1', 'lib/networkRetry.ps1',
                          'lib/validation_receipt.py', 'lib/validationRuntime.mjs', 'lib/WindowsValidationQos.cs',
                          'lib/local_change_scope.py', 'lib/task_workspace.py'):
             target = self.root / 'scripts' / relative

@@ -214,8 +214,7 @@ export async function functionSurfaceReplyCancellationFlow(page: Page, info: Tes
     const original = await savePart(page, info, 'before-large-surface.pcad', app);
     const dialog = await openPlot(page, true);
     await dialog.getByRole('textbox', { name: 'Z =', exact: true }).fill('(X^2+Y^2)/10');
-    // The real calculator covers 33×33 vertices here: cross the 1024 decoder block without a 49k-sample preview.
-    await bounds(dialog, [['X', '-1', '1'], ['Y', '-1', '1'], ['Z', '-1', '4']]);
+    await bounds(dialog, [['X', '-4', '4'], ['Y', '-4', '4'], ['Z', '-1', '4']]);
     await dialog.getByRole('textbox', { name: text('surfaceTolerance'), exact: true }).fill('0.001');
     await beginFrames(page); framesStarted = true;
     await preview(dialog, true);
@@ -224,8 +223,6 @@ export async function functionSurfaceReplyCancellationFlow(page: Page, info: Tes
     expect(ready.some(row => (row.vertices ?? 0) > 1024), 'Finite real reply must exercise more than one decoder element block').toBe(true);
     // A real input invalidates an already displayed result. It may never be committed as the new input.
     await dialog.getByRole('textbox', { name: 'Z =', exact: true }).fill('(X^2+Y^2)/20');
-    // Preserve the original in-flight Stop workload; do not let a tiny replacement finish before the trusted click.
-    await bounds(dialog, [['X', '-4', '4'], ['Y', '-4', '4'], ['Z', '-1', '4']]);
     await expect(dialog.getByRole('button', { name: text('surfaceApply'), exact: true })).toBeDisabled();
     await expect(dialog.locator('canvas')).toHaveCount(0);
     await dialog.getByRole('button', { name: text('preview'), exact: true }).click();

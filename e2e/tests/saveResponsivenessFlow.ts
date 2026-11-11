@@ -10,7 +10,7 @@ import { pcadEntries, zipPcadEntries } from '../../packages/io/src/pcad/pcadFile
 import { IO_LIMITS } from '../../packages/io/src/limits.js';
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '../../packages/model/src/index.js';
 import { processTreeMemoryTotals, linuxProcessMemoryReading, linuxProcessTreeDiscovery, type LinuxProcessStatReading } from '../../packages/test-utils/src/processMemorySamples.js';
-import { observeSaveResponse } from '../../packages/test-utils/src/releasePerformance.js';
+import { observeSaveResponse, reportDuration } from '../../packages/test-utils/src/releasePerformance.js';
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
@@ -405,7 +405,8 @@ export interface SaveMeasurementOptions {
 
 /**
  * 大容量の原本を抱えた部品を製品の「開く」で読み、実Worker・実入力・実保存・再開を通す(R06 の実測)。
- * 保存中の100入力の p95<100ms(全体と保存中だけの両方)を参考値として記録し、全PIDの追加 peak<512MiB(保存中と解放後)を確かめ、
+ * 保存中の100入力の p95<100ms(全体と保存中だけの両方)を参考値として記録し、同じ2つの p95 に元の100msの5倍の実用上限
+ * (500ms超は失敗)を共通の判定で適用し、全PIDの追加 peak<512MiB(保存中と解放後)を確かめ、
  * 測定値を `save-<MiB>-<回>.json` に残す。
  */
 export async function saveResponsivenessFlow(page: Page, info: TestInfo,
@@ -541,6 +542,9 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     await writeFile(info.outputPath(`save-${String(mib)}-${String(repeat)}.json`), JSON.stringify(record, null, 2));
     await info.attach(`save-${mib}-${repeat}`, { contentType: 'application/json', body: JSON.stringify(record, null, 2) });
     expect(record.memory.complete, 'process-memory collection incomplete; inspect expected/observed PIDs and readings (not a product memory-budget exceedance)').toBe(true);
+    // 100msは参考値(docs/requirements.md §5.2)。必要以上の遅さは共通の判定で失敗にする(元の100msの5倍、500ms超)。記録の書出しの後に判定する。
+    reportDuration(p95, responseObservation.referenceTargetMs, `${responseObservation.label} p95`);
+    reportDuration(activeP95, responseObservation.referenceTargetMs, `${responseObservation.label} 保存中p95`);
     expect(before.length).toBeGreaterThanOrEqual(3); expect(during.length).toBeGreaterThanOrEqual(3); expect(after.length).toBeGreaterThanOrEqual(3);
     expect(record.memory.extraPeak.workingSetBytes).toBeLessThan(extraMemoryBudgetBytes);
     expect(record.memory.extraPeak.privateBytes).toBeLessThan(extraMemoryBudgetBytes);

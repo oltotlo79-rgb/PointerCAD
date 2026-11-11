@@ -277,3 +277,55 @@ describe('保存応答の全100標本と厳密な100ms参考目標', () => {
     expect(observed.activeMeetsTarget).toBe(false); expect(rows).toEqual(before);
   });
 });
+
+describe('保存応答のp95と保存中p95は100msを参考値とし、共通の5倍の実用上限500msを超えたら失敗する', () => {
+  const rows = (ms: number, stage = 'compressing'): { pageLatencyMs: number[]; roundTripMs: number[]; stages: string[] } => ({
+    pageLatencyMs: Array.from({ length: 100 }, () => 1), roundTripMs: Array.from({ length: 100 }, () => ms),
+    stages: Array.from({ length: 100 }, () => stage) });
+  // e2e/tests/saveResponsivenessFlow.ts と同じ渡し方。参考値100msを共通の判定へ渡すと許容境界は5倍の500msになる。
+  const judge = (observed: ReturnType<typeof observeSaveResponse>): ReturnType<typeof reportDuration>[] => [
+    reportDuration(observed.p95, observed.referenceTargetMs, `${observed.label} p95`),
+    reportDuration(observed.activeP95, observed.referenceTargetMs, `${observed.label} 保存中p95`)];
+
+  it.each([
+    { ms: 99.9, meetsTarget: true },
+    { ms: 100, meetsTarget: false },
+    { ms: 499.9, meetsTarget: false },
+    { ms: 500, meetsTarget: false },
+  ])('p95と保存中p95が$msのとき許容境界500ms以内で通過し、100msの達否$meetsTargetを残す', ({ ms, meetsTarget }) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const observed = observeSaveResponse(rows(ms), '保存境界');
+    expect(observed).toMatchObject({ p95: ms, activeP95: ms, referenceTargetMs: 100, meetsTarget, activeMeetsTarget: meetsTarget,
+      decisionUse: 'observation' });
+    for (const measurement of judge(observed)) {
+      expect(measurement).toMatchObject({ actual: ms, target: 100, practicalLimit: 500, unit: 'ms', meetsTarget, usable: true });
+      expect(log).toHaveBeenCalledWith('[性能記録]', JSON.stringify(measurement));
+    }
+  });
+
+  it.each([500.01, 600, 128_000])('p95と保存中p95が%sのとき許容境界500ms超として失敗する', ms => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const observed = observeSaveResponse(rows(ms), '保存超過');
+    expect(observed).toMatchObject({ meetsTarget: false, activeMeetsTarget: false });
+    expect(() => judge(observed)).toThrow('実用上の遅延: 保存超過 p95');
+    expect(() => reportDuration(observed.activeP95, observed.referenceTargetMs, '保存超過 保存中p95')).toThrow('許容境界500ms');
+  });
+
+  it('保存後の速い入力でp95が小さくても、保存中p95の500ms超を失敗にする', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const input = rows(2, 'complete'); input.roundTripMs[99] = 600; input.stages[99] = 'compressing';
+    const observed = observeSaveResponse(input, '保存中だけ遅い');
+    expect(observed).toMatchObject({ p95: 2, activeP95: 600, meetsTarget: true, activeMeetsTarget: false });
+    expect(reportDuration(observed.p95, observed.referenceTargetMs, '保存中だけ遅い p95').usable).toBe(true);
+    expect(() => judge(observed)).toThrow('実用上の遅延: 保存中だけ遅い 保存中p95');
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1])('p95と保存中p95の非有限・負の値%sを許容境界内として通さない', value => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const observed = observeSaveResponse(rows(1), '保存不正');
+    expect(() => judge({ ...observed, p95: value })).toThrow('不正');
+    expect(() => judge({ ...observed, activeP95: value })).toThrow('不正');
+    const raw = rows(1); raw.roundTripMs[0] = value;
+    expect(() => observeSaveResponse(raw, '保存不正')).toThrow('不正');
+  });
+});

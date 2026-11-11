@@ -817,6 +817,15 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
             $e2e = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', "$shard/3", '-StageEvidence', $evidence)
             Assert-True ($e2e.Code -eq 0 -and ($e2e.Calls -join '|') -ceq "$browserCall|--filter @pointercad/desktop exec install-electron|run test:e2e --shard=$shard/3") "画面検査の組 $shard/3 は準備と画面検査だけを呼ぶ: $($e2e.Calls -join ' | ')"
         }
+        Assert-True ($e2e.Output.Contains('[成功] (準備) Playwright のブラウザ確認 は 1/3 回目で成功しました(やり直し 0 回)')) '準備の導入の成功の回数とやり直しの回数をログに出す'
+        # 準備の導入が通信以外の理由で失敗したら、やり直さずにその場で止まり、画面検査へ進まず段の記録も作らない
+        # (通信の失敗のやり直しは待ちが60秒からなので、ここでは流さずシナリオ15の関数で確かめる)。
+        $browserFailEvidence = Join-Path $stageBase 'browser-fail-evidence'
+        $env:PCAD_STAGE_FAIL = $browserCall
+        $failedBrowsers = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', '1/3', '-StageEvidence', $browserFailEvidence)
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        Assert-True ($failedBrowsers.Code -ne 0 -and ($failedBrowsers.Calls -join '|') -ceq $browserCall -and
+            $failedBrowsers.Output.Contains('[やり直さない]') -and -not (Test-Path -LiteralPath $browserFailEvidence)) '準備の導入の通信以外の失敗はやり直さず、画面検査へ進まず段の記録も作らない'
         $unitCalls = @($utilitiesCall, $expressionCall, $femCall, $restCall)
         Assert-True ((($unitCalls | ForEach-Object { 'pnpm ' + $_ }) -join ' && ') -ceq $rootTest) '単体の先行分と残りをつなぐとルートのtestと一致する(単体の欠落が無い)'
         $written = @(Get-ChildItem -LiteralPath $evidence -File | ForEach-Object { $_.Name } | Sort-Object)
@@ -1018,6 +1027,10 @@ Assert-True ($LASTEXITCODE -eq 0) 'main統合(gh pr create/ready/merge・git pus
 Assert-True ($LASTEXITCODE -eq 0) '1回の命令で diag.py wait を連ねる・待ちの合計が上限を超える命令を拒否するフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/git_optional_locks_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) '担当の git の読み取りに --no-optional-locks も GIT_OPTIONAL_LOCKS=0 も無い命令を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/transcript_scan_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '会話記録(~/.claude/projects の .jsonl)を grep・rg・cat・Select-String・Get-Content などで読む命令を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/orchestrator_scope_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '統括の調査・作業の命令(製品コードの検索と読取り・再帰と横断の走査・プロセスと性能の調査・強制終了・道具の失敗をパイプで隠す命令)を拒否するフックを自己試験する'
 
 
 # 2026-10-05 利用者の指示: 手元の軽い検査で、品質ゲートの道具が基点から変わっていない時は自己試験を省き、
@@ -1063,6 +1076,66 @@ finally {
             ForEach-Object { $_.Attributes = 'Normal' }
         Remove-Item -LiteralPath $verifiedToolRepo -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+# === シナリオ15: 準備の導入(Playwright のブラウザ確認)は、通信の失敗の時だけ間隔を空けて最大3回までやり直す
+#     (scripts/lib/networkRetry.ps1。2026-11-11 の main の CI で Linux の画面検査3組が名前解決の失敗で落ちた)。
+#     待ちは実際には行わず秒数だけを記録する。通信以外の失敗はやり直さず、3回とも失敗なら失敗のまま返す。
+$networkRetryLib = Join-Path $scriptDirectory 'lib\networkRetry.ps1'
+if (Test-Path -LiteralPath $networkRetryLib -PathType Leaf) {
+    . $networkRetryLib
+    $networkLine = "E: Failed to fetch https://security.ubuntu.com/ubuntu/pool/main/l/lame/libmp3lame0.deb  Temporary failure resolving 'security.ubuntu.com'"
+    $otherLine = "Error: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium/chrome"
+    function Invoke-RetryScenario {
+        param([object[]]$Outcomes)
+        $script:retryQueue = [Collections.Generic.Queue[object]]::new()
+        foreach ($queued in $Outcomes) { $script:retryQueue.Enqueue($queued) }
+        $script:retryWaits = [Collections.Generic.List[int]]::new()
+        $script:retryCalls = 0
+        $retryResult = Invoke-WithNetworkRetry -Name '(試験) 導入' -Attempt {
+            $script:retryCalls++
+            $script:retryQueue.Dequeue()
+        } -Sleep { param([int]$Seconds) $script:retryWaits.Add($Seconds) }
+        return [pscustomobject]@{ Result = $retryResult; Calls = $script:retryCalls; Waits = @($script:retryWaits); Left = $script:retryQueue.Count }
+    }
+    $succeeded = [pscustomobject]@{ ExitCode = 0; Lines = @('Chromium downloaded') }
+    $networkFailed = [pscustomobject]@{ ExitCode = 100; Lines = @('Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]', $networkLine, 'Failed to install browsers') }
+    $otherFailed = [pscustomobject]@{ ExitCode = 1; Lines = @($otherLine) }
+
+    $firstTry = Invoke-RetryScenario @($succeeded)
+    Assert-True ($firstTry.Result.ExitCode -eq 0 -and $firstTry.Calls -eq 1 -and $firstTry.Result.Attempts -eq 1 -and
+        $firstTry.Result.Retries -eq 0 -and $firstTry.Waits.Count -eq 0) '準備の導入: 1回目で成功したら、やり直さず待たない'
+    $secondTry = Invoke-RetryScenario @($networkFailed, $succeeded)
+    Assert-True ($secondTry.Result.ExitCode -eq 0 -and $secondTry.Calls -eq 2 -and $secondTry.Result.Attempts -eq 2 -and
+        $secondTry.Result.Retries -eq 1 -and (($secondTry.Waits -join ',') -ceq '60')) '準備の導入: 1回目が通信の失敗なら60秒待って2回目を行い、成功で終わる'
+    $allFailed = Invoke-RetryScenario @($networkFailed, $networkFailed, $networkFailed, $succeeded)
+    Assert-True ($allFailed.Result.ExitCode -eq 100 -and $allFailed.Calls -eq 3 -and $allFailed.Result.Attempts -eq 3 -and
+        $allFailed.Result.Retries -eq 2 -and $allFailed.Result.NetworkFailure -and (($allFailed.Waits -join ',') -ceq '60,120') -and
+        $allFailed.Left -eq 1) '準備の導入: 3回とも通信の失敗なら4回目を行わず、最後の終了コードのまま失敗する'
+    $notNetwork = Invoke-RetryScenario @($otherFailed, $succeeded)
+    Assert-True ($notNetwork.Result.ExitCode -eq 1 -and $notNetwork.Calls -eq 1 -and $notNetwork.Result.Retries -eq 0 -and
+        -not $notNetwork.Result.NetworkFailure -and $notNetwork.Waits.Count -eq 0) '準備の導入: 通信以外の失敗はやり直さず、その場で失敗する'
+    $thenOther = Invoke-RetryScenario @($networkFailed, $otherFailed, $succeeded)
+    Assert-True ($thenOther.Result.ExitCode -eq 1 -and $thenOther.Calls -eq 2 -and (($thenOther.Waits -join ',') -ceq '60')) '準備の導入: 通信の失敗の後の通信以外の失敗では、それ以上やり直さない'
+    foreach ($line in @($networkLine, 'Error: getaddrinfo EAI_AGAIN playwright.download.prss.microsoft.com',
+        'curl: (6) Could not resolve host: cdn.playwright.dev', 'Error: read ECONNRESET', 'Download failed: server returned code 503')) {
+        Assert-True ($null -ne (Find-NetworkFailure -Lines @('Downloading Chromium', $line))) "準備の導入: 通信の失敗とみなす: $line"
+    }
+    foreach ($line in @($otherLine, 'E: Unable to locate package libfoo', 'Download failed: server returned code 404', 'ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL')) {
+        Assert-True ($null -eq (Find-NetworkFailure -Lines @($line))) "準備の導入: 通信の失敗とみなさない: $line"
+    }
+    Assert-True ($null -eq (Find-NetworkFailure -Lines @())) '準備の導入: 出力の無い失敗は通信の失敗とみなさない'
+    # 実際の外部の命令の標準出力・標準エラー出力・終了コードを受け取る(この試験は ErrorActionPreference が Stop)。
+    $selfShell = (Get-Process -Id $PID).Path
+    $captured = Invoke-CapturedCommand -Command $selfShell -CommandArgs @('-NoProfile', '-Command',
+        "[Console]::Out.WriteLine('captured-stdout'); [Console]::Error.WriteLine('Temporary failure resolving example.invalid'); exit 3")
+    Assert-True ($captured.ExitCode -eq 3 -and @($captured.Lines) -contains 'captured-stdout' -and
+        $null -ne (Find-NetworkFailure -Lines $captured.Lines)) '準備の導入: 外部の命令の出力と終了コードを受け取り、標準エラー出力の通信の失敗も見つける'
+    $missingFailed = $false
+    try { Invoke-CapturedCommand -Command 'pointercad-missing-command-for-selftest' | Out-Null } catch { $missingFailed = $true }
+    Assert-True $missingFailed '準備の導入: 見つからない命令は偽の成功にせず例外にする'
+} else {
+    Assert-True $false '準備の導入のやり直しの処理(scripts/lib/networkRetry.ps1)が存在すること'
 }
 
 if ($failures -gt 0) {

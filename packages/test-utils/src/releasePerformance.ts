@@ -159,7 +159,8 @@ export interface SaveResponseObservation {
   readonly decisionUse: 'observation';
 }
 
-/** 保存の全100入力を対ごとのmaxで保持。100msちょうども未達だが、参考値だけで機能を失敗にしない。 */
+/** 保存の全100入力を対ごとのmaxで保持。100msちょうども未達だが、参考値だけで機能を失敗にしない。
+ * 必要以上の遅さは呼出し側がp95と保存中p95をreferenceTargetMsとともにreportDurationへ渡し、共通の5倍の実用上限(500ms超)で失敗にする(§5.2)。 */
 export function observeSaveResponse(value: unknown, label: string): SaveResponseObservation {
   if (label.trim() === '' || value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('保存入力の観測が不正です');

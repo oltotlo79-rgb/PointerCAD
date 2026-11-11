@@ -197,37 +197,57 @@ describe('曲面の二階微分で値域だけを共有する', () => {
 });
 
 
-describe('返信取消E2Eに必要な1024要素超の実曲面入力', () => {
-  it('同じ式と0.001精度で狭いXY範囲を計算し、実返信と独立残差を確認する', async () => {
-    const { executeFunctionSurfaceWorkRequest } = await import('./functionSurfaceWorkExecution.js');
-    const { decodeFunctionSurfaceWorkRequest, createFunctionSurfaceWorkEnvelope } = await import('./functionSurfaceWorkRequest.js');
+describe('返信取消E2Eの元の[-4,4]の実曲面入力と、標本化・なめらか化の所要の内訳', () => {
+  it('同じ式と0.001精度の元のXY範囲で、1024要素を大きく越える実返信と独立残差を確かめ、段ごとの所要を記録する', async () => {
+    const { decodeFunctionSurfaceWorkRequest } = await import('./functionSurfaceWorkRequest.js');
     const { warmMathBackend } = await import('./createMathBackend.js');
+    const { proveFunctionSurfaceBoundary } = await import('./functionSurfaceBoundary.js');
+    const { smoothFunctionSurface } = await import('./smoothFunctionSurface.js');
+    const { GEOMETRY_CALCULATION_MS } = await import('./mathWorkExecution.js');
     warmMathBackend(backend);
     const source = (text: string) => createFunctionMathSource(text, 'text', 'radian', { axes: ['X', 'Y'], parameters: [], coefficients: [] }, backend);
     const input = decodeFunctionSurfaceWorkRequest({
       identity: { documentId: 'surface-reply-fixture', documentVersion: 1, editorId: 'surface', inputRevision: 1 },
       independent: ['X', 'Y'], outputs: [source('X'), source('Y'), source('(X^2+Y^2)/10')],
-      lower: [-1, -1], upper: [1, 1], minimum: [-1, -1, -1], maximum: [1, 1, 4], tolerance: 0.001, coefficients: [],
+      lower: [-4, -4], upper: [4, 4], minimum: [-4, -4, -1], maximum: [4, 4, 4], tolerance: 0.001, coefficients: [],
       budget: { maximumSamples: 100_000, maximumCells: 400_000, maximumTriangles: 100_000, maximumDepth: 24 },
     });
-    const result = executeFunctionSurfaceWorkRequest(createFunctionSurfaceWorkEnvelope(1, input), backend).result;
-    if (result.status !== 'ready') throw new Error(JSON.stringify(result));
-    expect(result.vertices.length).toBeGreaterThan(1024);
-    expect(result.maximumInterpolationErrorBound).toBeLessThanOrEqual(0.001);
-    expect(result.spline).toBeDefined();
-    expect(result.spline?.errorBound).toBeLessThanOrEqual(0.001);
+    // functionSurfaceWorkExecution.ts と同じ順に、時計なしで各段の所要を測る（記録だけ。時間では合否を決めない）。
+    const context = { backend, shouldStop: () => undefined };
+    const preparingStarted = performance.now();
+    const surface = createFunctionSurfaceEvaluator(input.outputs, input.independent, input.coefficients, context);
+    const boundary = proveFunctionSurfaceBoundary(input, context);
+    const samplingStarted = performance.now();
+    let captured: Parameters<NonNullable<Parameters<typeof sampleFunctionSurface>[2]>['leaves']> | undefined;
+    const sampled = sampleFunctionSurface(surface, { ...input, ...input.budget, shouldStop: () => undefined, boundary },
+      { leaves: (...evidence) => { captured = evidence; } });
+    const smoothingStarted = performance.now();
+    if (sampled.status !== 'ready' || captured === undefined) throw new Error(JSON.stringify(sampled));
+    const [leaves, parameter, knownSample] = captured;
+    const smooth = smoothFunctionSurface(surface, leaves, { minimum: input.minimum, maximum: input.maximum, tolerance: input.tolerance,
+      parameter, knownSample, remainingSamples: input.budget.maximumSamples - sampled.stats.samples,
+      remainingCells: input.budget.maximumCells - sampled.stats.cells,
+      mesh: { vertices: sampled.vertices, triangles: sampled.triangles, bound: sampled.maximumInterpolationErrorBound }, stop: () => false });
+    const finished = performance.now();
+    if (smooth.status !== 'ready') throw new Error(JSON.stringify(smooth));
+    process.stdout.write('[pcad:surface-stage-timing] ' + JSON.stringify({ preparingMs: samplingStarted - preparingStarted,
+      samplingMs: smoothingStarted - samplingStarted, smoothingMs: finished - smoothingStarted, totalMs: finished - preparingStarted,
+      limitMs: GEOMETRY_CALCULATION_MS, vertices: sampled.vertices.length, triangles: sampled.triangles.length,
+      samplingStats: sampled.stats, smoothingUsed: smooth.used }) + String.fromCharCode(10));
+    expect(sampled.vertices.length).toBeGreaterThan(1024);
+    expect(sampled.triangles).toHaveLength(32_768);
+    expect({ samples: sampled.stats.samples + smooth.used.samples, cells: sampled.stats.cells + smooth.used.cells })
+      .toEqual({ samples: 49_666, cells: 38_229 });
+    expect(sampled.maximumInterpolationErrorBound).toBeLessThanOrEqual(0.001);
+    expect(smooth.spline.errorBound).toBeLessThanOrEqual(0.001);
     let residual = 0;
-    for (const [a, b, c] of result.triangles) {
-      const vertices = [result.vertices[a], result.vertices[b], result.vertices[c]];
+    for (const [a, b, c] of sampled.triangles) {
+      const vertices = [sampled.vertices[a], sampled.vertices[b], sampled.vertices[c]];
       const x = vertices.reduce((sum, vertex) => sum + vertex.point[0] / 3, 0);
       const y = vertices.reduce((sum, vertex) => sum + vertex.point[1] / 3, 0);
       const z = vertices.reduce((sum, vertex) => sum + vertex.point[2] / 3, 0);
       residual = Math.max(residual, Math.abs(z - (x * x + y * y) / 10));
     }
-    expect(residual).toBeLessThanOrEqual(result.maximumInterpolationErrorBound);
-    process.stdout.write('[pcad:surface-reply-fixture] ' + JSON.stringify({ formula: '(X^2+Y^2)/10',
-      lower: input.lower, upper: input.upper, minimum: input.minimum, maximum: input.maximum, tolerance: input.tolerance,
-      vertices: result.vertices.length, triangles: result.triangles.length, stats: result.stats,
-      maximumInterpolationErrorBound: result.maximumInterpolationErrorBound, splineErrorBound: result.spline?.errorBound, residual }) + String.fromCharCode(10));
-  });
+    expect(residual).toBeLessThanOrEqual(sampled.maximumInterpolationErrorBound);
+  }, 30_000);
 });

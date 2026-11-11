@@ -38,7 +38,14 @@ rg if it is on PATH, else an equivalent pure-Python scan) must be inside (3) or 
 value without a citation is only a warning); (3) sources.md + SHA-256 needs a fetch permission or a local copy;
 (4) a change to packages/ui/src/**/*.tsx or packages/help-content/docs needs controlInventory.test.ts and
 topics.test.ts in section 2; (5) a generator-side confirmation line (warning only). Violations (外れ) deny the launch;
-warnings are printed only by --check. Each new check isolates its own exceptions (they become warnings).
+warnings were printed only by --check until 2026-11-11 (see below). Each new check isolates its own exceptions (they
+become warnings).
+
+2026-11-11 cl-v103-enforcement-integration-1111 (rules/06 §10.485, mistake A): the orchestrator launched a worker while
+`--check` still showed one warning, although its own rule is "0 violations and 0 warnings before a launch". The launch
+hook (PreToolUse, Agent) now denies when the referenced instruction has even one warning, in the same reason format as a
+violation (the warnings are listed with the prefix "警告: "). The `--check` output and exit code are unchanged. A scan
+that runs out of the hook's short window is a warning too, so it also denies (fail closed; run `--check`).
 
 2026-10-25 cl-v103-instruction-guard-paths adds check 7: every root-prefixed path written in the "③" paragraph
 (packages/, apps/, e2e/, scripts/, docs/, .claude/, scratchpad/claude/tools/) must exist now (os.path.exists only),
@@ -289,7 +296,7 @@ def future_time_findings(text: str, now: datetime) -> list[tuple[int, str]]:
 
 def check_instruction_text(root: Path, display_path: str, text: str, now: datetime) -> list[str]:
     """検査を行い、外れの理由(行番号と検査の種類を含む文)の一覧を返す。空なら外れ無し。
-    警告(起動を止めない注意)は check_instruction_report が (外れ, 警告) の組で返す。"""
+    警告は check_instruction_report が (外れ, 警告) の組で返す(起動のフック hook() は 2026-11-11 から警告も拒否する)。"""
     return check_instruction_report(root, display_path, text, now)[0]
 
 
@@ -305,8 +312,9 @@ def check_instruction_text(root: Path, display_path: str, text: str, now: dateti
 #   5. 生成側の固定値 (W6 の2つ目。簡易。警告のみ)。
 #   (7. ③のパスの実在は 2026-10-25 cl-v103-instruction-guard-paths が足した。下の「検査7」の節。)
 #   (8. union 型の固定の表は 2026-10-25 cl-v103-instruction-guard-union が足した。下の「検査8」の節。)
-# 外れ(起動を止める)と警告(--check の出力にだけ出す)を分ける。各検査の内部の例外は警告に落として
+# 外れ(起動を止める)と警告(--check の出力に出す)を分ける。各検査の内部の例外は警告に落として
 # 続行する(既存の検査と他の新しい検査を巻き込まない。フックは失敗しても開く方針)。
+# 2026-11-11(rules/06 §10.485 の誤り A)から、起動のフックは警告も 1 件で拒否する(hook() を参照)。
 # ---------------------------------------------------------------------------
 
 # settings.json のフックの timeout は5秒。走査はそれより十分短い枠で打ち切り、外れにせず警告にする。
@@ -2176,7 +2184,7 @@ def docs_phase_findings(root: Path, display: str, scope_text: str) -> list[str]:
 def check_instruction_report(root: Path, display_path: str, text: str, now: datetime, *,
                              full_lists: bool = False, scan_seconds: float = HOOK_SCAN_SECONDS,
                              invocation="auto") -> tuple[list[str], list[str]]:
-    """(外れの一覧, 警告の一覧)。外れは起動を止め、警告は --check の出力にだけ出す。
+    """(外れの一覧, 警告の一覧)。外れは起動を止め、警告は --check の出力に出す(2026-11-11 から起動のフックは警告も拒否)。
     既存の3検査((a) 新規・(b) SHA-256・(c) 先の時刻)の後に、新しい検査を順に行う。"""
     # Validate transport before classifying instructions; a lost scope marker must not bypass checks.
     if "\ufffd" in text or re.search(r"\?{5,}", text):
@@ -2244,6 +2252,12 @@ def check_instruction_report(root: Path, display_path: str, text: str, now: date
     return messages, warnings
 
 
+WARNING_DENY_HEAD = (
+    "起動の依頼文が指す指示書に警告があります(OPS-12。外れ 0・警告 0 が起動の条件で、警告も起動を止める。"
+    "rules/06 §10.485。--check で確かめて直してから起動する): "
+)
+
+
 def extract_instruction_names(prompt: str) -> list[str]:
     names: list[str] = []
     for match in INSTRUCTION_REF.finditer(prompt):
@@ -2270,6 +2284,9 @@ def hook(payload: dict, now: datetime, root: Path | None = None) -> dict | None:
     if root is None:
         root = _root()
     messages: list[str] = []
+    # 2026-11-11 cl-v103-enforcement-integration-1111(rules/06 §10.485 の誤り A): 統括が警告 1 件の残る指示書で
+    # 担当を起動した。起動の条件は「外れ 0・警告 0」なので、起動の時も警告を 1 件でも拒否する(--check の出力は変えない)。
+    warnings: list[str] = []
     for name in names:
         path = root / INSTRUCTIONS_DIR / name
         if not path.is_file():
@@ -2282,17 +2299,22 @@ def hook(payload: dict, now: datetime, root: Path | None = None) -> dict | None:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        messages.extend(check_instruction_text(root, f"{INSTRUCTIONS_DIR}/{name}", text, now))
-    if not messages:
+        found_errors, found_warnings = check_instruction_report(root, f"{INSTRUCTIONS_DIR}/{name}", text, now)
+        messages.extend(found_errors)
+        warnings.extend(found_warnings)
+    if not messages and not warnings:
         return None
-    shown = messages[:12]
-    more = f" ...他{len(messages) - 12}件" if len(messages) > 12 else ""
+    if messages:
+        head = "起動の依頼文が指す指示書に外れがあります(OPS-12): "
+    else:
+        head = WARNING_DENY_HEAD
+    items = messages + [f"警告: {warning}" for warning in warnings]
+    shown = items[:12]
+    more = f" ...他{len(items) - 12}件" if len(items) > 12 else ""
     return {"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
-        "permissionDecisionReason": (
-            "起動の依頼文が指す指示書に外れがあります(OPS-12): " + " / ".join(shown) + more
-        ),
+        "permissionDecisionReason": head + " / ".join(shown) + more,
     }}
 
 

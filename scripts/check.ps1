@@ -108,6 +108,8 @@ $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd([char[]]"\\/")
 # (0) の前後比較で使う関数群(scripts/check.selftest.ps1 と共有する単一正本)
 . (Join-Path $scriptDirectory "lib\gitTreeGuard.ps1")
 . (Join-Path $scriptDirectory "lib\validationReceipt.ps1")
+# 準備の導入の命令を通信の失敗の時だけやり直す関数(scripts/check.selftest.ps1 と共有する単一正本)
+. (Join-Path $scriptDirectory "lib\networkRetry.ps1")
 
 function Invoke-Check {
     param([string]$Name, [string]$Command, [string[]]$CommandArgs)
@@ -138,6 +140,35 @@ function Invoke-Check {
         Write-Host ""
         Write-Host "[NG] $Name が失敗しました(終了コード: $checkExitCode)" -ForegroundColor Red
         exit $checkExitCode
+    }
+}
+
+# Invoke-Check と同じ表示・失敗の仕方で、準備の導入の命令を通信の失敗の時だけ最大3回まで流す
+# (scripts/lib/networkRetry.ps1)。[開始]・[終了] の行は段の全体で1回ずつ(所要はやり直しと待ちを含む)。
+function Invoke-NetworkRetryCheck {
+    param([string]$Name, [string]$Command, [string[]]$CommandArgs)
+    Write-Host ""
+    Write-Host "=== $Name ===" -ForegroundColor Cyan
+    Write-Host ("[開始] {0:yyyy-MM-ddTHH:mm:ss.fffzzz}" -f [DateTimeOffset]::Now)
+    $checkTimer = [Diagnostics.Stopwatch]::StartNew()
+    $retryOutcome = $null
+    $savedCommandGitEnvironment = Clear-InheritedGitEnv
+    try {
+        $retryOutcome = Invoke-WithNetworkRetry -Name $Name -Attempt { Invoke-CapturedCommand -Command $Command -CommandArgs $CommandArgs }
+    } catch {
+        Write-Host "[NG] $Name を起動できませんでした: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    } finally {
+        Restore-InheritedGitEnv -Saved $savedCommandGitEnvironment
+        $checkTimer.Stop()
+        $retryExitCode = if ($null -eq $retryOutcome) { 1 } else { [int]$retryOutcome.ExitCode }
+        Write-Host ("[終了] {0:yyyy-MM-ddTHH:mm:ss.fffzzz} / {1} / 所要 {2:F3} 秒 / 終了コード {3}" -f `
+            [DateTimeOffset]::Now, $Name, $checkTimer.Elapsed.TotalSeconds, $retryExitCode)
+    }
+    if ([int]$retryOutcome.ExitCode -ne 0) {
+        Write-Host ""
+        Write-Host "[NG] $Name が失敗しました(終了コード: $($retryOutcome.ExitCode)、試行 $($retryOutcome.Attempts) 回・やり直し $($retryOutcome.Retries) 回)" -ForegroundColor Red
+        exit ([int]$retryOutcome.ExitCode)
     }
 }
 
@@ -681,7 +712,9 @@ try {
             if ([Environment]::OSVersion.Platform -eq [PlatformID]::Unix) {
                 $browserInstallArgs = @("exec", "playwright", "install", "--with-deps", "chromium", "firefox")
             }
-            Invoke-Check "(準備) Playwright のブラウザ確認" pnpm $browserInstallArgs
+            # 名前解決・接続の失敗(2026-11-11 main の CI、Linux 3組)だけを間隔を空けて最大3回まで流す。
+            # 通信以外の失敗と3回とも失敗した時は、今までどおりこの段で止まる。
+            Invoke-NetworkRetryCheck "(準備) Playwright のブラウザ確認" pnpm $browserInstallArgs
             $ciStageSteps.Add('browsers')
             if (Test-Path -LiteralPath (Join-Path $root 'apps/desktop/package.json') -PathType Leaf) {
                 Invoke-Check "(準備) Electron の実行ファイル確認" pnpm @('--filter', '@pointercad/desktop', 'exec', 'install-electron')

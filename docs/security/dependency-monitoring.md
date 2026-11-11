@@ -26,7 +26,7 @@
 | React / Three / Vite / Playwright | 両アプリのビルド、実操作と表示、CSP/Worker/資産配信、Chromium・Firefox・Electronの通常受入 |
 | GitHub Actions | 権限、checkout対象、固定Node/pnpm、通常の同一検査入口、成果物・失敗の記録 |
 
-型・lint・単体・build・E2Eは`./scripts/check.ps1`を正本として実行し、更新PRだからといって既定性能値や検査対象を緩和しない。現CIはWindows/Ubuntuの`front`、`unit-lead`、`e2e`各3 shardと集約`checks`を接続済みとする。公開判定では設定の存在ではなく、完成コードの**同一SHAで両OSの全jobが成功した実行記録**を確認する。Firefox/Electronの実操作とNSIS・portable・AppImageの起動、保存、終了、全同梱物のhash照合も別に確認する。
+型・lint・単体・build・E2Eは`./scripts/check.ps1`を正本として実行し、更新PRだからといって既定性能値や検査対象を緩和しない。現CIはWindows/Ubuntuの`front`、`unit-lead`、`e2e`各6 shardと集約`checks`を接続済みとする。公開判定では設定の存在ではなく、完成コードの**同一SHAで両OSの全jobが成功した実行記録**を確認する。Firefox/Electronの実操作とNSIS・portable・AppImageの起動、保存、終了、全同梱物のhash照合も別に確認する。
 
 ## 2026-10-04のアラートと実行記録
 

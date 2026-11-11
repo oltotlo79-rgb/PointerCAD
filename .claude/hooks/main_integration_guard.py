@@ -1,7 +1,9 @@
 """Reject commands that integrate work into main before a valid completion judgment exists.
 
-rules/03 §6: integration into main requires (1) a judgment that at least 10 root tasks are
-complete and (2) both-OS CI green at the same SHA as main. This hook enforces only the first
+rules/03 §6: integration into main requires (1) a recorded completion judgment and (2) both-OS
+CI green at the same SHA as main. (2026-11-12, user's instruction: the former lower bound of 10
+completed root tasks no longer applies; a count of zero is also accepted.) This hook
+enforces only the first
 half, mechanically, at the point a PreToolUse Bash/PowerShell call would actually perform the
 integration: `gh pr create` (whose base is main -- explicitly, or by omission, since this
 project's default base is main), `gh pr ready` / `gh pr merge` (whose target PR's base cannot be
@@ -13,7 +15,8 @@ repository's current branch is `main`.
 The hook does not judge whether a completion claim is *true* -- that is the judgment worker's
 and the orchestrator's responsibility (per the instruction). It only checks that the record file
 scratchpad/claude/state/main-integration-judgment.json exists, parses as an object, and has
-`count` (int) >= 10 with `completedTaskIds` (array) whose length equals `count`. Any other
+`completedTaskIds` (array); when `count` is present it must be an int equal to that array's
+length. Any other
 defect in the record (missing commit/judgedAt/evidence, mismatched commit, etc.) is NOT this
 hook's concern and is left alone, per the instruction's explicit scope ("フックは記録の有無と形と
 件数だけを見る").
@@ -69,8 +72,8 @@ RELEASE_PATH = os.path.join(ROOT, "scratchpad", "claude", "state", "main-release
 RELEASE_LOOKUP_TIMEOUT = 3
 
 REASON_TEMPLATE = (
-    "{what} は main への統合に当たります(rules/03 §6: main への統合は10原タスク以上の完了の"
-    "判定と、main と同一 SHA の両OS CI の後)。{detail}"
+    "{what} は main への統合に当たります(rules/03 §6: main への統合は完了の判定の記録と、"
+    "main と同一 SHA の両OS CI の後)。{detail}"
 )
 
 
@@ -348,7 +351,8 @@ def find_main_integration(command: str, cwd: str) -> str | None:
     return None
 
 
-# --- judgment record: existence, shape, count only (per the instruction's explicit scope) ---
+# --- judgment record: existence, shape, count consistency only (per the instruction's explicit
+# scope). No lower bound on the count since 2026-11-12 (user's instruction). ---
 
 def _load_judgment_record() -> dict | None:
     if not os.path.isfile(JUDGMENT_PATH):
@@ -358,22 +362,23 @@ def _load_judgment_record() -> dict | None:
 
 
 def _judgment_defect(record: object) -> str | None:
-    """Returns a reason string if the record is missing/malformed/insufficient, else None."""
+    """Returns a reason string if the record is missing/malformed/inconsistent, else None.
+    `count` may be omitted; when present it must be an int equal to len(completedTaskIds)."""
     if record is None:
         return (
             f"判定の記録が無い({JUDGMENT_PATH})。"
         )
     if not isinstance(record, dict):
         return "判定の記録がオブジェクトの形になっていない。"
-    count = record.get("count")
-    if isinstance(count, bool) or not isinstance(count, int):
-        return "判定の記録の count が整数になっていない。"
+    count = None
+    if "count" in record:
+        count = record["count"]
+        if isinstance(count, bool) or not isinstance(count, int):
+            return "判定の記録の count が整数になっていない。"
     task_ids = record.get("completedTaskIds")
     if not isinstance(task_ids, list):
         return "判定の記録の completedTaskIds が配列になっていない。"
-    if count < 10:
-        return f"判定の記録の count が10未満({count})。"
-    if len(task_ids) != count:
+    if count is not None and len(task_ids) != count:
         return f"判定の記録の completedTaskIds の件数({len(task_ids)})と count({count})が一致しない。"
     return None
 

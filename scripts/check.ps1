@@ -47,7 +47,7 @@ param(
     [string]$ComparisonBase = '',
     [ValidateRange(1, 10)]
     [int]$E2ERepeats = 1,
-    # CIだけで画面操作を3台へ分配する。全3組×両OSの成功が全体合格の条件。
+    # CIだけで画面操作を6台へ分配する(k/6 の形。組の数は下の $ciE2EShardTotal)。全6組×両OSの成功が全体合格の条件。
     [string]$E2EShard = '',
     # 診断用: 1〜4段を省きE2Eだけを実行する。最終のPushゲートは必ずこの指定なしで通す。
     [switch]$E2EOnly,
@@ -110,6 +110,11 @@ $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd([char[]]"\\/")
 . (Join-Path $scriptDirectory "lib\validationReceipt.ps1")
 # 準備の導入の命令を通信の失敗の時だけやり直す関数(scripts/check.selftest.ps1 と共有する単一正本)
 . (Join-Path $scriptDirectory "lib\networkRetry.ps1")
+# CIの画面検査の組の数(2026-11-12 に3から6へ。最も長い組の偏りを減らすため)。-E2EShard はこの値から作る
+# 1/6〜6/6 だけを通す。.github/workflows/ci.yml の matrix.shard・'/6' と scripts/lib/ci_stage_evidence.py の
+# SHARD_TOTAL と同じ値にする(ci_stage_evidence.py の自己試験が3か所の一致を確かめる)。
+$ciE2EShardTotal = 6
+$ciE2EShards = @(1..$ciE2EShardTotal | ForEach-Object { "$_/$ciE2EShardTotal" })
 
 function Invoke-Check {
     param([string]$Name, [string]$Command, [string[]]$CommandArgs)
@@ -342,10 +347,10 @@ try {
     }
     $unitDiagnostic = -not [string]::IsNullOrWhiteSpace($UnitPackage)
     if (-not [string]::IsNullOrWhiteSpace($E2EShard) -and (
-        $E2EShard -notmatch '^[1-3]/3$' -or -not $isRunningOnCI -or $Level -ne 'Push' -or
+        $ciE2EShards -cnotcontains $E2EShard -or -not $isRunningOnCI -or $Level -ne 'Push' -or
         $ReceiptPhase -ne 'Manual' -or $E2ERepeats -ne 1 -or $StaticOnly -or $unitDiagnostic -or
         $E2EOnly -or $E2ENoDependencies -or -not [string]::IsNullOrWhiteSpace($E2EGrep))) {
-        Write-Host '[NG] E2Eの3分割はCIの通常Push検査だけで使用できます。診断・フック・連続検査とは併用できません。' -ForegroundColor Red
+        Write-Host "[NG] E2Eの$($ciE2EShardTotal)分割(-E2EShard は $($ciE2EShards[0])〜$($ciE2EShards[-1]))はCIの通常Push検査だけで使用できます。診断・フック・連続検査とは併用できません。" -ForegroundColor Red
         exit 1
     }
     if ($StaticOnly -and ($Level -ne "Push" -or $E2EOnly -or $unitDiagnostic -or $UnitTests.Count -gt 0)) {
@@ -394,7 +399,7 @@ try {
         exit 1
     }
     if ($ciStageRequested) {
-        $stageShardValid = if ($CIStage -eq 'E2E') { $E2EShard -match '^[1-3]/3$' } else { [string]::IsNullOrWhiteSpace($E2EShard) }
+        $stageShardValid = if ($CIStage -eq 'E2E') { $ciE2EShards -ccontains $E2EShard } else { [string]::IsNullOrWhiteSpace($E2EShard) }
         if (-not $isRunningOnCI -or $Level -ne 'Push' -or $ReceiptPhase -ne 'Manual' -or $E2ERepeats -ne 1 -or $Full -or
             $StaticOnly -or $unitDiagnostic -or $E2EOnly -or $E2ENoDependencies -or $lightRequested -or
             -not [string]::IsNullOrWhiteSpace($E2EGrep) -or [string]::IsNullOrWhiteSpace($StageEvidence) -or
@@ -445,13 +450,13 @@ try {
         exit 1
     }
     $hasE2E = $definedScripts -contains "test:e2e"
-    if (-not [string]::IsNullOrWhiteSpace($E2EShard) -and -not $hasE2E) { throw 'CIの3分割にはtest:e2eが必要です。' }
+    if (-not [string]::IsNullOrWhiteSpace($E2EShard) -and -not $hasE2E) { throw "CIの画面検査の$($ciE2EShardTotal)分割にはtest:e2eが必要です。" }
     if ($CIStage -eq 'Verify') {
-        # 集約(checks)だけ: 両OSの全段(前段・単体の先行分・画面検査3組)の記録がそろい、全てが
+        # 集約(checks)だけ: 両OSの全段(前段・単体の先行分・画面検査の全組)の記録がそろい、全てが
         # 同じ版・同じlock・OSごとに同じnode/pnpmで成功したことを確かめる。pnpmは実行しない。
         Invoke-Check "(照合) 両OSの全段の記録" python @('-B', '-X', 'utf8', $ciStageEvidenceScript, 'verify', '--root', $root, '--dir', $StageEvidence)
         Write-Host ''
-        Write-Host '[OK] 両OSの前段・単体の先行分・画面検査の全3組が、同じ版で全て成功したことを照合しました。' -ForegroundColor Green
+        Write-Host "[OK] 両OSの前段・単体の先行分・画面検査の全$($ciE2EShardTotal)組が、同じ版で全て成功したことを照合しました。" -ForegroundColor Green
         exit 0
     }
     $ciStageUnitSplit = $null
@@ -912,7 +917,7 @@ try {
         Write-Host "[OK] CIの段 $CIStage $E2EShard が成功し、記録しました。全体合格には、集約(checks)が両OSの全段の記録を照合して成功することが必要です。" -ForegroundColor Green
     }
     elseif (-not [string]::IsNullOrWhiteSpace($E2EShard)) {
-        Write-Host "[OK] CIの全単体・型・lint・ビルドと画面操作の分割 $E2EShard が成功しました。全体合格には両OSの全3組の成功が必要です。" -ForegroundColor Green
+        Write-Host "[OK] CIの全単体・型・lint・ビルドと画面操作の分割 $E2EShard が成功しました。全体合格には両OSの全$($ciE2EShardTotal)組の成功が必要です。" -ForegroundColor Green
     }
     else {
         Write-Host "[OK] 全ての検査に合格しました" -ForegroundColor Green

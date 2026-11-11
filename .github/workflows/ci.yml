@@ -25,9 +25,9 @@ permissions:
 # 2026-09-28(レビュー §6.3「検査の待ち時間を減らす」): 以前は両OS×3組の各組が型・lint・全単体・
 # ビルドを繰り返してから画面検査の1/3を流していた(run 36346675432 で1組 84〜189分)。画面検査は webServer が
 # 自分で組み立てるため前段の成果物を使わない。そこで OS ごとに、前段(自己試験・型・lint・単体の
-# 残り・ビルド)と単体の先行分を1回ずつ、画面検査を3組に分けて、5台で同時に流す。検査の件数・OS・
-# 精度・時間の判定は変えない。各段は成功したときだけ「同じ版・lock・道具と通した手順」を記録し、
-# 集約(checks)が両OSの全10段の記録を照合する(scripts/lib/ci_stage_evidence.py)。
+# 残り・ビルド)と単体の先行分を1回ずつ、画面検査を6組(2026-11-12 に3組から変更)に分けて、8台で同時に流す。
+# 検査の件数・OS・精度・時間の判定は変えない。各段は成功したときだけ「同じ版・lock・道具と通した手順」を記録し、
+# 集約(checks)が両OSの全16段の記録を照合する(scripts/lib/ci_stage_evidence.py)。
 # 各段でNode.jsの版がずれると集約の照合に失敗するため、同じ正確な版に固定する。
 jobs:
   front:
@@ -138,22 +138,21 @@ jobs:
           retention-days: 7
 
   e2e:
-    # 画面検査を Playwright の同じ設定から3組へ分配する(性能・起動の前提 project は各組で重複して流す)。
+    # 画面検査を Playwright の同じ設定から6組へ分配する(性能・起動の前提 project は各組で重複して流す)。
+    # 組の数は scripts/check.ps1 の $ciE2EShardTotal・scripts/lib/ci_stage_evidence.py の SHARD_TOTAL と
+    # 同じにする(ci_stage_evidence.py の自己試験が、この matrix と下の '/6' を含む3か所の一致を確かめる)。
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6]
     runs-on: ${{ matrix.os }}
     # 止まった検査で6時間待たないための上限。検査の時間判定ではない。
-    # 実測(run 36346675432、分割前)の画面検査の段: Win 1組 50.6分・2組 126.1分・3組 36.9分、
-    # Linux 35.7分・112.8分・42.2分。最大の Win 2組は firefox の math-input.spec.ts が1つの worker で約100分。
-    # 2026-09-28 に math-input.spec.ts を3ファイルへ分け(a-/z-math-input.spec.ts)、並列にした後の見込み
-    # (全 project の一覧から Playwright 1.62.1 の組の選び方を再現し、上の run の1件ごとの所要で積算)は
-    # 最大 Win 2組 約77分(firefox 約84分・functional 約47分の合計を2 worker で。Linux 2組 約62分)。
-    # 160分 = 分割が効かなかった場合の実測の最大(126.1分+準備)でも切らず、見込みの最大の約2倍(以前は240分)。
+    # Playwright 1.62.1 は試験を件数で等分し、project の順(functional→firefox→electron)に先頭から切る(所要時間は見ない)。
+    # 3組の時の main の CI(run 43038990339)の Win は 47分・129分・138分(通信切れ)と偏った(firefox の重い数式系と electron の直列が後ろの組に集中)。
+    # 6組の見込みは最も長い組で 60分(速い実行機)〜88分(遅い実行機)。160分は3組の時の上限のまま据え置く。
     timeout-minutes: 160
     steps:
       - name: リポジトリの取得
@@ -174,7 +173,7 @@ jobs:
 
       - name: 画面検査の1組 (scripts/check.ps1)
         shell: pwsh
-        run: ./scripts/check.ps1 -Install -CIStage E2E -E2EShard '${{ matrix.shard }}/3' -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'
+        run: ./scripts/check.ps1 -Install -CIStage E2E -E2EShard '${{ matrix.shard }}/6' -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'
 
       - name: 画面検査の記録を渡す
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -215,7 +214,7 @@ jobs:
           UNIT_LEAD_RESULT: ${{ needs.unit-lead.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
         run: |
-          if ($env:FRONT_RESULT -ne 'success' -or $env:UNIT_LEAD_RESULT -ne 'success' -or $env:E2E_RESULT -ne 'success') { throw '両OSの前段・単体の先行分・画面検査の全3組が成功していません。' }
+          if ($env:FRONT_RESULT -ne 'success' -or $env:UNIT_LEAD_RESULT -ne 'success' -or $env:E2E_RESULT -ne 'success') { throw '両OSの前段・単体の先行分・画面検査の全6組が成功していません。' }
           Write-Host '[OK] 両OSの全段のjobが成功しました。段の記録を照合します。'
 
       - name: リポジトリの取得

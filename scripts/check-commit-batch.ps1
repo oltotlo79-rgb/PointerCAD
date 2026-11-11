@@ -1,6 +1,5 @@
 ﻿param(
-    [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot),
-    [int]$MinimumCompletedTasks = 10
+    [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,7 +12,7 @@ if (-not (Test-Path -LiteralPath $libraryPath -PathType Leaf)) {
 
 try {
     $root = [IO.Path]::GetFullPath($RepositoryRoot)
-    $result = Test-CommitBatchRepository -RepositoryRoot $root -MinimumCompletedTasks $MinimumCompletedTasks
+    $result = Test-CommitBatchRepository -RepositoryRoot $root
 }
 catch {
     Write-Host "[NG] 一括コミット検査を実行できませんでした: $($_.Exception.Message)" -ForegroundColor Red

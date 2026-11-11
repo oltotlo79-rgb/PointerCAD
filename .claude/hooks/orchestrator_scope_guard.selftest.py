@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -34,10 +35,26 @@ spec = importlib.util.spec_from_file_location("orchestrator_scope_guard", HOOK)
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
 
+def msys_path(path: str) -> str:
+    """Git Bash（MSYS）で書く形の絶対パス。ドライブ付き（`C:/…`・`C:\\…`）は `/c/…` へ、POSIX の絶対パス（`/…`）は
+    そのまま返す。相対パス・ドライブ相対（`C:foo`）は ValueError。
+
+    2026-11-12 cl-v103-scope-guard-selftest-linux-1112: 以前は `"/" + p[0].lower() + p[2:]` と文字の位置で作っていたため、
+    Linux の CI（main 9a349c98、run 43079069480）で `/home/runner/…` が `//ome/runner/…` に壊れ、d61 が落ちた。
+    """
+    posix = path.replace("\\", "/")
+    drive = re.match(r"^([A-Za-z]):(/.*)?$", posix)
+    if drive:
+        return "/" + drive.group(1).lower() + (drive.group(2) or "")
+    if posix.startswith("/"):
+        return posix
+    raise ValueError(f"絶対パスではない: {path!r}")
+
+
 TMP = ROOT / "scratchpad" / "temp" / f"orchestrator-scope-guard-selftest-{uuid.uuid4().hex[:8]}"
 TMP_STR = str(TMP)
 TMP_POSIX = TMP.as_posix()
-TMP_MSYS = "/" + TMP_POSIX[0].lower() + TMP_POSIX[2:]
+TMP_MSYS = msys_path(TMP_STR)   # Windows は /c/…、Linux は TMP_POSIX と同じ（d61・r6d06 は Linux では POSIX の絶対パスを確かめる）
 CREATED: list[Path] = []
 
 MAIN_TRANSCRIPT = ("C:/Users/oltot/.claude/projects/C--Users-oltot-Documents-git-projects-PointerCAD/"
@@ -363,6 +380,56 @@ class CaseCountTests(unittest.TestCase):
 
     def test_hook_module_starts_no_child_process(self):
         self.assertNotIn("subprocess", vars(guard))
+
+
+# 根の例（文字として与える。実在しなくてよい）。手元の Windows・CI の Windows・CI の Linux の 3 つの形。
+WINDOWS_ROOT_FORWARD = "C:/Users/oltot/Documents/git-projects/PointerCAD"
+WINDOWS_ROOT_BACKSLASH = "D:\\a\\PointerCAD\\PointerCAD"
+POSIX_ROOT = "/home/runner/work/PointerCAD/PointerCAD"
+CI_LINUX_TMP = POSIX_ROOT + "/scratchpad/temp/orchestrator-scope-guard-selftest-2c530d9f"   # run 43079069480 の TMP
+
+
+class MsysPathTests(unittest.TestCase):
+    """msys_path（d61・r6d06 の命令の道のりを作る関数）を、Windows の形と POSIX の形の両方の入力で OS によらず確かめる。
+    2026-11-12: 文字の位置で作っていたため Linux の CI で `//ome/runner/…` に壊れた（main 9a349c98、run 43079069480）。"""
+
+    def test_windows_drive_forward_slashes(self):
+        self.assertEqual(msys_path(WINDOWS_ROOT_FORWARD), "/c/Users/oltot/Documents/git-projects/PointerCAD")
+
+    def test_windows_drive_backslashes(self):
+        self.assertEqual(msys_path(WINDOWS_ROOT_BACKSLASH), "/d/a/PointerCAD/PointerCAD")
+
+    def test_windows_drive_root_and_lowercase_drive(self):
+        self.assertEqual(msys_path("C:\\"), "/c/")
+        self.assertEqual(msys_path("e:"), "/e")
+        self.assertEqual(msys_path("c:/x/y"), "/c/x/y")
+
+    def test_posix_absolute_returned_unchanged(self):
+        for path in (POSIX_ROOT, CI_LINUX_TMP, "/"):
+            with self.subTest(path=path):
+                self.assertEqual(msys_path(path), path)
+        self.assertFalse(msys_path(CI_LINUX_TMP).startswith("//"), msys_path(CI_LINUX_TMP))
+
+    def test_relative_and_drive_relative_raise(self):
+        for path in ("scratchpad/temp/x", "C:foo", ""):
+            with self.subTest(path=path):
+                with self.assertRaises(ValueError):
+                    msys_path(path)
+
+    def test_this_run_tmp_msys_resolves_to_the_same_parts(self):
+        """この実行の TMP（Windows は C:\\…、Linux は /home/…）を msys_path に通しても、フックは同じ道のりと読む。"""
+        self.assertFalse(TMP_MSYS.startswith("//"), TMP_MSYS)
+        expected = [text.lower() for text, _ in guard._plain_parts(TMP_STR)]
+        self.assertEqual([text.lower() for text, _ in guard._plain_parts(TMP_MSYS)], expected)
+
+    def test_hook_denies_cat_product_through_msys_path_for_each_root_form(self):
+        """d61 と同じ命令を 3 つの形の根で作り、どれも R3 で拒否する（Linux の CI の命令の正しい形を含む）。"""
+        for root in (WINDOWS_ROOT_FORWARD, WINDOWS_ROOT_BACKSLASH, POSIX_ROOT, CI_LINUX_TMP):
+            command = f"cat {msys_path(root)}/packages/fem/src/worker.ts"
+            with self.subTest(root=root, command=command):
+                found = guard.analyze(command, "Bash", root, root)
+                self.assertIsNotNone(found, f"通ってしまった: {command!r}")
+                self.assertEqual(found[0], "R3")
 
 
 class CallerTests(unittest.TestCase):

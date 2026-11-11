@@ -349,25 +349,26 @@ process.exitCode = process.env.PCAD_PRODUCT_EXIT === '7' ? 7 : 0;
 
     def test_ci_shards_preserve_all_product_stages_and_cannot_replace_local_full_checks(self):
         entry = [self.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(self.root / 'scripts/check.ps1')]
-        self.command(entry + ['-E2EShard', '1/3'], success=False)
+        self.command(entry + ['-E2EShard', '1/6'], success=False)
         self.assertEqual(self.calls(), [])
         self.env['CI'] = 'true'
-        for arguments in [['-E2EShard', value] for value in ['0/3', '4/3', '1/2', '1/3 --no-deps']] + [
-            ['-E2EShard', '1/3', '-E2EOnly'], ['-E2EShard', '1/3', '-StaticOnly'],
-            ['-E2EShard', '1/3', '-ReceiptPhase', 'Push'], ['-E2EShard', '1/3', '-Level', 'Commit'],
-            ['-E2EShard', '1/3', '-E2ERepeats', '2'],
+        # Six shards since 2026-11-12; the former 3-shard values must now be rejected too.
+        for arguments in [['-E2EShard', value] for value in ['0/6', '7/6', '1/3', '3/3', '4/3', '1/2', '6/7', '1/6 --no-deps']] + [
+            ['-E2EShard', '1/6', '-E2EOnly'], ['-E2EShard', '1/6', '-StaticOnly'],
+            ['-E2EShard', '1/6', '-ReceiptPhase', 'Push'], ['-E2EShard', '1/6', '-Level', 'Commit'],
+            ['-E2EShard', '1/6', '-E2ERepeats', '2'],
         ]:
             with self.subTest(arguments=arguments):
                 self.command(entry + arguments, success=False)
                 self.assertEqual(self.calls(), [], 'Invalid shards must not start package commands')
-        for shard in [1, 2, 3]:
+        for shard in [1, 2, 3, 4, 5, 6]:
             before = len(self.calls())
-            self.command(entry + ['-E2EShard', f'{shard}/3'])
+            self.command(entry + ['-E2EShard', f'{shard}/6'])
             self.assertEqual([call for call in self.calls()[before:] if call.startswith('run ')],
-                             ['run typecheck', 'run lint', 'run test', 'run build', f'run test:e2e --shard={shard}/3'])
+                             ['run typecheck', 'run lint', 'run test', 'run build', f'run test:e2e --shard={shard}/6'])
             self.assertFalse((self.root / '.git/validation-receipt.json').exists())
-        self.write('.git/fail-step', 'run test:e2e --shard=2/3')
-        self.command(entry + ['-E2EShard', '2/3'], success=False)
+        self.write('.git/fail-step', 'run test:e2e --shard=2/6')
+        self.command(entry + ['-E2EShard', '2/6'], success=False)
         self.assertFalse((self.root / '.git/validation-receipt.json').exists())
         self.env['CI'] = ''
         before = len(self.calls())

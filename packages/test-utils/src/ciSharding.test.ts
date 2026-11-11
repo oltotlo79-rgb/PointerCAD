@@ -15,6 +15,19 @@ const root = new URL('../../../', import.meta.url);
 const prerequisiteProjects = new Set(['viewport-performance', 'startup-firefox', 'startup-electron']);
 const execFileAsync = promisify(execFile);
 const LIST_TIMEOUT_MS = 45_000;
+// 画面検査の組の数(この検査の中の唯一の値。2026-11-12 に3から6へ)。ci.yml の matrix.shard と check.ps1 へ渡す '/N'、
+// scripts/check.ps1 の $ciE2EShardTotal、scripts/lib/ci_stage_evidence.py の SHARD_TOTAL と同じにする。ci.yml との一致は
+// 下の検査が実物から読み取って確かめ、3か所の一致は ci_stage_evidence.py の自己試験が確かめる。
+const SHARD_TOTAL = 6;
+const shardNumbers = Array.from({ length: SHARD_TOTAL }, (_, index) => index + 1);
+
+/** ci.yml の画面検査の組の数を、matrix.shard の並びと check.ps1 へ渡す '/N' の両方から読み取る(改行は LF・CRLF のどちらでもよい)。 */
+function workflowShardDeclarations(workflow: string): { matrices: number[][]; totals: number[]; shardArguments: number } {
+  const matrices = [...workflow.matchAll(/^ +shard: \[([0-9, ]*)\][ \t]*\r?$/gmu)]
+    .map(match => (match[1] ?? '').split(',').map(part => Number(part.trim())));
+  const totals = [...workflow.matchAll(/-E2EShard '\$\{\{ matrix\.shard \}\}\/([0-9]+)'/gu)].map(match => Number(match[1]));
+  return { matrices, totals, shardArguments: workflow.split('-E2EShard').length - 1 };
+}
 
 function listFailure(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
@@ -34,7 +47,7 @@ function listFailure(error: unknown): string {
 async function listCases(shard?: number): Promise<Map<string, string>> {
   const cli = createRequire(new URL('package.json', root)).resolve('@playwright/test/cli');
   const { stdout, stderr } = await execFileAsync(process.execPath, [cli, 'test', '--config=e2e/playwright.config.ts',
-    '--list', '--reporter=json', ...(shard === undefined ? [] : [`--shard=${shard}/3`])], {
+    '--list', '--reporter=json', ...(shard === undefined ? [] : [`--shard=${shard}/${SHARD_TOTAL}`])], {
     cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, timeout: LIST_TIMEOUT_MS, maxBuffer: 8_000_000,
   });
   if (stderr.trim() !== '') throw new Error(`Playwright列挙 stderr (${shard ?? 'whole'}): ${stderr}`);
@@ -52,28 +65,28 @@ async function listCases(shard?: number): Promise<Map<string, string>> {
   return cases;
 }
 
-describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
-  it('実際のPlaywrightが選ぶ3組の和集合は全検査と一致し、通常操作を重複させない', async () => {
-    const labels = ['whole', 'shard1', 'shard2', 'shard3'] as const;
+describe(`CIの${SHARD_TOTAL}分割は全操作を保って別の実行機へ配る`, () => {
+  it(`実際のPlaywrightが選ぶ${SHARD_TOTAL}組の和集合は全検査と一致し、通常操作を重複させない`, async () => {
+    const labels = ['whole', ...shardNumbers.map(number => `shard${number}`)];
     // Playwrightは変換した検査ファイルと行の対応表(.map)を共有の変換キャッシュへ書き、書く前に同じファイルの
     // 控えを消す。キャッシュが空のまま2つの列挙を同時に流すと、片方が消して書き直す間の .map を他方が読めず、
     // そのファイルの全検査が変換後の行で列挙される(CI run 37260692577 の Linux)。全体の列挙を単独で流して
-    // キャッシュを満たし、3組はキャッシュを読むだけの状態で同時に流す。
+    // キャッシュを満たし、各組はキャッシュを読むだけの状態で同時に流す(組ごとの列挙の上限 LIST_TIMEOUT_MS は2波目でも1回分)。
     const firstWaveStartedAt = Date.now();
     const firstWave = await Promise.allSettled([listCases()]);
     console.log('[CI分割] 列挙wave1', { elapsedMs: Date.now() - firstWaveStartedAt });
     const secondWaveStartedAt = Date.now();
-    const secondWave = await Promise.allSettled([listCases(1), listCases(2), listCases(3)]);
+    const secondWave = await Promise.allSettled(shardNumbers.map(number => listCases(number)));
     console.log('[CI分割] 列挙wave2', { elapsedMs: Date.now() - secondWaveStartedAt });
     const listed = [...firstWave, ...secondWave];
     const failures = listed.flatMap((result, index) => result.status === 'rejected'
-      ? [`${labels[index]}: ${listFailure(result.reason)}`] : []);
+      ? [`${labels[index] ?? index}: ${listFailure(result.reason)}`] : []);
     expect(failures).toEqual([]);
     const [whole, ...shards] = listed.map(result => {
       if (result.status !== 'fulfilled') throw new Error(`Playwright列挙に失敗: ${listFailure(result.reason)}`);
       return result.value;
     });
-    if (whole === undefined || shards.length !== 3) throw new Error('全体と3分割の列挙が揃いません');
+    if (whole === undefined || shards.length !== SHARD_TOTAL) throw new Error(`全体と${SHARD_TOTAL}分割の列挙が揃いません`);
     expect(whole.size).toBeGreaterThan(300);
     const counts = new Map<string, number>();
     for (const [index, selected] of shards.entries()) {
@@ -88,10 +101,10 @@ describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
     for (const [key, project] of whole) {
       if (!prerequisiteProjects.has(project)) expect(counts.get(key), key).toBe(1);
     }
-    console.log('[CI分割] 全操作の選択と前提検査を照合', { total: whole.size, partitions: 3 });
+    console.log('[CI分割] 全操作の選択と前提検査を照合', { total: whole.size, partitions: SHARD_TOTAL });
   }, LIST_TIMEOUT_MS * 2 + 10_000);
 
-  it('両OSの前段・単体の先行分・画面検査3組を同時に流し、欠落・中止・失敗を既存の合格名へ変えない', () => {
+  it(`両OSの前段・単体の先行分・画面検査${SHARD_TOTAL}組を同時に流し、欠落・中止・失敗を既存の合格名へ変えない`, () => {
     const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
     const section = (name: string, next: string): string =>
       workflow.slice(workflow.indexOf(`\n  ${name}:`), workflow.indexOf(`\n  ${next}:`));
@@ -109,8 +122,8 @@ describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
     }
     expect(front).toContain('./scripts/check.ps1 -Install -CIStage Front' + evidence);
     expect(unitLead).toContain('./scripts/check.ps1 -Install -CIStage UnitLead' + evidence);
-    expect(e2e).toContain('shard: [1, 2, 3]');
-    expect(e2e).toContain("./scripts/check.ps1 -Install -CIStage E2E -E2EShard '${{ matrix.shard }}/3'" + evidence);
+    expect(e2e).toContain(`shard: [${shardNumbers.join(', ')}]`);
+    expect(e2e).toContain("./scripts/check.ps1 -Install -CIStage E2E -E2EShard '${{ matrix.shard }}/" + String(SHARD_TOTAL) + "'" + evidence);
     const combined = workflow.slice(workflow.indexOf('\n  checks:'));
     expect(combined).toContain('os: [windows-latest, ubuntu-latest]');
     expect(combined).toContain('if: always()');
@@ -119,6 +132,24 @@ describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
     expect(combined).toContain("-ne 'success'");
     expect(combined).toContain('pattern: ci-stage-*');
     expect(combined).toContain('./scripts/check.ps1 -CIStage Verify' + evidence);
+  });
+
+  it(`組の数の定数${SHARD_TOTAL}はci.ymlのmatrixと'/N'から読み取った値と一致し、3組の古い形を残さない`, () => {
+    // 読み取りの補助が CRLF・古い3組・二重の matrix を見分けること(実物の照合が空振りで通らないように)。
+    const sample = (numbers: string, total: number, lineEnding = '\n'): string => '        shard: [' + numbers + ']' + lineEnding
+      + "        run: ./scripts/check.ps1 -E2EShard '${{ matrix.shard }}/" + String(total) + "'" + lineEnding;
+    expect(workflowShardDeclarations(sample('1, 2, 3, 4, 5, 6', 6, '\r\n')))
+      .toEqual({ matrices: [[1, 2, 3, 4, 5, 6]], totals: [6], shardArguments: 1 });
+    expect(workflowShardDeclarations(sample('1, 2, 3', 3))).toEqual({ matrices: [[1, 2, 3]], totals: [3], shardArguments: 1 });
+    expect(workflowShardDeclarations(sample('1, 2, 3, 4, 5, 6', 6).repeat(2)).matrices).toHaveLength(2);
+    const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
+    const declared = workflowShardDeclarations(workflow);
+    // matrix.shard はちょうど1つで 1〜SHARD_TOTAL の並び、-E2EShard はちょうど1か所で '/SHARD_TOTAL' を渡す。
+    expect(declared.matrices).toEqual([shardNumbers]);
+    expect(declared.shardArguments).toBe(1);
+    expect(declared.totals).toEqual([SHARD_TOTAL]);
+    // 3組の時の古い形(組の数を変えた時に古い行が残ると、実行機の組と check.ps1 へ渡す '/N' がずれる)。
+    for (const retired of ['shard: [1, 2, 3]', "${{ matrix.shard }}/3'"]) expect(workflow).not.toContain(retired);
   });
 
   it.each(['\n', '\r\n'])('単体の先行分は両OSで対応するPythonからNumPy固定の仮想環境を用意する（改行 %j）', lineEnding => {

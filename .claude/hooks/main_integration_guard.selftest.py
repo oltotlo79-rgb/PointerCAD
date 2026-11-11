@@ -6,6 +6,9 @@ The child runner mocks only subprocess.run inside the hook: rev-parse reads a sy
 marker, and ls-remote returns the selected tag response. Unknown commands fail immediately.
 The hook itself still reads stdin, resolves its real file location, loads JSON from disk, and
 emits its production stdout/stderr. The existing 55 test expectations remain unchanged.
+2026-11-12 (user's instruction): the 10-task lower bound was removed. The same inputs that
+used to check it (count 9; count 0 with a release record) now check that they are allowed by
+the ordinary judgment, and new cases pin the remaining shape and consistency checks.
 """
 
 from __future__ import annotations
@@ -193,13 +196,36 @@ class MainIntegrationGuardTests(unittest.TestCase):
         self.assert_denied(self.invoke(command="gh pr create --title x --body y"),
                             contains="判定の記録が無い")
 
-    def test_count_9_denied(self):
+    def test_count_9_allowed(self):
         self._write_record({**VALID_RECORD, "count": 9, "completedTaskIds": [f"ADD-{i}" for i in range(9)]})
-        self.assert_denied(self.invoke(command="git push origin HEAD:main"), contains="count が10未満")
+        self.assert_allowed(self.invoke(command="git push origin HEAD:main"))
 
     def test_count_10_valid_allowed(self):
         self._write_record(VALID_RECORD)
         self.assert_allowed(self.invoke(command="git push origin HEAD:main"))
+
+    def test_count_zero_with_empty_task_ids_allowed(self):
+        self._write_record({**VALID_RECORD, "count": 0, "completedTaskIds": []})
+        self.assert_allowed(self.invoke(command="git push origin HEAD:main"))
+
+    def test_count_omitted_allowed(self):
+        record = {key: value for key, value in VALID_RECORD.items() if key != "count"}
+        self._write_record({**record, "completedTaskIds": ["ADD-1"]})
+        self.assert_allowed(self.invoke(command="gh pr merge 19 --squash"))
+
+    def test_count_omitted_without_task_ids_denied(self):
+        record = {key: value for key, value in VALID_RECORD.items()
+                  if key not in ("count", "completedTaskIds")}
+        self._write_record(record)
+        self.assert_denied(self.invoke(command="git push origin HEAD:main"), contains="配列になっていない")
+
+    def test_count_null_denied(self):
+        self._write_record({**VALID_RECORD, "count": None})
+        self.assert_denied(self.invoke(command="git push origin HEAD:main"), contains="count が整数")
+
+    def test_small_count_mismatch_with_task_ids_denied(self):
+        self._write_record({**VALID_RECORD, "count": 0, "completedTaskIds": ["ADD-1", "ADD-2"]})
+        self.assert_denied(self.invoke(command="git push origin HEAD:main"), contains="一致しない")
 
     def test_count_mismatch_with_task_ids_denied(self):
         self._write_record({**VALID_RECORD, "count": 10, "completedTaskIds": [f"ADD-{i}" for i in range(9)]})
@@ -461,12 +487,17 @@ class MainIntegrationGuardTests(unittest.TestCase):
             "prompt": "0", "locks": "0", "shell": False,
         }])
 
-    def test_release_count_below_ten_allowed_in_both_shells(self):
+    def test_release_record_with_count_zero_uses_ordinary_judgment_in_both_shells(self):
+        # Without the lower bound, a count-0 judgment is valid by itself: the release exception
+        # (and its remote lookup) is not consulted.
         self._write_release()
         self._write_record({**VALID_RECORD, "count": 0, "completedTaskIds": []})
         for tool in ("Bash", "PowerShell"):
             with self.subTest(tool=tool):
-                self.assert_release_allowed(self.invoke(tool=tool, command=RELEASE_PUSH))
+                result = self.invoke(tool=tool, command=RELEASE_PUSH)
+                self.assert_allowed(result)
+                self.assertEqual(result.stderr, "")
+        self.assertEqual(self._calls(), [])
 
     def test_release_missing_or_broken_judgment_allowed(self):
         self._write_release()

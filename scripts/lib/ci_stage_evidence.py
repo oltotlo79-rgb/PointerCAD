@@ -1,7 +1,7 @@
 """CI の段の記録と照合(2026-09-28、レビュー docs/review-2026-09-28-codex.md §6.3)。
 
-CI は1つの OS の検査を、前段(自己試験・型・lint・単体の残り・ビルド)、単体の先行分、画面検査の3組へ
-分けて別々の実行機で同時に流す。各段は成功したときだけ、この処理で「同じ版・同じ依存・同じ道具で
+CI は1つの OS の検査を、前段(自己試験・型・lint・単体の残り・ビルド)、単体の先行分、画面検査の
+SHARD_TOTAL 組(2026-11-12 に3から6へ)へ分けて別々の実行機で同時に流す。各段は成功したときだけ、この処理で「同じ版・同じ依存・同じ道具で
 どの手順を通したか」を記録する。集約(ci.yml の checks)はこの処理の verify で、両 OS の全段の記録が
 そろい、全てが同じ版(HEAD と木)・同じ lock・OS ごとに同じ node/pnpm で成功したことを確かめる。
 
@@ -11,7 +11,7 @@ CI は1つの OS の検査を、前段(自己試験・型・lint・単体の残�
 
 使い方:
   ci_stage_evidence.py unit-split --root <根>
-  ci_stage_evidence.py write --root <根> --dir <記録先> --stage Front|UnitLead|E2E [--shard k/3]
+  ci_stage_evidence.py write --root <根> --dir <記録先> --stage Front|UnitLead|E2E [--shard k/6]
                              --node <node --version> --pnpm <pnpm --version> --step <手順> ...
   ci_stage_evidence.py verify --root <根> --dir <記録先>
   ci_stage_evidence.py selftest
@@ -34,7 +34,9 @@ from typing import Mapping
 SCHEMA = 'pointercad-ci-stage/1'
 # 要件 §1.5: デスクトップ版の対応 OS。どちらかの記録が欠けたら合格にしない。
 OPERATING_SYSTEMS = ('Windows', 'Linux')
-SHARD_TOTAL = 3
+# 画面検査の組の数。.github/workflows/ci.yml の matrix.shard と check.ps1 への '/N'、scripts/check.ps1 の
+# $ciE2EShardTotal と同じ値にする(自己試験の _shard_total_selftest が3か所の一致を確かめる)。
+SHARD_TOTAL = 6
 STAGES = ('Front', 'UnitLead', 'E2E')
 RECORD_KEYS = {'schema', 'stage', 'shard', 'os', 'head', 'tree', 'lockfileSha256', 'node', 'pnpm',
                'steps', 'unitCommand', 'run', 'image', 'result'}
@@ -328,6 +330,64 @@ def _unit_split_selftest(base: Path) -> list[str]:
     return failures
 
 
+def shard_total_mismatches(workflow: str, check_script: str, total: int = SHARD_TOTAL) -> list[str]:
+    """ci.yml の matrix.shard と check.ps1 へ渡す '/N'、check.ps1 の $ciE2EShardTotal が total と違う点を返す。"""
+    problems = []
+    matrices = re.findall(r'^ +shard: \[([0-9, ]*)\][ \t]*\r?$', workflow, re.MULTILINE)
+    if len(matrices) != 1:
+        problems.append(f'ci.yml の matrix.shard が1つではありません({len(matrices)} 個)')
+    elif [part.strip() for part in matrices[0].split(',')] != [str(index) for index in range(1, total + 1)]:
+        problems.append(f'ci.yml の matrix.shard [{matrices[0]}] が 1〜{total} ではありません')
+    passed = re.findall(r"-E2EShard '\$\{\{ matrix\.shard \}\}/([0-9]+)'", workflow)
+    if passed != [str(total)]:
+        problems.append(f'ci.yml が check.ps1 へ渡す組の数 {passed} が [{total}] ではありません')
+    declared = re.findall(r'^\$ciE2EShardTotal = ([0-9]+)[ \t]*\r?$', check_script, re.MULTILINE)
+    if declared != [str(total)]:
+        problems.append(f'check.ps1 の $ciE2EShardTotal {declared} が [{total}] ではありません')
+    return problems
+
+
+def _shard_total_selftest() -> list[str]:
+    """組の数の3か所(ci.yml の matrix と '/N'、check.ps1、SHARD_TOTAL)のずれを止める。"""
+    failures = []
+
+    def workflow(numbers: list[int], total: int) -> str:
+        return ('        shard: [' + ', '.join(str(number) for number in numbers) + ']\n'
+                "        run: ./scripts/check.ps1 -Install -CIStage E2E -E2EShard '${{ matrix.shard }}/"
+                + str(total) + "' -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'\n")
+
+    six = list(range(1, 7))
+    good_workflow, good_check = workflow(six, 6), '$ciE2EShardTotal = 6\n'
+    cases = [
+        ('3か所が同じ6組なら一致', good_workflow, good_check, True),
+        ('改行が CRLF でも読める', good_workflow.replace('\n', '\r\n'), good_check.replace('\n', '\r\n'), True),
+        ('ci.yml の matrix が古い3組なら不一致', workflow([1, 2, 3], 6), good_check, False),
+        ('ci.yml が check.ps1 へ古い /3 を渡すなら不一致', workflow(six, 3), good_check, False),
+        ('check.ps1 の組の数が古い3なら不一致', good_workflow, '$ciE2EShardTotal = 3\n', False),
+        ('ci.yml の matrix の番号が欠ければ不一致', workflow([1, 2, 3, 4, 6], 6), good_check, False),
+        ('ci.yml の matrix が2つあれば不一致', good_workflow + workflow(six, 6), good_check, False),
+        ('check.ps1 に組の数が無ければ不一致', good_workflow, '', False),
+    ]
+    for label, workflow_text, check_text, consistent in cases:
+        problems = shard_total_mismatches(workflow_text, check_text, 6)
+        if (not problems) != consistent:
+            failures.append(f'組の数の照合: {label}: {problems}')
+        else:
+            print(f'[OK] 組の数の照合: {label}')
+    repository = Path(__file__).resolve().parents[2]
+    try:
+        actual_workflow = (repository / '.github/workflows/ci.yml').read_text(encoding='utf-8-sig')
+        actual_check = (repository / 'scripts/check.ps1').read_text(encoding='utf-8-sig')
+    except OSError as error:
+        return failures + [f'組の数の照合: ci.yml か check.ps1 を読めません: {error}']
+    problems = shard_total_mismatches(actual_workflow, actual_check, SHARD_TOTAL)
+    if problems:
+        failures.extend(f'組の数の照合(実物、SHARD_TOTAL={SHARD_TOTAL}): {problem}' for problem in problems)
+    else:
+        print(f'[OK] 組の数の照合: 実物の ci.yml・check.ps1 が SHARD_TOTAL={SHARD_TOTAL} と一致する')
+    return failures
+
+
 def _selftest() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from task_workspace import configure_project_temp
@@ -362,6 +422,7 @@ def _selftest() -> int:
     with tempfile.TemporaryDirectory(prefix='pointercad-ci-stage-') as temporary:
         base = Path(temporary)
         failures.extend(_unit_split_selftest(base))
+        failures.extend(_shard_total_selftest())
         root = base / 'repository'
         (root / 'apps/desktop').mkdir(parents=True)
         (root / 'package.json').write_text(json.dumps({'scripts': {'test': test_script}}), encoding='utf-8')
@@ -402,7 +463,11 @@ def _selftest() -> int:
         evidence = base / 'evidence'
         full_steps = {'Front': expected_steps('Front', root), 'UnitLead': ['unit-lead'],
                       'E2E': ['browsers', 'electron', 'e2e']}
-        for stage, shard in [('Front', None), ('UnitLead', None), ('E2E', '1/3'), ('E2E', '2/3'), ('E2E', '3/3')]:
+        e2e_shards = [f'{index}/{SHARD_TOTAL}' for index in range(1, SHARD_TOTAL + 1)]
+        # 2026-11-12 の決定は6組。組の数を変えるときは下の固定の期待値(16段・1of6〜6of6)も直す。
+        if e2e_shards != ['1/6', '2/6', '3/6', '4/6', '5/6', '6/6']:
+            failures.append(f'画面検査の組が 1/6〜6/6 ではありません: {e2e_shards}')
+        for stage, shard in [('Front', None), ('UnitLead', None)] + [('E2E', value) for value in e2e_shards]:
             expect_ok(f'{this_os} の {stage} {shard or ""} の記録を書く',
                       lambda s=stage, h=shard: write(root, evidence, s, h, 'v22.0.0', '10.0.0', full_steps[s], env))
         expect_error('同じ段の記録を二重に書かない',
@@ -412,14 +477,27 @@ def _selftest() -> int:
             record['os'] = other_os
             (evidence / name.replace(this_os.lower(), other_os.lower(), 1)).write_text(
                 json.dumps(record, ensure_ascii=False), encoding='utf-8')
-        summary = expect_ok('両 OS の全10段の記録がそろい、同じ版・lock・道具なら合格', lambda: verify(root, evidence, env))
-        if summary is not None and summary['records'] != 10:
-            failures.append('照合した記録の数が10ではありません')
+        summary = expect_ok('両 OS の全16段(前段・単体の先行分・画面検査6組)の記録がそろい、同じ版・lock・道具なら合格',
+                            lambda: verify(root, evidence, env))
+        if summary is not None and summary['records'] != 16:
+            failures.append('照合した記録の数が16ではありません')
+        names = sorted(p.name for p in evidence.iterdir())
+        wanted_names = sorted(f'{os_name.lower()}-{key}.json' for os_name in (this_os, other_os)
+                              for key in ['front', 'unit-lead'] + [f'e2e-{index}of6' for index in range(1, 7)])
+        if names != wanted_names:
+            failures.append(f'段の記録の名前が前段・単体の先行分・e2e-1of6〜6of6 ではありません: {names}')
+        else:
+            print('[OK] 段の記録の名前は両 OS の front・unit-lead・e2e-1of6〜6of6')
 
         def tampered(label: str, change, fragment: str) -> None:
             folder = base / f'tamper-{next(folder_numbers)}'
             shutil.copytree(evidence, folder)
-            change(folder)
+            try:
+                change(folder)
+            except OSError as error:
+                # 期待した記録が無い(組の数がずれた)ときも、例外で止めずに失敗として数える。
+                failures.append(f'{label}: 改ざんの準備に失敗しました: {error}')
+                return
             expect_error(label, lambda: verify(root, folder, env), fragment)
 
         def edit(name: str, mutate):
@@ -431,20 +509,34 @@ def _selftest() -> int:
             return apply
 
         mine = this_os.lower()
-        tampered('画面検査の1組の記録が無ければ不合格', lambda f: (f / f'{mine}-e2e-2of3.json').unlink(), '足りません')
-        tampered('単体の先行分の記録が無ければ不合格', lambda f: (f / f'{other_os.lower()}-unit-lead.json').unlink(), '足りません')
+        theirs = other_os.lower()
+        for index in range(1, 7):
+            tampered(f'画面検査の6組のうち {index} 組目の記録が無ければ不合格',
+                     lambda f, i=index: (f / f'{mine}-e2e-{i}of6.json').unlink(), '足りません')
+        tampered('他方の OS の画面検査の最後の組の記録が無ければ不合格', lambda f: (f / f'{theirs}-e2e-6of6.json').unlink(), '足りません')
+
+        def only_old_three(folder: Path) -> None:
+            for index in range(4, 7):
+                (folder / f'{mine}-e2e-{index}of6.json').unlink()
+        tampered('3組目までしか記録が無ければ(古い3組の CI と同じ)不合格', only_old_three, '足りません')
+        tampered('古い3組の名前の記録が混ざれば不合格',
+                 lambda f: shutil.copyfile(f / f'{mine}-e2e-1of6.json', f / f'{mine}-e2e-1of3.json'), '段の記録ではない')
+        tampered('7組目の記録が混ざれば不合格',
+                 lambda f: shutil.copyfile(f / f'{mine}-e2e-6of6.json', f / f'{mine}-e2e-7of6.json'), '段の記録ではない')
+        tampered('単体の先行分の記録が無ければ不合格', lambda f: (f / f'{theirs}-unit-lead.json').unlink(), '足りません')
         tampered('記録でないファイルが混ざれば不合格', lambda f: (f / 'extra.json').write_text('{}', encoding='utf-8'), '段の記録ではない')
-        tampered('別の木を検査した記録は不合格', edit(f'{mine}-e2e-1of3.json', lambda r: r.update(tree='0' * 40)), 'tree')
+        tampered('別の木を検査した記録は不合格', edit(f'{mine}-e2e-1of6.json', lambda r: r.update(tree='0' * 40)), 'tree')
         tampered('別の lock で検査した記録は不合格', edit(f'{mine}-front.json', lambda r: r.update(lockfileSha256='1' * 64)), 'lockfileSha256')
         tampered('別の版の記録は不合格', edit(f'{mine}-unit-lead.json', lambda r: r.update(head='2' * 40)), 'head')
         tampered('別の CI 実行の記録は不合格', edit(f'{mine}-front.json', lambda r: r['run'].update(id='4243')), '同じ CI の実行')
-        tampered('同じ OS で node の版が違えば不合格', edit(f'{mine}-e2e-3of3.json', lambda r: r.update(node='v22.0.1')), 'node・pnpm の版が違います')
+        tampered('同じ OS で node の版が違えば不合格', edit(f'{mine}-e2e-6of6.json', lambda r: r.update(node='v22.0.1')), 'node・pnpm の版が違います')
         tampered('前段の手順が欠ければ不合格', edit(f'{mine}-front.json', lambda r: r['steps'].remove('lint')), '手順')
-        tampered('画面検査の起動準備が欠ければ不合格', edit(f'{mine}-e2e-1of3.json', lambda r: r['steps'].remove('electron')), '手順')
+        tampered('画面検査の起動準備が欠ければ不合格', edit(f'{mine}-e2e-4of6.json', lambda r: r['steps'].remove('electron')), '手順')
         tampered('単体の残りの命令が今の test と違えば不合格',
                  edit(f'{mine}-front.json', lambda r: r.update(unitCommand='pnpm --recursive run test')), '単体の命令')
         tampered('成功以外の記録は不合格', edit(f'{mine}-front.json', lambda r: r.update(result='failure')), '成功の記録ではありません')
-        tampered('名前と中身の組が違えば不合格', edit(f'{mine}-e2e-1of3.json', lambda r: r.update(shard='2/3')), '名前と一致しません')
+        tampered('名前と中身の組が違えば不合格', edit(f'{mine}-e2e-1of6.json', lambda r: r.update(shard='2/6')), '名前と一致しません')
+        tampered('中身の組が古い形 1/3 なら不合格', edit(f'{mine}-e2e-1of6.json', lambda r: r.update(shard='1/3')), '名前と一致しません')
         tampered('余分な項目がある記録は不合格', edit(f'{mine}-front.json', lambda r: r.update(extra=True)), '形が段の記録と違います')
         expect_error('CI でない照合は拒否する', lambda: verify(root, evidence, {**env, 'CI': ''}), 'CI の集約')
         expect_error('対象の版と違う HEAD の照合は拒否する', lambda: verify(root, evidence, {**env, 'GITHUB_SHA': '3' * 40}), '一致しません')
@@ -458,10 +550,14 @@ def _selftest() -> int:
                      lambda: write(root, other, 'Front', None, 'v22.0.0', '10.0.0', ['selftest', 'typecheck'], env), '手順')
         expect_error('画面検査の組の指定が無ければ書かない',
                      lambda: write(root, other, 'E2E', None, 'v22.0.0', '10.0.0', full_steps['E2E'], env), '組の指定')
-        expect_error('4組目は書かない',
-                     lambda: write(root, other, 'E2E', '4/3', 'v22.0.0', '10.0.0', full_steps['E2E'], env), '組の指定')
+        for label, shard in [('7組目', '7/6'), ('0組目', '0/6'), ('古い形の1組目', '1/3'), ('古い形の3組目', '3/3'),
+                             ('古い形の4組目', '4/3'), ('先頭に0を付けた組', '01/6'), ('組の数だけ', '6'), ('空白付きの組', '1/6 ')]:
+            expect_error(f'画面検査の{label}({shard!r})は書かない',
+                         lambda h=shard: write(root, other, 'E2E', h, 'v22.0.0', '10.0.0', full_steps['E2E'], env), '組の指定')
         expect_error('前段に組を付けたら書かない',
-                     lambda: write(root, other, 'Front', '1/3', 'v22.0.0', '10.0.0', full_steps['Front'], env), '組の指定')
+                     lambda: write(root, other, 'Front', '1/6', 'v22.0.0', '10.0.0', full_steps['Front'], env), '組の指定')
+        expect_error('単体の先行分に組を付けたら書かない',
+                     lambda: write(root, other, 'UnitLead', '2/6', 'v22.0.0', '10.0.0', full_steps['UnitLead'], env), '組の指定')
         expect_error('対象の版と違う HEAD では書かない',
                      lambda: write(root, other, 'Front', None, 'v22.0.0', '10.0.0', full_steps['Front'], {**env, 'GITHUB_SHA': '4' * 40}), 'GITHUB_SHA')
         (root / 'pnpm-lock.yaml').write_text('lockfileVersion: changed\n', encoding='utf-8')

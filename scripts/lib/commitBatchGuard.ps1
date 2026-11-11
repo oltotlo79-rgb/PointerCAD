@@ -6,10 +6,7 @@ function Invoke-CommitBatchGit {
         [Parameter(Mandatory = $true)][string[]]$Arguments
     )
 
-    $safeDirectory = @()
-    if ($Arguments -notcontains 'write-tree') {
-        $safeDirectory = @('-c', ('safe.directory=' + ([IO.Path]::GetFullPath($RepositoryRoot).Replace('\', '/'))))
-    }
+    $safeDirectory = @('-c', ('safe.directory=' + ([IO.Path]::GetFullPath($RepositoryRoot).Replace('\', '/'))))
     $lines = @(& git -C $RepositoryRoot @safeDirectory @Arguments 2>$null)
     $exitCode = $LASTEXITCODE
     [PSCustomObject]@{
@@ -53,15 +50,12 @@ function New-CommitBatchGuardResult {
 function Test-CommitBatchRepository {
     param(
         [Parameter(Mandatory = $true)][string]$RepositoryRoot,
-        [int]$MinimumCompletedTasks = 10,
         [string]$RequiredBranch = 'main',
         [string]$ProgressPath = 'docs/progress.json'
     )
 
-    if ($MinimumCompletedTasks -lt 1) {
-        return New-CommitBatchGuardResult -Ok $false -Message '完了タスクの最低件数は1以上である必要があります。'
-    }
-
+    # 2026-11-12 の利用者の指示により、mainへの送信に完了件数の下限は無い。
+    # 完了記録の整合(削除0件・reportedCompletedの増分の一致)だけを確かめる。
     $branchResult = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('branch', '--show-current')
     if (-not $branchResult.Ok) {
         return New-CommitBatchGuardResult -Ok $false -Message '現在のブランチを取得できませんでした。'
@@ -78,7 +72,7 @@ function Test-CommitBatchRepository {
         return New-CommitBatchGuardResult -Ok $false -Message 'stage済みファイルの一覧を取得できませんでした。'
     }
     if ($branch -ne $RequiredBranch) {
-        return New-CommitBatchGuardResult -Ok $true -Message "作業ブランチ $branch へ保存します。mainへの統合は10原タスク以上とし、この保存で完成度を増やしません。"
+        return New-CommitBatchGuardResult -Ok $true -Message "作業ブランチ $branch へ保存します。この保存で完成度を増やしません。"
     }
 
     $implementationPaths = @($pathsResult.Lines | Where-Object {
@@ -87,33 +81,6 @@ function Test-CommitBatchRepository {
     })
     if ($implementationPaths.Count -eq 0) {
         return New-CommitBatchGuardResult -Ok $true -Message "文書だけのコミットです。ブランチ $RequiredBranch を確認しました。"
-    }
-
-    # A user-authorized exception applies only to the exact parent and staged tree.
-    # It changes the batch size rule only; the ordinary quality hooks still run.
-    $gitDirectory = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('rev-parse', '--absolute-git-dir')
-    if (-not $gitDirectory.Ok) {
-        return New-CommitBatchGuardResult -Ok $false -Message '承認記録の保存先を取得できませんでした。'
-    }
-    $approvalPath = Join-Path $gitDirectory.Text.Trim() 'pointercad-commit-batch-approval.json'
-    if (Test-Path -LiteralPath $approvalPath) {
-        try {
-            $approval = Get-Content -LiteralPath $approvalPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            $head = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('rev-parse', 'HEAD')
-            $tree = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('write-tree')
-            if ($head.Ok -and $tree.Ok -and
-                $approval.approvedBy -ceq 'user' -and
-                -not [string]::IsNullOrWhiteSpace([string]$approval.reason) -and
-                $approval.base -ceq $head.Text.Trim() -and
-                $approval.tree -ceq $tree.Text.Trim()) {
-                return New-CommitBatchGuardResult -Ok $true `
-                    -Message "利用者が承認した同一の変更をmainへ先行します: $($approval.reason)" `
-                    -ImplementationPaths $implementationPaths
-            }
-        }
-        catch {
-            return New-CommitBatchGuardResult -Ok $false -Message '一括件数の例外承認記録を読み取れませんでした。'
-        }
     }
 
     $stagedProgressResult = Invoke-CommitBatchGit -RepositoryRoot $RepositoryRoot -Arguments @('show', ":$ProgressPath")
@@ -150,13 +117,6 @@ function Test-CommitBatchRepository {
             -AddedTaskIds $addedTaskIds `
             -ImplementationPaths $implementationPaths
     }
-    if ($addedTaskIds.Count -lt $MinimumCompletedTasks) {
-        return New-CommitBatchGuardResult -Ok $false `
-            -Message "実装コミットには未完了から完了へ移したタスクIDが最低 $MinimumCompletedTasks 件必要です。現在: $($addedTaskIds.Count) 件。" `
-            -AddedTaskIds $addedTaskIds `
-            -ImplementationPaths $implementationPaths
-    }
-
     $reportedDelta = [int]$stagedProgress.reportedCompleted - [int]$headProgress.reportedCompleted
     if ($reportedDelta -ne $addedTaskIds.Count) {
         return New-CommitBatchGuardResult -Ok $false `

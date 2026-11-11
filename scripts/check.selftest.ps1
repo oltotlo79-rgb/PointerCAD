@@ -611,9 +611,9 @@ if ($null -ne $perfModeShellCommand) {
 $batchSelftest = Join-Path $PSScriptRoot 'check-commit-batch.selftest.ps1'
 if ($null -ne $perfModeShellCommand -and (Test-Path -LiteralPath $batchSelftest -PathType Leaf)) {
     & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $batchSelftest
-    Assert-True ($LASTEXITCODE -eq 0) '一括件数・作業ブランチ・同一変更だけの明示承認を自己試験する'
+    Assert-True ($LASTEXITCODE -eq 0) '件数の下限なし・作業ブランチ・detached HEAD・完了記録の整合を自己試験する'
 } else {
-    Assert-True $false '一括件数の自己試験を実行できること'
+    Assert-True $false '一括コミット検査の自己試験を実行できること'
 }
 
 $receiptSelftest = Join-Path $PSScriptRoot 'validation-receipt.selftest.py'
@@ -637,7 +637,7 @@ if (Test-Path -LiteralPath $scopeSelftest -PathType Leaf) {
     Assert-True $false '変更箇所別の検査範囲の自己試験が存在すること'
 }
 
-# === シナリオ13: CIの段(-CIStage、2026-09-28)。前段・単体の先行分・画面検査3組を別々の実行機で流し、
+# === シナリオ13: CIの段(-CIStage、2026-09-28)。前段・単体の先行分・画面検査6組(2026-11-12 に3組から変更)を別々の実行機で流し、
 #     集約(Verify)で両OSの全段の記録を照合する。記録と照合の細かな拒否は ci_stage_evidence.py の自己試験、
 #     ここでは実際の check.ps1 の入口(不正な組合せの拒否、各段が呼ぶ命令、失敗時に記録しないこと、照合)を確かめる。
 $ciStageScript = Join-Path $scriptDirectory 'lib/ci_stage_evidence.py'
@@ -648,6 +648,8 @@ if (Test-Path -LiteralPath $ciStageScript -PathType Leaf) {
     Assert-True $false 'CIの段の記録の処理が存在すること'
 }
 if ($null -ne $perfModeShellCommand) {
+    # 画面検査の組の数の期待値(check.ps1 の $ciE2EShardTotal とは別に、ここで固定の値として持つ)。
+    $ciShardTotal = 6
     $stageEnvironmentNames = @('CI', 'RUNNER_OS', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_SHA', 'DISPLAY', 'PATH',
         'PCAD_STAGE_CALL_LOG', 'PCAD_STAGE_FAIL', 'ImageOS', 'ImageVersion')
     $savedStageEnvironment = @{}
@@ -664,15 +666,19 @@ if ($null -ne $perfModeShellCommand) {
             @('-CIStage', 'Front'),
             @('-StageEvidence', $rejectedEvidence),
             @('-CIStage', 'E2E', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '7/6', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '0/6', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '1/3', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '3/3', '-StageEvidence', $rejectedEvidence),
             @('-CIStage', 'E2E', '-E2EShard', '4/3', '-StageEvidence', $rejectedEvidence),
-            @('-CIStage', 'Front', '-E2EShard', '1/3', '-StageEvidence', $rejectedEvidence),
-            @('-CIStage', 'UnitLead', '-E2EShard', '2/3', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'Front', '-E2EShard', '1/6', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'UnitLead', '-E2EShard', '2/6', '-StageEvidence', $rejectedEvidence),
             @('-CIStage', 'Verify', '-Install', '-StageEvidence', $rejectedEvidence),
             @('-CIStage', 'UnitLead', '-Full', '-StageEvidence', $rejectedEvidence),
             @('-CIStage', 'Front', '-Level', 'Commit', '-StageEvidence', $rejectedEvidence),
             @('-CIStage', 'Front', '-ReceiptPhase', 'Push', '-StageEvidence', $rejectedEvidence),
-            @('-CIStage', 'E2E', '-E2EShard', '1/3', '-E2ERepeats', '2', '-StageEvidence', $rejectedEvidence),
-            @('-CIStage', 'E2E', '-E2EShard', '1/3', '-E2EOnly', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '1/6', '-E2ERepeats', '2', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '1/6', '-E2EOnly', '-StageEvidence', $rejectedEvidence),
             @('-CIStage', 'Front', '-StaticOnly', '-StageEvidence', $rejectedEvidence)
         )) {
             $stageOutput = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath @arguments | Out-String
@@ -813,16 +819,16 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
         $unitLead = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
         Assert-True ($unitLead.Code -eq 0 -and ($unitLead.Calls -join '|') -ceq "$utilitiesCall|$expressionCall|$femCall") "単体の先行分は3包を順に呼ぶ: $($unitLead.Calls -join ' | ')"
         Assert-True (-not $unitLead.Output.Contains('品質ゲート自身の自己試験')) '単体の先行分は自己試験を繰り返さない'
-        foreach ($shard in 1..3) {
-            $e2e = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', "$shard/3", '-StageEvidence', $evidence)
-            Assert-True ($e2e.Code -eq 0 -and ($e2e.Calls -join '|') -ceq "$browserCall|--filter @pointercad/desktop exec install-electron|run test:e2e --shard=$shard/3") "画面検査の組 $shard/3 は準備と画面検査だけを呼ぶ: $($e2e.Calls -join ' | ')"
+        foreach ($shard in 1..$ciShardTotal) {
+            $e2e = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', "$shard/$ciShardTotal", '-StageEvidence', $evidence)
+            Assert-True ($e2e.Code -eq 0 -and ($e2e.Calls -join '|') -ceq "$browserCall|--filter @pointercad/desktop exec install-electron|run test:e2e --shard=$shard/$ciShardTotal") "画面検査の組 $shard/$ciShardTotal は準備と画面検査だけを呼ぶ: $($e2e.Calls -join ' | ')"
         }
         Assert-True ($e2e.Output.Contains('[成功] (準備) Playwright のブラウザ確認 は 1/3 回目で成功しました(やり直し 0 回)')) '準備の導入の成功の回数とやり直しの回数をログに出す'
         # 準備の導入が通信以外の理由で失敗したら、やり直さずにその場で止まり、画面検査へ進まず段の記録も作らない
         # (通信の失敗のやり直しは待ちが60秒からなので、ここでは流さずシナリオ15の関数で確かめる)。
         $browserFailEvidence = Join-Path $stageBase 'browser-fail-evidence'
         $env:PCAD_STAGE_FAIL = $browserCall
-        $failedBrowsers = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', '1/3', '-StageEvidence', $browserFailEvidence)
+        $failedBrowsers = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', "1/$ciShardTotal", '-StageEvidence', $browserFailEvidence)
         Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
         Assert-True ($failedBrowsers.Code -ne 0 -and ($failedBrowsers.Calls -join '|') -ceq $browserCall -and
             $failedBrowsers.Output.Contains('[やり直さない]') -and -not (Test-Path -LiteralPath $browserFailEvidence)) '準備の導入の通信以外の失敗はやり直さず、画面検査へ進まず段の記録も作らない'
@@ -830,7 +836,8 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
         Assert-True ((($unitCalls | ForEach-Object { 'pnpm ' + $_ }) -join ' && ') -ceq $rootTest) '単体の先行分と残りをつなぐとルートのtestと一致する(単体の欠落が無い)'
         $written = @(Get-ChildItem -LiteralPath $evidence -File | ForEach-Object { $_.Name } | Sort-Object)
         $osPrefix = $env:RUNNER_OS.ToLowerInvariant()
-        Assert-True (($written -join ',') -ceq (@("$osPrefix-e2e-1of3.json", "$osPrefix-e2e-2of3.json", "$osPrefix-e2e-3of3.json", "$osPrefix-front.json", "$osPrefix-unit-lead.json") -join ',')) "5段の記録がそろう: $($written -join ',')"
+        $expectedWritten = @(1..$ciShardTotal | ForEach-Object { "$osPrefix-e2e-$($_)of$($ciShardTotal).json" }) + @("$osPrefix-front.json", "$osPrefix-unit-lead.json")
+        Assert-True ($expectedWritten.Count -eq 8 -and ($written -join ',') -ceq ($expectedWritten -join ',')) "8段(画面検査6組・前段・単体の先行分)の記録がそろう: $($written -join ',')"
         $duplicate = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
         Assert-True ($duplicate.Code -ne 0) '同じ段の記録を二重に書かない'
 
@@ -841,12 +848,25 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
             [IO.File]::WriteAllText((Join-Path $evidence ($otherStageOs.ToLowerInvariant() + $name.Substring($osPrefix.Length))), $otherText, $utf8)
         }
         $verified = Invoke-StageFixture @('-CIStage', 'Verify', '-StageEvidence', $evidence)
-        Assert-True ($verified.Code -eq 0 -and $verified.Calls.Count -eq 0) '集約は両OSの全10段の記録を照合して合格し、pnpmを呼ばない'
-        Remove-Item -LiteralPath (Join-Path $evidence ($otherStageOs.ToLowerInvariant() + '-e2e-2of3.json'))
-        $incomplete = Invoke-StageFixture @('-CIStage', 'Verify', '-StageEvidence', $evidence)
-        # python の日本語の出力は親の文字コードで崩れることがあるため、check.ps1 の失敗の行と ASCII のファイル名で確かめる。
-        Assert-True ($incomplete.Code -ne 0 -and $incomplete.Output.Contains('(照合) 両OSの全段の記録 が失敗しました') -and
-            $incomplete.Output.Contains($otherStageOs.ToLowerInvariant() + '-e2e-2of3.json')) '画面検査の1組の記録が欠けたら集約は不合格'
+        Assert-True ($verified.Code -eq 0 -and $verified.Calls.Count -eq 0 -and $verified.Output.Contains("画面検査の全$($ciShardTotal)組")) '集約は両OSの全16段の記録を照合して合格し、pnpmを呼ばない'
+        # 6組のうち1つが欠けたら不合格(3組の時に無かった4組目以降と、最後の組で確かめる)。
+        foreach ($missingName in @(($otherStageOs.ToLowerInvariant() + "-e2e-$($ciShardTotal)of$($ciShardTotal).json"), "$osPrefix-e2e-4of$($ciShardTotal).json")) {
+            $missingPath = Join-Path $evidence $missingName
+            $missingText = [IO.File]::ReadAllText($missingPath, $utf8)
+            Remove-Item -LiteralPath $missingPath
+            $incomplete = Invoke-StageFixture @('-CIStage', 'Verify', '-StageEvidence', $evidence)
+            [IO.File]::WriteAllText($missingPath, $missingText, $utf8)
+            # python の日本語の出力は親の文字コードで崩れることがあるため、check.ps1 の失敗の行と ASCII のファイル名で確かめる。
+            Assert-True ($incomplete.Code -ne 0 -and $incomplete.Output.Contains('(照合) 両OSの全段の記録 が失敗しました') -and
+                $incomplete.Output.Contains($missingName)) "画面検査の1組の記録($missingName)が欠けたら集約は不合格"
+        }
+        # 古い3組の名前の記録(1of3)が混ざったら不合格。
+        $staleName = "$osPrefix-e2e-1of3.json"
+        Copy-Item -LiteralPath (Join-Path $evidence "$osPrefix-e2e-1of$($ciShardTotal).json") -Destination (Join-Path $evidence $staleName)
+        $stale = Invoke-StageFixture @('-CIStage', 'Verify', '-StageEvidence', $evidence)
+        Remove-Item -LiteralPath (Join-Path $evidence $staleName)
+        Assert-True ($stale.Code -ne 0 -and $stale.Output.Contains('(照合) 両OSの全段の記録 が失敗しました') -and
+            $stale.Output.Contains($staleName)) '古い3組の名前の記録が混ざったら集約は不合格'
 
         # === シナリオ14: 画面検査の段の直前の合図(-E2EStartSignal、2026-09-28 w96a の提案)。手元の全体検査の道具が
         #     画面検査の排他を段の直前にだけ取れるよう、check.ps1 は合言葉つきの要求を書き、同じ合言葉の答えを待つ。

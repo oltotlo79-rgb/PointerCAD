@@ -1,4 +1,4 @@
-import type { MeshReplySettlement } from './bridgeContracts.js';
+import type { MeshLedgerRelease, MeshReplySettlement } from './bridgeContracts.js';
 
 /** Candidate only: main-realm backing reachability, never RSS/native/driver memory. */
 export type HostRetentionReading =
@@ -26,6 +26,12 @@ export const HOST_RECORD_BYTES = 4096;
  * pending clone (CI 2026-11-12) use this same value.
  */
 export const REPLY_RESERVATION_WAIT_MS = 10_000;
+/**
+ * Changes that only release what the ledger already held. Each one removes one record (an entry, an owner, a refused
+ * reply or a reservation) and none adds one, so a run of them is finite. Every other change is growth.
+ */
+const RELEASE_ONLY_CHANGES: ReadonlySet<string> = new Set(['weak-backing-unreachable', 'backing-detached',
+  'owner-backings-pruned', 'refused-reply-backings-released', 'reply-settled-without-clone']);
 
 export class MeshHostRetention {
   private identities = new WeakMap<ArrayBuffer, number>();
@@ -34,6 +40,8 @@ export class MeshHostRetention {
   private pending = new Map<string, number>();
   private nextId = 0;
   private hostGeneration = 0;
+  /** The host generation of the latest growth change (any change outside RELEASE_ONLY_CHANGES). */
+  private lastGrowth = 0;
   private readonly generationChanges: { readonly epoch: number; readonly reason: string;
     readonly backingId: number | null; readonly lastObservedBackingBytes: number | null;
     readonly activeOwnersAtMutation: number | null }[] = [];
@@ -54,6 +62,7 @@ export class MeshHostRetention {
     lastObservedBackingBytes: number | null = null, activeOwnersAtMutation: number | null = null): void {
     if (!Number.isSafeInteger(this.hostGeneration + 1)) this.unknown = 'epoch-overflow';
     else this.hostGeneration += 1;
+    if (!RELEASE_ONLY_CHANGES.has(reason)) this.lastGrowth = this.hostGeneration;
     try {
       if (this.generationChanges.length === 128) { this.generationChanges.shift(); this.diagnosticDropped += 1; }
       this.generationChanges.push(Object.freeze({ epoch: this.hostGeneration, reason, backingId, lastObservedBackingBytes, activeOwnersAtMutation }));
@@ -80,6 +89,25 @@ export class MeshHostRetention {
   }
   /** Invalidates issued receipts when any owned Worker dispatch can change its current union. */
   advanceEpoch(): void { this.changed('owned-worker-dispatch-or-connection'); }
+  /**
+   * Why an observation taken at host generation `previous` conflicts now: `host-backings-released` when every change
+   * since then only released records and no reply clone is reserved, otherwise `host-epoch-changed`. A released-only
+   * conflict still needs a fresh observation (receipts keep their meaning); it only tells the caller it is finite.
+   */
+  conflictSince(previous: number, pendingCloneBytes: number | null): 'host-backings-released' | 'host-epoch-changed' {
+    return pendingCloneBytes === 0 && this.hostGeneration !== previous && this.lastGrowth <= previous
+      ? 'host-backings-released' : 'host-epoch-changed';
+  }
+  /**
+   * Whether the host changed since `previous` by releases only (false for null, no change, growth, a reserved clone or
+   * an unknown ledger), with the releasable record count that every released-only change strictly lowers.
+   */
+  releaseSince(previous: number | null): MeshLedgerRelease {
+    const reading = this.observe();
+    const releasedOnly = previous !== null && reading.status === 'known'
+      && this.conflictSince(previous, reading.pendingCloneBytes) === 'host-backings-released';
+    return { releasedOnly, records: this.entries.size + this.owners.size + this.pending.size + this.refusedReplies.size };
+  }
   /** Call before sending a request. A cancelled request keeps reservation until settled/adopted. */
   reserveReply(requestId: string, bytes: number): boolean {
     const reading = this.observe();

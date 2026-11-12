@@ -6,7 +6,7 @@ import '../shell/propertyFieldUnits.js';
 import type { AppState } from '../store/appState.js';
 import { partWithPoint, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { sphereGridNeedsUpdate } from './ViewportCanvas.js';
+import { sphereGridNeedsUpdate } from './viewportCanvasStoreViews.js';
 
 beforeEach(resetTestStore);
 afterEach(resetTestStore);

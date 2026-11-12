@@ -80,6 +80,8 @@ export type CurrentMeshLedgerReceipt =
       readonly unobserved: readonly ['native', 'gpu', 'wasm', 'mesh-metadata', 'other-providers']; };
 /** How a wait for every reserved reply clone of the realm ledger ended; never a release, receipt or acceptance. */
 export type MeshReplySettlement = 'settled' | 'stopped' | 'timeout' | 'unavailable';
+/** Whether the realm ledger changed since a host generation by releases only, and its releasable record count. */
+export interface MeshLedgerRelease { readonly releasedOnly: boolean; readonly records: number }
 export type SourceMeshBackingInspection =
   | { readonly status: 'unknown'; readonly reason: string }
   | { readonly status: 'known'; readonly hostEpoch: number; readonly inputBackingBytes: number;
@@ -116,6 +118,12 @@ export interface KernelBridge {
    * It only observes and never settles another request. Omitted means the caller keeps refusing `pending-reply`.
    */
   awaitMeshReplySettlement?(input: { readonly alive: () => boolean }): Promise<MeshReplySettlement>;
+  /**
+   * Whether the realm ledger changed since the host generation `since` (a known receipt's `hostEpoch`) by releases only,
+   * so a stale observation can be taken again as a finite released-only change, and the releasable record count that
+   * each such change lowers. It never revalidates a receipt. Omitted means every change counts as growth.
+   */
+  meshLedgerRelease?(since: number | null): MeshLedgerRelease;
   currentMeshLedgerReceipt?(receipt: CurrentMeshLedgerReceipt): boolean;
   inspectSourceMeshBackings?(receipt: CurrentMeshLedgerReceipt, buffers: readonly ArrayBufferLike[]): Promise<SourceMeshBackingInspection>;
   /** Synchronous managed host/provider-lifetime freshness; publication still requires the async global observation. */

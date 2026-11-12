@@ -5,10 +5,12 @@
  * 更新の順(TRACE_*)は、入力状態・寿命・表示を分ける前の実装で記録した値である。分けた後も
  * 同じ操作で同じ更新が同じ順に起きることを確かめる(期待値は分ける前の動きそのもの)。
  */
+import { createHash } from 'node:crypto';
 import React, { Children, isValidElement, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addSketch, appendSolid, createSketchFor, type PartDocument } from '@pointercad/model';
+import { addSketch, appendSolid, createEmptyPartDocument, createFeatureFolder, createSketchFor, moveFeatureFolderMember,
+  type PartDocument } from '@pointercad/model';
 import { FeatureTree } from './FeatureTree.js';
 import { FeatureFolderTree } from '../history/FeatureFolderTree.js';
 import { t, type MessageKey } from '../i18n/t.js';
@@ -363,6 +365,121 @@ describe('R07 FeatureTree store updates at the boundaries of the four input seri
     mount.unmount();
   });
 });
+
+/*
+ * 行・スケッチの親行・フォルダの中身・一覧(メニュー)・節の描き方を FeatureTree の外へ移しても、
+ * 返す要素の木(種類・key・関数以外の props・文字の子)が同じであることを、状態ごとの要約で比べる。
+ * 期待値は移す前の実装で記録した(下の TREE_PRINTS)。
+ */
+function typeName(type: unknown): string {
+  if (typeof type === 'string') return type;
+  if (typeof type === 'function') return type.name === '' ? 'anonymous' : type.name;
+  return String(type);
+}
+function fingerprint(nodes: Element[]): string {
+  const lines = nodes.map(element => {
+    const props = Object.keys(element.props).filter(name => name !== 'children').sort()
+      .map(name => [name, element.props[name]]);
+    const text = Children.toArray(element.props.children as ReactNode)
+      .filter(child => typeof child === 'string' || typeof child === 'number');
+    const json = JSON.stringify(props, (_name, value: unknown) =>
+      typeof value === 'function' ? '[function]' : isValidElement(value) ? '[element]' : value);
+    return `${typeName(element.type)}|${String(element.key)}|${json}|${JSON.stringify(text)}`;
+  });
+  return createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 16);
+}
+function resetDocumentTo(document: PartDocument): void {
+  resetTestStore();
+  const state = useAppStore.getState();
+  state.resetDocument(document);
+  state.recordRecomputeRequest(1);
+  state.applyRecompute(document, { ...resultFor(document), generation: 1 });
+  state.recordRecomputeCompletion(1, 'success');
+}
+
+describe('R07 FeatureTree rendered tree for each state', () => {
+  it('rows, sketch groups, folders, menus, rename fields, drag markers and sections render as before the move', () => {
+    const windowMock = windowListeners();
+    const mount = effectMount();
+    const prints: string[] = [];
+    let nodes = mount.rerender();
+    const take = (name: string): void => { nodes = mount.rerender(); prints.push(`${name} = ${fingerprint(nodes)}`); };
+    take('initial');
+    (row(nodes, 'solid:extrude-1').props.onPointerEnter as () => void)();
+    click(selectButton(nodes, 'sketch-feature:sketch-1:point-1'));
+    take('hover-select');
+    open(nodes, 'solid:extrude-1'); take('menu-solid');
+    key(one(menus(nodes), () => true), 'Escape'); take('menu-closed');
+    open(nodes, 'sketch-feature:sketch-1:point-1'); take('menu-sketch-row');
+    click(menuItem(nodes, 'featureTree.rename')); take('rename-row');
+    key(one(renameInputs(nodes), () => true), 'Escape'); take('rename-closed');
+    context(nodes, 'sketch:sketch-2'); take('menu-sketch-group');
+    click(menuItem(nodes, 'featureTree.rename')); take('rename-group');
+    key(one(renameInputs(nodes), () => true), 'Escape'); take('rename-group-closed');
+    pointerDown(nodes, 'solid:extrude-2'); take('drag-pressed');
+    windowMock.dispatch('pointermove', { clientX: 20, clientY: 0 }); take('drag-moved');
+    windowMock.dispatch('pointercancel', {}); take('drag-cancelled');
+    click(selectButton(nodes, 'sketch:sketch-1')); take('group-collapsed');
+    const sections = nodes.filter(element => element.props.className === 'pcad-tree__row pcad-tree__row--section');
+    click(sections[sections.length - 1]); take('section-collapsed');
+    click(sections[sections.length - 1]); take('section-opened');
+    useAppStore.getState().setTimelineIndex(0); take('timeline-start');
+    useAppStore.setState({ timelineRefusal: { message: 'refused', blockingFeatureId: 'extrude-1' } }); take('refusal');
+    mount.unmount();
+
+    hooks.values = []; hooks.refs = [];
+    const folderMount = effectMount();
+    const foldered = moveFeatureFolderMember(createFeatureFolder(fixture(), t('featureTree.sketchGroup')),
+      { kind: 'sketch-feature', sketchId: 'sketch-1', id: 'point-1' }, 'folder-1');
+    resetDocumentTo(moveFeatureFolderMember(foldered, { kind: 'solid', id: 'extrude-2' }, 'folder-1'));
+    nodes = folderMount.rerender(); prints.push(`folders = ${fingerprint(nodes)}`);
+    folderMount.unmount();
+
+    hooks.values = []; hooks.refs = [];
+    const singleMount = effectMount();
+    resetDocumentTo(partWithMixedFeatures());
+    nodes = singleMount.rerender(); prints.push(`single-sketch = ${fingerprint(nodes)}`);
+    open(nodes, 'sketch-feature:sketch-1:line-1'); nodes = singleMount.rerender();
+    prints.push(`single-sketch-menu = ${fingerprint(nodes)}`);
+    singleMount.unmount();
+
+    hooks.values = []; hooks.refs = [];
+    const emptyMount = effectMount();
+    resetDocumentTo(createEmptyPartDocument());
+    nodes = emptyMount.rerender(); prints.push(`empty = ${fingerprint(nodes)}`);
+    emptyMount.unmount();
+    expect(prints).toEqual(TREE_PRINTS);
+  });
+});
+
+/*
+ * Recorded 2026-11-12 19:00 with FeatureTree.tsx before its row, group, folder, menu and section rendering moved
+ * out (SHA-256 c6f982a65e72622981ddaec253d65ee1199b7bc864a0b964f1be447d32f58514).
+ */
+const TREE_PRINTS: readonly string[] = [
+  'initial = 0c35f691c8c90bbe',
+  'hover-select = 8429d4475d48c2e8',
+  'menu-solid = d4f7c48999cd515a',
+  'menu-closed = 8429d4475d48c2e8',
+  'menu-sketch-row = 37da5de78572efc7',
+  'rename-row = 8c00abe206331c1c',
+  'rename-closed = 8429d4475d48c2e8',
+  'menu-sketch-group = 9c2498a242d24dc6',
+  'rename-group = bb47e2a0877c8b8f',
+  'rename-group-closed = 8429d4475d48c2e8',
+  'drag-pressed = 8429d4475d48c2e8',
+  'drag-moved = 26720eeb2436692a',
+  'drag-cancelled = 8429d4475d48c2e8',
+  'group-collapsed = 13bd48d6f23a27ec',
+  'section-collapsed = 7873199bb2cc92bf',
+  'section-opened = 13bd48d6f23a27ec',
+  'timeline-start = d38e1aeb2bd91aed',
+  'refusal = 1460a0022b673c40',
+  'folders = 28bcd2bb7cee0dd4',
+  'single-sketch = 528c675d26e77fc5',
+  'single-sketch-menu = bbb72db1d8846b97',
+  'empty = 2291fe5209b88543',
+];
 
 describe('R07 FeatureTree lifetime', () => {
   it('100 mounts and disposals with an open menu, a drag and a hover leave no listener, subscription or transient display', () => {

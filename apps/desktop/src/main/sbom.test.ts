@@ -10,7 +10,7 @@ import {
   assembleSbomDocument, assertSbomMatchesReleaseManifest, assertSbomPublishable, buildSbom,
   collectSbomComponents, femComponentsFromDistribution, femDistributionGapsFromDistribution, deterministicUuid, findSbomGaps, matchSbomToReleaseManifest, verifyFontAssetParity,
   DESKTOP_RENDERER_PREFIX, ELECTRON_EXECUTABLE_NOTICES, assertSbomMatchesDesktopPackage, electronComponentFromPackage,
-  matchSbomToDesktopPackage, sbomElectronComponent,
+  matchSbomToDesktopPackage, sbomElectronComponent, netgenDependencyLicense,
 } from '../../../../scripts/release/sbom.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -747,12 +747,46 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
     const fem = JSON.parse(readFileSync(join(root, 'packages/fem/runtime/manifest.json'), 'utf8')) as { components: { name: string }[] };
     // FEM の部品は oofem・numpy・Pyodide・netgen-mesher の4件で、どれにも推測で SPDX や名前付き許諾を割り当てない(numpy の原文一式の網羅は未証明)。
     expect(fem.components.map(item => item.name)).toEqual(['oofem', 'numpy', 'Pyodide', 'netgen-mesher']);
-    expect(gaps.unclassifiedLicenses).toEqual(['FEM: oofem', 'FEM: numpy', 'FEM: Pyodide', 'FEM: netgen-mesher', 'FEM: pybind11', 'FEM: Netgen pybind11', 'FEM: Netgen zlib', 'FEM: Netgen concurrentqueue', 'FEM: Netgen gzstream']);
+    // Netgen の zlib・concurrentqueue・gzstream は同梱原文から識別子が決まる(下の専用の検査)。残る6件は理由付きで未分類のまま。
+    expect(gaps.unclassifiedLicenses).toEqual(['FEM: oofem', 'FEM: numpy', 'FEM: Pyodide', 'FEM: netgen-mesher', 'FEM: pybind11', 'FEM: Netgen pybind11']);
     expect(gaps.noLicenseInformation).toEqual([]);
     if (gaps.unresolvedNotices.length > 0) expect(() => assertSbomPublishable(sbom)).toThrow('Unresolved SBOM notices');
     else expect(() => assertSbomPublishable(sbom)).not.toThrow();
     const withGap = { ...sbom, metadata: { ...sbom.metadata, properties: [...sbom.metadata.properties, { name: 'pointercad:unresolvedNotice', value: 'missing@1.0.0' }] } };
     expect(() => assertSbomPublishable(withGap)).toThrow('Unresolved SBOM notices');
+  });
+
+  it('Netgenのzlib・concurrentqueue・gzstreamは、同梱原文の組とSHA-256が記録どおりの時だけSPDX識別子を持ち、違えば未分類に戻る', () => {
+    const distribution = collectFemRuntimeAssets(join(root, 'packages/fem/runtime'));
+    const components = femComponentsFromDistribution(distribution);
+    const expected = new Map([['FEM: Netgen zlib', 'Zlib'], ['FEM: Netgen concurrentqueue', 'BSL-1.0'], ['FEM: Netgen gzstream', 'LGPL-2.1-or-later']]);
+    for (const [name, id] of expected) {
+      const component = byName(components, name);
+      expect(component?.licenses, name).toEqual([{ license: { id } }]);
+      expect(component?.properties, name).toContainEqual({ name: 'pointercad:licenseStatus', value: 'classified' });
+      expect(component?.properties, name).not.toContainEqual({ name: 'pointercad:licenseStatus', value: 'unclassified' });
+    }
+    // pybind11 の LICENSE は .github/CONTRIBUTING.md の Enhancements の許諾を指し、その文は同梱原文に無いので識別子を付けない。
+    for (const name of ['FEM: Netgen pybind11', 'FEM: pybind11']) {
+      expect(byName(components, name)?.licenses, name).toBeUndefined();
+      expect(byName(components, name)?.properties, name).toContainEqual({ name: 'pointercad:licenseStatus', value: 'unclassified' });
+    }
+    // Netgen の zlib の原文は、追加計算部が固定する上流 v1.3.1 の LICENSE と同じバイト(そちらは既に Zlib)。
+    const zlibNotice = 'notices/845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243.txt';
+    expect(readFileSync(join(root, 'packages/fem/runtime', zlibNotice)).equals(readFileSync(join(root, 'vendor/exact-math/notices/zlib-1.3.1-LICENSE.txt')))).toBe(true);
+    // 結び付けの純関数: 版・原文の組・原文の固定値・部品名のどれかが違えば識別子を返さない。
+    const files = (JSON.parse(readFileSync(join(root, 'packages/fem/runtime/manifest.json'), 'utf8')) as { files: Record<string, { sha256: string }> }).files;
+    const lgplNotice = 'notices/a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7.txt';
+    const gzstreamNotice = 'notices/a941f6ab8280ee0e2dae76ec0d01b3e9637749e9f445f2f1987b4761c81db70c.txt';
+    const zlib = { name: 'FEM: Netgen zlib', version: '1.3.1', notices: [zlibNotice] };
+    expect(netgenDependencyLicense(zlib, files)).toBe('Zlib');
+    expect(netgenDependencyLicense({ name: 'FEM: Netgen gzstream', notices: [gzstreamNotice, lgplNotice] }, files)).toBe('LGPL-2.1-or-later');
+    expect(netgenDependencyLicense({ name: 'FEM: Netgen gzstream', notices: [gzstreamNotice] }, files)).toBeUndefined();
+    expect(netgenDependencyLicense({ ...zlib, version: '1.3.2' }, files)).toBeUndefined();
+    expect(netgenDependencyLicense({ ...zlib, notices: [] }, files)).toBeUndefined();
+    expect(netgenDependencyLicense({ ...zlib, notices: [zlibNotice, lgplNotice] }, files)).toBeUndefined();
+    expect(netgenDependencyLicense(zlib, { ...files, [zlibNotice]: { sha256: '0'.repeat(64) } })).toBeUndefined();
+    expect(netgenDependencyLicense({ ...zlib, name: 'FEM: Netgen pybind11' }, files)).toBeUndefined();
   });
 
   it('release-manifest.json(P13-1)の資産一覧と原文の経路・ハッシュを照合する', () => {

@@ -5,252 +5,55 @@
  *
  * `buildSolidGeometry` が組み立てた並びを three.js の部品へ流し込む。**毎フレーム
  * 作り直さない**。同じ組み立て結果を渡し直したときは何もせず、ボディの並びが同じ
- * (同じ Float32Array)なら入れ物も触らない。個数が同じで中身だけ変わったときは
- * 並びの中身を書き写す。常時の描画ループはここにも作らない
- * (常時の描画ループを作らない)。
+ * (同じ Float32Array)なら入れ物も触らない。常時の描画ループはここにも作らない。
  *
  * 色は画面の配色(packages/ui/src/shell/appShell.css の --pcad-* トークン)から
  * `themeColors.ts` が読み取って渡す(three.js は CSS 変数を直接読めないため)。
  * テーマを変えたときは `setThemeColors` で材質の色だけを塗り替え、**部品は作り直さない**
- * (FR-908 の即時反映、NFR-PF-1)。
+ * (FR-908 の即時反映、NFR-PF-1)。映り込み(鏡・ガラス、FR-1107)の環境マップは外から渡される。
+ * 作る・捨てるの判断はレンダラとシーンを持つ `createViewportScene.ts` が行う。
  *
- * 外観のために
- * **面ごと・立体ごとの外観(FR-1106〜1109)** を足した。要点は 3 つ。
+ * 責務の分け方:
  *
- * 1. 面の材質は**ボディごとの配列**になった。まとまり(`geometry.addGroup`)を作るのは
- *    純関数 `appearance/buildFaceGroups.ts`で、ここはその結果を流し込むだけ。
- *    **外観を 1 つも割り当てていない立体は長さ 1 の配列・まとまり 1 つ**なので、
- *    ドローコールも絵も外観の無い時と変わらない。
- * 2. 材質は見え方が同じなら使い回し、使われなくなったら捨てる
- *    (`appearance/createAppearanceMaterial.ts`)。**毎コマは作り直さない。**
- * 3. 映り込み(鏡・ガラス、FR-1107)の環境マップは外から渡される。作る・捨てるの判断は
- *    レンダラとシーンを持つ `createViewportScene.ts` が行う。
+ * | 責務 | 置き場所 | 持つ資源 | 寿命 |
+ * |---|---|---|---|
+ * | 部品を作る順の固定・断面表示の平面を配る・テーマ・破棄 | この関数 | 稜線の材質 3 つ、部分形状の重ね描きの雛形 2 組、断面の平面の入れ物 | 作ってから `dispose` まで |
+ * | ボディの面と稜線(形・外観・表示スタイル・当たり判定) | `solidLayerBodies.ts` | ボディごとの面と稜線の形、当たり判定の的 | ボディが減れば 1 回ずつ解放、残りは `dispose` |
+ * | 部分形状の重ね描き(ボディごと) | `solidLayerResources.ts` | ボディごとの重ね描きの形 | 強調が外れれば解放 |
+ * | 補助の表示(ねじの印・球面の案内線・切断の予告・断面のつまみ) | `solidLayerHelpers.ts` | 補助の形と材質、印ごとの線 | 印が減れば解放、残りは `dispose` |
+ * | 3D プリントの点検の色 | `solidLayerPrintability.ts` | 開いた辺の材質と線、割り当ての控え | 点検を閉じれば線を解放 |
+ * | 並びの差し替えと解放の決まり | `solidLayerBuffers.ts` | — | — |
+ * | 描く順 | `solidLayerRenderOrder.ts` | — | — |
+ *
+ * 外観は**面ごと・立体ごと(FR-1106〜1109)**。まとまり(`geometry.addGroup`)を作るのは純関数
+ * `appearance/buildFaceGroups.ts`、材質は見え方が同じなら使い回し、使われなくなったら捨てる
+ * (`appearance/createAppearanceMaterial.ts`)。**毎コマは作り直さない。**
  */
 
-import {
-  addVec3,
-  crossVec3,
-  DEFAULT_APPEARANCE,
-  normalizeVec3,
-  scaleVec3,
-  type AppearanceSpec,
-  type PrintabilityReport,
-  type ResolvedPlane,
-  type Vec3,
-} from '@pointercad/model';
+import type { PrintabilityReport, ResolvedPlane, Vec3 } from '@pointercad/model';
 import * as THREE from 'three';
 
-import type { FaceGroup } from '../appearance/buildFaceGroups.js';
-import {
-  createAppearanceMaterialStore,
-  themedAppearance,
-  type PatternTextureSource,
-} from '../appearance/createAppearanceMaterial.js';
-import {
-  buildPrintabilityGroups,
-  buildPrintabilityOpenEdgePositions,
-  printabilityAppearances,
-} from '../solid/printabilityColors.js';
+import { createAppearanceMaterialStore, type PatternTextureSource } from '../appearance/createAppearanceMaterial.js';
 import type { DisplayStyle } from '../store/viewSlice.js';
-import type {
-  SolidDrawEntry,
-  SolidEmphasis,
-  SolidGeometryBundle,
-} from './buildSolidGeometry.js';
-import { buildCutPreviewPositions } from './buildCutPreview.js';
+import type { SolidEmphasis, SolidGeometryBundle } from './buildSolidGeometry.js';
 import type { SubShapeEmphasis, SubShapeHighlightBatch, SubShapeHighlightBundle } from './buildSubShapeGeometry.js';
+import { createSolidBodyDraws, type BodyDraw } from './solidLayerBodies.js';
+import { borrowedGeometryRelease, geometryAttributeBytes, setGeometryAttributes, setVectorAttribute } from './solidLayerBuffers.js';
+import { createSolidHelperDisplays, type ThreadMarkInfo } from './solidLayerHelpers.js';
+import { createSolidPrintability } from './solidLayerPrintability.js';
+import { SUB_SHAPE_FACE_RENDER_ORDER, SUB_SHAPE_LINE_RENDER_ORDER } from './solidLayerRenderOrder.js';
 import { createSolidSubShapeResources, SUB_SHAPE_EMPHASES, type SubShapeOverlay,
   type SubShapeFaceMesh, type SubShapeLines, type SubShapePoints } from './solidLayerResources.js';
-import { cssColor, DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
+import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 import { createViewportLifetime, createViewportConstructionOwner, type ViewportLifetime } from './viewportLifetime.js';
 
-/*
- * 立体の艶(艶を抑えた樹脂のように見せて、面の向きの差を読み取りやすくする)は、いまは
- * 外観の既定値(`model` の `DEFAULT_APPEARANCE`: 光沢 5・粗さ 55)が正本になった。
- * 色そのもの(--pcad-solid)は引き続きテーマが決める(下の `themedAppearance`)。
- */
-
-/*
- * 稜線は、面の上に重ねるときは暗く、稜線だけのときは地から浮くよう明るくする(FR-105)。
- * 明るいテーマではどちらも暗い側へ寄せる(値は appShell.css のテーマごとの塊)。
- *
- * ホバーと選択の色の決め方は `createSketchLayer.ts` の注釈にまとめてある。
- * **同じトークン(--pcad-emphasis-hovered / --pcad-emphasis-selected)を使う**ので、
- * スケッチと立体で「選んでいる」の見え方が 2 通りに割れることはない。
- */
-
-/**
- * 描く順。スケッチの作図面 -1 → 面 0 → **立体 1** → 面の縁 2 → 線 3 → 点 4 の間に入れる。
- *
- * 立体の面と稜線は不透明なので、three.js は半透明のもの(方眼・作図面・スケッチの面・
- * 線・点)より**先に**描く。そのうえでスケッチの線と点は `depthTest: false` なので、
- * 立体の奥にあっても隠れずに前面へ出る。
- * renderOrder は不透明どうしの順序を決めるだけだが、層の前後関係を 1 箇所で
- * 読み取れるようにスケッチと同じ数直線の上へ置いておく。
- */
-const SOLID_RENDER_ORDER = 1;
-
-/**
- * 稜線は**面より後に**描く(FR-105)。
- *
- * 面は `polygonOffset` で少しだけ奥へ押してあり、稜線はその上に重なる。重なる画素の色は
- * 描いた順で決まる(縁のなめらか化が後から描いたほうを勝たせる)ので、順序を材質の
- * 作られた順に任せてはいけない。three.js の不透明の並べ替えは renderOrder → 材質の通し番号
- * (作った順)の順に見るため、以前は「面の材質を稜線より先に作っていた」ことで
- * たまたま面が先に描かれていた。外観で面の材質を外観から**後から**作るようにしたので、
- * このままでは順序が逆転して縁の画素の色が変わる(2026-09-05 実測: 800×600 の絵で 122 画素、
- * 最大の階調差 41)。**順序をここで明示して、以前と同じ絵を保つ**。
- */
-const SOLID_EDGE_RENDER_ORDER = SOLID_RENDER_ORDER + 0.25;
-
-/**
- * 球面の案内線(FR-431)の不透明度。形そのものより控えめにして、
- * 案内であることが見た目で分かるようにする。
- */
-const SPHERE_GRID_OPACITY = 0.5;
+// ねじの印の形とその線分を組み立てる純関数は補助の表示(`solidLayerHelpers.ts`)が持つ。ここから公開を続ける。
+export { buildThreadMarkPositions, type ThreadMarkInfo } from './solidLayerHelpers.js';
 
 /** 部分形状の強調(重ね描き)の面の不透明度。 */
 const SUB_SHAPE_FACE_OPACITY = 0.35;
-/** 部分形状の面の強調は、立体の面(SOLID_RENDER_ORDER)のすぐ後ろに描く。 */
-const SUB_SHAPE_FACE_RENDER_ORDER = SOLID_RENDER_ORDER + 0.5;
-/**
- * 部分形状の辺・頂点の強調は、スケッチの面の縁(`createSketchLayer.ts` の
- * `FACE_OUTLINE_RENDER_ORDER`)と同じ層に置く。裏側の辺・頂点も選べるので、
- * `depthTest: false` にして立体の奥にあっても隠れないようにする。
- */
-const SUB_SHAPE_LINE_RENDER_ORDER = 2;
 /** 部分形状の頂点の点の大きさ(px)。画面上の大きさを一定にする。 */
 const SUB_SHAPE_POINT_SIZE = 8;
-
-/**
- * ねじの簡略表示の印。B-rep には現れない、描画だけのための情報。
- *
- * **置き場について:** 本来は kernel の `ThreadMarkInfo`(`SolidBodyMesh.threadMarks`)が
- * model の `SolidBody` に添って届くが、これを書いた時点では
- * まだ届いていなかった。`ui` は `kernel` へ直接依存できない
- * (`apps → ui → model → kernel/expression` の一方向、rules/04-設計の規律.md)ので、
- * 欄の形だけをここに書く。model がこの形の値を返すようになったら、
- * この定義は import に差し替えてよい(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes`
- * と同じ橋渡しの考え方)。
- */
-export interface ThreadMarkInfo {
-  /** ねじ部の始まり(mm)。 */
-  readonly origin: Vec3;
-  /** 軸の向き。長さ 0(退化)の印は描かない。 */
-  readonly direction: Vec3;
-  /** 外径 d(mm)。円の半径は d/2。 */
-  readonly majorDiameter: number;
-  /** ねじ部の長さ(mm)。 */
-  readonly length: number;
-}
-
-/** ねじの印を描く円の分割数(線の色は --pcad-thread-mark。細実線、JIS の簡略図示に倣う)。 */
-const THREAD_MARK_SEGMENTS = 48;
-
-/** 円の基底(u・v)を作るための参照軸。direction とほぼ平行にならないものを選ぶ。 */
-function referenceAxis(direction: Vec3): Vec3 {
-  return Math.abs(direction[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
-}
-
-/** ベクトルが実質ゼロ(退化)かどうか。normalizeVec3 は長さ 0 を原点のまま返す約束。 */
-function isZeroVec3(v: Vec3): boolean {
-  return v[0] === 0 && v[1] === 0 && v[2] === 0;
-}
-
-/** 円 1 つぶんの線分(THREAD_MARK_SEGMENTS 分割の折れ線)を position の配列へ積む。 */
-function pushThreadMarkCircle(
-  positions: number[],
-  center: Vec3,
-  u: Vec3,
-  v: Vec3,
-  radius: number,
-): void {
-  const points: Vec3[] = [];
-  for (let step = 0; step < THREAD_MARK_SEGMENTS; step += 1) {
-    const angle = (step / THREAD_MARK_SEGMENTS) * Math.PI * 2;
-    const point = addVec3(
-      center,
-      addVec3(scaleVec3(u, Math.cos(angle) * radius), scaleVec3(v, Math.sin(angle) * radius)),
-    );
-    points.push(point);
-  }
-  for (let step = 0; step < THREAD_MARK_SEGMENTS; step += 1) {
-    const from = points[step];
-    const to = points[(step + 1) % THREAD_MARK_SEGMENTS];
-    positions.push(from[0], from[1], from[2], to[0], to[1], to[2]);
-  }
-}
-
-/**
- * ねじの簡略表示の印を線分列へ組み立てる。three.js に触れない純関数
- * (Node で検査できる)。各印について、外径 d の円をねじ部の始め(origin)と終わり
- * (origin + direction×length)に 1 つずつ、軸線を 1 本描く。
- *
- * 方向が退化している(長さ 0、または円の基底が作れない)印は黙って飛ばす
- * (`buildSubShapeGeometry.ts` の「範囲が外れていても黙って飛ばす」と同じ考え方)。
- */
-export function buildThreadMarkPositions(marks: readonly ThreadMarkInfo[]): Float32Array {
-  const positions: number[] = [];
-  for (const mark of marks) {
-    const direction = normalizeVec3(mark.direction);
-    if (isZeroVec3(direction)) {
-      continue;
-    }
-    const u = normalizeVec3(crossVec3(referenceAxis(direction), direction));
-    if (isZeroVec3(u)) {
-      continue;
-    }
-    const v = crossVec3(direction, u);
-    const radius = mark.majorDiameter / 2;
-    const end = addVec3(mark.origin, scaleVec3(direction, mark.length));
-    pushThreadMarkCircle(positions, mark.origin, u, v, radius);
-    pushThreadMarkCircle(positions, end, u, v, radius);
-    positions.push(mark.origin[0], mark.origin[1], mark.origin[2], end[0], end[1], end[2]);
-  }
-  return Float32Array.from(positions);
-}
-
-/*
- * 外観の割り当て(文書の表)から組み立てへ渡す一式を作る `buildAppearanceInput` は、
- * three.js に触れない純関数であり、上限の先出し検査(コマンド側)からも同じものを使うため、
- * `appearance/appearanceCommands.ts` へ移した。ここは import して使うだけにする
- * (同じ組み立てを 2 か所に持たない)。
- */
-
-/** まとまりが前回と同じか(中身で比べる。組み立てのたびに新しい配列が来るため)。 */
-function sameGroups(previous: readonly FaceGroup[] | null, next: readonly FaceGroup[]): boolean {
-  if (previous === null || previous.length !== next.length) {
-    return false;
-  }
-  return previous.every(
-    (group, position) =>
-      group.start === next[position].start &&
-      group.count === next[position].count &&
-      group.materialIndex === next[position].materialIndex,
-  );
-}
-
-/**
- * 使う外観の一覧が前回と同じか。**外観そのものは文書の値をそのまま指している**ので、
- * 参照で比べれば足りる(中身の比較は材質の鍵づくりで行う)。
- */
-function sameAppearances(
-  previous: readonly AppearanceSpec[] | null,
-  next: readonly AppearanceSpec[],
-): boolean {
-  if (previous === null || previous.length !== next.length) {
-    return false;
-  }
-  return previous.every((spec, position) => spec === next[position]);
-}
-
-/**
- * 面の材質は**ボディごとの配列**(FR-1106)。まとまり(`geometry.addGroup`)の
- * `materialIndex` がこの配列を指す。外観を 1 つも割り当てていない立体は長さ 1 の配列に
- * なり、外観の無い時と同じ 1 ドローコールで描かれる。
- */
-type SolidMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]>;
-type SolidEdges = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
 /**
  * 切断面の予告表示に渡すもの(FR-432)。
@@ -262,39 +65,6 @@ export interface CutPreview {
   readonly diagonal: number;
   readonly keep: 'positive' | 'negative';
 }
-
-/**
- * 切断面の予告の色。選択・ホバーと別の**警告系の黄**にして、
- * 「これから切る場所」だと読み取れるようにする。テーマの表(`themeColors.ts`)へは
- * 足さない——予告は道具を使っている間だけ出る一時的な表示で、明暗どちらのテーマでも
- * 同じ黄が読めるため(部分形状の重ね描きの色がテーマに従うのとは役割が違う)。
- */
-const CUT_PREVIEW_COLOR = 0xf0b429;
-/** 予告の四角の不透明度。向こう側の形が透けて見える濃さ。 */
-const CUT_PREVIEW_FACE_OPACITY = 0.2;
-
-/**
- * 断面表示のつまみ(FR-111)。
- *
- * **切断の予告表示をそのまま使い回し、色だけ変える**。切断(FR-432、形が
- * 変わる)と断面表示(見た目だけ)は結果がまったく違うので、同じ黄で出すと取り違える。
- * 予告の警告系の黄に対して、こちらは**落ち着いた青**にする(「いま見ているだけ」の合図)。
- * 予告と同じく、明暗どちらのテーマでも読める色を直に持ち、テーマの表へは足さない。
- */
-const SECTION_HANDLE_COLOR = 0x38bdf8;
-
-/**
- * つまみの四角の対角長が測れないとき(ボディが 1 つも無い)の代わりの大きさ(mm)。
- * 何も無い画面で断面表示を入れても、つまみが 1 画素も出ないと動かしようがないため
- * (NFR-UX-7)。方眼の刻みと同じ桁にしてある。
- */
-const SECTION_HANDLE_MIN_DIAGONAL = 40;
-
-/**
- * つまみの四角を、いま描いているボディより少しだけ広く出す倍率。
- * ぴったりだと切り口の縁で四角が終わってしまい、平面がどこにあるか読み取りにくい。
- */
-const SECTION_HANDLE_MARGIN = 1.15;
 
 /**
  * 断面表示のつまみ(FR-111)。**平面と残す側だけ**を受け取り、四角の大きさ(対角長)は
@@ -322,37 +92,6 @@ export interface PrintabilityHighlight {
    * ——点検を頼まなかった立体は、点検の間も元の外観のままにする。
    */
   readonly triangleOffsets: ReadonlyMap<string, number>;
-}
-
-/**
- * 開いた辺の線の色の濃さ。**面より手前に出す**(`depthTest: false`)ので、そのままだと
- * 形の中の辺まで全部見えて絵が潰れる。薄くして「向こう側にもある」と読めるようにする。
- */
-const PRINT_OPEN_EDGE_OPACITY = 0.85;
-
-/** 点検の色を出しているあいだの、立体 1 つぶんのまとまりと材質。 */
-interface PrintabilityPlan {
-  /** 作ったときの三角形の枚数。形が作り直されたら組み直す目印。 */
-  readonly triangleCount: number;
-  readonly groups: readonly FaceGroup[];
-  /** 既定 + 赤 + 橙 の 3 つ。ボディをまたいで同じ配列を使い回す(参照で比べられる)。 */
-  readonly appearances: readonly AppearanceSpec[];
-}
-
-/** ボディ 1 つぶんの部品。並びは前回と同じかどうかを参照で見分けられるよう控えておく。 */
-interface BodyDraw {
-  featureId: string;
-  positions: Float32Array | null;
-  normals: Float32Array | null;
-  uv: Float32Array | null;
-  indices: Uint32Array | null;
-  edgePositions: Float32Array | null;
-  /** 前回反映したまとまり(中身で比べる)。 */
-  groups: readonly FaceGroup[] | null;
-  /** 前回反映した外観の一覧(参照で比べる)。 */
-  appearances: readonly AppearanceSpec[] | null;
-  readonly mesh: SolidMesh;
-  readonly edges: SolidEdges;
 }
 
 export interface SolidLayer {
@@ -450,132 +189,10 @@ export interface SolidLayer {
   dispose(): void;
 }
 
-/** Attribute and index bytes currently attached to one geometry. */
-function geometryAttributeBytes(geometry: THREE.BufferGeometry): number {
-  let bytes = geometry.getIndex()?.array.byteLength ?? 0;
-  for (const attribute of Object.values(geometry.attributes)) {
-    if (attribute instanceof THREE.BufferAttribute) bytes += attribute.array.byteLength;
-  }
-  return bytes;
-}
-
-/**
- * 借用した並びを差し替える。入力配列は Source/Cache/Undo と共有されうるため書き換えない。
- * 同じ参照なら何もせず、同長なら attribute と GPU buffer を再利用して array 参照だけ更新する。
- * サイズが変わる場合は、旧属性がまだ付いている間に GPU 解放を一度通知する。
- */
-function setGeometryAttributes(
-  geometry: THREE.BufferGeometry,
-  attributes: readonly { readonly name: string; readonly values: Float32Array; readonly itemSize?: number }[],
-  indices?: Uint32Array,
-): void {
-  const index = geometry.getIndex();
-  const replacesAttribute = attributes.some(({ name, values, itemSize = 3 }) => {
-    const existing = geometry.getAttribute(name);
-    return existing !== undefined && (!(existing instanceof THREE.BufferAttribute)
-      || !(existing.array instanceof Float32Array)
-      || existing.array.length !== values.length || existing.itemSize !== itemSize);
-  });
-  const replacesIndex = indices !== undefined && index !== null
-    && (!(index.array instanceof Uint32Array) || index.array.length !== indices.length);
-  if (replacesAttribute || replacesIndex) {
-    // Dispose before replacing any attribute: renderer still sees every old GPU buffer.
-    // Same-length updates retain those buffers and only upload the new borrowed array.
-    geometry.dispose();
-  }
-  for (const { name, values, itemSize = 3 } of attributes) {
-    const existing = geometry.getAttribute(name);
-    if (existing instanceof THREE.BufferAttribute && existing.array instanceof Float32Array
-      && existing.array.length === values.length && existing.itemSize === itemSize) {
-      if (existing.array !== values) {
-        existing.array = values;
-        existing.needsUpdate = true;
-      }
-    } else {
-      geometry.setAttribute(name, new THREE.BufferAttribute(values, itemSize));
-    }
-  }
-  if (indices !== undefined) {
-    if (index !== null && index.array instanceof Uint32Array && index.array.length === indices.length) {
-      if (index.array !== indices) {
-        index.array = indices;
-        index.needsUpdate = true;
-      }
-    } else {
-      geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-    }
-  }
-}
-
-function setVectorAttribute(
-  geometry: THREE.BufferGeometry,
-  name: string,
-  values: Float32Array,
-  itemSize = 3,
-): void {
-  setGeometryAttributes(geometry, [{ name, values, itemSize }]);
-}
-
-/** GPU 解放通知の後で、geometry が保持する借用 CPU 配列への参照も外す。 */
-function disposeBorrowedGeometry(geometry: THREE.BufferGeometry): void {
-  geometry.dispose();
-  for (const name of Object.keys(geometry.attributes)) {
-    geometry.deleteAttribute(name);
-  }
-  geometry.setIndex(null);
-  geometry.boundingBox = null;
-  geometry.boundingSphere = null;
-}
-
-/** A later host-reference detach failure must not repeat a successful GPU release. */
-function borrowedGeometryRelease(geometry: THREE.BufferGeometry): () => void {
-  let notified = false;
-  return () => {
-    if (!notified) { geometry.dispose(); notified = true; }
-    for (const name of Object.keys(geometry.attributes)) geometry.deleteAttribute(name);
-    geometry.setIndex(null); geometry.boundingBox = null; geometry.boundingSphere = null;
-  };
-}
-
-
-/** Retain each retired draw and its individual release operations until cleanup succeeds. */
-function createSolidDrawRetirement(group: THREE.Group, draws: BodyDraw[]) {
-  let retiringDraw: BodyDraw | null = null;
-  const releases = new WeakMap<THREE.BufferGeometry, () => void>();
-  function geometryRelease(geometry: THREE.BufferGeometry): () => void {
-    let release = releases.get(geometry);
-    if (release === undefined) {
-      release = borrowedGeometryRelease(geometry);
-      releases.set(geometry, release);
-    }
-    return release;
-  }
-  function resize(count: number, createDraw: () => BodyDraw): void {
-    while (draws.length > count || retiringDraw !== null) {
-      const draw = draws[draws.length - 1];
-      if (draw === undefined) throw new Error('Retiring solid draw is missing');
-      retiringDraw = draw;
-      group.remove(draw.mesh);
-      group.remove(draw.edges);
-      geometryRelease(draw.mesh.geometry)();
-      geometryRelease(draw.edges.geometry)();
-      draw.positions = null;
-      draw.normals = null;
-      draw.uv = null;
-      draw.indices = null;
-      draw.edgePositions = null;
-      draws.pop();
-      retiringDraw = null;
-    }
-    while (draws.length < count) draws.push(createDraw());
-  }
-  return { resize, geometryRelease, get pending(): boolean { return retiringDraw !== null; } };
-}
-
 /**
  * 部分形状の重ね描き 3 本を 1 色ぶん作る。面は半透明のメッシュ、辺・頂点は
  * `depthTest: false`(裏側も見える)。renderOrder は面が立体の面の直後、
- * 辺・頂点はスケッチの面の縁と同じ層(`createSketchLayer.ts` の `FACE_OUTLINE_RENDER_ORDER`)。
+ * 辺・頂点はスケッチの面の縁と同じ層(`solidLayerRenderOrder.ts`)。
  */
 function createSubShapeOverlay(color: number, shared?: SubShapeOverlay,
   parent?: ReturnType<typeof createViewportConstructionOwner>): SubShapeOverlay {
@@ -659,12 +276,61 @@ function applySubShapeOverlay(overlay: SubShapeOverlay, batch: SubShapeHighlight
   overlay.vertices.visible = batch.vertexPositions.length > 0;
 }
 
+/** 破棄で解放する相手。どれも層が作り、層だけが持つ。 */
+interface SolidLayerParts {
+  readonly group: THREE.Group;
+  readonly edgeMaterials: Readonly<Record<SolidEmphasis, THREE.LineBasicMaterial>>;
+  readonly subShapeOverlays: Readonly<Record<SubShapeEmphasis, SubShapeOverlay>>;
+  readonly subShapeResources: ReturnType<typeof createSolidSubShapeResources>;
+  readonly draws: readonly BodyDraw[];
+  readonly bodies: ReturnType<typeof createSolidBodyDraws>;
+  readonly helpers: ReturnType<typeof createSolidHelperDisplays>;
+  readonly printing: ReturnType<typeof createSolidPrintability>;
+  readonly materialStore: ReturnType<typeof createAppearanceMaterialStore>;
+}
+
+/**
+ * 破棄の手順を 1 回だけ組む: 部品を入れ物から外し、作りかけの重ね描きの後始末、全ての形、材質の入れ物
+ * (外観の材質と柄)、全ての材質の順。どれかが失敗しても他の解放は続け、失敗した物だけを次の破棄で
+ * やり直す(WebGL の資源は GC で戻らない)。
+ */
+function registerSolidLayerCleanup(cleanup: ViewportLifetime, parts: SolidLayerParts): void {
+  const { group, edgeMaterials, subShapeOverlays, subShapeResources, draws, bodies, helpers, printing,
+    materialStore } = parts;
+  cleanup.register('detach solid objects', () => { group.clear(); });
+  for (const owner of subShapeResources.pendingCleanup) cleanup.register('failed overlay construction', () => {
+    owner.dispose();
+    if (owner.pendingCount !== 0) throw new Error(owner.errors.join('; '));
+  });
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>(Object.values(edgeMaterials));
+  for (const draw of draws) { geometries.add(draw.mesh.geometry); geometries.add(draw.edges.geometry); }
+  for (const emphasis of SUB_SHAPE_EMPHASES) {
+    for (const overlay of [subShapeOverlays[emphasis], ...subShapeResources.bodyOverlays[emphasis].values()]) {
+      geometries.add(overlay.faces.geometry); geometries.add(overlay.edges.geometry);
+      geometries.add(overlay.vertices.geometry);
+    }
+    const overlay = subShapeOverlays[emphasis];
+    materials.add(overlay.faces.material); materials.add(overlay.edges.material); materials.add(overlay.vertices.material);
+  }
+  for (const draw of helpers.markDraws()) geometries.add(draw.geometry);
+  for (const geometry of printing.openEdgeGeometries()) geometries.add(geometry);
+  for (const draw of helpers.ownedObjects()) { geometries.add(draw.geometry); materials.add(draw.material); }
+  materials.add(printing.material);
+  for (const geometry of geometries) cleanup.register('solid geometry', bodies.geometryRelease(geometry));
+  cleanup.register('appearance materials and textures', () => { materialStore.dispose(); });
+  for (const material of materials) cleanup.register('solid material', () => { material.dispose(); });
+}
+
 /**
  * 立体の層を作る。
  *
  * `patterns` は柄のテクスチャの出どころ(FR-1108)。既定は実物
  * (`appearance/patternTexture.ts`)で、canvas の無い Node の検査からは偽物を渡せる
  * (`createAppearanceMaterial.ts` の `PatternTextureSource`)。
+ *
+ * 部品を作る順(材質と部品の通し番号)は描く順の見分けに効くので、稜線の材質 → 部分形状の重ね描き →
+ * 補助の表示 → 点検の材質の順を変えない。
  */
 export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   const construction = createViewportConstructionOwner();
@@ -675,41 +341,16 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   try {
   const group = new THREE.Group();
   let cleanup: ViewportLifetime | null = null;
-
   /** いま効いているテーマの色。`setThemeColors` が来るまでは既定(ダーク)。 */
   let colors: ThemeColors = DEFAULT_THEME_COLORS;
-
-  /** いまの表示スタイル。テーマが変わったとき、稜線の色をどちらへ塗るかの判断に使う。 */
-  let lastDisplayStyle: DisplayStyle = 'shadedWithEdges';
-
   /**
-   * 面の材質の入れ物(FR-1106〜1109)。**ビューポートに 1 つだけ**持ち、
-   * 見え方(`appearanceKeyText`)が同じ外観には同じ材質を返す。使われなくなった材質と
-   * 柄のテクスチャは `collect` / `dispose` が捨てる(WebGL の資源は GC で戻らない)。
-   *
-   * 以前はここが `faceMaterial` 1 つで、全ボディの `THREE.Mesh` が共有していた。
-   * 外観のためにボディごとの材質配列(`geometry.addGroup` + `mesh.material = [...]`)へ移したが、
-   * **外観を 1 つも割り当てていない立体は長さ 1 の配列・まとまり 1 つ**になるので、
-   * ドローコールも絵も以前と変わらない。既定の外観の値
-   * (色 `#b8bfcc`・光沢 5・粗さ 55)は、そのころの `SOLID_ROUGHNESS` / `SOLID_METALNESS` と
-   * `--pcad-solid` をそのまま写したものである(`model` の `DEFAULT_APPEARANCE`)。
+   * 面の材質の入れ物(FR-1106〜1109)。**ビューポートに 1 つだけ**持ち、見え方(`appearanceKeyText`)が
+   * 同じ外観には同じ材質を返す。使われなくなった材質と柄のテクスチャは `collect` / `dispose` が捨てる。
+   * 作った時点ではまだ材質も柄も頼んでいない。渡された柄の出どころは別の層のものでもよい。
    */
-  // Initialization has not requested any material or pattern. The supplied
-  // pattern source may still belong to another live layer.
   const materialStore = createAppearanceMaterialStore(patterns);
-
-  /** いま材質へ入れている環境マップ(FR-1107)。鏡・ガラスが無ければ null。 */
-  let environment: THREE.Texture | null = null;
-
   /**
-   * 材質を作り直す必要があるか(テーマの色が変わった・環境マップが入れ替わった)。
-   * **毎コマは触らない**(「常時の描画ループを作らない」)。
-   */
-  let appearanceDirty = true;
-
-  /**
-   * 稜線の材質は強調の度合いごとに 1 つずつ。ボディごとには作らず、
-   * どれを使うかだけを切り替える(ボディが増えても材質は 3 つのまま)。
+   * 稜線の材質は強調の度合いごとに 1 つずつ。ボディごとには作らず、どれを使うかだけを切り替える。
    * `none` の色だけは表示スタイルで変わる(面の上か、稜線だけか)。
    */
   const edgeMaterials: Readonly<Record<SolidEmphasis, THREE.LineBasicMaterial>> = {
@@ -717,10 +358,9 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     hovered: acquired(new THREE.LineBasicMaterial({ color: DEFAULT_THEME_COLORS.hovered })),
     selected: acquired(new THREE.LineBasicMaterial({ color: DEFAULT_THEME_COLORS.selected })),
   };
-
   /**
-   * 部分形状(面・辺・頂点)の重ね描き。ホバー用・選択用の 2 組だけを作り、
-   * ボディごとには増やさない(全ボディの強調中の要素を 1 本のバッファへまとめる)。
+   * 部分形状(面・辺・頂点)の重ね描きの雛形。ホバー用・選択用の 2 組の材質だけを作り、
+   * ボディごとの重ね描き(`solidLayerResources.ts`)はこの材質を借りる。
    */
   const subShapeOverlays: Readonly<Record<SubShapeEmphasis, SubShapeOverlay>> = {
     hovered: createSubShapeOverlay(DEFAULT_THEME_COLORS.hovered, undefined, construction),
@@ -728,369 +368,29 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   };
   const subShapeResources = createSolidSubShapeResources(group, subShapeOverlays,
     createSubShapeOverlay, applySubShapeOverlay, borrowedGeometryRelease);
-  const subShapeBodyOverlays = subShapeResources.bodyOverlays;
-
+  const draws: BodyDraw[] = [];
+  const helpers = createSolidHelperDisplays({ group, acquired, draws });
   /**
-   * ねじの簡略表示の印。全ボディぶんを 1 本の `LineSegments` にまとめる
-   * (部分形状の重ね描きと同じ考え方)。**renderOrder は面の縁と同じ 2**
-   * (`SUB_SHAPE_LINE_RENDER_ORDER`)。裏側(手前の面に隠れた側)の印も見えるよう
-   * `depthTest: false` にする(部分形状のオーバーレイと同じ扱い。JIS の簡略図示は
-   * 隠れ線かどうかを描き分けないため)。薄い線に見せるため不透明度を下げる。
-   */
-  const threadMarkLines = new THREE.LineSegments(
-    acquired(new THREE.BufferGeometry()),
-    acquired(new THREE.LineBasicMaterial({
-      color: DEFAULT_THEME_COLORS.threadMark,
-      transparent: true,
-      opacity: 0.75,
-      depthTest: false,
-      depthWrite: false,
-    })),
-  );
-  threadMarkLines.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
-  threadMarkLines.visible = false;
-  group.add(threadMarkLines);
-  let lastThreadMarks: readonly ThreadMarkInfo[] | null = null;
-  /**
-   * One line object per thread mark. Its circles and axis are built around the local origin
-   * and placed by the mark's double origin, so a far mark keeps its 2 mm width in Float32 and
-   * two far marks are never merged into one shared base. The shared material stays with
-   * `threadMarkLines` (clipping, theme and disposal follow it).
-   */
-  const threadMarkDraws: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>[] = [];
-
-  /*
-    切断面の予告(FR-432)。**四角 1 枚と矢印 1 本だけ**を作り、ボディごとには
-    増やさない。四角は両面描き・奥行きを書かない半透明で、部分形状の重ね描きと同じ
-    `renderOrder` に載せる。矢印は面に隠れても見えるよう `depthTest: false`。
-  */
-  const cutPreviewFace = new THREE.Mesh(
-    acquired(new THREE.BufferGeometry()),
-    acquired(new THREE.MeshBasicMaterial({
-      color: CUT_PREVIEW_COLOR,
-      transparent: true,
-      opacity: CUT_PREVIEW_FACE_OPACITY,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })),
-  );
-  cutPreviewFace.renderOrder = SUB_SHAPE_FACE_RENDER_ORDER;
-  cutPreviewFace.visible = false;
-  group.add(cutPreviewFace);
-
-  /*
-    球面の案内線(球面グリッド、FR-431)。**全球ぶんを 1 本の
-    `LineSegments` にまとめる**ので、5° の 7,704 本でもドローコールは 1 回で済む。
-
-    色は方眼の主線(`--pcad-grid-major` に当たる薄い灰)にする。**ホバー・選択の色とは
-    別の色**にするのが要点で(「ホバーと選択の色が
-    近いと見分けられない」)、案内線が強調と同じ色だと「いま何を選んでいるか」が読めなくなる。
-
-    `depthTest: true` にして球の裏側の線は手前の面に隠す。
-    球の三角形は真球の内側に張られる(弦なので必ず内側)ため、案内線を真半径で引くと
-    面と競って縞になる。**半径をごくわずかに持ち上げて**(`SPHERE_GRID_LIFT`)その競りを
-    避ける(持ち上げ量は組み立て側=`createViewportScene.ts` が決める)。
-  */
-  const sphereGridLines = new THREE.LineSegments(
-    acquired(new THREE.BufferGeometry()),
-    acquired(new THREE.LineBasicMaterial({
-      color: DEFAULT_THEME_COLORS.gridMajor,
-      transparent: true,
-      opacity: SPHERE_GRID_OPACITY,
-      depthWrite: false,
-    })),
-  );
-  sphereGridLines.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
-  sphereGridLines.visible = false;
-  group.add(sphereGridLines);
-  let lastSphereGridPositions: Float32Array | null = null;
-
-  const cutPreviewArrow = new THREE.LineSegments(
-    acquired(new THREE.BufferGeometry()),
-    acquired(new THREE.LineBasicMaterial({
-      color: CUT_PREVIEW_COLOR,
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
-    })),
-  );
-  cutPreviewArrow.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
-  cutPreviewArrow.visible = false;
-  group.add(cutPreviewArrow);
-  let lastCutPreview: CutPreview | null = null;
-
-  /*
-    断面表示のつまみ(FR-111)。切断の予告と同じ 2 本(四角と矢印)を色だけ変えて
-    作る。**つまみ自身はクリップしない**(下の `clippedMaterials` に入れない)——平面の
-    真上にあるので、自分の切る面で消えてしまっては掴めなくなるため。
-  */
-  const sectionHandleFace = new THREE.Mesh(
-    acquired(new THREE.BufferGeometry()),
-    acquired(new THREE.MeshBasicMaterial({
-      color: SECTION_HANDLE_COLOR,
-      transparent: true,
-      opacity: CUT_PREVIEW_FACE_OPACITY,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })),
-  );
-  sectionHandleFace.renderOrder = SUB_SHAPE_FACE_RENDER_ORDER;
-  sectionHandleFace.visible = false;
-  group.add(sectionHandleFace);
-
-  const sectionHandleArrow = new THREE.LineSegments(
-    acquired(new THREE.BufferGeometry()),
-    acquired(new THREE.LineBasicMaterial({
-      color: SECTION_HANDLE_COLOR,
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
-    })),
-  );
-  sectionHandleArrow.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
-  sectionHandleArrow.visible = false;
-  group.add(sectionHandleArrow);
-  let lastSectionHandle: SectionHandle | null = null;
-
-  /**
-   * いま配っているクリッピング平面(FR-111)。**入れ物は 1 つのまま**で中身だけ入れ替える
-   * ので、材質へ配り直さなくても切る位置の変化がそのまま効く(three.js は毎コマこの配列を
-   * 読み、枚数が変わったときだけシェーダを組み直す)。空のあいだは費用ゼロ。
+   * いま配っているクリッピング平面(FR-111)。**入れ物は 1 つのまま**で中身だけ入れ替えるので、
+   * 材質へ配り直さなくても切る位置の変化がそのまま効く(three.js は毎コマこの配列を読み、枚数が
+   * 変わったときだけシェーダを組み直す)。空のあいだは費用ゼロ。
    */
   const sectionPlanes: THREE.Plane[] = [];
-
-  /*
-    3D プリントの点検の色(FR-815)。開いた辺は body 別の local 配列と Double origin
-    で描く。材質だけ共有し、遠方の世界座標を Float32 頂点へ焼き込まない。
-    面に隠れた辺も見えるよう `depthTest: false` にする——開いているところは形の裏側に
-    あることが多く、隠したのでは「どこが閉じていないか」を探せない(NFR-UX-7)。
-
-    **線の太さは指定しない。** WebGL の線幅はほとんどの環境で 1 画素に固定されており、
-    `LineBasicMaterial.linewidth` は効かない(three.js の既知の制限)。点検の「太い
-    紫の線」は、太さの代わりに**三角形の輪郭 3 辺すべてを引く**ことで面として目立たせる
-    (`buildPrintabilityOpenEdgePositions` の注釈)。
-  */
-  const printOpenEdgeMaterial = acquired(new THREE.LineBasicMaterial({
-    color: DEFAULT_THEME_COLORS.printOpenEdge,
-    transparent: true,
-    opacity: PRINT_OPEN_EDGE_OPACITY,
-    depthTest: false,
-    depthWrite: false,
-  }));
-  interface PrintOpenEdgeDraw {
-    readonly lines: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
-    positions: Float32Array;
-    indices: Uint32Array;
-    report: PrintabilityHighlight['report'];
-    triangleOffset: number;
-    triangleCount: number;
-  }
-  const printOpenEdgeDraws = new Map<string, PrintOpenEdgeDraw>();
-
-  /** いま出している点検の色。`null` なら外観のまま(点検を閉じた状態)。 */
-  let printability: PrintabilityHighlight | null = null;
-
-  /**
-   * 点検の間の 3 つの外観。**テーマの色が変わるまで作り直さない**——毎回作ると
-   * `sameAppearances`(参照で比べる)が必ず食い違い、ホバーのたびに材質を組み直す
-   * ことになる(NFR-PF-1)。
-   */
-  let printabilityAppearanceSet: readonly AppearanceSpec[] | null = null;
-
-  /** 立体ごとのまとまりの控え。三角形の枚数ぶん走る計算なので、毎コマは繰り返さない。 */
-  const printabilityPlans = new Map<string, PrintabilityPlan>();
-
-  /** 点検の色の控えを捨てる(点検の出し入れ・テーマの切替のとき)。 */
-  function clearPrintabilityCache(): void {
-    printabilityAppearanceSet = null;
-    printabilityPlans.clear();
-  }
-
-  /** 点検の間の 3 つの外観(既定 + 赤 + 橙)。控えがあればそれを返す。 */
-  function printabilitySpecs(): readonly AppearanceSpec[] {
-    if (printabilityAppearanceSet === null) {
-      // 既定は `DEFAULT_APPEARANCE` のまま渡す。テーマの立体の色は、材質を作る直前の
-      // `themedAppearance` が当てる(外観を割り当てていない立体とまったく同じ道)。
-      printabilityAppearanceSet = printabilityAppearances(
-        DEFAULT_APPEARANCE,
-        cssColor(colors.printThin),
-        cssColor(colors.printOverhang),
-      );
-    }
-    return printabilityAppearanceSet;
-  }
-
-  /**
-   * 立体 1 つの点検の色の割り当て。点検を出していない・その立体を点検していない・
-   * 三角形の並びが結果と噛み合わないときは `null`(元の外観のまま描く)。
-   */
-  function printabilityPlanFor(entry: SolidDrawEntry): PrintabilityPlan | null {
-    if (printability === null) {
-      return null;
-    }
-    const triangleOffset = printability.triangleOffsets.get(entry.featureId);
-    if (triangleOffset === undefined) {
-      return null;
-    }
-    const cached = printabilityPlans.get(entry.featureId);
-    if (cached !== undefined && cached.triangleCount === entry.triangleCount) {
-      return cached;
-    }
-    const groups = buildPrintabilityGroups(printability.report, triangleOffset, entry.triangleCount);
-    if (groups.length === 0) {
-      // 数が噛み合わなかった(点検の後に形が変わった等)。関係の無い面を赤くしない。
-      return null;
-    }
-    const plan: PrintabilityPlan = {
-      triangleCount: entry.triangleCount,
-      groups,
-      appearances: printabilitySpecs(),
-    };
-    printabilityPlans.set(entry.featureId, plan);
-    return plan;
-  }
-
-  const draws: BodyDraw[] = [];
-  const drawRetirement = createSolidDrawRetirement(group, draws);
-  /** 当たり判定にかける面。`draws` と同じ順に並ぶ。 */
-  const pickTargets: THREE.Object3D[] = [];
-  /** 当たった面 → ボディの id。userData は型が any になるので Map で持つ。 */
-  const idByObject = new Map<THREE.Object3D, string>();
-
+  const printing = createSolidPrintability({ group, acquired, getColors: () => colors });
+  const bodies = createSolidBodyDraws({ group, draws, edgeMaterials, materialStore, planFor: printing.planFor,
+    getColors: () => colors });
   let lastBundle: SolidGeometryBundle | null = null;
 
-  function createDraw(): BodyDraw {
-    // 材質はまだ決まっていない(最初の update で外観から作る)。空の配列で始める。
-    const mesh: SolidMesh = new THREE.Mesh(new THREE.BufferGeometry(), []);
-    mesh.renderOrder = SOLID_RENDER_ORDER;
-    const edges: SolidEdges = new THREE.LineSegments(
-      new THREE.BufferGeometry(),
-      edgeMaterials.none,
-    );
-    edges.renderOrder = SOLID_EDGE_RENDER_ORDER;
-    group.add(mesh);
-    group.add(edges);
-    return {
-      featureId: '',
-      positions: null,
-      normals: null,
-      uv: null,
-      indices: null,
-      edgePositions: null,
-      groups: null,
-      appearances: null,
-      mesh,
-      edges,
-    };
-  }
-
-  /** ボディ 1 つぶんの形を反映する。前回と同じ並びなら何もしない。 */
-  function applyGeometry(draw: BodyDraw, entry: SolidDrawEntry): void {
-    const origin = entry.coordinateFrame?.origin ?? [0, 0, 0];
-    if (
-      draw.featureId === entry.featureId &&
-      draw.positions === entry.positions &&
-      draw.normals === entry.normals &&
-      draw.uv === entry.uv &&
-      draw.indices === entry.indices &&
-      draw.edgePositions === entry.edgePositions &&
-      draw.mesh.position.x === origin[0] &&
-      draw.mesh.position.y === origin[1] &&
-      draw.mesh.position.z === origin[2]
-    ) {
-      return;
-    }
-    // Both objects use the same local arrays and double-precision world origin.
-    // Three multiplies camera inverse and object world matrix before uploading modelView.
-    draw.mesh.position.set(origin[0], origin[1], origin[2]);
-    draw.edges.position.set(origin[0], origin[1], origin[2]);
-    // 柄(FR-1108)を貼るための箱投影 UV。**同じ並び(同一参照)なら触らない**
-    // ので、ホバーや選択が変わっただけの組み立て直しでは GPU へ送り直さない。
-    setGeometryAttributes(draw.mesh.geometry, [
-      { name: 'position', values: entry.positions },
-      { name: 'normal', values: entry.normals },
-      { name: 'uv', values: entry.uv, itemSize: 2 },
-    ], entry.indices);
-    // 位置が変われば包む球も変わるので、視錐台の外と誤判定されないよう作り直す。
-    // 当たり判定(Raycaster)もこの球で粗く絞るため、必ず取り直す。
-    draw.mesh.geometry.computeBoundingSphere();
-    setVectorAttribute(draw.edges.geometry, 'position', entry.edgePositions);
-    draw.edges.geometry.computeBoundingSphere();
-    draw.featureId = entry.featureId;
-    draw.positions = entry.positions;
-    draw.normals = entry.normals;
-    draw.uv = entry.uv;
-    draw.indices = entry.indices;
-    draw.edgePositions = entry.edgePositions;
-  }
-
   /**
-   * ボディ 1 つぶんの外観(まとまりと材質の配列)を反映する(FR-1106)。
-   *
-   * **前回と同じまとまり・同じ外観で、材質を作り直す理由も無いときは何もしない。**
-   * `clearGroups` / `addGroup` と `mesh.material` の入れ替えは、three.js に材質の
-   * 束ね直しをさせるので、ホバーが動くたびに行うと 60fps(NFR-PF-1)を脅かす。
+   * 断面表示のクリッピングを配る相手(FR-111、§1.5-20)。**立体そのものと、その上に重ねる印**を全部入れる:
+   * 面の材質(見え方が同じなら使い回されるので同じ材質が 2 度出うる)、稜線の 3 本、部分形状の重ね描き
+   * 6 本、ねじの印、球面の案内線、点検の紫の線。切ったのに強調や印だけ空中に残るのを防ぐ。
+   * 切断の予告とつまみは平面の上にあるので入れない(自分で消えてしまう)。
    */
-  function applyAppearance(draw: BodyDraw, entry: SolidDrawEntry): void {
-    // 点検を出しているあいだは、外観の割り当てを一時的に**差し替える**。
-    // 上書きではないので、`setPrintabilityHighlight(null)` で元の外観がそのまま戻る。
-    const plan = printabilityPlanFor(entry);
-    const groups = plan === null ? entry.groups : plan.groups;
-    const appearances = plan === null ? entry.appearances : plan.appearances;
-    if (
-      !appearanceDirty &&
-      sameGroups(draw.groups, groups) &&
-      sameAppearances(draw.appearances, appearances)
-    ) {
-      return;
-    }
-    const materials = appearances.map((spec) =>
-      materialStore.materialFor(themedAppearance(spec, colors.solid), environment),
-    );
-    const geometry = draw.mesh.geometry;
-    geometry.clearGroups();
-    for (const faceGroup of groups) {
-      geometry.addGroup(faceGroup.start, faceGroup.count, faceGroup.materialIndex);
-    }
-    draw.mesh.material = materials;
-    draw.groups = groups;
-    draw.appearances = appearances;
-  }
-
-  /**
-   * いま画面に出ている外観で使っていない材質を捨てる。
-   * テーマの色を当てた後の外観で数えないと、テーマを切り替えた直後に**使っている材質を
-   * 捨ててしまう**ので、`applyAppearance` と同じ `themedAppearance` を通す。
-   */
-  function collectMaterials(entries: readonly SolidDrawEntry[]): void {
-    const used: AppearanceSpec[] = [];
-    for (const entry of entries) {
-      // 点検の間は赤と橙が「使っている材質」なので、同じ選び方(`applyAppearance`)で数える。
-      // 外観のほうだけを数えると、いま画面に出ている赤・橙をその場で捨ててしまう。
-      const plan = printabilityPlanFor(entry);
-      for (const spec of plan === null ? entry.appearances : plan.appearances) {
-        used.push(themedAppearance(spec, colors.solid));
-      }
-    }
-    materialStore.collect(used);
-  }
-
-  /**
-   * 断面表示のクリッピングを配る相手(FR-111、§1.5-20)。
-   *
-   * **立体そのものと、その上に重ねる印**を全部入れる。面の材質(ボディごとの配列。
-   * 見え方が同じなら使い回されるので同じ材質が 2 度出うる)、稜線の 3 本、部分形状の
-   * 重ね描き 6 本、ねじの印、球面の案内線。切ったのに強調や印だけ空中に残るのを防ぐ。
-   *
-   * **入れないもの**: 切断の予告とこのつまみ(平面の上にあるので自分で消えてしまう)。
-   * 方眼・軸・スケッチはこの層の外にあり、そもそも配る相手にならない。
-   */
-  function clippedMaterials(): readonly THREE.Material[] {
+  function applySectionPlanes(): void {
     const collected = new Set<THREE.Material>();
     for (const draw of draws) {
-      for (const material of draw.mesh.material) {
-        collected.add(material);
-      }
+      for (const material of draw.mesh.material) collected.add(material);
     }
     collected.add(edgeMaterials.none);
     collected.add(edgeMaterials.hovered);
@@ -1101,299 +401,49 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       collected.add(overlay.edges.material);
       collected.add(overlay.vertices.material);
     }
-    collected.add(threadMarkLines.material);
-    collected.add(sphereGridLines.material);
-    // 点検の紫の線も立体の上に重なる印なので、断面表示で一緒に切る(空中に残さない)。
-    collected.add(printOpenEdgeMaterial);
-    return [...collected];
+    for (const material of helpers.clippedMaterials()) collected.add(material);
+    collected.add(printing.material);
+    for (const material of collected) material.clippingPlanes = sectionPlanes;
   }
 
-  /** いまの平面の入れ物を、配る相手すべてへ差し込む(中身の入れ替えは別に効く)。 */
-  function applySectionPlanes(): void {
-    for (const material of clippedMaterials()) {
-      material.clippingPlanes = sectionPlanes;
-    }
-  }
-
-  /**
-   * つまみの四角の対角長を、いま描いているボディから測る(切断の予告と同じ考え方)。
-   *
-   * 包む球(`computeBoundingSphere` で取り直してある)の「原点からいちばん遠い点までの
-   * 距離」の 2 倍を対角長にすると、どこを中心に切っても四角が対象を覆う。ボディが 1 つも
-   * 無いときは最小の大きさにする。
-   */
-  function sectionHandleDiagonal(center: Vec3): number {
-    let reach = 0;
-    for (const draw of draws) {
-      const sphere = draw.mesh.geometry.boundingSphere;
-      if (sphere !== null) {
-        // Measured from the handle's own plane origin (double), so far-away bodies and planes
-        // keep the size of the shape instead of mixing in their distance from world zero.
-        reach = Math.max(reach, Math.hypot(
-          (draw.mesh.position.x - center[0]) + sphere.center.x,
-          (draw.mesh.position.y - center[1]) + sphere.center.y,
-          (draw.mesh.position.z - center[2]) + sphere.center.z,
-        ) + sphere.radius);
-      }
-    }
-    return reach > 0
-      ? reach * 2 * SECTION_HANDLE_MARGIN
-      : SECTION_HANDLE_MIN_DIAGONAL;
-  }
-
-  /** つまみの四角と矢印を組み立て直す。`lastSectionHandle` が null なら消すだけ。 */
-  function rebuildSectionHandle(): void {
-    if (lastSectionHandle === null) {
-      sectionHandleFace.visible = false;
-      sectionHandleArrow.visible = false;
-      return;
-    }
-    const center = lastSectionHandle.plane.origin;
-    const positions = buildCutPreviewPositions(
-      { ...lastSectionHandle.plane, origin: [0, 0, 0] },
-      sectionHandleDiagonal(center),
-      lastSectionHandle.keep,
-    );
-    sectionHandleFace.position.set(center[0], center[1], center[2]);
-    sectionHandleArrow.position.set(center[0], center[1], center[2]);
-    sectionHandleFace.updateMatrixWorld(true);
-    sectionHandleArrow.updateMatrixWorld(true);
-    setVectorAttribute(sectionHandleFace.geometry, 'position', positions.facePositions);
-    sectionHandleFace.geometry.computeVertexNormals();
-    sectionHandleFace.geometry.computeBoundingSphere();
-    sectionHandleFace.visible = positions.facePositions.length > 0;
-    setVectorAttribute(sectionHandleArrow.geometry, 'position', positions.arrowPositions);
-    sectionHandleArrow.geometry.computeBoundingSphere();
-    sectionHandleArrow.visible = positions.arrowPositions.length > 0;
-  }
-
-  /**
-   * 開いた辺の紫の線を body 別に更新する。origin だけの変更は配列を作り直さない。
-   * 点検の取消・body 削除時は GPU と CPU 配列への参照をともに解放する。
-   */
-  function rebuildPrintOpenEdges(entries: readonly SolidDrawEntry[]): void {
-    if (printability === null) {
-      clearPrintOpenEdges();
-      return;
-    }
-    const active = new Set<string>();
-    const occurrences = new Map<string, number>();
-    for (const entry of entries) {
-      // Keep separate frames even for repeated IDs in a directly supplied bundle.
-      const occurrence = occurrences.get(entry.featureId) ?? 0;
-      occurrences.set(entry.featureId, occurrence + 1);
-      const key = JSON.stringify([entry.featureId, occurrence]);
-      const triangleOffset = printability.triangleOffsets.get(entry.featureId);
-      if (triangleOffset === undefined) {
-        continue;
-      }
-      let draw = printOpenEdgeDraws.get(key);
-      if (draw === undefined || draw.positions !== entry.positions || draw.indices !== entry.indices
-        || draw.report !== printability.report || draw.triangleOffset !== triangleOffset
-        || draw.triangleCount !== entry.triangleCount) {
-        const positions = buildPrintabilityOpenEdgePositions(
-          entry.positions, entry.indices, printability.report, triangleOffset, entry.triangleCount,
-        );
-        if (positions.length === 0) continue;
-        if (draw === undefined) {
-          const lines = new THREE.LineSegments(new THREE.BufferGeometry(), printOpenEdgeMaterial);
-          lines.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
-          draw = { lines, positions: entry.positions, indices: entry.indices,
-            report: printability.report, triangleOffset, triangleCount: entry.triangleCount };
-          printOpenEdgeDraws.set(key, draw);
-          group.add(lines);
-        }
-        setVectorAttribute(draw.lines.geometry, 'position', positions);
-        draw.lines.geometry.computeBoundingSphere();
-        draw.positions = entry.positions;
-        draw.indices = entry.indices;
-        draw.report = printability.report;
-        draw.triangleOffset = triangleOffset;
-        draw.triangleCount = entry.triangleCount;
-      }
-      const origin = entry.coordinateFrame?.origin ?? [0, 0, 0];
-      draw.lines.position.set(origin[0], origin[1], origin[2]);
-      active.add(key);
-    }
-    for (const [key, draw] of printOpenEdgeDraws) {
-      if (active.has(key)) continue;
-      group.remove(draw.lines);
-      disposeBorrowedGeometry(draw.lines.geometry);
-      printOpenEdgeDraws.delete(key);
-    }
-    group.updateMatrixWorld(true);
-  }
-
-  function clearPrintOpenEdges(): void {
-    for (const draw of printOpenEdgeDraws.values()) {
-      group.remove(draw.lines);
-      disposeBorrowedGeometry(draw.lines.geometry);
-    }
-    printOpenEdgeDraws.clear();
-  }
-
-  /** 現在の BodyDraw から pick の的と ID を同時に作り直す。旧IDを残さない。 */
-  function rebuildPickTargets(entries: readonly SolidDrawEntry[]): void {
-    pickTargets.length = 0;
-    idByObject.clear();
-    const counts = new Map<string, number>();
-    for (const entry of entries) counts.set(entry.featureId, (counts.get(entry.featureId) ?? 0) + 1);
-    for (let position = 0; position < entries.length; position += 1) {
-      const draw = draws[position];
-      const entry = entries[position];
-      applyGeometry(draw, entry);
-      applyAppearance(draw, entry);
-      if (counts.get(entry.featureId) === 1) {
-        pickTargets.push(draw.mesh);
-        idByObject.set(draw.mesh, entry.featureId);
-      }
-    }
-    // A pointer may arrive before the renderer's next frame. Raycaster needs the
-    // translated mesh matrix immediately, including after a same-array frame change.
-    group.updateMatrixWorld(true);
-  }
-
-  /** 部品の数をボディの数に合わせ、形と外観を流し込む。 */
-  function syncDraws(entries: readonly SolidDrawEntry[]): void {
-    drawRetirement.resize(entries.length, createDraw);
-    rebuildPickTargets(entries);
-    collectMaterials(entries);
-    appearanceDirty = false;
+  /** 部品の数をボディの数に合わせ、形と外観を流し込み、形に付いて動く表示を合わせ直す。 */
+  function syncDraws(entries: SolidGeometryBundle['entries']): void {
+    bodies.sync(entries);
     // 新しく作られた面の材質にも断面表示の平面を配る(配り漏らすとその立体だけ切れない)。
     applySectionPlanes();
-    // 形が変われば覆うべき広さも変わるので、つまみを出しているあいだは組み立て直す。
-    rebuildSectionHandle();
+    helpers.rebuildSectionHandle();
     // 形が変われば開いた辺の位置も変わるので、点検を出しているあいだは引き直す。
-    rebuildPrintOpenEdges(entries);
-  }
-
-  /**
-   * 表示スタイルと強調を材質へ写す(FR-105、FR-106)。
-   *
-   * シェーディング = 面のみ / シェーディング+エッジ = 面と稜線 / ワイヤーフレーム = 稜線のみ。
-   * ただし**ホバー中・選択中のボディの稜線は、面のみの表示でも出す**。稜線でしか強調を
-   * 示さない決まり(「面の色は変えない」)なので、面のみの表示で稜線を全部消すと
-   * 何を選んでいるのか分からなくなるため(NFR-UX-7)。
-   */
-  function applyStyle(entries: readonly SolidDrawEntry[], displayStyle: DisplayStyle): void {
-    lastDisplayStyle = displayStyle;
-    const showFaces = displayStyle !== 'wireframe';
-    const showEdges = displayStyle !== 'shaded';
-    edgeMaterials.none.color.setHex(
-      displayStyle === 'wireframe' ? colors.solidEdgeWireframe : colors.solidEdgeOverSolid,
-    );
-    for (let position = 0; position < entries.length; position += 1) {
-      const draw = draws[position];
-      const entry = entries[position];
-      draw.mesh.visible = showFaces && entry.triangleCount > 0;
-      draw.edges.visible =
-        (showEdges || entry.emphasis !== 'none') && entry.edgeCount > 0;
-      draw.edges.material = edgeMaterials[entry.emphasis];
-    }
+    printing.rebuildOpenEdges(entries);
   }
 
   const layer: SolidLayer = {
     group,
-
     update(bundle, displayStyle, nextEnvironment = null): void {
       if (cleanup !== null) return;
-      if (nextEnvironment !== environment) {
-        environment = nextEnvironment;
-        appearanceDirty = true;
-      }
+      bodies.setEnvironment(nextEnvironment);
       // 並びも外観も前回のままなら、表示スタイルの入切だけで済ませる(毎コマの作り直しをしない)。
-      if (bundle !== lastBundle || appearanceDirty || drawRetirement.pending) {
+      if (bundle !== lastBundle || bodies.appearanceDirty || bodies.pending) {
         syncDraws(bundle.entries);
         lastBundle = bundle;
       }
-      applyStyle(bundle.entries, displayStyle);
+      bodies.applyStyle(bundle.entries, displayStyle);
     },
-
     updateSubShapes(bundle): void {
       if (cleanup !== null) return;
       subShapeResources.update(bundle);
     },
-
     updateThreadMarks(marks): void {
       if (cleanup !== null) return;
-      if (marks === lastThreadMarks) {
-        return;
-      }
-      lastThreadMarks = marks;
-      const locals = marks.flatMap((mark) => {
-        const positions = buildThreadMarkPositions([{ ...mark, origin: [0, 0, 0] }]);
-        return positions.length === 0 ? [] : [{ origin: mark.origin, positions }];
-      });
-      while (threadMarkDraws.length > locals.length) {
-        const draw = threadMarkDraws.pop();
-        if (draw !== undefined) {
-          group.remove(draw);
-          disposeBorrowedGeometry(draw.geometry);
-        }
-      }
-      while (threadMarkDraws.length < locals.length) {
-        const draw = new THREE.LineSegments(new THREE.BufferGeometry(), threadMarkLines.material);
-        draw.renderOrder = SUB_SHAPE_LINE_RENDER_ORDER;
-        threadMarkDraws.push(draw);
-        group.add(draw);
-      }
-      locals.forEach((local, index) => {
-        const draw = threadMarkDraws[index];
-        setVectorAttribute(draw.geometry, 'position', local.positions);
-        draw.geometry.computeBoundingSphere();
-        draw.position.set(local.origin[0], local.origin[1], local.origin[2]);
-        draw.visible = true;
-      });
-      group.updateMatrixWorld(true);
+      helpers.updateThreadMarks(marks);
     },
-
     updateSphereGrid(positions, origin = [0, 0, 0]): void {
       if (cleanup !== null) return;
-      sphereGridLines.position.set(origin[0], origin[1], origin[2]);
-      sphereGridLines.updateMatrixWorld(true);
-      const sameBacking = positions === lastSphereGridPositions;
-      lastSphereGridPositions = positions;
-      if (positions === null || positions.length === 0) {
-        sphereGridLines.visible = false;
-        return;
-      }
-      setVectorAttribute(sphereGridLines.geometry, 'position', positions);
-      // A Float32Array is mutable even when its identity is unchanged. The
-      // attribute and bounds containers stay owned by this geometry.
-      const attribute = sphereGridLines.geometry.getAttribute('position');
-      if (sameBacking && attribute instanceof THREE.BufferAttribute) attribute.needsUpdate = true;
-      sphereGridLines.geometry.computeBoundingSphere();
-      sphereGridLines.visible = true;
+      helpers.updateSphereGrid(positions, origin);
     },
-
     updateCutPreview(preview): void {
       if (cleanup !== null) return;
-      if (preview === lastCutPreview) {
-        // 同じ平面を渡し直したときは並びを 1 つも触らない(NFR-PF-1)。
-        return;
-      }
-      lastCutPreview = preview;
-      if (preview === null) {
-        cutPreviewFace.visible = false;
-        cutPreviewArrow.visible = false;
-        return;
-      }
-      const positions = buildCutPreviewPositions({ ...preview.plane, origin: [0, 0, 0] }, preview.diagonal,
-        preview.keep);
-      const [x, y, z] = preview.plane.origin;
-      cutPreviewFace.position.set(x, y, z);
-      cutPreviewArrow.position.set(x, y, z);
-      cutPreviewFace.updateMatrixWorld(true);
-      cutPreviewArrow.updateMatrixWorld(true);
-      setVectorAttribute(cutPreviewFace.geometry, 'position', positions.facePositions);
-      cutPreviewFace.geometry.computeVertexNormals();
-      cutPreviewFace.geometry.computeBoundingSphere();
-      cutPreviewFace.visible = positions.facePositions.length > 0;
-      setVectorAttribute(cutPreviewArrow.geometry, 'position', positions.arrowPositions);
-      cutPreviewArrow.geometry.computeBoundingSphere();
-      cutPreviewArrow.visible = positions.arrowPositions.length > 0;
+      helpers.updateCutPreview(preview);
     },
-
     setSectionPlanes(planes): void {
       if (cleanup !== null) return;
       // 入れ物は作り直さない(材質が持っている参照をそのまま生かす)。中身だけ入れ替える。
@@ -1403,146 +453,63 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       }
       applySectionPlanes();
     },
-
     updateSectionHandle(handle): void {
       if (cleanup !== null) return;
-      lastSectionHandle = handle;
-      rebuildSectionHandle();
+      helpers.updateSectionHandle(handle);
     },
-
     setPrintabilityHighlight(highlight): void {
       if (cleanup !== null) return;
-      if (highlight === printability) {
-        return;
-      }
-      printability = highlight;
-      clearPrintabilityCache();
+      if (!printing.set(highlight)) return;
       // 材質の割り当てが変わるので、次の `update` を待たずにここで反映する
       // (点検は押した瞬間に色が変わってほしい。NFR-UX-7)。
-      appearanceDirty = true;
-      if (lastBundle !== null) {
-        syncDraws(lastBundle.entries);
-      } else {
-        rebuildPrintOpenEdges([]);
-      }
+      bodies.markAppearanceDirty();
+      if (lastBundle !== null) syncDraws(lastBundle.entries);
+      else printing.rebuildOpenEdges([]);
     },
-
     setThemeColors(next): void {
       if (cleanup !== null) return;
       colors = next;
-      // 既定の外観の色はテーマが決める(FR-908)。材質そのものは次の `update` で作り直す
-      // (材質の入れ物が鍵で使い回すので、色を直に書き換えると鍵と中身が食い違う)。
-      appearanceDirty = true;
-      edgeMaterials.none.color.setHex(
-        lastDisplayStyle === 'wireframe' ? colors.solidEdgeWireframe : colors.solidEdgeOverSolid,
-      );
-      edgeMaterials.hovered.color.setHex(colors.hovered);
-      edgeMaterials.selected.color.setHex(colors.selected);
+      bodies.applyTheme(next);
       for (const emphasis of SUB_SHAPE_EMPHASES) {
         const overlay = subShapeOverlays[emphasis];
-        const color = emphasis === 'hovered' ? colors.hovered : colors.selected;
+        const color = emphasis === 'hovered' ? next.hovered : next.selected;
         overlay.faces.material.color.setHex(color);
         overlay.edges.material.color.setHex(color);
         overlay.vertices.material.color.setHex(color);
       }
-      threadMarkLines.material.color.setHex(colors.threadMark);
-      // 案内線もテーマの薄い灰へ塗り替える(部品は作り直さない、FR-908)。
-      sphereGridLines.material.color.setHex(colors.gridMajor);
-      printOpenEdgeMaterial.color.setHex(colors.printOpenEdge);
-      // 点検の赤・橙は材質の鍵に色が入っているので、控えを捨てて次の `update` で作り直す
-      // (稜線のように色だけ書き換えると、鍵と中身が食い違う)。
-      clearPrintabilityCache();
+      helpers.applyTheme(next);
+      printing.applyTheme(next);
     },
-
-    pickFace(raycaster): { readonly featureId: string; readonly triangleIndex: number } | null {
-      // pickBody と同じ的(ボディの面メッシュ)を使う。faceIndex は three.js が
-      // 「当たった三角形の通し番号」として Intersection に添えてくれる。
-      const hits = raycaster.intersectObjects(pickTargets, false);
-      for (const hit of hits) {
-        const featureId = idByObject.get(hit.object);
-        if (featureId !== undefined && typeof hit.faceIndex === 'number') {
-          return { featureId, triangleIndex: hit.faceIndex };
-        }
-      }
-      return null;
-    },
-
-    pickBody(raycaster): string | null {
-      // 近い順に並ぶので先頭が手前のボディ。表示スタイルで面を隠していても当たる
-      // (three.js の Raycaster は visible を見ない)ため、ワイヤーフレーム表示でも選べる。
-      const hits = raycaster.intersectObjects(pickTargets, false);
-      for (const hit of hits) {
-        const featureId = idByObject.get(hit.object);
-        if (featureId !== undefined) {
-          return featureId;
-        }
-      }
-      return null;
-    },
-
+    pickFace: (raycaster) => bodies.pickFace(raycaster),
+    pickBody: (raycaster) => bodies.pickBody(raycaster),
     meshBufferBytes(): number {
       if (subShapeResources.pendingCleanup.length !== 0) throw new Error('Solid overlay retained backing is unknown');
-      let bytes = 0;
-      for (const draw of draws) {
-        bytes += geometryAttributeBytes(draw.mesh.geometry) + geometryAttributeBytes(draw.edges.geometry);
-      }
+      let bytes = bodies.meshBytes();
       for (const emphasis of SUB_SHAPE_EMPHASES) {
-        for (const overlay of subShapeBodyOverlays[emphasis].values()) {
+        for (const overlay of subShapeResources.bodyOverlays[emphasis].values()) {
           bytes += geometryAttributeBytes(overlay.faces.geometry) + geometryAttributeBytes(overlay.edges.geometry)
             + geometryAttributeBytes(overlay.vertices.geometry);
         }
       }
       return bytes;
     },
-
     dispose(): void {
       if (cleanup === null) {
         cleanup = createViewportLifetime();
         group.visible = false;
-        pickTargets.length = 0;
-        idByObject.clear();
-        cleanup.register('detach solid objects', () => { group.clear(); });
-        for (const owner of subShapeResources.pendingCleanup) cleanup.register('failed overlay construction', () => {
-          owner.dispose();
-          if (owner.pendingCount !== 0) throw new Error(owner.errors.join('; '));
-        });
-        const geometries = new Set<THREE.BufferGeometry>();
-        const materials = new Set<THREE.Material>(Object.values(edgeMaterials));
-        for (const draw of draws) { geometries.add(draw.mesh.geometry); geometries.add(draw.edges.geometry); }
-        for (const emphasis of SUB_SHAPE_EMPHASES) {
-          for (const overlay of [subShapeOverlays[emphasis], ...subShapeBodyOverlays[emphasis].values()]) {
-            geometries.add(overlay.faces.geometry); geometries.add(overlay.edges.geometry);
-            geometries.add(overlay.vertices.geometry);
-          }
-          const overlay = subShapeOverlays[emphasis];
-          materials.add(overlay.faces.material); materials.add(overlay.edges.material); materials.add(overlay.vertices.material);
-        }
-        for (const draw of threadMarkDraws) geometries.add(draw.geometry);
-        for (const draw of printOpenEdgeDraws.values()) geometries.add(draw.lines.geometry);
-        for (const draw of [threadMarkLines, sphereGridLines, cutPreviewFace, cutPreviewArrow,
-          sectionHandleFace, sectionHandleArrow]) { geometries.add(draw.geometry); materials.add(draw.material); }
-        materials.add(printOpenEdgeMaterial);
-        for (const geometry of geometries) cleanup.register('solid geometry', drawRetirement.geometryRelease(geometry));
-        cleanup.register('appearance materials and textures', () => { materialStore.dispose(); });
-        for (const material of materials) cleanup.register('solid material', () => { material.dispose(); });
+        bodies.clearPickTargets();
+        registerSolidLayerCleanup(cleanup, { group, edgeMaterials, subShapeOverlays, subShapeResources, draws, bodies,
+          helpers, printing, materialStore });
       }
       cleanup.dispose();
       if (cleanup.pendingCount !== 0) throw new Error(cleanup.errors.join('; '));
-      draws.length = 0;
+      bodies.reset();
       subShapeResources.clear();
-      threadMarkDraws.length = 0;
-      printOpenEdgeDraws.clear();
+      helpers.reset();
+      printing.reset();
       // 平面は材質が捨てられた後には誰も読まない。入れ物だけ空にしておく。
       sectionPlanes.length = 0;
-      printability = null;
-      clearPrintabilityCache();
-      lastSectionHandle = null;
-      lastCutPreview = null;
       lastBundle = null;
-      lastThreadMarks = null;
-      lastSphereGridPositions = null;
-      environment = null;
-      appearanceDirty = true;
     },
   };
   construction.handoff();

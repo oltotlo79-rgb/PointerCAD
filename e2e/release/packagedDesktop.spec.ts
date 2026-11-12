@@ -10,7 +10,7 @@ import { expect, test, type ElectronApplication, type Page, type PlaywrightWorke
 import { DRAWING_FONT_ASSET } from '../../packages/drawing/src/text/fontAsset.js';
 import { chooseToolMenuItem } from '../tests/assemblyTestSupport.js';
 import { waitForMathEditorText } from '../tests/mathEditorReady.js';
-import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from '../tests/recompute.js';
+import { beginRecompute, KERNEL_TIMEOUT_MS, readRecomputeStats, waitForRecompute } from '../tests/recompute.js';
 import { uiMessage } from '../tests/uiMessages.js';
 import { verifyPackagedStartup } from './packagedStartup.js';
 
@@ -48,6 +48,12 @@ const PROCESS_EXIT_TIMEOUT_MS = 30_000;
  * 止まって worker ごと強制終了された。(f) にも同じ上限を掛け、原因を記録に残してから失敗させる)。
  */
 const CLEANUP_CLOSE_TIMEOUT_MS = 60_000;
+/**
+ * 「この部品から図面を作成」を製品が断る時にステータスバーへ出す文の鍵(packages/ui/src/drawing/createDrawingCommands.ts の
+ * 計算中・図面を開いている時の断りと、catch で選ぶ理由の全て)。(d-3) はこの文が出たら、その文で直ちに落とす。
+ */
+const DRAWING_REFUSAL_KEYS = ['drawing.error.noSolid', 'drawing.error.viewFailed', 'drawing.error.partTooLarge',
+  'drawing.error.selectSource', 'drawing.error.assemblyConstraints'] as const;
 const runFile = promisify(execFile);
 
 interface CandidateRecord {
@@ -248,6 +254,9 @@ async function prepareIsolation(): Promise<Isolation> {
   for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
   // Electron を Node として動かす指定が残っていると、配布物の画面が起動しない。
   delete env.ELECTRON_RUN_AS_NODE;
+  // Playwright の接続の記録の指定(DEBUG・DEBUG_FILE)は検査の側だけのもの。起動する配布物へは渡さない。
+  delete env.DEBUG;
+  delete env.DEBUG_FILE;
   let xdgConfigHome: string | null = null;
   if (process.platform === 'linux') {
     // --user-data-dir が効かなかった場合も、Linux の既定の置き場(~/.config など)へ書かないようにする。
@@ -412,6 +421,28 @@ async function launchPackaged(playwright: PlaywrightWorkerArgs['playwright'], ta
   });
 }
 
+/**
+ * 失敗した回の画面の状態(ステータスバーの文・警告・図面の要素の件数・再計算の状態)。成果物と記録だけで
+ * 「断られた・字体を読めなかった・計算が終わらない」のどれかを決められるようにする。読めない時はその理由を返す。
+ */
+async function readFailureState(page: Page): Promise<unknown> {
+  const reason = (error: unknown): string => `読めません: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500);
+  try {
+    const screen = await page.evaluate(() => ({
+      status: document.querySelector('.pcad-statusbar__text')?.textContent?.trim() ?? null,
+      alerts: Array.from(document.querySelectorAll('[role="alert"]'), element => (element.textContent ?? '').trim().slice(0, 300))
+        .filter(text => text !== ''),
+      drawingSvg: document.querySelectorAll('.pcad-drawing-svg svg').length,
+      drawingPaths: document.querySelectorAll('.pcad-drawing-svg path').length,
+      progress: document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow') ?? null,
+    }));
+    const recompute = await readRecomputeStats(page).catch(reason);
+    return { ...screen, recompute };
+  } catch (error) {
+    return reason(error);
+  }
+}
+
 function createItemRecorder(): { records: ItemRecord[]; run: <T>(id: string, label: string, body: () => Promise<T>) => Promise<T> } {
   const records: ItemRecord[] = [];
   const run = async <T>(id: string, label: string, body: () => Promise<T>): Promise<T> => {
@@ -558,6 +589,9 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
     await run('(d-2)', '同梱の数式の計算部で積分を求める', async () => {
       // e2e/release/offlineDomainCoverage.ts の verifyOfflineExactMath と同じ入口と式(通信の見張りは無い)。
       await page.getByRole('tab', { name: uiMessage('propertyPanel', 'propertyPanel.tabParameters'), exact: true }).click();
+      // 媒介変数の追加と名前の確定は文書の媒介変数を変え、再計算を起こす(model の affectsShape)。(d-1) と同じく
+      // 操作の前に世代を控え、今回の再計算の成功を待ってから数式の窓を開く(計算の途中の状態で次の操作へ進まない)。
+      const edited = await beginRecompute(page);
       await page.getByRole('button', { name: uiMessage('parameters', 'parameterPanel.addTooltip'), exact: true }).click();
       const row = page.locator('.pcad-parameter').last();
       const dialog = page.locator('.pcad-math-dialog');
@@ -567,16 +601,39 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
       await name.fill('厳密係数'); await name.press('Enter');
       await expect(page.getByRole('textbox', { name: `${uiMessage('parameters', 'parameterPanel.nameLabel')} 厳密係数`, exact: true }),
         '名前の確定が文書へ入ったこと').toHaveValue('厳密係数');
+      await waitForRecompute(page, edited);
       await row.getByRole('button', { name: uiMessage('math', 'math.open'), exact: true }).click();
       await waitForMathEditorText(dialog);
       await dialog.locator('textarea').fill('integrate(t^2,t,0,3)');
       await expect(dialog.locator('.pcad-math-editor__result[role="status"]')).toHaveText('= 9', { timeout: 225_000 });
+      // 「この式を使う」は媒介変数の値を文書へ入れ(ParameterMathDialog.tsx の applyDocument)、計算中の札を立てて
+      // 再計算を起こす。計算中に「この部品から図面を作成」を押すと製品は断る(createDrawingCommands.ts の isComputing。
+      // 2026-11-12 配布CI run 43180628085 の Linux で、断りの文「図にできる立体がありません。」のまま (d-3) が落ちた)。
+      // 窓が閉じた後に、この操作で始まった再計算の成功まで待ってから (d-3) へ進む。
+      const applied = await beginRecompute(page);
       await dialog.getByRole('button', { name: uiMessage('math', 'math.apply'), exact: true }).click();
       await expect(dialog).toHaveCount(0);
+      await waitForRecompute(page, applied);
     });
     await run('(d-3)', '同梱の字体で図面を描く', async () => {
+      // 押す直前の再計算の状態(計算中か・世代・結末)を記録に残す。断られた時に、押した時点の状態を記録から読める。
+      evidence.recomputeBeforeDrawing = await readRecomputeStats(page);
       await chooseToolMenuItem(page, uiMessage('toolbar', 'toolbar.fileMenu.groupLabel'), uiMessage('drawing', 'drawing.file.fromPart'));
-      await expect(page.locator('.pcad-drawing-svg svg')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+      const drawn = page.locator('.pcad-drawing-svg svg');
+      // 製品が図面の作成を断る時は、ステータスバーに理由の文を出して図面を開かない(createDrawingCommands.ts)。
+      const statusText = page.locator('.pcad-statusbar__text');
+      const refused = DRAWING_REFUSAL_KEYS.map(key => statusText.filter({ hasText: uiMessage('drawing', key) }))
+        .reduce((all, next) => all.or(next));
+      const fontRetry = page.getByRole('button', { name: uiMessage('drawing', 'drawing.font.retry'), exact: true });
+      // 図面・断りの文・字体の再試行のどれかが出るまで待ち、断られた時と字体を読めなかった時は、
+      // 図面の要素が無いという文でなく、その理由の文で落とす。
+      await expect(drawn.or(refused).or(fontRetry).first(), '図面か、断りの文か、字体の再試行のボタンが出ること')
+        .toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+      const status = (await statusText.first().textContent())?.trim() ?? '';
+      expect(await refused.count(), `図面の作成が断られていないこと(ステータスバーの文: ${status})`).toBe(0);
+      const alerts = (await page.getByRole('alert').allTextContents()).map(text => text.trim()).filter(text => text !== '');
+      expect(await fontRetry.count(), `字体の読込みが失敗していないこと(警告: ${alerts.join(' / ')})`).toBe(0);
+      await expect(drawn).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
       await expect.poll(() => page.locator('.pcad-drawing-svg [data-owner-id="view-1"] path').count(), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
       await expect(page.getByRole('alert').filter({ hasText: uiMessage('drawing', 'drawing.error.fontFailed') })).toHaveCount(0);
       await expect(page.getByRole('button', { name: uiMessage('drawing', 'drawing.font.retry'), exact: true })).toHaveCount(0);
@@ -670,6 +727,9 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
   } finally {
     if (!completed && session.page !== undefined && !session.closed) {
       await session.page.screenshot({ path: info.outputPath('packaged-desktop-failure.png') }).catch(() => undefined);
+      // 閉じる前に、失敗した時の画面の状態を記録と標準出力の両方へ残す(Actions の記録だけでも原因を読めるように)。
+      evidence.failureState = await readFailureState(session.page);
+      console.log(`[配布物の起動] 失敗した時の画面: ${JSON.stringify(evidence.failureState).slice(0, 2_000)}`);
     }
     if (session.app !== undefined && !session.closed) {
       // 失敗の後片付け。閉じる処理が戻らないと結果の記録を書けず、worker ごと強制終了される(2026-09-28 手元の流し直し)。

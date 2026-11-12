@@ -14,7 +14,7 @@
 .pcad-math-dialog::backdrop { background: rgb(0 0 0 / .4); }
 .pcad-math-dialog h2 { margin: 0; font-size: 1.1em; }
 /* One cancel button, always in the same place, whether the editor is still preparing or ready
-   (MC-27 regression: a click landing during that transition used to miss the button). */
+   (a click landing during that transition used to miss the button). */
 .pcad-math-dialog__actions { display: flex; justify-content: flex-end; margin-block-start: calc(10px * var(--pcad-scale)); }
 .pcad-math-editor {
   display: grid;
@@ -65,7 +65,7 @@
 }
 .pcad-math-editor math-field:focus-within { outline: 2px solid var(--pcad-accent); outline-offset: 2px; }
 /* Symbol entry already has the palette below; the on-screen keyboard toggle would render under this
-   modal dialog and be unreachable (MC-27d). */
+   modal dialog and be unreachable. */
 .pcad-math-editor math-field::part(virtual-keyboard-toggle) { display: none; }
 .pcad-math-editor__hint,
 .pcad-math-editor__meaning { color: var(--pcad-text-muted); font-size: .9em; overflow-wrap: anywhere; }

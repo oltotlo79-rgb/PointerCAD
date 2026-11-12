@@ -403,3 +403,58 @@ describe('waiting until no reply clone is reserved', () => {
     expect(await ledger.waitForNoPendingClone(() => true)).toBe('unavailable');
   });
 });
+
+// CI 2026-11-12 (4621eafa): old meshes collected during an observation are released-only changes, told apart from growth.
+describe('released-only host changes are told apart from growth', () => {
+  it('a detached record is released-only until a reservation, adoption or dispatch grows the ledger', () => {
+    const ledger = new MeshHostRetention(512), first = new ArrayBuffer(16), second = new ArrayBuffer(16);
+    expect(ledger.reserveReply('reply', 64)).toBe(true);
+    ledger.adoptReply('reply', 'owner', [first, second]);
+    const start = ledger.observe();
+    if (start.status !== 'known') throw new Error('Known ledger required');
+    expect(ledger.releaseSince(start.epoch)).toEqual({ releasedOnly: false, records: 3 });
+    structuredClone(first, { transfer: [first] });
+    expect(ledger.releaseSince(start.epoch)).toEqual({ releasedOnly: true, records: 2 });
+    expect(ledger.conflictSince(start.epoch, 0)).toBe('host-backings-released');
+    expect(ledger.conflictSince(start.epoch, 64)).toBe('host-epoch-changed');
+    expect(ledger.reserveReply('unsent', 32)).toBe(true);
+    ledger.settleWithoutReply('unsent');
+    expect(ledger.releaseSince(start.epoch).releasedOnly).toBe(false);
+    expect(ledger.conflictSince(start.epoch, 0)).toBe('host-epoch-changed');
+    const settled = ledger.observe();
+    if (settled.status !== 'known') throw new Error('Known ledger required');
+    expect(ledger.releaseSince(settled.epoch).releasedOnly).toBe(false);
+    ledger.advanceEpoch();
+    expect(ledger.releaseSince(settled.epoch).releasedOnly).toBe(false);
+    expect(ledger.releaseSince(null).releasedOnly).toBe(false);
+  });
+  it('every released-only change lowers the releasable record count, so taking an observation again is finite', () => {
+    const ledger = new MeshHostRetention(512), buffers = [new ArrayBuffer(8), new ArrayBuffer(8), new ArrayBuffer(8)];
+    buffers.forEach((buffer, index) => {
+      expect(ledger.reserveReply(`reply-${String(index)}`, 8)).toBe(true);
+      ledger.adoptReply(`reply-${String(index)}`, `owner-${String(index)}`, [buffer]);
+    });
+    expect(ledger.reserveReply('unsent', 8)).toBe(true);
+    const start = ledger.observe();
+    if (start.status !== 'known') throw new Error('Known ledger required');
+    let records = ledger.releaseSince(start.epoch).records;
+    expect(records).toBe(7);
+    ledger.settleWithoutReply('unsent');
+    for (const buffer of buffers) {
+      const before = records;
+      structuredClone(buffer, { transfer: [buffer] });
+      const reading = ledger.releaseSince(start.epoch);
+      expect(reading.releasedOnly).toBe(true);
+      expect(reading.records).toBeLessThan(before);
+      records = reading.records;
+    }
+    expect(records).toBe(0);
+  });
+  it('an unknown ledger is never released-only', () => {
+    const ledger = new MeshHostRetention(64);
+    const start = ledger.observe();
+    if (start.status !== 'known') throw new Error('Known ledger required');
+    ledger.markCoverageUnknown('test-unknown');
+    expect(ledger.releaseSince(start.epoch).releasedOnly).toBe(false);
+  });
+});

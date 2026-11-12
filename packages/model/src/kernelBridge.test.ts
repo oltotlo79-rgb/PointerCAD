@@ -2150,6 +2150,28 @@ describe('current global solid backing ledger through actual Comlink clones', ()
       expect(result.bodies[0].mesh.positions).toEqual(positions);
     } finally { held.release(); }
   });
+  it('a registered backing released during a held real capture is refused as released-only, never as growth', async () => {
+    // CI 2026-11-12 (4621eafa): old part meshes were collected while a new assembly observed the ledger.
+    const { api, bridge, owner, result } = await localBox();
+    if (bridge.captureCurrentMeshLedger === undefined || bridge.meshLedgerRelease === undefined) throw new Error('Capability');
+    const issued = await bridge.captureCurrentMeshLedger({ observationId: 'before-release', owners: [owner] });
+    if (issued.status !== 'known') throw new Error('Known actual receipt required');
+    const held = holdActualLedgerQueries(api, 1);
+    const capture = bridge.captureCurrentMeshLedger({ observationId: 'release-during-capture', owners: [owner] });
+    try {
+      await held.entered;
+      const edges = result.bodies[0].mesh.edgePositions.buffer;
+      // Detachment is the deterministic stand-in for collection: both are released-only host changes.
+      structuredClone(edges, { transfer: [edges] });
+      held.release();
+      expect(await capture).toMatchObject({ status: 'unknown', reason: 'host-backings-released' });
+      expect(bridge.meshLedgerRelease(issued.hostEpoch)).toMatchObject({ releasedOnly: true });
+      // The receipt meaning is unchanged: an issued receipt is no longer current after any host change.
+      expect(bridge.currentMeshLedgerReceipt?.(issued)).toBe(false);
+      const fresh = await bridge.captureCurrentMeshLedger({ observationId: 'after-release', owners: [owner] });
+      expect(fresh.status).toBe('known');
+    } finally { held.release(); }
+  });
   it('connection interruption prevents a held readonly capture from issuing a known old response', async () => {
     const { api, bridge, owner, result } = await localBox();
     if (bridge.captureCurrentMeshLedger === undefined) throw new Error('Capability');

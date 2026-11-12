@@ -1319,3 +1319,149 @@ describe('部品pickの未実行と失効を混同しない', () => {
     } finally { f.close(); }
   });
 });
+
+/** canvas への登録と解除を [種類, 受け手] の組で突き合わせ、解除されずに残った登録と、登録の無い解除を返す。 */
+function unmatchedCanvasListeners(added: readonly (readonly unknown[])[], removed: readonly (readonly unknown[])[]) {
+  const remaining = [...removed];
+  const leaked = added.filter(([type, listener]) => {
+    const index = remaining.findIndex(([removedType, removedListener]) => removedType === type && removedListener === listener);
+    if (index < 0) return true;
+    remaining.splice(index, 1);
+    return false;
+  });
+  return { leaked: leaked.map(([type]) => type), unpaired: remaining.map(([type]) => type) };
+}
+
+/** 模擬の scene が受けた呼び出しを、呼ばれた順に 1 行ずつの文字へ写す(重い引数は種類だけにする)。 */
+function sceneCallLog(scene: SceneCalls): string[] {
+  const entries: { readonly order: number; readonly text: string }[] = [];
+  for (const [name, spy] of Object.entries(scene)) {
+    spy.mock.calls.forEach((args: readonly unknown[], index: number) => {
+      const order = spy.mock.invocationCallOrder[index] ?? 0;
+      if (name === 'setAssembly') entries.push({ order, text: `setAssembly(${args[0] === EMPTY_ASSEMBLY_GEOMETRY ? 'empty' : 'bundle'})` });
+      else if (name === 'setSketch') entries.push({ order, text: `setSketch(${args[1] === null ? 'no-mesh' : 'mesh'})` });
+      else if (['setSketchHighlight', 'setBodyHighlight', 'setSubShapeHighlight', 'setInteractiveRendering', 'resize',
+        'setActivePane', 'render', 'setSphereGrid', 'setCutPreview', 'setSectionView', 'setPrintability'].includes(name)) {
+        entries.push({ order, text: `${name}${JSON.stringify(args)}` });
+      } else entries.push({ order, text: name });
+    });
+  }
+  return entries.sort((a, b) => a.order - b.order).map(entry => entry.text);
+}
+
+function clearSceneCalls(scene: SceneCalls): void {
+  for (const spy of Object.values(scene)) spy.mockClear();
+}
+
+describe('作り直しの基準: 装着と破棄の資源の差、選択・ドラッグ・取消の受け渡し', () => {
+  it('実の視点・組立の入力を結んだ 100 回の装着と破棄で、イベントの登録・画像・表示・購読・描画予約・公開口の差が毎回 0', () => {
+    fixture.realAssemblyInput = true;
+    let listenersPerLife = -1;
+    for (let life = 0; life < 100; life += 1) {
+      const addsBefore = fixture.canvas.addEventListener.mock.calls.length;
+      const removesBefore = fixture.canvas.removeEventListener.mock.calls.length;
+      const subscriptionsBefore = fixture.subscriptions.length;
+      const framesBefore = fixture.frames.length;
+      const cancelledBefore = fixture.cancelledFrames.length;
+      const current = mount();
+      const added = fixture.canvas.addEventListener.mock.calls.slice(addsBefore);
+      if (listenersPerLife < 0) listenersPerLife = added.length;
+      expect(added).toHaveLength(listenersPerLife);
+      expect(Object.keys(window).length).toBeGreaterThan(0);
+      current.cleanup(); current.cleanup();
+      const removed = fixture.canvas.removeEventListener.mock.calls.slice(removesBefore);
+      expect(unmatchedCanvasListeners(added, removed)).toEqual({ leaked: [], unpaired: [] });
+      expect(fixture.scenes).toHaveLength(life + 1);
+      expect(current.scene.dispose).toHaveBeenCalledTimes(1);
+      expect(current.cache.dispose).toHaveBeenCalledTimes(1);
+      expect(current.sketch.detach).toHaveBeenCalledTimes(1);
+      expect(current.quad).toHaveBeenCalledTimes(1);
+      expect(current.observer.disconnect).toHaveBeenCalledTimes(1);
+      const subscriptions = fixture.subscriptions.slice(subscriptionsBefore);
+      expect(subscriptions.length).toBeGreaterThan(0);
+      for (const subscription of subscriptions) expect(subscription.unsubscribe).toHaveBeenCalledTimes(1);
+      expect(fixture.frames.length - framesBefore).toBe(fixture.cancelledFrames.length - cancelledBefore);
+      expect(Object.keys(window)).toEqual([]);
+      expect(useAppStore.getState().captureThumbnail).toBeNull();
+      expect(useAppStore.getState().capturePrintFrame).toBeNull();
+      expect(useAppStore.getState().viewCameraController).toBeNull();
+    }
+    expect(listenersPerLife).toBeGreaterThan(2);
+  });
+
+  it('選択・ドラッグ・取消の系列で、ストアの更新と scene への受け渡しが基準の並びと同じ', () => {
+    // 前の検査が残す受領の控えに依らず、取消の段の更新の組を決める。
+    useAppStore.setState({ meshJsAccounting: null });
+    const current = mount();
+    const transitions: string[][] = [];
+    const unsubscribe = useAppStore.subscribe((next, previous) => {
+      transitions.push(Object.keys(next).filter(key => !Object.is(Reflect.get(next, key), Reflect.get(previous, key))).sort());
+    });
+    let lastDrawnFrame = 0;
+    // 1 段ごとに、操作 → 受け渡しの記録 → 予約された描画を 1 回だけ実行(その描画の受け渡しも同じ段に入れる)。
+    const step = (action: () => void) => {
+      clearSceneCalls(current.scene);
+      transitions.length = 0;
+      const framesBefore = fixture.frames.length;
+      action();
+      const frames = fixture.frames.length - framesBefore;
+      const pending = fixture.frames.at(-1);
+      if (pending !== undefined && pending.id > lastDrawnFrame) { lastDrawnFrame = pending.id; pending.draw(0); }
+      return { scene: sceneCallLog(current.scene), store: [...transitions], frames };
+    };
+    try {
+      const before = useAppStore.getState();
+      const initial = sceneCallLog(current.scene);
+      const firstDraw = step(() => undefined);
+      const select = step(() => { useAppStore.setState({ hoveredElementId: 'body-1', selection: ['body-1'] }); });
+      const sketchDrag = step(() => { useAppStore.getState().setDragResolved({ ...useAppStore.getState().resolvedSketch }); });
+      const cameraDrag = step(() => { current.controls.interactive(true); current.controls.changed(); current.controls.interactive(false); });
+      const assemblyDrag = step(() => {
+        useAppStore.setState({ assemblyDragOverlay: { document: createAssemblyDocument('drag overlay'),
+          library: useAppStore.getState().assemblyLibrary, documentId: 'drag-document', version: 1, generation: 1,
+          placements: new Map(), validatedIds: [] } });
+      });
+      const cancel = step(() => {
+        useAppStore.getState().endSketchDrag(false);
+        useAppStore.setState({ assemblyDragOverlay: null });
+        useAppStore.getState().cancelRecompute();
+        useAppStore.setState({ hoveredElementId: null, selection: [] });
+      });
+      const idle = step(() => undefined);
+      expect({ initial, firstDraw, select, sketchDrag, cameraDrag, assemblyDrag, cancel, idle }).toEqual(BASELINE_VIEWPORT_CANVAS_SERIES);
+      expect(current.assembly.cancelDrag).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+    } finally { unsubscribe(); current.cleanup(); }
+  });
+});
+
+const SERIES_RENDER = 'render[{},"perspective","shadedWithEdges",true,100]';
+/**
+ * 作り直しの前の版(ViewportCanvas が 1 つの関数だった時)で記録した、選択・ドラッグ・取消の系列の
+ * ストアの更新と scene への受け渡しの並び。作り直しの後もこの期待を変えずに通ることを、境界を動かしても
+ * 動きが同じことの証拠にする。
+ */
+const BASELINE_VIEWPORT_CANVAS_SERIES = {
+  initial: ['resize[640,480]', 'setSketch(no-mesh)', 'setSketchHighlight[null,[]]', 'setBodies', 'setAssembly(empty)',
+    'setInterference', 'setAppearance', 'setBodyHighlight[null,[]]', 'setSubShapeHighlight[null,[]]', 'setReferenceRepairPreview',
+    'setWorkPlane', 'setWorkPlaneVisible', 'setConstructionIds', 'setConstrainedFeatureIds', 'setReferences', 'setEditPreview',
+    'setTracking', 'setConstraintMarks', 'setSelectedConstraint', 'setInferredConstraintMarks', 'setMeasurement',
+    'setCutPreview[null]', 'setSphereGrid[null]', 'setCylinderBasisGuide', 'setPlanarBasisGuide', 'setSectionView[null]',
+    'setPrintability[null]', 'setAnalysisField', 'setAnalysisMode', 'setCanvases'],
+  firstDraw: { frames: 0, scene: ['setThemeColors', SERIES_RENDER], store: [] },
+  select: { frames: 1, scene: ['setReferenceRepairPreview', 'setSketchHighlight["body-1",["body-1"]]',
+    'setBodyHighlight["body-1",["body-1"]]', 'setSubShapeHighlight["body-1",["body-1"]]', 'setAssembly(empty)',
+    'setCutPreview[null]', 'setCylinderBasisGuide', 'setPlanarBasisGuide', 'setSphereGrid[null]', SERIES_RENDER],
+  store: [['hoveredElementId', 'selection']] },
+  sketchDrag: { frames: 1, scene: ['setReferenceRepairPreview', 'setSketch(no-mesh)', SERIES_RENDER], store: [['dragResolved']] },
+  cameraDrag: { frames: 1, scene: ['setInteractiveRendering[true]', 'setInteractiveRendering[false]', SERIES_RENDER], store: [] },
+  assemblyDrag: { frames: 1, scene: ['setReferenceRepairPreview', 'setAssembly(empty)', SERIES_RENDER],
+    store: [['assemblyDragOverlay']] },
+  cancel: { frames: 1, scene: ['setReferenceRepairPreview', 'setSketch(no-mesh)', 'setReferenceRepairPreview', 'setAssembly(empty)',
+    'setReferenceRepairPreview', 'setBodies', 'setCylinderBasisGuide', 'setPlanarBasisGuide', 'setReferenceRepairPreview',
+    'setSketchHighlight[null,[]]', 'setBodyHighlight[null,[]]', 'setSubShapeHighlight[null,[]]', 'setAssembly(empty)',
+    'setCutPreview[null]', 'setCylinderBasisGuide', 'setPlanarBasisGuide', 'setSphereGrid[null]', SERIES_RENDER],
+  store: [['dragResolved'], ['assemblyDragOverlay'], ['cancelRequestCount'], ['hoveredElementId', 'selection']] },
+  idle: { frames: 0, scene: [], store: [] },
+};

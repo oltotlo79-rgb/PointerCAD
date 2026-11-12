@@ -225,7 +225,7 @@
     {
       "file": "e2e/release/packagedDesktop.spec.ts",
       "category": "release-config",
-      "sha256": "5b7acf236088f7c3fde04373f0fed0febcc25ee419c5db98c831800156c4eae5",
+      "sha256": "4187e6394390a6bb8d43f946e172dd0719548f332ec293ee825c86abf34106d9",
       "reason": "packaged-desktop.config.ts variant"
     },
     {

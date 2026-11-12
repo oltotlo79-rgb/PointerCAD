@@ -34,9 +34,13 @@ describe('Netgen exact retained distribution source', () => {
     expect(evidence.headerSourceCorrespondence.every(row => row.byteIdentical)).toBe(true);
     expect(byName(components, 'FEM: Netgen pybind11')?.version).toBe('98e50b702d9ab784ec918399aaa20adcfd1af9a9');
     expect(byName(components, 'FEM: Netgen zlib')?.version).toBe('1.3.1');
-    for (const name of ['FEM: Netgen pybind11', 'FEM: Netgen zlib', 'FEM: Netgen concurrentqueue', 'FEM: Netgen gzstream']) {
-      expect(byName(components, name)?.properties).toContainEqual({ name: 'pointercad:licenseStatus', value: 'unclassified' });
-      expect(byName(components, name)?.licenses).toBeUndefined();
+    // pybind11 は同梱原文だけでは識別子が決まらないので未分類のまま(識別子は配布の許可の判断ではない)。
+    expect(byName(components, 'FEM: Netgen pybind11')?.properties).toContainEqual({ name: 'pointercad:licenseStatus', value: 'unclassified' });
+    expect(byName(components, 'FEM: Netgen pybind11')?.licenses).toBeUndefined();
+    // zlib・concurrentqueue・gzstream は同梱原文の全文から決まる識別子だけを持つ(sbom.test.ts の専用の検査が結び付けを確かめる)。
+    for (const [name, id] of [['FEM: Netgen zlib', 'Zlib'], ['FEM: Netgen concurrentqueue', 'BSL-1.0'], ['FEM: Netgen gzstream', 'LGPL-2.1-or-later']]) {
+      expect(byName(components, name)?.properties).toContainEqual({ name: 'pointercad:licenseStatus', value: 'classified' });
+      expect(byName(components, name)?.licenses).toEqual([{ license: { id } }]);
     }
     const mpi4py = byName(components, 'FEM: Netgen mpi4py header');
     expect(mpi4py?.licenses).toEqual([{ license: { id: 'BSD-3-Clause' } }]);

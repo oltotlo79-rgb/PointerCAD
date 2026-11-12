@@ -96,6 +96,14 @@ export function verifyFontAssetParity(root: string): Map<string, string>;
 export function collectSbomComponents(root?: string): SbomComponents;
 export function femComponentsFromDistribution(distribution: FemDistributionAssets): SbomComponent[];
 export function femDistributionGapsFromDistribution(distribution: FemDistributionAssets): string[];
+/** A retained Netgen dependency record (name, optional version, notice paths) and the FEM manifest file pins. */
+export interface NetgenDependencyRecord {
+  readonly name: string;
+  readonly version?: string;
+  readonly notices: readonly string[];
+}
+// The SPDX id read from the dependency's own shipped notices, or undefined unless name, version, notice set and pins all match.
+export function netgenDependencyLicense(item: NetgenDependencyRecord, files: Readonly<Record<string, { readonly sha256: string }>>): string | undefined;
 export function assembleSbomDocument(collected: SbomComponentsInput, options: SbomAssembleOptions): SbomDocument;
 export function buildSbom(root?: string, options?: SbomBuildOptions): SbomDocument;
 // The four functions below validate a JSON-like document at runtime (a saved sbom.json or

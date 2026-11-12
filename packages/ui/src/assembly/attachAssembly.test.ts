@@ -2148,3 +2148,143 @@ describe('initial Assembly observation waits for another request reply clone bef
     } finally { detach(); }
   });
 });
+
+// CI 2026-11-12 (4621eafa, Windows): old part meshes were collected while a new assembly observed the ledger, so the one
+// conflict restart was spent and the next released-only change failed it. Released-only changes are taken again without
+// that restart, in one place, for each of the nine refusals R1-R9 of the initial observation and its freshness checks.
+describe('initial Assembly observation takes released-only ledger changes again in one place', () => {
+  type Capture = NonNullable<AssemblyKernelBridge['captureCurrentMeshLedger']>;
+  type Inspect = NonNullable<AssemblyKernelBridge['inspectSourceMeshBackings']>;
+  type Release = NonNullable<AssemblyKernelBridge['meshLedgerRelease']>;
+  interface Script {
+    /** Ledger reason per capture call in order; null is the issued fixture receipt. */
+    readonly captures?: readonly (string | null)[];
+    readonly inspections?: readonly (string | null)[];
+    /** 1-based index of the issued receipt that the bridge reports as no longer current. */
+    readonly staleIssued?: number;
+    /** How many first inspection freshness checks report the inspection as no longer current. */
+    readonly staleInspections?: number;
+    /** What the ledger reports about a stale receipt's host changes; records fall at every reading unless `stalled`. */
+    readonly releasedOnly?: boolean;
+    readonly stalled?: boolean;
+  }
+  function scripted(fake: ReturnType<typeof fakeBridge>, script: Script) {
+    const capture = fake.bridge.captureCurrentMeshLedger?.bind(fake.bridge);
+    const inspect = fake.bridge.inspectSourceMeshBackings?.bind(fake.bridge);
+    const current = fake.bridge.currentMeshLedgerReceipt?.bind(fake.bridge);
+    const currentInspection = fake.bridge.currentSourceMeshBackingInspection?.bind(fake.bridge);
+    if (capture === undefined || inspect === undefined || current === undefined || currentInspection === undefined) {
+      throw new Error('Issued fixture required');
+    }
+    const staleReceipts = new WeakSet<object>();
+    let captureCalls = 0, issued = 0, inspectionCalls = 0, inspectionChecks = 0, records = 1000;
+    const captures = vi.fn<Capture>(async input => {
+      const reason = script.captures?.[captureCalls++] ?? null;
+      if (reason !== null) return { status: 'unknown', observationId: input.observationId, reason };
+      const receipt = await capture(input);
+      issued += 1;
+      if (issued === script.staleIssued) staleReceipts.add(receipt);
+      return receipt;
+    });
+    const inspections = vi.fn<Inspect>((receipt, buffers) => {
+      const reason = script.inspections?.[inspectionCalls++] ?? null;
+      return reason === null ? inspect(receipt, buffers) : Promise.resolve({ status: 'unknown', reason });
+    });
+    const release = vi.fn<Release>(since => {
+      if (script.stalled !== true) records -= 1;
+      return { releasedOnly: since !== null && script.releasedOnly === true, records };
+    });
+    fake.bridge.captureCurrentMeshLedger = captures;
+    fake.bridge.inspectSourceMeshBackings = inspections;
+    fake.bridge.currentMeshLedgerReceipt = receipt => !staleReceipts.has(receipt) && current(receipt);
+    fake.bridge.currentSourceMeshBackingInspection = (inspection, receipt) =>
+      inspectionChecks++ >= (script.staleInspections ?? 0) && currentInspection(inspection, receipt);
+    fake.bridge.meshLedgerRelease = release;
+    fake.bridge.awaitMeshReplySettlement = () => Promise.resolve('settled');
+    return { captures, inspections, release };
+  }
+  async function observe(fake: ReturnType<typeof fakeBridge>) {
+    const f = await fixture(), events: string[] = [];
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge, undefined, event => { events.push(`${event.stage}:${event.reason ?? ''}`); });
+    try { await settle(); } finally { detach(); }
+    return events;
+  }
+  const restarts = (events: readonly string[]) => events.filter(event => event.startsWith('observation-restarted:'));
+
+  it('reproduces the CI order: a growth conflict, then old meshes collected during the inspection, publishes success', async () => {
+    const fake = fakeBridge();
+    const { captures, inspections } = scripted(fake, { captures: ['host-epoch-changed'], inspections: ['host-epoch-changed'],
+      staleIssued: 1, releasedOnly: true });
+    const events = await observe(fake);
+    expect(useAppStore.getState().lastOutcome).toBe('success');
+    expect(restarts(events)).toEqual(['observation-restarted:host-epoch-changed', 'observation-restarted:host-backings-released']);
+    expect(captures).toHaveBeenCalledTimes(3); expect(inspections).toHaveBeenCalledTimes(2);
+    expect(events).toContain('publication-admitted:success');
+    expect(events.some(event => event.startsWith('calculate-threw-before-cleanup:'))).toBe(false);
+  });
+
+  it('keeps failing with the stage when growth conflicts happen twice (the single conflict restart is spent)', async () => {
+    const fake = fakeBridge();
+    const { captures, inspections } = scripted(fake, { captures: ['host-epoch-changed'], inspections: ['host-epoch-changed'],
+      staleIssued: 1, releasedOnly: false });
+    const events = await observe(fake);
+    expect(useAppStore.getState().lastOutcome).toBe('failed');
+    expect(useAppStore.getState().assemblyView).toBeNull();
+    expect(captures).toHaveBeenCalledTimes(2); expect(inspections).toHaveBeenCalledTimes(1);
+    expect(restarts(events)).toEqual(['observation-restarted:host-epoch-changed']);
+    expect(events).toContain('calculate-threw-before-cleanup:receipt-stale');
+  });
+
+  it('a released-only refusal without real progress cannot loop: it spends the conflict restart and then fails', async () => {
+    const fake = fakeBridge();
+    const { captures } = scripted(fake, { captures: ['host-backings-released', 'host-backings-released'], stalled: true });
+    const events = await observe(fake);
+    expect(useAppStore.getState().lastOutcome).toBe('failed');
+    expect(captures).toHaveBeenCalledTimes(2);
+    expect(restarts(events)).toEqual(['observation-restarted:host-backings-released']);
+    expect(events).toContain('calculate-threw-before-cleanup:receipt-unknown');
+  });
+
+  it.each([
+    ['R1 capture released', { captures: ['host-backings-released', 'host-epoch-changed'] }, 'host-backings-released'],
+    ['R2 capture pending', { captures: ['pending-reply', 'host-epoch-changed'] }, 'pending-reply'],
+    ['R3 inspection released', { captures: [null, 'host-epoch-changed'], inspections: ['host-backings-released'] }, 'host-backings-released'],
+    ['R4 inspection pending', { captures: [null, 'host-epoch-changed'], inspections: ['pending-reply'] }, 'pending-reply'],
+    ['R5 inspection global change', { captures: [null, 'host-epoch-changed'], inspections: ['global-epoch-changed'], releasedOnly: true },
+      'host-backings-released'],
+    ['R6 inspection stale receipt', { captures: [null, 'host-epoch-changed'], inspections: ['unissued-or-stale-receipt'], releasedOnly: true },
+      'host-backings-released'],
+    ['R7 receipt freshness', { captures: [null, 'host-epoch-changed'], staleIssued: 1, releasedOnly: true }, 'host-backings-released'],
+    ['R8 inspection freshness', { captures: [null, 'host-epoch-changed'], staleInspections: 1, releasedOnly: true }, 'host-backings-released'],
+  ] as const)('%s: one released-only change is taken again without the conflict restart', async (name, script: Script, reason) => {
+    const fake = fakeBridge();
+    const { captures } = scripted(fake, script);
+    const events = await observe(fake);
+    expect(useAppStore.getState().lastOutcome, name).toBe('success');
+    // The following growth conflict still has its single restart: the released-only change did not spend it.
+    expect(restarts(events)).toEqual([`observation-restarted:${reason}`, 'observation-restarted:host-epoch-changed']);
+    expect(captures).toHaveBeenCalledTimes(3);
+    expect(events.some(event => event.startsWith('calculate-threw-before-cleanup:'))).toBe(false);
+  });
+
+  it('R9 UI freshness: a UI backing released during the observation is taken again without the conflict restart', async () => {
+    const held = new ArrayBuffer(8);
+    assemblyUiBackings.adopt([held]);
+    const fake = fakeBridge();
+    const { captures } = scripted(fake, { captures: [null, 'host-epoch-changed'] });
+    const issue = captures.getMockImplementation();
+    if (issue === undefined) throw new Error('Scripted capture required');
+    const buffers = assemblyUiBackings.buffers.bind(assemblyUiBackings), revision = assemblyUiBackings.epoch.bind(assemblyUiBackings);
+    let released = false;
+    const readBuffers = vi.spyOn(assemblyUiBackings, 'buffers').mockImplementation(() => buffers().filter(buffer => !released || buffer !== held));
+    const readRevision = vi.spyOn(assemblyUiBackings, 'epoch').mockImplementation(() => revision() + (released ? 1 : 0));
+    captures.mockImplementation(async input => { const receipt = await issue(input); released = true; return receipt; });
+    try {
+      const events = await observe(fake);
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      expect(restarts(events)).toEqual(['observation-restarted:ui-backings-released', 'observation-restarted:host-epoch-changed']);
+      expect(captures).toHaveBeenCalledTimes(3);
+    } finally { readBuffers.mockRestore(); readRevision.mockRestore(); }
+  });
+});

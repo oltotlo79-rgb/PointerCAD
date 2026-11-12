@@ -1093,7 +1093,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
     }
     if (providers.length !== realmMeshProviders.size) return refused('worker-provider-changed');
     if (after.status !== 'known') return refused(after.reason);
-    if (after.epoch !== before.epoch || after.pendingCloneBytes !== 0) return refused('host-epoch-changed');
+    if (after.epoch !== before.epoch || after.pendingCloneBytes !== 0) return refused(host.conflictSince(before.epoch, after.pendingCloneBytes));
     const admittedBoundBytes = workerRetainedBackingBytes + after.retainedBackingBytes;
     if (!Number.isSafeInteger(admittedBoundBytes)) return refused('overflow');
     if (admittedBoundBytes > MESH_LEDGER_LIMIT_BYTES) return refused('budget-exceeded');
@@ -1471,7 +1471,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
         if (phaseCapture === capture) { phases.endCapture(nonce); phaseCapture = null; }
       }
     },
-    pendingWaiters: () => connection.waiters.size,
+    pendingWaiters: () => connection.waiters.size, meshLedgerRelease: since => ledger.host.releaseSince(since),
     meshLedgerOwner: ledger.owner, awaitMeshReplySettlement: ({ alive }) => ledger.host.waitForNoPendingClone(alive),
     inspectSourceMeshBackings: async (receipt, buffers) => {
       const unknown = (): SourceMeshBackingInspection => ({ status: 'unknown', reason: 'transport-unavailable' });

@@ -313,18 +313,116 @@ async function awaitPendingReply(bridge: AssemblyKernelBridge, request: Request,
   return true;
 }
 
-/** Obtain a complete fresh observation only after an explicit epoch conflict or a settled pending reply. */
+type LedgerReceipt = Awaited<ReturnType<NonNullable<AssemblyKernelBridge['captureCurrentMeshLedger']>>>;
+type LedgerInspection = Awaited<ReturnType<NonNullable<AssemblyKernelBridge['inspectSourceMeshBackings']>>>;
+interface AssemblyObservation {
+  readonly receipt: LedgerReceipt | undefined;
+  readonly inspection: LedgerInspection | undefined;
+  readonly uiInputs: readonly ArrayBuffer[];
+  readonly uiGeneration: number;
+}
+interface CurrentObservation {
+  readonly status: 'current';
+  readonly receipt: Extract<LedgerReceipt, { status: 'known' }>;
+  readonly inspection: Extract<LedgerInspection, { status: 'known' }>;
+  readonly uiInputs: readonly ArrayBuffer[];
+  readonly uiGeneration: number;
+}
+/** Why a taken observation is not current: the refusing stage, the ledger reason if any, and the receipt's host generation. */
+interface StaleObservation { readonly status: 'stale'; readonly stage: string; readonly reason: string | null; readonly since: number | null }
+
+/**
+ * The synchronous freshness of a taken observation (R6-R9 and the unavailable stages). The observation loop takes it
+ * again on a transient refusal; the publication refuses on any, with no await before publishing. One definition serves both.
+ */
+function checkObservation(bridge: AssemblyKernelBridge, observation: AssemblyObservation): CurrentObservation | StaleObservation {
+  const { receipt, inspection, uiInputs, uiGeneration } = observation;
+  const inspectionReason = inspection?.status === 'unknown' ? inspection.reason : null;
+  const stale = (stage: string, reason: string | null = inspectionReason): StaleObservation =>
+    ({ status: 'stale', stage, reason, since: receipt?.status === 'known' ? receipt.hostEpoch : null });
+  if (receipt === undefined) return stale('receipt-unavailable');
+  if (bridge.currentMeshLedgerReceipt?.(receipt) !== true || receipt.status !== 'known') return stale('receipt-stale');
+  if (inspection === undefined) return stale('inspection-unavailable');
+  if (inspection.status !== 'known') return stale('inspection-unknown');
+  if (bridge.currentSourceMeshBackingInspection?.(inspection, receipt) !== true) return stale('inspection-stale', null);
+  if (assemblyUiBackings.epoch() !== uiGeneration) return stale('ui-epoch-changed', null);
+  return { status: 'current', receipt, inspection, uiInputs, uiGeneration };
+}
+
+/** The publication's refusal of a stale observation, with the gates of the stage-by-stage checks it replaces. */
+function refuseStale(request: Request, stale: StaleObservation, gate: ObservationGates['gate']): never {
+  const message = t('assembly.recomputeFailed');
+  gate(request, stale.stage, stale.stage === 'inspection-unknown' ? stale.reason : message);
+  throw new AssemblyRecomputeRefusal(stale.stage, message);
+}
+
+/** What one initial observation may still spend on taking itself again (counts, never times). */
+interface RestartAllowance { conflictRestarts: number; pendingWaits: number; records: number | null }
+/** Concurrent growth changes, and released-only claims without progress: they share the single conflict restart. */
+const GROWTH_CONFLICTS: ReadonlySet<string> = new Set(['host-epoch-changed', 'global-epoch-changed', 'receipt-stale',
+  'inspection-stale', 'host-backings-released']);
+/** Refusals whose cause the ledger can tell as released-only from the receipt's host generation. */
+const RELEASE_CLASSIFIED: ReadonlySet<string> = new Set(['host-epoch-changed', 'global-epoch-changed',
+  'unissued-or-stale-receipt', 'receipt-stale', 'inspection-stale']);
+
+/**
+ * The released-only restart reason, or null. A ledger release counts only while the ledger's releasable record count
+ * strictly falls, and a UI release only while the observed UI backings strictly shrink to a subset: each record or
+ * backing is released once, so a run of these restarts is finite without spending the conflict restart.
+ */
+function releasedRestart(bridge: AssemblyKernelBridge, key: string, since: number | null, uiInputs: readonly ArrayBuffer[],
+  allowance: RestartAllowance): string | null {
+  if (key === 'ui-epoch-changed') {
+    const observed = new Set<ArrayBufferLike>(uiInputs), live = assemblyUiBackings.buffers();
+    return assemblyUiBackings.known() && live.length < uiInputs.length && live.every(buffer => observed.has(buffer))
+      ? 'ui-backings-released' : null;
+  }
+  const explicit = key === 'host-backings-released';
+  if (!explicit && (since === null || !RELEASE_CLASSIFIED.has(key))) return null;
+  const reading = bridge.meshLedgerRelease?.(explicit ? null : since);
+  if (reading === undefined || (!explicit && !reading.releasedOnly)
+    || allowance.records === null || reading.records >= allowance.records) return null;
+  allowance.records = reading.records;
+  return 'host-backings-released';
+}
+
+/**
+ * The one place a transient refusal of the initial observation (R1-R9) is classified. Returns the reason it is taken
+ * again with, null when the request became obsolete during a wait, or false when it is not taken again:
+ * - `pending-reply`: wait for the reply's actual settlement (awaitPendingReply, at most PENDING_REPLY_WAITS waits);
+ * - released records or UI backings only: no conflict restart, bounded by real progress (releasedRestart);
+ * - a concurrent growth change: the single conflict restart. A second one, or anything else, is not taken again.
+ */
+async function restartObservation(bridge: AssemblyKernelBridge, request: Request, stale: StaleObservation,
+  uiInputs: readonly ArrayBuffer[], allowance: RestartAllowance, gates: ObservationGates): Promise<string | null | false> {
+  const key = stale.reason ?? stale.stage;
+  if (key === 'pending-reply' && bridge.awaitMeshReplySettlement !== undefined) {
+    allowance.pendingWaits += 1;
+    if (!(await awaitPendingReply(bridge, request, allowance.pendingWaits, gates))) return null;
+    allowance.records = bridge.meshLedgerRelease?.(null).records ?? null;
+    return key;
+  }
+  const released = releasedRestart(bridge, key, stale.since, uiInputs, allowance);
+  if (released !== null) return released;
+  if (!GROWTH_CONFLICTS.has(key) || allowance.conflictRestarts > 0) return false;
+  allowance.conflictRestarts += 1;
+  allowance.records = bridge.meshLedgerRelease?.(null).records ?? null;
+  return key;
+}
+
+/**
+ * Takes the initial ledger observation and checks it exactly as the publication does, taking it again from the start
+ * whenever restartObservation classifies the refusal as transient. An inspection or freshness refusal that is not
+ * taken again is returned for the publication to refuse with its own stage and gates.
+ */
 async function captureInitialAssemblyObservation(
   bridge: AssemblyKernelBridge, request: Request, sources: ReadonlyMap<string, AssemblySourceMeshOwner>,
   owners: Parameters<NonNullable<AssemblyKernelBridge['captureCurrentMeshLedger']>>[0]['owners'],
   gates: ObservationGates,
-) {
+): Promise<AssemblyObservation | undefined> {
   const { obsolete, gate, refuse } = gates;
-  let receipt: Awaited<ReturnType<NonNullable<AssemblyKernelBridge['captureCurrentMeshLedger']>>> | undefined;
-  let inspection: Awaited<ReturnType<NonNullable<AssemblyKernelBridge['inspectSourceMeshBackings']>>> | undefined;
-  let uiInputs: ArrayBuffer[], uiGeneration: number;
-  // The one explicit epoch-conflict restart is counted apart from pending-reply waits, so a wait never consumes it.
-  let conflictRestarts = 0, pendingWaits = 0;
+  const allowance: RestartAllowance = { conflictRestarts: 0, pendingWaits: 0,
+    records: bridge.meshLedgerRelease?.(null).records ?? null };
   for (let attempt = 0; ; attempt += 1) {
     if (obsolete(request)) return;
     if ([...sources.values()].some(source => !source.current())) refuse(request, 'source-owner-stale', t('assembly.recomputeFailed'));
@@ -334,46 +432,39 @@ async function captureInitialAssemblyObservation(
     if (!assemblyUiBackings.known() || uiBuffers.some(buffer => !(buffer instanceof ArrayBuffer))) {
       refuse(request, 'ui-backing-refused', t('assembly.recomputeFailed'));
     }
-    uiInputs = uiBuffers.filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
-    uiGeneration = assemblyUiBackings.epoch();
+    const uiInputs = uiBuffers.filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
+    const uiGeneration = assemblyUiBackings.epoch();
     gate(request, 'ui-backing-admitted', null, uiInputs.length);
-    receipt = await bridge.captureCurrentMeshLedger?.({
+    const receipt = await bridge.captureCurrentMeshLedger?.({
       observationId: `assembly:${request.documentId}:${request.generation}:${attempt}`, owners,
     });
     gate(request, 'receipt', receipt?.status ?? 'unavailable', receipt?.status === 'unknown' ? null : owners.length);
     if (receipt?.status === 'unknown') gate(request, 'receipt-reason', receipt.reason);
     if (obsolete(request)) return;
     if ([...sources.values()].some(source => !source.current())) refuse(request, 'source-owner-stale', t('assembly.recomputeFailed'));
+    let observation: AssemblyObservation | null = null, stale: StaleObservation;
     if (receipt?.status === 'unknown') {
       gate(request, 'receipt-unknown', receipt.reason);
-      if (conflictRestarts === 0 && receipt.reason === 'host-epoch-changed') {
-        conflictRestarts += 1;
-        gate(request, 'observation-restarted', receipt.reason, attempt + 1);
-        continue;
-      }
-      if (receipt.reason !== 'pending-reply' || bridge.awaitMeshReplySettlement === undefined) {
-        throw new AssemblyRecomputeRefusal('receipt-unknown', t('assembly.recomputeFailed'));
-      }
-      pendingWaits += 1;
-      if (!(await awaitPendingReply(bridge, request, pendingWaits, gates))) return;
-      gate(request, 'observation-restarted', receipt.reason, attempt + 1);
-      continue;
+      stale = { status: 'stale', stage: 'receipt-unknown', reason: receipt.reason, since: null };
+    } else {
+      const inspection = receipt === undefined ? undefined : await bridge.inspectSourceMeshBackings?.(receipt, uiInputs);
+      if (obsolete(request)) return;
+      if ([...sources.values()].some(source => !source.current())) refuse(request, 'source-owner-stale', t('assembly.recomputeFailed'));
+      gate(request, 'inspection', inspection?.status ?? 'unavailable');
+      if (inspection?.status === 'unknown') gate(request, 'inspection-reason', inspection.reason);
+      observation = { receipt, inspection, uiInputs, uiGeneration };
+      const checked = checkObservation(bridge, observation);
+      if (checked.status === 'current') return observation;
+      stale = checked;
     }
-    inspection = receipt === undefined ? undefined : await bridge.inspectSourceMeshBackings?.(receipt, uiInputs);
-    if (obsolete(request)) return;
-    if ([...sources.values()].some(source => !source.current())) refuse(request, 'source-owner-stale', t('assembly.recomputeFailed'));
-    gate(request, 'inspection', inspection?.status ?? 'unavailable');
-    if (inspection?.status === 'unknown') {
-      gate(request, 'inspection-reason', inspection.reason);
-      if (conflictRestarts === 0 && inspection.reason === 'host-epoch-changed') {
-        conflictRestarts += 1;
-        gate(request, 'observation-restarted', inspection.reason, attempt + 1);
-        continue;
-      }
+    const restart = await restartObservation(bridge, request, stale, uiInputs, allowance, gates);
+    if (restart === null) return;
+    if (restart === false) {
+      if (observation === null) throw new AssemblyRecomputeRefusal('receipt-unknown', t('assembly.recomputeFailed'));
+      return observation;
     }
-    break;
+    gate(request, 'observation-restarted', restart, attempt + 1);
   }
-  return { receipt, inspection, uiInputs, uiGeneration };
 }
 
 /** 部品再計算だけは検査用に差し替えられる。合致は常にmodelの実solverを使う。 */
@@ -728,16 +819,11 @@ export function attachAssembly(
       ? source.hiddenOwners : [source.displayOwner, ...source.hiddenOwners]);
     const observation = await captureInitialAssemblyObservation(bridge, request, sources, owners, { obsolete, gate, refuse });
     if (observation === undefined || obsolete(request)) return;
-    const { receipt, inspection, uiInputs, uiGeneration } = observation;
+    const checked = checkObservation(bridge, observation);
+    if (checked.status === 'stale') refuseStale(request, checked, gate);
+    const { receipt, inspection, uiInputs, uiGeneration } = checked;
+    gate(request, 'receipt-current'); gate(request, 'inspection-current');
     const publication = useAppStore.getState();
-    if (receipt === undefined) refuse(request, 'receipt-unavailable', t('assembly.recomputeFailed'));
-    if (bridge.currentMeshLedgerReceipt?.(receipt) !== true) refuse(request, 'receipt-stale', t('assembly.recomputeFailed'));
-    gate(request, 'receipt-current');
-    if (inspection === undefined) refuse(request, 'inspection-unavailable', t('assembly.recomputeFailed'));
-    if (inspection.status !== 'known') { gate(request, 'inspection-unknown', inspection.reason); throw new AssemblyRecomputeRefusal('inspection-unknown', t('assembly.recomputeFailed')); }
-    if (bridge.currentSourceMeshBackingInspection?.(inspection, receipt) !== true) refuse(request, 'inspection-stale', t('assembly.recomputeFailed'));
-    gate(request, 'inspection-current');
-    if (assemblyUiBackings.epoch() !== uiGeneration) refuse(request, 'ui-epoch-changed', t('assembly.recomputeFailed'));
     if (publication.assembly !== request.document) refuse(request, 'document-changed', t('assembly.recomputeFailed'));
     if (publication.assemblyLibrary !== request.library) refuse(request, 'library-changed', t('assembly.recomputeFailed'));
     if (publication.activeDocumentId !== request.documentId) refuse(request, 'document-id-changed', t('assembly.recomputeFailed'));

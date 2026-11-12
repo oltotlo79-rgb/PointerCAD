@@ -7,6 +7,7 @@
  * 確かめる方針(P2 タスク20 から続く決め方)なので、ここでは印の線分の座標を作る
  * `buildThreadMarkPositions` だけを検査する。
  */
+import { createHash } from 'node:crypto';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   appearanceFromPreset,
@@ -25,7 +26,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
 import type { PatternTextureSource } from '../appearance/createAppearanceMaterial.js';
 import { printabilityTriangleOffsets } from '../solid/printabilityColors.js';
-import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
+import { subShapeElementId, type SolidFaceEntry } from '../solid/subShapeSelection.js';
 import {
   buildSolidGeometry, type AppearanceInput, type SolidBodyWithSubShapes,
   type SolidDrawEntry, type SolidGeometryBundle,
@@ -1559,7 +1560,197 @@ describe('createSolidLayer の繰り返し更新と資源寿命(R07)', () => {
       expect(intersect).toHaveBeenCalledTimes(2);
     }
   });
+
+  it('100回の装着と破棄で、全ての入口を通した後も作った形・材質・柄の画像を全て解放し差が0になる', () => {
+    const geometryDispose = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose');
+    const materialDispose = vi.spyOn(THREE.Material.prototype, 'dispose');
+    const textureDispose = vi.spyOn(THREE.Texture.prototype, 'dispose');
+    // The environment map belongs to the scene, not to the layer, so it is made outside the counted range.
+    const environment = new THREE.Texture();
+    const disposedIds = (contexts: readonly unknown[]): Set<number> => {
+      const found = new Set<number>();
+      for (const context of contexts) {
+        const id: unknown = typeof context === 'object' && context !== null ? Reflect.get(context, 'id') : undefined;
+        if (typeof id === 'number') found.add(id);
+      }
+      return found;
+    };
+    const counters = (): number[] => [new THREE.BufferGeometry().id, materialId(new THREE.MeshBasicMaterial()),
+      new THREE.Texture().id];
+    const counts: string[] = [];
+    try {
+      for (let cycle = 0; cycle < 100; cycle += 1) {
+        const before = counters();
+        const layer = createSolidLayer(fakePatterns());
+        exerciseEveryLayerInput(layer, environment);
+        layer.dispose();
+        expect(layer.group.children).toHaveLength(0);
+        const after = counters();
+        const disposed = [geometryDispose, materialDispose, textureDispose].map(spy => disposedIds(spy.mock.contexts));
+        const leaked = before.map((first, kind) => {
+          const missing: number[] = [];
+          for (let id = first + 1; id < after[kind]; id += 1) if (!disposed[kind].has(id)) missing.push(id);
+          return missing;
+        });
+        expect(leaked).toEqual([[], [], []]);
+        counts.push(before.map((first, kind) => after[kind] - first - 1).join('/'));
+      }
+      // Every cycle creates the same number of geometries, materials and textures (nothing accumulates).
+      expect(new Set(counts).size).toBe(1);
+      expect(counts[0]).not.toBe('0/0/0');
+    } finally { environment.dispose(); }
+  });
+
+  it('全ての入口を順に通した各段の表示の木(種類・作った順・描く順・材質・形の並び)が分ける前と同じ', () => {
+    const base = { object: new THREE.Object3D().id, geometry: new THREE.BufferGeometry().id,
+      material: materialId(new THREE.MeshBasicMaterial()), texture: new THREE.Texture().id };
+    const environment = new THREE.Texture();
+    const layer = createSolidLayer(fakePatterns());
+    const prints: string[] = [];
+    exerciseEveryLayerInput(layer, environment, (name) => { prints.push(`${name} = ${layerFingerprint(layer, base)}`); });
+    layer.dispose();
+    prints.push(`disposed = ${layerFingerprint(layer, base)}`);
+    environment.dispose();
+    expect(prints).toEqual(LAYER_PRINTS);
+  });
 });
+
+/**
+ * A pattern source that makes real textures without a canvas. Like `patternTexture.ts`, the source owns the
+ * originals and releases them in `disposeAll`; the material store owns and releases its clones.
+ */
+function fakePatterns(): PatternTextureSource {
+  const created: THREE.Texture[] = [];
+  return {
+    create: () => {
+      const pair = { texture: new THREE.Texture(), alphaTexture: new THREE.Texture() };
+      created.push(pair.texture, pair.alphaTexture);
+      return pair;
+    },
+    disposeAll: () => { for (const texture of created.splice(0)) texture.dispose(); },
+  };
+}
+
+/** Every public input of the solid layer, in an order that also retires draws, marks and overlays. */
+function exerciseEveryLayerInput(layer: ReturnType<typeof createSolidLayer>, environment: THREE.Texture,
+  after: (name: string) => void = () => undefined): void {
+  const preset = appearanceFromPreset('expandedMetal');
+  if (preset.pattern.kind === 'none') throw new Error('expected patterned preset');
+  const patterned: AppearanceSpec = { ...preset, pattern: { ...preset.pattern, spacing: expressionValueFromNumber(20) } };
+  const appearance: AppearanceInput = { defaultAppearance: DEFAULT_APPEARANCE, byBody: new Map([
+    ['first', { bodyAppearance: patterned, faceAppearances: new Map([[1, coloredAppearance('#ff0000')]]) }]]) };
+  const first: SolidBodyWithSubShapes = { ...makeBody('first', 3),
+    coordinateFrame: { space: 'local', origin: [5, 0, 0], maximumFloat32ErrorMm: 0.001 } };
+  const second = makeBody('second', 2);
+  const marks: ThreadMarkInfo[] = [
+    { origin: [0, 0, 0], direction: [0, 0, 1], majorDiameter: 6, length: 10 },
+    { origin: [1e6, 0, 0], direction: [1, 0, 0], majorDiameter: 4, length: 5 },
+  ];
+  const raycaster = new THREE.Raycaster(new THREE.Vector3(5, 0, 10), new THREE.Vector3(0, 0, -1));
+  layer.update(buildSolidGeometry([first, second], null, [], appearance), 'shadedWithEdges', environment);
+  after('two-bodies');
+  layer.updateSubShapes(buildSubShapeGeometry([first, second], subShapeElementId('second', 'face', 0),
+    [subShapeElementId('first', 'face', 0), subShapeElementId('first', 'face', 2)]));
+  after('sub-shapes');
+  layer.update(buildSolidGeometry([first, second], 'second', ['first'], appearance), 'wireframe', environment);
+  after('emphasis-wireframe');
+  layer.updateThreadMarks(marks);
+  after('thread-marks');
+  layer.updateSphereGrid(buildSphereGridPositions({ center: [0, 0, 0], radius: 10, stepDegrees: 30 }), [0, 0, 1]);
+  after('sphere-grid');
+  layer.updateCutPreview({ plane: SECTION_HANDLE_PLANE, diagonal: 12, keep: 'negative' });
+  after('cut-preview');
+  layer.setSectionPlanes([new THREE.Plane(new THREE.Vector3(0, 0, 1), -0.5)]);
+  after('section-planes');
+  layer.updateSectionHandle({ plane: SECTION_HANDLE_PLANE, keep: 'positive' });
+  after('section-handle');
+  layer.setPrintabilityHighlight({ report: printReportOf(5, { thin: [0], overhang: [1], openEdge: [2, 4] }),
+    triangleOffsets: printabilityTriangleOffsets([{ featureId: 'first', triangleCount: 3 },
+      { featureId: 'second', triangleCount: 2 }]) });
+  after('printability');
+  layer.setThemeColors({ ...DEFAULT_THEME_COLORS, hovered: 0x112233, selected: 0x445566, solid: 0x778899 });
+  layer.update(buildSolidGeometry([first], null, [], appearance), 'shaded', null);
+  after('theme-one-body');
+  layer.updateThreadMarks(marks.slice(0, 1));
+  layer.updateSubShapes(buildSubShapeGeometry([first], null, [subShapeElementId('first', 'face', 1)]));
+  layer.updateCutPreview(null);
+  layer.updateSphereGrid(null);
+  after('retired-helpers');
+  layer.setPrintabilityHighlight(null);
+  layer.updateSectionHandle(null);
+  layer.setSectionPlanes([]);
+  after('cleared');
+  after(`picks ${String(layer.pickBody(raycaster))} ${JSON.stringify(layer.pickFace(raycaster))} ${String(layer.meshBufferBytes())}`);
+}
+
+/** three.js numbers every material from one counter at run time; its type declarations omit the field. */
+function materialId(material: THREE.Material): number {
+  const id: unknown = Reflect.get(material, 'id');
+  if (typeof id !== 'number') throw new Error('material id missing');
+  return id;
+}
+
+/** Order-sensitive summary of the layer's scene graph, with ids relative to counters read before the layer. */
+function layerFingerprint(layer: ReturnType<typeof createSolidLayer>,
+  base: { readonly object: number; readonly geometry: number; readonly material: number; readonly texture: number }): string {
+  const lines: string[] = [];
+  const materialLine = (material: THREE.Material): string => {
+    const color: unknown = Reflect.get(material, 'color');
+    const map: unknown = Reflect.get(material, 'map');
+    const environmentMap: unknown = Reflect.get(material, 'envMap');
+    return [material.type, materialId(material) - base.material, material.transparent, material.opacity, material.depthTest,
+      material.depthWrite, material.side, material.polygonOffset, color instanceof THREE.Color ? color.getHex() : '-',
+      map instanceof THREE.Texture ? map.id - base.texture : '-', environmentMap instanceof THREE.Texture ? 'env' : '-',
+      material.clippingPlanes?.length ?? 0].join(',');
+  };
+  const geometryLine = (geometry: THREE.BufferGeometry): string => {
+    const attributes = Object.keys(geometry.attributes).sort().map(name => {
+      const attribute = geometry.getAttribute(name);
+      return attribute instanceof THREE.BufferAttribute
+        ? `${name}:${String(attribute.itemSize)}:${createHash('sha256').update(new Uint8Array(attribute.array.buffer,
+          attribute.array.byteOffset, attribute.array.byteLength)).digest('hex').slice(0, 12)}` : name;
+    });
+    const index = geometry.getIndex();
+    return [geometry.id - base.geometry, ...attributes, index === null ? '-' : index.count,
+      JSON.stringify(geometry.groups), geometry.boundingSphere?.radius ?? '-'].join(',');
+  };
+  layer.group.traverse(object => {
+    const head = [object.type, object.id - base.object, object.renderOrder, object.visible,
+      object.position.toArray().join(':'), object.children.length];
+    if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments || object instanceof THREE.Points) {
+      const geometry: unknown = object.geometry;
+      const material: unknown = object.material;
+      const materials: readonly unknown[] = Array.isArray(material) ? material : [material];
+      const isGeometry = (value: unknown): value is THREE.BufferGeometry => value instanceof THREE.BufferGeometry;
+      const isMaterial = (value: unknown): value is THREE.Material => value instanceof THREE.Material;
+      head.push(isGeometry(geometry) ? geometryLine(geometry) : '-',
+        materials.map(entry => isMaterial(entry) ? materialLine(entry) : '-').join('|'));
+    }
+    lines.push(head.join(';'));
+  });
+  return createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 16);
+}
+
+/*
+ * Recorded 2026-11-12 19:01 with createSolidLayer.ts before its body draws, helper displays, printability and
+ * disposal moved out (SHA-256 8c7dd6957b6e4634f19415bfff4bc3bd2b17a4763edcab169158302ade738244).
+ */
+const LAYER_PRINTS: readonly string[] = [
+  'two-bodies = 6f6f62aedab8a62d',
+  'sub-shapes = 7307b6ed895a2706',
+  'emphasis-wireframe = 4d261ffdb626c852',
+  'thread-marks = 7d8c3d6e7af7ac0b',
+  'sphere-grid = 275cfc35c0f9d106',
+  'cut-preview = 22e4709651cacbbb',
+  'section-planes = 88de908f9cc16328',
+  'section-handle = cfccb58f7f7ca52a',
+  'printability = 5917942dc3601bd1',
+  'theme-one-body = a8a377c784dd5c68',
+  'retired-helpers = d7181fe98e96b687',
+  'cleared = 121202cb82b79b81',
+  'picks null null 456 = 121202cb82b79b81',
+  'disposed = 529f1f66791ed6d0',
+];
 
 /** Appearance/group metadata comes from the ordinary builder; all tested arrays are independent literals. */
 function literalDrawEntry(featureId: string, variant: 'a' | 'b' = 'a'): SolidDrawEntry {

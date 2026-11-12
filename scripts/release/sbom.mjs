@@ -382,7 +382,40 @@ function femEmbeddedComponents(manifest, sourceIndex, facts) {
       ...notices.flatMap(facts)] }];
 }
 
-/** Exact retained Netgen dependency records; unresolved rights remain unclassified. */
+/**
+ * SPDX id for a retained Netgen dependency, read from its own complete shipped notice text - never guessed. Bound to the
+ * component name, the recorded version and the exact notice set; notices are content-addressed (notices/<sha256>.txt)
+ * and the FEM manifest pin must carry that same SHA-256, so a changed notice falls back to `unclassified`.
+ * - zlib 1.3.1: notice 845efc77... is byte-identical to vendor/exact-math notices/zlib-1.3.1-LICENSE.txt (upstream
+ *   madler/zlib v1.3.1 LICENSE), already recorded as 'Zlib' in EXACT_MATH_LICENSES: the Gailly/Adler 3-restriction text.
+ * - concurrentqueue: the shipped header comment is the complete "Boost Software License - Version 1.0 - August 17th,
+ *   2003" grant, condition and disclaimer, and names no other licence.
+ * - gzstream: the shipped header grants the GNU Lesser General Public License "either version 2.1 of the License, or
+ *   (at your option) any later version", and the second notice is the complete LGPL 2.1 text (the same words as the
+ *   oofem copies apart from the older FSF postal address).
+ * Netgen pybind11 stays unclassified: its LICENSE is the BSD 3-clause text but refers to .github/CONTRIBUTING.md, whose
+ * "Enhancements" grant is not in the shipped notice, so neither BSD-3-Clause nor BSD-3-Clause-LBNL is asserted. An id
+ * records the shipped text only; it is not a legal clearance and leaves legalClearance/sourceReplacementExecuted alone.
+ */
+const NETGEN_DEPENDENCY_LICENSES = new Map([
+  ['FEM: Netgen zlib', { version: '1.3.1', license: 'Zlib',
+    notices: ['notices/845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243.txt'] }],
+  ['FEM: Netgen concurrentqueue', { version: undefined, license: 'BSL-1.0',
+    notices: ['notices/a016208434ebc6a342c52fae34e7f3045d6a325089963b82cbee5bf3c8ae93cf.txt'] }],
+  ['FEM: Netgen gzstream', { version: undefined, license: 'LGPL-2.1-or-later',
+    notices: ['notices/a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7.txt',
+      'notices/a941f6ab8280ee0e2dae76ec0d01b3e9637749e9f445f2f1987b4761c81db70c.txt'] }],
+]);
+/** The recorded SPDX id only when name, version, the sorted notice set and every notice pin equal the record. */
+export function netgenDependencyLicense(item, files) {
+  const confirmed = NETGEN_DEPENDENCY_LICENSES.get(item?.name);
+  if (!confirmed || item.version !== confirmed.version || !Array.isArray(item.notices)) return undefined;
+  const notices = [...item.notices].sort();
+  if (notices.length !== confirmed.notices.length || notices.some((name, at) => name !== confirmed.notices[at])) return undefined;
+  return confirmed.notices.every((name) => files?.[name]?.sha256 === name.slice('notices/'.length, -'.txt'.length)) ? confirmed.license : undefined;
+}
+
+/** Exact retained Netgen dependency records; a dependency without a notice-confirmed SPDX id remains unclassified. */
 function netgenEmbeddedComponents(manifest, readMetadata, facts) {
   const mapPath = 'evidence/netgen-build-source-map.json';
   const map = readMetadata(mapPath);
@@ -427,10 +460,11 @@ function netgenEmbeddedComponents(manifest, readMetadata, facts) {
         throw new Error('FEM Netgen mpi4py permission correspondence differs');
       }
     }
+    const license = header ? 'BSD-3-Clause' : netgenDependencyLicense(item, manifest.files);
     return { type: item.type, name: item.name, ...(item.version === undefined ? {} : { version: item.version }),
-      ...(header ? { licenses: [{ license: { id: 'BSD-3-Clause' } }] } : {}),
+      ...(license ? { licenses: [licenseEntry(license)] } : {}),
       ...(item.sourceMember ? { hashes: [{ alg: 'SHA-256', content: item.sourceMember.sha256 }] } : {}),
-      properties: [property('pointercad:licenseStatus', header ? 'classified' : 'unclassified'),
+      properties: [property('pointercad:licenseStatus', license ? 'classified' : 'unclassified'),
         property('pointercad:femEmbeddedIn', 'FEM: netgen-mesher'),
         property('pointercad:femDependencyEvidence', mapPath),
         property('pointercad:femDependencyRelationship', item.relationship),

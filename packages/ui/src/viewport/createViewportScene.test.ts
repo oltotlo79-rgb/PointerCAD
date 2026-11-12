@@ -2443,3 +2443,162 @@ describe('native planar basis display ownership', () => {
     } finally { add.mockRestore(); lifecycle.recordGeometry = false; }
   });
 });
+
+type SceneResource = THREE.BufferGeometry | THREE.Material | THREE.Texture;
+
+/** 描いた場面から辿れる形・材質・画像(テクスチャ)を、初めて見た物だけ控えて解放の回数を数え始める。 */
+function trackSceneResources(scene: THREE.Scene, seen: Map<SceneResource, { disposed: number }>): void {
+  const track = (resource: SceneResource): void => {
+    if (seen.has(resource)) return;
+    const record = { disposed: 0 };
+    seen.set(resource, record);
+    const count = (): void => { record.disposed += 1; };
+    if (resource instanceof THREE.BufferGeometry) resource.addEventListener('dispose', count);
+    else if (resource instanceof THREE.Material) resource.addEventListener('dispose', count);
+    else resource.addEventListener('dispose', count);
+  };
+  if (scene.environment instanceof THREE.Texture) track(scene.environment);
+  scene.traverse(object => {
+    const geometry: unknown = 'geometry' in object ? object.geometry : undefined;
+    if (geometry instanceof THREE.BufferGeometry) track(geometry);
+    const material: unknown = 'material' in object ? object.material : undefined;
+    for (const entry of Array.isArray(material) ? material : [material]) {
+      if (!(entry instanceof THREE.Material)) continue;
+      track(entry);
+      for (const value of Object.values(entry)) if (value instanceof THREE.Texture) track(value);
+    }
+  });
+}
+
+describe('作り直しの基準: 場面の 100 回の生成と破棄、選択・ドラッグ・取消の境界の出力', () => {
+  const field: SolidFieldMesh = { quantity: 'xx', deformationScale: 0,
+    positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0], triangleElements: [0, 1], elementValues: [-40, 100],
+    legend: { minimum: -40, maximum: 100, constant: false } };
+  const orbit = { ...HOME_ORBIT, target: [0.25, 0.25, 0] as const, distance: 20 };
+
+  it('立体・部品・下絵・解析の場・球面の案内線を載せた 100 回の生成と破棄で、場面の形・材質・画像と予約の差が毎回 0', () => {
+    const ledger = new AssemblyUiBackingLedger(), pool = createGpuMeshBudget(1000000);
+    const seen = new Map<SceneResource, { disposed: number }>();
+    const counts: { owned: number; undisposed: number; shared: number; constructedUnreturned: number }[] = [];
+    lifecycle.instances.length = 0;
+    try {
+      for (let life = 0; life < 100; life += 1) {
+        const sharedBefore = new Set(seen.keys());
+        lifecycle.geometries = []; lifecycle.recordGeometry = true;
+        let state = stateWithBodies(useAppStore.getState(), [localFace(0)]);
+        const viewport = createViewportScene(mockRendererCanvas(640, 480),
+          { uiBackings: ledger, gpuMeshBudget: pool, readSolidMeshState: () => state });
+        const renderer = lifecycle.instances[life];
+        const drawAndTrack = (): void => {
+          viewport.render(orbit, 'perspective', 'shadedWithEdges', true, 100);
+          const scene = renderer?.renderedScene;
+          if (scene === null || scene === undefined) throw new Error('描いた場面がありません。');
+          trackSceneResources(scene, seen);
+        };
+        viewport.resize(640, 480);
+        viewport.setBodies(state.bodies);
+        viewport.setBodyHighlight('face', ['face']);
+        viewport.setSubShapeHighlight('face#face:0', ['face#face:0']);
+        viewport.setCanvases([{ id: 'canvas-1', image: { width: 2, height: 2 }, plane: WORK_PLANES.xy,
+          placement: { widthMm: 4, heightMm: 3, centerU: 0, centerV: 0, rotationDegrees: 0 }, opacity: 0.5 }]);
+        viewport.setAnalysisField(field);
+        viewport.setSphereGrid({ center: [0, 0, 0], radius: 1, stepDegrees: 30 });
+        drawAndTrack();
+        const assembly = assemblyFixture(state, worldAssemblyFace());
+        state = assembly.state;
+        viewport.setBodies(solidBodiesForAdmission(state));
+        viewport.setAssembly(assembly.bundle);
+        drawAndTrack();
+        expect(viewport.pickComponent(320, 240)).toBe('component-1');
+        viewport.dispose(); viewport.dispose();
+        expect(renderer?.disposeCalls).toBe(1);
+        expect(pool.reservedBytes()).toBe(0);
+        // 台帳の登録は弱い参照(生きている借り手の分は GC まで残る)なので、予約の待ちだけを数える。
+        expect(ledger.pending()).toBe(0);
+        expect(viewport.meshReservation()).toMatchObject({ viewportCleanupStatus: 'complete', assemblyCleanupStatus: 'complete',
+          environmentCleanupStatus: 'complete', displayCopyBytes: 0, gpuMeshBytes: 0, assemblyInstanceBytes: 0 });
+        const owned = [...seen].filter(([resource]) => !sharedBefore.has(resource));
+        counts.push({ owned: owned.length, undisposed: owned.filter(([, record]) => record.disposed === 0).length,
+          shared: [...sharedBefore].filter(resource => seen.get(resource)?.disposed === 0).length,
+          constructedUnreturned: lifecycle.geometries.filter(entry => entry.returned === 0).length });
+        lifecycle.recordGeometry = false;
+      }
+    } finally { lifecycle.recordGeometry = false; }
+    expect(counts[0]?.owned).toBeGreaterThan(10);
+    expect(counts.every(entry => entry.owned === counts[0]?.owned && entry.undisposed === 0)).toBe(true);
+    expect(counts.every(entry => entry.shared === counts[0]?.shared)).toBe(true);
+    expect(counts.every(entry => entry.constructedUnreturned === counts[0]?.constructedUnreturned)).toBe(true);
+    expect({ owned: counts[0]?.owned, shared: counts[0]?.shared, constructedUnreturned: counts[0]?.constructedUnreturned })
+      .toEqual(BASELINE_SCENE_LIFETIME_COUNTS);
+  });
+
+  it('選択・ドラッグ・取消の系列で、場面の境界の出力(当たり・予約・組み立ての回数)が基準と同じ', () => {
+    const ledger = new AssemblyUiBackingLedger(), pool = createGpuMeshBudget(1000000);
+    let state = stateWithBodies(useAppStore.getState(), [localFace(0)]);
+    const viewport = createViewportScene(mockRendererCanvas(640, 480),
+      { uiBackings: ledger, gpuMeshBudget: pool, readSolidMeshState: () => state });
+    const buildsAtStart = boundary.solidBuildCalls;
+    const observe = () => {
+      viewport.render(orbit, 'perspective', 'shadedWithEdges', false, 100);
+      const reservation = viewport.meshReservation();
+      return { body: viewport.pickBody(320, 240), face: viewport.pickFaceAt(320, 240), component: viewport.pickComponent(320, 240),
+        invalidated: viewport.assemblyDisplayInvalidated(), displayCopyBytes: reservation.displayCopyBytes,
+        gpuMeshBytes: reservation.gpuMeshBytes, assemblyInstanceBytes: reservation.assemblyInstanceBytes,
+        pool: pool.reservedBytes(), builds: boundary.solidBuildCalls - buildsAtStart };
+    };
+    try {
+      viewport.resize(640, 480);
+      viewport.setBodies(state.bodies);
+      const part = observe();
+      viewport.setBodyHighlight('face', ['face']);
+      viewport.setSubShapeHighlight('face#face:0', ['face#face:0']);
+      const select = observe();
+      viewport.setBodyHighlight(null, []);
+      viewport.setSubShapeHighlight(null, []);
+      const deselect = observe();
+      state = { ...state, cancelRequestCount: state.cancelRequestCount + 1, meshJsAccounting: null };
+      const partCancel = observe();
+      const assembly = assemblyFixture(stateWithBodies(useAppStore.getState(), []), worldAssemblyFace());
+      state = { ...assembly.state, completedGeneration: assembly.state.requestedGeneration };
+      viewport.setBodies(solidBodiesForAdmission(state));
+      viewport.setAssembly(assembly.bundle);
+      const assemblyShown = observe();
+      const moved = (x: number) => buildAssemblyGeometry({ ...assembly.input,
+        placements: new Map([['component-1', { position: [x, 0, 0], rotation: IDENTITY_PLACEMENT.rotation }]]) });
+      viewport.setAssembly(moved(50));
+      const dragged = observe();
+      viewport.setAssembly(moved(0));
+      const draggedBack = observe();
+      state = { ...state, cancelRequestCount: state.cancelRequestCount + 1 };
+      const assemblyCancel = observe();
+      expect({ part, select, deselect, partCancel, assemblyShown, dragged, draggedBack, assemblyCancel })
+        .toEqual(BASELINE_SCENE_BOUNDARY_SERIES);
+    } finally { viewport.dispose(); }
+    expect(pool.reservedBytes()).toBe(0);
+    expect(ledger.pending()).toBe(0);
+  });
+});
+
+/**
+ * 作り直しの前の版(createViewportScene が 1 つの関数だった時)で数えた、1 回の寿命で描いた場面から辿れる
+ * 形・材質・画像の数(owned)、前の寿命から残った物(shared)、作って返さなかった形(constructedUnreturned)。
+ */
+const BASELINE_SCENE_LIFETIME_COUNTS = { owned: 112, shared: 0, constructedUnreturned: 0 };
+
+const NO_SCENE_HIT = { body: null, face: null, component: null };
+const FACE_HIT = { body: 'face', face: { faceIndex: 0, featureId: 'face' }, component: null };
+/** 作り直しの前の版で記録した、選択・ドラッグ・取消の系列の境界の出力(作り直しの後も期待を変えない)。 */
+const BASELINE_SCENE_BOUNDARY_SERIES = {
+  part: { ...FACE_HIT, invalidated: false, displayCopyBytes: 24, gpuMeshBytes: 132, assemblyInstanceBytes: 0, pool: 132, builds: 1 },
+  select: { ...FACE_HIT, invalidated: false, displayCopyBytes: 108, gpuMeshBytes: 216, assemblyInstanceBytes: 0, pool: 216, builds: 2 },
+  deselect: { ...FACE_HIT, invalidated: false, displayCopyBytes: 24, gpuMeshBytes: 132, assemblyInstanceBytes: 0, pool: 132, builds: 3 },
+  partCancel: { ...NO_SCENE_HIT, invalidated: false, displayCopyBytes: 0, gpuMeshBytes: 0, assemblyInstanceBytes: 0, pool: 0, builds: 3 },
+  assemblyShown: { ...NO_SCENE_HIT, component: 'component-1', invalidated: false, displayCopyBytes: 24, gpuMeshBytes: 196,
+    assemblyInstanceBytes: 140, pool: 196, builds: 4 },
+  dragged: { ...NO_SCENE_HIT, invalidated: false, displayCopyBytes: 24, gpuMeshBytes: 196, assemblyInstanceBytes: 140, pool: 196,
+    builds: 4 },
+  draggedBack: { ...NO_SCENE_HIT, component: 'component-1', invalidated: false, displayCopyBytes: 24, gpuMeshBytes: 196,
+    assemblyInstanceBytes: 140, pool: 196, builds: 4 },
+  assemblyCancel: { ...NO_SCENE_HIT, invalidated: true, displayCopyBytes: 0, gpuMeshBytes: 0, assemblyInstanceBytes: 0, pool: 0,
+    builds: 4 },
+};

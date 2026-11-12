@@ -1051,6 +1051,10 @@ Assert-True ($LASTEXITCODE -eq 0) '担当の git の読み取りに --no-optiona
 Assert-True ($LASTEXITCODE -eq 0) '会話記録(~/.claude/projects の .jsonl)を grep・rg・cat・Select-String・Get-Content などで読む命令を拒否するフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/orchestrator_scope_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) '統括の調査・作業の命令(製品コードの検索と読取り・再帰と横断の走査・プロセスと性能の調査・強制終了・道具の失敗をパイプで隠す命令)を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/report_gap_question_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '統括が前の報告から15分以上たって利用者へ質問する(AskUserQuestion)のを拒否し、回答の後に20分を超えていれば報告を先に書くよう知らせるフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/orchestrator_code_write_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '統括が Write・Edit で道具やコード(.py・.mjs・.ts・.ps1 など)を書くことを拒否するフックを自己試験する'
 
 
 # 2026-10-05 利用者の指示: 手元の軽い検査で、品質ゲートの道具が基点から変わっていない時は自己試験を省き、

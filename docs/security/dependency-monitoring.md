@@ -166,6 +166,17 @@ Dependabotの**通常更新は実行中だが失敗中**。10/1のsecurity job `
 
 minimatchの#86（GHSA-g3hv-75wg-m249）は上の節「minimatch GHSA-g3hv-75wg-m249」の判定と期限のまま（この記録では変えていない）。
 
+### 2026-11-12 21:04の決定: 36件の4部品の版を上げた（alertのstateは未確認）
+
+- 利用者が2026-11-12 21:04に、選択肢の質問で「今すぐ版を上げる」を選んだ（依存の変更の承認。対象はcertifi・filelock・pip・virtualenvの4つの版だけ）。作業は担当cl-v103-fem-venv-versions-1112。
+- 上げた版: certifi 2026.7.22→2026.10.18、filelock 4.1.0→4.2.1、pip 24.3.1→26.2.0、virtualenv 21.14.6→21.14.9。上の36件それぞれの`first_patched_version`以上であることを、2026-11-12 18:45に取得した警告の材料で1件ずつ確かめた（36件とも満たす）。
+- 変えたファイル: `venv-requirements.txt`の版の4行（8・12・22・43行）と、台本`rebuild-oofem-pyodide.sh`の`s_venv`の版の4か所（159・160・162・167行）。続けて、この2つのバイトを固定する配布物の一覧の値（`packages/fem/runtime/manifest.json`・`evidence/source-index.json`・`sources/native-rebuild/portable/packet-inventory.json`の大きさとSHA-256）と、同梱の手引き`evidence/recipient-source-replacement.md` 53行の案内を直した。版の検査を`packages/fem/src/runtimeDelivery.test.ts`に足した（一覧と台本の4つの版が上の修正版以上で、一覧と台本の42件が同じであること）。
+- 変えていない記録: 以前にoofemを作り直した時の事実の記録（`replay-environment.json`のvenvの版とwheelのSHA-256、`replay-status.json`の`recompiled-by-root`と台本のSHA-256、`replay_controls.py`の台本のSHA-256、`packet-inventory.json`の`supersedes`・`packetOrigin`、`acquisition-request.json`）は古い版のまま残した。
+- 新しい版での作り直しは実行していない。4つの新しい版が一覧のほかの部品と版の条件で両立するか（例: virtualenvが求めるfilelockの範囲）は、各部品のMETADATAが手元に無く、確かめていない（ネットワークへ取りに行っていない）。
+- 続き（統括の決定）: 版を上げた後に中身と合わなくなった注記を直した。`venv-requirements.txt`の1行目（上の「36件に共通の事実」で引いた「Exact post-repair build venv (CPython 3.13.2)」）は、台本が求めるvenvの版であること、4つを2026-11-12に脆弱性の修正版へ上げたこと、ほかの版は作り直しの後の環境（export logs/cli-compatibility-r1/02-after.stdout）の記録のままであること、新しい4つの版での作り直しは実行していないことを書く文に替えた。台本の3行目・6行目の注記と173行目の止まる時の文は、照合の相手を「この台本が求めるvenvの版（`venv-requirements.txt`）」と書く文に替えた（文字だけで、照合の中身・終了コード・行数は同じ）。
+- 同梱の`replay_controls.py`と`replay-status.json`は2026-10-12の作り直し（台本のSHA-256 `1eb34343…`）の記録で、版を上げた後の台本にはそのままでは使えない（`replay_controls.py`は台本のSHA-256が違うと、何も流す前に「script SHA mismatch」で止まる作り）。新しい台本用の制御は用意していない。`acquisition-request.json` 182行の「existing post-repair venv」は当時の依頼の文で、当時のvenv（4つが古い版）は今の台本の`s_venv`の版の照合で止まる作り。どちらも実行しての確認はしていない。これらの記録のファイルは変えていない。
+- alertのstate: mainへ送った後にDependabotのalertを取り直して36件の`state`を確かめるまでは「解消」と書かない。上の36件の表（期限2026-12-12の例外）は、その確認までの記録として残す。確認の後に、この節へ結果を足す。
+
 ### 10/1〜10/3の失敗10本
 
 時刻はUTC。原文はログの行をそのまま引いた（長い行は一部）。

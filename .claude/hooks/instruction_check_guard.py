@@ -81,6 +81,16 @@ read-only / not to be changed), so "e2e は変えない" never triggers. On 2026
 right before a delivery because the package that changed e2e/tests/saveResponsivenessFlow.ts had no such acceptance line.
 The check only prevents that omission before launch; it never runs the evidence check and never certifies any result.
 
+2026-11-12 cl-v103-failure-records-enforcement-1112 adds checks 11-13 (candidate; rules/06 §10.492, §10.496, §10.498):
+(11) when the "③" paragraph allows changing product code under packages/<name>/ or apps/<name>/ (a .ts/.tsx under src/ that
+is not a .test./.spec./.testSupport./.selftest. file, such a folder, or such a glob; new paths included), the text from the
+"## 2" heading to the end must name the full test-utils run ("test-utils の単体を全件" / "packages/test-utils の全検査", or
+`--package test-utils` with `--all` on one line). Gate 20261112-094802 failed on compoundNamingPolicy.test.ts (a local name
+epochRestarts) because that package ran only two test-utils files. (12, warning) a line in a section titled "統括が確かめた事実"
+that touches a product path (scripts/, packages/, apps/, e2e/) without a line number or a means of checking (rg, git, gh,
+SHA-256, 実測, a .log path, commit <hex>) while naming a docs/ path. (13) an instruction whose file name contains
+independent-review must have a "読まない物" section. These checks never run tests and never certify any result.
+
 Everything the check needs lives in this one file (no import of anything under scratchpad/, which
 is gitignored and absent from CI and from any hermetic checkout -- rules/06 §10.336). Only
 scratchpad/claude/instructions/*.md content is inspected; unrelated prompts, or prompts that name
@@ -2233,6 +2243,211 @@ def e2e_coverage_findings(display: str, lines: list[str], scope_text: str) -> li
         note="" if has_section else "(「## 2」の見出しが無いので合格条件の文で探した)")]
 
 
+# --- 検査11: 製品のコードを変える包みの、test-utils の規約の検査の全件(2026-11-12 cl-v103-failure-records-enforcement-1112、rules/06 §10.492) ---
+# 全体検査 20261112-094802 は、製品のコード packages/ui/src/assembly/attachAssembly.ts を変えた包みが、局所の宣言の名前に略語の語
+# (epochRestarts の epoch)を使い、test-utils の命名の規約の検査 packages/test-utils/src/compoundNamingPolicy.test.ts で落ちた
+# (49 ファイル中 1 失敗)。その包みの合格条件は ui と model の単体を全件だけで、test-utils は行数と複雑さの 2 本しか流していなかった。
+# 命名・行数・複雑さ・境界などの規約の検査は test-utils の単体にあり、packages/ と apps/ の下の /src/ の製品の .ts・.tsx を全て読む
+# (compoundNamingPolicy.test.ts 61〜75 行。.test.・.spec.・.testSupport.・.selftest. は除く)。
+#   対象 = ③の経路の語(製品ファイルの直接の検査と同じ _path_entry_spans。裸の名前を含む。読取専用・変更禁止などとされた語は
+#          _worker_read_only で除く)のうち、根からの相対が packages/<名前>/ か apps/<名前>/ の下の次の物。新規の語も含む。
+#          ファイルの語 = 途中に src/ があり .ts・.tsx で終わり、検査のファイル(.test.・.spec.・.testSupport.・.selftest.)でない物。
+#          フォルダーの語 = packages/<名前>・apps/<名前> そのもの、その src、src の下のフォルダー。
+#          glob の語 = 途中に src/ があるか ** を含み、最後の部分の拡張子が .ts・.tsx か * の物(検査のファイルだけの glob は除く)。
+#   照合 = 「## 2」以降の本文(_body_from_section_two。見出しが無ければ合格条件の文)に「test-utils の単体を全件」
+#          「packages/test-utils の単体を全件」「packages/test-utils の全検査」(_full_run_named と同じ。直後に「流さない」などの
+#          否定が無い物)か、同じ行の `--package test-utils` と `--all` の組。
+#   外れ = 照合が無い(1 つの指示書に 1 件。行は最初の対象の語の行)。走査は無い(③と本文の文だけを見る)。
+# この検査は起動の前の書き漏れを防ぐだけで、試験を実行せず、その結果を合格と認定しない。
+
+TEST_UTILS_PACKAGE = "test-utils"
+TEST_UTILS_SHOWN = 3
+TEST_UTILS_ROOT_PATTERN = r"^(?:packages|apps)/[A-Za-z0-9_.\-]+(?:/|$)"
+TEST_UTILS_FOLDER_PATTERN = r"^(?:packages|apps)/[A-Za-z0-9_.\-]+(?:/src(?:/[^*?]*)?)?$"
+TEST_UTILS_SOURCE_PATTERN = r"\.tsx?$"
+TEST_UTILS_EXCLUDE_PATTERN = r"\.(?:test|spec|testSupport|selftest)\.[cm]?tsx?$"
+TEST_UTILS_GLOB_LAST_PATTERN = r"^[^.]*$|\.tsx?$|\*$"
+TEST_UTILS_ALL_OPTION_PATTERN = (
+    r"--package[ \t=]+test-utils(?![A-Za-z0-9_\-])[^\n]*--all(?![A-Za-z0-9_\-])"
+    r"|--all(?![A-Za-z0-9_\-])[^\n]*--package[ \t=]+test-utils(?![A-Za-z0-9_\-])")
+TEST_UTILS_MESSAGE = (
+    "{display} 行{line}: test-utils の規約の検査: ③が製品のコード {targets} の変更を許すのに、「## 2」以降の本文に"
+    "「test-utils の単体を全件」が無い{note}。命名・行数・複雑さ・境界の規約の検査は test-utils の単体にあり"
+    "(packages/test-utils/src/compoundNamingPolicy.test.ts など)、packages/ と apps/ の製品のコードの変更で落ちる。"
+    "合格条件に「test-utils の単体を全件」を足す(rules/06 §10.492。全体検査 20261112-094802 が局所の名前 epochRestarts で"
+    "落ちた)。この検査は起動の前の書き漏れを防ぐだけで、試験を実行せず結果を合格と認定しない")
+
+
+def _test_utils_product_entry(body: str) -> bool:
+    """根からの相対 body が、test-utils の規約の検査が読む製品のコード(packages/・apps/ の src の .ts・.tsx)に当たるか。"""
+    if re.match(TEST_UTILS_ROOT_PATTERN, body) is None:
+        return False
+    last = body.rsplit("/", 1)[-1]
+    if "*" in body or "?" in body:
+        if "/src/" not in body + "/" and "**" not in body:
+            return False
+        if re.search(TEST_UTILS_EXCLUDE_PATTERN, last) is not None:
+            return False
+        return re.search(TEST_UTILS_GLOB_LAST_PATTERN, last) is not None
+    if "." in last:
+        return ("/src/" in body and re.search(TEST_UTILS_SOURCE_PATTERN, last) is not None
+                and re.search(TEST_UTILS_EXCLUDE_PATTERN, last) is None)
+    return re.match(TEST_UTILS_FOLDER_PATTERN, body) is not None
+
+
+def testutils_scope_targets(scope_text: str) -> list[tuple[str, int]]:
+    """③が変更を許す製品のコードの語 [(語, ③の文の中の位置)](出現の順・重複なし)。読取専用・変更禁止とされた語は含めない。"""
+    text = scope_text.replace("\\", "/")
+    found: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for entry, _token, start, end, _bare in _path_entry_spans(text):
+        body = _clean_relative(entry.rstrip("/"))
+        if body is None or body in seen or not _test_utils_product_entry(body):
+            continue
+        if _worker_read_only(text, start, end):
+            continue
+        seen.add(body)
+        found.append((entry, start))
+    return found
+
+
+def testutils_full_run_named(body: str) -> bool:
+    """本文に test-utils の全件の指定があるか(_full_run_named と、同じ行の --package test-utils と --all の組)。"""
+    if _full_run_named(body, TEST_UTILS_PACKAGE):
+        return True
+    return re.search(TEST_UTILS_ALL_OPTION_PATTERN, body.replace("\\", "/")) is not None
+
+
+def testutils_full_findings(display: str, lines: list[str], scope_text: str) -> list[str]:
+    block = _scope_block(lines)
+    if block is None or not scope_text.strip():
+        return []
+    targets = testutils_scope_targets(scope_text)
+    if not targets:
+        return []
+    body, has_section = _body_from_section_two(lines)
+    if testutils_full_run_named(body):
+        return []
+    shown = "・".join(entry for entry, _start in targets[:TEST_UTILS_SHOWN])
+    if len(targets) > TEST_UTILS_SHOWN:
+        shown += f" ほか {len(targets) - TEST_UTILS_SHOWN} 件"
+    line = block[0] + scope_text.count("\n", 0, targets[0][1]) + 1
+    return [TEST_UTILS_MESSAGE.format(
+        display=display, line=line, targets=shown,
+        note="" if has_section else "(「## 2」の見出しが無いので合格条件の文で探した)")]
+
+
+# --- 検査12: 「統括が確かめた事実」の出どころ(警告。2026-11-12 cl-v103-failure-records-enforcement-1112、rules/06 §10.498) ---
+# 2026-11-12 18:48 の指示書 cl-v103-r11-dependency-evidence-1112.md は、docs/security/dependency-monitoring.md の 2026-11-02 の
+# 文を現物で確かめずに「scripts/release/sbom.mjs は Electron を集めていない」と書いた(現物は sbom.mjs 541〜588 行で既に集めて
+# いた。commit fe9a58e4)。担当が現物で誤りを見つけ、合格条件の 1 つが作れなかった。誤りの文は §1 の目的の節(13 行)にあった。
+#   対象 = 「統括が確かめた事実」を含む見出しの節(_section_range)の各行(見出しの行とコードの囲みの中は除く)。
+#          FACT_INCLUDE_PURPOSE_LEAD が真なら、「目的」で始まる見出しの直後から次の見出しの手前まで(目的の前書き)も対象にする
+#          (既定は偽。統括が採用の時に決める。rules/06 §10.498 の実例は目的の前書きにあった)。
+#   警告 = 行が製品のコードの実パス(scripts/・packages/・apps/・e2e/ で始まる語)に触れ、行番号(`<名前>.<拡張子>:<数字>` か
+#          「<数字> 行」)も確かめた手段(rg・grep・git・gh・SHA-256・実測・.log の実パス・commit <16 進>・run／job の番号)も無く、
+#          docs/ の文書のパスか「同じ文書」「この文書」の語がある(出どころが docs/ の文書だけ)。1 行に 1 件。
+# 起動のフックは警告も拒否する(2026-11-11 から)ので、警告でも起動は止まる。この検査は書き方を見るだけで、事実の正しさを認定しない。
+
+FACT_TITLE_PATTERN = r"統括が確かめた事実"
+FACT_PURPOSE_TITLE_PATTERN = r"^(?:[1１][.．)）][ \t]*)?目的"
+FACT_INCLUDE_PURPOSE_LEAD = False
+FACT_PRODUCT_PATH_PATTERN = (
+    r"(?<![A-Za-z0-9_@.\-/])(?:\./)?(?:scripts|packages|apps|e2e)/[A-Za-z0-9_@.\-/*?]*[A-Za-z0-9_*?]")
+FACT_LINE_NUMBER_PATTERN = (
+    r"\.[A-Za-z][A-Za-z0-9]{0,9}:[0-9]+"
+    r"|[0-9]+(?:[ \t]*[〜~\-–－][ \t]*[0-9]+)?[ \t]*行")
+FACT_MEANS_PATTERN = (
+    r"(?<![A-Za-z0-9_\-])(?:rg|grep|git|gh)(?![A-Za-z0-9_\-])"
+    r"|sha-?256|実測|\.log(?![A-Za-z0-9_])|commit[ \t]+[0-9a-f]{7,40}(?![0-9a-f])"
+    r"|(?<![A-Za-z0-9_])(?:run|job)[ \t]*(?:id[ \t]*)?[0-9]{6,}")
+FACT_DOCS_PATTERN = r"(?<![A-Za-z0-9_@.\-/])(?:\./)?docs/[A-Za-z0-9_@.\-/]|同じ文書|この文書"
+FACT_SHOWN = 2
+FACT_SOURCE_MESSAGE = (
+    "{display} 行{line}: 事実の出どころ: {where}の行が製品のコード {paths} に触れるのに、行番号"
+    "(`<名前>.<拡張子>:<数字>`・「<数字> 行」)も確かめた手段(rg・git・gh・SHA-256・実測・ログの実パス・run の番号)も無く、"
+    "出どころが docs/ の文書だけ。現物のファイルの行番号か rg・git の結果で確かめて書き直す(rules/06 §10.498。"
+    "2026-11-12 18:48 の指示書が docs/ の古い文を写して「sbom.mjs は Electron を集めていない」と書いた)。"
+    "この検査は書き方を見るだけで、事実の正しさを認定しない")
+
+
+def fact_section_ranges(lines: list[str], include_purpose_lead: bool | None = None) -> list[tuple[int, int, str]]:
+    """対象の範囲 (見出しの位置, 終了の次の位置, 呼び名) の一覧。事実の節と、設定により目的の前書き。"""
+    lead = FACT_INCLUDE_PURPOSE_LEAD if include_purpose_lead is None else include_purpose_lead
+    headings = _headings(lines)
+    ranges: list[tuple[int, int, str]] = []
+    for position, (index, _level, title) in enumerate(headings):
+        if re.search(FACT_TITLE_PATTERN, title):
+            start, end = _section_range(lines, headings, position)
+            ranges.append((start, end, "「統括が確かめた事実」"))
+        elif lead and re.match(FACT_PURPOSE_TITLE_PATTERN, title):
+            end = headings[position + 1][0] if position + 1 < len(headings) else len(lines)
+            ranges.append((index, end, "目的の前書き"))
+    return ranges
+
+
+def fact_line_unsourced(line: str) -> list[str] | None:
+    """警告に当たる行なら触れた製品のパスの一覧、当たらなければ None。"""
+    paths = [match.group(0) for match in re.finditer(FACT_PRODUCT_PATH_PATTERN, line)]
+    if not paths:
+        return None
+    if re.search(FACT_LINE_NUMBER_PATTERN, line) or re.search(FACT_MEANS_PATTERN, line, re.IGNORECASE):
+        return None
+    if re.search(FACT_DOCS_PATTERN, line) is None:
+        return None
+    return list(dict.fromkeys(paths))
+
+
+def fact_source_findings(display: str, lines: list[str], include_purpose_lead: bool | None = None) -> list[str]:
+    warnings: list[str] = []
+    seen: set[int] = set()
+    for start, end, where in fact_section_ranges(lines, include_purpose_lead):
+        in_fence = False
+        for index in range(start + 1, end):
+            line = lines[index]
+            if re.match(FENCE_PATTERN, line):
+                in_fence = not in_fence
+                continue
+            if in_fence or index in seen or re.match(HEADING_PATTERN, line):
+                continue
+            paths = fact_line_unsourced(line)
+            if paths is None:
+                continue
+            seen.add(index)
+            shown = "・".join(paths[:FACT_SHOWN]) + (f" ほか {len(paths) - FACT_SHOWN} 件" if len(paths) > FACT_SHOWN else "")
+            warnings.append(FACT_SOURCE_MESSAGE.format(display=display, line=index + 1, paths=shown, where=where))
+    return warnings
+
+
+# --- 検査13: 独立評価の指示書の「読まない物」(2026-11-12 cl-v103-failure-records-enforcement-1112、rules/06 §10.496) ---
+# 独立評価の評価者には、統括の見立てや作業の経緯(docs/報告記録2.md など)を読ませない(互いに見せない・独立を保つ)。
+# 2026-11-12 17:10 に 2 つの版の差 551 ファイルを評価者へ渡した時、差の中の評価の対象でない物(docs/報告記録2.md)を
+# 読まない物として扱わせる手当てが無く、評価者 B が報告記録の 2 つの版を行数だけ読んだ(評価者 B の final.md の N4)。
+#   対象 = ファイル名に independent-review を含む指示書。
+#   外れ = 「読まない物」(読まないもの・読まないファイル)を含む見出しも、その語で始まる行(箇条・太字を含む)も無い。
+# この検査は節があるかだけを見て、中身(挙げたパスの過不足)と、統括が後から送る連絡の中身は確かめない。
+
+REVIEW_NAME_WORD = "independent-review"
+REVIEW_EXCLUSION_PATTERN = r"読まない(?:物|もの|ファイル)"
+REVIEW_EXCLUSION_LINE_PATTERN = r"^[ \t>*\-]*(?:\*\*)?(?:[0-9０-９]+[.．)）][ \t]*)?読まない(?:物|もの|ファイル)"
+REVIEW_EXCLUSION_MESSAGE = (
+    "{display}: 独立評価の読まない物: 名前に independent-review を含む指示書に「読まない物」の節が無い。"
+    "評価の対象でない物(docs/報告記録.md・docs/報告記録2.md・scratchpad/claude/agents/registry.md・他の担当のフォルダーなど)を"
+    "「### 読まない物」の節に実パスで挙げ、読んだら評価は無効と書く。差やファイルの一覧を後から渡す時は、その一覧から"
+    "読まない物を外して渡す(rules/06 §10.496。2026-11-12 17:10 の差 551 ファイルに docs/報告記録2.md が入っていた)")
+
+
+def review_exclusion_findings(display: str, lines: list[str]) -> list[str]:
+    name = display.replace("\\", "/").rsplit("/", 1)[-1]
+    if REVIEW_NAME_WORD not in name:
+        return []
+    if any(re.search(REVIEW_EXCLUSION_PATTERN, title) for _index, _level, title in _headings(lines)):
+        return []
+    if any(re.match(REVIEW_EXCLUSION_LINE_PATTERN, line) for line in lines):
+        return []
+    return [REVIEW_EXCLUSION_MESSAGE.format(display=display)]
+
+
 DOCS_PHASE_REASON = '利用者の指示 2026-11-01 19:2x: 取扱説明書は最後'
 DOCS_PHASE_MARKER = 'scratchpad/claude/root-runtime/docs-phase-open.json'
 
@@ -2322,6 +2537,10 @@ def check_instruction_report(root: Path, display_path: str, text: str, now: date
             invocation if invocation in ("auto", None) else "auto")),
         # 検査 10(rules/06 §10.491): ③が e2e/ の下の変更を許すなら「## 2」以降に e2e_coverage の照合。既存の検査の後に足すだけ。
         ("画面検査の証拠の照合", lambda: (e2e_coverage_findings(display_path, lines, scope_text), [])),
+        # 検査 11〜13(rules/06 §10.492・§10.498・§10.496。2026-11-12 cl-v103-failure-records-enforcement-1112): 既存の検査の後に足すだけ。
+        ("test-utils の規約の検査", lambda: (testutils_full_findings(display_path, lines, scope_text), [])),
+        ("事実の出どころ", lambda: ([], fact_source_findings(display_path, lines))),
+        ("独立評価の読まない物", lambda: (review_exclusion_findings(display_path, lines), [])),
     )
     for name, step in steps:
         try:

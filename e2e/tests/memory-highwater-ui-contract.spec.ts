@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { actualPhaseCollector, viewportCollectedCoverage, expectMemoryEmptyDocument, memorySolidDimensionField, serialGpuReader, type GpuReading } from './memoryHighwaterFlow.js';
+import { actualPhaseCollector, viewportCollectedCoverage, expectMemoryEmptyDocument, memorySolidDimensionField, serialGpuReader, waitPhaseSamples, type GpuReading } from './memoryHighwaterFlow.js';
 import { INTERVAL_MS, type RawFrame } from './processResourceSampler.js';
 
 async function emptyFixture(page: Page, kind: 'solid' | 'assembly'): Promise<void> {
@@ -199,4 +199,27 @@ test('phase collection transfers each viewport sequence once and retains malform
   expect(collector.snapshots[2]).toMatchObject({ viewport: { events: [{ sequence: 'broken' }, { sequence: 6 }] } });
   expect(collector.problems).toContain('viewport:viewport-1: invalid sequence');
   expect(collector.problems).toContain('viewport:viewport-1: missing sequences 5..5');
+});
+
+// run 43228617681: the baseline wait timed out with 0 frames and the CI log carried only the poll text.
+test('a phase sample timeout names the frame count, the first sampler failures and the sampler start-up', async () => {
+  const sampler = { frames: [cpuFrame(1_000)], failures: ['first', 'second', 'third', 'fourth'],
+    describe: () => 'spawned 900 pid 7 exit running; stages script-start +40ms (0.0ms)' };
+  const failure = await waitPhaseSamples(sampler, { atEpochMs: 2_000, phase: 'baseline' }, 200)
+    .then(() => null, (error: unknown) => String(error));
+  expect(failure).toContain('toBeGreaterThanOrEqual');
+  expect(failure).toContain('sampler wait: phase baseline since 2000; frames 1, after phase 0, last 1000');
+  expect(failure).toContain('sampler failures 4: first | second | third');
+  expect(failure).not.toContain('fourth');
+  expect(failure).toContain('sampler spawned 900 pid 7 exit running; stages script-start +40ms (0.0ms)');
+});
+
+test('the phase sample wait still needs five frames at or after the mark', async () => {
+  const boundary = { atEpochMs: 2_000, phase: 'baseline' as const };
+  const frames = [1_999, 2_000, 2_100, 2_200, 2_300].map(cpuFrame);
+  const failure = await waitPhaseSamples({ frames, failures: [] }, boundary, 200).then(() => null, (error: unknown) => String(error));
+  expect(failure).toContain('frames 5, after phase 4');
+  expect(failure).toContain('sampler failures 0: none');
+  expect(failure).toContain('sampler n/a');
+  await expect(waitPhaseSamples({ frames: [...frames, cpuFrame(2_400)], failures: [] }, boundary)).resolves.toBeUndefined();
 });

@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
 import type { IpcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerPcadIpc, PCAD_OPEN_CHANNEL, PCAD_SAVE_CHANNEL, PCAD_SAVE_AS_CHANNEL,
+import { registerPcadIpc, PCAD_OPEN_CHANNEL, PCAD_SAVE_AS_CHANNEL,
   PCAD_CLEAR_TARGET_CHANNEL, PCAD_HAS_TARGET_CHANNEL } from './pcadDialogs.js';
 import type * as ImportedNodeFsTypes from 'node:fs';
 
@@ -21,6 +22,18 @@ vi.mock('./appSender.js', () => ({ validateAppSender: () => true }));
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof ImportedNodeFsTypes>();
   return { ...original, promises: {
+    open(path: string) {
+      memory.set(path, new Uint8Array(0));
+      return Promise.resolve({
+        write(bytes: Uint8Array, offset: number, length: number, position: number) {
+          const current = memory.get(path) ?? new Uint8Array(0);
+          const next = new Uint8Array(Math.max(current.byteLength, position + length));
+          next.set(current); next.set(bytes.subarray(offset, offset + length), position); memory.set(path, next);
+          return Promise.resolve({ bytesWritten: length, buffer: bytes });
+        },
+        close: () => Promise.resolve(),
+      });
+    },
     writeFile(path: string, bytes: Uint8Array) { memory.set(path, bytes.slice()); return fsHooks.afterWrite?.() ?? Promise.resolve(); },
     rename(from: string, to: string) {
       const bytes = memory.get(from); if (bytes === undefined) throw new Error('書込対象なし');
@@ -44,6 +57,15 @@ function invoke(channel: string, ...argumentsFromRenderer: unknown[]): Promise<u
   if (callback === undefined) throw new Error(`IPC未登録: ${channel}`);
   const result: unknown = Reflect.apply(callback, undefined, [{ sender }, ...argumentsFromRenderer]);
   return Promise.resolve(result);
+}
+
+/** 案Bの「保存」を画面と同じ順(開始→分けた回→確定)で呼ぶ。小さい並びなので 1 回で送る。 */
+async function save(name: string, bytes: Uint8Array, saveAs: boolean, kind = 'part'): Promise<unknown> {
+  const receipt = await invoke('pcad:saveBegin', name, saveAs, kind, bytes.byteLength);
+  if (receipt === null) return null;
+  if (typeof receipt !== 'object' || !('transferId' in receipt) || typeof receipt.transferId !== 'string') throw new Error('開始の答えなし');
+  if (bytes.byteLength > 0) await invoke('pcad:saveChunk', receipt.transferId, 0, bytes, createHash('sha256').update(bytes).digest('hex'));
+  return invoke('pcad:saveCommit', receipt.transferId);
 }
 
 beforeEach(() => {
@@ -99,18 +121,18 @@ describe('本体プロセスの保存先を文書切替で失効させる（レ�
   it('加工先の書き出し後もCtrl+S相当の保存は元のpcadへ向かう', async () => {
     const part = resolve('memory-only', 'source.pcad'), exported = resolve('memory-only', 'part.stl');
     electron.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: part }).mockResolvedValueOnce({ canceled: false, filePath: exported });
-    await invoke(PCAD_SAVE_CHANNEL, 'source.pcad', Uint8Array.of(1), true);
+    await save('source.pcad', Uint8Array.of(1), true);
     const receipt = await invoke('pcad:saveExport', 'part.stl', 'stl', Uint8Array.of(2));
     if (typeof receipt !== 'object' || receipt === null || !('token' in receipt)) throw new Error('書き出しの札なし');
     expect(typeof receipt.token).toBe('string');
-    await invoke(PCAD_SAVE_CHANNEL, 'source.pcad', Uint8Array.of(3), false);
+    await save('source.pcad', Uint8Array.of(3), false);
     expect(memory.get(part)).toEqual(Uint8Array.of(3)); expect(memory.get(exported)).toEqual(Uint8Array.of(2));
     expect(electron.showSaveDialog).toHaveBeenCalledTimes(2);
   });
   it.each(['clear', 'destroy'])('保存ダイアログ待機中の%s後に古い保存先を復活させない', async (action) => {
     const selection = deferred<{ canceled: boolean; filePath: string }>();
     electron.showSaveDialog.mockReturnValueOnce(selection.promise);
-    const saving = invoke(PCAD_SAVE_CHANNEL, 'A.pcad', Uint8Array.of(1), true);
+    const saving = save('A.pcad', Uint8Array.of(1), true);
     if (action === 'clear') await invoke(PCAD_CLEAR_TARGET_CHANNEL);
     else sender.emit('destroyed');
     selection.resolve({ canceled: false, filePath: resolve('memory-only', 'A.pcad') });
@@ -123,12 +145,12 @@ describe('本体プロセスの保存先を文書切替で失効させる（レ�
     const pathA = resolve('memory-only', 'A.pcad'), pathB = resolve('memory-only', 'B.pcad');
     electron.showSaveDialog.mockReturnValueOnce(oldSelection.promise)
       .mockResolvedValueOnce({ canceled: false, filePath: pathB });
-    const oldSave = invoke(PCAD_SAVE_CHANNEL, 'A.pcad', Uint8Array.of(1), true);
+    const oldSave = save('A.pcad', Uint8Array.of(1), true);
     await invoke(PCAD_CLEAR_TARGET_CHANNEL);
-    expect(await invoke(PCAD_SAVE_CHANNEL, 'B.pcad', Uint8Array.of(2), true)).toBe('B.pcad');
+    expect(await save('B.pcad', Uint8Array.of(2), true)).toBe('B.pcad');
     oldSelection.resolve({ canceled: false, filePath: pathA });
     expect(await oldSave).toBeNull();
-    expect(await invoke(PCAD_SAVE_CHANNEL, 'B.pcad', Uint8Array.of(3), false)).toBe('B.pcad');
+    expect(await save('B.pcad', Uint8Array.of(3), false)).toBe('B.pcad');
     expect(memory.get(pathA)).toEqual(Uint8Array.of(1));
     expect(memory.get(pathB)).toEqual(Uint8Array.of(3));
     expect(electron.showSaveDialog).toHaveBeenCalledTimes(2);
@@ -140,19 +162,19 @@ describe('図面の保存形式をIPCから保持する（P8-64）', () => {
     const chosenPath = resolve('memory-only', chosenName);
     const expectedName = chosenName.endsWith('.PCADD') ? chosenName : `${chosenName}.pcadd`;
     electron.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: chosenPath });
-    expect(await invoke(PCAD_SAVE_CHANNEL, '図面.pcadd', Uint8Array.of(7, 8), true, 'drawing')).toBe(expectedName);
+    expect(await save('図面.pcadd', Uint8Array.of(7, 8), true, 'drawing')).toBe(expectedName);
     expect(electron.showSaveDialog).toHaveBeenCalledWith(expect.objectContaining({
       filters: [{ name: 'PointerCAD の図面ファイル', extensions: ['pcadd'] }],
     }));
     expect(memory.get(resolve('memory-only', expectedName))).toEqual(Uint8Array.of(7, 8));
-    expect(await invoke(PCAD_SAVE_CHANNEL, '別名.pcadd', Uint8Array.of(9), false, 'drawing')).toBe(expectedName);
+    expect(await save('別名.pcadd', Uint8Array.of(9), false, 'drawing')).toBe(expectedName);
     expect(electron.showSaveDialog).toHaveBeenCalledTimes(1);
     expect(memory.get(resolve('memory-only', expectedName))).toEqual(Uint8Array.of(9));
   });
 
   it('図面保存の取消はファイルも保存先も作らない', async () => {
     electron.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: '' });
-    expect(await invoke(PCAD_SAVE_CHANNEL, '図面.pcadd', Uint8Array.of(1), true, 'drawing')).toBeNull();
+    expect(await save('図面.pcadd', Uint8Array.of(1), true, 'drawing')).toBeNull();
     expect(memory.size).toBe(0); expect(await invoke(PCAD_HAS_TARGET_CHANNEL)).toBe(false);
   });
 });

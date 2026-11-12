@@ -212,7 +212,9 @@ jobs:
         timeout-minutes: 25
         env:
           PCAD_PACKAGED_CANDIDATE: dist/desktop-stage/candidate.json
-          # Playwrightの接続の記録(CDPの送受信・起動の行・配布物の標準出力)。PlaywrightはDEBUG_FILEを各プロセスの
+          # Playwrightの接続の記録(connectOverCDPのCDPの送受信)。配布物は検査(packagedDesktop.spec.ts)が自分で起動するので、
+          # 起動の行と配布物の標準出力・標準エラーはこの記録に入らない。検査が読み、失敗の時だけ試験の出力先の
+          # packaged-desktop-output.log(時刻つき)と、起動の失敗の文へ書く。PlaywrightはDEBUG_FILEを各プロセスの
           # 読込みの時に開き、試験の出力先(test-results/packaged-desktop)は試験の初めに消すため、runnerの一時領域へ書く。
           # 失敗の時だけ出力先へ写し、下の「失敗時だけ」の保存の段で残す。配布物のプロセスへは渡さない(packagedDesktop.spec.ts)。
           DEBUG: pw:protocol,pw:browser

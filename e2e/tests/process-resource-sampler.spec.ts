@@ -4,7 +4,7 @@ import { platform } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect, test } from '@playwright/test';
 import { summarizeProcessMemory, summarizeSampledProcessMemory } from '../../packages/test-utils/src/processMemorySamples.js';
-import { windowsSampler, linuxSampler, linuxFrame, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
+import { windowsSampler, linuxSampler, linuxFrame, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
 import { readResidentFrames } from './readResidentSampler.js';
 
 /** Bound for each owned stop; an owned process still open after this is a failure, not ignored. */
@@ -63,7 +63,8 @@ test(`process sampler records actual cadence quality through repeated discoverie
     // Preserve the first failing run too, including discovery stages and actual read costs.
     if (sampler !== undefined) {
       const path = test.info().outputPath('process-sampler-raw.json');
-      await writeFile(path, JSON.stringify({ includeRoot, frames: sampler.frames, failures: sampler.failures }, null, 2), { flag: 'wx' });
+      await writeFile(path, JSON.stringify({ includeRoot, frames: sampler.frames, failures: sampler.failures,
+        stages: sampler.stages ?? [], startup: sampler.describe?.() ?? null }, null, 2), { flag: 'wx' });
       await test.info().attach('process-sampler-raw', { path, contentType: 'application/json' });
     }
   }
@@ -75,6 +76,17 @@ test(`process sampler records actual cadence quality through repeated discoverie
   const frames = sampler.frames.map(frame => ({ ...frame, phase: 'baseline' as const }));
   expect(sampler.failures).toEqual([]);
   expect(frames.length).toBeGreaterThanOrEqual((DISCOVERY_INTERVAL_MS * 3) / (INTERVAL_MS * 2));
+  if (platform() === 'win32') {
+    // The five start-up stages arrive as their own lines, in order, before the first frame read; none is a frame.
+    // script-start uses the framework clock (before Add-Type); every later stage uses the precise clock.
+    const stages = sampler.stages ?? [];
+    expect(stages.map(entry => entry.stage)).toEqual([...WINDOWS_SAMPLER_STAGES]);
+    for (const [index, entry] of stages.entries()) {
+      if (index > 0) expect(entry.atEpochMs).toBeGreaterThanOrEqual(stages[index - 1]?.atEpochMs ?? Number.POSITIVE_INFINITY);
+    }
+    expect(stages.at(-1)?.atEpochMs).toBeLessThanOrEqual(frames[0]?.readStartedAtEpochMs ?? -1);
+    expect(sampler.describe?.()).toMatch(/^spawned \d+ pid \d+ exit [^;]+ \+\d+ms; stages script-start \+\d+ms \(0\.0ms\), native-ready \+\d+ms/u);
+  }
   const ownedIdentities = new Set<string>();
   for (const [frameIndex, frame] of frames.entries()) {
     expect(frame.discoveryError).toBeNull();
@@ -248,6 +260,23 @@ test('windows frame timing separates the sleep from the loop and rejects missing
     { ...old, loopStartedAtEpochMs: 1_991 },
   ];
   for (const windowsTiming of malformed) expect(() => rawFrame(frame(windowsTiming))).toThrow('Malformed OS resource sample');
+});
+
+// A sampler that never reaches its first frame still shows how far it started (run 43228617681: 0 frames, no failure).
+// The start-up stage lines share stdout with the frames, so neither may be read as the other.
+test('a Windows sampler start-up stage line is kept as a stage and never counted as a frame', () => {
+  expect(readSamplerLine('{"samplerStage":"native-ready","atEpochMs":1000,"ms":86.3}'))
+    .toEqual({ stage: { stage: 'native-ready', atEpochMs: 1_000, ms: 86.3 } });
+  const frameLine = JSON.stringify({ atEpochMs: 1_100, readStartedAtEpochMs: 1_090, discoveredAtEpochMs: 1_000, processes: [], discoveryError: null });
+  const decoded: unknown = JSON.parse(frameLine);
+  expect(readSamplerLine(frameLine)).toEqual({ frame: rawFrame(decoded) });
+  // A malformed stage is a failure: it is neither a stage nor a frame.
+  for (const line of ['{"samplerStage":"native-ready","atEpochMs":-1,"ms":1}', '{"samplerStage":7,"atEpochMs":1,"ms":1}',
+    '{"samplerStage":"native-ready","atEpochMs":1}', '{"samplerStage":"native-ready","atEpochMs":1,"ms":"1"}']) {
+    expect(() => readSamplerLine(line), line).toThrow('Malformed sampler stage');
+  }
+  // A frame keeps its own validation.
+  expect(() => readSamplerLine('{"atEpochMs":1}')).toThrow('Malformed OS resource sample');
 });
 
 test('Linux actual stat/status readers retain state and distinguish disappearance, reuse and denied discovery', async () => {

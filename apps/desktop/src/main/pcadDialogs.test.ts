@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { IpcMain } from 'electron';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_RECOVERY_COPY_MARKER } from '@pointercad/ui/save-errors';
-import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openAnyDialog, openPcadDialog, savePcadDialog } from './pcadDialogs.js';
+import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openAnyDialog, openPcadDialog, registerPcadIpc } from './pcadDialogs.js';
 import type * as ImportedNodeFsTypes from 'node:fs';
 
 const memory = vi.hoisted(() => {
@@ -19,21 +22,36 @@ const memory = vi.hoisted(() => {
   };
 });
 
+const native = vi.hoisted(() => ({ handle: vi.fn<(...args: Parameters<IpcMain['handle']>) => void>() }));
 vi.mock('electron', () => ({
-  BrowserWindow: {},
+  BrowserWindow: { fromWebContents: () => null },
   dialog: {
     showOpenDialog: () => Promise.resolve(
       memory.openPath === null
         ? { canceled: true, filePaths: [] }
         : { canceled: false, filePaths: [memory.openPath] },
     ),
+    // 「保存」の窓は既定の保存先(model.pcad)を選ぶ。
+    showSaveDialog: () => Promise.resolve({ canceled: false, filePath: resolve('memory-only', 'model.pcad') }),
   },
-  ipcMain: {},
+  ipcMain: { handle: native.handle },
 }));
 vi.mock('./appSender.js', () => ({ validateAppSender: () => true }));
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof ImportedNodeFsTypes>();
   return { ...original, promises: {
+    open(path: string) {
+      memory.files.set(path, new Uint8Array(0));
+      return Promise.resolve({
+        write(bytes: Uint8Array, offset: number, length: number, position: number) {
+          const current = memory.files.get(path) ?? new Uint8Array(0);
+          const next = new Uint8Array(Math.max(current.byteLength, position + length));
+          next.set(current); next.set(bytes.subarray(offset, offset + length), position); memory.files.set(path, next);
+          return Promise.resolve({ bytesWritten: length, buffer: bytes });
+        },
+        close: () => Promise.resolve(),
+      });
+    },
     writeFile(path: string, bytes: Uint8Array) { memory.files.set(path, bytes.slice()); return Promise.resolve(); },
     rename(source: string, destination: string) {
       if (memory.failRename) throw new Error('rename refused');
@@ -80,10 +98,26 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const destination = resolve('memory-only', 'model.pcad');
 const originalBytes = Uint8Array.of(1, 2, 3), savedBytes = Uint8Array.of(4, 5, 6);
-function save() { return savePcadDialog(null, 'model.pcad', savedBytes, false, destination); }
+let serial = 0;
+let sender = Object.assign(new EventEmitter(), { id: serial });
+function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
+  const callback = native.handle.mock.calls.find(([name]) => name === channel)?.[1];
+  if (callback === undefined) throw new Error(`IPC未登録: ${channel}`);
+  return Promise.resolve().then((): unknown => Reflect.apply(callback, undefined, [{ sender }, ...args]));
+}
+/** 案Bの「保存」を画面と同じ順(開始→分けた回→確定)で通す。置換の手順は書き出しと共通の 1 つ。 */
+async function save(): Promise<unknown> {
+  const receipt = await invoke('pcad:saveBegin', 'model.pcad', true, 'part', savedBytes.byteLength);
+  if (typeof receipt !== 'object' || receipt === null || !('transferId' in receipt)) throw new Error('開始の答えなし');
+  await invoke('pcad:saveChunk', receipt.transferId, 0, savedBytes, createHash('sha256').update(savedBytes).digest('hex'));
+  return invoke('pcad:saveCommit', receipt.transferId);
+}
 function backups() { return [...memory.files].filter(([path]) => path.includes('.backup-')); }
 
+afterEach(() => { sender.emit('destroyed'); });
 beforeEach(() => {
+  serial += 1; sender = Object.assign(new EventEmitter(), { id: serial });
+  native.handle.mockClear(); registerPcadIpc();
   memory.files.clear(); memory.files.set(destination, originalBytes.slice()); memory.removed.length = 0;
   memory.failRename = false; memory.failBackup = false; memory.failReplace = false;
   memory.failRestore = false; memory.failCleanup = false;
@@ -93,7 +127,7 @@ beforeEach(() => {
 
 describe('デスクトップ保存の障害時にも元の内容を失わない（レビュー R01）', () => {
   it('同一フォルダー内の置換が成功すれば新しい内容だけが残る', async () => {
-    expect(await save()).toEqual({ name: 'model.pcad', path: destination });
+    expect(await save()).toBe('model.pcad');
     expect([...memory.files]).toEqual([[destination, savedBytes]]);
   });
 
@@ -136,7 +170,7 @@ describe('デスクトップ保存の障害時にも元の内容を失わない�
 
   it('成功後に一時ファイルを消せなくても保存を巻き戻さない', async () => {
     memory.failRename = true; memory.failCleanup = true;
-    expect(await save()).toEqual({ name: 'model.pcad', path: destination });
+    expect(await save()).toBe('model.pcad');
     expect(memory.files.get(destination)).toEqual(savedBytes);
     expect(backups()[0]?.[1]).toEqual(originalBytes);
   });

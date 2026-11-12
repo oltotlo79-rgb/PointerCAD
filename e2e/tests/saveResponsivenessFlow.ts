@@ -347,6 +347,38 @@ function median(values: readonly number[]): number {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
+interface PeakPidReading {
+  readonly pid: number; readonly workingSetBytes: number | null; readonly privateBytes: number | null;
+  readonly extraWorkingSetBytes: number | null; readonly extraPrivateBytes: number | null;
+}
+
+/**
+ * 山の1件(保存中で全PIDの WS 合計が最大の採取)の PID ごとの WS・private と、保存前の中央値との差。
+ * 記憶量の要約のログ([記憶量記録])にだけ使い、判定には使わない。読めない値は null のまま出す。
+ */
+function peakByPid(before: readonly ProcessTreeSample[], during: readonly ProcessTreeSample[], clickedAt: number):
+  { readonly atAfterClickMs: number; readonly processes: readonly PeakPidReading[] } | null {
+  const readings = (sample: ProcessTreeSample) => sample.readings.flatMap(reading => typeof reading === 'object' && reading !== null
+    && 'pid' in reading && typeof reading.pid === 'number' ? [{ pid: reading.pid,
+      workingSetBytes: 'workingSetBytes' in reading && typeof reading.workingSetBytes === 'number' ? reading.workingSetBytes : null,
+      privateBytes: 'privateBytes' in reading && typeof reading.privateBytes === 'number' ? reading.privateBytes : null }] : []);
+  let peak: ProcessTreeSample | undefined;
+  for (const sample of during) {
+    if (sample.workingSetBytes === null) continue;
+    if (peak === undefined || peak.workingSetBytes === null || sample.workingSetBytes > peak.workingSetBytes) peak = sample;
+  }
+  if (peak === undefined) return null;
+  const baselineOf = (pid: number, key: 'workingSetBytes' | 'privateBytes'): number | null => {
+    const values = before.flatMap(sample => readings(sample).filter(row => row.pid === pid).map(row => row[key]))
+      .filter((value): value is number => value !== null);
+    return values.length === 0 ? null : median(values);
+  };
+  const extra = (value: number | null, baseline: number | null): number | null => value === null || baseline === null ? null : value - baseline;
+  return { atAfterClickMs: peak.at - clickedAt, processes: readings(peak).map(row => ({ ...row,
+    extraWorkingSetBytes: extra(row.workingSetBytes, baselineOf(row.pid, 'workingSetBytes')),
+    extraPrivateBytes: extra(row.privateBytes, baselineOf(row.pid, 'privateBytes')) })) };
+}
+
 /** 実OPFSのファイルを、製品の File System Access API の保存の口(showSaveFilePicker)へ渡す。 */
 async function useOpfsSaveTarget(page: Page, fileName: string): Promise<SaveClockCalibration> {
   const nodeBefore = performance.now();
@@ -541,6 +573,12 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     };
     await writeFile(info.outputPath(`save-${String(mib)}-${String(repeat)}.json`), JSON.stringify(record, null, 2));
     await info.attach(`save-${mib}-${repeat}`, { contentType: 'application/json', body: JSON.stringify(record, null, 2) });
+    // 判定の前に記憶量の要約を1行で出す(成功の回も外部検査のログで版どうしを比べ、判定で落ちた回も値を残すため)。
+    // 上限・判定の式・判定の順は変えない。出力の形は [性能記録](releasePerformance.ts)と同じ「印 + JSON」。
+    console.log('[記憶量記録]', JSON.stringify({ label: responseObservation.label, environment: record.environment, target,
+      budgetBytes: extraMemoryBudgetBytes, complete: record.memory.complete, baseline, peak, released,
+      extraPeak: record.memory.extraPeak, extraAfterRelease: record.memory.extraAfterRelease, counts: record.memory.counts,
+      peakByPid: peakByPid(before, during, clickedAt) }));
     expect(record.memory.complete, 'process-memory collection incomplete; inspect expected/observed PIDs and readings (not a product memory-budget exceedance)').toBe(true);
     // 100msは参考値(docs/requirements.md §5.2)。必要以上の遅さは共通の判定で失敗にする(元の100msの5倍、500ms超)。記録の書出しの後に判定する。
     reportDuration(p95, responseObservation.referenceTargetMs, `${responseObservation.label} p95`);

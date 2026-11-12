@@ -50,7 +50,7 @@ OOFEMにはLGPL-2.1-or-laterが適用されます。この配布が採用する�
 
 `portable/rebuild-oofem-pyodide.sh` はBash/Linux用です。実証環境はLinux aarch64で、Emscripten 4.0.9、Pyodide/CPython ABIと固定Python環境を要求します。Windowsだけで実行する場合は対応するLinux環境を別途用意してください。ツールチェーンや13個のbuild用wheelが全て同梱された、という意味ではありません。
 
-`portable/replay-environment.json` と `venv-requirements.txt` に環境の版、`acquisition-request.json` に13個のwheelの固定取得URLとSHAがあります。開発者のcacheBodyパスではなく各行のPyPI URLを使い、空のwheelhouseへ保存して `wheelhouse-SHA256SUMS` と照合します。`packet-inventory.json` がrecipe/制御資料を固定しています。ビルド前にツールチェーン・xbuildenv・venvをこれらの固定条件で用意してください。
+`portable/replay-environment.json` にツールチェーンと以前の再構築の環境の版、`venv-requirements.txt` にrecipeが求めるvenvの版、`acquisition-request.json` に13個のwheelの固定取得URLとSHAがあります。開発者のcacheBodyパスではなく各行のPyPI URLを使い、空のwheelhouseへ保存して `wheelhouse-SHA256SUMS` と照合します。`packet-inventory.json` がrecipe/制御資料を固定しています。ビルド前にツールチェーン・xbuildenv・venvをこれらの固定条件で用意してください。venvは `venv-requirements.txt` の版で用意します。2026-11-12に、certifi・filelock・pip・virtualenvの4つの版を脆弱性の修正版（certifi 2026.10.18、filelock 4.2.1、pip 26.2.0、virtualenv 21.14.9）へ上げました。`replay-environment.json` のvenvには以前の版が記録のまま残っており、この4つだけが `venv-requirements.txt` と違います。新しい版での再構築は実行していません。同梱の `replay_controls.py` と `replay-status.json` は2026-10-12の再構築（recipeのSHA-256 `1eb34343d9d97ac5d9dab563f359d8e63f56f8ec6ef9e0b3c62ce138b81684aa`）の記録で、版を上げた後のrecipeにはそのままでは使えません。`replay_controls.py` は、recipeのSHA-256が違うと何も実行する前に「script SHA mismatch」で止まる作りです。新しいrecipe用の制御は用意していません。`acquisition-request.json` の「existing post-repair venv」は当時の依頼の文で、当時のvenv（4つが古い版）は今のrecipeの `s_venv` の版の照合で止まる作りです。どちらも実行しての確認はしていません。
 
 受領したruntimeの絶対パスを `RUNTIME`、用意した環境を `VENV`、`EMSDK_ENV`、`XBUILDENV`、`WHEELHOUSE`、まだ存在しない出力先を `BUILD_OUT` として指定します。利用者固有のパスに固定する必要はありません。
 

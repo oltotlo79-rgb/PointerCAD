@@ -84,8 +84,8 @@
       "sha256": "340502daa98931d864ee8d283f49c9f98f55ffe8e7a5632c38d02dff20e6e86f"
     },
     "evidence/source-index.json": {
-      "bytes": 66381,
-      "sha256": "579e1cc55ddcc0334105d38f6ac9b8c5189adfabd464ad46e63fc4f10f71be11"
+      "bytes": 66382,
+      "sha256": "b966ff6d64b638f914e9cb3d6fac0f7374d47caa277a9a2434486708249124f8"
     },
     "evidence/source-supplement.md": {
       "bytes": 4035,
@@ -472,8 +472,8 @@
       "sha256": "3651317c63deb56ba201d1737bc12a038e579fb6986ae619b38717fc3a23eaff"
     },
     "sources/native-rebuild/portable/rebuild-oofem-pyodide.sh": {
-      "bytes": 18976,
-      "sha256": "1eb34343d9d97ac5d9dab563f359d8e63f56f8ec6ef9e0b3c62ce138b81684aa"
+      "bytes": 19274,
+      "sha256": "cf15806cc115b25f39f485e3c3dd1ad0514c3541e07f1551d14a80b55b24627c"
     },
     "sources/native-rebuild/portable/replay-environment.json": {
       "bytes": 20212,
@@ -492,16 +492,16 @@
       "sha256": "2d7dbe5e79364c106d6690b492a6dc599ebfe378bdb20c636778b880d1fb524a"
     },
     "sources/native-rebuild/portable/venv-requirements.txt": {
-      "bytes": 988,
-      "sha256": "08fa224c1e0b98b60743ffee62a1989e34899f4ccfa3ec739bc4cdcd9b19f528"
+      "bytes": 1231,
+      "sha256": "60a830ba3e13706d25757cf279dff38b01efb24057e19f014aa9ef9c72354e18"
     },
     "sources/native-rebuild/portable/wheelhouse-SHA256SUMS": {
       "bytes": 1375,
       "sha256": "cb39d706813630fa34ca471525a46275f589feb2bd00e89c77a0cce0b86978dc"
     },
     "sources/native-rebuild/portable/packet-inventory.json": {
-      "bytes": 6661,
-      "sha256": "75938a9c01f8c2086b9114d4cc323faf914c105738ed8b9c0c6125e3610d7af2"
+      "bytes": 6662,
+      "sha256": "927752b3465db0b8614e570266bb2ddec7ad5acf174b3ca19f05ac9c5993b268"
     },
     "sources/native-rebuild/portable/replay-status.json": {
       "bytes": 2759,
@@ -648,8 +648,8 @@
       "sha256": "c185ecbf3a94843a4ecc96df199ef80ec88db7825541c43976d01dcc63efdff6"
     },
     "evidence/recipient-source-replacement.md": {
-      "bytes": 31052,
-      "sha256": "0ef507e4a61f5e3f4a0b1d3f9bb557b8d9548755e929d1e25d1d1ae128a595ae"
+      "bytes": 32273,
+      "sha256": "126d392f928618a75a089073707646f647f70e575689fb5425d81863429a62ca"
     },
     "sources/netgen-rebuild/fem-netgen-replacement.spec.ts": {
       "bytes": 10362,

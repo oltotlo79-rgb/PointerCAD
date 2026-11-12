@@ -32,6 +32,12 @@ spec = importlib.util.spec_from_file_location("instruction_check_guard", HOOK)
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
 
+# 2026-11-12 cl-v103-failure-records-enforcement-1112(rules/06 §10.492): 検査11(製品のコードを変える包みの test-utils の全件)は
+# c1_test_utils_full の試験(TestUtilsFullRunTests)で確かめる。下の既存の試験は検査 1〜10 の働きを確かめる作り例で、③に製品の
+# コードを書く物が多いので、同じプロセスの中では検査11 を空にして流す(既存の期待値は変えない)。
+_TESTUTILS_FULL_FINDINGS = guard.testutils_full_findings
+guard.testutils_full_findings = lambda display, lines, scope_text: []
+
 
 def _missing_ancestors(path: Path) -> list[Path]:
     """pathから根へ向かって、まだ存在しない祖先を深い方から集める(pathが先頭)。
@@ -560,14 +566,14 @@ class CliTests(unittest.TestCase):
     def test_cli_missing_scope_path_exit1_and_new_scope_path_exit0(self):
         # ③の対象は packages/ などの根の下だけ(scratchpad/temp の下の使い捨ては対象外)。実在するはずのないパスで試す。
         missing = "packages/model/src/zz-no-such-folder-guard-selftest/missing-scope-path.ts"
-        result = self.run_cli(f"③ 編集してよいファイルは {missing} だけ。\n\n# 指示書 t\n")
+        result = self.run_cli(f"③ 編集してよいファイルは {missing} だけ。\n\n# 指示書 t\n\n## 2. 合格条件\n\n1. test-utils の単体を全件。\n")
         self.assertEqual(result.returncode, 1)
         self.assertIn(f"③のパスが実在しない: {missing}", result.stdout)
         self.assertIn("外れ: 1 件", result.stdout)
         # 新規と書けば実在しなくてよい。このフックの自己試験自身(どの取り出しにも在る)は実在する。
         for scope in (f"新規 {missing}", ".claude/hooks/instruction_check_guard.py"):
             with self.subTest(scope=scope):
-                result = self.run_cli(f"③ 編集してよいファイルは {scope} だけ。\n\n# 指示書 t\n")
+                result = self.run_cli(f"③ 編集してよいファイルは {scope} だけ。\n\n# 指示書 t\n\n## 2. 合格条件\n\n1. test-utils の単体を全件。\n")
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertIn("外れ: 0 件", result.stdout)
 
@@ -2960,6 +2966,117 @@ class E2eCoverageTests(NewChecksBase):
         self.assertFalse(any(self.MARK in message for message in errors), errors)
         self.assertIn("検査「画面検査の証拠の照合」が内部の例外で実行できなかった", self.joined(warnings))
 
+
+
+# ---------------------------------------------------------------------------
+# 2026-11-12 cl-v103-failure-records-enforcement-1112: 検査 11〜13(rules/06 §10.492・§10.498・§10.496)。
+# 検査11 は上で空にしてあるので、この試験の中だけ元の関数に戻す。
+# ---------------------------------------------------------------------------
+
+_NEW_CHECK_DOC = ("① 子エージェントを起こさない。\n② git への書き込み禁止。\n{scope}\n\n# 指示書 t\n\n## 1. 目的\n\n{lead}\n\n"
+                  "### 統括が確かめた事実\n\n{facts}\n\n## 2. 合格条件\n\n{accept}\n")
+
+
+def _new_check_doc(scope="③ 編集してよいのは docs/x.md だけ。", accept="1. 通る。", facts="- 対象は main。", lead="直す。"):
+    return _NEW_CHECK_DOC.format(scope=scope, accept=accept, facts=facts, lead=lead)
+
+
+class TestUtilsFullRunTests(unittest.TestCase):
+    def setUp(self):
+        guard.testutils_full_findings = _TESTUTILS_FULL_FINDINGS
+        self.addCleanup(setattr, guard, "testutils_full_findings", lambda display, lines, scope_text: [])
+
+    def found(self, text):
+        lines = text.splitlines()
+        return guard.testutils_full_findings("t.md", lines, guard._scope_paragraph(lines))
+
+    def test_product_file_or_folder_without_full_run_is_refused(self):
+        for scope in ("③ 編集してよいファイルは packages/ui/src/assembly/attachAssembly.ts だけ。",
+                      "③ 編集してよいのは apps/desktop/src/main/ の中だけ。",
+                      "③ 編集してよいファイルは 新規 packages/model/src/part/newThing.tsx だけ。"):
+            with self.subTest(scope=scope):
+                self.assertEqual(len(self.found(_new_check_doc(scope=scope, accept="1. ui の単体を全件。"))), 1)
+
+    def test_negated_full_run_is_refused(self):
+        text = _new_check_doc(scope="③ 編集してよいファイルは packages/ui/src/a.ts だけ。",
+                              accept="1. test-utils の単体を全件は流さない。")
+        self.assertEqual(len(self.found(text)), 1)
+
+    def test_full_run_or_non_product_scope_passes(self):
+        product = "③ 編集してよいファイルは packages/ui/src/a.ts だけ。"
+        for scope, accept in ((product, "1. ui の単体を全件と test-utils の単体を全件。"),
+                              (product, "1. packages/test-utils の全検査。"),
+                              (product, "1. `diag.py unit --owner x --package test-utils --all` が 0。"),
+                              ("③ 編集してよいファイルは packages/ui/src/a.test.ts だけ。", "1. 通る。"),
+                              ("③ 編集してよいのは docs/x.md だけ。packages/ui/src/a.ts は読むだけ。", "1. 通る。")):
+            with self.subTest(scope=scope, accept=accept):
+                self.assertEqual(self.found(_new_check_doc(scope=scope, accept=accept)), [])
+
+    def test_wired_into_check_report(self):
+        root, created_dirs = make_root()
+        self.addCleanup(cleanup_root, root, created_dirs)
+        (root / "packages/ui/src").mkdir(parents=True)
+        (root / "packages/ui/src/a.ts").write_text("export const a = 1;\n", encoding="utf-8")
+        text = _new_check_doc(scope="③ 編集してよいファイルは packages/ui/src/a.ts だけ。", accept="1. ui の単体を全件。")
+        errors, _warnings = guard.check_instruction_report(root, "t.md", text, datetime(2026, 11, 12, 9, 0))
+        self.assertTrue(any("test-utils の規約の検査" in error for error in errors), errors)
+
+
+class FactSourceTests(unittest.TestCase):
+    def test_docs_only_claim_warns(self):
+        for facts in ("- docs/security/a.md によると scripts/release/sbom.mjs は Electron を集めていない。",
+                      "- 部品表に入っていない（同じ文書の行。scripts/release/sbom.mjs は集めていない）。"):
+            with self.subTest(facts=facts):
+                self.assertEqual(len(guard.fact_source_findings("t.md", _new_check_doc(facts=facts).splitlines())), 1)
+
+    def test_purpose_lead_only_when_enabled(self):
+        lines = _new_check_doc(lead="- 入っていない（同じ文書の行。scripts/release/sbom.mjs は集めていない）。").splitlines()
+        self.assertEqual(guard.fact_source_findings("t.md", lines), [])
+        self.assertEqual(len(guard.fact_source_findings("t.md", lines, True)), 1)
+
+    def test_line_number_means_or_no_docs_pass(self):
+        for facts in ("- docs/a.md は古い。現物は scripts/release/sbom.mjs 541〜588 行。",
+                      "- docs/a.md は古い。現物は scripts/release/sbom.mjs:541。",
+                      "- docs/a.md と scripts/release/sbom.mjs を rg で比べた。",
+                      "- docs/a.md の数は run 43149366809 の scripts/release/sbom.mjs の出力。",
+                      "- scripts/release/sbom.mjs は Electron を集めていない。"):
+            with self.subTest(facts=facts):
+                self.assertEqual(guard.fact_source_findings("t.md", _new_check_doc(facts=facts).splitlines()), [])
+
+    def test_warning_not_error_in_check_report(self):
+        root, created_dirs = make_root()
+        self.addCleanup(cleanup_root, root, created_dirs)
+        (root / "docs").mkdir(parents=True)
+        (root / "docs/x.md").write_text("x\n", encoding="utf-8")
+        text = _new_check_doc(facts="- docs/a.md によると scripts/release/sbom.mjs は集めていない。")
+        errors, warnings = guard.check_instruction_report(root, "t.md", text, datetime(2026, 11, 12, 9, 0))
+        self.assertTrue(any("事実の出どころ" in warning for warning in warnings), warnings)
+        self.assertFalse(any("事実の出どころ" in error for error in errors), errors)
+
+
+class ReviewExclusionTests(unittest.TestCase):
+    def test_review_without_section_is_refused(self):
+        for extra in ("### 読む物\n\n- docs/requirements.md", "- 規約にある読まない物を守る。"):
+            with self.subTest(extra=extra):
+                lines = _new_check_doc(lead=extra).splitlines()
+                self.assertEqual(len(guard.review_exclusion_findings("scratchpad/claude/instructions/x-independent-review-a.md", lines)), 1)
+
+    def test_section_or_other_name_passes(self):
+        for extra in ("### 読まない物（読んだら評価は無効）\n\n- docs/報告記録2.md", "- **読まない物**: docs/報告記録2.md"):
+            with self.subTest(extra=extra):
+                lines = _new_check_doc(lead=extra).splitlines()
+                self.assertEqual(guard.review_exclusion_findings("scratchpad/claude/instructions/x-independent-review-a.md", lines), [])
+        self.assertEqual(guard.review_exclusion_findings("scratchpad/claude/instructions/x-release-1112.md",
+                                                         _new_check_doc().splitlines()), [])
+
+    def test_wired_into_check_report(self):
+        root, created_dirs = make_root()
+        self.addCleanup(cleanup_root, root, created_dirs)
+        (root / "docs").mkdir(parents=True)
+        (root / "docs/x.md").write_text("x\n", encoding="utf-8")
+        errors, _warnings = guard.check_instruction_report(
+            root, "scratchpad/claude/instructions/x-independent-review-a.md", _new_check_doc(), datetime(2026, 11, 12, 9, 0))
+        self.assertTrue(any("独立評価の読まない物" in error for error in errors), errors)
 
 if __name__ == "__main__":
     unittest.main()

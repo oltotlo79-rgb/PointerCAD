@@ -32,7 +32,7 @@ let serial = 0;
 let sender = Object.assign(new EventEmitter(), { id: serial });
 
 /**
- * `pcad:confirmTarget`等は同期関数で、不正な引数を同期的にthrowする(`pcad:save`等の
+ * `pcad:confirmTarget`等は同期関数で、不正な引数を同期的にthrowする(`pcad:saveBegin`等の
  * 非同期ハンドラとは異なり、rejectしたPromiseを返すのではない)。`Promise.resolve().then(...)`
  * で必ずマイクロタスクへ逃がし、同期throwも`.rejects`で拾えるようにする。
  */
@@ -54,13 +54,25 @@ beforeEach(() => {
 
 describe('許可済みsenderでも不正な形の引数は副作用より先に断る', () => {
   it.each([
-    ['名前が文字列でない', [42, Uint8Array.of(1), true]],
-    ['バイト列がUint8Arrayでない', ['a.pcad', 'not-bytes', true]],
-    ['saveAsが真偽でない', ['a.pcad', Uint8Array.of(1), 'yes']],
-    ['kindが許可外', ['a.pcad', Uint8Array.of(1), true, 'stl']],
-  ])('pcad:save の依頼(%s)を例外で断り、保存ダイアログを開かない', async (_label, args) => {
-    await expect(invoke('pcad:save', ...args)).rejects.toThrow('保存の依頼の形が正しくありません。');
+    ['名前が文字列でない', [42, true, 'part', 1]],
+    ['saveAsが真偽でない', ['a.pcad', 'yes', 'part', 1]],
+    ['kindが許可外', ['a.pcad', true, 'stl', 1]],
+    ['kindが無い', ['a.pcad', true]],
+    ['長さが数でない', ['a.pcad', true, 'part', Uint8Array.of(1)]],
+    ['長さが負', ['a.pcad', true, 'part', -1]],
+    ['長さが整数でない', ['a.pcad', true, 'part', 0.5]],
+  ])('pcad:saveBegin の依頼(%s)を例外で断り、保存ダイアログを開かない', async (_label, args) => {
+    await expect(invoke('pcad:saveBegin', ...args)).rejects.toThrow('保存の依頼の形が正しくありません。');
     expect(native.showSaveDialog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['識別子が無い', []],
+    ['識別子が文字列でない', [7, 0, Uint8Array.of(1), 'x']],
+    ['知らない識別子', ['unknown-transfer', 0, Uint8Array.of(1), 'x']],
+  ])('pcad:saveChunk・pcad:saveCommit の依頼(%s)を例外で断る', async (_label, args) => {
+    await expect(invoke('pcad:saveChunk', ...args)).rejects.toThrow('保存の依頼の形が正しくありません。');
+    await expect(invoke('pcad:saveCommit', ...args.slice(0, 1))).rejects.toThrow('保存の依頼の形が正しくありません。');
   });
 
   it.each([

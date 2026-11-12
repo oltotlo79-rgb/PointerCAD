@@ -225,7 +225,7 @@
     {
       "file": "e2e/release/packagedDesktop.spec.ts",
       "category": "release-config",
-      "sha256": "4187e6394390a6bb8d43f946e172dd0719548f332ec293ee825c86abf34106d9",
+      "sha256": "bcaa36e8c25ad43d6728f024948db4bbbfe72e44a635bb3d8962398db715db32",
       "reason": "packaged-desktop.config.ts variant"
     },
     {
@@ -1424,7 +1424,7 @@
       "file": "memory-highwater-ui-contract.spec.ts",
       "category": "synthetic-helper-representative",
       "reason": "synthetic DOM tests and browser-free serial GPU reader tests verify helper rejection paths; Firefox-selected memory-highwater.spec.ts uses the same helper; individual synthetic cases are not Firefox results",
-      "sha256": "9da17be6ef5fd32595c907b0ea8d6d8d395ce7cbfbd51faa5d313bfb84718af1"
+      "sha256": "ad4ce936e87b3ecdd8189d6cb8235e2c6e77b9309e875684a52d3e2700e7f7bc"
     },
     {
       "file": "memory-highwater.spec.ts",
@@ -1622,7 +1622,7 @@
       "file": "process-resource-sampler.spec.ts",
       "category": "node-process-contract",
       "reason": "Node OS process sampler and resident-frame checks; no page/browser/context fixture",
-      "sha256": "cce8a460a79b9e3b22dd7f052d0369d5d535b1f59ce504794ea5a0288d1ffb08"
+      "sha256": "ff8bfb8412cb5a34cb950699d993dc6ea0457d1299dd4ae5cbfbea2f200c3a49"
     },
     {
       "file": "project-intersect.spec.ts",

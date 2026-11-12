@@ -32,10 +32,20 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
     ipcRenderer.invoke('pcad:confirmTarget', token),
   /** 新しい文書へ替えるとき、確定済み・未確定の保存先を解除する。 */
   clearSaveTarget: (): Promise<unknown> => ipcRenderer.invoke('pcad:clearTarget'),
-  /** 「保存」。答えは保存したファイル名か null(取り消し)。 */
-  savePcad: (suggestedName: string, bytes: Uint8Array, saveAs: boolean,
-    kind?: 'part' | 'assembly' | 'drawing'): Promise<unknown> =>
-    ipcRenderer.invoke('pcad:save', suggestedName, bytes, saveAs, kind),
+  /**
+   * 「保存」の開始(案B: バイト列を 1 回で送らず、本体が決めた大きさに分けて送る)。本体が保存先を決め、
+   * 答えは `{ transferId, chunkBytes }` か null(取り消し)。分けるのは画面の側(desktopFileGateway.ts)で、
+   * ここは大きな並びを受け取らない(全体をここへ渡すと、世界の境目で全体が写される)。
+   */
+  beginPcadSave: (suggestedName: string, saveAs: boolean, kind: 'part' | 'assembly' | 'drawing',
+    totalBytes: number): Promise<unknown> => ipcRenderer.invoke('pcad:saveBegin', suggestedName, saveAs, kind, totalBytes),
+  /** 分けた 1 回分。通し番号は 0 から、照合値は中身の SHA-256(16 進)。答えは受けたら true。 */
+  sendPcadSaveChunk: (transferId: string, index: number, bytes: Uint8Array, sha256: string): Promise<unknown> =>
+    ipcRenderer.invoke('pcad:saveChunk', transferId, index, bytes, sha256),
+  /** 確定。答えは保存したファイル名か null(保存先が途中で解除された)。 */
+  commitPcadSave: (transferId: string): Promise<unknown> => ipcRenderer.invoke('pcad:saveCommit', transferId),
+  /** 途中の保存を捨てる(本体の一時ファイルを消す。保存先には触れない)。 */
+  abortPcadSave: (transferId: string): Promise<unknown> => ipcRenderer.invoke('pcad:saveAbort', transferId),
   /** 上書き先を覚えているか。答えは真偽。 */
   hasSaveTarget: (): Promise<unknown> => ipcRenderer.invoke('pcad:hasTarget'),
   /**

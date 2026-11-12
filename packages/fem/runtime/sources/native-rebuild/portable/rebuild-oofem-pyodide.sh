@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Portable rebuild recipe for the PointerCAD OOFEM Pyodide wheel from its corresponding source (Linux, no network).
-# r15 (replay environment, see replay-environment.json): exact 13-file wheelhouse, all build requirements pinned,
+# r15 (replay environment, see replay-environment.json; the venv versions this recipe requires are venv-requirements.txt): exact 13-file wheelhouse, all build requirements pinned,
 # no discarded exit status in the pip/emscripten set-up, aarch64 host. This recipe is UNEXECUTED as a whole. It mirrors the actually executed native build that produced
 # oofem-3.1.dev5+g214b161ed-cp313-cp313-pyodide_2025_0_wasm32.whl (aaff729b15e1cec2ef90c9c0bb2d3594b3997b523d35344b18ba9f64d4d1a7e4);
-# see packet-files.json for the exact relationship. It is not that build.
+# see packet-files.json for the exact relationship. It is not that build. Since 2026-11-12, s_venv requires certifi, filelock, pip and virtualenv at security-fix versions (venv-requirements.txt) that differ from replay-environment.json; no rebuild has been run with them.
 #
 # Usage (own process group):
 #   setsid --wait bash rebuild-oofem-pyodide.sh --oofem-tar FILE --pybind11-tar FILE --timer-patch FILE \
@@ -156,21 +156,21 @@ import sys
 from importlib.metadata import distributions
 assert sys.version_info[:3] == (3, 13, 2), sys.version
 want = {'annotated-doc': '0.0.5', 'annotated-types': '0.8.0', 'anyio': '4.15.1', 'auditwheel-emscripten': '0.2.5',
-        'build': '1.2.2.post1', 'certifi': '2026.7.22', 'charset-normalizer': '3.5.2', 'click': '8.3.1',
-        'distlib': '0.4.3', 'filelock': '4.1.0', 'h11': '0.16.0', 'httpcore': '1.0.9', 'httpx': '0.28.1',
+        'build': '1.2.2.post1', 'certifi': '2026.10.18', 'charset-normalizer': '3.5.2', 'click': '8.3.1',
+        'distlib': '0.4.3', 'filelock': '4.2.1', 'h11': '0.16.0', 'httpcore': '1.0.9', 'httpx': '0.28.1',
         'idna': '3.20', 'leb128': '1.0.9', 'markdown-it-py': '4.2.0', 'mdurl': '0.1.2', 'packaging': '26.3',
-        'pathspec': '1.1.1', 'pip': '24.3.1', 'platformdirs': '4.13.0', 'pydantic': '2.14.0',
+        'pathspec': '1.1.1', 'pip': '26.2.0', 'platformdirs': '4.13.0', 'pydantic': '2.14.0',
         'pydantic-core': '2.50.0', 'pygments': '2.21.0', 'pyodide-build': '0.31.1', 'pyodide-cli': '0.5.0',
         'pyodide-lock': '0.1.3', 'pyproject-hooks': '1.3.3', 'python-discovery': '1.6.2', 'requests': '2.34.2',
         'resolvelib': '1.2.1', 'rich': '15.0.0', 'ruamel-yaml': '0.19.1', 'scikit-build-core': '0.11.6',
         'shellingham': '1.5.4', 'typer': '0.25.1', 'typing-inspection': '0.4.4', 'typing-extensions': '4.16.0',
-        'unearth': '0.18.3', 'urllib3': '2.8.0', 'virtualenv': '21.14.6', 'wheel': '0.48.0'}
+        'unearth': '0.18.3', 'urllib3': '2.8.0', 'virtualenv': '21.14.9', 'wheel': '0.48.0'}
 norm = lambda n: n.lower().replace('_', '-').replace('.', '-')
 have = {norm(d.metadata['Name']): d.version for d in distributions()}
 want = {norm(k): v for k, v in want.items()}
 diff = {k: (want.get(k), have.get(k)) for k in sorted(set(want) | set(have)) if want.get(k) != have.get(k)}
 print(sys.version, len(have), 'distributions')
-assert not diff, f'venv differs from the recorded post-repair venv: {diff}'
+assert not diff, f'venv differs from the venv versions this recipe requires (venv-requirements.txt): {diff}'
 PYEOF
 }
 s_toolchain() {

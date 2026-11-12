@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import type { IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
-import { constants as fileSystemConstants, promises as fileSystem } from 'node:fs';
+import { closeSync, constants as fileSystemConstants, promises as fileSystem, unlinkSync } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { SAVE_RECOVERY_COPY_MARKER, hasSaveRecoveryCopy } from '@pointercad/ui/save-errors';
 
@@ -22,8 +23,9 @@ import { beginExportWrite, clearExportHandoff, registerExportHandoffIpc } from '
  * 「名前」「バイト列」「名前を付けて保存かどうか」「ファイルの種類」だけで、
  * **パスは画面へ渡さない**(NFR-SE-1「外へ出す情報は最小にする」)。上書き先はここで覚える。
  *
- * **上書き先を扱うのは `.pcad` の 5 本(`pcad:open` / `pcad:confirmTarget` /
- * `pcad:clearTarget` / `pcad:save` / `pcad:hasTarget`)だけ。** `pcad:open` は実パスを
+ * **上書き先を扱うのは `.pcad` の口(`pcad:open` / `pcad:confirmTarget` /
+ * `pcad:clearTarget` / 保存の 4 本 `pcad:saveBegin`・`pcad:saveChunk`・`pcad:saveCommit`・`pcad:saveAbort` /
+ * `pcad:hasTarget`)だけ。** `pcad:open` は実パスを
  * 未確定の token に結び付け、画面が文書を検証した後の `pcad:confirmTarget` で初めて確定する。
  * 種類つきの 2 本(`pcad:openAny` / `pcad:saveAs`)は `lastPaths` を読みも書きもしない
  * (§0.a-0.4。書き出した先を覚えると、次の Ctrl+S が部品ではなく書き出した先を上書きしかねない)。
@@ -39,7 +41,18 @@ import { beginExportWrite, clearExportHandoff, registerExportHandoffIpc } from '
  * 読まずに同じ文字列を書いている)。
  */
 export const PCAD_OPEN_CHANNEL = 'pcad:open';
-export const PCAD_SAVE_CHANNEL = 'pcad:save';
+/**
+ * 「保存」は 4 本に分ける(案B、2026-11-13)。バイト列を 1 回の IPC で受けると、128MiB の部品で
+ * 本体プロセスに「受け取った並び」と「IPC の作業領域」が同時に生き、保存中の追加の記憶量の山の
+ * 大部分になっていた。開始で保存先を決め、`PCAD_SAVE_CHUNK_BYTES` ずつ一時ファイルへ追記し、確定で置き換える。
+ */
+const PCAD_SAVE_BEGIN_CHANNEL = 'pcad:saveBegin';
+const PCAD_SAVE_CHUNK_CHANNEL = 'pcad:saveChunk';
+const PCAD_SAVE_COMMIT_CHANNEL = 'pcad:saveCommit';
+const PCAD_SAVE_ABORT_CHANNEL = 'pcad:saveAbort';
+/** 分けて受け取る 1 回分の大きさ。ここだけで決め、開始の答えで画面へ知らせる(画面は自分で決めない)。 */
+const PCAD_SAVE_CHUNK_BYTES = 8 * 1024 * 1024;
+const SAVE_REQUEST_REFUSED = '保存の依頼の形が正しくありません。';
 export const PCAD_HAS_TARGET_CHANNEL = 'pcad:hasTarget';
 export const PCAD_CONFIRM_TARGET_CHANNEL = 'pcad:confirmTarget';
 export const PCAD_CLEAR_TARGET_CHANNEL = 'pcad:clearTarget';
@@ -91,12 +104,6 @@ export interface OpenedPcadFile {
   /** ファイルの絶対パス。上書き先として覚えるためだけに使う。 */
   readonly path: string;
   readonly bytes: Uint8Array;
-}
-
-/** 「保存」で書き込んだ先。`path` は本体プロセスの中だけで使う。 */
-export interface SavedPcadFile {
-  readonly name: string;
-  readonly path: string;
 }
 
 /**
@@ -168,15 +175,31 @@ function requireExportCurrent(signal?: AbortSignal): void {
   if (signal?.aborted) throw new ExportCancelledError('書き出しを取り消しました。');
 }
 
+/** 保存先と同じフォルダーの一時ファイルの名前。置換を同じボリュームの中の rename にするため。 */
+function temporaryPathFor(filePath: string): string {
+  return join(dirname(filePath), `${basename(filePath)}.tmp-${crypto.randomUUID()}`);
+}
+
 async function writeBytesTo(filePath: string, bytes: Uint8Array, signal?: AbortSignal): Promise<void> {
+  const temporaryPath = temporaryPathFor(filePath);
+  await replaceWithTemporary(filePath, temporaryPath,
+    () => fileSystem.writeFile(temporaryPath, bytes, signal === undefined ? { flag: 'wx' } : { flag: 'wx', signal }), signal);
+}
+
+/**
+ * `finishTemporary` で一時ファイルを完成させてから、保存先を置き換える。置き換えの前は保存先に触れない。
+ * 書き出し(`writeBytesTo`)と、分けて受け取る「保存」(`commitSaveTransfer`)の両方がこの 1 つの手順を使う。
+ * 成否に関わらず一時ファイルは消し、復元できなかった時の控えだけを残す。
+ */
+async function replaceWithTemporary(filePath: string, temporaryPath: string,
+  finishTemporary: () => Promise<void>, signal?: AbortSignal): Promise<void> {
   const directory = dirname(filePath);
-  const temporaryPath = join(directory, `${basename(filePath)}.tmp-${crypto.randomUUID()}`);
   const backupPath = join(directory, `${basename(filePath)}.backup-${crypto.randomUUID()}`);
   let backupCreated = false;
   let backupMayBeRemoved = false;
   try {
     requireExportCurrent(signal);
-    await fileSystem.writeFile(temporaryPath, bytes, signal === undefined ? { flag: 'wx' } : { flag: 'wx', signal });
+    await finishTemporary();
     requireExportCurrent(signal);
     try {
       requireExportCurrent(signal);
@@ -246,17 +269,17 @@ export async function openPcadDialog(window: BrowserWindow | null,
 }
 
 /**
- * 「保存」。`saveAs` が false で `lastPath` を覚えていれば、窓を出さずにそこへ上書きする
+ * 「保存」の保存先を決める。`saveAs` が false で `lastPath` を覚えていれば、窓を出さずにそこを返す
  * (Web 版が File System Access API でしている振る舞いと同じ)。取り消されたら null。
+ * 書くのは分けて受け取った後の確定(`commitSaveTransfer`)。
  */
-export async function savePcadDialog(
+async function choosePcadSavePath(
   window: BrowserWindow | null,
   suggestedName: string,
-  bytes: Uint8Array,
   saveAs: boolean,
   lastPath: string | null,
-  kind: 'part' | 'assembly' | 'drawing' = 'part',
-): Promise<SavedPcadFile | null> {
+  kind: 'part' | 'assembly' | 'drawing',
+): Promise<string | null> {
   let filePath = saveAs ? null : lastPath;
   if (filePath === null) {
     const options: SaveDialogOptions = {
@@ -278,8 +301,7 @@ export async function savePcadDialog(
       ? (extname(result.filePath).toLowerCase() === '.pcada' ? result.filePath : `${result.filePath}.pcada`)
       : withPcadExtension(result.filePath);
   }
-  await writeBytesTo(filePath, bytes);
-  return { name: basename(filePath), path: filePath };
+  return filePath;
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +474,184 @@ function watchWindow(event: IpcMainInvokeEvent): void {
     pendingPaths.delete(id);
     targetRevisions.delete(id);
     watchedWindowIds.delete(id);
+    abortSenderTransfers(id);
+  });
+  // 読み直し・描画の処理の終了では送り手が消えるので、途中の保存の一時ファイルを捨てる(本物には触れない)。
+  contents.on('did-navigate', () => { abortSenderTransfers(id); });
+  contents.on('render-process-gone', () => { abortSenderTransfers(id); });
+}
+
+/** 分けて受け取っている途中の「保存」1 回分。実パスと一時ファイルは本体プロセスの中だけで持つ。 */
+interface PcadSaveTransfer {
+  readonly senderId: number;
+  readonly path: string;
+  readonly temporaryPath: string;
+  readonly handle: FileHandle;
+  readonly totalBytes: number;
+  /** 開始の時の `targetRevisions` の版。確定の時に変わっていれば上書き先として覚えない(今の `pcad:save` と同じ決まり)。 */
+  readonly revision: object;
+  receivedBytes: number;
+  nextIndex: number;
+  busy: boolean;
+}
+
+/** 保存ごとの識別子(本体が開始で作る)→ 途中の保存。同時に複数あってよい(画面が閉じる・取消・確定で消える)。 */
+const saveTransfers = new Map<string, PcadSaveTransfer>();
+let exitCleanupRegistered = false;
+
+/** 途中の保存を捨てる。一時ファイルを閉じて消し、保存先には触れない。2 回呼んでも片付けは 1 回。 */
+async function abortSaveTransfer(transferId: string): Promise<void> {
+  const transfer = saveTransfers.get(transferId);
+  if (transfer === undefined) return;
+  saveTransfers.delete(transferId);
+  await transfer.handle.close().catch(() => undefined);
+  await removeTemporaryFile(transfer.temporaryPath);
+}
+
+function abortSenderTransfers(senderId: number): void {
+  for (const [transferId, transfer] of saveTransfers) {
+    if (transfer.senderId === senderId) void abortSaveTransfer(transferId);
+  }
+}
+
+/** アプリの終了で非同期の片付けが間に合わない時のため、終了の直前に残りの一時ファイルを同期で消す。 */
+function removeTransfersAtExit(): void {
+  for (const transfer of saveTransfers.values()) {
+    try { closeSync(transfer.handle.fd); } catch { /* 閉じ済みでよい */ }
+    try { unlinkSync(transfer.temporaryPath); } catch { /* 無ければよい */ }
+  }
+  saveTransfers.clear();
+}
+
+/** 形の違う依頼を断る。途中の保存は捨てて、同じ識別子では続けさせない。 */
+async function refuseSaveTransfer(transferId: string): Promise<never> {
+  await abortSaveTransfer(transferId);
+  throw new Error(SAVE_REQUEST_REFUSED);
+}
+
+/** 画面から来た識別子の保存を探す。知らない・終わった・別の画面の識別子は断る(他の保存は捨てない)。 */
+function ownTransfer(event: IpcMainInvokeEvent, transferId: unknown): { readonly id: string; readonly transfer: PcadSaveTransfer } {
+  const transfer = typeof transferId === 'string' ? saveTransfers.get(transferId) : undefined;
+  if (typeof transferId !== 'string' || transfer === undefined || transfer.senderId !== event.sender.id) {
+    throw new Error(SAVE_REQUEST_REFUSED);
+  }
+  return { id: transferId, transfer };
+}
+
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...digest].map(value => value.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 「保存」の開始。形を確かめ(合計は読込の上限 `MAX_COMPRESSED_INPUT_BYTES` まで。読めないファイルで開ける元を
+ * 上書きしない)、保存先を決め、同じフォルダーに一時ファイルを排他で作る。取り消されたら null。
+ */
+async function beginSaveTransfer(event: IpcMainInvokeEvent, args: readonly unknown[]):
+  Promise<{ transferId: string; chunkBytes: number } | null> {
+  const [suggestedName, saveAs, kind, totalBytes] = args;
+  if (args.length !== 4 || typeof suggestedName !== 'string' || typeof saveAs !== 'boolean'
+    || (kind !== 'part' && kind !== 'assembly' && kind !== 'drawing')
+    || typeof totalBytes !== 'number' || !Number.isSafeInteger(totalBytes) || totalBytes < 0) {
+    throw new Error(SAVE_REQUEST_REFUSED);
+  }
+  if (totalBytes > MAX_COMPRESSED_INPUT_BYTES) {
+    throw new Error('ファイルが大きすぎるため保存できません。開ける大きさの上限を超えています。');
+  }
+  watchWindow(event);
+  const senderId = event.sender.id, revision = {};
+  targetRevisions.set(senderId, revision);
+  const path = await choosePcadSavePath(windowOf(event), suggestedName, saveAs, lastPaths.get(senderId) ?? null, kind);
+  // 窓の間に画面が閉じたら送り手がいないので、一時ファイルを作らない。
+  if (path === null || !watchedWindowIds.has(senderId)) return null;
+  const temporaryPath = temporaryPathFor(path);
+  let handle: FileHandle;
+  try {
+    handle = await fileSystem.open(temporaryPath, 'wx');
+  } catch (cause) {
+    throw new Error('ファイルを保存できませんでした。', { cause });
+  }
+  const transferId = crypto.randomUUID();
+  saveTransfers.set(transferId, { senderId, path, temporaryPath, handle, totalBytes, revision,
+    receivedBytes: 0, nextIndex: 0, busy: false });
+  if (!watchedWindowIds.has(senderId)) {
+    await abortSaveTransfer(transferId);
+    return null;
+  }
+  return { transferId, chunkBytes: PCAD_SAVE_CHUNK_BYTES };
+}
+
+/**
+ * 分けた 1 回分を受け取り、一時ファイルの続きへ書く。通し番号は 0 から 1 つずつ(入れ違い・欠け・二重を断る)、
+ * 最後の回より前は `PCAD_SAVE_CHUNK_BYTES` ちょうど、合計は開始の長さまで、中身は送り手の SHA-256 と一致すること。
+ * 1 つの保存の回は 1 つずつ(前の回を書いている間の次の回は断る)。
+ */
+async function receiveSaveChunk(event: IpcMainInvokeEvent, args: readonly unknown[]): Promise<true> {
+  const [transferId, index, bytes, digest] = args;
+  const { id, transfer } = ownTransfer(event, transferId);
+  const position = transfer.receivedBytes;
+  // IPC が届ける並びは ArrayBuffer の上にある。共有の領域の並びは断る(写さずに同じ領域の見せ方として扱う)。
+  const piece = bytes instanceof Uint8Array && bytes.buffer instanceof ArrayBuffer
+    ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : null;
+  if (args.length !== 4 || transfer.busy || index !== transfer.nextIndex || piece === null
+    || typeof digest !== 'string' || piece.byteLength === 0 || piece.byteLength > PCAD_SAVE_CHUNK_BYTES
+    || position + piece.byteLength > transfer.totalBytes
+    || (position + piece.byteLength < transfer.totalBytes && piece.byteLength !== PCAD_SAVE_CHUNK_BYTES)) {
+    return refuseSaveTransfer(id);
+  }
+  transfer.busy = true;
+  transfer.nextIndex += 1;
+  transfer.receivedBytes += piece.byteLength;
+  try {
+    if (await sha256Hex(piece) !== digest || saveTransfers.get(id) !== transfer) return await refuseSaveTransfer(id);
+    try {
+      for (let written = 0; written < piece.byteLength;) {
+        const { bytesWritten } = await transfer.handle.write(piece, written, piece.byteLength - written, position + written);
+        if (bytesWritten <= 0) throw new Error('一時ファイルへ書き込めませんでした。');
+        written += bytesWritten;
+      }
+    } catch (cause) {
+      await abortSaveTransfer(id);
+      throw new Error('ファイルを保存できませんでした。', { cause });
+    }
+  } finally {
+    transfer.busy = false;
+  }
+  return true;
+}
+
+/**
+ * 確定。全部届いたことを確かめ、一時ファイルを閉じてから、書き出しと同じ置換の手順で保存先を置き換える。
+ * 開始の後に保存先の解除・別の保存の開始があれば、書いたうえで上書き先としては覚えず null を返す(今の決まり)。
+ */
+async function commitSaveTransfer(event: IpcMainInvokeEvent, args: readonly unknown[]): Promise<string | null> {
+  const { id, transfer } = ownTransfer(event, args[0]);
+  if (args.length !== 1 || transfer.busy || transfer.receivedBytes !== transfer.totalBytes) return refuseSaveTransfer(id);
+  saveTransfers.delete(id);
+  await replaceWithTemporary(transfer.path, transfer.temporaryPath, () => transfer.handle.close());
+  if (targetRevisions.get(event.sender.id) !== transfer.revision) return null;
+  rememberPath(event, transfer.path);
+  return basename(transfer.path);
+}
+
+/** 保存の 4 本の口を登録する。どの口も、許可していない送り手には副作用より先に答える。 */
+function registerSaveTransferIpc(): void {
+  if (!exitCleanupRegistered) {
+    process.once('exit', removeTransfersAtExit);
+    exitCleanupRegistered = true;
+  }
+  ipcMain.handle(PCAD_SAVE_BEGIN_CHANNEL, (event: IpcMainInvokeEvent, ...args: unknown[]) =>
+    validateAppSender(event) ? beginSaveTransfer(event, args) : null);
+  ipcMain.handle(PCAD_SAVE_CHUNK_CHANNEL, (event: IpcMainInvokeEvent, ...args: unknown[]) =>
+    validateAppSender(event) ? receiveSaveChunk(event, args) : false);
+  ipcMain.handle(PCAD_SAVE_COMMIT_CHANNEL, (event: IpcMainInvokeEvent, ...args: unknown[]) =>
+    validateAppSender(event) ? commitSaveTransfer(event, args) : null);
+  ipcMain.handle(PCAD_SAVE_ABORT_CHANNEL, async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<void> => {
+    if (!validateAppSender(event)) return;
+    const [transferId] = args;
+    const transfer = typeof transferId === 'string' ? saveTransfers.get(transferId) : undefined;
+    // 終わった・知らない・別の画面の識別子は何もしない(その保存の持ち主ではない)。
+    if (typeof transferId === 'string' && transfer?.senderId === event.sender.id) await abortSaveTransfer(transferId);
   });
 }
 
@@ -487,7 +687,7 @@ function windowOf(event: IpcMainInvokeEvent): BrowserWindow | null {
 
 /**
  * IPC を登録する。部品は `pcad:open` / `pcad:confirmTarget` / `pcad:clearTarget` /
- * `pcad:save` / `pcad:hasTarget` の5本、種類つきは `pcad:openAny` / `pcad:saveAs` の2本
+ * 保存の 4 本(`registerSaveTransferIpc`) / `pcad:hasTarget`、種類つきは `pcad:openAny` / `pcad:saveAs` の2本
  * (§0.a-0.5)。
  *
  * 往復する値は文字列・真偽・`Uint8Array`・文字列の並びに限る(構造化複製でそのまま往復できるもの)。
@@ -546,38 +746,7 @@ export function registerPcadIpc(): void {
     clearSaveTargets(event);
   });
 
-  ipcMain.handle(
-    PCAD_SAVE_CHANNEL,
-    async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<string | null> => {
-      if (!validateAppSender(event)) {
-        return null;
-      }
-      const [suggestedName, bytes, saveAs, kind = 'part'] = args;
-      if (
-        typeof suggestedName !== 'string' ||
-        !(bytes instanceof Uint8Array) ||
-        typeof saveAs !== 'boolean' || (kind !== 'part' && kind !== 'assembly' && kind !== 'drawing')
-      ) {
-        throw new Error('保存の依頼の形が正しくありません。');
-      }
-      watchWindow(event);
-      const revision = {};
-      targetRevisions.set(event.sender.id, revision);
-      const saved = await savePcadDialog(
-        windowOf(event),
-        suggestedName,
-        bytes,
-        saveAs,
-        lastPaths.get(event.sender.id) ?? null,
-        kind,
-      );
-      if (saved === null || targetRevisions.get(event.sender.id) !== revision) {
-        return null;
-      }
-      rememberPath(event, saved.path);
-      return saved.name;
-    },
-  );
+  registerSaveTransferIpc();
 
   ipcMain.handle(PCAD_HAS_TARGET_CHANNEL, (event: IpcMainInvokeEvent): boolean => {
     if (!validateAppSender(event)) {

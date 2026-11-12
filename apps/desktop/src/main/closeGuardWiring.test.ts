@@ -109,12 +109,18 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
   });
 
   /**
-   * `playwright._electron.launch(` を直接呼ぶ所を全て洗い、それぞれが未保存の確認(R03)の窓へ必ず答える
+   * 主の処理を操れる形で Electron を直接起動する所を全て洗い、それぞれが未保存の確認(R03)の窓へ必ず答える
    * ことを確かめる(終了確認の配線点検: 確認を省く印 CLOSE_GUARD_TEST_BYPASS_ENV は launchDesktop の外へ効かないため、
-   * launchDesktop を経由しない起動は自分で確認へ答えないと配布物の起動の検査が窓で止まる)。
-   * 新しく直接呼ぶ所が増えても、launchDesktop の利用も終了の確認への答え方も持たなければここで落ちる。
+   * launchDesktop を経由しない起動は自分で確認へ答えないと配布物の起動の検査が窓で止まる)。直接の起動は次の 2 つの形。
+   *  - `playwright._electron.launch(` を呼ぶ所(Playwright が主の処理の検査口 --inspect=0 を開く)。
+   *  - 自分で spawn などで起動し、その引数に主の処理の検査口(--inspect)を付ける所。配布物の起動の検査
+   *    (e2e/release/packagedDesktop.spec.ts)は、最初の読込みの途中に接続する競合を避けるため、2026-11-12 からこの形
+   *    (主の処理へは検査口で、画面へは connectOverCDP でつなぐ)。
+   * 確認への答え方(dialog.showMessageBox の上書き)は主の処理を操れる起動でしか使えない。検査口を開かない起動
+   * (ポータブル版の検査。文書を変えずに窓を閉じる)は、この決まりの外。
+   * 新しく直接起動する所が増えても、launchDesktop の利用も終了の確認への答え方も持たなければここで落ちる。
    */
-  it('_electron.launch を直接呼ぶ所は、launchDesktop を使うか終了の確認に自分で答える', () => {
+  it('Electron を直接起動して主の処理を操る所は、launchDesktop を使うか終了の確認に自分で答える', () => {
     const definesLaunchDesktop = 'e2e/tests/electronAppFlow.ts';
     expect(read(definesLaunchDesktop)).toContain('_electron.launch(');
     const files = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps', 'e2e', 'packages'],
@@ -122,7 +128,9 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
       .filter((name) => /\.(?:ts|tsx|mts|cts)$/u.test(name) && !/\.test\.[a-z]+$/u.test(name))
       // --cached still lists a tracked file deleted in the working tree until the deletion is committed; it runs nothing.
       .filter((name) => existsSync(resolve(root, name)));
-    const callers = files.filter((name) => name !== definesLaunchDesktop && /_electron\.launch\s*\(/u.test(read(name)));
+    const launchesDirectly = (source: string): boolean => /_electron\.launch\s*\(/u.test(source)
+      || /\b(?:spawn|execFile|fork)\s*\([^;]*?['"`]--inspect(?:-brk|-wait)?(?:=[^'"`]*)?['"`]/su.test(source);
+    const callers = files.filter((name) => name !== definesLaunchDesktop && launchesDirectly(read(name)));
     expect(callers.length).toBeGreaterThan(0);
     for (const caller of callers) {
       const source = read(caller);
@@ -133,7 +141,7 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
       const helperName = assignAt === -1 ? undefined
         : [...source.slice(0, assignAt).matchAll(/(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(/gu)].pop()?.[1];
       const answersCloseConfirm = helperName !== undefined && source.split(`${helperName}(`).length - 1 >= 2;
-      expect(usesLaunchDesktop || answersCloseConfirm, `${caller} は _electron.launch を直接呼びますが、`
+      expect(usesLaunchDesktop || answersCloseConfirm, `${caller} は Electron を直接起動して主の処理を操りますが、`
         + 'launchDesktop も使わず、終了の確認(dialog.showMessageBox を上書きする補助)への答え方も持ちません。').toBe(true);
     }
   });

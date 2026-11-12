@@ -306,6 +306,67 @@ describe('licenses and notices of every shipped FEM asset', () => {
   });
 });
 
+// The shipped rebuild list and recipe ask a recipient for these venv tools. Each must be at or above the first patched
+// version of every open Dependabot alert on venv-requirements.txt (read 2026-11-12); pinned here, not read from the alerts.
+const REBUILD_VENV_SECURITY_MINIMUMS = new Map([
+  ['certifi', '2026.10.18'], ['filelock', '4.2.1'], ['pip', '26.2.0'], ['virtualenv', '21.14.9'],
+]);
+const PORTABLE_REBUILD = 'sources/native-rebuild/portable/';
+const projectKey = (name: string): string => name.toLowerCase().replace(/[_.]/gu, '-');
+function versionNumbers(version: string): number[] {
+  if (!/^\d+(?:\.\d+)*$/u.test(version)) throw new Error('Expected a plain dotted version: ' + version);
+  return version.split('.').map(Number);
+}
+function atLeast(version: string, minimum: string): boolean {
+  const have = versionNumbers(version), need = versionNumbers(minimum);
+  for (let index = 0; index < Math.max(have.length, need.length); index += 1) {
+    const difference = (have[index] ?? 0) - (need[index] ?? 0);
+    if (difference !== 0) return difference > 0;
+  }
+  return true;
+}
+function projectPins(rows: readonly (readonly [string, string])[]): Map<string, string[]> {
+  const pins = new Map<string, string[]>();
+  for (const [name, version] of rows) pins.set(projectKey(name), [...(pins.get(projectKey(name)) ?? []), version]);
+  return pins;
+}
+function listedVenvPins(list: string): Map<string, string[]> {
+  return projectPins(list.split('\n').flatMap(line => {
+    const match = /^([A-Za-z0-9_.-]+)==(\S+)$/u.exec(line);
+    return match ? [[match[1], match[2]] as const] : [];
+  }));
+}
+function recipeVenvPins(recipe: string): Map<string, string[]> {
+  const table = /^s_venv\(\) \{\n[\s\S]*?^want = \{([\s\S]*?)\}\n/mu.exec(recipe)?.[1];
+  if (table === undefined) throw new Error('Expected the s_venv want table');
+  return projectPins([...table.matchAll(/'([A-Za-z0-9_.-]+)': '([^']+)'/gu)].map(match => [match[1], match[2]] as const));
+}
+
+describe('the shipped rebuild environment asks for security-fixed venv tools', () => {
+  it('pins certifi, filelock, pip and virtualenv once in the list and once in the recipe, at or above every fix', () => {
+    const listed = listedVenvPins(runtimeBytes(PORTABLE_REBUILD + 'venv-requirements.txt').toString('utf8'));
+    const recipe = recipeVenvPins(runtimeBytes(PORTABLE_REBUILD + 'rebuild-oofem-pyodide.sh').toString('utf8'));
+    const unfixed = [...REBUILD_VENV_SECURITY_MINIMUMS].flatMap(([name, minimum]) => {
+      const pins = { listed: listed.get(name) ?? [], recipe: recipe.get(name) ?? [] };
+      const fixed = pins.listed.length === 1 && pins.recipe.length === 1
+        && [...pins.listed, ...pins.recipe].every(version => atLeast(version, minimum));
+      return fixed ? [] : [{ name, minimum, ...pins }];
+    });
+    expect(unfixed).toEqual([]);
+    // The recipe refuses any venv that differs from its table, so the shipped list must state the same 42 pins.
+    expect(listed.size).toBe(42);
+    expect(Object.fromEntries(recipe)).toEqual(Object.fromEntries(listed));
+  });
+
+  it('compares dotted versions as numbers and refuses a version form it cannot order', () => {
+    expect([atLeast('2026.10.18', '2026.10.18'), atLeast('26.2', '26.2.0'), atLeast('21.14.10', '21.14.9')]).toEqual([true, true, true]);
+    expect([atLeast('2026.7.22', '2026.10.18'), atLeast('24.3.1', '25.3'), atLeast('4.2.0', '4.2.1')]).toEqual([false, false, false]);
+    expect(() => atLeast('1.2.2.post1', '1.2.2')).toThrow('Expected a plain dotted version');
+    expect(listedVenvPins('# note\npip==24.3.1\npip==26.2.0\n').get('pip')).toEqual(['24.3.1', '26.2.0']);
+    expect(() => recipeVenvPins('s_other() {\n}\n')).toThrow('Expected the s_venv want table');
+  });
+});
+
 // A protocol-valid qualification reply; the upstream displacement oracle is the fixed one in isBeamProof.
 const proof = { kind: 'oofem-upstream-test-2', purpose: 'runtime-qualification-only', pyodideVersion: FEM_RUNTIME_VERSION,
   pythonVersion: '3.13.2', oofemVersion: OOFEM_DISTRIBUTION_VERSION, pythonAbi: 'cp313-cp313', u1: -8.64e-4, u4: 9.47333333e-4,

@@ -1,12 +1,15 @@
 /// <reference lib="dom" />
-import { execFile } from 'node:child_process';
+import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { createInterface } from 'node:readline';
+import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { expect, test, type ElectronApplication, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type ElectronApplication, type Page,
+  type PlaywrightWorkerArgs } from '@playwright/test';
 import { DRAWING_FONT_ASSET } from '../../packages/drawing/src/text/fontAsset.js';
 import { chooseToolMenuItem } from '../tests/assemblyTestSupport.js';
 import { waitForMathEditorText } from '../tests/mathEditorReady.js';
@@ -28,8 +31,13 @@ import { verifyPackagedStartup } from './packagedStartup.js';
  * swiftshader の3つの指定は launchDesktop(e2e/tests/electronAppFlow.ts)と同じく検査の起動だけに渡す。
  *
  * 配布物には Playwright の起動の保留(loader)を入れられない(executablePath を渡すと Playwright は
- * loader を足さず、配布物は既定の本体だけを読む)。rules/06 §10.87 の起動の競合を避けられないため、
- * 起動の上限を明示し、窓の表示と最初の読込みの完了を main 側から確かめてから操作する。
+ * loader を足さず、配布物は既定の本体だけを読む)。そのため electron.launch は、窓の最初の読込みの途中に
+ * Chromium へつながることがある。接続の時点の文書が最初の空の文書だと、Playwright は次の確定の知らせ
+ * (Page.frameNavigated)を待つが、その確定は別の描画の処理の中で起き、知らせが届かずに60秒で止まった
+ * (2026-11-12 配布CI run 43228964079 の接続の記録。rules/06 §10.87 の起動の競合)。そこで配布物はこの検査が
+ * 自分で起動し、製品が出す最初の文書の確定の行(apps/desktop/src/main/main.ts の document-ready)を見てから、
+ * Chromium へは connectOverCDP、主の処理へは Node の検査口でつなぐ(launchPackaged)。起動の上限は明示し、
+ * 窓の表示と最初の読込みの完了も main 側から確かめてから操作する。
  */
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -139,7 +147,7 @@ function isWithin(path: string, directory: string): boolean {
 function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
-/** Playwright は Windows で cmd.exe を介して起動する。% と " は cmd.exe が書き換えるため先に断る。 */
+/** Windows で % と " を含むパスは、cmd.exe を介した起動(手での再現を含む)で書き換わるため先に断る。 */
 function assertCommandSafe(path: string, meaning: string): void {
   if (process.platform === 'win32' && /[%"]/u.test(path)) throw new Error(`${meaning}のパスに % や " を含めないでください: ${path}`);
 }
@@ -392,7 +400,7 @@ const CLOSE_CONFIRM_CHOICES = [uiMessage('file', 'file.closeGuard.save'), uiMess
  * 窓を閉じて終わる処理は配布物のまま通る。想定と違う確認(画面が固まったときの確認など)には「戻る」で答え、
  * 閉じられないまま上限で失敗させる。出された確認は本体の標準出力へ書く(閉じた後は Playwright から本体を読めない)。
  */
-async function answerCloseConfirmWithDiscard(app: ElectronApplication): Promise<void> {
+async function answerCloseConfirmWithDiscard(app: PackagedApplication): Promise<void> {
   await app.evaluate(({ dialog }, [marker, choices]) => {
     dialog.showMessageBox = (...args: unknown[]) => {
       const options: unknown = args.at(-1);
@@ -406,19 +414,380 @@ async function answerCloseConfirmWithDiscard(app: ElectronApplication): Promise<
   }, [CLOSE_CONFIRM_LOG, CLOSE_CONFIRM_CHOICES] as const);
 }
 
-async function launchPackaged(playwright: PlaywrightWorkerArgs['playwright'], target: LaunchTarget, isolation: Isolation): Promise<ElectronApplication> {
-  return playwright._electron.launch({
-    executablePath: target.executable,
-    args: [...SWIFTSHADER_ARGS, `--user-data-dir=${isolation.userData}`],
-    cwd: isolation.base,
-    env: isolation.env,
-    // Playwright 1.62.1 は Linux で chromiumSandbox が true でない限り --no-sandbox を足す。検査からは足さない。
-    // Linux の AppRun(electron-builder 26.15.3 の AppImage の入口)は `unshare -Ur true` で利用者の名前空間を
-    // 試し、使えないときだけ自分で --no-sandbox を足して本体を起動する。利用者が AppImage を開いたときと同じ判断を
-    // そのまま検査する(Windows ではこの指定は何も変えない)。
-    chromiumSandbox: true,
-    timeout: 60_000,
+/** 配布物の起動の上限(以前の electron.launch と同じ値)。3 行の待ちと 2 つの接続をこの中で行う。 */
+const LAUNCH_TIMEOUT_MS = 60_000;
+/** 起動に失敗した時だけ、接続口からページの確定済みの URL を読む上限。成功の時は使わない。 */
+const FAILURE_PROBE_TIMEOUT_MS = 5_000;
+/** 失敗の文へ入れる標準エラー・標準出力の末尾の行数。 */
+const OUTPUT_TAIL_LINES = 15;
+/** 配布物の出力の輪に残す行数(標準出力・標準エラー・読めなかった CDP の行の合計)。失敗の時だけ書き出す。 */
+const OUTPUT_RING_LINES = 500;
+// Playwright の electron.launch が待つ行と同じ形(Node の検査口と Chromium の接続口)。
+const INSPECTOR_LINE = /^Debugger listening on (ws:\/\/\S+)/u;
+const DEVTOOLS_LINE = /^DevTools listening on (ws:\/\/\S+)/u;
+/** 製品の主の処理が起動の段ごとに標準出力へ出す行(apps/desktop/src/main/main.ts の createMainWindow)。 */
+const STARTUP_STAGE_LINE = /^\[pcad:desktop-startup\] (\{.*\})$/u;
+/** 検査口がつながったまま主の処理が終わろうとすると Node が出す行。これを見たら検査口を閉じる(Playwright と同じ)。 */
+const DEBUGGER_DISCONNECT_LINE = 'Waiting for the debugger to disconnect...';
+
+/** 起動で待つ 3 行の到着の状態。 */
+interface LaunchSignals {
+  readonly inspector: string | null;
+  readonly devtools: string | null;
+  readonly documentReady: boolean;
+  readonly documentFailed: boolean;
+}
+const NO_LAUNCH_SIGNALS: LaunchSignals = { inspector: null, devtools: null, documentReady: false, documentFailed: false };
+
+/** [pcad:desktop-startup] の行の段の名前。違う行や壊れた行は null。 */
+function startupStage(line: string): string | null {
+  const body = STARTUP_STAGE_LINE.exec(line)?.[1];
+  if (body === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    const stage = typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'stage') : undefined;
+    return typeof stage === 'string' ? stage : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 配布物の出力の 1 行で、起動で待つ 3 行の状態を進める(一度来た行は戻さない)。 */
+function updateLaunchSignals(signals: LaunchSignals, stream: 'stdout' | 'stderr', line: string): LaunchSignals {
+  if (stream === 'stderr') {
+    return { ...signals, inspector: signals.inspector ?? INSPECTOR_LINE.exec(line)?.[1] ?? null,
+      devtools: signals.devtools ?? DEVTOOLS_LINE.exec(line)?.[1] ?? null };
+  }
+  const stage = startupStage(line);
+  return { ...signals, documentReady: signals.documentReady || stage === 'document-ready',
+    documentFailed: signals.documentFailed || stage === 'document-failed' };
+}
+
+/** 来なかった行の説明(失敗の文に入れる)。 */
+function missingLaunchSignals(signals: LaunchSignals): string[] {
+  const missing: string[] = [];
+  if (signals.inspector === null) missing.push('標準エラーの「Debugger listening on ws://…」(主の処理の Node の検査口)');
+  if (signals.devtools === null) missing.push('標準エラーの「DevTools listening on ws://…」(Chromium の接続口)');
+  if (!signals.documentReady) missing.push('標準出力の「[pcad:desktop-startup] … "document-ready"」(最初の文書の確定)');
+  return missing;
+}
+
+/** 配布物の出力の 1 行(届いた時刻・口・中身)。cdp は主の処理の検査口から届いた、JSON として読めなかった行。 */
+interface OutputLine {
+  readonly at: string;
+  readonly stream: 'stdout' | 'stderr' | 'cdp';
+  readonly text: string;
+}
+/** 配布物の出力の輪(末尾 OUTPUT_RING_LINES 行)。検査が失敗した時だけ packaged-desktop-output.log へ書く。 */
+interface OutputRing {
+  readonly lines: readonly OutputLine[];
+  push(stream: OutputLine['stream'], text: string): void;
+}
+function createOutputRing(): OutputRing {
+  const lines: OutputLine[] = [];
+  return {
+    lines,
+    push: (stream, text) => {
+      lines.push({ at: new Date().toISOString(), stream, text: text.slice(0, 2_000) });
+      if (lines.length > OUTPUT_RING_LINES) lines.shift();
+    },
+  };
+}
+function formatOutputRing(ring: OutputRing): string {
+  return ring.lines.map(line => `${line.at} [${line.stream}] ${line.text}`).join('\n') + '\n';
+}
+function outputTail(ring: OutputRing, stream: OutputLine['stream']): string[] {
+  return ring.lines.filter(line => line.stream === stream).slice(-OUTPUT_TAIL_LINES).map(line => line.text.slice(0, 300));
+}
+
+interface LaunchFailure {
+  readonly reason: string;
+  readonly elapsedMs: number;
+  readonly signals: LaunchSignals;
+  readonly frameUrls: string;
+  readonly stopped: string;
+  readonly stderrTail: readonly string[];
+  readonly stdoutTail: readonly string[];
+  readonly cdpTail: readonly string[];
+}
+
+/** 起動の失敗の文。1 行目に理由と来なかった行、続けて getFrameTree の url・後始末・出力の末尾を書く。 */
+function launchFailureMessage(failure: LaunchFailure): string {
+  const missing = missingLaunchSignals(failure.signals);
+  return [
+    `配布物の起動に失敗しました(${String(failure.elapsedMs)}ms、上限 ${String(LAUNCH_TIMEOUT_MS)}ms): ${failure.reason} / `
+      + `来なかった行: ${missing.length === 0 ? 'なし(3 行とも来た。止まったのは接続)' : missing.join('、')}`,
+    `来た接続口: ${JSON.stringify({ inspector: failure.signals.inspector, devtools: failure.signals.devtools })}`,
+    `接続の後の getFrameTree の url: ${failure.frameUrls}`,
+    `後始末: ${failure.stopped}`,
+    `標準エラーの末尾: ${JSON.stringify(failure.stderrTail)}`,
+    `標準出力の末尾: ${JSON.stringify(failure.stdoutTail)}`,
+    `読めなかった CDP の行: ${JSON.stringify(failure.cdpTail)}`,
+  ].join('\n');
+}
+
+function optionalField(value: unknown, key: string): unknown {
+  return typeof value === 'object' && value !== null ? Reflect.get(value, key) : undefined;
+}
+
+async function withDeadline<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<never>((_done, fail) => {
+      timer = setTimeout(() => { fail(new Error(`${label}が${String(timeoutMs)}ms 以内に終わりません`)); }, timeoutMs);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+interface CdpConnection {
+  send(method: string, payload?: Record<string, unknown>, sessionId?: string): Promise<unknown>;
+  close(): void;
+}
+
+/**
+ * Chrome DevTools Protocol の最小の接続(Node 主の処理の検査口と、失敗の時の Chromium の読取りに使う)。
+ * WebSocket は Node の組み込み(CI の Node 22.23.3 も既定で有効)。新しい依存は足さない。知らせ(event)は読まない。
+ * JSON として読めない行は捨てずに onMalformed へ渡し、どの返事か決められないので、返事を待つ全てをその行を入れた文で失敗にする。
+ */
+async function openCdpConnection(url: string, timeoutMs: number, onMalformed?: (text: string) => void): Promise<CdpConnection> {
+  const socket = new WebSocket(url);
+  await new Promise<void>((done, fail) => {
+    const timer = setTimeout(() => { socket.close(); fail(new Error(`${url} へ ${String(timeoutMs)}ms 以内に接続できません`)); }, timeoutMs);
+    socket.addEventListener('open', () => { clearTimeout(timer); done(); }, { once: true });
+    socket.addEventListener('error', () => { clearTimeout(timer); fail(new Error(`${url} へ接続できません`)); }, { once: true });
   });
+  const pending = new Map<number, { done: (value: unknown) => void; fail: (error: Error) => void }>();
+  let lastId = 0;
+  socket.addEventListener('message', (event) => {
+    const data: unknown = event.data;
+    const text = typeof data === 'string' ? data : `(文字でない行: ${Object.prototype.toString.call(data)})`;
+    let message: unknown;
+    try {
+      message = JSON.parse(text);
+    } catch (error) {
+      const broken = `${url} の CDP の行を JSON として読めません(${error instanceof Error ? error.message : String(error)}): ${text.slice(0, 300)}`;
+      onMalformed?.(broken);
+      for (const waiter of pending.values()) waiter.fail(new Error(broken));
+      pending.clear();
+      return;
+    }
+    const id = optionalField(message, 'id');
+    const waiter = typeof id === 'number' ? pending.get(id) : undefined;
+    if (typeof id !== 'number' || waiter === undefined) return;
+    pending.delete(id);
+    const failure = optionalField(message, 'error');
+    if (failure === undefined) waiter.done(optionalField(message, 'result'));
+    else waiter.fail(new Error(`CDP の返事が失敗です: ${JSON.stringify(failure).slice(0, 500)}`));
+  });
+  socket.addEventListener('close', () => {
+    for (const waiter of pending.values()) waiter.fail(new Error(`${url} の接続が切れました`));
+    pending.clear();
+  });
+  return {
+    send: (method, payload = {}, sessionId) => new Promise<unknown>((done, fail) => {
+      if (socket.readyState !== WebSocket.OPEN) { fail(new Error(`${url} の接続は閉じています`)); return; }
+      lastId += 1;
+      pending.set(lastId, { done, fail });
+      socket.send(JSON.stringify({ id: lastId, method, params: payload, ...(sessionId === undefined ? {} : { sessionId }) }));
+    }),
+    close: () => { socket.close(); },
+  };
+}
+
+/**
+ * 起動に失敗した時だけ呼ぶ。接続口から全てのページの target へ別に入り、確定済みの文書の URL(Page.getFrameTree)を読む。
+ * "" なら最初の空の文書のまま(確定の前)、app://pointercad/index.html なら確定の後。
+ */
+async function probeFrameUrls(devtools: string): Promise<string> {
+  let connection: CdpConnection | undefined;
+  try {
+    const opened = await openCdpConnection(devtools, FAILURE_PROBE_TIMEOUT_MS);
+    connection = opened;
+    const ask = (method: string, payload?: Record<string, unknown>, sessionId?: string): Promise<unknown> =>
+      withDeadline(opened.send(method, payload, sessionId), FAILURE_PROBE_TIMEOUT_MS, method);
+    const targets = optionalField(await ask('Target.getTargets'), 'targetInfos');
+    const pages = Array.isArray(targets) ? targets.filter((info: unknown) => optionalField(info, 'type') === 'page') : [];
+    const found: string[] = [];
+    for (const info of pages) {
+      const targetId = optionalField(info, 'targetId');
+      if (typeof targetId !== 'string') continue;
+      const sessionId = optionalField(await ask('Target.attachToTarget', { targetId, flatten: true }), 'sessionId');
+      if (typeof sessionId !== 'string') continue;
+      const frame = optionalField(optionalField(await ask('Page.getFrameTree', {}, sessionId), 'frameTree'), 'frame');
+      found.push(`target の url ${JSON.stringify(optionalField(info, 'url'))}・getFrameTree の url ${JSON.stringify(optionalField(frame, 'url'))}`);
+    }
+    return found.length === 0 ? 'ページの target がありません' : found.join('、');
+  } catch (error) {
+    return `読めません: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500);
+  } finally {
+    connection?.close();
+  }
+}
+
+/**
+ * 起動した本体を子の木ごと止める(Playwright の electron.launch の後始末と同じ。Windows は taskkill /T /F、Linux はプロセスの組)。
+ * 「止める物なし」は 'close'(本体と、管を受け継いだ子の全てが管を閉じた)の後だけ。本体の 'exit' の後でも、子が管を持って
+ * 残っていれば止めに行く(Linux の kill(-pid) は組の長が終わっていても組に届く)。
+ */
+function killProcessTree(child: ChildProcess, processClosed: boolean): string {
+  const pid = child.pid;
+  if (pid === undefined || processClosed) return '止める物なし';
+  try {
+    if (process.platform === 'win32') {
+      const result = spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'],
+        { windowsHide: true, encoding: 'utf8', timeout: PROCESS_EXIT_TIMEOUT_MS });
+      return `taskkill /PID ${String(pid)} /T /F: 終了コード ${String(result.status)} ${result.stdout.trim()} ${result.stderr.trim()}`.slice(0, 500);
+    }
+    process.kill(-pid, 'SIGKILL');
+    return `プロセスの組 ${String(pid)} を SIGKILL で停止`;
+  } catch (error) {
+    return `${String(pid)} を停止できず: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500);
+  }
+}
+
+type MainFunction = Extract<Parameters<ElectronApplication['evaluate']>[0], (...args: never[]) => unknown>;
+/** 主の処理の electron の型(Playwright の ElectronApplication.evaluate が本文へ渡す物と同じ)。 */
+type ElectronModule = Parameters<MainFunction>[0];
+
+/** この検査が起動した配布物。spec が使う ElectronApplication の口と同じ名前(と後始末の kill)だけを持つ。 */
+interface PackagedApplication {
+  /** 起動の記録(pid・接続口・3 行がそろうまでと接続までの所要)。 */
+  readonly launchRecord: Readonly<Record<string, unknown>>;
+  evaluate<R, A>(body: (electron: ElectronModule, arg: A) => R | Promise<R>, arg?: A): Promise<R>;
+  process(): ChildProcess;
+  firstWindow(options: { readonly timeout: number }): Promise<Page>;
+  windows(): Page[];
+  on(event: 'window', listener: (page: Page) => void): void;
+  close(): Promise<void>;
+  kill(): string;
+  /** 配布物の主の処理の標準出力・標準エラー(と読めなかった CDP の行)の輪。launchPackaged に渡した物と同じ。 */
+  readonly output: OutputRing;
+}
+
+/**
+ * 配布物を起動し、製品が出す最初の文書の確定の行(document-ready)まで待ってから接続する。最初の読込みの途中に
+ * つながないので、Playwright は確定の知らせ(Page.frameNavigated)を待たない(冒頭の注記)。引数は以前の electron.launch が
+ * 付けていた物と同じ(--inspect=0 と --remote-debugging-port=0 は空いた番号を OS に選ばせる)。Linux の --no-sandbox は
+ * 付けない(以前の chromiumSandbox: true と同じ。AppRun が `unshare -Ur true` で試し、使えないときだけ自分で足す。
+ * 利用者が AppImage を開いたときと同じ判断をそのまま検査する)。失敗した時は本体を木ごと止め、理由を文にして投げる。
+ * 出力は検査が渡した輪(output)へ入れる。起動に失敗して PackagedApplication を返せない時も、検査はその輪を書き出せる。
+ */
+async function launchPackaged(playwright: PlaywrightWorkerArgs['playwright'], target: LaunchTarget, isolation: Isolation,
+  output: OutputRing): Promise<PackagedApplication> {
+  const started = Date.now();
+  const remaining = (): number => Math.max(started + LAUNCH_TIMEOUT_MS - Date.now(), 1);
+  const env = { ...isolation.env };
+  // Playwright の electron.launch と同じく、検査の側の NODE_OPTIONS は配布物へ渡さない。
+  delete env.NODE_OPTIONS;
+  const child = spawn(target.executable, ['--inspect=0', '--remote-debugging-port=0', ...SWIFTSHADER_ARGS,
+    `--user-data-dir=${isolation.userData}`], {
+    cwd: isolation.base, env, stdio: ['ignore', 'pipe', 'pipe'],
+    // Linux は新しいプロセスの組にして、子ごと止められるようにする(Playwright と同じ)。
+    detached: process.platform !== 'win32',
+  });
+  // 検査の worker が先に終わる時も本体を残さない(Playwright の起動と同じ保護)。本体と子が管を閉じ終えたら外す。
+  let processClosed = false;
+  const killOnExit = (): void => { killProcessTree(child, processClosed); };
+  process.once('exit', killOnExit);
+  const closed = new Promise<void>((done) => {
+    child.once('close', () => { processClosed = true; process.off('exit', killOnExit); done(); });
+  });
+  let signals = NO_LAUNCH_SIGNALS;
+  let inspector: CdpConnection | undefined;
+  let notify = (): void => undefined;
+  const listen = (stream: Readable | null, name: 'stdout' | 'stderr'): void => {
+    if (stream === null) return;
+    createInterface({ input: stream, crlfDelay: Infinity }).on('line', (line: string) => {
+      const text = line.trimEnd();
+      output.push(name, text);
+      signals = updateLaunchSignals(signals, name, text);
+      if (name === 'stderr' && text.includes(DEBUGGER_DISCONNECT_LINE)) inspector?.close();
+      notify();
+    });
+  };
+  let spawnError: string | null = null;
+  const signalsReady = new Promise<void>((done, fail) => {
+    const settle = (error?: Error): void => {
+      clearTimeout(timer);
+      notify = (): void => undefined;
+      if (error === undefined) done(); else fail(error);
+    };
+    const timer = setTimeout(() => { settle(new Error(`${String(LAUNCH_TIMEOUT_MS)}ms 以内に 3 行がそろいません`)); }, LAUNCH_TIMEOUT_MS);
+    notify = (): void => {
+      if (spawnError !== null) settle(new Error(`起動できません: ${spawnError}`));
+      else if (signals.documentFailed) settle(new Error('最初の文書の読込みが失敗しました(document-failed)'));
+      else if (signals.inspector !== null && signals.devtools !== null && signals.documentReady) settle();
+      else if (child.exitCode !== null || child.signalCode !== null) {
+        settle(new Error(`配布物が起動の途中で終わりました(終了コード ${String(child.exitCode)}、signal ${String(child.signalCode)})`));
+      }
+    };
+    child.once('error', (error: Error) => { spawnError = error.message; notify(); });
+    child.once('exit', () => { notify(); });
+  });
+  listen(child.stdout, 'stdout');
+  listen(child.stderr, 'stderr');
+  let browser: Browser | undefined;
+  try {
+    await signalsReady;
+    const signalsMs = Date.now() - started;
+    const { inspector: inspectorUrl, devtools: devtoolsUrl } = signals;
+    if (inspectorUrl === null || devtoolsUrl === null) throw new Error('接続口の行を読めません');
+    const main = await openCdpConnection(inspectorUrl, remaining(), (broken) => { output.push('cdp', broken); });
+    inspector = main;
+    await withDeadline(main.send('Runtime.enable'), remaining(), '主の処理の検査口の Runtime.enable');
+    const connected = await playwright.chromium.connectOverCDP(devtoolsUrl, { timeout: remaining() });
+    browser = connected;
+    const context: BrowserContext | undefined = connected.contexts()[0];
+    if (context === undefined) throw new Error('配布物の Chromium に既定の文脈がありません');
+    const launchRecord = { pid: child.pid ?? null, inspector: inspectorUrl, devtools: devtoolsUrl, signalsMs,
+      connectedMs: Date.now() - started };
+    const evaluate = async <R, A>(body: (electron: ElectronModule, arg: A) => R | Promise<R>, arg?: A): Promise<R> => {
+      // Playwright の ElectronApplication.evaluate と同じく、本文を文字にして主の処理で electron を渡して呼ぶ。require は
+      // includeCommandLineAPI の時だけ使える(Electron 28 以降。Playwright も同じ指定)。値は JSON の形で返る(returnByValue)。
+      const reply = await main.send('Runtime.evaluate', {
+        expression: `(${body.toString()})(require('electron'), ${arg === undefined ? 'undefined' : JSON.stringify(arg)})`,
+        includeCommandLineAPI: true, awaitPromise: true, returnByValue: true });
+      const details = optionalField(reply, 'exceptionDetails');
+      if (details !== undefined) {
+        const description = optionalField(optionalField(details, 'exception'), 'description');
+        throw new Error(`主の処理での評価が失敗しました: ${(typeof description === 'string' ? description : JSON.stringify(details)).slice(0, 1_000)}`);
+      }
+      // 戻り値は本文の戻り値を JSON にした物(Playwright の ElectronApplication.evaluate と同じ約束)。
+      return optionalField(optionalField(reply, 'result'), 'value') as R;
+    };
+    return {
+      launchRecord,
+      evaluate,
+      process: () => child,
+      firstWindow: async ({ timeout }) => context.pages()[0] ?? await context.waitForEvent('page', { timeout }),
+      windows: () => context.pages(),
+      on: (_event, listener) => { context.on('page', listener); },
+      close: async () => {
+        if (child.exitCode === null && child.signalCode === null) {
+          // Playwright の ElectronApplication.close と同じ道: 主の処理で app.quit() を呼び、検査口を閉じ、本体の終了を待つ。
+          await evaluate(({ app: electronApp }) => { electronApp.quit(); }).catch(() => undefined);
+          main.close();
+        }
+        await closed;
+        await connected.close().catch(() => undefined);
+      },
+      kill: () => { main.close(); return killProcessTree(child, processClosed); },
+      output,
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    const frameUrls = signals.devtools === null ? '接続口の行が来ていないため読めません' : await probeFrameUrls(signals.devtools);
+    inspector?.close();
+    await browser?.close().catch(() => undefined);
+    const stopped = killProcessTree(child, processClosed);
+    const ended = await withDeadline(closed, PROCESS_EXIT_TIMEOUT_MS, '止めた本体の終了').then(() => '本体は終了した',
+      (waitError: unknown) => (waitError instanceof Error ? waitError.message : String(waitError)));
+    throw new Error(launchFailureMessage({ reason, elapsedMs: Date.now() - started, signals, frameUrls,
+      stopped: `${stopped}(${ended})`, stderrTail: outputTail(output, 'stderr'), stdoutTail: outputTail(output, 'stdout'),
+      cdpTail: outputTail(output, 'cdp') }), { cause: error });
+  }
 }
 
 /**
@@ -468,7 +837,7 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
   const evidence: Record<string, unknown> = {};
   const session: {
     isolation?: Isolation; profiles?: readonly string[]; before?: readonly TreeSnapshot[];
-    app?: ElectronApplication; page?: Page; closed: boolean; target?: LaunchTarget;
+    app?: PackagedApplication; page?: Page; closed: boolean; target?: LaunchTarget; output?: OutputRing;
   } = { closed: false };
   const pageErrors: string[] = [], crashes: string[] = [], consoleErrors: string[] = [];
   let completed = false;
@@ -489,9 +858,11 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
     });
     session.before = before;
     evidence.realProfilesBefore = before.map(summarizeTree);
-    const app = await run('(0-3)', '配布物を起動する', () => launchPackaged(playwright, target, isolation));
+    const output = createOutputRing();
+    session.output = output;
+    const app = await run('(0-3)', '配布物を起動する', () => launchPackaged(playwright, target, isolation, output));
     session.app = app;
-    // Playwright は閉じた後に子プロセスの参照を返せない。生きている間に保持する(rules/06 §10.87)。
+    evidence.launch = app.launchRecord;
     const child = app.process();
     await run('(1)', 'userData が一時フォルダーの下にある(外れたら直ちに閉じて失敗)', async () => {
       const reported = await app.evaluate(({ app: electronApp, BrowserWindow }) => {
@@ -743,6 +1114,21 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
         const remaining = session.target === undefined ? [] : await packagedProcesses(session.target, false).catch(() => []);
         evidence.cleanupClose = `${String(CLEANUP_CLOSE_TIMEOUT_MS / 1_000)}秒で閉じず、配布物のプロセスを止めた: ${stopLeftovers(remaining).join('、')}`;
       }
+    }
+    if (!completed && session.app !== undefined) {
+      // どの道で失敗しても、起動した本体とその子を残さない(Windows は taskkill /T で木ごと)。閉じ終えていれば何もしない。
+      // 成功の回は (f) が終了コード0とプロセスが残らないことを確かめ済みなので、ここへは来ない。
+      const stopped = session.app.kill();
+      if (stopped !== '止める物なし') evidence.forcedStopAfterFailure = stopped;
+    }
+    const output = session.app?.output ?? session.output;
+    if (!completed && output !== undefined) {
+      // 失敗した回だけ、配布物の主の処理の標準出力・標準エラー(と読めなかった CDP の行)を時刻つきで残す。どの段で落ちても
+      // 主の処理の console.error や Chromium の ERROR を読めるようにする(test-results/packaged-desktop は release.yml の
+      // 失敗の時の成果物)。書けなくても失敗の判定と結果の記録は止めない。
+      await mkdir(info.outputDir, { recursive: true })
+        .then(() => writeFile(info.outputPath('packaged-desktop-output.log'), formatOutputRing(output)))
+        .catch((error: unknown) => { evidence.outputLogFailure = error instanceof Error ? error.message : String(error); });
     }
     const { profiles, before, isolation } = session;
     if (!completed && profiles !== undefined && before !== undefined) {

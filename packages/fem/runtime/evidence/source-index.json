@@ -391,8 +391,8 @@
     },
     {
       "path": "packages/fem/runtime/sources/native-rebuild/portable/packet-inventory.json",
-      "bytes": 6661,
-      "sha256": "75938a9c01f8c2086b9114d4cc323faf914c105738ed8b9c0c6125e3610d7af2",
+      "bytes": 6662,
+      "sha256": "927752b3465db0b8614e570266bb2ddec7ad5acf174b3ca19f05ac9c5993b268",
       "components": [
         "oofem"
       ],
@@ -402,8 +402,8 @@
     },
     {
       "path": "packages/fem/runtime/sources/native-rebuild/portable/rebuild-oofem-pyodide.sh",
-      "bytes": 18976,
-      "sha256": "1eb34343d9d97ac5d9dab563f359d8e63f56f8ec6ef9e0b3c62ce138b81684aa",
+      "bytes": 19274,
+      "sha256": "cf15806cc115b25f39f485e3c3dd1ad0514c3541e07f1551d14a80b55b24627c",
       "components": [
         "oofem"
       ],
@@ -468,8 +468,8 @@
     },
     {
       "path": "packages/fem/runtime/sources/native-rebuild/portable/venv-requirements.txt",
-      "bytes": 988,
-      "sha256": "08fa224c1e0b98b60743ffee62a1989e34899f4ccfa3ec739bc4cdcd9b19f528",
+      "bytes": 1231,
+      "sha256": "60a830ba3e13706d25757cf279dff38b01efb24057e19f014aa9ef9c72354e18",
       "components": [
         "oofem"
       ],

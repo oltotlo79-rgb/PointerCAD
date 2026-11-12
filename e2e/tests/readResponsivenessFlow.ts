@@ -17,7 +17,7 @@ import { addImage, canvasRow, expectImage, samplePng } from './canvasAssetLifeti
 import { largeSaveFixture, openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { orphanReadFixture } from './readResponseFixture.js';
 import { assertReadWorkerClosed, nativeReadWorkers, observeRead, readObservationSnapshot, READ_OBSERVATION_COST, writeReadEvidence } from './readResponseObservation.js';
-import { startReadResidentSampler } from './readResidentSampler.js';
+import { startReadResidentSampler, type ResidentSample } from './readResidentSampler.js';
 import { readCommandTimeline, readInputMetrics } from './readResponseMetrics.js';
 
 /** Costs belong to this Playwright Node worker; browser/parent CPU is not included. */
@@ -270,6 +270,35 @@ function logReadAttempt(label: { kind: string; mib: number; attempt: number; rea
   return accepted;
 }
 
+/**
+ * 読込の記憶量の要約(ログの [記憶量記録] の1行)。extraPeak・extraReleased と同じ区切りと中央値の取り方で、判定には使わない。
+ * 役割ごとの値は、山の1件(読込中で WS 合計が最大の採取)の役割ごとの WS 合計と、読込前の中央値との差。
+ */
+function residentMemorySummary(before: readonly ResidentSample[], during: readonly ResidentSample[], after: readonly ResidentSample[],
+  startedAt: number | null) {
+  const median = (values: readonly number[]) => values.length === 0 ? null : [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  const middle = (rows: readonly ResidentSample[]) => ({ workingSet: median(rows.map(row => row.workingSet)),
+    secondaryBytes: median(rows.map(row => row.secondaryBytes)) });
+  const largest = (values: readonly number[]) => values.length === 0 ? null : Math.max(...values);
+  const roles = (sample: ResidentSample) => {
+    const totals = new Map<string, number>();
+    for (const process of sample.processes) {
+      const role = process.role ?? 'unknown';
+      totals.set(role, (totals.get(role) ?? 0) + (process.workingSetBytes ?? 0));
+    }
+    return totals;
+  };
+  let peak: ResidentSample | undefined;
+  for (const sample of during) if (peak === undefined || sample.workingSet > peak.workingSet) peak = sample;
+  const peakByRole = peak === undefined ? null : [...roles(peak)].map(([role, workingSetBytes]) => {
+    const baseline = median(before.map(sample => roles(sample).get(role) ?? 0));
+    return { role, workingSetBytes, extraWorkingSetBytes: baseline === null ? null : workingSetBytes - baseline };
+  });
+  return { baseline: middle(before), peak: { workingSet: largest(during.map(row => row.workingSet)),
+    secondaryBytes: largest(during.map(row => row.secondaryBytes)) }, released: middle(after),
+  peakAfterStartMs: peak === undefined || startedAt === null ? null : peak.at - startedAt, peakByRole };
+}
+
 /** Fixed collection over ordinary reads; never delay real Worker execution. */
 export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32 | 128,
   kind: 'orphan' | 'referenced', app?: ElectronApplication): Promise<void> {
@@ -397,6 +426,12 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
         startedAt, releasedAt, extraPeak, extraReleased, samples: resident,
         counts: { before: before.length, during: during.length, after: after.length }, extraPeakBudgetBytes: memoryBudget,
         full512MiBCondition: 'not proven: partial PID set and missing GPU measurement' } });
+    // 判定の前に記憶量の要約を1行で出す(成功の回も外部検査のログで版どうしを比べ、判定で落ちた回も値を残すため)。
+    // 上限・判定の式・判定の順は変えない。出力の形は [性能記録](releasePerformance.ts)と同じ「印 + JSON」。
+    console.log('[記憶量記録]', JSON.stringify({ label: `読込${String(mib)}MiB ${kind}`, environment: app !== undefined ? 'electron' : page.context().browser()?.browserType().name() ?? 'unknown',
+      budgetBytes: memoryBudget, errorCount: memoryFailures.length + (memory?.errors.length ?? 0), extraPeak, extraReleased,
+      counts: { before: before.length, during: during.length, after: after.length },
+      ...residentMemorySummary(before, during, after, startedAt) }));
     await command.press('Escape');
     // These counters describe the timed reads. The save/reopen proof below starts another real reader.
     expect(audit.sent).toBe(attempts.length); expect(audit.replied).toBe(attempts.length); expect(audit.terminated).toBe(attempts.length);

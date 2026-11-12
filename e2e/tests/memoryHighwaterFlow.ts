@@ -19,7 +19,7 @@ import { openTarget } from './electronAppFlow.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { parseUsageCensus, parseUsageWindow, qualifyDocumentedGpuUsage } from './documentedGpuUsage.js';
 
-import { windowsSampler, linuxSampler, linuxProcess, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type RawFrame } from './processResourceSampler.js';
+import { windowsSampler, linuxSampler, linuxProcess, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type RawFrame, type Sampler } from './processResourceSampler.js';
 const BUDGET_BYTES = 512 * 1024 * 1024;
 const SOURCE_PATHS = ['e2e/tests/memoryHighwaterFlow.ts', 'e2e/tests/processResourceSampler.ts', 'e2e/tests/memory-highwater.spec.ts',
   'e2e/tests/electron-memory-highwater.spec.ts', 'packages/test-utils/src/processMemorySamples.ts',
@@ -42,6 +42,36 @@ declare global {
 }
 
 interface PhaseBoundary { readonly atEpochMs: number; readonly phase: MemoryPhase; readonly observation: string }
+
+/** Each observed phase needs this many sampler frames after its mark, within this time. */
+const PHASE_SAMPLE_FRAMES = 5;
+const PHASE_SAMPLE_TIMEOUT_MS = 30_000;
+type PhaseSampleSource = Pick<Sampler, 'frames' | 'failures' | 'describe'>;
+
+/** The sampler state for a phase sample timeout, because the CI log carries no attachment. Never part of a judgment. */
+function samplerWaitDetail(sampler: PhaseSampleSource, boundary: Pick<PhaseBoundary, 'atEpochMs' | 'phase'> | undefined): string {
+  const since = boundary?.atEpochMs ?? 0;
+  const last = sampler.frames.at(-1);
+  const failures = sampler.failures.length === 0 ? 'none' : sampler.failures.slice(0, 3).map(text => text.slice(0, 300)).join(' | ');
+  return [`sampler wait: phase ${boundary?.phase ?? 'none'} since ${String(since)}; frames ${String(sampler.frames.length)}, after phase ${
+    String(sampler.frames.filter(frame => frame.atEpochMs >= since).length)}, last ${last === undefined ? 'none' : String(last.atEpochMs)}`,
+  `sampler failures ${String(sampler.failures.length)}: ${failures}`, `sampler ${sampler.describe?.() ?? 'n/a'}`].join('\n');
+}
+
+/**
+ * Wait for the phase samples after the latest mark. The flow always uses the 30s limit; a contract test may shorten it.
+ * A timeout keeps the poll text and adds the sampler state (frames, first failures, start-up stages).
+ */
+export async function waitPhaseSamples(sampler: PhaseSampleSource, boundary: Pick<PhaseBoundary, 'atEpochMs' | 'phase'> | undefined,
+  timeoutMs = PHASE_SAMPLE_TIMEOUT_MS): Promise<void> {
+  const since = boundary?.atEpochMs ?? 0;
+  try {
+    await expect.poll(() => sampler.frames.filter(frame => frame.atEpochMs >= since).length, { timeout: timeoutMs })
+      .toBeGreaterThanOrEqual(PHASE_SAMPLE_FRAMES);
+  } catch (error: unknown) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${samplerWaitDetail(sampler, boundary)}`, { cause: error });
+  }
+}
 
 interface ActualPhaseEvent {
   readonly stream: string; readonly sequence: number; readonly atEpochMs: number;
@@ -597,10 +627,7 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
     displaySnapshots.push({ atEpochMs, phase: phaseFor(atEpochMs, boundaries), hostAttributeReserved: value,
       driverAllocatedBytes: null, driverActualBytes: null });
   };
-  const waitSamples = async (): Promise<void> => {
-    const boundary = boundaries.at(-1)?.atEpochMs ?? 0;
-    await expect.poll(() => sampler.frames.filter(frame => frame.atEpochMs >= boundary).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(5);
-  };
+  const waitSamples = (): Promise<void> => waitPhaseSamples(sampler, boundaries.at(-1));
   const inputPath = info.outputPath(kind === 'solid' ? 'solid.pcad' : 'assembly.pcada');
   const fixture = kind === 'solid' ? boxPartFile('高水位の箱') : await twoBoxAssemblyFile();
   await writeFile(inputPath, fixture);

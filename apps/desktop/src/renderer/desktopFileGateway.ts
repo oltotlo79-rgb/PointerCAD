@@ -23,8 +23,10 @@ interface DesktopFileApi {
   openPcad(kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown>;
   confirmSaveTarget(token: string): Promise<unknown>;
   clearSaveTarget(): Promise<unknown>;
-  savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean,
-    kind?: 'part' | 'assembly' | 'drawing'): Promise<unknown>;
+  beginPcadSave(suggestedName: string, saveAs: boolean, kind: 'part' | 'assembly' | 'drawing', totalBytes: number): Promise<unknown>;
+  sendPcadSaveChunk(transferId: string, index: number, bytes: Uint8Array, sha256: string): Promise<unknown>;
+  commitPcadSave(transferId: string): Promise<unknown>;
+  abortPcadSave(transferId: string): Promise<unknown>;
   hasSaveTarget(): Promise<unknown>;
 }
 
@@ -59,11 +61,54 @@ function isDesktopFileApi(value: unknown): value is DesktopFileApi {
     typeof value.confirmSaveTarget === 'function' &&
     'clearSaveTarget' in value &&
     typeof value.clearSaveTarget === 'function' &&
-    'savePcad' in value &&
-    typeof value.savePcad === 'function' &&
+    'beginPcadSave' in value &&
+    typeof value.beginPcadSave === 'function' &&
+    'sendPcadSaveChunk' in value &&
+    typeof value.sendPcadSaveChunk === 'function' &&
+    'commitPcadSave' in value &&
+    typeof value.commitPcadSave === 'function' &&
+    'abortPcadSave' in value &&
+    typeof value.abortPcadSave === 'function' &&
     'hasSaveTarget' in value &&
     typeof value.hasSaveTarget === 'function'
   );
+}
+
+/** 「保存」の開始の答え。分ける大きさは本体が決め(本体の `PCAD_SAVE_CHUNK_BYTES`)、ここでは決めない。 */
+function isSaveReceipt(value: unknown): value is { readonly transferId: string; readonly chunkBytes: number } {
+  return isObject(value) && 'transferId' in value && typeof value.transferId === 'string'
+    && 'chunkBytes' in value && typeof value.chunkBytes === 'number'
+    && Number.isSafeInteger(value.chunkBytes) && value.chunkBytes > 0;
+}
+
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...digest].map(value => value.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 「保存」のバイト列を、本体が開始で答えた大きさに分けて順に送り、確定の答え(名前か null)を返す
+ * (案B、2026-11-13。1 回で送ると本体プロセスで全体の写しが 2 つ重なり、保存中の記憶量の山になった)。
+ * 各回は `slice` で独立した並びにする。`subarray` の見せ方を送ると、構造化複製が元の全体を写すため。
+ * 途中や確定で失敗したら、本体に一時ファイルを捨てさせてから失敗をそのまま返す。取り消し(開始が null)は null。
+ */
+async function savePcadInChunks(api: DesktopFileApi, suggestedName: string, bytes: Uint8Array, saveAs: boolean,
+  kind: 'part' | 'assembly' | 'drawing'): Promise<unknown> {
+  const receipt: unknown = await api.beginPcadSave(suggestedName, saveAs, kind, bytes.byteLength);
+  if (receipt === null || receipt === undefined) return null;
+  if (!isSaveReceipt(receipt)) throw new Error(t('file.saveFailed'));
+  const { transferId, chunkBytes } = receipt;
+  try {
+    for (let index = 0, offset = 0; offset < bytes.byteLength; index += 1, offset += chunkBytes) {
+      const piece = bytes.slice(offset, Math.min(offset + chunkBytes, bytes.byteLength));
+      const accepted: unknown = await api.sendPcadSaveChunk(transferId, index, piece, await sha256Hex(piece));
+      if (accepted !== true) throw new Error(t('file.saveFailed'));
+    }
+    return await api.commitPcadSave(transferId);
+  } catch (error) {
+    await api.abortPcadSave(transferId).catch(() => undefined);
+    throw error;
+  }
 }
 
 function isDesktopPrintApi(value: object): value is DesktopPrintApi {
@@ -270,7 +315,7 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
 
     async savePcad(suggestedName, bytes, saveAs, kind): Promise<string | null> {
       const revision = ++targetStateVersion;
-      const result: unknown = await api.savePcad(suggestedName, bytes, saveAs, kind);
+      const result: unknown = await savePcadInChunks(api, suggestedName, bytes, saveAs, kind ?? 'part');
       if (revision !== targetStateVersion) return null;
       if (result === null || result === undefined) {
         // 取り消された。

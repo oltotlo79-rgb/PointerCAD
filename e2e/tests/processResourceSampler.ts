@@ -65,7 +65,19 @@ interface WindowsTiming {
   readonly previousSleep?: { readonly requestedMs: number; readonly startedAtEpochMs: number; readonly endedAtEpochMs: number };
 }
 export type RawFrame = Omit<ProcessMemoryFrame, 'phase' | 'processes'> & { readonly processes: readonly ResourceProcessSample[]; readonly readStartedAtEpochMs: number; readonly windowsTiming?: WindowsTiming; readonly linuxDiscoveryComplete?: boolean; readonly linuxDiscovery?: readonly (LinuxAncestry | LinuxAncestryFailure | null)[] };
-export interface Sampler { readonly frames: RawFrame[]; readonly failures: string[]; stop(): Promise<void> }
+/** One start-up stage of the Windows sampler, written as its own stdout line before the first frame. */
+export interface SamplerStage { readonly stage: string; readonly atEpochMs: number; readonly ms: number }
+/** The Windows sampler's start-up stages, in the order its PowerShell script reaches them. */
+export const WINDOWS_SAMPLER_STAGES = ['script-start', 'native-ready', 'discovery-runspace-ready',
+  'first-discovery-started', 'first-discovery-complete'] as const;
+export interface Sampler {
+  readonly frames: RawFrame[]; readonly failures: string[];
+  /** Start-up stages seen so far (Windows only). They are never frames. */
+  readonly stages?: readonly SamplerStage[];
+  /** Spawn time, pid, exit and start-up stages for a failure text. Never part of a judgment. */
+  readonly describe?: () => string;
+  stop(): Promise<void>;
+}
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -131,6 +143,18 @@ export function rawFrame(value: unknown): RawFrame {
     discoveryError: value.discoveryError, ...(typeof value.rootCreated === 'string' ? { rootCreated: value.rootCreated } : {}),
     ...(typeof value.linuxDiscoveryComplete === 'boolean' ? { linuxDiscoveryComplete: value.linuxDiscoveryComplete } : {}),
     ...(windowsTiming(value.windowsTiming) ? { windowsTiming: value.windowsTiming } : {}) };
+}
+/**
+ * One stdout line of the Windows sampler: a start-up stage line (it has `samplerStage`) or a frame.
+ * A malformed line of either kind throws and is kept as a failure; a stage is never counted as a frame.
+ */
+export function readSamplerLine(line: string): { readonly stage: SamplerStage } | { readonly frame: RawFrame } {
+  const decoded: unknown = JSON.parse(line);
+  if (!isRecord(decoded) || !('samplerStage' in decoded)) return { frame: rawFrame(decoded) };
+  if (typeof decoded.samplerStage !== 'string' || !actualTime(decoded.atEpochMs) || !actualTime(decoded.ms)) {
+    throw new Error('Malformed sampler stage');
+  }
+  return { stage: { stage: decoded.samplerStage, atEpochMs: decoded.atEpochMs, ms: decoded.ms } };
 }
 let ticks: Promise<number> | undefined;
 function clockTicks(): Promise<number> {
@@ -273,12 +297,20 @@ $ErrorActionPreference='Stop'
 # Node decodes both redirected streams as UTF-8; do not emit the host OEM code page.
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding=[Console]::OutputEncoding
+# Each start-up stage is its own JSON line (samplerStage), never a frame: a sampler that never reaches its
+# first frame still shows how far it started. Built without ConvertTo-Json, whose set-up is timed below.
+function Write-SamplerStage([string]$stage,[long]$atEpochMs,[double]$ms){
+  [Console]::Out.WriteLine('{"samplerStage":"'+$stage+'","atEpochMs":'+$atEpochMs+',"ms":'+$ms.ToString('0.0',[Globalization.CultureInfo]::InvariantCulture)+'}')
+}
+# Before Add-Type only the framework clock exists; every later stage uses the precise clock.
+Write-SamplerStage 'script-start' ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) 0
 # Compile API declarations only. No process/PID is read during initialization.
 $nativeSetupClock=[System.Diagnostics.Stopwatch]::StartNew()
 Add-Type -TypeDefinition @'
 ${windowsNativeSource}
 '@
 $nativeInitializationMs=$nativeSetupClock.Elapsed.TotalMilliseconds
+Write-SamplerStage 'native-ready' ([SamplerNative]::EpochMilliseconds()) $nativeInitializationMs
 # Initialize JSON code/metadata with constants, before discovery or any real
 # sample. This is not a process read, and no measured frame is discarded.
 $serializerClock=[System.Diagnostics.Stopwatch]::StartNew()
@@ -403,6 +435,7 @@ $discoveryShell.Runspace=$discoveryRunspace
 [void]$discoveryShell.Invoke()
 if($discoveryShell.HadErrors){throw ($discoveryShell.Streams.Error | Out-String)}
 $discoveryInitializationMs=$discoverySetupClock.Elapsed.TotalMilliseconds
+Write-SamplerStage 'discovery-runspace-ready' ([SamplerNative]::EpochMilliseconds()) $discoveryInitializationMs
 function Start-Discovery{
   $discoveryShell.Commands.Clear()
   $discoveryShell.Streams.Error.Clear()
@@ -413,7 +446,10 @@ function Start-Discovery{
 # The first set is complete before the first frame, as before.
 try{
 $pending=Start-Discovery
+Write-SamplerStage 'first-discovery-started' $pending.startedAt 0
 [void]$pending.handle.AsyncWaitHandle.WaitOne()
+$firstDiscoveryCompletedAt=[SamplerNative]::EpochMilliseconds()
+Write-SamplerStage 'first-discovery-complete' $firstDiscoveryCompletedAt ($firstDiscoveryCompletedAt-$pending.startedAt)
 $discoveryStartedAt=$pending.startedAt
 $previousOutput=$null
 $previousSleep=$null
@@ -563,9 +599,11 @@ while($true){
   $discoveryShell.Dispose()
   $discoveryRunspace.Dispose()
 }`;
+  const spawnedAt = Date.now();
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
     { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  const frames: RawFrame[] = [], failures: string[] = [];
+  const frames: RawFrame[] = [], failures: string[] = [], stages: SamplerStage[] = [];
+  let exited: string | null = null;
   let pending = '';
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk: string) => {
@@ -573,8 +611,11 @@ while($true){
     let newline = pending.indexOf('\n');
     while (newline >= 0) {
       const line = pending.slice(0, newline).trim(); pending = pending.slice(newline + 1);
-      try { const decoded: unknown = JSON.parse(line); frames.push(rawFrame(decoded)); }
-      catch (error: unknown) { failures.push(`invalid sampler JSON: ${String(error)}`); }
+      try {
+        const read = readSamplerLine(line);
+        if ('frame' in read) frames.push(read.frame);
+        else stages.push(read.stage);
+      } catch (error: unknown) { failures.push(`invalid sampler JSON: ${String(error)}`); }
       newline = pending.indexOf('\n');
     }
   });
@@ -582,11 +623,14 @@ while($true){
   child.stderr.on('data', (chunk: string) => { failures.push(chunk); });
   child.on('error', (error: Error) => { failures.push(error.message); });
   let stopping = false;
-  const closed = new Promise<void>(resolve => { child.on('close', code => {
+  const closed = new Promise<void>(resolve => { child.on('close', (code, signal) => {
+    exited = `${String(code)}/${String(signal)} +${String(Date.now() - spawnedAt)}ms`;
     if (!stopping) failures.push(`sampler exited unexpectedly: ${String(code)}`);
     resolve();
   }); });
-  return { frames, failures, async stop() { stopping = true; child.kill(); await closed; } };
+  const describe = (): string => `spawned ${String(spawnedAt)} pid ${String(child.pid ?? 'none')} exit ${exited ?? 'running'}; stages ${
+    stages.length === 0 ? 'none' : stages.map(entry => `${entry.stage} +${String(entry.atEpochMs - spawnedAt)}ms (${entry.ms.toFixed(1)}ms)`).join(', ')}`;
+  return { frames, failures, stages, describe, async stop() { stopping = true; child.kill(); await closed; } };
 }
 
 export type LinuxFileReader = (pid: number, file: 'stat' | 'status' | 'cmdline') => Promise<string>;

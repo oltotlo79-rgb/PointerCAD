@@ -40,5 +40,5 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 unearth==0.18.3
 urllib3==2.8.0
-virtualenv==21.14.9
+virtualenv==21.14.13
 wheel==0.48.0

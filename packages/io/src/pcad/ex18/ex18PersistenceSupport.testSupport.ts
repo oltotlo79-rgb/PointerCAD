@@ -1,4 +1,4 @@
-/** Test-only W08 support. Inputs come from existing builders; expectations never feed them. */
+/** Test-only persistence support for direct editing. Inputs come from existing builders; expectations never feed them. */
 import { readFileSync } from 'node:fs';
 import { stdout } from 'node:process';
 import { createKernelApi } from '@pointercad/kernel';

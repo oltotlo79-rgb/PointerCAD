@@ -1,13 +1,13 @@
 /**
  * 書き出し・読み込みで 2 つ以上のファイルが共用するものの単一の置き場
- * (計画書 P6 §2.8 の断りの表、タスク16)。
+ * (断りの表)。
  *
  * ## なぜ 1 か所へ寄せるのか
  *
- * タスク17(`readStl.ts`)・タスク18(`readCafMesh.ts`)・タスク7(`xcafDocument.ts`)・
- * タスク13(`writeCafMesh.ts`)は並行して書かれたため、**先に着地したファイルへ触れない**
- * まま同じ文言・同じ型・同じ計算を写す形になった(各ファイルの注釈が「タスク16 で
- * 共有の置き場へ寄せる」と申し送っている)。写しが 2 か所にあると、片方だけ直したときに
+ * `readStl.ts`・`readCafMesh.ts`・`xcafDocument.ts`・
+ * `writeCafMesh.ts` は並行して書かれたため、**先に着地したファイルへ触れない**
+ * まま同じ文言・同じ型・同じ計算を写す形になった(各ファイルの注釈が「後で
+ * 共有の置き場へ寄せる」と書いていた)。写しが 2 か所にあると、片方だけ直したときに
  * 画面へ出る断りが読み込みの経路ごとに食い違う。**同じ規約は 1 か所にだけ書く**
  * (`CLAUDE.md`「規約の構成」)ので、ここが正本になる。
  *
@@ -23,14 +23,14 @@
  * **名前について:** 指示書は `meshShared.ts` を挙げていたが、書き出しの色の断り
  * (`INVALID_EXPORT_COLOR_MESSAGE`)は三角形の網とは関係が無く、STEP の書き出し
  * (`xcafDocument.ts`)も使う。中身は「入出力(exchange)で共用するもの」なので
- * `exchangeShared.ts` とした(指示書が名前を担当の判断に委ねている)。
+ * `exchangeShared.ts` とした。
  *
  * **OCCT を呼ばない。** ここにあるのは素の JavaScript の値と計算だけで、
  * 検査からも model からもそのまま呼べる。
  */
 
 /**
- * 読み込んだ三角形の束(計画書 §2.8。`.pcad` の `meshes/<id>.bin` と同じ並び)。
+ * 読み込んだ三角形の束(`.pcad` の `meshes/<id>.bin` と同じ並び)。
  *
  * 並びは `tessellate.ts` の `SurfaceMesh`・`exportMesh.ts` の `ExportMesh` と同じで、
  * 位置と法線は頂点ごとに 3 個ずつ、`indices` は三角形ごとに 3 個ずつ並ぶ。
@@ -51,7 +51,7 @@ export interface ImportedMeshData {
 }
 
 /**
- * 読めなかったとき(壊れている・頭が足りない・その形式でない)の断り(§2.8 の表)。
+ * 読めなかったとき(壊れている・頭が足りない・その形式でない)の断り。
  *
  * **STEP の `STEP_READ_FAILED_MESSAGE`(`readStep.ts`)と 1 字も違わない。** そちらは
  * STEP だけが使う断りの並び(形が無い・立体が無い)と 1 組になっているので、
@@ -63,7 +63,7 @@ export const MESH_READ_FAILED_MESSAGE =
   'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。';
 
 /**
- * 読めたが三角形が 1 枚も無かったときの断り(計画書 §2.4 の表)。
+ * 読めたが三角形が 1 枚も無かったときの断り。
  *
  * STL は「ファイルは読めたが面が 0 枚」という状態がありうるので、
  * 下の `MESH_NO_SHAPE_MESSAGE`(そもそも形が入っていない)と文言を分けてある。
@@ -71,7 +71,7 @@ export const MESH_READ_FAILED_MESSAGE =
 export const MESH_NO_FACE_MESSAGE = 'この形には面がありません。';
 
 /**
- * 読めたが形が 1 つも入っていなかったときの断り(計画書 §2.8 の表)。
+ * 読めたが形が 1 つも入っていなかったときの断り。
  *
  * `readStep.ts` の `STEP_NO_SHAPE_MESSAGE` と同じ文言。STEP 側を寄せない理由は
  * `MESH_READ_FAILED_MESSAGE` と同じ。
@@ -79,14 +79,14 @@ export const MESH_NO_FACE_MESSAGE = 'この形には面がありません。';
 export const MESH_NO_SHAPE_MESSAGE = 'このファイルには形が入っていません。';
 
 /**
- * 開ける三角形の上限(計画書 §2.8 の断りの表)。
+ * 開ける三角形の上限。
  *
- * 10 万三角形で約 2.4MB(§2.8 の見積もり)なので、500 万なら約 120MB。
+ * 10 万三角形で約 2.4MB(見積もり)なので、500 万なら約 120MB。
  * これを超えると WASM の記憶と `.pcad` の大きさのどちらも実用の範囲を出る。
  */
 export const MESH_MAX_TRIANGLE_COUNT = 5_000_000;
 
-/** 三角形が多すぎて開けないときの断り(計画書 §2.8 の表。個数を文言に入れる)。 */
+/** 三角形が多すぎて開けないときの断り(個数を文言に入れる)。 */
 export function meshTooLargeMessage(triangleCount: number): string {
   return `この形は大きすぎて開けません(三角形が ${String(triangleCount)} 個)。`;
 }
@@ -155,7 +155,7 @@ export function computeVertexNormals(
  * 原点と三角形が作る四面体の符号付き体積 `(v₁ × v₂)·v₃ / 6` を全部足すと、
  * 閉じた形なら中身の体積になる(外向きなら正、内向きなら負)。読み込んだファイルは
  * 表裏が揃っていないことがあるので**絶対値を取る**。開いた形では意味を持たないが、
- * 「読んだ形の目安」としてプロパティパネルへ出す(§2.18)。
+ * 「読んだ形の目安」としてプロパティパネルへ出す。
  */
 export function computeVolume(positions: Float32Array, indices: Uint32Array): number {
   let sum = 0;

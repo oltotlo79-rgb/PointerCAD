@@ -1,8 +1,8 @@
 /**
- * 「ファイル」の区画の配線(FR-806、FR-812、FR-814、FR-807。P6 §0.57、タスク31・33)。
+ * 「ファイル」の区画の配線(FR-806、FR-812、FR-814、FR-807)。
  *
  * 画面の組み立て(`Toolbar.tsx`)から**押したときに何が起きるか**を分けてある。
- * 一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
+ * 一覧ごとに 1 ファイルへ分けた。
  */
 
 import { analyzeParameters } from '@pointercad/model';
@@ -102,13 +102,13 @@ export function runNewAssembly(deps: PartFileDeps = createDefaultPartFileDeps())
 }
 
 // ---------------------------------------------------------------------------
-// ひな形・印刷・最近使ったファイル(FR-807、FR-810、FR-814。P6 タスク33)
+// ひな形・印刷・最近使ったファイル(FR-807、FR-810、FR-814)
 // ---------------------------------------------------------------------------
 
 /**
  * ひな形の手続きが要る口一式(`createExchangeDeps` と同じ役目)。
  *
- * 置き場は**ブラウザの中**にする(§0.a-0.36 の承認)。デスクトップ版も同じ口を使うので、
+ * 置き場は**ブラウザの中**にする。デスクトップ版も同じ口を使うので、
  * 「ひな形として保存」「ひな形から新規」の操作は Web 版とまったく同じになる(要件§1.5)。
  * ファイル(`.pcadt`)にも書けるので、環境をまたいで持ち運べる。
  */
@@ -174,12 +174,12 @@ async function runSaveAsTemplate(): Promise<void> {
 }
 
 /**
- * ひな形から新しい部品を始める(FR-814、§2.10)。
+ * ひな形から新しい部品を始める(FR-814)。
  *
  * **失うものがあれば先に確認する**(NFR-UX-3。「新規」と同じ確認)。読み切れたときだけ
  * 差し替えるので、断られた場合はいまの部品を触らない(NFR-RE-1)。
  *
- * 差し替えの順は「単位 → 文書 → ファイルの名前」。単位は文書の欄ではない(§0.a-0.1)ので
+ * 差し替えの順は「単位 → 文書 → ファイルの名前」。単位は文書の欄ではないので
  * 先に配り、**再計算が走るのは `resetDocument` の 1 回だけ**にする。
  */
 export async function runNewFromTemplate(source: TemplateSource): Promise<void> {
@@ -233,13 +233,13 @@ export async function runNewFromTemplate(source: TemplateSource): Promise<void> 
   store.resetDocument(outcome.document, preparedSession);
   store.setFileState(null, null);
   if (outcome.notice !== null) {
-    // 形の入ったひな形だった。断りではないので、そのまま開いたうえで 1 行知らせる(§2.10)。
+    // 形の入ったひな形だった。断りではないので、そのまま開いたうえで 1 行知らせる。
     useAppStore.getState().setFileMessage({ key: 'template.hasHistory', failed: false });
   }
 }
 
 /**
- * いま見えている 1 コマを印刷する(FR-810、FR-908、§2.11)。
+ * いま見えている 1 コマを印刷する(FR-810、FR-908)。
  *
  * デスクトップ版は口(`FileGateway.print`)へ渡し、Web 版は紙面を足して `window.print()`。
  * **絵を作る口はビューポートが差し出した `capturePrintFrame`**(白い下地・長辺 2000)で、
@@ -268,7 +268,7 @@ async function runPrint(): Promise<void> {
 }
 
 /**
- * 「ファイル」の畳んだ一覧から選んだときの処理(FR-812、P6 §0.57、タスク31・32・33)。
+ * 「ファイル」の畳んだ一覧から選んだときの処理(FR-812)。
  *
  * 決まった操作は `FileMenuActionId` を網羅する `switch` にしてあるのが要点で、
  * **配線を書かずに一覧へ行を足すと型検査が落ちる**(押しても何も起きない行を画面に
@@ -291,7 +291,7 @@ export function runFileMenuAction(
   }
   if (isRecentFileMenuId(id)) {
     /*
-     * 最近使ったファイル(FR-807、§0.a-0.38)。**その場では開かない。**
+     * 最近使ったファイル(FR-807)。**その場では開かない。**
      * 覚えているのは名前だけで場所は持たない(NFR-SE-1)ので、できるのは「開く」の窓を
      * 出すところまでである。窓へ名前を初期値として渡す口は今の `openPcad` に無いので、
      * 「開く」をそのまま呼ぶ(口を広げるとデスクトップ版の窓にも手が要る)。
@@ -355,7 +355,7 @@ function runFileMenuActionId(
 }
 
 /**
- * 書き出しのパネルの入れ物(P6 §0.a-0.20、タスク32)。
+ * 書き出しのパネルの入れ物。
  *
  * 中身は `file/ExchangePanel.tsx`。ここがするのは**置き場所と閉じ方**だけで、
  * `SettingsPanel` とまったく同じ作り(覆いを作らないので、開いている間も背後の
@@ -393,7 +393,7 @@ export function ExportPanelHost({
         deps={createExchangeDeps(exportBaseNameOf(fileName))}
         onFinished={(notices) => {
           /*
-            **書き出せたときの案内を失敗の口へ入れない**(タスク45 の指摘、43b の申し送り)。
+            **書き出せたときの案内を失敗の口へ入れない**。
             `setError` はステータスバーで「計算に失敗しました:」を頭に付けて赤くするので、
             うまくいったのに失敗したように見えていた。成功の 1 行そのものは
             `ExchangePanel` が `setFileMessage`(`failed: false`)で立てている。

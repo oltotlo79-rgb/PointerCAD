@@ -14,7 +14,7 @@ let readPendingContext: () => PendingFieldContext | undefined = () => undefined;
 export function registerPendingFieldContext(read: () => PendingFieldContext): void { readPendingContext = read; }
 export function pendingFieldContext(): PendingFieldContext | undefined { return readPendingContext(); }
 /**
- * 式が計算待ちの係数名を参照しているか(GR-20)。単位の中の名前(`(w*2)in` の `w`)も数える。
+ * 式が計算待ちの係数名を参照しているか。単位の中の名前(`(w*2)in` の `w`)も数える。
  * 読めない式(構文の誤り)は参照なしとし、評価で誤りの理由をそのまま出させる。
  */
 export function referencesPendingVariable(source: string, pending: ReadonlySet<string>, definition?: StoredMathExpression): boolean {

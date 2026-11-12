@@ -24,8 +24,8 @@ import { mapDocumentExpressions } from './reevaluatePart.js';
 import type { PartDocument } from './types.js';
 
 /**
- * Why a rename refused. Name issues are GR-01's `MathGeometryNameIssue` verbatim, so the screen can show its
- * own `parameter.error.*` text (付録B). The rest:
+ * Why a rename refused. Name issues are `MathGeometryNameIssue` verbatim, so the screen can show its
+ * own `parameter.error.*` text. The rest:
  * - `notFound`: no single definition carries this ID.
  * - `cancelled`: the request was aborted, or the document is no longer the current one.
  * - `unverifiedReference`: a formula to relabel carries a label that differs from the current name of what

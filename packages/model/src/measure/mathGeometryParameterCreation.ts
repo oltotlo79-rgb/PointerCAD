@@ -20,11 +20,11 @@ import type { MathGeometryOutcome } from './mathGeometryTypes.js';
 /** The unit of a measured real value (`MathGeometryOutcome`'s real `unit`): mm, mm², mm³, degree or radian. */
 export type MathGeometryValueUnit = Extract<MathGeometryOutcome, { readonly kind: 'real' }>['unit'];
 
-/** What the caller supplies for the new coefficient (GR-31 builds `name` and `description` from the UI's messages). */
+/** What the caller supplies for the new coefficient (the UI builds `name` and `description` from its messages). */
 interface MathGeometryParameterDraftInput {
   /** The coefficient's name, e.g. "<測定値の名前>の値" (`mathGeometry.createParameter.nameSuffix`). Not checked here. */
   readonly name: string;
-  /** The definition's current measured value (GR-14). Kept for display only; the recomputation decides the value. */
+  /** The definition's current measured value. Kept for display only; the recomputation decides the value. */
   readonly value: number;
   /** The measured value's unit. Only the unit decides the coefficient's unit; the quantity kind is never consulted. */
   readonly unit: MathGeometryValueUnit;
@@ -44,13 +44,13 @@ export type MathGeometryParameterDraftResult =
   | { readonly ok: true; readonly parameter: Parameter }
   | { readonly ok: false; readonly reason: MathGeometryParameterDraftReason; readonly message: string };
 
-/** Appendix C「係数の下書き・値なし」; the screen's own text is `mathGeometry.createParameter.disabled.noValue`. */
+/** 「係数の下書き・値なし」; the screen's own text is `mathGeometry.createParameter.disabled.noValue`. */
 const NO_VALUE_MESSAGE = '値が決まっていないため、係数を作れません。';
 
 /**
- * Measured unit → coefficient unit (§4(a)). Only millimetres and degrees have a `ParameterUnit` of their own;
+ * Measured unit → coefficient unit. Only millimetres and degrees have a `ParameterUnit` of their own;
  * areas, volumes and radians become `none` instead of being forced into `mm` or `degree` (`ParameterUnit` is
- * not extended, §4(e)). A `Record`, so a new measured unit cannot be added without deciding its entry here.
+ * not extended). A `Record`, so a new measured unit cannot be added without deciding its entry here.
  */
 const PARAMETER_UNIT_OF: Readonly<Record<MathGeometryValueUnit, ParameterUnit>> = {
   mm: 'mm',
@@ -65,7 +65,7 @@ const PARAMETER_UNIT_OF: Readonly<Record<MathGeometryValueUnit, ParameterUnit>> 
  * (`notFound` is checked before `noValue`). The draft's formula is the stored form of
  * `coef("<definition name>")`:
  * - `expression`: a single coefficient symbol whose ID is `mathGeometryCoefficientId(definitionId)` and whose
- *   label is the definition's current name (GR-04 resolves the pair and checks that they still agree);
+ *   label is the definition's current name (the coefficient resolution resolves the pair and checks that they still agree);
  * - `source`: `formatMathText` of that expression, used for both `ExpressionValue.source` and
  *   `mathDefinition.source`. The math engine parses `source` again and requires the stored expression, and
  *   `acceptNumericMath` requires the two sources to be one string;
@@ -73,7 +73,7 @@ const PARAMETER_UNIT_OF: Readonly<Record<MathGeometryValueUnit, ParameterUnit>> 
  *
  * `value` and `display` come from `exactExpressionValueFromNumber`: the passed double unrounded, and the same
  * 12 significant digits a recomputation displays (`mathScalarExpression`). The draft carries no `mathId`;
- * whether the new coefficient gets one is decided when it is added (GR-31).
+ * whether the new coefficient gets one is decided when it is added.
  */
 export function mathGeometryParameterDraft(document: PartDocument, definitionId: string,
   input: MathGeometryParameterDraftInput): MathGeometryParameterDraftResult {

@@ -25,7 +25,7 @@ export interface SolidContactPair {
   readonly frictionSourceId: string | null;
   readonly method: SolidContactMethod;
 }
-/** Definitions for W57 persistence. Meshes, projections, reactions and CAD mates are not saved here. */
+/** Definitions for contact-input persistence. Meshes, projections, reactions and CAD mates are not saved here. */
 export interface SolidContactSavedInput {
   readonly schema: typeof SOLID_CONTACT_SCHEMA;
   readonly id: typeof SOLID_CONTACT_ID;

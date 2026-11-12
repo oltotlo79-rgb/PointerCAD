@@ -6,7 +6,7 @@ import { toSubShapeQuery } from './subShapeQuery.js';
 
 
 /**
- * 罫線面・ロフトの断面 1 つをカーネルの言葉へ直す(FR-430、FR-410、P5 §2.9)。
+ * 罫線面・ロフトの断面 1 つをカーネルの言葉へ直す(FR-430、FR-410)。
  * 曲線の並びは `toCurveSpec` を使い回し、球は中心と半径をそのまま渡す。
  */
 function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
@@ -16,8 +16,8 @@ function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
     case 'sphere':
       return { kind: 'sphere', center: section.center, radius: section.radius };
     case 'faceQuery':
-      // 立体の面(§0.a-0.73)。輪郭の取り出しはカーネルの中で行うので、指紋と
-      // 対象の段の鍵だけを渡す(穴・面取りの面と同じ扱い)。対象は消費しない(§0.a-0.27)。
+      // 立体の面。輪郭の取り出しはカーネルの中で行うので、指紋と
+      // 対象の段の鍵だけを渡す(穴・面取りの面と同じ扱い)。対象は消費しない。
       return {
         kind: 'faceQuery',
         targetKey: section.targetKey,
@@ -35,7 +35,7 @@ function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
  * 穴・ねじ穴・R面取り・C面取り・ばねの欄(`centers` / `transforms` / `thread` / `mark` / `size` 等)は
  * model 側の型(resolvePart.ts の `SolidStepPlan`)と kernel 側の型(kernel/src/types.ts の
  * `HoleStepSpec` 等)で欄の名前と形をそろえてあるので、指紋(`face` / `targets`)だけ
- * `toSubShapeQuery` で詰め替え、残りはそのまま渡す(タスク17 手順3)。
+ * `toSubShapeQuery` で詰め替え、残りはそのまま渡す。
  */
 function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
   switch (plan.kind) {
@@ -54,9 +54,9 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
       }
     }) };
     case 'extrude':
-      // P5 で足した終端・傾き・薄板(FR-415・FR-401・FR-416)は**省略されたまま渡す**。
+      // 後から足した終端・傾き・薄板(FR-415・FR-401・FR-416)は**省略されたまま渡す**。
       // 段に無い欄はカーネルでも既定(距離ぶんを片側へ、傾きなし、中実)になるので、
-      // P2 からの押し出しの依頼は 1 ドットも変わらない(`ExtrudeStepSpec` の注釈)。
+      // 従来の押し出しの依頼は 1 ドットも変わらない(`ExtrudeStepSpec` の注釈)。
       return {
         kind: 'extrude',
         profile: plan.profile.map((curve) => toCurveSpec(curve)),
@@ -114,10 +114,10 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         tiltAngle: plan.tiltAngle,
         tiltAzimuth: plan.tiltAzimuth,
         transforms: plan.transforms,
-        // 入口の形(ざぐり・皿もみ、FR-422、タスク46)。**広げないときは段にも載せない**
+        // 入口の形(ざぐり・皿もみ、FR-422)。**広げないときは段にも載せない**
         // (省くとカーネルでも `{ kind: 'plain' }` になる。`HoleStepSpec.entry` の注釈)。
         ...(plan.entry === undefined ? {} : { entry: plan.entry }),
-        // 円筒の側面の穴(EX05)。**平面の穴では段にも載せない**(`HoleStepSpec.cylindrical` の注釈)。
+        // 円筒の側面の穴。**平面の穴では段にも載せない**(`HoleStepSpec.cylindrical` の注釈)。
         ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
         ...(plan.planar === undefined ? {} : { planar: plan.planar }),
       };
@@ -139,7 +139,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         mark: plan.mark,
         // 入口の形(ざぐり・皿もみ、FR-422、42c/46c)。穴とまったく同じ扱い(上の 'hole' 節)。
         ...(plan.entry === undefined ? {} : { entry: plan.entry }),
-        // 円筒の側面のねじ穴(EX05)。**平面のねじ穴では段にも載せない**。位置ごとの向きは kernel が面から決める。
+        // 円筒の側面のねじ穴。**平面のねじ穴では段にも載せない**。位置ごとの向きは kernel が面から決める。
         ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
         ...(plan.planar === undefined ? {} : { planar: plan.planar }),
       };
@@ -159,7 +159,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         swapReferenceFace: plan.swapReferenceFace,
       };
     case 'spring':
-      // ばねは対象ボディを持たない(§0.36)ので targetKey が無い。
+      // ばねは対象ボディを持たないので targetKey が無い。
       return {
         kind: 'spring',
         origin: plan.origin,
@@ -171,10 +171,10 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         handedness: plan.handedness,
       };
     case 'primitive':
-      // 基本形状(FR-429、P5 §2.7)。中心・向き・寸法だけで決まる「作る」段だが、
+      // 基本形状(FR-429)。中心・向き・寸法だけで決まる「作る」段だが、
       // 中心を立体の頂点にしたときだけ頂点の指紋(`originQuery`)と、その頂点を持つ
       // 立体の段の鍵(`targetKey`)を添え、カーネルが頂点を引いて位置を決める
-      // (§0.a-0.18)。**それでも対象は消費しない**(§0.a-0.19)ので、加工フィーチャーの
+      // **それでも対象は消費しない**ので、加工フィーチャーの
       // `targetKey` と違い結果には両方のボディが残る。寸法(`shape`)は model と kernel で
       // 欄の名前・形をそろえてあるので、指紋だけ詰め替えて残りはそのまま渡す。
       return {
@@ -188,9 +188,9 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
     case 'thruSections':
       /*
         罫線面(FR-430)とロフト(FR-410)は、model のフィーチャーが 2 種類でも
-        カーネルの段は 1 種類で `ruled` の真偽しか違わない(P5 §0.a-0.25)。
+        カーネルの段は 1 種類で `ruled` の真偽しか違わない。
         断面は輪郭(曲線の並び)・球(中心と半径)・立体の面(指紋と上流の鍵)の 3 通りで、
-        詰め替えは `toThruSectionSpec`。球の近似の点の数(`sphereSegments`、§0.a-0.74)は
+        詰め替えは `toThruSectionSpec`。球の近似の点の数(`sphereSegments`)は
         カーネル側が必須の欄にしてある(既定を入れるのは model の役目)ので必ず渡す。
       */
       return {
@@ -202,7 +202,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         sphereSegments: plan.sphereSegments,
       };
     /*
-      P5 の Should 群のうちタスク45 が解決する 4 種(FR-417・FR-419・FR-424)。
+      Should 群のうち解決する 4 種(FR-417・FR-419・FR-424)。
       角度のラジアン化・平面の数値化・倍率の正規化は resolvePart が済ませてあるので、
       ここでやるのは指紋(`faces` / `neutralFace`)の詰め替えだけである。
       **消費するかどうかは `visible` を決める model 側の話**で、依頼の形には出ない。
@@ -241,7 +241,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         perAxis: plan.perAxis,
       };
     /*
-      P5 の Should 群のうちタスク46 が解決する 5 種(FR-409・420・421・423・428)と、
+      Should 群のうち解決する 5 種(FR-409・420・421・423・428)と、
       前倒しした Could 群の 1 種(FR-418)。断面・経路の座標、向き、角度のラジアン化、
       呼び径の引き当ては resolvePart が済ませてあるので、ここでやるのは曲線と指紋の
       詰め替えだけである(欄の名前と形は model と kernel でそろえてある)。
@@ -290,7 +290,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
       return { kind: 'functionSurface', geometry: plan.geometry };
     case 'surface':
       // 曲面(FR-428)。作り方 6 種の詰め替えは `toSurfaceInput`。`face` / `offset` の
-      // ときだけ面を借りる立体の鍵を添えるが、**消費はしない**(§0.a-0.45)。
+      // ときだけ面を借りる立体の鍵を添えるが、**消費はしない**。
       return {
         kind: 'surface',
         shape: toSurfaceInput(plan.shape),
@@ -302,7 +302,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
       return { kind: plan.kind, targetKey: plan.targetKey, face: toSubShapeQuery(plan.face),
         hinge: toSubShapeQuery(plan.hinge), angle: plan.angle };
     case 'faceOffset':
-      // 平らな面の移動(EX-18)。指紋の詰め替えだけで、距離は解決済みの mm をそのまま渡す。
+      // 平らな面の移動。指紋の詰め替えだけで、距離は解決済みの mm をそのまま渡す。
       return {
         kind: 'faceOffset',
         targetKey: plan.targetKey,
@@ -324,7 +324,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
           ? { ...plan.blade, profile: plan.blade.profile.map(toCurveSpec) } : plan.blade,
       };
     case 'cut':
-      // 平面による切断(FR-432、§2.9b)。平面は resolvePart が「通る点+単位法線」まで
+      // 平面による切断(FR-432)。平面は resolvePart が「通る点+単位法線」まで
       // 解いてあるので、欄名を合わせるだけ(指紋は段へ運ばない)。
       return {
         kind: 'cut',
@@ -335,7 +335,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
       };
     case 'importedSolid':
       /*
-        読み込んだ形(FR-802、P6 §2.8、タスク20)。カーネルの `ImportedSolidStepSpec` は
+        読み込んだ形(FR-802)。カーネルの `ImportedSolidStepSpec` は
         **バイト列 1 つだけ**を受け取る(`shapeRef` は `.pcad` の中の入れ物の名前で、
         カーネルは `.pcad` を知らないので運ばない。鍵は resolvePart が済ませてある)。
       */
@@ -344,7 +344,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
 }
 
 /**
- * 曲面の作り方(FR-428)をカーネルの `SurfaceInput` へ直す(タスク46)。
+ * 曲面の作り方(FR-428)をカーネルの `SurfaceInput` へ直す。
  * 種類も欄名も同じだが、曲線(`ResolvedCurve` → `CurveSpec`)と指紋
  * (`SubShapeRef` → `SubShapeQuery`)だけは詰め替えが要る。各節は return で閉じる。
  */

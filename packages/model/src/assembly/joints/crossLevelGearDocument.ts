@@ -6,7 +6,7 @@ import type { AssemblyDocument } from '../types.js';
 import type { CrossLevelGearCoupling, CrossLevelGearFailureCode } from './crossLevelGear.js';
 
 /**
- * Saved cross-level gear (EX12): the authored definition behind CrossLevelGearCoupling (crossLevelGear.ts). Like the
+ * Saved cross-level gear: the authored definition behind CrossLevelGearCoupling (crossLevelGear.ts). Like the
  * same-level MechanismGearCoupling it stores expressions (ratio, phase) and ids only, never a solved angle or pose.
  * `childPath` is the typed occurrence path from the top-level component down to the subassembly placement that owns
  * `childJointId` (component ids, never a flattened row id), so repeated placements of one child stay distinct.

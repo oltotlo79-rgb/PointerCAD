@@ -1,20 +1,20 @@
 import type { PointPlacementSourceAnchor } from '../geometry/subShapeOrigin.js';
 /**
- * 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329)の解決
- * (P4 計画書 §2.8、タスク9)。
+ * 基準ジオメトリの解決
+ * (任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329)。
  *
- * **解決の順序**(統括の指示):
+ * **解決の順序**:
  *   参照先(スケッチの点・立体の部分形状)→ 基準ジオメトリ → それを使うスケッチ。
  * スケッチは作図面として基準平面を指せるので、両者は互いを呼び合う。そこで
  * 「頼まれたときに解いて覚える」(遅延+記憶)形にし、解いている途中のものを
  * もう一度頼まれたら**循環として日本語で断る**(FR-504。止めずに理由を出す)。
  *
  * **履歴順の制約**: 基準ジオメトリは自分より前に作られたものだけを参照できる。
- * 後ろのものを指した参照は「後で作られたので使えません」と断る(投影・交差 §2.7 と同じ考え方)。
+ * 後ろのものを指した参照は「後で作られたので使えません」と断る(投影・交差と同じ考え方)。
  *
  * 立体の面・辺・頂点は、`deps.subShape` が渡されていればそれで選び直し、無ければ保存された
  * 指紋の位置・向きをそのまま使う(`subShapeFromFingerprint`)。カーネルへの往復を増やさない
- * ため(P5 計画書 §2.9b.1 と同じ判断)。
+ * ため(平面の解決と同じ判断)。
  */
 
 import {
@@ -347,7 +347,7 @@ export function createReferenceResolver(
   }
 
   /**
-   * 球の基本形状(FR-429)を id で引き、中心と半径にする(球面上の点 FR-431、P5 タスク19)。
+   * 球の基本形状(FR-429)を id で引き、中心と半径にする(球面上の点 FR-431)。
    *
    * 見つからない・球でない・抑制されている・半径が正の数でない・中心が解けない、のどれでも
    * null を返す。呼び出し側はそれを 1 つの断り(`MISSING_SPHERE_MESSAGE`)にまとめる。
@@ -363,7 +363,7 @@ export function createReferenceResolver(
       return null;
     }
     if (feature.suppressed) {
-      // 抑制した球は画面に無いので、その球面上の点も置けない(計画書 §2.8.1 の断り)。
+      // 抑制した球は画面に無いので、その球面上の点も置けない。
       return null;
     }
     const radius = feature.shape.radius.value;
@@ -431,7 +431,7 @@ export function createReferenceResolver(
         return null;
       }
       case 'subShape': {
-        // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
+        // 立体の部分形状(3D スケッチの点、FR-330)。
         // 頂点はその位置、辺は中点、面は重心(`subShapeFromFingerprint` と同じ約束)。
         const found = resolveSubShape(reference.ref);
         return found === null ? null : { position: found.position,
@@ -447,7 +447,7 @@ export function createReferenceResolver(
         return position === null ? null : { position };
       }
       case 'sphereGrid': {
-        // 球面上の点(FR-431、P5 タスク19)。**位置と緯度の範囲の規則は
+        // 球面上の点(FR-431)。**位置と緯度の範囲の規則は
         // `sketch/resolveCoordinate.ts` に 1 つだけ置く**ので、ここは球を引く口を渡して
         // そちらへ任せる(同じ規則を 2 か所に書かない)。断りの文言は使わず、他の基準と
         // 同じく null にして呼び出し側の「見つかりません」に合わせる。

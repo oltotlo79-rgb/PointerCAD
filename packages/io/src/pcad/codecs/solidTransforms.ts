@@ -45,10 +45,10 @@ import {
   type SolidFeature,
 } from '@pointercad/model';
 
-/** ミラーの鏡にする平面の2通り(FR-419、§0.a-0.36)。 */
+/** ミラーの鏡にする平面の2通り(FR-419)。 */
 const MIRROR_PLANE_KINDS: readonly MirrorPlane['kind'][] = ['workPlane', 'face'];
 
-/** 拡大縮小の倍率の2通り(FR-424、§0.a-0.41)。 */
+/** 拡大縮小の倍率の2通り(FR-424)。 */
 const SCALE_FACTOR_KINDS: readonly ScaleFactor['kind'][] = ['uniform', 'perAxis'];
 
 const PATTERN_DIRECTION_KINDS: readonly PatternDirection['kind'][] = [
@@ -60,7 +60,7 @@ const PATTERN_DIRECTION_KINDS: readonly PatternDirection['kind'][] = [
 const PATTERN_PLACEMENT_KINDS: readonly PatternPlacement['kind'][] = [
   'linear',
   'circular',
-  // 点の集まりへ複製(FR-425、P5 §0.a-0.42、タスク43)。
+  // 点の集まりへ複製(FR-425)。
   'points',
 ];
 
@@ -75,7 +75,7 @@ function serializePatternDirection(direction: PatternDirection): PatternDirectio
   }
 }
 
-/** ミラーの鏡にする平面(FR-419、P5 タスク43)。 */
+/** ミラーの鏡にする平面(FR-419)。 */
 function serializeMirrorPlane(plane: MirrorPlane): MirrorPlane {
   switch (plane.kind) {
     case 'workPlane':
@@ -85,7 +85,7 @@ function serializeMirrorPlane(plane: MirrorPlane): MirrorPlane {
   }
 }
 
-/** 拡大縮小の倍率(FR-424、P5 タスク43)。 */
+/** 拡大縮小の倍率(FR-424)。 */
 function serializeScaleFactor(factor: ScaleFactor): ScaleFactor {
   switch (factor.kind) {
     case 'uniform':
@@ -119,14 +119,14 @@ function serializePatternPlacement(placement: PatternPlacement): PatternPlacemen
         fullCircle: placement.fullCircle,
       };
     case 'points':
-      // 点の集まりへ複製(FR-425、P5 タスク43)。個数・間隔の欄は無く、点の並びだけ。
+      // 点の集まりへ複製(FR-425)。個数・間隔の欄は無く、点の並びだけ。
       return { kind: 'points', nextSlotSerial: placement.nextSlotSerial,
         points: placement.points.map((slot) => ({ slotId: slot.slotId, reference: serializePointReference(slot.reference) })) };
   }
 }
 
 /**
- * パターンの向き・軸(§0.a-0.21)を読む。`RevolveAxis` と欄の形は同じだが、
+ * パターンの向き・軸を読む。`RevolveAxis` と欄の形は同じだが、
  * 意味が違う別の型なので `readRevolveAxis` を使い回さず、同じ組み立てを別に持つ
  * (model 側が2つの型を分けているのと揃える)。
  */
@@ -187,7 +187,7 @@ function readPatternDirection(
   }
 }
 
-/** パターンの並べ方(直線・円形、§2.7)を読む。 */
+/** パターンの並べ方(直線・円形)を読む。 */
 function readPatternPointSlot(value: unknown, path: string): Checked<PatternPointSlot> {
   const record = checkRecord(value, path);
   if (!record.ok) return record;
@@ -265,7 +265,7 @@ function readPatternPlacement(value: unknown, path: string): Checked<PatternPlac
       };
     }
     case 'points': {
-      // 点の集まりへ複製(FR-425、P5 タスク43)。個数・間隔の欄は無い。
+      // 点の集まりへ複製(FR-425)。個数・間隔の欄は無い。
       if (record.value['nextSlotSerial'] === undefined) {
         // Old input is allocated once at this document-read boundary and saved canonically.
         const points = readList(record.value, 'points', path, readPointReferenceItem);
@@ -298,7 +298,7 @@ function readPatternPlacementField(
   return readPatternPlacement(found.value, joinPath(parentPath, key));
 }
 
-/** パターン(FR-411、FR-412、§0.a-0.20、§0.a-0.21)を読む。もとにする加工フィーチャーの id を持つ。 */
+/** パターン(FR-411、FR-412)を読む。もとにする加工フィーチャーの id を持つ。 */
 export function readPatternFeature(
   record: Record<string, unknown>,
   path: string,

@@ -36,7 +36,7 @@ function candidateSources(definition: StoredMathExpression | null): { readonly s
 
 /**
  * A saved integrate(...) with no lower/upper bound is the indefinite form: its value is a whole
- * family of antiderivatives differing by a constant, never one number (MC-20). Detected from the
+ * family of antiderivatives differing by a constant, never one number. Detected from the
  * saved formula itself, the same way candidateSources reads ± and |A| above; the definite form
  * (with bounds) is unaffected since its binding domain is 'range', never 'unrestricted'.
  */
@@ -54,7 +54,7 @@ function containsIndefiniteIntegral(definition: StoredMathExpression | null): bo
 }
 
 /**
- * True when the node tree contains a natural-log operation, rendered "ln(" by readableMathResult below (MC-20c).
+ * True when the node tree contains a natural-log operation, rendered "ln(" by readableMathResult below.
  * Real ln is undefined for a non-positive argument; a reader working over the reals reads such an ln(u) as
  * ln|u| instead, the difference being absorbed into the antiderivative's own +C. Detected from the operation
  * itself, the same way containsIndefiniteIntegral above reads the saved formula, not from the rendered text.
@@ -73,7 +73,7 @@ function containsNaturalLog(node: MathNode): boolean {
 }
 
 /**
- * The exact answer to a whole-formula indefinite integral is a function of that integral's own variable (MC-20):
+ * The exact answer to a whole-formula indefinite integral is a function of that integral's own variable:
  * a lambda over the same binding. Like every 'function' result it is never a coordinate, component or coefficient.
  */
 function antiderivativeOf(definition: StoredMathExpression | null, evaluation: MathEvaluation): { readonly variable: string; readonly body: MathNode } | null {
@@ -157,7 +157,7 @@ export function mathEditorResultText(snapshot: MathEditorSnapshot): MathEditorRe
     // A variable already called C would be indistinguishable from the constant: name the constant K instead.
     const constant = antiderivative.variable === 'C' ? 'K' : 'C';
     const hint = t(constant === 'C' ? 'math.indefiniteIntegral.hint' : 'math.indefiniteIntegral.hintConstantK');
-    // Only an antiderivative written with ln needs the real-vs-complex reading note (MC-20c decision).
+    // Only an antiderivative written with ln needs the real-vs-complex reading note.
     const detail = containsNaturalLog(antiderivative.body) ? `${hint} ${t('math.indefiniteIntegral.lnRealNote')}` : hint;
     return result(`${t('math.indefiniteIntegral.antiderivative')}: ${readableMathResult(antiderivative.body)} + ${constant}`, detail);
   }

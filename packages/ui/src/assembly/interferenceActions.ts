@@ -1,4 +1,4 @@
-/** 干渉解析と、配置済み部品どうしの正確な隙間測定(P7 タスク26)。 */
+/** 干渉解析と、配置済み部品どうしの正確な隙間測定。 */
 import type {
   AssemblyInterferenceInput, AssemblyInterferenceOptions, AssemblyInterferenceResult,
   InterferenceKernelBridge, LengthUnit,

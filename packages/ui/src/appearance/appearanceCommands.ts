@@ -1,6 +1,6 @@
 /**
- * 外観(色・材質・柄・透過率/光沢/粗さ)の割り当てを、選択と文書から確定する純関数
- * (計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク11、§2.2.2、§0.a-0.11)。
+ * 外観(色・材質・柄・透過率/光沢/粗さ)の割り当てを、選択と文書から
+ * 確定する純関数。
  *
  * 対応要件: FR-1106(立体ごと・面ごとの色)、FR-1107(材質プリセット)、FR-1108(柄)、
  * FR-1109(個別の調整)、FR-1110(既定と取り消し)、FR-505(Undo)、NFR-UX-5。
@@ -13,14 +13,14 @@
  *
  * **外観の変更は再計算を起こさない。** `PartDocument.appearance` しか変えないので
  * `affectsShape`(model の `part/documentChange.ts`)が偽になり、ストアの購読も
- * `isComputing` の札も動かない(§2.3、タスク10 で配線済み)。ここでは形に関わる欄
+ * `isComputing` の札も動かない。ここでは形に関わる欄
  * (`solids` / `sketches` / `activeSketchId`)を一切触らないことがその前提になる。
  *
- * **上限の断りは「割り当てを作る前」に行う**(§0.a-0.11、NFR-UX-5)。描画側
+ * **上限の断りは「割り当てを作る前」に行う**(NFR-UX-5)。描画側
  * (`buildFaceGroups` → `buildSolidGeometry`)は上限を超えても止まらず既定 1 色へ落とすが、
  * それは「作れてしまった文書」への保険であって、利用者への返事にはならない。上限の**数**は
  * `buildFaceGroups.ts` の `MAX_MATERIALS_PER_BODY` / `MAX_GROUPS_PER_BODY` を import して
- * 使い、2 か所に書かない(同じ判断材料を 1 か所に置く。docs/報告記録.md 2026-09-04 03:20 ②)。
+ * 使い、2 か所に書かない(同じ判断材料を 1 か所に置く)。
  */
 
 import { collectMathCoefficients, renameVariable, type ExpressionValue } from '@pointercad/expression';
@@ -74,9 +74,9 @@ export interface AppearanceContext {
   readonly bodies: readonly SubShapeBody[];
   /** 選んでいる要素の id(立体そのもの、または `extrude-1#face:3` の形)。 */
   readonly selection: readonly string[];
-  /** いま選ぶ部分形状の種類(§0.a-0.6)。 */
+  /** いま選ぶ部分形状の種類。 */
   readonly selectionKind: SelectionKind;
-  /** 直前の再計算でカーネルが選び直した面の対応(§2.2.3)。 */
+  /** 直前の再計算でカーネルが選び直した面の対応。 */
   readonly matches: readonly AppearanceMatchEntry[];
 }
 
@@ -147,7 +147,7 @@ export function isSameAppearanceSpec(a: AppearanceSpec, b: AppearanceSpec): bool
  * 値の範囲(FR-1109)
  * ------------------------------------------------------------------------- */
 
-/** The provenance is static and reusable until the coefficient definitions change (GR-20c A5). */
+/** The provenance is static and reusable until the coefficient definitions change. */
 const derivedByParameters = new WeakMap<PartDocument['parameters'], ReadonlyMap<string, readonly string[]> | null>();
 
 function appearanceDerivedParameters(document: PartDocument): ReadonlyMap<string, readonly string[]> | null {
@@ -196,7 +196,7 @@ export function appearanceExpressionRefusalFor(
   return null;
 }
 
-/** 透過率・光沢・粗さの下限・上限(%、§2.2.1 の型の注釈)。 */
+/** 透過率・光沢・粗さの下限・上限(%)。 */
 const PERCENT_MIN = 0;
 const PERCENT_MAX = 100;
 
@@ -266,7 +266,7 @@ export function appearanceReadiness(context: AppearanceContext): {
 }
 
 /* ---------------------------------------------------------------------------
- * 上限の先出し検査(§0.a-0.11)
+ * 上限の先出し検査
  * ------------------------------------------------------------------------- */
 
 /** 面の割り当てが 1 つも無いボディに使う空の表(呼び出しごとに Map を作らない)。 */
@@ -342,14 +342,14 @@ function limitRefusalFor(
  *    警告を出すのは呼び出し側(`missingAppearanceCount`。FR-1106「選び直せなかった割り当ては
  *    警告し既定へ戻す」)。
  * 3. `matches` に同じ id が 1 つも無いときは、**割り当てを作ったときの通し番号**
- *    (`SubShapeRef.index`)を使う。外観だけを変えても再計算は起きない(§2.3)ので、
+ *    (`SubShapeRef.index`)を使う。外観だけを変えても再計算は起きないので、
  *    割り当てた直後は照合の結果がまだ無い。形はその瞬間から変わっていないため、
  *    保存された通し番号がそのまま正しい。これが無いと「色を付けたのに次に形を変えるまで
  *    色が出ない」ことになる。
  *
- * **置き場について:** タスク10 では `viewport/createSolidLayer.ts` にあったが、three.js に
+ * **置き場について:** 以前は `viewport/createSolidLayer.ts` にあったが、three.js に
  * 触れない純関数であり、上限の先出し検査(このファイル)からも同じものを使うため、
- * タスク11 でここへ移した(同じ組み立てを 2 か所に持たない)。
+ * ここへ移した(同じ組み立てを 2 か所に持たない)。
  */
 export function buildAppearanceInput(
   table: AppearanceTable,
@@ -469,7 +469,7 @@ export function assignAppearanceToSelection(
     return { ok: true, document: context.document };
   }
 
-  // 上限は「割り当てを作る前」に断る(§0.a-0.11)。触ったボディだけを見ればよい。
+  // 上限は「割り当てを作る前」に断る。触ったボディだけを見ればよい。
   const input = buildAppearanceInput(appearanceOf(next), context.matches);
   const touched = new Set(targets.map(bodyIdOfTarget));
   for (const body of context.bodies) {
@@ -502,7 +502,7 @@ export function clearAllAppearance(document: PartDocument): PartDocument {
  * ------------------------------------------------------------------------- */
 
 /**
- * いま選んでいるものに効いている外観(§2.2.2 の 3 段の優先順位)。
+ * いま選んでいるものに効いている外観(3 段の優先順位)。
  * 何も選んでいなければ既定の外観を返す(欄が空になるより、既定を出すほうが分かりやすい)。
  *
  * 複数選んでいるときは**最初の 1 つ**を出す。プロパティの欄は 1 組しかないので、
@@ -614,7 +614,7 @@ export function appearanceWithPattern(
 }
 
 /**
- * 木材の樹種を選び直す(FR-1107、§0.a-0.5)。**地の色と木目の樹種を同時に差し替える**
+ * 木材の樹種を選び直す(FR-1107)。**地の色と木目の樹種を同時に差し替える**
  * (`materialPresets.ts` の `appearanceFromPreset` の注釈がこの操作をここへ割り当てている)。
  * 柄が木目でないときは何もしない(樹種は木目の柄が持つ値のため)。
  */

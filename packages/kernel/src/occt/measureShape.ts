@@ -1,5 +1,5 @@
 /**
- * 測定と質量特性(FR-1101、FR-1102、計画書 P5 §2.10、タスク28)。
+ * 測定と質量特性(FR-1101、FR-1102)。
  *
  * ここに置くのは**形を変えない読み取りだけ**で、どの関数も引数の形に触れない
  * (キャッシュの持ち物をそのまま渡せる)。測った値は丸めずにそのまま返し、
@@ -8,21 +8,21 @@
  * **単位.** 長さ mm、面積 mm²、体積 mm³、角度は度。**カーネルが返すのは密度に依らない
  * 幾何量だけ**で、`measureMassProperties` の慣性モーメントは体積の 2 次モーメント(mm⁵)。
  * 質量(g)と g·mm² の慣性モーメントは、密度(g/cm³)を持っている model 側が
- * `measure/massProperties.ts` の `massFromVolume` / `inertiaWithDensity` で掛ける
- * (§0.a-0.32、§0.a-0.78、タスク29)。**密度を引数に取る版はここに置かない**
- * ——同じ掛け算を 2 か所に持つと、片方だけ直したときに食い違うため(タスク42b で削除)。
+ * `measure/massProperties.ts` の `massFromVolume` / `inertiaWithDensity` で掛ける。
+ * **密度を引数に取る版はここに置かない**
+ * ——同じ掛け算を 2 か所に持つと、片方だけ直したときに食い違うため(以前の版は削除した)。
  *
- * **慣性モーメントの基準は重心**(§0.a-0.32)。重心を通る主軸まわりの 3 つを返す。
+ * **慣性モーメントの基準は重心**。重心を通る主軸まわりの 3 つを返す。
  * 主軸は `GProp_PrincipalProps` が決めた第 1・第 2・第 3 の順で、
  * `principalMoments[i]` は `principalAxes[i]` まわりの値である(並びは形しだいで、
  * 大きい順とは限らない)。
  *
- * **out 引数(C++ の参照渡し)は 1 つも使わない**(計画書 §1.4-12)。
+ * **out 引数(C++ の参照渡し)は 1 つも使わない**。
  * `GProp_PrincipalProps.Moments(Ixx, Iyy, Izz)` は JavaScript の数値を値渡しするだけで
  * 書き換えが返らないため、戻り値を返す `GProp_GProps.MomentOfInertia(gp_Ax1)` を
  * 主軸ごとに 3 回呼ぶ(実測は `measureShape.test.ts` の「out 引数」の検査に残してある)。
  *
- * **列挙を引数に取る API も使わない**(§1.4)。距離は `BRepExtrema_DistShapeShape_1()` の
+ * **列挙を引数に取る API も使わない**。距離は `BRepExtrema_DistShapeShape_1()` の
  * 既定構築 + `LoadS1` / `LoadS2` / `Perform` で、面・辺の種類の判定は
  * `BRepAdaptor_Surface_2` / `BRepAdaptor_Curve_2` の `GetType()` の**値どうしの比較**で行う。
  */
@@ -112,7 +112,7 @@ export function distanceBetween(
     const range = keep(new oc.Message_ProgressRange_1());
     extrema.Perform(range);
     // 個数を返すメソッドの戻り型 Graphic3d_ZLayerId はどこにも定義が無いので
-    // Number() で整数へ直してから比べる(計画書 §1.3)。
+    // Number() で整数へ直してから比べる。
     if (!extrema.IsDone() || Number(extrema.NbSolution()) === 0) {
       throw new Error(DISTANCE_FAILED_MESSAGE);
     }
@@ -129,7 +129,7 @@ export function distanceBetween(
 export function edgeLength(oc: OpenCascadeInstance, edge: TopoDS_Shape): number {
   const properties = new oc.GProp_GProps_1();
   try {
-    // LinearProperties に番号は付かない(計画書 §1.4-4)。第 3・第 4 引数は
+    // LinearProperties に番号は付かない。第 3・第 4 引数は
     // SkipShared と UseTriangulation で、subShapes.ts の辺の長さと同じ指定にする
     // (同じ辺を 2 か所で測って値が食い違うことが無いように揃えてある)。
     oc.BRepGProp.LinearProperties(edge, properties, false, false);
@@ -192,7 +192,7 @@ function straightDirectionOf(
  *
  * **0〜90 度で返す。** 面の法線・辺の向きは形の作り方しだいで 180 度反転しうるので、
  * 内積の絶対値から求めて、平行なら 0 度、直交なら 90 度になるようにする
- * (計画書 §2.10.2 の `acos(|n₁·n₂|)`)。**丸めない**ので、直角は浮動小数の
+ * (`acos(|n₁·n₂|)`)。**丸めない**ので、直角は浮動小数の
  * 都合で 90.00000000000001 のような値になりうる(桁は表示側が決める)。
  */
 export function angleBetween(
@@ -225,7 +225,7 @@ interface AxisMoment {
 
 /**
  * 重心を通り `vector` の向きを持つ軸まわりのモーメントを、戻り値を返す
- * `MomentOfInertia(gp_Ax1)` で求める(out 引数の `Moments` を使わない。§1.4-12)。
+ * `MomentOfInertia(gp_Ax1)` で求める(out 引数の `Moments` を使わない)。
  */
 function momentAboutAxis(
   oc: OpenCascadeInstance,

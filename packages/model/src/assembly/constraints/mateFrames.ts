@@ -1,4 +1,4 @@
-/** 合致の補助基底。初期姿勢で局所座標に固定し、試行中に選び直さない(P7 §2.5.6)。 */
+/** 合致の補助基底。初期姿勢で局所座標に固定し、試行中に選び直さない。 */
 import { crossVec3, dotVec3, lengthVec3, scaleVec3, type Vec3 } from '../../sketch/vec3.js';
 import { rotateVector, type Quaternion } from '../placementMath.js';
 

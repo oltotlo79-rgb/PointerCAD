@@ -1,17 +1,17 @@
 /**
- * 拘束の変数の切り出しと自由度の数え方(FR-313、
- * 計画書 docs/plans/P4b-スケッチの仕上げ.md §2.2、タスク4)。
+ * 拘束の変数の切り出しと自由度の数え方
+ * (FR-313)。
  *
  * ソルバーが動かしてよい数(変数)を、スケッチの解決結果から決め打ちの順で並べる。
- * **動かせるのは「作図面の上にある、数値リテラルで書かれた座標」と「数値リテラルの半径」だけ**
- * (§0.a-0.2)。式で書かれた座標を動かすと式を壊すか、式と値が食い違う(FR-202
+ * **動かせるのは「作図面の上にある、数値リテラルで書かれた座標」と「数値リテラルの半径」だけ。**
+ * 式で書かれた座標を動かすと式を壊すか、式と値が食い違う(FR-202
  * 「式は文字列のまま保存され、元の式が再表示・再編集できる」)ので、式は定数として読む。
  *
  * 変数にしなかったものは理由つきで `frozen` に入れる。画面が「なぜこの点は動かないのか」を
- * 出せるようにするため(NFR-UX-7、タスク13)。
+ * 出せるようにするため(NFR-UX-7)。
  *
  * ここは純関数だけを置く。乱数・時刻・`Map` の反復順に頼らず、同じ文書からは必ず同じ並びの
- * 変数を返す(決定性。§2.2「変数の並び順は履歴順 → start, end, center → u, v で決め打ち」)。
+ * 変数を返す(決定性。「変数の並び順は履歴順 → start, end, center → u, v で決め打ち」)。
  */
 
 import { isNumericLiteral, type ExpressionValue } from '@pointercad/expression';
@@ -45,17 +45,17 @@ import {
 } from './types.js';
 
 /**
- * 変数の上限(§2.2)。超えたら解かずに断る(判定はタスク7。ここでは数え上げるだけ)。
+ * 変数の上限。超えたら解かずに断る(判定は `diagnose.ts`。ここでは数え上げるだけ)。
  * 2000 は点 1000 個ぶん。大規模な連立と階数診断は疎な経路を使う。
  */
 export const MAX_CONSTRAINT_VARIABLES = 2000;
 
-/** 半径の種類。円・円弧は 1 つ、楕円は長半径・短半径の 2 つを持つ(§2.2 の表)。 */
+/** 半径の種類。円・円弧は 1 つ、楕円は長半径・短半径の 2 つを持つ。 */
 export type RadiusKind = 'radius' | 'major' | 'minor';
 
 /** 変数にしなかった理由。 */
 export type FrozenReason =
-  /** 座標・半径が式で書かれている(§0.a-0.2)。 */
+  /** 座標・半径が式で書かれている。 */
   | 'expression'
   /** 「固定」拘束が付いている。 */
   | 'fixed'
@@ -113,11 +113,11 @@ export function featureIdOfPointKey(pointKey: string): string {
 }
 
 /**
- * 「円弧の端点は円周の上にある」という暗黙の式(|P − C| = r。統括の決定 2026-09-04)。
+ * 「円弧の端点は円周の上にある」という暗黙の式(|P − C| = r)。
  *
  * 円弧の端点を変数にした代わりに、円弧 1 本につき 2 本(始点・終点)を必ず立てる。
  * 利用者が付けた拘束ではないので `SketchDocument.constraints` には現れず、
- * 自由度の数え上げ(`countDegreesOfFreedom`)と残差の組み立て(タスク5)がここを見る。
+ * 自由度の数え上げ(`countDegreesOfFreedom`)と残差の組み立てがここを見る。
  * 半径の鍵は円弧なので必ず `radiusComponentKey(featureId, 'radius')`。
  */
 export interface ImplicitCircleEquation {
@@ -137,7 +137,7 @@ export interface VariableSet {
   /** 初期値(拘束を無視した解決から取る)。`variables` と同じ並び。 */
   readonly initial: readonly number[];
   /**
-   * 変数の鍵 → 列の番号(`variables` / `initial` の添字)。残差の計算(タスク5)が
+   * 変数の鍵 → 列の番号(`variables` / `initial` の添字)。残差の計算が
    * 「この点の u は何列目か」を引くための対応表。
    */
   readonly index: ReadonlyMap<string, number>;
@@ -154,10 +154,10 @@ export interface VariableSet {
   /** 形が決まった要素のフィーチャー id。拘束の材料が在るかの判定に使う(FR-504)。 */
   readonly elementFeatureIds: ReadonlySet<string>;
   /**
-   * **基準に追従する点**の鍵(座標が相対 `@dx,dy` か極 `@距離<角度` で書かれている点。
-   * P4b タスク22b)。
+   * **基準に追従する点**の鍵(座標が相対 `@dx,dy` か
+   * 極 `@距離<角度` で書かれている点)。
    *
-   * これらの点も数で書かれていれば変数になる(引っぱって動かせる、統括の決定 2026-09-05)
+   * これらの点も数で書かれていれば変数になる(引っぱって動かせる)
    * が、**動かさなかったときは基準と一緒に動かなければならない**。解いた座標をそのまま
    * 差し込むと、基準が拘束で動いたのに追従しない点ができてしまう(実測: 水平+長さ 10 で
    * 終点が (7,0,0) → (10,0,0) へ動いても、その終点を基準にした点が元の位置に残る)。
@@ -173,9 +173,9 @@ export interface VariableSet {
 }
 
 /**
- * 座標の 3 つの欄がすべて数値リテラルで書かれているか(§0.a-0.2)。
+ * 座標の 3 つの欄がすべて数値リテラルで書かれているか。
  *
- * **指定方法(絶対・相対・極)は問わない**(統括の決定 2026-09-05、案 A。P4b タスク22b)。
+ * **指定方法(絶対・相対・極)は問わない**(案 A)。
  * 相対 `@dx,dy` と極 `@距離<角度` も、数で書かれていれば引っぱって動かせる
  * (書き戻しは Δ・距離・角度のまま行うので、指定方法は保たれる。`dragSketch.commitDrag`)。
  * 式で書かれている欄が 1 つでもあれば、動かすと式を壊すので変数にしない(FR-202)。
@@ -241,10 +241,10 @@ function onPlaneReason(plane: WorkPlane, onPlane: boolean, world: Vec3): FrozenR
 /**
  * 保存された座標を変数にしてよいか。
  *
- * **指定方法では分けない**(統括の決定 2026-09-05、案 A。P4b タスク22b)。
+ * **指定方法では分けない**(案 A)。
  * 以前は相対・極を「基準が動けば追従するから」と一律 `derived`(定数)にしていたが、
  * 線分の道具の既定は「終点は直前の点からの相対」なので、**ふつうに引いた線分の終点が
- * 掴めない**という不都合が実測で出た(`docs/報告記録.md` 2026-09-05 実時計 07:11)。
+ * 掴めない**という不都合が実測で出た。
  *
  * 二重定義にならないのは、書き戻しを**相対のまま**行うため。解いた位置と基準の位置の差を
  * 取り直して Δ(極なら距離と角度)へ書くので、基準との関係はそのまま保たれる
@@ -352,7 +352,7 @@ function addAlias(builder: Builder, alias: string, canonical: string): void {
 /**
  * 「規則から導かれる」フィーチャー(点列・複製・オフセット・投影・断面・矩形・正多角形・長穴)の
  * 点と端点を定数として積む。n 番目だけを動かすと、もとの規則(基準+間隔+個数など)と
- * 食い違うので変数にしない(タスク4 の落とし穴)。
+ * 食い違うので変数にしない。
  */
 function addDerivedGroup(
   builder: Builder,
@@ -382,10 +382,10 @@ function addDerivedGroup(
 }
 
 /**
- * 拘束の変数を切り出す(§2.2)。`resolved` は拘束を無視した解決の結果で、初期値の出どころ。
+ * 拘束の変数を切り出す。`resolved` は拘束を無視した解決の結果で、初期値の出どころ。
  *
  * `plane` はこのスケッチの作図面。**この平面を指しているフィーチャーの座標だけ**が変数になる
- * (3D スケッチ・別の作図面の要素は定数。§0.a-0.3)。
+ * (3D スケッチ・別の作図面の要素は定数)。
  */
 export function collectVariables(
   document: SketchDocument,
@@ -497,10 +497,10 @@ export function collectVariables(
           feature.center,
         );
         addRadius(builder, id, 'radius', arc.radius, feature.radius, onPlane);
-        // **円弧の端点は変数にする**(統括の決定 2026-09-04。§0.a-0.6「角度は座標から導く」の
+        // **円弧の端点は変数にする**(「角度は座標から導く」の
         // 趣旨どおり)。角度を変数にすると端点座標と二重定義になるので、代わりに端点そのものを
         // 動かし、「端点が円周の上にある」暗黙の式 2 本(|P − C| = r)で円弧の形を保つ。
-        // 書き戻し(タスク8)では、動いた端点から開始角・終了角を逆算する。
+        // 書き戻しでは、動いた端点から開始角・終了角を逆算する。
         // 全周の円は端点を持たない(始点と終点が同じ点)ので、変数にせず定数のままにする。
         const fullCircle = isFullCircle(arc);
         if (onPlane && fullCircle && distanceToPlane(plane, arc.center) <= SKETCH_TOLERANCE_MM) {
@@ -533,8 +533,8 @@ export function collectVariables(
         );
         addRadius(builder, id, 'major', ellipse.majorRadius, feature.majorRadius, onPlane);
         addRadius(builder, id, 'minor', ellipse.minorRadius, feature.minorRadius, onPlane);
-        // 楕円の端点は円弧と違い定数のまま(統括の決定 2026-09-04)。端点から角度を逆算するには
-        // 長軸の傾きも要るが、傾きは変数にしない(§0.a-0.6)ので端点だけでは形が決まらない。
+        // 楕円の端点は円弧と違い定数のまま。端点から角度を逆算するには
+        // 長軸の傾きも要るが、傾きは変数にしないので端点だけでは形が決まらない。
         // 楕円に端点の拘束を付ける場面も少ないため、扱いを増やさない。
         addPoint(builder, id, vertexKey(id, 'start'), curveStart(ellipse), 'derived');
         addPoint(builder, id, vertexKey(id, 'end'), curveEnd(ellipse), 'derived');
@@ -593,7 +593,7 @@ export function collectVariables(
     }
   }
 
-  // 「固定」拘束は式を足さず、指された点/半径を変数から外す(§2.2 の表)。
+  // 「固定」拘束は式を足さず、指された点/半径を変数から外す。
   const fixedKeys = collectFixedKeys(builder, document);
 
   const variables: ConstraintVariable[] = [];
@@ -754,9 +754,9 @@ function hasMaterial(variableSet: VariableSet, target: ConstraintTarget): boolea
 }
 
 /**
- * 自由度を数える(§2.2)。**変数の数 −(有効な拘束の式+円弧の暗黙の式)の数**の素朴な数え方で、
+ * 自由度を数える。**変数の数 −(有効な拘束の式+円弧の暗黙の式)の数**の素朴な数え方で、
  * 拘束どうしが同じことを言っている(線形従属)かどうかは見ない。重なりまで見た正確な
- * 自由度はヤコビアンの階数から出す(タスク7 の `diagnoseConstraints`)。
+ * 自由度はヤコビアンの階数から出す(`diagnoseConstraints`)。
  *
  * 足りないぶん(`remaining`)と足しすぎのぶん(`excess`)は別々に数え、負の数にしない。
  * 「あと −2 か所決まっていません」は利用者に意味が通らないため。
@@ -766,7 +766,7 @@ export function countDegreesOfFreedom(
   constraints: readonly SketchConstraint[],
 ): DegreesOfFreedomCount {
   const dangling: string[] = [];
-  // 円弧の端点を変数にした代わりに立つ式(統括の決定 2026-09-04)。利用者の拘束が
+  // 円弧の端点を変数にした代わりに立つ式。利用者の拘束が
   // 1 つも無くても、円弧 1 本は「端点が円周の上にある」2 本のぶんだけ自由度が減る。
   const implicit = variableSet.implicit.length;
   let equations = implicit;

@@ -34,7 +34,7 @@ export type MathGeometryQuantity =
   | { readonly kind: 'radius'; readonly curve: MathGeometryCurve }
   /** Absolute arc sweep; circular solid edges use length / radius, without folding at 90 or 180 degrees. */
   | { readonly kind: 'central-angle'; readonly curve: MathGeometryCurve; readonly unit: 'degree' | 'radian' }
-  /** The entire sketch feature, including every segment and arc of a compound contour (Q9=CL1). */
+  /** The entire sketch feature, including every segment and arc of a compound contour. */
   | { readonly kind: 'contour-length'; readonly sketchId: string; readonly featureId: string }
   | { readonly kind: 'area'; readonly shape: MathGeometryBody | MathGeometryFace }
   | { readonly kind: 'volume'; readonly body: MathGeometryBody }

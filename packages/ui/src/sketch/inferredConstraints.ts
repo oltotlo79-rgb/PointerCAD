@@ -1,11 +1,11 @@
 /**
- * 拘束の自動推定(FR-333)の予告と確定を、ui 側で組み立てる純関数
- * (計画書 docs/plans/P6-入出力.md §0.a-0.48〜0.50・§2.15、タスク41)。
+ * 拘束の自動推定(FR-333)の予告と確定を、ui 側で
+ * 組み立てる純関数。
  *
- * 判定そのものは model の `inferConstraints`(タスク40)が持つ。ここがやるのは 3 つだけ。
+ * 判定そのものは model の `inferConstraints`が持つ。ここがやるのは 3 つだけ。
  *   ①`pointermove` のたびに渡す**近くの要素を絞る**(全要素を回さない。NFR-PF-1)。
- *   ②推定の結果を、P4b の拘束の印(`ConstraintMark`)と同じ形へ開く(§0.a-0.50
- *     「P4b の図柄をそのままビューポートへ小さく出す」)。
+ *   ②推定の結果を、拘束の印(`ConstraintMark`)と同じ形へ開く(
+ *     「拘束の図柄をそのままビューポートへ小さく出す」)。
  *   ③確定したときに `commitAddConstraint` で文書へ足す(FR-313)。
  *
  * **DOM にも three.js にもストアにも触れない。** ワールド → 画面の写し方は
@@ -90,7 +90,7 @@ function distanceToEnds(
 }
 
 /**
- * 推定の相手にする要素を、画面上の近さで絞る(NFR-PF-1。§2.15 の `nearby`)。
+ * 推定の相手にする要素を、画面上の近さで絞る(NFR-PF-1。`nearby`)。
  *
  * 測り方は種類ごとに変える。**円弧だけは中心ではなく円周までの距離で測る**のが要で、
  * 中心で測ると「中心が画面の外にある大きな円に接線を引く」が拾えなくなる。
@@ -170,7 +170,7 @@ export interface InferredConstraintPreview {
 }
 
 /**
- * 推定した拘束を、P4b の拘束の印と同じ形へ開く(§0.a-0.50)。
+ * 推定した拘束を、拘束の印と同じ形へ開く。
  *
  * 記号は `constraintSummary.ts` の表(`constraintKindSymbol`)をそのまま使う——
  * **予告と確定後で図柄が変わらない**ようにするためで、ここに記号の表の写しを作らない。
@@ -205,9 +205,9 @@ interface InferencePreviewInput {
   /** いまポインタが指している終点(ワールド座標)。 */
   readonly toWorld: Vec3;
   readonly project: ProjectToScreen;
-  /** 自動推定の入切(§0.a-0.49、既定は入)。 */
+  /** 自動推定の入切(既定は入)。 */
   readonly enabled: boolean;
-  /** Shift を押している間の一時停止(§0.a-0.50)。 */
+  /** Shift を押している間の一時停止。 */
   readonly suspended: boolean;
 }
 
@@ -295,7 +295,7 @@ export interface InferredCommitResult {
 }
 
 /**
- * 推定した拘束を文書へ足す(FR-313、FR-333。線を引き終えた瞬間、§0.a-0.50)。
+ * 推定した拘束を文書へ足す(FR-313、FR-333。線を引き終えた瞬間)。
  *
  * **断られたものは黙って飛ばす。** 推定はあくまで手助けなので、足せない 1 件のために
  * 線を引く操作そのものを止めない(NFR-UX-5 の「断って理由を出す」は、利用者が自分で

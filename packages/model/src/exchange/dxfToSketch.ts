@@ -1,35 +1,35 @@
 /**
- * DXF の実体をスケッチの要素へ写す(要件 FR-813・FR-301〜318・FR-202、計画書
- * docs/plans/P6-入出力.md §2.7・§0.a-0.32〜0.33、タスク26)。
+ * DXF の実体をスケッチの要素へ写す
+ * (要件 FR-813・FR-301〜318・FR-202)。
  *
- * 読み込みの 3 段のうちの 3 段目にあたる(計画書 §2.7)。
+ * 読み込みの 3 段のうちの 3 段目にあたる。
  *
  * ```
- * テキスト → parseDxfTags(text)      : DxfTag[]         … 字句(タスク22。io)
- *          → readDxf(tags)           : DxfReadResult    … 実体(タスク24。io)
+ * テキスト → parseDxfTags(text)      : DxfTag[]         … 字句(io)
+ *          → readDxf(tags)           : DxfReadResult    … 実体(io)
  *          → dxfToSketch(entities, …): SketchFeature[]  … この段(model)
  * ```
  *
  * ## 何をして、何をしないか
  *
- * - **新しい `SketchFeature` の種類を 1 つも作らない**(計画書 タスク26)。DXF の 5 種は
+ * - **新しい `SketchFeature` の種類を 1 つも作らない**。DXF の 5 種は
  *   既にある `point` / `line` / `arc` / `ellipse` / `spline` へそのまま写る。
  *   多角形(`LWPOLYLINE` / `POLYLINE`)と `INSERT` は `io` の段で線分・円弧へ開かれ、
  *   円は「開始 0 度・終了 360 度の円弧」になっているので、ここでの分岐は 5 つで済む。
  * - **単位の換算はここでする**(`io` の段は「ファイルに書かれた数のまま」返す)。
  *   `$INSUNITS` が inch なら 25.4 倍、`'other'`(フィート・メートル等)なら
- *   **呼び手が利用者へ訊いた倍率**(`unitOverrideMm`)を掛ける(計画書 §0.a-0.6)。
+ *   **呼び手が利用者へ訊いた倍率**(`unitOverrideMm`)を掛ける。
  * - **座標の式は小数の文字列そのまま**(FR-202)。式を作るのは既存の
  *   `expressionValueFromNumber`(有効数字 12 桁)で、**吸い付いた座標を保存するときと
- *   同じ書式にそろえる**(統括の決定 2026-09-06)。取り込んだ数そのものが式になるので
+ *   同じ書式にそろえる**。取り込んだ数そのものが式になるので
  *   「丸めた表示値を式に書かない」の対象ではなく、12 桁の相対誤差 1e-12 は幾何の許容
  *   (`SKETCH_TOLERANCE_MM` = 1e-6mm、カーネルの 1e-9)より十分小さい。
  *   inch の換算(`3.5in` → 25.4 倍)も、この丸めのおかげで `'88.9'` という読める式になる。
  * - **平面から外れた図形の案内はここで出す。** Z 座標を落とすのは `io` の段だが、
  *   件数(`DxfReadResult.offPlaneCount`)を文言にするのは「利用者へ見せる材料」を
- *   組み立てるこの段の役目(計画書 §0.a-0.33)。**断らない**(取り込めるほうが親切)。
+ *   組み立てるこの段の役目。**断らない**(取り込めるほうが親切)。
  * - **画面は持たない。** 作図面をどう選ばせるか、案内をどこへ出すか、単位を訊く窓は
- *   `packages/ui`(タスク32)の仕事。ここは純関数だけを置く。
+ *   `packages/ui`の仕事。ここは純関数だけを置く。
  *
  * ## 断りと、案内だけで済ませるものの線引き
  *
@@ -37,7 +37,7 @@
  * 少なすぎる・多すぎる)。落とした数は `droppedEntityCount` に残し、**残りは取り込む**
  * (FR-504「止めずに警告する」。1 つの図形のせいで図全体が入らないほうが困る)。
  * 一方、**形がわずかに変わるだけのもの**(4 次以上のスプライン、重み付きスプライン)は
- * 取り込んだうえで案内を 1 行出す(`docs/報告記録.md` 2026-09-06 04:55 の統括の決定)。
+ * 取り込んだうえで案内を 1 行出す。
  */
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
@@ -62,8 +62,8 @@ import { MM_PER_INCH } from '../units/length.js';
 import type { SketchDxfEntity, SketchDxfLengthUnit, SketchDxfPoint2d } from './dxfTypes.js';
 
 /**
- * 平面から外れた図形があったときの案内(計画書 §0.a-0.33 の文言そのまま)。
- * 文言を組み立てる場所を 1 か所にして、画面(タスク32)と検査で同じ文にする。
+ * 平面から外れた図形があったときの案内。
+ * 文言を組み立てる場所を 1 か所にして、画面と検査で同じ文にする。
  */
 export function dxfOffPlaneMessage(count: number): string {
   return `平面から外れた図形が ${String(count)} 個あります。平らにして取り込みます。`;
@@ -76,20 +76,20 @@ export function dxfOffPlaneMessage(count: number): string {
 export const MAX_SUPPORTED_SPLINE_DEGREE = 3;
 
 /**
- * 4 次以上のスプラインを 3 次までの曲線へ写したときの案内(統括の決定、
- * `docs/報告記録.md` 2026-09-06 04:55)。`io` の
+ * 4 次以上のスプラインを 3 次までの曲線へ写したときの案内。
+ * `io` の
  * `DXF_SPLINE_WEIGHT_IGNORED_MESSAGE`(重みを捨てたときの案内)と同じ言い回しにそろえる。
  */
 export const DXF_SPLINE_DEGREE_REDUCED_MESSAGE = '次数の高い曲線は形が少し変わります。';
 
 /**
- * 取り込めなかった図形の件数の案内(統括の決定 2026-09-06、計画書 §0.a-0.30)。
+ * 取り込めなかった図形の件数の案内。
  *
  * 数えるのは 2 種類あわせた数——**この段が落としたもの**(半径 0、点が多すぎるスプライン等)と、
  * **`io` の段が飛ばした知らない実体**(`DxfReadResult.skippedEntityCount`。`HATCH` / `TEXT` /
  * `DIMENSION` など)。利用者から見ればどちらも「読み込んだら図形が減った」という同じ 1 つの
- * 事実なので、文も 1 つにする。**文言の正本はここ**(`ja.json` には入れない。計画書 §2.8 の
- * 「文言の正本の層」)。
+ * 事実なので、文も 1 つにする。**文言の正本はここ**(`ja.json` には入れない。
+ * 文言の正本の層)。
  */
 export function dxfDroppedEntitiesMessage(count: number): string {
   return `取り込めなかった図形が ${String(count)} 個あります。`;
@@ -100,7 +100,7 @@ export interface DxfToSketchOptions {
   /** `DxfReadResult.unit`。座標に掛ける倍率をこれで決める。 */
   readonly unit: SketchDxfLengthUnit;
   /**
-   * `unit` が `'other'` のときの「1 単位あたりの mm」。**呼び手(タスク32 の窓)が
+   * `unit` が `'other'` のときの「1 単位あたりの mm」。**呼び手(書き出し・読み込みの窓)が
    * 利用者へ訊いた値**を渡す。渡されない・0 以下・有限でないときは 1(無単位として
    * mm と同じに扱う)。mm / inch のときは見ない。
    */
@@ -205,7 +205,7 @@ function takeSerial(
  * `$INSUNITS` の単位から、座標に掛ける倍率(mm / 単位)を決める。
  *
  * `'other'` は「単位は書いてあるが mm でも inch でもない」ので、倍率は呼び手が
- * 利用者へ訊いた値を使う(計画書 §0.a-0.6)。訊けていなければ 1 にする——
+ * 利用者へ訊いた値を使う。訊けていなければ 1 にする——
  * 無単位の DXF を mm として読むのは他の CAD と同じ既定で、断るより取り込めるほうが親切。
  */
 function millimetersPerUnit(options: DxfToSketchOptions): number {
@@ -268,10 +268,10 @@ function splinePointCountIssue(count: number, closed: boolean): string | null {
 }
 
 /**
- * DXF の実体をスケッチの要素へ写す(計画書 §2.7 の表)。
+ * DXF の実体をスケッチの要素へ写す。
  *
  * @param entities `io` の `readDxf` が返した実体(`INSERT` は展開済み、多角形は開き済み)。
- * @param plane 取り込み先の作図面(既定は XY 面。計画書 §0.a-0.33)。要素の座標は
+ * @param plane 取り込み先の作図面(既定は XY 面)。要素の座標は
  *   この作図面の 2 次元の点をワールドへ写した**絶対座標**になり、角度は作図面の第1軸から測る。
  * @param options 単位と、`io` が数えた件数。
  */
@@ -422,7 +422,7 @@ export function dxfToSketch(
   }
 
   // 取り込めなかった数は最後にしか分からないので、案内はここで 1 行だけ足す
-  // (この段が落とした数 + `io` が飛ばした知らない実体の数。統括の決定 2026-09-06)。
+  // (この段が落とした数 + `io` が飛ばした知らない実体の数)。
   const missingCount = droppedEntityCount + (options.skippedEntityCount ?? 0);
   if (missingCount > 0) {
     pushNotice(notices, dxfDroppedEntitiesMessage(missingCount));

@@ -11,9 +11,9 @@ import { mapFunctionDefinition } from './mapFunctionDefinition.js';
 import { resolveFunctionRanges } from './resolveFunctionRanges.js';
 
 /**
- * rules/06 §10.317: the calculation tape (`scalarMathTape.ts`) has no `equal` outside a `which` condition, so only
+ * The calculation tape (`scalarMathTape.ts`) has no `equal` outside a `which` condition, so only
  * F in the "F=0" form the explanation teaches (`function-curve.md`, `function-surface.md`) can ever be sampled. A
- * file saved before the draft editor refused this (GR-18b, `functionPlotDraft.ts`), or edited by hand, can still
+ * file saved before the draft editor refused this (`functionPlotDraft.ts`), or edited by hand, can still
  * hold an implicit curve or surface written "A=B" at the root. Left unchecked, it used to reach the tape and fail
  * with its own unclear "作図中に変化する演算「equal」の計算方法を確認してください。" This throws the same guidance
  * the draft editor shows before confirming, instead of silently rewriting to "A-(B)": which side becomes F is a
@@ -31,10 +31,10 @@ function implicitEquationRootHasEquals(definition: FunctionDefinition): boolean 
 
 export async function resolveFunctionInputs(document: PartDocument, definition: FunctionDefinition,
   analysis: ParameterAnalysis, isCurrent: () => boolean) {
-  // rules/06 §10.317: unconditional and checked first, so an old file's "=" form always explains what to type
+  // Unconditional and checked first, so an old file's "=" form always explains what to type
   // instead of reaching the tape's own unclear error further down (sampling, after this function returns).
   if (implicitEquationRootHasEquals(definition)) throw new Error(IMPLICIT_EQUATION_EQUALS_MESSAGE);
-  // GR-06b: no plot formula may feed a geometry-derived coefficient into an operation that jumps at a value boundary.
+  // No plot formula may feed a geometry-derived coefficient into an operation that jumps at a value boundary.
   // The rule is static, so it runs before any range or coefficient value is looked up (a refusal never reads as
   // "pending"); a document without geometry-derived coefficients skips it and keeps its previous path.
   if (analysis.geometryDerived !== undefined) {
@@ -58,7 +58,7 @@ export async function resolveFunctionInputs(document: PartDocument, definition: 
     return expression;
   });
   const coefficients = [...references].map(([id, label]) => {
-    // §4(e), as GR-04 rules: a measured value is read only by a coefficient's own formula, never by a plot formula.
+    // As the coefficient rules say: a measured value is read only by a coefficient's own formula, never by a plot formula.
     if (mathGeometryDefinitionIdOf(id) !== null) throw new Error(mathGeometryOutsideCoefficientMessage(label));
     const parameter = document.parameters.find(item => item.mathId === id && item.name === label);
     const decimal = parameter === undefined ? undefined : analysis.exactVariables.get(parameter.name);

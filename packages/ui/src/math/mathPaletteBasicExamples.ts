@@ -69,7 +69,7 @@ export const MATH_PALETTE_BASIC_EXAMPLES: readonly MathPaletteExample[] = [
   { id: 'sinh', selection: '0', slots: [], expected: 0 },
   { id: 'pi', selection: '', slots: [], expected: Math.PI },
   { id: 'imaginary-unit', selection: '', slots: [], expected: 'complex' },
-  // MC-02a: 初等・整数・複素の追加27件（下書きだったreal-part・imaginary-part・conjugateの実例化を含む）。
+  // 初等・整数・複素の追加27件（下書きだったreal-part・imaginary-part・conjugateの実例化を含む）。
   { id: 'arccos', selection: '0.5', slots: [], expected: 60 },
   { id: 'arctan', selection: '1', slots: [], expected: 45 },
   { id: 'cot', selection: '45', slots: [], expected: 1 },
@@ -97,9 +97,9 @@ export const MATH_PALETTE_BASIC_EXAMPLES: readonly MathPaletteExample[] = [
   { id: 'real-part', selection: String.raw`\operatorname{complex}\left(3,4\right)`, slots: [], expected: 3 },
   { id: 'imaginary-part', selection: String.raw`\operatorname{complex}\left(3,4\right)`, slots: [], expected: 4 },
   { id: 'conjugate', selection: String.raw`\operatorname{complex}\left(3,4\right)`, slots: [], expected: 'complex' },
-  // MC-02d (MC-04 gap): hard-to-type constant. ∞ was tried and dropped (see mathPaletteBasic.ts's comment).
+  // Hard-to-type constant. ∞ was tried and dropped (see mathPaletteBasic.ts's comment).
   { id: 'e', selection: '', slots: [], expected: Math.E },
-  // MC-02e (MC-11): confirmed by plusMinus.test.ts ('1±2'→[3,-1], '1∓2'→[-1,3]); order matches the
+  // confirmed by plusMinus.test.ts ('1±2'→[3,-1], '1∓2'→[-1,3]); order matches the
   // candidates array exactly (first operand plus, then minus), never collapsed to one value.
   { id: 'plus-minus', selection: '1', slots: ['2'], expected: { candidates: [3, -1] } },
   { id: 'minus-plus', selection: '1', slots: ['2'], expected: { candidates: [-1, 3] } },

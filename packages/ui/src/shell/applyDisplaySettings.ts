@@ -1,14 +1,14 @@
 /**
- * 表示設定(テーマ・拡大率)をルート要素へ反映する(計画書 docs/plans/P4-スケッチ拡張.md
- * タスク1、§0.a-0.1、§0.a-0.2、§2.2)。
+ * 表示設定(テーマ・拡大率)をルート要素へ
+ * 反映する。
  *
  * `appShell.css` は `[data-theme="…"]` セレクタで `:root` の `--pcad-*` トークンを
- * 丸ごと上書きする設計(§0.a-0.1)。ここはルート要素(`document.documentElement`)へ
+ * 丸ごと上書きする設計。ここはルート要素(`document.documentElement`)へ
  * `data-theme` 属性と `--pcad-scale` カスタムプロパティを書くだけで、CSS 側の
  * トークン定義そのものには触れない(`appShell.css` を正本のまま保つ)。
  *
  * three.js 側(ビューポートの背景・グリッド・スケッチの既定色)は CSS 変数を直接読めないため
- * `getComputedStyle` で読み直す別の配線が要る(§0.a-0.1)。これはタスク2 の範囲。
+ * `getComputedStyle` で読み直す別の配線が要る(この関数の範囲外)。
  */
 
 import type { DisplaySettings } from '../settings/settings.js';
@@ -30,7 +30,7 @@ interface ThemeRootElement {
  *
  * `data-ui-scale` は `uiScale` をそのまま文字列にした属性(例: `data-ui-scale="150"`)。
  * `appShell.css` のツールバーの 2 段の整形が、窓幅の媒体条件だけでなくこの属性でも
- * 効くようにするため(P4 タスク2 仕上げ。拡大率は媒体条件からは読めない)。
+ * 効くようにするため(拡大率は媒体条件からは読めない)。
  */
 export function applyDisplaySettings(settings: DisplaySettings, root: ThemeRootElement): void {
   root.dataset.theme = settings.theme;
@@ -43,7 +43,7 @@ export function applyDisplaySettings(settings: DisplaySettings, root: ThemeRootE
  * (`PointerCadApp.tsx` が起動時に 1 回呼ぶ)。**戻り値を呼ぶと見張りをやめる。**
  *
  * 呼んだ直後にも 1 回反映するので、初回描画から正しいテーマ・拡大率になる
- * (§0.a-0.1「切り替えは再起動なしに即時反映」はここと `setDisplaySettings` の両方で成立する)。
+ * (「切り替えは再起動なしに即時反映」はここと `setDisplaySettings` の両方で成立する)。
  */
 export function attachDisplaySettings(root: ThemeRootElement): () => void {
   applyDisplaySettings(useAppStore.getState().displaySettings, root);

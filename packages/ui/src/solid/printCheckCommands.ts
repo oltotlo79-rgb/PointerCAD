@@ -1,12 +1,12 @@
 /**
- * 3D プリントの点検を 1 回頼む(計画書 docs/plans/P6-入出力.md §0.51・§0.53、タスク46 = 43a)。
+ * 3D プリントの点検を 1 回頼む。
  *
  * 対応要件: FR-815(3D プリント向けの点検)、NFR-PF-4(進み具合と中止)、NFR-UX-5(断り)。
  *
  * DOM にも three.js にもストアにも触れない(`createPartInspector` だけが橋渡しの関数を
  * 受け取るが、それも呼ぶ相手を渡してもらうだけ)。判断を Node の単体検査で固定できる
  * ようにするため——`measureCommands.ts` とまったく同じ分け方で、点検も
- * 「**覚えてある形を読むだけ**」の操作(§0.a-0.30)である点まで測定と同じ。
+ * 「**覚えてある形を読むだけ**」の操作である点まで測定と同じ。
  *
  * ## 何を点検するか
  *
@@ -88,7 +88,7 @@ export function evaluatePrintCheckDraft(draft: PrintCheckDraft, units: FieldUnit
 
 /**
  * 点検する手立て(ストアが持つ口)。`PartMeasurer` と同じ形で、カーネル(Worker)を
- * 持たない検査では偽物を差し込める。**再計算は起こさない読み取り**(§0.a-0.30)。
+ * 持たない検査では偽物を差し込める。**再計算は起こさない読み取り**。
  */
 export type PartInspector = (
   document: PartDocument,
@@ -206,7 +206,7 @@ export interface PrintCheckInput {
  * 点検を 1 回走らせる(ツールバーの「3D プリントの点検」の中身)。
  *
  * **文書は 1 バイトも変えない**ので取り消しの段も積まず、再計算も起きない
- * (§0.a-0.30 の読み取り。`measureSelection` とまったく同じ性質)。
+ * (読み取りだけ。`measureSelection` とまったく同じ性質)。
  */
 export async function runPrintCheck(input: PrintCheckInput): Promise<PrintCheckOutcomeView> {
   if (input.criteria !== undefined) {

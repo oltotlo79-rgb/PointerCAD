@@ -3,7 +3,7 @@ import { createAllocations, type Allocations } from './allocations.js';
 import { distanceBetween } from './measureShape.js';
 import { makeProjection, type PlaneCurve, type SketchPlaneFrame } from './makeProjection.js';
 
-/** P8 §4/7.3の2026-09-10訂正で、このAPI一箇所だけに限定したbindingの検証。 */
+/** このAPI一箇所だけに限定したbindingの検証。 */
 export function isHlrOutlineKind(value: unknown, registry: unknown): value is HLRBRep_TypeOfResultingEdge {
   return typeof registry === 'function' && 'HLRBRep_OutLine' in registry && registry.HLRBRep_OutLine === value
     && typeof value === 'object' && value !== null && value instanceof registry && 'value' in value && value.value === 2

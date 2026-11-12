@@ -7,7 +7,7 @@ import type { ResolvedCurve, ResolvedFace } from '../sketch/types.js';
 /**
  * 解決済みの曲線をカーネルの言葉へ直す。長さは mm、角度はラジアン(FR-203)。
  *
- * 楕円の角度は解決の段でパラメータ角へ直してあるので、そのまま渡す(§1.4-8)。
+ * 楕円の角度は解決の段でパラメータ角へ直してあるので、そのまま渡す。
  * **全周の楕円は開始角・終了角を渡さない**: カーネルは両方そろっているときだけ
  * 弧として作り、無ければ全周の楕円にする(`makeEllipseEdge.ts` の決め)。
  */
@@ -68,7 +68,7 @@ export function toFaceRequest(face: ResolvedFace): PlanarFaceRequest {
 const FULL_TURN = 2 * Math.PI;
 
 /**
- * カーネルから返った曲線を model の言葉へ直す(FR-321、P4 タスク15)。`toCurveSpec` の逆。
+ * カーネルから返った曲線を model の言葉へ直す(FR-321)。`toCurveSpec` の逆。
  *
  * `featureId` は結果を持つフィーチャー(オフセット)の id を付ける。オフセットが返すのは
  * 線分と円弧だけ(`makeOffsetWire.ts`)だが、型の上では 4 種すべて来うるので全部を受ける。

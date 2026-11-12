@@ -13,11 +13,11 @@ import {
 import { formatArea, formatVolume, AREA_UNIT_KEYS, VOLUME_UNIT_KEYS } from './measureFormatting.js';
 
 /**
- * 質量の材料 19 種の見出し(§2.4.2、`densityMaterials.ts` の `DENSITY_MATERIALS` と同じ id)。
+ * 質量の材料 19 種の見出し(`densityMaterials.ts` の `DENSITY_MATERIALS` と同じ id)。
  *
  * **id は `string`**(木材が `wood-<樹種>` で作られる合成の id なので、model 側にも
  * 合併型が無い)ので、`Record<string, MessageKey>` で持ち、引けなかった id は
- * 呼び出し側が既定の材料へ落とす。文言は `ja.json` の `material.*`(タスク6 で追加済み)。
+ * 呼び出し側が既定の材料へ落とす。文言は `ja.json` の `material.*`。
  */
 const DENSITY_MATERIAL_LABEL_KEYS: Readonly<Record<string, MessageKey>> = {
   steel: 'material.steel',
@@ -47,15 +47,15 @@ export function densityMaterialLabelKey(id: string): MessageKey {
 }
 
 /**
- * 「測定」の節(FR-1102、要件§7.1、計画書タスク32、§2.10.3)。
+ * 「測定」の節(FR-1102、要件§7.1)。
  *
  * 出すのは 3 つと 1 ボタン。**選んでいるもの / 測れるもの / 結果 / 「測り直す」**。
  * 測る 1 手はストアの `measureSelection`(判断は `solid/measureCommands.ts`)1 か所に
  * あるので、ツールバーの「測る」を押したときとまったく同じ道を通る。
  *
- * **結果はモデルを変えるまで残る**(FR-1102、§0.a-0.29)ので、選び直しても消えない。
+ * **結果はモデルを変えるまで残る**(FR-1102)ので、選び直しても消えない。
  * だから「選んでいるもの」と「結果」が食い違うことがあり、結果には**何を測った値か**
- * (種類の見出し)を必ず添える。消したいときは Esc(§0.a-0.68)。
+ * (種類の見出し)を必ず添える。消したいときは Esc。
  */
 export function MeasureSection({
   readiness,
@@ -119,17 +119,17 @@ export function MeasureSection({
 }
 
 /**
- * 「質量特性」の節(FR-1101、§0.a-0.31、§0.a-0.32、計画書タスク32)。立体を 1 つ選んで
+ * 「質量特性」の節(FR-1101)。立体を 1 つ選んで
  * いるときだけ出す。
  *
  * **材料と密度はストアの一時入力が持つ**(文書には保存しない)。密度を変えるたびに文書が変わると
  * 取り消しの段が積まれ、形が変わっていないのに再計算の判定を通ることになるため
  * (rules/04-設計の規律.md「導出できるものは保存しない」)。一時入力は文書と立体に
- * ひも付き、別の立体ではその外観のプリセットに対応する材料から始まる(§0.a-0.31)。
+ * ひも付き、別の立体ではその外観のプリセットに対応する材料から始まる。
  *
  * 体積・重心・慣性モーメントはカーネルが測った密度なしの値で、**密度の掛け算は model の
  * 関数だけ**を通す(`massPropertiesView` → `massFromVolume` / `inertiaWithDensity`。
- * 統括の決定: 密度の掛け算は model の 1 か所)。
+ * 密度の掛け算は model の 1 か所)。
  */
 export function MassPropertiesSection({
   spec,

@@ -9,7 +9,7 @@ export type SubShapeFaceMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicM
 export type SubShapeLines = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 export type SubShapePoints = THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
 
-/** 部分形状 1 強調度(ホバー or 選択)ぶんの重ね描き 3 本(§0.a-0.7)。 */
+/** 部分形状 1 強調度(ホバー or 選択)ぶんの重ね描き 3 本。 */
 export interface SubShapeOverlay {
   readonly group: THREE.Group;
   readonly faces: SubShapeFaceMesh;

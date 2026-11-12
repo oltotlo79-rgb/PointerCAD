@@ -1,13 +1,13 @@
 /**
- * 拘束の道具とストアのつなぎ(FR-313、FR-504、NFR-UX-1、NFR-UX-5、
- * 計画書 docs/plans/P4b-スケッチの仕上げ.md タスク13)。
+ * 拘束の道具とストアのつなぎ(FR-313、FR-504、
+ * NFR-UX-1、NFR-UX-5)。
  *
- * 判断そのものは `constraintCommands.ts`(t12、純関数)と `constraintPicking.ts`(純関数)が
+ * 判断そのものは `constraintCommands.ts`(純関数)と `constraintPicking.ts`(純関数)が
  * 持ち、ここは**ストアを読んで渡し、返ってきたものをストアへ置く**だけにする
  * (`shell/commandLineActions.ts` と同じ置き方。`.tsx` からも `attachSketchInteraction.ts`
  * からも同じ 1 か所を呼べるようにするため)。
  *
- * **押したら必ず何かが起きる**(P4 タスク12 の失敗 (b))。条件がそろっていなければ
+ * **押したら必ず何かが起きる**。条件がそろっていなければ
  * 拘束は付かないが、帯に「あと何を押せばよいか」か「なぜ付けられないか」が必ず出る。
  */
 
@@ -61,7 +61,7 @@ export function constraintResolveOptions(store: Store): SketchResolveOptions {
 }
 
 /**
- * 判定と測定の材料(t12 の申し送り「1 回作って使い回す」)。**拘束は解かない**ので、
+ * 判定と測定の材料(「1 回作って使い回す」)。**拘束は解かない**ので、
  * ボタンの色を決めるためだけに反復計算が走ることはない(NFR-PF-1)。
  */
 export function constraintContextOfStore(store: Store): ConstraintContext {
@@ -69,7 +69,7 @@ export function constraintContextOfStore(store: Store): ConstraintContext {
 }
 
 /**
- * 完全に決まった要素のフィーチャー id(FR-313、利用者の決定②(2026-09-05)、タスク22b)。
+ * 完全に決まった要素のフィーチャー id(FR-313、利用者の決定②)。
  *
  * 判定そのものは純関数(`constrainedElements.ts`)に置き、ここは材料を集めるだけ。
  * **解決し直さない**(いま描いている `resolvedSketch` をそのまま使う。NFR-PF-1)。
@@ -184,7 +184,7 @@ const READY_TO_CHOOSE: EditToolReadiness = { ready: true, reasonKey: null };
  * ツールバーの「拘束」の一覧の入り切り(NFR-UX-5「実行前に理由を出す」)。
  *
  * **何も選んでいなければ 18 種すべて押せる。** 拘束の道具は「道具を選んでから要素を順に
- * 押す」流儀(統括の決定 2026-09-05)なので、選択が空のときに全部を不活性にすると
+ * 押す」流儀なので、選択が空のときに全部を不活性にすると
  * 道具そのものを選べなくなる。何かを選んでいるときは、その選択に付けられない種類だけを
  * 不活性にして理由を吹き出しに出す(NFR-UX-1 の「対象を選んでから操作」の側)。
  *
@@ -212,7 +212,7 @@ export function constraintToolReadinessOf(): (kind: SketchConstraintKind) => Edi
  * ツールバーで拘束の道具を選んだとき(NFR-UX-1「対象を選んでから操作」)。
  *
  * すでに条件を満たす要素が選ばれていればその場で付き、足りなければ**道具を選んだ状態**に
- * なって、ビューポートで押した要素を順に受け取る(統括の決定 2026-09-05、トリムと同じ流儀)。
+ * なって、ビューポートで押した要素を順に受け取る(トリムと同じ流儀)。
  */
 export function chooseConstraintTool(kind: SketchConstraintKind): void {
   const before = useAppStore.getState();
@@ -230,7 +230,7 @@ export function chooseConstraintTool(kind: SketchConstraintKind): void {
 }
 
 /**
- * 拘束の道具でビューポートを押したとき(タスク13)。押した相手を積み、必要な数がそろったら
+ * 拘束の道具でビューポートを押したとき。押した相手を積み、必要な数がそろったら
  * 付ける。同じところをもう一度押すと外れる(選び直せる)。
  */
 export function pickForConstraint(pick: ConstraintPick, anchor: readonly [number, number]): void {
@@ -305,7 +305,7 @@ export function removeConstraintById(constraintId: string): void {
 /**
  * 式を評価する(FR-207 のパラメータ表の名前もそのまま書ける)。読めなければ null。
  * 変数表はストアの 1 か所(`parameterAnalysis.variables`)から取り、打つ場所によって
- * 通ったり通らなかったりしないようにする(t18 の申し送り)。
+ * 通ったり通らなかったりしないようにする。
  */
 export function evaluateConstraintSource(store: Store, source: string): ExpressionValue | null {
   const result = evaluateExpression(source, store.parameterAnalysis);
@@ -317,7 +317,7 @@ export function evaluateConstraintSource(store: Store, source: string): Expressi
  * 名前(「幅」)を書けば表を 1 か所直すだけで形が追従する。
  *
  * 1 文字ごとに呼ばれるので、同じ拘束の続けざまの書き換えは Undo の 1 段にまとめる
- * (プロパティ欄の式の編集と同じ `coalesceKey` の流儀、§0.a-0.13)。
+ * (プロパティ欄の式の編集と同じ `coalesceKey` の流儀)。
  */
 export function changeConstraintValue(constraintId: string, source: string): void {
   const store = useAppStore.getState();

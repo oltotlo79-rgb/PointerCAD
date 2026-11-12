@@ -1,22 +1,22 @@
 /**
- * 書き出し・読み込みの型(要件 FR-803・FR-804・FR-802・FR-427、計画書
- * docs/plans/P6-入出力.md §2.1・§2.8、タスク2)。
+ * 書き出し・読み込みの型
+ * (要件 FR-803・FR-804・FR-802・FR-427)。
  *
  * ここに置くのは**型と定数だけ**で、判断(どの立体を書き出せるか)は `exportPart.ts` の
  * 純関数が持つ。カーネルも `packages/ui` の画面もこの 1 か所を見るので、形式の一覧・
  * 品質の 3 択・既定値を写して 2 か所に持つことはしない。
  *
  * **断りと警告は文字列のキーで持ち、日本語の文言は持たない**(NFR-MA-5)。文言は
- * `packages/ui` の `ja.json` が持ち、画面がキーで引く(計画書 §2.8 の表)。エラーコードの
- * 体系(`ParseErrorCode` など)は増やさない(`docs/報告記録.md` 2026-09-04 01:40 の③)。
+ * `packages/ui` の `ja.json` が持ち、画面がキーで引く。エラーコードの
+ * 体系(`ParseErrorCode` など)は増やさない。
  */
 
 /**
- * このアプリの種類一覧に載るファイル(計画書 §2.2・§2.10)。DWGは変換案内だけ。
+ * このアプリの種類一覧に載るファイル。DWGは変換案内だけ。
  *
- * `'pcad'` は部品の文書、`'pcadt'` はそのひな形(§0.a-0.35。中身は同じで拡張子と封筒の
+ * `'pcad'` は部品の文書、`'pcadt'` はそのひな形(中身は同じで拡張子と封筒の
  * `kind` だけが違う)。`'pcadscript'`は自動作図の処理ファイル。残りは他の CAD・スライサーとやり取りする形式で、`'glb'` は
- * glTF のバイナリ 1 ファイル版(§0.a-0.16)である。
+ * glTF のバイナリ 1 ファイル版である。
  *
  * **「書き出せる形式」「読み込める形式」はこれの部分集合**で、下の `ExportFormat` /
  * `ImportFormat` が正本になる。
@@ -30,12 +30,12 @@ export const FILE_KINDS: readonly FileKind[] = [
 
 /**
  * 立体を書き出せる形式(FR-803)。**`packages/io` の `ExportFormat` の正本**で、あちらは
- * この型と `EXPORT_FORMATS` を再輸出するだけにしてある(P2 が io に置いた定義を、P6 で
+ * この型と `EXPORT_FORMATS` を再輸出するだけにしてある(以前 io に置いた定義を
  * model へ寄せた。二重定義にしない)。
  *
  * **DXF はここに入らない。** DXF に書き出すのは平らなスケッチの線であって立体ではない
- * (§0.a-0.30・§0.a-0.34)ので、依頼の形(`ExportRequest`)も別になる。DXF の書き出しの
- * 依頼はタスク26 以降の担当が別に作る。ただし**品質(なめらかさ)の扱いだけは形式ごとの
+ * ので、依頼の形(`ExportRequest`)も別になる。DXF の書き出しの
+ * 依頼は別に作る。ただし**品質(なめらかさ)の扱いだけは形式ごとの
  * 性質**なので、`exportPart.ts` の `usesTriangles` は `FileKind` で受けて DXF も答える。
  */
 export type ExportFormat = 'step' | 'stl' | '3mf' | 'obj' | 'glb';
@@ -44,8 +44,8 @@ export type ExportFormat = 'step' | 'stl' | '3mf' | 'obj' | 'glb';
 export const EXPORT_FORMATS: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
 
 /**
- * 読み込める形式(FR-802 の Must の 3 つ)。3MF と glTF の読み込みは Could(FR-809、
- * §0.a-0.26・§0.a-0.56)、DXF の読み込みはスケッチになる別の口(FR-813)なので、
+ * 読み込める形式(FR-802 の Must の 3 つ)。3MF と glTF の読み込みは Could(FR-809)、
+ * DXF の読み込みはスケッチになる別の口(FR-813)なので、
  * どちらもここには入れない。**増やすときは `canRoundTrip` の意味も見直すこと。**
  */
 export type ImportFormat = 'step' | 'stl' | 'obj';
@@ -54,13 +54,13 @@ export type ImportFormat = 'step' | 'stl' | 'obj';
 export const IMPORT_FORMATS: readonly ImportFormat[] = ['step', 'stl', 'obj'];
 
 /**
- * 書き出す立体の選び方(FR-427、§0.a-0.12)。`'all'` は文書の中のすべての立体、
+ * 書き出す立体の選び方(FR-427)。`'all'` は文書の中のすべての立体、
  * `'selected'` は画面で選んである立体だけ。
  */
 export type ExportScope = 'all' | 'selected';
 
 /**
- * 三角形のなめらかさの 3 択(§0.a-0.20)。利用者には「粗い / 標準 / 細かい」として見せ、
+ * 三角形のなめらかさの 3 択。利用者には「粗い / 標準 / 細かい」として見せ、
  * 内部の逸脱(mm)は見せない(NFR-UX-4。数値の式にしない)。
  */
 export type ExportQuality = 'coarse' | 'normal' | 'fine';
@@ -69,7 +69,7 @@ export type ExportQuality = 'coarse' | 'normal' | 'fine';
 export const EXPORT_QUALITIES: readonly ExportQuality[] = ['coarse', 'normal', 'fine'];
 
 /**
- * 三角形の細かさの指定(§0.a-0.64)。**長さと角度の「対」**で持つ。
+ * 三角形の細かさの指定。**長さと角度の「対」**で持つ。
  *
  * カーネルの `ShapeExportMeshQuality`(`packages/kernel/src/types.ts`)と欄が 1 対 1 に
  * 同じで、そのまま渡せる形にしてある(**model は kernel の型を輸入しない**——依存の向きは
@@ -84,11 +84,11 @@ export interface ExportMeshQuality {
 }
 
 /**
- * 品質 → 三角形分割の細かさの対の表(§0.a-0.64)。**この表はここ 1 か所だけ**にある。
+ * 品質 → 三角形分割の細かさの対の表。**この表はここ 1 か所だけ**にある。
  *
- * **長さだけでは足りない**(2026-09-06 の実測、タスク11・17)。角度の偏差には既定の
+ * **長さだけでは足りない**(2026-09-06 の実測)。角度の偏差には既定の
  * 0.5 ラジアンがあり、丸い面ではそちらが先に効くので、長さを 0.1mm に絞っても
- * 半径 10 の球は 978 枚・体積の不足 1.43% にとどまる(§2.4 の「偏差 0.1 で 1% 以内」が
+ * 半径 10 の球は 978 枚・体積の不足 1.43% にとどまる(「偏差 0.1 で 1% 以内」が
  * 成り立たない)。角度も一緒に 0.2 ラジアンへ絞って初めて 2,022 枚・0.72% になり、
  * FR-803 の精度が成り立つ。だから 3 択の裏は数 1 つではなく**対**で持つ。
  *
@@ -102,7 +102,7 @@ export const EXPORT_MESH_QUALITY: Readonly<Record<ExportQuality, ExportMeshQuali
 };
 
 /**
- * 品質 → 三角形分割の逸脱(mm)の表(§0.a-0.20)。
+ * 品質 → 三角形分割の逸脱(mm)の表。
  *
  * **数を書き写さず、対の表(`EXPORT_MESH_QUALITY`)から長さの欄だけを取り出す。**
  * 同じ 3 つの数を 2 か所に書くと、片方だけ直したときに気づけない。
@@ -114,12 +114,12 @@ export const EXPORT_DEVIATION_MM: Readonly<Record<ExportQuality, number>> = {
 };
 
 /**
- * 書き出しの断りと警告のキー(計画書 §2.8 の表)。**文言は持たない**(ui の `ja.json`)。
+ * 書き出しの断りと警告のキー。**文言は持たない**(ui の `ja.json`)。
  *
  * - `nothingToExport`: 書き出せる立体が 1 つも無い(断りだけ)。
  * - `shellNotSupported`: 面だけの立体を、閉じた立体しか持てない形式(STL・3MF)へ出そうとした。
  * - `meshNotSupported`: 読み込んだ三角形の形を、B-rep しか持てない形式(STEP)へ出そうとした。
- * - `colorNotSupported`: 色を出す指定だが形式に色が無い(STL。§0.a-0.15。警告だけ)。
+ * - `colorNotSupported`: 色を出す指定だが形式に色が無い(STL。警告だけ)。
  * - `qualityIgnored`: なめらかさの指定が効かない形式(三角形を使わない。警告だけ)。
  *
  * `shellNotSupported` / `meshNotSupported` は**断りにも警告にもなる**。弾いた残りが 1 つでも
@@ -134,7 +134,7 @@ export type ExportNoticeKey =
   | 'qualityIgnored';
 
 /**
- * 書き出しの依頼(FR-803・FR-427)。画面(§0.a-0.20 のパネル)が組み立て、
+ * 書き出しの依頼(FR-803・FR-427)。画面(書き出しのパネル)が組み立て、
  * `selectExportBodies` が受ける。
  */
 export interface ExportRequest {
@@ -150,9 +150,9 @@ export interface ExportRequest {
   readonly quality: ExportQuality;
   /** 詳細指定の線形偏差(mm)。省略時は quality の既存の値を使う。 */
   readonly customDeviationMm?: number;
-  /** 色を書き出すか(§0.a-0.22。既定は `true`)。色を持てない形式(STL)では警告になる。 */
+  /** 色を書き出すか(既定は `true`)。色を持てない形式(STL)では警告になる。 */
   readonly withColors: boolean;
-  /** STL を文字で書くか(§0.a-0.14)。STL 以外では意味を持たない。既定はバイナリ(`false`)。 */
+  /** STL を文字で書くか。STL 以外では意味を持たない。既定はバイナリ(`false`)。 */
   readonly ascii: boolean;
 }
 
@@ -166,10 +166,10 @@ export interface ExportSelection {
    */
   readonly deviationMm: number | null;
   /**
-   * 三角形分割の細かさの対(§0.a-0.64)。三角形を使わない形式では `null`。
+   * 三角形分割の細かさの対。三角形を使わない形式では `null`。
    *
    * **`deviationMm` を残したまま欄を足してある。** あちらは長さだけを見る古い呼び出し
-   * (P6 の途中で書かれた配線)がそのまま動くようにするための同じ値の写しで、
+   * (以前に書かれた配線)がそのまま動くようにするための同じ値の写しで、
    * カーネルへ渡すのはこちらの対のほう(角度を落とすと丸い面が粗いままになる)。
    */
   readonly meshQuality: ExportMeshQuality | null;
@@ -185,16 +185,16 @@ export type ExportOutcome =
   | { readonly ok: true; readonly selection: ExportSelection }
   | { readonly ok: false; readonly reason: ExportNoticeKey };
 
-/** 書き出しの対象の既定(§0.a-0.12「既定は全て」)。 */
+/** 書き出しの対象の既定(「既定は全て」)。 */
 export const DEFAULT_EXPORT_SCOPE: ExportScope = 'all';
 
 /** なめらかさの既定。画面表示と同じ細かさ(0.1mm)で、たいていの用途に足りる。 */
 export const DEFAULT_EXPORT_QUALITY: ExportQuality = 'normal';
 
-/** 色を書き出すかの既定(§0.a-0.22。「既定は書き出す」)。 */
+/** 色を書き出すかの既定(「既定は書き出す」)。 */
 export const DEFAULT_EXPORT_WITH_COLORS = true;
 
-/** STL を文字で書くかの既定(§0.a-0.14。小さいバイナリを既定にする)。 */
+/** STL を文字で書くかの既定(小さいバイナリを既定にする)。 */
 export const DEFAULT_EXPORT_ASCII = false;
 
 /** `createExportRequest` に渡す上書き。省いた欄は既定になる。 */

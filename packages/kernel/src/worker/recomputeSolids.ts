@@ -77,7 +77,7 @@ import { OriginCacheBudget, originBytes as measuredOriginBytes, originRows, with
 const originCacheBudgets = new WeakMap<ShapeCache<CachedSolid>, OriginCacheBudget>();
 
 /**
- * 掃引体(ばね・実らせん)専用の粗いテッセレーション許容値(P3 仕上げ、2026-09-04)。
+ * 掃引体(ばね・実らせん)専用の粗いテッセレーション許容値。
  *
  * **背景.** 既定(線形 0.1mm・角度 0.5rad)は φ6 の穴のような小さい円柱面を
  * 「1 周 24 分割以上」に保つぎりぎりの値で(2026-09-04 実測: 半径 3mm の円柱面で
@@ -127,7 +127,7 @@ const SWEEP_TESSELLATION_OPTIONS: TessellationOptions = {
  * (`thread !== null`)。簡略表示(`thread === null`)は下穴の円柱面だけなので、
  * 穴と同じ理由で既定のまま(緩めると円柱面が角張る)。
  *
- * **基本形状(FR-429)は対象にしない**(P5 タスク14 の判断、2026-09-05 実測)。
+ * **基本形状(FR-429)は対象にしない**(2026-09-05 実測)。
  * 球とトーラスは面 1 枚の曲面なので三角形が増えることを心配したが、既定
  * (線形 0.1mm・角度 0.5rad)での実測は下表のとおりで、掃引体のような桁違いの
  * 増え方はしなかった(ばねは既定で 10114 枚・380〜900ms)。
@@ -141,7 +141,7 @@ const SWEEP_TESSELLATION_OPTIONS: TessellationOptions = {
  * | 箱 20³ | 12 枚・4.4ms | 12 枚・5.0ms | 12 枚・4.2ms |
  *
  * 緩める目安(球 r=10 で三角形 2000 枚超、または 100ms 超)に**どれも届かない**ので、
- * 見た目を落としてまで緩める理由が無い。**計画書 §2.13 が案として書いた
+ * 見た目を落としてまで緩める理由が無い。**当初の案の
  * 「基本形状だけ `angularDeflection: 0.8`」は、この寸法では効かない**(球で 978 → 978 枚、
  * トーラスで 2600 → 2300 枚)。これらの大きさでは角度ではなく線形の許容値のほうが
  * 細かさを決めているためで、角度だけを緩めても三角形はほとんど減らない。
@@ -150,7 +150,7 @@ const SWEEP_TESSELLATION_OPTIONS: TessellationOptions = {
  * 収まっている。必要になれば段ごとの指定(`SolidStepRequest.tessellation`)で
  * 寸法に応じて緩められるので、ここに寸法の分岐を作らない。
  *
- * **P5 タスク42a で 2 種を足した。** どちらも上の表の「掃引体」そのもので、
+ * **2 種を足した。** どちらも上の表の「掃引体」そのもので、
  * B スプライン曲面が出る作り方だから同じ扱いにする:
  * - **スイープ(FR-409)** は `BRepOffsetAPI_MakePipeShell`(ばねと同じ道具)。
  * - **外ねじ(FR-423)** は**実らせんを切ったとき**(`modeled`)だけ。簡略表示は
@@ -179,9 +179,9 @@ function hasDeflection(options: TessellationOptions | undefined): options is Tes
 }
 
 /**
- * 段の種類に応じてテッセレーション許容値を選ぶ(§0.35「形に応じて緩める」)。
+ * 段の種類に応じてテッセレーション許容値を選ぶ(「形に応じて緩める」)。
  *
- * 優先順位は **① 段ごとの指定(`SolidStepRequest.tessellation`、P5 §2.13)→
+ * 優先順位は **① 段ごとの指定(`SolidStepRequest.tessellation`)→
  * ② 呼び出し側が渡した全体の指定 → ③ 段の種類ごとの既定**(掃引体だけ粗くする)。
  *
  * **呼び出し側が明示的に許容値を指定しているときは、その指定を必ず尊重する.**
@@ -202,7 +202,7 @@ function resolveTessellationOptions(
 }
 
 /**
- * キャッシュに命中した段のメッシュへ、必要なら表面積を後から足す(統括の決定 2026-09-05)。
+ * キャッシュに命中した段のメッシュへ、必要なら表面積を後から足す。
  *
  * 表面積は依頼が `measureAreas` で求めたときだけ測る(`SolidRecomputeRequest` の注釈)。
  * そのため、先の再計算が求めなかった依頼だと、覚えてあるメッシュに `area` が入っていない。
@@ -226,9 +226,9 @@ function withMeasuredArea(
  *
  * メッシュも一緒に覚えるのは、鍵が当たったときに三角形分割と体積計算まで
  * やり直さずに済ませるため(NFR-PF-3。当たった段は OCCT を一切呼ばない)。
- * `mesh` には面・辺・頂点の一覧(§2.2 の指紋の材料)も入っているので、
+ * `mesh` には面・辺・頂点の一覧(指紋の材料)も入っているので、
  * 加工の段(穴・ねじ穴・R 面取り・C 面取り)が上流を入力にするときも
- * 一覧を作り直さない(タスク10、計画書 §2.8 の「一覧を作り直さない」)。
+ * 一覧を作り直さない(「一覧を作り直さない」)。
  * delete() は形と、形を作るために確保した領域(maker 等)の両方を手放す
  * (makeBox.ts の OcctShapeHandle と同じ約束)。
  */
@@ -244,7 +244,7 @@ export interface CachedSolid {
  * 再計算に要るもの。Worker の中で 1 組だけ作って使い回す。
  *
  * キャッシュを外から渡す形にしてあるのは、検査でキャッシュの当たり外れと
- * 作り直した回数を直に観測できるようにするため(計画書 タスク7 の手順1)。
+ * 作り直した回数を直に観測できるようにするため。
  */
 export interface SolidRecomputeDeps {
   readonly oc: OpenCascadeInstance;
@@ -280,11 +280,11 @@ const MISSING_INPUT_MESSAGE = 'もとになる立体が見つかりませんで�
 
 /**
  * 読み込んだ三角形の形(`bodyKind: 'mesh'`)を段の材料にしようとしたとき
- * (FR-802、P6 §0.a-0.23、§2.8 の断りの表)。
+ * (FR-802)。
  *
- * **メッシュは B-rep へ変換しない**と決めてある(§0.a-0.23。三角形の数だけ面ができて
+ * **メッシュは B-rep へ変換しない**と決めてある(三角形の数だけ面ができて
  * フィレット・穴あけが実用にならないため)。だから三角形の形には**削る形も、材料も、
- * 頂点を借りることも**できない。文言は §2.8 の表のまま。
+ * 頂点を借りることも**できない。文言は断りの表のまま。
  */
 const MESH_NOT_MACHINABLE_MESSAGE = '読み込んだ三角形の形には、穴あけや面取りはできません。';
 
@@ -294,7 +294,7 @@ function upstreamFailedMessage(label: string): string {
 }
 
 /**
- * 例外から、利用者へそのまま見せる日本語を取り出す(§0.a-0.19、タスク10)。
+ * 例外から、利用者へそのまま見せる日本語を取り出す。
  *
  * 各 make*.ts(makeHole・makeThread・makeFillet・makeChamfer・makeSpring)は、
  * OCCT の C++ 側が投げる例外(embind を通ると実体へのポインタを指す**数値**として
@@ -311,7 +311,7 @@ function toFailureMessage(error: unknown): string {
 }
 
 /**
- * 段と段の間で 1 回だけ制御を譲る(§2.6、§0.a-0.22)。
+ * 段と段の間で 1 回だけ制御を譲る。
  *
  * Promise の解決(マイクロタスク)では Worker は受信待ちの通知を処理できないので、
  * setTimeout を挟んでイベントループを 1 周させる。ここで中止の知らせが届く。
@@ -325,12 +325,12 @@ import { yieldToMessages } from './yieldToMessages.js';
  * 段の入力をキャッシュから引く。無ければ理由をつけて断る。
  * 同じ再計算の中で作れなかった段が入力なら、その段の名前を出す(下流も理由つきで失敗させる)。
  *
- * ブーリアン(タスク7 以前)と加工(穴・ねじ穴・R 面取り・C 面取り、タスク10)の両方が使うので、
+ * ブーリアンと加工(穴・ねじ穴・R 面取り・C 面取り)の両方が使うので、
  * どちらも同じ「もとになる立体が見つかりませんでした。」の文言で断る
- * (計画書 タスク10 の手順2。もとは findBooleanInput という名前だった)。
+ * (もとは findBooleanInput という名前だった)。
  *
- * **「読み込んだ三角形の形(`bodyKind: 'mesh'`)は材料にできない」の断りもここ 1 か所**
- * (P6 §0.a-0.23、タスク10)。上流の形を触る段は**例外なくこの関数を通る**ので、
+ * **「読み込んだ三角形の形(`bodyKind: 'mesh'`)は材料にできない」の断りもここ 1 か所。**
+ * 上流の形を触る段は**例外なくこの関数を通る**ので、
  * 段の種類ごとに同じ判定を書き足さずに済む(削る段も、借りるだけの段も、
  * 三角形の形からは面も頂点も取り出せないことに変わりは無い)。
  */
@@ -382,8 +382,8 @@ const MISSING_PRIMITIVE_TARGET_MESSAGE =
 /**
  * 基本形状の段(FR-429)。ふつうは中心・向き・寸法だけで決まるので上流の形を見ない。
  *
- * **`originQuery` があるときだけ、`targetKey` の形から頂点を引いて基準点にする**
- * (§0.a-0.18、P5 タスク14b)。そのとき `origin` は「頂点からのオフセット」になるので、
+ * **`originQuery` があるときだけ、`targetKey` の形から頂点を引いて基準点にする。**
+ * そのとき `origin` は「頂点からのオフセット」になるので、
  * 頂点の座標へ足してから `makePrimitive` へ渡す。
  *
  * **対象は消費しない。** 穴・ねじ穴・面取り・ブーリアンの `targetKey` は対象を食べるが、
@@ -391,7 +391,7 @@ const MISSING_PRIMITIVE_TARGET_MESSAGE =
  * 消費の有無を決めているのは段の `visible` で、この関数はそれに一切触れない。
  *
  * 頂点の一覧は `CachedSolid.mesh.vertices`(上流の段が作ったときの一覧)をそのまま使うので、
- * 一覧を作り直さない(NFR-PF-2、§2.8 の「一覧を作り直さない」)。
+ * 一覧を作り直さない(NFR-PF-2、「一覧を作り直さない」)。
  */
 function createPrimitiveSolid(
   oc: OpenCascadeInstance,
@@ -421,14 +421,14 @@ function createPrimitiveSolid(
 }
 
 /**
- * 罫線面(FR-430)・ロフト(FR-410)の段(P5 §2.9、タスク24・24b)。
+ * 罫線面(FR-430)・ロフト(FR-410)の段。
  *
  * 断面が**立体の面(`faceQuery`)のときだけ**、`targetKey` の形と部分形状の一覧を
  * キャッシュから引いて面を選び直し、その外周を輪郭として取り出す(`sectionWireFromFace`)。
  * 引き方は穴・ねじ穴・面取りとまったく同じ `findStepInput` で、**同じ手順を 2 か所に書かない**。
- * 一覧(`CachedSolid.mesh`)は上流の段が作ったものをそのまま使うので作り直さない(§2.8)。
+ * 一覧(`CachedSolid.mesh`)は上流の段が作ったものをそのまま使うので作り直さない。
  *
- * **対象は消費しない**(§0.a-0.27)。輪郭を貸した立体はそのまま画面に残るので、
+ * **対象は消費しない**。輪郭を貸した立体はそのまま画面に残るので、
  * 1 つにまとめたければ利用者が和(FR-404)を取る。消費の有無を決めているのは段の
  * `visible` で、この関数はそれに一切触れない。
  *
@@ -475,7 +475,7 @@ function createThruSectionsSolid(
 const MISSING_EXTRUDE_TARGET_MESSAGE =
   '「次の面まで」の相手になる立体が見つかりません。相手の立体を選び直してください。';
 
-/** 「対象を貫く」押し出し(EX04 の輪郭による貫通切断)に、貫く対象の鍵が入っていないとき(FR-504)。 */
+/** 「対象を貫く」押し出し(輪郭による貫通切断)に、貫く対象の鍵が入っていないとき(FR-504)。 */
 const MISSING_THROUGH_TARGET_MESSAGE =
   '貫いて切る対象の立体が見つかりません。切る立体を選び直してください。';
 
@@ -490,15 +490,15 @@ const THIN_EXTRUDE_SHAPING_MESSAGE =
   '薄い板の押し出しでは、終端の指定と側面の傾きは使えません。厚みを外すか、指定を外してください。';
 
 /**
- * 押し出しの段(FR-401、FR-415、FR-416)。P2 からの「距離ぶん片側へ」に、
- * P5 で終端・テーパ・薄板が乗った(`ExtrudeStepSpec` の注釈)。
+ * 押し出しの段(FR-401、FR-415、FR-416)。従来の「距離ぶん片側へ」に、
+ * 終端・テーパ・薄板が乗った(`ExtrudeStepSpec` の注釈)。
  *
  * 3 通りに分かれる:
  * - **薄板**(`thin`)は `makeThinExtrude`。輪郭をオフセットした帯を押し出す別の作り方。
  * - **「次の面まで」**(`end.kind === 'toNext'`)は相手の形が要るので、`targetKey` の段を
  *   キャッシュから引いて渡す。**相手は消費しない**(材料の位置を読むだけ)。
  * - それ以外は `makeExtrudeSolid` へそのまま渡す。欄をすべて省いた依頼は
- *   P2 からの押し出しと 1 ドットも変わらない。
+ *   従来の押し出しと 1 ドットも変わらない。
  */
 function createExtrudeSolid(
   oc: OpenCascadeInstance,
@@ -546,7 +546,7 @@ function createExtrudeSolid(
  * R 面取りの段(FR-407、FR-426)。半径が数 1 つなら一定半径、始点と終点の 2 つなら可変半径。
  *
  * **振り分けはここ 1 か所だけ**にして、作り手(`makeFillet.ts` / `makeVariableFillet.ts`)は
- * それぞれ 1 種類の半径だけを見る(§0.a-0.48。ファイルは別のまま)。
+ * それぞれ 1 種類の半径だけを見る(ファイルは別のまま)。
  * 可変半径は段の中のすべての辺に同じ 2 値を当てる(`FilletRadiusSpec` の注釈)。
  */
 function createFilletSolid(
@@ -571,7 +571,7 @@ function createFilletSolid(
 }
 
 /**
- * 曲面の段(FR-428、§0.a-0.45)。**閉じた立体ではなく面のボディ**を作る。
+ * 曲面の段(FR-428)。**閉じた立体ではなく面のボディ**を作る。
  *
  * 作り方が「すでにある立体の面を取り出す」(`shape.kind === 'face'`)か「その面を距離だけ
  * 離す」(`shape.kind === 'offset'`)ときだけ、`targetKey` の形と部分形状の一覧を
@@ -580,7 +580,7 @@ function createFilletSolid(
  *
  * `makeSurface` は「面ができたか」の判定のために面積を必ず 1 回測っており、その値を
  * `SurfaceResult.area` に添えて返す。**その面積をそのまま持ち帰り、`buildSolidBodyMesh` の
- * `knownArea` へ渡して測り直さない**(タスク42b。ブーリアンが体積を添えて返すのと同じ流儀)。
+ * `knownArea` へ渡して測り直さない**(ブーリアンが体積を添えて返すのと同じ流儀)。
  * 面積を欄に載せるかどうかの判断(`measureAreas`)は変えていない。
  */
 function createSurfaceSolid(
@@ -599,11 +599,11 @@ function createSurfaceSolid(
 }
 
 /**
- * 読み込んだ形のベースボディの段(FR-802、P6 §2.8、タスク10)。
+ * 読み込んだ形のベースボディの段(FR-802)。
  *
  * **抱き込んであるバイト列から B-rep を戻すだけ**で、形を作り替えない。読み込んだ形は
  * 再計算で変わりようがないので、**2 回目以降は段の鍵(`shapeRef`)が形状キャッシュに当たり、
- * この関数は呼ばれない**(`SolidRecomputeResult.cacheHits` が増える。§2.8 の
+ * この関数は呼ばれない**(`SolidRecomputeResult.cacheHits` が増える。
  * 「キャッシュの形をそのまま返す」)。ここが走るのは初回と、Worker が作り直された後だけである。
  *
  * 戻した形の持ち主はこの段で、`OcctShapeHandle` の約束どおり `delete()` で手放す
@@ -624,7 +624,7 @@ function createImportedSolid(
 }
 
 /**
- * 1 段ぶんの作り手の結果。ねじ穴(FR-406)だけが画面へ返すねじの印(§0.a-0.15)を持つので、
+ * 1 段ぶんの作り手の結果。ねじ穴(FR-406)だけが画面へ返すねじの印を持つので、
  * それ以外の段は空配列で揃える(createStepSolid が返す形を 1 つに揃えるための入れ物)。
  */
 interface StepSolidResult {
@@ -644,7 +644,7 @@ interface StepSolidResult {
    *
    * いま値を持って帰るのは曲面の段(`makeSurface`)だけで、「面ができたか」の判定のために
    * 結果の面積を必ず 1 回測っている(`makeSurface.ts` の `SurfaceResult`)。
-   * 同じ形なので測り直しても同じ値になるだけである(タスク42b)。
+   * 同じ形なので測り直しても同じ値になるだけである。
    */
   readonly area?: number;
 }
@@ -660,19 +660,19 @@ function noMarks(handle: OcctShapeHandle, volume?: number, area?: number): StepS
  *
  * **加工の段(穴・ねじ穴・R 面取り・C 面取り)は入力の形と部分形状の一覧が要る**ので、
  * `findStepInput` でキャッシュから取り出す。`CachedSolid.mesh` にはすでに
- * `faces` / `edges` / `vertices` が入っているので、一覧を作り直さない(NFR-PF-2、§2.8)。
+ * `faces` / `edges` / `vertices` が入っているので、一覧を作り直さない(NFR-PF-2)。
  * `mesh` は `SubShapeTables`(`{ faces, edges, vertices }`)の上位互換の形なので、
  * R 面取り・C 面取りへはそのまま渡せる(構造的部分型)。
  * **ばね(FR-414)は `targetKey` を持たないので、この取り出しを行わない**
- * (§0.36。押し出し・回転・縫合と同じ「新しいボディを作る」段)。
+ * (押し出し・回転・縫合と同じ「新しいボディを作る」段)。
  * **基本形状(FR-429)も同じ「作る」段だが、基準点を立体の頂点にしたときだけ
- * `targetKey` の形から頂点を引く**(§0.a-0.18、タスク14b)。それでも対象は消費しない
+ * `targetKey` の形から頂点を引く**。それでも対象は消費しない
  * (`createPrimitiveSolid` の注釈)。
  *
- * **P5 の Should 群・Could 群(タスク42a)も同じ 3 通りに分かれる:**
+ * **Should 群・Could 群も同じ 3 通りに分かれる:**
  * - **対象を取らない「作る」段**: スイープ(FR-409)、曲面(FR-428。ただし面を取り出す
  *   作り方だけは対象の形を借りる)。
- * - **対象を借りるが消費しない段**: ミラー(FR-419、§0.a-0.36)、
+ * - **対象を借りるが消費しない段**: ミラー(FR-419)、
  *   押し出しの「次の面まで」(FR-415)、曲面の「面を取り出す」(FR-428)。
  * - **対象を消費する段**: 抜き勾配・移動/回転・拡大縮小・リブ・エンボス・外ねじ・
  *   切断・くり抜き。
@@ -709,7 +709,7 @@ function createStepSolid(
     }
     case 'extrude':
       // 終端(FR-415)・テーパ(FR-401)・薄板(FR-416)の振り分けは createExtrudeSolid に
-      // 集めてある。欄をすべて省いた依頼は P2 からの押し出しと同じ道を通る。
+      // 集めてある。欄をすべて省いた依頼は 従来の押し出しと同じ道を通る。
       return noMarks(createExtrudeSolid(oc, spec, options, cache, failedLabels, featureId));
     case 'revolve':
       return noMarks(makeRevolveSolid(oc, spec, options));
@@ -746,7 +746,7 @@ function createStepSolid(
     }
     case 'thread': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      // 入口の形(ざぐり・皿もみ、FR-422、タスク42c)は段の欄のまま `makeThreadHole` が読む
+      // 入口の形(ざぐり・皿もみ、FR-422)は段の欄のまま `makeThreadHole` が読む
       // (段の型が作り手の依頼の上位互換なので詰め替えない)。省かれていれば真っ直ぐな下穴。
       const { handle, marks } = makeThreadHole(oc, spec, target.shape, target.mesh.faces, target.mesh.origins, featureId);
       return { handle, threadMarks: marks };
@@ -766,15 +766,15 @@ function createStepSolid(
       return noMarks(makeSpring(oc, spec));
     case 'primitive':
       // 基本形状(FR-429)。中心・向き・寸法だけで決まるが、基準点を立体の頂点に
-      // したときだけ対象の形から頂点を引く(消費はしない。タスク14b)。
+      // したときだけ対象の形から頂点を引く(消費はしない)。
       return noMarks(createPrimitiveSolid(oc, spec, cache, failedLabels, featureId));
     case 'thruSections':
       // 罫線面(FR-430)とロフト(FR-410)。断面が立体の面(faceQuery)のときだけ
-      // 上流の形を見て輪郭を取り出す(タスク24b)。それでも材料にした立体は
-      // 消費しない(§0.a-0.27。要るなら利用者が和を取る)。
+      // 上流の形を見て輪郭を取り出す。それでも材料にした立体は
+      // 消費しない(要るなら利用者が和を取る)。
       return noMarks(createThruSectionsSolid(oc, spec, options, cache, failedLabels));
 
-    // ここから下は P5 の Should 群・Could 群(タスク42a)。
+    // ここから下は Should 群・Could 群。
     // 段の型は作り手の依頼(`*Input`)の上位互換なので、詰め替えずにそのまま渡す。
 
     case 'draft': {
@@ -808,14 +808,14 @@ function createStepSolid(
       }
     }
     case 'faceOffset': {
-      // 平らな面の移動(EX-18)。段の型は作り手の依頼の上位互換なので詰め替えない。
+      // 平らな面の移動。段の型は作り手の依頼の上位互換なので詰め替えない。
       // 対象の形は借りるだけで、断ったときも元の形はキャッシュに残る(editSolidFace の約束)。
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       const moved = editSolidFace(oc, target.shape, target.mesh, spec);
       return noMarks(moved, moved.volume);
     }
     case 'mirror': {
-      // ミラー(FR-419)は対象を消費しない(§0.a-0.36)。鏡像を 1 つ作るだけで、
+      // ミラー(FR-419)は対象を消費しない。鏡像を 1 つ作るだけで、
       // 元と鏡像を 1 つにまとめたければ利用者が和(FR-404)を取る。
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       // 鏡像は形の全ての部分を一対一に写す(向きの反転は OCCT が面の向きで直す)。対象の tracked の出どころを
@@ -857,7 +857,7 @@ function createStepSolid(
       return noMarks(makeSweep(oc, spec));
     case 'rib': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      // 「材料まで伸ばすか」(`extendToBody`、タスク42c)も段の欄のまま `makeRib` が読む。
+      // 「材料まで伸ばすか」(`extendToBody`)も段の欄のまま `makeRib` が読む。
       // 省かれていれば今までどおり材料に当たるまで伸ばす。
       const ribbed = makeRib(oc, target.shape, spec);
       return noMarks(ribbed, ribbed.volume);
@@ -869,7 +869,7 @@ function createStepSolid(
     }
     case 'threadShaft': {
       // 外ねじ(FR-423)。ねじ穴と違って**面の一覧だけでなく `SubShapeTables` を丸ごと**渡す
-      // (円柱面の軸を読むのに辺・頂点も要る)。印は画面の簡略表示に載る(§0.a-0.15)。
+      // (円柱面の軸を読むのに辺・頂点も要る)。印は画面の簡略表示に載る。
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       const { handle, mark } = makeThreadShaft(oc, target.shape, target.mesh, spec);
       return { handle, threadMarks: [mark] };
@@ -877,7 +877,7 @@ function createStepSolid(
     case 'surface': {
       // 曲面(FR-428)。ここだけが `bodyKind: 'shell'` のボディを作る。
       // 判定そのものは buildSolidBodyMesh の hasSolid が行うので、ここに分岐は要らない。
-      // 面積は makeSurface が測り済みなので添えて返し、測り直させない(タスク42b)。
+      // 面積は makeSurface が測り済みなので添えて返し、測り直させない。
       const surface = createSurfaceSolid(oc, spec, options, cache, failedLabels, featureId);
       return noMarks(surface, undefined, surface.area);
     }
@@ -916,7 +916,7 @@ function createStepSolid(
       return noMarks(makeShell(oc, target.shape, target.mesh, spec));
     }
     case 'importedSolid':
-      // 読み込んだ形のベースボディ(FR-802、P6 タスク10)。対象を取らない「作る」段で、
+      // 読み込んだ形のベースボディ(FR-802)。対象を取らない「作る」段で、
       // 抱き込んだバイト列から形を戻すだけ(`createImportedSolid` の注釈)。
       return noMarks(createImportedSolid(oc, spec));
   }
@@ -929,7 +929,7 @@ function createStepSolid(
  * 立体になっているかの確認(hasSolid / isValidShape / 体積)は、
  * それぞれの作り手(makeExtrudeSolid・sewSolid・booleanOp・makeHole 等)が済ませている。
  *
- * `threadMarks` はねじ穴の段だけが非空(§0.a-0.15)。それ以外は `noMarks` が空配列にする。
+ * `threadMarks` はねじ穴の段だけが非空。それ以外は `noMarks` が空配列にする。
  * `measureAreas` は依頼が表面積を求めたかどうか(`SolidRecomputeRequest` の注釈)。
  * `knownVolume` / `knownArea` は作り手がすでに測ってある体積・表面積
  * (`StepSolidResult.volume` / `.area` の注釈)。
@@ -1226,9 +1226,9 @@ export function localCachedReferenceMesh(
 }
 
 /**
- * 外観を割り当てた面 1 つを、できたボディの面へ照合し直す(FR-1106、P5 §2.2.3)。
+ * 外観を割り当てた面 1 つを、できたボディの面へ照合し直す(FR-1106)。
  *
- * 採点は P3 の部分形状の参照とまったく同じ `resolveFaceReference`(重み 0.35/0.25/0.2/0.2、
+ * 採点は部分形状の参照とまったく同じ `resolveFaceReference`(重み 0.35/0.25/0.2/0.2、
  * しきい値 0.6)で、**外観のための別の規約は作らない**。届かなければ `null` を返し、
  * 呼び出し側(UI)が「見つからない」と断って既定の外観に戻す。
  *
@@ -1255,7 +1255,7 @@ function matchAppearanceFace(
 }
 
 /**
- * 外観の面の指紋を、できたボディの面へまとめて照合し直す(FR-1106、P5 §2.2.3)。
+ * 外観の面の指紋を、できたボディの面へまとめて照合し直す(FR-1106)。
  *
  * **OCCT を一切使わない純関数。** 引数はすべて `recomputeSolids` が集めた素の値で、
  * 50MB の WASM を読み込まずに Node で検査できる(`matchSubShape.ts` と同じ理由)。
@@ -1386,14 +1386,14 @@ function consumesBody(candidate: SolidStepSpec, source: SolidStepRequest): boole
  * - **鍵で作り直しを省く.** 段の鍵(model が解決済みのパラメータと上流の鍵から作る)が
  *   キャッシュに当たれば、OCCT を呼ばずに覚えていたメッシュをそのまま使う。
  * - **キャッシュの掃除はしない.** 再計算のたびに retain を呼ぶと、Undo で 1 段戻したときに
- *   作り直しが起きる。容量 SHAPE_CACHE_CAPACITY の LRU に任せる(2026-09-03 統括判断)。
+ *   作り直しが起きる。容量 SHAPE_CACHE_CAPACITY の LRU に任せる。
  *   段の数が容量を超える依頼では、先頭に近い段から追い出されることになる。
  * - **止めずに理由を出す.** 作れなかった段は failures に積んで次の段へ進む。
  *   その段を入力にするブーリアンも、上流の名前を添えた理由で失敗させて続ける(FR-504)。
  * - **消費されたボディは返さない.** visible が false の段はキャッシュに残す。
  *   直接編集が失敗した入力は、別の成功した加工に消費されていなければ表示へ戻す。
  * - **外観の面を選び直す.** 全段を計算し終えたあと、`appearanceQueries` の指紋を
- *   できたボディの面へ照合し直して `appearanceMatches` で返す(FR-1106、P5 §2.2.3)。
+ *   できたボディの面へ照合し直して `appearanceMatches` で返す(FR-1106)。
  *   依頼が無ければこの段は何もせず、OCCT を 1 回も呼ばない。
  *
  * 進捗と中止は呼び出し側の関数で受け取る。Comlink 越しでは Comlink.proxy した関数が渡る。
@@ -1440,13 +1440,13 @@ export async function recomputeSolids(
   let cancelled = false;
 
   const appearanceQueries = request.appearanceQueries ?? [];
-  /** 表面積を測るか(統括の決定 2026-09-05)。省略なら測らない。 */
+  /** 表面積を測るか。省略なら測らない。 */
   const measureAreas = request.measureAreas === true;
-  /** 外観の依頼が 1 件も無ければ、照合の材料も集めない(§0.a-0.54 の費用ゼロ)。 */
+  /** 外観の依頼が 1 件も無ければ、照合の材料も集めない(費用ゼロ)。 */
   const collectsAppearance = appearanceQueries.length > 0;
   /** 段の鍵 → 画面に出したボディの id。同じ鍵を複数の段が使うときは先に来た段を採る。 */
   const bodyIdByKey = new Map<string, string>();
-  /** ボディの id → 指紋の位置を正規化する物差し(境界箱の対角長の半分。P3 §2.2.3)。 */
+  /** ボディの id → 指紋の位置を正規化する物差し(境界箱の対角長の半分)。 */
   const scaleByBodyId = new Map<string, number>();
 
   /**

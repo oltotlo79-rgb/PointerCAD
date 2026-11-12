@@ -1,12 +1,12 @@
 /**
  * 合致の変数(剛体の 6 自由度)と自由度の数え方、連結成分の分割
- * (計画書 docs/plans/P7-アセンブリ.md タスク13、§2.5.1・§2.5.3。FR-603 / FR-602 / FR-604)。
+ * (FR-603 / FR-602 / FR-604)。
  *
- * ソルバー(P7 タスク15)が動かしてよい数を、アセンブリ文書から**決め打ちの順**で並べる。
+ * ソルバーが動かしてよい数を、アセンブリ文書から**決め打ちの順**で並べる。
  * 書き方は 2D の拘束(`sketch/constraints/variables.ts`)にそろえてある——同じ役目のものを
  * 2 通りの流儀で書かないため。そちらとの違いは 3 つだけである。
  *
- *  ① **変数は「増分」**(§2.5.1 の再パラメータ化)。2D は点の座標そのものを変数にするが、
+ *  ① **変数は「増分」**(再パラメータ化)。2D は点の座標そのものを変数にするが、
  *     3D の向きは四元数の 4 成分をそのまま動かすと `|q| = 1` の式が 1 本余分に要り、
  *     `JᵀJ` が特異になりやすい。オイラー角はジンバルロックがある。そこで
  *     **「いまの向きからの小さな回転 `ω`」**を変数にし、1 反復ごとに配置へ畳み込んで 0 へ戻す。
@@ -15,12 +15,12 @@
  *  ② **変数の単位は部品**(1 部品 = 6 変数)。2D のように成分ごとに凍る場面が無い
  *     (固定 FR-602 は部品まるごとを止める)。
  *  ③ **式で書かれた位置も変数にする。** 2D は「式で書かれた座標は動かすと式を壊す」ので
- *     定数にしたが(FR-202)、3D の合致は**解を保存しない**(§0.a-0.6)。解いた配置は
+ *     定数にしたが(FR-202)、3D の合致は**解を保存しない**。解いた配置は
  *     文書へ書き戻らないので式は壊れない。書き戻すのは引っぱって離した瞬間だけで、
- *     そこで断るかどうかは操作の側(P7 タスク18)が決める。
+ *     そこで断るかどうかは操作の側が決める。
  *
  * **ここは純関数だけを置く。** 乱数・時刻・`Map` の反復順に頼らず、同じ文書からは必ず同じ
- * 並びの変数と同じ順の連結成分を返す(§0.a-0.54 の決定性)。**例外を投げない**(FR-504)。
+ * 並びの変数と同じ順の連結成分を返す(決定性)。**例外を投げない**(FR-504)。
  */
 
 import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
@@ -36,10 +36,10 @@ import type { MateTargetKind } from './mateTargets.js';
 export const MATE_VARIABLES_PER_COMPONENT = 6;
 
 /**
- * 1 回の連立で解く変数の上限(§0.a-0.17)。solveMates は合致・ジョイント・歯車/カムでつながった群ごとに判定し、超えた群だけを解かずに断る(固定部品だけを共有する独立した群は別々に数える)。
+ * 1 回の連立で解く変数の上限。solveMates は合致・ジョイント・歯車/カムでつながった群ごとに判定し、超えた群だけを解かずに断る(固定部品だけを共有する独立した群は別々に数える)。
  *
  * 600 は動かせる部品 100 個ぶんで、`JᵀJ` のガウス消去が 600³/3 = 7.2×10⁷ 回になる大きさ。
- * これを超えると 1 反復が NFR-PF-2(単一操作 500ms)を割り込む(§2.13-1 の見積り)。
+ * これを超えると 1 反復が NFR-PF-2(単一操作 500ms)を割り込む(見積り)。
  */
 export const MAX_ASSEMBLY_VARIABLES = 600;
 
@@ -47,11 +47,11 @@ export const MAX_ASSEMBLY_VARIABLES = 600;
 export const MAX_MOVABLE_COMPONENTS = MAX_ASSEMBLY_VARIABLES / MATE_VARIABLES_PER_COMPONENT;
 
 /**
- * 動かせる部品が多すぎる(§2.12 の断りの文言)。**1 字も変えない。**
+ * 動かせる部品が多すぎる(断りの文言)。**1 字も変えない。**
  *
  * 置き場をここにしたのは、上限そのもの(`MAX_ASSEMBLY_VARIABLES`)と同じファイルに
  * 数と文を並べておくためである(2D は `diagnose.ts` に文を置くが、そちらは上限を
- * 「点」の数へ言い換える計算がもう 1 つ挟まる)。診断(P7 タスク16)はここから読む。
+ * 「点」の数へ言い換える計算がもう 1 つ挟まる)。診断はここから読む。
  */
 export const TOO_MANY_COMPONENTS_MESSAGE =
   `組める部品が多すぎます(上限 ${MAX_MOVABLE_COMPONENTS} 個)。組を入れ子にして分けてください。`;
@@ -61,7 +61,7 @@ export const TOO_MANY_COMPONENTS_MESSAGE =
  * ------------------------------------------------------------------ */
 
 /**
- * 1 つの部品が持つ 6 つの数(§2.5.1 の表)。
+ * 1 つの部品が持つ 6 つの数。
  *
  * `tx, ty, tz` は平行移動の増分(mm)、`rx, ry, rz` は**いまの向きからの小さな回転**
  * (回転ベクトル。長さが角度(rad)、向きが軸)。
@@ -69,8 +69,8 @@ export const TOO_MANY_COMPONENTS_MESSAGE =
 export type MateVariableAxis = 'tx' | 'ty' | 'tz' | 'rx' | 'ry' | 'rz';
 
 /**
- * 変数の並び順(§2.5.1)。**`components` の並び順 → この順**で決め打ちする。
- * `Map` の反復順に頼らないので、同じ文書からは必ず同じ列が出る(§0.a-0.54)。
+ * 変数の並び順。**`components` の並び順 → この順**で決め打ちする。
+ * `Map` の反復順に頼らないので、同じ文書からは必ず同じ列が出る。
  */
 export const MATE_VARIABLE_AXES: readonly MateVariableAxis[] = [
   'tx',
@@ -100,16 +100,16 @@ export type FrozenComponentReason =
   | 'suppressed';
 
 /**
- * 変数の一式。残差(P7 タスク14)とソルバー(タスク15)が列を引くための表。
+ * 変数の一式。残差とソルバーが列を引くための表。
  *
- * `columnOf` / `componentOf` を関数で持つのは計画書のタスク13 のとおり。中身は `Map` と
+ * `columnOf` / `componentOf` は関数で持つ。中身は `Map` と
  * 配列だが、**呼ぶ側に鍵の作り方(部品の先頭の列 + 軸の隔たり)を知らせない**ためである。
  */
 export interface MateVariableSet {
   /** 決め打ちの順(`components` の順 → `tx, ty, tz, rx, ry, rz`)。ソルバーの列の順。 */
   readonly variables: readonly MateVariable[];
   /**
-   * 初期値。**必ず全部 0**(変数はいまの配置からの増分。§2.5.1 の再パラメータ化)。
+   * 初期値。**必ず全部 0**(変数はいまの配置からの増分。再パラメータ化)。
    * それでも配列で持つのは、ソルバーが `x` の長さと初期値をこの 1 か所から取れるようにして、
    * 「長さは `variables.length`、値は 0」という同じ約束を呼ぶ側ごとに書かせないためである。
    */
@@ -118,7 +118,7 @@ export interface MateVariableSet {
   readonly movableComponentIds: readonly string[];
   /** 変数にしなかった部品 → その理由。 */
   readonly frozen: ReadonlyMap<string, FrozenComponentReason>;
-  /** この集合の変数が上限(`MAX_ASSEMBLY_VARIABLES`)を超えた印。解くかどうかは群ごとに solveMates が決める(§0.a-0.17)。 */
+  /** この集合の変数が上限(`MAX_ASSEMBLY_VARIABLES`)を超えた印。解くかどうかは群ごとに solveMates が決める。 */
   readonly tooMany: boolean;
   /** その部品のその軸は何列目か。動かせない部品・知らない部品なら `null`。 */
   readonly columnOf: (componentId: string, axis: MateVariableAxis) => number | null;
@@ -127,7 +127,7 @@ export interface MateVariableSet {
 }
 
 /**
- * 合致の変数を切り出す(§2.5.1)。
+ * 合致の変数を切り出す。
  *
  * **変数にしない条件は 2 つだけ**——`fixed === true`(FR-602)と `suppressed === true`
  * (FR-503)。**`visible === false` は変数にする**(見えなくても組み立ての一部で、
@@ -182,11 +182,11 @@ export function collectMateVariables(assembly: AssemblyDocument): MateVariableSe
  * ------------------------------------------------------------------ */
 
 /**
- * 合致の距離・角度、ジョイントの可動範囲、分解の距離を数にする(§0.a-0.9、FR-202)。
+ * 合致の距離・角度、ジョイントの可動範囲、分解の距離を数にする(FR-202)。
  *
  * 変数表は**アセンブリのパラメータ表**(`resolveAssembly.ts` の `assemblyVariables`)を
  * そのまま渡す——配置の式と合致の値で別の表を使うと、同じ名前が 2 つの意味を持つため
- * (タスク6 の申し送り「距離・角度も同じ表」)。
+ * (「距離・角度も同じ表」)。
  *
  * **評価できない式は保存された評価値をそのまま使う**(`reevaluatePart.ts` の
  * `reevaluateValue` と同じ約束。開いた瞬間に値が消えるより、最後に決まっていた数で
@@ -212,7 +212,7 @@ export function mateValueOf(
  * ------------------------------------------------------------------ */
 
 /**
- * 合致 1 本が出す式の本数(§2.5.2 の表)。**一致(`coincident`)だけ対象の種類で変わる**ので
+ * 合致 1 本が出す式の本数。**一致(`coincident`)だけ対象の種類で変わる**ので
  * ここには入れず、`coincidentEquationCount` が決める。
  */
 const MATE_EQUATION_COUNTS: Readonly<Record<Exclude<MateKind, 'coincident'>, number>> = {
@@ -223,7 +223,7 @@ const MATE_EQUATION_COUNTS: Readonly<Record<Exclude<MateKind, 'coincident'>, num
   tangent: 2,
 };
 
-/** ジョイント 1 つが出す式の本数(§2.6 の表)。残る自由度は 6 − この数。 */
+/** ジョイント 1 つが出す式の本数。残る自由度は 6 − この数。 */
 const JOINT_EQUATION_COUNTS: Readonly<Record<JointKind, number>> = {
   revolute: 5,
   slider: 5,
@@ -237,7 +237,7 @@ function hasDirection(kind: MateTargetKind): boolean {
 }
 
 /**
- * 一致の式の本数(§2.5.2 の 3 行)。**向きを持つかどうかだけで決まる。**
+ * 一致の式の本数(3 行)。**向きを持つかどうかだけで決まる。**
  *
  *  - 点と点 → `p₁ − p₂` の 3 成分で **3**
  *  - 点と面 → 面に載せる 1 本だけで **1**(面の上をすべる 2 自由度は残る)
@@ -297,7 +297,7 @@ export interface MateDegreesOfFreedom {
   /** 式の本数の合計(効いている合致とジョイントのぶん)。 */
   readonly equations: number;
   /**
-   * 決まらなくてよい自由度(§0.a-0.20)。**固定された部品が 1 つも無いときの 6**
+   * 決まらなくてよい自由度。**固定された部品が 1 つも無いときの 6**
    * (全体の平行移動 3 + 回転 3)で、あれば 0。これを引かないと、正しく組めていても
    * 常に「あと 6 か所決まっていません」と誤報する。
    */
@@ -314,7 +314,7 @@ export interface MateDegreesOfFreedom {
 export interface CountMateDegreesOfFreedomOptions {
   /**
    * 合致の id → 解決した対象 2 つの種類(`resolveMateTarget` の結果の `kind`)。
-   * **一致(`coincident`)の式の本数は種類で変わる**(§2.5.2)ので、一致を数えるには要る。
+   * **一致(`coincident`)の式の本数は種類で変わる**ので、一致を数えるには要る。
    * 無い合致は数えず `skipped` に `unknownTargets` として残す(黙って 3 本と決めない)。
    */
   readonly targetKinds?: ReadonlyMap<string, readonly [MateTargetKind, MateTargetKind]>;
@@ -332,10 +332,10 @@ function touchesVariable(
 }
 
 /**
- * 自由度を数える(§2.5.5 の「足りない」「足しすぎ」の目安)。
+ * 自由度を数える(「足りない」「足しすぎ」の目安)。
  *
  * **変数の数 − 式の本数**の素朴な数え方で、合致どうしが同じことを言っている(線形従属)か
- * どうかは見ない。重なりまで見た正確な自由度はヤコビアンの階数から出す(P7 タスク16 の
+ * どうかは見ない。重なりまで見た正確な自由度はヤコビアンの階数から出す(自由度の診断の
  * `diagnoseMates`)。2D の `countDegreesOfFreedom` と同じ役割・同じ言葉づかいにしてある。
  *
  * **動かせる部品を 1 つも含まない式は数えない。** 固定どうしを合致で結んでも動く数は 1 つも
@@ -402,7 +402,7 @@ export function countMateDegreesOfFreedom(
  * ------------------------------------------------------------------ */
 
 /**
- * 合致でつながった部品の塊 1 つ(§2.5.3、§0.a-0.18)。**成分ごとに別々の連立を解く。**
+ * 合致でつながった部品の塊 1 つ。**成分ごとに別々の連立を解く。**
  *
  * 塊が k 個に分かれれば、ガウス消去が n³ で効くぶん概ね k² 倍速くなる。
  */
@@ -440,7 +440,7 @@ function findRoot(parent: number[], node: number): number {
  * 2 つの節を同じ塊にする。
  *
  * **小さい番号を根にする。** 根が `components` の順で最も早い部品になるので、塊の並びが
- * 文書の順だけで決まる(§0.a-0.54 の決定性)。木の高さで根を選ぶと、同じ文書でも
+ * 文書の順だけで決まる(決定性)。木の高さで根を選ぶと、同じ文書でも
  * 辺をつなぐ順で根が変わってしまう。
  */
 function unite(parent: number[], a: number, b: number): void {
@@ -460,7 +460,7 @@ interface MutableGroup {
 }
 
 /**
- * 合致とジョイントでつながった部品を連結成分へ分ける(§2.5.3、§0.a-0.18)。
+ * 合致とジョイントでつながった部品を連結成分へ分ける。
  *
  * **節は動かせる部品だけ、辺は合致とジョイント。固定された部品につながる辺は「地面への辺」
  * として無視する**——固定は動かないので、固定を挟んだ 2 つの部品は互いの位置に影響しない。
@@ -469,7 +469,7 @@ interface MutableGroup {
  * 抑制された合致・ジョイント(FR-503)は辺にならない。指し先が消された部品のものも、
  * その部品が節に無いので自然と辺にならない(投げない。FR-504)。
  *
- * **成分の順序も、成分の中の並びも `components` の順**で決まる(§0.a-0.54)。
+ * **成分の順序も、成分の中の並びも `components` の順**で決まる。
  */
 export function mateComponentGroups(
   variableSet: MateVariableSet,

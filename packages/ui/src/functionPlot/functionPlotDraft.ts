@@ -8,7 +8,7 @@ import { prepareDocumentMathEnvironment } from '../math/prepareDocumentMathEdito
 import { t } from '../i18n/t.js';
 
 /**
- * rules/06 §10.317 (GR-18b): the calculation tape has no `equal`; F in "F=0" is what a curve/surface samples, not
+ * the calculation tape has no `equal`; F in "F=0" is what a curve/surface samples, not
  * "A=B". Checked on the parsed root before confirming, so a written "X^2+Y^2=1" is refused with a reason instead
  * of being silently rewritten to "X^2+Y^2-(1)" (which side becomes F is the user's choice). `resolveFunctionInputs`
  * (model) shows the same guidance text for an older saved file that still holds this form.
@@ -83,10 +83,10 @@ export type FunctionDraftResult = { readonly ok: true; readonly definition: Func
   | { readonly ok: false; readonly cancelled: boolean; readonly fields: ReadonlyMap<string, string> };
 
 /**
- * rules/06 (GR-18c): the caller supplies the document's CURRENT math-geometry outcomes exactly as
+ * the caller supplies the document's CURRENT math-geometry outcomes exactly as
  * `MathExpressionDialog.tsx` does (`mathGeometryInputsFor`, waiting via `waitForMathEditorGeometry` while
  * pending) so `prepareDocumentMathEnvironment`'s `evaluateDocumentMath` can resolve a geometry-derived
- * coefficient instead of leaving the WHOLE document's coefficient list empty (GR-18b's report: an ordinary
+ * coefficient instead of leaving the WHOLE document's coefficient list empty (an ordinary
  * coefficient sharing the document with an unresolved geometry-derived one failed identically). Omitting
  * `geometry` (scripting, and every pre-existing caller before this fix) keeps exactly today's behaviour.
  */
@@ -133,7 +133,7 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
     const input = draft.outputs[axis], completion = await calculate(axis, input.source, input.angleUnit, input.accepted, true);
     if (!current()) return failed();
     if (completion === null) continue;
-    // A refused formula keeps its own reason (e.g. an indefinite integral, MC-20); other states stay generic.
+    // A refused formula keeps its own reason (e.g. an indefinite integral); other states stay generic.
     if (completion.definition === null || completion.evaluation.status !== 'value' || completion.evaluation.kind !== 'function') {
       fields.set(axis, completion.evaluation.status === 'invalid' ? completion.evaluation.detail : t('math.invalidSource'));
     } else outputs.set(axis, completion.definition);
@@ -162,8 +162,8 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
     if (!(width > 0) || !Number.isFinite(width)) fields.set(`${parameter}.max`, t('functionPlot.invalidRange'));
   }
   if (fields.size > 0) return failed();
-  // GR-18b: a formula that feeds a geometry-derived coefficient into an operation that jumps at a value boundary
-  // is refused here (before confirming), with GR-06b's own reason placed on the formula field it came from.
+  // a formula that feeds a geometry-derived coefficient into an operation that jumps at a value boundary
+  // is refused here (before confirming), with its own refusal reason placed on the formula field it came from.
   const derivedCoefficientIds = mathGeometryDerivedCoefficientIds(environment.prepared.parameters,
     mathGeometryDerivedParameters(environment.prepared.parameters));
   const rejectGeometryDerived = (candidate: FunctionDefinition): boolean => {

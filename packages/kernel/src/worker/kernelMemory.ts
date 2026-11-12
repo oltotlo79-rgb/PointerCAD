@@ -1,6 +1,6 @@
 /**
  * 形状計算部(同梱の OCCT の WebAssembly)のメモリの量を読む(NFR-PF-6「WASM の実質上限
- * (〜4GB)内で動作。上限接近時に警告する」、計画書 P12-28)。
+ * (〜4GB)内で動作。上限接近時に警告する」)。
  *
  * **読むのは確保済みの量**(`HEAPU8.buffer.byteLength`)。Emscripten はメモリを増やすたびに
  * `Module.HEAPU8` を新しい窓へ差し替える(グルーコードの `updateGlobalBufferAndViews`)ので、

@@ -43,7 +43,7 @@ export function readAssemblyRecomputeGates() {
     coverage: 'bounded-assembly-recompute-gates-only', acceptanceComplete: false });
 }
 /**
- * Diagnostic metadata only (EX12 W02): wall-clock milliseconds of the sections of each assembly recompute (release of
+ * Diagnostic metadata only: wall-clock milliseconds of the sections of each assembly recompute (release of
  * the previous document, part recompute loop and its kernel/availability round trips, resolve, constraints,
  * publication). Bounded; never a gate, an acceptance or a native/GPU reading.
  */
@@ -540,7 +540,7 @@ export function attachAssembly(
       request.library,
     );
     if (documentId !== request.documentId) {
-      // EX12 W02: another document (a re-open of the same file included) recomputes every part, but a part ref it reuses
+      // another document (a re-open of the same file included) recomputes every part, but a part ref it reuses
       // keeps its kernel display part until its own recompute replaces it, so unchanged shapes meet the kernel's
       // content-keyed cache instead of being built again after a release (a re-open of 1,000 distinct definitions).
       // The old Scope still closes (its hidden reference meshes return); refs the new document lacks, retired owners and

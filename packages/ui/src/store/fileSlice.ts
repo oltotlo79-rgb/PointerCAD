@@ -1,6 +1,6 @@
 /**
  * ファイルのスライス(口・名前・保存済みの控え・自動保存・復元の問い合わせ)。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import type { AutoSaver, SaveDocumentEncoder } from '@pointercad/io';
@@ -43,7 +43,7 @@ export interface RecoverySaveState {
 }
 
 /**
- * 起動時に出す「前回の作業が残っています」の案内(FR-805、§0.a-0.12)。
+ * 起動時に出す「前回の作業が残っています」の案内(FR-805)。
  *
  * 中身そのもの(控えの `.pcad`)はここへ持たない。案内に出すのは時刻と名前だけで、
  * 実際の読み直しは「復元する」を押したときに保管庫から改めて行う(`attachAutoSave.ts`)。
@@ -107,7 +107,7 @@ export interface FileSlice {
   readonly documentSaveOperation: DocumentSaveOperation | null;
   readonly recoverySaveState: RecoverySaveState | null;
   /**
-   * ファイルの読み書きの口(§2.10)。既定はブラウザ用で、デスクトップ版が
+   * ファイルの読み書きの口。既定はブラウザ用で、デスクトップ版が
    * `setFileGateway` で差し替える(UI から `apps/` を import できないため)。
    */
   readonly fileGateway: FileGateway;
@@ -119,13 +119,13 @@ export interface FileSlice {
    */
   readonly savedDocument: PartDocument | null;
   /**
-   * いまの絵をサムネイルの PNG にする手立て(§0.a-0.18)。ビューポートが自分を
+   * いまの絵をサムネイルの PNG にする手立て。ビューポートが自分を
    * 差し出し、片付けで null へ戻す。用意できていなければサムネイルなしで保存する。
    */
   readonly captureThumbnail: ThumbnailCapture | null;
   /**
-   * いまの絵を**印刷用の 1 コマ**(PNG の data URL)にする手立て(FR-810、FR-908、
-   * P6 §2.11、タスク33)。`captureThumbnail` と同じくビューポートが差し出し、
+   * いまの絵を**印刷用の 1 コマ**(PNG の data URL)にする手立て(FR-810、FR-908)。
+   * `captureThumbnail` と同じくビューポートが差し出し、
    * 片付けで null へ戻す。用意できていなければ印刷を断る(NFR-UX-5)。
    *
    * **サムネイルの口とは別にする。** サムネイルは 256 画素の正方形で下地も画面と同じ
@@ -144,7 +144,7 @@ export interface FileSlice {
    * 別の控えを掴んで「消したはずのものが残る」ことになる。
    */
   readonly autoSaver: AutoSaver | null;
-  /** 起動時の復元の案内(§0.a-0.12)。出すものが無ければ null。 */
+  /** 起動時の復元の案内。出すものが無ければ null。 */
   readonly restorePrompt: RestorePrompt | null;
   /**
    * 答えを待っている確認(NFR-UX-3)。無ければ null。**文書を作り直しても消さない**(確認を出した
@@ -154,7 +154,7 @@ export interface FileSlice {
 
   // 動作を変える口はメソッド宣言ではなくプロパティ関数型で書く。メソッド宣言だと
   // useAppStore((state) => state.setX) のように取り出したとき @typescript-eslint/unbound-method
-  // に触れるため(計画書 P1 §0.a-0.12、docs/報告記録.md 2026-09-02 15:28 の残件②)。
+  // に触れるため。
   /** ファイルの読み書きの口を差し替える(デスクトップ版の入口が呼ぶ)。 */
   readonly setFileGateway: (gateway: FileGateway) => void;
   /** 開いているファイルの名前と、最後に保存した文書を差し替える。 */
@@ -174,13 +174,13 @@ export interface FileSlice {
   /** 出している確認に答えて閉じる。確認が無ければ何もしない。 */
   readonly answerDiscardConfirm: (choice: DiscardChoice) => void;
   /**
-   * 別名保存(FR-812、P6 §0.a-0.37、タスク28)。**いま開いている部品を新しい名前で保存し、
+   * 別名保存(FR-812)。**いま開いている部品を新しい名前で保存し、
    * 以後の保存先をその新しい名前へ切り替える。元のファイルには何も書かない。**
    *
    * 中身は既存の「保存」に `saveAs = true` を渡すだけで、新しい書き込みの筋道は作らない
    * (口が `savePcad(..., saveAs: true)` で必ず場所を訊き、書けた先を次の上書き先として
    * 覚え直す。Web 版・デスクトップ版とも既にそう振る舞う)。取り消されたときは
-   * 保存先も名前も変わらない。ツールバーへ出す入口はタスク33。
+   * 保存先も名前も変わらない。ツールバーへ出す入口は「ファイル」の畳んだ一覧。
    */
   readonly saveDocumentAs: () => Promise<void>;
 }
@@ -255,8 +255,8 @@ export const createFileSlice: StateCreator<
   setFileMessage: (fileMessage) => {
     set((state) => ({
       fileMessage,
-      // 保存・開くなどが成功したら、古い断りはもう関係ない知らせなので消す
-      // (§0.a-0.23 ⑦)。失敗のときは残す(利用者はまだその理由を解消していない)。
+      // 保存・開くなどが成功したら、古い断りはもう関係ない知らせなので消す。
+      // 失敗のときは残す(利用者はまだその理由を解消していない)。
       faceErrorKey:
         fileMessage !== null && !fileMessage.failed ? null : state.faceErrorKey,
       solidErrorKey:

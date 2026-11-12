@@ -1,12 +1,12 @@
 import { isObject } from '../valueGuards.js';
 /**
- * 下絵の画像を選ぶ・描ける形へ復号する口(計画書 docs/plans/P6-入出力.md §0.a-0.45、
- * §0.a-0.46、§2.14、タスク39)。
+ * 下絵の画像を選ぶ・描ける形へ復号する
+ * 口(FR-332)。
  *
  * 対応要件: FR-332(読み込んだ画像を作図面に置いて、2 点で寸法を合わせ、なぞる)、
  * NFR-SE-1(パスを持ち回らない)、要件§1.5(Web 版とデスクトップ版に機能差を作らない)。
  *
- * **`FileGateway`(`fileGateway.ts`)を通さない理由**(タスク39 の判断):
+ * **`FileGateway`(`fileGateway.ts`)を通さない理由**:
  * 種類つきの出し入れが受け付ける `FileKind`(正本は `@pointercad/model` の `exchange/types.ts`)
  * には画像が無い。表へ PNG / JPEG を足すと、種類の表は**書き出しの窓**(`saveFileAs`)とも
  * 共有なので、書き出せない形式が書き出しの一覧に並んでしまう。下絵は「読むだけ・上書き先を
@@ -15,13 +15,13 @@ import { isObject } from '../valueGuards.js';
  * この口は `openFileThrough` の呼び出し 1 行へ縮む。)
  *
  * **受け付けの判定(形式の見分け、断りの日本語)はここに書かない。** PNG / JPEG の見分け
- * (マジックバイト)と断りの日本語は `@pointercad/model` の `sketch/canvas.ts`(タスク38)が持つ
+ * (マジックバイト)と断りの日本語は `@pointercad/model` の `sketch/canvas.ts`が持つ
  * (文言を写すと数字が 2 か所で食い違う)。選んだバイト列を最終的に受け付けられるかは
  * 呼び出し側(ストア)が `checkCanvasImage` で行う。
  *
  * **例外は「確保する前」のサイズ確認だけ。** `MAX_CANVAS_IMAGE_BYTES`(数の正本は
  * `sketch/canvas.ts`。ここでは値を書き写さず参照するだけ)を超える `File` は、
- * `file.arrayBuffer()` を呼ぶ前(=本文を確保する前)に断る(R07。300MiB 相当の File でも
+ * `file.arrayBuffer()` を呼ぶ前(=本文を確保する前)に断る(300MiB 相当の File でも
  * 本文を確保しない。`readBrowserFile.ts` と同じ流儀)。断った後の形式判定・最終的な
  * 受け付け可否と文言は、これまでどおり `checkCanvasImage` が持つ。
  *
@@ -50,7 +50,7 @@ export interface PickedCanvasImage {
 }
 
 /**
- * ファイル選択の窓に出す種類。**PNG と JPEG だけ**(§0.a-0.45。ブラウザが必ず読める 2 つ)。
+ * ファイル選択の窓に出す種類。**PNG と JPEG だけ**(ブラウザが必ず読める 2 つ)。
  * 拡張子ではなく MIME 型で書くのは、`.PNG` のような大文字や、拡張子の無いファイルも
  * 選べるようにするため(中身の判定は `detectImageFormat` がバイト列で行う)。
  */
@@ -69,7 +69,7 @@ export function canvasImageMimeType(format: CanvasImageFormat): string {
 
 /**
  * 復号した画像。**three.js のテクスチャの素材**になり、画素の幅・高さは 2 点の寸法合わせ
- * (§2.14 の `幅(mm) = 縮尺 × 画素の幅`)が使う。
+ * (`幅(mm) = 縮尺 × 画素の幅`)が使う。
  *
  * ブラウザでは `createImageBitmap` が返す `ImageBitmap` がそのまま当てはまる。
  * 欄を絞った形にしてあるのは、three.js に触れない検査(Node)から偽の画像を渡せるようにする
@@ -113,7 +113,7 @@ interface DocumentScope {
   readonly document: DomDocument;
 }
 
-/** 読み出したファイルの中身(名前つき)。`size` は本文を確保する前のサイズ確認に使う(R07)。 */
+/** 読み出したファイルの中身(名前つき)。`size` は本文を確保する前のサイズ確認に使う。 */
 interface NamedReadableFile {
   readonly name: string;
   readonly size: number;
@@ -220,7 +220,7 @@ export function pickCanvasImage(scope: object = globalThis): Promise<PickedCanva
         finish(null);
         return;
       }
-      // 本文を確保する前にサイズを確認する(R07)。300MiB 相当の File でも `arrayBuffer()`
+      // 本文を確保する前にサイズを確認する。300MiB 相当の File でも `arrayBuffer()`
       // を呼ばずに断る。上限そのものは `sketch/canvas.ts` の `MAX_CANVAS_IMAGE_BYTES` を
       // 参照するだけで、ここでは書き写さない(`readBrowserFile.ts` と同じ流儀)。
       if (!Number.isSafeInteger(file.size) || file.size < 0) {
@@ -255,7 +255,7 @@ export function pickCanvasImage(scope: object = globalThis): Promise<PickedCanva
 }
 
 /**
- * 画像のバイト列を描ける形へ復号する(§0.a-0.46「作図面に貼る」)。
+ * 画像のバイト列を描ける形へ復号する(「作図面に貼る」)。
  *
  * **`imageOrientation: 'flipY'` を必ず頼む。** three.js の `Texture.flipY`(既定 true)は
  * `ImageBitmap` には効かない決まりなので、ここで上下を返しておかないと下絵が逆さまに貼られる。
@@ -298,18 +298,18 @@ export async function decodeCanvasImage(
  *
  * 画素をそのまま mm にすると、写真(4000 画素)が 4m の下絵になって画面から溢れる。
  * 100mm は起動時の方眼(1 目盛 10mm)にちょうど収まる大きさで、**この後に 2 点の
- * 寸法合わせ(§2.14)で本当の寸法へ合わせる**ことが前提の出発点である。
+ * 寸法合わせで本当の寸法へ合わせる**ことが前提の出発点である。
  */
 const DEFAULT_CANVAS_WIDTH_MM = 100;
 
 /**
  * 貼ったばかりの下絵の不透明度(0〜1)。**なぞるための薄い紙**なので、線を引いたときに
- * 下絵と線が見分けられる濃さにする(§2.14 の表の 0.5 と同じ値)。
+ * 下絵と線が見分けられる濃さにする(0.5)。
  */
 const DEFAULT_CANVAS_OPACITY = 0.5;
 
 /**
- * 読み込んだ画像から下絵 1 枚(文書の `SketchCanvas`)を作る(FR-332、§0.a-0.45)。
+ * 読み込んだ画像から下絵 1 枚(文書の `SketchCanvas`)を作る(FR-332)。
  *
  * - id は既存の下絵から続けて採番する(`nextCanvasId`)。画像の鍵は呼出側が発行し、
  *   削除済みの下絵を Undo する際にも同じバイト列を参照できるよう再利用しない。

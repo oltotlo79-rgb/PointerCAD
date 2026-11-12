@@ -25,8 +25,8 @@ import {
 // ---------------------------------------------------------------------------
 
 /*
-  以下、`export` が付いている小さな変換は**アセンブリの読み書き**(`assemblyJson.ts`、
-  P7 タスク3)からも呼ぶ(式・パラメータ・部分形状の参照・軸・外観・一覧の読み方・
+  以下、`export` が付いている小さな変換は**アセンブリの読み書き**(`assemblyJson.ts`)
+  からも呼ぶ(式・パラメータ・部分形状の参照・軸・外観・一覧の読み方・
   版の持ち上げ)。
 
   アセンブリ文書は部品文書とはまったく別の型だが、**その中に入っている部品と共通の値**
@@ -51,7 +51,7 @@ export function serializeExpression(value: ExpressionValueJson): ExpressionValue
 }
 
 // ---------------------------------------------------------------------------
-// P3(§2.2、§2.6、§2.7、§2.7b、タスク19)が足す部分形状の参照と加工の欄
+// 部分形状の参照と加工の欄
 // ---------------------------------------------------------------------------
 
 export function serializeVec3(vector: Vec3): Vec3 {
@@ -90,7 +90,7 @@ export function readList<T>(
   return { ok: true, value: items };
 }
 
-/** 欄が無ければ `undefined`、あれば式として読む(P5 タスク43 の省略できる式の欄)。 */
+/** 欄が無ければ `undefined`、あれば式として読む(省略できる式の欄)。 */
 export function readOptionalExpression(
   record: Record<string, unknown>,
   key: string,
@@ -124,7 +124,7 @@ export function readNullableExpression(
   return readExpression(record, key, path);
 }
 
-/** 欄が無ければ `undefined`、あれば真偽として読む(P5 タスク43 の省略できるつまみ)。 */
+/** 欄が無ければ `undefined`、あれば真偽として読む(省略できるつまみ)。 */
 export function readOptionalBoolean(
   record: Record<string, unknown>,
   key: string,
@@ -136,7 +136,7 @@ export function readOptionalBoolean(
   return readBoolean(record, key, path);
 }
 
-/** 欄が無ければ `undefined`、あれば決められた文字列として読む(P5 タスク43)。 */
+/** 欄が無ければ `undefined`、あれば決められた文字列として読む。 */
 export function readOptionalLiteral<T extends string>(
   record: Record<string, unknown>,
   key: string,
@@ -150,8 +150,8 @@ export function readOptionalLiteral<T extends string>(
 }
 
 /**
- * 欄が無ければ `undefined`、あれば文字列として読む(読み込んだ形の `importedAt`、
- * P6 タスク20)。**`null` は受け付けない**——省略と `null` を別の意味にしないため。
+ * 欄が無ければ `undefined`、あれば文字列として読む(読み込んだ形の `importedAt`)。
+ * **`null` は受け付けない**——省略と `null` を別の意味にしないため。
  */
 export function readOptionalString(
   record: Record<string, unknown>,
@@ -165,8 +165,8 @@ export function readOptionalString(
 }
 
 /**
- * 欄が無ければ `undefined`、あれば数として読む(読み込んだ三角形の形の `volume`、
- * P6 タスク20)。指紋の `radius` を読む `readOptionalNumber`(guards.ts)とは別物で、
+ * 欄が無ければ `undefined`、あれば数として読む(読み込んだ三角形の形の `volume`)。
+ * 指紋の `radius` を読む `readOptionalNumber`(guards.ts)とは別物で、
  * あちらは**欄があって `null`** を許す(「円柱でないので半径が無い」の意味を持つ null)。
  */
 export function readOptionalNumberField(
@@ -233,7 +233,7 @@ export function readNullableString(
  * 決まった文字列のどれかとして読むが、`readLiteral` と違い**一致しなくても断らない**
  * (`{ ok: true, value: null }` を返す)。将来プリセット・柄・樹種が増えても、古い版の
  * アプリで新しい文書を(部分的に)開けるようにするための前方互換の道具
- * (計画書 P5-高度なソリッド・外観と測定.md タスク5「未知のプリセット id / 柄の種類は、
+ * (「未知のプリセット id / 柄の種類は、
  * その割り当てを落として読み進める」)。欄そのものが無い・文字列でない場合は通常どおり断る。
  */
 export function readKnownLiteralOrNull<T extends string>(

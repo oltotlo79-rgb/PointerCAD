@@ -22,13 +22,13 @@ import type { MathGeometryDefinition, MathGeometryOutcome } from './mathGeometry
 /** 段階再計算の段取り。`recomputePart` がこのとおりに形を作り、測る。 */
 export interface MathGeometryStagePlan {
   /**
-   * 係数名 → その係数を計算させない理由(GR-02 の `blocked`)。どの段の数式の評価にも
+   * 係数名 → その係数を計算させない理由(依存の解析の `blocked`)。どの段の数式の評価にも
    * `DocumentMathContext.blocked` として渡す。理由を持つ係数は数学の計算部へ送られず、その理由で失敗する。
    */
   readonly blocked: ReadonlyMap<string, string>;
   /**
    * 途中の段で測る定義。`stages[k - 1]` が段 k の形を作った後で測る定義で、文書の並び。
-   * 段 k の定義は、段 k より前に測った値だけで作れる形を測る(GR-02 の `stageOf`)。
+   * 段 k の定義は、段 k より前に測った値だけで作れる形を測る(依存の解析の `stageOf`)。
    * 計算させない係数だけが使う段は空になる(その段では形を作らない)。
    */
   readonly stages: readonly (readonly MathGeometryDefinition[])[];
@@ -39,7 +39,7 @@ export interface MathGeometryStagePlan {
  * 1 つも無ければ null(途中の段は無く、再計算は今までと同じ 1 回だけ)。
  *
  * 係数の式が 1 つも無い文書では依存解析そのものを行わない(NFR-PF-3: 図形の測定値を使わない
- * 部品の再計算に費用を足さない)。式の係数参照を読めない文書(GR-02 の `unreadable`)も null で、
+ * 部品の再計算に費用を足さない)。式の係数参照を読めない文書(依存の解析の `unreadable`)も null で、
  * その式は数式の評価が今までどおり理由付きで断る。例外を投げない。
  */
 export function planMathGeometryStages(document: PartDocument): MathGeometryStagePlan | null {
@@ -55,7 +55,7 @@ export function planMathGeometryStages(document: PartDocument): MathGeometryStag
   const stages = Array.from({ length: analysis.stageCount }, (): MathGeometryDefinition[] => []);
   const seen = new Set<string>();
   for (const definition of document.mathGeometry ?? []) {
-    // 同じ識別番号の定義は 1 つに決まらない(GR-04 `resolvableMathGeometryDefinitions`)ので needed に入らない。
+    // 同じ識別番号の定義は 1 つに決まらない(`resolvableMathGeometryDefinitions`)ので needed に入らない。
     if (seen.has(definition.id)) continue;
     seen.add(definition.id);
     const stage = analysis.stageOf.get(definition.id);
@@ -66,7 +66,7 @@ export function planMathGeometryStages(document: PartDocument): MathGeometryStag
 }
 
 /**
- * 測った結果が係数の式へ数として入るか(GR-04 の `mathGeometryCoefficientValue` が値を渡すもの:
+ * 測った結果が係数の式へ数として入るか(`mathGeometryCoefficientValue` が値を渡すもの:
  * 有限の実数)。真偽(平行・垂直など)と未解決は入らない。段階再計算は、前に形を作ってから
  * このような値が 1 つも増えていなければ形を作り直さない(作り直しても同じ形になるため)。
  */

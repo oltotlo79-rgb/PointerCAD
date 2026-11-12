@@ -9,7 +9,7 @@ import { ARCHIVE_TOO_LARGE_MESSAGE, readArchive, type ArchiveReadLimits } from '
 
 /**
  * 図面の束では、図面の項目も参照元の項目も同じ強さで圧縮する。以前の版(参照元を一度 ZIP に
- * してから展開し直して結合していた)と同じバイト列を保つための値(R06)。
+ * してから展開し直して結合していた)と同じバイト列を保つための値。
  */
 const BUNDLE_LEVEL = 6;
 
@@ -43,7 +43,7 @@ function assertReopenable(entries: PcadZipEntries, ref: string, limits: ArchiveR
 
 /**
  * 固定した時刻で文書と依存一式を書く。原本のダイジェスト検査も共有する。
- * 図面と参照元の項目を圧縮前の表のまま結合し、最後に 1 回だけ圧縮する(R06。以前は圧縮 3 回・展開 2 回)。
+ * 図面と参照元の項目を圧縮前の表のまま結合し、最後に 1 回だけ圧縮する(以前は圧縮 3 回・展開 2 回)。
  * `limits` は検査で小さな上限を注入するための口。既定は読み手と同じ `IO_LIMITS`。
  */
 export async function writeDrawingBundle(document: DrawingDocument, options: WritePcaddFileOptions,
@@ -84,7 +84,7 @@ export type ReadDrawingBundleOptions = ReadPcadFileOptions;
 
 /**
  * 検証完了後に参照元一式を返す。古い、添付なしの図面も同じ読み手を通る。
- * 参照元の名前空間は 1 回だけ展開し、ZIP を作り直さずに部品・アセンブリの読み手の検査へ渡す(R06)。
+ * 参照元の名前空間は 1 回だけ展開し、ZIP を作り直さずに部品・アセンブリの読み手の検査へ渡す。
  */
 export async function readDrawingBundle(bytes: Uint8Array, options: ReadDrawingBundleOptions = {}): Promise<ReadPcaddFileResult> {
   const drawing = readPcaddFile(bytes, options);

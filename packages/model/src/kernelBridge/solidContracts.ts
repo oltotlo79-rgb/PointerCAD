@@ -25,9 +25,9 @@ export interface NativePlanarBasis {
   readonly normal: Vec3;
 }
 /**
- * 面 1 枚の素性(計画書 P3 §2.2、§2.8)。部分形状の当たり判定・強調・指紋の材料になる。
+ * 面 1 枚の素性。部分形状の当たり判定・強調・指紋の材料になる。
  * kernel の `SolidFaceInfo` と同じ形だが、model は kernel の型を再輸出しないので
- * この場に自分の型として持つ(P0 §0.11)。
+ * この場に自分の型として持つ。
  */
 export interface SolidFaceEntry {
   /** Complete nonempty current native face boundary, including inner wires; seam edges occur once.
@@ -75,7 +75,7 @@ export interface SolidFaceEntry {
   readonly triangleCount: number;
 }
 
-/** 辺 1 本の素性。並びは面と同じく通し番号の順(計画書 P3 §2.2、§2.8)。 */
+/** 辺 1 本の素性。並びは面と同じく通し番号の順。 */
 export interface SolidEdgeEntry {
   /** Current native circle parameter basis in part coordinates, not a saved fingerprint.
    * Original increasing range (radians); orientation does not swap legacy start/end.
@@ -107,14 +107,14 @@ export interface SolidEdgeEntry {
   readonly segmentCount: number;
 }
 
-/** 頂点 1 つの素性。位置しか持たない(計画書 P3 §2.2、§2.8)。 */
+/** 頂点 1 つの素性。位置しか持たない。 */
 export interface SolidVertexEntry {
   readonly index: number;
   readonly position: Vec3;
 }
 
 /**
- * ねじの簡略表示の印(§0.a-0.15)。B-rep には現れない、描画だけのための情報。
+ * ねじの簡略表示の印。B-rep には現れない、描画だけのための情報。
  * 下穴は実際に掘るが、ねじ山は形を作らずに細い円と軸線で表すので、再計算の費用がかからない。
  */
 export interface ThreadMarkEntry {
@@ -125,26 +125,26 @@ export interface ThreadMarkEntry {
 }
 
 /**
- * 形の種類(FR-428、P5 §0.a-0.45。P6 §0.a-0.24 で `'mesh'` が加わった)。閉じた立体を含む形は
+ * 形の種類(FR-428)。閉じた立体を含む形は
  * `'solid'`、面だけのボディ(押し出し面・回転面など)は `'shell'`、**読み込んだ三角形の形**
- * (STL / OBJ / glTF / 3MF のベースボディ、FR-802、P6 §2.8)は `'mesh'`。
+ * (STL / OBJ / glTF / 3MF のベースボディ、FR-802)は `'mesh'`。
  *
  * 閉じた立体と開いた面が混在するボディは `'mixed'`。開いた面は体積に含めない。
  * kernel にも同じ名前・同じ4値の型があるが、**kernel の型は再輸出しない**約束
- * (このファイルの冒頭、P0 §0.11)なので model 側で同じ並びを持つ(P6 タスク10 が
- * kernel 側を広げ、タスク20 の前借りとして model 側もここで追随した)。P5 タスク3 の
+ * (このファイルの冒頭)なので model 側で同じ並びを持つ(kernel 側を
+ * 広げたとき、model 側もここで追随した)。最初の
  * 時点ではどの段も閉じた立体しか作らないので必ず `'solid'` で、`'shell'` が実際に来るのは
- * 曲面の段が入るタスク41 から、`'mesh'` が来るのは読み込んだ形のベースボディ
- * (`importedMesh` のフィーチャー)が入る P6 タスク20 から。
+ * 曲面の段から、`'mesh'` が来るのは読み込んだ形のベースボディ
+ * (`importedMesh` のフィーチャー)から。
  */
 export type SolidBodyKind = 'solid' | 'shell' | 'mesh' | 'mixed';
 
 /**
- * 外観を割り当てた面 1 つぶんの照合の依頼(FR-1106、P5 §2.2.3、§0.a-0.2)。
+ * 外観を割り当てた面 1 つぶんの照合の依頼(FR-1106)。
  *
  * 文書は面を指紋(`SubShapeRef`)で覚えているだけなので、形を作り直すと面の通し番号が
  * ずれる。**選び直しの採点はカーネルにしか無い**(`matchSubShape.ts`。重みとしきい値を
- * model へ複製しない、§0.a-0.2)ので、再計算のたびにこの依頼をカーネルへ添えて
+ * model へ複製しない)ので、再計算のたびにこの依頼をカーネルへ添えて
  * 選び直してもらう。`bodyFeatureId` はその面を持つボディを作ったフィーチャーの id で、
  * 橋がそれを段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
  */
@@ -169,7 +169,7 @@ export interface AppearanceMatchEntry {
   readonly faceIndex: number | null;
 }
 
-/** 画面に出るボディ 1 つ。id はそれを作ったフィーチャーの id と同じ(§0.a-0.5)。 */
+/** 画面に出るボディ 1 つ。id はそれを作ったフィーチャーの id と同じ。 */
 export interface SolidBody {
   readonly featureId: string;
   readonly mesh: SolidBodyMeshData;
@@ -188,16 +188,16 @@ export interface SolidBody {
    *
    * **任意の欄にしてあるのは、`SolidBody` を組み立てている見本(`packages/ui` の
    * ビューポートとストアの検査、`part/subShapeCache.test.ts`)を直せるのが、
-   * それぞれのパッケージを受け持つ後続のタスク(ui のタスク10・11)だからである。**
-   * ここを必須にすると、P5 タスク4 の担当が触れない範囲の型検査が落ちる。
+   * それぞれのパッケージの側だからである。**
+   * ここを必須にすると、model の外の型検査が落ちる。
    * カーネルから来た値はそのまま写し、**カーネルが返さなかったときは欄ごと省く**
-   * (0 と偽らない)。kernel 側で必須へ引き上げる話は kernel の後続タスクが持つ。
+   * (0 と偽らない)。kernel 側で必須へ引き上げる話は kernel の側で扱う。
    */
   readonly area?: number;
   /**
    * 形の種類(FR-428)。**model の型ではまだ任意**にしてあるが、任意にしてある理由は
-   * `area` と同じ(`SolidBody` を組み立てている ui の見本を直せるのが ui のタスク)。
-   * **詰め替えでは必ず値を入れる**——カーネル側は §0.a-0.77(タスク42b)で必須の欄に
+   * `area` と同じ(`SolidBody` を組み立てている ui の見本を一度に直さずに済ませるため)。
+   * **詰め替えでは必ず値を入れる**——カーネル側は必須の欄に
    * なったので、`toSolidBody` は既定へ落とさずカーネルの値をそのまま写す。
    * 実際の再計算の結果でこの欄が空になることは無い。
    */
@@ -211,7 +211,7 @@ export interface SolidBody {
    */
   readonly isValid: boolean;
   /**
-   * 部分形状(面・辺・頂点)の一覧(計画書 P3 §2.2、§2.8、タスク10・17)。並びは通し番号の順で、
+   * 部分形状(面・辺・頂点)の一覧。並びは通し番号の順で、
    * `faces.length` / `edges.length` は必ずカーネルの `faceCount` / `edgeCount` と一致する
    * (kernel 側の buildSolidBodyMesh・subShapes.ts が保証し、本ファイルの検査で固定する)。
    * 加工フィーチャー(穴・面取り等)が保存する `SubShapeRef` の指紋は、この一覧から作る。
@@ -219,7 +219,7 @@ export interface SolidBody {
   readonly faces: readonly SolidFaceEntry[];
   readonly edges: readonly SolidEdgeEntry[];
   readonly vertices: readonly SolidVertexEntry[];
-  /** ねじの簡略表示の印(§0.a-0.15)。無ければ空配列。 */
+  /** ねじの簡略表示の印。無ければ空配列。 */
   readonly threadMarks: readonly ThreadMarkEntry[];
   /** Runtime proof table; current bridge population is a later stage. */
   readonly origins?: CurrentOriginIndex;
@@ -236,7 +236,7 @@ export interface SolidBodyFailure {
 /**
  * 形状計算部のメモリの量(NFR-PF-6「WASM の実質上限(〜4GB)内で動作。上限接近時に警告する」)。
  * kernel の `KernelMemoryUsage` と同じ意味だが、model は kernel の型を再輸出しないので
- * 自分の言葉の型として持つ(P0 §0.11)。確保済みの量は増えるだけで、計算部を作り直す
+ * 自分の言葉の型として持つ。確保済みの量は増えるだけで、計算部を作り直す
  * (画面を開き直す)まで減らない。上限に近いかどうかは画面が決める(ui の `statusText.ts`)。
  */
 export interface KernelMemoryReading {
@@ -259,7 +259,7 @@ export interface SolidRecomputeOutcome {
    * 同じ並び・同じ件数で返り、頼まなければ空配列。
    *
    * 任意の欄にしてあるのは `SolidBody.area` と同じ理由(この型を組み立てている見本を
-   * 直せるのが別のタスクの担当だから)で、詰め替えでは必ず値を入れる。
+   * 一度に直さずに済ませるため)で、詰め替えでは必ず値を入れる。
    */
   readonly appearanceMatches?: readonly AppearanceMatchEntry[];
   /**
@@ -363,7 +363,7 @@ export type PartProgressCallback = (progress: PartProgress) => void;
 
 /**
  * 中止を尋ねる口。true を返すと、段と段の間で残りを打ち切る(NFR-PF-4)。
- * 1 段の演算そのものは途中で止められない(§2.6 の限界)。
+ * 1 段の演算そのものは途中で止められない。
  */
 export type PartCancelToken = () => boolean;
 
@@ -373,21 +373,21 @@ export interface SolidRecomputeOptions {
   readonly partId?: string;
   /**
    * 世代番号。呼び出しごとに 1 つ増やし、古い応答を捨てる目印にする
-   * (P1 の attachSketchRecompute と同じ発想)。
+   * (attachSketchRecompute と同じ発想)。
    */
   readonly generation?: number;
   readonly onProgress?: PartProgressCallback;
   readonly shouldCancel?: PartCancelToken;
   /**
-   * 外観を割り当てた面(FR-1106、§2.2.3)。**省略か空なら照合を一切頼まない。**
+   * 外観を割り当てた面(FR-1106)。**省略か空なら照合を一切頼まない。**
    * 照合の物差し(境界箱の対角長)を測るのにもカーネルは OCCT を呼ぶので、外観を
-   * 1 つも割り当てていない文書では費用をゼロにする(§0.a-0.54)。
+   * 1 つも割り当てていない文書では費用をゼロにする。
    */
   readonly appearance?: readonly AppearanceFaceRequest[];
   /**
-   * ボディの表面積(`SolidBody.area`)を測るか(FR-1102、統括の決定 2026-09-05 07:28)。
+   * ボディの表面積(`SolidBody.area`)を測るか(FR-1102)。
    *
-   * **既定は測らない。** 表面積は測定・質量特性(タスク29 以降)が求めたときだけ要る値で、
+   * **既定は測らない。** 表面積は測定・質量特性が求めたときだけ要る値で、
    * 測る費用(カーネルの実測で面 26 枚の板に 11.4ms)を毎回の再計算で払わないため。
    * **外観の面の照合はこの値を使わない**(照合が見るのは面ごとの面積で、それは
    * 面の一覧に元から入っている)ので、`appearance` を渡してもここは真にならない。

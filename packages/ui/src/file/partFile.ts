@@ -2,14 +2,14 @@ import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { awaitThumbnailCapture, reportThumbnailCaptureReason, type ThumbnailCapture, type ThumbnailCaptureResult } from './thumbnail.js';
 import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 /**
- * 新規・開く・保存の手続き(計画書 docs/plans/P2-ソリッド基礎.md タスク23)。
+ * 新規・開く・保存の手続き。
  *
  * 対応要件: FR-801(`.pcad` の保存と読込)、FR-806(保存・読込の操作)、
  * NFR-UX-3(復元できない操作の前に確認する)、NFR-RE-1(失敗しても今の文書を壊さない)。
  *
- * 配線を `.tsx` へ直書きせず、ここへ切り出して検査できるようにする
- * (docs/報告記録.md 2026-09-02 22:10 の④)。ブラウザの API はここでは触らない。
- * ファイルを選ぶ・読む・書くのはすべてストアの `fileGateway`(§2.10)に任せるので、
+ * 配線を `.tsx` へ直書きせず、ここへ切り出して検査できるようにする。
+ * ブラウザの API はここでは触らない。
+ * ファイルを選ぶ・読む・書くのはすべてストアの `fileGateway`に任せるので、
  * 検査では記憶上のバイト列を返す偽の口を差し込める。
  *
  * **失敗しても今の文書は変えない。** 読み込みが途中で断られたときに、いま開いている
@@ -59,12 +59,12 @@ import { continuingParameterSession, parameterCheckpointInput, parameterCheckpoi
 export interface PartFileDeps {
   /** headless検査用の明示注入口。製品の既定はストアが持つ同一配信元Worker。 */
   readonly encodeSave?: SaveDocumentEncoder;
-  /** サムネイルの PNG。作れなければ null(サムネイルなしで保存する、§0.a-0.18)。 */
+  /** サムネイルの PNG。作れなければ null(サムネイルなしで保存する)。 */
   readonly captureThumbnail: ThumbnailCapture;
   /** 失うものがある操作の前に確認する。「はい」なら true(NFR-UX-3)。 */
   readonly confirmDiscard: (messageKey: MessageKey) => Promise<boolean>;
   /**
-   * 最近使ったファイルの履歴の置き場(FR-807、P6 §0.a-0.38、タスク28)。
+   * 最近使ったファイルの履歴の置き場(FR-807)。
    *
    * **省略すると端末の `localStorage`**(使えない環境では履歴を残さない)。`null` を渡すと
    * どこにも残さない。検査から記憶上の偽の置き場を渡せるように、ここも他の 2 つと同じ
@@ -72,7 +72,7 @@ export interface PartFileDeps {
    */
   readonly recentFilesStorage?: RecentFilesStorage | null;
   /**
-   * 保存に一緒に入れる添付(読み込んだ形・下絵。§0.a-0.9・0.24・0.45、P6 タスク32)。
+   * 保存に一緒に入れる添付(読み込んだ形・下絵)。
    *
    * **渡さないと、読み込んだ形を含む部品が開き直せなくなる。** `.pcad` の読み手は
    * 文書が指している `shapes/*.brep` / `meshes/*.bin` / `canvases/*.png` が欠けていると
@@ -84,10 +84,10 @@ export interface PartFileDeps {
    */
   readonly attachmentsOf?: () => PcadAttachments | undefined;
   /**
-   * 開いたファイルに入っていた添付を受け取る口(P6 タスク32)。
+   * 開いたファイルに入っていた添付を受け取る口。
    *
    * **`.pcad` を開いた瞬間にしか手に入らない。** 読み込んだ形の B-rep は再計算で
-   * 作り直せない(§0.a-0.9 の「導出できるものは保存しない」の例外)ので、ここで
+   * 作り直せない(「導出できるものは保存しない」の例外)ので、ここで
    * 受け取って持ち回らないと、次の再計算で形が消え、次の保存でファイルからも消える。
    */
   readonly onAttachmentsLoaded?: (attachments: PcadAttachments) => void;
@@ -108,7 +108,7 @@ export type ReadPartDocumentOutcome =
       readonly ok: true;
       readonly document: PartDocument;
       /**
-       * ファイルに入っていた添付(P6 §0.a-0.55、タスク21・32)。**未参照のものも入る。**
+       * ファイルに入っていた添付。**未参照のものも入る。**
        * 呼び出し側はこれを持ち回り、次の保存でそのまま書き戻す。
        */
       readonly attachments: PcadAttachments;
@@ -193,13 +193,13 @@ function captureThumbnailFromViewport(): ThumbnailCaptureResult {
     return result;
   } catch {
     reportThumbnailCaptureReason('producer:throw');
-    // サムネイルが作れないことを保存の失敗にしない(§0.a-0.18)。
+    // サムネイルが作れないことを保存の失敗にしない。
     return null;
   }
 }
 
 /**
- * 開いたファイルの添付をストアへ入れ直す(P6 タスク32・39)。
+ * 開いたファイルの添付をストアへ入れ直す。
  *
  * **3 つまとめて差し替える。** 開くのは文書ごとの操作なので、前の文書の読み込んだ形も
  * 下絵も残さない(残すと、新しい文書が指していない添付を書き戻し続けることになる)。
@@ -268,7 +268,7 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     return;
   }
   // 確認に答えた時点の文書を控える。ファイルを選ぶ窓や読込の間に編集・取り消しをしたら、
-  // 開く前に改めて確認する(docs/review-2026-09-28-codex.md R02)。
+  // 開く前に改めて確認する。
   const request = beginOpenRequest();
   try {
   let picked: PickedFile | null;
@@ -313,8 +313,8 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   // ここまで来たら中身は確かめ済み。開いた文書は新しい履歴から始め、前の文書の選択も
   // 持ち越さない(`opensDocument`)。開いた直後の Undo で前の文書へ戻ると、名前と上書き先は
   // 開いたファイルのまま中身だけが前の文書になり、上書き保存で開いたファイルを壊すため。
-  // 文書まるごとの差し替えなので、プロパティ欄の打ちかけの下書きは捨てる
-  // (§0.a-0.1〜、docs/報告記録.md 2026-09-04 14:05 の 9b)。
+  // 文書まるごとの差し替えなので、プロパティ欄の打ちかけの下書きは
+  // 捨てる。
   const store = useAppStore.getState();
   // 形そのもの(読み込んだ B-rep・三角形・下絵)は文書の外にあるので、
   // 文書を差し替える前に渡す(差し替えの直後に再計算が走るため)。
@@ -446,7 +446,7 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   recordRecentFile(savedFileName, { storage: deps.recentFilesStorage });
 
   /*
-   * 手で保存できたら自動保存の控えは用済みなので消す(§0.a-0.12)。
+   * 手で保存できたら自動保存の控えは用済みなので消す。
    * 残しておくと、次の起動で「前回の作業が残っています」と、いま保存したばかりの
    * ファイルより古いものを勧めてしまう。
    * 控えを消せなくても保存そのものは成功しているので、失敗は伝えない(NFR-RE-1)。

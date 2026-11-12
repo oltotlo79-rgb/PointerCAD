@@ -19,19 +19,19 @@ import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
 import { makeCompound } from './transformShape.js';
 
 /**
- * エンボス・刻印(FR-421、FR-504、計画書 P5 §0.a-0.38・タスク39)。
+ * エンボス・刻印(FR-421、FR-504)。
  *
  * **平らな面の上に置いた閉じた輪郭を、面の法線の向きに深さぶん押し出して、
  * 足す(浮き出す = `Fuse`)か引く(彫る = `Cut`)。** 銘板の文字や模様の刻印に使う。
  *
- * **平らな面だけを相手にする(§0.a-0.38 の決定)。** 曲面へ輪郭を沿わせる「ラップ」は
- * 投影と曲がった面での押し出しが要り、自由曲面に近づくので P6 以降へ回してある。
+ * **平らな面だけを相手にする。** 曲面へ輪郭を沿わせる「ラップ」は
+ * 投影と曲がった面での押し出しが要り、自由曲面に近づくので扱っていない。
  *
  * **輪郭は世界座標で来る(model 側が面の上に置く)。** この関数は受け取った輪郭を
  * 面の平面へ落として(丸めのぶんのずれを吸収して)から押し出す。面と平行でない輪郭は、
  * 押し出しても「面から測った深さ」が輪郭上の点ごとに変わって意味が定まらないので断る。
  *
- * **作り方(接する形を避ける。P3 §0.a-0.12):**
+ * **作り方(接する形を避ける):**
  *   ① 面を指紋で選び直し、平面であることを確かめる。面の向きが `TopAbs_REVERSED` の
  *      ときは法線の符号を反転して、必ず材料の外を向く向きにする。
  *   ② 輪郭ごとに平らな面を 1 枚張り、面の平面へ落とす。
@@ -41,13 +41,13 @@ import { makeCompound } from './transformShape.js';
  *      収まるので、増減する体積は輪郭の面積 × `depth` ちょうどになる。
  *   ⑤ 工具をコンパウンドへまとめ、**ブーリアンは 1 回**(makeHole.ts と同じ理由)。
  *
- * **`makeExtrudeSolid`(タスク33)を呼ばない理由:** あちらは断面 1 つを受け取って
+ * **`makeExtrudeSolid`を呼ばない理由:** あちらは断面 1 つを受け取って
  * 押し出した角柱そのものを返す関数で、`margin` ぶん手前から押し始める決めも、
  * 面の指紋から向きを決める段も持たない。ここで要るのは「面の上の複数の輪郭を
  * まとめて 1 つの工具にして 1 回のブーリアンで足し引きする」ことなので、
  * 共通で使えるところ(`makePlanarFace` / `makeCompound` / `booleanOp` /
  * `boundingDiagonal`)だけを呼んでいる。「長い形に余裕を足す」決めも
- * `subShapes.ts` の `booleanMargin` 1 か所へまとめてあり(§0.a-0.78、タスク42b)、
+ * `subShapes.ts` の `booleanMargin` 1 か所へまとめてあり、
  * `makeSolidSweep.ts` / `makeHole.ts` / `makeRib.ts` / `makeCut.ts` と同じ値になる。
  */
 
@@ -67,11 +67,11 @@ const PARALLEL_DOT = 1 - 1e-7;
  */
 const AREA_TOLERANCE_RATIO = 1e-6;
 
-/** 面が選び直せなかったとき(FR-504、§2.2.5)。 */
+/** 面が選び直せなかったとき(FR-504)。 */
 const MISSING_FACE_MESSAGE =
   'エンボスするもとの面が見つかりません。形が大きく変わったため、選び直してください。';
 
-/** 曲面を指されたとき(§0.a-0.38。曲面へのラップは P6 以降)。 */
+/** 曲面を指されたとき(曲面へのラップは未対応)。 */
 const NOT_PLANAR_MESSAGE = '彫れるのは平らな面だけです。平らな面を選び直してください。';
 
 /** 輪郭が 1 本も来なかったとき。 */
@@ -92,7 +92,7 @@ const EMBOSS_FAILED_MESSAGE = 'エンボスを作れませんでした。輪郭�
 /** ブーリアンは通ったのに形が変わらなかったとき。 */
 const NO_CHANGE_MESSAGE = 'エンボスで形が変わりませんでした。深さと輪郭の位置を見直してください。';
 
-/** エンボス 1 段の依頼(計画書 タスク39 の実装内容)。 */
+/** エンボス 1 段の依頼。 */
 export interface EmbossInput {
   /** 彫る(浮き出す)相手の面の指紋。平らな面だけ。 */
   readonly face: SubShapeQuery;
@@ -191,7 +191,7 @@ function extrude(
  * 2 枚の面の共通部分の面積が輪郭の面積と同じなら、輪郭は面の中にある。
  * はみ出していると共通部分がその面積ぶん欠けるので見分けられる。
  *
- * **はみ出しを黙って通さない理由(2026-09-05 に Node で実測):** 計画書 タスク39 の検証表は
+ * **はみ出しを黙って通さない理由(2026-09-05 に Node で実測):** 検証の表は
  * 「はみ出した部分は効かない見込み」と書いているが、40×30×10 の板の上面へ 10×10 の輪郭を
  * 縁(x = 40)の真上に半分はみ出させて深さ 2 を掛けたところ、
  *   - 彫る  : 体積 11900(= 12000 − 50×2)、面 10 枚。輪郭の半分だけが効いた欠けた形。
@@ -200,7 +200,7 @@ function extrude(
  *     そのまま材料として残り、`12000 + 5×10×2 + 5×10×(2 + margin)` になっていた。
  * つまり浮き出すときは**増える量が margin の取り方で変わる**(利用者からは説明のつかない値になる)。
  * どちらも「深さぶん彫った / 浮き出した」という意図とは違う形なので、断って直し方を示す
- * (NFR-UX-5、FR-504。統括の指示により計画書の「実測して報告」から断りへ変えた)。
+ * (NFR-UX-5、FR-504。「実測して報告」から断りへ変えた)。
  */
 function isInsideFace(
   oc: OpenCascadeInstance,
@@ -320,7 +320,7 @@ function makeEmbossTool(
  * 「面が見つからない」で断る。工具はこの関数が最後に解放する。
  *
  * 返す値は `booleanOp` の結果そのもので、**測り済みの体積を持ったまま**返る
- * (`BooleanResult` は `OcctShapeHandle` を広げた型なので、計画書 タスク39 の
+ * (`BooleanResult` は `OcctShapeHandle` を広げた型なので、設計の
  * 戻り値の約束はそのまま満たす)。呼び出し側は体積を測り直さずに使える。
  */
 export function makeEmboss(
@@ -343,7 +343,7 @@ export function makeEmboss(
     throw new Error(EMBOSS_FAILED_MESSAGE);
   }
   const faceIndex = resolvePlanarFaceIndex(tables, input.face, diagonal * 0.5);
-  // 面と接する形を作らないための余裕(§0.a-0.12。makeHole.ts の貫通穴と同じ決め)。
+  // 面と接する形を作らないための余裕(makeHole.ts の貫通穴と同じ決め)。
   const margin = booleanMargin(diagonal);
 
   const { keep, release } = createAllocations();
@@ -375,7 +375,7 @@ export function makeEmboss(
     const result = booleanOp(oc, input.raised ? 'union' : 'subtract', target, tool);
 
     try {
-      // 彫れば減り、浮き出せば増える(計画書 タスク39 の手順3)。変わらないなら、
+      // 彫れば減り、浮き出せば増える。変わらないなら、
       // 輪郭がすでに材料の外(浮き出す側に何も無い)などで意図が果たせていない。
       const change = result.volume - measureVolume(oc, target);
       const changed = input.raised

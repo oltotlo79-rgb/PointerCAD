@@ -1,7 +1,7 @@
 /**
- * スケッチ文書の生成と履歴操作(計画書 docs/plans/P1-式とスケッチ.md タスク9)。
+ * スケッチ文書の生成と履歴操作。
  *
- * 履歴を書き換えず、変更のたびに新しい配列を作る。P2 の Undo / Redo(FR-505)は
+ * 履歴を書き換えず、変更のたびに新しい配列を作る。Undo / Redo(FR-505)は
  * この不変性の上に乗る。参照は id で持ち、座標を複製しない(FR-311、FR-502 の土台)。
  */
 
@@ -17,13 +17,13 @@ import type {
   SketchPointFeature,
 } from './types.js';
 
-/** 面の既定の塗り色(FR-310、§0.a-0.5)。 */
+/** 面の既定の塗り色(FR-310)。 */
 export const DEFAULT_FACE_COLOR = '#7aa2f7';
 
 /**
  * フィーチャーの種類ごとの既定名。ドキュメントの既定データとしてここに置く。
- * UI 文字列(ja.json)とは別扱い。資源化するかは P2 のフィーチャーツリー実装時に判断する
- * (docs/報告記録.md 2026-09-02 14:59 の残件④と同じ扱い)。
+ * UI 文字列(ja.json)とは別扱い。
+ * 資源化するかはフィーチャーツリーの側で判断する。
  */
 const KIND_LABELS: Readonly<Record<SketchFeatureKind, string>> = {
   point: '点',
@@ -39,21 +39,21 @@ const KIND_LABELS: Readonly<Record<SketchFeatureKind, string>> = {
   functionCurve: '関数曲線',
   offset: 'オフセット',
   // ミラー・複写・配列複写はどれも `kind: 'copy'` の 1 種類(`types.ts` の `CopyPlacement`)。
-  // 木に出す名前を並べ方ごとに分けるかはタスク33(ツリー・プロパティ)で判断する。
+  // 木に出す名前を並べ方ごとに分けるかはツリー・プロパティの側で判断する。
   copy: '複製',
-  // 投影・交差(FR-325、タスク25)。どちらも立体を下描きへ取り込む道具なので、
+  // 投影・交差(FR-325)。どちらも立体を下描きへ取り込む道具なので、
   // 木に出す名前も利用者の言葉(「投影」「断面」)にそろえる。
   projectedCurve: '投影',
   planeSection: '断面',
 };
 
-/** 起動時の文書。空の履歴を持つ(§0.a-0.2)。作図面の既定は DEFAULT_WORK_PLANE_ID(XY)。 */
+/** 起動時の文書。空の履歴を持つ。作図面の既定は DEFAULT_WORK_PLANE_ID(XY)。 */
 export function createEmptySketchDocument(): SketchDocument {
   return { id: 'sketch-1', name: 'スケッチ1', features: [] };
 }
 
 /**
- * 「点1」「押し出し3」のような名前から末尾の連番を読む(§2.3、§0.a-0.19)。
+ * 「点1」「押し出し3」のような名前から末尾の連番を読む。
  * `label` で始まらない、または残りが数字だけでなければ 0(まだ連番が無いものとして扱う)。
  */
 export function nameSerial(name: string, label: string): number {
@@ -69,7 +69,7 @@ export function nameSerial(name: string, label: string): number {
 }
 
 /**
- * 同じ種類の既存の名前の最大連番 + 1 の名前を作る(§2.3、§0.a-0.19)。
+ * 同じ種類の既存の名前の最大連番 + 1 の名前を作る。
  * 「点1」「点2」から「点1」を消しても、残る「点2」の次は「点3」になり重複しない。
  * 全部消せば「点1」に戻るが、そのとき重複する相手はいない。
  */
@@ -77,12 +77,12 @@ export function nextSerialName(usedNames: Iterable<string>, label: string): stri
   return nextSerialValue(usedNames, label, nameSerial);
 }
 
-/** 同じ接頭辞の既存 id の最大連番 + 1 の id を作る(名前と同じ方式、§2.3)。 */
+/** 同じ接頭辞の既存 id の最大連番 + 1 の id を作る(名前と同じ方式)。 */
 export function nextSerialId(usedIds: Iterable<string>, prefix: string): string {
   return nextSerialValue(usedIds, prefix, nameSerial);
 }
 
-/** 種類ごとに、既存の名前の最大連番 + 1 の名前を作る(「点1」「線分2」…、§0.a-0.19)。 */
+/** 種類ごとに、既存の名前の最大連番 + 1 の名前を作る(「点1」「線分2」…)。 */
 export function nextFeatureName(document: SketchDocument, kind: SketchFeatureKind): string {
   const label = KIND_LABELS[kind];
   const usedNames = document.features
@@ -91,7 +91,7 @@ export function nextFeatureName(document: SketchDocument, kind: SketchFeatureKin
   return nextSerialName(usedNames, label);
 }
 
-/** 種類ごとに、既存の id の最大連番 + 1 の id を作る(§0.a-0.19)。 */
+/** 種類ごとに、既存の id の最大連番 + 1 の id を作る。 */
 export function nextFeatureId(document: SketchDocument, kind: SketchFeatureKind): string {
   const usedIds = document.features
     .filter((feature) => feature.kind === kind)
@@ -99,7 +99,7 @@ export function nextFeatureId(document: SketchDocument, kind: SketchFeatureKind)
   return nextSerialId(usedIds, `${kind}-`);
 }
 
-/** 履歴の末尾へ足す。元の文書は変えない(P2 の Undo の土台)。 */
+/** 履歴の末尾へ足す。元の文書は変えない(Undo の土台)。 */
 export function appendFeature(document: SketchDocument, feature: SketchFeature): SketchDocument {
   return { ...document, features: [...document.features, feature] };
 }

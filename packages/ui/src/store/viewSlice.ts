@@ -1,8 +1,8 @@
 /**
  * 表示のスライス(投影・様式・グリッド・断面表示・端末の設定・視点の要求)。
  *
- * ストアは 1 本のまま(rules/04-設計の規律.md)で、**書く場所だけ**を機能ごとに分けてある
- * (P6 タスク52)。`set` / `get` はどのスライスでも `AppState` 全体を指すので、
+ * ストアは 1 本のまま(rules/04-設計の規律.md)で、**書く場所だけ**を機能ごとに分けてある。
+ * `set` / `get` はどのスライスでも `AppState` 全体を指すので、
  * スライスをまたぐ読み書きは `get()` 経由で行い、スライス同士を import しない。
  */
 
@@ -27,20 +27,20 @@ export type ProjectionMode = 'perspective' | 'orthographic';
 export type DisplayStyle = 'shaded' | 'shadedWithEdges' | 'wireframe';
 
 /**
- * ビューの断面表示(FR-111。P6 タスク34・35、計画書 §2.12、§0.40〜0.42)。
+ * ビューの断面表示(FR-111)。
  *
  * **形は切らない。** ここにあるのは「どの面で、どれだけずらして、どちら側を残して
  * **見た目だけ**クリップするか」という表示の札で、`affectsShape` の経路には乗らない
  * (再計算を起こさない)。導出できる表示の状態なので `.pcad` にも書かない(rules/04)。
  *
- * 切断面の指定は P5 の切断(FR-432)と同じ `PlaneSpec` を共有する(要件 FR-111 の明記)。
+ * 切断面の指定は 切断(FR-432)と同じ `PlaneSpec` を共有する(要件 FR-111 の明記)。
  */
 export interface SectionViewState {
   /** 切る面の決め方(FR-432 と共有)。既定は今の作図面(基準の 3 面)。 */
   readonly plane: PlaneSpec;
-  /** 平面の法線方向へずらす量(mm、§0.42)。既定は 0。つまみのドラッグで変わる。 */
+  /** 平面の法線方向へずらす量(mm)。既定は 0。つまみのドラッグで変わる。 */
   readonly offsetMm: number;
-  /** 残す側を反対にするか(§0.42 の裏返しのつまみ 1 つ)。 */
+  /** 残す側を反対にするか(裏返しのつまみ 1 つ)。 */
   readonly flipped: boolean;
 }
 
@@ -79,7 +79,7 @@ export interface ViewSlice {
   readonly displayStyle: DisplayStyle;
   readonly showGrid: boolean;
   /**
-   * ビューの断面表示(FR-111。P6 タスク35)。出していないときは `null` で、そのとき
+   * ビューの断面表示(FR-111)。出していないときは `null` で、そのとき
    * 材質のクリッピング平面は空になる(費用ゼロ、NFR-PF-1)。
    *
    * **再計算を起こさない。** 入切しても体積も形も変わらず、`isComputing` も立たない。
@@ -88,7 +88,7 @@ export interface ViewSlice {
    */
   readonly sectionView: SectionViewState | null;
   /**
-   * 表示テーマと拡大率(FR-908、FR-909、§0.a-0.1〜0.3)。端末(`localStorage`)へ保存され、
+   * 表示テーマと拡大率(FR-908、FR-909)。端末(`localStorage`)へ保存され、
    * 部品文書とは無関係な利用者・端末の好みなので `resetDocument`(新規)では戻さない。
    * ルート要素への反映(`data-theme` / `--pcad-scale`)は `shell/applyDisplaySettings.ts`。
    */
@@ -96,7 +96,7 @@ export interface ViewSlice {
   /** ホーム視点への復帰要求を数える(FR-108)。増えるたびにビューポートが反応する。 */
   readonly homeViewRequestCount: number;
   /**
-   * 「視点に合わせる」の要求を数える(§0.a-0.3)。視点の正本は `attachCameraControls` に
+   * 「視点に合わせる」の要求を数える。視点の正本は `attachCameraControls` に
    * あってストアからは読めないので、ビューポートが増加に気づいて今の視点を渡し返す。
    */
   readonly matchWorkPlaneRequestCount: number;
@@ -107,13 +107,13 @@ export interface ViewSlice {
    */
   readonly focusViewportRequestCount: number;
   /**
-   * コマンドラインの欄(FR-208、P4b タスク18)へ焦点を移す要求を数える。欄を持っているのは
+   * コマンドラインの欄(FR-208)へ焦点を移す要求を数える。欄を持っているのは
    * `shell/CommandLine.tsx` だけなので、増加に気づいた向こう側が焦点を移す
    * (`focusViewportRequestCount` と対になる仕組み)。`AppShell.tsx` の `Space` が増やす。
    */
   readonly commandLineFocusRequestCount: number;
   /**
-   * コマンドラインの欄に焦点があるか(FR-208、P4b タスク18)。
+   * コマンドラインの欄に焦点があるか(FR-208)。
    *
    * ビューポート(`attachSketchInteraction.ts`)は React の外にいて、どこに焦点があるかを
    * props からは知れない。欄に焦点があるあいだの押下は「欄から出るための押下」として
@@ -124,8 +124,8 @@ export interface ViewSlice {
   /** ビューポート区画の大きさ(画素)。その場入力を端で折り返すのに使う。 */
   readonly viewportSize: readonly [number, number];
   /**
-   * 球面の案内線(球面グリッド、FR-431、P5 タスク21)の間隔(度)。**式のまま持つ**
-   * (FR-201)ので `ExpressionValue`。既定は 5 度(§0.a-0.21)で、1 度未満と 90 度超は
+   * 球面の案内線(球面グリッド、FR-431)の間隔(度)。**式のまま持つ**
+   * (FR-201)ので `ExpressionValue`。既定は 5 度で、1 度未満と 90 度超は
    * 線が引けないので案内線そのものを出さない(`buildSphereGrid.ts` の断り)。
    *
    * **文書には持たない。** 見えるか見えないかだけを決める表示の設定で、形にも保存する
@@ -134,7 +134,7 @@ export interface ViewSlice {
    */
   readonly sphereGridStep: ExpressionValue;
   /**
-   * 球面の案内線をいつも出すか(FR-431「常時表示への切替」、§0.a-0.21)。
+   * 球面の案内線をいつも出すか(FR-431「常時表示への切替」)。
    * 既定は切で、そのときは**球を選んでいる間だけ**出る。
    */
   readonly sphereGridAlwaysVisible: boolean;
@@ -143,7 +143,7 @@ export interface ViewSlice {
   readonly setShowGrid: (showGrid: boolean) => void;
   /**
    * 断面表示(FR-111)の入切をひっくり返す。入れるときは**今の作図面**を切る面にし、
-   * オフセット 0・表向きから始める(§0.42 の既定)。基準の 3 面でない作図面(任意の
+   * オフセット 0・表向きから始める(既定)。基準の 3 面でない作図面(任意の
    * 作業平面・3D スケッチ)のときは XY から始める——予告の解決(`resolveCutPlane`)が
    * 基準の 3 面しか引けないので、解けない面で始めて何も起きないのを避ける。
    *
@@ -154,7 +154,7 @@ export interface ViewSlice {
   readonly setSectionView: (sectionView: SectionViewState | null) => void;
   /** 断面表示のオフセット(mm)だけを差し替える(つまみのドラッグ・その場の数値入力)。 */
   readonly setSectionOffset: (offsetMm: number) => void;
-  /** 断面表示の残す側を反対にする(§0.42)。 */
+  /** 断面表示の残す側を反対にする。 */
   readonly flipSectionView: () => void;
   /** 表示テーマ・拡大率を差し替え、`localStorage` へ保存する(FR-908、FR-909)。 */
   readonly setDisplaySettings: (settings: DisplaySettings) => void;
@@ -248,7 +248,7 @@ export const createViewSlice: StateCreator<
   homeViewRequestCount: 0,
   matchWorkPlaneRequestCount: 0,
   focusViewportRequestCount: 0,
-  // コマンドライン(FR-208、P4b タスク18)。文書を作り直しても要求の数は戻さないので、
+  // コマンドライン(FR-208)。文書を作り直しても要求の数は戻さないので、
   // ここ(createInitialDocumentState の外)に置く。欄の打ちかけは部品側が捨てる。
   commandLineFocusRequestCount: 0,
   commandLineFocused: false,

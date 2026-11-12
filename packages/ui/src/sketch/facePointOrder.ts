@@ -1,5 +1,5 @@
 /**
- * Order of the corner points of a face made from selected points (R30, FR-309/FR-330).
+ * Order of the corner points of a face made from selected points (FR-309/FR-330).
  *
  * The same tolerance as the face boundary resolver (`SKETCH_TOLERANCE_MM`) decides whether
  * two points coincide, whether the points lie on one plane (`fitPlaneNormal` / `isPlanar`),

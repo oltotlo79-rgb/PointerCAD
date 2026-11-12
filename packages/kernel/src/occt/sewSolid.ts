@@ -14,7 +14,7 @@ import { countSolidShapes } from './solidTopology.js';
 import { validateToleranceMm } from './tolerances.js';
 
 /**
- * 縫合に要る面の最小の枚数(§0.a-0.7)。
+ * 縫合に要る面の最小の枚数。
  * 1 枚だけ渡すと縫合の結果は殻にならず面のまま返るので、先に断る
  * (2026-09-03 に Node 上で実測。SewedShape().ShapeType() が TopAbs_FACE になる)。
  */
@@ -58,7 +58,7 @@ interface SewFacesResult extends OcctShapeHandle {
 }
 
 /**
- * 借用した曲面を縫い、閉じた 1 solid だけを返す(EX-18 W14)。
+ * 借用した曲面を縫い、閉じた 1 solid だけを返す。
  * 円筒側面 1 枚と端面 2 枚を実 OCCT で検証する。一般自由曲面の成立は保証しない。
  * 同じ位相面の再指定は向きに関係なく拒否する(別々に作った同一幾何の検出ではない)。
  * 入力の所有は移さず、各面を Copy_2(..., true, false) で幾何ごと複製してから扱う。
@@ -128,7 +128,7 @@ export function sewSolidFaces(oc: OpenCascadeInstance, input: SewFacesInput): Se
 /**
  * 縫合した形の中にある殻を全て取り出す。
  *
- * 2026-09-03 に Node 上で実測した SewedShape() の種類(計画書 §1.2 の未確認点 3):
+ * 2026-09-03 に Node 上で実測した SewedShape() の種類:
  *   箱の 6 面(閉じる)  → TopAbs_SHELL、自由辺 0
  *   箱の 5 面(開く)    → TopAbs_SHELL、自由辺 4
  *   面 1 枚だけ          → TopAbs_FACE、自由辺 4
@@ -165,7 +165,7 @@ function findShells(oc: OpenCascadeInstance, shape: TopoDS_Shape, keep: Allocati
  * 縫合 → 殻の取り出し → MakeSolid_3 → 向きの直し → 閉じているかの確認 の順。
  *
  * 断るときは利用者へそのまま見せられる日本語の Error を投げ、呼び出し側が理由として拾う
- * (FR-504。止めずに理由を出す)。閉じない・つながらない場合の文言は計画書 タスク4 の表に従う。
+ * (FR-504。止めずに理由を出す)。閉じない・つながらない場合の文言は断りの表に従う。
  *
  * **向きの直し.** BRepBuilderAPI_Sewing は面の向きを揃えるが、揃える先が内側になることがある。
  * 2026-09-03 に Node 上で実測したところ、10 × 20 × 30 の箱の 6 面を縫って作った立体の体積は

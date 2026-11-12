@@ -1,4 +1,4 @@
-/** 明示的な部品局所フレーム(P7訂正0.69)。長さmm、右手系の単位基底。 */
+/** 明示的な部品局所フレーム。長さmm、右手系の単位基底。 */
 import {
   addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3,
 } from '../../sketch/vec3.js';
@@ -104,7 +104,7 @@ export function jointFramePairFromTargets(
   return a === null || b === null ? null : { a, b };
 }
 
-/** 球の向き3自由度を単一angleへ押し込まない。値の読取/unwrap/driverはタスク20。 */
+/** 球の向き3自由度を単一angleへ押し込まない。値の読取/unwrap/driverは駆動の側(driveJoint.ts)。 */
 export function jointCoordinateNames(kind: JointKind): readonly JointCoordinate[] {
   switch (kind) {
     case 'revolute': return ['angle'];

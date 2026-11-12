@@ -1,12 +1,12 @@
 import { unitDirection as toUnit } from './normalizeDirection.js';
 /**
- * ばね(コイルばね、FR-414、計画書 P3 §2.7b.4、タスク9b)。
+ * ばね(コイルばね、FR-414)。
  *
  * らせんの掃引路(makeHelix.ts、ねじの実らせんと共用)を、円形の断面(線材の太さ)で
- * 掃引して作る。**対象を取らず、新しい形を作る**(§0.36。押し出し・回転・縫合と同じ
+ * 掃引して作る。**対象を取らず、新しい形を作る**(押し出し・回転・縫合と同じ
  * 「作る」フィーチャーで、パターンの対象にもしない)。
  *
- * **掃引の向きの指定(§1.4-11 の実測、2026-09-04 に Node で確認)。**
+ * **掃引の向きの指定(実測、2026-09-04 に Node で確認)。**
  * D20/d2/p5/n4(コイル径20・線径2・ピッチ5・巻数4)で 3 通りを比べた(一時的な
  * 実測ファイルで確認。結果はここへ記録し、実測ファイルは削除した)。
  *
@@ -22,13 +22,13 @@ import { unitDirection as toUnit } from './normalizeDirection.js';
  * `SetMode_1`(Frenet)と `SetMode_3`(副法線を軸へ固定)はどちらも正しい体積になる
  * ——円の断面は接線まわりにどれだけ回っても同じ円のままなので、経路の接線に
  * 垂直な向きを保つ指定であればどちらでも成り立つ。**ここでは意味の読める
- * `SetMode_1(true)`(Frenet、法線面を保つ)を採る**(計画書の推奨どおり)。
+ * `SetMode_1(true)`(Frenet、法線面を保つ)を採る**(当初の推奨どおり)。
  *
- * **体積・所要の実測(makeSpring.test.ts に検査として残す。§2.7b.5 の検算表 5 点):**
+ * **体積・所要の実測(makeSpring.test.ts に検査として残す。検算表 5 点):**
  * 計算値との相対誤差はすべて 0.0000%〜0.0002% ほど(掃引を B スプラインで
  * 近似する誤差、許容 0.5% に対して十分小さい)。巻数 4(D20/d2/p5)の所要は
  * 実測 200ms 前後で NFR-PF-2(500ms)に収まる。巻数 20 / 100 の所要は
- * makeSpring.test.ts が実測してログに残す(§0.35。上限は無く実測を報告するだけ)。
+ * makeSpring.test.ts が実測してログに残す(上限は無く実測を報告するだけ)。
  */
 
 import type {
@@ -44,7 +44,7 @@ import { helixStartFrame, makeHelixWire, type HelixSpec } from './makeHelix.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 
-/** 巻数の上限(§0.a-0.35)。 */
+/** 巻数の上限。 */
 const MAX_TURNS = 200;
 
 /** これ未満の体積(mm³)は「立体にならなかった」とみなす(他の make*.ts と同じ下限)。 */
@@ -56,7 +56,7 @@ const WIRE_TOO_LARGE_MESSAGE = '線径はコイル径より小さくしてくだ
 const PITCH_MESSAGE = 'ピッチは 0 より大きい数にしてください。';
 const TURNS_MESSAGE = '巻数は 0 より大きく 200 以下にしてください。';
 
-/** 隣り合う巻きの線材が交差するとき(§2.7b.4)。実行する前に断る(NFR-UX-5)。 */
+/** 隣り合う巻きの線材が交差するとき。実行する前に断る(NFR-UX-5)。 */
 const PITCH_TOO_SMALL_MESSAGE = 'ピッチは線径より大きくしてください。隣どうしの線がぶつかります。';
 
 /** 軸の向きが決まらないとき(長さ 0・非数)。 */
@@ -69,7 +69,7 @@ const SWEEP_FAILED_MESSAGE = 'ばねの形を作れませんでした。コイ�
 const NOT_SOLID_MESSAGE = 'ばねが立体になりませんでした。線径を小さくするか、ピッチを大きくしてください。';
 
 
-/** 値を確かめる。断るときは日本語の Error(§2.7b.4 の断り方の表)。 */
+/** 値を確かめる。断るときは日本語の Error。 */
 function checkSpringSpec(spec: SpringStepSpec): void {
   if (!Number.isFinite(spec.coilDiameter) || spec.coilDiameter <= 0) {
     throw new Error(COIL_DIAMETER_MESSAGE);
@@ -107,7 +107,7 @@ function toHelixSpec(spec: SpringStepSpec): HelixSpec {
 }
 
 /**
- * ばねの断面(円)のワイヤ。始点に中心があり、接線に垂直な向きに置く(§2.7b.4)。
+ * ばねの断面(円)のワイヤ。始点に中心があり、接線に垂直な向きに置く。
  * 確保したものは keep へ積む(呼び出し側がまとめて解放する)。
  */
 export function makeSpringProfile(
@@ -137,16 +137,16 @@ export function makeSpringProfile(
 }
 
 /**
- * ばね(FR-414)。対象を取らず、新しい形を作る(§0.36)。
+ * ばね(FR-414)。対象を取らず、新しい形を作る。
  *
- * 手順は計画書 §2.7b.4 のとおり: ①値の検査 → ②`makeHelixWire` で掃引路 →
+ * 手順: ①値の検査 → ②`makeHelixWire` で掃引路 →
  * ③`helixStartFrame` で始点と接線を取り `makeSpringProfile` で断面 →
  * ④`BRepOffsetAPI_MakePipeShell` で掃引 → ⑤`MakeSolid()` が false ならソリッドで包む →
  * ⑥`isValidShape` / `hasSolid` / 体積 0 の検査。
  *
- * 計画書の見出しは `options?: TessellationOptions` を持つが、掃引そのものは
+ * 当初の見出しは `options?: TessellationOptions` を持つが、掃引そのものは
  * テッセレーションの粗さを使わないので受け取らない(`makeHole.ts` が
- * `options` を未使用引数として外したのと同じ判断。2026-09-04 引き継ぎ時の統括メモ参照)。
+ * `options` を未使用引数として外したのと同じ判断。)。
  */
 export function makeSpring(oc: OpenCascadeInstance, spec: SpringStepSpec): OcctShapeHandle {
   checkSpringSpec(spec);
@@ -161,7 +161,7 @@ export function makeSpring(oc: OpenCascadeInstance, spec: SpringStepSpec): OcctS
     const pipe = keep(new oc.BRepOffsetAPI_MakePipeShell(spine));
     // Frenet(法線面を保つ)。SetMode_3(副法線を軸へ固定)でも同じ体積になるが、
     // SetMode_2(軸に固定した平面)は断面が接線から大きく傾いて自己交差した
-    // ほぼ潰れた形になる(このファイル冒頭の注釈、§1.4-11 の実測)。
+    // ほぼ潰れた形になる(このファイル冒頭の注釈、実測)。
     pipe.SetMode_1(true);
     // 断面はすでに正しい位置と向きにあるので補正しない(makeSpringProfile が
     // 接線に垂直な向きへ置いている)。
@@ -171,7 +171,7 @@ export function makeSpring(oc: OpenCascadeInstance, spec: SpringStepSpec): OcctS
     }
     pipe.Build(keep(new oc.Message_ProgressRange_1()));
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
-    // (docs/報告記録.md 2026-09-03 06:56 の⑤。makeThread.ts と同じ扱い)。
+    // (makeThread.ts と同じ扱い)。
     if (!pipe.IsDone()) {
       throw new Error(SWEEP_FAILED_MESSAGE);
     }
@@ -180,7 +180,7 @@ export function makeSpring(oc: OpenCascadeInstance, spec: SpringStepSpec): OcctS
     if (pipe.MakeSolid()) {
       shape = keep(pipe.Shape());
     } else {
-      // 掃引した殻が閉じていなかったとき(§1.4-5)。殻をソリッドで包む。
+      // 掃引した殻が閉じていなかったとき。殻をソリッドで包む。
       const shell = keep(oc.TopoDS.Shell_1(keep(pipe.Shape())));
       const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shell));
       if (!solidMaker.IsDone()) {

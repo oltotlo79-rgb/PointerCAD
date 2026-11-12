@@ -13,11 +13,11 @@ import { withVirtualFileInput } from './virtualFile.js';
 import type { RgbTuple } from './xcafDocument.js';
 
 /**
- * STEP の読み込み(計画書 P6 §2.3・§2.4、タスク8。FR-802 / FR-811)。
+ * STEP の読み込み(FR-802 / FR-811)。
  *
  * **`STEPCAFControl_Reader` を使う**(書き出しの `STEPCAFControl_Writer` と対)。
  * 素の `STEPControl_Reader` でも形は読めるが、**名前と色は XCAF の文書にしか入らない**。
- * 書き出し(タスク7)が名前と色を書いている以上、読みで捨てるとファイルを往復させた
+ * 書き出しが名前と色を書いている以上、読みで捨てるとファイルを往復させた
  * だけで情報が落ちる。`Perform_2(filename, doc, range)` は**列挙を 1 つも取らない**。
  *
  * **単位(FR-811):** 内部は mm 固定(NFR-RE-3)。OCCT は STEP のヘッダの単位
@@ -26,13 +26,13 @@ import type { RgbTuple } from './xcafDocument.js';
  *
  * ---
  *
- * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1、-6):**
+ * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984):**
  *
  * - 実行時に関数として束縛されているもの: `STEPControl_Reader_1` / `STEPCAFControl_Reader_1` /
  *   `TDF_LabelSequence_1` / `Handle_TDF_Attribute_1` / `TDataStd_Name` / `TDataStd_TreeNode` /
  *   `TCollection_AsciiString_13` / `Quantity_Color_1` / `TColStd_SequenceOfAsciiString_1` /
  *   `Interface_Static`(`.test.ts` の 1 件目が毎回確かめる)。
- * - **§1.5-6 の答え: `SetSystemLengthUnit` を呼んでも呼ばなくても結果は同じ。**
+ * - ** `SetSystemLengthUnit` を呼んでも呼ばなくても結果は同じ。**
  *   1 inch の箱を単位 INCH の STEP として書いて読むと、**どちらでも体積 16387.064mm³**
  *   (= 25.4³)になった。読み手の `SystemLengthUnit()` は最初から `1`(mm)で、
  *   OCCT がヘッダの `CONVERSION_BASED_UNIT('INCH',…)` を見て 25.4 倍してくれる。
@@ -42,7 +42,7 @@ import type { RgbTuple } from './xcafDocument.js';
  *   (`subShapes.ts` の `FindKey` と同じ性質。取り出して解放しても元の読み手は無事だった)、
  *   複製へ書いた設定が本体へ届く保証が無い一方、`Interface_Static` は静的な設定表で
  *   `CVal` で読み返して確かめられるため。
- * - **`GetFreeShapes(seq)` の out 引数は使える**(§1.5-5)。箱+球の 2 立体を書いた STEP で
+ * - **`GetFreeShapes(seq)` の out 引数は使える**。箱+球の 2 立体を書いた STEP で
  *   `Length()` が 2 になり、`XCAFDoc_ShapeTool.GetShape_2(label)` が体積 12000 と
  *   4188.790205 の形をそれぞれ返した。**`OneShape()` への後退は要らなかった。**
  * - **壊れたバイト列・0 バイトのファイルでも例外は飛ばない。** `Perform_2` が false を返し、
@@ -56,7 +56,7 @@ import type { RgbTuple } from './xcafDocument.js';
  *      第 2 引数 0 は「非 ASCII を置き換えず UTF-8 にする」指定で、`ToCString()` は
  *      その**バイトを 1 バイト 1 文字として並べた文字列**を返す(実測: '箱' が長さ 3 の
  *      'Ã§Â®Â±' に見える)。だから `TextDecoder` で UTF-8 として解き直す。
- * - **立体ごとの色は列挙なしでたどれる**(§0.a-0.17 の述語ガードを増やさずに済む)。
+ * - **立体ごとの色は列挙なしでたどれる**(述語ガードを増やさずに済む)。
  *   OCCT 7.6 の `XCAFDoc_ColorTool` は色の割り当てを **`TDataStd_TreeNode`** で持つ
  *   (`XCAFDoc_GraphNode` ではない。実測で形のラベルに GraphNode は 1 つも無かった)。
  *   形のラベルの属性を数え上げ、`DynamicType()` の名前が `TDataStd_TreeNode` のものを
@@ -64,7 +64,7 @@ import type { RgbTuple } from './xcafDocument.js';
  *   `Quantity_Color` が持つのは線形 RGB なので、`Quantity_Color.Convert_LinearRGB_To_sRGB_1`
  *   で sRGB(`#rrggbb` を 255 で割った値)へ戻す。往復の実測は 1 桁目まで一致した。
  * - **`Reader().FileUnits(...)` でファイルの単位の名前が読める。** mm の STEP は
- *   `['millimetre']`、inch の STEP は `['INCH']`。取り込んだ形の素性(計画書 §2.8 の
+ *   `['millimetre']`、inch の STEP は `['INCH']`。取り込んだ形の素性(
  *   `ImportedSource.unit`)へそのまま渡せる。**`Reader()` の複製は必ず解放する**——
  *   解放を忘れると読み込みのたびに読み手 1 つぶんが WASM に残り、続く読み込みが目に見えて
  *   遅くなる(面 504 枚の読み込みが同じ機械で **9,081ms → 2,859ms** に縮んだ)。
@@ -72,14 +72,14 @@ import type { RgbTuple } from './xcafDocument.js';
  *   (書いたあと必ず `'MM'` へ戻す。設定表は OCCT の実体ごとに 1 つしかない)。
  */
 
-/** 読めなかったとき(壊れている・STEP でない)の断り(計画書 §2.8 の表)。 */
+/** 読めなかったとき(壊れている・STEP でない)の断り。 */
 export const STEP_READ_FAILED_MESSAGE =
   'このファイルを読めませんでした。ファイルが壊れているか、対応していない形式です。';
 
-/** 読めたが形が 1 つも入っていなかったときの断り(計画書 §2.8 の表)。 */
+/** 読めたが形が 1 つも入っていなかったときの断り。 */
 export const STEP_NO_SHAPE_MESSAGE = 'このファイルには形が入っていません。';
 
-/** 形はあるが閉じた立体が 1 つも無かったときの断り(§2.8 の「面だけの立体」に対応)。 */
+/** 形はあるが閉じた立体が 1 つも無かったときの断り(「面だけの立体」に対応)。 */
 export const STEP_NO_SOLID_MESSAGE =
   'このファイルには立体が入っていません。面だけの形は読み込めません。';
 
@@ -261,7 +261,7 @@ export function readStepUnitNames(
 }
 
 /**
- * STEP のバイト列を読んで、立体の一覧を返す(§2.3、FR-802 / FR-811)。
+ * STEP のバイト列を読んで、立体の一覧を返す(FR-802 / FR-811)。
  *
  * ```ts
  * const read = readStep(oc, bytes);
@@ -274,7 +274,7 @@ export function readStepUnitNames(
  *
  * 読めなかったとき・形が無いとき・閉じた立体が 1 つも無いときは**日本語の理由**で断る
  * (NFR-RE-1。呼び出し側は例外を受けて断りの文言をそのまま見せられる)。
- * 仮想ファイルは `withVirtualFileInput` が必ず片付ける(§2.2)。
+ * 仮想ファイルは `withVirtualFileInput` が必ず片付ける。
  */
 export function readStep(
   oc: OpenCascadeInstance,

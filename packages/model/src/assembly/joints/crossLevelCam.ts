@@ -12,7 +12,7 @@ import { JointDriveWork, resolveSubAssemblyOccurrenceSteps, solveSubAssemblyJoin
   type SubAssemblyJointDriveOutcome } from './subAssemblyJointDrive.js';
 
 /**
- * Cross-level cam (EX12), model contract only: the disc cam of the same-level relation (camFollower.ts, eccentric
+ * Cross-level cam, model contract only: the disc cam of the same-level relation (camFollower.ts, eccentric
  * circular disc R with eccentricity e and roller r) on a revolute joint of the top-level assembly, driving the slider
  * of ONE subassembly placement (typed occurrence path). The same-level relation infers the follower side and offset
  * from a shared support and an in-line check; across levels there is no shared component, so the law is authored:

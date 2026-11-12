@@ -1,8 +1,8 @@
 /**
- * スプライン(FR-317)の曲線の形を解く純関数(計画書 docs/plans/P4-スケッチ拡張.md §2.3、タスク5)。
+ * スプライン(FR-317)の曲線の形を解く純関数。
  *
  * 通過点方式は「与えた点をぴったり通る B スプライン」を連立一次方程式で解いて求め、
- * 制御点方式は与えた点をそのまま極(poles)にする(統括の決定 §0.a-0.17)。
+ * 制御点方式は与えた点をそのまま極(poles)にする。
  * 次数は min(点の数 − 1, 3)。2 点なら 1 次(直線)、3 点なら 2 次、4 点以上なら 3 次。
  *
  * 下描きはWorkerを往復せずに描く(NFR-PF-1)。補間の純数値処理は、専用の
@@ -20,7 +20,7 @@ import type { ResolvedSpline } from './types.js';
 import { addVec3, scaleVec3, type Vec3 } from './vec3.js';
 
 /**
- * 1 本のスプラインに置ける点の上限(統括の決定 §0.a-0.17)。
+ * 1 本のスプラインに置ける点の上限。
  * 極を解く連立一次方程式は点の数の 3 乗に比例するので、打ち間違いで莫大な数を
  * 置かれないための歯止めにする(点列の `MAX_POINT_ARRAY_COUNT` と同じ考え方)。
  */
@@ -29,7 +29,7 @@ export const MAX_SPLINE_POINTS = 100;
 /** Linear generated curves need no interpolation solver; keep the function sampling ceiling. */
 export const MAX_LINEAR_SPLINE_POINTS = 200_000;
 
-/** 開いた曲線の点の下限。2 点は直線として許す(§0.a-0.17)。 */
+/** 開いた曲線の点の下限。2 点は直線として許す。 */
 export const MIN_SPLINE_POINTS = 2;
 
 /** 閉じた曲線の点の下限。2 点では輪にならない。 */
@@ -177,7 +177,7 @@ export function sampleSplineCurve(data: SplineCurveData, divisions: number): Vec
 }
 
 /**
- * 曲線の上の 1 点を「0(始まり)〜1(終わり)」の割合で拾う(FR-322、タスク17)。
+ * 曲線の上の 1 点を「0(始まり)〜1(終わり)」の割合で拾う(FR-322)。
  *
  * `sampleSplineCurve` が全体を等間隔で拾うのに対し、こちらは**狭めた区間の中だけを
  * 拾い直す**のに使う(`intersectionMath.ts` の交点の追い込み)。等間隔の並びを

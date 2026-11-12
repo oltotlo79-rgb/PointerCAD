@@ -131,7 +131,7 @@ async function initialize(notify: (phase: ExactMathEnginePhase) => void, profile
     ['cas_sequences.py', sequencesSource], ['cas_sequence_ranges.py', sequenceRangesSource], ['cas_integer.py', integerSource],
     ['cas_region_integrals.py', regionIntegralsSource], ['cas_probability.py', probabilitySource],
     ['cas_probability_laws.py', probabilityLawsSource], ['cas_probability_domain.py', probabilityDomainSource],
-    // Registered operations: the dispatch and each implementing task's module (MC-12/16/18/23/24).
+    // Registered operations: the dispatch and each implementing task's module.
     ['cas_extended_dispatch.py', extendedDispatchSource], ['cas_cardinality.py', cardinalitySource],
     ['cas_vector_projection.py', vectorProjectionSource], ['cas_matrix_constructors.py', matrixConstructorsSource],
     ['cas_set_relations.py', setRelationsSource], ['cas_logic_extended.py', logicExtendedSource]]) {

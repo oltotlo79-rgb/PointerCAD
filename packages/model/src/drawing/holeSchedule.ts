@@ -63,7 +63,7 @@ export function buildHoleSchedule(document: PartDocument, context: HoleScheduleC
   const candidates: HoleScheduleCandidate[] = [];
   for (const feature of document.solids) {
     if (feature.suppressed || (feature.kind !== 'hole' && feature.kind !== 'threadHole')) continue;
-    // 円筒の側面の穴・ねじ穴(EX05)は軸が位置ごとに放射方向を向き、穴表の平面上の X・Y を持たない。
+    // 円筒の側面の穴・ねじ穴は軸が位置ごとに放射方向を向き、穴表の平面上の X・Y を持たない。
     // 平面の表には載せない(面を平面として解決しない。中心の点が無いことで表全体を断らない)。
     if (feature.planar !== undefined && (feature.cylindrical !== undefined || feature.centers.length !== 0)) return { ok: false, reason: 'invalidValue', featureId: feature.id };
     if (feature.cylindrical !== undefined) continue;

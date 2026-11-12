@@ -1,12 +1,12 @@
 /**
- * アセンブリ文書の生成と採番(計画書 docs/plans/P7-アセンブリ.md タスク1、§2.2)。
+ * アセンブリ文書の生成と採番。
  *
  * `part/createPartDocument.ts` とまったく同じ流儀にする——履歴を書き換えず、変更のたびに
  * 新しい配列を作る。Undo / Redo(FR-505)はこの不変性の上に乗る。
  *
  * ここに置くのは「空の文書を作る」ことと「次の id を決める」ことだけで、部品を置く・消す・
- * 固定する・表示を切り替えるといった履歴操作は `assembly/assemblyEdit.ts`(P7 タスク7)、
- * 解決(形の再計算と配置の合成)は `assembly/resolveAssembly.ts`(P7 タスク6)の担当にする。
+ * 固定する・表示を切り替えるといった履歴操作は `assembly/assemblyEdit.ts`、
+ * 解決(形の再計算と配置の合成)は `assembly/resolveAssembly.ts`の担当にする。
  */
 
 import { createDefaultNamedViews } from '../part/namedViews.js';
@@ -27,12 +27,12 @@ import type {
 } from './types.js';
 
 /**
- * アセンブリ文書の保存形式の版(§0.a-0.2)。
+ * アセンブリ文書の保存形式の版。
  *
  * **部品とアセンブリで版の系列を分けない**(取り違えの判定を 1 か所で済ませるため)。
  * したがって `PART_SCHEMA_VERSION` をそのまま使い、数を写して 2 か所に持たない。
  * 封筒(`packages/io/src/pcad/schema.ts` の `PCAD_SCHEMA_VERSION`)もこの数と揃える
- * (P7 タスク3 が `kind: 'assembly'` を足すときに同じ数へ上げる)。
+ * (`kind: 'assembly'` を足すときも同じ数へ上げる)。
  */
 export const ASSEMBLY_SCHEMA_VERSION = PART_SCHEMA_VERSION;
 
@@ -48,8 +48,8 @@ export const DEFAULT_ASSEMBLY_NAME = '組立1';
  * 位置は式のまま持つので、あとからプロパティで式に直せる(FR-202)。
  *
  * 向きは単位四元数 `(0, 0, 0, 1)`(`qw = cos(0) = 1`)で、**`qw >= 0` の規約**
- * (§0.a-0.54)を満たす。式を数へ解いた後の配置(`RigidPlacement`)と、その単位元
- * `IDENTITY_PLACEMENT` は `assembly/placementMath.ts`(P7 タスク2)の担当で、
+ * を満たす。式を数へ解いた後の配置(`RigidPlacement`)と、その単位元
+ * `IDENTITY_PLACEMENT` は `assembly/placementMath.ts`の担当で、
  * **保存される形はこちら、計算に使う形はあちら**と役割を分ける。
  */
 export const DEFAULT_COMPONENT_PLACEMENT: Placement = {
@@ -62,7 +62,7 @@ export const DEFAULT_COMPONENT_PLACEMENT: Placement = {
 };
 
 /**
- * 合致の種類の一覧(§0.a-0.13)。読み書き(P7 タスク3)が「知らない種類」を断るときの
+ * 合致の種類の一覧。読み書きが「知らない種類」を断るときの
  * 正本にする(同じ一覧を 2 か所に書かない。`parameters/types.ts` の `PARAMETER_UNITS` と同じ流儀)。
  */
 export const MATE_KINDS: readonly MateKind[] = [
@@ -74,12 +74,12 @@ export const MATE_KINDS: readonly MateKind[] = [
   'tangent',
 ];
 
-/** ジョイントの種類の一覧(§0.a-0.22)。用途は `MATE_KINDS` と同じ。 */
+/** ジョイントの種類の一覧。用途は `MATE_KINDS` と同じ。 */
 export const JOINT_KINDS: readonly JointKind[] = ['revolute', 'slider', 'cylindrical', 'ball'];
 
 /**
- * 規格部品の種類の一覧(§0.a-0.30〜0.35)。用途は `MATE_KINDS` と同じ。
- * **寸法表(行と数値)は `assembly/standard/**`(P7 タスク27・28)が持つ。**
+ * 規格部品の種類の一覧。用途は `MATE_KINDS` と同じ。
+ * **寸法表(行と数値)は `assembly/standard/**`が持つ。**
  */
 export const STANDARD_CATALOG_IDS: readonly StandardCatalogId[] = [
   'hexBolt',
@@ -99,7 +99,7 @@ export const STANDARD_CATALOG_IDS: readonly StandardCatalogId[] = [
   'steelPipe',
 ];
 
-/** 部品表の列の一覧(FR-611 の 4 列 + 質量。§0.a-0.38)。並びが既定の列順でもある。 */
+/** 部品表の列の一覧(FR-611 の 4 列 + 質量)。並びが既定の列順でもある。 */
 export const BOM_COLUMN_IDS: readonly BomColumnId[] = [
   'number',
   'name',
@@ -109,11 +109,11 @@ export const BOM_COLUMN_IDS: readonly BomColumnId[] = [
   'configuration',
 ];
 
-/** 部品表の並べ替えの基準の一覧(§2.10)。 */
+/** 部品表の並べ替えの基準の一覧。 */
 export const BOM_SORT_KEYS: readonly BomSortKey[] = ['number', 'name', 'quantity', 'mass'];
 
 /**
- * 部品表の既定(§0.a-0.38、§2.10)。5 列すべてを番号順で出し、
+ * 部品表の既定。5 列すべてを番号順で出し、
  * サブアセンブリは中身を展開せず 1 行として数える。
  */
 export const DEFAULT_BOM_SETTINGS: BomSettings = {
@@ -146,7 +146,7 @@ export function createAssemblyDocument(name: string): AssemblyDocument {
 }
 
 /*
-  採番(§0.a-0.19 と同じ方式)。
+  採番(部品のフィーチャーと同じ方式)。
 
   既存の id の最大連番 + 1 を返すので、**途中のものを消しても番号を再利用しない。**
   「component-1」「component-2」「component-3」から 2 つ目を消して 1 つ足すと「component-4」に

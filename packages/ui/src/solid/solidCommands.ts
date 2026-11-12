@@ -1,18 +1,18 @@
 /**
- * 選択からソリッドフィーチャーを作る純関数(計画書 docs/plans/P2-ソリッド基礎.md タスク18、
- * docs/plans/P3-加工フィーチャー.md タスク25b)。
+ * 選択からソリッドフィーチャーを
+ * 作る純関数。
  *
  * 対応要件: FR-401(押し出し)、FR-402(回転)、FR-403(縫合)、FR-404(ブーリアン)、FR-414(ばね)、
  * NFR-UX-1(対象を選んでから操作)、NFR-UX-5(できない操作は理由を示す)。
  *
  * `packages/ui/src/sketch/sketchCommands.ts` と同じ流儀に揃える。ストアにも DOM にも
- * 触れない純関数だけを置き、操作の判断を Node の単体検査で固定できるようにする
- * (`docs/報告記録.md` 2026-09-02 23:09 の教訓)。文書は不変で、確定できないときは
+ * 触れない純関数だけを置き、操作の判断を Node の単体検査で固定できるようにする。
+ * 文書は不変で、確定できないときは
  * 元の文書をそのまま返す。
  *
  * **ばね(`commitSpring`)はここに置く。** ばねは対象を消費しない「作る」フィーチャーで、
- * 押し出し・回転・縫合の仲間であり加工ではない(§0.a-0.36)。加工6種(穴・ねじ穴・R面取り・
- * C面取り・直線/円形パターン)の実装は `machiningCommands.ts`(タスク25)にあり、
+ * 押し出し・回転・縫合の仲間であり加工ではない。加工6種(穴・ねじ穴・R面取り・
+ * C面取り・直線/円形パターン)の実装は `machiningCommands.ts`にあり、
  * `solidToolReadiness` / `commitSolidInput` はそちらへ委譲する。
  */
 
@@ -95,27 +95,27 @@ import {
 import { findSketchFeatureAt } from './sketchRefs.js';
 import { parseSubShapeId, selectedSubShapeRefs, subShapeRefOf, type SubShapeBody } from './subShapeSelection.js';
 
-/** 縫合に要る面の最小枚数(§0.a-0.7)。 */
+/** 縫合に要る面の最小枚数。 */
 const MIN_SEW_FACES = 2;
-/** ブーリアンに要るボディの選択数(§0.a-0.6)。 */
+/** ブーリアンに要るボディの選択数。 */
 const REQUIRED_BODY_COUNT = 2;
 
 /**
- * 押し出し距離の既定値(§0.a-0.8)。
+ * 押し出し距離の既定値。
  *
- * **数の正本は model の `DEFAULT_EXTRUDE_DISTANCE_MM`**(P6 タスク27 の申し送り)。
+ * **数の正本は model の `DEFAULT_EXTRUDE_DISTANCE_MM`**。
  * ひな形が道具の既定値として持ち運ぶ値(FR-814)と同じものなので、同じ数を 2 か所に置かない。
  */
 export const DEFAULT_EXTRUDE_DISTANCE: ExpressionValue = expressionValueFromNumber(
   DEFAULT_EXTRUDE_DISTANCE_MM,
 );
-/** 回転角度の既定値(§0.a-0.9)。 */
+/** 回転角度の既定値。 */
 export const DEFAULT_REVOLVE_ANGLE: ExpressionValue = expressionValueFromNumber(360);
-/** 回転軸の既定値。world の Z 軸(§0.a-0.9)。 */
+/** 回転軸の既定値。world の Z 軸。 */
 const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 /**
- * 押し出しの側面の傾き・薄板の厚みの既定値(FR-401、FR-416。P5 タスク50 で押し出しの段へ
- * 畳んだぶん)。model の定数を式へ直したもので、同じ数を 2 か所に書かない。
+ * 押し出しの側面の傾き・薄板の厚みの既定値(FR-401、FR-416。押し出しの段で
+ * 聞くぶん)。model の定数を式へ直したもので、同じ数を 2 か所に書かない。
  */
 export const DEFAULT_TAPER_ANGLE: ExpressionValue = expressionValueFromNumber(
   DEFAULT_TAPER_ANGLE_DEGREES,
@@ -124,12 +124,12 @@ export const DEFAULT_EXTRUDE_THICKNESS: ExpressionValue = expressionValueFromNum
   DEFAULT_EXTRUDE_THICKNESS_MM,
 );
 
-/** 縫合の許容量の既定値。model の DEFAULT_SEW_TOLERANCE_MM を式へ直したもの(§0.a-0.7)。 */
+/** 縫合の許容量の既定値。model の DEFAULT_SEW_TOLERANCE_MM を式へ直したもの。 */
 export const DEFAULT_SEW_TOLERANCE: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SEW_TOLERANCE_MM,
 );
 
-/** ばねのコイル径の既定値。model の DEFAULT_SPRING_COIL_DIAMETER_MM を式へ直したもの(§0.a-0.30)。 */
+/** ばねのコイル径の既定値。model の DEFAULT_SPRING_COIL_DIAMETER_MM を式へ直したもの。 */
 export const DEFAULT_SPRING_COIL_DIAMETER: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SPRING_COIL_DIAMETER_MM,
 );
@@ -141,18 +141,18 @@ export const DEFAULT_SPRING_WIRE_DIAMETER: ExpressionValue = expressionValueFrom
 export const DEFAULT_SPRING_PITCH: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SPRING_PITCH_MM,
 );
-/** ばねの巻数の既定値(既定の全長はピッチ×巻数 = 20mm、§0.a-0.30)。 */
+/** ばねの巻数の既定値(既定の全長はピッチ×巻数 = 20mm)。 */
 export const DEFAULT_SPRING_TURNS: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SPRING_TURNS_COUNT,
 );
-/** ばねの軸の既定値。world の Z 軸(§0.a-0.29)。 */
+/** ばねの軸の既定値。world の Z 軸。 */
 const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
-/** ばねの巻き方向の既定値(§0.a-0.33)。 */
+/** ばねの巻き方向の既定値。 */
 export const DEFAULT_SPRING_HANDEDNESS: SpringHandedness = 'right';
-/** 全長・ピッチ・巻数のうち計算で求める欄の既定値(§0.a-0.30)。 */
+/** 全長・ピッチ・巻数のうち計算で求める欄の既定値。 */
 export const DEFAULT_SPRING_DERIVED: SpringDerived = 'length';
 /**
- * 球面上の点の緯度・経度の既定値(度。FR-431、タスク22)。**赤道の +X 側**で、
+ * 球面上の点の緯度・経度の既定値(度。FR-431)。**赤道の +X 側**で、
  * 段の欄の既定(`numericInput.ts` の `SPHERE_GRID_POINT_FIELDS`)と同じ 0 / 0 にする。
  * 何も打たずに Enter を押しても点が 1 つできる(NFR-UX-4)。
  */
@@ -162,8 +162,8 @@ export const DEFAULT_SPHERE_GRID_LONGITUDE: ExpressionValue = expressionValueFro
  * ばねの全長の欄が無いとき(既定の `derived: 'length'` のとき、springLength は
  * その場入力に出てこない)に `commitSpring` へ渡す穴埋め値。`commitSpring` は
  * `derived` が指す欄を必ず自動生成した式で上書きするので、この値がそのまま
- * 使われることはない(§0.a-0.30)。計画書はこの定数を挙げていないので、export はせず
- * ここだけで使う(判断に迷った点として報告する)。
+ * 使われることはない。公開の定数ではないので、export はせず
+ * ここだけで使う。
  */
 const SPRING_LENGTH_PLACEHOLDER: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SPRING_PITCH_MM * DEFAULT_SPRING_TURNS_COUNT,
@@ -175,13 +175,13 @@ export type SolidCommandOutcome =
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
 /**
- * ツールバーの「ソリッド」区画に並ぶ 6 つの操作(§0.a-0.15)。
+ * ツールバーの「ソリッド」区画に並ぶ 6 つの操作。
  *
  * 前の 3 つは数値を聞いてから作るので `SolidToolId`(numericInput.ts が正本)と同じ id を使い、
  * 後の 3 つは選んで押すだけなので `BooleanOperation` の id をそのまま使う。同じものを
  * 2 か所で数え直さないよう、どちらも既存の型から組み立てる。
  *
- * **P5 タスク32 で「測る」(`MeasureToolId`)も入った。** 立体を作る操作ではないが、
+ * **「測る」(`MeasureToolId`)も入る。** 立体を作る操作ではないが、
  * 「選んでから押す/押せない理由を持つ」点はまったく同じで、ツールバーのボタンが
  * 押せる条件を引く口(`solidToolReadiness`)を 1 つにしておきたいため。
  */
@@ -220,7 +220,7 @@ const POINT_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['point']);
  *
  * 探す順は `findSketchFeatureAt`(`sketchRefs.ts`)に任せ、**編集中のスケッチを先に**見る。
  * 文書の並び順に前から探すと、スケッチ 2 の `face-1` を押し出したつもりでスケッチ 1 の
- * `face-1` が使われる(P4 タスク27 の報告 (B)、仕上げ (g) で修正)。
+ * `face-1` が使われる(直した不具合)。
  */
 function faceRefById(document: PartDocument, elementId: string): SketchFaceRef | undefined {
   const found = findSketchFeatureAt(document, elementId, FACE_KINDS);
@@ -268,7 +268,7 @@ export function selectedFaceRefs(
 }
 
 /**
- * 選択中の要素から回転軸に使える線分の参照を 1 本拾う(§0.a-0.9)。
+ * 選択中の要素から回転軸に使える線分の参照を 1 本拾う。
  *
  * 線分が選ばれていないときは undefined を返し、回転軸の選択肢は X / Y / Z だけになる。
  * 「線分が無い」は失敗ではない(軸の既定は world の Z)ので理由は持たない。
@@ -278,7 +278,7 @@ export function selectedLineRef(
   selection: readonly string[],
 ): SketchLineRef | undefined {
   for (const elementId of selection) {
-    // 面と同じく、編集中のスケッチを先に見る(仕上げ (g)。`faceRefById` の注釈を参照)。
+    // 面と同じく、編集中のスケッチを先に見る(`faceRefById` の注釈を参照)。
     const found = findSketchFeatureAt(document, elementId, LINE_KINDS);
     if (found !== undefined) {
       return { sketchId: found.sketchId, lineFeatureId: found.featureId };
@@ -288,7 +288,7 @@ export function selectedLineRef(
 }
 
 /**
- * 選択中の要素からブーリアンの対象・相手を決める(§0.a-0.6)。
+ * 選択中の要素からブーリアンの対象・相手を決める。
  * `selection` は面などとも混じり得るので、`liveBodyIds` に載っている id だけを数える。
  * 先に選んだものが対象、後(Shift で追加した方)が相手。ちょうど 2 つでなければ needTwoBodies。
  */
@@ -317,7 +317,7 @@ function faceRefExists(document: PartDocument, ref: SketchFaceRef): boolean {
 
 /**
  * `SketchPointRef` が指す点フィーチャーが実在するか。**点列(`kind: 'pointArray'`)は
- * 受け付けない**(始点は 1 点でなければならない、§0.a-0.29)。
+ * 受け付けない**(始点は 1 点でなければならない)。
  */
 function pointRefExists(document: PartDocument, ref: SketchPointRef): boolean {
   const sketch = findSketch(document, ref.sketchId);
@@ -328,18 +328,18 @@ function pointRefExists(document: PartDocument, ref: SketchPointRef): boolean {
   return feature !== undefined && feature.kind === 'point';
 }
 
-/** 選択からばねの始点にする点フィーチャーを 1 つ拾った結果(タスク25b、§0.a-0.29)。 */
+/** 選択からばねの始点にする点フィーチャーを 1 つ拾った結果。 */
 export type SpringOriginOutcome =
   | { readonly ok: true; readonly ref: SketchPointRef }
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
 /**
- * 選択の中からばねの始点にする点フィーチャーを 1 つ拾う(§0.a-0.29)。選んだ順に見て、
+ * 選択の中からばねの始点にする点フィーチャーを 1 つ拾う。選んだ順に見て、
  * 最初に見つかった**点フィーチャー(`kind: 'point'`)だけ**を使う。
  *
  * **点列は「その点列の1点目」として受け付けない。** 始点は 1 点でなければならないため、
- * 点列フィーチャー(`kind: 'pointArray'`)は読み飛ばす(この決めは計画書 §2.11 の表・
- * タスク25b の検証表どおり)。線分などほかの要素が混ざっていても無視して次を探す。
+ * 点列フィーチャー(`kind: 'pointArray'`)は読み飛ばす。
+ * 線分などほかの要素が混ざっていても無視して次を探す。
  * 1 つも見つからなければ `springError.noOriginPoint`。
  */
 export function selectedSpringOrigin(
@@ -347,7 +347,7 @@ export function selectedSpringOrigin(
   selection: readonly string[],
 ): SpringOriginOutcome {
   for (const elementId of selection) {
-    // 面・線分と同じく、編集中のスケッチを先に見る(仕上げ (g))。
+    // 面・線分と同じく、編集中のスケッチを先に見る。
     const found = findSketchFeatureAt(document, elementId, POINT_KINDS);
     if (found !== undefined) {
       return { ok: true, ref: { sketchId: found.sketchId, pointFeatureId: found.featureId } };
@@ -358,15 +358,15 @@ export function selectedSpringOrigin(
 
 /**
  * ばねの全長・ピッチ・巻数のうち、`derived` が指す 1 つを他の 2 つから自動生成した式で
- * 計算し直す(§0.a-0.30)。呼び出し側が `derived` の欄に何を渡していても、ここで必ず
+ * 計算し直す。呼び出し側が `derived` の欄に何を渡していても、ここで必ず
  * 上書きする(呼び出し側は「入力された 2 つ」だけを正しく渡せばよい)。
  *
- * 自動生成した式の `source` は次のとおり(タスク25b の検証表で固定)。
+ * 自動生成した式の `source` は次のとおり。
  * - `derived: 'length'` → `(pitch) * (turns)`（単一の数・名前なら括弧なし）
  * - `derived: 'pitch'` → `(length) / (turns)`（同上）
  * - `derived: 'turns'` → `(length) / (pitch)`（同上）
  *
- * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
+ * `variables` はパラメータ表の変数表(追加のみ)。
  */
 function resolveSpringLengthFields(
   derived: SpringDerived,
@@ -399,13 +399,13 @@ function resolveSpringLengthFields(
 }
 
 /**
- * ばねを 1 つ作る(FR-414、§0.a-0.29〜0.36)。対象ボディを持たず、消費もしない
- * 「作る」フィーチャー(§0.a-0.36)。始点の参照先が無ければ `noOriginPoint` で断る。
+ * ばねを 1 つ作る(FR-414)。対象ボディを持たず、消費もしない
+ * 「作る」フィーチャー。始点の参照先が無ければ `noOriginPoint` で断る。
  *
  * `parameters.length` / `pitch` / `turns` は 3 つとも渡すが、`derived` が指す 1 つは
  * `resolveSpringLengthFields` が他の 2 つから自動生成した式で必ず上書きする。
  *
- * `variables` はパラメータ表(FR-207)の変数表(任意引数、P4b タスク22a で追加。呼び出し側の
+ * `variables` はパラメータ表(FR-207)の変数表(任意引数。呼び出し側の
  * `commitToStore.ts` を今回は変えないため、渡さなければ従来どおり空として扱う)。
  */
 export function commitSpring(
@@ -461,8 +461,8 @@ export function commitSpring(
 /**
  * 押し出しを 1 つ作る(FR-401、FR-415、FR-416)。面の参照先が無ければ noFace で断る。
  *
- * **足した 5 欄(終わり方・傾き・厚み)はすべて省略できる**(P5 タスク50 で
- * 押し出しの段へ畳んだぶん)。省略したときは P2 からの押し出しと**1 ドットも違わない
+ * **足した 5 欄(終わり方・傾き・厚み)はすべて省略できる**(押し出しの段で
+ * 聞くぶん)。省略したときは 基本の押し出しと**1 ドットも違わない
  * 文書**になる——欄そのものを持たせないので、鍵も読み書きも従来のままである
  * (model の `ExtrudeFeature` が 5 欄を省略可能にしているのと同じ決め)。
  */
@@ -506,7 +506,7 @@ export function commitExtrude(
 }
 
 /**
- * 押し出しの終わり方を段の選択肢から組み立てる(FR-415、タスク50)。
+ * 押し出しの終わり方を段の選択肢から組み立てる(FR-415)。
  *
  * **「距離」と省略では欄そのものを作らない**(`symmetric` から決まるので、同じ形に
  * 2 通りの書き方ができないようにする)。「選んだ面まで」は止める面が要るので、
@@ -533,7 +533,7 @@ function extrudeEndOf(
   }
 }
 
-/** 薄板の厚みを付ける側(FR-416、タスク50)。知らない値は断る。 */
+/** 薄板の厚みを付ける側(FR-416)。知らない値は断る。 */
 function thicknessSideOf(
   value: string | undefined,
 ): { readonly ok: true; readonly side: ThicknessSide } | { readonly ok: false; readonly reasonKey: MessageKey } {
@@ -638,7 +638,7 @@ export function commitSew(
 }
 
 /**
- * ブーリアンを 1 つ作る(FR-404、§0.a-0.5)。
+ * ブーリアンを 1 つ作る(FR-404)。
  * 対象と相手は同じ id なら sameBody、`liveBodyIds` に無ければ noBody で断る。
  */
 export function commitBoolean(
@@ -678,11 +678,11 @@ const READY: SolidToolReadiness = { ready: true, reasonKey: null };
  * 「押せるのに断られる」「押せないのに作れる」が起きない。
  *
  * `bodies` は加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)を
- * `machiningToolReadiness`(タスク25、`machiningCommands.ts`)へ委譲するときに要る
- * カーネルの立体一覧(タスク20 の `SubShapeBody`)。**タスク26 がツールバー側から実際の
+ * `machiningToolReadiness`(`machiningCommands.ts`)へ委譲するときに要る
+ * カーネルの立体一覧(`SubShapeBody`)。**ツールバー側から実際の
  * 一覧を渡すまでの間、既存の呼び出し(`Toolbar.tsx`)が3引数のままでも型検査が壊れないよう
- * 任意引数にし、既定を空配列にした**(計画書は4引数目を明記していないので、判断に迷った
- * 点として報告する)。縫合は選んだ既存の面を参照にするためにも使う。押し出し・回転・和・差・積・ばねは `bodies` を使わない。
+ * 任意引数にし、既定を空配列にした**。
+ * 縫合は選んだ既存の面を参照にするためにも使う。押し出し・回転・和・差・積・ばねは `bodies` を使わない。
  */
 export function solidToolReadiness(
   document: PartDocument,
@@ -712,7 +712,7 @@ export function solidToolReadiness(
         ? { ready: false, reasonKey: 'solidError.sameBody' }
         : READY;
     }
-    // 加工6種(タスク25)は machiningToolReadiness へ委譲する。同じ判断を2か所に書かない。
+    // 加工6種は machiningToolReadiness へ委譲する。同じ判断を2か所に書かない。
     case 'hole':
     case 'threadHole':
     case 'fillet':
@@ -722,15 +722,15 @@ export function solidToolReadiness(
       const context: MachiningContext = { document, selection, bodies };
       return machiningToolReadiness(context, tool);
     }
-    // ばね(タスク25b、§0.a-0.29)。押せる条件は「スケッチの点フィーチャーが1つ選ばれて
+    // ばね。押せる条件は「スケッチの点フィーチャーが1つ選ばれて
     // いること」だけ(軸は既定の Z があるので選ばなくてよい、NFR-UX-4)。
     case 'spring': {
       const origin = selectedSpringOrigin(document, selection);
       return origin.ok ? READY : { ready: false, reasonKey: origin.reasonKey };
     }
     /*
-      基本形状5種(タスク18、FR-429)。押せる条件は `primitiveToolReadiness` の1か所だけに
-      置く(2026-09-05 16:35 の申し送り)。中心も向きも選ばずに置けるので常に押せる
+      基本形状5種(FR-429)。押せる条件は `primitiveToolReadiness` の1か所だけに
+      置く。中心も向きも選ばずに置けるので常に押せる
       (NFR-UX-4)。
     */
     case 'sphere':
@@ -742,7 +742,7 @@ export function solidToolReadiness(
       return primitiveToolReadiness(context, tool);
     }
     /*
-      球面上の点(FR-431、タスク22)。押せる条件は「球を 1 つ選んでいること」だけ。
+      球面上の点(FR-431)。押せる条件は「球を 1 つ選んでいること」だけ。
       緯度・経度は既定(0 / 0)があるので何も打たずに決められる(NFR-UX-4)。
       **どの球かは選択からしか決まらない**ので、ここだけは断る理由を持つ。
     */
@@ -751,7 +751,7 @@ export function solidToolReadiness(
         ? { ready: false, reasonKey: 'solidError.sphereGridMissingSphere' }
         : READY;
     /*
-      面をつなぐ(FR-430)とロフト(FR-410)。タスク27、§2.9。押せる条件は
+      面をつなぐ(FR-430)とロフト(FR-410)。押せる条件は
       `ruledCommands.ts` の 1 か所だけに置く(判断を 2 か所に書かない)。どちらも
       **先に輪郭を選んでから押す**道具なので、基本形状と違って押せない理由を持つ。
     */
@@ -764,7 +764,7 @@ export function solidToolReadiness(
       return loftToolReadiness(context);
     }
     /*
-      測る(FR-1101、FR-1102。タスク32、§2.10)。押せる条件は「選んでいるものから測れる
+      測る(FR-1101、FR-1102)。押せる条件は「選んでいるものから測れる
       種類が決まること」だけで、文書は 1 ミリも変えない。判断は `measure.ts` の
       `measureReadiness` 1 か所にあり、`measureCommands.ts` がツールバーの読む形へ
       詰め替えている(ここで 2 重に判定しない)。
@@ -772,7 +772,7 @@ export function solidToolReadiness(
     case 'measure':
       return measureToolReadiness(selection, bodies);
     /*
-      P5 の Should 群 11 種(FR-409、FR-417〜425、FR-428。タスク50)。押せる条件は
+      Should 群 11 種(FR-409、FR-417〜425、FR-428)。押せる条件は
       `shapeEditCommands.ts` の `shapeEditReadiness` 1 か所だけに置き、ここは委譲する
       (`machiningToolReadiness` へ委譲するのと同じ理由。判定を 2 か所に置くと
       「押せるのに断られる」が起きる)。
@@ -795,7 +795,7 @@ export function solidToolReadiness(
       return shapeEditReadiness(context, tool);
     }
     /*
-      平面による切断(FR-432、タスク27e)。平面の決め方と「反対側も残す」を持つので、
+      平面による切断(FR-432)。平面の決め方と「反対側も残す」を持つので、
       判定も確定も `cutCommands.ts` にある。
     */
     case 'cut': {
@@ -806,19 +806,19 @@ export function solidToolReadiness(
 }
 
 /**
- * 選択とその場入力の確定結果から、ソリッドフィーチャーを 1 つ作る(タスク24 の SolidInputCommit)。
+ * 選択とその場入力の確定結果から、ソリッドフィーチャーを 1 つ作る(SolidInputCommit)。
  *
  * 面はポップアップを開いた時点ではなく**決めた時点の選択**から拾い直す。開いたまま
  * 面を選び直せるので、最後に選ばれていたものを使うのが利用者の期待に合う(NFR-UX-1)。
  * 欄が空のまま決めたときは既定値で作る(NFR-UX-4)。
  *
- * 加工6種は `commitMachiningInput`(タスク25、`machiningCommands.ts`)へ委譲する。
- * `bodies` の扱いは `solidToolReadiness` の注釈のとおり(タスク26 まで既定は空配列)。
- * ばねは対象を消費しない「作る」フィーチャーなので、ここで直に `commitSpring` を呼ぶ
- * (§0.a-0.36)。
+ * 加工6種は `commitMachiningInput`(`machiningCommands.ts`)へ委譲する。
+ * `bodies` の扱いは `solidToolReadiness` の注釈のとおり(既定は空配列)。
+ * ばねは対象を消費しない「作る」フィーチャーなので、ここで直に `commitSpring` を
+ * 呼ぶ。
  *
  * `variables` はパラメータ表(FR-207)の変数表で、**ばねの導出式**(ピッチ × 巻数 = 全長)を
- * 評価するのに要る(P4b タスク22b-(h))。渡さないと、ピッチにパラメータ名を書いたときに
+ * 評価するのに要る。渡さないと、ピッチにパラメータ名を書いたときに
  * 全長の読み取り専用の欄が `= 0` になる(形は正しい)。他の道具は式をそのまま持つだけなので
  * 使わない。任意引数にしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
  */
@@ -833,9 +833,9 @@ export function commitSolidInput(
 ): SolidCommandOutcome {
   switch (commit.tool) {
     /*
-      押し出し(FR-401、FR-415、FR-416)。タスク50 で終わり方・側面の傾き・薄板を
-      この段へ畳んだので、確定もここで組み立てる。**つまみを 1 つも入れずに決めたときは
-      P2 からの押し出しとまったく同じ文書**になる(足した欄を作らない)。
+      押し出し(FR-401、FR-415、FR-416)。終わり方・側面の傾き・薄板も
+      この段で聞くので、確定もここで組み立てる。**つまみを 1 つも入れずに決めたときは
+      基本の押し出しとまったく同じ文書**になる(足した欄を作らない)。
     */
     case 'extrude': {
       const face = selectedFaceRef(document, selection);
@@ -908,7 +908,7 @@ export function commitSolidInput(
         tolerance: commit.values.tolerance ?? DEFAULT_SEW_TOLERANCE,
       });
     }
-    // 加工6種(タスク25)は commitMachiningInput へ委譲する。同じ判断を2か所に書かない。
+    // 加工6種は commitMachiningInput へ委譲する。同じ判断を2か所に書かない。
     case 'hole':
     case 'threadHole':
     case 'fillet':
@@ -918,7 +918,7 @@ export function commitSolidInput(
       const context: MachiningContext = { document, selection, bodies };
       return commitMachiningInput(context, commit);
     }
-    // ばね(タスク25b、FR-414)。始点はスケッチの点フィーチャーの参照のみ(§0.a-0.29)。
+    // ばね(FR-414)。始点はスケッチの点フィーチャーの参照のみ。
     case 'spring': {
       const origin = selectedSpringOrigin(document, selection);
       if (!origin.ok) {
@@ -927,8 +927,8 @@ export function commitSolidInput(
       return commitSpring(document, {
         origin: origin.ref,
         axis: commit.axis ?? DEFAULT_SPRING_AXIS,
-        // 傾き角・方位角はその場入力に出てこない(穴と同じ作り、§0.a-0.10)。
-        // プロパティからの再編集はタスク29b の担当。
+        // 傾き角・方位角はその場入力に出てこない(穴と同じ作り)。
+        // プロパティからの再編集は別のファイルが受け持つ。
         tiltAngle: DEFAULT_TILT_ANGLE,
         tiltAzimuth: DEFAULT_TILT_AZIMUTH,
         length: commit.values.springLength ?? SPRING_LENGTH_PLACEHOLDER,
@@ -940,7 +940,7 @@ export function commitSolidInput(
         handedness: commit.springHandedness ?? DEFAULT_SPRING_HANDEDNESS,
       }, variables, options);
     }
-    // 基本形状5種(タスク18、FR-429)。対象を消費しない「作る」フィーチャー(§0.a-0.19)。
+    // 基本形状5種(FR-429)。対象を消費しない「作る」フィーチャー。
     case 'sphere':
     case 'box':
     case 'cylinder':
@@ -950,7 +950,7 @@ export function commitSolidInput(
       return commitPrimitive(context, commit);
     }
     /*
-      球面上の点(FR-431、タスク22)。**作る先だけが違う**(立体ではなく 3D スケッチの点)
+      球面上の点(FR-431)。**作る先だけが違う**(立体ではなく 3D スケッチの点)
       ので、ここで部品文書のスケッチを差し替えて返す。点の組み立てそのものは
       `sketchCommands.ts` の `commitSphereGridPoint` 1 か所にあり、案内の交点を押した経路
       (`attachSketchInteraction.ts`)とまったく同じ形の文書になる。
@@ -983,15 +983,15 @@ export function commitSolidInput(
       }
       return { ok: true, document: replaceSketch(document, next), featureId: created.id };
     }
-    // 面をつなぐ・ロフト(タスク27、FR-430、FR-410)。対象を消費しない「作る」
-    // フィーチャー(§0.a-0.27)なので、加工ではなくここから `ruledCommands.ts` へ渡す。
+    // 面をつなぐ・ロフト(FR-430、FR-410)。対象を消費しない「作る」
+    // フィーチャーなので、加工ではなくここから `ruledCommands.ts` へ渡す。
     case 'ruled':
     case 'loft': {
       const context: RuledContext = { document, bodies, selection };
       return commitRuledInput(context, commit);
     }
     /*
-      P5 の Should 群 11 種(タスク50)。押せる条件と同じく `shapeEditCommands.ts` へ
+      Should 群 11 種。押せる条件と同じく `shapeEditCommands.ts` へ
       委譲する。道具 id の絞り込みは `shapeEditToolOf` の 1 か所だけで行う
       (`as` を使わずに `ShapeEditToolId` へ絞る)。
     */
@@ -1017,7 +1017,7 @@ export function commitSolidInput(
       }
       return commitShapeEdit(context, commit, shapeTool);
     }
-    // 平面による切断(FR-432、タスク27e)。「反対側も残す」では履歴を 2 段積む。
+    // 平面による切断(FR-432)。「反対側も残す」では履歴を 2 段積む。
     case 'cut': {
       const context: CutContext = { document, selection, bodies };
       return commitCutInput({ ...context, resolvedSketches }, commit);
@@ -1026,7 +1026,7 @@ export function commitSolidInput(
 }
 
 /**
- * 選択からブーリアンを 1 つ作る(§0.a-0.6)。和・差・積のボタンはこれ 1 つで済む。
+ * 選択からブーリアンを 1 つ作る。和・差・積のボタンはこれ 1 つで済む。
  * 先に選んだ立体が対象、後(Shift で足した方)が相手になる。
  */
 export function commitBooleanFromSelection(

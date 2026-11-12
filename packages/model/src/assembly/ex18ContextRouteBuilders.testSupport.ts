@@ -1,4 +1,4 @@
-/** Test-only EX-18 context-route inputs. Never read oracle expectations to construct geometry. */
+/** Test-only assembly-context route inputs. Never read oracle expectations to construct geometry. */
 import { expressionValueFromNumber as value } from '@pointercad/expression';
 
 import type { KernelBridge, SolidBody } from '../kernelBridge.js';

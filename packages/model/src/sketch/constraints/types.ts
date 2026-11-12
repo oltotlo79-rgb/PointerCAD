@@ -1,15 +1,15 @@
 /**
- * 拘束の保存形(FR-313、計画書 docs/plans/P4b-スケッチの仕上げ.md §0.a-0.5・§2.2、タスク4)。
+ * 拘束の保存形(FR-313)。
  *
  * 寸法拘束 6 種(横距離・縦距離・距離・角度・半径・直径)と幾何拘束 11 種(一致・中点・
  * 曲線上・水平・垂直・平行・直角・接線・同心・等しい・対称)に「固定」を足した18種を持つ。
- * 「固定」を足したのは、動かない点が 1 つも無いと解が一意に決まらないため(§0.a-0.2)。
+ * 「固定」を足したのは、動かない点が 1 つも無いと解が一意に決まらないため。
  *
  * **拘束は順序を持たない**ので、フィーチャーの履歴(`SketchDocument.features`)とは
- * 別の配列(`SketchDocument.constraints`)に置く(§0.a-0.5)。
+ * 別の配列(`SketchDocument.constraints`)に置く。
  *
  * 寸法の目標値は `ExpressionValue` で持つ。式のまま保存されるので、パラメータ表
- * (FR-207)の名前を寸法拘束へ書ける(§2.2「2 つの機能がここで噛み合う」)。
+ * (FR-207)の名前を寸法拘束へ書ける(「2 つの機能がここで噛み合う」)。
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
@@ -18,7 +18,7 @@ import type { SketchDocument, SketchElementRef } from '../types.js';
 
 /**
  * 拘束が指す先。点の鍵は `resolveCoordinate.ts` の `vertexKey` / `ResolvedPoint.id` と
- * 同じ規約で、別の規約をここで作らない(§2.2 の落とし穴)。
+ * 同じ規約で、別の規約をここで作らない(過去の落とし穴)。
  *
  * - `point`: 点フィーチャー(鍵は `featureId`)、点列・複製の n 番目(`featureId#n`)、
  *   スプラインの n 番目(`featureId#n`)。
@@ -55,9 +55,9 @@ export type SketchConstraintKind =
   | 'diameter';
 
 /**
- * 種類の網羅表。`io` の読み書き(タスク21)と ui の一覧(タスク12・13)が
+ * 種類の網羅表。`io` の読み書きと ui の一覧が
  * 「知らない種類が増えていないか」をこの 1 か所で確かめられるようにする
- * (`SketchFeatureKind` に種類を足したとき網羅箇所が落ちた P4 タスク4 の教訓)。
+ * (`SketchFeatureKind` に種類を足したとき網羅箇所が落ちた過去の教訓)。
  */
 export const SKETCH_CONSTRAINT_KINDS: readonly SketchConstraintKind[] = [
   'coincident',
@@ -137,7 +137,7 @@ export type SketchConstraint =
     });
 
 /**
- * 拘束 1 つが出す残差(式)の本数(§2.2 の表)。自由度は
+ * 拘束 1 つが出す残差(式)の本数。自由度は
  * 「変数の数 − 有効な拘束の式の数」で数える(`variables.ts` の `countDegreesOfFreedom`)。
  *
  * **「固定」だけ 0 本**なのは、固定が式を足すのではなく**変数を 2 つ減らす**道具だから

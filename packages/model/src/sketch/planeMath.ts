@@ -9,12 +9,12 @@ import {
   type Vec3,
 } from './vec3.js';
 
-/** 基準の 3 面の id。固定表 `WORK_PLANES` の鍵で、この 3 つだけが常に存在する(§0.3)。 */
+/** 基準の 3 面の id。固定表 `WORK_PLANES` の鍵で、この 3 つだけが常に存在する。 */
 export type BaseWorkPlaneId = 'xy' | 'xz' | 'yz';
 
 /**
- * 作図面の id。基準の 3 面か、部品文書の作業平面フィーチャーの id(FR-328、P4 §0.a-0.13)、
- * または 3D スケッチを表す `FREE_WORK_PLANE_ID`(FR-330、P4 §0.a-0.4、タスク10)。
+ * 作図面の id。基準の 3 面か、部品文書の作業平面フィーチャーの id(FR-328)、
+ * または 3D スケッチを表す `FREE_WORK_PLANE_ID`(FR-330)。
  *
  * 任意の文字列を許すので `WORK_PLANES[id]` のような固定表の引きは**型で守られない**。
  * 基準の 3 面かどうかは `isBaseWorkPlaneId` で判定し、平面そのものは `baseWorkPlane`
@@ -36,7 +36,7 @@ export interface WorkPlane {
   readonly normal: Vec3;
 }
 
-/** Z 軸が上の座標系(P0 の決定)に合わせた3つの基本平面(計画書 §2.8 の表)。 */
+/** Z 軸が上の座標系に合わせた3つの基本平面。 */
 export const WORK_PLANES: Readonly<Record<BaseWorkPlaneId, WorkPlane>> = {
   xy: { id: 'xy', origin: [0, 0, 0], axisU: [1, 0, 0], axisV: [0, 1, 0], normal: [0, 0, 1] },
   xz: { id: 'xz', origin: [0, 0, 0], axisU: [1, 0, 0], axisV: [0, 0, 1], normal: [0, -1, 0] },
@@ -47,7 +47,7 @@ export const DEFAULT_WORK_PLANE_ID: BaseWorkPlaneId = 'xy';
 
 export const WORK_PLANE_IDS: readonly BaseWorkPlaneId[] = ['xy', 'xz', 'yz'];
 
-/** ワールドの軸の向き(§0.a-0.9)。回転軸・パターンの軸・基準軸が共有する。 */
+/** ワールドの軸の向き。回転軸・パターンの軸・基準軸が共有する。 */
 export const WORLD_AXIS_DIRECTIONS: Readonly<Record<'x' | 'y' | 'z', Vec3>> = {
   x: [1, 0, 0],
   y: [0, 1, 0],
@@ -55,7 +55,7 @@ export const WORLD_AXIS_DIRECTIONS: Readonly<Record<'x' | 'y' | 'z', Vec3>> = {
 };
 
 /**
- * 3D スケッチ(作図面に依らないスケッチ、FR-330)の作図面 id(P4 §0.a-0.4、タスク10)。
+ * 3D スケッチ(作図面に依らないスケッチ、FR-330)の作図面 id。
  *
  * 新しい文書種は作らず、`SketchFeatureBase.planeId` がこの値のときだけ「作図面が無い」
  * とみなす。基準の 3 面・任意の作業平面の id とぶつからないよう、フィーチャー id の形

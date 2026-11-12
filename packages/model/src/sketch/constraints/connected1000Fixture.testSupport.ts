@@ -6,7 +6,7 @@ import type { Vec3 } from '../vec3.js';
 import type { SketchConstraint } from './types.js';
 
 /**
- * EX-13 W01: the one fixed connected 1000-point sketch, shared by the drag session test
+ * The one fixed connected 1000-point sketch, shared by the drag session test
  * (packages/ui/src/viewport/sketchDragSession.connected1000.test.ts), the diagnosis test
  * (diagnose.test.ts) and the Web/Electron scripts (e2e/tests/sketchConnected1000Flow.ts).
  * Test-only data: no residual, Jacobian, rank or solver import, and no random numbers.
@@ -20,7 +20,7 @@ import type { SketchConstraint } from './types.js';
  *
  * The canonical text is `JSON.stringify({ features, constraints })` (UTF-8). Its SHA-256 is fixed
  * below and asserted by the tests. An independent regeneration from the recipe and this procedure
- * (outside the product, EX-13 W01 work report) produced the same three values.
+ * (outside the product, in a separate work report) produced the same three values.
  */
 export const CONNECTED_1000_RECIPE = {
   fixture: 'EX-13 W01 connected 1000-point sketch',

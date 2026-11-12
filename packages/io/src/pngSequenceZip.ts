@@ -1,4 +1,4 @@
-/** P7-22。既存のPNG bytesを31枚まとめる。画像の縮小・再圧縮はしない。 */
+/** 既存のPNG bytesを31枚まとめる。画像の縮小・再圧縮はしない。 */
 import { zipSync, type Zippable } from 'fflate';
 import { IO_LIMITS } from './limits.js';
 

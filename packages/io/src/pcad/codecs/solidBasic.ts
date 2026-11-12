@@ -40,7 +40,7 @@ import {
 
 /*
  * `.pcad` から読める立体の種類(24 種)は `SOLID_FEATURE_KINDS`(`@pointercad/model`)を
- * そのまま使う(P5 仕上げ (h)、`docs/報告記録.md` 2026-09-05 23:08 の t47 指摘③)。
+ * そのまま使う。
  *
  * 以前はここに io 自前の配列を持っていたが、model の `SolidFeatureKind` に種類を
  * 足しても揃えて直す仕組みが無く、`SolidFeatureKind` と数がずれる余地があった。
@@ -48,23 +48,23 @@ import {
  * それを輸入するここは自前で並べ直さない。知らない種類の `kind` は `readLiteral` が
  * 「その欄の型が違う」として断る(新しい欄の解釈を推測しないため)。
  */
-/** 押し出しの終端の4通り(FR-415、P5 タスク43)。 */
+/** 押し出しの終端の4通り(FR-415)。 */
 const EXTRUDE_END_KINDS: readonly ExtrudeEnd['kind'][] = [
   'distance',
   'symmetric',
   'toFace',
   'toNext',
-  // EX04 の輪郭による貫通切断だけが書く(対象の立体の id を持つ)。
+  // 輪郭による貫通切断だけが書く(対象の立体の id を持つ)。
   'throughTarget',
 ];
 
-/** 薄板押し出しの厚みの向き(FR-416、§0.a-0.46)。カーネルの `ThinExtrudeSide` と同じ3値。 */
+/** 薄板押し出しの厚みの向き(FR-416)。カーネルの `ThinExtrudeSide` と同じ3値。 */
 const THICKNESS_SIDES: readonly ThicknessSide[] = ['inner', 'outer', 'both'];
 
 const BOOLEAN_OPERATIONS: readonly BooleanOperation[] = ['union', 'subtract', 'intersect'];
 
 /**
- * 押し出しの終端(FR-415、P5 タスク43)。呼び出し側が**省略されていない**ときだけ呼ぶ
+ * 押し出しの終端(FR-415)。呼び出し側が**省略されていない**ときだけ呼ぶ
  * (既定を書き込むと版 6 までのファイルの往復で欄が増えてしまう)。
  */
 function serializeExtrudeEnd(end: ExtrudeEnd): ExtrudeEnd {
@@ -82,7 +82,7 @@ function serializeExtrudeEnd(end: ExtrudeEnd): ExtrudeEnd {
 }
 
 /**
- * 押し出しの終端(FR-415、P5 タスク43)を読む。欄が無いファイルは `undefined` のまま
+ * 押し出しの終端(FR-415)を読む。欄が無いファイルは `undefined` のまま
  * 返す(既定は model の `extrudeShapingOf` が `symmetric` から決める)。
  */
 function readExtrudeEnd(
@@ -149,7 +149,7 @@ export function readExtrudeFeature(
     return symmetric;
   }
   /*
-    終端・傾き・薄板(FR-415、FR-401、FR-416。P5 タスク43)。**5 欄とも省略できる。**
+    終端・傾き・薄板(FR-415、FR-401、FR-416)。**5 欄とも省略できる。**
     版 6 までのファイルはどれも持たないので、無いときは `undefined` のまま読み、
     既定は model の `extrudeShapingOf` が与える(既定値を io にも書くと 2 か所になる)。
   */
@@ -274,7 +274,7 @@ export function readBooleanFeature(
   if (!toolFeatureId.ok) {
     return toolFeatureId;
   }
-  // 「何も削れない差」の断り(EX04)。欄が無ければ従来の差。書くのは true だけなので、
+  // 「何も削れない差」の断り。欄が無ければ従来の差。書くのは true だけなので、
   // true 以外(false や真偽値でない値)は壊れた欄として断る。
   const requireRemoval = readOptionalBoolean(record, 'requireRemoval', path);
   if (!requireRemoval.ok) {
@@ -283,7 +283,7 @@ export function readBooleanFeature(
   if (requireRemoval.value === false) {
     return fieldProblem(joinPath(path, 'requireRemoval'), 'type');
   }
-  // 閉じた輪郭の切断の「反対側も残す」で積んだ 2 つ目が 1 つ目を指す(EX-04 W3)。欄が無ければ単独
+  // 閉じた輪郭の切断の「反対側も残す」で積んだ 2 つ目が 1 つ目を指す。欄が無ければ単独
   // (以前のファイルはすべてこれ)。空でない文字列だけを受け付け、空文字列・文字列でない値は壊れた欄として断る。
   const pairedWith = readOptionalPairedWith(record, path);
   if (!pairedWith.ok) {
@@ -303,7 +303,7 @@ export function readBooleanFeature(
   };
 }
 
-/** ブーリアンの任意の欄 `pairedWith`(EX-04 W3)を読む。欄が無ければ `undefined`。 */
+/** ブーリアンの任意の欄 `pairedWith`を読む。欄が無ければ `undefined`。 */
 function readOptionalPairedWith(record: Record<string, unknown>, path: string): Checked<string | undefined> {
   if (!('pairedWith' in record)) {
     return { ok: true, value: undefined };
@@ -329,7 +329,7 @@ export function serializeExtrudeFeature(feature: Extract<SolidFeature, { readonl
     reversed: feature.reversed,
     symmetric: feature.symmetric,
     /*
-      終端・傾き・薄板(FR-415、FR-401、FR-416。P5 タスク43)。**省略は欄ごと省略のまま**
+      終端・傾き・薄板(FR-415、FR-401、FR-416)。**省略は欄ごと省略のまま**
       にするので、版 6 までのファイルは往復しても欄が 1 つも増えない。
     */
     ...(feature.end === undefined ? {} : { end: serializeExtrudeEnd(feature.end) }),
@@ -385,7 +385,7 @@ export function serializeBooleanFeature(feature: Extract<SolidFeature, { readonl
     targetFeatureId: feature.targetFeatureId,
     toolFeatureId: feature.toolFeatureId,
     ...(feature.requireRemoval === true ? { requireRemoval: true } : {}),
-    // 欄があるときだけ書く(単独のブーリアンは以前と同じ JSON のまま往復する。EX-04 W3)。
+    // 欄があるときだけ書く(単独のブーリアンは以前と同じ JSON のまま往復する)。
     ...(feature.pairedWith === undefined ? {} : { pairedWith: feature.pairedWith }),
   };
 }

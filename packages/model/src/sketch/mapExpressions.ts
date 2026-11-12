@@ -1,6 +1,6 @@
 /**
  * スケッチ文書の中の式を1つずつ写して回る道具
- * (計画書 docs/plans/P4b-スケッチの仕上げ.md タスク3、FR-202・FR-207・FR-502)。
+ * (FR-202・FR-207・FR-502)。
  *
  * **「スケッチのどこに式があるか」を知っているのはこの1か所だけ**にする。
  * 変数表つきで評価し直す(`recomputeSketch.ts` の `reevaluateDocument`)、
@@ -264,7 +264,7 @@ function rebuildFeature(feature: SketchFeature, map: ValueMapper): SketchFeature
   }
 }
 
-/** 拘束18種のうち、目標値の式を持つ6種(横距離・縦距離・距離・角度・半径・直径)を写す(FR-313、§2.2)。 */
+/** 拘束18種のうち、目標値の式を持つ6種(横距離・縦距離・距離・角度・半径・直径)を写す(FR-313)。 */
 function rebuildConstraint(constraint: SketchConstraint, map: ValueMapper): SketchConstraint {
   switch (constraint.kind) {
     case 'coincident':

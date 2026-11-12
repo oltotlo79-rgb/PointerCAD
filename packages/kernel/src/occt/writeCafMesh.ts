@@ -11,13 +11,13 @@ import {
 } from './xcafFaceColors.js';
 
 /**
- * OBJ / glTF(.glb)の書き出し(計画書 P6 §2.4・§2.5、タスク13。FR-803 / FR-1106)。
+ * OBJ / glTF(.glb)の書き出し(FR-803 / FR-1106)。
  *
- * ## `RWObj_CafWriter` / `RWGltf_CafWriter` を使わない理由(統括の決定 2026-09-06)
+ * ## `RWObj_CafWriter` / `RWGltf_CafWriter` を使わない理由
  *
- * 計画書のタスク13 手順 3〜4 は OCCT の XCAF の書き手を想定していた。だが**書き出し用の
- * 三角形は 1 本の経路(タスク11 の `buildExportMesh`)から全形式へ配る**と決めた
- * (タスク12 で STL を JS で組んだのと同じ決定)。理由は 3 つ。
+ * 当初の案は OCCT の XCAF の書き手を想定していた。だが**書き出し用の
+ * 三角形は 1 本の経路(`buildExportMesh`)から全形式へ配る**と決めた
+ * (STL を JS で組んだのと同じ決定)。理由は 3 つ。
  *
  * 1. **形式ごとに三角形の数が違う、を避ける。** `RWGltf_CafWriter` は渡された形から
  *    自分で三角形を取るので、`forEachExportTriangle`(`writeStl.ts`)が落としている
@@ -26,31 +26,31 @@ import {
  * 2. **品質の対(長さ + 角度)を渡す口が無い。** 書き出しの品質は「弦のずれ mm と
  *    角度のずれ rad の対」で持つ(`exportMesh.ts` の実測)。XCAF の書き手には形しか
  *    渡せない。
- * 3. **決定性(§0.a-0.62)。** OCCT の書き手はファイルへ生成元や時刻を書き込む。
+ * 3. **決定性。** OCCT の書き手はファイルへ生成元や時刻を書き込む。
  *    自分で組めば `asset.generator` を `PointerCAD` に固定でき、**同じ三角形からは
  *    必ず同じバイト列**になる(STEP のように 1 行落として比べる必要が無い)。
  *
- * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1)と、
+ * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984)と、
  * 採用した closed 版での確認(2026-10-24):** 旧レジストリ版では `oc.RWObj_CafWriter` /
  * `oc.RWGltf_CafWriter` はどちらも実行時に関数として存在したが、**closed 版 OCCT
  * (`vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677`)には無い**(実行時に
  * `undefined`)。この実装は元から OCCT の書き手を使わず、上の 3 つの理由で自前の純関数で
- * 書く(統括の決定 2026-09-06 と 2026-10-24)ので、影響は無い。`.test.ts` の 1 件目は、
+ * 書くので、影響は無い。`.test.ts` の 1 件目は、
  * 採用した共通の三角形から OBJ と glTF の両方を書き出せることを確かめる。
- * `Quantity_TOC_sRGB` の意味(渡した値がそのまま sRGB として書かれる)はタスク7 で
+ * `Quantity_TOC_sRGB` の意味(渡した値がそのまま sRGB として書かれる)は
  * 実測済み(`xcafDocument.ts` の `resolveColorEnums`)。ここは OCCT を通さないので、
  * 色の解釈は**このファイルが自分で決める**(下の `srgbToLinear`)。
  *
- * `oc`(OpenCascadeInstance)は要らない。**この関数は純関数**で、仮想ファイル(§2.2)も
+ * `oc`(OpenCascadeInstance)は要らない。**この関数は純関数**で、仮想ファイルも
  * 経由しない。
  *
- * ## 単位(§0.a-0.7)
+ * ## 単位
  *
  * - **OBJ は mm のまま。** OBJ に単位の決まりが無く、`readCafMesh` も倍率を掛けない。
  * - **glTF は m。** glTF の仕様が長さをメートルと定めているので `mm ÷ 1000` で書く。
  *   読み手(`readCafMesh`)は `SetSystemLengthUnit(0.001)` で 1000 倍して mm に戻す。
  *
- * ## 頂点の共有(統括への報告事項)
+ * ## 頂点の共有
  *
  * **位置と法線は `ExportMesh` の配列を添字で共有したまま書く。** `writeStl` のように
  * 三角形ごとに 9 座標を書き出すと OBJ の `v` が三角形数 ×3 行に膨らみ、glTF も頂点が
@@ -65,11 +65,11 @@ import {
  * `NaN`** になって、どの道具でも開けないファイルになる(`writeStl.ts` が `NaN` の法線を
  * 書かないのと同じ理由)。振り直しは 1 回の走査で済み、ファイルも小さくなる。
  *
- * ## 面ごとの色(タスク13b、§0.a-0.22)
+ * ## 面ごとの色
  *
  * 立体 1 つは「材質の添字 + 添字配列の範囲」の**区間の並び**(`MeshSection`)として
  * 書き出す。`CafMeshBody.faceColors`(面の通し番号 → 色)を渡すと、`ExportMesh.faceRanges`
- * (タスク13b で足した、`tessellate` が元から返している面ごとの範囲)で添字を切り分け、
+ * (`tessellate` が元から返している面ごとの範囲)で添字を切り分け、
  * **同じ色の面を 1 つの区間へまとめる。** OBJ は `usemtl` が区間ごとに増え、glTF は
  * `primitives` が区間ごとに分かれる。書き出しの本体(`writeObjText` / `writeGlbBytes`)は
  * 1 行も変えていない——区間の並びを作る `prepareScene` だけが広がった。
@@ -77,13 +77,13 @@ import {
  * **決まりごと(2026-09-06 実測で確定):**
  *
  * - **区間の並びは面の通し番号の昇順**(同じ色が初めて出た面の番号の順)。同じ表からは
- *   必ず同じバイト列になる(§0.a-0.62)。
+ *   必ず同じバイト列になる。
  * - **材質は「実際に使った色」だけ作る。** 6 面すべてに色を付ければ材質は 6 つで、
  *   立体の色ぶんの材質は作らない(誰も指していない材質をファイルへ書かない、という
  *   もとからの決まり——`prepareScene` の注釈)。色を付けなかった面が 1 枚でもあれば、
  *   その面のぶんとして立体の色の材質が 1 つできる。
- * - **面の色は立体の色より優先する**(§2.5.1)。
- * - **面の色を渡さない/空の表を渡したときは、タスク13 とまったく同じバイト列。**
+ * - **面の色は立体の色より優先する**。
+ * - **面の色を渡さない/空の表を渡したときは、面の色の無い書き出しとまったく同じバイト列。**
  * - 面積 0 の三角形の落とし方と未参照頂点の振り直しは**面ごとに切っても変わらない**
  *   (`compactIndices` を面の範囲ごとに呼び、`compactVertices` は元から複数区間を前提)。
  */
@@ -97,7 +97,7 @@ interface CafMeshBody {
   /** 立体の色(sRGB の 0〜1)。`null` なら既定の色(`DEFAULT_BODY_COLOR`)。 */
   readonly color: RgbTuple | null;
   /**
-   * 面ごとの色(**面の通し番号 → 色**。§2.5.1、タスク13b)。**省略できる。**
+   * 面ごとの色(**面の通し番号 → 色**)。**省略できる。**
    *
    * 通し番号は `mesh.faceRanges`(= `subShapes.ts` の `faceAt`)と同じ並び。
    * 載っていない面は立体の色になる。**`mesh.faceRanges` が無い網へ渡すと日本語の
@@ -131,7 +131,7 @@ export interface CafMeshFile {
  * 書き出しの結果。
  *
  * **`files` は 1 つとは限らない。** OBJ は `.obj` と `.mtl` の 2 つ(1 つ目が `.obj`)、
- * glTF は `.glb` の 1 つ。利用者へどう渡すか(2 ファイルの保存)はタスク16 の配線が決める。
+ * glTF は `.glb` の 1 つ。利用者へどう渡すか(2 ファイルの保存)は書き出しの配線が決める。
  *
  * 落とした枚数を戻りに入れた理由は `writeStl.ts` の `StlWriteResult` と同じ——
  * 数え直すと三角形をもう一度全部たどることになり、書いた枚数と食い違いうるため。
@@ -146,12 +146,12 @@ export interface CafMeshWriteResult {
 }
 
 /**
- * 色を指定しなかった立体の色(P5 の既定の外観の色 `#b8bfcc` を 255 で割ったもの)。
+ * 色を指定しなかった立体の色(既定の外観の色 `#b8bfcc` を 255 で割ったもの)。
  *
  * **正本は `packages/model/src/appearance/materialPresets.ts` の `DEFAULT_APPEARANCE.color`
  * (`'#b8bfcc'`)** で、そこから**数値だけ引き写した**。kernel は model へ依存できない
  * (`rules/04-設計の規律.md` の依存方向 `ui → model → kernel`)ので、写しを置くほかない。
- * 引き写した値は `184/255`、`191/255`、`204/255`(計画書 §2.5 の検証表と同じ)。
+ * 引き写した値は `184/255`、`191/255`、`204/255`(検証の表と同じ)。
  *
  * **色を持たない材質を書かない理由:** glTF で `material` を省くと、仕様の既定の材質
  * (`baseColorFactor` が白、`metallicFactor` が 1 = 完全な金属)が使われ、**画面で見た色と
@@ -165,7 +165,7 @@ const DEFAULT_BASE_NAME = 'model';
 /** OBJ の座標・法線の小数点以下の桁数(`writeStl.ts` の ASCII と同じ固定桁。決定性)。 */
 const OBJ_FRACTION_DIGITS = 6;
 
-/** glTF の長さの単位(m)へ直す割り算(§0.a-0.7)。 */
+/** glTF の長さの単位(m)へ直す割り算。 */
 const MM_PER_METER = 1000;
 
 /** GLB の頭の合言葉 `glTF`(リトルエンディアンの uint32)。 */
@@ -254,7 +254,7 @@ export const MESH_NO_FACE_RANGES_MESSAGE =
   'この形には面の区切りが無いので、面ごとの色を書き出せません。';
 
 /**
- * sRGB(0〜1)を線形の値へ直す(計画書 §2.5 の検証表)。
+ * sRGB(0〜1)を線形の値へ直す。
  *
  * glTF の `baseColorFactor` は**線形**と定められている(`KHR` の仕様。画面の色をそのまま
  * 入れると明るすぎる灰色になる)。OBJ の `Kd` は色空間の定めが無く、慣行として画面の色
@@ -263,7 +263,7 @@ export const MESH_NO_FACE_RANGES_MESSAGE =
  * 式は sRGB の逆ガンマ: `c ≤ 0.04045` なら `c / 12.92`、それ以外は `((c + 0.055) / 1.055)^2.4`。
  * `#b8bfcc`(= `184/255`, `191/255`, `204/255`)は
  * `[0.4793201831008268, 0.5209955732043543, 0.6038273388553378]` になる(2026-09-06 実測。
- * 計画書 §2.5 の「先頭は約 0.4793」と一致する)。検査は**この関数を使わずに式を組み直して**
+ * 検証の表の「先頭は約 0.4793」と一致する)。検査は**この関数を使わずに式を組み直して**
  * 突き合わせる(実装が間違っていても検査が通る、を避けるため)。
  */
 function srgbToLinear(value: number): number {
@@ -277,7 +277,7 @@ function srgbToLinear(value: number): number {
  * 途中で切れて `.mtl` を見つけられなくなる**(色が付かない)。パスの区切りも落とす
  * (仮想ファイルの外を指させない)。
  *
- * **輸出しているのは、STL の配線(`worker/kernelApi.ts` のタスク16)が同じ規則で
+ * **輸出しているのは、STL の配線(`worker/kernelApi.ts`)が同じ規則で
  * `<基>.stl` を組むため。** 書き出しの結果は形式によらず `files: { fileName, bytes }[]`
  * で返す約束にしたので、ファイル名の作り方が形式ごとに食い違うと利用者から見て
  * 「OBJ だけ名前が変わる」ことになる。規則は 1 か所だけに置く。
@@ -401,7 +401,7 @@ interface RawSection {
 
 /**
  * 添字の切れ端を 1 本に連ねる。1 本しか無ければ写さずそのまま返す
- * (面の色を渡さない道で余計な写しを作らない = タスク13 と同じバイト列)。
+ * (面の色を渡さない道で余計な写しを作らない = 面の色の無い書き出しと同じバイト列)。
  */
 function concatIndices(parts: readonly Uint32Array[]): Uint32Array {
   if (parts.length === 1) {
@@ -421,9 +421,9 @@ function concatIndices(parts: readonly Uint32Array[]): Uint32Array {
 }
 
 /**
- * 立体 1 つを、色ごとの区間へ切り分ける(タスク13b)。
+ * 立体 1 つを、色ごとの区間へ切り分ける。
  *
- * 面の色が無ければ**立体まるごとで 1 区間**——タスク13 とまったく同じ道を通る。
+ * 面の色が無ければ**立体まるごとで 1 区間**——面の色の無い書き出しとまったく同じ道を通る。
  * 面の色があれば `mesh.faceRanges` で面ごとに切り、**同じ色の面を 1 つの区間へまとめる**
  * (区間の並びは、その色が初めて出た面の通し番号の昇順)。
  */
@@ -457,11 +457,11 @@ function splitBody(body: CafMeshBody): {
   }
 
   // 色の値を鍵にした表。`Map` は入れた順を覚えるので、面の通し番号の昇順にたどれば
-  // 区間の並びも決まる(§0.a-0.62 の決定性)。
+  // 区間の並びも決まる(決定性)。
   const groups = new Map<string, { readonly color: RgbTuple; readonly parts: Uint32Array[] }>();
   let dropped = 0;
   for (const [faceIndex, range] of faceRanges.entries()) {
-    // 表に載っていない面は立体の色(面の割り当てが立体より優先する。§2.5.1)。
+    // 表に載っていない面は立体の色(面の割り当てが立体より優先する)。
     const color = faceColors.get(faceIndex) ?? bodyColor;
     const start = range.triangleOffset * 3;
     const compacted = compactIndices(
@@ -555,7 +555,7 @@ function formatObjNumber(value: number): string {
 }
 
 /**
- * OBJ(`.obj`)を組む。単位は **mm のまま**(§0.a-0.7)。
+ * OBJ(`.obj`)を組む。単位は **mm のまま**。
  *
  * 並びは「立体ごとに `o` → `usemtl` → `v` → `vn` → `f`」。**添字はファイル全体の通し番号
  * (1 始まり)**なので、立体をまたぐたびに書いた頂点の数だけずらす。`f` は `v//vn` の形で
@@ -603,7 +603,7 @@ function writeObjText(scene: PreparedScene, mtlFileName: string): string {
 /**
  * 材質のファイル(`.mtl`)を組む。
  *
- * `Kd`(拡散色)だけを書く。**光沢・粗さ・透過率は書かない**(§0.a-0.22。4 形式で意味の
+ * `Kd`(拡散色)だけを書く。**光沢・粗さ・透過率は書かない**(4 形式で意味の
  * 合う変換表を作れないため)。`Kd` は慣行として画面の色(sRGB)をそのまま入れる
  * ——glTF の `baseColorFactor` と違い、MTL に色空間の定めが無い。
  */
@@ -684,20 +684,20 @@ function rawBytes(array: Float32Array | Uint32Array): Uint8Array {
 }
 
 /**
- * GLB(バイナリ glTF)を組む。単位は **m**(§0.a-0.7)。
+ * GLB(バイナリ glTF)を組む。単位は **m**。
  *
  * 中身は 12 バイトの頭(`glTF` / 版 2 / 全長)+ JSON チャンク + BIN チャンク。
  * チャンクはどちらも 4 バイト境界まで詰める(JSON は空白 `0x20`、BIN は 0)。
  *
  * **位置は mm ÷ 1000 で書き直す。** `Float32Array` へ入れ直すので、20mm は
  * `0.019999999552965164`(float32 の 0.02)になる。読み手(`readCafMesh`)は OCCT に
- * 1000 倍させるため、**節点を作る前に倍率が掛かって 20.0 へ戻る**(タスク18 の実測)。
+ * 1000 倍させるため、**節点を作る前に倍率が掛かって 20.0 へ戻る**(実測)。
  * 法線は向きなので倍率を掛けない。
  *
  * **添字は uint32(5125)で書く。** `ExportMesh.indices` が `Uint32Array` なので、
  * uint16 へ落とすと頂点が 65536 個を超える立体で壊れるうえ、変換のぶん遅くなる。
  *
- * `asset.generator` は `PointerCAD` に固定し、**時刻は 1 バイトも入れない**(§0.a-0.62)。
+ * `asset.generator` は `PointerCAD` に固定し、**時刻は 1 バイトも入れない**。
  */
 function writeGlbBytes(scene: PreparedScene): Uint8Array {
   const binChunks: Uint8Array[] = [];
@@ -793,7 +793,7 @@ function writeGlbBytes(scene: PreparedScene): Uint8Array {
     name: material.name,
     pbrMetallicRoughness: {
       // glTF の `baseColorFactor` は線形(冒頭の `srgbToLinear` の注釈)。
-      // 4 つ目は不透明度で、透過率は書かない決定(§0.a-0.22)なので必ず 1。
+      // 4 つ目は不透明度で、透過率は書かない決定なので必ず 1。
       baseColorFactor: [
         srgbToLinear(material.color[0]),
         srgbToLinear(material.color[1]),
@@ -801,7 +801,7 @@ function writeGlbBytes(scene: PreparedScene): Uint8Array {
         1,
       ],
       // **`metallicFactor` の既定は 1(完全な金属)** で、そのままだと色がほぼ見えない。
-      // P5 の光沢の値を写すのではなく、**glTF の既定を打ち消して色を見せる**ための 0。
+      // 外観の光沢の値を写すのではなく、**glTF の既定を打ち消して色を見せる**ための 0。
       metallicFactor: 0,
     },
   }));
@@ -855,7 +855,7 @@ function writeGlbBytes(scene: PreparedScene): Uint8Array {
 }
 
 /**
- * 三角形の網の並びを OBJ / glTF(.glb)のバイト列にする(§2.4・§2.5、FR-803 / FR-1106)。
+ * 三角形の網の並びを OBJ / glTF(.glb)のバイト列にする(FR-803 / FR-1106)。
  *
  * ```ts
  * const mesh = buildExportMesh(oc, shape, 0.1, { angularDeflectionRad: 0.2 });
@@ -864,12 +864,12 @@ function writeGlbBytes(scene: PreparedScene): Uint8Array {
  * ```
  *
  * **口は 1 つにしてある**(`writeObj` / `writeGltf` に分けない)。読み手(`readCafMesh`)と
- * 同じ形にすることと、タスク16 の配線が拡張子から形式を決めるので分岐が 1 か所で済む
+ * 同じ形にすることと、書き出しの配線が拡張子から形式を決めるので分岐が 1 か所で済む
  * ためである。**返るファイルの数が形式で違う**(OBJ は 2 つ、glTF は 1 つ)ので、
  * 呼び出し側は `files` を数えずにそのまま全部保存すればよい。
  *
  * **空の並び・三角形 0 枚は断らずに「中身の無いファイル」を返す**(`writeStl` と同じ判断)。
- * §2.4 の断りの表にある「書き出せる立体がありません」は `packages/model` が立体を選ぶ段で
+ * 断りの表にある「書き出せる立体がありません」は `packages/model` が立体を選ぶ段で
  * 出すもので、そこを通った先の kernel が同じ判定を重ねると断りの持ち主が 2 か所になる。
  * 0 枚の OBJ / GLB は仕様どおり組み立てられるので、ここで例外にする根拠が無い。
  */

@@ -1,6 +1,6 @@
 /**
- * DXF の実体を `model` の言葉で表した型(要件 FR-813、計画書 docs/plans/P6-入出力.md
- * §2.7、タスク26)。
+ * DXF の実体を `model` の言葉で表した型
+ * (要件 FR-813)。
  *
  * ## なぜ `packages/io` の `DxfEntity` を輸入しないか
  *
@@ -14,7 +14,7 @@
  * 構造的部分型でそのまま受け渡せる(`readDxf(...).entities` を `dxfToSketch` へ、
  * `sketchToDxf(...)` の結果を `writeDxf` へ、変換なしで渡せる)。
  * **両者がずれていないことは `io` 側の検査で固定する**(`io` は `model` を輸入できるので、
- * あちらでだけ 2 つの型を並べて代入できる。タスク32 / 44 への申し送り)。
+ * あちらでだけ 2 つの型を並べて代入できる。)。
  *
  * ## 名前に `Sketch` を付けている理由
  *
@@ -36,7 +36,7 @@
 /**
  * `$INSUNITS` から見た長さの単位。`'other'` は「単位は書いてあるが mm でも inch でもない」
  * (0 = 無単位、2 = フィート、5 = cm、6 = m など)。**倍率は呼び手が利用者へ訊く**
- * (計画書 §0.a-0.6。`DxfToSketchOptions.unitOverrideMm`)。
+ * (`DxfToSketchOptions.unitOverrideMm`)。
  */
 export type SketchDxfLengthUnit = 'mm' | 'inch' | 'other';
 
@@ -69,7 +69,7 @@ export interface SketchDxfLineEntity extends SketchDxfEntityBase {
 
 /**
  * `CIRCLE` / `ARC` ↔ `SketchArcFeature`。**円は「開始 0 度・終了 360 度の円弧」**として持つ
- * (計画書 §0.32。写し先が全周の指定で円になるので、種類を増やさない)。
+ * (写し先が全周の指定で円になるので、種類を増やさない)。
  */
 export interface SketchDxfArcEntity extends SketchDxfEntityBase {
   readonly kind: 'arc';

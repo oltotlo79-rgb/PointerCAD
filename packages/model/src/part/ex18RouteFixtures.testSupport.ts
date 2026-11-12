@@ -1,5 +1,5 @@
 /**
- * Test-only EX-18 analytic expectations. No modeling route reads these constants to construct its input.
+ * Test-only analytic expectations for direct editing. No modeling route reads these constants to construct its input.
  * Shape A is a 40 x 30 x 10 plate with a Z through hole of radius 3 at (10, 15).
  * The volume is the rectangular prism minus the cylindrical bore: 12000 - 90 * pi mm^3.
  * Keep this module out of product imports.
@@ -81,9 +81,9 @@ function boundsOf(body: SolidBody): { readonly low: Vec3; readonly high: Vec3 } 
 }
 
 /**
- * This W01 fixture measures straight Z bores with a full cylindrical wall. A cylindrical face alone is not a
+ * This fixture measures straight Z bores with a full cylindrical wall. A cylindrical face alone is not a
  * through hole: require inward material orientation, full-height span and circular openings at both plate faces.
- * Group by the measured axis/radius before counting. General split-wall topology is the separate W02 oracle scope.
+ * Group by the measured axis/radius before counting. General split-wall topology is the separate oracle scope below.
  */
 function throughBores(body: SolidBody, lowZ: number, highZ: number): readonly SolidFaceEntry[] {
   const close = (left: number, right: number): boolean => Math.abs(left - right) <= EX18_TOLERANCE.holeMm;
@@ -131,7 +131,7 @@ export function expectEx18Bracket(body: SolidBody, expected: Ex18BracketExpectat
   expect(body.faces.filter(face => face.surfaceKind === 'cylinder')).toHaveLength(1);
 }
 
-/** W02 analytic constants, independent of every construction route. Existing W01 tolerances stay separate. */
+/** Split-wall analytic constants, independent of every construction route. Straight-bore tolerances stay separate. */
 export const EX18_ORACLE_EXPECTATIONS = {
   A: {
     volume: 12000 - 90 * Math.PI,
@@ -153,7 +153,7 @@ export const EX18_ORACLE_EXPECTATIONS = {
   },
 } as const;
 
-/** W03 independent analytic targets; never imported by construction helpers. */
+/** Independent analytic targets; never imported by construction helpers. */
 export const EX18_ORACLE_A_DIAMETER_EIGHT = {
   volume: 12000 - 160 * Math.PI,
   low: [0, 0, 0],
@@ -169,7 +169,7 @@ export const EX18_ORACLE_A_HOLE_X_TWELVE = {
   holes: [{ axisOrigin: [12, 15, 0], direction: [0, 0, 1], radius: 3 }],
 } as const;
 
-/** W04: unchanged outer flange/stem with the full-length bore radius edited from 3 to 4. */
+/** Unchanged outer flange/stem with the full-length bore radius edited from 3 to 4. */
 export const EX18_ORACLE_B_RADIUS_FOUR = {
   volume: 2725 * Math.PI,
   low: [-15, -15, 0],
@@ -177,7 +177,7 @@ export const EX18_ORACLE_B_RADIUS_FOUR = {
   holes: [{ axisOrigin: [0, 0, 0], direction: [0, 0, 1], radius: 4 }],
 } as const;
 
-/** W04: the same oblique XZ section at depth Y=12, V=20*12*10. */
+/** The same oblique XZ section at depth Y=12, V=20*12*10. */
 export const EX18_ORACLE_C_DEPTH_TWELVE = {
   volume: 2400,
   low: [0, 0, 0],
@@ -185,7 +185,7 @@ export const EX18_ORACLE_C_DEPTH_TWELVE = {
   holes: [],
 } as const;
 
-/** W06: move only B's through-bore axis by +2 mm in X via a manual assembly reference update. */
+/** Move only B's through-bore axis by +2 mm in X via a manual assembly reference update. */
 export const EX18_ORACLE_B_CONTEXT_MOVED = {
   volume: 2900 * Math.PI,
   low: [-15, -15, 0],
@@ -193,7 +193,7 @@ export const EX18_ORACLE_B_CONTEXT_MOVED = {
   holes: [{ axisOrigin: [2, 0, 0], direction: [0, 0, 1], radius: 3 }],
 } as const;
 
-/** W06: C's reference vertex moves to (7,3,2); relative vertices preserve the whole oblique prism. */
+/** C's reference vertex moves to (7,3,2); relative vertices preserve the whole oblique prism. */
 export const EX18_ORACLE_C_CONTEXT_MOVED = {
   volume: 2000,
   low: [7, 3, 2],
@@ -201,7 +201,7 @@ export const EX18_ORACLE_C_CONTEXT_MOVED = {
   holes: [],
 } as const;
 
-/** W05 independent pre-edit targets. Input dimensions are literal, never derived from these expectations. */
+/** Independent pre-edit targets. Input dimensions are literal, never derived from these expectations. */
 export const EX18_ORACLE_DIRECT_SEEDS = {
   A: {
     volume: 9600 - 72 * Math.PI,

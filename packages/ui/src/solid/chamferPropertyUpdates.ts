@@ -36,7 +36,7 @@ export function setChamferField(
   }
 }
 
-/** もとの決め方から距離(1つ目)を引き継ぎ、2つ目は既定値で作り直す(§0.a-0.18)。 */
+/** もとの決め方から距離(1つ目)を引き継ぎ、2つ目は既定値で作り直す。 */
 function convertChamferSize(size: ChamferSize, kind: ChamferSize['kind']): ChamferSize {
   const distance = size.kind === 'twoDistances' ? size.distance1 : size.distance;
   switch (kind) {

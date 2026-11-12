@@ -1,7 +1,7 @@
 /**
- * 平面の決め方(FR-328 の任意の作業平面)と、その解決(P4 計画書 §2.8、タスク9)。
+ * 平面の決め方(FR-328 の任意の作業平面)と、その解決。
  *
- * **P5 の切断(FR-432)と共有する型**(P5 計画書 §0.a-0.56、§2.9b.1、P4 §0.a-0.13 の追記)。
+ * **平面による切断(FR-432)と共有する型**。
  * 「面を確定できる要素の組み合わせ」を 2 か所に書かないため、切断も作業平面もここの
  * `PlaneSpec` を使う。
  *
@@ -9,14 +9,14 @@
  * 立体の面・辺・頂点は指紋つきの参照(`SubShapeRef`)で指す。上流が変わったときに
  * 選び直した位置・向きを使えるよう、**部分形状の解決は呼び出し側が渡す関数に任せる**
  * (`PlaneResolveContext.subShape`)。渡されなければ保存された指紋の位置・向きを使う
- * (`subShapeFromFingerprint`)。カーネルへの往復を増やさないためで、P5 計画書 §2.9b.1 の
+ * (`subShapeFromFingerprint`)。カーネルへの往復を増やさないためで、
  * 「UI が持っているボディの一覧から向きを引いて model 側で解決する」と同じ考え方。
  *
  * 例外を投げず、失敗も戻り値で返す(FR-504、NFR-RE-1)。文言は日本語で、利用者が次に
  * 何をすればよいか分かる形にする。
  *
  * 置き場について: `part`(立体)にも `sketch`(スケッチ)にも実体として依存させたくないので、
- * `geometry/subShapeRef.ts` と同じ中立の置き場に置く(P4 §0.a-0.7 と同じ判断)。
+ * `geometry/subShapeRef.ts` と同じ中立の置き場に置く(同じ判断)。
  * `part/types.ts` からは型だけを import する(実体を輸入しないので循環しない)。
  */
 
@@ -69,7 +69,7 @@ export interface AxisFrame {
  *
  * `WorkPlane`(planeMath.ts)から `id` を除いた形で、カーネルの
  * `SketchPlaneFrame { origin, axisU, normal }`(`packages/kernel/src/occt/makeProjection.ts`)
- * をそのまま含む。投影・交差(タスク25・26)と P5 の切断がこの値をそのまま渡せる。
+ * をそのまま含む。投影・交差と平面による切断がこの値をそのまま渡せる。
  */
 export interface ResolvedPlane {
   readonly origin: Vec3;
@@ -103,7 +103,7 @@ export interface ResolvedSubShape {
  * 要件の 6 通り(3 点 / 点+辺 / 点+軸と角度 / 点+既存面に平行 / 既存の平らな面 /
  * 基準平面のオフセット)に、FR-328 v1.0 からの「既存の辺を軸に指定角度だけ傾けた平面」
  * (`tilted`)を足した 7 種。点はすべて `PointReference`(座標の式・スケッチの点・
- * 要素の端点。3D スケッチの点と立体の頂点はタスク10 が同じ型へ 1 種足す)。
+ * 要素の端点。3D スケッチの点と立体の頂点は同じ型の 1 種)。
  */
 export type PlaneSpec =
   /** 3 点を通る。法線は p1→p2 と p1→p3 の外積(右ねじ)、第 1 軸は p1→p2 の向き。 */
@@ -201,7 +201,7 @@ function failure(reason: PlaneErrorKey, message: string): PlaneOutcome {
  * 保存された指紋から部分形状の位置・向きを取り出す(選び直しの関数が無いときの既定)。
  *
  * 指紋は「選んだ瞬間」の値なので、上流が変わっていれば古い。選び直した値を使うには
- * `PlaneResolveContext.subShape` を渡す(タスク25 と P5 の切断が配線する)。
+ * `PlaneResolveContext.subShape` を渡す(投影・交差と平面による切断が配線する)。
  */
 export function subShapeFromFingerprint(reference: SubShapeRef): ResolvedSubShape {
   const { fingerprint } = reference;
@@ -534,7 +534,7 @@ function resolveTiltedPlane(
 /**
  * 平面の指定を解決する(FR-328、FR-432)。例外を投げず、断る理由を戻り値で返す(FR-504)。
  *
- * 法線の向きは指定の種類ごとに一意に決まる(下の各関数の注釈)。P5 の切断はこの向きで
+ * 法線の向きは指定の種類ごとに一意に決まる(下の各関数の注釈)。平面による切断はこの向きで
  * 「残す側」の意味を決めるので、同じ指定からは必ず同じ法線が出ること(決定性)が要る。
  */
 export function resolvePlaneSpec(spec: PlaneSpec, context: PlaneResolveContext): PlaneOutcome {
@@ -559,7 +559,7 @@ export function resolvePlaneSpec(spec: PlaneSpec, context: PlaneResolveContext):
 /**
  * 点の参照を鍵の材料の文字列にする。同じ参照からは常に同じ文字列が出る(決定性)。
  *
- * 立体の部分形状(FR-330 の 3D スケッチの点、タスク10)は指紋そのものを材料にする。
+ * 立体の部分形状(FR-330 の 3D スケッチの点)は指紋そのものを材料にする。
  * 指紋の文字列は呼び出し側が渡す(`fingerprintKeyText`。循環 import を避けるため、
  * `planeSpecKeyText` と同じ約束)。位置・大きさが変われば鍵も変わるので、
  * 上流の立体が変わったときに古い形状キャッシュを拾わない。
@@ -581,7 +581,7 @@ function pointReferenceKeyText(
     case 'subShape':
       return `subShape:${fingerprintText(reference.ref)}`;
     case 'sphereGrid':
-      // 球面上の点(FR-431、P5 タスク19)。球の id と緯度・経度で決まる。
+      // 球面上の点(FR-431)。球の id と緯度・経度で決まる。
       // 球そのものの中心・半径は球の段の鍵に入るので、ここでは指しているものだけを材料にする。
       return (
         `sphereGrid:${reference.sphereFeatureId}` +
@@ -603,10 +603,10 @@ function axisSpecKeyText(spec: AxisSpec): string {
 }
 
 /**
- * 平面の指定を鍵の材料の文字列にする(P5 のタスク27c の `cacheKey.ts` が呼ぶ)。
+ * 平面の指定を鍵の材料の文字列にする(`cacheKey.ts` が呼ぶ)。
  *
  * 指紋の文字列は呼び出し側が `fingerprintKeyText` を渡す(循環 import を避けるため。
- * `docs/報告記録.md` 2026-09-04 01:40 の①と同じ約束)。数は `keyNumber` で丸め、
+ * 他の鍵の材料と同じ約束)。数は `keyNumber` で丸め、
  * 丸めの規則を 2 か所に書かない。
  */
 export function planeSpecKeyText(

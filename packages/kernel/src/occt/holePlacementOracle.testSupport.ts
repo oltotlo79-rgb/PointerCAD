@@ -1,5 +1,5 @@
 /**
- * Independent EX05 test oracle. Only known input matrices and elementary vector arithmetic enter here;
+ * Independent test oracle for holes on a cylinder side. Only known input matrices and elementary vector arithmetic enter here;
  * no OCCT frame, product transform, resolved plan or generated geometry supplies an expectation.
  */
 import type { Vec3Tuple } from '../types.js';
@@ -33,7 +33,7 @@ export const CYLINDER_ORACLE_PLACEMENTS = [
   { name: 'translated reflection', matrix: mirrored, translation: [-31, 19, 7] as Vec3Tuple, reflected: true },
 ].flatMap(placement => [37, -53, 37 + 360, -53 - 360].map(degrees => ({ ...placement, degrees })));
 
-/** W1's X/Z columns and right-handed Z cross X construction, unchanged (cylinder R=10, bottom z=-5). */
+/** The original X/Z columns and right-handed Z cross X construction, unchanged (cylinder R=10, bottom z=-5). */
 export function cylinderPlacementOracle(matrix: HoleOracleMatrix, translation: Vec3Tuple, height: number, angle: number) {
   const x = holeOracleTimes(matrix, [1, 0, 0]), z = holeOracleTimes(matrix, [0, 0, 1]);
   const y = cross(z, x);

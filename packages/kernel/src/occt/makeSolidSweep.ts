@@ -6,8 +6,8 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { ExtrudeStepSpec, RevolveStepSpec, TessellationOptions, Vec3Tuple } from '../types.js';
-// 確保したものをまとめて解放する入れ物は allocations.ts が正本(計画書 タスク2)。
-// P3 の加工(穴・ねじ・面取り)も同じ入れ物を使うので、ここでは持たない。
+// 確保したものをまとめて解放する入れ物は allocations.ts が正本。
+// 加工(穴・ねじ・面取り)も同じ入れ物を使うので、ここでは持たない。
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
@@ -20,7 +20,7 @@ import { booleanMargin, boundingDiagonal } from './subShapes.js';
 /**
  * BRepPrimAPI_MakePrism_1 / BRepPrimAPI_MakeRevol_1 の Copy に渡す値。
  *
- * 2026-09-03 に Node で実測(計画書 §1.2 の未確認点 1 の後半):
+ * 2026-09-03 に Node で実測:
  *   40 × 30 の断面を 10 押し出したとき Copy=true / false のどちらでも
  *   体積 12000、面 6、稜線 12、妥当性 true で結果が変わらなかった。
  * 断面は毎回この関数の中で作り捨てるので複製する意味が無く、OCCT の C++ 側の
@@ -31,14 +31,14 @@ const SWEEP_COPY = false;
 /**
  * BRepPrimAPI_MakePrism_1 の Canonize に渡す値。
  *
- * 2026-09-03 に Node で実測(計画書 §1.2 の未確認点 1):
+ * 2026-09-03 に Node で実測:
  *   10 × 10 の正方形を Z へ 5 押し出したとき
  *     Canonize=true  体積 500 / 面 6 / 稜線 12 / 平面 6 枚
  *     Canonize=false 体積 500 / 面 6 / 稜線 12 / 平面 2 枚 + 押し出し曲面 4 枚
  *   体積と面数はどちらも同じで、違うのは側面の下地の曲面だけだった。
  *
  * true を採る。平らな断面を押し出した側面は本来ただの平面であり、
- * 平面として持っておいたほうが後段のブーリアン(タスク5)や面の選択が素直に働くため。
+ * 平面として持っておいたほうが後段のブーリアンや面の選択が素直に働くため。
  */
 const PRISM_CANONIZE = true;
 
@@ -79,7 +79,7 @@ const NO_MATERIAL_AHEAD_MESSAGE = '押し出す先に立体がありません。
  *
  * `toFace`(指定の面まで)は model 側が面までの距離を計算して渡す約束なので、
  * カーネルから見ると `distance` と同じ扱いになる。**種類を分けて持つのは、
- * 断りの文言と後段(タスク42・45)の配線で区別が要るため**で、長さの計算は増やさない。
+ * 断りの文言と後段の配線で区別が要るため**で、長さの計算は増やさない。
  */
 export type ExtrudeEndSpec =
   /** 距離を指定して押し出す(いまと同じ)。 */
@@ -91,7 +91,7 @@ export type ExtrudeEndSpec =
   /** 次にぶつかる面まで。対象の形が要る。 */
   | { readonly kind: 'toNext' }
   /**
-   * 対象の立体を両側へ必ず貫く(EX04 の輪郭による貫通切断)。長さは**再計算のたびに**対象の
+   * 対象の立体を両側へ必ず貫く(輪郭による貫通切断)。長さは**再計算のたびに**対象の
    * 厳密な境界箱から決める(`throughTargetRange`)ので、上流で対象が大きくなっても貫き続ける。
    * 対象の形が要る(`toNext` と同じく `target` で渡し、消費しない)。
    */
@@ -100,9 +100,9 @@ export type ExtrudeEndSpec =
 /**
  * 押し出しに後から足した指定(FR-415、FR-401)。**すべて省略できる。**
  *
- * 省略したときは P2 からの押し出し(`spec.distance` ぶんを片側へ、傾きなし)と
+ * 省略したときは 従来の押し出し(`spec.distance` ぶんを片側へ、傾きなし)と
  * 1 ドットも変わらない。`packages/kernel/src/types.ts` の `ExtrudeStepSpec` へ
- * 欄を足すのは計画書のタスク42 の仕事なので、このタスクでは**関数の引数**で受け取る。
+ * 欄はここでは足さず、**関数の引数**で受け取る。
  */
 export interface ExtrudeShapeOptions {
   /** 終端の指定。省略すると `{ kind: 'distance', distance: spec.distance }` と同じ。 */
@@ -144,12 +144,12 @@ function resolveExtrudeRange(
       throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
     }
     // 対象を必ず突き抜ける長さ。ちょうど接する形はブーリアンが最も苦手なので余裕を足す
-    // (P3 §0.a-0.12。makeHole.ts の貫通穴と同じ決め)。
+    // (makeHole.ts の貫通穴と同じ決め)。
     const diagonal = boundingDiagonal(oc, target);
     if (!(diagonal > 0)) {
       throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
     }
-    // 「次の面まで」で使う角柱の余裕(§0.a-0.12 と同じ決め)。対象の境界箱の対角長へ
+    // 「次の面まで」で使う角柱の余裕(穴と同じ決め)。対象の境界箱の対角長へ
     // 両側 `booleanMargin` ぶんを足した長さの角柱を作り、必ず突き抜けさせる。
     return { startOffset: 0, length: diagonal + 2 * booleanMargin(diagonal) };
   }
@@ -179,7 +179,7 @@ function resolveExtrudeRange(
  * 表示用の頂点も使わない。`subShapes.ts` の `boundingDiagonal` と同じ測り方で、余白 gap は 0)の
  * 8 隅を、断面の平面上の 1 点から押し出す向きへ投影する。投影の最小・最大が、対象のどの点も
  * 入る向きの範囲の外枠になる(箱は対象を必ず含むので、斜めの断面では長めに出るが、短くはならない)。
- * 両端に「次の面まで」と同じ余裕 `booleanMargin`(§0.a-0.12)を足し、端の面が対象の面と重ならない
+ * 両端に「次の面まで」と同じ余裕 `booleanMargin`を足し、端の面が対象の面と重ならない
  * ようにする。断面が対象の外にあっても、その側の長さが 0 から始まるだけで同じ式で決まる。
  */
 function throughTargetRange(
@@ -303,7 +303,7 @@ function collectSideFaces(
 /**
  * 押し出した角柱の側面を傾ける(FR-401 のテーパ角)。
  *
- * 抜き勾配(FR-417)と同じ道具 `BRepOffsetAPI_DraftAngle_2` を使う(§0.a-0.34・0.35)。
+ * 抜き勾配(FR-417)と同じ道具 `BRepOffsetAPI_DraftAngle_2` を使う。
  * 中立面(動かない面)は断面そのものなので、断面の大きさは指定どおりのまま残り、
  * 押し出した先ほど内へ絞られる(または外へ広がる)。
  *
@@ -314,7 +314,7 @@ function collectSideFaces(
  * **符号の意味(2026-09-05 に Node で実測):** 傾ける向き(`Direction`)と中立面の法線を
  * どちらも押し出しの向きに揃えたとき、角度が**正で内へ絞り**(40×30 を 10 押し出して
  * 5° で体積 11397.785043646)、**負で外へ広がる**(同 12622.626333009)。
- * どちらも計画書 §2.11 の手計算(角錐台の積分)と 1e-9 まで一致した。
+ * どちらも手計算(角錐台の積分)と 1e-9 まで一致した。
  */
 function applyTaper(
   oc: OpenCascadeInstance,
@@ -382,7 +382,7 @@ function advanceOfCentre(
 }
 
 /**
- * 「次の面まで」(FR-415)。長い角柱と対象の共通部分を取り、手前の塊だけを残す(§0.a-0.33)。
+ * 「次の面まで」(FR-415)。長い角柱と対象の共通部分を取り、手前の塊だけを残す。
  *
  * ブーリアンは `booleanOp.ts` を通さず直に組み立てている。断りの文言が
  * 押し出し専用(「押し出す先に立体がありません。」)であることと、
@@ -438,11 +438,11 @@ function keepNearestChunk(
 /**
  * 断面を direction の向きへ押し出す(FR-401、FR-415)。
  *
- * 向きは model 側で決めて渡す約束(計画書 §0.a-0.8)なので、ここでは反転を扱わない。
+ * 向きは model 側で決めて渡す約束なので、ここでは反転を扱わない。
  * 向きは長さ 1 に揃えてから長さを掛ける。断面が閉じていない・自己交差している・
  * 平面に乗っていない場合は makePlanarFace が理由つきで断り、その文言がそのまま呼び出し側へ伝わる。
  *
- * 第 4 引数 `shaping` は省略できる(P2 からの呼び出し側は 1 行も変わらない)。
+ * 第 4 引数 `shaping` は省略できる(従来の呼び出し側は 1 行も変わらない)。
  * 終端の指定(距離 / 両側 / 指定の面まで / 次の面まで)と側面の傾きはここで受け取る。
  */
 export function makeExtrudeSolid(
@@ -552,7 +552,7 @@ export function makeExtrudeSolid(
  * 断面を軸まわりに angle(ラジアン)だけ回す(FR-402)。
  *
  * 角度は必ずラジアンで受け取る。度で受け取ると MakeEdge_9 と同じ取り違えが起きるため、
- * 度からの換算は model 側の責務にしてある(計画書 §0.a-0.9)。
+ * 度からの換算は model 側の責務にしてある。
  */
 export function makeRevolveSolid(
   oc: OpenCascadeInstance,

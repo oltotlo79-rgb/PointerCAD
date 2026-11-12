@@ -1,20 +1,20 @@
 import { createConfiguredNumericInput as createNumericInput } from '../settings/createConfiguredNumericInput.js';
 /**
  * コマンドラインの欄が打った 1 行を、道具の切替・欄への流し込み・段の確定へつなぐ
- * (計画書 docs/plans/P4b-スケッチの仕上げ.md タスク18、§0.a-0.8〜0.11、§2.5。FR-208)。
+ * (FR-208)。
  *
  * ここには **DOM にも React にも触れない**処理だけを置き、`CommandLine.tsx` は
- * 見た目とキーの詰め替えだけを受け持つ(`docs/報告記録.md` 2026-09-02 23:09
- * 「操作の判断は純関数へ切り出して Node で検査する」)。ストアを読み書きするものと、
+ * 見た目とキーの詰め替えだけを受け持つ(
+ * 「操作の判断は純関数へ切り出して Node で検査する」方針)。ストアを読み書きするものと、
  * 完全な純関数(履歴・候補・案内)を 1 つのファイルへまとめてある。
  *
- * **打った値の行き先は 3 つ**(計画書 タスク18 の「実装内容」)。
+ * **打った値の行き先は 3 つ**。
  *   ①道具の語 → `setActiveTool` と、その道具の 1 段目を開く。
  *   ②座標・名前付きの欄 → **いま開いているその場入力の欄へ流し込んでから**確定する。
  *   ③空の Enter → いまの欄の値(空欄は既定値)のまま確定する(NFR-UX-4)。
  *
  * 確定はどれも `commitToStore.ts` の `applyNumericTransition` を通る。ポップアップの
- * Enter とまったく同じ道筋なので、どちらから打っても結果が変わらない(NFR-UX-1、§0.a-0.9)。
+ * Enter とまったく同じ道筋なので、どちらから打っても結果が変わらない(NFR-UX-1)。
  */
 
 import { isFreeWorkPlaneId, type CoordinateInput } from '@pointercad/model';
@@ -41,10 +41,10 @@ import {
 } from '../sketch/numericInput.js';
 import { useAppStore } from '../store/useAppStore.js';
 
-/** さかのぼれる履歴の件数(§0.a-0.11)。**保存しない**ので、閉じると消える。 */
+/** さかのぼれる履歴の件数。**保存しない**ので、閉じると消える。 */
 const COMMAND_HISTORY_LIMIT = 20;
 
-/** 候補として同時に見せる件数の上限(§0.a-0.11)。 */
+/** 候補として同時に見せる件数の上限。 */
 export const COMMAND_SUGGESTION_LIMIT = 5;
 
 /**
@@ -60,7 +60,7 @@ const FALLBACK_ANCHOR_PIXELS = 160;
  * 複写・配列・角の丸め/面取り)とトリム・延長は**先に対象を選ぶ**道具で、選択が無いまま
  * 段を開くと入れ場所の無い数値を聞くことになる(NFR-UX-5「実行してから失敗させない」)。
  * これらはコマンドラインでは道具の切替だけを行い、対象を選んでからツールバーの一覧で
- * 開いてもらう(タスク22 への申し送り)。
+ * 開いてもらう。
  *
  * 表は `Record<CommandToolId, …>` で持つので、`commandLine.ts` の `COMMAND_WORDS` へ
  * 道具を足したらここも足さないと型検査で落ちる(網羅が崩れない)。かき込む道具の 1 段目は
@@ -115,7 +115,7 @@ function failed(message: string, suggestions: readonly string[] = []): CommandLi
 }
 
 // ---------------------------------------------------------------------------
-// 履歴(純関数。保存しない、§0.a-0.11)
+// 履歴(純関数。保存しない)
 // ---------------------------------------------------------------------------
 
 /**
@@ -166,7 +166,7 @@ export function stepCommandHistory(
 // ---------------------------------------------------------------------------
 
 /**
- * 打ちかけの語に前方一致する道具(最大 5 件、§0.a-0.11)。
+ * 打ちかけの語に前方一致する道具(最大 5 件)。
  * 座標や名前付きの欄(`10,20` / `r=5`)を打ち始めたら候補は出さない(道具ではないため)。
  */
 export function commandSuggestions(input: string): readonly CommandWord[] {
@@ -195,7 +195,7 @@ export function acceptedWordOf(word: CommandWord, input = ''): string {
 }
 
 /**
- * 次に打つものの案内(§0.a-0.11)。**いま開いている段の欄名をそのまま出す**ので、
+ * 次に打つものの案内。**いま開いている段の欄名をそのまま出す**ので、
  * 同じ文言を 2 か所に書かない(`numericInput.ts` の `labelKey` が正本)。
  * 段が開いていなければ null(そのときは道具の名前を打つ番なので、候補が案内になる)。
  */
@@ -211,13 +211,13 @@ export function nextFieldLabels(state: NumericInputState | null): readonly strin
 // ---------------------------------------------------------------------------
 
 /**
- * 打った文字列を解くのに要る手掛かりを、いまのストアから作る(§2.5 の `context`)。
+ * 打った文字列を解くのに要る手掛かりを、いまのストアから作る(`context`)。
  *
  * `variables`(パラメータ表、FR-207)はストアの控え `parameterAnalysis.variables` を
- * そのまま渡す(P4b タスク11 で配線)。**その場入力のポップアップ
+ * そのまま渡す。**その場入力のポップアップ
  * (`NumericInputPopover.tsx`)とプロパティの欄(`PropertyPanel.tsx`)へ渡すのも同じ表**で、
  * 出どころはストアの 1 か所だけにしてある。片方だけに渡すと、同じ式がどちらから打つかで
- * 通ったり通らなかったりする(タスク18 の申し送り)。
+ * 通ったり通らなかったりする。
  */
 export function commandLineContext(): CommandLineContext {
   const store = useAppStore.getState();
@@ -281,7 +281,7 @@ function modeOf(value: CoordinateInput): CoordinateMode {
 }
 
 /**
- * 打った座標を、いま開いている段の欄へ流し込む(計画書 タスク18 の落とし穴
+ * 打った座標を、いま開いている段の欄へ流し込む(
  * 「打った値をポップオーバーの欄へ映すのを忘れない」)。
  * 流し込めないときは断りの文言を返す。
  */
@@ -336,11 +336,11 @@ function activateCommandTool(tool: NumericInputToolId): CommandLineSubmission {
  * いまの姿そのまま)。断られた理由は帯に出るので、ここでは断りかどうかだけを返す。
  */
 function commitStep(filled: NumericInputState): CommandLineSubmission {
-  // 確定にも変数表を渡す(FR-207、タスク11)。渡さないと `板厚 * 2` を打ち込めても
+  // 確定にも変数表を渡す(FR-207)。渡さないと `板厚 * 2` を打ち込めても
   // Enter で断られ、欄と決定で食い違う。
   const store = useAppStore.getState();
   const variables = store.parameterAnalysis.variables;
-  // 表示の単位も一緒に渡す(FR-811、P6 タスク3b)。渡さないと、その場入力では inch で
+  // 表示の単位も一緒に渡す(FR-811)。渡さないと、その場入力では inch で
   // 受けた `10*2` が、コマンドラインからの Enter では mm になって値が食い違う。
   const display = {
     lengthUnit: store.displaySettings.lengthUnit,

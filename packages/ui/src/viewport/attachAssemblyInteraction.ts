@@ -284,7 +284,7 @@ function decideHover(state: MateInputState, event: PointerEvent, target: Assembl
 }
 
 /**
- * 受領の失効で表示を片付けた hover の拾い直し(CI run 43102593955 の EX-18 Electron B/e: 強調は store が変わらないので
+ * 受領の失効で表示を片付けた hover の拾い直し(CI の Electron の検査で見つかった: 強調は store が変わらないので
  * 取り直しも拾い直しも起きず、ポインタを止めたままでは 30 秒付かなかった)。押下の保留と同じ取り直し・比較
  * (awaitMateRefresh・staleMateDocumentField・staleMateInputField)を使い、頼んだ時と store・canvas の枠が同じ時だけ
  * 同じ event で 1 回だけ拾い直す。次の移動・離脱・押下・1〜4・detach は cancel で捨てる。timer と回数の繰り返しは使わない。

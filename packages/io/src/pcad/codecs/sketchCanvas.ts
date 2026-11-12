@@ -54,11 +54,11 @@ function readRectification(value: unknown, path: string): Checked<CanvasRectific
 }
 
 /**
- * 下絵 1 枚(FR-332、版7、P6 タスク38)。
+ * 下絵 1 枚(FR-332、版7)。
  *
  * **画像のバイト列はここに 1 バイトも書かない。** `imageId` が `.pcad` の ZIP のエントリ
  * (`canvases/<imageId>.png`、`pcadFile.ts`)を指すだけで、`document.json` には id と
- * 寸法しか入れない(読み込んだ B-rep・三角形と同じ流儀。§2.8)。
+ * 寸法しか入れない(読み込んだ B-rep・三角形と同じ流儀)。
  */
 export function serializeSketchCanvas(canvas: SketchCanvas): SketchCanvas {
   const rectification = canvas.rectification === undefined ? null
@@ -102,7 +102,7 @@ function readCanvasOpacity(
 }
 
 /**
- * 下絵 1 枚(FR-332、版7、P6 タスク38)を読む。
+ * 下絵 1 枚(FR-332、版7)を読む。
  *
  * `imageId` は ZIP のエントリを指す名前で、**指す先が入っているかはここでは見ない**
  * (`pcadFile.ts` の `findMissingAttachment` が `missingField` で断る。`document.json`

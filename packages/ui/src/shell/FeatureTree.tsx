@@ -1,5 +1,5 @@
 /**
- * 左のモデルブラウザ(要件§7.1、FR-501)の表示(R07、レビュー F07 の責務の分離)。
+ * 左のモデルブラウザ(要件§7.1、FR-501)の表示(入力・寿命・ストアの変更は別のファイルへ分けてある)。
  *
  * | 責務 | 置き場所 | 確定の時点 | 取消 |
  * |---|---|---|---|
@@ -142,12 +142,12 @@ import {
 } from './timelineRail.js';
 
 /**
- * 行の頭に出す種類の絵。道具のアイコンと同じ図柄にして、作ったものと道具を結び付ける
- * (計画書 docs/plans/P3-加工フィーチャー.md タスク27)。
+ * 行の頭に出す種類の絵。道具のアイコンと同じ図柄にして、作ったものと道具を
+ * 結び付ける。
  *
- * P3 のタスク13 で種類が13個に増え、タスク26 が加工6種+ばねの図柄(`icons.tsx`)を足した。
- * タスク27 でその7つをここへ差し替え、CubeIcon の仮置き(タスク13〜22 の暫定)を終わらせた。
- * P4 タスク33 で、タスク32 が用意した図柄(オフセット・ミラー・複写・配列)へ借り物を
+ * 加工6種+ばねの図柄(`icons.tsx`)も道具と同じものを使い、
+ * CubeIcon の仮置きは残していない。
+ * 整形の道具の図柄(オフセット・ミラー・複写・配列)も借り物から
  * 差し替え、複製を配置ごとに分け、基準ジオメトリ 4 種と投影・交差の図柄を足した。
  */
 const KIND_ICONS: Readonly<
@@ -198,25 +198,25 @@ const KIND_ICONS: Readonly<
   linearPattern: LinearPatternIcon,
   circularPattern: CircularPatternIcon,
   spring: SpringIcon,
-  // 基本形状5種(FR-429、P5 タスク15)。タスク51 が用意した道具の図柄へ差し替えた
-  // (タスク52。木の行と「作る」の一覧のボタンが同じ絵になる)。
+  // 基本形状5種(FR-429)。道具の図柄と同じものを使う
+  // (木の行と「作る」の一覧のボタンが同じ絵になる)。
   sphere: SphereIcon,
   box: BoxIcon,
   cylinder: CylinderIcon,
   cone: ConeIcon,
   torus: TorusIcon,
-  // 面をつなぐ(FR-430)とロフト(FR-410)。P5 タスク27 で専用の図柄を入れた
+  // 面をつなぐ(FR-430)とロフト(FR-410)。専用の図柄を使う
   // (直線で結ぶ / なめらかに結ぶの違いが絵でも分かる。`icons.tsx` の注釈)。
   ruled: RuledIcon,
   loft: LoftIcon,
   /*
-    P5 の Should 群(§2.11、P5 タスク43)。タスク50・51 が道具の図柄を用意したので、
-    タスク52 で借り物(`CubeIcon` ほか)から専用の図柄へ差し替えた。木の行と
+    Should 群。道具の図柄があるので、
+    借り物(`CubeIcon` ほか)ではなく専用の図柄を使う。木の行と
     「作る」「加工」の一覧のボタンが同じ絵になり、作ったものと道具が結び付く。
   */
   mirror: MirrorSolidIcon,
   draft: DraftIcon,
-  // 平らな面の移動(EX-18 の限られた一段)。面を押し出して足す / 削る操作なので、
+  // 平らな面の移動(限られた一段)。面を押し出して足す / 削る操作なので、
   // 専用の図柄ができるまで押し出しの絵を借りる(木の名前は「面の移動」で見分けられる)。
   faceOffset: ExtrudeIcon,
   holeTranslate: TransformIcon,
@@ -231,12 +231,12 @@ const KIND_ICONS: Readonly<
   functionSurface: SurfaceIcon,
   // 点パターン(FR-425)。直線・円形パターンと同じ絵では見分けが付かない。
   pointPattern: PointPatternIcon,
-  // くり抜き(FR-418、P5 タスク46)。タスク55 で道具と同じ図柄へ差し替えた。
+  // くり抜き(FR-418)。道具と同じ図柄。
   shell: ShellIcon,
-  // 平面による切断(FR-432、P5 タスク27c)。タスク27f で道具と同じ図柄へ差し替えた。
+  // 平面による切断(FR-432)。道具と同じ図柄。
   cut: CutIcon,
   surfaceCut: CutIcon,
-  // 読み込んだ形のベースボディ 2 種(FR-802、P6 タスク20)。木の行がそのまま道具の絵になる。
+  // 読み込んだ形のベースボディ 2 種(FR-802)。木の行がそのまま道具の絵になる。
   importedSolid: ImportedSolidIcon,
   importedMesh: ImportedMeshIcon,
 };
@@ -279,11 +279,11 @@ function menuRight(right: number): number {
 }
 
 /**
- * 「統合済み」の札を、つまみより前の段だけの消費関係に合わせ直す(P4b タスク22a-(3))。
+ * 「統合済み」の札を、つまみより前の段だけの消費関係に合わせ直す。
  *
  * `buildTreeSections` の `consumed` は文書全体から導くため、途中まで戻しても後ろの段
- * (穴・パターン等)の消費がそのまま残って見える(表示上の既知差、`docs/報告記録.md`
- * 2026-09-05 実時計 01:05 の申し送り②)。ソリッド節の行だけ、`consumedIdsUpToTimeline`
+ * (穴・パターン等)の消費がそのまま残って見える(表示上の既知差)。
+ * ソリッド節の行だけ、`consumedIdsUpToTimeline`
  * (`timelineRail.ts`)で作り直した消費の表へ差し替える。
  */
 function withTimelineConsumed(
@@ -307,7 +307,7 @@ function withTimelineConsumed(
  * 行をクリックで選び、Shift+クリックで足す(FR-106)。指を乗せるとビューポート側も光る。
  * 計算できていない行には赤い印を出し、理由をホバーで見せる(FR-504)。
  *
- * どの行も「⋮」ボタンか右クリックで小さな一覧を開く(P3 §0.a-0.23 ②)。立体の行は
+ * どの行も「⋮」ボタンか右クリックで小さな一覧を開く。立体の行は
  * 抑制・改名・削除ができ(FR-503)、スケッチにも改名・メモ・フォルダ移動・削除がある。
  * 一覧も改名の欄も**モーダルにしない**(NFR-UX-2)ので、開いている間も視点操作は効く。
  * 削除の前に確認を出さないのは、元に戻す(Ctrl+Z)で戻せるため(NFR-UX-3)。参照していた
@@ -333,16 +333,16 @@ export function FeatureTree(): React.JSX.Element {
   const sketchErrors = useAppStore((state) => state.sketchErrors);
   const partErrors = useAppStore((state) => state.partErrors);
   const resolvedReferences = useAppStore((state) => state.resolvedReferences);
-  // タイムラインのつまみ(FR-507、FR-506、P4b タスク19)。区画は増やさず、履歴の行の
-  // 左端をなぞる細いレールとして木の中に出す(§0.a-0.18 の利用者の決定は案 B)。
+  // タイムラインのつまみ(FR-507、FR-506)。区画は増やさず、履歴の行の
+  // 左端をなぞる細いレールとして木の中に出す(利用者の決定)。
   const timelineIndex = useAppStore((state) => state.timelineIndex);
-  // 順序の入れ替えを断った理由(FR-507、FR-504。タスク20)。壊れる側の行に印を出す。
+  // 順序の入れ替えを断った理由(FR-507、FR-504)。壊れる側の行に印を出す。
   const timelineRefusal = useAppStore((state) => state.timelineRefusal);
   const [isExpanded, setIsExpanded] = useState(true);
   const [collapsed, setCollapsed] = useState<readonly TreeSectionKey[]>([]);
   const [collapsedSketchIds, setCollapsedSketchIds] = useState<readonly string[]>([]);
 
-  // 基準の節(FR-328、FR-329、P4 タスク33)は「作業平面 → スケッチ → 立体」の順で
+  // 基準の節(FR-328、FR-329)は「作業平面 → スケッチ → 立体」の順で
   // 使うものなので、いちばん上に置く。中身は履歴順のまま。
   const sections = [
     buildReferenceSection(part, resolvedReferences.errors),
@@ -355,7 +355,7 @@ export function FeatureTree(): React.JSX.Element {
   ];
   /*
    * スケッチが 2 本以上ある文書のときだけ、スケッチの節を「スケッチ1」「スケッチ2」…の
-   * 親行で束ねる(P4 仕上げ (g)、FR-501)。1 本だけのときは親行を出さず、要素をそのまま
+   * 親行で束ねる(FR-501)。1 本だけのときは親行を出さず、要素をそのまま
    * 節へ並べるこれまでの見え方を保つ(ふつうの部品は 1 本しか使わないので、階層を 1 段
    * 増やすだけの得が無い。NFR-UX-6「はじめの一歩を邪魔しない」)。
    */
@@ -377,7 +377,7 @@ export function FeatureTree(): React.JSX.Element {
       total + (grouped && section.key === 'sketch' ? groupedRowCount : section.rows.length),
     0,
   );
-  // 抑制はソリッドの行だけが持つ(P3 §0.a-0.23 ②)。
+  // 抑制はソリッドの行だけが持つ。
   const menuFeature =
     menu === null || menu.sectionKey !== 'solid' ? undefined : findSolid(part, menu.featureId);
   // 表示・非表示は基準ジオメトリの行だけが持つ(FR-329)。
@@ -385,7 +385,7 @@ export function FeatureTree(): React.JSX.Element {
     menu === null || menu.sectionKey !== 'reference'
       ? undefined
       : findReference(part, menu.featureId);
-  // スケッチそのものの親行(P4 仕上げ (g))。改名・削除・スケッチの追加を持つ。
+  // スケッチそのものの親行。改名・削除・スケッチの追加を持つ。
   const menuSketchGroup =
     menu === null || menu.sectionKey !== 'sketchDocument'
       ? undefined
@@ -405,7 +405,7 @@ export function FeatureTree(): React.JSX.Element {
           ? 'featureTree.sketchDeleteBlocked'
           : null;
   /*
-   * 「⋮」の一覧に出す「1 つ上へ」「1 つ下へ」(FR-507、タスク20、NFR-UX-3)。
+   * 「⋮」の一覧に出す「1 つ上へ」「1 つ下へ」(FR-507、NFR-UX-3)。
    * 帯に出る行(基準ジオメトリ・立体)にだけ出す。マウスのドラッグが苦手でも同じことが
    * できるようにするための入り口で、押せるかどうか・断りの理由はドラッグと同じ判定
    * (`timelineMoveOffer` → `canMoveHistoryItem`)から引く(同じ規約を 2 か所に書かない)。
@@ -414,7 +414,7 @@ export function FeatureTree(): React.JSX.Element {
     menu !== null && (menu.sectionKey === 'solid' || menu.sectionKey === 'reference');
   const menuMoveUp = menuInTimeline && menu !== null ? timelineMoveOffer(part, menu.featureId, -1) : null;
   const menuMoveDown = menuInTimeline && menu !== null ? timelineMoveOffer(part, menu.featureId, 1) : null;
-  // 「ここを原点にする」(FR-331)を出せる行かどうかは行の種類だけで決まる(タスク35b)。
+  // 「ここを原点にする」(FR-331)を出せる行かどうかは行の種類だけで決まる。
   const menuRow =
     menu === null
       ? null
@@ -439,7 +439,7 @@ export function FeatureTree(): React.JSX.Element {
   };
 
   /**
-   * 「⋮」の一覧の「1 つ上へ」「1 つ下へ」1 項目ぶん(FR-507、タスク20)。
+   * 「⋮」の一覧の「1 つ上へ」「1 つ下へ」1 項目ぶん(FR-507)。
    *
    * 動かせないときは**押せなくして理由を吹き出しで読める**ようにする(NFR-UX-5)。
    * 押してから断る形にしないのは、ドラッグの予告(赤い線)と同じ考え方。
@@ -480,7 +480,7 @@ export function FeatureTree(): React.JSX.Element {
   };
 
   /**
-   * スケッチ 1 本の親行と、その下にぶら下がる要素の行(P4 仕上げ (g)、FR-501)。
+   * スケッチ 1 本の親行と、その下にぶら下がる要素の行(FR-501)。
    * スケッチが 2 本以上あるときだけ出す。
    *
    * 押すと**作図するスケッチが切り替わり**(作図面の札とビューポートの作図面も追従する。
@@ -620,7 +620,7 @@ export function FeatureTree(): React.JSX.Element {
     const stop: TimelineStop | undefined = timelineStops.get(row.id);
     const ahead = stop !== undefined && stop.state === 'ahead';
     /*
-     * 順序を入れ替えるドラッグの予告(FR-507、タスク20、NFR-UX-5)。
+     * 順序を入れ替えるドラッグの予告(FR-507、NFR-UX-5)。
      * 落ちる場所に線を引き、落とせない位置では赤くする。離してから断るのではなく、
      * 離す前に見て分かるようにするため。
      */
@@ -651,7 +651,7 @@ export function FeatureTree(): React.JSX.Element {
           title={stop === undefined ? undefined : t('timeline.dragTooltip')}
           onPointerDown={(event) => {
             /*
-             * 掴む(FR-507、タスク20)。帯に出る行だけが掴める。左ボタン以外・つまみ・
+             * 掴む(FR-507)。帯に出る行だけが掴める。左ボタン以外・つまみ・
              * 「⋮」・名前の欄の上では掴まない(それぞれ別の役目を持つため)。
              * この時点ではまだ「押しただけ」で、`DRAG_THRESHOLD_PX` を超えて動いて
              * 初めて並べ替えになる(押しただけなら今までどおり行の選択)。
@@ -694,7 +694,7 @@ export function FeatureTree(): React.JSX.Element {
         >
           {/*
             行の左端のつまみ(FR-507、FR-506)。行の高さも字下げも変えないよう、行の
-            余白の上へ重ねて置く(過去の失敗: docs/報告記録.md 2026-09-04 20:30 で
+            余白の上へ重ねて置く(過去の失敗:
             画面へ足したものが区画を 1 段分押し広げた)。
           */}
           {stop === undefined ? null : <TimelineStopHandle stop={stop} atEnd={timelineAtEnd} />}
@@ -780,7 +780,7 @@ export function FeatureTree(): React.JSX.Element {
             </span>
           )}
           {/*
-            並べ替えを断った理由(FR-507、FR-504。タスク20)。出す先は動かした行ではなく
+            並べ替えを断った理由(FR-507、FR-504)。出す先は動かした行ではなく
             **壊れる側の行**(model の `blockingFeatureId`)。「どれが困るのか」がその場で
             分かるようにするため。同じ文はステータスバーの帯にも 1 行で出る。
           */}
@@ -793,7 +793,7 @@ export function FeatureTree(): React.JSX.Element {
             </span>
           )}
           {/*
-            スケッチ・ソリッドどちらの行も同じ「⋮」の非モーダル一覧を開く(P3 §0.a-0.23 ②)。
+            スケッチ・ソリッドどちらの行も同じ「⋮」の非モーダル一覧を開く。
             一覧の中身(抑制・改名の有無)は sectionKey で決める。
           */}
           {featureNoteOf(part, noteTargetForRow(part, row.id, sectionKey, sketchId)) === '' ? null : <span className="pcad-tree__badge" title={t('historyNote.edit')}>{t('historyNote.badge')}</span>}
@@ -889,8 +889,8 @@ export function FeatureTree(): React.JSX.Element {
                     return (
                       <li key={section.key}>
                         {/*
-                          節の見出し。スケッチの節にだけ「＋」(スケッチを追加)を並べる
-                          (P4 仕上げ (g))。入れ子のボタンは作れないので、見出しの
+                          節の見出し。スケッチの節にだけ「＋」(スケッチを追加)を並べる。
+                          入れ子のボタンは作れないので、見出しの
                           折りたたみボタンと「＋」を器の div へ横に並べる。
                         */}
                         <div className="pcad-tree__section" data-name-search-key={!grouped && section.key === 'sketch' ? featureFolderMemberKey({ kind: 'sketch', id: part.activeSketchId }) : undefined}>
@@ -936,7 +936,7 @@ export function FeatureTree(): React.JSX.Element {
                           ) : null}
                         </div>
                         {!open ? null : grouped && section.key === 'sketch' ? (
-                          // スケッチが 2 本以上ある文書だけ、親行で束ねて出す(P4 仕上げ (g))。
+                          // スケッチが 2 本以上ある文書だけ、親行で束ねて出す。
                           <ul className="pcad-tree__children">
                             {sketchGroups.filter(group => !ownedRow(group.sketchId, 'sketchDocument')).map((group) => renderSketchGroup(group))}
                           </ul>
@@ -967,11 +967,11 @@ export function FeatureTree(): React.JSX.Element {
       </div>
 
       {/*
-        一覧の中身は節で決める(P3 §0.a-0.23 ②、P4 タスク33)。
+        一覧の中身は節で決める。
         - ソリッド: 抑制・改名・削除
         - 基準ジオメトリ: 表示の切替・改名・削除(FR-329、FR-503)
         - スケッチの要素: 改名・削除
-        - スケッチそのもの(親行、P4 仕上げ (g)): スケッチを追加・改名・削除
+        - スケッチそのもの(親行): スケッチを追加・改名・削除
         参照先が壊れて(消えて)いる間は開かない(旧来の振る舞いのまま)。
       */}
       {menu === null ||
@@ -1029,7 +1029,7 @@ export function FeatureTree(): React.JSX.Element {
             </button>
           ) : null}
           {/*
-            作る順序を 1 段ずつ入れ替える(FR-507、タスク20)。帯に出る行にだけ出す。
+            作る順序を 1 段ずつ入れ替える(FR-507)。帯に出る行にだけ出す。
             ドラッグと同じことができる入り口で、マウスの操作が苦手でも使える(NFR-UX-3)。
           */}
           {renderMoveItem(
@@ -1046,7 +1046,7 @@ export function FeatureTree(): React.JSX.Element {
             'timeline.moveDownTooltip',
             'timeline.moveAtBottom',
           )}
-          {/* スケッチの親行からも新しいスケッチを作れる(節の頭の「＋」と同じ、仕上げ (g))。 */}
+          {/* スケッチの親行からも新しいスケッチを作れる(節の頭の「＋」と同じ)。 */}
           {menu.sectionKey === 'sketchDocument' ? (
             <button
               type="button"
@@ -1062,7 +1062,7 @@ export function FeatureTree(): React.JSX.Element {
             </button>
           ) : null}
           {/*
-            選んだ点を原点にする(FR-331、タスク35b)。スケッチの点と基準点の行にだけ出す。
+            選んだ点を原点にする(FR-331)。スケッチの点と基準点の行にだけ出す。
             ツールバーには道具を増やさない決まりなので、入り口はこの一覧とプロパティの 2 つ。
           */}
           {canSetOrigin ? (
@@ -1101,7 +1101,7 @@ export function FeatureTree(): React.JSX.Element {
           }}>{t('historyFolder.moveTitle')}</button>
           {/*
             消せないスケッチ(最後の 1 本、要素を立体が使っているもの)は押せなくし、
-            理由を吹き出しで読めるようにする(仕上げ (g)、FR-503、NFR-UX-5)。
+            理由を吹き出しで読めるようにする(FR-503、NFR-UX-5)。
             それ以外の行では `sketchDeleteBlockedKey` は必ず null なので従来どおり押せる。
           */}
           <button

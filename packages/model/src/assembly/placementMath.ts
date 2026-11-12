@@ -1,8 +1,8 @@
 /**
- * 配置の数学(四元数と剛体変換)。計画書 P7 §2.4、タスク2。FR-601 / NFR-RE-3 / NFR-RE-4。
+ * 配置の数学(四元数と剛体変換)。FR-601 / NFR-RE-3 / NFR-RE-4。
  *
  * アセンブリに置いた部品 1 つの「どこに・どちら向きに」を、**位置 3 数 + 四元数 4 数**で
- * 持つ(§0.5)。4×4 行列で持たないのは、反復のたびに正規化 1 回で回転へ戻せて、
+ * 持つ。4×4 行列で持たないのは、反復のたびに正規化 1 回で回転へ戻せて、
  * 行列を直に入れたときのような「回転でなくなる」丸め誤差の漏れが起きないため。
  *
  * **すべて純関数で、OCCT にも three にも触れない**(Node の Vitest だけで検査できる)。
@@ -10,8 +10,8 @@
  * を経由して渡す。共有する有限判定だけは `vec3.ts` と `kernelBridge/vectorMath.ts` の限定入口を
  * 経由する。型と純粋な算術だけを使い、kernel の index や OCCT は読み込まない。
  *
- * **四元数の規約**(§2.4): `q = (x, y, z, w)`、`w = cos(θ/2)`、`(x, y, z) = 軸 × sin(θ/2)`。
- * `q` と `−q` は同じ回転なので、**`w >= 0` へ符号を揃える**(§0.54 の決定性。同じ文書を
+ * **四元数の規約**: `q = (x, y, z, w)`、`w = cos(θ/2)`、`(x, y, z) = 軸 × sin(θ/2)`。
+ * `q` と `−q` は同じ回転なので、**`w >= 0` へ符号を揃える**(決定性。同じ文書を
  * 2 回解いて配置が完全に一致することを、この 1 か所の正規化で担保する)。
  *
  * **数値精度**(rules/04): 長さ・角度の比較はすべて `QUATERNION_TOLERANCE` を明示して行い、
@@ -32,9 +32,9 @@ export type Quaternion = readonly [number, number, number, number];
 /**
  * 剛体の配置(位置 + 向き)。点は `p' = R(q)·p + t` で写る。
  *
- * 保存形の `Placement`(タスク1 の `assembly/types.ts`)は位置を**式**
+ * 保存形の `Placement`(`assembly/types.ts`)は位置を**式**
  * (`ExpressionValue`)で持つが、ここは式を数へ解いた後の値だけを扱う。式から数へ
- * 直すのはアセンブリの解決(タスク6 `resolveAssembly.ts`)の役目。
+ * 直すのはアセンブリの解決(`resolveAssembly.ts`)の役目。
  */
 export interface RigidPlacement {
   readonly position: Vec3;
@@ -43,7 +43,7 @@ export interface RigidPlacement {
 
 /** 軸と角の組。既存の `RigidTransform`(軸+角)との橋渡しに使う。 */
 export interface AxisAngle {
-  /** 長さ 1 の回転軸。角が 0 のときは軸が決まらないので `[0, 0, 1]`(§1.4-8)。 */
+  /** 長さ 1 の回転軸。角が 0 のときは軸が決まらないので `[0, 0, 1]`。 */
   readonly axis: Vec3;
   /** 回転角(ラジアン)。`w >= 0` へ揃えてあるので必ず `0 <= θ <= π`。 */
   readonly angleRadians: number;
@@ -53,7 +53,7 @@ export interface AxisAngle {
  * 四元数・軸の長さの許容誤差。
  *
  * `1e-12` は「これ未満の長さは 0 とみなす」線引きで、`exponentialMap` の 1 次近似へ
- * 切り替える境目(§2.4 の手順3)と同じ値を使う。倍精度の刻み(2.2e-16)より 4 桁大きく、
+ * 切り替える境目と同じ値を使う。倍精度の刻み(2.2e-16)より 4 桁大きく、
  * 検査で要求される往復の精度(1e-12)を割らない位置に置いてある。
  */
 export const QUATERNION_TOLERANCE = 1e-12;
@@ -80,10 +80,10 @@ function cleanZeroQuaternion(rotation: Quaternion): Quaternion {
 /**
  * 符号を揃えるための係数(+1 か −1)。
  *
- * `w > 0` なら +1、`w < 0` なら −1(§0.54 の「`w >= 0` へ揃える」)。**`w` がちょうど 0
+ * `w > 0` なら +1、`w < 0` なら −1(「`w >= 0` へ揃える」)。**`w` がちょうど 0
  * のとき**(180° 回転)は `w` だけでは `q` と `−q` を区別できないので、`x → y → z` の順で
  * 最初に 0 でない成分が正になる側を選ぶ。ここまで決めておかないと、同じ 180° の回転が
- * 実行のたびに違う符号で保存されうる(§0.54 が求める決定性が崩れる)。
+ * 実行のたびに違う符号で保存されうる(求める決定性が崩れる)。
  */
 function leadingSign(rotation: Quaternion): number {
   const [x, y, z, w] = rotation;
@@ -103,7 +103,7 @@ function leadingSign(rotation: Quaternion): number {
 }
 
 /**
- * 長さ 1・`w >= 0` へ揃える(§0.54)。**符号の反転はここ 1 か所だけで行う。**
+ * 長さ 1・`w >= 0` へ揃える。**符号の反転はここ 1 か所だけで行う。**
  *
  * 長さが取れない(0 に近い)ときと、NaN・∞ が混ざっているときは恒等を返す。投げないのは
  * FR-504(止めずに警告する)の流儀で、`vec3.ts` の `normalizeVec3` が長さ 0 で原点を返すのと
@@ -127,11 +127,11 @@ export function normalizeQuaternion(rotation: Quaternion): Quaternion {
 }
 
 /**
- * 「軸と角度」から四元数を作る(§2.4)。`q = (a·sin(θ/2), cos(θ/2))`、`a` は長さ 1 の軸。
+ * 「軸と角度」から四元数を作る。`q = (a·sin(θ/2), cos(θ/2))`、`a` は長さ 1 の軸。
  *
  * 軸の長さが 0(向きが決まらない)ときは恒等を返す。回しようがないので、`vec3.ts` の
  * `rotateDirection` が長さ 0 の軸で元の向きをそのまま返すのと同じ扱いにしてある。
- * **利用者に四元数は見せない**(§0.5)。画面の欄はこの「軸と角度」のまま。
+ * **利用者に四元数は見せない**。画面の欄はこの「軸と角度」のまま。
  */
 export function quaternionFromAxisAngle(axis: Vec3, angleRadians: number): Quaternion {
   const size = Math.hypot(axis[0], axis[1], axis[2]);
@@ -177,15 +177,15 @@ export function quaternionFromBasis(x: Vec3, y: Vec3, z: Vec3, tolerance: number
 }
 
 /**
- * 四元数から「軸と角度」へ戻す(§2.4)。`θ = 2·acos(clamp(w, −1, 1))`、`a = (x,y,z)/sin(θ/2)`。
+ * 四元数から「軸と角度」へ戻す。`θ = 2·acos(clamp(w, −1, 1))`、`a = (x,y,z)/sin(θ/2)`。
  *
  * 先に `normalizeQuaternion` を通すので `w >= 0`、つまり返す角は必ず `0 <= θ <= π` になる。
  * `θ > π` の回転を渡すと、同じ回転を表す「逆向きの軸まわりの `2π − θ`」として返る
- * (回転としては同じもの。§0.54 の符号揃えの当然の帰結)。
+ * (回転としては同じもの。符号揃えの当然の帰結)。
  *
  * **`θ = 0`(`|w| ≈ 1`)のときは軸が決まらない**ので `[0, 0, 1]` を入れる。既存の
  * `IDENTITY_TRANSFORM`(kernel の `transformShape.ts`)が Z 軸を入れているのと同じ流儀で、
- * 長さ 0 の軸を返すと下流の「軸が決まりません」の検査に引っかかるため(§1.4-8)。
+ * 長さ 0 の軸を返すと下流の「軸が決まりません」の検査に引っかかるため。
  */
 export function quaternionToAxisAngle(rotation: Quaternion): AxisAngle {
   const [x, y, z, w] = normalizeQuaternion(rotation);
@@ -204,7 +204,7 @@ export function quaternionToAxisAngle(rotation: Quaternion): AxisAngle {
 }
 
 /**
- * 向きを四元数で回す(§2.4 の回転行列 `R` をそのまま展開したもの)。
+ * 向きを四元数で回す(回転行列 `R` をそのまま展開したもの)。
  *
  * 渡された四元数は長さ 1 とは限らない(反復の途中の値が来る)ので、必ず正規化してから使う。
  * 正規化を省くと長さの 2 乗ぶんだけ拡大縮小が混ざり、剛体変換でなくなる。
@@ -232,9 +232,9 @@ export function rotateVector(rotation: Quaternion, vector: Vec3): Vec3 {
  * 四元数の積 `q₁·q₂`。**「先に `q₂` で回し、次に `q₁` で回す」**合成
  * (`R(q₁·q₂) = R(q₁)·R(q₂)`)。
  *
- * 計画書 §2.4 が挙げる関数一覧には無いが、`composePlacement` が回転の合成に要る。
- * 積の式を `composePlacement` の中へ埋め込むとサブアセンブリの入れ子(§2.11)や
- * ジョイントの駆動(タスク20)から使えず、同じ式を書き写すことになるので独立させた。
+ * 当初の関数一覧には無いが、`composePlacement` が回転の合成に要る。
+ * 積の式を `composePlacement` の中へ埋め込むとサブアセンブリの入れ子や
+ * ジョイントの駆動から使えず、同じ式を書き写すことになるので独立させた。
  */
 export function multiplyQuaternion(a: Quaternion, b: Quaternion): Quaternion {
   const [ax, ay, az, aw] = a;
@@ -248,10 +248,10 @@ export function multiplyQuaternion(a: Quaternion, b: Quaternion): Quaternion {
 }
 
 /**
- * 配置の合成 `(q₁, t₁) ∘ (q₂, t₂) = (q₁·q₂, R(q₁)·t₂ + t₁)`(§2.4)。
+ * 配置の合成 `(q₁, t₁) ∘ (q₂, t₂) = (q₁·q₂, R(q₁)·t₂ + t₁)`。
  *
  * **「外側 ∘ 内側」の順**で、点には内側から掛かる(`合成(p) = 外側(内側(p))`)。
- * サブアセンブリの入れ子(§2.11)で、親の配置を `outer`、子の配置を `inner` に渡す。
+ * サブアセンブリの入れ子で、親の配置を `outer`、子の配置を `inner` に渡す。
  */
 export function composePlacement(outer: RigidPlacement, inner: RigidPlacement): RigidPlacement {
   return {
@@ -260,7 +260,7 @@ export function composePlacement(outer: RigidPlacement, inner: RigidPlacement): 
   };
 }
 
-/** 点へ配置をかける。`p' = R(q)·p + t`(§2.4)。 */
+/** 点へ配置をかける。`p' = R(q)·p + t`。 */
 export function applyPlacementToPoint(placement: RigidPlacement, point: Vec3): Vec3 {
   return cleanZeroVec3(addVec3(rotateVector(placement.rotation, point), placement.position));
 }
@@ -274,7 +274,7 @@ export function applyPlacementToDirection(placement: RigidPlacement, direction: 
 }
 
 /**
- * 配置を既存の `RigidTransform`(平行移動 + 回転軸 + 回転角)へ写す(§1.4-8)。
+ * 配置を既存の `RigidTransform`(平行移動 + 回転軸 + 回転角)へ写す。
  *
  * `RigidTransform` は「原点まわりに回してから平行移動する」形なので、`rotationOrigin` に
  * 原点を入れれば `p' = R(q)·p + t` とぴったり一致する(kernel の `applyTransformToPoint` /
@@ -292,9 +292,9 @@ export function placementToRigidTransform(placement: RigidPlacement): RigidTrans
 }
 
 /**
- * 回転ベクトル(向き = 軸、長さ = 角)から四元数へ(指数写像、§2.4 の手順3)。
+ * 回転ベクトル(向き = 軸、長さ = 角)から四元数へ(指数写像)。
  *
- * 合致のソルバ(タスク13〜15)が回転の増分をこの 3 数で持つため、反復のたびに
+ * 合致のソルバが回転の増分をこの 3 数で持つため、反復のたびに
  * ここで四元数へ直す。`θ = |ω|` として
  *   - `θ < QUATERNION_TOLERANCE` のときは `(ω/2, 1)`(`sin(θ/2)/θ → 1/2` の 1 次近似)、
  *   - そうでなければ `(ω/θ · sin(θ/2), cos(θ/2))`。

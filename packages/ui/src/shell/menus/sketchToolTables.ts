@@ -18,12 +18,12 @@ export function selectTrackAngleStep(step: number): void {
 }
 
 /**
- * 3D スケッチ(FR-330)で使えない道具は選ばせず、理由を帯へ出す(NFR-UX-5、タスク14)。
+ * 3D スケッチ(FR-330)で使えない道具は選ばせず、理由を帯へ出す(NFR-UX-5)。
  *
  * 使える・使えないの判断は `freeSketch.ts` の `freeSketchToolRejection` 1 か所に置いてある。
  * 押せなくするのではなく「押したら理由が出る」形にしてあるのは、押せない見た目だけだと
- * なぜ使えないのかが分からないため(P3 の加工6種と同じ扱い、`docs/報告記録.md`
- * 2026-09-04 10:50 の仕上げ (e)-(b))。
+ * なぜ使えないのかが分からないため(加工6種と
+ * 同じ扱い)。
  */
 export function blockedInFreeSketch(tool: NumericInputToolId): boolean {
   const store = useAppStore.getState();

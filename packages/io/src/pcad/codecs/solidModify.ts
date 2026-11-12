@@ -45,7 +45,7 @@ const CHAMFER_SIZE_KINDS: readonly ChamferSize['kind'][] = [
   'distanceAngle',
 ];
 
-/** 切断で残す側(FR-432、§0.a-0.57)。法線の側か、その反対。 */
+/** 切断で残す側(FR-432)。法線の側か、その反対。 */
 
 /** Surface blades retain definitions and references, never evaluated geometry. */
 function readSurfaceCutBlade(value: unknown, path: string): Checked<SurfaceCutBlade> {
@@ -116,7 +116,7 @@ function serializeChamferSize(size: ChamferSize): ChamferSize {
   }
 }
 
-/** C 面取りの大きさ(等距離・2距離・距離と角度、§0.a-0.18)を読む。 */
+/** C 面取りの大きさ(等距離・2距離・距離と角度)を読む。 */
 function readChamferSize(value: unknown, path: string): Checked<ChamferSize> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -177,7 +177,7 @@ function readChamferSizeField(
   return readChamferSize(found.value, joinPath(parentPath, key));
 }
 
-/** R 面取り(FR-407、§0.a-0.17)を読む。丸める辺・頂点の一覧(頂点は展開せずそのまま保存)。 */
+/** R 面取り(FR-407)を読む。丸める辺・頂点の一覧(頂点は展開せずそのまま保存)。 */
 export function readFilletFeature(
   record: Record<string, unknown>,
   path: string,
@@ -196,14 +196,14 @@ export function readFilletFeature(
     return radius;
   }
   /*
-    可変半径の終点側(FR-426、P5 タスク46)。**省略できる欄**なので、版 4 以前・
+    可変半径の終点側(FR-426)。**省略できる欄**なので、版 4 以前・
     版 5 前半のファイル(`radius` だけを持つ)は欄が無いまま読めて、`filletRadiusOf` が
     「一定半径」として返す。読み手で 2 通りの形へ分岐する必要も、移行を増やす必要もない
-    (計画書 タスク54 の注意書きが求めていた「両方の形を読める」を、欄を足す形で満たす)。
+    (「両方の形を読める」を、欄を足す形で満たす)。
 
-    **`radiusEnd` が `null` のときも「欄が無い」として読む**(P5 仕上げ (h)、
-    `docs/報告記録.md` 2026-09-05 23:08 の t47 指摘①)。書き手(`serializeSolidFeature`)は
-    `radiusEnd` が `undefined` でも `null` でも欄ごと落とすので(§0.a-0.48「一定半径」)、
+    **`radiusEnd` が `null` のときも「欄が無い」として読む**。
+    書き手(`serializeSolidFeature`)は
+    `radiusEnd` が `undefined` でも `null` でも欄ごと落とすので(「一定半径」)、
     読み手だけが `null` を型違いとして断ると書き手と非対称になる。`filletRadiusOf` も
     `undefined` と `null` を同じ「一定半径」として扱う(`createPartDocument.ts` の
     「省略できる欄の約束」を参照。`radiusEnd` は `thickness` と違い `null` に
@@ -229,7 +229,7 @@ export function readFilletFeature(
   };
 }
 
-/** C 面取り(FR-408、§0.a-0.18)を読む。 */
+/** C 面取り(FR-408)を読む。 */
 export function readChamferFeature(
   record: Record<string, unknown>,
   path: string,
@@ -265,7 +265,7 @@ export function readChamferFeature(
 }
 
 // ---------------------------------------------------------------------------
-// P5 の Should 群 9 種の読み込み(§2.11、タスク43)。
+// Should 群 9 種の読み込み。
 //
 // **書き出し(`serializeSolidFeature`)と欄名・順序を必ず揃える。** 参照は id と指紋、
 // 寸法は式のままで、座標・ラジアン・解決した形は 1 つも読まない(要件§8)。
@@ -312,7 +312,7 @@ export function readDraftFeature(
 }
 
 /**
- * 平らな面の移動(EX-18 の限られた一段)を読む。保存するのは対象の id・面の指紋・
+ * 平らな面の移動(限られた一段)を読む。保存するのは対象の id・面の指紋・
  * 符号付きの距離の式だけ(座標や解決した形は読まない。要件§8)。
  */
 export function readFaceOffsetFeature(
@@ -344,7 +344,7 @@ export function readFaceOffsetFeature(
   };
 }
 
-/** くり抜き(FR-418、§2.12、P5 タスク46)を読む。開ける面は 0 枚でもよい。 */
+/** くり抜き(FR-418)を読む。開ける面は 0 枚でもよい。 */
 export function readShellFeature(
   record: Record<string, unknown>,
   path: string,
@@ -380,7 +380,7 @@ export function readShellFeature(
 }
 
 /**
- * 平面による切断(FR-432、§2.9b、タスク27c)を読む。
+ * 平面による切断(FR-432)を読む。
  *
  * 切断面は任意の作業平面(FR-328)と同じ `readPlaneSpec` を通す(読み書きを 2 か所に
  * 書かない)。`pairedWith` は**文字列か null** で、欄が無ければ型が違うとして断る
@@ -431,7 +431,7 @@ export function serializeFilletFeature(feature: Extract<SolidFeature, { readonly
     targetFeatureId: feature.targetFeatureId,
     targets: feature.targets.map(serializeSubShapeRef),
     radius: serializeExpression(feature.radius),
-    // 可変半径(FR-426、P5 タスク46)。**一定半径のときは欄そのものを書かない**ので、
+    // 可変半径(FR-426)。**一定半径のときは欄そのものを書かない**ので、
     // 版 4 以前・版 5 前半のファイルと 1 バイトも変わらない(押し出しの `end` と同じ決め)。
     ...(feature.radiusEnd === undefined || feature.radiusEnd === null
       ? {}
@@ -485,7 +485,7 @@ export function serializeFaceOffsetFeature(
 
 /** shell の保存欄。解決値を足さず、元の式と参照を保持する。 */
 export function serializeShellFeature(feature: Extract<SolidFeature, { readonly kind: 'shell' }>): SolidFeature {
-  // くり抜き(FR-418、§2.12、P5 タスク46)。開ける面は 0 枚でもよい。
+  // くり抜き(FR-418)。開ける面は 0 枚でもよい。
   return {
     id: feature.id,
     kind: 'shell',
@@ -500,7 +500,7 @@ export function serializeShellFeature(feature: Extract<SolidFeature, { readonly 
 
 /** cut の保存欄。解決値を足さず、元の式と参照を保持する。 */
 export function serializeCutFeature(feature: Extract<SolidFeature, { readonly kind: 'cut' }>): SolidFeature {
-  // 平面による切断(FR-432、§2.9b、タスク27c)。切断面は任意の作業平面(FR-328)と
+  // 平面による切断(FR-432)。切断面は任意の作業平面(FR-328)と
   // 同じ `serializePlaneSpec` を通す(読み書きを 2 か所に書かない)。
   // `pairedWith` は単独なら null をそのまま書き出す(欄ごと省略しない。
   // 「対の相手がいない」ことを読む側が判定に使うため)。

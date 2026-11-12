@@ -1,5 +1,5 @@
 import { parseFailure as failure } from './codedFailure.js';
-/** 図面文書と `.pcadd` の `document.json` の相互変換(P8 タスク3)。 */
+/** 図面文書と `.pcadd` の `document.json` の相互変換。 */
 
 import type {
   Annotation,

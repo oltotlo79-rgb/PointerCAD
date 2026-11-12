@@ -15,7 +15,7 @@ interface Violation { consumer: string; specifier: string; typeOnly: boolean; re
 // Exact source and AST expression only; any edit or new consumer requires review.
 const dynamicBaseline = [
   { consumer: 'packages/ui/src/math/localExactMathEngine.ts',
-    sha256: 'ff2ea75ac30155819f7aa42410b67490d7f098d0ff6c765e1ca7d00a1928ff00',
+    sha256: '9410576e478f5795f45635d5112ae799d57d472dddc3e3e89292548b46b1d2d6',
     expression: 'moduleUrl', reason: 'Loads the shipped pyodide.mjs from the fixed runtime folder.' },
   { consumer: 'packages/test-utils/src/functionSizePolicy.test.ts',
     sha256: 'fdd61741dd3dbe49260312b0524ab51ff47a9a93d10d9ca3d922ef57967f93ae',

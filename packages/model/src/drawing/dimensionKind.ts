@@ -6,7 +6,7 @@ export interface SuggestedDimensionKind {
   readonly measurement: DimensionMeasurement;
 }
 
-/** 選択の順によらず同じ寸法を推奨し、対応しない組を暗黙に別対象へ置き換えない(P8-26)。 */
+/** 選択の順によらず同じ寸法を推奨し、対応しない組を暗黙に別対象へ置き換えない。 */
 export function suggestDimensionKind(
   targets: readonly ResolvedDimensionTarget[], requested?: 'arcLength',
 ): SuggestedDimensionKind | null {

@@ -5,7 +5,7 @@ import type {
 
 
 /* ------------------------------------------------------------------ *
- * 書き出しと読み込み(FR-802〜804、FR-811、P6 タスク32b)
+ * 書き出しと読み込み(FR-802〜804、FR-811)
  * ------------------------------------------------------------------ */
 
 /**
@@ -23,12 +23,12 @@ export type ExportColor = readonly [number, number, number];
  *
  * **形も段の鍵も渡さない。** 立体は「それを作ったフィーチャーの id」で指し、鍵
  * (`ResolvedSolidStep.key`)への引き直しは `KernelBridge.exportShapes` が行う
- * (測定の `MeasureTarget` とまったく同じ流儀、§0.a-0.5)。
+ * (測定の `MeasureTarget` とまったく同じ流儀)。
  *
  * 名前と色は**ファイルへ書き込む値**で、履歴の名前と外観の割り当て(`bodyColorsFor` /
  * `faceColorsFor`)から呼び出し側が組む。**色を書かない指定のときは `null` と省略で渡す**
  * ——形式ごとに「色を書くか」の欄を持つのは STEP だけなので、ほかの形式では
- * 値そのものを空にするのが色を落とす唯一の手立てである(§0.a-0.22)。
+ * 値そのものを空にするのが色を落とす唯一の手立てである。
  */
 export interface ShapeExportBody {
   /** 書き出す立体を作ったフィーチャーの id(= ボディの id)。 */
@@ -38,7 +38,7 @@ export interface ShapeExportBody {
   /** 立体の色。`null` なら色を付けない。 */
   readonly color: ExportColor | null;
   /**
-   * 面ごとの色(面の通し番号 → 色。§2.5.1)。**面の割り当ては立体の色より優先する。**
+   * 面ごとの色(面の通し番号 → 色)。**面の割り当ては立体の色より優先する。**
    * 色を付けた面が 1 枚も無い立体では省く(空の表を作らない)。
    */
   readonly faceColors?: ReadonlyMap<number, ExportColor>;
@@ -46,7 +46,7 @@ export interface ShapeExportBody {
 
 /**
  * 書き出しの形式(幾何カーネルの言葉)。**3MF だけ `'mesh'`** で、三角形までを受け取って
- * ZIP と XML は `packages/io` が組む(§0.a-0.19。io は幾何カーネルを呼べない)。
+ * ZIP と XML は `packages/io` が組む(io は幾何カーネルを呼べない)。
  */
 type ShapeExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
 
@@ -58,19 +58,19 @@ export interface ShapeExportOptions {
   readonly format: ShapeExportFormat;
   /** 書き出す立体。並びがそのままファイルの中の並びになる。 */
   readonly bodies: readonly ShapeExportBody[];
-  /** 三角形の細かさの対(§0.a-0.64)。三角形を使わない形式(STEP)では `null`。 */
+  /** 三角形の細かさの対。三角形を使わない形式(STEP)では `null`。 */
   readonly meshQuality: ExportMeshQuality | null;
-  /** 色を書くか(§0.a-0.22)。**効くのは STEP だけ**(ほかは `color` を空にして落とす)。 */
+  /** 色を書くか。**効くのは STEP だけ**(ほかは `color` を空にして落とす)。 */
   readonly withColors: boolean;
-  /** STL を文字で書くか(§0.a-0.14)。STL 以外では見ない。 */
+  /** STL を文字で書くか。STL 以外では見ない。 */
   readonly ascii: boolean;
-  /** ファイル名の基(拡張子なし)。`.obj` と `.mtl` は同じ基を使う(§0.a-0.16)。 */
+  /** ファイル名の基(拡張子なし)。`.obj` と `.mtl` は同じ基を使う。 */
   readonly baseName: string;
 }
 
 /**
  * 書き出したファイル 1 つ。**名前を変えずにそのまま保存する。**
- * `.obj` の材質の行が `.mtl` を名前で指しているので、変えると色が付かない(§2.4)。
+ * `.obj` の材質の行が `.mtl` を名前で指しているので、変えると色が付かない。
  */
 export interface ExportedFile {
   readonly fileName: string;
@@ -88,7 +88,7 @@ export interface ExportFaceRange {
   readonly triangleCount: number;
 }
 
-/** 書き出した立体 1 つぶんの三角形(3MF のときだけ返る。§0.a-0.19)。 */
+/** 書き出した立体 1 つぶんの三角形(3MF のときだけ返る)。 */
 export interface ExportedMeshBody {
   /** 依頼に入れた名前をそのまま返す(io が 3MF の物体の名前に使う)。 */
   readonly name: string | null;
@@ -97,7 +97,7 @@ export interface ExportedMeshBody {
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
   /**
-   * 面ごとの色(依頼に入れた `ShapeExportBody.faceColors` をそのまま返す。§2.5.1)。
+   * 面ごとの色(依頼に入れた `ShapeExportBody.faceColors` をそのまま返す)。
    * `packages/io` の `writeThreeMf` が `<basematerials>` の材質参照まで届かせるのに使う。
    * 色を付けた面が 1 枚も無い立体では省く。
    */
@@ -148,7 +148,7 @@ export interface ImportedTriangles {
 export interface ImportedBodyCommon {
   /** ファイルに入っていた名前。無ければ `null`。 */
   readonly name: string | null;
-  /** ファイルに入っていた色。無ければ `null`(当面は使わない。§0.a-0.28)。 */
+  /** ファイルに入っていた色。無ければ `null`(当面は使わない)。 */
   readonly color: ExportColor | null;
   /** 体積(mm³)。 */
   readonly volume: number;
@@ -157,7 +157,7 @@ export interface ImportedBodyCommon {
 }
 
 /**
- * 読み込んだ立体 1 つ(FR-802、§2.8)。**B-rep を持つ枝と三角形だけの枝を型で分ける。**
+ * 読み込んだ立体 1 つ(FR-802)。**B-rep を持つ枝と三角形だけの枝を型で分ける。**
  * 「無い値に `null` を入れる」形にすると、受け取る側が確かめ忘れても型検査が助けない
  * (kernel の `ShapeImportBody` と同じ分け方)。
  */
@@ -176,7 +176,7 @@ export type ImportedBody =
 /**
  * 読み込みの結果(FR-802、FR-811)。**座標はすでに mm へ換算済み**(NFR-RE-3)で、
  * `unit` は「ファイルが何で書かれていたか」の記録である。`'other'`(STL / OBJ)のときは
- * 呼び出し側が利用者へ訊く(§0.a-0.6)。
+ * 呼び出し側が利用者へ訊く。
  */
 export type ShapeImportOutcome =
   | {

@@ -17,7 +17,7 @@ import { mathGeometryCoefficientId, mathGeometryReferencesOf } from './mathGeome
 import type { MathGeometryDefinition, MathGeometryOutcome } from './mathGeometryTypes.js';
 
 /* ---------------------------------------------------------------------------
- * Q4=S1: operations allowed in a formula computed from a measured value
+ * Operations allowed in a formula computed from a measured value
  * ------------------------------------------------------------------------- */
 
 /** The 24 trigonometric and hyperbolic functions and their inverses (`sin` … `arcsch`). */
@@ -29,7 +29,7 @@ const TRIGONOMETRIC_OPERATIONS = [
 ] as const;
 
 /**
- * Q4=S1 (§4(e)): the operation IDs a geometry-derived formula may contain. Every one is continuous in
+ * The operation IDs a geometry-derived formula may contain. Every one is continuous in
  * its operands, so a measured double that is off by a rounding step moves the result by a comparable
  * amount instead of jumping (floor, round, comparisons, cases, integer arithmetic, sets, equations and
  * ranged sums are absent on purpose). Integrals have their own contextual check below: their local
@@ -47,7 +47,7 @@ export const GEOMETRY_DERIVED_OPERATIONS: ReadonlySet<string> = new Set<string>(
 export interface GeometryDerivedOperationIssue {
   /** The rejected operation ID exactly as stored in the formula (e.g. `floor`, `less`, `sum`). */
   readonly operation: string;
-  /** Appendix C's sentence, naming the operation the way the text notation spells it. */
+  /** The refusal sentence, naming the operation the way the text notation spells it. */
   readonly message: string;
 }
 
@@ -85,7 +85,7 @@ export function geometryDerivedIntegralOperands(node: MathNode): readonly MathNo
  * constants and symbols are not operations and are accepted; a declared value is a closed constant and
  * a declared map can only be applied through `mapping-value`, which is rejected here.
  *
- * Walks iteratively (R27): stored formulas are already bounded by the decoder's node and depth limits.
+ * Walks iteratively: stored formulas are already bounded by the decoder's node and depth limits.
  */
 export function checkGeometryDerivedOperations(expression: MathNode): GeometryDerivedOperationIssue | null {
   const pending: MathNode[] = [expression];
@@ -108,7 +108,7 @@ export function checkGeometryDerivedOperations(expression: MathNode): GeometryDe
 }
 
 /* ---------------------------------------------------------------------------
- * Which coefficients are geometry-derived (§4(e) 由来の保持)
+ * Which coefficients are geometry-derived (由来の保持)
  * ------------------------------------------------------------------------- */
 
 /**
@@ -132,7 +132,7 @@ export function mathGeometryDerivedParameters(parameters: readonly Parameter[]):
     direct.set(parameter.name, definition === undefined ? [] : mathGeometryReferencesOf(definition).map(reference => reference.definitionId));
   }
   const derived = new Map<string, readonly string[]>();
-  // Without a single measured reference nothing can be derived; skip the dependency walk (R45: no cost
+  // Without a single measured reference nothing can be derived; skip the dependency walk (no cost
   // for documents that do not use math geometry).
   if ([...direct.values()].every(ids => ids.length === 0)) return derived;
   const dependencies = parameterDependencies(parameters);
@@ -156,13 +156,13 @@ export function mathGeometryDerivedParameters(parameters: readonly Parameter[]):
 }
 
 /* ---------------------------------------------------------------------------
- * Handing one measured value to the math engine (§4(e) 数式への入力)
+ * Handing one measured value to the math engine (数式への入力)
  * ------------------------------------------------------------------------- */
 
 /**
  * The definitions a `coef` reference may resolve to, by definition ID. A definition is left out when
  * another definition repeats its ID or its name, or a coefficient already has its name: definitions and
- * coefficients share one label space (GR-01), and the math engine refuses a request whose coefficient
+ * coefficients share one label space, and the math engine refuses a request whose coefficient
  * labels repeat. A reference to a left-out definition fails with a reason; it never picks one of the
  * candidates.
  */
@@ -202,12 +202,12 @@ export type MathGeometryCoefficientInput =
  * Convert `outcome` (the caller's current result for `definition`, or `undefined`) into the input the
  * math engine receives for `coef("<definition.name>")`. An outcome that belongs to another document or
  * another definition is not this definition's current value and reads as `pending`; freshness within
- * this document (same recomputation generation) is the caller's responsibility (GR-06 passes only this
- * generation's outcomes, GR-14/GR-18 only the current ones).
+ * this document (same recomputation generation) is the caller's responsibility (the staged recomputation passes only this
+ * generation's outcomes, the screens only the current ones).
  *
  * The decimal is `String(value)`: the shortest decimal that reads back to the same double, possibly in
  * exponent notation (`1e-7`, `1.5e+21`), which the math engine's decimal grammar accepts. It is never
- * rounded further here and never accompanied by an `exactExpression` (§4(e)); the unit is the
+ * rounded further here and never accompanied by an `exactExpression`; the unit is the
  * definition's own (mm, mm², mm³, degree or radian) and is not converted.
  */
 export function mathGeometryCoefficientValue(document: PartDocument, definition: MathGeometryDefinition,
@@ -223,36 +223,36 @@ export function mathGeometryCoefficientValue(document: PartDocument, definition:
 }
 
 /* ---------------------------------------------------------------------------
- * Reasons shown to the user (Appendix C; the model keeps its own Japanese text because it cannot read
+ * Reasons shown to the user (the model keeps its own Japanese text because it cannot read
  * the UI's message files, like `LENGTH_UNIT_NAME_MESSAGE`)
  * ------------------------------------------------------------------------- */
 
-/** Appendix C「参照先の不一致」: the definition is missing, renamed without this reference, or ambiguous. */
+/** 「参照先の不一致」: the definition is missing, renamed without this reference, or ambiguous. */
 export function mathGeometryReferenceMismatchMessage(label: string): string {
   return `図形の測定値の参照先を確認できません: ${label}`;
 }
 
-/** Appendix C「測れない」: `reason` is the measuring code's own sentence. */
+/** 「測れない」: `reason` is the measuring code's own sentence. */
 export function mathGeometryUnresolvedMessage(definitionName: string, coefficientName: string, reason: string): string {
   return `図形の測定値「${definitionName}」を測れないため、係数「${coefficientName}」を計算できません: ${reason}`;
 }
 
-/** Appendix C「真偽」. */
+/** 「真偽」. */
 export function mathGeometryBooleanMessage(definitionName: string): string {
   return `平行・垂直などの判定の結果は係数の式に使えません: ${definitionName}`;
 }
 
-/** Appendix C「演算」. */
+/** 「演算」. */
 export function mathGeometryOperationMessage(operation: string): string {
   return `図形の測定値から計算する式では「${operation}」を使えません。値の境目で結果が変わる計算は使えません。`;
 }
 
-/** Not in Appendix C: the value is simply not measured yet in this recomputation ("計算待ち"). */
+/** Not a refusal: the value is simply not measured yet in this recomputation ("計算待ち"). */
 export function mathGeometryPendingMessage(definitionName: string): string {
   return `図形の測定値「${definitionName}」を計算中です。形の計算が終わると使えます。`;
 }
 
-/** Not in Appendix C: Q2=U1/U3 lets only a coefficient's own formula read a measured value. */
+/** Only a coefficient's own formula may read a measured value. */
 export function mathGeometryOutsideCoefficientMessage(label: string): string {
   return `図形の測定値は係数の式の中でだけ使えます: ${label}`;
 }

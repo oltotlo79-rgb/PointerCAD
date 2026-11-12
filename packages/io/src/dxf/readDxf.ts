@@ -1,51 +1,51 @@
 /**
- * DXF のタグの列を実体(`DxfEntity`)の列へ畳む(要件 FR-813、計画書 docs/plans/P6-入出力.md
- * §2.7 タスク24)。
+ * DXF のタグの列を実体(`DxfEntity`)の列へ畳む
+ * (要件 FR-813)。
  *
- * 読み込みの 3 段のうちの 2 段目にあたる(計画書 §2.7)。
+ * 読み込みの 3 段のうちの 2 段目にあたる。
  *
  * ```
- * テキスト → parseDxfTags(text)   : DxfTag[]      … 字句(タスク22。dxfTags.ts)
+ * テキスト → parseDxfTags(text)   : DxfTag[]      … 字句(dxfTags.ts)
  *          → readDxf(tags)        : DxfReadResult … 実体(この段)
- *          → dxfToSketch(…)       : SketchFeature[] … スケッチへの写し(タスク26。model 側)
+ *          → dxfToSketch(…)       : SketchFeature[] … スケッチへの写し(model 側)
  * ```
  *
  * ## 何をして、何をしないか
  *
- * - **扱う実体は 9 種**(計画書 §0.a-0.30): `POINT` / `LINE` / `CIRCLE` / `ARC` /
+ * - **扱う実体は 9 種**: `POINT` / `LINE` / `CIRCLE` / `ARC` /
  *   `ELLIPSE` / `LWPOLYLINE` / `POLYLINE`(+ `VERTEX` / `SEQEND`)/ `SPLINE` / `INSERT`。
  *   **それ以外の実体(`TEXT` / `HATCH` / `DIMENSION` …)は黙って飛ばす**(断らない。
  *   他の CAD が書いた DXF には必ず知らない実体が入っているため)。飛ばした数だけを
- *   `skippedEntityCount` に残し、利用者へ知らせるかどうかは上の段(タスク26)が決める。
+ *   `skippedEntityCount` に残し、利用者へ知らせるかどうかは上の段が決める。
  * - **`INSERT` はここで展開する。** ブロックの中身を「倍率 → 回転 → 移動」の順で写した
- *   実体に置き換えるので、この段より上はブロックを知らなくてよい。**入れ子は 8 段まで**
- *   (計画書 §0.a-0.32)。9 段目と自己参照は `DXF_BLOCK_NESTING_MESSAGE` で断る。
+ *   実体に置き換えるので、この段より上はブロックを知らなくてよい。**入れ子は 8 段まで。**
+ *   9 段目と自己参照は `DXF_BLOCK_NESTING_MESSAGE` で断る。
  * - **多角形(`LWPOLYLINE` / `POLYLINE`)は線分と円弧の並びへ開く。** 写し先の
- *   `SketchFeature` に多角形の種類が無く(計画書 §0.32 が「`line` と `arc` の並び」と決めている)、
+ *   `SketchFeature` に多角形の種類が無く(「`line` と `arc` の並び」と決めている)、
  *   ふくらみ(bulge)の換算をこの段で済ませておけば、上の段は 1 対 1 で写すだけで済むため。
- * - **単位の換算はここでしない。** `$INSUNITS`(1 = inch、4 = mm、無ければ mm。計画書 §0.a-0.6)を
+ * - **単位の換算はここでしない。** `$INSUNITS`(1 = inch、4 = mm、無ければ mm)を
  *   読んで `unit` に添えるだけで、**座標はファイルに書かれた数のまま**返す。理由は 3 つ。
  *   ①`unit` が `'other'`(フィートやメートル)のときにどうするかは、利用者へ訊く画面を持つ
- *   上の段の判断であること。②STL / OBJ は「取り込みの時に利用者へ訊く」(計画書 §0.a-0.6)ので、
- *   換算の場所を上の段へ揃えたほうが 1 か所で済むこと。③書き出し(タスク25)は
+ *   上の段の判断であること。②STL / OBJ は「取り込みの時に利用者へ訊く」ので、
+ *   換算の場所を上の段へ揃えたほうが 1 か所で済むこと。③書き出しは
  *   `$INSUNITS = 4`(mm)固定なので、この段で換算すると往復で二重に掛かる恐れがあること。
- * - **Z 座標は捨てる**(2D の図として取り込む。計画書 §0.a-0.33)。捨てた実体の数を
+ * - **Z 座標は捨てる**(2D の図として取り込む)。捨てた実体の数を
  *   `offPlaneCount` に残す。**文言(「平面から外れた図形が N 個あります。」)はここでは出さない**
- *   ——案内を出すかどうかは上の段(タスク26)が決める。
+ *   ——案内を出すかどうかは上の段が決める。
  *
  * ## 断りと、黙って飛ばすものの線引き
  *
  * **形式として読めないもの**(`ENDSEC` が無い、`ENDBLK` が無い、既知の実体に必要な
  * グループコードが無い、半径が 0 以下)は `DXF_UNSUPPORTED_FORMAT_MESSAGE` で断る。
  * 壊れた対応のまま読み進めると、別の図形として「読めた」ことになってしまうため
- * (字句の段(タスク22)と同じ考え方)。
+ * (字句の段と同じ考え方)。
  * 一方、**知らない実体**は正常な DXF にも必ず入っているので飛ばす。
  *
- * ## 触れていないもの(上の段・別のタスクへの申し送り)
+ * ## 触れていないもの(上の段に任せるもの)
  *
  * - `INSERT` の並べ置き(グループ 70 / 71 の列数・行数、44 / 45 の間隔)は**1 個として読む**。
  *   複数の CAD で既定が 1 であり、繰り返しの配置は稀なため。
- * - 押し出しの向き(グループ 210 / 220 / 230)は**見ない**(計画書 §0.a、タスク23 の申し送り)。
+ * - 押し出しの向き(グループ 210 / 220 / 230)は**見ない**。
  *   平らな DXF が対象なので、向きが反転した実体は鏡に映った位置で読まれる。
  * - 色(グループ 62)は**生の整数のまま**持つ(`0` = ブロックに従う、`256` = レイヤーに従う、
  *   負 = 表示を消してある、の意味づけは上の段の仕事)。
@@ -88,7 +88,7 @@ export interface DxfLineEntity extends DxfEntityBase {
 
 /**
  * `CIRCLE` / `ARC`、および多角形のふくらみ(bulge)を開いた円弧の区間。
- * **円は「開始 0 度・終了 360 度の円弧」として持つ**(計画書 §0.32。写し先の
+ * **円は「開始 0 度・終了 360 度の円弧」として持つ**(写し先の
  * `SketchArcFeature` が全周の指定で円になるため、種類を増やさない)。
  */
 export interface DxfArcEntity extends DxfEntityBase, DxfArcGeometry {
@@ -119,7 +119,7 @@ export type DxfEntity =
  */
 export type DxfLengthUnit = 'mm' | 'inch' | 'other';
 
-/** `readDxf` の結果。**上の段(タスク26)が案内の文言を組み立てるための材料をすべて持つ。** */
+/** `readDxf` の結果。**上の段が案内の文言を組み立てるための材料をすべて持つ。** */
 export interface DxfReadResult {
   /** 読み取れた実体(`INSERT` は展開済み、多角形は線分と円弧へ開き済み)。 */
   readonly entities: readonly DxfEntity[];
@@ -129,13 +129,13 @@ export interface DxfReadResult {
   readonly insUnits: number | null;
   /** 扱わない実体を飛ばした数(展開後の数。`INSERT` の中で飛ばした分も数える)。 */
   readonly skippedEntityCount: number;
-  /** Z が 0 でなかった実体の数(平らにして取り込んだ数。計画書 §0.a-0.33)。 */
+  /** Z が 0 でなかった実体の数(平らにして取り込んだ数)。 */
   readonly offPlaneCount: number;
   /** `BLOCKS` にあったブロックの定義の数(展開した回数ではない)。 */
   readonly blockCount: number;
 }
 
-/** ブロックの入れ子が深すぎるときに利用者へ見せる日本語(計画書 §2.7 の表)。 */
+/** ブロックの入れ子が深すぎるときに利用者へ見せる日本語。 */
 export const DXF_BLOCK_NESTING_MESSAGE = 'ブロックの入れ子が深すぎます。';
 
 /**
@@ -158,13 +158,13 @@ export const DXF_NON_UNIFORM_SCALE_MESSAGE = 'ブロックの縦横で倍率が�
  */
 export const DXF_TOO_MANY_ENTITIES_MESSAGE = 'この DXF は図形が多すぎて取り込めません。';
 
-/** `INSERT` の入れ子の深さの上限(計画書 §0.a-0.32)。 */
+/** `INSERT` の入れ子の深さの上限。 */
 export const DXF_MAX_BLOCK_NESTING_DEPTH = 8;
 
-/** 展開後の実体の数の上限。性能の上限(1 万エンティティ / 3 秒。§2.17 #6)の 10 倍を取る。 */
+/** 展開後の実体の数の上限。性能の上限(1 万エンティティ / 3 秒)の 10 倍を取る。 */
 export const DXF_MAX_ENTITY_COUNT = 100_000;
 
-/** `$INSUNITS` の値。DXF の仕様の番号(計画書 §0.a-0.6 が使うのはこの 2 つだけ)。 */
+/** `$INSUNITS` の値。DXF の仕様の番号(使うのはこの 2 つだけ)。 */
 const INSUNITS_INCH = 1;
 const INSUNITS_MILLIMETER = 4;
 
@@ -466,7 +466,7 @@ function splitRecords(tags: readonly DxfTag[]): readonly DxfRecord[] {
 // ---------------------------------------------------------------------------
 
 /**
- * `HEADER` から `$INSUNITS` だけを拾う(計画書 タスク24 手順 2)。
+ * `HEADER` から `$INSUNITS` だけを拾う。
  * ヘッダの変数は「`9`/変数名」に続けて値のタグが来るので、**次の `9` が現れる前の
  * `70`** を値とみなす。
  */
@@ -484,10 +484,10 @@ function readInsUnits(tags: readonly DxfTag[]): number | null {
   return null;
 }
 
-/** `$INSUNITS` の値を、上の段が扱う 3 通りへ寄せる(計画書 §0.a-0.6)。 */
+/** `$INSUNITS` の値を、上の段が扱う 3 通りへ寄せる。 */
 function toLengthUnit(insUnits: number | null): DxfLengthUnit {
   if (insUnits === null) {
-    // 単位が書かれていない DXF は mm とみなす(計画書 §0.6)。
+    // 単位が書かれていない DXF は mm とみなす。
     return 'mm';
   }
   if (insUnits === INSUNITS_INCH) {
@@ -553,7 +553,7 @@ function readLineEntity(record: DxfRecord): DxfLineEntity {
   };
 }
 
-/** `CIRCLE` は「開始 0 度・終了 360 度の円弧」として読む(計画書 §0.32)。 */
+/** `CIRCLE` は「開始 0 度・終了 360 度の円弧」として読む。 */
 function readCircleEntity(record: DxfRecord): DxfArcEntity {
   const radius = requiredNumber(record.tags, 40);
   if (radius <= 0) {
@@ -660,7 +660,7 @@ function readSplineEntity(record: DxfRecord): DxfSplineEntity {
 
 /**
  * 頂点の並びを、線分と円弧の区間へ開く。ふくらみ(bulge)が 0 でない区間は円弧、
- * 0 の区間は線分になる(`bulgeToArc` が `null` を返したら直線として扱う。タスク23 の決め)。
+ * 0 の区間は線分になる(`bulgeToArc` が `null` を返したら直線として扱う)。
  * **長さ 0 の区間は捨てる**(同じ点が続けて書かれた多角形が、線分 0 本ぶんの図形を作らないため)。
  */
 function polylineToEntities(
@@ -753,7 +753,7 @@ const Z_CODES: readonly number[] = [30, 31, 38];
 
 /**
  * 記録が平面から外れているか(Z が 0 でないか)。**座標としては使わず、数えるだけ**
- * (計画書 §0.a-0.33「Z 座標は無視する。外れた図形があれば 1 行案内する」)。
+ * (「Z 座標は無視する。外れた図形があれば 1 行案内する」)。
  */
 function isOffPlane(record: DxfRecord, vertexRecords: readonly DxfRecord[] = []): boolean {
   for (const tag of record.tags) {

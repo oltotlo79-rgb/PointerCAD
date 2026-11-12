@@ -70,7 +70,7 @@ function layoutsCurrent(source: AssemblySourceMeshOwner): boolean {
  * receipt.owners indexed by dispatchId, built once per frozen issued owner list (a bridge receipt never changes).
  * sourceCurrent used to scan the whole list for every required owner: with one display owner per distinct part
  * definition, one admission check was O(sources x owners) and the assembly layer repeats it on every allocation, so a
- * 1,000-definition publication blocked the page for minutes (EX12 W02). The compared fields and the result are the same;
+ * 1,000-definition publication blocked the page for minutes. The compared fields and the result are the same;
  * an unfrozen list is indexed again on every call because it could change after a check.
  */
 const issuedOwnersByDispatch = new WeakMap<readonly LedgerOwner[], ReadonlyMap<string, readonly LedgerOwner[]>>();

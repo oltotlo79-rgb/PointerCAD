@@ -7,7 +7,7 @@ import { activeDocumentKind } from '../../store/documentKind.js';
 import { useAppStore } from '../../store/useAppStore.js';
 /**
  * 畳んだ一覧の共通の見た目(FR-904、NFR-UX-7)。中身の表は `toolbarMenus.ts` にある。
- * 一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
+ * 一覧ごとに 1 ファイルへ分けた。
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -32,18 +32,18 @@ interface ToolMenuProps<Id extends string> {
   readonly GroupIcon: IconComponent;
   /**
    * いま選んでいる道具の id。畳んだボタンの図柄と `aria-pressed` を決めるためだけに使う
-   * ので、道具 id の型ではなく**文字列**で受ける(P4b タスク13 で「拘束」の一覧を足した。
+   * ので、道具 id の型ではなく**文字列**で受ける(「拘束」の一覧もあり、
    * 拘束の種類は `NumericInputToolId` ではなく `SketchConstraintKind` で、
    * `triggerItemOf` もこの用途のために `string` を受ける形になっている)。
    */
   readonly activeTool: string;
   /**
    * 道具ごとの押せる条件(NFR-UX-5「実行前に理由提示」)。渡さなければ常に押せる。
-   * タスク22〜24 が道具ごとに違う条件を足すときは、ここを id で振り分ける。
+   * 道具ごとに違う条件を足すときは、ここを id で振り分ける。
    */
   readonly readinessOf?: (id: Id) => EditToolReadiness;
   /**
-   * 畳んだボタンに「押されている」見た目(`aria-pressed`)を出すか。既定は出す(§0.a-0.80)。
+   * 畳んだボタンに「押されている」見た目(`aria-pressed`)を出すか。既定は出す。
    *
    * **「投影」の一覧だけは出さない。** 透視投影か平行投影かは**必ずどちらかが効いている**
    * ので、押下表示が常に点いたままになり「押しっぱなしのボタン」に見える(2026-09-05 の
@@ -59,10 +59,10 @@ interface ToolMenuProps<Id extends string> {
 }
 
 /**
- * 図柄つきの畳んだ一覧(「作図」「編集」、§0.a-0.14、タスク32)。
+ * 図柄つきの畳んだ一覧(「作図」「編集」)。
  *
  * **1 段に戻すための形**(利用者の決定 2026-09-04)。基本の 6 道具と同じ溝の中に、
- * 図柄+小さな ▾ のボタンとして並ぶ。t12・t21 の時点では名前つきのボタンが基本の道具の
+ * 図柄+小さな ▾ のボタンとして並ぶ。以前は名前つきのボタンが基本の道具の
  * 下へ積まれ、ツールバーが 1440 画素で 2〜3 段相当(実測 97.5〜126.5px)になっていた。
  *
  * 作り(非モーダル、外を押すと閉じる、Esc で閉じる)は `PlaneMenu` と同じ。加えて
@@ -123,7 +123,7 @@ export function ToolMenu<Id extends string>({
   const shown = triggerItemOf(items, activeTool, recentId);
   /*
    * 行に出す名前。**利用者が付けた名前を持つ行だけ**が `label` を持ち(保存したひな形と
-   * 最近使ったファイル。P6 タスク33)、持たない行は今までどおり `ja.json` から引く
+   * 最近使ったファイル)、持たない行は今までどおり `ja.json` から引く
    * (NFR-MA-5)。読み替えをここ 1 か所に閉じておくと、ツールチップ・読み上げ名・行の
    * 見出しの 3 か所が必ず同じ名前になる。
    */

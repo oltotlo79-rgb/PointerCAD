@@ -145,12 +145,12 @@ export function assemblyMateRowDetails(rowId: string, view: AssemblyView | null 
 }
 
 /**
- * 左のモデルブラウザの**アセンブリ版**(要件§7.1、FR-501。計画書 P7 タスク9)。
+ * 左のモデルブラウザの**アセンブリ版**(要件§7.1、FR-501)。
  *
  * 「アセンブリ → 部品 / 合致 / ジョイント / 分解ステップの 4 つの束 → その中身」の親子で、
  * 置いた順(文書の順)に並べる。**区画は増やさない**(`rules/04-設計の規律.md`)——
  * 部品を開いているときの `FeatureTree` と同じ場所に、同じ見た目で入れ替わって出る
- * (どちらを出すかは `AppShell.tsx` が文書の種類で決める。§0.a-0.10)。
+ * (どちらを出すかは `AppShell.tsx` が文書の種類で決める)。
  *
  * **行の組み立ては純関数**(`assemblyTreeRows.ts`)に置き、ここは並べるだけにしてある。
  * 行をクリックで選び、Shift+クリックで足す(FR-106)。指を乗せるとビューポート側も光る
@@ -158,7 +158,7 @@ export function assemblyMateRowDetails(rowId: string, view: AssemblyView | null 
  *
  * 部品の行は「⋮」ボタンか右クリックで小さな一覧を開き、固定(FR-602)・表示(FR-605)・
  * 抑制(FR-503)を切り替えられる。合致・ジョイント・分解ステップの行の操作は、
- * それぞれを作る段(P7 タスク17・35 ほか)が同じ一覧へ足す。
+ * それぞれを作る段が同じ一覧へ足す。
  *
  * 開いているかどうか・一覧を出しているかどうかは見た目だけの一時状態なのでコンポーネントに
  * 持つ(`FeatureTree` と同じ)。形の正本はストアの `assembly` だけ。
@@ -462,7 +462,7 @@ export function AssemblyTree(): React.JSX.Element {
                         /*
                           束ごとの短い案内。部品を 1 つも置いていないアセンブリ全体の案内
                           (`assembly.emptyState`)はビューポートの側に `AppShell` が出すので、
-                          ここでは二重に出さない(P7 タスク5 の申し送り)。
+                          ここでは二重に出さない。
                         */
                         <p className="pcad-tree__hint">{t(section.emptyKey)}</p>
                       ) : (

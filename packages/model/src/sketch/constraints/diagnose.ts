@@ -1,15 +1,15 @@
 /**
- * 拘束の診断(足りない・足しすぎ・矛盾。FR-313、NFR-UX-5、FR-504、
- * 計画書 docs/plans/P4b-スケッチの仕上げ.md §2.2「診断」、タスク7)。
+ * 拘束の診断(足りない・足しすぎ・矛盾)。
+ * (FR-313、NFR-UX-5、FR-504)。
  *
- * ヤコビアン(タスク5 が作る残差の行)を 1 度だけ走査して、次の 4 つを分けて返す。
+ * ヤコビアン(`residuals.ts` が作る残差の行)を 1 度だけ走査して、次の 4 つを分けて返す。
  *
  * | 見るもの | 何を意味するか | 画面に出すもの |
  * |---|---|---|
  * | 変数の数 − 階数 | まだ決まっていない自由度 | 「あと N か所決まっていません」 |
  * | 足しても階数が増えない行 | 足しすぎ(冗長) | 「○○1 は、ほかの拘束ですでに決まっています。」 |
  * | 足しても階数が増えず、残差の食い違いが残る行 | 矛盾(同時には成り立たない) | 「○○1 と ○○2 は同時には成り立ちません。」 |
- * | 材料の足りない拘束(タスク5 の `skipped`) | 指していた要素が消えた | タスク5 が作った日本語の理由をそのまま |
+ * | 材料の足りない拘束(`residuals.ts` の `skipped`) | 指していた要素が消えた | `residuals.ts` が作った日本語の理由をそのまま |
  *
  * **冗長と矛盾の見分け方は「階数」と「残差」の 2 段。**
  * ある行 aᵢ が先行の独立な行 a_{j₁}…a_{j_k} の線形結合 Σ w a_j で書けるなら、その行は階数を
@@ -20,9 +20,9 @@
  *
  * 線形化では捕まらない矛盾(階数は満ちているのに解が無い非線形の組)もあるので、残差が
  * 許容量を超えたまま矛盾が 1 件も見つからなかったときだけ、**残差の大きい順に最大 3 つ**を
- * 原因として挙げる(計画書 §2.2 の表の規則)。
+ * 原因として挙げる(診断の表の規則)。
  *
- * **x には「解いた後の値」を渡す**(タスク8 の 3 段の解決の②の結果)。初期値のまま渡すと、
+ * **x には「解いた後の値」を渡す**(`solveSketch.ts` の 3 段の解決の②の結果)。初期値のまま渡すと、
  * まだ解いていないだけの残差を「矛盾」と読み違える(上の線形結合の判定だけは x に依らない)。
  *
  * ここは純関数だけを置く。乱数・時刻・`Map` の反復順に頼らず、同じ入力からは必ず同じ診断を返す。
@@ -45,7 +45,7 @@ import {
 } from './variables.js';
 
 /**
- * 矛盾の原因として画面へ挙げる拘束の数の上限(計画書 §2.2「残差が大きい順に上位 3 つ」)。
+ * 矛盾の原因として画面へ挙げる拘束の数の上限(「残差が大きい順に上位 3 つ」)。
  * 全部を並べると帯に収まらず、どれから直せばよいか分からなくなるため。
  */
 export const CONFLICT_REPORT_LIMIT = 3;
@@ -90,7 +90,7 @@ export type ConstraintDiagnosisMessageKind =
   | 'redundant'
   /** 矛盾の拘束 1 つぶん。 */
   | 'conflict'
-  /** 材料が足りない・縮退などで式を作れなかった拘束 1 つぶん(タスク5 の文をそのまま)。 */
+  /** 材料が足りない・縮退などで式を作れなかった拘束 1 つぶん(`residuals.ts` の文をそのまま)。 */
   | 'skipped'
   /** 変数が上限を超えた。 */
   | 'tooMany'
@@ -189,7 +189,7 @@ const REORTHOGONALIZE_RATIO = 0.7;
  * 判定は行ごとの相対値で行う。ある行を先行の行と直交化した残りの長さが、もとの長さの
  * `RANK_RELATIVE_TOLERANCE`(1e-9)倍を下回ったら従属とする。**行の大きさで割る**ので、
  * mm の量(距離・一致)と無次元の量(平行・角度)が混ざっても判定が偏らない
- * (計画書 §2.2 の落とし穴「単位が混ざったら列を正規化」に対する答え。列は
+ * (落とし穴「単位が混ざったら列を正規化」に対する答え。列は
  * すべて mm の量なので列の正規化は要らず、行の側を正規化すれば足りる)。
  */
 function analyzeRows(rows: readonly ResidualRow[], columnCount: number): RowAnalysis {
@@ -373,9 +373,9 @@ function joinWithAnd(names: readonly string[]): string {
  * ------------------------------------------------------------------ */
 
 /**
- * 拘束を診断する(§2.2 の表)。**例外を投げない**(FR-504、NFR-RE-1)。
+ * 拘束を診断する。**例外を投げない**(FR-504、NFR-RE-1)。
  *
- * `x` は変数の現在値(`VariableSet.variables` と同じ並び)。タスク8 は連立を解いた後の値を渡す。
+ * `x` は変数の現在値(`VariableSet.variables` と同じ並び)。`solveSketch.ts` は連立を解いた後の値を渡す。
  */
 export function diagnoseConstraints(
   constraints: readonly SketchConstraint[],
@@ -454,7 +454,7 @@ export function diagnoseConstraints(
       }
       partners.push(partnerId);
     }
-    // **階数を増やさない行は、まず「足しすぎ」として数える**(統括の指示・計画書 §2.2 の表)。
+    // **階数を増やさない行は、まず「足しすぎ」として数える**。
     // 矛盾はそのうえで残差の食い違いを見た結果なので、同じ拘束が両方に入ることがある
     // (長さ 10 と長さ 12 は「足しすぎ 1 件」かつ「矛盾 2 件」)。
     if (!seenRedundant.has(row.constraintId)) {
@@ -513,7 +513,7 @@ export function diagnoseConstraints(
   const satisfied = !incomplete && maxResidual <= tolerance;
   if (!satisfied && conflictDetails.length === 0) {
     // 線形化では捕まらない矛盾(階数は満ちているのに解が無い非線形の組)。
-    // 残差の大きい順に上位 3 つを原因として挙げる(計画書 §2.2 の表)。
+    // 残差の大きい順に上位 3 つを原因として挙げる。
     const ordered = rows
       .map((row, rowIndex) => ({ row, rowIndex }))
       .filter((entry) => visible(entry.row.constraintId) && Math.abs(entry.row.value) > tolerance)
@@ -541,7 +541,7 @@ export function diagnoseConstraints(
   const conflicting = conflictDetails.slice(0, CONFLICT_REPORT_LIMIT).map((entry) => entry.constraintId);
   const redundant = redundantDetails.map((entry) => entry.constraintId);
   // 「材料が足りない」の判定は `countDegreesOfFreedom` の指し先の検査を正本にする。
-  // タスク5 の `skipped` は残差を作れなかった理由(向きが読めない `unsupportedTarget` と
+  // `residuals.ts` の `skipped` は残差を作れなかった理由(向きが読めない `unsupportedTarget` と
   // 要素が消えた場合の区別が付かない)なので、同じ規則を 2 か所に書かない。
   const dangling = countDegreesOfFreedom(
     variableSet,

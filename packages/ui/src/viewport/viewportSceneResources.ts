@@ -128,7 +128,7 @@ export function createSceneLayers(scene: THREE.Scene, acquired: SceneAcquire, cr
 
   const assemblyLayer = createAssembly();
   scene.add(assemblyLayer.group);
-  // 干渉の赤は共有材質を変えず、共通形状だけを独立した層へ重ねる(P7 タスク26)。
+  // 干渉の赤は共有材質を変えず、共通形状だけを独立した層へ重ねる。
   const interferenceLayer = acquired('interferenceLayer', createInterferenceLayer());
   scene.add(interferenceLayer.group);
   const analysisFieldLayer = acquired('analysisFieldLayer', createSolidFieldLayer());
@@ -137,12 +137,12 @@ export function createSceneLayers(scene: THREE.Scene, acquired: SceneAcquire, cr
   scene.add(analysisModeLayer.group);
 
   /*
-    下絵の画像(FR-332、P6 タスク39)。**スケッチの線より必ず後ろ**に描く(§0.a-0.46)ので、
+    下絵の画像(FR-332)。**スケッチの線より必ず後ろ**に描くので、
     読む順も層の前後にそろえてスケッチの層より前に足す(実際の前後は足した順ではなく
     `canvasLayer.ts` の `CANVAS_RENDER_ORDER`(-2)が決める)。
     **断面表示のクリッピング平面は配らない**(`solidLayer.setSectionPlanes` の相手にしない)。
     中を見るために断面表示を入れた瞬間に下絵まで切れて消えると、なぞるための紙として
-    用を成さないため(タスク39 の判断)。下絵は形ではないので、切っても体積も三角形も変わらない。
+    用を成さないため。下絵は形ではないので、切っても体積も三角形も変わらない。
   */
   const canvasLayer = acquired('canvasLayer', createCanvasLayer());
   scene.add(canvasLayer.group);
@@ -155,22 +155,22 @@ export function createSceneLayers(scene: THREE.Scene, acquired: SceneAcquire, cr
   const referenceLayer = acquired('referenceLayer', createReferenceLayer());
   scene.add(referenceLayer.group);
 
-  // 向きの吸着の案内線(FR-110、P4b タスク16)。下書きより後ろ・面より前に出す。
+  // 向きの吸着の案内線(FR-110)。下書きより後ろ・面より前に出す。
   const trackingLayer = acquired('trackingLayer', createTrackingLayer());
   scene.add(trackingLayer.group);
-  // 拘束の印(FR-313、タスク13)。「固定」の記号だけは色を分けるので、記号の表の正本
+  // 拘束の印(FR-313)。「固定」の記号だけは色を分けるので、記号の表の正本
   // (`constraintSummary.ts`)から値として受け取る(同じ表を 2 か所に書かない)。
   const constraintLayer = acquired('constraintLayer', createConstraintLayer(constraintKindSymbol('fix')));
   scene.add(constraintLayer.group);
   /*
-    拘束の自動推定の予告(FR-333、P6 タスク41)。**印の層をもう 1 つ持つ**のは、確定した
+    拘束の自動推定の予告(FR-333)。**印の層をもう 1 つ持つ**のは、確定した
     拘束の印(`constraintSummaries` から作る)と予告を別々に差し替えるため。1 つの層に
     混ぜると、再計算で拘束の印が入れ替わるたびに予告が消えてしまう。図柄・大きさ・色は
-    同じ層の実装をそのまま使う(§0.a-0.50「P4b の図柄をそのまま出す」)。
+    同じ層の実装をそのまま使う(「拘束の図柄をそのまま出す」)。
   */
   const inferenceLayer = acquired('inferenceLayer', createConstraintLayer(constraintKindSymbol('fix')));
   scene.add(inferenceLayer.group);
-  // 測定の結果(FR-1102、P5 タスク31)。線・弧・端の丸・値の札を、他の重ね描きより手前に出す。
+  // 測定の結果(FR-1102)。線・弧・端の丸・値の札を、他の重ね描きより手前に出す。
   const measureLayer = acquired('measureLayer', createMeasureLayer());
   scene.add(measureLayer.group);
   const cylinderBasisLayer = acquired('cylinderBasisLayer', createMeasureLayer());
@@ -271,10 +271,10 @@ export function updateBasisGuideLayers(
 /** 札の画面上の大きさを、描画のたびに視点の距離と区画の高さからそろえ直す。 */
 export function updateLabelScreenScale(layers: ViewportSceneLayers, orbit: OrbitState, rectangleHeight: number,
   uiScale: number): void {
-  // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す(P4 仕上げ (f))。
+  // 名前の札(基準軸・座標系)の画面上の大きさをそろえ直す。
   // ズームでカメラ距離が変わるたびに効くよう、描画のたびに計算し直す。
   layers.referenceLayer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangleHeight, uiScale);
-  // 測定の値の札も同じ大きさ(約 13px)にそろえる(P5 タスク31)。
+  // 測定の値の札も同じ大きさ(約 13px)にそろえる。
   layers.measureLayer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangleHeight, uiScale);
   layers.cylinderBasisLayer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangleHeight, uiScale);
   for (const layer of layers.planarBasisLayers) {
@@ -283,7 +283,7 @@ export function updateLabelScreenScale(layers: ViewportSceneLayers, orbit: Orbit
 }
 
 /**
- * ビューの断面表示(FR-111、タスク35)のクリッピング平面。**1 枚を使い回す**
+ * ビューの断面表示(FR-111)のクリッピング平面。**1 枚を使い回す**
  * (引いている最中は中身だけ書き換える)。切っているあいだは材質へ配らない。
  */
 export function createSectionClipping(layers: Pick<ViewportSceneLayers, 'solidLayer' | 'assemblyLayer' | 'interferenceLayer'>) {
@@ -304,7 +304,7 @@ export function createSectionClipping(layers: Pick<ViewportSceneLayers, 'solidLa
       return;
     }
     /*
-      引いている最中は**同じ `THREE.Plane` の中身だけ**を書き換える(タスク34 の申し送り)。
+      引いている最中は**同じ `THREE.Plane` の中身だけ**を書き換える。
       材質が持っているのは入れ物への参照なので、枚数が変わらないかぎり配り直さなくてよく、
       three.js もシェーダを組み直さない(1 コマの中で終わる、NFR-PF-1)。
     */

@@ -2,7 +2,7 @@ import { interpolateOpen, interpolateClosed, controlPointData,
   explicitCubicData as numericExplicitCubicData, splineDegree as numericSplineDegree,
   hasDuplicateSplinePoint as numericHasDuplicateSplinePoint } from '../math/splineInterpolation.js';
 /**
- * スプラインの辺(FR-317、計画書 P4 §2.3、タスク8)。
+ * スプラインの辺(FR-317)。
  *
  * 「通過点」方式(与えた点を必ず通る)と「制御点」方式(与えた点が曲線を引っぱる)の
  * 2 とおりを、開いた曲線と閉じた曲線の両方について作る。
@@ -10,15 +10,15 @@ import { interpolateOpen, interpolateClosed, controlPointData,
  * **カーネルへ渡すのは `Geom_BSplineCurve_1`(極・節点・多重度・次数)だけで、
  * 通過点方式の補間そのものは、importを持たない純数値subpathで自前に解く。** 理由を残す。
  *
- * 1. 計画書 §0.a-0.17 が第一候補にした `GeomAPI_PointsToBSpline_2` は、引数に
+ * 1. 当初の第一候補の `GeomAPI_PointsToBSpline_2` は、引数に
  *    連続性の列挙 `GeomAbs_Shape` を取る。opencascade.js の型定義では列挙の各値が
  *    空の型 `{}` なので、そのままでは型検査を通らず、`makeFillet.ts` と同じ
  *    「`unknown` を経由する述語ガード」を新しく 1 か所増やすことになる。
- *    計画書 §0.a-0.23 はその書き方を 2 か所(オフセットと面張り)に限って承認しており、
+ *    その書き方の承認は 2 か所(オフセットと面張り)に限られており、
  *    ここは含まれていない。**自前で解けば列挙を 1 つも触らずに済む。**
  * 2. 厳密な通過点補間の `GeomAPI_Interpolate` は使えない。構築に要る
  *    `Handle_TColgp_HArray1OfPnt` の中身 `TColgp_HArray1OfPnt` が、型定義にも
- *    実行時の実体にも無い(2026-09-04 に Node 上で実測。計画書 §1.4-1 の裏づけ)。
+ *    実行時の実体にも無い(2026-09-04 に Node 上で実測)。
  * 3. `GeomAPI_PointsToBSpline_2` は「許容誤差内の近似」なので、そもそも点を通る保証がない。
  *    自前で解けば連立一次方程式の解の精度(実測 1e-14mm 以下)でぴったり通る。
  *

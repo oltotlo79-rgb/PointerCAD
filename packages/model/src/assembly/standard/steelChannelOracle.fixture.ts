@@ -1,4 +1,4 @@
-/** Independent W6c transcription; no application imports. Printed precision is retained as strings.
+/** Independent channel transcription; no application imports. Printed precision is retained as strings.
  * JISF G 3192 amendment draft table 12, via docs/standards/jis/channel-jis-g-3192.json.
  * The transcript is authorized as the source here; no final JIS edition or stock availability is asserted.
  */

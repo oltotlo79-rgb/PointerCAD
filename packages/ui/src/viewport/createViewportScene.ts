@@ -138,7 +138,7 @@ const GPU_MESH_BUDGET_MESSAGE = 'Local display mesh buffers exceed the GPU budge
 
 /**
  * 1 枚描くときの見せ方。視点はここでも持たず、呼び出しごとに渡されたものを控えるだけ
- * (視点の正本は `attachCameraControls`)。サムネイル(§0.a-0.18)は最後の 1 枚と
+ * (視点の正本は `attachCameraControls`)。サムネイルは最後の 1 枚と
  * 同じ見せ方で描き直すため、この控えを使う。
  */
 interface RenderSettings {
@@ -148,15 +148,15 @@ interface RenderSettings {
   readonly showGrid: boolean;
   /**
    * UI の拡大率(`DisplaySettings.uiScale`、90〜150)。名前の札(基準軸・座標系)の
-   * 画面上の大きさをそろえるのに使う(P4 仕上げ (f)、`createReferenceLayer.ts`)。
+   * 画面上の大きさをそろえるのに使う(`createReferenceLayer.ts`)。
    */
   readonly uiScale: number;
 }
 
 /**
- * ビューの断面表示(FR-111、P6 タスク35、§2.12)を描くのに要るもの。
+ * ビューの断面表示(FR-111)を描くのに要るもの。
  *
- * 平面の**数**は `sectionView.ts` の `toThreePlane`(タスク34、three.js に触れない純関数)が
+ * 平面の**数**は `sectionView.ts` の `toThreePlane`(three.js に触れない純関数)が
  * 作る。`THREE.Plane` に組み直すのはここだけで、つまみ(四角と矢印)の四角の大きさは
  * `createSolidLayer` がいま描いているボディから測る。
  */
@@ -209,25 +209,25 @@ export interface ViewportScene {
   /** スケッチの表示を差し替える(FR-105、FR-310)。 */
   setSketch(sketch: ResolvedSketch, mesh: SketchMesh | null): void;
   /**
-   * 構築線(FR-320)として破線で引く要素の id を差し替える(P4 タスク33)。
+   * 構築線(FR-320)として破線で引く要素の id を差し替える。
    * 解決済みの曲線は construction を持たないので、履歴から引いた集合を外から渡す。
    */
   setConstructionIds(ids: ReadonlySet<string>): void;
   /**
-   * 完全に決まった要素(FR-313、利用者の決定②(2026-09-05)、P4b タスク22b)の
+   * 完全に決まった要素(FR-313、利用者の決定②)の
    * フィーチャー id を差し替える。判定は `constrainedElements.ts` が行い、ここは
    * 受け取った集合を組み立てへ渡すだけにする(判定を 2 か所に置かない)。
    */
   setConstrainedFeatureIds(ids: ReadonlySet<string>): void;
   /** ホバー・選択の強調を差し替える(FR-106)。 */
   setSketchHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
-  /** ソリッドの表示を差し替える(FR-105)。ボディの id はフィーチャーの id(§0.a-0.5)。 */
+  /** ソリッドの表示を差し替える(FR-105)。ボディの id はフィーチャーの id。 */
   setBodies(bodies: readonly SolidBody[]): void;
   /**
-   * 配置した部品の表示を差し替える(FR-605、P7 タスク10)。
+   * 配置した部品の表示を差し替える(FR-605)。
    *
    * 渡すのは `createAssemblyLayer.ts` の `buildAssemblyGeometry` が仕分けた一式で、
-   * **形は部品の鍵ごとに 1 つ**・配置は置いた数だけ入っている(§0.a-0.4)。
+   * **形は部品の鍵ごとに 1 つ**・配置は置いた数だけ入っている。
    * `EMPTY_ASSEMBLY_GEOMETRY` を渡すと消える(アセンブリを開いていないあいだの値)。
    * **同じ一式(同一参照)を渡し直したときは並びを触らない**(NFR-PF-1)。
    */
@@ -235,7 +235,7 @@ export interface ViewportScene {
   /** 干渉解析の共通形状と、一覧で選んだ組を独立層へ渡す。 */
   setInterference(result: AssemblyInterferenceResult | null, selectedKey: string | null): void;
   /**
-   * 外観の割り当てを差し替える(FR-1106〜1109、P5 タスク10)。文書の割り当てと、
+   * 外観の割り当てを差し替える(FR-1106〜1109)。文書の割り当てと、
    * カーネルが選び直した面の対応から `createSolidLayer.ts` の `buildAppearanceInput` が
    * 組み立てたものを渡す。`null` で「割り当て無し」(既定の外観 1 色)に戻る。
    *
@@ -261,13 +261,13 @@ export interface ViewportScene {
   setPlanarBasisGuide(guide: PlanarBasisGuide | null): void;
   setReferenceRepairPreview(preview: ReferenceRepairPreview | null): Promise<void>;
   /**
-   * 切断面の予告表示を差し替える(FR-432、P5 タスク27e、§0.a-0.61)。
+   * 切断面の予告表示を差し替える(FR-432)。
    * `null` で消える。**同じ内容(同一参照)を渡し直すと並びを触らない**(NFR-PF-1)ので、
    * 呼び出し側は予告の値を毎回作り直さず、変わったときだけ新しい値を渡す。
    */
   setCutPreview(preview: CutPreview | null): void;
   /**
-   * ビューの断面表示(FR-111、P6 タスク35)を差し替える。`null` で切る(元に戻る)。
+   * ビューの断面表示(FR-111)を差し替える。`null` で切る(元に戻る)。
    *
    * **形は変えない。** 材質のクリッピング平面を差し替えるだけなので、体積も三角形も
    * 1 つも変わらず、再計算(`isComputing`)も走らない。切っていないあいだは平面が
@@ -275,7 +275,7 @@ export interface ViewportScene {
    */
   setSectionView(view: SectionViewRender | null): void;
   /**
-   * 3D プリントの点検の色(FR-815、P6 §0.53、タスク46)を出す / 消す。`null` で閉じる。
+   * 3D プリントの点検の色(FR-815)を出す / 消す。`null` で閉じる。
    *
    * **形は 1 つも変わらない。** 材質の割り当てを一時的に差し替えるだけなので、体積も
    * 三角形も変わらず、再計算(`isComputing`)も走らない。閉じれば元の外観に戻る。
@@ -289,16 +289,16 @@ export interface ViewportScene {
   /** Mode-shape overlay (display only); the caller keeps it exclusive with the analysis field. */
   setAnalysisMode(preview: SolidModeDrawing | null): void;
   /**
-   * 下絵の画像(FR-332、P6 タスク39)を差し替える。空の並びで消える。
+   * 下絵の画像(FR-332)を差し替える。空の並びで消える。
    *
    * **形は 1 つも変わらない。** 下絵は押し出しの材料にも当たり判定にもならないので、
-   * 入切・移動・不透明度の変更で再計算(`isComputing`)は走らない(§2.14)。
+   * 入切・移動・不透明度の変更で再計算(`isComputing`)は走らない。
    * 入切で外したもの・作図面を解けないもの・画像をまだ復号できていないものは、
    * 呼び出し側が並びから外して渡す(この層は渡された分だけを描く)。
    */
   setCanvases(draws: readonly CanvasDraw[]): void;
   /**
-   * 球面の案内線(球面グリッド、FR-431、P5 タスク21)を差し替える。`null` で消える。
+   * 球面の案内線(球面グリッド、FR-431)を差し替える。`null` で消える。
    *
    * **中身が同じなら組み立て直さない。** 呼び出し側(`ViewportCanvas.tsx`)は文書が
    * 変わるたびに新しい値を作るので、参照ではなく**中心・半径・間隔の値**で見比べる
@@ -335,14 +335,14 @@ export interface ViewportScene {
     screenY: number,
   ): { readonly featureId: string; readonly faceIndex: number } | null;
   /**
-   * いまの絵をもう 1 回描いて、一辺 `size` の PNG のバイト列にする(§0.a-0.18)。
+   * いまの絵をもう 1 回描いて、一辺 `size` の PNG のバイト列にする。
    * `preserveDrawingBuffer` を常時有効にすると描画が重くなる(NFR-PF-1)ので、
    * **描いた直後の同じ同期処理の中**で読む。まだ一度も描いていなければ null。
    */
   captureThumbnail(size?: number, reasonSink?: ThumbnailCaptureReasonSink): Uint8Array | null;
   /**
    * いまの絵をもう 1 回描いて、**印刷用の 1 コマ**(PNG の data URL)にする
-   * (FR-810、FR-908、P6 §2.11、タスク33)。読む時機は `captureThumbnail` と同じ理由で
+   * (FR-810、FR-908)。読む時機は `captureThumbnail` と同じ理由で
    * 「描いた直後の同じ同期処理の中」。まだ一度も描いていなければ null。
    *
    * **サムネイルを流用しない。** サムネイルは 256 画素の正方形で下地も画面と同じ暗い色だが、
@@ -357,41 +357,41 @@ export interface ViewportScene {
    */
   setThemeColors(colors: ThemeColors): void;
   /**
-   * いま描いている作図面(§0.a-0.3)。薄い矩形で向きを示す。
+   * いま描いている作図面。薄い矩形で向きを示す。
    * 任意の作業平面(FR-328)も出せるよう、id ではなく**解いた面そのもの**を受け取る
-   * (解くのはストア側の `workPlane`、P4 タスク13)。
+   * (解くのはストア側の `workPlane`)。
    */
   setWorkPlane(plane: WorkPlane): void;
-  /** 作図面の矩形を出すか(3D スケッチでは出さない。FR-330、P4 タスク33)。 */
+  /** 作図面の矩形を出すか(3D スケッチでは出さない。FR-330)。 */
   setWorkPlaneVisible(visible: boolean): void;
   /**
-   * トリム・延長の予告(FR-322、P4 タスク22)。マウスを乗せた区間(消える区間)と、
+   * トリム・延長の予告(FR-322)。マウスを乗せた区間(消える区間)と、
    * 伸びる区間の折れ線を、もとの線の上へ重ねて描く。`null` で消す。
    */
   setEditPreview(preview: EditPreview | null): void;
   /**
-   * 向きの吸着の案内線(FR-110、P4b タスク16)。細い破線を画面いっぱいに引く。
+   * 向きの吸着の案内線(FR-110)。細い破線を画面いっぱいに引く。
    * 同時に出すのは最大 2 本で、`null` か空で消す。
    */
   setTracking(lines: readonly TrackCandidate[] | null): void;
   /**
-   * 拘束の印(FR-313、P4b タスク13)。要素の脇に記号の小さな札を常時出す(§0.a-0.7 の①)。
+   * 拘束の印(FR-313)。要素の脇に記号の小さな札を常時出す。
    * `null` か空で消す。当たり判定は `constraintPicking.ts` の `constraintMarkAt` が
-   * 同じ並びを見て行う(描画・当たり判定・選択の 3 つをそろえる、P4 タスク12 の失敗)。
+   * 同じ並びを見て行う(描画・当たり判定・選択の 3 つをそろえる)。
    */
   setConstraintMarks(marks: readonly ConstraintMark[] | null): void;
   /** 一覧・印で選んでいる拘束(FR-313)。その印だけ大きく出す。`null` で解除。 */
   setSelectedConstraint(constraintId: string | null): void;
   /**
-   * 線を引いている最中に推定した拘束の**予告**の印(FR-333、P6 タスク41)。
-   * 図柄は確定後の拘束の印とまったく同じ(§0.a-0.50)で、`null` か空で消す。
+   * 線を引いている最中に推定した拘束の**予告**の印(FR-333)。
+   * 図柄は確定後の拘束の印とまったく同じで、`null` か空で消す。
    * 実在の拘束ではないので当たり判定には出ない(押しても選ばれない)。
    */
   setInferredConstraintMarks(marks: readonly ConstraintMark[] | null): void;
   /** 基準ジオメトリ(基準軸・基準点・座標系、FR-329)を出す。 */
   setReferences(references: ResolvedReferences): void;
   /**
-   * 測定の結果(FR-1102、P5 タスク31)。測った 2 点を結ぶ線と端の丸、角度の 2 本の線と弧、
+   * 測定の結果(FR-1102)。測った 2 点を結ぶ線と端の丸、角度の 2 本の線と弧、
    * 値の札を出す。`null` で消す。**同じものを渡し直したときは並びを触らない**(NFR-PF-1)。
    */
   setMeasurement(measurement: MeasurementState | null): void;
@@ -403,7 +403,7 @@ export interface ViewportScene {
    * canvas 上の画素座標にあるポインタの光線(カメラの視点からその画素を通る半直線)。
    * ワールド座標系の origin/direction(単位ベクトル)を返す。まだ一度も描いていなければ
    * null。案内線(向きの吸着)の候補位置を、画面上でポインタに最も近い点で決めるのに使う
-   * (P4b 仕上げ (a)、`trackMath.ts` の `closestParameterToRay`)。
+   * (`trackMath.ts` の `closestParameterToRay`)。
    */
   pointerRay(x: number, y: number): PointerRay | null;
   resize(widthPixels: number, heightPixels: number): void;
@@ -413,8 +413,8 @@ export interface ViewportScene {
 }
 
 /**
- * ねじの印(threadMarks)を持つボディ。`SolidBody` はタスク17(橋渡しの拡張)で
- * この欄を必須で持つようになったので、ここでは呼び出し側の型を示すために
+ * ねじの印(threadMarks)を持つボディ。`SolidBody` は
+ * この欄を必須で持つので、ここでは呼び出し側の型を示すために
  * 同じ欄をそのまま再宣言している(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes` と
  * 同じ考え方、§7)。
  */
@@ -422,7 +422,7 @@ interface SolidBodyWithThreadMarks extends SolidBody {
   readonly threadMarks: readonly ThreadMarkInfo[];
 }
 
-/** ボディの一覧からねじの印だけを 1 本にまとめる(§0.a-0.15)。 */
+/** ボディの一覧からねじの印だけを 1 本にまとめる。 */
 function collectThreadMarks(
   bodies: readonly SolidBodyWithThreadMarks[],
 ): readonly ThreadMarkInfo[] {
@@ -604,7 +604,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
   renderer.setPixelRatio(viewportPixelRatio(globalThis.devicePixelRatio, interactiveRendering));
   renderer.setClearColor(0x000000, 0);
   /*
-    ビューの断面表示(FR-111、P6 タスク35、§2.12)。**材質ごとの**クリッピング平面を
+    ビューの断面表示(FR-111)。**材質ごとの**クリッピング平面を
     使うので、レンダラ側でその機能を開けておく。開けるだけでは何も変わらない——
     three.js は `material.clippingPlanes` が空(または null)の材質を従来どおりに描く
     (`WebGLClipping.setState` の先頭で抜ける)ので、断面表示を使わない限り費用はゼロ
@@ -624,8 +624,8 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
   // 光源・方眼・各層は viewportSceneResources.ts が同じ取得順・scene へ足す順で作る。
   const layers = createSceneLayers(scene, acquired, () => {
     /*
-      配置した部品(FR-605、P7 タスク10)。**部品の立体とは別の層**にする——1 つの窓で開く
-      文書は 1 つだけ(§0.a-0.10)なので同時には出ないが、形の持ち方が違う(立体は
+      配置した部品(FR-605)。**部品の立体とは別の層**にする——1 つの窓で開く
+      文書は 1 つだけなので同時には出ないが、形の持ち方が違う(立体は
       フィーチャーごとに 1 つ、アセンブリは**部品の鍵ごとに 1 つを全インスタンスで共有**)
       ため、同じ入れ物に混ぜると共有の判断が 2 通りに割れる。
       断面表示のクリッピング平面(FR-111)は、下の独立した干渉層と同時に配る。
@@ -658,7 +658,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
   let currentSpacing = 0;
 
   /**
-   * 基準軸(FR-329)を出す長さの、方眼の広がりに対する割合(P4 タスク33)。
+   * 基準軸(FR-329)を出す長さの、方眼の広がりに対する割合。
    * 方眼と同じ長さだと方眼の線に紛れるので、はっきり内側で終わるようにする。
    */
   const REFERENCE_AXIS_EXTENT_RATIO = 0.55;
@@ -675,7 +675,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     axisLines.geometry = buildAxisGeometry(axisLength(spacing), colors, acquireLineGeometry);
     // 作図面の矩形は方眼と同じ広がりにする。
     sketchLayer.setWorkPlaneExtent(gridExtent(spacing));
-    // 基準軸は方眼より**短く**する(P4 タスク33、タスク9・13 の申し送り)。
+    // 基準軸は方眼より**短く**する。
     // 方眼と同じ長さだと方眼の線と見分けが付かず、どこまでが軸なのか分からなかった。
     referenceLayer.setAxisHalfLength(gridExtent(spacing) * REFERENCE_AXIS_EXTENT_RATIO);
     // 案内線は方眼と同じ広がりまで伸ばす(視野のおよそ 2 倍なので「画面いっぱい」になる)。
@@ -694,7 +694,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
   let sketchHighlight: SketchHighlight = NO_HIGHLIGHT;
   /** 構築線(FR-320)として破線で引く要素の id。履歴から引いた集合を外から入れてもらう。 */
   let constructionIds: ReadonlySet<string> = new Set<string>();
-  /** 完全に決まった要素(FR-313、タスク22b)の id。これも外から入れてもらう。 */
+  /** 完全に決まった要素(FR-313)の id。これも外から入れてもらう。 */
   let constrainedIds: ReadonlySet<string> = new Set<string>();
   let sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
   /** スケッチの入力のどれかが変わったときに、描画用の並びを組み立て直す。 */
@@ -727,7 +727,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
   let solidDisplayInvalidated = false;
 
   /**
-   * 配置した部品(FR-605、タスク10)。アセンブリを開いていないあいだは空のまま
+   * 配置した部品(FR-605)。アセンブリを開いていないあいだは空のまま
    * (形も入れ物も 1 つも作らないので費用はゼロ)。
    */
   let assemblyBundle: AssemblyGeometryBundle = EMPTY_ASSEMBLY_GEOMETRY;
@@ -801,7 +801,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
   }
 
   /**
-   * 映り込み用の環境マップ(FR-1107、§0.a-0.9)。**鏡・ガラスを 1 つでも使っているときだけ
+   * 映り込み用の環境マップ(FR-1107)。**鏡・ガラスを 1 つでも使っているときだけ
    * 作り、使わなくなったら捨てる**(NFR-PF-5)。レンダラを持っているのはここだけなので、
    * 作る・捨てるの判断もここで行い、`createSolidLayer` へはできあがったものを渡す。
    */
@@ -839,7 +839,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
   }
 
   /**
-   * 押し出しの仮の形(段階計算の受け入れ。EX-14)を描いている間は、立体・面の当たり判定を返さない。
+   * 押し出しの仮の形(段階計算の受け入れ)を描いている間は、立体・面の当たり判定を返さない。
    * 仮の形のボディは文書のフィーチャーではないので、その id を選択・ホバーへ渡さない(表示だけ)。
    */
   function stagedPreviewDisplayed(): boolean {
@@ -1066,20 +1066,20 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     }
   }
 
-  /** 部分形状(面・辺・頂点)の強調の現在値(§0.a-0.7)。 */
+  /** 部分形状(面・辺・頂点)の強調の現在値。 */
   let subShapeHoveredElementId: string | null = null;
   let subShapeSelection: readonly string[] = [];
   let subShapeBundle = EMPTY_SUB_SHAPE_HIGHLIGHT;
 
-  /** ねじの簡略表示の印(§0.a-0.15)。ボディの一覧から導くだけで、別の入力は持たない。 */
+  /** ねじの簡略表示の印。ボディの一覧から導くだけで、別の入力は持たない。 */
   let threadMarks: readonly ThreadMarkInfo[] = [];
 
-  /** 切断面の予告(FR-432、タスク27e)。道具を使っている間だけ入り、確定・取消で null に戻る。 */
+  /** 切断面の予告(FR-432)。道具を使っている間だけ入り、確定・取消で null に戻る。 */
   let cutPreview: CutPreview | null = null;
 
   const sectionClipping = createSectionClipping(layers);
 
-  /** 球面の案内線(FR-431、タスク21)。出していないときは null。 */
+  /** 球面の案内線(FR-431)。出していないときは null。 */
   let sphereGridSpec: SphereGridSpec | null = null;
   let sphereGridPositions: Float32Array | null = null;
 

@@ -5,9 +5,9 @@ import type { NumericFieldRange } from '../sketch/numericInput.js';
 import type { AppearanceNumberField } from './appearanceCommands.js';
 
 /**
- * 面の塗り色の見本(FR-310、§0.a-0.5)。ここが履歴へ保存する値の正本で、
+ * 面の塗り色の見本(FR-310)。ここが履歴へ保存する値の正本で、
  * appShell.css の --pcad-swatch-1〜8 は同じ色を見本の下地に使うための写し。
- * 任意色は P2 以降。
+ * 任意色はここでは扱わない。
  */
 export const FACE_COLORS: readonly string[] = [
   '#7aa2f7',
@@ -21,10 +21,10 @@ export const FACE_COLORS: readonly string[] = [
 ];
 
 /* ---------------------------------------------------------------------------
- * 外観(FR-1106〜1110、要件§4.12、計画書 P5 タスク12)
+ * 外観(FR-1106〜1110、要件§4.12)
  * ------------------------------------------------------------------------- */
 
-/** 材質プリセットの見出し(§2.4.1、11 種)。id → ja.json のキーの対応はここ 1 か所に置く。 */
+/** 材質プリセットの見出し(11 種)。id → ja.json のキーの対応はここ 1 か所に置く。 */
 export const PRESET_LABEL_KEYS: Readonly<Record<AppearancePresetId, MessageKey>> = {
   default: 'appearance.preset.default',
   steel: 'appearance.preset.steel',
@@ -39,7 +39,7 @@ export const PRESET_LABEL_KEYS: Readonly<Record<AppearancePresetId, MessageKey>>
   custom: 'appearance.preset.custom',
 };
 
-/** 木材の樹種の見出し(§0.a-0.5、6 種)。 */
+/** 木材の樹種の見出し(6 種)。 */
 export const WOOD_LABEL_KEYS: Readonly<Record<WoodSpecies, MessageKey>> = {
   hinoki: 'appearance.wood.hinoki',
   sugi: 'appearance.wood.sugi',
@@ -72,7 +72,7 @@ export const PATTERN_KINDS: readonly AppearancePattern['kind'][] = [
  */
 const DEFAULT_PATTERN_SPACING_MM = 10;
 
-/** 柄を「なし」から木目へ選んだときの、樹種の既定値(§0.a-0.5 の表の先頭)。 */
+/** 柄を「なし」から木目へ選んだときの、樹種の既定値(樹種の表の先頭)。 */
 const DEFAULT_WOOD_SPECIES_FOR_PATTERN: WoodSpecies = 'hinoki';
 
 /**
@@ -131,7 +131,7 @@ export const PERCENT_RANGE: NumericFieldRange = {
   maxInclusive: true,
 };
 
-/** 透過率・光沢・粗さの見出しキー(タスク6の表)。 */
+/** 透過率・光沢・粗さの見出しキー。 */
 export const PERCENT_FIELD_LABEL_KEYS: Readonly<Record<AppearanceNumberField, MessageKey>> = {
   transmission: 'propertyPanel.appearanceTransmission',
   gloss: 'propertyPanel.appearanceGloss',

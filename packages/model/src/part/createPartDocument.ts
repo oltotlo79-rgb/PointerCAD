@@ -1,6 +1,6 @@
 /**
- * 部品(パート)文書の生成と履歴操作(計画書 docs/plans/P2-ソリッド基礎.md タスク9b、
- * docs/plans/P3-加工フィーチャー.md タスク13)。
+ * 部品(パート)文書の生成と
+ * 履歴操作。
  *
  * 履歴を書き換えず、変更のたびに新しい配列を作る。Undo / Redo(FR-505)はこの不変性の上に乗る。
  * 参照は id で持ち、座標や形を複製しない(FR-311、FR-502)。
@@ -47,13 +47,13 @@ import type {
 } from './types.js';
 
 /**
- * 部品文書の保存形式の版(§0.a-0.3)。P3 で 3 になり(P3 計画書 §0.a-0.22、タスク19)、
- * P4 タスク31(§0.a-0.24)で 4 になり、P4b タスク21(§0.a-0.17、案 A)で 5 になった。
+ * 部品文書の保存形式の版。加工フィーチャーで 3 になり、
+ * スケッチの拡張で 4 になり、スケッチの仕上げで 5 になった。
  *
- * P4 が足したのは新しいスケッチの種類(矩形・正多角形・長穴・楕円・スプライン・オフセット・
+ * スケッチの拡張で足したのは新しいスケッチの種類(矩形・正多角形・長穴・楕円・スプライン・オフセット・
  * 複製・投影/交差)と基準ジオメトリ・任意平面・3D スケッチ・構築線フラグで、版 3 まで
  * 一部のファイルで省略できていた欄(`construction`・点列の `layout`・`references`)を
- * 版 4 からは必須にした。P4b が足したのはパラメータ表(`parameters`、FR-207)とスケッチの
+ * 版 4 からは必須にした。スケッチの仕上げで足したのはパラメータ表(`parameters`、FR-207)とスケッチの
  * 拘束(`SketchDocument.constraints`、FR-313)で、`parameters` は版 5 から必須の欄にする
  * (拘束は型自体が恒常的に省略可能なままなので、版を理由に必須化はしない。
  * `packages/io/src/pcad/documentJson.ts` の `readSketch` を参照)。
@@ -61,14 +61,14 @@ import type {
  * (`packages/io/src/pcad/schema.ts`)と必ず同じにする(`documentJson.test.ts` が検査する)。
  * 版 4 以前のファイルは `SCHEMA_MIGRATIONS[4]` が `parameters` の省略を明示的に補って読み込む。
  *
- * P5 タスク2 で足した外観の割り当て(`PartDocument.appearance`、FR-1106〜1110)は、
- * P5 タスク5(§0.a-0.15、P4b が版 5 を使ったための読み替えで版 6)で `packages/io` が
+ * 外観の割り当て(`PartDocument.appearance`、FR-1106〜1110)は、
+ * 版 6 で `packages/io` が
  * 読み書きと移行(`SCHEMA_MIGRATIONS[5]`)を実装したので版 6 から必須の欄にした。
  * 版 5 以前のファイルは `SCHEMA_MIGRATIONS[5]` が `appearance` の省略を空の表で補って読み込む。
  *
- * P6 タスク20 で足した読み込んだ形のベースボディ 2 種(`importedSolid` / `importedMesh`、
- * FR-802)と、P6 タスク21 が `.pcad` の ZIP へ足した添付のエントリ
- * (`shapes/*.brep` / `meshes/*.bin` / `canvases/*.png`)で版 7 になった(§0.a-0.55)。
+ * 読み込んだ形のベースボディ 2 種(`importedSolid` / `importedMesh`、
+ * FR-802)と、`.pcad` の ZIP へ足した添付のエントリ
+ * (`shapes/*.brep` / `meshes/*.bin` / `canvases/*.png`)で版 7 になった。
  * **版は 1 回しか上げない**ので、まだ欄になっていない選択セット(`selectionSets`、FR-112)と
  * 下絵(`canvases`、FR-332)も版 7 に含め、版 6 以前のファイルは
  * `SCHEMA_MIGRATIONS[6]` がこの 2 欄の省略を空配列で補って読み込む。
@@ -76,10 +76,10 @@ import type {
 // 版17は図形を測る定義を保持し、旧版による無言の読み捨てを防ぐ。
 export const PART_SCHEMA_VERSION = 22;
 
-/** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
+/** 縫合のつなぎ目の既定の許容量(mm)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;
 
-/** 穴の直径の既定(mm、P3 §タスク13)。 */
+/** 穴の直径の既定(mm)。 */
 export const DEFAULT_HOLE_DIAMETER_MM = 6;
 
 /** 止まり穴の深さの既定(mm)。 */
@@ -94,19 +94,19 @@ export const DEFAULT_CHAMFER_DISTANCE_MM = 1;
 /** C 面取りの角度の既定(度)。 */
 export const DEFAULT_CHAMFER_ANGLE_DEGREES = 45;
 
-/** 直線パターンの間隔の既定(mm、§0.a-0.21)。 */
+/** 直線パターンの間隔の既定(mm)。 */
 export const DEFAULT_PATTERN_SPACING_MM = 20;
 
-/** 直線パターンの個数の既定(§0.a-0.21)。 */
+/** 直線パターンの個数の既定。 */
 export const DEFAULT_PATTERN_COUNT = 3;
 
-/** 円形パターンの個数の既定(§0.a-0.21)。 */
+/** 円形パターンの個数の既定。 */
 export const DEFAULT_CIRCULAR_PATTERN_COUNT = 4;
 
-/** パターンの個数の上限(P3 §2.7)。これを超える指定は解決のときに断る。 */
+/** パターンの個数の上限。これを超える指定は解決のときに断る。 */
 export const MAX_PATTERN_COUNT = 100;
 
-/** ばねのコイル中心径の既定(mm、FR-414、§0.a-0.30)。 */
+/** ばねのコイル中心径の既定(mm、FR-414)。 */
 export const DEFAULT_SPRING_COIL_DIAMETER_MM = 20;
 
 /** ばねの線径の既定(mm)。 */
@@ -115,14 +115,14 @@ export const DEFAULT_SPRING_WIRE_DIAMETER_MM = 2;
 /** ばねのピッチの既定(mm)。 */
 export const DEFAULT_SPRING_PITCH_MM = 5;
 
-/** ばねの巻数の既定。既定の全長は ピッチ × 巻数 = 20mm になる(§0.a-0.30)。 */
+/** ばねの巻数の既定。既定の全長は ピッチ × 巻数 = 20mm になる。 */
 export const DEFAULT_SPRING_TURNS = 4;
 
-/** ばねの巻数の上限(§0.a-0.35)。これを超える指定は解決のときに断る。 */
+/** ばねの巻数の上限。これを超える指定は解決のときに断る。 */
 export const MAX_SPRING_TURNS = 200;
 
 /*
-  基本形状5種の既定の寸法(mm。FR-429、P5 計画書 §2.7.1 の表と §0.a-0.16 の決定)。
+  基本形状5種の既定の寸法(mm。FR-429)。
 
   何も選ばずに道具を押して決めただけで意味のある形ができる大きさにしてある
   (NFR-UX-4「Enter 連打で意味のある結果」)。利用者は作ったあとに式で直せる(FR-202)。
@@ -137,13 +137,13 @@ export const DEFAULT_BOX_SIZE_MM = 20;
 /** 円柱の半径の既定(mm)。 */
 export const DEFAULT_CYLINDER_RADIUS_MM = 10;
 
-/** 円柱の高さの既定(mm)。底面の中心から軸の向きへ伸びる(§0.a-0.17)。 */
+/** 円柱の高さの既定(mm)。底面の中心から軸の向きへ伸びる。 */
 export const DEFAULT_CYLINDER_HEIGHT_MM = 20;
 
 /** 円錐の下半径の既定(mm)。 */
 export const DEFAULT_CONE_BOTTOM_RADIUS_MM = 10;
 
-/** 円錐の上半径の既定(mm)。0 なら尖った円錐、0 より大きければ円錐台(§0.a-0.16)。 */
+/** 円錐の上半径の既定(mm)。0 なら尖った円錐、0 より大きければ円錐台。 */
 export const DEFAULT_CONE_TOP_RADIUS_MM = 0;
 
 /** 円錐の高さの既定(mm)。 */
@@ -156,7 +156,7 @@ export const DEFAULT_TORUS_MAJOR_RADIUS_MM = 20;
 export const DEFAULT_TORUS_MINOR_RADIUS_MM = 5;
 
 /**
- * 基本形状の向きの既定(§0.a-0.16)。世界の Z 軸。
+ * 基本形状の向きの既定。世界の Z 軸。
  *
  * 球・トーラスは向きを変えても形が変わらないが、欄を種類ごとに出し分けないほうが
  * 作りが単純なので5種すべてが同じ欄を持つ(表示の出し分けは UI の仕事)。
@@ -164,56 +164,56 @@ export const DEFAULT_TORUS_MINOR_RADIUS_MM = 5;
 export const DEFAULT_PRIMITIVE_AXIS: AxisSpec = { kind: 'world', axis: 'z' };
 
 /**
- * ねじれの補正の既定(§0.a-0.28)。0 なら `ThruSections` に任せたそのままの対応になる。
+ * ねじれの補正の既定。0 なら `ThruSections` に任せたそのままの対応になる。
  * 整数の式で持ち、小数を書かれたら解決のときに断る(切り捨てない)。
  */
 export const DEFAULT_RULED_TWIST = 0;
 
 /**
- * 球へつなぐときの近似の点の数の既定(§0.a-0.74)。
- * 24 / 48 / 72 から選べるうちのいちばん軽いもの(タスク24 の実測で 72 点は 5〜6 秒)。
+ * 球へつなぐときの近似の点の数の既定。
+ * 24 / 48 / 72 から選べるうちのいちばん軽いもの(実測で 72 点は 5〜6 秒)。
  */
 export const DEFAULT_RULED_SPHERE_SEGMENTS: RuledSphereSegments = 24;
 
-/** 段ごとに選べる球の近似の点の数(§0.a-0.74)。UI の選択肢と io の妥当性検査が共有する。 */
+/** 段ごとに選べる球の近似の点の数。UI の選択肢と io の妥当性検査が共有する。 */
 export const RULED_SPHERE_SEGMENT_CHOICES: readonly RuledSphereSegments[] = [24, 48, 72];
 
 /*
-  P5 の Should 群(FR-401、FR-409、FR-415〜425、FR-428。計画書 §2.11、§2.15、タスク43)の
+  Should 群(FR-401、FR-409、FR-415〜425、FR-428)の
   既定値と上限。
 
-  既定値は §2.15 の「その場数値入力」の表の「既定」列をそのまま写したもので、表に無いものは
+  既定値は「その場数値入力」の表の「既定」列をそのまま写したもので、表に無いものは
   「何も選ばずに道具を押しただけで意味のある形ができる」大きさにしてある(NFR-UX-4)。
-  上限は解決(タスク45・46)が範囲の検査に使い、UI(タスク49)も同じ値を見る
+  上限は解決が範囲の検査に使い、UIも同じ値を見る
   (同じ数を 2 か所に書かない)。
 */
 
 /**
- * 押し出しの終端の既定(FR-415)。`{ kind: 'distance' }` = P2 からの「長さを指定して片側へ」。
+ * 押し出しの終端の既定(FR-415)。`{ kind: 'distance' }` = 従来の「長さを指定して片側へ」。
  * この欄が無い古い文書は `symmetric` の真偽から作る(`packages/io`)。
  */
 export const DEFAULT_EXTRUDE_END: ExtrudeEnd = { kind: 'distance' };
 
-/** 押し出しのテーパ角の既定(度、FR-401)。0 なら傾けない(P2 からの押し出しと同じ形)。 */
+/** 押し出しのテーパ角の既定(度、FR-401)。0 なら傾けない(従来の押し出しと同じ形)。 */
 export const DEFAULT_TAPER_ANGLE_DEGREES = 0;
 
 /**
  * 押し出しのテーパ角の上限(度、FR-401)。
  *
  * カーネル(`occt/makeSolidSweep.ts`)は「0 度以上 90 度未満」で受けるが、**抜き勾配と
- * 同じ 60 度で止める**(§0.a-0.72)。89.99999 度のような値が妥当性検査を通ると巨大な形が
+ * 同じ 60 度で止める**。89.99999 度のような値が妥当性検査を通ると巨大な形が
  * できてしまうのは押し出しの傾きでも同じで、2 つの道具で上限が違うと利用者が覚えられない
- * (NFR-UX-1)ためである。統括の判断が要る決定なので報告に載せる。
+ * (NFR-UX-1)ためである。
  */
 export const MAX_TAPER_ANGLE_DEGREES = 60;
 
-/** 薄板押し出しの厚みの向きの既定(FR-416、§0.a-0.46)。輪郭を壁の外側の境界にする。 */
+/** 薄板押し出しの厚みの向きの既定(FR-416)。輪郭を壁の外側の境界にする。 */
 export const DEFAULT_THICKNESS_SIDE: ThicknessSide = 'inner';
 
 /** 薄板押し出しの厚みの既定(mm、FR-416)。`thickness` に数を入れたときの最初の値。 */
 export const DEFAULT_EXTRUDE_THICKNESS_MM = 2;
 
-/** 穴の入口の既定(FR-422、§0.a-0.39)。広げない。欄が無い古い文書もこれになる。 */
+/** 穴の入口の既定(FR-422)。広げない。欄が無い古い文書もこれになる。 */
 export const DEFAULT_HOLE_ENTRY: HoleEntry = { kind: 'plain' };
 
 /** ざぐりの径の既定(mm、FR-422)。穴の径(既定 6mm)より大きくする。 */
@@ -228,62 +228,62 @@ export const DEFAULT_COUNTERSINK_DIAMETER_MM = 12;
 /** 皿もみの開き角の既定(度、FR-422)。JIS の皿頭ねじの標準。 */
 export const DEFAULT_COUNTERSINK_ANGLE_DEGREES = 90;
 
-/** 抜き勾配の角度の既定(度、§2.15 の段の表)。 */
+/** 抜き勾配の角度の既定(度)。 */
 export const DEFAULT_DRAFT_ANGLE_DEGREES = 1;
 
 /**
- * 抜き勾配の角度の上限(度、§0.a-0.72)。計画書タスク43 の手順5 は 89 だったが、
- * **統括の決定 §0.a-0.72(2026-09-05 14:21)が 60 度に狭めた**のでそちらを採る。
+ * 抜き勾配の角度の上限(度)。当初の案は 89 だったが、
+ * **60 度に狭めた**のでそちらを採る。
  */
 export const MAX_DRAFT_ANGLE_DEGREES = 60;
 
-/** ミラーの鏡にする平面の既定(§0.a-0.36)。基準の 3 面のうち XY。 */
+/** ミラーの鏡にする平面の既定。基準の 3 面のうち XY。 */
 export const DEFAULT_MIRROR_PLANE_ID: BaseWorkPlaneId = 'xy';
 
-/** 移動/回転の回転角の既定(度、§2.15 の段の表)。0 なら平行移動だけ。 */
+/** 移動/回転の回転角の既定(度)。0 なら平行移動だけ。 */
 export const DEFAULT_TRANSFORM_ROTATION_DEGREES = 0;
 
-/** 移動/回転の移動量の既定(mm、§2.15 の段の表)。X / Y / Z とも 0。 */
+/** 移動/回転の移動量の既定(mm)。X / Y / Z とも 0。 */
 export const DEFAULT_TRANSLATION_MM = 0;
 
-/** 拡大縮小の倍率の既定(§2.15 の段の表)。全体倍率・軸ごとのどちらも 2 倍から始める。 */
+/** 拡大縮小の倍率の既定。全体倍率・軸ごとのどちらも 2 倍から始める。 */
 export const DEFAULT_SCALE_FACTOR = 2;
 
-/** 拡大縮小の倍率の下限(§2.11、計画書タスク43 の手順5)。 */
+/** 拡大縮小の倍率の下限。 */
 export const MIN_SCALE = 0.001;
 
-/** 拡大縮小の倍率の上限(§2.11、計画書タスク43 の手順5)。 */
+/** 拡大縮小の倍率の上限。 */
 export const MAX_SCALE = 1000;
 
 /**
- * スイープの向きの決め方の既定(FR-409、§2.15 の段の表)。
+ * スイープの向きの決め方の既定(FR-409)。
  * false は「ねじれを抑える」側で、つまみを入れると Frenet になる。
  */
 export const DEFAULT_SWEEP_FRENET = false;
 
-/** リブの厚みの既定(mm、§2.15 の段の表)。 */
+/** リブの厚みの既定(mm)。 */
 export const DEFAULT_RIB_THICKNESS_MM = 3;
 
-/** リブの厚みを付ける側の既定(§2.15 の段の表のつまみ「両側へ」)。 */
+/** リブの厚みを付ける側の既定(つまみ「両側へ」)。 */
 export const DEFAULT_RIB_SIDE: RibSide = 'both';
 
 /** リブを材料に届くまで伸ばすかの既定(FR-420)。届かない壁は用を成さないので true。 */
 export const DEFAULT_RIB_EXTEND_TO_BODY = true;
 
-/** エンボスの高さ(深さ)の既定(mm、§2.15 の段の表)。 */
+/** エンボスの高さ(深さ)の既定(mm)。 */
 export const DEFAULT_EMBOSS_HEIGHT_MM = 1;
 
-/** エンボスが浮き出すかの既定(FR-421)。false は彫る側(§2.15 の段の表のつまみ「浮き出す」)。 */
+/** エンボスが浮き出すかの既定(FR-421)。false は彫る側(つまみ「浮き出す」)。 */
 export const DEFAULT_EMBOSS_RAISED = false;
 
-/** 外ねじの長さの既定(mm、§2.15 の段の表)。 */
+/** 外ねじの長さの既定(mm)。 */
 export const DEFAULT_THREAD_SHAFT_LENGTH_MM = 20;
 
 /** 外ねじを切り始める端の既定(FR-423)。円柱面の軸のパラメータが小さいほうの端。 */
 export const DEFAULT_THREAD_SHAFT_FROM_END: 'first' | 'last' = 'first';
 
 /**
- * 外ねじを実らせんで切るかの既定(FR-423、§0.a-0.15)。
+ * 外ねじを実らせんで切るかの既定(FR-423)。
  * 実らせんは 1 本で数秒かかる(2026-09-05 実測 中央値 4184ms)ので、既定は簡略表示。
  */
 export const DEFAULT_THREAD_SHAFT_MODELED = false;
@@ -295,38 +295,38 @@ export const DEFAULT_SURFACE_DISTANCE_MM = 20;
 export const DEFAULT_SURFACE_ANGLE_DEGREES = 360;
 
 /**
- * 曲面のオフセットの既定の距離(mm、FR-428、タスク42b で足した 6 種目)。
+ * 曲面のオフセットの既定の距離(mm、FR-428、6 種目)。
  * 押し出しの距離(20mm)と分けてあるのは、面を「少し離す」使い方が普通だからである。
  */
 export const DEFAULT_SURFACE_OFFSET_MM = 5;
 
-/* -- P5 の Could 群のうちタスク46 が前倒しした 2 つ(FR-418、FR-426、§2.12)-- */
+/* -- Could 群のうち前倒しした 2 つ(FR-418、FR-426)-- */
 
-/** くり抜きの壁の厚さの既定(mm、FR-418、§0.a-0.47)。 */
+/** くり抜きの壁の厚さの既定(mm、FR-418)。 */
 export const DEFAULT_SHELL_THICKNESS_MM = 2;
 
 /** くり抜きの向きの既定(FR-418)。false = 内向き(外側の大きさが変わらない)。 */
 export const DEFAULT_SHELL_OUTWARD = false;
 
 /**
- * 可変半径フィレットの終点側の半径の既定(mm、FR-426、§0.a-0.48)。
+ * 可変半径フィレットの終点側の半径の既定(mm、FR-426)。
  * 始点側の既定(`DEFAULT_FILLET_RADIUS_MM` = 2)と違う値にしてあるのは、
  * 「可変にする」を選んだ瞬間に一定半径と同じ形にならないようにするためである。
  */
 export const DEFAULT_FILLET_RADIUS_END_MM = 5;
 
-/* -- 平面による切断(FR-432、§2.9b、タスク27c)-- */
+/* -- 平面による切断(FR-432)-- */
 
 /**
- * 切断で残す側の既定(§0.a-0.57、§2.9b.2)。法線の側を残す。
+ * 切断で残す側の既定。法線の側を残す。
  *
  * 既定値は 1 か所だけに置く(`extrudeShapingOf` / `filletRadiusOf` と同じ約束)。
- * コマンド(タスク27e)とプロパティ(タスク27f)はこの値を写さずにここから読む。
+ * コマンドとプロパティはこの値を写さずにここから読む。
  */
 export const DEFAULT_CUT_KEEP: CutFeature['keep'] = 'positive';
 
 /*
- * 省略できる欄の約束(P5 仕上げ (h)、`docs/報告記録.md` 2026-09-05 23:08 の t47 指摘②)。
+ * 省略できる欄の約束。
  *
  * この下にある3つの口(`extrudeShapingOf` / `holeEntryOf` / `filletRadiusOf`)が
  * 「省略できる欄」を埋める場所を1か所に揃えている。約束は次のとおり:
@@ -351,7 +351,7 @@ export const DEFAULT_CUT_KEEP: CutFeature['keep'] = 'positive';
  * 押し出しの「終端・傾き・薄板」の欄をすべて埋めた形(FR-415、FR-401、FR-416)。
  *
  * 欄名はカーネルの `ExtrudeShapeOptions`(`occt/makeSolidSweep.ts`)と同じにしてあるので、
- * 解決(タスク45)は式を数へ直すだけで詰め替えられる。
+ * 解決は式を数へ直すだけで詰め替えられる。
  */
 export interface ExtrudeShaping {
   readonly end: ExtrudeEnd;
@@ -362,14 +362,14 @@ export interface ExtrudeShaping {
 }
 
 /**
- * 押し出しの省略された欄を既定で埋める(FR-415、FR-401、FR-416。タスク43)。
+ * 押し出しの省略された欄を既定で埋める(FR-415、FR-401、FR-416)。
  *
  * **既定値をここ 1 か所だけに置くための口。** 解決・読み書き・プロパティ・その場入力は
  * `feature.end ?? ...` と自分で書かず、必ずこれを通す(同じ既定を各所へ写すと、片方だけ
  * 変えたときに黙って食い違う。`RuledSphereSegments` の既定と同じ考え方)。
  *
- * **終端の省略は `symmetric` から決める。** `end` は P5 タスク43 で足した欄で、それ以前の
- * 文書は「両側へ出すか」を `symmetric`(P2 からの欄)だけで表していた。既定を一律に
+ * **終端の省略は `symmetric` から決める。** `end` は後から足した欄で、それ以前の
+ * 文書は「両側へ出すか」を `symmetric`(従来の欄)だけで表していた。既定を一律に
  * `distance` にすると、両側へ出していた古い押し出しが片側へ変わってしまう。
  */
 export function extrudeShapingOf(feature: ExtrudeFeature): ExtrudeShaping {
@@ -383,7 +383,7 @@ export function extrudeShapingOf(feature: ExtrudeFeature): ExtrudeShaping {
 }
 
 /**
- * 穴・ねじ穴の入口の形(FR-422)。省略は「広げない」(§0.a-0.39)。
+ * 穴・ねじ穴の入口の形(FR-422)。省略は「広げない」。
  * 既定を 1 か所に置く理由は `extrudeShapingOf` と同じ。
  */
 export function holeEntryOf(feature: HoleFeature | ThreadHoleFeature): HoleEntry {
@@ -391,7 +391,7 @@ export function holeEntryOf(feature: HoleFeature | ThreadHoleFeature): HoleEntry
 }
 
 /**
- * R 面取りの半径(FR-407、可変半径は FR-426)。省略は「一定半径」(§0.a-0.48)。
+ * R 面取りの半径(FR-407、可変半径は FR-426)。省略は「一定半径」。
  *
  * 既定を 1 か所に置く理由は `extrudeShapingOf` / `holeEntryOf` と同じ。
  * 種類を付けて返すのは、読む側(解決・鍵・プロパティ)が `radiusEnd` の null 判定を
@@ -418,7 +418,7 @@ export function filletRadiusOf(feature: FilletFeature): FilletRadius {
 
 /**
  * 連番を分ける単位。ブーリアンは演算ごとに別の連番にするので、
- * フィーチャーの種類そのもの(`boolean`)ではなく演算名を鍵にする(§2.3)。
+ * フィーチャーの種類そのもの(`boolean`)ではなく演算名を鍵にする。
  * パターンも同じ理由で配置ごと(直線 / 円形)に分ける。
  */
 export type SolidLabelKey =
@@ -445,17 +445,17 @@ export type SolidLabelKey =
   | PrimitiveShapeKind
   /*
     面をつなぐ(FR-430)とロフト(FR-410)も別々の連番にする。カーネルの段は 1 種類だが、
-    利用者から見て別の道具なので(§0.a-0.25)、木に「面をつなぐ1」「ロフト1」と出す。
+    利用者から見て別の道具なので、木に「面をつなぐ1」「ロフト1」と出す。
   */
   | 'ruled'
   | 'loft'
   /*
-    P5 の Should 群(§2.11、タスク43)。9 種はフィーチャーの種類とそのまま 1 対 1 で、
+    Should 群。9 種はフィーチャーの種類とそのまま 1 対 1 で、
     ブーリアン・パターン・基本形状のように 1 つの種類を複数の連番へ分けるものは無い
     (曲面 5 種は「押し出し面1」ではなく「曲面1」で数える。利用者から見て道具が 1 つだから)。
   */
   | 'draft'
-  /** 平らな面の移動(EX-18 の限られた一段)。フィーチャーの種類と 1 対 1。 */
+  /** 平らな面の移動(限られた一段)。フィーチャーの種類と 1 対 1。 */
   | 'faceOffset'
   | 'holeTranslate'
   | 'faceRotate'
@@ -469,19 +469,19 @@ export type SolidLabelKey =
   | 'surface'
   | 'functionSurface'
   /*
-    点集合パターン(FR-425、§0.a-0.42)。直線・円形と同じ理由で配置ごとに連番を分ける
+    点集合パターン(FR-425)。直線・円形と同じ理由で配置ごとに連番を分ける
     (`PatternPlacement` に case が 1 つ増えたので、鍵も 1 つ増える)。
   */
   | 'pointPattern'
-  /** くり抜き(FR-418、§2.12)。P5 の Could 群のうちタスク46 が前倒しした 1 種。 */
+  /** くり抜き(FR-418)。Could 群のうち前倒しした 1 種。 */
   | 'shell'
-  /** 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。 */
+  /** 平面による切断(FR-432)。分割(FR-424)もこれで満たす。 */
   | 'cut'
   | 'surfaceCut'
   /*
-    読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。B-rep(STEP)と
+    読み込んだ形のベースボディ 2 種(FR-802)。B-rep(STEP)と
     三角形(STL / OBJ / 3MF / glTF)は利用者から見て別のもの——**三角形の形は加工できない**
-    (§0.a-0.23)——なので、ブーリアンの演算・基本形状の 5 種と同じ理由で連番も分ける。
+    ——なので、ブーリアンの演算・基本形状の 5 種と同じ理由で連番も分ける。
   */
   | 'importedSolid'
   | 'importedMesh';
@@ -542,14 +542,14 @@ const SOLID_FEATURE_KIND_TABLE = {
 } satisfies Record<SolidFeatureKind, true>;
 
 /**
- * 実行時に持てる `SolidFeatureKind` の一覧(26 種。P5 仕上げ (h) で 24 種、P6 タスク20 で
- * 読み込んだ形の 2 種を足した。
- * `docs/報告記録.md` 2026-09-05 23:08 の t47 指摘③)。
+ * 実行時に持てる `SolidFeatureKind` の一覧(26 種。基本の 24 種に、
+ * 読み込んだ形の 2 種を足した
+ * もの)。
  *
  * これまで `packages/io`(妥当性検査の選択肢)と `packages/ui`(自前の一覧)が
  * それぞれ種類の一覧を手書きで持っていて、`SolidFeatureKind` に種類を1つ足しても
  * 揃えて直す仕組みが無かった。ここを唯一の実行時の一覧にし、`io` はこれを輸入する
- * (このタスクで置き換え済み)。`ui` の自前の一覧の置き換えは後続タスクの担当。
+ * (置き換え済み)。`ui` の自前の一覧の置き換えは ui の側で行う。
  *
  * `SOLID_LABELS`(`SolidLabelKey` の表、34 種)とは鍵の粒度が違うので**同じ配列にはならない**
  * (ブーリアン・パターン・基本形状は複数の連番の単位に分かれる。上の `SolidLabelKey` の
@@ -587,10 +587,10 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   torus: 'トーラス',
   ruled: '面をつなぐ',
   loft: 'ロフト',
-  // P5 の Should 群(§2.11、タスク43)。ツールバーの道具の名前(タスク48 の ja.json)と
+  // Should 群。ツールバーの道具の名前(ja.json)と
   // 同じ言葉にする(FR-501「木の名前と道具の名前が食い違わない」)。
   draft: '抜き勾配',
-  // 平らな面の移動(EX-18)。ツールバーの道具の名前(ja の solid.faceOffset)と同じ言葉にする。
+  // 平らな面の移動。ツールバーの道具の名前(ja の solid.faceOffset)と同じ言葉にする。
   faceOffset: '面の移動',
   holeTranslate: '穴の移動',
   faceRotate: '面の回転',
@@ -604,14 +604,14 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   surface: '曲面',
   functionSurface: '関数曲面',
   pointPattern: '点パターン',
-  // くり抜き(FR-418、§2.12。P5 の Could 群、タスク46 で前倒し)。
+  // くり抜き(FR-418。Could 群を前倒し)。
   shell: 'くり抜き',
-  // 平面による切断(FR-432、§2.9b、タスク27c)。「反対側も残す」で 2 つ積んだときは
+  // 平面による切断(FR-432)。「反対側も残す」で 2 つ積んだときは
   // 「切断1」「切断2」と連番が並ぶ(同じ種類なので分けない)。
   cut: '切断',
   surfaceCut: '面による切断',
-  // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8)。利用者の言葉で「読み込んだ形」と
-  // 「読み込んだ三角形の形」に分ける(断りの文言(§2.8 の表)と同じ言い回しにそろえる)。
+  // 読み込んだ形のベースボディ 2 種(FR-802)。利用者の言葉で「読み込んだ形」と
+  // 「読み込んだ三角形の形」に分ける(断りの文言と同じ言い回しにそろえる)。
   importedSolid: '読み込んだ形',
   importedMesh: '読み込んだ三角形の形',
 };
@@ -628,7 +628,7 @@ export const REFERENCE_LABELS: Readonly<Record<ReferenceFeatureKind, string>> = 
 };
 
 /**
- * スケッチの既定名の見出し(P4 仕上げ (g))。「スケッチ1」「スケッチ2」…と連番を付ける。
+ * スケッチの既定名の見出し。「スケッチ1」「スケッチ2」…と連番を付ける。
  * `createEmptySketchDocument` が起動時に付ける名前(「スケッチ1」)と必ず同じ言葉にする。
  * `SOLID_LABELS` / `REFERENCE_LABELS` と同じくドキュメントの既定データ(UI 文字列とは別扱い)。
  */
@@ -646,18 +646,18 @@ export function createEmptyPartDocument(): PartDocument {
     references: [],
     solids: [],
     sheetUnfolds: [],
-    // パラメータ表(FR-207)の既定は空。名前を付けた数値は利用者が足す(P4b タスク2)。
+    // パラメータ表(FR-207)の既定は空。名前を付けた数値は利用者が足す。
     parameters: [],
     namedViews: createDefaultNamedViews(),
     configurations: createDefaultConfigurations([]),
     activeConfigurationId: 'configuration-1',
     // 外観の割り当て(FR-1106〜1110)の既定は空の表。割り当てが1つも無い文書は
-    // P2 からの単色(`DEFAULT_APPEARANCE`)で描かれ、見た目は変わらない(P5 §0.a-0.4)。
+    // 既定の単色(`DEFAULT_APPEARANCE`)で描かれ、見た目は変わらない。
     appearance: emptyAppearanceTable(),
-    // 選択セット(FR-112、P6 §0.a-0.44)の既定は空。名前を付けた組は利用者が作る
-    // (タスク37)。外観と同じく形に影響しない札なので、起動時の見た目は変わらない。
+    // 選択セット(FR-112)の既定は空。名前を付けた組は利用者が作る
+    // 外観と同じく形に影響しない札なので、起動時の見た目は変わらない。
     selectionSets: [],
-    // 下絵の画像(FR-332、P6 §0.a-0.45)の既定も空。読み込んだときだけ増える(タスク38)。
+    // 下絵の画像(FR-332)の既定も空。読み込んだときだけ増える。
     canvases: [],
   };
 }
@@ -714,7 +714,7 @@ export function removeReference(document: PartDocument, featureId: string): Part
   };
 }
 
-/** 同じ種類の既存の名前の最大連番 + 1(ソリッドと同じ方式、§0.a-0.19)。 */
+/** 同じ種類の既存の名前の最大連番 + 1(ソリッドと同じ方式)。 */
 export function nextReferenceName(document: PartDocument, kind: ReferenceFeatureKind): string {
   const usedNames = document.references
     .filter((feature) => feature.kind === kind)
@@ -722,7 +722,7 @@ export function nextReferenceName(document: PartDocument, kind: ReferenceFeature
   return nextSerialName(usedNames, REFERENCE_LABELS[kind]);
 }
 
-/** 同じ種類の既存の id の最大連番 + 1(ソリッドと同じ方式、§0.a-0.19)。 */
+/** 同じ種類の既存の id の最大連番 + 1(ソリッドと同じ方式)。 */
 export function nextReferenceId(document: PartDocument, kind: ReferenceFeatureKind): string {
   const usedIds = document.references
     .filter((feature) => feature.kind === kind)
@@ -746,7 +746,7 @@ export function addSketch(document: PartDocument, sketch: SketchDocument): PartD
 }
 
 /**
- * この文書へ足せる空のスケッチを1本作る(P4 仕上げ (g)、FR-501)。
+ * この文書へ足せる空のスケッチを1本作る(FR-501)。
  * まだ足してはいない(足すのは `addSketch`)。id と名前だけを採番して返す。
  */
 export function createSketchFor(document: PartDocument): SketchDocument {
@@ -758,7 +758,7 @@ export function createSketchFor(document: PartDocument): SketchDocument {
 }
 
 /**
- * 新しいスケッチの id(ソリッド・基準ジオメトリと同じ連番方式、§0.a-0.19)。
+ * 新しいスケッチの id(ソリッド・基準ジオメトリと同じ連番方式)。
  * 途中の 1 本を消しても残ったものと重ならない(「スケッチ1」を消しても次は「スケッチ3」)。
  */
 export function nextSketchId(document: PartDocument): string {
@@ -768,7 +768,7 @@ export function nextSketchId(document: PartDocument): string {
   );
 }
 
-/** 新しいスケッチの名前(id と同じ方式、§0.a-0.19)。利用者が改名した名前とも重ならない。 */
+/** 新しいスケッチの名前(id と同じ方式)。利用者が改名した名前とも重ならない。 */
 export function nextSketchName(document: PartDocument): string {
   return nextSerialName(
     document.sketches.map((sketch) => sketch.name),
@@ -777,10 +777,10 @@ export function nextSketchName(document: PartDocument): string {
 }
 
 /**
- * スケッチを1本取り除く(P4 仕上げ (g)、FR-503)。
+ * スケッチを1本取り除く(FR-503)。
  *
  * **最後の1本は消さない。** 消すと作図する場所が無くなり、`activeSketchId` の指し先も
- * 作れなくなるため(§0.a-0.4「activeSketchId は sketches のいずれかを指す」)。
+ * 作れなくなるため(「activeSketchId は sketches のいずれかを指す」)。
  * 消したものを編集中だったときは、残りの先頭を編集中にする。
  * このスケッチの要素を参照していた立体は履歴に残し、解決のときに理由つきで断る
  * (FR-504。止めずに警告する。`removeSolid` / `removeReference` と同じ扱い)。
@@ -809,7 +809,7 @@ export function replaceSketch(document: PartDocument, sketch: SketchDocument): P
   };
 }
 
-/** 編集中のスケッチを切り替える。実在しない id なら元の文書をそのまま返す(§0.a-0.4)。 */
+/** 編集中のスケッチを切り替える。実在しない id なら元の文書をそのまま返す。 */
 export function setActiveSketch(document: PartDocument, sketchId: string): PartDocument {
   if (findSketch(document, sketchId) === undefined) {
     return document;
@@ -824,7 +824,7 @@ export function findSolid(document: PartDocument, featureId: string): SolidFeatu
 /**
  * ソリッドフィーチャーを履歴の末尾へ足す。
  * id はボディの id でもあり他のフィーチャーから参照されるので、
- * すでに同じ id があれば足さずに元の文書をそのまま返す(§0.a-0.5)。
+ * すでに同じ id があれば足さずに元の文書をそのまま返す。
  */
 export function appendSolid(document: PartDocument, feature: SolidFeature): PartDocument {
   if (findSolid(document, feature.id) !== undefined) {
@@ -875,7 +875,7 @@ export function removeSolid(document: PartDocument, featureId: string): PartDocu
 }
 
 /**
- * 同じ種類の既存の名前の最大連番 + 1(§0.a-0.19)。削除しても重複しない。
+ * 同じ種類の既存の名前の最大連番 + 1。削除しても重複しない。
  * 数えるのは履歴の全部の名前で、利用者が改名した名前とも重ならないようにする。
  */
 export function nextSolidName(document: PartDocument, key: SolidLabelKey): string {
@@ -883,7 +883,7 @@ export function nextSolidName(document: PartDocument, key: SolidLabelKey): strin
   return nextSerialName(usedNames, SOLID_LABELS[key]);
 }
 
-/** 同じ接頭辞の既存 id の最大連番 + 1(名前と同じ方式、§0.a-0.19)。 */
+/** 同じ接頭辞の既存 id の最大連番 + 1(名前と同じ方式)。 */
 export function nextSolidId(document: PartDocument, key: SolidLabelKey): string {
   const usedIds = document.solids.map((feature) => feature.id);
   return nextSerialId(usedIds, `${key}-`);
@@ -908,7 +908,7 @@ export function defaultPrimitiveOrigin(): SolidOrigin {
 }
 
 /**
- * 基本形状5種の既定の寸法(§2.7.1 の表)。式は既定値の数をそのまま書いた文字列になる
+ * 基本形状5種の既定の寸法。式は既定値の数をそのまま書いた文字列になる
  * (`expressionValueFromNumber`)ので、プロパティ欄に「10」と出て、そのまま直せる。
  */
 export function defaultPrimitiveShape(kind: PrimitiveShapeKind): PrimitiveShape {
@@ -946,7 +946,7 @@ export function defaultPrimitiveShape(kind: PrimitiveShapeKind): PrimitiveShape 
 
 /**
  * 基本形状のフィーチャーを1つ作る(FR-429)。まだ履歴へは足していない(足すのは
- * `appendSolid`)。id と名前は形ごとの連番で採る(「球1」「箱1」…、§0.a-0.19)。
+ * `appendSolid`)。id と名前は形ごとの連番で採る(「球1」「箱1」…)。
  *
  * 基準点と向きを省くと、原点に既定の向き(Z 軸)で置く(NFR-UX-4)。
  */
@@ -968,34 +968,34 @@ export function createPrimitiveFeature(
 }
 
 /**
- * そのフィーチャーが対象として消費するボディの id(§0.a-0.5、P3 §2.6 / §2.7 / §2.7b)。
+ * そのフィーチャーが対象として消費するボディの id。
  *
  * - ブーリアンは対象と相手の2つ。
  * - 加工(穴・ねじ穴・R 面取り・C 面取り)は対象のボディ1つを消費して新しいボディを1つ作る。
- * - パターンは繰り返しのもとにした加工フィーチャーのボディ1つを消費する(§0.a-0.20)。
- * - 押し出し・回転・**ばね**は何も消費しない(ばねは §0.a-0.36 で「作る」フィーチャー)。
+ * - パターンは繰り返しのもとにした加工フィーチャーのボディ1つを消費する。
+ * - 押し出し・回転・**ばね**は何も消費しない(ばねは「作る」フィーチャー)。
  * - **縫合**はスケッチの面を縫うときは何も消費しない。既にある面を縫うとき(`surfaceFaces`、
- *   EX-18)は、縫った面のうち**曲面**(`surface`・`functionSurface`。閉じた立体でない面だけの
+ *   面入力の縫合)は、縫った面のうち**曲面**(`surface`・`functionSurface`。閉じた立体でない面だけの
  *   本体)の本体を取り込む(消費する。商用 CAD の縫い合わせと同じ)。縫合の結果は入力の面と
  *   必ず重なるので、残すと画面のクリックが古い曲面を拾い、縫った立体を加工できない。
  *   **立体の本体の面を縫ったときは、その立体を残す**(面を読むだけ)。どの本体が曲面かは
  *   文書を見ないと決まらないので、`solids`(文書の立体の一覧)を渡されたときだけ数える。
  *   渡さない呼び出し(履歴の依存・三角形の形の断り)では今までどおり何も返さない。
- * - **基本形状**も何も消費しない(P5 §0.a-0.19)。基準点に立体の頂点を指したときも
+ * - **基本形状**も何も消費しない。基準点に立体の頂点を指したときも
  *   消費しない: 頂点の座標を読むだけなので、貸した立体はそのまま画面に残る。
- * - **面をつなぐ(罫線面)・ロフト**も何も消費しない(P5 §0.a-0.27)。立体の面や球を
+ * - **面をつなぐ(罫線面)・ロフト**も何も消費しない。立体の面や球を
  *   輪郭に借りても、輪郭を読むだけなので元の立体はそのまま画面に残る。残しておかないと
  *   「球と柱を罫線でつないだあと和でまとめる」ができなくなる。
  *
- * P5 の Should 群(§2.11、タスク43)は種類ごとに分かれる:
+ * Should 群は種類ごとに分かれる:
  * - **抜き勾配・移動/回転・拡大縮小・リブ・エンボス・外ねじ**は対象1つを消費する
- *   (加工と同じで、変換・加工した立体1つだけが残る。§0.a-0.41)。
- * - **ミラー**は消費しない(§0.a-0.36)。鏡像を作ったあと元と鏡像を和でつなぐのが普通の
+ *   (加工と同じで、変換・加工した立体1つだけが残る)。
+ * - **ミラー**は消費しない。鏡像を作ったあと元と鏡像を和でつなぐのが普通の
  *   使い方で、元を消すと和が取れない。
  * - **スイープ**は対象を取らない「作る」フィーチャー。
  * - **曲面**も消費しない。作り方が `face`(既にある立体の面を取り出す)のときだけ相手の
  *   立体を指すが、面を読むだけなので貸した立体はそのまま画面に残る(罫線面の
- *   `solidFace`・基本形状の頂点と同じ扱い。§0.a-0.45)。
+ *   `solidFace`・基本形状の頂点と同じ扱い)。
  *
 
  * 順序は文書に書かれた順のまま返す(重複の除去はしない。同じ id を2度指すブーリアンは
@@ -1018,9 +1018,9 @@ export function consumedTargetsOf(feature: SolidFeature, solids?: readonly Solid
     case 'sweep':
     case 'importedSolid':
     case 'importedMesh':
-      // ミラー(§0.a-0.36)は対象を指すが消費しない。スイープは対象を取らない。
-      // 読み込んだ形の 2 種(FR-802、P6 §2.8)も対象を取らない「作る」フィーチャーで、
-      // 基本形状(P5 §0.a-0.19)とまったく同じ扱いになる。
+      // ミラーは対象を指すが消費しない。スイープは対象を取らない。
+      // 読み込んだ形の 2 種(FR-802)も対象を取らない「作る」フィーチャーで、
+      // 基本形状とまったく同じ扱いになる。
       return [];
     case 'boolean':
       return [feature.targetFeatureId, feature.toolFeatureId];
@@ -1040,11 +1040,11 @@ export function consumedTargetsOf(feature: SolidFeature, solids?: readonly Solid
     case 'shell':
     case 'cut':
     case 'surfaceCut':
-      // 加工4種、P5 の Should 群のうち対象1つを消費するもの(§2.11 の表)、そして
-      // くり抜き(FR-418、§2.12。中身を抜いた立体 1 つだけが残る)と
-      // 平面による切断(FR-432、§2.9b。残す側 1 つだけが残る)。
+      // 加工4種、Should 群のうち対象1つを消費するもの、そして
+      // くり抜き(FR-418、中身を抜いた立体 1 つだけが残る)と
+      // 平面による切断(FR-432、残す側 1 つだけが残る)。
       //
-      // **切断は「対」でも 1 つずつ対象を返す**(§0.a-0.58)。対を 1 度だけ数えるのは
+      // **切断は「対」でも 1 つずつ対象を返す**。対を 1 度だけ数えるのは
       // 消費する側の役目で(`consumedBodyIds` の注釈)、ここは種類ごとの規則だけを持つ。
       return [feature.targetFeatureId];
     case 'pattern':
@@ -1052,14 +1052,14 @@ export function consumedTargetsOf(feature: SolidFeature, solids?: readonly Solid
     case 'surface':
     case 'functionSurface':
       // 曲面(FR-428)。`face` のときだけ相手の立体を指すが、面を読むだけなので
-      // **どの作り方でも消費しない**(§0.a-0.45)。分岐を残してあるのは、面のオフセット・
+      // **どの作り方でも消費しない**。分岐を残してあるのは、面のオフセット・
       // 厚み付け(消費しうる種類)が後で足されたときにここを直すと分かるようにするため。
       return [];
   }
 }
 
 /**
- * 面入力の縫合(EX-18)が取り込む曲面の本体の id。縫った面の順に、重複なしで返す。
+ * 面入力の縫合が取り込む曲面の本体の id。縫った面の順に、重複なしで返す。
  * 曲面(`surface`・`functionSurface`)だけを数え、立体の本体・見つからない本体は数えない
  * (見つからない参照は解決が `missingBody` で断る。`consumedBodyIds` も履歴で前にあるものだけを数える)。
  */
@@ -1076,15 +1076,15 @@ function sewnSurfaceBodyIds(feature: SewFeature, solids: readonly SolidFeature[]
 /**
  * そのフィーチャーが加工(対象のボディを1つだけ取る種類)か。
  * 穴・ねじ穴・R 面取り・C 面取り・パターンが該当する。
- * ブーリアンは対象を2つ取るので加工には数えない。ばねは対象を取らないので `false`(§0.a-0.36)。
- * 基本形状も対象を取らないので `false`(P5 §0.a-0.19)。
- * 面をつなぐ・ロフトも対象を取らない「作る」フィーチャーなので `false`(P5 §0.a-0.27)。
+ * ブーリアンは対象を2つ取るので加工には数えない。ばねは対象を取らないので `false`。
+ * 基本形状も対象を取らないので `false`。
+ * 面をつなぐ・ロフトも対象を取らない「作る」フィーチャーなので `false`。
  *
- * P5 の Should 群(§2.11 の表、タスク43)では、**抜き勾配・リブ・エンボス・外ねじ**が
+ * Should 群では、**抜き勾配・リブ・エンボス・外ねじ**が
  * `true`(対象1つを取って形を変える加工)、**ミラー・移動/回転・拡大縮小・スイープ・曲面**が
  * `false` になる。移動/回転と拡大縮小は対象を1つ消費するが、形そのものは変えず位置と
- * 大きさを変えるだけなので「加工」には数えない(§2.11 の表が `isMachining` を分けている
- * のはこのため。§2.15 のツールバーでは「加工」の一覧に同居する)。
+ * 大きさを変えるだけなので「加工」には数えない(`isMachining` を分けている
+ * のはこのため。ツールバーでは「加工」の一覧に同居する)。
  */
 export function isMachiningFeature(feature: SolidFeature): boolean {
   switch (feature.kind) {
@@ -1105,9 +1105,9 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'shell':
     case 'cut':
     case 'surfaceCut':
-      // くり抜き(FR-418、§2.12)と切断(FR-432、§2.9b)も対象 1 つを取って形を変えるので
-      // 加工に数える(ツールバーでも「加工」の畳んだ一覧に入る。§0.a-0.64)。
-      // 平らな面の移動(EX-18)も対象 1 つを取って形を変えるので加工に数える。
+      // くり抜き(FR-418)と切断(FR-432)も対象 1 つを取って形を変えるので
+      // 加工に数える(ツールバーでも「加工」の畳んだ一覧に入る)。
+      // 平らな面の移動も対象 1 つを取って形を変えるので加工に数える。
       return true;
     case 'extrude':
     case 'revolve':
@@ -1125,7 +1125,7 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'functionSurface':
     case 'importedSolid':
     case 'importedMesh':
-      // 読み込んだ形の 2 種(FR-802、P6 §2.8)は対象を取らないので加工ではない。
+      // 読み込んだ形の 2 種(FR-802)は対象を取らないので加工ではない。
       // **加工の「される側」にはなる**——`importedSolid` の上には穴も面取りも積める
       // (FR-802)。`importedMesh` だけは対象にできず、断りは `resolvePart.ts` が出す。
       return false;
@@ -1133,35 +1133,35 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
 }
 
 /**
- * パターン(FR-411、FR-412)の対象にできるか。穴・ねじ穴だけ(§0.a-0.20)。
+ * パターン(FR-411、FR-412)の対象にできるか。穴・ねじ穴だけ。
  *
  * フィレット・面取りを外すのは「工具の形」が無く、変換した位置の辺を指紋で選び直す必要が
- * あって危ういため。ばねも対象にしない(§0.a-0.36)。基本形状も同じく対象にしない
- * (工具ではなく「作る」フィーチャーだから。P5 §0.a-0.19)。
+ * あって危ういため。ばねも対象にしない。基本形状も同じく対象にしない
+ * (工具ではなく「作る」フィーチャーだから)。
  *
- * **面をつなぐ・ロフトも対象にしない**(P5 §0.a-0.27)。押し出し・回転・縫合・ばね・
+ * **面をつなぐ・ロフトも対象にしない**。押し出し・回転・縫合・ばね・
  * 基本形状と同じ「作る」フィーチャーで、差し引く工具の形を持たないためである。
  *
- * **P5 の Should 群 9 種もすべて対象にしない**(§0.a-0.42)。P5 で足すパターンの拡張は
+ * **Should 群 9 種もすべて対象にしない**。パターンの拡張は
  * 「点の集まりへ複製」だけで、複製できるもとを穴・ねじ穴から広げる話ではない
- * (面取り・R 面取りを対象にする案は Could として P6 以降へ回した)。
+ * (面取り・R 面取りを対象にする案は Could として後へ回した)。
  */
 export function isPatternSource(feature: SolidFeature): boolean {
   return feature.kind === 'hole' || feature.kind === 'threadHole';
 }
 
 /**
- * ほかのフィーチャーに消費されたボディの id(§0.a-0.5)。
+ * ほかのフィーチャーに消費されたボディの id。
  *
  * 消費できるのは「履歴で自分より前にあり、抑制されていない」フィーチャーのボディだけ。
  * 抑制されたフィーチャーは再計算で飛ばされるので何も消費せず、ボディも作らない。
  * 参照先が消えている場合(FR-504 で失敗させる場合)は消費に数えない。
  * ここは文書だけを見る判定で、実際に形が作れたかどうかは resolvePart が決める。
  *
- * **「反対側も残す」で対になった 2 つの切断(FR-432、§0.a-0.58)も、対象を 1 度だけ
+ * **「反対側も残す」で対になった 2 つの切断(FR-432)も、対象を 1 度だけ
  * 数える。** 消費の記録が集合(`Set`)なので、同じ id を 2 度足しても 1 つのままになり、
  * 「対の片方だけが消費した」と数える特別扱いは要らない。結果として対象は画面から消え、
- * 切断 2 つが `liveBodyIds` に並ぶ(これが §0.a-0.58 の求める形である)。
+ * 切断 2 つが `liveBodyIds` に並ぶ(これが求める形である)。
  * 対の片方だけを抑制すれば、残ったほうが単独の切断として対象を消費する。
  */
 export function consumedBodyIds(document: PartDocument): ReadonlySet<string> {
@@ -1183,7 +1183,7 @@ export function consumedBodyIds(document: PartDocument): ReadonlySet<string> {
 }
 
 /**
- * いま画面に出るボディの id を履歴順に並べる(§0.a-0.5)。
+ * いま画面に出るボディの id を履歴順に並べる。
  * 抑制されておらず、まだ消費されていないフィーチャーのボディ。
  * 作成に失敗したものを外すのは resolvePart の役目(文書だけでは分からない)。
  */

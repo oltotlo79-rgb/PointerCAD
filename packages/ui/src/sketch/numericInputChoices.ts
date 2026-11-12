@@ -18,12 +18,12 @@ import type { NumericChoice, NumericChoiceOption, NumericInputOptions, RevolveAx
 import type { NumericInputStep } from './numericInputTools.js';
 
 /**
- * なめらかさ(球へつなぐときの接点の数、§0.a-0.74)の選択肢。
+ * なめらかさ(球へつなぐときの接点の数)の選択肢。
  *
  * 値は model の `RULED_SPHERE_SEGMENT_CHOICES`(= カーネルの `SphereSegmentCount`)から
  * 組み立てるので、選べる数の正本は 1 か所しかない。見出しだけをここで日本語に付け替える
  * (24 / 48 / 72 という数そのものは利用者にとって意味が無く、「どれくらい細かいか」だけが
- * 伝わればよい。24b の文言案、docs/報告記録.md 2026-09-05 17:23)。
+ * 伝わればよい)。
  */
 const RULED_SPHERE_SEGMENT_LABEL_KEYS: Readonly<Record<RuledSphereSegments, MessageKey>> = {
   24: 'numericInput.choice.ruledSphereSegments24',
@@ -50,7 +50,7 @@ const WORLD_AXIS_OPTIONS: readonly NumericChoiceOption[] = [
   { value: 'z', labelKey: 'numericInput.axis.z' },
 ];
 
-/** 選んだ線分を軸にする選択肢の見出し(P2 タスク21 で専用のキーを追加した)。 */
+/** 選んだ線分を軸にする選択肢の見出し(専用のキーを持つ)。 */
 const AXIS_LINE_LABEL_KEY: MessageKey = 'numericInput.axis.line';
 
 function axisLikeOptions(axisLine: SketchLineRef | undefined): readonly NumericChoiceOption[] {
@@ -59,10 +59,10 @@ function axisLikeOptions(axisLine: SketchLineRef | undefined): readonly NumericC
     : [...WORLD_AXIS_OPTIONS, { value: 'line', labelKey: AXIS_LINE_LABEL_KEY }];
 }
 
-/** 回転軸の既定(§0.a-0.9)。XY 面にかいた断面を Z 軸まわりに回すのが最も多い。 */
+/** 回転軸の既定。XY 面にかいた断面を Z 軸まわりに回すのが最も多い。 */
 export const DEFAULT_REVOLVE_AXIS: RevolveAxisChoice = 'z';
 
-/** 回転・円形パターン・ばねの軸(見出しは「回転軸」で共用、§2.11)。 */
+/** 回転・円形パターン・ばねの軸(見出しは「回転軸」で共用)。 */
 function axisChoice(axisLine: SketchLineRef | undefined, defaultValue: string): NumericChoice {
   return {
     key: 'axis',
@@ -72,7 +72,7 @@ function axisChoice(axisLine: SketchLineRef | undefined, defaultValue: string): 
   };
 }
 
-/** 直線パターンの向き(§0.a-0.21。既定は X)。回転軸とは別のキー・見出しにする。 */
+/** 直線パターンの向き(既定は X)。回転軸とは別のキー・見出しにする。 */
 function patternDirectionChoice(axisLine: SketchLineRef | undefined): NumericChoice {
   return {
     key: 'patternDirection',
@@ -82,7 +82,7 @@ function patternDirectionChoice(axisLine: SketchLineRef | undefined): NumericCho
   };
 }
 
-/** ねじ穴の呼び(M2〜M64)。ラベルは METRIC_THREAD_DESIGNATIONS の文字をそのまま使う(§2.11)。 */
+/** ねじ穴の呼び(M2〜M64)。ラベルは METRIC_THREAD_DESIGNATIONS の文字をそのまま使う。 */
 function threadDesignationChoice(): NumericChoice {
   return {
     key: 'threadDesignation',
@@ -119,7 +119,7 @@ function chamferModeChoice(): NumericChoice {
   };
 }
 
-/** ばねの巻き方向。既定は右巻き(§0.a-0.33)。 */
+/** ばねの巻き方向。既定は右巻き。 */
 function springHandednessChoice(): NumericChoice {
   return {
     key: 'springHandedness',
@@ -132,7 +132,7 @@ function springHandednessChoice(): NumericChoice {
   };
 }
 
-/** ばねの求める値(全長/ピッチ/巻数)。既定は全長(§0.a-0.30)。 */
+/** ばねの求める値(全長/ピッチ/巻数)。既定は全長。 */
 function springDerivedChoice(): NumericChoice {
   return {
     key: 'springDerived',
@@ -148,7 +148,7 @@ function springDerivedChoice(): NumericChoice {
 
 /**
  * 正多角形の半径の測り方(FR-315)。既定は外接(頂点を通る)。
- * 計画書タスク12 が「UI の既定値は 'circumscribed'(FR-315 の主要な指定方法)」と決めている。
+ * 「UI の既定値は 'circumscribed'(FR-315 の主要な指定方法)」という決まりによる。
  */
 function polygonRadiusModeChoice(): NumericChoice {
   return {
@@ -162,7 +162,7 @@ function polygonRadiusModeChoice(): NumericChoice {
   };
 }
 
-/** 点列の並べ方(FR-327)。既定は直線(P1 からの振る舞いをそのまま既定にする)。 */
+/** 点列の並べ方(FR-327)。既定は直線(従来の振る舞いをそのまま既定にする)。 */
 function pointArrayLayoutChoice(): NumericChoice {
   return {
     key: 'pointArrayLayout',
@@ -191,7 +191,7 @@ function splineModeChoice(): NumericChoice {
 
 /**
  * 2 点+半径の円弧のふくらむ向き(FR-326)。1 点目から 2 点目へ進む向きに対して
- * 左右どちらへふくらむかで、2 つある中心のどちらを採るかが決まる(§0.a-0.18)。
+ * 左右どちらへふくらむかで、2 つある中心のどちらを採るかが決まる。
  * どちらを選んでも短い方の弧(劣弧)になるので、既定は左でよい(NFR-UX-4)。
  */
 function arcBulgeChoice(): NumericChoice {
@@ -206,7 +206,7 @@ function arcBulgeChoice(): NumericChoice {
   };
 }
 
-/* ---- P4 タスク21: 編集(オフセット)の選択肢(FR-321) ---- */
+/* ---- 編集(オフセット)の選択肢(FR-321) ---- */
 
 /**
  * オフセットのどちら側か(FR-321)。**値は常に `outside` / `inside`**(model の `OffsetSide`)
@@ -244,10 +244,10 @@ function offsetCornerChoice(): NumericChoice {
   };
 }
 
-/* ---- P4 タスク24: ミラーの選択肢(FR-324) ---- */
+/* ---- ミラーの選択肢(FR-324) ---- */
 
 /**
- * ミラーで鏡にできるものの一覧(P4 タスク24)。ツールバーが選択と作図面から見込んで渡す
+ * ミラーで鏡にできるものの一覧。ツールバーが選択と作図面から見込んで渡す
  * (`copyCommands.ts` の `mirrorAxisAvailability`)。渡されなければ「作図面の軸が使える」
  * として扱う(基準の 3 面の上でかいているのが普通のため)。
  */
@@ -265,8 +265,8 @@ const DEFAULT_MIRROR_AXES: MirrorAxisOptions = { planeAxes: true, selectedLine: 
  * 鏡にするもの(FR-324)。
  *
  * 見出しを「作図面の X 軸 / Y 軸」ではなく「横軸 / 縦軸」にしてある。XZ 面の縦向きの軸は Z、
- * YZ 面の横向きの軸は Y なので、「Y 軸」と書くと作図面によっては嘘になるため(統括の指示
- * との違いとして報告する)。ヘルプでは「XY 面なら X 軸」と言い添える。
+ * YZ 面の横向きの軸は Y なので、「Y 軸」と書くと作図面によっては嘘になるため。
+ * ヘルプでは「XY 面なら X 軸」と言い添える。
  */
 function mirrorBasisChoice(axes: MirrorAxisOptions): NumericChoice {
   const options: NumericChoiceOption[] = [];
@@ -288,7 +288,7 @@ function mirrorBasisChoice(axes: MirrorAxisOptions): NumericChoice {
   };
 }
 
-/* ---- P4 タスク13: 基準ジオメトリの選択肢(FR-328、FR-329) ---- */
+/* ---- 基準ジオメトリの選択肢(FR-328、FR-329) ---- */
 
 /** 選択肢の値で「文書にある基準軸」を指すときの頭(`reference:基準軸-1` の形)。 */
 export const REFERENCE_AXIS_VALUE_PREFIX = 'reference:';
@@ -303,7 +303,7 @@ export interface ReferenceAxisOption {
 /**
  * 軸の選択肢。ワールドの X / Y / Z に、文書にある基準軸を足す(FR-329)。
  * 基準軸の名前は利用者が付け替えられるので `labelKey` ではなく `label` に入れる
- * (ねじの呼び径と同じ扱い、§2.11「手順3」)。
+ * (ねじの呼び径と同じ扱い)。
  */
 function referenceAxisOptions(
   axes: readonly ReferenceAxisOption[] | undefined,
@@ -390,7 +390,7 @@ function referencePointKindChoice(): NumericChoice {
   };
 }
 
-/* ---- P4 タスク23: スケッチの角の面取りの選択肢(FR-323) ---- */
+/* ---- スケッチの角の面取りの選択肢(FR-323) ---- */
 
 /**
  * スケッチの角の面取りの決め方(FR-323)。既定は等距離(Enter 連打で正方形の切り落とし、
@@ -409,12 +409,12 @@ function sketchChamferModeChoice(): NumericChoice {
   };
 }
 
-/* ---- P5 タスク49: Should / Could 群の選択肢(§2.15 の段の表) ---- */
+/* ---- Should / Could 群の選択肢 ---- */
 
 /*
   既定はすべて model の定数から引く(同じ値を 2 か所に書かない)。model に定数の無い
   2 つ(曲面の作り方・切断面の決め方)だけ、ここで「何も選ばなくても意味のある形になる」
-  ものを既定にした(NFR-UX-4)。統括へ報告する判断点。
+  ものを既定にした(NFR-UX-4)。
 */
 
 /** 押し出しの終わり方(FR-415)。既定は model の `DEFAULT_EXTRUDE_END`(= 距離)。 */
@@ -446,8 +446,8 @@ function thicknessSideChoice(): NumericChoice {
 }
 
 /**
- * ミラーの鏡にする面(FR-419、§0.a-0.36)。基準の 3 面と「選んだ面」の 4 つだけで、
- * 3 点指定のような決め方は持たない(§0.a-0.36 が認めた範囲。切断とはここが違う)。
+ * ミラーの鏡にする面(FR-419)。基準の 3 面と「選んだ面」の 4 つだけで、
+ * 3 点指定のような決め方は持たない(切断とはここが違う)。
  */
 function mirrorPlaneChoice(): NumericChoice {
   return {
@@ -526,11 +526,11 @@ function surfaceOperationChoice(): NumericChoice {
 }
 
 /**
- * 切断面の決め方(FR-432、§0.a-0.56)。基準の 3 面・選んだ面・3 点・点と辺・点と軸の 7 つ。
+ * 切断面の決め方(FR-432)。基準の 3 面・選んだ面・3 点・点と辺・点と軸の 7 つ。
  * 値は model の `PlaneSpec` の種類(と作業平面の id)へそのまま読み替えられる言葉にしてある。
  * 既定は XY 面——何も選ばなくても切れる唯一の決め方だから(NFR-UX-4)。
  *
- * EX-04 W1 で、X / Y / Z 軸に垂直な面(位置は式)・選んだ作業平面・辺を含む面の 5 つを足した
+ * X / Y / Z 軸に垂直な面(位置は式)・選んだ作業平面・辺を含む面の 5 つも持つ
  * (既存の 7 つと閉じた輪郭の値・並び・既定は変えない。読み替えは cutCommands.ts)。
  */
 function cutPlaneKindChoice(): NumericChoice {
@@ -551,7 +551,7 @@ function cutPlaneKindChoice(): NumericChoice {
       { value: 'pointAndEdge', labelKey: 'numericInput.cutPlaneKind.pointAndEdge' },
       { value: 'pointAndEdgeContaining', labelKey: 'numericInput.cutPlaneKind.pointAndEdgeContaining' },
       { value: 'pointAndAxis', labelKey: 'numericInput.cutPlaneKind.pointAndAxis' },
-      // 平面ではなく、選んだ閉じた輪郭で貫いて切る(EX04。cutCommands.ts の PROFILE_CUT_KIND)。
+      // 平面ではなく、選んだ閉じた輪郭で貫いて切る(cutCommands.ts の PROFILE_CUT_KIND)。
       { value: 'profile', labelKey: 'numericInput.cutPlaneKind.profile' },
     ],
   };
@@ -645,9 +645,9 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
     case 'springLength':
       return [springDerivedChoice()];
     /*
-      基本形状5種の向き(§2.15 の「つまみ」列)。回転軸(FR-402)と同じ `RevolveAxis` を
+      基本形状5種の向き。回転軸(FR-402)と同じ `RevolveAxis` を
       流用するので選択肢も同じもの(X / Y / Z、線分が選ばれていれば「選んだ線分」)を使う
-      (§0.a-0.16「同じものを2つ作らない」)。既定は Z(model の `DEFAULT_PRIMITIVE_AXIS`)。
+      (「同じものを2つ作らない」)。既定は Z(model の `DEFAULT_PRIMITIVE_AXIS`)。
       球とトーラスは向きを変えても見た目が変わらないが、種類ごとに出し分けない
       (5 種で同じ欄立てにしたほうが操作の勘が働く。model 側の型も5種で共通)。
     */
@@ -658,17 +658,17 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
     case 'torusSize':
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
     /*
-      面をつなぐ(FR-430、タスク27)の「なめらかさ」(§0.a-0.74)。
-      **球を含まない断面では形に効かない**(§0.a-0.87)ので、そのときは選択肢ごと伏せる。
+      面をつなぐ(FR-430)の「なめらかさ」。
+      **球を含まない断面では形に効かない**ので、そのときは選択肢ごと伏せる。
       効かない欄を出すと「変えたのに形が変わらない」ことになり、利用者は理由を推し量れない
       (NFR-UX-5「できないことは示す」の裏返し)。球を含むかどうかはツールバーが選択から
       見込んで `ruledHasSphere` で渡す。ロフト(`loftTwist`)には球を置けないので選択肢は無い。
     */
     case 'ruledTwist':
       return options.ruledHasSphere === true ? [ruledSphereSegmentsChoice()] : [];
-    /* ---- P5 タスク49: Should / Could 群(§2.15 の段の表) ---- */
+    /* ---- Should / Could 群 ---- */
     /*
-      押し出し(FR-401、FR-415、FR-416)。タスク50 で終わり方と厚みの側をここへ畳んだ。
+      押し出し(FR-401、FR-415、FR-416)。終わり方と厚みの側もここで聞く。
       どちらも選択肢なので**段を開いた直後から出る**が、欄は既定(終わり方＝距離、
       薄板にする＝切)では距離 1 つのままである。
     */
@@ -693,12 +693,12 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
       ];
     case 'mirrorPlane':
       return [mirrorPlaneChoice()];
-    // 回す軸は回転・円形パターン・ばねと同じ選択肢を使い回す(§0.a-0.16)。既定も同じ Z。
+    // 回す軸は回転・円形パターン・ばねと同じ選択肢を使い回す。既定も同じ Z。
     case 'transformRotation':
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
     case 'ribThickness':
       return [ribSideChoice()];
-    // 穴(FR-405、FR-422)。タスク50 で入口の広げ方をここへ畳んだ。
+    // 穴(FR-405、FR-422)。入口の広げ方もここで聞く。
     case 'holeSize':
       return [holeEntryChoice(), holePlacementChoice()];
     // 呼びと系列はねじ穴とまったく同じ表を使う(規格表を 2 か所に持たない、FR-406)。

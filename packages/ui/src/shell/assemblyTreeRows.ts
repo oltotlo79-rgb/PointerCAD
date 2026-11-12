@@ -1,5 +1,5 @@
 /**
- * アセンブリの木の行の組み立て(計画書 docs/plans/P7-アセンブリ.md タスク9。
+ * アセンブリの木の行の組み立て(
  * FR-501 / FR-604 / FR-605、要件§7.1 の「ツリー」の欄)。
  *
  * 部品のときの木(`solid/solidSummary.ts` の `buildTreeSections`)とまったく同じ流儀で、
@@ -8,10 +8,10 @@
  *
  * 束(節)は**部品 / 合致 / ジョイント / 分解ステップの 4 つ**で、中身が空でも必ず 4 つ返す
  * (空のときの案内を呼び手が出せるようにするため。部品側の `buildTreeSections` と同じ約束)。
- * **部品を 1 つも置いていないアセンブリ全体の案内は `AppShell` が出す**(`assembly.emptyState`。
- * P7 タスク5)ので、ここでは束ごとの短い案内だけを持ち、二重に出さない。
+ * **部品を 1 つも置いていないアセンブリ全体の案内は `AppShell` が出す**(`assembly.emptyState`)
+ * ので、ここでは束ごとの短い案内だけを持ち、二重に出さない。
  *
- * **行の `key` には必ず種類の接頭辞を付ける**(`rules/06` 10.9)。部品の id・合致の id・
+ * **行の `key` には必ず種類の接頭辞を付ける**。部品の id・合致の id・
  * ジョイントの id・ステップの id は別々に採番される(`component-1` / `mate-1` …)ので
  * 普段は重ならないが、**壊れたファイル・古いファイルでは重なりうる**。重なった瞬間に
  * 「消したはずの行が残る」事故が起きる(10.9 が外観の節で実際に起こした)ので、
@@ -31,7 +31,7 @@ import { rigidGroupsOf } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 
-/** 束(節)の種類。行の `key` の接頭辞にもなる(`rules/06` 10.9)。 */
+/** 束(節)の種類。行の `key` の接頭辞にもなる。 */
 export type AssemblyTreeSectionKey = 'component' | 'mate' | 'joint' | 'step';
 
 /**
@@ -50,13 +50,13 @@ export type AssemblyRowKind =
   | 'jointStep';
 
 /**
- * 行に出す状態の印(計画書タスク9 の「固定・非表示・抑制・未解決・矛盾」)。
+ * 行に出す状態の印(固定・非表示・抑制・未解決・矛盾)。
  *
  * - `fixed`: 固定した部品(FR-602)。動かない。
  * - `hidden`: 画面に出していない部品(FR-605)。組み立ての一部としては残る。
  * - `suppressed`: 抑制した部品・合致(FR-503)。**置かなかったことにする**。
- * - `unresolved`: 指し先がいま引けない(§0.a-0.40。消えた部品を指す合致など)。
- * - `conflicting`: ほかの合致と同時には成り立たない(§0.a-0.20 の診断)。
+ * - `unresolved`: 指し先がいま引けない(消えた部品を指す合致など)。
+ * - `conflicting`: ほかの合致と同時には成り立たない(合致の診断)。
  * - `fastened`: ボルト締結などで他の部品と互いに固定した組の部品(追加要件6)。組ごと動く。
  *   全体の固定(`fixed`)とは別の印。解くのは「組む」の「締結を外す」。
  */
@@ -107,7 +107,7 @@ interface AssemblyTreeDiagnosis {
   /** 解決できなかった理由(`ResolvedAssembly.errors`)。`componentId` で行と対応づける。 */
   readonly errors: readonly AssemblyError[];
   /**
-   * 同時には成り立たない合致・ジョイントの id(§0.a-0.20 の診断。P7 タスク16)。
+   * 同時には成り立たない合致・ジョイントの id(合致の診断)。
    * その段が入るまでは誰も渡さないので、`conflicting` の印は付かない。
    */
   readonly conflictingIds?: ReadonlySet<string>;
@@ -174,7 +174,7 @@ export const ASSEMBLY_BADGE_TOOLTIP_KEYS: Readonly<Record<AssemblyRowBadge, Mess
 };
 
 /**
- * 行の `key`(`rules/06` 10.9)。**接頭辞を付ける場所はここ 1 か所だけ**にしてある。
+ * 行の `key`。**接頭辞を付ける場所はここ 1 か所だけ**にしてある。
  * 種類が違えば必ず食い違い、同じ種類の中では id が食い違う(文書の側が保証する)。
  */
 export function assemblyRowKey(sectionKey: AssemblyTreeSectionKey, id: string): string {
@@ -221,8 +221,8 @@ function linkBadges(
 /**
  * アセンブリの木の並びを作る(FR-501)。**束は必ず 4 つ**返す。
  *
- * 並び順は文書の並びのまま(部品表の番号・連結成分の順もこの並びで決まる。§2.10)なので、
- * 同じ文書からは必ず同じ木ができる(§0.a-0.54 の決定性)。
+ * 並び順は文書の並びのまま(部品表の番号・連結成分の順もこの並びで決まる)なので、
+ * 同じ文書からは必ず同じ木ができる(決定性)。
  */
 export function assemblyTreeRows(
   assembly: AssemblyDocument,

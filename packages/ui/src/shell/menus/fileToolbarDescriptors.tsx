@@ -4,7 +4,7 @@ import type { ButtonEntry } from './toolbarShared.js';
 /**
  * ファイルの操作(FR-806)。図柄だけのボタンで、名前は読み上げ名とツールチップが担う。
  *
- * ボタンは 3 つのまま増やさない(§0.a-0.15)。「名前を付けて保存」は保存ボタンを
+ * ボタンは 3 つのまま増やさない。「名前を付けて保存」は保存ボタンを
  * Shift を押しながら押すか、Ctrl+Shift+S で行う。その旨はツールチップに書く(NFR-UX-7)。
  */
 export const FILE_ACTIONS = [

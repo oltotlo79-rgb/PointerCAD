@@ -1,4 +1,4 @@
-/** GR-19a: comparison margins are entered in mm/degrees and stored in mm/radians. */
+/** comparison margins are entered in mm/degrees and stored in mm/radians. */
 import { evaluateExpression, expressionValueFromNumber } from '@pointercad/expression';
 import {
   DEFAULT_MATH_GEOMETRY_TOLERANCE,
@@ -41,7 +41,7 @@ export function mathGeometryToleranceText(tolerance: MathGeometryTolerance): str
 }
 
 /**
- * GR-19c fix: resolves the tolerance to submit from `edited`, the field(s) a draft actually changed.
+ * Resolves the tolerance to submit from `edited`, the field(s) a draft actually changed.
  * A field absent from `edited` keeps `current`'s own number **verbatim** rather than the 12-significant-
  * digit display text re-parsed — confirming an edit to one field must never drift the other.
  *

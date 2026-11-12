@@ -1,12 +1,12 @@
 import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import { crossVec, dotVec as dot } from './sketchCorner.js';
 /**
- * らせん(計画書 P3 §2.7b.3、タスク9)。
+ * らせん。
  *
  * **ねじの実らせん(FR-406)とばね(FR-414)が共用する部品**で、同じらせんの式を
  * 2 か所に書かないためにここへ切り出してある。したがって
  * **ねじ側の都合(有効半径の決め方、右ねじ固定)も、ばね側の都合(線径、座巻き)も
- * 持ち込まない。** 巻き方向は引数で受け取る(§0.a-0.33)。
+ * 持ち込まない。** 巻き方向は引数で受け取る。
  *
  * 作り方は「円柱面の上に 2D の直線を引き、その直線を辺にする」というもので、
  * 円柱面 `Geom_CylindricalSurface` の (u, v) は
@@ -129,7 +129,7 @@ export function helixParameterLength(pitch: number, turns: number): number {
 
 /**
  * らせんの 3D の長さ(mm)。**巻数 × √((2π·半径)² + pitch²)。**
- * 掃引した管の体積 `π r² L` の検算に使う(§2.7b.5)。
+ * 掃引した管の体積 `π r² L` の検算に使う。
  *
  * `helixParameterLength` と同じく、0 や負も式のまま返す(巻数 0 なら 0)。
  */
@@ -142,7 +142,7 @@ export function helixArcLength(radius: number, pitch: number, turns: number): nu
  *
  * 局所座標で右巻きのらせんは `(R cos u, R sin u, p·u/2π)` なので、
  * u = 0 の点は `origin + R·x̂`、接線は `R·ŷ + (p/2π)·ẑ` を長さ 1 にしたもの。
- * 左巻きは ŷ の符号が反転する(§0.a-0.33)。
+ * 左巻きは ŷ の符号が反転する。
  *
  * 軸の向きが決まらないときは日本語の `Error`。
  */
@@ -204,14 +204,14 @@ function checkSpec(spec: HelixSpec): HelixAxisFrame {
 /**
  * らせんの辺を作る(3D 曲線つき)。確保したものは `keep` へ積む。
  *
- * 手順(§2.7b.3、いずれも §1.2 で実在を確認済み):
+ * 手順(いずれも実在を確認済み):
  *   1. `gp_Ax3_3(始点, 軸, 第 1 軸)` … 第 1 軸は `helixAxisFrame` が決める
  *   2. `Geom_CylindricalSurface_1(ax3, 半径)` → `Handle_Geom_Surface_2`
  *   3. `Geom2d_Line_3((0,0), (±1, pitch/2π))` → `Handle_Geom2d_Curve_2`
  *   4. `BRepBuilderAPI_MakeEdge_31(曲線, 面, 0, helixParameterLength(...))`
  *   5. `BRepLib.BuildCurves3d_2(辺)` … 3D 曲線を付ける(付けないと掃引できない)
  *
- * **`Handle_Geom2d_Line` は `Handle_Geom2d_Curve` を継承していない**(§1.3)ので、
+ * **`Handle_Geom2d_Line` は `Handle_Geom2d_Curve` を継承していない**ので、
  * 親の Handle(`Handle_Geom2d_Curve_2` / `Handle_Geom_Surface_2`)を直に作る。
  */
 export function makeHelixEdge(
@@ -231,7 +231,7 @@ export function makeHelixEdge(
 
   const start = keep(new oc.gp_Pnt2d_3(0, 0));
   const sign = spec.handedness === 'left' ? -1 : 1;
-  // gp_Dir2d は向きを長さ 1 へ揃えるので、左右でパラメータ長の式は変わらない(§0.a-0.33)。
+  // gp_Dir2d は向きを長さ 1 へ揃えるので、左右でパラメータ長の式は変わらない。
   const slope = keep(new oc.gp_Dir2d_4(sign, spec.pitch / TWO_PI));
   const line = keep(new oc.Geom2d_Line_3(start, slope));
   const curveHandle = keep(new oc.Handle_Geom2d_Curve_2(line));

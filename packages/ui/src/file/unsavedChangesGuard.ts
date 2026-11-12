@@ -12,7 +12,7 @@
  * 変更も守る。
  *
  * 取り付けは各アプリの入口が行う(Web 版は `apps/web/src/main.tsx`、デスクトップ版は
- * `apps/desktop/src/renderer/main.tsx`。レビュー R03)。デスクトップ版の窓で `beforeunload` を使うと
+ * `apps/desktop/src/renderer/main.tsx`)。デスクトップ版の窓で `beforeunload` を使うと
  * 確認を出さずに閉じるのを止めてしまうので、デスクトップ版は本体の問合せの口
  * (`CloseRequestTarget`。preload が出す)を渡す。本体が窓の「閉じる」を止めて問い合わせ、
  * ここが未保存を判定し、未保存があれば本体の窓で「保存して閉じる・保存せずに閉じる・戻る」を

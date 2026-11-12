@@ -1,13 +1,13 @@
 /**
- * アセンブリの解決(計画書 docs/plans/P7-アセンブリ.md §2.3、タスク6。FR-601 / FR-606 / NFR-PF-3)。
+ * アセンブリの解決(FR-601 / FR-606 / NFR-PF-3)。
  *
  * アセンブリ文書(保存する形)を、**部品ごとの再計算の依頼**と**インスタンスごとの配置(数)**
  * へ直す。ここで済ませるのは model 側で計算できることだけで、
  *   ① 抱き込んだ部品文書を `partRef` で引く(`partLibrary.ts` の `partOf`)
- *   ② **同じ部品は 1 回だけ**解決する(§0.a-0.4。§2.13-6 の「インスタンスごとに再計算すると
+ *   ② **同じ部品は 1 回だけ**解決する(「インスタンスごとに再計算すると
  *      50 × 252ms = 12.6 秒で上限を割る」がこの決めの根拠)
- *   ③ 保存形の配置(位置 = 式)を数へ解き、四元数を `w >= 0` へ揃える(§0.a-0.54)
- *   ④ 親の配置と合成する(サブアセンブリの入れ子。§2.11)
+ *   ③ 保存形の配置(位置 = 式)を数へ解き、四元数を `w >= 0` へ揃える
+ *   ④ 親の配置と合成する(サブアセンブリの入れ子)
  * の 4 つである。
  *
  * **カーネルを呼ばない純関数。** 実際の B-rep を作るのはカーネルの側で、この関数が返すのは
@@ -19,8 +19,8 @@
  * (FR-504、NFR-RE-1「止めずに警告する」)。**抑制(`suppressed`)は失敗ではない**ので
  * `errors` には入らず、置かれなかったものとして扱う(部品文書の `resolvePart` と同じ流儀)。
  *
- * **合致は解かない**(§2.3 の⑤。P7 タスク15)。ここが返す配置は「利用者が置いた配置」で、
- * 合致の解はその上に別の段として乗る(§0.a-0.6。解は保存しない)。
+ * **合致は解かない**。ここが返す配置は「利用者が置いた配置」で、
+ * 合致の解はその上に別の段として乗る(解は保存しない)。
  */
 
 import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
@@ -40,7 +40,7 @@ import {
 import type { AssemblyComponent, AssemblyDocument, ComponentSource } from './types.js';
 import { standardPartRejection } from './standard/buildStandardPart.js';
 
-/** 規格部品の出どころ(`ComponentSource` の 1 枝)。台本(タスク29)へ渡す形。 */
+/** 規格部品の出どころ(`ComponentSource` の 1 枝)。台本へ渡す形。 */
 export type StandardPartSource = Extract<ComponentSource, { readonly kind: 'standardPart' }>;
 
 /**
@@ -69,21 +69,21 @@ export interface AssemblyError {
  * アセンブリの解決結果。
  *
  * `parts` の鍵は**部品の鍵**(`partKeyOf`)で、`kind: 'part'` のときは `partRef` そのもの
- * (計画書のタスク6 が言う `Map<partRef, ResolvedPart>`)。規格部品は文書を持たないので、
- * 呼び寸法から作った鍵になる。**同じ鍵は 1 つしか入らない**(§0.a-0.4)。
+ * (`Map<partRef, ResolvedPart>`)。規格部品は文書を持たないので、
+ * 呼び寸法から作った鍵になる。**同じ鍵は 1 つしか入らない**。
  *
  * `placements` は**インスタンスごと**(`componentId` → 数に直した配置)。抑制された部品は
- * 入らない。並び順は文書の `components` の順で、2 回解いても変わらない(§0.a-0.54)。
+ * 入らない。並び順は文書の `components` の順で、2 回解いても変わらない。
  */
 export interface ResolvedAssembly {
-  /** 部品の鍵 → 部品 1 つの解決結果。**部品ごとに 1 回だけ**(§0.a-0.4)。 */
+  /** 部品の鍵 → 部品 1 つの解決結果。**部品ごとに 1 回だけ**。 */
   readonly parts: ReadonlyMap<string, ResolvedPart>;
   /** インスタンスの id → 世界座標での配置(親と合成した後)。 */
   readonly placements: ReadonlyMap<string, RigidPlacement>;
   /**
    * インスタンスの id → 部品の鍵。**中身を引けたインスタンスだけ**が入る。
    *
-   * 計画書のタスク6 が挙げる 3 つの欄には無いが、これが無いと受け取った側が
+   * 当初の案の 3 つの欄には無いが、これが無いと受け取った側が
    * `partKeyOf` を自分で呼び直すことになり、鍵の作り方が 2 か所に散る。
    * 「置いてあるが中身が引けなかった」(`placements` にはあり、ここには無い)を
    * 1 回の照合で見分けられるようにもなる。
@@ -113,12 +113,12 @@ export interface ResolveAssemblyOptions {
    */
   readonly library?: PartLibrary;
   /**
-   * 親の配置(サブアセンブリの入れ子、§2.11)。**外側 ∘ 内側**の順で合成するので、
+   * 親の配置(サブアセンブリの入れ子)。**外側 ∘ 内側**の順で合成するので、
    * ここへ親の配置を渡すと、この文書の部品はすべて親ごと動く。省くと恒等。
    */
   readonly parent?: RigidPlacement;
   /**
-   * 規格部品の寸法表から部品文書を組む台本(FR-612、FR-616、§0.a-0.35。P7 タスク29 の
+   * 規格部品の寸法表から部品文書を組む台本(FR-612、FR-616。
    * `buildStandardPart`)。**表に無い呼び寸法では `null` を返す**(投げない)。
    * 渡さなければ規格部品は組み立てられず、`errors` に理由が積まれる。
    */
@@ -131,10 +131,10 @@ export interface ResolveAssemblyOptions {
   readonly ancestors?: readonly string[];
 }
 
-/** 部品文書が引けない(`parts/<ref>.json` が無い)。計画書のタスク6 の検証表の文言。 */
+/** 部品文書が引けない(`parts/<ref>.json` が無い)。検証の表の文言。 */
 export const MISSING_PART_MESSAGE = '部品が見つかりません。';
 
-/** 規格部品の呼び寸法が寸法表に無い(§2.12 の断りの文言)。 */
+/** 規格部品の呼び寸法が寸法表に無い(断りの文言)。 */
 export const MISSING_STANDARD_SIZE_MESSAGE = 'この呼び寸法は用意されていません。';
 
 /** サブアセンブリの深さ上限と、利用者へ見せる固定文言。 */
@@ -155,13 +155,13 @@ export const INVALID_PLACEMENT_MESSAGE = '置いた位置を数にできませ�
 const NO_VARIABLES: ReadonlyMap<string, number> = new Map<string, number>();
 
 /**
- * 部品の鍵(§0.a-0.4 の「同じ部品は 1 回だけ」の単位)。
+ * 部品の鍵(「同じ部品は 1 回だけ」の単位)。
  *
  * - 部品・サブアセンブリは抱き込んだ文書の `ref`。ZIP の中では `parts/<ref>.json` の
- *   1 つの名前空間なので、2 つの枝で鍵がぶつかることはない(§2.2)。
- * - 規格部品は文書を持たない(§0.a-0.35)ので、**形が決まるもの**(種類・呼び寸法・指定)
+ *   1 つの名前空間なので、2 つの枝で鍵がぶつかることはない。
+ * - 規格部品は文書を持たないので、**形が決まるもの**(種類・呼び寸法・指定)
  *   から鍵を作る。指定は**名前の辞書順**に並べて書く——並べないと、同じ指定を違う順で
- *   作っただけで鍵が変わり、同じ形を 2 回組むことになる(§0.a-0.54 の決定性)。
+ *   作っただけで鍵が変わり、同じ形を 2 回組むことになる(決定性)。
  */
 export function partKeyOf(source: ComponentSource): string {
   switch (source.kind) {
@@ -190,10 +190,10 @@ function* placementSources(assembly: AssemblyDocument): Generator<string> {
 }
 
 /**
- * アセンブリのパラメータ表(§0.a-0.9)を解いた変数表。
+ * アセンブリのパラメータ表を解いた変数表。
  *
  * **部品の側のパラメータとは別物**で、混ぜない(部品の表は部品文書の中で閉じている)。
- * 合致の距離・ジョイントの可動範囲・分解の距離(P7 タスク12 以降)も同じ表で評価するので、
+ * 合致の距離・ジョイントの可動範囲・分解の距離も同じ表で評価するので、
  * 作り方を 1 か所に置いて輸出しておく。**表が空なら解析そのものを行わない。**
  */
 export function assemblyVariables(assembly: AssemblyDocument): ReadonlyMap<string, number> {
@@ -222,7 +222,7 @@ function numberOf(value: ExpressionValue, context: EvaluateOptions): number {
  * 保存形の配置(位置 = 式、向き = 四元数)を、計算に使う配置(数)へ直す。
  *
  * 向きは必ず `normalizeQuaternion` を通す——長さ 1・`w >= 0` へ揃える場所を 1 か所に
- * 保つため(§0.a-0.54)。壊れた向き(長さ 0・NaN)は同関数が恒等へ落とすので、
+ * 保つため。壊れた向き(長さ 0・NaN)は同関数が恒等へ落とすので、
  * ここでは断らない(位置と違って「どこに置いたか」が狂わないため)。
  */
 function rigidPlacementOf(
@@ -268,8 +268,8 @@ function partDocumentOf(
       (`PartLibrary.parts`。中身は `PartDocument` だけ)には入っていない。**部品として
       引き当てにいかない**——ZIP の中では `parts/<ref>.json` の 1 つの名前空間なので、
       壊れたファイルで `ref` がぶつかると部品文書を掴んでしまい、別の形が黙って出る。
-      中を再帰で解くのは P7 タスク36 で、この枝がその入り口になる(親の配置を
-      `options.parent` へ渡して自分自身を呼ぶ形。§2.11)。
+      中を再帰で解くときは、この枝がその入り口になる(親の配置を
+      `options.parent` へ渡して自分自身を呼ぶ形)。
     */
     return { message: MISSING_PART_MESSAGE };
   }
@@ -283,7 +283,7 @@ function partDocumentOf(
  * 部品 1 つの解決は `resolvePart` に任せ、その前に**部品自身のパラメータ表を配る**
  * (`applyParameters`。部品の経路 `recomputePart` とまったく同じ順序で、これを省くと
  * 表の値を変えても部品の形が追従しない)。アセンブリのパラメータ表は配置の式にだけ効く
- * (部品の側のパラメータはアセンブリからは見えない。§0.a-0.9)。
+ * (部品の側のパラメータはアセンブリからは見えない)。
  */
 export function resolveAssembly(
   assembly: AssemblyDocument,
@@ -357,7 +357,7 @@ export function resolveAssembly(
       continue;
     }
     if (parts.has(key)) {
-      // 2 個目以降。**解決し直さない**(§0.a-0.4)。形は 1 つを全インスタンスで使い回す。
+      // 2 個目以降。**解決し直さない**。形は 1 つを全インスタンスで使い回す。
       partKeys.set(component.id, key);
       continue;
     }

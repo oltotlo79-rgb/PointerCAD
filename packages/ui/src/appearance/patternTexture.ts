@@ -1,8 +1,8 @@
 /**
- * 柄(手続き的テクスチャ、FR-1108)を `THREE.CanvasTexture` として作る(計画書
- * docs/plans/P5-高度なソリッド・外観と測定.md §2.4.3、タスク8)。
+ * 柄(手続き的テクスチャ、FR-1108)を `THREE.CanvasTexture` として
+ * 作る。
  *
- * 統括の指示(このタスクの依頼書)により、実装は次の3段に分ける。
+ * 実装は次の3段に分ける。
  *
  * 1. `patternDrawCommands` / `patternAlphaDrawCommands` — Canvas 2D の命令を「描く」
  *    のではなく「データとして列挙する」純関数。three にも DOM にも触れないので Node で
@@ -16,13 +16,13 @@
  *    環境に依存する薄い皮。**canvas が無い環境(Node の検査、Web Worker 等)では
  *    必ず `null` を返し、例外を投げない。**
  *
- * 先行タスク1が `packages/model/src/appearance/types.ts` に `AppearancePattern` を
- * 作っているが、`model/src/index.ts` からはまだ輸出されていない(タスク2でまとめる)ため、
+ * `packages/model/src/appearance/types.ts` に `AppearancePattern` が
+ * あるが、これを書いた時点では `model/src/index.ts` から輸出されていなかったため、
  * このファイルは model の型に依存せず、`PatternKind` という自分だけの文字列の union
- * (`AppearancePattern.kind` と同じ4つの値)で受ける。タスク9で
- * `AppearanceSpec.pattern.kind` → `PatternKind` への詰め替えを行う(申し送り)。
+ * (`AppearancePattern.kind` と同じ4つの値)で受ける。呼ぶ側で
+ * `AppearanceSpec.pattern.kind` → `PatternKind` への詰め替えを行う。
  *
- * **乱数を使わない**(§2.4.3)。同じ文書を開き直したときに同じ絵が出るようにするため、
+ * **乱数を使わない**。同じ文書を開き直したときに同じ絵が出るようにするため、
  * 木目のゆらぎも周期の異なる正弦波3本の和で作る(`Math.random` を1つも呼ばない)。
  *
  * **タイルの継ぎ目を合わせる**(手順3)。エキスパンドメタルの対角線は、隣のタイルへ
@@ -32,19 +32,19 @@
  * 継ぎ目の食い違いを避ける。
  *
  * **繰り返しの間隔(mm)は、タイルの絵そのものには影響しない。** `texture.repeat` を
- * 変えるだけで実寸を変える設計(§0.a-0.6)なので、`spacing` は `patternRepeatFor` を
- * 通してタスク9・10が使う(1枚が表す実寸は `spacing` そのもの。ピクセル数には依らない)。
+ * 変えるだけで実寸を変える設計なので、`spacing` は `patternRepeatFor` を
+ * 通して材質の側が使う(1枚が表す実寸は `spacing` そのもの。ピクセル数には依らない)。
  */
 
 import * as THREE from 'three';
 import { createViewportLifetime, type ViewportLifetime } from '../viewport/viewportLifetime.js';
 
-/** タイルの一辺の画素数。§2.4.3 の決定どおり 512。 */
+/** タイルの一辺の画素数。512。 */
 export const PATTERN_TEXTURE_SIZE = 512;
 
 /**
  * 柄の種類。`AppearancePattern`(`packages/model/src/appearance/types.ts`)の
- * `kind` と同じ4つの文字列(`'none'` は柄なし)。タスク9で model の型からここへ詰め替える。
+ * `kind` と同じ4つの文字列(`'none'` は柄なし)。呼ぶ側が model の型からここへ詰め替える。
  */
 export type PatternKind = 'none' | 'expandedMetal' | 'checkerPlate' | 'woodGrain';
 
@@ -120,7 +120,7 @@ export interface PatternDrawOptions {
 
 const EXPANDED_METAL_BASE_COLOR = '#8c9199';
 const EXPANDED_METAL_STRAND_COLOR = '#e2e5e9';
-/** alphaMap 用。桟が白(不透明)・穴が黒(透明)(§0.a-0.8)。 */
+/** alphaMap 用。桟が白(不透明)・穴が黒(透明)。 */
 const ALPHA_HOLE_COLOR = '#000000';
 const ALPHA_STRAND_COLOR = '#ffffff';
 
@@ -132,7 +132,7 @@ const CHECKER_PLATE_SHADOW_COLOR = '#5a5a5a';
 const DEFAULT_WOOD_BASE_COLOR = '#cbab7d';
 const DEFAULT_WOOD_GRAIN_COLOR = '#9c7a4a';
 
-/** 桟の幅は1タイルの1/6(§2.4.3)。 */
+/** 桟の幅は1タイルの1/6。 */
 const EXPANDED_METAL_STRAND_FRACTION = 1 / 6;
 
 /**
@@ -321,7 +321,7 @@ export function patternDrawCommands(kind: PatternKind, options: PatternDrawOptio
 }
 
 /**
- * エキスパンドメタルの抜き(桟が白・穴が黒)。`alphaMap` に使う(§0.a-0.8)。
+ * エキスパンドメタルの抜き(桟が白・穴が黒)。`alphaMap` に使う。
  * エキスパンドメタル以外は `null`(alphaMap が要らないことを表す)。
  */
 export function patternAlphaDrawCommands(
@@ -398,13 +398,13 @@ export interface PatternCreateOptions {
 
 export interface PatternTextureResult {
   readonly texture: THREE.CanvasTexture;
-  /** エキスパンドメタルだけ非 `null`(§0.a-0.8)。 */
+  /** エキスパンドメタルだけ非 `null`。 */
   readonly alphaTexture: THREE.CanvasTexture | null;
 }
 
 /** 使い回しの鍵。柄の種類と(木目なら)樹種の色だけで決まる。間隔(mm)は含めない
- *  (タイルの絵そのものは間隔に依らず、`texture.repeat` は使う側(タスク9・10)が
- *  `patternRepeatFor` で都度計算して反映するため。§2.4.3「512×512のCanvasTextureを
+ *  (タイルの絵そのものは間隔に依らず、`texture.repeat` は使う側が
+ *  `patternRepeatFor` で都度計算して反映するため。「512×512のCanvasTextureを
  *  1種類につき1枚だけ作り、使い回す」)。 */
 export function patternCacheKey(kind: PatternKind, options: PatternCreateOptions): string {
   return [kind, options.baseColor ?? '', options.grainColor ?? ''].join('|');
@@ -412,7 +412,7 @@ export function patternCacheKey(kind: PatternKind, options: PatternCreateOptions
 
 /**
  * 繰り返しの間隔(mm)を `texture.repeat` の値へ直す。UV は箱投影で mm の座標そのもの
- * (§0.7)なので、`1 / spacingMm` を掛ければ「タイル1枚がちょうど spacingMm mm になる」
+ * なので、`1 / spacingMm` を掛ければ「タイル1枚がちょうど spacingMm mm になる」
  * (FR-1108「模様の大きさを数式で指定」)。
  *
  * 導出例(縞鋼板、間隔20mm): 1枚のテクスチャが表す実寸は spacingMm の値そのもの、
@@ -428,7 +428,7 @@ const pendingPatternTextures = new Map<THREE.Texture, ViewportLifetime>();
 
 /**
  * 柄の `CanvasTexture` を作る(環境に canvas があるときだけ)。同じ引数(柄の種類 +
- * 樹種の色)では同じ結果を返す(使い回し。§2.4.3)。Node の検査環境のように
+ * 樹種の色)では同じ結果を返す(使い回し)。Node の検査環境のように
  * `document.createElement` が使えない環境、または `'2d'` の描画道具が取れない環境では
  * `null` を返し、例外は投げない。
  */

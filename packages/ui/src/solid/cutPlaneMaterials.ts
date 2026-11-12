@@ -1,10 +1,10 @@
 /**
- * 切断の「切る面の材料」を選択と入力から集め、押す前に確かめる(EX-04 W1、FR-432・FR-328)。
+ * 切断の「切る面の材料」を選択と入力から集め、押す前に確かめる(FR-432・FR-328)。
  *
  * 切る面の決め方は 5 通り(立体の面／3 点／点と法線／XYZ 軸に垂直な面／任意の作業平面)。
  * model の `PlaneSpec` はどの材料も表せるので、ここは**選択と入力を `PlaneSpec` の参照へ
  * 読み替えるだけ**にし、平面の解き方は model の `resolvePlaneSpec` をそのまま使う
- * (同じ規則を 2 か所に書かない。§0.a-0.56)。
+ * (同じ規則を 2 か所に書かない)。
  *
  * | 材料 | 選び方 | 切断に保存する参照 |
  * |---|---|---|
@@ -147,7 +147,7 @@ type SketchPointMaterial =
  *
  * model は `{ kind: 'point' }` を**文書の並び順で最初に見つかったスケッチ**の点として解く
  * (`resolveReferences.ts`)。編集中のスケッチより前のスケッチに同じ名前の点があると、
- * 選んだ点と別の点で切ってしまうので断る(rules/06 §10.381 の同名 id の取り違え)。
+ * 選んだ点と別の点で切ってしまうので断る(同名 id の取り違えの再発防止)。
  */
 function sketchPointMaterial(context: CutContext, elementId: string): SketchPointMaterial | null {
   const { document } = context;
@@ -290,7 +290,7 @@ export function cutPlaneMaterialRejection(context: CutContext, plane: PlaneSpec)
 }
 
 /**
- * 切る面を、押す前の確かめ(`cutPlaneMaterialRejection`)と同じ手掛かりで解く(EX-04 W2)。
+ * 切る面を、押す前の確かめ(`cutPlaneMaterialRejection`)と同じ手掛かりで解く。
  * 切断の予告(`cutPlanePreview.ts`)はこれで面を解くので、予告と確定前の確かめが同じ材料の解決になる。
  * 確定した切断は model の `resolvePart` が同じ `resolvePlaneSpec` で解く。
  */

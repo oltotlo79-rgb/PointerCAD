@@ -14,14 +14,14 @@ import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { measureVolume } from './solidMesh.js';
 
 /**
- * 薄板押し出し(FR-416。計画書 P5 §2.12・§0.a-0.46、タスク53)。
+ * 薄板押し出し(FR-416)。
  *
  * 輪郭を「線」ではなく「厚みのある壁」と見なして押し出す。閉じた輪郭なら
  * **中身の詰まった柱ではなく、壁だけの筒**になり、開いた輪郭なら 1 枚の薄い板になる。
  *
  * **作り方(3 段):**
  *   ① 輪郭を厚みぶんオフセットして、壁の**内側の境界**と**外側の境界**を作る
- *      (`makeOffsetWire`。P4 で作った FR-321 の道具をそのまま使い、
+ *      (`makeOffsetWire`。FR-321 の道具をそのまま使い、
  *       同じ手順を 2 か所に書かない)。
  *   ② 2 本の境界から、押し出す断面を作る。
  *      - 閉じた輪郭: 境界それぞれから面を張って押し出し、**大きいほうから小さいほうを引く**。
@@ -54,7 +54,7 @@ export type ThinExtrudeSide =
   /** 輪郭を壁の中心にして、両側へ半分ずつ付ける。 */
   | 'both';
 
-/** 薄板押し出し 1 段の依頼(計画書 §2.12)。 */
+/** 薄板押し出し 1 段の依頼。 */
 interface ThinExtrudeInput {
   /** 輪郭。閉じていても開いていてもよい。並んだ順につながっていること。 */
   readonly profile: readonly CurveSpec[];
@@ -335,7 +335,7 @@ function buildOpenWall(
 /**
  * 輪郭に厚みを付けて押し出す(FR-416)。**新しい形を返す。**
  *
- * 向きは model 側で決めて渡す約束(計画書 §0.a-0.8)なので、ここでは輪郭の平面を推し量らない。
+ * 向きは model 側で決めて渡す約束なので、ここでは輪郭の平面を推し量らない。
  * 失敗は必ず日本語の理由を持つ `Error` で返し、アプリを落とさない(NFR-RE-1、FR-504)。
  */
 export function makeThinExtrude(

@@ -1,7 +1,7 @@
 /**
- * 3MF の読み込み(FR-809、計画書 docs/plans/P6-入出力.md §2.6・§2.8、タスク19)。
+ * 3MF の読み込み(FR-809)。
  *
- * 3MF は ZIP の中に XML を入れた形式で、OCCT には読み手が無い(§0.a-0.26)。だから
+ * 3MF は ZIP の中に XML を入れた形式で、OCCT には読み手が無い。だから
  * `packages/io` が自前で読む。書き出し(`writeThreeMf.ts`)のちょうど逆で、
  * ZIP を共通の上限つきストリーミング入口で開き、`3D/3dmodel.model` の
  * `<vertex x= y= z=>` と `<triangle v1= v2= v3=>` を拾う。
@@ -9,21 +9,21 @@
  * **OCCT を呼ばない。** 返すのは素の JS の並び(位置・法線・添字)だけで、
  * `packages/io` は `packages/kernel` へ依存できない(依存方向 `apps → ui → model → kernel`。
  * `rules/04-設計の規律.md`)。**kernel の `ImportedMeshData`(`occt/exchangeShared.ts`)と
- * 同じ並び**にしてあるので、タスク16 の配線は写しを作らずそのまま渡せる。
+ * 同じ並び**にしてあるので、読み込みの配線は写しを作らずそのまま渡せる。
  * 頂点の法線と体積は、kernel の `occt/exchangeShared.ts` の `computeVertexNormals` /
  * `computeVolume` を model が出し直したもの(`@pointercad/model`)をそのまま呼ぶ
  * (io → model → kernel の向きのまま。式の写しを持たない)。
  *
- * **メッシュを B-rep へ戻さない**(§0.a-0.23)。読んだ形は三角形のまま持ち、
+ * **メッシュを B-rep へ戻さない**。読んだ形は三角形のまま持ち、
  * 表示・測定・書き出しはできるが、穴あけ・面取り・ブーリアンの対象にはしない。
  *
- * **例外を外へ出さない**(§0.a-0.27、NFR-RE-1)。`readPcadFile` と同じ流儀で、
+ * **例外を外へ出さない**(NFR-RE-1)。`readPcadFile` と同じ流儀で、
  * 壊れたファイルも結果オブジェクト(`{ ok: false, reason }`)で断る。呼び出し側は
  * `reason` をそのまま画面へ出せる日本語として扱える(NFR-UX-5)。
  *
  * ---
  *
- * ## XML の読み手を自前で書く理由(§1.1)
+ * ## XML の読み手を自前で書く理由
  *
  * `DOMParser` はブラウザには在るが **Node(Vitest)には無い**。外部の XML パーサーを
  * 足すのは `rules/02-禁止事項.md`(依存の無断変更)に触れるうえ、3MF で要るのは
@@ -34,8 +34,8 @@
  * ## 断りの文言が kernel と同文である理由
  *
  * `MESH_READ_FAILED_MESSAGE` / `MESH_NO_FACE_MESSAGE` / `meshTooLargeMessage` と
- * 上限 500 万の**正本は `packages/kernel/src/occt/exchangeShared.ts`** で、STL(タスク17)と
- * OBJ / glTF(タスク18)がそこから引いている。io は kernel を輸入できないので、
+ * 上限 500 万の**正本は `packages/kernel/src/occt/exchangeShared.ts`** で、STLと
+ * OBJ / glTFがそこから引いている。io は kernel を輸入できないので、
  * ここには**同じ文字列を写して**置く(依存方向が一方向なので写すほかない)。
  * 読み込んだ形式によって断り方が変わっては利用者が困るので、**写しがずれていないことは
  * 検査で固定する**(`readThreeMf.test.ts` に正本の文字列を書き写した検査がある)。
@@ -68,7 +68,7 @@ export const THREE_MF_NO_FACE_MESSAGE = 'この形には面がありません。
  * 開ける三角形の上限。
  *
  * 正本は kernel の `exchangeShared.ts` の `MESH_MAX_TRIANGLE_COUNT`。
- * 10 万三角形で約 2.4MB(§2.8 の見積もり)なので、500 万なら約 120MB。
+ * 10 万三角形で約 2.4MB(見積もり)なので、500 万なら約 120MB。
  */
 export const THREE_MF_MAX_TRIANGLE_COUNT = 5_000_000;
 
@@ -96,7 +96,7 @@ export type ThreeMfLengthUnit =
   | 'meter';
 
 /**
- * 単位 1 つぶんが何 mm か(§0.a-0.6。FR-811「インチのファイルも正しい寸法で開ける」)。
+ * 単位 1 つぶんが何 mm か(FR-811「インチのファイルも正しい寸法で開ける」)。
  *
  * `foot` は 12 inch なので `12 × 25.4 = 304.8`。どれも 10 進で厳密に書ける値である。
  */
@@ -116,7 +116,7 @@ export interface ThreeMfMesh {
   /**
    * `<basematerials>` の `displaycolor` から読んだ色(sRGB の 0〜1)。
    *
-   * **model は読み込んだ形を既定の外観にする**(§0.a-0.28。色の取り込みは P7 以降)。
+   * **model は読み込んだ形を既定の外観にする**(色の取り込みは未対応)。
    * それでも io が捨てないのは、捨ててしまうと後で拾い直せないためで、
    * 使うかどうかは上の層が決める。
    */
@@ -141,7 +141,7 @@ export type ThreeMfReadResult =
       readonly meshes: readonly ThreeMfMesh[];
       /**
        * ファイルに書いてあった単位。**座標は既に mm へ換算してある**ので、
-       * 上の層(タスク20 の `ImportedSource.unit`)へ渡すのは `'mm'` でよい。
+       * 上の層(`ImportedSource.unit`)へ渡すのは `'mm'` でよい。
        * これは「元のファイルが何で書かれていたか」の記録である。
        */
       readonly unit: ThreeMfLengthUnit;
@@ -160,7 +160,7 @@ function fail(reason: string): ThreeMfReadResult {
 }
 
 /* ------------------------------------------------------------------ *
- * XML の小さな読み手(§1.1)
+ * XML の小さな読み手
  * ------------------------------------------------------------------ */
 
 /** Unicode の符号位置の上限(`String.fromCodePoint` が受け付ける最大)。 */
@@ -228,7 +228,7 @@ function unescapeXml(value: string): string {
 const ATTRIBUTE_PATTERN = /([A-Za-z_:][-\w.:]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 /**
- * タグ 1 つぶんの文字列から属性を読む(タスク19 の手順 2)。
+ * タグ 1 つぶんの文字列から属性を読む。
  *
  * ```ts
  * readAttributes('<vertex z="3" x=\'1\' y="2"/>') // → { x: '1', y: '2', z: '3' }
@@ -420,7 +420,7 @@ function toLengthUnit(value: string | undefined): ThreeMfLengthUnit | null {
 /**
  * `displaycolor`(`#rrggbb` または `#rrggbbaa`)を sRGB の 0〜1 にする。
  *
- * 透過(`aa`)は捨てる(§0.a-0.22 で「色だけを扱い、透過率・光沢・粗さは扱わない」)。
+ * 透過(`aa`)は捨てる(「色だけを扱い、透過率・光沢・粗さは扱わない」)。
  * 読めない書き方は `null`(色は飾りなので、断らずに既定の外観へ落とす)。
  */
 function parseDisplayColor(value: string | undefined): ThreeMfColor | null {
@@ -721,7 +721,7 @@ function colorOf(object: RawObject, materials: ParsedModel['materials']): ThreeM
 
 
 /**
- * XML を読む前に `<triangle` の数を数える(§0.a-0.27 の 3 段構えの ①)。
+ * XML を読む前に `<triangle` の数を数える(3 段構えの ①)。
  *
  * **なぜ読む前に数えるのか。** 500 万三角形の 3MF は展開後の XML だけで 300MB 前後になり、
  * タグへ畳んでから断ると、断るためだけに記憶を食い尽くす(`readStl.ts` が
@@ -745,7 +745,7 @@ function countTriangleTags(xml: string): number {
 }
 
 /**
- * 3MF のバイト列から三角形の束を読む(FR-809、§2.6)。
+ * 3MF のバイト列から三角形の束を読む(FR-809)。
  *
  * ```ts
  * const result = readThreeMf(bytes);
@@ -762,7 +762,7 @@ function countTriangleTags(xml: string): number {
  * 実在し、そこで断ると「形が入っているのに開けない」ことになるためである。
  *
  * **例外を投げない。** 壊れたファイル・面が 0 枚・大きすぎる形は、日本語の理由を添えた
- * `{ ok: false, reason }` で返す(§0.a-0.27、NFR-RE-1)。
+ * `{ ok: false, reason }` で返す(NFR-RE-1)。
  */
 export function readThreeMf(
   bytes: Uint8Array,
@@ -871,7 +871,7 @@ export function readThreeMf(
     return { ok: true, meshes, unit: parsed.unit };
   } catch {
     // ここへ来るのは記憶が足りないときだけ(`Float32Array` の確保など)。
-    // **例外を外へ出さない**という約束(§0.a-0.27)を最後に守るための受け皿である。
+    // **例外を外へ出さない**という約束を最後に守るための受け皿である。
     return fail(THREE_MF_READ_FAILED_MESSAGE);
   }
 }

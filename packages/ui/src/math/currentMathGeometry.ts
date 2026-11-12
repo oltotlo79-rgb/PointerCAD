@@ -1,5 +1,5 @@
 /**
- * 図形の測定値の「いまの値」の判定(ADD-23、計画書 geomref-plan.md §4(c)、GR-14)。
+ * 図形の測定値の「いまの値」の判定(ADD-23)。
  *
  * 再計算の結果(`PartRecomputeResult.mathGeometry`)は、`applyRecompute` が「計算した文書・
  * 世代」と一緒にストアの `mathGeometryResult` へ控える(`store/recomputeSlice.ts`)。
@@ -7,7 +7,7 @@
  * 1 か所にまとめ、状況のコードだけを返す(文言は持たない。i18n の鍵は画面側が引く)。
  *
  * 値を出すのは「いま画面に出ている部品の文書」と「その世代の完了した計算」が揃うときだけ。
- * 形の変更直後・取消・新規・開く・復元・Undo/Redo・世代交代・履歴の途中表示(Q12=H1)では
+ * 形の変更直後・取消・新規・開く・復元・Undo/Redo・世代交代・履歴の途中表示では
  * 出さない。**文書ID は十分条件にしない**(既定ID `part-1` は一意でない)。文書オブジェクトと
  * 形の欄の同一性(`affectsShape` は参照比較)と世代で判定する。外観・名前だけの変更は
  * `affectsShape` が偽なので値を保つ。
@@ -27,14 +27,14 @@ export interface MathGeometryResultSnapshot {
   readonly generation: number;
   /**
    * 測定まで進んだか(`result.mathGeometry !== undefined`)。形の計算部の呼び出しや数式の
-   * 前段が失敗した結果には測定値が付かないので false になる(申し送り §2.3-②)。
+   * 前段が失敗した結果には測定値が付かないので false になる。
    */
   readonly evaluated: boolean;
   /** 定義ID → 結果。未解決の理由(5種)と model の文をそのまま持つ(落とさない)。 */
   readonly outcomes: ReadonlyMap<string, MathGeometryOutcome>;
 }
 
-/** 未解決の理由(model の 5 種)。文言の対応(GR-19a)はこの型の網羅の表で漏れを落とす。 */
+/** 未解決の理由(model の 5 種)。文言の対応はこの型の網羅の表で漏れを落とす。 */
 export type MathGeometryUnresolvedReason =
   Extract<MathGeometryOutcome, { readonly status: 'unresolved' }>['reason'];
 
@@ -61,7 +61,7 @@ export type MathGeometryResultState = Pick<
 export type CurrentMathGeometry =
   /** 部品を開いていない(アセンブリ・図面)。節を出さない。 */
   | { readonly status: 'notPart' }
-  /** 履歴の途中を表示している(Q12=H1)。値を出さない。 */
+  /** 履歴の途中を表示している。値を出さない。 */
   | { readonly status: 'timeline' }
   /** 最新の計算を中止した。形を計算し直すまで値を出さない。 */
   | { readonly status: 'cancelled' }
@@ -171,7 +171,7 @@ export function currentMathGeometry(state: MathGeometryResultState): CurrentMath
 const NO_INPUTS: ReadonlyMap<string, MathGeometryOutcome> = new Map<string, MathGeometryOutcome>();
 
 /**
- * 数式の評価へ渡す図形の測定値(`DocumentMathContext.geometry`、GR-04)。
+ * 数式の評価へ渡す図形の測定値(`DocumentMathContext.geometry`)。
  *
  * - 定義を持たない文書には空の表を返す(何も測らないので、計算中でも待たずに評価できる)。
  * - `document` がいま画面に出ている部品の文書そのものでなければ null(古い文書へ新しい値や

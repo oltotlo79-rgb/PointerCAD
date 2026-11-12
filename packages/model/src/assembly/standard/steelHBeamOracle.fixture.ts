@@ -1,4 +1,4 @@
-/** W7 independent literal transcription of JISF G 3192 draft 2024-07-24 table 15.
+/** Independent literal transcription of JISF G 3192 draft 2024-07-24 table 15.
  * PDF SHA-256: ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa.
  * Transcript SHA-256: 0dd545f1de1aa71d19f13b7e78ea75ef12a4f98107ea3d38636ce103024cbe55.
  * No application imports. Printed precision is retained as strings.
@@ -135,6 +135,6 @@ export const H_BEAM_ADDITION_SAVED_OPTIONS = [
 export const H_BEAM_ADDITION_EDITION_ORACLE = H_BEAM_ADDITION_SAVED_OPTIONS.map(([key]) =>
   [key, 'JIS G 3192', 'JIS G 3192', '2024'] as const);
 
-// Only these three H profiles existed before W7; all other profile entries are additions.
+// Only these three H profiles existed before the table 15 additions; all other profile entries are additions.
 export const H_BEAM_PROFILE_ADDITIONS = H_BEAM_ORACLE.filter(row =>
   !['H 150×150×7×10', 'H 200×200×8×12', 'H 300×300×10×15'].includes(row.size));

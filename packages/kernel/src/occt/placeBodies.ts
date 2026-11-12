@@ -1,22 +1,22 @@
 /**
- * 配置つきの立体の組み立てと境界箱(計画書 P7 §2.4、タスク8)。FR-601 / FR-615 / NFR-PF-1。
+ * 配置つきの立体の組み立てと境界箱。FR-601 / FR-615 / NFR-PF-1。
  *
- * アセンブリに置いた部品 1 つは、**部品の形 1 つ + 配置(位置 3 数 + 四元数 4 数)**で表す
- * (§0.5、§0.8)。同じ部品を 50 個置いても形は 1 つしか作らない(§0.4)ので、ここが
+ * アセンブリに置いた部品 1 つは、**部品の形 1 つ + 配置(位置 3 数 + 四元数 4 数)**で表す。
+ * 同じ部品を 50 個置いても形は 1 つしか作らないので、ここが
  * 受け持つのは「持っている形へ配置を掛けた見え方を作る」ことだけである。
  *
- * **四元数 → `gp_Trsf` の橋はこのファイルの `makePlacementTransform` 1 か所だけに置く**
- * (計画書 タスク8 の実装内容)。同じ橋を 2 か所へ書くと、回転と平行移動の順序が
+ * **四元数 → `gp_Trsf` の橋はこのファイルの `makePlacementTransform` 1 か所だけに置く。**
+ * 同じ橋を 2 か所へ書くと、回転と平行移動の順序が
  * 食い違ったときに部品の位置が静かにずれる。既存の `transformShape.ts` は
  * **軸と角**の `RigidTransformSpec` を受ける道具で、こちらは**四元数**を受ける道具である。
  *
  * **形を複製しない。** `transformShape` は `BRepBuilderAPI_Transform`(`Copy = true`)で
  * 幾何ごと複製するが、ここは `TopoDS_Shape.Moved(TopLoc_Location)` で**位置だけを差し替えた
- * 別の入れ物**を返す。部品 50 個ぶん幾何を複製すると §2.13-6(アセンブリを開いて 5 秒)を
+ * 別の入れ物**を返す。部品 50 個ぶん幾何を複製すると性能の上限(アセンブリを開いて 5 秒)を
  * 割るためで、`Moved` は下地の形を共有するので費用が置き場所の付け替えだけで済む。
  * **引数の形には触れない**(`Moved` はもとの形を書き換えない。`Move` のほうが書き換える版)。
  *
- * **確保したものは必ず `delete()`**(`rules/04`、P5 §7.3)。`gp_Trsf` / `gp_Quaternion` /
+ * **確保したものは必ず `delete()`**(`rules/04`)。`gp_Trsf` / `gp_Quaternion` /
  * `gp_Vec` / `Bnd_Box` も対象なので、`createAllocations()` へ積んで作った順の逆に返す。
  */
 
@@ -42,7 +42,7 @@ const NO_ROTATION_MESSAGE = '部品の向きが決まりません。';
 /** 中身の無い境界箱から角を読もうとしたとき(形が空・null のときに起きる)。 */
 const EMPTY_BOX_MESSAGE = '部品の大きさが取れません。';
 
-/** 何も動かさない配置。`w = cos(0) = 1`(§2.4 の四元数の規約)。 */
+/** 何も動かさない配置。`w = cos(0) = 1`(四元数の規約)。 */
 export const IDENTITY_PLACEMENT: PlacementSpec = {
   position: [0, 0, 0],
   rotation: [0, 0, 0, 1],
@@ -68,7 +68,7 @@ function isFiniteTuple(value: Vec3Tuple): boolean {
  * 長さ 1 へ揃える。**符号(`w >= 0`)は揃えない。**
  *
  * `q` と `−q` は同じ回転行列になるので、ここで符号を触っても形は 1 ドットも変わらない。
- * 符号を揃えるのは「同じ文書から同じバイト列ができる」ための決めごと(§0.54)で、
+ * 符号を揃えるのは「同じ文書から同じバイト列ができる」ための決めごとで、
  * 保存する値を持つ model 側(`assembly/placementMath.ts` の `normalizeQuaternion`)の
  * 1 か所だけで行う。カーネルは受け取った値をそのまま形にする。
  */
@@ -81,11 +81,11 @@ function unitQuaternion(rotation: QuaternionTuple): QuaternionTuple {
 }
 
 /**
- * 配置から `gp_Trsf` を 1 つ作る。**回してから移す**(`p' = R(q)·p + t`、§2.4)。
+ * 配置から `gp_Trsf` を 1 つ作る。**回してから移す**(`p' = R(q)·p + t`)。
  *
  * `SetRotation_2(gp_Quaternion)` は変換そのものを「原点まわりの回転」に置き換える
  * (平行移動は 0、倍率は 1 に戻る)ので、そのあとの `SetTranslationPart` で入れた `t` は
- * **回転のあとに足される**。この順序は §1.5-4 の実測項目で、`placeBodies.test.ts` が
+ * **回転のあとに足される**。この順序は実測した項目で、`placeBodies.test.ts` が
  * 20³ の箱を Z 軸まわり 90° 回して (10,0,0) へ移した頂点の座標で固定している。
  *
  * 確保したものは `keep` へ積む(`makeTransform` と同じ形。`gp_Trsf` も解放が要るため)。
@@ -112,7 +112,7 @@ export function makePlacementTransform(
  * 形へ配置を掛けた見え方を作る。**もとの形には触れない。**
  *
  * 返した handle の `delete()` で、置いた形・置き場所・変換をまとめて解放する。
- * 引数の `shape` は呼び出し側の持ち物なので解放しない(部品の形は 1 つを使い回す。§0.4)。
+ * 引数の `shape` は呼び出し側の持ち物なので解放しない(部品の形は 1 つを使い回す)。
  */
 export function placeShape(
   oc: OpenCascadeInstance,
@@ -134,7 +134,7 @@ export function placeShape(
 }
 
 /**
- * 形の境界箱を作る(干渉チェックの 1 段目、§2.7)。
+ * 形の境界箱を作る(干渉チェックの 1 段目)。
  *
  * 第 3 引数 false は「三角形分割を使わず厳密な面から測る」指定(`subShapes.ts` の
  * `boundingDiagonal` と同じ)。`BRepBndLib.Add` は形の許容誤差ぶん(既定 1e-7)だけ箱を
@@ -159,12 +159,12 @@ export function boundingBoxOf(oc: OpenCascadeInstance, shape: TopoDS_Shape): Occ
 /**
  * 境界箱へ配置を掛けた箱を作る(`Bnd_Box.Transformed`)。
  *
- * **形を作り直さずに置いた先の大きさが分かる**ので、干渉チェックの 1 段目(§2.7)と
+ * **形を作り直さずに置いた先の大きさが分かる**ので、干渉チェックの 1 段目と
  * 「全体が入る箱」の計算はこちらを使う。回転が 90° の倍数でないときは、返る箱は
  * 「回した形にぴったり」ではなく**回した箱を包む軸に平行な箱**になる(必ず形を含むので
  * 絞り込みには使える。ぴったりの箱が要るときは `placeShape` した形から測り直す)。
  *
- * 計画書の見出しは `transformedBoundingBox(box, placement)` だが、`gp_Trsf` を作るのに
+ * 当初の見出しは `transformedBoundingBox(box, placement)` だが、`gp_Trsf` を作るのに
  * OCCT の実体が要るので `oc` を第 1 引数に取る形にした(`makeTransform` と同じ流儀)。
  */
 export function transformedBoundingBox(
@@ -187,7 +187,7 @@ export function transformedBoundingBox(
  * 境界箱の角 2 つを数で読む。
  *
  * `Bnd_Box.Get(xmin, …)` は数値を参照渡しで返す形なので JS からは受け取れない。
- * 角の点を戻り値で返す `CornerMin()` / `CornerMax()` を使う(§1.4-1、`subShapes.ts` と同じ)。
+ * 角の点を戻り値で返す `CornerMin()` / `CornerMax()` を使う(`subShapes.ts` と同じ)。
  * 読んだ `gp_Pnt` は OCCT の実体なので必ず解放する。
  */
 export function boundingBoxRange(box: Bnd_Box): BoundingBoxRange {
@@ -208,7 +208,7 @@ export function boundingBoxRange(box: Bnd_Box): BoundingBoxRange {
 }
 
 /**
- * 2 つの境界箱が重なるか(干渉チェックの 1 段目の判定、§2.7)。
+ * 2 つの境界箱が重なるか(干渉チェックの 1 段目の判定)。
  *
  * `Bnd_Box.IsOut_4(Other)` は「外にある = 重ならない」を返すので、否定して使う。
  * **接している(面がぴったり合う)ときは重なると答える。** 箱の段は「ここから先は

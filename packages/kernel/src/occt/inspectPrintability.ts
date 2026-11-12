@@ -2,18 +2,18 @@ import type { ExportMesh } from './exportMesh.js';
 import { DEGENERATE_CROSS_LENGTH_MM2 } from './writeStl.js';
 
 /**
- * 3D プリント向けの点検(FR-815、NFR-PF-4。計画書 P6 §0.51・§2.16、タスク42)。
+ * 3D プリント向けの点検(FR-815、NFR-PF-4)。
  *
  * 最小肉厚・オーバーハングの角度・水密性の 3 つを、**1 回の呼び出しでまとめて**返す
- * (§0.a-0.30「カーネルを呼ぶ回数を最小にする」)。結果は**三角形ごと**に持つ
- * (ui が色を塗る単位が三角形だから。§0.53、タスク43)。
+ * (「カーネルを呼ぶ回数を最小にする」)。結果は**三角形ごと**に持つ
+ * (ui が色を塗る単位が三角形だから)。
  *
  * ## OCCT(`oc`)を引数に取らない理由
  *
  * この関数は**純関数**で、`ExportMesh`(三角形の網)だけを見る。`writeStl.ts` が
  * `oc` を取らないのと同じ理由に、この点検固有の理由が 2 つ加わる。
  *
- * 1. **読み込んだ三角形の形(`bodyKind: 'mesh'`、§0.a-0.23)も点検できる。** STL / OBJ /
+ * 1. **読み込んだ三角形の形(`bodyKind: 'mesh'`)も点検できる。** STL / OBJ /
  *    glTF から読んだ形には B-rep が無いので、OCCT の形を要求する作りにすると
  *    「読み込んだ形は点検できません」という穴ができる。**3D プリントの点検は、
  *    まさにその読み込んだ形にこそ要る。**
@@ -21,16 +21,16 @@ import { DEGENERATE_CROSS_LENGTH_MM2 } from './writeStl.js';
  *    三角形(`buildExportMesh` の結果)そのものなので、「点検は通ったのに書き出した
  *    ファイルは別の形だった」が起こらない。品質(偏差)を変えれば点検の結果も同じだけ変わる。
  *
- * ## §1.5-21 の実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984)
+ * ## 実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984)
  *
  * `BRepIntCurveSurface_Inter` の実行時のメソッドは
  * `Face Init_1 Init_2 Init_3 Load More Next Pnt Point State Transition U V W`
  * だけで、**列挙(`More` / `Next`)を取らない版は無い**(型定義も実行時も一致)。
  * 加えて `Init_*` / `Load` はどれも `TopoDS_Shape` を要求するので、上の理由 1 の
  * 「読み込んだ三角形の形」には初めから使えない。**だから当たり判定は自前で書く**
- * (計画書 §0.52 が「無ければ自前」と定めたとおり)。
+ * (「無ければ自前」と定めたとおり)。
  *
- * ## 3 つの判定(§0.51)
+ * ## 3 つの判定
  *
  * | 項目 | 中身 |
  * |---|---|
@@ -38,10 +38,10 @@ import { DEGENERATE_CROSS_LENGTH_MM2 } from './writeStl.js';
  * | オーバーハング | 面の法線と真下 (0,0,−1) のなす角 θ が、しきい値(既定 45°)より小さければ「支持が要る」。**造形台に接する三角形(最下点から 0.1mm 以内)は除く** |
  * | 水密性 | 三角形の辺のうち、ちょうど 2 枚に共有されていないものが 1 本でもあれば「閉じていない」 |
  *
- * **造形の向きは Z 上向き固定**(§0.51。向きを選べるようにするのは要件に無い)。
+ * **造形の向きは Z 上向き固定**(向きを選べるようにするのは要件に無い)。
  */
 
-/** 三角形が 1 枚も無い形を点検しようとしたとき(§2.16 の断りの表、NFR-UX-5)。 */
+/** 三角形が 1 枚も無い形を点検しようとしたとき(NFR-UX-5)。 */
 export const PRINTABILITY_NO_TRIANGLE_MESSAGE = '点検できる形がありません。';
 
 /** 最小肉厚のしきい値が正の有限な数でないとき(FR-504、NFR-UX-5)。 */
@@ -53,7 +53,7 @@ export const PRINTABILITY_OVERHANG_ANGLE_MESSAGE =
   'オーバーハングの角度は 0 度以上 90 度以下にしてください。';
 
 /**
- * 最小肉厚のしきい値の既定(mm。§0.51)。
+ * 最小肉厚のしきい値の既定(mm)。
  *
  * 0.4mm のノズルで 2 本ぶん。3D プリントの実務でよく使う値で、式で変えられる。
  * **この値の正本はここ 1 か所**で、model / ui は写しを持たずここから引く
@@ -61,11 +61,11 @@ export const PRINTABILITY_OVERHANG_ANGLE_MESSAGE =
  */
 export const DEFAULT_MIN_THICKNESS_MM = 0.8;
 
-/** オーバーハングの角度のしきい値の既定(度。§0.51)。水平から 45° より寝た下向きの面は支持が要る。 */
+/** オーバーハングの角度のしきい値の既定(度)。水平から 45° より寝た下向きの面は支持が要る。 */
 export const DEFAULT_OVERHANG_ANGLE_DEG = 45;
 
 /**
- * 造形台に接しているとみなす高さ(mm。§0.51)。
+ * 造形台に接しているとみなす高さ(mm)。
  *
  * 形の最下点からこの範囲に**三角形が丸ごと収まっている**とき、その三角形は台の上に
  * 直に載るので支持が要らない。「重心が低い」ではなく「3 頂点とも低い」で判定するのは、
@@ -81,7 +81,7 @@ export interface PrintabilityOptions {
   readonly overhangAngleDeg?: number;
 }
 
-/** 進捗のどの段か。重い段は肉厚だけで、あとの 2 つは合わせても 1 割に満たない(§2.16 の見積もり)。 */
+/** 進捗のどの段か。重い段は肉厚だけで、あとの 2 つは合わせても 1 割に満たない(見積もり)。 */
 export type PrintabilityPhase = 'watertight' | 'overhang' | 'thickness';
 
 /** 進捗の知らせ(NFR-PF-4)。Comlink 越しでは Comlink.proxy した関数が受け取る。 */
@@ -95,7 +95,7 @@ export interface PrintabilityProgress {
   /**
    * 全体でどこまで進んだか(0〜1)。
    *
-   * 段ごとの割り当ては水密性 0.1・オーバーハング 0.1・肉厚 0.8 で、§2.16 の費用の
+   * 段ごとの割り当ては水密性 0.1・オーバーハング 0.1・肉厚 0.8 で、見積もった費用の
    * 見積もり(10ms / 1ms / 50ms)より水密性とオーバーハングに厚く配っている。
    * **進捗の棒が戻って見えないようにする**ためで、正確な残り時間の予想ではない。
    */
@@ -156,7 +156,7 @@ export interface PrintabilitySummary {
 /**
  * 点検の結果。
  *
- * **三角形ごとの真偽は 1 ビットずつ詰める**(§2.17-9 の「3n ビット」)。5 万三角形なら
+ * **三角形ごとの真偽は 1 ビットずつ詰める**(「3n ビット」)。5 万三角形なら
  * 1 本あたり 6,250 バイト、3 本で 18,750 バイト(18.3KiB)で Worker 越しに渡せる。
  * 真偽の配列(`boolean[]`)にすると同じ内容が 5 万要素 × 3 本の構造化複製になり、
  * 転送量も複製の時間も 2 桁増える。**読み出しは `readPrintabilityFlag` を使う。**
@@ -187,7 +187,7 @@ export function printabilityFlagByteLength(triangleCount: number): number {
 }
 
 /**
- * 詰めた真偽を 1 つ読む(ui が色を割り当てるときに使う。タスク43)。
+ * 詰めた真偽を 1 つ読む(ui が色を割り当てるときに使う)。
  *
  * 並びは**下位ビットから**で、三角形 `index` は `bits[index >> 3]` の
  * `1 << (index & 7)` のビットにある。範囲の外は `false`(色を塗らない)。
@@ -334,7 +334,7 @@ interface EdgeReport {
  * `Float32Array` へ落としても同じビットになる。2026-09-06 の実測でも、箱・球・円柱・
  * 円錐・トーラス・ブーリアンの差(中空の箱)のすべてで開いた辺は 0 本だった。
  * **わざと丸めない**のは、丸めると「ほとんど同じだが升目の境をまたぐ 2 点」が
- * 逆に離れてしまい、突き合わせが入力の位置で揺れるためである(決定性、§0.a-0.62)。
+ * 逆に離れてしまい、突き合わせが入力の位置で揺れるためである(決定性)。
  */
 function weldVertices(positions: Float32Array): Int32Array {
   const nodeCount = Math.floor(positions.length / 3);
@@ -354,7 +354,7 @@ function weldVertices(positions: Float32Array): Int32Array {
 }
 
 /**
- * 辺の共有数を数え、ちょうど 2 枚に共有されていない辺と、その辺を持つ三角形を拾う(§0.51 ③)。
+ * 辺の共有数を数え、ちょうど 2 枚に共有されていない辺と、その辺を持つ三角形を拾う。
  *
  * **面積 0 の三角形は数に入れない。** 球の極や回転面の継ぎ目で OCCT が作る「同じ節点を
  * 2 度含む三角形」は、辺の 1 本が長さ 0、残りの 2 本が同じ 1 組になるため、そのまま数えると
@@ -538,7 +538,7 @@ interface CellPlan {
 /**
  * 升目の大きさを決める(手順 2)。
  *
- * **出発点は「最小肉厚のしきい値の 2 倍」**(§2.16 の推奨。既定 1.6mm)。ここから、
+ * **出発点は「最小肉厚のしきい値の 2 倍」**(既定 1.6mm)。ここから、
  * ①升目の総数が `MAX_GRID_CELLS` を超える、②格子へ登録する項目が `maxGridEntries` を
  * 超える、のどちらかなら升目を倍にして測り直す。**大きい形ほど升目を粗くする**ので、
  * 記憶の量が形の大きさに引きずられない。倍にするたびに項目は約 1/8 になるので、
@@ -719,7 +719,7 @@ function intersectTriangle(
  *
  * 升目を 1 つずつ進み、その升目の三角形だけを試す。**その升目を出るところまでに
  * 当たりが見つかったらそこで止める**(先の升目にもっと近い当たりは無いため)。
- * これが「素朴な全数比較 5 万² = 25 億回」を避ける仕掛けである(§0.52)。
+ * これが「素朴な全数比較 5 万² = 25 億回」を避ける仕掛けである。
  *
  * @param source 自分自身の三角形の番号(必ず飛ばす)。
  * @param rayId 同じ三角形を升目ごとに二度試さないための通し番号。
@@ -875,12 +875,12 @@ export async function inspectPrintability(
     });
   };
 
-  // ① 水密性(§0.51 ③)。
+  // ① 水密性。
   report('watertight', 0);
   const edges = collectEdgeReport(mesh, facts);
   report('watertight', facts.count);
 
-  // ② オーバーハング(§0.51 ②)。法線と真下のなす角 θ が小さいほど寝ている。
+  // ② オーバーハング。法線と真下のなす角 θ が小さいほど寝ている。
   // cos θ = −nz(法線は単位ベクトル)なので、θ < しきい値 は −nz > cos(しきい値)。
   report('overhang', 0);
   const overhangTriangles = new Uint8Array(printabilityFlagByteLength(facts.count));
@@ -894,7 +894,7 @@ export async function inspectPrintability(
     if (-facts.normals[triangle * 3 + 2] <= overhangCosine) {
       continue;
     }
-    // 造形台に載っている三角形は支持が要らない(§0.51 の但し書き)。
+    // 造形台に載っている三角形は支持が要らない。
     let onPlate = true;
     for (let corner = 0; corner < 3 && onPlate; corner += 1) {
       if (mesh.positions[mesh.indices[triangle * 3 + corner] * 3 + 2] > plateZ) {
@@ -909,7 +909,7 @@ export async function inspectPrintability(
   }
   report('overhang', facts.count);
 
-  // ③ 最小肉厚(§0.51 ①)。格子で候補を絞り、重心から内向きの光線を 1 本ずつ飛ばす。
+  // ③ 最小肉厚。格子で候補を絞り、重心から内向きの光線を 1 本ずつ飛ばす。
   const bounds = collectBounds(mesh, facts);
   const plan = chooseCellSize(mesh, facts, bounds, minThicknessMm);
   const grid = buildGrid(mesh, facts, bounds, plan);

@@ -33,7 +33,7 @@ import {
   type ThreadSeries,
 } from '@pointercad/model';
 
-/** 穴の入口の3通り(ざぐり・皿もみ。FR-422、§0.a-0.39)。 */
+/** 穴の入口の3通り(ざぐり・皿もみ。FR-422)。 */
 const HOLE_ENTRY_KINDS: readonly HoleEntry['kind'][] = ['plain', 'counterbore', 'countersink'];
 
 /** 外ねじを切り始める端(FR-423)。 */
@@ -45,10 +45,10 @@ const THREAD_SERIES: readonly ThreadSeries[] = ['coarse', 'fine'];
 
 const THREAD_REPRESENTATIONS: readonly ThreadRepresentation[] = ['simplified', 'modeled'];
 
-/** 円筒の側面の穴の置き方(EX05)。今は円筒の面の 1 通り。 */
+/** 円筒の側面の穴の置き方。今は円筒の面の 1 通り。 */
 const CYLINDRICAL_HOLE_KINDS: readonly 'cylinder-face'[] = ['cylinder-face'];
 
-/** 穴の `cylindrical` 欄の形(EX05)。model の `HoleFeature` から取り、別の型を作らない。 */
+/** 穴の `cylindrical` 欄の形。model の `HoleFeature` から取り、別の型を作らない。 */
 type CylindricalHolePlacement = NonNullable<Extract<SolidFeature, { readonly kind: 'hole' }>['cylindrical']>;
 
 /** 円筒の側面の穴の位置 1 つ(高さ mm と角度 度の式)を読む。 */
@@ -115,7 +115,7 @@ function serializeHoleDepth(depth: HoleDepth): HoleDepth {
   }
 }
 
-/** 穴の入口(ざぐり・皿もみ。FR-422、P5 タスク43)。省略でないときだけ呼ぶ。 */
+/** 穴の入口(ざぐり・皿もみ。FR-422)。省略でないときだけ呼ぶ。 */
 function serializeHoleEntry(entry: HoleEntry): HoleEntry {
   switch (entry.kind) {
     case 'plain':
@@ -135,7 +135,7 @@ function serializeHoleEntry(entry: HoleEntry): HoleEntry {
   }
 }
 
-/** 穴の深さ(貫通/止まり、§0.a-0.12)を読む。 */
+/** 穴の深さ(貫通/止まり)を読む。 */
 function readHoleDepth(value: unknown, path: string): Checked<HoleDepth> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -171,7 +171,7 @@ function readHoleDepthField(
 }
 
 /**
- * 穴の入口(ざぐり・皿もみ。FR-422、P5 タスク43)を読む。
+ * 穴の入口(ざぐり・皿もみ。FR-422)を読む。
  *
  * **欄が無い古いファイルは `undefined` のまま返す**(`RuledSphereSegments` は既定値を
  * 埋めたが、こちらは型が省略可能なので既定を書き込まない。読む側は model の
@@ -228,7 +228,7 @@ function readHoleEntry(
 }
 
 /**
- * 円筒の側面の穴(EX05)の置き方を読む。**欄が無い古いファイルは `undefined` のまま返す**
+ * 円筒の側面の穴の置き方を読む。**欄が無い古いファイルは `undefined` のまま返す**
  * (今までの平面の穴。入口の欄と同じ扱いで既定を書き込まない)。位置は 1 つずつ高さ(mm)と
  * 角度(度)の式。位置が 0 個のファイルも読み込み、断るのは model の解決(画面に理由が出る)。
  */
@@ -255,7 +255,7 @@ function readCylindricalHole(
   return { ok: true, value: { kind: kind.value, locations: locations.value } };
 }
 
-/** 穴(FR-405、§0.a-0.9〜0.a-0.12)を読む。中心は1つ以上(点列は展開済みの一覧として保存)。 */
+/** 穴(FR-405)を読む。中心は1つ以上(点列は展開済みの一覧として保存)。 */
 export function readHoleFeature(
   record: Record<string, unknown>,
   path: string,
@@ -281,7 +281,7 @@ export function readHoleFeature(
   if (!depth.ok) {
     return depth;
   }
-  // 入口(ざぐり・皿もみ。FR-422、P5 タスク43)。欄が無ければ省略のまま(= 広げない)。
+  // 入口(ざぐり・皿もみ。FR-422)。欄が無ければ省略のまま(= 広げない)。
   const entry = readHoleEntry(record, path);
   if (!entry.ok) {
     return entry;
@@ -294,7 +294,7 @@ export function readHoleFeature(
   if (!tiltAzimuth.ok) {
     return tiltAzimuth;
   }
-  // 円筒の側面の穴(EX05)。欄が無ければ省略のまま(= 今までの平面の穴)。
+  // 円筒の側面の穴。欄が無ければ省略のまま(= 今までの平面の穴)。
   const planar = readPlanarHole(record, path);
   if (!planar.ok) return planar;
   if (planar.value !== undefined && (face.value.fingerprint.kind !== 'face' || face.value.fingerprint.surfaceKind !== 'plane')) {
@@ -324,7 +324,7 @@ export function readHoleFeature(
   };
 }
 
-/** ねじ穴(FR-406、§0.a-0.13〜0.a-0.16)を読む。呼び・系列は一覧と突き合わせて絞る。 */
+/** ねじ穴(FR-406)を読む。呼び・系列は一覧と突き合わせて絞る。 */
 export function readThreadHoleFeature(
   record: Record<string, unknown>,
   path: string,
@@ -362,7 +362,7 @@ export function readThreadHoleFeature(
   if (!depth.ok) {
     return depth;
   }
-  // 入口(ざぐり・皿もみ。FR-422、P5 タスク43)。穴とまったく同じ扱い。
+  // 入口(ざぐり・皿もみ。FR-422)。穴とまったく同じ扱い。
   const entry = readHoleEntry(record, path);
   if (!entry.ok) {
     return entry;
@@ -383,7 +383,7 @@ export function readThreadHoleFeature(
   if (!tiltAzimuth.ok) {
     return tiltAzimuth;
   }
-  // 円筒の側面のねじ穴(EX05)。穴と同じ読み方で、欄が無ければ省略のまま(= 今までの平面のねじ穴)。
+  // 円筒の側面のねじ穴。穴と同じ読み方で、欄が無ければ省略のまま(= 今までの平面のねじ穴)。
   const planar = readPlanarHole(record, path);
   if (!planar.ok) return planar;
   if (planar.value !== undefined && (face.value.fingerprint.kind !== 'face' || face.value.fingerprint.surfaceKind !== 'plane')) {
@@ -485,11 +485,11 @@ export function serializeHoleFeature(feature: Extract<SolidFeature, { readonly k
     ...serializePlanarHole(feature),
     diameter: serializeExpression(feature.diameter),
     depth: serializeHoleDepth(feature.depth),
-    // 入口(ざぐり・皿もみ。FR-422、P5 タスク43)。省略は欄ごと省略のまま。
+    // 入口(ざぐり・皿もみ。FR-422)。省略は欄ごと省略のまま。
     ...(feature.entry === undefined ? {} : { entry: serializeHoleEntry(feature.entry) }),
     tiltAngle: serializeExpression(feature.tiltAngle),
     tiltAzimuth: serializeExpression(feature.tiltAzimuth),
-    // 円筒の側面の穴(EX05)。平面の穴は欄ごと省略のまま(古いファイルと 1 字も変えない)。
+    // 円筒の側面の穴。平面の穴は欄ごと省略のまま(古いファイルと 1 字も変えない)。
     ...(feature.cylindrical === undefined ? {} : {
       cylindrical: {
         kind: feature.cylindrical.kind,
@@ -523,7 +523,7 @@ export function serializeThreadHoleFeature(feature: Extract<SolidFeature, { read
     representation: feature.representation,
     tiltAngle: serializeExpression(feature.tiltAngle),
     tiltAzimuth: serializeExpression(feature.tiltAzimuth),
-    // 円筒の側面のねじ穴(EX05)。穴と同じ形で保存し、平面のねじ穴は欄ごと省略のまま。
+    // 円筒の側面のねじ穴。穴と同じ形で保存し、平面のねじ穴は欄ごと省略のまま。
     ...(feature.cylindrical === undefined ? {} : {
       cylindrical: {
         kind: feature.cylindrical.kind,

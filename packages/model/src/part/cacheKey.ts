@@ -3,8 +3,8 @@ import type { HoleCenterAnchor, HolePlacementRole } from '../geometry/subShapeOr
 import type { HoleTranslateKeyMaterial, FaceRotateKeyMaterial } from './directEditOperations.js';
 import type { FaceOffsetKeyMaterial } from './directFaceEdit.js';
 /**
- * ソリッドの計算結果を覚えておく形状キャッシュの鍵(計画書 docs/plans/P2-ソリッド基礎.md
- * §2.5、§0.a-0.20)。
+ * ソリッドの計算結果を覚えておく
+ * 形状キャッシュの鍵。
  *
  * フィーチャーの解決済みパラメータ(座標・向き・角度・許容誤差)と、参照する上流ボディの
  * 鍵とを1本の文字列にまとめ、FNV-1a 32bit を2本(開始点が違う)回して16桁の16進文字列に
@@ -15,27 +15,27 @@ import type { FaceOffsetKeyMaterial } from './directFaceEdit.js';
  * 64ビット相当の鍵なので、200フィーチャー規模で衝突する確率は誕生日近似で
  * およそ 200 × 199 / 2 / 2^64 ≈ 1.08e-15 であり、無視できるほど小さい。
  *
- * 材料の型はこのファイルで定義し、`packages/model/src/index.ts` から輸出する(タスク12 で追加。
- * タスク17 以降の ui が鍵の材料を組み立てるときに使う)。タスク11 の `resolvePart.ts` が作る
- * `SolidStepPlan` とは別物のままにする(統括の決定: docs/報告記録.md 2026-09-03 07:35 の④
- * 「タスク10 は鍵関数の入力型を自ファイルに置く」)。欄名は `packages/kernel/src/types.ts` の
- * `ExtrudeStepSpec` 等と揃えてあるので、タスク11・12 は解決済みの値をそのままここへ渡せる。
+ * 材料の型はこのファイルで定義し、`packages/model/src/index.ts` から輸出する(
+ * ui が鍵の材料を組み立てるときに使う)。`resolvePart.ts` が作る
+ * `SolidStepPlan` とは別物のままにする(
+ * 鍵関数の入力型を自ファイルに置く)。欄名は `packages/kernel/src/types.ts` の
+ * `ExtrudeStepSpec` 等と揃えてあるので、解決の側は解決済みの値をそのままここへ渡せる。
  *
  * BigInt は使わない(1フィーチャーの再計算のたびに何度も呼ばれる経路があり、型と性能の
  * 両方で不利なため)。`Math.imul` で32ビット同士の乗算を正確に(オーバーフローなく)行う。
  *
- * P3(docs/plans/P3-加工フィーチャー.md タスク14)で、加工フィーチャー(穴・ねじ穴・R 面取り・
+ * 加工フィーチャー(穴・ねじ穴・R 面取り・
  * C 面取り)とばねの材料を足した。**既存の4種類(押し出し・回転・縫合・ブーリアン)の
- * 文字列は1文字も変えていない**(変えると P2 で作った鍵がすべて変わり、形状キャッシュが
+ * 文字列は1文字も変えていない**(変えると以前に作った鍵がすべて変わり、形状キャッシュが
  * 全滅するため)。パターン(FR-411 / FR-412)は独立の材料を持たない: パターンは穴・ねじ穴の
- * 工具を並べるだけなので、材料は穴・ねじの `transforms` に乗る(§0.a-0.20)。
+ * 工具を並べるだけなので、材料は穴・ねじの `transforms` に乗る。
  *
  * 部分形状(面・辺)の指紋は、この場で組み立てずに `part/subShapeRef.ts` の
  * `fingerprintKeyText` が作った文字列をそのまま受け取る(`KeySubShape`)。丸めの規則
  * (`keyNumber`、9桁・-0 は 0)を2か所に書かないための決めで、依存の向きも
  * `subShapeRef.ts → cacheKey.ts` の一方向のままになる(逆向きに import すると循環する)。
  *
- * P5(docs/plans/P5-高度なソリッド・外観と測定.md タスク44)で Should 群・Could 群の
+ * Should 群・Could 群の
  * 11 種(抜き勾配・ミラー・移動回転・拡大縮小・スイープ・リブ・エンボス・外ねじ・曲面・
  * 切断・くり抜き)の材料を足し、既存の押し出し(終端・テーパ・薄板)・穴とねじ穴(入口)・
  * R 面取り(可変半径)の欄を広げた。守った決めは3つ:
@@ -44,14 +44,14 @@ import type { FaceOffsetKeyMaterial } from './directFaceEdit.js';
  *    `face`・押し出しの `toNext`)も混ぜる。消費するかどうかと、上流が変わったら鍵が
  *    変わるかどうかは別の話である。混ぜないと上流を編集しても鍵が変わらず、古い形が
  *    キャッシュから返る(NFR-PF-3 の鍵の連鎖)。
- * 2. **外観(色・材質・柄)は1つも混ぜない。** 外観は形に影響しない(FR-1106、P5 §2.2.3)。
- *    材料の型に外観の欄が無いので、混ぜようとしても混ぜられない(§2.3 の二重の保証の片方。
+ * 2. **外観(色・材質・柄)は1つも混ぜない。** 外観は形に影響しない(FR-1106)。
+ *    材料の型に外観の欄が無いので、混ぜようとしても混ぜられない(二重の保証の片方。
  *    もう片方は `part/documentChange.ts` の `affectsShape`)。
- * 3. **省略できる欄は「既定なら文字列に出さない」。** タスク43 が押し出しの5欄と穴の
+ * 3. **省略できる欄は「既定なら文字列に出さない」。** 押し出しの5欄と穴の
  *    `entry` を省略できる欄にしたので、`createPartDocument.ts` の `extrudeShapingOf` /
  *    `holeEntryOf` を通した値がそのまま材料に来る。既定を明示した材料と省略した材料が
  *    別の鍵になると、**同じ形に2つの鍵ができて**キャッシュが当たらなくなるため、
- *    既定のときは P2 / P3 のときと1文字も違わない文字列にする(既存の鍵も壊れない)。
+ *    既定のときは以前と1文字も違わない文字列にする(既存の鍵も壊れない)。
  */
 
 /** 鍵の材料に使う3要素ベクトル。mm 単位(NFR-RE-3)。 */
@@ -76,7 +76,7 @@ export interface KeyArc {
 }
 
 /**
- * 楕円・楕円弧(FR-318、P4 タスク5)。model の `ResolvedEllipse` と同じ欄名。
+ * 楕円・楕円弧(FR-318)。model の `ResolvedEllipse` と同じ欄名。
  * 角度は**径数方程式のパラメータ角**(ラジアン)で、方位角からの変換は解決の側で済んでいる。
  */
 export interface KeyEllipse {
@@ -91,7 +91,7 @@ export interface KeyEllipse {
 }
 
 /**
- * スプライン(FR-317、P4 タスク5)。model の `ResolvedSpline` と同じ欄名。
+ * スプライン(FR-317)。model の `ResolvedSpline` と同じ欄名。
  * 極ではなく通過点・制御点をそのまま材料にするのは、極は点から一意に決まるので
  * 点が同じなら形も同じになり、鍵として点で足りるため(解き直しの費用も掛からない)。
  */
@@ -109,7 +109,7 @@ export interface KeySpline {
 export type KeyCurve = KeySegment | KeyArc | KeyEllipse | KeySpline;
 
 /**
- * 押し出しの終端(FR-415、P5 タスク44)の鍵の材料。
+ * 押し出しの終端(FR-415)の鍵の材料。
  * 4 種と欄名は kernel の `ExtrudeEndSpec`(`occt/makeSolidSweep.ts`)と同じにしてある。
  * 距離はすべて mm で、`toFace` は model が面までの距離を計算済みの値を持つ。
  */
@@ -120,7 +120,7 @@ export type ExtrudeEndKeyMaterial =
   /** 次にぶつかる面まで。長さは相手の形で決まるので、`ExtrudeKeyMaterial.targetKey` が要る。 */
   | { readonly kind: 'toNext' }
   /**
-   * 対象を両側へ貫く(EX04)。長さは対象の形で決まるので `ExtrudeKeyMaterial.targetKey` が要る
+   * 対象を両側へ貫く。長さは対象の形で決まるので `ExtrudeKeyMaterial.targetKey` が要る
    * (`keyExtrudeExtras` が必ず混ぜる。上流で対象が変われば鍵も変わる)。
    */
   | { readonly kind: 'throughTarget' };
@@ -128,8 +128,8 @@ export type ExtrudeEndKeyMaterial =
 /**
  * 薄板押し出し(FR-416)の鍵の材料。kernel の `ThinExtrudeSpec` と同じ欄名。
  * `side` を `string` にしてあるのは、選択肢の union を model の型と2か所に書かないため
- * (`ChamferKeyMaterial.mode`・`SpringKeyMaterial.handedness` と同じ決め、
- * `docs/報告記録.md` 2026-09-04 01:40 の①)。
+ * (`ChamferKeyMaterial.mode`・
+ * `SpringKeyMaterial.handedness` と同じ決め)。
  */
 export interface ThinExtrudeKeyMaterial {
   /** 壁の厚み(mm)。 */
@@ -139,11 +139,11 @@ export interface ThinExtrudeKeyMaterial {
 }
 
 /**
- * 押し出し(FR-401)の鍵の材料。断面+向き+長さ(平行移動と反転は model 側で計算済み、§0.a-0.8)。
+ * 押し出し(FR-401)の鍵の材料。断面+向き+長さ(平行移動と反転は model 側で計算済み)。
  *
- * P5 タスク44 で終端(FR-415)・テーパ(FR-401)・薄板(FR-416)の欄を足した。
+ * 終端(FR-415)・テーパ(FR-401)・薄板(FR-416)の欄を足した。
  * **足した5欄はすべて省略でき、省略と既定は同じ鍵になる**(このファイル冒頭の決め 3)。
- * 「既定」は P2 からの押し出しそのもの、すなわち
+ * 「既定」は従来の押し出しそのもの、すなわち
  * `end` が `{ kind: 'distance', distance }`(= この材料の `distance` と同じ長さ)、
  * テーパ 0・内向き、薄板なし、上流なし、である。
  */
@@ -203,7 +203,7 @@ export interface BooleanKeyMaterial {
 }
 
 /**
- * 工具全体にかける剛体変換1つ(パターン、FR-411 / FR-412、§0.a-0.20)。
+ * 工具全体にかける剛体変換1つ(パターン、FR-411 / FR-412)。
  * `rotationAngle` はラジアン。0 なら平行移動だけになる。
  * kernel の `RigidTransformSpec`・model の `RigidTransform` と同じ欄名にしてあるので、
  * 解決済みの値をそのまま詰め替えられる。
@@ -224,11 +224,11 @@ export interface KeyTransform {
 export type KeySubShape = string;
 
 /**
- * 穴・ねじ穴の入口の形(ざぐり・皿もみ。FR-422、P5 §0.a-0.39、タスク44)の鍵の材料。
+ * 穴・ねじ穴の入口の形(ざぐり・皿もみ。FR-422)の鍵の材料。
  *
  * 3 種と欄名は kernel の `HoleEntrySpec`(`occt/makeHole.ts`)と同じ。
  * **皿もみの `angle` はラジアン**で、段の依頼とまったく同じ単位である
- * (文書は度で持ち、換算は解決(タスク46)が行う。model の `HoleEntry` の注釈)。
+ * (文書は度で持ち、換算は解決が行う。model の `HoleEntry` の注釈)。
  * 単位を段と揃えるのは、鍵の材料を組み立てる側が段の依頼から欄を写すだけで済むようにするため。
  *
  * 皿もみの円錐の深さは頭径・穴の径・角度からカーネルが導くので、材料には持たない
@@ -273,10 +273,10 @@ export interface HoleKeyMaterial {
   /**
    * 工具の並べ方(パターン、FR-411 / FR-412 / FR-425)。
    *
-   * **点の集まりへ複製(FR-425、P5 §0.a-0.42)も、独立の欄を持たずにここへ乗る。**
-   * 解決(タスク46)が点それぞれを平行移動 1 つへ直すので、点の一覧はこの並びに
+   * **点の集まりへ複製(FR-425)も、独立の欄を持たずにここへ乗る。**
+   * 解決が点それぞれを平行移動 1 つへ直すので、点の一覧はこの並びに
    * そのまま現れる。点の座標を材料へ二重に持たせないのは、同じ形に2つの鍵ができるのを
-   * 避けるためである(カーネルの段も点集合のための欄を持たない。報告記録 9/5 19:10)。
+   * 避けるためである(カーネルの段も点集合のための欄を持たない)。
    */
   readonly transforms: readonly KeyTransform[];
   /**
@@ -285,7 +285,7 @@ export interface HoleKeyMaterial {
    */
   readonly entry?: HoleEntryKeyMaterial;
   /**
-   * 円筒の側面の穴(EX05)。高さ(mm)と角度(**ラジアン**)を位置の順に混ぜる。
+   * 円筒の側面の穴。高さ(mm)と角度(**ラジアン**)を位置の順に混ぜる。
    * **平面の穴では省き、鍵の文字列にも出さない**(今までの穴の鍵を 1 字も変えないため)。
    */
   readonly cylindrical?: CylindricalHoleKeyMaterial;
@@ -298,7 +298,7 @@ export interface HoleKeyMaterial {
   readonly locations: readonly { readonly x: number; readonly y: number }[];
 }
 
-/** 円筒の側面の穴の位置(EX05)の鍵の材料。段の `CylindricalHolePlan` と同じ形。 */
+/** 円筒の側面の穴の位置の鍵の材料。段の `CylindricalHolePlan` と同じ形。 */
 export interface CylindricalHoleKeyMaterial {
   readonly kind: 'cylinder-face';
   readonly locations: readonly { readonly height: number; readonly angle: number }[];
@@ -307,7 +307,7 @@ export interface CylindricalHoleKeyMaterial {
 /**
  * ねじ穴(FR-406)の鍵の材料。穴に、ねじの規格から決まる値と表示方法を足したもの。
  * `modeled` は実らせん形状(true)か簡略表示(false)かで、**形そのものが変わる**ので混ぜる
- * (簡略表示は下穴だけを掘り、実らせんはさらにらせんを差し引く。§0.a-0.15、§0.a-0.16)。
+ * (簡略表示は下穴だけを掘り、実らせんはさらにらせんを差し引く)。
  */
 export interface ThreadKeyMaterial {
   /** 下穴の面の名前の材料(`HoleKeyMaterial` と同じ)。**欄が無ければ鍵の文字列にも出さない。** */
@@ -333,13 +333,13 @@ export interface ThreadKeyMaterial {
   readonly transforms: readonly KeyTransform[];
   /** 入口の形(FR-422)。穴とまったく同じ扱いで、省略と `plain` は同じ鍵になる。 */
   readonly entry?: HoleEntryKeyMaterial;
-  /** 円筒の側面のねじ穴(EX05)。穴の `cylindrical` と同じで、平面のねじ穴では省く(鍵の文字列にも出ない)。 */
+  /** 円筒の側面のねじ穴。穴の `cylindrical` と同じで、平面のねじ穴では省く(鍵の文字列にも出ない)。 */
   readonly cylindrical?: CylindricalHoleKeyMaterial;
   readonly planar?: PlanarHoleKeyMaterial;
 }
 
 /**
- * 丸める半径(FR-407、可変半径は FR-426、§0.a-0.48)。
+ * 丸める半径(FR-407、可変半径は FR-426)。
  * 数1つなら一定半径、2値なら辺の始点側 `start` から終点側 `end` へ変える可変半径。
  * kernel の `FilletRadiusSpec` と同じ形にしてある。
  */
@@ -348,10 +348,10 @@ export type FilletRadiusKeyMaterial = number | { readonly start: number; readonl
 /**
  * R 面取り(FR-407)の鍵の材料。
  * `targets` は辺・頂点の指紋の並びで、**並びが違えば違う鍵**になる。
- * そのため **model は必ず通し番号の昇順に並べてから渡す**(タスク16 の `planFillet`)。
+ * そのため **model は必ず通し番号の昇順に並べてから渡す**(`planFillet`)。
  * 同じ辺の集合を選んだのに選んだ順で鍵が変わると、キャッシュが当たらなくなるため。
  *
- * P5 タスク44 で半径を可変(FR-426)にも広げた。一定半径の文字列は P3 のまま変えていない
+ * 半径を可変(FR-426)にも広げた。一定半径の文字列は以前のまま変えていない
  * (数1つのときは `keyNumber` の出力そのもので、可変のときだけ `variable(…)` を出す)。
  */
 export interface FilletKeyMaterial {
@@ -380,8 +380,8 @@ export interface ChamferKeyMaterial {
 }
 
 /**
- * ばね(FR-414、§2.7b)の鍵の材料。
- * 対象のボディを消費しないので `targetKey` を持たない(§0.a-0.36)。
+ * ばね(FR-414)の鍵の材料。
+ * 対象のボディを消費しないので `targetKey` を持たない。
  *
  * **全長(`length`)と `derived` は材料に混ぜない。** 形を決めるのは `pitch` と `turns` の2つで、
  * 全長は `length = pitch × turns` で導ける値だからである。混ぜると「ピッチ5・巻数4」と
@@ -422,13 +422,13 @@ export type PrimitiveShapeKeyMaterial =
   | { readonly kind: 'torus'; readonly majorRadius: number; readonly minorRadius: number };
 
 /**
- * 基本形状(FR-429、P5 §2.7)の鍵の材料。形の種類と寸法・基準点・向き。
+ * 基本形状(FR-429)の鍵の材料。形の種類と寸法・基準点・向き。
  *
- * 対象のボディを消費しない「作る」フィーチャーなので、ばねと同じく普段は上流を持たない
- * (§0.a-0.19)。ただし**基準点に立体の頂点を指したときだけ** `originQuery`(頂点の指紋)と
+ * 対象のボディを消費しない「作る」フィーチャーなので、ばねと同じく普段は上流を持たない。
+ * ただし**基準点に立体の頂点を指したときだけ** `originQuery`(頂点の指紋)と
  * `targetKey`(その頂点を持つ立体の段の鍵)が入る。
  *
- * **この2つを材料へ必ず含める**(P5 タスク14b の申し送り)。含めないと、上流の押し出しを
+ * **この2つを材料へ必ず含める**。含めないと、上流の押し出しを
  * 伸ばして頂点が動いても段の鍵が変わらず、**古い位置の形がキャッシュから返る**。
  * 鍵の連鎖(NFR-PF-3)は「材料が変われば鍵が変わる」ことに全面的に頼っているので、
  * 位置を決める材料が鍵の外にあってはならない。消費しないことと鍵に混ぜることは別の話で、
@@ -439,7 +439,7 @@ export type PrimitiveShapeKeyMaterial =
  */
 export interface PrimitiveKeyMaterial {
   readonly kind: 'primitive';
-  /** 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心(§0.a-0.17)。 */
+  /** 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心。 */
   readonly origin: KeyVec3;
   /** 向き(単位ベクトル)。`gp_Ax2` の Z 方向になる。 */
   readonly axis: KeyVec3;
@@ -451,7 +451,7 @@ export interface PrimitiveKeyMaterial {
 }
 
 /**
- * 罫線面・ロフト(FR-430、FR-410、P5 §2.9)の断面 1 つぶんの鍵の材料。
+ * 罫線面・ロフト(FR-430、FR-410)の断面 1 つぶんの鍵の材料。
  *
  * 種類は kernel の `ThruSectionSpec` と同じ 3 通りにしてある。輪郭は解決済みの数値
  * (`KeyCurve`)を、球は中心と半径を、立体の面は**指紋の文字列と対象の段の鍵**を混ぜる。
@@ -463,14 +463,14 @@ export type ThruSectionKeyMaterial =
   | { readonly kind: 'sphere'; readonly center: KeyVec3; readonly radius: number }
   | {
       readonly kind: 'faceQuery';
-      /** 面を持つ立体の段の鍵。**消費はしない**(§0.a-0.27)が鍵には必ず混ぜる。 */
+      /** 面を持つ立体の段の鍵。**消費はしない**が鍵には必ず混ぜる。 */
       readonly targetKey: string;
       /** 面の指紋(`fingerprintKeyText` の出力)。 */
       readonly query: KeySubShape;
     };
 
 /**
- * 罫線面・ロフト(FR-430、FR-410、P5 §2.9)の鍵の材料。
+ * 罫線面・ロフト(FR-430、FR-410)の鍵の材料。
  *
  * 対象のボディを消費しない「作る」段なので、ばね・基本形状と同じく上流の `targetKey` を
  * 段そのものは持たない(輪郭に立体の面を使ったときだけ、その断面の中に鍵が入る)。
@@ -478,7 +478,7 @@ export type ThruSectionKeyMaterial =
  * **断面の数値をすべて混ぜる。** スケッチの面を動かすと輪郭の座標が変わるので、輪郭を
  * 混ぜておけば上流の変化がそのまま鍵に伝わる(押し出しの `profile` と同じ考え方)。
  * `ruled` は直線で結ぶ(罫線面)かなめらかに結ぶ(ロフト)かで**形が変わる**ので混ぜ、
- * `twist` と `sphereSegments` も形を変えるので混ぜる(§0.a-0.28、§0.a-0.74)。
+ * `twist` と `sphereSegments` も形を変えるので混ぜる。
  */
 export interface ThruSectionsKeyMaterial {
   readonly kind: 'thruSections';
@@ -492,19 +492,19 @@ export interface ThruSectionsKeyMaterial {
 }
 
 // ---------------------------------------------------------------------------
-// P5 の Should 群・Could 群の材料(FR-417〜FR-428、FR-432。計画書 §2.11、タスク44)。
+// Should 群・Could 群の材料(FR-417〜FR-428、FR-432)。
 //
 // 欄の名前と単位は `packages/kernel/src/types.ts` の段の型(`DraftStepSpec` ほか)と
 // 揃えてある。**角度はどれもラジアン**(段の依頼と同じ単位)で、度からの換算は解決の
-// 担当である(`docs/報告記録.md` 2026-09-04 00:30 の③(c))。
+// 担当である。
 //
 // **対象を消費するかどうかにかかわらず、上流を指す種類は `targetKey` を必ず持つ。**
-// 消費しないのはミラー(§0.a-0.36)と曲面の `face`(§0.a-0.45)だが、どちらも上流の形が
+// 消費しないのはミラーと曲面の `face`だが、どちらも上流の形が
 // 変われば結果の形が変わるので、鍵の連鎖(NFR-PF-3)には同じように参加する。
 // ---------------------------------------------------------------------------
 
 /**
- * 抜き勾配(FR-417、§2.11)の鍵の材料。**対象を消費する。**
+ * 抜き勾配(FR-417)の鍵の材料。**対象を消費する。**
  * `faces` の並びは指紋の並びのまま持つ(`FilletKeyMaterial.targets` と同じ約束)。
  */
 export interface DraftKeyMaterial {
@@ -521,7 +521,7 @@ export interface DraftKeyMaterial {
 }
 
 /**
- * ミラー(FR-419、§0.a-0.36)の鍵の材料。
+ * ミラー(FR-419)の鍵の材料。
  *
  * **対象を消費しないが `targetKey` は必ず混ぜる。** 鏡に映す立体が変われば鏡像も変わるので、
  * 混ぜないと元を編集しても鏡像の鍵が変わらず、古い形がキャッシュから返る(NFR-PF-3)。
@@ -539,7 +539,7 @@ export interface MirrorKeyMaterial {
 }
 
 /**
- * 移動/回転(FR-424、§0.a-0.41)の鍵の材料。**対象を消費する。**
+ * 移動/回転(FR-424)の鍵の材料。**対象を消費する。**
  * 欄名は `KeyTransform`(パターンの剛体変換)と同じで、回転角はラジアン。
  */
 export interface TransformKeyMaterial {
@@ -553,13 +553,13 @@ export interface TransformKeyMaterial {
 }
 
 /**
- * 拡大縮小(FR-424、§0.a-0.41)の鍵の材料。**対象を消費する。**
+ * 拡大縮小(FR-424)の鍵の材料。**対象を消費する。**
  *
  * `uniform` と `perAxis` は**どちらか一方だけ**が入る(kernel の `ScaleStepSpec` と同じ約束)。
  * 両方を材料の欄として持つのは、全体倍率 2 と軸ごと (2,2,2) が**同じ形**でも
  * 別の指定であることを鍵の上でも区別できるようにするためではなく、段の依頼をそのまま
  * 写せるようにするためである(同じ形に2つの鍵ができるのは、解決が常にどちらか一方の
- * 書き方に正規化することで防ぐ。判断はタスク45)。
+ * 書き方に正規化することで防ぐ)。
  */
 export interface ScaleKeyMaterial {
   readonly kind: 'scale';
@@ -573,7 +573,7 @@ export interface ScaleKeyMaterial {
 }
 
 /**
- * スイープ(FR-409、§0.a-0.43)の鍵の材料。
+ * スイープ(FR-409)の鍵の材料。
  * **対象を取らない「作る」段**なので `targetKey` を持たない(押し出し・ばねと同じ)。
  * 断面も経路も解決済みの座標なので、スケッチを直せばそのまま鍵が変わる。
  */
@@ -589,7 +589,7 @@ export interface SweepKeyMaterial {
 }
 
 /**
- * リブ(FR-420、§0.a-0.37)の鍵の材料。**対象を消費する。**
+ * リブ(FR-420)の鍵の材料。**対象を消費する。**
  * 欄名は kernel の `RibStepSpec` と同じ。`direction`(材料へ向かう向き)は
  * 「材料に届くまで伸ばすか」を解決が向きへ直した後の値である。
  */
@@ -606,14 +606,14 @@ export interface RibKeyMaterial {
   /** 伸ばす向き。 */
   readonly direction: KeyVec3;
   /**
-   * 材料に届くまで伸ばすか(FR-420、タスク46)。**忘れると伸ばす/伸ばさないが同じ鍵になる**
+   * 材料に届くまで伸ばすか(FR-420)。**忘れると伸ばす/伸ばさないが同じ鍵になる**
    * ので必ず混ぜる(伸ばし方が違えば形が変わるため、NFR-PF-3)。
    */
   readonly extendToBody: boolean;
 }
 
 /**
- * エンボス(FR-421、§0.a-0.38)の鍵の材料。**対象を消費する。**
+ * エンボス(FR-421)の鍵の材料。**対象を消費する。**
  * 彫る(差)か浮き出す(和)かで形が変わるので `raised` も混ぜる。
  */
 export interface EmbossKeyMaterial {
@@ -629,7 +629,7 @@ export interface EmbossKeyMaterial {
 }
 
 /**
- * 外ねじ(FR-423、§0.a-0.40)の鍵の材料。**対象を消費する。**
+ * 外ねじ(FR-423)の鍵の材料。**対象を消費する。**
  *
  * 簡略表示(`modeled: false`)と実らせん(true)は**形そのものが変わる**ので混ぜる
  * (ねじ穴の `ThreadKeyMaterial.modeled` と同じ理由。簡略表示は B-rep に触れない)。
@@ -651,7 +651,7 @@ export interface ThreadShaftKeyMaterial {
 }
 
 /**
- * 曲面の作り方(FR-428、§0.a-0.45)の鍵の材料。5 種の中身をすべて持つ。
+ * 曲面の作り方(FR-428)の鍵の材料。5 種の中身をすべて持つ。
  * 種類と欄名は kernel の `SurfaceInput`(`occt/makeSurface.ts`)と同じにしてある。
  * 角度はラジアン。
  */
@@ -680,13 +680,13 @@ export type SurfaceShapeKeyMaterial =
   /** すでにある立体の面 1 枚。指紋と、段の `targetKey` の**両方**が鍵に効く。 */
   | { readonly kind: 'face'; readonly face: KeySubShape }
   /**
-   * すでにある立体の面を距離だけ離した殻(カーネルの `SurfaceInput` の 6 種目、タスク42b)。
+   * すでにある立体の面を距離だけ離した殻(カーネルの `SurfaceInput` の 6 種目)。
    * `face` と同じく指紋と `targetKey` の両方が鍵に効き、距離も形を変えるので混ぜる。
    */
   | { readonly kind: 'offset'; readonly face: KeySubShape; readonly distance: number };
 
 /**
- * 曲面(FR-428、§0.a-0.45)の鍵の材料。面だけのボディを作る。
+ * 曲面(FR-428)の鍵の材料。面だけのボディを作る。
  *
  * **`face` の作り方でも対象を消費しない**(面を貸した立体は画面に残る)が、
  * `targetKey` は必ず混ぜる。混ぜないと上流を編集しても鍵が変わらず、古い面の形が
@@ -713,10 +713,10 @@ export interface SurfaceCutKeyMaterial {
 }
 
 /**
- * 平面による切断(FR-432、§2.9b。分割 FR-424 もこれで満たす、§0.a-0.60)の鍵の材料。
+ * 平面による切断(FR-432、分割 FR-424 もこれで満たす)の鍵の材料。
  * **対象を消費する。**
  *
- * **model のフィーチャーの型(`CutFeature`)はタスク27c が後で足す**ので、ここでは
+ * **model のフィーチャーの型(`CutFeature`)は別に定義する**ので、ここでは
  * 段の依頼 `CutStepSpec` に合わせた形だけを用意してある(欄名・単位とも同じ)。
  * 切断面は解決が「通る点+単位法線」の数値へ直してから渡す。
  */
@@ -732,7 +732,7 @@ export interface CutKeyMaterial {
 }
 
 /**
- * くり抜き(シェル。FR-418、§0.a-0.47)の鍵の材料。**対象を消費する。**
+ * くり抜き(シェル。FR-418)の鍵の材料。**対象を消費する。**
  *
  * `openFaces` は**0枚でもよい**(中だけが空になる)。並びは指紋の並びのまま持ち、
  * 長さも鍵に混ざるので「0枚」と「1枚」は必ず別の鍵になる。
@@ -749,13 +749,13 @@ export interface ShellKeyMaterial {
 }
 
 /**
- * 読み込んだ形(ベースボディ。FR-802、P6 §2.8、§0.a-0.9)の鍵の材料。
+ * 読み込んだ形(ベースボディ。FR-802)の鍵の材料。
  *
  * 文書内連番の名前(`shapeRef`)と、原本の内容(`shapeDigest`)の両方を含める。
  * 別文書が同じ連番を使っても内容が違えば鍵が変わる。原本のSHA-256は読み込み時に
  * 一度だけ計算するため、大きなB-repを再計算のたびに読み直さない(NFR-PF-3)。
  *
- * **三角形の形(`importedMesh`)はここに無い。** B-rep にしない(§0.a-0.23)ので
+ * **三角形の形(`importedMesh`)はここに無い。** B-rep にしないので
  * カーネルの段にならず、作り直す計算が無いから鍵も要らない。
  */
 export interface ImportedSolidKeyMaterial {
@@ -769,7 +769,7 @@ export interface ImportedSolidKeyMaterial {
 /**
  * 1段ぶんの鍵の材料。段の種類ごとに要る値だけを持つ。
  * パターン(FR-411 / FR-412 / FR-425)の材料はここに無い。パターンはもとの穴・ねじ穴の材料の
- * `targetKey` と `transforms` を差し替えたものとして表すため(§0.a-0.20、§0.a-0.42)。
+ * `targetKey` と `transforms` を差し替えたものとして表すため。
  */
 export type SolidStepKeyMaterial =
   | { readonly kind: 'functionSurface'; readonly inputSignature: string }
@@ -784,9 +784,9 @@ export type SolidStepKeyMaterial =
   | SpringKeyMaterial
   | PrimitiveKeyMaterial
   | ThruSectionsKeyMaterial
-  // ここから下は P5 の Should 群・Could 群(§2.11、タスク44)。
+  // ここから下は Should 群・Could 群。
   | DraftKeyMaterial
-  // 平らな面の移動(EX-18)。材料の形は directFaceEdit.ts が持つ。
+  // 平らな面の移動。材料の形は directFaceEdit.ts が持つ。
   | FaceOffsetKeyMaterial
   | HoleTranslateKeyMaterial
   | FaceRotateKeyMaterial
@@ -801,7 +801,7 @@ export type SolidStepKeyMaterial =
   | CutKeyMaterial
   | SurfaceCutKeyMaterial
   | ShellKeyMaterial
-  // 読み込んだ形(FR-802、P6 §2.8、タスク20)。
+  // 読み込んだ形(FR-802)。
   | ImportedSolidKeyMaterial;
 
 /** 座標を鍵へ混ぜるときの丸め桁数。double の下位の揺れで鍵が変わらないようにする。 */
@@ -835,7 +835,7 @@ export function keyExactNumber(value: number): string {
 const FNV_PRIME_32 = 0x01000193;
 /** 標準の FNV-1a 32bit オフセット基底。公式テストベクトルの起点(下の test ファイルで検算)。 */
 const FNV_OFFSET_LANE_1 = 0x811c9dc5;
-/** 第2レーンは第1レーンと違う開始点で回す(§0.a-0.20「オフセットが違う」)。全ビット反転で作る。 */
+/** 第2レーンは第1レーンと違う開始点で回す(「オフセットが違う」)。全ビット反転で作る。 */
 const FNV_OFFSET_LANE_2 = (~FNV_OFFSET_LANE_1) >>> 0;
 
 /**
@@ -853,7 +853,7 @@ function fnv1a32(text: string, offsetBasis: number): number {
 }
 
 /**
- * FNV-1a を32ビット2本(オフセットが違う)で回し、16桁の16進文字列にする(§0.a-0.20)。
+ * FNV-1a を32ビット2本(オフセットが違う)で回し、16桁の16進文字列にする。
  * 決定的(同じ入力には常に同じ出力)。BigInt を使わない。
  */
 export function hash64(text: string): string {
@@ -895,7 +895,7 @@ function keyCurve(curve: KeyCurve): string {
 /**
  * 曲線の並び1本ぶん。順序を保ったまま連結し、長さも混ぜる(衝突対策)。
  *
- * オフセット(FR-321、P4 タスク15)の鍵も曲線の並びを材料にするので輸出する。
+ * オフセット(FR-321)の鍵も曲線の並びを材料にするので輸出する。
  * 丸めの規則(`keyNumber`)を2か所に書かないための決めで、`geometry/planeSpec.ts` が
  * `keyNumber` を借りているのと同じ考え方。
  */
@@ -905,7 +905,7 @@ export function keyCurveList(curves: readonly KeyCurve[]): string {
 
 /**
  * 曲線の並びの並び(縫合の面ごと・エンボスの輪郭ごと・曲面のロフトの断面ごと)。
- * 外側の長さも混ぜる(`keyCurveList` と同じ衝突対策)。縫合が P2 から使っている
+ * 外側の長さも混ぜる(`keyCurveList` と同じ衝突対策)。縫合が以前から使っている
  * 文字列とまったく同じ形なので、既存の鍵は変わらない。
  */
 function keyCurveListGroup(groups: readonly (readonly KeyCurve[])[]): string {
@@ -1033,9 +1033,9 @@ function keyThinExtrude(thin: ThinExtrudeKeyMaterial | null): string {
 }
 
 /**
- * 押し出しに P5 で足した5欄(FR-415・FR-401・FR-416)の文字列。
+ * 押し出しに後から足した5欄(FR-415・FR-401・FR-416)の文字列。
  *
- * **既定のときは空文字列を返す**ので、P2 からの押し出しの鍵は1文字も変わらず、
+ * **既定のときは空文字列を返す**ので、従来の押し出しの鍵は1文字も変わらず、
  * 「欄を省略した材料」と「既定を明示した材料」も同じ鍵になる(冒頭の決め 3)。
  * 既定とは「この材料の `distance` ぶんを片側へ、傾きなし、中実、上流なし」で、
  * `createPartDocument.ts` の `extrudeShapingOf` が省略に当てる値と同じである。
@@ -1095,7 +1095,7 @@ function keyPlanarHoleExtra(placement: PlanarHoleKeyMaterial | undefined): strin
 }
 
 /**
- * 円筒の側面の穴の位置(EX05)。省略は空文字(平面の穴の鍵を変えない)。
+ * 円筒の側面の穴の位置。省略は空文字(平面の穴の鍵を変えない)。
  * 個数を前に付けるので、位置の数が違う入力が同じ文字列になることはない。
  */
 function keyCylindricalHoleExtra(placement: CylindricalHoleKeyMaterial | undefined): string {
@@ -1110,7 +1110,7 @@ function keyCylindricalHoleExtra(placement: CylindricalHoleKeyMaterial | undefin
 
 /**
  * 穴・ねじ穴の入口の文字列。**広げない(省略・`plain`)ときは空文字列**を返す。
- * 理由は `keyExtrudeExtras` と同じで、省略と既定を同じ鍵にし、P3 の鍵も壊さないため。
+ * 理由は `keyExtrudeExtras` と同じで、省略と既定を同じ鍵にし、以前の鍵も壊さないため。
  */
 function keyHoleEntryExtra(entry: HoleEntryKeyMaterial | undefined): string {
   if (entry === undefined || entry.kind === 'plain') {
@@ -1121,7 +1121,7 @@ function keyHoleEntryExtra(entry: HoleEntryKeyMaterial | undefined): string {
 
 /**
  * R 面取りの半径(FR-407、FR-426)。
- * 一定半径は P3 と同じ数字列そのままで、可変半径だけ `variable(…)` を出す。
+ * 一定半径は以前と同じ数字列そのままで、可変半径だけ `variable(…)` を出す。
  * `keyNumber` の出力は必ず数字と小数点だけなので、2つが混ざることはない。
  */
 function keyFilletRadius(radius: FilletRadiusKeyMaterial): string {
@@ -1162,7 +1162,7 @@ function keySurfaceShape(shape: SurfaceShapeKeyMaterial): string {
 export function keyMaterialText(material: SolidStepKeyMaterial): string {
   switch (material.kind) {
     case 'extrude':
-      // P5 で足した5欄は既定なら出さない(keyExtrudeExtras の注釈、冒頭の決め 3)。
+      // 後から足した5欄は既定なら出さない(keyExtrudeExtras の注釈、冒頭の決め 3)。
       return (
         `extrude{profile=${keyCurveList(material.profile)}` +
         `;direction=${keyVec3(material.direction)}` +
@@ -1391,14 +1391,14 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
 }
 
 /**
- * 1段ぶんの鍵(§0.a-0.20)。名前・抑制・色は材料に含めない(形が変わらないため)。
+ * 1段ぶんの鍵。名前・抑制・色は材料に含めない(形が変わらないため)。
  * ブーリアンの材料は上流の鍵(`targetKey` / `toolKey`)を含むので、上流が変われば
  * この鍵も必ず変わる(鍵の連鎖、NFR-PF-3)。加工フィーチャー(穴・ねじ穴・R 面取り・
  * C 面取り)も同じく `targetKey` を含むので、連鎖は同じように効く。ばねは上流を取らない
- * ので `targetKey` を持たない(§0.a-0.36)。基本形状は普段は上流を取らないが、基準点に
- * 立体の頂点を指したときだけ `targetKey` を持つ(消費はしない。P5 §0.a-0.18 / §0.a-0.19)。
+ * ので `targetKey` を持たない。基本形状は普段は上流を取らないが、基準点に
+ * 立体の頂点を指したときだけ `targetKey` を持つ(消費はしない)。
  *
- * P5 の Should 群・Could 群(タスク44)も同じ規律で、**上流を指すものは消費してもしなくても
+ * Should 群・Could 群も同じ規律で、**上流を指すものは消費してもしなくても
  * `targetKey` を混ぜる**(ミラー・曲面の `face`・押し出しの「次の面まで」が「消費しないが
  * 混ぜる」側)。対象を取らない「作る」段(スイープ)だけが `targetKey` を持たない。
  */

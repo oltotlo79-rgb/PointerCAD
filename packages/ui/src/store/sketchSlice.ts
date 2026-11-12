@@ -1,6 +1,6 @@
 /**
  * スケッチのスライス(道具・派生の控え・下書き・指標・断りの理由)。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import {
@@ -42,18 +42,18 @@ export interface SnapIndicator {
 export interface SketchSlice {
   /**
    * 選んでいる道具(FR-301〜309、FR-401〜403、FR-405〜408、FR-411、FR-412)。スケッチの道具に
-   * 加えて、数値を聞くソリッドの道具(押し出し・回転・縫合)と、P3 の加工の道具(穴・ねじ穴・
+   * 加えて、数値を聞くソリッドの道具(押し出し・回転・縫合)と、加工の道具(穴・ねじ穴・
    * R 面取り・C 面取り・直線/円形パターン)も入る。和・差・積は押した瞬間に作って
-   * 終わるので、道具として選ばれた状態にはならない(§0.a-0.6)。
+   * 終わるので、道具として選ばれた状態にはならない。
    *
-   * タスク24 が加工6種+ばねを `NumericInputToolId`(`numericInput.ts` の `SolidToolId`)へ
-   * 足したので、型はこれ1本(以前の一時型 `P3SolidToolId` はタスク26 で消した)。
+   * 加工6種+ばねも `NumericInputToolId`(`numericInput.ts` の `SolidToolId`)に
+   * 入るので、型はこれ1本(以前の一時型 `P3SolidToolId` は消した)。
    */
   readonly activeTool: NumericInputToolId;
   /**
-   * 派生の控え(§0.a-0.4)。`document.sketches` のうち `activeSketchId` のもの。
+   * 派生の控え。`document.sketches` のうち `activeSketchId` のもの。
    * 正本は `document` の 1 つだけで、ここは `applyDocument` が同期する。**直接 set しない。**
-   * P1 からの読み手(`shell` / `viewport` / `sketch` の 13 ファイル)をそのまま生かすために残す。
+   * 以前からの読み手(`shell` / `viewport` / `sketch` の 13 ファイル)をそのまま生かすために残す。
    */
   readonly sketch: SketchDocument;
   /** 解決済みの幾何。履歴から導ける実行時の控え(保存しない)。 */
@@ -62,7 +62,7 @@ export interface SketchSlice {
   readonly sketchMesh: SketchMesh | null;
   /** いま編集しているスケッチの失敗(FR-504)。部品全体の失敗は `partErrors`。 */
   readonly sketchErrors: readonly SketchError[];
-  /** スナップの入り切りと、有効な種別(FR-107、§0.a-0.10)。 */
+  /** スナップの入り切りと、有効な種別(FR-107)。 */
   readonly snapEnabled: boolean;
   readonly snapKinds: readonly SnapKind[];
   /** 連続描画(FR-307)。 */
@@ -74,7 +74,7 @@ export interface SketchSlice {
   /** 線分の始点・円弧の中心・点列の基準として先に決めた座標。まだ無ければ null。 */
   readonly pendingStart: CoordinateInput | null;
   /**
-   * P4 の新しい図形(矩形・長穴・楕円・スプライン等)の途中経過(FR-314〜318、タスク12)。
+   * 図形の道具(矩形・長穴・楕円・スプライン等)の途中経過(FR-314〜318)。
    * 置いた点と前の段の欄の値を積む。道具を変える・ポップアップを閉じると空へ戻る。
    */
   readonly shapeDraft: ShapeDraft;
@@ -86,7 +86,7 @@ export interface SketchSlice {
    */
   readonly shapeErrorMessage: string | null;
   /**
-   * 基準ジオメトリ(作業平面・基準軸・基準点・座標系)の途中経過(FR-328、FR-329、タスク13)。
+   * 基準ジオメトリ(作業平面・基準軸・基準点・座標系)の途中経過(FR-328、FR-329)。
    * 置いた点とこれまでの段で選んだ決め方を積む。道具を変える・ポップアップを閉じると空へ戻る。
    */
   readonly referenceDraft: ReferenceDraft;
@@ -98,16 +98,16 @@ export interface SketchSlice {
   /** いま吸い付いている場所。無ければ null(FR-107)。 */
   readonly snapIndicator: SnapIndicator | null;
   /**
-   * いま出している向きの吸着の案内線(FR-110、P4b タスク16)。無ければ null。
+   * いま出している向きの吸着の案内線(FR-110)。無ければ null。
    *
    * ビューポートが細い破線で画面いっぱいに引き、ステータスバーが「15° に合わせています」
-   * 「線分1 の延長線」の一言を組み立てる材料にする。同時に出すのは最大 2 本(§0.14)。
+   * 「線分1 の延長線」の一言を組み立てる材料にする。同時に出すのは最大 2 本。
    * `snapIndicator` と同じく、作るのは React の外(`attachSketchInteraction.ts`)なので
    * ここに置く(rules/04-設計の規律.md「フロントの状態は Zustand 1 本」)。
    */
   readonly trackIndicator: readonly TrackCandidate[] | null;
   /**
-   * 線を引いている最中に推定した拘束の予告(FR-333、P6 タスク41)。無ければ null。
+   * 線を引いている最中に推定した拘束の予告(FR-333)。無ければ null。
    *
    * **形にも保存にも影響しない一時状態**で、`.pcad` には書かない(`affectsShape` を
    * 通らない)。線を引き終えた瞬間に `commitToStore.ts` がこれを読んで拘束を足し、
@@ -117,7 +117,7 @@ export interface SketchSlice {
    */
   readonly inferredConstraints: InferredConstraintPreview | null;
   /**
-   * トリム・延長の道具でマウスを乗せているときの予告(FR-322、タスク22)。
+   * トリム・延長の道具でマウスを乗せているときの予告(FR-322)。
    * 消える区間・伸びる区間の折れ線で、ビューポートがもとの線の上へ重ねて描く。
    *
    * ホバーと同じ「表示だけの一時状態」だが、作るのは React の外
@@ -138,22 +138,22 @@ export interface SketchSlice {
    */
   readonly solidErrorKey: MessageKey | null;
   /**
-   * 整形系の道具(オフセット、FR-321、タスク21)を作れなかった理由の文言キー。
+   * 整形系の道具(オフセット、FR-321)を作れなかった理由の文言キー。
    * `faceErrorKey` / `solidErrorKey` と同じ扱いで、ステータスバーが
    * 「オフセットを作れませんでした:」の言い回しで出す。
    */
   readonly editErrorKey: MessageKey | null;
   /**
-   * 整形系の道具が**成功したときに添える案内**の文言キー(FR-323、タスク23)。
+   * 整形系の道具が**成功したときに添える案内**の文言キー(FR-323)。
    *
    * 断り(`editErrorKey`)と分けてあるのは、赤い帯で「できませんでした」と出すのが
    * 事実に反するため。いまの使い道は 1 つで、角を丸めた 2 本を境界に使っている面が
-   * あったときに「面の境界に足した曲線を入れ直してください」と伝える(t18 の申し送り)。
+   * あったときに「面の境界に足した曲線を入れ直してください」と伝える。
    * 文書が変われば用済みなので `applyDocument` が落とす。
    */
   readonly editNoticeKey: MessageKey | null;
   /**
-   * 原点を移したときに帯へ出す一言(FR-331、P4 タスク35b)。
+   * 原点を移したときに帯へ出す一言(FR-331)。
    *
    * `editNoticeKey` と同じ「うまくいったときの知らせ」だが、もとの原点の座標の**式**を
    * 差し込んだ文になるので、文言キーではなく組み立て済みの文で持つ
@@ -187,27 +187,27 @@ export interface SketchSlice {
   readonly updateNumericInput: (state: NumericInputState) => void;
   readonly closeNumericInput: () => void;
   /**
-   * 入力欄の通し番号(EX-14)。開く・閉じるたびと、値・選択肢・つまみ・道具・段など**意味**が
+   * 入力欄の通し番号。開く・閉じるたびと、値・選択肢・つまみ・道具・段など**意味**が
    * 変わる更新のたびに 1 つ進み、戻らない。焦点の移動だけの更新では進まない。同じ値の入力欄を
    * 開き直した場合も進むので、開き直す前の入力で始めた計算を採用しない。文書の世代ではなく、
    * 入力欄の中だけで使う。文書を作り直しても戻さない(`SketchInitialState` に入れない)。
    */
   readonly numericInputRevision: number;
   readonly setPendingStart: (start: CoordinateInput | null) => void;
-  /** 新しい図形の途中経過を置き換える(タスク12)。 */
+  /** 新しい図形の途中経過を置き換える。 */
   readonly setShapeDraft: (draft: ShapeDraft) => void;
   /** 図形を作れなかった理由を出す・消す(NFR-UX-5)。 */
   readonly setShapeError: (message: string | null) => void;
-  /** 基準ジオメトリの途中経過を置き換える(タスク13)。 */
+  /** 基準ジオメトリの途中経過を置き換える。 */
   readonly setReferenceDraft: (draft: ReferenceDraft) => void;
   /** 基準ジオメトリを作れなかった理由を出す・消す(NFR-UX-5)。 */
   readonly setReferenceError: (message: string | null) => void;
   readonly setSnapIndicator: (indicator: SnapIndicator | null) => void;
-  /** 向きの吸着の案内線を出す・消す(FR-110、タスク16)。 */
+  /** 向きの吸着の案内線を出す・消す(FR-110)。 */
   readonly setTrackIndicator: (lines: readonly TrackCandidate[] | null) => void;
-  /** 推定した拘束の予告を出す・消す(FR-333、P6 タスク41)。 */
+  /** 推定した拘束の予告を出す・消す(FR-333)。 */
   readonly setInferredConstraints: (preview: InferredConstraintPreview | null) => void;
-  /** トリム・延長の予告を出す・消す(FR-322、タスク22)。 */
+  /** トリム・延長の予告を出す・消す(FR-322)。 */
   readonly setEditPreview: (preview: EditPreview | null) => void;
   /** 面を張れなかった理由を出す・消す。 */
   readonly setFaceError: (key: MessageKey | null) => void;
@@ -215,9 +215,9 @@ export interface SketchSlice {
   readonly setSolidError: (key: MessageKey | null) => void;
   /** 整形系の道具(オフセット等)を作れなかった理由を出す・消す(FR-321、NFR-UX-5)。 */
   readonly setEditError: (key: MessageKey | null) => void;
-  /** 整形系の道具が成功したときの案内を出す・消す(FR-323、タスク23)。 */
+  /** 整形系の道具が成功したときの案内を出す・消す(FR-323)。 */
   readonly setEditNotice: (key: MessageKey | null) => void;
-  /** 原点を移したときの一言を出す・消す(FR-331、タスク35b)。 */
+  /** 原点を移したときの一言を出す・消す(FR-331)。 */
   readonly setOriginNotice: (message: string | null) => void;
   /** ビューポートで選んだ場所を覚える・忘れる。 */
   readonly setPickAnchor: (anchor: readonly [number, number] | null) => void;
@@ -265,14 +265,14 @@ export const createSketchSlice: StateCreator<
   setActiveTool: (activeTool) => {
     get().closeScriptPanel();
     // 道具を変えたら入力中のポップアップを閉じ、取りかけの始点と吸着の印も落とす
-    // (取りかけの操作を持ち越さない、NFR-UX-3)。選ぶ部分形状の種類(§0.a-0.6)も
+    // (取りかけの操作を持ち越さない、NFR-UX-3)。選ぶ部分形状の種類も
     // 道具に応じて自動で切り替える(selectionKindForTool は subShapeSelection.ts の
     // 1 か所だけに置き、ここで対応表を作り直さない)。
     set((state) => {
       /*
-        いま選んでいるものをそのまま材料にする道具(面をつなぐ・ロフト。§2.15 の「測る」と
+        いま選んでいるものをそのまま材料にする道具(面をつなぐ・ロフト。「測る」と
         同じ扱い)では種類を切り替えない。切り替えると下の `kindChanged` が真になり、押した
-        瞬間に材料の選択が消えてしまう(`keepsSelectionKind` の注釈、2026-09-05 の実測)。
+        瞬間に材料の選択が消えてしまう(`keepsSelectionKind` の注釈)。
       */
       const selectionKind = keepsSelectionKind(activeTool)
         ? state.selectionKind
@@ -285,20 +285,20 @@ export const createSketchSlice: StateCreator<
         numericInput: null,
         numericInputAnchor: null,
         pendingStart: null,
-        // 新しい図形の取りかけ(置いた点・前の段の値)も持ち越さない(タスク12)。
+        // 新しい図形の取りかけ(置いた点・前の段の値)も持ち越さない。
         shapeDraft: EMPTY_SHAPE_DRAFT,
         shapeErrorMessage: null,
-        // 基準ジオメトリの取りかけ(置いた点・選んだ決め方)も持ち越さない(タスク13)。
+        // 基準ジオメトリの取りかけ(置いた点・選んだ決め方)も持ち越さない。
         referenceDraft: EMPTY_REFERENCE_DRAFT,
         referenceErrorMessage: null,
-        // 3D スケッチで押した場所の面も持ち越さない(タスク14)。
+        // 3D スケッチで押した場所の面も持ち越さない。
         freeSketchPlane: null,
         snapIndicator: null,
         // 案内線も持ち越さない(道具が変われば向きを合わせる相手も変わる、FR-110)。
         trackIndicator: null,
         // 推定した拘束の予告も持ち越さない(線の道具をやめたら予告する相手がいない、FR-333)。
         inferredConstraints: null,
-        // 拘束の道具も持ち越さない(別の道具を押したらやめる、NFR-UX-3。P4b タスク13)。
+        // 拘束の道具も持ち越さない(別の道具を押したらやめる、NFR-UX-3)。
         activeConstraintKind: null,
         constraintTargets: NO_CONSTRAINT_TARGETS,
         constraintErrorMessage: null,
@@ -310,8 +310,8 @@ export const createSketchSlice: StateCreator<
         appearanceErrorKey: null,
         editNoticeKey: null,
         originNoticeMessage: null,
-        // 種類が変わったら、違う種類の選択が加工の対象に紛れ込まないよう選択を空にする
-        // (§0.a-0.6)。種類が変わらないときだけ、面の道具の掃除(§0.a-0.23 ⑨)を従来どおり行う。
+        // 種類が変わったら、違う種類の選択が加工の対象に紛れ込まないよう選択を空にする。
+        // 種類が変わらないときだけ、面の道具の掃除を従来どおり行う。
         selection: kindChanged
           ? []
           : activeTool === 'face'
@@ -323,7 +323,7 @@ export const createSketchSlice: StateCreator<
   replaceSketchFeature: (featureId, feature) => {
     const state = get();
     // 同じ要素への続けざまの書き換え(プロパティ欄の 1 文字ごと)は Undo の 1 段に
-    // まとめる(§0.a-0.13)。まとめないと Ctrl+Z が 1 文字ずつ戻る。
+    // まとめる。まとめないと Ctrl+Z が 1 文字ずつ戻る。
     state.applyDocument(
       replaceSketch(state.document, replaceFeature(state.sketch, featureId, feature)),
       { coalesceKey: `sketchFeature:${featureId}` },
@@ -332,7 +332,7 @@ export const createSketchSlice: StateCreator<
   removeSketchFeature: (featureId) => {
     const state = get();
     /*
-     * 要素を消したら、それを指している拘束も一緒に消す(FR-313、P4b タスク13)。
+     * 要素を消したら、それを指している拘束も一緒に消す(FR-313)。
      *
      * 残しておくと「指している要素がありません」の拘束が一覧に溜まり、診断の
      * `dangling` として毎回数えられる。取り消し(Ctrl+Z)は文書ごと 1 段で戻るので、
@@ -360,12 +360,12 @@ export const createSketchSlice: StateCreator<
   },
   numericInputRevision: 0,
   openNumericInput: (numericInput, numericInputAnchor) => {
-    // 開くのは新しい入力欄。同じ道具・同じ値でも前の入力欄とは別の持ち主にする(EX-14)。
+    // 開くのは新しい入力欄。同じ道具・同じ値でも前の入力欄とは別の持ち主にする。
     set((state) => ({ numericInput, numericInputAnchor, numericInputRevision: state.numericInputRevision + 1 }));
   },
   updateNumericInput: (numericInput) => {
     /*
-      欄を打ち直したら、推定した拘束の予告(FR-333、P6 タスク41)を捨てる。
+      欄を打ち直したら、推定した拘束の予告(FR-333)を捨てる。
 
       **予告はポインタが指している終点から作る**ので、そのあと利用者が欄へ別の座標を
       打ち込むと、予告した拘束(「水平」など)が打ち込んだ線に当てはまらなくなる。
@@ -377,14 +377,14 @@ export const createSketchSlice: StateCreator<
       「クリックで置く → Enter で確定」の道筋では予告はそのまま残る。
     */
     set((state) => ({ numericInput, inferredConstraints: null,
-      // 意味の変わる更新だけ通し番号を進める(焦点の移動・評価の表示だけでは進めない。EX-14)。
+      // 意味の変わる更新だけ通し番号を進める(焦点の移動・評価の表示だけでは進めない)。
       ...(state.numericInput !== null
         && numericInputSemanticKey(state.numericInput) === numericInputSemanticKey(numericInput)
         ? {} : { numericInputRevision: state.numericInputRevision + 1 }) }));
   },
   closeNumericInput: () => {
     // 取りかけの図形(置いた点・前の段の値)も一緒に捨てる。ポップアップが閉じたあとに
-    // 別の道具で置いた点と混ざらないようにするため(NFR-UX-3、タスク12)。
+    // 別の道具で置いた点と混ざらないようにするため(NFR-UX-3)。
     set((state) => ({
       numericInput: null,
       numericInputAnchor: null,

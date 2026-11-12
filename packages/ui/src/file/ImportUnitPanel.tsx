@@ -2,7 +2,7 @@ import { t } from '../i18n/t.js';
 import { answerImportUnit } from './exchangeActions.js';
 
 /**
- * 読み込んだファイルの単位を訊く小窓(計画書 docs/plans/P6-入出力.md §0.a-0.6、タスク32b)。
+ * 読み込んだファイルの単位を訊く小窓。
  *
  * 対応要件: FR-802、FR-811、NFR-UX-4(Enter 連打で意味のある結果)、
  * NFR-UX-5(できないことは押す前に断る / 誤操作を招く訊き方をしない)。
@@ -23,7 +23,7 @@ export function ImportUnitPanel(): React.JSX.Element {
       className="pcad-card pcad-import-unit"
       onSubmit={(event) => {
         event.preventDefault();
-        // Enter は既定のミリメートル(数をそのまま取り込む、§0.a-0.6 の既定)。
+        // Enter は既定のミリメートル(数をそのまま取り込む既定)。
         answerImportUnit('mm');
       }}
       onKeyDown={(event) => {

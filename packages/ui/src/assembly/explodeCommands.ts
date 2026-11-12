@@ -1,4 +1,4 @@
-/** P7 タスク35。分解ステップを作るまでの判断を DOM とストアから分離した純関数。 */
+/** 分解ステップを作るまでの判断を DOM とストアから分離した純関数。 */
 import { evaluateExpression } from '@pointercad/expression';
 import {
   addExplodeStep, assemblyExpressionContext,

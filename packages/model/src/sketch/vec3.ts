@@ -108,7 +108,7 @@ export function rotateAboutAxis(
 }
 
 /**
- * 平面(点+法線)に対する鏡像(FR-324、P4 §0.a-0.21、タスク20)。
+ * 平面(点+法線)に対する鏡像(FR-324)。
  *
  *   p' = p − 2 ((p − o) · n̂) n̂     (n̂ は単位法線、o は平面の上の 1 点)
  *
@@ -133,7 +133,7 @@ export function mirrorVec3(point: Vec3, planeOrigin: Vec3, planeNormal: Vec3): V
  * 比較や表示で「−0」が出ないようにするための後始末(`rotateDirection` の中と同じ理由)。
  *
  * `part/resolvePart.ts` にも同じ働きの私的な関数(`cleanZeroVec3`)がある。あちらを触る
- * タスクでこちらへ寄せて 1 か所にする(P4 タスク20 の申し送り)。
+ * タスクでこちらへ寄せて 1 か所にする。
  */
 export function cleanZeroVec3(vector: Vec3): Vec3 {
   return [
@@ -143,7 +143,7 @@ export function cleanZeroVec3(vector: Vec3): Vec3 {
   ];
 }
 
-/** スケッチの許容誤差(mm)。OCCT 既定の 1e-7 より一桁ゆるく取る(§0.14)。 */
+/** スケッチの許容誤差(mm)。OCCT 既定の 1e-7 より一桁ゆるく取る。 */
 export const SKETCH_TOLERANCE_MM = 1e-6;
 
 /** 2 点が同じ位置とみなせるか。端点のつながり判定に使う。 */

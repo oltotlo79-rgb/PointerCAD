@@ -1,7 +1,7 @@
 /**
- * P7 タスク51: 固定 WASM の XCAF 階層を実証する専用の口。公開 index へは載せない。
+ * 固定 WASM の XCAF 階層を実証する専用の口。公開 index へは載せない。
  *
- * 所有権の表 (rules/06 10.13・10.16):
+ * 所有権の表:
  * | 分類 | 対象 | 解放 |
  * | ① new の単独所有 | 文字列、ラベル列、ラベル、builder、変換、Location、reader/writer、GProps、境界箱、名前属性 | keep → release の逆順 |
  * | ② Handle へ所有移譲 | new TDocStd_Document → Handle_TDocStd_Document_2 | Handle だけ keep。本体は delete しない |

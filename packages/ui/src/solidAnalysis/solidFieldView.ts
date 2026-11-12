@@ -142,22 +142,22 @@ export const SOLID_RESULT_WARNING_KEYS = {
 /**
  * The only thresholds of the result warnings. Display only: no result is accepted or refused here, and the FEM
  * acceptance (packages/fem/src/solidAnalysisResults.ts: relative free-DOF residual <= 1e-8, scaled pivot > 1e-12) and the
- * W71/W72 verification tolerances are unchanged.
+ * FEM verification tolerances are unchanged.
  * - reentrantTurnDegrees: a boundary edge is re-entrant when its two outward face normals turn by more than 45 degrees
  *   towards the outside (interior angle above 225 degrees). Linear elasticity is singular at any re-entrant corner; the
  *   45 degrees only keeps facets of a smooth concave surface from being reported (the panel's default angular deflection
  *   0.3 rad turns at most 17 degrees per facet; a user value above 0.785 rad can report such facets). Shallower
  *   re-entrant corners (180-225 degrees) are not detected.
  * - residual: 1e-10, one hundredth of the FEM acceptance 1e-8. A healthy double LDL^T solve leaves about 1e-13; a
- *   residual in the top two accepted decades means lost digits. It is ten times inside the strictest solid W71 tolerance
+ *   residual in the top two accepted decades means lost digits. It is ten times inside the strictest solid verification tolerance
  *   (modal 1e-9), so no warning-free result can carry a solver error of that size.
  * - pivot: 1e-6. The smallest symmetrically scaled pivot p amplifies rounding by about eps / p; at p = 1e-6 that is
- *   2.2e-10, again inside the strictest solid W71 tolerance 1e-9. Smaller pivots mean a nearly unsupported model.
+ *   2.2e-10, again inside the strictest solid verification tolerance 1e-9. Smaller pivots mean a nearly unsupported model.
  * - averagingFraction: 0.1. Constant-stress Tet4 values jump between elements; the jump between an element value and
  *   its nodal average is the recovered-stress error estimate of Zienkiewicz and Zhu (Int. J. Numer. Meth. Eng. 24,
  *   1987). Ten percent of the peak von Mises stress is this product's display choice, not a published limit. A uniform
- *   field (every W71 single-element comparison) has a difference of exactly 0, so the threshold cannot conflict with
- *   the W71/W72 tolerances (<= 1e-3).
+ *   field (every single-element verification comparison) has a difference of exactly 0, so the threshold cannot conflict with
+ *   the verification tolerances (<= 1e-3).
  */
 export const SOLID_RESULT_WARNING_LIMITS = Object.freeze({
   reentrantTurnDegrees: 45, residual: 1e-10, pivot: 1e-6, averagingFraction: 0.1,

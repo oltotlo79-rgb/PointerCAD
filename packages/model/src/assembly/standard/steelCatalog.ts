@@ -264,7 +264,7 @@ function pipe(size: string, outsideDiameter: number, wallThickness: number,
     standardLengthsMm: [5500], dimensions: { outsideDiameter, wallThickness } };
 }
 
-/** sources.md §2・§4: draft standard dimensions, never stock or treatment/strength guarantees. */
+/** Draft standard dimensions, never stock or treatment/strength guarantees. */
 function hotS45c(catalog: 'roundBar' | 'flatBar', size: string, dimensions: SteelProduct['dimensions']): SteelProduct {
   return { key: `S45C:${catalog}:${size}:hotRolled`, catalog, size, materialGrade: 'S45C',
     materialStandard: 'JIS G 4051', productStandard: catalog === 'roundBar' ? 'JIS G 4051' : 'JIS G 3194',
@@ -277,7 +277,7 @@ function hotS45c(catalog: 'roundBar' | 'flatBar', size: string, dimensions: Stee
     geometry: 'nominal', standardLengthsMm: [], dimensions };
 }
 
-/** W5: only SS400 dimensions present in the JISF drafts, separate from frozen producer rows. */
+/** Only SS400 dimensions present in the JISF drafts, separate from frozen producer rows. */
 function ss400Standard(catalog: 'flatBar' | 'roundBar', size: string,
   dimensions: SteelProduct['dimensions']): SteelProduct {
   return { key: `SS400:${catalog}:${size}`, catalog, size, materialGrade: 'SS400',
@@ -291,7 +291,7 @@ function ss400Standard(catalog: 'flatBar' | 'roundBar', size: string,
     geometry: 'nominal', standardLengthsMm: [], dimensions };
 }
 
-/** W6d: draft table 8/12 additions, separate from every frozen producer row. */
+/** Draft table 8/12 additions, separate from every frozen producer row. */
 function ss400SectionStandard(catalog: 'equalAngle' | 'channel', size: string): SteelProduct {
   const evidence = catalog === 'equalAngle' ? 'ssAngleDraft' : 'ssChannelDraft';
   return { key: `SS400:${catalog}:${size}`, catalog, size, materialGrade: 'SS400',
@@ -303,7 +303,7 @@ function ss400SectionStandard(catalog: 'equalAngle' | 'channel', size: string): 
     geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE[evidence], standardLengthsMm: [] };
 }
 
-/** W7: table 15 additions only; keep every existing producer row and saved string. */
+/** Table 15 additions only; keep every existing producer row and saved string. */
 function ss400HBeamStandard(size: string): SteelProduct {
   return { key: `SS400:hBeam:${size}`, catalog: 'hBeam', size, materialGrade: 'SS400',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192', condition: hot,
@@ -351,7 +351,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     [36, [50, 65, 75, 90, 100, 125, 150, 200]],
   ] as const).flatMap(([thickness, widths]) => widths.map((width) =>
     hotS45c('flatBar', `FB ${width}×${thickness}`, { width, thickness }))),
-  // W5, G 3194 draft PDF p6 tables 1/2: all 132 standard pairs, minus the frozen five above.
+  // G 3194 draft PDF p6 tables 1/2: all 132 standard pairs, minus the frozen five above.
   ...([
     [4.5, [25, 32, 38, 44, 50, 65, 75, 90, 100, 125, 150, 200]],
     [6, [25, 32, 38, 44, 65, 75, 90, 125, 150, 200]],
@@ -366,12 +366,12 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     [36, [25, 32, 38, 44, 50, 65, 75, 90, 100, 125, 150, 200]],
   ] as const).flatMap(([thickness, widths]) => widths.map((width) =>
     ss400Standard('flatBar', `FB ${width}×${thickness}`, { width, thickness }))),
-  // W5, G 3191 draft PDF p6 table 1: 44 unparenthesized diameters, minus the frozen five.
+  // G 3191 draft PDF p6 table 1: 44 unparenthesized diameters, minus the frozen five.
   // Clause 5.1: diameters below 9 mm refer to bar-in-coil; no cut-stock supply is asserted.
   ...[5.5, 6, 7, 8, 9, 10, 11, 12, 20, 24, 28, 30, 32, 36, 38, 42, 46, 48, 50,
     55, 56, 60, 64, 65, 70, 75, 80, 85, 90, 95, 100, 110, 120, 130, 140, 150, 160, 180, 200]
     .map((diameter) => ss400Standard('roundBar', `φ${diameter}`, { diameter })),
-  // W6d: JISF G 3192 draft tables 8/12, transcribed g3192-tables.json.
+  // JISF G 3192 draft tables 8/12, transcribed g3192-tables.json.
   ...[
     'L 120×120×8',
     'L 130×130×9',
@@ -398,7 +398,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     '[ 380×100×13×16.5',
     '[ 380×100×13×20',
   ].map((size) => ss400SectionStandard('channel', size)),
-  // W7: JISF G 3192 draft 2024-07-24, table 15, PDF p21–22; final standard and supply lengths unverified.
+  // JISF G 3192 draft 2024-07-24, table 15, PDF p21–22; final standard and supply lengths unverified.
   ...[
     'H 100×50×5×7',
     'H 125×60×6×8',
@@ -447,7 +447,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     'H 912×302×18×34',
     'H 918×303×19×37',
   ].map(ss400HBeamStandard),
-  // W8b: JISF G 3452 draft table 4, PDF p10 / printed p6; black additions and all -ZN white pipes.
+  // JISF G 3452 draft table 4, PDF p10 / printed p6; black additions and all -ZN white pipes.
   ...([
     ['6A', 10.5, 2.0, 'T4-01', true],
     ['8A', 13.8, 2.3, 'T4-02', true],

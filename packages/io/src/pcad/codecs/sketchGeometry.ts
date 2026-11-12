@@ -31,7 +31,7 @@ import {
 } from '@pointercad/model';
 
 /**
- * オフセット(FR-321、P4 タスク15)の側と角。`model` の `OffsetSide` /
+ * オフセット(FR-321)の側と角。`model` の `OffsetSide` /
  * `OffsetCornerKind` と同じ2値ずつ。
  */
 const OFFSET_SIDES: readonly OffsetSide[] = ['outside', 'inside'];
@@ -337,7 +337,7 @@ export function readSplineFeature(
 }
 
 /**
- * オフセット(FR-321、P4 タスク15)を読む。
+ * オフセット(FR-321)を読む。
  * ずらした後の曲線は保存されていない(再計算で導く)ので、読むのは元の要素・距離・
  * 側・角だけ。距離の符号は使わず、どちら側かは `side` が持つ。
  */
@@ -381,7 +381,7 @@ export function readOffsetFeature(
 }
 
 /**
- * 投影(FR-325、P4 タスク25)を読む。
+ * 投影(FR-325)を読む。
  * 投影された曲線は保存されていない(立体と作図面から再計算で導く)ので、
  * 読むのは投影元の面・辺への参照だけ。
  */
@@ -409,7 +409,7 @@ export function readProjectedCurveFeature(
   };
 }
 
-/** 交差(FR-325、P4 タスク25)を読む。断面を取る立体の id だけを持つ。 */
+/** 交差(FR-325)を読む。断面を取る立体の id だけを持つ。 */
 export function readPlaneSectionFeature(
   record: Record<string, unknown>,
   path: string,

@@ -16,7 +16,7 @@ export function toKeyVec3(vector: Vec3): KeyVec3 {
   return [vector[0], vector[1], vector[2]];
 }
 
-/** 剛体変換を鍵の材料へ詰め替える(パターン、タスク16)。欄名は cacheKey.ts の KeyTransform と同じ。 */
+/** 剛体変換を鍵の材料へ詰め替える(パターン)。欄名は cacheKey.ts の KeyTransform と同じ。 */
 export function toKeyTransform(transform: RigidTransform): KeyTransform {
   return {
     translation: toKeyVec3(transform.translation),
@@ -136,7 +136,7 @@ export function toKeyExtrudeEnd(end: ExtrudeEndPlan): ExtrudeEndKeyMaterial {
 }
 
 /**
- * 穴の入口を鍵の材料へ詰め替える(cacheKey.ts の `HoleEntryKeyMaterial`、タスク46)。
+ * 穴の入口を鍵の材料へ詰め替える(cacheKey.ts の `HoleEntryKeyMaterial`)。
  * 段に欄が無い(広げない)ときは `{ kind: 'plain' }` を渡す——`keyHoleEntryExtra` が
  * `plain` を鍵の文字列に出さないので、省略と「広げない」は同じ鍵になる。
  */
@@ -151,7 +151,7 @@ export function toKeyHoleEntry(entry: HoleEntryPlan | undefined): HoleEntryKeyMa
 
 /**
  * 丸める半径を鍵の材料へ詰め替える(cacheKey.ts の `FilletRadiusKeyMaterial`)。
- * 一定半径は数 1 つのままなので、P3 からの R 面取りの鍵は 1 文字も変わらない。
+ * 一定半径は数 1 つのままなので、従来の R 面取りの鍵は 1 文字も変わらない。
  */
 export function toKeyFilletRadius(radius: FilletRadiusPlan): FilletRadiusKeyMaterial {
   return typeof radius === 'number' ? radius : { start: radius.start, end: radius.end };

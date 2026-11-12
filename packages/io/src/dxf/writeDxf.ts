@@ -1,36 +1,36 @@
 /**
- * 実体(`DxfEntity`)を DXF R12(AC1009)のテキストへ書き出す(要件 FR-813、
- * 計画書 docs/plans/P6-入出力.md §2.7 タスク25)。
+ * 実体(`DxfEntity`)を DXF R12(AC1009)のテキストへ書き出す
+ * (要件 FR-813)。
  *
  * 書き出しの 2 段のうちの 1 段目にあたる(読み込みの `readDxf.ts` の逆向き)。
  *
  * ```
- * SketchFeature[] → sketchToDxf(sketch) : DxfEntity[] … スケッチの写し(タスク26。model 側)
+ * SketchFeature[] → sketchToDxf(sketch) : DxfEntity[] … スケッチの写し(model 側)
  *                 → writeDxf(entities)  : string      … この段
  * ```
  *
  * ## 何を書き、何を書かないか
  *
- * - **版は R12(`$ACADVER` = `AC1009`)**(§0.a-0.30 の承認)。R12 は `ENTITIES` だけで
+ * - **版は R12(`$ACADVER` = `AC1009`)**。R12 は `ENTITIES` だけで
  *   図が成り立つ最も単純な版で、どの CAD も読める。新しい版は `OBJECTS` / `CLASSES` と
  *   拡張辞書が要り、書く量が 3 倍になる。
- * - **単位は mm 固定(`$INSUNITS` = 4)**(§0.a-0.7「書き出しは常に mm」)。
+ * - **単位は mm 固定(`$INSUNITS` = 4)**(「書き出しは常に mm」)。
  *   表示の単位が inch でもファイルの中身は mm(NFR-RE-3)。
  * - **`TABLES` は `LTYPE`(`CONTINUOUS` 1 本)と `LAYER`(使ったレイヤーぶん)だけ**書く。
- *   §2.7 の骨組みは `HEADER` / `ENTITIES` / `EOF` しか描いていないが、**実体が名指しした
+ *   当初の骨組みは `HEADER` / `ENTITIES` / `EOF` しか描いていないが、**実体が名指しした
  *   レイヤーと線種が表に無い DXF を断る読み手がある**ので、「他 CAD で開ける最小」
- *   (タスク25 の検証表の判断基準)を満たすためにこの 2 つだけ足す。逆に
+ *   (検証の表の判断基準)を満たすためにこの 2 つだけ足す。逆に
  *   `VPORT` / `STYLE` / `VIEW` は名指ししないので書かない。
- * - P8の`writeDxfDocument`はTEXT・SOLID・3次元POLYLINEとLAYER・LTYPE・STYLEを扱う。
+ * - 図面の`writeDxfDocument`はTEXT・SOLID・3次元POLYLINEとLAYER・LTYPE・STYLEを扱う。
  *   従来の`writeDxf`の入出力を保ち、図面だけが追加の表を指定する。日本語はR12のCIF表現で書く。
  *
  * ## R12 に無い実体の落とし方(楕円・自由曲線)
  *
  * `ELLIPSE` と `SPLINE` と `LWPOLYLINE` は **R13 以降**の実体で、R12 には無い。
- * §0.a-0.30 は「書き出しは R12」と「書き出す実体に `ELLIPSE` / `SPLINE` / `LWPOLYLINE` を
+ * 設計の決めは「書き出しは R12」と「書き出す実体に `ELLIPSE` / `SPLINE` / `LWPOLYLINE` を
  * 含める」を両方書いていて、そのままでは両立しない。**版のほうを守り、楕円と自由曲線は
  * `POLYLINE` + `VERTEX` + `SEQEND`(R12 で読める折れ線)へ落とす**ことにした。理由は、
- * §0.a-0.30 が R12 を選んだ根拠が「どの CAD も読める」ことであり、AC1009 と名乗る
+ * R12 を選んだ根拠が「どの CAD も読める」ことであり、AC1009 と名乗る
  * ファイルに R13 の実体を混ぜると**その根拠がそのまま崩れる**ため。
  * 形が変わる読み替えなので、**落とした本数を `DxfWriteResult.flattenedCurveCount` に残す**
  * (案内を出すかどうかは画面を持つ上の段の判断。FR-504「止めずに警告する」)。
@@ -47,7 +47,7 @@
  * 3 つ目に写すと、画面に見えている曲線と書き出した折れ線が食い違う**ため。
  * (同じ式は kernel と model に既に 2 つあり、model 側の注釈がその事情を書いている。)
  *
- * ## 決定性(§0.a-0.62)
+ * ## 決定性
  *
  * 同じ実体の列からは必ず同じ文字列ができる。日時・作成者・乱数を一切書かず、
  * 数の書き方を `formatDxfNumber` の 1 か所へ寄せ(9 桁で丸め・末尾の 0 を落とし・`-0` を
@@ -77,19 +77,19 @@ import type {
  */
 export const DXF_WRITE_INVALID_VALUE_MESSAGE = 'DXF に書き出せない値の図形が含まれています。';
 
-/** 書き出す版(§0.a-0.30)。 */
+/** 書き出す版。 */
 export const DXF_WRITE_ACAD_VERSION = 'AC1009';
 
-/** 書き出す単位(§0.a-0.7。4 = mm)。 */
+/** 書き出す単位(4 = mm)。 */
 export const DXF_WRITE_INSUNITS = 4;
 
-/** 実体がレイヤーを持たないときに使うレイヤー(§0.a-0.30「レイヤーは 1 枚(`0`)だけ」)。 */
+/** 実体がレイヤーを持たないときに使うレイヤー(「レイヤーは 1 枚(`0`)だけ」)。 */
 const DEFAULT_LAYER = '0';
 
 /** すべての実体が使う線種。R12 の `LTYPE` 表に 1 本だけ書く。 */
 const CONTINUOUS_LINETYPE = 'CONTINUOUS';
 
-/** 小数点以下の桁数(§2.7「小数点以下 9 桁」。`.pcad` の丸めと揃える)。 */
+/** 小数点以下の桁数(「小数点以下 9 桁」。`.pcad` の丸めと揃える)。 */
 const DECIMALS = 9;
 
 /** 全周の楕円を折れ線へ落とすときの分割数(5 度ごと)。**分割の細かさはここ 1 か所。** */
@@ -113,7 +113,7 @@ const POLYLINE_CLOSED_FLAG = 1;
 /** レイヤーの表に書く色(7 = 白/黒。図の色は実体ごとの 62 で持つ)。 */
 const LAYER_TABLE_COLOR = 7;
 
-/** 書き出しの結果。**上の段(タスク26)が案内の文言を組み立てるための材料を持つ。** */
+/** 書き出しの結果。**上の段が案内の文言を組み立てるための材料を持つ。** */
 export interface DxfWriteResult {
   /** DXF のテキスト(改行は `\r\n`)。 */
   readonly text: string;
@@ -126,14 +126,14 @@ export interface DxfWriteResult {
 
 /**
  * 折れ線へ落とした曲線があったときに見せる日本語(NFR-UX-5)。
- * 文言を組み立てる場所を 1 か所にして、画面(P6 の書き出しの窓)と検査で同じ文にする。
+ * 文言を組み立てる場所を 1 か所にして、画面(書き出しの窓)と検査で同じ文にする。
  */
 export function dxfFlattenedCurveMessage(count: number): string {
   return `${String(count)} 個の曲線は折れ線に近づけて書き出しました。`;
 }
 
 /**
- * 数を DXF の値として書く形にする(§2.7)。
+ * 数を DXF の値として書く形にする。
  *
  * - **小数点以下 9 桁で丸める**(`.pcad` の 9 桁の丸めと揃える)。
  * - **末尾の 0 を落とす**(`1.500000000` ではなく `1.5`)。
@@ -213,7 +213,7 @@ function baseTags(entity: DxfEntityBase): DxfTag[] {
   return tags;
 }
 
-/** 1 点(グループ `code` / `code + 10` / `code + 20`)。**Z は必ず 0**(平らな図。§0.a-0.34)。 */
+/** 1 点(グループ `code` / `code + 10` / `code + 20`)。**Z は必ず 0**(平らな図)。 */
 function pointTags(code: number, point: DxfPoint2d): DxfTag[] {
   return [numberTag(code, point.x), numberTag(code + 10, point.y), numberTag(code + 20, 0)];
 }
@@ -232,7 +232,7 @@ function writeLineEntity(entity: DxfLineEntity): DxfTag[] {
 }
 
 /**
- * 円弧。**全周なら `CIRCLE`、それ以外は `ARC`**(§2.7)。
+ * 円弧。**全周なら `CIRCLE`、それ以外は `ARC`**。
  *
  * `ARC` の開始角(50)・終了角(51)は**度**で、**DXF の円弧は必ず反時計回りに
  * 50 から 51 へ回る**。実体のほうは `endAngle − startAngle` が符号つきの中心角なので、
@@ -416,7 +416,7 @@ function writeEntity(entity: DxfWriteEntity): { readonly tags: DxfTag[]; readonl
   }
 }
 
-/** `HEADER` セクション。**版と単位だけ**を書く(§2.7 の骨組み)。 */
+/** `HEADER` セクション。**版と単位だけ**を書く。 */
 function headerTags(): DxfTag[] {
   return [
     tag(0, 'SECTION'),
@@ -510,7 +510,7 @@ export function writeDxfDocument(entities: readonly DxfWriteEntity[], options?: 
 }
 
 /**
- * 実体の列を DXF R12 のテキストへ書き出す(計画書 タスク25 手順 2 の入口)。
+ * 実体の列を DXF R12 のテキストへ書き出す(書き出しの入口)。
  * 折れ線へ落とした曲線の数が要るときは `writeDxfDocument` を使う。
  *
  * @throws {Error} `writeDxfDocument` と同じ。
@@ -520,7 +520,7 @@ export function writeDxf(entities: readonly DxfEntity[]): string {
 }
 
 
-/** P8: P6のHEADER/ENTITIES/EOFを維持し、表と文字用STYLEだけを拡張する。 */
+/** 図面: 従来のHEADER/ENTITIES/EOFを維持し、表と文字用STYLEだけを拡張する。 */
 function drawingTablesTags(entities: readonly DxfWriteEntity[], options: DxfWriteOptions): DxfTag[] {
   const types = options.lineTypes;
   const names = new Set(types.map((lineType) => lineType.name));

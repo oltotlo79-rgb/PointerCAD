@@ -9,9 +9,9 @@ import type { SolidFieldKey, SolidFieldSummary } from './solidPropertyContracts.
 /**
  * 欄の見出し・説明・単位。その場数値入力(numericInput.ts)と同じ言葉を使う。
  *
- * ピッチ・下穴径・傾き・傾ける向きはその場入力を持たない(§0.a-0.10「その場入力には出さず
+ * ピッチ・下穴径・傾き・傾ける向きはその場入力を持たない(「その場入力には出さず
  * プロパティでだけ編集」、下穴径はねじの呼びから自動で決まる)ので専用の tooltip キーが
- * 無い。ラベルと同じキーを tooltip にも使う(ja.json を増やさない、計画書 §4)。
+ * 無い。ラベルと同じキーを tooltip にも使う(ja.json を増やさない)。
  */
 /** 0 より大きい数だけ(厚み・半径・長さ)。その場入力の `POSITIVE` と同じ形。 */
 const POSITIVE_RANGE: NumericFieldRange = {
@@ -61,7 +61,7 @@ const SURFACE_ANGLE_RANGE: NumericFieldRange = {
   maxInclusive: true,
 };
 
-/** 切る面の傾き(度)。§2.9b の断りと同じ 0 以上 180 度未満。 */
+/** 切る面の傾き(度)。切断の断りと同じ 0 以上 180 度未満。 */
 export const PLANE_TILT_RANGE: NumericFieldRange = {
   min: 0,
   minInclusive: true,
@@ -187,7 +187,7 @@ const FIELD_DEFINITIONS: Readonly<
     tooltipKey: 'numericInput.tooltip.springLength',
     unit: 'mm',
   },
-  // 面をつなぐ・ロフトのねじれ(タスク27)。その場入力の欄とまったく同じ文言キーを使う
+  // 面をつなぐ・ロフトのねじれ。その場入力の欄とまったく同じ文言キーを使う
   // (同じ数を 2 通りの名前で呼ばない)。単位は個(頂点の数)。
   ruledTwist: {
     labelKey: 'numericInput.field.ruledTwist',
@@ -195,8 +195,8 @@ const FIELD_DEFINITIONS: Readonly<
     unit: 'count',
   },
   /*
-    P5 の Should / Could 群と切断(タスク52・27f・55)。見出し・説明・単位・範囲は
-    **その場入力(numericInput.ts、タスク49・50・27e)とまったく同じ文言キー**にする。
+    Should / Could 群と切断。見出し・説明・単位・範囲は
+    **その場入力(numericInput.ts)とまったく同じ文言キー**にする。
     同じ数を 2 通りの名前で呼ばないための決めで、ばね・面をつなぐと同じ流儀。
   */
   taperAngle: {
@@ -246,7 +246,7 @@ const FIELD_DEFINITIONS: Readonly<
     tooltipKey: 'numericInput.tooltip.holePlanarY',
     unit: 'mm',
   },
-  // 円筒の側面の穴(EX05)。範囲は付けない(面の上にあるかは kernel が実際の面の境界で決め、
+  // 円筒の側面の穴。範囲は付けない(面の上にあるかは kernel が実際の面の境界で決め、
   // 外なら理由を出して断る。角度は何周しても同じ向き)。
   holeCylinderHeight: {
     labelKey: 'numericInput.field.holeCylinderHeight',
@@ -368,10 +368,10 @@ const FIELD_DEFINITIONS: Readonly<
 };
 
 /**
- * readOnly は既定 false。既存の呼び出し(加工6種・パターン)は1つも変えない(タスク29b)。
+ * readOnly は既定 false。既存の呼び出し(加工6種・パターン)は1つも変えない。
  *
  * `range` は**持っている欄にだけ**足す(持たない欄の要約に `range: undefined` の欄を
- * 生やさない)。P1〜P4 からある欄は範囲を持たないので、要約の形もそのまま変わらない。
+ * 生やさない)。以前からある欄は範囲を持たないので、要約の形もそのまま変わらない。
  */
 export function fieldSummary(
   key: SolidFieldKey,

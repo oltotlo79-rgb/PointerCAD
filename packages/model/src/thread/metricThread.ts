@@ -1,5 +1,5 @@
 /**
- * JIS メートル並目・細目ねじ(M2〜M64)の採用データ(計画書 §2.5、FR-406)。
+ * JIS メートル並目・細目ねじ(M2〜M64)の採用データ(FR-406)。
  *
  * 呼び径と並目ピッチ、および本アプリで採用する細目ピッチを保持する。
  * 細目は各径に複数ある組合せから1値を採用しており、使用頻度の順位を意味しない。
@@ -33,7 +33,7 @@ export interface MetricThreadSize {
 export type ThreadSeries = 'coarse' | 'fine';
 
 /**
- * 表(M2〜M64、28行)。`D1` / `d2` の列は持たない(計算で出す、§0.a-0.13)。
+ * 表(M2〜M64、28行)。`D1` / `d2` の列は持たない(計算で出す)。
  * 呼び径の昇順に並べる。
  */
 export const METRIC_THREADS: readonly MetricThreadSize[] = [
@@ -77,13 +77,13 @@ export function threadTriangleHeight(pitch: number): number {
 
 /**
  * めねじ内径 D1 = d − 2·(5/8)H = d − (5√3/8)·P(ISO 68-1 の基本山形)。
- * 下穴の径にも使う(§0.a-0.14)。工具のドリル径(JIS B 1004)とは別の値(§2.5.2)。
+ * 下穴の径にも使う。工具のドリル径(JIS B 1004)とは別の値(§2.5.2)。
  */
 export function threadMinorDiameter(diameter: number, pitch: number): number {
   return diameter - 2 * (5 / 8) * threadTriangleHeight(pitch);
 }
 
-/** 有効径 d2 = d − 2·(3/8)H = d − (3√3/8)·P(ISO 68-1 の基本山形)。P6 の図面で使う。 */
+/** 有効径 d2 = d − 2·(3/8)H = d − (3√3/8)·P(ISO 68-1 の基本山形)。図面で使う。 */
 export function threadPitchDiameter(diameter: number, pitch: number): number {
   return diameter - 2 * (3 / 8) * threadTriangleHeight(pitch);
 }
@@ -110,5 +110,5 @@ export function metricThreadPitch(size: MetricThreadSize, series: ThreadSeries):
 export const METRIC_THREAD_DESIGNATIONS: readonly string[] =
   METRIC_THREADS.map((size) => size.designation);
 
-/** 既定の呼び。最も使われるサイズ(§0.a-0.13 の例にも使われている M6)。 */
+/** 既定の呼び。最も使われるサイズ(M6)。 */
 export const DEFAULT_THREAD_DESIGNATION = 'M6';

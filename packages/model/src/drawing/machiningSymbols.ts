@@ -25,7 +25,7 @@ function entryTokens(entry: HoleEntry | undefined, holeDiameter: number): readon
   return [symbol('countersink'), text(`φ${number(entry.diameter.value)}${angle}`)];
 }
 
-/** フィーチャーの現在の式の値から注記を作る。記号の字体への依存は持たない(P8-33)。 */
+/** フィーチャーの現在の式の値から注記を作る。記号の字体への依存は持たない。 */
 export function machiningSymbols(feature: MachiningFeature, options: {
   /** 等距離/2距離の面取りは、対象面から解決した角度を与えた場合だけC表記にする。 */
   readonly chamferAngleDegrees?: number;

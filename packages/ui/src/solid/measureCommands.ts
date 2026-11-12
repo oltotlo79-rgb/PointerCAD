@@ -1,13 +1,13 @@
 import { subVec3 as subtract } from '@pointercad/model/vec3';
 /**
- * 「測る」の道具の組み立て(計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク32、
- * §2.10、§0.a-0.29〜0.32、§0.a-0.68、§0.a-0.69)。
+ * 「測る」の道具の
+ * 組み立て。
  *
  * 対応要件: FR-1101(体積・質量・重心・慣性モーメント)、FR-1102(距離・角度・長さ・面積)、
  * FR-905、NFR-UX-1、NFR-UX-5、NFR-PF-4。
  *
- * **判断は `solid/measure.ts`(タスク30)、描き方は `viewport/createMeasureLayer.ts`
- * (タスク31)にある。この場はその 2 つをつなぐ。** つまり
+ * **判断は `solid/measure.ts`、描き方は `viewport/createMeasureLayer.ts`
+ * にある。この場はその 2 つをつなぐ。** つまり
  * ①何を測れるか(`measureReadiness`)を押せる条件へ直し、
  * ②一覧から出せるものは往復せずに測り(`measureLocally`)、
  * ③出せないものだけカーネルへ聞き(`KernelBridge.measure`)、
@@ -16,7 +16,7 @@ import { subVec3 as subtract } from '@pointercad/model/vec3';
  * DOM にも three.js にもストアにも触れない(`createPartMeasurer` だけが橋渡しの関数を
  * 受け取るが、それも呼ぶ相手を渡してもらうだけで、自分では何も掴まない)。
  * 判断を Node の単体検査で固定できるようにするため
- * (`docs/報告記録.md` 2026-09-02 23:09「操作の判断は純関数へ切り出して検査する」)。
+ * (「操作の判断は純関数へ切り出して検査する」方針)。
  */
 
 import { expressionValueFromNumber } from '@pointercad/expression';
@@ -79,7 +79,7 @@ const READY: SolidToolReadiness = { ready: true, reasonKey: null };
 /**
  * 「測る」がいま押せるか(NFR-UX-5「実行してから失敗させない」)。
  *
- * 判断そのものは `measureReadiness`(タスク30)の 1 か所だけに置き、ここは
+ * 判断そのものは `measureReadiness`の 1 か所だけに置き、ここは
  * ツールバーが読む形(`SolidToolReadiness`)へ詰め替える。断りの文言も
  * `measureRejectionMessageKey` が持つものをそのまま使うので、ツールチップ・帯・
  * プロパティ欄のどこで見ても同じ日本語になる(NFR-MA-5)。
@@ -165,14 +165,14 @@ export function describeMeasureKinds(kinds: readonly MeasureKind[]): string {
  * 値の表示(プロパティ欄。§2 の決定)
  * ------------------------------------------------------------------------- */
 
-/** 角度の小数の桁数(統括の指示: 角度は度で小数 2 桁)。 */
+/** 角度の小数の桁数(角度は度で小数 2 桁)。 */
 const ANGLE_FRACTION_DIGITS = 2;
 
 /**
  * プロパティ欄に出す値(FR-1101、FR-1102)。
  *
  * **画面の札(`formatMeasure`、小数 3 桁)とは書式が違う。** 札は「ひと目で読む」ための
- * 幅の揃った数で、こちらは「読み取って書き写す」ための数だから(統括の指示: 距離は
+ * 幅の揃った数で、こちらは「読み取って書き写す」ための数だから(距離は
  * `formatDisplayLength`、角度は度で小数 2 桁)。mm の長さは 1000mm 以上で m へ、
  * mm の面積・体積は有効数字 12 桁、inch の長さ・面積・体積は小数 3 桁で出す。
  */
@@ -235,14 +235,14 @@ export function formatMeasurePoint(point: Vec3, unit: LengthUnit = 'mm'): string
   return `${numbers.join(NUMBER_SEPARATOR)} ${t('measure.unit.millimeter')}`;
 }
 
-/** 主軸まわりの慣性モーメント 3 つの表示(単位は g·mm²、§0.a-0.32)。 */
+/** 主軸まわりの慣性モーメント 3 つの表示(単位は g·mm²)。 */
 export function formatMoments(moments: readonly [number, number, number]): string {
   const numbers = moments.map((value) => displayNumber(value));
   return `${numbers.join(NUMBER_SEPARATOR)} ${t('propertyPanel.unitGramMillimeterSquared')}`;
 }
 
 /* ---------------------------------------------------------------------------
- * 画面へ出す 1 件を組み立てる(§2.10.3)
+ * 画面へ出す 1 件を組み立てる
  * ------------------------------------------------------------------------- */
 
 
@@ -372,7 +372,7 @@ function directionFrom(apex: Vec3, edge: SolidEdgeEntry): Vec3 {
 }
 
 /**
- * 一覧から出せた結果を、画面へ出す 1 件(`MeasurementState`)へ組み立てる(タスク31)。
+ * 一覧から出せた結果を、画面へ出す 1 件(`MeasurementState`)へ組み立てる。
  *
  * 線を引ける測定(距離・長さ)は `result.segment` がそのまま使われ、角度はここで
  * 描き方(`MeasureAngleSpec`)を組み立て、面積・体積は札を置く場所(`anchor`)だけを渡す。
@@ -385,7 +385,7 @@ export function measurementOf(
 ): MeasurementState {
   return {
     result,
-    // 札の数だけを表示の単位で出す(FR-811、P6 タスク3)。省くと mm。
+    // 札の数だけを表示の単位で出す(FR-811)。省くと mm。
     text: formatMeasure(result, unit),
     angle: angleSpecOf(result.kind, targets, bodies),
     anchor: anchorOf(result.kind, targets, bodies),
@@ -430,7 +430,7 @@ function anchorOf(
 }
 
 /**
- * カーネルが返した最短距離を、画面へ出す 1 件へ組み立てる(§0.a-0.30、§0.a-0.69)。
+ * カーネルが返した最短距離を、画面へ出す 1 件へ組み立てる。
  * 線は 2 つの最近点を結ぶ 1 本になる(`buildMeasureShapes` がそのまま引く)。
  */
 export function measurementFromDistance(
@@ -451,7 +451,7 @@ export function measurementFromDistance(
 }
 
 /* ---------------------------------------------------------------------------
- * 質量特性(FR-1101、§0.a-0.31、§0.a-0.32)
+ * 質量特性(FR-1101)
  * ------------------------------------------------------------------------- */
 
 /**
@@ -459,7 +459,7 @@ export function measurementFromDistance(
  *
  * **密度の掛け算はここでは行わない。** 材料は利用者がプロパティ欄で切り替えるものなので、
  * 掛けるのは表示の直前(`massPropertiesView`)で、しかも model の関数
- * (`massFromVolume` / `inertiaWithDensity`)だけを使う(統括の決定: 密度の掛け算は
+ * (`massFromVolume` / `inertiaWithDensity`)だけを使う(密度の掛け算は
  * model の 1 か所)。
  */
 export interface MassPropertiesResult {
@@ -485,7 +485,7 @@ export interface MassPropertiesView {
 }
 
 /**
- * 密度(g/cm³)を掛けて、画面に出す質量と慣性モーメントを求める(FR-1101、§0.a-0.32)。
+ * 密度(g/cm³)を掛けて、画面に出す質量と慣性モーメントを求める(FR-1101)。
  * 計算そのものは model の 2 関数に任せ、ここでは 1 つも数を丸めない(rules/04)。
  */
 export function massPropertiesView(
@@ -508,7 +508,7 @@ export function isValidDensity(value: number): boolean {
 }
 
 /**
- * その立体の材料の既定(§0.a-0.31)。**外観のプリセットに対応する材料**を選ぶので、
+ * その立体の材料の既定。**外観のプリセットに対応する材料**を選ぶので、
  * アルミの外観を付けた立体はアルミの密度(2.68 g/cm³)で始まる。対応が無い外観
  * (既定・鏡など)では鋼(`DEFAULT_DENSITY_MATERIAL_ID`)にする。
  */
@@ -529,7 +529,7 @@ export function densityOf(materialId: string): number {
 }
 
 /* ---------------------------------------------------------------------------
- * カーネルへの問い合わせ(§0.a-0.30)
+ * カーネルへの問い合わせ
  * ------------------------------------------------------------------------- */
 
 /** 測る相手を model の橋渡しの言葉へ詰め替える(指紋つきの参照をそのまま渡す)。 */
@@ -546,7 +546,7 @@ export function toModelMeasureTargets(
  * 覚えてある形を測る手立て(ストアが持ち、`PointerCadApp` が差し出す)。
  *
  * `PartRecomputer` と同じ形で、カーネル(Worker)を持たない検査では偽物を差し込める。
- * **再計算は起こさない読み取り**(§0.a-0.30)なので、形がキャッシュに無ければ
+ * **再計算は起こさない読み取り**なので、形がキャッシュに無ければ
  * カーネルは `kind: 'failed'` を返す(落とさない、NFR-RE-1)。
  */
 export type PartMeasurer = (
@@ -570,13 +570,13 @@ export interface PartMeasurerDeps extends CachedResolveDeps {
 }
 
 /**
- * 測る手立てを組み立てる(タスク32)。
+ * 測る手立てを組み立てる。
  *
  * カーネルは**段の鍵**(`ResolvedSolidStep.key`)でしか形を引けないので、測る前に
- * 文書を解き直して段の一覧を作る。その解き方は `resolveCachedSteps`(書き出しと共有。
- * P6 タスク32b)にあり、ここは覚え書きを渡して測る相手を添えるだけにする。
+ * 文書を解き直して段の一覧を作る。その解き方は `resolveCachedSteps`(書き出しと共有)
+ * にあり、ここは覚え書きを渡して測る相手を添えるだけにする。
  * 覚え書きに無いものがあれば鍵が食い違い、カーネルが「測れませんでした。もう一度
- * お試しください。」を返す(§0.a-0.30 の断りと同じ文言。落とさない)。
+ * お試しください。」を返す(カーネルの断りと同じ文言。落とさない)。
  */
 export function createPartMeasurer(deps: PartMeasurerDeps): PartMeasurer {
   return (document, targets, kind) =>
@@ -609,8 +609,8 @@ export interface MeasureContext {
   /** カーネルへ聞く手立て。差し出されていなければ null(往復の要る測定だけが断られる)。 */
   readonly measurer: PartMeasurer | null;
   /**
-   * 画面に出している長さの単位(FR-811、P6 タスク3)。**札の文字だけ**に効き、測る値
-   * そのものは mm のまま(NFR-RE-3)。省くと mm なので、P5 までの呼び出しは変わらない。
+   * 画面に出している長さの単位(FR-811)。**札の文字だけ**に効き、測る値
+   * そのものは mm のまま(NFR-RE-3)。省くと mm なので、従来の呼び出しは変わらない。
    */
   readonly lengthUnit?: LengthUnit;
 }
@@ -619,12 +619,12 @@ export interface MeasureContext {
  * いま選んでいるものを測る(FR-1101、FR-1102)。**押したら必ず何かが起きる**
  * (測れなければ日本語の理由が返る、NFR-UX-5)。
  *
- * 順序は §2.10.2 のとおり。
+ * 順序は次のとおり。
  * ①測れる種類を決める(`measureReadiness`。既定は先頭の種類)。
  * ②一覧から出せるなら**カーネルを呼ばずに**測る(NFR-PF-4)。
  * ③出せない種類(辺どうし・立体どうしの最短距離)はカーネルへ 1 往復。
  * ④立体を 1 つ選んでいるときは、体積を一覧から出したうえで**質量特性だけ**を
- *   カーネルへ聞く(重心と慣性モーメントは一覧に無い、§0.a-0.30)。
+ *   カーネルへ聞く(重心と慣性モーメントは一覧に無い)。
  */
 export async function runMeasure(context: MeasureContext): Promise<MeasureOutcomeView> {
   const ready = partMeasureReadiness(context.selection, context.bodies, context.sketch, context.lengthUnit);
@@ -657,7 +657,7 @@ export async function runMeasure(context: MeasureContext): Promise<MeasureOutcom
 }
 
 /**
- * カーネルへ 1 往復する(§0.a-0.30)。
+ * カーネルへ 1 往復する。
  *
  * **通信ごと失敗しても投げない**(Worker が壊れている、返事が来ない)。測るのは
  * 読み取りだけなので、失敗しても文書は 1 バイトも変わらず、呼び出し側は

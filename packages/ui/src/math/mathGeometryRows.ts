@@ -1,4 +1,4 @@
-/** GR-19a: pure display/readiness data for GR-19b. No document edits or stored derived values. */
+/** pure display/readiness data for the math geometry panel. No document edits or stored derived values. */
 import { checkVariableName, expressionValueFromNumber } from '@pointercad/expression';
 import {
   analyzeMathGeometryDependencies,
@@ -48,7 +48,7 @@ const KIND_KEYS = {
   radius: 'mathGeometry.kind.radius',
   'central-angle': 'mathGeometry.kind.central-angle',
   'contour-length': 'mathGeometry.kind.contour-length',
-  // GR-22: G1 comparisons (packages/model/src/measure/mathGeometryCongruence.ts).
+  // G1 comparisons (packages/model/src/measure/mathGeometryCongruence.ts).
   congruent: 'mathGeometry.kind.congruent',
   similar: 'mathGeometry.kind.similar',
 } as const satisfies Record<Exclude<MathGeometryQuantity['kind'], 'coordinate'>, MessageKey>;
@@ -166,8 +166,8 @@ export function mathGeometryPanelGuideText(state: MathGeometryToolGuideState): s
 }
 
 /**
- * GR-22: also passes the document's reference geometry, so a selection pairing a point with a
- * reference coordinate system offers `coordinate` in that frame. GR-22b brought
+ * also passes the document's reference geometry, so a selection pairing a point with a
+ * reference coordinate system offers `coordinate` in that frame. That change also brought
  * `mathGeometryToolGuide.ts`'s own call to `mathGeometrySelection` up to the same 5 arguments (it
  * passes `activePartDocument(state)?.references ?? []` the same way), so the status-bar guide's stage
  * and count agree with this candidate list — neither call relies any longer on the 5th argument's `[]`
@@ -238,7 +238,7 @@ function createParameterReadiness(document: PartDocument, definition: MathGeomet
   real: boolean, isBoolean: boolean): MathGeometryReadiness {
   if (!real) return disabled(isBoolean ? 'mathGeometry.createParameter.disabled.booleanValue' : 'mathGeometry.createParameter.disabled.noValue');
   const name = `${definition.name}${t('mathGeometry.createParameter.nameSuffix')}`;
-  // This is a parameter name (GR-31/commitAddParameter), not a new geometry definition name.
+  // This is a parameter name (commitAddParameter), not a new geometry definition name.
   if (checkVariableName(name) !== null) return disabled('mathGeometry.createParameter.disabled.invalidName');
   const duplicate = document.parameters.some(item => item.name === name)
     || document.mathGeometry?.some(item => item.name === name) === true;

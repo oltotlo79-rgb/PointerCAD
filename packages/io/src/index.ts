@@ -1,6 +1,6 @@
 /**
- * ファイル入出力(要件 FR-8xx)。P2 で .pcad の document.json の読み書きを実装する。
- * STEP / STL / 3MF / OBJ / glTF は P4 以降。
+ * ファイル入出力(要件 FR-8xx)。.pcad の document.json の読み書きを実装する。
+ * STEP / STL / 3MF / OBJ / glTF は後から足した。
  */
 
 // 圧縮入力・展開後・メッシュ配列・DXF 本文の読み込み上限（単一正本）。
@@ -13,7 +13,7 @@ export {
   type IoLimits,
 } from './limits.js';
 
-// .pcad / .pcada の書式の版と封筒(要件§8、§0.a-0.3、P7 §0.a-0.1)。
+// .pcad / .pcada の書式の版と封筒(要件§8)。
 export {
   PCAD_APP_NAME,
   PCAD_ASSEMBLY_KIND,
@@ -33,14 +33,14 @@ export {
   type PcadPartFile,
   type SchemaMigration,
 } from './pcad/schema.js';
-// 図面文書と document.json の相互変換(P8 タスク3)。
+// 図面文書と document.json の相互変換。
 export {
   parseDrawing,
   serializeDrawing,
   type ParseDrawingResult,
   type SerializeDrawingOptions,
 } from './pcad/drawingJson.js';
-// アセンブリ文書と document.json の相互変換(FR-601、FR-801、P7 §2.2、タスク3)。
+// アセンブリ文書と document.json の相互変換(FR-601、FR-801)。
 export {
   readAssemblyDocument,
   writeAssemblyDocument,
@@ -63,7 +63,7 @@ export {
   decodeImportedMeshBytes,
   emptyPcadAttachments,
   encodeImportedMeshBytes,
-  // 読んだファイルがひな形か(FR-814、P6 §0.a-0.35、タスク27)。**画面(タスク33)が
+  // 読んだファイルがひな形か(FR-814)。**画面が
   // 種別の文字列を写さずに判断できるよう、述語のまま出す。**
   isTemplateKind,
   PCAD_CANVAS_ENTRY_PREFIX,
@@ -71,7 +71,7 @@ export {
   PCAD_DOCUMENT_ENTRY,
   PCAD_MESH_ENTRY_PREFIX,
   PCAD_MESH_ENTRY_SUFFIX,
-  // アセンブリが抱き込む部品文書のエントリ(`parts/<ref>.json`。P7 タスク3)。
+  // アセンブリが抱き込む部品文書のエントリ(`parts/<ref>.json`)。
   PCAD_PART_ATTACHMENTS_DIGEST_ENTRY,
   PCAD_PART_ENTRY_PREFIX,
   PCAD_PART_ENTRY_SUFFIX,
@@ -129,7 +129,7 @@ export {
   type AutoSaveTimerHandle,
 } from './autoSave.js';
 
-// 分解図・ジョイントの共通時間軸を、固定日時の31枚PNG ZIPへまとめる(P7 タスク22)。
+// 分解図・ジョイントの共通時間軸を、固定日時の31枚PNG ZIPへまとめる。
 export {
   createPngSequenceZip,
   PNG_SEQUENCE_FRAME_COUNT,
@@ -138,13 +138,13 @@ export {
 } from './pngSequenceZip.js';
 
 // 書き出し・読み込みの形式(FR-803、FR-802)。**正本は `@pointercad/model` の
-// `exchange/types.ts` と `exchange/exportPart.ts`**(P6 タスク2)へ移したので、ここは
+// `exchange/types.ts` と `exchange/exportPart.ts`**へ移したので、ここは
 // 同じ名前を再輸出するだけにしてある(二重定義にしない。io は model に依存している)。
 export {
   canRoundTrip, EXPORT_FORMATS, IMPORT_FORMATS, type ExportFormat, type ImportFormat,
 } from '@pointercad/model';
 
-// DXF の読み書き(FR-813、計画書 §2.7)。字句(タグ)→ 曲線の換算 → 実体の読み取り、の 3 段を
+// DXF の読み書き(FR-813)。字句(タグ)→ 曲線の換算 → 実体の読み取り、の 3 段を
 // この順で並べる。**座標の単位は換算していない**(`DxfReadResult.unit` を見て上の段が決める)。
 export {
   DXF_TOO_LARGE_MESSAGE,
@@ -154,7 +154,7 @@ export {
   type DxfTag,
 } from './dxf/dxfTags.js';
 export {
-  // `arcToBulge` は `bulgeToArc` の逆(円弧 → 多角形のふくらみ)。書き出し(タスク25)が
+  // `arcToBulge` は `bulgeToArc` の逆(円弧 → 多角形のふくらみ)。書き出しが
   // 折れ線の区間へ円弧を戻すのに使う。
   arcToBulge,
   bulgeToArc,
@@ -186,7 +186,7 @@ export {
   type DxfReadResult,
   type DxfSplineEntity,
 } from './dxf/readDxf.js';
-// DXF の書き出し(タスク25)。**R12(AC1009)・`$INSUNITS = 4`(mm)固定**で、R12 に無い
+// DXF の書き出し。**R12(AC1009)・`$INSUNITS = 4`(mm)固定**で、R12 に無い
 // `ELLIPSE` / `SPLINE` は折れ線へ落とす(落とした本数は `DxfWriteResult.flattenedCurveCount`)。
 // `writeDxf` はテキストだけ、`writeDxfDocument` は案内の材料つきの結果を返す。
 export {
@@ -200,8 +200,8 @@ export {
   type DxfWriteResult,
 } from './dxf/writeDxf.js';
 
-// 3MF の読み書き(FR-803、FR-809、計画書 §2.6)。3MF は ZIP の中の XML なので、OCCT を
-// 使わずに `packages/io` が自前で組み立て・読み取りをする(§0.a-0.18、§0.a-0.26)。
+// 3MF の読み書き(FR-803、FR-809)。3MF は ZIP の中の XML なので、OCCT を
+// 使わずに `packages/io` が自前で組み立て・読み取りをする。
 // **kernel の型を輸入しない**(依存方向。`rules/04-設計の規律.md`)ので、書き出しは平らな
 // 配列を受け(`ThreeMfMeshInput`)、読み込みは kernel の `ImportedMeshData` と同じ並びを返す。
 export {

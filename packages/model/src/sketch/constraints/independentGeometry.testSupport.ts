@@ -6,7 +6,7 @@ import type { Vec3 } from '../vec3.js';
 import type { ConstraintTarget, SketchConstraint } from './types.js';
 
 /** Analytic fixtures only: no residual, Jacobian, rank or solver imports.
- * The separate Decimal calculation is retained with the W03 work report.
+ * The separate Decimal calculation is retained in a separate work report.
  */
 export interface GeometryOracle {
   readonly name: string;

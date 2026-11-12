@@ -1,4 +1,4 @@
-/** R06/R10: 展開せずZIPの領域・宣言値・対応関係を検査する。
+/** 展開せずZIPの領域・宣言値・対応関係を検査する。
  * PKWARE APPNOTE 6.3.10 §4.3/4.5.3:
  * https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT */
 export class ZipDirectoryError extends Error {

@@ -1,19 +1,19 @@
 /**
- * 部品の再計算(計画書 docs/plans/P2-ソリッド基礎.md タスク12、§2.5、要件§6.3)。
+ * 部品の再計算(要件§6.3)。
  *
  * 文書が変わるたびに、次の順で計算し直す。
- *   1. resolvePart … 履歴を1段ずつ解決し、消費を判定し、キャッシュの鍵を決める(タスク11)
+ *   1. resolvePart … 履歴を1段ずつ解決し、消費を判定し、キャッシュの鍵を決める
  *   2. ソリッドの再計算 … 参照・投影の依存を解決した間だけ次の巡へ進む
  *   3. 面のテッセレーション … 最終結果の面のあるスケッチだけをカーネルへ渡す
  *
  * **例外を投げない。** 解決の失敗もカーネルの失敗も errors へ集めて返し、作れたものは返す
  * (FR-504、NFR-RE-1「止めずに警告する」)。カーネルとの通信ごと失敗したときは、
- * 頼んだ分をすべて kernelFailed にして返す(P1 の recomputeSketch と同じ書き方)。
+ * 頼んだ分をすべて kernelFailed にして返す(recomputeSketch と同じ書き方)。
  *
- * 呼ぶ頻度は「文書が変わったときだけ」。ホバー・選択・視点操作では呼ばない(§2.4、NFR-PF-1)。
+ * 呼ぶ頻度は「文書が変わったときだけ」。ホバー・選択・視点操作では呼ばない(NFR-PF-1)。
  *
  * 図形の測定値を係数の式で使う文書だけは、1〜2 を依存の深さだけ繰り返し、段ごとに測った値を
- * 次の段の係数へ渡す(段階再計算、GR-06。`recomputePart` の注釈)。
+ * 次の段の係数へ渡す(段階再計算。`recomputePart` の注釈)。
  */
 
 import { computeVolume } from '@pointercad/kernel';
@@ -87,8 +87,8 @@ export interface PartSketchResult {
   /** 面が1枚も無いとき(カーネルを呼ばないとき)と、呼び出しごと失敗したときは null。 */
   readonly mesh: SketchMesh | null;
   /**
-   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313、P4b タスク8)。画面はここから
-   * 「あと N か所決まっていません」を帯へ出す(タスク13)。拘束が無ければ null。
+   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313)。画面はここから
+   * 「あと N か所決まっていません」を帯へ出す。拘束が無ければ null。
    */
   readonly diagnosis: ConstraintDiagnosis | null;
 }
@@ -107,7 +107,7 @@ export interface PartRecomputeResult {
   readonly sheetMetalBodies?: ResolvedPart['sheetMetalBodies'];
   /** 文書の順に並んだスケッチの結果。 */
   readonly sketches: readonly PartSketchResult[];
-  /** いま画面に出るボディ(§0.a-0.5)。消費されたボディは入らない。 */
+  /** いま画面に出るボディ。消費されたボディは入らない。 */
   readonly bodies: readonly SolidBody[];
   /** 解決の失敗、スケッチの失敗、カーネルの失敗を上流から下流の順に並べたもの(FR-504)。 */
   readonly errors: readonly PartRecomputeError[];
@@ -116,20 +116,20 @@ export interface PartRecomputeResult {
   /** 段と段の間で打ち切られたか(NFR-PF-4)。 */
   readonly cancelled: boolean;
   /**
-   * この結果がどの依頼のものか(P1 の attachSketchRecompute と同じ発想)。
+   * この結果がどの依頼のものか(attachSketchRecompute と同じ発想)。
    * 呼び出し側は自分が数えている世代と見比べ、古い応答を捨てる。
    */
   readonly generation: number;
   /**
-   * 外観を割り当てた面が、いまの形のどの面に当たるか(FR-1106、P5 §2.2.3)。
+   * 外観を割り当てた面が、いまの形のどの面に当たるか(FR-1106)。
    *
    * 文書の `appearance` のうち**面への割り当てだけ**が、文書と同じ並びで入る。
    * `faceIndex` が `null` のものは選び直せなかった割り当てで、画面はそこを既定の外観で
    * 描いて警告を出す(FR-1106)。**割り当て自体は文書から消さない。**
-   * 立体への割り当ては指紋を持たず照合が要らないので、ここには入らない(§2.2.2)。
+   * 立体への割り当ては指紋を持たず照合が要らないので、ここには入らない。
    *
    * 任意の欄にしてあるのは `SolidBody.area` と同じ理由(この型を組み立てている
-   * `packages/ui` の見本を直せるのが ui のタスク10・11 の担当だから)で、
+   * `packages/ui` の見本を一度に直さずに済むから)で、
    * `recomputePart` は必ず値を入れる。
    */
   readonly appearanceMatches?: readonly AppearanceMatchEntry[];
@@ -163,64 +163,64 @@ export interface PartRecomputeOptions {
   readonly onProgress?: PartProgressCallback;
   readonly shouldCancel?: PartCancelToken;
   /**
-   * 計算済みのオフセット(FR-321、タスク15・21)を覚えておく入れ物。
+   * 計算済みのオフセット(FR-321)を覚えておく入れ物。
    *
    * 渡さないと呼び出しのたびに新しく作るので、毎回カーネルへ頼み直すことになる。
-   * 画面から繰り返し呼ぶ側(ui、タスク21)は 1 つ作って持ち回る(NFR-PF-2、
+   * 画面から繰り返し呼ぶ側(ui)は 1 つ作って持ち回る(NFR-PF-2、
    * `recomputeSketch.ts` の `SketchRecomputeOptions.offsets` と同じ約束)。
    */
   readonly offsets?: OffsetCache;
   /**
-   * 計算済みの投影・交差(FR-325、タスク25)を覚えておく入れ物。
+   * 計算済みの投影・交差(FR-325)を覚えておく入れ物。
    * オフセットと同じ約束で、画面から繰り返し呼ぶ側は 1 つ作って持ち回る(NFR-PF-2)。
    */
   readonly projections?: ProjectionCache;
   /**
-   * 立体の面・辺・頂点の選び直し(FR-325、FR-328〜330 の上流追従、タスク25)を
+   * 立体の面・辺・頂点の選び直し(FR-325、FR-328〜330 の上流追従)を
    * 覚えておく入れ物。持ち回ると、上流が変わっていない再計算では選び直しによる追加巡回を省ける。
    */
   readonly subShapes?: SubShapeCache;
   /**
-   * ボディの表面積(`SolidBody.area`)を測るか(FR-1102、P5 仕上げ (i)、
-   * 統括の決定 2026-09-05 07:28。`kernelBridge.ts` の `SolidRecomputeOptions.measureAreas`
+   * ボディの表面積(`SolidBody.area`)を測るか(FR-1102。
+   * `kernelBridge.ts` の `SolidRecomputeOptions.measureAreas`
    * と同じ約束)。
    *
-   * **既定は測らない(false)。** 穴 20 個の性能の余裕を削らないため(§0.a-0.67)、
-   * 毎回の再計算では測定の費用を払わない。測定・質量特性(タスク29 以降)が表面積を
+   * **既定は測らない(false)。** 穴 20 個の性能の余裕を削らないため、
+   * 毎回の再計算では測定の費用を払わない。測定・質量特性が表面積を
    * 求めたときだけ、呼び出し側(ui)がここを true にして呼ぶ。
    */
   readonly measureAreas?: boolean;
   /**
-   * 読み込んだ形(FR-802、P6 §2.8、タスク20)の B-rep のバイト列の置き場。
+   * 読み込んだ形(FR-802)の B-rep のバイト列の置き場。
    *
    * `.pcad` の ZIP の `shapes/<shapeRef>.brep` をそのまま読んだ表で、**開いた文書 1 つに
    * つき 1 つ**を作って持ち回る(オフセット・投影の覚え書きと同じ約束)。渡さないと
    * `importedSolid` の段は「読み込んだ形が見つかりません」で失敗する(FR-504)。
-   * 表を組み立てるのは `packages/io`(タスク21)、ここはそのまま `resolvePart` へ渡すだけ。
+   * 表を組み立てるのは `packages/io`、ここはそのまま `resolvePart` へ渡すだけ。
    */
   readonly importedShapes?: ImportedShapeBytes;
   /** Captured document attachments; never substitute saved volume for triangle geometry. */
   readonly importedMeshes?: ReadonlyMap<string, EmbeddedPartMesh>;
 }
 
-/** 面を作れなかったとき(P1 の recomputeSketch と同じ文言に揃える)。 */
+/** 面を作れなかったとき(recomputeSketch と同じ文言に揃える)。 */
 function sketchKernelFailed(featureId: string, message: string): SketchError {
   return { featureId, code: 'kernelFailed', message: `面を作れませんでした: ${message}` };
 }
 
 /**
- * カーネルの「加工するもとの面(辺)が見つかりません」の失敗を見分ける目印(P3 §2.4.2.5、
- * §0.a-0.5)。kernel の `SolidStepFailure` は `message` しか持たないので、
+ * カーネルの「加工するもとの面(辺)が見つかりません」の失敗を見分ける目印。
+ * kernel の `SolidStepFailure` は `message` しか持たないので、
  * `makeHole.ts` / `makeFillet.ts` / `makeChamfer.ts` が共通で使うこの語尾を手がかりに
  * `missingSubShape` へ詰め替える(コミット済みの実装を Grep して、この語尾を使う失敗が
- * 他に無いことを確認済み。計画書の例文とは前置き部分が食い違うが、実装を正とする)。
+ * 他に無いことを確認済み。当初の例文とは前置き部分が食い違うが、実装を正とする)。
  */
 const MISSING_SUB_SHAPE_SUFFIX = '形が大きく変わったため、選び直してください。';
 
 /**
  * 立体を作れなかったとき。段ごとの理由はカーネルが利用者向けの日本語で返すので、
- * そのまま見せる(docs/報告記録.md 2026-09-02 22:10 の②「橋渡しは失敗理由を捨てない」)。
- * `missingSubShape` かどうかは文言で見分ける(P3 タスク17。§2.2.4「選び直しはカーネルの
+ * そのまま見せる(橋渡しは失敗理由を捨てない)。
+ * `missingSubShape` かどうかは文言で見分ける(「選び直しはカーネルの
  * 中で行う」ため)。面による切断の詳細な理由コードは reason に保持する。
  */
 function solidKernelFailed(featureId: string, message: string, reason?: PartError['reason']): PartError {
@@ -290,10 +290,10 @@ const NO_SOLIDS: SolidRecomputeOutcome = {
 };
 
 /**
- * 面へ割り当てた外観を、カーネルへの照合の依頼へ集める(FR-1106、P5 §2.2.3)。
+ * 面へ割り当てた外観を、カーネルへの照合の依頼へ集める(FR-1106)。
  *
  * 立体への割り当て(`kind: 'body'`)は指紋を持たず、フィーチャーの id で直に引けるので
- * 照合そのものが要らない(§2.2.2 の優先順位の 2 段目)。ここで集めるのは面だけで、
+ * 照合そのものが要らない(優先順位の 2 段目)。ここで集めるのは面だけで、
  * **1 件も無ければ空配列**になり、カーネルは照合の段を丸ごと飛ばす(費用ゼロ)。
  */
 function toAppearanceRequests(document: PartDocument): readonly AppearanceFaceRequest[] {
@@ -335,7 +335,7 @@ async function callSolids(
         onProgress: options.onProgress,
         shouldCancel: options.shouldCancel,
         appearance,
-        // 既定は測らない(NFR-PF-2〜3。§0.a-0.67「穴 20 個の性能の余裕を削らない」)。
+        // 既定は測らない(NFR-PF-2〜3。「穴 20 個の性能の余裕を削らない」)。
         measureAreas: options.measureAreas ?? false,
         ...(options.localMesh === undefined ? {} : { localMesh: options.localMesh }),
       }),
@@ -616,7 +616,7 @@ function cancelledResult(
  * 部品を丸ごと計算し直す(要件§6.3)。どこで失敗しても例外を投げない(FR-504、NFR-RE-1)。
  * カーネルを呼ぶのは、面のあるスケッチと、段が1つ以上あるときだけ(NFR-PF-1)。
  *
- * ## 巡の分かれ方(P4 タスク25、FR-325)
+ * ## 巡の分かれ方(FR-325)
  *
  * 投影・交差(FR-325)と部分形状の上流追従(FR-328〜330)は、**立体が出来てからでないと
  * 解けない**(投影のもとになる B-rep はカーネルが立体を作ったときに初めて形状キャッシュへ
@@ -631,33 +631,33 @@ function cancelledResult(
  * 追加巡回でも変わっていない段は鍵が当たって作り直されない。
  * 進展が止まった要求と循環にはIDつきの診断を返す。各巡の前に取消を確認する(NFR-PF-4)。
  *
- * ## 外観の面の照合(FR-1106、P5 §2.2.3)
+ * ## 外観の面の照合(FR-1106)
  *
  * 面に付けた色は指紋(`SubShapeRef`)で覚えているだけなので、形を作り直すと面の通し番号が
  * ずれる。そこで**立体の再計算に相乗りして**、割り当ての一覧をカーネルへ添え、
- * 選び直した結果を `appearanceMatches` で受け取る(採点を model へ複製しないための決め、
- * §0.a-0.2)。**割り当てが 1 件も無ければ何も添えないので、費用は増えない。**
+ * 選び直した結果を `appearanceMatches` で受け取る(採点を model へ複製しないための決め)。
+ * **割り当てが 1 件も無ければ何も添えないので、費用は増えない。**
  *
  * **外観だけを変えたときは、そもそもこの関数を呼ばない。** 呼ぶかどうかの判定は
  * `part/documentChange.ts` の `affectsShape` が持ち、画面側(ストアの購読)が使う。
  * 段の鍵(`cacheKeyFor`)も外観を見ないので、仮に呼んでも全段がキャッシュに当たる
- * (§2.2.3「鍵に混ぜない」との二重の保証)。
+ * (「鍵に混ぜない」との二重の保証)。
  *
- * ## 表面積の測定(FR-1102、P5 仕上げ (i))
+ * ## 表面積の測定(FR-1102)
  *
  * `options.measureAreas` を素通しでカーネルへ渡す(`SolidRecomputeOptions.measureAreas` と
- * 同じ約束)。**既定は false のまま**(§0.a-0.67「穴 20 個の性能の余裕を削らない」)なので、
+ * 同じ約束)。**既定は false のまま**(「穴 20 個の性能の余裕を削らない」)なので、
  * 呼び出し側が明示的に true を渡さない限り `SolidBody.area` は今までどおり埋まらない。
- * 測定・質量特性(タスク29 以降)が表面積を使うかどうかは呼び出し側(ui)の判断。
+ * 測定・質量特性が表面積を使うかどうかは呼び出し側(ui)の判断。
  *
- * ## パラメータ表(FR-207、P4b タスク3)
+ * ## パラメータ表(FR-207)
  *
  * 解決を始める前に、パラメータ表(名前を付けた数値)の値を**文書の全ての式へ配る**
  * (`applyParameters`)。ここを通さないと、表の値を変えても押し出しの距離や穴の径が
  * 追従しない(FR-502)。**表が空なら `applyParameters` は元の文書をそのまま返す**ので、
  * パラメータを使わない部品では費用も結果も変わらない。
  *
- * ## 図形の測定値を使う係数(段階再計算、GR-06。計画書 §4(d)、利用者の回答 Q7=O1)
+ * ## 図形の測定値を使う係数(段階再計算)
  *
  * 係数の式が図形の測定値(`coef("名前")`)を使うと、その係数で作る形は、測る形ができて測り
  * 終わるまで作れない。そこで**図形由来の係数がある文書だけ**、`planMathGeometryStages` の段取りに
@@ -803,7 +803,7 @@ export async function recomputePart(
   if (options.shouldCancel?.()) {
     return cancelledResult(generation);
   }
-  // 図形の測定値を使う係数がある文書だけ、途中の段で測った値を最後の段の数式へ渡す(GR-06)。
+  // 図形の測定値を使う係数がある文書だけ、途中の段で測った値を最後の段の数式へ渡す。
   const plan = planMathGeometryStages(document);
   const stage = plan === null ? undefined : await measureStages(document, bridge, requestOptions, generation, plan);
   if (stage === null) {
@@ -836,7 +836,7 @@ function isShapeBuild(value: PartRecomputeResult | ShapeBuild): value is ShapeBu
   return 'resolved' in value;
 }
 
-/** 段階再計算(GR-06)の 1 段で数式の評価へ渡すもの(`DocumentMathContext` の同じ名前の欄)。 */
+/** 段階再計算の 1 段で数式の評価へ渡すもの(`DocumentMathContext` の同じ名前の欄)。 */
 interface StageMath {
   /** この再計算でここまでに測った結果(定義ID → 結果)。無い定義を使う係数は「計算待ち」になる。 */
   readonly geometry: ReadonlyMap<string, MathGeometryOutcome>;
@@ -872,7 +872,7 @@ function failedIdsOf(build: ShapeBuild): ReadonlySet<string> {
 }
 
 /**
- * 段階再計算の途中の段(GR-06、§4(d))。段 k ごとに、それまでに測った値で形を作り、段 k の定義を測る。
+ * 段階再計算の途中の段。段 k ごとに、それまでに測った値で形を作り、段 k の定義を測る。
  * 返すのは最後の段(全部の定義を測る段)の数式へ渡すもの。取り消されたら null(途中の値を残さない)。
  *
  * - 前に形を作ってから係数へ入る値が 1 つも増えていなければ、形を作り直さずに次の段の定義を測る。
@@ -1010,7 +1010,7 @@ async function buildShapes(
     functionSurfaces: featureId => surfaces.plans.get(featureId) ?? null,
     functionPoint: functionPoints.resolve,
     subShape: resolveSubShape,
-    // 読み込んだ形のバイト列(FR-802、P6 §2.8)。渡されなければ resolvePart が空として扱う。
+    // 読み込んだ形のバイト列(FR-802)。渡されなければ resolvePart が空として扱う。
     importedShapes: options.importedShapes,
   };
 

@@ -1,5 +1,5 @@
 /**
- * 組立の文脈の参照の確定(EX-18)。model の `commitContextReference` を呼び、結果を `applyAssembly`
+ * 組立の文脈の参照の確定。model の `commitContextReference` を呼び、結果を `applyAssembly`
  * (1回が Undo の1段)へ渡す。元の点は、確定を始めた時の表示の形(`assemblyView`)から引く。
  *
  * 部品の一式のハッシュを待つ間に、次のどれかが変わったら古い計算は書かない(`stale`):

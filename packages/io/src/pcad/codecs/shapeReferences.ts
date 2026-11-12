@@ -40,7 +40,7 @@ import { readSubShapeOrigin, serializeSubShapeOrigin } from './subShapeOrigin.js
 
 const REVOLVE_AXIS_KINDS: readonly RevolveAxis['kind'][] = ['world', 'line', 'reference'];
 
-// P3(§2.10、タスク19)が足す判別の一覧。
+// 部分形状の参照の判別の一覧。
 const SUB_SHAPE_KINDS: readonly SubShapeKind[] = ['face', 'edge', 'vertex'];
 
 const FACE_SURFACE_KINDS: readonly FaceSurfaceKind[] = [
@@ -76,7 +76,7 @@ export function serializeRevolveAxis(axis: RevolveAxis): RevolveAxis {
     case 'line':
       return { kind: 'line', line: serializeLineRef(axis.line) };
     case 'reference':
-      // 基準軸フィーチャーへの参照(FR-329、P4 タスク9)。
+      // 基準軸フィーチャーへの参照(FR-329)。
       return { kind: 'reference', referenceFeatureId: axis.referenceFeatureId };
   }
 }
@@ -122,7 +122,7 @@ export function serializeSubShapeRef(reference: SubShapeRef): SubShapeRef {
   };
 }
 
-/** スケッチの曲線の並びへの参照(P5 タスク43)。id の配列は写して持つ。 */
+/** スケッチの曲線の並びへの参照。id の配列は写して持つ。 */
 export function serializeCurveRef(reference: SketchCurveRef): SketchCurveRef {
   return { sketchId: reference.sketchId, curveIds: [...reference.curveIds] };
 }
@@ -233,11 +233,11 @@ export function readRevolveAxis(
 }
 
 // ---------------------------------------------------------------------------
-// P3(§2.2、§2.6、§2.7、§2.7b、タスク19)が足す部分形状の参照と加工の欄の読み込み
+// 部分形状の参照と加工の欄の読み込み
 // ---------------------------------------------------------------------------
 
 /**
- * スケッチの点・点列フィーチャーへの参照を読む(穴の中心・ばねの始点、§0.a-0.9、§0.a-0.29)。
+ * スケッチの点・点列フィーチャーへの参照を読む(穴の中心・ばねの始点)。
  * `readSubShapeRef` と同じく、値を直に読む版(readPointRef)と欄から読む版(readPointRefField)
  * の組にする(`readFaceRef` / `readFaceRefItem` と同じ流儀)。
  */
@@ -270,7 +270,7 @@ export function readPointRefField(
 }
 
 /**
- * 部分形状の指紋を種類ごとに読む(§2.2.2)。`face` / `edge` / `vertex` で欄が違うので、
+ * 部分形状の指紋を種類ごとに読む。`face` / `edge` / `vertex` で欄が違うので、
  * `kind` を先に判別してから分ける。
  */
 function readSubShapeFingerprint(value: unknown, path: string): Checked<SubShapeFingerprint> {
@@ -414,7 +414,7 @@ export function readSubShapeRefField(
   return readSubShapeRef(found.value, joinPath(parentPath, key));
 }
 
-/** スケッチの曲線の並びへの参照(P5 タスク43)。id の配列は 1 つ以上でなくてもここでは断らない。 */
+/** スケッチの曲線の並びへの参照。id の配列は 1 つ以上でなくてもここでは断らない。 */
 function readCurveRefRecord(
   record: Record<string, unknown>,
   path: string,

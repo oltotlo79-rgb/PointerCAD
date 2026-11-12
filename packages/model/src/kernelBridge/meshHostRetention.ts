@@ -68,7 +68,7 @@ export class MeshHostRetention {
       || !Number.isSafeInteger(maximumOwners) || maximumOwners < 1) throw new RangeError('Invalid host retention bounds');
   }
   /**
-   * A ledger whose record bounds follow its byte capacity (EX12: one display owner per distinct part definition, so a
+   * A ledger whose record bounds follow its byte capacity (one display owner per distinct part definition, so a
    * fixed 128 owners / 4,096 entries refused an assembly of 1,000 definitions). One owner or entry per
    * HOST_RECORD_BYTES of limitBytes: 512 MiB admits 131,072 of each. The bound stays (metadata never grows without
    * limit); reaching it refuses at reservation (owners) or that one adoption (entries) with its reason and admits

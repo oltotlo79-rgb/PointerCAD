@@ -12,7 +12,7 @@ export interface OcctShapeHandle {
 }
 
 /**
- * 原点を角とする直方体を作る(FR-401 の押し出しに先立つ P0 の確認用形状)。
+ * 原点を角とする直方体を作る(FR-401 の押し出しに先立つ確認用形状)。
  * 単位は mm(NFR-RE-3)。
  */
 export function makeBox(oc: OpenCascadeInstance, parameters: BoxParameters): OcctShapeHandle {

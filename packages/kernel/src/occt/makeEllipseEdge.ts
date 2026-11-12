@@ -21,7 +21,7 @@ export interface EllipseSpec {
    * 呼び出し側の書き漏らしを「全周のつもりが弧になる」事故ではなく「弧のつもりが
    * 全周になる」目立つ形の事故にとどめる)。
    *
-   * **注意(2026-09-04 実測、計画書 §1.4-8・§6.8-2 の確認事項への回答)**:
+   * **注意(2026-09-04 実測)**:
    * この角度は BRepBuilderAPI_MakeEdge_13 = gp_Elips の径数方程式
    * P(u) = center + majorRadius·cos(u)·majorAxis + minorRadius·sin(u)·(normal×majorAxis)
    * の **パラメータ角(離心近点角)** であり、中心から見た **幾何的な方位角とは一致しない**。
@@ -46,7 +46,7 @@ export interface EllipseSpec {
  * gp_Ax2_2(center, normal, majorAxis) → gp_Elips_2(axis, majorRadius, minorRadius) →
  * 角度が両方指定されていれば BRepBuilderAPI_MakeEdge_13、無ければ全周の
  * BRepBuilderAPI_MakeEdge_12。makeArcEdge(makeSketchEdges.ts)の円の作り方をそのまま
- * 楕円へ踏襲した(docs/報告記録.md 2026-09-02 18:23)。
+ * 楕円へ踏襲した。
  *
  * 成否の判定に Error() の列挙値を使わないのは、opencascade.js の型定義で
  * BRepBuilderAPI_EdgeError の各値が空の型 `{}` になっており、比較には強制変換が

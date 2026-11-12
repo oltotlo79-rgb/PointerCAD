@@ -27,7 +27,7 @@ export interface CommandLineProps {
 }
 
 /**
- * コマンドラインの欄(計画書 docs/plans/P4b-スケッチの仕上げ.md タスク18、§0.a-0.8。FR-208)。
+ * コマンドラインの欄(FR-208)。
  *
  * ステータスバーの左、ファイル名の右へ埋め込む 1 行の欄。**区画は 5 つのまま**増やさない
  * (rules/04-設計の規律.md、要件§7.1)。打った 1 行の解釈と行き先はすべて
@@ -35,11 +35,11 @@ export interface CommandLineProps {
  *
  * 打ちかけの文字・履歴・履歴をたどっている位置は**表示だけの一時状態**なので、ここで
  * `useState` に持つ(`PropertyPanel.tsx` の打ちかけの下書きと同じ扱い。
- * rules/04-設計の規律.md「useState は表示専用の一時状態だけ」)。履歴は保存しない(§0.a-0.11)。
+ * rules/04-設計の規律.md「useState は表示専用の一時状態だけ」)。履歴は保存しない。
  *
  * **文書がまるごと差し替わったら(開く・新規・復元・Undo / Redo)欄を空にする。**
  * 焦点が欄にあるまま差し替わると、古い打ちかけが残って新しい文書と食い違うため
- * (docs/報告記録.md 2026-09-04 14:05 の 9b と同じ失敗。判定の材料も同じ `documentVersion`)。
+ * (プロパティの欄の下書きと同じ失敗。判定の材料も同じ `documentVersion`)。
  */
 export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.Element {
   const documentVersion = useAppStore((state) => state.documentVersion);
@@ -156,7 +156,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   return (
     <div className="pcad-commandline">
       {suggestions.length === 0 ? null : (
-        /* 候補は欄の**上**へ出す(下はステータスバーの外、§0.a-0.11)。 */
+        /* 候補は欄の**上**へ出す(下はステータスバーの外)。 */
         <div
           className="pcad-commandline__suggestions"
           role="listbox"
@@ -208,7 +208,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
         onKeyDown={onKeyDown}
       />
       {fieldLabels.length === 0 ? null : (
-        /* 次に打つものは、いま開いている段の欄名をそのまま出す(§0.a-0.11)。 */
+        /* 次に打つものは、いま開いている段の欄名をそのまま出す。 */
         <span className="pcad-commandline__next" aria-live="polite">
           {`${t('commandLine.nextLabel')} ${fieldLabels.join(LABEL_SEPARATOR)}`}
         </span>

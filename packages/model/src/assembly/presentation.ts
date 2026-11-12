@@ -1,4 +1,4 @@
-/** P7 タスク21。保存したステップから任意時刻の表示配置を純関数で導く。 */
+/** 分解の表示。保存したステップから任意時刻の表示配置を純関数で導く。 */
 import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 import { resolveRevolveAxis } from '../part/resolvePart.js';
 import { nextSerialId } from '../sketch/createSketchDocument.js';
@@ -56,7 +56,7 @@ function unitDirection(vector: Vec3 | null): Vec3 | null {
 
 /**
  * `AxisSpec` の向きを世界座標へ解く。world は文字どおり世界軸、line/reference は
- * ステップの先頭部品に属する軸として解く。向きの保存型は P5 の `AxisSpec` だけを使う。
+ * ステップの先頭部品に属する軸として解く。向きの保存型は部品の `AxisSpec` だけを使う。
  */
 export function resolvePresentationDirection(
   body: ExplodeStepBody,

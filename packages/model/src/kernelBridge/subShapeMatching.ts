@@ -41,7 +41,7 @@ function uniqueSemanticCandidate(body: SolidBody, reference: SubShapeRef): SubSh
  * 製品の再計算は resolveSubShapeReference の matched だけを採用する。
  *
  * 採点は kernel の `matchFace` / `matchEdge` / `matchVertex`(OCCT を使わない純関数)を
- * そのまま使うので、重み・しきい値は加工フィーチャーと同じである(§0.a-0.4)。
+ * そのまま使うので、重み・しきい値は加工フィーチャーと同じである。
  * ここに残した同点時の番号順選択は互換用であり、加工側の採用判定には使わない。
  * 返す位置・向きは現在の候補の値であり、保存された指紋の値を代用しない。
  *
@@ -127,7 +127,7 @@ function faceGeometry(body: SolidBody, face: SolidFaceEntry): MateSubShapeGeomet
 
 /**
  * 互換用の低水準選択。製品の合致は resolveSubShapeReference の matched だけを採用する。
- * 現在の形から種類・大きさ・重心・解析軸上点を選ぶ(P7-14b)。
+ * 現在の形から種類・大きさ・重心・解析軸上点を選ぶ。
  * selectSubShape と同じ kernel の採点を使い、重心を解析点で置き換えない。
  * body は部品座標の形。アセンブリの配置は resolveMateTarget が1回だけ掛ける。
  */
@@ -169,7 +169,7 @@ export function selectMateTargetGeometry(
 }
 
 /**
- * 選び直しの最高点と次点(図形の測定値の曖昧さの判定、GR-05)。
+ * 選び直しの最高点と次点(図形の測定値の曖昧さの判定)。
  * `index` と `score` は `selectMateTargetGeometry` が選ぶ候補そのものの番号と点。
  */
 export interface SubShapeMatchScores {

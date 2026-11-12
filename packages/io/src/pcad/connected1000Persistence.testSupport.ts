@@ -3,7 +3,7 @@ import { createEmptyPartDocument, replaceSketch, type ConstraintTarget, type Coo
 import { connected1000PointId, connected1000Sketch }
   from '@pointercad/model/testing/connected-fixtures';
 
-// EX-13 W12/W13 fixture construction only. No test registration, solver,
+// Fixture construction only. No test registration, solver,
 // residual, file IO or scratchpad dependency; both layers use identical input.
 const point = (index: number): ConstraintTarget => ({ kind: 'point', pointId: connected1000PointId(index) });
 const curve = (featureId: string): ConstraintTarget => ({ kind: 'curve', element: { featureId } });
@@ -11,11 +11,11 @@ const vertex = (featureId: string, which: 'start' | 'end' | 'center'): Constrain
   ({ kind: 'vertex', featureId, vertex: which });
 const expression = (source: string, value: number) => ({ source, value, display: String(value) });
 
-// A separate schema21 fixture: the pure W01 distance fan, one fixed anchor,
+// A separate schema21 fixture: the pure original distance fan, one fixed anchor,
 // and consistent examples of ALL fourteen legacy kinds. The six auxiliary
 // curves use expression-defined coordinates/radii and add no solver variables.
 // There are 1000 authored point features (999 movable), not a schema21 file
-// relabelled from the new vertical-distance fixture. Current W01 stays unchanged.
+// relabelled from the new vertical-distance fixture. The current distance fan stays unchanged.
 export function legacyConnected1000Part(): PartDocument {
   const base = createEmptyPartDocument();
   const fan = connected1000Sketch(base.sketches[0], false);

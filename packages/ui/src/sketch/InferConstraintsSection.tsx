@@ -2,11 +2,11 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 /**
- * 「拘束の推定」の節(FR-333、§0.a-0.49、タスク41・43)。
+ * 「拘束の推定」の節(FR-333)。
  *
  * **値はステータスバーの入切とまったく同じ 1 つ**(`displaySettings.inferConstraints`)で、
  * 同じ setter を通す。2 か所で別々に持つと、片方を押したときにもう片方が古い値のまま
- * 残る(rules/04「同じ状態を 2 か所に持たない」)。しきい値の数は出さない(§0.a-0.48)。
+ * 残る(rules/04「同じ状態を 2 か所に持たない」)。しきい値の数は出さない。
  */
 export function InferConstraintsSection(): React.JSX.Element {
   const displaySettings = useAppStore((state) => state.displaySettings);

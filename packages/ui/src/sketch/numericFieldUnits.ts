@@ -8,7 +8,7 @@ export function usesDisplayInputUnit(field: { readonly typed?: boolean; readonly
 }
 
 /**
- * **どの欄が長さかを決める唯一の表**(P6 タスク3b、FR-811・FR-814・FR-205)。
+ * **どの欄が長さかを決める唯一の表**(FR-811・FR-814・FR-205)。
  *
  * 欄ごとに「これは長さ」と書き分けず、欄の定義がすでに持っている `unit` 1 本で決める。
  * 角度(`degree`)・回数や個数(`count`)は長さではないので、表示の単位(mm / inch)の
@@ -34,7 +34,7 @@ export function isLengthFieldUnit(unit: FieldUnit): boolean {
 }
 
 /**
- * 打たれた文字列を、**保存する式の文字列**へ直す(§0.a-0.63、§2.9.1 ②)。
+ * 打たれた文字列を、**保存する式の文字列**へ直す。
  *
  * 長さの欄のときだけ model の `parseDisplayInput` へ回す(表示が inch で単位が 1 つも
  * 書かれていなければ `(<打った式>)in` で包む。mm のときは包まない)。**規則そのものは

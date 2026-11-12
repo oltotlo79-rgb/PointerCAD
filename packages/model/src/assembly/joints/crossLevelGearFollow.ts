@@ -15,7 +15,7 @@ import { JointDriveWork, solveSubAssemblyJointDriveSteps } from './subAssemblyJo
 export type CrossLevelGearNoticeCode = CrossLevelGearDocumentFailureCode | 'coupled-motion';
 
 /**
- * Cross-level gears under ANY parent-level motion (EX12): a drive of another joint, a drag or a presentation step can
+ * Cross-level gears under ANY parent-level motion: a drive of another joint, a drag or a presentation step can
  * change the angle of a coupled parent joint through a linkage. The relation thetaChild = ratio * thetaParent + phase
  * must then hold on the shown poses too. These helpers find which coupled parent joints a parent-level pose change
  * moved (by the relative pose of the joint's two members, independent of how the motion was produced) and solve every

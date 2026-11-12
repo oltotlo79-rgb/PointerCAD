@@ -1,6 +1,6 @@
 /**
  * つまみのスライス(FR-507。どこまでの段を見せるか、その知らせと断りの理由)。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import { mathGeometryHistoryEdges, moveHistoryItem } from '@pointercad/model';
@@ -12,8 +12,8 @@ import type { AppState } from './appState.js';
 /** つまみ(時をまたぐ表示)のスライスが持つ欄と操作。 */
 export interface TimelineSlice {
   /**
-   * タイムラインのつまみの位置(FR-507、FR-506、P4b タスク19)。帯の通し番号で、
-   * `null` が末尾(全部作られた状態)。**保存しない**(§0.a-0.19)ので `.pcad` には
+   * タイムラインのつまみの位置(FR-507、FR-506)。帯の通し番号で、
+   * `null` が末尾(全部作られた状態)。**保存しない**ので `.pcad` には
    * 入らず、開く・新規・復元・Undo / Redo のたびに `null` へ戻す。
    *
    * 形の正本はあくまで `document`(全体)で、ここが変わっても `document` は 1 バイトも
@@ -23,14 +23,14 @@ export interface TimelineSlice {
    */
   readonly timelineIndex: number | null;
   /**
-   * つまみについての知らせの文言キー(P4b タスク19)。断りではないので帯を赤くしない。
+   * つまみについての知らせの文言キー。断りではないので帯を赤くしない。
    * いまの使い道は 1 つで、途中まで戻したまま新しいものを作ったときに
    * 「新しく作ったものを出すため、最後まで戻しました」と伝える。
    * 文書が次に変われば用済みなので `applyDocument` が落とす。
    */
   readonly timelineNoticeKey: MessageKey | null;
   /**
-   * 順序の入れ替えを断った理由(FR-504、FR-507。P4b タスク20)。断らなかったときは null。
+   * 順序の入れ替えを断った理由(FR-504、FR-507)。断らなかったときは null。
    *
    * 理由の文は model(`moveHistoryItem` の `reason`)が相手の名前つきで組み立てたものを
    * そのまま持つ。`blockingFeatureId` は**壊れる側**(指している方)なので、木のその行に
@@ -44,7 +44,7 @@ export interface TimelineSlice {
    */
   readonly setTimelineIndex: (index: number | null) => void;
   /**
-   * 履歴の順序を入れ替える(FR-507、FR-504。P4b タスク20)。`toIndex` は帯の通し番号。
+   * 履歴の順序を入れ替える(FR-507、FR-504)。`toIndex` は帯の通し番号。
    *
    * 動かせるなら文書を 1 回だけ積むので、取り消し(Ctrl+Z)1 回で元の順序に戻る
    * (NFR-UX-3)。依存を壊すなら**文書は 1 バイトも変えず**、理由を `timelineRefusal` へ
@@ -80,7 +80,7 @@ export const createTimelineSlice: StateCreator<
             timelineIndex,
             // 3D へ出す形を切り直すので、計算中の札は素直に立てる。つまみを動かした
             // だけなら段の鍵が変わらず全段がキャッシュに当たるので、すぐ下りる
-            // (NFR-PF-3。§2.7「巻き戻しても再計算が起きない」)。
+            // (NFR-PF-3。「巻き戻しても再計算が起きない」)。
             isComputing: true,
             // つまみを動かしたら、前の位置についての知らせは用済み。
             timelineNoticeKey: null,

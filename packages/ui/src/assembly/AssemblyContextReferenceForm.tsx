@@ -42,7 +42,7 @@ export function contextLinkToCommit(
 }
 
 /**
- * 組立の文脈の参照(EX-18)。選んだ置いた部品(先)の基準点を、別に置いた部品(元)の面の中心に合わせる。
+ * 組立の文脈の参照。選んだ置いた部品(先)の基準点を、別に置いた部品(元)の面の中心に合わせる。
  * 選んだ基準点の結び付けは同じ id のまま「参照から更新」で計算し直す。確定は `runContextReferenceCommit` だけを通す。
  */
 export function AssemblyContextReferenceForm(props: { readonly componentId: string }): React.JSX.Element | null {

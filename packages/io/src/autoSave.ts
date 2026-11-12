@@ -1,9 +1,9 @@
 /**
  * 自動保存の保管庫と制御(要件 FR-805、NFR-RE-2)。
  *
- * 計画書 `docs/plans/P2-ソリッド基礎.md` のタスク16は「保管庫は document.json の文字列をそのまま
- * 保つ」案だったが、タスク15で `.pcad` の読み書き(`writePcadFile` / `readPcadFile`、
- * `packages/io/src/pcad/pcadFile.ts`)が確定したため、統括の指示によりこちらは
+ * 当初の案は「保管庫は document.json の文字列をそのまま
+ * 保つ」だったが、`.pcad` の読み書き(`writePcadFile` / `readPcadFile`、
+ * `packages/io/src/pcad/pcadFile.ts`)が確定したため、こちらは
  * **`.pcad` のバイト列(ZIP)をそのまま保つ**方式にしている。読み込み側(サムネイル込みの
  * `readPcadFile`)と書式を1本化でき、UI 側は復元候補をそのまま「開く」と同じ経路で扱える。
  *
@@ -61,7 +61,7 @@ export interface AutoSaveRecord {
   readonly savedAt: string;
   /** ZIPのバイト列。復元はkind(旧控えはpart)とreadDocumentBundleで行う。 */
   readonly bytes: Uint8Array;
-  /** 復元カードの表示に使う文書名(要件§0.a-0.12「前回の作業が残っています」)。 */
+  /** 復元カードの表示に使う文書名(「前回の作業が残っています」)。 */
   readonly documentName: string;
 }
 
@@ -81,7 +81,7 @@ export interface DocumentAutoSaveStorage extends AutoSaveStorage {
 /**
  * 控えの1件が指す文書・窓の識別子。3欄(kind・documentId・sessionId)がそろわない旧控えは
  * 既定の部品の控え(`DEFAULT_AUTO_SAVE_IDENTITY`)を指す。保管庫の鍵と、ui の復元・破棄が
- * 同じ控えを指すよう、判断はここ 1 か所に置く(以前は ui に同じ本体の写しがあった。P12 で解消)。
+ * 同じ控えを指すよう、判断はここ 1 か所に置く(以前は ui に同じ本体の写しがあった)。
  */
 export function autoSaveRecordIdentity(record: AutoSaveRecord): AutoSaveIdentity {
   if (record.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined) {
@@ -138,7 +138,7 @@ export function createMemoryAutoSaveStorage(): DocumentAutoSaveStorage {
 
 /*
  * packages/io の tsconfig は DOM の型を持たない(Node のユニットテストでも使われるため。
- * 計画書§1.1「idb は入れない」と同じ理由で、このファイルのためだけに DOM lib を足すことも
+ * 「idb は入れない」と同じ理由で、このファイルのためだけに DOM lib を足すことも
  * しない)。そのため IndexedDB の型は、実際に使う分だけを自前で最小限に宣言する。
  * ブラウザの実装がこれらのメソッドを持つことは信頼してよい契約とみなす(OCCT の embind バインディ
  * ングと同じ扱い)。読み書きする中身(AutoSaveRecord)だけは isAutoSaveRecord で実際に検査する。
@@ -439,12 +439,12 @@ export interface AutoSaverOptions {
   /** 書き込みが transaction の完了まで成功したときの通知。古い失敗表示を消すための口。 */
   readonly onSuccess?: () => void;
   /**
-   * 控えへ一緒に入れる添付(読み込んだ形・下絵。§0.a-0.9・0.24・0.45、P6 タスク32)。
+   * 控えへ一緒に入れる添付(読み込んだ形・下絵)。
    *
    * **渡さないと、読み込んだ形を含む文書の控えが復元できない。** `.pcad` の読み手は
    * 文書が指している `shapes/*.brep` / `meshes/*.bin` / `canvases/*.png` が欠けていると
    * `missingField` で断る(`pcad/pcadFile.ts` の `findMissingAttachment`)ので、
-   * 添付を渡さずに書いた控えは「開けない控え」になる(P6 タスク21 の申し送り)。
+   * 添付を渡さずに書いた控えは「開けない控え」になる。
    *
    * **書く直前に呼ぶ**(控えを取る瞬間の表を使う)。表そのものではなく関数で受けるのは、
    * 添付が増減しても自動保存の側を作り直さずに済ませるためで、`now` / `setTimeout` と
@@ -474,7 +474,7 @@ export interface DocumentAutoSaver extends AutoSaver {
 }
 
 /**
- * 自動保存の制御(FR-805、NFR-RE-2、計画書§0.a-0.11 / 0.12)。
+ * 自動保存の制御(FR-805、NFR-RE-2)。
  * `markDirty` で変更を記録し、`intervalMs` ごとに、前回書いた文書と違うときだけ
  * 文書の束をZIPにして保管庫へ書く(未変更なら書かない)。
  * 書き込み中に新しい依頼が来ても、二重に書き込みを始めず今動いている書き込みへ相乗りする

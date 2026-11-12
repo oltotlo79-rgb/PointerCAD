@@ -1,7 +1,7 @@
 /**
  * `.pcad` / `.pcada` / `.pcadd` / 3MF が共有する上限つきZIP読み込み。
  * 出力を確保する前に中央目録とraw DEFLATEの実展開長を検査し、固定出力へ展開してCRCを照合する。
- * 宣言サイズだけを信用せず、選択されたエントリの累積も同じ予算へ数える（R06/R10）。
+ * 宣言サイズだけを信用せず、選択されたエントリの累積も同じ予算へ数える。
  */
 import { inflateSync } from 'fflate';
 import { IO_LIMITS, type IoLimits } from '../limits.js';

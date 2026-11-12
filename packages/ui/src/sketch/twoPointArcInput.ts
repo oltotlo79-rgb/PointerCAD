@@ -1,6 +1,6 @@
 import { t } from '../i18n/t.js';
 
-/* ---- P4 タスク11: 2 点+半径の円弧(FR-326、統括の決定 §0.a-0.18) ---- */
+/* ---- 2 点+半径の円弧(FR-326) ---- */
 
 /** 断りの文へ長さを差し込むときの丸め(1μm 単位)。桁が伸びて読みにくくなるのを防ぐ。 */
 function lengthText(millimetres: number): string {
@@ -16,7 +16,7 @@ function lengthText(millimetres: number): string {
  * 引けないので null を返す。
  *
  * 向きを持たない長さだけをここで受け持ち、作図面の中で実際の中心を組み立てるのは
- * タスク12 の `shapeCommands.ts`(`arcCenterFromTwoPointsAndRadius`)。
+ * `shapeCommands.ts`(`arcCenterFromTwoPointsAndRadius`)。
  */
 export function twoPointArcCenterOffset(chordLength: number, radius: number): number | null {
   if (!Number.isFinite(chordLength) || !Number.isFinite(radius)) {

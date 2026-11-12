@@ -1,7 +1,7 @@
 /**
- * 部品を作り直したときに戻す初期値(§0.a-0.2)。**1 か所にまとめる**ので、
+ * 部品を作り直したときに戻す初期値。**1 か所にまとめる**ので、
  * 新しい欄を足すときはその機能のスライスの `*InitialState` にも名前を足す
- * (足し忘れると型検査が落ちる。P6 タスク52)。
+ * (足し忘れると型検査が落ちる)。
  */
 import { type ExpressionValue, expressionValueFromNumber } from '@pointercad/expression';
 import type { ImportedMeshBytes } from '@pointercad/io';
@@ -58,7 +58,7 @@ export type InitialDocumentState = ViewInitialState &
   DrawingInitialState & HelpInitialState & SheetMetalInitialState;
 
 /**
- * 球面の案内線の間隔の既定(度。FR-431、§0.a-0.21)。**数そのものは
+ * 球面の案内線の間隔の既定(度。FR-431)。**数そのものは
  * `buildSphereGrid.ts` の 1 か所だけ**にあり、ここはそれを式へ直して持つ(FR-201)。
  */
 const DEFAULT_SPHERE_GRID_STEP: ExpressionValue = expressionValueFromNumber(
@@ -67,7 +67,7 @@ const DEFAULT_SPHERE_GRID_STEP: ExpressionValue = expressionValueFromNumber(
 
 /** テストで元へ戻せるよう、文書まわりの初期値を1箇所にまとめる。 */
 export function createInitialDocumentState(): InitialDocumentState {
-  // 起動時は空のスケッチ 1 本だけを持つ部品から始める(§0.a-0.2、NFR-UX-6 の空状態ガイド)。
+  // 起動時は空のスケッチ 1 本だけを持つ部品から始める(NFR-UX-6 の空状態ガイド)。
   const document = { ...createEmptyPartDocument(), id: createPartLineageId() };
   const sketch = activeSketchOf(document);
   return {
@@ -75,37 +75,37 @@ export function createInitialDocumentState(): InitialDocumentState {
     ...emptySheetMetalTool(),
     sheetMetalBodies: new Map(),
     activeTool: 'select',
-    // 'select' は立体を選ぶ道具(選択の種類の対応は selectionKindForTool の既定分岐、§0.a-0.6)。
+    // 'select' は立体を選ぶ道具(選択の種類の対応は selectionKindForTool の既定分岐)。
     selectionKind: 'body',
     workPlaneId: DEFAULT_WORK_PLANE_ID,
     // 起動時の部品には基準ジオメトリが 1 つも無いので、作図面は基準の XY そのもの。
     workPlane: WORK_PLANES[DEFAULT_WORK_PLANE_ID],
-    // 断面表示(FR-111、P6 タスク35)は切った状態から始める(費用ゼロ)。
+    // 断面表示(FR-111)は切った状態から始める(費用ゼロ)。
     sectionView: null,
-    // 3D プリントの点検(FR-815、P6 タスク42・43・46)。新しい部品はまだ点検していない。
+    // 3D プリントの点検(FR-815)。新しい部品はまだ点検していない。
     printability: null,
     printabilityOwner: null,
     printabilityOffsets: null,
-    // 下絵(FR-332、P6 タスク39)。新しい部品は画像を 1 枚も持たない。
+    // 下絵(FR-332)。新しい部品は画像を 1 枚も持たない。
     canvases: new Map<string, Uint8Array>(),
     canvasMessage: null,
     canvasPixelSizes: new Map<string, CanvasPixelSize>(),
     canvasImageLoads: new Map(),
     canvasImageRetries: new Map(),
-    // 起動時の部品は読み込んだ形を 1 つも持たない(FR-802、P6 タスク32)。
+    // 起動時の部品は読み込んだ形を 1 つも持たない(FR-802)。
     importedShapes: new Map<string, Uint8Array>(),
     importedMeshes: new Map<string, ImportedMeshBytes>(),
     canvasRectification: null,
     canvasScale: null,
-    // 3D スケッチで押した場所の面(FR-330、タスク14)。まだ一度も押していない。
+    // 3D スケッチで押した場所の面(FR-330)。まだ一度も押していない。
     freeSketchPlane: null,
     resolvedReferences: EMPTY_RESOLVED_REFERENCES,
-    // 起動時の部品はパラメータを 1 つも持たない(FR-207、タスク11)。
+    // 起動時の部品はパラメータを 1 つも持たない(FR-207)。
     parameterAnalysis: EMPTY_PARAMETER_ANALYSIS,
     nonLengthVariables: EMPTY_NON_LENGTH_VARIABLES,
     document,
     documentVersion: 0,
-    // つまみは常に末尾から始まる(§0.a-0.19。保存しないので開き直しても同じ)。
+    // つまみは常に末尾から始まる(保存しないので開き直しても同じ)。
     timelineIndex: null,
     timelineNoticeKey: null,
     timelineRefusal: null,
@@ -116,7 +116,7 @@ export function createInitialDocumentState(): InitialDocumentState {
     resolvedSketch: resolveSketch(sketch),
     sketchMesh: null,
     sketchErrors: [],
-    // 起動時の部品は拘束を 1 つも持たない(FR-313、P4b タスク13)。
+    // 起動時の部品は拘束を 1 つも持たない(FR-313)。
     constraintDiagnosis: null,
     constraintSummaries: NO_CONSTRAINT_SUMMARIES,
     activeConstraintKind: null,
@@ -124,18 +124,18 @@ export function createInitialDocumentState(): InitialDocumentState {
     constraintErrorMessage: null,
     constraintPrompt: null,
     selectedConstraintId: null,
-    // 引っぱり(FR-313、P4b タスク14)。起動直後は何も掴んでいない。
+    // 引っぱり(FR-313)。起動直後は何も掴んでいない。
     sketchDrag: null,
     dragResolved: null,
     dragRefusalKey: null,
     bodies: [],
     referenceRepairBodies: null,
     resolvedPartSketches: null,
-    // 起動直後の部品には外観の割り当てが 1 つも無い(FR-1106、P5 タスク10)。
+    // 起動直後の部品には外観の割り当てが 1 つも無い(FR-1106)。
     appearanceMatches: [],
     partErrors: [],
     cacheHits: 0,
-    // 図形の測定値(ADD-23、GR-14)。まだ 1 度も計算していないので、測った値を持たない。
+    // 図形の測定値(ADD-23)。まだ 1 度も計算していないので、測った値を持たない。
     mathGeometryResult: null,
     recomputeProgress: null,
     cancelRequestCount: 0,
@@ -169,14 +169,14 @@ export function createInitialDocumentState(): InitialDocumentState {
     appearanceErrorKey: null,
     editNoticeKey: null,
     originNoticeMessage: null,
-    // 起動直後は何も測っていない(FR-1102、P5 タスク31・32)。
+    // 起動直後は何も測っていない(FR-1102)。
     measurement: null,
     strengthSession: null,
     massProperties: null,
     measureErrorKey: null,
-    // 形を測る手立てはカーネルを持つ側が起動時に差し出す(P5 タスク32)。
+    // 形を測る手立てはカーネルを持つ側が起動時に差し出す。
     partMeasurer: null,
-    // 3D プリントの点検の口(FR-815、P6 タスク46)。カーネルを積むまでは差し出されない。
+    // 3D プリントの点検の口(FR-815)。カーネルを積むまでは差し出されない。
     partInspector: null,
     isInspectingPrint: false,
     printCheckCancelRequested: false,
@@ -184,12 +184,12 @@ export function createInitialDocumentState(): InitialDocumentState {
     exchangeNotice: null,
     exportHandoff: null,
     exportHandoffAttempt: null,
-    // 書き出し・読み込みの口も同じ(P6 タスク32)。差し出されるまでは理由つきで断る。
+    // 書き出し・読み込みの口も同じ。差し出されるまでは理由つきで断る。
     exchangeKernel: null,
-    // 起動直後は何も読み込んでいないので、単位を訊く小窓も出ていない(P6 タスク32b)。
+    // 起動直後は何も読み込んでいないので、単位を訊く小窓も出ていない。
     importUnitAsked: false,
     pickAnchor: null,
-    // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める(§2.10)。
+    // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める。
     fileGateway: createBrowserFileGateway(),
     fileName: null,
     savedDocument: null,
@@ -199,7 +199,7 @@ export function createInitialDocumentState(): InitialDocumentState {
     autoSaver: null,
     restorePrompt: null,
     /*
-      起動直後はアセンブリを開いていない(P7 §0.a-0.10、タスク5)。1 つの窓で開く文書は
+      起動直後はアセンブリを開いていない。1 つの窓で開く文書は
       1 つだけなので、ここが null のあいだは上の `document`(部品)が画面に出る。
       新規の部品を作ったときも null へ戻す(`documentSlice.ts` の `resetDocument`)。
     */

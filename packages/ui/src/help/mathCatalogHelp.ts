@@ -18,7 +18,7 @@ const GROUP_ORDER: readonly MathPaletteGroup[] = [
 
 /**
  * ヘルプの用語検査（packages/help-content/src/topics.test.ts の FORBIDDEN_TERMS）は、math-input・
- * math-symbols の両章に限って「連立一次式」（完全な一語として使う場合）を認めている（MC-04b、2026-09-24）。
+ * math-symbols の両章に限って「連立一次式」（完全な一語として使う場合）を認めている。
  * この章の自己検査（本ファイル末尾の findForbiddenHelpTerm）も同じ例外を使い、目録の元の名前と
  * 見出しをそのまま載せる（言い換え・章全体へのリンクへの置き換えはしない）。
  */
@@ -72,7 +72,7 @@ function substituteTemplate(template: string, example: Pick<MathPaletteExample, 
   return source;
 }
 
-/** 説明の節（math-input.md の見出し）への個別リンク。元の見出し名をそのまま使う（MC-04b）。 */
+/** 説明の節（math-input.md の見出し）への個別リンク。元の見出し名をそのまま使う。 */
 function sectionReference(help: string): string {
   const safe = assertPlainCell(help, 'help section title');
   return `[${safe}](math-input.md#${helpHeadingId(help)})`;

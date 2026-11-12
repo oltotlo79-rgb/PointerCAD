@@ -18,7 +18,7 @@ import { openTutorial } from '../tutorial/tutorialActions.js';
 import { OfflineSettings } from './OfflineSettings.js';
 
 /**
- * 表示設定(計画書 docs/plans/P4-スケッチ拡張.md タスク2、§0.a-0.3、§2.2)。
+ * 表示設定。
  *
  * 対応要件: FR-908(表示テーマ 5 種)、FR-909(拡大率 90〜150%)。どちらも
  * **再起動なしに即時反映**で、選んだ内容は端末に残る(`settings.ts` が `localStorage` へ)。

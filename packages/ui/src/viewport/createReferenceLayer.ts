@@ -1,6 +1,6 @@
 /**
  * 基準ジオメトリ(基準軸・基準点・座標系)の 3D 表示
- * (計画書 docs/plans/P4-スケッチ拡張.md タスク13、FR-329)。
+ * (FR-329)。
  *
  * 任意の作業平面(FR-328)そのものは、作図面として選ばれているものだけを
  * `createSketchLayer` が薄い矩形で出す。ここで出すのは**参照のためだけの軸・点・座標系**で、
@@ -56,7 +56,7 @@ export interface ReferenceLayer {
   /**
    * 名前の札(基準軸・座標系)が画面上でおよそ一定の大きさ(約 13px)に見えるよう、
    * カメラ距離・画面(canvas)の高さ・UI 拡大率から札のワールド高さを計算し直す
-   * (P4 仕上げ (f))。視点操作(ズーム)のたびに毎描画で呼ぶ想定。
+   * 視点操作(ズーム)のたびに毎描画で呼ぶ想定。
    */
   updateScreenScale(distance: number, viewportHeightPixels: number, uiScalePercent: number): void;
   dispose(): void;
@@ -203,7 +203,7 @@ function buildCoordinateSystemPositions(
 }
 
 /* ---------------------------------------------------------------------------
- * 名前の札(P4 タスク33、タスク9・13 の申し送り「基準軸が方眼と同じ長さで見分けにくい」)
+ * 名前の札(「基準軸が方眼と同じ長さで見分けにくい」への対応)
  * ------------------------------------------------------------------------- */
 
 /** 札の文字の大きさ(画素、等倍の画面での基準)と、札の内側の余白(画素)。 */
@@ -211,8 +211,8 @@ const LABEL_FONT_PIXELS = 22;
 const LABEL_PADDING_PIXELS = 8;
 
 /**
- * 札の高さを画面上でおよそ一定に保つ、目標の画素数(P4 仕上げ (f)、
- * 統括の目視 2026-09-04「札が画面幅の 1/6 ほどに巨大化する」への対応)。
+ * 札の高さを画面上でおよそ一定に保つ、目標の画素数(
+ * 札が画面幅の 1/6 ほどに巨大化したことへの対応)。
  * 12〜14px 相当という指示のうち中央の値を採る。
  */
 const LABEL_SCREEN_HEIGHT_PIXELS = 13;
@@ -246,7 +246,7 @@ interface NameTag {
  * 描画のたびに three.js が位置を合わせてくれて配線が増えない。
  *
  * `resolutionScale` は canvas の画素数だけを底上げする(表示上の大きさ・縦横比は変えない)。
- * 高 DPI の画面でも輪郭がにじまないようにするため(P4 仕上げ (f))。
+ * 高 DPI の画面でも輪郭がにじまないようにするため。
  */
 function createNameTag(text: string, color: number, resolutionScale: number): NameTag | null {
   const canvas = document.createElement('canvas');
@@ -309,7 +309,7 @@ export function createReferenceLayer(): ReferenceLayer {
   );
   /**
    * 札の高さ(mm)。カメラ距離・画面の高さ・UI 拡大率から毎描画で計算し直す
-   * (`updateScreenScale`、P4 仕上げ (f))。ここでの初期値は最初の描画までの仮の値。
+   * (`updateScreenScale`)。ここでの初期値は最初の描画までの仮の値。
    */
   let tagWorldHeight = DEFAULT_AXIS_HALF_LENGTH_MM * 0.02;
 
@@ -357,11 +357,11 @@ export function createReferenceLayer(): ReferenceLayer {
   }
 
   /**
-   * 名前の札を出し直す(FR-329、P4 タスク33)。
+   * 名前の札を出し直す(FR-329)。
    *
    * 札を出すのは**軸と座標系だけ**にする。基準点は「どれがどれか」を木で選べば分かるうえ、
    * 平面や軸を決めるために同じ場所へ重なって置かれることが多く、札を出すと文字どうしが
-   * 重なって却って読めなくなる(実測、2026-09-04)。軸は端の少し内側、座標系は
+   * 重なって却って読めなくなる(実測)。軸は端の少し内側、座標系は
    * 矢印の先の高さへ置く。**画面に出していないもの(`visible: false`)には札を出さない。**
    */
   function applyTags(references: ResolvedReferences): void {

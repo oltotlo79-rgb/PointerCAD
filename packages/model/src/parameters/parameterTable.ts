@@ -1,12 +1,12 @@
 /**
  * パラメータ表の依存グラフ・循環・未使用・変数表と、表そのものの編集
- * (要件 FR-207・FR-206、計画書 docs/plans/P4b-スケッチの仕上げ.md §2.6・タスク2)。
+ * (要件 FR-207・FR-206)。
  *
  * ここに置くのは**純関数だけ**で、DOM にも React にも文書の歩き回りにも触れない。
- * 部品文書の全式を評価し直すのはタスク3(`part/reevaluatePart.ts`)、
- * 断りの文言を組み立てるのはタスク10(`ui/src/parameters/parameterCommands.ts`)の担当にする。
+ * 部品文書の全式を評価し直すのは `part/reevaluatePart.ts`、
+ * 断りの文言を組み立てるのは `ui/src/parameters/parameterCommands.ts` の役目にする。
  *
- * 評価の流れ(§2.6):
+ * 評価の流れ:
  *   ① 各パラメータの式が参照する名前を集める(`collectVariableNames`)
  *   ② 有向グラフを作り、深さ優先で並べ替える(参照される側が先)
  *   ③ 循環に含まれる名前は評価せず「循環」の印を付ける(値は前回のまま据え置く)
@@ -46,7 +46,7 @@ const BLACK = 2;
 
 /**
  * 名前から引ける表。同じ名前が 2 つあるときは**先に出たほう**を採る(決定性のため)。
- * 名前の重複はタスク10 が追加・改名の時点で断るので、ここまで来るのは想定外の形だけ。
+ * 名前の重複は ui が追加・改名の時点で断るので、ここまで来るのは想定外の形だけ。
  */
 function indexByName(parameters: readonly Parameter[]): ReadonlyMap<string, Parameter> {
   const byName = new Map<string, Parameter>();
@@ -135,7 +135,7 @@ export function parameterEvaluationOrder(parameters: readonly Parameter[]): Para
 /**
  * パラメータ表を解析し、変数表・循環・未使用・失敗を返す(FR-207)。
  *
- * `usedSources` は文書の中の全ての式の文字列(タスク3 の `collectExpressionSources` が集める)。
+ * `usedSources` は文書の中の全ての式の文字列(`collectExpressionSources` が集める)。
  * 「使われていない名前」の判定に使い、**パラメータ自身の式もここで見る**ので、
  * `usedSources` にパラメータの式が入っていてもいなくても結果は同じになる。
  *
@@ -171,7 +171,7 @@ export function analyzeParameters(
       exactVariables.set(name, result.value.exact);
       continue;
     }
-    // 循環の外にあって循環を参照している名前も、ここで unknownVariable として拾われる(§2.6)。
+    // 循環の外にあって循環を参照している名前も、ここで unknownVariable として拾われる。
     failures.push({ name, message: result.error.message });
   }
 
@@ -214,7 +214,7 @@ function unusedParameterNames(
 }
 
 /**
- * その名前を参照している**他の**パラメータの名前。削除の可否の判断に使う(タスク10)。
+ * その名前を参照している**他の**パラメータの名前。削除の可否の判断に使う。
  * 自分自身への参照は数えない(理由は `unusedParameterNames` と同じ)。
  */
 export function referencesTo(
@@ -229,7 +229,7 @@ export function referencesTo(
     .map((parameter) => parameter.name);
 }
 
-/** 表の末尾へ足す。元の配列は変えない。重複した名前を断るのは呼び出し側(タスク10)。 */
+/** 表の末尾へ足す。元の配列は変えない。重複した名前を断るのは呼び出し側。 */
 export function addParameter(
   parameters: readonly Parameter[],
   parameter: Parameter,
@@ -241,7 +241,7 @@ export function addParameter(
 
 /**
  * 名前で 1 つ取り除く。**消すだけ**で、参照が残っているかは見ない。
- * 参照されている名前を消してよいかの判断は、`referencesTo` を見て呼び出し側(タスク10)が行う
+ * 参照されている名前を消してよいかの判断は、`referencesTo` を見て呼び出し側が行う
  * (型の層で断ると、断りの文へ参照元の件数を差し込めない)。
  */
 export function removeParameter(
@@ -262,13 +262,13 @@ export function replaceParameter(
 }
 
 /**
- * 改名。参照している**他のパラメータの式**も同時に書き換える(タスク1 の `renameVariable`)。
+ * 改名。参照している**他のパラメータの式**も同時に書き換える(`renameVariable`)。
  * 字句単位で差し替えるので、`板厚` を改名しても `板厚さ` という別の名前は変わらない。
  *
  * 式の**値**は変えない。名前が変わっても数は変わらないので、`value` と `display` はそのまま持つ
  * (FR-202「式は文字列のまま保存され、再表示・再編集できる」)。
  *
- * **文書の側の式**(押し出しの距離など)は、この関数の対象外。文書を歩くのはタスク3 の担当。
+ * **文書の側の式**(押し出しの距離など)は、この関数の対象外。文書を歩くのは `part/reevaluatePart.ts` の役目。
  * `from` の名前が表に無ければ、何もせず元の配列を返す。
  */
 export function renameParameter(
@@ -293,7 +293,7 @@ export function renameParameter(
  * 表の中で 1 行を動かす(利用者の並べ替え)。`from` の行を抜いて `to` の位置へ差し込む。
  * 範囲の外の位置を渡されたら何もせず元の配列を返す(画面の取り違えで表が壊れないように)。
  *
- * 並び順は**表示の順**でしかなく、評価の順序(依存順)には影響しない(§2.6)。
+ * 並び順は**表示の順**でしかなく、評価の順序(依存順)には影響しない。
  */
 export function reorderParameters(
   parameters: readonly Parameter[],
@@ -324,7 +324,7 @@ export function nextParameterName(parameters: readonly Parameter[]): string {
 }
 
 /* ---------------------------------------------------------------------------
- * 新しく付ける名前の検査(P6 §0.a-0.1、`docs/報告記録.md` 2026-09-06 02:16 の統括の決定)
+ * 新しく付ける名前の検査
  * ------------------------------------------------------------------------- */
 
 /**
@@ -361,7 +361,7 @@ export const LENGTH_UNIT_NAME_MESSAGE = 'in と mm は単位の名前なので�
  *
  * **既存の文書に `mm` や `in` という名前があっても、これで弾かない。** 読み込みと評価は
  * これまでどおり通す(`checkVariableName` も `analyzeParameters` も変えていない)。
- * 断るのは利用者がこれから名前を打つとき(追加・改名)だけである(統括の決定)。
+ * 断るのは利用者がこれから名前を打つとき(追加・改名)だけである。
  */
 export function checkNewParameterName(name: string): NewParameterNameIssue | null {
   // 単位の判定を先に置く。`"` は識別子の文字ではないので `checkVariableName` を先に呼ぶと

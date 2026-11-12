@@ -30,8 +30,8 @@ export function readSketchFeatureBase(
   if (!name.ok) {
     return name;
   }
-  // 作図面は基準の 3 面(xy / xz / yz)か、任意の作業平面フィーチャーの id(FR-328、
-  // P4 タスク9)。決まった 3 つに限れなくなったので、空でない文字列であることだけを見る。
+  // 作図面は基準の 3 面(xy / xz / yz)か、任意の作業平面フィーチャーの id(FR-328)。
+  // 決まった 3 つに限れなくなったので、空でない文字列であることだけを見る。
   const planeId = readString(record, 'planeId', path);
   if (!planeId.ok) {
     return planeId;
@@ -44,8 +44,8 @@ export function readSketchFeatureBase(
 
 /**
  * 構築線(FR-320)の欄。**版4からは必須**(欠けていれば `missingField`)。
- * 版3以前(スキーマ版は上げなかった、統括の差し戻し 2026-09-04)はこの欄を持たない
- * ファイルもあったが、その寛容さは P4 タスク31(§0.a-0.24)で
+ * 版3以前(スキーマ版は上げなかった)はこの欄を持たない
+ * ファイルもあったが、その寛容さは版4の厳密化で
  * `schema.ts` の `SCHEMA_MIGRATIONS[3]`(版3→4の移行)へ移した。移行済みの版4データは
  * 必ずこの欄を持つので、ここでは寛容に読まない。書き手(`serializeSketchFeature`)は
  * 常にこの欄を書く。

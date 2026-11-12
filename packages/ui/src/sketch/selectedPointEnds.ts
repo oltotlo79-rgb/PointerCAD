@@ -1,6 +1,6 @@
 /**
  * Shared selection checks for operations on selected existing points: the two-point connection
- * (R29) and the face through three or more points (R30). Both use the same document, current
+ * and the face through three or more points. Both use the same document, current
  * result, selection-proof and reference checks; only the counts and messages differ.
  */
 import { expressionValueFromNumber } from '@pointercad/expression';

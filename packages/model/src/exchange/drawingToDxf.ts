@@ -85,7 +85,7 @@ function textOutlineTransform(text: RenderText): AffineTransform2 | null {
   return transform.every(Number.isFinite) && Math.abs(transform[0] * transform[3] - transform[1] * transform[2]) > 1e-12 ? transform : null;
 }
 
-/** 用紙上の共通IRをP6のR12書き手へ渡す。新しいDXF実体を混ぜず、省略は件数で返す。 */
+/** 用紙上の共通IRを既存のR12書き手へ渡す。新しいDXF実体を混ぜず、省略は件数で返す。 */
 export function drawingToDxf(document: RenderDocument, layers: readonly DrawingLayer[], toleranceMm = 0.001,
   options: DrawingDxfConversionOptions = {}): DrawingDxfGeometry {
   if (![document.widthMm, document.heightMm, toleranceMm].every((value) => Number.isFinite(value) && value > 0)

@@ -20,31 +20,31 @@ import {
 import { withVirtualFileInput } from './virtualFile.js';
 
 /**
- * OBJ / glTF の読み込み(計画書 P6 §2.8、タスク18。FR-802 / FR-809)。
+ * OBJ / glTF の読み込み(FR-802 / FR-809)。
  *
- * **`RWObj_CafReader` / `RWGltf_CafReader` を使う**(§0.a-0.26)。どちらも親の
+ * **`RWObj_CafReader` / `RWGltf_CafReader` を使う**。どちらも親の
  * `RWMesh_CafReader` が持つ `Perform(theFile, theProgress)` と `SingleShape()` だけで
  * 読めるので、**列挙を 1 つも取らない**(述語ガードを増やさない)。
  *
- * **読んだ三角形は B-rep へ戻さない**(§0.a-0.23)。返すのは STL の読み込み(タスク17)と
+ * **読んだ三角形は B-rep へ戻さない**。返すのは STL の読み込みと
  * **同じ `ImportedMeshData`**(位置・法線・添字・三角形数・体積)で、`tessellate.ts` の
  * `SurfaceMesh` と同じ並びに揃えてある。
  *
  * ---
  *
- * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1、-12、-7):**
+ * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984):**
  *
  * - `oc.RWObj_CafReader` / `oc.RWGltf_CafReader` / `oc.RWMesh_CafReader` は実行時に関数
  *   (`.test.ts` の 1 件目が毎回確かめる)。**`RWObj_CafWriter` / `RWGltf_CafWriter` は、採用した
  *   closed 版 OCCT(`vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677`)には
  *   無い**(実行時に `undefined`。2026-10-24 に確認。旧レジストリ版にはあった)。OBJ / glTF の
- *   書き出しは OCCT の書き手を使わず、自前の純関数 `writeCafMesh.ts` で行う(統括の決定
- *   2026-09-06 と 2026-10-24)。
- * - **§1.5-12 の答え: `SetDocument` を呼ばずに `Perform` は成功する。** 文書を渡さない
+ *   書き出しは OCCT の書き手を使わず、
+ *   自前の純関数 `writeCafMesh.ts` で行う。
+ * - ** `SetDocument` を呼ばずに `Perform` は成功する。** 文書を渡さない
  *   まま `Perform` が `true` を返し、`SingleShape()` が中身のある形を返した。
- *   **XCAF の文書(タスク7)は読み込みには要らない。**
+ *   **XCAF の文書は読み込みには要らない。**
  * - **⚠️ `Perform` の第 1 引数に JavaScript の文字列を渡すと落ちる。** 型定義の
- *   `XCAFDoc_PartId` は宣言が無く `any` に解けるが(§1.4-1)、実行時の束縛は
+ *   `XCAFDoc_PartId` は宣言が無く `any` に解けるが、実行時の束縛は
  *   `TCollection_AsciiString` で、素の文字列を渡すと
  *   `BindingError: Cannot pass "/pointercad/1-probe.obj" as a TCollection_AsciiString` に
  *   なる。**`new oc.TCollection_AsciiString_2(path)` に包んで渡す**(STEP の
@@ -61,7 +61,7 @@ import { withVirtualFileInput } from './virtualFile.js';
  *   → **ある面はファイルの法線を使い、無い面だけ三角形から計算する**(下の
  *   `computeVertexNormals`)。面ごとに節点の範囲が重ならないので、混ざっていても
  *   互いに影響しない。
- * - **§1.5-7 の答え(読み込み側): `SetSystemLengthUnit(0.001)` で mm になる。** 一辺
+ * - **読み込み側: `SetSystemLengthUnit(0.001)` で mm になる。** 一辺
  *   0.02(m)の箱の glb を読むと、既定(`SystemLengthUnit()` が `-1`)では 0.02 のまま、
  *   `0.001` を渡すと**ちょうど 20**、`1000` を渡すと 0.00002 になった。つまり倍率は
  *   `FileLengthUnit / SystemLengthUnit` で掛かる。glb の `FileLengthUnit()` は読む前から
@@ -71,18 +71,18 @@ import { withVirtualFileInput } from './virtualFile.js';
  *   19.999999552965164 になる)。
  * - **OBJ は単位を持たない**(`FileLengthUnit()` も `SystemLengthUnit()` も `-1`)ので、
  *   **何も設定しない**(倍率が掛からず、ファイルの数がそのまま mm になる)。取り込みの
- *   単位を利用者に訊くのは model / ui の仕事(§0.a-0.6)。
+ *   単位を利用者に訊くのは model / ui の仕事。
  * - **座標系は変換されない。** `HasSystemCoordinateSystem()` は最初から false で、
  *   glb の `HasFileCoordinateSystem()` は true(glTF は Y 上)だが、**受け手側の座標系を
  *   設定しない限り回転は掛からない**(実測で箱の軸がそのまま入った)。受け手側を決める
  *   `SetSystemCoordinateSystem_2` は列挙 `RWMesh_CoordinateSystem` を取るが、**呼ばない
- *   ので述語ガードは増えない**(§4 の上限に触れない)。
+ *   ので述語ガードは増えない**(述語ガードの上限に触れない)。
  * - **壊れた glb は `Perform` が false を返す**(例外は飛ばず、OCCT が
  *   `defines invalid JSON document!` を出力へ書くだけ)。→ 断りは戻り値で判定する。
  * - **形の入っていない OBJ(面が 1 つも無い)は `Perform` が true を返し、
  *   `SingleShape()` が空になる。** → 断りは `IsNull()` でも判定する(NFR-RE-1)。
  *
- * **持ち主の見分け(`rules/06-過去の失敗と対策.md` 10.13):**
+ * **持ち主の見分け:**
  * - 読み手(`RWObj_CafReader` / `RWGltf_CafReader`)は `new` したものなので `delete()` する。
  * - `SingleShape()` / `TopTools_IndexedMapOfShape.FindKey()` / `BRep_Tool.Triangulation()` の
  *   戻りは値または `const T&` なので **embind の複製**。控えへ積んで必ず返す。
@@ -95,12 +95,12 @@ import { withVirtualFileInput } from './virtualFile.js';
 export type CafMeshFormat = 'obj' | 'gltf';
 
 /**
- * 断りの文言・上限は `exchangeShared.ts` が正本(タスク16 で寄せた)。
+ * 断りの文言・上限は `exchangeShared.ts` が正本。
  *
  * **OBJ / glTF だけの名前でも引けるように、ここから名前を変えて中継する。** 値の持ち主を
  * 1 つにしつつ、画面や検査が引いている名前を残すためで、`readStl.ts` も同じ流儀。
  * **`CAF_MESH_READ_FAILED_MESSAGE` は STL・STEP の「読めませんでした」と 1 字も違わない**
- * (§2.8 の断りの表が形式をまたいで 1 つの文言と決めている)。
+ * (断りの表が形式をまたいで 1 つの文言と決めている)。
  */
 export {
   MESH_MAX_TRIANGLE_COUNT as CAF_MESH_MAX_TRIANGLE_COUNT,
@@ -138,7 +138,7 @@ const GLTF_SYSTEM_LENGTH_UNIT_M = 0.001;
  * 面 1 枚ぶんの読み取り口(2 度の走査で使い回す)。
  *
  * 1 度目で三角形の数を数え、**大きすぎるファイルを配列を確保する前に断る**
- * (§2.8 の門。読んでから断ると 500 万三角形ぶんの JS の配列を作ってしまう)。
+ * (読んでから断ると 500 万三角形ぶんの JS の配列を作ってしまう)。
  * 2 度目で位置と添字を書き込む。取り出したものは呼び出し側の控えが持ち続ける。
  */
 interface FaceMeshSource {
@@ -160,7 +160,7 @@ interface FaceMeshSource {
  *
  * `tessellate.ts` と違って**三角形分割の付かない面は積まない**。あちらは面の通し番号を
  * 加工フィーチャーの指定に使うので 0 枚でも積む必要があったが、読み込んだメッシュは
- * 面を指定できない(§0.a-0.23)ので、番号を揃える相手がいない。
+ * 面を指定できないので、番号を揃える相手がいない。
  */
 function collectFaceMeshes(
   oc: OpenCascadeInstance,
@@ -174,7 +174,7 @@ function collectFaceMeshes(
 
   const subShapeCount = subShapes.Size();
   for (let index = 1; index <= subShapeCount; index += 1) {
-    // `FindKey` の戻りは embind の複製(rules/06 10.13 の ③)なので控えへ積む。
+    // `FindKey` の戻りは embind の複製なので控えへ積む。
     const subShape = keep(subShapes.FindKey(index));
     if (subShape.ShapeType() !== faceType) {
       continue;
@@ -185,13 +185,13 @@ function collectFaceMeshes(
     if (handle.IsNull()) {
       continue;
     }
-    // `.get()` の戻りは借り物なので控えへ積まない(rules/06 10.13 の ①)。
+    // `.get()` の戻りは借り物なので控えへ積まない。
     const triangulation = handle.get();
     sources.push({
       face,
       handle,
       location,
-      // 個数の型 `Graphic3d_ZLayerId` はどこにも定義が無いので、整数へ直してから使う(§1.4)。
+      // 個数の型 `Graphic3d_ZLayerId` はどこにも定義が無いので、整数へ直してから使う。
       nodeCount: Number(triangulation.NbNodes()),
       triangleCount: Number(triangulation.NbTriangles()),
       hasNormals: triangulation.HasNormals(),
@@ -268,7 +268,7 @@ function writeFaceMesh(
     // (`tessellate.ts` と同じ扱い。体積の符号と法線の向きがここで決まる)。
     const reversed = source.face.Orientation_1() !== oc.TopAbs_Orientation.TopAbs_FORWARD;
     // `Triangles()` は `const T&` を返すので embind の複製。使い終わったら解放が要る
-    // (rules/06 10.13 の ③。忘れると読み込みのたびに溜まって目に見えて遅くなる)。
+    // (忘れると読み込みのたびに溜まって目に見えて遅くなる)。
     const triangles = keep(triangulation.Triangles());
     for (let index = 1; index <= source.triangleCount; index += 1) {
       try {
@@ -289,7 +289,7 @@ function writeFaceMesh(
 }
 
 /**
- * OBJ / glTF のバイト列を読んで、三角形の束を返す(§2.8、FR-802 / FR-809)。
+ * OBJ / glTF のバイト列を読んで、三角形の束を返す(FR-802 / FR-809)。
  *
  * ```ts
  * const mesh = readCafMesh(oc, bytes, { format: 'gltf' });
@@ -297,15 +297,15 @@ function writeFaceMesh(
  * ```
  *
  * **口は 1 つにしてある**(`readObj` / `readGltf` に分けない)。分けても中身は読み手の
- * `new` と単位の設定しか変わらず、呼び出し側(タスク16 の配線)は拡張子から形式を
+ * `new` と単位の設定しか変わらず、呼び出し側(書き出し・読み込みの配線)は拡張子から形式を
  * 決めるので、形式を値で受け取るほうが分岐が 1 か所で済む。
  *
  * **glTF は mm へ直して返す**(OCCT に 1000 倍させる。冒頭の実測)。
- * **OBJ は単位を持たない**ので、ファイルの数がそのまま mm になる(§0.a-0.6)。
+ * **OBJ は単位を持たない**ので、ファイルの数がそのまま mm になる。
  *
  * 読めなかったとき・形が入っていないとき・三角形が多すぎるときは**日本語の理由**で断る
  * (NFR-RE-1。呼び出し側は例外を受けて断りの文言をそのまま見せられる)。
- * 仮想ファイルは `withVirtualFileInput` が必ず片付ける(§2.2)。
+ * 仮想ファイルは `withVirtualFileInput` が必ず片付ける。
  *
  * 返る値はただの JS の並びなので、呼び出し側に解放の責任は無い(OCCT が確保したものは
  * この関数の中で全部返す)。
@@ -331,7 +331,7 @@ export function readCafMesh(
       const range = keep(new oc.Message_ProgressRange_1());
       // 第 1 引数は実行時には `TCollection_AsciiString`。素の文字列は通らない(冒頭の実測)。
       const fileArgument = keep(new oc.TCollection_AsciiString_2(path));
-      // `SetDocument` は呼ばない(§1.5-12 の実測。文書なしで読める)。
+      // `SetDocument` は呼ばない(実測。文書なしで読める)。
       if (!reader.Perform(fileArgument, range)) {
         // 壊れたファイルでも例外は飛ばず false が返る(冒頭の実測)。
         throw new Error(MESH_READ_FAILED_MESSAGE);

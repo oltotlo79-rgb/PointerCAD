@@ -1,8 +1,8 @@
 /**
- * パラメータ表(名前を付けた数値)の型(要件 FR-207・FR-206、
- * 計画書 docs/plans/P4b-スケッチの仕上げ.md §2.6・タスク2)。
+ * パラメータ表(名前を付けた数値)の型
+ * (要件 FR-207・FR-206)。
  *
- * パラメータは部品文書に 1 つだけ持つ(`PartDocument.parameters`、§0.a-0.17)。
+ * パラメータは部品文書に 1 つだけ持つ(`PartDocument.parameters`)。
  * スケッチごとに持たないのは、FR-207 の「どの数値欄からも名前で参照でき」が
  * 部品全体を対象にしているため。
  *
@@ -21,7 +21,7 @@ import type { ExpressionValue, MathCoefficientValue } from '@pointercad/expressi
 export type ParameterUnit = 'mm' | 'degree' | 'none';
 
 /**
- * 単位の一覧。io の読み書き(タスク21)が「知らない単位」を断るときの正本にする
+ * 単位の一覧。io の読み書きが「知らない単位」を断るときの正本にする
  * (同じ一覧を 2 か所に書かない)。
  */
 export const PARAMETER_UNITS: readonly ParameterUnit[] = ['mm', 'degree', 'none'];
@@ -51,7 +51,7 @@ export interface ParameterFailure {
  * 依存の解析の結果。画面はこれを見て赤い印と「未使用」の印を出す(FR-207)。
  *
  * どの配列も**表の並び順**(利用者が並べ替えた順)で返す。評価の順序は内部で決めるが、
- * 表示の順は利用者が決めたものを崩さない(§2.6)。
+ * 表示の順は利用者が決めたものを崩さない。
  */
 export interface ParameterAnalysis {
   /** 評価できた変数表。循環に含まれる名前と、評価に失敗した名前は入らない。 */
@@ -70,7 +70,7 @@ export interface ParameterAnalysis {
    * 図形由来の係数(図形の測定値を直接、または他の係数を経由して使う係数)の名前 → 使う図形の測定値の定義ID。
    * 表の並び順で、図形由来の係数だけが入る(1つも無ければ欄ごと省く)。評価に失敗した係数も由来は残す。
    * これらの値は形の計算部の倍精度そのもので、厳密な原式・有理数として扱わず、パラメータ表の覚え書きにも
-   * 残さない(計画書 geomref-plan §4(e)、GR-04)。
+   * 残さない。
    */
   readonly geometryDerived?: ReadonlyMap<string, readonly string[]>;
 }

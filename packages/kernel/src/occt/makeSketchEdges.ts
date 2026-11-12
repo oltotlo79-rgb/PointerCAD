@@ -78,7 +78,7 @@ export function makeArcEdge(oc: OpenCascadeInstance, arc: ArcSpec): OcctEdgeHand
 
 /**
  * 曲線の指定から稜線を作る。楕円(FR-318)とスプライン(FR-317)は、
- * それぞれ専用の作り手へ振り分ける(P4 タスク5 で `CurveSpec` を 4 種へ広げた)。
+ * それぞれ専用の作り手へ振り分ける(`CurveSpec` は 4 種)。
  */
 export function makeCurveEdge(oc: OpenCascadeInstance, curve: CurveSpec): OcctEdgeHandle {
   switch (curve.kind) {

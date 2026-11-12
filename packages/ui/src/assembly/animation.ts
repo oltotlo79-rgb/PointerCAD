@@ -1,4 +1,4 @@
-/** P7 タスク22。単一時間軸の再生と31枚PNGの直列書き出し。 */
+/** 単一時間軸の再生と31枚PNGの直列書き出し。 */
 import { createPngSequenceZip, PNG_SEQUENCE_FRAME_COUNT } from '@pointercad/io';
 import {
   explodedPlacements, presentationJointRequests, solveDrivenJoint,

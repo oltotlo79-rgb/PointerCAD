@@ -1,8 +1,8 @@
 /**
- * アセンブリのスライス(P7 §0.10、計画書タスク5)。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * アセンブリのスライス。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  *
- * **1 つの窓で開く文書は 1 つだけ**(§0.a-0.10)。ここが `null` でないあいだは
+ * **1 つの窓で開く文書は 1 つだけ**。ここが `null` でないあいだは
  * アセンブリを開いていることになり、部品の読み出しの口(`documentKind.ts` の
  * `activePartDocument`)は `null` を返す。種類による分岐は**すべて `documentKind.ts`**
  * にあり、このスライスは文書・部品ライブラリとその履歴を持つ。
@@ -135,7 +135,7 @@ export interface AssemblySlice extends CircularWeldSlice {
   /**
    * アセンブリを開く。**部品の欄はここでは触らない**——欄そのものは起動時の空の部品を
    * 持ったまま残るが、`activePartDocument` が `null` を返すので画面には出ない
-   * (§0.a-0.10「1 つの窓で 1 つの文書」)。
+   * (「1 つの窓で 1 つの文書」)。
    */
   readonly openAssembly: (document: AssemblyDocument, library?: PartLibrary,
     options?: { readonly preserveSaveTarget?: boolean; readonly preparedSession?: PreparedDocumentSession }) => void;
@@ -321,7 +321,7 @@ type InterferenceTransientState = Pick<AssemblyOwnedInitialState,
   | 'isCheckingAssemblyInterference' | 'assemblyInterferenceError'>;
 
 /** いまの文書・表示の形・部品の一式でボルト締結を予告する。表示が古ければ予告しない。 */
-/** EX12: an edit or Undo that ends a coupled drag of the current document gives back the drives shown at the drag start,
+/** an edit or Undo that ends a coupled drag of the current document gives back the drives shown at the drag start,
  * but only while the shown drives are still the ones that drag published (anything else replaced them on purpose). */
 function endedDragDrives(state: AppState): Pick<AppState, 'assemblyOccurrenceDrives'> | null {
   const drag = state.assemblyDrag;
@@ -448,7 +448,7 @@ export const createAssemblySlice: StateCreator<
       && state.assemblyMotionJointValues === source.assemblyMotionJointValues
       && state.assemblyOccurrenceDrives === source.assemblyOccurrenceDrives;
   }
-  /** A solved top-level drive is published with every cross-level group it turns (EX12), or refused whole. */
+  /** A solved top-level drive is published with every cross-level group it turns, or refused whole. */
   function publishJointDrive(values: ReadonlyMap<string, number>, prepared: NonNullable<ReturnType<typeof prepareJointDrive>>,
     driven: SolveDrivenJointOutcome): boolean {
     const update = jointDriveUpdate(values, prepared, driven);

@@ -136,11 +136,11 @@ const MISSING_BODY_MESSAGE =
   'もとになる立体が見つかりませんでした。もう一度計算し直してください。';
 
 /**
- * 測る形が形状キャッシュに無いとき(FR-1101、FR-1102、§0.a-0.30)。
+ * 測る形が形状キャッシュに無いとき(FR-1101、FR-1102)。
  *
  * 測定は再計算を起こさない読み取りなので、ここで自分から作り直すことはしない。
  * 呼び出し側(UI)は、再計算の完了を待って**自動で 1 回だけ測り直し**、
- * それでも無ければこの文言をそのまま見せる(§0.a-0.30 の条件)。
+ * それでも無ければこの文言をそのまま見せる。
  */
 const MEASURE_MISSING_SHAPE_MESSAGE = '測れませんでした。もう一度お試しください。';
 
@@ -151,7 +151,7 @@ const MEASURE_NEEDS_TWO_MESSAGE = '距離を測るには 2 つ選んでくださ
 const MEASURE_NEEDS_ONE_MESSAGE = '体積と重心を測るには立体を 1 つ選んでください。';
 
 /**
- * 読み込んだ形へ付ける、画面用の三角形の粗さ(FR-802、P6 §2.8)。
+ * 読み込んだ形へ付ける、画面用の三角形の粗さ(FR-802)。
  *
  * **省略と同じ意味の空の指定**にしてある。`tessellate` の既定(線形 0.1mm・角度 0.5rad)は
  * 画面表示の既定そのもので、読み込んだ形も画面に出るところは他のボディと変わらないため、
@@ -216,7 +216,7 @@ function assemblyWithShapes(
 }
 
 /**
- * 読み込んだ形 1 つを、Comlink 越しに渡せる形へ畳む(FR-802、P6 §2.8)。
+ * 読み込んだ形 1 つを、Comlink 越しに渡せる形へ畳む(FR-802)。
  *
  * **バイト列を三角形より先に作る。** `tessellate` は `BRepMesh_IncrementalMesh` を通して
  * **形そのものへ三角形を書き込む**ので、順序を逆にすると三角形分割の付いた形が保存され、
@@ -253,15 +253,15 @@ function toImportBody(
 }
 
 /**
- * 読み込んだ三角形の形 1 つを、Comlink 越しに渡せる形へ畳む(FR-802、P6 §2.8、§0.a-0.23)。
+ * 読み込んだ三角形の形 1 つを、Comlink 越しに渡せる形へ畳む(FR-802)。
  *
  * **B-rep は作らない。** 三角形から面を張り直すと面が三角形の数だけでき、その上の
- * フィレットも穴あけも実用にならない(§0.a-0.23)。だから `bodyKind` は `'mesh'` で、
+ * フィレットも穴あけも実用にならない。だから `bodyKind` は `'mesh'` で、
  * この枝には `brepBytes` の欄そのものが無い(`ShapeImportBody` の注釈)。
  *
  * **名前と色は `null` にする。** STL には名前も色も無く、OBJ / glTF は持てるが
  * `readCafMesh` が形だけを取り出す作りである(読み込んだ色は当面使わない決定
- * §0.a-0.28 の下では、読む手間に見合わない)。取り込むなら P7 以降。
+ * の下では、読む手間に見合わない)。取り込むなら後で行う。
  *
  * 体積は読み手が三角形から数えた値(発散定理。`occt/exchangeShared.ts` の `computeVolume`)。
  */
@@ -281,7 +281,7 @@ function toImportMeshBody(mesh: ImportedMeshData): ShapeImportBody {
 }
 
 /**
- * 書き出す立体ぶんの三角形を、依頼の品質でまとめて作り直す(FR-803、§0.a-0.13)。
+ * 書き出す立体ぶんの三角形を、依頼の品質でまとめて作り直す(FR-803)。
  *
  * **形の複製に掛けるので、画面用のキャッシュは 1 枚も汚れない**(`occt/exportMesh.ts`)。
  * 品質の対(長さと角度)は依頼のまま渡す——角度を省いた依頼では
@@ -315,11 +315,11 @@ function exportMetadataCodeUnits(request: ShapeExportRequest): number {
 }
 
 /**
- * 書き出し用の三角形を 1 つの網に連ねる(3D プリント点検、FR-815、タスク42)。
+ * 書き出し用の三角形を 1 つの網に連ねる(3D プリント点検、FR-815)。
  *
  * **`inspectPrintability`(`occt/inspectPrintability.ts`)は `ExportMesh` を 1 つしか
  * 受け取らない。** 複数ボディを指定したときは、水密性・肉厚とも「ボディをまたいだ
- * 1 つの形」として測ってよい(§0.51 の点検はボディの区別を持たない)ので、ここで
+ * 1 つの形」として測ってよい(点検はボディの区別を持たない)ので、ここで
  * 添字をずらしながら連結する(STL の `writeStl.ts` が複数の網を 1 ファイルへ書くのと
  * 同じ考え方だが、あちらはバイト列を直接書くのに対し、ここは 1 本の `ExportMesh` を
  * 組み立てて `inspectPrintability` へそのまま渡す点が違う)。
@@ -568,15 +568,15 @@ export interface KernelApi {
     admitReply?: MeshReplyAdmission,
   ): Promise<SolidRecomputeResult>;
   /**
-   * 輪郭を距離ぶん平行にずらした曲線の列を作る(FR-321、P4 タスク15)。
+   * 輪郭を距離ぶん平行にずらした曲線の列を作る(FR-321)。
    *
    * 何件でも 1 回の往復でまとめて頼める(面のテッセレーションと同じ形)。
    * 1 件失敗しても残りは作り、理由を `failures` へ入れて返す(FR-504、NFR-RE-1)。
-   * 距離の符号(どちら側へずらすか)は呼び出し側が決める(§0.a-0.22)。
+   * 距離の符号(どちら側へずらすか)は呼び出し側が決める。
    */
   offsetSketchCurves(request: SketchOffsetRequest): Promise<SketchOffsetOutcome>;
   /**
-   * 立体の面・辺の輪郭を作図面へ投影した曲線を作る(FR-325、P4 タスク25・26)。
+   * 立体の面・辺の輪郭を作図面へ投影した曲線を作る(FR-325)。
    *
    * もとの立体は**形状キャッシュの鍵**で指す(B-rep は Comlink 越しに渡せないため)。
    * 鍵は `recomputeSolids` が段ごとに預けたもので、上流が変われば鍵も変わる。
@@ -601,11 +601,11 @@ export interface KernelApi {
     cancelToken?: DrawingKernelCancelToken,
   ): Promise<SectionResult>;
   /**
-   * 覚えてある形を測る(FR-1101、FR-1102、P5 タスク28)。
+   * 覚えてある形を測る(FR-1101、FR-1102)。
    *
-   * **測定は再計算を起こさない読み取り**(§0.a-0.30)。対象は投影・交差と同じく
+   * **測定は再計算を起こさない読み取り**。対象は投影・交差と同じく
    * **形状キャッシュの鍵**(段の `key`)で指し、面・辺・頂点は指紋で選び直す。
-   * 選び直しは P3 の部分形状の参照(`occt/pickSubShape.ts` → `matchSubShape.ts`)
+   * 選び直しは部分形状の参照(`occt/pickSubShape.ts` → `matchSubShape.ts`)
    * そのままで、測定のための別の規約は作らない。
    *
    * 鍵が見つからない・指紋に合う面が無い・件数が合わないときは、**投げずに**
@@ -613,16 +613,16 @@ export interface KernelApi {
    */
   measure(request: MeasureRequest): Promise<MeasureResult>;
   /**
-   * 覚えてある形をファイルの中身へ書き出す(FR-803、P6 §2.3〜§2.6、タスク10・16)。
+   * 覚えてある形をファイルの中身へ書き出す(FR-803)。
    *
-   * **形式ごとに口を増やさない**(§0.a-0.2)。STEP / STL / OBJ / glTF / 3MF 用の三角形 /
+   * **形式ごとに口を増やさない**。STEP / STL / OBJ / glTF / 3MF 用の三角形 /
    * B-rep の切り替えは依頼の `format` で判別し、実装は網羅 `switch` で受ける
    * (`ShapeExportRequest` の表)。対象は投影・測定と同じく**段のキャッシュの鍵**で指す。
    *
    * **要件 FR-803 の 5 形式はすべてこの 1 本から出る。** STEP は `'step'`、STL は `'stl'`
    * (バイナリ / ASCII は `ascii` で切り替え)、OBJ は `'obj'`(`.obj` と `.mtl` の 2 ファイル)、
    * glTF は `'gltf'`(`.glb`)、3MF は `'mesh'` で三角形だけを受け取って `packages/io` が
-   * ZIP と XML を組む(§0.a-0.19。io は OCCT を呼べない)。
+   * ZIP と XML を組む(io は OCCT を呼べない)。
    *
    * **測定と同じく、これは読み取りだけ**で再計算も鍵の作り直しも起こさない。三角形は
    * 形の複製に掛けるので、画面用のキャッシュは 1 枚も汚れない(`occt/exportMesh.ts`)。
@@ -633,24 +633,24 @@ export interface KernelApi {
    */
   exportShapes(request: ShapeExportRequest): Promise<ShapeExportResult>;
   /**
-   * ファイルの中身から形を読み込む(FR-802、FR-811、P6 §2.3・§2.8、タスク10・16)。
+   * ファイルの中身から形を読み込む(FR-802、FR-811)。
    *
    * 書き出しと同じく**口は 1 本**で、依頼の `format`(STEP / STL / OBJ / glTF / B-rep)で
    * 判別する。返すのは**`.pcad` へ抱き込むバイト列と画面用の三角形**で、形そのものは
    * Worker の中に残さない(`ShapeImportBody` の注釈)。**三角形しか持たない形式
    * (STL / OBJ / glTF)は `bodyKind: 'mesh'` で返り、B-rep のバイト列を持たない**
-   * (§0.a-0.23。メッシュ → B-rep の変換はしない)。
+   * (メッシュ → B-rep の変換はしない)。
    * 読み込んだ形の単位は mm へ換算済み(NFR-RE-3。`ShapeImportResult.unit` の表)。
    *
    * 読めなかったとき・立体が入っていなかったときは**日本語の理由で投げる**
-   * (§2.8 の断りの表。画面はその文言をそのまま見せる)。
+   * (画面はその文言をそのまま見せる)。
    */
   importShape(request: ShapeImportRequest): Promise<ShapeImportResult>;
   /**
-   * 3D プリント向けの点検(FR-815、NFR-PF-4、P6 §0.51・§2.16、タスク42)。
+   * 3D プリント向けの点検(FR-815、NFR-PF-4)。
    *
    * **最小肉厚・オーバーハングの角度・水密性の 3 つを 1 回の呼び出しでまとめて返す**
-   * (§0.a-0.30「カーネルを呼ぶ回数を最小にする」)。対象は書き出し・投影と同じく
+   * (「カーネルを呼ぶ回数を最小にする」)。対象は書き出し・投影と同じく
    * **段のキャッシュの鍵**(`ShapeInspectRequest.bodies` の `bodyKey`)で指し、直近の再計算で
    * 画面へ返した表示メッシュをそのまま使う。別品質で作り直さないので、結果の三角形番号は
    * 画面の同じ番号を指す。複数ボディでは表示メッシュを依頼順に連ねて点検する。
@@ -663,11 +663,11 @@ export interface KernelApi {
    * 鍵が形状キャッシュに見つからないときは、書き出し・投影と同じ `MISSING_BODY_MESSAGE`
    * で断る(投げる。書き出しと同じく「一部だけ点検できた」を返さない)。
    *
-   * **タスク42 では任意(`?`)にしてあったが、タスク46(43a)で必須へ引き上げた。**
+   * **以前は任意(`?`)にしてあったが、必須へ引き上げた。**
    * 任意のままだと、この口を呼ぶ `KernelBridge.inspectPrintability`(model)が毎回
    * 「実装されているか」を実行時に確かめる分岐を持つことになり、偽の `KernelApi` が
    * 実装を忘れても型検査が黙って通ってしまう(呼び出し側が組み終わるまでの経過措置
-   * だった、P5 タスク42a の `HoleStepSpec.entry` と同じ扱い)。**呼び出し側が
+   * だった、`HoleStepSpec.entry` と同じ扱い)。**呼び出し側が
    * 組み終わったので、実装漏れを型検査で捕まえる側へ戻す。**
    */
   inspectPrintability(
@@ -739,7 +739,7 @@ function recomputeKeys(request: SolidRecomputeRequest): Set<string> {
  * 現在のメッシュの会計 1 回が数える記録（表示の部品・隠れた貸出し・期待する持ち主）1 件あたりに充てる容量。
  * recomputeSolids.ts の返信 1 件の固定の管理情報と同じ 4,096 バイトで、会計の容量 limitBytes（上限 512MiB）から
  * 件数の上限を決める（512MiB なら 131,072 件）。上限は残す。以前の固定の 128 件は、異なる部品定義が 128 を
- * 超える組立（EX-12 の 1,000 定義）の公開を metadata-capacity で必ず断っていた。
+ * 超える組立（1,000 定義）の公開を metadata-capacity で必ず断っていた。
  */
 const MESH_ACCOUNTING_RECORD_BYTES = 4096;
 
@@ -768,7 +768,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
   });
   // 形状キャッシュは窓口 1 つにつき 1 つ。再計算をまたいで残すことで、
   // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
-  // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない(2026-09-03 統括判断)。
+  // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない。
   // 数値の callback は従来の診断(meshBytes)のまま残し、保持量の会計は配列の実体
   // (ArrayBuffer)を明示して渡す。同じ実体を指す複数の view・複数の body は 1 回だけ数える。
   const cache = shapeCache ?? createShapeCache<CachedSolid>(
@@ -1448,7 +1448,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
                     shape: shapes[index],
                     name: item.name,
                     color: item.color,
-                    // 面ごとの色(P6 タスク7b+13b)。`StepWriteEntry`(= `XcafShapeEntry`)が
+                    // 面ごとの色。`StepWriteEntry`(= `XcafShapeEntry`)が
                     // 元から持つ欄なので、依頼の欄をそのまま渡すだけでよい。
                     faceColors: item.faceColors,
                   })),
@@ -1461,8 +1461,8 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
             return { format: 'step', bytes: written.bytes, colorWritten: written.colorWritten };
           }
           case 'stl': {
-            // STL は三角形の網を 1 つしか持てないので、立体をそのまま順につなぐ(§2.4)。
-            // 色は書かない(§0.a-0.15。仕様に無い)ので、依頼の名前と色は使わない。
+            // STL は三角形の網を 1 つしか持てないので、立体をそのまま順につなぐ。
+            // 色は書かない(仕様に無い)ので、依頼の名前と色は使わない。
             const meshes = buildExportMeshes(oc, shapes, request, work);
             work.reserveOutput(exportSerializationReserve(request.ascii ? 'stl-ascii' : 'stl-binary',
               work.triangleCount, meshes.length, exportMetadataCodeUnits(request)));
@@ -1494,7 +1494,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
                 mesh: meshes[index],
                 name: item.name,
                 color: item.color,
-                // 面ごとの色(P6 タスク7b+13b)。`meshes[index]` は `buildExportMesh` の
+                // 面ごとの色。`meshes[index]` は `buildExportMesh` の
                 // 戻りなので `faceRanges` を必ず持ち、`CafMeshBody.faceColors` へそのまま渡せる。
                 faceColors: item.faceColors,
               })),
@@ -1514,7 +1514,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
             work.checkDeadline();
             const bodies: ShapeExportMeshBody[] = request.bodies.map((item, index) => ({
               bodyKey: item.bodyKey,
-              // 形の複製に掛けるので、画面用キャッシュの三角形は 1 枚も変わらない(§0.a-0.13)。
+              // 形の複製に掛けるので、画面用キャッシュの三角形は 1 枚も変わらない。
               triangles: meshes[index],
             }));
             return { format: 'mesh', bodies };
@@ -1536,12 +1536,12 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
     async importShape(request): Promise<ShapeImportResult> {
       const oc = await loadOcct();
 
-      // 網羅 `switch`。STL / OBJ の読み込み(タスク16・18)は依頼の union へ 1 つ足すと、
+      // 網羅 `switch`。STL / OBJ の読み込みは依頼の union へ 1 つ足すと、
       // ここが型検査で落ちて配線を促す(`ShapeImportRequest` の注釈)。
       switch (request.format) {
         case 'step': {
           // `readStep` が返した形は読み手の持ち物。**必ず `delete()` する**
-          // (`rules/06` 10.13 の解放の見分け。忘れると次の読み込みが数倍遅くなる)。
+          // (解放の見分け。忘れると次の読み込みが数倍遅くなる)。
           const read = readStepAssembly(oc, request.bytes, {
             fileName: request.fileName,
             withColors: request.withColors,
@@ -1576,7 +1576,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
           }
         }
         case 'brep': {
-          // `.pcad` へ抱き込んだバイト列(§0.a-0.9)。名前も色も文書の側が持っているので、
+          // `.pcad` へ抱き込んだバイト列。名前も色も文書の側が持っているので、
           // ここでは形だけを戻す。単位は内部単位そのもの(mm)で、ファイルの単位は無い。
           const shape = readBrepBytes(oc, request.bytes);
           try {
@@ -1592,8 +1592,8 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
           }
         }
         case 'stl': {
-          // **STL に単位は無い**(§0.a-0.6)。数をそのまま mm として取り込み、違ったら
-          // 利用者に訊く——訊くのは ui(タスク32)なので、ここは `'other'` と記録するだけ。
+          // **STL に単位は無い**。数をそのまま mm として取り込み、違ったら
+          // 利用者に訊く——訊くのは uiなので、ここは `'other'` と記録するだけ。
           const mesh = readStl(oc, request.bytes, { fileName: request.fileName });
           return { bodies: [toImportMeshBody(mesh)], unit: 'other', unitNames: [] };
         }
@@ -1607,7 +1607,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
         }
         case 'gltf': {
           // **glTF は仕様が m と定めている**ので、`readCafMesh` が OCCT に 1000 倍させて
-          // mm で受け取っている(`SetSystemLengthUnit(0.001)`。§0.a-0.6)。取り違えようが
+          // mm で受け取っている(`SetSystemLengthUnit(0.001)`)。取り違えようが
           // ないので、利用者に単位を訊く必要が無い(`'mm'` を返す)。
           const mesh = readCafMesh(oc, request.bytes, {
             format: 'gltf',

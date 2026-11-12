@@ -17,7 +17,7 @@ import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
 
 /**
- * くり抜き(シェル、FR-418。計画書 P5 §2.12・§0.a-0.47、タスク53)。
+ * くり抜き(シェル、FR-418)。
  *
  * 立体の中身を抜いて、指定した厚さの壁だけを残す。開ける面(開口面)を選べば
  * そこに口が空き、1 枚も選ばなければ**外から見た形は変わらず中だけが空になる**。
@@ -31,7 +31,7 @@ import { boundingDiagonal, faceAt } from './subShapes.js';
  *
  * **2026-09-05 に Node で実測したこと:**
  *   - `MakeThickSolidBySimple(box, ±2)` は 20³ の箱で `IsDone()` が**偽**になり、
- *     何も作れなかった(計画書 §1.5-4 の確認点。**この API は使えない**)。
+ *     何も作れなかった(**この API は使えない**)。
  *   - `MakeThickSolidByJoin(box20, 空の一覧, -2, …)` は `IsDone()` が真だが、返るのは
  *     体積 4096(= 16³)の**中身の詰まった小さい箱**で、壁(3904 = 8000 − 4096)にはならない。
  *     さらに**外向き(+2)では体積が −13587.49 と負になり、向きが裏返った立体が返った**。
@@ -39,7 +39,7 @@ import { boundingDiagonal, faceAt } from './subShapes.js';
  *   - `PerformByJoin(box20, ±2, …)` は内向き 4096・外向き +13587.492558290382 の
  *     どちらも向きの正しい立体を返した。②はこちらを使う。
  *   - `MakeThickSolidByJoin(box20, [上面], -2, …)` は体積 3391.9999999999986、面 11 枚
- *     (外 5 + 内 5 + 口の縁 1)の壁つき立体になった(計画書の期待値 3392 と一致)。
+ *     (外 5 + 内 5 + 口の縁 1)の壁つき立体になった(検証の表の期待値 3392 と一致)。
  *   - 厚さ 12(20³ の箱)は `IsDone()` が偽になった。例外は飛ばない。
  */
 
@@ -52,7 +52,7 @@ const MIN_SOLID_VOLUME_MM3 = 1e-9;
  */
 const OFFSET_TOLERANCE_MM = 1e-7;
 
-/** 肉厚が 0 以下・非数のとき(計画書 タスク53 の検証表の文言)。 */
+/** 肉厚が 0 以下・非数のとき(検証の表の文言)。 */
 const THICKNESS_MESSAGE = '肉厚は 0 より大きい数にしてください。';
 
 /** 肉厚が形に対して大きすぎるとき(同上)。 */
@@ -83,8 +83,8 @@ const KERNEL_NOT_READY_MESSAGE =
  * そのままでは型検査を通らない(makeFillet.ts の `ChFi3d_FilletShape`、
  * makeOffsetWire.ts の `GeomAbs_JoinType` と同じ壁)。
  *
- * **これは統括が計画書 §0.a-0.47 と §4 で承認した、P5 で新しく作る唯一の述語ガードの置き場**
- * である(P3 の `makeFillet.ts`、P4 の `makeOffsetWire.ts`、P5 タスク37 の `makeSweep.ts` に
+ * **これは承認を得た、この段で新しく作る唯一の述語ガードの置き場**
+ * である(`makeFillet.ts`、`makeOffsetWire.ts`、`makeSweep.ts` に
  * 続く 4 か所目。着手時に Grep で数えた既存は 3 か所)。`as` / `any` / `@ts-ignore` /
  * `eslint-disable` は 1 つも使っていない。
  *
@@ -93,7 +93,7 @@ const KERNEL_NOT_READY_MESSAGE =
  * embind が作る列挙値は中身の見えない空のオブジェクトなので、形を見て見分ける手立てが無い。
  * したがってこのガードは「OCCT の読み込みが済んでいない/壊れている」ことだけを捕まえる網である。
  *
- * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、写す前に統括へ諮る。
+ * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、写す前に承認を得る。
  */
 function isOffsetMode(value: unknown): value is BRepOffset_Mode {
   return typeof value === 'object' && value !== null;
@@ -101,17 +101,17 @@ function isOffsetMode(value: unknown): value is BRepOffset_Mode {
 
 /**
  * 列挙(`GeomAbs_JoinType`)を引数に取る API のための述語ガード。
- * 理由・限界・承認の範囲は上の `isOffsetMode` と同じ(§0.a-0.47 が
- * この 2 つを `makeShell.ts` の 1 か所へ置くことを承認している)。
+ * 理由・限界・承認の範囲は上の `isOffsetMode` と同じ(承認は
+ * この 2 つを `makeShell.ts` の 1 か所へ置くことに限る)。
  *
  * `makeOffsetWire.ts` にも同じ名前のガードがあるが、あちらは輸出していない
- * (P4 の承認範囲に閉じた作りのまま触らない、という統括の指示)。
+ * (承認の範囲に閉じた作りのまま触らない)。
  */
 function isJoinType(value: unknown): value is GeomAbs_JoinType {
   return typeof value === 'object' && value !== null;
 }
 
-/** くり抜き 1 段の依頼(計画書 §2.12)。 */
+/** くり抜き 1 段の依頼。 */
 interface ShellInput {
   /**
    * 開ける面の指紋。**0 枚でもよい**(そのときは外から見た形が変わらない、
@@ -208,7 +208,7 @@ function buildOpenedShell(
     throw toJapaneseFailure(error, TOO_THICK_MESSAGE);
   }
   // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
-  // (docs/報告記録.md 2026-09-03 06:56 の⑤。makeFillet.ts と同じ扱い)。
+  // (makeFillet.ts と同じ扱い)。
   if (!maker.IsDone()) {
     throw new Error(TOO_THICK_MESSAGE);
   }
@@ -257,7 +257,7 @@ function buildOffsetSolid(
  * 断ったときも触れない。失敗は必ず日本語の理由を持つ `Error` で返し、
  * アプリを落とさない(NFR-RE-1、FR-504)。
  *
- * **失敗の扱いは 3 段構え**(計画書 タスク53 の手順5)。
+ * **失敗の扱いは 3 段構え**。
  *   ① 事前検査: 肉厚が 0 以下、対象が空、肉厚が形の大きさに見合わない、の 3 つをここで断る。
  *   ② 結果の検証: `IsDone()` に加えて、立体が残ったか・体積が出たか・B-rep として妥当かを見る。
  *   ③ Worker の再起動: 段の失敗を受け止める仕組みは既存(`worker/recomputeSolids.ts`)。
@@ -286,7 +286,7 @@ export function makeShell(
   const scale = diagonal * 0.5;
   const faceIndices = resolveOpenFaces(tables, input.openFaces, scale);
 
-  // 列挙値は unknown を経由してから述語ガードで絞る(§0.a-0.47。isOffsetMode の注釈)。
+  // 列挙値は unknown を経由してから述語ガードで絞る(isOffsetMode の注釈)。
   const mode: unknown = oc.BRepOffset_Mode.BRepOffset_Skin;
   const join: unknown = oc.GeomAbs_JoinType.GeomAbs_Arc;
   if (!isOffsetMode(mode) || !isJoinType(join)) {

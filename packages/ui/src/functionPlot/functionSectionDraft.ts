@@ -51,7 +51,7 @@ export async function prepareFunctionSection(document: PartDocument, documentVer
   const parent = document.solids.find(feature => feature.id === parentId);
   if (parent?.kind !== 'functionSurface' || parent.suppressed) return { status: 'failed', message: t('functionPlot.missingCurve') };
   if (input.source.trim() === '') return { status: 'failed', message: t('functionPlot.required') };
-  // GR-18c: resolve the document's current math-geometry outcomes once and reuse them for both the parent
+  // resolve the document's current math-geometry outcomes once and reuse them for both the parent
   // surface's own re-evaluation and the section's coordinate environment below (same pattern as
   // MathExpressionDialog.tsx / functionPointDraft.ts).
   let geometry: ReadonlyMap<string, MathGeometryOutcome>;

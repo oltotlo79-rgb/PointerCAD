@@ -13,25 +13,25 @@ import {
 import { withVirtualFileInput } from './virtualFile.js';
 
 /**
- * STL の読み込み(計画書 P6 §2.8、タスク17。FR-802)。
+ * STL の読み込み(FR-802)。
  *
- * **`RWStl.ReadFile_2(theFile, theProgress): Handle_Poly_Triangulation` を使う**
- * (§0.a-0.25)。`StlAPI_Reader.Read(theShape, theFileName)` を使わないのは、第 1 引数が
+ * **`RWStl.ReadFile_2(theFile, theProgress): Handle_Poly_Triangulation` を使う。**
+ * `StlAPI_Reader.Read(theShape, theFileName)` を使わないのは、第 1 引数が
  * C++ の参照渡し(out 引数)で、embind で書き換えが JS へ返るかを型定義から判断できない
- * ため(P5 §1.4-12)。**回避策があるので最初から回避策で書く。**
+ * ため。**回避策があるので最初から回避策で書く。**
  *
- * **読んだ三角形は B-rep へ戻さない**(§0.a-0.23)。10 万三角形から面を張り直すと面が
+ * **読んだ三角形は B-rep へ戻さない**。10 万三角形から面を張り直すと面が
  * 10 万枚でき、その上のフィレットも穴も実用にならない。だからこの関数が返すのは
  * 「画面へ出して測れるだけの三角形の束」であり、`tessellate.ts` の `SurfaceMesh` と
  * 同じ並び(位置・法線・添字)に揃えてある。
  *
  * ---
  *
- * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1、-13):**
+ * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984):**
  *
  * - `oc.RWStl` は実行時に関数で、`ReadFile_2` / `WriteBinary` / `WriteAscii` も関数
  *   (`.test.ts` の 1 件目が毎回確かめる)。
- * - **§1.5-13 の答え: `Normal_1(i)` は呼べない。** `RWStl.ReadFile_2` が返す
+ * - ** `Normal_1(i)` は呼べない。** `RWStl.ReadFile_2` が返す
  *   `Poly_Triangulation` は **`HasNormals()` が `false`** で(バイナリ・ASCII とも実測)、
  *   `Normal_1(1)` は `Error` ではなく**数値(WASM の番地。実測 18940064)**を投げる。
  *   STL のファイルには面ごとの法線が書いてあるが、OCCT の読み手はそれを捨てて頂点を
@@ -46,7 +46,7 @@ import { withVirtualFileInput } from './virtualFile.js';
  * - 頂点は束ねられる。20³ の箱の 12 枚(頂点 36 個ぶん書いてある)を読むと
  *   `NbNodes()` は 8、`NbTriangles()` は 12 になった。
  *
- * **持ち主の見分け(`rules/06-過去の失敗と対策.md` 10.13):**
+ * **持ち主の見分け:**
  * - `RWStl.ReadFile_2` の戻りの `Handle_Poly_Triangulation` は**新しい Handle** なので
  *   使い終わったら `delete()` する(控えへ積む)。
  * - `handle.get()` の戻りは**借り物**なので `delete()` しない(積まない)。
@@ -56,7 +56,7 @@ import { withVirtualFileInput } from './virtualFile.js';
  */
 
 /**
- * 断りの文言・上限・三角形の束の型は `exchangeShared.ts` が正本(タスク16 で寄せた)。
+ * 断りの文言・上限・三角形の束の型は `exchangeShared.ts` が正本。
  *
  * **STL だけの名前でも引けるように、ここから名前を変えて中継する。** 画面や検査が
  * 「STL の断り」として引いている名前を残しつつ、値の持ち主は 1 つだけにするためで、
@@ -108,7 +108,7 @@ export function startsWithBytes(bytes: Uint8Array, signature: readonly number[])
 }
 
 /**
- * 読む前にバイト列の頭を確かめる(計画書 §0.a-0.27 の 3 段構えの ①)。
+ * 読む前にバイト列の頭を確かめる(3 段構えの ①)。
  *
  * **なぜ読む前に見るのか。** ①84 バイト未満は STL の頭すら入っていないので、OCCT へ渡す
  * までもなく断れる。②三角形 0 枚のバイナリは OCCT からは「壊れている」と区別が付かない
@@ -143,7 +143,7 @@ function inspectHeader(bytes: Uint8Array): StlHeader {
 }
 
 /**
- * STL のバイト列を読んで、三角形の束を返す(§2.8、FR-802)。
+ * STL のバイト列を読んで、三角形の束を返す(FR-802)。
  *
  * ```ts
  * const mesh = readStl(oc, bytes);
@@ -152,7 +152,7 @@ function inspectHeader(bytes: Uint8Array): StlHeader {
  *
  * 読めなかったとき・三角形が 0 枚のとき・多すぎるときは**日本語の理由**で断る
  * (NFR-RE-1。呼び出し側は例外を受けて断りの文言をそのまま見せられる)。
- * 仮想ファイルは `withVirtualFileInput` が必ず片付ける(§2.2)。
+ * 仮想ファイルは `withVirtualFileInput` が必ず片付ける。
  *
  * 返る値はただの JS の並びなので、呼び出し側に解放の責任は無い(OCCT が確保したものは
  * この関数の中で全部返す)。
@@ -175,9 +175,9 @@ export function readStl(
         // 壊れたファイルでも例外は飛ばず、空の Handle が返る(冒頭の実測)。
         throw new Error(MESH_READ_FAILED_MESSAGE);
       }
-      // `.get()` の戻りは借り物なので控えへ積まない(rules/06 10.13 の ①)。
+      // `.get()` の戻りは借り物なので控えへ積まない。
       const triangulation = handle.get();
-      // 個数の型 `Graphic3d_ZLayerId` はどこにも定義が無いので、整数へ直してから使う(§1.4)。
+      // 個数の型 `Graphic3d_ZLayerId` はどこにも定義が無いので、整数へ直してから使う。
       const nodeCount = Number(triangulation.NbNodes());
       const triangleCount = Number(triangulation.NbTriangles());
       if (nodeCount === 0 || triangleCount === 0) {
@@ -202,7 +202,7 @@ export function readStl(
 
       const indices = new Uint32Array(triangleCount * 3);
       // `Triangles()` は `const T&` を返すので embind の複製。使い終わったら解放が要る
-      // (rules/06 10.13 の ③。忘れると読み込みのたびに溜まって目に見えて遅くなる)。
+      // (忘れると読み込みのたびに溜まって目に見えて遅くなる)。
       const triangles = keep(triangulation.Triangles());
       const triangleOwner = createAllocations();
       for (let index = 1; index <= triangleCount; index += 1) {

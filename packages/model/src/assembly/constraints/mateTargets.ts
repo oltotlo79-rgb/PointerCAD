@@ -1,22 +1,22 @@
 /**
- * 合致の対象の解決(計画書 docs/plans/P7-アセンブリ.md タスク12、§2.5.2、§2.12。
+ * 合致の対象の解決(
  * FR-603 / FR-609 / FR-329)。
  *
  * 合致(`Mate`)とジョイント(`Joint`)が指しているのは「どのインスタンスの、どの部分形状か」
- * (`MateTarget`)だけである。残差とヤコビアン(タスク14)が要る**世界座標の代表点 `p`、
- * 解析軸上点、代表の向き `n`**(§2.5.2)と円筒の半径へ直すのがこのファイルの役目。
+ * (`MateTarget`)だけである。残差とヤコビアンが要る**世界座標の代表点 `p`、
+ * 解析軸上点、代表の向き `n`**と円筒の半径へ直すのがこのファイルの役目。
  *
- * **部品の中の座標を、配置を掛けて世界座標へ直す**(§2.3 の⑥)。掛けるのはタスク2 の純関数
+ * **部品の中の座標を、配置を掛けて世界座標へ直す**。掛けるのは `placementMath.ts` の純関数
  * (`applyPlacementToPoint` / `applyPlacementToDirection`)で、回転行列の式をここへ書き写さない。
  *
  * **例外を投げない**(FR-504、NFR-RE-1「止めずに警告する」)。曲面(球面など)・軸の取れない形・
- * 見つからない部品は、**対象を消さずに理由(日本語の文言)を返す**——P3 §6.10-1(部分形状の
+ * 見つからない部品は、**対象を消さずに理由(日本語の文言)を返す**——過去の失敗(部分形状の
  * 指紋の誤選択)の教訓で、選び直せなかった対象を黙って捨てると利用者が合致を作り直す羽目になる。
- * 文言は §2.12 の表から 1 字も変えずに使う。
+ * 文言は断りの表から 1 字も変えずに使う。
  *
  * **カーネルを呼ばない純関数。** 合致を解く呼び出し側は `ResolveMateTargetOptions.subShape`
  * に、`createSubShapeReferenceResolver` の一意一致した `match.geometry` だけを返す関数を渡す。
- * 解析軸上点は保存指紋に無いので、この経路で取り直す(P7-14b)。旧指紋だけでも従来の
+ * 解析軸上点は保存指紋に無いので、この経路で取り直す。旧指紋だけでも従来の
  * 代表点は返すが、円筒・円錐の重心から解析軸上点を捏造しない。解析軸が無い合致は
  * 残差準備側で missingAxis になる。
  *
@@ -49,9 +49,9 @@ import { MISSING_PART_MESSAGE, type ResolvedAssembly } from '../resolveAssembly.
 import type { MateTarget, OriginElement } from '../types.js';
 
 /**
- * 合致の対象を、残差の側から見た 4 種類へ畳んだもの(§2.5.2 の `p` と `n`)。
+ * 合致の対象を、残差の側から見た 4 種類へ畳んだもの(`p` と `n`)。
  *
- * `cylinder` を `axis` と分けているのは、**接線合致(§2.5.2 の tangent)が半径を要る**ため。
+ * `cylinder` を `axis` と分けているのは、**接線合致(tangent)が半径を要る**ため。
  * 半径を持たない軸(直線の辺・部品の 3 軸・円錐の軸)と同じ種類にすると、残差の側で
  * 「半径があるか」を毎回見ることになる。
  */
@@ -92,10 +92,10 @@ export type MateTargetOutcome =
 /** 解決に添える設定。 */
 export interface ResolveMateTargetOptions {
   /**
-   * 部分形状の選び直し(P4 と同じ流儀)。**部品の鍵**(`ResolvedAssembly.partKeys` の値)と
+   * 部分形状の選び直し(スケッチの参照と同じ流儀)。**部品の鍵**(`ResolvedAssembly.partKeys` の値)と
    * 保存された参照を受け取り、**いまの形での指紋と解析軸上点**を返す。選び直せなければ null。
    *
-   * 鍵で渡すのはインスタンスの id ではない——同じ部品を 5 個置いても形は 1 つ(§0.a-0.4)で、
+   * 鍵で渡すのはインスタンスの id ではない——同じ部品を 5 個置いても形は 1 つで、
    * 選び直しの答えも 1 つだからである(インスタンスごとに呼ぶと同じ照合を 5 回することになる)。
    *
    * `createSubShapeReferenceResolver` の一意一致だけを使う。ResolvedSubShape は半径・面積・
@@ -105,15 +105,15 @@ export interface ResolveMateTargetOptions {
   readonly subShape?: (partKey: string, reference: SubShapeRef) => MateSubShapeGeometry | null;
 }
 
-/** 曲面(球面など)を合致の対象にした(§2.12 の断りの文言)。 */
+/** 曲面(球面など)を合致の対象にした(断りの文言)。 */
 export const UNUSABLE_FACE_MESSAGE =
   'この面は合致に使えません。平らな面か円筒の面を選んでください。';
 
-/** 軸の取れない形を対象にした(§2.12 の断りの文言)。 */
+/** 軸の取れない形を対象にした(断りの文言)。 */
 export const MISSING_AXIS_MESSAGE = 'この形からは軸が決まりません。';
 
 /**
- * 部分形状が選び直せない(FR-504)。**§2.12 の表に無い場面**なので、同じ意味を既に持っている
+ * 部分形状が選び直せない(FR-504)。**断りの表に無い場面**なので、同じ意味を既に持っている
  * `geometry/planeSpec.ts` の `missingSubShape`(「…が見つかりません。形が大きく変わったため、
  * 選び直してください。」)と同じ言い回しにそろえた(同じ状況を 2 通りの文で説明しない)。
  */
@@ -180,8 +180,8 @@ function isFullCircle(length: number, radius: number): boolean {
 /**
  * 面 1 枚を対象へ直す(部品の中の座標のまま)。
  *
- * 取れるのは**平らな面・円筒面・円錐面の軸**(§0.a-0.13 の「対象に取れるもの」)で、
- * **球面・トーラス・自由曲面は断る**(§0.a-0.13「曲面は取れない」)。円錐は半径が場所で
+ * 取れるのは**平らな面・円筒面・円錐面の軸**(「対象に取れるもの」)で、
+ * **球面・トーラス・自由曲面は断る**(「曲面は取れない」)。円錐は半径が場所で
  * 変わる(指紋の `radius` は基準位置の半径)ので、**半径を持たない `axis`** として返す。
  */
 function faceTarget(fingerprint: Extract<MateSubShapeGeometry, { kind: 'face' }>): MateTargetOutcome {
@@ -210,7 +210,7 @@ function faceTarget(fingerprint: Extract<MateSubShapeGeometry, { kind: 'face' }>
  * 辺 1 本を対象へ直す(部品の中の座標のまま)。
  *
  * まっすぐな辺は中点が軸上。円弧は解析中心が取得できたときだけ全周制限を外す。
- * 旧指紋だけの欠けた円弧・楕円・自由曲線は従来どおり断る(§2.12)。
+ * 旧指紋だけの欠けた円弧・楕円・自由曲線は従来どおり断る。
  */
 function edgeTarget(fingerprint: Extract<MateSubShapeGeometry, { kind: 'edge' }>): MateTargetOutcome {
   const direction = usableDirection(fingerprint.axis);
@@ -273,7 +273,7 @@ function originTarget(element: OriginElement): MateTargetOutcome {
   }
 }
 
-/** 部品の中の座標を、配置を掛けて世界座標へ直す(§2.3 の⑥)。 */
+/** 部品の中の座標を、配置を掛けて世界座標へ直す。 */
 function inWorld(placement: RigidPlacement, local: ResolvedMateTarget): ResolvedMateTarget {
   return {
     kind: local.kind,
@@ -291,10 +291,10 @@ function inWorld(placement: RigidPlacement, local: ResolvedMateTarget): Resolved
 /**
  * 合致の対象 1 つを世界座標の「点と向き」へ解決する(FR-603、FR-609、FR-329)。
  *
- * 第 2 引数はタスク6 の解決結果まるごと。計画書のタスク12 は
+ * 第 2 引数はアセンブリの解決結果まるごと。当初の案は
  * `resolveMateTarget(target, resolvedParts, placements)` の 3 つ組で書いているが、
- * **対象の `componentId` から形へ届くには `partKeys`(インスタンス → 部品の鍵)が要る**
- * (タスク6 の申し送り)。3 つに割ると呼び出し側が組を作り直すことになり、
+ * **対象の `componentId` から形へ届くには `partKeys`(インスタンス → 部品の鍵)が要る。**
+ * 3 つに割ると呼び出し側が組を作り直すことになり、
  * 別々の解決結果を取り違えて渡せてしまうので、1 つの `ResolvedAssembly` を受け取る形にした。
  *
  * **抑制された部品・消された部品は `placements` に入らない**ので、そのまま「部品が
@@ -319,7 +319,7 @@ export function resolveMateTarget(
   const partKey = resolved.partKeys.get(target.componentId);
   const part = partKey === undefined ? undefined : resolved.parts.get(partKey);
   if (partKey === undefined || part === undefined) {
-    // 置いてはあるが中身が引けない(`partKeys` に入らないのはこの場合だけ。タスク6)。
+    // 置いてはあるが中身が引けない(`partKeys` に入らないのはこの場合だけ)。
     return refuse('missingComponent', MISSING_PART_MESSAGE);
   }
   if (!part.liveBodyIds.includes(target.ref.bodyFeatureId)) {

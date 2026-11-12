@@ -163,7 +163,7 @@ export function attachMathField(
       // (Chromium does), so MathLive's own onBlur - which clears its internal, module-global
       // "currently focused mathfield" reference - never runs for this field. The next math-field
       // anywhere in the app to receive focus then finds that stale reference still marked focused and
-      // calls back into it, throwing inside MathLive's torn-down internals (MC-27d). Blurring here,
+      // calls back into it, throwing inside MathLive's torn-down internals. Blurring here,
       // while the field is still connected, runs MathLive's normal blur handling first so its
       // bookkeeping stays correct regardless of the browser's removal quirk. Callers must dispose before the
       // field leaves the document (MathEditorSurface disposes in a layout-effect cleanup): once MathLive's

@@ -1,4 +1,4 @@
-/** P10-5/14/16。パネル接線境界の向きは各面の反時計回り外周に揃える。 */
+/** パネル接線境界の向きは各面の反時計回り外周に揃える。 */
 export type PanelPoint = readonly [number, number];
 export interface SheetPanelEdge { readonly panelId: string; readonly from: PanelPoint; readonly to: PanelPoint }
 export interface SheetPanelConnection {

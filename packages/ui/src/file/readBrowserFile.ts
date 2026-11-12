@@ -1,4 +1,4 @@
-/** R07: picker/input/種類つき入口が共用し、本文を取る前にサイズを検査する。 */
+/** picker/input/種類つき入口が共用し、本文を取る前にサイズを検査する。 */
 import { IO_LIMITS } from '@pointercad/io';
 import { t } from '../i18n/t.js';
 

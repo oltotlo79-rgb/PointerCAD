@@ -105,7 +105,7 @@ function faceMap(oc: OpenCascadeInstance, shape: TopoDS_Shape, owned: Allocation
   return map;
 }
 
-/** Limit the operation to the W16 topology: a rectangular plate with one straight through-hole. */
+/** Limit the operation to the supported topology: a rectangular plate with one straight through-hole. */
 function readPlate(
   oc: OpenCascadeInstance, shape: TopoDS_Shape, selected: TopoDS_Face, owned: Allocations,
 ): PlateGeometry {
@@ -197,7 +197,7 @@ function assertResult(
 }
 
 /**
- * Move one full cylindrical through-hole within a six-plane rectangular plate (W16/H1).
+ * Move one full cylindrical through-hole within a six-plane rectangular plate.
  * delta is in world mm and perpendicular to the hole axis; this is not a whole-body translation.
  * solid and cylindricalFace are borrowed and never deleted or changed. The face must actually belong
  * to solid (even an identical face from another body is refused). Saved-reference resolution belongs to K1.

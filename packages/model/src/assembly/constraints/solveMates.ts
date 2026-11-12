@@ -1,4 +1,4 @@
-/** 合致を成分ごとに解く。解は文書へ書き戻さない(P7 §2.5.6、FR-603/604)。 */
+/** 合致を成分ごとに解く。解は文書へ書き戻さない(FR-603/604)。 */
 import { CONFLICT_REPORT_LIMIT, remainingMessage } from '../../sketch/constraints/diagnose.js';
 import { qrDecompositionSteps } from './rigidQrSteps.js';
 import { RigidWorkSequence } from './cooperativeRigid.js';
@@ -57,7 +57,7 @@ export interface SolveMatesOptions extends RigidSolveOptions {
   readonly nonLengthVariables?: ReadonlySet<string>;
   /**
    * 上流で姿勢6自由度を固定済みの部品だけを指定する。その姿勢はplacementsから読む。
-   * 位置だけのdrag pinは含めない。部分的なdriverの残差はタスク18/20で接続する。
+   * 位置だけのdrag pinは含めない。部分的なdriverの残差は別に接続する。
    */
   readonly anchors?: ReadonlyMap<string, 'origin' | 'driver'>;
 }
@@ -88,7 +88,7 @@ export interface MateComponentDiagnosis {
   readonly constraintBranchViolations?: readonly AssemblyConstraintRef[];
   readonly componentIds: readonly string[];
   readonly mateIds: readonly string[];
-  /** タスク16が合致ごとの残差を示すための、最終配置の行(mateId/scale付き)。 */
+  /** 自由度の診断が合致ごとの残差を示すための、最終配置の行(mateId/scale付き)。 */
   readonly rows: readonly MateResidualRow[];
   readonly gauge: { readonly kind: 'fixed' | 'origin' | 'driver' | 'firstComponent' | 'constant';
     readonly componentId: string | null; readonly removed: number };
@@ -208,7 +208,7 @@ export interface MateSolveDiagnosis {
   readonly components: readonly MateComponentDiagnosis[];
   readonly limits: readonly MateVariableLimit[];
   readonly constantConflicts: readonly string[];
-  /** ジョイントの残差はタスク19。未対応を黙って収束に数えない。 */
+  /** ジョイントの残差はここでは扱わない。未対応を黙って収束に数えない。 */
   readonly unsupportedJointIds: readonly string[];
 }
 
@@ -907,7 +907,7 @@ function summarizeConstraints(documentIds: readonly string[], rows: readonly Con
 
 
 /**
- * 最終solve結果から表示用診断を作る純関数(P7訂正0.68、FR-604)。
+ * 最終solve結果から表示用診断を作る純関数(FR-604)。
  * 再求解・再配置・再gaugeはしない。線形従属や未収束は大域的矛盾の証明ではない。
  */
 export function diagnoseMates(document: AssemblyDocument, outcome: SolveMatesOutcome): MateDiagnosis {

@@ -39,7 +39,7 @@ export async function searchFunctionPoints(document:PartDocument,documentVersion
   }
   const axes=FUNCTION_AXES.filter(axis=>fields[axis]!==null);
   if(axes.length<1 || axes.length>2) return {status:'failed',message:t('functionPoint.chooseCoordinates')};
-  // GR-18c: resolve the document's current math-geometry outcomes once (MathExpressionDialog.tsx's own
+  // resolve the document's current math-geometry outcomes once (MathExpressionDialog.tsx's own
   // pattern) and reuse them for both this draft's own evaluation and the point-search environment below, so
   // a geometry-derived coefficient in the curve/surface's formula does not make every coefficient reference
   // look like a syntax error.

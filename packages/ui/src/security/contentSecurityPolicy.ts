@@ -1,4 +1,4 @@
-/** R11: Web/DesktopのHTMLと配信側が共用する文字列。
+/** Web/DesktopのHTMLと配信側が共用する文字列。
  * 画面は文字列からのJavaScript生成を許可しない。現OCCTのembindだけが必要とする
  * 動的生成の許可は、正規kernel Workerのレスポンスへ限定する。 */
 export const APP_CONTENT_SECURITY_POLICY = [

@@ -1,5 +1,5 @@
 /**
- * Transient indicators published by one canvas's sketch interaction (R07): the snap mark, the
+ * Transient indicators published by one canvas's sketch interaction : the snap mark, the
  * tracking lines, the inferred-constraint preview and the trim/extend/corner preview.
  *
  * The indicators live in the shared store. Each canvas remembers the exact objects it published,

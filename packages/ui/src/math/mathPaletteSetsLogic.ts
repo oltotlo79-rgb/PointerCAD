@@ -200,17 +200,17 @@ export const MATH_PALETTE_SETS_LOGIC: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.setsLogic.r-squared'), argumentTypes: ['vector', 'vector'], resultType: 'real', method: 'native', functionUse: false, help: HELP.statistics }),
   item('intersection', 'sets-logic', t('math.palette.intersection.label'), '∩', String.raw`#0\cap #?`, ['intersection'], t('math.palette.intersection.meaning'), [t('math.palette.intersection.keyword0'), t('math.palette.intersection.keyword1')],
     // set-minus/union/intersection route through containsSetCalculation into the exact runtime (setBounds.ts, mathBackendResult.ts); the
-    // native scalar box never reduces a Union/Intersection node to a value. Corrected from the MC-03 draft's 'native' when adding the example.
+    // native scalar box never reduces a Union/Intersection node to a value. Corrected from the draft's 'native' when adding the example.
     { domain: t('math.paletteDomain.setsLogic.intersection'), argumentTypes: ['set', 'set'], resultType: 'set', method: 'exact-runtime', functionUse: false, help: HELP.setBounds }),
   item('union', 'sets-logic', t('math.palette.union.label'), '∪', String.raw`#0\cup #?`, ['union'], t('math.palette.union.meaning'), [t('math.palette.union.keyword0'), t('math.palette.union.keyword1')],
     { domain: t('math.paletteDomain.setsLogic.union'), argumentTypes: ['set', 'set'], resultType: 'set', method: 'exact-runtime', functionUse: false, help: HELP.setBounds }),
   item('cases', 'sets-logic', t('math.palette.cases.label'), 'cases', String.raw`\begin{cases}#?&#?\\#?&#?\end{cases}`, ['which'], t('math.palette.cases.meaning'), [t('math.palette.cases.keyword0'), t('math.palette.cases.keyword1')],
     // functionUse: 実計算で確認(mathPaletteExamples.test.ts)した結果true。条件がT等の作図変数に依存しない場合はpruneMathPiecewise.ts等で
-    // 選んだ枝だけに整理されてから関数作図の式へ渡るため使える。MC-03の下書きの暫定値falseを実例追加時に実測へ合わせて修正。
+    // 選んだ枝だけに整理されてから関数作図の式へ渡るため使える。下書きの暫定値falseを実例追加時に実測へ合わせて修正。
     { domain: t('math.paletteDomain.setsLogic.cases'), argumentTypes: ['expression', 'condition', 'expression', 'condition'], resultType: 'real', method: 'native', functionUse: true, help: HELP.paletteArguments }),
   item('equal', 'equations', t('math.palette.equal.label'), '=', String.raw`#0=#?`, ['equal'], t('math.palette.equal.meaning'), [t('math.palette.equal.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.equal'), argumentTypes: ['expression', 'expression'], resultType: 'boolean', method: 'native', functionUse: false, help: HELP.equations }),
-  // 24-08・25-11・26-09（math-add-coverage.md §7.2 MC-02c）: 比較・論理・集合・分布宣言の追加。
+  // 比較・論理・集合・分布宣言の追加。
   // 比較・論理はnativeMathBackend.tsのbooleanOperationで、集合はcas_sets.py（exact-runtime）とmathBackendResult.tsの定数一覧で実装済み。
   item('not-equal', 'sets-logic', t('math.palette.not-equal.label'), '≠', String.raw`#0\neq #?`, ['not-equal'], t('math.palette.not-equal.meaning'), [t('math.palette.not-equal.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.not-equal'), argumentTypes: ['expression', 'expression'], resultType: 'boolean', method: 'native', functionUse: false, help: HELP.equations }),
@@ -305,7 +305,7 @@ export const MATH_PALETTE_SETS_LOGIC: readonly MathPaletteCatalogItem[] = [
     t('math.palette.partial-equations.meaning'), [t('math.palette.partial-equations.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.partial-equations'), argumentTypes: ['equation-list', 'variable-list', 'variable-list', 'list'], resultType: 'symbolic',
       method: 'exact-runtime', functionUse: false, help: t('math.paletteHelp.setsLogic.partialEquations') }),
-  // MC-02d (MC-23): set relations, sharing element/set-minus/union/intersection's exact-runtime set engine.
+  // set relations, sharing element/set-minus/union/intersection's exact-runtime set engine.
   item('not-element', 'sets-logic', t('math.palette.not-element.label'), '∉', String.raw`#0\notin #?`, ['not-element'], t('math.palette.not-element.meaning'), [t('math.palette.not-element.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.not-element'), argumentTypes: ['real', 'set'], resultType: 'boolean', method: 'exact-runtime', functionUse: false, help: HELP.setBounds }),
   item('subset', 'sets-logic', t('math.palette.subset.label'), '⊂', String.raw`#0\subset #?`, ['subset'], t('math.palette.subset.meaning'), [t('math.palette.subset.keyword0')],
@@ -320,20 +320,20 @@ export const MATH_PALETTE_SETS_LOGIC: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.setsLogic.complement'), argumentTypes: ['set', 'set'], resultType: 'set', method: 'exact-runtime', functionUse: false, help: HELP.setBounds }),
   item('cartesian-product', 'sets-logic', t('math.palette.cartesian-product.label'), 'A×B', String.raw`\operatorname{cartesianproduct}\left(#0,#?\right)`, ['cartesian-product'], t('math.palette.cartesian-product.meaning'), [t('math.palette.cartesian-product.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.cartesian-product'), argumentTypes: ['set', 'set'], resultType: 'set', method: 'exact-runtime', functionUse: false, help: HELP.setBounds }),
-  // MC-02d (MC-24): explicit absolute tolerance equality, sharing the finite quantifiers' exact-runtime module.
+  // explicit absolute tolerance equality, sharing the finite quantifiers' exact-runtime module.
   item('approximately-equal', 'sets-logic', t('math.palette.approximately-equal.label'), '≈', String.raw`\operatorname{approxequal}\left(#0,#?,#?\right)`, ['approximately-equal'], t('math.palette.approximately-equal.meaning'), [t('math.palette.approximately-equal.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.approximately-equal'), argumentTypes: ['real', 'real', 'real'], resultType: 'boolean', method: 'exact-runtime', functionUse: false, help: HELP.equations }),
-  // MC-02d (MC-12): finite set cardinality (also reachable through |x|; see mathPaletteBasic.ts's absolute entry).
+  // finite set cardinality (also reachable through |x|; see mathPaletteBasic.ts's absolute entry).
   item('cardinality', 'sets-logic', t('math.palette.cardinality.label'), 'n(A)', String.raw`\operatorname{cardinality}\left(#0\right)`, ['cardinality'], t('math.palette.cardinality.meaning'), [t('math.palette.cardinality.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.cardinality'), argumentTypes: ['set'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.setBounds }),
-  // MC-02d (MC-04 gap): boolean literal constants, matching true/false already reachable inside conditions.
+  // Boolean literal constants, matching true/false already reachable inside conditions.
   item('true', 'sets-logic', t('math.palette.true.label'), '⊤', String.raw`\top`, [], t('math.palette.true.meaning'), [t('math.palette.true.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.true'), argumentTypes: [], resultType: 'boolean', method: 'native', functionUse: false, help: HELP.equations }),
   item('false', 'sets-logic', t('math.palette.false.label'), '⊥', String.raw`\bot`, [], t('math.palette.false.meaning'), [t('math.palette.false.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.false'), argumentTypes: [], resultType: 'boolean', method: 'native', functionUse: false, help: HELP.equations }),
-  // MC-02e (MC-24): finite quantifiers, sharing approximately-equal's exact-runtime module (cas_logic_extended.py).
+  // finite quantifiers, sharing approximately-equal's exact-runtime module (cas_logic_extended.py).
   // Structural (LaTeX) input required a mathLatexFunctions.ts fix (\operatorname{forall}/{exists} did not bind
-  // the variable and set with Element like mathTextSyntax.ts does; MC-02d's final report §4-2).
+  // the variable and set with Element like mathTextSyntax.ts does).
   item('for-all', 'sets-logic', t('math.palette.for-all.label'), '∀', String.raw`\operatorname{forall}\left(#?,#?,#?\right)`, ['for-all'], t('math.palette.for-all.meaning'), [t('math.palette.for-all.keyword0')],
     { domain: t('math.paletteDomain.setsLogic.for-all'), argumentTypes: ['variable', 'set', 'condition'], resultType: 'boolean', method: 'exact-runtime', functionUse: false, help: HELP.quantifiers }),
   item('exists', 'sets-logic', t('math.palette.exists.label'), '∃', String.raw`\operatorname{exists}\left(#?,#?,#?\right)`, ['exists'], t('math.palette.exists.meaning'), [t('math.palette.exists.keyword0')],

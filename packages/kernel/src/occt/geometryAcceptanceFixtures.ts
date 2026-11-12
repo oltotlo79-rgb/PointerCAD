@@ -1,6 +1,6 @@
 import type { PrimitiveShapeSpec, PrimitiveStepSpec, Vec3Tuple } from '../types.js';
 
-/** R22 acceptance inputs and closed-form expectations. This test fixture does not read OCCT results. */
+/** Acceptance inputs and closed-form expectations. This test fixture does not read OCCT results. */
 export const R22_SCALES = [1e-3, 1, 1e3] as const;
 export const R22_SHAPES = ['box', 'sphere', 'cylinder'] as const;
 export const R22_OPERATIONS = ['translate', 'rotate', 'inch'] as const;

@@ -124,7 +124,7 @@ export const MATH_PALETTE_CALCULUS: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.calculus.product'), argumentTypes: ['expression', 'integer'], resultType: 'real', method: 'native', functionUse: false, help: HELP.sums }),
   item('integral', 'calculus', t('math.palette.integral.label'), '∫', String.raw`\int_{#?}^{#?}{#0}\,\mathrm{d}x`, ['integrate'], t('math.palette.integral.meaning'), [t('math.palette.integral.keyword0'), t('math.palette.integral.keyword1')],
     { domain: t('math.paletteDomain.calculus.integral'), argumentTypes: ['expression', 'real', 'real'], resultType: 'real', method: 'native', functionUse: false, help: HELP.integrals }),
-  // MC-19b (Q4=A): plain D differentiates with respect to an existing plotting variable or a differential
+  // plain D differentiates with respect to an existing plotting variable or a differential
   // problem's independent variable and never binds a free name; a standalone value uses derivative-at.
   // Both are published with plotting examples whose values the geometry runtime samples (mathPaletteCalculusExamples.ts).
   item('derivative', 'calculus', t('math.palette.derivative.label'), 'd/dx', String.raw`\frac{\mathrm{d}}{\mathrm{d}#?}{#0}`, ['differentiate'], t('math.palette.derivative.meaning'), [t('math.palette.derivative.keyword0'), t('math.palette.derivative.keyword1')],
@@ -145,7 +145,7 @@ export const MATH_PALETTE_CALCULUS: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.calculus.dot'), argumentTypes: ['vector', 'vector'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.paletteArguments }),
   item('cross', 'linear-algebra', t('math.palette.cross.label'), 'a×b', String.raw`#0\times #?`, ['cross'], t('math.palette.cross.meaning'), [t('math.palette.cross.keyword0')],
     { domain: t('math.paletteDomain.calculus.cross'), argumentTypes: ['vector', 'vector'], resultType: 'vector', method: 'exact-runtime', functionUse: false, help: HELP.paletteArguments }),
-  // MC-02b: matrix basics (transpose・adjoint・inverse・trace・rank), registered but previously absent from the
+  // matrix basics (transpose・adjoint・inverse・trace・rank), registered but previously absent from the
   // catalog. Like determinant, transpose/conjugate-transpose/inverse-matrix/trace are computed by
   // exactRuntime/cas_input.py (matrix.T/.H/.inv()/.trace()); only rank has a native fast path (reduceExactMatrixRank
   // in exactMatrixOperation.ts, invoked from prepareMathCalculation.ts before the generic engine runs).
@@ -161,7 +161,7 @@ export const MATH_PALETTE_CALCULUS: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.calculus.rank'), argumentTypes: ['matrix'], resultType: 'real', method: 'native', functionUse: false, help: HELP.linear }),
   item('norm', 'linear-algebra', t('math.palette.norm.label'), '‖v‖', String.raw`\operatorname{norm}\left(#0\right)`, ['norm'], t('math.palette.norm.meaning'), [],
     { domain: t('math.paletteDomain.calculus.norm'), argumentTypes: ['vector'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.paletteArguments }),
-  // MC-02b: vector calculus at an explicit point (usable directly in the coordinate/coefficient fields).
+  // vector calculus at an explicit point (usable directly in the coordinate/coefficient fields).
   item('gradient-at', 'calculus', t('math.palette.gradient-at.label'), '∇f(p)', String.raw`\operatorname{gradientat}\left(#0,#?,#?\right)`, ['gradient-at'], t('math.palette.gradient-at.meaning'), [t('math.palette.gradient-at.keyword0')],
     { domain: t('math.paletteDomain.calculus.gradient-at'), argumentTypes: ['expression', 'variable-list', 'list'], resultType: 'vector', method: 'exact-runtime', functionUse: false, help: HELP.vectorCalculusAt }),
   item('divergence-at', 'calculus', t('math.palette.divergence-at.label'), '∇·F(p)', String.raw`\operatorname{divergenceat}\left(#0,#?,#?\right)`, ['divergence-at'], t('math.palette.divergence-at.meaning'), [t('math.palette.divergence-at.keyword0')],
@@ -174,9 +174,9 @@ export const MATH_PALETTE_CALCULUS: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.calculus.jacobian-at'), argumentTypes: ['expression', 'variable-list', 'list'], resultType: 'matrix', method: 'exact-runtime', functionUse: false, help: HELP.vectorCalculusAt }),
   item('hessian-at', 'calculus', t('math.palette.hessian-at.label'), 'H(p)', String.raw`\operatorname{hessianat}\left(#0,#?,#?\right)`, ['hessian-at'], t('math.palette.hessian-at.meaning'), [],
     { domain: t('math.paletteDomain.calculus.hessian-at'), argumentTypes: ['expression', 'variable-list', 'list'], resultType: 'matrix', method: 'exact-runtime', functionUse: false, help: HELP.vectorCalculusAt }),
-  // MC-02b: vector calculus for function curves/surfaces only (X・Y・Z・T・U・V). No coordinate-field example exists;
-  // The six function forms need explicit axis/parameter roles. MC-03b supplies that scope and
-  // verifies actual component values in the geometry runtime before publishing their examples.
+  // vector calculus for function curves/surfaces only (X・Y・Z・T・U・V). No coordinate-field example exists;
+  // The six function forms need explicit axis/parameter roles. That scope is supplied, and
+  // actual component values are verified in the geometry runtime before publishing their examples.
   item('gradient', 'calculus', t('math.palette.gradient.label'), '∇f', String.raw`\operatorname{gradient}\left(#0,#?\right)`, ['gradient'], t('math.palette.gradient.meaning'), [t('math.palette.gradient.keyword0')],
     { domain: t('math.paletteDomain.calculus.gradient'), argumentTypes: ['expression', 'variable-list'], resultType: 'vector', method: 'native', functionUse: true, help: HELP.vectorCalculus }),
   item('divergence', 'calculus', t('math.palette.divergence.label'), '∇·F', String.raw`\operatorname{divergence}\left(#0,#?\right)`, ['divergence'], t('math.palette.divergence.meaning'), [t('math.palette.divergence.keyword0')],
@@ -189,7 +189,7 @@ export const MATH_PALETTE_CALCULUS: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.calculus.jacobian'), argumentTypes: ['expression', 'variable-list'], resultType: 'matrix', method: 'native', functionUse: true, help: HELP.vectorCalculus }),
   item('hessian', 'calculus', t('math.palette.hessian.label'), 'H', String.raw`\operatorname{hessian}\left(#0,#?\right)`, ['hessian'], t('math.palette.hessian.meaning'), [],
     { domain: t('math.paletteDomain.calculus.hessian'), argumentTypes: ['expression', 'variable-list'], resultType: 'matrix', method: 'native', functionUse: true, help: HELP.vectorCalculus }),
-  // MC-02b: line/surface/volume integrals, circulation and flux.
+  // line/surface/volume integrals, circulation and flux.
   item('line-integral', 'calculus', t('math.palette.line-integral.label'), '∫C f ds', String.raw`\operatorname{lineintegral}\left(#0,#?,#?,#?,#?,#?\right)`, ['line-integral'], t('math.palette.line-integral.meaning'), [],
     { domain: t('math.paletteDomain.calculus.line-integral'), argumentTypes: ['expression', 'variable-list', 'expression', 'variable', 'real', 'real'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.lineIntegrals }),
   item('circulation', 'calculus', t('math.palette.circulation.label'), '∮C F·dr', String.raw`\operatorname{circulation}\left(#0,#?,#?,#?,#?,#?\right)`, ['circulation'], t('math.palette.circulation.meaning'), [],
@@ -200,9 +200,9 @@ export const MATH_PALETTE_CALCULUS: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.calculus.flux-integral'), argumentTypes: ['expression', 'variable-list', 'expression', 'variable-list', 'list', 'list'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.regionIntegrals }),
   item('volume-integral', 'calculus', t('math.palette.volume-integral.label'), '∭V f dV', String.raw`\operatorname{volumeintegral}\left(#0,#?,#?,#?,#?,#?\right)`, ['volume-integral'], t('math.palette.volume-integral.meaning'), [],
     { domain: t('math.paletteDomain.calculus.volume-integral'), argumentTypes: ['expression', 'variable-list', 'expression', 'variable-list', 'list', 'list'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.regionIntegrals }),
-  // MC-02e (MC-19d): closed line/surface integrals, calculated only after closedIntegrals.ts proves the
+  // closed line/surface integrals, calculated only after closedIntegrals.ts proves the
   // parametrized curve/surface is closed (confirmed by closedIntegrals.test.ts's own analytic values).
-  // MC-04b (2026-09-24, real check): structural input uses \oint\left(...\right) / \oiint\left(...\right)
+  // Real check: structural input uses \oint\left(...\right) / \oiint\left(...\right)
   // directly. parseMathLatex.ts's CLOSED_INTEGRALS branch accepts \oint(/\oiint( followed by an argument
   // list; \left/\right are spacing tokens the tokenizer drops (mathLatexTokens.ts), so \oint\left(...\right)
   // reaches that branch exactly like \oint(...). Confirmed both by closedIntegrals.test.ts's own round trip
@@ -218,31 +218,31 @@ export const MATH_PALETTE_CALCULUS: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.calculus.closed-surface-integral'), argumentTypes: ['expression', 'variable-list', 'expression', 'variable-list', 'list', 'list'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.closedIntegrals }),
   item('closed-flux-integral', 'calculus', t('math.palette.closed-flux-integral.label'), '∯ F·dS', String.raw`\oiint\left(#0,#?,#?,#?,#?,#?\right)`, ['closed-flux-integral'], t('math.palette.closed-flux-integral.meaning'), [],
     { domain: t('math.paletteDomain.calculus.closed-flux-integral'), argumentTypes: ['expression', 'variable-list', 'expression', 'variable-list', 'list', 'list'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.closedIntegrals }),
-  // MC-02b: value at a specified point, of a specified differentiation order. requiresExactCalculus()
+  // value at a specified point, of a specified differentiation order. requiresExactCalculus()
   // (mathExactCalculus.ts) lists 'differentiate-at' explicitly, so this always resolves via exact-runtime.
   item('derivative-at', 'calculus', t('math.palette.derivative-at.label'), 'f⁽ⁿ⁾(a)', String.raw`\operatorname{derivativeat}\left(#0,#?,#?,#?\right)`, ['differentiate-at'], t('math.palette.derivative-at.meaning'), [t('math.palette.derivative-at.keyword0')],
     { domain: t('math.paletteDomain.calculus.derivative-at'), argumentTypes: ['expression', 'variable', 'real', 'natural'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.derivativeAt }),
-  // MC-02b: infinite sums/products (the existing sum/product items only carry finite-range examples).
+  // infinite sums/products (the existing sum/product items only carry finite-range examples).
   item('infinite-sum', 'series', t('math.palette.infinite-sum.label'), 'Σ_{k=1}^∞', String.raw`\sum_{k=1}^{\infty}{#0}`, ['sum'], t('math.palette.infinite-sum.meaning'), [],
     { domain: t('math.paletteDomain.calculus.infinite-sum'), argumentTypes: ['expression'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.infiniteSeries }),
   item('infinite-product', 'series', t('math.palette.infinite-product.label'), 'Π_{k=1}^∞', String.raw`\prod_{k=1}^{\infty}{#0}`, ['product'], t('math.palette.infinite-product.meaning'), [],
     { domain: t('math.paletteDomain.calculus.infinite-product'), argumentTypes: ['expression'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.infiniteSeries }),
-  // MC-02d (MC-16): exact vector projection, sharing the validated matrix runtime like dot/cross/norm.
+  // exact vector projection, sharing the validated matrix runtime like dot/cross/norm.
   item('projection', 'linear-algebra', t('math.palette.projection.label'), 'proj', String.raw`\operatorname{projection}\left(#0,#?\right)`, ['projection'], t('math.palette.projection.meaning'), [t('math.palette.projection.keyword0')],
     { domain: t('math.paletteDomain.calculus.projection'), argumentTypes: ['vector', 'vector'], resultType: 'vector', method: 'exact-runtime', functionUse: false, help: HELP.paletteArguments }),
-  // MC-02d (MC-18): fixed-size identity/zero matrix constructors.
+  // fixed-size identity/zero matrix constructors.
   item('identity-matrix', 'linear-algebra', t('math.palette.identity-matrix.label'), 'I', String.raw`\operatorname{identitymatrix}\left(#0\right)`, ['identity-matrix'], t('math.palette.identity-matrix.meaning'), [t('math.palette.identity-matrix.keyword0')],
     { domain: t('math.paletteDomain.calculus.identity-matrix'), argumentTypes: ['natural'], resultType: 'matrix', method: 'exact-runtime', functionUse: false, help: HELP.linear }),
   item('zero-matrix', 'linear-algebra', t('math.palette.zero-matrix.label'), '0', String.raw`\operatorname{zeromatrix}\left(#0,#?\right)`, ['zero-matrix'], t('math.palette.zero-matrix.meaning'), [t('math.palette.zero-matrix.keyword0')],
     { domain: t('math.paletteDomain.calculus.zero-matrix'), argumentTypes: ['natural', 'natural'], resultType: 'matrix', method: 'exact-runtime', functionUse: false, help: HELP.linear }),
-  // MC-02d (MC-30/MC-31b): total differential at an explicit point, lowered into gradient-at's components dot the
+  // total differential at an explicit point, lowered into gradient-at's components dot the
   // increments. The nested Function(...) call is a literal value (this operation's own operand, not an auto-wrap).
   item('total-differential-at', 'calculus', t('math.palette.total-differential-at.label'), 'df(p)', String.raw`\operatorname{totaldifferentialat}\left(\operatorname{Function}\left(#0,#?,#?\right),#?,#?\right)`, ['total-differential-at'], t('math.palette.total-differential-at.meaning'), [t('math.palette.total-differential-at.keyword0')],
     { domain: t('math.paletteDomain.calculus.total-differential-at'), argumentTypes: ['expression', 'variable', 'variable', 'list', 'list'], resultType: 'real', method: 'exact-runtime', functionUse: false, help: HELP.vectorCalculusAt }),
-  // MC-04c: integrate(f,x) with no bound (structural: \int{f}\,\mathrm{d}x with no _/^ range, confirmed accepted by
+  // integrate(f,x) with no bound (structural: \int{f}\,\mathrm{d}x with no _/^ range, confirmed accepted by
   // exactIndefiniteIntegrals.test.ts:117-123). The answer is the antiderivative family F+C (mathIndefiniteIntegralResult
   // .test.ts): the exact runtime finds a closed-form primitive and proves it by differentiating it back, delivered as
-  // a 'function' lambda over the integral's own variable (MC-20). 'antiderivative' (mathPaletteGroups.ts) keeps this
+  // a 'function' lambda over the integral's own variable. 'antiderivative' (mathPaletteGroups.ts) keeps this
   // distinct from an ordinary mapping's 'function' result. Never usable in coordinates/components/coefficients or
   // function plots because the constant C is never determined; a definite integral (existing 'integral' item) or a
   // written-out antiderivative with a chosen constant is required there instead.

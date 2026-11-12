@@ -1,4 +1,4 @@
-/** P7-18: temporary position objective, followed by the existing hard-only LM. */
+/** Temporary position objective, followed by the existing hard-only LM. */
 import {
   CONSTRAINT_INITIAL_DAMPING, CONSTRAINT_MAX_DAMPING, CONSTRAINT_STEP_TOLERANCE,
   qrDecomposition, RANK_RELATIVE_TOLERANCE,

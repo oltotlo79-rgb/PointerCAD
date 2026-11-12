@@ -1,11 +1,11 @@
 /**
  * DXF の曲線(bulge の円弧・ELLIPSE・SPLINE)を、スケッチが受けられる素の数値へ換算する
- * (要件 FR-813、計画書 docs/plans/P6-入出力.md §2.7 タスク23)。
+ * (要件 FR-813)。
  *
- * この段は **OCCT を呼ばない純関数だけ**で、`dxfTags.ts`(タスク22)が読んだ
- * 「コードと値の対」を、タスク24 の実体の読み取りが組み立てた数値として受け取り、
+ * この段は **OCCT を呼ばない純関数だけ**で、`dxfTags.ts`が読んだ
+ * 「コードと値の対」を、実体の読み取り(`readDxf.ts`)が組み立てた数値として受け取り、
  * 中心・半径・角度のような**幾何の量**へ直す。`SketchFeature` へ写すのは
- * `model` 側(タスク26 の `dxfToSketch.ts`)の仕事なので、ここでは
+ * `model` 側(`dxfToSketch.ts`)の仕事なので、ここでは
  * `ExpressionValue`(式の文字列)にも `CoordinateInput` にも触れない。
  *
  * ## 単位と向きの約束(rules/04-設計の規律.md、`model` の流儀に合わせる)
@@ -20,14 +20,14 @@
  * - **楕円の開始角・終了角は「長軸から測った方位角」(度)。** DXF が持つのは
  *   媒介変数(下記)なので、ここで方位角へ直す。`SketchEllipseFeature` の
  *   `startAngle` / `endAngle` が方位角だから(型定義の注釈)。
- * - **`-0` を作らない。** タグの段(タスク22)と揃える。`Object.is` の比較や
+ * - **`-0` を作らない。** タグの段と揃える。`Object.is` の比較や
  *   文字にしたときの `"-0"` を避けるため。
  *
  * ## Z 座標について
  *
  * この段は 2D の点しか受け取らない。**Z ≠ 0 の実体を平らにして「平面から外れた図形が
  * N 個あります。」と案内する**のは、実体を数え上げられる 1 つ上の段
- * (タスク24・26)の仕事(計画書 §0.a-0.33)。
+ * (`readDxf.ts`・`dxfToSketch.ts`)の仕事。
  */
 
 import { ellipseParameterToAzimuth } from '@pointercad/model';
@@ -63,7 +63,7 @@ export interface DxfEllipseGeometry {
   readonly endAngle: number;
 }
 
-/** SPLINE のタグから読み取った素の値(タスク24 が組み立て、この段が畳む)。 */
+/** SPLINE のタグから読み取った素の値(実体の読み取りが組み立て、この段が畳む)。 */
 export interface DxfSplineInput {
   /** グループ 71。次数(1 以上の整数)。 */
   readonly degree: number;
@@ -89,7 +89,7 @@ export interface DxfSplineGeometry {
 }
 
 /**
- * 重み付き(有理)スプラインの重みを捨てたときの案内(計画書 §2.7)。
+ * 重み付き(有理)スプラインの重みを捨てたときの案内。
  * 写し先の `SketchSplineFeature` は重みを持たないため、形がわずかに変わる。
  */
 export const DXF_SPLINE_WEIGHT_IGNORED_MESSAGE = '重みの付いた曲線は形が少し変わります。';
@@ -107,7 +107,7 @@ const DECIMAL_PATTERN = /^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$
 /** 10 進の整数として認める書き方(グループ 70 / 71 など)。 */
 const INTEGER_PATTERN = /^[+-]?[0-9]+$/;
 
-/** `-0` を `0` へ寄せる。タグの段(タスク22)の決めと揃える。 */
+/** `-0` を `0` へ寄せる。タグの段の決めと揃える。 */
 function normalizeZero(value: number): number {
   return value === 0 ? 0 : value;
 }
@@ -372,7 +372,7 @@ export function ellipseFromDxf(
  *
  * ## 決めごと
  *
- * - **制御点があれば制御点の版**(`mode: 'control'`)へ写す(計画書 §2.7)。
+ * - **制御点があれば制御点の版**(`mode: 'control'`)へ写す。
  *   `SketchSplineFeature` が「通過点」と「制御点」の 2 通りを持つため、
  *   新しい曲線の種類を作らずに済む。
  * - **制御点が無くフィット点だけのとき**は、フィット点を通過点として
@@ -386,9 +386,9 @@ export function ellipseFromDxf(
  *   `SketchSplineFeature` は「閉じるための重複点は入れない」約束のため。
  *   落とすのは**座標が完全に一致する**ときだけにして、近いだけの点は残す
  *   (DXF は同じ十進表記を書き直すので一致する)。周期スプラインが先頭の
- *   `次数` 個ぶんを巻き直して並べている場合の畳み直しは、実体の段(タスク24)で見る。
+ *   `次数` 個ぶんを巻き直して並べている場合の畳み直しは、実体の段で見る。
  * - **点の個数の上限(`model` の `MAX_SPLINE_POINTS`)はここでは見ない。**
- *   上限は写し先の都合なので、`model` 側(タスク26)が見る。
+ *   上限は写し先の都合なので、`model` 側が見る。
  *
  * @throws {Error} `DXF_UNSUPPORTED_FORMAT_MESSAGE` を持つ例外。次数が 1 以上の整数でない、
  *   座標が有限でない、または点が 1 つも無いとき。

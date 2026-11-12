@@ -1,24 +1,24 @@
 import { unitDirection as toUnit } from './normalizeDirection.js';
 import { lengthVec as magnitude, subVec as subtract, dotVec as dot } from './sketchCorner.js';
 /**
- * 面と面をつなぐ立体(罫線面、FR-430)とロフト(FR-410)。計画書 P5 §2.9、タスク24。
+ * 面と面をつなぐ立体(罫線面、FR-430)とロフト(FR-410)。
  *
  * **1 つの道具で 2 つの機能をまかなう。** `BRepOffsetAPI_ThruSections` は
- * `ruled` の真偽で「直線で結ぶ(罫線面)」と「なめらかに結ぶ(ロフト)」を切り替えられる
- * (§0.a-0.25)。利用者から見て別の道具なので**フィーチャーの種類は model 側で分ける**が、
+ * `ruled` の真偽で「直線で結ぶ(罫線面)」と「なめらかに結ぶ(ロフト)」を切り替えられる。
+ * 利用者から見て別の道具なので**フィーチャーの種類は model 側で分ける**が、
  * カーネルの段は 1 種類(`thruSections`)にまとめてある。
  *
  * **列挙を 1 つも触らない。** `SetParType`(`Approx_ParametrizationType`)と
- * `SetContinuity`(`GeomAbs_Shape`)は呼ばない(§1.2-B)。`Shape()` はこのクラスに無く、
+ * `SetContinuity`(`GeomAbs_Shape`)は呼ばない。`Shape()` はこのクラスに無く、
  * 親 `BRepBuilderAPI_MakeShape` のものを使う。
  *
- * **`IsDone()` を見る前に `Shape()` を呼ばない**(`docs/報告記録.md` 2026-09-03 06:56 の⑤。
+ * **`IsDone()` を見る前に `Shape()` を呼ばない**(
  * `makeThread.ts` / `makeSpring.ts` と同じ扱い)。空の結果でも `IsDone()` は true になりうるので、
- * 立体になっているかは `hasSolid` と体積で別に確かめる(同 ④)。
+ * 立体になっているかは `hasSolid` と体積で別に確かめる。
  *
  * ---
  *
- * ## 球が選ばれたとき(§2.9.3、§0.a-0.26)
+ * ## 球が選ばれたとき
  *
  * 球の輪郭は「縁」を持たないので、`ThruSections` にそのまま渡せない。球に外接する直線
  * (= 接する円錐面)で結ぶ必要があり、**2 つの経路**を持つ(判定と数値は `sphereTangent.ts`)。
@@ -51,8 +51,8 @@ import { lengthVec as magnitude, subVec as subtract, dotVec as dot } from './ske
  * NFR-PF-2(単一フィーチャー 500ms)を満たせるのは縫合だけである。
  *
  * **点の数(`spec.sphereSegments`)の選び方(2026-09-05 実測、3 回ずつ)。**
- * 計画書 §2.9.3 の既定は 72 点だが、72 点では NFR-PF-2 を超えるため**既定は 24 点**で、
- * 24 / 48 / 72 の 3 択を段ごとに選べるようにしてある(§0.a-0.74、タスク24b)。
+ * 当初の既定は 72 点だが、72 点では NFR-PF-2 を超えるため**既定は 24 点**で、
+ * 24 / 48 / 72 の 3 択を段ごとに選べるようにしてある。
  * (a) の経路が使える軸対称の入力を、あえて (b) の経路で作って解析値 24741.124688560 と
  * 比べた表(輪の数は 1 本):
  *
@@ -72,13 +72,13 @@ import { lengthVec as magnitude, subVec as subtract, dotVec as dot } from './ske
  * 5 本 4008ms)、**境界箱は 1 本のときが最も球に近い**(軸対称では球の半径ちょうどの 10.000、
  * 3 本では 10.003)。所要と形の両方で 1 本が最良だった。
  *
- * **限界(統括へ報告済み)。** 球冠が半球より広くなる配置(接点の列が球の大円に近づくとき)では、
+ * **限界。** 球冠が半球より広くなる配置(接点の列が球の大円に近づくとき)では、
  * なめらかな面が球の外へ最大 0.9mm ほど膨らむ(球 r=10・円 r=8 @ (5,0,−20) で境界箱の上端が
  * 10.935)。球に外接する直線そのもの(接点の位置)は厳密なので、膨らむのは球冠の側だけである。
  *
  * ---
  *
- * ## 立体の面を輪郭にする(`faceQuery`、§0.a-0.73、タスク24b)
+ * ## 立体の面を輪郭にする(`faceQuery`)
  *
  * 断面が `faceQuery` のときは、**選び直しをこのファイルの外(`worker/recomputeSolids.ts`)で
  * 済ませてから**、取り出した外周のワイヤを添字つきで受け取る(`makeThruSections` の第 4 引数)。
@@ -135,7 +135,7 @@ const FULL_TURN = 2 * Math.PI;
 const FULL_TURN_EPSILON = 1e-9;
 
 /**
- * (b) で輪郭を割る点の数として選べる値(§0.a-0.74)。
+ * (b) で輪郭を割る点の数として選べる値。
  *
  * ファイル冒頭の実測表のとおり、NFR-PF-2(500ms)に収まるいちばん細かい値は 24 で、
  * model 側の既定もこれになる。48 / 72 は所要が上限を超えるが、なめらかさを優先して
@@ -331,9 +331,9 @@ function checkSectionFace(oc: OpenCascadeInstance, face: TopoDS_Face, wire: Topo
 }
 
 /**
- * 立体の面を指紋で選び直し、その外周を輪郭のワイヤとして取り出す(§0.a-0.73、タスク24b)。
+ * 立体の面を指紋で選び直し、その外周を輪郭のワイヤとして取り出す。
  *
- * **選び直しは `pickSubShape` に任せる**(P3 §2.2.4)。重みもしきい値も穴・面取り・
+ * **選び直しは `pickSubShape` に任せる**。重みもしきい値も穴・面取り・
  * 投影とまったく同じで、罫線面のための別の規約は作らない。
  *
  * 外周の取り出しは `BRepTools.OuterWire`(`loadOcct.node.test.ts` と同じ書き方で
@@ -415,7 +415,7 @@ function toSectionSource(
 }
 
 /**
- * `twist` のぶんだけ曲線の並びを回す(§0.a-0.28)。
+ * `twist` のぶんだけ曲線の並びを回す。
  *
  * ワイヤの始点は「最初に足した稜線の始点」で決まるので、足す順を n 本ぶん回すと
  * 2 つの輪郭の対応がずれ、ねじれを目で直せる。並びを回すだけで形そのものは変えない。
@@ -436,7 +436,7 @@ function rotateCurves(curves: readonly CurveSpec[], twist: number): readonly Cur
  *
  * 取り出し方は `sewSolid.ts` の `findShell` と同じ(殻がそのまま返る場合と、入れ物
  * (COMPOUND)に入って返る場合の両方を扱う)。`sewSolid.ts` の関数は外へ出していないので、
- * ここでは同じ実測(2026-09-03、計画書 §1.2 の未確認点 3)に基づく最小のものを置く。
+ * ここでは同じ実測に基づく最小のものを置く。
  */
 function findShell(oc: OpenCascadeInstance, shape: TopoDS_Shape): TopoDS_Shell | null {
   const shellType = oc.TopAbs_ShapeEnum.TopAbs_SHELL;
@@ -536,7 +536,7 @@ function circleOfSection(curves: readonly CurveSpec[]): {
 }
 
 /**
- * (a) 軸対称の罫線立体(§0.a-0.26-(a))。
+ * (a) 軸対称の罫線立体(球の軸を通る輪郭)。
  * 円錐台の側面 + 接触円より上の球冠 + 輪郭の平らな面 の 3 枚を縫合する。
  *
  * `BRepPrimAPI_MakeCone` / `BRepPrimAPI_MakeSphere` の `Face()`(親
@@ -608,7 +608,7 @@ function makeAxialSphereSolid(
 }
 
 /**
- * 輪郭のワイヤを、長さの等しい間隔で `count` 点に割る(§2.9.3-(b) の離散化)。
+ * 輪郭のワイヤを、長さの等しい間隔で `count` 点に割る(離散化)。
  *
  * `BRepAdaptor_CompCurve` はワイヤ全体を 1 本の曲線として扱えるので、稜線が何本あっても
  * 同じ数の点に割れる。`GCPnts_QuasiUniformAbscissa` は列挙を 1 つも取らない。
@@ -670,7 +670,7 @@ function contourNormal(points: readonly Vec3Tuple[], sphereCenter: Vec3Tuple): V
 }
 
 /**
- * (b) 一般の輪郭の罫線立体(§0.a-0.26-(b))。
+ * (b) 一般の輪郭の罫線立体(それ以外の輪郭)。
  * 罫線の殻(輪郭 → 接点)+ 球冠を張る殻(接点 → 輪 → 頂点)+ 輪郭の平らな面 を縫合する。
  *
  * **輪郭の平らな面は、元の曲線ではなく割った折れ線から張る。** 罫線の殻の縁は折れ線なので、
@@ -825,7 +825,7 @@ function splitSphereSection(
 /**
  * 断面から輪郭のワイヤを 1 本作る。
  *
- * 曲線の並びのときは `twist` のぶんだけ並びを回してから組む(§0.a-0.28)。
+ * 曲線の並びのときは `twist` のぶんだけ並びを回してから組む。
  * **面の外周にはひねりが効かない。** 始点をずらすには稜線を並べ替える元の曲線が要るが、
  * 面から取り出したワイヤにはそれが無いためである。ひねりを指定しても断らず、
  * その断面だけ元の並びのまま結ぶ(形は作れるので、止める理由が無い。NFR-RE-1)。
@@ -882,7 +882,7 @@ function makeSphereRuledSolid(
   return general;
 }
 
-/** 輪郭どうしをつなぐ立体(罫線面・ロフトの基本の場合、§2.9.2)。 */
+/** 輪郭どうしをつなぐ立体(罫線面・ロフトの基本の場合)。 */
 function makePlainThruSections(
   oc: OpenCascadeInstance,
   spec: ThruSectionsStepSpec,
@@ -893,15 +893,15 @@ function makePlainThruSections(
   // FR-435: 既存の罫線面/ロフトは変更せず、明示したロフトだけ近似を平滑化する。
   // これはロフト内部の指定であり、借りた断面の隣接面へのG1接続を保証しない。
   if (!spec.ruled && spec.smooth) maker.SetSmoothing(true);
-  // 辺の数と向きを揃える(§2.9.2)。輪郭ごとに稜線の数が違っても対応が付く。
+  // 辺の数と向きを揃える。輪郭ごとに稜線の数が違っても対応が付く。
   //
   // **ひねりを指定したときは揃え直さない**(2026-09-05 実測)。`CheckCompatibility` は
   // 「各断面の始点と向きを決め直して揃える」処理なので、`twist` でずらした始点も
   // 元へ戻してしまい、体積が 1e-3 の桁まで同じになった(ひねりが効かない)。
-  // ずらすときは並び順どおりの対応に任せる(§0.a-0.28。ねじれは目で見て直す)。
+  // ずらすときは並び順どおりの対応に任せる(ねじれは目で見て直す)。
   maker.CheckCompatibility(spec.twist === 0);
   for (let index = 0; index < profiles.length; index += 1) {
-    // ひねりは 2 つ目以降の輪郭にだけ効かせる(片方の始点だけをずらす。§0.a-0.28)。
+    // ひねりは 2 つ目以降の輪郭にだけ効かせる(片方の始点だけをずらす)。
     maker.AddWire(wireOfSource(oc, profiles[index], index === 0 ? 0 : spec.twist, keep));
   }
   maker.Build(keep(new oc.Message_ProgressRange_1()));
@@ -915,7 +915,7 @@ function makePlainThruSections(
 /**
  * 面と面をつなぐ立体(罫線面、FR-430)とロフト(FR-410)を作る。
  *
- * **対象を消費しない「作る」フィーチャー**(§0.a-0.27)。輪郭の材料になった立体は
+ * **対象を消費しない「作る」フィーチャー**。輪郭の材料になった立体は
  * そのまま画面に残るので、1 つにまとめたければ利用者が和(FR-404)を取る。
  *
  * 断るときは利用者へそのまま見せられる日本語の Error を投げ、呼び出し側

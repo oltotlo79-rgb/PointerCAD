@@ -1,5 +1,5 @@
 /**
- * Assembly parameter table commands (FR-207 for `AssemblyDocument.parameters`, §0.a-0.9). The CORE half of
+ * Assembly parameter table commands (FR-207 for `AssemblyDocument.parameters`). The CORE half of
  * Pure command boundary for the assembly parameter table; the panel lives elsewhere.
  *
  * Pure functions with the argument conventions of the part commands (parameterCommands.ts): documents are immutable,

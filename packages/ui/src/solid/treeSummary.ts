@@ -33,7 +33,7 @@ export function selectionKindLabelKeys(
 /**
  * スケッチの要素 id から種類の見出しキーを引く。見つからなければ null。
  * 探す順は `findSketchFeatureAt`(`sketchRefs.ts`)に任せ、**編集中のスケッチを先に**見る。
- * 要素 id はスケッチをまたいで重なるため(P4 仕上げ (g))。
+ * 要素 id はスケッチをまたいで重なるため。
  */
 function sketchKindLabelKey(document: PartDocument, elementId: string): MessageKey | null {
   const found = findSketchFeatureAt(document, elementId);
@@ -41,7 +41,7 @@ function sketchKindLabelKey(document: PartDocument, elementId: string): MessageK
 }
 
 /**
- * ツリーの節(FR-501)。スケッチ・ソリッドに加え、P4 タスク33 で基準ジオメトリの節
+ * ツリーの節(FR-501)。スケッチ・ソリッドに加え、基準ジオメトリの節
  * (作業平面・基準軸・基準点・座標系。FR-328、FR-329)を足した。
  *
  * 基準の節は `buildTreeSections` ではなく `buildReferenceSection` が別に作る。
@@ -66,7 +66,7 @@ export interface TreeRow {
   readonly errorMessage: string | null;
   /** 抑制中(FR-503)。スケッチの要素と基準ジオメトリは常に false。 */
   readonly suppressed: boolean;
-  /** ほかの立体と組み合わさって単独では表示されない(§0.a-0.5)。 */
+  /** ほかの立体と組み合わさって単独では表示されない。 */
   readonly consumed: boolean;
   /**
    * 画面に出していない基準ジオメトリ(`visible: false`、FR-329)。
@@ -123,11 +123,11 @@ export function buildTreeSections(
 }
 
 /**
- * スケッチ 1 本ぶんの節の中身(P4 仕上げ (g)、FR-501)。
+ * スケッチ 1 本ぶんの節の中身(FR-501)。
  *
  * 部品文書はもともと**複数のスケッチ**を持てる形だったが(`PartDocument.sketches`)、
  * ツリーは編集中の 1 本しか出していなかったので、新しいスケッチを作る・切り替える入口が
- * 画面のどこにも無かった(P4 タスク27 の報告 (A))。ここで文書内の全スケッチを親行として
+ * 画面のどこにも無かった。ここで文書内の全スケッチを親行として
  * 並べられるようにする。
  *
  * `buildTreeSections` の戻り(スケッチ・ソリッドの 2 節)は 1 行も変えない。あの形を
@@ -152,7 +152,7 @@ export interface SketchTreeGroup {
 /** スケッチの要素 1 つを木の行へ直す。`buildTreeSections` と同じ組み立て。 */
 function sketchFeatureRow(feature: SketchFeature, errors: readonly SketchError[]): TreeRow {
   const message = partErrorMessage(errors, feature.id);
-  // 複製(FR-324)は配置ごとに絵と名前を変える(P4 タスク33、タスク20 の申し送り)。
+  // 複製(FR-324)は配置ごとに絵と名前を変える。
   const kind = sketchTreeKindOf(feature);
   return {
     id: feature.id,
@@ -168,7 +168,7 @@ function sketchFeatureRow(feature: SketchFeature, errors: readonly SketchError[]
 }
 
 /**
- * 文書内の全スケッチを、木に出せる形へ並べる(P4 仕上げ (g)、FR-501)。
+ * 文書内の全スケッチを、木に出せる形へ並べる(FR-501)。
  *
  * 失敗の理由(`sketchErrors`)を添えるのは**編集中のスケッチだけ**。ストアが持っている
  * `sketchErrors` は編集中の 1 本ぶんしかないため(`useAppStore.ts` の `activeSketchErrors`)、
@@ -200,7 +200,7 @@ export function renameSketch(sketch: SketchDocument, name: string): SketchDocume
 }
 
 /**
- * 基準ジオメトリの節(FR-328、FR-329、P4 タスク33)。
+ * 基準ジオメトリの節(FR-328、FR-329)。
  *
  * 履歴順にそのまま並べ、`visible: false` のものも薄く(`hidden`)出す。
  * 節を `buildTreeSections` の戻りへ足さず別に作るのは、既に固定してある

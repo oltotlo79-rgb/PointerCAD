@@ -1,4 +1,4 @@
-/** 曲げの中立面長と内外寸の換算（P10-2）。 */
+/** 曲げの中立面長と内外寸の換算。 */
 export interface SheetBendInput {
   /** mm */ readonly thickness: number;
   /** mm、内側 */ readonly radius: number;

@@ -19,7 +19,7 @@ import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
 
 /**
- * 平らな面の移動(EX-18 の限られた一段)。立体の平らな面 1 枚を、その外向き法線の向きへ
+ * 平らな面の移動(限られた一段)。立体の平らな面 1 枚を、その外向き法線の向きへ
  * 符号付きの距離だけ平行に動かす。正は材料を足し、負は削る。
  *
  * **この段が扱うのは「隣の面がすべて動かす面に直角な形」だけ**(板の端面・上面など)。

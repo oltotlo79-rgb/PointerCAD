@@ -1,4 +1,4 @@
-/** 部品の差し替えを予告してから一度に適用する純関数(FR-614、P7 §2.11)。 */
+/** 部品の差し替えを予告してから一度に適用する純関数(FR-614)。 */
 import { resolveReplacementSubShapeReference, type SolidBody, type SubShapeReferenceResolution } from '../kernelBridge.js';
 import { fingerprintKeyText, type SubShapeRef } from '../geometry/subShapeRef.js';
 import { replaceComponent as replaceComponentRecord } from './assemblyEdit.js';

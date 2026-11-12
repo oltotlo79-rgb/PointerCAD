@@ -6,8 +6,8 @@ import { useAppStore } from '../store/useAppStore.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { t } from '../i18n/t.js';
 
-/** GR-18b: a slider replaces a coefficient's formula with a plain number (§4(e)), which would silently cut a
- *  geometry-derived coefficient loose from the shape it measures (GR-04: the value is re-derived every
+/** a slider replaces a coefficient's formula with a plain number (§4(e)), which would silently cut a
+ *  geometry-derived coefficient loose from the shape it measures (the value is re-derived every
  *  recomputation). Such a coefficient never gets a slider, and `applyFunctionCoefficientSlider` refuses one
  *  offered anyway (defence in depth; the list below already omits it). */
 export function functionCoefficientParameters(document: PartDocument, definition: FunctionDefinition): readonly Parameter[] {

@@ -1,8 +1,8 @@
 /**
- * タイムライン(FR-507)の並び・依存・並べ替えの妥当性と、途中までの文書(FR-506)
- * (計画書 docs/plans/P4b-スケッチの仕上げ.md §2.7、タスク9)。
+ * タイムライン(FR-507)の並び・依存・並べ替えの妥当性と、
+ * 途中までの文書(FR-506)。
  *
- * **帯の並び**: `references`(順)→ `solids`(順)の 1 本の通し(§0.a-0.20)。
+ * **帯の並び**: `references`(順)→ `solids`(順)の 1 本の通し。
  * スケッチ(`PartDocument.sketches`)は帯に出さない。配列ではあるが履歴ではなく、
  * 「何番目に作られたか」を表す欄をどこにも持たないためである(帯へ混ぜると、
  * 作られた順を推測で決めることになる)。スケッチは、それを使う立体の依存として
@@ -16,7 +16,7 @@
  * | 立体 → 立体(消費) | `consumedTargetsOf`(createPartDocument.ts) |
  * | 立体 → スケッチ → 立体 / 作業平面 | `referencedSketchIds`(resolvePart.ts)+ そのスケッチの依存 |
  * | 立体 → 立体(部分形状) | `SubShapeRef.bodyFeatureId`(穴・ねじ穴の面、フィレット・面取りの辺) |
- * | 立体 → 立体(消費しないが指す) | ミラーの対象・鏡の面、曲面の `face`、罫線面/ロフトの立体の面と球、基本形状の頂点、押し出しの「選んだ面まで」(P5 タスク45) |
+ * | 立体 → 立体(消費しないが指す) | ミラーの対象・鏡の面、曲面の `face`、罫線面/ロフトの立体の面と球、基本形状の頂点、押し出しの「選んだ面まで」 |
  * | 立体 → 基準ジオメトリ | `AxisSpec` の `reference`(回転軸・パターンの向き・ばねの軸) |
  * | 基準ジオメトリ → 何でも | `PlaneSpec` / `ReferenceAxisDefinition` / `ReferencePointDefinition` / `AxisSpec` / `PointReference` |
  * | スケッチ → 立体 | 投影(`SketchProjectedCurveFeature.source`)・交差(`planeSection.targetFeatureId`)・3D スケッチの頂点参照(`PointReference` の `subShape`)・球面上の点(同 `sphereGrid`、FR-431) |
@@ -31,10 +31,10 @@
  *
  * 例外を投げず、断りは日本語で相手の名前つきに返す(FR-504、NFR-RE-1)。
  *
- * **図形の測定値を使う係数の順序(GR-07)**: `reorderTimeline` / `canMoveHistoryItem` /
+ * **図形の測定値を使う係数の順序**: `reorderTimeline` / `canMoveHistoryItem` /
  * `moveHistoryItem` は任意引数 `extraDependencies` で、この帯の依存グラフに合わせる追加の
  * 辺を受け取れる(`mergedDependencyGraph`)。図形の測定値(計測した形)を係数経由で使う形は、
- * 測った形より履歴の後ろでなければならない(計画書 §4(d)、Q7=O1)という別の規則を、
+ * 測った形より履歴の後ろでなければならないという別の規則を、
  * `historyDependencies` 自体を変えずに足すためのもの。辺は `measure/mathGeometryDependencies.ts`
  * の `mathGeometryHistoryEdges(document)` が作るが、そちらが `historyDependencies` を import
  * しているため、ここから逆に import すると循環する。呼出し側が計算済みの辺を渡す形にして
@@ -255,7 +255,7 @@ function pointReferenceDependencies(
     case 'subShape':
       return subShapeDependencies(context, reference.ref);
     case 'sphereGrid':
-      // 球面上の点(FR-431、P5 タスク19)は球そのものに乗っているので、球のフィーチャーへ
+      // 球面上の点(FR-431)は球そのものに乗っているので、球のフィーチャーへ
       // 依存する。球の半径・中心を変えると点が動く(要件 FR-431)ことを、依存の向きでも表す。
       return solidDependency(context, reference.sphereFeatureId);
   }
@@ -413,7 +413,7 @@ function solidDependencies(
     found.push(...solidDependency(context, consumedId));
   }
   // スケッチの一覧を渡すのは、拡大縮小の中心と点集合パターンの点(`PointReference`)が
-  // 「どのスケッチか」を持たず、id で探さないと数えられないためである(タスク46)。
+  // 「どのスケッチか」を持たず、id で探さないと数えられないためである。
   if (context.preciseProfiles && feature.kind === 'revolve') {
     // Recompute needs only the profile; the axis closure is added below.
     found.push(...sketchDependencies(context, feature.profile.sketchId, feature.profile.faceFeatureId));
@@ -433,8 +433,8 @@ function solidDependencies(
       break;
     case 'extrude':
       /*
-        押し出し(FR-401、FR-415)。「選んだ面まで」(`end.toFace`)だけが立体の面を指す
-        (P5 タスク43・45)。**消費しないが上流を指す**ので、ここで数えないと
+        押し出し(FR-401、FR-415)。「選んだ面まで」(`end.toFace`)だけが立体の面を指す。
+        **消費しないが上流を指す**ので、ここで数えないと
         「面を借りている立体」より前へ押し出しを動かせてしまう(FR-507)。
         「次の面まで」(`toNext`)は相手を指す欄を持たない(解決が「直前の生きた立体」を
         選ぶ)ので、文書だけを見るここでは数えられない。
@@ -442,7 +442,7 @@ function solidDependencies(
       if (feature.end !== undefined && feature.end.kind === 'toFace') {
         found.push(...subShapeDependencies(context, feature.end.face));
       }
-      // 「対象を貫く」(`end.throughTarget`、EX04)は対象の立体を名指しする。消費しないが上流を
+      // 「対象を貫く」(`end.throughTarget`)は対象の立体を名指しする。消費しないが上流を
       // 指すので、ここで数えないと切断の押し出しを対象より前へ動かせてしまう(FR-507)。
       if (feature.end !== undefined && feature.end.kind === 'throughTarget') {
         found.push(...solidDependency(context, feature.end.targetFeatureId));
@@ -462,8 +462,8 @@ function solidDependencies(
       }
       break;
     case 'pattern':
-      // 点集合(FR-425、P5 タスク43)は軸を持たないので、軸の依存は数えない
-      // (点そのものの依存は `PointReference` が id しか持たず追えない。t46 への申し送り)。
+      // 点集合(FR-425)は軸を持たないので、軸の依存は数えない
+      // (点そのものの依存は `PointReference` が id しか持たず追えない)。
       if (feature.placement.kind !== 'points') {
         found.push(
           ...axisSpecDependencies(
@@ -479,8 +479,8 @@ function solidDependencies(
       found.push(...axisSpecDependencies(context, feature.axis));
       break;
     case 'primitive':
-      // 基本形状(FR-429)。中心の頂点指定と相対座標の参照は上流を指す(**消費しない**、
-      // §0.a-0.19)。向きの軸は他の種類と同じ扱い。
+      // 基本形状(FR-429)。中心の頂点指定と相対座標の参照は上流を指す(**消費しない**)。
+      // 向きの軸は他の種類と同じ扱い。
       if (feature.origin.kind === 'vertex') {
         found.push(...subShapeDependencies(context, feature.origin.ref));
       } else if (feature.origin.kind === 'coordinate') {
@@ -503,9 +503,9 @@ function solidDependencies(
       break;
     case 'mirror':
       /*
-        ミラー(FR-419、§0.a-0.36)。**対象を消費しないので `consumedTargetsOf` には
-        現れない**が、鏡に映すもとの立体は必ず自分より前になければならない
-        (docs/報告記録.md 2026-09-05 19:38 の t45 への申し送り)。鏡が立体の面のときは
+        ミラー(FR-419)。**対象を消費しないので `consumedTargetsOf` には
+        現れない**が、鏡に映すもとの立体は必ず自分より前になければならない。
+        鏡が立体の面のときは
         その面を持つ立体も同じ理由で数える。
       */
       found.push(...solidDependency(context, feature.targetFeatureId));
@@ -540,13 +540,13 @@ function solidDependencies(
       break;
     case 'surface':
       /*
-        曲面(FR-428、§0.a-0.45)。**どの作り方でも消費しない**が、`face`(立体の面を
-        取り出す)のときだけ上流を指すので、ミラーと同じ理由で数える(t45 への申し送り)。
+        曲面(FR-428)。**どの作り方でも消費しない**が、`face`(立体の面を
+        取り出す)のときだけ上流を指すので、ミラーと同じ理由で数える。
         ほかの 4 種はスケッチの面・軸だけで、上の 2 つに数え終えている。
       */
       if (feature.operation.kind === 'face' || feature.operation.kind === 'offset') {
         // 面を借りる立体は `targetFeatureId` と面の指紋の両方が指す(ふつうは同じ id)。
-        // 面のオフセット(タスク42b の 6 種目)も面を借りるだけなので同じ扱い。
+        // 面のオフセット(6 種目)も面を借りるだけなので同じ扱い。
         found.push(...solidDependency(context, feature.operation.targetFeatureId));
         found.push(...subShapeDependencies(context, feature.operation.face));
       } else if (feature.operation.kind === 'revolve') {
@@ -559,12 +559,12 @@ function solidDependencies(
       break;
     case 'holeTranslate':
     case 'faceOffset':
-      // 平らな面の移動(EX-18)。対象は消費するので上で数え終えているが、面の指紋は
+      // 平らな面の移動。対象は消費するので上で数え終えているが、面の指紋は
       // 別のボディを指しうる(解決は断るが、並べ替えの判定は解決の成否と無関係)。
       found.push(...subShapeDependencies(context, feature.face));
       break;
     case 'shell':
-      // くり抜き(FR-418、§2.12)。対象は消費するので上で数え終えているが、開ける面の
+      // くり抜き(FR-418)。対象は消費するので上で数え終えているが、開ける面の
       // 指紋は別のボディを指しうる(解決は断るが、並べ替えの判定は解決の成否と無関係)。
       for (const face of feature.openFaces) {
         found.push(...subShapeDependencies(context, face));
@@ -580,7 +580,7 @@ function solidDependencies(
       break;
     case 'cut':
       /*
-        平面による切断(FR-432、§2.9b、タスク27c)。対象は消費するので上で数え終えているが、
+        平面による切断(FR-432)。対象は消費するので上で数え終えているが、
         **切断面が指すもの**(点・辺・面・軸・作業平面)は別のボディや基準ジオメトリを
         指しうる。基準ジオメトリの平面とまったく同じものを指せるので、
         `planeSpecDependencies` をそのまま使う(規則を 2 か所に書かない)。
@@ -594,7 +594,7 @@ function solidDependencies(
     case 'importedSolid':
     case 'importedMesh':
       /*
-        読み込んだ形の 2 種(FR-802、P6 §2.8、タスク20)。**依存は 1 つも無い。**
+        読み込んだ形の 2 種(FR-802)。**依存は 1 つも無い。**
         スケッチも立体の面も基準ジオメトリも指さず、ファイルから入った形そのものを
         持っているだけなので、履歴のどこへでも動かせる(FR-507)。
       */
@@ -608,7 +608,7 @@ function solidDependencies(
  *
  * **立体の面(`solidFace`)と球(`sphere`)は消費しない**ので `consumedTargetsOf` には
  * 現れないが、輪郭を借りるもとの立体は必ず自分より前になければならない
- * (docs/報告記録.md 2026-09-05 19:38 の t45 への申し送り)。
+ * ため、ここで数える。
  * スケッチの面は上のスケッチの依存で数え終えている。
  */
 function ruledSectionDependencies(
@@ -894,8 +894,8 @@ type ReorderPlanOutcome = { readonly ok: true; readonly plan: ReorderPlan | null
 
 /**
  * `historyDependencies` の帯の依存グラフへ、呼出し側が持ってきた追加の辺を合わせる
- * (GR-07。図形の測定値を使う係数の
- * 順序規則 Q7=O1「測る形は、その値を使う形より履歴の前」)。
+ * (図形の測定値を使う係数の
+ * 順序規則「測る形は、その値を使う形より履歴の前」)。
  *
  * `measure/mathGeometryDependencies.ts` の `mathGeometryHistoryEdges(document)` がこの形
  * (featureId → 自分より前になければならない featureId の一覧)の辺を作るが、その関数は
@@ -985,9 +985,9 @@ function planReorder(
  * 帯の from の位置のものを to の位置へ動かす(FR-507)。
  * 依存を壊すなら理由つきで断り、文書は変えない(FR-504)。
  *
- * `extraDependencies`(GR-07・任意)は `historyDependencies` の辺に合わせる追加の辺
+ * `extraDependencies`(任意)は `historyDependencies` の辺に合わせる追加の辺
  * (featureId → 自分より前になければならない featureId の一覧)。図形の測定値を使う係数の
- * 順序規則(計画書 §4(d)、Q7=O1)を効かせるときは、呼出し側が
+ * 順序規則を効かせるときは、呼出し側が
  * `mathGeometryHistoryEdges(document)`(`measure/mathGeometryDependencies.ts`)を渡す。
  * 省略すれば従来どおり `historyDependencies(document)` だけで判定する。
  */
@@ -1019,7 +1019,7 @@ export function reorderTimeline(
  * そのフィーチャーを帯の `newIndex` へ動かせるか(ドラッグ中の予告に使う。NFR-UX-5)。
  * 文書を作らないので、ドラッグのたびに何度呼んでもよい。
  *
- * `extraDependencies`(GR-07・任意)は `reorderTimeline` と同じ追加の辺。図形由来の係数が
+ * `extraDependencies`(任意)は `reorderTimeline` と同じ追加の辺。図形由来の係数が
  * 無い文書では省略でき、費用は増えない(`mathGeometryHistoryEdges` 側が空で早期に返す)。
  */
 export function canMoveHistoryItem(
@@ -1038,7 +1038,7 @@ export function canMoveHistoryItem(
 
 /**
  * そのフィーチャーを帯の `newIndex` へ動かした新しい文書(`reorderTimeline` の id 版)。
- * `extraDependencies`(GR-07・任意)は `reorderTimeline` と同じ追加の辺。
+ * `extraDependencies`(任意)は `reorderTimeline` と同じ追加の辺。
  */
 export function moveHistoryItem(
   document: PartDocument,
@@ -1076,7 +1076,7 @@ function cutCounts(
  * **フィーチャーそのものは複製しない**(配列を切るだけ)。複製すると
  * `resolvePart` が作る段の鍵が変わり、つまみを動かすたびに全段が作り直しになる
  * (NFR-PF-3 に反する)。つまみの位置は保存しないので、この関数は文書へ欄を足さない
- * (§0.a-0.19。抑制 `suppressed` は利用者の指定であって、つまみとは別のもの)。
+ * (抑制 `suppressed` は利用者の指定であって、つまみとは別のもの)。
  */
 export function documentUpTo(document: PartDocument, index: number | null): PartDocument {
   const total = document.references.length + document.solids.length;

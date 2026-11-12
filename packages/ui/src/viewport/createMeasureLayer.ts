@@ -1,8 +1,8 @@
 import { addScaled as scaleFrom, lengthVec3 as norm, dotVec3 as dot } from '@pointercad/model/vec3';
 import { unitMeasureVector as unit } from '../solid/measurementVector.js';
 /**
- * 測定の結果の表示層(計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク31、
- * §0.a-0.29/0.30、§2.10)。
+ * 測定の結果の表示層
+ * (FR-1102)。
  *
  * 対応要件: FR-1102(測った値をその場に出し、モデルを変えるまで残す)、NFR-PF-1(60fps)、
  * NFR-UX-7。
@@ -18,10 +18,10 @@ import { unitMeasureVector as unit } from '../solid/measurementVector.js';
  * 渡し直したときは何も触らない(`last === next` で早く返る。NFR-PF-1)。
  *
  * **色は `themeColors.ts` のトークンから読む。** ビューキューブの面に固定色を焼き込んで
- * テーマに追従しなかった失敗(docs/報告記録.md 2026-09-04 15:40)を繰り返さないため、
+ * テーマに追従しなかった失敗を繰り返さないため、
  * ここには 16 進の色を書かない(既定値の後退先は `themeColors.ts` の 1 か所)。
  *
- * **常時の描画ループは作らない**(docs/報告記録.md 2026-09-02 15:42)。札の大きさを
+ * **常時の描画ループは作らない**。札の大きさを
  * 画面上で一定に保つ `updateScreenScale` は、既に回っている描画(`createViewportScene` の
  * `drawScene`)の中から呼ばれるだけで、この場は自分で `requestAnimationFrame` を持たない。
  */
@@ -42,7 +42,7 @@ import { cssColor, DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.
  *
  * `LocalMeasureResult` は角度のとき `segment` を持たない(値は 2 つの向きから求まるので、
  * どこに線を引くかは測り方ではなく**見せ方**の話)。どの点を頂にしてどちらへ線を伸ばすかは
- * 選んだ面・辺から決まるので、組み立ては測定を作る側(タスク32)が行い、ここは
+ * 選んだ面・辺から決まるので、組み立ては測定を作る側が行い、ここは
  * 受け取ったとおりに描く。
  */
 export interface MeasureAngleSpec {
@@ -59,7 +59,7 @@ export interface MeasureAngleSpec {
 /**
  * 画面に出している測定 1 件(ストアの `measurement`)。
  *
- * `result` はタスク30 の `measureLocally`(またはカーネルの返事を同じ形へ詰め替えたもの)、
+ * `result` は `measureLocally`(またはカーネルの返事を同じ形へ詰め替えたもの)、
  * `text` は `formatMeasure` の文字列。**この場は値を計算しない**(測る規則は
  * `solid/measure.ts` の 1 か所だけに置く)。
  */
@@ -425,7 +425,7 @@ export function createMeasureLayer(): MeasureLayer {
     linewidth: MEASURE_LINE_WIDTH_PIXELS,
     // 面より後に描くための「半透明」扱い(透け具合は 1 のままなので色は変わらない)。
     transparent: true,
-    // 立体の奥にある測定線も見えるようにする(計画書タスク31 の手順1)。
+    // 立体の奥にある測定線も見えるようにする。
     depthTest: false,
     depthWrite: false,
   });

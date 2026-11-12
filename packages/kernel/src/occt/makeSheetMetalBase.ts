@@ -1,4 +1,4 @@
-/** P10-4: 外周と独立した内周から、一定厚の板金基板を作る。 */
+/** 外周と独立した内周から、一定厚の板金基板を作る。 */
 import type { OpenCascadeInstance, TopoDS_Face, TopoDS_Shape, TopoDS_Wire } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';

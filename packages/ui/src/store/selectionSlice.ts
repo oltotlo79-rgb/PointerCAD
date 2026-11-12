@@ -1,6 +1,6 @@
 /**
  * 選択のスライス(選択・ホバー・選択の種類・選択セット FR-112・外観 FR-1106)。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import {
@@ -37,12 +37,12 @@ export interface SelectionSlice {
   /** ホバー中の要素 id(FR-106)。 */
   readonly hoveredElementId: string | null;
   /**
-   * いま選ぶ部分形状の種類(FR-106、§0.a-0.6)。道具を選ぶと `setActiveTool` が自動で
-   * 切り替える。手動の切替は `setSelectionKind`(`1`〜`4` キーの受け口はタスク26)。
+   * いま選ぶ部分形状の種類(FR-106)。道具を選ぶと `setActiveTool` が自動で
+   * 切り替える。手動の切替は `setSelectionKind`。
    */
   readonly selectionKind: SelectionKind;
   /**
-   * 外観を割り当てられなかった理由の文言キー(FR-1106〜1110、NFR-UX-5。P5 タスク11)。
+   * 外観を割り当てられなかった理由の文言キー(FR-1106〜1110、NFR-UX-5)。
    *
    * 断りは 4 通りで、いずれも**割り当てを作る前**に決まる(`appearanceCommands.ts`):
    * 選んでいるものが無い / 値が 0〜100 の外 / そのボディの材質が 9 種以上 /
@@ -52,7 +52,7 @@ export interface SelectionSlice {
    */
   readonly appearanceErrorKey: MessageKey | null;
   /**
-   * 選ぶ部分形状の種類を手動で切り替える(§0.a-0.6)。種類が変わったら、いまの選択のうち
+   * 選ぶ部分形状の種類を手動で切り替える。種類が変わったら、いまの選択のうち
    * 種類の合わないものを外す(違う種類の選択が加工の対象に紛れ込むのを防ぐ、NFR-UX-1)。
    */
   readonly setSelectionKind: (kind: SelectionKind) => void;
@@ -62,7 +62,7 @@ export interface SelectionSlice {
    * (NFR-UX-5。取り消しの段も積まない)。**再計算は走らない**(`affectsShape` が偽)。
    */
   readonly createSelectionSetFromSelection: (name: string) => SelectionSetRefusal | null;
-  /** 組の名前を変える(FR-112)。断ったときは理由を返す。同じ名前は許す(§2.13)。 */
+  /** 組の名前を変える(FR-112)。断ったときは理由を返す。同じ名前は許す。 */
   readonly renameSelectionSet: (id: string, name: string) => SelectionSetRefusal | null;
   /** 組を 1 つ消す(FR-112)。取り消し(Ctrl+Z)1 回で戻る。 */
   readonly removeSelectionSet: (id: string) => void;
@@ -70,7 +70,7 @@ export interface SelectionSlice {
   readonly addSelectionToSet: (id: string) => void;
   /**
    * 組の中身を選択にする(FR-112「呼び出す」)。**引けなかった件数を返し**、画面が
-   * 「n 件は見つかりませんでした」と知らせる(FR-504、§2.13。組そのものは残す)。
+   * 「n 件は見つかりませんでした」と知らせる(FR-504、組そのものは残す)。
    */
   readonly selectSelectionSet: (id: string) => number;
   readonly setSelection: (ids: readonly string[], source?: SelectionSource) => void;
@@ -84,7 +84,7 @@ export interface SelectionSlice {
    * 判断は `appearance/appearanceCommands.ts` の純関数 1 か所に置き、ここは
    * 「文書を渡す」「断りを置く」だけにする。確定は `applyDocument` を通すので、
    * **取り消し(FR-505)と保存は 1 行も足さずに効く**。形は変わらないので
-   * `affectsShape` が偽になり、再計算も計算中の札も起きない(§2.3)。
+   * `affectsShape` が偽になり、再計算も計算中の札も起きない。
    */
   readonly assignAppearance: (spec: AppearanceSpec) => void;
   /** 割り当てを 1 つ外す(FR-1110)。 */
@@ -113,7 +113,7 @@ export const createSelectionSlice: StateCreator<
   Omit<SelectionSlice, keyof SelectionInitialState>
 > = (set, get) => ({
   setSelectionKind: (selectionKind) => {
-    // 変わらないときは選択を残す(手動切替でも自動切替と同じ規約、§0.a-0.6)。
+    // 変わらないときは選択を残す(手動切替でも自動切替と同じ規約)。
     set((state) =>
       state.selectionKind === selectionKind ? state
         : state.activeTool === 'faceRotate' && (state.selectionKind === 'face' || state.selectionKind === 'edge')
@@ -176,7 +176,7 @@ export const createSelectionSlice: StateCreator<
     const outcome = selectionSetElementIds(state.bodies, found);
     /*
       選ぶ種類を**先に**合わせる。`setSelectionKind` は種類が変わると選択を空にするので、
-      順序を逆にすると選んだそばから消える(§0.a-0.6)。
+      順序を逆にすると選んだそばから消える。
     */
     state.setSelectionKind(selectionKindForSet(found));
     state.setSelection(outcome.elementIds, { kind: 'references', references: outcome.references });

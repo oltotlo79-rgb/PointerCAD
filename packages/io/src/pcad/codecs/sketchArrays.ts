@@ -33,7 +33,7 @@ import {
 } from '@pointercad/model';
 
 /**
- * 複製のしかたと鏡の基準(FR-324、P4 タスク20)。`model` の `CopyPlacement['kind']` /
+ * 複製のしかたと鏡の基準(FR-324)。`model` の `CopyPlacement['kind']` /
  * `MirrorBasis['kind']` と同じ値ずつ。
  */
 const COPY_PLACEMENT_KINDS: readonly CopyPlacement['kind'][] = [
@@ -45,14 +45,14 @@ const COPY_PLACEMENT_KINDS: readonly CopyPlacement['kind'][] = [
 
 const MIRROR_BASIS_KINDS: readonly MirrorBasis['kind'][] = ['axis', 'plane'];
 
-/** 点列の並べ方(FR-327、タスク6)。`model` の `PointArrayLayout['kind']` と同じ3値。 */
+/** 点列の並べ方(FR-327)。`model` の `PointArrayLayout['kind']` と同じ3値。 */
 const POINT_ARRAY_LAYOUT_KINDS: readonly PointArrayLayout['kind'][] = [
   'linear',
   'circular',
   'grid',
 ];
 
-/** 点列の並べ方(FR-327、タスク6)。種類ごとに欄が違うので `kind` で分岐する。 */
+/** 点列の並べ方(FR-327)。種類ごとに欄が違うので `kind` で分岐する。 */
 export function serializePointArrayLayout(layout: PointArrayLayout): PointArrayLayout {
   switch (layout.kind) {
     case 'linear':
@@ -84,7 +84,7 @@ export function serializePointArrayLayout(layout: PointArrayLayout): PointArrayL
   }
 }
 
-/** 鏡の基準(FR-324、タスク20)。線を軸にするか平面かで欄が違うので `kind` で分岐する。 */
+/** 鏡の基準(FR-324)。線を軸にするか平面かで欄が違うので `kind` で分岐する。 */
 function serializeMirrorBasis(basis: MirrorBasis): MirrorBasis {
   switch (basis.kind) {
     case 'axis':
@@ -94,7 +94,7 @@ function serializeMirrorBasis(basis: MirrorBasis): MirrorBasis {
   }
 }
 
-/** 複製のしかた(FR-324、タスク20)。並べ方ごとに欄が違うので `kind` で分岐する。 */
+/** 複製のしかた(FR-324)。並べ方ごとに欄が違うので `kind` で分岐する。 */
 export function serializeCopyPlacement(placement: CopyPlacement): CopyPlacement {
   switch (placement.kind) {
     case 'mirror':
@@ -120,7 +120,7 @@ export function serializeCopyPlacement(placement: CopyPlacement): CopyPlacement 
 }
 
 /**
- * 点列の並べ方(FR-327、タスク6)。`kind` で直線状・円周上・格子状を見分けてから
+ * 点列の並べ方(FR-327)。`kind` で直線状・円周上・格子状を見分けてから
  * 種類ごとの欄を読む(スプラインの `mode` と同じ、先に判別子だけを確かめる書き方)。
  */
 function readPointArrayLayout(
@@ -250,9 +250,9 @@ function readGridLayout(
 
 /**
  * 点列(FR-308、FR-327)。**版4からは `layout` が必須**(欠けていれば `missingField`)。
- * 版3以前(スキーマ版は上げなかった、統括の差し戻し 2026-09-04)は `layout` を挟まず
+ * 版3以前(スキーマ版は上げなかった)は `layout` を挟まず
  * `base`/`azimuth`/`spacing`/`count` を直下に持つフラットな形もあったが、その寛容さは
- * P4 タスク31(§0.a-0.24)で `schema.ts` の `SCHEMA_MIGRATIONS[3]` へ移した
+ * 版4の厳密化で `schema.ts` の `SCHEMA_MIGRATIONS[3]` へ移した
  * (直線状 `kind: 'linear'` の `layout` へ包み直す変換)。書き手は常に `layout` を書く。
  */
 export function readPointArrayFeature(
@@ -267,7 +267,7 @@ export function readPointArrayFeature(
   return { ok: true, value: { ...base, kind: 'pointArray', layout: layout.value } };
 }
 
-/** 鏡の基準(FR-324、タスク20)。`kind` で線を軸にするか平面かを見分けてから欄を読む。 */
+/** 鏡の基準(FR-324)。`kind` で線を軸にするか平面かを見分けてから欄を読む。 */
 function readMirrorBasis(
   source: Record<string, unknown>,
   key: string,
@@ -301,7 +301,7 @@ function readMirrorBasis(
 }
 
 /**
- * 複製のしかた(FR-324、タスク20)。`kind` で並べ方を見分けてから種類ごとの欄を読む
+ * 複製のしかた(FR-324)。`kind` で並べ方を見分けてから種類ごとの欄を読む
  * (点列の `layout` と同じ書き方)。
  */
 function readCopyPlacement(
@@ -400,7 +400,7 @@ function readCircularArrayPlacement(
 }
 
 /**
- * ミラー・複写・配列複写(FR-324、P4 タスク20)を読む。
+ * ミラー・複写・配列複写(FR-324)を読む。
  * 複製された曲線は保存されていない(再計算で導く)ので、読むのは元の要素と複製のしかただけ。
  */
 export function readCopyFeature(

@@ -77,7 +77,7 @@ export function createMathResultMemory(): MathResultMemory {
 }
 
 /**
- * The values of one page's formula editors and document recomputations (2026-09-27, P12-28). Applying an
+ * The values of one page's formula editors and document recomputations (P12-28). Applying an
  * edit calculated each formula in the editor, and the recomputation that followed calculated the same
  * formulas again (Firefox 3.3 s); reopening an editor or undoing calculated values already known. A
  * request whose every field except its identity equals a remembered one receives a copy of that value

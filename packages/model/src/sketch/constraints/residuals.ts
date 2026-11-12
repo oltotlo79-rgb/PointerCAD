@@ -1,15 +1,15 @@
 /**
- * 拘束の残差とヤコビアン(FR-313、計画書 docs/plans/P4b-スケッチの仕上げ.md §2.2、タスク5)。
+ * 拘束の残差とヤコビアン(FR-313)。
  *
  * 変数の現在値 x(`VariableSet.variables` と同じ並び)から、拘束 1 つあたり 1〜2 本の
- * 残差 r(x) と、その偏微分(ヤコビアンの 1 行)を作る純関数を置く。連立の解き方(タスク6)と
- * 診断(タスク7)は、ここが返す行だけを見る。
+ * 残差 r(x) と、その偏微分(ヤコビアンの 1 行)を作る純関数を置く。連立の解き方と
+ * 診断は、ここが返す行だけを見る。
  *
  * **偏微分は手で導いた解析式で書く**(数値微分に頼らない)。数値微分は打ち切り誤差と丸め誤差の
  * 板挟みで精度が出ず、変数の数だけ残差を数え直すので速度でも不利になる。正しさは検査で
  * 中心差分(h = 1e-6)と突き合わせて機械的に確かめる(`residuals.test.ts`)。
  *
- * **向きを使う残差は単位ベクトルにしてから外積・内積を取る**(§2.2)。線分の長さが残差の
+ * **向きを使う残差は単位ベクトルにしてから外積・内積を取る**。線分の長さが残差の
  * 大きさに混ざると、長い線と短い線を同じ拘束でつないだときに長い側だけが大きく動く。
  *
  * 長さ 0 の線分・重なった点・半径 0 の円では単位ベクトルが作れないので、残差を作らずに
@@ -35,7 +35,7 @@ import {
 
 /**
  * 残差 1 本と、その偏微分(変数の添字 → 値)。**0 の項は入れない**ので、1 行あたりの
- * 項数は 2〜8 個に収まる(疎な行)。`JᵀJ` の組み立て(タスク6)はこの疎さを前提にする。
+ * 項数は 2〜8 個に収まる(疎な行)。`JᵀJ` の組み立てはこの疎さを前提にする。
  */
 export interface ResidualRow {
   /** どの拘束が出した式か。円弧の暗黙の式は `implicit:` で始まる作り物の id。 */
@@ -53,7 +53,7 @@ export type ResidualSkipReason =
   /** 指し先の組み合わせがその拘束に合わない(円に平行拘束、線分に半径拘束など)。 */
   | 'unsupportedTarget';
 
-/** 残差を作れなかった拘束 1 つ。理由の文は画面へそのまま出せる日本語で持つ(タスク7 が使う)。 */
+/** 残差を作れなかった拘束 1 つ。理由の文は画面へそのまま出せる日本語で持つ(`diagnose.ts` が使う)。 */
 export interface SkippedResidual {
   readonly constraintId: string;
   readonly reason: ResidualSkipReason;
@@ -69,7 +69,7 @@ export interface ResidualReport {
 
 /**
  * 円弧の暗黙の式(端点が円周の上にある)の id の接頭辞。利用者が付けた拘束の id と
- * 見分けるために付ける。診断(タスク7)は、この接頭辞の付いた id を利用者へ見せない。
+ * 見分けるために付ける。診断は、この接頭辞の付いた id を利用者へ見せない。
  */
 export const IMPLICIT_CONSTRAINT_ID_PREFIX = 'implicit:';
 
@@ -116,7 +116,7 @@ interface CircleRef {
 
 /**
  * 半径を探す順。円・円弧は `radius`、楕円は長半径 `major` を採る。
- * 短半径だけを指す道具は P4b では作らないので、ここでは扱わない(タスク12 の範囲)。
+ * 短半径だけを指す道具は 作らないので、ここでは扱わない。
  */
 const RADIUS_KINDS: readonly RadiusKind[] = ['radius', 'major'];
 
@@ -174,7 +174,7 @@ function makeLine(start: PointRef, end: PointRef): LineRef {
   const deltaU = end.u - start.u;
   const deltaV = end.v - start.v;
   // 2 次元では `Math.hypot` より素朴な `Math.sqrt` が速く、精度の差は実用上出ない
-  // (残差はドラッグ中に毎フレーム回るため。タスク5 の落とし穴)。
+  // (残差はドラッグ中に毎フレーム回るため)。
   const length = Math.sqrt(deltaU * deltaU + deltaV * deltaV);
   const scale = length > 0 ? 1 / length : 0;
   return { start, end, unitU: deltaU * scale, unitV: deltaV * scale, length };
@@ -503,7 +503,7 @@ function tangentOutcome(
   return ok([rowOf(id, value, gradient)]);
 }
 
-/** 等しい。円どうしは半径の差、線分どうしは長さの差(§2.2)。 */
+/** 等しい。円どうしは半径の差、線分どうしは長さの差。 */
 function equalOutcome(
   variableSet: VariableSet,
   x: readonly number[],
@@ -639,7 +639,7 @@ function distanceOutcome(
 }
 
 /**
- * 角度。`dot(û1, û2)·sinθ − cross(û1, û2)·cosθ`(§2.2)。
+ * 角度。`dot(û1, û2)·sinθ − cross(û1, û2)·cosθ`。
  * `atan2` の差で書くと ±180° をまたいだところで不連続になり Newton が発散するので採らない。
  * 目標の角度は度で持つ(`ExpressionValue` の角度欄の約束)ので、ここで弧度へ直す。
  */
@@ -747,7 +747,7 @@ function constraintOutcome(
 
 /**
  * 円弧の暗黙の式(端点が円周の上にある。|P − C| − r = 0)。
- * 円弧の端点を変数にした代わりに立てる式で、利用者の拘束ではない(統括の決定 2026-09-04)。
+ * 円弧の端点を変数にした代わりに立てる式で、利用者の拘束ではない。
  */
 function implicitOutcome(
   variableSet: VariableSet,
@@ -798,7 +798,7 @@ function implicitMessage(featureId: string, reason: ResidualSkipReason): string 
  * すべての拘束と円弧の暗黙の式から、残差の行と、作れなかったものの一覧を作る。
  *
  * 並びは「利用者の拘束の順 → 円弧の暗黙の式の順」で決め打ちする(決定性。同じ入力からは
- * 必ず同じ行の並びになり、階数の数え方(タスク7)も揺れない)。
+ * 必ず同じ行の並びになり、階数の数え方も揺れない)。
  */
 export function buildResidualReport(
   constraints: readonly SketchConstraint[],
@@ -835,7 +835,7 @@ export function buildResidualReport(
 }
 
 /**
- * 残差の行だけを作る(連立を解く反復から毎回呼ばれる入口。タスク6)。
+ * 残差の行だけを作る(連立を解く反復から毎回呼ばれる入口)。
  * 断りの一覧が要るときは `buildResidualReport` を使う。
  */
 export function buildResiduals(

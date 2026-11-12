@@ -45,7 +45,7 @@ const POPOVER_WIDTH_PIXELS = 260;
  * 高さの見込み(画素)。実際の高さは欄の数と誤り文の折り返しで変わるため、
  * いちばん背の高い段より少し大きい値を採って下端からはみ出しにくくする。
  *
- * P5 タスク49 で段が増え、いちばん背が高いのは外ねじ(欄 2 つ+選択肢 3 つ+つまみ 1 つ)に
+ * 段が増え、いちばん背が高いのは外ねじ(欄 2 つ+選択肢 3 つ+つまみ 1 つ)に
  * なった。選択肢 1 つぶんが見出しと横並びのボタンで約 46px なので、以前の見込み(3 欄+
  * 誤り文 1 行 = 280px)に選択肢 2 つぶんを足して 372px にする。
  * **見込みが小さいと下端で切れる**だけで、大きすぎても上へ寄るだけなので安全側へ倒す。
@@ -58,7 +58,7 @@ const MIN_POPOVER_HEIGHT_PIXELS = 120;
 /**
  * 入力欄の高さの上限(画素)。置いた位置から下端の余白までに収め、入りきらない分は入力欄の中で
  * 縦に送る。押し出しのように選択肢とつまみが多い段でも、低い窓で「決定」「取消」「形を確かめる」が
- * 画面の外へ出ない(EX-14)。位置の決め方(`clampAnchor`)は他の入力欄と共有するので変えない。
+ * 画面の外へ出ない。位置の決め方(`clampAnchor`)は他の入力欄と共有するので変えない。
  */
 export function popoverMaxHeight(top: number, viewportHeight: number): number {
   return Math.max(MIN_POPOVER_HEIGHT_PIXELS, viewportHeight - top - EDGE_MARGIN_PIXELS);
@@ -66,7 +66,7 @@ export function popoverMaxHeight(top: number, viewportHeight: number): number {
 
 /**
  * 選択肢の一覧をこの個数を超えて持つときは、横並びのボタンではなく畳んだ一覧にする
- * (計画書タスク24「呼び径のような長い一覧は畳んだ一覧にする」)。呼び径(28個)だけが該当し、
+ * (「呼び径のような長い一覧は畳んだ一覧にする」)。呼び径(28個)だけが該当し、
  * 軸・向き・系列・決め方・巻き方向・求める値(いずれも4個以下)は横並びのままにする。
  */
 const LONG_CHOICE_OPTION_THRESHOLD = 6;
@@ -95,7 +95,7 @@ export function clampAnchor(
 }
 
 /**
- * ポップアップの中で意味を持つキーだけを取り出す(§2.9)。
+ * ポップアップの中で意味を持つキーだけを取り出す。
  * それ以外は欄へそのまま通す(文字の入力・カーソル移動を邪魔しない)。
  *
  * Space と ← → は、焦点がつまみ・選択肢にあるときだけ拾う。欄に焦点があるときに
@@ -138,7 +138,7 @@ function numericInputKeyFor(
     if (event.key === '2') {
       return 'Alt2';
     }
-    // 3D スケッチでは極座標のタブを出さない(§0.a-0.5、タスク14)ので、
+    // 3D スケッチでは極座標のタブを出さないので、
     // そのときは Alt+3 も効かせない(見えていない指定方法へ切り替わらないように)。
     if (event.key === '3' && modes.includes('polar')) {
       return 'Alt3';
@@ -157,7 +157,7 @@ interface ChoiceGroupProps {
 }
 
 /**
- * 選択肢1つぶんの見出しと並び(計画書タスク24 §2.11)。
+ * 選択肢1つぶんの見出しと並び。
  * 短い一覧(4個以下)は横並びのボタン、長い一覧(呼び径28個)は畳んだ一覧
  * (Toolbar.tsx の吸着の種別の一覧と同じ pcad-menu の作り)にする。
  *
@@ -271,9 +271,9 @@ export interface NumericInputPopoverProps {
  * 開いている間も背後の視点操作とホバーはそのまま効く。
  *
  * 状態はストアの `numericInput` 1 本で、この部品は表示とキーの詰め替えだけを受け持つ。
- * 欄の巡回・確定・取消の規則は `numericInput.ts` の純関数が決める(§0.a-0.8)。
+ * 欄の巡回・確定・取消の規則は `numericInput.ts` の純関数が決める。
  *
- * P3 で選択肢(choices)が配列になり(§2.11)、ばね(FR-414)は2段構えになった。
+ * 選択肢(choices)は配列で持ち、ばね(FR-414)は2段構えにしている。
  * ばねの1段目の確定は `kind: 'open'` で返る(まだ利用者へ渡す完成した加工ではないため)。
  */
 export function NumericInputPopover({
@@ -283,26 +283,26 @@ export function NumericInputPopover({
   const [mathTarget, setMathTarget] = useState<NumericMathTarget | null>(null);
   const state = useAppStore((store) => store.numericInput?.toolId === 'text' ? null : store.numericInput);
   const anchor = useAppStore((store) => store.numericInputAnchor);
-  // 3D スケッチ(FR-330)では極座標の指定方法を隠す(§0.a-0.5、タスク14)。
+  // 3D スケッチ(FR-330)では極座標の指定方法を隠す。
   const workPlaneId = useAppStore((store) => store.workPlaneId);
   const modes = coordinateModesFor(workPlaneId);
   /*
-   * パラメータ表の変数表(FR-207、FR-201、P4b タスク11)。ここで渡さないと、
+   * パラメータ表の変数表(FR-207、FR-201)。ここで渡さないと、
    * `板厚 * 2` がプロパティの欄では通るのに、その場入力では「知らない名前です」に
-   * なってしまう(タスク18 の申し送り。3 つの入口へ**同じ表**を渡す)。
+   * なってしまう(3 つの入口へ**同じ表**を渡す)。
    * 評価と確定の両方へ渡す。片方だけだと、欄では緑なのに決定で断られる。
    */
   const analysis = useAppStore((store) => store.parameterAnalysis);
   const variables = analysis.variables;
   const pendingVariables = useAppStore(pendingFieldVariables);
   /*
-   * 表示の単位(FR-811、P6 タスク3b)。単位を書かない入力を inch とみなすかどうかが
+   * 表示の単位(FR-811)。単位を書かない入力を inch とみなすかどうかが
    * これで決まるので、**評価・確定・札のすべてへ同じ値を渡す**(片方だけだと欄の
    * 「= 値」と実際に作られる形が食い違う)。長さでない名前の集合も同じ理由で一緒に渡す。
    */
   const lengthUnit = useAppStore((store) => store.displaySettings.lengthUnit);
   const nonLengthVariables = useAppStore((store) => store.nonLengthVariables);
-  // 押し出しの段階計算の知らせ(計算中・表示中・失敗の理由・入力が変わった)。EX-14。
+  // 押し出しの段階計算の知らせ(計算中・表示中・失敗の理由・入力が変わった)。
   const stagedMessageKey = useAppStore((store) =>
     store.numericInput?.step === 'extrudeDistance' ? stagedExtrusionMessageKey(store) : null);
   const directStage = useAppStore((store) => store.numericInput?.step === 'holeTranslateVector'
@@ -343,7 +343,7 @@ export function NumericInputPopover({
   const position = clampAnchor(anchor, viewportWidth, viewportHeight);
   const coordinateStep = asksCoordinate(state.step);
   // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
-  // (css の .pcad-popover__fields--wide の意図どおり)。2欄以上の段は P1 の座標と同じ
+  // (css の .pcad-popover__fields--wide の意図どおり)。2欄以上の段は座標の段と同じ
   // 固定幅に揃える(欄ごとに見出しの長さが大きく違っても列がずれないようにするため)。
   const wideFields = state.fields.length === 1;
 
@@ -358,7 +358,7 @@ export function NumericInputPopover({
 
   /*
    * 決めた・取り消したときの反映は `commitToStore.ts` の `applyNumericTransition` が
-   * 1 か所で受け持つ(P4b タスク18)。コマンドライン(`shell/CommandLine.tsx`)も
+   * 1 か所で受け持つ。コマンドライン(`shell/CommandLine.tsx`)も
    * まったく同じ関数を通るので、どちらから打っても同じ道筋になる(NFR-UX-1)。
    */
   const handleKey = (key: NumericInputKey): void => {
@@ -441,9 +441,9 @@ export function NumericInputPopover({
       ) : null}
 
       {/*
-        欄を持たない段(P4 のスプラインの決め方)では入れ物ごと出さない。
+        欄を持たない段(スプラインの決め方)では入れ物ごと出さない。
         .pcad-popover は縦並びの gap を持つので、空の入れ物を置くと見出しと選択肢の間に
-        すき間が 1 つ余分に空くため(タスク11 で欄が 0 個の段ができた)。
+        すき間が 1 つ余分に空くため(欄が 0 個の段がある)。
       */}
       {state.fields.length === 0 ? null : (
         <div className={wideFields ? 'pcad-popover__fields pcad-popover__fields--wide' : 'pcad-popover__fields'}>
@@ -501,7 +501,7 @@ export function NumericInputPopover({
               disabled={!numericToggleEnabled(state, toggle.key)}
               onClick={() => {
                 /*
-                  切り替えた後の欄の数で焦点位置を数える(P5 タスク49)。拡大縮小の
+                  切り替えた後の欄の数で焦点位置を数える。拡大縮小の
                   「軸ごと」のように**つまみで欄が 1 つから 3 つへ増える**段があるので、
                   切り替える前の state.fields.length を使うと輪の位置がずれる
                   (選択肢の onSelect が next.fields.length を使うのと同じ理由)。
@@ -533,7 +533,7 @@ export function NumericInputPopover({
       <div className="pcad-popover__actions">
         {/*
           スプラインだけは「点をいくつ置くか」が決まっていないので、Enter は点を 1 つ置く
-          合図のままにして、置き終えたことを伝えるボタンをここへ出す(FR-317、タスク12)。
+          合図のままにして、置き終えたことを伝えるボタンをここへ出す(FR-317)。
           押すと「決め方」の段(通過点/制御点・閉じる)へ進む。
         */}
         {state.step === 'splinePoint' ? (
@@ -550,7 +550,7 @@ export function NumericInputPopover({
           </button>
         ) : null}
         {/*
-          押し出しだけは、確定する前に同じ候補の形を計算して表示できる(EX-14)。
+          押し出しだけは、確定する前に同じ候補の形を計算して表示できる。
           確定(Enter・決定)と同じ入力の評価を通り、文書と取り消しには触れない。
         */}
         {state.step === 'extrudeDistance' ? (

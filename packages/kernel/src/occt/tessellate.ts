@@ -107,7 +107,7 @@ function admitMeshCounts(
 /**
  * 面に付いた位置(`TopLoc_Location`)を、節点と法線へどう掛けるか。
  *
- * ## なぜ位置ごとに 1 回だけ決めるのか(P6 タスク11b、2026-09-06 実測)
+ * ## なぜ位置ごとに 1 回だけ決めるのか(2026-09-06 実測)
  *
  * 元の走査は節点 1 個につき `Node(i)` → `Transformed(transformation)` → `X()/Y()/Z()`
  * → `delete()` × 2 と、embind をまたぐ呼び出しを 7 回していた。`Transformed` は

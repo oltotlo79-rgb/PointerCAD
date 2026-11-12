@@ -1,4 +1,4 @@
-/** 干渉解析の結果を表示専用の一覧へ写す純関数(P7 タスク26)。 */
+/** 干渉解析の結果を表示専用の一覧へ写す純関数。 */
 import type { AssemblyInterferencePair, AssemblyInterferenceReport } from '@pointercad/model';
 
 export interface InterferenceRow {

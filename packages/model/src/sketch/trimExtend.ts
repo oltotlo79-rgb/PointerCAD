@@ -1,8 +1,8 @@
 /**
- * トリム(切り取り)と延長(FR-322、計画書 P4 §2.5・§0.a-0.10、タスク17)。
+ * トリム(切り取り)と延長(FR-322)。
  *
- * どちらも**元のフィーチャーを書き換える**(履歴に新しい道具を積まない)。統括の決定
- * §0.a-0.10「整形系(トリム・延長・フィレット/面取り)は既存の要素を書き換える」に従う。
+ * どちらも**元のフィーチャーを書き換える**(履歴に新しい道具を積まない)。設計の決め
+ * 「整形系(トリム・延長・フィレット/面取り)は既存の要素を書き換える」に従う。
  * 利用者の目には「引いた線が短くなる/伸びる」だけで、道具の履歴は増えない。
  *
  * ## 書き換えた欄は数値になる
@@ -11,7 +11,7 @@
  * `expressionValueFromNumber`)。交点は「相手の曲線」との関係で決まる値で、これを参照の形で
  * 持たせようとすると、**相手が履歴の後ろにいるときに前方参照になって解けない**
  * (`resolveSketch` は履歴を先頭から順に解くので、後ろのフィーチャーは基準にできない。
- * 計画書 §2.5 の `{ kind: 'intersection' }` 案はこの点で成り立たない)。
+ * 当初の `{ kind: 'intersection' }` 案はこの点で成り立たない)。
  * だから交点は確定した瞬間に数へ落とす。**触っていない欄の式はそのまま残る**ので、
  * 円弧のトリムでは中心の式が残り、角度だけが数になる。
  *
@@ -19,7 +19,7 @@
  *
  * そのままでは 1 本だけ短くできないので、**先に線分・円弧の個別のフィーチャーへ分解**して
  * から切る(`explodeCompoundFeature`)。分解は文書を 1 回作り替えるだけなので、
- * Undo 1 回で元の矩形へ戻る(P2 の Undo は文書の差し替えを 1 段と数える、FR-505)。
+ * Undo 1 回で元の矩形へ戻る(Undo は文書の差し替えを 1 段と数える、FR-505)。
  *
  * すべて純関数で、文書を書き換えず新しい文書を返す。DOM にもカーネルにも触れない。
  */
@@ -76,7 +76,7 @@ import {
 } from './vec3.js';
 
 /**
- * 断る理由。画面の言い回し(ja.json)はこの鍵で選ぶ(タスク22)。
+ * 断る理由。画面の言い回し(ja.json)はこの鍵で選ぶ。
  * 文言もここで日本語のまま返すので、鍵を使わない側はそのまま出せる。
  */
 export type TrimErrorKey =
@@ -262,7 +262,7 @@ function remapSingleRef(
   return created === undefined ? reference : { featureId: created };
 }
 
-/** 複製(FR-324、タスク20)の「複製のしかた」に入っている参照を付け替える。 */
+/** 複製(FR-324)の「複製のしかた」に入っている参照を付け替える。 */
 function remapCopyPlacement(
   placement: CopyPlacement,
   featureId: string,
@@ -465,7 +465,7 @@ function prepareTarget(
  * 並んだ曲線のうち、指した点にいちばん近い 1 本の位置。
  * ui のトリム・延長の予告(`packages/ui/src/sketch/trimPreview.ts` の `targetCurveAt`)も
  * この関数をそのまま呼ぶ(予告で強調する 1 本と実際に切る 1 本がここ 1 か所で決まる。
- * 以前は ui に同じ本体の写しがあった。P12 で解消)。
+ * 以前は ui に同じ本体の写しがあった)。
  */
 export function nearestCurveIndex(curves: readonly ResolvedCurve[], point: Vec3): number {
   let best = 0;
@@ -499,7 +499,7 @@ function allCurves(resolved: ResolvedSketch): readonly ResolvedCurve[] {
  *
  * ui のトリムの予告(`packages/ui/src/sketch/trimPreview.ts` の `cutRatiosOf`)も
  * この関数をそのまま呼ぶ。予告と実際のトリムの区切りは、ここ 1 か所で決まる
- * (以前は ui に同じ本体の写しがあった。P12 で解消)。
+ * (以前は ui に同じ本体の写しがあった)。
  */
 export function cutRatios(
   target: ResolvedCurve,
@@ -686,7 +686,7 @@ export function trimCurve(
 /**
  * 伸ばす向きを試す長さ(mm)。スケッチ全体を確実に覆う長さにする。
  * ui の延長の予告(`trimPreview.ts` の `extendPreviewAt`)もこの関数をそのまま呼ぶ
- * (以前は ui に同じ本体の写しがあった。P12 で解消)。
+ * (以前は ui に同じ本体の写しがあった)。
  */
 export function probeLength(resolved: ResolvedSketch, from: Vec3): number {
   let far = 1;
@@ -705,7 +705,7 @@ export function probeLength(resolved: ResolvedSketch, from: Vec3): number {
 /**
  * 線分を、指定した端の外側へ伸ばした「試しの線分」。
  * ui の延長の予告(`trimPreview.ts` の `extendPreviewAt`)もこの関数をそのまま呼ぶ
- * (以前は ui に同じ本体の写しがあった。P12 で解消)。
+ * (以前は ui に同じ本体の写しがあった)。
  */
 export function probeSegment(
   segment: ResolvedSegment,

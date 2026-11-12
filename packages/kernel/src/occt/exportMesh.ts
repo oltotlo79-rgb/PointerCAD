@@ -1,5 +1,5 @@
 /**
- * 書き出し用の三角形の作り直し(FR-803、NFR-PF-2、計画書 P6 §0.a-0.13、タスク11)。
+ * 書き出し用の三角形の作り直し(FR-803、NFR-PF-2)。
  *
  * STL / OBJ / glTF / 3MF は「品質(偏差)を選べる」ことが要件(FR-803)で、
  * 画面用の粗さ(`DEFAULT_LINEAR_DEFLECTION = 0.1`)より細かい三角形を出したい。
@@ -8,9 +8,9 @@
  * 直接掛けると、次の描画がキャッシュに残った細かい三角形を使ってしまい重くなる
  * (NFR-PF-1)。**書き出し用の三角形は、画面用のキャッシュを汚さない別の経路で作る。**
  *
- * ## 「複製する」を採った理由(§0.a-0.13 が担当判断に委ねた点、2026-09-06 実測)
+ * ## 「複製する」を採った理由(実測で決めた点)
  *
- * 計画書は「複製してから掛ける」か「掛けたあと元の粗さで掛け直す」かを、
+ * 当初の案は「複製してから掛ける」か「掛けたあと元の粗さで掛け直す」かを、
  * `BRepBuilderAPI_Copy` の費用の実測で決めるとしていた。Node で測った結果は次のとおり。
  *
  * | 形 | `BRepBuilderAPI_Copy_2(S, false, false)` | 偏差 0.1 の三角形分割 | `BRepTools.Clean` |
@@ -28,7 +28,7 @@
  * 複製せず共有する**ため。三角形分割が書き込まれるのは位相の側(`BRep_TFace`)で、
  * 位相は `copyGeom` の値によらず必ず複製されるので、共有しても元の形の三角形は汚れない。
  * `copyMesh = false` は「元に付いている画面用の三角形を持ち込まない」指定で、
- * どのみち掛け直すぶんを写す無駄を省く(§0.a-0.13 の「三角形を持ち込まない引数で」)。
+ * どのみち掛け直すぶんを写す無駄を省く(「三角形を持ち込まない引数で」)。
  *
  * `BRepTools.Clean`(実在。`.d.ts` 154238 行、`Clean(theShape, theForce)`)は使わない。
  * 複製は書き出しが終わったその場で捨てるので、捨てる直前に三角形を落としても意味が無く、
@@ -73,7 +73,7 @@ function mesherFailureMessage(status: number): string {
  * `buildExportMesh` の任意の指定。
  *
  * いまは角度の偏差だけ。**省略できる形にしてあるのは、`buildExportMesh(oc, shape, deflectionMm)`
- * で呼んでいる側(P6 タスク10 の書き出しの配線)を壊さないため**で、省略したときの
+ * で呼んでいる側(書き出しの配線)を壊さないため**で、省略したときの
  * 振る舞いは角度の偏差を足す前とまったく同じになる。
  */
 export interface ExportMeshOptions {
@@ -94,7 +94,7 @@ export interface ExportMeshOptions {
  * `SurfaceMesh` に合わせたためで、STL / glTF / 3MF がどれも 32 ビットの浮動小数で
  * 座標を持つので、ここで 64 ビットにしても書き出す段で落ちる。
  *
- * 面ごとの範囲表(`SurfaceMesh.faceRanges`)は**タスク13b で足した**。面ごとの色
+ * 面ごとの範囲表(`SurfaceMesh.faceRanges`)は**後から足した**。面ごとの色
  * (`writeCafMesh.ts` / `packages/io` の 3MF)が「どの三角形がどの面のものか」を要るためで、
  * `tessellate` が既に返しているものをそのまま持ち上げただけである。
  */
@@ -104,7 +104,7 @@ export interface ExportMesh {
   readonly indices: Uint32Array;
   readonly triangleCount: number;
   /**
-   * `TopExp.MapShapes_2` の順に並ぶ、面ごとの三角形の範囲(タスク13b。§0.a-0.22)。
+   * `TopExp.MapShapes_2` の順に並ぶ、面ごとの三角形の範囲。
    * 通し番号は `subShapes.ts` の `faceAt` と同じで、`buildExportMesh` は必ず入れる。
    *
    * **省略できる形にしてあるのは、B-rep の面を持たない三角形の束があるため。**
@@ -123,7 +123,7 @@ export interface ExportMesh {
  * `BRepMesh_IncrementalMesh` を掛け、複製ごとその場で捨てる。呼び出しの前後で
  * `shape` の三角形は 1 枚も変わらない(検査で固定してある)。
  *
- * ## 角度の偏差を対で受ける理由(2026-09-06 実測、統括の決定)
+ * ## 角度の偏差を対で受ける理由(2026-09-06 実測)
  *
  * 弦のずれだけを細かくしても、**角度の偏差の既定 0.5 ラジアンが先に効いて**
  * 丸い面はそれ以上細かくならない。球 r=10 を長さ 0.1mm で切ったときの実測は、

@@ -23,7 +23,7 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
   if (!current()) return rejected('係数の改名を中止しました。');
   if (!original.parameters.some(parameter => parameter.name === from)) return rejected('改名する係数がありません。');
   if (from === to) return { ok: true, document: original };
-  // Coefficients and math-geometry definitions share one `coef` label space (GR-01, GR-08): a coefficient named
+  // Coefficients and math-geometry definitions share one `coef` label space: a coefficient named
   // like a definition would drop that definition out of `resolvableMathGeometryDefinitions`, so refuse it here.
   if (checkNewParameterName(to) !== null || original.parameters.some(parameter => parameter.name === to)
     || (original.mathGeometry ?? []).some(definition => definition.name === to)) {
@@ -50,7 +50,7 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
       for (const definition of Object.values(configuration.mathDefinitions ?? {})) definitions.add(definition);
     }
     const byId = new Map(document.parameters.map(parameter => [parameter.mathId, parameter.name]));
-    // A formula may also read measured values (GR-04); a `math-geometry:` reference is verified by its definition's name.
+    // A formula may also read measured values; a `math-geometry:` reference is verified by its definition's name.
     for (const definition of resolvableMathGeometryDefinitions(document).values()) byId.set(mathGeometryCoefficientId(definition.id), definition.name);
     const replacements = new Map<StoredMathExpression, StoredMathExpression>();
     let revision = 0;
@@ -100,7 +100,7 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
       return { id: configuration.id, name: configuration.name, values,
         ...(Object.keys(mathDefinitions).length === 0 ? {} : { mathDefinitions }) };
     });
-    // `context` passes through unchanged: no definition is renamed here, so `context.geometry` (GR-04) still resolves.
+    // `context` passes through unchanged: no definition is renamed here, so `context.geometry` still resolves.
     const result = await evaluateDocumentMath(synchronizeConfigurations({ ...geometry, parameters, configurations }), context);
     if (!current()) return rejected('係数の改名を中止しました。');
     return result.ok ? { ok: true, document: result.document }

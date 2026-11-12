@@ -1,5 +1,5 @@
 /**
- * カーネル(Worker)の手立てをストアへ差し出す口(P6 タスク52 で `useAppStore.ts` から
+ * カーネル(Worker)の手立てをストアへ差し出す口(`useAppStore.ts` から
  * 切り出した)。**ストアを読む側**なので、スライスからは参照しない(輪を作らないため)。
  */
 import type { PcadAttachments } from '@pointercad/io';
@@ -33,7 +33,7 @@ import { documentWithIssuanceLedger, prepareDocumentEdit } from './documentDeriv
 import { useAppStore } from './useAppStore.js';
 
 /**
- * 書き出し・読み込みの口を差し出す(FR-802、FR-803。P6 タスク32)。
+ * 書き出し・読み込みの口を差し出す(FR-802、FR-803)。
  *
  * `attachPartMeasure` とまったく同じ形にしてある。**書き出しも読み込みも再計算を
  * 起こさない読み取り**なので、文書の変化は見張らない(差し出して、片付けで取り下げるだけ)。
@@ -51,11 +51,11 @@ export function attachExchangeKernel(kernel: ExchangeKernel): () => void {
 }
 
 /**
- * いまの添付の表(`.pcad` へ一緒に書くもの。P6 §0.a-0.55、タスク32)。
+ * いまの添付の表(`.pcad` へ一緒に書くもの)。
  *
  * **保存・自動保存はここ 1 か所から取る。** 3 つを別々に読み集めると、片方だけ渡し忘れた
  * ときに「開き直せないファイル」ができる(`packages/io` の `findMissingAttachment` が
- * `missingField` で断る)。下絵(`canvases`、タスク39)も同じ表に載る。
+ * `missingField` で断る)。下絵(`canvases`)も同じ表に載る。
  */
 export function currentPcadAttachments(document = useAppStore.getState().document): PcadAttachments {
   const state = useAppStore.getState();
@@ -67,10 +67,10 @@ export function currentPcadAttachments(document = useAppStore.getState().documen
 }
 
 /**
- * 形を測る手立てを差し出す(FR-1101、FR-1102。P5 タスク32)。
+ * 形を測る手立てを差し出す(FR-1101、FR-1102)。
  *
  * カーネル(Worker)を持っているのは入口(`PointerCadApp`)だけなので、`attachPartRecompute`
- * と同じ流儀で外から差し込む。**測定は再計算を起こさない読み取り**(§0.a-0.30)なので、
+ * と同じ流儀で外から差し込む。**測定は再計算を起こさない読み取り**なので、
  * 文書の変化は見張らない(差し出して、片付けで取り下げるだけ)。
  *
  * 戻り値を呼ぶと取り下げる。
@@ -87,10 +87,10 @@ export function attachPartMeasure(measurer: PartMeasurer): () => void {
 }
 
 /**
- * 3D プリントの点検の手立てを差し出す(FR-815。P6 タスク46)。
+ * 3D プリントの点検の手立てを差し出す(FR-815)。
  *
  * `attachPartMeasure` とまったく同じ形。**点検も再計算を起こさない読み取り**
- * (§0.a-0.30)なので、文書の変化は見張らない(差し出して、片付けで取り下げるだけ)。
+ * なので、文書の変化は見張らない(差し出して、片付けで取り下げるだけ)。
  *
  * 戻り値を呼ぶと取り下げる。
  */
@@ -126,7 +126,7 @@ export type PartRecomputer = (
  * 終わったときだけになる。失敗しても例外を投げず、理由を画面に出す(FR-504、NFR-RE-1)。
  *
  * 依頼のたびに世代番号を 1 つ増やして渡す(NFR-PF-4)。E2E が今回の依頼を区別できるよう、
- * 開始した世代と完了した世代・結末だけはストアにも記録する(P7 タスク52)。この欄の変更は
+ * 開始した世代と完了した世代・結末だけはストアにも記録する。この欄の変更は
  * 下の購読条件(文書とタイムラインだけ)に当たらないので、再計算を再帰的に予約しない。
  * 中止は `cancelRecompute` が数える回数で拾う。
  *
@@ -224,7 +224,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
         queued !== null ||
         generation !== current,
       /*
-       * 読み込んだ形の B-rep(FR-802、P6 §0.a-0.9)。**渡さないと `importedSolid` の段が
+       * 読み込んだ形の B-rep(FR-802)。**渡さないと `importedSolid` の段が
        * 「読み込んだ形が見つかりません」で失敗する。** 表は文書と一緒に差し替わるので、
        * 依頼を出すそのときの表を読む(`PointerCadApp` の覚え書きと同じ約束)。
        */
@@ -467,7 +467,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
 
   /**
    * 計算に渡す文書。**保存されるのは常に `document`(全体)で、ここで切ったものは
-   * 画面に出す形を決めるためだけに使う**(FR-506、タスク19 の落とし穴)。
+   * 画面に出す形を決めるためだけに使う**(FR-506)。
    * つまみが末尾(`null`)のときは `documentUpTo` が同じ文書をそのまま返す(`===`)ので、
    * これまでの経路と 1 ミリ秒も変わらない(NFR-PF-3)。
    */
@@ -496,10 +496,10 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
       return;
     }
     // つまみを動かしたときも計算し直す(FR-507)。切った文書のフィーチャーは複製されない
-    // ので段の鍵は変わらず、前半の段は全部キャッシュに当たる(§2.7)。
-    // **外観の割り当てだけが変わったときは投げない**(FR-1106〜1110、要件§4.12、
-    // P5 §2.3.2)。色を変えるたびに 100 フィーチャーの解決と Worker の往復が起きるのを
-    // 避けるための、P5 で最も効く 1 行。形の変化の判定は `model` の `affectsShape` が正本。
+    // ので段の鍵は変わらず、前半の段は全部キャッシュに当たる。
+    // **外観の割り当てだけが変わったときは投げない**(FR-1106〜1110、要件§4.12)。
+    // 色を変えるたびに 100 フィーチャーの解決と Worker の往復が起きるのを
+    // 避けるための、最も効く 1 行。形の変化の判定は `model` の `affectsShape` が正本。
     if (
       activePartDocument(previous) === null || affectsShape(previous.document, next.document) ||
       next.timelineIndex !== previous.timelineIndex || next.importedMeshes !== previous.importedMeshes

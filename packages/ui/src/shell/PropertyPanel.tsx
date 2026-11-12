@@ -146,15 +146,15 @@ interface FieldDraft {
 
 /**
  * 「拘束で決まった、いまの位置」の**表示だけ**を有効数字 9 桁へ丸める桁数
- * (利用者の決定、docs/報告記録.md 2026-09-05 10:43「保存値・入力欄・他の『= 値』の
- * 桁は変えない」。P4b タスク23b-1)。保存値(履歴)には一切使わない。
+ * (利用者の決定「保存値・入力欄・他の『= 値』の
+ * 桁は変えない」)。保存値(履歴)には一切使わない。
  */
 const SOLVED_COORDINATE_DISPLAY_DIGITS = 9;
 
 /**
  * `solvedCoordinateText`(`../sketch/featureSummary.js`)が作る
  * 「= (x, y, z)(拘束で決まった値)」の 3 つの数だけを有効数字 9 桁へ丸め直す
- * (P4b タスク23b-1、利用者の決定「解の表示は 9 桁で丸める」)。
+ * (利用者の決定「解の表示は 9 桁で丸める」)。
  *
  * 丸めるのは**この行の表示だけ**。座標の保存値・入力欄・他の「= 値」の行(スカラーの
  * 読み取り専用の欄など)はここを通らないので変わらない。`solvedCoordinateText` 自体は
@@ -183,9 +183,9 @@ export function roundSolvedCoordinateText(text: string): string {
 }
 
 /**
- * 相対・極で入れた点の「基準」を読める形で出す(FR-302、FR-303、FR-330、P4 タスク33)。
- * 立体の頂点を基準にしているときは「押し出し1 / 立体の頂点」のように出す
- * (タスク10 の申し送り)。基準が要素なら押してその要素を選べる。
+ * 相対・極で入れた点の「基準」を読める形で出す(FR-302、FR-303、FR-330)。
+ * 立体の頂点を基準にしているときは「押し出し1 / 立体の頂点」のように出す。
+ * 基準が要素なら押してその要素を選べる。
  */
 function CoordinateBaseRow({
   group,
@@ -222,8 +222,8 @@ function CoordinateBaseRow({
  *
  * ただし**選ぶ要素が変わらないまま文書だけが差し替わる**(焦点を残したまま開く・新規・
  * 復元・Undo/Redo をすると、開き直した文書にも同じ id のフィーチャーが残っているため
- * `key` は変わらない)ときは、この作り直しが起きず古い下書きが残ってしまう
- * (docs/報告記録.md 2026-09-04 14:05 の 9b)。`documentVersion`(文書が丸ごと
+ * `key` は変わらない)ときは、この作り直しが起きず古い下書きが残ってしまう。
+ * `documentVersion`(文書が丸ごと
  * 差し替わった回数)を `fieldDraft.ts` の純関数で見張り、変わっていたら下書きを捨てる。
  */
 function FeatureProperties({ feature }: { readonly feature: SketchFeature }): React.JSX.Element {
@@ -234,9 +234,9 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
   const sketchErrors = useAppStore((state) => state.sketchErrors);
   const documentVersion = useAppStore((state) => state.documentVersion);
   // パラメータ表の変数表(FR-207、FR-201)。`板厚 * 2` のような式をここでも読めるようにする。
-  // その場入力・コマンドラインの欄と**同じ表**を渡す(タスク18 の申し送り)。
+  // その場入力・コマンドラインの欄と**同じ表**を渡す。
   const units = useFieldUnits();
-  // 拘束の診断(FR-313)。null なら拘束を 1 つも持たないスケッチ(タスク22b-(g))。
+  // 拘束の診断(FR-313)。null なら拘束を 1 つも持たないスケッチ。
   const constraintDiagnosis = useAppStore((state) => state.constraintDiagnosis);
   const workPlaneId = useAppStore((state) => state.workPlaneId);
   const workPlane = useAppStore((state) => state.workPlane);
@@ -269,7 +269,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
     &&[feature.from.dx,feature.from.dy,feature.from.dz,feature.to.dx,feature.to.dy,feature.to.dz].every(value=>value.source==='0'&&!value.mathDefinition);
   const baseSummary=attachedFunctionPoint||attachedDirection?{...summarized,coordinates:[]}:summarized;
   /*
-    拘束で決まった、いまの位置を欄の下へ添える(FR-313、P4b タスク22b-(g))。
+    拘束で決まった、いまの位置を欄の下へ添える(FR-313)。
     解いた座標は文書に書かない(rules/04「導出できるものは保存しない」)ので、上の欄には
     保存された式しか出ない。形が動いたのに数字が変わらないと読めてしまうため、
     **保存された式だけで解いた形**と**いま描いている形**を突き合わせ、動いた欄にだけ
@@ -448,8 +448,8 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
               <CoordinateBaseRow group={group} />
               <div className="pcad-coordinate__fields">{group.fields.map(renderField)}</div>
               {/*
-                拘束で決まった、いまの位置(FR-313、タスク22b-(g))。動いた欄だけ出る。
-                数字だけ表示用に有効数字 9 桁へ丸める(タスク23b-1、保存値は丸めない)。
+                拘束で決まった、いまの位置(FR-313)。動いた欄だけ出る。
+                数字だけ表示用に有効数字 9 桁へ丸める(保存値は丸めない)。
               */}
               {group.solvedText === null ? null : (
                 <p className="pcad-coordinate__solved" title={t('propertyPanel.solvedTooltip')}>
@@ -621,7 +621,7 @@ function ReferenceButton({
 }
 
 /**
- * 参照の節の見出し(P3 タスク27)。もとは押し出し・回転・縫合(断面)とブーリアン
+ * 参照の節の見出し。もとは押し出し・回転・縫合(断面)とブーリアン
  * (組み合わせるもの)の2択だったが、加工6種の「加工するもとの立体・並べる穴」は
  * どちらにも当たらないので専用の見出し(`sectionTarget`)を足した。
  */
@@ -633,9 +633,9 @@ function referencesSectionTitleKey(feature: SolidFeature): MessageKey {
     return 'propertyPanel.sectionProfile';
   }
   /*
-    面をつなぐ・ロフト(FR-430、FR-410、P5 タスク27)が参照するのは「加工するもとの立体」
+    面をつなぐ・ロフト(FR-430、FR-410)が参照するのは「加工するもとの立体」
     ではなく**つなぐ断面**なので、押し出し・回転・縫合と同じ「断面」の見出しにする
-    (対象を消費しないので「対象」という言葉が実態に合わない。§0.a-0.27)。
+    (対象を消費しないので「対象」という言葉が実態に合わない)。
   */
   if (feature.kind === 'ruled' || feature.kind === 'loft') {
     return 'propertyPanel.sectionProfile';
@@ -653,7 +653,7 @@ const LONG_CHOICE_OPTION_THRESHOLD = 6;
 /**
  * いくつかから1つを選ぶ欄(深さの種類・ねじの呼び・面取りの決め方・パターンの向き等)。
  * 選択肢が多い(ねじの呼び28個)ときは、`NumericInputPopover.tsx` の `ChoiceGroup` と同じ
- * pcad-menu の作り(ボタン1つ+その下に開く一覧)で畳む(タスク28、§2.11「呼びの畳んだ一覧」)。
+ * pcad-menu の作り(ボタン1つ+その下に開く一覧)で畳む。
  *
  * 開閉は見た目だけの一時状態なのでここでだけ持つ(rules/04-設計の規律.md)。
  */
@@ -819,14 +819,14 @@ export function createSolidPropertyFieldEdit(
  * 選ばれている立体 1 つの中身(FR-202、FR-311、FR-501)。
  *
  * 距離・角度・許容量は**入力した式そのもの**を出し、式として読めたときだけ履歴を差し替える。
- * 打っている途中は表示専用の下書きに置く(スケッチの欄と同じ作り、docs/報告記録.md 2026-09-02 23:35)。
- * 続けざまの書き換えは `coalesceKey` で Undo の 1 段にまとめる(§0.a-0.13)。
+ * 打っている途中は表示専用の下書きに置く(スケッチの欄と同じ作り)。
+ * 続けざまの書き換えは `coalesceKey` で Undo の 1 段にまとめる。
  *
  * 形が作れていない立体でも欄は編集できる。直せばそのまま作り直せるようにするため(FR-504)。
  * 体積と三角形の数は形ができたときだけ出し、出せないときは「—」ではなく理由を言葉で出す。
  *
  * 下書きが**選ぶ要素が変わらないまま文書だけ差し替わった**ときに残ってしまう不具合
- * (docs/報告記録.md 2026-09-04 14:05 の 9b)への対処は `FeatureProperties` と同じ
+ * への対処は `FeatureProperties` と同じ
  * (`fieldDraft.ts` の `documentVersion` の見張り)。
  */
 function SolidProperties({ feature }: { readonly feature: SolidFeature }): React.JSX.Element {
@@ -837,7 +837,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   // パラメータ表の変数表(FR-207)。押し出しの距離に `板厚 * 2` と書けるようにする。
   const units = useFieldUnits();
   // タイムラインのつまみ(FR-507)。つまみより後ろの段はまだ作られていないだけで、
-  // 失敗ではない(P4b タスク22a-(2)、docs/報告記録.md 2026-09-05 実時計 01:05 の申し送り①)。
+  // 失敗ではない。
   const timelineIndex = useAppStore((state) => state.timelineIndex);
   const [locationState, setLocationState] = useState(() => reconcileCylindricalPropertySelection(feature, null));
   const location = reconcileCylindricalPropertySelection(feature, locationState);
@@ -869,9 +869,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   };
 
   /**
-   * 式の 1 欄。範囲(`SolidFieldSummary.range`、P5 タスク52)を持つ欄は、**範囲の外の値では
+   * 式の 1 欄。範囲(`SolidFieldSummary.range`)を持つ欄は、**範囲の外の値では
    * 履歴を差し替えず**に赤と理由だけを出す(NFR-UX-5「実行してから失敗させない」)。
-   * 範囲を持たない P1〜P4 からの欄のふるまいは 1 つも変わらない。
+   * 範囲を持たない以前からの欄のふるまいは 1 つも変わらない。
    */
   const renderField = (item: SolidFieldSummary): React.JSX.Element => {
     const edit = createSolidPropertyFieldEdit(feature, item.key, location, units);
@@ -932,8 +932,8 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   };
 
   /**
-   * derived が指す欄(§0.a-0.30)。式は入れられないので `ExpressionField` を使わず、
-   * 同じ `pcad-field` の見た目で値だけを見せる(タスク29b「ExpressionField を無効化」)。
+   * derived が指す欄。式は入れられないので `ExpressionField` を使わず、
+   * 同じ `pcad-field` の見た目で値だけを見せる(「ExpressionField を無効化」)。
    * `readOnly` の HTML 属性と `tabIndex=-1` で、打っても効かず Tab でも止まらないようにする。
    */
   const renderReadOnlyField = (item: SolidFieldSummary): React.JSX.Element => {
@@ -951,7 +951,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         tabIndex={-1}
         aria-readonly="true"
         /*
-          式を入れられない欄なので、**数そのもの**を表示の単位で出す(タスク3b)。
+          式を入れられない欄なので、**数そのもの**を表示の単位で出す。
           打ち込める欄と違って「保存されている式」を見せる意味が無く、横の札(in)と
           中身の数の単位が食い違うほうが読み違いを生む。
         */
@@ -1083,7 +1083,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           <h3 className="pcad-section__title">{t(referencesSectionTitleKey(feature))}</h3>
           <dl className="pcad-properties">
             {feature.kind !== 'boolean' ? null : (
-              // 組み合わせ方(和・差・積)。種類は summarizeSolid がすでに持っている(P3 §0.a-0.23 ②)。
+              // 組み合わせ方(和・差・積)。種類は summarizeSolid がすでに持っている。
               <>
                 <dt className="pcad-properties__key">{t('propertyPanel.operation')}</dt>
                 <dd className="pcad-properties__value">{t(summary.kindLabelKey)}</dd>
@@ -1103,7 +1103,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
                 </dd>
               </Fragment>
             ))}
-            {/* 選んだ部分形状は数だけを出す(「選んだ辺 4」)。個々の番号は利用者に意味が無い(§0.a-0.17)。 */}
+            {/* 選んだ部分形状は数だけを出す(「選んだ辺 4」)。個々の番号は利用者に意味が無い。 */}
             {summary.subShapeCounts.map((entry, index) => (
               <Fragment key={`${entry.labelKey}-${String(index)}`}>
                 <dt className="pcad-properties__key">{t(entry.labelKey)}</dt>
@@ -1135,7 +1135,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
             {body === undefined ? missing : String(body.mesh.triangleCount)}
           </dd>
           {/*
-            読み込んだ形(FR-802、P6 §2.18、タスク32)だけに出す面の数。
+            読み込んだ形(FR-802)だけに出す面の数。
             **素性の節ではなくここに出す**のは、面の数が文書には入っておらず、
             計算した形からしか分からないため(体積・三角形の数と同じ出どころ)。
             読み込んだ形は「その上へ穴や面取りを積めるか」の目安になるので出す。
@@ -1155,7 +1155,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
 }
 
 /* ------------------------------------------------------------------ *
- * 基本形状(FR-429、P5 タスク18)
+ * 基本形状(FR-429)
  * ------------------------------------------------------------------ */
 
 /** 打っている途中の基本形状の欄。寸法の欄と中心の座標の欄で名前空間を分ける。 */
@@ -1173,13 +1173,13 @@ const PRIMITIVE_ORIGIN_DRAFT_PREFIX = 'origin:';
  *
  * `SolidProperties` の「立体」「かたち」「結果」の節の**下に続けて**出す独立した節にしてある。
  * 寸法の欄を `solidSummary.ts` の `SolidFieldSummary` へ載せる案もあるが、
- * **`solidSummary.ts` はタスク43 の変更がコミット検査待ち**で触れないため、
- * 基本形状の欄だけをこの節に閉じた(統括の指示。タスク43 が載ったあと `solidSummary.ts` へ
- * 寄せ直すかは統括の判断。**そのときも中心の 3 通りと向きはここの作りをそのまま使える**)。
+ * **基本形状の欄は `solidSummary.ts` とは分けて**、
+ * この節に閉じた(`solidSummary.ts` へ
+ * 寄せ直すときも、**中心の 3 通りと向きはここの作りをそのまま使える**)。
  *
  * 打っている途中の値は表示専用の下書きに置き、式として読めたときだけ履歴を差し替える
  * (`SolidProperties` とまったく同じ作り)。続けざまの書き換えは `coalesceKey` で Undo の
- * 1 段にまとめる(§0.a-0.13)。
+ * 1 段にまとめる。
  */
 function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): React.JSX.Element {
   const documentVersion = useAppStore((state) => state.documentVersion);
@@ -1331,11 +1331,11 @@ function PrimitiveSection({ feature }: { readonly feature: PrimitiveFeature }): 
 }
 
 /* ------------------------------------------------------------------ *
- * 球面の案内線と球面上の点(FR-431、P5 タスク21・22)
+ * 球面の案内線と球面上の点(FR-431)
  * ------------------------------------------------------------------ */
 
 /**
- * 球を選んでいるときに出す「球面の案内線」の節(FR-431、§0.a-0.21)。
+ * 球を選んでいるときに出す「球面の案内線」の節(FR-431)。
  *
  * 線の間隔(式、FR-201)と「いつも出す」の 2 つだけを持つ。**どちらも文書には残らない**
  * 画面の設定なので、履歴にも保存にも触れない(ストアの `sphereGridStep` /
@@ -1450,7 +1450,7 @@ export function setSphereGridAngle(
 }
 
 /**
- * 球面上の点の「球の上の位置」の節(FR-431、FR-202、タスク22)。
+ * 球面上の点の「球の上の位置」の節(FR-431、FR-202)。
  *
  * 緯度・経度を**式のまま**直せる。座標(ΔX / ΔY / ΔZ)は 0 のままで意味を持たないので、
  * 直すのはこの 2 つだけにする。半径や中心を変えれば点はひとりでに動くので、
@@ -1532,18 +1532,18 @@ function SphereGridPointSection({
 }
 
 /* ------------------------------------------------------------------ *
- * 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク27)
+ * 面をつなぐ・ロフト(FR-430、FR-410)
  * ------------------------------------------------------------------ */
 
 /**
- * 面をつなぐ・ロフトの「つなぎ方」の節(FR-430、FR-410、§0.a-0.87)。
+ * 面をつなぐ・ロフトの「つなぎ方」の節(FR-430、FR-410)。
  *
  * ねじれの式の欄・なめらかさの 3 択・つなぐ面の一覧は、どれも `solidSummary.ts` の
  * `fields` / `choices` / `references` に載せてあるので、すぐ上の `SolidProperties` が
  * そのまま描く。**この節が持つのは注記 1 行だけ**である。
  *
- * 注記が要るのは「立体の面から取り出した断面にはねじれが効かない」ことで(タスク24b の
- * 実装。カーネルは面の外周を元の並びのまま結び、ずらしを断りもしない)、欄を伏せるわけには
+ * 注記が要るのは「立体の面から取り出した断面にはねじれが効かない」ことで(
+ * カーネルは面の外周を元の並びのまま結び、ずらしを断りもしない)、欄を伏せるわけには
  * いかない(値は保存され、スケッチの面の断面には効く)。効かないだけで**間違いではない**
  * ので赤い断りにはせず、淡い注記で伝える(rules/04「止めずに警告する」)。
  * 注記が要らないとき(断面が全部スケッチの面・球)は何も出さない。
@@ -1566,11 +1566,11 @@ function RuledNoteSection({
 }
 
 /* ------------------------------------------------------------------ *
- * 平面による切断(FR-432、§2.9b、P5 タスク27f)
+ * 平面による切断(FR-432)
  * ------------------------------------------------------------------ */
 
 /**
- * 切断の「切る面」の節(FR-432、§0.a-0.56〜0.58)。
+ * 切断の「切る面」の節(FR-432)。
  *
  * 傾き角・方位角・ずらす距離の欄と「反対側を残す」のつまみは `solidSummary.ts` の
  * `fields` / `toggles` に載せてあるので、すぐ上の `SolidProperties` がそのまま描く。
@@ -1582,7 +1582,7 @@ function RuledNoteSection({
  *    いま選んでいるものから決め方を組み立て直す(道具と同じ推測 `inferPlaneSpec` を使う。
  *    同じ規則を 2 か所に書かない)。押せないときは理由を添える(NFR-UX-5)。
  *
- * 対で作られた切断(§0.a-0.58)は 2 つが同じ面で切っているので、選び直したときは
+ * 対で作られた切断は 2 つが同じ面で切っているので、選び直したときは
  * **相手の面も一緒に**差し替える(片方だけ動くと 2 つのボディが噛み合わなくなる)。
  */
 function CutSection({ feature }: { readonly feature: CutFeature }): React.JSX.Element {
@@ -1657,7 +1657,7 @@ interface ReferenceFieldDraft {
 }
 
 /**
- * 選ばれている基準ジオメトリ 1 つの中身(FR-328、FR-329、FR-503、P4 タスク33)。
+ * 選ばれている基準ジオメトリ 1 つの中身(FR-328、FR-329、FR-503)。
  *
  * 決め方(3 点・辺・面の法線など)は作ったときに決まるので読み取り専用で出し、
  * 式で決まる欄(平面のオフセット・傾き・角度)と、座標で置いた基準点の位置だけを直せる。
@@ -1812,7 +1812,7 @@ interface OriginSelection {
 }
 
 /**
- * いま選ばれているものが「原点にできる 1 点」かを見る(FR-331、P4 タスク35b)。
+ * いま選ばれているものが「原点にできる 1 点」かを見る(FR-331)。
  *
  * 立体の頂点は木に行が無いのでプロパティが唯一の入り口になる。頂点を選ぶと
  * `solidForSelection` は何も返さない(要素 id が `押し出し1#vertex:3` の形で立体の id と
@@ -1842,11 +1842,11 @@ function useOriginSelection(): OriginSelection | null {
 }
 
 /**
- * 「ここを原点にする」のボタン(FR-331、P4 タスク35b)。
+ * 「ここを原点にする」のボタン(FR-331)。
  *
  * 押すと、その点が (0, 0, 0) になるよう文書内の絶対座標が**式のまま**平行移動し、ほかの
  * 要素は式のまま追従する。ツールバーには道具を増やさない決まりなので、入り口はここと
- * モデルブラウザの「⋮」一覧の 2 つ(§0.a-0.25 ③)。頂点は式を持たないため、丸めない
+ * モデルブラウザの「⋮」一覧の 2 つ。頂点は式を持たないため、丸めない
  * 倍精度の数値で移す(FR-331)。
  *
  * 何が選ばれているか(欄の中身)とは別の話なので、上の欄と並ばず独立した節にする。
@@ -1879,7 +1879,7 @@ function OriginSection({ origin }: { readonly origin: OriginSelection }): React.
 }
 
 /**
- * 外観の節の `key` に付ける接頭辞(P5 仕上げ (d))。
+ * 外観の節の `key` に付ける接頭辞。
  *
  * 外観の節は「選び直したら打ちかけの下書きを捨てる」ために選択そのものを `key` にするが、
  * **接頭辞を付けないと、立体を 1 つだけ選んでいるときに `SolidProperties` の
@@ -1900,7 +1900,7 @@ export function appearanceSectionKey(selection: readonly string[]): string {
 }
 
 /**
- * 基本形状の節の `key` に付ける接頭辞(P5 タスク18、rules/06 10.9)。
+ * 基本形状の節の `key` に付ける接頭辞。
  *
  * 基本形状の節は `SolidProperties`(`key={solid.id}`)と**同じ親**に並ぶので、
  * 接頭辞を付けずにフィーチャーの id をそのまま `key` にすると兄弟の鍵が必ず重なる
@@ -1920,7 +1920,7 @@ export function primitiveSectionKey(featureId: string): string {
 }
 
 /**
- * 面をつなぐ・ロフトの注記の節の `key` に付ける接頭辞(P5 タスク27、rules/06 10.9)。
+ * 面をつなぐ・ロフトの注記の節の `key` に付ける接頭辞。
  *
  * 基本形状の節・外観の節とまったく同じ理由で付ける。接頭辞が無いとフィーチャーの id を
  * そのまま `key` にすることになり、同じ親(`.pcad-panel__body`)に並ぶ `SolidProperties`
@@ -1940,7 +1940,7 @@ export function ruledSectionKey(featureId: string): string {
 }
 
 /**
- * 切断の「切る面」の節の `key` に付ける接頭辞(P5 タスク27f、rules/06 10.9)。
+ * 切断の「切る面」の節の `key` に付ける接頭辞。
  * 外観・基本形状・つなぎ方の節とまったく同じ理由で付ける。
  */
 const CUT_KEY_PREFIX = 'cut:';
@@ -1955,7 +1955,7 @@ export function sphereGridSectionKey(featureId: string): string {
 }
 
 /**
- * 球面の案内線・球の上の位置の節の `key` に付ける接頭辞(P5 タスク21・22、rules/06 10.9)。
+ * 球面の案内線・球の上の位置の節の `key` に付ける接頭辞。
  * 外観・基本形状・つなぎ方・切断の節とまったく同じ理由で付ける。フィーチャーの id は
  * model の `nextSolidId` / `nextFeatureId` が作る `sphere-1` / `point-1` の形なので、
  * `sphereGrid:` から始まることは無い(`-` と `:` の違い)。
@@ -1967,7 +1967,7 @@ export function cutSectionKey(featureId: string): string {
 }
 
 /**
- * 測定の節・質量特性の節の `key` に付ける接頭辞(P5 タスク32、rules/06 10.9)。
+ * 測定の節・質量特性の節の `key` に付ける接頭辞。
  *
  * 外観・基本形状・つなぎ方の節とまったく同じ理由で付ける。接頭辞が無いと、立体を 1 つだけ
  * 選んでいるときに `SolidProperties` の `key={solid.id}` と同じ文字列になり、**同じ親の中で
@@ -1986,13 +1986,13 @@ export function measureSectionKey(selection: readonly string[]): string {
 
 /**
  * 質量特性の節の `key`(接頭辞 + 立体のフィーチャーの id)。立体を選び直すと作り直され、
- * 材料と密度がその立体の外観から選び直される(§0.a-0.31)。
+ * 材料と密度がその立体の外観から選び直される。
  */
 export function massSectionKey(featureId: string): string {
   return `${MASS_KEY_PREFIX}${featureId}`;
 }
 
-/** 右の区画のタブ(§0.a-0.15)。区画は 5 つのままで、この 2 枚だけを切り替える。 */
+/** 右の区画のタブ。区画は 5 つのままで、この 2 枚だけを切り替える。 */
 type PanelTab = 'properties' | 'parameters';
 
 /**
@@ -2000,9 +2000,9 @@ type PanelTab = 'properties' | 'parameters';
  *
  * 1 つだけ選ばれているときは中身を出して式のまま直せるようにし、いくつも選ばれているときは
  * 数と種類だけを出す(面を張るときは順に選んでいくので、そのたびに欄が入れ替わらないように)。
- * 節ごとに「鍵(補助色)と値(等幅の数字)」の2列で並べる形は P0 から変えない。
+ * 節ごとに「鍵(補助色)と値(等幅の数字)」の2列で並べる形は変えない。
  *
- * P4b から「プロパティ」「パラメータ」の 2 タブを持つ(§0.a-0.15、FR-207)。
+ * 「プロパティ」「パラメータ」の 2 タブを持つ(FR-207)。
  * **区画は増やさない**(rules/04-設計の規律.md)。どちらを開いているかは履歴に残らない
  * 画面だけの状態なので `useState` に置く(同上「表示専用の一時状態だけ」)。
  */
@@ -2029,9 +2029,9 @@ export function PropertyPanel(): React.JSX.Element {
   };
   const appearanceReady = appearanceReadiness(appearanceContext).ok;
   /*
-    測定と質量特性(FR-1101、FR-1102、タスク32)。**判断は `measure.ts` の 1 か所**で、
+    測定と質量特性(FR-1101、FR-1102)。**判断は `measure.ts` の 1 か所**で、
     ここは「節を出すかどうか」を決めるためだけに読む。測った結果は選択の変化では消えない
-    (§0.a-0.29)ので、いま選んでいるものが測れなくても結果が残っていれば節を出す。
+    ので、いま選んでいるものが測れなくても結果が残っていれば節を出す。
   */
   const measureSketch = useAppStore(state => state.isComputing ? undefined : state.resolvedSketch);
   const measureReady = partMeasureReadiness(selection, appearanceContext.bodies, measureSketch);
@@ -2047,14 +2047,14 @@ export function PropertyPanel(): React.JSX.Element {
   const single = featureIds.length === 1;
   const feature = single ? featureForSelection(sketch, selection) : null;
   // スケッチの要素で見つからなければ立体、それも無ければ基準ジオメトリを探す。
-  // id は文書の中で重ならない(§0.a-0.5)。
+  // id は文書の中で重ならない。
   const solid = single && feature === null ? solidForSelection(part, selection) : null;
   const reference =
     single && feature === null && solid === null && selection[0] !== undefined
       ? (findReference(part, selection[0]) ?? null)
       : null;
   const kinds = selectionKindLabelKeys(part, selection).map((key) => t(key));
-  // 「ここを原点にする」を出せる 1 点(FR-331、タスク35b)。立体の頂点はここだけに出る。
+  // 「ここを原点にする」を出せる 1 点(FR-331)。立体の頂点はここだけに出る。
   const origin = useOriginSelection();
 
   if (scriptOpen) return <section className="pcad-panel pcad-panel--right"><ScriptPanel /></section>;
@@ -2128,7 +2128,7 @@ export function PropertyPanel(): React.JSX.Element {
           </div>
         )}
         {/*
-          基本形状の寸法・中心・向き(FR-429、FR-502、タスク18)。「立体」の節の下に続けて
+          基本形状の寸法・中心・向き(FR-429、FR-502)。「立体」の節の下に続けて
           出す。**`key` には必ず `PRIMITIVE_KEY_PREFIX` を付ける**(すぐ上の
           `SolidProperties` の `key={solid.id}` と同じ文字列になると兄弟の鍵が重なり、
           古い節が消えずに残る。rules/06 10.9 の再発を防ぐ)。
@@ -2137,7 +2137,7 @@ export function PropertyPanel(): React.JSX.Element {
           <PrimitiveSection key={primitiveSectionKey(solid.id)} feature={solid} />
         )}
         {/*
-          面をつなぐ・ロフトの注記(FR-430、タスク27)。欄・選択肢・つなぐ面の一覧は
+          面をつなぐ・ロフトの注記(FR-430)。欄・選択肢・つなぐ面の一覧は
           `SolidProperties` がすでに描いているので、ここは「立体の面にはねじれが効かない」
           注記だけを添える。**`key` には必ず `RULED_KEY_PREFIX` を付ける**(基本形状の節と
           同じ理由。rules/06 10.9 の再発を防ぐ)。
@@ -2146,33 +2146,33 @@ export function PropertyPanel(): React.JSX.Element {
           <RuledNoteSection key={ruledSectionKey(solid.id)} feature={solid} />
         )}
         {/*
-          切断の「切る面」(FR-432、タスク27f)。決め方・残る側・選び直しは欄にできないので
+          切断の「切る面」(FR-432)。決め方・残る側・選び直しは欄にできないので
           ここへ出す(欄とつまみは `SolidProperties` が描く)。**`key` には必ず
-          `CUT_KEY_PREFIX` を付ける**(基本形状・つなぎ方の節と同じ理由。rules/06 10.9)。
+          `CUT_KEY_PREFIX` を付ける**(基本形状・つなぎ方の節と同じ理由)。
         */}
         {solid === null || solid.kind !== 'cut' ? null : (
           <CutSection key={cutSectionKey(solid.id)} feature={solid} />
         )}
         {/*
-          球面の案内線(FR-431、タスク21)。球を選んでいるときだけ出す。線の間隔と
+          球面の案内線(FR-431)。球を選んでいるときだけ出す。線の間隔と
           「いつも出す」は画面の設定で、履歴にも保存にも触れない。**`key` には必ず
-          `SPHERE_GRID_KEY_PREFIX` を付ける**(基本形状の節と同じ理由。rules/06 10.9)。
+          `SPHERE_GRID_KEY_PREFIX` を付ける**(基本形状の節と同じ理由)。
         */}
         {solid === null || solid.kind !== 'primitive' || solid.shape.kind !== 'sphere' ? null : (
           <SphereGridSection key={sphereGridSectionKey(solid.id)} />
         )}
         {/*
-          球の上の位置(FR-431、FR-202、タスク22)。球面上の点を選んでいるときだけ出す。
+          球の上の位置(FR-431、FR-202)。球面上の点を選んでいるときだけ出す。
           **`key` の接頭辞**は上と同じ理由(`FeatureProperties` の `key={feature.id}` と
           兄弟になるので、接頭辞が無いと鍵が重なる)。
         */}
         {feature === null || sphereGridAnglesOf(feature) === null ? null : (
           <SphereGridPointSection key={sphereGridSectionKey(feature.id)} feature={feature} />
         )}
-        {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331、タスク35b)。 */}
+        {/* 点を 1 つだけ選んでいるときの「ここを原点にする」(FR-331)。 */}
         {origin === null ? null : <OriginSection origin={origin} />}
         {/*
-          外観の節(FR-1106〜1110、要件§4.12、タスク12)。立体または面を選んでいるときだけ
+          外観の節(FR-1106〜1110、要件§4.12)。立体または面を選んでいるときだけ
           出す(`feature`/`solid`/`reference` のどれが出ていても、その下に続けて出す)。
           選ぶ対象が変わるたびに作り直す(`key` は選択そのものから作るので、選び直すたびに
           打っている途中の下書きも消える。`FeatureProperties`/`SolidProperties` と同じ流儀)。
@@ -2181,14 +2181,14 @@ export function PropertyPanel(): React.JSX.Element {
           選んでいるときの `selection.join('|')` が上の `SolidProperties` の `key={solid.id}`
           とまったく同じ文字列になり、**同じ親の中で兄弟の鍵が重なる**。鍵が重なると React は
           入れ替えのときに古い側を消し損ね、前に選んでいた立体の節が画面に残り続ける
-          (選ぶたびに 4 節ずつ積み上がる。2026-09-05 実測、P5 仕上げ (d)。
-          docs/報告記録.md の同日の追記)。
+          (選ぶたびに 4 節ずつ
+          積み上がった実測がある)。
         */}
         {!appearanceReady ? null : (
           <AppearanceSection key={appearanceSectionKey(selection)} context={appearanceContext} />
         )}
         {/*
-          測定と質量特性(FR-1101、FR-1102、タスク32)。外観の節と同じ流儀で、選んでいるものが
+          測定と質量特性(FR-1101、FR-1102)。外観の節と同じ流儀で、選んでいるものが
           何であってもその下に続けて出す。**`key` には必ず接頭辞を付ける**(すぐ上の
           `SolidProperties` の `key={solid.id}` と重なると古い節が消えずに残る。rules/06 10.9)。
         */}
@@ -2202,12 +2202,12 @@ export function PropertyPanel(): React.JSX.Element {
           />
         )}
         {/*
-          拘束の一覧(FR-313、P4b タスク13)。**区画もタブも増やさない**(rules/04)。
+          拘束の一覧(FR-313)。**区画もタブも増やさない**(rules/04)。
           いま編集しているスケッチの拘束をここへ並べ、行を押すと 3D の印が光り、
           寸法拘束は値をその場で書き換えられる。拘束が 1 つも無ければ何も出ない。
         */}
         {/*
-          P6 の 5 つの節(FR-111、FR-112、FR-332、FR-333、FR-815。§2.18、タスク43)。
+          次の 5 つの節(FR-111、FR-112、FR-332、FR-333、FR-815)。
           **区画もタブも増やさない**(rules/04)。選んでいるものが何であっても、
           外観・測定の節と同じくその下に続けて出す。**`key` は付けない**——条件で
           出し分ける兄弟ではなく常に同じ位置に 1 つずつ並ぶので、鍵が重なりようがない

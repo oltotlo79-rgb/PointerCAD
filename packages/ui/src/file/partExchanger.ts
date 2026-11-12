@@ -1,11 +1,11 @@
 /**
- * 書き出し・読み込みの橋渡し(計画書 docs/plans/P6-入出力.md §2.4・§2.5・§2.5.1・§2.8、
- * §0.a-0.19・0.22、タスク32b)。
+ * 書き出し・読み込みの橋渡し
+ * (FR-802、FR-803)。
  *
  * 対応要件: FR-802(読み込み)、FR-803(書き出し)、FR-804(名前と色)、FR-1106(外観)、
  * NFR-MA-1(依存の向き)、NFR-RE-1(止めずに警告する)。
  *
- * **タスク32 が空けておいた口(`ExchangeKernel`)を埋める場所。** 手続き
+ * **手続きが空けておいた口(`ExchangeKernel`)を埋める場所。** 手続き
  * (`exchangeFile.ts`)は「何を書き出すか」まで決めてくれるが、幾何カーネルは
  * **段の鍵**(`ResolvedSolidStep.key`)でしか形を引けないので、ここで
  * ①文書を解き直して鍵を作り(`resolveCachedSteps`。測定と同じ解き方)、
@@ -53,7 +53,7 @@ import type {
  *
  * **文書と外観の照合の 2 つだけ**を受け取る。照合(`appearanceMatches`)は再計算のたびに
  * 返っている面の通し番号で、面ごとの色を組むのに要る(`faceColorsFor`。照合をここで
- * やり直さない、§2.5.1)。
+ * やり直さない)。
  */
 interface PartExchangeSnapshot {
   readonly document: PartDocument;
@@ -92,8 +92,8 @@ function toFaceColorTuples(
  * - 色は立体ごと(`bodyColorsFor`)と面ごと(`faceColorsFor`)の**別々の表**から組む。
  *   面の割り当ては立体の色より優先するので、両方をそのまま渡して優先はカーネルに任せる。
  * - **「色を含める」が切れているときは、色そのものを渡さない。** 形式ごとに「色を書くか」の
- *   欄を持つのは STEP だけで、ほかの形式では値を空にするのが色を落とす唯一の手立てである
- *   (§0.a-0.22)。STL は色の欄を初めから見ないので、ここで形式ごとに分けない
+ *   欄を持つのは STEP だけで、ほかの形式では値を空にするのが色を落とす唯一の手立てである。
+ *   STL は色の欄を初めから見ないので、ここで形式ごとに分けない
  *   (`carriesColor` の表を 2 か所に持たないため)。
  */
 export function exportBodiesFor(
@@ -115,7 +115,7 @@ export function exportBodiesFor(
       name: names.get(featureId) ?? null,
       color: color === undefined ? null : rgbTupleOf(color),
     };
-    // 色を付けた面が 1 枚も無い立体には面の表を添えない(空の表を作らない、§2.5.1)。
+    // 色を付けた面が 1 枚も無い立体には面の表を添えない(空の表を作らない)。
     return faces === undefined ? body : { ...body, faceColors: toFaceColorTuples(faces) };
   });
 }
@@ -123,7 +123,7 @@ export function exportBodiesFor(
 /**
  * 書き出しの結果を、手続き(`exchangeFile.ts`)が受け取る形へ直す。
  *
- * **3MF だけファイルが返らない**(§0.a-0.19。ZIP と XML は `packages/io` が組む)ので、
+ * **3MF だけファイルが返らない**(ZIP と XML は `packages/io` が組む)ので、
  * 三角形を `meshes` に載せて `files` は空にする。断りは**日本語の理由の例外**で投げる
  * (`ExchangeKernel` の約束。呼び出し側は帯へそのまま出す)。
  */
@@ -169,7 +169,7 @@ export function toExchangeImportedBody(body: ImportedBody): ExchangeImportedBody
 }
 
 /**
- * 書き出し・読み込みの口を組み立てる(タスク32b)。
+ * 書き出し・読み込みの口を組み立てる。
  *
  * `attachExchangeKernel` へ渡すと、ツールバーの「書き出す」「読み込む」が実際に動く
  * (差し出す前は `EXCHANGE_KERNEL_MISSING_MESSAGE` で断られる)。
@@ -178,7 +178,7 @@ export function createPartExchanger(deps: PartExchangerDeps): ExchangeKernel {
   return {
     async exportShapes(request: ExchangeExportRequest): Promise<ExchangeExportOutcome> {
       const snapshot = deps.snapshot();
-      // 書き出しは再計算を起こさない読み取り(§0.a-0.30)。解くだけで鍵が揃う。
+      // 書き出しは再計算を起こさない読み取り。解くだけで鍵が揃う。
       const steps = resolveCachedSteps(snapshot.document, deps);
       const outcome = await deps.exportShapes(steps, {
         format: request.format,
@@ -195,7 +195,7 @@ export function createPartExchanger(deps: PartExchangerDeps): ExchangeKernel {
     async importShape(format, fileName, bytes): Promise<ExchangeImportOutcome> {
       const outcome = await deps.importShape({ format, fileName, bytes });
       if (outcome.kind === 'failed') {
-        // 読めなかった理由は下の層(幾何カーネル)が日本語で持っている(§2.8)。
+        // 読めなかった理由は下の層(幾何カーネル)が日本語で持っている。
         throw new Error(outcome.message);
       }
       return {

@@ -1,17 +1,17 @@
 /**
- * 選択から加工フィーチャー(穴・ねじ穴・R 面取り・C 面取り・直線/円形パターン)を作る純関数
- * (計画書 docs/plans/P3-加工フィーチャー.md タスク25、§0.a-0.9〜0.21)。
+ * 選択から加工フィーチャー(穴・ねじ穴・R 面取り・C 面取り・直線/円形パターン)を
+ * 作る純関数。
  *
- * `packages/ui/src/solid/solidCommands.ts`(P2 タスク18)と同じ流儀に揃える。ストアにも DOM にも
- * 触れない純関数だけを置き、操作の判断を Node の単体検査で固定できるようにする
- * (`docs/報告記録.md` 2026-09-02 23:09 の教訓)。文書は不変で、確定できないときは元の文書を
+ * `packages/ui/src/solid/solidCommands.ts`と同じ流儀に揃える。ストアにも DOM にも
+ * 触れない純関数だけを置き、操作の判断を Node の単体検査で固定できるようにする。
+ * 文書は不変で、確定できないときは元の文書を
  * そのまま返す(FR-504、NFR-UX-5)。
  *
  * **ばね(`commitSpring`)はここに置かない。** ばねは対象を消費しない「作る」フィーチャーで
- * 加工ではない(§0.a-0.36)。タスク25b が `solidCommands.ts` へ足す。
+ * 加工ではない。`solidCommands.ts` が持つ。
  *
- * **要素の種類の判定は id の接頭辞ではなく文書・一覧への所属で行う**
- * (`docs/報告記録.md` 2026-09-03 13:05 の②)。部分形状も同じで、`bodies`(カーネルが返した
+ * **要素の種類の判定は id の接頭辞ではなく文書・一覧への所属で行う**。
+ * 部分形状も同じで、`bodies`(カーネルが返した
  * 立体の一覧)に載っているかで判定する。`solidCommands.ts` の `faceRefById` と同じ書き方を使う。
  */
 
@@ -79,15 +79,15 @@ import {
 } from './subShapeSelection.js';
 
 /**
- * 加工の道具(§2.11 のツールバー「加工」区画の 6 個)。
+ * 加工の道具(ツールバー「加工」区画の 6 個)。
  * `SolidToolId`(numericInput.ts)から「対象のボディを 1 つ加工する・パターンで並べる」
- * 6 種類だけに絞った型。押し出し・回転・縫合・ばねは対象を消費しない別枠(§0.a-0.36)なので
+ * 6 種類だけに絞った型。押し出し・回転・縫合・ばねは対象を消費しない別枠なので
  * `machiningToolReadiness` の対象にしない。
  *
- * 計画書タスク25 の宣言は `machiningToolReadiness(context, tool: SolidToolId)` だが、
+ * 当初の宣言は `machiningToolReadiness(context, tool: SolidToolId)` だが、
  * `SolidToolId` は加工でない道具(押し出し・回転・縫合・ばね)も含むため、switch を
  * 網羅すると「押せない」以外に書きようのない枝が残る。ここでは実装を正とし、専用の
- * 絞り込んだ型を使う(判断に迷った点として報告する)。
+ * 絞り込んだ型を使う。
  */
 export type MachiningToolId =
   | 'hole'
@@ -97,17 +97,17 @@ export type MachiningToolId =
   | 'linearPattern'
   | 'circularPattern';
 
-/** 加工のコマンドが必要とする文脈(計画書タスク25)。 */
+/** 加工のコマンドが必要とする文脈。 */
 export interface MachiningContext {
   readonly document: PartDocument;
   /**
    * カーネルが返した立体の一覧。指紋を作るのに要る。
    *
-   * 計画書の宣言は `readonly SolidBody[]`(`@pointercad/model` の型)だが、`SolidBody` に
-   * 面・辺・頂点の一覧が届くのはタスク10(kernel)・タスク17(model)の後で、このタスクの
-   * 着手時点ではまだ届いていない(タスク20 の `subShapeSelection.ts` の同じ注記を参照)。
-   * そこでタスク20 が定めた `SubShapeBody`(部分形状を選ぶのに要るものだけを持つボディ)を使う。
-   * タスク17 が `SolidBody` へ同じ形の欄を足したら、この欄の型をそちらへ差し替えるだけでよい。
+   * 当初の宣言は `readonly SolidBody[]`(`@pointercad/model` の型)だが、`SolidBody` に
+   * 面・辺・頂点の一覧が無い時期に書いたので、
+   * `subShapeSelection.ts` の同じ注記のとおり、
+   * `SubShapeBody`(部分形状を選ぶのに要るものだけを持つボディ)を使う。
+   * `SolidBody` が同じ形の欄を持てば、この欄の型をそちらへ差し替えるだけでよい。
    */
   readonly bodies: readonly SubShapeBody[];
   /** 選択(順序つき)。部分形状の id も入る。 */
@@ -121,7 +121,7 @@ const READY: SolidToolReadiness = { ready: true, reasonKey: null };
 export const DEFAULT_HOLE_DIAMETER: ExpressionValue = expressionValueFromNumber(
   DEFAULT_HOLE_DIAMETER_MM,
 );
-/** 止まり穴の深さ・ねじ部の長さの既定値(§2.11 の表。どちらも 10mm)。 */
+/** 止まり穴の深さ・ねじ部の長さの既定値(どちらも 10mm)。 */
 export const DEFAULT_HOLE_DEPTH: ExpressionValue = expressionValueFromNumber(DEFAULT_HOLE_DEPTH_MM);
 export const DEFAULT_THREAD_LENGTH: ExpressionValue = expressionValueFromNumber(
   DEFAULT_HOLE_DEPTH_MM,
@@ -130,14 +130,14 @@ export const DEFAULT_THREAD_LENGTH: ExpressionValue = expressionValueFromNumber(
 export const DEFAULT_FILLET_RADIUS: ExpressionValue = expressionValueFromNumber(
   DEFAULT_FILLET_RADIUS_MM,
 );
-/** C 面取りの距離・角度の既定値(距離2 も等距離の既定と同じ値を使う、§2.11)。 */
+/** C 面取りの距離・角度の既定値(距離2 も等距離の既定と同じ値を使う)。 */
 export const DEFAULT_CHAMFER_DISTANCE: ExpressionValue = expressionValueFromNumber(
   DEFAULT_CHAMFER_DISTANCE_MM,
 );
 export const DEFAULT_CHAMFER_ANGLE: ExpressionValue = expressionValueFromNumber(
   DEFAULT_CHAMFER_ANGLE_DEGREES,
 );
-/** 直線パターンの間隔・個数の既定値。向きの既定は X(§0.a-0.21)。 */
+/** 直線パターンの間隔・個数の既定値。向きの既定は X。 */
 export const DEFAULT_PATTERN_SPACING: ExpressionValue = expressionValueFromNumber(
   DEFAULT_PATTERN_SPACING_MM,
 );
@@ -145,32 +145,32 @@ export const DEFAULT_PATTERN_COUNT_VALUE: ExpressionValue = expressionValueFromN
   DEFAULT_PATTERN_COUNT,
 );
 export const DEFAULT_LINEAR_PATTERN_DIRECTION: PatternDirection = { kind: 'world', axis: 'x' };
-/** 円形パターンの角度・個数の既定値。軸の既定は Z(§0.a-0.21)。 */
+/** 円形パターンの角度・個数の既定値。軸の既定は Z。 */
 export const DEFAULT_CIRCULAR_PATTERN_ANGLE: ExpressionValue = expressionValueFromNumber(360);
 export const DEFAULT_CIRCULAR_PATTERN_COUNT_VALUE: ExpressionValue = expressionValueFromNumber(
   DEFAULT_CIRCULAR_PATTERN_COUNT,
 );
 export const DEFAULT_CIRCULAR_PATTERN_AXIS: PatternDirection = { kind: 'world', axis: 'z' };
 /**
- * 穴・ねじ穴の傾き角・方位角の既定値(0 = 面に垂直)。§0.a-0.10 の決定により、その場入力には
+ * 穴・ねじ穴の傾き角・方位角の既定値(0 = 面に垂直)。決まりにより、その場入力には
  * 出てこない(プロパティでだけ編集する)ので、その場入力からの確定(`commitMachiningInput`)では
- * 常にこの既定値を使う。プロパティからの再編集はタスク27 の担当。
+ * 常にこの既定値を使う。プロパティからの再編集は別のファイルが受け持つ。
  */
 export const DEFAULT_TILT_ANGLE: ExpressionValue = expressionValueFromNumber(0);
 export const DEFAULT_TILT_AZIMUTH: ExpressionValue = expressionValueFromNumber(0);
 /**
- * 円筒の側面の穴(EX05)の高さ・角度の既定値。高さは止まり穴の深さの既定と同じ 10mm、
+ * 円筒の側面の穴の高さ・角度の既定値。高さは止まり穴の深さの既定と同じ 10mm、
  * 角度は 0 度(円筒の面の基準の向き)。面の外になれば kernel が理由を出して断る。
  */
 export const DEFAULT_CYLINDER_HOLE_HEIGHT: ExpressionValue = expressionValueFromNumber(DEFAULT_HOLE_DEPTH_MM);
 export const DEFAULT_CYLINDER_HOLE_ANGLE: ExpressionValue = expressionValueFromNumber(0);
 /**
- * 可変半径の R 面取り(FR-426)の終わり側の半径の既定値(P5 タスク50 で R 面取りの段へ畳んだ)。
+ * 可変半径の R 面取り(FR-426)の終わり側の半径の既定値(R 面取りの段で聞く)。
  */
 export const DEFAULT_FILLET_RADIUS_END: ExpressionValue = expressionValueFromNumber(
   DEFAULT_FILLET_RADIUS_END_MM,
 );
-/** ざぐりの径・深さ、皿もみの頭径・開き角の既定値(FR-422。同じくタスク50 で穴の段へ)。 */
+/** ざぐりの径・深さ、皿もみの頭径・開き角の既定値(FR-422。穴の段で聞く)。 */
 export const DEFAULT_COUNTERBORE_DIAMETER: ExpressionValue = expressionValueFromNumber(
   DEFAULT_COUNTERBORE_DIAMETER_MM,
 );
@@ -185,7 +185,7 @@ export const DEFAULT_COUNTERSINK_ANGLE: ExpressionValue = expressionValueFromNum
 );
 
 /**
- * 加工の対象になる立体の id を決める(§0.a-0.6)。
+ * 加工の対象になる立体の id を決める。
  *
  * 選択中の部分形状(面・辺・頂点)が**すべて同じ立体に属していれば**その立体、
  * 部分形状の選択が無ければ**直に選ばれている立体が 1 つだけのときに限り**その立体。
@@ -227,7 +227,7 @@ function resolveMachiningFace(context: MachiningContext): MachiningFaceOutcome {
   return { ok: true, ref, targetFeatureId: target };
 }
 
-/** 選んだ面が円筒の面か(EX05)。保存される指紋の曲面の種類で決める。 */
+/** 選んだ面が円筒の面か。保存される指紋の曲面の種類で決める。 */
 function isCylinderFace(ref: SubShapeRef): boolean {
   return ref.fingerprint.kind === 'face' && ref.fingerprint.surfaceKind === 'cylinder';
 }
@@ -264,10 +264,10 @@ function holeInputError(parameters: {
 }
 
 /**
- * 選択からスケッチの点・点列フィーチャーを中心点として拾う(§0.a-0.9)。選んだ順を保ち、
+ * 選択からスケッチの点・点列フィーチャーを中心点として拾う。選んだ順を保ち、
  * 同じフィーチャーを 2 度選んでも 1 回だけ数える。点列は featureIdOf が 1 点の選択
  * (`point-1#3`)からもフィーチャー id(`point-1`)を返すので、1 点だけ選んでも点列全体を
- * 指したことになる(展開は resolvePart が行う、§0.a-0.9)。
+ * 指したことになる(展開は resolvePart が行う)。
  */
 const CENTER_POINT_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['point', 'pointArray']);
 
@@ -282,7 +282,7 @@ function selectedCenterPoints(
     if (seen.has(featureId)) {
       continue;
     }
-    // 押し出しの面と同じく、**編集中のスケッチを先に**見る(P4 仕上げ (g)、`sketchRefs.ts`)。
+    // 押し出しの面と同じく、**編集中のスケッチを先に**見る(`sketchRefs.ts`)。
     // 文書の並び順に前から探すと、スケッチ 2 の `point-1` を選んだつもりでスケッチ 1 の
     // `point-1` が穴の中心になる。
     const found = findSketchFeatureAt(document, elementId, CENTER_POINT_KINDS);
@@ -295,7 +295,7 @@ function selectedCenterPoints(
 }
 
 /**
- * 選択中の頂点を「その頂点に集まる辺」へ展開する(§0.a-0.17 の追記どおり、確定時=ここで行う)。
+ * 選択中の頂点を「その頂点に集まる辺」へ展開する(確定時=ここで行う)。
  *
  * 展開は `SubShapeBody.edges` の `start` / `end`(端点の座標)と `SubShapeBody.vertices` の
  * `position` を `isSamePoint`(model のスケッチ許容誤差)で突き合わせて行う。ボディが
@@ -329,7 +329,7 @@ function expandVertexTargets(context: MachiningContext): readonly SubShapeRef[] 
   return expanded;
 }
 
-/** 番号の昇順に並べる。まずボディ、次に通し番号(§2.7/cacheKey.ts の決定性の要求に揃える)。 */
+/** 番号の昇順に並べる。まずボディ、次に通し番号(cacheKey.ts の決定性の要求に揃える)。 */
 function sortSubShapeRefs(refs: readonly SubShapeRef[]): readonly SubShapeRef[] {
   return [...refs].sort((a, b) => {
     if (a.bodyFeatureId !== b.bodyFeatureId) {
@@ -357,8 +357,8 @@ type PatternSourceOutcome =
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
 /**
- * パターンで繰り返す穴・ねじ穴を選択から決める(§0.a-0.20)。パターンの道具は
- * `selectionKind` が `'body'` のままなので(タスク21 の `SELECTION_KIND_FOR_TOOL`)、
+ * パターンで繰り返す穴・ねじ穴を選択から決める。パターンの道具は
+ * `selectionKind` が `'body'` のままなので(`SELECTION_KIND_FOR_TOOL`)、
  * 立体そのもの(= その穴・ねじ穴フィーチャーの id)を選ぶ。
  */
 function selectedPatternSource(
@@ -381,8 +381,8 @@ function selectedPatternSource(
  * 穴を 1 つ作る(FR-405)。面が選ばれていなければ `noFace`、面は複数の立体にまたがっていれば
  * `faceNotOnTarget`、中心にする点が無ければ `noCenterPoint`。
  *
- * 傾き角・方位角はその場入力に出てこない(§0.a-0.10)。ここでは呼び出し側が渡した値を
- * そのまま使う。プロパティからの再編集(タスク27)もこの欄をそのまま更新すればよい。
+ * 傾き角・方位角はその場入力に出てこない。ここでは呼び出し側が渡した値を
+ * そのまま使う。プロパティからの再編集もこの欄をそのまま更新すればよい。
  */
 export function commitHole(
   context: MachiningContext,
@@ -392,12 +392,12 @@ export function commitHole(
     readonly tiltAngle: ExpressionValue;
     readonly tiltAzimuth: ExpressionValue;
     /**
-     * 入口の形(ざぐり・皿もみ。FR-422、P5 タスク50 で穴の段へ畳んだ)。
-     * **省略すると欄そのものを作らない**ので、P3 からの穴と 1 ドットも違わない文書になる。
+     * 入口の形(ざぐり・皿もみ。FR-422、穴の段で聞く)。
+     * **省略すると欄そのものを作らない**ので、入口の無い穴と 1 ドットも違わない文書になる。
      */
     readonly entry?: HoleEntry;
     /**
-     * 円筒の側面の穴(EX05)の位置(高さ mm・角度 度)。**省略すると今までどおりの平面の穴**で、
+     * 円筒の側面の穴の位置(高さ mm・角度 度)。**省略すると今までどおりの平面の穴**で、
      * 文書も 1 ドットも違わない。入れたときは中心の点を使わない。
      */
     readonly cylindrical?: { readonly height: ExpressionValue; readonly angle: ExpressionValue };
@@ -466,7 +466,7 @@ export function commitHole(
 }
 
 /**
- * 穴の入口の広げ方を段の選択肢から組み立てる(FR-422、タスク50)。
+ * 穴の入口の広げ方を段の選択肢から組み立てる(FR-422)。
  *
  * **「広げない」と省略では欄そのものを作らない**(model の `holeEntryOf` が `plain` を
  * 補うので、同じ形に 2 通りの書き方ができないようにする)。知らない値は断る(NFR-UX-5)。
@@ -503,7 +503,7 @@ function holeEntryFromCommit(
 
 /**
  * ねじ穴を 1 つ作る(FR-406)。断り方は穴と同じ(`noFace` / `faceNotOnTarget` / `noCenterPoint`)。
- * ピッチと下穴径は規格表(`findMetricThread` + `threadMinorDiameter`、タスク11)から作り、
+ * ピッチと下穴径は規格表(`findMetricThread` + `threadMinorDiameter`)から作り、
  * `expressionValueFromNumber` で式にする。利用者はプロパティで上書きできる(FR-202)。
  */
 export function commitThreadHole(
@@ -516,7 +516,7 @@ export function commitThreadHole(
     readonly representation: ThreadRepresentation;
     readonly tiltAngle: ExpressionValue;
     readonly tiltAzimuth: ExpressionValue;
-    /** 円筒の側面のねじ穴(EX05)の位置(高さ mm・角度 度)。**省略すると今までどおりの平面のねじ穴**。 */
+    /** 円筒の側面のねじ穴の位置(高さ mm・角度 度)。**省略すると今までどおりの平面のねじ穴**。 */
     readonly cylindrical?: { readonly height: ExpressionValue; readonly angle: ExpressionValue };
     /** 点選択/円筒とは排他の、選択平面内の符号付き長さ。 */
     readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
@@ -537,7 +537,7 @@ export function commitThreadHole(
       return { ok: false, reasonKey: 'numericInput.error.planarHoleBasis' };
     }
   } else if (parameters.cylindrical !== undefined) {
-    // 穴と同じ断り(EX05)。円筒の面でない・点も選んでいるときは、黙って平面のねじ穴にしない。
+    // 穴と同じ断り。円筒の面でない・点も選んでいるときは、黙って平面のねじ穴にしない。
     if (!isCylinderFace(face.ref)) {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleNotCylinder' };
     }
@@ -600,7 +600,7 @@ export function commitThreadHole(
 
 /**
  * R 面取りを 1 つ作る(FR-407)。辺・頂点が 1 つも選ばれていなければ `noEdge`。
- * 頂点は集まる辺へ展開して保存する(§0.a-0.17)。展開した辺が複数の立体にまたがるとき
+ * 頂点は集まる辺へ展開して保存する。展開した辺が複数の立体にまたがるとき
  * (辺の選択どうしが違う立体に属するとき)は `noTargetBody` で断る。
  */
 export function commitFillet(
@@ -608,8 +608,8 @@ export function commitFillet(
   parameters: {
     readonly radius: ExpressionValue;
     /**
-     * 可変半径(FR-426、P5 タスク50 で R 面取りの段へ畳んだ)の終わり側の半径。
-     * **省略すると欄そのものを作らない**ので、P3 からの R 面取りと同じ文書になる。
+     * 可変半径(FR-426、R 面取りの段で聞く)の終わり側の半径。
+     * **省略すると欄そのものを作らない**ので、一定半径の R 面取りと同じ文書になる。
      */
     readonly radiusEnd?: ExpressionValue;
   },
@@ -639,7 +639,7 @@ export function commitFillet(
 /**
  * C 面取りを 1 つ作る(FR-408)。断り方は R 面取りと同じ(`noEdge` / `noTargetBody`)。
  * 基準面の入替え(`swapReferenceFace`)は作成時には聞かず、既定 false で作り
- * プロパティで編集する(§0.a-0.18)。
+ * プロパティで編集する。
  */
 export function commitChamfer(
   context: MachiningContext,
@@ -669,7 +669,7 @@ export function commitChamfer(
 
 /**
  * パターンの個数と「両側へ」の組み合わせを、確定前に断れるかだけ検査する
- * (NFR-UX-5「実行してから失敗させない」、計画書タスク29、§2.7 の過去の失敗
+ * (NFR-UX-5「実行してから失敗させない」、過去の失敗
  * 「両側へ+偶数個は成立しない」)。範囲・文言は `resolvePart.ts` の `resolvePatternCount` /
  * `resolvePatternTransforms` と揃える(model 側の判断を書き写すだけで、新しい規則は作らない。
  * `resolvePart` は解決のたびに同じ検査をもう一度行うので、ここでの事前検査を通っても
@@ -677,8 +677,8 @@ export function commitChamfer(
  */
 function invalidPatternPlacementReasonKey(placement: PatternPlacement): MessageKey | null {
   if (placement.kind === 'points') {
-    // 点集合(FR-425、P5 タスク43)は個数の欄を持たず、置き場所は点の数そのもの。
-    // 事前に断る規則はまだ無い(道具はタスク50、解決はタスク46)。
+    // 点集合(FR-425)は個数の欄を持たず、置き場所は点の数そのもの。
+    // 事前に断る規則はまだ無い。
     return null;
   }
   const count = placement.count.value;
@@ -692,11 +692,11 @@ function invalidPatternPlacementReasonKey(placement: PatternPlacement): MessageK
 }
 
 /**
- * パターンを 1 つ作る(FR-411、FR-412、§0.a-0.20)。繰り返す穴・ねじ穴が選ばれていなければ
+ * パターンを 1 つ作る(FR-411、FR-412)。繰り返す穴・ねじ穴が選ばれていなければ
  * `noPatternSource`、選ばれていても穴・ねじ穴でなければ `sourceNotHole`。
  *
  * 個数(`placement.count`)が 2〜`MAX_PATTERN_COUNT` の整数か、「両側へ」+偶数個でないかを
- * ここで先に検査して断る(計画書タスク29、NFR-UX-5)。`resolvePart`(§2.7)も解決のたびに
+ * ここで先に検査して断る(NFR-UX-5)。`resolvePart`も解決のたびに
  * 同じ検査を行うが、それは保存済みの文書(手入力やファイル読み込み)に対する事後の安全網で、
  * ここでの事前検査とは目的が異なるため両方に置く(重複ではない)。
  */
@@ -739,9 +739,9 @@ function planarInputFromCommit(commit: SolidInputCommit):
 }
 
 /**
- * その場入力の確定結果(タスク24 の `SolidInputCommit`)から加工を 1 つ作る。
+ * その場入力の確定結果(`SolidInputCommit`)から加工を 1 つ作る。
  * 押し出し・回転・縫合・ばねはここでは扱わない(それぞれ `solidCommands.ts` /
- * タスク25b の担当)。`SolidInputCommit.tool` は `SolidToolId`(加工でない道具も含む)を
+ * commitSpring の担当)。`SolidInputCommit.tool` は `SolidToolId`(加工でない道具も含む)を
  * 使っているため、switch を網羅させるために「まだ使えない」を返す枝を残す
  * (`solidCommands.ts` の既存の枝と同じ文言 `solidError.notYetAvailable`)。
  */
@@ -768,7 +768,7 @@ export function commitMachiningInput(
         ...(planar.value === undefined ? {} : { planar: planar.value }),
         tiltAngle: DEFAULT_TILT_ANGLE,
         tiltAzimuth: DEFAULT_TILT_AZIMUTH,
-        // 「円筒の側面に」を入れたときだけ、高さと角度で位置を決める(EX05)。
+        // 「円筒の側面に」を入れたときだけ、高さと角度で位置を決める。
         ...(commit.flags.cylinderFace === true
           ? {
               cylindrical: {
@@ -800,7 +800,7 @@ export function commitMachiningInput(
         representation: commit.flags.modeledThread === true ? 'modeled' : 'simplified',
         tiltAngle: DEFAULT_TILT_ANGLE,
         tiltAzimuth: DEFAULT_TILT_AZIMUTH,
-        // 「円筒の側面に」を入れたときだけ、高さと角度で位置を決める(EX05、穴と同じ)。
+        // 「円筒の側面に」を入れたときだけ、高さと角度で位置を決める(穴と同じ)。
         ...(commit.flags.cylinderFace === true
           ? {
               cylindrical: {
@@ -814,7 +814,7 @@ export function commitMachiningInput(
     case 'fillet':
       return commitFillet(context, {
         radius: commit.values.radius ?? DEFAULT_FILLET_RADIUS,
-        // 「終わりを別の半径に」を入れたときだけ終わりの半径を持たせる(タスク50)。
+        // 「終わりを別の半径に」を入れたときだけ終わりの半径を持たせる。
         ...(commit.flags.variableRadius === true
           ? { radiusEnd: commit.values.filletRadiusEnd ?? DEFAULT_FILLET_RADIUS_END }
           : {}),
@@ -899,14 +899,14 @@ export function commitMachiningInput(
     case 'cut':
       /*
         加工でない道具(押し出し・回転・縫合)とばねはここでは作らない
-        (それぞれ solidCommands.ts / タスク25b の担当)。**基本形状5種**(FR-429、
-        P5 タスク18)と**面をつなぐ・ロフト**(FR-430、FR-410、P5 タスク27)も加工ではない
-        (どちらも対象を消費しない「作る」フィーチャー、§0.a-0.19 / 0.27)ので
+        (それぞれ solidCommands.ts / commitSpring の担当)。**基本形状5種**(FR-429)
+        と**面をつなぐ・ロフト**(FR-430、FR-410)も加工ではない
+        (どちらも対象を消費しない「作る」フィーチャー)ので
         `primitiveCommands.ts` / `ruledCommands.ts` の担当で、振り分けは
         `solidCommands.ts` の `commitSolidInput` が行う。ここは switch を網羅するための枝。
 
-        P5 タスク49 が足した Should / Could 群 16 種(FR-401、FR-409、FR-415〜428、FR-432)も
-        同じ枝に入る。**コマンドの本体はタスク50**(切断はタスク27e の `cutCommands.ts`)で、
+        Should / Could 群 16 種(FR-401、FR-409、FR-415〜428、FR-432)も
+        同じ枝に入る。**コマンドの本体は確定側**(切断は `cutCommands.ts`)で、
         `solidCommands.ts` の `commitSolidInput` も同じ「まだ使えません」を返す。
       */
       return { ok: false, reasonKey: 'solidError.notYetAvailable' };
@@ -931,7 +931,7 @@ export function machiningToolReadiness(
         return { ready: false, reasonKey: face.reasonKey };
       }
       const centers = selectedCenterPoints(context.document, context.selection);
-      // 穴もねじ穴も円筒の面だけで押せる(EX05。その場入力で「円筒の側面に」と高さ・角度を入れる)。
+      // 穴もねじ穴も円筒の面だけで押せる(その場入力で「円筒の側面に」と高さ・角度を入れる)。
       // 平面だけでも入力を開ける。既定の点モードの確定には引き続き中心点が必要。
       if (isCylinderFace(face.ref)) {
         return centers.length === 0 ? READY : { ready: false, reasonKey: 'machiningError.cylinderHoleWithPoints' };

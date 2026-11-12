@@ -291,7 +291,7 @@ export function FaceToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 円(FR-326)。中心の点を添えた真円で表す(P4 タスク32)。
+ * 円(FR-326)。中心の点を添えた真円で表す。
  * 円弧(四分円+破線の半径)とも楕円(横長)とも絵柄が重ならないようにしてある。
  */
 export function CircleToolIcon(props: IconProps): React.JSX.Element {
@@ -304,7 +304,7 @@ export function CircleToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 2 点+半径の円弧(FR-313)。通したい 2 点を両端に置いた弧で表す(P4 タスク32)。
+ * 2 点+半径の円弧(FR-313)。通したい 2 点を両端に置いた弧で表す。
  * 線分(2 点を直線で結ぶ)と対になる絵柄で、結ぶ線が弧かどうかで見分ける。
  */
 export function TwoPointArcToolIcon(props: IconProps): React.JSX.Element {
@@ -318,7 +318,7 @@ export function TwoPointArcToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 3 点の円弧(FR-330、P4 タスク36、2026-09-04 追加要件)。2 点+半径の円弧と同じ弧の上に、
+ * 3 点の円弧(FR-330、2026-09-04 追加要件)。2 点+半径の円弧と同じ弧の上に、
  * 通過点(塗りつぶした小さな点、弧の上に乗る)を添えて「3 点をクリックしてかく」ことを表す。
  */
 export function ThreePointArcToolIcon(props: IconProps): React.JSX.Element {
@@ -333,8 +333,8 @@ export function ThreePointArcToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 矩形(FR-314)。長方形の輪郭で表す(P4 タスク4、統括の指示 2026-09-04)。
- * `FeatureTree.tsx` の KIND_ICONS がツリーの行の頭に、道具アイコンとしてタスク12 が使う。
+ * 矩形(FR-314)。長方形の輪郭で表す。
+ * `FeatureTree.tsx` の KIND_ICONS がツリーの行の頭に、道具アイコンとしてツールバーが使う。
  */
 export function RectangleToolIcon(props: IconProps): React.JSX.Element {
   return (
@@ -344,7 +344,7 @@ export function RectangleToolIcon(props: IconProps): React.JSX.Element {
   );
 }
 
-/** 正多角形(FR-315)。正六角形の輪郭で表す(P4 タスク4、統括の指示 2026-09-04)。 */
+/** 正多角形(FR-315)。正六角形の輪郭で表す。 */
 export function PolygonToolIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>
@@ -353,7 +353,7 @@ export function PolygonToolIcon(props: IconProps): React.JSX.Element {
   );
 }
 
-/** 長穴(FR-316)。両端が半円で丸まった横長の輪郭で表す(P4 タスク4、統括の指示 2026-09-04)。 */
+/** 長穴(FR-316)。両端が半円で丸まった横長の輪郭で表す。 */
 export function SlotToolIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>
@@ -362,7 +362,7 @@ export function SlotToolIcon(props: IconProps): React.JSX.Element {
   );
 }
 
-/** 楕円(FR-318)。横長の楕円の輪郭で表す(P4 タスク5)。 */
+/** 楕円(FR-318)。横長の楕円の輪郭で表す。 */
 export function EllipseToolIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>
@@ -371,7 +371,7 @@ export function EllipseToolIcon(props: IconProps): React.JSX.Element {
   );
 }
 
-/** スプライン(FR-317)。点の間をなめらかにうねる曲線で表す(P4 タスク5)。 */
+/** スプライン(FR-317)。点の間をなめらかにうねる曲線で表す。 */
 export function SplineToolIcon(props: IconProps): React.JSX.Element {
   return (
     <SvgIcon {...props}>
@@ -382,7 +382,7 @@ export function SplineToolIcon(props: IconProps): React.JSX.Element {
 
 /**
  * オフセット(FR-321)。もとの輪郭(実線)と、それをずらした複製(破線)を入れ子にして表す。
- * 「元は残り、ずらした複製ができる」ことが 1 枚で読める絵柄にしてある(P4 タスク32)。
+ * 「元は残り、ずらした複製ができる」ことが 1 枚で読める絵柄にしてある。
  */
 export function OffsetToolIcon(props: IconProps): React.JSX.Element {
   return (
@@ -395,7 +395,7 @@ export function OffsetToolIcon(props: IconProps): React.JSX.Element {
 
 /**
  * トリム(FR-322)。交わる線(縦)で区切られた横線の、**消える側を破線**にして表す。
- * 「交点で区切って、押した側が消える」ことが 1 枚で読める絵柄にしてある(P4 タスク22)。
+ * 「交点で区切って、押した側が消える」ことが 1 枚で読める絵柄にしてある。
  */
 export function TrimToolIcon(props: IconProps): React.JSX.Element {
   return (
@@ -408,8 +408,8 @@ export function TrimToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 延長(FR-322)。短い線(実線)が、破線でぶつかる相手の線(縦)まで伸びる絵柄
- * (P4 タスク22)。トリムの図柄と左右対称の作りにして、隣に並べても取り違えないようにした。
+ * 延長(FR-322)。短い線(実線)が、破線でぶつかる相手の線(縦)まで伸びる絵柄。
+ * トリムの図柄と左右対称の作りにして、隣に並べても取り違えないようにした。
  */
 export function ExtendToolIcon(props: IconProps): React.JSX.Element {
   return (
@@ -422,7 +422,7 @@ export function ExtendToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * スケッチの角の丸め(FR-323、P4 タスク23)。直角に交わる 2 本の実線の角が円弧で丸まり、
+ * スケッチの角の丸め(FR-323)。直角に交わる 2 本の実線の角が円弧で丸まり、
  * 落ちる角の先が破線で残る絵柄。立体の R 面取り(`FilletIcon`)とは別の図柄にして、
  * 「線の角」と「立体の辺」を取り違えないようにしてある。
  */
@@ -438,7 +438,7 @@ export function SketchFilletToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * スケッチの角の面取り(FR-323、P4 タスク23)。丸めの図柄と同じ形で、角を斜めの実線で
+ * スケッチの角の面取り(FR-323)。丸めの図柄と同じ形で、角を斜めの実線で
  * 切り落とす絵柄。並べて置いても円弧と斜線の違いで見分けられる。
  */
 export function SketchChamferToolIcon(props: IconProps): React.JSX.Element {
@@ -453,7 +453,7 @@ export function SketchChamferToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * ミラー(FR-324、P4 タスク24)。鏡の軸(縦の破線)をはさんで、実線の三角と破線の三角が
+ * ミラー(FR-324)。鏡の軸(縦の破線)をはさんで、実線の三角と破線の三角が
  * 向かい合う絵柄。「軸で折り返した複製ができる」ことが 1 枚で読める。
  */
 export function MirrorToolIcon(props: IconProps): React.JSX.Element {
@@ -467,7 +467,7 @@ export function MirrorToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 複写(FR-324、P4 タスク24)。実線の四角から矢印が伸び、ずれた先に破線の四角が並ぶ。
+ * 複写(FR-324)。実線の四角から矢印が伸び、ずれた先に破線の四角が並ぶ。
  * オフセットの図柄(入れ子の四角)とは重ならない絵柄にしてある。
  */
 export function CopyToolIcon(props: IconProps): React.JSX.Element {
@@ -481,7 +481,7 @@ export function CopyToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 直線配列(FR-324、P4 タスク24)。実線の縦棒 1 本と破線の縦棒 2 本を等間隔に並べ、
+ * 直線配列(FR-324)。実線の縦棒 1 本と破線の縦棒 2 本を等間隔に並べ、
  * 下に間隔の矢印を添える。加工の直線パターン(丸を並べる)とは絵柄を分けてある
  * (こちらはスケッチの線を並べる道具なので、並ぶものを棒にした)。
  */
@@ -498,7 +498,7 @@ export function LinearArrayToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 円形配列(FR-324、P4 タスク24)。破線の軌道の上に、実線の棒 1 本と破線の棒 2 本を
+ * 円形配列(FR-324)。破線の軌道の上に、実線の棒 1 本と破線の棒 2 本を
  * 120 度おきに置く。加工の円形パターン(丸を並べる)と同じ構図だが、並ぶものを棒にして
  * 「スケッチの線を並べる道具」だと分かるようにした。
  */
@@ -514,7 +514,7 @@ export function CircularArrayToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 投影(FR-325、P4 タスク27)。上にある立体の面(実線の四角)から、まっすぐ下の作図面へ
+ * 投影(FR-325)。上にある立体の面(実線の四角)から、まっすぐ下の作図面へ
  * 落ちる**破線の矢**と、落ちた先の輪郭(細い四角)を描く。「上の形が下の面へ写る」ことが
  * 1 枚で読める絵柄にしてある。
  */
@@ -530,7 +530,7 @@ export function ProjectToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 断面(交差、FR-325、P4 タスク27)。立体(縦長の四角)を横切る作図面を**太い横線**で表し、
+ * 断面(交差、FR-325)。立体(縦長の四角)を横切る作図面を**太い横線**で表し、
  * 交わってできる線(切り口)を線の上に置く。投影の図柄と作りを変えて、隣に並べても
  * 取り違えないようにした。
  */
@@ -545,7 +545,7 @@ export function SectionToolIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 畳んだ一覧「作図」のボタン(§0.a-0.14、P4 タスク32)。四角と楕円を重ねて
+ * 畳んだ一覧「作図」のボタン。四角と楕円を重ねて
  * 「いろいろな形をまとめてかく入口」を表す。中の道具を一度でも使うと、ボタンの図柄は
  * 最後に使った道具のものへ変わるので、これは何も使っていないときの顔になる。
  */
@@ -559,9 +559,9 @@ export function ShapeGroupIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 畳んだ一覧「編集」のボタン(§0.a-0.14、P4 タスク32)。はさみで「かいたものへ手を入れる」
+ * 畳んだ一覧「編集」のボタン。はさみで「かいたものへ手を入れる」
  * ことを表す。中身はオフセットから始まり、トリム・延長・フィレット・面取り・ミラー・複写が
- * 加わる(タスク22〜24)ので、特定の道具ではなく道具箱の顔にしてある。
+ * 加わるので、特定の道具ではなく道具箱の顔にしてある。
  */
 export function EditGroupIcon(props: IconProps): React.JSX.Element {
   return (
@@ -586,7 +586,7 @@ export function PlaneIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 基準ジオメトリの節(P4 タスク33、FR-328・FR-329)。原点から出る 2 本の軸と点で
+ * 基準ジオメトリの節(FR-328・FR-329)。原点から出る 2 本の軸と点で
  * 「形を作らない基準のあつまり」を表す。作図面(PlaneIcon)と見分けるため軸を主にする。
  */
 export function ReferenceGroupIcon(props: IconProps): React.JSX.Element {
@@ -752,7 +752,7 @@ export function SnapGridIcon(props: IconProps): React.JSX.Element {
 }
 
 /*
- * 向きの吸着(FR-110、P4b タスク16)の 4 つ。点に合わせる 5 つと同じ一覧に並ぶので、
+ * 向きの吸着(FR-110)の 4 つ。点に合わせる 5 つと同じ一覧に並ぶので、
  * 同じ 16×16 の枠と線の太さで描き、**破線(画面に出る案内線と同じ見た目)**で
  * 「線に沿って合わせる」ことを示す。点に合わせる 5 つが持っている四角は入れない
  * (合う先が 1 点ではなく向きなので、四角があると点に合うものと見分けが付かない)。
@@ -879,7 +879,7 @@ export function SavePointIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 名前を付けて保存(FR-812、P6 タスク31)。保存の板の右下に鉛筆を重ねて
+ * 名前を付けて保存(FR-812)。保存の板の右下に鉛筆を重ねて
  * 「保存するときに名前を書く」を表す。保存(`SaveIcon`)と見分けが付くよう、
  * 板そのものは右下を開けてある。
  */
@@ -894,7 +894,7 @@ export function SaveAsIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 「ファイル」の畳んだ一覧のボタンに出す図柄(P6 §0.57、タスク31)。
+ * 「ファイル」の畳んだ一覧のボタンに出す図柄。
  *
  * 新規・開く・保存の 3 つと同じ溝に並ぶので、書類に「ほかにもある」の 3 点を添えて
  * 「ファイルまわりのそのほかの操作」を表す。1 つの操作を指す図柄ではないため、
@@ -1008,7 +1008,7 @@ export function IntersectIcon(props: IconProps): React.JSX.Element {
 }
 
 /*
- * 加工の 6 つ(P3、§2.11)とばね。穴・ねじ穴は「板に丸い穴」、R/C 面取りは「角を、実線(加工後)と
+ * 加工の 6 つとばね。穴・ねじ穴は「板に丸い穴」、R/C 面取りは「角を、実線(加工後)と
  * 破線(加工前の角)で描き分け」、パターンは「もとの 1 つ(実線)と複製(破線)」で表す。
  * ばねは横倒しにしたコイルをそのまま描く。文字を出さないボタンで使うので、名前は
  * 読み上げ名(aria-label)とツールチップが担う(Toolbar.tsx、FR-904)。
@@ -1102,7 +1102,7 @@ export function SpringIcon(props: IconProps): React.JSX.Element {
 }
 
 /*
- * 基本形状5種(FR-429、P5 タスク18)。「作る」の一覧に並ぶ。
+ * 基本形状5種(FR-429)。「作る」の一覧に並ぶ。
  *
  * 5 つとも**その形そのもの**を正面から見た輪郭で描く(押し出し・回転のように操作を表す
  * 図柄ではなく、置かれる形が一目で分かるほうがよいため。NFR-UX-7)。塗りは他の立体の図柄と
@@ -1120,7 +1120,7 @@ export function SphereIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 球面上の点(FR-431、P5 タスク22)。球に緯線・経線の案内を 1 本ずつ引き、その交点に
+ * 球面上の点(FR-431)。球に緯線・経線の案内を 1 本ずつ引き、その交点に
  * 点を打った形。球の図柄(`SphereIcon`)とは「交点の丸」があるかどうかで見分けられる。
  */
 export function SphereGridPointIcon(props: IconProps): React.JSX.Element {
@@ -1183,10 +1183,10 @@ export function TorusIcon(props: IconProps): React.JSX.Element {
 }
 
 /*
- * 面をつなぐ(罫線面、FR-430)とロフト(FR-410)。P5 タスク27。「作る」の一覧に並ぶ。
+ * 面をつなぐ(罫線面、FR-430)とロフト(FR-410)。「作る」の一覧に並ぶ。
  *
  * どちらも「上下 2 つの輪郭を結ぶ」形だが、**結び方の違いがひと目で分かる**ように描き分ける。
- * 面をつなぐは横の線を**まっすぐ**に、ロフトは**ふくらませた曲線**にしてある(§0.a-0.25 の
+ * 面をつなぐは横の線を**まっすぐ**に、ロフトは**ふくらませた曲線**にしてある(2 つの
  * 違いは `ruled` の真偽 1 つだけなので、絵でもその 1 点だけを変える)。
  * 輪郭の楕円は上を小さく下を大きくして、「大きさの違う 2 つを結ぶ」ことを表す。
  */
@@ -1233,11 +1233,11 @@ export function GearIcon(props: IconProps): React.JSX.Element {
 }
 
 /* ===========================================================================
- * 拘束の図柄(FR-313、P4b タスク13)
+ * 拘束の図柄(FR-313)
  *
  * 14 種すべてに図柄を用意する。ビューポートの印は 1 文字の記号
  * (`constraintSummary.ts` の `symbol`)だが、ツールバーの畳んだ一覧と拘束の一覧は
- * ボタンの大きさの図柄が要るため(t12 の申し送り)。
+ * ボタンの大きさの図柄が要るため。
  *
  * 描き分けの決まり: **拘束の相手(線・円・点)を薄い線で描き、条件そのものを濃い印で
  * 重ねる**のではなく、16×16 の中で「何と何がどうなるか」だけを線で表す。細かい記号を
@@ -1404,9 +1404,9 @@ export function ConstraintGroupIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 「作る」の一覧そのものの図柄(P5 タスク51)。立体の輪郭に小さな「+」を添えて
+ * 「作る」の一覧そのものの図柄。立体の輪郭に小さな「+」を添えて
  * 「立体を新しく作る道具のまとまり」を表す。中身は押し出し・回転・縫合・ばねで始まり、
- * 基本形状・罫線・スイープ・ロフト(タスク18・49)が加わるので、特定の道具ではなく
+ * 基本形状・罫線・スイープ・ロフトが加わるので、特定の道具ではなく
  * 道具箱の顔にしてある(`ShapeGroupIcon` / `EditGroupIcon` と同じ考え方)。
  */
 export function CreateGroupIcon(props: IconProps): React.JSX.Element {
@@ -1419,7 +1419,7 @@ export function CreateGroupIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 「合わせる」の一覧そのものの図柄(P5 タスク51)。2 つの輪郭が重なるところを描いて
+ * 「合わせる」の一覧そのものの図柄。2 つの輪郭が重なるところを描いて
  * 「立体どうしを組み合わせる(和・差・積)」ことを表す。和・差・積の図柄(`UnionIcon` 等)は
  * 塗りで結果を描き分けているので、こちらは塗らずに「重なりそのもの」だけを描いて見分ける。
  */
@@ -1433,9 +1433,9 @@ export function CombineGroupIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 「加工」の一覧そのものの図柄(P5 タスク51)。角を落とした塊に穴を 1 つあけて
+ * 「加工」の一覧そのものの図柄。角を落とした塊に穴を 1 つあけて
  * 「できた立体へ手を入れる」ことを表す。中身は穴・ねじ穴・R面取り・C面取り・パターンで
- * 始まり、切断・シェル・リブ(タスク27f・49)が加わる。
+ * 始まり、切断・シェル・リブが加わる。
  */
 export function MachiningGroupIcon(props: IconProps): React.JSX.Element {
   return (
@@ -1447,7 +1447,7 @@ export function MachiningGroupIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 外観(色・材質、FR-1106〜1110、P5 タスク12)。角の丸い正方形を十字に4分割し、
+ * 外観(色・材質、FR-1106〜1110)。角の丸い正方形を十字に4分割し、
  * 1 区画だけを薄く塗って「色を選ぶ見本」を表す。
  */
 export function AppearanceIcon(props: IconProps): React.JSX.Element {
@@ -1461,7 +1461,7 @@ export function AppearanceIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 測る(FR-1101、FR-1102、P5 タスク32)。斜めに寝かせた物差しと、目盛りの短い線 3 本。
+ * 測る(FR-1101、FR-1102)。斜めに寝かせた物差しと、目盛りの短い線 3 本。
  * 世の中の CAD の「測定」と同じ見立てで、何をする道具かが図柄だけで読める(NFR-UX-7)。
  */
 export function MeasureIcon(props: IconProps): React.JSX.Element {
@@ -1474,7 +1474,7 @@ export function MeasureIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 図形の測定値(GR-30。Q1=A4)。測る(斜めの物差し)を土台に、右上へ名前の札を添えて
+ * 図形の測定値。測る(斜めの物差し)を土台に、右上へ名前の札を添えて
  * 「測って名前を付けて保存する」ことを図柄だけで読めるようにする(NFR-UX-7)。
  * 外観(枡)・測る(物差し)・点検(層+虫めがね)・下絵(作図面)と重ならない図柄にして、
  * 一覧の行を見分けられるようにする。
@@ -1490,7 +1490,7 @@ export function MathGeometryIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 3D プリントの点検(FR-815、P6 タスク46)。積み上がった層の線 3 本と、調べる虫めがね。
+ * 3D プリントの点検(FR-815)。積み上がった層の線 3 本と、調べる虫めがね。
  * 「積んで作るものを調べる」が図柄だけで読める(NFR-UX-7)。外観(枡)・測る(物差し)・
  * 下絵(作図面)と重ならない図柄にして、一覧の 4 行を見分けられるようにする。
  */
@@ -1505,12 +1505,12 @@ export function PrintCheckIcon(props: IconProps): React.JSX.Element {
 }
 
 /*
- * P5 の Should 群 12 種の図柄(FR-409、FR-417〜428、FR-432。タスク50、§2.15)。
+ * Should 群 12 種の図柄(FR-409、FR-417〜428、FR-432)。
  *
  * 約束は既存の図柄と同じで、枡は 16 × 16、線は共通の 1.5、塗りは半透明(0.35)。
  * 「作る」の一覧へ 3 つ(ミラー・スイープ・曲面)、「加工」の一覧へ 9 つ
  * (抜き勾配・くり抜き・リブ・エンボス・外ねじ・移動/回転・拡大縮小・点パターン・切断)。
- * **一覧の中に並ぶだけなのでツールバーの幅は 1 画素も増えない**(§0.a-0.80)。
+ * **一覧の中に並ぶだけなのでツールバーの幅は 1 画素も増えない**。
  */
 
 /** ミラー(FR-419)。鏡の線をはさんで、同じ形が向かい合う。 */
@@ -1655,7 +1655,7 @@ export function CutIcon(props: IconProps): React.JSX.Element {
 
 /**
  * 読み込んだ形(FR-802)。箱(受け皿)へ、上から矢印が入っていく——
- * ファイルから B-rep を取り込んだことを表す(統括の指示、P6 タスク20 の帰結)。
+ * ファイルから B-rep を取り込んだことを表す。
  */
 export function ImportedSolidIcon(props: IconProps): React.JSX.Element {
   return (
@@ -1669,7 +1669,7 @@ export function ImportedSolidIcon(props: IconProps): React.JSX.Element {
 
 /**
  * 読み込んだ三角形の形(FR-802)。1 枚の三角形を 4 枚へ分けた網の目——
- * B-rep にしない、三角形のままの形であることを表す(統括の指示、P6 タスク20 の帰結)。
+ * B-rep にしない、三角形のままの形であることを表す。
  */
 export function ImportedMeshIcon(props: IconProps): React.JSX.Element {
   return (
@@ -1682,7 +1682,7 @@ export function ImportedMeshIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 書き出す(FR-803、P6 タスク32)。箱から矢印が**外へ出ていく**——
+ * 書き出す(FR-803)。箱から矢印が**外へ出ていく**——
  * いまの立体をファイルへ渡すことを表す。読み込む図柄と矢印の向きだけが違う。
  */
 export function ExportIcon(props: IconProps): React.JSX.Element {
@@ -1696,7 +1696,7 @@ export function ExportIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 読み込む(FR-802、FR-813、P6 タスク32)。箱へ矢印が**入っていく**——
+ * 読み込む(FR-802、FR-813)。箱へ矢印が**入っていく**——
  * ほかのソフトのファイルを取り込むことを表す。履歴の段の図柄
  * (`ImportedSolidIcon`)と同じ向きにそろえてある。
  */
@@ -1711,7 +1711,7 @@ export function ImportIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * ひな形として保存(FR-814、P6 タスク33)。角を折った白紙に星を添えて
+ * ひな形として保存(FR-814)。角を折った白紙に星を添えて
  * 「これからの部品のもとになる 1 枚」を表す。中身の入っていない部品なので、
  * 白紙(`NewFileIcon`)を土台にしてある。
  */
@@ -1726,7 +1726,7 @@ export function TemplateSaveIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * ひな形から新規(FR-814、P6 タスク33)。ひな形の白紙から**もう 1 枚**が起きる形。
+ * ひな形から新規(FR-814)。ひな形の白紙から**もう 1 枚**が起きる形。
  * 「ひな形として保存」(`TemplateSaveIcon`)と土台の白紙をそろえてあるので、
  * 一覧の中で 2 つが対になって読める。
  */
@@ -1741,7 +1741,7 @@ export function TemplateNewIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 印刷(FR-810、P6 タスク33)。世の中の道具と同じ、紙の出るプリンタの形。
+ * 印刷(FR-810)。世の中の道具と同じ、紙の出るプリンタの形。
  * 上が送り込む紙、真ん中が本体、下が刷り上がった紙。
  */
 export function PrintIcon(props: IconProps): React.JSX.Element {
@@ -1755,7 +1755,7 @@ export function PrintIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
- * 最近使ったファイル(FR-807、P6 タスク33)。書類に時計の針を添えて
+ * 最近使ったファイル(FR-807)。書類に時計の針を添えて
  * 「いつ触ったか」を覚えているだけであることを表す(場所は覚えない、NFR-SE-1)。
  */
 export function RecentFileIcon(props: IconProps): React.JSX.Element {

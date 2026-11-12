@@ -1,10 +1,10 @@
 /**
- * 規格部品カタログの保存版(P7 §2.8.1)。寸法表を直すときはこの版を増やし、
+ * 規格部品カタログの保存版。寸法表を直すときはこの版を増やし、
  * 既に保存された版の表を残す。古いアセンブリの形と質量を黙って変えないためである。
  */
 export const STANDARD_CATALOG_REVISION = 'jis-2026-09-08-r1';
 
-/** 寸法表から普通の PartDocument を組み立てる台本の版(P7 §2.8.1)。 */
+/** 寸法表から普通の PartDocument を組み立てる台本の版。 */
 export const STANDARD_PART_GENERATOR_REVISION = '1';
 
 /**

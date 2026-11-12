@@ -2,7 +2,7 @@
  * スケッチの区画に並ぶ道具の表(平置きの 6 道具・作図面・作業平面・基準ジオメトリ・
  * 吸い付きの種類・数の欄の初期の段)と、その場で決まる小さな判断。
  *
- * 一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
+ * 一覧ごとに 1 ファイルへ分けた。
  */
 
 import type { WorkPlaneId } from '@pointercad/model';
@@ -74,12 +74,12 @@ export const TOOLS = [
 
 /*
  * ソリッドと加工の道具の表は `toolbarMenus.ts` の `CREATE_MENU_ITEMS` /
- * `COMBINE_MENU_ITEMS` / `MACHINING_MENU_ITEMS` へ移した(P5 タスク51、§0.a-0.51)。
+ * `COMBINE_MENU_ITEMS` / `MACHINING_MENU_ITEMS` へ移した。
  * 図柄 13 個を平置きしていた 2 つの区画を「作る」「合わせる」「加工」の畳んだ一覧
  * 3 つへまとめたので、区画ごとの表もそちらへ寄せてある(同じ表を 2 か所に書かない)。
  */
 
-/** 作図面(要件§4.3、§0.a-0.3)。既定は XY。 */
+/** 作図面(要件§4.3)。既定は XY。 */
 export const PLANES = [
   { id: 'xy', labelKey: 'toolbar.plane.xy', tooltipKey: 'toolbar.plane.xyTooltip' },
   { id: 'xz', labelKey: 'toolbar.plane.xz', tooltipKey: 'toolbar.plane.xzTooltip' },
@@ -91,9 +91,9 @@ export const PLANES = [
 }[];
 
 /**
- * 作業平面の作り方(FR-328、タスク13)。作図面の畳んだ一覧の中に「作業平面を作る…」として
- * 並べる。新しいトリガーを増やさないのは、ツールバーを 1440 画素で 1 段に保つため
- * (§0.a-0.14、§0.34)。区画そのものの再編と図柄はタスク32 が行う。
+ * 作業平面の作り方(FR-328)。作図面の畳んだ一覧の中に「作業平面を作る…」として
+ * 並べる。新しいトリガーを増やさないのは、ツールバーを 1440 画素で 1 段に保つため。
+ * 区画そのものの組み方と図柄は別に持つ。
  */
 export const PLANE_TOOLS = [
   {
@@ -122,7 +122,7 @@ export const PLANE_TOOLS = [
   readonly tooltipKey: MessageKey;
 }[];
 
-/** 基準軸・基準点・座標系(FR-329、タスク13)。同じ畳んだ一覧の下の段に並べる。 */
+/** 基準軸・基準点・座標系(FR-329)。同じ畳んだ一覧の下の段に並べる。 */
 export const REFERENCE_TOOLS = [
   {
     id: 'referenceAxis',
@@ -146,8 +146,8 @@ export const REFERENCE_TOOLS = [
 }[];
 
 /**
- * 吸着の種別(FR-107、§0.a-0.10)。P2 では 1 つのボタンと畳んだ一覧へまとめ、
- * ツールバーを 1440 画素で 1 段に保つ(§0.a-0.15)。畳んでいる間も
+ * 吸着の種別(FR-107)。1 つのボタンと畳んだ一覧へまとめ、
+ * ツールバーを 1440 画素で 1 段に保つ。畳んでいる間も
  * 「いくつ効いているか」をボタンの上に出し、名前はツールチップで読める。
  */
 export const SNAP_KINDS_UI = [
@@ -182,8 +182,8 @@ export const SNAP_KINDS_UI = [
     Icon: SnapGridIcon,
   },
   /*
-   * 向きの吸着(FR-110、P4b タスク16)。**同じ一覧に並べる**のは、利用者から見れば
-   * 「どこに吸い付くか」の設定が 1 か所であるべきだから(§0.13 の決定、NFR-UX-1)。
+   * 向きの吸着(FR-110)。**同じ一覧に並べる**のは、利用者から見れば
+   * 「どこに吸い付くか」の設定が 1 か所であるべきだから(NFR-UX-1)。
    * 並びは `SNAP_PRIORITY` の末尾 4 つと同じ順にして、優先順位が見た目にも表れるようにする。
    */
   {
@@ -213,7 +213,7 @@ export const SNAP_KINDS_UI = [
 ] as const satisfies readonly (ButtonEntry & { readonly kind: SnapKind })[];
 
 /**
- * 道具を選んだ直後に開く入力の段階(§2.9「出るきっかけ①ツールを選ぶ→すぐ出る」)。
+ * 道具を選んだ直後に開く入力の段階(「ツールを選ぶ→すぐ出る」)。
  * 選択と面は数値ではなくクリックで進めるので開かない。
  */
 export const INITIAL_STEPS = {

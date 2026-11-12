@@ -1,4 +1,4 @@
-/** Test-only EX18 route-c inputs. Never import from product code or construct from oracle expectations. */
+/** Test-only route-c inputs for direct editing. Never import from product code or construct from oracle expectations. */
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';

@@ -2,7 +2,7 @@ import { createConfiguredNumericInput as createNumericInput } from '../../settin
 /**
  * スケッチの道具を押したときの配線(FR-313〜318、FR-322〜326、FR-328〜330)。
  *
- * 一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
+ * 一覧ごとに 1 ファイルへ分けた。
  */
 
 import { t } from '../../i18n/t.js';
@@ -51,7 +51,7 @@ export function activateTool(id: SketchToolId, pressed: boolean): void {
 }
 
 /**
- * P4 の新しい図形(FR-314〜318、FR-326)の道具を選ぶ(タスク12)。
+ * 図形の道具(FR-314〜318、FR-326)の道具を選ぶ。
  *
  * 最初に開く段は `SHAPE_TOOL_STEPS`(numericInput.ts)が正本で、ここへ表を作り直さない。
  * 同じ道具をもう一度押したら選択へ戻すのは `activateTool` と同じ約束にする。
@@ -72,7 +72,7 @@ export function activateShapeTool(id: ShapeToolId | 'text', pressed: boolean): v
 }
 
 /**
- * 整形系の道具を開くときに、その道具だけが要る見込みを渡す(タスク21・24)。
+ * 整形系の道具を開くときに、その道具だけが要る見込みを渡す。
  *
  * オフセットは「選んだ輪郭が閉じているか」(側の見出しの切り替え)、ミラーは「鏡に何が
  * 使えるか」(選択肢の並び)、複写は「3D スケッチか」(欄が 2 つか 3 つか)。どれも
@@ -93,7 +93,7 @@ function editInputOptionsFor(id: EditToolId): NumericInputOptions {
       };
     case 'copy':
       return { freeSketch: isFreeWorkPlaneId(store.workPlaneId) };
-    // 角の丸め・面取り(タスク23)は、開く前に決めておく見込みを持たない
+    // 角の丸め・面取りは、開く前に決めておく見込みを持たない
     // (半径・距離の欄も面取りの決め方も、対象の角によらず同じ)。
     case 'linearArray':
     case 'circularArray':
@@ -104,24 +104,24 @@ function editInputOptionsFor(id: EditToolId): NumericInputOptions {
 }
 
 /**
- * 整形系の道具(オフセット・トリム・延長・ミラー・複写・配列複写、FR-321・322・324、
- * タスク21・22・24)を選ぶ。
+ * 整形系の道具(オフセット・トリム・延長・ミラー・複写・配列複写、FR-321・322・324)
+ * を選ぶ。
  *
  * **オフセット・複製系**は対象をあらかじめ選択道具(既存の `select`)で選んでおく約束
- * (§2.5「選んでから操作」)なので、押した時点の選択で押せる条件(`editToolReadiness`)を
- * 確かめ、足りなければ道具だけ切り替えて理由を帯へ出す(§0.a-0.6 の穴・ばね等と同じ作り、
+ * (「選んでから操作」)なので、押した時点の選択で押せる条件(`editToolReadiness`)を
+ * 確かめ、足りなければ道具だけ切り替えて理由を帯へ出す(穴・ばね等と同じ作り、
  * NFR-UX-5「実行してから失敗させない」)。押せれば、道具ごとの見込み(`editInputOptionsFor`)を
  * 渡してその場入力を開く。
  *
  * **ミラーだけ**は選択のほかに「鏡になるもの」が要るので、それも先に確かめる。任意の作業平面の
  * 上で線分も選んでいないときは鏡にできるものが 1 つも無いので、開かずに理由を出す。
  *
- * **トリム・延長**は数値を 1 つも聞かず、選択も使わない(§0.a-0.26 の利用者の決定)。
+ * **トリム・延長**は数値を 1 つも聞かず、選択も使わない(利用者の決定)。
  * 道具にしたらビューポートへ焦点を戻すだけにして、あとはビューポートの上で
  * 「消したい部分/伸ばしたい端の近く」を押してもらう(`attachSketchInteraction.ts`)。
  * 焦点を戻すのは、Esc(道具を終える)がその場で効くようにするため(NFR-UX-7)。
  *
- * **投影・断面**(FR-325、タスク27)も数値を聞かず、押した瞬間に決まる。こちらは
+ * **投影・断面**(FR-325)も数値を聞かず、押した瞬間に決まる。こちらは
  * どちらの順でも成立させる(NFR-UX-1)ので、押した時点ですでに面・辺・立体が選ばれて
  * いればその場でまとめて取り込み、選ばれていなければ道具のままビューポートで押してもらう。
  */
@@ -137,7 +137,7 @@ export function activateEditTool(id: EditMenuToolId, pressed: boolean): void {
   }
   /*
     投影・断面は選ぶものの種類(`selectionKind`)を切り替える道具で、`setActiveTool` は
-    種類が変わると選択を空にする(§0.a-0.6)。「選んでから道具」を成立させるため、
+    種類が変わると選択を空にする。「選んでから道具」を成立させるため、
     道具を切り替える**前**にいまの選択から対象を拾っておく。
   */
   const picked = isPickEditTool(id)
@@ -159,7 +159,7 @@ export function activateEditTool(id: EditMenuToolId, pressed: boolean): void {
   }
   if (isCornerEditTool(id)) {
     /*
-      角の丸め・面取り(FR-323、タスク23)。**どちらの順でも成立させる**(NFR-UX-1)。
+      角の丸め・面取り(FR-323)。**どちらの順でも成立させる**(NFR-UX-1)。
       すでに角を作る 2 本が選ばれていれば、その場で半径/距離の欄を開く(「選んでから道具」)。
       選ばれていなければ道具にしてビューポートへ焦点を戻し、角へマウスを乗せて予告を見ながら
       押してもらう(「道具を選んでから対象」)。選ばれていないことは間違いではないので、
@@ -192,7 +192,7 @@ export function activateEditTool(id: EditMenuToolId, pressed: boolean): void {
 }
 
 /**
- * 基準ジオメトリ(FR-328、FR-329)の道具を選ぶ(タスク13)。
+ * 基準ジオメトリ(FR-328、FR-329)の道具を選ぶ。
  *
  * 最初に開く段は `REFERENCE_TOOL_STEPS`(numericInput.ts)が正本。軸の選択肢に並べる
  * 基準軸の一覧は、開くときの文書から引いて渡す(段をまたいで持ち越されるので 1 度でよい)。

@@ -15,10 +15,10 @@ import { isValidShape, measureVolume } from './solidMesh.js';
 import { countSolidShapes } from './solidTopology.js';
 
 /**
- * 平らな面を、その面の縁の直線の辺(蝶番)のまわりに回す(EX-18 W16 R1)。
+ * 平らな面を、その面の縁の直線の辺(蝶番)のまわりに回す。
  *
  * **有限の面を剛体のまま回す操作ではない。** 面の支持平面を蝶番の直線のまわりに回し、
- * 隣の 4 枚の平面は動かさずに、その交線で面を切り直す(W16 のプローブで成立した手順:
+ * 隣の 4 枚の平面は動かさずに、その交線で面を切り直す(試作で成立した手順:
  * 立体全体の深い複製へ `BRepOffsetAPI_DraftAngle` を掛ける。中立面 = 蝶番を共有するもう 1 枚の面、
  * 抜き方向 = 中立面の外向き法線)。蝶番の 2 頂点と、回す面に触れない頂点は動かない。
  *
@@ -41,14 +41,14 @@ import { countSolidShapes } from './solidTopology.js';
  *   - 回した面の法線が n'、他の 5 面の法線が元のまま。
  *   - 体積 = L·W·(H + W·s·tanθ/2)(相対 1e-9。L = 蝶番の長さ、H = 回す面から反対の面までの高さ)。
  *
- * **所有:** `solid`・`planarFace`・`hingeEdge` は借用で、解放も変更もしない(rules/06 §10.16・§10.424。
+ * **所有:** `solid`・`planarFace`・`hingeEdge` は借用で、解放も変更もしない(
  * builder へ渡すのは深い複製だけ)。読む前に、面と辺が本当に `solid` に属すること、辺が面の縁に
  * あることを確かめる(同じ形の別の立体の面・辺は断る)。ここで作る wrapper(複製・一覧・
  * 読み取りの値・DraftAngle と結果)はすべて createAllocations の控えへ積み、断ったとき・
  * 例外のときはその場で、成功したときは結果の delete()(2 回目は何もしない)で逆順に解放する。
  * 使う戻り値はすべて embind の複製(`Shape()`・`ModifiedShape()`・`FindKey()`・`Face_1`/`Edge_1`/
  * `Vertex_1`・`Plane()`・`Axis()`・`Direction()`・`Value()`・`Line()`・`BRep_Tool.Pnt`)で、
- * Handle.get() の借用は無い(rules/06 §10.13。同じ呼び出しは editSolidFace・moveSolidHole・makeDraft・
+ * Handle.get() の借用は無い(同じ呼び出しは editSolidFace・moveSolidHole・makeDraft・
  * subShapes で実測済み)。保存された参照(SubShapeQuery)からの解決はこの入口の外(K1)で行う。
  */
 

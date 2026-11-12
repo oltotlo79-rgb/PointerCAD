@@ -1,12 +1,12 @@
 import type { ExportMesh } from './exportMesh.js';
 
 /**
- * STL の書き出し(計画書 P6 §2.4、タスク12。FR-803)。
+ * STL の書き出し(FR-803)。
  *
- * ## `StlAPI.Write` を使わない理由(統括の決定 2026-09-06。計画書 §0.a-0.14 を改める)
+ * ## `StlAPI.Write` を使わない理由
  *
- * 計画書 §0.a-0.14 は `StlAPI.Write(shape, file, ascii)` を推奨していた。だが**書き出し用の
- * 三角形は 1 本の経路(タスク11 の `buildExportMesh`)から全形式(STL / OBJ / glTF / 3MF)へ
+ * 当初の案は `StlAPI.Write(shape, file, ascii)` を推奨していた。だが**書き出し用の
+ * 三角形は 1 本の経路(`buildExportMesh`)から全形式(STL / OBJ / glTF / 3MF)へ
  * 配る**と決めたので、この関数は**形ではなく三角形の網を受け取り、バイト列を JS で組む**。
  * 理由は 4 つ。
  *
@@ -17,22 +17,22 @@ import type { ExportMesh } from './exportMesh.js';
  * 3. **極の面積 0 の三角形を書き出し側で落とす**(下の `forEachExportTriangle`)決定を、
  *    STL / OBJ / glTF / 3MF で同じ 1 か所に実装できる。`StlAPI.Write` に任せると STL だけ
  *    振る舞いが違う。
- * 4. 計画書 §2.17-3 の上限(10 万三角形で 2 秒)の導出そのものが、
+ * 4. 性能の上限(10 万三角形で 2 秒)の導出そのものが、
  *    「`DataView.setFloat32` は 1 回 10ns 程度」——**自前で組む前提**で書かれている。
  *
  * `oc`(OpenCascadeInstance)は要らない。**この関数は純関数**で、同じ `ExportMesh` からは
- * 必ず同じバイト列が出る(§0.a-0.62 の決定性)。仮想ファイル(§2.2)も経由しない。
+ * 必ず同じバイト列が出る(決定性)。仮想ファイルも経由しない。
  *
- * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1)と、
+ * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984)と、
  * 採用した closed 版での確認(2026-10-24):** 旧レジストリ版では `oc.StlAPI` は実行時に関数で、
  * `StlAPI.Write` も関数として存在したが、**closed 版 OCCT
  * (`vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677`)には `oc.StlAPI` も
  * `oc.StlAPI_Writer` も無い**(実行時に `undefined`)。この実装は元から使わず、書き出しは
- * 自前の純関数で行う(上の 4 つの理由。統括の決定 2026-09-06 と 2026-10-24)ので、影響は無い。
+ * 自前の純関数で行う(上の 4 つの理由)ので、影響は無い。
  * `.test.ts` の 1 件目は、採用した共通の三角形から ASCII とバイナリの STL を書き出せることを
  * 確かめる。
  *
- * ## バイナリ STL の構造(§2.4)
+ * ## バイナリ STL の構造
  *
  * ```
  * 80 バイト   見出し(任意の文字列)
@@ -43,7 +43,7 @@ import type { ExportMesh } from './exportMesh.js';
  *     2 バイト  属性(0)
  * ```
  *
- * ## 決定性のための決め(§0.a-0.62)
+ * ## 決定性のための決め
  *
  * - 見出しの 80 バイトは `PointerCAD` + 空白詰めで**固定**。**時刻もファイル名も入れない。**
  *   STEP はヘッダに OCCT が時刻を書くので比較から 1 行落とすほかないが(`writeStep.ts`)、
@@ -92,7 +92,7 @@ const SPACE_BYTE = 0x20;
  * 書き出す 1 枚の三角形。
  *
  * **`forEachExportTriangle` は同じ 1 つの入れ物を書き換えて渡す。** 10 万枚ぶんの
- * 小さな配列を作ると GC が走って §2.17-3 の 2 秒に響くためで、**受け取った側が
+ * 小さな配列を作ると GC が走って上限の 2 秒に響くためで、**受け取った側が
  * 持ち帰ってはいけない**(次の三角形で中身が変わる)。書き出しはその場でバイトへ
  * 落とすだけなので、これで困らない。
  */
@@ -160,7 +160,7 @@ export function forEachExportTriangle(
 
 /** 書き出しの指定。 */
 export interface StlWriteOptions {
-  /** `true` なら ASCII、`false` ならバイナリ(§2.4)。 */
+  /** `true` なら ASCII、`false` ならバイナリ。 */
   readonly ascii: boolean;
   /**
    * `solid` の行に書く名前(既定 `PointerCAD`)。
@@ -178,7 +178,7 @@ export interface StlWriteOptions {
  * **落とした枚数を `writeStl` の戻りに入れたのは、数え直しを避けるため。** 別関数で
  * 数えると三角形をもう一度全部たどることになり(10 万枚で無駄が二重になる)、
  * しかも「書いたバイト列」と「数えた枚数」が別々に作られるので食い違いうる。
- * 利用者への知らせ(タスク16)は「面積 0 の三角形を n 枚除きました」の 1 行なので、
+ * 利用者への知らせは「面積 0 の三角形を n 枚除きました」の 1 行なので、
  * 書いたその場の数をそのまま渡すのが正しい。
  */
 export interface StlWriteResult {
@@ -226,7 +226,7 @@ function writeBinaryStl(
       view.setFloat32(offset + index * 4, vertices[index], true);
     }
     offset += 36;
-    // 属性の 2 バイトは 0。色を入れる拡張が各社ばらばらにあるが、STL に色は書かない(§0.15)。
+    // 属性の 2 バイトは 0。色を入れる拡張が各社ばらばらにあるが、STL に色は書かない。
     view.setUint16(offset, 0, true);
     offset += 2;
   });
@@ -254,22 +254,22 @@ function writeAsciiStl(meshes: readonly ExportMesh[], name: string): Uint8Array 
 }
 
 /**
- * 三角形の網の並びを STL のバイト列にする(§2.4、FR-803)。
+ * 三角形の網の並びを STL のバイト列にする(FR-803)。
  *
  * ```ts
  * const mesh = buildExportMesh(oc, shape, 0.1, { angularDeflectionRad: 0.2 });
  * const { bytes, droppedTriangleCount } = writeStl([mesh], { ascii: false });
  * ```
  *
- * **複数のボディは 1 つの STL に連ねる**(§2.4。STL は三角形の網を 1 つしか持てない)。
- * 計画書は `makeCompound` でまとめてから 1 つの形として渡す手順だったが、三角形を
+ * **複数のボディは 1 つの STL に連ねる**(STL は三角形の網を 1 つしか持てない)。
+ * 当初の案は `makeCompound` でまとめてから 1 つの形として渡す手順だったが、三角形を
  * 受け取る形にしたので**並びをそのまま順につなぐ**だけで足りる(コンパウンドを作る
  * ぶんの複製と解放が消える)。
  *
  * **空の並びは断らずに「三角形 0 枚」を返す**(バイナリなら 84 バイト、ASCII なら
- * `solid` と `endsolid` の 2 行)。§2.4 の断りの表にある「書き出せる立体がありません」は
+ * `solid` と `endsolid` の 2 行)。断りの表にある「書き出せる立体がありません」は
  * `packages/model` 側が立体を選ぶ段で出すもので、そこを通った先の kernel が同じ判定を
- * 重ねると、断りの文言の持ち主が 2 か所になる(P5 §0.a-0.83 と同じ理由)。
+ * 重ねると、断りの文言の持ち主が 2 か所になる。
  * 0 枚の STL は仕様どおり組み立てられるので、ここで例外にする根拠が無い。
  */
 export function writeStl(

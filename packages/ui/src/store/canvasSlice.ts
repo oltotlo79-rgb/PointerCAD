@@ -1,6 +1,6 @@
 /**
  * 下絵のスライス(FR-332。画像・寸法合わせ・画素の大きさ)。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import { expressionValueFromNumber } from '@pointercad/expression';
@@ -23,10 +23,10 @@ import {
 import type { AppState } from './appState.js';
 
 /**
- * 下絵の 2 点の寸法合わせ(FR-332。P6 タスク39、計画書 §0.a-0.46、§2.14)の途中の状態。
+ * 下絵の 2 点の寸法合わせ(FR-332)の途中の状態。
  *
  * **形は変わらない。** 画像の上で 2 点を指し、その実寸(mm、式)を打つと、下絵の幅・高さ
- * だけが変わる(§2.14 の式)。**縮尺は保存しない**(幅 ÷ 画素の幅でいつでも出せる、rules/04)。
+ * だけが変わる。**縮尺は保存しない**(幅 ÷ 画素の幅でいつでも出せる、rules/04)。
  */
 export interface CanvasScaleState {
   /** 合わせる下絵の id(`SketchCanvas.id`)。 */
@@ -55,11 +55,11 @@ export interface CanvasRectificationState {
 /** 下絵のスライスが持つ欄と操作。 */
 export interface CanvasSlice {
   /**
-   * 下絵の画像そのもののバイト列(FR-332、P6 §0.a-0.45、タスク39)。鍵は
+   * 下絵の画像そのもののバイト列(FR-332)。鍵は
    * `SketchCanvas.imageId` で、`.pcad` の ZIP のエントリ `canvases/<imageId>.png` と 1 対 1。
    *
    * **文書(`document.canvases`)には id と寸法しか入らない**ので、数 MB のバイト列は
-   * ここで持つ(§0.9 と同じ流儀。JSON へ入れると読み書きが桁違いに遅くなる)。
+   * ここで持つ(JSON へ入れると読み書きが桁違いに遅くなる)。
    * 保存するときは現在文書が参照する画像を `packages/io` の添付として書き出す。
    * 開くときは衝突する画像IDを正規化し、履歴の画像も含む表を `setCanvasImages` へ渡す。
    * **不変**にしてあるので、足す・消すたびに新しい `Map` を作る(rules/04)。
@@ -69,7 +69,7 @@ export interface CanvasSlice {
    */
   readonly canvases: ReadonlyMap<string, Uint8Array>;
   /**
-   * 2 点の寸法合わせ(FR-332、§2.14)の途中の状態。`null` のあいだは浮かぶ欄も出ない。
+   * 2 点の寸法合わせ(FR-332)の途中の状態。`null` のあいだは浮かぶ欄も出ない。
    *
    * 点は**作図面の上の (u, v)**(押した場所を作図面へ落としたもの)で持ち、2 つそろったら
    * 実寸を打つ欄が出る。**再計算を起こさない**(文書に触らないので `affectsShape` の
@@ -91,7 +91,7 @@ export interface CanvasSlice {
    * 下絵の画像の**画素の大きさ**(鍵は `SketchCanvas.imageId`)。復号できた画像だけが載る。
    *
    * 文書には保存しない(`rules/04`。復号した画像がいつでも答える)が、2 点の寸法合わせ
-   * (§2.14 の `幅 = 縮尺 × 画素の幅`)とプロパティの表示に要るので、復号したときに
+   * (`幅 = 縮尺 × 画素の幅`)とプロパティの表示に要るので、復号したときに
    * ビューポートがここへ控える。**画像 1 枚につき数 2 つだけ**なので記憶は増えない。
    */
   readonly canvasPixelSizes: ReadonlyMap<string, CanvasPixelSize>;
@@ -100,11 +100,11 @@ export interface CanvasSlice {
   readonly setCanvasImageLoad: (imageId: string, owner: CanvasImageOwner, load: CanvasImageLoad | null) => void;
   readonly retryCanvasImage: (canvasId: string, documentId?: string, imageId?: string) => void;
   /**
-   * 下絵を 1 枚足す(FR-332、タスク39)。id は `nextCanvasId`、画像の鍵は `imageId` で、
+   * 下絵を 1 枚足す(FR-332)。id は `nextCanvasId`、画像の鍵は `imageId` で、
    * バイト列は添付の表(`canvases`)へ入れる。**再計算は走らない**(`affectsShape` が偽)。
    */
   readonly addCanvas: (canvas: SketchCanvas, bytes: Uint8Array) => void;
-  /** 下絵の入切(FR-332)。**再計算は走らない**(§2.14 の表)。 */
+  /** 下絵の入切(FR-332)。**再計算は走らない**。 */
   readonly setCanvasVisible: (id: string, visible: boolean) => void;
   /** 下絵の不透明度(0〜1)。同じく再計算は走らない。 */
   readonly setCanvasOpacity: (id: string, opacity: number) => void;
@@ -113,10 +113,10 @@ export interface CanvasSlice {
   /** 正規化済みの画像表で入れ直す。呼出側が既存履歴の画像も保持する。 */
   readonly setCanvasImages: (images: ReadonlyMap<string, Uint8Array>) => void;
   /**
-   * 開いた `.pcad` の添付から、読み込んだ形と三角形を入れ直す(FR-802、タスク32)。
+   * 開いた `.pcad` の添付から、読み込んだ形と三角形を入れ直す(FR-802)。
    * **丸ごと差し替える**(開くのは文書ごとの操作なので、前の文書の添付は残さない)。
    */
-  /** 2 点の寸法合わせを始める(§2.14)。もう一度呼ぶと点を捨ててやり直す。 */
+  /** 2 点の寸法合わせを始める。もう一度呼ぶと点を捨ててやり直す。 */
   readonly startCanvasScale: (canvasId: string, documentId?: string, imageId?: string) => void;
   /** 寸法合わせの点を 1 つ足す(作図面の上の (u, v))。3 点目は 1 点目を捨てて詰める。 */
   readonly addCanvasScalePoint: (point: readonly [number, number]) => void;
@@ -134,7 +134,7 @@ export interface CanvasSlice {
   /** 不要・差替え・復号待ちの画像の寸法を取り下げる。 */
   readonly removeCanvasPixelSize: (imageId: string) => void;
   /**
-   * 指した 2 点が `realLengthMm` になるよう下絵の幅・高さを合わせる(§2.14)。
+   * 指した 2 点が `realLengthMm` になるよう下絵の幅・高さを合わせる。
    * 合わせられたら `true`。断ったときは `false` を返し、理由の日本語を帯へ出す
    * (文言の正本は `@pointercad/model` の `sketch/canvas.ts`)。
    */
@@ -173,7 +173,7 @@ export const createCanvasSlice: StateCreator<
       return;
     }
     set({ canvases: new Map([...state.canvases, [canvas.imageId, bytes]]), canvasMessage: null });
-    // 文書へは id と寸法だけを入れる(バイト列は上の表。§0.a-0.45)。
+    // 文書へは id と寸法だけを入れる(バイト列は上の表)。
     state.applyDocument({ ...state.document, canvases: [...state.document.canvases, canvas] });
   },
   setCanvasVisible: (id, visible) => {

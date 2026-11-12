@@ -12,15 +12,15 @@ import { toSubShapeQuery } from './subShapeQuery.js';
 import { toSolidStepRequest } from './solidRequests.js';
 
 /* ------------------------------------------------------------------ *
- * 外観の面の照合(FR-1106、P5 §2.2.3、タスク4)
+ * 外観の面の照合(FR-1106)
  * ------------------------------------------------------------------ */
 
 /**
- * 外観を割り当てた面を、カーネルへの照合の依頼へ詰め替える(§2.2.3)。
+ * 外観を割り当てた面を、カーネルへの照合の依頼へ詰め替える。
  *
  * **依頼が 1 件も無ければ空配列を返す。** カーネルは空なら照合の段そのものを飛ばし、
  * 物差し(境界箱の対角長)を測るための OCCT の呼び出しも 1 回も行わない
- * (§0.a-0.54「外観の追加で所要を増やさない」)。
+ * (「外観の追加で所要を増やさない」)。
  *
  * 次の 2 つは依頼に乗せずに落とす。落とした割り当ては `toAppearanceMatches` が
  * `faceIndex: null`(= 見つからない)で必ず補うので、件数は依頼元と食い違わない。
@@ -50,7 +50,7 @@ export function toAppearanceQueries(
 }
 
 /**
- * 照合の結果を model の言葉へ詰め替える(§2.2.3)。
+ * 照合の結果を model の言葉へ詰め替える。
  *
  * **戻りは依頼(`requests`)と同じ並び・同じ件数**で、依頼に乗せなかったもの・
  * カーネルが返さなかったものは `faceIndex: null` で補う。呼び出し側(ui)は
@@ -58,7 +58,7 @@ export function toAppearanceQueries(
  *
  * ボディの id は**文書側の値をそのまま返す**。カーネルは面の属するボディが
  * 見つからないときに空文字を返す約束だが、見つかったときの値は「段の id = ボディの id」
- * (§0.a-0.5)より必ず `request.bodyFeatureId` と同じなので、空文字を外へ出す意味が無い。
+ * より必ず `request.bodyFeatureId` と同じなので、空文字を外へ出す意味が無い。
  */
 export function toAppearanceMatches(
   requests: readonly AppearanceFaceRequest[],
@@ -78,15 +78,15 @@ export function toAppearanceMatches(
 /**
  * 立体の再計算の依頼を 1 つ組み立てる(Worker 版と直結版で同じものを使う)。
  *
- * ## 段ごとの三角形分割の粗さ(§2.13、§0.a-0.54)について
+ * ## 段ごとの三角形分割の粗さについて
  *
  * `SolidStepRequest.tessellation` にはここでは何も入れず、**粗さの規則はカーネルに
  * 1 か所だけ置いたままにする**(`recomputeSolids.ts` の `isRelaxableSweepStep`。
- * ばねと実らせんのねじ穴を 0.15 / 0.7 へ緩める、P3 仕上げ (a) の実測)。
+ * ばねと実らせんのねじ穴を 0.15 / 0.7 へ緩める、実測による)。
  * 同じ規則を model にも書くと 2 か所になり、片方だけ直したときに食い違うため。
  * カーネルは「段ごとの指定 > 全体の指定 > 段の種類の既定」の順で選ぶので、ここで
  * 値を添えるとカーネルの既定の方が負けてしまう。基本形状(球・トーラス)を緩める案は
- * **効き目が無いことがタスク14 で実測された**(球 r10 は 0.8 を添えても 978 枚のまま)
+ * **効き目が無いことが実測された**(球 r10 は 0.8 を添えても 978 枚のまま)
  * ので入れない。利用者が粗さを選べるようにする段になったら、その値だけをここへ通す。
  */
 export function toSolidRecomputeRequest(
@@ -283,8 +283,8 @@ const MISSING_BODY_MESSAGE = 'カーネルから立体が返りませんでし�
 
 /**
  * カーネルの結果を model のボディへ詰め替える。妥当性の判定は SolidBody.isValid の注釈のとおり。
- * `faces` / `edges` / `vertices` / `threadMarks` は kernel の一覧と欄の名前・形が同じなので
- * (計画書 §2.8)、詰め替えは配列をそのまま渡すだけで済む(model 独自の型として持つのは
+ * `faces` / `edges` / `vertices` / `threadMarks` は kernel の一覧と欄の名前・形が同じなので、
+ * 詰め替えは配列をそのまま渡すだけで済む(model 独自の型として持つのは
  * `SolidFaceEntry` 等の型そのものを kernel から再輸出しないためで、値の変形は要らない)。
  */
 function toSolidBody(mesh: SolidBodyMesh): SolidBody {
@@ -314,7 +314,7 @@ function toSolidBody(mesh: SolidBodyMesh): SolidBody {
     // 表面積は依頼が求めたときだけカーネルが測る(SolidRecomputeOptions.measureAreas)。
     // 測っていなければ欄ごと空のまま渡し、0 と偽らない。
     area: mesh.area,
-    // 形の種類はカーネルの必須の欄(§0.a-0.77、タスク42b)なので、そのまま写す。
+    // 形の種類はカーネルの必須の欄なので、そのまま写す。
     // 判定は kernel の `hasSolid` そのままで、体積では決めない(体積 8000 の開いた殻がある)。
     bodyKind: mesh.bodyKind,
     isValid: mesh.triangleCount > 0 && Number.isFinite(mesh.volume) && (mesh.bodyKind === 'shell' || mesh.volume > 0),

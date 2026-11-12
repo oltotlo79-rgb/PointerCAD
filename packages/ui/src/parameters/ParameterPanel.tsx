@@ -1,7 +1,7 @@
 import { UnresolvedMathPanel } from './UnresolvedMathPanel.js';
 /**
- * パラメータ表(名前を付けた数値)のパネル(要件 FR-207・FR-201・FR-502、
- * 計画書 docs/plans/P4b-スケッチの仕上げ.md §0.a-0.15・タスク11)。
+ * パラメータ表(名前を付けた数値)のパネル(要件 FR-207・
+ * FR-201・FR-502)。
  *
  * プロパティ区画の「パラメータ」タブの中身。**区画は増やさない**(rules/04-設計の規律.md)。
  *
@@ -11,12 +11,12 @@ import { UnresolvedMathPanel } from './UnresolvedMathPanel.js';
  * 同じにして、利用者が同じ形の欄として見分けられるようにする(NFR-UX-1)。
  *
  * **確定は Enter か、欄の外を押したとき(blur)だけ。** 1 文字打つごとに確定すると
- * `applyParameters`(部品文書を隅々まで歩く)が毎打鍵で走る(タスク10 の落とし穴)。
+ * `applyParameters`(部品文書を隅々まで歩く)が毎打鍵で走る。
  * 打っている途中は下書き(表示専用の一時状態)に置き、確定のときに 1 度だけ通す。
  *
  * 文書がまるごと差し替わった(開く・新規・復元・Undo / Redo)ときは、打ちかけの
- * 下書きを捨てて保存済みの値を出す(`fieldDraft.ts`、docs/報告記録.md 2026-09-04
- * 14:05 の 9b。同じ不具合をこの表でも起こさないため)。
+ * 下書きを捨てて保存済みの値を出す(`fieldDraft.ts`。
+ * 同じ不具合をこの表でも起こさないため)。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -175,7 +175,7 @@ export function ParameterPanel(): React.JSX.Element {
     }
   }, [renameBusy, document]);
   /*
-   * 表示の単位と「長さでないパラメータの名前」(FR-811、P6 タスク3b、§0.a-0.63)。
+   * 表示の単位と「長さでないパラメータの名前」(FR-811)。
    *
    * **この表の行が長さかどうかは、名前がこの集合にあるかで決める。** 行そのものは
    * `unit`(mm / 度 / なし)を持っているが、その `unit` から「長さか」を決める規則は
@@ -255,7 +255,7 @@ export function ParameterPanel(): React.JSX.Element {
     busy: (busy) => setCsvOperation(busy ? 'export' : null), issues: setCsvIssues, status: setCsvStatus,
   });
 
-  /** 打ちかけを覚える。まだ文書は変えない(確定は Enter / blur、タスク10 の落とし穴)。 */
+  /** 打ちかけを覚える。まだ文書は変えない(確定は Enter / blur)。 */
   const setDraft = (next: ParameterDraft | null): void => {
     setDraftState({ draft: next, seenVersion: documentVersion });
     persistParameterPanelGuideDraft(next, document);
@@ -290,13 +290,13 @@ export function ParameterPanel(): React.JSX.Element {
     draft !== null && draft.name === row.name && draft.field === field ? draft : null;
 
   /**
-   * その行が**長さ**のパラメータか(タスク3b)。長さの行だけが、表示が inch のときに
+   * その行が**長さ**のパラメータか。長さの行だけが、表示が inch のときに
    * 単位の無い入力を `(…)in` で包まれる。角度と無次元の行は影響を受けない(FR-205)。
    */
   const isLengthRow = (row: ParameterRow): boolean => !nonLengthVariables.has(row.name);
 
   /**
-   * 打った文字を、**保存する式の文字列**へ直す(§0.a-0.63)。長さの行のときだけ
+   * 打った文字を、**保存する式の文字列**へ直す。長さの行のときだけ
    * 表示の単位を被せる。判定も綴りも `applyDisplayUnit`(model の `parseDisplayInput`)
    * の 1 か所にある。
    */
@@ -368,13 +368,13 @@ export function ParameterPanel(): React.JSX.Element {
       case 'source':
         /*
          * 式は**文字列のまま**入れる(FR-202)。読めない式でも断らず、値は前のまま
-         * 据え置く(§2.6 の③)。読めたかどうかは `applyParameters` が判断し、読めなければ
+         * 据え置く。読めたかどうかは `applyParameters` が判断し、読めなければ
          * `analysis.failures` に理由が入って欄の下へ赤で出る(FR-207、NFR-RE-1)。
          */
         run(
           commitReplaceParameter(document, row.name, {
             value: {
-              // 表示が inch なら、単位の無い入力を `(…)in` で包んで保存する(タスク3b)。
+              // 表示が inch なら、単位の無い入力を `(…)in` で包んで保存する。
               source: parameterExpression(row, text),
               value: row.value,
               display: String(row.value),
@@ -400,7 +400,7 @@ export function ParameterPanel(): React.JSX.Element {
       return current.message;
     }
     if (row.geometry?.pending) return t('mathGeometry.status.pending');
-    // 値だけを表示の単位で出す(タスク3b)。式そのものは書き換えない(FR-202)。
+    // 値だけを表示の単位で出す。式そのものは書き換えない(FR-202)。
     const unit = isLengthRow(row) ? 'mm' : 'degree';
     if (current === null) {
       return (
@@ -550,7 +550,7 @@ export function ParameterPanel(): React.JSX.Element {
               title={t('parameterPanel.removeTooltip')}
               aria-label={t('parameterPanel.removeTooltip')}
               onClick={() => {
-                // 参照が残っている名前は断られる(件数入りの文が名前の欄の下へ出る、タスク10)。
+                // 参照が残っている名前は断られる(件数入りの文が名前の欄の下へ出る)。
                 run(commitRemoveParameter(document, row.name), rowRejection(row));
               }}
             >

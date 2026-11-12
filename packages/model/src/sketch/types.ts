@@ -1,5 +1,5 @@
 /**
- * スケッチの保存形式と、解決済みの形の型(計画書 docs/plans/P1-式とスケッチ.md §2.6)。
+ * スケッチの保存形式と、解決済みの形の型。
  *
  * 保存するのはフィーチャー履歴だけで、解決済みの座標やメッシュは保存しない
  * (要件§8、rules/04-設計の規律.md「導出できるものは保存しない」)。
@@ -23,12 +23,12 @@ import type { Vec3 } from './vec3.js';
  * `previous` は保存しても履歴上の位置から導けるため、解決のときに
  * 「そのフィーチャーより前で最後に作られた点」として求める。
  *
- * **新しい基準の足し方(P4 §0.a-0.6):** この union に 1 種類足し、
+ * **新しい基準の足し方:** この union に 1 種類足し、
  * `resolveCoordinate.ts` の `resolvePointReference` に 1 case、
  * `geometry/planeSpec.ts` の `pointReferenceKeyText` に 1 case、
  * `io` の `POINT_REFERENCE_KINDS` / `serializePointReference` / `readPointReference` に
- * 1 か所ずつ足すだけで済む形を保つ。**P5 の球面上の点(FR-431)はこの形で
- * `sphereGrid` を足した**(P5 タスク19。P4 では球というフィーチャーがまだ無かったので
+ * 1 か所ずつ足すだけで済む形を保つ。**球面上の点(FR-431)はこの形で
+ * `sphereGrid` を足した**(以前は球というフィーチャーがまだ無かったので
  * 型に入れなかった。解決できない種類を先に型へ持ち込むと、意味を持たない分岐が残るため)。
  */
 export type PointReference =
@@ -42,22 +42,22 @@ export type PointReference =
       readonly vertex: 'start' | 'end' | 'center';
     }
   /**
-   * 立体の部分形状(頂点・辺・面)の位置(FR-330、P4 §2.4・§2.6、タスク10)。
+   * 立体の部分形状(頂点・辺・面)の位置(FR-330)。
    * 3D スケッチで「立体の頂点を結んで線を引く / 面を張る」ための基準。
    * 位置は頂点ならその点、辺なら中点、面なら重心(`SubShapeFingerprint.position` の約束)。
    * 上流の立体が変われば指紋で選び直す(`SketchResolveOptions.subShape`)。
    */
   | { readonly kind: 'subShape'; readonly ref: SubShapeRef }
   /**
-   * 球面上の点(FR-431、P5 計画書 §2.8.1、タスク19)。3D スケッチの点を球の表面に置く。
+   * 球面上の点(FR-431)。3D スケッチの点を球の表面に置く。
    *
    * **座標を保存せず「どの球の緯度・経度か」だけを保存する。** 球の半径・中心を変えれば
    * 点も球面に留まったまま動き、そこから引いた線・面も一緒に動く(要件 FR-431 の太字部分)。
    * 導出できるものを保存しない約束(要件§8)とも一致する。
    *
    * **軸の規約**: 北極は世界の +Z、経度 0 は世界の +X で、+X から +Y へ回る向きが正。
-   * 位置は `C + r(cos φ cos λ, cos φ sin λ, sin φ)`(計画書 §2.8.1 の式そのまま)で、
-   * 基本形状の向き(`PrimitiveFeature.axis`)は見ない。グリッドを描く側(タスク21)と
+   * 位置は `C + r(cos φ cos λ, cos φ sin λ, sin φ)`で、
+   * 基本形状の向き(`PrimitiveFeature.axis`)は見ない。グリッドを描く側と
    * 同じ規約でないと、画面の交点と保存した緯度・経度がずれるため。
    */
   | {
@@ -127,19 +127,19 @@ export interface SketchLineFeature extends SketchFeatureBase {
   readonly kind: 'line';
   readonly from: CoordinateInput;
   readonly to: CoordinateInput;
-  /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
+  /** 構築線(FR-320)。境界に選べない扱いにする。既定 false。 */
   readonly construction: boolean;
 }
 
 /**
- * 3D スケッチ(`planeId` が `FREE_WORK_PLANE_ID`)の円弧の向き(FR-330、§2.4、タスク10)。
+ * 3D スケッチ(`planeId` が `FREE_WORK_PLANE_ID`)の円弧の向き(FR-330)。
  *
  * 作図面が無いと法線・第1軸を借りる先が無いので、その円弧専用の向きをここで持つ。
  * どちらも「原点から見た向きベクトル」として解く(絶対座標なら成分そのもの)。
  * `xAxis` は法線に垂直な成分だけを使うので、多少ずれていてもよい(法線と平行なときだけ断る)。
  *
- * 3 点(始点・終点・通過点)から円弧を作る指定方法は、UI 側(タスク14)が中心・半径・
- * 角度とこの向きを計算してから保存する(2 点+半径の円弧を UI で中心へ直す §0.a-0.18 と
+ * 3 点(始点・終点・通過点)から円弧を作る指定方法は、UI 側が中心・半径・
+ * 角度とこの向きを計算してから保存する(2 点+半径の円弧を UI で中心へ直すのと
  * 同じ考え方。model の保存形は「中心+半径+角度+向き」の 1 通りに揃える)。
  */
 export interface FreeArcOrientation {
@@ -154,21 +154,21 @@ export interface SketchArcFeature extends SketchFeatureBase {
   readonly center: CoordinateInput;
   readonly radius: ExpressionValue;
   readonly startAngle: ExpressionValue;
-  /** 開始角との差が ±360 なら全周の円になる(FR-305、§0.a-0.4)。 */
+  /** 開始角との差が ±360 なら全周の円になる(FR-305)。 */
   readonly endAngle: ExpressionValue;
-  /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
+  /** 構築線(FR-320)。境界に選べない扱いにする。既定 false。 */
   readonly construction: boolean;
   /**
-   * 3D スケッチ専用の向き(FR-330、タスク10)。`planeId` が作図面を指すときは
+   * 3D スケッチ専用の向き(FR-330)。`planeId` が作図面を指すときは
    * 作図面の法線・第1軸を使うので不要(無視する)。3D スケッチで無ければ `missingBase`。
    */
   readonly freeOrientation?: FreeArcOrientation;
 }
 
 /**
- * 点列の並べ方(FR-327、タスク6)。直線状(既存)に加え、円周上・格子状を持てる。
- * P3 の `PatternPlacement`(直線/円形の discriminated union)と同じ形を流用する
- * (§0.a-0.9)。
+ * 点列の並べ方(FR-327)。直線状(既存)に加え、円周上・格子状を持てる。
+ * パターンの `PatternPlacement`(直線/円形の discriminated union)と
+ * 同じ形を流用する。
  */
 export type PointArrayLayout =
   | {
@@ -199,8 +199,8 @@ export type PointArrayLayout =
 
 /**
  * 点列(FR-308、FR-327)。並べ方は `layout` の種類で分岐する(既存の直線状は
- * `layout.kind === 'linear'` へ包み直した、P3までのデータとは保存形が変わる破壊的変更
- * (§0.a-0.24。`.pcad` の版アップとタスク31 の変換で吸収する)。
+ * `layout.kind === 'linear'` へ包み直した、以前のデータとは保存形が変わる破壊的変更
+ * (`.pcad` の版アップと版4への変換で吸収する)。
  */
 export interface SketchPointArrayFeature extends SketchFeatureBase {
   readonly kind: 'pointArray';
@@ -209,14 +209,14 @@ export interface SketchPointArrayFeature extends SketchFeatureBase {
 
 /**
  * 対角の 2 点で指定する矩形(FR-314)。1 フィーチャーが 4 本の線分を生む
- * (`resolveSketch.ts` の `curvesByFeature`、§0.a-0.8)。中心+幅+高さの指定は
+ * (`resolveSketch.ts` の `curvesByFeature`)。中心+幅+高さの指定は
  * UI 側が corner1/corner2 の対角座標へ変換してから保存する(保存形はこの 2 点に統一する)。
  */
 export interface SketchRectangleFeature extends SketchFeatureBase {
   readonly kind: 'rectangle';
   readonly corner1: CoordinateInput;
   readonly corner2: CoordinateInput;
-  /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
+  /** 構築線(FR-320)。境界に選べない扱いにする。既定 false。 */
   readonly construction: boolean;
 }
 
@@ -265,7 +265,7 @@ export interface SketchEllipseFeature extends SketchFeatureBase {
   readonly rotation: ExpressionValue;
   readonly startAngle: ExpressionValue;
   readonly endAngle: ExpressionValue;
-  /** 構築線(FR-320)。P4 タスク6 で境界に選べない扱いにする。既定 false。 */
+  /** 構築線(FR-320)。境界に選べない扱いにする。既定 false。 */
   readonly construction: boolean;
 }
 
@@ -275,7 +275,7 @@ export interface SketchEllipseFeature extends SketchFeatureBase {
  * `mode` が `interpolate` なら与えた点を必ず通り、`control` なら与えた点が曲線を引っぱる。
  * `closed` なら最後の点から最初の点へ戻ってつながる(**閉じるための重複点は入れない**)。
  * 点の数は開いた曲線で 2 個以上、閉じた曲線で 3 個以上、いずれも
- * `splineMath.ts` の `MAX_SPLINE_POINTS` 個以下(統括の決定 §0.a-0.17)。
+ * `splineMath.ts` の `MAX_SPLINE_POINTS` 個以下。
  */
 export interface SketchSplineFeature extends SketchFeatureBase {
   readonly kind: 'spline';
@@ -287,20 +287,20 @@ export interface SketchSplineFeature extends SketchFeatureBase {
 }
 
 /** 面の境界に使う要素の参照。点列の中の 1 点、または複数曲線フィーチャーの n 番目の曲線を
- * 指すときだけ index を付ける(§0.a-0.8)。省略時は「そのフィーチャーの全周・全体」を表す。 */
+ * 指すときだけ index を付ける。省略時は「そのフィーチャーの全周・全体」を表す。 */
 export interface SketchElementRef {
   readonly featureId: string;
   readonly index?: number;
 }
 
 /**
- * オフセットをどちら側へずらすか(FR-321、タスク15)。
+ * オフセットをどちら側へずらすか(FR-321)。
  *
  * - **閉じた輪郭**: `outside` が外へ広がる側、`inside` が内へ縮む側。
  *   輪郭を描いた向き(時計回り/反時計回り)にはよらない
  *   (`offsetMath.ts` 冒頭の実測を参照)。
  * - **開いた曲線**: 内も外も無いので、**進む向きから見た左が `outside`、右が `inside`**。
- *   画面には「左/右」と出す(道具の側の言葉づかいはタスク21)。
+ *   画面には「左/右」と出す(道具の側の言葉づかいは ui)。
  */
 export type OffsetSide = 'outside' | 'inside';
 
@@ -311,20 +311,20 @@ export type OffsetSide = 'outside' | 'inside';
 export type OffsetCornerKind = 'round' | 'sharp';
 
 /**
- * オフセット(FR-321、§2.5、タスク15)。選んだ線・円弧・つながった輪郭を、距離ぶん
- * 平行にずらした**新しい**曲線列を作る。元の要素は変えない(複製系、§0.a-0.10)。
+ * オフセット(FR-321)。選んだ線・円弧・つながった輪郭を、距離ぶん
+ * 平行にずらした**新しい**曲線列を作る。元の要素は変えない(複製系)。
  *
  * **曲線の形はここでは決まらない。** ずらした形は OCCT に解いてもらうので、解決
  * (`resolveSketch`)は「材料がそろっているか」だけを確かめ、まだ形が無いものを
  * `ResolvedSketch.pendingOffsets` へ積む。実際の形はカーネルの往復を持つ
- * `recomputeSketch` が入れる(§2.9、`offsetMath.ts` の注釈)。
+ * `recomputeSketch` が入れる(`offsetMath.ts` の注釈)。
  */
 export interface SketchOffsetFeature extends SketchFeatureBase {
   readonly kind: 'offset';
   /**
    * オフセット元。並んだ順につながった 1 本の輪郭として扱う。
    * 矩形などの複数曲線フィーチャーは、`index` を省けば全周、指定すれば n 番目の曲線
-   * (面の境界と同じ約束、§0.a-0.8)。
+   * (面の境界と同じ約束)。
    */
   readonly source: readonly SketchElementRef[];
   /** 距離の**大きさ**(mm、0 以上)。どちら側かは `side` が決める(NFR-UX-4)。 */
@@ -336,12 +336,12 @@ export interface SketchOffsetFeature extends SketchFeatureBase {
 }
 
 /**
- * 鏡像(FR-324)の鏡にするもの(タスク20)。
+ * 鏡像(FR-324)の鏡にするもの。
  *
- * **計画書のタスク20 は `planeId: WorkPlaneId | null` と `axis: SketchElementRef | null` の
+ * **当初の案は `planeId: WorkPlaneId | null` と `axis: SketchElementRef | null` の
  * 2 欄で「排他」としていたが、判別子つきの union にした。** 2 欄だと「両方 null」
  * 「両方指定」という型の上では作れてしまう組み合わせを解決のたびに実行時に断る羽目になり、
- * UI 側(タスク24)も作れない組み合わせを気にしながら組み立てることになるため。
+ * UI 側も作れない組み合わせを気にしながら組み立てることになるため。
  * 型で排他にすれば分岐は 1 つずつで済む。
  */
 export type MirrorBasis =
@@ -364,14 +364,14 @@ export type MirrorBasis =
     };
 
 /**
- * 複製のしかた(FR-324、タスク20)。鏡像・移動・直線状の配列・円形の配列の 4 通り。
+ * 複製のしかた(FR-324)。鏡像・移動・直線状の配列・円形の配列の 4 通り。
  *
  * 個数(`count`)は**もとを含めた総数**で、複製されるのは `count − 1` 個
- * (P3 のパターン `resolvePatternTransforms` と同じ規則)。鏡像と移動は必ず 1 個。
+ * (立体のパターン `resolvePatternTransforms` と同じ規則)。鏡像と移動は必ず 1 個。
  *
  * `delta` / `direction` は**原点から見た向きベクトル**として解く(絶対座標なら成分そのもの、
  * 極なら「距離と角度」で向きを決められる)。`SketchArcFeature.freeOrientation` と同じ約束で、
- * 3D スケッチでも同じ形のまま使えるようにするため(計画書は `direction: PointReference` と
+ * 3D スケッチでも同じ形のまま使えるようにするため(当初の案は `direction: PointReference` と
  * していたが、点の参照では向きを表せないので座標指定に寄せた)。
  */
 export type CopyPlacement =
@@ -396,8 +396,8 @@ export type CopyPlacement =
     };
 
 /**
- * ミラー・複写・配列複写(FR-324、§2.5、タスク20)。**元の要素は変えず、複製を履歴へ積む**
- * (複製系、§0.a-0.10)。
+ * ミラー・複写・配列複写(FR-324)。**元の要素は変えず、複製を履歴へ積む**
+ * (複製系)。
  *
  * **複製は「参照で追従する 1 フィーチャー」**にしてある。`source` は要素の id だけを持ち、
  * 解決のたびに元の形を写し直すので、**元を動かせば複製も動く**(FR-311・FR-502 の
@@ -417,7 +417,7 @@ export interface SketchCopyFeature extends SketchFeatureBase {
   readonly kind: 'copy';
   /**
    * 複製するもと。矩形などの複数曲線フィーチャーは `index` を省けば全体、
-   * 指定すれば n 番目だけ(§0.a-0.8)。**点列も `index` を省けば全部の点**
+   * 指定すれば n 番目だけ。**点列も `index` を省けば全部の点**
    * (面の境界は「省略なら先頭の 1 点」だが、複製では全部を写すほうが素直なため)。
    */
   readonly source: readonly SketchElementRef[];
@@ -428,23 +428,23 @@ export interface SketchCopyFeature extends SketchFeatureBase {
 
 export interface SketchFaceFeature extends SketchFeatureBase {
   readonly kind: 'face';
-  /** 順序が意味を持つ。点だけ、または線・円弧だけを並べる(§0.a-0.13)。 */
+  /** 順序が意味を持つ。点だけ、または線・円弧だけを並べる。 */
   readonly boundary: readonly SketchElementRef[];
   /** 塗り色(FR-310)。"#rrggbb"。 */
   readonly color: string;
 }
 
 /**
- * 投影(FR-325、§2.7、タスク25)。既存の立体の**面の外周**または**辺**を、
+ * 投影(FR-325)。既存の立体の**面の外周**または**辺**を、
  * このフィーチャーの作図面(`planeId`)へ直交投影した曲線を作る。
  *
  * **曲線の形はここでは決まらない**(オフセットと同じ、`SketchOffsetFeature` の注釈)。
  * 立体の B-rep はカーネル(Worker)の中にしか無いので、解決(`resolveSketch`)は
  * 「作図面と参照がそろっているか」だけを確かめ、まだ形が無いものを
  * `ResolvedSketch.pendingProjections` へ積む。実際の形を入れるのは
- * カーネルの往復を持つ `recomputePart`(タスク25)である。
+ * カーネルの往復を持つ `recomputePart`である。
  *
- * **参照できるのは「このスケッチを使う立体より前に作られた立体」だけ**(§0.a-0.11)。
+ * **参照できるのは「このスケッチを使う立体より前に作られた立体」だけ**。
  * 後から作られる立体を指すと `resolvePart` が `missingBody` で断る(循環を作らないため)。
  *
  * 結果は `curvesByFeature` へ線分・円弧・スプライン(点列)として積まれ、
@@ -459,7 +459,7 @@ export interface SketchProjectedCurveFeature extends SketchFeatureBase {
 }
 
 /**
- * 交差(FR-325、§2.7、タスク25)。既存の立体と、このフィーチャーの作図面が
+ * 交差(FR-325)。既存の立体と、このフィーチャーの作図面が
  * 交わってできる線(断面の輪郭)を取り込む。
  *
  * 解決の流れと参照できる範囲は `SketchProjectedCurveFeature` と同じ。
@@ -467,7 +467,7 @@ export interface SketchProjectedCurveFeature extends SketchFeatureBase {
  */
 export interface SketchPlaneSectionFeature extends SketchFeatureBase {
   readonly kind: 'planeSection';
-  /** 断面を取る立体を作ったフィーチャーの id(= ボディの id、§0.a-0.5)。 */
+  /** 断面を取る立体を作ったフィーチャーの id(= ボディの id)。 */
   readonly targetFeatureId: string;
   readonly construction: boolean;
 }
@@ -496,13 +496,13 @@ export type SketchFeature =
   | SketchProjectedCurveFeature
   | SketchPlaneSectionFeature;
 
-/** スケッチ文書。変更のたびに新しい配列を作る(P2 の Undo の土台、FR-505)。 */
+/** スケッチ文書。変更のたびに新しい配列を作る(Undo の土台、FR-505)。 */
 export interface SketchDocument {
   readonly id: string;
   readonly name: string;
   readonly features: readonly SketchFeature[];
   /**
-   * 拘束(FR-313、P4b §0.a-0.5、タスク4)。**順序を持たない**ので履歴(`features`)とは
+   * 拘束(FR-313)。**順序を持たない**ので履歴(`features`)とは
    * 別の配列にする。中身の型は `constraints/types.ts`。
    *
    * **欄が無いことを許す**のは、拘束の欄を持たない版(`.pcad` のスキーマ版 4 まで)の
@@ -543,7 +543,7 @@ export interface ResolvedArc {
 
 /**
  * 解決済みの楕円・楕円弧(FR-318)。`ResolvedArc` を「半径 2 つ」へ広げず新しい種類にしたのは、
- * 円弧の利用箇所がどれも「半径は 1 つ」を前提にしているため(§2.3 の判断)。
+ * 円弧の利用箇所がどれも「半径は 1 つ」を前提にしているため。
  *
  * **`startAngle` / `endAngle` は径数方程式のパラメータ角(ラジアン)**で、中心から見た
  * 幾何の方位角ではない(両者が一致するのは 0°・90°・180°・270° の 4 点だけ)。曲線上の点は
@@ -605,34 +605,34 @@ export type SketchErrorCode =
   | 'degenerate'
   | 'notClosed'
   | 'notPlanar'
-  /** 面の境界に選んだ点が一直線に並んでいて平面が定まらない(§2.3、P1 の残件)。 */
+  /** 面の境界に選んだ点が一直線に並んでいて平面が定まらない。 */
   | 'collinear'
   | 'tooFewPoints'
   | 'mixedBoundary'
-  /** 構築線(FR-320)を面の境界に選んだ(タスク6)。 */
+  /** 構築線(FR-320)を面の境界に選んだ。 */
   | 'constructionElement'
   /**
-   * 立体の部分形状(頂点・辺・面)の参照を選び直せなかった(FR-330、タスク10)。
+   * 立体の部分形状(頂点・辺・面)の参照を選び直せなかった(FR-330)。
    * 上流の立体が大きく変わって指紋に合う形が無くなった場合で、
    * `missingBase`(スケッチの中の基準が無い)とは原因が違うので分けて持つ。
    */
   | 'missingSubShape'
   /**
-   * 拘束が同時に成り立たない、または同じ条件が重なっている(FR-313、P4b タスク4・7)。
+   * 拘束が同時に成り立たない、または同じ条件が重なっている(FR-313)。
    * 「水平と垂直を同じ線分に付けた」「長さ 10 と長さ 12 を同じ線分に付けた」など。
    * 形は最後に解けた状態のまま描き、理由だけを出す(FR-504、NFR-RE-1)。
    */
   | 'constraintConflict'
   /**
    * 拘束を付けられる要素が多すぎる(変数が `MAX_CONSTRAINT_VARIABLES` を超えた)。
-   * 解かずに断り、形は拘束を無視した状態のまま描く(P4b §2.2、NFR-PF-2 を守るため)。
+   * 解かずに断り、形は拘束を無視した状態のまま描く(NFR-PF-2 を守るため)。
    */
   | 'constraintTooMany'
   /**
-   * 拘束を効かせられなかった(FR-313、P4b タスク8)。`constraintConflict` が
+   * 拘束を効かせられなかった(FR-313)。`constraintConflict` が
    * 「どの拘束どうしが噛み合っていないか」を指せるのに対し、こちらは**原因の拘束を
    * 指せない**場合に使う。3 つある。
-   * ①3D スケッチ(作図面が無い)に拘束が付いている(§0.a-0.3)。
+   * ①3D スケッチ(作図面が無い)に拘束が付いている。
    * ②反復を使い切っても残差が残り、原因の拘束を絞り込めなかった。
    * ③その拘束が指していた要素が消えた・縮退していて式を作れなかった。
    * どれも形は描いたまま理由だけを出す(FR-504、NFR-RE-1)。
@@ -648,7 +648,7 @@ export interface SketchError {
 }
 
 /**
- * オフセット元の輪郭の形(FR-321、タスク15)。
+ * オフセット元の輪郭の形(FR-321)。
  *
  * 閉じているかどうかで、ずらす側の決め方が変わる。開いた曲線は「進む向きの左/右」で
  * 側を決めるので、たどり始める点・そこでの進む向き・左右の基準になる法線を持つ。
@@ -666,11 +666,11 @@ export type OffsetContourShape =
     };
 
 /**
- * まだ形が決まっていないオフセットの依頼(FR-321、タスク15)。
+ * まだ形が決まっていないオフセットの依頼(FR-321)。
  *
  * 解決(`resolveSketch`)は OCCT を呼ばない純関数なので、覚え書き(`OffsetCache`)に
  * 結果が無いオフセットはここへ積まれる。これは**失敗ではなく一時的な状態**なので
- * `errors` には入れない(§2.7 の投影・交差の `pending` と同じ扱い)。
+ * `errors` には入れない(投影・交差の `pending` と同じ扱い)。
  * カーネルへ頼んで結果を覚え書きへ入れ、解決し直すのは `recomputeSketch` の役目。
  */
 export interface PendingOffset {
@@ -687,11 +687,11 @@ export interface PendingOffset {
 }
 
 /**
- * 投影・交差のもと(FR-325、タスク25)。どちらも「立体の何を使うか」だけが違う。
+ * 投影・交差のもと(FR-325)。どちらも「立体の何を使うか」だけが違う。
  *
  * `subShape` は面・辺の指紋つきの参照で、上流の立体が変わればカーネルが選び直す。
  * `body` は立体そのもの(交差が使う)。どちらも `bodyFeatureId` でボディを指すので、
- * 参照先の履歴上の位置を `resolvePart` が確かめられる(§0.a-0.11 の順序の制約)。
+ * 参照先の履歴上の位置を `resolvePart` が確かめられる(順序の制約)。
  */
 export type ProjectionSource =
   | { readonly kind: 'subShape'; readonly ref: SubShapeRef }
@@ -703,10 +703,10 @@ export function projectionBodyFeatureId(source: ProjectionSource): string {
 }
 
 /**
- * まだ形が決まっていない投影・交差(FR-325、タスク25)。
+ * まだ形が決まっていない投影・交差(FR-325)。
  *
  * `PendingOffset` と同じ扱いで、**失敗ではなく一時的な状態**なので `errors` には入れない
- * (§2.7 の「pending の印は errors とは別に持つ」)。違いは、投影・交差の形を作るには
+ * (「pending の印は errors とは別に持つ」)。違いは、投影・交差の形を作るには
  * **もとの立体が先に出来ていなければならない**ことで、そのため覚え書きの鍵を作るのに
  * 必要な「立体の段の鍵」はスケッチ 1 本からは分からない。鍵を組み立てて覚え書きを引き、
  * カーネルへ頼むのは部品文書の側(`resolvePart` / `recomputePart`)である。
@@ -725,24 +725,24 @@ export interface ResolvedSketch {
   readonly points: readonly ResolvedPoint[];
   readonly segments: readonly ResolvedSegment[];
   readonly arcs: readonly ResolvedArc[];
-  /** 楕円・楕円弧(FR-318)。線分・円弧と並ぶ独立の配列(タスク5)。 */
+  /** 楕円・楕円弧(FR-318)。線分・円弧と並ぶ独立の配列。 */
   readonly ellipses: readonly ResolvedEllipse[];
   /** スプライン(FR-317)。 */
   readonly splines: readonly ResolvedSpline[];
   readonly faces: readonly ResolvedFace[];
   readonly errors: readonly SketchError[];
-  /** まだ形が決まっていないオフセット(FR-321、タスク15)。無ければ空。 */
+  /** まだ形が決まっていないオフセット(FR-321)。無ければ空。 */
   readonly pendingOffsets: readonly PendingOffset[];
-  /** まだ形が決まっていない投影・交差(FR-325、タスク25)。無ければ空。 */
+  /** まだ形が決まっていない投影・交差(FR-325)。無ければ空。 */
   readonly pendingProjections: readonly PendingProjection[];
   /**
    * 「1 フィーチャーが複数の曲線を生む」もの(矩形・正多角形・長穴・オフセット・複製)の
-   * 曲線を、フィーチャーの id から順番どおりに引く(§0.a-0.8、タスク4・15・20)。
+   * 曲線を、フィーチャーの id から順番どおりに引く。
    *
    * `segments` / `arcs` にも同じ曲線が入っているが、そちらは種類ごとに分かれるので
    * **1 フィーチャーの中の並び順(`featureId#n` の n)が分からなくなる**
    * (長穴は「直線・円弧・直線・円弧」の順で交互に並ぶ)。n 番目の曲線を名指しする側
-   * (面の境界、オフセット元、トリム・延長の対象。FR-322、タスク17)はここを見る。
+   * (面の境界、オフセット元、トリム・延長の対象。FR-322)はここを見る。
    * 線分・円弧のように 1 フィーチャー = 1 曲線のものはここに入らない。
    */
   readonly curvesByFeature: ReadonlyMap<string, readonly ResolvedCurve[]>;

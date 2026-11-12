@@ -1,5 +1,5 @@
 /**
- * Dragging a sketch point, end point or centre (FR-313, P4b task 14; R07).
+ * Dragging a sketch point, end point or centre (FR-313).
  *
  * Responsibility: one drag from the grab to its end. While dragging, the document is never
  * changed. Each pointer target gets its own resumable solve job; every animation frame advances only
@@ -88,7 +88,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
   /** The last solved coordinates, written back to the document on release. */
   let dragSolution: ReadonlyMap<string, Vec3> | null = null;
   /**
-   * A constraint mark under the grab point (P4b task 13). Releasing without moving selects that mark,
+   * A constraint mark under the grab point . Releasing without moving selects that mark,
    * so neither the end point under a distance mark nor the mark itself becomes unreachable.
    */
   let dragMarkId: string | null = null;
@@ -239,7 +239,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
   /**
    * One frame: start the job of the newest target if there is one, advance the current job by a bounded
    * work allowance, show only a finished result, and commit when a release is pending and done.
-   * The document is not changed before the commit; the shape goes to `dragResolved` (§2.2).
+   * The document is not changed before the commit; the shape goes to `dragResolved`.
    */
   function runFrame(): void {
     const state = useAppStore.getState();
@@ -328,7 +328,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
         return false;
       }
       if (context.variableSet === null || context.plane === null) {
-        // A 3D sketch has no work plane; explain and do not grab (§0.a-0.3).
+        // A 3D sketch has no work plane; explain and do not grab.
         state.setDragRefusal(dragRefusalMessageKey('freeSketch'));
         return false;
       }
@@ -372,7 +372,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
       reserveFrame();
     },
     /**
-     * The release (§0.a-0.4). Only the dragged point's coordinate is rewritten, as one Undo step.
+     * The release. Only the dragged point's coordinate is rewritten, as one Undo step.
      * A grab without a move does not change the document.
      */
     finish: (pointer, eventAtMs) => {

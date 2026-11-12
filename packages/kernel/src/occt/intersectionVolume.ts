@@ -5,7 +5,7 @@ import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
 
-/** この体積(mm³)を厳密に超える共通部分だけを干渉とする(P7 §2.7、FR-615)。 */
+/** この体積(mm³)を厳密に超える共通部分だけを干渉とする(FR-615)。 */
 export const MIN_INTERFERENCE_VOLUME_MM3 = 1e-6;
 
 export type IntersectionVolumeStage =

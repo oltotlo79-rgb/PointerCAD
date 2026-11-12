@@ -2,7 +2,7 @@
 import { consumedBodyIds, type PartDocument, type PartRecomputeError } from '@pointercad/model';
 
 /**
- * ほかの立体に取り込まれた立体の id(§0.a-0.5)。
+ * ほかの立体に取り込まれた立体の id。
  *
  * 文書だけを見る `consumedBodyIds` と違い、**失敗したブーリアンは何も取り込まない**ものとして
  * 数える。再計算(resolvePart)が失敗した段では消費を確定させないので、失敗を数に入れると

@@ -56,7 +56,7 @@ export type SteelBendEditResult = SteelBendPickerResult | { readonly ok: false; 
   | { readonly ok: true; readonly sources: SteelBendSources; readonly product: SteelProduct }
   | { readonly ok: false; readonly reason: 'missing' | 'modified' | 'unsupported' };
 
-/** W03 is the authority: never infer an authored recipe from a sketch or today's defaults. */
+/** The saved recipe is the authority: never infer an authored recipe from a sketch or today's defaults. */
 export function readSteelBendEditInput(document: PartDocument): SteelBendEditInput {
   const saved = steelBendInputState(document);
   if (saved.status !== 'original') return { ok: false, reason: saved.status };

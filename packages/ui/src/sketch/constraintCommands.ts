@@ -1,23 +1,23 @@
 import { nextSerialId, nextSerialName } from '@pointercad/model/sketch-document';
 /**
  * 拘束を付ける・消す・値を書き換える純関数と、いま選んでいる要素に付けられる拘束の下見
- * (FR-313、FR-504、NFR-UX-1、NFR-UX-5、計画書 docs/plans/P4b-スケッチの仕上げ.md
- * §2.2・§0.a-0.2/0.3、タスク12)。
+ * (FR-313、FR-504、
+ * NFR-UX-1、NFR-UX-5)。
  *
  * `editCommands.ts` / `parameterCommands.ts` と同じ流儀にそろえる。DOM にもストアにも
  * 触れず、文書は不変で、断るときは元の文書を 1 文字も変えずに理由と日本語の一言だけを返す。
- * 印・一覧・ツールバーへの配線はタスク13、引っぱっての追従はタスク14 の役目で、ここは
+ * 印・一覧・ツールバーへの配線と引っぱっての追従は別のファイルの役目で、ここは
  * 「どの拘束を付けられるか」「付けたらどんな文書になるか」だけを決める。
  *
  * **押したら必ず何かが起きる。** 条件がそろっていなくても `ready: false` と理由が必ず返り、
- * 呼ぶ側はそれを帯へ出せる(P4 タスク12 の失敗 (b)「押しても種類が変わらず理由も出ない」の
+ * 呼ぶ側はそれを帯へ出せる(「押しても種類が変わらず理由も出ない」失敗の
  * 再発防止)。
  *
- * **付けた後で矛盾するかどうかは、ここでは断らない。** 計画書 §0.a に「同じ要素に矛盾する
- * 拘束を足したとき」の決定が無いので、統括の指示どおり「止めずに警告する」(FR-504、
+ * **付けた後で矛盾するかどうかは、ここでは断らない。** 「同じ要素に矛盾する
+ * 拘束を足したとき」の扱いは「止めずに警告する」(FR-504、
  * NFR-RE-1、`rules/04-設計の規律.md`)を採る。付けた文書を `resolveConstrainedSketch`
- * (model、タスク8)へ通せば `diagnosis.conflicting` に原因の拘束が並ぶので、印と帯は
- * タスク13 がそこから出す。ここで先回りして解いて断ると、①解く計算が 2 回になり、
+ * (model)へ通せば `diagnosis.conflicting` に原因の拘束が並ぶので、印と帯は
+ * 呼ぶ側がそこから出す。ここで先回りして解いて断ると、①解く計算が 2 回になり、
  * ②「矛盾しているが値を直せば成り立つ」拘束を付けさせないことになる。
  *
  * ここで**事前に**断るのは、解かなくても分かることだけにする(NFR-UX-5)。
@@ -64,7 +64,7 @@ import { toElementRef } from './sketchCommands.js';
  * 種類ごとの見出しの鍵(ja.json)。**文言は 1 か所だけ**にし、一覧・印・断り・拘束の名前
  * (「直角1」)がすべてここを引く(NFR-MA-5)。18 種を網羅する `Record` なので、model 側で
  * 種類が増えたらこの表が型検査で落ちる(`SketchFeatureKind` に種類を足したとき網羅箇所が
- * 落ちた P4 タスク4 の教訓)。
+ * 落ちた失敗の教訓)。
  */
 export const CONSTRAINT_KIND_LABEL_KEYS: Readonly<Record<SketchConstraintKind, MessageKey>> = {
   coincident: 'constraint.kind.coincident',
@@ -87,7 +87,7 @@ export const CONSTRAINT_KIND_LABEL_KEYS: Readonly<Record<SketchConstraintKind, M
   diameter: 'constraint.kind.diameter',
 };
 
-/** 種類の見出しの鍵。ツールバーの一覧(タスク13)もこれを引く。 */
+/** 種類の見出しの鍵。ツールバーの一覧もこれを引く。 */
 export function constraintKindLabelKey(kind: SketchConstraintKind): MessageKey {
   return CONSTRAINT_KIND_LABEL_KEYS[kind];
 }
@@ -100,7 +100,7 @@ export function constraintKindLabel(kind: SketchConstraintKind): string {
 /** 数値を聞く拘束(寸法拘束 6 種)。その他は選んだ瞬間に付く。 */
 const VALUE_KINDS: readonly SketchConstraintKind[] = ['distance', 'horizontalDistance', 'verticalDistance', 'angle', 'radius', 'diameter'];
 
-/** その拘束は数値を聞くか(段を開くかどうかの判断。タスク13)。 */
+/** その拘束は数値を聞くか(段を開くかどうかの判断)。 */
 export function constraintNeedsValue(kind: SketchConstraintKind): boolean {
   return VALUE_KINDS.includes(kind);
 }
@@ -127,7 +127,7 @@ export function constraintValueUnit(kind: SketchConstraintKind): FieldUnit | nul
 
 /** 断った理由。文言は `ja.json`(NFR-MA-5)、対応は `REJECTION_MESSAGE_KEYS` の 1 か所。 */
 export type ConstraintCommandRejectionReason =
-  /** 3D スケッチ(作図面を持たないスケッチ)には拘束を付けられない(§0.a-0.3)。 */
+  /** 3D スケッチ(作図面を持たないスケッチ)には拘束を付けられない。 */
   | 'freeSketch'
   /** 選んだ要素がこのスケッチのものではない(複数スケッチの文書で起きる)。 */
   | 'otherSketch'
@@ -185,7 +185,7 @@ const REJECTION_MESSAGE_KEYS: Readonly<Record<ConstraintCommandRejectionReason, 
   notDimensional: 'constraint.error.notDimensional',
 };
 
-/** 断りの文言の鍵。ツールバーの案内(タスク13)も同じ鍵を引く。 */
+/** 断りの文言の鍵。ツールバーの案内も同じ鍵を引く。 */
 export function constraintRejectionMessageKey(
   reason: ConstraintCommandRejectionReason,
 ): MessageKey {
@@ -205,7 +205,7 @@ export interface ConstraintAddSuccess {
   readonly document: SketchDocument;
   /** 足した拘束の id(履歴順)。 */
   readonly constraintIds: readonly string[];
-  /** 先頭の id。一覧で選んで見せるのに使う(タスク13)。 */
+  /** 先頭の id。一覧で選んで見せるのに使う。 */
   readonly constraintId: string;
 }
 
@@ -232,12 +232,12 @@ function reject(reason: ConstraintCommandRejectionReason): ConstraintCommandReje
  * `resolveConstrainedSketch` をここで呼ぶと、ボタンの色を決めるためだけに毎回
  * 反復計算が走ってしまう(NFR-PF-1)。
  *
- * 呼ぶ側(タスク13)は 1 回作って使い回してよい。省くと関数ごとに作り直す。
+ * 呼ぶ側は 1 回作って使い回してよい。省くと関数ごとに作り直す。
  */
 export interface ConstraintContext {
   /** 拘束を無視した解決。既定値を測るもとであり、選んだ要素の種類の出どころ。 */
   readonly resolved: ResolvedSketch;
-  /** このスケッチの作図面。3D スケッチ(作図面を持たない)なら null(§0.a-0.3)。 */
+  /** このスケッチの作図面。3D スケッチ(作図面を持たない)なら null。 */
   readonly plane: WorkPlane | null;
   /** 動かせる数と、動かせない理由(`frozen`)。作図面が無ければ null。 */
   readonly variableSet: VariableSet | null;
@@ -262,7 +262,7 @@ function sketchWorkPlane(document: SketchDocument, options: SketchResolveOptions
   return null;
 }
 
-/** 判定と測定の材料を作る(§2.2 の①の段だけを走らせる)。 */
+/** 判定と測定の材料を作る(判定の段だけを走らせる)。 */
 export function constraintContextOf(
   document: SketchDocument,
   options: SketchResolveOptions = {},
@@ -271,7 +271,7 @@ export function constraintContextOf(
 }
 
 /**
- * 同じ材料を、**すでに解決してある結果から**作る(P4b タスク22b)。
+ * 同じ材料を、**すでに解決してある結果から**作る。
  *
  * いま描いている形(ストアの `resolvedSketch`)をそのまま使えるので、解決をもう一度
  * 走らせずに済む(NFR-PF-1)。要素の決まり具合の色分け(FR-313、利用者の決定②)は
@@ -419,7 +419,7 @@ export function targetPositionOf(resolved: ResolvedSketch, target: ConstraintTar
   }
 }
 
-/** 線分の中点(印を線の真ん中に置く。タスク13)。 */
+/** 線分の中点(印を線の真ん中に置く)。 */
 export function lineMidpointOf(resolved: ResolvedSketch, featureId: string): Vec3 | null {
   const segment = resolved.segments.find((candidate) => candidate.featureId === featureId);
   if (segment === undefined) {
@@ -471,11 +471,11 @@ function lineDirectionOf(
  * いまの形から測った既定値(NFR-UX-4「Enter 連打だけでも意味のある結果になる」)。
  * **丸めない**(`exactExpressionValueFromNumber`)。有効数字 12 桁へ丸める
  * `expressionValueFromNumber` を使うと、拘束が要求する精度(1e-9)より粗い値が入り、
- * 付けた瞬間に形がわずかに動く(§2.3)。
+ * 付けた瞬間に形がわずかに動く。
  *
  * 角度は `atan2(外積, 内積)` の符号つきの度で測る。model の残差
  * `dot·sinθ − cross·cosθ` はこの符号つきの角度で 0 になるので、絶対値にすると
- * 「付けた瞬間に線が裏返る」ことがある(§2.2 の角度の式)。
+ * 「付けた瞬間に線が裏返る」ことがある。
  */
 export function measuredConstraintValue(
   kind: SketchConstraintKind,
@@ -561,7 +561,7 @@ function targetsOf(elements: readonly ConstraintElement[]): readonly ConstraintT
 }
 
 /**
- * 選んだ要素の種類と個数から指し先を決める(計画書 タスク12 の表)。
+ * 選んだ要素の種類と個数から指し先を決める。
  *
  * **順序に意味を持たせるのは角度だけ**(「1 本目から 2 本目へ測る」)。接線(線分+円)と
  * 対称(点 2 つ+軸)は種類で見分けるので選ぶ順は不問、平行・直角・一致・等しい・同心・
@@ -650,7 +650,7 @@ function selectionTargets(
 
 /**
  * 指し先そのものの形が種類に合っているか(選択を通さずに `commitAddConstraint` を
- * 直に呼ぶ道、タスク14 のドラッグ等のための検査)。
+ * 直に呼ぶ道、拘束を引っぱるドラッグ等のための検査)。
  */
 function targetShapeReason(
   kind: SketchConstraintKind,
@@ -741,7 +741,7 @@ function featureIdOfVariable(variable: ConstraintVariable): string {
 }
 
 /**
- * 選んだ要素に動かせる数が 1 つでもあるか(§0.a-0.2)。1 つも無ければ、拘束を付けても
+ * 選んだ要素に動かせる数が 1 つでもあるか。1 つも無ければ、拘束を付けても
  * 形は動かず「矛盾」とだけ言われる。付ける前に理由を出す(NFR-UX-5)。
  */
 function hasMovableVariable(
@@ -826,7 +826,7 @@ export function constraintReadiness(
     return notReady('otherSketch');
   }
   if (elements.some((element) => element.free) || (elements.length > 0 && variableSet === null)) {
-    // 3D スケッチの要素を選んでいる、または作図面がまだ 1 つも無い(§0.a-0.3)。
+    // 3D スケッチの要素を選んでいる、または作図面がまだ 1 つも無い。
     return notReady('freeSketch');
   }
   if (
@@ -954,7 +954,7 @@ function withConstraints(
  *
  * `value` を省くと、数値を聞く拘束(距離・角度・半径・直径)の目標値は**いまの形から
  * 測った値**になる(NFR-UX-4)。値は `ExpressionValue` なので、パラメータ表(FR-207)の
- * 名前をそのまま書ける(§2.2「2 つの機能がここで噛み合う」)。
+ * 名前をそのまま書ける(「2 つの機能がここで噛み合う」)。
  */
 export function commitAddConstraint(
   document: SketchDocument,
@@ -1145,7 +1145,7 @@ export function commitSetConstraintValue(
   };
 }
 
-/** その要素を指している拘束の id(要素を消すときの後始末に使う。タスク13)。 */
+/** その要素を指している拘束の id(要素を消すときの後始末に使う)。 */
 export function constraintsReferencing(
   document: SketchDocument,
   featureId: string,

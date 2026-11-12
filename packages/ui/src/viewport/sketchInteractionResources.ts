@@ -93,7 +93,7 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
         return;
       }
       /*
-        引っぱっている最中(FR-313、タスク14)。ホバーも当たり判定も要らない
+        引っぱっている最中(FR-313)。ホバーも当たり判定も要らない
         (掴む相手はもう決まっている)ので、解き直しだけをコマごとに予約する。
       */
       drag.schedule(pointer, event.timeStamp);
@@ -109,7 +109,7 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
 
     if (isClickEditTool(state.activeTool)) {
       // トリム・延長は「乗せた区間を強調 → 押して消す/伸ばす」だけの道具なので、
-      // 吸着も立体の当たり判定も通さない(§0.a-0.26)。
+      // 吸着も立体の当たり判定も通さない。
       updateEditPreview(state.activeTool, pointer);
       return;
     }
@@ -117,8 +117,8 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
     if (skipsSketchElements(state.selectionKind)) {
       /*
         部分形状(面・辺・頂点)を拾う種類のときは、スケッチ要素の当たり判定を飛ばして
-        部分形状だけを拾う(スケッチの面が立体の面より先に当たるのを防ぐ、§2.3.2、
-        タスク30 不具合(c))。吸着も使わない。
+        部分形状だけを拾う(スケッチの面が立体の面より先に当たるのを防ぐ)。
+        吸着も使わない。
       */
       const connectionPick = state.selectionKind === 'vertex' && state.activeTool === 'select'
         ? pickConnectionPoint(state, project, pointer) : null;
@@ -133,7 +133,7 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
 
     if (state.activeTool === 'sphereGridPoint') {
       /*
-        球面上の点(FR-431、タスク21・22)。案内線の交点に吸い付いた緯度・経度を段の欄へ
+        球面上の点(FR-431)。案内線の交点に吸い付いた緯度・経度を段の欄へ
         入れ、押せば点になることを見せる(NFR-UX-5)。スケッチの要素の吸着も向きの吸着も
         通さない——狙っているのは球の上の交点だけなので、他の候補を混ぜると交点から
         引き離される。乗せている球そのものは強調して「どの球の上か」を示す。
@@ -151,12 +151,12 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
     const hoverSketch = tracksDirection(state.activeTool) ? state.resolvedSketch
       : sketchForSelection(state.resolvedSketch, state.displaySettings.selectionFilter);
     const snap = findSnap(pointer, hoverSketch);
-    // 点に吸い付いていないときだけ向きを見る(§0.13 の優先順位)。
+    // 点に吸い付いていないときだけ向きを見る(点の吸着を優先する)。
     const track = findTrack(pointer, snap);
 
     // 当たり判定(6 画素)から外れていても、吸着(12 画素)が拾った要素は強調して
     // 「どこへ吸い付くのか」を見せる(FR-106、FR-107)。
-    // スケッチにも吸着にも当たらなかったときだけ、3D スケッチの頂点(タスク14)、
+    // スケッチにも吸着にも当たらなかったときだけ、3D スケッチの頂点、
     // 続いて奥にある立体を拾う。頂点は既存の強調(setSubShapeHighlight)でそのまま光る。
     const picked = pickSketchElement(hoverSketch, project, pointer);
     const nextHovered =
@@ -189,7 +189,7 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
     indicators.showSnap(nextIndicator);
     indicators.showTrack(track === null ? null : track.candidates);
 
-    // 拘束の自動推定の予告(FR-333、タスク41)。Shift を押している間は止める(§0.a-0.50)。
+    // 拘束の自動推定の予告(FR-333)。Shift を押している間は止める。
     updateInferredConstraints(pointer, event.shiftKey, snap, track);
   }
   return onPointerMove;
@@ -226,7 +226,7 @@ function createPointerDownHandler(context: InputContext): (event: PointerEvent) 
     const state = useAppStore.getState();
     if (state.commandLineFocused) {
       /*
-        コマンドラインの欄(FR-208、P4b タスク18)に焦点があるあいだの押下は、
+        コマンドラインの欄(FR-208)に焦点があるあいだの押下は、
         **欄から出るための押下**として当たり判定を飛ばす。ここで下の各枝へ流すと、
         どの枝も `event.preventDefault()` で既定の動作を止めて開いている欄から焦点を
         奪わないようにしている(NFR-UX-2)ため、押しても焦点がコマンドラインに残ったままになり、
@@ -240,7 +240,7 @@ function createPointerDownHandler(context: InputContext): (event: PointerEvent) 
 
     if (state.activeConstraintKind !== null) {
       /*
-        拘束の道具(FR-313、タスク13)。押した要素・端点を順に受け取り、必要な数がそろったら
+        拘束の道具(FR-313)。押した要素・端点を順に受け取り、必要な数がそろったら
         拘束が付く。焦点は canvas に残して、続けて何か所でも押せて Esc で終われるようにする
         (トリム・延長と同じ、NFR-UX-7)。
       */
@@ -251,7 +251,7 @@ function createPointerDownHandler(context: InputContext): (event: PointerEvent) 
 
     if (startSectionInput(event, pointer)) {
       /*
-        断面表示のつまみ(FR-111、§0.42)。**道具に関わらず掴める**——断面表示は「いま何を
+        断面表示のつまみ(FR-111)。**道具に関わらず掴める**——断面表示は「いま何を
         しているか」と無関係に中を見るための表示で、切る位置を直すのに道具を選び直させる
         のは筋が悪い(NFR-UX-1)。掴めるのは矢印の根もとの 18px だけなので、ほかの操作を
         奪わない(掴めなければそのまま下の枝へ落ちる)。
@@ -263,7 +263,7 @@ function createPointerDownHandler(context: InputContext): (event: PointerEvent) 
 
     if (startSketchDragInput(event, pointer, tool)) {
       /*
-        点・端点・中心を掴んで引っぱる(FR-313、タスク14)。順は §0.a 追記 5 の
+        点・端点・中心を掴んで引っぱる(FR-313)。順は §0.a 追記 5 の
         「①拘束の道具 → ②印の当たり判定 → ③従来」を守りつつ、**掴めるときだけ②より先**に
         置く。理由: 距離拘束の印は指し先の点そのものの上に出る(`constraintSummary.ts` の
         `anchorsOf`)ので、印を必ず先に見ると端点をいつまでも掴めない。掴んでおいて
@@ -271,7 +271,7 @@ function createPointerDownHandler(context: InputContext): (event: PointerEvent) 
         そのまま生きている。掴めなかったときは下の②へ落ちる。
 
         Shift/Ctrl を押しているときは「選択に足す」操作なので掴まない。選ぶものの種類が
-        立体の面・辺・頂点のときは、そもそもスケッチ要素を拾わない(§2.3.2)。
+        立体の面・辺・頂点のときは、そもそもスケッチ要素を拾わない。
 
         ポインタを捕まえて、canvas の外へ出ても離すまで追い続ける。既定の動作は止めない
         (canvas に焦点が移り、Esc が効くようにする)。
@@ -293,7 +293,7 @@ function createKeyHandler(context: InputContext): (event: KeyboardEvent) => void
   /**
    * canvas に焦点があるときだけ来る(ViewportCanvas の tabIndex={0})。
    * ポップアップの欄に焦点があるときは来ないので、そちらの Enter / Esc とぶつからない
-   * (docs/報告記録.md 2026-09-02 15:42 の「Home キーは canvas に焦点があるときだけ」と同じ考え)。
+   * (「Home キーは canvas に焦点があるときだけ」と同じ考え)。
    */
   function onKeyDown(event: KeyboardEvent): void {
     if (lifetime.disposed) return;
@@ -302,7 +302,7 @@ function createKeyHandler(context: InputContext): (event: KeyboardEvent) => void
     if (state.assembly !== null) return;
     if (event.key === 'Shift') {
       /*
-        拘束の自動推定の一時停止(FR-333、§0.a-0.50)。押した瞬間に予告を消す
+        拘束の自動推定の一時停止(FR-333)。押した瞬間に予告を消す
         (マウスを動かすまで印が残っていると「止まっていない」と見える)。離したときは
         次にマウスを動かした時点で戻る——予告はもともとマウスの動きに付く表示なので、
         キーを離しただけで印が湧いて出るほうが不自然だから。**他のキーの処理は続ける**
@@ -314,7 +314,7 @@ function createKeyHandler(context: InputContext): (event: KeyboardEvent) => void
       event.preventDefault();
       if (drag.active()) {
         /*
-          引っぱりの取り消し(FR-313、タスク14、NFR-UX-3)。文書は 1 度も変えていないので、
+          引っぱりの取り消し(FR-313、NFR-UX-3)。文書は 1 度も変えていないので、
           仮の形を捨てるだけで押す前の形へ戻る。選択も取りかけも巻き込まないよう、
           ここで返して他の Esc の後始末はしない。
         */
@@ -325,7 +325,7 @@ function createKeyHandler(context: InputContext): (event: KeyboardEvent) => void
       state.setPendingStart(null);
       state.closeNumericInput();
       if (state.activeConstraintKind !== null) {
-        // 拘束の道具(FR-313、タスク13)も Esc で終わる(トリム・延長と同じ)。
+        // 拘束の道具(FR-313)も Esc で終わる(トリム・延長と同じ)。
         cancelConstraintTool();
         return;
       }
@@ -338,7 +338,7 @@ function createKeyHandler(context: InputContext): (event: KeyboardEvent) => void
         isCornerEditTool(state.activeTool) ||
         isPickEditTool(state.activeTool)
       ) {
-        // トリム・延長(§0.a-0.26)、角の丸め・面取り(FR-323)、投影・断面(FR-325)は
+        // トリム・延長、角の丸め・面取り(FR-323)、投影・断面(FR-325)は
         // Esc で終わり、選択の道具へ戻る。予告は `setActiveTool` が落とす。
         state.setActiveTool('select');
       }
@@ -374,7 +374,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
     if (pointerId !== null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
   }
 
-  /** 離したら引っぱりを確定する(FR-313、タスク14)。掴んでいなければ何もしない。 */
+  /** 離したら引っぱりを確定する(FR-313)。掴んでいなければ何もしない。 */
   function onPointerUp(event: PointerEvent): void {
     if (lifetime.disposed || lifetime.activePointerId !== event.pointerId) return;
     if (section.active()) {
@@ -411,7 +411,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
       state.setHovered(null);
     }
     indicators.clearSnapIndicators();
-    // 画面から出たら「ここが消える」の赤も消す(タスク22)。
+    // 画面から出たら「ここが消える」の赤も消す。
     if (state.editPreview !== null) {
       indicators.hideEdit();
     }

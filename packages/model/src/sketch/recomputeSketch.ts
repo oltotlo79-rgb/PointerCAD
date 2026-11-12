@@ -1,9 +1,9 @@
 /**
- * スケッチの再計算(計画書 docs/plans/P1-式とスケッチ.md タスク12、要件§6.3)。
+ * スケッチの再計算(要件§6.3)。
  *
  * 履歴を解決し、面があればカーネルで三角形にする。点・線・円弧の表示に必要な情報は
  * 解決結果(ResolvedSketch)に入っているので、カーネルは面のときだけ呼ぶ
- * (マウス操作のたびに Worker を往復させないため、NFR-PF-1、計画書 §2.7)。
+ * (マウス操作のたびに Worker を往復させないため、NFR-PF-1)。
  * どこで失敗しても例外を投げず、理由を errors へ入れて返す(FR-504、NFR-RE-1)。
  */
 
@@ -41,7 +41,7 @@ export interface SketchRecomputeResult {
   /** 解決の失敗・拘束の失敗・カーネルの失敗を合わせたもの(FR-504)。 */
   readonly errors: readonly SketchError[];
   /**
-   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313、P4b タスク8)。拘束が無ければ null。
+   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313)。拘束が無ければ null。
    * 部品文書の経路は `PartSketchResult.diagnosis` が同じものを持つ。
    */
   readonly diagnosis: ConstraintDiagnosis | null;
@@ -50,10 +50,10 @@ export interface SketchRecomputeResult {
 /** 再計算に添える設定。 */
 export interface SketchRecomputeOptions {
   /**
-   * 計算済みのオフセット(FR-321、タスク15)を覚えておく入れ物。
+   * 計算済みのオフセット(FR-321)を覚えておく入れ物。
    *
    * 渡さないと呼び出しのたびに新しく作るので、毎回カーネルへ頼み直すことになる。
-   * 画面から繰り返し呼ぶ側(ui、タスク21)は 1 つ作って持ち回る(NFR-PF-2)。
+   * 画面から繰り返し呼ぶ側(ui)は 1 つ作って持ち回る(NFR-PF-2)。
    */
   readonly offsets?: OffsetCache;
 }
@@ -123,14 +123,14 @@ function isWrongSide(pending: PendingOffset, entry: SketchOffsetEntry): boolean 
 }
 
 /**
- * まだ形の無いオフセットをカーネルへ頼み、結果を覚え書きへ入れる(FR-321、タスク15)。
+ * まだ形の無いオフセットをカーネルへ頼み、結果を覚え書きへ入れる(FR-321)。
  *
  * 往復は最大 2 回。1 回目で全件をまとめて頼み、開いた曲線が逆側に出たものだけを
  * 2 回目でまとめて頼み直す。返すのは失敗の一覧だけで、成功したものは覚え書きに入る
  * (呼び出し側が解決をやり直すと、そこから曲線が入る)。
  */
 /**
- * `recomputePart.ts`(タスク21)が、部品の中の複数スケッチぶんの `pendingOffsets` を
+ * `recomputePart.ts`が、部品の中の複数スケッチぶんの `pendingOffsets` を
  * まとめて 1 回のカーネル往復で埋めるのにも使うため、この関数だけは輸出する。
  * 他はスケッチ単体の再計算(`recomputeSketch`)の内側だけで完結させる。
  */
@@ -196,7 +196,7 @@ export async function fillOffsets(
  * スケッチを解決し、面があればカーネルで三角形にする(要件§6.3)。
  * 面が 1 枚失敗しても残りは描けるので、mesh と errors を両方返す(FR-504、NFR-RE-1)。
  *
- * オフセット(FR-321、タスク15)があるときは、**解決 → カーネルで形を作る → 解決し直す**
+ * オフセット(FR-321)があるときは、**解決 → カーネルで形を作る → 解決し直す**
  * の順で進む。解決そのものは OCCT を呼ばない純関数のままで、形は覚え書き越しに差し込む。
  */
 export async function recomputeSketch(
@@ -206,7 +206,7 @@ export async function recomputeSketch(
 ): Promise<SketchRecomputeResult> {
   const offsets = options.offsets ?? createOffsetCache();
   const offsetCurves = (key: string): readonly ResolvedCurve[] | null => offsets.get(key);
-  // 拘束(FR-313、P4b タスク8)も解く。拘束が 1 つも無ければ
+  // 拘束(FR-313)も解く。拘束が 1 つも無ければ
   // `resolveConstrainedSketch` は `resolveSketch` を 1 回呼ぶだけなので費用は変わらない。
   let constrained = resolveConstrainedSketch(document, { offsetCurves });
   let resolved = constrained.resolved;
@@ -249,7 +249,7 @@ export async function recomputeSketch(
  *
  * 値も表示も変わらなければ**元のオブジェクトをそのまま返す**。こうしておくと、
  * `mapSketchExpressions` が「1 つも変わらなかった」ことを参照の比較だけで判定でき、
- * 中身が同じ文書を作り直して下流の鍵を無駄に変えることがなくなる(P4b タスク3)。
+ * 中身が同じ文書を作り直して下流の鍵を無駄に変えることがなくなる。
  */
 function reevaluate(value: ExpressionValue, variables: ReadonlyMap<string, number>, options: EvaluateOptions): ExpressionValue {
   const result = evaluateExpression(value.source, { ...options, variables });
@@ -268,7 +268,7 @@ function reevaluate(value: ExpressionValue, variables: ReadonlyMap<string, numbe
  * 「スケッチのどこに式があるか」を知っているのは `mapExpressions.ts` の 1 か所だけ。
  * 部品文書の全域(立体・基準ジオメトリ)を回す `part/reevaluatePart.ts` も**同じ歩き方**
  * (`mapSketchExpressions`)を通るので、要素の種類が増えても両方が同時に追従する
- * (同じ規則を 2 か所に書かない。P4b タスク3)。
+ * (同じ規則を 2 か所に書かない)。
  */
 export function reevaluateDocument(
   document: SketchDocument,

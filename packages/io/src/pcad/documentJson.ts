@@ -8,7 +8,7 @@ import { readFeatureFolders, serializeFeatureFolders } from './codecs/featureFol
 import { readFeatureNotes, serializeFeatureNotes } from './codecs/featureNotes.js';
 import { readMathGeometry, serializeMathGeometry } from './codecs/mathGeometry.js';
 /**
- * 部品文書と `.pcad` の `document.json` の相互変換(計画書 docs/plans/P2-ソリッド基礎.md タスク14、要件§8)。
+ * 部品文書と `.pcad` の `document.json` の相互変換(要件§8)。
  *
  * 書き出しは欄を決まった順で組み立てるので、同じ文書からは必ず同じ文字列ができる(決定的)。
  * 保存するのはフィーチャー履歴と式だけで、解決済みの座標・メッシュ(TypedArray)・キャッシュの鍵は
@@ -21,7 +21,7 @@ import { readMathGeometry, serializeMathGeometry } from './codecs/mathGeometry.j
  *  - **読めない欄が1つでもあればファイル全体を断る。** その要素だけを捨てて残りを開くと、
  *    利用者が気づかずに保存し直したときに元のデータを失うため。
  *
- * 版の扱いは統括の決定④(docs/報告記録.md 2026-09-03 07:35)に従う。文書の `schemaVersion` が正で、
+ * 版の扱い: 文書の `schemaVersion` が正で、
  * 封筒の `schema` には同じ値を書く。読み手は封筒の `schema` を先に検査してから中身を読む。
  */
 
@@ -148,7 +148,7 @@ function serializePartDocument(document: PartDocument): PartDocument {
   if (document.beamAnalysisInputs !== undefined && document.schemaVersion < 20) {
     throw new RangeError('Persisted beam inputs require document schema 20');
   }
-  // 円筒の側面の穴(EX05)は版20で入った欄。版19以前(v1.0.2 は版17)と名乗るファイルに書くと、古い読み手が
+  // 円筒の側面の穴は版20で入った欄。版19以前(v1.0.2 は版17)と名乗るファイルに書くと、古い読み手が
   // 欄を捨てて高さ・角度を失うので書かない。読むときは断らない(移行した古い入力の既知の欄は保つ)。
   if (document.schemaVersion < 20
     && document.solids.some((feature) => (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.cylindrical !== undefined)) {
@@ -181,7 +181,7 @@ function serializePartDocument(document: PartDocument): PartDocument {
     sheetUnfolds: document.sheetUnfolds.map(serializeSheetUnfold),
     parameters: document.parameters.map(serializeParameter),
     appearance: serializeAppearanceTable(document.appearance),
-    // 版7 で足した 2 欄(P6 §0.a-0.44・0.45)。**外観の後ろに置く**ことで、版6 までの
+    // 版7 で足した 2 欄。**外観の後ろに置く**ことで、版6 までの
     // ファイルの並び(id → … → appearance)が 1 行も動かない。
     selectionSets: document.selectionSets.map(serializeSelectionSet),
     canvases: document.canvases.map(serializeSketchCanvas),
@@ -197,23 +197,23 @@ export interface SerializeOptions {
   /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
   readonly savedAt?: string;
   /**
-   * 封筒に書く種別(§0.a-0.35)。既定は部品(`PCAD_DOCUMENT_KIND`)で、
+   * 封筒に書く種別。既定は部品(`PCAD_DOCUMENT_KIND`)で、
    * ひな形(`.pcadt`)として書き出すときだけ `PCAD_TEMPLATE_KIND` を渡す。
    * 中身(部品文書)の作りは種別で 1 文字も変わらない(履歴を空にするのは上の層の仕事)。
    */
   readonly kind?: PcadDocumentKind;
   /**
-   * 表示の長さの単位(FR-814、§2.10)。**ひな形のときだけ渡す。**
+   * 表示の長さの単位(FR-814)。**ひな形のときだけ渡す。**
    * 渡さなければ封筒にこの欄そのものが出ない(部品の `.pcad` のバイト列は
-   * タスク27 の前後で 1 バイトも変わらない)。
+   * ひな形の欄を足す前と 1 バイトも変わらない)。
    */
   readonly lengthUnit?: LengthUnit;
-  /** 各道具の既定値(FR-814、§2.10)。`lengthUnit` と同じく、ひな形のときだけ渡す。 */
+  /** 各道具の既定値(FR-814)。`lengthUnit` と同じく、ひな形のときだけ渡す。 */
   readonly toolDefaults?: PcadToolDefaults;
 }
 
 /**
- * 道具の既定値を封筒へ書く形にする(FR-814、§2.10)。
+ * 道具の既定値を封筒へ書く形にする(FR-814)。
  *
  * 他の `serialize*` と同じく**欄を 1 つずつ決まった順で書き写す**。渡された
  * オブジェクトをそのまま入れないのは、①欄の順が呼び出し側の作り方に左右されると
@@ -237,16 +237,16 @@ function serializeToolDefaults(toolDefaults: PcadToolDefaults): PcadToolDefaults
 export function serializeDocument(document: PartDocument, options: SerializeOptions = {}): string {
   assertReferenceOriginVersion(document, document.schemaVersion);
   const envelope: PcadEnvelope = {
-    // 封筒の版は文書の版と同じ値を書く(統括の決定④)。
+    // 封筒の版は文書の版と同じ値を書く。
     schema: document.schemaVersion,
-    // 既定は部品(要件§8)。ひな形のときだけ呼び出し側が種別を渡す(§0.a-0.35)。
+    // 既定は部品(要件§8)。ひな形のときだけ呼び出し側が種別を渡す。
     kind: options.kind ?? PCAD_DOCUMENT_KIND,
     app: PCAD_APP_NAME,
     savedAt: options.savedAt ?? new Date().toISOString(),
     /*
-      ひな形の 2 欄(FR-814、§2.10)。**渡されなければ `undefined` のままにする。**
+      ひな形の 2 欄(FR-814)。**渡されなければ `undefined` のままにする。**
       `JSON.stringify` は値が `undefined` の欄を書かないので、部品の `.pcad` の
-      バイト列はタスク27 の前後で 1 バイトも変わらない(既存の検査がそれを固定している)。
+      バイト列はひな形の欄を足す前と 1 バイトも変わらない(既存の検査がそれを固定している)。
       場所を `savedAt` と `document` の間にしてあるのは、封筒の欄(小さい設定)を
       先に、中身(大きい文書)を最後に置く並びを崩さないためである。
     */
@@ -418,13 +418,13 @@ export type ParseDocumentResult =
       readonly document: PartDocument;
       readonly savedAt: string;
       /**
-       * 封筒に書かれていた種別(§0.a-0.35)。部品なら `'part'`、ひな形なら `'partTemplate'`。
-       * **中身の読み方は種別で変わらない**ので、ここで返して上の層(タスク27 の
+       * 封筒に書かれていた種別。部品なら `'part'`、ひな形なら `'partTemplate'`。
+       * **中身の読み方は種別で変わらない**ので、ここで返して上の層(
        * 「このファイルはひな形ではありません。」の断り)に判断させる。
        */
       readonly kind: PcadDocumentKind;
       /**
-       * 封筒に書かれていた表示の長さの単位(FR-814、§2.10)。**欄が無ければ `undefined`**
+       * 封筒に書かれていた表示の長さの単位(FR-814)。**欄が無ければ `undefined`**
        * ——ここではファイルに書いてあったとおりを返し、既定(`'mm'`)で埋めるのは上の層
        * (model の `openTemplate`)の仕事にする。既定値を io と model の両方に置かないため。
        */
@@ -447,7 +447,7 @@ function parseJsonText(text: string): Checked<unknown> {
 
 /**
  * 古い版を今の版まで順に持ち上げる(要件§8 の前方互換)。持ち上げられなければ null。
- * P2 では `SCHEMA_MIGRATIONS` が空なので、版 1 はここで必ず null になる。
+ * `SCHEMA_MIGRATIONS` に版 1 の移行は無いので、版 1 はここで必ず null になる。
  */
 export function migrateToCurrentSchema(
   raw: Record<string, unknown>,
@@ -476,7 +476,7 @@ export function migrateToCurrentSchema(
 }
 
 /**
- * 封筒の任意の欄「表示の長さの単位」を読む(FR-814、§2.10。P6 タスク27)。
+ * 封筒の任意の欄「表示の長さの単位」を読む(FR-814)。
  *
  * **欄が無いのは不備ではない**(版 7 でも持たないファイルがある)ので `undefined` を返す。
  * 欄があるのに知らない値だったときだけ、他の欄と同じ厳しさで断る(`invalidField`)。
@@ -489,12 +489,12 @@ function readEnvelopeLengthUnit(raw: Record<string, unknown>): Checked<LengthUni
 }
 
 /**
- * 封筒の任意の欄「道具の既定値」を読む(FR-814、§2.10)。`lengthUnit` と同じく、
+ * 封筒の任意の欄「道具の既定値」を読む(FR-814)。`lengthUnit` と同じく、
  * **欄が無ければ `undefined`、あれば 5 欄すべてを厳密に検査する。**
  *
  * 途中まで書かれた `toolDefaults` を「ある分だけ読む」ようにはしない。半端な設定を
  * 黙って受け入れると、どの値が利用者の指定でどれが既定なのかが後から分からなくなる。
- * 知らない欄は読み飛ばす(P12 で欄が増えたひな形を、この版のアプリでも開けるように)。
+ * 知らない欄は読み飛ばす(後で欄が増えたひな形を、この版のアプリでも開けるように)。
  */
 function readEnvelopeToolDefaults(
   raw: Record<string, unknown>,
@@ -545,9 +545,9 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
   if (!app.ok || app.value !== PCAD_APP_NAME) {
     return fail('notPcad', NOT_PCAD_MESSAGE);
   }
-  // 種別は封筒の欄なので、中身を読む前に見る(統括の決定、要件§8)。
+  // 種別は封筒の欄なので、中身を読む前に見る(要件§8)。
   // 欄そのものが無い・文字列でないものは PointerCAD の封筒になっていないので notPcad、
-  // 文字列だが受け入れる一覧(部品とひな形。§0.a-0.35)に無いものは
+  // 文字列だが受け入れる一覧(部品とひな形)に無いものは
   // 「PointerCAD のファイルだが、この種類はまだ読めない」と分けて断る。
   const kind = readString(raw, 'kind', '');
   if (!kind.ok) {
@@ -563,7 +563,7 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
   if (!savedAt.ok) {
     return failField(savedAt.problem);
   }
-  // ひな形の 2 欄(FR-814、§2.10)。どちらも任意なので、無いこと自体は断りにならない。
+  // ひな形の 2 欄(FR-814)。どちらも任意なので、無いこと自体は断りにならない。
   const lengthUnit = readEnvelopeLengthUnit(raw);
   if (!lengthUnit.ok) {
     return failField(lengthUnit.problem);
@@ -627,7 +627,7 @@ function readEnvelope(raw: Record<string, unknown>, schema: number): ParseDocume
 }
 
 /**
- * 封筒の `kind` が受け入れる種別のどれかかを確かめる(§0.a-0.35)。
+ * 封筒の `kind` が受け入れる種別のどれかかを確かめる。
  * `Array.includes` は引数の型を一覧の型に狭めてしまい `as` が要るので、
  * 自前の型ガードで書く(**`as` / `any` を使わない**)。
  */
@@ -641,7 +641,7 @@ function isPcadDocumentKind(value: string): value is PcadDocumentKind {
 }
 
 /**
- * 拘束の `id` は文書の中(複数スケッチをまたいで)重ならないことを確かめる(P4b タスク21の
+ * 拘束の `id` は文書の中(複数スケッチをまたいで)重ならないことを確かめる(過去に見つけた
  * 落とし穴)。重なると一覧と印が混ざるため、見つけたら理由つきで断る。
  */
 function findDuplicateConstraintId(sketches: readonly SketchDocument[]): string | null {
@@ -658,9 +658,9 @@ function findDuplicateConstraintId(sketches: readonly SketchDocument[]): string 
 }
 
 /**
- * 外観の割り当ての `id` は表の中で重ならないことを確かめる(FR-1106〜1110、P5 タスク5)。
+ * 外観の割り当ての `id` は表の中で重ならないことを確かめる(FR-1106〜1110)。
  * `findDuplicateConstraintId` と同じ理由(重なると「1 つずつ外す」(FR-1110)がどちらを
- * 外すか決まらない。統括の指示により、重複は前方互換の対象にせず `invalidField` で断る)。
+ * 外すか決まらない。重複は前方互換の対象にせず `invalidField` で断る)。
  */
 function findDuplicateAppearanceId(table: AppearanceTable): string | null {
   const seen = new Set<string>();
@@ -674,7 +674,7 @@ function findDuplicateAppearanceId(table: AppearanceTable): string | null {
 }
 
 /**
- * 選択セット・下絵の `id` が重なっていないことを確かめる(FR-112、FR-332、P6 タスク37・38)。
+ * 選択セット・下絵の `id` が重なっていないことを確かめる(FR-112、FR-332)。
  * `findDuplicateAppearanceId` とまったく同じ理由(重なると「1 つずつ消す」「名前を変える」が
  * どちらを指すか決まらない)で、**エラーコードは増やさず** `invalidField` で断る。
  */
@@ -691,9 +691,9 @@ function findDuplicateId(ids: readonly string[]): string | null {
 
 /**
  * 移行を試みる前に、封筒の版と文書自身が持つ版が食い違っていないかを確かめる
- * (要件§8、統括の決定④)。移行は封筒の版だけで判定し(このファイル冒頭の決めごと)、
+ * (要件§8)。移行は封筒の版だけで判定し(このファイル冒頭の決めごと)、
  * `SCHEMA_MIGRATIONS` の各段は `schemaVersion` を無条件に書き換えるため、
- * ここで先に確かめないと版4への移行(P4 タスク31)が移行前の食い違いを握りつぶしてしまう
+ * ここで先に確かめないと版4への移行が移行前の食い違いを握りつぶしてしまう
  * (`readEnvelope` の同種の検査は移行の要らない=封筒が今の版のときにしか通らない)。
  * `document` が record でない、または `schemaVersion` が数でなければ、
  * その不備は通常の欄検査(`readPartDocument`)に断らせるのでここでは何もしない。
@@ -718,7 +718,7 @@ function envelopeDocumentVersionMismatch(
 
 /**
  * `document.json` の中身(すでに JSON.parse 済みのもの)から部品文書を読む。
- * 封筒の `schema` を先に検査してから中身を読む(統括の決定④)。
+ * 封筒の `schema` を先に検査してから中身を読む。
  */
 function decodeFile(raw: unknown): ParseDocumentResult {
   if (!isRecord(raw)) {

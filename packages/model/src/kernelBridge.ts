@@ -1,9 +1,9 @@
 /**
- * model から幾何カーネルへの唯一の接点(計画書 docs/plans/P1-式とスケッチ.md タスク12、
- * docs/plans/P3-加工フィーチャー.md タスク17)。
+ * model から幾何カーネルへの
+ * 唯一の接点。
  *
  * @pointercad/kernel の型はこの入口と kernelBridge/ 内の変換処理で使い、外へは model の型で返す
- * (P0 §0.11、rules/04-設計の規律.md の依存方向)。Workerの接続と実行はこの入口が所有し、変換処理は通信しない。
+ * (rules/04-設計の規律.md の依存方向)。Workerの接続と実行はこの入口が所有し、変換処理は通信しない。
  * 例外はkernelBridge/splineMath.tsからimportを持たない純数値subpathへの委譲だけで、Worker/OCCTの入口は増やさない。
  */
 
@@ -235,13 +235,13 @@ export function sketchChamferGeometry(
 }
 
 /**
- * 対象の立体を作ったフィーチャーの id が、いま渡された `steps` の中に見つからなかったとき
- * (§0.a-0.30)。
+ * 対象の立体を作ったフィーチャーの id が、いま渡された `steps` の中に見つからなかったときの
+ * 断りの文言。
  *
  * kernel(`worker/kernelApi.ts` の `MEASURE_MISSING_SHAPE_MESSAGE`)が形状キャッシュに
  * 鍵が無かったときに返すのと**同じ日本語**。kernel はこの文字列を輸出していない
  * (`KernelApi` の実装の中だけの定数)ので、断りの文言を 1 つに揃えるためここへ複製する。
- * **測定は再計算を起こさない読み取り**(§0.a-0.30)なので、鍵が引けない対象があるときは
+ * **測定は再計算を起こさない読み取り**なので、鍵が引けない対象があるときは
  * カーネルを呼ばずにここで断る(古い・存在しない鍵で問い合わせて紛らわしい失敗を返させない)。
  */
 const MEASURE_MISSING_SHAPE_MESSAGE = '測れませんでした。もう一度お試しください。';
@@ -263,7 +263,7 @@ function toFailureMessage(error: unknown): string {
 }
 
 /* ------------------------------------------------------------------ *
- * 3D プリント向けの点検(FR-815、P6 §0.51・§0.53・§2.16、タスク46 = 43a)
+ * 3D プリント向けの点検(FR-815)
  * ------------------------------------------------------------------ */
 
 /**
@@ -313,7 +313,7 @@ export {
 const PRINTABILITY_NO_BODY_MESSAGE = '点検できる形がありません。';
 
 /* ------------------------------------------------------------------ *
- * 部分形状の選び直し(FR-325・FR-328〜330 の上流追従、P4 タスク25)— 同期の純関数
+ * 部分形状の選び直し(FR-325・FR-328〜330 の上流追従)— 同期の純関数
  * ------------------------------------------------------------------ */
 
 export { resolveSubShapeReference, resolveReplacementSubShapeReference, createSubShapeReferenceResolver, SUB_SHAPE_AMBIGUITY_MARGIN, type SubShapeReferenceResolution } from './kernelBridge/referenceResolution.js';
@@ -441,7 +441,7 @@ function toPrintabilityProgressProxy(
 declare global {
   interface Window {
     /**
-     * **検査専用の口**(P5、NFR-PF-4 の E2E)。アプリはこの値を 1 か所も書かない。
+     * **検査専用の口**(NFR-PF-4 の E2E)。アプリはこの値を 1 か所も書かない。
      *
      * 正の数を入れておくと、立体の**段と段の間**(カーネルが中止を尋ねてくるところ)で
      * 毎回この ms だけ待ってから答える。頁の外(Playwright)から入れるためだけにあり、
@@ -468,14 +468,14 @@ function debugStepDelayMs(): number {
 }
 
 /**
- * 中止を尋ねる関数も同じ理由で Comlink.proxy で包む(§1.2-5)。
+ * 中止を尋ねる関数も同じ理由で Comlink.proxy で包む。
  *
  * ここに**検査専用の遅延の口**(`window.pcadDebugStepDelayMs`)を 1 つだけ挟んである。
  * カーネルは段と段の間でこの関数を `await` して答えを待つ(`recomputeSolids` の
  * 「中止の口が渡されているときだけ制御を譲る」)ので、ここで待つと**計算そのものが
  * その ms だけ延びる**。長い計算(NFR-PF-4 の帯と「中止」)を機械の速さに頼らず作れる。
- * CPU を絞って長い計算を作る手は、共有の遅いランナーでは検査が時間切れになった
- * (rules/06 10.14)。値が入っていない通常の道では `shouldCancel()` をそのまま返し、
+ * CPU を絞って長い計算を作る手は、共有の遅いランナーでは検査が時間切れになった。
+ * 値が入っていない通常の道では `shouldCancel()` をそのまま返し、
  * 約束(Promise)すら作らない。
  */
 function toCancelProxy(
@@ -523,7 +523,7 @@ function toOutcome(
     normals: mesh.normals,
     indices: mesh.indices,
     triangleCount: mesh.triangleCount,
-    // 線分1本あたり 6 要素(始点 xyz + 終点 xyz)の並び(docs/報告記録.md 2026-09-02 21:03)。
+    // 線分1本あたり 6 要素(始点 xyz + 終点 xyz)の並び。
     boundaryPositions: mesh.boundaryPositions,
   }));
 
@@ -545,7 +545,7 @@ function toOutcome(
 }
 
 /**
- * Worker が壊れたときに利用者へ見せる理由(NFR-RE-1、§2.9、§0.a-0.19)。
+ * Worker が壊れたときに利用者へ見せる理由(NFR-RE-1)。
  * OCCT の C++ 側が `abort()` すると WASM ごと止まり、以後どの依頼にも応答しなくなる。
  * この場合いまの再計算はやり直せないので、値を戻すよう案内する。
  */
@@ -717,7 +717,7 @@ function rememberOperation<T>(connection: KernelConnection, status: KernelOperat
 }
 
 /**
- * Workerが黙ったまま壊れても全RPCを決着させる(§2.9)。共有Promiseのthenは使わず、
+ * Workerが黙ったまま壊れても全RPCを決着させる。共有Promiseのthenは使わず、
  * 呼び出しごとの通知を登録する。同期送信失敗もfinallyを通し、通知とcallbackを解放する。
  * 破損・disposeは既存のrefuseの値で返す。決着理由はoperationStatus(result)で区別する。
  */
@@ -921,7 +921,7 @@ const MESH_LEDGER_LIMIT_BYTES = 512 * 1024 * 1024;
 type CurrentWorkerMeshQuery = NonNullable<KernelApi['readCurrentMeshAccounting']>;
 type CurrentWorkerMeshObservation = Awaited<ReturnType<CurrentWorkerMeshQuery>>;
 type ReferenceMeshLeaseDisposition = Awaited<ReturnType<NonNullable<KernelApi['releaseReferenceMeshLease']>>>;
-// Record bounds follow the 512 MiB capacity (one per HOST_RECORD_BYTES = 131,072), not a fixed 128 owners (EX12).
+// Record bounds follow the 512 MiB capacity (one per HOST_RECORD_BYTES = 131,072), not a fixed 128 owners.
 const realmMeshHost = MeshHostRetention.forCapacity(MESH_LEDGER_LIMIT_BYTES);
 let nextMeshProvider = 0;
 const realmMeshProviders = new Map<number, {
@@ -1332,7 +1332,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     phases.record('connection-closed', capturedGeneration, null);
   }
   /**
-   * 壊れた Worker を締めて作り直す(§2.9、§0.a-0.19)。形状キャッシュは Worker の中にあるので
+   * 壊れた Worker を締めて作り直す。形状キャッシュは Worker の中にあるので
    * 作り直すと空になり、次の再計算は全段作り直しになる(遅くなるが落ちない、この限界は
    * `KernelBridge.recomputeSolids` の doc comment にも書いた)。
    */
@@ -1685,7 +1685,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       }
       const active = connection;
       // 線・円弧の折れ線は UI が自前で作るので、カーネルへは面だけを頼む
-      // (マウス操作のたびに Worker を往復させないため、NFR-PF-1、計画書 §2.7)。
+      // (マウス操作のたびに Worker を往復させないため、NFR-PF-1)。
       return raceWithBroken(
         active,
         () => active.remote
@@ -1703,7 +1703,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       if (steps.length === 0 && options.localMesh === undefined) {
         return { bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] };
       }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
       if (health.broken && !disposed) {
         restart();
       }
@@ -1777,7 +1777,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
           } finally { inFlightParts.delete(owner); }
         },
         // Worker がこの依頼の途中で壊れた。拒否せずに理由つきの失敗として解決する
-        // (recomputePart.ts が kernelFailed として拾う。§0.a-0.19「拒否しない」)。
+        // (recomputePart.ts が kernelFailed として拾う。「拒否しない」)。
         // 消費されて画面に出ないはずの段(visible: false)は、成功しても失敗しても
         // 利用者には見えないので失敗に数えない(toSolidOutcome の扱いと揃える)。
         () => ({
@@ -1797,7 +1797,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       if (requests.length === 0) {
         return { results: [], failures: [] };
       }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
       if (health.broken && !disposed) {
         restart();
       }
@@ -1948,10 +1948,10 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     async measure(steps, targets, kind): Promise<MeasureOutcome> {
       const request = toMeasureRequest(steps, targets, kind);
       if (request === null) {
-        // 鍵が引けない対象があるので、Worker を起こさずここで断る(§0.a-0.30)。
+        // 鍵が引けない対象があるので、Worker を起こさずここで断る。
         return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
       }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
       if (health.broken && !disposed) {
         restart();
       }
@@ -1972,7 +1972,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
         // 鍵が引けない立体があるので、Worker を起こさずここで断る(NFR-UX-5)。
         return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
       }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
       if (health.broken && !disposed) {
         restart();
       }
@@ -2008,7 +2008,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     },
 
     async importShape(options): Promise<ShapeImportOutcome> {
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
       if (health.broken && !disposed) {
         restart();
       }
@@ -2025,7 +2025,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
 
     async inspectPrintability(steps, options): Promise<PrintabilityOutcome> {
       if (options.bodies.length === 0) {
-        // 点検する形が 1 つも無いので Worker を起こさない(§0.a-0.30)。
+        // 点検する形が 1 つも無いので Worker を起こさない。
         return { kind: 'failed', message: PRINTABILITY_NO_BODY_MESSAGE };
       }
       const items = toShapeInspectItems(steps, options.bodies);
@@ -2033,7 +2033,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
         // 鍵が引けない立体があるので、Worker を起こさずここで断る(測定と同じ)。
         return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
       }
-      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
+      // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す。
       if (health.broken && !disposed) {
         restart();
       }
@@ -2113,14 +2113,14 @@ function hasPartLifetime(api: KernelApi): api is PartLifetimeApi {
 }
 
 /**
- * Worker を通さず、同じプロセスの `KernelApi` へ直につなぐ橋(P4 タスク25)。
+ * Worker を通さず、同じプロセスの `KernelApi` へ直につなぐ橋。
  *
  * **本番では使わない。** ブラウザ・Electron は必ず `createKernelBridge`(Worker 版)を使う
  * (幾何カーネルは Web Worker 上で動かす、rules/04・NFR-PF-4)。この関数があるのは、
  * **Node の検査で「部品文書の経路が実カーネルで最後まで通る」ことを確かめる**ためである
- * (t21 の教訓: 偽の橋だけでは配線もれが見つからない。`docs/報告記録.md` 2026-09-04 21:05)。
+ * (t21 の教訓: 偽の橋だけでは配線もれが見つからない)。
  *
- * Worker が無いので壊れの検知・作り直し(§2.9)は持たない。`dispose` も何もしない
+ * Worker が無いので壊れの検知・作り直しは持たない。`dispose` も何もしない
  * (形状キャッシュは渡された `KernelApi` の持ち物で、寿命は呼び出し側が決める)。
  */
 export function createDirectKernelBridge(api: PartLifetimeApi): AssemblyKernelBridge & DrawingKernelBridge & FunctionKernelBridge;
@@ -2213,7 +2213,7 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
     async measure(steps, targets, kind): Promise<MeasureOutcome> {
       const request = toMeasureRequest(steps, targets, kind);
       if (request === null) {
-        // 鍵が引けない対象があるので、カーネルを呼ばずここで断る(§0.a-0.30)。
+        // 鍵が引けない対象があるので、カーネルを呼ばずここで断る。
         return { kind: 'failed', message: MEASURE_MISSING_SHAPE_MESSAGE };
       }
       const result = await api.measure(request);
@@ -2251,7 +2251,7 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
       }
       const items = toShapeInspectItems(steps, options.bodies);
       if (items === null) {
-        // 鍵が引けない立体があるので、カーネルを呼ばずここで断る(§0.a-0.30)。
+        // 鍵が引けない立体があるので、カーネルを呼ばずここで断る。
         return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
       }
       try {

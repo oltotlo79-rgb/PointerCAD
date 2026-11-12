@@ -1,6 +1,6 @@
 /**
- * 表示と入力の長さの単位(要件 FR-811・FR-814、計画書 docs/plans/P6-入出力.md
- * §2.9・§2.9.1、§0.a-0.1・§0.a-0.63)。
+ * 表示と入力の長さの単位
+ * (要件 FR-811・FR-814)。
  *
  * **内部は mm 固定**(NFR-RE-3)。換算するのは**表示と入力の境目だけ**で、文書には
  * 単位を保存しない(表示を mm ↔ inch で切り替えても `.pcad` は 1 バイトも変わらない)。
@@ -20,14 +20,14 @@ import { formatLength as formatMillimeters } from '../measure/massProperties.js'
 import type { Parameter, ParameterUnit } from '../parameters/types.js';
 
 /**
- * 画面に出す長さの単位(FR-811)。**端末の設定であって文書の属性ではない**(§0.a-0.1)。
+ * 画面に出す長さの単位(FR-811)。**端末の設定であって文書の属性ではない**。
  * 式の中に書ける単位(`@pointercad/expression` の `ExpressionLengthUnit` = `mm` / `in` / `"`)
  * とは別物で、あちらは綴り、こちらは表示の選択肢である。
  */
 export type LengthUnit = 'mm' | 'inch';
 
 /**
- * 表示の単位の一覧。設定の読み込み(タスク3)が「知らない単位」を断るときの正本にする
+ * 表示の単位の一覧。設定の読み込みが「知らない単位」を断るときの正本にする
  * (同じ一覧を 2 か所に書かない。`parameters/types.ts` の `PARAMETER_UNITS` と同じ流儀)。
  */
 export const LENGTH_UNITS: readonly LengthUnit[] = ['mm', 'inch'];
@@ -41,7 +41,7 @@ export const LENGTH_UNITS: readonly LengthUnit[] = ['mm', 'inch'];
  */
 export const MM_PER_INCH = 25.4;
 
-/** inch で表示するときの小数の桁数(§2.9)。0.001in ≒ 0.0254mm で、機械加工の読みに足りる。 */
+/** inch で表示するときの小数の桁数。0.001in ≒ 0.0254mm で、機械加工の読みに足りる。 */
 export const INCH_DISPLAY_DIGITS = 3;
 
 /**
@@ -116,7 +116,7 @@ function greatestCommonDivisor(left: number, right: number): number {
  *
  * **刻みへ丸めるので、元の mm へは戻らない**(`10mm` は `25/64"` = `9.921875mm`。差
  * `0.078125mm`)。値そのものを扱う欄には使わず、**読ませるための表記**にだけ使う。
- * 表示の既定は小数(`formatDisplayLength`)のままで、分数にするかは画面が選ぶ(タスク3b)。
+ * 表示の既定は小数(`formatDisplayLength`)のままで、分数にするかは画面が選ぶ。
  *
  * 丸めは符号を外した大きさで行う(`Math.round` は負の 0.5 を 0 側へ寄せるため、
  * 正負で刻みの取り方が変わらないようにする)。
@@ -146,8 +146,8 @@ export function toFractionalInch(
  * inch の別名として使われる引用符のうち、半角の `"` へ直すもの。
  *
  * 日本語入力(IME)で `3/8"` と打つと閉じ引用符 U+201D(”)が入り、式としては
- * 「使えない文字」になる。ここで半角へ直しておく(`docs/報告記録.md` 2026-09-06 02:16 の
- * 統括の決定「全角 ” の正規化は入力の受け方の純関数で」)。
+ * 「使えない文字」になる。ここで半角へ直しておく(
+ * 「全角 ” の正規化は入力の受け方の純関数で」)。
  *
  * `expression` の `normalizeExpressionSource`(全角の数字・記号 → 半角)へ足さないのは、
  * 引用符が**入力欄の都合**であって式の文法の話ではないため。1 文字を 1 文字へ置き換えるので
@@ -170,7 +170,7 @@ export function normalizeInchQuotes(source: string): string {
 }
 
 /**
- * 数値欄に打たれた文字列を、**保存する式の文字列**へ直す(§0.a-0.63、§2.9.1 ②)。
+ * 数値欄に打たれた文字列を、**保存する式の文字列**へ直す。
  * 値ではなく式を返す(FR-202「式は文字列のまま保存される」)。
  *
  * - 表示が inch で、打った文字列に単位が 1 つも書かれていないときは、**全体を `(…)in` で
@@ -214,7 +214,7 @@ function isLengthParameterUnit(unit: ParameterUnit): boolean {
 }
 
 /**
- * 長さでないパラメータ(角度・無次元)の名前の集合(§0.a-0.63)。
+ * 長さでないパラメータ(角度・無次元)の名前の集合。
  * `evaluateExpression` の `nonLengthVariables` へそのまま渡す。
  *
  * 単位つきの式(`(w+10)in`)の中では、**長さのパラメータだけ**を単位の倍率で割ってから

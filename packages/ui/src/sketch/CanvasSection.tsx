@@ -57,7 +57,7 @@ function CanvasOpacity({ canvas }: { readonly canvas: SketchCanvas }): React.JSX
  *
  * **同じ対応表が `StatusBar.tsx`(`planeLabel`)にもある。** あちらは作業平面の名前まで
  * 引くので入力が違い(文書の一覧が要る)、ここは下絵の行に短く出すだけなので分けてある。
- * 1 か所へまとめるならタスク45(図柄と札の整理)でまとめて行う。
+ * 1 か所へまとめるなら、図柄と札の整理と一緒に行う。
  */
 const CANVAS_PLANE_LABEL_KEYS = {
   xy: 'toolbar.plane.xy',
@@ -70,12 +70,12 @@ function canvasPlaneLabel(planeId: string): string {
 }
 
 /**
- * 「下絵」の節(FR-332、§2.14、タスク39・43)。
+ * 「下絵」の節(FR-332)。
  *
  * 敷いてある下絵を並べ、**濃さ・入切・削除・寸法合わせ**を持つ。幅・高さ・中心・向きは
  * 読むだけにしてある——これらを直す口はストアに無く(2 点の寸法合わせ `applyCanvasScale`
  * がまとめて決める)、ここで文書を直に書き換えると同じ判断が 2 か所に分かれるため。
- * **どの操作でも再計算は走らない**(§2.14 の表)。
+ * **どの操作でも再計算は走らない**。
  */
 export function CanvasSection(): React.JSX.Element {
   const canvases = useAppStore((state) => state.document.canvases);

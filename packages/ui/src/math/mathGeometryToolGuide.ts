@@ -16,13 +16,13 @@ import { activePartDocument } from '../store/documentKind.js';
 import { currentMathGeometry, type MathGeometryResultState } from './mathGeometryResults.js';
 import { mathGeometrySelection, type MathGeometryCandidateReason } from './mathGeometrySelection.js';
 
-/** 道具の id(GR-30 が `NumericInputToolId` へ足したもの)。 */
+/** 道具の id(`NumericInputToolId` の 1 つ)。 */
 const MATH_GEOMETRY_TOOL: MathGeometryToolId = 'mathGeometry';
 
 /**
- * 案内の段。GR-15 の理由コード(何も選んでいない・組に対応する量がない・選びすぎ)に、
+ * 案内の段。`mathGeometrySelection` の理由コード(何も選んでいない・組に対応する量がない・選びすぎ)に、
  * 測れる量がある段(`ready`)と形の計算中(`computing`)を足したもの。
- * 理由コードが増えたら(GR-22 等)、下の表の網羅の型検査が文の足し忘れを落とす。
+ * 理由コードが増えたら、下の表の網羅の型検査が文の足し忘れを落とす。
  */
 type MathGeometryToolGuideStage = MathGeometryCandidateReason | 'ready' | 'computing';
 
@@ -63,13 +63,13 @@ function guideOf(stage: Exclude<MathGeometryToolGuideStage, 'ready'>): MathGeome
  *
  * 1. 何も選んでいない → 段0「測りたい点・辺・面・立体を選んでください。…」
  * 2. 選びすぎ(4 つ以上) → 「選ぶのは3つまでです。」
- * 3. 形の計算中(GR-14 の `computing`) → 「形の計算が終わってから追加してください。」
+ * 3. 形の計算中(`computing`) → 「形の計算が終わってから追加してください。」
  * 4. 選んだ組に対応する量がない → 「選んだ組み合わせから測れる量がありません。」
  * 5. それ以外 → 段1「{count}件の量を測れます。…」
  *
  * 1・2 は選択そのものだけで決まるので、計算中でも正しい次の一手になる(選ぶことは計算中にも
  * できる)。4・5 は形(解決済みのスケッチ・ボディ)から作る判断で、計算中は古い形に基づくため、
- * 計算中の文を先に出す。履歴の途中表示・取消・形を作れなかったとき(GR-14 の `timeline`・
+ * 計算中の文を先に出す。履歴の途中表示・取消・形を作れなかったとき(`timeline`・
  * `cancelled`・`notEvaluated`)は値を出せないだけで、定義の追加は文書を変えて計算し直すので、
  * 選択の段をそのまま出す(値が出ない理由は節の状態の文が伝える)。
  */
@@ -77,7 +77,7 @@ export function mathGeometryToolGuide(state: MathGeometryToolGuideState): MathGe
   if (state.activeTool !== MATH_GEOMETRY_TOOL || activePartDocument(state) === null) {
     return null;
   }
-  // GR-22b: also pass the document's reference geometry (mathGeometryRows.ts's selectionOf does the
+  // also pass the document's reference geometry (mathGeometryRows.ts's selectionOf does the
   // same), so a point selected together with a reference coordinate system offers `coordinate` in
   // that frame here too — this guide's count and the candidate list (mathGeometryRows.ts) must agree.
   const { candidates, reason } = mathGeometrySelection(
@@ -104,7 +104,7 @@ export function mathGeometryToolGuide(state: MathGeometryToolGuideState): MathGe
 }
 
 /**
- * 案内を 1 文にする(`{count}` などを差し込む)。状態欄と節の先頭(GR-19a)が同じ文を出すよう、
+ * 案内を 1 文にする(`{count}` などを差し込む)。状態欄と節の先頭が同じ文を出すよう、
  * 文の組み立てもここ 1 か所に置く。
  */
 export function mathGeometryToolGuideText(guide: MathGeometryToolGuide): string {

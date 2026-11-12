@@ -1,4 +1,4 @@
-/** GR-31: create a coefficient referring to a current measurement, in one Undo entry. */
+/** create a coefficient referring to a current measurement, in one Undo entry. */
 import { mathGeometryParameterDraft, prepareDocumentMathIdentity,
   type MathGeometryValueUnit, type PartDocument } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
@@ -41,7 +41,7 @@ const UNIT_KEYS = {
 } as const satisfies Record<MathGeometryValueUnit, MessageKey>;
 
 /**
- * GR-19b calls this with the latest store state and the document owning the clicked row.
+ * The panel calls this with the latest store state and the document owning the clicked row.
  * No Worker or intermediate document is published. Refusals leave both document and Undo untouched;
  * success returns the localized notice (and its key/name) for the panel to display.
  */

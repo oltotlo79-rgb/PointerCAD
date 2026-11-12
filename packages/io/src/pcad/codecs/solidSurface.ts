@@ -30,18 +30,18 @@ import {
   type SurfaceOperation,
 } from '@pointercad/model';
 
-/** 曲面の作り方5種(FR-428)。カーネルの `SurfaceInput` と同じ実名(§0.a-0.45)。 */
+/** 曲面の作り方5種(FR-428)。カーネルの `SurfaceInput` と同じ実名。 */
 const SURFACE_OPERATION_KINDS: readonly SurfaceOperation['kind'][] = [
   'extrude',
   'revolve',
   'planar',
   'loft',
   'face',
-  // 面のオフセット(P5 タスク42b が kernel へ足した 6 種目。FR-428)。
+  // 面のオフセット(kernel の 6 種目。FR-428)。
   'offset',
 ];
 
-/** 曲面の作り方5種(FR-428、P5 タスク43)。実名はカーネルの `SurfaceInput` と同じ。 */
+/** 曲面の作り方5種(FR-428)。実名はカーネルの `SurfaceInput` と同じ。 */
 function serializeSurfaceOperation(operation: SurfaceOperation): SurfaceOperation {
   switch (operation.kind) {
     case 'extrude':
@@ -74,7 +74,7 @@ function serializeSurfaceOperation(operation: SurfaceOperation): SurfaceOperatio
         face: serializeSubShapeRef(operation.face),
       };
     case 'offset':
-      // 面のオフセット(FR-428 の 6 種目、P5 タスク42b・46)。面と距離を書く。
+      // 面のオフセット(FR-428 の 6 種目)。面と距離を書く。
       return {
         kind: 'offset',
         targetFeatureId: operation.targetFeatureId,

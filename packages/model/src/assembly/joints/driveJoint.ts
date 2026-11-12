@@ -1,4 +1,4 @@
-/** P7 §2.6/タスク20。角度の履歴と限界は呼出しの一時入力。文書と配置を変更しない。 */
+/** ジョイントの駆動。角度の履歴と限界は呼出しの一時入力。文書と配置を変更しない。 */
 import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { crossVec3, dotVec3, scaleVec3, subVec3 } from '../../sketch/vec3.js';

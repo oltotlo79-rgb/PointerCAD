@@ -1,5 +1,5 @@
 /**
- * Dragging the section view handle (FR-111, P6 task 35, §0.42; R07).
+ * Dragging the section view handle (FR-111).
  *
  * Responsibility: only the display offset of the section view. The document and Undo never change;
  * the offset is written to the display state while moving. The grab is bound to the document it

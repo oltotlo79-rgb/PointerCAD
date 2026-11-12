@@ -1,13 +1,13 @@
 import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import { dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /**
- * 穴あけ(FR-405、計画書 P3 §2.4、タスク6)と、入口の形(ざぐり・皿もみ。FR-422、
- * 計画書 P5 §0.a-0.39、タスク40)。
+ * 穴あけ(FR-405)と、
+ * 入口の形(ざぐり・皿もみ。FR-422)。
  *
  * 面を指紋で選び直し、その平面へ中心の点を投影し、面の法線の逆向き(必要なら傾けた向き)へ
  * 円柱を伸ばして対象から差し引く。円柱は 1 つのコンパウンドへまとめ、**ブーリアンは 1 回**で行う。
  *
- * **§1.4-⑧ の実測(2026-09-03、Node、板 40×30×10 と 200×200×10)。**
+ * **実測(2026-09-03、Node、板 40×30×10 と 200×200×10)。**
  * `BRepFeat_MakeCylindricalHole`(②)と「円柱+ブーリアン差」(①)を比べた結果、
  * 体積はどちらも解析値と一致したが、次の 3 点で①を採った。
  *   - 速さ: 穴 20 個で ①(コンパウンド 1 回差)150ms に対し、②(1 穴ずつ)450ms、
@@ -16,7 +16,7 @@ import { dotVec as dot, crossVec as cross } from './sketchCorner.js';
  *   - 断り方: 材料に当たらない穴・板より大きい径の穴で、② は `BRepFeat_InvalidPlacement` を
  *     返すだけで「何が起きたか」を区別できない。① は「何も削れなかった」「立体が残らなかった」を
  *     体積で見分けられ、利用者へ違う直し方を案内できる(FR-504)。
- * さらに②は軸 1 本ずつしか受け取れないので、パターン(§0.a-0.20)で工具を複製する作りに合わない。
+ * さらに②は軸 1 本ずつしか受け取れないので、パターンで工具を複製する作りに合わない。
  */
 
 import type {
@@ -49,14 +49,14 @@ import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
 import { readNativePlanarBasis } from './planarFaceBasis.js';
 import { isIdentityTransform, transformShape, transformsOrIdentity } from './transformShape.js';
 
-/** 面が選び直せなかったとき(FR-504、§2.2.5)。 */
+/** 面が選び直せなかったとき(FR-504)。 */
 const MISSING_FACE_MESSAGE =
   '穴をあけるもとの面が見つかりません。形が大きく変わったため、選び直してください。';
 
-/** P3 の制限。曲がった面への穴は、面の平面が決まらないので扱わない。 */
+/** 曲がった面への穴は、面の平面が決まらないので扱わない。 */
 const NOT_PLANAR_MESSAGE = '穴をあけられるのは平らな面だけです。平らな面を選び直してください。';
 
-/** 円筒の側面の穴(EX05)で、選び直した面が円筒でなかったとき。 */
+/** 円筒の側面の穴で、選び直した面が円筒でなかったとき。 */
 const NOT_CYLINDRICAL_MESSAGE = '円筒の側面の穴をあけられるのは円筒の面だけです。円筒の面を選び直してください。';
 
 /** 円筒の側面の穴の位置が 1 つも無いとき。 */
@@ -128,9 +128,9 @@ const NOTHING_LEFT_MESSAGE = '穴をあけたら立体が残りませんでし�
  *
  * **黙って通さずに断る**のは、通すと「穴の段があるのに形が 1 つも変わらない」立体が
  * ツリーに並び、利用者が理由を知る手立てが無くなるためである(NFR-UX-5 の
- * 「理由提示」、FR-504)。断れば P2 の作り(ツリーの赤い印・プロパティの理由・
+ * 「理由提示」、FR-504)。断れば既存の作り(ツリーの赤い印・プロパティの理由・
  * ステータスバー)がそのまま働き、どの段を直せばよいかが分かる。
- * パターン(§0.a-0.20)で一部の穴だけが材料を外れる場合は、他の穴が削れていれば
+ * パターンで一部の穴だけが材料を外れる場合は、他の穴が削れていれば
  * 削れた量が 0 にならないので、この断りには当たらない。
  */
 const NOTHING_REMOVED_MESSAGE = '穴が材料に当たりませんでした。中心の位置や向きを見直してください。';
@@ -142,16 +142,16 @@ const NOTHING_REMOVED_MESSAGE = '穴が材料に当たりませんでした。�
 const MIN_REMOVED_VOLUME_MM3 = 1e-9;
 
 /**
- * 穴の入口の形(FR-422、計画書 P5 §0.a-0.39)。
+ * 穴の入口の形(FR-422)。
  *
- * 穴の種類を増やすのではなく**同じ穴の入口だけを広げる**指定にしてある(§0.a-0.39 の承認)。
+ * 穴の種類を増やすのではなく**同じ穴の入口だけを広げる**指定にしてある。
  * 既定は `plain`(広げない)で、読み手が古い文書へ補う値もこれになる。
  *
  * - `counterbore`(ざぐり): 径 `diameter`・深さ `depth` の円柱で入口を広げる。
  *   円筒面では高さ・角度で決まる入口から放射方向へ測った深さで、底は穴の軸に垂直な平面。
  * - `countersink`(皿もみ): 頭径 `diameter`・開き角 `angle`(**ラジアン**)の円錐で広げる。
  *   円錐の深さは `(頭径 − 穴の径) / 2 / tan(angle / 2)` で**カーネルが決める**
- *   (model には計算させない。計画書 タスク46 手順4)。
+ *   (model には計算させない)。
  */
 export type HoleEntrySpec =
   | { readonly kind: 'plain' }
@@ -166,7 +166,7 @@ const PLAIN_ENTRY: HoleEntrySpec = { kind: 'plain' };
  *
  * **皿もみの深さの式 `(頭径 − 穴の径) / 2 / tan(角度/2)` はここ 1 か所だけに置く。**
  * 工具を作る `makeEntryTool` と、**ねじの山を入口の底から始める `makeThread.ts`**
- * が同じ値を要るので、同じ規則を 2 か所に書かないための輸出である(タスク42c)。
+ * が同じ値を要るので、同じ規則を 2 か所に書かないための輸出である。
  * 値の正しさ(角度が 0 度より大きく 180 度未満、頭径が穴の径より大きい)は
  * `checkHoleEntry` が先に確かめる約束で、ここは式だけを持つ。
  */
@@ -185,27 +185,27 @@ export function holeEntryDepth(entry: HoleEntrySpec | undefined, diameter: numbe
   }
 }
 
-/** 面の向きから求めた、穴をあけるための座標系(§2.4.2)。 */
+/** 面の向きから求めた、穴をあけるための座標系。 */
 export interface HoleFrame {
   /** 掘り進む向き(単位ベクトル)。傾きを適用した後。円筒の側面の穴では最初の位置の向き。 */
   readonly direction: Vec3Tuple;
   /** 面の平面へ投影した中心点。centers と同じ並び。円筒の側面の穴では面の上の入口の点。 */
   readonly origins: readonly Vec3Tuple[];
   /**
-   * 円筒の側面の穴(EX05)だけが持つ、`origins` と同じ並びの**位置ごとの**掘る向き。
+   * 円筒の側面の穴だけが持つ、`origins` と同じ並びの**位置ごとの**掘る向き。
    * 平面の穴では省く(すべての穴が `direction` へ掘る。今までの作りと 1 命令も変わらない)。
    */
   readonly directions?: readonly Vec3Tuple[];
   /**
-   * 円筒の側面の穴(EX05)だけが持つ、`origins` と同じ並びの**凹んだ面(管の内面)の半径**。
+   * 円筒の側面の穴だけが持つ、`origins` と同じ並びの**凹んだ面(管の内面)の半径**。
    * 凸の面(外面)の位置は null。刃物を口の外側へ戻す量を、内側の空洞の中に収めるために使う。
    */
   readonly concaveRadii?: readonly (number | null)[];
   /**
    * もとの立体の境界箱の対角長(mm)。
    *
-   * 面の指紋の位置を正規化する物差し(§2.2.3、この半分)と、貫通穴の長さ・口の余裕
-   * (§0.a-0.12)の両方がこの値を使う。**同じ立体から 2 回測ると同じ値になるので、
+   * 面の指紋の位置を正規化する物差し(この半分)と、貫通穴の長さ・口の余裕
+   * の両方がこの値を使う。**同じ立体から 2 回測ると同じ値になるので、
    * `resolveHoleFrame` が測った 1 回ぶんを `makeHoleTools` へ持ち回る**
    * (以前は段ごとに 2 回測っていた)。
    */
@@ -253,17 +253,17 @@ function readPlaneFrame(
 }
 
 /**
- * 掘り進む向き(§2.4.2 の手順 4)。
+ * 掘り進む向き。
  *
  * 傾き 0 なら面の法線の逆向き(材料の中へ)。傾けるときは、
- * **方位角が「倒す先の向き」**で、第 1 軸から第 2 軸へ回る向きに測る(§0.a-0.10)。
+ * **方位角が「倒す先の向き」**で、第 1 軸から第 2 軸へ回る向きに測る。
  *
  *   d = sin(傾き角) × (cos(方位角) x + sin(方位角) y) − cos(傾き角) n
  *
- * 計画書 §2.4.2 の手順 4 は「軸 = cos(方位角)x + sin(方位角)y のまわりに −n を回す」と
+ * 当初の手順は「軸 = cos(方位角)x + sin(方位角)y のまわりに −n を回す」と
  * 書いてあるが、その式だと方位角 0 で倒れる先が**第 2 軸**になり、
- * 「方位角の基準は面の第 1 軸」(§0.a-0.10)と 90 度食い違う。ここでは決定(§0.a-0.10)の
- * 意味を採り、**方位角 0 で第 1 軸へ倒れる**式にした(統括へ報告済み)。
+ * 「方位角の基準は面の第 1 軸」と 90 度食い違う。ここでは決定の
+ * 意味を採り、**方位角 0 で第 1 軸へ倒れる**式にした。
  * 回す軸で言えば `sin(方位角)x − cos(方位角)y` のまわりに −n を回したものと同じで、
  * 傾き 0 のとき d = −n、|d| = 1 はどちらの読み方でも変わらない。
  */
@@ -284,7 +284,7 @@ function drillDirection(
   ]);
 }
 
-/** 点を面の平面へ落とす(§2.4.2 の手順 5)。p' = p − ((p − q)·n) n。 */
+/** 点を面の平面へ落とす。p' = p − ((p − q)·n) n。 */
 function projectOntoPlane(point: Vec3Tuple, frame: PlaneFrame): Vec3Tuple {
   const { normal, pointOnPlane } = frame;
   const gap = dot(
@@ -331,7 +331,7 @@ function resolveFaceOfKind(
     throw new Error(MISSING_FACE_MESSAGE);
   }
 
-  // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する(§2.2.3)。
+  // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する。
   const scale = diagonal * 0.5;
   const match = resolveFaceReference(faces, query, scale, origins);
   if (match.status !== 'matched') {
@@ -356,7 +356,7 @@ function resolveFaceOfKind(
 }
 
 /**
- * 面の指紋から穴の座標系を求める(§2.4.2 の手順 1〜5)。
+ * 面の指紋から穴の座標系を求める。
  * 面が見つからない・平面でないときは日本語の Error を投げる。
  *
  * 引数の `shape` は解放しない(呼び出し側=形状キャッシュの持ち物)。
@@ -365,7 +365,7 @@ function resolveFaceOfKind(
 const CYLINDER_LINEAR_TOLERANCE = 1e-7;
 
 /**
- * 選んだ円筒の面の座標系(EX05)。すべて OCCT の解析曲面(`BRepAdaptor_Surface_2(face, true)` の
+ * 選んだ円筒の面の座標系。すべて OCCT の解析曲面(`BRepAdaptor_Surface_2(face, true)` の
  * `Cylinder()` と、面の境界を読み込んだパラメーターの範囲)から読む。三角形分割は使わない。
  */
 interface CylinderFrame {
@@ -426,7 +426,7 @@ function readCylinderFrame(oc: OpenCascadeInstance, face: TopoDS_Face, keep: All
 }
 
 /**
- * 位置 1 つの入口の点と掘る向き(EX05)。
+ * 位置 1 つの入口の点と掘る向き。
  *
  * 1. 高さ・角度を OCCT のパラメーターへ: v = vFirst + 高さ、u = 角度(右手系)または −角度(左手系)を
  *    [uFirst, uFirst + 2π) へ畳む。
@@ -498,7 +498,7 @@ function cylinderLocationFrame(
 }
 
 /**
- * 円筒の側面の穴の座標系(EX05)。平面の穴の `resolveHoleFrame` と同じ照合・断り方で面を選び直し、
+ * 円筒の側面の穴の座標系。平面の穴の `resolveHoleFrame` と同じ照合・断り方で面を選び直し、
  * 位置ごとに入口の点と掘る向きを返す。中心の点・傾きは受け付けない(`CYLINDER_UNSUPPORTED_MESSAGE`)。
  */
 function resolveCylindricalHoleFrame(
@@ -561,7 +561,7 @@ export function resolveHoleFrame(
       throw new Error(CENTER_NOT_FINITE_MESSAGE);
     }
   }
-  // 角度はラジアン(度からの換算は model の責務。docs/報告記録.md 2026-09-02 18:23)。
+  // 角度はラジアン(度からの換算は model の責務)。
   if (!Number.isFinite(spec.tiltAngle) || spec.tiltAngle < 0 || spec.tiltAngle >= Math.PI / 2) {
     throw new Error(TILT_ANGLE_MESSAGE);
   }
@@ -690,7 +690,7 @@ function makeEntryTool(
  * 先に和で 1 つにまとめると期待どおり 11450.221285621785 になる。
  *
  * 中心が離れた穴どうしは重ならないので、**まとめるのは 1 つの中心の中だけ**で足りる。
- * コンパウンドと Cut は今までどおり 1 回のままである(§1.4-⑧ の実測を壊さない)。
+ * コンパウンドと Cut は今までどおり 1 回のままである(上の実測を壊さない)。
  */
 function fuseEntryTool(
   oc: OpenCascadeInstance,
@@ -712,15 +712,15 @@ function fuseEntryTool(
 /**
  * 穴の工具(円柱の集まり)を作る。変換(パターン)もここで適用する。
  *
- * 貫通(`depth === null`)は対象の境界箱の対角長から長さを決める(§0.a-0.12)。
- * 止まり穴は平底で、深さは面から測る(§0.a-0.11。ドリルの 118 度の先端は
- * 図面の簡略図示と合わせて P8 で判断する)。
+ * 貫通(`depth === null`)は対象の境界箱の対角長から長さを決める。
+ * 止まり穴は平底で、深さは面から測る(ドリルの 118 度の先端は
+ * 図面の簡略図示と合わせて別に判断する)。
  *
- * **変換(パターン、§0.a-0.20)の決め:** 円柱は「中心の数 × 変換の数」だけ作る。
- * `transforms` が空なら恒等 1 つとして扱う(計画書 タスク9 手順3)ので、
+ * **変換(パターン)の決め:** 円柱は「中心の数 × 変換の数」だけ作る。
+ * `transforms` が空なら恒等 1 つとして扱うので、
  * パターンでない穴はもとの位置に 1 本ずつ立つ。パターンのときに model が渡すのは
- * **もとの位置ぶんを除いた n−1 個**で、もとの穴はすでに対象のボディに開いている
- * (§2.7 の畳み方の手順 4)。恒等の変換は複製を作らずにもとの円柱をそのまま使う
+ * **もとの位置ぶんを除いた n−1 個**で、もとの穴はすでに対象のボディに開いている。
+ * 恒等の変換は複製を作らずにもとの円柱をそのまま使う
  * (要らない複製を作らないため。結果は同じ)。
  *
  * **入口の形(`entry`、FR-422):** ざぐりの円柱・皿もみの円錐は、中心ごとに下穴の円柱と
@@ -767,12 +767,12 @@ export function makeHoleTools(
     throw new Error(HOLE_FAILED_MESSAGE);
   }
 
-  // 貫通穴の余裕(§0.a-0.12)。面とちょうど接する円柱は OCCT のブーリアンが最も苦手と
+  // 貫通穴の余裕。面とちょうど接する円柱は OCCT のブーリアンが最も苦手と
   // する形(接触面ができる)なので、口の外側へこのぶん伸ばした位置から掘り始め、
   // 長さも両側へこのぶん足す。
   const margin = booleanMargin(diagonal);
   const length = depth === null ? diagonal + 2 * margin : depth + margin;
-  // 円筒の側面の穴(EX05)は位置ごとに向きが違う。並びが食い違えば作らない(取り違えた向きで掘らない)。
+  // 円筒の側面の穴は位置ごとに向きが違う。並びが食い違えば作らない(取り違えた向きで掘らない)。
   if (frame.directions !== undefined && (frame.directions.length !== frame.origins.length || entry.kind === 'countersink')) {
     throw new Error(frame.directions.length !== frame.origins.length ? HOLE_FAILED_MESSAGE : CYLINDER_UNSUPPORTED_MESSAGE);
   }
@@ -797,7 +797,7 @@ export function makeHoleTools(
 
     for (const [centerOffset, origin] of frame.origins.entries()) {
       const direction = frame.directions?.[centerOffset] ?? frame.direction;
-      // 管の内面(凹んだ面、EX05)では、戻る量を内側の空洞の中に収める。最大刃径を検査してから
+      // 管の内面(凹んだ面)では、戻る量を内側の空洞の中に収める。最大刃径を検査してから
       // 戻り量を決める。平面・外面の工具は今までの値を保つ。
       const concaveRadius = frame.concaveRadii?.[centerOffset] ?? null;
       const largestToolRadius = (entry.kind === 'counterbore' ? entry.diameter : diameter) / 2;
@@ -948,7 +948,7 @@ export function hasHoleMaterialRemoval(
  * (`BooleanResult` の注釈。呼び出し側の `buildSolidBodyMesh` が測り直さずに使う)。
  *
  * `entry` は入口の形(FR-422)。**省くと今までどおりの真っ直ぐな穴**になるので、
- * 段の型(`HoleStepSpec`)へ欄が増えるまで(タスク42)は呼び出し側を変えずに済む。
+ * 段の型(`HoleStepSpec`)へ欄が増えるまでは呼び出し側を変えずに済む。
  */
 export function makeHole(
   oc: OpenCascadeInstance,

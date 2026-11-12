@@ -114,7 +114,7 @@ export function toShapeExportOutcome(
     case 'mesh':
       // 並びは依頼のままなので、名前・色・面ごとの色は同じ位置の依頼から取れる(kernel の約束)。
       // 面ごとの三角形の範囲は kernel が返した網(`body.triangles.faceRanges`)から取る
-      // (面ごとの色が三角形の材質参照まで届くには、この対がどちらも要る。R04)。
+      // (面ごとの色が三角形の材質参照まで届くには、この対がどちらも要る)。
       return {
         kind: 'meshes',
         bodies: result.bodies.map((body, index) => {

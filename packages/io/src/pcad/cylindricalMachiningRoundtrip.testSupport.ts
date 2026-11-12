@@ -1,4 +1,4 @@
-/** EX-05.PERSIST: independent frame/volume oracle; no product placement or transform helpers. */
+/** Independent frame/volume oracle for holes on a cylinder side; no product placement or transform helpers. */
 import { expect } from 'vitest';
 import { createKernelApi } from '@pointercad/kernel';
 import {

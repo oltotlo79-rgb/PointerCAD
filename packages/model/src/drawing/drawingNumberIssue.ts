@@ -1,4 +1,4 @@
-/** R09: 既知欄の型を確認した後、数値の意味だけを検証する。 */
+/** 既知欄の型を確認した後、数値の意味だけを検証する。 */
 import { drawingViewBasis, type DrawingDocument, type DrawingElementStyle } from '@pointercad/drawing';
 
 export interface DrawingNumberIssue {

@@ -1,16 +1,16 @@
 /**
  * ひな形(テンプレート)から新しい部品を始める / いまの部品をひな形にする
- * (要件 FR-814、計画書 docs/plans/P6-入出力.md §2.10・§0.a-0.35・§0.a-0.36、タスク27)。
+ * (要件 FR-814)。
  *
  * **ひな形は「中身の入っていない部品」**である。形も欄も部品とまったく同じで、
  * 保存の中身(ZIP + JSON)も 1 行も分けない。分かれるのは封筒の種別
- * (`packages/io` の `PCAD_TEMPLATE_KIND`)と拡張子(`.pcadt`)だけ(§0.a-0.35)。
+ * (`packages/io` の `PCAD_TEMPLATE_KIND`)と拡張子(`.pcadt`)だけ。
  *
  * ここに置くのは**文書だけを見る純関数**で、ファイルの読み書き(`packages/io`)にも
  * 画面(`packages/ui`)にも触れない。断りと知らせは**コード**だけを返し、利用者へ見せる
  * 文言は ui が持つ(NFR-MA-5。`.pcad` の `file.error.wrongKind` と同じ流儀)。
  *
- * **`lengthUnit` と `toolDefaults` を文書ではなく封筒に持つ理由**(§0.a-0.1):
+ * **`lengthUnit` と `toolDefaults` を文書ではなく封筒に持つ理由**:
  * どちらも**利用者の設定**であって部品の形の一部ではない。文書に単位を持たせると
  * 「`10` は 10mm か 10inch か」が保存の版と設定の両方に依存してしまう(内部は mm 固定、
  * NFR-RE-3)。設定はひな形の封筒に写して持ち運び、新規作成のときに端末の設定へ配る。
@@ -31,27 +31,27 @@ import {
 import type { PartDocument } from './types.js';
 
 /**
- * 部品文書の id の接頭辞(`createEmptyPartDocument` の `'part-1'` と同じ連番方式、§0.a-0.19)。
+ * 部品文書の id の接頭辞(`createEmptyPartDocument` の `'part-1'` と同じ連番方式)。
  * ひな形から新規作成するときに**ひな形の id と重ならない id** を採るために使う。
  */
 const PART_ID_PREFIX = 'part-';
 
 /**
- * 押し出しの距離の既定(mm)。`packages/ui` の `DEFAULT_EXTRUDE_DISTANCE`(P2 からの 10mm)と
- * 同じ値である。**ひな形は道具の既定値を持ち運ぶ**(§2.10)ので、値の正本を model 側の
- * ここへ置いた。ui の定数をこちらへ寄せる(同じ数を 2 か所に置かない)のはタスク33 の担当。
+ * 押し出しの距離の既定(mm)。`packages/ui` の `DEFAULT_EXTRUDE_DISTANCE`(10mm)と
+ * 同じ値である。**ひな形は道具の既定値を持ち運ぶ**ので、値の正本を model 側の
+ * ここへ置いた。ui の定数をこちらへ寄せる(同じ数を 2 か所に置かない)のは ui の側の仕事。
  */
 export const DEFAULT_EXTRUDE_DISTANCE_MM = 10;
 
 /**
  * スケッチの円の半径の既定(mm)。`packages/ui` の数値入力の表(`numericInput.ts` の
- * 円の `defaultSource`)と同じ値。ui を寄せるのがタスク33 なのは押し出しの距離と同じ。
+ * 円の `defaultSource`)と同じ値。ui を寄せるのは押し出しの距離と同じく ui の側。
  */
 export const DEFAULT_CIRCLE_RADIUS_MM = 10;
 
 /**
- * ひな形が持ち運ぶ道具の既定値(FR-814、§2.10)。**P6 ではこの 5 つに絞る**
- * (増やすのは P12 の環境設定、FR-1104)。
+ * ひな形が持ち運ぶ道具の既定値(FR-814)。**いまはこの 5 つに絞る**
+ * (増やすのは環境設定、FR-1104)。
  *
  * 値は**式の文字列**で持つ(FR-202)。評価値ではなく式のまま持つのは、パラメータ表を
  * 参照する既定値(`板厚 * 2`)を将来書けるようにするためで、`.pcad` の他の数値欄と同じ
@@ -94,7 +94,7 @@ export const TOOL_DEFAULT_KEYS: readonly (keyof ToolDefaults)[] = Object.keys(
 ).filter((key): key is keyof ToolDefaults => key in TOOL_DEFAULT_KEY_TABLE);
 
 /**
- * 道具の既定値の既定(ひな形が `toolDefaults` を持たないときの値。§2.10「無ければ既定」)。
+ * 道具の既定値の既定(ひな形が `toolDefaults` を持たないときの値。「無ければ既定」)。
  *
  * 数はそれぞれの定数から作る(同じ数を 2 か所に書かない)。`String` を通すだけなので
  * `'6'` のように整数の字面になり、プロパティ欄にそのまま出せる。
@@ -108,13 +108,13 @@ export const DEFAULT_TOOL_DEFAULTS: ToolDefaults = {
 };
 
 /**
- * ひな形が単位を持たないときの表示の単位(§2.10「`lengthUnit` が無いひな形は `'mm'`」)。
+ * ひな形が単位を持たないときの表示の単位(「`lengthUnit` が無いひな形は `'mm'`」)。
  * 内部の計算は単位に関係なく mm のまま(NFR-RE-3)。
  */
 export const DEFAULT_TEMPLATE_LENGTH_UNIT: LengthUnit = 'mm';
 
 /**
- * ひな形 1 つ(FR-814、§2.10)。部品文書そのものに、封筒が持つ 2 つの設定を添えた形。
+ * ひな形 1 つ(FR-814)。部品文書そのものに、封筒が持つ 2 つの設定を添えた形。
  *
  * `packages/io` の封筒(`PcadEnvelope`)では `lengthUnit` / `toolDefaults` が**任意の欄**
  * (版 7 のファイルでも持たないものがある)だが、こちらは読み終えた後の形なので
@@ -122,7 +122,7 @@ export const DEFAULT_TEMPLATE_LENGTH_UNIT: LengthUnit = 'mm';
  * `undefined` を確かめずに済むようにするためで、`PcadAttachments` が空の表を持つのと同じ考え方。
  */
 export interface PartTemplate {
-  /** ひな形の中身。**履歴(基準ジオメトリ・ソリッド・スケッチ)は空**(§2.10)。 */
+  /** ひな形の中身。**履歴(基準ジオメトリ・ソリッド・スケッチ)は空**。 */
   readonly document: PartDocument;
   /** 表示の長さの単位(FR-811、FR-814)。新規作成のときに端末の設定へ反映する。 */
   readonly lengthUnit: LengthUnit;
@@ -133,7 +133,7 @@ export interface PartTemplate {
 /**
  * 空の履歴(スケッチ 1 本・基準ジオメトリ無し・ソリッド無し)と、履歴に結び付いた札を作る。
  *
- * **選択セット(FR-112)と下絵(FR-332)もここで空にする**(P6 タスク37・38)。どちらも
+ * **選択セット(FR-112)と下絵(FR-332)もここで空にする**。どちらも
  * パラメータ表・外観と違って**履歴を指している**ためである。選択セットの要素は立体の
  * ボディ id と部分形状の指紋で、下絵の `imageId` は `.pcad` の ZIP のエントリを指すので、
  * 履歴を空にしたひな形へ持ち越すと、どちらも指す先の無い参照になる(下絵は画像の添付ごと
@@ -143,8 +143,8 @@ function emptyHistory(): Pick<
   PartDocument,
   'sketches' | 'activeSketchId' | 'references' | 'solids' | 'sheetUnfolds' | 'selectionSets' | 'canvases'
 > {
-  // スケッチは 0 本にできない(`activeSketchId` が `sketches` のいずれかを指す約束、
-  // §0.a-0.4)。起動直後の部品と同じく、空のスケッチを 1 本だけ持たせる。
+  // スケッチは 0 本にできない(`activeSketchId` が `sketches` のいずれかを指す約束)。
+  // 起動直後の部品と同じく、空のスケッチを 1 本だけ持たせる。
   const sketch = createEmptySketchDocument();
   return {
     sketches: [sketch],
@@ -158,23 +158,23 @@ function emptyHistory(): Pick<
 }
 
 export interface DocumentFromTemplateOptions {
-  /** 新しい部品の名前。省略するとひな形の名前が初期値になる(§2.10 の表)。 */
+  /** 新しい部品の名前。省略するとひな形の名前が初期値になる。 */
   readonly name?: string;
 }
 
 /**
- * ひな形から新しい部品を始める(FR-814、§2.10)。
+ * ひな形から新しい部品を始める(FR-814)。
  *
  * - **新しい id を採る。** ひな形の id と重ならない連番(`part-1` → `part-2`)にする。
  *   同じ id のまま開くと、ひな形と新しい部品が同じものとして扱われる場面
  *   (最近使ったファイル・自動保存の鍵)で取り違えが起きる。
- * - **履歴は空にする**(計画書タスク27 の実装内容、統括の指示 2026-09-06)。ひな形に形が
+ * - **履歴は空にする**。ひな形に形が
  *   入っていた場合は `openTemplate` が知らせ(`templateHasHistory`)を返しているので、
  *   利用者は黙って落とされたとは受け取らない。**ひな形のファイルそのものは変わらない。**
- * - **パラメータ表・外観はそのままコピーする**(§2.10 の表)。どちらも不変の値なので
+ * - **パラメータ表・外観はそのままコピーする**。どちらも不変の値なので
  *   参照をそのまま渡す(写しを作っても中身は変わらない)。
  * - 単位と道具の既定値は文書の欄ではないので、ここでは触らない(`template` から
- *   呼び出し側が端末の設定・ストアへ配る。§0.a-0.1)。
+ *   呼び出し側が端末の設定・ストアへ配る)。
  */
 export function documentFromTemplate(
   template: PartTemplate,
@@ -194,7 +194,7 @@ export function documentFromTemplate(
 }
 
 export interface TemplateFromDocumentOptions {
-  /** いまの表示の単位(端末の設定、§0.a-0.1)。ひな形の封筒へ書く。 */
+  /** いまの表示の単位(端末の設定)。ひな形の封筒へ書く。 */
   readonly lengthUnit: LengthUnit;
   /** いまの道具の既定値。ひな形の封筒へ書く。 */
   readonly toolDefaults: ToolDefaults;
@@ -203,9 +203,9 @@ export interface TemplateFromDocumentOptions {
 }
 
 /**
- * いまの部品をひな形にする(FR-814、§2.10。「ひな形として保存」の中身)。
+ * いまの部品をひな形にする(FR-814、「ひな形として保存」の中身)。
  *
- * **履歴を空にして書く**(§0.a-0.35「フィーチャー履歴は空」)。持ち越すのは名前・
+ * **履歴を空にして書く**(「フィーチャー履歴は空」)。持ち越すのは名前・
  * パラメータ表・外観と、封筒の 2 つの設定だけ。元の部品の文書は変えない(不変)。
  *
  * id はそのまま持ち越す。ひな形の id は「そのひな形から作られた部品」の id を採るときの
@@ -229,15 +229,15 @@ export function templateFromDocument(
 }
 
 /**
- * ひな形を開いたときの知らせ(§2.10)。**断りではない**(そのまま開く)。
+ * ひな形を開いたときの知らせ。**断りではない**(そのまま開く)。
  * 文言(「このひな形には形が入っています。そのまま開きます。」)は ui が持つ。
  */
 export type TemplateNotice = 'templateHasHistory';
 
 /**
- * ひな形として開けない理由(§2.8 の断りの表)。文言(「このファイルはひな形では
+ * ひな形として開けない理由。文言(「このファイルはひな形では
  * ありません。」)は ui が持ち、`.pcad` の `file.error.wrongKind` と同じ扱いにする
- * ——**エラーコードを増やさない**(`docs/報告記録.md` 2026-09-04 01:40 の③)。
+ * ——**エラーコードを増やさない**。
  */
 export type TemplateRefusal = 'notTemplate';
 
@@ -254,9 +254,9 @@ export interface TemplateFileContents {
   readonly isTemplate: boolean;
   /** 読み込んだ部品文書。 */
   readonly document: PartDocument;
-  /** 封筒の `lengthUnit`。無ければ `'mm'` とみなす(§2.10)。 */
+  /** 封筒の `lengthUnit`。無ければ `'mm'` とみなす。 */
   readonly lengthUnit?: LengthUnit;
-  /** 封筒の `toolDefaults`。無ければ既定を使う(§2.10)。 */
+  /** 封筒の `toolDefaults`。無ければ既定を使う。 */
   readonly toolDefaults?: ToolDefaults;
 }
 
@@ -270,7 +270,7 @@ export type OpenTemplateResult =
   | { readonly ok: false; readonly reason: TemplateRefusal };
 
 /**
- * その文書に形(履歴)が入っているか(§2.10 の「フィーチャー履歴」の行)。
+ * その文書に形(履歴)が入っているか(「フィーチャー履歴」の行)。
  *
  * ソリッドと基準ジオメトリだけでなく**スケッチの中身**も見る。利用者から見れば
  * 線が引いてあるひな形も「形が入っている」ものだからで、`documentFromTemplate` が
@@ -284,14 +284,14 @@ function hasHistory(document: PartDocument): boolean {
 }
 
 /**
- * 読み込んだファイルをひな形として受け取る(FR-814、§2.10)。
+ * 読み込んだファイルをひな形として受け取る(FR-814)。
  *
  * - **ひな形でないファイル(`.pcad`)は断る。** 拡張子だけでは分からない(名前は
- *   いくらでも変えられる)ので、封筒の種別で判断する(§0.a-0.35)。
- * - **形が入っているひな形は断らない。** 知らせを 1 行返して、そのまま開く(§2.10)。
+ *   いくらでも変えられる)ので、封筒の種別で判断する。
+ * - **形が入っているひな形は断らない。** 知らせを 1 行返して、そのまま開く。
  * - 欠けている任意の欄は既定で埋める(`lengthUnit` 無し → `'mm'`、
  *   `toolDefaults` 無し → `DEFAULT_TOOL_DEFAULTS`)。版 7 のひな形でも
- *   この 2 欄を持たないものがあるため(タスク27 の手順2「任意の欄にする」)。
+ *   この 2 欄を持たないものがあるため(「任意の欄にする」)。
  */
 export function openTemplate(contents: TemplateFileContents): OpenTemplateResult {
   if (!contents.isTemplate) {

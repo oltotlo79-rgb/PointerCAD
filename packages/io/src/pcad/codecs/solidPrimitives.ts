@@ -36,12 +36,12 @@ import {
 } from '@pointercad/model';
 
 /**
- * 基本形状(FR-429、P5 計画書 §0.a-0.18、タスク17)の基準点の3通り
+ * 基本形状(FR-429)の基準点の3通り
  * (座標の式・スケッチの点・立体の頂点)。
  */
 const SOLID_ORIGIN_KINDS: readonly SolidOrigin['kind'][] = ['coordinate', 'sketchPoint', 'vertex'];
 
-/** 基本形状5種の判別(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7.1、タスク17)。 */
+/** 基本形状5種の判別(球・箱・円柱・円錐・トーラス。FR-429)。 */
 const PRIMITIVE_SHAPE_KINDS: readonly PrimitiveShape['kind'][] = [
   'sphere',
   'box',
@@ -55,9 +55,9 @@ const SPRING_DERIVED_VALUES: readonly SpringDerived[] = ['length', 'pitch', 'tur
 const SPRING_HANDEDNESS_VALUES: readonly SpringHandedness[] = ['right', 'left'];
 
 /**
- * 基本形状の基準点(FR-429、P5 計画書 §2.7.1、タスク17)。3通りで欄が違うので
+ * 基本形状の基準点(FR-429)。3通りで欄が違うので
  * `kind` で分岐する。`vertex` の指紋は `serializeSubShapeRef` をそのまま使い回す
- * (P3 の加工フィーチャーと同じ形)。
+ * (加工フィーチャーと同じ形)。
  */
 function serializeSolidOrigin(origin: SolidOrigin): SolidOrigin {
   switch (origin.kind) {
@@ -71,7 +71,7 @@ function serializeSolidOrigin(origin: SolidOrigin): SolidOrigin {
 }
 
 /**
- * 基本形状の寸法(FR-429、P5 計画書 §2.7.1、タスク17)。種類ごとに欄が違うので
+ * 基本形状の寸法(FR-429)。種類ごとに欄が違うので
  * `kind` で分岐する。寸法は式のまま保存する(FR-202)。
  */
 function serializePrimitiveShape(shape: PrimitiveShape): PrimitiveShape {
@@ -108,7 +108,7 @@ function serializePrimitiveShape(shape: PrimitiveShape): PrimitiveShape {
 }
 
 /**
- * ばね(FR-414、§2.7b)を読む。`derived` / `handedness` は選択肢の一覧と突き合わせて絞る
+ * ばね(FR-414)を読む。`derived` / `handedness` は選択肢の一覧と突き合わせて絞る
  * (知らない値は断る)。
  */
 export function readSpringFeature(
@@ -181,12 +181,12 @@ export function readSpringFeature(
 }
 
 // ---------------------------------------------------------------------------
-// P5(FR-429、計画書 §2.7.1、タスク17)が足す基本形状の読み込み
+// 基本形状(FR-429)の読み込み
 // ---------------------------------------------------------------------------
 
 /**
  * 基本形状の基準点を読む(FR-429)。3通りで欄が違うので `kind` で分岐する。
- * `sketchPoint` は `readPointRefField`、`vertex` は `readSubShapeRefField`(P3 の
+ * `sketchPoint` は `readPointRefField`、`vertex` は `readSubShapeRefField`(
  * 加工フィーチャーと同じ組み立て)をそのまま使い回す。
  */
 function readSolidOrigin(
@@ -328,7 +328,7 @@ function readPrimitiveShapeField(
 }
 
 /**
- * 基本形状(球・箱・円柱・円錐・トーラス。FR-429、P5 計画書 §2.7.1、タスク17)を読む。
+ * 基本形状(球・箱・円柱・円錐・トーラス。FR-429)を読む。
  * 対象を消費しない「作る」フィーチャーなので、押し出し・ばねと同じ構え(基本の欄 +
  * 種類固有の欄)で読む。
  */
@@ -384,7 +384,7 @@ export function serializeSpringFeature(feature: Extract<SolidFeature, { readonly
 
 /** primitive の保存欄。解決値を足さず、元の式と参照を保持する。 */
 export function serializePrimitiveFeature(feature: Extract<SolidFeature, { readonly kind: 'primitive' }>): SolidFeature {
-  // 基本形状(FR-429、P5 計画書 §2.7.1、タスク17)。対象を消費しない「作る」
+  // 基本形状(FR-429)。対象を消費しない「作る」
   // フィーチャーなので、押し出し・ばねと同じく欄をそのまま組み立てる。
   return {
     id: feature.id,

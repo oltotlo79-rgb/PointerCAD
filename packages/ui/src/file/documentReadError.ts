@@ -28,7 +28,7 @@ const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
 };
 
 /**
- * 読めなかった理由を利用者へ見せる文言のキーへ直す(P6 タスク33)。
+ * 読めなかった理由を利用者へ見せる文言のキーへ直す。
  *
  * ひな形(`.pcadt`)も同じ封筒を読む(`file/templateFile.ts`)ので、上の表を**写さずに**
  * 使えるようにここへ 1 つだけ口を開けてある。表そのものは外へ出さない(理由と文言の

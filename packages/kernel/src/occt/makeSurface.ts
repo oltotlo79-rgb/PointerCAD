@@ -4,20 +4,20 @@ import { surfacePrismSubShapeOrigins, type NativeSurfaceLine } from './subShapeO
 import { surfaceArcAnchorValid, surfaceArcPrismOrigins } from './surfaceArcOrigins.js';
 import { makeTrackedPlanarFace, planarSurfaceAnchorRefusal, planarSurfaceSubShapeOrigins } from './planarSurfaceOrigins.js';
 /**
- * 曲面(面だけの形、FR-428)。計画書 P5 §0.a-0.45、タスク41。
+ * 曲面(面だけの形、FR-428)。
  *
- * **立体にならない形をあえて作る、この 1 ファイルだけの例外。** P2 から P5 のいまに至るまで、
+ * **立体にならない形をあえて作る、この 1 ファイルだけの例外。** これまで、
  * 段の結果は必ず `hasSolid` と体積で「閉じた立体になったか」を確かめてきた。空のブーリアンの
- * 結果は `IsDone()` も `HasErrors()` も嘘をつくので、**体積でしか捕まえられない**ためである
- * (`docs/報告記録.md` 2026-09-03 06:56 の④)。曲面はその検査を通らないので、
- * §0.a-0.45 で「面のボディを許す。ただし `bodyKind: 'shell'` という印を明示的に持つ」と決めた。
+ * 結果は `IsDone()` も `HasErrors()` も嘘をつくので、**体積でしか捕まえられない**ためである。
+ * 曲面はその検査を通らないので、
+ * そこで「面のボディを許す。ただし `bodyKind: 'shell'` という印を明示的に持つ」と決めた。
  *
  * **緩めるのではなく、逆向きに厳しくする。** この関数は「立体ができたら失敗」とし
  * (`hasSolid` が真なら断る)、代わりに**面積 > 0** を確かめる。ソリッドの段
  * (押し出し・回転・ブーリアン・穴・面取り…)の検査は 1 つも触らない。分岐は
  * このファイルの中だけで閉じており、「体積 0 は失敗」の規律に穴を開けない。
  *
- * ## 作れる面の種類(§0.a-0.45 の「曲面の段の種類」)
+ * ## 作れる面の種類(「曲面の段の種類」)
  *
  * | 種類 | 作り方 | 結果の形 |
  * |---|---|---|
@@ -34,21 +34,21 @@ import { makeTrackedPlanarFace, planarSurfaceAnchorRefusal, planarSurfaceSubShap
  * `BRepPrimAPI_MakePrism` / `MakeRevol` は掃く相手の次元をそのまま 1 つ上げる)。
  * だから輪郭が閉じている必要が無く、線分 1 本からでも面が作れる。
  *
- * ## 計画書との差(統括の指示による)
+ * ## 曲面の段の種類
  *
- * 計画書タスク41 の `SurfaceOperation` は `extrude` / `revolve` / `offset` / `sew` /
- * `thicken` の 5 つだったが、統括の指示は §0.a-0.45 の「曲面の段の種類」(開いた輪郭の
- * 押し出し・回転の面版、既存の面の複製、ロフトの面版)に沿った 5 つを求めていた。
- * タスク42b で**面のオフセット(`offset`)を 6 つ目として足した**(§0.a-0.83)ので、
+ * 当初の案の `SurfaceOperation` は `extrude` / `revolve` / `offset` / `sew` /
+ * `thicken` の 5 つだったが、採ったのは「曲面の段の種類」(開いた輪郭の
+ * 押し出し・回転の面版、既存の面の複製、ロフトの面版)に沿った 5 つである。
+ * 後から**面のオフセット(`offset`)を 6 つ目として足した**ので、
  * いまは 6 種ある。
  * **厚み付け(`MakeThickSolidBySimple`)はここには無い。** 結果が立体になるので、
  * そもそもこの関数の「立体ができたら失敗」と噛み合わないためである
- * (くり抜き(FR-418)としてタスク53 の `makeShell.ts` が受け持つ)。
+ * (くり抜き(FR-418)として `makeShell.ts` が受け持つ)。
  *
  * ## 曲面に対する加工を断る場所
  *
  * フィレット・面取り・穴のような加工は面だけの形には掛けられない。その断りを既存の
- * `make*.ts` へ足すのは**タスク42** の仕事なので、ここでは判定の関数
+ * `make*.ts` の側で出すので、ここでは判定の関数
  * (`isShellShape`)と文言(`SHELL_NOT_SUPPORTED_MESSAGE`)だけを用意する。
  */
 
@@ -84,7 +84,7 @@ const MAX_REVOLVE_ANGLE = 2 * Math.PI + 1e-9;
 
 /**
  * 面が作れなかったときの断り(FR-504、NFR-RE-1)。
- * 計画書タスク41 の検証表が「`面を作れませんでした。` を含む Error」を求めているので、
+ * 検証の表が「`面を作れませんでした。` を含む Error」を求めているので、
  * この文言で始める(呼び出し側の `recomputeSolids` がそのまま理由として拾う)。
  */
 const SURFACE_FAILED_MESSAGE = '面を作れませんでした。輪郭と向きを見直してください。';
@@ -142,7 +142,7 @@ export function isShellShape(oc: OpenCascadeInstance, shape: TopoDS_Shape): bool
  * 曲面の段の入力(FR-428)。**6 つのうち `face` と `offset` だけが相手の立体を要る**
  * (どちらも借りるだけで消費しない)。
  *
- * 角度はラジアンで受け取る(度からの換算は model 側の責務。§0.a-0.9)。
+ * 角度はラジアンで受け取る(度からの換算は model 側の責務)。
  */
 export type SurfaceInput =
   /** 輪郭を向きへ掃いた面。輪郭は閉じていなくてよい(線分 1 本からでも面になる)。 */
@@ -192,7 +192,7 @@ export type SurfaceInput =
  * 曲面の段の結果。**測り済みの面積を持ったまま返る。**
  *
  * 面積は「面ができたか」の判定のためにこの関数の中で必ず 1 回測っている。
- * 呼び出し側(タスク42 の `recomputeSolids`)は `bodyKind: 'shell'` のボディの
+ * 呼び出し側(`recomputeSolids`)は `bodyKind: 'shell'` のボディの
  * プロパティに面積を出すので、同じ形をもう一度測らずに済むよう添えて返す
  * (ブーリアンが体積を添えて返す `booleanOp.ts` の `BooleanResult` と同じ考え)。
  */
@@ -212,7 +212,7 @@ function isFinitePoint(point: Vec3Tuple): boolean {
  *
  * **閉じているかを確かめない**ところだけが `makePlanarFace.ts` /
  * `makeThruSections.ts` の `makeSectionWire` と違う。曲面は開いた輪郭からでも
- * 作れることが要点(§0.a-0.45)なので、ここで閉じ方を要求してはいけない。
+ * 作れることが要点なので、ここで閉じ方を要求してはいけない。
  */
 function makeProfileWire(
   oc: OpenCascadeInstance,
@@ -242,7 +242,7 @@ function makeProfileWire(
 }
 
 /**
- * 輪郭のワイヤを向きへ掃いた面(§0.a-0.45 の「開いた輪郭の押し出しの面版」)。
+ * 輪郭のワイヤを向きへ掃いた面(「開いた輪郭の押し出しの面版」)。
  *
  * 第 3 引数 Copy = false、第 4 引数 Canonize = true は `makeSolidSweep.ts` と同じ理由による
  * (断面はこの中で作り捨てるので複製しない。平らな輪郭を掃いた面は平面として持っておく)。
@@ -295,7 +295,7 @@ function extrudeProfile(
 }
 
 /**
- * 閉じた輪郭から平らな面を 1 枚張る(§0.a-0.45 の `planar`)。
+ * 閉じた輪郭から平らな面を 1 枚張る(`planar`)。
  *
  * 保存された線の持ち主(`profileOrigins`)が付いていて、線分だけの閉じた輪郭(3〜32 本)のときだけ、
  * 線ごとに実際にワイヤへ入った辺を控えて面・辺・頂点へ名前を付ける(`planarSurfaceOrigins.ts`)。
@@ -326,7 +326,7 @@ function planarProfile(
 }
 
 /**
- * 輪郭のワイヤを軸まわりに回した面(§0.a-0.45 の「回転の面版」)。
+ * 輪郭のワイヤを軸まわりに回した面(「回転の面版」)。
  *
  * 輪郭の端が軸に乗っていてもよい(半円弧を全周回すと、両端が軸に乗った球面になる)。
  * `IsDone()` が false のまま `Shape()` を呼ぶと C++ の例外が飛ぶので、先に見る
@@ -359,12 +359,12 @@ function revolveProfile(
 }
 
 /**
- * 輪郭どうしをつないだ面(§0.a-0.45 の「ロフトの面版」)。
+ * 輪郭どうしをつないだ面(「ロフトの面版」)。
  *
  * `BRepOffsetAPI_ThruSections` の第 1 引数 `isSolid` に **false** を渡すところだけが
  * `makeThruSections.ts` と違う(あちらは両端にふたを張って立体にする)。ふたが無いので
  * 結果は側面だけの殻になり、`hasSolid` は偽になる。
- * 列挙を取る `SetParType` / `SetContinuity` は呼ばない(§1.4-14)。
+ * 列挙を取る `SetParType` / `SetContinuity` は呼ばない。
  */
 function loftProfiles(
   oc: OpenCascadeInstance,
@@ -389,10 +389,10 @@ function loftProfiles(
 }
 
 /**
- * すでにある立体の面を指紋で選び直して取り出す(§0.a-0.45 の「既存の面の複製」)。
+ * すでにある立体の面を指紋で選び直して取り出す(「既存の面の複製」)。
  *
  * 選び直しは `pickSubShape.ts` へ任せる。**加工フィーチャー(穴・フィレット・面取り)と
- * 同じ採点・同じしきい値**なので、同じ指紋からは必ず同じ面が選ばれる(§0.a-0.4)。
+ * 同じ採点・同じしきい値**なので、同じ指紋からは必ず同じ面が選ばれる。
  * 取り出した面は新しく作られた形なので、この関数の控えへ積んで解放を引き受ける。
  *
  * **選び直した面は、そのまま返さずに必ず複製する(名前のとおり「複製」する)。**
@@ -401,7 +401,7 @@ function loftProfiles(
  * `offsetExistingFace` の `BRepOffsetAPI_MakeOffsetShape`)へ渡すと、組む途中の
  * 書き込み(稜線への pcurve の追加、許容誤差の広げ直し)がキャッシュ上の立体へ届き、
  * **面を貸した立体をあとから切る・くり抜く段が壊れる**。同じ事故を
- * `makeThruSections.ts` の `sectionWireFromFace` で実測した(2026-09-06、rules/06 10.16)。
+ * `makeThruSections.ts` の `sectionWireFromFace` で実測した。
  * 第 2 引数 true は下地の幾何も複製する指定、第 3 引数 false は三角形分割を
  * 複製しない指定(`makeCut.ts` の `copyTarget` と同じ)。
  */
@@ -428,13 +428,13 @@ function copyExistingFace(
 }
 
 /**
- * 選び直した面を距離だけ離した殻(§0.a-0.45 の「面のオフセット」、FR-428)。
+ * 選び直した面を距離だけ離した殻(「面のオフセット」、FR-428)。
  *
- * **`BRepOffsetAPI_MakeOffsetShape.PerformBySimple(形, 距離)` を使う**(§0.a-0.45 の承認)。
+ * **`BRepOffsetAPI_MakeOffsetShape.PerformBySimple(形, 距離)` を使う**。
  * この呼び方は**列挙引数を 1 つも取らない**ので、述語ガードを増やさずに済む
  * (列挙 2 個を取る `PerformByJoin` は `makeShell.ts` のくり抜きだけが使う)。
  * `MakeOffset()` は呼ばない——戻り型の `BRepOffset_MakeOffset` は型定義にクラス宣言が
- * 無く、参照すると型が壊れるためである(計画書 §1.4)。
+ * 無く、参照すると型が壊れるためである。
  *
  * 距離 0 は「離さない」ので面がそのまま返り、オフセットの段として意味を持たない。
  * 数でない値も含めて入口で断る(FR-504、NFR-RE-1。止めずに理由を出す)。
@@ -493,7 +493,7 @@ function buildSurfaceShape(
 /**
  * 面だけの形(厚みのない面)を作る(FR-428)。
  *
- * **対象を消費しない「作る」段**(押し出し・回転・基本形状と同じ。§0.a-0.27)。
+ * **対象を消費しない「作る」段**(押し出し・回転・基本形状と同じ)。
  * `face`(既存の面の取り出し)で材料にした立体もそのまま画面に残る。
  *
  * `target` と `tables` は `input.kind` が `'face'` か `'offset'` のときだけ要る。**`target` は
@@ -520,7 +520,7 @@ export function makeSurface(
       : input.kind === 'planar' ? planarProfile(oc, keep, input, options, semantic)
       : buildSurfaceShape(oc, keep, input, target, tables, options);
 
-    // ここが「体積 0 は失敗」の裏返しにあたる 2 つの検査(§0.a-0.45)。
+    // ここが「体積 0 は失敗」の裏返しにあたる 2 つの検査。
     // ① 立体ができていたら断る。曲面の段はソリッドを作らないので、
     //    立体ができたということは入力か作り方が食い違っている合図である。
     if (!isShellShape(oc, shape)) {

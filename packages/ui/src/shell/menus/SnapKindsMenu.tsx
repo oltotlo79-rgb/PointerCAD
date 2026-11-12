@@ -3,7 +3,7 @@ import { toolbarCommandId } from '../../commands/toolbarCommandCatalog.js';
 import { currentCommandLabel } from '../../commands/commandLabels.js';
 import { currentShortcutAssignments } from '../../settings/shortcutSettings.js';
 /**
- * 吸い付きの種類の一覧(FR-107、FR-322)。一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
+ * 吸い付きの種類の一覧(FR-107、FR-322)。一覧ごとに 1 ファイルへ分けた。
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -18,12 +18,12 @@ import { LABEL_SEPARATOR, NAME_SEPARATOR } from './toolbarShared.js';
 interface SnapKindsMenuProps {
   readonly snapEnabled: boolean;
   readonly snapKinds: readonly SnapKind[];
-  /** 向きの吸着の角度の刻み(度)。`settings.ts` が端末に覚える(FR-110、§0.12)。 */
+  /** 向きの吸着の角度の刻み(度)。`settings.ts` が端末に覚える(FR-110)。 */
   readonly trackAngleStep: number;
 }
 
 /**
- * 吸着の種別の畳んだ一覧(§0.a-0.15)。
+ * 吸着の種別の畳んだ一覧。
  *
  * モーダルにしないので、開いている間も背後の視点操作と作図はそのまま効く。
  * 開いているかどうかは見た目だけの一時状態なので、ここでだけ持つ
@@ -114,7 +114,7 @@ export function SnapKindsMenu({
             </button>
           ))}
           {/*
-            角度の刻み(FR-110、§0.12)。**「角度」の入切のすぐ下**へ置く。この値が効くのは
+            角度の刻み(FR-110)。**「角度」の入切のすぐ下**へ置く。この値が効くのは
             「角度」だけなので、設定パネル(テーマ・拡大率)へ離して置くより、切り替える札の
             隣にあるほうが結び付きが分かる(NFR-UX-1)。値そのものは表示設定と同じ 1 つの鍵で
             端末に覚える(`settings.ts`)。

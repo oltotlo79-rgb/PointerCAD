@@ -15,7 +15,7 @@ import type { ExtrudeEndSpec } from './occt/makeSolidSweep.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
 import type { SurfaceCutInput, SurfaceCutReason } from './occt/makeSurfaceCut.js';
 import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
-// 書き出し・読み込み(FR-802、FR-803、P6 タスク10)が使う 4 つも同じ理由で取り込む。
+// 書き出し・読み込み(FR-802、FR-803)が使う 4 つも同じ理由で取り込む。
 // 三角形の網(`ExportMesh`)は `occt/exportMesh.ts`、色(`RgbTuple`)は
 // `occt/xcafDocument.ts`、ファイルの単位(`StepFileLengthUnit`)は `occt/readStep.ts`、
 // 面ごとの色の表(`FaceColorMap`)は `occt/xcafFaceColors.ts` が正本。
@@ -26,7 +26,7 @@ import type { PrintabilityResult } from './occt/inspectPrintability.js';
 import type { StepFileLengthUnit } from './occt/readStep.js';
 import type { RgbTuple } from './occt/xcafDocument.js';
 import type { FaceColorMap } from './occt/xcafFaceColors.js';
-// 投影・交差(FR-325、P4 タスク26)の作図面と、作図面の上の 2 次元の曲線も
+// 投影・交差(FR-325)の作図面と、作図面の上の 2 次元の曲線も
 // `occt/makeProjection.ts` が正本。オフセットと同じ理由で取り込んで輸出し直す。
 import type {
   PlaneArc,
@@ -171,11 +171,11 @@ export interface SketchTessellation {
 }
 
 /**
- * 輪郭のオフセット(FR-321、P4 タスク15)を Worker 越しに頼むための型。
+ * 輪郭のオフセット(FR-321)を Worker 越しに頼むための型。
  *
  * 形を作るのは `occt/makeOffsetWire.ts` で、角の種類(`OffsetJoinType`)と結果の輪郭
  * (`OffsetContour`)はそこの定義をそのまま使う(同じ約束を2か所に書かない)。
- * 距離は**符号つき**で、どちら側が外かは呼び出し側(model)が決める(§0.a-0.22)。
+ * 距離は**符号つき**で、どちら側が外かは呼び出し側(model)が決める。
  */
 export type { OffsetContour, OffsetJoinType };
 
@@ -213,7 +213,7 @@ export interface SketchOffsetOutcome {
 }
 
 /**
- * 投影・交差(FR-325、P4 タスク25・26)を Worker 越しに頼むための型。
+ * 投影・交差(FR-325)を Worker 越しに頼むための型。
  *
  * 形を作るのは `occt/makeProjection.ts` / `occt/makeSection.ts` で、作図面
  * (`SketchPlaneFrame`)と作図面の上の曲線(`PlaneCurve`)はそこの定義をそのまま使う。
@@ -334,7 +334,7 @@ export interface SketchProjectionItem {
   /** もとの立体の形状キャッシュの鍵。 */
   readonly shapeKey: string;
   /**
-   * 投影する面・辺の指紋。カーネルが立体の中から選び直す(§2.2.4)。
+   * 投影する面・辺の指紋。カーネルが立体の中から選び直す。
    * `null` なら立体そのもの(含まれるすべての辺)を投影する。
    */
   readonly subShape: SubShapeQuery | null;
@@ -389,7 +389,7 @@ export interface SketchProjectionOutcome {
 // OCCT の形そのものは Worker の中に置いたままにする(NFR-MA-1)。
 
 /**
- * 段の依頼が持つ値のうち、意味を決めているのが作り手のファイルのもの(P5 タスク42a)。
+ * 段の依頼が持つ値のうち、意味を決めているのが作り手のファイルのもの。
  *
  * オフセットの角の種類(`OffsetJoinType`)と同じ理由で、**定義はその値を読む作り手の側に
  * 1 つだけ置き**、ここでは取り込んで輸出し直す。押し出しの終端(FR-415)は
@@ -400,7 +400,7 @@ export interface SketchProjectionOutcome {
 export type { ExtrudeEndSpec, HoleEntrySpec, SurfaceInput, ThinExtrudeSide };
 
 /**
- * 薄板押し出し(FR-416、P5 §2.12)の厚みの指定。
+ * 薄板押し出し(FR-416)の厚みの指定。
  *
  * 厚みと向きは**必ず組**で決まる(厚みだけ・向きだけでは形が決まらない)ので、
  * `ExtrudeStepSpec` に 2 つの欄をばらばらに足さず 1 つの入れ物にまとめる
@@ -417,9 +417,9 @@ export interface ThinExtrudeSpec {
 /**
  * ソリッドを作る 1 手順。向き・両側・反転の計算は model 側で済ませて渡す。
  *
- * **P5 で欄が増えた**(FR-415 の終端、FR-401 のテーパ、FR-416 の薄板)。増えた欄は
- * **すべて省略でき、省略したときは P2 からの押し出しと 1 ドットも変わらない**
- * (版 4 以前の文書と、まだ欄を渡していない model の経路がそのまま動く。計画書 §2.13)。
+ * **後から欄が増えた**(FR-415 の終端、FR-401 のテーパ、FR-416 の薄板)。増えた欄は
+ * **すべて省略でき、省略したときは従来の押し出しと 1 ドットも変わらない**
+ * (版 4 以前の文書と、まだ欄を渡していない model の経路がそのまま動く)。
  */
 export interface ExtrudeStepSpec {
   readonly kind: 'extrude';
@@ -450,7 +450,7 @@ export interface ExtrudeStepSpec {
   readonly thin?: ThinExtrudeSpec;
   /**
    * 「次の面まで」(`end.kind === 'toNext'`)の相手の立体を指すキャッシュの鍵。
-   * 「対象を貫く」(`end.kind === 'throughTarget'`、EX04)では貫く対象の立体の鍵。
+   * 「対象を貫く」(`end.kind === 'throughTarget'`)では貫く対象の立体の鍵。
    * それ以外の終端では省く(渡されても見ない)。
    *
    * **この鍵の段は消費しない**(材料の位置を読むだけで、相手の立体は画面に残る。
@@ -480,7 +480,7 @@ export interface SewStepSpec {
   readonly tolerance: number;
 }
 
-/** 既存の曲面を借りて縫い合わせる 1 手順(EX-18 W14)。保存・UI 接続は W15。 */
+/** 既存の曲面を借りて縫い合わせる 1 手順。保存・UI 接続はこの型の外。 */
 export interface SewFacesStepSpec {
   readonly kind: 'sew';
   /** Worker のキャッシュから借りる面。実体と所有権は Worker の外へ渡さない。 */
@@ -495,7 +495,7 @@ export interface BooleanStepSpec {
   /** すでに作った形を指すキャッシュの鍵。 */
   readonly targetKey: string;
   readonly toolKey: string;
-  /** true なら、差で何も削れないとき理由つきで断る(EX04)。既定は欄なしで従来どおり。 */
+  /** true なら、差で何も削れないとき理由つきで断る。既定は欄なしで従来どおり。 */
   readonly requireRemoval?: true;
 }
 
@@ -516,20 +516,20 @@ export type SolidStepSpec =
   | ThreadStepSpec
   | FilletStepSpec
   | ChamferStepSpec
-  /** ばね(FR-414、§2.7b)。対象を取らず、新しい形を作る(§0.36)。 */
+  /** ばね(FR-414)。対象を取らず、新しい形を作る。 */
   | SpringStepSpec
-  /** 基本形状(FR-429、P5 §2.7)。ばねと同じく対象を取らない「作る」段(§0.a-0.19)。 */
+  /** 基本形状(FR-429)。ばねと同じく対象を取らない「作る」段。 */
   | PrimitiveStepSpec
-  /** 罫線面(FR-430)とロフト(FR-410、P5 §2.9)。これも対象を取らない「作る」段(§0.a-0.27)。 */
+  /** 罫線面(FR-430)とロフト(FR-410)。これも対象を取らない「作る」段。 */
   | ThruSectionsStepSpec
-  // ここから下は P5 の Should 群・Could 群(タスク42a)。定義は下の「加工の段」の節にある。
+  // ここから下は Should 群・Could 群。定義は下の「加工の段」の節にある。
   /** 抜き勾配(FR-417)。 */
   | DraftStepSpec
-  /** 平らな面の移動(EX-18 の限られた一段。平面・隣が直角)。 */
+  /** 平らな面の移動(限られた一段。平面・隣が直角)。 */
   | FaceOffsetStepSpec
   | HoleTranslateStepSpec
   | FaceRotateStepSpec
-  /** ミラー(FR-419)。対象を消費しない(§0.a-0.36)。 */
+  /** ミラー(FR-419)。対象を消費しない。 */
   | MirrorStepSpec
   /** 移動/回転(FR-424)。 */
   | TransformStepSpec
@@ -545,12 +545,12 @@ export type SolidStepSpec =
   | ThreadShaftStepSpec
   /** 曲面(FR-428)。`bodyKind: 'shell'` のボディを作る。 */
   | SurfaceStepSpec
-  /** 平面による切断(FR-432)。分割(FR-424)もこれで満たす(§0.a-0.60)。 */
+  /** 平面による切断(FR-432)。分割(FR-424)もこれで満たす。 */
   | CutStepSpec
   | SurfaceCutStepSpec
   /** くり抜き(FR-418)。 */
   | ShellStepSpec
-  /** 読み込んだ形のベースボディ(FR-802、P6 §2.8、タスク10)。定義は下の節にある。 */
+  /** 読み込んだ形のベースボディ(FR-802)。定義は下の節にある。 */
   | ImportedSolidStepSpec
   | SheetBaseStepSpec
   | SheetFlangeStepSpec
@@ -569,7 +569,7 @@ export interface SheetBodyStepSpec extends SheetMetalBodyInput { readonly kind: 
 /** 展開の板同士を、1ソリッド・体積加算一致を条件として接続する。 */
 export interface SheetJoinStepSpec { readonly kind: 'sheetJoin'; readonly targetKey: string; readonly toolKey: string }
 
-/** P10: 基板の輪郭と板厚。Kは展開だけに使うため折曲げB-repの段へ混ぜない。 */
+/** 板金の基板の輪郭と板厚。Kは展開だけに使うため折曲げB-repの段へ混ぜない。 */
 export interface SheetBaseStepSpec extends SheetMetalBaseInput {
   readonly kind: 'sheetBase';
 }
@@ -593,13 +593,13 @@ export interface SolidStepRequest {
   /** この段の結果を画面に出すか。消費されたボディは false。 */
   readonly visible: boolean;
   /**
-   * この段だけの三角形分割の粗さ(P5 §2.13、§0.a-0.54)。省略なら段の種類ごとの既定。
+   * この段だけの三角形分割の粗さ。省略なら段の種類ごとの既定。
    *
    * 優先順位は **段ごとの指定 > 呼び出し側が `recomputeSolids` の第 2 引数へ渡した指定 >
    * 段の種類ごとの既定**(掃引体だけ粗くする `SWEEP_TESSELLATION_OPTIONS`)。
    * 段ごとに変えられるようにしてあるのは、形の種類が同じでも寸法によって必要な細かさが
    * 変わるためで、値を決めるのは model 側(`kernelBridge.ts` の `toSolidStepRequest`)。
-   * P6 の STL / 3MF の「品質(偏差)指定」(FR-803)もこの欄へ乗る(計画書 §7.1-(d))。
+   * STL / 3MF の「品質(偏差)指定」(FR-803)もこの欄へ乗る。
    */
   readonly tessellation?: TessellationOptions;
 }
@@ -627,23 +627,23 @@ export interface SolidRecomputeRequest {
   /** 取り消しの世代番号。cancelSolidRecompute に同じ番号を渡すと止まる(NFR-PF-4)。 */
   readonly generation: number;
   /**
-   * 外観を割り当てた面の指紋(FR-1106、P5 §2.2.3)。段を作り終えたあと、
+   * 外観を割り当てた面の指紋(FR-1106)。段を作り終えたあと、
    * カーネルが同じ面を選び直して `SolidRecomputeResult.appearanceMatches` で返す。
    *
    * **省略か空なら照合を一切行わない。** 照合の物差し(境界箱の対角長)を測るのにも
    * OCCT を呼ぶので、外観を 1 つも割り当てていない文書では 1 回も呼ばないようにして、
-   * 費用をゼロにする(§0.a-0.54 の「外観の追加で所要を増やさない」)。
+   * 費用をゼロにする(「外観の追加で所要を増やさない」)。
    */
   readonly appearanceQueries?: readonly AppearanceQuery[];
   /**
-   * ボディの表面積(`SolidBodyMesh.area`)を測るか(統括の決定 2026-09-05、P5 タスク14)。
+   * ボディの表面積(`SolidBodyMesh.area`)を測るか。
    *
    * **省略か false なら測らず、`area` は入らない。** 表面積は形が手元にあるこの場でしか
    * 安く測れないが、それでもただではない(2026-09-05 実測: 面 26 枚の板で 11.4ms)。
    * NFR-PF-2 の上限 500ms に対して穴 20 個の板がすでに 485〜510ms を使っているので、
    * 誰も見ない表面積のために余裕を削らない、という判断である。
    *
-   * **true にするのは、測定・質量特性(FR-1101・FR-1102、タスク28・29)が値を要るときだけ。**
+   * **true にするのは、測定・質量特性(FR-1101・FR-1102)が値を要るときだけ。**
    * 外観の面の照合(FR-1106)は面ごとの面積(`SolidFaceInfo.area`)しか使わないので、
    * この欄とは関わりが無い(照合を頼んでも表面積は測らない)。
    *
@@ -660,7 +660,7 @@ export interface SolidRecomputeRequest {
 }
 
 /**
- * 形の種類(FR-428、P5 §0.a-0.45。P6 §0.a-0.24 で `'mesh'` が加わった)。
+ * 形の種類(FR-428。読み込んだ三角形の形の `'mesh'` を含む)。
  *
  * - `'solid'`: 閉じた立体のみからなる形。
  * - `'shell'`: 面だけのボディ(押し出し面・回転面など)。曲面の段(`makeSurface.ts`)が作る。
@@ -668,13 +668,13 @@ export interface SolidRecomputeRequest {
  * - `'mixed'`: 閉じた立体と、立体に属さない開いた面が混在する形。
  *
  * CAD形の分類はshapeBodyKindで面の所属を調べ、**体積では決めない**
- * (ふたの無い開いた殻は体積が 0 とは限らない。P5 タスク41 の実測)。
+ * (ふたの無い開いた殻は体積が 0 とは限らない。実測)。
  *
- * **`'mesh'` を作るのは kernel ではなく model 側**(`importedMesh` のフィーチャー。
- * P6 §2.8、タスク20)。三角形の網は B-rep へ変換しない(§0.a-0.23)ので、この種類の
+ * **`'mesh'` を作るのは kernel ではなく model 側**(`importedMesh` のフィーチャー)。
+ * 三角形の網は B-rep へ変換しないので、この種類の
  * ボディは幾何カーネルの中に形を持たない。kernel から見ると **`'mesh'` は
  * 「段の材料にできない印」** で、加工の段が対象に取ろうとしたら
- * `worker/recomputeSolids.ts` の `findStepInput` が 1 か所で断る(§2.8 の断りの表)。
+ * `worker/recomputeSolids.ts` の `findStepInput` が 1 か所で断る。
  */
 export type SolidBodyKind = 'solid' | 'shell' | 'mesh' | 'mixed';
 
@@ -698,7 +698,7 @@ export interface SolidBodyMesh {
   /** 稜線の線分列。線分 1 本あたり 6 個(始点 xyz + 終点 xyz)。 */
   readonly edgePositions: Float32Array;
   readonly triangleCount: number;
-  /** faces.length と必ず一致する(計画書 §2.8。タスク10 の検査で固定)。 */
+  /** faces.length と必ず一致する(検査で固定)。 */
   readonly faceCount: number;
   /** edges.length と必ず一致する(同上)。 */
   readonly edgeCount: number;
@@ -707,29 +707,29 @@ export interface SolidBodyMesh {
   /**
    * 表面積(mm²)。測定(FR-1102)と曲面の検証(FR-428)に使う。
    *
-   * **依頼が `SolidRecomputeRequest.measureAreas` で求めたときだけ入る**(統括の決定
-   * 2026-09-05、P5 タスク14)。求めていない再計算では `undefined` のままで、
+   * **依頼が `SolidRecomputeRequest.measureAreas` で求めたときだけ入る**。
+   * 求めていない再計算では `undefined` のままで、
    * 測る費用(面 26 枚の板で 11.4ms)を払わない。理由は `measureAreas` の注釈にある。
-   * **`area` はこの決定により任意の欄のままとし、タスク4 でも必須へ上げない。**
+   * **`area` はこの決めにより任意の欄のままとし、必須へ上げない。**
    */
   readonly area?: number;
   /**
-   * 形の種類(FR-428)。**必須の欄**(§0.a-0.77、タスク42b)。
+   * 形の種類(FR-428)。**必須の欄**。
    *
    * 判定は `buildSolidBodyMesh` の `hasSolid(oc, shape)` そのままで、**体積では決めない**。
-   * タスク41 で「ふたの無い開いた殻は体積が 0 とは限らない」ことが実測(体積 8000 の
+   * 「ふたの無い開いた殻は体積が 0 とは限らない」ことが実測(体積 8000 の
    * 開いた殻)で確かめられたため、体積からは `solid` / `shell` を判別できない。
    * `hasSolid` は部分形状を数えるだけなので安く、どの段でも必ず入れられる。
    *
-   * §0.a-0.4 等で任意にしていたのは、この欄を組み立てる model 側の見本が揃うまでの
+   * 以前に任意にしていたのは、この欄を組み立てる model 側の見本が揃うまでの
    * 経過措置だった(`area` は「求めたときだけ測る」ので任意のまま。理由が違う)。
    */
   readonly bodyKind: SolidBodyKind;
-  /** 面の一覧(§2.2、§2.3)。並びは通し番号の順。 */
+  /** 面の一覧。並びは通し番号の順。 */
   readonly faces: readonly SolidFaceInfo[];
   readonly edges: readonly SolidEdgeInfo[];
   readonly vertices: readonly SolidVertexInfo[];
-  /** ねじの簡略表示の印(§0.a-0.15)。無ければ空配列。 */
+  /** ねじの簡略表示の印。無ければ空配列。 */
   readonly threadMarks: readonly ThreadMarkInfo[];
   /** Runtime proof table. Producers populate this in P1. */
   readonly origins?: CurrentOriginIndex;
@@ -848,8 +848,8 @@ export interface SolidRecomputeResult {
    * 外観の面の照合の結果(FR-1106)。依頼の `appearanceQueries` と同じ並び・同じ件数で返る。
    * 依頼が省略・空なら空配列。
    *
-   * 任意の欄にしてあるのは `SolidBodyMesh.area` と同じ理由(組み立て側の model を
-   * 直せるのが P5 タスク4)で、kernel の `recomputeSolids` は必ず値を入れる。
+   * 任意の欄にしてあるのは `SolidBodyMesh.area` と同じ理由(組み立て側の model の
+   * 見本を一度に直さずに済む)で、kernel の `recomputeSolids` は必ず値を入れる。
    */
   readonly appearanceMatches?: readonly AppearanceMatch[];
   /**
@@ -883,7 +883,7 @@ export interface SolidProgress {
 // 上と同じく、Comlink 越しに渡せる素の値(数値・文字列・真偽・配列)だけで書く。
 //
 // SolidStepSpec の union と SolidBodyMesh の faces / edges / vertices / threadMarks は
-// タスク10(kernel の段の追加・メッシュへの一覧の添付)でつないだ(計画書 §2.8)。
+// kernel の段の追加とメッシュへの一覧の添付でつないだ。
 // faceCount は faces.length と、edgeCount は edges.length と必ず一致する
 // (solidMesh.ts の buildSolidBodyMesh と subShapes.ts の collectSubShapes が保証し、
 // recomputeSolids.test.ts が検査で固定する)。
@@ -891,7 +891,7 @@ export interface SolidProgress {
 /** 部分形状(B-rep の面・辺・頂点)の種類。選択と参照の単位になる。 */
 export type SubShapeKind = 'face' | 'edge' | 'vertex';
 
-/** 面の下地になっている曲面の種類。指紋の必須の一致条件(計画書 §2.2.2)。 */
+/** 面の下地になっている曲面の種類。指紋の必須の一致条件。 */
 export type FaceSurfaceKind = 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus' | 'other';
 
 /** 辺の下地になっている曲線の種類。指紋の必須の一致条件。 */
@@ -900,7 +900,7 @@ export type EdgeCurveKind = 'line' | 'circle' | 'ellipse' | 'other';
 /**
  * 面 1 枚の素性。指紋の材料と、当たり判定・強調の範囲表を兼ねる。
  *
- * 「形が同じなら必ず同じ値になるもの」だけを持つ(計画書 §2.2.2)。
+ * 「形が同じなら必ず同じ値になるもの」だけを持つ。
  * 隣り合う面の一覧や三角形の数は、形が少し変わるだけで壊れるので持たない。
  */
 export interface SolidFaceInfo {
@@ -989,7 +989,7 @@ export interface SolidVertexInfo {
 }
 
 /**
- * ねじの簡略表示の印(§0.a-0.15)。B-rep には現れない、描画だけのための情報。
+ * ねじの簡略表示の印。B-rep には現れない、描画だけのための情報。
  * 下穴は実際に掘るが、ねじ山は形を作らずに細い円と軸線で表すので、再計算の費用がかからない。
  */
 export interface ThreadMarkInfo {
@@ -1000,7 +1000,7 @@ export interface ThreadMarkInfo {
 }
 
 /**
- * 文書が保存する「部分形状の指紋」。段の依頼に乗り、カーネルが選び直しに使う(計画書 §2.2)。
+ * 文書が保存する「部分形状の指紋」。段の依頼に乗り、カーネルが選び直しに使う。
  *
  * B-rep の面・辺には名前が無く通し番号しか手がかりが無いため、上流のフィーチャーを
  * 編集すると番号がずれて別の面を指しうる(トポロジカルネーミング問題)。そこで番号だけでなく
@@ -1032,11 +1032,11 @@ export type SubShapeQuery =
       readonly origin?: SubShapeOrigin };
 
 /**
- * 外観を割り当てた面 1 つぶんの照合の依頼(FR-1106、P5 §2.2.3)。
+ * 外観を割り当てた面 1 つぶんの照合の依頼(FR-1106)。
  *
  * 外観は履歴ではなく「割り当て」なので、文書は面を指紋(`SubShapeQuery`)で覚えている。
  * 形を作り直すと面の通し番号がずれるため、再計算のたびにここでカーネルが選び直す。
- * **指紋の採点と規約は P3 の部分形状の参照(`occt/matchSubShape.ts`)をそのまま使い、
+ * **指紋の採点と規約は 部分形状の参照(`occt/matchSubShape.ts`)をそのまま使い、
  * 外観のための別の規約は作らない。**
  */
 export interface AppearanceQuery {
@@ -1066,7 +1066,7 @@ export interface AppearanceMatch {
 }
 
 /**
- * 工具全体にかける剛体変換(パターン、§0.a-0.20)。空なら恒等 1 つとして扱う。
+ * 工具全体にかける剛体変換(パターン)。空なら恒等 1 つとして扱う。
  *
  * パターンは新しい段の種類を作らず、穴・ねじ穴の工具をこの変換で複製して
  * まとめて差し引く。回転角は必ずラジアン(度で渡す取り違えを避けるため、
@@ -1088,7 +1088,7 @@ export interface HoleStepSpec {
   readonly centerAnchors?: readonly HoleCenterAnchor[];
   readonly placementRoles?: readonly HolePlacementRole[];
   readonly kind: 'hole';
-  /** 穴をあける立体を指すキャッシュの鍵。この段が消費する(§0.a-0.5)。 */
+  /** 穴をあける立体を指すキャッシュの鍵。この段が消費する。 */
   readonly targetKey: string;
   /** 穴をあける面。カーネルが指紋で選び直し、平面と法線を取り出す。 */
   readonly face: SubShapeQuery;
@@ -1099,22 +1099,22 @@ export interface HoleStepSpec {
   readonly depth: number | null;
   /** 面の法線からの傾き(ラジアン)。 */
   readonly tiltAngle: number;
-  /** 傾ける向き(面内の方位角、ラジアン)。基準は gp_Pln.XAxis()(§0.a-0.10)。 */
+  /** 傾ける向き(面内の方位角、ラジアン)。基準は gp_Pln.XAxis()。 */
   readonly tiltAzimuth: number;
   readonly transforms: readonly RigidTransformSpec[];
   /**
-   * 入口の形(ざぐり・皿もみ、FR-422、§0.a-0.39)。形の定義は `occt/makeHole.ts` の
+   * 入口の形(ざぐり・皿もみ、FR-422)。形の定義は `occt/makeHole.ts` の
    * `HoleEntrySpec` が正本(皿もみの角度は**ラジアン**。深さは kernel が角度と径から出すので、
    * model は計算しない)。
    *
    * **省くと今までどおりの真っ直ぐな穴**(`{ kind: 'plain' }`)になる。
-   * 任意の欄にしてあるのは、この欄を組み立てる model 側(`kernelBridge.ts`)を直せるのが
-   * P5 タスク46 だからで、**タスク46 が既定 `{ kind: 'plain' }` を必ず入れるようにしたら
+   * 任意の欄にしてあるのは、この欄を組み立てる model 側(`kernelBridge.ts`)が
+   * 組み終わるまでの経過措置だからで、**model 側が既定 `{ kind: 'plain' }` を必ず入れるようにしたら
    * 必須へ引き上げてよい**(`SolidBodyMesh.bodyKind` と同じ経過措置)。
    */
   readonly entry?: HoleEntrySpec;
   /**
-   * 円筒の側面の穴(EX05)。**省くと今までどおりの平面の穴**(`centers` を面の平面へ投影する)。
+   * 円筒の側面の穴。**省くと今までどおりの平面の穴**(`centers` を面の平面へ投影する)。
    * 入れたときは `face` が円筒面でなければ断り、`centers` は空、傾きは 0、入口は `plain` でなければ断る
    * (曲面の上のざぐり・皿もみ・傾きの正しさをまだ扱わないため。黙って平面の穴にしない)。
    * 位置の意味は `CylindricalHoleSpec` の注釈が正本。
@@ -1124,7 +1124,7 @@ export interface HoleStepSpec {
 }
 
 /**
- * 円筒の側面の穴の位置 1 つ(EX05)。
+ * 円筒の側面の穴の位置 1 つ。
  *
  * - `height`(mm): 円筒の**面自身の軸の向き**(OCCT の `gp_Cylinder.Position().Direction()`)に沿って、
  *   選んだ面の**下側の境界**(その軸の向きで小さい側、`BRepAdaptor_Surface.FirstVParameter()`)から測る。
@@ -1151,7 +1151,7 @@ export interface PlanarFaceBasis {
   readonly normal: Vec3Tuple;
 }
 
-/** 円筒の側面の穴(EX05)。位置ごとに軸の向きが違う(角度が違えば別の放射方向へ掘る)。 */
+/** 円筒の側面の穴。位置ごとに軸の向きが違う(角度が違えば別の放射方向へ掘る)。 */
 export interface CylindricalHoleSpec {
   readonly kind: 'cylinder-face';
   readonly locations: readonly CylindricalHoleLocation[];
@@ -1189,10 +1189,10 @@ export interface ThreadStepSpec {
   readonly transforms: readonly RigidTransformSpec[];
   /** 実らせんを切るときだけ入る。簡略表示のときは null。 */
   readonly thread: ThreadCutSpec | null;
-  /** 画面へ返すねじの印(簡略表示、§0.a-0.15)。実形状のときも返してよい。 */
+  /** 画面へ返すねじの印(簡略表示)。実形状のときも返してよい。 */
   readonly mark: ThreadMarkSpec | null;
   /**
-   * 下穴の入口の形(ざぐり・皿もみ、FR-422、§0.a-0.39)。**穴(`HoleStepSpec.entry`)と
+   * 下穴の入口の形(ざぐり・皿もみ、FR-422)。**穴(`HoleStepSpec.entry`)と
    * まったく同じ扱い**で、形の定義は `occt/makeHole.ts` の `HoleEntrySpec` が正本
    * (皿もみの角度は**ラジアン**。深さは kernel が角度と径から出す)。
    *
@@ -1200,12 +1200,12 @@ export interface ThreadStepSpec {
    * ねじ山は入口の底から始まる(`occt/makeThread.ts` の `threadOrigins`)ので、
    * 削れる量は「入口が無いときの削れ量 + 入口の削れ量」になる。
    *
-   * 任意の欄にしてあるのは穴と同じ理由(欄を組み立てる model 側を直すのが別のタスク)で、
+   * 任意の欄にしてあるのは穴と同じ理由(欄を組み立てる model 側が組み終わるまでの経過措置)で、
    * model が既定 `{ kind: 'plain' }` を必ず入れるようになったら必須へ引き上げてよい。
    */
   readonly entry?: HoleEntrySpec;
   /**
-   * 円筒の側面のねじ穴(EX05)。**省くと今までどおりの平面のねじ穴**。意味と断り方は
+   * 円筒の側面のねじ穴。**省くと今までどおりの平面のねじ穴**。意味と断り方は
    * `HoleStepSpec.cylindrical` と同じ(下穴は穴と同じ `resolveHoleFrame` が位置ごとの向きを決め、
    * ねじ山・切り始め・印も位置ごとの向きを使う。`occt/makeThread.ts` の `holeDirections`)。
    */
@@ -1214,7 +1214,7 @@ export interface ThreadStepSpec {
 }
 
 /**
- * 丸める半径(FR-407、FR-426、§0.a-0.48)。
+ * 丸める半径(FR-407、FR-426)。
  *
  * 数 1 つなら一定半径(`occt/makeFillet.ts`)、始点と終点の 2 つなら可変半径
  * (`occt/makeVariableFillet.ts`)。**辺の始点側が `start`、終点側が `end`** で、
@@ -1226,7 +1226,7 @@ export type FilletRadiusSpec = number | { readonly start: number; readonly end: 
 /**
  * 角を丸める 1 手順(FR-407)。
  * targets には辺と頂点の指紋が混ざる。頂点はカーネルが「その頂点に集まる辺」へ
- * 展開する(§0.a-0.17。頂点を球状に丸める API は OCCT に無い)。
+ * 展開する(頂点を球状に丸める API は OCCT に無い)。
  */
 export interface FilletStepSpec {
   readonly kind: 'fillet';
@@ -1243,7 +1243,7 @@ export interface FilletStepSpec {
  *
  * `FilletStepSpec` の半径が可変にも広がった(FR-426)ので、**一定半径しか扱わない
  * `makeFillet` には絞った型で渡す**。振り分けるのは `recomputeSolids` の 1 か所だけで、
- * 作り手の側に「どちらの半径か」の分岐を持ち込まない(ファイルは別のまま。§0.a-0.48)。
+ * 作り手の側に「どちらの半径か」の分岐を持ち込まない(ファイルは別のまま)。
  */
 export type ConstantFilletStepSpec = FilletStepSpec & { readonly radius: number };
 
@@ -1263,7 +1263,7 @@ export interface ChamferStepSpec {
   readonly targets: readonly SubShapeQuery[];
   readonly size: ChamferSizeSpec;
   /**
-   * 2 距離・距離角度のときの基準面を、辺に接する 2 面のうち後の方にするか(§0.a-0.18)。
+   * 2 距離・距離角度のときの基準面を、辺に接する 2 面のうち後の方にするか。
    * 基準面をもう 1 回選ばせると操作が 2 段になるため、既定は並びで先に出る面にし、
    * 思っていたのと逆ならこのつまみ 1 つで入れ替える。
    */
@@ -1271,8 +1271,8 @@ export interface ChamferStepSpec {
 }
 
 /**
- * らせんを掃引してばねを作る 1 手順(FR-414、計画書 §2.7b.2)。
- * 対象を取らない(押し出し・回転・縫合と同じ「新しいボディを作る」段、§0.36)。
+ * らせんを掃引してばねを作る 1 手順(FR-414)。
+ * 対象を取らない(押し出し・回転・縫合と同じ「新しいボディを作る」段)。
  */
 export interface SpringStepSpec {
   readonly kind: 'spring';
@@ -1286,17 +1286,17 @@ export interface SpringStepSpec {
   readonly wireDiameter: number;
   /** 1 巻きあたりの軸方向の進み(mm)。 */
   readonly pitch: number;
-  /** 巻数。0 より大きい。整数でなくてよい。上限は 200(§0.a-0.35)。 */
+  /** 巻数。0 より大きい。整数でなくてよい。上限は 200。 */
   readonly turns: number;
   readonly handedness: 'right' | 'left';
 }
 
 /**
- * 基本形状の寸法(mm)。種類ごとに欄が違う判別共用体(FR-429、計画書 P5 §2.7.2)。
+ * 基本形状の寸法(mm)。種類ごとに欄が違う判別共用体(FR-429)。
  *
  * 円錐だけが半径を 2 つ持つ。上半径 0 で尖った円錐に、0 より大きい値で円錐台になるので、
- * **円錐台を別の種類にしないで済む**(§0.a-0.16)。寸法の範囲の検査と断りの文言は
- * `occt/makePrimitive.ts` が持つ(model 側にも同じ検査があり、実行前に赤くする。§2.7.1)。
+ * **円錐台を別の種類にしないで済む**。寸法の範囲の検査と断りの文言は
+ * `occt/makePrimitive.ts` が持つ(model 側にも同じ検査があり、実行前に赤くする)。
  */
 export type PrimitiveShapeSpec =
   | { readonly kind: 'sphere'; readonly radius: number }
@@ -1311,10 +1311,10 @@ export type PrimitiveShapeSpec =
   | { readonly kind: 'torus'; readonly majorRadius: number; readonly minorRadius: number };
 
 /**
- * 基本形状を 1 つ作る 1 手順(FR-429、計画書 P5 §2.7.2)。
- * **対象を取らない**(押し出し・回転・縫合・ばねと同じ「新しいボディを作る」段、§0.a-0.19)。
+ * 基本形状を 1 つ作る 1 手順(FR-429)。
+ * **対象を取らない**(押し出し・回転・縫合・ばねと同じ「新しいボディを作る」段)。
  *
- * 例外は基準点を「立体の頂点」にしたとき(§0.a-0.18、P5 タスク14b)で、そのときだけ
+ * 例外は基準点を「立体の頂点」にしたときで、そのときだけ
  * `originQuery` と `targetKey` が入り、カーネルが対象の形から頂点を引く。
  * **それでも対象は消費しない**(穴・ばね・ブーリアンと違い、頂点を貸した立体は
  * そのまま画面に残る)ので、「新しいボディを作る」段であることは変わらない。
@@ -1322,10 +1322,10 @@ export type PrimitiveShapeSpec =
 export interface PrimitiveStepSpec {
   readonly kind: 'primitive';
   /**
-   * 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心(§0.a-0.17)。
+   * 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心。
    *
-   * **`originQuery` が入っているときは、その頂点からのオフセットとして扱う**
-   * (統括の決定 2026-09-05、P5 タスク14b)。頂点そのものを基準にするなら `[0, 0, 0]`。
+   * **`originQuery` が入っているときは、その頂点からのオフセットとして扱う。**
+   * 頂点そのものを基準にするなら `[0, 0, 0]`。
    * `originQuery` が `null` のときは、これまでどおり世界座標そのものである。
    */
   readonly origin: Vec3Tuple;
@@ -1333,14 +1333,14 @@ export interface PrimitiveStepSpec {
   readonly axis: Vec3Tuple;
   readonly shape: PrimitiveShapeSpec;
   /**
-   * 基準点にする「立体の頂点」の指紋(FR-429 の 3 通りのうちの 1 つ、§0.a-0.18)。
+   * 基準点にする「立体の頂点」の指紋(FR-429 の 3 通りのうちの 1 つ)。
    *
    * 座標の式・スケッチの点で基準点を決めるときは `null`。頂点を指すときは
    * **必ず `kind: 'vertex'` の指紋**を入れる(面・辺を渡されたら断る)。
-   * 選び直しは P3 の部分形状の参照とまったく同じ採点(`occt/matchSubShape.ts` の
+   * 選び直しは部分形状の参照とまったく同じ採点(`occt/matchSubShape.ts` の
    * `matchVertex`)で行い、基本形状のための別の規約は作らない。
    *
-   * **頂点の指紋は番号が変わると最高 0.5 でしきい値 0.6 に届かない**(§0.a-0.18 の注意)。
+   * **頂点の指紋は番号が変わると最高 0.5 でしきい値 0.6 に届かない**。
    * つまり上流を大きく作り替えると「見つからない」になりやすく、そのときは
    * 日本語の理由を添えて断る(FR-504)。
    */
@@ -1348,11 +1348,11 @@ export interface PrimitiveStepSpec {
   /**
    * `originQuery` の頂点を持つ立体の段のキャッシュの鍵。`originQuery` が `null` なら `null`。
    *
-   * **この鍵の段は消費しない**(§0.a-0.19)。穴・面取り・ブーリアンの `targetKey` は
+   * **この鍵の段は消費しない**。穴・面取り・ブーリアンの `targetKey` は
    * 対象を食べてしまうが、基本形状は頂点の座標を読むだけなので、対象のボディは
    * そのまま画面に残る(結果は 2 ボディになる)。
    *
-   * **呼び出し側(model の `part/cacheKey.ts`、P5 タスク15)は、この段の鍵の材料に
+   * **呼び出し側(model の `part/cacheKey.ts`)は、この段の鍵の材料に
    * `originQuery` と `targetKey` を必ず含める。** 含めないと、上流の押し出しを伸ばして
    * 頂点が動いても段の鍵が変わらず、古い位置の形がキャッシュから返る(NFR-PF-3 の
    * 鍵の連鎖は「材料が変われば鍵が変わる」ことに全面的に頼っているため)。
@@ -1361,15 +1361,15 @@ export interface PrimitiveStepSpec {
 }
 
 /**
- * 罫線面・ロフトの断面 1 つ(FR-430、FR-410、計画書 P5 §2.9、タスク24)。
+ * 罫線面・ロフトの断面 1 つ(FR-430、FR-410)。
  *
  * ふつうは閉じた輪郭(`curves`)だが、**球だけは縁を持たない**ので中心と半径で渡す。
  * 球が入っているときは `ThruSections` にそのまま渡さず、球に外接する直線
  * (接する円錐面)で結ぶ経路へ入る(`occt/makeThruSections.ts` の冒頭)。
  *
- * **立体の面を輪郭にするときは `faceQuery`**(§0.a-0.73、P5 タスク24b)。model 側で
+ * **立体の面を輪郭にするときは `faceQuery`**。model 側で
  * 輪郭の曲線に直さないのは、面を指す手がかりが指紋(`SubShapeQuery`)しか無く、
- * **選び直しはカーネルの中で行う**と決めてあるためである(P3 §2.2.4。穴・面取りと同じ)。
+ * **選び直しはカーネルの中で行う**と決めてあるためである(穴・面取りと同じ)。
  */
 export type ThruSectionSpec =
   | { readonly kind: 'curves'; readonly curves: readonly CurveSpec[] }
@@ -1379,7 +1379,7 @@ export type ThruSectionSpec =
       /**
        * 面を持つ立体の段のキャッシュの鍵。
        *
-       * **この鍵の段は消費しない**(§0.a-0.27)。輪郭を貸した立体はそのまま画面に残る。
+       * **この鍵の段は消費しない**。輪郭を貸した立体はそのまま画面に残る。
        *
        * **呼び出し側(model の `part/cacheKey.ts`)は、この段の鍵の材料に `targetKey` と
        * `query` を必ず含める。** 含めないと、上流の押し出しを伸ばして面が動いても
@@ -1393,7 +1393,7 @@ export type ThruSectionSpec =
     };
 
 /**
- * 球へつなぐ一般の輪郭(§2.9.3-(b))を割る点の数(§0.a-0.74、利用者の決定 2026-09-05)。
+ * 球へつなぐ一般の輪郭を割る点の数(利用者の決定 2026-09-05)。
  *
  * 多いほど球への接し方が滑らかになり、そのぶん遅くなる。既定の 24 は
  * NFR-PF-2(500ms)に収まるいちばん細かい値で、48 / 72 は「なめらかさ」を優先して
@@ -1402,14 +1402,14 @@ export type ThruSectionSpec =
 export type SphereSegmentCount = 24 | 48 | 72;
 
 /**
- * 輪郭をつないで立体にする 1 手順(罫線面 FR-430・ロフト FR-410、計画書 P5 §2.9)。
+ * 輪郭をつないで立体にする 1 手順(罫線面 FR-430・ロフト FR-410)。
  *
- * **対象を取らない「作る」段**(押し出し・回転・縫合・ばね・基本形状と同じ。§0.a-0.27)。
+ * **対象を取らない「作る」段**(押し出し・回転・縫合・ばね・基本形状と同じ)。
  * 輪郭の材料になった立体はそのまま画面に残る。
  *
  * 罫線面(直線で結ぶ)とロフト(なめらかに結ぶ)は、利用者から見て別の道具なので
  * **model 側のフィーチャーの種類は分ける**が、カーネルでは `ruled` の真偽だけが違うので
- * 段は 1 種類にまとめてある(§0.a-0.25。同じものを 2 つ作らない)。
+ * 段は 1 種類にまとめてある(同じものを 2 つ作らない)。
  */
 export interface ThruSectionsStepSpec {
   readonly kind: 'thruSections';
@@ -1421,24 +1421,24 @@ export interface ThruSectionsStepSpec {
   readonly ruled: boolean;
   /** true なら両端に面を張って閉じた立体にする。false なら殻のまま(いまは常に true)。 */
   readonly closed: boolean;
-  /** 輪郭のねじれを直すための、2 つ目以降の輪郭の稜線のずらし数(整数。§0.a-0.28)。 */
+  /** 輪郭のねじれを直すための、2 つ目以降の輪郭の稜線のずらし数(整数)。 */
   readonly twist: number;
   /**
-   * 球へつなぐ一般の輪郭を割る点の数(§0.a-0.74)。**段ごとに必須**。
+   * 球へつなぐ一般の輪郭を割る点の数。**段ごとに必須**。
    *
    * 省略できる欄にしていないのは、文書に書かれていない段が「既定の 24」で
    * 黙って作られると、後で既定を変えたときに保存済みの文書の形が一斉に変わるためである
-   * (既定を入れるのは model 側。`docs/plans/P5-高度なソリッド・外観と測定.md` §0.a-0.74)。
+   * (既定を入れるのは model 側)。
    * 24 / 48 / 72 以外の値(古い文書・壊れた文書から来た値)は理由をつけて断る。
    *
-   * **球を含まない段では形に効かない。** 全周の円と球の厳密な経路(§2.9.3-(a))も
+   * **球を含まない段では形に効かない。** 全周の円と球の厳密な経路も
    * 点に割らないので、この値には依らない。
    */
   readonly sphereSegments: SphereSegmentCount;
 }
 
 // ---------------------------------------------------------------------------
-// P5 の Should 群・Could 群の段(FR-401、FR-409、FR-415〜FR-428、FR-432。タスク42a)。
+// Should 群・Could 群の段(FR-401、FR-409、FR-415〜FR-428、FR-432)。
 //
 // 形を作るのは `occt/make*.ts` で、**段の型はその作り手の依頼(`*Input`)の上位互換**
 // (判別のための `kind` と、対象を指す `targetKey` を足しただけ)にしてある。
@@ -1451,10 +1451,10 @@ export interface ThruSectionsStepSpec {
 // ---------------------------------------------------------------------------
 
 /**
- * 抜き勾配(FR-417、P5 §2.11)。中立面を基準に、選んだ面を型が抜ける向きへ傾ける。
+ * 抜き勾配(FR-417)。中立面を基準に、選んだ面を型が抜ける向きへ傾ける。
  *
  * **対象を消費する**(傾けた立体 1 つだけが残る)。
- * 角度の上限は 60 度(§0.a-0.72)。判定と断りの文言は `occt/makeDraft.ts` が持つ。
+ * 角度の上限は 60 度。判定と断りの文言は `occt/makeDraft.ts` が持つ。
  */
 export interface DraftStepSpec {
   readonly kind: 'draft';
@@ -1488,7 +1488,7 @@ export interface HoleTranslateStepSpec {
 }
 
 /**
- * 平らな面の移動(EX-18 の限られた一段)。平らな面 1 枚を外向き法線の向きへ符号付きの距離だけ
+ * 平らな面の移動(限られた一段)。平らな面 1 枚を外向き法線の向きへ符号付きの距離だけ
  * 平行に動かす。**対象を消費する。** 扱えるのは隣の面がすべて直角な面だけで、判定と断りの
  * 文言は `occt/editSolidFace.ts` が持つ(欄は `FaceOffsetInput` の上位互換)。
  */
@@ -1503,7 +1503,7 @@ export interface FaceOffsetStepSpec {
 }
 
 /**
- * ミラー(FR-419、§0.a-0.36)。平面に対する鏡像を 1 つ作る。
+ * ミラー(FR-419)。平面に対する鏡像を 1 つ作る。
  *
  * **対象を消費しない。** 鏡像を作ったあと元と鏡像を「和」でつなぐのが普通の使い方で、
  * 元を消すと和が取れない(基本形状・罫線面と同じ「作る」段)。結果は 2 ボディになる。
@@ -1519,7 +1519,7 @@ export interface MirrorStepSpec {
 }
 
 /**
- * 移動/回転(FR-424、§0.a-0.41)。対象を剛体変換した立体を 1 つ作る。
+ * 移動/回転(FR-424)。対象を剛体変換した立体を 1 つ作る。
  *
  * **対象を消費する**(元の位置に残すと二重になる)。
  * 欄の意味は `RigidTransformSpec` と同じで、回転角は必ずラジアン。
@@ -1536,11 +1536,11 @@ export interface TransformStepSpec {
 }
 
 /**
- * 拡大縮小(FR-424、§0.a-0.41)。**対象を消費する。**
+ * 拡大縮小(FR-424)。**対象を消費する。**
  *
  * `uniform`(全体の倍率)と `perAxis`(軸ごとの倍率)は**どちらか一方だけ**を入れる
  * (両方 null・両方非 null はどちらも組み立ての誤りとして断る。`occt/transformShape.ts`)。
- * 軸ごとに倍率が違うと円柱面が楕円柱面に変わり、下流の指紋が外れうる(タスク35 の実測)。
+ * 軸ごとに倍率が違うと円柱面が楕円柱面に変わり、下流の指紋が外れうる(実測)。
  */
 export interface ScaleStepSpec {
   readonly kind: 'scale';
@@ -1555,7 +1555,7 @@ export interface ScaleStepSpec {
 }
 
 /**
- * スイープ(FR-409、§0.a-0.43、§0.a-0.76)。断面を経路に沿って掃く。
+ * スイープ(FR-409)。断面を経路に沿って掃く。
  *
  * **対象を取らない「作る」段**(押し出し・回転・縫合・ばね・基本形状と同じ)。
  * 断面の重心は経路の始点へ移され、断面の法線は経路の接線へ最小回転で合わせられる。
@@ -1573,7 +1573,7 @@ export interface SweepStepSpec {
 }
 
 /**
- * リブ(FR-420、§0.a-0.37、§0.a-0.75)。開いた輪郭に厚みを付けた壁を立体へ足す。
+ * リブ(FR-420)。開いた輪郭に厚みを付けた壁を立体へ足す。
  *
  * **対象を消費する**(リブが付いた立体 1 つだけが残る)。
  */
@@ -1601,9 +1601,9 @@ export interface RibStepSpec {
 }
 
 /**
- * エンボス(FR-421、§0.a-0.38)。平らな面へ輪郭を彫る / 浮き出す。
+ * エンボス(FR-421)。平らな面へ輪郭を彫る / 浮き出す。
  *
- * **対象を消費する。** 面は平面だけ(曲面へのラップは P6 以降)。
+ * **対象を消費する。** 面は平面だけ(曲面へのラップは未対応)。
  */
 export interface EmbossStepSpec {
   readonly kind: 'emboss';
@@ -1620,14 +1620,14 @@ export interface EmbossStepSpec {
 }
 
 /**
- * 外ねじ(FR-423、§0.a-0.40)。円柱面にねじを切る。
+ * 外ねじ(FR-423)。円柱面にねじを切る。
  *
  * **対象を消費する。** 選ぶのは**円柱面 1 つ**で、深さ・貫通の概念は無い
  * (ねじ穴は平らな面と点を選ぶ。だから別の段にしてある)。
  * **軸の径は面から測る**ので利用者に入れさせない(NFR-UX-4)。`majorDiameter` は
  * 画面に出す印(`ThreadMarkInfo`)に載せる呼び径で、削る深さはピッチから決まる。
  *
- * **簡略表示(`modeled: false`)では B-rep に触れない**(§0.a-0.15)。印だけを返し、
+ * **簡略表示(`modeled: false`)では B-rep に触れない**。印だけを返し、
  * 形はもとのまま渡すので費用はほぼ 0。実らせん(`modeled: true`)は 1 本で数秒かかる
  * (2026-09-05 実測 中央値 4184ms、負荷あり)ので、既定は簡略にする。
  */
@@ -1649,7 +1649,7 @@ export interface ThreadShaftStepSpec {
 }
 
 /**
- * 曲面(FR-428、§0.a-0.45)。**閉じた立体ではなく面のボディ**(`bodyKind: 'shell'`)を作る。
+ * 曲面(FR-428)。**閉じた立体ではなく面のボディ**(`bodyKind: 'shell'`)を作る。
  *
  * **対象を取らない「作る」段。** ただし作り方が「すでにある立体の面を取り出す」
  * (`shape.kind === 'face'`)か「その面を距離だけ離す」(`shape.kind === 'offset'`)の
@@ -1680,10 +1680,10 @@ export interface SurfaceCutStepSpec {
 }
 
 /**
- * 平面による切断(FR-432、P5 §2.9b。分割(FR-424)もこれで満たす。§0.a-0.60)。
+ * 平面による切断(FR-432、分割(FR-424)もこれで満たす)。
  *
  * **対象を消費する。** 両側が要るなら切断の段を 2 つ置く
- * (「1 フィーチャー = 最大 1 ボディ」の規則を曲げない。§0.a-0.41)。
+ * (「1 フィーチャー = 最大 1 ボディ」の規則を曲げない)。
  */
 export interface CutStepSpec {
   readonly kind: 'cut';
@@ -1698,7 +1698,7 @@ export interface CutStepSpec {
 }
 
 /**
- * くり抜き(FR-418、§0.a-0.47)。壁の厚さを残して中身を抜く。
+ * くり抜き(FR-418)。壁の厚さを残して中身を抜く。
  *
  * **対象を消費する。**
  */
@@ -1718,21 +1718,21 @@ export interface ShellStepSpec {
 }
 
 /**
- * 読み込んだ形のベースボディ(FR-802、P6 §2.8、§0.a-0.9、タスク10)。
+ * 読み込んだ形のベースボディ(FR-802)。
  *
  * **対象を取らない「作る」段**(押し出し・基本形状と同じ)。履歴を持たない形なので、
  * 段がすることは「抱き込んであるバイト列から B-rep を戻す」ことだけである。
  *
- * **鍵は `.pcad` の中の入れ物の名前(`shapeRef`)だけで足りる**(model の `part/cacheKey.ts`、
- * タスク20)。読み込んだ形は再計算で変わりようがないので、**同じ部品を開いている間は
+ * **鍵は `.pcad` の中の入れ物の名前(`shapeRef`)だけで足りる**(model の `part/cacheKey.ts`)。
+ * 読み込んだ形は再計算で変わりようがないので、**同じ部品を開いている間は
  * 2 回目以降が必ず形状キャッシュに当たる**(`SolidRecomputeResult.cacheHits` が増える)。
  *
  * バイト列を段に載せて毎回渡すのは、Worker が作り直されたとき(タブの再読み込み、
  * キャッシュの追い出し)に戻せる材料がここにしか無いためである。**読み込んだ B-rep を
  * `.pcad` へ抱き込むこと自体が `rules/04` の「導出できるものは保存しない」への例外**で、
- * 利用者の承認(§0.a-0.9)を得ている——読み込んだものは再計算で導出できないので趣旨に反しない。
+ * 利用者の承認を得ている——読み込んだものは再計算で導出できないので趣旨に反しない。
  *
- * **三角形の形(`importedMesh`、`bodyKind: 'mesh'`)はここへ来ない**(§0.a-0.23。
+ * **三角形の形(`importedMesh`、`bodyKind: 'mesh'`)はここへ来ない**(
  * メッシュは B-rep にしないので、幾何カーネルの段にならない。model が直接ボディにする)。
  */
 export interface ImportedSolidStepSpec {
@@ -1745,7 +1745,7 @@ export interface ImportedSolidStepSpec {
 }
 
 /**
- * 測る対象 1 つ(FR-1101、FR-1102、P5 §2.10.1、タスク28)。
+ * 測る対象 1 つ(FR-1101、FR-1102)。
  *
  * 形そのものは Comlink 越しに渡せないので、**段のキャッシュの鍵**(`SolidStepRequest.key`)で
  * 「覚えてある形」を指す(投影・交差の `SketchProjectionItem.shapeKey` と同じ流儀)。
@@ -1765,12 +1765,12 @@ export interface MeasureTargetSpec {
 
 /**
  * 測定の依頼(FR-1101、FR-1102)。**形は作り直さない読み取りだけ**で、
- * 履歴の再計算も鍵の作り直しも起こさない(§0.a-0.30)。
+ * 履歴の再計算も鍵の作り直しも起こさない。
  *
  * 件数は測るものごとに決まっている。`distance` は 2 つ、`massProperties` は 1 つで、
  * 合わない件数で頼まれたら理由をつけて断る(投げない。NFR-RE-1)。
  *
- * **カーネルへ頼むのはこの 2 つだけ**(§0.a-0.30)。点間の距離・辺の長さ・面の面積・
+ * **カーネルへ頼むのはこの 2 つだけ**。点間の距離・辺の長さ・面の面積・
  * 面どうしのなす角は、再計算がすでに返している一覧(`SolidVertexInfo.position` /
  * `SolidEdgeInfo.length` / `SolidFaceInfo.area` / `SolidFaceInfo.axis`)から
  * model 側が計算するので、Worker を往復しない(NFR-PF-4)。
@@ -1787,7 +1787,7 @@ export interface MeasureRequest {
  * 測れなかったときも投げずに `failed` を返す(FR-504、NFR-RE-1)。
  * 単位は距離・重心が mm、体積が mm³、表面積が mm²、慣性モーメントが mm⁵
  * (密度を掛けない体積の 2 次モーメント)。**質量(g)と g·mm² の慣性モーメントは、
- * 密度(g/cm³)を持っている model 側が掛ける**(§0.a-0.32、タスク29)。
+ * 密度(g/cm³)を持っている model 側が掛ける**。
  */
 export type MeasureResult =
   | {
@@ -1818,9 +1818,9 @@ export type MeasureResult =
   | { readonly kind: 'failed'; readonly message: string };
 
 // ---------------------------------------------------------------------------
-// 書き出しと読み込み(FR-802、FR-803。P6 §2.3・§2.4・§2.8、タスク10)。
+// 書き出しと読み込み(FR-802、FR-803)。
 //
-// **口(`KernelApi` のメソッド)は書き出し 1 本・読み込み 1 本しか作らない**(§0.a-0.2)。
+// **口(`KernelApi` のメソッド)は書き出し 1 本・読み込み 1 本しか作らない**。
 // STEP / 三角形 / B-rep の切り替えは**依頼の中の `format` で判別**し、実装は網羅 `switch`
 // (`default` を作らない)で受ける。形式が増えたときに口を増やすと、UI と Worker の
 // 両側に同じ数の配線が要るうえ、どこまで実装したのかが型から読めなくなるためである。
@@ -1844,7 +1844,7 @@ export interface ShapeExportItem {
   /** 立体の色(sRGB の 0〜1)。`null` なら色を付けない。 */
   readonly color: RgbTuple | null;
   /**
-   * 面ごとの色(**面の通し番号 → 色**。§2.5.1、P6 タスク7b+13b)。**省略できる。**
+   * 面ごとの色(**面の通し番号 → 色**)。**省略できる。**
    *
    * 面の割り当ては立体の色より優先する(`xcafFaceColors.ts` / `writeCafMesh.ts` の注釈)。
    * 色を持てない形式(STL / `'mesh'` / `'brep'`)は**この欄を見ない**——
@@ -1854,7 +1854,7 @@ export interface ShapeExportItem {
   readonly faceColors?: FaceColorMap;
 }
 
-/** STEP のアセンブリで共有する部品定義 1 つ(P7 タスク41)。 */
+/** STEP のアセンブリで共有する部品定義 1 つ。 */
 export interface ShapeExportAssemblyDefinition {
   /** アセンブリの中だけで一意な、参照用の安定した id。 */
   readonly id: string;
@@ -1923,7 +1923,7 @@ export interface ShapeExportMeshQuality {
  * **1 回の書き出しで 2 つ以上のファイルが出ることがある。** OBJ は `.obj` と `.mtl` の
  * 2 つで、`.obj` の `mtllib` の行が `.mtl` の名前を指しているため**名前を勝手に変えると
  * 色が付かない**。だから名前は kernel が組んで返し、呼び出し側は数えずにそのまま全部
- * 保存する(§0.a-0.20 の書き出しのパネル、タスク32)。
+ * 保存する(書き出しのパネル)。
  */
 export interface ShapeExportFile {
   /** 保存するときのファイル名(拡張子つき)。 */
@@ -1933,7 +1933,7 @@ export interface ShapeExportFile {
 }
 
 /**
- * 書き出しの依頼(FR-803)。**形式は依頼の中の `format` で判別する**(§0.a-0.2)。
+ * 書き出しの依頼(FR-803)。**形式は依頼の中の `format` で判別する**。
  *
  * **口(`KernelApi.exportShapes`)は 1 本しか作らない。** 形式が増えるたびに口を増やすと、
  * UI と Worker の両側へ同じ数の配線が要るうえ、どこまで実装したのかが型から読めなくなる。
@@ -1951,8 +1951,8 @@ export interface ShapeExportFile {
  * | `'mesh'` | 立体ごとの三角形の網(ファイルは組まない) | 3MF(`packages/io` が組む) |
  * | `'brep'` | 立体ごとの B-rep のバイト列 | `.pcad` の `shapes/<id>.brep` |
  *
- * **`'mesh'` だけファイルを返さないのは、3MF を書くのが `packages/io` だから**(§0.a-0.19)。
- * io は OCCT を呼べず(§0.a-0.2)、偏差を指定した三角形は kernel でしか作れないので、
+ * **`'mesh'` だけファイルを返さないのは、3MF を書くのが `packages/io` だから**。
+ * io は OCCT を呼べず、偏差を指定した三角形は kernel でしか作れないので、
  * kernel は三角形までを返して ZIP と XML の組み立ては io に任せる。
  */
 export type ShapeExportRequest =
@@ -1962,7 +1962,7 @@ export type ShapeExportRequest =
       readonly bodies: readonly ShapeExportItem[];
       /** 省略時は従来どおり `bodies` を平らに書く。指定時は共有定義と配置木を書く。 */
       readonly assembly?: ShapeExportAssembly;
-      /** 色を書くか(§0.a-0.22)。省くと書く。列挙が取れない環境では形だけになる。 */
+      /** 色を書くか。省くと書く。列挙が取れない環境では形だけになる。 */
       readonly withColors?: boolean;
     }
   | ({
@@ -1970,10 +1970,10 @@ export type ShapeExportRequest =
       readonly format: 'stl';
       readonly bodies: readonly ShapeExportItem[];
       /**
-       * `true` なら ASCII、省くとバイナリ(§2.4)。
+       * `true` なら ASCII、省くとバイナリ。
        *
-       * **STL に色は書かない**(§0.a-0.15。仕様に色が無い)ので、依頼の `name` / `color` は
-       * 使わない。「STL には色が付きません」の案内は書き出しの画面が出す(タスク32)。
+       * **STL に色は書かない**(仕様に色が無い)ので、依頼の `name` / `color` は
+       * 使わない。「STL には色が付きません」の案内は書き出しの画面が出す。
        */
       readonly ascii?: boolean;
       /** ファイル名の基(拡張子なし。省くと `model`)。 */
@@ -2051,7 +2051,7 @@ export type ShapeExportResult =
        * OCCT は球の極や回転面の継ぎ目で同じ節点を 2 度含む三角形を作ることがあり
        * (`occt/writeStl.ts` の `DEGENERATE_CROSS_LENGTH_MM2`)、そのままでは法線が
        * `NaN` になってどの道具でも開けないファイルになる。**落とした枚数を返すのは、
-       * 「三角形を n 枚除きました」の 1 行を画面が出せるようにするため**(タスク32)。
+       * 「三角形を n 枚除きました」の 1 行を画面が出せるようにするため**。
        */
       readonly droppedTriangleCount: number;
     }
@@ -2059,7 +2059,7 @@ export type ShapeExportResult =
   | { readonly format: 'brep'; readonly bodies: readonly ShapeExportBrepBody[] };
 
 /**
- * 3D プリント向けの点検の依頼(FR-815、NFR-PF-4、P6 §0.51・§2.16、タスク42)。
+ * 3D プリント向けの点検の依頼(FR-815、NFR-PF-4)。
  *
  * **対象は書き出しと同じ `ShapeExportItem[]`。** 名前も色も使わず、`bodyKey` で
  * Worker が直近に画面へ返した表示メッシュを引く。別品質で再メッシュ化しないため、
@@ -2102,7 +2102,7 @@ export interface ShapeInspectResult extends PrintabilityResult {
  *
  * `'step'` / `'stl'` / `'obj'` / `'gltf'` はファイルから読む口、`'brep'` は `.pcad` に
  * 抱き込んだバイト列を戻す口である。3MF の読み込み(FR-809)は `packages/io` が
- * 自前の ZIP / XML の読み手で行うので、この union には入らない(§0.a-0.26)。
+ * 自前の ZIP / XML の読み手で行うので、この union には入らない。
  */
 export type ShapeImportRequest =
   | {
@@ -2115,7 +2115,7 @@ export type ShapeImportRequest =
       readonly withColors?: boolean;
     }
   | {
-      /** `.pcad` の `shapes/<id>.brep` に抱き込んだバイト列(§0.a-0.9)。 */
+      /** `.pcad` の `shapes/<id>.brep` に抱き込んだバイト列。 */
       readonly format: 'brep';
       readonly bytes: Uint8Array;
     }
@@ -2142,10 +2142,10 @@ export type ShapeImportRequest =
     };
 
 /**
- * 読み込んだ立体 1 つぶんに共通する欄(FR-802、P6 §2.8)。
+ * 読み込んだ立体 1 つぶんに共通する欄(FR-802)。
  *
- * 色はファイルに入っていた値をそのまま返すが、**model は当面これを使わず既定の外観にする**
- * (§0.a-0.28)。捨てずに返しておくのは、P7 以降で取り込むときに読み直さずに済ませるため。
+ * 色はファイルに入っていた値をそのまま返すが、**model は当面これを使わず既定の外観にする。**
+ * 捨てずに返しておくのは、後で取り込むときに読み直さずに済ませるため。
  */
 interface ShapeImportBodyCommon {
   /** ファイルに入っていた名前。無ければ `null`。 */
@@ -2159,20 +2159,20 @@ interface ShapeImportBodyCommon {
 }
 
 /**
- * 読み込んだ立体 1 つぶん(FR-802、P6 §2.8)。
+ * 読み込んだ立体 1 つぶん(FR-802)。
  *
  * **形(`TopoDS_Shape`)は入らない。** B-rep は Comlink を越えられないので、代わりに
  * ①**そのまま `.pcad` へ入れられるバイト列**(`brepBytes`)と、②**画面へ出せる三角形**
  * (`triangles`)を返す。model はこの 2 つで `importedSolid` のフィーチャーを組み立て、
- * 次の再計算では①を段(`ImportedSolidStepSpec`)へ載せて形を戻す(タスク20)。
+ * 次の再計算では①を段(`ImportedSolidStepSpec`)へ載せて形を戻す。
  *
  * **`bodyKind` で 2 つに割ってある。** STL / OBJ / glTF は三角形しか持たないファイルで、
- * そこから B-rep を作ることはしない(§0.a-0.23。面が三角形の数だけできて、その上の
+ * そこから B-rep を作ることはしない(面が三角形の数だけできて、その上の
  * フィレットも穴あけも実用にならない)。だから**メッシュの枝には `brepBytes` が無い**——
  * 「無い値に `null` を入れて渡す」形にすると、受け取る側が `null` の検査を忘れても
  * 型検査が助けてくれない。model は `bodyKind` で分けて `importedSolid`(B-rep を
- * `shapes/<id>.brep` へ)と `importedMesh`(三角形を `meshes/<id>.bin` へ)を作り分ける
- * (§0.a-0.24、タスク20)。
+ * `shapes/<id>.brep` へ)と `importedMesh`(三角形を `meshes/<id>.bin` へ)
+ * を作り分ける。
  */
 export type ShapeImportBody =
   | (ShapeImportBodyCommon & {
@@ -2183,7 +2183,7 @@ export type ShapeImportBody =
     })
   | (ShapeImportBodyCommon & {
       /**
-       * 読み込んだ三角形の形(§0.a-0.23)。**B-rep を持たない**ので、加工フィーチャーの
+       * 読み込んだ三角形の形。**B-rep を持たない**ので、加工フィーチャーの
        * 対象にできない(`worker/recomputeSolids.ts` の 1 か所で断る)。
        */
       readonly bodyKind: 'mesh';
@@ -2197,7 +2197,7 @@ export interface ShapeImportAssemblyDefinition {
   readonly bodyIndex: number;
 }
 
-/** 読み込んだ STEP のアセンブリ構造(P7 タスク42)。 */
+/** 読み込んだ STEP のアセンブリ構造。 */
 export interface ShapeImportAssembly {
   readonly name: string | null;
   readonly definitions: readonly ShapeImportAssemblyDefinition[];
@@ -2208,15 +2208,15 @@ export interface ShapeImportAssembly {
  * 読み込みの結果(FR-802、FR-811)。
  *
  * **中身はすでに mm へ換算してある**(NFR-RE-3。内部は mm 固定)。`unit` は
- * 「ファイルが何で書かれていたか」の記録で、`ImportedSource.unit`(P6 §2.8)へそのまま乗る。
+ * 「ファイルが何で書かれていたか」の記録で、`ImportedSource.unit`へそのまま乗る。
  *
- * **形式ごとの `unit`(§0.a-0.6):**
+ * **形式ごとの `unit`:**
  *
  * | 形式 | `unit` | 理由 |
  * |---|---|---|
  * | STEP | `'mm'` / `'inch'` / `'other'` | ファイルが単位を持つ(`SystemLengthUnit`)ので読み取る |
  * | glTF | `'mm'` | 仕様が長さを m と定めており、OCCT が読む前に mm へ直す(取り違えようがない) |
- * | STL / OBJ | `'other'` | **どちらの仕様にも単位が無い。** 数をそのまま mm として取り込むので、違ったら利用者に訊く(訊くのは ui。タスク32) |
+ * | STL / OBJ | `'other'` | **どちらの仕様にも単位が無い。** 数をそのまま mm として取り込むので、違ったら利用者に訊く(訊くのは ui) |
  * | B-rep | `'mm'` | `.pcad` に抱き込んだ内部単位そのもの |
  */
 export interface ShapeImportResult {
@@ -2239,24 +2239,24 @@ export interface ShapeImportResult {
 }
 
 /**
- * 向きを表す四元数 `(x, y, z, w)`(P7 §2.4、タスク8)。
+ * 向きを表す四元数 `(x, y, z, w)`。
  *
  * `w = cos(θ/2)`、`(x, y, z) = 軸 × sin(θ/2)`。**長さ 1 に揃っていなくてもよい**
  * (`occt/placeBodies.ts` の `makePlacementTransform` が形にする前に長さで割る)。
  * `q` と `−q` は同じ回転なので、符号を `w >= 0` へ揃えるかどうかは形に影響しない。
- * 揃えるのは保存の決定性のための決めごと(§0.54)で、model 側の 1 か所だけで行う。
+ * 揃えるのは保存の決定性のための決めごとで、model 側の 1 か所だけで行う。
  */
 export type QuaternionTuple = readonly [number, number, number, number];
 
 /**
- * アセンブリに置いた部品 1 つの配置(P7 §0.5、§2.4、タスク8)。点は `p' = R(q)·p + t` で写る。
+ * アセンブリに置いた部品 1 つの配置。点は `p' = R(q)·p + t` で写る。
  *
  * **4×4 行列で持たない。** 反復のたびに正規化 1 回で回転へ戻せて、行列を直に入れたときの
- * ような「回転でなくなる」丸め誤差の漏れが起きないためである(§0.5)。
+ * ような「回転でなくなる」丸め誤差の漏れが起きないためである。
  *
  * 既存の `RigidTransformSpec`(パターンの「平行移動 + 回転軸 + 回転角」)とは**別の型**で、
  * どちらへ渡すかで回転の表し方が違う。橋渡し(四元数 ⇄ 軸と角)は model 側の
- * `assembly/placementMath.ts` が持つ(§1.4-8)。
+ * `assembly/placementMath.ts` が持つ。
  */
 export interface PlacementSpec {
   /** 位置(mm)。回転のあとに足される。 */

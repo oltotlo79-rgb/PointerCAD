@@ -1,6 +1,6 @@
 /**
  * 拘束(FR-313)と引っぱりのスライス。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import type {
@@ -20,7 +20,7 @@ import { NO_CONSTRAINT_TARGETS } from './documentDerived.js';
 /** 拘束と引っぱりのスライスが持つ欄と操作。 */
 export interface ConstraintSlice {
   /**
-   * いま編集しているスケッチの拘束の診断(FR-313、P4b タスク13)。
+   * いま編集しているスケッチの拘束の診断(FR-313)。
    *
    * 中身は model が解いた結果(`PartSketchResult.diagnosis` / `SketchRecomputeResult.diagnosis`)
    * をそのまま写したもので、**拘束が 1 つも無いスケッチと 3D スケッチでは null**
@@ -31,18 +31,18 @@ export interface ConstraintSlice {
    */
   readonly constraintDiagnosis: ConstraintDiagnosis | null;
   /**
-   * 拘束の一覧の行(FR-313、P4b タスク13)。プロパティの一覧・3D の印・印の当たり判定が
-   * **同じ 1 つ**を見る(描画・当たり判定・選択の 3 つをそろえる、P4 タスク12 の失敗の
+   * 拘束の一覧の行(FR-313)。プロパティの一覧・3D の印・印の当たり判定が
+   * **同じ 1 つ**を見る(描画・当たり判定・選択の 3 つがずれる失敗の
    * 再発防止)。文書と解決結果から導ける控えなので保存しない(rules/04-設計の規律.md)。
    *
    * 拘束が 1 つも無ければ空の並びを使い回す(解決を歩き直さない、NFR-PF-1)。
    */
   readonly constraintSummaries: readonly ConstraintSummary[];
   /**
-   * いま選んでいる拘束の道具(FR-313、P4b タスク13)。選んでいなければ null。
+   * いま選んでいる拘束の道具(FR-313)。選んでいなければ null。
    *
-   * 拘束の道具は**トリム・延長と同じ流儀**(道具を選んでから要素を順に押す。統括の決定
-   * 2026-09-05)なので、`activeTool` とは別に持つ。`activeTool` は `'select'` のままで、
+   * 拘束の道具は**トリム・延長と同じ流儀**(道具を選んでから要素を
+   * 順に押す)なので、`activeTool` とは別に持つ。`activeTool` は `'select'` のままで、
    * ビューポートの押下だけがこちらを先に見る(`attachSketchInteraction.ts`)。
    */
   readonly activeConstraintKind: SketchConstraintKind | null;
@@ -68,14 +68,14 @@ export interface ConstraintSlice {
    */
   readonly selectedConstraintId: string | null;
   /**
-   * いま引っぱっている点(FR-313、P4b タスク14)。引っぱっていなければ null。
+   * いま引っぱっている点(FR-313)。引っぱっていなければ null。
    *
    * **表示だけの一時状態**で、文書は 1 か所も変わらない(`pointermove` のたびに文書を
    * 作り直すと取り消しの段が増える)。文書へ書き戻すのは離した 1 回だけ。
    */
   readonly sketchDrag: SketchDrag | null;
   /**
-   * 引っぱっている最中の形(FR-313、P4b タスク14)。引っぱっていなければ null。
+   * 引っぱっている最中の形(FR-313)。引っぱっていなければ null。
    *
    * `resolvedSketch`(文書どおりの形)はそのままにして、**描くときだけこちらを優先する**
    * (`ViewportCanvas.tsx`)。当たり判定・プロパティ・吸着は文書どおりの形を読み続けるので、
@@ -88,11 +88,11 @@ export interface ConstraintSlice {
    */
   readonly dragRefusalKey: MessageKey | null;
   /**
-   * 拘束の道具を選ぶ・やめる(FR-313、P4b タスク13)。`null` でやめる。
+   * 拘束の道具を選ぶ・やめる(FR-313)。`null` でやめる。
    * 道具を選ぶと、取りかけの入力・選択・押した相手は持ち越さない(NFR-UX-3)。
    */
   readonly setConstraintTool: (kind: SketchConstraintKind | null) => void;
-  /** 拘束の道具で押した相手を置き換える(タスク13)。 */
+  /** 拘束の道具で押した相手を置き換える。 */
   readonly setConstraintTargets: (targets: readonly ConstraintTarget[]) => void;
   /** 拘束を付けられなかった理由を出す・消す(NFR-UX-5)。 */
   readonly setConstraintError: (message: string | null) => void;
@@ -101,7 +101,7 @@ export interface ConstraintSlice {
   /** 一覧・印で選んでいる拘束を差し替える(FR-313)。 */
   readonly setSelectedConstraint: (constraintId: string | null) => void;
   /**
-   * 引っぱりを始める(FR-313、P4b タスク14)。掴んだ点を覚えるだけで、文書は変えない。
+   * 引っぱりを始める(FR-313)。掴んだ点を覚えるだけで、文書は変えない。
    * 前の断りはここで消える(押し直したら理由も出し直す)。
    */
   readonly beginSketchDrag: (drag: SketchDrag) => void;

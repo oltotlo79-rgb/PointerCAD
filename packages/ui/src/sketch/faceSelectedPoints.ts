@@ -1,8 +1,8 @@
 /**
- * A face through three or more selected existing points (R30, FR-309/FR-330).
+ * A face through three or more selected existing points (FR-309/FR-330).
  *
  * The selection proof, the current-result checks and the end coordinates are shared with the
- * two-point connection (R29) in `selectedPointEnds.ts`. The result is one closed outline of new
+ * two-point connection in `selectedPointEnds.ts`. The result is one closed outline of new
  * lines that refer to the original points with zero offsets, and one existing `face` feature
  * whose boundary is that outline. Both are published by a single document update.
  */

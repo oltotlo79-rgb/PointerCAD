@@ -15,15 +15,15 @@ import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
 
 /**
- * 輪郭のオフセット(FR-321、計画書 P4 §2.5・§0.a-0.22、タスク16)。
+ * 輪郭のオフセット(FR-321)。
  *
  * 平面上でつながった線分・円弧の列を、距離 d だけ離れた別の輪郭へ写す。
- * 元の輪郭は変えない(オフセットは複製系。§0.a-0.10)。
+ * 元の輪郭は変えない(オフセットは複製系)。
  *
  * **結果は OCCT の形ではなく、線分と円弧の指定(CurveSpec)の列で返す。**
  * こうすると呼び出し側が結果をそのまま makePlanarFace / 押し出しの断面へ渡せて、
  * OCCT の実体の寿命を気にせずに済む(この関数の中で全て解放する)。
- * 計画書の下書きは OCCT の辺の控えを返す形だったが、統括の指示により
+ * 当初の下書きは OCCT の辺の控えを返す形だったが、
  * 「辺ごとに種類を判別して線分・円弧へ戻す」形にした。
  */
 
@@ -63,7 +63,7 @@ const INVALID_DISTANCE_MESSAGE = 'オフセットの距離は数で指定して�
 /** 元の曲線がつながっていないとき(makePlanarFace と同じ文言に揃える)。 */
 const NOT_CONNECTED_MESSAGE = '選んだ線・円弧がつながっていないため、輪郭を作れませんでした。';
 
-/** 内側へ寄せすぎて輪郭が潰れたとき(計画書 タスク16 の検証表の文言)。 */
+/** 内側へ寄せすぎて輪郭が潰れたとき(検証の表の文言)。 */
 const TOO_FAR_INSIDE_MESSAGE = 'これ以上内側にはオフセットできません。';
 
 /** 外側(または距離 0)で作れなかったとき。 */
@@ -97,7 +97,7 @@ const TAU = 2 * Math.PI;
  * 実行すると
  * `TS2739: Type '{}' is missing the following properties from type 'GeomAbs_JoinType':
  * GeomAbs_Arc, GeomAbs_Tangent, GeomAbs_Intersection` が 2 件出た(2026-09-04 実測)。そこで
- * **`unknown` を経由する述語ガード 1 つ**で絞る。これは統括が計画書 §0.a-0.23 で
+ * **`unknown` を経由する述語ガード 1 つ**で絞る。これは承認を得た
  * 承認した 2 か所のうちの 1 つ(オフセット)で、`as` / `any` / `@ts-ignore` /
  * `eslint-disable` は 1 つも使っていない。
  *
@@ -106,7 +106,7 @@ const TAU = 2 * Math.PI;
  * embind が作る列挙値は中身の見えない空のオブジェクトなので、形を見て見分ける手立てが無い。
  * したがってこのガードは「OCCT の読み込みが済んでいない/壊れている」ことだけを捕まえる網である。
  *
- * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、写す前に統括へ諮る。
+ * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、写す前に承認を得る。
  */
 function isJoinType(value: unknown): value is GeomAbs_JoinType {
   return typeof value === 'object' && value !== null;
@@ -279,7 +279,7 @@ function joinTypeValue(oc: OpenCascadeInstance, joinType: OffsetJoinType): GeomA
  * **失敗の見方(2026-09-04 に Node で実測):** 内側へ寄せすぎて輪郭が消える場合
  * (半径 10 の円に −10 / −15)は例外にならず `IsDone()` が false になる。
  * `IsDone()` を見る前に `Shape()` を呼ぶと C++ 例外が飛ぶ
- * (docs/報告記録.md 2026-09-03 06:56 の⑤と同じ扱い)ので、必ず先に成否を見る。
+ * (他の作り手と同じ扱い)ので、必ず先に成否を見る。
  */
 export function makeOffsetWire(
   oc: OpenCascadeInstance,

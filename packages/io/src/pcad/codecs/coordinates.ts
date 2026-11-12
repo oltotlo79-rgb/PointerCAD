@@ -35,9 +35,9 @@ const POINT_REFERENCE_KINDS: readonly PointReference['kind'][] = [
   'previous',
   'point',
   'vertex',
-  // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
+  // 立体の部分形状(3D スケッチの点、FR-330)。
   'subShape',
-  // 球面上の点(FR-431。P5 タスク19)。種類が 1 つ増えるだけなのでスキーマ版は変えない。
+  // 球面上の点(FR-431)。種類が 1 つ増えるだけなのでスキーマ版は変えない。
   'sphereGrid',
 ];
 
@@ -94,7 +94,7 @@ export function serializeCoordinate(input: CoordinateInput): CoordinateInput {
   }
 }
 
-/** 3D スケッチの円弧の向き(FR-330、P4 タスク10)。中身は 2 つの座標指定。 */
+/** 3D スケッチの円弧の向き(FR-330)。中身は 2 つの座標指定。 */
 export function serializeFreeOrientation(orientation: FreeArcOrientation): FreeArcOrientation {
   return {
     normal: serializeCoordinate(orientation.normal),
@@ -115,7 +115,7 @@ export function readPointReference(
 }
 
 /**
- * 点の指定を値そのものから読む(一覧の 1 件用。P5 タスク43 の点集合パターンが使う)。
+ * 点の指定を値そのものから読む(一覧の 1 件用。点集合パターンが使う)。
  * `readFaceRef` / `readFaceRefItem` と同じ「欄用と値用の組」の流儀
  * (`readPlaneSpecRecord` と同じく、中身の読み方は 1 か所にだけ置く)。
  */
@@ -163,7 +163,7 @@ function readPointReferenceRecord(
       };
     }
     case 'subShape': {
-      // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
+      // 立体の部分形状(3D スケッチの点、FR-330)。
       const ref = readSubShapeRefField(record, 'ref', path);
       if (!ref.ok) {
         return ref;
@@ -171,7 +171,7 @@ function readPointReferenceRecord(
       return { ok: true, value: { kind: 'subShape', ref: ref.value } };
     }
     case 'sphereGrid': {
-      // 球面上の点(FR-431。P5 タスク19)。球の id と緯度・経度の式だけを読む。
+      // 球面上の点(FR-431)。球の id と緯度・経度の式だけを読む。
       const sphereFeatureId = readString(record, 'sphereFeatureId', path);
       if (!sphereFeatureId.ok) {
         return sphereFeatureId;
@@ -314,12 +314,12 @@ function readPolarCoordinate(
 }
 
 /**
- * 3D スケッチの円弧の向き(FR-330、P4 タスク10)の欄。
+ * 3D スケッチの円弧の向き(FR-330)の欄。
  *
  * **作図面の上の円弧はこの欄を持たない**(版に関係なく恒常的に省略可能。書き手も
  * `feature.freeOrientation === undefined` のときは書かない)。`construction`・点列の
  * `layout`・`references` と違い、これは「版3以前だけの寛容さ」ではないので、
- * P4 タスク31(§0.a-0.24)の版4厳密化・`SCHEMA_MIGRATIONS[3]` の対象にしない
+ * 版4の厳密化・`SCHEMA_MIGRATIONS[3]` の対象にしない
  * (版4でもこのまま無ければ null を返す)。
  * 欄があるのに中身が読めない場合はファイル全体を断る(このファイル冒頭の決めごと)。
  */

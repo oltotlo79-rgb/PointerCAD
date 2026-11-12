@@ -17,7 +17,7 @@ import { quadLayout, type QuadRectangle } from './quadLayout.js';
  * 控え(画面座標との行き来に使う)の持ち主は createViewportScene のまま。
  */
 
-/** 本アプリは Z 軸が上(計画書 §0.a-0.9)。three.js の既定(Y 上)から変える。 */
+/** 本アプリは Z 軸が上。three.js の既定(Y 上)から変える。 */
 const UP_AXIS = new THREE.Vector3(0, 0, 1);
 
 const NEAR_PLANE = 0.05;

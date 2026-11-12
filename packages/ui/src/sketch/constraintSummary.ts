@@ -1,14 +1,14 @@
 /**
  * 拘束の要約(一覧の 1 行と、印を置く場所)を作る純関数
- * (FR-313、FR-501、FR-504、NFR-UX-7、計画書 docs/plans/P4b-スケッチの仕上げ.md タスク12)。
+ * (FR-313、FR-501、FR-504、NFR-UX-7)。
  *
  * `featureSummary.ts`(フィーチャーをプロパティ欄の行へ直す)と同じ流儀で、DOM にも
  * three.js にも触れず、画面に出す文言はすべて `ja.json` から引く(NFR-MA-5)。
- * 一覧パネル・印の描画・当たり判定(タスク13)は、ここが返した `ConstraintSummary` だけを見る。
+ * 一覧パネル・印の描画・当たり判定は、ここが返した `ConstraintSummary` だけを見る。
  *
  * **記号は図柄の代わりではない。** ここが返す `symbol` は「どの拘束か」を 1 文字で言うための
- * 印(§0.a-0.7 の①「要素の脇に `⊥` `∥` `=` `H` `V` 等の記号を常時表示」)で、実際の図柄は
- * タスク13 が `icons.tsx` に持つ。両方が要るのは、ビューポートの印は 1 文字のビルボードで
+ * 印(「要素の脇に `⊥` `∥` `=` `H` `V` 等の記号を常時表示」)で、実際の図柄は
+ * `icons.tsx` が持つ。両方が要るのは、ビューポートの印は 1 文字のビルボードで
  * 描くのに対し、ツールバーと一覧はボタンの大きさの図柄を要るため。
  */
 
@@ -37,12 +37,12 @@ import {
 } from './constraintCommands.js';
 import { UNIT_KEYS } from './numericInput.js';
 
-/** 一覧・印に出す状態。診断(model、タスク7)の結果をそのまま写す。 */
+/** 一覧・印に出す状態。診断(model)の結果をそのまま写す。 */
 export type ConstraintState = 'ok' | 'conflicting' | 'redundant' | 'dangling';
 
 /**
- * 印を置く場所 1 つ(P4b タスク22b)。位置だけでなく**そこにスケッチの点があるか**を
- * 持つ。点の真上に印を出すと掴み(ドラッグ、タスク14)と競合するので、点に付く印
+ * 印を置く場所 1 つ。位置だけでなく**そこにスケッチの点があるか**を
+ * 持つ。点の真上に印を出すと掴み(ドラッグ)と競合するので、点に付く印
  * (一致・固定・距離の端など)は画面上で少し上へずらして描くため
  * (`constraintPicking.ts` の `MARK_POINT_LIFT_PIXELS`)。
  */
@@ -60,7 +60,7 @@ export interface ConstraintSummary {
   readonly label: string;
   /** 何を指しているか(「線分1 と 線分2」)。 */
   readonly detail: string;
-  /** 印の記号(`⊥` `∥` `=` `H` `V` など)。図柄は `icons.tsx`(タスク13)。 */
+  /** 印の記号(`⊥` `∥` `=` `H` `V` など)。図柄は `icons.tsx`。 */
   readonly symbol: string;
   /** 寸法拘束の値。式のまま持つ(FR-202)。数値を持たない拘束は null。 */
   readonly value: ExpressionValue | null;
@@ -74,7 +74,7 @@ export interface ConstraintSummary {
 }
 
 /**
- * 種類ごとの印の記号(§0.a-0.7 の①)。**言葉ではなく記号**なので `ja.json` へ置かない
+ * 種類ごとの印の記号。**言葉ではなく記号**なので `ja.json` へ置かない
  * (日本語以外へ広げても同じ記号を使う。NFR-MA-5 が分離を求めているのは文言)。
  * 18 種を網羅する `Record` なので、種類が増えたら型検査で落ちる。
  */
@@ -201,7 +201,7 @@ function describeValue(
  *
  * 点・端点を指しているとき(`targetPositionOf` が答えるとき)と、円・円弧の中心へ落ちた
  * ときは `onPoint` を立てる。どちらもそこにスケッチの点があり、印を真上に出すと掴みと
- * 競合するため(タスク22b)。線分の中点だけは点が無いのでそのまま置く。
+ * 競合するため。線分の中点だけは点が無いのでそのまま置く。
  */
 function anchorOfTarget(context: ConstraintContext, target: ConstraintTarget): ConstraintAnchor | null {
   const direct = targetPositionOf(context.resolved, target);
@@ -236,7 +236,7 @@ function withoutDuplicates(anchors: readonly ConstraintAnchor[]): readonly Const
 
 /**
  * 印を置く場所。**一致と同心は 1 つ**(2 つの指し先が同じ場所へ重なる拘束なので、
- * 印も 1 つでよい。計画書の「一致拘束の anchors は一致させた点 1 つ」)。
+ * 印も 1 つでよい。一致拘束の anchors は一致させた点 1 つ)。
  * それ以外は指し先ごとに 1 つずつ置く(平行なら 2 本の線の中点)。
  */
 function anchorsOf(
@@ -258,7 +258,7 @@ function anchorsOf(
 }
 
 /**
- * 一覧・印に出す状態。診断(タスク7)があればそれを写し、無ければ「材料がそろっているか」
+ * 一覧・印に出す状態。診断があればそれを写し、無ければ「材料がそろっているか」
  * だけを見る(`VariableSet.elementFeatureIds` は形が決まった要素の一覧)。
  *
  * 同じ拘束が冗長と矛盾の両方に入ることがある(長さ 10 と長さ 12)。**矛盾を優先**して出す
@@ -289,7 +289,7 @@ function stateOf(
 /**
  * 拘束 1 つを一覧の 1 行にする(FR-501 と同じ流儀)。
  *
- * `diagnosis` を渡すと `state` に矛盾・冗長・材料切れが反映される(タスク13 が
+ * `diagnosis` を渡すと `state` に矛盾・冗長・材料切れが反映される(呼ぶ側が
  * `resolveConstrainedSketch` の結果から渡す)。省くと材料の有無だけを見る。
  */
 export function constraintSummary(

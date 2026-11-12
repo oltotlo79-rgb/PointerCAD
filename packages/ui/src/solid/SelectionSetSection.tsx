@@ -5,13 +5,13 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 /**
- * 「選択セット」の節(FR-112、§2.13、§0.a-0.44)。
+ * 「選択セット」の節(FR-112)。
  *
  * 一覧(名前と員数)・新しく作る・名前を変える・消す・選ぶ・足すを 1 か所に置く。
  * 判断は `solid/selectionSetCommands.ts` と model の `part/selectionSets.ts` にあり、
- * ここは画面だけを描く。**組を触っても再計算は走らない**(`affectsShape` が偽、§0.a-0.44)。
+ * ここは画面だけを描く。**組を触っても再計算は走らない**(`affectsShape` が偽)。
  *
- * 覚えられるのは**立体・面・辺・頂点の 4 種すべて**(利用者の決定、2026-09-06)。
+ * 覚えられるのは**立体・面・辺・頂点の 4 種すべて**(利用者の決定)。
  */
 export function SelectionSetSection(): React.JSX.Element {
   const sets = useAppStore((state) => state.document.selectionSets);

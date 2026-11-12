@@ -1,14 +1,14 @@
 /**
- * ミラー・複写・直線配列・円形配列(FR-324、計画書 docs/plans/P4-スケッチ拡張.md タスク24)を、
+ * ミラー・複写・直線配列・円形配列(FR-324)を、
  * その場数値入力の確定からスケッチの履歴へ積む純関数。
  *
- * `editCommands.ts` の `commitOffset` と同じ「選択から作る」構図(P3 の `commitFace` の流儀)に
+ * `editCommands.ts` の `commitOffset` と同じ「選択から作る」構図(`commitFace` の流儀)に
  * そろえる。DOM にもストアにも触れず、文書は不変で、作れないときは元の文書をそのまま返して
  * 理由キーだけを返す(FR-504、NFR-UX-5)。
  *
  * ## 4 つの道具はどれも 1 種類のフィーチャー
  *
- * model(タスク20)の `SketchCopyFeature` は `placement` の種類(mirror / translate /
+ * modelの `SketchCopyFeature` は `placement` の種類(mirror / translate /
  * linearArray / circularArray)だけが違う 1 種類のフィーチャーで、**もとの要素を id で参照する**。
  * だからツリーに増える行は 1 つ(「複製N」)、取り消し(Ctrl+Z)も 1 回、そして
  * **もとを動かせば複製も動く**(FR-311・FR-502)。ここでするのは「選択 → `source`」
@@ -19,7 +19,7 @@
  *
  * model は点と曲線が混じった `source` を `mixedBoundary` で断る。ui で「点だけ」「線だけ」の
  * 2 フィーチャーへ自動で分ける案を検討したが、**分けない**ことにした。理由は 3 つ。
- *   ① ツリーに 1 行・取り消し 1 回という約束(統括の指示、FR-505)が崩れる。
+ *   ① ツリーに 1 行・取り消し 1 回という約束(FR-505)が崩れる。
  *   ② 片方だけ作れたときに「半分できた」状態が残り、何が起きたのかを帯の 1 文で説明できない。
  *   ③ NFR-UX-5「実行してから失敗させない」に沿うなら、混ざった時点で**押す前に**断るのが筋。
  * そのため `copySourceFromSelection` が混在を見つけ、道具を押した瞬間に帯へ理由を出す。
@@ -78,7 +78,7 @@ type CopySourceOutcome =
 /**
  * 選んだ要素を複製のもと(`SketchCopyFeature.source`)へ直す。選んだ順がそのまま並びになる。
  *
- * 点だけ、または曲線だけ(§0.a-0.13 の面の境界と同じ約束)。混ざっていたら断る
+ * 点だけ、または曲線だけ(面の境界と同じ約束)。混ざっていたら断る
  * (このファイル冒頭の判断)。面は複製の対象にしないので `unknown` と同じ扱いで断る。
  */
 export function copySourceFromSelection(

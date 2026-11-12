@@ -1,5 +1,6 @@
 /** Bind the existing desktop, Web and offline inventories to one release edition. */
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { verifyDesktopPackageArtifacts } from './desktopPackageTargets.mjs';
 import { sourceFileHash } from './desktopFileInventory.mjs';
 import { verifyDesktopDistribution } from './desktopDistribution.mjs';
@@ -26,6 +27,25 @@ function sourceInventory(value, label) {
     if (!hash(digest)) throw new Error('Invalid ' + label + ' input fingerprint: ' + name);
   }
   return sorted(value);
+}
+/**
+ * A v2 stream asset (the OCCT kernel, apps/web/vite.config.ts occtAssets) is stored as its gzip transport bytes,
+ * while byteLength/sha256 name the decoded WASM (scripts/vite/offlineAssets.mjs verifiedStream). Check the stored
+ * bytes against transport, then decode within the recorded size + 1 and check the decoded bytes against the record.
+ */
+function verifyStreamAsset(name, stored, asset) {
+  if (stored.length !== asset.transport.byteLength || sha256(stored) !== asset.transport.sha256) {
+    throw new Error('Offline asset transport differs: ' + name);
+  }
+  let decoded;
+  try { decoded = gunzipSync(stored, { maxOutputLength: asset.byteLength + 1 }); }
+  catch (error) {
+    if (error?.code === 'ERR_BUFFER_TOO_LARGE') throw new Error('Offline asset decoded size exceeds the record: ' + name, { cause: error });
+    throw new Error('Offline asset transport is not valid gzip: ' + name, { cause: error });
+  }
+  if (decoded.length !== asset.byteLength || sha256(decoded) !== asset.sha256) {
+    throw new Error('Offline asset decoded bytes differ: ' + name);
+  }
 }
 function filesByPath(files, label, key) {
   if (!Array.isArray(files) || files.length === 0) throw new Error('Missing ' + label + ' files');
@@ -165,9 +185,11 @@ export async function createReleaseManifest({ packageFiles, builderConfig, tag =
   for (const asset of offline.assets) {
     const name = decodeURIComponent(asset.url);
     expectedWeb.add(name);
-    if (!web.has(name) || web.get(name).length !== asset.byteLength || sha256(web.get(name)) !== asset.sha256) {
-      throw new Error('Offline asset differs: ' + name);
-    }
+    const stored = web.get(name);
+    if (stored === undefined) throw new Error('Offline asset differs: ' + name);
+    // readOfflineAssetManifest allows transport only on v2 stream assets; every other asset is stored as listed.
+    if (asset.transport !== undefined) verifyStreamAsset(name, stored, asset);
+    else if (stored.length !== asset.byteLength || sha256(stored) !== asset.sha256) throw new Error('Offline asset differs: ' + name);
   }
   for (const name of web.keys()) {
     if (name === '_redirects') {

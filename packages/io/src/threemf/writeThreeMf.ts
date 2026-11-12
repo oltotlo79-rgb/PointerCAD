@@ -1,28 +1,28 @@
 /**
- * 3MF の書き出し(FR-803、計画書 docs/plans/P6-入出力.md §2.6、タスク14)。
+ * 3MF の書き出し(FR-803)。
  *
  * 3MF は ZIP の中に XML を 3 つ入れた形式で、OCCT には書き出しの口が無い。だから
- * `packages/io` が自前で組み立てる(§0.a-0.18。既にある `fflate` を使うので依存は増えない)。
+ * `packages/io` が自前で組み立てる(既にある `fflate` を使うので依存は増えない)。
  *
- * **OCCT を呼ばない。** 三角形は引数で受け取る(§0.a-0.19)。`packages/io` は
+ * **OCCT を呼ばない。** 三角形は引数で受け取る。`packages/io` は
  * `packages/kernel` へ依存できない(依存方向 `apps → ui → model → kernel`。
  * `rules/04-設計の規律.md`)ので、kernel の `ExportMesh` を import せず、
  * **同じ並びを受け取れる型 `ThreeMfMeshInput` をこちら側に置く**。位置は x,y,z の平ら、
  * 添字は 3 個 1 組で、`ExportMesh` の `positions` / `indices` をそのまま渡せる
- * (配線はタスク16。`exportShapes({ format: 'mesh' })` の戻りと、依頼に入っている
+ * (配線では`exportShapes({ format: 'mesh' })` の戻りと、依頼に入っている
  * 名前・色を組にする)。
  *
  * **三角形は受け取ったまま書く。** 面積 0 や `NaN` の三角形を落とすのは kernel の
- * 書き出し側の担当で(`docs/報告記録.md` 2026-09-06、タスク12)、ここへ来る並びは
+ * 書き出し側の担当で、ここへ来る並びは
  * 既に落とした後のものである。同じ判定をここへ写すと 3 か所目になり、片方だけ直したときに
  * 形式ごとで枚数が食い違う。頂点の順(反時計回りが外向き)も kernel の `tessellate.ts` が
  * 面の向きに合わせて揃えてあるので、こちらでは入れ替えない。
  *
- * **決定的にする**(§0.a-0.62)。`.pcad` と同じ固定日時(`FIXED_ENTRY_MTIME`)を ZIP の
+ * **決定的にする**。`.pcad` と同じ固定日時(`FIXED_ENTRY_MTIME`)を ZIP の
  * ヘッダへ書き、エントリの並びも固定する。同じ三角形と同じ名前・色からは、いつ・どの
  * 計算機で書いても 1 バイト違わないファイルができる(検査で固定してある)。
  *
- * 中身の決まりは 3MF Core の仕様(§2.6 に写しがある)に従う。ここに書く文面
+ * 中身の決まりは 3MF Core の仕様に従う。ここに書く文面
  * (`[Content_Types].xml` と `_rels/.rels`)は仕様どおりの固定文字列である。
  */
 
@@ -41,11 +41,11 @@ import { admitThreeMf, checkThreeMfDeadline, threeMfDeadline,
 
 /**
  * 色と面ごとの三角形の範囲の型は `baseMaterials.ts` に置いてあるが、**取り込み口はここのまま**
- * にする(タスク14 から `writeThreeMf.js` を指している呼び手と `index.ts` を動かさないため)。
+ * にする(以前から `writeThreeMf.js` を指している呼び手と `index.ts` を動かさないため)。
  */
 export type { ThreeMfColor, ThreeMfFaceRange } from './baseMaterials.js';
 
-/** ZIP のエントリ名(§2.6。3MF Core の最小構成の 3 つ)。 */
+/** ZIP のエントリ名(3MF Core の最小構成の 3 つ)。 */
 export const THREE_MF_CONTENT_TYPES_ENTRY = '[Content_Types].xml';
 /** 同上。 */
 export const THREE_MF_RELS_ENTRY = '_rels/.rels';
@@ -89,7 +89,7 @@ export interface ThreeMfMeshInput {
   /** 三角形の添字。3 個 1 組で頂点を指す。長さは 3 の倍数。 */
   readonly indices: ArrayLike<number>;
   /**
-   * 面ごとの色(FR-1106、§2.5.1、タスク14b)。面の通し番号 → 色。**面の色が立体の色より
+   * 面ごとの色(FR-1106)。面の通し番号 → 色。**面の色が立体の色より
    * 優先する。** model の `faceColorsFor` が返す内側の表をそのまま渡せる。
    * 省くと(または `faceRanges` を省くと)立体の色だけになる。
    */
@@ -104,7 +104,7 @@ export interface ThreeMfMeshInput {
 /** `writeThreeMf` の任意の指定。 */
 export interface WriteThreeMfOptions {
   /**
-   * 色を書くか(§0.a-0.22。省くと書く)。`false` なら `<basematerials>` を作らず、
+   * 色を書くか(省くと書く)。`false` なら `<basematerials>` を作らず、
    * `<object>` にも材質の指定を付けない(形だけの 3MF になる)。
    */
   readonly withColors?: boolean;
@@ -112,10 +112,10 @@ export interface WriteThreeMfOptions {
   readonly remainingMs?: number;
 }
 
-/** 3MF Core の名前空間(§2.6)。 */
+/** 3MF Core の名前空間。 */
 const MODEL_NAMESPACE = 'http://schemas.microsoft.com/3dmanufacturing/core/2015/02';
 
-/** 長さの単位。内部は mm 固定なので常にこれ(§0.a-0.7)。 */
+/** 長さの単位。内部は mm 固定なので常にこれ。 */
 const MODEL_UNIT = 'millimeter';
 
 /**
@@ -128,10 +128,10 @@ const BASE_MATERIALS_ID = 1;
 /** 最初の立体の資源 id。 */
 const FIRST_OBJECT_ID = 2;
 
-/** XML の圧縮の強さ。`.pcad` の `document.json` と同じ 6(§2.6)。 */
+/** XML の圧縮の強さ。`.pcad` の `document.json` と同じ 6。 */
 const XML_LEVEL = 6;
 
-/** `[Content_Types].xml`(§2.6 の固定の文面。3MF Core が求める 2 つの既定)。 */
+/** `[Content_Types].xml`(固定の文面。3MF Core が求める 2 つの既定)。 */
 const CONTENT_TYPES_XML = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
@@ -141,7 +141,7 @@ const CONTENT_TYPES_XML = [
   '',
 ].join('\n');
 
-/** `_rels/.rels`(§2.6 の固定の文面。3D モデルの入口を 1 つだけ指す)。 */
+/** `_rels/.rels`(固定の文面。3D モデルの入口を 1 つだけ指す)。 */
 const RELS_XML = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
@@ -151,8 +151,8 @@ const RELS_XML = [
 ].join('\n');
 
 /**
- * 色を `#rrggbbff` にする(§2.6。**3MF は 8 桁(RGBA)、小文字**)。
- * 透過は書かない(§0.a-0.22 で「柄と透過率と光沢と粗さは書き出さない」)ので、末尾は常に `ff`。
+ * 色を `#rrggbbff` にする(**3MF は 8 桁(RGBA)、小文字**)。
+ * 透過は書かない(「柄と透過率と光沢と粗さは書き出さない」)ので、末尾は常に `ff`。
  */
 function formatDisplayColor(color: ThreeMfColor): string {
   let text = '#';
@@ -200,10 +200,10 @@ function checkIndex(value: number, vertexCount: number): number {
 /**
  * 三角形の行を書き出す。
  *
- * 面ごとの色(タスク14b)は `p1` として 1 三角形ずつ付く。**立体の色と同じ三角形には
+ * 面ごとの色は `p1` として 1 三角形ずつ付く。**立体の色と同じ三角形には
  * 付けない**(`<object pindex>` を継ぐので同じ色になり、書いても増えるのは XML の大きさだけ)。
  * `triangleColors` が `null` のときは `p1` を一切見ない——面の色を渡さない書き出しが
- * タスク14 と 1 バイトも変わらないようにするため、行を組む式を分けている。
+ * 面の色の無い書き出しと 1 バイトも変わらないようにするため、行を組む式を分けている。
  */
 function pushTriangles(
   lines: string[],
@@ -244,8 +244,8 @@ interface PartMaterials {
  * 立体ごとの色の組を作り、`<basematerials>` の中の添字を割り当てる。
  *
  * **立体の色を先に全部並べ、面の色はその後ろへ足す。** こうすると立体の `pindex` は
- * タスク14 と同じ「立体の添字」のままで、面の色が増えても `<object>` の行が動かない
- * (複数の立体でも `<basematerials>` は 1 つ、という §2.6 の形も崩さない)。
+ * 面の色の無い書き出しと同じ「立体の添字」のままで、面の色が増えても `<object>` の行が動かない
+ * (複数の立体でも `<basematerials>` は 1 つ、という形も崩さない)。
  */
 function assignMaterials(parts: readonly ThreeMfMeshInput[], deadlineAt: number): PartMaterials[] {
   const assigned: PartMaterials[] = [];
@@ -272,9 +272,9 @@ function assignMaterials(parts: readonly ThreeMfMeshInput[], deadlineAt: number)
 /**
  * `3D/3dmodel.model` の中身を組み立てる。
  *
- * 立体ごとに `<object>` を 1 つ作り、`<build>` に `<item>` を 1 つずつ並べる(§2.6)。
+ * 立体ごとに `<object>` を 1 つ作り、`<build>` に `<item>` を 1 つずつ並べる。
  * 色は立体ごとに `<basematerials>` の 1 行(`<base>`)として並べ、`<object>` の
- * `pid` / `pindex` で指す。**面ごとの色(タスク14b)はこの並びの後ろへ `<base>` を足し、
+ * `pid` / `pindex` で指す。**面ごとの色はこの並びの後ろへ `<base>` を足し、
  * `<triangle>` に `p1` を付ける**(組み替えは `baseMaterials.ts`)。立体の色の並び
  * (立体の順 = 添字の順)は崩さないので、面の色があってもなくても `<object>` の行は同じになる。
  */

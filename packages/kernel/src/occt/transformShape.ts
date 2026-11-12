@@ -1,22 +1,22 @@
 import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import { crossVec, dotVec } from './sketchCorner.js';
 /**
- * 剛体変換と、形をまとめるコンパウンド(計画書 P3 §2.7、タスク9)。
+ * 剛体変換と、形をまとめるコンパウンド。
  *
  * パターン(FR-411 / FR-412)は新しい段の種類を作らず、**穴・ねじ穴の工具を
- * この変換で複製して 1 回で差し引く**(§0.a-0.20)。ここに置くのは
+ * この変換で複製して 1 回で差し引く**。ここに置くのは
  *   ①`RigidTransformSpec` から `gp_Trsf` を作る、
  *   ②形を変換した複製を作る、
  *   ③複数の形を 1 つのコンパウンドへまとめる、
  *   ④OCCT を使わずに点・向きへ同じ変換をかける(ねじの印の位置に使う)、
  * の 4 つだけで、パターンの刻み(間隔・角度・個数)は model 側の責務である。
  *
- * **P5 の追加(計画書 タスク35、FR-419 / FR-424):**
+ * **ミラー・移動/回転・拡大縮小(FR-419 / FR-424):**
  *   ⑤`mirrorShape`: 平面に対する鏡像(FR-419)、
  *   ⑥`scaleShape`: 全体倍率と軸ごと倍率の拡大縮小(FR-424)。
  *
  * **FR-424 の「移動/回転」に新しい関数は作らない。** 上の②`transformShape` が
- * `RigidTransformSpec`(平行移動+軸まわりの回転)そのもので、計画書 §2.12 の表も
+ * `RigidTransformSpec`(平行移動+軸まわりの回転)そのもので、設計の表も
  * 「`transformShape.ts` をそのまま」と書いている。同じ変換の作り方を 2 か所へ
  * 書くと、パターン(FR-411)と移動/回転(FR-424)で回転の順序が食い違いうる。
  */
@@ -64,8 +64,8 @@ const TRANSFORM_FAILED_MESSAGE = '形を変換できませんでした。指定�
 /**
  * 何も動かさない変換。
  *
- * パターンでない穴(`transforms` が空)は、これ 1 つを指定されたものとして扱う
- * (計画書 タスク9 手順3)。`rotationAxis` は回転角が 0 なら使われないが、
+ * パターンでない穴(`transforms` が空)は、これ 1 つを指定されたものとして扱う。
+ * `rotationAxis` は回転角が 0 なら使われないが、
  * 長さ 0 の向きを既定にすると「軸が決まらない」検査に引っかかるので Z 軸を入れてある。
  */
 export const IDENTITY_TRANSFORM: RigidTransformSpec = {
@@ -115,7 +115,7 @@ export function isIdentityTransform(spec: RigidTransformSpec): boolean {
 }
 
 /**
- * 変換の一覧を「必ず 1 つ以上」にする。空なら恒等 1 つ(計画書 タスク9 手順3)。
+ * 変換の一覧を「必ず 1 つ以上」にする。空なら恒等 1 つ。
  *
  * パターンでない穴は変換を持たないが、工具の作り方を 1 本にしておくと、
  * 「パターンのときだけ通る道」ができず取り違えが起きない。
@@ -130,7 +130,7 @@ export function transformsOrIdentity(
  * 点へ同じ変換をかける(OCCT を使わない)。**回転してから平行移動**する。
  *
  * ねじの印(`ThreadMarkInfo`)は B-rep を持たない描画だけの情報なので、
- * 形を作らずにこの式で位置を出す(§0.a-0.15)。`makeTransform` と同じ順序・
+ * 形を作らずにこの式で位置を出す。`makeTransform` と同じ順序・
  * 同じ式であることを検査で固定してある(transformShape.test.ts)。
  *
  * 回転はロドリゲスの式: v' = v cosθ + (k × v) sinθ + k (k·v)(1 − cosθ)。
@@ -190,7 +190,7 @@ function rotate(spec: RigidTransformSpec, value: Vec3Tuple): Vec3Tuple {
  * OCCT の `A.Multiplied(B)` は「B をかけてから A をかける」合成なので、
  * 平行移動 × 回転 の順に書くと「回転 → 平行移動」になる。
  *
- * 確保したものは `keep` へ積む(呼び出し側がまとめて解放する)。計画書の
+ * 確保したものは `keep` へ積む(呼び出し側がまとめて解放する)。当初の
  * 見出しは `makeTransform(oc, spec): gp_Trsf` だが、`gp_Trsf` も OCCT が
  * 確保する実体で解放が要るため、`makeHelixEdge` と同じく控えを引数に取る形にした。
  */
@@ -295,7 +295,7 @@ export function makeMirrorTransform(
 /**
  * 平面に対する鏡像を作る(FR-419)。**もとの形は変えない**(`Copy = true`)。
  *
- * ミラーのフィーチャーは対象のボディを**消費しない**(計画書 §0.a-0.36)。
+ * ミラーのフィーチャーは対象のボディを**消費しない**。
  * 鏡像を作ったあと元と鏡像を和でつなぐのが普通の使い方で、元を消すと和が取れない。
  * 「元を残すか」は段の側(model)の話なので、ここは複製を 1 つ返すだけにしてある。
  */
@@ -326,7 +326,7 @@ export function mirrorShape(
 /**
  * 拡大縮小の指定(FR-424)。`uniform` と `perAxis` は**どちらか一方だけ**を入れる。
  *
- * 画面の「全体 / 軸ごと」の切り替え(計画書 §2.12 の `ScaleFeature`)をそのまま
+ * 画面の「全体 / 軸ごと」の切り替え(`ScaleFeature`)をそのまま
  * 写した形で、両方 null・両方非 null はどちらも組み立ての誤りとして断る。
  */
 export interface ScaleSpec {

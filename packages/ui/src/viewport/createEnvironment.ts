@@ -1,16 +1,16 @@
 /**
- * 映り込み用の環境マップ(計画書 docs/plans/P5-高度なソリッド・外観と測定.md §2.6、
- * §0.a-0.9、タスク9)。
+ * 映り込み用の環境マップ
+ * (映り込む外観が要るときだけ作る)。
  *
  * 対応要件: FR-1107(鏡・ガラス)、NFR-PF-5(要らないものを作らない)。
  *
  * three.js に同梱の手続き的な部屋(`RoomEnvironment`)を `PMREMGenerator` に通して
- * 1 枚だけ作る。**画像ファイルは 1 つも増えない**(依存の追加も 0 件。§1、§0.a-0.9)。
+ * 1 枚だけ作る。**画像ファイルは 1 つも増えない**(依存の追加も 0 件)。
  *
  * **鏡・ガラスを 1 つも使っていない文書では作らない。** 作るかどうかの判断は
  * `appearance/createAppearanceMaterial.ts` の `anyNeedsEnvironment` が行い、
  * ここは「入になったら作る / 切になったら捨てる」だけを受け持つ(NFR-PF-5)。
- * タスク10 の呼び出し方(申し送り):
+ * 呼ぶ側の使い方:
  *
  * ```ts
  * const environments = createEnvironmentStore(() => createEnvironmentTarget(renderer));
@@ -23,13 +23,13 @@
  * }
  * ```
  *
- * **`scene.environment` に入れる。`scene.background` には入れない**(§2.6)。背景は
+ * **`scene.environment` に入れる。`scene.background` には入れない**。背景は
  * `alpha: true` の canvas 越しに CSS の縦グラデーションが透ける今の見た目を保つ。
  *
- * **レンダラの設定は触らない**(§0.a-0.12)。足すのは `scene.environment` の 1 行だけで、
+ * **レンダラの設定は触らない**。足すのは `scene.environment` の 1 行だけで、
  * トーンマッピングや出力の色空間は変えない(既存の全画面の見た目が変わるため)。
  *
- * 計画書との差(理由つき): 計画書は `createEnvironmentTexture(renderer): THREE.Texture` と
+ * 当初の形との差(理由つき): 当初は `createEnvironmentTexture(renderer): THREE.Texture` と
  * 書いているが、`PMREMGenerator.fromScene` が返すのは `WebGLRenderTarget` であり、
  * テクスチャだけを取り出すと**レンダーターゲットを捨てる口が無くなる**
  * (§4「three.js で作った材質・テクスチャ・レンダーターゲットは必ず dispose() する」)。
@@ -44,7 +44,7 @@ import { LOCAL_DISPLAY_GPU_MESH_BUDGET, type GpuMeshBudget } from './solidMeshAd
 import { createViewportLifetime, type ViewportLifetime } from './viewportLifetime.js';
 
 /**
- * 部屋を環境マップへ焼くときのぼかし(ラジアン)。§2.6 の値そのまま。
+ * 部屋を環境マップへ焼くときのぼかし(ラジアン)。
  * 小さくすると部屋の家具の形が鏡へはっきり映り、大きくすると明るさだけが残る。
  */
 const ENVIRONMENT_BLUR_SIGMA = 0.04;
@@ -145,7 +145,7 @@ export interface EnvironmentCandidate {
 
 /**
  * 環境マップの持ち主。**鏡・ガラスがある間だけ 1 枚を持ち、無くなったら捨てる**
- * (§0.a-0.9、NFR-PF-5)。
+ * (NFR-PF-5)。
  */
 export interface EnvironmentStore {
   /** いま持っている環境マップ(無ければ `null`)。材質へ渡す値。 */

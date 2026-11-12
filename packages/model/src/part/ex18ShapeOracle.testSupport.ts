@@ -1,5 +1,5 @@
 /**
- * Test-only EX-18 oracle. Never import this module from product code.
+ * Test-only shape oracle for direct editing. Never import this module from product code.
  * Measures the supplied B-rep afresh; no route, cached mesh or construction dimensions are inputs.
  * Exact bounds are certified for bounded planar/cylindrical faces with line/circle boundaries,
  * including degree-one, two-pole Bezier/BSpline representations proven to cover their full segment.
@@ -133,7 +133,7 @@ function readEdge(oc: Occt, shape: Edge): EdgeData {
       if (curve.Degree() === 1 && curve.NbPoles() === 2
         && (bezier || (!curve.IsPeriodic() && !curve.IsRational() && curve.NbKnots() === 2))) {
         // BRepAdaptor returns a handle to geometry with the edge location applied. Own the
-        // handle and returned point copies, never its borrowed get() result (rules/06 10.13).
+        // handle and returned point copies, never its borrowed get() result.
         const handle = bezier ? keep(curve.Bezier()) : keep(curve.BSpline());
         const geometry = handle.get();
         const startPole = xyz(keep(geometry.Pole(1))), endPole = xyz(keep(geometry.Pole(2)));
@@ -274,7 +274,7 @@ function throughHoles(oc: Occt, faces: readonly FaceData[], edges: readonly Edge
     });
     if (open) {
       // Two separate equal-radius sections of a stepped bore are not two independent passages.
-      // EX-18 A/B have a straight bore spanning the body. Other open partial-span components are
+      // Parts A/B have a straight bore spanning the body. Other open partial-span components are
       // explicitly uncertified until a more general void-connectivity oracle is supplied.
       const bodyDistances = edges.flatMap(edge => edge.points.map(point => dot(subtract(point, cylinder.origin), cylinder.direction)));
       if (Math.abs(low - Math.min(...bodyDistances)) > GEOMETRY_MM || Math.abs(high - Math.max(...bodyDistances)) > GEOMETRY_MM) {

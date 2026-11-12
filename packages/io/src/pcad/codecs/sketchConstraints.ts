@@ -27,14 +27,14 @@ import {
 } from '@pointercad/model';
 
 /**
- * 拘束が指す先の種類(FR-313、P4b タスク21)。`ConstraintTarget['vertex']` は
+ * 拘束が指す先の種類(FR-313)。`ConstraintTarget['vertex']` は
  * `PointReference` の同名の欄と同じ3値なので `VERTEX_NAMES` をそのまま使い回す
  * (同じ一覧を2か所に書かない)。
  */
 const CONSTRAINT_TARGET_KINDS: readonly ConstraintTarget['kind'][] = ['point', 'vertex', 'curve'];
 
 /**
- * 拘束が指す先(FR-313、P4b タスク21)。`resolveCoordinate.ts` の `vertexKey` /
+ * 拘束が指す先(FR-313)。`resolveCoordinate.ts` の `vertexKey` /
  * `ResolvedPoint.id` と同じ規約(`constraints/types.ts` の `ConstraintTarget` のコメント参照)。
  */
 function serializeConstraintTarget(target: ConstraintTarget): ConstraintTarget {
@@ -49,7 +49,7 @@ function serializeConstraintTarget(target: ConstraintTarget): ConstraintTarget {
 }
 
 /**
- * 拘束1件(FR-313、P4b タスク21)。寸法の目標値(距離・角度・半径・直径)は式のまま保存する
+ * 拘束1件(FR-313)。寸法の目標値(距離・角度・半径・直径)は式のまま保存する
  * (FR-202)。拘束の**解**(座標の上書き)は保存しない(rules/04「導出できるものは保存しない」)。
  */
 export function serializeConstraint(constraint: SketchConstraint): SketchConstraint {
@@ -129,7 +129,7 @@ export function serializeConstraint(constraint: SketchConstraint): SketchConstra
   }
 }
 
-/** 拘束が指す先(FR-313、P4b タスク21)。値そのものから読む(埋め込み先が多いため)。 */
+/** 拘束が指す先(FR-313)。値そのものから読む(埋め込み先が多いため)。 */
 function readConstraintTargetItem(value: unknown, path: string): Checked<ConstraintTarget> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -189,7 +189,7 @@ function readConstraintTarget(
 }
 
 /**
- * 拘束1件(FR-313、P4b タスク21)を読む。`SKETCH_CONSTRAINT_KINDS` を網羅するので、
+ * 拘束1件(FR-313)を読む。`SKETCH_CONSTRAINT_KINDS` を網羅するので、
  * 知らない種類は `readLiteral` が場所つきで断る(既存の流儀と同じ)。
  */
 function readConstraint(value: unknown, path: string): Checked<SketchConstraint> {
@@ -344,7 +344,7 @@ function readConstraint(value: unknown, path: string): Checked<SketchConstraint>
 }
 
 /**
- * スケッチの拘束(FR-313、P4b タスク21)を読む。**型自体が恒常的に省略可能**
+ * スケッチの拘束(FR-313)を読む。**型自体が恒常的に省略可能**
  * (`SketchDocument.constraints?`)なので、`freeOrientation` と同じ約束で「欄が無ければ
  * `null`」を返し、呼び出し側は欄そのものを持たない(`undefined` にもしない)。
  * 版に関係なく同じ扱いにする(移行の対象にしない。`schema.ts` の `migrateDocumentToV5` 参照)。

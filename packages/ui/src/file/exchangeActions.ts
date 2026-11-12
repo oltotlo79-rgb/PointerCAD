@@ -1,6 +1,6 @@
 import { createDocumentElementId } from '@pointercad/model/document-identity';
 /**
- * 書き出し・読み込みの 1 手(計画書 docs/plans/P6-入出力.md §2.2・§2.8、タスク32)。
+ * 書き出し・読み込みの 1 手。
  *
  * 対応要件: FR-802、FR-803、FR-811、FR-813、NFR-RE-1(止めずに警告する)。
  *
@@ -8,7 +8,7 @@ import { createDocumentElementId } from '@pointercad/model/document-identity';
  * `createDefaultPartFileDeps` と同じ役目で、ストアの持ち物(ファイルの口・幾何カーネルの
  * 口・添付の表)を `ExchangeDeps` の形へ詰め替え、結果を帯へ流す。
  *
- * **`exchangeFile.ts` はストアを輸入しない**(輪を作らない、P6 タスク28 の申し送り)ので、
+ * **`exchangeFile.ts` はストアを輸入しない**(輪を作らない)ので、
  * つなぎ目はこのファイルの中だけにある。
  */
 
@@ -32,7 +32,7 @@ import {
 /**
  * 幾何カーネルの口がまだ差し出されていないとき(`attachExchangeKernel` を呼ぶ前)の断り。
  *
- * **文言の正本はこの層**(§2.8「文言の正本の層」に言う下の層と同じ扱いで、
+ * **文言の正本はこの層**(「文言の正本の層」に言う下の層と同じ扱いで、
  * `ja.json` には持たない)。起動直後の一瞬と、幾何カーネルを載せない検査でしか出ない。
  */
 export const EXCHANGE_KERNEL_MISSING_MESSAGE =
@@ -47,7 +47,7 @@ function missingKernel(): ExchangeKernel {
 }
 
 /**
- * 3MF を組む(§0.a-0.19)。カーネルは三角形までしか返さないので、ZIP と XML は
+ * 3MF を組む。カーネルは三角形までしか返さないので、ZIP と XML は
  * `packages/io` が組む。**この 1 行が「io は幾何カーネルを呼べない」という約束の接ぎ目**である。
  */
 function buildThreeMf(baseName: string, encodeThreeMf: typeof encodeThreeMfInWorker) {
@@ -61,7 +61,7 @@ function buildThreeMf(baseName: string, encodeThreeMf: typeof encodeThreeMfInWor
 }
 
 /**
- * 単位を訊いている読み込みの返し先(§0.a-0.6)。**同時に 1 本しか走らない**——
+ * 単位を訊いている読み込みの返し先。**同時に 1 本しか走らない**——
  * 読み込みはファイルを選ぶ窓から始まり、その 1 本が終わるまで次の答えは来ない。
  *
  * ストアへ関数を置かないのは、ストアに持たせるのは**画面に出す値**だけという決め
@@ -70,7 +70,7 @@ function buildThreeMf(baseName: string, encodeThreeMf: typeof encodeThreeMfInWor
 let pendingImportUnit: ((unit: LengthUnit | null) => void) | null = null;
 
 /**
- * 単位を訊く(§0.a-0.6)。STL / OBJ / 単位の無い DXF のときだけ呼ばれる。
+ * 単位を訊く。STL / OBJ / 単位の無い DXF のときだけ呼ばれる。
  *
  * **確認の窓(`confirm`)は使わない。** 2 択を「OK / キャンセル」で訊くと、どちらが
  * どの単位か覚えていないと誤って選んでしまい、しかも 3 つ目の答え(やめる)を
@@ -134,7 +134,7 @@ export async function importFile(format?: ImportFileKind): Promise<void> {
   const store = useAppStore.getState();
   /*
    * 待ちの間(ファイルを選ぶ・形を読む・単位を訊く)に文書を切り替えた・編集した・取り消した
-   * ときは、開始時の文書から作った結果を当てない(docs/review-2026-09-28-codex.md R01)。
+   * ときは、開始時の文書から作った結果を当てない。
    * 版の番号は通常の編集で増えないので、参照で調べる共通の判定を使う。後から始めた
    * 読み込みがあれば、先の結果は黙って捨てる(依頼の順序)。
    */

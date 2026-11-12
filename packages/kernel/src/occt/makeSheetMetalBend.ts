@@ -1,4 +1,4 @@
-/** 円筒曲げと接線直線部から、一定厚の板を生成する（P10-1）。 */
+/** 円筒曲げと接線直線部から、一定厚の板を生成する。 */
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';

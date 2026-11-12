@@ -1,6 +1,6 @@
 /**
- * 選択とその場入力から Should 群の立体フィーチャーを作る純関数
- * (計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク50、§2.11、§2.15)。
+ * 選択とその場入力から Should 群の立体フィーチャーを
+ * 作る純関数。
  *
  * 対応要件: FR-409(スイープ)、FR-417(抜き勾配)、FR-418(くり抜き)、FR-419(ミラー)、
  * FR-420(リブ)、FR-421(エンボス)、FR-423(外ねじ)、FR-424(移動/回転・拡大縮小)、
@@ -8,20 +8,20 @@
  * NFR-UX-1(対象を選んでから操作)、NFR-UX-4(Enter 連打で意味のある結果)、
  * NFR-UX-5(できない操作は実行前に理由を示す)。
  *
- * **`machiningCommands.ts`(P3 タスク25)とまったく同じ形にしてある。** 文脈は
+ * **`machiningCommands.ts`とまったく同じ形にしてある。** 文脈は
  * `MachiningContext`(文書・ボディの一覧・選択)を使い回し、押せるかどうかは
  * `shapeEditReadiness`、確定は `commitShapeEdit` の 2 つだけを外へ出す。ストアにも DOM にも
- * 触れない純関数だけを置き、操作の判断を Node の単体検査で固定できるようにする
- * (`docs/報告記録.md` 2026-09-02 23:09 の教訓)。文書は不変で、断るときは元の文書を
+ * 触れない純関数だけを置き、操作の判断を Node の単体検査で固定できるようにする。
+ * 文書は不変で、断るときは元の文書を
  * そのまま返す(FR-504、NFR-UX-5)。
  *
  * **切断(FR-432)はここに置かない。** 平面の決め方(`PlaneSpec`)と予告の四角を持ち、
- * 「反対側も残す」で履歴を 2 段積む(§0.a-0.58)という別の作りなので `cutCommands.ts` にある。
+ * 「反対側も残す」で履歴を 2 段積むという別の作りなので `cutCommands.ts` にある。
  *
  * **押し出しの終わり方・薄板(FR-415/416)、ざぐり・皿もみ(FR-422)、可変半径の R 面取り
- * (FR-426)もここに無い。** タスク50 で既存の押し出し・穴・R 面取りへ畳んだので、確定は
+ * (FR-426)もここに無い。** 既存の押し出し・穴・R 面取りの段で聞くので、確定は
  * `solidCommands.ts` の `commitExtrude` と `machiningCommands.ts` の `commitHole` /
- * `commitFillet` が受け持つ(統括の決定 2026-09-06)。
+ * `commitFillet` が受け持つ。
  */
 
 import { commitDirectEdit, directEditRejection } from './directEditCommands.js';
@@ -101,10 +101,10 @@ import {
 } from './subShapeSelection.js';
 
 /**
- * Should 群の道具(§2.15 のツールバーの一覧のうち 11 個)。
+ * Should 群の道具(ツールバーの一覧のうち 11 個)。
  *
- * 計画書タスク50 の宣言は 10 個(`shell` を Could 群として外していた)だが、くり抜きは
- * model(タスク46 が前倒し)もカーネル(タスク53)も揃っているので、ここで一緒に扱う。
+ * 当初の宣言は 10 個(`shell` を Could 群として外していた)だが、くり抜きは
+ * model もカーネルも揃っているので、ここで一緒に扱う。
  * 道具の id は `SolidToolId`(`numericInput.ts` が正本)の部分集合で、立体のミラーだけは
  * スケッチの鏡像複写(FR-324)と id がぶつかるため `mirrorSolid` になっている。
  */
@@ -164,7 +164,7 @@ export const DEFAULT_SURFACE_OFFSET: ExpressionValue =
   expressionValueFromNumber(DEFAULT_SURFACE_OFFSET_MM);
 export const DEFAULT_SHELL_THICKNESS: ExpressionValue =
   expressionValueFromNumber(DEFAULT_SHELL_THICKNESS_MM);
-/** 平らな面の移動の距離の既定(EX-18)。数は model の DEFAULT_FACE_OFFSET_MM 1 か所にある。 */
+/** 平らな面の移動の距離の既定。数は model の DEFAULT_FACE_OFFSET_MM 1 か所にある。 */
 export const DEFAULT_FACE_OFFSET: ExpressionValue = expressionValueFromNumber(DEFAULT_FACE_OFFSET_MM);
 
 /* ------------------------------------------------------------------ *
@@ -191,7 +191,7 @@ function selectedSketchFace(
   selection: readonly string[],
 ): SketchFaceRef | null {
   for (const elementId of selection) {
-    // 編集中のスケッチを先に見る(`sketchRefs.ts` の説明。P4 仕上げ (g))。
+    // 編集中のスケッチを先に見る(`sketchRefs.ts` の説明)。
     const found = findSketchFeatureAt(document, elementId, FACE_KINDS);
     if (found !== undefined) {
       return { sketchId: found.sketchId, faceFeatureId: found.featureId };
@@ -288,7 +288,7 @@ function selectedPointReferences(
 }
 
 /**
- * 対象になる立体を 1 つ決める(§0.a-0.6)。
+ * 対象になる立体を 1 つ決める。
  *
  * **直に選ばれている立体を先に見る。** 抜き勾配・エンボス・外ねじ・くり抜きは面を選ぶが、
  * ミラー・移動/回転・拡大縮小・リブは立体そのものを選ぶ。どちらの選び方でも同じ関数で
@@ -379,7 +379,7 @@ function threadShaftEndOf(value: string | undefined): ChoiceOutcome<'first' | 'l
 }
 
 /**
- * ミラーの鏡にする面(FR-419、§0.a-0.36)。基準の 3 面はそのまま `workPlane`、
+ * ミラーの鏡にする面(FR-419)。基準の 3 面はそのまま `workPlane`、
  * 「選んだ面」だけが立体の平らな面(指紋)になる。
  */
 function mirrorPlaneOf(
@@ -428,7 +428,7 @@ function draftRejection(context: MachiningContext): MessageKey | null {
 }
 
 /**
- * 平らな面の移動(EX-18)。平らな面をちょうど 1 枚選び、その面を持つ立体が決まること。
+ * 平らな面の移動。平らな面をちょうど 1 枚選び、その面を持つ立体が決まること。
  * 立体も一緒に選んでいて面と別の立体なら断る(別の立体の面を動かす形を作らない)。
  * 隣の面が直角か・ほかの形に当たらないかは確定後にカーネルが確かめて断る(元の立体は残る)。
  */
@@ -506,7 +506,7 @@ function pointPatternRejection(context: MachiningContext): MessageKey | null {
 }
 
 /**
- * 点集合パターンで繰り返す加工(穴・ねじ穴に限る、§0.a-0.20)を選択から決める。
+ * 点集合パターンで繰り返す加工(穴・ねじ穴に限る)を選択から決める。
  * 直線・円形パターン(`machiningCommands.ts` の `selectedPatternSource`)と同じ判定を使う。
  */
 function pointPatternSourceOf(context: MachiningContext): string | null {
@@ -636,7 +636,7 @@ function commitDraft(context: MachiningContext, commit: SolidInputCommit): Solid
 }
 
 /**
- * 平らな面の移動(EX-18)。選んだ平らな面 1 枚を、その面を持つ立体の上で符号付きの距離だけ動かす。
+ * 平らな面の移動。選んだ平らな面 1 枚を、その面を持つ立体の上で符号付きの距離だけ動かす。
  * **対象を消費する**(抜き勾配と同じ)。欄が空なら model の既定(外向き 1mm)で作る(NFR-UX-4)。
  */
 function commitFaceOffset(context: MachiningContext, commit: SolidInputCommit): SolidCommandOutcome {
@@ -660,7 +660,7 @@ function commitFaceOffset(context: MachiningContext, commit: SolidInputCommit): 
   return appended(context.document, feature, id);
 }
 
-/** ミラー(FR-419)。**対象を消費しない**ので、元と鏡像の両方が残る(§0.a-0.36)。 */
+/** ミラー(FR-419)。**対象を消費しない**ので、元と鏡像の両方が残る。 */
 function commitMirror(context: MachiningContext, commit: SolidInputCommit): SolidCommandOutcome {
   const target = shapeEditTargetOf(context);
   if (target === null) {
@@ -721,7 +721,7 @@ function commitTransform(
 /**
  * 拡大縮小(FR-424)。**対象を消費する。**
  *
- * 動かさない点は世界の原点にする。中心を選ばせる欄は §2.15 の段の表に無く、あとから
+ * 動かさない点は世界の原点にする。中心を選ばせる欄は段に無く、あとから
  * プロパティで式に直せる(FR-202、FR-502。基本形状の基準点と同じ扱い)。
  */
 function commitScale(context: MachiningContext, commit: SolidInputCommit): SolidCommandOutcome {
@@ -777,7 +777,7 @@ function commitSweep(context: MachiningContext, commit: SolidInputCommit): Solid
   return appended(context.document, feature, id);
 }
 
-/** リブ(FR-420)。**対象を消費する。** 材料へ届くまで伸ばすのは既定どおり(タスク46)。 */
+/** リブ(FR-420)。**対象を消費する。** 材料へ届くまで伸ばすのは既定どおり。 */
 function commitRib(context: MachiningContext, commit: SolidInputCommit): SolidCommandOutcome {
   const target = shapeEditTargetOf(context);
   if (target === null) {
@@ -806,7 +806,7 @@ function commitRib(context: MachiningContext, commit: SolidInputCommit): SolidCo
   return appended(context.document, feature, id);
 }
 
-/** エンボス(FR-421)。**対象を消費する。** 面は平らな面だけ(タスク39)。 */
+/** エンボス(FR-421)。**対象を消費する。** 面は平らな面だけ。 */
 function commitEmboss(context: MachiningContext, commit: SolidInputCommit): SolidCommandOutcome {
   const face = selectedSolidFaces(context).find(isFlatFace);
   if (face === undefined) {
@@ -884,7 +884,7 @@ function commitThreadShaft(
 }
 
 /**
- * 曲面(FR-428)。**どの作り方も対象を消費しない**(面を読むだけ、§0.a-0.45)。
+ * 曲面(FR-428)。**どの作り方も対象を消費しない**(面を読むだけ)。
  * 作り方ごとに要る材料が違うので、足りなければそれぞれの理由で断る(NFR-UX-5)。
  */
 function surfaceOperationOf(
@@ -993,7 +993,7 @@ function commitPointPattern(context: MachiningContext): SolidCommandOutcome {
 
 /**
  * くり抜き(FR-418)。**対象を消費する。**
- * 開ける面は 0 枚でもよい(閉じたまま中だけ空になる。タスク53 の実測)。
+ * 開ける面は 0 枚でもよい(閉じたまま中だけ空になる)。
  */
 function commitShell(context: MachiningContext, commit: SolidInputCommit): SolidCommandOutcome {
   const target = shapeEditTargetOf(context);

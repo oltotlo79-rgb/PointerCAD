@@ -1,5 +1,5 @@
 /**
- * JSON(unknown)を型へ絞る道具(計画書 docs/plans/P2-ソリッド基礎.md タスク14)。
+ * JSON(unknown)を型へ絞る道具。
  *
  * ファイルから読んだ値は何が入っているか分からないので、`as` による強制変換を使わず、
  * 欄を1つずつ検査して型を確かめる(rules/02-禁止事項.md)。
@@ -13,7 +13,7 @@ import { decodeMathExpressionStorage } from '@pointercad/model';
 /**
  * 式文字列と評価値の組(FR-202)。@pointercad/expression の `ExpressionValue` と同じ型を、
  * 依存を1つも増やさずに @pointercad/model の型から取り出す
- * (packages/io の依存は @pointercad/model だけ。§0.a-0.2)。
+ * (packages/io の依存は @pointercad/model だけ)。
  */
 export type ExpressionValueJson = ExtrudeFeature['distance'];
 
@@ -207,7 +207,7 @@ export function readExpression(
 
 /**
  * 式文字列と評価値の組を**値そのものから**読む(`readVec3Item` / `readVec3` と同じ、
- * 値用と欄用の組)。配列の要素が式のとき(アセンブリの配置の位置 3 数、P7 §2.2)に使う。
+ * 値用と欄用の組)。配列の要素が式のとき(アセンブリの配置の位置 3 数)に使う。
  * 読み方の決めごとは 1 か所だけにしたいので、欄用の `readExpression` はこれを呼ぶ。
  */
 export function readExpressionItem(item: unknown, path: string): Checked<ExpressionValueJson> {
@@ -241,7 +241,7 @@ export function readExpressionItem(item: unknown, path: string): Checked<Express
 }
 
 /**
- * 3次元ベクトル(mm)を読む(P3、部分形状の指紋の位置・軸)。長さ3の配列で、
+ * 3次元ベクトル(mm)を読む(部分形状の指紋の位置・軸)。長さ3の配列で、
  * 3つとも数値でなければ断る。`readVec3` は欄から、`readVec3Item` は値そのものから読む
  * (`readFaceRef` / `readFaceRefItem` と同じ、欄用と値用の組)。
  */

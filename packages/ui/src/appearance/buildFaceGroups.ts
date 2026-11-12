@@ -1,19 +1,19 @@
 /**
- * 面のまとまり(描画グループ)を作る純関数(計画書
- * docs/plans/P5-高度なソリッド・外観と測定.md §2.5.2、タスク7)。
+ * 面のまとまり(描画グループ)を
+ * 作る純関数。
  *
  * 対応要件: FR-1106(立体ごと・面ごとの色)、NFR-PF-1(60fps)。
  *
  * three.js にも DOM にもストアにも触れない(Node のまま検査できる)。
  * `THREE.BufferGeometry.addGroup(start, count, materialIndex)` へそのまま渡せる形を作り、
- * 実際に three を触るのは `viewport/createSolidLayer.ts`(タスク10)だけにする。
+ * 実際に three を触るのは `viewport/createSolidLayer.ts`だけにする。
  *
- * **ドローコールの数は材質の種類ではなく「まとまりの数」で決まる**(§2.5.2)。
+ * **ドローコールの数は材質の種類ではなく「まとまりの数」で決まる**。
  * 面は通し番号の順に並び、同じ材質の面が索引の上で隣り合っていれば 1 つのまとまりへ
  * 畳める。畳めるだけ畳むことが NFR-PF-1 の要である。
  *
  * **`triangleCount === 0` の面が実在する**(三角形が付かなかった面。
- * `docs/報告記録.md` 2026-09-03 21:50 の③と同じ事情が面にもある)。
+ * 長さ 0 の線分と同じ事情が面にもある)。
  * 0 枚の面はまとまりを作らない。空の `addGroup` は描画の役に立たないうえ、
  * 「隣り合う同じ材質」の判定を分断してドローコールを増やすため。
  */
@@ -43,15 +43,15 @@ export interface FaceGroupPlan {
    *
    * **0 番は必ずこのボディの既定**(立体全体の割り当てがあればそれ、無ければ文書の既定)
    * とする。面ごとの割り当てが 1 つも無いときに `appearances.length === 1` になり、
-   * P2 と 1 ドットも変わらない絵が出る(§0.a-0.12)ための決めである。
+   * 外観の無い時と 1 ドットも変わらない絵が出るための決めである。
    */
   readonly appearances: readonly AppearanceSpec[];
 }
 
-/** 1 ボディで使える材質の種類の上限(§0.a-0.11。既定 1 + 割り当て 7)。 */
+/** 1 ボディで使える材質の種類の上限(既定 1 + 割り当て 7)。 */
 export const MAX_MATERIALS_PER_BODY = 8;
 
-/** 1 ボディのまとまりの数の上限(§2.5.2。= ボディ 1 つのドローコールの上限)。 */
+/** 1 ボディのまとまりの数の上限(= ボディ 1 つのドローコールの上限)。 */
 const MAX_GROUPS_PER_BODY = 32;
 
 /** 数値を鍵の一部にする。`-0` と `0` を同じ文字にするため `String` を通す。 */
@@ -73,7 +73,7 @@ function patternKeyText(pattern: AppearancePattern): string {
 }
 
 /**
- * 外観を「見え方」で表す鍵(§2.5.3 の `fingerprintKeyText` と同じ発想)。
+ * 外観を「見え方」で表す鍵(`fingerprintKeyText` と同じ発想)。
  *
  * 見るのは three.js の材質へ写る値だけにする。すなわち
  * **プリセットの id と、式の文字(`source` / `display`)は鍵に入れない**。
@@ -93,14 +93,14 @@ export function appearanceKeyText(appearance: AppearanceSpec): string {
 /**
  * 面ごとの外観から、描画のまとまりを作る。
  *
- * 優先順位は `model` の `resolveAppearanceFor` と同じ 3 段(§2.2.2)で、
+ * 優先順位は `model` の `resolveAppearanceFor` と同じ 3 段で、
  * ここでは「面の割り当て」だけを表(`appearanceByFaceIndex`)で受け取り、
  * 残る 2 段(立体の割り当て → 文書の既定)は `bodyAppearance ?? defaultAppearance` で表す。
  *
  * **面の順序は変えない。** カーネルが返す面の通し番号の順がそのまま索引の順であり、
  * 並べ替えると `SolidFaceEntry.triangleOffset` との対応が崩れるため。
  *
- * 上限(§0.a-0.11 の材質 8 種、§2.5.2 のまとまり 32 個)を超えたときは
+ * 上限(材質 8 種、まとまり 32 個)を超えたときは
  * **例外を投げずに `null` を返す**。断りの文言を出すのは呼び出し側の役目とし、
  * 純関数は「作れなかった」ことだけを返す(NFR-UX-5 の実行前の赤表示はコマンド側)。
  */

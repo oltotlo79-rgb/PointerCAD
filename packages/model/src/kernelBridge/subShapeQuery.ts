@@ -4,7 +4,7 @@ import type { SubShapeQueryPlan } from '../part/resolvePart.js';
 
 
 /**
- * 部分形状の指紋を kernel の言葉(`SubShapeQuery`)へ詰め替える(§2.4.2、§2.8、タスク17 手順3)。
+ * 部分形状の指紋を kernel の言葉(`SubShapeQuery`)へ詰め替える。
  *
  * model の `SubShapeQueryPlan`(= `SubShapeRef`)は「そのボディを作ったフィーチャーの id」
  * (`bodyFeatureId`)を持つが、カーネルは段の対象(targetKey で指したボディ)の中だけを

@@ -44,7 +44,7 @@ function isUnknownArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value);
 }
 
-/** P7 の部品ライブラリと同じ、鍵を辞書順へそろえた決定的な文字列化。 */
+/** アセンブリの部品ライブラリと同じ、鍵を辞書順へそろえた決定的な文字列化。 */
 export function canonicalDrawingSourceText(value: unknown): string {
   if (value === null) {
     return 'null';
@@ -68,7 +68,7 @@ export function canonicalDrawingSourceText(value: unknown): string {
   return 'null';
 }
 
-/** 抱き込む文書の内容だけからSHA-256を作る。形やメッシュは入力に含めない(§0.3)。 */
+/** 抱き込む文書の内容だけからSHA-256を作る。形やメッシュは入力に含めない。 */
 export async function drawingSourceContentHash(document: DrawingSourceDocument): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalDrawingSourceText(document));
   return sha256Hex(bytes);

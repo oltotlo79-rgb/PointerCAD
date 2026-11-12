@@ -1,5 +1,5 @@
 /**
- * 解決済みスケッチを描画用の並びへ組み立てる(計画書 docs/plans/P1-式とスケッチ.md タスク20 手順1)。
+ * 解決済みスケッチを描画用の並びへ組み立てる。
  *
  * 対応要件: FR-105(表示スタイル)、FR-310(面の色)、NFR-PF-1(60fps)。
  *
@@ -22,7 +22,7 @@ import { sampleCurve, toLineSegmentPositions } from '../sketch/sampleCurve.js';
 /**
  * 強調の度合い。選択が最も強く、ホバーはその手前(FR-106)。
  *
- * `constrained`(完全に決まった要素、FR-313、利用者の決定②(2026-09-05)、P4b タスク22b)
+ * `constrained`(完全に決まった要素、FR-313、利用者の決定②)
  * だけは強調ではなく**状態を表す色**で、選択・ホバーより弱い。青(選択・ホバー)が
  * 掛かっているあいだはそちらを優先し、何も掛かっていないときにだけこの色で描く。
  */
@@ -94,7 +94,7 @@ export const NO_HIGHLIGHT: SketchHighlight = { hoveredElementId: null, selection
 /** 構築線が 1 つも無いとき(FR-320)。 */
 const EMPTY_CONSTRUCTION_IDS: ReadonlySet<string> = new Set<string>();
 
-/** 完全に決まった要素が 1 つも無いとき(FR-313、タスク22b)。 */
+/** 完全に決まった要素が 1 つも無いとき(FR-313)。 */
 const EMPTY_CONSTRAINED_IDS: ReadonlySet<string> = new Set<string>();
 
 /** 何も無いスケッチ。起動直後と、片付けたあとの初期値に使う。 */
@@ -154,7 +154,7 @@ function toBuffers(sink: Sink): EmphasisBuffers {
  *
  * `constrainedIds`(完全に決まった要素、FR-313)は**いちばん弱い**。選択・ホバーの青が
  * 掛かっているあいだはそちらを出し、何も掛かっていないときだけ落ち着いた別色にする
- * (利用者の決定②(2026-09-05)「選択・ホバーの青は従来どおり優先」)。
+ * (利用者の決定②「選択・ホバーの青は従来どおり優先」)。
  */
 export function emphasisOf(
   elementId: string,
@@ -182,7 +182,7 @@ export function emphasisOf(
  * 点だけで張った面(境界の線がフィーチャーとして存在しない)だけを縁として引く。
  *
  * カーネルの結果があるときはその境界(線分1本あたり6要素の並び、
- * docs/報告記録.md 2026-09-02 21:03)を使い、まだ届いていなければ
+ * 実測で確かめた形)を使い、まだ届いていなければ
  * 解決済みの曲線から引く。計算の間だけ輪郭が消えるのを避けるため。
  */
 function faceOutlineValues(
@@ -220,11 +220,11 @@ export function buildSketchGeometry(
   /**
    * 構築線(FR-320)として引く要素の id(`featureSummary.ts` の `constructionFeatureIds`)。
    * 解決済みの曲線は construction を持たないので、履歴から引いた集合をここへ渡す
-   * (model の型も既存の期待値も変えない、P4 タスク33)。渡さなければ全部が実線。
+   * (model の型も既存の期待値も変えない)。渡さなければ全部が実線。
    */
   constructionIds: ReadonlySet<string> = EMPTY_CONSTRUCTION_IDS,
   /**
-   * 完全に決まった要素(FR-313、P4b タスク22b)のフィーチャー id
+   * 完全に決まった要素(FR-313)のフィーチャー id
    * (`constrainedElements.ts` の `fullyConstrainedFeatureIds`)。渡さなければ全部が既定色。
    */
   constrainedIds: ReadonlySet<string> = EMPTY_CONSTRAINED_IDS,
@@ -251,15 +251,15 @@ export function buildSketchGeometry(
   }
 
   const drawnCurveFeatureIds = new Set<string>();
-  // 楕円(FR-318)とスプライン(FR-317)も線として描く(P4 タスク12)。`sampleCurve` が
+  // 楕円(FR-318)とスプライン(FR-317)も線として描く。`sampleCurve` が
   // どの種類も折れ線へ直すので、ここは 4 種を並べるだけでよい。
   //
-  // 矩形・正多角形・長穴・オフセット・複製は 1 フィーチャーが複数の曲線を生む(§0.a-0.8)。
+  // 矩形・正多角形・長穴・オフセット・複製は 1 フィーチャーが複数の曲線を生む。
   // 曲線 1 本ずつの要素 id は `featureId#n` で、順番は `curvesByFeature` が持つ
   // (`segments` / `arcs` へ分かれて入るので、そちらの並び順からは分からない)。
   // **強調はフィーチャー単位でも 1 本単位でも効かせる**(`emphasisOf` は
   // elementId と featureId の両方を見るので、`rect1` を選べば全辺、`rect1#2` を
-  // 選べばその 1 辺だけが光る。タスク4 の申し送り「最後の 1 辺だけ」の直し)。
+  // 選べばその 1 辺だけが光る。「最後の 1 辺だけ光る」不具合の直し)。
   const elementIdByCurve = new Map<ResolvedCurve, string>();
   for (const [featureId, group] of sketch.curvesByFeature) {
     group.forEach((curve, position) => {

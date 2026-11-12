@@ -13,8 +13,8 @@ import { runMeasureTool } from './solidToolActions.js';
 export function lookToolbarReadiness(state: AppState, id: LookToolId): SolidToolReadiness {
   if (state.assembly !== null && id !== 'strength') return { ready: false, reasonKey: 'command.unavailable.document' };
   if (id === 'strength' || id === 'canvas') return { ready: true, reasonKey: null };
-  // 図形の測定値(GR-30)。押せる条件は「部品を開いている」だけ(上の分岐で保証済み)。
-  // 何も選んでいなくても押せる(§4(a) の P2)。
+  // 図形の測定値。押せる条件は「部品を開いている」だけ(上の分岐で保証済み)。
+  // 何も選んでいなくても押せる。
   if (id === 'mathGeometry') return { ready: true, reasonKey: null };
   const bodies = subShapeBodiesOf(state.bodies);
   if (id === 'measure') return measureToolReadiness(state.selection, bodies, state.isComputing ? undefined : state.resolvedSketch);
@@ -32,7 +32,7 @@ export function chooseLookTool(id: LookToolId): boolean {
   if (id === 'measure') { runMeasureTool(readiness); return readiness.ready; }
   if (id === 'canvas') { void addCanvasFromFile(); return true; }
   if (id === 'mathGeometry') {
-    // 図形の測定値(GR-30)。専用の分岐: 同じ道具ならもう一度押して選択の道具へ戻し、
+    // 図形の測定値。専用の分岐: 同じ道具ならもう一度押して選択の道具へ戻し、
     // そうでなければこの道具へ切り替える。どちらも選択は消さない(§4(a))。
     state.setActiveTool(state.activeTool === id ? 'select' : id);
     state.requestViewportFocus();

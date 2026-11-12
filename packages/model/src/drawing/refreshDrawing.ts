@@ -31,7 +31,7 @@ export function drawingSourceChangedExternally(source: DrawingSource, contentHas
   return contentHash !== undefined && contentHash.length > 0 && contentHash !== source.contentHash;
 }
 
-/** 投影と寸法を同じ再評価結果から作る。投影の再利用は既存の方向/内容ハッシュの鍵に従う(P8-39)。 */
+/** 投影と寸法を同じ再評価結果から作る。投影の再利用は既存の方向/内容ハッシュの鍵に従う。 */
 export async function refreshDrawing(
   drawing: DrawingDocument, kernel: DrawingResolveKernel, options: DrawingRefreshOptions = {},
 ): Promise<DrawingRefreshResult> {

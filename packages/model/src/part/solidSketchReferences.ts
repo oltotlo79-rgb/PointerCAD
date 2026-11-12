@@ -12,7 +12,7 @@ function axisSketchIds(spec: AxisSpec): readonly string[] {
 }
 
 /**
- * 点の参照(`PointReference`)が指しているスケッチの id(FR-325 の順序の制約、タスク46)。
+ * 点の参照(`PointReference`)が指しているスケッチの id(FR-325 の順序の制約)。
  *
  * `PointReference` は**どのスケッチかを持たない**(`{ kind: 'point'; pointId }` のように
  * フィーチャーの id だけ)ので、`resolveReferences.ts` と同じ約束で**全スケッチを id で
@@ -20,9 +20,9 @@ function axisSketchIds(spec: AxisSpec): readonly string[] {
  *
  * これが要るのは、拡大縮小の中心(FR-424)と点集合パターンの点(FR-425)だけが
  * 「スケッチを使うのに参照からスケッチ id を読めない」種類だからである。数え上げられないと
- * §0.a-0.11 の順序の制約(投影のもとにできるのは、そのスケッチを使う立体より前の立体だけ)が
+ * 順序の制約(投影のもとにできるのは、そのスケッチを使う立体より前の立体だけ)が
  * その 2 種で効かず、**自分より後の立体を投影したスケッチの点で穴を並べられてしまう**
- * (docs/報告記録.md 2026-09-05 19:38 の t43 → t46 への申し送り)。
+ * ため、ここで数え上げる。
  */
 export function sketchIdOfPointReference(
   reference: PointReference,
@@ -56,9 +56,9 @@ function pointSketchIds(
 }
 
 /**
- * 1 つのソリッドフィーチャーが使うスケッチの id(FR-325 の順序の制約、タスク25)。
+ * 1 つのソリッドフィーチャーが使うスケッチの id(FR-325 の順序の制約)。
  *
- * 「投影のもとにできるのは、そのスケッチを使う立体より前に作られた立体だけ」(§0.a-0.11)を
+ * 「投影のもとにできるのは、そのスケッチを使う立体より前に作られた立体だけ」を
  * 機械的に判定するために要る。断面・回転軸・穴の中心・ばねの始点・パターンの向きの
  * どれもスケッチを指しうるので、種類ごとに列挙する(網羅 switch なので、
  * 新しいソリッドフィーチャーを足すとここで型検査が落ちて足し忘れを防げる)。
@@ -89,22 +89,22 @@ export function referencedSketchIds(
     case 'spring':
       return [feature.origin.sketchId, ...axisSketchIds(feature.axis)];
     case 'primitive':
-      // 基本形状(FR-429、タスク15)。スケッチを見るのは中心にスケッチの点を指したときだけで、
+      // 基本形状(FR-429)。スケッチを見るのは中心にスケッチの点を指したときだけで、
       // 座標の式・立体の頂点はスケッチを使わない。向きの軸は他の種類と同じ扱い。
       return [
         ...(feature.origin.kind === 'sketchPoint' ? [feature.origin.ref.sketchId] : []),
         ...axisSketchIds(feature.axis),
       ];
     case 'ruled':
-      // 面をつなぐ(FR-430、タスク25)。スケッチを見るのは断面が「スケッチの面」のときだけで、
+      // 面をつなぐ(FR-430)。スケッチを見るのは断面が「スケッチの面」のときだけで、
       // 立体の面・球はスケッチを使わない。
       return sectionSketchIds([feature.first, feature.second]);
     case 'loft':
       return sectionSketchIds(feature.sections);
     /*
-      P5 の Should 群(§2.11、タスク43)。**参照の欄はこの段で確定しているので、
+      Should 群。**参照の欄はこの段で確定しているので、
       「どのスケッチを使うか」はいまここで正しく数え上げる**(解決の実装を待たない)。
-      §0.a-0.11 の順序の制約は解決の成否と無関係に効く判定だからである。
+      順序の制約は解決の成否と無関係に効く判定だからである。
     */
     case 'draft':
     case 'holeTranslate':
@@ -114,7 +114,7 @@ export function referencedSketchIds(
     case 'threadShaft':
     case 'shell':
       // 面の指紋とフィーチャーの id しか持たない(スケッチを見ない)。
-      // くり抜き(FR-418、§2.12)も同じで、開ける面は指紋で持つ。
+      // くり抜き(FR-418)も同じで、開ける面は指紋で持つ。
       return [];
     case 'emboss':
       // 相手の面は指紋で、輪郭だけがスケッチの面フィーチャー。
@@ -123,8 +123,8 @@ export function referencedSketchIds(
       return feature.rotationAxis === null ? [] : axisSketchIds(feature.rotationAxis);
     case 'scale':
       // 中心の点はスケッチの点でありうる。`PointReference` は「どのスケッチか」を持たない
-      // ので、**スケッチの一覧を渡されたときだけ** id で探して数える(タスク46。
-      // 渡されないときは P5 タスク43 のまま空——既存の呼び出しのふるまいを変えないため)。
+      // ので、**スケッチの一覧を渡されたときだけ** id で探して数える(
+      // 渡されないときは以前のまま空——既存の呼び出しのふるまいを変えないため)。
       return pointSketchIds([feature.origin], sketches);
     case 'sweep':
       return [feature.profile.sketchId, feature.path.sketchId, ...(feature.guide === undefined ? [] : [feature.guide.sketchId])];
@@ -138,19 +138,19 @@ export function referencedSketchIds(
       return feature.blade.kind === 'extrusion' ? [feature.blade.profile.sketchId]
         : feature.blade.kind === 'plane' ? planeSketchIds(feature.blade.plane, sketches) : [];
     case 'cut':
-      // 切断(FR-432、タスク27c)。切断面の点がスケッチの点でありうるので、拡大縮小の
+      // 切断(FR-432)。切断面の点がスケッチの点でありうるので、拡大縮小の
       // 中心とまったく同じ扱いで id から探す(スケッチの一覧を渡されたときだけ数える)。
       return planeSketchIds(feature.plane, sketches);
     case 'importedSolid':
     case 'importedMesh':
-      // 読み込んだ形(FR-802、P6 §2.8)。**スケッチを 1 本も見ない**(ファイルから入った
+      // 読み込んだ形(FR-802)。**スケッチを 1 本も見ない**(ファイルから入った
       // 形そのものなので、参照の欄が 1 つも無い)。
       return [];
   }
 }
 
 /**
- * 平面の指定(`PlaneSpec`)が使うスケッチの id(FR-325 の順序の制約、タスク27c)。
+ * 平面の指定(`PlaneSpec`)が使うスケッチの id(FR-325 の順序の制約)。
  *
  * 点は `PointReference` で「どのスケッチか」を持たないので、`scale` の中心・点集合
  * パターンと同じく **id で全スケッチから探す**(`pointSketchIds`)。面・辺は指紋なので
@@ -188,12 +188,12 @@ function patternSketchIds(
     case 'circular':
       return axisSketchIds(placement.axis);
     case 'points':
-      // 点集合(FR-425)。`scale` の中心とまったく同じ扱いで、id から探す(タスク46)。
+      // 点集合(FR-425)。`scale` の中心とまったく同じ扱いで、id から探す。
       return pointSketchIds(placement.points.map((point) => point.reference), sketches);
   }
 }
 
-/** 曲面の作り方が使うスケッチの id(FR-428、タスク43・46)。 */
+/** 曲面の作り方が使うスケッチの id(FR-428)。 */
 function surfaceSketchIds(operation: SurfaceOperation): readonly string[] {
   switch (operation.kind) {
     case 'extrude':

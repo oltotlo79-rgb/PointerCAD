@@ -128,10 +128,10 @@ export interface KernelBridge {
   tessellateSketchFaces(faces: readonly ResolvedFace[]): Promise<SketchTessellationOutcome>;
   /**
    * 解決済みの段を履歴順にカーネルへ渡し、表示用のボディを受け取る(FR-401〜404、要件§6.3)。
-   * 文書が変わったときだけ呼ぶ。ホバー・選択・視点操作では呼ばない(§2.4)。
+   * 文書が変わったときだけ呼ぶ。ホバー・選択・視点操作では呼ばない。
    *
    * Worker が壊れて応答しなくなったときは例外を投げず、進行中の依頼を
-   * `KERNEL_BROKEN_MESSAGE` の失敗として解決する(§2.9、NFR-RE-1「止めずに警告する」)。
+   * `KERNEL_BROKEN_MESSAGE` の失敗として解決する(NFR-RE-1「止めずに警告する」)。
    * 次にこの関数を呼んだときは Worker を作り直してから依頼を出す。作り直すと
    * 形状キャッシュが空になるので、次の再計算は全段作り直しになる(遅くなるが落ちない)。
    */
@@ -140,14 +140,14 @@ export interface KernelBridge {
     options?: SolidRecomputeOptions,
   ): Promise<SolidRecomputeOutcome>;
   /**
-   * 輪郭を距離ぶんずらした曲線の列をカーネルへ頼む(FR-321、P4 タスク15)。
+   * 輪郭を距離ぶんずらした曲線の列をカーネルへ頼む(FR-321)。
    * 何件でも 1 回の往復でまとめて頼め、1 件失敗しても残りは返る(FR-504)。
    */
   offsetSketchCurves(
     requests: readonly SketchOffsetRequestItem[],
   ): Promise<SketchOffsetResult>;
   /**
-   * 立体の面・辺の輪郭を作図面へ投影した曲線をカーネルへ頼む(FR-325、P4 タスク25)。
+   * 立体の面・辺の輪郭を作図面へ投影した曲線をカーネルへ頼む(FR-325)。
    * 何件でも 1 回の往復でまとめて頼め、1 件失敗しても残りは返る(FR-504)。
    */
   projectSketchCurves(
@@ -161,12 +161,12 @@ export interface KernelBridge {
     requests: readonly SketchProjectionRequestItem[],
   ): Promise<SketchProjectionResult>;
   /**
-   * 覚えてある形を測る(FR-1101、FR-1102、P5 タスク29)。**再計算を起こさない読み取り**
-   * (§0.a-0.30)。対象は立体を作ったフィーチャーの id で指し、`steps` から段の鍵
+   * 覚えてある形を測る(FR-1101、FR-1102)。**再計算を起こさない読み取り。**
+   * 対象は立体を作ったフィーチャーの id で指し、`steps` から段の鍵
    * (`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す(外観の面の照合と同じ流儀)。
    *
    * **`steps` の中に鍵が引けない対象が 1 つでもあれば、カーネルを呼ばずに断る**
-   * (測定は読み取りだけなので、ここから再計算を起こさない、§0.a-0.30)。
+   * (測定は読み取りだけなので、ここから再計算を起こさない)。
    */
   measure(
     steps: readonly ResolvedSolidStep[],
@@ -174,7 +174,7 @@ export interface KernelBridge {
     kind: 'distance' | 'massProperties',
   ): Promise<MeasureOutcome>;
   /**
-   * 覚えてある形をファイルへ書き出す(FR-803、FR-804、P6 タスク32b)。**測定と同じく
+   * 覚えてある形をファイルへ書き出す(FR-803、FR-804)。**測定と同じく
    * 再計算を起こさない読み取り**で、対象は立体を作ったフィーチャーの id で指し、`steps` から
    * 段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
    *
@@ -186,19 +186,19 @@ export interface KernelBridge {
     options: ShapeExportOptions,
   ): Promise<ShapeExportOutcome>;
   /**
-   * ファイルから立体を読み込む(FR-802、FR-811、P6 タスク32b)。**今の文書には触れない**
+   * ファイルから立体を読み込む(FR-802、FR-811)。**今の文書には触れない**
    * ——読めた形を返すだけで、履歴へ積むかどうかは呼び出し側が決める(NFR-RE-1)。
    *
    * 読めなかった理由は投げずに `kind: 'failed'` で返す(文言の正本は幾何カーネル)。
    */
   importShape(options: ShapeImportOptions): Promise<ShapeImportOutcome>;
   /**
-   * 3D プリント向けの点検(FR-815、P6 タスク46)。**測定・書き出しと同じく再計算を
+   * 3D プリント向けの点検(FR-815)。**測定・書き出しと同じく再計算を
    * 起こさない読み取り**で、対象は立体を作ったフィーチャーの id で指し、`steps` から
    * 段の鍵(`ResolvedSolidStep.key`)へ引き直してからカーネルへ渡す。
    *
-   * **1 つでも鍵が引けなければ、カーネルを呼ばずに `kind: 'failed'` で断る**(測定と同じ、
-   * §0.a-0.30)。点検できなかった理由も投げずに返す(NFR-RE-1)。
+   * **1 つでも鍵が引けなければ、カーネルを呼ばずに `kind: 'failed'` で断る**(測定と同じ)。
+   * 点検できなかった理由も投げずに返す(NFR-RE-1)。
    *
    * 進み具合と中止は `options` に渡す(`recomputeSolids` と同じ形)。**中止しても結果は
    * 返る**(`PrintabilityReport.cancelled` が真になり、肉厚だけが測ったところまでになる)。
@@ -211,9 +211,9 @@ export interface KernelBridge {
 }
 
 /**
- * Worker が壊れたかどうかを持つ小さな状態機械(§2.9)。
+ * Worker が壊れたかどうかを持つ小さな状態機械。
  * Worker そのものには触れないので、実物の Worker を起動できない Node のテストからも
- * 判断のロジックだけを確かめられる(docs/報告記録.md 2026-09-02 14:50 の④
+ * 判断のロジックだけを確かめられる(
  * 「Worker の実動作は Node では確かめられない」)。
  */
 export interface KernelHealth {

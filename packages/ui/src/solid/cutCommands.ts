@@ -1,15 +1,15 @@
 /**
  * 選択とその場入力から「平面による切断」を作る純関数
- * (計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク27e、§2.9b、§0.a-0.56〜0.61)。
+ * (FR-432)。
  *
  * 対応要件: FR-432(平面による切断)、FR-201/202(式のまま持つ)、FR-502、FR-504、
  * NFR-UX-1(対象を選んでから操作)、NFR-UX-2(その場で聞く)、
  * NFR-UX-4(Enter 連打で意味のある結果)、NFR-UX-5(できない操作は実行前に理由を示す)。
  *
- * **`machiningCommands.ts`(P3 タスク25)と同じ形にしてある。** 文脈・押せる条件・確定の
+ * **`machiningCommands.ts`と同じ形にしてある。** 文脈・押せる条件・確定の
  * 3 つだけを外へ出し、ストアにも DOM にも触れない。切断だけが別ファイルなのは、
  * ①平面の決め方を `PlaneSpec`(model、FR-328 と共有)で組み立てる、②「反対側も残す」で
- * **履歴を 2 段積む**(§0.a-0.58)という 2 点が他の道具と違うためである。
+ * **履歴を 2 段積む**という 2 点が他の道具と違うためである。
  *
  * 予告の四角の頂点を作るのは `../viewport/buildCutPreview.ts`(three に触れない純関数)。
  */
@@ -74,9 +74,9 @@ import {
 import { findSketchFeatureAt } from './sketchRefs.js';
 
 /**
- * 切断のコマンドが必要とする文脈(計画書タスク27e)。
+ * 切断のコマンドが必要とする文脈。
  *
- * 計画書の宣言は `selectionKind` と `sketch` も持っていたが、どちらも使わないので置かない。
+ * 当初の宣言は `selectionKind` と `sketch` も持っていたが、どちらも使わないので置かない。
  * 選ぶ種類は選択の中身(頂点・辺・面の要素 id)から読めるし、いまの作図面は
  * `SketchDocument` が持っていない(作図面の id はストアの持ち物)。何も選んでいないときの
  * 後退先は**段の選択肢**(基準の 3 面)なので、そちらを引数で受け取る。
@@ -96,7 +96,7 @@ export interface CutContext {
   readonly resolvedSketches?: ResolvedCutSketches;
 }
 
-/** 残す側(§0.a-0.57)。法線の側か、その反対か。 */
+/** 残す側。法線の側か、その反対か。 */
 export type CutKeep = CutFeature['keep'];
 
 /** 押せる。 */
@@ -105,7 +105,7 @@ const READY: SolidToolReadiness = { ready: true, reasonKey: null };
 /** 3 点で平面を決めるのに要る点の数。 */
 const THREE_POINTS = 3;
 
-/** 傾き角・方位角の既定(度)。§2.15 の段の表の「0 / 0」。 */
+/** 傾き角・方位角の既定(度)。「0 / 0」。 */
  const DEFAULT_CUT_TILT: ExpressionValue = expressionValueFromNumber(0);
 export const DEFAULT_CUT_AZIMUTH: ExpressionValue = expressionValueFromNumber(0);
 
@@ -124,7 +124,7 @@ const COLLINEAR_AREA_EPSILON = 1e-9;
  * ------------------------------------------------------------------ */
 
 /**
- * 段の選択肢 `cutPlaneKind` のうち、EX-04 W1 で足した決め方の値。
+ * 段の選択肢 `cutPlaneKind` のうち、軸・作業平面・辺を含む面の決め方の値。
  *
  * - `axisX` / `axisY` / `axisZ` … その軸に垂直な面。位置は欄「位置」の式で決める
  *   (`cutPlaneMaterials.ts` の `placeAxisPoint`。法線は軸の向き)。
@@ -361,7 +361,7 @@ export function cutToolReadiness(context: CutContext): SolidToolReadiness {
   }
   // 材料を何も選んでいない(推測が null)のは「足りない」ではなく「基準の 3 面で切る」
   // という意味なので、そのときは平面の中身を確かめない。スケッチの点・作業平面のように
-  // 指紋に位置を持たない材料は、model の平面の解き方で押す前に確かめる(EX-04 W1)。
+  // 指紋に位置を持たない材料は、model の平面の解き方で押す前に確かめる。
   const inferred = inferFromMaterials(collected.materials, DEFAULT_CUT_TILT);
   const rejection = inferred === null
     ? null
@@ -370,7 +370,7 @@ export function cutToolReadiness(context: CutContext): SolidToolReadiness {
 }
 
 /* ------------------------------------------------------------------ *
- * 閉じた輪郭による貫通切断(EX04)
+ * 閉じた輪郭による貫通切断
  * ------------------------------------------------------------------ */
 
 /**
@@ -385,7 +385,7 @@ export function cutToolReadiness(context: CutContext): SolidToolReadiness {
  *    再計算で切り口も変わる(式・参照のまま持つ FR-201/202)。
  * 2. 差(`BooleanFeature`, `subtract`)— 対象から 1. を引く。1. はここで消費される。
  *    輪郭の内側を残すときは積(`intersect`)、両方を残すときは差と積の対(2 つ目が `pairedWith` で
- *    1 つ目を指す。対象と 1. は対で 1 度だけ消費される)を積む(EX-04 W3、`commitProfileCut`)。
+ *    1 つ目を指す。対象と 1. は対で 1 度だけ消費される)を積む(`commitProfileCut`)。
  *
  * 保存・読み込み・形状キャッシュの鍵・再計算・元に戻すは、どちらも既存の押し出しと
  * ブーリアンの経路をそのまま通る(新しい OCCT の分割や保存形を足さない)。
@@ -465,7 +465,7 @@ function curveSamples(curve: ResolvedCurve): Vec3[] {
 /**
  * 曲線を包む点。円弧・楕円は中心から半径(長いほう)だけ各軸へ離した立方体の 8 隅で包む
  * (曲線は必ずその中にある)。スプラインは与えられた点を使う(補間のスプラインは点の外へ
- * 少し膨らみうる。4 倍の長さの余裕で受け止める前提で、制限として報告する)。
+ * 少し膨らみうる。4 倍の長さの余裕で受け止める前提の制限)。
  */
 function curveBounds(curve: ResolvedCurve): Vec3[] {
   switch (curve.kind) {
@@ -682,7 +682,7 @@ function targetCorners(context: CutContext, targetFeatureId: string): Vec3[] | n
 }
 
 /**
- * 閉じた輪郭で切るときに残す側(EX-04 W3)。`outside` = 輪郭の外側(既定。従来の「内側を差し引く」差)、
+ * 閉じた輪郭で切るときに残す側。`outside` = 輪郭の外側(既定。従来の「内側を差し引く」差)、
  * `inside` = 輪郭の内側(積)。平面の切断と同じ入口のつまみで選ぶ: 「反対側を残す」で内側、
  * 「反対側も残す(2 つに分ける)」で両方(`commitCutInput`)。
  */
@@ -718,11 +718,11 @@ function profileCutFeatureOf(
 }
 
 /**
- * 選んだ閉じた輪郭で対象を貫いて切る(EX04)。押し出しと差(または積)の 2 段を 1 回の変更で積む
+ * 選んだ閉じた輪郭で対象を貫いて切る。押し出しと差(または積)の 2 段を 1 回の変更で積む
  * (上の `PROFILE_CUT_KIND` の注釈)。断ったときは文書を変えない。
  * `featureId` は切り口を持つ最終のボディ(1 つ目のブーリアン)の id。
  *
- * 残す側(EX-04 W3): `keep` が外側なら差、内側なら積を積む。`keepBoth` が真のときは平面の切断の
+ * 残す側: `keep` が外側なら差、内側なら積を積む。`keepBoth` が真のときは平面の切断の
  * 「反対側も残す」と同じく**ブーリアンを 2 つ**積み、2 つ目は残す側が逆で `pairedWith` に 1 つ目の
  * id を入れる(対象と押し出しは対で 1 度だけ消費される。押し出しも 1 つを共有する)。
  * 押し出し・ブーリアン 1〜2 は 1 回の文書の変更なので、元に戻す 1 回で全て消える。
@@ -879,7 +879,7 @@ function commitOpenCurveCut(context: CutContext, keep: CutKeep, keepBoth: boolea
 }
 
 /* ------------------------------------------------------------------ *
- * 確定(§0.a-0.58「反対側も残す」は履歴を 2 段積む)
+ * 確定(「反対側も残す」は履歴を 2 段積む)
  * ------------------------------------------------------------------ */
 
 /** 反対側(`keep` の裏返し)。 */
@@ -910,7 +910,7 @@ function cutFeatureOf(
  * 切断を確定する(FR-432)。
  *
  * `keepBoth` が真のときは **`appendSolid` を 2 回**呼び、2 つ目は残す側が逆で
- * `pairedWith` に 1 つ目の id を入れる(§0.a-0.58。「1 フィーチャー = 最大 1 ボディ」の
+ * `pairedWith` に 1 つ目の id を入れる(「1 フィーチャー = 最大 1 ボディ」の
  * 規約を曲げずに「反対側も残す」を満たす)。平面の中身は 2 つとも同じものを渡す。
  *
  * `featureId` に返すのは **1 つ目**の id(利用者が押した操作の主役で、ツリーの選択も
@@ -940,11 +940,11 @@ export function commitCut(
 }
 
 /**
- * その場入力の確定結果から切断を作る(タスク24 の `SolidInputCommit`)。
- * 平面の決め方は段の選択肢と選択から組み立て、残す側はつまみ 2 つで決める(§0.a-0.57)。
+ * その場入力の確定結果から切断を作る(`SolidInputCommit`)。
+ * 平面の決め方は段の選択肢と選択から組み立て、残す側はつまみ 2 つで決める。
  *
  * 座標の式の点(「点を座標で入れる」)と軸の位置(「X / Y / Z 軸に垂直な面」)は、補助の基準点を
- * 積んでから名指しする(EX-04 W1、`cutPlaneMaterials.ts`)。基準点と切断は**1 回の文書の変更**で
+ * 積んでから名指しする(`cutPlaneMaterials.ts`)。基準点と切断は**1 回の文書の変更**で
  * 積むので、元に戻す 1 回で両方が消える。断るときは文書を変えない。
  */
 export function commitCutInput(
@@ -953,8 +953,8 @@ export function commitCutInput(
 ): SolidCommandOutcome {
   const planeKind = commit.shapeChoices?.cutPlaneKind;
   if (planeKind === PROFILE_CUT_KIND) {
-    // 閉じた輪郭で貫いて切る(EX04)。平面の決め方・傾きは使わない。残す側は平面の切断と同じ
-    // つまみで選ぶ(EX-04 W3): 「反対側を残す」で輪郭の内側、「反対側も残す」で両方。
+    // 閉じた輪郭で貫いて切る。平面の決め方・傾きは使わない。残す側は平面の切断と同じ
+    // つまみで選ぶ: 「反対側を残す」で輪郭の内側、「反対側も残す」で両方。
     if (commit.flags.cutPointByCoordinate === true) return { ok: false, reasonKey: 'cutError.coordinatePointUnused' };
     if (selectedSurfaceBlades(context).length > 0) {
       return commitSurfaceBladeCut(context, commit.flags.cutKeepOpposite === true ? 'negative' : 'positive',
@@ -996,7 +996,7 @@ export function commitCutInput(
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
 /**
- * その場入力の確定結果から、平面で切る中身を組み立てて押す前に確かめる(EX-04 W2)。
+ * その場入力の確定結果から、平面で切る中身を組み立てて押す前に確かめる。
  *
  * **確定(`commitCutInput`)と予告(`cutPlanePreview.ts`)の共通の入口**で、材料の拾い方・決め方の
  * 組み立て・補助の点の積み方・断る順序と理由を 1 か所にまとめる(予告が確定と別の面を出さないため)。
@@ -1114,7 +1114,7 @@ function cutPlaneDraft(
 }
 
 /* ------------------------------------------------------------------ *
- * 予告表示のための解決(タスク27e 手順6、§0.a-0.61)
+ * 予告表示のための解決
  * ------------------------------------------------------------------ */
 
 /**
@@ -1128,7 +1128,7 @@ function cutPlaneDraft(
  * 文脈(`CutContext`)を取らないのは、指紋だけで解けるためである。呼び出し側は
  * `cutPlaneSpecFor` で組み立てた決め方をそのまま渡せばよい。
  *
- * EX-04 W2 から、切断の道具の予告はこれを使わず `cutPlanePreview.ts`(確定と同じ式の評価・材料の
+ * 切断の道具の予告はこれを使わず `cutPlanePreview.ts`(確定と同じ式の評価・材料の
  * 解決)を通る。ここはビューの断面表示(FR-111)のように、文脈を持たずに指紋と基準の面だけで解く呼び出し用。
  */
 export function resolveCutPlane(plane: PlaneSpec): ResolvedPlane | null {
@@ -1164,7 +1164,7 @@ function worldAxisDirection(axis: 'x' | 'y' | 'z'): Vec3 {
 }
 
 /**
- * 予告の四角の大きさ(= 対象のボディの境界箱の対角長、§0.a-0.61)。
+ * 予告の四角の大きさ(= 対象のボディの境界箱の対角長)。
  *
  * 稜線の端点(`mesh.edgePositions`)から境界箱を測る。稜線は形の端まで届いているので、
  * 三角形の頂点を全部見なくても同じ大きさになる。ボディが見つからない・稜線が 1 本も

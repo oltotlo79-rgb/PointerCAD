@@ -1,19 +1,19 @@
 /**
- * コマンドラインの構文解析と道具の語の表(計画書 docs/plans/P4b-スケッチの仕上げ.md タスク17、
- * §0.a-0.8〜0.11、§2.5。FR-208)。
+ * コマンドラインの構文解析と道具の語の表
+ * (FR-208)。
  *
  * ここは純関数だけで、DOM にも React にも Zustand ストアにも触れない。
  * 打った文字列を「道具の切替」「いま開いている段の座標の欄」「名前付きの欄」「段の確定」
- * のどれかへ翻訳するだけで、`numericInput.ts` の段の定義には一切触れない(§0.a-0.9)。
- * 欄への流し込み・候補の表示・段への配線はタスク18(`CommandLine.tsx`)の役目。
+ * のどれかへ翻訳するだけで、`numericInput.ts` の段の定義には一切触れない。
+ * 欄への流し込み・候補の表示・段への配線は`CommandLine.tsx` の役目。
  *
- * **対象にする道具(§0.a-0.10、計画書 タスク17 の「この表は網羅ではない」の指示への回答)**:
+ * **対象にする道具(道具の表は網羅ではないので、ここで範囲を決めた)**:
  * `SketchToolId + ShapeToolId + EditToolId + ClickEditToolId` の 23 種だけを対象にした
- * (計画書の推奨どおり)。ソリッドの道具(`SolidToolId` 10 種)・基準ジオメトリ
+ * (スケッチの道具だけ)。ソリッドの道具(`SolidToolId` 10 種)・基準ジオメトリ
  * (`ReferenceToolId` 7 種)・立体から取り込む 2 種(`PickEditToolId`)は対象外(FR-208 の目的が
  * キーボードだけでの作図であるため)。
  *
- * **語の割り当て**: 計画書が明示した 17 道具(線分・円・円弧・点・矩形・正多角形・長穴・楕円・
+ * **語の割り当て**: 語の表で決めた 17 道具(線分・円・円弧・点・矩形・正多角形・長穴・楕円・
  * スプライン・複写・ミラー・オフセット・トリム・延長・フィレット・面取り・面)はその表のとおり。
  * 残り 6 道具(選択・点列・2点円弧・3点の円弧・直線配列・円形配列)は AutoCAD に直接の相当が
  * 無いため、次のとおり自分で決めた(短縮の頭文字が他と重ならないことは検査で固定する)。
@@ -24,8 +24,8 @@
  * - 直線配列: `ar`(array。CLAUDE.md の指示にある「AR=配列」を直線側の既定に割り当てた)。
  * - 円形配列: `par`(polar array)。
  *
- * なお「点」の短縮は計画書タスク17 の表がすでに `po` としており、実物の AutoCAD の
- * `acad.pgp` も `PO,*POINT`(POINT の既定の別名は PO)なので、計画書の表を正とした。
+ * なお「点」の短縮は語の表が `po` としており、実物の AutoCAD の
+ * `acad.pgp` も `PO,*POINT`(POINT の既定の別名は PO)なので、その表のとおりにした。
  *
  * **道具の語を ja.json に置かない理由**: 語(`words`)は「打つ文字列」であって表示ではない。
  * 表示名は `labelKey` で `ja.json` から引く(既存の `toolbar.tool.*`)。両者を混同しない。
@@ -55,10 +55,10 @@ import type {
   SketchToolId,
 } from './numericInput.js';
 
-/** コマンドラインが道具の切替として受け付ける道具(§0.a-0.10 の推奨どおりの範囲)。 */
+/** コマンドラインが道具の切替として受け付ける道具。 */
 export type CommandToolId = SketchToolId | ShapeToolId | EditToolId | ClickEditToolId;
 
-/** 道具 1 つの語(日本語・英語・短縮)。一覧はこのファイルの 1 か所だけ(§0.a-0.10 の②)。 */
+/** 道具 1 つの語(日本語・英語・短縮)。一覧はこのファイルの 1 か所だけ。 */
 export interface CommandWord {
   readonly tool: CommandToolId;
   /** 表示に使う名前。ツールバーの labelKey と同じものを指す(`toolbar.tool.*`)。 */
@@ -123,19 +123,19 @@ export const COMMAND_WORDS: readonly CommandWord[] = [
   { tool: 'extend', labelKey: 'toolbar.tool.extend', words: ['延長', 'extend', 'ex'] },
 ];
 
-/** 名前付きの欄の単文字の別名(§2.5「r=5 / d=20 / a=30 / l=100」)。1 か所だけに置く。 */
+/** 名前付きの欄の単文字の別名(「r=5 / d=20 / a=30 / l=100」)。1 か所だけに置く。 */
 const FIELD_KEY_ALIASES: Readonly<Record<string, string>> = {
   r: 'radius',
   d: 'diameter',
   a: 'angle',
   l: 'length',
-  // 元の要件文の例(r=5, d=3, n=6)に合わせて、個数の別名も足した(計画書の必須表には無いが、
-  // 同じ考えの自然な拡張。task18 が current の欄名と突き合わせて使う)。
+  // 元の要件文の例(r=5, d=3, n=6)に合わせて、個数の別名も足した(必須の語の表には無いが、
+  // 同じ考えの自然な拡張。`CommandLine.tsx` が current の欄名と突き合わせて使う)。
   n: 'count',
 };
 
 /**
- * コマンドラインが受け取る手掛かり(計画書 §2.5 の `context` 引数)。
+ * コマンドラインが受け取る手掛かり(`context` 引数)。
  * 3D スケッチ(`plane` が null)では極座標が使えない(既存の `resolveCoordinate.ts` と同じ制約)。
  */
 export interface CommandLineContext {
@@ -158,11 +158,11 @@ export type CommandLineOutcome =
   | { readonly kind: 'error'; readonly message: string; readonly suggestions: readonly string[] };
 
 // ---------------------------------------------------------------------------
-// 全角の正規化(§2.5)。式の共通正規化に加え、構造判定用の @ ＜ ＝ も扱うため、
+// 全角の正規化。式の共通正規化に加え、構造判定用の @ ＜ ＝ も扱うため、
 // このファイルの中に専用の表を持つ。数字・演算子の正規化は evaluateExpression 自身が
 // もう一度行うので二重になるが、
 // この関数の役目は「道具の語か座標か欄名かを見分けるための、ここでの構造判定」であり、
-// その判定より前に @ ＜ ＝ を半角へ直しておく必要がある(§2.5 の「2 文字だけ足す」を、
+// その判定より前に @ ＜ ＝ を半角へ直しておく必要がある(「2 文字だけ足す」を、
 // 欄名の＝も同じ理由で 1 つ足して 3 文字にした)。
 // ---------------------------------------------------------------------------
 
@@ -174,7 +174,7 @@ const NORMALIZE_MAP: ReadonlyMap<string, string> = new Map([
   ['×', '*'], ['＊', '*'], ['÷', '/'], ['／', '/'],
   ['（', '('], ['）', ')'], ['＾', '^'],
   ['　', ' '],
-  // ここから下 3 文字が、式エンジンの表に無いのでこのファイルが足すぶん(§2.5)。
+  // ここから下 3 文字が、式エンジンの表に無いのでこのファイルが足すぶん。
   ['＠', '@'],
   ['＜', '<'],
   ['＝', '='],
@@ -189,7 +189,7 @@ function normalizeCommandLineSource(source: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 括弧の深さを数えながらの分割(§2.5「root(8,3), 5」が壊れないようにする)。
+// 括弧の深さを数えながらの分割(「root(8,3), 5」が壊れないようにする)。
 // ---------------------------------------------------------------------------
 
 /** 深さ0にある `,` だけで分ける。関数呼び出しの引数の `,` を巻き込まない。 */
@@ -214,7 +214,7 @@ function splitTopLevelComma(source: string): readonly string[] {
   return parts;
 }
 
-/** 深さ0にある最初の1文字の位置。無ければ -1(§2.5「最初の括弧の外の `<` だけで分ける」)。 */
+/** 深さ0にある最初の1文字の位置。無ければ -1(「最初の括弧の外の `<` だけで分ける」)。 */
 function findTopLevelCharacter(source: string, target: string): number {
   let depth = 0;
   for (let i = 0; i < source.length; i += 1) {
@@ -245,7 +245,7 @@ function findToolByWord(word: string): CommandToolId | null {
   return null;
 }
 
-/** 打ちかけの語に前方一致する道具(最大 5 件、§0.a-0.11)。 */
+/** 打ちかけの語に前方一致する道具(最大 5 件)。 */
 export function suggestCommands(input: string, limit = 5): readonly CommandWord[] {
   const normalized = normalizeCommandLineSource(input.trim()).toLowerCase();
   if (normalized === '') {
@@ -289,7 +289,7 @@ function errorOutcome(message: string, suggestions: readonly string[]): CommandL
 }
 
 // ---------------------------------------------------------------------------
-// 座標の組み立て(§2.5)。
+// 座標の組み立て。
 // ---------------------------------------------------------------------------
 
 /** 分けた成分が座標らしいかどうか(道具の語の判定に失敗した後、最後にこれで振り分ける)。 */
@@ -424,7 +424,7 @@ function parsePolar(body: string, angleIndex: number, hasAt: boolean, context: C
       base: { kind: 'previous' },
       distance: distanceResult.value,
       azimuth: angleResult.value,
-      // コマンドラインの極座標は平面内だけを書く記法なので仰角は常に 0(§2.5)。
+      // コマンドラインの極座標は平面内だけを書く記法なので仰角は常に 0。
       elevation: expressionValueFromNumber(0),
     },
   };
@@ -452,7 +452,7 @@ function parseCoordinateLike(source: string, context: CommandLineContext): Comma
 const FIELD_PATTERN = /^([A-Za-z][A-Za-z0-9]*)\s*=\s*(.*)$/;
 
 /**
- * コマンドラインの1行を解く(FR-208)。欄への流し込み・段への確定はタスク18 が行う。
+ * コマンドラインの1行を解く(FR-208)。欄への流し込み・段への確定は `CommandLine.tsx` が行う。
  */
 export function parseCommandLine(input: string, context: CommandLineContext): CommandLineOutcome {
   const firstTrim = input.trim();

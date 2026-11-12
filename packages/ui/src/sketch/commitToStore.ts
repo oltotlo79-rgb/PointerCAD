@@ -1,6 +1,6 @@
 /**
- * その場数値入力で決まった 1 段を、ストアの控え(履歴・取りかけ・断り)へ反映する
- * (計画書 docs/plans/P4-スケッチ拡張.md タスク14)。
+ * その場数値入力で決まった 1 段を、
+ * ストアの控え(履歴・取りかけ・断り)へ反映する。
  *
  * 対応要件: FR-301〜309、FR-314〜318、FR-326、FR-327、FR-330、FR-504、NFR-UX-5。
  *
@@ -108,7 +108,7 @@ export function drawingPlane(): WorkPlane {
  *
  * 断りは先に出す。`setSketch`(= `applyDocument`)は古い断りを消すので、順序を逆にすると
  * 出したばかりの理由が消える(NFR-UX-5)。返り値はポップアップが「閉じてよいか」の判断に使う
- * (断られたときは閉じない。P4 タスク33、タスク12 の申し送り)。
+ * (断られたときは閉じない)。
  */
 export function applySketchCommit(
   commit: NumericInputCommit,
@@ -123,7 +123,7 @@ export function applySketchCommit(
     plane: drawingPlane(),
     chaining: store.chaining,
     pendingStart: store.pendingStart,
-    // P4 の新しい図形は、置いた点と前の段の値を下書きへ積む(タスク12)。
+    // 図形の道具は、置いた点と前の段の値を下書きへ積む。
     // 欄の値を名前で引くのに、確定した段の状態も渡す。
     shapeDraft: store.shapeDraft,
     input: input ?? undefined,
@@ -156,7 +156,7 @@ export function applySketchCommit(
 }
 
 /**
- * 線を引き終えた瞬間に、予告していた拘束を足す(FR-333、P6 タスク41、§0.a-0.50
+ * 線を引き終えた瞬間に、予告していた拘束を足す(FR-333。
  * 「確定は線を引き終えた瞬間」)。足すものが無ければ渡された文書をそのまま返す。
  *
  * **足すのは「予告したときに読んだ id」と「いま作られる線の id」が同じときだけ。**
@@ -193,13 +193,13 @@ function withInferredConstraints(
  * 何を作るかは純関数 `commitSolidInput` が決め、断られたら理由を帯へ出して履歴は変えない
  * (FR-504、NFR-UX-5)。作れたらその立体を選び、道具は選択へ戻す。
  *
- * 道具を先に選択へ戻し、そのあとで作ったフィーチャーを選ぶ(P4 タスク30 不具合(a))。
+ * 道具を先に選択へ戻し、そのあとで作ったフィーチャーを選ぶ。
  * 逆順(選ぶ→道具を戻す)だと、穴・ねじ穴・R/C面取りのように選ぶ種類が面/辺から立体へ
  * 変わる道具では、`setActiveTool` が種類の変化を見て選択を空にしてしまい、作った直後の
  * 立体が選ばれない。`setActiveTool` を先に呼べば、選択が空になるのはこの時点までで、
  * その後の `setSelection` が確定して残る。
  *
- * (P4b タスク18 で `AppShell.tsx` から移した。ポップアップとコマンドラインの 2 つの入口が
+ * (`AppShell.tsx` から移した。ポップアップとコマンドラインの 2 つの入口が
  * 同じ手順を通るようにするため。手順そのものは 1 行も変えていない。)
  */
 function currentCutSketches(store: ReturnType<typeof useAppStore.getState>) {
@@ -224,13 +224,13 @@ export function applySolidCommit(commit: SolidInputCommit): boolean {
   const base = mathCommitBase(commit);
   if (base === null) return false;
   // 加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の確定には部分形状の一覧が
-  // 要る(solidCommands.ts タスク25b の4引数目)。
+  // 要る(`commitSolidInput` の4引数目)。
   const calculated = tryMathComposition(() => commitSolidInput(
     base,
     store.selection,
     commit,
     subShapeBodiesOf(store.bodies),
-    // ばねの導出式(ピッチ × 巻数 = 全長)にパラメータ表の変数表を渡す(P4b タスク22b-(h))。
+    // ばねの導出式(ピッチ × 巻数 = 全長)にパラメータ表の変数表を渡す。
     // 渡さないと、ピッチに「板厚」と書いたとき全長の読み取り専用の欄が = 0 になる。
     store.parameterAnalysis.variables,
     store.parameterAnalysis,
@@ -240,7 +240,7 @@ export function applySolidCommit(commit: SolidInputCommit): boolean {
   const outcome = calculated.value;
   if (!outcome.ok) {
     store.setSolidError(outcome.reasonKey);
-    // 断られたらポップアップを閉じない(理由は帯に出ている、P4 タスク33)。
+    // 断られたらポップアップを閉じない(理由は帯に出ている)。
     return false;
   }
   store.applyDocument(outcome.document);
@@ -280,7 +280,7 @@ function solidStageCandidateOf(commit: SolidInputCommit): ExtrudeStageCandidate 
 }
 
 /**
- * 押し出しを確定する(EX-14)。形の計算が成功したその文書と結果を 1 回で採用し、取り消しは
+ * 押し出しを確定する。形の計算が成功したその文書と結果を 1 回で採用し、取り消しは
  * 1 段だけ積む。計算中なら 'pending' を返し、入力の窓は開いたまま(終わり次第採用して閉じる)。
  * 計算部が無い・断られた・失敗した・古くなったときは理由を帯へ出し、文書と取り消しは変えない。
  */
@@ -321,7 +321,7 @@ function confirmMachiningCommit(commit: SolidInputCommit): StagedConfirmation {
 }
 
 /**
- * 「形を確かめる」(EX-14)。確定と同じ候補を段階計算に出し、成功した形を仮に表示する。
+ * 「形を確かめる」。確定と同じ候補を段階計算に出し、成功した形を仮に表示する。
  * 文書・取り消しには触れない。欄に誤りがあれば確定と同じく最初の誤りへ焦点を戻す。
  */
 export function previewExtrudeTransition(transition: NumericInputTransition): void {
@@ -347,7 +347,7 @@ export function previewExtrudeTransition(transition: NumericInputTransition): vo
  * (次の一手が続く、NFR-UX-1)。断りは `applyDocument` より**先に**出す
  * (`applyDocument` は古い断りを消すので、逆順にすると消える)。
  *
- * (P4b タスク18 で `AppShell.tsx` から移した。手順そのものは 1 行も変えていない。)
+ * (`AppShell.tsx` から移した。手順そのものは 1 行も変えていない。)
  */
 export function applyReferenceCommit(commit: ReferenceInputCommit): boolean {
   const store = useAppStore.getState();
@@ -370,19 +370,19 @@ export function applyReferenceCommit(commit: ReferenceInputCommit): boolean {
   if (outcome.createdPlaneId !== null) {
     store.setWorkPlane(outcome.createdPlaneId);
   }
-  // 断られたらポップアップを閉じない(P4 タスク33、タスク12 の申し送り)。
+  // 断られたらポップアップを閉じない。
   return outcome.rejection === null;
 }
 
 /**
- * その場入力の 1 手(`applyNumericInputKey` が返した移り変わり)をストアへ反映する
- * (P4b タスク18)。
+ * その場入力の 1 手(`applyNumericInputKey` が返した移り変わり)を
+ * ストアへ反映する。
  *
  * **ここが唯一の入口**で、その場入力のポップアップ(`NumericInputPopover.tsx`)と
  * コマンドライン(`shell/CommandLine.tsx`)の両方がこれを呼ぶ。どちらから打っても
- * まったく同じ道筋を通る(NFR-UX-1、§0.a-0.9「どちらから打っても同じ確定処理」)。
+ * まったく同じ道筋を通る(NFR-UX-1。どちらから打っても同じ確定処理)。
  *
- * **断られたときはポップアップを閉じない**(P4 タスク33、タスク12 の申し送り)。
+ * **断られたときはポップアップを閉じない**。
  * 半径が 2 点の間隔の半分に足りないときのように、値そのものは式として読めても形が
  * 作れないことがある。その場で閉じてしまうと、利用者は入れ直した値を全部打ち直す羽目に
  * なる。理由は帯に出ているので、欄はそのまま残して直させる(NFR-UX-5、NFR-UX-3)。
@@ -401,12 +401,12 @@ export function applyNumericTransition(transition: NumericInputTransition): void
       return;
     case 'cancelled':
       store.closeNumericInput();
-      // 押し出しの確かめていた形・計算中の確定も一緒にやめる(EX-14)。文書には触れない。
+      // 押し出しの確かめていた形・計算中の確定も一緒にやめる。文書には触れない。
       cancelExtrusion();
       return;
     case 'solidCommitted':
       // 押し出しは形の計算が成功してから採用し、採用した時に窓を閉じる。計算中・断り・失敗の
-      // 間は窓を開いたままにする(EX-14。confirmExtrudeCommit の注釈)。
+      // 間は窓を開いたままにする(confirmExtrudeCommit の注釈)。
       if (transition.commit.tool === 'extrude') {
         // コマンドラインは値を流し込んだ姿で確定する。計算中・失敗のときに窓に見える値と、
         // 計算している値を同じにするため、その姿を先に入力の窓へ残す(所有の判定は変わらない)。
@@ -428,7 +428,7 @@ export function applyNumericTransition(transition: NumericInputTransition): void
       store.closeNumericInput();
       return;
     case 'referenceCommitted': {
-      // 基準ジオメトリは 1 つ作ったら閉じる段と、次の点を聞く段がある(P4 タスク13)。
+      // 基準ジオメトリは 1 つ作ったら閉じる段と、次の点を聞く段がある。
       // どちらかは nextNumericInput が決めるので、スケッチと同じ流れで扱う。
       if (!applyReferenceCommit(transition.commit)) {
         return;
@@ -499,7 +499,7 @@ export function applyEditCommit(commit: EditInputCommit): boolean {
 }
 
 /**
- * 投影・交差(FR-325、タスク27)の確定をストアへ反映する。
+ * 投影・交差(FR-325)の確定をストアへ反映する。
  *
  * 数値を 1 つも聞かないので段(その場入力)を通らず、**押した瞬間に決まる**
  * (`Toolbar.tsx` の `commitBooleanAction` と同じ「数値を聞かない道具」の作り)。
@@ -507,7 +507,7 @@ export function applyEditCommit(commit: EditInputCommit): boolean {
  *   ①道具を選んでからビューポートで面・辺・立体を押す(`attachSketchInteraction.ts`)。
  *   ②面・辺・立体を選んでから一覧の「投影」「断面」を押す(`Toolbar.tsx`)。
  *
- * 道具は選んだまま残す(続けて何枚でも取り込める。トリム・延長と同じ、§0.a-0.26)。
+ * 道具は選んだまま残す(続けて何枚でも取り込める。トリム・延長と同じ)。
  * 断りは帯へ出すだけで履歴も選択も変えない(FR-504、NFR-UX-5)。**文書の差し替えは 1 回**
  * なので、複数まとめて取り込んでも取り消し(Ctrl+Z)は 1 回で戻る(NFR-UX-3)。
  */
@@ -520,7 +520,7 @@ export function applyProjectionCommit(
     store.setEditError(projectionMissingTargetKey(tool));
     return false;
   }
-  // 順序の制約(§0.a-0.11)は押した瞬間に見る。再計算まで待たせない(NFR-UX-5)。
+  // 順序の制約は押した瞬間に見る。再計算まで待たせない(NFR-UX-5)。
   const rejection = projectionSourcesRejection(store.document, store.sketch.id, sources);
   if (rejection !== null) {
     store.setEditError(rejection);
@@ -532,7 +532,7 @@ export function applyProjectionCommit(
 }
 
 /**
- * 角の丸め・面取り(FR-323、タスク23)の確定。
+ * 角の丸め・面取り(FR-323)の確定。
  *
  * 他の整形系と 2 つだけ違う。①**道具を選んだまま残す**(続けて別の角を指せる。
  * 利用者の決定「続けて別の角も。Esc で終了」)。②丸めた 2 本を境界に使っている面が

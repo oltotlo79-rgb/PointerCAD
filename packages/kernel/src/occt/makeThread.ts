@@ -1,20 +1,20 @@
 /**
- * ねじ穴(FR-406、計画書 P3 §2.4、タスク9)と、おねじ(FR-423、計画書 P5 §0.a-0.40、
- * タスク40)。
+ * ねじ穴(FR-406)と、
+ * おねじ(FR-423)。
  *
  * **めねじとおねじが共用するのは、らせんと三角形の断面から溝を作る `makeThreadGroove`**
  * である(同じ規則を 2 か所に書かない)。違いは「材料の表面より外へ削るか内へ削るか」
  * だけで、それは `ThreadGrooveSpec` の `wallRadius` と `apexRadius` の大小で表す。
  *
- * 下穴(めねじ内径 D1)は穴(タスク6)とまったく同じ手順で掘り、
- * `spec.thread` が入っているときだけ**実らせんの溝**を切る(§0.a-0.16)。
+ * 下穴(めねじ内径 D1)は穴とまったく同じ手順で掘り、
+ * `spec.thread` が入っているときだけ**実らせんの溝**を切る。
  * 既定は簡略表示で、そのときは B-rep に触れず `ThreadMarkInfo` を返すだけなので
- * 再計算の費用が下穴 1 本ぶんしかかからない(§0.a-0.15)。
+ * 再計算の費用が下穴 1 本ぶんしかかからない。
  *
- * **実らせんの所要(2026-09-04 に Node で実測。§1.4-⑥):**
+ * **実らせんの所要(2026-09-04 に Node で実測):**
  * M6×1・深さ 10mm(10 巻き)で、掃引そのものは 30〜170ms と安いが、
  * **溝を材料から差し引くブーリアンに 1.5〜1.9 秒かかり、NFR-PF-2(単一フィーチャー
- * 500ms)を超える。** 打ち切るか P5 へ送るかは統括の判断を待つ(§0.a-0.16)ので、
+ * 500ms)を超える。** この時間の扱いは未決なので、
  * ここでは動く形で実装したうえで実測値を報告してある。簡略表示(既定)は 30ms 前後。
  *
  * **工具の組み立て方(2026-09-04 実測に基づく重要な決め):**
@@ -91,7 +91,7 @@ const NOTHING_REMOVED_MESSAGE =
 /** おねじの除去体積の下限(mm³)。ねじ穴は hasHoleMaterialRemoval で微小切削も調べる。 */
 const MIN_REMOVED_VOLUME_MM3 = 1e-9;
 
-/** おねじの面が選び直せなかったとき(FR-504、§2.2.5)。 */
+/** おねじの面が選び直せなかったとき(FR-504)。 */
 const MISSING_SHAFT_FACE_MESSAGE =
   'おねじを作るもとの面が見つかりません。形が大きく変わったため、選び直してください。';
 
@@ -116,11 +116,11 @@ const SHAFT_NOTHING_REMOVED_MESSAGE =
 
 /**
  * おねじの山の高さ h3 が、ピッチの何倍か。**`h3 = (17/24)·H`、`H = (√3/2)·P`**
- * (基本山形、ISO 68-1。§0.a-0.13 がめねじで使っている表と同じ出どころ)。
+ * (基本山形、ISO 68-1。めねじで使っている表と同じ出どころ)。
  * 谷の径は `d3 = d − 2·h3 = d − 1.2268693…·P` になる。
  *
- * **ピッチから出すのは、`ThreadShaftInput` が谷の径を持たないためである**
- * (計画書 タスク40 の実装内容)。呼び径と系列から谷の径を引くのは model の表の役目だが、
+ * **ピッチから出すのは、`ThreadShaftInput` が谷の径を持たないためである。**
+ * 呼び径と系列から谷の径を引くのは model の表の役目だが、
  * おねじでは「軸の実寸(円柱面の指紋から測った半径)から山の高さぶんだけ削る」ほうが
  * 形として正しい(呼び径と軸の実寸が少しずれていても、山の頂が必ず軸の外周に乗る)。
  */
@@ -141,7 +141,7 @@ const PROFILE_BASE_RATIO = 0.75;
  * 溝の断面を、下穴の壁より内側へどれだけ食い込ませるか(山の高さに対する割合)。
  *
  * 断面の底辺を下穴の円筒面にぴったり合わせると、工具どうしが面で接する形になり、
- * OCCT のブーリアンが最も苦手とする配置になる(貫通穴の margin と同じ理屈、§0.a-0.12)。
+ * OCCT のブーリアンが最も苦手とする配置になる(貫通穴の margin と同じ理屈)。
  * 2026-09-04 の実測でも、食い込ませない(0)ほうが 3 倍以上遅かった
  * (10 巻きで和が 5.4 秒 対 1.5 秒)。食い込ませたぶんは下穴の中の空所なので、
  * 出来上がる形は変わらない。
@@ -149,7 +149,7 @@ const PROFILE_BASE_RATIO = 0.75;
 const PROFILE_INSET_RATIO = 0.25;
 
 /**
- * 溝(ねじ山を削り取る形)1 本の指定。**めねじとおねじが同じ形で使う**(§0.a-0.40)。
+ * 溝(ねじ山を削り取る形)1 本の指定。**めねじとおねじが同じ形で使う**。
  *
  * めねじ(ねじ穴)は「下穴の壁より外側(材料の奥)へ」、おねじ(軸)は
  * 「軸の外周より内側(材料の奥)へ」削るという違いだけなので、
@@ -170,13 +170,13 @@ interface ThreadGrooveSpec {
   readonly apexRadius: number;
 }
 
-/** 掃引路(らせん)の半径。材料の表面と山の頂点の中間(§2.4.2 の手順 12)。 */
+/** 掃引路(らせん)の半径。材料の表面と山の頂点の中間。 */
 function grooveSweepRadius(wallRadius: number, apexRadius: number): number {
   return (wallRadius + apexRadius) / 2;
 }
 
 /**
- * 掃引路(らせん)の半径を径で受ける版(めねじ。§2.4.2 の手順 12)。
+ * 掃引路(らせん)の半径を径で受ける版(めねじ)。
  * 規則そのものは `grooveSweepRadius` に 1 つだけ置く。
  */
 export function threadSweepRadius(majorDiameter: number, drillDiameter: number): number {
@@ -263,7 +263,7 @@ function makeThreadProfile(
  * ねじ 1 本ぶんの実らせん(掃引した溝)。**めねじ・おねじが共用する本体**で、
  * 値の門番はそれぞれの入口(`makeThreadCut` / `makeThreadShaft`)が済ませてある。
  *
- * **巻き方向は常に右**である(JIS のメートルねじは右ねじ。左ねじは P5 以降)。
+ * **巻き方向は常に右**である(JIS のメートルねじは右ねじ。左ねじは未対応)。
  * 軸の向きを反転して同じ「右」で作ると、同じ 1 本のらせんを逆の端からたどった形になる
  * ので、おねじの `fromEnd: 'last'` でも右ねじのままになる。
  *
@@ -288,7 +288,7 @@ function makeThreadGroove(oc: OpenCascadeInstance, spec: ThreadGrooveSpec): Occt
     const profile = makeThreadProfile(oc, spec, keep);
 
     const pipe = keep(new oc.BRepOffsetAPI_MakePipeShell(spine));
-    // 掃引の向きは「軸を副法線に固定」(§2.4.2 の手順 15)。断面はすでに軸を含む面の上に
+    // 掃引の向きは「軸を副法線に固定」。断面はすでに軸を含む面の上に
     // 正しく置いてあるので、Add_1 の補正(第 3 引数)は行わない。
     // 2026-09-04 実測: SetMode_1(Frenet)でも溝の体積は同じ(40.6340mm³)だったが、
     // ねじは軸まわりの形なので意味の読める SetMode_3 を採る。
@@ -298,11 +298,11 @@ function makeThreadGroove(oc: OpenCascadeInstance, spec: ThreadGrooveSpec): Occt
       throw new Error(SWEEP_FAILED_MESSAGE);
     }
     pipe.Build(keep(new oc.Message_ProgressRange_1()));
-    // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ(docs/報告記録.md 2026-09-03 06:56 の⑤)。
+    // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ。
     if (!pipe.IsDone()) {
       throw new Error(SWEEP_FAILED_MESSAGE);
     }
-    // 2026-09-04 実測(§1.4-⑤): 掃引した殻は閉じており MakeSolid() は true を返し、
+    // 2026-09-04 実測: 掃引した殻は閉じており MakeSolid() は true を返し、
     // Shape() は SOLID になった。false になったときのために殻を包む道は残しておく。
     if (!pipe.MakeSolid()) {
       const shell = keep(oc.TopoDS.Shell_1(keep(pipe.Shape())));
@@ -344,7 +344,7 @@ export function makeThreadCut(
   });
 }
 
-/** ねじの印(簡略表示、§0.a-0.15)。B-rep には触らず、描くための情報だけを返す。 */
+/** ねじの印(簡略表示)。B-rep には触らず、描くための情報だけを返す。 */
 function buildMarks(
   spec: ThreadStepSpec,
   origins: readonly Vec3Tuple[],
@@ -414,7 +414,7 @@ function buildThreadCuts(
 
 /**
  * ねじの切り始め。入口(ざぐり・皿もみ、FR-422)があれば、**その底からねじ山が始まる**
- * ように、面へ投影した中心を掘り進む向きへ入口の深さだけ下げる(タスク42c)。
+ * ように、面へ投影した中心を掘り進む向きへ入口の深さだけ下げる。
  *
  * **削れる量は「入口が無いときと同じ量 + 入口の削れ量」になる。** 切り始めより上へ
  * はみ出す溝の断面(ピッチの 3/8 ぶん)は、入口が無ければ材料の外(面より上)に、
@@ -442,7 +442,7 @@ function threadOrigins(frame: HoleFrame, spec: ThreadStepSpec): readonly Vec3Tup
 }
 
 /**
- * 位置ごとの掘る向き。円筒の側面のねじ穴(EX05)では `resolveHoleFrame` が位置ごとの向き(`frame.directions`)を
+ * 位置ごとの掘る向き。円筒の側面のねじ穴では `resolveHoleFrame` が位置ごとの向き(`frame.directions`)を
  * 返すので、溝・切り始め・印はそれを使う(`makeHoleTools` の下穴と同じ向き)。平面のねじ穴では全て `frame.direction`
  * (今までと同じ値)。並びが食い違えば作らない(取り違えた向きでねじを切らない)。
  */
@@ -468,10 +468,10 @@ function directionAt(directions: readonly Vec3Tuple[], index: number): Vec3Tuple
  * `faces` は `target` から作った面の一覧で、別の形から作った一覧を渡すと
  * 「面が見つからない」で断る(`resolveHoleFrame` が判定する)。
  *
- * **実らせんを切るかどうかは `spec.representation` ではなく `spec.thread !== null` で決める**
- * (計画書 タスク9 手順5)。表示の選択を model が形の依頼へ畳んで渡すためである。
+ * **実らせんを切るかどうかは `spec.representation` ではなく `spec.thread !== null` で決める。**
+ * 表示の選択を model が形の依頼へ畳んで渡すためである。
  *
- * **入口の形(`spec.entry`、FR-422)は穴とまったく同じ道を通る**(タスク42c)。
+ * **入口の形(`spec.entry`、FR-422)は穴とまったく同じ道を通る**。
  * ざぐりの円柱・皿もみの円錐を下穴と和でまとめるのは `makeHoleTools` の仕事なので、
  * ここは受け取った欄をそのまま渡すだけで、同じ規則を 2 か所に書かない。
  */
@@ -581,7 +581,7 @@ export function makeThreadHole(
     if (!hasHoleMaterialRemoval(oc, target, result.shape, removed)) {
       throw new Error(NOTHING_REMOVED_MESSAGE);
     }
-    // 印は入口があっても変わらない(簡略表示の印は面の口から測る。§0.a-0.15)ので、
+    // 印は入口があっても変わらない(簡略表示の印は面の口から測る)ので、
     // 下げる前の `frame.origins` を渡す。
     return { handle: result, marks: buildMarks(spec, frame.origins, holeDirections(frame), placements) };
   } catch (error) {
@@ -614,10 +614,10 @@ function toJapaneseFailure<T extends OcctShapeHandle>(
 }
 
 /**
- * おねじ 1 段の依頼(FR-423、計画書 タスク40 の実装内容)。
+ * おねじ 1 段の依頼(FR-423)。
  *
- * 深さ・貫通の概念は無く、**円柱面の指紋 1 つ**と「軸のどちらの端から」「長さ」で決まる
- * (§0.a-0.40)。呼び径とピッチは model が規格データ(`metricThread.ts`)から引いて渡す。
+ * 深さ・貫通の概念は無く、**円柱面の指紋 1 つ**と「軸のどちらの端から」「長さ」で決まる。
+ * 呼び径とピッチは model が規格データ(`metricThread.ts`)から引いて渡す。
  */
 export interface ThreadShaftInput {
   /** ねじを切る円柱面の指紋。平面など円柱でない面は断る。 */
@@ -639,7 +639,7 @@ interface ShaftAxis {
   readonly start: Vec3Tuple;
   /** 切り進む向き(単位ベクトル)。もう一方の端へ向かう。 */
   readonly direction: Vec3Tuple;
-  /** 軸の半径(mm)。**利用者に入れさせず、面から測る**(§0.a-0.40、NFR-UX-4)。 */
+  /** 軸の半径(mm)。**利用者に入れさせず、面から測る**(NFR-UX-4)。 */
   readonly radius: number;
 }
 
@@ -662,7 +662,7 @@ function checkShaftInput(input: ThreadShaftInput): void {
 }
 
 /**
- * 円柱面を指紋で選び直し、軸・半径・端を読む(計画書 タスク40 の手順 4)。
+ * 円柱面を指紋で選び直し、軸・半径・端を読む。
  *
  * 半径と軸は `BRepAdaptor_Surface_2(face).Cylinder()` から取る。**面の向き
  * (Orientation)による符号の反転はしない。** 指紋の `axis`(`subShapes.ts` が
@@ -683,7 +683,7 @@ function readShaftAxis(
     // 利用者に見せるのは「面が見つからない」で足りる(直し方は同じ = 面を選び直す)。
     throw new Error(MISSING_SHAFT_FACE_MESSAGE);
   }
-  // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する(§2.2.3)。
+  // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する。
   const match = resolveFaceReference(tables.faces, query, boundingDiagonal(oc, target) * 0.5, tables.origins);
   if (match.status !== 'matched') {
     throw new Error(MISSING_SHAFT_FACE_MESSAGE);
@@ -755,7 +755,7 @@ function readShaftAxis(
 }
 
 /**
- * 形を作り変えずに handle だけを新しくする(簡略表示のとき、§0.a-0.15)。
+ * 形を作り変えずに handle だけを新しくする(簡略表示のとき)。
  *
  * 恒等の配置で「同じ実体を指す別の `TopoDS_Shape`」を作る。**B-rep は 1 つも作り直さない。**
  * 2026-09-05 に Node で実測したところ、面と辺と頂点が 34 個の板で 0ms、`IsSame()` が真、
@@ -781,10 +781,10 @@ function copyShapeHandle(oc: OpenCascadeInstance, shape: TopoDS_Shape): OcctShap
  * `tables` は `target` から作った一覧で、別の形から作った一覧を渡すと
  * 「面が見つからない」で断る。
  *
- * **簡略表示(`modeled: false`)では B-rep に触れない**(§0.a-0.15)。印だけを返し、
+ * **簡略表示(`modeled: false`)では B-rep に触れない**。印だけを返し、
  * 形はもとのまま渡すので、再計算の費用はほぼ 0 になる。
  *
- * **実らせん(`modeled: true`)は、軸の外周から山ぶんを削り取る**(§0.a-0.40)。
+ * **実らせん(`modeled: true`)は、軸の外周から山ぶんを削り取る**。
  * めねじとの違いは山の頂点が軸の内側にあることだけで、掃引そのものは
  * `makeThreadGroove` を共用する。山の高さはピッチから出す(`EXTERNAL_CREST_RATIO`)。
  */

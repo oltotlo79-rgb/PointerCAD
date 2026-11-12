@@ -1,7 +1,7 @@
 /**
  * スケッチの畳んだ一覧(「作図」「編集」「拘束」)の中身(FR-313〜318、FR-326)。
  *
- * 分け方の決定は P6 タスク52(一覧ごとに 1 ファイル)。
+ * 一覧ごとに 1 ファイルへ分けてある。
  */
 
 import type { SketchConstraintKind } from '@pointercad/model';
@@ -106,11 +106,11 @@ export const SHAPE_MENU_ITEMS: readonly ToolMenuItem<ShapeToolId | 'text' | 'fun
 /**
  * 「編集」の一覧(FR-321〜324)。オフセット・トリム・延長。
  *
- * **タスク23・24 への申し送り**: スケッチのフィレット・スケッチの面取り・ミラー・複写・
+ * **道具の足し方**: スケッチのフィレット・スケッチの面取り・ミラー・複写・
  * 配列複写は、この表へ `{ id, labelKey, tooltipKey, Icon }` の 1 行を足すだけで一覧に並ぶ。
  * 押せる条件は `editCommands.ts` の `editToolReadiness` が道具 id で振り分けているので、
- * 「選んでから操作」でない道具を足すときはそちらへ 1 行足す(タスク22 でトリム・延長の
- * ぶんを足した)。一覧の項目が増えてもツールバーの幅は変わらない
+ * 「選んでから操作」でない道具を足すときはそちらへ 1 行足す(トリム・延長の
+ * ぶんがその例)。一覧の項目が増えてもツールバーの幅は変わらない
  * (`segmentedWidthPixels` の注釈)。
  */
 export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
@@ -132,7 +132,7 @@ export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
     tooltipKey: 'toolbar.tool.extendTooltip',
     Icon: ExtendToolIcon,
   },
-  // 角を指して使う 2 つ(タスク23)。整形系なので複製系より前へ置く。
+  // 角を指して使う 2 つ。整形系なので複製系より前へ置く。
   {
     id: 'sketchFillet',
     labelKey: 'toolbar.tool.sketchFillet',
@@ -170,7 +170,7 @@ export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
     Icon: CircularArrayToolIcon,
   },
   /*
-    投影・断面(FR-325、タスク27)。かいた線をいじる道具ではなく「立体からかたちを
+    投影・断面(FR-325)。かいた線をいじる道具ではなく「立体からかたちを
     取り込む」道具なので、一覧の最後にまとめて並べる。押す相手がスケッチではなく立体
     なので、押せる条件(`editToolReadiness`)は常に押せる側へ振り分けてある。
   */
@@ -189,9 +189,9 @@ export const EDIT_MENU_ITEMS: readonly ToolMenuItem<EditMenuToolId>[] = [
 ];
 
 /**
- * 「拘束」の一覧(FR-313、P4b タスク13)。幾何拘束と固定の12種 → 寸法拘束6種の18種を並べる。
+ * 「拘束」の一覧(FR-313)。幾何拘束と固定の12種 → 寸法拘束6種の18種を並べる。
  *
- * **区画は増やさず、畳んだ一覧を 1 つ足すだけ**にする(統括の決定 2026-09-05)。
+ * **区画は増やさず、畳んだ一覧を 1 つ足すだけ**にする。
  * 溝の幅は畳んだボタン 1 つぶん(31 画素)しか増えず、一覧の中に18種を入れても
  * ツールバーの高さは 1 段(68.5 画素)のまま(`segmentedWidthPixels` の注釈)。
  *

@@ -1,4 +1,4 @@
-/** P10: 板金の履歴に保存する入力。解決済みの形状・展開座標は含めない。 */
+/** 板金の履歴に保存する入力。解決済みの形状・展開座標は含めない。 */
 import type { ExpressionValue } from '@pointercad/expression';
 import type { SketchFaceRef, SketchLineRef } from '../part/featureReferences.js';
 import type { SolidFeatureBase } from '../part/featureIdentity.js';

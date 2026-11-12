@@ -1,15 +1,15 @@
 import type { ResolvedPointWithIdentity } from './resolveReferences.js';
 import type { FaceOrigin, HoleCenterAnchor, HolePlacementRole } from '../geometry/subShapeOrigin.js';
 /**
- * ソリッド履歴の解決と消費の判定(計画書 docs/plans/P2-ソリッド基礎.md タスク11、§2.2、§2.5)。
+ * ソリッド履歴の解決と消費の判定。
  *
  * 部品文書(保存する形)を、カーネルへ渡せる「1段ずつの作り方」(SolidStepPlan)へ直す。
  * ここで済ませるのは model 側で計算できることだけ:
- *   - 断面の座標の解決(P1 の resolveSketch)
- *   - 押し出しの向き・反転・両側の平行移動(§0.a-0.8。OCCT の gp_Trsf を使わない)
- *   - 回転軸の解決と角度の度→ラジアン(§0.a-0.9)
- *   - ボディの消費の判定(§0.a-0.5、§2.2)
- *   - 形状キャッシュの鍵(§0.a-0.20。part/cacheKey.ts へ材料を渡す)
+ *   - 断面の座標の解決(resolveSketch)
+ *   - 押し出しの向き・反転・両側の平行移動(OCCT の gp_Trsf を使わない)
+ *   - 回転軸の解決と角度の度→ラジアン
+ *   - ボディの消費の判定
+ *   - 形状キャッシュの鍵(part/cacheKey.ts へ材料を渡す)
  *
  * **例外を投げない。** 解決できない段はボディを作らず、理由を errors へ入れて次の段へ進む
  * (FR-504、NFR-RE-1「止めずに警告する」)。失敗した段のボディは下流から見えないので、
@@ -18,19 +18,19 @@ import type { FaceOrigin, HoleCenterAnchor, HolePlacementRole } from '../geometr
  * 解決結果は保存しない(rules/04-設計の規律.md「導出できるものは保存しない」)。
  * 型を part/types.ts ではなくこのファイルへ置くのは、part/types.ts が「保存する形」だけを
  * 集めた場所であり、解決結果(導出物)を混ぜると保存対象の見分けがつかなくなるため。
- * 鍵の材料の型を cacheKey.ts が自分で持つのと同じ方針(docs/報告記録.md 2026-09-03 07:35 の④)。
+ * 鍵の材料の型を cacheKey.ts が自分で持つのと同じ方針。
  *
- * P3(docs/plans/P3-加工フィーチャー.md タスク15)で穴(FR-405)とねじ穴(FR-406)を足した。
+ * 穴(FR-405)とねじ穴(FR-406)を足した。
  * ここで済ませるのは model 側で計算できることだけで、次の3つは**カーネルの責務**である
- * (model は面の指紋しか持たず、面の平面も境界箱も知らないため。§2.4.2):
- *   - 面の指紋からの選び直し(見つからなければカーネルが断り、タスク17 が missingSubShape に詰める)
+ * (model は面の指紋しか持たず、面の平面も境界箱も知らないため):
+ *   - 面の指紋からの選び直し(見つからなければカーネルが断り、橋渡しが missingSubShape に詰める)
  *   - 中心点の面への投影と、掘る向き(面の法線と傾き角・方位角から作る)
- *   - 貫通穴の長さ(対象の境界箱の対角長から決める、§0.a-0.12)
+ *   - 貫通穴の長さ(対象の境界箱の対角長から決める)
  *
- * P3(タスク15b)でばね(FR-414、§2.7b)を足した。ばねは面でなく軸(RevolveAxis)を持つので、
+ * ばね(FR-414)を足した。ばねは面でなく軸(RevolveAxis)を持つので、
  * 穴と違い掘る向きの計算(`resolveTiltedDirection`)まで model 側で完結する
  * (カーネルへは傾きを適用した後の向きベクトルをそのまま渡す)。全長・ピッチ・巻数のうち
- * `derived` が指す欄は保存値を無視して他の2つから計算し直す(`resolveSpringLength`、§0.a-0.30)。
+ * `derived` が指す欄は保存値を無視して他の2つから計算し直す(`resolveSpringLength`)。
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
@@ -185,11 +185,11 @@ import type { FunctionPointResolver as TypeFunctionPointResolver } from '../func
 
 
 /**
- * 工具全体にかける剛体変換(パターン、FR-411 / FR-412、§0.a-0.20)。
+ * 工具全体にかける剛体変換(パターン、FR-411 / FR-412)。
  * kernel の `RigidTransformSpec` と同じ形だが別の型にして、kernelBridge が詰め替える
  * (NFR-MA-1)。回転角はラジアン(度からの換算は model の責務)。
  *
- * P3 タスク15 の穴・ねじ穴では**必ず空配列**を渡す。並べるのはパターン(タスク16)だけで、
+ * 穴・ねじ穴では**必ず空配列**を渡す。並べるのはパターンだけで、
  * 「空」と「恒等変換を1つ」は鍵の文字列が違う(cacheKey.ts の `HoleKeyMaterial` の注釈)ため、
  * パターンでない穴は必ず空に揃える。
  */
@@ -204,22 +204,22 @@ export interface RigidTransform {
 /**
  * 段が指す部分形状(面・辺・頂点)の指紋。
  *
- * 計画書 §タスク15 は `SubShapeFingerprint & { index: number }`(kernel の `SubShapeQuery` と
+ * 当初の案は `SubShapeFingerprint & { index: number }`(kernel の `SubShapeQuery` と
  * 同じ平らな形)としていたが、**保存形の `SubShapeRef` をそのまま持ち回る**形にした。理由は2つ:
  *   - 鍵の材料に混ぜる文字列は `subShapeRef.ts` の `fingerprintKeyText(ref)` が作り、
  *     これが `bodyFeatureId` を必要とする。平らに崩すと鍵を作れない。
  *   - 崩して詰め直すには指紋の種類ごとの分岐を2か所(ここと kernelBridge)に書くことになる。
- * 平らな `SubShapeQuery` へ崩すのは kernelBridge(タスク17)の1か所だけにする。
+ * 平らな `SubShapeQuery` へ崩すのは kernelBridgeの1か所だけにする。
  */
 export type SubShapeQueryPlan = SubShapeRef;
 
 /**
- * 罫線面・ロフト(FR-430、FR-410、P5 §2.9)の断面 1 つの解決結果。
+ * 罫線面・ロフト(FR-430、FR-410)の断面 1 つの解決結果。
  *
  * 種類は kernel の `ThruSectionSpec` と同じ意味で並べる(詰め替えは `kernelBridge.ts`)。
  * スケッチの面は輪郭の座標まで解けるが、**立体の面は指紋のまま段へ乗せる**
- * (輪郭を取り出せるのはカーネルだけ。穴の面とまったく同じ扱い、§2.2)。
- * 球は縁を持たないので中心と半径で渡す(§2.9.3)。
+ * (輪郭を取り出せるのはカーネルだけ。穴の面とまったく同じ扱い)。
+ * 球は縁を持たないので中心と半径で渡す。
  */
 export type ThruSectionPlan =
   | { readonly kind: 'curves'; readonly curves: readonly ResolvedCurve[] }
@@ -227,7 +227,7 @@ export type ThruSectionPlan =
   | {
       readonly kind: 'faceQuery';
       /**
-       * 面を持つ立体の段の鍵。**この段はその立体を消費しない**(§0.a-0.27)ので、
+       * 面を持つ立体の段の鍵。**この段はその立体を消費しない**ので、
        * 加工フィーチャーの `targetKey` と違い `consumedTargetsOf` には現れない。
        * 鍵に混ぜるのは、上流が変われば輪郭も変わるようにするためだけである(NFR-PF-3)。
        */
@@ -237,14 +237,14 @@ export type ThruSectionPlan =
     };
 
 /**
- * 押し出しの終端(FR-415、P5 §2.11、タスク45)を解決した結果。
+ * 押し出しの終端(FR-415)を解決した結果。
  *
  * 4 種と欄名は kernel の `ExtrudeEndSpec`(`occt/makeSolidSweep.ts`)と同じで、距離は mm。
- * **`toFace`(選んだ面まで)の距離は model が計算して数値で渡す**(§0.a-0.33)ので、
+ * **`toFace`(選んだ面まで)の距離は model が計算して数値で渡す**ので、
  * カーネルから見ると `distance` と同じ扱いになる。`toNext`(次の面まで)だけは相手の形が
  * 要るので、段の `targetKey` と組で使う。
  *
- * **`distance` と `symmetric` の段は P2 のまま**(`SolidStepPlan.extrude` の注釈)なので、
+ * **`distance` と `symmetric` の段は従来のまま**(`SolidStepPlan.extrude` の注釈)なので、
  * ここへ現れるのは `toFace` と `toNext` だけである。4 種を書いてあるのは、カーネルの型と
  * 1 対 1 に保って詰め替えを分岐なしにするためと、鍵の材料(`ExtrudeEndKeyMaterial`)が
  * 同じ 4 種を持つためである。
@@ -254,10 +254,10 @@ export type ExtrudeEndPlan =
   | { readonly kind: 'symmetric'; readonly forward: number; readonly backward: number }
   | { readonly kind: 'toFace'; readonly distance: number }
   | { readonly kind: 'toNext' }
-  /** EX04 の輪郭による貫通切断。`toNext` と同じく段の `targetKey` と組で使う(対象は名指し)。 */
+  /** 輪郭による貫通切断。`toNext` と同じく段の `targetKey` と組で使う(対象は名指し)。 */
   | { readonly kind: 'throughTarget' };
 
-/** 薄板押し出し(FR-416、§0.a-0.46)。kernel の `ThinExtrudeSpec` と同じ欄名。 */
+/** 薄板押し出し(FR-416)。kernel の `ThinExtrudeSpec` と同じ欄名。 */
 export interface ThinExtrudePlan {
   /** 壁の厚み(mm)。0 より大きい。 */
   readonly thickness: number;
@@ -265,12 +265,12 @@ export interface ThinExtrudePlan {
 }
 
 /**
- * 穴・ねじ穴の入口の形(ざぐり・皿もみ。FR-422、P5 §0.a-0.39、タスク46)を解決した結果。
+ * 穴・ねじ穴の入口の形(ざぐり・皿もみ。FR-422)を解決した結果。
  *
  * 3 種と欄名は kernel の `HoleEntrySpec`(`occt/makeHole.ts`)と同じで、**皿もみの角度は
  * ラジアン**(文書は度で持ち、換算はここが行う。`HoleEntry` の注釈)。
  * **皿もみの円錐の深さは持たない**——頭径・穴の径・角度からカーネルが導くためである
- * (導出できるものは渡さない。統括の決定 2026-09-05 17:37)。
+ * (導出できるものは渡さない)。
  *
  * `plain`(広げない)の段は**この欄そのものを省く**ので、入口を指定していない穴と
  * 「広げない」を明示した穴は段も鍵も 1 ドット違わない(押し出しの終端と同じ決め)。
@@ -287,7 +287,7 @@ export type HoleEntryPlan =
 }
 
 /**
- * 円筒の側面の穴の位置(EX05)を解決した結果。kernel の `CylindricalHoleSpec` と同じ形なので
+ * 円筒の側面の穴の位置を解決した結果。kernel の `CylindricalHoleSpec` と同じ形なので
  * `kernelBridge` はそのまま渡せる。高さは mm、角度は**ラジアン**(度からの換算は model の責務)。
  * **平面の穴では段にこの欄を載せない**(省略と今までの段を同じ鍵にする)。
  */
@@ -297,7 +297,7 @@ export interface CylindricalHolePlan {
 }
 
 /**
- * 丸める半径(FR-407、可変半径は FR-426、§0.a-0.48)を解決した結果。
+ * 丸める半径(FR-407、可変半径は FR-426)を解決した結果。
  *
  * kernel の `FilletRadiusSpec` と同じ形(`number | { start; end }`)にしてあるので、
  * `kernelBridge` はそのまま渡せる。`start` は辺の始点側、`end` は終点側の半径(mm)。
@@ -305,12 +305,12 @@ export interface CylindricalHolePlan {
 export type FilletRadiusPlan = number | { readonly start: number; readonly end: number };
 
 /**
- * 曲面の作り方(FR-428、§0.a-0.45)を解決した結果。6 種。
+ * 曲面の作り方(FR-428)を解決した結果。6 種。
  *
  * 種類と欄名は kernel の `SurfaceInput`(`occt/makeSurface.ts`)に揃えてあるので、
  * `kernelBridge` は曲線と指紋を詰め替えるだけで渡せる。角度はラジアン、距離は mm。
  * **`face` と `offset` だけが立体の面を材料にする**が、どちらも借りるだけで消費しない
- * (罫線面の `faceQuery`・基本形状の頂点と同じ扱い、§0.a-0.27)。
+ * (罫線面の `faceQuery`・基本形状の頂点と同じ扱い)。
  */
 export type SurfaceShapePlan =
   | {
@@ -359,13 +359,13 @@ export type SurfaceCutBladePlan =
 
 /**
  * model 側の「1段の作り方」。kernel の SolidStepSpec とは別の型にして、
- * kernelBridge(タスク12)が詰め替える(NFR-MA-1。model は kernel の型を再輸出しない)。
+ * kernelBridgeが詰め替える(NFR-MA-1。model は kernel の型を再輸出しない)。
  * 向き・反転・両側の平行移動はここまでで済ませてあり、kernel へは断面・向き・長さだけが渡る。
  */
 export type SolidStepPlan =
   | TypeFunctionSurfacePlan
   | SheetSolidPlan
-  // 平らな面の移動(EX-18 の限られた一段)。形は directFaceEdit.ts が持つ。**対象を消費する。**
+  // 平らな面の移動(限られた一段)。形は directFaceEdit.ts が持つ。**対象を消費する。**
   | FaceOffsetPlan
   | HoleTranslatePlan
   | FaceRotatePlan
@@ -384,17 +384,17 @@ export type SolidStepPlan =
        */
       readonly distance: number;
       /**
-       * どこまで押し出すか(FR-415、P5 タスク45)。**省略は「距離ぶんを片側へ」と同じ。**
+       * どこまで押し出すか(FR-415)。**省略は「距離ぶんを片側へ」と同じ。**
        *
        * **両側(`symmetric`)でも省略する。** 断面を距離の半分だけ逆向きへ動かすのは
-       * P2 からの model の役目(§0.a-0.8)で、`profile` にその平行移動が入っている。
+       * 以前からの model の役目で、`profile` にその平行移動が入っている。
        * ここへ kernel の `symmetric`(前後の長さ)を重ねて渡すと、カーネルがもう一度
        * 同じぶんだけずらしてしまう。したがって現れるのは `toFace` と `toNext` だけ。
        */
       readonly end?: ExtrudeEndPlan;
       /**
        * 側面の傾き(**ラジアン**、FR-401)。大きさだけを持ち、向きは `taperOutward`。
-       * 省略・0 は「傾けない」(P2 からの押し出しと同じ形)。
+       * 省略・0 は「傾けない」(従来の押し出しと同じ形)。
        */
       readonly taperAngle?: number;
       /** true で押し出すほど外へ広がり、false(既定)で内へ絞る。 */
@@ -443,26 +443,26 @@ export type SolidStepPlan =
       readonly pointPlacementReferences?: readonly { readonly slotId: string; readonly reference: PointReference }[];
       readonly centerAnchors?: readonly HoleCenterAnchor[];
       readonly placementRoles?: readonly HolePlacementRole[];
-      /** 穴をあける対象のボディの鍵。この段が消費する(§0.a-0.5)。 */
+      /** 穴をあける対象のボディの鍵。この段が消費する。 */
       readonly targetKey: string;
-      /** 穴をあける面。カーネルが指紋で選び直し、平面と法線を取り出す(§2.2)。 */
+      /** 穴をあける面。カーネルが指紋で選び直し、平面と法線を取り出す。 */
       readonly face: SubShapeQueryPlan;
       /** 面へ投影する前の中心点(mm)。投影はカーネルが行う。利用者が選んだ順のまま並べる。 */
       readonly centers: readonly Vec3[];
       readonly diameter: number;
-      /** 貫通なら null(長さはカーネルが境界箱から決める、§0.a-0.12)。止まり穴なら深さ(mm)。 */
+      /** 貫通なら null(長さはカーネルが境界箱から決める)。止まり穴なら深さ(mm)。 */
       readonly depth: number | null;
       /** 面の法線からの傾き(ラジアン)。0 以上 π/2 未満。 */
       readonly tiltAngle: number;
-      /** 傾ける向き(面内の方位角、ラジアン)。基準は面の第1軸(§0.a-0.10)。 */
+      /** 傾ける向き(面内の方位角、ラジアン)。基準は面の第1軸。 */
       readonly tiltAzimuth: number;
       readonly transforms: readonly RigidTransform[];
       /**
-       * 入口の形(ざぐり・皿もみ。FR-422、タスク46)。**広げないときは省く**
+       * 入口の形(ざぐり・皿もみ。FR-422)。**広げないときは省く**
        * (`HoleEntryPlan` の注釈。省略と「広げない」を同じ段・同じ鍵にするため)。
        */
       readonly entry?: HoleEntryPlan;
-      /** 円筒の側面の穴(EX05)。**平面の穴では省く**(`CylindricalHolePlan` の注釈)。 */
+      /** 円筒の側面の穴。**平面の穴では省く**(`CylindricalHolePlan` の注釈)。 */
       readonly cylindrical?: CylindricalHolePlan;
       readonly planar?: PlanarHolePlan;
     }
@@ -477,7 +477,7 @@ export type SolidStepPlan =
       readonly targetKey: string;
       readonly face: SubShapeQueryPlan;
       readonly centers: readonly Vec3[];
-      /** 下穴の径(mm)。既定はめねじ内径 D1(§0.a-0.14)。 */
+      /** 下穴の径(mm)。既定はめねじ内径 D1。 */
       readonly drillDiameter: number;
       /**
        * ピッチ(mm)。簡略表示では `thread` が null になり形には効かないが、
@@ -488,7 +488,7 @@ export type SolidStepPlan =
       readonly tiltAngle: number;
       readonly tiltAzimuth: number;
       readonly transforms: readonly RigidTransform[];
-      /** 実らせんを切るときだけ入る。簡略表示のときは null(§0.a-0.15、§0.a-0.16)。 */
+      /** 実らせんを切るときだけ入る。簡略表示のときは null。 */
       readonly thread: {
         readonly majorDiameter: number;
         readonly pitch: number;
@@ -497,15 +497,15 @@ export type SolidStepPlan =
       /**
        * 3D の簡略表示に使うねじの印(B-rep には触らない)。
        * kernel 側は `ThreadMarkSpec | null` だが、**model は簡略表示でも実らせんでも必ず作る**
-       * ので null を取らない(印は実形状のときも出す、§2.4.2)。
+       * ので null を取らない(印は実形状のときも出す)。
        */
       readonly mark: { readonly majorDiameter: number; readonly length: number };
       /**
-       * 入口の形(ざぐり・皿もみ。FR-422、タスク46)。**広げないときは省く**
+       * 入口の形(ざぐり・皿もみ。FR-422)。**広げないときは省く**
        * (`HoleEntryPlan` の注釈と同じ約束。穴の枝と1文字も違わない扱い)。
        */
       readonly entry?: HoleEntryPlan;
-      /** 円筒の側面のねじ穴(EX05)。**平面のねじ穴では省く**(穴の枝の `cylindrical` と同じ)。 */
+      /** 円筒の側面のねじ穴。**平面のねじ穴では省く**(穴の枝の `cylindrical` と同じ)。 */
       readonly cylindrical?: CylindricalHolePlan;
       readonly planar?: PlanarHolePlan;
     }
@@ -513,7 +513,7 @@ export type SolidStepPlan =
       readonly kind: 'spring';
       /** らせんの軸の始点(mm)。 */
       readonly origin: Vec3;
-      /** 軸の向き(単位ベクトル)。傾きを適用した後(§0.a-0.29)。 */
+      /** 軸の向き(単位ベクトル)。傾きを適用した後。 */
       readonly direction: Vec3;
       /** コイルの中心径(mm)。 */
       readonly coilDiameter: number;
@@ -527,19 +527,19 @@ export type SolidStepPlan =
     }
   | {
       readonly kind: 'fillet';
-      /** 丸める対象のボディの鍵。この段が消費する(§0.a-0.5)。 */
+      /** 丸める対象のボディの鍵。この段が消費する。 */
       readonly targetKey: string;
-      /** 丸める辺・頂点の指紋。通し番号の昇順に並べる(鍵を安定させるため、タスク16)。 */
+      /** 丸める辺・頂点の指紋。通し番号の昇順に並べる(鍵を安定させるため)。 */
       readonly targets: readonly SubShapeQueryPlan[];
       /**
        * 丸める半径(mm)。0 より大きい。**可変半径(FR-426)のときは始点と終点の 2 値**
-       * (`FilletRadiusPlan`)。一定半径のときは P3 と同じ数 1 つで、段も鍵も変わらない。
+       * (`FilletRadiusPlan`)。一定半径のときは以前と同じ数 1 つで、段も鍵も変わらない。
        */
       readonly radius: FilletRadiusPlan;
     }
   | {
       readonly kind: 'chamfer';
-      /** 面を取る対象のボディの鍵。この段が消費する(§0.a-0.5)。 */
+      /** 面を取る対象のボディの鍵。この段が消費する。 */
       readonly targetKey: string;
       /** 面を取る辺の指紋。通し番号の昇順に並べる(fillet と同じ理由)。 */
       readonly targets: readonly SubShapeQueryPlan[];
@@ -547,13 +547,13 @@ export type SolidStepPlan =
         | { readonly kind: 'equal'; readonly distance: number }
         | { readonly kind: 'twoDistances'; readonly distance1: number; readonly distance2: number }
         | { readonly kind: 'distanceAngle'; readonly distance: number; readonly angle: number };
-      /** 2距離・距離角度のときの基準面を、辺に接する2面のうち後の方にするか(§0.a-0.18)。 */
+      /** 2距離・距離角度のときの基準面を、辺に接する2面のうち後の方にするか。 */
       readonly swapReferenceFace: boolean;
     }
   | {
       readonly kind: 'primitive';
       /**
-       * 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心(P5 §0.a-0.17)。
+       * 基準点(mm)。球・箱・トーラスは中心、円柱・円錐は底面の中心。
        *
        * **`originQuery` が入っているときは、その頂点からのずれ**(kernel の
        * `PrimitiveStepSpec.origin` と同じ約束)。いまの UI にはずれの欄が無いので、
@@ -579,24 +579,24 @@ export type SolidStepPlan =
           }
         | { readonly kind: 'torus'; readonly majorRadius: number; readonly minorRadius: number };
       /**
-       * 基準点にする「立体の頂点」の指紋(FR-429、§0.a-0.18)。座標の式・スケッチの点なら null。
+       * 基準点にする「立体の頂点」の指紋(FR-429)。座標の式・スケッチの点なら null。
        * **選び直しはカーネルが行う**(model は面・辺・頂点の位置を持たないため、穴の面と同じ扱い)。
        */
       readonly originQuery: SubShapeQueryPlan | null;
       /**
        * `originQuery` の頂点を持つ立体の段の鍵。`originQuery` が null なら null。
-       * **この段はその立体を消費しない**(頂点の座標を読むだけ、§0.a-0.19)ので、
+       * **この段はその立体を消費しない**(頂点の座標を読むだけ)ので、
        * 加工フィーチャーの `targetKey` と違い `consumedTargetsOf` には現れない。
        */
       readonly targetKey: string | null;
     }
   | {
       /**
-       * 輪郭をつないで立体にする段(罫線面 FR-430・ロフト FR-410、P5 §2.9)。
+       * 輪郭をつないで立体にする段(罫線面 FR-430・ロフト FR-410)。
        *
        * **model のフィーチャーは 2 種類(`ruled` / `loft`)だが、段は 1 種類**にまとめる
-       * (§0.a-0.25。カーネルでは `ruled` の真偽しか違わないので、同じものを 2 つ作らない)。
-       * 対象を取らない「作る」段で、輪郭を貸した立体は消費しない(§0.a-0.27)。
+       * (カーネルでは `ruled` の真偽しか違わないので、同じものを 2 つ作らない)。
+       * 対象を取らない「作る」段で、輪郭を貸した立体は消費しない。
        */
       readonly kind: 'thruSections';
       readonly smooth: boolean;
@@ -604,20 +604,20 @@ export type SolidStepPlan =
       readonly sections: readonly ThruSectionPlan[];
       /** true なら直線で結ぶ(罫線面)、false ならなめらかに結ぶ(ロフト)。 */
       readonly ruled: boolean;
-      /** 両端に面を張って閉じた立体にするか。いまは常に true(§0.a-0.25)。 */
+      /** 両端に面を張って閉じた立体にするか。いまは常に true。 */
       readonly closed: boolean;
-      /** ねじれの補正(整数、§0.a-0.28)。小数は解決のときに断ってあるのでここへは来ない。 */
+      /** ねじれの補正(整数)。小数は解決のときに断ってあるのでここへは来ない。 */
       readonly twist: number;
       /**
-       * 球へつなぐときの近似の点の数(§0.a-0.74)。球を含まない段でも
+       * 球へつなぐときの近似の点の数。球を含まない段でも
        * 既定(`DEFAULT_RULED_SPHERE_SEGMENTS`)が入る(段の欄を種類で出し分けないため)。
        */
       readonly sphereSegments: RuledSphereSegments;
     }
   | {
       /**
-       * 抜き勾配(FR-417、P5 §2.11、タスク45)。**対象を消費する。**
-       * 面の選び直しはカーネルが行う(model は指紋を渡すだけ。穴の面と同じ扱い、§2.2)。
+       * 抜き勾配(FR-417)。**対象を消費する。**
+       * 面の選び直しはカーネルが行う(model は指紋を渡すだけ。穴の面と同じ扱い)。
        */
       readonly kind: 'draft';
       readonly targetKey: string;
@@ -631,7 +631,7 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * ミラー(FR-419、§0.a-0.36)。平面に対する鏡像のボディを 1 つ作る。
+       * ミラー(FR-419)。平面に対する鏡像のボディを 1 つ作る。
        * **対象を消費しない**(元と鏡像を後で和でまとめるため)が、`targetKey` は必ず持つ。
        */
       readonly kind: 'mirror';
@@ -643,7 +643,7 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * 移動/回転(FR-424、§0.a-0.41)。**対象を消費する。**
+       * 移動/回転(FR-424)。**対象を消費する。**
        * 欄の意味は `RigidTransform`(パターンの剛体変換)と同じで、回転角はラジアン。
        */
       readonly kind: 'transform';
@@ -656,8 +656,8 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * 拡大縮小(FR-424、§0.a-0.41)。**対象を消費する。**
-       * `uniform` と `perAxis` は**どちらか一方だけ**が入る(解決が正規化する、§2.11)。
+       * 拡大縮小(FR-424)。**対象を消費する。**
+       * `uniform` と `perAxis` は**どちらか一方だけ**が入る(解決が正規化する)。
        */
       readonly kind: 'scale';
       readonly targetKey: string;
@@ -670,7 +670,7 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * スイープ(FR-409、§0.a-0.43、タスク46)。断面を経路に沿って掃く。
+       * スイープ(FR-409)。断面を経路に沿って掃く。
        * **対象を取らない「作る」段**(押し出し・ばね・基本形状と同じ)。
        */
       readonly kind: 'sweep';
@@ -684,7 +684,7 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * リブ(FR-420、§0.a-0.37、タスク46)。開いた輪郭に厚みを付けた壁を足す。
+       * リブ(FR-420)。開いた輪郭に厚みを付けた壁を足す。
        * **対象を消費する。**
        */
       readonly kind: 'rib';
@@ -700,7 +700,7 @@ export type SolidStepPlan =
       /** 伸ばす向き(材料へ向かう向き、単位ベクトル)。輪郭の平面の中にある。 */
       readonly direction: Vec3;
       /**
-       * 材料に届くまで伸ばすか(FR-420、タスク46)。false は伸ばさず輪郭の厚みぶんだけの壁。
+       * 材料に届くまで伸ばすか(FR-420)。false は伸ばさず輪郭の厚みぶんだけの壁。
        * カーネルの段(`RibStepSpec.extendToBody`)と同じ欄名で、鍵にも必ず混ぜる
        * (`cacheKey.ts` の `RibKeyMaterial.extendToBody` の注釈)。
        */
@@ -708,12 +708,12 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * エンボス(FR-421、§0.a-0.38、タスク46)。平らな面へ輪郭を彫る / 浮き出す。
+       * エンボス(FR-421)。平らな面へ輪郭を彫る / 浮き出す。
        * **対象を消費する。**
        */
       readonly kind: 'emboss';
       readonly targetKey: string;
-      /** 相手の面の指紋。平らな面だけ(選び直しはカーネル、§2.2)。 */
+      /** 相手の面の指紋。平らな面だけ(選び直しはカーネル)。 */
       readonly face: SubShapeQueryPlan;
       /** 面の上に置く閉じた輪郭。model のフィーチャーは 1 枚だが、段は列で受ける。 */
       readonly profiles: readonly (readonly ResolvedCurve[])[];
@@ -724,9 +724,9 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * 外ねじ(FR-423、§0.a-0.40、タスク46)。円柱面にねじを切る。**対象を消費する。**
+       * 外ねじ(FR-423)。円柱面にねじを切る。**対象を消費する。**
        * 呼び径は規格表(`thread/metricThread.ts`)から引き、軸の実寸との食い違いは
-       * 解決が先に断る(§0.a-0.85、`THREAD_SHAFT_DIAMETER_TOLERANCE_MM`)。
+       * 解決が先に断る(`THREAD_SHAFT_DIAMETER_TOLERANCE_MM`)。
        */
       readonly kind: 'threadShaft';
       readonly targetKey: string;
@@ -743,7 +743,7 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * 曲面(FR-428、§0.a-0.45、タスク46)。**面だけのボディ**を作る。
+       * 曲面(FR-428)。**面だけのボディ**を作る。
        * **どの作り方でも対象を消費しない**が、`face` / `offset` のときは面を借りる立体の
        * 鍵を必ず持つ(鍵の連鎖。混ぜないと上流を編集しても古い面の形が返る、NFR-PF-3)。
        */
@@ -754,7 +754,7 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * くり抜き(シェル。FR-418、§0.a-0.47、タスク46)。壁の厚さを残して中身を抜く。
+       * くり抜き(シェル。FR-418)。壁の厚さを残して中身を抜く。
        * **対象を消費する。**
        */
       readonly kind: 'shell';
@@ -768,11 +768,11 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * 平面による切断(FR-432、§2.9b、タスク27c)。**対象を消費し、残す側 1 つ**を作る。
+       * 平面による切断(FR-432)。**対象を消費し、残す側 1 つ**を作る。
        *
        * 平面(`PlaneSpec` の 7 種)は解決が「通る点+単位法線」の数値まで解いてから
        * 載せる。カーネルは平面 1 枚しか要らないので、指紋を段へ運ばない
-       * (§2.9b の「カーネルへの往復を増やさない」)。
+       * (「カーネルへの往復を増やさない」)。
        */
       readonly kind: 'cut';
       readonly targetKey: string;
@@ -791,10 +791,10 @@ export type SolidStepPlan =
     }
   | {
       /**
-       * 読み込んだ形(ベースボディ。FR-802、P6 §2.8、タスク20)。**対象を取らない「作る」段。**
+       * 読み込んだ形(ベースボディ。FR-802)。**対象を取らない「作る」段。**
        *
        * 段がすることは「抱き込んであるバイト列から B-rep を戻す」ことだけである
-       * (カーネルの `ImportedSolidStepSpec`、タスク10)。
+       * (カーネルの `ImportedSolidStepSpec`)。
        *
        * **鍵に混ぜるのは `shapeRef` だけ**(`bytes` は混ぜない)。中身は読み込んだあと
        * 二度と変わらないので、同じ `shapeRef` なら必ず同じ形になり、大きなバイト列を
@@ -812,14 +812,14 @@ export type SolidStepPlan =
 
 /** カーネルへ渡す1段。順序が意味を持つ(要件§2「履歴パラメトリック」)。 */
 export interface ResolvedSolidStep {
-  /** この段を作ったフィーチャーの id。作られるボディの id でもある(§0.a-0.5)。 */
+  /** この段を作ったフィーチャーの id。作られるボディの id でもある。 */
   readonly featureId: string;
   /** 進捗表示とツリーに出す名前(FR-501、NFR-PF-4)。鍵には混ぜない。 */
   readonly name: string;
-  /** 形状キャッシュの鍵(§0.a-0.20)。同じ鍵なら作り直さない(NFR-PF-3)。 */
+  /** 形状キャッシュの鍵。同じ鍵なら作り直さない(NFR-PF-3)。 */
   readonly key: string;
   readonly plan: SolidStepPlan;
-  /** 画面に出すか。ブーリアンに消費されたボディは false(§0.a-0.5)。 */
+  /** 画面に出すか。ブーリアンに消費されたボディは false。 */
   readonly visible: boolean;
 }
 
@@ -838,19 +838,19 @@ export type PartErrorCode =
   /** そのボディはすでに別のブーリアンが消費している。 */
   | 'consumedTwice'
   /**
-   * 加工するもとの面・辺・頂点が見つからない(§0.a-0.5、FR-504)。
-   * 指紋の照合はカーネルの中で行う(§2.2.4)ので、**この code を出すのは
-   * 「面・辺を1つも指していない」場合(タスク16 の面取り)と、カーネルの失敗を詰め替える
-   * kernelBridge / recomputePart(タスク17)**である。文言は
+   * 加工するもとの面・辺・頂点が見つからない(FR-504)。
+   * 指紋の照合はカーネルの中で行うので、**この code を出すのは
+   * 「面・辺を1つも指していない」場合(面取り)と、カーネルの失敗を詰め替える
+   * kernelBridge / recomputePart**である。文言は
    * 「加工するもとの面(辺)が見つかりません。形が大きく変わったため、選び直してください。」
    */
   | 'missingSubShape'
   /**
-   * 基準ジオメトリ(FR-328、FR-329)の指定が循環している(P4 タスク9)。
+   * 基準ジオメトリ(FR-328、FR-329)の指定が循環している。
    * 作業平面 A がスケッチ S の点を使い、S が作業平面 A の上に描かれている、のような場合。
    */
   | 'circularReference'
-  /** カーネルが形を作れなかった(このファイルでは使わない。タスク12 が使う)。 */
+  /** カーネルが形を作れなかった(このファイルでは使わない)。 */
   | 'kernelFailed';
 
 /** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */
@@ -861,12 +861,12 @@ export interface PartError {
   readonly message: string;
 }
 
-/** スケッチ1本ぶんの解決結果。タスク12 がこれへメッシュを足す。 */
+/** スケッチ1本ぶんの解決結果。再計算がこれへメッシュを足す。 */
 export interface ResolvedPartSketch {
   readonly sketchId: string;
   readonly resolved: ResolvedSketch;
   /**
-   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313、P4b タスク8)。
+   * 拘束の診断(自由度・足しすぎ・矛盾。FR-313)。
    * **拘束が 1 つも無いスケッチと 3D スケッチでは null**(診断そのものを行わない)。
    */
   readonly diagnosis: ConstraintDiagnosis | null;
@@ -879,7 +879,7 @@ export interface ResolvedPartSketch {
 }
 
 /**
- * まだ形の無い投影・交差を、カーネルへ頼める形まで組み立てたもの(FR-325、タスク25)。
+ * まだ形の無い投影・交差を、カーネルへ頼める形まで組み立てたもの(FR-325)。
  *
  * スケッチ側の `PendingProjection` は「どの立体の何を、どの作図面へ」までしか知らない。
  * ここでその立体の**段の鍵**(`ResolvedSolidStep.key`)を足すことで、
@@ -900,9 +900,9 @@ export interface ResolvedProjection {
 }
 
 /**
- * 読み込んだ三角形の形のボディ 1 つ(FR-802、P6 §2.8、タスク20)。
+ * 読み込んだ三角形の形のボディ 1 つ(FR-802)。
  *
- * **段(`ResolvedSolidStep`)にはならない。** 三角形は B-rep にしない(§0.a-0.23)ので
+ * **段(`ResolvedSolidStep`)にはならない。** 三角形は B-rep にしないので
  * 幾何カーネルへ渡す形が無く、`SolidStepPlan` にも `bodyKeys` にも現れない。そのかわり
  * ここへ 1 行ずつ並べ、画面が `.pcad` の `meshes/<meshRef>.bin` から三角形を読んで描く。
  *
@@ -910,7 +910,7 @@ export interface ResolvedProjection {
  * 作り直す計算そのものが無いためである(だから鍵の欄も持たない)。
  */
 export interface ResolvedMeshBody {
-  /** このボディを作ったフィーチャーの id(= ボディの id、§0.a-0.5)。 */
+  /** このボディを作ったフィーチャーの id(= ボディの id)。 */
   readonly featureId: string;
   /** フィーチャーツリーに出す名前(FR-501)。 */
   readonly name: string;
@@ -933,7 +933,7 @@ export interface ResolvedPart {
   /** 板金の展開・次の曲げに使う導出情報。通常の部品では省略し、文書へ保存しない。 */
   readonly sheetMetalBodies?: ReadonlyMap<string, ResolvedSheetBody>;
   /**
-   * スケッチ id ごとの解決結果(P1 の resolveSketch をそのまま呼ぶ)。文書の順を保つ。
+   * スケッチ id ごとの解決結果(resolveSketch をそのまま呼ぶ)。文書の順を保つ。
    * スケッチ側の失敗は resolved.errors に入っており、下の errors へは写さない
    * (同じ失敗を2箇所に持つと、消したときの取りこぼしが起きるため)。
    */
@@ -948,7 +948,7 @@ export interface ResolvedPart {
   /** カーネルへ渡す段の一覧。順序が意味を持つ。失敗した段と抑制された段は入らない。 */
   readonly steps: readonly ResolvedSolidStep[];
   /**
-   * 読み込んだ三角形の形のボディ(FR-802、P6 §2.8、タスク20)。無ければ空。
+   * 読み込んだ三角形の形のボディ(FR-802)。無ければ空。
    *
    * **`steps` とは別の一覧にしてある。** カーネルへ渡す段が 1 つも増えないので `steps` へ
    * 混ぜると「段の数」「キャッシュに当たった数」の意味が狂い、性能の検査(NFR-PF-2)が
@@ -956,7 +956,7 @@ export interface ResolvedPart {
    */
   readonly meshBodies: readonly ResolvedMeshBody[];
   /**
-   * まだ形の無い投影・交差(FR-325、タスク25)。無ければ空。
+   * まだ形の無い投影・交差(FR-325)。無ければ空。
    * `recomputePart` がカーネルへ頼み、覚え書きへ入れてから解決し直す
    * (`ResolvedSketch.pendingOffsets` と同じ 2 段の流れ)。
    */
@@ -964,12 +964,12 @@ export interface ResolvedPart {
   /** ソリッドの解決の失敗(FR-504)。抑制は失敗ではないので入れない。 */
   readonly errors: readonly PartError[];
   /**
-   * いま画面に出るボディの id(§0.a-0.5)。steps のうち visible なものを履歴順に並べたもの。
+   * いま画面に出るボディの id。steps のうち visible なものを履歴順に並べたもの。
    * createPartDocument.ts の liveBodyIds は文書だけを見る近似で、こちらは
    * 「作成に成功したか」まで見た確定版(FR-502 の表示・選択はこちらを使う)。
    *
-   * **読み込んだ三角形の形(`meshBodies`)もここへ並ぶ**(FR-802、P6 §2.8)。画面に出て
-   * 選べて色を付けられる(§0.a-0.28)ものは、段になるかどうかに関わらず「生きたボディ」
+   * **読み込んだ三角形の形(`meshBodies`)もここへ並ぶ**(FR-802)。画面に出て
+   * 選べて色を付けられるものは、段になるかどうかに関わらず「生きたボディ」
    * だからである。並びは履歴の順で、段とメッシュが混ざっても文書の並びのままになる。
    */
   readonly liveBodyIds: readonly string[];
@@ -982,19 +982,19 @@ export interface RevolveAxisFrame {
 }
 
 
-/** 角度の上限(度)。全周を超える回転は受け付けない(§0.a-0.9)。 */
+/** 角度の上限(度)。全周を超える回転は受け付けない。 */
 const MAX_REVOLVE_DEGREES = 360;
 
 /**
  * 傾き角の上限(度、含まない)。90 度では掘る向きが面と平行になり材料へ入らない。
- * カーネル(タスク6 の `makeHole`)も許容を [0, π/2) にしてあるので、同じ境界で先に断る
- * (§2.9 の第1段「入力の妥当性は model と kernel の両方で見る」)。
+ * カーネル(`makeHole`)も許容を [0, π/2) にしてあるので、同じ境界で先に断る
+ * (「入力の妥当性は model と kernel の両方で見る」)。
  */
 const MAX_TILT_DEGREES = 90;
 
 /**
  * C 面取りの距離+角度の上限(度、含まない)。0 度・90 度では基準面と平行になり
- * 面取りにならない(§2.6.2 の断り方の一覧と同じ境界)。
+ * 面取りにならない(断り方の一覧と同じ境界)。
  */
 const MAX_CHAMFER_ANGLE_DEGREES = 90;
 
@@ -1012,7 +1012,7 @@ function negateVec3(vector: Vec3): Vec3 {
   ];
 }
 
-/** 曲線をベクトルぶん平行移動する(押し出しの「両側へ」に使う、§0.a-0.8)。 */
+/** 曲線をベクトルぶん平行移動する(押し出しの「両側へ」に使う)。 */
 export function translateCurve(curve: ResolvedCurve, offset: Vec3): ResolvedCurve {
   switch (curve.kind) {
     case 'segment':
@@ -1030,9 +1030,9 @@ export function translateCurve(curve: ResolvedCurve, offset: Vec3): ResolvedCurv
 }
 
 /**
- * 回転軸を解決する。world 軸は原点+単位ベクトル、スケッチの線分は始点+向き(§0.a-0.9)。
+ * 回転軸を解決する。world 軸は原点+単位ベクトル、スケッチの線分は始点+向き。
  *
- * P4(FR-329、タスク9)で基準軸フィーチャーへの参照 `reference` が増えた。基準軸は
+ * 基準軸フィーチャーへの参照 `reference`(FR-329)もある。基準軸は
  * 部品文書の履歴を見ないと解けないので、**解決済みの表を第 3 引数で受け取る**
  * (渡されなければ基準軸は解けず null。既存の呼び出しはそのまま動く)。
  */
@@ -1079,9 +1079,9 @@ type PlanOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 段を組み立てるのに要る「部品文書の外から解ける道具」(P5 タスク45)。
+ * 段を組み立てるのに要る「部品文書の外から解ける道具」。
  *
- * P5 の Should 群(押し出しの「選んだ面まで」・ミラー・拡大縮小)は、断面と式のほかに
+ * Should 群(押し出しの「選んだ面まで」・ミラー・拡大縮小)は、断面と式のほかに
  * **立体の面の平面・作業平面・点の参照**を要る。どれも既に正本の解決が別の場所にあり
  * (`geometry/planeSpec.ts` の `subShapeFromFingerprint`、`part/resolveReferences.ts` の
  * `workPlane` / `point`)、ここへ写すと同じ規約が 2 か所になる。そこで**関数のまま束ねて
@@ -1105,7 +1105,7 @@ interface SolidPlanContext {
   /** 基準軸(FR-329)の解決結果。`resolveRevolveAxis` へそのまま渡す。 */
   readonly axisFrames: ReadonlyMap<string, AxisFrame>;
   /**
-   * スケッチの**保存形**(P5 タスク46)。解決済みの `ResolvedPartSketch` は作図面の id を
+   * スケッチの**保存形**。解決済みの `ResolvedPartSketch` は作図面の id を
    * 持たないので、**開いた輪郭の平面の法線**を作図面から取るためにここで持つ
    * (リブ FR-420・曲面の押し出し FR-428。線分 1 本の輪郭は座標だけからは平面が決まらない)。
    */
@@ -1126,7 +1126,7 @@ function isPositiveFinite(value: number): boolean {
 }
 
 /* ------------------------------------------------------------------ *
- * 押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)。P5 §2.11、タスク45
+ * 押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)。
  * ------------------------------------------------------------------ */
 
 /** 選んだ面が引けない(消えた・上流が失敗した)。面取りの言い回しに揃える。 */
@@ -1149,7 +1149,7 @@ const EXTRUDE_TO_FACE_BEHIND_MESSAGE =
 const EXTRUDE_TO_NEXT_MISSING_MESSAGE = '押し出す先に立体がありません。';
 
 /**
- * 「対象を貫く」(EX04)の対象が、履歴で自分より前に無い・自分自身・すでに別のところで消費されているとき。
+ * 「対象を貫く」の対象が、履歴で自分より前に無い・自分自身・すでに別のところで消費されているとき。
  * 先にある立体(前方参照)は `bodyKeys` にまだ無いので「見つからない」に入る。
  */
 const EXTRUDE_THROUGH_TARGET_MISSING_MESSAGE =
@@ -1173,9 +1173,9 @@ type ExtrudeEndOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 「選んだ面まで」の距離を model 側で計算する(FR-415、§0.a-0.33)。
+ * 「選んだ面まで」の距離を model 側で計算する(FR-415)。
  *
- * 面の平面は **P4 タスク9 と同じ仕組み**(`geometry/planeSpec.ts` の
+ * 面の平面は **作業平面と同じ仕組み**(`geometry/planeSpec.ts` の
  * `subShapeFromFingerprint`、または `resolvePart` に渡された選び直しの関数)で解く。
  * カーネルを呼ばずに済むのは、面の重心と法線が指紋そのものに入っているためである。
  *
@@ -1246,8 +1246,8 @@ function lastLiveBodyKey(
 /**
  * 押し出しの終端(FR-415)を段の欄へ直す。
  *
- * `distance` と `symmetric` は **P2 のまま**(段に `end` を載せない)。両側の平行移動は
- * model の役目(§0.a-0.8)で `profile` に入っており、kernel の `symmetric` を重ねると
+ * `distance` と `symmetric` は **従来のまま**(段に `end` を載せない)。両側の平行移動は
+ * model の役目で `profile` に入っており、kernel の `symmetric` を重ねると
  * 二重にずれるためである(`SolidStepPlan.extrude.end` の注釈)。
  */
 function resolveExtrudeEnd(
@@ -1319,9 +1319,9 @@ function resolveExtrudeEnd(
 }
 
 /**
- * 押し出し(FR-401、FR-415、FR-416、§0.a-0.8)。向き・反転・両側の平行移動をここで決める。
+ * 押し出し(FR-401、FR-415、FR-416)。向き・反転・両側の平行移動をここで決める。
  *
- * P5 タスク45 で終端(FR-415)・テーパ(FR-401)・薄板(FR-416)を足した。省略できる 5 欄は
+ * 終端(FR-415)・テーパ(FR-401)・薄板(FR-416)を足した。省略できる 5 欄は
  * **必ず `extrudeShapingOf` を通して読む**(既定値は createPartDocument.ts の 1 か所)。
  * 段へは**既定から外れた欄だけ**を載せるので、欄を省いた押し出しと既定を明示した押し出しは
  * 段も鍵も 1 ドット違わない(cacheKey.ts の `keyExtrudeExtras` と同じ決め)。
@@ -1389,7 +1389,7 @@ function planExtrude(
     thin = { thickness: shaping.thickness.value, side: shaping.thicknessSide };
   }
 
-  // 「両側へ」は、断面を逆向きへ距離の半分だけ動かしてから距離ぶん押し出す(§0.a-0.8)。
+  // 「両側へ」は、断面を逆向きへ距離の半分だけ動かしてから距離ぶん押し出す。
   // 平行移動を model 側で行うので、カーネルへは断面・向き・長さだけを渡せる。
   const profile =
     shaping.end.kind === 'symmetric'
@@ -1422,7 +1422,7 @@ function planExtrude(
   };
 }
 
-/** 回転(FR-402、§0.a-0.9)。角度は度で持ち、ここでラジアンへ直す。 */
+/** 回転(FR-402)。角度は度で持ち、ここでラジアンへ直す。 */
 function planRevolve(
   feature: RevolveFeature,
   sketches: readonly ResolvedPartSketch[],
@@ -1460,7 +1460,7 @@ function planRevolve(
   };
 }
 
-/** 縫合(FR-403、§0.a-0.7)。面を2枚以上並べ、許容量とともに渡す。 */
+/** 縫合(FR-403)。面を2枚以上並べ、許容量とともに渡す。 */
 function planSew(
   feature: SewFeature,
   sketches: readonly ResolvedPartSketch[],
@@ -1511,10 +1511,10 @@ function planSew(
   return { ok: true, plan: { kind: 'sew', profiles, tolerance } };
 }
 
-/** 閉じた輪郭の切断の対(EX-04 W3)が、同じ立体・同じ輪郭・反対の残す側になっていない。 */
+/** 閉じた輪郭の切断の対が、同じ立体・同じ輪郭・反対の残す側になっていない。 */
 const PROFILE_CUT_PAIR_MESSAGE = '対になっている切断には、同じ立体と輪郭、反対の残す側が必要です。';
 
-/** 閉じた輪郭の切断(EX04)のブーリアンか。残す側は差 = 輪郭の外側、積 = 輪郭の内側(EX-04 W3)。 */
+/** 閉じた輪郭の切断のブーリアンか。残す側は差 = 輪郭の外側、積 = 輪郭の内側。 */
 function isProfileCut(feature: BooleanFeature): boolean {
   return feature.requireRemoval === true && (feature.operation === 'subtract' || feature.operation === 'intersect');
 }
@@ -1526,14 +1526,14 @@ function linkedBooleans(feature: BooleanFeature, solids: readonly SolidFeature[]
     && (candidate.id === feature.pairedWith || candidate.pairedWith === feature.id));
 }
 
-/** 閉じた輪郭の切断の対の引き方の結果(EX-04 W3)。 */
+/** 閉じた輪郭の切断の対の引き方の結果。 */
 type ProfileCutPair =
   | { readonly kind: 'single' }
   | { readonly kind: 'paired'; readonly partner: BooleanFeature }
   | { readonly kind: 'broken' };
 
 /**
- * 閉じた輪郭の切断の対(「反対側も残す」で積んだ差と積。EX-04 W3)を文書から引く。
+ * 閉じた輪郭の切断の対(「反対側も残す」で積んだ差と積)を文書から引く。
  * 考え方は平面の切断の `pairedCutOf` と同じで、**文書は書き換えない**。
  *
  * - 結びが無い・相手が文書に無い・抑制されている → 単独。
@@ -1556,11 +1556,11 @@ function profileCutPairOf(feature: BooleanFeature, solids: readonly SolidFeature
 }
 
 /**
- * ブーリアン(FR-404、§0.a-0.5)。対象と相手のボディを消費して1つのボディを作る。
+ * ブーリアン(FR-404)。対象と相手のボディを消費して1つのボディを作る。
  * 参照できるのは「履歴で自分より前にあり、抑制されておらず、作成に成功し、
  * まだ消費されていない」ボディだけ。消費そのものは呼び出し側(resolvePart)が記録する。
  *
- * **閉じた輪郭の切断の対だけの例外**(EX-04 W3。平面の切断の `resolveCutTarget` と同じ形):
+ * **閉じた輪郭の切断の対だけの例外**(平面の切断の `resolveCutTarget` と同じ形):
  * 「反対側も残す」で積んだ差と積の 2 つ目は、対象と相手(輪郭の押し出し)が 1 つ目に消費された後で
  * 解決される。このときだけ `consumedTwice` を出さず、対象と相手を **1 度だけ**消費したものとして扱う。
  * 例外を許すのは対の相手が段を作れた(= `bodyKeys` にいる)ときだけで、相手が段を作れていないなら
@@ -1615,7 +1615,7 @@ export type MachiningTargetOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 加工(穴・ねじ穴・R 面取り・C 面取り・パターン)の対象になるボディの鍵を引く(§0.a-0.5)。
+ * 加工(穴・ねじ穴・R 面取り・C 面取り・パターン)の対象になるボディの鍵を引く。
  *
  * 参照できるのはブーリアンと同じく「履歴で自分より前にあり、抑制されておらず、作成に成功し、
  * まだ消費されていない」ボディだけ。消費そのものの記録は呼び出し側(resolvePart)が
@@ -1654,16 +1654,16 @@ export type HoleCentersOutcome =
  * スケッチの点・点列フィーチャーから穴の中心点を展開する(FR-405 の「複数点同時」、FR-308)。
  *
  * `resolveSketch` の `points` は点フィーチャーと点列フィーチャーの全点を平らに並べた配列で、
- * 各要素が作り手の `featureId` を持つ(P1 の実装。着手時に実測して確認した)。
+ * 各要素が作り手の `featureId` を持つ(実装を実測して確認した)。
  * 参照は要素 id(`point-1#3`)ではなく**フィーチャー id** を持つので、**点列を指すと必ず全点**が
  * 中心になる(点列の1点だけを指す書き方は持たない、types.ts の `SketchPointRef` の注釈)。
  * 並びは利用者が選んだ参照の順、点列の中では作られた順のままにする(並びは鍵に効く。
  * cacheKey.ts の `HoleKeyMaterial.centers` の注釈)。
  *
  * 参照の一部が見つからなくても、1点でも取れれば残りで続ける(消えた点のぶんだけ穴が減る)。
- * 1点も取れないときだけ断る(計画書 タスク15 の解決の規則3)。
+ * 1点も取れないときだけ断る。
  *
- * 計画書の署名には `featureId` が無いが、失敗を `PartError`(featureId を必ず持つ)で返すため
+ * 当初の署名には `featureId` が無いが、失敗を `PartError`(featureId を必ず持つ)で返すため
  * `resolveMachiningTarget` と同じく第1引数で受け取る形にした。
  */
 export function resolveHoleCenters(
@@ -1702,7 +1702,7 @@ type DepthOutcome =
   | { readonly ok: true; readonly depth: number | null }
   | { readonly ok: false; readonly error: PartError };
 
-/** 深さ(FR-405)。貫通は null(長さはカーネルが境界箱から決める、§0.a-0.12)。 */
+/** 深さ(FR-405)。貫通は null(長さはカーネルが境界箱から決める)。 */
 function resolveHoleDepth(featureId: string, depth: HoleDepth): DepthOutcome {
   if (depth.kind === 'through') {
     return { ok: true, depth: null };
@@ -1727,7 +1727,7 @@ type TiltOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 傾き角と方位角を度からラジアンへ直す(§0.a-0.10)。
+ * 傾き角と方位角を度からラジアンへ直す。
  *
  * 傾き角は 0 以上 90 度未満(90 度では掘る向きが面と平行になり材料へ入らない)。
  * 方位角は面内の向きなので範囲を決めない(360 度を超えても、負でも、同じ向きを指すだけ)。
@@ -1761,7 +1761,7 @@ function resolveTilt(
 }
 
 /* ------------------------------------------------------------------ *
- * 穴の入口(ざぐり・皿もみ。FR-422、P5 §0.a-0.39)。タスク46
+ * 穴の入口(ざぐり・皿もみ。FR-422)。
  * ------------------------------------------------------------------ */
 
 /**
@@ -1785,12 +1785,12 @@ type HoleEntryOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 穴の入口の形(FR-422)を段の欄へ直す(§0.a-0.39、タスク46)。
+ * 穴の入口の形(FR-422)を段の欄へ直す。
  *
  * - `plain`(広げない)は **null** を返し、段へ欄そのものを載せない(省略と同じ鍵にする)。
  * - `counterbore` は径と深さをそのまま。**径は下穴の径より大きい**こと(先出し検査)。
  * - `countersink` は角度を**度からラジアンへ**直す。**円錐の深さは計算しない**——
- *   `(頭径 − 穴の径) / 2 / tan(角度 / 2)` はカーネルが導く(統括の決定 2026-09-05 17:37)。
+ *   `(頭径 − 穴の径) / 2 / tan(角度 / 2)` はカーネルが導く。
  *
  * `drillDiameter` は「入口を広げるもとの穴の径」で、穴では直径、ねじ穴では下穴径になる。
  * 見る順(角度 → 頭径)はカーネルの `checkHoleEntry` と同じにしてある——深さの式が角度の
@@ -1849,7 +1849,7 @@ function resolveHoleEntry(
 }
 
 /* ------------------------------------------------------------------ *
- * 円筒の側面の穴(EX05)
+ * 円筒の側面の穴
  * ------------------------------------------------------------------ */
 
 /**
@@ -1885,7 +1885,7 @@ type CylindricalOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 円筒の側面の位置を段の欄へ直す(EX05)。欄が無ければ null(今までの平面の穴)。
+ * 円筒の側面の位置を段の欄へ直す。欄が無ければ null(今までの平面の穴)。
  * 中心の点・傾き・皿もみとの組み合わせは、正しく扱えるまで断る(kernel も同じ文言で断る)。
  * 角度は度からラジアンへ。範囲は決めない(何周しても同じ向き)。位置が面の上にあるかは kernel が
  * 実際の面の境界で判定する(model は面の形を持たない)。
@@ -1938,14 +1938,14 @@ type HoleBaseOutcome =
 
 /**
  * 穴とねじ穴に共通する解決(対象・面・中心・深さ・傾き)。
- * 断る順は計画書 タスク15 の「解決の規則」のとおり(対象 → 面 → 中心 → 深さ → 傾き)。
+ * 断る順は「解決の規則」のとおり(対象 → 面 → 中心 → 深さ → 傾き)。
  */
 function resolveHoleBase(
   feature: HoleLikeFeature,
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
-  /** 円筒の側面の穴(EX05)。中心の点を持たないので中心の解決を飛ばす(空であることは呼び出し側が確かめ済み)。 */
+  /** 円筒の側面の穴。中心の点を持たないので中心の解決を飛ばす(空であることは呼び出し側が確かめ済み)。 */
   withoutCenters = false,
 ): HoleBaseOutcome {
   const target = resolveMachiningTarget(
@@ -1970,7 +1970,7 @@ function resolveHoleBase(
     };
   }
   // 参照の型(SubShapeRef)は辺・頂点も表せるので、面であることをここで確かめる
-  // (P3 の穴は平らな面にだけあけられる。面かどうかの判定は指紋の種類で足りる)。
+  // (穴は平らな面にだけあけられる。面かどうかの判定は指紋の種類で足りる)。
   if (subShapeKindOf(feature.face) !== 'face') {
     return {
       ok: false,
@@ -2009,11 +2009,11 @@ function resolveHoleBase(
 }
 
 /**
- * 穴(FR-405、§2.4)。対象のボディを消費して1つの新しいボディを作る。
+ * 穴(FR-405)。対象のボディを消費して1つの新しいボディを作る。
  *
  * 中心点の面への投影・掘る向き・貫通穴の長さはカーネルが決める(model は面の指紋しか
- * 持たないため、§2.4.2)。ここで作るのは「どの面に、どの点を中心に、どの太さで、
- * どこまで掘るか」までである。`transforms` は必ず空配列(並べるのはパターン、タスク16)。
+ * 持たないため)。ここで作るのは「どの面に、どの点を中心に、どの太さで、
+ * どこまで掘るか」までである。`transforms` は必ず空配列(並べるのはパターン)。
  */
 function planHole(
   feature: HoleFeature,
@@ -2021,7 +2021,7 @@ function planHole(
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
 ): PlanOutcome {
-  // 円筒の側面の穴(EX05)は中心の点を持たない。組み合わせの断りを中心の解決より先に出す。
+  // 円筒の側面の穴は中心の点を持たない。組み合わせの断りを中心の解決より先に出す。
   const planar = resolvePlanarHole(feature);
   if (!planar.ok) return planar;
   const cylindrical = resolveCylindricalHole(feature);
@@ -2037,7 +2037,7 @@ function planHole(
   if (!isPositiveFinite(diameter)) {
     return fail(feature.id, 'invalidValue', '穴の直径は 0 より大きい数にしてください。');
   }
-  // 入口の形(FR-422、タスク46)。省略された欄は `holeEntryOf` が既定で埋める。
+  // 入口の形(FR-422)。省略された欄は `holeEntryOf` が既定で埋める。
   const entry = resolveHoleEntry(feature.id, holeEntryOf(feature), diameter);
   if (!entry.ok) {
     return entry;
@@ -2066,7 +2066,7 @@ function planHole(
 }
 
 /**
- * ねじ穴(FR-406、§2.4)。下穴は穴と同じ手順で掘り、ねじ山だけが追加になる。
+ * ねじ穴(FR-406)。下穴は穴と同じ手順で掘り、ねじ山だけが追加になる。
  *
  * 呼び(`designation`)から規格表(thread/metricThread.ts)を引いておねじの外径 `d` を得る。
  * ピッチ・下穴径は規格表から入るが式で書き換えられる(FR-202)ので、**文書の値を正**とし、
@@ -2079,7 +2079,7 @@ function planThreadHole(
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
 ): PlanOutcome {
-  // 円筒の側面のねじ穴(EX05)。穴と同じ口で組み合わせを断り、中心の解決を飛ばす(`planHole` と同じ順)。
+  // 円筒の側面のねじ穴。穴と同じ口で組み合わせを断り、中心の解決を飛ばす(`planHole` と同じ順)。
   const planar = resolvePlanarHole(feature);
   if (!planar.ok) return planar;
   const cylindrical = resolveCylindricalHole(feature);
@@ -2142,7 +2142,7 @@ function planThreadHole(
       transforms: [],
       // 実らせんを切るのは representation が 'modeled' のときだけ(既定は簡略表示)。
       thread: modeled ? { majorDiameter: size.diameter, pitch, length: threadLength } : null,
-      // 印は簡略表示でも実らせんでも作る(§2.4.2「実形状のときも返してよい」)。
+      // 印は簡略表示でも実らせんでも作る(「実形状のときも返してよい」)。
       mark: { majorDiameter: size.diameter, length: threadLength },
       // 広げないときは欄そのものを載せない(省略と「広げない」を同じ段・同じ鍵にするため)。
       ...(entry.entry === null ? {} : { entry: entry.entry }),
@@ -2154,10 +2154,10 @@ function planThreadHole(
 }
 
 /**
- * 丸める・面を取る辺(頂点は§0.a-0.17 追記によりコマンド確定時にすでに辺へ展開されている)の
- * 指紋を、重複を除いてから通し番号の昇順に並べ替える(タスク16、cacheKey.ts の
+ * 丸める・面を取る辺(頂点はコマンド確定時にすでに辺へ展開されている)の
+ * 指紋を、重複を除いてから通し番号の昇順に並べ替える(cacheKey.ts の
  * `FilletKeyMaterial` / `ChamferKeyMaterial` の注釈「並びが違えば違う鍵になる」)。
- * 同じ辺を2回選んでいても1回だけ渡す(§2.6.2 手順3)。
+ * 同じ辺を2回選んでいても1回だけ渡す。
  */
 function sortedUniqueTargets(targets: readonly SubShapeRef[]): readonly SubShapeQueryPlan[] {
   return [...dedupeSubShapeRefs(targets)].sort((a, b) => a.index - b.index);
@@ -2168,8 +2168,8 @@ const MISSING_SUB_SHAPE_MESSAGE =
   '加工するもとの面(辺)が見つかりません。形が大きく変わったため、選び直してください。';
 
 /**
- * R 面取り(FR-407、§2.6)。対象のボディを消費して1つの新しいボディを作る。
- * 辺・頂点の選び直しは指紋でカーネルが行う(model は指紋を渡すだけ、§2.2)。
+ * R 面取り(FR-407)。対象のボディを消費して1つの新しいボディを作る。
+ * 辺・頂点の選び直しは指紋でカーネルが行う(model は指紋を渡すだけ)。
  */
 function planFillet(
   feature: FilletFeature,
@@ -2185,10 +2185,10 @@ function planFillet(
     return fail(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
   }
   /*
-    半径(FR-407)と可変半径(FR-426、§0.a-0.48、タスク46)。省略できる欄は必ず
+    半径(FR-407)と可変半径(FR-426)。省略できる欄は必ず
     `filletRadiusOf` を通して読む(既定は `createPartDocument.ts` の 1 か所)。
     **可変でも始点と終点の両方が 0 より大きい**ことを先に確かめる(カーネルの
-    `makeVariableFillet.ts` は `Add_3(0, r)` も成功させてしまうので入口で断る、タスク53)。
+    `makeVariableFillet.ts` は `Add_3(0, r)` も成功させてしまうので入口で断る)。
     始点と終点が同じ値のときも `{ start; end }` のまま渡す——カーネルの実測で
     「始点 = 終点は一定半径と 1e-6 一致」が固定されており(2026-09-05 16:13)、
     ここで数 1 つへ畳むと利用者が入れた「可変」の指定が段の形から消えてしまうためである。
@@ -2239,7 +2239,7 @@ function resolvePositiveDistance(featureId: string, distance: number): PositiveD
 
 /**
  * C 面取りの大きさ(FR-408 の①②③)を解決する。角度は度→ラジアンへ直し、
- * 0 度より大きく 90 度より小さいことを検査する(§2.6.2 の断り方の一覧)。
+ * 0 度より大きく 90 度より小さいことを検査する(断り方の一覧)。
  */
 function resolveChamferSize(featureId: string, size: ChamferSize): ChamferSizeOutcome {
   switch (size.kind) {
@@ -2293,9 +2293,9 @@ function resolveChamferSize(featureId: string, size: ChamferSize): ChamferSizeOu
 }
 
 /**
- * C 面取り(FR-408、§2.6)。対象のボディを消費して1つの新しいボディを作る。
+ * C 面取り(FR-408)。対象のボディを消費して1つの新しいボディを作る。
  * 基準面(2距離・距離+角度のとき)は `swapReferenceFace` の値をそのまま渡し、
- * どちらの面が先に出るかの判定はカーネルが `TopExp` の並びで行う(§0.a-0.18)。
+ * どちらの面が先に出るかの判定はカーネルが `TopExp` の並びで行う。
  */
 function planChamfer(
   feature: ChamferFeature,
@@ -2327,12 +2327,12 @@ function planChamfer(
 }
 
 /**
- * 全長・ピッチ・巻数のうち derived が指すものを、他の2つから計算する(FR-414、§0.a-0.30)。
+ * 全長・ピッチ・巻数のうち derived が指すものを、他の2つから計算する(FR-414)。
  *
  * 関係式は `length = pitch × turns`。**derived が指す欄の保存値は読まない**(引数に含めても
  * 使わない)。0 で割ることになる欄が invalidValue の理由なので、割る前に断る。
  * OCCT も文書も触らない純関数で、3通りの derived をそれぞれ単体で検査できる
- * (計画書 タスク15b の検証表)。
+ * (検証の表)。
  */
 export function resolveSpringLength(
   values: { readonly length: number; readonly pitch: number; readonly turns: number },
@@ -2375,14 +2375,14 @@ export function resolveSpringLength(
 }
 
 /**
- * スケッチの点フィーチャーから1点を引く(ばねの始点、§0.a-0.29)。
+ * スケッチの点フィーチャーから1点を引く(ばねの始点)。
  *
  * ばねの始点は点フィーチャー(点列は使わない、型定義 `SketchPointRef` の注釈と同じ形を流用)。
  * `resolveSketch` の `points` は点フィーチャーと点列フィーチャーの全点を平らに並べた配列
  * (`resolveHoleCenters` の注釈を参照)なので、点列を指していても先頭の1点を返す。
  * 見つからなければ null(呼び出し側が missingProfile として断る)。
  *
- * P5(FR-429、タスク16)で基本形状の基準点(`SolidOrigin.sketchPoint`)からも呼ぶ。
+ * 基本形状(FR-429)の基準点(`SolidOrigin.sketchPoint`)からも呼ぶ。
  * 「スケッチの点フィーチャーを1つ引く」という同じ仕事なので、同じものを2つ作らない
  * (断りの文言だけが呼び出し側で違う)。
  */
@@ -2400,7 +2400,7 @@ export function resolveSpringOrigin(
   return point === undefined ? null : point.position;
 }
 
-/** 0 のとき -0 になっている成分を +0 へ揃える(negateVec3 と同じ理由。§0.a-0.30 関連の過去の失敗)。 */
+/** 0 のとき -0 になっている成分を +0 へ揃える(negateVec3 と同じ理由。過去の失敗)。 */
 function cleanZeroVec3(vector: Vec3): Vec3 {
   return [
     vector[0] === 0 ? 0 : vector[0],
@@ -2410,18 +2410,18 @@ function cleanZeroVec3(vector: Vec3): Vec3 {
 }
 
 /**
- * 軸を解決し、傾き角・方位角を適用した向きを返す(FR-414、§0.a-0.10、§0.a-0.29)。
+ * 軸を解決し、傾き角・方位角を適用した向きを返す(FR-414)。
  *
- * 穴(タスク15 の `drillDirection`、`packages/kernel/src/occt/makeHole.ts`)と同じ三角関数の形
+ * 穴(`drillDirection`、`packages/kernel/src/occt/makeHole.ts`)と同じ三角関数の形
  * `sin(傾き) × (cos(方位)x + sin(方位)y) と cos(傾き) × 軸` を使うが、符号が違う:
  * 穴は「傾き 0 で面の法線の逆(材料の中)」なので `− cos(傾き)・法線` だが、
- * ばねは「傾き 0 で軸そのまま」(§0.a-0.10、types.ts の SpringFeature の注釈)なので
+ * ばねは「傾き 0 で軸そのまま」(types.ts の SpringFeature の注釈)なので
  * `+ cos(傾き)・軸` になる。またばねには面が無いので、基準の第1軸・第2軸は
  * `referenceAxes` が model 自身で作る(穴は面の `gp_Pln.XAxis()` をカーネルが使う)。
  *
  * `resolveTilt`(角度の範囲検査と度→ラジアンの変換)は穴と共用している。
  * 向きの組み立てそのものは `planeMath.ts` の `tiltedDirection` が正本で、任意の作業平面
- * (FR-328 の「点+軸と角度」、P4 タスク9)と同じ規約を 2 か所に書かないようにしている。
+ * (FR-328 の「点+軸と角度」)と同じ規約を 2 か所に書かないようにしている。
  * ここでは −0 を +0 へ揃える後始末だけを足す。
  */
 export function resolveTiltedDirection(
@@ -2435,9 +2435,9 @@ export function resolveTiltedDirection(
 }
 
 /**
- * ばね(FR-414、§2.7b)。対象を取らず、新しいボディを1つ作る(§0.a-0.36)。
+ * ばね(FR-414)。対象を取らず、新しいボディを1つ作る。
  *
- * 解決の順は計画書 タスク15b のとおり: 始点 → 軸 → 傾き → コイル径・線径 →
+ * 解決の順は次のとおり: 始点 → 軸 → 傾き → コイル径・線径 →
  * 全長・ピッチ・巻数(derived の計算)→ ピッチと線径の関係。
  * どの段階で断っても、それより後ろの計算(重い掃引はカーネル側だが)は行わない。
  */
@@ -2490,8 +2490,8 @@ function planSpring(
   if (resolvedLength.turns > MAX_SPRING_TURNS) {
     return fail(feature.id, 'invalidValue', '巻数は 0 より大きく 200 以下にしてください。');
   }
-  // ここは model が先に断る(NFR-UX-5)。カーネル(タスク9b の makeSpring)でも同じ検査をするが、
-  // 重い掃引を走らせる前にツリーへ理由を出す(計画書 タスク15b の解決の規則6)。
+  // ここは model が先に断る(NFR-UX-5)。カーネル(makeSpring)でも同じ検査をするが、
+  // 重い掃引を走らせる前にツリーへ理由を出す。
   if (resolvedLength.pitch <= wireDiameter) {
     return fail(
       feature.id,
@@ -2522,7 +2522,7 @@ const POINT_PATTERN_EMPTY_MESSAGE =
 const POINT_PATTERN_MISSING_MESSAGE =
   '並べる点が見つかりません。スケッチで点を作ってからやり直してください。';
 
-/** パターンの並べ方の個数(FR-411、FR-412、§2.7)。2 以上 MAX_PATTERN_COUNT 以下の整数。 */
+/** パターンの並べ方の個数(FR-411、FR-412)。2 以上 MAX_PATTERN_COUNT 以下の整数。 */
 type PatternCountOutcome =
   | { readonly ok: true; readonly count: number }
   | { readonly ok: false; readonly message: string };
@@ -2535,7 +2535,7 @@ function resolvePatternCount(count: ExpressionValue): PatternCountOutcome {
   return { ok: true, count: value };
 }
 
-/** 直線パターンの変換1つ(向き × 間隔 × k)。回転は掛けない(rotationAngle 0、§2.7)。 */
+/** 直線パターンの変換1つ(向き × 間隔 × k)。回転は掛けない(rotationAngle 0)。 */
 function linearPatternTransform(direction: Vec3, spacing: number, k: number): RigidTransform {
   return {
     // 0 を掛けると -0 になる成分があるので cleanZeroVec3 で揃える(negateVec3 と同じ理由)。
@@ -2547,9 +2547,9 @@ function linearPatternTransform(direction: Vec3, spacing: number, k: number): Ri
 }
 
 /**
- * パターンの変換の一覧を作る(FR-411、FR-412、§2.7)。もとの位置ぶんは作らない(n−1 個)。
+ * パターンの変換の一覧を作る(FR-411、FR-412)。もとの位置ぶんは作らない(n−1 個)。
  * 直線の向きも円形の軸も `resolveRevolveAxis` で解決する(`PatternDirection` は `RevolveAxis` と
- * 同じ形なので、専用の解決関数を新しく作らない、§0.a-0.21)。
+ * 同じ形なので、専用の解決関数を新しく作らない)。
  */
 export function resolvePatternTransforms(
   placement: PatternPlacement,
@@ -2563,7 +2563,7 @@ export function resolvePatternTransforms(
   | { readonly ok: false; readonly code: PartErrorCode; readonly message: string } {
   if (placement.kind === 'points') {
     /*
-      点の集まりへ複製(FR-425、P5 §0.a-0.42、タスク46)。
+      点の集まりへ複製(FR-425)。
 
       **点の一覧がそのまま置き場所になる。** 直線・円形が「もとを含めた総数」を持ち
       もとの位置ぶんの変換を作らない(n−1 個)のと違い、点集合は利用者が「並べたい場所を
@@ -2619,7 +2619,7 @@ export function resolvePatternTransforms(
         message: '並べる間隔は 0 より大きい数にしてください。',
       };
     }
-    // 両側へ並べるときに n が偶数だと、もとの穴の位置に工具が来ない(§2.7 の「注意」)。
+    // 両側へ並べるときに n が偶数だと、もとの穴の位置に工具が来ない(「注意」)。
     if (placement.symmetric && n % 2 === 0) {
       return {
         ok: false,
@@ -2638,7 +2638,7 @@ export function resolvePatternTransforms(
     const transforms: RigidTransform[] = [];
     const placementRoles: HolePlacementRole[] = [];
     if (placement.symmetric) {
-      // n は奇数なので (n-1)/2 は整数。0(もとの位置)を除いて両側へ振る(§2.7 の刻み表)。
+      // n は奇数なので (n-1)/2 は整数。0(もとの位置)を除いて両側へ振る。
       const half = (n - 1) / 2;
       for (let k = -half; k <= half; k += 1) {
         if (k === 0) {
@@ -2656,7 +2656,7 @@ export function resolvePatternTransforms(
     return { ok: true, transforms, placementRoles };
   }
 
-  // 円形パターン。全周なら 360/n 度刻み、そうでなければ角度を n−1 等分する(§2.7)。
+  // 円形パターン。全周なら 360/n 度刻み、そうでなければ角度を n−1 等分する。
   let stepAngle: number;
   if (placement.fullCircle) {
     stepAngle = (2 * Math.PI) / n;
@@ -2698,9 +2698,9 @@ export function resolvePatternTransforms(
 }
 
 /**
- * パターン(FR-411、FR-412、§2.7、§0.a-0.20)。繰り返すもとの加工フィーチャー(穴・ねじ穴に限る)
+ * パターン(FR-411、FR-412)。繰り返すもとの加工フィーチャー(穴・ねじ穴に限る)
  * のボディを消費し、もとの工具の指定に `transforms` を足しただけの計画を作る。
- * パターン専用の SolidStepPlan の種類は持たない(§2.7「畳み方」手順5・6)。
+ * パターン専用の SolidStepPlan の種類は持たない(「畳み方」手順5・6)。
  */
 function planPattern(
   feature: PatternFeature,
@@ -2711,8 +2711,8 @@ function planPattern(
   context: SolidPlanContext,
 ): PlanOutcome {
   const notPatternSourceMessage = '繰り返せるのは穴とねじ穴だけです。穴かねじ穴を選び直してください。';
-  // 過去の失敗(ブーリアンの対象=相手)と同じ扱いで、自己参照を先に弾く
-  // (docs/報告記録.md 2026-09-03 08:23 の②)。パターン自身は kind が 'pattern' で
+  // 過去の失敗(ブーリアンの対象=相手)と同じ扱いで、自己参照を先に弾く。
+  // パターン自身は kind が 'pattern' で
   // isPatternSource が false になるので、この早期リターンが無くても下の判定で同じ結果になるが、
   // 「自己参照」であることを意図として明示するため独立させる。
   if (feature.sourceFeatureId === feature.id) {
@@ -2736,7 +2736,7 @@ function planPattern(
   if (!transformsOutcome.ok) {
     return fail(feature.id, transformsOutcome.code, transformsOutcome.message);
   }
-  // もとの穴・ねじ穴の解決をもう一度呼んで再利用する(§2.7 手順5)。ただし consumed には
+  // もとの穴・ねじ穴の解決をもう一度呼んで再利用する。ただし consumed には
   // 「空集合」を渡す: もとのフィーチャー自身がその対象(例: 穴なら掘り込む先のボディ)を
   // main loop の消費記録ですでに consumed へ加えている(このパターンの直前で処理済みのため)。
   // 同じ consumed をそのまま渡すと、もとのフィーチャーがもう一度自分の対象を消費しようとした
@@ -2784,14 +2784,14 @@ function planPattern(
 }
 
 /* ------------------------------------------------------------------ *
- * 基本形状(FR-429、P5 §2.7、タスク16)
+ * 基本形状(FR-429)
  * ------------------------------------------------------------------ */
 
 /**
  * 部品文書の側で座標の式を解くときの手掛かり。
  *
  * 部品文書には作図面もスケッチの履歴も無いので、極座標の基準は XY 平面と決め(決定性)、
- * 点・端点の表は空にする(P4 の `resolveReferences.ts` の `pointFromDefinition` と
+ * 点・端点の表は空にする(`resolveReferences.ts` の `pointFromDefinition` と
  * まったく同じ決め方。同じ規約を2通りに分けない)。この結果、
  *   - 絶対座標(`mode: 'absolute'`)は常に解ける
  *   - ずれ・極座標は基準が「原点」か「立体の部分形状」のときに解ける
@@ -2811,12 +2811,12 @@ const PART_COORDINATE_CONTEXT: ResolveContext = {
 };
 
 /**
- * 基本形状の断りの文言(FR-429、FR-504、§2.7.1 の「断りの条件」)。
+ * 基本形状の断りの文言(FR-429、FR-504、「断りの条件」)。
  *
  * **同じ検査がカーネル(`packages/kernel/src/occt/makePrimitive.ts`)にもある。**
  * model が先に断るので利用者が見るのはここの文言だけだが、片方だけ直すと理由が食い違うため
  * **文言は 1 字も違えずに揃える**(ばねの「ピッチは線径より…」が model と kernel の
- * 2 か所にあるのと同じ扱い。統括の決定 2026-09-05「model の文言を採る」)。
+ * 2 か所にあるのと同じ扱い。model の文言を採る)。
  * model 側で先に断るのは、重い OCCT の呼び出しの前にツリーへ理由を出すため(NFR-UX-5)。
  */
 const PRIMITIVE_CONE_RADIUS_NEGATIVE_MESSAGE = '円錐の半径は 0 以上にしてください。';
@@ -2827,7 +2827,7 @@ const PRIMITIVE_CONE_RADIUS_SAME_MESSAGE = '円錐の上下の半径が同じで
 /** 管が中心の穴を食いつぶして自己交差する。 */
 const PRIMITIVE_TORUS_MINOR_TOO_LARGE_MESSAGE =
   'トーラスの管の半径は、中心までの半径より小さくしてください。';
-/** 中心にしたスケッチの点が消えた・見つからない(§2.7.1 の断り方の表)。 */
+/** 中心にしたスケッチの点が消えた・見つからない。 */
 const MISSING_PRIMITIVE_POINT_MESSAGE = '中心にする点が見つかりません。点を選び直してください。';
 /**
  * 中心にした頂点を持つ立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。
@@ -2856,11 +2856,11 @@ type PrimitiveShapeOutcome =
   | { readonly ok: false; readonly message: string };
 
 /**
- * 基本形状の寸法を式から解決し、範囲を確かめる(§2.7.1 の表)。
+ * 基本形状の寸法を式から解決し、範囲を確かめる。
  *
  * 見る順は `makePrimitive.ts` の `checkShapeSpec` と同じにしてある(同じ入力からは
- * 必ず同じ理由が出るようにするため)。円錐だけは半径 0 を許す(上半径 0 で尖るため、
- * §0.a-0.16)ので「0 以上」で見て、両方 0・上下同径を別の理由で断る。
+ * 必ず同じ理由が出るようにするため)。円錐だけは半径 0 を許す(上半径 0 で尖るため)
+ * ので「0 以上」で見て、両方 0・上下同径を別の理由で断る。
  */
 function resolvePrimitiveShape(shape: PrimitiveShape): PrimitiveShapeOutcome {
   switch (shape.kind) {
@@ -2949,15 +2949,15 @@ export type SolidOriginOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 立体の基準点を解決する(FR-429 の3通り、§2.7.1、§0.a-0.18)。
+ * 立体の基準点を解決する(FR-429 の3通り)。
  *
  * - 座標の式 … `resolveCoordinate`(スケッチ側の正本)を再利用して世界座標にする。
  * - スケッチの点 … 解決済みのスケッチから点を引いて世界座標にする。
  * - 立体の頂点 … **ここでは解決しない。** 指紋(`query`)と、その頂点を持つ立体の段の鍵
- *   (`targetKey`)を段へ乗せ、頂点の選び直しはカーネルが行う(穴の面と同じ扱い、§2.2)。
+ *   (`targetKey`)を段へ乗せ、頂点の選び直しはカーネルが行う(穴の面と同じ扱い)。
  *   model は面・辺・頂点の位置を持たないので、ここで解こうとしても解けない。
  *
- * **頂点を借りても対象は消費しない**(§0.a-0.19)。`targetKey` を持つのは鍵を連鎖させる
+ * **頂点を借りても対象は消費しない**。`targetKey` を持つのは鍵を連鎖させる
  * ためだけで、消費の記録(`consumedTargetsOf`)には現れない。鍵に混ぜないと、上流を
  * 伸ばして頂点が動いても鍵が変わらず古い形がキャッシュから返る(cacheKey.ts の注釈)。
  */
@@ -2973,7 +2973,7 @@ export function resolveSolidOrigin(
     case 'coordinate': {
       const resolved = resolveCoordinate(origin.value, { ...PART_COORDINATE_CONTEXT, functionPoint, subShape }, featureId);
       if (!resolved.ok) {
-        // 式のエラー(値が数でない・基準が無い)をそのまま見せる(§2.7.1 の断り方の表)。
+        // 式のエラー(値が数でない・基準が無い)をそのまま見せる。
         return { ok: false, error: partError(featureId, 'invalidValue', resolved.error.message) };
       }
       return { ok: true, value: { origin: resolved.value, query: null, targetKey: null } };
@@ -3012,7 +3012,7 @@ export function resolveSolidOrigin(
 }
 
 /**
- * 基本形状(FR-429、§2.7)。対象を取らず、新しいボディを1つ作る(§0.a-0.19)。
+ * 基本形状(FR-429)。対象を取らず、新しいボディを1つ作る。
  *
  * 解決の順は 基準点 → 向き(軸)→ 寸法。どの段階で断っても、それより後ろは見ない
  * (ばね `planSpring` と同じ組み立て方)。**寸法の範囲はここで先に断る**ので、
@@ -3029,7 +3029,7 @@ function planPrimitive(
   if (!origin.ok) {
     return origin;
   }
-  // 向きは回転軸(FR-402)と同じ `AxisSpec` を流用する(§0.a-0.16。同じものを2つ作らない)。
+  // 向きは回転軸(FR-402)と同じ `AxisSpec` を流用する(同じものを2つ作らない)。
   const axisFrame = resolveRevolveAxis(feature.axis, sketches, axisFrames);
   if (axisFrame === null) {
     return fail(feature.id, 'missingProfile', MISSING_PRIMITIVE_AXIS_MESSAGE);
@@ -3054,10 +3054,10 @@ function planPrimitive(
 }
 
 /* ------------------------------------------------------------------ *
- * 面をつなぐ(罫線面 FR-430)・ロフト(FR-410)。P5 §2.9、タスク25
+ * 面をつなぐ(罫線面 FR-430)・ロフト(FR-410)。
  * ------------------------------------------------------------------ */
 
-/** つなぐには断面が 2 つ要る(§2.9.1)。ロフトも下限は同じ。 */
+/** つなぐには断面が 2 つ要る。ロフトも下限は同じ。 */
 const MIN_THRU_SECTIONS = 2;
 
 /**
@@ -3069,11 +3069,11 @@ const THRU_SECTIONS_MISSING_FACE_MESSAGE =
   'つなぐもとの面が見つかりません。スケッチで面を張ってからやり直してください。';
 const THRU_SECTIONS_MISSING_SPHERE_MESSAGE =
   'つなぐもとの球が見つかりません。球を選び直してください。';
-/** 球は縁を持たないので、球どうしを結ぶ直線が決まらない(§2.9.3)。 */
+/** 球は縁を持たないので、球どうしを結ぶ直線が決まらない。 */
 const THRU_SECTIONS_TWO_SPHERES_MESSAGE = '球どうしを直線でつなぐことはできません。';
-/** ロフトは球を扱わない(§2.9.3。球へつなぐのは罫線面だけ)。 */
+/** ロフトは球を扱わない(球へつなぐのは罫線面だけ)。 */
 const LOFT_SPHERE_MESSAGE = 'ロフトには球を使えません。「面をつなぐ」を使ってください。';
-/** ねじれの補正は稜線を何本ずらすかなので、整数でないと意味が決まらない(§0.a-0.28)。 */
+/** ねじれの補正は稜線を何本ずらすかなので、整数でないと意味が決まらない。 */
 const THRU_SECTIONS_TWIST_MESSAGE = 'ねじれの補正は整数にしてください。';
 /**
  * 中心を立体の頂点で決めた球(FR-429 の 3 通りのうちの 1 つ)は、まだ相手にできない。
@@ -3093,9 +3093,9 @@ type ThruSectionOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 断面に指した球(`kind: 'primitive'` の球、FR-429)を中心と半径に直す(§2.9.3)。
+ * 断面に指した球(`kind: 'primitive'` の球、FR-429)を中心と半径に直す。
  *
- * 引き方は球面上の点(FR-431、タスク19b の `sphereAt`)とまったく同じにしてある
+ * 引き方は球面上の点(FR-431、`sphereAt`)とまったく同じにしてある
  * (同じ規則を 2 通りに書かない)。中心は `resolveSolidOrigin`、半径は `shape.radius.value`。
  */
 function resolveSphereSection(
@@ -3111,7 +3111,7 @@ function resolveSphereSection(
     sphere === undefined ||
     sphere.kind !== 'primitive' ||
     sphere.shape.kind !== 'sphere' ||
-    // 抑制した球は画面に無いので、つなぐ相手にもできない(タスク19b の球面上の点と同じ)。
+    // 抑制した球は画面に無いので、つなぐ相手にもできない(球面上の点と同じ)。
     sphere.suppressed
   ) {
     return {
@@ -3140,11 +3140,11 @@ function resolveSphereSection(
 }
 
 /**
- * 断面 1 つを解決する(§2.9.1)。
+ * 断面 1 つを解決する。
  *
  * - スケッチの面 … 解決済みの輪郭(`ResolvedCurve`)をそのまま段へ乗せる。
  * - 球 … 中心と半径へ直す(上の `resolveSphereSection`)。
- * - 立体の面 … **カーネルが選び直してから輪郭を取り出す**(§0.a-0.73、タスク24b)。
+ * - 立体の面 … **カーネルが選び直してから輪郭を取り出す**。
  */
 function resolveRuledSection(
   featureId: string,
@@ -3174,9 +3174,9 @@ function resolveRuledSection(
       return resolveSphereSection(featureId, section.sphereFeatureId, solids, sketches, bodyKeys, context);
     case 'solidFace': {
       /*
-        立体の面(§0.a-0.73、タスク24b)。**輪郭へは直さず、指紋のまま段へ乗せる。**
+        立体の面。**輪郭へは直さず、指紋のまま段へ乗せる。**
         面を選び直せるのはカーネルだけ(model は面の位置も外周も持たない)で、穴・面取りの
-        面とまったく同じ扱いである(§2.2.4)。参照の型は辺・頂点も表せるので、面であることを
+        面とまったく同じ扱いである。参照の型は辺・頂点も表せるので、面であることを
         ここで先に確かめる(カーネルも断るが、OCCT を呼ぶ前に赤くする。NFR-UX-5)。
       */
       if (subShapeKindOf(section.ref) !== 'face') {
@@ -3192,13 +3192,13 @@ function resolveRuledSection(
           error: partError(featureId, 'missingBody', THRU_SECTIONS_MISSING_BODY_MESSAGE),
         };
       }
-      // **消費しない**(§0.a-0.27)ので `consumed` は見ない。鍵に混ぜるのは鍵の連鎖のため。
+      // **消費しない**ので `consumed` は見ない。鍵に混ぜるのは鍵の連鎖のため。
       return { ok: true, section: { kind: 'faceQuery', targetKey, query: section.ref } };
     }
   }
 }
 
-/** ねじれの補正(§0.a-0.28)。小数は切り捨てずに断る(統括の決定)。 */
+/** ねじれの補正。小数は切り捨てずに断る。 */
 function resolveThruSectionsTwist(
   featureId: string,
   twist: ExpressionValue,
@@ -3236,9 +3236,9 @@ function resolveRuledSections(
 }
 
 /**
- * 面をつなぐ(罫線面、FR-430、§2.9)。2 つの断面を直線で結ぶ。
+ * 面をつなぐ(罫線面、FR-430)。2 つの断面を直線で結ぶ。
  *
- * **対象を消費しない**(§0.a-0.27)ので `consumed` を見ない。輪郭を貸した立体・球は
+ * **対象を消費しない**ので `consumed` を見ない。輪郭を貸した立体・球は
  * そのまま画面に残り、要るなら和(FR-404)でまとめられる。
  */
 function planRuled(
@@ -3271,7 +3271,7 @@ function planRuled(
     plan: {
       kind: 'thruSections', smooth: false,
       sections: sections.sections,
-      // 直線で結ぶ(罫線面)。ロフトとの違いはこの 1 つだけ(§0.a-0.25)。
+      // 直線で結ぶ(罫線面)。ロフトとの違いはこの 1 つだけ。
       ruled: true,
       closed: true,
       twist: twist.twist,
@@ -3281,8 +3281,8 @@ function planRuled(
 }
 
 /**
- * ロフト(FR-410、§2.9)。2 つ以上の断面をなめらかに結ぶ。
- * 球は置けない(§2.9.3)ので、指されていたら理由を出して断る。
+ * ロフト(FR-410)。2 つ以上の断面をなめらかに結ぶ。
+ * 球は置けないので、指されていたら理由を出して断る。
  */
 function planLoft(
   feature: LoftFeature,
@@ -3327,7 +3327,7 @@ function planLoft(
 }
 
 /* ------------------------------------------------------------------ *
- * 抜き勾配・ミラー・移動/回転・拡大縮小(FR-417、FR-419、FR-424)。P5 §2.11、タスク45
+ * 抜き勾配・ミラー・移動/回転・拡大縮小(FR-417、FR-419、FR-424)。
  * ------------------------------------------------------------------ */
 
 /** 傾ける面・中立面に面でないもの(辺・頂点)を選んだ。穴の「面だけ」と同じ守り。 */
@@ -3339,9 +3339,9 @@ const DRAFT_NEUTRAL_NOT_FLAT_MESSAGE =
 const DRAFT_OTHER_BODY_MESSAGE = '傾ける面は、加工するもとの立体の面にしてください。';
 
 /**
- * 抜き勾配(FR-417、§2.11)。対象のボディを消費して 1 つの新しいボディを作る。
+ * 抜き勾配(FR-417)。対象のボディを消費して 1 つの新しいボディを作る。
  *
- * 面の選び直しはカーネルが行う(model は指紋を渡すだけ、§2.2)。ここで確かめるのは
+ * 面の選び直しはカーネルが行う(model は指紋を渡すだけ)。ここで確かめるのは
  * 「面を指しているか」「対象の立体の面か」「角度が範囲の中か」の 3 つで、どれも
  * OCCT を呼ぶ前に赤くできる(NFR-UX-5)。
  */
@@ -3368,7 +3368,7 @@ function planDraft(
       return fail(feature.id, 'invalidValue', DRAFT_OTHER_BODY_MESSAGE);
     }
   }
-  // 中立面だけは平らでなければならない(types.ts の `neutralFace` の注釈、タスク34 の実測)。
+  // 中立面だけは平らでなければならない(types.ts の `neutralFace` の注釈、実測)。
   const neutral = context.subShape(feature.neutralFace);
   if (neutral !== null && (neutral.surfaceKind !== 'plane' || neutral.axis === null)) {
     return fail(feature.id, 'degenerate', DRAFT_NEUTRAL_NOT_FLAT_MESSAGE);
@@ -3395,7 +3395,7 @@ function planDraft(
 }
 
 /**
- * 平らな面の移動(EX-18 の限られた一段)。対象のボディを消費して 1 つの新しいボディを作る。
+ * 平らな面の移動(限られた一段)。対象のボディを消費して 1 つの新しいボディを作る。
  *
  * model だけで断れるもの(面でない・別の立体の面・平らでない・距離が 0 や数でない)は
  * `checkFaceOffset` が OCCT を呼ぶ前に赤くする(NFR-UX-5)。隣の面の幾何と、ほかの形との
@@ -3432,9 +3432,9 @@ type MirrorPlaneOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * ミラーの鏡にする平面(FR-419、§0.a-0.36)を「通る点+単位法線」へ直す。
+ * ミラーの鏡にする平面(FR-419)を「通る点+単位法線」へ直す。
  *
- * 基準の 3 面と任意の作業平面(FR-328)は同じ `workPlane`(P4 タスク9 の解決結果)から、
+ * 基準の 3 面と任意の作業平面(FR-328)は同じ `workPlane`(作業平面の解決結果)から、
  * 立体の平らな面は面の指紋(または選び直し)から取る。どちらも既にある仕組みを呼ぶだけで、
  * 平面の作り方をここへ写さない。
  */
@@ -3474,9 +3474,9 @@ function resolveMirrorPlane(
 }
 
 /**
- * ミラー(FR-419、§0.a-0.36)。平面に対する鏡像のボディを 1 つ作る。
+ * ミラー(FR-419)。平面に対する鏡像のボディを 1 つ作る。
  *
- * **対象を消費しない**ので `consumed` を見ない(罫線面の立体の面と同じ扱い、§0.a-0.27)。
+ * **対象を消費しない**ので `consumed` を見ない(罫線面の立体の面と同じ扱い)。
  * 元と鏡像の両方が `liveBodyIds` に残り、要るなら和(FR-404)でまとめられる。
  * それでも `targetKey` は必ず持つ——元を編集したら鏡像も作り直すためである(NFR-PF-3)。
  */
@@ -3504,10 +3504,10 @@ const TRANSFORM_MISSING_AXIS_MESSAGE =
   '回転の軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
 
 /**
- * 移動/回転(FR-424、§0.a-0.41)。対象を剛体変換したボディを 1 つ作る。**対象を消費する。**
+ * 移動/回転(FR-424)。対象を剛体変換したボディを 1 つ作る。**対象を消費する。**
  *
  * 回転軸は回転(FR-402)・パターン(FR-411)と同じ `AxisSpec` なので `resolveRevolveAxis` を
- * 再利用する(同じものを 2 つ作らない、§0.a-0.21)。軸が null なら平行移動だけで、
+ * 再利用する(同じものを 2 つ作らない)。軸が null なら平行移動だけで、
  * 段には恒等の回転(角 0)を入れる——kernel の `RigidTransformSpec` が軸の欄を必ず持つため。
  */
 function planTransform(
@@ -3563,7 +3563,7 @@ function planTransform(
 
 /** 拡大縮小の中心にする点が引けない(基本形状の中心の言い回しに揃える)。 */
 const SCALE_MISSING_ORIGIN_MESSAGE = '拡大縮小の中心にする点が見つかりません。点を選び直してください。';
-/** 倍率の断り 3 種(§2.11 の範囲 MIN_SCALE 〜 MAX_SCALE)。 */
+/** 倍率の断り 3 種(範囲 MIN_SCALE 〜 MAX_SCALE)。 */
 const SCALE_NOT_POSITIVE_MESSAGE = '倍率は 0 より大きい数にしてください。';
 const SCALE_TOO_SMALL_MESSAGE = '倍率は 0.001 以上にしてください。';
 const SCALE_TOO_LARGE_MESSAGE = '倍率は 1000 以下にしてください。';
@@ -3583,12 +3583,12 @@ function checkScaleFactor(value: number): string | null {
 }
 
 /**
- * 拡大縮小(FR-424、§0.a-0.41)。**対象を消費する。**
+ * 拡大縮小(FR-424)。**対象を消費する。**
  *
  * **軸ごとの倍率が 3 つとも同じなら全体の倍率へ正規化する。** 倍率 2 の立方体は
  * `uniform: 2` でも `perAxis: [2,2,2]` でもまったく同じ形なので、正規化しないと
  * 同じ形に 2 つの鍵ができ、キャッシュが 2 度計算する(cacheKey.ts の
- * `ScaleKeyMaterial` の注釈が「判断はタスク45」としているのがここ)。
+ * `ScaleKeyMaterial` の注釈が述べる正規化はここで行う)。
  */
 function planScale(
   feature: ScaleFeature,
@@ -3640,7 +3640,7 @@ function planScale(
 
 /* ------------------------------------------------------------------ *
  * スイープ・リブ・エンボス・外ねじ・曲面・くり抜き
- * (FR-409、FR-420、FR-421、FR-423、FR-428、FR-418)。P5 §2.11・§2.12、タスク46
+ * (FR-409、FR-420、FR-421、FR-423、FR-428、FR-418)。
  * ------------------------------------------------------------------ */
 
 /**
@@ -3648,7 +3648,7 @@ function planScale(
  *
  * `ResolvedSketch.curvesByFeature` は「フィーチャー id → その形になった曲線」の表で、
  * 矩形・正多角形のように 1 つのフィーチャーが複数の曲線になるものも 1 つの束で引ける
- * (P4 タスク17 で公開された表。同じ引き方を 2 通りに書かない)。
+ * (公開された表。同じ引き方を 2 通りに書かない)。
  *
  * **並びは書かれた順のまま**にする(経路は順につながっている前提。`SketchCurveRef` の注釈)。
  * 1 本でも引けなければ null を返し、呼び出し側が種類ごとの文言で断る(FR-504)。
@@ -3689,7 +3689,7 @@ function findResolvedCurves(
 }
 
 /**
- * 開いた輪郭が乗っている平面の単位法線(リブ FR-420・曲面の押し出し FR-428、タスク46)。
+ * 開いた輪郭が乗っている平面の単位法線(リブ FR-420・曲面の押し出し FR-428)。
  *
  * まず座標から当てはめる(`fitPlaneNormal`)。**線分 1 本の輪郭は座標だけからは平面が
  * 決まらない**(直線を含む平面は無数にある)ので、そのときは輪郭をかいた**作図面**の
@@ -3727,11 +3727,11 @@ const SWEEP_MISSING_PATH_MESSAGE =
   '掃く道筋が見つかりません。スケッチで線をかいてから選び直してください。';
 
 /**
- * スイープ(FR-409、§0.a-0.43、§0.a-0.76)。断面を経路に沿って掃く。
+ * スイープ(FR-409)。断面を経路に沿って掃く。
  *
  * **対象を取らない「作る」段**なので `bodyKeys` も `consumed` も見ない。
  * 断面の重心を経路の始点へ移すこと・法線を接線へ合わせることはカーネルの役目
- * (タスク37)で、model は断面と経路の座標を渡すだけである。
+ * で、model は断面と経路の座標を渡すだけである。
  */
 function planSweep(feature: SweepFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
   const face = findResolvedFace(sketches, feature.profile);
@@ -3765,7 +3765,7 @@ const RIB_THICKNESS_MESSAGE = '厚みは 0 より大きい数にしてくださ�
 const RIB_NO_DIRECTION_MESSAGE =
   'リブの向きが決まりません。輪郭の面と伸ばす向きを確かめてください。';
 /**
- * リブ(FR-420、§0.a-0.37、§0.a-0.75)。開いた輪郭に厚みを付けた壁を立体へ足す。
+ * リブ(FR-420)。開いた輪郭に厚みを付けた壁を立体へ足す。
  *
  * **厚みの向き(`side`)と伸ばす向き(`direction`)は別物である。**
  * - 厚みは輪郭の平面の法線の側へ付く。`both` は両側へ半分ずつ(段の `symmetric` が真)、
@@ -3774,7 +3774,7 @@ const RIB_NO_DIRECTION_MESSAGE =
  * - 伸ばす向きは**輪郭の平面の中**にあり、`法線 × 輪郭の弦`(始点 → 終点)で決める。
  *   カーネルの検査(`makeRib.test.ts`)の例——法線 (0,1,0)・弦 +X・伸ばす向き (0,0,−1)——が
  *   ちょうどこの式になる。輪郭をかいた順で向きが決まるので、思っていたのと逆になったら
- *   輪郭をかき直す(段に向きの欄が無いため。**タスク49・50 への申し送り**)。
+ *   輪郭をかき直す(段に向きの欄が無いため)。
  */
 function planRib(
   feature: RibFeature,
@@ -3828,7 +3828,7 @@ function planRib(
 }
 
 /**
- * リブを伸ばす向きを 1 つに決める(FR-420、タスク46)。
+ * リブを伸ばす向きを 1 つに決める(FR-420)。
  *
  * 弦に直交する向きは平面の中に 2 つ(互いに逆)あり、**どちらに材料があるかは model には
  * 分からない**(段は相手の形を鍵でしか持たない)。そこで「材料は輪郭の下にある」という
@@ -3837,7 +3837,7 @@ function planRib(
  * 輪郭の平面が水平で上下の別が付かない(内積 0)ときだけ、外積の向きをそのまま採る。
  *
  * 思っていたのと逆になったら輪郭をかき直す。段にもフィーチャーにも向きの欄が無いので、
- * つまみが要るかどうかは画面の段(**タスク49・50**)で判断する。
+ * つまみが要るかどうかは画面の段で判断する。
  */
 function ribExtendDirection(extend: Vec3): Vec3 {
   const unit = normalizeVec3(extend);
@@ -3851,15 +3851,15 @@ const WORLD_DOWN: Vec3 = [0, 0, -1];
 /** エンボスの断りの文言(FR-421、FR-504)。 */
 const EMBOSS_OTHER_BODY_MESSAGE = '彫る面は、加工するもとの立体の面にしてください。';
 const EMBOSS_NOT_FACE_MESSAGE = '彫れるのは面だけです。面を選び直してください。';
-/** 曲面へのラップは P6 以降(タスク39)。いまは平らな面だけ。 */
+/** 曲面へのラップは未対応。いまは平らな面だけ。 */
 const EMBOSS_NOT_FLAT_MESSAGE = '彫れるのは平らな面だけです。平らな面を選び直してください。';
 const EMBOSS_MISSING_PROFILE_MESSAGE =
   '彫る輪郭が見つかりません。スケッチで面を張ってからやり直してください。';
 
 /**
- * エンボス(FR-421、§0.a-0.38)。平らな面へ輪郭を彫る / 浮き出す。**対象を消費する。**
+ * エンボス(FR-421)。平らな面へ輪郭を彫る / 浮き出す。**対象を消費する。**
  *
- * 面の選び直しはカーネルが行う(model は指紋を渡すだけ、§2.2)。ここで確かめるのは
+ * 面の選び直しはカーネルが行う(model は指紋を渡すだけ)。ここで確かめるのは
  * 「面か」「対象の立体の面か」「平らか」「輪郭があるか」「高さが正か」の 5 つで、
  * どれも OCCT を呼ぶ前に赤くできる(NFR-UX-5)。
  * 文書の `height`(面から測った高さ)がカーネルの `depth` になる——彫るときは
@@ -3916,31 +3916,31 @@ const THREAD_SHAFT_OTHER_BODY_MESSAGE = 'ねじを切る面は、加工するも
 const THREAD_SHAFT_NOT_CYLINDER_MESSAGE =
   'ねじを切れるのは円柱の面だけです。円柱の面を選び直してください。';
 /**
- * 呼び径と軸の実寸が食い違う(§0.a-0.85、統括の決定 2026-09-05 17:37)。
+ * 呼び径と軸の実寸が食い違う。
  * **カーネルでは断らず model で断る**ので、この文言が唯一の理由になる。
  */
 const THREAD_SHAFT_DIAMETER_MESSAGE =
   '呼び径と軸の径が合いません。ねじの呼びか、ねじを切る面を選び直してください。';
 
 /**
- * 呼び径と軸の実寸の許容差(mm、§0.a-0.85)。
+ * 呼び径と軸の実寸の許容差(mm)。
  * おねじの外径は軸の径とほぼ同じ(JIS のはめあいで数十 μm 差)なので、
  * 0.5mm も違えば「別の太さの軸にその呼びを付けた」とみなしてよい。
  */
 const THREAD_SHAFT_DIAMETER_TOLERANCE_MM = 0.5;
 
 /**
- * 外ねじ(FR-423、§0.a-0.40)。円柱面にねじを切る。**対象を消費する。**
+ * 外ねじ(FR-423)。円柱面にねじを切る。**対象を消費する。**
  *
  * 呼び(`nominal`)から規格表(`thread/metricThread.ts`)を引いて呼び径 d を得る。
  * ピッチは規格表から入るが式で書き換えられる(FR-202)ので**文書の値を正**とし、
  * 表からは呼び径だけを取る(ねじ穴 `planThreadHole` とまったく同じ扱い)。
  *
- * **呼び径と円柱面の実寸の食い違いは、保存された指紋の半径で見る**(§0.a-0.85)。
+ * **呼び径と円柱面の実寸の食い違いは、保存された指紋の半径で見る**。
  * 「いまの形」で選び直した半径は model に無い(`ResolvedSubShape` は面積・重心・軸しか
  * 持たない)ためで、上流を大きく作り替えて軸の太さが変わった場合は、カーネルの選び直しの
  * 結果とここの判定がずれうる。**そのときはカーネルがねじを切れずに断る**ので黙って
- * 間違った形になることはないが、理由の出どころが変わる(**タスク47・55 への申し送り**)。
+ * 間違った形になることはないが、理由の出どころが変わる。
  */
 function planThreadShaft(
   feature: ThreadShaftFeature,
@@ -4023,12 +4023,12 @@ type SurfaceShapeOutcome =
   | { readonly ok: false; readonly error: PartError };
 
 /**
- * 曲面の作り方 6 種(FR-428、§0.a-0.45)を段の欄へ直す。
+ * 曲面の作り方 6 種(FR-428)を段の欄へ直す。
  *
  * **種類ごとに材料が違う**——押し出し・回転・平面・ロフトはスケッチの曲線、
  * 面・オフセットは立体の面の指紋である。前者は座標まで解けるが、後者は指紋のまま渡し、
- * 選び直しはカーネルが行う(罫線面の `solidFace` とまったく同じ扱い、§2.2)。
- * **どの作り方でも対象を消費しない**ので `consumed` を見ない(§0.a-0.45)。
+ * 選び直しはカーネルが行う(罫線面の `solidFace` とまったく同じ扱い)。
+ * **どの作り方でも対象を消費しない**ので `consumed` を見ない。
  */
 /** A single saved open arc is named independently of straight-line and closed-region producers. */
 function surfaceArcOrigin(sketch: SketchDocument | undefined, ids: readonly string[],
@@ -4209,7 +4209,7 @@ function resolveSurfaceShape(
         };
       }
       if (operation.kind === 'face') {
-        // **消費しない**(§0.a-0.45)ので `consumed` は見ない。鍵は連鎖のために持つ。
+        // **消費しない**ので `consumed` は見ない。鍵は連鎖のために持つ。
         return {
           ok: true,
           value: { shape: { kind: 'face', face: operation.face }, targetKey },
@@ -4231,7 +4231,7 @@ function resolveSurfaceShape(
 }
 
 /**
- * 曲面(FR-428、§0.a-0.45)。**閉じた立体ではなく面だけのボディ**を作る。
+ * 曲面(FR-428)。**閉じた立体ではなく面だけのボディ**を作る。
  * **どの作り方でも対象を消費しない**(面を貸した立体はそのまま画面に残る)。
  */
 function planSurface(
@@ -4257,7 +4257,7 @@ const SHELL_OTHER_BODY_MESSAGE = '開ける面は、くり抜くもとの立体�
 const SHELL_THICKNESS_MESSAGE = '壁の厚さは 0 より大きい数にしてください。';
 
 /**
- * くり抜き(シェル。FR-418、§0.a-0.47、§2.12)。壁の厚さを残して中身を抜く。
+ * くり抜き(シェル。FR-418)。壁の厚さを残して中身を抜く。
  * **対象を消費する。**
  *
  * **開ける面は 0 枚でもよい**(そのときは外から見た形が変わらず、中だけが空になる)ので、
@@ -4299,7 +4299,7 @@ function planShell(
 }
 
 /* ------------------------------------------------------------------ *
- * 平面による切断(FR-432、§2.9b、タスク27c)
+ * 平面による切断(FR-432)
  * ------------------------------------------------------------------ */
 
 /** 切るもとの立体が引けない(未作成・抑制中・上流が失敗・前方参照)。 */
@@ -4308,13 +4308,13 @@ const CUT_MISSING_BODY_MESSAGE = '切るもとの立体が見つかりません�
 const CUT_CONSUMED_TWICE_MESSAGE = 'その立体はすでに別のところで使われています。';
 
 /**
- * 対になっている切断(§0.a-0.58)を文書から引く。
+ * 対になっている切断を文書から引く。
  *
  * 結びは 2 つ目が `pairedWith` に 1 つ目の id を持つ形で保存されるので、**どちら向きにも
  * 探す**(履歴の並べ替え FR-507 で 2 つの順序が入れ替わっても対のままにするため)。
  *
  * **相手が文書に無い・抑制されている・切断でない・別の立体を切っているときは null**
- * (= 単独の切断として扱う)。文書は書き換えない(§2.9b.2)。
+ * (= 単独の切断として扱う)。文書は書き換えない。
  */
 function pairedCutOf(feature: CutFeature, solids: readonly SolidFeature[]): CutFeature | null {
   const partner = solids.find(
@@ -4330,7 +4330,7 @@ function pairedCutOf(feature: CutFeature, solids: readonly SolidFeature[]): CutF
 }
 
 /**
- * 切断の対象になるボディの鍵を引く(§0.a-0.5、§0.a-0.58)。
+ * 切断の対象になるボディの鍵を引く。
  *
  * 加工の `resolveMachiningTarget` と同じ判定に、**対の切断だけの例外**を足したもの。
  * 「反対側も残す」で積まれた 2 つ目は、対象が 1 つ目に消費された後で解決される。
@@ -4363,7 +4363,7 @@ function resolveCutTarget(
 /**
  * 切断面(`PlaneSpec`)を解く。**平面の解決の正本は `geometry/planeSpec.ts`** で、
  * ここは手掛かり(点・部分形状・軸・作図面)を束ねて渡すだけである(同じ規則を 2 か所に
- * 書かない。§0.a-0.56)。軸は回転・パターンと同じ `resolveRevolveAxis` を再利用する。
+ * 書かない)。軸は回転・パターンと同じ `resolveRevolveAxis` を再利用する。
  */
 function cutPlaneContext(
   sketches: readonly ResolvedPartSketch[],
@@ -4483,9 +4483,9 @@ function surfaceCutDependencyError(
 }
 
 /**
- * 平面による切断(FR-432、§2.9b)。対象を消費し、残す側 1 つのボディを作る。
+ * 平面による切断(FR-432)。対象を消費し、残す側 1 つのボディを作る。
  *
- * 残す側の意味は解決した**法線の向き**で決まる(§0.a-0.57)ので、断りの文言も含めて
+ * 残す側の意味は解決した**法線の向き**で決まるので、断りの文言も含めて
  * 平面の解決は `resolvePlaneSpec` に任せる(同じ指定からは必ず同じ法線が出る)。
  * 平面が決まらなかった理由(`PlaneErrorKey`)は基準ジオメトリと同じ表でツリーの
  * 断りへ写す(`REFERENCE_ERROR_CODES`。断りのコードを増やさない)。
@@ -4521,19 +4521,19 @@ function planCut(
 }
 
 /**
- * 読み込んだ三角形の形を加工・組み合わせの対象に指したときの断り(P6 §2.8 の表、§0.a-0.23)。
+ * 読み込んだ三角形の形を加工・組み合わせの対象に指したときの断り(断りの表)。
  *
  * **この文言の正本は model のこの 1 行**である。カーネル(`worker/recomputeSolids.ts` の
- * `MESH_NOT_MACHINABLE_MESSAGE`、タスク10)にも 1 字違わぬ同じ文言の断りがあるが、
+ * `MESH_NOT_MACHINABLE_MESSAGE`)にも 1 字違わぬ同じ文言の断りがあるが、
  * あちらは二重の網(段まで届いてしまった場合の最後の砦)で、
- * **参照へ変えるのは P6 タスク16 の担当**である(model → kernel の依存を作らずに、
+ * **参照へは変えていない**(model → kernel の依存を作らずに、
  * kernel が model の文言を輸入する形にはできないため、当面は同じ文字列が 2 か所にある)。
  */
 export const IMPORTED_MESH_TARGET_MESSAGE =
   '読み込んだ三角形の形には、穴あけや面取りはできません。';
 
 /**
- * 読み込んだ形(ベースボディ。FR-802、P6 §2.8、タスク20)の段。
+ * 読み込んだ形(ベースボディ。FR-802)の段。
  *
  * 対象も式も取らないので、することは**抱き込んだバイト列を置き場から引く**ことだけ。
  * 引けなかった(= `.pcad` の `shapes/<shapeRef>.brep` が無い)ときは、形が作れない理由を
@@ -4556,7 +4556,7 @@ function planImportedSolid(
 }
 
 /**
- * 「読み込んだ三角形の形は加工・組み合わせの対象にできない」の断り(§0.a-0.23)を、
+ * 「読み込んだ三角形の形は加工・組み合わせの対象にできない」の断りを、
  * **model で 1 か所だけ**判定する。
  *
  * 判定に `consumedTargetsOf`(`createPartDocument.ts`)をそのまま使うのは、**形を変える
@@ -4640,7 +4640,7 @@ function planSolid(
       return planTransform(feature, sketches, bodyKeys, consumed, context);
     case 'scale':
       return planScale(feature, bodyKeys, consumed, context);
-    // P5 の Should 群の残り 5 種(§2.11、タスク46)と、前倒しした Could 群の 1 種(§2.12)。
+    // Should 群の残り 5 種と、前倒しした Could 群の 1 種。
     case 'sweep':
       return planSweep(feature, sketches);
     case 'rib':
@@ -4657,17 +4657,17 @@ function planSolid(
     }
     case 'shell':
       return planShell(feature, bodyKeys, consumed);
-    // 平面による切断(FR-432、§2.9b、タスク27c)。
+    // 平面による切断(FR-432)。
     case 'surfaceCut':
       return planSurfaceCut(feature, solids, sketches, bodyKeys, consumed, context);
     case 'cut':
       return planCut(feature, solids, sketches, bodyKeys, consumed, context);
-    // 読み込んだ形(FR-802、P6 §2.8、タスク20)。
+    // 読み込んだ形(FR-802)。
     case 'importedSolid':
       return planImportedSolid(feature, importedShapes);
     case 'importedMesh':
       /*
-        読み込んだ三角形の形は**幾何カーネルの段にならない**(§0.a-0.23)。
+        読み込んだ三角形の形は**幾何カーネルの段にならない**。
         呼び出し側(`resolvePart`)が `importedMesh` をこの関数へ渡す前に `meshBodies` へ
         振り分けているので、ここへは来ない。到達しない節に断りを書くのではなく
         `degenerate` の失敗で返してあるのは、`default` を作らずに網羅の switch を保ちつつ、
@@ -4685,7 +4685,7 @@ interface StepDraft {
   readonly plan: SolidStepPlan;
 }
 
-/** visible を決める前の三角形の形のボディ(段と同じ流儀。FR-802、§2.8)。 */
+/** visible を決める前の三角形の形のボディ(段と同じ流儀。FR-802)。 */
 type MeshBodyDraft = Omit<ResolvedMeshBody, 'visible'>;
 
 /**
@@ -4711,7 +4711,7 @@ function toPartError(error: ReferenceError): PartError {
 
 /**
  * 拘束まで解いたスケッチ(`ConstrainedSketch`)を、外へ返す形(`ResolvedPartSketch`)へ詰め替える。
- * `resolveSketchesAndReferences` の中で2か所(球の基準点の解決 タスク19b、最終の一覧)から
+ * `resolveSketchesAndReferences` の中で2か所(球の基準点の解決、最終の一覧)から
  * 同じ詰め替えが要るので、ここへ1つだけ置く(同じ規則を2か所に書かない)。
  */
 function toResolvedPartSketch(sketchId: string, constrained: ConstrainedSketch): ResolvedPartSketch {
@@ -4724,7 +4724,7 @@ function toResolvedPartSketch(sketchId: string, constrained: ConstrainedSketch):
 }
 
 /**
- * スケッチと基準ジオメトリを、互いを頼りながら解く(P4 タスク9)。
+ * スケッチと基準ジオメトリを、互いを頼りながら解く。
  *
  * スケッチは作図面として任意の作業平面(FR-328)を指せて、その作業平面はスケッチの点を
  * 基準にできる。どちらを先に解くかは決められないので、**頼まれたときに解いて覚える**形にする。
@@ -4740,20 +4740,20 @@ function resolveSketchesAndReferences(
   readonly sketches: readonly ResolvedPartSketch[];
   readonly references: ResolvedReferences;
   readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
-  /** 点の参照の解決(拡大縮小の中心 FR-424 が使う。P5 タスク45)。 */
+  /** 点の参照の解決(拡大縮小の中心 FR-424 が使う)。 */
   readonly point: (reference: PointReference) => Vec3 | null;
   readonly pointWithIdentity: (reference: PointReference) => ResolvedPointWithIdentity | null;
   readonly axisFrames: ReadonlyMap<string, AxisFrame>;
 } {
   const { offsetCurves, projectedCurves, subShape } = options;
-  // 拘束まで解いた結果を覚える(FR-313、P4b タスク8)。**スケッチを解く場所は
+  // 拘束まで解いた結果を覚える(FR-313)。**スケッチを解く場所は
   // この関数の中の 2 か所だけ**で、どちらも `resolveConstrainedSketch` を通す
-  // (片方だけ差し替えると拘束が効かない経路が残る。P4 タスク21 の教訓)。
+  // (片方だけ差し替えると拘束が効かない経路が残る)。
   const resolvedSketches = new Map<string, ConstrainedSketch>();
   const resolvingSketches = new Set<string>();
 
   /**
-   * 球の基本形状(FR-429)を id で引き、中心と半径にする(球面上の点 FR-431、P5 タスク19b)。
+   * 球の基本形状(FR-429)を id で引き、中心と半径にする(球面上の点 FR-431)。
    *
    * 球を引くのは部品文書の側の役目(`resolveCoordinate.ts` の `ResolveContext.sphere` の
    * 注釈)。中心は `resolveSolidOrigin`(基本形状の基準点の正本)、半径は `shape.radius.value`
@@ -4764,7 +4764,7 @@ function resolveSketchesAndReferences(
    * 点(`SolidOrigin.sketchPoint`)を指していれば `resolveSolidOrigin` が missingProfile を
    * 返し、ここでは null(呼び出し側の「球が見つかりません」)になる。基準点に立体の頂点
    * (`SolidOrigin.vertex`)を指す球も同じ理由で解けない(`bodyKeys` はソリッドの段を作る前
-   * なのでまだ空)。どちらも P5 タスク19b の検証範囲(座標で指定した球)には現れない。
+   * なのでまだ空)。どちらも検証の範囲(座標で指定した球)には現れない。
    */
   function sphereAt(sphereFeatureId: string): ResolvedSphere | null {
     if (options.invalidInputs?.has(sphereFeatureId)) return null;
@@ -4773,7 +4773,7 @@ function resolveSketchesAndReferences(
       return null;
     }
     if (feature.suppressed) {
-      // 抑制した球は画面に無いので、その球面上の点も置けない(計画書 §2.8.1 の断り)。
+      // 抑制した球は画面に無いので、その球面上の点も置けない。
       return null;
     }
     const radius = feature.shape.radius.value;
@@ -4795,7 +4795,7 @@ function resolveSketchesAndReferences(
   }
 
   /**
-   * スケッチの点の基準 'point' から部品の基準点を引く(EX-18 組立の文脈の参照)。解くのは既存の
+   * スケッチの点の基準 'point' から部品の基準点を引く(組立の文脈の参照)。解くのは既存の
    * `resolver.point` だけ。座標の値(絶対)で決めた基準点だけを通す。頂点・辺・面・相対の基準点は
    * このスケッチから作る立体やスケッチに戻って循環し得るので断る。消えた基準点は none(従来の「見つからない」)。
    */
@@ -4847,7 +4847,7 @@ function resolveSketchesAndReferences(
       resolvedSketches.set(sketchId, constrained);
       return constrained.resolved;
     },
-    // 基準ジオメトリ(FR-328、FR-329)も同じ口で「いまの形」を見る(タスク25)。
+    // 基準ジオメトリ(FR-328、FR-329)も同じ口で「いまの形」を見る。
     subShape,
   });
 
@@ -4878,7 +4878,7 @@ function resolveSketchesAndReferences(
 }
 
 /* ------------------------------------------------------------------ *
- * 投影・交差の解決順序(FR-325、§0.a-0.11、タスク25)
+ * 投影・交差の解決順序(FR-325)
  * ------------------------------------------------------------------ */
 
 /** 参照先の立体が見つからない(未作成・抑制中・上流が失敗・削除された)。 */
@@ -4888,16 +4888,16 @@ function missingProjectionBodyMessage(source: ProjectionSource): string {
     : '断面をとる立体が見つかりません。立体を選び直してください。';
 }
 
-/** 順序違反(自分より後に作られる立体を指した)。§0.a-0.11 の制約。 */
+/** 順序違反(自分より後に作られる立体を指した)。順序の制約。 */
 function laterProjectionBodyMessage(source: ProjectionSource): string {
   const what = source.kind === 'subShape' ? '投影' : '断面';
   return `${what}のもとにできるのは、このスケッチを使う立体より前に作られた立体だけです。履歴の順序を見直してください。`;
 }
 
 /**
- * `resolvePart` へ渡せるもの(P4 タスク21・25、FR-321、FR-325、FR-330)。
+ * `resolvePart` へ渡せるもの(FR-321、FR-325、FR-330)。
  *
- * オフセット(FR-321)と投影・交差(FR-325)の実際の形は OCCT に任せてある(タスク15・26)
+ * オフセット(FR-321)と投影・交差(FR-325)の実際の形は OCCT に任せてある
  * ので、`resolveSketch` と同じく「計算済みの形を覚え書きから読むだけ」の関数を渡す。
  * まだ計算していないものは `ResolvedSketch.pendingOffsets` / `ResolvedPart.projections` へ
  * 積まれ、カーネルへ頼んで埋めるのは `recomputePart` の役目。
@@ -4905,13 +4905,13 @@ function laterProjectionBodyMessage(source: ProjectionSource): string {
 export interface ResolvePartOptions {
   readonly invalidInputs?: ReadonlyMap<string, string>;
   readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
-  /** 計算済みの投影・交差の曲線をフィーチャーの id で引く(タスク25)。 */
+  /** 計算済みの投影・交差の曲線をフィーチャーの id で引く。 */
   readonly projectedCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
   readonly functionCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
   readonly functionPoint?: TypeFunctionPointResolver;
   readonly functionSurfaces?: (featureId: string) => TypeFunctionSurfacePlan | null;
   /**
-   * 立体の面・辺・頂点の選び直し(FR-325、FR-328〜330 の上流追従、タスク25)。
+   * 立体の面・辺・頂点の選び直し(FR-325、FR-328〜330 の上流追従)。
    *
    * 渡されなければ保存された指紋の位置・向きをそのまま使う
    * (`geometry/planeSpec.ts` の `subShapeFromFingerprint`)。**渡すと、3D スケッチの
@@ -4921,11 +4921,11 @@ export interface ResolvePartOptions {
    */
   readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
   /**
-   * 読み込んだ形(FR-802、P6 §2.8、タスク20)の B-rep のバイト列の置き場。
+   * 読み込んだ形(FR-802)の B-rep のバイト列の置き場。
    * **渡されなければ空**で、`importedSolid` の段は「読み込んだ形が見つかりません」で失敗する。
    *
    * 中身は `.pcad` の ZIP の `shapes/<shapeRef>.brep` をそのまま読んだバイト列で、
-   * 表を組み立てるのは `packages/io`(タスク21)、ここまで運ぶのは `recomputePart` である。
+   * 表を組み立てるのは `packages/io`、ここまで運ぶのは `recomputePart` である。
    * 曲線の覚え書き(`offsetCurves` / `projectedCurves`)を関数で受けているのと違って表
    * (`ReadonlyMap`)で受けるのは、①中身が読み込んだ時点で全部そろっていて後から埋まる
    * ことがない、②`.pcad` の添付をそのまま持ち回れる、の 2 つによる。
@@ -4934,7 +4934,7 @@ export interface ResolvePartOptions {
 }
 
 /**
- * 読み込んだ形のバイト列の置き場(FR-802、P6 §2.8、§0.a-0.9)。
+ * 読み込んだ形のバイト列の置き場(FR-802)。
  * 鍵は `ImportedSolidFeature.shapeRef`、値は `shapes/<shapeRef>.brep` の中身。
  */
 export type ImportedShapeBytes = ReadonlyMap<string, Uint8Array>;
@@ -4966,7 +4966,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     },
   );
   // 面・辺・頂点の位置は、選び直しの関数があればそれ、無ければ保存された指紋から取る
-  // (`resolveReferences.ts` の `resolveSubShape` とまったく同じ既定。§0.a-0.33)。
+  // (`resolveReferences.ts` の `resolveSubShape` とまったく同じ既定)。
   const context: SolidPlanContext = {
     functionPoint: options.functionPoint,
     functionSurfaces: options.functionSurfaces ?? (() => null),
@@ -4981,7 +4981,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   const importedShapes = options.importedShapes ?? NO_IMPORTED_SHAPES;
 
   const drafts: StepDraft[] = [];
-  /** 読み込んだ三角形の形(FR-802、§2.8)。段にならないので別の一覧へ積む。 */
+  /** 読み込んだ三角形の形(FR-802)。段にならないので別の一覧へ積む。 */
   const meshDrafts: MeshBodyDraft[] = [];
   // 基準ジオメトリの失敗もツリーの行として出すので、同じ一覧へ写す(FR-504)。
   const errors: PartError[] = references.errors.map(toPartError);
@@ -4992,7 +4992,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   // Shared BRep bytes may belong to distinct input bodies; keep later imports independently consumable.
   const importedShapeRefs = new Set<string>();
   const sheetMetalBodies = new Map<string, ResolvedSheetBody>();
-  /** すでに他のフィーチャーが消費したボディ。同じものを2度は使えない(§2.2)。 */
+  /** すでに他のフィーチャーが消費したボディ。同じものを2度は使えない。 */
   const consumed = new Set<string>();
   const surfaceCutGraph = document.solids.some(feature => feature.kind === 'surfaceCut')
     ? historyDependencies(document, { includeSelf: true }) : new Map<string, readonly string[]>();
@@ -5011,7 +5011,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     }
     if (feature.kind === 'importedMesh') {
       /*
-        読み込んだ三角形の形(FR-802、§2.8、§0.a-0.23)。**カーネルの段を作らない**ので
+        読み込んだ三角形の形(FR-802)。**カーネルの段を作らない**ので
         `bodyKeys` にも入れない——入れると下流の穴・ブーリアンが「あるはずの形」を指して
         しまい、断りがカーネルまで届いてから出ることになる。ここで入れずにおけば、
         対象に指した加工は `importedMeshTargetError` が文書だけを見て理由つきで断る。
@@ -5066,10 +5066,10 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     if (plan.kind === 'importedSolid') importedShapeRefs.add(plan.shapeRef);
     drafts.push({ featureId: feature.id, name: feature.name, key, plan: outcome.plan });
     bodyKeys.set(feature.id, key);
-    // 消費するボディを記録する(ブーリアンは対象と相手、加工は対象1つ、§0.a-0.5)。
+    // 消費するボディを記録する(ブーリアンは対象と相手、加工は対象1つ)。
     // 種類ごとの規則は createPartDocument.ts の consumedTargetsOf が正本で、ここには書かない。
     // 面入力の縫合が取り込む曲面は文書を見ないと決まらないので、文書の立体の一覧を渡す
-    // (文書だけの consumedBodyIds と同じ渡し方。EX-18)。
+    // (文書だけの consumedBodyIds と同じ渡し方)。
     // 段が作れなかったフィーチャーはここへ来ないので、失敗した加工は何も消費しない。
     for (const consumedId of consumedTargetsOf(feature, document.solids)) {
       consumed.add(consumedId);
@@ -5093,13 +5093,13 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   // まだ形の無い投影・交差(FR-325)を、段の鍵がそろったここで組み立てる。
   // 段のループの中ではなくループの後で行うのは、①鍵はループが作るもの、
   // ②順序の制約は「そのスケッチを使う立体より前か」で決まり、履歴全体を見ないと
-  // 判定できない、の 2 つによる(§0.a-0.11)。
+  // 判定できない、の 2 つによる。
   const projections = collectProjections(document, sketches, bodyKeys, errors);
 
   /*
     生きたボディの id を**文書の履歴の順**で並べる(FR-502)。段と三角形の形が混ざるので、
     2 つの一覧を継ぎ足すのではなく文書の並びで拾い直す。三角形の形が 1 つも無い文書では
-    段の並び = 文書の並びなので、P2 からの結果と 1 つも変わらない。
+    段の並び = 文書の並びなので、従来の結果と 1 つも変わらない。
   */
   const liveIds = new Set<string>([
     ...steps.filter((step) => step.visible).map((step) => step.featureId),
@@ -5141,7 +5141,7 @@ function collectProjections(
       bodyOrder.set(feature.id, index);
     }
   });
-  // 点の参照からスケッチを引けるように、スケッチの一覧も渡す(FR-425・FR-424、タスク46)。
+  // 点の参照からスケッチを引けるように、スケッチの一覧も渡す(FR-425・FR-424)。
   const firstUse = firstSketchUseIndexes(document.solids, document.sketches);
 
   const requests: ResolvedProjection[] = [];
@@ -5188,7 +5188,7 @@ function planProjection(
       ),
     };
   }
-  // 順序の制約(§0.a-0.11)。そのスケッチをどの立体も使っていなければ制約は無い。
+  // 順序の制約。そのスケッチをどの立体も使っていなければ制約は無い。
   const bodyIndex = bodyOrder.get(bodyFeatureId);
   if (
     firstUseIndex !== undefined &&

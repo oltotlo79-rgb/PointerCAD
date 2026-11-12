@@ -1,4 +1,4 @@
-/** P10: 板金の入力だけを保存する。導出座標・メッシュ・一時表示は書き出さない。 */
+/** 板金の入力だけを保存する。導出座標・メッシュ・一時表示は書き出さない。 */
 import type { SheetBaseFeature, SheetBendFeature, SheetBendRuleOverride, SheetFlangeFeature, SheetFlangeProfile, SheetMetalFeature,
   SheetMetalRule, SheetPanelBoundaryRef, SheetReliefFeature, SketchFaceRef, SketchLineRef } from '@pointercad/model';
 import { checkRecord, fieldProblem, joinPath, readBoolean, readExpression, readLiteral, readRecord, readString, readValue,

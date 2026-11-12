@@ -1,5 +1,5 @@
 /**
- * 切断の予告の面を、確定と同じ道筋で解く純関数(EX-04 W2、FR-432、NFR-UX-2・NFR-UX-5)。
+ * 切断の予告の面を、確定と同じ道筋で解く純関数(FR-432、NFR-UX-2・NFR-UX-5)。
  *
  * 予告は「いま決定したら、この面で切ります」を見せるものなので、確定(`commitCutInput`)と別の
  * 解釈をしない。次の 3 段は、どれも確定と同じ関数を通る。
@@ -52,9 +52,9 @@ import type { SubShapeBody } from './subShapeSelection.js';
 /** 予告の面。`createSolidLayer.ts` の `CutPreview` と同じ形(描き方は変えない)。 */
 interface CutPlanePreview {
   readonly plane: ResolvedPlane;
-  /** 四角の対角の長さ(= 対象のボディの境界箱の対角長、§0.a-0.61)。 */
+  /** 四角の対角の長さ(= 対象のボディの境界箱の対角長)。 */
   readonly diagonal: number;
-  /** 残す側(§0.a-0.57)。「反対側を残す」のつまみで決まり、確定の 1 つ目の切断と同じ。 */
+  /** 残す側。「反対側を残す」のつまみで決まり、確定の 1 つ目の切断と同じ。 */
   readonly keep: CutKeep;
 }
 

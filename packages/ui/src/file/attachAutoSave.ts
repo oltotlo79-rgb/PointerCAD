@@ -1,5 +1,5 @@
 /**
- * 自動保存の見張りとクラッシュ復元(計画書 docs/plans/P2-ソリッド基礎.md タスク24、§2.9)。
+ * 自動保存の見張りとクラッシュ復元。
  *
  * 対応要件: FR-805(5 分ごとの自動保存)、NFR-RE-2(異常終了しても直前の作業を失わない)、
  * NFR-UX-2(モーダルを増やさない)。
@@ -12,8 +12,8 @@
  *  - 案内の「復元する」「控えを書き出す」「破棄する」を実行する。
  *  - ブラウザで使う IndexedDB の保管庫を選び、無ければ失敗を通知する。
  *
- * 配線を `.tsx` へ直書きせず、ここへ切り出して検査できるようにする
- * (docs/報告記録.md 2026-09-02 22:10 の④)。`PointerCadApp.tsx` は `startAutoSave` を
+ * 配線を `.tsx` へ直書きせず、ここへ切り出して検査できるようにする。
+ * `PointerCadApp.tsx` は `startAutoSave` を
  * 呼んで、片付けの手を受け取るだけにする。
  */
 
@@ -71,7 +71,7 @@ class IndexedDbUnavailableError extends Error {
 }
 
 /**
- * ブラウザで使える保管庫を選ぶ(§0.a-0.11)。
+ * ブラウザで使える保管庫を選ぶ。
  *
  * IndexedDB が無ければ、読み込みは候補なし、書き込みと削除は `unavailable` の理由つきで
  * 失敗する。記憶上へ黙って落とすと、控えが残っていないのに成功したように見えるため。
@@ -188,7 +188,7 @@ export interface AttachAutoSaveOptions {
  * 部品文書の変化を見張り、控えを書く人へ伝える(FR-805)。**戻り値を呼ぶと見張りをやめる。**
  *
  * 保存していない変更が無いとき(手で保存した直後、Undo で保存した形へ戻ったとき)は
- * 伝えない。伝えると、変わっていない中身の控えを作り直すことになる(§0.a-0.12)。
+ * 伝えない。伝えると、変わっていない中身の控えを作り直すことになる。
  *
  * あわせて、画面が隠れたとき(タブを閉じる・別のタブへ移る直前)に未保存の変更があれば、
  * 5 分を待たずにその場で控えを書く。閉じる操作を止めることはできない(ブラウザは
@@ -289,7 +289,7 @@ export interface LoadAutoSavePromptOptions {
 }
 
 /**
- * 起動時に控えを読み、復元の案内を出す(§2.9)。この版で読めない控えも消さず、理由と
+ * 起動時に控えを読み、復元の案内を出す。この版で読めない控えも消さず、理由と
  * `.pcad` のまま書き出す導線を出す。新しい版の控えと壊れた控えを黙って同じ扱いにしない。
  */
 export async function loadAutoSavePrompt(
@@ -336,13 +336,13 @@ export async function loadAutoSavePrompt(
  *
  * 復元した部品は**まだどのファイルにも保存されていない**扱いにする(名前は「名称未設定」に
  * 戻る)。控えは前回の作業の途中の姿であって、ファイルに書いた中身とは限らないため。
- * 控えそのものは消さない。破棄を選ぶまで残す(§0.a-0.12)ので、復元した直後にもう一度
+ * 控えそのものは消さない。破棄を選ぶまで残すので、復元した直後にもう一度
  * 落ちても同じところから始められる。
  */
 export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   const before = useAppStore.getState();
-  // 押した時点の文書と比べる。版の番号は通常の編集で増えないので、参照で調べる共通の判定を使う
-  // (docs/review-2026-09-28-codex.md R01 の注意)。変わっていたら何もせず、案内を残す。
+  // 押した時点の文書と比べる。版の番号は通常の編集で増えないので、参照で調べる共通の判定を使う。
+  // 変わっていたら何もせず、案内を残す。
   const read = beginRecoveryRead('restore', saver);
   const isCurrent = read.isCurrent;
   try {
@@ -420,7 +420,7 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   /*
    * 形そのもの(読み込んだ B-rep・三角形・下絵)は文書の外にあるので、**文書を作り直した
    * 後に**入れ直す(`resetDocument` が前の部品の表を空にするので、先に入れると消える。
-   * ストアの `resetDocument` の注釈と同じ順序。P6 タスク32・39)。
+   * ストアの `resetDocument` の注釈と同じ順序)。
    */
   store.setImportedAttachments(outcome.attachments.shapes, outcome.attachments.meshes);
   store.setCanvasImages(outcome.attachments.canvases);
@@ -617,7 +617,7 @@ export function startAutoSave(options: StartAutoSaveOptions = {}): () => void {
     createAutoSaver({
       storage: createUnsavedOnlyStorage(createAutoSaveStorageForBrowser()),
       /*
-       * 控えにも添付(読み込んだ形・下絵)を一緒に入れる(P6 タスク32、タスク21 の申し送り)。
+       * 控えにも添付(読み込んだ形・下絵)を一緒に入れる。
        * **渡さないと、読み込んだ形を含む文書の控えが復元できない**——`.pcad` の読み手は
        * 文書が指している添付が欠けていると断るので、添付なしで書いた控えは
        * 「開けない控え」になる(`packages/io` の `findMissingAttachment`)。

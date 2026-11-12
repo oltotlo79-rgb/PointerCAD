@@ -1,5 +1,5 @@
 /**
- * スナップの候補集めと選択(計画書 docs/plans/P1-式とスケッチ.md タスク15 手順3、§2.8、§0.a-0.10)。
+ * スナップの候補集めと選択。
  *
  * 対応要件: FR-107(端点・中点・円中心・交点・グリッドへのスナップ、種別のフィルタ)。
  *
@@ -19,7 +19,7 @@ import type { TrackKind } from './trackMath.js';
 
 /**
  * 向きの吸着(FR-110)の 4 種。**候補の型は別**(`trackMath.ts` の `TrackCandidate`。
- * 1 点に決まらず線になるため)だが、**入切の一覧は 1 つに揃える**(§0.13 の決定)。
+ * 1 点に決まらず線になるため)だが、**入切の一覧は 1 つに揃える**。
  * 利用者から見れば「どこに吸い付くか」の設定は 1 か所であるべきなので、ここでは
  * 種別だけを `SnapKind` の仲間へ足す。型だけを借りるので実行時の相互参照は起きない。
  */
@@ -34,13 +34,13 @@ export const TRACK_SNAP_KINDS: readonly TrackKind[] = [
 export type SnapKind = 'endpoint' | 'intersection' | 'midpoint' | 'center' | 'grid' | TrackKind;
 
 /**
- * 優先順位(§0.a-0.10、§0.13)。判定半径の中に複数の候補があれば、まずこの順で選び、
+ * 優先順位。判定半径の中に複数の候補があれば、まずこの順で選び、
  * 同じ種別の中でだけ画面距離の近さで選ぶ。
  * 距離を先に見ると、ポインタのすぐ近くに必ず現れる格子点が常に勝ってしまい、
  * 端点や交点へ吸い付けなくなるため。
  *
  * **点の候補がすべて先**で、向きの候補(FR-110)は末尾へ並べる。点は 1 点に決まるが
- * 向きは線なので、両方が判定半径に入ったら点を採る(§0.13)。
+ * 向きは線なので、両方が判定半径に入ったら点を採る。
  */
 export const SNAP_PRIORITY: readonly SnapKind[] = [
   'endpoint',
@@ -51,12 +51,12 @@ export const SNAP_PRIORITY: readonly SnapKind[] = [
   ...TRACK_SNAP_KINDS,
 ];
 
-/** 既定では全種別が有効(§0.a-0.10「スナップ既定有効」、§0.12「トラッキングの既定は入」)。 */
+/** 既定では全種別が有効(「スナップ既定有効」「トラッキングの既定は入」)。 */
 export const DEFAULT_SNAP_KINDS: readonly SnapKind[] = SNAP_PRIORITY;
 
 /**
  * 入切の一覧のうち、向きの吸着(FR-110)として効いているものだけを取り出す。
- * `collectTrackCandidates` の `enabled` はこの形で受け取る(§0.13)。
+ * `collectTrackCandidates` の `enabled` はこの形で受け取る。
  */
 export function enabledTrackKinds(enabled: ReadonlySet<SnapKind>): ReadonlySet<TrackKind> {
   return new Set(TRACK_SNAP_KINDS.filter((kind) => enabled.has(kind)));
@@ -68,7 +68,7 @@ export const SNAP_RADIUS_PIXELS = 12;
 /**
  * 交点とみなす2直線の最短距離(mm)。これより離れていればねじれの位置。
  * 交点の計算そのものは model へ引き上げた(FR-322 のトリム・延長が同じ計算を使うため。
- * `packages/model/src/sketch/intersectionMath.ts`、タスク17)ので、値もそこから借りる。
+ * `packages/model/src/sketch/intersectionMath.ts`)ので、値もそこから借りる。
  */
 export { INTERSECTION_TOLERANCE_MM } from '@pointercad/model';
 
@@ -92,7 +92,7 @@ export type ProjectToScreen = (point: Vec3) => readonly [number, number] | null;
  * 2 線分の交点。平行・ねじれ・線分の外側なら null。
  *
  * 計算の中身は model の `segmentSegmentIntersection`(`intersectionMath.ts`)に移した。
- * トリム・延長(FR-322、タスク17)が同じ交点を使うが、model から ui は参照できない
+ * トリム・延長(FR-322)が同じ交点を使うが、model から ui は参照できない
  * (依存方向 ui → model、`rules/04-設計の規律.md`)ため、ui が使う側へ回った。
  * 判定の中身も許容誤差も変えていない。
  */
@@ -178,7 +178,7 @@ export function collectSnapCandidates(
   }
 
   /*
-   * 楕円(FR-318)とスプライン(FR-317)も吸着の候補にする(P4 タスク33、タスク12 の申し送り)。
+   * 楕円(FR-318)とスプライン(FR-317)も吸着の候補にする。
    * どちらも `sampleCurve` が折れ線へ直せるので、**折れ線の両端を端点、真ん中を中点**に取る。
    * 楕円は中心も取る(円弧と同じ)。全周のときは両端が同じ場所に来るが、同じ位置の候補が
    * 2 つ並ぶだけで選ばれ方は変わらない。
@@ -222,7 +222,7 @@ export function collectSnapCandidates(
     });
   }
 
-  // 交点は線分どうしだけ(§0.a-0.10。円弧との交点は P2)。
+  // 交点は線分どうしだけ(円弧との交点はここでは扱わない)。
   for (let i = 0; i < sketch.segments.length; i += 1) {
     for (let j = i + 1; j < sketch.segments.length; j += 1) {
       const crossing = segmentIntersection(sketch.segments[i], sketch.segments[j]);
@@ -250,7 +250,7 @@ export function collectSnapCandidates(
 }
 
 /**
- * 画面上でポインタに吸い付く候補を 1 つ選ぶ(§2.8)。
+ * 画面上でポインタに吸い付く候補を 1 つ選ぶ。
  * 判定半径の中にある候補のうち優先度が最も高いものを返し、
  * 同じ優先度が並んだときだけ画面距離の近いものを返す。
  * `enabled` に無い種別は候補から外す(FR-107 の種別フィルタ)。

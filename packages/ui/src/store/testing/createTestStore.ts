@@ -54,7 +54,7 @@ export function resultFor(document: PartDocument): PartRecomputeResult {
       sketchId: sketch.id,
       resolved: resolveSketch(sketch),
       mesh: null,
-      // 拘束の診断(model の P4b タスク8)。この検査の文書は拘束を持たない。
+      // 拘束の診断。この検査の文書は拘束を持たない。
       diagnosis: null,
     })),
     bodies: [],
@@ -65,7 +65,7 @@ export function resultFor(document: PartDocument): PartRecomputeResult {
   };
 }
 
-/** P1 の applySketch(スケッチ 1 本ぶんの結果)を作る。 */
+/** applySketch に渡す結果(スケッチ 1 本ぶん)を作る。 */
 export function sketchResultFor(sketch: SketchDocument): SketchRecomputeResult {
   return { resolved: resolveSketch(sketch), mesh: null, errors: [], diagnosis: null };
 }
@@ -87,7 +87,7 @@ export function partWithPoint(): PartDocument {
   return replaceSketch(createEmptyPartDocument(), documentWithPoint());
 }
 
-/** 押し出し 1 段だけの部品文書。ボディの id はフィーチャーの id と同じ(§0.a-0.5)。 */
+/** 押し出し 1 段だけの部品文書。ボディの id はフィーチャーの id と同じ。 */
 export function extrudeFeature(id: string): ExtrudeFeature {
   return {
     id,
@@ -111,7 +111,7 @@ export function partWithThreeSolids(): PartDocument {
 }
 
 /**
- * 穴 1 つ(P4b タスク20 の並べ替えの検査用)。対象の立体を指すので、対象より前へは
+ * 穴 1 つ(並べ替えの検査用)。対象の立体を指すので、対象より前へは
  * 動かせない(`timelineOrder.ts` の依存)。中身は依存の材料としてしか使わない。
  */
 export function holeFeature(id: string, targetFeatureId: string): HoleFeature {
@@ -154,7 +154,7 @@ export function bodyFor(featureId: string): SolidBody {
     },
     volume: 6000,
     isValid: true,
-    // P3 タスク17 で SolidBody に必須で足された欄。この検査では中身を使わない。
+    // SolidBody の必須の欄。この検査では中身を使わない。
     faces: [],
     edges: [],
     vertices: [],
@@ -163,7 +163,7 @@ export function bodyFor(featureId: string): SolidBody {
 }
 
 /**
- * 点・線・面(境界に使える/使えない)と立体が 1 つずつ入った部品文書(§0.a-0.23 ⑨)。
+ * 点・線・面(境界に使える/使えない)と立体が 1 つずつ入った部品文書。
  * `setActiveTool('face')` の選択掃除を検査するのに使う。
  */
 export function partWithMixedFeatures(): PartDocument {
@@ -227,9 +227,9 @@ export function resetTestStore(): void {
     focusViewportRequestCount: 0,
     viewportSize: [0, 0],
     // createInitialDocumentState の外にある(文書を作り直しても戻らない)ので、
-    // ここで明示的に初期化しないと前の検査の値が漏れる(§0.a-0.23 ⑨)。
+    // ここで明示的に初期化しないと前の検査の値が漏れる。
     kernelLoaded: false,
-    // displaySettings も同じ理由(タスク1)。他の検査が setDisplaySettings を呼んでも
+    // displaySettings も同じ理由。他の検査が setDisplaySettings を呼んでも
     // 次の検査へ持ち越さない。
     displaySettings: DEFAULT_DISPLAY_SETTINGS,
     // 文書間では保つ表示専用の状態も、独立した試験の間では持ち越さない。

@@ -55,7 +55,7 @@ export type DrawingEditor = { readonly kind: 'view'; readonly cameraId?: string;
   | { readonly kind: 'annotation'; readonly manufacturingKind: 'datum' | 'gdt' | 'weld'; readonly elementId?: string }
   | { readonly kind: 'layer' };
 
-/** 図面文書の寿命。履歴と保存処理はP8後段が同じ欄へ接続する。 */
+/** 図面文書の寿命。履歴と保存処理も同じ欄へ接続する。 */
 export interface DrawingSlice {
   readonly drawing: DrawingDocument | null;
   readonly savedDrawing: DrawingDocument | null;

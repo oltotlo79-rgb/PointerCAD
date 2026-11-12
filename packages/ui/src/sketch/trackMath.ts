@@ -1,13 +1,13 @@
 /**
- * 向きの吸着(直交・極トラッキング)の候補集めと選択(計画書 docs/plans/P4b-スケッチの仕上げ.md タスク15、§0.13、§2.4)。
+ * 向きの吸着(直交・極トラッキング)の候補集めと選択。
  *
  * 対応要件: FR-110(直交・極トラッキング。既存の点からの延長線・垂線・平行線への吸着)。
  *
- * `snapMath.ts` の `SnapCandidate` は「点」しか持てない(§0.13 の根拠)ため、
+ * `snapMath.ts` の `SnapCandidate` は「点」しか持てないため、
  * 「向き」の候補はここに新しい型(`TrackCandidate`)を分けて持つ。判定は `snapMath.ts` と
  * 同じく**画面座標**で行う(ワールド座標で測ると遠くの要素にも近くの要素と同じ距離で
  * 吸い付いてしまうため)。ここは DOM にも three.js にも触れない純関数だけを置く
- * (`snapMath.ts` は触らない。`SnapKind` への 4 種の追加・配線はタスク16で行う)。
+ * (`snapMath.ts` は触らない。`SnapKind` への 4 種の追加・配線は別のファイルで行う)。
  */
 
 import {
@@ -22,9 +22,9 @@ import type { ProjectToScreen } from './snapMath.js';
 export type TrackKind = 'polar' | 'extension' | 'perpendicular' | 'parallel';
 
 /**
- * 優先順位(§0.13)。点の吸着(`SnapCandidate`)がすべて先に判定されるので、
+ * 優先順位。点の吸着(`SnapCandidate`)がすべて先に判定されるので、
  * ここは向きの候補どうしの優先順位だけを決める。極を先にするのは、極が
- * 「起点からの角度」という利用者の意図に最も近いため(§2.4)。
+ * 「起点からの角度」という利用者の意図に最も近いため。
  */
 const TRACK_PRIORITY: readonly TrackKind[] = ['polar', 'extension', 'perpendicular', 'parallel'];
 
@@ -47,22 +47,22 @@ export interface TrackResult {
   readonly candidates: readonly TrackCandidate[];
 }
 
-/** 刻み角度の候補(§0.12)。設定パネルの6択(タスク16)もこれを正とする。 */
+/** 刻み角度の候補。設定パネルの6択もこれを正とする。 */
 export const TRACK_ANGLE_STEPS: readonly number[] = [5, 10, 15, 30, 45, 90];
 export const DEFAULT_TRACK_ANGLE_STEP = 15;
 
 /**
- * 案内線の候補を絞る粗い当たり判定の半径(mm、§2.9)。
+ * 案内線の候補を絞る粗い当たり判定の半径(mm)。
  *
  * `collectTrackCandidates` はここでは画面座標(`ProjectToScreen`)を受け取らないため、
  * 「画面 200 画素」をそのままでは測れない。ポインタを作図面へ落とした点(`pointOnPlane`)
  * とのワールド距離で代わりに絞る、粗い一次選別として使う(最終判定は `chooseTrack` が
  * 画面座標で行う)。値は性能検査(線分200本、うち近傍10本、4ms以内)で実測して決めた
- * (`trackMath.test.ts` の性能検査を参照。担当が実測して固定した値、§2.9 の落とし穴)。
+ * (`trackMath.test.ts` の性能検査を参照。担当が実測して固定した値)。
  */
 const TRACK_CANDIDATE_SEARCH_RADIUS_MM = 200;
 
-/** 2 直線が平行とみなす、単位方向ベクトルどうしの内積の絶対値のしきい値(§2.2 の 1e-9 と同じ考え方)。 */
+/** 2 直線が平行とみなす、単位方向ベクトルどうしの内積の絶対値のしきい値(拘束の判定の 1e-9 と同じ考え方)。 */
 const PARALLEL_DOT_EPSILON = 1e-9;
 
 /** 角度を 0〜360 未満へ正規化する。 */
@@ -99,7 +99,7 @@ export function polarCandidate(
   };
 }
 
-/** 線分の両端・中点のいずれかがポインタの近くにあるか(§2.9 の粗い当たり判定)。 */
+/** 線分の両端・中点のいずれかがポインタの近くにあるか(粗い当たり判定)。 */
 function isSegmentNearby(segment: ResolvedSegment, pointOnPlane: Vec3): boolean {
   return (
     distanceVec3(segment.from, pointOnPlane) <= TRACK_CANDIDATE_SEARCH_RADIUS_MM ||
@@ -112,7 +112,7 @@ function isSegmentNearby(segment: ResolvedSegment, pointOnPlane: Vec3): boolean 
 /**
  * 既存の要素から、延長線・垂線・平行線の候補を集める(FR-110)。
  *
- * 円弧・楕円・スプラインからは作らない(向きが1つに決まらないため、§2.4 の落とし穴)。
+ * 円弧・楕円・スプラインからは作らない(向きが1つに決まらないため)。
  * 線分だけを対象にする。
  */
 export function collectTrackCandidates(
@@ -189,7 +189,7 @@ export function collectTrackCandidates(
 /**
  * ポインタの光線(カメラの視点からポインタの画素を通る半直線)。ワールド座標系の
  * origin/direction(単位ベクトル)を持つ。ビューポート側(`createViewportScene.ts` の
- * `pointerRay`)が three.js の `Raycaster.ray` からそのまま作って渡す(P4b 仕上げ (a))。
+ * `pointerRay`)が three.js の `Raycaster.ray` からそのまま作って渡す。
  */
 export interface PointerRay {
   readonly origin: Vec3;
@@ -198,12 +198,12 @@ export interface PointerRay {
 
 /**
  * 直線 L: line.origin + t・line.direction の上で、光線 ray に最も近い点のパラメータ t
- * (P4b 仕上げ (a)、§2.4)。
+ * を求める。
  *
- * 【なぜ】タスク15の `positionAlongCandidate` は「候補の直線上で、作図面上のポインタ点に
+ * 【なぜ】以前の `positionAlongCandidate` は「候補の直線上で、作図面上のポインタ点に
  * ワールド座標で最も近い点」(直線への垂直射影)を採っていたが、視点が斜めだと、この
  * ワールドの最近点と画面上での最近点がずれ、案内線の印がポインタから遠くに決まってしまう
- * (実測、`docs/報告記録.md` 2026-09-05 00:10 の t16 の懸念)。**候補の直線上の点は
+ * (実測)。**候補の直線上の点は
  * 「ポインタの光線に最も近い点」で決めれば、この食い違いが起きない**(下記の導出)。
  *
  * 【導出】d = line.direction、v = ray.direction とし、
@@ -247,7 +247,7 @@ export function closestParameterToRay(
 }
 
 /**
- * 候補の直線の上で、吸い付く点を決める(§2.4、P4b 仕上げ (a))。
+ * 候補の直線の上で、吸い付く点を決める。
  *
  * 極(polar)だけは例外。極は「起点からの距離を保ったまま角度だけ丸める」という
  * 利用者の意図(AutoCADの極トラッキングと同じ挙動)に合わせるため、直線への垂直な
@@ -256,7 +256,7 @@ export function closestParameterToRay(
  * この式は画面上の最近点とは無関係な意図的な挙動なので、光線が渡っても変えない。
  *
  * 延長線・垂線・平行線は、**光線 ray が渡っていれば** `closestParameterToRay` で
- * 「ポインタの光線に最も近い点」を採る(P4b 仕上げ (a) の直し方)。光線が無い
+ * 「ポインタの光線に最も近い点」を採る。光線が無い
  * (呼び出し側が渡していない、既存の呼び出し方との後方互換)か、案内線が視線と
  * 平行で t が求まらないときだけ、従来の「作図面上のポインタ点への垂直射影」へ後退する。
  */
@@ -347,16 +347,16 @@ function intersectTrackLines(a: TrackCandidate, b: TrackCandidate): Vec3 | null 
 /**
  * 画面距離で1〜2本を選び、吸い付く位置を返す(FR-110)。
  * 2本目が1本目と別の種類で、かつ平行でなければ、その交点を吸着点にする
- * (AutoCADのオブジェクトスナップトラッキングと同じ挙動、§2.4)。
+ * (AutoCADのオブジェクトスナップトラッキングと同じ挙動)。
  *
- * **交点も判定半径の中にあるときだけ採る**(P4b タスク22b の (e)、t16 の懸念)。
+ * **交点も判定半径の中にあるときだけ採る**。
  * 1 本ずつの候補は「ポインタに最も近い点」で決まるので必ず判定半径の中に入るが、
  * **2 本の交点はその限りではない**。ほぼ平行な 2 本(例: 330° の極と延長線)の交点は
- * 遠くに決まり、実測でポインタから最大 51.57px 離れた(`docs/報告記録.md` 2026-09-05
- * 実時計 01:10)。そのまま採ると「案内線には合っているのに、点は指から遠い所へ飛ぶ」
+ * 遠くに決まり、実測でポインタから最大 51.57px 離れた。
+ * そのまま採ると「案内線には合っているのに、点は指から遠い所へ飛ぶ」
  * ことになるので、交点が判定半径の外なら**近い方の 1 本へ落とす**(NFR-UX-5)。
  *
- * `ray`(ポインタの光線、P4b 仕上げ (a))は**省略可**にしてある。既存の呼び出し(t15・t16)は
+ * `ray`(ポインタの光線)は**省略可**にしてある。既存の呼び出しは
  * 渡さないので、そのときは従来どおり `pointOnPlane` への垂直射影で候補の位置を決める
  * (`positionAlongCandidate` を参照)。呼び出し側(`attachSketchInteraction.ts`)が
  * `scene.pointerRay` で作った光線を渡すと、画面上でポインタに最も近い点で決まる。

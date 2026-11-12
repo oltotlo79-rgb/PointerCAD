@@ -1,18 +1,18 @@
 /**
- * 選択とその場入力から「面をつなぐ」(罫線面)とロフトを作る純関数
- * (計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク27、§2.9、§2.15)。
+ * 選択とその場入力から「面をつなぐ」(罫線面)とロフトを
+ * 作る純関数。
  *
  * 対応要件: FR-430(面と面をつなぐ、球へもつなぐ、立体の面も輪郭に使える)、FR-410(ロフト)、
  * FR-201/202(式のまま持つ)、FR-502(あとから式で直せる)、FR-504(止めずに警告する)、
  * NFR-UX-1(対象を選んでから操作)、NFR-UX-4(Enter 連打で意味のある結果)、
  * NFR-UX-5(できない操作は実行前に理由を示す)。
  *
- * `solidCommands.ts`(P2 タスク18)・`primitiveCommands.ts`(P5 タスク18)と同じ流儀に揃える。
+ * `solidCommands.ts`・`primitiveCommands.ts`と同じ流儀に揃える。
  * ストアにも DOM にも触れない純関数だけを置き、操作の判断を Node の単体検査で固定できる
- * ようにする(`docs/報告記録.md` 2026-09-02 23:09 の教訓)。文書は不変で、断るときは元の
+ * ようにする。文書は不変で、断るときは元の
  * 文書をそのまま返す(FR-504)。
  *
- * **どちらも対象を消費しない「作る」フィーチャー**(§0.a-0.27)。輪郭を貸した立体・球は
+ * **どちらも対象を消費しない「作る」フィーチャー**。輪郭を貸した立体・球は
  * そのまま画面に残るので、要るなら和(FR-404)でまとめられる。だから加工
  * (`machiningCommands.ts`)ではなく「作る」側に置く。
  *
@@ -48,16 +48,16 @@ import {
   type SubShapeBody,
 } from './subShapeSelection.js';
 
-/** 面をつなぐ・ロフトの道具(§2.15 のツールバー「作る」の一覧のうち 2 つ)。 */
+/** 面をつなぐ・ロフトの道具(ツールバー「作る」の一覧のうち 2 つ)。 */
 export type RuledToolId = 'ruled' | 'loft';
 
-/** 罫線面が結ぶ断面の数。ちょうど 2 つ(§2.9.1。3 つ以上つなぐならロフト)。 */
+/** 罫線面が結ぶ断面の数。ちょうど 2 つ(3 つ以上つなぐならロフト)。 */
 const RULED_SECTION_COUNT = 2;
 
 /** ロフトに要る断面の最小数(model の `MIN_THRU_SECTIONS` と同じ 2)。 */
 const MIN_LOFT_SECTIONS = 2;
 
-/** ねじれの補正の既定値(model の定数を式へ直したもの、§0.a-0.28)。 */
+/** ねじれの補正の既定値(model の定数を式へ直したもの)。 */
 export const DEFAULT_RULED_TWIST_VALUE: ExpressionValue =
   expressionValueFromNumber(DEFAULT_RULED_TWIST);
 
@@ -101,9 +101,9 @@ function isSphereFeature(feature: SolidFeature | undefined): boolean {
  *
  * - 立体の面(`extrude-1#face:3`)… その立体が球なら `sphere`、そうでなければ `solidFace`。
  *   **球の面を選んでも球のボディを選んでも同じ結果**にする(NFR-UX-1。球の面は 1 枚しか
- *   無く、利用者にとって「球を選んだ」以外の意味を持たないため。タスク27 手順3)。
+ *   無く、利用者にとって「球を選んだ」以外の意味を持たないため)。
  * - 立体そのもの(`sphere-1`)… **球のときだけ**断面になる。球以外の立体は「どの面か」が
- *   決まらないので、面を選んでもらう(選択の種類は道具が `face` に切り替える、§2.15)。
+ *   決まらないので、面を選んでもらう(選択の種類は道具が `face` に切り替える)。
  * - スケッチの面 … `sketchFace`。編集中のスケッチを先に見る(`sketchRefs.ts` の説明)。
  */
 function ruledSectionOf(context: RuledContext, elementId: string): RuledSection | null {
@@ -140,7 +140,7 @@ function ruledSectionOf(context: RuledContext, elementId: string): RuledSection 
  * 混ざった選択のまま押しても意図どおりに作れる)。
  *
  * 罫線面はこの並びの 1 つ目が `first`、2 つ目が `second` になり、ロフトはこの並びが
- * そのまま `sections` になる(**選んだ順が形の順**、§2.15)。
+ * そのまま `sections` になる(**選んだ順が形の順**)。
  */
 export function ruledSectionsOf(context: RuledContext): readonly RuledSection[] {
   const sections: RuledSection[] = [];
@@ -154,7 +154,7 @@ export function ruledSectionsOf(context: RuledContext): readonly RuledSection[] 
 }
 
 /**
- * 選んだ断面に球が含まれるか(§0.a-0.87)。その場入力の「なめらかさ」の選択肢を出すか
+ * 選んだ断面に球が含まれるか。その場入力の「なめらかさ」の選択肢を出すか
  * どうかを、ツールバーがこれで見込む(球を含まない断面では点の数が形に効かない)。
  */
 export function ruledSelectionHasSphere(context: RuledContext): boolean {
@@ -162,7 +162,7 @@ export function ruledSelectionHasSphere(context: RuledContext): boolean {
 }
 
 /**
- * 断面に選んだ球が、いま輪郭の相手にできるか(§2.9.3)。
+ * 断面に選んだ球が、いま輪郭の相手にできるか。
  *
  * **中心を立体の頂点で決めた球は断る。** model は頂点の座標を持たず(選び直せるのは
  * カーネルだけ)、段へ渡せるのは中心の座標そのものなので、解決のときに必ず失敗する
@@ -200,7 +200,7 @@ export function ruledSectionsRejection(
     return 'ruledError.needTwoSections';
   }
   if (sections.every((section) => section.kind === 'sphere')) {
-    // 球どうしは直線で結べない(§2.9.3。接する直線の相手になる輪郭が無い)。
+    // 球どうしは直線で結べない(接する直線の相手になる輪郭が無い)。
     return 'ruledError.twoSpheres';
   }
   return sphereSectionRejection(document, sections);
@@ -219,11 +219,11 @@ export function loftSectionsRejection(sections: readonly RuledSection[]): Messag
 }
 
 /* ------------------------------------------------------------------ *
- * 値の先出し検査(§0.a-0.28、NFR-UX-5)
+ * 値の先出し検査(NFR-UX-5)
  * ------------------------------------------------------------------ */
 
 /**
- * ねじれの補正が作れる値かを**カーネルを呼ぶ前に**確かめる(§0.a-0.28)。
+ * ねじれの補正が作れる値かを**カーネルを呼ぶ前に**確かめる。
  *
  * **整数でなければ断る(切り捨てない)。** model の `resolveThruSectionsTwist` と同じ判定で、
  * 「1.5 個ぶんずらす」に意味が無いのに黙って 1 個ぶんにすると、利用者は書いた式と形の
@@ -321,7 +321,7 @@ export function commitRuled(
 
 /**
  * ロフトを 1 つ作って履歴へ積む(FR-410)。**履歴は 1 段**。
- * 断面の並びは**選んだ順**そのままで、球は使えない(§2.9.3)。
+ * 断面の並びは**選んだ順**そのままで、球は使えない。
  */
 export function commitLoft(
   context: RuledContext,
@@ -350,7 +350,7 @@ export function commitLoft(
 }
 
 /**
- * その場入力の確定結果から、面をつなぐかロフトを 1 つ作る(タスク24 の `SolidInputCommit`)。
+ * その場入力の確定結果から、面をつなぐかロフトを 1 つ作る(`SolidInputCommit`)。
  * 欄が空のまま決めたときは既定値で作る(NFR-UX-4。ねじれ 0、なめらかさ ふつう)。
  */
 export function commitRuledInput(
@@ -379,7 +379,7 @@ export function commitRuledInput(
  * ------------------------------------------------------------------ */
 
 /**
- * 「ねじれが効かない」旨の注記を出すか(§0.a-0.87、タスク24b の実装)。
+ * 「ねじれが効かない」旨の注記を出すか。
  *
  * カーネルは**立体の面から取り出した外周を元の並びのまま結び、ずらしを断りもしない**。
  * 効かない欄を黙って出すと「値を変えたのに形が変わらない」ことになり、利用者は理由を

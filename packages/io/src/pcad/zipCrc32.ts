@@ -1,4 +1,4 @@
-/** R10: ZIPの偶発的破損を検出するCRC-32。真正性の署名ではない。 */
+/** ZIPの偶発的破損を検出するCRC-32。真正性の署名ではない。 */
 const table = Uint32Array.from({ length: 256 }, (_, byte) => {
   let value = byte;
   for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ ((value & 1) === 0 ? 0 : 0xedb88320);
@@ -16,7 +16,7 @@ export function zipCrc32(bytes: Uint8Array): number {
   return finishZipCrc32(updateZipCrc32(startZipCrc32(), bytes));
 }
 
-/** 区切って計算する時の最初の途中値(大きい項目を区切って圧縮する `zipSteps.ts` 用。R06)。 */
+/** 区切って計算する時の最初の途中値(大きい項目を区切って圧縮する `zipSteps.ts` 用)。 */
 export function startZipCrc32(): number {
   return 0xffffffff;
 }

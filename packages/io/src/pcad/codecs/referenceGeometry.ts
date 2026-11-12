@@ -37,7 +37,7 @@ import {
   type ReferencePointDefinition,
 } from '@pointercad/model';
 
-/** 平面の決め方(FR-328。P5 の切断 FR-432 と共有する)。 */
+/** 平面の決め方(FR-328。平面による切断 FR-432 と共有する)。 */
 const PLANE_SPEC_KINDS: readonly PlaneSpec['kind'][] = [
   'threePoints',
   'pointAndEdge',
@@ -73,10 +73,10 @@ const REFERENCE_POINT_KINDS: readonly ReferencePointDefinition['kind'][] = [
 ];
 
 // ---------------------------------------------------------------------------
-// P4(FR-328、FR-329、タスク9)が足す平面の指定と基準ジオメトリの書き出し
+// 平面の指定と基準ジオメトリ(FR-328、FR-329)の書き出し
 // ---------------------------------------------------------------------------
 
-/** 平面の決め方(FR-328)。P5 の切断(FR-432)も同じ型を読み書きする。 */
+/** 平面の決め方(FR-328)。平面による切断(FR-432)も同じ型を読み書きする。 */
 export function serializePlaneSpec(spec: PlaneSpec): PlaneSpec {
   switch (spec.kind) {
     case 'threePoints':
@@ -210,7 +210,7 @@ export function serializeReferenceFeature(feature: ReferenceFeature): ReferenceF
 }
 
 // ---------------------------------------------------------------------------
-// P4(FR-328、FR-329、タスク9)が足す平面の指定と基準ジオメトリの読み込み
+// 平面の指定と基準ジオメトリ(FR-328、FR-329)の読み込み
 // ---------------------------------------------------------------------------
 
 function readPlaneSpecRecord(
@@ -533,7 +533,7 @@ function readReferenceFeature(value: unknown, path: string): Checked<ReferenceFe
  * 基準ジオメトリの履歴を読む(FR-328、FR-329)。
  *
  * **版4からは必須**(欠けていれば `missingField`)。版3のまま追加されていた期間
- * (タスク9)はこの欄を持たないファイルもあったが、その寛容さは P4 タスク31(§0.a-0.24)で
+ * はこの欄を持たないファイルもあったが、その寛容さは版4の厳密化で
  * `schema.ts` の `SCHEMA_MIGRATIONS[3]`(欄が無ければ空配列で補う)へ移した。
  * 書き手は常にこの欄を書く。
  */

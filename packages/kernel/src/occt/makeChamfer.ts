@@ -17,10 +17,10 @@ import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHisto
 import { semanticOperationOrigins } from './semanticOperationOrigins.js';
 
 /**
- * C 面取り(FR-408、計画書 P3 §2.6、タスク8)。
+ * C 面取り(FR-408)。
  *
  * 対象の立体の辺を、保存してある指紋で選び直してから斜めに削り取る。
- * 大きさの指定は 3 通り(§0.a-0.18、`ChamferSizeSpec`)。
+ * 大きさの指定は 3 通り(`ChamferSizeSpec`)。
  *   - `equal`         : 距離 1 つ。両側とも同じ距離で 45°(`Add_2`)。基準面は要らない。
  *   - `twoDistances`  : 距離 2 つ。`distance1` が基準面の側(`Add_3`)。
  *   - `distanceAngle` : 距離と角度。角度は基準面から測る(`AddDA`)。
@@ -32,7 +32,7 @@ import { semanticOperationOrigins } from './semanticOperationOrigins.js';
 /** これ未満の体積(mm³)は「立体が残らなかった」とみなす(makeFillet.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
 
-/** 指紋から辺を 1 本も選び直せなかったとき(§0.a-0.5 の missingSubShape に当たる)。 */
+/** 指紋から辺を 1 本も選び直せなかったとき(missingSubShape に当たる)。 */
 const MISSING_EDGE_MESSAGE =
   '面を取るもとの辺が見つかりません。形が大きく変わったため、選び直してください。';
 
@@ -63,7 +63,7 @@ function requireDistance(value: number): void {
  * 大きさの指定を、OCCT へ渡す前に検査する。
  *
  * 角度は**ラジアン**で受け取る(`ChamferSizeSpec` の約束。度からの換算は model 側の責務。
- * `docs/報告記録.md` 2026-09-02 18:23 で `MakeEdge_9` の角度をラジアンで取り違えた例がある)。
+ * `MakeEdge_9` の角度をラジアンで取り違えた例がある)。
  * 上限を 90 度ちょうどにしないのは、90 度ではもう一方の距離 `distance·tan(angle)` が
  * 無限大に発散して面取りが定義できないためである(下の `AddDA` の注釈を参照)。
  */
@@ -89,7 +89,7 @@ function validateSize(size: ChamferSizeSpec): void {
 }
 
 /**
- * 辺の基準面を取り出す(§0.a-0.18)。呼び出し側が delete() する。
+ * 辺の基準面を取り出す。呼び出し側が delete() する。
  *
  * `facesTouchingEdge` は `TopExp` の並びの順に面の通し番号を返すので、既定はその先頭、
  * `swapReferenceFace` が真なら 2 番目を使う。基準面をもう 1 回選ばせると操作が 2 段になり
@@ -98,9 +98,9 @@ function validateSize(size: ChamferSizeSpec): void {
  * 接する面が 1 つ以下の辺(自由辺・殻の縁)には面取りできないので断る。
  *
  * **費用の注意:** `facesTouchingEdge` は呼ぶたびに `TopExp.MapShapes_2` を回すので、
- * 辺の本数 × 面の枚数の費用がかかる(タスク4 の残件(b))。面取りする辺は
- * 実用上は数本〜十数本なので P3 では素直な実装のままにし、
- * 面が数百枚の形で効いてくるならタスク10 の性能実測で一覧を 1 度だけ作る版へ寄せる。
+ * 辺の本数 × 面の枚数の費用がかかる(残る課題)。面取りする辺は
+ * 実用上は数本〜十数本なので 今は素直な実装のままにし、
+ * 面が数百枚の形で効いてくるなら性能の実測で一覧を 1 度だけ作る版へ寄せる。
  */
 function referenceFaceOf(
   oc: OpenCascadeInstance,
@@ -123,7 +123,7 @@ function referenceFaceOf(
 /**
  * 辺 1 本を面取りの対象として登録する。
  *
- * **`Add_3` / `AddDA` の意味(2026-09-03 に Node で実測。計画書 §1.4-②③):**
+ * **`Add_3` / `AddDA` の意味(2026-09-03 に Node で実測):**
  * 20×20×20 の箱の (0,0) にある縦の辺に、基準面を x=0 の面(`facesTouchingEdge` の先頭)
  * として掛けたところ、
  *   - `Add_3(3, 1, E, F)` → x=0 の面の側へ 3mm、y=0 の面の側へ 1mm 入った
@@ -188,10 +188,10 @@ function toJapaneseFailure(error: unknown, message: string): Error {
 /**
  * C 面取り(FR-408)。**対象は消費せず、新しい形を返す。**
  *
- * 手順は計画書 §2.6.2 のとおりで、①指紋で辺を選び直す → ②大きさに応じて
+ * 手順は、①指紋で辺を選び直す → ②大きさに応じて
  * `Add_2` / `Add_3` / `AddDA` → ③`Build` → ④成否の確認 → ⑤結果の妥当性の確認、と進む。
  *
- * **辺の選び直しは R 面取りと同じ `resolveFilletEdges` を使う**(計画書 タスク8 の手順3)。
+ * **辺の選び直しは R 面取りと同じ `resolveFilletEdges` を使う**。
  * 「1 本でも選び直せなければ部分成功にせず断る」「重複は 1 度だけ」「番号の昇順で Add する」
  * という判断を 2 か所に書かないため。断りの文言だけがこちらの語彙(「面を取るもとの辺」)になる。
  *
@@ -203,7 +203,7 @@ function toJapaneseFailure(error: unknown, message: string): Error {
  *   `NbFaultyVertices()` は**そもそも存在しない**(型定義 92968 行の宣言と親
  *   `BRepFilletAPI_LocalOperation`(93104 行)・`BRepBuilderAPI_MakeShape`(11768 行)を確認)。
  *   フィレット側だけが持つ口である。したがって成否は `IsDone()` と結果の検証で見る。
- *   なお `HasResult()` はフィレットでは成功時でも false になる(タスク7 の実測)ので、
+ *   なお `HasResult()` はフィレットでは成功時でも false になる(実測)ので、
  *   仮にあったとしても成否の判定には使えない。
  * - 距離が大きすぎる失敗は例外にならず `IsDone()` が false になった。
  *   20×20×20 の箱で、縦 1 辺に 25mm(辺の間隔 20 を超える)、縦 4 辺に 15mm
@@ -212,7 +212,7 @@ function toJapaneseFailure(error: unknown, message: string): Error {
  *
  * **体積が増えても失敗にしない。** 凹んだ辺(内側の角)を面取りすると材料が足されて
  * 体積は増える。これは正しい結果なので、「体積が増えたら失敗」という判定は入れない
- * (タスク7 の実測で確かめた性質。検査でも固定してある)。
+ * (実測で確かめた性質。検査でも固定してある)。
  */
 export function makeChamfer(
   oc: OpenCascadeInstance,
@@ -247,7 +247,7 @@ export function makeChamfer(
     }
 
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
-    // (docs/報告記録.md 2026-09-03 06:56 の⑤。面取りも同じ扱いにする)。
+    // (面取りも同じ扱いにする)。
     if (!maker.IsDone()) {
       throw new Error(BUILD_FAILED_MESSAGE);
     }

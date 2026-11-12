@@ -96,11 +96,11 @@ function serializeSteelBendInput(input: SteelBendInput): SteelBendInput {
 /** リブの厚みを付ける側(FR-420)。 */
 const RIB_SIDES: readonly RibSide[] = ['both', 'positive', 'negative'];
 
-/** 罫線面・ロフトの断面の 3 通り(P5 §2.9.1)。知らない `kind` は `readLiteral` が断る。 */
+/** 罫線面・ロフトの断面の 3 通り。知らない `kind` は `readLiteral` が断る。 */
 const RULED_SECTION_KINDS: readonly RuledSection['kind'][] = ['sketchFace', 'sketchCurves', 'solidFace', 'sphere'];
 
 /**
- * 罫線面・ロフトの断面 1 つ(FR-430、FR-410、P5 計画書 §2.9.1、タスク25)。
+ * 罫線面・ロフトの断面 1 つ(FR-430、FR-410)。
  * 参照は id と指紋のまま保存し、輪郭の座標は保存しない(導出物、rules/04)。
  */
 function serializeRuledSection(section: RuledSection): RuledSection {
@@ -116,7 +116,7 @@ function serializeRuledSection(section: RuledSection): RuledSection {
   }
 }
 
-/** 罫線面・ロフトの断面 1 つ(P5 §2.9.1、タスク25)。 */
+/** 罫線面・ロフトの断面 1 つ。 */
 function readRuledSectionItem(value: unknown, path: string): Checked<RuledSection> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -168,9 +168,9 @@ function readRuledSectionField(
 }
 
 /**
- * 球へつなぐときの近似の点の数(§0.a-0.74)。
+ * 球へつなぐときの近似の点の数。
  *
- * **欄が無い古いファイルは既定の 24 として読む**(この欄は P5 の途中で足したもので、
+ * **欄が無い古いファイルは既定の 24 として読む**(この欄は後から足したもので、
  * 無いことが「壊れている」を意味しないため)。24 / 48 / 72 以外の数は
  * その欄の型が違うとして断る(新しい値の意味を推測しない)。
  */
@@ -367,7 +367,7 @@ export function readEmbossFeature(
 
 /** ruled の保存欄。解決値を足さず、元の式と参照を保持する。 */
 export function serializeRuledFeature(feature: Extract<SolidFeature, { readonly kind: 'ruled' }>): SolidFeature {
-  // 面をつなぐ(FR-430、P5 §2.9.1、タスク25)。断面 2 つ+ねじれ+球の点の数。
+  // 面をつなぐ(FR-430)。断面 2 つ+ねじれ+球の点の数。
   return {
     id: feature.id,
     kind: 'ruled',

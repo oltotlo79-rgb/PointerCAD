@@ -2,7 +2,7 @@
  * プロパティ欄の打ちかけの下書きと、文書の版の照合(`PropertyPanel.tsx` の
  * `FeatureProperties` / `SolidProperties` で共通の仕組み)。
  *
- * 対応: docs/報告記録.md 2026-09-04 14:05 の 9b(Electron 検査の不合格 1 件)。
+ * 対応: 文書の差し替えで古い下書きが残る不具合(Electron 検査で見つかった)。
  *
  * 欄に焦点を残したまま文書が差し替わる(開く・新規・復元・Undo/Redo)と、選んでいる
  * フィーチャーの id が変わらない限り `PropertyPanel` は同じ `key` のまま再描画するため

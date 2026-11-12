@@ -42,13 +42,13 @@ import {
 } from './exchangeFile.js';
 
 /**
- * 書き出しのパネル(計画書 docs/plans/P6-入出力.md §0.a-0.20・§0.a-0.34、タスク32・53)。
+ * 書き出しのパネル。
  *
  * 対応要件: FR-803(形式と品質)、FR-813(DXF)、FR-427(すべて / 選んだ立体)、
  * FR-811(単位の案内)、NFR-UX-2(モーダルにしない)、NFR-UX-4(Enter 連打で意味のある結果)、
  * NFR-UX-5(できないことは押す前に断る)。
  *
- * **形式は 6 つで、6 つ目の DXF だけ書き出すものが違う**(§0.a-0.34)。前の 5 つは立体を、
+ * **形式は 6 つで、6 つ目の DXF だけ書き出すものが違う**。前の 5 つは立体を、
  * DXF は**いま編集しているスケッチの平らな線**を書き出す。入口を 2 つに割らないのは、
  * 利用者にとって「書き出す」は 1 つの操作だからである(NFR-UX-1)。
  *
@@ -77,7 +77,7 @@ const FORMAT_LABELS: Readonly<Record<ExportPanelFormat, string>> = {
   dxf: 'DXF',
 };
 
-/** なめらかさの 3 択の名前(§0.a-0.20。裏の数は見せない)。 */
+/** なめらかさの 3 択の名前(裏の数は見せない)。 */
 const QUALITY_LABEL_KEYS: Readonly<Record<ExportQuality, MessageKey>> = {
   coarse: 'exchange.qualityCoarse',
   normal: 'exchange.qualityStandard',
@@ -230,11 +230,11 @@ export function ExchangePanel({
   const renderedComputing = useAppStore((state) => state.isComputing);
   const renderedRequestedGeneration = useAppStore((state) => state.requestedGeneration);
   const renderedCompletedGeneration = useAppStore((state) => state.completedGeneration);
-  // 3D プリントの点検の結果(FR-815、タスク42・43)。点検済みなら促す 1 行を出さない。
+  // 3D プリントの点検の結果(FR-815)。点検済みなら促す 1 行を出さない。
   const printability = useAppStore(currentPrintabilityReport);
   const printabilityOwner = useAppStore((state) => state.printabilityOwner);
   const displayLengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
-  // DXF の書き出しが見るもの(§0.a-0.34)。**いま編集しているスケッチだけ**を書き出す。
+  // DXF の書き出しが見るもの。**いま編集しているスケッチだけ**を書き出す。
   const document = useAppStore((state) => state.document);
   const sketch = useAppStore((state) => state.sketch);
   const resolvedSketch = useAppStore((state) => state.resolvedSketch);
@@ -322,7 +322,7 @@ export function ExchangePanel({
   const precisionError = shape.showsQuality && customQuality && customDeviationMm === null
     ? t('exchange.deviationInvalid') : null;
   /**
-   * 立体を書き出す形式のときだけ依頼を組む。DXF は立体を 1 つも見ない(§0.a-0.34)ので
+   * 立体を書き出す形式のときだけ依頼を組む。DXF は立体を 1 つも見ないので
    * `null` にして、下の断りも実行も別の枝へ分ける。
    */
   const request: ExportRequest | null =
@@ -334,7 +334,7 @@ export function ExchangePanel({
           quality,
           customDeviationMm: customQuality && customDeviationMm !== null ? customDeviationMm : undefined,
           /*
-            **出していない欄の指定は渡さない**(タスク45 の指摘、2026-09-06)。色の切替を
+            **出していない欄の指定は渡さない**。色の切替を
             出していない形式(STL)へ既定の `true` を渡すと、カーネルへ「色を付けて」と
             頼んだうえで「この形式に色はありません」と警告が返る——利用者は色の欄を
             見ていないので直しようがない。ここで偽にしておけば、頼み事そのものが消える。
@@ -346,7 +346,7 @@ export function ExchangePanel({
         });
 
   /*
-    DXF を書き出す先の作図面(§0.a-0.34「作図面の上の 2 次元へ落とす」)。
+    DXF を書き出す先の作図面(「作図面の上の 2 次元へ落とす」)。
     **スケッチが最後に使った作図面**を使う——いまの作図面(`workPlane`)は「次に描く面」で、
     描き終わったスケッチの面とは限らない。まだ 1 つも要素が無いスケッチだけは面を決め
     ようがないので、いまの作図面へ落とす(そのときは書き出す図形も 0 個で断りが出る)。
@@ -368,7 +368,7 @@ export function ExchangePanel({
       : refusalTextOf(exportRefusalKey(bodies, request)));
   /*
     3D プリント向けの形式(STL / 3MF)で、まだ一度も点検していないときの 1 行
-    (FR-815、§0.53)。**判定はここ 1 か所**で、形式ごとの `if` を画面へ散らさない。
+    (FR-815)。**判定はここ 1 か所**で、形式ごとの `if` を画面へ散らさない。
     3MF は色を持てるので `showsNoColorNotice` では拾えず、形式そのものを見る。
   */
   const isPrintFormat = format === 'stl' || format === '3mf';
@@ -497,7 +497,7 @@ export function ExchangePanel({
             latest.setTutorialExports({ ...latest.tutorialExports, [request.format]: ownerDocument });
           }
           /*
-            **成功は成功の口で知らせる**(タスク45 の指摘、2026-09-06)。書き出せたことを
+            **成功は成功の口で知らせる**。書き出せたことを
             `setError` で出すと、ステータスバーが「計算に失敗しました:」を頭に付けて赤く
             するので、うまくいったのに失敗したように見えた。ここは保存と同じ口
             (`fileMessage`、`failed: false`)を通すので、落ち着いた調子の 1 行になる。
@@ -570,7 +570,7 @@ export function ExchangePanel({
 
       {/*
         「対象」の欄は必ず 1 つ出る。立体の形式では 2 択、DXF では「いま編集している
-        スケッチ」の 1 行になる(§0.a-0.34。選びようが無いものを選ばせない)。
+        スケッチ」の 1 行になる(選びようが無いものを選ばせない)。
       */}
       <div className="pcad-exchange__group">
         <span className="pcad-exchange__label">{t('exchange.target')}</span>
@@ -608,7 +608,7 @@ export function ExchangePanel({
         <p className="pcad-exchange__notice">{t('exchange.dxfCurveNotice')}</p>
       ) : null}
 
-      {/* なめらかさは三角形を使う形式のときだけ(§0.a-0.20)。 */}
+      {/* なめらかさは三角形を使う形式のときだけ。 */}
       {shape.showsQuality ? (
         <div className="pcad-exchange__group">
           <span className="pcad-exchange__label">{t('exchange.quality')}</span>
@@ -654,7 +654,7 @@ export function ExchangePanel({
         </div>
       ) : null}
 
-      {/* 文字で書くのは STL だけ(§0.a-0.14)。 */}
+      {/* 文字で書くのは STL だけ。 */}
       {shape.showsAscii ? (
         <label className="pcad-exchange__toggle">
           <input title={t('controlGuide.exchange.ascii')}
@@ -669,7 +669,7 @@ export function ExchangePanel({
         </label>
       ) : null}
 
-      {/* 色を含めるのは色を持てる形式だけ。既定は入(§0.a-0.22)。 */}
+      {/* 色を含めるのは色を持てる形式だけ。既定は入。 */}
       {shape.showsColor ? (
         <label className="pcad-exchange__toggle">
           <input title={t('controlGuide.exchange.colors')}
@@ -684,7 +684,7 @@ export function ExchangePanel({
         </label>
       ) : null}
 
-      {/* STL には色が無いので 1 行で断っておく(§0.a-0.15)。 */}
+      {/* STL には色が無いので 1 行で断っておく。 */}
       {shape.showsNoColorNotice ? (
         <>
           <p className="pcad-exchange__notice">{t('exchange.stlNoColor')}</p>
@@ -693,7 +693,7 @@ export function ExchangePanel({
       ) : null}
 
       {/*
-        まだ点検していない 3D プリント向けの形式で、点検を促す 1 行(FR-815、§0.53)。
+        まだ点検していない 3D プリント向けの形式で、点検を促す 1 行(FR-815)。
         **止めない**——「書き出す」は押せるままで、覆いも確認の窓も出さない
         (NFR-UX-3「確認ダイアログは復元不能な操作に限る」。書き出しはいつでもやり直せる)。
       */}
@@ -708,7 +708,7 @@ export function ExchangePanel({
           calculating={previewCount === 'loading'} />
       ) : null}
 
-      {/* 単位の案内(§0.a-0.7。glTF だけメートル)。 */}
+      {/* 単位の案内(glTF だけメートル)。 */}
       <p className="pcad-exchange__notice">{t(shape.unitNoticeKey)}</p>
 
       {/* できないことは押す前に赤で断る(NFR-UX-5)。 */}

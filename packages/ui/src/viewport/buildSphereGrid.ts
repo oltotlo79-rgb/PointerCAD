@@ -1,14 +1,14 @@
 /**
- * 球面グリッドの組み立てと交点への吸着(計画書 docs/plans/P5-高度なソリッド・外観と測定.md
- * §2.8.2、タスク20)。
+ * 球面グリッドの組み立てと交点への吸着
+ * (球面上の点の道具が使う)。
  *
  * 対応要件: FR-431(球の緯度・経度の案内グリッドと、その交点から作る球面上の点)、
  * FR-107(吸着の判定は画面座標で 12 画素)、NFR-PF-1(ビューポート操作で 60fps)。
  *
  * ここは DOM にも three.js にも触れない純関数だけを置く(`snapMath.ts` / `pickMath.ts` と
- * 同じ流儀)。描画(`LineSegments`)と配線はタスク21、緯度・経度の入力と点の作成はタスク22。
+ * 同じ流儀)。描画(`LineSegments`)と配線、緯度・経度の入力と点の作成は呼ぶ側。
  *
- * 【軸の規約】タスク19(`model` の `PointReference.sphereGrid`)と**必ず同じ**にする。
+ * 【軸の規約】`model` の `PointReference.sphereGrid` と**必ず同じ**にする。
  *   - 北極は +Z、経度 0 は +X、+X → +Y の向きが経度の正。
  *   - 位置 = C + r(cos φ cos λ, cos φ sin λ, sin φ)   φ = 緯度、λ = 経度(どちらも度)
  *   - 緯度は [−90, 90]、経度は 360 で回る。
@@ -28,18 +28,18 @@ import {
 import { SNAP_RADIUS_PIXELS, type ProjectToScreen } from '../sketch/snapMath.js';
 import type { PointerRay } from '../sketch/trackMath.js';
 
-/** 緯線・経線の間隔(度)の下限・上限と既定(§0.a-0.21)。 */
+/** 緯線・経線の間隔(度)の下限・上限と既定。 */
 export const MIN_SPHERE_GRID_STEP_DEGREES = 1;
 export const MAX_SPHERE_GRID_STEP_DEGREES = 90;
 export const DEFAULT_SPHERE_GRID_STEP_DEGREES = 5;
 
-/** 間隔が範囲外のときの断り(計画書 §2.8.3)。 */
+/** 間隔が範囲外のときの断り。 */
 export const SPHERE_GRID_STEP_RANGE_MESSAGE =
   'グリッドの間隔は 1 度以上 90 度以下にしてください。';
 
 /**
  * 1 本の線(緯線 1 周・経線 1 本)を折れ線にするときの分割数。**間隔が変わっても 72 固定**
- * (計画書 タスク20 手順2)。5° の経線 72 本に合わせた値で、緯線は 1 周 360° を 5° ずつ、
+ * (5° の経線 72 本に合わせた値で、緯線は 1 周 360° を 5° ずつ、
  * 経線は南極から北極までの 180° を 2.5° ずつに割る。
  */
 export const SPHERE_GRID_DIVISIONS = 72;
@@ -79,7 +79,7 @@ export function isValidSphereGridStep(stepDegrees: number): boolean {
 
 /**
  * 組み立ての入口で間隔を確かめる。1° 未満は線分が 25 万本を超えて実用にならず、
- * 90° 超は緯線が 1 本も引けない(§0.a-0.21)。
+ * 90° 超は緯線が 1 本も引けない。
  *
  * **組み立てだけが例外を投げ、吸着(`nearestSphereGridPoint`)は null を返す。**
  * 吸着は `pointermove` ごとに呼ばれるので、範囲外の間隔で例外を投げ続けると操作が
@@ -101,7 +101,7 @@ function normalizeLongitude(degrees: number): number {
  *
  * 極(緯度 ±90)だけは三角関数を通さず軸の上の点をそのまま返す。`Math.cos(π/2)` は
  * 厳密には 0 にならず 6.1e-17 なので、そのまま掛けると経線ごとに 1e-15 ほど違う「極」が
- * できてしまう。**極は 1 点に集約する**(§2.8.2)ので、ここで厳密に揃える。
+ * できてしまう。**極は 1 点に集約する**ので、ここで厳密に揃える。
  */
 export function sphereGridPointAt(
   spec: SphereGridSpec,
@@ -253,7 +253,7 @@ export function buildSphereGridPositions(spec: SphereGridSpec): Float32Array {
   return positions;
 }
 
-/** 線分列と格子点をまとめて組み立てる(描画はタスク21、点の作成はタスク22が使う)。 */
+/** 線分列と格子点をまとめて組み立てる(描画と点の作成が使う)。 */
 export function buildSphereGrid(spec: SphereGridSpec): SphereGrid {
   return {
     spec,
@@ -293,7 +293,7 @@ function raySphereHit(spec: SphereGridSpec, ray: PointerRay): number | null {
 }
 
 /**
- * ポインタの光線から、最も近い格子点(緯度・経度を間隔で丸めたもの)を求める(§2.8.2)。
+ * ポインタの光線から、最も近い格子点(緯度・経度を間隔で丸めたもの)を求める。
  *
  * **候補を全部回さない。** 光線と球の交点を解いて緯度・経度へ直し、間隔で丸めるだけなので、
  * 費用は交点の数(5° で 2,522 個)に依らず一定になる。`pointermove` ごとに呼んでも
@@ -346,7 +346,7 @@ export function nearestSphereGridPoint(
  * ワールド → 画面の写しは呼び出し側(ビューポート)から関数で注入する。
  *
  * 位置そのものは光線の最近点(球との交点)から決まるので、視点が斜めでも案内の交点と
- * ポインタがずれない(P4b 仕上げ (a) と同じ考え方)。
+ * ポインタがずれない(案内線の吸着と同じ考え方)。
  */
 export function snapToSphereGrid(
   spec: SphereGridSpec,

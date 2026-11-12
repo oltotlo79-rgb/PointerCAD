@@ -46,7 +46,7 @@ export function detectSubAssemblyProblem(
   return visit(assembly, []);
 }
 
-/** 計画書の短い名前。循環があれば参照経路、無ければ null。 */
+/** 当初の案での短い名前。循環があれば参照経路、無ければ null。 */
 export function detectCycle(
   assembly: AssemblyDocument,
   documents: ReadonlyMap<string, AssemblyDocument>,

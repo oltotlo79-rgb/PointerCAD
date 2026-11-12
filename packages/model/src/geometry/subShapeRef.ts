@@ -1,30 +1,30 @@
 /**
- * 部分形状(面・辺・頂点)への参照と、幾何の指紋(計画書 docs/plans/P3-加工フィーチャー.md
- * §2.2、§0.a-0.3、§0.a-0.4、タスク12。置き場の組み替えは
- * docs/plans/P4-スケッチ拡張.md §0.a-0.7、§2.6、タスク3)。
+ * 部分形状(面・辺・頂点)への参照と、
+ * 幾何の指紋。
+ * 置き場は model の中立の位置(geometry)。
  *
  * B-rep の面・辺には名前が無く `TopExp` の並び順しか手がかりが無いため、上流のフィーチャー
  * を変えると並びがずれる(トポロジカルネーミング問題)。この対策として、文書には並び順の
  * かわりに「指紋」(種類・軸の向き・大きさ・位置・通し番号)を保存し、再計算のたびにカーネル
- * (Worker 側、タスク5 `matchSubShape.ts`)が指紋と最も点の高い部分形状を選び直す。
+ * (Worker 側、`matchSubShape.ts`)が指紋と最も点の高い部分形状を選び直す。
  * このファイルは指紋そのものと、文書側で使う純粋な道具(種類の判定・同一判定・重複除去・
  * 鍵の材料への文字列化)だけを持つ。**採点(何点で一致とみなすか)は kernel 側の責務であり、
- * ここには置かない**(計画書 §2.2.4「選び直しはカーネルの中で行う」)。
+ * ここには置かない**(「選び直しはカーネルの中で行う」)。
  *
  * 型の置き場について: これらの型は `.pcad` に保存される値であり、当初は保存形をまとめる
- * `part/types.ts` に置いていた(P3 タスク13)。P4 では 3D スケッチ(FR-330)の点が立体の頂点
+ * `part/types.ts` に置いていた。3D スケッチ(FR-330)の点が立体の頂点
  * (部分形状の参照)を指す必要があり、`sketch` 側もこの型を import しなければならなくなった。
  * `part/types.ts` は `sketch/types.ts` を import しているため(`part → sketch` の一方向)、
  * 型を `part/types.ts` に置いたままでは `sketch` からの import が循環してしまう。そこで
  * `part` にも `sketch` にも依存しない中立の置き場としてこの `geometry/` を新設し、
- * 両方がここを import する形にした(P4 計画書 §0.a-0.7)。`part/types.ts` と
+ * 両方がここを import する形にした。`part/types.ts` と
  * `part/subShapeRef.ts` は、既存コードの import 文を変えずに済ませるためこのファイルからの
  * re-export だけを残す。
  *
  * 依存方向について: `@pointercad/kernel` は import しない。model から kernel への import は
  * `kernelBridge.ts` だけに閉じる約束(同ファイル冒頭のコメント)になっており、
  * `packages/kernel/src/types.ts` に構造の似た `SubShapeKind` 等があっても、model 側で
- * 型を定義して合わせる(P2 の `kernelBridge.ts` と同じ流儀)。
+ * 型を定義して合わせる(`kernelBridge.ts` と同じ流儀)。
  */
 
 import { keyNumber } from '../part/cacheKey.js';
@@ -41,7 +41,7 @@ function originKey(origin: SubShapeOrigin): string {
   });
 }
 
-/** 部分形状の種類(P3 計画書 §2.2.2)。 */
+/** 部分形状の種類。 */
 export type SubShapeKind = 'face' | 'edge' | 'vertex';
 
 /** 面の曲面の種類。 */
@@ -51,9 +51,9 @@ export type FaceSurfaceKind = 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus'
 export type EdgeCurveKind = 'line' | 'circle' | 'ellipse' | 'other';
 
 /**
- * 部分形状の指紋(P3 計画書 §2.2.2)。保存される。
+ * 部分形状の指紋。保存される。
  * 「形が同じなら必ず同じ値になるもの」だけを持つ。三角形の数・色・隣接する面の一覧は
- * 形が変わると壊れやすく費用も高いため入れない(§2.2.2「入れないもの」)。
+ * 形が変わると壊れやすく費用も高いため入れない(「入れないもの」)。
  */
 export type SubShapeFingerprint =
   | {
@@ -83,7 +83,7 @@ export type SubShapeFingerprint =
   | { readonly kind: 'vertex'; readonly position: Vec3 };
 
 /**
- * ボディの部分形状(面・辺・頂点)への参照(P3 計画書 §2.2.2)。保存される。
+ * ボディの部分形状(面・辺・頂点)への参照。保存される。
  *
  * B-rep の面・辺には名前が無く並び順しか手がかりが無いので(トポロジカルネーミング問題)、
  * 選んだ瞬間の指紋をそのまま保存し、再計算のたびにカーネルが `bodyFeatureId` の指すボディの
@@ -126,7 +126,7 @@ export function isSameSubShape(a: SubShapeRef, b: SubShapeRef): boolean {
 
 /**
  * 一覧から重複を取り除く(先に出たほうを残す)。
- * `fillet` / `chamfer` が同じ辺を 2 回指していても 1 回だけ処理する(§2.6.2 手順3)ための
+ * `fillet` / `chamfer` が同じ辺を 2 回指していても 1 回だけ処理するための
  * model 側の道具。O(n²) だが、1 フィーチャーが指す部分形状の数は多くても数十個程度で
  * 費用は無視できる。
  */
@@ -157,7 +157,7 @@ function keyOptionalNumberText(value: number | null): string {
 }
 
 /**
- * 参照を鍵の材料の文字列にする(タスク14が `cacheKeyFor` の材料へ混ぜるときに使う)。
+ * 参照を鍵の材料の文字列にする(`cacheKeyFor` の材料へ混ぜるときに使う)。
  * 同じ参照からは常に同じ文字列が出る(決定性)。座標・大きさは `cacheKey.ts` の `keyNumber`
  * で丸め、丸めの規則を2か所に書かない(`KEY_DECIMALS = 9`、-0 は 0 と同一視)。
  * `bodyFeatureId` と `index` も混ぜるので、同じ形の指紋でもボディや通し番号が違えば

@@ -1,4 +1,4 @@
-/** Captured before W6c parameterization; rounded coordinates and unrounded area are frozen separately. */
+/** Captured before the channel parameterization; rounded coordinates and unrounded area are frozen separately. */
 export const CHANNEL_BEFORE_PARAMETERIZATION = [
   {
     "size": "[ 75×40×5×7",

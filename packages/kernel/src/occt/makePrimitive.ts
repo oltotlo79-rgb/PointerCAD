@@ -1,17 +1,17 @@
 import { unitDirection as toUnit } from './normalizeDirection.js';
 /**
- * 基本形状(球・箱・円柱・円錐・トーラス、FR-429、計画書 P5 §2.7.2、タスク13)。
+ * 基本形状(球・箱・円柱・円錐・トーラス、FR-429)。
  *
  * スケッチを描かずに、中心・向き(軸)・寸法だけからソリッドを作る。対象を取らず
- * 新しい形を作る「作る」フィーチャー(§0.a-0.19。押し出し・回転・縫合・ばねと同じ)。
+ * 新しい形を作る「作る」フィーチャー(押し出し・回転・縫合・ばねと同じ)。
  *
- * **5 種すべてを `gp_Ax2` を取る版で作る**(§0.a-0.16)。`gp_Ax2` は「原点 + Z 方向 +
+ * **5 種すべてを `gp_Ax2` を取る版で作る**。`gp_Ax2` は「原点 + Z 方向 +
  * X 方向」の直交枠で、これに揃えることで配置の計算を `primitiveAxes` 1 つにまとめられる。
  * 使う版は `BRepPrimAPI_MakeSphere_9(Axis, R)` / `MakeBox_5(Axes, dx, dy, dz)` /
  * `MakeCylinder_3(Axes, R, H)` / `MakeCone_3(Axes, R1, R2, H)` / `MakeTorus_5(Axes, R1, R2)`。
- * どれも列挙(`enum`)を引数に取らないので、強制変換なしで型検査を通る(§1.4-14)。
+ * どれも列挙(`enum`)を引数に取らないので、強制変換なしで型検査を通る。
  *
- * **基準点の意味(§0.a-0.17。統括の決定、利用者確認済み):**
+ * **基準点の意味(利用者確認済み):**
  * - 球・箱・トーラス … 重心(形の中心)
  * - 円柱・円錐 … 底面の中心(`gp_Ax2` の原点そのもの)
  *
@@ -20,19 +20,19 @@ import { unitDirection as toUnit } from './normalizeDirection.js';
  * 一方 `BRepPrimAPI_MakeBox_5` は `gp_Ax2` の原点を箱の**角**にするので、「中心」と
  * 言われた位置に角が来ないよう、箱だけは原点を 3 方向へ半分ずつ戻す(`boxCornerOrigin`)。
  *
- * **部分角度(何度ぶん作るか)は持たない**(§0.a-0.20)。角度を取る版(`MakeTorus_6` 等)は
+ * **部分角度(何度ぶん作るか)は持たない**。角度を取る版(`MakeTorus_6` 等)は
  * あるが、FR-429 は角度に触れておらず、部分円柱は円弧の回転(FR-402)で作れる。
- * 必要になれば P6 以降で足す。
+ * 必要になれば後で足す。
  *
- * **基準点を「立体の頂点」にできる**(FR-429、§0.a-0.18、タスク14b)。そのときは
+ * **基準点を「立体の頂点」にできる**(FR-429)。そのときは
  * `PrimitiveStepSpec.originQuery` に頂点の指紋が入り、`resolvePrimitiveOrigin` が
  * 対象の形から頂点を引いて座標にする。`origin` はその頂点からのオフセットになる。
  * **対象は消費しない**(頂点を借りるだけなので、対象のボディはそのまま残る)。
  *
  * **`PrimitiveStepSpec` / `PrimitiveShapeSpec` は `packages/kernel/src/types.ts` にある**
- * (タスク13 ではこのファイルで仮に宣言し、タスク14 で移した)。段の依頼の型を
+ * (以前はこのファイルで仮に宣言していた)。段の依頼の型を
  * `SolidStepSpec` の union へ足すのと、`recomputeSolids.ts` の `switch` に節を足すのは
- * 同じタスクで行う必要がある(先に型だけ足すと非網羅で型検査が落ちるため。P3 タスク12 → 13)。
+ * 同じ変更で行う必要がある(先に型だけ足すと非網羅で型検査が落ちるため)。
  */
 
 import type {
@@ -78,7 +78,7 @@ const TORUS_MINOR_TOO_LARGE_MESSAGE =
 const ORIGIN_MESSAGE = '位置または向きの値が正しくありません。';
 
 /**
- * 基準点にする頂点が見つからなかったときの断り(FR-429、FR-504、タスク14b)。
+ * 基準点にする頂点が見つからなかったときの断り(FR-429、FR-504)。
  *
  * 語尾は `makeHole.ts` / `makeFillet.ts` / `makeChamfer.ts` / `pickSubShape.ts` と
  * 揃えてある(model 側の `part/recomputePart.ts` がこの語尾で `missingSubShape` へ
@@ -87,7 +87,7 @@ const ORIGIN_MESSAGE = '位置または向きの値が正しくありません�
  * **頂点は当たりにくい.** 頂点の指紋は軸も大きさも持たないので、通し番号が変わると
  * 位置がぴったり同じでも 0.5 にしか届かず、しきい値 0.6 を割る
  * (`matchSubShape.ts` の `MATCH_WEIGHT_VERTEX_INDEX` の説明)。上流を大きく作り替えると
- * この断りが出るのは決めどおりの動きで、利用者には選び直してもらう(§0.a-0.18)。
+ * この断りが出るのは決めどおりの動きで、利用者には選び直してもらう。
  */
 export const MISSING_PRIMITIVE_VERTEX_MESSAGE =
   '中心にする頂点が見つかりません。形が大きく変わったため、選び直してください。';
@@ -135,9 +135,9 @@ function requirePositive(value: number, fieldName: string): void {
 }
 
 /**
- * 寸法を確かめる(計画書 タスク13 の断り方の表)。**OCCT を呼ぶ前に弾く**(NFR-UX-5)。
+ * 寸法を確かめる(断り方の表)。**OCCT を呼ぶ前に弾く**(NFR-UX-5)。
  *
- * 円錐の半径だけは 0 を許す(上半径 0 で尖った円錐になる。§0.a-0.16)ので、
+ * 円錐の半径だけは 0 を許す(上半径 0 で尖った円錐になる)ので、
  * 「0 より大きい」ではなく「0 以上」で見て、両方 0 のときだけ別の理由で断る。
  * 上下の半径が同じときは OCCT が形を作れない(実測。CONE_RADIUS_SAME_MESSAGE の注釈)
  * ので、円柱を使うよう促して断る。
@@ -244,13 +244,13 @@ export function readAxesFrame(axes: gp_Ax2, keep: Allocations['keep']): AxesFram
 }
 
 /**
- * 箱の中心指定のために原点をずらす(§0.a-0.17)。
+ * 箱の中心指定のために原点をずらす。
  *
  * `BRepPrimAPI_MakeBox_5` は `gp_Ax2` の原点を箱の角にし、そこから X / Y / Z の 3 方向へ
  * `dx` / `dy` / `dz` だけ伸ばす。中心を `origin` に置くには、3 方向へそれぞれ半分だけ
  * 戻った点を角にすればよい。**軸が Z 以外でも正しく中心になる**(枠の 3 方向を使うため)。
  *
- * 計画書の骨子では引数が `(origin, axis, sizeX, sizeY, sizeZ)` だが、X / Y 方向は
+ * 当初の骨子では引数が `(origin, axis, sizeX, sizeY, sizeZ)` だが、X / Y 方向は
  * `axis` だけからは決まらない(OCCT が `gp_Ax2` の中で決める)ので、読み返した枠を
  * 受け取る形にした。純関数のまま(OCCT を呼ばない)なので検査は同じように書ける。
  */
@@ -272,7 +272,7 @@ export function boxCornerOrigin(
 }
 
 /**
- * 頂点の座標に基準点のオフセットを足す(統括の決定 2026-09-05、タスク14b)。
+ * 頂点の座標に基準点のオフセットを足す。
  *
  * **OCCT を呼ばない純関数。** `origin` を「頂点からのずれ」と決めてあるので、
  * 頂点そのものを基準にしたいときは `[0, 0, 0]` が渡る。ずらせるようにしてあるのは、
@@ -283,9 +283,9 @@ export function offsetFromVertex(vertex: Vec3Tuple, offset: Vec3Tuple): Vec3Tupl
 }
 
 /**
- * 立体の頂点を基準にする基本形状の基準点を、対象の形から引く(FR-429、§0.a-0.18、タスク14b)。
+ * 立体の頂点を基準にする基本形状の基準点を、対象の形から引く(FR-429)。
  *
- * 採点は P3 の部分形状の参照とまったく同じ `resolveVertexReference`(重み 0.5 / 0.5、しきい値 0.6)で、
+ * 採点は部分形状の参照とまったく同じ `resolveVertexReference`(重み 0.5 / 0.5、しきい値 0.6)で、
  * **基本形状のための別の規約は作らない**。位置を正規化する物差し(`scale`)も加工フィーチャーと
  * 同じ「対象の境界箱の対角長の半分」にするので、同じ指紋からは穴・面取り・投影と必ず同じ
  * 頂点が選ばれる(`pickSubShape.ts` と同じ決め方)。
@@ -327,8 +327,8 @@ export function resolvePrimitiveOrigin(
  * maker を組み立てて形を取り出す。
  *
  * `Build(range)` → `IsDone()` → `Shape()` の順に呼ぶ。**`IsDone()` を見る前に `Shape()` を
- * 呼ばない**(未完成の maker から形を取ると C++ 例外が飛ぶ。P3 §1.3、
- * `docs/報告記録.md` 2026-09-03 06:56 の⑤)。
+ * 呼ばない**(未完成の maker から形を取ると
+ * C++ 例外が飛ぶ)。
  *
  * `Shape()` が返す形は maker の中の実体を指すので、控えへ maker より後に積む(解放は逆順)。
  */
@@ -345,7 +345,7 @@ function finishMaker(
   return keep(maker.Shape());
 }
 
-/** 種類ごとに OCCT の maker を選んで形を作る。基準点の扱いの違いは箱だけ(§0.a-0.17)。 */
+/** 種類ごとに OCCT の maker を選んで形を作る。基準点の扱いの違いは箱だけ。 */
 function buildPrimitiveShape(
   oc: OpenCascadeInstance,
   spec: PrimitiveStepSpec,
@@ -397,7 +397,7 @@ function buildPrimitiveShape(
 }
 
 /**
- * 基本形状を 1 つ作る(FR-429)。対象を取らず、新しい形を作る(§0.a-0.19)。
+ * 基本形状を 1 つ作る(FR-429)。対象を取らず、新しい形を作る。
  *
  * **`spec.origin` は解決済みの世界座標として扱う。** 基準点が立体の頂点のときは、
  * 呼び出し側(`worker/recomputeSolids.ts`)が先に `resolvePrimitiveOrigin` で座標へ直し、

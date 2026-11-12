@@ -196,7 +196,7 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
       <MathEditorPanel {...ready} acceptLabel={owner.kind === 'problem' ? t('math.problem.apply') : undefined} palette={MATH_INPUT_PALETTE} readOnly={busy} onHelp={() => useAppStore.getState().openHelpTopic('math-input')} />
     </>}
     {/* Same button in the same place whether the editor is still preparing or ready, so a click or Esc that
-        lands during the preparation-to-ready transition still closes the dialog (MC-27 regression, 2026-10-01). */}
+        lands during the preparation-to-ready transition still closes the dialog (regression guard). */}
     <div className="pcad-math-dialog__actions">
       <button type="button" className="pcad-button" title={t('math.guide.cancel')}
         onClick={() => { if (ready === null) owner.onClose(); else ready.controller.cancel(); }}>{t('math.cancel')}</button>

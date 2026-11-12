@@ -23,7 +23,7 @@ import { computeVolumeProperties } from './volumeProperties.js';
 /**
  * computeVolumePropertiesのOnlyClosed=falseについての従来の実測。
  *
- * 2026-09-03 に Node で実測した結果(計画書 §1.2 の未確認点 2):
+ * 2026-09-03 に Node で実測した結果:
  *   10 × 20 × 30 の箱     OnlyClosed=false → 6000 / OnlyClosed=true → 6000
  *   同じ箱を縫合した立体   OnlyClosed=false → 6000 / OnlyClosed=true → 6000
  *   箱の 5 面だけの開いた殻 OnlyClosed=false → 4800 / OnlyClosed=true → 0
@@ -59,7 +59,7 @@ export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape, know
  * 全体の表面積と面ごとの面積の合計が食い違わない)。
  *
  * 閉じていない形(面だけの殻)でも面の合計がそのまま返るので、
- * `bodyKind` が `'shell'` のボディでも 0 にはならない(§0.a-0.45 の
+ * `bodyKind` が `'shell'` のボディでも 0 にはならない(設計の
  * 「shell の段だけ体積 0 を通して面積 > 0 を確かめる」の材料)。
  */
 export function measureArea(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
@@ -103,37 +103,37 @@ export function hasSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean 
 }
 
 /**
- * 表示用データを 1 回でまとめて作る(FR-105、FR-310、計画書 §2.8、タスク10)。
+ * 表示用データを 1 回でまとめて作る(FR-105、FR-310)。
  * 面の三角形は tessellate、稜線は extractEdges が作り、両方の範囲表を
- * `collectSubShapes`(subShapes.ts)へ渡して面・辺・頂点の一覧(指紋の材料、§2.2)を添える。
+ * `collectSubShapes`(subShapes.ts)へ渡して面・辺・頂点の一覧(指紋の材料)を添える。
  * 3 つの関数はすべて同じ `TopExp.MapShapes_2(shape, ..., true, true)` の並びで
  * 部分形状を数えるので、通し番号は必ず 1 対 1 に対応する(tessellate.ts / extractEdges.ts /
  * subShapes.ts の注釈のとおり)。返す値は TypedArray と数値・文字列・配列だけなので、
  * そのまま Comlink 越しに渡せる。形の解放は呼び出し側の責任(この関数は shape を消費しない)。
  *
- * `threadMarks` はねじ穴(タスク9)だけが渡す、B-rep に現れない描画用の印(§0.a-0.15)。
+ * `threadMarks` はねじ穴だけが渡す、B-rep に現れない描画用の印。
  * 渡されなければ空配列にする(押し出し・回転・穴・面取り・ばね等はねじの印を持たない)。
  *
- * **形の種類(`bodyKind`)は必ず返す**(FR-428。`SolidBodyMesh` の必須の欄。§0.a-0.77)。
+ * **形の種類(`bodyKind`)は必ず返す**(FR-428。`SolidBodyMesh` の必須の欄)。
  * 判定は実際の位相による。閉じた立体以外に面が残る場合は `mixed` とし、**体積では決めない**。開いた殻は体積が 0 とは
- * 限らない(タスク41 の実測: 体積 8000 の開いた殻)ので、体積からは見分けられないためである。
+ * 限らない(実測: 体積 8000 の開いた殻)ので、体積からは見分けられないためである。
  * `'shell'` が来るのは曲面の段(`makeSurface.ts`)から。
  *
- * **表面積(`area`)は `measureAreas` が true のときだけ返す**(P5 タスク14、統括の決定
- * 2026-09-05)。形が手元にあるこの場でしか安く測れないが、それでもただではない
+ * **表面積(`area`)は `measureAreas` が true のときだけ返す**。
+ * 形が手元にあるこの場でしか安く測れないが、それでもただではない
  * (2026-09-05 実測: 面 26 枚の板で 11.4ms)ので、測定・質量特性(FR-1101・FR-1102)が
  * 値を要る依頼のときだけ測る。理由の全文は `types.ts` の `SolidRecomputeRequest.measureAreas`
  * の注釈にある。**測るときは、面ごとの面積を足し合わせるのではなく形そのものから直に測る**
  * (足し合わせると、面の一覧の作り方(共有面の数え方)に結果が引きずられるため)。
  *
- * **表面積も `knownArea` が渡されたらそれを使い、測り直さない**(P5 タスク42b、
- * §0.a-0.83)。曲面の段(`makeSurface.ts`)は「面ができたか」を確かめるために結果の面積を
+ * **表面積も `knownArea` が渡されたらそれを使い、測り直さない**。
+ * 曲面の段(`makeSurface.ts`)は「面ができたか」を確かめるために結果の面積を
  * 必ず 1 回測っており(`SurfaceResult.area`)、同じ形をもう一度測っても同じ値にしかならない。
  * `knownVolume` とまったく同じ流儀で、**測るかどうかの判断(`measureAreas`)は変えない**
  * ——求められていなければ、覚えている値があっても欄ごと落とす(振る舞いを変えないため)。
  *
- * **体積(`volume`)は `knownVolume` が渡されたらそれを使い、測り直さない**
- * (P5 仕上げ (b)、2026-09-05)。ブーリアンを通った段(和・差・積・穴)は
+ * **体積(`volume`)は `knownVolume` が渡されたらそれを使い、測り直さない。**
+ * ブーリアンを通った段(和・差・積・穴)は
  * `booleanOp` が「立体が残ったか」の判定のために同じ形の体積をすでに測っている
  * (`booleanOp.ts` の `BooleanResult`)。同じ形をもう一度測っても必ず同じ値になるので、
  * 測り直すぶん(面 26 枚・辺 72 本の板で 7.5〜11ms)がそのまま無駄になる。

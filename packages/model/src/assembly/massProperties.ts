@@ -1,4 +1,4 @@
-/** アセンブリ全体の体積・質量・重心(FR-1101、P7 タスク40・43)。 */
+/** アセンブリ全体の体積・質量・重心(FR-1101)。 */
 import {
   DEFAULT_DENSITY_MATERIAL_ID,
   findDensityMaterial,

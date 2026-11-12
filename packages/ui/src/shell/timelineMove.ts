@@ -1,6 +1,6 @@
 /**
  * タイムラインの「途中への差し込み」と「順序の入れ替え」の判断だけを集めた純関数
- * (計画書 docs/plans/P4b-スケッチの仕上げ.md タスク20、FR-507、FR-504、NFR-UX-3、NFR-UX-5)。
+ * (FR-507、FR-504、NFR-UX-3、NFR-UX-5)。
  *
  * つまみの位置そのもの(どこまで戻しているか)は `timelineRail.ts` が受け持つ。
  * こちらは**履歴の並びを変える側**で、
@@ -13,7 +13,7 @@
  * 「⋮」の項目を押せるようにするか)へ翻訳するだけにする。**同じ規約を 2 か所に書かない。**
  *
  * `.tsx` は Node の検査で描けないので、判断はここへ置いて `FeatureTree.tsx` は描くだけにする
- * (`statusText.ts` / `timelineRail.ts` と同じ切り分け。docs/報告記録.md 2026-09-02 23:09)。
+ * (`statusText.ts` / `timelineRail.ts` と同じ切り分け)。
  */
 
 import {
@@ -82,10 +82,10 @@ function moveTailInto<T>(items: readonly T[], count: number, at: number): readon
 }
 
 /**
- * つまみを途中に置いたまま作ったものを、**つまみの位置へ差し込む**(FR-507、タスク20)。
+ * つまみを途中に置いたまま作ったものを、**つまみの位置へ差し込む**(FR-507)。
  *
- * タスク19 では、戻したまま作ると新しいものが配列の末尾へ積まれて画面に出てこないので、
- * つまみを末尾へ戻して知らせていた(`historyGrew` の分岐)。タスク20 でその分岐を
+ * 以前は、戻したまま作ると新しいものが配列の末尾へ積まれて画面に出てこないので、
+ * つまみを末尾へ戻して知らせていた(`historyGrew` の分岐)。その分岐を
  * `insertPositionAt` へ差し替え、**つまみの位置へ入れて、つまみを差し込んだ段へ進める。**
  * 差し込んだ後ろの段(穴・面取りなど)は、新しい立体の上で再計算される(`resolvePart` が
  * 並びのとおりに作り直すので、ここで面倒を見ることは無い)。
@@ -108,7 +108,7 @@ export function placeNewFeatures(
   }
   if (isTimelineAtEnd(previous, timelineIndex)) {
     // つまみはもういちばん下を指している。差し込む先が末尾なので並びは変えず、
-    // つまみだけ `null`(末尾)へそろえる(§0.a-0.19。位置は番号ではなく null で持つ)。
+    // つまみだけ `null`(末尾)へそろえる(位置は番号ではなく null で持つ)。
     return { document: next, timelineIndex: null, inserted: false };
   }
   const addedReferences = appendedCount(previous.references, next.references);

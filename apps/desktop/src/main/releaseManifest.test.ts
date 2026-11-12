@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { assembleDesktopDistribution, verifyDesktopDistribution } from '../../../../scripts/release/desktopDistribution.mjs';
@@ -13,6 +13,8 @@ import type { PublicationManifestInput } from '../../../../scripts/release/publi
 import { PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES } from '../../../../scripts/release/releaseReadiness.mjs';
 import { assembleSbomDocument, electronComponentFromPackage } from '../../../../scripts/release/sbom.mjs';
 import type { SbomComponentInput } from '../../../../scripts/release/sbom.mjs';
+import { offlineManifestBody } from '../../../../scripts/vite/offlineProtocol.mjs';
+import type { OfflineAssetManifest, OfflineAssetRecord } from '../../../../scripts/vite/offlineProtocol.mjs';
 import { bytes, files, fixture, hash, inputs, json } from './distributionTestFixture.js';
 import { sourceFileHash } from '../../../../scripts/release/desktopFileInventory.mjs';
 
@@ -462,5 +464,100 @@ describe('公開manifest(publication)は公開一覧・SBOM・撮影の登録簿
   it('上限は公開前検査(releaseReadiness)と同じ値を使う', () => {
     expect(PUBLICATION_LIMITS.pagesFileBytes).toBe(PAGES_MAX_FILE_BYTES);
     expect(PUBLICATION_LIMITS.pagesFiles).toBe(PAGES_MAX_FILES);
+  });
+});
+
+// v2(stream)のWeb候補: OCCTはgzipの実ファイル(transport)で配り、一覧の大きさ・SHAは復号後のwasmを指す
+// (apps/web/vite.config.ts の occtAssets、scripts/vite/offlineAssets.mjs の verifiedStream と同じ形)。
+// 2026-11-12 の配布用CI(run 43149366809)の combine は、この形を復号後の記録と実ファイルで比べて落ちた。
+const streamKernel = wasm('occt stream kernel '.repeat(32));
+const streamPath = `occt/stream/opencascade.full-${hash(streamKernel)}.wasm`;
+const legacyPath = `occt/opencascade.full-${hash(streamKernel).slice(0, 16)}.bin`;
+function streamFiles(kernel: Uint8Array): Map<string, Uint8Array> {
+  const compressed = gzipSync(kernel, { level: 9 }), sha = hash(kernel);
+  const legacy = `opencascade.full-${sha.slice(0, 16)}.bin`, stream = `stream/opencascade.full-${sha}.wasm`;
+  return new Map<string, Uint8Array>([
+    ['occt/manifest.json', json({ byteLength: kernel.length, sha256: sha, compression: 'gzip',
+      parts: [{ order: 0, file: legacy, byteLength: compressed.length }],
+      stream: { file: stream, compression: 'gzip', transportByteLength: compressed.length, transportSha256: hash(compressed),
+        decodedByteLength: kernel.length, decodedSha256: sha } })],
+    ['occt/' + legacy, compressed], ['occt/' + stream, compressed],
+  ]);
+}
+const streamRelease = () => releaseFixture(sourceCommit, { sourceCommit, dirtySources: false }, { web: streamFiles(streamKernel) });
+function webBytes(input: ReleaseManifestInput, name: string): Uint8Array {
+  const value = input.webFiles.find(file => file.path === name)?.bytes;
+  if (value === undefined) throw new Error('Missing fixture Web file: ' + name);
+  return value;
+}
+function flipped(value: Uint8Array, index: number, mask: number): Uint8Array {
+  const copy = new Uint8Array(value);
+  copy[index] = (copy[index] ?? 0) ^ mask;
+  return copy;
+}
+/**
+ * 組み立て後のWebファイルを差し替え、web-build.jsonとoffline-assets.json(buildIdを含む)を差し替えた中身に合わせる。
+ * 検査したい記録だけを食い違わせるため、transportの無い記録は`stale`に挙げた物以外を新しいバイトへ追従させ、
+ * streamの記録(transportを持つ)は`stream`で渡した変更だけを行う。
+ */
+function replaceWebFiles(input: ReleaseManifestInput, replacements: ReadonlyMap<string, Uint8Array>,
+  options: { readonly stale?: readonly string[]; readonly stream?: (asset: OfflineAssetRecord) => OfflineAssetRecord } = {}): ReleaseManifestInput {
+  const current = new Map<string, Uint8Array>(input.webFiles.map(file => [file.path, file.bytes] as const));
+  for (const [name, value] of replacements) current.set(name, value);
+  const read = (name: string): Uint8Array => {
+    const value = current.get(name);
+    if (value === undefined) throw new Error('Missing fixture Web file: ' + name);
+    return value;
+  };
+  const build = JSON.parse(new TextDecoder().decode(read('web-build.json'))) as { outputs: Record<string, string> };
+  for (const name of replacements.keys()) build.outputs[name] = hash(read(name));
+  current.set('web-build.json', json(build));
+  const changed = new Set([...replacements.keys(), 'web-build.json']);
+  const offline = JSON.parse(new TextDecoder().decode(read('offline-assets.json'))) as OfflineAssetManifest;
+  const assets = offline.assets.map((asset): OfflineAssetRecord => {
+    const name = decodeURIComponent(asset.url);
+    if (asset.transport !== undefined) return options.stream === undefined ? asset : options.stream(asset);
+    if (!changed.has(name) || (options.stale ?? []).includes(name)) return asset;
+    return { ...asset, byteLength: read(name).byteLength, sha256: hash(read(name)) };
+  });
+  const body = { format: offline.format, entry: offline.entry, required: offline.required, assets,
+    totalBytes: assets.reduce((sum, asset) => sum + asset.byteLength, 0) };
+  current.set('offline-assets.json', json({ ...body, buildId: hash(JSON.stringify(offlineManifestBody(body))) }));
+  return { ...input, webFiles: files(current) };
+}
+const withTransport = (stored: Uint8Array) => (asset: OfflineAssetRecord): OfflineAssetRecord =>
+  ({ ...asset, transport: { encoding: 'gzip', byteLength: stored.byteLength, sha256: hash(stored) } });
+
+describe('v2(stream)のOCCTは、実ファイルをtransportと、復号した中身を一覧の大きさ・SHAと照合する', () => {
+  it('(a) gzipの実ファイルと復号後の記録を持つv2のWeb候補を受け入れる', async () => {
+    const input = streamRelease(), stored = webBytes(input, streamPath);
+    expect(stored.byteLength).not.toBe(streamKernel.byteLength);
+    expect(hash(gunzipSync(stored))).toBe(hash(streamKernel));
+    const manifest = await createReleaseManifest(input);
+    expect(manifest.web.files.find(file => file.path === streamPath)).toEqual({ path: streamPath, bytes: stored.byteLength, sha256: hash(stored) });
+    await expect(verifyReleaseManifest(manifest, input)).resolves.toEqual(manifest);
+  });
+  it('(b) gzipの実ファイルを1バイト変えると、transportの不一致で拒否する', async () => {
+    const input = streamRelease(), stored = webBytes(input, streamPath);
+    const tampered = flipped(stored, Math.floor(stored.length / 2), 0xff);
+    await expect(createReleaseManifest(replaceWebFiles(input, new Map([[streamPath, tampered]]))))
+      .rejects.toThrow('Offline asset transport differs: ' + streamPath);
+  });
+  it('(c) transportは合うが、復号した中身のSHAが記録と違うと拒否する', async () => {
+    const input = streamRelease(), regzipped = gzipSync(flipped(streamKernel, streamKernel.length - 1, 0x01), { level: 9 });
+    await expect(createReleaseManifest(replaceWebFiles(input, new Map([[streamPath, regzipped]]), { stream: withTransport(regzipped) })))
+      .rejects.toThrow('Offline asset decoded bytes differ: ' + streamPath);
+  });
+  it('(d) 復号後の大きさが記録を超えると、展開の上限(記録の大きさ+1)で拒否する', async () => {
+    const larger = new Uint8Array(streamKernel.length + 4096);
+    larger.set(streamKernel);
+    const input = streamRelease(), regzipped = gzipSync(larger, { level: 9 });
+    await expect(createReleaseManifest(replaceWebFiles(input, new Map([[streamPath, regzipped]]), { stream: withTransport(regzipped) })))
+      .rejects.toThrow('Offline asset decoded size exceeds the record: ' + streamPath);
+  });
+  it('(e) transportを持たない資産は従来どおり実ファイルの大きさ・SHAで照合し、1バイトの違いを拒否する', async () => {
+    const input = streamRelease(), tampered = flipped(webBytes(input, legacyPath), 0, 0xff);
+    await expect(createReleaseManifest(replaceWebFiles(input, new Map([[legacyPath, tampered]]), { stale: [legacyPath] })))
+      .rejects.toThrow('Offline asset differs: ' + legacyPath);
   });
 });

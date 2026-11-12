@@ -56,7 +56,7 @@ import {
 import { mathGeometryTargetsOf, type MathGeometryTarget } from './mathGeometryIdentity.js';
 import type { MathGeometryDefinition } from './mathGeometryTypes.js';
 
-/** Q7=O1: 測る→係数→形→測る…の連なり(段)の上限。これを超える段の測定値は係数へ渡さない。 */
+/** 測る→係数→形→測る…の連なり(段)の上限。これを超える段の測定値は係数へ渡さない。 */
 export const MATH_GEOMETRY_MAX_STAGES = 8;
 
 /* ---------------------------------------------------------------------------
@@ -71,11 +71,11 @@ export interface MathGeometryCycle {
   readonly coefficientNames: readonly string[];
   /** 循環に含まれる測る形(立体・スケッチ)の id。 */
   readonly shapeIds: readonly string[];
-  /** 付録C の循環の文(代表の 1 組)。 */
+  /** 循環の文(代表の 1 組)。 */
   readonly message: string;
 }
 
-/** Q7=O1 の順序違反 1 件。F が T より前にあり、T を測った値を係数から使っている。 */
+/** 順序規則の違反 1 件。F が T より前にあり、T を測った値を係数から使っている。 */
 export interface MathGeometryOrderViolation {
   /** 使う側の帯の項目(F)。 */
   readonly featureId: string;
@@ -89,7 +89,7 @@ export interface MathGeometryOrderViolation {
 export interface MathGeometryDependencyAnalysis {
   /**
    * 係数名 → その係数が直接または他の係数を通して使う図形の測定値の定義ID(図形由来の係数だけ)。
-   * GR-04 の `mathGeometryDerivedParameters` と同じ関係(集合にしただけ)。式に書かれた識別番号を
+   * `mathGeometryDerivedParameters` と同じ関係(集合にしただけ)。式に書かれた識別番号を
    * そのまま入れるので、1 つに決まらない定義の ID も含む(その参照は評価が理由付きで断る)。
    */
   readonly geometryDerived: ReadonlyMap<string, ReadonlySet<string>>;
@@ -122,8 +122,8 @@ export interface MathGeometryDependencyAnalysis {
 }
 
 /* ---------------------------------------------------------------------------
- * 理由の文(計画書 付録C。検査で文字列を照合する)。「測れない」「参照先の不一致」など評価で使う文は
- * GR-04 の `mathGeometryCoefficients.ts` にあり、ここには循環・順序・段数の 3 つだけを置く。
+ * 理由の文(検査で文字列を照合する)。「測れない」「参照先の不一致」など評価で使う文は
+ * `mathGeometryCoefficients.ts` にあり、ここには循環・順序・段数の 3 つだけを置く。
  * ------------------------------------------------------------------------- */
 
 export function mathGeometryCycleMessage(coefficient: string, definition: string, shape: string): string {
@@ -407,7 +407,7 @@ function stronglyConnected(ids: readonly string[], edges: DefinitionEdges): read
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
 /**
- * 図形の測定値の依存を形を作る前に解析する(§4(d))。例外を投げない: 式の係数参照を読めない
+ * 図形の測定値の依存を形を作る前に解析する。例外を投げない: 式の係数参照を読めない
  * (同じ識別番号に 2 つの名前がある)ときは、依存を空にして `unreadable` に理由を入れる
  * (その式は評価でも理由付きで断られる)。
  */
@@ -421,7 +421,7 @@ export function analyzeMathGeometryDependencies(document: PartDocument): MathGeo
   }
 }
 
-/** 並べ替え(GR-07)で `historyDependencies` へ足す辺。F → F より前でなければならない T。 */
+/** 並べ替えで `historyDependencies` へ足す辺。F → F より前でなければならない T。 */
 export function mathGeometryHistoryEdges(document: PartDocument): ReadonlyMap<string, readonly string[]> {
   return analyzeMathGeometryDependencies(document).historyEdges;
 }

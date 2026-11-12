@@ -9,7 +9,7 @@
  * target, and `volume` only resolves when the body's `bodyKind` is `'solid'` (a shell/mesh/mixed
  * body still measures `area` through the kernel's massProperties call, which does not check kind).
  *
- * GR-22 adds: a circular curve (sketch arc or circular solid edge) also offers `radius`/
+ * In addition, a circular curve (sketch arc or circular solid edge) also offers `radius`/
  * `central-angle`; a compound sketch feature made only of segments/arcs (no ellipse/spline) offers
  * `contour-length` instead of `length` (never both — `mathGeometry.ts`'s `sketchCurve()` still
  * refuses to treat a compound contour as "its first edge"); a planar face participates in
@@ -48,7 +48,7 @@ export interface MathGeometryCandidates {
 
 /**
  * Selecting more than this becomes `'tooMany'`. Selecting exactly this many offers the 3-point
- * angle (∠ABC, GR-22) only when all three resolve to points; any other triple stays `'unsupportedPair'`.
+ * angle (∠ABC) only when all three resolve to points; any other triple stays `'unsupportedPair'`.
  */
 const MATH_GEOMETRY_SELECTION_LIMIT = 3;
 
@@ -251,7 +251,7 @@ function pairCandidates(first: Target, second: Target): readonly MathGeometryQua
   return result;
 }
 
-/** The ∠ABC angle (second = vertex, GR-22) when all three resolved targets are points; otherwise none. */
+/** The ∠ABC angle (second = vertex) when all three resolved targets are points; otherwise none. */
 function tripleCandidates(first: Target, second: Target, third: Target): readonly MathGeometryQuantity[] {
   if (first.point === undefined || second.point === undefined || third.point === undefined) return [];
   return [{ kind: 'point-angle', first: first.point, second: second.point, third: third.point, unit: 'degree' }];
@@ -265,7 +265,7 @@ function tripleCandidates(first: Target, second: Target, third: Target): readonl
  * intrinsic quantities (coordinate/length/area/volume/radius/central-angle/contour-length); 2 items
  * offer a relation between them (distance, coordinate-in-frame, angle/parallel/perpendicular/
  * congruent/similar) when one exists; exactly 3 items offer ∠ABC when every item is a point.
- * `reason` explains an empty result; GR-19a maps it to text.
+ * `reason` explains an empty result; the panel maps it to text.
  */
 export function mathGeometrySelection(
   selection: readonly string[],

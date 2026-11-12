@@ -13,7 +13,7 @@ import type { JointDriveRequest } from './driveJoint.js';
 import { jointFramePairFromTargets, type JointFramePair } from './jointFrames.js';
 
 /**
- * Flexible subassembly (EX12): drive one joint of a child assembly inside ONE placement of it.
+ * Flexible subassembly: drive one joint of a child assembly inside ONE placement of it.
  *
  * The parent solve keeps every subassembly rigid (resolveAssembly: one rigid body per occurrence) and the child
  * document is shared by all its placements, so this never edits the child or the parent document. It returns the

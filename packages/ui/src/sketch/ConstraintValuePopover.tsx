@@ -15,7 +15,7 @@ import type { SketchConstraintKind } from '@pointercad/model';
 
 /**
  * 寸法拘束(距離・角度・半径・直径)の値をその場で聞く小さな入力
- * (FR-313、NFR-UX-2、NFR-UX-4、計画書 docs/plans/P4b-スケッチの仕上げ.md タスク13)。
+ * (FR-313、NFR-UX-2、NFR-UX-4)。
  *
  * **道具のその場入力(`NumericInputPopover`)とは別の部品にしてある。** 理由は 2 つ。
  * ①拘束は `NumericInputToolId`(道具)ではなく `SketchConstraintKind`(条件の種類)で
@@ -27,7 +27,7 @@ import type { SketchConstraintKind } from '@pointercad/model';
  * 既定値は「いま測った値」(NFR-UX-4)。空のまま Enter を押すと、いまの形のまま固まる。
  */
 
-/** 種類ごとの欄の説明。名前は `constraint.kind.*`(t12 の表)をそのまま使う。 */
+/** 種類ごとの欄の説明。名前は `constraint.kind.*`をそのまま使う。 */
 const VALUE_TOOLTIP_KEYS: Readonly<Record<'distance' | 'angle' | 'radius' | 'diameter', MessageKey>> =
   {
     distance: 'constraint.value.lengthTooltip',

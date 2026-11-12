@@ -1,6 +1,6 @@
 /**
  * 測定のスライス(FR-1101・FR-1102)。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import type { StateCreator } from 'zustand';
@@ -37,20 +37,20 @@ export interface MeasureSlice {
   readonly editStrength: (edit: StrengthEdit) => void;
   readonly calculateStrength: () => void;
   /**
-   * いま画面に出している測定の結果(FR-1102、P5 タスク31)。無ければ null。
+   * いま画面に出している測定の結果(FR-1102)。無ければ null。
    *
    * ビューポートの層(`createMeasureLayer.ts`)が線・弧・端の丸・値の札を出し、
-   * プロパティ欄(タスク32)が同じものを数字で出す。**測る・消すの操作はタスク32** で、
+   * プロパティ欄が同じものを数字で出す。**測る・消すの操作は `measureCommands.ts`** で、
    * ここは「結果を持つ欄」と「いつ消えるか」だけを決める。
    *
-   * **形が変わったら消す**(FR-1102「モデルを変更するまで残る」、§0.a-0.29)。判定は
+   * **形が変わったら消す**(FR-1102「モデルを変更するまで残る」)。判定は
    * `affectsShape` で、`applyDocument` / `undo` / `redo` の 3 か所が落とす。**外観だけの
    * 変更(FR-1106〜1110)では消えない**(形は 1 ミリも動いていないので、測った値は
    * そのまま正しい)。
    */
   readonly measurement: NamedMeasurementState | null;
   /**
-   * いま出している質量特性(FR-1101、P5 タスク32)。無ければ null。
+   * いま出している質量特性(FR-1101)。無ければ null。
    *
    * 体積・重心・慣性モーメントはカーネルが測った**密度を掛けていない**値で、
    * 材料と密度の入力は `massDensityDraft` が持つ(材料ごとに測り直さないため)。
@@ -58,7 +58,7 @@ export interface MeasureSlice {
    */
   readonly massProperties: MassPropertiesResult | null;
   /**
-   * 測れなかった理由の文言キー(FR-1102、NFR-UX-5。P5 タスク32)。
+   * 測れなかった理由の文言キー(FR-1102、NFR-UX-5)。
    *
    * `appearanceErrorKey` と同じ扱いで、いま押した「測る」への返事。理由の文はそれだけで
    * 通じる 1 文(「測りたいものを 1 つか 2 つ選んでください。」)なので、帯は頭の言葉を
@@ -66,7 +66,7 @@ export interface MeasureSlice {
    */
   readonly measureErrorKey: MessageKey | null;
   /**
-   * 覚えてある形を測る手立て(FR-1101、FR-1102。P5 タスク32)。
+   * 覚えてある形を測る手立て(FR-1101、FR-1102)。
    *
    * カーネル(Worker)を持っているのは `PointerCadApp` だけなので、`PartRecomputer` と
    * 同じ流儀で外から差し出してもらう(`attachPartMeasure`)。差し出されていなければ
@@ -75,7 +75,7 @@ export interface MeasureSlice {
    */
   readonly partMeasurer: PartMeasurer | null;
   /**
-   * 測った結果を出す・消す(FR-1102、タスク32)。`null` を渡せば画面からも消える。
+   * 測った結果を出す・消す(FR-1102)。`null` を渡せば画面からも消える。
    * 質量特性(立体を選んだときだけ付く)も一緒に差し替えるので、
    * 「値は消えたのに重さだけ残る」状態にならない。
    */
@@ -84,7 +84,7 @@ export interface MeasureSlice {
     massProperties?: MassPropertiesResult | null,
   ) => void;
   /**
-   * 測った値と進行中の要求を消す(FR-1102、§0.a-0.68 の Esc)。
+   * 測った値と進行中の要求を消す(FR-1102。Esc で消す)。
    * 結果も進行中の要求も無い場合は何もしない。
    */
   readonly clearMeasurement: () => void;
@@ -96,7 +96,7 @@ export interface MeasureSlice {
    *
    * 判断と組み立ては `solid/measureCommands.ts` の `runMeasure` 1 か所に置き、ここは
    * 「ストアの値を渡す」「結果か理由を置く」だけにする。**文書は 1 バイトも変えない**ので
-   * 取り消しの段も積まず、再計算も起きない(§0.a-0.30 の読み取り)。
+   * 取り消しの段も積まず、再計算も起きない(読み取りだけ)。
    * 一覧から出せる測定はその場で終わり、往復の要るものだけカーネルを待つ(NFR-PF-4)。
    */
   readonly measureSelection: () => void;
@@ -146,7 +146,7 @@ export const createMeasureSlice: StateCreator<
   clearMeasurement: () => {
     const state = get();
     if (state.measurement === null && state.massProperties === null && state.measurementRequest === null) {
-      // 何も出していない。Esc の他の働き(道具の取り消し)へそのまま譲る(§0.a-0.68)。
+      // 何も出していない。Esc の他の働き(道具の取り消し)へそのまま譲る。
       return;
     }
     set({ measurement: null, massProperties: null, measurementRequest: null });
@@ -165,7 +165,7 @@ export const createMeasureSlice: StateCreator<
       // カーネルが返したボディはそのまま `MeasureBody`(体積つき)を満たす。
       bodies: state.bodies,
       measurer: state.partMeasurer,
-      // 測定の帯は表示の単位で出す(FR-811、P6 タスク3 の残り。値は mm のまま)。
+      // 測定の帯は表示の単位で出す(FR-811。値は mm のまま)。
       lengthUnit: state.displaySettings.lengthUnit,
     }).then((outcome) => {
       // 待っているあいだに文書が変わっていることがあるので、置く先は取り直す。

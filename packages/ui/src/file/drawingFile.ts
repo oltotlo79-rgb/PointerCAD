@@ -17,7 +17,7 @@ import { continuingParameterSession, parameterCheckpointIdentity, parameterCheck
 
 /**
  * 図面を開く。読込の間の変化は版の番号だけでなく文書の参照で調べる(版は通常の編集で
- * 増えないため。docs/review-2026-09-28-codex.md R01 の注意)。扱いは `mayOpenAfterRead`。
+ * 増えないため)。扱いは `mayOpenAfterRead`。
  */
 export async function applyPickedDrawing(
   picked: PickedFile,

@@ -1,17 +1,17 @@
 /**
- * ビューの断面表示(FR-111)の純関数
- * (計画書 docs/plans/P6-入出力.md §2.12、タスク34、§0.40)。
+ * ビューの断面表示(FR-111)の
+ * 純関数。
  *
  * 対応要件: FR-111(形を切らずに、見た目だけをクリップして中を確かめる)、
  * NFR-PF-1(60fps。1 コマの中で作り直せる軽さ)、NFR-UX-5(できないときは理由を示す)。
  *
  * **three.js に触れない。** ここが返すのは素の数(法線 3 個と定数 1 個)だけで、
  * `new THREE.Plane(...)` を作って材質の `clippingPlanes` へ配るのは
- * `ViewportCanvas.tsx` / `createSolidLayer.ts`(タスク35)が受け持つ。
+ * `ViewportCanvas.tsx` / `createSolidLayer.ts`が受け持つ。
  * こうしておくと Node の単体検査で値をそのまま確かめられる
- * (P5 §0.a-0.61 の `buildCutPreview.ts` と同じ流儀)。
+ * (`buildCutPreview.ts` と同じ流儀)。
  *
- * **形は変えない。** 切断面の指定は P5 の `PlaneSpec` / `resolvePlaneSpec`(FR-432)を
+ * **形は変えない。** 切断面の指定は 切断の `PlaneSpec` / `resolvePlaneSpec`(FR-432)を
  * そのまま共有し、ここではその結果(`ResolvedPlane`)を見た目のクリップ用の数へ写すだけ。
  * 再計算(`affectsShape`)の経路には乗らない。
  *
@@ -33,7 +33,7 @@ import {
  * three の `Plane` は **`normal · p + constant = 0`** で平面を表す(`normal` は単位)。
  * `new THREE.Plane(new THREE.Vector3(...normal), constant)` にそのまま渡せる形にしてある。
  * 残る(描かれる)のは `normal · p + constant > 0` の側、つまり**法線の向いている側**で、
- * P5 の切断の `keep === 'positive'` と同じ規約になる(§0.40)。
+ * 切断の `keep === 'positive'` と同じ規約になる。
  */
 export interface SectionPlaneNumbers {
   /** 単位法線。描かれる側を向く。 */
@@ -73,7 +73,7 @@ function cleanZero(value: number): number {
 }
 
 /**
- * 解決した平面を、three.js のクリッピング平面に渡す素の数へ写す(§2.12)。
+ * 解決した平面を、three.js のクリッピング平面に渡す素の数へ写す。
  *
  * ## 式の導出
  *
@@ -95,7 +95,7 @@ function cleanZero(value: number): number {
  * - 平面の原点が NaN・無限大なら `constant` が数にならないので断る。
  *
  * @param resolved 解決した平面(`resolvePlaneSpec` の結果。法線は単位の想定だが確かめる)。
- * @param offsetMm 法線方向へずらす量(mm)。既定は 0(§0.42)。
+ * @param offsetMm 法線方向へずらす量(mm)。既定は 0。
  * @param flipped 残す側を反対にするか(つまみの裏返し)。
  */
 export function toThreePlane(

@@ -15,13 +15,13 @@ import { FACE_COLORS, PRESET_LABEL_KEYS, WOOD_LABEL_KEYS, PATTERN_LABEL_KEYS, PA
 import { AppearanceMenu } from './AppearanceMenu.js';
 
 /**
- * 外観の節(FR-1106〜1110、要件§4.12、計画書タスク12)。立体または面を選んでいるときだけ
- * 描く(呼び出し側の `PropertyPanel` が `appearanceReadiness` で判定済み。§0.a-0.13
+ * 外観の節(FR-1106〜1110、要件§4.12)。立体または面を選んでいるときだけ
+ * 描く(呼び出し側の `PropertyPanel` が `appearanceReadiness` で判定済み。
  * 「専用パネル/ダイアログは作らず、プロパティの節+ツールバーのボタン1つ」)。
  *
  * 確定は `useAppStore.getState().assignAppearance` を呼ぶだけにし、選択から割り当て先を
- * 決める判断・範囲外(NFR-UX-5)・上限(§0.a-0.11)の判定は
- * `appearance/appearanceCommands.ts`(タスク11)に任せて、ここで二重に作らない。
+ * 決める判断・範囲外(NFR-UX-5)・上限の判定は
+ * `appearance/appearanceCommands.ts`に任せて、ここで二重に作らない。
  * ただし透過率・光沢・粗さは打っている途中に赤くしたい(NFR-UX-5「実行してから
  * 失敗させない」)ので、確定する前に `numericInput.ts` の `rangeErrorFor` で
  * 範囲外を確かめる(コマンド側の断りは、欄を経ない入口からの保険として残る)。

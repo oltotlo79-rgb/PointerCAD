@@ -1,5 +1,5 @@
 import { dotVec3 as dot, crossVec3 as cross } from '../sketch/vec3.js';
-/** P10-15/16。平面の剛体展開と共有する接線座標へ写す。 */
+/** 平面の剛体展開と共有する接線座標へ写す。 */
 export type SheetPoint3 = readonly [number, number, number];
 export type SheetPoint2 = readonly [number, number];
 interface CylindricalBendFrame {

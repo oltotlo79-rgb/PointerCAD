@@ -2,7 +2,7 @@ import { appendSolid, createEmptyPartDocument, type PartDocument, type SolidBody
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { bodyFor, extrudeFeature } from '../store/testing/createTestStore.js';
 
-/** Adversarial R17 fixture: both current edges tie against the saved edge, but each can be selected explicitly. */
+/** Adversarial fixture: both current edges tie against the saved edge, but each can be selected explicitly. */
 export function repairFixture(): { readonly document: PartDocument; readonly body: SolidBody; readonly reference: SubShapeRef } {
   const reference: SubShapeRef = { bodyFeatureId: 'base', index: 99, fingerprint: {
     kind: 'edge', curveKind: 'line', length: 20, position: [0, 0, 0], axis: [1, 0, 0], radius: null,

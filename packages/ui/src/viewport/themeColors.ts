@@ -1,6 +1,6 @@
 /**
- * 3D 表示の色を画面のテーマから読み取る(計画書 docs/plans/P4-スケッチ拡張.md タスク2、
- * §0.a-0.1、§2.2)。
+ * 3D 表示の色を画面のテーマから
+ * 読み取る。
  *
  * 対応要件: FR-908(表示テーマの切替。**切り替えは再起動なしに即時反映**)。
  *
@@ -33,7 +33,7 @@ export interface ThemeColors {
   readonly sketchCurve: number;
   readonly sketchOutline: number;
   /**
-   * 完全に決まったスケッチ要素の色(FR-313、利用者の決定②(2026-09-05)、P4b タスク22b)。
+   * 完全に決まったスケッチ要素の色(FR-313、利用者の決定②)。
    * 動かせる数が 1 つも残っていない要素だけをこの色で描き、まだ決まっていない要素は
    * 既定色(`sketchCurve` / `sketchPoint`)のままにする。判定は `constrainedElements.ts`。
    * 選択・ホバーの青が優先なので、この色と青が同時に出ることはない。
@@ -53,22 +53,22 @@ export interface ThemeColors {
   /** 作図面の薄い矩形。 */
   readonly workPlane: number;
   /**
-   * トリムで消える区間の強調(FR-322、P4 タスク22)。マウスを乗せた区間だけをこの色で
-   * 重ねて描き、クリックするとそこが消える(§0.a-0.26 の利用者の決定)。
+   * トリムで消える区間の強調(FR-322)。マウスを乗せた区間だけをこの色で
+   * 重ねて描き、クリックするとそこが消える(利用者の決定)。
    * 「消える」を示す色なので、ホバー・選択の青とは別の赤系にする。
    * 延長の予告はホバーと同じ色を薄く使うので、専用の欄は持たない。
    */
   readonly trimRemove: number;
   /**
-   * 向きの吸着の案内線(FR-110、P4b タスク16)。細い破線で画面いっぱいに引く線の色で、
-   * **吸着の印(`--pcad-accent`)と同じアクセント色**にする(§0.14 の利用者の決定)。
+   * 向きの吸着の案内線(FR-110)。細い破線で画面いっぱいに引く線の色で、
+   * **吸着の印(`--pcad-accent`)と同じアクセント色**にする(利用者の決定)。
    * 5 テーマすべてで、ビューポートの地(`--pcad-viewport-top` / `--pcad-viewport-bottom`)
    * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
    */
   readonly track: number;
   /**
-   * 拘束の印(FR-313、P4b タスク13、§0.a-0.7 の①)。要素の脇に出す記号の色を状態で
-   * 分ける(統括の指示「満たしている / 冗長は薄い / 矛盾は赤 / 動かない点は鍵」)。
+   * 拘束の印(FR-313)。要素の脇に出す記号の色を状態で
+   * 分ける(「満たしている / 冗長は薄い / 矛盾は赤 / 動かない点は鍵」)。
    * 5 テーマすべてで、ビューポートの地(`--pcad-viewport-top` / `--pcad-viewport-bottom`)
    * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
    */
@@ -80,7 +80,7 @@ export interface ThemeColors {
   /** 「固定」の印。動かない点であることを、他の拘束と別の色で見分ける。 */
   readonly constraintFixed: number;
   /**
-   * 測定の線・端の丸・弧・値の札(FR-1102、P5 タスク31)。選択(青)・ホバー(淡い青)・
+   * 測定の線・端の丸・弧・値の札(FR-1102)。選択(青)・ホバー(淡い青)・
    * トリムで消える区間(赤)と混ざらない橙系にして、「いま測った値」だと一目で分かるようにする。
    * 5 テーマすべてで、ビューポートの地(`--pcad-viewport-top` / `--pcad-viewport-bottom`)
    * に対して 3:1 以上の明度差を持つ(実測は `themeColors.test.ts`)。
@@ -89,7 +89,7 @@ export interface ThemeColors {
   /** 干渉体積の独立した重ね描き。5テーマでビューポートの地と3:1以上。 */
   readonly interference: number;
   /**
-   * 3D プリントの点検の色(FR-815、P6 §0.53、タスク46)。**点検を出している間だけ**
+   * 3D プリントの点検の色(FR-815)。**点検を出している間だけ**
    * 立体をこの 3 色で塗り分ける(薄い肉厚 = 赤、せり出し = 橙、開いた辺 = 紫の線)。
    * 意味と色の対応はヘルプ(`print-check.md`)にも書くので、テーマで色の系統が
    * 入れ替わらないよう、どのテーマでも「赤・橙・紫」の系統をそのまま保つ。
@@ -100,7 +100,7 @@ export interface ThemeColors {
   /** 半球光の地面側の色。明るいテーマでは立体の下面が沈みすぎないよう明るくする。 */
   readonly sceneGround: number;
   /**
-   * ビューキューブの 6 面(P4 タスク2 仕上げ、docs/報告記録.md 2026-09-04 14:05)。
+   * ビューキューブの 6 面。
    * 面ごとに明るさを変えて立体に見せる(上・前・右から光が当たっている想定)。
    */
   readonly viewCubeFaceTop: number;
@@ -116,7 +116,7 @@ export interface ThemeColors {
 }
 
 /**
- * 既定(ダーク)の色。**P0〜P3 で各層が持っていた定数と同じ値**で、
+ * 既定(ダーク)の色。**以前は各層が持っていた定数と同じ値**で、
  * テーマのトークンが読めない場面(まだ CSS が効いていない・値が壊れている)の後退先も兼ねる。
  */
 export const DEFAULT_THEME_COLORS: ThemeColors = {
@@ -128,7 +128,7 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   sketchPoint: 0xe8eaf0,
   sketchCurve: 0x9aa3b2,
   sketchOutline: 0x6b7380,
-  // 完全に決まった要素(P4b タスク22b)。ダークの値は appShell.css の :root と同じ。
+  // 完全に決まった要素。ダークの値は appShell.css の :root と同じ。
   sketchConstrained: 0x7ee08a,
   hovered: 0x8ec5ff,
   selected: 0x4f8cff,
@@ -138,22 +138,22 @@ export const DEFAULT_THEME_COLORS: ThemeColors = {
   threadMark: 0x8a93a6,
   workPlane: 0x4f8cff,
   trimRemove: 0xff6b6b,
-  // ダークの --pcad-accent と同じ値(吸着の印と同じアクセント色、§0.14)。
+  // ダークの --pcad-accent と同じ値(吸着の印と同じアクセント色)。
   track: 0x4f8cff,
-  // 拘束の印(P4b タスク13)。ダークの値は appShell.css の :root と同じ。
+  // 拘束の印。ダークの値は appShell.css の :root と同じ。
   constraintOk: 0x5ad1c8,
   constraintRedundant: 0xc8a04a,
   constraintConflict: 0xff6b6b,
   constraintFixed: 0xc08cff,
-  // 測定(P5 タスク31)。ダークの値は appShell.css の :root と同じ。
+  // 測定。ダークの値は appShell.css の :root と同じ。
   measure: 0xffa64d,
   interference: 0xff6b6b,
-  // 3D プリントの点検(P6 タスク46)。ダークの値は appShell.css の :root と同じ。
+  // 3D プリントの点検。ダークの値は appShell.css の :root と同じ。
   printThin: 0xff6b6b,
   printOverhang: 0xffa64d,
   printOpenEdge: 0xc08cff,
   sceneGround: 0x3a3f4a,
-  // ビューキューブ(P0〜P3 で faceTexture.ts / createViewCubeScene.ts が直接持っていた定数)。
+  // ビューキューブ(以前 faceTexture.ts / createViewCubeScene.ts が直接持っていた定数)。
   viewCubeFaceTop: 0xeef1f6,
   viewCubeFaceFront: 0xe3e7ee,
   viewCubeFaceRight: 0xdfe3ea,

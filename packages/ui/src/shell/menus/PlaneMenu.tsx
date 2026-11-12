@@ -5,7 +5,7 @@ import { currentCommandLabel } from '../../commands/commandLabels.js';
 import { currentShortcutAssignments } from '../../settings/shortcutSettings.js';
 import { useAppStore } from '../../store/useAppStore.js';
 /**
- * 作図面の一覧(FR-328、FR-330)。一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
+ * 作図面の一覧(FR-328、FR-330)。一覧ごとに 1 ファイルへ分けた。
  */
 
 import { isFreeWorkPlaneId, type WorkPlaneId } from '@pointercad/model';
@@ -26,14 +26,14 @@ interface PlaneMenuProps {
 }
 
 /**
- * 作図面(XY / XZ / YZ)の畳んだ一覧(§0.a-0.25 ②、§0.34)。
+ * 作図面(XY / XZ / YZ)の畳んだ一覧。
  *
  * ①(無効なモードタブを隠す)と「加工」区画・ばねを足しただけでは、1440 画素へ
  * 必要な幅が実測 1437.3px となり(2026-09-04 実測)、余裕が 3px 弱しか無い
  * (書体やスクロールバーの差で環境によっては 1440px を超えかねない)。そこで
  * `SnapKindsMenu` と同じ畳んだ一覧の作りで 3 つを 1 つのトリガー+一覧へまとめ、
- * 安全な余白を作る(§0.34「②を行ってよい」)。トリガーには**いまの作図面の名前を
- * 札に出す**(畳んでも状態が分かる、§0.34)。モーダルにしない(NFR-UX-2)ので、
+ * 安全な余白を作る。トリガーには**いまの作図面の名前を
+ * 札に出す**(畳んでも状態が分かる)。モーダルにしない(NFR-UX-2)ので、
  * 開いている間も背後の操作はそのまま効く。
  */
 export function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuProps): React.JSX.Element {

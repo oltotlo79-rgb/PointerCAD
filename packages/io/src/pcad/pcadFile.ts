@@ -2,21 +2,21 @@ import { fileFailure as fail } from './codedFailure.js';
 import { sheetFlatReferenceIssue, canonicalDrawingSourceText, crossLevelGearTreeFailure, crossLevelCamTreeFailure } from '@pointercad/model';
 /**
  * `.pcad` / `.pcada` の ZIP コンテナの読み書き
- * (計画書 docs/plans/P2-ソリッド基礎.md タスク15、P7 §2.2 タスク3、要件§8、FR-801)。
+ * (要件§8、FR-801)。
  *
  * `.pcad` は ZIP で、中に次のものを入れる。
  *  - `document.json` … 部品文書の封筒(documentJson.ts が作る文字列を UTF-8 にしたもの)。圧縮する。
- *  - `thumbnail.png` … 画面の縮小画像。作れなければ入れない(§0.a-0.18)。PNG は既に圧縮済みなので無圧縮で入れる。
- *  - **添付**(P6 タスク21、§0.a-0.9・0.24・0.45・0.55。版 7 から)
+ *  - `thumbnail.png` … 画面の縮小画像。作れなければ入れない。PNG は既に圧縮済みなので無圧縮で入れる。
+ *  - **添付**(版 7 から)
  *    - `shapes/<shapeRef>.brep` … 読み込んだ B-rep(`importedSolid` が指す。OCCT の `BinTools` のバイト列)。
  *    - `meshes/<meshRef>.bin` … 読み込んだ三角形(`importedMesh` が指す。下の `PCM1` の並び)。
  *    - `canvases/<id>.png` … 下絵の画像(FR-332)。
  *
- * **添付は `rules/04`「導出できるものは保存しない」の承認済みの例外**である(§0.a-0.9 の例外①、
- * §0.a-0.24 の例外②、§0.a-0.55 の例外③)。読み込んだ形も下絵も**再計算では導出できない**
+ * **添付は `rules/04`「導出できるものは保存しない」の承認済みの例外**である(例外①、
+ * 例外②、例外③)。読み込んだ形も下絵も**再計算では導出できない**
  * ——元のファイルが手元から消えたら二度と作れない——ので、`.pcad` へ抱き込む。
  * `document.json` には id と素性だけを書き、バイト列は 1 バイトも入れない
- * (10 万三角形を JSON にすると 10MB を超える。§2.8)。
+ * (10 万三角形を JSON にすると 10MB を超える)。
  *
  * **決定的にする。** 同じ部品文書と同じ保存時刻からは、いつ・どの計算機で書き出しても
  * 同じバイト列ができる。ZIP のヘッダには「ファイルの最終更新日時」を書く欄があり、
@@ -29,7 +29,7 @@ import { sheetFlatReferenceIssue, canonicalDrawingSourceText, crossLevelGearTree
  * 2107 年までしか表せず、fflate は範囲外だと例外を投げる。1980-01-01 だと時間帯によっては
  * 1979 年になってしまうため 1 日ずらし、夏時間の切り替えを避けるため正午にしている。
  *
- * **アセンブリ(`.pcada`、P7 タスク3)も同じ ZIP の作りにする**(§0.a-0.1)。違うのは
+ * **アセンブリ(`.pcada`)も同じ ZIP の作りにする**。違うのは
  * `document.json` の中身(`AssemblyDocument`、`assemblyJson.ts`)と、抱き込んだ部品文書の
  * エントリ `parts/<ref>.json` と、再導出できない部品添付
  * (`parts/<ref>/shapes/*.brep`・`meshes/*.bin`・`canvases/*.png`)が増える。添付の
@@ -91,12 +91,12 @@ import { isSafeZipEntryName } from './zipDirectory.js';
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
 /** サムネイルを入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_THUMBNAIL_ENTRY = 'thumbnail.png';
-/** 図面が抱き込む参照元文書のエントリ名(P8 §2.3)。 */
+/** 図面が抱き込む参照元文書のエントリ名。 */
 export const PCAD_SOURCE_ENTRY_PREFIX = 'source/';
 export const PCAD_SOURCE_ENTRY_SUFFIX = '.json';
 
 /**
- * 添付のエントリ名の前後(§0.a-0.55)。名前は `<前>` + 参照の文字列 + `<後>` でできている。
+ * 添付のエントリ名の前後。名前は `<前>` + 参照の文字列 + `<後>` でできている。
  * 参照の文字列に `/` は入らない前提で、入っているものは添付として扱わない
  * (知らないエントリと同じく黙って読み飛ばす。ZIP の中の入れ子の階層を作らせない)。
  */
@@ -108,9 +108,9 @@ export const PCAD_CANVAS_ENTRY_PREFIX = 'canvases/';
 export const PCAD_CANVAS_ENTRY_SUFFIX = '.png';
 
 /**
- * アセンブリ(`.pcada`)が抱き込む部品文書のエントリ名の前後(P7 §2.2、タスク3)。
+ * アセンブリ(`.pcada`)が抱き込む部品文書のエントリ名の前後。
  * 中身は**部品の `document.json` とまったく同じ文字列**(封筒つき)なので、
- * 読み書きは `serializeDocument` / `parseDocument` をそのまま使う(§2.3)。
+ * 読み書きは `serializeDocument` / `parseDocument` をそのまま使う。
  * 名前の決まりは添付と同じで、参照に `/` が入るものは部品として扱わない。
  */
 export const PCAD_PART_ENTRY_PREFIX = 'parts/';
@@ -122,7 +122,7 @@ export const PCAD_PART_ATTACHMENTS_DIGEST_ENTRY = 'attachments.sha256';
  * ZIP のヘッダへ書く固定の日時。年・月・日・時・分・秒がそのまま書かれるので、
  * 時間帯に依らず同じ値になるよう、実行環境の時間帯での日時として組み立てる。
  *
- * **3MF の書き出し(`threemf/writeThreeMf.ts`)も同じ値を使う**(計画書 P6 §2.6。
+ * **3MF の書き出し(`threemf/writeThreeMf.ts`)も同じ値を使う**(
  * 決定性の決めを 2 か所に書かないため)ので、このファイルから輸出している。
  */
 export const FIXED_ENTRY_MTIME = new Date(1980, 0, 2, 12, 0, 0, 0);
@@ -132,10 +132,10 @@ const DOCUMENT_LEVEL = 6;
 /** `thumbnail.png` の圧縮の強さ。PNG は既に圧縮済みなので、掛け直さない。 */
 const THUMBNAIL_LEVEL = 0;
 /**
- * 添付の圧縮の強さ(§0.a-0.55 の手順 5。**担当が実測して決めた**)。
+ * 添付の圧縮の強さ(**実測して決めた**)。
  *
  * `.brep` と `.bin` は素の数値の並びなので deflate が良く効く
- * (実測: 20³ の箱の `BinTools` は 4,494 → 694 バイト(§0.a-0.10)。
+ * (実測: 20³ の箱の `BinTools` は 4,494 → 694 バイト。
  * 10 万三角形の `.bin` は 2,400,012 → 実測値を `pcadFile.test.ts` に記録)。
  * `.png` は既に圧縮済みなので `thumbnail.png` と同じく掛け直さない。
  */
@@ -145,7 +145,7 @@ const ATTACHMENT_IMAGE_LEVEL = 0;
 /**
  * ZIP へ入れる 1 項目(中身と圧縮の指定)。
  *
- * **文書から項目を作る処理と、最後の圧縮を分ける**(レビュー R06)。図面の束
+ * **文書から項目を作る処理と、最後の圧縮を分ける**。図面の束
  * (`drawingBundle.ts`)は参照元の部品・アセンブリの項目をこの形のまま結合し、
  * 圧縮してから展開し直す往復をしない。
  */
@@ -181,7 +181,7 @@ export function zipPcadEntries(entries: ReadonlyMap<string, PcadZipEntry>): Uint
 
 /**
  * 保存 Worker の圧縮。`zipPcadEntries` と同じバイト列を作り、1MiB を超える項目は 1MiB ごとに
- * 処理を返す(Worker の終了要求と取消をその間に受け付ける。レビュー R06)。
+ * 処理を返す(Worker の終了要求と取消をその間に受け付ける)。
  */
 export async function zipPcadEntriesAsync(entries: ReadonlyMap<string, PcadZipEntry>,
   control: ZipStepsControl = {}): Promise<Uint8Array> {
@@ -190,17 +190,17 @@ export async function zipPcadEntriesAsync(entries: ReadonlyMap<string, PcadZipEn
 }
 
 /**
- * 読み込んだ三角形の中身(`meshes/<meshRef>.bin` の中身。§2.8)。
+ * 読み込んだ三角形の中身(`meshes/<meshRef>.bin` の中身)。
  *
  * 位置・法線は頂点 1 つにつき 3 つ、添字は三角形 1 つにつき 3 つ。
- * **B-rep にはしない**(§0.a-0.23)ので、この 3 本の配列がそのまま形の正本になる。
+ * **B-rep にはしない**ので、この 3 本の配列がそのまま形の正本になる。
  */
 export type ImportedMeshBytes = EmbeddedPartMesh;
 
 /**
- * `.pcad` に入っている添付の表(§0.a-0.55)。鍵は**エントリ名ではなく参照の文字列**
+ * `.pcad` に入っている添付の表。鍵は**エントリ名ではなく参照の文字列**
  * (`ImportedSolidFeature.shapeRef` / `ImportedMeshFeature.meshRef` / 下絵の id)なので、
- * `shapes` は**そのまま `PartRecomputeOptions.importedShapes` へ渡せる**(タスク20 の形)。
+ * `shapes` は**そのまま `PartRecomputeOptions.importedShapes` へ渡せる**。
  *
  * 3 つとも「空の表」を持つ(欄ごと無くさない)。読み手が毎回 `undefined` を確かめずに
  * 済み、添付を持たない `.pcad`(版 6 までのファイル)も同じ形で扱えるため。
@@ -232,7 +232,7 @@ export async function writeDocumentBundle(
   return zipPcadEntries(await documentBundleEntries(bundle, options));
 }
 
-/** `writeDocumentBundle` の圧縮前の項目。図面の束が項目のまま抱き込むための口(R06)。 */
+/** `writeDocumentBundle` の圧縮前の項目。図面の束が項目のまま抱き込むための口。 */
 export async function documentBundleEntries(
   bundle: DocumentBundle,
   options: WriteDocumentBundleOptions = {},
@@ -277,7 +277,7 @@ export async function readDocumentBundle(
 }
 
 /**
- * `readArchive` が取り出した項目の表から、部品・アセンブリの束を読む(図面の束の参照元。R06)。
+ * `readArchive` が取り出した項目の表から、部品・アセンブリの束を読む(図面の束の参照元)。
  *
  * ZIP を作り直して読み直さずに、`readDocumentBundle` と同じ検査を通す。以前の図面の読み手は
  * 項目名を戻した ZIP を作り直していたので、そのときの項目名の検査(空・絶対パス等を断る)も
@@ -348,7 +348,7 @@ function assemblyBundleOf(
 }
 
 // ---------------------------------------------------------------------------
-// `meshes/<id>.bin` の並び(§2.8)
+// `meshes/<id>.bin` の並び
 // ---------------------------------------------------------------------------
 
 /**
@@ -364,11 +364,11 @@ function assemblyBundleOf(
  * **なぜマジックを置くか:** ZIP のエントリ名は他のアプリでも書き換えられるので、
  * 名前だけを信じない。**なぜ 2 つの数を頭に置くか:** 位置と法線の境目が n から、
  * 添字の始まりが 2n から決まり、**残りの長さを数えなくても切り出せる**ため。
- * **なぜ位置 → 法線 → 添字の順か:** 計画書 §2.8 の並びをそのまま守る(表示は
+ * **なぜ位置 → 法線 → 添字の順か:** 決めた並びをそのまま守る(表示は
  * 位置と法線を先に要り、添字は最後にあれば足りる)。
  *
  * 全体の長さは `12 + 12n + 12n + 12m` バイトになる(float32 も uint32 も 4 バイト × 3)。
- * 10 万三角形・頂点 5 万なら 2,400,012 バイト(§2.8 の見積もりと同じ)。
+ * 10 万三角形・頂点 5 万なら 2,400,012 バイト(見積もりと同じ)。
  */
 const MESH_HEADER_BYTES = 12;
 /** マジックの 4 バイト。'PCM1' を UTF-8(= ASCII)にしたもの。 */
@@ -517,24 +517,24 @@ export interface WritePcadFileOptions {
   /** サムネイルの PNG。作れなかったときは渡さない(そのときは ZIP へ入れない)。 */
   readonly thumbnailPng?: Uint8Array;
   /**
-   * 封筒に書く種別(§0.a-0.35)。既定は部品、ひな形(`.pcadt`)のときだけ
+   * 封筒に書く種別。既定は部品、ひな形(`.pcadt`)のときだけ
    * `PCAD_TEMPLATE_KIND` を渡す。ZIP の作りは種別で 1 文字も変わらない。
    */
   readonly kind?: PcadDocumentKind;
   /**
-   * ひな形が持ち運ぶ表示の長さの単位(FR-814、§2.10。P6 タスク27)。
+   * ひな形が持ち運ぶ表示の長さの単位(FR-814)。
    * **ひな形として書き出すときだけ渡す。** 渡さなければ封筒にこの欄は出ない
-   * (部品の `.pcad` のバイト列はタスク27 の前後で 1 バイトも変わらない)。
+   * (部品の `.pcad` のバイト列はひな形の欄を足す前と 1 バイトも変わらない)。
    */
   readonly lengthUnit?: LengthUnit;
   /** ひな形が持ち運ぶ道具の既定値(FR-814)。`lengthUnit` と同じ扱い。 */
   readonly toolDefaults?: PcadToolDefaults;
   /**
-   * 添付(§0.a-0.55)。渡さなければ添付のエントリは 1 つも入らない。
+   * 添付。渡さなければ添付のエントリは 1 つも入らない。
    *
    * **文書が参照しているものだけを渡す責任は呼び出し側にある。** ここで文書と突き合わせて
    * 落とさないのは、①書き出しは断れない(戻り値がバイト列だけ)、②未参照の添付を捨てると
-   * 「まだ欄になっていない下絵」(タスク38)を往復で失う、の 2 つによる。
+   * 「まだ欄になっていない下絵」を往復で失う、の 2 つによる。
    * 欠けているほうは読み手が `missingField` で断る。
    */
   readonly attachments?: PcadAttachments;
@@ -635,18 +635,18 @@ export type ReadPcadFileResult =
       readonly ok: true;
       readonly document: PartDocument;
       readonly savedAt: string;
-      /** 封筒の種別(部品かひな形か、§0.a-0.35)。判断は上の層(タスク27)がする。 */
+      /** 封筒の種別(部品かひな形か)。判断は上の層がする。 */
       readonly kind: PcadDocumentKind;
       /**
-       * ひな形が持ち運んでいた表示の長さの単位(FR-814、§2.10)。**欄が無ければ `undefined`。**
+       * ひな形が持ち運んでいた表示の長さの単位(FR-814)。**欄が無ければ `undefined`。**
        * 既定(`'mm'`)で埋めるのは model の `openTemplate` の仕事(`documentJson.ts` の注記)。
        */
       readonly lengthUnit?: LengthUnit;
       /** ひな形が持ち運んでいた道具の既定値(FR-814)。`lengthUnit` と同じく、無ければ `undefined`。 */
       readonly toolDefaults?: PcadToolDefaults;
       /**
-       * ZIP に入っていた添付(§0.a-0.55)。**未参照のものも捨てずに返す。**
-       * 版 7 のファイルに、この版の読み手がまだ知らない参照(下絵、タスク38)が
+       * ZIP に入っていた添付。**未参照のものも捨てずに返す。**
+       * 版 7 のファイルに、この版の読み手がまだ知らない参照(下絵)が
        * 入っていることがあり、捨てると往復でその添付を失うため。
        */
       readonly attachments: PcadAttachments;
@@ -756,7 +756,7 @@ function collectAttachments(
     if (canvasRef !== null) {
       canvases.set(canvasRef, bytes);
     }
-    // どれでもない名前は知らないエントリとして読み飛ばす(P2 からの決めごと)。
+    // どれでもない名前は知らないエントリとして読み飛ばす(以前からの決めごと)。
   }
   return {
     attachments: { shapes, meshes, canvases, shapeDigests },
@@ -772,10 +772,10 @@ function collectAttachments(
  *
  * 欠けたまま開くと、履歴の先頭のベースボディが**形の無い段**になって再計算が通らない
  * (FR-802)。読み込みの時点で断ったほうが、何が起きたかを利用者へ伝えられる。
- * 断りは既存の `missingField`(**エラーコードを増やさない**。
- * `docs/報告記録.md` 2026-09-04 01:40 の③)。
+ * 断りは既存の `missingField`
+ * (**エラーコードを増やさない**)。
  *
- * **下絵(`canvases`、FR-332、タスク38)も同じ扱いにする。** 画像が欠けた下絵は
+ * **下絵(`canvases`、FR-332)も同じ扱いにする。** 画像が欠けた下絵は
  * 何も描けない枠だけになり、そのまま保存し直すと欄だけが残って**画像を永久に失う**。
  * 読み込みの時点で断れば、利用者は元の `.pcad` を残したまま作り直せる(FR-504)。
  */
@@ -889,23 +889,23 @@ function readPcadEntriesInternal(entries: ReadonlyMap<string, Uint8Array>, owned
 }
 
 /**
- * 読んだファイルがひな形(`.pcadt`)か(FR-814、§0.a-0.35)。
+ * 読んだファイルがひな形(`.pcadt`)か(FR-814)。
  *
  * **拡張子ではなく封筒の種別で判断する**(名前はいくらでも変えられる)。ここに
  * 述語を置いておくと、「どの種別がひな形か」を知っているのが `schema.ts` と
- * この 1 行だけで済み、呼び出し側(ui のタスク33、model の `openTemplate` へ渡す真偽)が
+ * この 1 行だけで済み、呼び出し側(ui、model の `openTemplate` へ渡す真偽)が
  * 種別の文字列を写さずに書ける。
  *
  * ひな形でないファイルを断るのは呼び出し側で、**断りのコードは増やさない**
  * ——`.pcad` の種別違いと同じ `file.error.wrongKind` の文言に寄せる
- * (`docs/報告記録.md` 2026-09-04 01:40 の③、統括の決定 2026-09-06 09:0x)。
+ * (エラーコードを増やさないため)。
  */
 export function isTemplateKind(kind: PcadDocumentKind): boolean {
   return kind === PCAD_TEMPLATE_KIND;
 }
 
 // ---------------------------------------------------------------------------
-// アセンブリ(`.pcada`)の ZIP コンテナ(P7 §2.2、タスク3)
+// アセンブリ(`.pcada`)の ZIP コンテナ
 // ---------------------------------------------------------------------------
 
 export interface WritePcadaFileOptions {
@@ -935,7 +935,7 @@ export interface WritePcadaFileOptions {
  *
  * 1 つ 1 つの中身は**部品の `document.json` とまったく同じ文字列**にする
  * (`serializeDocument`)。こうしておくと読み手が既存の `parseDocument` をそのまま使え、
- * 部品文書の読み書きを 2 か所に持たずに済む(§2.3)。**保存時刻はアセンブリの封筒と
+ * 部品文書の読み書きを 2 か所に持たずに済む。**保存時刻はアセンブリの封筒と
  * 同じ値**を書く——抱き込んだ部品ごとに違う時刻を入れると、同じアセンブリから
  * 書き出したバイト列が呼ぶたびに変わってしまうため(決定性。このファイル冒頭)。
  */
@@ -1073,7 +1073,7 @@ export type ReadPcadaFileResult =
  * ZIP のエントリから抱き込んだ部品文書を取り出す。1 つでも読めなければ、そのエントリ名と
  * 中身の理由を添えて断る(**読めない欄が 1 つでもあればファイル全体を断る**。
  * `documentJson.ts` 冒頭の決めごと)。**エラーコードは中身の理由をそのまま通す**
- * (増やさない。`docs/報告記録.md` 2026-09-04 01:40 の③)。
+ * (増やさない)。
  */
 type CollectPartsResult =
   | {
@@ -1089,7 +1089,7 @@ function collectParts(entries: ReadonlyMap<string, Uint8Array>): CollectPartsRes
   for (const [name, bytes] of entries) {
     const ref = attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX);
     if (ref === null) {
-      // どれでもない名前は知らないエントリとして読み飛ばす(P2 からの決めごと)。
+      // どれでもない名前は知らないエントリとして読み飛ばす(以前からの決めごと)。
       continue;
     }
     const text = decodeUtf8(bytes);
@@ -1226,8 +1226,8 @@ async function collectPartAttachments(
  * `.pcad` の添付が欠けたときとまったく同じ判断)。
  *
  * **サブアセンブリ(`assemblyRef`)と規格部品はここでは見ない。** 前者の中身は
- * アセンブリ文書で、読み手が別(P7 タスク36・37 の担当)。後者は寸法表から組み立てるので
- * 抱き込む文書がそもそも無い(§0.a-0.35)。
+ * アセンブリ文書で、読み手が別(`assemblyJson.ts`)。後者は寸法表から組み立てるので
+ * 抱き込む文書がそもそも無い。
  */
 function findMissingPart(
   document: AssemblyDocument,
@@ -1366,7 +1366,7 @@ export function writePcaddFile(
   return zipPcadEntries(pcaddEntries(document, options));
 }
 
-/** `writePcaddFile` の圧縮前の項目。図面の束が参照元の項目と結合するための口(R06)。 */
+/** `writePcaddFile` の圧縮前の項目。図面の束が参照元の項目と結合するための口。 */
 export function pcaddEntries(
   document: DrawingDocument,
   options: WritePcaddFileOptions,

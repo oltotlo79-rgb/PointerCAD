@@ -22,7 +22,7 @@ import type { FileGateway } from './fileGateway.js';
  * ファイルの読み書きの口を差し替える。画面(React)を起動する前に呼ぶ。
  * 呼ばなければ、ブラウザ用の口(`createBrowserFileGateway`)がそのまま使われる。
  *
- * 種類つきの出し入れ(`openFile` / `saveFileAs`。P6 計画書 タスク4)は**省いてよい欄**なので、
+ * 種類つきの出し入れ(`openFile` / `saveFileAs`)は**省いてよい欄**なので、
  * 部品の読み書き 3 本だけを持つ口も今までどおり差し込める。省かれた口へ頼んだときは
  * `openFileThrough` / `saveFileAsThrough` がブラウザ用の実装で答える(要件§1.5 の保険)。
  */

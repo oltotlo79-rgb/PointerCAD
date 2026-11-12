@@ -43,7 +43,7 @@ function ownerOf(document: AssemblyDocument, library: PartLibrary, path: readonl
 }
 
 /**
- * Flexible subassembly (EX12): the child joints of ONE subassembly placement (any depth, `path` from the top level),
+ * Flexible subassembly: the child joints of ONE subassembly placement (any depth, `path` from the top level),
  * driven for this placement only. Values are transient motion state (driveAssemblyOccurrenceJoint): no document edit,
  * no Undo step, not saved; other placements of the same child keep their own values.
  */

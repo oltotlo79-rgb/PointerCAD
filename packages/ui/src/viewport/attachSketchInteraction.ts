@@ -1,7 +1,7 @@
 import { createConfiguredNumericInput as createNumericInput } from '../settings/createConfiguredNumericInput.js';
 /**
- * ビューポートの上でのホバー・選択・吸着・形の作り始めを結ぶ
- * (計画書 docs/plans/P1-式とスケッチ.md タスク21 手順4)。
+ * ビューポートの上でのホバー・選択・吸着・形の作り始めを
+ * 結ぶ。
  *
  * 対応要件: FR-106(ホバーとクリック選択)、FR-107(吸着)、FR-307(続けてかく)、FR-309(面)。
  *
@@ -9,7 +9,7 @@ import { createConfiguredNumericInput as createNumericInput } from '../settings/
  * ここは「DOM の出来事をストアの操作へ詰め替える」だけにする。視点操作
  * (attachCameraControls)とぶつからないよう、左ボタン以外と Alt 併用は何もしない。
  *
- * 責務の分け方(R07)。どの系列も文書を変えるのは表の「確定」の欄の時点だけ:
+ * 責務の分け方。どの系列も文書を変えるのは表の「確定」の欄の時点だけ:
  *
  * | 系列 | 置き場所 | 確定(文書・Undo を変える時点) | 取消(文書を変えずに終える) |
  * |---|---|---|---|
@@ -145,7 +145,7 @@ import { snapToSphereGrid, type SphereGridPoint, type SphereGridSpec } from './b
 
 /**
  * 数値入力で位置を決める道具。選択と面はクリックだけで進む。
- * P4 タスク11 で新しい図形(円・2点+半径の円弧・矩形・正多角形・長穴・楕円・スプライン)も
+ * 図形の道具(円・2点+半径の円弧・矩形・正多角形・長穴・楕円・スプライン)も
  * ここへ入った。いずれも「押した場所が座標そのもの」になる道具なので、既存のかき込む
  * 4 道具とまったく同じ扱いにする(立体も部分形状も拾わない)。
  */
@@ -165,11 +165,11 @@ const FIRST_STEP: Readonly<Record<DrawingToolId, NumericInputStep>> = {
 const BASE_PROBE_ID = 'numericInput';
 
 /**
- * 数値を聞くソリッドの道具かどうか(P2 タスク19、P3 タスク24 で加工6種+ばねを追加、§2.11)。
+ * 数値を聞くソリッドの道具かどうか(加工6種+ばねを含む)。
  *
  * `SolidToolId` の全メンバーは `numericInput.ts` の `SOLID_TOOL_STEPS`(道具ごとの最初の段)の
  * キーと同じ集合になるようにその型で作ってあるので、そこから判定する。以前はここへ
- * `'extrude' | 'revolve' | 'sew'` の3つだけを書き出していたため、P3 で `SolidToolId` へ
+ * `'extrude' | 'revolve' | 'sew'` の3つだけを書き出していたため、`SolidToolId` へ
  * 穴・ねじ穴・R面取り・C面取り・パターン・ばねが増えたときに追随できておらず、
  * これらの道具で pointerdown が誤って `openInputAt`(座標入力)へ流れる不具合があった。
  * 一覧をハードコードせず `SOLID_TOOL_STEPS` から引くことで、今後の道具追加にも追随する。
@@ -184,7 +184,7 @@ export function addsToSketchSelection(event: Pick<PointerEvent, 'shiftKey' | 'ct
 }
 
 /**
- * ツールバーの「見た目」の一覧に並ぶ道具(FR-1101、FR-1102、FR-1106。P5 タスク11・32)。
+ * ツールバーの「見た目」の一覧に並ぶ道具(FR-1101、FR-1102、FR-1106)。
  *
  * 外観と測るは、どちらも**立体を作らず「いま選んでいるものについて何かをする」**道具で、
  * 押し出しのような `SolidToolId` でも、トリムのような自前のクリックの意味を持つ道具でもない。
@@ -193,7 +193,7 @@ export function addsToSketchSelection(event: Pick<PointerEvent, 'shiftKey' | 'ct
  * 表を作る。型が増えたらこの表が型検査で落ちるので、追随の漏れが機械で見つかる
  * (`numericInput.ts` の `CLICK_EDIT_TOOLS` / `PICK_EDIT_TOOLS` と同じ流儀)。
  *
- * **図形の測定値(`MathGeometryToolId`、GR-30)も同じ性質**(立体を作らず、いま選んでいる
+ * **図形の測定値(`MathGeometryToolId`)も同じ性質**(立体を作らず、いま選んでいる
  * ものについて何かをする)なのでここへ入る（LOOK_TOOLS の型で道具の網羅を照合する）。
  */
 const LOOK_TOOLS: Readonly<Record<AppearanceToolId | MeasureToolId | MathGeometryToolId, true>> = {
@@ -210,24 +210,24 @@ export function isLookTool(
 }
 
 /**
- * 立体そのものをクリックで選べる道具かどうか(FR-106、§0.a-0.6)。
+ * 立体そのものをクリックで選べる道具かどうか(FR-106)。
  *
  * 選択のときと、立体の道具(押し出し・回転・縫合、ブーリアンの相手選び、パターン・ばねの
  * 対象選び)のときに効かせる。面の道具は面の境界を順にクリックする道具なので、立体を拾うと
  * 選ぶ順が壊れる。かき込む道具(点・線分・円弧・点列)は押した場所が座標そのものなので拾わない。
  *
- * 断面(FR-325、タスク27)も立体そのものを押して決める道具なので、ここへ入れる
+ * 断面(FR-325)も立体そのものを押して決める道具なので、ここへ入れる
  * (`isPickEditTool` の 2 つのうち、投影は面・辺を押すので `picksSubShapes` 側を通る)。
  *
- * **外観と測る(`isLookTool`)もここへ入れる(P5 仕上げ (j))。** どちらも立体そのものを
+ * **外観と測る(`isLookTool`)もここへ入れる。** どちらも立体そのものを
  * 選ぶ場面を持つ道具で、外観は「立体ごとに色を付ける」道(`subShapeSelection.ts` の
  * `selectionKindForTool` の注釈が『立体へ付けたいときは `4` キーで切り替える』と案内している)、
- * 測るは体積・質量特性・立体 2 つの隙間(FR-1101、§0.a-0.69)がどれも立体を選ぶ。
- * P5 タスク11・32 でこの 2 つが増えたときにここへ足し忘れていたため、**その 2 つの道具の
+ * 測るは体積・質量特性・立体 2 つの隙間(FR-1101)がどれも立体を選ぶ。
+ * この 2 つが増えたときにここへ足し忘れていたため、**その 2 つの道具の
  * あいだは立体をクリックしても選べず、ホバーの強調も出なかった**(2026-09-06 ヘッドレスで実測。
  * 「外観 → `4` → 箱を押す」で選択が空のまま)。
  *
- * **図形の測定値(GR-30)も測ると同じ理由でここへ入る**(`isLookTool` に足したので自動で
+ * **図形の測定値も測ると同じ理由でここへ入る**(`isLookTool` に足したので自動で
  * 拾う)。選んだ点・辺・面・立体から作れる量が決まる道具なので、立体・部分形状を
  * クリックで拾えないと何も測定値を作れない。
  */
@@ -241,7 +241,7 @@ export function isDrawingTool(tool: NumericInputToolId): tool is DrawingToolId {
 }
 
 /**
- * 部分形状(面・辺・頂点)をクリック・ホバーで拾う種類かどうか(§0.a-0.6、§2.3.2)。
+ * 部分形状(面・辺・頂点)をクリック・ホバーで拾う種類かどうか。
  * `picksBodies` の部分形状版。**選択の種類が `body` なら立体の道具・立体の経路(いまのまま)を使う**
  * ので、ここは `body` 以外のときだけ true になる。かき込む道具(点・線・円弧・点列)を
  * 使っているときは、選択の種類を手動で部分形状へ切り替えていても拾わない
@@ -254,7 +254,7 @@ export function picksSubShapes(kind: SelectionKind, tool: NumericInputToolId): b
 
 /**
  * 選択の種類が `body` でないとき、スケッチ要素の当たり判定を飛ばして部分形状だけを拾うべきか
- * (§2.3.2、タスク30 不具合(c))。
+ * (スケッチの面が先に当たる不具合の再発防止)。
  *
  * スケッチの面フィーチャーは「投影した輪郭の内側なら当たり」という当たり判定なので、
  * 押し出し済みの面(の輪郭の内側)を押すと、奥にある立体の面より手前のスケッチ面が
@@ -268,7 +268,7 @@ export function skipsSketchElements(kind: SelectionKind): boolean {
 
 /**
  * `state.bodies` を `pickSolidSubShape` が要る形へ詰め替える。面・辺・頂点の一覧は
- * model の `SolidBody` にタスク17(橋渡しの拡張)で必須の欄として届くようになったが、
+ * model の `SolidBody` に必須の欄として届くが、
  * `?? []` は保険としてそのまま残す(押し出し等、一覧そのものが空のボディを空として扱う)。
  */
 export function toSubShapeBodies(bodies: readonly SolidBodyWithSubShapes[]): readonly SubShapeBody[] {
@@ -362,11 +362,11 @@ export function attachSketchInteraction(
 
   /**
    * 操作に使う作図面。任意の作業平面(FR-328)は部品文書を見ないと決まらないので、
-   * **解くのはストアの `workPlane`**(文書か作図面が変わるたびに 1 度だけ解く、タスク13)。
+   * **解くのはストアの `workPlane`**(文書か作図面が変わるたびに 1 度だけ解く)。
    * ここではそれを読むだけにして、同じ計算を押すたびにやり直さない(NFR-PF-1)。
    * 引数の id は「いま読んだ状態と食い違っていないか」を確かめるためだけに使う。
    *
-   * 3D スケッチ(FR-330、タスク14)には作図面が無いので、代わりに**直前に置いた点を通り
+   * 3D スケッチ(FR-330)には作図面が無いので、代わりに**直前に置いた点を通り
    * 画面に正対する面**を毎回作る(`freeSketch.ts` の `freeClickPlane`。理由はそちらの注釈)。
    * カメラが動けば向きが変わる面なので、ストアには置かず押すたびに作る。
    */
@@ -421,7 +421,7 @@ export function attachSketchInteraction(
 
   /**
    * いま合っている向き(FR-110)。点の吸着(`snap`)が採れているときは**そちらが優先**
-   * なので何も返さない(§0.13。点は 1 点に決まるが向きは線なので、点を先に採る)。
+   * なので何も返さない(点は 1 点に決まるが向きは線なので、点を先に採る)。
    * 吸着そのものが切、または向きの種別が 1 つも効いていないときも返さない(FR-107 と揃える)。
    */
   function findTrack(
@@ -461,8 +461,8 @@ export function attachSketchInteraction(
       kinds,
     );
     /*
-      候補の直線上でどこが「吸い付く点」かは、ポインタの光線に最も近い点で決める
-      (P4b 仕上げ (a))。視点が斜めだと、作図面上のポインタ点への垂直射影(光線を渡さない
+      候補の直線上でどこが「吸い付く点」かは、ポインタの光線に最も近い点で決める。
+      視点が斜めだと、作図面上のポインタ点への垂直射影(光線を渡さない
       ときの後退先)では画面上の最近点とずれ、案内線の印がポインタから遠くに決まってしまう
       実測があったための修正(`trackMath.ts` の `closestParameterToRay` の注釈)。
     */
@@ -484,16 +484,16 @@ export function attachSketchInteraction(
   }
 
   /**
-   * 拾った 1 件を選択フィルタ(FR-112、P6 タスク36)に通す。切ってある種類なら null。
+   * 拾った 1 件を選択フィルタ(FR-112)に通す。切ってある種類なら null。
    *
    * **押して選ぶのも、乗せて強調するのも同じこの道を通る**(`pickInto` と `onPointerMove` の
    * どちらも下の `pickBodyAt` / `pickSubShapeAt` を呼ぶ)ので、「押せば選べるのに色は
    * 出ない」という食い違いは起きない。絞り込みそのものは Node で検査できる純関数
    * (`solid/selectionFilter.ts` の `filterPickCandidates`)に置いてある。
    *
-   * **限界(申し送り)**: 選択の種類が `edge` のときは頂点が辺に勝つ(§0.a-0.27)ので、
+   * **限界(申し送り)**: 選択の種類が `edge` のときは頂点が辺に勝つので、
    * 頂点だけを切ってあると「頂点の上に乗った瞬間だけ辺も拾えない」。頂点を外して辺を
-   * 拾い直すには `pickSolidSubShape` に辺だけの道が要る(タスク37・44 へ申し送り)。
+   * 拾い直すには `pickSolidSubShape` に辺だけの道が要る(残りの課題)。
    */
   function throughSelectionFilter(
     picked: { readonly elementId: string; readonly kind: SelectionKind } | null,
@@ -509,7 +509,7 @@ export function attachSketchInteraction(
   /**
    * 押した場所にある立体の id(FR-106)。立体が 1 つも無いときは光線を飛ばさない。
    * スケッチの要素のほうが細くて狙いにくいので、**必ず要素を先に**当ててから呼ぶ
-   * (小さいものを先に取る、P1 §2.8)。
+   * (小さいものを先に取る)。
    *
    * 選択フィルタ(FR-112)で「立体」を切ってあるときは光線そのものを飛ばさない。
    */
@@ -526,12 +526,12 @@ export function attachSketchInteraction(
   }
 
   /**
-   * 押した場所にある立体の部分形状(面・辺・頂点)の要素 id(§2.3.2)。選択の種類が `body` の
-   * ときや、部分形状を拾わない道具(かき込む道具、§2.3.2)のときは呼ばない前提で null を返す。
+   * 押した場所にある立体の部分形状(面・辺・頂点)の要素 id。選択の種類が `body` の
+   * ときや、部分形状を拾わない道具(かき込む道具)のときは呼ばない前提で null を返す。
    *
    * 面は光線(`pickFaceAt`)、辺・頂点は画面座標(`pickSolidSubShape`。頂点が辺に勝つ、
-   * §0.a-0.27 の裏側も含む)。**吸着(スケッチの点への吸い付き)はここでは使わない**
-   * (§2.3.2 の順序表。吸着は作図の補助で、既にある立体の部分形状を拾う場面とは関係が薄い)。
+   * 裏側も含む)。**吸着(スケッチの点への吸い付き)はここでは使わない**
+   * (吸着は作図の補助で、既にある立体の部分形状を拾う場面とは関係が薄い)。
    */
   function pickSubShapeAt(pointer: readonly [number, number]): string | null {
     const state = useAppStore.getState();
@@ -539,7 +539,7 @@ export function attachSketchInteraction(
     if (selectionKind === 'body' || bodies.length === 0 || !picksSubShapes(selectionKind, activeTool)) {
       return null;
     }
-    // 押し出しの仮の形(EX-14)を描いている間は、画面に見えていない確定済みの辺・頂点を拾わない
+    // 押し出しの仮の形を描いている間は、画面に見えていない確定済みの辺・頂点を拾わない
     // (面は描いている層を当てるので、場面の側が仮の形を当てないようにしてある)。
     if (stagedPreviewOf(state) !== null) {
       return null;
@@ -559,7 +559,7 @@ export function attachSketchInteraction(
   }
 
   /**
-   * 3D スケッチ(FR-330、タスク14)で、押した場所にある立体の頂点。
+   * 3D スケッチ(FR-330)で、押した場所にある立体の頂点。
    *
    * 作図面のあるスケッチでは、かき込む道具は立体も部分形状も拾わない(押した場所が座標
    * そのものになる道具なので、当たり判定を挟むと座標の入り口が曖昧になる)。3D スケッチだけは
@@ -588,7 +588,7 @@ export function attachSketchInteraction(
   }
 
   /* ---------------------------------------------------------------- *
-   * 球面上の点(FR-431、計画書タスク21・22)
+   * 球面上の点(FR-431)
    * ---------------------------------------------------------------- */
 
   /**
@@ -622,11 +622,11 @@ export function attachSketchInteraction(
   }
 
   /**
-   * ポインタの下にある案内線の交点(FR-431、§0.a-0.22)。無ければ null。
+   * ポインタの下にある案内線の交点(FR-431)。無ければ null。
    *
    * **候補を全部回さない。** 光線と球の交点を解いて緯度・経度へ直し、間隔で丸めるだけなので、
    * 費用は交点の数(5° で 2,522 個)に依らず一定になる(`buildSphereGrid.ts` の
-   * `nearestSphereGridPoint`)。P1 の当たり判定(`pickMath.ts`)のように候補を毎回
+   * `nearestSphereGridPoint`)。スケッチの当たり判定(`pickMath.ts`)のように候補を毎回
    * 画面へ写していたら `pointermove` ごとに 2,522 回の変換になり、NFR-PF-1 を割る。
    * 画面座標で 12 画素まで、の判定だけは `snapToSphereGrid` が 1 点ぶん行う。
    */
@@ -646,7 +646,7 @@ export function attachSketchInteraction(
   }
 
   /**
-   * 案内線の交点に吸い付いた緯度・経度を、開いている段の欄へ入れる(タスク22 手順2)。
+   * 案内線の交点に吸い付いた緯度・経度を、開いている段の欄へ入れる。
    *
    * **値が変わったときだけ**ストアへ書く。ポインタが同じ升の中を滑っている間は丸めた
    * 緯度・経度が変わらないので、`pointermove` のたびに書き直すことはない(NFR-PF-1)。
@@ -705,7 +705,7 @@ export function attachSketchInteraction(
   }
 
   /* ---------------------------------------------------------------- *
-   * トリム・延長(FR-322、計画書タスク22、§0.a-0.26 の利用者の決定)
+   * トリム・延長(FR-322、利用者の決定)
    * ---------------------------------------------------------------- */
 
   /**
@@ -731,7 +731,7 @@ export function attachSketchInteraction(
 
   /**
    * トリム・延長のときのマウスの動き。乗っている区間(トリムなら消える区間、
-   * 延長なら伸びる区間)を予告として出す(§0.a-0.26、NFR-UX-5)。
+   * 延長なら伸びる区間)を予告として出す(NFR-UX-5)。
    * 断られる場面では何も強調しない。理由はクリックしたときに帯へ出る。
    */
   function updateEditPreview(tool: ClickEditToolId, pointer: readonly [number, number]): void {
@@ -768,7 +768,7 @@ export function attachSketchInteraction(
   /**
    * トリム・延長のクリック(FR-322)。押した瞬間に決まり、**1 クリック = Undo 1 回**
    * (`setSketch` が文書を 1 段だけ積む、FR-505)。道具は選んだままなので、
-   * 続けて何か所でも消せる・伸ばせる(§0.a-0.26)。
+   * 続けて何か所でも消せる・伸ばせる。
    *
    * 断りは model の 6 種をそのまま帯へ出す(`editCommands.ts` が文言キーへ移し替える)。
    * 文書は変わらないので、失敗しても線は消えない(FR-504、NFR-UX-5)。
@@ -795,12 +795,12 @@ export function attachSketchInteraction(
   }
 
   /* ---------------------------------------------------------------- *
-   * 投影・断面(FR-325、計画書タスク27)
+   * 投影・断面(FR-325)
    * ---------------------------------------------------------------- */
 
   /**
    * 投影・断面のクリック(FR-325)。押した瞬間に決まり、**1 クリック = Undo 1 回**。
-   * 道具は選んだまま残るので、続けて何枚でも投影できる(トリム・延長と同じ、§0.a-0.26)。
+   * 道具は選んだまま残るので、続けて何枚でも投影できる(トリム・延長と同じ)。
    *
    * 拾う相手は道具で分かれる。投影は立体の面・辺(選ぶ種類は `selectionKindForTool` が
    * 面へ切り替えてあり、`2` キーで辺へ替えられる)、断面は立体そのもの。何にも当たって
@@ -819,7 +819,7 @@ export function attachSketchInteraction(
   }
 
   /* ---------------------------------------------------------------- *
-   * 角の丸め・面取り(FR-323、計画書タスク23)
+   * 角の丸め・面取り(FR-323)
    * ---------------------------------------------------------------- */
 
   /**
@@ -914,7 +914,7 @@ export function attachSketchInteraction(
   }
 
   /**
-   * 線を引いている最中の拘束の自動推定(FR-333、P6 タスク41、§0.a-0.50)。
+   * 線を引いている最中の拘束の自動推定(FR-333)。
    * `pointermove` ごとに 1 回だけ呼ぶ。
    *
    * 予告するのは**始点を置いて終点を探している線**だけ(確定は「線を引き終えた瞬間」なので、
@@ -924,7 +924,7 @@ export function attachSketchInteraction(
    * ため、`onPointerMove` が既に求めた候補をそのまま受け取る(同じ計算を 2 度しない、
    * NFR-PF-1)。近くの要素の絞り込みと判定は `inferredConstraints.ts` / model の純関数。
    *
-   * `suspended` は Shift(§0.a-0.50「押している間は推定を止める」)。
+   * `suspended` は Shift(「押している間は推定を止める」)。
    */
   function updateInferredConstraints(
     pointer: readonly [number, number],
@@ -965,7 +965,7 @@ export function attachSketchInteraction(
   /**
    * 選択の道具・面の道具・立体の道具・部分形状(面・辺・頂点)を選ぶ加工の道具。押した順が
    * 面の境界の順になり、立体を 2 つ選ぶ順が和・差・積の「もと」と「組み合わせる方」になる
-   * (FR-106、FR-309、§0.a-0.6)。何も無いところを押したら選択を解く(足すときは解かない)。
+   * (FR-106、FR-309)。何も無いところを押したら選択を解く(足すときは解かない)。
    */
   function pickInto(pointer: readonly [number, number], accumulate: boolean): void {
     const state = useAppStore.getState();
@@ -973,8 +973,8 @@ export function attachSketchInteraction(
     if (skipsSketchElements(state.selectionKind)) {
       /*
         部分形状(面・辺・頂点)を拾う種類のときは、スケッチ要素の当たり判定を飛ばして
-        部分形状だけを拾う(スケッチの面が立体の面より先に当たるのを防ぐ、§2.3.2、
-        タスク30 不具合(c))。
+        部分形状だけを拾う(スケッチの面が
+        立体の面より先に当たるのを防ぐ)。
       */
       if (state.selectionKind === 'vertex' && state.activeTool === 'select') {
         const picked = pickConnectionPoint(state, project, pointer);
@@ -982,14 +982,14 @@ export function attachSketchInteraction(
         elementId = picked?.elementId ?? null;
       } else elementId = pickSubShapeAt(pointer);
     } else {
-      // 選択の種類が body のときは従来の順序(要素 → 吸着 → 立体、P1・P2 のまま)。
+      // 選択の種類が body のときは従来の順序(要素 → 吸着 → 立体)。
       const picked = pickSketchElement(
         sketchForSelection(state.resolvedSketch, state.displaySettings.selectionFilter), project, pointer,
       );
       elementId = picked !== null ? picked.elementId : pickBodyAt(pointer);
     }
     if (elementId === null) {
-      // 押し出しの仮の形(EX-14)を描いている間は、何も拾わない押下(仮の形の上・何も無い所)で
+      // 押し出しの仮の形を描いている間は、何も拾わない押下(仮の形の上・何も無い所)で
       // 確定に要る選択(輪郭の面・相手)を消さない。選び直しは要素を押す、やめるは Esc。
       if (!accumulate && stagedPreviewOf(state) === null) {
         state.setSelection([]);
@@ -1007,10 +1007,10 @@ export function attachSketchInteraction(
   }
 
   /**
-   * 拘束の道具でビューポートを押したとき(FR-313、P4b タスク13)。
+   * 拘束の道具でビューポートを押したとき(FR-313)。
    *
-   * 拘束の道具は**トリム・延長と同じ流儀**(道具を選んでから要素を順に押す。統括の決定
-   * 2026-09-05)。押した相手は `constraintPicking.ts` が決め、**端点・中心を先に見る**ので
+   * 拘束の道具は**トリム・延長と同じ流儀**(道具を選んでから要素を
+   * 順に押す)。押した相手は `constraintPicking.ts` が決め、**端点・中心を先に見る**ので
    * 「線分の端どうしを一致させる」が成立する(`pickMath.ts` は端点を個別に拾えない)。
    * 積み方と確定は `constraintActions.ts` の 1 か所に置き、ここは押した場所を渡すだけにする。
    */
@@ -1031,7 +1031,7 @@ export function attachSketchInteraction(
   /**
    * 拘束の印を押したら、その拘束を一覧で選ぶ(FR-106 と同じ「押したら選ばれる」)。
    * 印に当たらなければ false を返し、呼び出し側はふつうの当たり判定へ進む。
-   * **描画・当たり判定・選択の 3 つをそろえる**(P4 タスク12 の失敗の再発防止)ため、
+   * **描画・当たり判定・選択の 3 つをそろえる**ため、
    * 見るのは 3D へ渡したものと同じ `constraintSummaries` 1 つだけ。
    */
   function pickConstraintMark(pointer: readonly [number, number]): boolean {
@@ -1074,14 +1074,14 @@ export function attachSketchInteraction(
       return start.ok ? start.value : null;
     }
     /*
-      P4 の新しい図形(矩形の対角・長穴の 2 つ目の中心・2 点+半径の円弧の 2 点目・
-      スプラインの 2 点目以降)は、**まだ履歴に無い「いま置いた点」**が基準になる
-      (タスク12)。置いた点の並びをそのまま解けば、確定したフィーチャーを resolveSketch が
+      図形の道具(矩形の対角・長穴の 2 つ目の中心・2 点+半径の円弧の 2 点目・
+      スプラインの 2 点目以降)は、**まだ履歴に無い「いま置いた点」**が基準になる。
+      置いた点の並びをそのまま解けば、確定したフィーチャーを resolveSketch が
       解くときと同じ位置になるので、押した場所が欄へ正しいずれとして入る。
     */
     const placed = state.shapeDraft.points;
     if (placed.length > 0) {
-      // 任意の作業平面(FR-328)の上の点も解けるよう、解いた面も渡す(タスク13 の申し送り)。
+      // 任意の作業平面(FR-328)の上の点も解けるよう、解いた面も渡す。
       const positions = resolveShapePoints(
         state.sketch,
         state.workPlaneId,
@@ -1153,10 +1153,10 @@ export function attachSketchInteraction(
   }
 
   /**
-   * 3D スケッチで立体の頂点を押したときに、点を 1 つ作る(FR-330、計画書タスク14)。
+   * 3D スケッチで立体の頂点を押したときに、点を 1 つ作る(FR-330)。
    *
-   * **点の道具**は押した瞬間に確定する(その場数値入力は開かない。計画書タスク14 の
-   * 「もう 1 つの点の作り方」)。**線分・円弧・スプライン**の道具では、いま聞いている
+   * **点の道具**は押した瞬間に確定する(その場数値入力は開かない。
+   * 点を作るもう 1 つの方法)。**線分・円弧・スプライン**の道具では、いま聞いている
    * 座標の段の答えとして頂点を渡す。段の進み方(始点 → 終点、点を積み上げる)は
    * `commitNumericInput` / `nextNumericInput` に任せるので、数値を打ったときとまったく
    * 同じ道筋になる(NFR-UX-1)。
@@ -1208,7 +1208,7 @@ export function attachSketchInteraction(
     if (tool === 'select' || tool === 'face') {
       // 面の道具では 1 つずつ足す。選択の道具は Shift/Ctrl で追加・解除する。
       // 選択の種類(selectionKind)がどうであっても、この2つの道具の振る舞いは変えない
-      // (P1・P2 のまま。手動で部分形状の種類へ切り替えていても面の境界の順が壊れないように、
+      // (手動で部分形状の種類へ切り替えていても面の境界の順が壊れないように、
       // この判定を選択の種類より先に置く)。
       pickInto(pointer, tool === 'face' || addsToSketchSelection(event));
       return true;
@@ -1216,7 +1216,7 @@ export function attachSketchInteraction(
 
     if (isClickEditTool(tool)) {
       /*
-        トリム・延長(FR-322、§0.a-0.26 の利用者の決定)。押した瞬間に決まる道具なので、
+        トリム・延長(FR-322、利用者の決定)。押した瞬間に決まる道具なので、
         選択もその場入力も挟まない。焦点は canvas に残して、続けて何か所でも押せて
         Esc で終われるようにする(NFR-UX-7)。
       */
@@ -1227,7 +1227,7 @@ export function attachSketchInteraction(
 
     if (isPickEditTool(tool)) {
       /*
-        投影・断面(FR-325、タスク27)。押した立体の面・辺・立体そのものがそのまま
+        投影・断面(FR-325)。押した立体の面・辺・立体そのものがそのまま
         取り込む相手になる。選択もその場入力も挟まず、押した瞬間に決まる。この判定を
         下の「部分形状を選ぶ道具」より先に置くのは、そちらへ流れると選ぶだけで
         終わってしまうため。
@@ -1239,7 +1239,7 @@ export function attachSketchInteraction(
 
     if (isCornerEditTool(tool)) {
       /*
-        角の丸め・面取り(FR-323、タスク23)。押した角の 2 本を選んで、その場で半径/距離を
+        角の丸め・面取り(FR-323)。押した角の 2 本を選んで、その場で半径/距離を
         聞く。確定したあとも道具は残るので、続けて別の角を押せる(Esc で終わる)。
       */
       event.preventDefault();
@@ -1249,7 +1249,7 @@ export function attachSketchInteraction(
 
     if (isReferenceTool(tool)) {
       /*
-        基準ジオメトリの道具(FR-328、FR-329、タスク13)。座標を聞いている段では押した場所を
+        基準ジオメトリの道具(FR-328、FR-329)。座標を聞いている段では押した場所を
         欄へ入れ(NFR-UX-1)、決め方の段では辺・面・頂点を選ぶ(選択の種類は道具を選んだ
         ときに `selectionKindForTool` が切り替えている)。開いている欄から焦点は奪わない。
       */
@@ -1268,7 +1268,7 @@ export function attachSketchInteraction(
 
     if (tool === 'sphereGridPoint') {
       /*
-        球面上の点(FR-431、タスク22)。案内線の交点を押したらその場で点ができ、
+        球面上の点(FR-431)。案内線の交点を押したらその場で点ができ、
         交点から外れたところを押したときは**球を選び直す**ふつうの選択になる
         (どの球の上に置くかを押し直せる)。開いている欄から焦点は奪わない。
       */
@@ -1283,9 +1283,9 @@ export function attachSketchInteraction(
       // 立体の道具(押し出し・回転・縫合、パターン・ばねの対象選び)と、部分形状(面・辺・頂点)を
       // 選ぶ加工の道具(穴・ねじ穴・R 面取り・C 面取り)では、入力欄を開いたまま対象を選び直せる。
       // 焦点は欄に残してそのまま Enter で決められるようにする(NFR-UX-2)。Shift で相手を足す
-      // (§0.a-0.6)。
+      // (穴・ばね等と同じ)。
       //
-      // 見るのを `isSolidTool` から `picksBodies` へ広げてある(P5 仕上げ (j))。外観・測るは
+      // 見るのを `isSolidTool` から `picksBodies` へ広げてある。外観・測るは
       // `SolidToolId` ではないので、選ぶものが「立体」のときこの枝に入れず、**押しても何も
       // 起きなかった**(下の「押した場所が座標にならない道具」で黙って返っていた)。
       // 選択・投影・断面は上の枝で先に返るので、条件を広げてもそれらの振る舞いは変わらない。
@@ -1306,7 +1306,7 @@ export function attachSketchInteraction(
 
     if (isFreeWorkPlaneId(state.workPlaneId) && isDrawingTool(tool)) {
       /*
-        3D スケッチ(FR-330、タスク14)。立体の頂点を押したらその頂点を参照する点にし
+        3D スケッチ(FR-330)。立体の頂点を押したらその頂点を参照する点にし
         (押した場所そのものより頂点を優先する。狙って押しているのは頂点のほう)、
         頂点でないところを押したときは、押した場所を「直前の点を通り画面に正対する面」の
         上の点として欄へ入れる(面の作り方と理由は `freeSketch.ts` の `freeClickPlane`)。
@@ -1323,8 +1323,8 @@ export function attachSketchInteraction(
     }
 
     if (!isDrawingTool(tool)) {
-      // 押した場所が座標にならない道具(オフセットのように既にある要素を選ぶ道具、
-      // タスク21・22)は、ここでは何もしない。段の開き方はその道具の受け持ち。
+      // 押した場所が座標にならない道具(オフセットのように既にある要素を選ぶ道具)は、
+      // ここでは何もしない。段の開き方はその道具の受け持ち。
       return;
     }
     openInputAt(tool, pointer);

@@ -1,6 +1,6 @@
 import { dotVec as dot3, crossVec as cross3 } from './sketchCorner.js';
 /**
- * 立体の面・辺を作図面へ投影する(FR-325、計画書 P4 §2.7・タスク26)。
+ * 立体の面・辺を作図面へ投影する(FR-325)。
  *
  * このファイルは投影そのものに加えて、**作図面の姿勢(原点・第 1 軸・法線)と、
  * 作図面の上の 2 次元の曲線の型**を持つ。交差(makeSection.ts)も同じ型で結果を返すので、
@@ -34,7 +34,7 @@ import { dotVec as dot3, crossVec as cross3 } from './sketchCorner.js';
  * - `Handle_Geom_Plane_2(plane)` のような**ハンドルへ包んだ生の実体を、ハンドルとは別に
  *   `delete()` してはいけない**(2026-09-04 実測。`RuntimeError: table index is out of bounds`
  *   で落ちる)。このファイルはハンドルを 1 つも使わないので、その落とし穴を踏まない。
- * - 列挙を引数に取る API を 1 つも使わないため、述語ガード(計画書 §0.a-0.23 で
+ * - 列挙を引数に取る API を 1 つも使わないため、述語ガード(承認を得て
  *   2 か所だけ承認)を増やさない。
  */
 
@@ -132,7 +132,7 @@ const JOIN_TOLERANCE_MM = 1e-6;
 
 /**
  * 点列で返す曲線 1 本あたりの点の数の上限。
- * model 側のスプラインが受け取れる点の数の上限(計画書 §0.a-0.17)に合わせてある。
+ * model 側のスプラインが受け取れる点の数の上限に合わせてある。
  */
 const MAX_POLYLINE_POINTS = 100;
 

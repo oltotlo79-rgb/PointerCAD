@@ -7,9 +7,9 @@ import type { FieldUnit, NumericFieldRange, NumericToggleKey } from '../sketch/n
 
 /**
  * プロパティ欄で式のまま直せる欄の種類。種類ごとに1つだけ持つ。
- * P3 タスク27 で加工6種の欄(直径・深さ・半径・面取りの距離2種・傾き2種・ピッチ・下穴径・
+ * 加工6種の欄(直径・深さ・半径・面取りの距離2種・傾き2種・ピッチ・下穴径・
  * ねじ部の長さ・パターンの間隔・個数・角度)を足した。ばねの5つ(コイル径〜全長)は
- * タスク29b が使う欄で、型はここでまとめて広げる(計画書タスク27 の型宣言のとおり)。
+ * ばねのプロパティ欄が使う欄で、型はここでまとめて広げる。
  */
 export type SolidFieldKey =
   | SheetFieldKey
@@ -30,24 +30,24 @@ export type SolidFieldKey =
   | 'spacing'
   | 'count'
   | 'patternAngle'
-  /** ばね(FR-414)。タスク29b が使う。 */
+  /** ばね(FR-414)。 */
   | 'coilDiameter'
   | 'wireDiameter'
   | 'springPitch'
   | 'springTurns'
   | 'springLength'
   /**
-   * 面をつなぐ・ロフトのねじれの補正(FR-430、FR-410、§0.a-0.28。P5 タスク27)。
+   * 面をつなぐ・ロフトのねじれの補正(FR-430、FR-410)。
    * 2 つの道具で意味も単位も同じなので欄の名前も 1 つにする(その場入力の
    * `SolidCommitValues.ruledTwist` と同じ名前)。
    */
   | 'ruledTwist'
-  /* ---- P5 の Should / Could 群と切断(タスク52・27f・55、§2.11・§2.12・§2.9b) ---- */
+  /* ---- Should / Could 群と切断 ---- */
   /** 押し出しの側面の傾き(度、FR-401)。向きは `taperOutward` のつまみが持つ。 */
   | 'taperAngle'
   /** 薄板押し出しの壁の厚み(mm、FR-416)。中実のときは欄ごと出さない。 */
   | 'extrudeThickness'
-  /* 穴・ねじ穴の入口(FR-422)。入口の種類で出る欄が入れ替わる(§0.a-0.39)。 */
+  /* 穴・ねじ穴の入口(FR-422)。入口の種類で出る欄が入れ替わる。 */
   | 'counterboreDiameter'
   | 'counterboreDepth'
   | 'countersinkDiameter'
@@ -56,7 +56,7 @@ export type SolidFieldKey =
   | 'holePlanarX'
   | 'holePlanarY'
   /*
-    円筒の側面の穴(EX05)の位置。高さ(mm)は円筒の面の下側の端から軸に沿って、角度(度)は軸の
+    円筒の側面の穴の位置。高さ(mm)は円筒の面の下側の端から軸に沿って、角度(度)は軸の
     まわり。位置が 1 つの穴にだけ出す(欄の種類は 1 つずつしか持てないため)。
   */
   | 'holeCylinderHeight'
@@ -65,7 +65,7 @@ export type SolidFieldKey =
   | 'radiusEnd'
   /** 抜き勾配の角度(度、FR-417)。 */
   | 'draftAngle'
-  /** 平らな面の移動の符号付きの距離(mm、EX-18)。正で外へ足し、負で内へ削る。 */
+  /** 平らな面の移動の符号付きの距離(mm)。正で外へ足し、負で内へ削る。 */
   | 'faceOffsetDistance'
   /* 移動/回転(FR-424)。平行移動 3 欄と回す角度。 */
   | 'translationX'
@@ -94,7 +94,7 @@ export type SolidFieldKey =
 /**
  * プロパティ欄の1行。式は source をそのまま出す(FR-202)。
  *
- * 計画書は `unitKey: MessageKey` としていたが、欄を描く `ExpressionField` が受け取るのは
+ * 当初は `unitKey: MessageKey` としていたが、欄を描く `ExpressionField` が受け取るのは
  * `FieldUnit`(numericInput.ts の UNIT_KEYS がキーへ直す)なので、同じ対応表を2度持たずに
  * 済むよう `unit: FieldUnit` で返す。スケッチ側の `FeatureFieldSummary` とも形がそろう。
  */
@@ -105,15 +105,15 @@ export interface SolidFieldSummary {
   readonly unit: FieldUnit;
   readonly value: ExpressionValue;
   /**
-   * 読み取り専用(既定 false)。ばねの `derived` が指す欄だけ true になる(§0.a-0.30)。
-   * true のときプロパティは `ExpressionField` を無効化して値だけを見せる(タスク29b)。
+   * 読み取り専用(既定 false)。ばねの `derived` が指す欄だけ true になる。
+   * true のときプロパティは `ExpressionField` を無効化して値だけを見せる。
    */
   readonly readOnly: boolean;
   /**
-   * 受け付ける値の範囲(NFR-UX-5、P5 タスク52)。**上限・下限の数は model の定数が正本**で、
+   * 受け付ける値の範囲(NFR-UX-5)。**上限・下限の数は model の定数が正本**で、
    * ここはその定数から組み立てるだけにする(同じ数を 2 か所に書かない)。
    *
-   * P5 で足した欄にだけ付ける。P1〜P4 からある欄に後から付けると、いままで通っていた
+   * Should / Could 群の欄にだけ付ける。以前からある欄に後から付けると、いままで通っていた
    * 値が黙って弾かれる(その場入力の側で既に範囲を見ているので、二重に狭める理由も無い)。
    * 範囲を持たない欄では欄そのものを持たない(省略)。
    */
@@ -121,20 +121,20 @@ export interface SolidFieldSummary {
 }
 
 /**
- * 立体側だけが持つつまみ(C面取りの「基準の面を入れ替える」、§0.a-0.18)。
+ * 立体側だけが持つつまみ(C面取りの「基準の面を入れ替える」)。
  * その場入力の `NumericToggleKey`(numericInput.ts)には無い。numericInput.ts は
- * P1・P2 の振る舞いを1つも変えない約束(計画書 §4)なので、ここだけで型を広げる。
+ * 基本の段の振る舞いを1つも変えない約束なので、ここだけで型を広げる。
  */
 export type SolidToggleKey =
   | NumericToggleKey
   | 'swapReferenceFace'
   /**
-   * リブの「材料に届くまで伸ばす」(FR-420、P5 タスク52)。その場入力の段では既定のまま
+   * リブの「材料に届くまで伸ばす」(FR-420)。その場入力の段では既定のまま
    * 作らせる(欄を増やさない)ので `NumericToggleKey` に無く、プロパティでだけ切り替える。
    */
   | 'ribExtendToBody'
   /**
-   * 曲面のロフトを「直線でつなぐ」か(FR-428、P5 タスク52)。同上でプロパティ専用。
+   * 曲面のロフトを「直線でつなぐ」か(FR-428)。同上でプロパティ専用。
    */
   | 'surfaceRuled';
 
@@ -146,9 +146,9 @@ export interface SolidToggleSummary {
 }
 
 /**
- * 深さの種類・ねじの見せ方・面取りの決め方など、いくつかから1つを選ぶ欄(P3 §2.11)。
+ * 深さの種類・ねじの見せ方・面取りの決め方など、いくつかから1つを選ぶ欄。
  * 直線パターンの「向き」と円形パターンの「軸」は、どちらも model の `PatternDirection` を
- * 使うため `patternDirection` 1つのキーを共用する(計画書タスク27 の型宣言のとおり)。
+ * 使うため `patternDirection` 1つのキーを共用する。
  */
 export interface SolidChoiceSummary {
   /** 長い説明を横一列へ詰めず、1つのメニューで選ぶ。 */
@@ -162,16 +162,16 @@ export interface SolidChoiceSummary {
     | 'chamferMode'
     | 'patternDirection'
     | 'patternKind'
-    /** ばね(FR-414)。タスク29b が使う。 */
+    /** ばね(FR-414)。 */
     | 'springAxis'
     | 'springHandedness'
     | 'springDerived'
     /**
-     * 面をつなぐの「なめらかさ」(球へつなぐときの接点の数、§0.a-0.74。P5 タスク27)。
-     * **球を含まない断面では形に効かない**ので、そのときは欄ごと出さない(§0.a-0.87)。
+     * 面をつなぐの「なめらかさ」(球へつなぐときの接点の数)。
+     * **球を含まない断面では形に効かない**ので、そのときは欄ごと出さない。
      */
     | 'ruledSphereSegments'
-    /* ---- P5 の Should / Could 群と切断(タスク52・27f・55) ---- */
+    /* ---- Should / Could 群と切断 ---- */
     /** 押し出しの終わり方(FR-415)。距離 / 両側へ / 選んだ面まで / 次の面まで。 */
     | 'extrudeEnd'
     /** 薄板押し出しの厚みの側(FR-416)。内側 / 外側 / 両側。 */
@@ -210,7 +210,7 @@ export interface SolidSubShapeCountSummary {
 
 /**
  * 参照しているもの(もとの面・組み合わせる立体)。座標も形も複製せず、名前だけを引く(FR-311)。
- * 計画書の `{ labelKey, name }` に、クリックでその要素を選べるよう `elementId` を足した。
+ * `{ labelKey, name }` に、クリックでその要素を選べるよう `elementId` を足した。
  */
 export interface SolidReferenceSummary {
   readonly labelKey: MessageKey;
@@ -221,7 +221,7 @@ export interface SolidReferenceSummary {
 }
 
 /**
- * 回転軸(FR-402、§0.a-0.9)。ワールドの軸は X / Y / Z を選び直せるが、
+ * 回転軸(FR-402)。ワールドの軸は X / Y / Z を選び直せるが、
  * 線分を軸にしたものは線分そのものを選び直す操作が要るので、名前を読み取り専用で出す。
  */
 export type SolidAxisSummary =
@@ -237,7 +237,7 @@ export interface SolidSummary {
   readonly kindLabelKey: MessageKey;
   /** 抑制中(FR-503)。true なら形は計算されない。 */
   readonly suppressed: boolean;
-  /** ほかの立体と組み合わさって単独では表示されない(§0.a-0.5)。 */
+  /** ほかの立体と組み合わさって単独では表示されない。 */
   readonly consumed: boolean;
   readonly fields: readonly SolidFieldSummary[];
   readonly toggles: readonly SolidToggleSummary[];

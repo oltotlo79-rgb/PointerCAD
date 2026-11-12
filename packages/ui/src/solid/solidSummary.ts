@@ -1,7 +1,7 @@
 import { setSurfaceField, setSurfaceOperationKind } from './surfacePropertyUpdates.js';
 /**
- * 立体1つを「モデルブラウザとプロパティが表に出せる形」へ直す
- * (計画書 docs/plans/P2-ソリッド基礎.md タスク22、docs/plans/P3-加工フィーチャー.md タスク27・28)。
+ * 立体1つを「モデルブラウザとプロパティが表に出せる形」へ
+ * 直す。
  *
  * 対応要件: FR-501(ツリーの種類と名前)、FR-502(参照は id で持つ)、FR-503(抑制・改名・削除)、
  * FR-504(失敗の明示)、FR-202(入れた式をそのまま再表示する)、FR-311(直すと下流が追従する)。
@@ -10,10 +10,10 @@ import { setSurfaceField, setSurfaceOperationKind } from './surfacePropertyUpdat
  * 触れない純関数だけを置き、表示する文言は持たず必ず ja.json のキー(MessageKey)で返す
  * (NFR-MA-5)。書き戻しは元のフィーチャーを変えずに新しいフィーチャーを作る(FR-505 の土台)。
  *
- * P3 タスク27 で加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の欄・つまみ・
- * 選択肢・参照を足した。タスク28 でねじ穴の深さ(貫通/止まり)・傾き角・傾ける向きの欄と
- * 選択肢を仕上げた(§0.a-0.10、0.13、0.14)。ばね(spring)の節は§0.a-0.30の読み取り専用の欄
- * (derived)を要するためタスク29b がここへ追記する(この時点ではまだ空)。
+ * 加工6種(穴・ねじ穴・R面取り・C面取り・直線/円形パターン)の欄・つまみ・
+ * 選択肢・参照を持つ。ねじ穴の深さ(貫通/止まり)・傾き角・傾ける向きの欄と
+ * 選択肢も持つ。ばね(spring)の節は読み取り専用の欄
+ * (derived)を要する。
  */
 
 import {
@@ -114,7 +114,7 @@ export {
 } from './referenceSummary.js';
 export type { ReferenceFieldKey, ReferenceFieldSummary, ReferenceSummary } from './referenceSummary.js';
 
-/** プロパティ欄で選び直せるワールドの軸(§0.a-0.9)。線分の軸はここでは選べない。 */
+/** プロパティ欄で選び直せるワールドの軸。線分の軸はここでは選べない。 */
 export const WORLD_AXIS_CHOICES: readonly {
   readonly axis: 'x' | 'y' | 'z';
   readonly labelKey: MessageKey;
@@ -128,12 +128,12 @@ function toggleSummary(key: NumericToggleKey, value: boolean): SolidToggleSummar
   return { key, labelKey: TOGGLE_LABEL_KEYS[key], value };
 }
 
-/** C面取りの「基準の面を入れ替える」(§0.a-0.18)。等距離では効かないので呼び出し側で外す。 */
+/** C面取りの「基準の面を入れ替える」。等距離では効かないので呼び出し側で外す。 */
 function swapReferenceFaceToggle(value: boolean): SolidToggleSummary {
   return { key: 'swapReferenceFace', labelKey: 'propertyPanel.swapReferenceFace', value };
 }
 
-/** 穴・ねじ穴の「選んだ面 1」「中心の点 N」(subShapeCounts、§0.a-0.9)。 */
+/** 穴・ねじ穴の「選んだ面 1」「中心の点 N」(subShapeCounts)。 */
 function holeSubShapeCounts(
   feature: HoleFeature | ThreadHoleFeature,
 ): readonly SolidSubShapeCountSummary[] {
@@ -143,7 +143,7 @@ function holeSubShapeCounts(
   ];
 }
 
-/** 穴の欄。直径・(止まりのときだけ深さ)・傾き・傾ける向き(§0.a-0.10、0.11)。 */
+/** 穴の欄。直径・(止まりのときだけ深さ)・傾き・傾ける向き。 */
 function holeFields(feature: HoleFeature, locationIndex?: number): SolidFieldSummary[] {
   const fields = [fieldSummary('diameter', feature.diameter)];
   if (feature.depth.kind === 'blind') {
@@ -169,7 +169,7 @@ function holeFields(feature: HoleFeature, locationIndex?: number): SolidFieldSum
 
 /**
  * ねじ穴の欄。ピッチ・下穴径・ねじ部の長さ・(止まりのときだけ深さ)・傾き・傾ける向き
- * (§0.a-0.10、0.13、0.14。穴の `holeFields` と同じ並びに、規格から入る3つを前へ足す)。
+ * (0.14。穴の `holeFields` と同じ並びに、規格から入る3つを前へ足す)。
  */
 function threadHoleFields(feature: ThreadHoleFeature, locationIndex?: number): SolidFieldSummary[] {
   const fields = [
@@ -253,7 +253,7 @@ function threadSeriesChoice(series: ThreadSeries): SolidChoiceSummary {
   };
 }
 
-/** ねじの見せ方(簡略/実際のねじ山、§0.a-0.15、0.16)。 */
+/** ねじの見せ方(簡略/実際のねじ山)。 */
 function threadRepresentationChoice(representation: ThreadRepresentation): SolidChoiceSummary {
   return {
     key: 'threadRepresentation',
@@ -280,7 +280,7 @@ function chamferModeChoice(kind: ChamferSize['kind']): SolidChoiceSummary {
   };
 }
 
-/** C面取りの欄。決め方で出る欄が変わる(§0.a-0.18、計画書タスク27の検証表)。 */
+/** C面取りの欄。決め方で出る欄が変わる。 */
 function chamferFieldSummaries(size: ChamferSize): SolidFieldSummary[] {
   switch (size.kind) {
     case 'equal':
@@ -309,12 +309,12 @@ function patternDirectionOptions(): SolidChoiceSummary['options'] {
 
 /**
  * 直線パターンの「向き」・円形パターンの「軸」・ばねの「軸」。model の `PatternDirection` と
- * `RevolveAxis`(ばねの軸、§0.a-0.29)は同じ形(`{kind:'world',axis}` / `{kind:'line',line}`)
- * なので、この1つの関数で組み立てる。返す `key` は既定 `patternDirection`(計画書タスク27の
- * 型宣言のとおり)だが、ばねだけは `SolidChoiceSummary.key` に予約されている `springAxis` を
- * 呼び出し側(タスク29b)が渡す。見出しも呼び出し側で使い分ける(直線は「向き」、円形は
+ * `RevolveAxis`(ばねの軸)は同じ形(`{kind:'world',axis}` / `{kind:'line',line}`)
+ * なので、この1つの関数で組み立てる。返す `key` は既定 `patternDirection`
+ * だが、ばねだけは `SolidChoiceSummary.key` に予約されている `springAxis` を
+ * 呼び出し側が渡す。見出しも呼び出し側で使い分ける(直線は「向き」、円形は
  * 「回転軸」、ばねは「軸」)。線分を軸にしているときは、その線分の名前を選択肢に足して
- * 読み取れるようにする(選び直しの操作はタスク29が仕上げる)。
+ * 読み取れるようにする(選び直しの操作は別に持つ)。
  */
 function directionChoice(
   document: PartDocument,
@@ -326,7 +326,7 @@ function directionChoice(
     return { key, labelKey, value: direction.axis, options: patternDirectionOptions() };
   }
   // 線分の軸も基準軸(FR-329)も「名前を選択肢に足して読み取れるようにする」だけなので、
-  // 同じ 'line' の値へまとめる(選び直しの操作はタスク29・33 が仕上げる)。
+  // 同じ 'line' の値へまとめる(選び直しの操作は別に持つ)。
   const label =
     direction.kind === 'reference'
       ? referenceAxisName(document, direction.referenceFeatureId)
@@ -341,7 +341,7 @@ function directionChoice(
 
 /**
  * ばねの欄(コイル径・線径・ピッチ・巻数・全長)。`derived` が指す欄だけ読み取り専用にする
- * (§0.a-0.30)。並びは §2.11 の表のとおり(コイル径・線径 → ピッチ・巻数 → 全長)。
+ * 並びはコイル径・線径 → ピッチ・巻数 → 全長。
  */
 function springFields(feature: SpringFeature): SolidFieldSummary[] {
   return [
@@ -353,7 +353,7 @@ function springFields(feature: SpringFeature): SolidFieldSummary[] {
   ];
 }
 
-/** ばねの巻き方向(右巻き/左巻き、§0.a-0.33)。 */
+/** ばねの巻き方向(右巻き/左巻き)。 */
 function springHandednessChoice(handedness: SpringHandedness): SolidChoiceSummary {
   return {
     key: 'springHandedness',
@@ -366,7 +366,7 @@ function springHandednessChoice(handedness: SpringHandedness): SolidChoiceSummar
   };
 }
 
-/** ばねの求める値(全長/ピッチ/巻数のうち、他の2つから計算するもの、§0.a-0.30)。 */
+/** ばねの求める値(全長/ピッチ/巻数のうち、他の2つから計算するもの)。 */
 function springDerivedChoice(derived: SpringDerived): SolidChoiceSummary {
   return {
     key: 'springDerived',
@@ -381,12 +381,12 @@ function springDerivedChoice(derived: SpringDerived): SolidChoiceSummary {
 }
 
 /**
- * 面をつなぐの「なめらかさ」(球へつなぐときの接点の数、§0.a-0.74)。
+ * 面をつなぐの「なめらかさ」(球へつなぐときの接点の数)。
  *
  * 選べる数の正本は model の `RULED_SPHERE_SEGMENT_CHOICES`(= カーネルの
  * `SphereSegmentCount`)1 か所だけで、ここは見出しを日本語に付け替えるだけにする。
  * 見出しはその場入力の選択肢とまったく同じ文言キーを使う(同じものを 2 通りの名前で
- * 呼ばない。24b の文言案、docs/報告記録.md 2026-09-05 17:23)。
+ * 呼ばない)。
  */
 function ruledSphereSegmentsChoice(segments: RuledSphereSegments): SolidChoiceSummary {
   return {
@@ -408,8 +408,8 @@ const RULED_SPHERE_SEGMENT_LABEL_KEYS: Readonly<Record<RuledSphereSegments, Mess
 };
 
 /* ------------------------------------------------------------------ *
- * P5 の Should / Could 群と切断の欄・つまみ・選択肢
- * (タスク52・27f・55。§2.11・§2.12・§2.9b)
+ * Should / Could 群と切断の
+ * 欄・つまみ・選択肢
  * ------------------------------------------------------------------ */
 
 /** つまみ 1 つ。`NumericToggleKey` に無い、プロパティ専用のつまみもここで作れる。 */
@@ -418,7 +418,7 @@ function solidToggle(key: SolidToggleKey, labelKey: MessageKey, value: boolean):
 }
 
 /**
- * 閉じた輪郭の切断(EX04)のブーリアンか(EX-04 W3)。`requireRemoval` を立てた差(輪郭の外側を残す)と
+ * 閉じた輪郭の切断のブーリアンか。`requireRemoval` を立てた差(輪郭の外側を残す)と
  * 積(輪郭の内側を残す)だけが当たり、手作業の和・差・積(欄なし)は当たらない。
  */
 function isProfileCutBoolean(feature: BooleanFeature): boolean {
@@ -426,7 +426,7 @@ function isProfileCutBoolean(feature: BooleanFeature): boolean {
 }
 
 /**
- * 閉じた輪郭の切断が「反対側も残す」の対になっているか(EX-04 W3)。抑制されていない別のブーリアンと
+ * 閉じた輪郭の切断が「反対側も残す」の対になっているか。抑制されていない別のブーリアンと
  * `pairedWith` で結ばれていれば(どちら向きでも)対。相手が消えた・抑制されたときは単独に戻る
  * (model の `resolvePart` の対の引き方と同じ見方)。
  */
@@ -472,7 +472,7 @@ function thicknessSideChoice(side: ThicknessSide): SolidChoiceSummary {
   };
 }
 
-/** 穴・ねじ穴の入口の形(FR-422、§0.a-0.39)。 */
+/** 穴・ねじ穴の入口の形(FR-422)。 */
 function holeEntryChoice(entry: HoleEntry, cylindrical: boolean): SolidChoiceSummary {
   const options: SolidChoiceSummary['options'] = [
     { value: 'plain', labelKey: 'numericInput.holeEntry.plain' },
@@ -738,9 +738,9 @@ function cutPlaneFields(plane: PlaneSpec): SolidFieldSummary[] {
 }
 
 /**
- * 切る面の傾きの欄だけは範囲を持たせる(§2.9b の断り「0 度以上 180 度未満」を
+ * 切る面の傾きの欄だけは範囲を持たせる(切断の断り「0 度以上 180 度未満」を
  * 押す前に出すため)。`FIELD_DEFINITIONS` の `tiltAngle` は穴と共用で、穴の傾きは
- * P3 からの範囲(その場入力側)に従うので、ここで切断のときだけ差し替える。
+ * 加工の範囲(その場入力側)に従うので、ここで切断のときだけ差し替える。
  */
 function withPlaneTiltRange(field: SolidFieldSummary): SolidFieldSummary {
   return field.key === 'tiltAngle' ? { ...field, range: PLANE_TILT_RANGE } : field;
@@ -783,10 +783,10 @@ export function summarizeSolid(
         ...(feature.profile === null ? [] : [feature.profile.face, ...feature.profile.holes].map((ref) => profileReference(document, ref)))], subShapeCounts: [] };
     case 'extrude': {
       /*
-        押し出し(FR-401、FR-415、FR-416。タスク52・55)。**省略できる 5 欄は必ず
+        押し出し(FR-401、FR-415、FR-416)。**省略できる 5 欄は必ず
         `extrudeShapingOf` を通して読む**(既定値をここへ写さない。model の約束)。
 
-        「両側へ」は P2 の `symmetric` つまみではなく**終わり方の選択肢**で選ぶ
+        「両側へ」は 古い `symmetric` つまみではなく**終わり方の選択肢**で選ぶ
         (同じことを 2 つの操作でできるようにしない。NFR-UX-1)。書き戻す側
         (`setSolidChoice`)が `end` と `symmetric` の両方を必ず揃えるので、
         古い文書(`end` を持たない)でも見え方と保存の中身が食い違わない。
@@ -836,8 +836,8 @@ export function summarizeSolid(
       };
     case 'boolean':
       /*
-        閉じた輪郭の切断(EX04。`requireRemoval` を立てた差・積)だけは、残す側を「輪郭の内側を残す」の
-        つまみ 1 つで切り替える(EX-04 W3。差 = 輪郭の外側、積 = 輪郭の内側)。「反対側も残す」で
+        閉じた輪郭の切断(`requireRemoval` を立てた差・積)だけは、残す側を「輪郭の内側を残す」の
+        つまみ 1 つで切り替える(差 = 輪郭の外側、積 = 輪郭の内側)。「反対側も残す」で
         対になった 2 つ(どちらかが `pairedWith` で相手を指す)は両側を残しているので、片方だけを
         裏返すと同じ側の 2 つになって再計算が断る。だから対のあいだはつまみを出さず、2 つ目に相手への
         案内を参照として足す(平面の切断の `cutPaired` と同じ)。手作業の和・差・積はつまみを持たない。
@@ -870,7 +870,7 @@ export function summarizeSolid(
       };
     case 'threadHole':
       // 深さの種類(貫通/止まり)は穴と同じ選択肢を先頭に置き、続けて呼び・種類・見せ方を出す
-      // (§0.a-0.13、0.14。タスク28で深さ・傾きの欄と選択肢を仕上げた)。
+      // (深さ・傾きの欄と選択肢も持つ)。
       return {
         ...base,
         fields: [...threadHoleFields(feature, cylindricalLocationIndex), ...holeEntryFields(holeEntryOf(feature))],
@@ -887,7 +887,7 @@ export function summarizeSolid(
       };
     case 'fillet': {
       /*
-        R 面取り(FR-407)と可変半径(FR-426、タスク55)。**半径は `filletRadiusOf` を
+        R 面取り(FR-407)と可変半径(FR-426)。**半径は `filletRadiusOf` を
         通して読む**(終点側の半径は省略できる欄で、既定は「一定半径」)。
         「終わりを別の半径に」を入にしたときだけ 2 欄になる(NFR-UX-2)。
       */
@@ -908,7 +908,7 @@ export function summarizeSolid(
       return {
         ...base,
         fields: chamferFieldSummaries(feature.size),
-        // 基準面の入れ替えは2距離・距離+角度のときだけ効く(等距離では効かない、§0.a-0.18)。
+        // 基準面の入れ替えは2距離・距離+角度のときだけ効く(等距離では効かない)。
         toggles:
           feature.size.kind === 'equal' ? [] : [swapReferenceFaceToggle(feature.swapReferenceFace)],
         choices: [chamferModeChoice(feature.size.kind)],
@@ -929,8 +929,8 @@ export function summarizeSolid(
       }
       if (placement.kind === 'points') {
         /*
-          点の集まりへ複製(FR-425、P5 タスク43)。間隔・角度・個数の欄を持たず、
-          置き場所は点そのものが決める。点の一覧をプロパティに並べるのは **タスク52** で、
+          点の集まりへ複製(FR-425)。間隔・角度・個数の欄を持たず、
+          置き場所は点そのものが決める。点の一覧をプロパティに並べる処理は持たず、
           ここは `PatternPlacement` に case が増えたときにこの枝を落とさないための最小の
           形である(いまはもとの穴と点の数だけを出す)。
         */
@@ -959,9 +959,9 @@ export function summarizeSolid(
       };
     }
     case 'spring':
-      // ばね(FR-414)。始点(スケッチの点)は参照として出し、軸(§0.a-0.29)・巻き方向
-      // (§0.a-0.33)・求める値(§0.a-0.30)は choices へ、対象を消費しないので subShapeCounts
-      // は空(§0.a-0.36)。
+      // ばね(FR-414)。始点(スケッチの点)は参照として出し、軸・巻き方向
+      // ・求める値は choices へ、対象を消費しないので subShapeCounts
+      // は空。
       return {
         ...base,
         fields: springFields(feature),
@@ -976,8 +976,8 @@ export function summarizeSolid(
       };
     case 'primitive':
       /*
-        基本形状(FR-429)。寸法の欄・中心・向きをプロパティへ出すのは **タスク18** で、
-        ここはタスク15 で `SolidFeature` の union が広がったときにこの網羅 switch を
+        基本形状(FR-429)。寸法の欄・中心・向きはここでは出さず、
+        ここは `SolidFeature` の union が広がったときにこの網羅 switch を
         落とさないための最小の枝である。いまは種類と名前(base)だけを出す。
       */
       return {
@@ -990,10 +990,10 @@ export function summarizeSolid(
       };
     case 'ruled':
       /*
-        面をつなぐ(FR-430、P5 タスク27)。ねじれの式の欄と、球へつなぐときの
+        面をつなぐ(FR-430)。ねじれの式の欄と、球へつなぐときの
         「なめらかさ」の 3 択を出す。
 
-        **なめらかさは球を含む断面のときだけ出す**(§0.a-0.87)。球を含まない断面では
+        **なめらかさは球を含む断面のときだけ出す**。球を含まない断面では
         点の数が形に 1 つも効かないので、出すと「変えたのに形が変わらない」ことになる。
         「ねじれが立体の面には効かない」ほうは値が保存されるので欄は出したまま、
         プロパティが注記を添える(`ruledCommands.ts` の `ruledTwistNoteKey`)。
@@ -1028,10 +1028,10 @@ export function summarizeSolid(
         subShapeCounts: [],
       };
     /*
-      P5 の Should 群 9 種(§2.11、P5 タスク43)+ くり抜き(FR-418)+ 切断(FR-432)。
-      式の欄・つまみ・選択肢はタスク52・27f・55 でここへ入れた。**選び直しに画面での
+      Should 群 9 種+ くり抜き(FR-418)+ 切断(FR-432)。
+      式の欄・つまみ・選択肢をここで出す。**選び直しに画面での
       指し示しが要るもの(面・辺・輪郭・経路)は欄にせず、数か名前だけを出す**
-      (回転の線分の軸・穴の面と同じ切り分け。P2 からの流儀)。
+      (回転の線分の軸・穴の面と同じ切り分け)。
     */
     case 'draft':
       return {
@@ -1054,7 +1054,7 @@ export function summarizeSolid(
         subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 },
           ...(feature.kind === 'faceRotate' ? [{ labelKey: 'propertyPanel.selectedEdges' as const, count: 1 }] : [])] };
     case 'faceOffset':
-      // 平らな面の移動(EX-18)。直せるのは符号付きの距離 1 つ。動かす面は画面で指すものなので
+      // 平らな面の移動。直せるのは符号付きの距離 1 つ。動かす面は画面で指すものなので
       // 欄にせず枚数だけを出す(抜き勾配の面と同じ切り分け)。
       return {
         ...base,
@@ -1134,7 +1134,7 @@ export function summarizeSolid(
         subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
       };
     case 'shell':
-      // くり抜き(FR-418、タスク55)。開ける面は 0 枚でもよいので枚数だけを出す。
+      // くり抜き(FR-418)。開ける面は 0 枚でもよいので枚数だけを出す。
       return {
         ...base,
         fields: [fieldSummary('shellThickness', feature.thickness)],
@@ -1151,12 +1151,12 @@ export function summarizeSolid(
         subShapeCounts: [] };
     case 'cut':
       /*
-        平面による切断(FR-432、タスク27f)。**切断が持つ式は切る面の中にある**ので、
-        決め方ごとに出る欄が変わる(§2.9b.1)。決め方そのものは読み取り専用で出し、
+        平面による切断(FR-432)。**切断が持つ式は切る面の中にある**ので、
+        決め方ごとに出る欄が変わる。決め方そのものは読み取り専用で出し、
         選び直しはプロパティの「選び直す」ボタン(`PropertyPanel.tsx`)から行う——
         平面の材料(点・辺・面)は画面で指すものなので、欄では選べない。
 
-        残す側は「反対側を残す」のつまみ 1 つで裏返す(§0.a-0.57)。対で作られた
+        残す側は「反対側を残す」のつまみ 1 つで裏返す。対で作られた
         2 つ目(`pairedWith`)は、相手への案内を参照へ足す。
       */
       return {
@@ -1206,7 +1206,7 @@ export function summarizeSolid(
       return { ...base, fields: [], toggles: [], choices: [], references: [], subShapeCounts: [] };
     case 'importedSolid':
       /*
-        読み込んだ形(FR-802、P6 §2.8、タスク20)。履歴を持たないので式の欄は1つも無い
+        読み込んだ形(FR-802)。履歴を持たないので式の欄は1つも無い
         (model の同コメントのとおり)。素性(ファイル名・形式・単位・バイト数)に加え、
         形の種類(solid / shell)も読み取り専用の参照として出す。
       */
@@ -1227,7 +1227,7 @@ export function summarizeSolid(
       };
     case 'importedMesh':
       /*
-        読み込んだ三角形の形(FR-802、P6 §2.8、タスク20)。B-rep にしないので式の欄も
+        読み込んだ三角形の形(FR-802)。B-rep にしないので式の欄も
         加工の対象にもならない。三角形の数は必ずあり、体積は閉じていない形では測れず
         省略できる(model の `ImportedMeshFeature.volume` の注釈のとおり)ので「—」を出す。
       */
@@ -1258,7 +1258,7 @@ export function summarizeSolid(
  * 式の欄を書き戻した新しいフィーチャーを作る(元は変えない、FR-311)。
  * 妥当な式になったときだけ呼ぶ。その種類が持たない欄なら同じものを返す。
  *
- * `variables` はパラメータ表(FR-207)の変数表(任意引数、P4b タスク22a で追加)。
+ * `variables` はパラメータ表(FR-207)の変数表(任意引数)。
  * ばね以外の種類は自動生成した式を持たないので使わない。
  */
 export function setSolidField(
@@ -1297,13 +1297,13 @@ export function setSolidField(
     case 'boolean':
       return feature;
     case 'primitive':
-      // 基本形状の寸法の書き戻しは **タスク18**(プロパティに欄を出すのと同じ段)。
+      // 基本形状の寸法の書き戻しはここでは行わない。
       // いまは欄が1つも無いので、そのまま返す。
       return feature;
     case 'ruled':
     case 'loft':
       /*
-        面をつなぐ・ロフト(FR-430、FR-410、タスク27)。直せるのはねじれ 1 つだけで、
+        面をつなぐ・ロフト(FR-430、FR-410)。直せるのはねじれ 1 つだけで、
         断面(つなぐ面)はプロパティから選び直せない(選び直すには画面で面を指す操作が
         要る。回転の線分の軸・穴の面と同じ切り分け)。他の欄の名前が来たらそのまま返す
         (`setPrimitiveField` と同じ約束)。
@@ -1468,7 +1468,7 @@ function setPatternField(
     return feature;
   }
   if (placement.kind === 'points') {
-    // 点集合(FR-425、P5 タスク43)は式の欄を持たない(置き場所は点そのもの)。
+    // 点集合(FR-425)は式の欄を持たない(置き場所は点そのもの)。
     return feature;
   }
   if (key === 'patternAngle') {
@@ -1482,7 +1482,7 @@ function setPatternField(
 
 /**
  * パターンの向き・軸をワールドの X / Y / Z へ変える(回転の `setSolidAxis` と同じ扱い)。
- * 選んだ線分への切り替えはタスク29(プロパティの仕上げ)が行う。パターン以外は同じものを返す。
+ * 選んだ線分への切り替えは別の関数が行う。パターン以外は同じものを返す。
  */
 function setPatternDirection(feature: SolidFeature, axis: 'x' | 'y' | 'z'): SolidFeature {
   if (feature.kind !== 'pattern') {
@@ -1495,7 +1495,7 @@ function setPatternDirection(feature: SolidFeature, axis: 'x' | 'y' | 'z'): Soli
     case 'circular':
       return { ...feature, placement: { ...feature.placement, axis: direction } };
     case 'points':
-      // 点集合(FR-425、P5 タスク43)は向きの欄を持たない(置き場所は点そのもの)。
+      // 点集合(FR-425)は向きの欄を持たない(置き場所は点そのもの)。
       return feature;
   }
 }
@@ -1504,7 +1504,7 @@ function setPatternDirection(feature: SolidFeature, axis: 'x' | 'y' | 'z'): Soli
  * 選択肢の欄を書き戻した新しいフィーチャーを作る(元は変えない、FR-311)。
  * 妥当な値でない・その種類が持たない選択肢なら同じものを返す。
  *
- * `variables` はパラメータ表の変数表(任意引数、P4b タスク22a で追加)。`springDerived` の
+ * `variables` はパラメータ表の変数表(任意引数)。`springDerived` の
  * 切り替え直後の書き戻しにだけ使う。
  */
 export function setSolidChoice(
@@ -1540,7 +1540,7 @@ export function setSolidChoice(
         ? setPatternDirection(feature, value)
         : feature;
     case 'patternKind':
-      // 直線⇔円形の切替は作らない(種類は作成時に決まる、§0.a-0.21)。
+      // 直線⇔円形の切替は作らない(種類は作成時に決まる)。
       return feature;
     case 'springAxis':
       return value === 'x' || value === 'y' || value === 'z' ? setSpringAxis(feature, value) : feature;
@@ -1551,7 +1551,7 @@ export function setSolidChoice(
         ? setSpringDerived(feature, value, variables, options)
         : feature;
     case 'ruledSphereSegments':
-      // 面をつなぐの「なめらかさ」(§0.a-0.74)。3 択の外の値は黙って捨てる(他の選択肢と同じ)。
+      // 面をつなぐの「なめらかさ」。3 択の外の値は黙って捨てる(他の選択肢と同じ)。
       return setRuledSphereSegments(feature, value);
     case 'extrudeEnd':
       return setExtrudeEnd(feature, value);
@@ -1589,7 +1589,7 @@ export function setSolidChoice(
 /**
  * 押し出しの終わり方を切り替える(FR-415)。
  *
- * **`end` と P2 からの `symmetric` を必ず同時に揃える。** `symmetric` は解決・その場入力・
+ * **`end` と 古い `symmetric` を必ず同時に揃える。** `symmetric` は解決・その場入力・
  * 読み書きがまだ読んでいる欄で、片方だけ変えると同じ文書が 2 通りの意味を持ってしまう
  * (`extrudeShapingOf` は `end` が無いときにだけ `symmetric` を見る)。
  *
@@ -1666,7 +1666,7 @@ function setRibSide(feature: SolidFeature, side: RibSide): SolidFeature {
  */
 
 /**
- * なめらかさ(球へつなぐときの接点の数)を書き戻す(§0.a-0.74)。
+ * なめらかさ(球へつなぐときの接点の数)を書き戻す。
  * 面をつなぐ以外のフィーチャー・3 択の外の値ならそのまま返す。
  */
 function setRuledSphereSegments(feature: SolidFeature, value: string): SolidFeature {
@@ -1703,7 +1703,7 @@ export function setSolidToggle(
   }
   if (feature.kind === 'fillet') {
     /*
-      可変半径(FR-426、タスク55)。入にすると終点側の半径の欄が出て、切ると省略へ戻す。
+      可変半径(FR-426)。入にすると終点側の半径の欄が出て、切ると省略へ戻す。
       **切ったときは `undefined` へ戻す**(model の約束: `radiusEnd` は「一定半径」を
       `undefined` で表し、`null` に別の意味を持たせていない)。
     */
@@ -1761,13 +1761,13 @@ export function setSolidToggle(
       : feature;
   }
   if (feature.kind === 'cut') {
-    // 反対側を残す(§0.a-0.57)。法線の向きは変えず、残す側だけを裏返す。
+    // 反対側を残す。法線の向きは変えず、残す側だけを裏返す。
     return key === 'cutKeepOpposite'
       ? { ...feature, keep: value ? 'negative' : 'positive' }
       : feature;
   }
   if (feature.kind === 'boolean') {
-    // 閉じた輪郭の切断の「輪郭の内側を残す」(EX-04 W3)。対象・輪郭・印はそのままで、差 ⇔ 積だけを替える。
+    // 閉じた輪郭の切断の「輪郭の内側を残す」。対象・輪郭・印はそのままで、差 ⇔ 積だけを替える。
     // 手作業の和・差・積はこのつまみを持たないので、そのまま返す。
     return key === 'cutKeepOpposite' && isProfileCutBoolean(feature)
       ? { ...feature, operation: value ? 'intersect' : 'subtract' }

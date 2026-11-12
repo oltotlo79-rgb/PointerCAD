@@ -78,7 +78,7 @@ export function setHoleField(
 }
 
 /**
- * 円筒の側面の穴(EX05)の指定位置だけを書き戻す。位置の指定を省略できるのは 1 件のときだけ。
+ * 円筒の側面の穴の指定位置だけを書き戻す。位置の指定を省略できるのは 1 件のときだけ。
  */
 function setCylindricalHoleField(
   feature: HoleFeature | ThreadHoleFeature,
@@ -186,7 +186,7 @@ function applyThreadSize(
 /**
  * ねじの呼びを変える。ピッチ・下穴径も規格表から一緒に変わる(FR-406)。
  * 利用者が個別に上書きしていても、呼びを変え直すとその上書きは失われる(この決めは
- * ヘルプ `thread.md`(タスク28)へ書く)。呼びが見つからない・ねじ穴以外なら同じものを返す。
+ * ヘルプ `thread.md`へ書く)。呼びが見つからない・ねじ穴以外なら同じものを返す。
  */
 export function setThreadDesignation(feature: SolidFeature, designation: string): SolidFeature {
   if (feature.kind !== 'threadHole') {

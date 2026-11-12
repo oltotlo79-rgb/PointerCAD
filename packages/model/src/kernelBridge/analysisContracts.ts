@@ -17,16 +17,16 @@ import type {
 
 
 /* ------------------------------------------------------------------ *
- * 測定(FR-1101、FR-1102、P5 タスク29)
+ * 測定(FR-1101、FR-1102)
  * ------------------------------------------------------------------ */
 
 /**
  * 測る対象 1 つ(model の言葉)。
  *
- * 立体は「それを作ったフィーチャーの id」で指す(§0.a-0.5「段の id = ボディの id」)。
+ * 立体は「それを作ったフィーチャーの id」で指す(「段の id = ボディの id」)。
  * kernel は形状キャッシュの鍵(`ResolvedSolidStep.key`)でしか形を引けないので、
  * `KernelBridge.measure` がこの id を鍵へ引き直してからカーネルへ渡す(外観の面の照合
- * `toAppearanceQueries` と同じ流儀、§2.2.3)。
+ * `toAppearanceQueries` と同じ流儀)。
  */
 export interface MeasureTarget {
   readonly bodyFeatureId: string;
@@ -46,10 +46,10 @@ export interface MeasureTarget {
  * (kind ごとの欄はそのまま持ち回る)。
  *
  * **距離・重心はワールド座標の mm。慣性モーメント(`principalMoments`)は重心を通る主軸
- * まわりの体積の 2 次モーメントで、密度を掛けていない mm⁵のまま**(§0.a-0.32)。
+ * まわりの体積の 2 次モーメントで、密度を掛けていない mm⁵のまま**。
  * 密度(g/cm³)を掛けた質量(g)・慣性モーメント(g·mm²)は、密度表を持つ model 側の
  * `measure/massProperties.ts`(`massFromVolume` / `inertiaWithDensity`)が別途計算する
- * (統括の決定: 密度の掛け算は model のこの 1 か所だけで行う)。
+ * (密度の掛け算は model のこの 1 か所だけで行う)。
  */
 export type MeasureOutcome =
   | {
@@ -135,7 +135,7 @@ export interface PrintabilitySummary {
  * 点検の結果(FR-815)。
  *
  * 三角形ごとの真偽は**1 ビットずつ詰めてある**(5 万三角形で 1 本 6,250 バイト、
- * 3 本で 18.3KiB。§2.17-9)。読み出しは `readPrintabilityFlag`——**同じビットの並べ方を
+ * 3 本で 18.3KiB)。読み出しは `readPrintabilityFlag`——**同じビットの並べ方を
  * 2 か所に書かない**ため、model はカーネルの純関数をそのまま輸出し直す
  * (`sketchFilletGeometry` と同じ扱い)。
  */

@@ -9,7 +9,7 @@ import {
 import { readSubShapeRef, serializeSubShapeRef } from './shapeReferences.js';
 
 /*
- * Flat bolted-joint records (EX-06 edit): the user's picks and choices and the generated part ids. Inputs only; the
+ * Flat bolted-joint records : the user's picks and choices and the generated part ids. Inputs only; the
  * planner recomputes sizes, lengths and placements from the current parts and catalogue. Readers that do not know this
  * field ignore it (the joint still exists; only editing is unavailable), so no schema bump is needed.
  */

@@ -83,7 +83,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
     const current = () => isCurrent() && !abort.signal.aborted && running.current === abort;
     setBusy(true); setPreview(null); setDisplayed(false); setIssues(new Map());
     try {
-      // GR-18c: wait for the document's current math-geometry outcomes exactly as MathExpressionDialog.tsx
+      // wait for the document's current math-geometry outcomes exactly as MathExpressionDialog.tsx
       // does, so a geometry-derived coefficient (and any ordinary coefficient sharing the document) can
       // resolve instead of the whole document looking like a syntax error. The "計算中" busy state above
       // already covers this wait; a still-pending measurement surfaces as evaluateFunctionPlotDraft's own

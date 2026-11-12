@@ -1,9 +1,9 @@
 /**
- * XCAF の STEP から共有部品定義と配置木を読む(P7 タスク42、FR-802 / FR-804)。
+ * XCAF の STEP から共有部品定義と配置木を読む(FR-802 / FR-804)。
  *
  * `GetFreeShapes` → `GetComponents` → `GetReferredShape` / `GetLocation` の順でたどる。
  * 形は定義ラベルごとに 1 回だけ取り出し、複数の occurrence は同じ `definitionId` を指す。
- * P6 の平らな STEP は、自由形を恒等配置の部品として同じ結果へ畳む。
+ * 階層の無い平らな STEP は、自由形を恒等配置の部品として同じ結果へ畳む。
  */
 import type {
   OpenCascadeInstance,

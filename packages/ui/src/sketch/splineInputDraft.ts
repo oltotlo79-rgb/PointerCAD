@@ -1,13 +1,13 @@
 import { MAX_SPLINE_POINTS, MIN_CLOSED_SPLINE_POINTS, MIN_SPLINE_POINTS, type CoordinateInput } from '@pointercad/model';
 
-/* ---- P4 タスク11: スプラインの下書き(FR-317、計画書タスク11 の splineDraft) ---- */
+/* ---- スプラインの下書き(FR-317) ---- */
 
 /**
  * 置いた点をためておく下書き。
  *
  * スプラインだけは「クリックのたびに点を積み、最後にまとめて 1 本の曲線にする」進行なので、
  * 「1 段 = 1 要素」の `NumericInputState` では表せない。どこへ置くか(ストアの欄)は
- * タスク12 が決め、ここでは形と規則(足せるか・曲線にできるか)だけを純関数で持つ。
+ * 呼ぶ側が決め、ここでは形と規則(足せるか・曲線にできるか)だけを純関数で持つ。
  */
 export interface SplineDraft {
   /** 置いた順がそのまま曲線の向きになる。 */

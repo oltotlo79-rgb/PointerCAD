@@ -14,7 +14,7 @@ import { booleanMargin, boundingDiagonal } from './subShapes.js';
 import { makeCompound } from './transformShape.js';
 
 /**
- * リブ(FR-420、計画書 P5 §0.a-0.37・タスク38)。
+ * リブ(FR-420)。
  *
  * **リブは「開いた線に厚みを付けた壁を、立体に当たるまで伸ばして足す」加工である。**
  * 閉じた輪郭が要らないところが押し出し(FR-401)との違いで、板の補強に使う。
@@ -24,19 +24,19 @@ import { makeCompound } from './transformShape.js';
  *      薄い帯(シェル)にする。`symmetric` なら先に法線の逆へ `thickness / 2` ずらす。
  *   ② その帯を `direction` へ、対象と帯の両方を包む境界箱の対角ぶん(+ 余裕)押し出して
  *      長い壁にする。**`extendToBody: false` のときだけ、長さを輪郭の長さにする**
- *      (タスク42c。材料に届かなければ断る)。
+ *      (材料に届かなければ断る)。
  *   ③ 壁から対象を**引く**(`Cut`)。残った塊のうち**帯に接している塊だけ**を採る。
  *      これが「輪郭から材料に当たるまで」の部分、すなわちリブの本体になる。
  *   ④ 対象と `Fuse` して 1 つの立体にする。
  *
  * **③ で `Common`(対象の内側)ではなく `Cut`(対象の外側)を採る理由:** リブが足す材料は
- * **輪郭と材料の間の空間**であって、材料の内側ではない。計画書タスク38 の検証表の期待値
+ * **輪郭と材料の間の空間**であって、材料の内側ではない。検証の表の期待値
  * (40×30×10 の板 + 長さ 20・高さ 10・厚み 3 のリブ = 12600 = 12000 + 600)も、
  * 板の**外**に 600 mm³ を足した値になっている。「対象との Common で材料の内側に収まる部分を
- * 求め」という計画書の文だけは、この期待値と合わない(Common を採ると体積は 12000 のまま
- * 1 mm³ も増えない)。**期待値の側を正としてこの実装を書き、統括へ差として報告する。**
+ * 求め」という当初の文だけは、この期待値と合わない(Common を採ると体積は 12000 のまま
+ * 1 mm³ も増えない)。**期待値の側を正としてこの実装を書いた。**
  *
- * **タスク33 の `makeExtrudeSolid(end: 'toNext')` を呼べない理由(統括への申し送り):**
+ * **`makeExtrudeSolid(end: 'toNext')` を呼べない理由:**
  *   1. `toNext` は「対象と `Common` を取り、押し出しの始点に最も近い塊を残す」もので、
  *      残すのは**材料の内側**。リブが要るのは**材料の外側**なので、意味が逆になる。
  *   2. `makeExtrudeSolid` は断面に `makePlanarFace`(閉じた平らな輪郭)を要求する。
@@ -44,7 +44,7 @@ import { makeCompound } from './transformShape.js';
  *   同じ手順を 2 か所に書かないため、共通で使えるところ(境界箱の対角 `boundingDiagonal`、
  *   コンパウンド `makeCompound`、和 `booleanOp`)は既存の関数をそのまま呼んでいる。
  *   「長い角柱を作って余裕を足す」決めも `subShapes.ts` の `booleanMargin` 1 か所へ
- *   まとめてあり(§0.a-0.78、タスク42b)、`makeSolidSweep.ts` と同じ値になる。
+ *   まとめてあり、`makeSolidSweep.ts` と同じ値になる。
  */
 
 /** 「厚みが出た」とみなす体積の下限(mm³)。makeSolidSweep.ts と同じ考え方。 */
@@ -61,7 +61,7 @@ const TOUCH_TOLERANCE_MM = 1e-6;
 /** 壁が対象に届いたかを長さで見るときの許容(mm)。境界箱の丸めのぶん。 */
 const REACH_TOLERANCE_MM = 1e-6;
 
-/** 輪郭が 1 本も選ばれていないとき(計画書 タスク38 の検証表の文言)。 */
+/** 輪郭が 1 本も選ばれていないとき(検証の表の文言)。 */
 const NO_PROFILE_MESSAGE = 'リブの輪郭が選ばれていません。';
 
 /** 厚みが 0 以下のとき(同上)。 */
@@ -76,14 +76,14 @@ const NOT_CONNECTED_MESSAGE = '選んだ線・円弧がつながっていない�
 /** 壁を作れなかった・潰れたとき。 */
 const NO_THICKNESS_MESSAGE = 'リブに厚みが出ませんでした。厚みと伸ばす向きを見直してください。';
 
-/** 伸ばした先に材料が無かったとき(計画書 タスク38 の検証表の文言、NFR-UX-5)。 */
+/** 伸ばした先に材料が無かったとき(検証の表の文言、NFR-UX-5)。 */
 const NOT_REACHED_MESSAGE = 'リブが立体に届いていません。位置を見直してください。';
 
 /**
  * 「材料まで伸ばさない」リブ(`extendToBody: false`)の壁が材料へ届かないとき。
  *
- * 届かないまま和を取ると**離れた 2 つの塊**になり、1 つのボディという約束が崩れる
- * (§0.a-0.5)。伸ばす長さを利用者が輪郭で決めている以上、勝手に伸ばして
+ * 届かないまま和を取ると**離れた 2 つの塊**になり、1 つのボディという約束が崩れる。
+ * 伸ばす長さを利用者が輪郭で決めている以上、勝手に伸ばして
  * つなぐこともできないので、理由をつけて断る(FR-504)。
  */
 const NOT_TOUCHING_MESSAGE = 'リブが材料に届きません。';
@@ -94,7 +94,7 @@ const INSIDE_MESSAGE = 'リブの輪郭が立体の中にあります。輪郭�
 /** ブーリアンそのものが成立しなかったとき(FR-504、NFR-RE-1)。 */
 const RIB_FAILED_MESSAGE = 'リブを作れませんでした。輪郭の位置と向きを見直してください。';
 
-/** リブの依頼(計画書 タスク38)。 */
+/** リブの依頼。 */
 export interface RibInput {
   /** 輪郭(閉じていなくてよい)。並んだ順につながっていること。 */
   readonly profile: readonly CurveSpec[];
@@ -107,12 +107,12 @@ export interface RibInput {
   /** 伸ばす向き(材料へ向かう向き)。 */
   readonly direction: Vec3Tuple;
   /**
-   * 材料に届くまで壁を伸ばすか(**省くと true = タスク38 からの振る舞いのまま**)。
+   * 材料に届くまで壁を伸ばすか(**省くと true = 以前からの振る舞いのまま**)。
    *
    * `false` のときは伸ばす長さを**輪郭の長さ**(稜線の長さの合計)にする。
    * 段の欄に長さが無いので、利用者が引いた輪郭そのものを物差しにするしかなく、
    * model 側の型(`RibFeature.extendToBody`)も「輪郭の長さぶんだけの壁を立てる」と
-   * 決めてある(タスク46)。届かない置き方は `NOT_TOUCHING_MESSAGE` で断る。
+   * 決めてある。届かない置き方は `NOT_TOUCHING_MESSAGE` で断る。
    */
   readonly extendToBody?: boolean;
 }
@@ -122,8 +122,8 @@ export interface RibInput {
  * ワイヤの長さ(mm)。`BRepGProp.LinearProperties` は稜線の長さの合計を返す。
  *
  * `makeSweep.ts` に同じ 5 行の関数があるが、あちらは輸出していない
- * (このタスクでは `makeSweep.ts` を変えない決め)。`normalizeDirection` と同じく、
- * 輸出の整理をするときに共通の置き場へ寄せることを統括へ提案する。
+ * (`makeSweep.ts` は変えない決め)。`normalizeDirection` と同じく、
+ * 輸出の整理をするときに共通の置き場へ寄せる。
  */
 function wireLength(
   oc: OpenCascadeInstance,
@@ -310,7 +310,7 @@ function selectRibChunks(
 /**
  * 開いた輪郭に厚みを付けた壁を、対象に当たるまで伸ばして足す(FR-420)。
  *
- * 向き(`normal` / `direction`)は model 側で決めて渡す約束(計画書 §0.a-0.8 と同じ流儀)なので、
+ * 向き(`normal` / `direction`)は model 側で決めて渡す約束(他の作り手と同じ流儀)なので、
  * ここでは輪郭の平面を推し量らない。`direction` は輪郭の平面の中の向き(材料へ向かう向き)、
  * `normal` はその平面の法線で、2 つが平行だと壁が潰れるので断る。
  *
@@ -334,7 +334,7 @@ export function makeRib(
   if (normal === null || direction === null) {
     throw new Error(NO_DIRECTION_MESSAGE);
   }
-  // 省略は「材料まで伸ばす」(タスク38 からの振る舞い)。
+  // 省略は「材料まで伸ばす」(以前からの振る舞い)。
   const extendToBody = input.extendToBody ?? true;
 
   const { keep, release } = createAllocations();
@@ -363,7 +363,7 @@ export function makeRib(
     if (!(diagonal > 0)) {
       throw new Error(NOT_REACHED_MESSAGE);
     }
-    // 壁を伸ばす長さの余裕(§0.a-0.12、makeSolidSweep.ts の `toNext` と同じ決め)。
+    // 壁を伸ばす長さの余裕(makeSolidSweep.ts の `toNext` と同じ決め)。
     // 対象の面とちょうど接する形はブーリアンが最も苦手なので、必ず突き抜けさせる。
     //
     // **「材料まで伸ばさない」(`extendToBody: false`)ときだけ、長さを輪郭の長さにする。**

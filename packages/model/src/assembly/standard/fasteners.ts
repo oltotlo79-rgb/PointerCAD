@@ -4,7 +4,7 @@ import type {
 } from './types.js';
 
 /*
- * 数値の調査記録は docs/standards/jis/*.json。ここは P7 が使う M3〜M20 の実行時カタログで、
+ * 数値の調査記録は docs/standards/jis/*.json。ここはアセンブリが使う M3〜M20 の実行時カタログで、
  * 本体規格の系列を採る。verified=false と note は調査記録から落とさない。
  * 表の出典(規格・版・題名・範囲・URL)も調査記録の JSON が正本で、ここには写さない。
  */

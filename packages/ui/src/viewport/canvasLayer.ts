@@ -1,20 +1,20 @@
 /**
- * 下絵の画像の表示層と、作図面に貼るための計算(計画書 docs/plans/P6-入出力.md
- * §0.a-0.45〜0.47、§2.14、タスク39)。
+ * 下絵の画像の表示層と、作図面に貼るための計算
+ * (FR-332)。
  *
  * 対応要件: FR-332(読み込んだ画像を作図面に置き、2 点で寸法を合わせ、その上をなぞって
  * スケッチできる)、NFR-UX-2(その場の数値入力)、NFR-PF-1(60fps)。
  *
  * **前半は純関数だけ**(three.js に触れない)。作図面の上での置き方から 4 頂点のワールド座標を
- * 作り、押した点を画像の画素へ写し戻し、2 点の実寸から幅・高さ(mm)を出す。§2.14 の式と
- * 検証表はここで固定する。**後半が three.js の層**で、画像 1 枚につき面 1 枚を貼る。
+ * 作り、押した点を画像の画素へ写し戻し、2 点の実寸から幅・高さ(mm)を出す。寸法合わせの式と
+ * 検査の値はここで固定する。**後半が three.js の層**で、画像 1 枚につき面 1 枚を貼る。
  *
  * **下絵は形にならない。** 押し出しの材料にも当たり判定にもならず、入切・移動・不透明度の
- * 変更で再計算は走らない(`part/documentChange.ts` の `affectsShape` が偽、§2.14)。
- * 下絵の線には吸着しない(§0.a-0.47。画像の中の線を見つけるには画像処理が要り、要件に無い。
- * P1 のグリッド吸着・端点吸着はそのまま効くので、なぞる操作は成立する)。
+ * 変更で再計算は走らない(`part/documentChange.ts` の `affectsShape` が偽)。
+ * 下絵の線には吸着しない(画像の中の線を見つけるには画像処理が要り、要件に無い。
+ * グリッド吸着・端点吸着はそのまま効くので、なぞる操作は成立する)。
  *
- * **テクスチャ・材質・形は必ず `dispose()` する**(P5 §4)。消したとき・画像を差し替えた
+ * **テクスチャ・材質・形は必ず `dispose()` する**。消したとき・画像を差し替えた
  * ときの経路を両方作り、検査で回数を数える。
  */
 
@@ -121,12 +121,12 @@ function toRadians(degrees: number): number {
 }
 
 /**
- * 下絵の面の 4 頂点のワールド座標(FR-332、§2.14)。**three.js に触れない純関数**。
+ * 下絵の面の 4 頂点のワールド座標(FR-332)。**three.js に触れない純関数**。
  *
  * 幅・高さから中心まわりの (u, v) を作り、`rotationDegrees` だけ第 1 軸から第 2 軸へ回し、
  * 中心へ寄せてから作図面のワールド座標へ写す(`planeToWorld`)。
  *
- * 例(§2.14 とタスク39 の検証表): XY 面に幅 400・高さ 300 を原点中心・傾き 0 で置くと、
+ * 例: XY 面に幅 400・高さ 300 を原点中心・傾き 0 で置くと、
  * 4 頂点は `(±200, ±150, 0)` になる。
  */
 export function buildCanvasPlanePositions(
@@ -157,7 +157,7 @@ export function canvasPositionValues(corners: readonly Vec3[]): Float32Array {
 }
 
 /**
- * 作図面の上の点 (u, v) を、画像の画素の座標へ写し戻す(§2.14 の寸法合わせの下ごしらえ)。
+ * 作図面の上の点 (u, v) を、画像の画素の座標へ写し戻す(寸法合わせの下ごしらえ)。
  *
  * 画素は**左上が原点**で、`u` が右、`v` が下(`CanvasPixelPoint` の決め)。置き方の逆算なので、
  * 中心を引き、`rotationDegrees` だけ逆に回してから、幅・高さで割って画素へ直す。
@@ -184,7 +184,7 @@ export function canvasPixelPointOf(
   return [(ratioU + 0.5) * pixelSize.width, (ratioV + 0.5) * pixelSize.height];
 }
 
-/** 2 点の寸法合わせの結果。断りの理由と日本語は model(タスク38)のものをそのまま通す。 */
+/** 2 点の寸法合わせの結果。断りの理由と日本語は modelのものをそのまま通す。 */
 export type CanvasResizeResult =
   | {
       readonly ok: true;
@@ -200,7 +200,7 @@ export type CanvasResizeResult =
   | Extract<ScaleFromTwoPointsResult, { readonly ok: false }>;
 
 /**
- * 下絵の上で指した 2 点と、その実寸(mm)から、新しい幅・高さ(mm)を出す(§0.a-0.46、§2.14)。
+ * 下絵の上で指した 2 点と、その実寸(mm)から、新しい幅・高さ(mm)を出す。
  *
  * ```
  * 画素の距離 d = √((u₂−u₁)² + (v₂−v₁)²)
@@ -208,11 +208,11 @@ export type CanvasResizeResult =
  * 幅(mm) = s × 画素の幅     高さ(mm) = s × 画素の高さ
  * ```
  *
- * 例(§2.14): 800×600 画素の画像で (100,100)〜(500,100) の 400 画素を 200mm と指定すると
+ * 例: 800×600 画素の画像で (100,100)〜(500,100) の 400 画素を 200mm と指定すると
  * `s = 0.5` になり、幅 400mm・高さ 300mm になる。
  *
  * 2 点は**作図面の上の点**(押した場所を作図面へ落としたもの)で受け取り、ここで画素へ
- * 写し戻してから model の `scaleFromTwoPoints`(タスク38)へ渡す。式の正本は model 側 1 か所で、
+ * 写し戻してから model の `scaleFromTwoPoints`へ渡す。式の正本は model 側 1 か所で、
  * 断りの文言(同じ位置・実寸が 0 以下)もそちらのものをそのまま返す。
  */
 export function canvasSizeForTwoPoints(
@@ -245,7 +245,7 @@ export function canvasSizeForTwoPoints(
 // ---------------------------------------------------------------------------
 
 /**
- * 描く順。**スケッチの線より必ず後ろ**(§0.a-0.46)。
+ * 描く順。**スケッチの線より必ず後ろ**。
  *
  * `createSketchLayer.ts` の数直線は 作図面の矩形 -1 → 面 0 → 縁 2 → 線 3 → 点 4 で、
  * 立体は 1(`createSolidLayer.ts`)。下絵はそのすべての後ろに置くので、いちばん小さい
@@ -264,7 +264,7 @@ export interface CanvasDraw {
   readonly plane: WorkPlane;
   /** 作図面の上での置き方(式は評価済み)。 */
   readonly placement: CanvasPlacement;
-  /** 不透明度 0〜1(`SketchCanvas.opacity` の評価値そのまま。§2.14)。 */
+  /** 不透明度 0〜1(`SketchCanvas.opacity` の評価値そのまま)。 */
   readonly opacity: number;
   /** 出力矩形から原画像へ。補正欄なしはidentity。 */
   readonly homography?: CanvasHomography;
@@ -278,7 +278,7 @@ export interface CanvasLayer {
    * 呼び出し側が並びから外して渡す**(この層は渡された分だけを描く)。
    *
    * 同じ id のものは部品を使い回し、位置・不透明度だけを書き換える(NFR-PF-1)。
-   * 並びから消えた id の部品は、テクスチャ・材質・形を捨ててから外す(P5 §4)。
+   * 並びから消えた id の部品は、テクスチャ・材質・形を捨ててから外す。
    */
   update(draws: readonly CanvasDraw[]): void;
   dispose(): void;
@@ -295,13 +295,13 @@ interface CanvasEntry {
 }
 
 /**
- * 面 1 枚を作る。**深度は書かない**(`depthWrite: false`、§0.a-0.46)ので、下絵が
+ * 面 1 枚を作る。**深度は書かない**(`depthWrite: false`)ので、下絵が
  * スケッチや立体を隠すことはない。**両面**にするのは、作図面の裏へ回っても下絵が消えないため
  * (`createSketchLayer.ts` の作図面の矩形と同じ)。
  *
- * **クリッピング平面(断面表示、FR-111、タスク35)は配らない。** 配ると、中を見るために
- * 断面表示を入れた瞬間に下絵まで切れて消えてしまい、「なぞるための紙」として用を成さない
- * (タスク39 の判断)。下絵は形ではないので、切っても体積にも三角形にも関係しない。
+ * **クリッピング平面(断面表示、FR-111)は配らない。** 配ると、中を見るために
+ * 断面表示を入れた瞬間に下絵まで切れて消えてしまい、「なぞるための紙」として用を成さない。
+ * 下絵は形ではないので、切っても体積にも三角形にも関係しない。
  */
 function createCanvasEntry(image: DecodedCanvasImage, opacity: number): CanvasEntry {
   const positions = new Float32Array(CANVAS_CORNER_COUNT * 3);
@@ -342,7 +342,7 @@ function canvasTextureOf(image: DecodedCanvasImage): THREE.Texture {
   return texture;
 }
 
-/** 面 1 枚ぶんの資源を捨てる(テクスチャ・材質・形の 3 つ。P5 §4)。 */
+/** 面 1 枚ぶんの資源を捨てる(テクスチャ・材質・形の 3 つ)。 */
 function disposeCanvasEntry(entry: CanvasEntry): void {
   entry.mesh.material.map?.dispose();
   entry.mesh.material.dispose();

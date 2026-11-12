@@ -6,7 +6,7 @@ import { deriveSpringValue } from './springExpressions.js';
 
 
 /**
- * derived が指す `SolidFieldKey`(§0.a-0.30)。`setSpringField` が読み取り専用の欄への
+ * derived が指す `SolidFieldKey`。`setSpringField` が読み取り専用の欄への
  * 書き戻しを防ぐのに使う。
  */
 const SPRING_DERIVED_FIELD_KEY: Readonly<Record<SpringDerived, SolidFieldKey>> = {
@@ -17,10 +17,10 @@ const SPRING_DERIVED_FIELD_KEY: Readonly<Record<SpringDerived, SolidFieldKey>> =
 
 /**
  * ばねの全長・ピッチ・巻数のうち、`derived` が指す1つを他の2つから自動生成した式で
- * 計算し直す(§0.a-0.30)。`solidCommands.ts` の `commitSpring` が使う式(タスク25b で
- * 固定済み)と同じものを、欄を書き換えた直後・求める値を切り替えた直後の書き戻しにも使う。
+ * 計算し直す。`solidCommands.ts` の `commitSpring` が使う式
+ * と同じものを、欄を書き換えた直後・求める値を切り替えた直後の書き戻しにも使う。
  *
- * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
+ * `variables` はパラメータ表の変数表(追加のみ)。
  */
 function resolveSpringDerivedFields(
   derived: SpringDerived,
@@ -70,13 +70,13 @@ function recomputeSpringDerived(
 }
 
 /**
- * ばねの欄を書き戻す(§0.a-0.30)。`derived` が指す欄は読み取り専用なので書き戻さない
+ * ばねの欄を書き戻す。`derived` が指す欄は読み取り専用なので書き戻さない
  * (`ExpressionField` を無効化しているので onChange は来ないが、念のためここでも防ぐ)。
  * 全長・ピッチ・巻数のどれかを書き換えたときは、derived が指す欄を計算し直して画面の数字を
  * 合わせる(NFR-UX-4。E2E「巻数を書き換えると全長が変わる」の土台)。コイル径・線径は
  * `全長 = ピッチ × 巻数` の関係に関わらないので、書き換えても他の欄は変わらない。
  *
- * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
+ * `variables` はパラメータ表の変数表(追加のみ)。
  */
 export function setSpringField(
   feature: SpringFeature,
@@ -104,21 +104,21 @@ export function setSpringField(
   }
 }
 
-/** ばねの軸をワールドの X / Y / Z へ変える(パターンの向き・回転軸と同じ扱い、§0.a-0.29)。 */
+/** ばねの軸をワールドの X / Y / Z へ変える(パターンの向き・回転軸と同じ扱い)。 */
 export function setSpringAxis(feature: SolidFeature, axis: 'x' | 'y' | 'z'): SolidFeature {
   return feature.kind === 'spring' ? { ...feature, axis: { kind: 'world', axis } } : feature;
 }
 
-/** ばねの巻き方向を変える(§0.a-0.33)。見た目が左右反転するだけで体積は変わらない。 */
+/** ばねの巻き方向を変える。見た目が左右反転するだけで体積は変わらない。 */
 export function setSpringHandedness(feature: SolidFeature, handedness: SpringHandedness): SolidFeature {
   return feature.kind === 'spring' ? { ...feature, handedness } : feature;
 }
 
 /**
- * 「求める値」を切り替える(§0.a-0.30)。切り替えた直後に、新しく derived になった欄を
+ * 「求める値」を切り替える。切り替えた直後に、新しく derived になった欄を
  * 他の2つから計算し直して書き戻す(NFR-UX-4「切り替えた瞬間に画面の数字が合う」)。
  *
- * `variables` はパラメータ表の変数表(P4b タスク22a、追加のみ)。
+ * `variables` はパラメータ表の変数表(追加のみ)。
  */
 export function setSpringDerived(
   feature: SolidFeature,

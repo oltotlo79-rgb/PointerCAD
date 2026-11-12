@@ -1,8 +1,8 @@
 /**
- * 部品文書に対する外観の操作と、割り当ての優先順位(FR-1106、FR-1110、要件§4.12)。
- * 計画書 docs/plans/P5-高度なソリッド・外観と測定.md §2.2.2、§0.a-0.1、タスク2。
+ * 部品文書に対する外観の操作と、割り当ての優先順位。
+ * (FR-1106、FR-1110、要件§4.12)。
  *
- * `appearanceTable.ts`(タスク1)は「表」だけを扱う。ここはその上に薄く乗る層で、
+ * `appearanceTable.ts`は「表」だけを扱う。ここはその上に薄く乗る層で、
  * `PartDocument` を受け取って新しい `PartDocument` を返す純関数だけを置く
  * (`part/createPartDocument.ts` の `appendSolid` / `replaceSolid` と同じ流儀)。
  * 表の作り方そのものは 1 か所(`appearanceTable.ts`)にしかない。
@@ -34,7 +34,7 @@ import type { AppearanceSpec, AppearanceTable, AppearanceTarget } from './types.
 const EMPTY_TABLE: AppearanceTable = emptyAppearanceTable();
 
 /**
- * 文書の外観の表(FR-1106)。`appearance` の欄は版 6(タスク5)で `packages/io` が
+ * 文書の外観の表(FR-1106)。`appearance` の欄は版 6で `packages/io` が
  * 読み書きするまで省略できる(`part/types.ts` の注釈)ので、無ければ空の表として扱う。
  * 欄が必須になった後もこの関数を通しておけば呼び出し側は変わらない。
  */
@@ -52,7 +52,7 @@ function withAppearance(document: PartDocument, table: AppearanceTable): PartDoc
 
 /**
  * 立体 1 つ(= フィーチャー 1 つが作るボディ)へ外観を割り当てる(FR-1106)。
- * 同じ立体にすでに割り当てがあれば差し替える(§2.2.2「同じ対象に 2 つ以上の割り当てを重ねない」)。
+ * 同じ立体にすでに割り当てがあれば差し替える(「同じ対象に 2 つ以上の割り当てを重ねない」)。
  */
 export function assignBodyAppearance(
   document: PartDocument,
@@ -65,7 +65,7 @@ export function assignBodyAppearance(
 
 /**
  * 面 1 枚へ外観を割り当てる(FR-1106)。面は部分形状の指紋(`SubShapeRef`)で持ち、
- * 再計算のたびにカーネルが選び直す(§2.2.3、タスク3・4)。
+ * 再計算のたびにカーネルが選び直す。
  */
 export function assignFaceAppearance(
   document: PartDocument,
@@ -99,7 +99,7 @@ export function pruneDocumentAppearance(document: PartDocument): PartDocument {
 }
 
 /**
- * ある対象に効いている外観(§2.2.2 の 3 段の優先順位)。
+ * ある対象に効いている外観(3 段の優先順位)。
  *
  * ```
  * 1. その面を直接指す面の割り当て
@@ -109,7 +109,7 @@ export function pruneDocumentAppearance(document: PartDocument): PartDocument {
  *
  * ここで見るのは**指紋が同じ面**だけである(`isSameAppearanceTarget`)。形が変わって
  * 面の通し番号がずれたときの「選び直し」は採点付きの照合が要り、カーネルが再計算の
- * ついでに行う(§0.a-0.2、タスク3・4)。採点を model に複製しないための線引き。
+ * ついでに行う。採点を model に複製しないための線引き。
  */
 export function resolveAppearanceFor(
   table: AppearanceTable,

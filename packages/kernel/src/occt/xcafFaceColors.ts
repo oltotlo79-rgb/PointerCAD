@@ -11,7 +11,7 @@ import { faceAt } from './subShapes.js';
 import type { ColorEnums, RgbTuple } from './xcafDocument.js';
 
 /**
- * 面ごとの色(計画書 P6 §2.5.1、タスク7b・13b。FR-803 / FR-1106 / 要件§12)。
+ * 面ごとの色(FR-803 / FR-1106 / 要件§12)。
  *
  * 立体まるごとの色は `xcafDocument.ts` が付ける。ここが受け持つのは
  * **「面の通し番号 → 色」の表を XCAF の文書へ載せる**ことだけで、
@@ -19,7 +19,7 @@ import type { ColorEnums, RgbTuple } from './xcafDocument.js';
  *
  * ---
  *
- * ## 実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-29)
+ * ## 実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984)
  *
  * **① `XCAFDoc_ColorTool.SetColor_5` の第 1 引数へ面(`TopoDS_Face`)を直接渡すと色が付く。**
  * 20³ の箱を `AddShape(shape, false, true)`(下ごしらえ true)で載せてから、`faceAt` で
@@ -63,10 +63,10 @@ import type { ColorEnums, RgbTuple } from './xcafDocument.js';
  * **④ 主費用は `faceAt`(120 µs)である。** `faceAt` は呼ぶたびに `TopExp.MapShapes_2` で
  * 部分形状の表を作り直すので、色を付ける面の枚数に対しておおむね二乗で効く。それでも
  * ここで使っているのは、**面の通し番号の並びの正本を 1 か所(`subShapes.ts`)に保つ**ため
- * ——同じ並びを書き写すと、選択(P3)と書き出しで面の番号がずれる。数百面へ色を付ける
+ * ——同じ並びを書き写すと、選択と書き出しで面の番号がずれる。数百面へ色を付ける
  * 場面が実際に出たら、`subShapes.ts` の側に「面をまとめて引く口」を足して差し替える。
  *
- * **⑤ 解放(rules/06 10.13)。** `faceAt` の戻りと `Quantity_Color_3` は**呼び出した側が
+ * **⑤ 解放。** `faceAt` の戻りと `Quantity_Color_3` は**呼び出した側が
  * 解放する**ので、どちらも渡された控え(`Allocations`)へ積む。`colorTool` は
  * `Handle.get()` の借り物なので触らない。
  */
@@ -77,9 +77,9 @@ export type FaceColorMap = ReadonlyMap<number, RgbTuple>;
 /**
  * 色を付ける面が見つからないとき(通し番号が範囲の外・負・整数でない)の断り(NFR-RE-1)。
  *
- * **落とさずに日本語の理由で断る。** 面の割り当ては P5 の指紋の照合から来るので、
- * 形が変わって面の枚数が減れば範囲の外を指しうる(P5 §0.a-0.62・0.63)。
- * ただし `faceIndex: null`(選び直せなかった面)は表に載らない約束(§2.5.1)なので、
+ * **落とさずに日本語の理由で断る。** 面の割り当ては外観の指紋の照合から来るので、
+ * 形が変わって面の枚数が減れば範囲の外を指しうる。
+ * ただし `faceIndex: null`(選び直せなかった面)は表に載らない約束なので、
  * ここへ来るのは呼び出し側の取り違えである。
  */
 export function faceColorNotFoundMessage(faceIndex: number): string {
@@ -128,7 +128,7 @@ export function exportColorKey(color: RgbTuple): string {
 }
 
 /**
- * 面ごとの色を XCAF の文書へ載せる(§2.5.1)。
+ * 面ごとの色を XCAF の文書へ載せる。
  *
  * `shape` は既に `XCAFDoc_ShapeTool.AddShape(shape, false, true)` で文書へ載っていること。
  * **下ごしらえ(第 3 引数 true)が部分形状の登録を済ませているので、面のラベルを
@@ -152,7 +152,7 @@ export function applyFaceColors(
   checkFaceColors(faceColors);
 
   // **面の通し番号の昇順**にたどる。`Map` の並び(入れた順)に結果を左右させないため
-  // ——同じ表からは必ず同じ文書ができる(§0.a-0.62 の決定性)。
+  // ——同じ表からは必ず同じ文書ができる(決定性)。
   const faceIndices = [...faceColors.keys()].sort((left, right) => left - right);
   const colorCache = new Map<string, Quantity_Color>();
   let applied = 0;

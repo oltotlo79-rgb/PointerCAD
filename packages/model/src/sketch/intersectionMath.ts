@@ -1,5 +1,5 @@
 /**
- * 曲線の上の点・曲線どうしの交点・曲線の並びの連結(FR-322、計画書 P4 §2.5・タスク17)。
+ * 曲線の上の点・曲線どうしの交点・曲線の並びの連結(FR-322)。
  *
  * ここに 3 つを集める。
  *
@@ -13,7 +13,7 @@
  * 3. **連結のたどり**: 「並べた曲線が端でつながっているか、輪になっているか」に
  *    1 か所で答える(`traceCurveChain`)。面の境界(`resolveSketch.ts` の
  *    `resolveCurveLoop`)とオフセット元の輪郭(同 `analyzeOffsetContour`)が
- *    同じ歩き方を別々に持っていたのをここへまとめた(2026-09-04 の申し送り)。
+ *    同じ歩き方を別々に持っていたのをここへまとめた。
  *
  * **`curveStart` / `curveEnd` / `arcPointAt` / `ellipsePointAt` / `isFullCircle` /
  * `isFullEllipse` は `resolveSketch.ts` から移してきた。** 交点の計算がこれらを使うので、
@@ -54,7 +54,7 @@ export const FULL_TURN_EPSILON = 1e-9;
 
 /**
  * 交点とみなす 2 直線の最短距離(mm)。これより離れていればねじれの位置。
- * P1 から `ui/src/sketch/snapMath.ts` にあった値をそのまま持ち上げたもので、
+ * 以前 `ui/src/sketch/snapMath.ts` にあった値をそのまま持ち上げたもので、
  * 吸着(FR-107)の見え方を変えないために数値は変えない。
  */
 export const INTERSECTION_TOLERANCE_MM = 1e-3;
@@ -148,7 +148,7 @@ export function curveEnd(curve: ResolvedCurve): Vec3 {
   }
 }
 
-/** 開始角と終了角の差が ±360 度以上なら全周の円(FR-305、§0.a-0.4)。 */
+/** 開始角と終了角の差が ±360 度以上なら全周の円(FR-305)。 */
 export function isFullCircle(arc: ResolvedArc): boolean {
   return Math.abs(arc.endAngle - arc.startAngle) >= FULL_TURN - FULL_TURN_EPSILON;
 }
@@ -405,7 +405,7 @@ function segmentCrossing(
 }
 
 /**
- * 2 線分の交点。平行・ねじれ・線分の外側なら null(FR-107 の吸着で P1 から使っている形)。
+ * 2 線分の交点。平行・ねじれ・線分の外側なら null(FR-107 の吸着で以前から使っている形)。
  * `ui/src/sketch/snapMath.ts` の `segmentIntersection` はこれをそのまま呼ぶ。
  */
 export function segmentSegmentIntersection(a: ResolvedSegment, b: ResolvedSegment): Vec3 | null {

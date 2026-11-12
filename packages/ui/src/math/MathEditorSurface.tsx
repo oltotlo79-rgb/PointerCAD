@@ -62,7 +62,7 @@ function StructuredField({input,controller,createField,readOnly,maximumSourceLen
   // A layout effect, so that React runs the cleanup (dispose, which blurs the field) before it removes the
   // dialog's DOM. A passive cleanup ran after the removal: MathLive had already disposed the field in its
   // disconnectedCallback, blur() did nothing, and in Firefox (no blur event on removal) the next structured
-  // field's focus() threw inside MathLive and React unmounted the app (ADD-17 and MC-27d, 2026-09-24).
+  // field's focus() threw inside MathLive and React unmounted the app (ADD-17).
   useLayoutEffect(()=>{
     if(container.current===null)return;
     const field=attachMathField(container.current,createField,{label,describedBy:descriptionId,
@@ -153,7 +153,7 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
       {props.resultDetail===''?null:<p>{props.resultDetail}</p>}</div>
     {props.resultActions}
     {/* Cancel lives outside this panel (MathExpressionDialog's persistent footer) so the same button, in the
-        same place, closes the dialog whether the panel is still loading or ready (rules/06, MC-27 regression). */}
+        same place, closes the dialog whether the panel is still loading or ready (regression guard). */}
     <footer className="pcad-math-editor__actions">
       <button type="button" className="pcad-button pcad-button--primary" title={labels.hints.apply} disabled={!props.canApply||editingBlocked} onClick={controller.apply}>{labels.apply}</button>
     </footer>

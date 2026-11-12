@@ -1,5 +1,5 @@
 /**
- * スケッチの履歴全体をワールド座標へ解決する(計画書 docs/plans/P1-式とスケッチ.md タスク11)。
+ * スケッチの履歴全体をワールド座標へ解決する。
  *
  * 履歴を先頭から順にたどり、点・線分・円弧・点列・面を組み立てる(要件§6.3)。
  * 途中のフィーチャーが解決できなくても止めず、そのフィーチャーだけを errors へ入れて
@@ -8,12 +8,12 @@
  * 座標 1 点の解決は resolveCoordinate.ts の担当で、ここは
  * 「そこまでに解決できたもの」(ResolveContext)を育てながら順に渡す。
  *
- * 作図面は 3 通りある(P4)。基準の 3 面(`WORK_PLANES`)、部品文書の作業平面
- * (FR-328、タスク9。`SketchResolveOptions.workPlane` で引く)、そして
- * **作図面を持たない 3D スケッチ**(FR-330、タスク10。`isFreeWorkPlaneId`)。
+ * 作図面は 3 通りある。基準の 3 面(`WORK_PLANES`)、部品文書の作業平面
+ * (FR-328、`SketchResolveOptions.workPlane` で引く)、そして
+ * **作図面を持たない 3D スケッチ**(FR-330、`isFreeWorkPlaneId`)。
  * 3D スケッチで作れるのは点・線分・円弧・スプライン・面の 5 つで、円弧だけは
  * 向き(法線・角度 0 の向き)をフィーチャー自身が持つ。面は境界が同じ平面に乗るときだけ
- * 張れ、乗らなければ `notPlanar` で断る(非平面の面張りはタスク10b)。
+ * 張れ、乗らなければ `notPlanar` で断る。
  */
 
 import type { ResolvedSubShape } from '../geometry/planeSpec.js';
@@ -99,7 +99,7 @@ import type { FunctionPointResolver as TypeFunctionPointResolver } from '../func
 /** 点列で一度に作れる点の上限。打ち間違いで莫大な数を作らないための歯止め。 */
 export const MAX_POINT_ARRAY_COUNT = 1000;
 
-/** 点列の個数の下限。1 個でも点列として成立させる(統括の指示、2026-09-02)。 */
+/** 点列の個数の下限。1 個でも点列として成立させる(2026-09-02)。 */
 const MIN_POINT_ARRAY_COUNT = 1;
 
 /** 平面の当てはめに使う円弧の標本点の数(両端を含む)。 */
@@ -107,7 +107,7 @@ const ARC_PLANE_SAMPLES = 5;
 
 /**
  * 曲線の上の点・全周の判定は `intersectionMath.ts` にある(交点の計算がこれらを使うため
- * そちらへ移した。タスク17)。ここから再輸出して、呼び出し側の import を変えずに済ませる。
+ * そちらへ移した)。ここから再輸出して、呼び出し側の import を変えずに済ませる。
  */
 export {
   arcPointAt,
@@ -120,7 +120,7 @@ export {
 
 /**
  * 中心から見た幾何の方位角(ラジアン、長軸から短軸へ向かう向きが正)を、
- * 楕円の径数方程式のパラメータ角へ直す(統括の指示 2026-09-04、計画書 §1.4-8)。
+ * 楕円の径数方程式のパラメータ角へ直す。
  *
  * 方位角 θ の向きの半直線と楕円の交点は
  *   a·cos u = r·cos θ、b·sin u = r·sin θ(r は中心からの距離)
@@ -170,7 +170,7 @@ export function fitPlaneNormal(points: readonly Vec3[]): Vec3 | null {
   return normalizeVec3(best);
 }
 
-/** すべての点が同じ平面に乗っているか(FR-309。非平面は FR-312 で Could なので P1 は断る)。 */
+/** すべての点が同じ平面に乗っているか(FR-309。非平面は FR-312 で Could なので断る)。 */
 export function isPlanar(points: readonly Vec3[]): boolean {
   const normal = fitPlaneNormal(points);
   if (normal === null) {
@@ -236,8 +236,8 @@ type CurvesOutcome =
 
 /**
  * 複数曲線フィーチャー(矩形・正多角形・長穴)の曲線を、種類ごとに `segments` / `arcs` へ積む。
- * 線分・円弧の単体フィーチャーと同じ配列に並ぶことで、UI 側(pickMath.ts 等、タスク11・12)が
- * 既存の `sketch.segments` / `sketch.arcs` の走査をそのまま使える(§2.3)。
+ * 線分・円弧の単体フィーチャーと同じ配列に並ぶことで、UI 側(pickMath.ts 等)が
+ * 既存の `sketch.segments` / `sketch.arcs` の走査をそのまま使える。
  */
 function pushCurves(
   curves: readonly PolylineCurve[],
@@ -254,7 +254,7 @@ function pushCurves(
 }
 
 /**
- * 矩形(FR-314)の 4 辺を対角 2 点から作る(§0.a-0.8、タスク4)。対角の 2 点を作図面へ
+ * 矩形(FR-314)の 4 辺を対角 2 点から作る。対角の 2 点を作図面へ
  * 落とし(`worldToPlane`)、作図面内の軸に平行な 4 頂点を組み立ててから世界座標へ戻す。
  * こうすることで、対角の 2 点が作図面から多少ずれて入力されても矩形は平面上に収まる。
  */
@@ -288,10 +288,10 @@ function resolveRectangleCurves(
 }
 
 /**
- * 正多角形(FR-315)の n 辺を中心・半径・辺数から作る(タスク4)。半径は円周(外接、頂点円)
+ * 正多角形(FR-315)の n 辺を中心・半径・辺数から作る。半径は円周(外接、頂点円)
  * かアポテム(内接、辺の中点までの距離)かで扱いが違うため、内接のときだけ
  * 外接半径 = 内接半径 ÷ cos(π/n) で頂点円の半径へ変換してから頂点を並べる。
- * 角度 0 は作図面の第1軸(円弧・点列と同じ規約、§2.8)。
+ * 角度 0 は作図面の第1軸(円弧・点列と同じ規約)。
  */
 function resolvePolygonCurves(
   featureId: string,
@@ -328,7 +328,7 @@ function resolvePolygonCurves(
 }
 
 /**
- * 長穴(FR-316)を 2 中心点+幅から作る(タスク4)。直線区間 2 本(中心を結ぶ向きに平行)+
+ * 長穴(FR-316)を 2 中心点+幅から作る。直線区間 2 本(中心を結ぶ向きに平行)+
  * 半円弧 2 本(それぞれの中心・半径=幅/2)。矩形と同じく両中心を作図面へ落として組み立てる。
  *
  * 半円弧の向きの決め方: 中心 2 を通る円弧の xAxis を「中心1→中心2」の単位ベクトルに取ると、
@@ -453,7 +453,7 @@ function resolveLinearPointArray(
 /**
  * 円周上の点列(FR-327)。中心・半径・個数で等角度に並べる。開始角は常に作図面の
  * 第1軸(角度 0、正多角形 `resolvePolygonCurves` と同じ規約)で、利用者に開始角の
- * 指定は持たせない(計画書 §0.a-0.9 のタスク6 実装内容の型のとおり)。
+ * 指定は持たせない。
  */
 function greatestCommonDivisor(a: number, b: number): number {
   while (b !== 0) { const remainder = a % b; a = b; b = remainder; }
@@ -571,7 +571,7 @@ function resolveGridPointArray(
   return { ok: true, points };
 }
 
-/** 点列を並べ方(`layout.kind`)で分岐して解決する(FR-308、FR-327、タスク6)。 */
+/** 点列を並べ方(`layout.kind`)で分岐して解決する(FR-308、FR-327)。 */
 function resolvePointArrayFeature(
   featureId: string,
   layout: PointArrayLayout,
@@ -593,11 +593,11 @@ type OffsetSourceOutcome =
   | { readonly ok: false; readonly error: SketchError };
 
 /**
- * オフセット元(FR-321、タスク15)の要素を、選んだ順に曲線の列へ広げる。
+ * オフセット元(FR-321)の要素を、選んだ順に曲線の列へ広げる。
  *
  * 参照の解き方は面の境界(`resolveFace`)と同じ約束にそろえる: 単体の線・円弧・楕円・
  * スプラインはそのまま 1 本、矩形などの複数曲線フィーチャーは `index` を省けば全周、
- * 指定すれば n 番目だけ(§0.a-0.8)。点・点列は線ではないので選べない。
+ * 指定すれば n 番目だけ。点・点列は線ではないので選べない。
  */
 function collectOffsetSource(
   featureId: string,
@@ -680,10 +680,10 @@ function openContour(
 
 /**
  * オフセット元の曲線の列が並んだ順につながっているかを確かめ、輪になっているか・
- * 開いているならどこからどちら向きにたどり始めるかを返す(FR-321、タスク15)。
+ * 開いているならどこからどちら向きにたどり始めるかを返す(FR-321)。
  *
  * たどり方は `resolveCurveLoop`(面の境界)と同じなので、歩き方そのものは
- * `intersectionMath.ts` の `traceCurveChain` に 1 つだけ置いてある(タスク17 で共通化)。
+ * `intersectionMath.ts` の `traceCurveChain` に 1 つだけ置いてある(共通化した)。
  * 違うのは**閉じていなくてもよい**ところと、**1 本目を逆向きにたどってよい**ところで、
  * 開いた輪郭は片側へずらした 1 本の曲線になる(`makeOffsetWire.ts` の `IsOpenResult`)。
  *
@@ -755,7 +755,7 @@ function pushResolvedCurves(
 }
 
 /**
- * 解決のときに外から渡せる手掛かり(P4 タスク9)。
+ * 解決のときに外から渡せる手掛かり。
  *
  * 基準の 3 面(`WORK_PLANES`)はこのファイルだけで引けるが、任意の作業平面(FR-328)は
  * 部品文書の基準ジオメトリを見ないと決まらない。スケッチ 1 本は部品文書を知らないので、
@@ -767,13 +767,13 @@ export interface SketchResolveOptions {
   readonly invalidInputs?: ReadonlyMap<string, string>;
   readonly workPlane?: (planeId: WorkPlaneId) => WorkPlane | null;
   /**
-   * 立体の部分形状(頂点・辺・面)の選び直し(FR-330、タスク10)。
+   * 立体の部分形状(頂点・辺・面)の選び直し(FR-330)。
    * 渡されなければ保存された指紋の位置をそのまま使う(`resolveCoordinate.ts` の注釈)。
-   * 上流の立体の変化への追従は部品文書の側が担う(タスク25 で配線する)。
+   * 上流の立体の変化への追従は部品文書の側が担う。
    */
   readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
   /**
-   * 計算済みのオフセット(FR-321、タスク15)の曲線を鍵で引く。
+   * 計算済みのオフセット(FR-321)の曲線を鍵で引く。
    *
    * オフセットの形は OCCT に解いてもらうので、ここでは**読むだけ**にして解決を
    * 純関数のまま保つ。引けなければ「まだ計算していない」として `pendingOffsets` へ
@@ -781,7 +781,7 @@ export interface SketchResolveOptions {
    */
   readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
   /**
-   * 計算済みの投影・交差(FR-325、タスク25)の曲線を**フィーチャーの id で**引く。
+   * 計算済みの投影・交差(FR-325)の曲線を**フィーチャーの id で**引く。
    *
    * オフセット(`offsetCurves`)が鍵で引くのに対してこちらが id で引くのは、
    * 投影の鍵の材料に「もとの立体の段の鍵」が要り、それはスケッチ 1 本からは
@@ -793,7 +793,7 @@ export interface SketchResolveOptions {
   /** Current-generation, XYZ-clipped function geometry, supplied only after both workers succeed. */
   readonly functionCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
   /**
-   * 拘束を解いた後の点の位置(FR-313、P4b タスク8。3 段の解決の③)。
+   * 拘束を解いた後の点の位置(FR-313、3 段の解決の③)。
    *
    * 鍵は `ResolvedPoint.id` / `vertexKey` と同じ規約(点フィーチャーは `featureId`、
    * 線分の端点は `featureId:start` / `:end`、円弧・楕円の中心は `featureId:center`、
@@ -816,7 +816,7 @@ export interface SketchResolveOptions {
    */
   readonly radiusOverrides?: ReadonlyMap<string, number>;
   /**
-   * 球の基本形状(FR-429)を id から引く(球面上の点 FR-431、P5 タスク19b)。
+   * 球の基本形状(FR-429)を id から引く(球面上の点 FR-431)。
    *
    * スケッチ 1 本は立体を知らないので、`ResolveContext.sphere` と同じ口をここでも外から
    * 受け取る(`subShape` と同じ考え方)。渡されなければ球を 1 つも知らない扱いになり、
@@ -825,7 +825,7 @@ export interface SketchResolveOptions {
    */
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
   readonly functionPoint?: TypeFunctionPointResolver;
-  /** 部品の基準点を id から引く(EX-18)。`ResolveContext.partPoint` へそのまま渡す。部品文書の側(`resolvePart.ts`)が渡す。 */
+  /** 部品の基準点を id から引く。`ResolveContext.partPoint` へそのまま渡す。部品文書の側(`resolvePart.ts`)が渡す。 */
   readonly partPoint?: ResolveContext['partPoint'];
 }
 
@@ -837,7 +837,7 @@ function arcAngleOf(arc: ResolvedArc, world: Vec3): number {
 }
 
 /**
- * 拘束で動いた円弧の端点から、開始角・終了角を逆算する(FR-313、タスク8)。
+ * 拘束で動いた円弧の端点から、開始角・終了角を逆算する(FR-313)。
  *
  * 円弧の端点は拘束の変数(`constraints/variables.ts`。角度を変数にすると端点座標と
  * 二重定義になるため、角度ではなく端点そのものを動かす約束)。動いた端点をそのまま
@@ -870,7 +870,7 @@ function withOverriddenEndpoints(
 }
 
 /**
- * 3D スケッチ(FR-330)の円弧の向きを解く(タスク10)。作図面があればそこから借り、
+ * 3D スケッチ(FR-330)の円弧の向きを解く。作図面があればそこから借り、
  * 無ければフィーチャー自身の `freeOrientation` から作る。
  *
  * 第1軸は法線に垂直な成分だけを使う(`planeMath.ts` の `planeAxesFor` と同じ考え方)。
@@ -927,7 +927,7 @@ function resolveArcOrientation(
 }
 
 /**
- * 3D スケッチ(作図面なし、FR-330)では作れない図形を断る(タスク10)。
+ * 3D スケッチ(作図面なし、FR-330)では作れない図形を断る。
  *
  * 3D スケッチで作れるのは点・線分・円弧・スプライン・面の 5 つ(要件 FR-330)。
  * 矩形・正多角形・長穴・楕円・点列は「作図面の中の並び」で形が決まる図形なので、
@@ -951,15 +951,15 @@ export function resolveSketch(
   options: SketchResolveOptions = {},
 ): ResolvedSketch {
   const lookupWorkPlane = options.workPlane ?? baseWorkPlane;
-  // 渡されなければ `resolvePointReference` が保存された指紋の位置を使う(タスク10)。
+  // 渡されなければ `resolvePointReference` が保存された指紋の位置を使う。
   const subShape = options.subShape;
-  // 渡されなければ球面上の点(FR-431)は「球が見つかりません」で断る(タスク19b)。
+  // 渡されなければ球面上の点(FR-431)は「球が見つかりません」で断る。
   const sphere = options.sphere;
-  // 渡されなければ、すべてのオフセットが「まだ計算していない」扱いになる(タスク15)。
+  // 渡されなければ、すべてのオフセットが「まだ計算していない」扱いになる。
   const lookupOffset = options.offsetCurves ?? ((): null => null);
-  // 渡されなければ、すべての投影・交差が「まだ計算していない」扱いになる(タスク25)。
+  // 渡されなければ、すべての投影・交差が「まだ計算していない」扱いになる。
   const lookupProjection = options.projectedCurves ?? ((): null => null);
-  // 拘束を解いた結果の差し込み(FR-313、タスク8)。渡されなければ何も上書きしないので、
+  // 拘束を解いた結果の差し込み(FR-313)。渡されなければ何も上書きしないので、
   // 拘束を持たない文書の解決は 1 行も余分な処理を通らない。
   const pointOverrides = options.pointOverrides;
   const radiusOverrides = options.radiusOverrides;
@@ -979,13 +979,13 @@ export function resolveSketch(
   const curveByFeature = new Map<string, ResolvedCurve>();
   const pointsByFeature = new Map<string, readonly ResolvedPoint[]>();
   /**
-   * 矩形・正多角形・長穴のように「1 フィーチャーが複数の曲線を生む」結果(§0.a-0.8、タスク4)。
+   * 矩形・正多角形・長穴のように「1 フィーチャーが複数の曲線を生む」結果。
    * 既存の線分・円弧(1 フィーチャー = 1 曲線)は単数の curveByFeature のまま残す
    * (既存の呼び出し側を壊さないため)。
    */
   const curvesByFeature = new Map<string, readonly ResolvedCurve[]>();
   /**
-   * 構築線(FR-320、タスク6)の featureId。線・円弧・矩形・正多角形・長穴・楕円・スプラインが
+   * 構築線(FR-320)の featureId。線・円弧・矩形・正多角形・長穴・楕円・スプラインが
    * `construction: true` を持つときにここへ足す。`resolveFace` が面の境界に選ばれていないか
    * ここを見て断る(解決済みの曲線(`ResolvedCurve`)自体には construction を持たせない
    * ため、featureId で引く)。
@@ -1019,8 +1019,8 @@ export function resolveSketch(
       continue;
     }
 
-    // 作図面は基準の 3 面か、部品文書の作業平面フィーチャー(FR-328、タスク9)。
-    // 3D スケッチ(FR-330、タスク10)だけは「作図面が無い」ことが正しい状態なので、
+    // 作図面は基準の 3 面か、部品文書の作業平面フィーチャー(FR-328)。
+    // 3D スケッチ(FR-330)だけは「作図面が無い」ことが正しい状態なので、
     // 引く前に分ける。それ以外で見つからなければ、そのフィーチャーだけを断って先へ進む
     // (FR-504、NFR-RE-1)。
     const free = isFreeWorkPlaneId(feature.planeId);
@@ -1040,7 +1040,7 @@ export function resolveSketch(
         errors.push(at.error);
         continue;
       }
-      // 拘束を解いた位置があればそれを使う(タスク8)。以後の参照(相対座標の基準・
+      // 拘束を解いた位置があればそれを使う。以後の参照(相対座標の基準・
       // 面の境界)はすべてこの位置を見るので、上書きは下流へそのまま伝わる。
       const position = overridePoint(feature.id, at.value);
       const resolved: ResolvedPoint = { id: feature.id, featureId: feature.id, position,
@@ -1119,7 +1119,7 @@ export function resolveSketch(
         errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
         continue;
       }
-      // 向きは作図面から借りるか、3D スケッチなら円弧自身の指定から作る(FR-330、タスク10)。
+      // 向きは作図面から借りるか、3D スケッチなら円弧自身の指定から作る(FR-330)。
       const orientation = resolveArcOrientation(
         feature.id,
         plane,
@@ -1369,7 +1369,7 @@ export function resolveSketch(
         majorAxis: directionInPlane(plane, feature.rotation.value),
         majorRadius,
         minorRadius,
-        // 利用者が入れる方位角をパラメータ角へ直してから持つ(§1.4-8 の答え)。
+        // 利用者が入れる方位角をパラメータ角へ直してから持つ。
         startAngle: azimuthToEllipseParameter(startAzimuth, majorRadius, minorRadius),
         endAngle: azimuthToEllipseParameter(endAzimuth, majorRadius, minorRadius),
       };
@@ -1404,7 +1404,7 @@ export function resolveSketch(
 
     if (feature.kind === 'offset') {
       // 左右の基準になる法線が要るので、オフセットは作図面のあるスケッチだけで作れる
-      // (3D スケッチでの対応はタスク17 以降の申し送り)。
+      // (3D スケッチでは断る)。
       if (plane === null) {
         errors.push(needsWorkPlane(feature.id, 'オフセット'));
         continue;
@@ -1439,7 +1439,7 @@ export function resolveSketch(
       });
       const remembered = lookupOffset(key);
       if (remembered === null) {
-        // まだ形が無いだけで失敗ではないので errors には入れない(§2.7 と同じ扱い)。
+        // まだ形が無いだけで失敗ではないので errors には入れない(投影・交差と同じ扱い)。
         pendingOffsets.push({
           featureId: feature.id,
           key,
@@ -1471,7 +1471,7 @@ export function resolveSketch(
 
     if (feature.kind === 'copy') {
       // 複製は「もとを id で参照する 1 フィーチャー」なので、ここまでに解決できた
-      // 点・曲線をそのまま写す(FR-324、タスク20。`copyMath.ts` の注釈)。
+      // 点・曲線をそのまま写す(FR-324、`copyMath.ts` の注釈)。
       const copied = resolveCopyFeature(
         feature,
         plane,
@@ -1594,7 +1594,7 @@ type SplineOutcome =
   | { readonly ok: false; readonly error: SketchError };
 
 /**
- * スプライン(FR-317)を解決する(タスク5)。点の数と重なりを先に確かめてから座標を解く。
+ * スプライン(FR-317)を解決する。点の数と重なりを先に確かめてから座標を解く。
  * 断りの文言はカーネル(`makeSplineEdge.ts`)と揃えてあるので、下描きと本物の曲線が
  * 同じ入力に対して同じ理由で断る(`splineMath.ts` の注釈)。
  *
@@ -1605,7 +1605,7 @@ function resolveSplineFeature(
   feature: SketchSplineFeature,
   context: ResolveContext,
   previous: Vec3 | null,
-  /** 拘束を解いた位置の差し込み(タスク8)。鍵はスプラインの n 番目の点(`featureId#n`)。 */
+  /** 拘束を解いた位置の差し込み。鍵はスプラインの n 番目の点(`featureId#n`)。 */
   overridePoint: (key: string, value: Vec3) => Vec3,
 ): SplineOutcome {
   const count = feature.points.length;
@@ -1652,13 +1652,13 @@ type FaceOutcome =
   | { readonly ok: false; readonly error: SketchError };
 
 /**
- * 面の境界を組み立てる(FR-309)。点だけ、または線・円弧だけを並べる(§0.a-0.13)。
+ * 面の境界を組み立てる(FR-309)。点だけ、または線・円弧だけを並べる。
  * 曲線の向きは変えない。ワイヤの向きはカーネル側の MakeWire が揃える。
  *
  * 矩形・正多角形・長穴(`curvesByFeature`)は、`index` を指定すれば n 番目の曲線だけ、
- * 省略すればそのフィーチャーの全曲線を順に展開して使う(§0.a-0.8、タスク4)。
+ * 省略すればそのフィーチャーの全曲線を順に展開して使う。
  *
- * 構築線(FR-320、タスク6)は選べない: `constructionFeatureIds` に featureId があれば
+ * 構築線(FR-320)は選べない: `constructionFeatureIds` に featureId があれば
  * `constructionElement` で断る(点・点列・面は construction を持たないため、この検査に
  * 現れるのは常に曲線の参照)。
  */
@@ -1719,7 +1719,7 @@ function resolveFace(
         ),
       };
     }
-    // 点列の中の 1 点を指すときだけ index を付ける(§2.6)。省略なら先頭。
+    // 点列の中の 1 点を指すときだけ index を付ける。省略なら先頭。
     const point = group[reference.index ?? 0];
     if (point === undefined) {
       return {
@@ -1758,7 +1758,7 @@ function resolveFace(
     }
     curves.push({ kind: 'segment', featureId: feature.id, from, to });
   }
-  // 一直線上の点だけでは平面が定まらない。同じ平面に乗らない(notPlanar)とは分けて伝える(§2.3)。
+  // 一直線上の点だけでは平面が定まらない。同じ平面に乗らない(notPlanar)とは分けて伝える。
   if (fitPlaneNormal(pickedPoints) === null) {
     return {
       ok: false,
@@ -1817,7 +1817,7 @@ function resolveCurveLoop(
   }
 
   // 2 本目以降は選んだ向きが逆でもつながっていれば受け入れる。1 本目は選んだ向きのまま
-  // 歩き始める(たどり方そのものは `intersectionMath.ts` の `traceCurveChain`、タスク17)。
+  // 歩き始める(たどり方そのものは `intersectionMath.ts` の `traceCurveChain`)。
   const traced = traceCurveChain(curves);
   if (!traced.ok) {
     return {

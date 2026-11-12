@@ -14,7 +14,7 @@ export type AssemblyMenuActionId =
   | 'circularFilletWeld';
 
 /**
- * 「組む」の正本。計画書 §0.43 の5項目をこの順に保ち、ボルト締結(追加要件6)の2項目、すみ肉溶接の1項目を
+ * 「組む」の正本。基本の5項目をこの順に保ち、ボルト締結(追加要件6)の2項目、すみ肉溶接の1項目を
  * 後ろへ足す。
  */
 export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] = [

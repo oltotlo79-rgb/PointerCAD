@@ -16,7 +16,7 @@ import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
 
 /**
- * 抜き勾配(FR-417、計画書 P5 §0.a-0.35・§2.11、タスク34)。
+ * 抜き勾配(FR-417)。
  *
  * 型抜きや 3D プリントのために、基準にする平らな面(中立面)を 1 枚選び、
  * そこから離れるにつれて広がる(または狭まる)ように側面を傾ける。
@@ -42,9 +42,9 @@ const NO_TARGET_FACE_MESSAGE = '傾きを付ける面が選ばれていません
 /**
  * 傾ける面の指紋が 1 つでも届かなかったとき。
  *
- * 計画書 タスク34 の断り方の表には無い文言だが、R 面取り・C 面取りと同じく
+ * 断り方の表には無い文言だが、R 面取り・C 面取りと同じく
  * **部分成功にしない**(選んだ 4 枚のうち 3 枚だけ傾いた立体を黙って作らない)ため、
- * 中立面とは別の言葉で断る(統括へ報告済み)。中立面の文言を使い回すと、
+ * 中立面とは別の言葉で断る。中立面の文言を使い回すと、
  * 利用者がどちらの面を選び直せばよいか分からなくなる。
  */
 const MISSING_TARGET_FACE_MESSAGE =
@@ -54,11 +54,11 @@ const MISSING_TARGET_FACE_MESSAGE =
 const ANGLE_MESSAGE = '抜き勾配の角度は 0 度より大きく 60 度以下にしてください。';
 
 /**
- * 角度の上限(ラジアン)。**60 度**(統括の決定 §0.a-0.72、2026-09-05 14:21)。
+ * 角度の上限(ラジアン)。**60 度**。
  *
  * もとは「90 度未満」だったが、89.99999 度のような値も妥当性検査を通ってしまい、
- * 巨大な形ができる懸念があった(タスク34 の実測)。実用の抜き勾配は 1〜10 度なので、
- * 60 度で断っても作れる形は減らない。**UI(タスク49)も同じ上限にする。**
+ * 巨大な形ができる懸念があった(実測)。実用の抜き勾配は 1〜10 度なので、
+ * 60 度で断っても作れる形は減らない。**UIも同じ上限にする。**
  */
 const MAX_DRAFT_ANGLE = Math.PI / 3;
 
@@ -72,7 +72,7 @@ const BUILD_FAILED_MESSAGE = '抜き勾配を付けられませんでした。�
 /** 中立面の平面が壊れていて向きを取り出せないとき(通常は起きない)。 */
 const NEUTRAL_BROKEN_MESSAGE = '基準の面の向きを読み取れませんでした。別の面を選び直してください。';
 
-/** 抜き勾配 1 段の依頼(計画書 タスク34 の実装内容)。 */
+/** 抜き勾配 1 段の依頼。 */
 export interface DraftInput {
   /** 傾ける面の指紋。1 枚以上。重複は 1 度だけ数える。 */
   readonly faces: readonly SubShapeQuery[];
@@ -165,7 +165,7 @@ function readNeutralPlane(
 }
 
 /**
- * `Status()` の値を利用者に見せない覚え書きへ直す(計画書 §1.5-16 の実測用)。
+ * `Status()` の値を利用者に見せない覚え書きへ直す。
  *
  * 戻り値どうしの `===` 比較はできる(列挙の各値は型定義では空の型 `{}` だが、
  * 引数に渡さず比べるだけなら型検査を通る。subShapes.ts の `GetType()` と同じ仕組み)。
@@ -212,7 +212,7 @@ function toJapaneseFailure(error: unknown, message: string): Error {
 /**
  * 抜き勾配(FR-417)。**対象は消費せず、新しい形を返す。**
  *
- * 手順は計画書 タスク34 のとおりで、①角度と枚数の門番 → ②中立面を指紋で選び直して
+ * 手順は、①角度と枚数の門番 → ②中立面を指紋で選び直して
  * 平面であることを確かめる → ③抜き方向(中立面の外向き法線。`reversed` で反転)→
  * ④対象の面を指紋で選び直して 1 枚ずつ `Add` → ⑤`Build` → ⑥成否と結果の検証、と進む。
  *
@@ -222,11 +222,11 @@ function toJapaneseFailure(error: unknown, message: string): Error {
  * **`Add` の第 5 引数 `Flag` は使わない(2026-09-05 に Node で実測)。**
  * 40×30×10 の板の 4 側面に、上面を中立面・方向 +Z・角度 5 度で掛けたところ、
  * `Flag` を true にしても false にしても結果は同じ体積 12622.626333008871 だった。
- * 計画書 §0.a-0.35 は「`Flag` で反転」と書いているが、実測では反転しない。
+ * 当初の設計は「`Flag` で反転」としていたが、実測では反転しない。
  * そこで **`reversed` は抜き方向(`gp_Dir`)そのものを反転して実現する**。
  * 方向を反転すると外向き 12622.626333008871 ↔ 内向き 11397.785043645936 が入れ替わり、
- * 解析値(§2.11 の `(1/tan5)·(1200T ± 70T² + (4/3)T³)`、`T = 10·tan5°`)と一致した。
- * `Flag` には計画書の書き方どおり `true` を渡す(意味が無いので値は結果を変えない)。
+ * 解析値(`(1/tan5)·(1200T ± 70T² + (4/3)T³)`、`T = 10·tan5°`)と一致した。
+ * `Flag` には当初の書き方どおり `true` を渡す(意味が無いので値は結果を変えない)。
  *
  * **向きの意味(実測):** 中立面から見て**抜き方向の逆側**にある材料が広がり、
  * 抜き方向の側にある材料は狭まる。上面を中立面にして方向を上面の外向き法線(+Z)に取ると、
@@ -242,7 +242,7 @@ export function makeDraft(
   tables: SubShapeTables,
   input: DraftInput,
 ): OcctShapeHandle {
-  // 角度はラジアン(度からの換算は model の責務。docs/報告記録.md 2026-09-02 18:23)。
+  // 角度はラジアン(度からの換算は model の責務)。
   // 0 度は「傾けない」ので段として意味が無く、90 度以上は面が抜き方向と平行になって
   // 傾きが定義できない(実測では 89.99 度で妥当でない巨大な形ができた)。
   // その 89.99 度を入り口で止めるため、上限は 60 度に狭めてある(MAX_DRAFT_ANGLE)。
@@ -301,7 +301,7 @@ export function makeDraft(
         throw new Error(MISSING_TARGET_FACE_MESSAGE);
       }
       try {
-        // 第 5 引数 Flag は結果を変えない(上の注釈の実測)。計画書の書き方どおり true。
+        // 第 5 引数 Flag は結果を変えない(上の注釈の実測)。当初の書き方どおり true。
         maker.Add(face, direction, input.angle, plane, true);
       } catch (error) {
         throw toJapaneseFailure(error, ADD_FAILED_MESSAGE);
@@ -324,7 +324,7 @@ export function makeDraft(
     }
 
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
-    // (docs/報告記録.md 2026-09-03 06:56 の⑤。抜き勾配も同じ扱いにする)。
+    // (抜き勾配も同じ扱いにする)。
     if (!maker.IsDone()) {
       throw new Error(BUILD_FAILED_MESSAGE);
     }
@@ -335,7 +335,7 @@ export function makeDraft(
       throw new Error(BUILD_FAILED_MESSAGE);
     }
     // 角度が 90 度に近いと、IsDone() が真のまま妥当でない形が返ることがある(実測 89.99 度)。
-    // 妥当性まで見て初めて通す(計画書 タスク34 の手順6)。
+    // 妥当性まで見て初めて通す。
     if (!isValidShape(oc, shape)) {
       throw new Error(BUILD_FAILED_MESSAGE);
     }

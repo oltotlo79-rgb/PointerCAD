@@ -7,7 +7,7 @@ import { toSubShapeQuery } from './subShapeQuery.js';
 /**
  * 測定の依頼を kernel の言葉へ詰め替える。対象の立体を「段の鍵」へ引き直す
  * (`toAppearanceQueries` と同じ流儀)。**1 つでも鍵が引けなければ null を返し**、
- * 呼び出し側はカーネルを呼ばずに断る(§0.a-0.30)。
+ * 呼び出し側はカーネルを呼ばずに断る。
  */
 export function toMeasureRequest(
   steps: readonly ResolvedSolidStep[],

@@ -1,10 +1,10 @@
 /**
- * 表示設定(テーマと拡大率)の型と永続化(計画書 docs/plans/P4-スケッチ拡張.md タスク1、
- * §0.a-0.1〜0.3、§2.2)。
+ * 表示設定(テーマと拡大率)の型と
+ * 永続化。
  *
  * 対応要件: FR-908(表示テーマの切替、5 種、既定はダーク、端末に保存)、
  * FR-909(表示の拡大率、90〜150%、端末に保存)。どちらも「再起動なしに即時反映」
- * (§0.a-0.1・0.2)と「端末に保存」(§0.a-0.3、`localStorage`)が要件。
+ * と「端末に保存」(`localStorage`)が要件。
  *
  * ここは DOM に触れない純関数だけを持つ。ルート要素(`document.documentElement`)への
  * 反映は `packages/ui/src/shell/applyDisplaySettings.ts` が担う。ストアの状態
@@ -52,7 +52,7 @@ export interface DisplaySettings {
   readonly uiScale: number;
   /**
    * 向きの吸着(FR-110)の角度の刻み(度)。`TRACK_ANGLE_STEPS` の 6 つ
-   * (5 / 10 / 15 / 30 / 45 / 90)から選ぶ。既定は 15(§0.12 の利用者の決定)。
+   * (5 / 10 / 15 / 30 / 45 / 90)から選ぶ。既定は 15(利用者の決定)。
    *
    * テーマや拡大率と同じ「端末に覚える設定」なので、同じ 1 つの鍵へまとめて入れる
    * (`localStorage` の鍵を増やさない)。
@@ -60,7 +60,7 @@ export interface DisplaySettings {
   readonly trackAngleStep: number;
   /**
    * タイムラインのつまみ(FR-507)の初回の案内を、もう見せたか
-   * (利用者の決定①(2026-09-05)「つまみは控えめのまま+初回だけ帯に案内」、P4b タスク22b)。
+   * (利用者の決定①「つまみは控えめのまま+初回だけ帯に案内」)。
    *
    * ソリッドが初めて 2 段以上になったときに 1 度だけ帯へ「左端のつまみを引くと途中まで
    * 戻せます」を出し、その時に true にする。**端末に覚える**ので、同じ人に二度は出ない。
@@ -68,9 +68,9 @@ export interface DisplaySettings {
    */
   readonly timelineHintSeen: boolean;
   /**
-   * 画面に出す長さの単位(FR-811。P6 タスク3)。既定は `'mm'`。
+   * 画面に出す長さの単位(FR-811)。既定は `'mm'`。
    *
-   * **端末の設定であって文書の属性ではない**(P6 §0.a-0.1)。内部の値は常に mm 固定で、
+   * **端末の設定であって文書の属性ではない**。内部の値は常に mm 固定で、
    * 換算するのは表示と入力の境目だけなので、ここを切り替えても `.pcad` のバイト列は
    * 1 バイトも変わらない(NFR-RE-3。`settings.test.ts` で固定する)。
    *
@@ -79,16 +79,16 @@ export interface DisplaySettings {
    */
   readonly lengthUnit: LengthUnit;
   /**
-   * 選択フィルタ(FR-112。P6 タスク36)。**既定は全部入**で、P4b までの操作を 1 つも変えない。
+   * 選択フィルタ(FR-112)。**既定は全部入**で、フィルタの無い時の操作を 1 つも変えない。
    *
-   * **端末の設定であって文書の属性ではない**(§0.43。切っても形は変わらず `.pcad` にも
+   * **端末の設定であって文書の属性ではない**(切っても形は変わらず `.pcad` にも
    * 書かない)。テーマ・拡大率・刻み角度・単位と同じ性質なので、`localStorage` の鍵を
    * 増やさず同じ 1 つの `DisplaySettings` へ入れる。
    */
   readonly selectionFilter: SelectionFilter;
   /**
-   * 拘束の自動推定(FR-333。P6 タスク41)の入切。**既定は入**(§0.a-0.49 の利用者の決定
-   * 2026-09-05 22:05)。切ると線を引いている最中の予告の印が 1 つも出ず、確定しても
+   * 拘束の自動推定(FR-333)の入切。**既定は入**(利用者の決定)。
+   * 切ると線を引いている最中の予告の印が 1 つも出ず、確定しても
    * 拘束は足されない。
    *
    * **端末の設定であって文書の属性ではない**(切っても既にある拘束は消えず、`.pcad` にも
@@ -126,7 +126,7 @@ function isThemeId(value: unknown): value is ThemeId {
   return typeof value === 'string' && THEME_IDS.some((id) => id === value);
 }
 
-/** 90〜150 の範囲内の有限数か。範囲外は「個別に丸めず既定へ戻す」対象にする(タスク1の検証表)。 */
+/** 90〜150 の範囲内の有限数か。範囲外は「個別に丸めず既定へ戻す」対象にする。 */
 function isValidUiScale(value: unknown): value is number {
   return (
     typeof value === 'number' &&
@@ -136,12 +136,12 @@ function isValidUiScale(value: unknown): value is number {
   );
 }
 
-/** 角度の刻みとして選べる 6 つのどれかか(§0.12)。中間の値は受け付けない。 */
+/** 角度の刻みとして選べる 6 つのどれかか。中間の値は受け付けない。 */
 function isValidTrackAngleStep(value: unknown): value is number {
   return typeof value === 'number' && TRACK_ANGLE_STEPS.some((step) => step === value);
 }
 
-/** 保存されている値のうち、P4 までにもあった 2 欄。 */
+/** 保存されている値のうち、最初からあった 2 欄。 */
 interface StoredDisplayCore {
   readonly theme: ThemeId;
   readonly uiScale: number;
@@ -150,7 +150,7 @@ interface StoredDisplayCore {
 /**
  * 保存されている形として妥当か。`theme` と `uiScale` のどちらか一方でも壊れていれば
  * 全体を捨てて既定値に戻す(1 つの欄が壊れていても部分的に採用しない。
- * P2 の自動保存の控えの壊れ方への対処(docs/報告記録.md 2026-09-03 19:10)と同じ判断)。
+ * 自動保存の控えの壊れ方への対処と同じ判断)。
  */
 function hasValidDisplayCore(value: unknown): value is StoredDisplayCore {
   return (
@@ -166,10 +166,10 @@ function hasValidDisplayCore(value: unknown): value is StoredDisplayCore {
 /**
  * 保存されている値から角度の刻みを読む。**この欄だけは欄ごとに既定へ後退させる。**
  *
- * 理由: この欄は P4b で足したので、それより前に保存された値には**無いのが正常**である。
+ * 理由: この欄は後から足したので、それより前に保存された値には**無いのが正常**である。
  * 上の「1 つでも壊れていたら全部捨てる」をこの欄にも当てはめると、前の版から使っている
  * 利用者のテーマと拡大率まで既定へ戻ってしまう(必須の欄を足して旧いデータが読めなく
- * なった P4 タスク6 の差し戻しと同じ前方互換の問題、docs/報告記録.md 2026-09-04 15:20)。
+ * なった過去の差し戻しと同じ前方互換の問題)。
  * 欄はあるが値が壊れている・範囲外のときも、同じ理由でこの欄だけを既定へ戻す(NFR-UX-4)。
  */
 function readTrackAngleStep(value: object): number {
@@ -180,9 +180,9 @@ function readTrackAngleStep(value: object): number {
 }
 
 /**
- * 保存されている値からつまみの案内の既読を読む(P4b タスク22b)。
+ * 保存されている値からつまみの案内の既読を読む。
  * **この欄も欄ごとに既定へ後退させる**(`readTrackAngleStep` と同じ前方互換の理由。
- * P4b より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
+ * この欄より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
  * 既定へ戻してはいけない)。既読でない側(false)へ倒すので、壊れていても案内は出る。
  */
 function readTimelineHintSeen(value: object): boolean {
@@ -193,9 +193,9 @@ function readTimelineHintSeen(value: object): boolean {
 }
 
 /**
- * 保存されている値から表示の長さの単位を読む(FR-811、P6 タスク3)。
+ * 保存されている値から表示の長さの単位を読む(FR-811)。
  * **この欄も欄ごとに既定へ後退させる**(`readTrackAngleStep` と同じ前方互換の理由。
- * P6 より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
+ * この欄より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
  * 既定へ戻してはいけない)。知らない綴り(`'cm'` など)も同じく `'mm'` へ戻す。
  *
  * 選べる単位の正本は model の `LENGTH_UNITS` 1 か所だけで、ここは写しを作らない
@@ -211,9 +211,9 @@ function readLengthUnit(value: object): LengthUnit {
 }
 
 /**
- * 保存されている値から選択フィルタを読む(FR-112、P6 タスク36)。
+ * 保存されている値から選択フィルタを読む(FR-112)。
  * **この欄も欄ごとに既定へ後退させる**(`readTrackAngleStep` と同じ前方互換の理由。
- * P6 より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
+ * この欄より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
  * 既定へ戻してはいけない)。**戻り先は全部入**なので、壊れていても選べなくならない
  * (NFR-UX-4。「何も選べない」状態のまま起動するのがいちばん困る)。
  */
@@ -227,10 +227,10 @@ function readSelectionFilter(value: object): SelectionFilter {
 }
 
 /**
- * 保存されている値から拘束の自動推定の入切を読む(FR-333、P6 タスク41)。
+ * 保存されている値から拘束の自動推定の入切を読む(FR-333)。
  * **この欄も欄ごとに既定へ後退させる**(`readTrackAngleStep` と同じ前方互換の理由。
  * この欄より前に保存された値にはこの欄が無いのが正常で、無いことを理由にテーマまで
- * 既定へ戻してはいけない)。**戻り先は入**(§0.a-0.49 の既定)なので、壊れていても
+ * 既定へ戻してはいけない)。**戻り先は入**(既定)なので、壊れていても
  * 推定は効いたままになる。
  */
 function readInferConstraints(value: object): boolean {
@@ -241,7 +241,7 @@ function readInferConstraints(value: object): boolean {
 }
 
 /**
- * ステータスバーの札に出す文言のキー(FR-811、P6 タスク3)。**文言は ja.json**(NFR-MA-5)。
+ * ステータスバーの札に出す文言のキー(FR-811)。**文言は ja.json**(NFR-MA-5)。
  * 単位が増えたら型検査がここを落とすので、札の文言を足し忘れない。
  */
 export const LENGTH_UNIT_LABEL_KEYS: Readonly<Record<LengthUnit, MessageKey>> = {
@@ -267,7 +267,7 @@ export function clampUiScale(value: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// 設定パネルが使う刻みとキー操作(タスク2。ここも DOM に触れない純関数)
+// 設定パネルが使う刻みとキー操作(ここも DOM に触れない純関数)
 // ---------------------------------------------------------------------------
 
 /**

@@ -1,5 +1,5 @@
 /**
- * 文書から導ける控えを作り直す純関数(P6 タスク52 で `useAppStore.ts` から切り出した)。
+ * 文書から導ける控えを作り直す純関数(`useAppStore.ts` から切り出した)。
  *
  * **`document` を書き換える経路は必ずここの `documentPatch` を通る。** 経路ごとに同じ
  * 判定を書かないため(rules/04「導出できるものは保存しない」)。
@@ -56,7 +56,7 @@ import { partAssetRetention } from './partAssetRetention.js';
 const ALIGNMENT_EPSILON = 1e-9;
 
 /**
- * 今の視点に最も近い作図面を選ぶ(§0.a-0.3)。
+ * 今の視点に最も近い作図面を選ぶ。
  *
  * 画面に正対して見えている面ほど、その法線が視線と平行になる。だから法線と視線の
  * 内積の絶対値が最大の面を採る(手前から見ているか奥から見ているかは問わない)。
@@ -78,13 +78,13 @@ export function workPlaneForOrbit(orbit: OrbitState): WorkPlaneId {
   return best;
 }
 
-/** いま編集しているスケッチ(§0.a-0.4)。指し先が消えていたら先頭を使う。 */
+/** いま編集しているスケッチ。指し先が消えていたら先頭を使う。 */
 export function activeSketchOf(document: PartDocument): SketchDocument {
   return findSketch(document, document.activeSketchId) ?? document.sketches[0];
 }
 
 /**
- * そのスケッチが使っている作図面(P4 仕上げ (g)、FR-328、FR-501)。
+ * そのスケッチが使っている作図面(FR-328、FR-501)。
  *
  * スケッチ文書そのものは作図面を持たない(持つのは要素 1 つ 1 つの `planeId`)。
  * だからスケッチを切り替えたときに札とビューポートを合わせる先は、**最後に置いた要素の
@@ -102,15 +102,15 @@ export function workPlaneOfSketch(sketch: SketchDocument | undefined): WorkPlane
 }
 
 /**
- * 面の境界に使える要素の種類(§0.a-0.23 ⑨)。
+ * 面の境界に使える要素の種類。
  * `packages/ui/src/sketch/sketchCommands.ts` の `commitFace`(実体は `boundaryElementKind`)が
  * 受け付ける種類にそろえる。面フィーチャー自身は境界に使えない。
  *
- * P4 タスク12 で新しい図形(矩形・正多角形・長穴・楕円・スプライン)を足した。いずれも
+ * 図形の道具(矩形・正多角形・長穴・楕円・スプライン)も含む。いずれも
  * 曲線を生むので面の囲みに使える(矩形・正多角形・長穴は 1 フィーチャーが複数の曲線を生み、
- * `resolveFace` が全周を展開する。§0.a-0.8)。
- * P4 タスク21 でオフセット(複製の曲線列)を足した。結果は元と同じ曲線なので同様に使える
- * (§2「結果の曲線は…面の境界に使える」)。
+ * `resolveFace` が全周を展開する)。
+ * オフセット(複製の曲線列)も含む。結果は元と同じ曲線なので同様に使える
+ * (結果の曲線は面の境界に使える)。
  */
 const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
   'point',
@@ -125,18 +125,18 @@ const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
   // 関数曲線も解決後は通常の曲線。面を選ぶ瞬間に境界から落とさない。
   'functionCurve',
   'offset',
-  // P4 タスク20 で複製(ミラー・複写・配列複写)を足した。複製の結果は元と同じ形の
+  // 複製(ミラー・複写・配列複写)。複製の結果は元と同じ形の
   // 曲線・点なので、面の囲みにもそのまま使える(FR-324)。
   'copy',
-  // P4 タスク25 で投影・交差を足した。取り込んだ輪郭は普通の線・円弧として扱えるので、
-  // 面の囲みにも押し出しの材料にも使える(FR-325、計画書 §2「結果の曲線は…使える」)。
+  // 投影・交差。取り込んだ輪郭は普通の線・円弧として扱えるので、
+  // 面の囲みにも押し出しの材料にも使える(FR-325)。
   'projectedCurve',
   'planeSection',
 ]);
 
 /**
  * 面の道具を選んだときに、境界に使えない要素(面フィーチャー・立体・部分形状)を
- * 選択から外す(§0.a-0.23 ⑨)。計算中(幾何カーネルの初回読み込み中)に速い操作で
+ * 選択から外す。計算中(幾何カーネルの初回読み込み中)に速い操作で
  * 面を張ろうとすると、選択に残った面や立体が境界へ混じって断られる不具合の対策。
  * 判定は `featureIdOf` で元の要素 id に戻し、いまのスケッチにその id の点・線・円弧・
  * 点列フィーチャーがあるかどうかで行う(立体の id はスケッチに無いのでここで外れる)。
@@ -152,7 +152,7 @@ export function filterSelectionForFaceTool(
   return kept.length === selection.length ? selection : kept;
 }
 
-/** 文書を差し替えたときに一緒に作り直す控え(§0.a-0.4)。 */
+/** 文書を差し替えたときに一緒に作り直す控え。 */
 export type DocumentPatch = Pick<
   AppState,
   | 'document'
@@ -176,12 +176,12 @@ export type DocumentPatch = Pick<
 >;
 
 /**
- * 作図面 id が、その文書でまだ有効か(統括の指示、2026-09-05。P4b タスク22a-(5)・22b-(i))。
+ * 作図面 id が、その文書でまだ有効か。
  *
  * 基準の3面(xy / xz / yz)は常に有効。任意の作業平面は、文書の `references` にその id の
  * 作業平面フィーチャーがあるときだけ有効とする。
  *
- * **3D スケッチ(`free`)の扱いは経路で分ける**(P4b タスク22b-(i)、統括の指示 2026-09-05)。
+ * **3D スケッチ(`free`)の扱いは経路で分ける**。
  * ・`replacesDocument`(新規・開く・復元)… 無効とし、基準の XY へ戻す。**新しい部品を
  *   3D スケッチのまま始めると、次に描く矩形が「3D スケッチではこの形をかけません」で
  *   必ず失敗する**(Electron 台本の項目 10〜13 がすべてこれで落ちた実測)。前の部品の
@@ -210,11 +210,11 @@ export function isWorkPlaneIdValidFor(
 }
 
 /**
- * つまみの知らせ(FR-507)を選ぶ(P4b タスク19・22b-(a))。
+ * つまみの知らせ(FR-507)を選ぶ。
  *
- * ①途中まで戻したまま作ったときは「差し込みました」(タスク19)。
+ * ①途中まで戻したまま作ったときは「差し込みました」。
  * ②そうでなく、**ソリッドが初めて 2 段以上になった**ときは、つまみの初回の案内を 1 度だけ
- *   出す(利用者の決定①(2026-09-05))。既読は端末に覚えるので同じ人に二度は出ない。
+ *   出す(利用者の決定①)。既読は端末に覚えるので同じ人に二度は出ない。
  * ③どちらでもなければ何も言わない。
  */
 export function timelineNoticeFor(
@@ -253,15 +253,15 @@ export function documentWithIssuanceLedger(
  * 文書から消えたフィーチャーは選択とホバーからも外す(消えたものを指したままだと、
  * プロパティ欄が空を出し、次に同じ id が採番されたとき別物を選んで見える)。
  *
- * **部分形状の id(`extrude-1#face:0` 等)もここで一緒に掃除される**(§0.a-0.8)。
+ * **部分形状の id(`extrude-1#face:0` 等)もここで一緒に掃除される**。
  * `liveIds.has(featureIdOf(id))` は `#` の前(ボディの id)しか見ないため、`as`
- * を使わずに済み、タスク20 が決めた id の書式(`subShapeSelection.ts`)を 1 行も
+ * を使わずに済み、id の書式(`subShapeSelection.ts`)を 1 行も
  * 変えずにそのまま効く。**ただし「ボディ自体は残っているが、面・辺・頂点の番号が
  * 再計算で範囲外になった」場合はここでは掃除されない**(ボディの id はまだ `liveIds`
- * にあるため)。この限界は表示側(タスク22 の `buildSubShapeGeometry`)が範囲外の
- * 参照を黙って描かないことで見た目の破綻を防ぐ想定(§2.11)。
+ * にあるため)。この限界は表示側(`buildSubShapeGeometry`)が範囲外の
+ * 参照を黙って描かないことで見た目の破綻を防ぐ想定。
  *
- * **作図面 `workPlaneId` もここで一緒に確かめる**(P4b タスク22a-(5))。`resetDocument` /
+ * **作図面 `workPlaneId` もここで一緒に確かめる**。`resetDocument` /
  * `applyDocument`(開く・復元)/ `undo` / `redo` はすべてここを通るので、経路ごとに同じ
  * 判定を書かずに済む。新しい文書にその作業平面が無ければ既定の XY へ戻す
  * (`referencePatch` が作り直す `workPlane` の解決先も、このあとの XY に揃う)。
@@ -284,7 +284,7 @@ export function documentPatch(
     liveIds.add(solid.id);
   }
   const hovered = state.hoveredElementId;
-  // 作図面が指す作業平面が新しい文書に無ければ既定の XY へ戻す(P4b タスク22a-(5))。
+  // 作図面が指す作業平面が新しい文書に無ければ既定の XY へ戻す。
   const workPlaneId = isWorkPlaneIdValidFor(next, state.workPlaneId, replacesDocument)
     ? state.workPlaneId
     : DEFAULT_WORK_PLANE_ID;
@@ -327,10 +327,10 @@ export interface DocumentEditPlacement {
  * 確定前の計算(段階計算の候補)が**同じ整えを通る**ので、確かめた文書と保存される
  * 文書が食い違わない。
  *
- * - タイムラインのつまみ(FR-507、タスク19・20)の面倒を見る。
+ * - タイムラインのつまみ(FR-507)の面倒を見る。
  *   ①文書をまるごと差し替えたとき(開く)は、つまみを末尾へ戻す。前の部品のつまみを
- *     持ち越さないため(§0.a-0.19「開いた直後は常に末尾」)。
- *   ②途中まで戻したまま履歴が伸びたときは、**つまみの位置へ差し込む**(タスク20)。
+ *     持ち越さないため(「開いた直後は常に末尾」)。
+ *   ②途中まで戻したまま履歴が伸びたときは、**つまみの位置へ差し込む**。
  *     末尾へ積んだままだと戻した画面に作ったものが出てこないので、差し込んだうえで
  *     つまみをその段へ進めて見せる。止めて断ることはしない
  *     (rules/04-設計の規律.md「操作をブロックするゲートも作らない」)。
@@ -380,13 +380,13 @@ export function documentEditPatch(
 ): Partial<AppState> {
   const next = prepared.document;
   return {
-    // 丸ごとの差し替え(開く・復元)では 3D スケッチも降ろす(タスク22b-(i))。
+    // 丸ごとの差し替え(開く・復元)では 3D スケッチも降ろす。
     ...documentPatch(state, next, stack, replaces),
-    // 文書をまるごと差し替える呼び出し(開く等)のときだけ進める(§0.a-0.1〜)。
+    // 文書をまるごと差し替える呼び出し(開く等)のときだけ進める。
     documentVersion:
       replaces ? state.documentVersion + 1 : state.documentVersion,
     timelineIndex: prepared.timelineIndex,
-    // 知らせは「差し込みました」か、つまみの初回の案内(タスク22b-(a))か、無しの 3 通り。
+    // 知らせは「差し込みました」か、つまみの初回の案内か、無しの 3 通り。
     timelineNoticeKey: timelineNoticeFor(state, next, prepared.inserted),
     // 順序の入れ替えの断りは、形が変われば用済み(FR-504)。
     timelineRefusal: null,
@@ -394,8 +394,8 @@ export function documentEditPatch(
     // 打つたびに札が点滅する。再計算は attachPartRecompute が拾い、終わり次第
     // そのまま形が動く(NFR-PF-1)。
     //
-    // **形に影響しない変更(外観の割り当てだけ、FR-1106〜1110)でも立てない**
-    // (P5 §2.3.2)。下の `attachPartRecompute` の購読も `affectsShape` を見て
+    // **形に影響しない変更(外観の割り当てだけ、FR-1106〜1110)でも立てない**。
+    // 下の `attachPartRecompute` の購読も `affectsShape` を見て
     // 再計算を投げないので、ここで立てると誰も下ろせない札が残る。要件§4.12の
     // 「外観を変えても再計算は起きず、描画だけが変わる」はこの 2 か所で守られる。
     isComputing:
@@ -406,28 +406,28 @@ export function documentEditPatch(
     fileMessage: null,
     // 中止の知らせも、次の計算が始まる時点で用済み(NFR-PF-4)。
     recomputeCancelled: false,
-    // 古い「面/立体/図形を作れませんでした」の断りも文書が変われば用済み(§0.a-0.23 ⑦)。
+    // 古い「面/立体/図形を作れませんでした」の断りも文書が変われば用済み。
     faceErrorKey: null,
     solidErrorKey: null,
     editErrorKey: null,
     appearanceErrorKey: null,
-    // 「測れませんでした」の断りも、文書が変われば用済み(FR-1102、タスク32)。
+    // 「測れませんでした」の断りも、文書が変われば用済み(FR-1102)。
     measureErrorKey: null,
     editNoticeKey: null,
     shapeErrorMessage: null,
     referenceErrorMessage: null,
-    // 拘束の断りも文書が変われば用済み(FR-504、タスク13)。
+    // 拘束の断りも文書が変われば用済み(FR-504)。
     constraintErrorMessage: null,
-    // 引っぱれなかった理由も、形が変われば用済み(タスク14)。
+    // 引っぱれなかった理由も、形が変われば用済み。
     dragRefusalKey: null,
-    // 原点を移した知らせも、次に形が変われば用済み(FR-331、タスク35b)。
+    // 原点を移した知らせも、次に形が変われば用済み(FR-331)。
     // 原点の再設定そのものは applyDocument のあとで setOriginNotice を呼んで立て直す。
     originNoticeMessage: null,
     // トリム・延長の予告は「いまの形」の上の区間なので、形が変われば描き直し
-    // (次にマウスが動いたときに出し直す。タスク22)。
+    // (次にマウスが動いたときに出し直す)。
     editPreview: null,
     // 測定は**形が変わったときだけ**消す(FR-1102「モデルを変更するまで残る」、
-    // §0.a-0.29。外観だけの変更では形が 1 ミリも動かないので測った値は正しいまま)。
+    // 外観だけの変更では形が 1 ミリも動かないので測った値は正しいまま)。
     measurement: affectsShape(state.document, next) ? null : state.measurement,
     // 質量特性も測定と同じ条件で消す(体積・重心は形そのものの値なので、
     // 形が変われば測り直し。外観だけの変更では材料が変わっても残る)。
@@ -436,7 +436,7 @@ export function documentEditPatch(
 }
 
 /**
- * つまみの初回の案内を出したら、二度と出さないよう端末に覚える(P4b タスク22b-(a)、
+ * つまみの初回の案内を出したら、二度と出さないよう端末に覚える(
  * 利用者の決定①)。`set` の中は副作用を持たない純粋な差分にしたいので、
  * `localStorage` への書き込みは文書を差し替えた後にここで 1 回だけ行う。
  */
@@ -447,7 +447,7 @@ export function rememberTimelineHintShown(after: AppState): void {
 }
 
 /**
- * パラメータ表の控えを作り直す(FR-207、タスク11)。
+ * パラメータ表の控えを作り直す(FR-207)。
  *
  * **パラメータが 1 つも無い文書では解析そのものを省く**(`referencePatch` と同じ理由)。
  * 解析は文書の全ての式を集めて「使われていない名前」を数えるので、欄で 1 文字打つたびに
@@ -482,9 +482,9 @@ export const EMPTY_PARAMETER_ANALYSIS: ParameterAnalysis = {
 };
 
 /**
- * 作業平面と基準ジオメトリの控えを作り直す(タスク13)。
+ * 作業平面と基準ジオメトリの控えを作り直す。
  *
- * 基準ジオメトリが 1 つも無い文書(P4 より前に作ったものを含む)では解決そのものを
+ * 基準ジオメトリが 1 つも無い文書(基準ジオメトリの無い版で作ったものを含む)では解決そのものを
  * 省く。プロパティ欄で 1 文字打つたびにここを通るので、要らない計算を積まないため
  * (NFR-PF-1)。
  */
@@ -514,7 +514,7 @@ export const EMPTY_RESOLVED_REFERENCES: ResolvedReferences = {
 };
 
 /**
- * いま編集しているスケッチの失敗だけを控えへ写す(§0.a-0.4、FR-504)。
+ * いま編集しているスケッチの失敗だけを控えへ写す(FR-504)。
  *
  * 解決の失敗はスケッチごとの結果にそのまま入っている。カーネルが面を作れなかった失敗は
  * 部品全体の `errors` に混ざって届き、型の上では PartError と見分けが付かないので、
@@ -550,7 +550,7 @@ export const NO_CONSTRAINT_TARGETS: readonly ConstraintTarget[] = [];
 export const NO_CONSTRAINT_SUMMARIES: readonly ConstraintSummary[] = [];
 
 /**
- * 拘束の一覧の行を作り直す(FR-313、タスク13)。**拘束が 1 つも無い文書では歩き直さない**
+ * 拘束の一覧の行を作り直す(FR-313)。**拘束が 1 つも無い文書では歩き直さない**
  * (`parameterPatch` / `referencePatch` と同じ理由。いまの既定の部品は拘束を持たない)。
  *
  * 材料は「いま描いている解決結果」をそのまま使い回す。印に要るのは位置と名前だけで、

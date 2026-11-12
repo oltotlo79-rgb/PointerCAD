@@ -39,7 +39,7 @@ export const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
  *
  * この 1 つの定数が、起動直後(`attachCameraControls` の初期値)・「視点を戻す」(Home キーと
  * `goHome`)・ビューポートの格子の初期の刻み(`createViewportScene`)の全部を決める。
- * P6 の名前付きビューと 4 分割表示(FR-113)もここを参照する。
+ * 名前付きビューと 4 分割表示(FR-113)もここを参照する。
  */
 export const HOME_ORBIT: OrbitState = {
   azimuth: -Math.PI / 4,
@@ -170,10 +170,10 @@ export function orthographicFrustumHeight(distance: number): number {
 
 /**
  * 名前の札(基準軸・座標系、`createReferenceLayer.ts`)を画面上でおよそ一定の大きさに保つための、
- * その時点のワールド単位での高さ(mm、P4 仕上げ (f))。
+ * その時点のワールド単位での高さ(mm)。
  *
  * 札は world 単位の大きさの板(スプライト)なので、なにもしなければカメラに近づくほど
- * 画面上で大きく見える(統括の目視 2026-09-04「札が画面幅の 1/6 ほどに巨大化する」)。
+ * 画面上で大きく見える(札が画面幅の 1/6 ほどに巨大化した)。
  * `worldUnitsPerPixel` は `orthographicFrustumHeight` と同じ式を使っているため、
  * 透視投影・平行投影のどちらでも同じ計算で画面上の大きさをそろえられる。
  *

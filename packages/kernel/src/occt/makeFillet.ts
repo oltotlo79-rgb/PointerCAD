@@ -16,7 +16,7 @@ import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHisto
 import { semanticOperationOrigins } from './semanticOperationOrigins.js';
 
 /**
- * R 面取り(FR-407、計画書 P3 §2.6、タスク7)。
+ * R 面取り(FR-407)。
  *
  * 対象の立体の辺を、保存してある指紋で選び直してから半径 r で丸める。
  * 丸められないときは**必ず日本語の理由を持つ Error で断り、アプリを落とさない**
@@ -27,7 +27,7 @@ import { semanticOperationOrigins } from './semanticOperationOrigins.js';
 /** これ未満の体積(mm³)は「立体が残らなかった」とみなす(booleanOp.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
 
-/** 指紋から辺を 1 本も選び直せなかったとき(§0.a-0.5 の missingSubShape に当たる)。 */
+/** 指紋から辺を 1 本も選び直せなかったとき(missingSubShape に当たる)。 */
 const MISSING_EDGE_MESSAGE =
   '丸めるもとの辺が見つかりません。形が大きく変わったため、選び直してください。';
 
@@ -58,7 +58,7 @@ function faultyContourMessage(count: number): string {
  *
  * この API に番号付きの別版は無く(2026-09-03 に opencascade.full.d.ts の 93009 行で確認)、
  * 列挙を避ける書き方が存在しない。そこで **`unknown` を経由する述語ガード 1 つ**で絞る。
- * これは統括が §0.a-0.26 で承認した唯一の例外で、`as` / `any` / `@ts-ignore` /
+ * これは承認を得た唯一の例外で、`as` / `any` / `@ts-ignore` /
  * `eslint-disable` は 1 つも使っていない。
  *
  * **この判定が確かめられること:** 「値が null でないオブジェクトであること」だけ。
@@ -68,15 +68,15 @@ function faultyContourMessage(count: number): string {
  * 「OCCT の読み込みが済んでいない/壊れている」ことだけを捕まえる網である。
  * 2026-09-03 に Node で実測したところ、
  * `new oc.BRepFilletAPI_MakeFillet(shape, oc.ChFi3d_FilletShape.ChFi3d_Rational)` は
- * 実行時にそのまま構築できた(§1.4-①。数値 0 を渡しても構築できたが、
+ * 実行時にそのまま構築できた(数値 0 を渡しても構築できたが、
  * 意味が読める列挙値のほうを採る)。
  *
- * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、この書き方を写す前に統括へ諮る。
+ * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、この書き方を写す前に承認を得る。
  *
- * **輸出している理由(P5 タスク53、2026-09-05):** 可変半径の R 面取り(FR-426)は
- * 同じ `BRepFilletAPI_MakeFillet` を `Add_3(R1, R2, E)` で使うが、統括の指示により
+ * **輸出している理由:** 可変半径の R 面取り(FR-426)は
+ * 同じ `BRepFilletAPI_MakeFillet` を `Add_3(R1, R2, E)` で使うが、
  * `makeVariableFillet.ts` という別ファイルに置く。そこで同じガードを書き直すと
- * 「同じ書き方を 2 か所に置く」ことになり、計画書 §4 が P5 に許した新しいガードは
+ * 「同じ書き方を 2 か所に置く」ことになり、新しく許されたガードは
  * `makeShell.ts` の 1 か所だけである。**新しいガードを増やさずに済ませるため、
  * ここにある 1 つを輸出して使い回す**(判定の中身は 1 文字も変えていない)。
  */
@@ -89,12 +89,12 @@ export function isFilletShape(value: unknown): value is ChFi3d_FilletShape {
  *
  * - 辺の指紋は `resolveEdgeReference` でそのまま選び直す。
  * - 頂点の指紋は `resolveVertexReference` で頂点を選び直してから、
- *   その頂点に集まる辺(`edgesTouchingVertex`)へ展開する(§0.a-0.17)。
+ *   その頂点に集まる辺(`edgesTouchingVertex`)へ展開する。
  *   OCCT に「頂点を球状に丸める」API は無く、集まる辺を同じ半径で丸めるのが
  *   利用者の言う「角を丸める」に当たるため。
  * - 面の指紋は丸める対象になりえないので 0 本を返す(呼び出し側が断る)。
  *
- * **頂点の経路は保険である。** §0.a-0.17 の追記で、文書には頂点の参照を保存せず
+ * **頂点の経路は保険である。** 設計の追記で、文書には頂点の参照を保存せず
  * UI が確定時に「集まる辺」へ展開して保存すると決まった。頂点の指紋は
  * 通し番号が変わると最高 0.5 点にしかならずしきい値 0.6 に届かない
  * (matchSubShape.ts の MATCH_WEIGHT_VERTEX_INDEX の注釈)ので、
@@ -120,16 +120,16 @@ function resolveOneTarget(
 }
 
 /**
- * 指紋の一覧から、丸める辺の通し番号を決める(§0.a-0.17)。
+ * 指紋の一覧から、丸める辺の通し番号を決める。
  * 重複は取り除き、番号の昇順で返す。
  *
- * **1 つでも選び直せない指紋があれば、部分成功にせず空の配列を返す**(統括の指示)。
+ * **1 つでも選び直せない指紋があれば、部分成功にせず空の配列を返す**。
  * 「3 本のうち 2 本だけ丸まった立体」は、利用者が意図していない別の形であり、
  * 黙って作ると気づかないまま下流へ伝わるため。空になった理由(0 個だったのか、
  * 一部が外れたのか)は区別せず、呼び出し側が同じ「見つかりません」で断る。
  *
- * C 面取り(タスク8 の `makeChamfer`)も同じ判断を使うので、**この関数を輸入して使い、
- * 同じ判断を 2 か所に書かない**(計画書 タスク8 の手順3)。断りの文言だけが
+ * C 面取り(`makeChamfer`)も同じ判断を使うので、**この関数を輸入して使い、
+ * 同じ判断を 2 か所に書かない**。断りの文言だけが
  * 「丸めるもとの辺」「面を取るもとの辺」で違うので、文言は呼び出し側が決める。
  */
 export function resolveFilletEdges(
@@ -175,7 +175,7 @@ function toJapaneseFailure(error: unknown, message: string): Error {
 /**
  * R 面取り(FR-407)。**対象は消費せず、新しい形を返す。**
  *
- * 手順は計画書 §2.6.2 のとおりで、①指紋で辺を選び直す → ②`Add_2(radius, edge)` →
+ * 手順は、①指紋で辺を選び直す → ②`Add_2(radius, edge)` →
  * ③`Build` → ④成否の確認 → ⑤結果の妥当性の確認、と進む。
  *
  * **引数の `target` は解放しない。** 形はキャッシュの持ち物で、丸めたあとも
@@ -186,10 +186,10 @@ function toJapaneseFailure(error: unknown, message: string): Error {
  *   (計算値 7570.796326795 と一致)を得た。
  * - **`HasResult()` は成功しても偽になる。** 上の成功例でも偽だった。OCCT の
  *   `HasResult()` は「失敗したが途中までの形(`BadShape()`)がある」ことを表す口であり、
- *   成功したかどうかの合図ではない。**計画書 §0.a-0.19 と タスク7 の表は
+ *   成功したかどうかの合図ではない。**当初の設計の表は
  *   「`HasResult()` が偽なら断る」と書いているが、そのとおりに実装すると
  *   成功したフィレットまで全部断ってしまう**ので、ここでは失敗の判定に使わない
- *   (実測値を統括へ報告済み)。
+ *   (実測で確かめた)。
  * - 失敗は 2 通りに分かれた。半径が隣の面からはみ出す場合は
  *   `IsDone()` 偽・`NbFaultyContours()` が 1 以上(40×30×10 の板の縦 1 辺に R40)、
  *   隣り合うフィレットどうしがぶつかる場合は
@@ -200,7 +200,7 @@ function toJapaneseFailure(error: unknown, message: string): Error {
 export function makeFillet(
   oc: OpenCascadeInstance,
   // 半径は**一定**のものだけを受け取る(可変半径は makeVariableFillet.ts、FR-426)。
-  // どちらの半径かを振り分けるのは recomputeSolids の 1 か所だけにしてある(§0.a-0.48)。
+  // どちらの半径かを振り分けるのは recomputeSolids の 1 か所だけにしてある。
   spec: ConstantFilletStepSpec,
   target: TopoDS_Shape,
   tables: SubShapeTables,
@@ -217,7 +217,7 @@ export function makeFillet(
     throw new Error(MISSING_EDGE_MESSAGE);
   }
 
-  // 列挙値は unknown を経由してから述語ガードで絞る(§0.a-0.26。isFilletShape の注釈)。
+  // 列挙値は unknown を経由してから述語ガードで絞る(isFilletShape の注釈)。
   const filletShape: unknown = oc.ChFi3d_FilletShape.ChFi3d_Rational;
   if (!isFilletShape(filletShape)) {
     throw new Error(KERNEL_NOT_READY_MESSAGE);
@@ -246,20 +246,20 @@ export function makeFillet(
     try {
       maker.Build(range);
     } catch (error) {
-      // 辺が 1 本も無いまま Build すると C++ 例外が飛ぶ(§1.4-④ の実測)。
+      // 辺が 1 本も無いまま Build すると C++ 例外が飛ぶ(実測)。
       // ここへ来るのは上の 0 本の門番をすり抜けた別の理由のときだけだが、
       // 数値のまま外へ出さず理由へ直す。
       throw toJapaneseFailure(error, BUILD_FAILED_MESSAGE);
     }
 
-    // 個数の戻り型 Graphic3d_ZLayerId は型定義のどこにも無いので整数へ直す(§1.3)。
+    // 個数の戻り型 Graphic3d_ZLayerId は型定義のどこにも無いので整数へ直す。
     const faultyContours = Number(maker.NbFaultyContours());
     if (faultyContours > 0) {
       throw new Error(faultyContourMessage(faultyContours));
     }
 
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
-    // (docs/報告記録.md 2026-09-03 06:56 の⑤。フィレットも同じ扱いにする)。
+    // (フィレットも同じ扱いにする)。
     if (!maker.IsDone()) {
       throw new Error(BUILD_FAILED_MESSAGE);
     }

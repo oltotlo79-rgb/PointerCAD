@@ -24,9 +24,9 @@ export interface AssemblyDragState {
   readonly origin: Vec3;
   readonly prepared: PreparedMateDrag;
   readonly placements: ReadonlyMap<string, RigidPlacement>;
-  /** EX12: the occurrence drives shown when the drag began, given back when a coupled preview ends without a release. */
+  /** the occurrence drives shown when the drag began, given back when a coupled preview ends without a release. */
   readonly occurrenceDrives: ReadonlyMap<string, AssemblyOccurrenceDrive>;
-  /** EX12: the coupled child drives the last frame published (null when the last frame turned no coupled joint). */
+  /** the coupled child drives the last frame published (null when the last frame turned no coupled joint). */
   readonly published: ReadonlyMap<string, AssemblyOccurrenceDrive> | null;
 }
 export interface AssemblyDragOverlay {
@@ -140,7 +140,7 @@ function requestComponentDrag(pointer: Vec3, phase: 'frame' | 'release', options
       else useAppStore.setState({ assemblyDragNotice: 'failed' });
       return null;
     }
-    // EX12: a drag that turns the parent joint of a saved cross-level gear or the joint of a saved cam carries every
+    // a drag that turns the parent joint of a saved cross-level gear or the joint of a saved cam carries every
     // coupled child (the same follow as every other parent-level motion), or is refused whole with the reason shown.
     const coupled = coupledDragFollow({ document: drag.document, view: drag.view, initial: drag.prepared.initial }, result.placements);
     if (coupled.kind === 'refused') {
@@ -174,7 +174,7 @@ export function finishComponentDrag(pointer: Vec3, options: DragRequestOptions =
   if (step === null || !step.result.committable || !currentComponentDrag(drag)) { cancelOwnedComponentDrag(drag, 'failed'); return false; }
   const result = step.result;
   if (step.coupled.kind === 'coupled') {
-    // EX12: joint motion, not a placement edit. The parent placements, the reached joint values and every coupled child
+    // joint motion, not a placement edit. The parent placements, the reached joint values and every coupled child
     // are published together like a joint drive: no document edit, no Undo step, not saved.
     useAppStore.setState({ assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null,
       assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: result.placements,

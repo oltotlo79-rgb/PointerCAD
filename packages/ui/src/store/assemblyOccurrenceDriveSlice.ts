@@ -14,7 +14,7 @@ import type { AssemblyView } from './assemblySlice.js';
 import type { AssemblyDriveResult } from './assemblyJointDrive.js';
 
 /**
- * Flexible subassembly drives (EX12): transient child-joint drives per subassembly occurrence path. Like the top-level
+ * Flexible subassembly drives: transient child-joint drives per subassembly occurrence path. Like the top-level
  * joint drive this is motion state only: it never writes the document, the Undo history or the saved file, and each
  * placement of a shared child keeps its own values and placements. An entry belongs to the document and the view it
  * was solved against; a different document or a recomputed view makes it stale (never shown, dropped on the next drive).

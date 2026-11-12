@@ -1,5 +1,5 @@
 /**
- * ソリッド(立体)の表示層(計画書 docs/plans/P2-ソリッド基礎.md タスク20 手順3)。
+ * ソリッド(立体)の表示層。
  *
  * 対応要件: FR-105(表示スタイル)、FR-106(ホバー・選択・当たり判定)、NFR-PF-1(60fps)。
  *
@@ -7,24 +7,24 @@
  * 作り直さない**。同じ組み立て結果を渡し直したときは何もせず、ボディの並びが同じ
  * (同じ Float32Array)なら入れ物も触らない。個数が同じで中身だけ変わったときは
  * 並びの中身を書き写す。常時の描画ループはここにも作らない
- * (docs/報告記録.md 2026-09-02 15:42)。
+ * (常時の描画ループを作らない)。
  *
  * 色は画面の配色(packages/ui/src/shell/appShell.css の --pcad-* トークン)から
  * `themeColors.ts` が読み取って渡す(three.js は CSS 変数を直接読めないため)。
  * テーマを変えたときは `setThemeColors` で材質の色だけを塗り替え、**部品は作り直さない**
  * (FR-908 の即時反映、NFR-PF-1)。
  *
- * P5 タスク10(計画書 docs/plans/P5-高度なソリッド・外観と測定.md §2.5、§2.6)で
+ * 外観のために
  * **面ごと・立体ごとの外観(FR-1106〜1109)** を足した。要点は 3 つ。
  *
  * 1. 面の材質は**ボディごとの配列**になった。まとまり(`geometry.addGroup`)を作るのは
- *    純関数 `appearance/buildFaceGroups.ts`(タスク7)で、ここはその結果を流し込むだけ。
+ *    純関数 `appearance/buildFaceGroups.ts`で、ここはその結果を流し込むだけ。
  *    **外観を 1 つも割り当てていない立体は長さ 1 の配列・まとまり 1 つ**なので、
- *    ドローコールも絵も P2〜P4 と変わらない(§0.a-0.12)。
+ *    ドローコールも絵も外観の無い時と変わらない。
  * 2. 材質は見え方が同じなら使い回し、使われなくなったら捨てる
- *    (`appearance/createAppearanceMaterial.ts`、タスク9)。**毎コマは作り直さない。**
+ *    (`appearance/createAppearanceMaterial.ts`)。**毎コマは作り直さない。**
  * 3. 映り込み(鏡・ガラス、FR-1107)の環境マップは外から渡される。作る・捨てるの判断は
- *    レンダラとシーンを持つ `createViewportScene.ts` が行う(§0.a-0.9)。
+ *    レンダラとシーンを持つ `createViewportScene.ts` が行う。
  */
 
 import {
@@ -65,7 +65,7 @@ import { cssColor, DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.
 import { createViewportLifetime, createViewportConstructionOwner, type ViewportLifetime } from './viewportLifetime.js';
 
 /*
- * 立体の艶(艶を抑えた樹脂のように見せて、面の向きの差を読み取りやすくする)は、P5 から
+ * 立体の艶(艶を抑えた樹脂のように見せて、面の向きの差を読み取りやすくする)は、いまは
  * 外観の既定値(`model` の `DEFAULT_APPEARANCE`: 光沢 5・粗さ 55)が正本になった。
  * 色そのもの(--pcad-solid)は引き続きテーマが決める(下の `themedAppearance`)。
  */
@@ -84,7 +84,7 @@ import { createViewportLifetime, createViewportConstructionOwner, type ViewportL
  *
  * 立体の面と稜線は不透明なので、three.js は半透明のもの(方眼・作図面・スケッチの面・
  * 線・点)より**先に**描く。そのうえでスケッチの線と点は `depthTest: false` なので、
- * 立体の奥にあっても隠れずに前面へ出る(docs/報告記録.md 2026-09-03 00:06 の (b))。
+ * 立体の奥にあっても隠れずに前面へ出る。
  * renderOrder は不透明どうしの順序を決めるだけだが、層の前後関係を 1 箇所で
  * 読み取れるようにスケッチと同じ数直線の上へ置いておく。
  */
@@ -96,26 +96,26 @@ const SOLID_RENDER_ORDER = 1;
  * 面は `polygonOffset` で少しだけ奥へ押してあり、稜線はその上に重なる。重なる画素の色は
  * 描いた順で決まる(縁のなめらか化が後から描いたほうを勝たせる)ので、順序を材質の
  * 作られた順に任せてはいけない。three.js の不透明の並べ替えは renderOrder → 材質の通し番号
- * (作った順)の順に見るため、P2〜P4 は「面の材質を稜線より先に作っていた」ことで
- * たまたま面が先に描かれていた。P5 で面の材質を外観から**後から**作るようにしたので、
+ * (作った順)の順に見るため、以前は「面の材質を稜線より先に作っていた」ことで
+ * たまたま面が先に描かれていた。外観で面の材質を外観から**後から**作るようにしたので、
  * このままでは順序が逆転して縁の画素の色が変わる(2026-09-05 実測: 800×600 の絵で 122 画素、
- * 最大の階調差 41)。**順序をここで明示して、P4 と同じ絵を保つ**(§0.a-0.12)。
+ * 最大の階調差 41)。**順序をここで明示して、以前と同じ絵を保つ**。
  */
 const SOLID_EDGE_RENDER_ORDER = SOLID_RENDER_ORDER + 0.25;
 
 /**
- * 球面の案内線(FR-431、タスク21)の不透明度。形そのものより控えめにして、
- * 案内であることが見た目で分かるようにする(§0.a-0.21)。
+ * 球面の案内線(FR-431)の不透明度。形そのものより控えめにして、
+ * 案内であることが見た目で分かるようにする。
  */
 const SPHERE_GRID_OPACITY = 0.5;
 
-/** 部分形状の強調(重ね描き)の面の不透明度(§0.a-0.7)。 */
+/** 部分形状の強調(重ね描き)の面の不透明度。 */
 const SUB_SHAPE_FACE_OPACITY = 0.35;
 /** 部分形状の面の強調は、立体の面(SOLID_RENDER_ORDER)のすぐ後ろに描く。 */
 const SUB_SHAPE_FACE_RENDER_ORDER = SOLID_RENDER_ORDER + 0.5;
 /**
  * 部分形状の辺・頂点の強調は、スケッチの面の縁(`createSketchLayer.ts` の
- * `FACE_OUTLINE_RENDER_ORDER`)と同じ層に置く。裏側の辺・頂点も選べる(§0.a-0.27)ので、
+ * `FACE_OUTLINE_RENDER_ORDER`)と同じ層に置く。裏側の辺・頂点も選べるので、
  * `depthTest: false` にして立体の奥にあっても隠れないようにする。
  */
 const SUB_SHAPE_LINE_RENDER_ORDER = 2;
@@ -123,13 +123,13 @@ const SUB_SHAPE_LINE_RENDER_ORDER = 2;
 const SUB_SHAPE_POINT_SIZE = 8;
 
 /**
- * ねじの簡略表示の印(§0.a-0.15、計画書タスク23)。B-rep には現れない、描画だけのための情報。
+ * ねじの簡略表示の印。B-rep には現れない、描画だけのための情報。
  *
  * **置き場について:** 本来は kernel の `ThreadMarkInfo`(`SolidBodyMesh.threadMarks`)が
- * model の `SolidBody` に添って届くが、それはタスク17(橋渡しの拡張)で、このタスクの
- * 着手時点ではまだ届いていない。`ui` は `kernel` へ直接依存できない
+ * model の `SolidBody` に添って届くが、これを書いた時点では
+ * まだ届いていなかった。`ui` は `kernel` へ直接依存できない
  * (`apps → ui → model → kernel/expression` の一方向、rules/04-設計の規律.md)ので、
- * 欄の形だけをここに書く。タスク17 が model からこの形の値を返すようになったら、
+ * 欄の形だけをここに書く。model がこの形の値を返すようになったら、
  * この定義は import に差し替えてよい(`buildSolidGeometry.ts` の `SolidBodyWithSubShapes`
  * と同じ橋渡しの考え方)。
  */
@@ -182,7 +182,7 @@ function pushThreadMarkCircle(
 }
 
 /**
- * ねじの簡略表示の印(§0.a-0.15)を線分列へ組み立てる。three.js に触れない純関数
+ * ねじの簡略表示の印を線分列へ組み立てる。three.js に触れない純関数
  * (Node で検査できる)。各印について、外径 d の円をねじ部の始め(origin)と終わり
  * (origin + direction×length)に 1 つずつ、軸線を 1 本描く。
  *
@@ -213,7 +213,7 @@ export function buildThreadMarkPositions(marks: readonly ThreadMarkInfo[]): Floa
 /*
  * 外観の割り当て(文書の表)から組み立てへ渡す一式を作る `buildAppearanceInput` は、
  * three.js に触れない純関数であり、上限の先出し検査(コマンド側)からも同じものを使うため、
- * P5 タスク11 で `appearance/appearanceCommands.ts` へ移した。ここは import して使うだけにする
+ * `appearance/appearanceCommands.ts` へ移した。ここは import して使うだけにする
  * (同じ組み立てを 2 か所に持たない)。
  */
 
@@ -247,36 +247,36 @@ function sameAppearances(
 /**
  * 面の材質は**ボディごとの配列**(FR-1106)。まとまり(`geometry.addGroup`)の
  * `materialIndex` がこの配列を指す。外観を 1 つも割り当てていない立体は長さ 1 の配列に
- * なり、P2 と同じ 1 ドローコールで描かれる(§0.a-0.12)。
+ * なり、外観の無い時と同じ 1 ドローコールで描かれる。
  */
 type SolidMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]>;
 type SolidEdges = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
 /**
- * 切断面の予告表示に渡すもの(FR-432、P5 タスク27e)。
+ * 切断面の予告表示に渡すもの(FR-432)。
  * 平面と、対象のボディの境界箱の対角長と、残る側の 3 つだけ。
  */
 export interface CutPreview {
   readonly plane: ResolvedPlane;
-  /** 四角の対角の長さ(= 対象の境界箱の対角長、§0.a-0.61)。 */
+  /** 四角の対角の長さ(= 対象の境界箱の対角長)。 */
   readonly diagonal: number;
   readonly keep: 'positive' | 'negative';
 }
 
 /**
- * 切断面の予告の色(§0.a-0.61)。選択・ホバーと別の**警告系の黄**にして、
+ * 切断面の予告の色。選択・ホバーと別の**警告系の黄**にして、
  * 「これから切る場所」だと読み取れるようにする。テーマの表(`themeColors.ts`)へは
  * 足さない——予告は道具を使っている間だけ出る一時的な表示で、明暗どちらのテーマでも
  * 同じ黄が読めるため(部分形状の重ね描きの色がテーマに従うのとは役割が違う)。
  */
 const CUT_PREVIEW_COLOR = 0xf0b429;
-/** 予告の四角の不透明度(§0.a-0.61)。向こう側の形が透けて見える濃さ。 */
+/** 予告の四角の不透明度。向こう側の形が透けて見える濃さ。 */
 const CUT_PREVIEW_FACE_OPACITY = 0.2;
 
 /**
- * 断面表示のつまみ(FR-111、P6 タスク35、§0.41・§0.42)。
+ * 断面表示のつまみ(FR-111)。
  *
- * **P5 の切断の予告表示をそのまま使い回し、色だけ変える**(§0.41)。切断(FR-432、形が
+ * **切断の予告表示をそのまま使い回し、色だけ変える**。切断(FR-432、形が
  * 変わる)と断面表示(見た目だけ)は結果がまったく違うので、同じ黄で出すと取り違える。
  * 予告の警告系の黄に対して、こちらは**落ち着いた青**にする(「いま見ているだけ」の合図)。
  * 予告と同じく、明暗どちらのテーマでも読める色を直に持ち、テーマの表へは足さない。
@@ -308,7 +308,7 @@ export interface SectionHandle {
 }
 
 /**
- * 3D プリントの点検の色表示(FR-815、P6 §0.53、タスク46)。
+ * 3D プリントの点検の色表示(FR-815)。
  *
  * **外観を上書きせず、割り当てを一時的に差し替えるだけ**にする。`null` を渡せば
  * 元の外観に戻る(材質そのものは `materialStore` が鍵で持っているので、作り直しも起きない)。
@@ -330,7 +330,7 @@ export interface PrintabilityHighlight {
  */
 const PRINT_OPEN_EDGE_OPACITY = 0.85;
 
-/** 点検の色を出しているあいだの、立体 1 つぶんのまとまりと材質(§0.53)。 */
+/** 点検の色を出しているあいだの、立体 1 つぶんのまとまりと材質。 */
 interface PrintabilityPlan {
   /** 作ったときの三角形の枚数。形が作り直されたら組み直す目印。 */
   readonly triangleCount: number;
@@ -363,7 +363,7 @@ export interface SolidLayer {
    * 同じ組み立て結果(同一オブジェクト)を渡し直したときは並びを触らない。
    *
    * `environment` は映り込み用の環境マップ(FR-1107)。鏡・ガラスが 1 つも無ければ `null`
-   * で、そのときは材質にも入れない(§0.a-0.9)。作る・捨てるの判断は
+   * で、そのときは材質にも入れない。作る・捨てるの判断は
    * `createViewportScene.ts` が行う(レンダラとシーンを持っているのがそちらのため)。
    */
   update(
@@ -372,26 +372,26 @@ export interface SolidLayer {
     environment?: THREE.Texture | null,
   ): void;
   /**
-   * 部分形状(面・辺・頂点)のホバー・選択の強調を差し替える(§0.a-0.7)。
+   * 部分形状(面・辺・頂点)のホバー・選択の強調を差し替える。
    * `update` と同じく、同じ組み立て結果を渡し直したときは並びを触らない。
    */
   updateSubShapes(bundle: SubShapeHighlightBundle): void;
   /**
-   * ねじの簡略表示の印を差し替える(§0.a-0.15)。全ボディぶんをまとめた 1 本の配列で渡す
+   * ねじの簡略表示の印を差し替える。全ボディぶんをまとめた 1 本の配列で渡す
    * (`createViewportScene.ts` がボディの一覧から集める)。同じ配列(同一参照)を渡し直したときは
    * 並びを触らない。
    */
   updateThreadMarks(marks: readonly ThreadMarkInfo[]): void;
   /**
-   * 球面の案内線(球面グリッド、FR-431、P5 タスク21)の線分列を差し替える。
+   * 球面の案内線(球面グリッド、FR-431)の線分列を差し替える。
    *
-   * **緯線・経線をまとめて 1 本の `LineSegments`** に入れる(§0.a-0.21)。`null` で消える。
+   * **緯線・経線をまとめて 1 本の `LineSegments`** に入れる。`null` で消える。
    * **同じ並び(同一参照)を渡し直したときは並びを触らない**(NFR-PF-1。ねじの印・
    * 切断の予告と同じ約束)ので、呼び出し側は球も間隔も変わっていないときに組み立て直さない。
    */
   updateSphereGrid(positions: Float32Array | null, origin?: Vec3): void;
   /**
-   * 切断面の予告表示を差し替える(FR-432、P5 タスク27e、§0.a-0.61)。
+   * 切断面の予告表示を差し替える(FR-432)。
    *
    * **四角は 1 枚だけ**で、ボディごとには作らない。`null` を渡すと消える(確定・取消の
    * どちらでも呼び出し側が `null` を渡す)。**同じ内容(同一参照)を渡し直したときは
@@ -399,10 +399,10 @@ export interface SolidLayer {
    */
   updateCutPreview(preview: CutPreview | null): void;
   /**
-   * ビューの断面表示(FR-111、P6 タスク35、§2.12)のクリッピング平面を配る。
+   * ビューの断面表示(FR-111)のクリッピング平面を配る。
    *
    * **立体を描くすべての材質へ、同じ 1 本の配列をそのまま渡す**(面の材質はボディごとに
-   * 配列になっている、P5 タスク10)。`material.clippingPlanes` は材質ごとの欄なので、
+   * 配列になっている)。`material.clippingPlanes` は材質ごとの欄なので、
    * 1 つでも配り漏らすとその立体・その面だけ切れない(§1.5-20)。
    *
    * **切っていないときは空**にする。three.js は `clippingPlanes` が空(または `null`)の
@@ -412,7 +412,7 @@ export interface SolidLayer {
    */
   setSectionPlanes(planes: readonly THREE.Plane[]): void;
   /**
-   * 3D プリントの点検の色を出す / 消す(FR-815、§0.53)。
+   * 3D プリントの点検の色を出す / 消す(FR-815)。
    *
    * 出しているあいだ、点検を頼んだ立体は**外観の割り当てを無視して 3 材質**
    * (既定 + 赤 + 橙)で描かれ、開いた辺を持つ三角形の輪郭が紫の線で重なる。
@@ -420,9 +420,9 @@ export interface SolidLayer {
    */
   setPrintabilityHighlight(highlight: PrintabilityHighlight | null): void;
   /**
-   * 断面表示のつまみ(§0.42)を差し替える。`null` で消える。
+   * 断面表示のつまみを差し替える。`null` で消える。
    *
-   * P5 の切断の予告(`updateCutPreview`)と同じ四角と矢印を、色だけ変えて出す(§0.41)。
+   * 切断の予告(`updateCutPreview`)と同じ四角と矢印を、色だけ変えて出す。
    * **四角の大きさはいま描いているボディから測る**ので、呼び出し側は平面と残す側だけを
    * 渡せばよい。予告と違って**毎回組み立て直す**(つまみは引いている最中に動くので、
    * 同じ値を渡し直す場面がほとんど無い)。
@@ -574,7 +574,7 @@ function createSolidDrawRetirement(group: THREE.Group, draws: BodyDraw[]) {
 
 /**
  * 部分形状の重ね描き 3 本を 1 色ぶん作る。面は半透明のメッシュ、辺・頂点は
- * `depthTest: false`(裏側も見える、§0.a-0.27)。renderOrder は面が立体の面の直後、
+ * `depthTest: false`(裏側も見える)。renderOrder は面が立体の面の直後、
  * 辺・頂点はスケッチの面の縁と同じ層(`createSketchLayer.ts` の `FACE_OUTLINE_RENDER_ORDER`)。
  */
 function createSubShapeOverlay(color: number, shared?: SubShapeOverlay,
@@ -683,14 +683,14 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   let lastDisplayStyle: DisplayStyle = 'shadedWithEdges';
 
   /**
-   * 面の材質の入れ物(FR-1106〜1109、P5 タスク9・10)。**ビューポートに 1 つだけ**持ち、
+   * 面の材質の入れ物(FR-1106〜1109)。**ビューポートに 1 つだけ**持ち、
    * 見え方(`appearanceKeyText`)が同じ外観には同じ材質を返す。使われなくなった材質と
    * 柄のテクスチャは `collect` / `dispose` が捨てる(WebGL の資源は GC で戻らない)。
    *
-   * P2〜P4 はここが `faceMaterial` 1 つで、全ボディの `THREE.Mesh` が共有していた。
-   * P5 でボディごとの材質配列(`geometry.addGroup` + `mesh.material = [...]`)へ移したが、
+   * 以前はここが `faceMaterial` 1 つで、全ボディの `THREE.Mesh` が共有していた。
+   * 外観のためにボディごとの材質配列(`geometry.addGroup` + `mesh.material = [...]`)へ移したが、
    * **外観を 1 つも割り当てていない立体は長さ 1 の配列・まとまり 1 つ**になるので、
-   * ドローコールも絵も P2 と変わらない(§0.a-0.12)。既定の外観の値
+   * ドローコールも絵も以前と変わらない。既定の外観の値
    * (色 `#b8bfcc`・光沢 5・粗さ 55)は、そのころの `SOLID_ROUGHNESS` / `SOLID_METALNESS` と
    * `--pcad-solid` をそのまま写したものである(`model` の `DEFAULT_APPEARANCE`)。
    */
@@ -703,7 +703,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
 
   /**
    * 材質を作り直す必要があるか(テーマの色が変わった・環境マップが入れ替わった)。
-   * **毎コマは触らない**(docs/報告記録.md 2026-09-02 15:42「常時の描画ループを作らない」)。
+   * **毎コマは触らない**(「常時の描画ループを作らない」)。
    */
   let appearanceDirty = true;
 
@@ -719,7 +719,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   };
 
   /**
-   * 部分形状(面・辺・頂点)の重ね描き(§0.a-0.7)。ホバー用・選択用の 2 組だけを作り、
+   * 部分形状(面・辺・頂点)の重ね描き。ホバー用・選択用の 2 組だけを作り、
    * ボディごとには増やさない(全ボディの強調中の要素を 1 本のバッファへまとめる)。
    */
   const subShapeOverlays: Readonly<Record<SubShapeEmphasis, SubShapeOverlay>> = {
@@ -731,7 +731,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   const subShapeBodyOverlays = subShapeResources.bodyOverlays;
 
   /**
-   * ねじの簡略表示の印(§0.a-0.15)。全ボディぶんを 1 本の `LineSegments` にまとめる
+   * ねじの簡略表示の印。全ボディぶんを 1 本の `LineSegments` にまとめる
    * (部分形状の重ね描きと同じ考え方)。**renderOrder は面の縁と同じ 2**
    * (`SUB_SHAPE_LINE_RENDER_ORDER`)。裏側(手前の面に隠れた側)の印も見えるよう
    * `depthTest: false` にする(部分形状のオーバーレイと同じ扱い。JIS の簡略図示は
@@ -760,7 +760,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   const threadMarkDraws: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>[] = [];
 
   /*
-    切断面の予告(FR-432、§0.a-0.61)。**四角 1 枚と矢印 1 本だけ**を作り、ボディごとには
+    切断面の予告(FR-432)。**四角 1 枚と矢印 1 本だけ**を作り、ボディごとには
     増やさない。四角は両面描き・奥行きを書かない半透明で、部分形状の重ね描きと同じ
     `renderOrder` に載せる。矢印は面に隠れても見えるよう `depthTest: false`。
   */
@@ -779,14 +779,14 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   group.add(cutPreviewFace);
 
   /*
-    球面の案内線(球面グリッド、FR-431、§0.a-0.21、タスク21)。**全球ぶんを 1 本の
+    球面の案内線(球面グリッド、FR-431)。**全球ぶんを 1 本の
     `LineSegments` にまとめる**ので、5° の 7,704 本でもドローコールは 1 回で済む。
 
     色は方眼の主線(`--pcad-grid-major` に当たる薄い灰)にする。**ホバー・選択の色とは
-    別の色**にするのが要点で(docs/報告記録.md 2026-09-03 20:40 の①(b)「ホバーと選択の色が
+    別の色**にするのが要点で(「ホバーと選択の色が
     近いと見分けられない」)、案内線が強調と同じ色だと「いま何を選んでいるか」が読めなくなる。
 
-    `depthTest: true` にして球の裏側の線は手前の面に隠す(§0.a-0.21 の手順2)。
+    `depthTest: true` にして球の裏側の線は手前の面に隠す。
     球の三角形は真球の内側に張られる(弦なので必ず内側)ため、案内線を真半径で引くと
     面と競って縞になる。**半径をごくわずかに持ち上げて**(`SPHERE_GRID_LIFT`)その競りを
     避ける(持ち上げ量は組み立て側=`createViewportScene.ts` が決める)。
@@ -820,7 +820,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   let lastCutPreview: CutPreview | null = null;
 
   /*
-    断面表示のつまみ(FR-111、§0.42)。切断の予告と同じ 2 本(四角と矢印)を色だけ変えて
+    断面表示のつまみ(FR-111)。切断の予告と同じ 2 本(四角と矢印)を色だけ変えて
     作る。**つまみ自身はクリップしない**(下の `clippedMaterials` に入れない)——平面の
     真上にあるので、自分の切る面で消えてしまっては掴めなくなるため。
   */
@@ -860,13 +860,13 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   const sectionPlanes: THREE.Plane[] = [];
 
   /*
-    3D プリントの点検の色(FR-815、§0.53)。開いた辺は body 別の local 配列と Double origin
+    3D プリントの点検の色(FR-815)。開いた辺は body 別の local 配列と Double origin
     で描く。材質だけ共有し、遠方の世界座標を Float32 頂点へ焼き込まない。
     面に隠れた辺も見えるよう `depthTest: false` にする——開いているところは形の裏側に
     あることが多く、隠したのでは「どこが閉じていないか」を探せない(NFR-UX-7)。
 
     **線の太さは指定しない。** WebGL の線幅はほとんどの環境で 1 画素に固定されており、
-    `LineBasicMaterial.linewidth` は効かない(three.js の既知の制限)。§0.53 の「太い
+    `LineBasicMaterial.linewidth` は効かない(three.js の既知の制限)。点検の「太い
     紫の線」は、太さの代わりに**三角形の輪郭 3 辺すべてを引く**ことで面として目立たせる
     (`buildPrintabilityOpenEdgePositions` の注釈)。
   */
@@ -1032,7 +1032,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
    * 束ね直しをさせるので、ホバーが動くたびに行うと 60fps(NFR-PF-1)を脅かす。
    */
   function applyAppearance(draw: BodyDraw, entry: SolidDrawEntry): void {
-    // 点検を出しているあいだは、外観の割り当てを一時的に**差し替える**(§0.53)。
+    // 点検を出しているあいだは、外観の割り当てを一時的に**差し替える**。
     // 上書きではないので、`setPrintabilityHighlight(null)` で元の外観がそのまま戻る。
     const plan = printabilityPlanFor(entry);
     const groups = plan === null ? entry.groups : plan.groups;
@@ -1058,7 +1058,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   }
 
   /**
-   * いま画面に出ている外観で使っていない材質を捨てる(§2.5.3)。
+   * いま画面に出ている外観で使っていない材質を捨てる。
    * テーマの色を当てた後の外観で数えないと、テーマを切り替えた直後に**使っている材質を
    * 捨ててしまう**ので、`applyAppearance` と同じ `themedAppearance` を通す。
    */
@@ -1116,7 +1116,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   }
 
   /**
-   * つまみの四角の対角長を、いま描いているボディから測る(§0.a-0.61 と同じ考え方)。
+   * つまみの四角の対角長を、いま描いているボディから測る(切断の予告と同じ考え方)。
    *
    * 包む球(`computeBoundingSphere` で取り直してある)の「原点からいちばん遠い点までの
    * 距離」の 2 倍を対角長にすると、どこを中心に切っても四角が対象を覆う。ボディが 1 つも
@@ -1168,7 +1168,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   }
 
   /**
-   * 開いた辺の紫の線を body 別に更新する(§0.53)。origin だけの変更は配列を作り直さない。
+   * 開いた辺の紫の線を body 別に更新する。origin だけの変更は配列を作り直さない。
    * 点検の取消・body 削除時は GPU と CPU 配列への参照をともに解放する。
    */
   function rebuildPrintOpenEdges(entries: readonly SolidDrawEntry[]): void {
@@ -1272,7 +1272,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
    *
    * シェーディング = 面のみ / シェーディング+エッジ = 面と稜線 / ワイヤーフレーム = 稜線のみ。
    * ただし**ホバー中・選択中のボディの稜線は、面のみの表示でも出す**。稜線でしか強調を
-   * 示さない決まり(§0.a-0.21「面の色は変えない」)なので、面のみの表示で稜線を全部消すと
+   * 示さない決まり(「面の色は変えない」)なので、面のみの表示で稜線を全部消すと
    * 何を選んでいるのか分からなくなるため(NFR-UX-7)。
    */
   function applyStyle(entries: readonly SolidDrawEntry[], displayStyle: DisplayStyle): void {

@@ -1,4 +1,4 @@
-/** R06: 出力バイトを生成せずraw DEFLATEの展開長を検査する。
+/** 出力バイトを生成せずraw DEFLATEの展開長を検査する。
  * 形式の根拠: https://www.rfc-editor.org/rfc/rfc1951.html §3.2。
  * 入力全体と固定上限のHuffman表だけを読む。展開サイズに比例する確保は行わない。 */
 export class DeflateSizeError extends Error {

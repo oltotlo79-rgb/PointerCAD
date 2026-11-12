@@ -35,20 +35,20 @@ const NOTHING_LEFT_MESSAGE = '組み合わせた結果、立体が残りませ�
 const INVALID_RESULT_MESSAGE =
   '組み合わせた立体の形が正しくありませんでした。位置や形を見直してください。';
 
-/** 差で何も削れなかったとき(EX04。`requireRemoval` を立てた差だけが断る)。 */
+/** 差で何も削れなかったとき(`requireRemoval` を立てた差だけが断る)。 */
 const NOTHING_REMOVED_MESSAGE =
   '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
 
 /**
  * 輪郭の内側を残す積で、輪郭が立体に届かず内側に何も残らなかったとき
- * (EX-04 W3。`requireRemoval` を立てた積だけが断る)。
+ * (`requireRemoval` を立てた積だけが断る)。
  */
 const NOTHING_INSIDE_MESSAGE =
   '切る輪郭が立体に届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
 
 /**
  * 輪郭の内側を残す積で、立体がまるごと輪郭の中にあり何も削れなかったとき
- * (EX-04 W3。`requireRemoval` を立てた積だけが断る)。
+ * (`requireRemoval` を立てた積だけが断る)。
  */
 const NOTHING_OUTSIDE_MESSAGE =
   '切る輪郭が立体をまるごと囲んでいて、何も削れませんでした。輪郭の位置や大きさを見直してください。';
@@ -56,7 +56,7 @@ const NOTHING_OUTSIDE_MESSAGE =
 /** ブーリアンの任意の条件。省略すると従来どおり(何も削れない差・積も成立させる)。 */
 interface BooleanOptions {
   /**
-   * true なら、閉じた輪郭の切断として実際に立体を切り分けることを求める(EX04、EX-04 W3)。
+   * true なら、閉じた輪郭の切断として実際に立体を切り分けることを求める。
    * - 差(輪郭の外側を残す): 対象と相手の共通部分に立体が無いとき `NOTHING_REMOVED_MESSAGE` で断る。
    * - 積(輪郭の内側を残す): 共通部分に立体が無いとき `NOTHING_INSIDE_MESSAGE`、対象から相手を
    *   引いた残り(輪郭の外側)に立体が無いとき `NOTHING_OUTSIDE_MESSAGE` で断る。
@@ -78,7 +78,7 @@ function assertRemovesMaterial(oc: OpenCascadeInstance, target: TopoDS_Shape, to
 }
 
 /**
- * 輪郭の内側を残す積(EX-04 W3)で、輪郭の外側に削り取るものがあるかを確かめる。対象から相手を引いた
+ * 輪郭の内側を残す積で、輪郭の外側に削り取るものがあるかを確かめる。対象から相手を引いた
  * 残りを非破壊で作り(入力の形には触れない)、立体が無いか体積が `MIN_SOLID_VOLUME_MM3` 未満なら
  * `NOTHING_OUTSIDE_MESSAGE` で断る(差の `assertRemovesMaterial` と同じ境目・同じ作り方)。
  */
@@ -237,8 +237,8 @@ export function booleanOp(
   options?: BooleanOptions,
 ): BooleanResult {
   // 進捗の入れ物。2026-09-03 に Node で実測したところ、引数なしの
-  // Message_ProgressRange_1 をそのまま渡して 3 種の演算とも成立した
-  // (計画書 §1.2 の未確認点 4)。
+  // Message_ProgressRange_1 をそのまま渡して
+  // 3 種の演算とも成立した。
   const allocations = createAllocations();
   try {
     const range = allocations.keep(new oc.Message_ProgressRange_1());
@@ -246,7 +246,7 @@ export function booleanOp(
     if (shapeBodyKind(oc, target) !== 'solid' || shapeBodyKind(oc, tool) !== 'solid') throw new Error(OPEN_FACES_NOT_SUPPORTED);
     if (options?.requireRemoval === true && operation === 'subtract') assertRemovesMaterial(oc, target, tool);
     if (options?.requireRemoval === true && operation === 'intersect') {
-      // 輪郭の内側を残す(EX-04 W3)。外側に削るものが無い(輪郭が立体をまるごと囲む)なら断る。
+      // 輪郭の内側を残す。外側に削るものが無い(輪郭が立体をまるごと囲む)なら断る。
       assertKeepsOutside(oc, target, tool);
       // Refuse an empty inside on copied topology before the real Common touches borrowed inputs.
       assertSolidRemains(oc, 'intersect', target, tool, NOTHING_INSIDE_MESSAGE);
@@ -260,7 +260,7 @@ export function booleanOp(
 }
 
 /**
- * 輪郭の内側を残す積の結果を作る(EX-04 W3)。共通部分に立体が無いときの断り(`NOTHING_LEFT_MESSAGE`)
+ * 輪郭の内側を残す積の結果を作る。共通部分に立体が無いときの断り(`NOTHING_LEFT_MESSAGE`)
  * だけを、輪郭が届かなかったことを伝える `NOTHING_INSIDE_MESSAGE` に置き換える(他の断りはそのまま)。
  */
 function buildInsideResult(build: () => BooleanResult): BooleanResult {

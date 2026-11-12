@@ -1,12 +1,12 @@
 /**
  * 計画 `docs/plans/追加-数学入力.md` §1（分野別の網羅表、L134〜L165の32行・256記号。幾何9件〔L165〕を除く）と、
- * 公開目録（`mathPaletteExamples.ts` の `MATH_INPUT_PALETTE`）の機械照合（MC-04、`mathCatalogCoverage.test.ts`）。
+ * 公開目録（`mathPaletteExamples.ts` の `MATH_INPUT_PALETTE`）の機械照合（`mathCatalogCoverage.test.ts`）。
  *
  * 各記号は次のどちらか一方だけを持つ。
  * - `catalogIds`（{@link MathCoverageAccepted}）: 公開目録（`MATH_INPUT_PALETTE`）の項目ID。1個以上。
  *   1つの記号が複数の目録項目にまたがる場合（例: L152「SVD」→ svd-u/svd-s/svd-v/singular-values）は全て列挙する。
- * - `reason`（{@link MathCoveragePending}）: 未実装・範囲外の理由。計画の利用者回答・後続タスク名（MC-02d・MC-19b・
- *   MC-19c・MC-12・MC-20 等）・設計上パレット化しない理由のいずれかを明記する（空文字列は不可）。
+ * - `reason`（{@link MathCoveragePending}）: 未実装・範囲外の理由。計画の利用者回答・後続の作業の名前・
+ *   設計上パレット化しない理由のいずれかを明記する（空文字列は不可）。
  *   後続タスクが目録へ項目を追加したら、対応する `reason` を `catalogIds` へ書き換えるだけで済む。
  *
  * 幾何9記号（L165）は図形参照（CAD参照）として `packages/model/src/measure/mathGeometry.ts` の評価へ対応する。

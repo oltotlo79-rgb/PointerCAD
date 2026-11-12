@@ -133,11 +133,11 @@ export const MATH_PALETTE_BASIC: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.basic.nth-root'), argumentTypes: ['real', 'natural'], resultType: 'real', method: 'native', functionUse: true, help: HELP.inputUnits }),
   item('factorial', 'basic', t('math.palette.factorial.label'), 'n!', String.raw`{#0}!`, ['factorial'], t('math.palette.factorial.meaning'), [t('math.palette.factorial.keyword0')],
     { domain: t('math.paletteDomain.basic.factorial'), argumentTypes: ['natural'], resultType: 'real', method: 'native', functionUse: false, help: HELP.inputUnits }),
-  // MC-02d (統括 09:28): |x| now also reaches vector length, set cardinality and square-matrix candidates
+  // |x| also reaches vector length, set cardinality and square-matrix candidates
   // (absoluteValueCandidates.ts). argumentTypes widened to 'complex' (real still matches via sameKind's real⊂complex
   // rule; the existing example stays a real number). 'complex' is the closest single declared type this catalog's
   // one-type-per-slot MathPaletteArgumentType can express; vector/set/matrix acceptance has no matching slot type
-  // without either a union type or dedicated examples, so it is not encoded here (see final report).
+  // without either a union type or dedicated examples, so it is not encoded here.
   item('absolute', 'basic', t('math.palette.absolute.label'), '|x|', String.raw`\left|#0\right|`, ['absolute'], t('math.palette.absolute.meaning'), [t('math.palette.absolute.keyword0'), t('math.palette.absolute.keyword1')],
     { domain: t('math.paletteDomain.basic.absolute'), argumentTypes: ['complex'], resultType: 'real', method: 'native', functionUse: true, help: HELP.inputUnits }),
   item('sin', 'functions', t('math.palette.sin.label'), 'sin', String.raw`\sin\left(#0\right)`, ['sin'], t('math.palette.sin.meaning'), [t('math.palette.sin.keyword0')],
@@ -166,7 +166,7 @@ export const MATH_PALETTE_BASIC: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.basic.pi'), argumentTypes: [], resultType: 'real', method: 'native', functionUse: true, help: HELP.symbols }),
   item('imaginary-unit', 'symbols', t('math.palette.imaginary-unit.label'), 'ⅈ', String.raw`\mathrm{i}`, [], t('math.palette.imaginary-unit.meaning'), [t('math.palette.imaginary-unit.keyword0'), t('math.palette.imaginary-unit.keyword1')],
     { domain: t('math.paletteDomain.basic.imaginary-unit'), argumentTypes: [], resultType: 'complex', method: 'native', functionUse: false, help: HELP.symbols }),
-  // MC-02a: 初等・整数・複素の追加27件（arccos〜cis の24件と、下書きだったRe・Im・共役の実例化）。
+  // 初等・整数・複素の追加27件（arccos〜cis の24件と、下書きだったRe・Im・共役の実例化）。
   item('arccos', 'functions', t('math.palette.arccos.label'), 'arccos', String.raw`\operatorname{arccos}\left(#0\right)`, ['arccos'], t('math.palette.arccos.meaning'), [t('math.palette.arccos.keyword0'), t('math.palette.arccos.keyword1'), t('math.palette.arccos.keyword2')],
     { domain: t('math.paletteDomain.basic.arccos'), argumentTypes: ['real'], resultType: 'real', method: 'native', functionUse: true, help: HELP.paletteArguments }),
   item('arctan', 'functions', t('math.palette.arctan.label'), 'arctan', String.raw`\operatorname{arctan}\left(#0\right)`, ['arctan'], t('math.palette.arctan.meaning'), [t('math.palette.arctan.keyword0'), t('math.palette.arctan.keyword1'), t('math.palette.arctan.keyword2')],
@@ -215,13 +215,13 @@ export const MATH_PALETTE_BASIC: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.basic.argument'), argumentTypes: ['complex'], resultType: 'real', method: 'native', functionUse: false, help: HELP.complex }),
   item('cis', 'complex', t('math.palette.cis.label'), 'cis', String.raw`\operatorname{cis}\left(#0\right)`, ['cis'], t('math.palette.cis.meaning'), [t('math.palette.cis.keyword0'), t('math.palette.cis.keyword1')],
     { domain: t('math.paletteDomain.basic.cis'), argumentTypes: ['angle'], resultType: 'complex', method: 'native', functionUse: false, help: HELP.complex }),
-  // MC-02d (MC-04 gap): hard-to-type constant e, matching pi/imaginary-unit's own symbol entries.
+  // Hard-to-type constant e, matching pi/imaginary-unit's own symbol entries.
   // ∞ (\infty) was tried and dropped: a bare ∞ evaluates to {status:'invalid',reason:'non-finite'}, not a
   // 'value'-status result (confirmed by the real unit run), so it has no standalone value this catalog can publish;
-  // see the final report.
+  // it is left out of the catalog.
   item('e', 'symbols', t('math.palette.e.label'), 'e', String.raw`\exponentialE`, [], t('math.palette.e.meaning'), [t('math.palette.e.keyword0')],
     { domain: t('math.paletteDomain.basic.e'), argumentTypes: [], resultType: 'real', method: 'native', functionUse: true, help: HELP.symbols }),
-  // MC-02e (MC-11): ±・∓ produce status:'multiple' candidates, never a single status:'value' (plusMinus.ts).
+  // ±・∓ produce status:'multiple' candidates, never a single status:'value' (plusMinus.ts).
   // Not usable inside function plotting until a sign is chosen (confirmed by plusMinus.test.ts).
   item('plus-minus', 'basic', t('math.palette.plus-minus.label'), '±', String.raw`#0\pm#?`, ['plus-minus'], t('math.palette.plus-minus.meaning'), [t('math.palette.plus-minus.keyword0')],
     { domain: t('math.paletteDomain.basic.plus-minus'), argumentTypes: ['real', 'real'], resultType: 'candidates', method: 'native', functionUse: false, help: HELP.plusMinus }),

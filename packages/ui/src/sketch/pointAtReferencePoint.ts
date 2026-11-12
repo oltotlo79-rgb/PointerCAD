@@ -6,7 +6,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { pointReferenceCoordinate } from './selectedPointEnds.js';
 
 /**
- * EX-18 route 5 user entry: with one part reference point selected (for example the point an assembly-context link
+ * User entry: with one part reference point selected (for example the point an assembly-context link
  * drives), add a sketch point in the active sketch that follows it (relative 0,0,0 to that reference point). The saved
  * link is the existing PointReference kind 'point'; the model resolves it through the part reference-point bridge.
  */

@@ -20,13 +20,13 @@ function holePlacementKeyMaterial(plan: Extract<SolidStepPlan, { readonly kind: 
   };
 }
 
-/** 1段ぶんの鍵の材料(§0.a-0.20)。名前・抑制・色は混ぜない(形が変わらないため)。 */
+/** 1段ぶんの鍵の材料。名前・抑制・色は混ぜない(形が変わらないため)。 */
 export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): SolidStepKeyMaterial {
   switch (plan.kind) {
     case 'extrude':
-      // P5 で足した 5 欄は**省略された欄も既定で埋めてから**渡す。埋めても
-      // `keyExtrudeExtras` が既定を空文字列に畳むので、P2 からの押し出しの鍵は変わらず、
-      // 「欄を省いた押し出し」と「既定を明示した押し出し」も同じ鍵になる(タスク44 の決め 3)。
+      // 後から足した 5 欄は**省略された欄も既定で埋めてから**渡す。埋めても
+      // `keyExtrudeExtras` が既定を空文字列に畳むので、従来の押し出しの鍵は変わらず、
+      // 「欄を省いた押し出し」と「既定を明示した押し出し」も同じ鍵になる。
       return {
         kind: 'extrude',
         profile: plan.profile.map(toKeyCurve),
@@ -104,7 +104,7 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         pitch: plan.pitch,
         threadLength: plan.mark.length,
         depth: plan.depth,
-        // 実らせんか簡略表示かで形そのものが変わるので鍵に混ぜる(§0.a-0.15、§0.a-0.16)。
+        // 実らせんか簡略表示かで形そのものが変わるので鍵に混ぜる。
         modeled: plan.thread !== null,
         tiltAngle: plan.tiltAngle,
         tiltAzimuth: plan.tiltAzimuth,
@@ -113,7 +113,7 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         entry: toKeyHoleEntry(plan.entry),
       };
     case 'spring':
-      // 全長(length)と derived は混ぜない(cacheKey.ts の SpringKeyMaterial の注釈、§0.a-0.30)。
+      // 全長(length)と derived は混ぜない(cacheKey.ts の SpringKeyMaterial の注釈)。
       return {
         kind: 'spring',
         origin: toKeyVec3(plan.origin),

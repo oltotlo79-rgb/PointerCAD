@@ -1,13 +1,13 @@
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 
 /**
- * OCCT(WASM)の仮想ファイルへの出し入れ(計画書 P6 §2.2、タスク6。FR-802 / FR-803)。
+ * OCCT(WASM)の仮想ファイルへの出し入れ(FR-802 / FR-803)。
  *
  * OCCT の読み書き(STEP / STL / OBJ / glTF)は「ファイル名」しか受け取らない。
  * 実際のディスクへは書かず、Emscripten が WASM の中に持つ仮想のファイル置き場
  * (`oc.FS`)へ書かせてから、そのバイト列を取り出す。
  *
- * **規律:** 確保したものを必ず解放する(計画書 P5 §4、`allocations.ts`)のと同じ規律を
+ * **規律:** 確保したものを必ず解放する(`allocations.ts`)のと同じ規律を
  * ファイルにも当てはめる。仮想の置き場は WASM の記憶を食い、残ったままだと次の
  * 書き出しが古い中身を読む。だから `finally` で必ず消す。
  *
@@ -65,7 +65,7 @@ interface CleanupResult {
  *
  * `oc.FS` が投げるのは Emscripten の `ErrnoError` で、型定義には現れない。
  * `as` で決めつけず、`in` と `typeof` で実際に確かめてから読む。型の絞り込みを
- * 外へ持ち出す述語(`x is T`)は作らない(計画書 P6 §4 の規約)。
+ * 外へ持ち出す述語(`x is T`)は作らない。
  */
 function errnoOf(error: unknown): number | undefined {
   if (typeof error === 'object' && error !== null && 'errno' in error) {
@@ -154,7 +154,7 @@ function removeFiles(oc: OpenCascadeInstance, names: readonly string[]): Cleanup
 }
 
 /**
- * 仮想ファイルへ書かせて、できたバイト列を受け取る(§2.2)。
+ * 仮想ファイルへ書かせて、できたバイト列を受け取る。
  *
  * ```ts
  * const files = withVirtualFile(oc, 'step', (path) => {
@@ -165,7 +165,7 @@ function removeFiles(oc: OpenCascadeInstance, names: readonly string[]): Cleanup
  *
  * `/pointercad/<連番>.<拡張子>` を作って `fn` に絶対パスを渡す。**`fn` の実行中に
  * 置き場へ増えたファイルは全部拾って返す**(OBJ の書き出しは `.obj` と `.mtl` の
- * 2 つを作る。計画書 §0.a-0.16)。並びは自分で頼んだ名前が先頭で、あとは名前順。
+ * 2 つを作る)。並びは自分で頼んだ名前が先頭で、あとは名前順。
  *
  * `fn` が例外を投げても、書き出しが 1 つも作られなくても、**作られたものは `finally`
  * で必ず消す**。1 つも作られなかったときは日本語の理由で断る(NFR-RE-1。呼び出し側は
@@ -238,7 +238,7 @@ export function withVirtualFile(
 }
 
 /**
- * バイト列を仮想ファイルへ置いてから読ませる(§2.2 の逆向き)。
+ * バイト列を仮想ファイルへ置いてから読ませる(書き出しの逆向き)。
  *
  * ```ts
  * const shape = withVirtualFileInput(oc, 'part.step', bytes, (path) => reader.ReadFile(path));

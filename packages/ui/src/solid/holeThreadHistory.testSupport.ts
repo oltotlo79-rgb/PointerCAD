@@ -1,4 +1,4 @@
-/** Native geometry and public store actions for the EX-05 history regressions. */
+/** Native geometry and public store actions for the hole/thread history regressions. */
 import { createHash } from 'node:crypto';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {

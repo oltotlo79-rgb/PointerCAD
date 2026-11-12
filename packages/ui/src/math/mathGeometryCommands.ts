@@ -1,5 +1,5 @@
 import { createDocumentElementId } from '@pointercad/model/document-identity';
-/** GR-16: definition edits publish one immutable document, hence one Undo entry. */
+/** definition edits publish one immutable document, hence one Undo entry. */
 import {
   addMathGeometryDefinition,
   checkMathGeometryName,
@@ -71,7 +71,7 @@ export function defaultMathGeometryName(document: PartDocument, quantity: MathGe
   }
 }
 
-/** `quantity` is the chosen GR-15 mathGeometrySelection candidate; the panel owns selection/readiness. */
+/** `quantity` is the chosen mathGeometrySelection candidate; the panel owns selection/readiness. */
 export function createMathGeometryFromSelection(state: MathGeometryCommandState, owner: PartDocument,
   quantity: MathGeometryQuantity, name: string = defaultMathGeometryName(owner, quantity)): MathGeometryCommandResult {
   const refusal = ownerRefusal(state, owner);
@@ -79,7 +79,7 @@ export function createMathGeometryFromSelection(state: MathGeometryCommandState,
   return publish(state, owner, addMathGeometryDefinition(owner, { name, quantity }, createDocumentElementId()));
 }
 
-/** Keep the definition's identity/name/tolerance, replacing it with a GR-15 candidate of the same kind/unit. */
+/** Keep the definition's identity/name/tolerance, replacing it with a mathGeometrySelection candidate of the same kind/unit. */
 export function reselectMathGeometry(state: MathGeometryCommandState, owner: PartDocument,
   id: string, quantity: MathGeometryQuantity): MathGeometryCommandResult {
   const refusal = ownerRefusal(state, owner);
@@ -91,11 +91,11 @@ export function changeMathGeometryAngleUnit(state: MathGeometryCommandState, own
   id: string, unit: 'degree' | 'radian'): MathGeometryCommandResult {
   const refusal = ownerRefusal(state, owner);
   if (refusal !== null) return refusal;
-  // GR-09's new angle kinds are deliberately left to the model's existing refusal until its follow-up.
+  // The newer angle kinds are deliberately left to the model's existing refusal for now.
   return publish(state, owner, setMathGeometryAngleUnit(owner, id, unit));
 }
 
-/** Input units are mm and radians. The editor converts degrees before calling (GR-19a). */
+/** Input units are mm and radians. The editor converts degrees before calling. */
 export function changeMathGeometryTolerance(state: MathGeometryCommandState, owner: PartDocument,
   id: string, tolerance: MathGeometryTolerance): MathGeometryCommandResult {
   const refusal = ownerRefusal(state, owner);

@@ -1,18 +1,18 @@
 /**
- * P4 の新しい図形(円・2 点+半径の円弧・矩形・正多角形・長穴・楕円・スプライン・
- * 点列の円周/格子)を、その場数値入力の確定から履歴へ積む純関数
- * (計画書 docs/plans/P4-スケッチ拡張.md タスク12)。
+ * スケッチの図形(円・2 点+半径の円弧・矩形・正多角形・長穴・楕円・スプライン・
+ * 点列の円周/格子)を、その場数値入力の確定から履歴へ積む
+ * 純関数。
  *
  * 対応要件: FR-314(矩形)、FR-315(正多角形)、FR-316(長穴)、FR-317(スプライン)、
  * FR-318(楕円・楕円弧)、FR-320(構築線)、FR-326(円・2 点+半径の円弧)、FR-327(点列の拡張)。
  *
- * `sketchCommands.ts`(P1 の点・線分・円弧・点列・面)と同じ流儀にそろえる。DOM にも
+ * `sketchCommands.ts`(点・線分・円弧・点列・面)と同じ流儀にそろえる。DOM にも
  * ストアにも触れず、文書は不変で、確定できないときは元の文書をそのまま返して断る理由だけを
- * 添える(FR-504、NFR-UX-5)。段の遷移と欄の中身は `numericInput.ts`(タスク11)が決め、
+ * 添える(FR-504、NFR-UX-5)。段の遷移と欄の中身は `numericInput.ts`が決め、
  * ここは「決まった値を履歴の形へ直す」ことだけを受け持つ。
  *
- * **要素の種類は id の接頭辞ではなく文書への所属で見分ける**
- * (`docs/報告記録.md` 2026-09-03 13:05 の②)。ここで足す仮の点も「文書へ足して解いて捨てる」
+ * **要素の種類は id の接頭辞ではなく文書への所属で見分ける**。
+ * ここで足す仮の点も「文書へ足して解いて捨てる」
  * 形にしてあり、id の形で本物と見分けさせない。
  */
 
@@ -70,7 +70,7 @@ export type ArcBulge = 'left' | 'right';
 
 /**
  * 円(中心+半径、FR-326)。model に円の種類は無いので、既存の円弧を全周(0°〜360°)で作る
- * (§2.3「円は既存の `arc` kind で startAngle=0, endAngle=360」)。名前も円弧の連番になる。
+ * (「円は既存の `arc` kind で startAngle=0, endAngle=360」)。名前も円弧の連番になる。
  */
 export function commitCircle(
   document: SketchDocument,
@@ -98,7 +98,7 @@ export type TwoPointArcOutcome =
   | { readonly ok: false; readonly reason: string };
 
 /**
- * 2 点+半径の円弧(FR-326、§0.a-0.18)。中心を自前で求めてから既存の円弧として積む。
+ * 2 点+半径の円弧(FR-326)。中心を自前で求めてから既存の円弧として積む。
  *
  * model の円弧は「中心・半径・開始角・終了角」で持つので、通した 2 点は保存できない。
  * ここで求めた中心を絶対座標として保存する(2 点を後から動かして追従させることはできない)。
@@ -149,7 +149,7 @@ export type ThreePointArcOutcome =
   | { readonly ok: false; readonly reason: string };
 
 /**
- * 3 点(始点・終点・通過点)の円弧(FR-330、P4 タスク36、2026-09-04 追加要件)。
+ * 3 点(始点・終点・通過点)の円弧(FR-330、2026-09-04 追加要件)。
  *
  * 3 点の世界座標から `arcThroughPoints`(model)で中心・半径・法線・第1軸・角度を求め、
  * 既存の `SketchArcFeature`(中心+半径+開始角/終了角+`freeOrientation`)として積む
@@ -157,7 +157,7 @@ export type ThreePointArcOutcome =
  * 追従しない**(2 点+半径の円弧(`commitTwoPointArc`)と同じ制約)。
  *
  * `freeOrientation` は 3D スケッチ(`planeId === 'free'`)以外では model が無視するが
- * (`resolveArcOrientation`)、計画書タスク36 の指定どおり常に渡す(平面上でも
+ * (`resolveArcOrientation`)、常に渡す(平面上でも
  * `arcThroughPoints` の法線は作図面の法線と一致する)。
  */
 export function commitThreePointArc(
@@ -198,7 +198,7 @@ export function commitThreePointArc(
 }
 
 /**
- * 矩形(FR-314)。対角の 2 点をそのまま保存する(中心+幅+高さの指定はプロパティ側、§2.3)。
+ * 矩形(FR-314)。対角の 2 点をそのまま保存する(中心+幅+高さの指定はプロパティ側)。
  * 2 点目の基準は 1 点目にそろえる(`resolveSketch` が矩形の 2 点目を
  * 「1 点目を直前の点として」解くため)。
  */
@@ -367,11 +367,11 @@ export function commitGridPointArray(
 }
 
 /* ---------------------------------------------------------------------------
- * 2 点+半径の円弧の幾何(§0.a-0.18)
+ * 2 点+半径の円弧の幾何
  * ------------------------------------------------------------------------- */
 
 /**
- * 2 点と半径から円弧の中心を求める(FR-326、§0.a-0.18)。
+ * 2 点と半径から円弧の中心を求める(FR-326)。
  *
  * 中心は 2 点を結ぶ弦の垂直二等分線上にあり、中点から
  * √(半径² − (弦の半分)²)(`twoPointArcCenterOffset`)だけ離れている。解は 2 つあり、
@@ -471,10 +471,10 @@ export interface ShapeDraftValue {
 }
 
 /**
- * 新しい図形の途中経過(タスク12)。
+ * 新しい図形の途中経過。
  *
- * P1 の道具は「1 点覚えて次の段で使う」だけだったので `pendingStart`(座標 1 つ)で足りたが、
- * P4 の図形には**点を 2 つ以上置く**もの(長穴・2 点+半径の円弧・スプライン)と、
+ * 基本の道具は「1 点覚えて次の段で使う」だけなので `pendingStart`(座標 1 つ)で足りるが、
+ * 図形の道具には**点を 2 つ以上置く**もの(長穴・2 点+半径の円弧・スプライン)と、
  * **欄の値を段をまたいで持ち越す**もの(楕円の半径と傾き、格子の行)があるため、
  * 置いた点・前の段の値・つまみ・選択肢をまとめてここへ積む。
  * 道具を変える・ポップアップを閉じると空へ戻る(取りかけを持ち越さない、NFR-UX-3)。
@@ -511,15 +511,15 @@ interface ShapeCommitContext {
   readonly document: SketchDocument;
   readonly planeId: WorkPlaneId;
   /**
-   * `planeId` を解いた面(FR-328、タスク13・14)。任意の作業平面は部品文書を見ないと
+   * `planeId` を解いた面(FR-328)。任意の作業平面は部品文書を見ないと
    * 決まらないので、解くのは呼び出し側(`commitToStore.ts` の `drawingPlane`)にする。
    *
-   * **タスク13 の申し送りの直し**: 以前はここで基準の 3 面だけを引き、それ以外を既定の
+   * **任意の作業平面への直し**: 以前はここで基準の 3 面だけを引き、それ以外を既定の
    * XY に落としていたため、任意の作業平面の上で 2 点+半径の円弧を作ると XY 平面の上の
    * 円弧になっていた。面そのものを受け取ることで、どの作業平面でも押した場所どおりになる。
    */
   readonly plane: WorkPlane;
-  /** 点列の基準点(P1 の道具と共有する取りかけ)。新しい図形の点は `draft.points`。 */
+  /** 点列の基準点(基本の道具と共有する取りかけ)。新しい図形の点は `draft.points`。 */
   readonly pendingStart: CoordinateInput | null;
   readonly draft: ShapeDraft;
   /**
@@ -581,7 +581,7 @@ function placeShapePoint(
       return unchanged(withDraft(context, { points: [...context.draft.points, coordinate] }));
 
     case 'threePointArcVia': {
-      // 3 点目(通過点)で確定する(FR-330、タスク36。欄は無い)。
+      // 3 点目(通過点)で確定する(FR-330、欄は無い)。
       const start = context.draft.points[0];
       const end = context.draft.points[1];
       if (start === undefined || end === undefined) {
@@ -616,7 +616,7 @@ function placeShapePoint(
     }
 
     case 'splinePoint': {
-      // 点の数の上限(model の MAX_SPLINE_POINTS)は タスク11 の規則をそのまま使う。
+      // 点の数の上限(model の MAX_SPLINE_POINTS)はスプラインの規則をそのまま使う。
       const outcome = appendSplinePoint(splineDraftOf(context.draft), coordinate);
       if (!outcome.ok) {
         return rejected(context, outcome.reason);
@@ -629,7 +629,7 @@ function placeShapePoint(
     case 'lineEnd':
     case 'arcCenter':
     case 'pointArrayBase':
-      // P1 の道具の段。履歴へ積むのは sketchCommands.ts の受け持ちなので何もしない。
+      // 基本の道具の段。履歴へ積むのは sketchCommands.ts の受け持ちなので何もしない。
       return unchanged(context);
   }
 }
@@ -790,7 +790,7 @@ function buildShapeFeature(
     }
 
     case 'arcShape':
-      // P1 の円弧の段。履歴へ積むのは sketchCommands.ts の受け持ち。
+      // 基本の円弧の段。履歴へ積むのは sketchCommands.ts の受け持ち。
       return unchanged(context);
   }
 }
@@ -816,7 +816,7 @@ function buildPointArray(
     );
   }
   if (layout !== 'grid') {
-    // 直線状はここへ来ない(sketchCommands.ts が P1 のまま受け持つ)。
+    // 直線状はここへ来ない(sketchCommands.ts が受け持つ)。
     return unchanged(context);
   }
   const rowSpacing = value('rowSpacing');
@@ -903,7 +903,7 @@ function withDraft(context: ShapeCommitContext, patch: Partial<ShapeDraft>): Sha
   return { ...context, draft: { ...context.draft, ...patch } };
 }
 
-/** 下書きを、タスク11 のスプラインの規則(`checkSplineDraft` 等)が読める形にする。 */
+/** 下書きを、スプラインの規則(`checkSplineDraft` 等)が読める形にする。 */
 function splineDraftOf(draft: ShapeDraft): SplineDraft {
   return {
     points: draft.points,

@@ -1,6 +1,6 @@
 /**
  * 「見た目」の区画(投影・表示スタイル・方眼・断面・外観・測る・下絵・点検)。
- * 一覧ごとに 1 ファイルへ分けた(P6 タスク52)。
+ * 一覧ごとに 1 ファイルへ分けた。
  */
 
 import type { AppearanceMatchEntry, PartDocument } from '@pointercad/model';
@@ -26,12 +26,12 @@ interface LookGroupProps {
 }
 
 /**
- * 「見た目」の区画(FR-1106〜1110、要件§4.12。P5 タスク12 で外観、タスク51 で畳んだ一覧へ)。
+ * 「見た目」の区画(FR-1106〜1110、要件§4.12)。
  *
- * 専用パネル/ダイアログは採らず、畳んだ一覧 1 つにする(§0.a-0.13、§0.a-0.51)。
- * いまの中身は外観 1 つだけだが、**タスク32 の「測る」がこの一覧の 2 行目に入る**
- * (§0.a-0.29 が「測る」をボタン 1 つと決めているので、区画を増やさずに済む。要件§7.1)。
- * 押せる条件と理由は `appearanceReadiness`(`appearance/appearanceCommands.ts`、タスク11)に
+ * 専用パネル/ダイアログは採らず、畳んだ一覧 1 つにする。
+ * 中身は外観と、**この一覧の 2 行目に入る「測る」**
+ * (「測る」はボタン 1 つと決めているので、区画を増やさずに済む。要件§7.1)。
+ * 押せる条件と理由は `appearanceReadiness`(`appearance/appearanceCommands.ts`)に
  * 1 本化してあるのでここで 2 重に判定しない(`SolidGroup` と同じ作り)。
  *
  * **入れ物側に `role="group"` を付けない**のは、開いた一覧(`.pcad-menu__panel`)がすでに
@@ -51,8 +51,8 @@ export function LookGroup({
   const isAssembly = useAppStore(state => state.assembly !== null);
   const readiness = appearanceReadiness({ document, bodies, selection, selectionKind, matches });
   /*
-    項目ごとの押せる条件。外観は `appearanceReadiness`(タスク11)、測るは
-    `measureToolReadiness`(タスク32)で、どちらも判断の正本はそれぞれ 1 か所にある。
+    項目ごとの押せる条件。外観は `appearanceReadiness`、測るは
+    `measureToolReadiness`で、どちらも判断の正本はそれぞれ 1 か所にある。
   */
   const readinessOf = (id: LookToolId): SolidToolReadiness => {
     if (id === 'strength') return { ready: true, reasonKey: null };
@@ -64,13 +64,13 @@ export function LookGroup({
       return { ready: true, reasonKey: null };
     }
     if (id === 'mathGeometry') {
-      // 図形の測定値(GR-30)。押せる条件は「部品を開いている」だけ(何も選んでいなくてもよい)。
+      // 図形の測定値。押せる条件は「部品を開いている」だけ(何も選んでいなくてもよい)。
       // アセンブリでは `isAssembly` の絞り込み(下の items)でそもそも一覧に出ない。
       return { ready: true, reasonKey: null };
     }
     if (id === 'printCheck') {
       /*
-        3D プリントの点検(FR-815、タスク46)。**立体が 1 つでもあれば押せる**
+        3D プリントの点検(FR-815)。**立体が 1 つでもあれば押せる**
         (選んでいなければ全部を点検する、`printCheckTargets`)。1 つも無いときだけ
         理由つきで断る(NFR-UX-5)。
       */

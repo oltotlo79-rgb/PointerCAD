@@ -58,7 +58,7 @@ export function fatigueStrainMeanStressRange(cycles: readonly { readonly meanStr
   return [Math.min(...values), Math.max(...values)];
 }
 
-/** True when a history is a one-time record: its repeated applications are counted closed-loop (task019), so the
+/** True when a history is a one-time record: its repeated applications are counted closed-loop, so the
  * life is not 1 / damage and the panel says how it was counted. */
 export function fatigueStrainHasOnceHistory(result: FatigueStrainResult): boolean {
   for (const history of result.histories) if (history.sequence === 'once') return true;

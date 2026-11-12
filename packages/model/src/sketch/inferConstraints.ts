@@ -1,20 +1,20 @@
 /**
- * 拘束の自動推定(FR-333、FR-313。計画書 docs/plans/P6-入出力.md §0.a-0.48〜0.50・§2.15、タスク40)。
+ * 拘束の自動推定(FR-333、FR-313)。
  *
  * 線を引いている最中に「水平・垂直・一致・接線・平行」を推定して、印で予告するための
  * 材料を作る。**ここは純関数だけを置く**(乱数・時刻・DOM・three.js に触れない)。画面の
  * 縮尺は引数で受け取るので、同じ入力からは必ず同じ推定になる。
  *
- * **推定するのは 5 種だけ**(§0.a-0.48)。同心・等しい・対称・直角は誤爆が多いので推定しない。
+ * **推定するのは 5 種だけ**。同心・等しい・対称・直角は誤爆が多いので推定しない。
  *
- * **判定のしきい値は下の 2 つの定数だけ**(§0.a-0.48。ここ 1 か所に置き、ヘルプには数値を
+ * **判定のしきい値は下の 2 つの定数だけ**(ここ 1 か所に置き、ヘルプには数値を
  * 書かない)。角度は 3°、一致は画面上 6 画素。3° の根拠は「100 画素の線の端が 5 画素ずれると
  * 2.86°」で、**「まっすぐ引いたつもり」が水平と読まれる幅**として採った値である。
  *
- * **優先順位は 一致 > 接線 > 水平・垂直 > 平行**で、**同時に出すのは最大 2 つ**(§2.15。
+ * **優先順位は 一致 > 接線 > 水平・垂直 > 平行**で、**同時に出すのは最大 2 つ**(
  * 印が増えすぎると読めない)。
  *
- * **推定した拘束は、そのまま足しても P4b のソルバーが解ける形にする**(FR-313、FR-504)。
+ * **推定した拘束は、そのまま足しても拘束のソルバーが解ける形にする**(FR-313、FR-504)。
  * そのために次の 3 つを守っている。
  *   ①一致の相手へ端点を寄せた後の向きで、水平・垂直・平行・接線を判定する
  *     (寄せた後に 3° を外れる線へ水平を付けて、矛盾を作らないため)。
@@ -22,8 +22,8 @@
  *     (同じことを 2 通りで言う「足しすぎ」を作らない)。
  *   ③既存の拘束と同じものは出さない(同じ拘束を 2 つ付けない)。
  *
- * 入切(§0.a-0.49、既定は入)と Shift による一時停止(§0.a-0.50)もここで受ける。
- * 予告の印そのものを描くのと、確定して拘束を足す配線は ui の役目(タスク41)。
+ * 入切(既定は入)と Shift による一時停止もここで受ける。
+ * 予告の印そのものを描くのと、確定して拘束を足す配線は ui の役目。
  */
 
 import type { ConstraintTarget, SketchConstraint } from './constraints/types.js';
@@ -35,22 +35,22 @@ import type { ResolvedArc, ResolvedPoint, ResolvedSegment } from './types.js';
 import { dotVec3, SKETCH_TOLERANCE_MM, type Vec3 } from './vec3.js';
 
 /**
- * 水平・垂直・平行・接線とみなす角度の幅(度、§0.a-0.48)。**しきい値の定数はここだけ。**
- * ちょうどこの角度は推定する(`≤` で判定する。§2.15 の検証表)。
+ * 水平・垂直・平行・接線とみなす角度の幅(度)。**しきい値の定数はここだけ。**
+ * ちょうどこの角度は推定する(`≤` で判定する)。
  */
 export const INFER_ANGLE_TOLERANCE_DEGREES = 3;
 
 /**
- * 一致とみなす**画面上の**距離(画素、§0.a-0.48)。**しきい値の定数はここだけ。**
+ * 一致とみなす**画面上の**距離(画素)。**しきい値の定数はここだけ。**
  *
  * ワールド座標(mm)ではなく画面の画素で測るのは、mm で測ると遠くの要素にも近くと同じ
  * 距離で吸い付いてしまうため(ui の `snapMath.ts` と同じ理由)。値は ui の
  * `PICK_RADIUS_PIXELS`(= 6)と同じで、依存方向(ui → model)の都合で ui から
- * 借りられないので**こちらを正本にする**。ui はタスク41 でこの定数を読む。
+ * 借りられないので**こちらを正本にする**。ui はこの定数を読む。
  */
 export const INFER_COINCIDENT_RADIUS_PIXELS = 6;
 
-/** 同時に予告する上限(§2.15)。印が増えすぎると読めないため。 */
+/** 同時に予告する上限。印が増えすぎると読めないため。 */
 export const MAX_INFERRED_CONSTRAINTS = 2;
 
 /**
@@ -58,11 +58,11 @@ export const MAX_INFERRED_CONSTRAINTS = 2;
  *
  * 角度そのもの(`Math.atan2` → 度)ではなく正接で比べるのは、**ちょうど 3° の向きを
  * 度へ直すと最後の 1 桁が 3 をわずかに超えることがある**ためで、「ちょうど 3° は推定する」
- * (§2.15 の検証表)が丸めで揺れないようにする。
+ * (検証の表)が丸めで揺れないようにする。
  */
 const ANGLE_TOLERANCE_TANGENT = Math.tan(degreesToRadians(INFER_ANGLE_TOLERANCE_DEGREES));
 
-/** 推定する拘束の種類(§0.a-0.48 の 5 種)。 */
+/** 推定する拘束の種類(5 種)。 */
 export type InferredConstraintKind =
   | 'coincident'
   | 'tangent'
@@ -71,7 +71,7 @@ export type InferredConstraintKind =
   | 'parallel';
 
 /**
- * 予告の並び順(§2.15)。**一致 > 接線 > 水平・垂直 > 平行。**
+ * 予告の並び順。**一致 > 接線 > 水平・垂直 > 平行。**
  * 上限を超えたぶんはこの順で落とす。
  */
 export const INFERENCE_PRIORITY: readonly InferredConstraintKind[] = [
@@ -98,10 +98,10 @@ export interface DraftSegment {
 
 /**
  * 推定の相手にできる既存の要素(解決済み)。**近くのものだけを詰めて渡す**
- * (`pointermove` のたびに全要素を回さない。NFR-PF-1。絞るのは ui の役目、タスク41)。
+ * (`pointermove` のたびに全要素を回さない。NFR-PF-1。絞るのは ui の役目)。
  *
  * `ResolvedSketch` の同名の欄をそのまま渡せる形にしてある。
- * 楕円・スプラインは相手にしない(接線・平行の式を P4b が持たないため)。
+ * 楕円・スプラインは相手にしない(接線・平行の式を拘束のソルバーが持たないため)。
  */
 export interface InferenceElements {
   readonly points?: readonly ResolvedPoint[];
@@ -116,9 +116,9 @@ interface InferConstraintsOptions {
   readonly pixelsPerMillimetre: number;
   /** 文書に既にある拘束。同じものは推定しない。省けば「1 つも無い」として読む。 */
   readonly constraints?: readonly SketchConstraint[];
-  /** 自動推定の入切(§0.a-0.49)。**既定は入。** 切れば 1 つも推定しない。 */
+  /** 自動推定の入切。**既定は入。** 切れば 1 つも推定しない。 */
   readonly enabled?: boolean;
-  /** Shift を押している間の一時停止(§0.a-0.50)。true なら 1 つも推定しない。 */
+  /** Shift を押している間の一時停止。true なら 1 つも推定しない。 */
   readonly suspended?: boolean;
 }
 
@@ -128,12 +128,12 @@ interface InferredBase {
    * 接線は円弧の、平行は線分のフィーチャー id。**水平・垂直は相手がいないので null。**
    */
   readonly relatedId: string | null;
-  /** 予告の印を出す位置(作図面の座標)。§0.a-0.50 の「相手の近くに小さな印」。 */
+  /** 予告の印を出す位置(作図面の座標)。「相手の近くに小さな印」。 */
   readonly markerAt: PlanePoint;
 }
 
 /**
- * 推定した拘束 1 つ。欄の並びは P4b の `SketchConstraint` と同じにしてあるので、
+ * 推定した拘束 1 つ。欄の並びは `SketchConstraint` と同じにしてあるので、
  * `constraintFromInference` で id と名前を付ければそのまま文書へ足せる。
  */
 export type InferredConstraint =
@@ -159,7 +159,7 @@ export type InferredConstraint =
 
 /**
  * 推定した拘束が指す先を並べる(`constraints/types.ts` の `constraintTargets` と同じ流儀)。
- * ui の `commitAddConstraint` はこの並びのまま受け取れる(タスク41)。
+ * ui の `commitAddConstraint` はこの並びのまま受け取れる。
  */
 export function inferredConstraintTargets(
   inferred: InferredConstraint,
@@ -230,7 +230,7 @@ interface CoincidenceCandidate {
   readonly target: ConstraintTarget;
 }
 
-/** 一致の相手を集める(既存の点と、線分・円弧の端点。§2.15)。 */
+/** 一致の相手を集める(既存の点と、線分・円弧の端点)。 */
 function coincidenceCandidates(
   nearby: InferenceElements,
   plane: WorkPlane,
@@ -425,7 +425,7 @@ function parallelPartner(
   return best;
 }
 
-/** 既に同じ拘束が文書にあるか(同じ拘束を 2 つ付けない。§2.15 の検証表)。 */
+/** 既に同じ拘束が文書にあるか(同じ拘束を 2 つ付けない)。 */
 function alreadyConstrained(
   inferred: InferredConstraint,
   constraints: readonly SketchConstraint[],
@@ -441,14 +441,14 @@ function alreadyConstrained(
 /**
  * 描いている線から拘束を推定する(FR-333)。**例外を投げない。**
  *
- * 返るのは優先順位の高い順に最大 2 つ(§2.15)。1 つも当てはまらなければ空。
+ * 返るのは優先順位の高い順に最大 2 つ。1 つも当てはまらなければ空。
  */
 export function inferConstraints(
   draft: DraftSegment,
   nearby: InferenceElements,
   options: InferConstraintsOptions,
 ): readonly InferredConstraint[] {
-  // 入切(§0.a-0.49)と Shift の一時停止(§0.a-0.50)。どちらも「1 つも推定しない」。
+  // 入切と Shift の一時停止。どちらも「1 つも推定しない」。
   if (options.enabled === false || options.suspended === true) {
     return [];
   }
@@ -473,7 +473,7 @@ export function inferConstraints(
   /*
     一致の相手へ寄せた後の端点。**向きの推定はこちらで行う。** 引いた線の向きが 3° 以内でも、
     一致で端点が動いた後に 3° を外れるなら、その水平・平行はソルバーの中で矛盾になるため
-    (推定した拘束が矛盾を作らないこと。タスク40 の「関係する過去の失敗」)。
+    (推定した拘束が矛盾を作らないこと。「関係する過去の失敗」)。
   */
   const snapped: [PlanePoint, PlanePoint] = [draft.from, draft.to];
   for (const end of ends) {
@@ -498,7 +498,7 @@ export function inferConstraints(
     /*
       ②接線。端点が円周の上にあり(一致と同じ幅で測る)、線の向きがその点の接線と 3° 以内。
 
-      **向きの正負まで見る**のは、P4b の接線の残差(`constraints/residuals.ts` の
+      **向きの正負まで見る**のは、拘束の接線の残差(`constraints/residuals.ts` の
       `tangentOutcome`)が符号つきの距離で、**円の中心が線の進む向きの右側にある**ことを
       求めるためである。逆側で推定すると、拘束を足した瞬間に線が円の反対側へ飛ぶ。
       求める接線の向きは、中心から接点への向き n を −90° 回した (n_v, −n_u)。
@@ -557,7 +557,7 @@ export function inferConstraints(
       **相手が既に水平(垂直)拘束を持っていて、こちらにも同じ軸を推定したときは出さない。**
       その組み合わせは「軸に沿う」ことを 2 通りで言うだけになり、足しすぎ
       (`diagnose.ts` の redundant)を作るため。相手に軸の拘束が無ければ、平行は
-      別のことを言っている(相手の向きにも効く)ので、水平と一緒に出してよい(§2.15 の表)。
+      別のことを言っている(相手の向きにも効く)ので、水平と一緒に出してよい。
     */
     const partner = parallelPartner(nearby, plane, draft.featureId, [du, dv], (featureId) =>
       axis !== null && hasAxisConstraint(constraints, featureId, axis),
@@ -576,7 +576,7 @@ export function inferConstraints(
     }
   }
 
-  // 既にある拘束と同じものは落とし、優先順位で並べ直して上限まで採る(§2.15)。
+  // 既にある拘束と同じものは落とし、優先順位で並べ直して上限まで採る。
   return found
     .filter((inferred) => !alreadyConstrained(inferred, constraints))
     .sort((a, b) => INFERENCE_PRIORITY.indexOf(a.kind) - INFERENCE_PRIORITY.indexOf(b.kind))

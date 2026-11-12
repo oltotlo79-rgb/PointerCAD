@@ -5,8 +5,8 @@ import {
 import type { AssemblyView } from '../store/assemblySlice.js';
 
 /**
- * A component drag that turns the parent joint of a saved cross-level gear or the joint of a saved cross-level cam
- * (EX12). The drag's own solve (solveMateDrag) gives the parent placements; the coupled child placements are solved by
+ * A component drag that turns the parent joint of a saved cross-level gear or the joint of a saved cross-level cam.
+ * The drag's own solve (solveMateDrag) gives the parent placements; the coupled child placements are solved by
  * the same follow as every other parent-level motion (crossLevelMotionFollow), so there is no second solver. Such a
  * drag is joint motion: its frames and its release publish the parent and every coupled child together, never a
  * document edit. It is refused whole when a coupled child cannot follow, when the relations cannot be evaluated, or

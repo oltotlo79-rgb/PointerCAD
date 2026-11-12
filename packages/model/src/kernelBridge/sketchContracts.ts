@@ -32,7 +32,7 @@ export interface SketchTessellationOutcome {
 }
 
 /**
- * オフセット 1 件の依頼(model の言葉、FR-321、P4 タスク15)。
+ * オフセット 1 件の依頼(model の言葉、FR-321)。
  * 距離は**符号つき**で、どちら側かは呼び出し側(`recomputeSketch`)が決めてから渡す。
  */
 export interface SketchOffsetRequestItem {
@@ -68,7 +68,7 @@ export interface SketchOffsetResult {
 }
 
 /* ------------------------------------------------------------------ *
- * 投影・交差(FR-325、P4 タスク25・26)
+ * 投影・交差(FR-325)
  * ------------------------------------------------------------------ */
 
 /**
@@ -87,7 +87,7 @@ export interface SketchProjectionRequestItem {
   readonly bodyKey: string;
   /**
    * 投影する面・辺。**`null` なら立体そのもの**(交差、または立体全体の投影)。
-   * 面・辺は指紋で渡し、選び直しはカーネルの中で行う(§2.2.4)。
+   * 面・辺は指紋で渡し、選び直しはカーネルの中で行う。
    */
   readonly source: SubShapeRef | null;
   /** 投影先・切り口の作図面。 */
@@ -113,19 +113,19 @@ export interface SketchProjectionResult {
 }
 
 /* ------------------------------------------------------------------ *
- * スケッチの角の丸め・面取り(FR-323、P4 タスク18・19)— Worker を通らない同期の口
+ * スケッチの角の丸め・面取り(FR-323)— Worker を通らない同期の口
  * ------------------------------------------------------------------ */
 
 /**
- * ## なぜ Worker を往復しないのか、なぜここに置くのか(統括の決定 §0.a-0.20)
+ * ## なぜ Worker を往復しないのか、なぜここに置くのか
  *
  * 角の丸め・面取りの形は、角を作るのが 2 本の**線分**である限り閉じた式で解ける。
- * タスク19 の実測で OCCT(`ChFi2d_FilletAlgo` / `ChFi2d_ChamferAPI`)は使わないと決まり、
+ * 実測で OCCT(`ChFi2d_FilletAlgo` / `ChFi2d_ChamferAPI`)は使わないと決まり、
  * kernel の `makeSketchFillet2d.ts` / `makeSketchChamfer2d.ts` は **OCCT に触れない純関数**
  * になった(理由は同ファイルの冒頭)。だから Worker への往復は要らない。
  *
  * それでも呼び出しをこのファイルに通すのは、**model からカーネルを呼ぶのは
- * `kernelBridge.ts` だけ**という決め(このファイルの冒頭、P0 §0.11)を守るため。
+ * `kernelBridge.ts` だけ**という決め(このファイルの冒頭)を守るため。
  * 式そのものは kernel が単一の正本を持ち(OCCT との一致を検査で固定しているのは
  * kernel 側だけで、model からは OCCT を呼べない)、model 側へ写して 2 か所に持つことは
  * しない(`splineMath.ts` が抱えている二重定義を増やさない)。

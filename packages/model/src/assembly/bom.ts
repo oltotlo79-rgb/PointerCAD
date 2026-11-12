@@ -1,5 +1,5 @@
 /**
- * アセンブリの部品表(FR-611、P7 §2.10・§2.10.1)。
+ * アセンブリの部品表(FR-611)。
  *
  * 保存文書を書き換えず、置いた部品と解決済みの体積から表示行を作る純関数である。
  * 同じ部品の判定は `partKeyOf` に集め、材質を加えた組を部品表の同一性にする。
@@ -21,7 +21,7 @@ export interface BomBody {
   readonly volume: number;
 }
 
-/** 展開可能なサブアセンブリ 1 件。P7 タスク36の再帰解決結果をそのまま渡せる。 */
+/** 展開可能なサブアセンブリ 1 件。サブアセンブリの再帰解決の結果をそのまま渡せる。 */
 export interface BomSubAssemblyData {
   readonly assembly: AssemblyDocument;
   readonly resolved: BomResolvedData;

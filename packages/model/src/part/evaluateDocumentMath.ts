@@ -25,14 +25,14 @@ export interface DocumentMathContext {
   readonly signal?: AbortSignal;
   readonly isCurrent: () => boolean;
   /**
-   * Measured math-geometry values of THIS document's current recomputation, by definition ID (GR-04).
+   * Measured math-geometry values of THIS document's current recomputation, by definition ID.
    * A definition without an entry here is "計算待ち": the coefficient reading it fails with a pending
    * reason, its ID is listed in `recompute.pendingGeometry`, and its users land in `invalidInputs`.
-   * Values are used as the kernel's doubles only (§4(e)); an old or foreign value must not be passed.
+   * Values are used as the kernel's doubles only; an old or foreign value must not be passed.
    */
   readonly geometry?: ReadonlyMap<string, MathGeometryOutcome>;
   /**
-   * Coefficient name → reason it must not be evaluated in this pass (GR-02's cycle, order and depth
+   * Coefficient name → reason it must not be evaluated in this pass (the dependency analysis's cycle, order and depth
    * findings, supplied by the stage recomputation). A blocked coefficient fails with exactly that reason
    * and is never sent to the math engine; everything depending on it fails as well.
    */
@@ -82,7 +82,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
   const evaluatedParameters = new Map<string, Parameter>();
   const parameterFailures = new Map<string, string>(), invalidInputs = new Map<string, string>();
   const geometryDefinitions = resolvableMathGeometryDefinitions(document), pendingGeometry = new Set<string>();
-  /** Coefficient name → math-geometry definition IDs it uses (§4(e)); filled before any formula is evaluated. */
+  /** Coefficient name → math-geometry definition IDs it uses; filled before any formula is evaluated. */
   let geometryDerived: ReadonlyMap<string, readonly string[]> = new Map();
   let calculationUnavailable = false;
   let inputRevision = 0;
@@ -127,7 +127,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
   };
 
   /**
-   * GR-19d: a legacy (name-referencing) formula naming an already-failed coefficient must relay that
+   * A legacy (name-referencing) formula naming an already-failed coefficient must relay that
    * coefficient's own reason (circular or otherwise), not the generic "決まっていない名前です" (unknown
    * name, `packages/expression/src/errors.ts`, code `unknownVariable`) — that text is reserved for a
    * name this document never defines. `parameterFailures` only holds names that ARE real parameters,
@@ -144,7 +144,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     return null;
   };
 
-  /** `coefficientName` is set only for a coefficient's own formula: the one place a measured value may be read (Q2=U1). */
+  /** `coefficientName` is set only for a coefficient's own formula: the one place a measured value may be read. */
   const evaluate = async (value: ExpressionValue, coefficientName?: string): Promise<ValueResult> => {
     bindMathCompositionNames(value, compositionNames);
     const definition = value.mathDefinition;
@@ -154,7 +154,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       if (!exact.ok) return { ok: false, message: dependentFailureMessage(exact.error, value.source) ?? exact.error.message };
       const result = evaluateExpression(value.source, options);
       if (!result.ok) return { ok: false, message: dependentFailureMessage(result.error, value.source) ?? result.error.message };
-      // A measured double is never re-read as an exact rational, not even after legacy arithmetic (§4(e)).
+      // A measured double is never re-read as an exact rational, not even after legacy arithmetic.
       if (usesGeometryDerived(value)) return { ok: true, value: result.value, decimal: exact.value.exact };
       try {
         const original = originalCoefficientExpression(result.value, legacyNames, [...coefficientNames.values()]);
@@ -171,7 +171,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     if (measured.length > 0 && coefficientName === undefined) {
       return { ok: false, message: mathGeometryOutsideCoefficientMessage(measured[0].label) };
     }
-    // Q4=S1: checked before any value is looked up, so a refused operation is never reported as pending.
+    // Allowed operations: checked before any value is looked up, so a refused operation is never reported as pending.
     if (measured.length > 0 || usesGeometryDerived(value)) {
       const issue = checkGeometryDerivedOperations(definition.expression);
       if (issue !== null) return { ok: false, message: issue.message };
@@ -229,7 +229,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       let coefficient: MathWorkRequest['coefficients'][number];
       try {
         const id = parameter.mathId ?? `legacy-coefficient:${document.parameters.indexOf(parameter)}`;
-        // A geometry-derived coefficient travels as its decimal only: no exact original expression (§4(e)).
+        // A geometry-derived coefficient travels as its decimal only: no exact original expression.
         coefficient = geometryDerived.has(name) ? { id, label: name, decimal: result.decimal } : { id, label: name,
           decimal: result.decimal, exactExpression: originalCoefficientExpression(result.value, legacyNames, [...coefficientNames.values()]) };
       } catch (error) {

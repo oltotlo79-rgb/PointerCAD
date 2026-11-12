@@ -21,7 +21,7 @@ import type { Parameter } from '../parameters/types.js';
 import { checkGeometryDerivedOperations, GEOMETRY_DERIVED_OPERATIONS, geometryDerivedIntegralOperands, type GeometryDerivedOperationIssue,
 } from './mathGeometryCoefficients.js';
 
-/** GR-04's issue, plus which formula of the plot holds the refused operation (so the editor can mark that field). */
+/** The coefficient checker's issue, plus which formula of the plot holds the refused operation (so the editor can mark that field). */
 export interface GeometryDerivedFunctionOperationIssue extends GeometryDerivedOperationIssue {
   /** The output axis of that formula, or `null` for the single equation of an implicit curve or surface. */
   readonly output: FunctionPlotAxis | null;
@@ -62,7 +62,7 @@ export function functionFormulaExpressions(definition: FunctionDefinition): read
 
 /**
  * The `coef` IDs (`Parameter.mathId`) of the geometry-derived coefficients among `parameters`. `derived` maps a
- * coefficient name to the definitions it uses: `ParameterAnalysis.geometryDerived`, or GR-04's
+ * coefficient name to the definitions it uses: `ParameterAnalysis.geometryDerived`, or the coefficient checker's
  * `mathGeometryDerivedParameters(parameters)`. A derived coefficient without a math ID cannot appear in a plot formula
  * (formulas name coefficients by ID) and adds nothing.
  */
@@ -93,7 +93,7 @@ function operandsOf(node: MathNode): readonly MathNode[] {
 }
 
 /**
- * Every node of `root` whose subtree reads a coefficient in `ids`. One iterative post-order pass (no recursion, R27):
+ * Every node of `root` whose subtree reads a coefficient in `ids`. One iterative post-order pass (no recursion):
  * each node is expanded once even when the parser shares a node object, so the cost stays linear in the stored
  * formula, which the decoder already bounds (nodes and depth).
  */
@@ -120,7 +120,7 @@ function nodesReading(root: MathNode, ids: ReadonlySet<string>): ReadonlySet<Mat
   return reading;
 }
 
-/** Q4=S1 applied to one node: a binder, or an operation outside `GEOMETRY_DERIVED_OPERATIONS` (GR-04's list). */
+/** The allowed-operations rule applied to one node: a binder, or an operation outside `GEOMETRY_DERIVED_OPERATIONS` (the coefficient checker's list). */
 function refusedOperation(node: MathNode): boolean {
   return node.kind === 'binder' || (node.kind === 'operation' && !GEOMETRY_DERIVED_OPERATIONS.has(node.operation));
 }
@@ -131,7 +131,7 @@ function definingEquation(node: MathNode): node is Extract<MathNode, { readonly 
 }
 
 /**
- * The first refused operation (pre-order, left to right, like GR-04) whose operands read a coefficient in `ids`.
+ * The first refused operation (pre-order, left to right, like the coefficient checker) whose operands read a coefficient in `ids`.
  * Subtrees that read none are skipped: nothing inside them can be refused.
  */
 function firstRefusedOperation(root: MathNode, ids: ReadonlySet<string>, implicit: boolean): GeometryDerivedOperationIssue | null {
@@ -151,8 +151,8 @@ function firstRefusedOperation(root: MathNode, ids: ReadonlySet<string>, implici
       continue;
     }
     if (refusedOperation(node)) {
-      // GR-04's checker reports its own root first (pre-order), so for a refused node it yields exactly GR-04's
-      // issue: the same operation ID and the same spelling in Appendix C's sentence (e.g. `ceiling` → 「ceil」).
+      // The coefficient checker reports its own root first (pre-order), so for a refused node it yields exactly its
+      // issue: the same operation ID and the same spelling in the refusal sentence (e.g. `ceiling` → 「ceil」).
       const issue = checkGeometryDerivedOperations(node);
       if (issue !== null) return issue;
     }
@@ -163,11 +163,11 @@ function firstRefusedOperation(root: MathNode, ids: ReadonlySet<string>, implici
 }
 
 /**
- * GR-06b: the first operation in the plot's formulas (in `functionFormulaExpressions` order) that feeds a
+ * The first operation in the plot's formulas (in `functionFormulaExpressions` order) that feeds a
  * geometry-derived coefficient (`derivedCoefficientIds`, see `mathGeometryDerivedCoefficientIds`) into a value
- * boundary, or `null` when the plot may use them. The reason is GR-04's Appendix C sentence「演算」. With no derived
+ * boundary, or `null` when the plot may use them. The reason is the coefficient checker's sentence「演算」. With no derived
  * coefficient nothing is examined. A measured value referenced directly by a plot formula is a different refusal
- * (GR-04's `mathGeometryOutsideCoefficientMessage`), made where the coefficients are resolved.
+ * (`mathGeometryOutsideCoefficientMessage`), made where the coefficients are resolved.
  */
 export function checkGeometryDerivedFunctionOperations(definition: FunctionDefinition,
   derivedCoefficientIds: ReadonlySet<string>): GeometryDerivedFunctionOperationIssue | null {

@@ -23,10 +23,10 @@ import {
 } from '@pointercad/model';
 
 /**
- * 選択セットの要素(FR-112、P6 §0.a-0.44、タスク37)。**外観の割り当て先より 2 語多い。**
+ * 選択セットの要素(FR-112)。**外観の割り当て先より 2 語多い。**
  *
  * 利用者の決定(2026-09-06)で選択セットは辺・頂点も覚えるようになった(選択フィルタの
- * 4 つの入切と対になる。§0.a-0.43)。外観は色を塗る先が面なので `'edge'` / `'vertex'` を
+ * 4 つの入切と対になる)。外観は色を塗る先が面なので `'edge'` / `'vertex'` を
  * 受け付けてはならず、一覧を分けてある。**欄も書式の版も増えていない**(版7 のまま)ので、
  * 立体・面だけの既存の版7 のファイルはそのまま読める。
  */
@@ -38,10 +38,10 @@ const SELECTION_MEMBER_KINDS: readonly SelectionMember['kind'][] = [
 ];
 
 /**
- * 選択セットの要素 1 つ(`SelectionMember`、FR-112、版7、P6 タスク37)。
+ * 選択セットの要素 1 つ(`SelectionMember`、FR-112、版7)。
  *
  * **外観の割り当て先(`AppearanceTarget`)とは別の型になった**(利用者の決定、2026-09-06)。
- * 立体と面だけでなく**辺と頂点も覚える**ので書き手を分ける。`ref` の中身は P3 の
+ * 立体と面だけでなく**辺と頂点も覚える**ので書き手を分ける。`ref` の中身は部分形状の
  * `serializeSubShapeRef`(指紋つき)をそのまま使い回すため、増えるのは `kind` に入る語
  * (`'edge'` / `'vertex'`)だけで、**欄は 1 つも増えず書式の版も上がらない**(版7 のまま)。
  * 立体・面だけの既存の版7 のファイルは 1 バイトも変わらない。
@@ -55,7 +55,7 @@ function serializeSelectionMember(member: SelectionMember): SelectionMember {
   return { kind: member.ref.fingerprint.kind, ref: serializeSubShapeRef(member.ref) };
 }
 
-/** 選択セット 1 つ(FR-112、版7、P6 タスク37)。 */
+/** 選択セット 1 つ(FR-112、版7)。 */
 export function serializeSelectionSet(set: SelectionSet): SelectionSet {
   return {
     id: set.id,
@@ -65,9 +65,9 @@ export function serializeSelectionSet(set: SelectionSet): SelectionSet {
 }
 
 /**
- * 選択セットの要素 1 つ(`SelectionMember`、FR-112、版7、P6 タスク37)を読む。
+ * 選択セットの要素 1 つ(`SelectionMember`、FR-112、版7)を読む。
  *
- * 立体・面・辺・頂点の 4 種(利用者の決定、2026-09-06)。`ref` の中身は P3 の
+ * 立体・面・辺・頂点の 4 種(利用者の決定、2026-09-06)。`ref` の中身は部分形状の
  * `readSubShapeRefField`(指紋つき)をそのまま使い回すので、外観の読み手との違いは
  * **受け付ける `kind` の語が 2 つ多いことだけ**である。知らない語(`'edgeLoop'` 等)は
  * `readLiteral` が場所を添えて断る(エラーコードは増やさず `invalidField` のまま)。
@@ -103,12 +103,12 @@ function readSelectionMemberRecord(
 }
 
 /**
- * 選択セット 1 つ(FR-112、版7、P6 タスク37)を読む。
+ * 選択セット 1 つ(FR-112、版7)を読む。
  *
  * **名前が空かどうかはここでは見ない。** 空にできないのは利用者の操作の話(model の
  * `createSelectionSet` が断る)で、壊れたファイルの判定ではないため、ここで断ると
  * 「開けないファイル」を作ってしまう(FR-504「読み込みでファイルを失わせない」)。
- * **同じ名前が 2 つあっても読む**(§2.13。区別は id が付ける)。
+ * **同じ名前が 2 つあっても読む**(区別は id が付ける)。
  */
 function readSelectionSetItem(value: unknown, path: string): Checked<SelectionSet> {
   const record = checkRecord(value, path);

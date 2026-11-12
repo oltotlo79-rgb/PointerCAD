@@ -66,7 +66,7 @@ const SKETCH_FEATURE_KINDS: readonly SketchFeature['kind'][] = [
   'functionCurve',
   'offset',
   'copy',
-  // 投影・交差(FR-325、P4 タスク25)。曲線そのものは保存せず、立体への参照だけを持つ。
+  // 投影・交差(FR-325)。曲線そのものは保存せず、立体への参照だけを持つ。
   'projectedCurve',
   'planeSection',
 ];
@@ -106,7 +106,7 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         endAngle: serializeExpression(feature.endAngle),
         construction: feature.construction,
       };
-      // 3D スケッチの円弧の向き(FR-330、P4 タスク10)。作図面のある円弧は持たないので、
+      // 3D スケッチの円弧の向き(FR-330)。作図面のある円弧は持たないので、
       // そのときは欄そのものを書かない(持たない状態と「空の向き」を混ぜないため)。
       if (feature.freeOrientation === undefined) {
         return arc;
@@ -240,10 +240,10 @@ export function serializeSketch(sketch: SketchDocument): SketchDocument {
     name: sketch.name,
     features: sketch.features.map(serializeSketchFeature),
   };
-  // 拘束(FR-313、P4b タスク21)。**型自体が恒常的に省略可能**(`SketchDocument.constraints?`)
+  // 拘束(FR-313)。**型自体が恒常的に省略可能**(`SketchDocument.constraints?`)
   // なので、`freeOrientation` と同じ約束で「有れば有るまま、無ければ書かない」にする
   // (`references` と違い、無い文書に `[]` を足す正規化はしない。往復が元の文書と
-  // deep equal になることを不変条件にするため。統括の決定 2026-09-04)。
+  // deep equal になることを不変条件にするため)。
   if (sketch.constraints === undefined) {
     return base;
   }

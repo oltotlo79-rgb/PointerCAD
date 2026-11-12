@@ -38,7 +38,7 @@ interface ToleranceEditorProps {
 }
 
 /**
- * GR-19c fixes: (1) confirming an edit to one margin field must not drift the other away from its
+ * Fixes: (1) confirming an edit to one margin field must not drift the other away from its
  * exact stored number (`resolveMathGeometryTolerance` keeps whichever field is absent from `draft`
  * verbatim instead of re-parsing its rounded display text); (2) each field's error text lives outside
  * its `<label>`, tied to the input by `aria-describedby` like every other field's error display
@@ -85,7 +85,7 @@ export function ToleranceEditor({ owner, id, version, onResult }: ToleranceEdito
   </details>;
 }
 
-/** GR-19b: render GR-19a's decisions and send edits through GR-16/GR-31 only. */
+/** render `mathGeometryRows.ts`'s decisions and send edits through the command modules only. */
 export function MathGeometryPanel(): React.JSX.Element | null {
   const visible = useAppStore(mathGeometryPanelVisible);
   return visible ? <MathGeometryPanelContent /> : null;

@@ -24,14 +24,14 @@ export function profileReference(document: PartDocument, ref: SketchFaceRef): So
 }
 
 /**
- * 罫線面・ロフトの断面 1 つを、プロパティに出す参照へ直す(FR-430、FR-410、P5 タスク27)。
+ * 罫線面・ロフトの断面 1 つを、プロパティに出す参照へ直す(FR-430、FR-410)。
  *
  * スケッチの面は「スケッチ名 / 面の名前」、立体の面と球は名前だけを出す(面の通し番号は
  * プロパティに出す約束が無く、指紋の中身を利用者に見せても意味がないため)。
  *
  * 見出し(`labelKey`)は**呼び出し側が渡す**。罫線面は「1 つ目の面」「2 つ目の面」で
  * どちらがどちらか読めるようにし、ロフトは並びが意味を持つので全部「断面」にする
- * (タスク27。タスク25 の最小の枝は断面の種類で見出しを変えていたが、種類ではなく
+ * (以前の最小の枝は断面の種類で見出しを変えていたが、種類ではなく
  * **何番目か**のほうが利用者に要る情報である)。
  */
 export function ruledSectionReference(
@@ -87,10 +87,10 @@ const IMPORTED_SOURCE_UNIT_NAMES: Readonly<Record<LengthUnit, string>> = {
 };
 
 /**
- * 読み込んだ形の素性(ファイル名・形式・単位・バイト数、FR-802、P6 §2.8)を
+ * 読み込んだ形の素性(ファイル名・形式・単位・バイト数、FR-802)を
  * 読み取り専用の参照へ直す(importedSolid / importedMesh が共有する)。
  *
- * **式の欄を1つも持たない**(履歴が無いので直せる寸法が無い、§0.a-0.9)ので、選び直しの
+ * **式の欄を1つも持たない**(履歴が無いので直せる寸法が無い)ので、選び直しの
  * 操作もない。`elementId` はこのフィーチャー自身の id にして、押すと立体を選べるだけの
  * 行にする(`bodyReference` が対象の立体を指すのと同じ扱い。選び直しではなく確認のため)。
  */
@@ -132,7 +132,7 @@ export function referenceAxisName(document: PartDocument, referenceFeatureId: st
 }
 
 /**
- * 回転軸の見え方。線分の軸と基準軸(FR-329)は名前を引いて読み取り専用で出す(§0.a-0.9)。
+ * 回転軸の見え方。線分の軸と基準軸(FR-329)は名前を引いて読み取り専用で出す。
  * 基準軸も「名前を出すだけ」で扱いが同じなので `kind: 'line'`(= 読み取り専用の名前)にまとめる。
  */
 export function axisSummary(document: PartDocument, feature: SolidFeature): SolidAxisSummary | null {

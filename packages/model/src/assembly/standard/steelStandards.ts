@@ -30,7 +30,7 @@ const draftNote = '原案で確認（2026-10-24調査時、JSAの規格票は保
 /**
  * Nine standards, with nine JISF PDFs across eight standards (G 3192 has two drafts).
  * G 3123 has no JISF draft in the investigation; G 3444's edition remains inferred.
- * URL/hash pairs are transcribed from the EX-03 investigation, not fetched at runtime.
+ * URL/hash pairs are transcribed from the steel standards investigation, not fetched at runtime.
  */
 export const STEEL_STANDARDS = {
   'jis-g-3101-2024': {

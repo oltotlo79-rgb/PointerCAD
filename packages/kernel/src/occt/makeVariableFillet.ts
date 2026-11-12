@@ -9,15 +9,15 @@ import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, edgeAt } from './subShapes.js';
 
 /**
- * 半径の変わる R 面取り(FR-426。計画書 P5 §2.12・§0.a-0.48、タスク53)。
+ * 半径の変わる R 面取り(FR-426)。
  *
  * 辺 1 本の中で丸みの大きさを変える。始点側の半径と終点側の半径を別々に指定すると、
  * OCCT がその間をなめらかにつなぐ。半径が一定の R 面取り(FR-407)は `makeFillet.ts` の
  * 担当で、**そちらは 1 行も変えていない**(段への組み込みと 2 つの統合の判断は
- * 計画書のタスク42・55 の仕事)。
+ * ここでは行わない)。
  *
- * **API は `Add_3(R1, R2, E)`**(§0.a-0.48)。`SetRadius_5` / `_6` は名前に反して
- * 一定半径なので使わない(§1.4-7)。
+ * **API は `Add_3(R1, R2, E)`**。`SetRadius_5` / `_6` は名前に反して
+ * 一定半径なので使わない。
  *
  * **どちらの端が R1 か(2026-09-05 に Node で実測):** 20³ の箱の縦稜線
  * (下端 z = 0、上端 z = 20)に `Add_3(2, 5, edge)` を掛けたところ、
@@ -31,12 +31,12 @@ import { boundingDiagonal, edgeAt } from './subShapes.js';
  *   R5 → R2 : 7943.407681943795(入れ替えても同じ)
  *   R5 一定 : 7892.6990816987245(解析値 8000 − (1 − π/4)·20·25 と一致)
  *   R2 一定 : 7982.831853071794(解析値 8000 − (1 − π/4)·20·4 と一致)
- * 計画書の検証表が挙げる近似値 7944.203522483337(半径が長さに比例して変わると見なし、
+ * 検証の表が挙げる近似値 7944.203522483337(半径が長さに比例して変わると見なし、
  * 断面積を `(r1² + r1r2 + r2²)/3` で平均した値)との差は 0.796 mm³ で、
  * **削れた量に対して 1.43%** だった。OCCT の可変半径は半径そのものを直線で変える法則ではなく
- * 面をなめらかにつなぐ近似なので、解析値とはこの程度ずれる。**計画書の期待値(相対 1%)は
+ * 面をなめらかにつなぐ近似なので、解析値とはこの程度ずれる。**当初の期待値(相対 1%)は
  * 満たせないため、検査では「一定 R2 と一定 R5 の間にあること」「両端の半径が指定どおりであること」
- * 「近似値との差が削れた量の 2% 以内であること」で固定した**(統括へ報告済み)。
+ * 「近似値との差が削れた量の 2% 以内であること」で固定した**。
  */
 
 /** これ未満の体積(mm³)は「立体が残らなかった」とみなす(booleanOp.ts と同じ下限)。 */
@@ -106,7 +106,7 @@ function toJapaneseFailure(error: unknown, message: string): Error {
  * 辺の選び直しは `makeFillet.ts` の `resolveFilletEdges` をそのまま使う
  * (**同じ判断を 2 か所に書かない**)。あちらは指紋の一覧をまとめて番号へ直すが、
  * ここでは半径が辺ごとに違うので **1 件ずつ**渡す。頂点の指紋を「集まる辺」へ広げる
- * 決め(§0.a-0.17)も、1 件ずつ渡すことでそのまま効く。
+ * 決めも、1 件ずつ渡すことでそのまま効く。
  *
  * **1 つでも選び直せない指紋があれば断る**(部分成功にしない。`makeFillet.ts` と同じ判断)。
  * 並びを昇順に固定するのは、同じ入力から必ず同じ順で `Add_3` して同じ形が出るようにするため。
@@ -181,8 +181,8 @@ export function makeVariableFillet(
     throw new Error(MISSING_EDGE_MESSAGE);
   }
 
-  // 列挙値は unknown を経由してから述語ガードで絞る(§0.a-0.26。makeFillet.ts の注釈)。
-  // **新しいガードは作らず、makeFillet.ts の 1 つを輸入して使い回す**(§4)。
+  // 列挙値は unknown を経由してから述語ガードで絞る(makeFillet.ts の注釈)。
+  // **新しいガードは作らず、makeFillet.ts の 1 つを輸入して使い回す**。
   const filletShape: unknown = oc.ChFi3d_FilletShape.ChFi3d_Rational;
   if (!isFilletShape(filletShape)) {
     throw new Error(KERNEL_NOT_READY_MESSAGE);
@@ -214,7 +214,7 @@ export function makeVariableFillet(
       throw toJapaneseFailure(error, BUILD_FAILED_MESSAGE);
     }
 
-    // 個数の戻り型 Graphic3d_ZLayerId は型定義のどこにも無いので整数へ直す(§1.4)。
+    // 個数の戻り型 Graphic3d_ZLayerId は型定義のどこにも無いので整数へ直す。
     const faultyContours = Number(maker.NbFaultyContours());
     if (faultyContours > 0) {
       throw new Error(faultyContourMessage(faultyContours));

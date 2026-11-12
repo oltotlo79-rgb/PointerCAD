@@ -1,9 +1,9 @@
 /**
- * ボルトの通し穴の径と呼びの対応の根拠(EX-06)。通し穴どうしの締結で、穴の径から呼びを選ぶ時だけ使う。
+ * ボルトの通し穴の径と呼びの対応の根拠。通し穴どうしの締結で、穴の径から呼びを選ぶ時だけ使う。
  *
  * 出典: NBK「Diameter of Clearance Holes and Counterbores for Bolts and Screws」(2015-06-18 掲載、
  * https://www.nbk1560.com/en-US/resources/other/article/technical-20-diameter-of-clearance-holes-and-counterbores-for-bolts-and-screws/ )
- * の表の 1級・2級・3級の値(mm)。統括が取得して転記を確認した。この頁だけでは JIS の版を確定できない
+ * の表の 1級・2級・3級の値(mm)。転記は確認済み。この頁だけでは JIS の版を確定できない
  * ので、JIS B 1001 の本文とは名乗らない。4級(主に鋳抜き穴)と、ISO 273 の外の括弧付きの値は持たない。
  *
  * 1 行は「この呼びのボルトに対し、穴の径がこの範囲なら通し穴として扱える」根拠で、下限は 1級の径、
@@ -37,7 +37,7 @@ export const NBK_CLEARANCE_GRADES: readonly ClearanceGrades[] = [
   { nominal: 'M24', grade1: 25, grade2: 26, grade3: 28 },
 ];
 
-/** 締結の計画へ渡す根拠の行。範囲は 1級〜3級。統括が確認した転記なので verified。 */
+/** 締結の計画へ渡す根拠の行。範囲は 1級〜3級。確認済みの転記なので verified。 */
 export const CLEARANCE_EVIDENCE: readonly ClearanceEvidenceRow[] = NBK_CLEARANCE_GRADES.map((row) => ({
   nominal: row.nominal, minimumHoleDiameter: row.grade1, maximumHoleDiameter: row.grade3,
   verified: true, source: CLEARANCE_EVIDENCE_SOURCE,

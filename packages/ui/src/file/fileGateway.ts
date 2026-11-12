@@ -1,7 +1,7 @@
 import { isObject } from '../valueGuards.js';
 /**
- * ファイルの読み書きの口(計画書 docs/plans/P2-ソリッド基礎.md タスク23、§2.10、§0.a-0.10。
- * 種類つきの出し入れは docs/plans/P6-入出力.md §2.2、§0.a-0.4、タスク4)。
+ * ファイルの読み書きの口。
+ * 種類つきの出し入れも持つ。
  *
  * 対応要件: FR-806(保存・読込)、FR-802(読み込み)、FR-803(書き出し)、NFR-SE-1、
  * 要件§1.5(Web 版とデスクトップ版に機能差を作らない)。
@@ -10,7 +10,7 @@ import { isObject } from '../valueGuards.js';
  * 「開く」「保存する」の**口だけ**をここに置き、実装はストアへ差し込む。
  * ここにあるのはブラウザ用の実装で、デスクトップ版は `setFileGateway` で差し替える。
  *
- * ブラウザ用は 2 段構えにする(§0.a-0.10)。
+ * ブラウザ用は 2 段構えにする。
  *  - File System Access API(`showOpenFilePicker` / `showSaveFilePicker`)があればそれを使う。
  *    開いたファイルの手掛かりを覚えられるので、**同じファイルへの上書き保存**ができる。
  *  - 無ければ、保存はダウンロード(`<a download>`)、読込はファイル選択(`<input type="file">`)へ落とす。
@@ -21,7 +21,7 @@ import { isObject } from '../valueGuards.js';
  *    部品そのもの(`.pcad`)の開く・保存する。開いた先は、呼び手が中身を確かめて
  *    `confirmSaveTarget` した後にだけ上書き先になる。
  *  - `openFile` / `saveFileAs`: 他の形式との出し入れ(STEP・STL・OBJ・glTF・3MF・DXF・ひな形)。
- *    **上書き先を覚えない**(§0.a-0.4)。覚えてしまうと、書き出しの後の Ctrl+S が
+ *    **上書き先を覚えない**。覚えてしまうと、書き出しの後の Ctrl+S が
  *    部品ではなく書き出した先を上書きしかねないため。`saveFileAs` は呼ぶたびに名前を訊く。
  *
  * File System Access API は TypeScript の DOM の型定義に**入っていない**(TypeScript 5.9 で確認)。
@@ -42,7 +42,7 @@ import { readBrowserFile, type BrowserReadableFile } from './readBrowserFile.js'
 import type { DrawingPrintOptions as TypeDrawingPrintOptions } from '@pointercad/drawing';
 
 
-/** 開いたファイル 1 つぶん(§2.10)。 */
+/** 開いたファイル 1 つぶん。 */
 export interface PickedFile {
   /** 拡張子を含むファイル名。パスは含まない(ブラウザは渡してくれない)。 */
   readonly name: string;
@@ -51,7 +51,7 @@ export interface PickedFile {
   readonly saveTargetToken: string | null;
 }
 
-/** 種類まで分かったファイル 1 つぶん(§2.2)。パスは含まない(NFR-SE-1)。 */
+/** 種類まで分かったファイル 1 つぶん。パスは含まない(NFR-SE-1)。 */
 export interface PickedTypedFile {
   /** どの形式として読むか。頼んだ種類(`openFile` の引数)の中から選ばれる。 */
   readonly kind: FileKind;
@@ -101,8 +101,8 @@ export interface FileGateway {
   clearSaveTarget?(): void;
   /**
    * 種類を選んでファイルを開く(FR-802、FR-813、FR-807)。取り消されたら null。
-   * この種類つき読み込みは `.pcad` の上書き先候補を作らず、`hasSaveTarget()` も変えない
-   * (§0.a-0.4)。
+   * この種類つき読み込みは `.pcad` の上書き先候補を作らず、`hasSaveTarget()` も
+   * 変えない。
    *
    * 省略できる欄にしてあるのは、差し込み側(検査の偽の口や古いデスクトップ版)を
    * 壊さないため。省略された口へは `openFileThrough` がブラウザ用の実装で答える。
@@ -111,7 +111,7 @@ export interface FileGateway {
   openParameterCsv?(): Promise<PickedParameterCsvFile | null>;
   /**
    * 名前を訊いて書き出す(FR-803、FR-812、FR-814)。書けたら true、取り消されたら false。
-   * **呼ぶたびに名前を訊く**(上書き先を覚えない。§0.a-0.4)。
+   * **呼ぶたびに名前を訊く**(上書き先を覚えない)。
    * 省略できる理由は `openFile` と同じ。
    */
   saveFileAs?(fileName: string, kind: SaveFileKind, bytes: Uint8Array, control?: ExportSaveControl): Promise<boolean>;
@@ -120,7 +120,7 @@ export interface FileGateway {
   openExport?(token: string): Promise<boolean>;
   openCamTool?(tool: CamTool): Promise<boolean>;
   /**
-   * 印刷する(FR-810。P6 計画書 §2.11、タスク29)。PNG のバイト列を渡すと、
+   * 印刷する(FR-810)。PNG のバイト列を渡すと、
    * 印刷できたら true、取り消されたら false を返す(**取り消しは例外にしない**)。
    *
    * **この口を持つのはデスクトップ版だけ。** ブラウザは `window.print()` で印刷できるので、
@@ -252,7 +252,7 @@ function hasSavePicker(scope: object): scope is SavePickerScope {
 }
 
 /**
- * File System Access API が使えるか(§0.a-0.10)。
+ * File System Access API が使えるか。
  *
  * 「開く」と「保存する」の両方が揃っているときだけ使えると数える。片方だけがある環境は
  * 知られていないうえ、片方だけ使うと「開いたファイルへ上書き保存できる / できない」が
@@ -612,13 +612,13 @@ export async function openParameterCsvInBrowser(scope: object = globalThis): Pro
 // ---------------------------------------------------------------------------
 
 /**
- * 種類を選んでファイルを開く(§2.2)。取り消されたら null。
+ * 種類を選んでファイルを開く。取り消されたら null。
  *
- * **上書き先を覚えない。** 覚えるのは `.pcad` の `savePcad` / `openPcad` だけで(§0.a-0.4)、
+ * **上書き先を覚えない。** 覚えるのは `.pcad` の `savePcad` / `openPcad` だけで、
  * ここは口の状態を一切触らないただの関数にしてある。
  *
  * 拡張子で種類を見分けられなかったときは断る。中身の先頭のバイト列で見分ける段構え
- * (§0.a-0.27)は読み込む側の担当で、ここでは「どの形式として読むか」を決められない。
+ * は読み込む側の担当で、ここでは「どの形式として読むか」を決められない。
  */
 export async function openFileInBrowser(
   kinds: readonly FileKind[],
@@ -669,10 +669,10 @@ export async function openFileInBrowser(
 }
 
 /**
- * 名前を訊いて書き出す(§2.2)。書けたら true、取り消されたら false(例外は投げない)。
+ * 名前を訊いて書き出す。書けたら true、取り消されたら false(例外は投げない)。
  *
- * **呼ぶたびに名前を訊く。** 前に書いた先を覚えないので、2 回続けて呼べば 2 回とも窓が出る
- * (§0.a-0.4)。部品の上書き保存(`savePcad`)とはここが違う。
+ * **呼ぶたびに名前を訊く。** 前に書いた先を覚えないので、2 回続けて呼べば 2 回とも窓が出る。
+ * 部品の上書き保存(`savePcad`)とはここが違う。
  */
 export async function saveFileAsInBrowser(
   fileName: string,
@@ -683,7 +683,7 @@ export async function saveFileAsInBrowser(
 ): Promise<boolean> {
   if (!mayContinueExport(control)) return false;
   if (!hasSavePicker(scope)) {
-    // 場所は選べないので、名前を添えてダウンロードする(§0.a-0.10)。
+    // 場所は選べないので、名前を添えてダウンロードする。
     if (!mayContinueExport(control)) return false;
     downloadBytes(scope, fileName, primaryMimeTypeOf(kind), bytes);
     return true;
@@ -749,12 +749,12 @@ export function saveFileAsThrough(
 // ---------------------------------------------------------------------------
 
 /**
- * ブラウザ用の口(§2.10)。File System Access API があれば使い、無ければ
- * ダウンロード / ファイル選択へ落とす(§0.a-0.10)。
+ * ブラウザ用の口。File System Access API があれば使い、無ければ
+ * ダウンロード / ファイル選択へ落とす。
  *
  * 保存先と、開いてから中身を確かめ終えるまでの候補を覚えるのはこの口 1 つの中だけ。
  * 作り直せばどちらも忘れる。
- * **覚えるのは `.pcad` の分だけ**で、`saveFileAs` / `openFile` は控えを触らない(§0.a-0.4)。
+ * **覚えるのは `.pcad` の分だけ**で、`saveFileAs` / `openFile` は控えを触らない。
  *
  * 調べる相手を引数で受けるのは、検査で偽の `globalThis` を渡せるようにするため
  * (`hasFileSystemAccess` と同じ考え方)。既定は本物の `globalThis` なので、
@@ -812,7 +812,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
     async savePcad(suggestedName, bytes, saveAs, kind = 'part'): Promise<string | null> {
       const revision = ++targetRevision;
       if (!hasSavePicker(scope)) {
-        // 場所は選べないので、名前を添えてダウンロードする(§0.a-0.10)。
+        // 場所は選べないので、名前を添えてダウンロードする。
         downloadBytes(scope, suggestedName, PCAD_MIME_TYPE, bytes);
         return suggestedName;
       }

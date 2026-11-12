@@ -32,14 +32,14 @@ import {
 } from '@pointercad/model';
 
 // ---------------------------------------------------------------------------
-// P5(FR-1106〜1110、要件§4.12、タスク5)が足す外観の割り当ての判別の一覧
+// 外観の割り当て(FR-1106〜1110、要件§4.12)の判別の一覧
 // ---------------------------------------------------------------------------
 
-/** 外観の割り当て先(§2.2.1)。立体はフィーチャー id、面は部分形状の参照。 */
+/** 外観の割り当て先。立体はフィーチャー id、面は部分形状の参照。 */
 const APPEARANCE_TARGET_KINDS: readonly AppearanceTarget['kind'][] = ['body', 'face'];
 
 /**
- * 材質プリセットの id(§2.4.1、11 種)。**未来のプリセットが増えたときの前方互換のため**、
+ * 材質プリセットの id(11 種)。**未来のプリセットが増えたときの前方互換のため**、
  * ここに無い文字列は `readLiteral` のように断らず、その割り当てだけを落として読み進める
  * (`readAppearanceSpec` 参照)。
  */
@@ -65,7 +65,7 @@ const APPEARANCE_PATTERN_KINDS: readonly AppearancePattern['kind'][] = [
   'woodGrain',
 ];
 
-/** 木材の樹種(§0.a-0.5、6 種)。未知の樹種も同じ理由で割り当てを落とす。 */
+/** 木材の樹種(6 種)。未知の樹種も同じ理由で割り当てを落とす。 */
 const WOOD_SPECIES_VALUES: readonly WoodSpecies[] = [
   'hinoki',
   'sugi',
@@ -105,7 +105,7 @@ export function serializeAppearanceSpec(spec: AppearanceSpec): AppearanceSpec {
   };
 }
 
-/** 外観の割り当て先(FR-1106)。面は部分形状の参照(P3 の `serializeSubShapeRef` を使い回す)。 */
+/** 外観の割り当て先(FR-1106)。面は部分形状の参照(`serializeSubShapeRef` を使い回す)。 */
 function serializeAppearanceTarget(target: AppearanceTarget): AppearanceTarget {
   switch (target.kind) {
     case 'body':
@@ -123,7 +123,7 @@ function serializeAppearanceEntry(entry: AppearanceEntry): AppearanceEntry {
   };
 }
 
-/** 外観の割り当て表(FR-1106〜1110、版6、P5 タスク5)。 */
+/** 外観の割り当て表(FR-1106〜1110、版6)。 */
 export function serializeAppearanceTable(table: AppearanceTable): AppearanceTable {
   return { entries: table.entries.map(serializeAppearanceEntry) };
 }
@@ -131,7 +131,7 @@ export function serializeAppearanceTable(table: AppearanceTable): AppearanceTabl
 /**
  * 光沢・粗さ・透過率(FR-1107、FR-1109)。0〜100(%)の式を読む。式が壊れて評価値が NaN の
  * ときは `readExpression` が既に許容しているので対象にしないが、有限の数で 0〜100 の範囲外
- * なら壊れたファイルとして断る(統括の指示。範囲外は `invalidField`)。
+ * なら壊れたファイルとして断る(範囲外は `invalidField`)。
  */
 function readAppearancePercent(
   source: Record<string, unknown>,
@@ -152,7 +152,7 @@ function readAppearancePercent(
 
 /**
  * 柄(FR-1108)を読む。**未知の柄の種類・未知の樹種は `null` を返し**、呼び出し側
- * (`readAppearanceSpec`)がその割り当てごと落とす(前方互換、タスク5)。
+ * (`readAppearanceSpec`)がその割り当てごと落とす(前方互換)。
  */
 function readAppearancePattern(
   source: Record<string, unknown>,
@@ -267,7 +267,7 @@ export function readAppearanceSpec(
 
 /**
  * 外観の割り当て先(FR-1106)を、値そのもの(record)から読む。面は部分形状の参照
- * (P3 の `readSubShapeRefField` を使い回す)。
+ * (`readSubShapeRefField` を使い回す)。
  *
  * **選択セットの要素(`SelectionMember`)はここでは読まない。** 利用者の決定(2026-09-06)で
  * 選択セットは辺・頂点も覚えるようになり、型が分かれた(`readSelectionMemberRecord`)。
@@ -319,7 +319,7 @@ function readAppearanceTarget(
 
 /**
  * 外観の割り当て 1 件を読む。**未知のプリセット id・柄の種類・樹種は、この割り当てだけを
- * 落として読み進める**(戻り値 `null`。ファイル全体は断らない。前方互換、計画書タスク5)。
+ * 落として読み進める**(戻り値 `null`。ファイル全体は断らない。前方互換)。
  * それ以外の壊れ方(id・対象・欄の型違い等)は、このファイルの他の読み手と同じく
  * ファイル全体を断る。
  */

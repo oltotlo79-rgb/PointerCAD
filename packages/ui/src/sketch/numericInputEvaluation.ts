@@ -21,7 +21,7 @@ export interface NumericInputEvaluation {
   readonly firstErrorIndex: number;
 }
 
-/** 範囲外を表す識別子(packages/expression の ExpressionErrorCode、P3 §0.a-0.23 ①)。 */
+/** 範囲外を表す識別子(packages/expression の ExpressionErrorCode)。 */
 const RANGE_ERROR_CODE = 'outOfRange';
 
 /** 打った文字そのものの読み取りに失敗した code。表示用の単位の包みで位置がずれうる。 */
@@ -71,13 +71,13 @@ export function effectiveSource(field: NumericField): string {
 }
 
 /**
- * その欄を評価する式の文字列(P6 タスク3b、§0.a-0.63)。**保存されるのもこの文字列**で、
+ * その欄を評価する式の文字列。**保存されるのもこの文字列**で、
  * 評価した値ではない(FR-202)。
  *
  * 打った文字が残っている長さの欄だけを、表示の単位で包む(`applyDisplayUnit`)。
  * 空欄(= 既定値で埋まる)と、吸い付きで入った座標は**すでに内部の mm** なので包まない
  * (`NumericField.typed` の注釈を見よ)。表示が mm のときは何を通しても包まれないので、
- * P1〜P5 の振る舞いは 1 文字も変わらない。
+ * 従来の振る舞いは 1 文字も変わらない。
  */
 export function fieldExpression(field: NumericField, unit: LengthUnit = 'mm'): string {
   if (!usesDisplayInputUnit(field)) {
@@ -97,7 +97,7 @@ export function fillDefaults(state: NumericInputState): NumericInputState {
   }
   return {
     ...state,
-    // 埋めるのは既定値(内部の mm)なので、打った文字の印は落とす(タスク3b)。
+    // 埋めるのは既定値(内部の mm)なので、打った文字の印は落とす。
     fields: state.fields.map((field) => ({
       ...field,
       source: effectiveSource(field),
@@ -107,9 +107,9 @@ export function fillDefaults(state: NumericInputState): NumericInputState {
 }
 
 /**
- * 表示の単位に関わる選択肢(P6 タスク3b、§0.a-0.63)。
+ * 表示の単位に関わる選択肢。
  *
- * どちらも省くと**表示が mm・パラメータはすべて長さ**になる。つまり P1〜P5 の呼び出しと
+ * どちらも省くと**表示が mm・パラメータはすべて長さ**になる。つまり従来の呼び出しと
  * 検査は 1 文字も書き換えずに同じ値を返す(安全側の既定)。
  */
 export interface DisplayUnitOptions {
@@ -120,7 +120,7 @@ export interface DisplayUnitOptions {
   readonly lengthUnit?: LengthUnit;
   /**
    * 長さでないパラメータの名前(model の `nonLengthVariables(document.parameters)`)。
-   * 単位の空間の中で「個数や角度まで倍率で割る」のを防ぐ(§0.a-0.63)。
+   * 単位の空間の中で「個数や角度まで倍率で割る」のを防ぐ。
    */
   readonly nonLengthVariables?: ReadonlySet<string>;
 }
@@ -139,8 +139,8 @@ export function evaluateNumericInput(
     // 式としては読めても、その道具が使えない値は決定させない(NFR-UX-5)。
     // 個数(パターンの count)が整数かどうかはここでは確かめない。NumericFieldRange は
     // min/max しか表現できず、ここへ整数判定を足すと他の欄(距離等)へ影響しない設計を
-    // 保つのが難しいため、整数かどうかの検査は加工コマンド側(タスク25
-    // machiningCommands.ts)で行う判断とした(計画書タスク24 検証表の注記への回答)。
+    // 保つのが難しいため、整数かどうかの検査は加工コマンド側(
+    // machiningCommands.ts)で行う判断とした。
     const rangeError = rangeErrorFor(field, result.value);
     return rangeError === null
       ? { key: field.key, value: result.value, error: null }
@@ -193,7 +193,7 @@ export function commitValues(evaluation: NumericInputEvaluation): ExpressionValu
 
 /**
  * 決定した値を欄の名前で引く(円弧の `radius` など)。
- * 並び順の取り違えを防ぐため、タスク17 が履歴へ積むときはこちらを使う。
+ * 並び順の取り違えを防ぐため、履歴へ積むときはこちらを使う。
  */
 export function valueByFieldKey(
   state: NumericInputState,

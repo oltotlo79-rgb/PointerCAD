@@ -30,17 +30,17 @@ function derivedParameters(parameters: readonly Parameter[]): ReadonlyMap<string
 export type PendingFieldVariablesState = MathGeometryResultState & Pick<AppState, 'parameterAnalysis'>;
 
 /**
- * 旧式の欄で値を出してはいけない係数の名前(GR-20)。
+ * 旧式の欄で値を出してはいけない係数の名前。
  *
  * 図形由来の係数(図形の測定値を直接、または他の係数を経由して使う係数)の値は、形を計算し直す
  * たびに変わる。ストアの変数表(`parameterAnalysis.variables`)は、再計算の結果の解析を
  * `applyRecompute` が採用したまま、次の文書の変更まで残る。履歴の途中を表示して計算した結果や、
  * つまみを末尾へ戻した後の計算中・その取消・失敗の間は、その表の図形由来の値は「いまの形の値」
- * ではない。そこで、GR-14 の判定(`currentMathGeometry`)が `current` でない間は、解析が図形由来と
- * 印を付けた係数(`ParameterAnalysis.geometryDerived`、GR-04)の名前をすべて計算待ちとする。
+ * ではない。そこで、図形の判定(`currentMathGeometry`)が `current` でない間は、解析が図形由来と
+ * 印を付けた係数(`ParameterAnalysis.geometryDerived`)の名前をすべて計算待ちとする。
  * `current` の間と、図形由来の係数を持たない文書では空の集合を返す(従来と同じ評価)。
  *
- * 文書変更直後の解析は印も値も持たないため、係数の定義からも由来を求める(GR-20b)。
+ * 文書変更直後の解析は印も値も持たないため、係数の定義からも由来を求める。
  * 同じ識別番号に異なる名前を持つ壊れた式では、現在の解析の印へ戻す。
  *
  * 同じ状態には同じ集合を返す(Zustand の選択関数からそのまま呼べる)。

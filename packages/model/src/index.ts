@@ -165,7 +165,7 @@ export type {
 export {
   planeFromNormal, planeSpecKeyText, resolvePlaneSpec, subShapeFromFingerprint,
 } from './geometry/planeSpec.js';
-/** 3D スケッチの 3 点(始点・終点・通過点)の円弧(FR-330、P4 タスク36)。 */
+/** 3D スケッチの 3 点(始点・終点・通過点)の円弧(FR-330)。 */
 export type { ArcThroughPointsResult } from './geometry/arcThroughPoints.js';
 export { arcThroughPoints } from './geometry/arcThroughPoints.js';
 export type {
@@ -211,7 +211,7 @@ export type {
   SketchFunctionCurveFeature,
 } from './sketch/types.js';
 export { projectionBodyFeatureId } from './sketch/types.js';
-/** 拘束(FR-313、P4b タスク4)。型と、変数の切り出し・自由度の数え方。 */
+/** 拘束(FR-313)。型と、変数の切り出し・自由度の数え方。 */
 export type {
   ConstraintTarget, SketchConstraint, SketchConstraintKind,
 } from './sketch/constraints/types.js';
@@ -229,7 +229,7 @@ export {
   curveEndpointKeys, featureIdOfPointKey, MAX_CONSTRAINT_VARIABLES, pointComponentKey,
   pointValueAt, radiusComponentKey, radiusValueAt, variableComponentKey,
 } from './sketch/constraints/variables.js';
-/** 拘束の残差とヤコビアン(FR-313、P4b タスク5)。 */
+/** 拘束の残差とヤコビアン(FR-313)。 */
 export type {
   ResidualRow,
 } from './sketch/constraints/residuals.js';
@@ -237,7 +237,7 @@ export {
   buildResidualReport, buildResiduals, IMPLICIT_CONSTRAINT_ID_PREFIX, implicitEquationId,
   isImplicitConstraintId,
 } from './sketch/constraints/residuals.js';
-/** 連立の解き方(FR-313、NFR-PF-2、P4b タスク6)。行列の道具と Levenberg–Marquardt。 */
+/** 連立の解き方(FR-313、NFR-PF-2)。行列の道具と Levenberg–Marquardt。 */
 export type {
   LinearizedRow,
   SolveOutcome,
@@ -246,14 +246,14 @@ export {
   CONSTRAINT_INITIAL_DAMPING, CONSTRAINT_MAX_ITERATIONS, CONSTRAINT_TOLERANCE, matrixRank,
   qrDecomposition, solveLeastSquares, solveLevenbergMarquardt, solveLinearSystem,
 } from './sketch/constraints/solve.js';
-/** 拘束の診断(足りない・足しすぎ・矛盾。FR-313、NFR-UX-5、P4b タスク7)。 */
+/** 拘束の診断(足りない・足しすぎ・矛盾。FR-313、NFR-UX-5)。 */
 export type {
   ConstraintDiagnosis,
 } from './sketch/constraints/diagnose.js';
 export {
   CONFLICT_REPORT_LIMIT, CONSTRAINT_TOO_MANY_MESSAGE, diagnoseConstraints, remainingMessage,
 } from './sketch/constraints/diagnose.js';
-/** 3 段の解決への差し込み(FR-313、FR-504、P4b タスク8)。拘束を解いてから解決し直す。 */
+/** 3 段の解決への差し込み(FR-313、FR-504)。拘束を解いてから解決し直す。 */
 export type {
   ConstrainedSketch,
   ConstrainedSketchJob,
@@ -270,7 +270,7 @@ export type { ResolveContext, ResolveOutcome } from './sketch/resolveCoordinate.
 export {
   resolveCoordinate, resolvePointReference, vertexKey,
 } from './sketch/resolveCoordinate.js';
-/** 球面上の点(FR-431、P5 タスク19)。 */
+/** 球面上の点(FR-431)。 */
 export type { ResolvedSphere } from './sketch/resolveCoordinate.js';
 export {
   LATITUDE_RANGE_MESSAGE, MISSING_SPHERE_MESSAGE, sphereGridPosition,
@@ -384,7 +384,7 @@ export type {
   ThreadHoleFeature,
   ThreadRepresentation,
 } from './part/types.js';
-/** パラメータ表(名前を付けた数値。FR-207、P4b タスク2)。 */
+/** パラメータ表(名前を付けた数値。FR-207)。 */
 export type {
   Parameter,
   ParameterAnalysis,
@@ -403,7 +403,7 @@ export {
   parameterEvaluationOrder, referencesTo, removeParameter, renameParameter, reorderParameters,
   replaceParameter,
 } from './parameters/parameterTable.js';
-/** 図面文書の生成・採番・参照元・レイヤー編集(P8 タスク4・7)。 */
+/** 図面文書の生成・採番・参照元・レイヤー編集。 */
 export type {
   Annotation,
   Balloon,
@@ -513,7 +513,7 @@ export {
   setActiveSketch, SKETCH_LABEL, SOLID_LABELS,
 } from './part/createPartDocument.js';
 /*
- * ひな形(FR-814、P6 §2.10、タスク27)。**画面(`packages/ui` のタスク33)から呼ぶので
+ * ひな形(FR-814)。**画面(`packages/ui`)から呼ぶので
  * ここへ並べる。** 中身は文書だけを見る純関数で、ファイルの読み書きにも画面にも触れない。
  */
 export type {
@@ -574,7 +574,7 @@ export {
   translateCurve,
 } from './part/resolvePart.js';
 /**
- * タイムライン(FR-507)と途中までの文書(FR-506、ロールバック。P4b タスク9)。
+ * タイムライン(FR-507)と途中までの文書(FR-506、ロールバック)。
  * 帯の並び・依存グラフ・並べ替えの可否・つまみの位置での差し込み。
  */
 export type {
@@ -650,7 +650,7 @@ export { renameDocumentMathGeometry } from './part/renameDocumentMathGeometry.js
 export { createBodyMateTargetOptions, createBodyMateTargetResolver, resolveConstrainedAssembly } from './assembly/resolveConstrainedAssembly.js';
 export { drawingSourceCenter } from './drawing/sourceCenter.js';
 /**
- * 部品文書の全式の評価し直し(FR-207、FR-502、P4b タスク3)。
+ * 部品文書の全式の評価し直し(FR-207、FR-502)。
  * パラメータ表の値を 1 か所変えると、参照している全ての欄が追従する仕組みの入口。
  */
 export type {
@@ -670,7 +670,7 @@ export type { PushUndoOptions, UndoStack } from './history/undoStack.js';
 export {
   canRedo, canUndo, createUndoStack, pushUndo, redo, undo, UNDO_COALESCE_MS, UNDO_LIMIT,
 } from './history/undoStack.js';
-/** 外観(FR-1106〜1110、P5 タスク1・2)。 */
+/** 外観(FR-1106〜1110)。 */
 export { affectsShape } from './part/documentChange.js';
 export type {
   AppearanceEntry, AppearancePattern, AppearancePresetId, AppearanceSpec, AppearanceTable,
@@ -693,12 +693,12 @@ export {
   appearanceOf, assignBodyAppearance, assignFaceAppearance, clearDocumentAppearance,
   pruneDocumentAppearance, removeDocumentAppearance, resolveAppearanceFor,
 } from './appearance/documentAppearance.js';
-/** 外観の橋渡し(P5 タスク4)。 */
+/** 外観の橋渡し。 */
 export type {
   AppearanceMatchEntry,
   SolidBodyKind,
 } from './kernelBridge.js';
-/** 基本形状(FR-429、P5 タスク15)。 */
+/** 基本形状(FR-429)。 */
 export type {
   PrimitiveFeature, PrimitiveShape, PrimitiveShapeKind, SolidOrigin,
 } from './part/types.js';
@@ -712,10 +712,10 @@ export {
   DEFAULT_PRIMITIVE_AXIS, DEFAULT_SPHERE_RADIUS_MM, DEFAULT_TORUS_MAJOR_RADIUS_MM,
   DEFAULT_TORUS_MINOR_RADIUS_MM,
 } from './part/createPartDocument.js';
-/** 測定(FR-1101、FR-1102、P5 タスク29)。 */
+/** 測定(FR-1101、FR-1102)。 */
 export type { MeasureOutcome, MeasureTarget } from './kernelBridge.js';
 /**
- * 3D プリント向けの点検(FR-815、計画書 P6 §0.51・§0.53・§2.16、タスク42・46)。
+ * 3D プリント向けの点検(FR-815)。
  *
  * **ui は kernel を輸入できない**(依存の向きは `ui → model → kernel`)ので、点検の依頼と
  * 結果の言葉をここで受け渡す。三角形ごとの真偽は 1 ビットずつ詰まっており、読み出しの
@@ -733,7 +733,7 @@ export {
   readPrintabilityFlag,
 } from './kernelBridge.js';
 /**
- * 読み込んだ三角形の頂点法線と体積(P6 タスク17・19)。式の正本は kernel の
+ * 読み込んだ三角形の頂点法線と体積。式の正本は kernel の
  * `occt/exchangeShared.ts` の 1 か所で、io(3MF の読み込み)は kernel を輸入できないので、
  * model が同じ関数をそのまま出し直す(`kernelBridge/meshMath.ts`)。
  */
@@ -742,8 +742,8 @@ export {
   formatLength, formatMass, GRAM_PER_CM3_TO_GRAM_PER_MM3, inertiaWithDensity, massFromVolume,
 } from './measure/massProperties.js';
 /**
- * 面をつなぐ(罫線面 FR-430)・ロフト(FR-410)。P5 タスク25。
- * 段は 1 種類(`thruSections`)で、フィーチャーだけが 2 種類に分かれる(§0.a-0.25)。
+ * 面をつなぐ(罫線面 FR-430)・ロフト(FR-410)。
+ * 段は 1 種類(`thruSections`)で、フィーチャーだけが 2 種類に分かれる。
  */
 export type {
   LoftFeature, RuledFeature, RuledSection, RuledSphereSegments,
@@ -756,8 +756,8 @@ export {
   DEFAULT_RULED_SPHERE_SEGMENTS, DEFAULT_RULED_TWIST, RULED_SPHERE_SEGMENT_CHOICES,
 } from './part/createPartDocument.js';
 /**
- * P5 の Should 群(FR-401、FR-409、FR-415、FR-417、FR-419〜425、FR-427、FR-428)。
- * P5 計画書 §2.11、タスク43。**型と既定値だけ**で、解決はタスク45・46、鍵の材料はタスク44。
+ * Should 群(FR-401、FR-409、FR-415、FR-417、FR-419〜425、FR-427、FR-428)。
+ * **型と既定値だけ**で、解決は `resolvePart.ts`、鍵の材料は `cacheKey.ts`。
  *
  * 押し出しの終端・傾き・薄板(FR-415・FR-401・FR-416)と穴の入口(FR-422)は
  * 既存のフィーチャーの省略できる欄なので、読む側は必ず `extrudeShapingOf` /
@@ -783,22 +783,22 @@ export {
   MAX_DRAFT_ANGLE_DEGREES, MAX_SCALE, MAX_TAPER_ANGLE_DEGREES, MIN_SCALE,
 } from './part/createPartDocument.js';
 /**
- * P5 の Should 群の鍵の材料と段(FR-401、FR-415〜FR-419、FR-424、FR-428、FR-432。タスク45)。
+ * Should 群の鍵の材料と段(FR-401、FR-415〜FR-419、FR-424、FR-428、FR-432)。
  *
- * 鍵の材料 16 件は**タスク44 が作ったもの**で、輸出だけがこのタスクに残っていた
- * (`docs/報告記録.md` 2026-09-05 20:04 の t45 への申し送り)。ui とその場入力が
+ * 鍵の材料 16 件は**`cacheKey.ts` にあるもの**で、ここで輸出する。
+ * ui とその場入力が
  * 「同じ形なら同じ鍵」を確かめられるように、`SolidStepKeyMaterial` の枝をすべて出す。
  *
- * 段の側は、タスク45 が解決した 4 種(抜き勾配・ミラー・移動/回転・拡大縮小)と、
+ * 段の側は、解決する 4 種(抜き勾配・ミラー・移動/回転・拡大縮小)と、
  * 押し出しに足した終端・薄板の型を出す。段の union(`SolidStepPlan`)そのものは
- * P2 から輸出していないので、ここでも出さない(kernelBridge が唯一の読み手)。
+ * 以前から輸出していないので、ここでも出さない(kernelBridge が唯一の読み手)。
  */
 export type {
   CutKeyMaterial,
   ExtrudeEndKeyMaterial,
 } from './part/cacheKey.js';
 export type { ExtrudeEndPlan } from './part/resolvePart.js';
-/** 平らな面の移動(EX-18 の限られた一段。平面・隣が直角)。保存形・検査・作成・寸法の差し替え。 */
+/** 平らな面の移動(限られた一段。平面・隣が直角)。保存形・検査・作成・寸法の差し替え。 */
 export {
   checkFaceOffset,
   createFaceOffsetFeature,
@@ -809,7 +809,7 @@ export {
   withFaceOffsetFace,
 } from './part/directFaceEdit.js';
 /**
- * P5 タスク46: スイープ・リブ・エンボス・ざぐり/皿もみ・外ねじ・点集合パターン・曲面
+ * スイープ・リブ・エンボス・ざぐり/皿もみ・外ねじ・点集合パターン・曲面
  * (FR-409、FR-420〜423、FR-425、FR-428)と、Could 群から前倒しした
  * くり抜き(FR-418)・可変半径フィレット(FR-426)。
  *
@@ -818,7 +818,7 @@ export {
  * (`filletRadiusOf` / `FilletRadius`)と既定値だけを出す(既定を各所へ写さない。
  * `extrudeShapingOf` / `holeEntryOf` とまったく同じ約束)。
  *
- * 段の型(`SolidStepPlan`)は P2 から輸出していないので、ここでも出さない。
+ * 段の型(`SolidStepPlan`)は以前から輸出していないので、ここでも出さない。
  * ただし**段の欄の型**(入口の形・丸める半径・曲面の作り方)は、ui とその場入力が
  * 「同じ形なら同じ段」を確かめられるように出す(`ExtrudeEndPlan` と同じ扱い)。
  */
@@ -832,23 +832,23 @@ export type {
   FilletRadiusPlan,
 } from './part/resolvePart.js';
 /**
- * 点の参照(`PointReference`)が指すスケッチの id(FR-325 の順序の制約、タスク46)。
+ * 点の参照(`PointReference`)が指すスケッチの id(FR-325 の順序の制約)。
  * 拡大縮小の中心と点集合パターンの点だけは参照からスケッチを読めないので、
  * 全スケッチを id で探すこの口を通す(`referencedSketchIds` の第 2 引数も同じ材料)。
  */
 export { sketchIdOfPointReference } from './part/resolvePart.js';
 /**
- * 平面による切断(FR-432、P5 計画書 §2.9b、タスク27c)。分割(FR-424)もこれで満たす
- * (§0.a-0.60)。
+ * 平面による切断(FR-432)。
+ * 分割(FR-424)もこれで満たす。
  *
  * **`CutFeature` は新しい保存形**なので型を出す(`ShellFeature` と同じ扱い)。
  * 切断面の型 `PlaneSpec` と解決 `resolvePlaneSpec` は**任意の作業平面(FR-328)と
- * 共有するもの**で、P4 タスク9 の時点からここで輸出済みである(§0.a-0.56。切断のために
- * 新しく足す平面の型は無い)。残す側の既定はコマンド(タスク27e)とプロパティ
- * (タスク27f)が写さずに読めるよう、既定値の正本をここから出す。
+ * 共有するもの**で、以前からここで輸出済みである(切断のために
+ * 新しく足す平面の型は無い)。残す側の既定はコマンドとプロパティ
+ * が写さずに読めるよう、既定値の正本をここから出す。
  *
- * 鍵の材料 `CutKeyMaterial` はタスク44 が作り、タスク45 が輸出済み。段の型
- * (`SolidStepPlan`)は P2 から輸出していないので、切断でも出さない。
+ * 鍵の材料 `CutKeyMaterial` は輸出済み。段の型
+ * (`SolidStepPlan`)は以前から輸出していないので、切断でも出さない。
  */
 export type { CutFeature } from './part/types.js';
 export type { SurfaceCutFeature, SurfaceCutBlade } from './part/types.js';
@@ -856,22 +856,22 @@ export type { SurfaceCutBladePlan } from './part/resolvePart.js';
 export type { SurfaceCutKeyMaterial } from './part/cacheKey.js';
 export { DEFAULT_CUT_KEEP } from './part/createPartDocument.js';
 /**
- * `SolidFeatureKind` の実行時の一覧(P5 仕上げ (h)、`docs/報告記録.md` 2026-09-05 23:08 の
- * t47 指摘③)。`packages/io` の妥当性検査はこれを輸入する(このタスクで置き換え済み)。
- * `packages/ui` の自前の一覧の置き換えは後続タスクの担当。
+ * `SolidFeatureKind` の実行時の一覧。
+ * `packages/io` の妥当性検査はこれを輸入する。
+ * `packages/ui` の自前の一覧の置き換えは ui の側で行う。
  */
 export { SOLID_FEATURE_KINDS } from './part/createPartDocument.js';
 /**
- * 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
+ * 読み込んだ形のベースボディ 2 種(FR-802)。
  *
  * 文書の型(`ImportedSolidFeature` / `ImportedMeshFeature` / `ImportedSource`)は
- * `packages/io` が `.pcad` へ読み書きし(タスク21)、`packages/ui` がツリーとプロパティへ
- * 出す(タスク32)。**形そのもの(B-rep / 三角形)は ZIP の別エントリ**にあり、
- * ここから出る型には 1 バイトも入らない(§0.a-0.9)。
+ * `packages/io` が `.pcad` へ読み書きし、`packages/ui` がツリーとプロパティへ
+ * 出す。**形そのもの(B-rep / 三角形)は ZIP の別エントリ**にあり、
+ * ここから出る型には 1 バイトも入らない。
  *
  * `ImportedShapeBytes` は再計算へバイト列を渡す口、`ResolvedMeshBody` は
  * 「段にならないボディ」の解決結果、`IMPORTED_MESH_TARGET_MESSAGE` は
- * 「三角形の形は加工できない」の断りの文言(§0.a-0.23。model が正本)である。
+ * 「三角形の形は加工できない」の断りの文言(model が正本)である。
  */
 export type {
   ImportedMeshFeature, ImportedSolidFeature, ImportedSource, ImportedSourceFormat,
@@ -880,15 +880,15 @@ export type { ImportedShapeBytes } from './part/resolvePart.js';
 export { IMPORTED_MESH_TARGET_MESSAGE } from './part/resolvePart.js';
 export type { ImportedSolidKeyMaterial } from './part/cacheKey.js';
 /**
- * 表示と入力の長さの単位(FR-811、FR-814、P6 タスク1)。**内部は mm 固定**(NFR-RE-3)で、
+ * 表示と入力の長さの単位(FR-811、FR-814)。**内部は mm 固定**(NFR-RE-3)で、
  * ここにあるのは表示と入力の境目で使う純関数だけ。文書には単位を保存しない。
  *
  * `parseDisplayInput` が返すのは**式の文字列**(値ではない)。表示が inch のとき、単位を
- * 書かない入力を `(…)in` で包む(§0.a-0.63)。包むかどうかの判定は
+ * 書かない入力を `(…)in` で包む。包むかどうかの判定は
  * `@pointercad/expression` の字句に任せてあり、単位の綴りはあちらの 1 か所だけにある。
  *
  * `nonLengthVariables` は `evaluateExpression` の同名の選択肢へ渡す集合を作る。
- * **文書全体の評価(`applyParameters`)へ配線するかは統括の判断待ち**なので、ここでは
+ * **文書全体の評価(`applyParameters`)へは配線していない**ので、ここでは
  * 純関数を出すだけにしてある。
  */
 export type { LengthUnit } from './units/length.js';
@@ -898,7 +898,7 @@ export {
   toDisplayLength, toFractionalInch,
 } from './units/length.js';
 /**
- * 新しく付けるパラメータ名の検査(P6 §0.a-0.1、統括の決定)。長さの単位の綴り
+ * 新しく付けるパラメータ名の検査。長さの単位の綴り
  * (`mm` / `in` / `"`)を**これから打つ名前としてだけ**断る。既存の文書に同じ名前が
  * あっても読み込みは通す(`checkVariableName` は変えていない)。
  */
@@ -907,17 +907,17 @@ export {
   checkNewParameterName, isLengthUnitName, LENGTH_UNIT_NAME_MESSAGE,
 } from './parameters/parameterTable.js';
 /**
- * 書き出し・読み込みの型と、書き出す対象の決め方(FR-803、FR-804、FR-427、P6 タスク2)。
+ * 書き出し・読み込みの型と、書き出す対象の決め方(FR-803、FR-804、FR-427)。
  *
  * **`ExportFormat` / `ImportFormat` / `EXPORT_FORMATS` / `IMPORT_FORMATS` / `canRoundTrip` の
- * 正本はここ**である。P2 が `packages/io` に置いた同じ 5 つは、P6 でこの再輸出に置き換えた
+ * 正本はここ**である。以前 `packages/io` に置いた同じ 5 つは、この再輸出に置き換えた
  * (二重定義にしない。io は model に依存しているので依存方向に反しない)。
  *
  * 断りと警告は**文字列のキー**(`ExportNoticeKey`)で返し、日本語の文言は持たない
  * (NFR-MA-5。文言は `packages/ui` の `ja.json`)。エラーコードの体系は増やしていない。
  *
  * **DXF は `ExportFormat` に入っていない。** DXF へ書き出すのは平らなスケッチの線であって
- * 立体ではない(§0.a-0.34)ため、依頼の形が別になる。ただし「なめらかさが効くか」だけは
+ * 立体ではないため、依頼の形が別になる。ただし「なめらかさが効くか」だけは
  * 形式の性質なので、`usesTriangles` / `exportDeviationMm` は `FileKind` で受けて DXF も答える。
  */
 export type {
@@ -943,15 +943,15 @@ export {
 } from './exchange/exportPart.js';
 
 /**
- * 外観 → 書き出しの色の写し(FR-1106、要件§12、計画書 P6 §2.5・§2.5.1、タスク15)。
+ * 外観 → 書き出しの色の写し(FR-1106、要件§12)。
  *
- * **色だけ**を写す(柄・透過率・光沢・粗さは書き出さない。§0.a-0.22)。色は **sRGB の
+ * **色だけ**を写す(柄・透過率・光沢・粗さは書き出さない)。色は **sRGB の
  * 0〜1** で出し、glTF の `baseColorFactor` が要る線形への変換は kernel が持つ。
  *
  * 立体ごと(`bodyColorsFor`)と面ごと(`faceColorsFor`)を**別々の表**で返す。XCAF は
- * 形そのものと面のラベルへ別々に色を付ける(§2.5.1)ためで、**面の割り当てが立体より
- * 優先する**という P5 の順は、配線が「面の表を先に見て、無ければ立体の表」と読むことで
- * 成り立つ。面の通し番号は P5 の `appearanceMatches` から取り、照合をやり直さない。
+ * 形そのものと面のラベルへ別々に色を付けるためで、**面の割り当てが立体より
+ * 優先する**という外観の順は、配線が「面の表を先に見て、無ければ立体の表」と読むことで
+ * 成り立つ。面の通し番号は `appearanceMatches` から取り、照合をやり直さない。
  */
 export type { RgbColor } from './exchange/exportColors.js';
 export {
@@ -959,8 +959,8 @@ export {
 } from './exchange/exportColors.js';
 
 /**
- * DXF ↔ スケッチの写し(FR-813、FR-301〜318、FR-202、計画書 P6 §2.7・§0.a-0.32〜0.34、
- * タスク26)。
+ * DXF ↔ スケッチの写し
+ * (FR-813、FR-301〜318、FR-202)。
  *
  * **新しい `SketchFeature` の種類を 1 つも作らない。** DXF の 5 種は既にある
  * `point` / `line` / `arc` / `ellipse` / `spline` へ写る(円は「開始 0 度・終了 360 度の
@@ -973,14 +973,14 @@ export {
  * いないことの検査は `io` 側**(あちらは両方の型を輸入できる)。
  *
  * 座標の式は既存の `expressionValueFromNumber`(有効数字 12 桁)で作り、吸い付いた座標を
- * 保存するときと同じ書式にそろえてある(統括の決定 2026-09-06)。案内の文言
+ * 保存するときと同じ書式にそろえてある。案内の文言
  * (平面から外れた・取り込めなかった件数・次数の高い曲線)の**正本はこの層**で、
- * `ja.json` には持たない(計画書 §2.8「文言の正本の層」)。
+ * `ja.json` には持たない(「文言の正本の層」)。
  *
  * `dxfToSketch` は単位の換算(inch は 25.4 倍)と案内の組み立てまでを行い、`sketchToDxf` は
  * **構築線を書き出さず、平らでない形を `DXF_NOT_PLANAR_MESSAGE` で断る。** どちらも
  * 画面を持たない純関数で、作図面の選ばせ方・単位の訊き方・案内の出し方は
- * `packages/ui`(タスク32)の仕事。
+ * `packages/ui`の仕事。
  */
 export type {
   SketchDxfEntity,
@@ -996,11 +996,11 @@ export {
 } from './exchange/sketchToDxf.js';
 
 /**
- * 選択セット(FR-112、計画書 P6 §0.a-0.44・§2.13、タスク37)。
+ * 選択セット(FR-112)。
  *
  * `PartDocument.selectionSets` に持つ「名前を付けた選んだ組」で、要素の型
  * `SelectionMember` は**立体・面・辺・頂点の独自の型**である(外観の `AppearanceTarget`
- * とは別。2026-09-06 の利用者の決定でセットに面以外も入れられるようにした、タスク50)。
+ * とは別。2026-09-06 の利用者の決定でセットに面以外も入れられるようにした)。
  * 判定 `isSameSelectionMember` も独自。
  *
  * **形に影響しない**(`affectsShape` が偽)ので、セットを足しても消しても再計算は走らない。
@@ -1016,14 +1016,14 @@ export {
 } from './part/selectionSets.js';
 
 /**
- * 下絵の画像(FR-332、計画書 P6 §0.a-0.45・§0.a-0.46・§2.14、タスク38)。
+ * 下絵の画像(FR-332)。
  *
  * `PartDocument.canvases` に持つ「作図面に貼った画像」で、バイト列は `.pcad` の ZIP の
  * 別エントリ(`canvases/<imageId>.png`)へ入る。**画像を保存するのは `rules/04` の
- * 承認済みの例外**(導出できないため。§0.a-0.45 の例外③)。
+ * 承認済みの例外**(導出できないため。例外③)。
  *
  * 受け付けは PNG / JPEG だけ・1 枚 8MB まで(`checkCanvasImage`)で、断りの日本語は
- * この層が持つ(上限の数を知っているのがこの層だけのため。§2.8「文言の正本の層」)。
+ * この層が持つ(上限の数を知っているのがこの層だけのため。「文言の正本の層」)。
  * 寸法合わせ(`scaleFromTwoPoints`)は 2 点の画素の距離と実寸から mm/画素を出す純関数。
  */
 export type { SketchCanvas } from './part/types.js';
@@ -1046,7 +1046,7 @@ export type {
 export { solveCanvasHomography, projectCanvasHomography } from './sketch/canvasHomography.js';
 
 /**
- * 拘束の自動推定(FR-333、FR-313、計画書 P6 §0.a-0.48〜0.50・§2.15、タスク40)。
+ * 拘束の自動推定(FR-333、FR-313)。
  *
  * 線を引いている最中に「水平・垂直・一致・接線・平行」を推定して予告するための純関数で、
  * 画面の縮尺は引数(`pixelsPerMillimetre`)で受け取るので DOM にも three.js にも触れない。
@@ -1056,7 +1056,7 @@ export { solveCanvasHomography, projectCanvasHomography } from './sketch/canvasH
  * 依存方向(`apps → ui → model`)の都合で ui から借りられないため model 側を正本にし、
  * **ui はこの輸出を読む**(同じ数を 2 か所に書かない。`rules/04-設計の規律.md`)。
  *
- * 印を描くのと、確定して拘束を足す配線は ui の役目(タスク41)。
+ * 印を描くのと、確定して拘束を足す配線は ui の役目。
  */
 export type {
   DraftSegment,
@@ -1069,11 +1069,11 @@ export {
 } from './sketch/inferConstraints.js';
 
 /**
- * アセンブリの配置の数学(FR-601、計画書 P7 §2.4、タスク2)。
+ * アセンブリの配置の数学(FR-601)。
  *
  * 置いた部品 1 つの「どこに・どちら向きに」を位置 3 数 + 四元数 4 数で持ち、点・向きへ
  * 掛ける・入れ子で合成する・既存の `RigidTransform`(軸+角)へ写す、までの純関数。
- * **符号を `w >= 0` へ揃える正規化は `normalizeQuaternion` の 1 か所だけ**(§0.54 の
+ * **符号を `w >= 0` へ揃える正規化は `normalizeQuaternion` の 1 か所だけ**(決定性の
  * 決定性)。OCCT にも three にも触れないので、Node の Vitest だけで検査できる。
  */
 export type { Quaternion, RigidPlacement } from './assembly/placementMath.js';
@@ -1085,16 +1085,16 @@ export {
 } from './assembly/placementMath.js';
 
 /**
- * アセンブリ文書(FR-601、FR-602、FR-605、FR-606、FR-611、FR-613。
- * 計画書 P7 §2.2、タスク1)。
+ * アセンブリ文書
+ * (FR-601、FR-602、FR-605、FR-606、FR-611、FR-613)。
  *
  * 部品文書(`PartDocument`)と並ぶもう 1 つの保存の単位で、**部品を参照して置いたもの**
  * (`AssemblyComponent`)・合致(`Mate`)・ジョイント(`Joint`)・分解のステップ
  * (`PresentationStep`)・パラメータ・部品表の設定を持つ。**部品の形も合致の解も保存しない**
- * (§0.a-0.4、§0.a-0.6)ので、開くたびに部品ごとに 1 回だけ作り、解き直す。
+ * ので、開くたびに部品ごとに 1 回だけ作り、解き直す。
  *
- * 版は部品と同じ系列にする(`ASSEMBLY_SCHEMA_VERSION` = `PART_SCHEMA_VERSION`。§0.a-0.2)。
- * 置く・消す・固定・表示の履歴操作は `assembly/assemblyEdit.ts`(タスク7)が足す。
+ * 版は部品と同じ系列にする(`ASSEMBLY_SCHEMA_VERSION` = `PART_SCHEMA_VERSION`)。
+ * 置く・消す・固定・表示の履歴操作は `assembly/assemblyEdit.ts`が足す。
  */
 export type {
   AssemblyComponent, AssemblyDocument, BomColumnId, BomSettings, BomSortKey, ComponentSource,
@@ -1113,13 +1113,13 @@ export {
 } from './assembly/createAssemblyDocument.js';
 
 /**
- * 抱き込んだ部品文書の出し入れと内容ハッシュ(FR-601、要件§8。計画書 P7 §2.3、タスク4)。
+ * 抱き込んだ部品文書の出し入れと内容ハッシュ(FR-601、要件§8)。
  *
  * アセンブリ文書と**対で持ち回る**入れ物(`PartLibrary`)で、「どのファイルから・いつ・
  * どの中身を取り込んだか」に加え、再導出できない読み込み形・メッシュ・下絵を持つ。
  * 内容ハッシュは**文書だけ**を決定的に文字列にして SHA-256 を取るので、保存し直しただけでは
  * 変わらない(封筒の `savedAt` を含まない)。**同じ文書と添付を 2 回抱き込まない**(`embedPart` が
- * 既存の `partRef` を返す)。元のファイルを追いかけた結果の文言は上の層が持つ(§2.12)。
+ * 既存の `partRef` を返す)。元のファイルを追いかけた結果の文言は上の層が持つ。
  */
 export type {
   EmbeddedPartAttachments,
@@ -1135,11 +1135,11 @@ export {
 } from './assembly/partLibrary.js';
 
 /**
- * アセンブリの解決(FR-601、FR-606、NFR-PF-3。計画書 P7 §2.3、タスク6)。
+ * アセンブリの解決(FR-601、FR-606、NFR-PF-3)。
  *
  * アセンブリ文書を「部品ごとの再計算の依頼(`ResolvedPart`)」と「インスタンスごとの配置
  * (数に直した `RigidPlacement`)」へ直す**カーネルを呼ばない純関数**。**同じ部品は 1 回だけ**
- * 解決し、全インスタンスで形を使い回す(§0.a-0.4。インスタンスごとに作り直すと §2.13-6 の
+ * 解決し、全インスタンスで形を使い回す(インスタンスごとに作り直すと
  * 上限 5 秒を割る)。部品が引けない・位置が数にならないは投げずに `errors` へ積む(FR-504)。
  */
 export type {
@@ -1169,7 +1169,7 @@ export {
   assemblyMassProperties, materialOf, PARTIAL_ASSEMBLY_MASS_MESSAGE,
 } from './assembly/massProperties.js';
 
-/** 部品表の純粋な集計(FR-611、P7 §2.10・§2.10.1)。 */
+/** 部品表の純粋な集計(FR-611)。 */
 export type {
   BomBody,
   BomResolvedData,
@@ -1177,7 +1177,7 @@ export type {
 } from './assembly/bom.js';
 export { buildBom, bomPartName } from './assembly/bom.js';
 
-/** JIS規格部品の寸法表・出典・普通の部品文書を組む台本(P7 タスク27〜29)。 */
+/** JIS規格部品の寸法表・出典・普通の部品文書を組む台本。 */
 export type {
   FastenerDimensionSeries,
   HexBoltRow,
@@ -1224,12 +1224,12 @@ export { planSteelBend, steelBendSection } from './assembly/standard/steelBendGe
 export type { SteelBendDimensions } from './assembly/standard/steelBendGeometry.js';
 
 /**
- * 部品を置く・消す・固定・表示の履歴操作(FR-601、FR-602、FR-505、FR-605、FR-606。
- * 計画書 P7 タスク7)。
+ * 部品を置く・消す・固定・表示の履歴操作
+ * (FR-601、FR-602、FR-505、FR-605、FR-606)。
  *
  * **すべて新しい文書を返す純関数**なので、Undo / Redo は `history/undoStack.ts` が
- * そのまま効く(1 回の操作 = 1 段)。**最初に置いた部品は自動で固定**(§0.a-0.7)、
- * 名前の既定は `<部品名>:<n>`(§0.a-0.8)。**部品を消すと、その部品を指していた合致・
+ * そのまま効く(1 回の操作 = 1 段)。**最初に置いた部品は自動で固定**、
+ * 名前の既定は `<部品名>:<n>`。**部品を消すと、その部品を指していた合致・
  * ジョイント・分解のステップも一緒に消える**(指し先の無い合致を残さないため)。
  */
 export type { CreateComponentOptions } from './assembly/assemblyEdit.js';
@@ -1240,13 +1240,13 @@ export {
 } from './assembly/assemblyEdit.js';
 
 /**
- * 合致の対象の解決(FR-603、FR-609、FR-329。計画書 P7 タスク12、§2.5.2)。
+ * 合致の対象の解決(FR-603、FR-609、FR-329)。
  *
  * 合致とジョイントが指している「どのインスタンスの、どの部分形状か」を、残差が要る
  * **世界座標の点と向き**(と円筒の半径)へ直す**カーネルを呼ばない純関数**。位置・軸・半径は
  * 保存された指紋(`SubShapeRef`)から取り、部品の配置を掛けて世界座標へ直す。
  * **曲面(球面など)・軸の取れない形・見つからない部品は、対象を消さずに理由を返す**
- * (投げない。FR-504。文言は計画書 §2.12 のまま)。
+ * (投げない。FR-504。文言は決めたとおり)。
  */
 export type {
   MateTargetKind,
@@ -1257,7 +1257,7 @@ export {
 } from './assembly/constraints/mateTargets.js';
 
 /**
- * 合致の変数と自由度・連結成分(FR-603、FR-602、FR-604。計画書 P7 タスク13、§2.5.1・§2.5.3)。
+ * 合致の変数と自由度・連結成分(FR-603、FR-602、FR-604)。
  *
  * ソルバーが動かしてよい数を、**動かせる部品 1 つにつき 6 つ**(平行移動の増分 3 + いまの
  * 向きからの小さな回転 3)、`components` の順で並べる**純関数**。固定(FR-602)と抑制は

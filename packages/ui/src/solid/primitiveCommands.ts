@@ -1,17 +1,17 @@
 /**
- * 選択とその場入力から基本形状(球・箱・円柱・円錐・トーラス)を作る純関数
- * (計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク18、§2.7、§2.15)。
+ * 選択とその場入力から基本形状(球・箱・円柱・円錐・トーラス)を
+ * 作る純関数。
  *
  * 対応要件: FR-429(基本形状5種と3通りの基準点)、FR-201/202(式のまま持つ)、
  * FR-502(あとから式で直せる)、NFR-UX-4(Enter 連打で意味のある結果)、
  * NFR-UX-5(できない操作は実行前に理由を示す)。
  *
- * `solidCommands.ts`(P2 タスク18)・`machiningCommands.ts`(P3 タスク25)と同じ流儀に揃える。
+ * `solidCommands.ts`・`machiningCommands.ts`と同じ流儀に揃える。
  * ストアにも DOM にも触れない純関数だけを置き、操作の判断を Node の単体検査で固定できる
- * ようにする(`docs/報告記録.md` 2026-09-02 23:09 の教訓)。文書は不変で、断るときは元の
+ * ようにする。文書は不変で、断るときは元の
  * 文書をそのまま返す(FR-504)。
  *
- * **基本形状は対象を消費しない**(§0.a-0.19)。中心に立体の頂点を借りても、貸した立体は
+ * **基本形状は対象を消費しない**。中心に立体の頂点を借りても、貸した立体は
  * そのまま画面に残る。だから加工(`machiningCommands.ts`)ではなく「作る」側に置く。
  *
  * **押せない条件を持たない**(`primitiveToolReadiness` は常に押せる)。何も選ばずに押して
@@ -51,7 +51,7 @@ import type { SolidCommandOutcome, SolidToolReadiness } from './solidCommands.js
 import { selectedSubShapeRefs, type SubShapeBody } from './subShapeSelection.js';
 
 /**
- * 基本形状の道具(§2.15 のツールバー「作る」の一覧のうち5種)。
+ * 基本形状の道具(ツールバー「作る」の一覧のうち5種)。
  * `SolidToolId`(`numericInput.ts` が正本)から基本形状だけに絞った型で、model の
  * `PrimitiveShapeKind` とまったく同じ語にしてある(道具 id がそのまま形の種類になる)。
  */
@@ -70,21 +70,21 @@ export interface PrimitiveContext {
 }
 
 /*
-  計画書タスク18 の宣言は `PrimitiveContext` に `selectionKind` と `sketch` も持たせているが、
+  当初の宣言は `PrimitiveContext` に `selectionKind` と `sketch` も持たせていたが、
   どちらもこの層では読まない。中心の決め方は「選択の中に頂点があるか / スケッチの点があるか」
   だけで決まり(`selectedPrimitiveOrigin`)、スケッチは部品文書からたどれる
   (`findSketchFeatureAt` が編集中のスケッチを先に見る、`sketchRefs.ts`)。
-  使わない欄を文脈に置くと呼び出し側が値を作る手間だけが増えるので、実装を正とした
-  (判断に迷った点として報告する)。
+  使わない欄を文脈に置くと呼び出し側が値を作る手間だけが増えるので、実装を
+  正とした。
 */
 
 /** 押せる。基本形状は選択を要らないので、断る枝を持たない(NFR-UX-4)。 */
 const READY: SolidToolReadiness = { ready: true, reasonKey: null };
 
-/** 部分形状のうち、中心にできるのは頂点だけ(FR-429、§0.a-0.18)。 */
+/** 部分形状のうち、中心にできるのは頂点だけ(FR-429)。 */
 const ORIGIN_SUB_SHAPE_KIND = 'vertex';
 
-/** 中心にできるスケッチの要素の種類。ばねの始点と同じく**点フィーチャーだけ**(§0.a-0.29)。 */
+/** 中心にできるスケッチの要素の種類。ばねの始点と同じく**点フィーチャーだけ**。 */
 const POINT_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['point']);
 
 /* ------------------------------------------------------------------ *
@@ -122,14 +122,14 @@ export const DEFAULT_TORUS_MINOR_RADIUS: ExpressionValue = expressionValueFromNu
 );
 
 /* ------------------------------------------------------------------ *
- * 中心(基準点)を選択から決める(FR-429 の3通り、§0.a-0.18)
+ * 中心(基準点)を選択から決める(FR-429 の3通り)
  * ------------------------------------------------------------------ */
 
 /**
- * 選んでいるものから中心を決める(FR-429、§0.a-0.18)。
+ * 選んでいるものから中心を決める(FR-429)。
  *
  * 見る順は **立体の頂点 → スケッチの点 → 原点**。頂点を先に見るのは、基本形状の道具が選ぶ
- * 種類を頂点にする決め(§2.15 の表)に合わせたためで、どちらも選ばれているときは
+ * 種類を頂点にする決めに合わせたためで、どちらも選ばれているときは
  * 「いま選ぶ種類として画面で光っているほう」を採る。
  *
  * **どれも選ばれていなければ原点の座標**(`defaultPrimitiveOrigin`、絶対座標の 0,0,0)を返す。
@@ -154,11 +154,11 @@ export function selectedPrimitiveOrigin(context: PrimitiveContext): SolidOrigin 
 }
 
 /* ------------------------------------------------------------------ *
- * 寸法の先出し検査(§2.7.1 の断りの条件、NFR-UX-5)
+ * 寸法の先出し検査(断りの条件、NFR-UX-5)
  * ------------------------------------------------------------------ */
 
 /**
- * 寸法が作れる形になっているかを**カーネルを呼ぶ前に**確かめる(§2.7.1、NFR-UX-5)。
+ * 寸法が作れる形になっているかを**カーネルを呼ぶ前に**確かめる(NFR-UX-5)。
  * 作れないときは断りの文言キー、作れるなら null。
  *
  * 見る順は model の `resolvePrimitiveShape`(`resolvePart.ts`)とまったく同じにしてある。
@@ -197,7 +197,7 @@ function isPositiveFinite(value: number): boolean {
 }
 
 /**
- * 円錐の断り(§2.7.1 の表)。高さ → 半径が負 → 両方 0 → 上下同径 の順で見る
+ * 円錐の断り。高さ → 半径が負 → 両方 0 → 上下同径 の順で見る
  * (model・カーネルと同じ順)。**上半径 0 は正しい形**(尖った円錐)なので断らない。
  */
 function coneRejection(bottomRadius: number, topRadius: number, height: number): MessageKey | null {
@@ -214,11 +214,11 @@ function coneRejection(bottomRadius: number, topRadius: number, height: number):
   if (bottomRadius <= 0 && topRadius <= 0) {
     return 'primitiveError.coneRadiusBothZero';
   }
-  // 上下が同じ半径の円錐は OCCT が作れない(§2.7.1 の実測)ので円柱を促す。
+  // 上下が同じ半径の円錐は OCCT が作れないので円柱を促す。
   return bottomRadius === topRadius ? 'primitiveError.coneRadiusSame' : null;
 }
 
-/** トーラスの断り(§2.7.1)。管の半径が主半径以上だと中心の穴を食いつぶして自己交差する。 */
+/** トーラスの断り。管の半径が主半径以上だと中心の穴を食いつぶして自己交差する。 */
 function torusRejection(majorRadius: number, minorRadius: number): MessageKey | null {
   if (!isPositiveFinite(majorRadius) || !isPositiveFinite(minorRadius)) {
     return 'primitiveError.torusRadius';
@@ -231,7 +231,7 @@ function torusRejection(majorRadius: number, minorRadius: number): MessageKey | 
  * ------------------------------------------------------------------ */
 
 /**
- * その場入力の値から形の寸法を組み立てる(§2.15 の段の表)。
+ * その場入力の値から形の寸法を組み立てる。
  * 欄が渡されなかったときは既定値を使う(空欄のまま Enter、NFR-UX-4)。
  */
 export function primitiveShapeFrom(
@@ -291,10 +291,10 @@ export function primitiveToolOf(tool: string): PrimitiveToolId | null {
 /**
  * 基本形状がいま押せるか(NFR-UX-5)。**常に押せる。**
  *
- * 中心も向きも選ばずに置けるので、断る理由が1つも無い(§0.a-0.18 の既定は原点、
- * §0.a-0.16 の既定は Z 軸)。引数に道具を取るのは、押せる条件が形ごとに違わないことを
+ * 中心も向きも選ばずに置けるので、断る理由が1つも無い(中心の既定は原点、
+ * 向きの既定は Z 軸)。引数に道具を取るのは、押せる条件が形ごとに違わないことを
  * 呼び出し側から見て明らかにするためで、`solidToolReadiness` が5種とも同じようにここへ
- * 委譲できる(押せる条件は1か所、2026-09-05 16:35 の申し送り)。
+ * 委譲できる(押せる条件は1か所)。
  */
 export function primitiveToolReadiness(
   _context: PrimitiveContext,
@@ -313,7 +313,7 @@ export function primitiveToolReadiness(
  *
  * 中心は**決めた時点の選択**から拾い直す(ポップアップを開いたまま選び直せるので、
  * 最後に選ばれていたものを使うのが利用者の期待に合う。NFR-UX-1)。
- * 寸法が作れない形なら**履歴を変えずに断る**(§2.7.1、NFR-UX-5)。
+ * 寸法が作れない形なら**履歴を変えずに断る**(NFR-UX-5)。
  */
 export function commitPrimitive(
   context: PrimitiveContext,
@@ -330,7 +330,7 @@ export function commitPrimitive(
     return { ok: false, reasonKey: rejection };
   }
   const origin = selectedPrimitiveOrigin(context);
-  // 向きは回転軸と同じ `AxisSpec`(§0.a-0.16)。選ばれていなければ既定の Z。
+  // 向きは回転軸と同じ `AxisSpec`。選ばれていなければ既定の Z。
   const axis: AxisSpec = commit.axis ?? DEFAULT_PRIMITIVE_AXIS;
   const base = createPrimitiveFeature(context.document, tool, origin, axis);
   const feature: PrimitiveFeature = { ...base, shape };
@@ -532,7 +532,7 @@ export type PrimitiveOriginSummary =
   /**
    * 座標で置いた中心。`fields` は**絶対座標のときだけ**3 つ入る。相対・極で置かれた中心
    * (いまの入り口では作られないが、型としては表せる)は欄の意味が距離と角度になるので、
-   * 空にして名前だけを出す(直すのはタスク19b 以降の課題として残す)。
+   * 空にして名前だけを出す(直すのは残りの課題)。
    */
   | { readonly kind: 'coordinate'; readonly fields: readonly PrimitiveOriginField[] }
   | { readonly kind: 'sketchPoint'; readonly name: string | null }

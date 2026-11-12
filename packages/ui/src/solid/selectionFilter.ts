@@ -1,5 +1,5 @@
 /**
- * 選択フィルタ(FR-112)の純関数(計画書 docs/plans/P6-入出力.md §2.13、§0.43、タスク36)。
+ * 選択フィルタ(FR-112)の純関数。
  *
  * 対応要件: FR-112(選べる種類を絞る)、NFR-PF-1(60fps。切替は 1 コマの中)、
  * NFR-UX-5(何も選べない状態は理由を示す)。
@@ -7,7 +7,7 @@
  * **three.js にも DOM にもストアにも触れない**(Node で検査できる)。当たり判定そのものは
  * `pickSubShape.ts` / `createSolidLayer.ts` が行い、ここはその**候補の一覧を絞るだけ**。
  * ホバーの強調も選択も同じ候補の一覧を通るので、絞る場所を 1 つにしておけば
- * 「押せば選べるのにホバーの色は出ない」といった食い違いが起きない(タスク36 手順3)。
+ * 「押せば選べるのにホバーの色は出ない」といった食い違いが起きない。
  *
  * **形は変えない。** 絞った結果は選択とホバーにしか効かず、`affectsShape` の経路には
  * 乗らない(再計算を起こさない、rules/04)。設定は端末に覚える(`settings.ts`)。
@@ -37,7 +37,7 @@ export interface SelectionFilter {
 export const SELECTION_FILTER_KINDS: readonly SelectionKind[] = ['vertex', 'edge', 'face', 'body'];
 
 /**
- * 種類の札(§0.a-0.6、FR-112)。**この 1 つが正本**で、ステータスバーの「選ぶもの」の札
+ * 種類の札(FR-112)。**この 1 つが正本**で、ステータスバーの「選ぶもの」の札
  * (`shell/statusText.ts`)も選択フィルタの入切(`shell/StatusBar.tsx`)も同じ表を引く。
  * 種類が増えたら型検査がここを落とすので、札の文言を足し忘れない(文言は ja.json、NFR-MA-5)。
  */
@@ -49,7 +49,7 @@ export const SELECTION_KIND_LABEL_KEYS = {
 } as const satisfies Record<SelectionKind, MessageKey>;
 
 /**
- * 既定は**全部入**(§0.43)。P4b までの操作を 1 つも変えないための出発点で、
+ * 既定は**全部入**。フィルタの無い時の操作を 1 つも変えないための出発点で、
  * 保存された値が壊れているときの戻り先でもある。
  */
 export const ALL_SELECTABLE: SelectionFilter = {
@@ -65,7 +65,7 @@ export function isNoneSelectable(filter: SelectionFilter): boolean {
 }
 
 /**
- * 当たり判定の候補から、切ってある種類のものを外す(§2.13)。
+ * 当たり判定の候補から、切ってある種類のものを外す。
  *
  * **1 件も減らないときは受け取った一覧をそのまま返す**(同一参照)。既定(全部入)では
  * 配列を 1 つも作らないので、絞り込みを常に通しても費用が増えない(NFR-PF-1)。

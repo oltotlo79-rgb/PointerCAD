@@ -1,4 +1,4 @@
-/** 干渉の共通形状を、アセンブリの共有材質へ触れず赤く重ねる層(P7 タスク26)。 */
+/** 干渉の共通形状を、アセンブリの共有材質へ触れず赤く重ねる層。 */
 import type { AssemblyInterferenceResult } from '@pointercad/model';
 import * as THREE from 'three';
 import { interferencePairKey } from '../assembly/interferenceView.js';

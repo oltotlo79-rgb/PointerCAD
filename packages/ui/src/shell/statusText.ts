@@ -1,5 +1,5 @@
 /**
- * ステータスバーに出す 1 文の組み立て(計画書 docs/plans/P2-ソリッド基礎.md タスク25、
+ * ステータスバーに出す 1 文の組み立て(
  * FR-504、FR-905、NFR-PF-4、NFR-UX-7)。
  *
  * 状況の優先順位と文の組み立てを純関数として置き、`StatusBar.tsx` は描くだけにする。
@@ -37,14 +37,14 @@ import { weldPickCount, type NestedWeldDraft } from '../assembly/nestedWeldDraft
 
 /**
  * 進み具合を出すまでの待ち時間(NFR-PF-4)。進み具合が届いてからこれだけ経つまでは
- * 何も出さない。短い計算で札が出たり消えたりして点滅するのを防ぐため
- * (docs/報告記録.md 2026-09-02 23:35 の②と同じ理由)。
+ * 何も出さない。短い計算で札が出たり消えたりして点滅するのを
+ * 防ぐため。
  */
 export const PROGRESS_DELAY_MS = 300;
 
 /**
  * 形状計算部のメモリの警告を出す割合(NFR-PF-6「WASM の実質上限(〜4GB)内で動作。上限接近時に
- * 警告する」、計画書 P12-28)。確保済みの量が上限のこの割合を**超えたら**、帯に理由と対処を出す。
+ * 警告する」)。確保済みの量が上限のこの割合を**超えたら**、帯に理由と対処を出す。
  * **この値はここ 1 か所だけに置く**(判断は `isKernelMemoryNearLimit`)。4 分の 3 にしてあるのは、
  * 上限までの残り(約 1GB)があるうちに、保存と開き直しを済ませられるようにするため。
  */
@@ -68,7 +68,7 @@ const GUIDE_KEYS = {
   extrude: 'statusBar.guide.extrude',
   revolve: 'statusBar.guide.revolve',
   sew: 'statusBar.guide.sew',
-  // P3 タスク24 が SolidToolId へ足した加工6種+ばね。案内文はタスク18 で ja.json に
+  // SolidToolId の加工6種+ばね。案内文は ja.json に
   // 追加済み(statusBar.guide.*)なので、そのまま割り当てる(本実装、暫定ではない)。
   hole: 'statusBar.guide.hole',
   threadHole: 'statusBar.guide.threadHole',
@@ -77,21 +77,21 @@ const GUIDE_KEYS = {
   linearPattern: 'statusBar.guide.linearPattern',
   circularPattern: 'statusBar.guide.circularPattern',
   spring: 'statusBar.guide.spring',
-  // P4 タスク11 が `ShapeToolId`(`NumericInputToolId` の一部)へ足した新しい図形
+  // `ShapeToolId`(`NumericInputToolId` の一部)の図形の道具
   // (FR-314〜318、FR-326)。この表は網羅が要るので、段を足した同じタスクで案内も足す
-  // (P3 タスク24 で `Record<NumericInputToolId>` が非網羅になった前例、
-  //  docs/報告記録.md 2026-09-04 03:20 ③)。ツールバーのボタンはタスク32。
+  // (`Record<NumericInputToolId>` が非網羅になった前例が
+  //  あるため)。
   text: 'text.status.pickOrigin',
   circle: 'statusBar.guide.circle',
   twoPointArc: 'statusBar.guide.twoPointArc',
-  // P4 タスク36(2026-09-04 追加要件)が `ShapeToolId` へ足した 3 点の円弧(FR-330)。
+  // `ShapeToolId` の 3 点の円弧(FR-330)。
   threePointArc: 'statusBar.guide.threePointArc',
   rectangle: 'statusBar.guide.rectangle',
   polygon: 'statusBar.guide.polygon',
   slot: 'statusBar.guide.slot',
   ellipse: 'statusBar.guide.ellipse',
   spline: 'statusBar.guide.spline',
-  // P4 タスク13 が `ReferenceToolId` へ足した基準ジオメトリ(FR-328、FR-329)。
+  // `ReferenceToolId` の基準ジオメトリ(FR-328、FR-329)。
   // 上と同じ理由で、道具を足した同じタスクで案内も足す。
   referencePlaneThreePoints: 'statusBar.guide.referencePlaneThreePoints',
   referencePlaneOffset: 'statusBar.guide.referencePlaneOffset',
@@ -100,69 +100,69 @@ const GUIDE_KEYS = {
   referenceAxis: 'statusBar.guide.referenceAxis',
   referencePoint: 'statusBar.guide.referencePoint',
   referenceCoordinateSystem: 'statusBar.guide.referenceCoordinateSystem',
-  // P4 タスク21 が `EditToolId`(`NumericInputToolId` の一部)へ足した整形系の道具
+  // `EditToolId`(`NumericInputToolId` の一部)の整形系の道具
   // (FR-321)。上と同じ理由で、道具を足した同じタスクで案内も足す。
   offset: 'statusBar.guide.offset',
-  // P4 タスク22 が `ClickEditToolId` へ足したトリム・延長(FR-322)。数値を聞かず
+  // `ClickEditToolId` のトリム・延長(FR-322)。数値を聞かず
   // ビューポートを押して決める道具なので、案内は「どこを押すか」を伝える文にしてある
-  // (§0.a-0.26 の利用者の決定、NFR-UX-7)。
+  // (利用者の決定、NFR-UX-7)。
   trim: 'statusBar.guide.trim',
   extend: 'statusBar.guide.extend',
-  // P4 タスク24 が `EditToolId` へ足した複製系(FR-324)。上と同じ理由で、道具を足した
+  // `EditToolId` の複製系(FR-324)。上と同じ理由で、道具を足した
   // 同じタスクで案内も足す。どれも「先に選んでから道具を押す」道具なので、その順を伝える。
   mirror: 'statusBar.guide.mirror',
   copy: 'statusBar.guide.copy',
   linearArray: 'statusBar.guide.linearArray',
   circularArray: 'statusBar.guide.circularArray',
-  // P4 タスク23 が `EditToolId` へ足した角の丸め・面取り(FR-323)。「選んでから」でも
+  // `EditToolId` の角の丸め・面取り(FR-323)。「選んでから」でも
   // 「道具を選んでから角をクリック」でも成立する道具なので、案内は後者(何も選んでいない
-  // ときの次の一手)を書く(§0.a-0.26 のトリムと同じ考え方、NFR-UX-7)。
+  // ときの次の一手)を書く(トリムと同じ考え方、NFR-UX-7)。
   sketchFillet: 'statusBar.guide.sketchFillet',
   sketchChamfer: 'statusBar.guide.sketchChamfer',
-  // P4 タスク27 が `PickEditToolId` へ足した投影・断面(FR-325)。数値を聞かず、立体の
+  // `PickEditToolId` の投影・断面(FR-325)。数値を聞かず、立体の
   // 面・辺・立体そのものを押して決める道具なので、案内は「何を押すか」と「順序の制約」
-  // (このスケッチを使う立体より前の立体だけ)を伝える文にしてある(§0.a-0.11、NFR-UX-7)。
+  // (このスケッチを使う立体より前の立体だけ)を伝える文にしてある(NFR-UX-7)。
   projectedCurve: 'statusBar.guide.projectedCurve',
   planeSection: 'statusBar.guide.planeSection',
-  // P5 タスク11 が `AppearanceToolId` へ足した外観(FR-1106〜1110)。数値を聞かず、
+  // `AppearanceToolId` の外観(FR-1106〜1110)。数値を聞かず、
   // 立体か面を選んでから色・材質を選ぶ道具なので、案内は「何を選ぶか」を伝える文にする。
   // 上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで案内も足す。
   appearance: 'statusBar.guide.appearance',
-  // P5 タスク18 が `SolidToolId` へ足した基本形状5種(FR-429)。何も選ばなくても置ける道具
+  // `SolidToolId` の基本形状5種(FR-429)。何も選ばなくても置ける道具
   // なので、案内は「何を選ぶと中心になるか」と「そのまま Enter で置ける」ことを伝える
   // (NFR-UX-4、NFR-UX-7)。上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで
-  // 案内も足す(docs/報告記録.md 2026-09-04 03:20 ③)。
+  // 案内も足す。
   sphere: 'statusBar.guide.sphere',
   box: 'statusBar.guide.box',
   cylinder: 'statusBar.guide.cylinder',
   cone: 'statusBar.guide.cone',
   torus: 'statusBar.guide.torus',
-  // P5 タスク22 が `SolidToolId` へ足した球面上の点(FR-431)。**先に球を選んでから押す**
+  // `SolidToolId` の球面上の点(FR-431)。**先に球を選んでから押す**
   // 道具で、押した後は「案内の交点をクリックする」か「緯度・経度を打つ」の 2 通りがある
   // ので、案内はその両方を伝える(NFR-UX-1、NFR-UX-7)。上と同じ理由(この表は網羅が
   // 要る)で、道具を足した同じタスクで案内も足す。
   sphereGridPoint: 'statusBar.guide.sphereGridPoint',
-  // P5 タスク27 が `SolidToolId` へ足した面をつなぐ(FR-430)とロフト(FR-410)。どちらも
+  // `SolidToolId` の面をつなぐ(FR-430)とロフト(FR-410)。どちらも
   // **先に輪郭を選んでから押す**道具なので、案内は「何をいくつ選ぶか」を伝える
-  // (NFR-UX-1、NFR-UX-7)。罫線面だけは球も選べることを添える(§0.a-0.26)。
+  // (NFR-UX-1、NFR-UX-7)。罫線面だけは球も選べることを添える。
   // 上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで案内も足す。
   ruled: 'statusBar.guide.ruled',
   loft: 'statusBar.guide.loft',
-  // P5 タスク32 が `MeasureToolId` へ足した測る(FR-1101、FR-1102)。**選んでいるものから
+  // `MeasureToolId` の測る(FR-1101、FR-1102)。**選んでいるものから
   // 測る種類が決まる**道具なので、案内は「何をいくつ選ぶか」と「もう一度押すと測り直せる」
   // ことを伝える(NFR-UX-1、NFR-UX-7)。上と同じ理由(この表は網羅が要る)で、道具を
   // 足した同じタスクで案内も足す。
   measure: 'statusBar.guide.measure',
-  // GR-30 が `MathGeometryToolId` へ足した図形の測定値(Q1=A4)。段0(未選択)の案内。
-  // 選択が進んだ具体的な案内(候補件数・断りの理由)は GR-26 が同じ優先順位へ足す。
+  // `MathGeometryToolId` の図形の測定値。段0(未選択)の案内。
+  // 選択が進んだ具体的な案内(候補件数・断りの理由)は同じ優先順位の別の口で出す。
   // 上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで案内も足す。
   mathGeometry: 'statusBar.guide.mathGeometry',
   /*
-    P5 タスク49 が `SolidToolId` へ足した Should / Could 群 16 種(FR-401、FR-409、
+    `SolidToolId` の Should / Could 群 16 種(FR-401、FR-409、
     FR-415〜428、FR-432)。**道具を足したら案内も同じタスクで足す**という約束どおり
-    (docs/報告記録.md 2026-09-04 03:20 の③。この表は網羅が要るので足し忘れると型検査が
+    (この表は網羅が要るので足し忘れると型検査が
     落ちる)。どれも「先に選んでから押す」道具なので、案内は**何をいくつ選ぶか**を伝える
-    (NFR-UX-1、NFR-UX-7)。コマンドの本体はタスク50(切断はタスク27e)。
+    (NFR-UX-1、NFR-UX-7)。
 
     立体のミラーの鍵が `mirrorSolid` なのは、スケッチの鏡像複写(FR-324)がすでに
     `mirror` を使っているため(`numericInput.ts` の `SolidToolId` の注釈)。
@@ -185,8 +185,8 @@ const GUIDE_KEYS = {
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
 /*
- * 選択の種類の札(§0.a-0.6)の表は `solid/selectionFilter.ts` にある。
- * P6 タスク36 の選択フィルタ(FR-112)が**同じ 4 つを同じ札で**ステータスバーに並べるので、
+ * 選択の種類の札の表は `solid/selectionFilter.ts` にある。
+ * 選択フィルタ(FR-112)が**同じ 4 つを同じ札で**ステータスバーに並べるので、
  * 表を 2 か所に置かず、種類の並び(`SELECTION_FILTER_KINDS`)と一緒の 1 か所から引く。
  */
 
@@ -198,10 +198,10 @@ const SNAP_GUIDE_KEYS = {
   center: 'statusBar.snap.center',
   grid: 'statusBar.snap.grid',
   /*
-   * 向きの吸着(FR-110、P4b タスク16)。角度や要素の名前が分かるときは下の
+   * 向きの吸着(FR-110)。角度や要素の名前が分かるときは下の
    * `trackGuideText` の詳しい文言が先に選ばれるので、ここはその材料が無いときの後退先。
    * この表は網羅が要る(`satisfies Record<SnapKind, …>`)ので、種別を足した同じタスクで
-   * 案内も足す(P3 タスク24 で網羅が崩れた前例、docs/報告記録.md 2026-09-04 03:20 ③)。
+   * 案内も足す(網羅が崩れた前例がある)。
    */
   polar: 'statusBar.snap.polar',
   extension: 'statusBar.snap.extension',
@@ -220,7 +220,7 @@ const TRACK_GUIDE_KEYS = {
 /** 頭の言葉と本文をつなぐ空白。文字そのものは言葉に依らないのでここに置く。 */
 const PREFIX_SEPARATOR = ' ';
 
-/** 和・差・積が押せる状態になる立体の数(§0.a-0.6)。 */
+/** 和・差・積が押せる状態になる立体の数。 */
 const BOOLEAN_READY_BODY_COUNT = 2;
 
 /**
@@ -275,13 +275,13 @@ interface StatusLine {
   /** 道具の案内と並べる計算表示。詳細はツールチップと読み上げに使う。 */
   readonly activity: { readonly text: string; readonly detail: string } | null;
   /**
-   * 選択の種類の札の文言(§0.a-0.6)。優先順位のどの1文を選んでいても常に出すので、
+   * 選択の種類の札の文言。優先順位のどの1文を選んでいても常に出すので、
    * 上の `kind` / `text` とは独立に持つ(`[ファイル名] [状況の1文] [spacer] [選ぶもの]
-   * [作図面] [吸着] [単位]` の並び、`docs/報告記録.md` 2026-09-03 18:30 の残件(f))。
+   * [作図面] [吸着] [単位]` の並び)。
    */
   readonly selectionKindLabel: string;
   /**
-   * つまみが末尾でないことの札(FR-507、NFR-UX-7。P4b タスク19)。末尾なら null。
+   * つまみが末尾でないことの札(FR-507、NFR-UX-7)。末尾なら null。
    *
    * `selectionKindLabel` と同じく、優先順位のどの 1 文を選んでいても**常に出す**。
    * 帯の 1 文は 1 つしか出せないので、失敗や吸着の案内に押しのけられて
@@ -290,7 +290,7 @@ interface StatusLine {
   readonly rollbackLabel: string | null;
 }
 
-/** 帯に出す、いま合っている向き 1 本ぶん(FR-110、P4b タスク16)。 */
+/** 帯に出す、いま合っている向き 1 本ぶん(FR-110)。 */
 export interface TrackStatus {
   readonly kind: TrackKind;
   /** 極(角度)のときの角度(度)。他の種類は null。 */
@@ -301,7 +301,7 @@ export interface TrackStatus {
 
 /**
  * 向きの吸着の案内(FR-110、NFR-UX-7)。「15° に合わせています」「線分1 の延長線」。
- * 2 本の案内線が交わる点に合っているときは両方を並べて出す(§2.4 の交点)。
+ * 2 本の案内線が交わる点に合っているときは両方を並べて出す。
  * 合っている向きが無ければ null を返し、呼び出し側は点の吸着・道具の案内へ後退する。
  */
 export function trackGuideText(tracks: readonly TrackStatus[]): string | null {
@@ -319,7 +319,7 @@ export function trackGuideText(tracks: readonly TrackStatus[]): string | null {
 }
 
 /**
- * コマンドラインの断り 1 つぶん(FR-208、P4b タスク18)。`commandLineActions.ts` の
+ * コマンドラインの断り 1 つぶん(FR-208)。`commandLineActions.ts` の
  * `CommandLineFailure` と同じ形だが、`statusText.ts` は画面側の一番下の層(純関数だけ)
  * なので、上の層の型に依存しないよう同じ欄をここに持つ。
  */
@@ -388,7 +388,7 @@ export function kernelMemoryWarningText(memory: KernelMemoryView | null | undefi
   })}`;
 }
 
-/** ばねのその場入力の段(§2.11)。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
+/** ばねのその場入力の段。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
 export type SpringNumericInputStep = 'springShape' | 'springLength';
 
 /** アセンブリの上部にある全22道具と、次に行う操作の文言。 */
@@ -568,116 +568,116 @@ interface StatusInput {
   /** 立体を作れなかった理由(FR-401〜404)。 */
   readonly solidErrorKey: MessageKey | null;
   /**
-   * 整形系の道具(オフセット等)を作れなかった理由(FR-321、P4 タスク21)。`shapeErrorMessage`
+   * 整形系の道具(オフセット等)を作れなかった理由(FR-321)。`shapeErrorMessage`
    * と同じく省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)を
    * そのまま通すため。
    */
   readonly editErrorKey?: MessageKey | null;
   /**
-   * 外観を割り当てられなかった理由(FR-1106〜1110、NFR-UX-5。P5 タスク11)。
+   * 外観を割り当てられなかった理由(FR-1106〜1110、NFR-UX-5)。
    * いま押したボタンへの返事なので、他の断りと同じ高さの優先順位に置く。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly appearanceErrorKey?: MessageKey | null;
   /**
-   * 測れなかった理由(FR-1102、NFR-UX-5。P5 タスク32)。いま押した「測る」への返事なので、
+   * 測れなかった理由(FR-1102、NFR-UX-5)。いま押した「測る」への返事なので、
    * 他の断りと同じ高さの優先順位に置く。理由の文はそれだけで通じる 1 文
    * (「測りたいものを 1 つか 2 つ選んでください。」)なので頭の言葉は付けない。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly measureErrorKey?: MessageKey | null;
   /**
-   * 選び直せなかった外観の割り当ての数(FR-1106、P5 §2.2.3。タスク11)。
+   * 選び直せなかった外観の割り当ての数(FR-1106)。
    * 形が変わって指紋が合わなくなった面の件数で、0 なら何も出さない。数えるのは
    * `appearance/appearanceCommands.ts` の `missingAppearanceCount` 1 か所だけにする。
    */
   readonly appearanceMissingCount?: number;
   /**
-   * 整形系の道具が**うまくいったときに添える案内**(FR-323、P4 タスク23)。断りではないので
+   * 整形系の道具が**うまくいったときに添える案内**(FR-323)。断りではないので
    * 帯を赤くせず、「保存しました」等と同じ短い知らせとして出す。いまの使い道は 1 つで、
    * 角を丸めた 2 本を境界に使っている面があったときの「面の境界に足した曲線を入れ直して
-   * ください」(t18 の申し送り)。省略できるようにしてあるのは、この欄を持たない既存の
+   * ください」。省略できるようにしてあるのは、この欄を持たない既存の
    * 呼び出し(検査)をそのまま通すため。
    */
   readonly editNoticeKey?: MessageKey | null;
   /**
-   * 図形を作れなかった理由(FR-314〜318、FR-326、P4 タスク12)。限界値(点の数・半径)を
+   * 図形を作れなかった理由(FR-314〜318、FR-326)。限界値(点の数・半径)を
    * 差し込んだ文になるので、文言キーではなく組み立て済みの文で受け取る。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly shapeErrorMessage?: string | null;
   /**
    * 基準ジオメトリ(作業平面・基準軸・基準点・座標系)を作れなかった理由
-   * (FR-328、FR-329、P4 タスク13)。`shapeErrorMessage` と同じ扱いで、選んでいるものが
+   * (FR-328、FR-329)。`shapeErrorMessage` と同じ扱いで、選んでいるものが
    * 足りないときの案内を差し込んだ文になるので文言キーではなく組み立て済みの文で受け取る。
    */
   readonly referenceErrorMessage?: string | null;
   /**
-   * コマンドラインで打った 1 行を受け取れなかった理由(FR-208、P4b タスク18)。
+   * コマンドラインで打った 1 行を受け取れなかった理由(FR-208)。
    * いま押した Enter への返事なので、他の断りと同じ高さの優先順位に置く(NFR-UX-5)。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly commandLineFailure?: CommandLineFailureView | null;
   /**
-   * 拘束を付けられなかった理由(FR-313、FR-504、P4b タスク13)。いま押した道具・要素への
-   * 返事なので、他の断りと同じ高さの優先順位に置く(NFR-UX-5)。model / t12 が組み立てた
+   * 拘束を付けられなかった理由(FR-313、FR-504)。いま押した道具・要素への
+   * 返事なので、他の断りと同じ高さの優先順位に置く(NFR-UX-5)。model / 拘束のコマンドが組み立てた
    * 日本語をそのまま持つので、文言キーではなく文で受け取る(`shapeErrorMessage` と同じ扱い。
    * 省略できるのも同じ理由)。
    */
   readonly constraintErrorMessage?: string | null;
   /**
-   * 引っぱれなかった理由(FR-313、P4b タスク14)。押した瞬間の返事なので、他の断りと
+   * 引っぱれなかった理由(FR-313)。押した瞬間の返事なので、他の断りと
    * 同じ高さの優先順位に置く(NFR-UX-5)。省略できるようにしてあるのは、この欄を
    * 持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly dragRefusalKey?: MessageKey | null;
   /**
-   * いま引っぱっている最中か(FR-313、P4b タスク14)。案内を「離すと決まります」に
+   * いま引っぱっている最中か(FR-313)。案内を「離すと決まります」に
    * 差し替えるためだけに使う(NFR-UX-7)。
    */
   readonly dragging?: boolean;
   /**
-   * 拘束の道具で「次に何を押せばよいか」(FR-313、NFR-UX-7、P4b タスク13)。
+   * 拘束の道具で「次に何を押せばよいか」(FR-313、NFR-UX-7)。
    * 道具を選んでいなければ null。道具ごとの案内(`guideKeyFor`)を押しのけて出す。
    */
   readonly constraintPickMessage?: string | null;
   /**
-   * 拘束の決まり具合の 1 文(FR-313「足りない拘束の数を示し」、P4b タスク13)。
+   * 拘束の決まり具合の 1 文(FR-313「足りない拘束の数を示し」)。
    * 「あと N か所決まっていません」「すべて決まりました」「付けすぎの拘束が N 件あります」
    * 「同時に成り立たない拘束が N 件あります」。model の診断(`ConstraintDiagnosis.summary`)を
    * そのまま受け取る(同じ文言を 2 か所に書かない)。拘束が無ければ null。
    */
   readonly constraintSummaryText?: string | null;
   /**
-   * 原点を移したときの一言(FR-331、P4 タスク35b)。`editNoticeKey` と同じ「うまくいった
+   * 原点を移したときの一言(FR-331)。`editNoticeKey` と同じ「うまくいった
    * ときの知らせ」だが、もとの原点の座標の式を差し込んだ文になるので組み立て済みの文で
    * 受け取る。省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)を
    * そのまま通すため。
    */
   readonly originNoticeMessage?: string | null;
   /**
-   * タイムラインのつまみが末尾でないときの位置(FR-507、P4b タスク19)。末尾なら null。
+   * タイムラインのつまみが末尾でないときの位置(FR-507)。末尾なら null。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly rollback?: TimelineRollback | null;
   /**
-   * つまみについての知らせ(P4b タスク19)。断りではないので赤くしない。いまの使い道は
+   * つまみについての知らせ。断りではないので赤くしない。いまの使い道は
    * 1 つで、途中まで戻したまま新しいものを作ったときの「最後まで戻しました」。
    * `editNoticeKey` と同じ扱い(省略できるのも同じ理由)。
    */
   readonly timelineNoticeKey?: MessageKey | null;
   /**
-   * 書き出しの添え物(P6 タスク45 の指摘、43b の申し送り)。「弾いた立体が 1 つあります」
+   * 書き出しの添え物。「弾いた立体が 1 つあります」
    * 「面積 0 の三角形を 3 枚除きました」のような、**うまくいったときに添える案内**。
    *
    * **失敗の口(`errorMessage`)へ入れない。** あちらは頭に「計算に失敗しました:」を付けて
-   * 赤くするので、書き出せたのに失敗したように見えていた(タスク45 が見つけた不具合)。
+   * 赤くするので、書き出せたのに失敗したように見えていた(以前の不具合)。
    * 断りではないので赤くせず、「保存しました」と同じ調子で出す。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)を通すため。
    */
   readonly exchangeNotice?: string | null;
   /**
-   * 3D プリントの点検を断った理由(FR-815、NFR-UX-5。P6 タスク46)。いま押した
+   * 3D プリントの点検を断った理由(FR-815、NFR-UX-5)。いま押した
    * 「3D プリントの点検」への返事なので、他の断りと同じ高さの優先順位に置く。
    * 理由の文はそれだけで通じる 1 文(「点検できる形がありません。」)なので頭の言葉は
    * 付けない(測定・外観の断りと同じ扱い)。
@@ -689,13 +689,13 @@ interface StatusInput {
    */
   readonly inspectingPrint?: boolean;
   /**
-   * 形状計算部のメモリの量(NFR-PF-6、計画書 P12-28)。上限に近いときだけ帯に警告を出す。
+   * 形状計算部のメモリの量(NFR-PF-6)。上限に近いときだけ帯に警告を出す。
    * まだ届いていなければ null。省略できるようにしてあるのは、この欄を持たない既存の呼び出し
    * (検査)をそのまま通すため。
    */
   readonly kernelMemory?: KernelMemoryView | null;
   /**
-   * 順序の入れ替えを断った理由(FR-507、FR-504。P4b タスク20)。断らなかったときは null。
+   * 順序の入れ替えを断った理由(FR-507、FR-504)。断らなかったときは null。
    * 相手のフィーチャーの名前が入る文なので、文言キーではなく組み立て済みの文で受け取る
    * (`shapeErrorMessage` と同じ扱い。省略できるのも同じ理由)。
    */
@@ -717,14 +717,14 @@ interface StatusInput {
   /** 再計算の最中か。 */
   readonly isComputing: boolean;
   /**
-   * 幾何カーネルを読み込み終えたか(§0.a-0.23 ⑨)。初回の計算中だけ文言を分けるので、
+   * 幾何カーネルを読み込み終えたか。初回の計算中だけ文言を分けるので、
    * `isComputing` と組み合わせて使う。
    */
   readonly kernelLoaded: boolean;
   /** いま吸い付いている先。無ければ null(FR-107)。 */
   readonly snapKind: SnapKind | null;
   /**
-   * いま合っている向き(FR-110、P4b タスク16)。案内線が 2 本出ているときは 2 件入る。
+   * いま合っている向き(FR-110)。案内線が 2 本出ているときは 2 件入る。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly track?: readonly TrackStatus[] | null;
@@ -733,15 +733,15 @@ interface StatusInput {
   /** いま選ばれている立体の数(FR-404 の対象指定)。 */
   readonly selectedBodyCount: number;
   /**
-   * 選んでいる部分形状の数(§0.a-0.6)。道具に応じた種類(穴・ねじ穴なら面、R/C 面取りなら
+   * 選んでいる部分形状の数。道具に応じた種類(穴・ねじ穴なら面、R/C 面取りなら
    * 辺)だけを数えた値を渡す。立体を選ぶ道具のときは常に 0 でよい(`machiningGuideText` が
    * 使わない)。数える関数は `countSelectedSubShapes`。
    */
   readonly selectedSubShapeCount: number;
-  /** 選択の種類の札(頂点/辺/面/立体、§0.a-0.6)。いまストアが持っている値をそのまま渡す。 */
+  /** 選択の種類の札(頂点/辺/面/立体)。いまストアが持っている値をそのまま渡す。 */
   readonly selectionKind: SelectionKind;
   /**
-   * ばねの始点にする点フィーチャーが選ばれているか(§0.a-0.29、仕上げ (d))。
+   * ばねの始点にする点フィーチャーが選ばれているか。
    * ばねは対象が立体でも部分形状でもなくスケッチの点なので、`selectedBodyCount` /
    * `selectedSubShapeCount` では判定できない(いずれも数えない)。ツールバーの「ばね」
    * ボタンの押せる条件と同じ `solidToolReadiness(document, selection, 'spring').ready`
@@ -749,7 +749,7 @@ interface StatusInput {
    */
   readonly springOriginSelected: boolean;
   /**
-   * いま開いているその場入力がばねの何段目か(§2.11「ばねの2段」)。ポップアップが
+   * いま開いているその場入力がばねの何段目か(「ばねの2段」)。ポップアップが
    * 開いていない、または他の道具のポップアップのときは null。`activeTool !== 'spring'`
    * のときは呼び出し側が常に null を渡してよい(`machiningGuideText` が見るのは
    * `activeTool === 'spring'` のときだけ)。
@@ -763,7 +763,7 @@ interface StatusInput {
    */
   readonly numericInputStep?: NumericInputStep | null;
   /**
-   * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23、利用者の回答 Q11=P2、GR-26)。
+   * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23、利用者の回答 Q11=P2)。
    * 「{count}件の量を測れます。…」「選ぶのは3つまでです。」のように、選択が進むにつれて
    * 変わる 1 文。判断はストアを読む `math/mathGeometryToolGuide.ts` の純関数 1 か所にあり、
    * この層(画面側の最下層の純関数)はそれを読み込まない。`StatusBar.tsx` が道具の有効な
@@ -774,14 +774,14 @@ interface StatusInput {
    */
   readonly mathGeometryGuide?: string | null;
   /**
-   * いまの作図面の id(FR-328、FR-330、タスク14)。3D スケッチ(作図面なし)のときだけ、
+   * いまの作図面の id(FR-328、FR-330)。3D スケッチ(作図面なし)のときだけ、
    * 道具ごとの案内へ「立体の頂点を押すと点になる」という一言を添えるのに使う(NFR-UX-7)。
    * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
    */
   readonly workPlaneId?: WorkPlaneId;
 }
 
-/** 選択のうち、いま画面にある立体を指しているものの数(§0.a-0.5、FR-404)。 */
+/** 選択のうち、いま画面にある立体を指しているものの数(FR-404)。 */
 export function countSelectedBodies(
   selection: readonly string[],
   liveBodyIds: readonly string[],
@@ -791,7 +791,7 @@ export function countSelectedBodies(
 }
 
 /**
- * 選択のうち、指定した種類の部分形状(面・辺・頂点)の数(§0.a-0.6)。
+ * 選択のうち、指定した種類の部分形状(面・辺・頂点)の数。
  * `countSelectedBodies`(立体版)と同じ作り。`StatusBar.tsx` が道具に応じた種類を渡す。
  */
 export function countSelectedSubShapes(
@@ -801,13 +801,13 @@ export function countSelectedSubShapes(
   return selection.filter((id) => parseSubShapeId(id)?.kind === kind).length;
 }
 
-/** 選択の種類の札の文言(§0.a-0.6)。「選ぶもの 面」のように出す。 */
+/** 選択の種類の札の文言。「選ぶもの 面」のように出す。 */
 function selectionKindText(kind: SelectionKind): string {
   return `${t('selection.kindLabel')}${PREFIX_SEPARATOR}${t(SELECTION_KIND_LABEL_KEYS[kind])}`;
 }
 
 /**
- * つまみが末尾でないことの札(FR-507、NFR-UX-7。P4b タスク19)。
+ * つまみが末尾でないことの札(FR-507、NFR-UX-7)。
  * 「途中まで戻しています(3 件目 / 5 件)」。末尾なら null で、札そのものを出さない。
  */
 export function rollbackText(rollback: TimelineRollback | null | undefined): string | null {
@@ -821,7 +821,7 @@ export function rollbackText(rollback: TimelineRollback | null | undefined): str
 }
 
 /**
- * ばねの段階的な案内(§0.a-0.6、§0.a-0.29、仕上げ (d))。「ばね」ボタンを押した後、
+ * ばねの段階的な案内。「ばね」ボタンを押した後、
  * 段が進むにつれて案内を更新する。文言は `packages/help-content/docs/ja/spring.md` の手順と
  * `numericInput.ts` の段名(`springShape` = 「ばねの形を決める」、`springLength` = 「ばねの
  * 長さを決める」)に揃える。
@@ -834,7 +834,7 @@ export function rollbackText(rollback: TimelineRollback | null | undefined): str
  *   「選択が整ったら伝える」流儀。ポップアップは「ばね」を押した時点で開くので、この文言は
  *   ポップアップを開く前の後押しにも、開いた後の入力の促しにも使える)。
  * - その場入力が2段目(`springLength`)まで進んだら、「ピッチと巻数(全長)を」促す文言に
- *   替える。`derived` によって実際に出る2つの欄は変わる(§0.a-0.30)ので、3つの量をまとめて
+ *   替える。`derived` によって実際に出る2つの欄は変わるので、3つの量をまとめて
  *   案内し、どれが出ていても通じるようにする。
  */
 export function springGuideText(
@@ -950,13 +950,13 @@ export function numericStepGuideText(step: NumericInputStep | null | undefined):
 
 /**
  * 加工の道具(穴・ねじ穴・R 面取り・C 面取り・直線/円形パターン・ばね)で、選択が進むにつれて
- * 案内を更新する(§0.a-0.6「選択の数を案内に出す」、P3 タスク29 でパターンの段、
- * 仕上げ (d) でばねの段を追加)。その道具にとって何も選ばれていなければ null を返し、
+ * 案内を更新する(「選択の数を案内に出す」。パターンの段と
+ * ばねの段を含む)。その道具にとって何も選ばれていなければ null を返し、
  * 呼び出し側は道具の基本案内(`guideKeyFor`)へ後退する。
  *
  * - 穴・ねじ穴: 面を 1 つ以上選んだら「中心にする点を選んでください。」に進む(面を選ぶまでは
  *   基本案内が「面と点の両方を」とまとめて伝えている)。
- * - R/C 面取り: 辺を選ぶたびに「辺を N 本選んでいます。」で選んだ数を伝える(P2 の
+ * - R/C 面取り: 辺を選ぶたびに「辺を N 本選んでいます。」で選んだ数を伝える(
  *   `statusBar.guide.booleanReady` と同じ「選択が進んだら具体的に伝える」考え方)。
  * - 直線/円形パターン: 並べる穴・ねじ穴は部分形状ではなく立体そのものを選ぶ道具
  *   (`selectionKind` が `'body'` のまま、machiningCommands.ts の `selectedPatternSource` と
@@ -1001,7 +1001,7 @@ export function machiningGuideText(
  * 立体を 1 つだけ選んでいるなら、次にすることは「組み合わせる相手を選ぶ」なので
  * ブーリアンの案内(`statusBar.guide.boolean`)を出す。ちょうど 2 つ選べていれば
  * 和・差・積が押せると伝える。3 つ以上は 2 つに絞ってもらう必要があるので
- * 1 つのときと同じ案内へ戻す(§0.a-0.6「ちょうど 2 つ」)。
+ * 1 つのときと同じ案内へ戻す(「ちょうど 2 つ」)。
  */
 export function guideKeyFor(
   activeTool: NumericInputToolId,
@@ -1077,7 +1077,7 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  *
  * 1. ファイル操作の失敗 … いま押したボタンへの返事。理由の文だけで通じるので頭の言葉は付けない。
  * 2. 面・立体・整形系(オフセット等)・図形を作れなかった断り、順序の入れ替えの断り
- *    (FR-507、タスク20)… これもいま押した Enter やボタン、いま離したドラッグへの返事
+ *    (FR-507)… これもいま押した Enter やボタン、いま離したドラッグへの返事
  *    (NFR-UX-5)。
  * 3. 計算の失敗 … 再計算が投げた理由、続いて集まった失敗の件数と先頭の理由(FR-504)。
  * 4. 中止の知らせ … 失敗ではないので赤くしない(NFR-PF-4)。
@@ -1088,11 +1088,11 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * 6.5. 形状計算部のメモリが上限に近いことの警告(NFR-PF-6)。赤い帯で保存と開き直しを促す。
  *    進み具合と「中止」・中止の知らせ・保存の知らせは押しのけない(中止は既存の口のまま)。
  * 7. 案内 … 計算中の札、吸着の案内、拘束の道具の次の一手、加工の選択が進んだ具合と
- *    図形の測定値の道具の段階の案内(同じ高さ、GR-26)、拘束の決まり具合
+ *    図形の測定値の道具の段階の案内(同じ高さ)、拘束の決まり具合
  *    (「あと N か所決まっていません」、FR-313)、道具ごとの次の一手。
  *
  * 選択の種類の札(`selectionKindLabel`)は、この優先順位のどれを選んでいても常に出す
- * (`[選ぶもの]` の札は状況の1文と独立、§0.a-0.6)ので、内側の `resolveLine` には含めず
+ * (`[選ぶもの]` の札は状況の1文と独立)ので、内側の `resolveLine` には含めず
  * ここで一度だけ足す。
  */
 /** 操作案内の有無を、計算表示と受動的な履歴ヒントで共用する。 */
@@ -1125,7 +1125,7 @@ export function describeStatus(input: StatusInput): StatusLine {
       detail: line.text,
     } : null,
     selectionKindLabel: selectionKindText(input.selectionKind),
-    // つまみの札も 1 文とは独立に常に添える(FR-507、タスク19)。
+    // つまみの札も 1 文とは独立に常に添える(FR-507)。
     rollbackLabel: rollbackText(input.rollback),
   };
 }
@@ -1144,17 +1144,17 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     return failureLine('statusBar.editError', t(input.editErrorKey));
   }
   if (input.appearanceErrorKey !== undefined && input.appearanceErrorKey !== null) {
-    // 外観を割り当てられなかった断り(FR-1106〜1110、P5 タスク11)。いま押したボタンへの
+    // 外観を割り当てられなかった断り(FR-1106〜1110)。いま押したボタンへの
     // 返事なので、他の断りと同じ高さに置く。理由の文はそれだけで通じる 1 文
     // (「この立体には 8 種類までしか…」)なので、頭の言葉は付けない。
     return failureLine(null, t(input.appearanceErrorKey));
   }
   if (input.measureErrorKey !== undefined && input.measureErrorKey !== null) {
-    // 測れなかった断り(FR-1102、P5 タスク32)。外観と同じ扱いで、理由の文をそのまま出す。
+    // 測れなかった断り(FR-1102)。外観と同じ扱いで、理由の文をそのまま出す。
     return failureLine(null, t(input.measureErrorKey));
   }
   if (input.printCheckErrorMessage !== undefined && input.printCheckErrorMessage !== null) {
-    // 点検できなかった断り(FR-815、P6 タスク46)。測定と同じ扱いで、理由の文をそのまま出す。
+    // 点検できなかった断り(FR-815)。測定と同じ扱いで、理由の文をそのまま出す。
     return failureLine(null, input.printCheckErrorMessage);
   }
   if (input.shapeErrorMessage !== undefined && input.shapeErrorMessage !== null) {
@@ -1164,12 +1164,12 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     return failureLine('statusBar.referenceError', input.referenceErrorMessage);
   }
   if (input.constraintErrorMessage !== undefined && input.constraintErrorMessage !== null) {
-    // 拘束を付けられなかった断り(FR-313、タスク13)。いま押したボタン・要素への返事なので、
-    // 他の断りと同じ高さに置く。理由の文は t12 / model が組み立てたものをそのまま出す。
+    // 拘束を付けられなかった断り(FR-313)。いま押したボタン・要素への返事なので、
+    // 他の断りと同じ高さに置く。理由の文は拘束のコマンド / model が組み立てたものをそのまま出す。
     return failureLine('statusBar.constraintError', input.constraintErrorMessage);
   }
   if (input.dragRefusalKey !== undefined && input.dragRefusalKey !== null) {
-    // 引っぱれなかった断り(FR-313、タスク14)。いま押した点への返事なので、
+    // 引っぱれなかった断り(FR-313)。いま押した点への返事なので、
     // 他の断りと同じ高さに置く。
     return failureLine('statusBar.dragError', t(input.dragRefusalKey));
   }
@@ -1180,7 +1180,7 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     case 'failed': return failureLine(null, t('assembly.drag.failed'));
   }
   if (input.timelineRefusalMessage !== undefined && input.timelineRefusalMessage !== null) {
-    // 順序の入れ替えの断り(FR-507、タスク20)。いま離したドラッグへの返事なので、
+    // 順序の入れ替えの断り(FR-507)。いま離したドラッグへの返事なので、
     // 他の断りと同じ高さに置く。理由の文は model が相手の名前つきで組み立てたものをそのまま出す。
     return failureLine('statusBar.timelineError', input.timelineRefusalMessage);
   }
@@ -1210,7 +1210,7 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     return {
       kind: 'progress',
       text: progressText(input.progress),
-      // 中止は段と段の間でしか効かない(§2.6 の限界)。押しても止まらないように
+      // 中止は段と段の間でしか効かない。押しても止まらないように
       // 見えるのを避けるため、待たされることがあると先に伝えておく。
       hint: t('statusBar.progressHint'),
       progress: progressView(input.progress),
@@ -1230,11 +1230,11 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     && (input.timelineNoticeKey !== 'timeline.hint'
       || (input.fileMessage === null && !hasActiveToolGuide(input)
         && (input.assemblyDragNotice === undefined || input.assemblyDragNotice === null)))) {
-    // つまみを末尾へ戻したことの知らせ(FR-507、タスク19)。断りではないので赤くしない。
+    // つまみを末尾へ戻したことの知らせ(FR-507)。断りではないので赤くしない。
     return { kind: 'saved', text: t(input.timelineNoticeKey), hint: null, progress: null };
   }
   if (input.exchangeNotice !== undefined && input.exchangeNotice !== null) {
-    // 書き出しの添え物(タスク45・46)。**赤くしない**——うまくいったときの知らせだから。
+    // 書き出しの添え物。**赤くしない**——うまくいったときの知らせだから。
     return { kind: 'saved', text: input.exchangeNotice, hint: null, progress: null };
   }
   if (input.fileMessage !== null) {
@@ -1261,7 +1261,7 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   }
   /*
     選び直せなかった外観の割り当て(FR-1106「選び直せなかった割り当ては警告し、既定の外観に
-    戻す」、P5 §2.2.3)。形が変わって色が外れたままなので、直すまで出し続ける。
+    戻す」)。形が変わって色が外れたままなので、直すまで出し続ける。
     押した操作への返事ではないので断りの列より後ろに置くが、道具の案内よりは先に出す
     (放っておくと色が戻らないため、NFR-UX-7)。**割り当て自体は文書から消さない。**
   */
@@ -1274,7 +1274,7 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   }
   if (input.isComputing) {
     // 初回の計算だけ、幾何カーネル(約 50MB)の読み込みを含む旨に文言を分ける
-    // (§0.a-0.23 ⑨。実測で初回は 3〜7 秒かかり、固まったように見えるため)。
+    // (実測で初回は 3〜7 秒かかり、固まったように見えるため)。
     const key = input.kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel';
     return { kind: 'computing', text: t(key), hint: null, progress: null };
   }
@@ -1332,7 +1332,7 @@ function resolveGuide(input: StatusInput): StatusLineWithoutSelectionKind {
     };
   }
   // 加工の道具は、部分形状(またはパターンなら立体、ばねなら始点の点)を選ぶにつれて
-  // 具体的な案内へ進める(§0.a-0.6)。何も選んでいなければ null が返り、道具の基本案内
+  // 具体的な案内へ進める。何も選んでいなければ null が返り、道具の基本案内
   // (guideKeyFor)へ後退する。
   const machiningText = machiningGuideText(
     input.activeTool,
@@ -1342,7 +1342,7 @@ function resolveGuide(input: StatusInput): StatusLineWithoutSelectionKind {
     input.springStep,
   );
   /*
-    図形の測定値の道具(Q11=P2、GR-26)の段階の案内も、加工の道具と同じ高さに置く
+    図形の測定値の道具の段階の案内も、加工の道具と同じ高さに置く
     (選ぶにつれて具体的な案内へ進める点が同じ)。道具が違えば渡されても使わないので、
     加工などほかの道具の案内を押しのけない。
   */
@@ -1353,7 +1353,7 @@ function resolveGuide(input: StatusInput): StatusLineWithoutSelectionKind {
       ? input.mathGeometryGuide
       : null;
   /*
-    拘束(FR-313、タスク13)は 2 段に分けて出す。
+    拘束(FR-313)は 2 段に分けて出す。
     ①道具を選んでいるあいだは「次に何を押せばよいか」を最優先で出す(いま進んでいる操作)。
     ②そうでなければ、拘束の決まり具合(「あと N か所決まっていません」)を道具の案内の
       代わりに出す。拘束を使っている文書ではこちらのほうが知りたいことのため。
@@ -1368,7 +1368,7 @@ function resolveGuide(input: StatusInput): StatusLineWithoutSelectionKind {
       ? input.constraintSummaryText
       : null;
   /*
-    引っぱっている最中(FR-313、タスク14)は「離すと決まります」を最優先で出す。
+    引っぱっている最中(FR-313)は「離すと決まります」を最優先で出す。
     いま手を動かしている操作の案内なので、拘束の決まり具合より先に立つ(NFR-UX-7)。
   */
   const draggingText = input.dragging === true ? t('statusBar.guide.dragging') : null;
@@ -1382,7 +1382,7 @@ function resolveGuide(input: StatusInput): StatusLineWithoutSelectionKind {
       mathGeometryText ??
       summaryText ??
       t(guideKeyFor(input.activeTool, input.selectedBodyCount)),
-    // 3D スケッチ(FR-330、タスク14)では、道具の案内に「立体の頂点を押すと、その頂点に
+    // 3D スケッチ(FR-330)では、道具の案内に「立体の頂点を押すと、その頂点に
     // 付く点ができる」ことを添える。3D スケッチにしかない入り口で、押せることが画面から
     // だけでは分からないため(NFR-UX-7)。
     hint: freeSketchHint(input.workPlaneId, input.activeTool),

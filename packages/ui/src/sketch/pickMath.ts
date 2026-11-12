@@ -1,5 +1,5 @@
 /**
- * ホバーとクリックの当たり判定(計画書 docs/plans/P1-式とスケッチ.md タスク15 手順5、§2.8)。
+ * ホバーとクリックの当たり判定。
  *
  * 対応要件: FR-106(スケッチ要素のクリック選択とホバーハイライト)。
  *
@@ -114,7 +114,7 @@ export function pickSketchElement(
 
   let bestCurve: PickResult | null = null;
   let bestCurveDistance = Number.POSITIVE_INFINITY;
-  // 楕円(FR-318)とスプライン(FR-317)も曲線として拾う(P4 タスク12)。
+  // 楕円(FR-318)とスプライン(FR-317)も曲線として拾う。
   // `sampleCurve` がどの種類も折れ線へ直せるので、当たり判定の中身は 4 種で共通。
   for (const curve of [
     ...sketch.segments,

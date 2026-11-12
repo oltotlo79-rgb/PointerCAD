@@ -7,7 +7,7 @@ const COMPONENT_SOURCE_KINDS: readonly ComponentSource['kind'][] = [
   'standardPart',
 ];
 
-/** 規格部品の追加の指定(§0.a-0.34)。値が文字列でない欄が 1 つでもあれば断る。 */
+/** 規格部品の追加の指定。値が文字列でない欄が 1 つでもあれば断る。 */
 function readStandardOptions(
   source: Record<string, unknown>,
   key: string,

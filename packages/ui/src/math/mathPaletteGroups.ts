@@ -14,8 +14,8 @@ export type MathPaletteGroup = 'basic' | 'functions' | 'calculus' | 'linear-alge
  * 結果型。計算部の評価結果（MathEvaluation の値）の kind と同じ名前を使う。
  * 'candidates' だけは例外で、status:'value' ではなく status:'multiple'（±・∓ 等、符号ごとの候補を
  * 確定させない結果。mathInputContract.ts）を表す。実例の expected は数値でなく候補の一覧で書く（下記）。
- * 'antiderivative' も例外で、計算部が実際に返す kind は写像などと同じ'function'のまま変えない
- * （MC-20系）が、目録ではその中の不定積分の答え（積分定数Cを持つ原始関数の族。座標・成分・係数の
+ * 'antiderivative' も例外で、計算部が実際に返す kind は写像などと同じ'function'のまま変えないが
+ * 目録ではその中の不定積分の答え（積分定数Cを持つ原始関数の族。座標・成分・係数の
  * 数値にも関数作図にも使えない）だけを区別する表示用の種類として使う。実例の照合
  * （mathPaletteExamples.test.ts）は kind:'function' に加え、返った関数が元の積分自身の束縛変数への
  * lambdaであることまで確かめる。

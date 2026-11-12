@@ -4,7 +4,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
 import type { CoordinateMode } from './numericInputTools.js';
 
-/** 座標モードのタブの並び(§2.9)。Alt+1 / Alt+2 / Alt+3 の順でもある。 */
+/** 座標モードのタブの並び。Alt+1 / Alt+2 / Alt+3 の順でもある。 */
 export const COORDINATE_MODES: readonly CoordinateMode[] = ['absolute', 'relative', 'polar'];
 
 /** タブの見出し。 */
@@ -33,23 +33,23 @@ export const UNIT_KEYS: Readonly<Record<FieldUnit, MessageKey>> = {
 };
 
 /**
- * 表示が inch のときに長さの欄へ出す札(P6 タスク3b、FR-811)。
+ * 表示が inch のときに長さの欄へ出す札(FR-811)。
  * 測定の帯と同じ文言(`measure.unit.inch` = `in`)を引く——同じ語を 2 か所に書かない。
  */
 const INCH_FIELD_UNIT_KEY: MessageKey = 'measure.unit.inch';
 
 /**
- * 欄の単位札のキー(P6 タスク3b)。**長さの欄だけ**が表示の単位で変わり、角度・個数は
- * `UNIT_KEYS` のまま(FR-205)。`unit` を省くと mm なので、P1〜P5 の呼び出しは変わらない。
+ * 欄の単位札のキー。**長さの欄だけ**が表示の単位で変わり、角度・個数は
+ * `UNIT_KEYS` のまま(FR-205)。`unit` を省くと mm なので、従来の呼び出しは変わらない。
  */
 export function fieldUnitLabelKey(unit: FieldUnit, lengthUnit: LengthUnit = 'mm'): MessageKey {
   return isLengthFieldUnit(unit) && lengthUnit === 'inch' ? INCH_FIELD_UNIT_KEY : UNIT_KEYS[unit];
 }
 
 /**
- * 欄の下へ添える値の桁数(有効数字。P6 タスク3b)。
+ * 欄の下へ添える値の桁数(有効数字)。
  *
- * 利用者の決定「解の表示は 9 桁で丸める」(docs/報告記録.md 2026-09-05)と同じ桁にする。
+ * 利用者の決定「解の表示は 9 桁で丸める」と同じ桁にする。
  * mm を inch へ割ると `10 / 25.4 = 0.3937007874015748` のように末尾が伸びるので、
  * **表示だけ**をここで丸める。**保存する式には 1 文字も書き戻さない**(丸めた値を式へ
  * 入れると、単位を切り替えるたびに文書が変わってしまう)。
@@ -60,8 +60,8 @@ export const FIELD_VALUE_DISPLAY_DIGITS = 9;
  * 数値 1 つを有効数字 `digits` 桁へ丸める(末尾の 0 は落ちる。`String()` の癖どおり)。
  * `0` と有限でない値はそのまま返す(`log10(0)` が `-Infinity` になるのを避ける)。
  *
- * P4b タスク23b-1 で `shell/PropertyPanel.tsx` に置いた同名の関数をここへ移した
- * (タスク3b)。**丸め方を 2 通り持たない**ため、あちらはこれを輸入して使う。
+ * `shell/PropertyPanel.tsx` にあった同名の関数をここへ移した。
+ * **丸め方を 2 通り持たない**ため、あちらはこれを輸入して使う。
  */
 export function roundToSignificantDigits(value: number, digits: number): number {
   if (value === 0 || !Number.isFinite(value)) {
@@ -90,12 +90,12 @@ export function exactFractionalInchText(millimeters: number): string | null {
 }
 
 /**
- * 欄の下へ添える「= 値」の右辺(P6 タスク3b)。
+ * 欄の下へ添える「= 値」の右辺。
  *
  * 長さの欄で表示が inch のときだけ、**評価した値だけ**を inch へ直して単位を添える
  * (例: 内部 `10`mm → `0.393700787 in`)。式そのものは書き換えない(FR-202)。
  * 1/64 インチでちょうど表せる長さには分数インチも添える(`9.525`mm → `0.375 in (3/8")`。FR-814)。
- * それ以外(mm・角度・個数)は式エンジンの表示文字列をそのまま出す(P1 からの見え方)。
+ * それ以外(mm・角度・個数)は式エンジンの表示文字列をそのまま出す(従来の見え方)。
  */
 export function fieldValueText(
   unit: FieldUnit,
@@ -111,7 +111,7 @@ export function fieldValueText(
 
 /**
  * 同じ値の**数だけ**(単位の札を添えない)。単位を別の場所へ出す欄——読み取り専用の
- * 欄(derived、§0.a-0.30)のように、札が横に並んでいる場所で使う。
+ * 欄(derived)のように、札が横に並んでいる場所で使う。
  */
 export function fieldValueNumberText(
   unit: FieldUnit,

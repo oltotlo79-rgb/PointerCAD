@@ -1,13 +1,13 @@
 /**
- * スケッチの 1 要素を「モデルブラウザとプロパティが表に出せる形」へ直す
- * (計画書 docs/plans/P1-式とスケッチ.md タスク22 手順1)。
+ * スケッチの 1 要素を「モデルブラウザとプロパティが表に出せる形」へ
+ * 直す。
  *
  * 対応要件: FR-202(入れた式をそのまま再表示する)、FR-311(後から変えると下流が追従する)、
  * FR-501(ツリーの種類と名前)、FR-504(失敗の明示)。
  *
  * DOM にも React にもストアにも触れない純関数だけを置く。表示する文言は持たず、
  * 必ず ja.json のキー(MessageKey)で返す(NFR-MA-5)。書き戻しは元の要素を変えずに
- * 新しい要素を作る(P2 の Undo の土台、FR-505)。
+ * 新しい要素を作る(Undo の土台、FR-505)。
  */
 
 import {
@@ -62,7 +62,7 @@ export interface FeatureFieldSummary {
 /**
  * 座標を指定する場所。要素の種類ごとに持てる場所が決まっている。
  *
- * P4 タスク33 で新しい図形ぶんを足した。スプラインの点だけは個数が決まらないので
+ * 図形の道具の欄も含む。スプラインの点だけは個数が決まらないので
  * `points.0` のような文字列になり、この union には入らない(`FeatureCoordinateSummary.path`
  * は文字列で持つ)。
  */
@@ -121,7 +121,7 @@ export interface FeatureCoordinateSummary {
   /** 消せる点(スプラインの点)なら true。 */
   readonly removable: boolean;
   /**
-   * 拘束で決まった、いまの位置(FR-313、P4b タスク22b (g))。拘束が動かしていなければ null。
+   * 拘束で決まった、いまの位置(FR-313)。拘束が動かしていなければ null。
    *
    * 拘束で解いた座標は文書に書かない(`rules/04-設計の規律.md`「導出できるものは保存しない」)
    * ので、上の欄には**保存された式と指定方法**しか出ない。形は動いているのに数字が変わらない
@@ -169,7 +169,7 @@ export interface FeatureReferenceSummary {
   readonly elementId: string | null;
 }
 
-/** 矩形の見せ方(FR-314、計画書タスク33)。履歴の形(対角 2 点)は変わらない。 */
+/** 矩形の見せ方(FR-314)。履歴の形(対角 2 点)は変わらない。 */
 export type RectangleView = 'corners' | 'centerSize';
 
 export const RECTANGLE_VIEWS: readonly RectangleView[] = ['corners', 'centerSize'];
@@ -247,11 +247,11 @@ export const FEATURE_KIND_LABEL_KEYS: Readonly<Record<SketchTreeKind, MessageKey
   functionCurve: 'functionPlot.curveTitle',
   offset: 'toolbar.tool.offset',
   copy: 'toolbar.tool.copy',
-  // 投影・交差(FR-325、P4 タスク25)。道具そのものはタスク27 で足す。
+  // 投影・交差(FR-325)。
   projectedCurve: 'toolbar.tool.projectedCurve',
   planeSection: 'toolbar.tool.planeSection',
   // 複製(FR-324)の 4 通り。木の行の名前(ミラー1・複写1・直線配列1・円形配列1)と
-  // 同じ言葉にする(P4 タスク33、タスク20 の申し送り)。
+  // 同じ言葉にする。
   copyMirror: 'toolbar.tool.mirror',
   copyTranslate: 'toolbar.tool.copyMove',
   copyLinearArray: 'toolbar.tool.linearArray',
@@ -294,7 +294,7 @@ const FIELD_LABEL_KEYS = {
   endAngle: 'numericInput.field.endAngle',
   spacing: 'numericInput.field.spacing',
   count: 'numericInput.field.count',
-  // P4 の新しい図形(FR-314〜318、FR-321、FR-324、FR-327)。
+  // 図形の道具(FR-314〜318、FR-321、FR-324、FR-327)。
   sides: 'numericInput.field.sides',
   width: 'numericInput.field.width',
   height: 'propertyPanel.height',
@@ -312,7 +312,7 @@ const FIELD_LABEL_KEYS = {
 } as const satisfies Record<string, MessageKey>;
 
 /**
- * 指定方法を切り替えたときの初期値。欄の意味が変わるので値は引き継がない(§2.9)。
+ * 指定方法を切り替えたときの初期値。欄の意味が変わるので値は引き継がない。
  * 数は numericInput.ts の COORDINATE_FIELDS の既定値(0 / 距離 10)にそろえる。
  */
 const ZERO: ExpressionValue = expressionValueFromNumber(0);
@@ -354,7 +354,7 @@ function plainBase(labelKey: MessageKey): CoordinateBaseSummary {
 
 /**
  * 名前のある基準。「押し出し1 / 立体の頂点」のように、参照先の名前と何を指すかを並べる
- * (タスク10 の申し送り「頂点参照の基準の表示」)。名前を引けないときは種類だけを出す。
+ * (頂点参照の基準の表示)。名前を引けないときは種類だけを出す。
  */
 function namedBase(
   labelKey: MessageKey,
@@ -419,8 +419,8 @@ export function baseSummary(
       return namedBase(solidSubShapeLabelKey(fingerprint.kind), name, null);
     }
     case 'sphereGrid': {
-      // 球面上の点(FR-431、P5 タスク19)。球の名前も部品文書にしかないので同じ口で引く。
-      // 緯度・経度そのものの欄はタスク22 が足す(ここは基準の 1 行だけ)。
+      // 球面上の点(FR-431)。球の名前も部品文書にしかないので同じ口で引く。
+      // 緯度・経度そのものの欄は別に持つ(ここは基準の 1 行だけ)。
       const name = options.bodyName?.(reference.sphereFeatureId) ?? null;
       return namedBase(BASE_LABEL_KEYS.sphereGrid, name, null);
     }
@@ -584,7 +584,7 @@ function offsetCornerChoice(corner: OffsetCornerKind): FeatureChoiceSummary {
   };
 }
 
-/** 矩形の見せ方(FR-314、計画書タスク33)。履歴は対角 2 点のまま変わらない。 */
+/** 矩形の見せ方(FR-314)。履歴は対角 2 点のまま変わらない。 */
 function rectangleModeChoice(view: RectangleView): FeatureChoiceSummary {
   return {
     key: 'rectangleMode',
@@ -616,7 +616,7 @@ function elementReference(
 }
 
 /**
- * 矩形を「中心+幅+高さ」で見るための軸の組(FR-314、計画書タスク33)。
+ * 矩形を「中心+幅+高さ」で見るための軸の組(FR-314)。
  * 幅は第 1 軸、高さは第 2 軸。任意の作業平面は世界の軸と一致しないので XY と同じ組にする
  * (対角 2 点の見せ方はどの平面でも正しいので、そちらへ切り替えれば編集できる)。
  */
@@ -643,8 +643,8 @@ const TWO: ExpressionValue = expressionValueFromNumber(2);
 
 /**
  * (a + b) / 2 の式(FR-202「式は文字列のまま」)。expression 層の合成関数(`combineExpression.ts`)
- * を使い、有理数どうしは厳密に、それ以外は括弧つきで連結する(P4 仕上げ (f)、
- * 統括の目視 2026-09-04「矩形の換算式 `((0)+(40))/2` が読みにくい」への対応)。
+ * を使い、有理数どうしは厳密に、それ以外は括弧つきで連結する(
+ * 矩形の換算式 `((0)+(40))/2` が読みにくかったことへの対応)。
  */
 function midpointExpression(a: ExpressionValue, b: ExpressionValue): ExpressionValue {
   return divideExpression(addExpression(a, b), TWO);
@@ -692,7 +692,7 @@ export function rectangleCenterSize(feature: SketchRectangleFeature): RectangleC
   };
 }
 
-/** 中心+幅+高さから対角 2 点へ戻す(履歴の形は対角 2 点のまま、§2.3)。 */
+/** 中心+幅+高さから対角 2 点へ戻す(履歴の形は対角 2 点のまま)。 */
 export function rectangleFromCenterSize(
   feature: SketchRectangleFeature,
   value: RectangleCenterSize,
@@ -1003,7 +1003,7 @@ export function summarizeFeature(
       });
     case 'arc': {
       // 3D スケッチ(FR-330)の円弧だけが自分の向きを持つ。プロパティ欄でだけ編集させ、
-      // その場入力には出さない(P3 の穴の傾き角と同じ判断、計画書タスク33)。
+      // その場入力には出さない(穴の傾き角と同じ判断)。
       const orientation = feature.freeOrientation;
       return summaryOf(base, {
         coordinates:
@@ -1112,7 +1112,7 @@ function withCoordinate(
         : { ...feature, freeOrientation: { ...orientation, xAxis: next } };
     }
   }
-  // 直線状・格子状の点列は基準点を「base」に持ち、円周上は「center」に持つ(§2.3)。
+  // 直線状・格子状の点列は基準点を「base」に持ち、円周上は「center」に持つ。
   if (feature.kind === 'pointArray') {
     const layout = feature.layout;
     if (slot === 'base' && layout.kind !== 'circular') {
@@ -1236,7 +1236,7 @@ export function setCoordinateField(
 }
 
 /**
- * 「中心+幅+高さ」の見せ方で入れた値を、対角 2 点へ書き戻す(FR-314、計画書タスク33)。
+ * 「中心+幅+高さ」の見せ方で入れた値を、対角 2 点へ書き戻す(FR-314)。
  * その見せ方に無い道筋なら null を返し、呼び出し側が普通の書き戻しへ進む。
  */
 function setRectangleCenterSizeField(
@@ -1558,7 +1558,7 @@ export function removeSplinePoint(feature: SketchFeature, index: number): Sketch
 }
 
 /**
- * 構築線(FR-320)として引く要素の id(P4 タスク33)。
+ * 構築線(FR-320)として引く要素の id。
  *
  * **model は解決済みの曲線(`ResolvedCurve`)に construction を持たせない**
  * (`resolveSketch.ts` の注釈。面の境界に選べるかの判定にしか使っていない)。
@@ -1628,7 +1628,7 @@ function coordinateInMode(input: CoordinateInput, mode: CoordinateMode): Coordin
 
 /**
  * 位置の決め方(絶対・相対・極)を切り替えた別の要素を作る(FR-301〜303)。
- * 欄の意味が変わるので入力は引き継がず既定値へ戻す(§2.9)。
+ * 欄の意味が変わるので入力は引き継がず既定値へ戻す。
  */
 export function setFeatureCoordinateMode(
   feature: SketchFeature,
@@ -1689,13 +1689,13 @@ export interface ResolvedFieldSummary {
   readonly text: string;
 }
 
-/** 表示用の数の文字列。有効数字 12 桁で、指数表記にしない(§2.4)。 */
+/** 表示用の数の文字列。有効数字 12 桁で、指数表記にしない。 */
 function formatNumber(value: number): string {
   return expressionValueFromNumber(value).display;
 }
 
 /* ---------------------------------------------------------------------------
- * 拘束で決まった座標(FR-313、P4b タスク22b (g))
+ * 拘束で決まった座標(FR-313)
  * ------------------------------------------------------------------------- */
 
 /** 座標の欄と解決結果の点の対応。ここに無い場所(矩形の角など)は規則から作られる点。 */
@@ -1744,7 +1744,7 @@ function samePosition(a: Vec3, b: Vec3): boolean {
 }
 
 /**
- * 拘束で決まった、いまの位置の 1 文(FR-313、P4b タスク22b (g))。
+ * 拘束で決まった、いまの位置の 1 文(FR-313)。
  *
  * `stored` は**保存された式だけで解いた形**、`solved` は**拘束を解いた後の形**(いま
  * 描いている形)。2 つが同じなら拘束は何も動かしていないので null(欄の下は今までどおり
@@ -1772,7 +1772,7 @@ export function solvedCoordinateText(
 }
 
 /**
- * 座標の欄へ「拘束で決まった、いまの位置」を差し込む(FR-313、タスク22b (g))。
+ * 座標の欄へ「拘束で決まった、いまの位置」を差し込む(FR-313)。
  * 動いた欄が 1 つも無ければ**元の要約をそのまま返す**(無駄な描き直しを起こさない)。
  */
 export function withSolvedCoordinates(
@@ -1878,7 +1878,7 @@ export function resolvedFields(
     case 'planeSection':
     case 'functionCurve': {
       // 1 フィーチャーが複数の曲線を生むものは、できた曲線の本数と長さの合計を出す
-      // (§0.a-0.8 の `curvesByFeature` がそのまま「何本できたか」の答えになる)。
+      // (`curvesByFeature` がそのまま「何本できたか」の答えになる)。
       const curves = resolved.curvesByFeature.get(feature.id);
       if (curves === undefined || curves.length === 0) {
         // 複製は点だけを写すこともある(点列を複製したとき)。そのときは点の数を出す。

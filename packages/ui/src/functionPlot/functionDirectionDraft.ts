@@ -36,7 +36,7 @@ export async function evaluateFunctionDirection(document:PartDocument,documentVe
   if(found.status==='failed')throw new Error(found.message);
   if(!found.search.exhaustive||found.search.unresolved!==0)throw new Error(t('functionPoint.completeRequired'));
   const identity={documentId:document.id,documentVersion,editorId:'function-direction',inputRevision:0};
-  // GR-18c: the offset/length fields below can reference a coefficient the same way any dimension field
+  // the offset/length fields below can reference a coefficient the same way any dimension field
   // does, so this needs the document's current math-geometry outcomes exactly as searchFunctionPoints's own
   // (already-fixed) internal evaluation does.
   const geometry=await waitForMathEditorGeometry(document,signal,current,()=>undefined);

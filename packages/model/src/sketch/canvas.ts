@@ -1,20 +1,20 @@
 /**
- * 下絵の画像の受け入れと 2 点の寸法合わせ(FR-332「読み込んだ画像を作図面に置いて、
+ * 下絵の画像の受け入れと 2 点の寸法合わせ。
+ * (FR-332「読み込んだ画像を作図面に置いて、
  * 2 点で寸法を合わせ、その上をなぞってスケッチできる」)。
- * 計画書 docs/plans/P6-入出力.md §0.a-0.45、§0.a-0.46、§2.14、タスク38。
  *
  * ここに置くのは**純関数だけ**で、DOM にも three.js にも `Image` にも触れない
- * (画像を復号して画素の幅・高さを測るのは `packages/ui` タスク39 の仕事。Node の検査で
+ * (画像を復号して画素の幅・高さを測るのは `packages/ui` の仕事。Node の検査で
  * 動かせるように、ここはバイト列と数だけを見る)。
  *
  * **画像そのものを `.pcad` へ保存するのは `rules/04`「導出できるものは保存しない」の
- * 承認済みの例外**である(§0.a-0.45 の例外③、統括の承認)。読み込んだ画像は**再計算では
+ * 承認済みの例外**である(例外③)。読み込んだ画像は**再計算では
  * 導出できない**——元のファイルが手元から消えたら二度と作れない——ので、読み込んだ B-rep
- * (§0.a-0.9)・読み込んだ三角形(§0.a-0.24)とまったく同じ理屈で `.pcad` に抱き込む。
+ * や読み込んだ三角形とまったく同じ理屈で `.pcad` に抱き込む。
  * 文書(`part/types.ts` の `SketchCanvas`)が持つのは id と寸法だけで、バイト列は
  * ZIP の別エントリ(`canvases/<imageId>.png`)へ入れる。
  *
- * **断りの文言をこの層に置く理由**(§2.8「文言の正本の層」、統括の決定 2026-09-06):
+ * **断りの文言をこの層に置く理由**(「文言の正本の層」):
  * 上限の 8MB を知っているのはこの層だけなので、文言を `packages/ui` の `ja.json` へ
  * 写すと、上限を変えたときに数字が 2 か所で食い違う。読み込んだ形の「大きすぎる」
  * (kernel / io が組み立てて返す文)と同じ扱いにそろえてある。
@@ -24,11 +24,11 @@ import { startsWithBytes } from '@pointercad/kernel';
 import type { SketchCanvas } from '../part/types.js';
 import { integerSerial, nextSerialValue } from '../serialValue.js';
 
-/** 下絵として受け付ける画像の形式(§0.a-0.45)。ブラウザが必ず読める 2 つに絞る。 */
+/** 下絵として受け付ける画像の形式。ブラウザが必ず読める 2 つに絞る。 */
 export type CanvasImageFormat = 'png' | 'jpeg';
 
 /**
- * 1 枚あたりの上限(バイト)。**8MB**(§0.a-0.45)。
+ * 1 枚あたりの上限(バイト)。**8MB**。
  *
  * 根拠は NFR-PF-6(メモリ)と `.pcad` の大きさで、画像は圧縮済みのまま ZIP へ入る
  * (`packages/io` の `ATTACHMENT_IMAGE_LEVEL` は 0)ので、この値がそのまま
@@ -39,15 +39,15 @@ export const MAX_CANVAS_IMAGE_BYTES = 8 * 1024 * 1024;
 /** 上の値を MB で表した数(文言に埋め込むためだけに使う。数の正本は上の定数)。 */
 const MAX_CANVAS_IMAGE_MEGABYTES = MAX_CANVAS_IMAGE_BYTES / 1024 / 1024;
 
-/** PNG / JPEG のどちらでもない画像を渡されたときの断り(§2.8 の表)。 */
+/** PNG / JPEG のどちらでもない画像を渡されたときの断り。 */
 export const CANVAS_UNSUPPORTED_FORMAT_MESSAGE = '対応していない画像です。';
 
-/** 上限を超えた画像を渡されたときの断り(§2.8 の表)。上限の数は定数から埋める。 */
+/** 上限を超えた画像を渡されたときの断り。上限の数は定数から埋める。 */
 export const CANVAS_TOO_LARGE_MESSAGE = `画像が大きすぎます。${String(
   MAX_CANVAS_IMAGE_MEGABYTES,
 )}MB までにしてください。`;
 
-/** 2 点の寸法合わせで、2 点が同じ位置だったときの断り(§2.14 の表。0 除算の防止)。 */
+/** 2 点の寸法合わせで、2 点が同じ位置だったときの断り(0 除算の防止)。 */
 export const CANVAS_SAME_POINT_MESSAGE =
   '2 つの点が同じ位置です。離れた 2 点を指してください。';
 
@@ -68,7 +68,7 @@ const PNG_SIGNATURE: readonly number[] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x
 const JPEG_SIGNATURE: readonly number[] = [0xff, 0xd8, 0xff];
 
 /**
- * バイト列の先頭から画像の形式を見分ける(§0.a-0.45)。PNG でも JPEG でもなければ `null`。
+ * バイト列の先頭から画像の形式を見分ける。PNG でも JPEG でもなければ `null`。
  *
  * **拡張子ではなくバイト列で見る。** 名前はいくらでも変えられるので、`.png` という名前の
  * GIF を受け取ってしまうと、貼った下絵が画面に出ないだけの分かりにくい不具合になる
@@ -84,7 +84,7 @@ export function detectImageFormat(bytes: Uint8Array): CanvasImageFormat | null {
   return null;
 }
 
-/** 下絵の画像を受け付けられない理由(§2.8 の表)。 */
+/** 下絵の画像を受け付けられない理由。 */
 export type CanvasImageRefusal = 'unsupportedFormat' | 'tooLarge';
 
 /** 下絵の画像を確かめた結果。断るときは理由と、そのまま見せられる日本語を返す。 */
@@ -97,7 +97,7 @@ export type CheckCanvasImageResult =
     };
 
 /**
- * 読み込もうとしている画像を受け付けられるか確かめる(§0.a-0.45)。
+ * 読み込もうとしている画像を受け付けられるか確かめる。
  *
  * **形式を先に見る。** 8MB を超える GIF は「対応していない画像です。」と伝えたほうが、
  * 利用者が次に何をすればよいか(PNG か JPEG に変換する)が分かるためである
@@ -121,7 +121,7 @@ export function checkCanvasImage(bytes: Uint8Array): CheckCanvasImageResult {
 /** 画像の上の 1 点(画素。左上が原点で、`u` が右、`v` が下)。 */
 export type CanvasPixelPoint = readonly [number, number];
 
-/** 寸法合わせができなかった理由(§2.14 の表)。 */
+/** 寸法合わせができなかった理由。 */
 export type CanvasScaleRefusal = 'samePoint' | 'invalidLength';
 
 /** 寸法合わせの結果。 */
@@ -130,7 +130,7 @@ export type ScaleFromTwoPointsResult =
       readonly ok: true;
       /** 縮尺(mm / 画素)。 */
       readonly scale: number;
-      /** 2 点の画素の距離。検算と案内のために返す(§2.14 の導出の表)。 */
+      /** 2 点の画素の距離。検算と案内のために返す。 */
       readonly pixelDistance: number;
     }
   | {
@@ -140,14 +140,14 @@ export type ScaleFromTwoPointsResult =
     };
 
 /**
- * 画像の上で指した 2 点と、その 2 点の実寸(mm)から縮尺を決める(FR-332、§0.a-0.46)。
+ * 画像の上で指した 2 点と、その 2 点の実寸(mm)から縮尺を決める(FR-332)。
  *
  * ```
  * 画素の距離 d = √((u₂−u₁)² + (v₂−v₁)²)
  * 縮尺 s = L / d   [mm / 画素]
  * ```
  *
- * 例(§2.14): (100,100)〜(500,100) の 400 画素を 200mm と指定すると `s = 0.5`。
+ * 例: (100,100)〜(500,100) の 400 画素を 200mm と指定すると `s = 0.5`。
  *
  * **2 点が同じ位置なら断る**(0 除算の防止、NFR-UX-5)。**実寸が 0 以下・有限でない
  * ときも断る**(縮尺が 0 や負や NaN になると、画像が消える・裏返る・寸法が
@@ -177,13 +177,13 @@ export interface CanvasSizeMm {
 }
 
 /**
- * 縮尺と画素の大きさから、作図面に貼る大きさ(mm)を出す(§2.14)。
+ * 縮尺と画素の大きさから、作図面に貼る大きさ(mm)を出す。
  *
  * ```
  * 幅(mm) = s × 画素の幅   高さ(mm) = s × 画素の高さ
  * ```
  *
- * 例(§2.14): `s = 0.5` の 800×600 画素の画像は 400mm × 300mm になる。
+ * 例: `s = 0.5` の 800×600 画素の画像は 400mm × 300mm になる。
  * **`SketchCanvas` は幅と高さ(mm)だけを持ち、縮尺は保存しない**(縮尺は幅 ÷ 画素の幅で
  * いつでも出せる。導出できるものは保存しない、`rules/04`)。
  */
@@ -216,7 +216,7 @@ export function removeCanvas(
 
 /**
  * 下絵の入切(FR-332)。**形に影響しない**ので、切り替えても再計算は走らない
- * (`part/documentChange.ts` の `affectsShape` が偽を返す。§2.14 の表)。
+ * (`part/documentChange.ts` の `affectsShape` が偽を返す)。
  * 値が変わらなければ元の配列を同一参照のまま返す。
  */
 export function setCanvasVisible(

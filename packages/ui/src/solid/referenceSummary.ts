@@ -22,7 +22,7 @@ export const REFERENCE_KIND_LABEL_KEYS: Readonly<Record<ReferenceFeatureKind, Me
  * 平面の決め方の名前(FR-328、FR-329、切断は FR-432)。その場入力の言葉と同じものを使う。
  *
  * 基準ジオメトリ(作業平面)と切断の切る面は**同じ `PlaneSpec`** なので、名前の表も
- * 1 つだけにする(同じものを 2 通りの名前で呼ばない)。切断のプロパティ(タスク27f)が
+ * 1 つだけにする(同じものを 2 通りの名前で呼ばない)。切断のプロパティが
  * 「切る面の決め方」を読み取り専用で出すのに使う。
  */
 export const PLANE_SPEC_LABEL_KEYS: Readonly<Record<PlaneSpec['kind'], MessageKey>> = {
@@ -115,7 +115,7 @@ function planeSpecFields(spec: PlaneSpec): readonly ReferenceFieldSummary[] {
   }
 }
 
-/** 基準ジオメトリ 1 つの見え方をまとめる(FR-328、FR-329、P4 タスク33)。 */
+/** 基準ジオメトリ 1 つの見え方をまとめる(FR-328、FR-329)。 */
 export function summarizeReference(
   feature: ReferenceFeature,
   errors: readonly ReferenceError[] = [],

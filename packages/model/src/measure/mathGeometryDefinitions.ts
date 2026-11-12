@@ -19,7 +19,7 @@ import {
 } from './mathGeometryIdentity.js';
 import type { MathGeometryDefinition, MathGeometryQuantity, MathGeometryTolerance } from './mathGeometryTypes.js';
 
-/** What a new definition needs. `tolerance` defaults to `DEFAULT_MATH_GEOMETRY_TOLERANCE` (Q5=T1) when omitted. */
+/** What a new definition needs. `tolerance` defaults to `DEFAULT_MATH_GEOMETRY_TOLERANCE` when omitted. */
 interface MathGeometryDefinitionInput {
   readonly name: string;
   readonly quantity: MathGeometryQuantity;
@@ -28,15 +28,15 @@ interface MathGeometryDefinitionInput {
 
 /**
  * Every way one of this file's commands can refuse. Name issues are `MathGeometryNameIssue` verbatim
- * (GR-01's `checkMathGeometryName`, reused rather than re-derived). The rest are specific to this file:
+ * (`checkMathGeometryName`, reused rather than re-derived). The rest are specific to this file:
  * - `duplicateId`: `newId` already names a definition in this document (`addMathGeometryDefinition`).
  * - `notFound`: no definition with that ID (every other command).
- * - `kindMismatch`: a re-select changed the quantity's `kind` (`replaceMathGeometryQuantity`). §4(a)'s
+ * - `kindMismatch`: a re-select changed the quantity's `kind` (`replaceMathGeometryQuantity`). The screen's
  *   row only ever offers a same-kind re-select, but this function is the actual gate (NFR-UX-5).
  * - `unitMismatch`: a re-select kept the `kind` but changed an angle's `unit` (`replaceMathGeometryQuantity`).
  * - `notAngle`: an angle-unit edit on a definition whose quantity carries no unit (`setMathGeometryAngleUnit`).
  * - `inUse`: a delete on a definition some coefficient/configuration/unresolved problem still references
- *   (`removeMathGeometryDefinition`); GR-01's `mathGeometryUsage` names them in the message.
+ *   (`removeMathGeometryDefinition`); `mathGeometryUsage` names them in the message.
  * - `invalidTolerance`: outside the range shared with `measure/mathGeometry.ts`'s request validation and
  *   io's `readMathGeometry` (`addMathGeometryDefinition` with an explicit `tolerance`, `setMathGeometryTolerance`).
  *   The message names the offending field (`validateMathGeometryTolerance`); the code is the same for both.
@@ -66,14 +66,14 @@ function nameIssueMessage(issue: MathGeometryNameIssue): string {
   }
 }
 
-/** The refusal for an unknown definition ID. Exported so every command that looks a definition up by ID says it the same way (GR-03b's `mathGeometryParameterDraft` reuses it). */
+/** The refusal for an unknown definition ID. Exported so every command that looks a definition up by ID says it the same way (`mathGeometryParameterDraft` reuses it). */
 export const MATH_GEOMETRY_NOT_FOUND_MESSAGE = '指定した図形の測定値が見つかりません。';
 
-/** A field of `MathGeometryTolerance` (`linearMm` / `angularRadians`), as the screen's two tolerance fields name them (Q5=T3). */
+/** A field of `MathGeometryTolerance` (`linearMm` / `angularRadians`), as the screen's two tolerance fields name them. */
 export type MathGeometryToleranceField = 'linear' | 'angular';
 
 /**
- * The field of `tolerance` that breaks the rule, or `null` when both fields are valid (GR-03b). The rule is
+ * The field of `tolerance` that breaks the rule, or `null` when both fields are valid. The rule is
  * the one `measure/mathGeometry.ts`'s `evaluateMathGeometry` enforces on every request (its local `valid`
  * check) and `packages/io/src/pcad/codecs/mathGeometry.ts`'s `readMathGeometry` enforces on every saved
  * definition, unchanged: `linearMm` is finite and strictly positive; `angularRadians` is finite, strictly
@@ -81,7 +81,7 @@ export type MathGeometryToleranceField = 'linear' | 'angular';
  * 45° or more would let one pair of lines count as parallel and perpendicular at the same time.
  *
  * The length field is checked first: when both fields are wrong, `'linear'` (the first field) is reported.
- * The screen converts its degree input to radians before calling this (GR-19a), so the rule is never
+ * The screen converts its degree input to radians before calling this, so the rule is never
  * restated in `packages/ui`. `mathGeometryTypes.ts` holds only the `MathGeometryTolerance` shape, model
  * cannot import io (dependency direction), and `mathGeometry.ts` keeps its check private, so this is the
  * model's one exported form of the rule.
@@ -95,8 +95,8 @@ export function validateMathGeometryTolerance(tolerance: MathGeometryTolerance):
 }
 
 /**
- * Appendix C's sentence per field (GR-03b). It replaces GR-03's single sentence, which gave 90° as the
- * angle limit where the rule has always been 45° (plan §7 #21). The reason code stays `invalidTolerance`.
+ * The refusal sentence per field. It replaces the former single sentence, which gave 90° as the
+ * angle limit where the rule has always been 45°. The reason code stays `invalidTolerance`.
  * The screen shows its own text per field (`mathGeometry.tolerance.error.linear` / `.angular`), not these.
  */
 const INVALID_TOLERANCE_MESSAGES: Readonly<Record<MathGeometryToleranceField, string>> = {
@@ -121,10 +121,10 @@ function indexOf(document: PartDocument, id: string): number {
 
 /**
  * Adds a definition built from `input` under `newId` (minted by the caller — `crypto.randomUUID()` from
- * the UI, per §4(e)'s identifier contract; this function only guards against an already-issued ID, it
+ * the UI, per the identifier contract; this function only guards against an already-issued ID, it
  * does not mint one). Refuses a name `checkMathGeometryName` rejects, an already-used `newId`, or an
  * explicit `tolerance` that `validateMathGeometryTolerance` rejects. Omitting `tolerance` always succeeds
- * (name/id permitting) — `DEFAULT_MATH_GEOMETRY_TOLERANCE` (Q5=T1) is valid by construction.
+ * (name/id permitting) — `DEFAULT_MATH_GEOMETRY_TOLERANCE` is valid by construction.
  */
 export function addMathGeometryDefinition(
   document: PartDocument,
@@ -154,10 +154,10 @@ export function mathGeometryAngleUnitOf(quantity: MathGeometryQuantity): 'degree
 }
 
 /**
- * Re-selects what `id` measures. §4(a)'s row only offers this when the current selection yields the same
+ * Re-selects what `id` measures. The screen only offers this when the current selection yields the same
  * `quantity.kind` (and, for an angle, the same `unit`) as the existing definition, but this function is
  * the actual gate: it refuses `kindMismatch`/`unitMismatch` itself rather than trusting the caller. The
- * definition's `id`, `name` and `tolerance` are always kept (only `quantity` changes) — per R23/§4(a)'s
+ * definition's `id`, `name` and `tolerance` are always kept (only `quantity` changes) — per the screen's
  * "識別番号・名前・比べる幅は保つ".
  */
 export function replaceMathGeometryQuantity(document: PartDocument, id: string, quantity: MathGeometryQuantity): MathGeometryDefinitionResult {
@@ -174,7 +174,7 @@ export function replaceMathGeometryQuantity(document: PartDocument, id: string, 
 }
 
 /**
- * Toggles an angle definition's display unit (度/ラジアン, §4(a)). Quantities without an angular unit
+ * Toggles an angle definition's display unit (度/ラジアン). Quantities without an angular unit
  * refuse `notAngle`. Setting the unit already in effect is a
  * no-op that returns `document` by the same reference (no pointless recomputation; mirrors
  * `part/configurations.ts`'s "nothing changed → same document" convention).
@@ -191,7 +191,7 @@ export function setMathGeometryAngleUnit(document: PartDocument, id: string, uni
 }
 
 /**
- * Changes `id`'s comparison margin (Q5=T3's per-definition edit). Refuses `invalidTolerance` under the
+ * Changes `id`'s comparison margin (the per-definition edit). Refuses `invalidTolerance` under the
  * same rule `addMathGeometryDefinition` checks an explicit tolerance against (`validateMathGeometryTolerance`),
  * with the offending field's sentence. Setting the same value already stored is a no-op that returns
  * `document` unchanged by reference.
@@ -210,8 +210,8 @@ export function setMathGeometryTolerance(document: PartDocument, id: string, tol
 
 /**
  * Removes definition `id`, refusing `inUse` (naming every referencing coefficient/configuration/unresolved
- * problem, via GR-01's `mathGeometryUsage`) rather than deleting out from under a live reference — R23,
- * NFR-UX-5, and the same "先にそちらを直してください" shape §4(a)/付録B use for the screen's own message.
+ * problem, via `mathGeometryUsage`) rather than deleting out from under a live reference —
+ * NFR-UX-5, and the same "先にそちらを直してください" shape as the screen's own message.
  */
 export function removeMathGeometryDefinition(document: PartDocument, id: string): MathGeometryDefinitionResult {
   if (indexOf(document, id) === -1) return refuse('notFound', MATH_GEOMETRY_NOT_FOUND_MESSAGE);

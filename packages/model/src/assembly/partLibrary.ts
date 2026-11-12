@@ -2,16 +2,16 @@ import { sha256Hex } from '../sha256.js';
 import { isRecord } from '../valueGuards.js';
 /**
  * アセンブリが抱き込んだ部品文書の出し入れと内容ハッシュ
- * (計画書 docs/plans/P7-アセンブリ.md §2.3、タスク4。FR-601、要件§8)。
+ * (FR-601、要件§8)。
  *
  * 要件§8 は「参照部品はアセンブリファイルに相対パス+内容ハッシュで記録(欠損時は警告)」と
  * 定める。その 3 つ(どのファイルから・いつ・どの中身を取り込んだか)を持つのがこのファイルで、
  * **再導出できる部品の形は持たない**が、読み込んだ B-rep・メッシュと下絵は原本なので
- * 部品文書と同じ `partRef` の名前空間で抱き込む(P7 タスク49)。
+ * 部品文書と同じ `partRef` の名前空間で抱き込む。
  *
  * **抱き込んだ文書はアセンブリ文書の中に入らない。** `AssemblyDocument` が持つのは
  * 「どの `partRef` を置いたか」(`ComponentSource`)だけで、文書そのものと素性は
- * ZIP の別エントリ(`parts/<ref>.json`)と封筒の `partFiles` に入る(§2.2)。
+ * ZIP の別エントリ(`parts/<ref>.json`)と封筒の `partFiles` に入る。
  * その 2 つを 1 つにまとめた入れ物が `PartLibrary` で、**アセンブリ文書と対で持ち回る。**
  * こう分けておくと、部品を差し替えてもアセンブリ文書(Undo の単位)が変わらない場合と
  * 変わる場合を取り違えずに済む。
@@ -19,7 +19,7 @@ import { isRecord } from '../valueGuards.js';
  * **元のファイルを追いかける判断はここでしない。** `staleParts` が「中身が違う `partRef`」を
  * 数えて返すだけで、「部品が更新されています。取り込み直しますか。」「元のファイルが
  * 見つかりません。取り込んだ形で開いています。」の文言と、**どちらでも読み込みを止めない**
- * 決めごとは上の層(P7 タスク5・6 の ui)が持つ(§2.3、§2.12)。
+ * 決めごとは上の層(ui)が持つ。
  */
 
 import type { PartDocument } from '../part/types.js';
@@ -32,7 +32,7 @@ import type { AssemblyDocument } from './types.js';
  * **`packages/io` の `PcadPartFile` と欄が 1 つ 1 つ同じ**なので、model の側で作った配列を
  * そのまま `writePcadaFile` へ渡せる(構造で合う)。同じ形を 2 か所に書いているのは
  * 依存の向き(`io → model`)のためで、io から model の型を参照するように寄せるのは
- * P7 タスク3 の担当と統括の判断に委ねる(そのときはこちらが正本になる)。
+ * 後の判断に委ねる(そのときはこちらが正本になる)。
  */
 export interface EmbeddedPartFile {
   /** ZIP の中の名前。`parts/<ref>.json` の `<ref>` で、`ComponentSource.partRef` が指す。 */
@@ -91,7 +91,7 @@ export const EMPTY_PART_LIBRARY: PartLibrary = {
   assemblies: new Map(),
 };
 
-/** 抱き込んだ部品文書の `ref` の接頭辞。`part-1`、`part-2`、…(§2.2 の例と同じ綴り)。 */
+/** 抱き込んだ部品文書の `ref` の接頭辞。`part-1`、`part-2`、…。 */
 export const PART_REF_PREFIX = 'part-';
 
 /** 内容ハッシュの計算に使う要約の種類。**変えると既存のファイルの `contentHash` が全部変わる。** */
@@ -241,7 +241,7 @@ export function canonicalTextOf(value: unknown): string {
  * 部品文書を決定的な 1 本の文字列にする(ハッシュの対象。**封筒は含まない**)。
  *
  * 輸出しているのは、`packages/io` の検査から「書いた `parts/<ref>.json` を読み直しても
- * この文字列が変わらない」ことを確かめられるようにするため(P7 タスク3 への申し送り)。
+ * この文字列が変わらない」ことを確かめられるようにするため。
  */
 export function canonicalPartDocumentText(document: PartDocument): string {
   return canonicalTextOf(document);
@@ -254,7 +254,7 @@ export function canonicalPartDocumentText(document: PartDocument): string {
  * この関数と、これを使う `embedPart` / `replacePartDocument` も約束を返す。同期にできるのは
  * 比べるだけの `staleParts` と、取り出すだけの `partOf` である。
  *
- * `crypto.subtle` が使える根拠(2026-09-06 実測、§1.5-24):
+ * `crypto.subtle` が使える根拠(2026-09-06 実測):
  * Node の Vitest(v25.9.0)で `globalThis.crypto.subtle.digest` が働くことを確かめた。
  * ブラウザと Worker では**安全なコンテキスト**でだけ使えるが、この製品は Web 版が
  * `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` を立てた配信、デスクトップ版が
@@ -274,7 +274,7 @@ export async function attachmentsDigestOf(
   return sha256Hex(canonicalAttachmentsBytes(attachments));
 }
 
-/** 次に抱き込む部品の `ref`。既存の最大連番 + 1 で、**消しても番号を再利用しない**(§0.a-0.19)。 */
+/** 次に抱き込む部品の `ref`。既存の最大連番 + 1 で、**消しても番号を再利用しない**。 */
 export function nextPartRef(library: PartLibrary): string {
   return nextSerialId(
     library.partFiles.map((partFile) => partFile.ref),
@@ -331,7 +331,7 @@ export interface EmbedPartResult {
  * 部品文書を抱き込む(FR-601、要件§8)。
  *
  * **同じ部品文書と添付を 2 回抱き込まない。** 2 つのハッシュが同じものがすでにあれば、その
- * `partRef` を返して一式は増やさない(同じ部品を 2 個置いても形は 1 つ、§0.a-0.8)。
+ * `partRef` を返して一式は増やさない(同じ部品を 2 個置いても形は 1 つ)。
  * このとき**取り込み元のファイル名と相対パスは最初のものを残す**——中身が同じなら
  * どちらから取り込んでも開いた結果は変わらず、後から来たほうで上書きすると、
  * 先に取り込んだ部品を指していた「元のファイル」の追いかけ先が黙って変わってしまうため。
@@ -381,7 +381,7 @@ export async function embedPart(
 }
 
 /**
- * 抱き込んだ部品文書を差し替える(§0.a-0.11。「部品を別窓で直して戻る」と、
+ * 抱き込んだ部品文書を差し替える(「部品を別窓で直して戻る」と、
  * 元のファイルが更新されていたときの「取り込み直す」の 2 つがこれを通る)。
  *
  * **文書ハッシュ・添付ダイジェスト・取り込み時刻を更新する**(中身が変わったため)。
@@ -391,8 +391,8 @@ export async function embedPart(
  * 差し替えた結果が別の `ref` と同じ中身になっても**まとめない**——置いた部品
  * (`ComponentSource.partRef`)がその `ref` を指しているので、消すと参照が切れるためである。
  *
- * **合致の選び直し**(§2.11)はここではしない。部品の形が変われば部分形状の指紋が動くので、
- * 呼んだ側が P7 タスク38 の選び直しを続けて通す(このファイルは文書の出し入れだけを持つ)。
+ * **合致の選び直し**はここではしない。部品の形が変われば部分形状の指紋が動くので、
+ * 呼んだ側が合致の選び直しを続けて通す(このファイルは文書の出し入れだけを持つ)。
  */
 export async function replacePartDocument(
   library: PartLibrary,
@@ -425,13 +425,13 @@ export async function replacePartDocument(
 }
 
 /**
- * 元のファイルのほうが変わっている部品を数える(要件§8、§2.3)。
+ * 元のファイルのほうが変わっている部品を数える(要件§8)。
  *
  * `hashesOnDisk` は「`partRef` → いま元のファイルから作った内容ハッシュ」。
  * **中身が違うものだけ**を取り込んだ順に返す。
  *
  * **元のファイルが読めなかったものは `hashesOnDisk` に入れない**(呼んだ側が入れない)。
- * 「見つからない」と「更新されている」は利用者へ出す文言が違い(§2.12)、
+ * 「見つからない」と「更新されている」は利用者へ出す文言が違い、
  * どちらでも読み込みを止めないからである。ここに載っていない `ref` は数に入れない。
  */
 export function staleParts(

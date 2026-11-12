@@ -1,5 +1,5 @@
 /**
- * ボディ(立体)を描画用の並びへ組み立てる(計画書 docs/plans/P2-ソリッド基礎.md タスク20 手順2)。
+ * ボディ(立体)を描画用の並びへ組み立てる。
  *
  * 対応要件: FR-105(表示スタイル)、FR-106(ホバーと選択)、NFR-PF-1(60fps)。
  *
@@ -13,10 +13,10 @@
  * **1 つずつ別の入れ物**に入れる。ボディは面と稜線がボディ単位でまとまっており、
  * 当たり判定(FR-106)も「どのボディに当たったか」を返す必要があるため。
  *
- * P5 タスク7(計画書 docs/plans/P5-高度なソリッド・外観と測定.md §2.5.2、§0.a-0.7)で
+ * 外観のために
  * **箱投影の UV(FR-1108)と、面のまとまり(FR-1106)** を足した。どちらも three.js に
  * 触れない純関数のままで、実際に `BufferGeometry` へ流し込むのは `createSolidLayer.ts`
- * (タスク10)だけである。
+ * だけである。
  */
 
 import { DEFAULT_APPEARANCE, type AppearanceSpec, type SolidBody } from '@pointercad/model';
@@ -28,10 +28,10 @@ import type { SolidEdgeEntry, SolidFaceEntry, SolidVertexEntry } from '../solid/
 export type SolidEmphasis = 'none' | 'hovered' | 'selected';
 
 /**
- * 部分形状の一覧を持つボディ(計画書タスク22)。
+ * 部分形状の一覧を持つボディ。
  *
- * `faces` / `edges` / `vertices` はタスク17 で `SolidBody` 本体に必須の欄として届くように
- * なった(model/src/kernelBridge.ts)。この型は「部分形状の一覧を持つボディ」であることを
+ * `faces` / `edges` / `vertices` は `SolidBody` 本体に必須の欄として届く
+ * (model/src/kernelBridge.ts)。この型は「部分形状の一覧を持つボディ」であることを
  * 呼び出し側の型で示すために残しているだけで、`SolidBody` と同じ欄をそのまま再宣言している
  * (`SolidBody` は構造的にこの型を満たすので、呼び出し側の詰め替えは要らない)。
  */
@@ -43,7 +43,7 @@ export interface SolidBodyWithSubShapes extends SolidBody {
 
 /** ボディ 1 つぶんの描画データ。通常はカーネル配列を参照し、local柄だけ描画用に複製する。 */
 export interface SolidDrawEntry {
-  /** ボディの id = それを作ったフィーチャーの id(§0.a-0.5)。 */
+  /** ボディの id = それを作ったフィーチャーの id。 */
   readonly featureId: string;
   /** 頂点座標。x, y, z の順に 3 個ずつ。柄付きlocalでは三角形ごとの描画用複製。 */
   readonly positions: Float32Array;
@@ -85,17 +85,17 @@ export interface SolidDrawEntry {
    * 外観の割り当てが上限(材質 8 種 / まとまり 32 個)を超えたか。
    *
    * 超えたときは**描画を止めず**、このボディの既定 1 色だけで描く形へ落とす
-   * (FR-504「止めずに警告する」)。断りの文言を出すのは呼び出し側(タスク11)の役目で、
+   * (FR-504「止めずに警告する」)。断りの文言を出すのは呼び出し側の役目で、
    * ここは「落とした」ことだけを伝える。
    */
   readonly appearanceLimitExceeded: boolean;
 }
 
-/** 1 ボディぶんの外観の割り当て(タスク10 が文書と照合の結果から組み立てて渡す)。 */
+/** 1 ボディぶんの外観の割り当て(呼ぶ側が文書と照合の結果から組み立てて渡す)。 */
 export interface BodyAppearanceInput {
   /** 立体全体の割り当て。無ければ `null`。 */
   readonly bodyAppearance: AppearanceSpec | null;
-  /** 面の通し番号 → その面だけの割り当て(カーネルの照合の結果、§0.a-0.2)。 */
+  /** 面の通し番号 → その面だけの割り当て(カーネルの照合の結果)。 */
   readonly faceAppearances: ReadonlyMap<number, AppearanceSpec>;
 }
 
@@ -171,10 +171,10 @@ function isDrawableBody(body: SolidBodyWithSubShapes): boolean {
 }
 
 /**
- * 位置と法線から、mm 単位の箱投影 UV を作る(FR-1108、§0.a-0.7)。
+ * 位置と法線から、mm 単位の箱投影 UV を作る(FR-1108)。
  *
  * **頂点ごとに法線の絶対値が最大の軸を選び、残る 2 軸の座標(mm)をそのまま UV にする。**
- * 柄の繰り返しの間隔は `texture.repeat = 1 / 間隔(mm)` で当てる(タスク8 の
+ * 柄の繰り返しの間隔は `texture.repeat = 1 / 間隔(mm)` で当てる(`patternTexture.ts` の
  * `patternRepeatFor`)ので、ここでは 1mm = 1 の生の座標を渡せばよい。
  *
  * 軸の選び方と残る 2 軸の順序:
@@ -191,7 +191,7 @@ function isDrawableBody(body: SolidBodyWithSubShapes): boolean {
  * 左右反転して見えるが、木目・縞鋼板・エキスパンドメタルはいずれも対称な柄なので
  * 実害が無い。同じ理由で、絶対値が並んだとき(45°の面)は z → y → x の順で先に選ぶ
  * (どちらへ倒しても継ぎ目は生じるので、決め方を 1 つに固定して結果を再現可能にする。
- * §0.a-0.7 の「45°付近の継ぎ目は受け入れる」)。
+ * 「45°付近の継ぎ目は受け入れる」)。
  *
  * 法線が 0(または数でない)の頂点は投影面を選べないので `[0, 0]` にする。
  */
@@ -594,7 +594,7 @@ const NO_FACE_APPEARANCES: ReadonlyMap<number, AppearanceSpec> = new Map<number,
  * まとまりが索引の全体をちょうど覆うようにする(three の `addGroup` の約束)。
  *
  * 面の範囲表に隙間があっても(三角形が付かなかった面などで起こりうる)、覆われない索引が
- * 出ると**その三角形がまったく描かれない**。P2 と同じ絵を出すため、隙間と末尾は
+ * 出ると**その三角形がまったく描かれない**。外観の無い時と同じ絵を出すため、隙間と末尾は
  * このボディの既定(材質 0 番)で埋める。隣り合う同じ材質は 1 つに畳んでドローコールを
  * 増やさない。
  */
@@ -638,7 +638,7 @@ interface AppearancePlan {
  *
  * 材質が 1 種類しか無いとき(= 外観を割り当てていない、または立体全体に 1 つだけ)は
  * **面の範囲表を見ずに索引の全体を 1 つのまとまりにする**。ドローコールが 1 で済み、
- * 面の範囲表がどうであれ P2 と 1 ドットも変わらない絵になる(§0.a-0.12)ため。
+ * 面の範囲表がどうであれ 外観の無い時と 1 ドットも変わらない絵になるため。
  */
 function appearancePlanOf(
   body: SolidBodyWithSubShapes,
@@ -677,7 +677,7 @@ function appearancePlanOf(
  * 柄付きlocalでも同じ元配列/材質/原点なら描画用の控えを再利用する。
  *
  * `appearance` は省略できる(FR-1106 の配線が済むまでと、外観を持たない呼び出しのため)。
- * 省略したときは全ボディが既定の外観 1 色・まとまり 1 つになり、P2 と同じ絵が出る。
+ * 省略したときは全ボディが既定の外観 1 色・まとまり 1 つになり、外観の無い時と同じ絵が出る。
  */
 export function buildSolidGeometry(
   bodies: readonly SolidBodyWithSubShapes[],
@@ -712,7 +712,7 @@ export function buildSolidGeometry(
   const copies = new Set<ArrayBufferLike>();
 
   for (const body of bodies) {
-    // 1 フィーチャーが作るボディは最大 1 つ(§0.a-0.5)。同じ id が 2 つ来たら
+    // 1 フィーチャーが作るボディは最大 1 つ。同じ id が 2 つ来たら
     // 先のものだけを描き、対応表が後のもので上書きされないようにする。
     if (index.has(body.featureId) || !isDrawableBody(body)) {
       continue;

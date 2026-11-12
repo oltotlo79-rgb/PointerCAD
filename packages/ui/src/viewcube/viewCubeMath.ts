@@ -64,9 +64,9 @@ export function orbitStateForRegion(region: ViewCubeRegion, current: OrbitState)
 /**
  * 角度を (-π, +π] へ折り返す。回転アニメーションで遠回りしないために使う。
  *
- * 計画書(docs/plans/P0-基盤.md タスク12)の実装 `((angle + Math.PI) % (2 * Math.PI) 〜) - Math.PI`
+ * 当初の式 `((angle + Math.PI) % (2 * Math.PI) 〜) - Math.PI`
  * は π の奇数倍(例: 3π)を厳密に -π へ丸めるため、テストが期待する +π と食い違う
- * (実測・原因は統括への報告を参照)。ここでは範囲を (-π, +π] とし、±π ちょうどの
+ * (実測で確認)。ここでは範囲を (-π, +π] とし、±π ちょうどの
  * 入力は +π 側へ寄せることで一致させる。
  */
 export function normalizeAngle(angle: number): number {

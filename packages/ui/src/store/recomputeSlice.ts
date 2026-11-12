@@ -1,6 +1,6 @@
 /**
  * 再計算の結果のスライス(立体・失敗・進み具合・中止。要件§6.3、NFR-PF-4)。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import {
@@ -106,13 +106,13 @@ export interface RecomputeSlice {
     readonly generation: number;
     readonly sketches: readonly Pick<PartRecomputeResult['sketches'][number], 'sketchId' | 'resolved'>[];
   } | null;
-  /** ソリッドのボディ(§0.a-0.5)。カーネルが返した三角形と稜線。 */
+  /** ソリッドのボディ。カーネルが返した三角形と稜線。 */
   readonly bodies: readonly SolidBody[];
   /**
-   * 外観を割り当てた面が、いまの形のどの面に当たるか(FR-1106、P5 §2.2.3、タスク10)。
+   * 外観を割り当てた面が、いまの形のどの面に当たるか(FR-1106)。
    *
    * 再計算のたびにカーネルが指紋で選び直した結果がそのまま入る。`faceIndex` が `null` の
-   * ものは選び直せなかった割り当てで、その面は既定の外観で描き、警告を出す(タスク11・12)。
+   * ものは選び直せなかった割り当てで、その面は既定の外観で描き、警告を出す。
    * **割り当て自体は文書から消さない。**
    */
   readonly appearanceMatches: readonly AppearanceMatchEntry[];
@@ -125,7 +125,7 @@ export interface RecomputeSlice {
   /**
    * 中止を頼んだ回数(NFR-PF-4)。`attachPartRecompute` は計算を始めるときの値を覚え、
    * それより増えていたら段と段の間で打ち切る。数で持つのは、止めたい計算が
-   * 走っていないときに押されても次の計算へ引きずらないため(§0.a-0.22)。
+   * 走っていないときに押されても次の計算へ引きずらないため。
    */
   readonly cancelRequestCount: number;
   /**
@@ -135,7 +135,7 @@ export interface RecomputeSlice {
    */
   readonly recomputeCancelled: boolean;
   /**
-   * 図形の測定値の結果(ADD-23、計画書 geomref-plan.md §4(c)、GR-14)。計算した文書・世代と
+   * 図形の測定値の結果(ADD-23)。計算した文書・世代と
    * 対で持つ。**画面はここを直接読んで値を出さない**——いまの値かどうかの判定は
    * `math/mathGeometryResults.ts` の `currentMathGeometry` だけが行う。中止・古い世代・
    * 履歴の途中・部品以外・形の違う文書の結果は控えず、前の値も残さない(null)。
@@ -148,7 +148,7 @@ export interface RecomputeSlice {
   /** `completedGeneration` の結末。まだ 1 度も完了していなければ `idle`。 */
   readonly lastOutcome: RecomputeOutcome;
   /**
-   * 形状計算部のメモリの量(NFR-PF-6、計画書 P12-28)。まだ 1 度も届いていなければ null。
+   * 形状計算部のメモリの量(NFR-PF-6)。まだ 1 度も届いていなければ null。
    *
    * **量は計算部の事実で、文書の事実ではない**ので、文書を作り直しても戻さない
    * (`RecomputeInitialState` に入れない。世代の欄と同じ扱い)。量を添えない結果(ソリッドの段まで
@@ -163,7 +163,7 @@ export interface RecomputeSlice {
   readonly applyRecompute: (document: PartDocument, result: PartRecomputeResult) => void;
   /** 計算の進み具合を出す・消す(NFR-PF-4)。 */
   readonly setRecomputeProgress: (progress: PartProgress | null) => void;
-  /** 計算を止めるよう頼む(NFR-PF-4)。段と段の間でしか止まらない(§2.6 の限界)。 */
+  /** 計算を止めるよう頼む(NFR-PF-4)。段と段の間でしか止まらない。 */
   readonly cancelRecompute: () => void;
   /**
    * 形状計算部のメモリの量を控える(NFR-PF-6)。部品の再計算の量は `applyRecompute` が控える。
@@ -171,9 +171,9 @@ export interface RecomputeSlice {
    * 量が無い(undefined)ときは何もせず、前の量を持ち続ける。
    */
   readonly recordKernelMemory: (memory: KernelMemoryState | undefined) => void;
-  /** 再計算を開始した世代を記録する(E2E の検査口、P7 タスク52)。 */
+  /** 再計算を開始した世代を記録する(E2E の検査口)。 */
   readonly recordRecomputeRequest: (generation: number) => void;
-  /** 再計算が終わった世代と結末を対で記録する(E2E の検査口、P7 タスク52)。 */
+  /** 再計算が終わった世代と結末を対で記録する(E2E の検査口)。 */
   readonly recordRecomputeCompletion: (
     generation: number,
     outcome: Exclude<RecomputeOutcome, 'idle'>,
@@ -218,7 +218,7 @@ export type RecomputeInitialState = Pick<
 >;
 
 /**
- * 図形の測定値の控えを作る(GR-14)。**前の値を残さない**: 中止・いま依頼中でない世代・
+ * 図形の測定値の控えを作る。**前の値を残さない**: 中止・いま依頼中でない世代・
  * 履歴の途中(つまみで切った文書)・部品以外・形の欄が違う文書の結果では null を返す。
  *
  * 計算の間に形に関わらない欄(外観・名前)だけが変わった文書では、計算した文書のまま控える。
@@ -395,15 +395,15 @@ function recomputeResultPatch(
       active === undefined
         ? state.sketchErrors
         : activeSketchErrors(sketch, active, result.errors),
-    // 拘束の診断(FR-313、タスク13)。いま編集しているスケッチのぶんだけを控える。
+    // 拘束の診断(FR-313)。いま編集しているスケッチのぶんだけを控える。
     constraintDiagnosis: active === undefined ? state.constraintDiagnosis : active.diagnosis,
     ...(active === undefined
       ? { constraintSummaries: state.constraintSummaries }
       : constraintSummaryPatch(sketch, active.resolved, active.diagnosis)),
-    // 確定した形が届いたので、引っぱっている間の仮の形は用済み(タスク14)。
+    // 確定した形が届いたので、引っぱっている間の仮の形は用済み。
     dragResolved: active === undefined ? state.dragResolved : null,
     // 途中で打ち切られた結果は「作れたところまで」でしかないので、前のボディを
-    // 半分だけの形へ置き換えない(NFR-PF-4、§2.6 の限界)。
+    // 半分だけの形へ置き換えない(NFR-PF-4)。
     bodies: result.cancelled ? state.bodies : result.bodies,
     sheetMetalBodies: result.cancelled ? state.sheetMetalBodies : (result.sheetMetalBodies ?? new Map()),
     // 外観の面の照合(FR-1106)はボディと対で意味を持つので、ボディを差し替えたときだけ
@@ -413,7 +413,7 @@ function recomputeResultPatch(
       : (result.appearanceMatches ?? []),
     partErrors: result.errors,
     cacheHits: result.cacheHits,
-    // 図形の測定値(GR-14)。控えるかどうかの条件は mathGeometryResultOf の 1 か所。
+    // 図形の測定値。控えるかどうかの条件は mathGeometryResultOf の 1 か所。
     mathGeometryResult: mathGeometryResultOf(state, document, result),
     ...(result.parameterAnalysis === undefined || result.cancelled || result.generation !== state.requestedGeneration
       || document.id !== state.document.id || document.parameters !== state.document.parameters ? {} : {
@@ -425,7 +425,7 @@ function recomputeResultPatch(
     recomputeProgress: null,
     // 中止で終わったことは帯で短く知らせる。最後まで走ったならその知らせは消す。
     recomputeCancelled: result.cancelled,
-    // 幾何カーネルを積んで少なくとも 1 回計算が終わった(§0.a-0.23 ⑨)。
+    // 幾何カーネルを積んで少なくとも 1 回計算が終わった。
     // 購読通知(subscribe)の中で set を入れ子にしないよう、ここへ直接含める。
     kernelLoaded: true,
     // 形状計算部のメモリの量(NFR-PF-6)。取り消した結果でも計算部の事実なので控える。

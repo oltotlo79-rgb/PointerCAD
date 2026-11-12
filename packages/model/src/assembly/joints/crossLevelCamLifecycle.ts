@@ -13,7 +13,7 @@ import {
 import { JointDriveWork, solveSubAssemblyJointDriveSteps, type SubAssemblyJointDriveOutcome } from './subAssemblyJointDrive.js';
 
 /**
- * Saved cross-level cam (EX12): the authored definition behind CrossLevelCamCoupling (crossLevelCam.ts), stored like
+ * Saved cross-level cam: the authored definition behind CrossLevelCamCoupling (crossLevelCam.ts), stored like
  * the same-level MechanismCamCoupling (expressions and ids only, never a solved angle or pose). `offsetMm` and
  * `direction` are an AUTHORED LAW chosen by the user: the follower translation is direction * (rho(theta) + offset).
  * Nothing checks that the CAD bodies touch across the levels (the same-level cam's shared-support and in-line checks

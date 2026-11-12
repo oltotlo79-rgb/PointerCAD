@@ -23,7 +23,7 @@ export interface ExpressionFieldProps {
   readonly field: NumericField;
   readonly result: NumericFieldResult;
   /**
-   * 画面に出している長さの単位(FR-811、P6 タスク3b)。省くと mm。
+   * 画面に出している長さの単位(FR-811)。省くと mm。
    * 手入力する長さの単位と、下に添える評価値の単位。設定値・クリック値・空欄の
    * 既定値は内部のmmなので、欄の札もmmとする(元の式は変えない)。
    */
@@ -52,7 +52,7 @@ function fieldMessage(
   if (result.error !== null) {
     return result.error.message;
   }
-  // 値だけを表示の単位で出す。**欄の中の式は 1 文字も書き換えない**(FR-202、タスク3b)。
+  // 値だけを表示の単位で出す。**欄の中の式は 1 文字も書き換えない**(FR-202)。
   return result.value === null ? '' : `= ${fieldValueText(field.unit, result.value, lengthUnit)}`;
 }
 
@@ -113,7 +113,7 @@ export function ExpressionField({
     }
     // すでにこの欄へ焦点があるとき(利用者がクリックで入ったとき)は選び直さない。
     // 状態機械が焦点を動かしたとき(開いた直後・Tab・モード切替)だけ全選択にして、
-    // そのまま打てば上書きになるようにする(NFR-UX-4、§2.9 の「初期焦点」)。
+    // そのまま打てば上書きになるようにする(NFR-UX-4、「初期焦点」)。
     if (input.ownerDocument.activeElement === input) {
       return;
     }

@@ -1,6 +1,6 @@
 /**
  * ひな形の保存と「ひな形から新規」の手続き
- * (計画書 docs/plans/P6-入出力.md §2.10・§0.a-0.35・§0.a-0.36、タスク33)。
+ * (FR-814)。
  *
  * 対応要件: FR-814(ひな形と単位)、FR-806(新規)、NFR-UX-3(失うものがある操作の前に確認)、
  * NFR-RE-1(失敗しても今の文書を壊さない)、要件§1.5(Web 版とデスクトップ版に機能差を作らない)。
@@ -9,13 +9,13 @@
  * 置き場(ブラウザの中 / 端末)は `TemplateStorage` の 4 つの口だけに閉じてあるので、
  * 検査では記憶上の偽の置き場を差し込める。
  *
- * **持ち場所は 2 つある**(§0.a-0.36 の承認)。
+ * **持ち場所は 2 つある**。
  *  - 置き場(`TemplateStorage`): Web 版はブラウザの中、デスクトップ版も同じ口を使う。
  *    一覧に出せるのはこちらで、「ひな形から新規」の行はここから作る。
  *  - ファイル(`.pcadt`): 「ひな形として保存」は置き場へ入れたあと、同じ中身をファイルにも
  *    書き出せる。環境をまたいで持ち運べるので、Web 版とデスクトップ版に機能差ができない。
  *
- * 中身は部品の `.pcad` と 1 バイトも変わらない(封筒の種別と拡張子だけが違う。§0.a-0.35)ので、
+ * 中身は部品の `.pcad` と 1 バイトも変わらない(封筒の種別と拡張子だけが違う)ので、
  * 読み書きは `packages/io` の `writePcadFile` / `readPcadFile` をそのまま使う。
  */
 
@@ -81,7 +81,7 @@ export interface StoredTemplate {
 type StoredTemplateSummary = Omit<StoredTemplate, 'bytes'>;
 
 /**
- * ひな形の置き場(§0.a-0.36)。**口は 4 つだけ**にして、どこに置くか(ブラウザの中か、
+ * ひな形の置き場。**口は 4 つだけ**にして、どこに置くか(ブラウザの中か、
  * 記憶の上か)を手続きから隠す。例外は投げない——置き場が使えない環境でも操作を止めない
  * (NFR-RE-1。`AutoSaveStorage` と同じ約束)。
  */
@@ -99,8 +99,8 @@ export interface TemplateStorage {
 /**
  * 置き場に残すひな形の上限。
  *
- * 画面から消す入口を作らない(操作は「ひな形として保存」「ひな形から新規」の 2 つだけ、
- * §0.a-0.36)ので、際限なく溜まらないよう**古いものから落ちる**ようにする。
+ * 画面から消す入口を作らない(操作は「ひな形として保存」「ひな形から新規」の 2 つだけ)
+ * ので、際限なく溜まらないよう**古いものから落ちる**ようにする。
  * 最近使ったファイル(`MAX_RECENT_FILES`)と同じ考え方で、同じ 10 件にそろえてある。
  */
 const MAX_STORED_TEMPLATES = 10;
@@ -192,14 +192,14 @@ export function createMemoryTemplateStorage(): TemplateStorage {
 
 /*
  * ブラウザの中の置き場。**自動保存(`packages/io` の `createIndexedDbAutoSaveStorage`)と
- * 同じ流儀**にそろえる(§0.a-0.36 の承認)。ただし**データベースは別にする**:
+ * 同じ流儀**にそろえる。ただし**データベースは別にする**:
  * 自動保存のデータベース(`pointercad`)は版 1 で開かれていて、同じ版のまま別の入れ物を
  * 足すことはできない(版を上げると、先に開いた側が開けなくなる)。名前を分ければ、
  * どちらの側も自分の版だけを見ていればよい。
  *
  * 実際の読み書きは Node の単体検査では確かめられない(`indexedDB` が無い。
  * `packages/io` の同じ注記と同じ理由)ので、ここで検査するのは「置き場が無いときの分岐」
- * だけにし、通しの確認は画面での実測(統括の実機確認)へ送る。
+ * だけにし、通しの確認は画面での実測へ送る。
  */
 
 /** ひな形を入れるデータベースと入れ物の名前。 */
@@ -302,7 +302,7 @@ async function withTemplateStore<T>(
 }
 
 /**
- * ブラウザの中の置き場(§0.a-0.36)。使えない環境では `list` が空、`get` が null、
+ * ブラウザの中の置き場。使えない環境では `list` が空、`get` が null、
  * `put` / `remove` が何もしない(例外は投げない。自動保存と同じ約束)。
  */
 export function createIndexedDbTemplateStorage(): TemplateStorage {
@@ -336,11 +336,11 @@ export function createIndexedDbTemplateStorage(): TemplateStorage {
 // ---------------------------------------------------------------------------
 
 /**
- * ひな形として開けない理由の文言(§2.8 の断りの表)。
+ * ひな形として開けない理由の文言。
  *
  * **断りのコードも文言も増やさない**——`.pcad` の種別違いと同じ `file.error.wrongKind`
  * (「PointerCAD の部品ファイルではないようです。」)へ寄せる(`packages/io` の
- * `isTemplateKind` の注記、`docs/報告記録.md` 2026-09-04 01:40 の③)。
+ * `isTemplateKind` の注記)。
  */
 const TEMPLATE_REFUSAL_KEYS: Readonly<Record<TemplateRefusal, MessageKey>> = {
   notTemplate: 'file.error.wrongKind',
@@ -368,12 +368,12 @@ export type ReadTemplateOutcome =
   | { readonly ok: false; readonly messageKey: MessageKey };
 
 /**
- * `.pcadt` のバイト列からひな形を読み、新しい部品を起こす(FR-814、§2.10)。
+ * `.pcadt` のバイト列からひな形を読み、新しい部品を起こす(FR-814)。
  *
  * 置き場から出したものもファイルから開いたものも**同じここを通る**(読めなかった理由の
  * 言い換えを 2 か所に持たない。`readPartDocument` と同じ考え方)。
  *
- * **形の入ったひな形も断らない。** 知らせを 1 つ返して、履歴を空にして開く(§2.10。
+ * **形の入ったひな形も断らない。** 知らせを 1 つ返して、履歴を空にして開く(
  * 履歴を空にするのは model の `documentFromTemplate`)。
  */
 export function readTemplateBytes(bytes: Uint8Array): ReadTemplateOutcome {
@@ -383,7 +383,7 @@ export function readTemplateBytes(bytes: Uint8Array): ReadTemplateOutcome {
     return { ok: false, messageKey: openErrorMessageKey(result.error.code) };
   }
   const opened = openTemplate({
-    // ひな形かどうかは**封筒の種別**で決める(拡張子は名前を変えれば何とでもなる、§0.a-0.35)。
+    // ひな形かどうかは**封筒の種別**で決める(拡張子は名前を変えれば何とでもなる)。
     isTemplate: isTemplateKind(result.kind),
     document: result.document,
     lengthUnit: result.lengthUnit,
@@ -434,7 +434,7 @@ export interface TemplateSaveControl extends SaveEncodingControl {
 export interface SaveTemplateRequest {
   /** いま開いている部品。ここから履歴を落としたものがひな形になる。 */
   readonly document: PartDocument;
-  /** いまの表示の単位(端末の設定。§0.a-0.1)。 */
+  /** いまの表示の単位(端末の設定)。 */
   readonly lengthUnit: LengthUnit;
   /** いまの道具の既定値。 */
   readonly toolDefaults: ToolDefaults;
@@ -455,14 +455,14 @@ export type SaveTemplateOutcome =
   | { readonly ok: false; readonly cancelled: true };
 
 /**
- * いまの部品をひな形として保存する(FR-814、§2.10)。
+ * いまの部品をひな形として保存する(FR-814)。
  *
  * **置き場が先、ファイルは後。** 置き場へ入れてからファイルの窓を出すので、窓を取り消しても
  * ひな形は残る(「保存したのに何も残らなかった」を作らない)。ファイルにも書けるので、
  * Web 版で作ったひな形をデスクトップ版へ持って行ける(要件§1.5)。
  *
  * **履歴は持ち越さない**(`templateFromDocument`)。パラメータ表・外観・単位・道具の
- * 既定値だけが新しい部品へ引き継がれる(§2.10 の表)。
+ * 既定値だけが新しい部品へ引き継がれる。
  */
 export async function saveTemplate(
   deps: TemplateDeps,
@@ -523,7 +523,7 @@ export type NewFromTemplateOutcome =
   | { readonly ok: false; readonly cancelled: true };
 
 /**
- * ひな形から新しい部品を起こす(FR-814、§2.10)。
+ * ひな形から新しい部品を起こす(FR-814)。
  *
  * **読み切って中身も確かめられたときだけ**新しい部品を返す(NFR-RE-1)。呼び出し側は
  * 返ってきた値を利用先で検証してから文書と設定を差し替える。

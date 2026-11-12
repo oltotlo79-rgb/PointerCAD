@@ -75,10 +75,14 @@ Dependabotの**通常更新は実行中だが失敗中**。10/1のsecurity job `
 | source-map-js | 1.2.1 → 1.2.2 | postcss 8.5.26 | `postcss@8.5.26>source-map-js`（新設） |
 | zod | 4.5.4 → 4.6.6 | eslint-plugin-react-hooks 7.1.1 | `eslint-plugin-react-hooks@7.1.1>zod`（新設） |
 
-- 対象のバイト: 変更前は`pnpm-workspace.yaml` 45ff4843…（1,966 B）と`pnpm-lock.yaml` cde5ed4f…（131,546 B）。候補は`pnpm-workspace.yaml` fe465146…（2,094 B）と`pnpm-lock.yaml` 927537b7…（131,663 B。pnpm 11.25.0でlockだけを解決し終了0）。統括の伝達では07:20:47に作業ツリーへ採用した。07:31 JSTに、作業ツリーの2ファイルがこの候補のSHAと一致し、lockに旧版7件とvitest 4.1.11が残っていないことを読み取りで確かめた。
-- **未了の境界**: この記録の時点で、このlockによる`pnpm install --frozen-lockfile`、型・lint・単体・build・E2E、Electron 44.9.1の回帰（上の「Electron / Node」の行）、配布作成、両OSのCIはまだ実行していない。導入済み・配布済み・Dependabot alertの解消とは扱わない。alertのstateはdefault branchへの反映後にAPIで再GETする。
+- 対象のバイト: 変更前は`pnpm-workspace.yaml` 45ff4843…（1,966 B）と`pnpm-lock.yaml` cde5ed4f…（131,546 B）。候補は`pnpm-workspace.yaml` fe465146…（2,094 B）と`pnpm-lock.yaml` 927537b7…（131,663 B。pnpm 11.25.0でlockだけを解決し終了0）。統括の伝達では07:20:47に作業ツリーへ採用した。07:31 JSTに、作業ツリーの2ファイルがこの候補のSHAと一致し、lockに旧版7件とvitest 4.1.11が残っていないことを読み取りで確かめた。2026-11-12時点の`pnpm-lock.yaml`は64452ade13077f0da4de4b1f1fd8fb1b9582628da3d325761e19632a0a47519a（131,851 B、`sha256sum`で取得）で、上の927537b7…とは別の値になっている（変わった内訳は未照合）。`pnpm-workspace.yaml`は2026-11-12時点でもfe465146…（2,094 B）で、上の候補と同じ。
+- **未了の境界（2026-11-02の記録時点。2026-11-12時点の現況は下の「2026-11-12時点の現況」）**: この記録の時点で、このlockによる`pnpm install --frozen-lockfile`、型・lint・単体・build・E2E、Electron 44.9.1の回帰（上の「Electron / Node」の行）、配布作成、両OSのCIはまだ実行していない。導入済み・配布済み・Dependabot alertの解消とは扱わない。alertのstateはdefault branchへの反映後にAPIで再GETする。
 - 配布SBOMとの関係: 6件（vitest/mocker・undici 2系統・fast-uri・source-map-js・zod）は開発・build・配布作成の道具の依存で、`docs/standards/licenses/runtime-notices.json`の配布npm部品11件に含まれない。ElectronはDesktopの実行環境として同梱されるが、現行の`scripts/release/sbom.mjs`はElectron本体を部品として集めていない（版はDesktop候補の`electronVersion`に記録される）。これは今回の更新の前からの範囲で、今回新たに外したものではない。
-- FEMの応用ソース書庫の索引（`packages/fem/runtime/evidence/application-source-index.json`）は`pnpm-lock.yaml` cde5ed4f…と`pnpm-workspace.yaml` 45ff4843…を記録している。`collectSbomComponents`とFEMのbuildはこの記録と現在のファイルの一致を確かめ（`assertFemApplicationBuildInputs`）、不一致なら止まる。採用したlock・yamlに合わせて書庫・索引・manifestの固定値を作り直すまで、SBOMの生成とbuildは通らない見込み（未実行）。
+- FEMの応用ソース書庫の索引（`packages/fem/runtime/evidence/application-source-index.json`）は`pnpm-lock.yaml` cde5ed4f…と`pnpm-workspace.yaml` 45ff4843…を記録していた（2026-11-02時点）。`collectSbomComponents`とFEMのbuildはこの記録と現在のファイルの一致を確かめ（`assertFemApplicationBuildInputs`）、不一致なら止まる。2026-11-02の記録時点では、採用したlock・yamlに合わせて書庫・索引・manifestの固定値を作り直すまで、SBOMの生成とbuildは通らない見込みだった（当時は未実行）。2026-11-12時点の索引は`pnpm-lock.yaml` 64452ade…（131,851 B）と`pnpm-workspace.yaml` fe465146…（2,094 B）を記録しており、どちらも現在のファイルの`sha256sum`と一致している（索引の値と照合）。
+- **2026-11-12時点の現況**:
+  - SBOM: 配布用の外部検査（GitHub Actions run 43149366809、commit 33e823d289f790eb9865da720f20a98acf8339a9）で、段「SBOM(CycloneDX)を作る」は成功した。出力は`components`268、`unresolvedNotices`0、`unclassifiedLicenses`9、`noLicenseInformation`0。Electron本体を部品に含めない点は、上の記述のまま変えていない。
+  - 同じrunの次の段「release-manifestを組み立てる」は失敗した。原因は調査中で、この文書には書かない。配布物の一覧（release-manifest）は、この時点ではまだ作れていない。
+  - 未確認: 10/1〜10/2のDependabotの失敗の原因は、今も確かめていない。2026-11-12時点のcommitでのDependabot alertのstateも、確かめていない（default branchへの反映後にAPIで再GETする）。
 
 ### minimatch GHSA-g3hv-75wg-m249（到達しないので対象外、期限付き）
 

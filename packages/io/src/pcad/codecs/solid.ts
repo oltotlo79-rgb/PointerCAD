@@ -168,12 +168,12 @@ export function readSolidFeature(value: unknown, path: string): Checked<SolidFea
       return readRuledFeature(record.value, path, base.value);
     case 'loft':
       return readLoftFeature(record.value, path, base.value);
-    // P5 の Should 群 9 種(§2.11、タスク43)。
+    // Should 群 9 種。
     case 'draft':
       return readDraftFeature(record.value, path, base.value);
     case 'holeTranslate': case 'faceRotate':
       return readDirectEditFeature(record.value, path, base.value, kind.value);
-    // 平らな面の移動(EX-18 の限られた一段)。保存の版は上げない(種類の追加だけ)。
+    // 平らな面の移動(限られた一段)。保存の版は上げない(種類の追加だけ)。
     case 'faceOffset':
       return readFaceOffsetFeature(record.value, path, base.value);
     case 'mirror':
@@ -194,15 +194,15 @@ export function readSolidFeature(value: unknown, path: string): Checked<SolidFea
       return readSurfaceFeature(record.value, path, base.value);
     case 'functionSurface':
       return readFunctionSurfaceFeature(record.value, path, base.value);
-    // P5 の Could 群のうちタスク46 が前倒しした 1 種(FR-418)。
+    // Could 群のうち前倒しした 1 種(FR-418)。
     case 'shell':
       return readShellFeature(record.value, path, base.value);
-    // 平面による切断(FR-432、§2.9b、タスク27c)。
+    // 平面による切断(FR-432)。
     case 'surfaceCut':
       return readSurfaceCutFeature(record.value, path, base.value);
     case 'cut':
       return readCutFeature(record.value, path, base.value);
-    // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
+    // 読み込んだ形のベースボディ 2 種(FR-802)。
     case 'importedSolid':
       return readImportedSolidFeature(record.value, path, base.value);
     case 'importedMesh':

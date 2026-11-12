@@ -1,12 +1,12 @@
 /**
- * スケッチの表示層(計画書 docs/plans/P1-式とスケッチ.md タスク20 手順3)。
+ * スケッチの表示層。
  *
  * 対応要件: FR-105(表示スタイル)、FR-310(面の色)、NFR-PF-1(60fps)。
  *
  * `buildSketchGeometry` が組み立てた並びを three.js の部品へ流し込む。
  * **毎フレーム作り直さない**。同じ組み立て結果を渡し直したときは何もせず、
  * 要素数が変わらないときは並びの中身だけを差し替える(NFR-PF-1)。
- * 常時の描画ループはここにも作らない(docs/報告記録.md 2026-09-02 15:42)。
+ * 常時の描画ループはここにも作らない。
  *
  * 色は画面の配色(packages/ui/src/shell/appShell.css の --pcad-* トークン)から
  * `themeColors.ts` が読み取って渡す(three.js は CSS 変数を直接読めないため)。
@@ -31,7 +31,7 @@ const POINT_SIZE_PIXELS = 6;
 
 /**
  * 線の太さ(画素)。WebGL の実装上、太い線は描けず 1 画素で描かれる端末が多い
- * (太線には three/examples/jsm の Line2 が要るが、P1 では依存を増やさない)。
+ * (太線には three/examples/jsm の Line2 が要るが、依存を増やさない)。
  * 意図した太さを残しておき、対応している環境ではこの太さで出る。
  */
 const CURVE_WIDTH_PIXELS = 1.5;
@@ -40,9 +40,9 @@ const CURVE_WIDTH_PIXELS = 1.5;
  * 点の色 = --pcad-sketch-point、線の色 = --pcad-sketch-curve、面の縁 = --pcad-sketch-outline、
  * ホバー・選択 = --pcad-emphasis-hovered / --pcad-emphasis-selected(themeColors.ts)。
  *
- * ホバーと選択の色の決め方(§0.a-0.23-⑩): 以前は --pcad-accent と --pcad-accent-hover の
- * 色差だけで示していたが、実機の目視で見分けにくいと分かった(`docs/報告記録.md`
- * 2026-09-03 20:40 の②)。ダークではホバーを明るい水色 `0x8ec5ff` にして明度差を広げ、
+ * ホバーと選択の色の決め方: 以前は --pcad-accent と --pcad-accent-hover の
+ * 色差だけで示していたが、実機の目視で見分けにくいと分かった。
+ * ダークではホバーを明るい水色 `0x8ec5ff` にして明度差を広げ、
  * 選択は `0x4f8cff` に据え置いた(背景 --pcad-surface に対して約 8.88:1 と約 5.02:1 で、
  * どちらも 4.5:1 以上。濃い青 `0x2f6fe0` 案は約 3.43:1 で不採用、2026-09-03)。
  * 明るいテーマでは地が反転するので、**ホバーを淡い青・選択を濃い青**にして同じだけの
@@ -117,7 +117,7 @@ const CURVE_RENDER_ORDER = 3;
 const POINT_RENDER_ORDER = 4;
 
 /**
- * トリム・延長の予告(FR-322、P4 タスク22)を描く順。
+ * トリム・延長の予告(FR-322)を描く順。
  *
  * **もとの線とまったく同じ場所に重ねる**ので、いちばん後に描いて必ず上に出す。
  * ここが線(3)より小さいと、消える区間の赤がもとの灰色の線に隠れて見えない
@@ -127,7 +127,7 @@ const EDIT_PREVIEW_RENDER_ORDER = 5;
 
 /**
  * 予告の濃さ。トリムは「ここが消える」と言い切る強調なので濃く、延長は「まだ無い線」の
- * 予告なので薄くする(§0.a-0.26 の「薄く予告表示」)。
+ * 予告なので薄くする(「薄く予告表示」)。
  */
 const TRIM_PREVIEW_OPACITY = 1;
 const EXTEND_PREVIEW_OPACITY = 0.6;
@@ -156,14 +156,14 @@ export interface SketchLayer {
    */
   setThemeColors(colors: ThemeColors): void;
   /**
-   * トリム・延長の予告(FR-322、P4 タスク22)。消える区間・伸びる区間の折れ線を
+   * トリム・延長の予告(FR-322)。消える区間・伸びる区間の折れ線を
    * もとの線の上へ重ねて描く。`null` で消す。
    */
   setEditPreview(preview: EditPreview | null): void;
   /** いま描いている作図面。矩形の向きが変わる。 */
   setWorkPlane(plane: WorkPlane): void;
   /**
-   * 作図面の矩形を出すか(FR-330、P4 タスク33、タスク10 の申し送り)。
+   * 作図面の矩形を出すか(FR-330)。
    * 3D スケッチ(作図面なし)では**矩形を出さない**。作図面が無いのに XY の面が
    * 出ていると「この面の上にかいている」と誤解させるため。
    */
@@ -390,7 +390,7 @@ export function createSketchLayer(): SketchLayer {
   }
 
   /*
-   * トリム・延長の予告(FR-322、P4 タスク22)。要素ごとではなく**同時に 1 本だけ**出る
+   * トリム・延長の予告(FR-322)。要素ごとではなく**同時に 1 本だけ**出る
    * 一時的な線なので、強調(none / hovered / selected)の 3 本組は作らず 1 本で持つ。
    * 色と濃さは種類(消える区間 / 伸びる区間)で塗り替える。
    */

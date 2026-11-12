@@ -7,12 +7,12 @@ import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 /**
  * ツールバー(FR-901〜904、NFR-UX-7)。**ここは区画を並べるだけ**で、
  * 一覧の中身は `toolbarMenus.ts`、押したときの配線と区画の部品は `menus/` にある
- * (P6 タスク52。道具を足すときはこのファイルではなく、その一覧のファイルへ書く)。
+ * (道具を足すときはこのファイルではなく、その一覧のファイルへ書く)。
  */
 /*
  * ボディ一覧の詰め替え(`subShapeBodiesOf`)は `solid/subShapeSelection.ts` が正本
- * (作るのが `SubShapeBody` なので、その型を持つファイルに置く。P4b タスク18 で移した)。
- * ここから輸出し直してあるのは、P3 からの読み手の import をそのまま生かすため。
+ * (作るのが `SubShapeBody` なので、その型を持つファイルに置く)。
+ * ここから輸出し直してあるのは、以前からの読み手の import をそのまま生かすため。
  */
 export { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 
@@ -81,21 +81,21 @@ import {
  *
  * 左から「製品名 → ファイル → 元に戻す・やり直す → モードのタブ → スケッチ → ソリッド →
  * 見た目 → 作図面」、右へ「投影 / 表示 / 補助 / 吸着 / 視点」の機能グループを並べる
- * (P5 タスク51 で「加工」区画を「ソリッド」区画の中の畳んだ一覧へ寄せ、「外観」区画を
- * 「見た目」へ改めた。§0.a-0.51)。
+ * (「加工」は「ソリッド」区画の中の畳んだ一覧に入れ、「外観」は
+ * 「見た目」の区画に入れる)。
  * 機能グループは区画名を頭に置き、いま選ばれているものをアクセント色の面で示す(NFR-UX-7)。
  * 状態の正本は Zustand ストア1本(rules/04-設計の規律.md)。
  *
  * 「スケッチ」区画は、基本の 6 道具(選択・点・線分・円弧・点列・面)の右に「作図」「編集」
- * 「拘束」の畳んだボタンを**同じ行**へ並べた 1 行にする(利用者の決定 2026-09-04、タスク32)。
+ * 「拘束」の畳んだボタンを**同じ行**へ並べた 1 行にする(利用者の決定)。
  * 「ソリッド」区画も同じ作りで「作る」「合わせる」「加工」の 3 つを 1 つの溝に並べる。
  * よく使う道具は 1 クリック、それ以外は 2 クリックで届く。
  *
- * 横幅の方針: 1440 画素の窓で 1 段に収まることを条件にする(§0.a-0.15)。
- * 実測(2026-09-05、ダーク・拡大率 100%、1440×900): 高さ 68.5 画素の 1 段、1 段に必要な幅
- * 1144.3 画素、1440 画素の窓での余裕 295.7 画素(タスク51 の前は 1437.3 画素・余裕 2.7 画素)。
+ * 横幅の方針: 1440 画素の窓で 1 段に収まることを条件にする。
+ * 実測(ダーク・拡大率 100%、1440×900): 高さ 68.5 画素の 1 段、1 段に必要な幅
+ * 1144.3 画素、1440 画素の窓での余裕 295.7 画素(畳む前は 1437.3 画素・余裕 2.7 画素)。
  * 畳んだ一覧へ道具を足しても幅は増えない(`toolbarMenus.ts` の `segmentedWidthPixels`)ので、
- * タスク18・27f・32・49 が足すボタンはすべて既存の一覧の中へ入る。
+ * 後から足すボタンはすべて既存の一覧の中へ入る。
  * 図柄で分かるものは図柄だけのボタン(`pcad-button--icon`)にして詰め、
  * 文字を添えたい道具(スケッチ・続けてかく)には `pcad-button--collapsible` を付けて、
  * 窓が 1600 画素より狭いときだけ文字を畳む(appShell.css)。図柄だけになるボタンには
@@ -107,7 +107,7 @@ export function Toolbar(): React.JSX.Element {
   const projection = useAppStore((state) => state.projection);
   const displayStyle = useAppStore((state) => state.displayStyle);
   const showGrid = useAppStore((state) => state.showGrid);
-  // 断面表示(FR-111、P6 タスク35)。**入切だけ**を取り出して、切る位置が動いただけでは
+  // 断面表示(FR-111)。**入切だけ**を取り出して、切る位置が動いただけでは
   // ツールバーを描き直さない(NFR-PF-1。他の札と同じ取り出し方)。
   const sectionViewOn = useAppStore((state) => state.sectionView !== null);
   const activeTool = useAppStore((state) => state.activeTool);
@@ -118,21 +118,21 @@ export function Toolbar(): React.JSX.Element {
   const trackAngleStep = useAppStore((state) => state.displaySettings.trackAngleStep);
   const chaining = useAppStore((state) => state.chaining);
   const partDocument = useAppStore((state) => state.document);
-  // 文書にある任意の作業平面(FR-328、タスク13)。作図面の一覧に名前で並べる。
+  // 文書にある任意の作業平面(FR-328)。作図面の一覧に名前で並べる。
   const customPlanes = workPlaneEntries(partDocument);
   const bodies = useAppStore((state) => state.bodies);
   // ソリッド・加工の押せる条件の判定(solidToolReadiness)が要る形へ詰め替える
-  // (タスク17 の後は state.bodies をそのまま渡せるようになる、subShapeBodiesOf の注釈)。
+  // (subShapeBodiesOf の注釈)。
   const subShapeBodies = subShapeBodiesOf(bodies);
   const selection = useAppStore((state) => state.selection);
-  // 外観(FR-1106〜1110、タスク12)の押せる条件の判定に要る。
+  // 外観(FR-1106〜1110)の押せる条件の判定に要る。
   const selectionKind = useAppStore((state) => state.selectionKind);
   const appearanceMatches = useAppStore((state) => state.appearanceMatches);
-  // 整形系(オフセット、FR-321、タスク21)の押せる条件の判定に要る。
+  // 整形系(オフセット、FR-321)の押せる条件の判定に要る。
   const resolvedSketch = useAppStore((state) => state.resolvedSketch);
   const canUndo = useAppStore((state) => state.canUndo);
   const canRedo = useAppStore((state) => state.canRedo);
-  // 拘束(FR-313、タスク13)。いま選んでいる拘束の道具と、履歴そのもの(下見に要る)。
+  // 拘束(FR-313)。いま選んでいる拘束の道具と、履歴そのもの(下見に要る)。
   const activeConstraintKind = useAppStore((state) => state.activeConstraintKind);
   useAppStore((state) => state.sketch);
   /*
@@ -142,7 +142,7 @@ export function Toolbar(): React.JSX.Element {
    */
   const constraintReadinessOf = constraintToolReadinessOf();
   /*
-   * 書き出しのパネルが開いているか(P6 タスク32)。**見た目だけの一時状態**なので
+   * 書き出しのパネルが開いているか。**見た目だけの一時状態**なので
    * ここで持つ(`SettingsPanel` の開閉と同じ扱い。rules/04 の「状態はストア 1 本」は
    * 部品文書と端末の好みが対象)。
    */
@@ -154,7 +154,7 @@ export function Toolbar(): React.JSX.Element {
   const functionOpen = utilityPanel === 'functionPlot';
   const setFunctionOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('functionPlot', open);
   /*
-   * 「ファイル」の一覧に並べる、数の決まらない行の材料(P6 タスク33)。
+   * 「ファイル」の一覧に並べる、数の決まらない行の材料。
    *  - 保存したひな形(FR-814): ブラウザの中の置き場から**非同期**で読む。
    *  - 最近使ったファイル(FR-807): 端末の覚え書きから同期で読む。
    * どちらも**見た目だけの一時状態**なのでここで持つ(部品文書ではないので、rules/04 の
@@ -194,7 +194,7 @@ export function Toolbar(): React.JSX.Element {
 
       {/*
         ファイルと履歴。どちらも世の中の道具と同じ図柄なので区画名を置かず、
-        製品名のとなりに 5 つ並べる(§0.a-0.15)。
+        製品名のとなりに 5 つ並べる。
       */}
       <div className="pcad-toolbar__actions">
         <div className="pcad-segmented" role="group" aria-label={t('toolbar.file.title')}>
@@ -216,18 +216,18 @@ export function Toolbar(): React.JSX.Element {
             </button>
           ))}
           {/*
-            たまにしか使わないファイル操作(P6 §0.57、タスク31)。**新規・開く・保存と
+            たまにしか使わないファイル操作。**新規・開く・保存と
             同じ溝の中**へ畳んだボタンを 1 つだけ足す。区画は増やさない(要件§7.1、rules/04)。
             溝は 88 → 121 画素の 33 画素だけ広がり、一覧の中へ項目をいくつ足しても
             そこから先は増えない(`toolbarMenus.ts` の `segmentedWidthPixels`)。
 
             押下表示を出さないのは、ファイル操作は**押した瞬間に終わる**もので、
-            「いまこの道具を使っている」状態にならないため(「投影」と同じ理由、§0.a-0.80)。
+            「いまこの道具を使っている」状態にならないため(「投影」と同じ理由)。
           */}
           <ToolMenu
             /*
-              決まった 6 行のうしろへ、保存したひな形と最近使ったファイルが名前のまま並ぶ
-              (P6 タスク33)。**0 件のものは 1 行も出ない**ので、押しても何も起きない行が
+              決まった 6 行のうしろへ、保存したひな形と最近使ったファイルが名前のまま並ぶ。
+              **0 件のものは 1 行も出ない**ので、押しても何も起きない行が
               画面に出ることはない。行がいくつ増えても溝の幅は変わらない。
             */
             items={fileMenuItems(
@@ -261,7 +261,7 @@ export function Toolbar(): React.JSX.Element {
             }}
           />
           {/*
-            書き出しのパネル(FR-803、§0.a-0.20)。一覧の「書き出す」を選んだときだけ出す。
+            書き出しのパネル(FR-803)。一覧の「書き出す」を選んだときだけ出す。
             **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
           */}
           {documentKind === 'part' && comparisonOpen ? <DocumentDiffDialog onClose={() => setComparisonOpen(false)} /> : null}
@@ -349,9 +349,9 @@ export function Toolbar(): React.JSX.Element {
           ))}
           {/*
             「作図」「編集」は基本の 6 道具と**同じ溝の中**へ図柄+▾ のボタンとして置く
-            (利用者の決定 2026-09-04、タスク32)。区画(.pcad-toolbar__group)は縦積みなので、
+            (利用者の決定)。区画(.pcad-toolbar__group)は縦積みなので、
             溝の外へ出すと道具の下の段に落ちてツールバーが 2〜3 段相当になってしまう
-            (t12・t21 の申し送り、実測 97.5〜126.5px)。ここへ入れておけば、一覧に道具を
+            (実測 97.5〜126.5px)。ここへ入れておけば、一覧に道具を
             いくつ足しても横幅は 31 画素のまま増えない(toolbarMenus.ts の幅の見積もり)。
           */}
           <ToolMenu
@@ -370,17 +370,17 @@ export function Toolbar(): React.JSX.Element {
             GroupIcon={EditGroupIcon}
             activeTool={activeTool}
             /*
-              整形系のうち「対象を選んでから操作」(§2.5)の道具は、押せない理由を一覧の
+              整形系のうち「対象を選んでから操作」の道具は、押せない理由を一覧の
               項目にも出す(NFR-UX-5)。道具ごとの振り分けは `editToolReadiness`
               (editCommands.ts)の 1 か所に置いてある。トリム・延長は選択を使わないので
-              いつでも押せる(§0.a-0.26、タスク22)。
+              いつでも押せる。
             */
             readinessOf={(id) => editToolReadiness(id, resolvedSketch, selection)}
             commandGroup="edit"
           />
           {/*
-            「拘束」(FR-313、P4b タスク13)。区画も段も増やさず、畳んだ一覧を 1 つ足すだけ
-            (統括の決定 2026-09-05)。溝の幅は 31 画素しか増えないので、1440 画素の窓では
+            「拘束」(FR-313)。区画も段も増やさず、畳んだ一覧を 1 つ足すだけ。
+            溝の幅は 31 画素しか増えないので、1440 画素の窓では
             1 段(68.5 画素)のまま(`toolbarMenus.ts` の `segmentedWidthPixels`)。
 
             押した後の流れは `constraintActions.ts` の 1 か所に置く。選んでいるものだけで
@@ -425,7 +425,7 @@ export function Toolbar(): React.JSX.Element {
             customPlanes={customPlanes}
           />
           {/*
-            いま見ている向きに最も近い作図面へ移る(§0.a-0.3)。視点の正本はビューポートの
+            いま見ている向きに最も近い作図面へ移る。視点の正本はビューポートの
             中にあるので、ここでは要求を数えるだけにしてビューポートに応えてもらう。
           */}
           <button
@@ -450,8 +450,8 @@ export function Toolbar(): React.JSX.Element {
       <span className="pcad-toolbar__spacer" />
 
       {/*
-        投影(FR-102)。P5 タスク51 で 2 つの図柄ボタンを畳んだ一覧 1 つへまとめた
-        (§0.a-0.51)。畳んだボタンには**いま効いているほうの図柄**が出るので、開かなくても
+        投影(FR-102)。2 つの図柄ボタンを畳んだ一覧 1 つへまとめてある。
+        畳んだボタンには**いま効いているほうの図柄**が出るので、開かなくても
         今の見え方が読み取れる(`triggerItemOf` が `activeTool` = いまの投影と一致する項目を
         返す。作図面の一覧が「XY」を札に出すのと同じ考え方)。
         入れ物側に `role="group"` を付けないのは、開いた一覧がすでに同じ「投影」という名前の
@@ -470,7 +470,7 @@ export function Toolbar(): React.JSX.Element {
             activeTool={projection}
             /*
               投影は必ずどちらかが効いているので、畳んだボタンの押下表示は出さない
-              (常に点いたままだと「押しっぱなし」に見える。§0.a-0.80、タスク32)。
+              (常に点いたままだと「押しっぱなし」に見える)。
               いま効いているほうは図柄が示す。
             */
             showPressed={false}
@@ -533,10 +533,10 @@ export function Toolbar(): React.JSX.Element {
             <WireframeIcon />
           </button>
           {/*
-            ビューの断面表示(FR-111、P6 タスク35、§0.57)。**「表示」の区画に入口 1 つだけ**を
+            ビューの断面表示(FR-111)。**「表示」の区画に入口 1 つだけ**を
             足す(区画は増やさない、rules/04)。押すと今の作図面で切り、切る位置はビューポートの
             つまみとその場の数値入力で動かす。**形は切らない**(見た目だけのクリップ)。
-            図柄は交差の印を当面そのまま使う(専用の図柄はタスク45 でまとめて作る)。
+            図柄は交差の印を当面そのまま使う(専用の図柄はまだ無い)。
           */}
           {documentKind === 'part' ? <button
             type="button"

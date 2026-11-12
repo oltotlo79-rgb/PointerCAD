@@ -1,6 +1,6 @@
 /**
  * 入出力(FR-802・FR-803)と 3D プリントの点検(FR-815)のスライス。
- * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
+ * 分け方の約束は `viewSlice.ts` の冒頭にある。
  */
 
 import type { ImportedMeshBytes } from '@pointercad/io';
@@ -23,9 +23,9 @@ import type { AppState } from './appState.js';
 import { pendingFieldVariables } from '../shell/pendingFieldVariables.js';
 
 /**
- * 3D プリント向けの点検の要約と結果(FR-815、P6 §0.51・§0.53・§2.16、タスク42・43・46)。
+ * 3D プリント向けの点検の要約と結果(FR-815)。
  *
- * **43b が ui 側へ仮に写して置いていた型を、タスク46 で model が輸出する型へ差し替えた。**
+ * **ui 側へ仮に写して置いていた型を、model が輸出する型へ差し替えた。**
  * 欄の名前も型も最初からそろえてあったので、詰め替えは 1 か所も要らなかった
  * (`packages/ui` は `@pointercad/kernel` に依存しない——依存は model 経由だけ、rules/04)。
  * **画面に出る欄の意味の正本は `model` の `PrintabilitySummary`** で、ここには写さない。
@@ -69,14 +69,14 @@ export interface ExchangeSlice {
   readonly finishExportHandoff: (attempt: object, handoff: ExportHandoff | null) => void;
   readonly clearExportHandoff: () => void;
   /**
-   * 3D プリントの点検の結果(FR-815、P6 §0.53、タスク42・43)。まだ点検していなければ `null`。
+   * 3D プリントの点検の結果(FR-815)。まだ点検していなければ `null`。
    *
    * **再計算を起こさない。** 文書に触らないので `affectsShape` の経路を通らず、点検を
-   * 閉じれば元の色に戻る(§0.53)。文書を作り直したら消える(古い形の三角形の並びを
+   * 閉じれば元の色に戻る。文書を作り直したら消える(古い形の三角形の並びを
    * 新しい形が指すことは無い)ので、`sectionView` と同じく
    * `createInitialDocumentState` の側に置いてある。
    *
-   * 欄と型を 43b が置き、タスク46 が中身(`KernelBridge.inspectPrintability` の配線と
+   * 欄と型はここに置き、中身(`KernelBridge.inspectPrintability` の配線と
    * 色の層)を入れた。`null` のあいだ、プロパティの節は「まだ点検していません。」と
    * 説明だけを出す。
    */
@@ -93,7 +93,7 @@ export interface ExchangeSlice {
    * いま点検を走らせている最中か(FR-815、NFR-PF-4)。
    *
    * **再計算の `isComputing` とは別の札**にする。点検は文書を 1 バイトも変えない読み取り
-   * (§0.a-0.30)なので、再計算の札を立てると「形を計算しています…」と出て、
+   * なので、再計算の札を立てると「形を計算しています…」と出て、
    * 履歴の操作まで塞いでしまう(`isComputing` を見て止まる場所が幾つもある)。
    */
   readonly isInspectingPrint: boolean;
@@ -110,7 +110,7 @@ export interface ExchangeSlice {
    */
   readonly printCheckErrorMessage: string | null;
   /**
-   * 書き出しの添え物(FR-803、P6 タスク45 の指摘・43b の申し送り)。「弾いた立体が
+   * 書き出しの添え物(FR-803)。「弾いた立体が
    * 1 つあります」のような**うまくいったときの知らせ**で、無ければ `null`。
    *
    * **失敗の口(`errorMessage`)へ入れない。** あちらはステータスバーで頭に
@@ -118,7 +118,7 @@ export interface ExchangeSlice {
    */
   readonly exchangeNotice: string | null;
   /**
-   * 書き出し・読み込みの口(FR-802、FR-803。P6 タスク32)。
+   * 書き出し・読み込みの口(FR-802、FR-803)。
    *
    * `partMeasurer` とまったく同じ理由で外から差し出してもらう(幾何カーネル(Worker)を
    * 持っているのは `PointerCadApp` だけで、`packages/ui` は幾何カーネルへ直接依存できない)。
@@ -127,7 +127,7 @@ export interface ExchangeSlice {
    */
   readonly exchangeKernel: ExchangeKernel | null;
   /**
-   * 読み込んだファイルの単位を利用者へ訊いている最中か(FR-811、§0.a-0.6。P6 タスク32b)。
+   * 読み込んだファイルの単位を利用者へ訊いている最中か(FR-811)。
    *
    * **単位を書かない形式(STL / OBJ・単位の無い DXF)を読み込んだときだけ**立つ。
    * 答え(ミリメートル / インチ / やめる)は `file/exchangeActions.ts` の
@@ -138,26 +138,26 @@ export interface ExchangeSlice {
    */
   readonly importUnitAsked: boolean;
   /**
-   * 読み込んだ形の B-rep のバイト列(FR-802、P6 §0.a-0.9、タスク32)。鍵は
+   * 読み込んだ形の B-rep のバイト列(FR-802)。鍵は
    * `ImportedSolidFeature.shapeRef` で、`.pcad` の ZIP のエントリ `shapes/<shapeRef>.brep` と
    * 1 対 1。**上の `canvases` と同じ「添付の表」の 3 つ目**である。
    *
    * **再計算のたびにそのまま `PartRecomputeOptions.importedShapes` へ渡す。** 渡さないと
    * `importedSolid` の段は「読み込んだ形が見つかりません」で失敗する(FR-504)。
    * 保存・自動保存でも一緒に書く。書かないと、開き直したときに読み手が
-   * `missingField` で断る(`packages/io` の `findMissingAttachment`。タスク21 の申し送り)。
+   * `missingField` で断る(`packages/io` の `findMissingAttachment`)。
    */
   readonly importedShapes: ReadonlyMap<string, Uint8Array>;
   /**
-   * 読み込んだ三角形(FR-802、P6 §0.a-0.24、タスク32)。鍵は `ImportedMeshFeature.meshRef` で、
+   * 読み込んだ三角形(FR-802)。鍵は `ImportedMeshFeature.meshRef` で、
    * `.pcad` の ZIP のエントリ `meshes/<meshRef>.bin` と 1 対 1。
    *
-   * **再計算には渡さない**(三角形の形は幾何カーネルの段にならない、§0.a-0.23)。
+   * **再計算には渡さない**(三角形の形は幾何カーネルの段にならない)。
    * 持つのは保存と画面表示のためだけである。
    */
   readonly importedMeshes: ReadonlyMap<string, ImportedMeshBytes>;
   /**
-   * 3D プリントの点検の口(FR-815。P6 タスク46)。
+   * 3D プリントの点検の口(FR-815)。
    *
    * `partMeasurer` とまったく同じ理由で外から差し出してもらう(幾何カーネル(Worker)を
    * 持っているのは `PointerCadApp` だけで、`packages/ui` は幾何カーネルへ直接依存できない)。
@@ -174,7 +174,7 @@ export interface ExchangeSlice {
     meshes: ReadonlyMap<string, ImportedMeshBytes>,
   ) => void;
   /**
-   * 読み込んだ形を**足す**(FR-802、タスク32)。いま開いている部品へ 1 ファイルぶんを
+   * 読み込んだ形を**足す**(FR-802)。いま開いている部品へ 1 ファイルぶんを
    * 追加する参照は未使用か同じ原本に限り、既存の別原本を上書きする依頼は全体を断る。
    * ファイル取込の衝突正規化はexchangeActionsで文書と同時に済ませる。
    */
@@ -183,10 +183,10 @@ export interface ExchangeSlice {
     meshes: ReadonlyMap<string, ImportedMeshBytes>,
   ) => void;
   /**
-   * 3D プリントの点検の結果を置く・消す(FR-815、タスク42・43・46)。
+   * 3D プリントの点検の結果を置く・消す(FR-815)。
    *
    * `offsets` は色を塗る相手(省くと空 = どの立体にも塗らない)。`null` を渡すと
-   * **点検を閉じる**——色が消えて元の外観に戻り、形も体積も 1 つも変わらない(§0.53)。
+   * **点検を閉じる**——色が消えて元の外観に戻り、形も体積も 1 つも変わらない。
    */
   readonly setPrintability: (
     report: PrintabilityReport | null,
@@ -199,13 +199,13 @@ export interface ExchangeSlice {
    *
    * 判断と組み立ては `solid/printCheckCommands.ts` の `runPrintCheck` 1 か所に置き、
    * ここは「ストアの値を渡す」「結果か理由を置く」だけにする(`measureSelection` と同じ)。
-   * **文書は 1 バイトも変えない**ので取り消しの段も積まず、再計算も起きない(§0.a-0.30)。
+   * **文書は 1 バイトも変えない**ので取り消しの段も積まず、再計算も起きない。
    * 走っているあいだは `isInspectingPrint` が立つ(`isComputing` は立てない)。
    */
   readonly inspectPrintability: () => void;
   /** 点検を走らせる手立てを差し出す・取り下げる(`attachPartInspector` が呼ぶ)。 */
   readonly setPartInspector: (inspector: PartInspector | null) => void;
-  /** 書き出しの添え物を出す・消す(FR-803、タスク45・46)。断りではないので赤くしない。 */
+  /** 書き出しの添え物を出す・消す(FR-803)。断りではないので赤くしない。 */
   readonly setExchangeNotice: (notice: string | null) => void;
 }
 

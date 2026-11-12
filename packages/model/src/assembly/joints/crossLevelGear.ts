@@ -10,7 +10,7 @@ import { JointDriveWork, resolveSubAssemblyOccurrenceSteps, solveSubAssemblyJoin
   type SubAssemblyJointDriveOutcome } from './subAssemblyJointDrive.js';
 
 /**
- * Cross-level gear (EX12): a revolute joint of the top-level assembly coupled to a revolute joint inside ONE
+ * Cross-level gear: a revolute joint of the top-level assembly coupled to a revolute joint inside ONE
  * subassembly placement (typed occurrence path, never a flattened row id), with the gear relation of
  * GearRatioCoupling taking the parent joint as A: thetaChild = ratio * thetaParent + phaseDeg (degrees).
  *

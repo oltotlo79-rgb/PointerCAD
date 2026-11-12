@@ -1,5 +1,5 @@
 /**
- * EX-12 W01: the one table of 1000 distinct part dimensions, shared by two fixtures (test-only; no product code imports
+ * The one table of 1000 distinct part dimensions, shared by two fixtures (test-only; no product code imports
  * this file):
  * - the io round trip of 1000 box definitions (assemblyDistinctPartsRoundtrip.test.ts, expectations unchanged), and
  * - the host assembly of 1000 distinct real shapes (e2e/tests/assembly1000HostFixture.ts and the real-kernel check in
@@ -55,7 +55,7 @@ export function hostShapeOf(index: number): HostShape {
   return { kind: 'box', sizeX, sizeY, sizeZ };
 }
 
-/** Id of the one body each host definition yields (the boolean consumes its box and tool, kernel §0.a-0.5). */
+/** Id of the one body each host definition yields (the boolean consumes its box and tool). */
  function hostBodyFeatureIdOf(index: number): string {
   const kind = hostShapeOf(index).kind;
   return kind === 'box' ? 'box-1' : kind === 'cylinder' ? 'cylinder-1' : 'cut-1';

@@ -1,16 +1,16 @@
 import { unitDirection as toUnit } from './normalizeDirection.js';
 import { subVec as subtract, dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /**
- * スイープ(経路に沿った押し出し、FR-409)。計画書 P5 §2.9、タスク37。
+ * スイープ(経路に沿った押し出し、FR-409)。
  *
  * 閉じた断面(スケッチの輪郭)を、開いた経路(スケッチの線・円弧・スプラインの連なり)に
- * 沿って `BRepOffsetAPI_MakePipeShell` で掃引して立体にする。道具は P3 のばね
+ * 沿って `BRepOffsetAPI_MakePipeShell` で掃引して立体にする。道具はばね
  * (`makeSpring.ts`)・ねじ(`makeThread.ts`)で実運用中のものと同じで、違いは
  * 「経路が利用者の描いた曲線であること」と「断面が円とは限らないこと」の 2 点だけである。
  *
  * ---
  *
- * ## 向きの規則(§0.a-0.43 の承認どおり)
+ * ## 向きの規則
  *
  * - `frenet = true`(既定): `SetMode_1(true)`。断面が経路の接線に垂直な面を保つ。
  * - `frenet = false`(「ねじれを抑える」): `SetMode_3(gp_Dir(0,0,1))`。副法線を上下方向へ
@@ -24,7 +24,7 @@ import { subVec as subtract, dotVec as dot, crossVec as cross } from './sketchCo
  *
  * ---
  *
- * ## 断面の置き方(タスク37 手順 3)
+ * ## 断面の置き方
  *
  * 利用者は断面のスケッチと経路のスケッチを別々に描くので、断面が経路の始点に乗って
  * いるとは限らない。そこで**断面を経路の始点へ移し、経路の接線に垂直な向きへ回してから**
@@ -57,7 +57,7 @@ import { subVec as subtract, dotVec as dot, crossVec as cross } from './sketchCo
  *
  * ## 閉じた経路(輪)
  *
- * 計画書 §0.a はこの場合を決めていない。**実測して通せることを確かめたうえで通す**
+ * 当初の設計はこの場合を決めていない。**実測して通せることを確かめたうえで通す**
  * (半径 20 の全周の円に円 r=2 を沿わせるとトーラス 1579.1367 が正しく出る)。
  * 断るのは「立体にならなかった」ときだけで、経路が閉じていること自体は理由にしない。
  *
@@ -87,12 +87,12 @@ import { subVec as subtract, dotVec as dot, crossVec as cross } from './sketchCo
  * 角の外側を丸めるぶん体積が変わり、面も 1 枚増えるので、寸法どおりの立体にならない。
  *
  * `SetTransitionMode` は列挙を引数に取るので、下の `isTransitionMode` の**述語ガード 1 か所**で
- * 渡す(統括が 2026-09-05 に承認。`as` / `any` は使わない)。
+ * 渡す(承認済み。`as` / `any` は使わない)。
  *
  * **それでも作れないほど鋭い角は断る。** 30 の線分から 174 度折り返す経路(断面 円 r=2)は、
  * 留め継ぎの面が自分自身と交わって立体にならない(実測)。この場合は「角を丸める」ことを
  * 添えて断る。半径 5 で角を丸めた経路(直線 25 + 1/4 円弧 R5 + 直線 35)は 852.678281 で
- * 計算値と完全に一致するので、逃げ道は用意されている(P4 の 2 次元の R 面取り)。
+ * 計算値と完全に一致するので、逃げ道は用意されている(スケッチの 2 次元の R 面取り)。
  *
  * **「掃引できた長さ」の検査は網として残す。** 断面の重心が経路に乗り、断面が接線に垂直で
  * あれば、体積は必ず **断面の面積 × 経路の長さ** になる(断面の重心まわりの 1 次モーメントが
@@ -136,7 +136,7 @@ const MIN_SOLID_VOLUME_MM3 = 1e-9;
 /** 向きの計算に使う許容誤差。長さ 0 のベクトル・平行な 2 つの向きを見分けるのに使う。 */
 const TOLERANCE = 1e-9;
 
-/** 「ねじれを抑える」ときに副法線を固定する向き(上下方向)。§0.a-0.43。 */
+/** 「ねじれを抑える」ときに副法線を固定する向き(上下方向)。 */
 const BINORMAL: Vec3Tuple = [0, 0, 1];
 
 const NO_PATH_MESSAGE = '掃引する道筋が選ばれていません。';
@@ -151,7 +151,7 @@ const NO_TANGENT_MESSAGE = '道筋の向きが決まりません。道筋を選�
 const BINORMAL_PARALLEL_MESSAGE =
   'ねじれを抑える指定は、道筋が上下方向と平行なときには使えません。';
 
-/** 掃引そのものが成立しなかったとき(計画書 タスク37 の検証表の文言)。 */
+/** 掃引そのものが成立しなかったとき(検証の表の文言)。 */
 const BUILD_FAILED_MESSAGE = '掃引できませんでした。断面と道筋の位置を見直してください。';
 
 /**
@@ -187,7 +187,7 @@ const SWEPT_LENGTH_TOLERANCE = 0.01;
 /** 断面の広がり・経路の曲がりを測るときに割る点の数(`makeThruSections.ts` と同じ道具立て)。 */
 const SAMPLE_COUNT = 64;
 
-/** スイープ 1 つ分の入力(計画書 タスク37 の見出し)。 */
+/** スイープ 1 つ分の入力。 */
 export interface SweepInput {
   /** 断面。閉じた輪郭 1 本を作る曲線の並び。 */
   readonly profile: readonly CurveSpec[];
@@ -320,7 +320,7 @@ interface ProfileFrame {
  * 断面のワイヤから平らな面を張り、重心と法線を取る。
  *
  * 断り方は `makePlanarFace.ts` と同じ 3 段階(閉じていない → 平面でない → 自分自身と交わる)
- * だが、**文言は掃引の場面のものに差し替える**(計画書 タスク37 の検証表。NFR-UX-5)。
+ * だが、**文言は掃引の場面のものに差し替える**(検証の表。NFR-UX-5)。
  * 面そのものは掃引には渡さない ── `MakePipeShell` が受け取るのは断面のワイヤで、
  * 面は「重心と法線を測るため」だけに作る。
  */
@@ -348,7 +348,7 @@ function readProfileFrame(
   const centreOfMass = keep(properties.CentreOfMass());
 
   // 面は MakeFace_15(wire, true) で作った平面なので、GetType を確かめずに Plane() を呼べる
-  // (列挙 GeomAbs_SurfaceType の各値は空の型なので、比較には強制変換が要る。§1.2-B)。
+  // (列挙 GeomAbs_SurfaceType の各値は空の型なので、比較には強制変換が要る)。
   const surface = keep(new oc.BRepAdaptor_Surface_2(face, true));
   const direction = keep(keep(keep(surface.Plane()).Axis()).Direction());
   const normal = toUnit([direction.X(), direction.Y(), direction.Z()]);
@@ -435,7 +435,7 @@ function placementOf(profile: ProfileFrame, path: PathStart): RigidTransformSpec
  * **2026-09-05 に Node で実測した結果:** 実行時には
  * `pipe.SetTransitionMode(oc.BRepBuilderAPI_TransitionMode.BRepBuilderAPI_RightCorner)` が
  * そのまま働き、直角に曲がる経路が留め継ぎで最後までつながる(下の表)。つまり**壁は型検査だけ**である。
- * そこで **`unknown` を経由する述語ガード 1 つ**で絞る。これは**統括が 2026-09-05 に承認した
+ * そこで **`unknown` を経由する述語ガード 1 つ**で絞る。これは**承認を得た
  * `makeSweep.ts` の 1 か所**で、`as` / `any` / `@ts-ignore` / `eslint-disable` は 1 つも使っていない。
  *
  * **この判定が確かめられること:** 「値が null でないオブジェクトであること」だけ。
@@ -443,7 +443,7 @@ function placementOf(profile: ProfileFrame, path: PathStart): RigidTransformSpec
  * embind が作る列挙値は中身の見えない空のオブジェクトなので、形を見て見分ける手立てが無い。
  * したがってこのガードは「OCCT の読み込みが済んでいない/壊れている」ことだけを捕まえる網である。
  *
- * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、写す前に統括へ諮る。
+ * **他の箇所へ広げない。** 別の API で同じ壁に当たったら、写す前に承認を得る。
  */
 function isTransitionMode(value: unknown): value is BRepBuilderAPI_TransitionMode {
   return typeof value === 'object' && value !== null;
@@ -459,7 +459,7 @@ function rightCornerMode(oc: OpenCascadeInstance): BRepBuilderAPI_TransitionMode
 }
 
 /**
- * P11b §0.a-0.4で承認された列挙型の補完。embindの宣言は各値を{}とするため必要。
+ * 承認を得た列挙型の補完。embindの宣言は各値を{}とするため必要。
  * 値は読み込んだOCCTのNoContactそのものとの同一性で検証し、他の列挙/任意オブジェクトは通さない。
  * TypeScript上の列挙構造までは検証できない。実OCCTで方向と断面倍率の結果を別に確認する。
  */
@@ -475,7 +475,7 @@ function applyGuideMode(oc: OpenCascadeInstance, pipe: BRepOffsetAPI_MakePipeShe
   pipe.SetMode_5(guide, true, mode);
 }
 
-/** 掃引の向きの指定を `MakePipeShell` へ渡す(§0.a-0.43)。 */
+/** 掃引の向きの指定を `MakePipeShell` へ渡す。 */
 function applySweepMode(
   oc: OpenCascadeInstance,
   pipe: BRepOffsetAPI_MakePipeShell,
@@ -501,7 +501,7 @@ function applySweepMode(
  * 断るときは利用者へそのまま見せられる日本語の `Error` を投げ、呼び出し側
  * (`recomputeSolids`)が理由として拾う(FR-504、NFR-RE-1。止めずに理由を出す)。
  *
- * 計画書の見出しは `options?: TessellationOptions` を持つが、掃引そのものは
+ * 当初の見出しは `options?: TessellationOptions` を持つが、掃引そのものは
  * テッセレーションの粗さを使わない(粗さは段の種類ごとに `recomputeSolids.ts` が
  * 掛ける)ので受け取らない。`makeSpring.ts` / `makeHole.ts` と同じ判断。
  */
@@ -566,7 +566,7 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
     pipe.Build(keep(new oc.Message_ProgressRange_1()));
     mark('build');
     // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
-    // (docs/報告記録.md 2026-09-03 06:56 の⑤。makeSpring.ts と同じ扱い)。
+    // (makeSpring.ts と同じ扱い)。
     if (!pipe.IsDone()) {
       throw new Error(BUILD_FAILED_MESSAGE);
     }
@@ -575,7 +575,7 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
     if (pipe.MakeSolid()) {
       shape = keep(pipe.Shape());
     } else {
-      // 掃引した殻が閉じていなかったとき(P3 §1.4-5)。殻をソリッドで包む。
+      // 掃引した殻が閉じていなかったとき。殻をソリッドで包む。
       const shell = keep(oc.TopoDS.Shell_1(keep(pipe.Shape())));
       const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shell));
       if (!solidMaker.IsDone()) {

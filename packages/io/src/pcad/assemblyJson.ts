@@ -4,14 +4,14 @@ import { readJointOccurrenceConnections, serializeJointOccurrenceConnections } f
 import { readBoltedJointRecords, serializeBoltedJointRecords } from './codecs/boltedJointRecords.js';
 /**
  * アセンブリ文書と `.pcada` の `document.json` の相互変換
- * (計画書 docs/plans/P7-アセンブリ.md タスク3、§2.2、要件§8、FR-801)。
+ * (要件§8、FR-801)。
  *
  * **書き方は部品の `documentJson.ts` とまったく同じにする。**
  *  - 書き出しは欄を決まった順で組み立てるので、同じ文書からは必ず同じ文字列ができる(決定的)。
  *  - 読み込みは `as` を使わず、欄を 1 つずつ検査して型を確かめる(`guards.ts`)。
  *  - **知らない欄は捨てる。読めない欄が 1 つでもあればファイル全体を断る。**
- *  - 断りのコードは部品と同じ `ParseErrorCode` を使い回す(**エラーコードを増やさない**。
- *    `docs/報告記録.md` 2026-09-04 01:40 の③)。
+ *  - 断りのコードは部品と同じ `ParseErrorCode` を使い回す
+ *    (**エラーコードを増やさない**)。
  *
  * 部品と共通の値(式・パラメータ・部分形状の参照・軸・外観)の変換は `documentJson.ts` から
  * 輸入する(**同じ書式を 2 か所に書かない**)。種類の一覧(`MATE_KINDS`・`JOINT_KINDS`・
@@ -20,7 +20,7 @@ import { readBoltedJointRecords, serializeBoltedJointRecords } from './codecs/bo
  *
  * **保存しないもの**(`rules/04-設計の規律.md`「導出できるものは保存しない」):
  * 部品の形(B-rep・三角形)、合致の解、いまの再生位置、部品表の集計。いずれも
- * 開いてから作り直す(§0.a-0.4、§0.a-0.6)。抱き込んだ部品文書そのものは
+ * 開いてから作り直す。抱き込んだ部品文書そのものは
  * `document.json` ではなく ZIP の別エントリ(`parts/<ref>.json`、`pcadFile.ts`)に入る。
  */
 
@@ -132,7 +132,7 @@ const PRESENTATION_BODY_KINDS: readonly PresentationStep['body']['kind'][] = ['e
 // ---------------------------------------------------------------------------
 
 /**
- * 規格部品の追加の指定(§0.a-0.34)を**鍵の順に並べ直す**。
+ * 規格部品の追加の指定を**鍵の順に並べ直す**。
  *
  * 表の並び順は作った側の都合で変わるので、**同じ中身から同じバイト列**ができる約束
  * (`pcadFile.ts` 冒頭)を守るために毎回そろえる(添付の `sortedEntries` と同じ理由)。
@@ -150,7 +150,7 @@ function serializeStandardOptions(
   return sorted;
 }
 
-/** 部品の出どころ(§0.a-0.3)。種類ごとに欄が違うので `kind` で分岐する。 */
+/** 部品の出どころ。種類ごとに欄が違うので `kind` で分岐する。 */
 function serializeComponentSource(source: ComponentSource): ComponentSource {
   switch (source.kind) {
     case 'part':
@@ -158,7 +158,7 @@ function serializeComponentSource(source: ComponentSource): ComponentSource {
     case 'subAssembly':
       return { kind: 'subAssembly', assemblyRef: source.assemblyRef };
     case 'standardPart':
-      // 呼び寸法だけを保存し、組み立てた部品文書は保存しない(§0.a-0.35)。
+      // 呼び寸法だけを保存し、組み立てた部品文書は保存しない。
       return {
         kind: 'standardPart',
         catalog: source.catalog,
@@ -171,8 +171,8 @@ function serializeComponentSource(source: ComponentSource): ComponentSource {
 }
 
 /**
- * 配置(§2.4)。位置は式のまま、向きは四元数の 4 数をそのまま書く。
- * **`w >= 0` へ揃えるのは model の `normalizePlacement` の仕事**(§0.a-0.54)で、
+ * 配置。位置は式のまま、向きは四元数の 4 数をそのまま書く。
+ * **`w >= 0` へ揃えるのは model の `normalizePlacement` の仕事**で、
  * ここでは受け取った値を写すだけにする(同じ正規化を 2 か所に置かない)。
  */
 function serializePlacement(placement: Placement): Placement {
@@ -191,7 +191,7 @@ function serializePlacement(placement: Placement): Placement {
   };
 }
 
-/** 合致・ジョイントの対象(§0.a-0.14)。部分形状は P3 の指紋つきの参照をそのまま使う。 */
+/** 合致・ジョイントの対象。部分形状は部品の指紋つきの参照をそのまま使う。 */
 function serializeMateTarget(target: MateTarget): MateTarget {
   switch (target.kind) {
     case 'subShape':
@@ -311,7 +311,7 @@ function serializePresentationStep(step: PresentationStep): PresentationStep {
         ? {
             kind: 'explode',
             componentIds: [...step.body.componentIds],
-            // 向きは P5 の `AxisSpec`(= `RevolveAxis`)を流用する(§0.a-0.36)。
+            // 向きは部品の `AxisSpec`(= `RevolveAxis`)を流用する。
             direction: serializeRevolveAxis(step.body.direction),
             distance: serializeExpression(step.body.distance),
           }
@@ -328,7 +328,7 @@ function serializePresentationStep(step: PresentationStep): PresentationStep {
   };
 }
 
-/** 部品表の見せ方(FR-611)。集計そのものは保存しない(毎回数え直す。§2.10)。 */
+/** 部品表の見せ方(FR-611)。集計そのものは保存しない(毎回数え直す)。 */
 function serializeBomSettings(bom: BomSettings): BomSettings {
   return {
     columns: [...bom.columns],
@@ -355,7 +355,7 @@ function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocu
     ...(document.jointOccurrenceConnections === undefined ? {} : {
       jointOccurrenceConnections: serializeJointOccurrenceConnections(document.jointOccurrenceConnections, document.components),
     }),
-    // Bolted-joint edit records (EX-06). Omitted when empty so files without them keep their exact bytes.
+    // Bolted-joint edit records. Omitted when empty so files without them keep their exact bytes.
     ...(document.boltedJoints === undefined || document.boltedJoints.length === 0 ? {} : {
       boltedJoints: serializeBoltedJointRecords(document.boltedJoints, document.components),
     }),
@@ -399,7 +399,7 @@ export interface WriteAssemblyDocumentOptions {
   /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
   readonly savedAt?: string;
   /**
-   * 抱き込んだ部品の素性(要件§8、§2.3)。**文書そのものは ZIP の別エントリ**なので、
+   * 抱き込んだ部品の素性(要件§8)。**文書そのものは ZIP の別エントリ**なので、
    * ここへ渡すのは「どのファイルから取り込んだか」だけ。渡さなければ空の一覧を書く。
    */
   readonly partFiles?: readonly PcadPartFile[];
@@ -415,7 +415,7 @@ export function writeAssemblyDocument(
 ): string {
   assertReferenceOriginVersion(document, document.schemaVersion);
   const envelope: PcadAssemblyEnvelope = {
-    // 封筒の版は文書の版と同じ値を書く(部品と同じ決めごと。統括の決定④)。
+    // 封筒の版は文書の版と同じ値を書く(部品と同じ決めごと)。
     schema: document.schemaVersion,
     kind: PCAD_ASSEMBLY_KIND,
     app: PCAD_APP_NAME,
@@ -431,7 +431,7 @@ export function writeAssemblyDocument(
 // ---------------------------------------------------------------------------
 
 /**
- * 四元数の 4 数を読む(§2.4)。**長さ 4・4 つとも有限の数**でなければ断る。
+ * 四元数の 4 数を読む。**長さ 4・4 つとも有限の数**でなければ断る。
  *
  * 有限性まで見るのは、壊れたファイルの `NaN` / `Infinity` を通すと、そこから作った
  * 回転行列が丸ごと `NaN` になり、**画面から部品が消えた**ようにしか見えなくなるためである
@@ -554,7 +554,7 @@ function readMateTarget(
  * 置いた部品 1 つ。**外観と材質は省略できる**ので、欄が無いことは不備にしない。
  *
  * 外観に知らないプリセット・柄が入っていたとき(`readAppearanceSpec` が `null` を返す)は、
- * **その部品の色分けだけを落として読み進める**(P5 タスク5 の前方互換と同じ扱い。
+ * **その部品の色分けだけを落として読み進める**(部品の外観の前方互換と同じ扱い。
  * 部品の位置は色より大事で、色が読めないだけでファイルごと開けなくしない)。
  */
 function readComponent(value: unknown, path: string): Checked<AssemblyComponent> {
@@ -911,7 +911,7 @@ function readPresentationBody(
     if (!componentIds.ok) {
       return componentIds;
     }
-    // 分解の向きは P5 の `AxisSpec`(= `RevolveAxis`)を流用する(§0.a-0.36)ので、
+    // 分解の向きは部品の `AxisSpec`(= `RevolveAxis`)を流用するので、
     // 読み手も回転軸のものをそのまま使う(同じ書式を 2 か所に書かない)。
     const direction: Checked<AxisSpec> = readRevolveAxis(record.value, 'direction', path);
     if (!direction.ok) {

@@ -1,9 +1,9 @@
 /**
  * 部品文書の全ての式を、変数表つきで評価し直す
- * (要件 FR-207・FR-502・FR-202、計画書 docs/plans/P4b-スケッチの仕上げ.md §2.6・タスク3)。
+ * (要件 FR-207・FR-502・FR-202)。
  *
  * パラメータ表(名前を付けた数値)の値を1か所変えると、その名前を使っている**すべての欄**が
- * 追従する。追従の実体がここで、流れは §2.6 の①〜⑤である。
+ * 追従する。追従の実体がここで、流れは次の①〜⑤である。
  *   ①〜④ パラメータ表を解いて変数表を作る … `parameters/parameterTable.ts` の `analyzeParameters`
  *   ⑤ その変数表で文書の全式を評価し直す … このファイルの `reevaluatePartDocument`
  *
@@ -97,7 +97,7 @@ function rebuildHoleDepth(depth: HoleDepth, map: ValueMapper): HoleDepth {
 }
 
 /**
- * 穴の入口(ざぐり・皿もみ。FR-422、P5 タスク43)。
+ * 穴の入口(ざぐり・皿もみ。FR-422)。
  * **省略されている(= 広げない)ときは省略のまま返す**(既定を書き込まない)。
  */
 function rebuildHoleEntry(
@@ -118,7 +118,7 @@ function rebuildHoleEntry(
 }
 
 /**
- * 円筒の側面の穴の位置(EX05)。高さと角度はどちらも式なので、変数や元の寸法が変われば
+ * 円筒の側面の穴の位置。高さと角度はどちらも式なので、変数や元の寸法が変われば
  * 解き直す。位置の数と並びは変えない(並びは掘る順で、鍵にも効く)。
  */
 function rebuildCylindricalHole(
@@ -152,7 +152,7 @@ function rebuildChamferSize(size: ChamferSize, map: ValueMapper): ChamferSize {
 
 /**
  * パターンの並べ方(FR-411 直線、FR-412 円形、FR-425 点集合)。向き・軸は参照だけで
- * 式を持たない。**点集合(P5 タスク43)は間隔・個数の欄を持たず、点そのものが式を持つ**
+ * 式を持たない。**点集合は間隔・個数の欄を持たず、点そのものが式を持つ**
  * (球面上の点の緯度・経度。FR-431)ので、平面の指定と同じく点を写す。
  */
 function rebuildPatternPlacement(placement: PatternPlacement, map: ValueMapper): PatternPlacement {
@@ -169,7 +169,7 @@ function rebuildPatternPlacement(placement: PatternPlacement, map: ValueMapper):
   }
 }
 
-/** 基本形状5種の寸法(FR-429、P5 タスク15)。種類ごとに欄が違う。 */
+/** 基本形状5種の寸法(FR-429)。種類ごとに欄が違う。 */
 function rebuildPrimitiveShape(shape: PrimitiveShape, map: ValueMapper): PrimitiveShape {
   switch (shape.kind) {
     case 'sphere':
@@ -200,7 +200,7 @@ function rebuildPrimitiveShape(shape: PrimitiveShape, map: ValueMapper): Primiti
 }
 
 /**
- * 基本形状の基準点(FR-429、P5 タスク15)。式を持つのは座標の指定のときだけで、
+ * 基本形状の基準点(FR-429)。式を持つのは座標の指定のときだけで、
  * スケッチの点・立体の頂点は参照だけ(位置は解決のときに引く)。
  */
 function rebuildSolidOrigin(origin: SolidOrigin, map: ValueMapper): SolidOrigin {
@@ -218,7 +218,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
   switch (feature.kind) {
     case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return mapSheetMetalExpressions(feature, map);
     case 'extrude':
-      // 終端(FR-415)・傾き(FR-401)・薄板(FR-416)の欄は省略できる(P5 タスク43)。
+      // 終端(FR-415)・傾き(FR-401)・薄板(FR-416)の欄は省略できる。
       // 省略されている欄は `undefined` のまま残し、既定を書き込まない
       // (`createPartDocument.ts` の `extrudeShapingOf` が読むときに埋める)。
       return {
@@ -245,7 +245,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         entry: rebuildHoleEntry(feature.entry, map),
         tiltAngle: map(feature.tiltAngle),
         tiltAzimuth: map(feature.tiltAzimuth),
-        // 円筒の側面の穴(EX05)。平面の穴は欄ごと省略のまま(`undefined` の欄を作らない)。
+        // 円筒の側面の穴。平面の穴は欄ごと省略のまま(`undefined` の欄を作らない)。
         ...(feature.cylindrical === undefined
           ? {}
           : { cylindrical: rebuildCylindricalHole(feature.cylindrical, map) }),
@@ -262,7 +262,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         threadLength: map(feature.threadLength),
         tiltAngle: map(feature.tiltAngle),
         tiltAzimuth: map(feature.tiltAzimuth),
-        // 円筒の側面のねじ穴(EX05)。穴と同じく高さと角度の式を解き直す。平面のねじ穴は欄ごと省略のまま。
+        // 円筒の側面のねじ穴。穴と同じく高さと角度の式を解き直す。平面のねじ穴は欄ごと省略のまま。
         ...(feature.cylindrical === undefined
           ? {}
           : { cylindrical: rebuildCylindricalHole(feature.cylindrical, map) }),
@@ -270,7 +270,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
           locations: feature.planar.locations.map(p => ({ x: map(p.x), y: map(p.y) })) } }),
       };
     case 'fillet':
-      // 可変半径(FR-426、タスク46)の終点側は**省略できる欄**なので、押し出しの
+      // 可変半径(FR-426)の終点側は**省略できる欄**なので、押し出しの
       // `taperAngle` と同じく「あるときだけ写す」(既定を各所へ写さない)。
       return {
         ...feature,
@@ -303,11 +303,11 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       };
     case 'ruled':
     case 'loft':
-      // 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク25)。断面は参照だけで式を持たず、
-      // 式の欄は「ねじれの補正」1 つだけ(§0.a-0.28)。
+      // 面をつなぐ・ロフト(FR-430、FR-410)。断面は参照だけで式を持たず、
+      // 式の欄は「ねじれの補正」1 つだけ。
       return { ...feature, twist: map(feature.twist) };
     /*
-      P5 の Should 群(§2.11、タスク43)。**式を持つ欄だけを写す。**
+      Should 群。**式を持つ欄だけを写す。**
       面・辺の指紋、フィーチャーの id、真偽のつまみ、ねじの呼び・系列は式ではないので
       そのまま残る(`...feature` が持ち回る)。
     */
@@ -318,7 +318,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
     case 'faceRotate':
       return { ...feature, angle: map(feature.angle) };
     case 'faceOffset':
-      // 平らな面の移動(EX-18)。式の欄は符号付きの距離 1 つだけ(面の指紋はそのまま)。
+      // 平らな面の移動。式の欄は符号付きの距離 1 つだけ(面の指紋はそのまま)。
       return reevaluateFaceOffset(feature, map);
     case 'mirror':
       // 鏡にする平面は作業平面の id か面の指紋だけで、式を 1 つも持たない。
@@ -353,7 +353,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
     case 'functionSurface':
       return { ...feature, definition: mapFunctionDefinition(feature.definition, map, expression => expression) };
     case 'shell':
-      // くり抜き(FR-418、§2.12、タスク46)。式の欄は壁の厚さ 1 つだけで、
+      // くり抜き(FR-418)。式の欄は壁の厚さ 1 つだけで、
       // 開ける面の指紋・向きのつまみは式ではない。
       return { ...feature, thickness: map(feature.thickness) };
     case 'surfaceCut':
@@ -361,19 +361,19 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         ? { ...feature, blade: { kind: 'plane', plane: rebuildPlaneSpec(feature.blade.plane, map) } }
         : feature;
     case 'cut':
-      // 平面による切断(FR-432、§2.9b、タスク27c)。式は切断面の中(`pointAndAxis` の
+      // 平面による切断(FR-432)。式は切断面の中(`pointAndAxis` の
       // 傾き角・方位角、`face` / `workPlane` のオフセット、点の座標)にある。
       return { ...feature, plane: rebuildPlaneSpec(feature.plane, map) };
     case 'importedSolid':
     case 'importedMesh':
-      // 読み込んだ形の 2 種(FR-802、P6 §2.8、タスク20)。**式の欄を 1 つも持たない**
+      // 読み込んだ形の 2 種(FR-802)。**式の欄を 1 つも持たない**
       // (履歴を持たない形なので、寸法を式で書き直す余地が無い)。素性(`source`)の
       // 単位・バイト数は読み込んだときの記録で、パラメータの値が変わっても動かない。
       return feature;
   }
 }
 
-/** 拡大縮小の倍率(FR-424、P5 タスク43)。全体は1つ、軸ごとは3つの式を持つ。 */
+/** 拡大縮小の倍率(FR-424)。全体は1つ、軸ごとは3つの式を持つ。 */
 function rebuildScaleFactor(factor: ScaleFactor, map: ValueMapper): ScaleFactor {
   switch (factor.kind) {
     case 'uniform':
@@ -383,7 +383,7 @@ function rebuildScaleFactor(factor: ScaleFactor, map: ValueMapper): ScaleFactor 
   }
 }
 
-/** 曲面の作り方5種(FR-428、P5 タスク43)。輪郭・軸・面は参照だけで式を持たない。 */
+/** 曲面の作り方5種(FR-428)。輪郭・軸・面は参照だけで式を持たない。 */
 function rebuildSurfaceOperation(
   operation: SurfaceOperation,
   map: ValueMapper,
@@ -394,7 +394,7 @@ function rebuildSurfaceOperation(
     case 'revolve':
       return { ...operation, angle: map(operation.angle) };
     case 'offset':
-      // 面のオフセット(タスク42b が足した 6 種目)。式の欄は距離 1 つ。
+      // 面のオフセット(6 種目)。式の欄は距離 1 つ。
       return { ...operation, distance: map(operation.distance) };
     case 'planar':
     case 'loft':
@@ -406,7 +406,7 @@ function rebuildSurfaceOperation(
 /**
  * 平面の決め方7種(FR-328)の式の欄を写す。
  *
- * 点そのものが式を持つようになった(球面上の点の緯度・経度。FR-431、P5 タスク19)ので、
+ * 点そのものが式を持つようになった(球面上の点の緯度・経度。FR-431)ので、
  * 「点・辺・面の参照だけだから式は無い」とは言えなくなった。点を持つ 4 種は
  * `mapPointReferenceExpressions` を通す。
  */
@@ -456,7 +456,7 @@ function rebuildReferenceFeature(feature: ReferenceFeature, map: ValueMapper): R
         : feature;
     case 'referenceAxis':
       // 軸そのものは式を持たないが、2 点で決める軸の**点の側**が式を持ちうる
-      // (球面上の点の緯度・経度。FR-431、P5 タスク19)。
+      // (球面上の点の緯度・経度。FR-431)。
       return feature.definition.kind === 'twoPoints'
         ? {
             ...feature,
@@ -557,7 +557,7 @@ export function collectExpressionSources(document: PartDocument): readonly strin
   return sources;
 }
 
-/** 式1つと、それを持っているものの id・表示名(FR-207、P4b タスク22b)。 */
+/** 式1つと、それを持っているものの id・表示名(FR-207)。 */
 export interface ExpressionOwner {
   readonly mathDefinition?: ExpressionValue['mathDefinition'];
   /** 利用者が書いた式の文字列。 */
@@ -597,11 +597,11 @@ function displayNames(document: PartDocument): ReadonlyMap<string, string> {
 }
 
 /**
- * 文書の中の全ての式を、**持ち主の名前つき**で集める(FR-207、P4b タスク22b)。
+ * 文書の中の全ての式を、**持ち主の名前つき**で集める(FR-207)。
  *
  * `collectExpressionSources` は式の文字列しか返さないので、パラメータの削除を断るときに
- * 「3 か所から使われています」としか言えなかった(`docs/報告記録.md` 2026-09-05 実時計
- * 01:05・01:40 の申し送り)。利用者が直しに行けるよう、**どのフィーチャーから使われて
+ * 「3 か所から使われています」としか言えなかった。
+ * 利用者が直しに行けるよう、**どのフィーチャーから使われて
  * いるか**を名前で言えるようにする(NFR-UX-5「なぜできないか、どうすればできるか」)。
  *
  * 歩き方も並びも `collectExpressionSources` と同じ(同じ `mapDocumentExpressions` を通す)。
@@ -768,7 +768,7 @@ const EMPTY_ANALYSIS: ParameterAnalysis = {
  *
  * 表があるときは、文書の式に加えて**パラメータ表自身の値**も新しい変数表で書き直す
  * (表の「値」の列が古い数を見せ続けないように)。循環に含まれる名前は変数表に入らないので、
- * その式は評価できず前回の値のまま据え置かれる(§2.6 の③)。
+ * その式は評価できず前回の値のまま据え置かれる(③)。
  */
 export function applyParameters(document: PartDocument): AppliedParameters {
   if (document.parameters.length === 0) {

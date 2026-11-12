@@ -1,29 +1,29 @@
 /**
- * 外観の割り当て表の組み立て(FR-1106〜1110)。
- * 計画書 docs/plans/P5-高度なソリッド・外観と測定.md §2.2.2、タスク1。
+ * 外観の割り当て表の組み立て。
+ * (FR-1106〜1110)。
  *
  * 割り当ては不変の配列として持ち、追加・差し替え・削除のたびに新しい配列を作る
  * (`part/createPartDocument.ts` の `appendSolid` / `replaceSolid` / `removeSolid` と
  * 同じ流儀。見つからない削除は元の表を同一参照のまま返し、無駄な作り直しをしない)。
  *
  * 同じ対象(立体 1 つ、または面 1 枚)に 2 つ以上の割り当てを重ねない。
- * `isSameAppearanceTarget` で既存の割り当てを探し、あれば差し替える(§2.2.2)。
+ * `isSameAppearanceTarget` で既存の割り当てを探し、あれば差し替える。
  */
 
 import { isSameSubShape } from '../geometry/subShapeRef.js';
 import { integerSerial, nextSerialValue } from '../serialValue.js';
 import type { AppearanceEntry, AppearanceSpec, AppearanceTable, AppearanceTarget } from './types.js';
 
-/** 割り当ての id の接頭辞。採番は「同じ接頭辞の既存 id の最大連番 + 1」(§0.a-0.19 と同じ規則)。 */
+/** 割り当ての id の接頭辞。採番は「同じ接頭辞の既存 id の最大連番 + 1」(フィーチャーの id と同じ規則)。 */
 const APPEARANCE_ID_PREFIX = 'appearance-';
 
-/** 空の表(§0.a-0.1)。起動時の文書(タスク2)がこれを入れる。 */
+/** 空の表。起動時の文書がこれを入れる。 */
 export function emptyAppearanceTable(): AppearanceTable {
   return { entries: [] };
 }
 
 /**
- * 同じ対象を指しているか(§2.2.2)。種類が違えば別対象。立体は id が一致するか、
+ * 同じ対象を指しているか。種類が違えば別対象。立体は id が一致するか、
  * 面は指紋の同一判定(`isSameSubShape`。ボディ・種類・通し番号が一致するか)で見る。
  */
 export function isSameAppearanceTarget(a: AppearanceTarget, b: AppearanceTarget): boolean {
@@ -55,7 +55,7 @@ export function nextAppearanceId(table: AppearanceTable): string {
 }
 
 /**
- * 割り当てを作る、または同じ対象の割り当てがあれば差し替える(§2.2.2「同じ対象に
+ * 割り当てを作る、または同じ対象の割り当てがあれば差し替える(「同じ対象に
  * 2 つ以上の割り当てがあってはならない」)。差し替えるときは id と対象を変えない。
  */
 export function assignAppearance(
@@ -96,7 +96,7 @@ export function clearAppearance(table: AppearanceTable): AppearanceTable {
 
 /**
  * ボディの割り当てを引く。面の割り当ては、カーネルが指紋を選び直した結果(faceIndex)と
- * 突き合わせてから引く必要があるため、ここでは扱わない(§2.2.3、タスク3・4 の橋渡し)。
+ * 突き合わせてから引く必要があるため、ここでは扱わない(面の照合の橋渡しの仕事)。
  */
 export function bodyAppearanceOf(table: AppearanceTable, bodyFeatureId: string): AppearanceSpec | null {
   const entry = table.entries.find(

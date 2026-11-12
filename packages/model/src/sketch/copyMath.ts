@@ -1,14 +1,14 @@
 /**
- * ミラー・複写・配列複写の変換(FR-324、計画書 P4 §2.5・§0.a-0.21、タスク20)。
+ * ミラー・複写・配列複写の変換(FR-324)。
  *
  * ## カーネルを呼ばない
  *
- * 統括の決定 §0.a-0.21 のとおり、鏡映・平行移動・回転はすべて model の `Vec3` 演算で解く。
+ * 設計の決めのとおり、鏡映・平行移動・回転はすべて model の `Vec3` 演算で解く。
  * OCCT の `gp_Trsf` は使わない(往復の待ち時間も、失敗の経路も増やさないため)。
  *
  * ## 元は残し、複製だけを作る
  *
- * 複製系(§0.a-0.10)なので、もとの要素には触れない。`SketchCopyFeature` は
+ * 複製系なので、もとの要素には触れない。`SketchCopyFeature` は
  * **もとの要素を id で参照する 1 つのフィーチャー**で、解決のたびに元の形を写し直す
  * (`types.ts` の `SketchCopyFeature` の注釈に判断の理由)。
  *
@@ -64,7 +64,7 @@ const FULL_TURN_DEGREES = 360;
 
 /**
  * 複製で作れる個数の下限・上限(もとを含めた総数)。
- * P3 のパターン(`part/createPartDocument.ts` の `MAX_PATTERN_COUNT`)と同じ 2〜100 に
+ * 立体のパターン(`part/createPartDocument.ts` の `MAX_PATTERN_COUNT`)と同じ 2〜100 に
  * そろえる。`sketch` から `part` を import すると依存が逆流するので値だけ合わせる。
  */
 export const MIN_COPY_COUNT = 2;
@@ -73,7 +73,7 @@ export const MAX_COPY_COUNT = 100;
 /**
  * 複製にかける 1 つぶんの変換。
  *
- * `rigid` は「軸まわりに回してから平行移動する」剛体変換で、P3 の `RigidTransform`
+ * `rigid` は「軸まわりに回してから平行移動する」剛体変換で、パターンの `RigidTransform`
  * (`part/resolvePart.ts`)と同じ欄立て。`mirror` は平面に対する鏡映で、剛体ではない
  * (向きが裏返る)ので種類を分ける。
  */
@@ -164,7 +164,7 @@ export function mirrorTransform(origin: Vec3, normal: Vec3): SketchTransform {
 
 /**
  * 直線状の配列複写の変換の一覧(FR-324)。もとの位置ぶんは作らないので `count − 1` 個
- * (P3 の `resolvePatternTransforms` と同じ規則)。
+ * (`resolvePatternTransforms` と同じ規則)。
  */
 export function linearArrayTransforms(
   direction: Vec3,
@@ -303,7 +303,7 @@ function findSingleCurve(
 }
 
 /**
- * 複製するもとの要素を、選んだ順に広げる(FR-324、タスク20)。
+ * 複製するもとの要素を、選んだ順に広げる(FR-324)。
  *
  * 参照の解き方はオフセット元(`resolveSketch.ts` の `collectOffsetSource`)と同じ約束で、
  * 単体の線・円弧・楕円・スプラインはそのまま 1 本、矩形などは `index` を省けば全体、
@@ -376,7 +376,7 @@ export function collectCopySource(
  * 複製のしかたを解く
  * ------------------------------------------------------------------ */
 
-/** 複製する個数(もとを含めた総数)の妥当性。P3 のパターンと同じ 2〜100 の整数。 */
+/** 複製する個数(もとを含めた総数)の妥当性。立体のパターンと同じ 2〜100 の整数。 */
 export function checkCopyCount(featureId: string, count: number): SketchError | null {
   if (
     !Number.isFinite(count) ||
@@ -437,7 +437,7 @@ function resolveMirrorTransform(
 }
 
 /**
- * 複製のしかたから変換の一覧を作る(FR-324、タスク20)。
+ * 複製のしかたから変換の一覧を作る(FR-324)。
  * 変換は「もとの位置ぶんを含めない」ので、鏡像・移動は 1 個、配列は `count − 1` 個。
  */
 export function resolveCopyTransforms(
@@ -513,7 +513,7 @@ export function resolveCopyTransforms(
         if (!Number.isFinite(angle) || angle <= 0 || angle > FULL_TURN_DEGREES) {
           return fail(featureId, 'invalidValue', '並べる角度は 0 より大きく 360 以下にしてください。');
         }
-        // 全周でないときは、指定した角度を「もとを含めた個数 − 1」で等分する(P3 と同じ)。
+        // 全周でないときは、指定した角度を「もとを含めた個数 − 1」で等分する(立体のパターンと同じ)。
         stepDegrees = angle / (count - 1);
       }
       const instances: { transform: SketchTransform; role: CopyPointPlacementRole }[] = [];
@@ -536,7 +536,7 @@ export function resolveCopyTransforms(
  * ------------------------------------------------------------------ */
 
 /**
- * 複製フィーチャーを解決する(FR-324、タスク20)。
+ * 複製フィーチャーを解決する(FR-324)。
  *
  * 並び順は**変換が外側、もとの要素が内側**。もとが 4 辺の矩形で複製が 2 個なら
  * `#0`〜`#3` が 1 個目の複製、`#4`〜`#7` が 2 個目になる。こうすると 1 個ぶんが

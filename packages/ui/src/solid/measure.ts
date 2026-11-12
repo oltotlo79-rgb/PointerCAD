@@ -1,25 +1,25 @@
 import { crossVec3, lengthVec3 as norm, dotVec3 as dot, subVec3 as subtract } from '@pointercad/model/vec3';
 import { unitMeasureVector as unit } from './measurementVector.js';
 /**
- * 測定の判定と、カーネルを呼ばずに測れるものの計算(FR-1102、NFR-UX-1、NFR-UX-5、
- * 計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク30、§0.a-0.29/0.30、§2.10.2)。
+ * 測定の判定と、カーネルを呼ばずに測れるものの計算(FR-1102、
+ * NFR-UX-1、NFR-UX-5)。
  *
- * `packages/ui/src/sketch/constraintCommands.ts`(P4b タスク12)の
+ * `packages/ui/src/sketch/constraintCommands.ts`の
  * `constraintReadiness` / `applicableConstraintKinds` と同じ流儀に揃える。DOM にも three.js にも
  * ストアにも触れない純関数だけを置き、判断を Node の単体検査で固定する
- * (`docs/報告記録.md` 2026-09-02 23:09「操作の判断は純関数へ切り出して検査する」)。
+ * (「操作の判断は純関数へ切り出して検査する」方針)。
  *
  * **押したら必ず何かが起きる。** 測れない組み合わせでも `ready: false` と日本語の理由が必ず返り、
- * 呼ぶ側(タスク31・32)はそれをそのまま帯へ出せる(NFR-UX-5「実行してから失敗させない」)。
+ * 呼ぶ側はそれをそのまま帯へ出せる(NFR-UX-5「実行してから失敗させない」)。
  *
  * **必要な情報は既に届いているものから引く。** 面積・長さ・法線・軸・位置はカーネルが再計算の
  * ついでに返している一覧(`SubShapeBody.faces` / `.edges` / `.vertices`)に入っているので、
- * 測るためにカーネルへ問い合わせるのは §0.a-0.30 の 2 つ(2 つの部分形状の最短距離と質量特性)
- * だけにする(`docs/報告記録.md` 2026-09-04 04:30 の②と同じ考え方。Worker の往復を増やさない、
+ * 測るためにカーネルへ問い合わせるのは 2 つ(2 つの部分形状の最短距離と質量特性)
+ * だけにする(Worker の往復を増やさない、
  * NFR-PF-4)。
  *
- * **この場は「何を測れるか」と「一覧から出せる値」だけを決める。** 画面への線と札はタスク31、
- * プロパティ欄・ツールバー・カーネルへの問い合わせはタスク32 の役目。
+ * **この場は「何を測れるか」と「一覧から出せる値」だけを決める。** 画面への線と札は `viewport/createMeasureLayer.ts`、
+ * プロパティ欄・ツールバー・カーネルへの問い合わせは `measureCommands.ts` の役目。
  */
 
 import {
@@ -48,12 +48,12 @@ import {
  * ------------------------------------------------------------------------- */
 
 /**
- * 測れるものの種類(§0.a-0.29)。
+ * 測れるものの種類。
  *
- * 計画書の宣言にある `'none'` は入れていない。**測れないことは種類ではなく理由で表す**ほうが、
+ * 当初の宣言にあった `'none'` は入れていない。**測れないことは種類ではなく理由で表す**ほうが、
  * 「なぜ測れないか」を必ず日本語で言えるためで(NFR-UX-5)、`measureReadiness` は測れないとき
  * `kinds` を空にして `reason` / `message` を返す。代わりに `'massProperties'`(体積・質量・重心。
- * FR-1101)を足した。この 2 点は計画書との差として報告済み。
+ * FR-1101)を足した。
  */
 export type MeasureKind =
   /** 2 点の距離。 */
@@ -64,7 +64,7 @@ export type MeasureKind =
   | 'faceDistance'
   /** 辺と辺の最短距離(カーネルが要る)。 */
   | 'edgeDistance'
-  /** 立体 2 つの最短距離(隙間。カーネルが要る)。§0.a-0.69、タスク32。 */
+  /** 立体 2 つの最短距離(隙間。カーネルが要る)。 */
   | 'bodyDistance'
   /** 面と面のなす角。 */
   | 'faceAngle'
@@ -102,7 +102,7 @@ export function measureKindLabel(kind: MeasureKind): string {
   return t(MEASURE_KIND_LABEL_KEYS[kind]);
 }
 
-/** 表示の単位。計画書 §2.10.2 の 4 種。 */
+/** 表示の単位(4 種)。 */
 export type MeasureUnit = 'mm' | 'degree' | 'mm2' | 'mm3';
 
 /** 種類ごとの単位。 */
@@ -142,7 +142,7 @@ const MEASURE_UNIT_LABEL_KEYS: Readonly<
     mm3: 'measure.unit.cubicMillimeter',
   },
   /*
-   * 表示が inch のとき(FR-811、P6 タスク3)。**角度だけは長さの単位に依らない**ので、
+   * 表示が inch のとき(FR-811)。**角度だけは長さの単位に依らない**ので、
    * mm 側とまったく同じ鍵を指す(度は度のまま)。
    */
   inch: {
@@ -154,7 +154,7 @@ const MEASURE_UNIT_LABEL_KEYS: Readonly<
 };
 
 /**
- * 測った値(内部は必ず mm 系)を、表示の単位の数へ直す(FR-811、P6 §2.9)。
+ * 測った値(内部は必ず mm 系)を、表示の単位の数へ直す(FR-811)。
  *
  * **換算の次数は測る種類で違う**(長さは 25.4、面積は 2 乗、体積は 3 乗)。角度は
  * 長さの単位に依らないのでそのまま返す。`switch` に `default` を書かないので、
@@ -206,17 +206,17 @@ const REJECTION_MESSAGE_KEYS: Readonly<Record<MeasureRejectionReason, MessageKey
   missingTarget: 'measureError.missingTarget',
 };
 
-/** 断りの文言の鍵。帯の案内(タスク32)も同じ鍵を引く。 */
+/** 断りの文言の鍵。帯の案内も同じ鍵を引く。 */
 export function measureRejectionMessageKey(reason: MeasureRejectionReason): MessageKey {
   return REJECTION_MESSAGE_KEYS[reason];
 }
 
 /**
- * カーネルが測れなかったときの断りの鍵(§0.a-0.30)。
+ * カーネルが測れなかったときの断りの鍵。
  *
- * 形がキャッシュに無いときは、呼ぶ側(タスク32)が**再計算の完了を待って自動で 1 回だけ
+ * 形がキャッシュに無いときは、呼ぶ側が**再計算の完了を待って自動で 1 回だけ
  * 測り直し**、それでも測れなければこの文言で断る。文言はカーネルが返す断り
- * (計画書 §2.10.1 の「もう一度お試しください。」)とそろえてあり、画面に出る日本語は
+ * (「もう一度お試しください。」)とそろえてあり、画面に出る日本語は
  * どちらの経路でも同じになる。
  */
 export const MEASURE_FAILED_MESSAGE_KEY: MessageKey = 'measureError.failed';
@@ -226,9 +226,9 @@ export const MEASURE_FAILED_MESSAGE_KEY: MessageKey = 'measureError.failed';
  * ------------------------------------------------------------------------- */
 
 /**
- * 測るのに要るボディ。タスク20 の `SubShapeBody`(面・辺・頂点の一覧)に体積を足したもの。
+ * 測るのに要るボディ。`SubShapeBody`(面・辺・頂点の一覧)に体積を足したもの。
  *
- * `@pointercad/model` の `SolidBody` はこの形をそのまま満たすので、呼び出し側(タスク31・32)は
+ * `@pointercad/model` の `SolidBody` はこの形をそのまま満たすので、呼び出し側は
  * 詰め替えずに渡せる。体積を別の型で足しているのは、`subShapeSelection.ts` の `SubShapeBody` が
  * 「部分形状を選ぶのに要るものだけ」を持つ型で、測定の都合で欄を増やす場所ではないため。
  */
@@ -242,7 +242,7 @@ export interface MeasureBody extends SubShapeBody {
  * 測る相手 1 つ。
  *
  * 指し方は既存のものに合わせる(部分形状は指紋つきの `SubShapeRef`、立体はそれを作った
- * フィーチャーの id)。model 側の橋渡し(タスク29 の `MeasureTarget`)が
+ * フィーチャーの id)。model 側の橋渡し(`MeasureTarget`)が
  * `{ bodyFeatureId, subShape: SubShapeRef | null }` を受けるので、そのまま詰め替えられる。
  */
 export interface MeasureTarget {
@@ -254,7 +254,7 @@ export interface MeasureTarget {
   readonly ref: SubShapeRef | null;
   /** 一覧の通し番号。立体そのものを選んだときは null。 */
   readonly index: number | null;
-  /** 元の要素 id。画面の強調(タスク31)がそのまま使える。 */
+  /** 元の要素 id。画面の強調がそのまま使える。 */
   readonly elementId: string;
 }
 
@@ -304,8 +304,8 @@ function ready(
 /**
  * 選んだもの 1 つを、種類ごとの素性つきで持つ(この場の中だけで使う)。
  *
- * ボディの型を型変数にしてあるのは、**「何を測れるか」の判定には体積が要らない**ため
- * (タスク32)。ツールバーのボタンの入り切り(`solidToolReadiness`)が渡してくるのは
+ * ボディの型を型変数にしてあるのは、**「何を測れるか」の判定には体積が要らない**ため。
+ * ツールバーのボタンの入り切り(`solidToolReadiness`)が渡してくるのは
  * 体積を持たない `SubShapeBody` の一覧なので、判定だけはそれで通るようにする。
  * 値を出す側(`measureLocally`)は体積を使うので `MeasureBody` のままにする。
  */
@@ -336,7 +336,7 @@ function entryAt<T extends { readonly index: number }>(
 /**
  * 要素 id 1 つを読み取る。
  * 立体そのものの id は `bodies` に載っているかで判定する(id の接頭辞では判定しない。
- * `docs/報告記録.md` 2026-09-03 13:05 の②)。
+ * 文書・一覧への所属で見る)。
  */
 function resolveTarget<B extends SubShapeBody>(
   bodies: readonly B[],
@@ -408,7 +408,7 @@ function crossLength(a: Vec3, b: Vec3): number {
 
 /**
  * 2 つの向きのなす角(度、0〜90)。裏表を区別しないので、逆向きどうしは 0 度になる
- * (面の表裏で角度が変わると利用者の期待から外れるため。計画書タスク30 の検証表)。
+ * (面の表裏で角度が変わると利用者の期待から外れるため)。
  *
  * `acos` ではなく `atan2(|a×b|, |a·b|)` を使う。`acos` は 0 度・180 度の近くで
  * 入力のわずかな誤差が角度の誤差へ大きく効くのに対し、`atan2` はどの角度でも精度が保てる。
@@ -447,7 +447,7 @@ function lineDirectionOf(edge: SolidEdgeEntry): Vec3 | null {
 }
 
 /* ---------------------------------------------------------------------------
- * 何を測れるか(§0.a-0.29)
+ * 何を測れるか
  * ------------------------------------------------------------------------- */
 
 /** 2 つ選んだときの規則。選んだ順は見ない(どちらを先に選んでも同じ結果)。 */
@@ -457,7 +457,7 @@ function kindsForPair(
 ): readonly MeasureKind[] {
   if (first.kind === 'body' && second.kind === 'body') {
     /*
-      立体 2 つの隙間(§0.a-0.69)。カーネルの最短距離は形どうし全般で測れるので、
+      立体 2 つの隙間。カーネルの最短距離は形どうし全般で測れるので、
       面や辺と同じ 1 本の道でそのまま測れる(`measureLocally` は null を返す)。
     */
     return ['bodyDistance'];
@@ -473,7 +473,7 @@ function kindsForPair(
       return ['faceDistance'];
     }
     /*
-      平面どうしの距離は「平行なときだけ」測る(計画書タスク30 の手順3)。交わる 2 平面の
+      平面どうしの距離は「平行なときだけ」測る。交わる 2 平面の
       「距離」は 0 にしかならず、利用者が知りたいのは角度のため。
     */
     return isParallel(normalA, normalB) ? ['faceDistance', 'faceAngle'] : ['faceAngle'];
@@ -495,21 +495,21 @@ function kindsForPair(
   ) {
     return ['pointFaceDistance'];
   }
-  // 点と辺、面と辺、立体と部分形状。§0.a-0.29 に規則が無いので測らない。
+  // 点と辺、面と辺、立体と部分形状。測る規則を決めていないので測らない。
   return NO_KINDS;
 }
 
 /**
- * 選んでいるものから、何を測れるかを決める(§0.a-0.29、NFR-UX-1)。
+ * 選んでいるものから、何を測れるかを決める(NFR-UX-1)。
  *
  * 規則: 頂点2=距離 / 面2=距離と角度 / 辺2=角度と最短距離 / 頂点+面=点と面の距離 /
- * 立体2=最短距離(§0.a-0.69) / 面1=面積 / 辺1=長さ / 立体1=体積と質量特性。
+ * 立体2=最短距離 / 面1=面積 / 辺1=長さ / 立体1=体積と質量特性。
  * **選択の順序は見ない**(2 つ選ばれていれば十分)。
  *
  * 測れないときは `ready: false` と日本語の理由を返す。呼ぶ側は帯へそのまま出せる(NFR-UX-5)。
  *
  * **体積を持たない一覧(`SubShapeBody`)でも判定できる。** ツールバーのボタンの入り切りは
- * `solidToolReadiness` 経由でこの関数を呼び、そこに届く一覧に体積が無いため(タスク32)。
+ * `solidToolReadiness` 経由でこの関数を呼び、そこに届く一覧に体積が無いため。
  */
 export function measureReadiness(
   selection: readonly string[],
@@ -538,7 +538,7 @@ export function measureReadiness(
       case 'edge':
         return ready(['edgeLength'], targets);
       case 'body':
-        // 体積は一覧から出せる。重心・慣性モーメントはカーネルが要る(§0.a-0.30、FR-1101)。
+        // 体積は一覧から出せる。重心・慣性モーメントはカーネルが要る(FR-1101)。
         return ready(['bodyVolume', 'massProperties'], targets);
       case 'vertex':
         // 点 1 つだけでは測るものが無い。2 つ目を選べば距離になる。
@@ -550,7 +550,7 @@ export function measureReadiness(
 }
 
 /* ---------------------------------------------------------------------------
- * カーネルを呼ばずに測る(§2.10.2)
+ * カーネルを呼ばずに測る
  * ------------------------------------------------------------------------- */
 
 /** 一覧から出せた測定の結果。 */
@@ -771,9 +771,9 @@ function bodyVolume(resolved: readonly ResolvedTarget[]): LocalMeasureResult | n
 }
 
 /**
- * カーネルを呼ばずに測れるものを測る(§2.10.2)。
+ * カーネルを呼ばずに測れるものを測る。
  *
- * 出せないときは null を返す。呼ぶ側(タスク32)はそのときだけカーネルへ問い合わせる。
+ * 出せないときは null を返す。呼ぶ側はそのときだけカーネルへ問い合わせる。
  * null になるのは、①種類がそもそもカーネル向き(`needsKernel` が真)、②平面でない面の距離、
  * ③相手が一覧から消えた、④値が数にならない(退化した形)、のいずれか。
  */
@@ -803,7 +803,7 @@ export function measureLocally(
     case 'edgeDistance':
     case 'bodyDistance':
     case 'massProperties':
-      // 最短距離(辺どうし・立体どうし)と質量特性はカーネルの役目(§0.a-0.30、§0.a-0.69)。
+      // 最短距離(辺どうし・立体どうし)と質量特性はカーネルの役目。
       return null;
   }
 }
@@ -816,7 +816,7 @@ export function measureLocally(
 const MEASURE_FRACTION_DIGITS = 3;
 
 /**
- * 表示の単位ごとの小数の桁数(FR-811、P6 §2.9)。
+ * 表示の単位ごとの小数の桁数(FR-811)。
  *
  * inch 側は model の `INCH_DISPLAY_DIGITS`(`formatDisplayLength` が使う桁)をそのまま
  * 見る。同じ「inch の桁」を 2 か所に書くと、片方だけ直したときに欄ごとに見え方が変わる。
@@ -833,11 +833,11 @@ const MEASURE_FRACTION_DIGITS_BY_UNIT: Readonly<Record<LengthUnit, number>> = {
  *
  * **`formatVolume`(`solidSummary.ts`)とは丸め方が違う。** あちらはプロパティ欄の体積を
  * 式エンジンの表示規則(有効数字 12 桁)で出すが、測定は「読み取る数字」なので小数 3 桁に
- * そろえる(計画書タスク30 の手順4)。1μm 単位まで読めれば十分で、桁が揺れると
- * 画面の札(タスク31)の幅が測るたびに変わる。
+ * そろえる。1μm 単位まで読めれば十分で、桁が揺れると
+ * 画面の札の幅が測るたびに変わる。
  *
  * `unit` は**表示の単位**(FR-811。端末の設定で、内部の値は mm のまま)。省くと mm に
- * なるので、P5 までの呼び出しは 1 文字も見た目が変わらない。
+ * なるので、従来の呼び出しは 1 文字も見た目が変わらない。
  */
 export function formatMeasure(result: LocalMeasureResult, unit: LengthUnit = 'mm'): string {
   const value = displayMeasureValue(result.value, result.unit, unit);

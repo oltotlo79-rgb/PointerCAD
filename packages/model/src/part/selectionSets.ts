@@ -1,6 +1,6 @@
 /**
- * 選択セットの組み立て(FR-112「選んだ組に名前を付けて保存・呼び出しできる」)。
- * 計画書 docs/plans/P6-入出力.md §0.a-0.44、§2.13、タスク37。
+ * 選択セットの組み立て。
+ * (FR-112「選んだ組に名前を付けて保存・呼び出しできる」)。
  *
  * ここに置くのは**純関数だけ**で、DOM にも React にもカーネルにも触れない。
  * セットは不変の配列として持ち、足す・消す・名前を変えるたびに新しい配列を作る
@@ -51,7 +51,7 @@ export function isSameSelectionMember(a: SelectionMember, b: SelectionMember): b
   return a.kind === b.kind && isSameSubShape(a.ref, b.ref);
 }
 
-/** セットを作れなかった理由(§2.13 の表)。文言は `packages/ui` が持つ。 */
+/** セットを作れなかった理由。文言は `packages/ui` が持つ。 */
 export type SelectionSetRefusal =
   /** 名前が空(空白だけも空とみなす)。FR-112 は名前で呼び出すので、名無しは作れない。 */
   'emptyName';
@@ -71,7 +71,7 @@ export type RenameSelectionSetResult =
  *
  * 空白を落とすのは、見た目が同じ名前(`上面` と `上面 `)が一覧に並ぶと利用者が
  * 区別できないためである。**空白を落とした後で同じ名前になっても許す**
- * (§2.13「同じ名前を 2 つ ── 許す(id で区別する)」)。
+ * (「同じ名前を 2 つ ── 許す(id で区別する)」)。
  */
 function normalizeName(name: string): string | null {
   const trimmed = name.trim();
@@ -106,7 +106,7 @@ function dedupeMembers(members: readonly SelectionMember[]): readonly SelectionM
 }
 
 /**
- * セットを作る(FR-112)。**空のセットも作れる**(§2.13。先に名前だけ決めて、
+ * セットを作る(FR-112)。**空のセットも作れる**(先に名前だけ決めて、
  * 後から `addSelectionSetMembers` で足す使い方を許す)。
  * 名前が空(空白だけを含む)のときだけ断る。
  */
@@ -128,7 +128,7 @@ export function createSelectionSet(
 }
 
 /**
- * セットの名前を変える(FR-112)。**同じ名前が既にあっても許す**(§2.13)。
+ * セットの名前を変える(FR-112)。**同じ名前が既にあっても許す**。
  * id が見つからなければ元の配列を同一参照のまま返す(`ok: true`。名前の検査は先に通す)。
  */
 export function renameSelectionSet(
@@ -187,7 +187,7 @@ export function addSelectionSetMembers(
 }
 
 /**
- * セットから要素を外す。**セットそのものは残る**(0 件になっても消さない。§2.13 の
+ * セットから要素を外す。**セットそのものは残る**(0 件になっても消さない。
  * 「面が消えた ── 警告してその 1 件をセットから外す(セットは残る)」と同じ扱い)。
  * 何も減らなければ元の配列を同一参照のまま返す。
  */
@@ -217,7 +217,7 @@ export interface PruneSelectionSetsResult {
 }
 
 /**
- * 消えたボディを指す要素をセットから外す(§2.13「面が消えた ── 警告してその 1 件を
+ * 消えたボディを指す要素をセットから外す(「面が消えた ── 警告してその 1 件を
  * セットから外す。セットは残る」、FR-504、NFR-RE-1)。
  *
  * `appearance/appearanceTable.ts` の `pruneAppearance` と同じ判定(要素が指している
@@ -227,7 +227,7 @@ export interface PruneSelectionSetsResult {
  * 選び直して足せる(FR-112)。
  *
  * **部分形状そのものが選び直せなかったとき**(ボディは生きているが指紋が外れたとき)は、
- * ここではなくカーネルとの照合(P5 の `appearanceMatches` と同じ仕組み)が判断する。
+ * ここではなくカーネルとの照合(`appearanceMatches` と同じ仕組み)が判断する。
  * model は「ボディが消えた」だけを見る。
  *
  * **種類は問わない。** 立体・面・辺・頂点のどれであっても、指しているボディの id を

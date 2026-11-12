@@ -75,7 +75,7 @@ export async function newAssembly(deps: PartFileDeps): Promise<void> {
  *
  * `request` は破棄の確認に答えた時点の札(`beginOpenRequest`)。読込の間に文書が変わったら
  * `mayOpenAfterRead` が改めて確認するか、開くのをやめる(組立を開くと取り消しの履歴を
- * 作り直すため、確認なしに置き換えると読込中の編集を取り戻せない。R02)。
+ * 作り直すため、確認なしに置き換えると読込中の編集を取り戻せない)。
  */
 export async function applyPickedAssembly(
   picked: PickedFile,

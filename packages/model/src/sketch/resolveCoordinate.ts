@@ -1,18 +1,18 @@
 /**
- * 1 点の指定(絶対・相対・極)をワールド座標へ直す(計画書 docs/plans/P1-式とスケッチ.md タスク10)。
+ * 1 点の指定(絶対・相対・極)をワールド座標へ直す。
  *
  * 例外を投げず、失敗も戻り値(ResolveOutcome)で返す。1 つの点が解決できなくても
  * 残りのフィーチャーの解決を続け、理由をツリーへ出せるようにするため(FR-504、NFR-RE-1)。
  *
- * 履歴全体をたどるのはタスク11 の担当で、ここは「そこまでに解決できたもの」を
+ * 履歴全体をたどるのは部品文書の解決の役目で、ここは「そこまでに解決できたもの」を
  * ResolveContext で受け取るだけにする。前方参照・自己参照が手掛かりに含まれないのは
  * その組み立て方の当然の帰結で、ここでは他の見つからない参照と同じ missingBase になる。
  *
- * P4 タスク10(FR-330、3D スケッチ)で 2 つ広げた。①作図面は無いことがある
+ * 3D スケッチ(FR-330)のために 2 つ広げた。①作図面は無いことがある
  * (`ResolveContext.plane` が null。絶対・相対はそのまま解け、極座標だけ断る)。
  * ②基準に立体の部分形状(頂点・辺・面)を選べる(`PointReference` の `subShape`)。
  *
- * P5 タスク19(FR-431、球面グリッド)でもう 1 つ広げた。③基準に球面上の点を選べる
+ * 球面グリッド(FR-431)のためにもう 1 つ広げた。③基準に球面上の点を選べる
  * (`PointReference` の `sphereGrid`)。球は立体の側にしか無いので、`subShape` と同じく
  * 「引く口」(`ResolveContext.sphere`)を外から渡してもらう。
  */
@@ -29,7 +29,7 @@ import type { FunctionPointResolver as TypeFunctionPointResolver } from '../func
  * 球面上の点(FR-431)の土台になる球。**中心と半径だけ**を見る。
  *
  * 基本形状の向き(`PrimitiveFeature.axis`)を持たないのは、緯度・経度の基準を世界の軸に
- * 固定すると決めたため(`PointReference` の `sphereGrid` の注釈、計画書 §2.8.1)。
+ * 固定すると決めたため(`PointReference` の `sphereGrid` の注釈)。
  */
 export interface ResolvedSphere {
   readonly center: Vec3;
@@ -37,16 +37,16 @@ export interface ResolvedSphere {
 }
 
 /**
- * 球面上の点の断り(FR-431、計画書 §2.8.1)。球が消えた・球でない・まだ作られていない
+ * 球面上の点の断り(FR-431)。球が消えた・球でない・まだ作られていない
  * (前方参照)のどれも、利用者から見れば「選び直す」で直るので 1 つの文言にまとめる。
  */
 export const MISSING_SPHERE_MESSAGE = '球が見つかりません。球を選び直してください。';
 
-/** 緯度が範囲外のときの断り(FR-431、計画書 タスク19 の断り方の表)。 */
+/** 緯度が範囲外のときの断り(FR-431、断り方の表)。 */
 export const LATITUDE_RANGE_MESSAGE = '緯度は −90 度から 90 度の間で指定してください。';
 
 /**
- * 球面上の点の位置(FR-431、計画書 §2.8.1)。
+ * 球面上の点の位置(FR-431)。
  *
  *   点 = C + r(cos φ cos λ, cos φ sin λ, sin φ)   φ = 緯度、λ = 経度(どちらも度)
  *
@@ -74,7 +74,7 @@ export function vertexKey(featureId: string, vertex: 'start' | 'end' | 'center')
 }
 
 /**
- * 部品の基準点(ReferencePointFeature)を引いた結果(EX-18 組立の文脈の参照からスケッチへ)。
+ * 部品の基準点(ReferencePointFeature)を引いた結果(組立の文脈の参照からスケッチへ)。
  * none は「その id の部品の基準点は無い」、refused は「あるが基準にできない(古い・循環し得る)」。
  */
 export type PartPointLookup =
@@ -87,10 +87,10 @@ export const NO_PART_POINT: PartPointLookup = { kind: 'none' };
 /** 解決に使える手掛かり。フィーチャーを履歴順にたどりながら育てる。 */
 export interface ResolveContext {
   /**
-   * そのフィーチャーの作図面。極座標の角度と仰角の基準(§2.8)。
+   * そのフィーチャーの作図面。極座標の角度と仰角の基準。
    * **3D スケッチ(FR-330、`planeId` が `FREE_WORK_PLANE_ID`)では null**。
    * 絶対・相対の指定は作図面を見ないのでそのまま解けるが、極座標は基準になる
-   * 第1軸・第2軸が無いので断る(§0.a-0.5。UI も 3D スケッチでは極を出さない)。
+   * 第1軸・第2軸が無いので断る(UI も 3D スケッチでは極を出さない)。
    */
   readonly plane: WorkPlane | null;
   /** ここまでに解決できた点。id は点フィーチャーなら featureId、点列の n 番目なら `featureId#n`。 */
@@ -103,17 +103,17 @@ export interface ResolveContext {
   /** 要素の端点・中心。鍵は vertexKey() の形。 */
   readonly vertices: ReadonlyMap<string, Vec3>;
   /**
-   * 立体の部分形状(頂点・辺・面)の選び直し(FR-330、タスク10)。
+   * 立体の部分形状(頂点・辺・面)の選び直し(FR-330)。
    * 渡されなければ保存された指紋の位置をそのまま使う(`subShapeFromFingerprint`)。
    *
    * スケッチ 1 本は立体を知らないので、**上流の立体の変化への追従は部品文書の側**
-   * (`resolvePart.ts`。タスク25 で配線する)がこの口へ選び直しの関数を渡して行う。
+   * (`resolvePart.ts`)がこの口へ選び直しの関数を渡して行う。
    * `geometry/planeSpec.ts` の `PlaneResolveContext.subShape` と同じ形にしてあるので、
    * 部品文書側は同じ関数を両方へそのまま渡せる。
    */
   readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
   /**
-   * 球の基本形状(FR-429)を id から引く(球面上の点 FR-431、P5 タスク19)。
+   * 球の基本形状(FR-429)を id から引く(球面上の点 FR-431)。
    *
    * `subShape` と同じ理由でここを口にしてある。**スケッチ 1 本は立体を知らない**ので、
    * 球の中心・半径を解けるのは部品文書の側(`part/resolveReferences.ts`・`part/resolvePart.ts`)
@@ -126,7 +126,7 @@ export interface ResolveContext {
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
   readonly functionPoint?: TypeFunctionPointResolver;
   /**
-   * 部品の基準点を id から引く(EX-18)。スケッチ 1 本は部品を知らないので、`sphere` と同じく
+   * 部品の基準点を id から引く。スケッチ 1 本は部品を知らないので、`sphere` と同じく
    * 部品文書の側(`resolvePart.ts`)が渡す。渡されなければ部品の基準点は無い扱い(従来どおり)。
    */
   readonly partPoint?: (pointId: string) => PartPointLookup;
@@ -157,7 +157,7 @@ export function resolvePointReference(
         :{ok:true,value:point};
     }
     case 'origin':
-      // ワールド原点。P1 の作図面はすべて原点を通るので平面の原点とも一致する(§2.8)。
+      // ワールド原点。基準の作図面はすべて原点を通るので平面の原点とも一致する。
       return { ok: true, value: ORIGIN };
     case 'previous':
       if (context.previous === null) {
@@ -166,7 +166,7 @@ export function resolvePointReference(
       return { ok: true, value: context.previous };
     case 'point': {
       const found = context.points.find((point) => point.id === reference.pointId);
-      // 部品の基準点(EX-18)。同じ id のスケッチの点もあれば、どちらかを黙って選ばずに断る。
+      // 部品の基準点。同じ id のスケッチの点もあれば、どちらかを黙って選ばずに断る。
       const part = context.partPoint?.(reference.pointId) ?? NO_PART_POINT;
       if (found !== undefined && part.kind !== 'none') {
         return failure(featureId, 'invalidValue',
@@ -217,7 +217,7 @@ export function resolvePointReference(
         return { ok: false, error: invalid };
       }
       // 緯度は極を越えると裏側へ回り込んでしまい、利用者の意図と一致しない。
-      // 経度は 1 周回れば同じ点なので範囲を制限しない(計画書 タスク19 の手順 4)。
+      // 経度は 1 周回れば同じ点なので範囲を制限しない。
       if (reference.latitude.value < -90 || reference.latitude.value > 90) {
         return failure(featureId, 'invalidValue', LATITUDE_RANGE_MESSAGE);
       }
@@ -281,7 +281,7 @@ export function resolveCoordinate(
     };
   }
 
-  // 3D スケッチには角度の基準になる作図面が無い(§0.a-0.5、FR-330)。
+  // 3D スケッチには角度の基準になる作図面が無い(FR-330)。
   // 値の不備より先に伝える。基準が無ければ角度の意味自体が決まらないため。
   if (context.plane === null) {
     return failure(
@@ -299,7 +299,7 @@ export function resolveCoordinate(
   if (invalid !== null) {
     return { ok: false, error: invalid };
   }
-  // 角度は作図面の第1軸から第2軸へ向かう向きが正、仰角は法線側が正(§2.6、§2.8)。
+  // 角度は作図面の第1軸から第2軸へ向かう向きが正、仰角は法線側が正。
   const offset = polarOffset(
     context.plane,
     input.distance.value,

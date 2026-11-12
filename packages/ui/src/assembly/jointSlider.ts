@@ -1,4 +1,4 @@
-/** P7 タスク22。ジョイントのつまみの範囲と入力値を決める純関数。 */
+/** ジョイントのつまみの範囲と入力値を決める純関数。 */
 import { evaluateExpression } from '@pointercad/expression';
 import {
   assemblyExpressionContext,

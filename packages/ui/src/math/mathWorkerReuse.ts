@@ -20,7 +20,7 @@ const MAXIMUM_USES = 16;
  * when the last editor closes; document or owner changes and the 16-use limit still release it.
  *
  * Math editors have a separate slot (`acquireEditor`). Every opening of an editor used to create and
- * prepare its own Worker (Chromium 16.7 s, Firefox 65 s, 2026-09-27) and to terminate it on closing.
+ * prepare its own Worker (Chromium 16.7 s, Firefox 65 s) and to terminate it on closing.
  * The Worker of a closed editor is now kept for the next editor of the same document under the same
  * limits (document change, idle time, use limit, full clear). A Worker whose request was cancelled,
  * timed out or retired has already been terminated by its group and is never returned. The

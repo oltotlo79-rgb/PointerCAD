@@ -110,12 +110,66 @@ async function homeView(page: Page): Promise<void> {
   await page.locator('canvas.pcad-viewport__canvas').focus();
   await page.keyboard.press('Home');
 }
+/**
+ * Failure-only diagnostic for a tree row that did not become hovered (CI run 43102593955, EX-18 Electron B/e: 30 s
+ * without the class). Reads the topmost element at the pointer, the canvas box, every component row class, the mesh
+ * ledger (host epoch changes and receipt validations), the assembly display owner, recompute and render statistics and,
+ * on the desktop, the window state; attaches them and prints one `[hover診断]` line for the CI log. It only reads, and a
+ * read failure never hides the original error. The judgement and its time limit stay with the caller.
+ */
+export async function attachHoverDiagnostics(page: Page, info: TestInfo, point: readonly [number, number],
+  app: ElectronApplication | undefined): Promise<void> {
+  let body: string;
+  try {
+    const viewport = await page.evaluate(([x, y]) => {
+      const call = (name: string): unknown => {
+        const read: unknown = Reflect.get(window, name);
+        try { return typeof read === 'function' ? Reflect.apply(read, window, []) : 'unavailable'; }
+        catch (error) { return `threw: ${String(error)}`; }
+      };
+      const field = (value: unknown, key: string): unknown => value !== null && typeof value === 'object' ? Reflect.get(value, key) : undefined;
+      const tail = (value: unknown, count: number): unknown => Array.isArray(value) ? value.slice(-count) : value;
+      const top = document.elementFromPoint(x, y);
+      const box = document.querySelector('canvas.pcad-viewport__canvas')?.getBoundingClientRect();
+      const ledger = call('pcadMeshLedgerDiagnostics');
+      const host = field(ledger, 'host');
+      return { point: [x, y], top: top === null ? null : `${top.tagName}.${top.getAttribute('class') ?? ''}`,
+        canvas: box === undefined ? null : { x: box.x, y: box.y, width: box.width, height: box.height },
+        hasFocus: document.hasFocus(), visibility: document.visibilityState,
+        componentRows: Array.from(document.querySelectorAll('.pcad-tree__row[data-name-search-key^="component:"]'),
+          row => `${row.getAttribute('data-name-search-key') ?? ''} ${row.getAttribute('class') ?? ''}`),
+        meshLedger: typeof ledger === 'object' && ledger !== null ? { host: { epoch: field(host, 'epoch'),
+          changes: tail(field(host, 'changes'), 24) }, validations: tail(field(ledger, 'validations'), 8) } : ledger,
+        assemblyOwner: call('pcadViewportAssemblyOwner'), recompute: call('pcadRecomputeStats'),
+        render: call('pcadViewportRenderStats') };
+    }, point);
+    const desktop = app === undefined ? null : await app.evaluate(({ BrowserWindow }) => {
+      const shown = BrowserWindow.getAllWindows()[0];
+      return shown === undefined ? null : { visible: shown.isVisible(), focused: shown.isFocused(),
+        minimized: shown.isMinimized(), bounds: shown.getBounds() };
+    });
+    body = JSON.stringify({ viewport, desktop });
+  } catch (error) {
+    body = JSON.stringify({ unavailable: error instanceof Error ? error.message : String(error) });
+  }
+  await info.attach('hover-diagnostics', { body, contentType: 'application/json' }).catch(() => undefined);
+  console.log(`[hover診断] ${body.slice(0, 4096)}`);
+}
+
+/** Waits for the hovered class exactly as before; only when it fails, the diagnostic above is added and the error rethrown. */
+export async function expectHoveredRow(page: Page, info: TestInfo, row: Locator, point: readonly [number, number],
+  app: ElectronApplication | undefined): Promise<void> {
+  try { await expect(row).toHaveClass(/pcad-tree__row--hovered/u); }
+  catch (error) { await attachHoverDiagnostics(page, info, point, app); throw error; }
+}
+
 /** The page point of a world point that must hit `name` first: the pointer is moved there and the tree row checked. */
-async function grabPoint(page: Page, name: string, world: readonly [number, number, number]): Promise<readonly [number, number]> {
+async function grabPoint(page: Page, info: TestInfo, app: ElectronApplication | undefined, name: string,
+  world: readonly [number, number, number]): Promise<readonly [number, number]> {
   const point = await homeViewPagePoint(page, world);
   await page.mouse.move(...point);
   const row = treeSectionRows(page, '部品').filter({ has: exactLabel(page, name) });
-  await expect(row).toHaveClass(/pcad-tree__row--hovered/u);
+  await expectHoveredRow(page, info, row, point, app);
   return point;
 }
 /**
@@ -170,14 +224,14 @@ export async function assemblyCoupledDragFlow(page: Page, info: TestInfo, app: E
   // 1. Pull the handle to 30 degrees: the leaf would have to turn -60, beyond its 40 degree limit. Refused whole: the
   //    reason is shown and nothing moved (no motion, no child drive, the document as written).
   expect(2 * 30).toBeGreaterThan(DRAG_TURN_LIMIT_DEG);
-  await dragTo(page, await grabPoint(page, 'handle', [HANDLE[0], HANDLE[1], HANDLE[2]]), onHandlePlane(onCircle(30)));
+  await dragTo(page, await grabPoint(page, info, app, 'handle', [HANDLE[0], HANDLE[1], HANDLE[2]]), onHandlePlane(onCircle(30)));
   await expect(page.getByRole('region', { name: REPAIRS, exact: true }).getByRole('alert')).toHaveText(REFUSED_LIMIT);
   await expectWritten(page, true);
   expect(await readOccurrenceDrives(page)).toEqual([]);
 
   // 2. Pull it to 12 degrees (the leaf turns -24, inside the limit): the wheel turns and the coupled arm follows, as
   //    motion only.
-  await dragTo(page, await grabPoint(page, 'handle', [HANDLE[0], HANDLE[1], HANDLE[2]]), onHandlePlane(onCircle(12)));
+  await dragTo(page, await grabPoint(page, info, app, 'handle', [HANDLE[0], HANDLE[1], HANDLE[2]]), onHandlePlane(onCircle(12)));
   try {
     await expect.poll(async () => Math.abs(zDegrees(byName(await readAssemblyStats(page)).get('wheel')?.displayed?.rotation)))
       .toBeGreaterThan(6);
@@ -208,7 +262,7 @@ export async function assemblyCoupledDragFlow(page: Page, info: TestInfo, app: E
   await homeView(page);
   const loose = DRAG_WRITTEN.loose ?? [0, -60, 0];
   const edit = await beginRecompute(page);
-  await dragTo(page, await grabPoint(page, 'loose', [loose[0], loose[1], loose[2]]), [loose[0] + 15, loose[1], loose[2]]);
+  await dragTo(page, await grabPoint(page, info, app, 'loose', [loose[0], loose[1], loose[2]]), [loose[0] + 15, loose[1], loose[2]]);
   await waitForRecompute(page, edit);
   const moved = byName(await readAssemblyStats(page)).get('loose')?.resolved?.position ?? [];
   expect(Math.hypot((moved[0] ?? 0) - loose[0], (moved[1] ?? 0) - loose[1], (moved[2] ?? 0) - loose[2])).toBeGreaterThan(1);

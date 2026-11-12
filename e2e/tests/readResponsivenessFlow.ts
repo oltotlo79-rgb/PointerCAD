@@ -229,10 +229,53 @@ async function referencedReadPath(page: Page, info: TestInfo, mib: 32 | 128, cos
   return { path, check, rawBytes: fixture.rawBytes, meshHash: fixture.originalHash, imageSha: sourceHash };
 }
 
+type ReadSnapshot = Awaited<ReturnType<typeof readObservationSnapshot>>;
+
+/**
+ * One attempt's rows: spans/resets of reads not owned by an earlier attempt, inputs and round trips
+ * from attempt.inputStart. Earlier rows are already in their own attempt files and every row stays in
+ * the final read-<kind>-<mib>(-observation).json, so per-attempt files grow linearly with the reads.
+ * sent/replied/terminated/workerUrls remain the cumulative counters.
+ */
+function attemptEvidence<T>(snapshot: ReadSnapshot, trips: readonly T[], inputStart: number, earlierReadIds: ReadonlySet<string>) {
+  const roundTrips = trips.slice(inputStart);
+  if (snapshot === null || !('spans' in snapshot)) return { audit: snapshot, roundTrips, rows: null };
+  const rows = { spans: snapshot.spans.filter(span => !earlierReadIds.has(span.id)), inputs: snapshot.inputs.slice(inputStart),
+    resets: snapshot.resets.filter(reset => !earlierReadIds.has(reset.readId)) };
+  return { audit: { ...snapshot, ...rows,
+    scope: 'this attempt: spans/resets/inputs and roundTrips start at attempt.inputStart; sent/replied/terminated/workerUrls are cumulative' },
+  roundTrips, rows };
+}
+
+/** One CI log line per real read, so a CI-only shortfall is readable without the artifact. Returns this read's accepted count. */
+function logReadAttempt(label: { kind: string; mib: number; attempt: number; readId: string | null },
+  rows: ReturnType<typeof attemptEvidence>['rows'],
+  trips: readonly { readonly start: number; readonly end: number; readonly ms: number; readonly readId: string | null }[],
+  offset: { readonly lower: number; readonly upper: number } | null, acceptedBefore: number): number {
+  const round = (value: number) => Math.round(value * 10) / 10;
+  const span = rows?.spans.find(candidate => candidate.id === label.readId);
+  // Decisions depend only on each input, its trip, its own span and that span's resets: all are in this slice.
+  const decisions = rows === null || offset === null ? []
+    : readInputMetrics(undefined, rows.inputs, trips, offset, rows.spans, rows.resets).decisions.filter(row => row.readId === label.readId);
+  const counts = new Map<string, number>();
+  for (const decision of decisions) counts.set(decision.reason, (counts.get(decision.reason) ?? 0) + 1);
+  const accepted = counts.get('accepted') ?? 0;
+  counts.delete('accepted');
+  const own = trips.filter(trip => trip.readId === label.readId).map(trip => trip.ms).sort((a, b) => a - b);
+  console.log(`[読込応答] ${JSON.stringify({ kind: label.kind, mib: label.mib, attempt: label.attempt, readId: label.readId,
+    workerMs: span === undefined || span.end === null ? null : round(span.end - span.start), typed: own.length,
+    accepted, excluded: decisions.length - accepted, reasons: Object.fromEntries(counts), total: acceptedBefore + accepted,
+    tripMedianMs: own.length === 0 ? null : round(own[Math.floor(own.length / 2)]),
+    clockOffsetWidthMs: offset === null ? null : round(offset.upper - offset.lower) })}`);
+  return accepted;
+}
+
 /** Fixed collection over ordinary reads; never delay real Worker execution. */
 export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32 | 128,
   kind: 'orphan' | 'referenced', app?: ElectronApplication): Promise<void> {
-  const policy = { minimumInputs: 100, maximumReads: 12, maximumInputsPerRead: 100,
+  // maximumReads only stops a runaway loop; the deadline minus the reserve still bounds the collection.
+  // One 32MiB orphan read admitted 8.0 inputs on Linux CI (run 43102593955: 96 after 12 reads) and 14-15 locally.
+  const policy = { minimumInputs: 100, maximumReads: 40, maximumInputsPerRead: 100,
     reserveForEvidenceAndSaveMs: 30_000, maximumFlowMs: Math.min(120_000, info.timeout), timeoutMs: info.timeout,
     stopRule: 'finish current read then use ALL valid samples once at least 100 exist' };
   const attempts: { attempt: number; start: number; end: number | null; readId: string | null; inputStart: number; inputEnd: number | null }[] = [];
@@ -244,7 +287,7 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
   const spanNotifications: { phase: 'start' | 'end'; id: string; at: number; receivedAt: number }[] = [];
   let offset: { lower: number; upper: number } | null = null;
   let completed = false, startedAt: number | null = null, releasedAt: number | null = null;
-  let failure: string | null = null;
+  let failure: string | null = null, acceptedSoFar = 0;
   const memoryFailures: string[] = [];
   const costs = readFlowCosts(), flowStart = performance.now();
   // Native Playwright's unchanged total test deadline remains authoritative.
@@ -320,8 +363,11 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
         if (metrics.samples.length >= policy.minimumInputs) break;
       } finally {
         row.end = performance.now(); row.inputEnd = await page.evaluate(() => window.pcadReadObservation?.inputs.length ?? null).catch(() => null);
+        const evidence = attemptEvidence(await readObservationSnapshot(page), roundTrips, row.inputStart,
+          new Set(attempts.flatMap(earlier => earlier !== row && earlier.readId !== null ? [earlier.readId] : [])));
         await writeReadEvidence(info, `read-${kind}-${mib}-attempt-${attempt + 1}`, { policy, attempt: row,
-          audit: await readObservationSnapshot(page), roundTrips, clockOffset: offset, workers });
+          audit: evidence.audit, roundTrips: evidence.roundTrips, clockOffset: offset, workers });
+        acceptedSoFar += logReadAttempt({ kind, mib, attempt: row.attempt, readId: row.readId }, evidence.rows, evidence.roundTrips, offset, acceptedSoFar);
       }
     }
     releasedAt = performance.now();

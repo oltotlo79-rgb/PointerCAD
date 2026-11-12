@@ -2812,5 +2812,154 @@ class WarningDenyAtLaunchTests(NewChecksBase):
         self.assertTrue(decision["permissionDecisionReason"].startswith(guard.WARNING_DENY_HEAD))
 
 
+class E2eCoverageTests(NewChecksBase):
+    """検査10: ③が e2e/ の下の変更を許すなら、「## 2」以降に画面検査の証拠の照合 e2e_coverage が要る(rules/06 §10.491)。"""
+
+    MARK = "画面検査の証拠の照合: ③が"
+    ACCEPT = "1. `python -B -X utf8 scratchpad/claude/tools/e2e_coverage.py check --worktree` の結果が足りない組 0。"
+
+    def body(self, acceptance: str = "1. 画面検査が通る。", purpose: str = "背景だけ。") -> str:
+        return (f"## 1. 目的\n\n{purpose}\n\n## 2. 合格条件\n\n{acceptance}\n\n"
+                "## 3. 変えてはいけないもの\n\n- 無し。\n")
+
+    def with_scope_line(self, scope_line: str, body: str | None = None) -> str:
+        return ("① 子エージェントを起こさない。\n② git への書き込み禁止。\n"
+                f"{scope_line}\n\n# 指示書 w\n\n{self.body() if body is None else body}")
+
+    def coverage_errors(self, text: str) -> list[str]:
+        return [message for message in self.errors(text) if self.MARK in message]
+
+    # (a) ③が e2e/tests/x.ts を許し、「## 2」以降に e2e_coverage が無い → 外れ(足すべき合格条件の例と根拠を書く)
+
+    def test_a_scope_allowing_an_e2e_file_without_e2e_coverage_after_section_two_is_denied(self):
+        errors = self.coverage_errors(make_instruction("e2e/tests/x.ts（直す）", self.body()))
+        self.assertEqual(len(errors), 1, errors)
+        message = errors[0]
+        self.assertTrue(message.startswith("x.md 行3: "), message)
+        self.assertIn("③が e2e/tests/x.ts の変更を許すのに、「## 2」以降の本文に e2e_coverage の語が無い。", message)
+        self.assertIn("`python -B -X utf8 scratchpad/claude/tools/e2e_coverage.py check --worktree` の結果が足りない組 0", message)
+        self.assertIn("残る組の一覧を final に書く", message)
+        self.assertIn("rules/06 §10.491", message)
+
+    # (b) 同じ③で、「## 2」以降の合格条件に e2e_coverage がある → 外れなし
+
+    def test_b_e2e_coverage_in_the_acceptance_after_section_two_passes(self):
+        self.assertEqual(self.coverage_errors(make_instruction("e2e/tests/x.ts（直す）", self.body(self.ACCEPT))), [])
+        # 「## 2」以降なら合格条件の後の節でも数える(製品ファイルの直接の検査と同じ範囲)。
+        later = ("## 1. 目的\n\n背景。\n\n## 2. 合格条件\n\n1. 画面検査が通る。\n\n"
+                 "## 5. 成果物\n\n- e2e_coverage.py check --worktree の出力。\n")
+        self.assertEqual(self.coverage_errors(make_instruction("e2e/tests/x.ts（直す）", later)), [])
+
+    # (c) ③が e2e/ を含まない → 外れなし(別の根の下の e2e・名前が e2e で始まる別のフォルダー・バッククォートのコマンドも)
+
+    def test_c_a_scope_without_e2e_paths_is_not_checked(self):
+        for scope in ("packages/model/src/a.ts", "packages/ui/src/e2e/x.ts・docs/e2e/a.md", "scratchpad/c3/e2e/tests/x.ts",
+                      "e2etools/x.ts と e2e2/y.ts",
+                      "packages/ui/src/a.ts（実在の名前は `rg -l \"x\" e2e/ e2e/tests` で確かめる）"):
+            with self.subTest(scope=scope):
+                self.assertEqual(self.coverage_errors(make_instruction(scope, self.body())), [])
+
+    # (d) ③が「e2e は変えない」と書くだけ(否定の文脈) → 外れなし
+
+    def test_d_a_scope_that_only_says_e2e_is_not_changed_passes(self):
+        for scope_line in (
+            "③ 編集してよいファイルは scratchpad/claude/agents/w/ 以下だけ（新規の自担当フォルダー）。"
+            "製品のコード・e2e・docs・scripts は読むだけで変えない。",
+            "③ 編集してよいファイルは packages/test-utils/src/ciSharding.test.ts の 1 本と、scratchpad/claude/agents/w/ 以下だけ。"
+            ".github/workflows/ci.yml・scripts・playwright.config.ts・e2e・package.json は変えない。",
+            "③ 編集してよいファイルは scratchpad/claude/agents/w/ 以下だけ。e2e/tests/saveResponsivenessFlow.ts と e2e/ は変えない（読むだけ）。",
+            "③ 編集してよいファイルは packages/model/src/a.ts と、scratchpad/claude/agents/w/ 以下だけ。"
+            "e2e/tests/x.spec.ts は読むだけ。担当は final.md と progress.md を書く。",
+        ):
+            with self.subTest(scope_line=scope_line):
+                self.assertEqual(self.coverage_errors(self.with_scope_line(scope_line)), [])
+
+    # (e) ③が e2e/ のフォルダーごと(根の e2e/・e2e/tests/・glob)や直下の設定・新規の spec を許す → 外れ
+
+    def test_e_a_whole_e2e_folder_or_any_file_under_e2e_in_scope_is_denied(self):
+        cases = {
+            "e2e/ 以下の全て": "e2e/",
+            "./e2e/ 以下": "e2e/",
+            "e2e/tests/ 以下の flow": "e2e/tests/",
+            "e2e/** の spec と flow": "e2e/**",
+            "e2e/playwright.config.ts（e2e 直下の設定）": "e2e/playwright.config.ts",
+            "新規 e2e/tests/y.spec.ts": "e2e/tests/y.spec.ts",
+            "`e2e/tests/z.ts`（直す）": "e2e/tests/z.ts",
+        }
+        for scope, shown in cases.items():
+            with self.subTest(scope=scope):
+                errors = self.coverage_errors(make_instruction(scope, self.body()))
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn(f"③が {shown} の変更を許すのに", errors[0])
+
+    # (f) e2e_coverage の語が「## 2」より前(目的の説明)や③の中にだけある → 外れ
+
+    def test_f_e2e_coverage_only_before_section_two_is_denied(self):
+        purpose = "`python -B -X utf8 scratchpad/claude/tools/e2e_coverage.py check --worktree` で 129 組の不足が出た。"
+        errors = self.coverage_errors(make_instruction("e2e/tests/x.ts（直す）", self.body(purpose=purpose)))
+        self.assertEqual(len(errors), 1, errors)
+        errors = self.coverage_errors(make_instruction("e2e/tests/x.ts（e2e_coverage の不足を埋める）", self.body()))
+        self.assertEqual(len(errors), 1, errors)
+
+    # 見出しの無い指示書は合格条件の段落で探す(製品ファイルの直接の検査と同じ _body_from_section_two)
+
+    def test_without_a_section_two_heading_the_acceptance_paragraph_is_used(self):
+        with_word = make_instruction("e2e/tests/x.ts", "合格条件: e2e_coverage.py check --worktree の足りない組 0。\n")
+        self.assertEqual(self.coverage_errors(with_word), [])
+        without = make_instruction("e2e/tests/x.ts", "合格条件: 画面検査が通る。\n\ne2e_coverage は別の段落にだけある。\n")
+        errors = self.coverage_errors(without)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("(「## 2」の見出しが無いので合格条件の文で探した)", errors[0])
+
+    # 行番号は最初の e2e の語の行。4 つ以上は 3 つと「ほか N 件」。フックも起動を止め、照合を足せば通す
+
+    def test_line_number_long_list_and_the_hook_denies_until_the_acceptance_names_it(self):
+        text = ("① 子エージェントを起こさない。\n② git への書き込み禁止。\n③ 編集してよいファイルは次だけ。\n"
+                "- packages/model/src/a.ts\n- e2e/tests/a.ts・e2e/tests/b.ts、e2e/tests/c.ts、e2e/tests/d.ts\n"
+                "- scratchpad/claude/agents/w/ 以下\n\n# 指示書 w\n\n" + self.body())
+        errors = self.coverage_errors(text)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertTrue(errors[0].startswith("x.md 行5: "), errors[0])
+        self.assertIn("③が e2e/tests/a.ts・e2e/tests/b.ts・e2e/tests/c.ts ほか 1 件 の変更を許すのに", errors[0])
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
+            "prompt": "`scratchpad/claude/instructions/e2e.md` を読む。", "description": "t"}}
+        content = make_instruction("e2e/tests/x.ts（直す）", self.body())
+        self.materialize(content)
+        self.write("scratchpad/claude/instructions/e2e.md", content)
+        result = guard.hook(payload, self.now, root=self.root)
+        self.assertIsNotNone(result)
+        self.assertIn(self.MARK, result["hookSpecificOutput"]["permissionDecisionReason"])
+        self.write("scratchpad/claude/instructions/e2e.md", make_instruction("e2e/tests/x.ts（直す）", self.body(self.ACCEPT)))
+        self.assertIsNone(guard.hook(payload, self.now, root=self.root))
+
+    # 既存の検査の判定は変えない: 検査 7 の外れは今までどおり先に出て、新しい外れは最後に 1 件だけ足される
+
+    def test_existing_checks_are_unchanged_and_the_new_message_is_appended_last(self):
+        self.materialize_scope = False
+        errors = self.errors(make_instruction("e2e/tests/nope.spec.ts（追加だけ）", self.body()))
+        self.assertEqual(len(errors), 2, errors)
+        self.assertIn("③のパスが実在しない: e2e/tests/nope.spec.ts", errors[0])
+        self.assertIn(self.MARK, errors[1])
+        errors = self.errors(make_instruction("e2e/tests/nope.spec.ts（追加だけ）", self.body(self.ACCEPT)))
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("③のパスが実在しない: e2e/tests/nope.spec.ts", errors[0])
+
+    def test_an_exception_in_check_ten_becomes_a_warning_and_the_other_checks_still_run(self):
+        original = guard.e2e_coverage_findings
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        guard.e2e_coverage_findings = boom
+        try:
+            self.materialize_scope = False
+            errors, warnings = self.report(make_instruction("e2e/tests/nope.spec.ts", self.body()))
+        finally:
+            guard.e2e_coverage_findings = original
+        self.assertTrue(any("③のパスが実在しない" in message for message in errors), errors)
+        self.assertFalse(any(self.MARK in message for message in errors), errors)
+        self.assertIn("検査「画面検査の証拠の照合」が内部の例外で実行できなかった", self.joined(warnings))
+
+
 if __name__ == "__main__":
     unittest.main()

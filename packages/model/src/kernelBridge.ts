@@ -1472,7 +1472,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       }
     },
     pendingWaiters: () => connection.waiters.size,
-    meshLedgerOwner: ledger.owner,
+    meshLedgerOwner: ledger.owner, awaitMeshReplySettlement: ({ alive }) => ledger.host.waitForNoPendingClone(alive),
     inspectSourceMeshBackings: async (receipt, buffers) => {
       const unknown = (): SourceMeshBackingInspection => ({ status: 'unknown', reason: 'transport-unavailable' });
       const active = connection;

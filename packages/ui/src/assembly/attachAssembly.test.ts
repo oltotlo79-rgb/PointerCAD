@@ -1999,3 +1999,152 @@ describe('initial Assembly observation restarts only an explicit epoch conflict'
       } finally { finish?.(); detach(); }
     });
 });
+
+// CI 2026-11-12 (Windows): a new empty assembly right after startup observed while the startup Part reply clone was still
+// reserved (pending-reply) and failed at once. The pending reply is a precondition to wait for, never a terminal refusal.
+describe('initial Assembly observation waits for another request reply clone before failing', () => {
+  type Settle = NonNullable<AssemblyKernelBridge['awaitMeshReplySettlement']>;
+  type Capture = NonNullable<AssemblyKernelBridge['captureCurrentMeshLedger']>;
+  /** The first `pending` observations see another request's unreceived reply clone; later ones are the issued fixture. */
+  function pendingCaptures(fake: ReturnType<typeof fakeBridge>, pending: number) {
+    const capture = fake.bridge.captureCurrentMeshLedger?.bind(fake.bridge);
+    if (capture === undefined) throw new Error('Issued fixture required');
+    let calls = 0;
+    const captures = vi.fn<Capture>(input => {
+      calls += 1;
+      return calls <= pending ? Promise.resolve({ status: 'unknown', observationId: input.observationId, reason: 'pending-reply' }) : capture(input);
+    });
+    fake.bridge.captureCurrentMeshLedger = captures;
+    return captures;
+  }
+  async function documentOf(shape: 'empty' | 'parts') {
+    if (shape === 'empty') return { document: createAssemblyDocument('新しいアセンブリ'), library: EMPTY_PART_LIBRARY };
+    const f = await fixture();
+    return { document: f.document, library: f.library };
+  }
+  const stagesOf = (events: readonly string[], wanted: readonly string[]) => events.filter(event => wanted.includes(event));
+
+  it.each(['empty', 'parts'] as const)('(a) waits once for the settlement and publishes success for the %s assembly', async shape => {
+    const { document, library } = await documentOf(shape);
+    const fake = fakeBridge(), captures = pendingCaptures(fake, 1);
+    const settlement = vi.fn<Settle>(() => Promise.resolve('settled'));
+    fake.bridge.awaitMeshReplySettlement = settlement;
+    const events: string[] = [];
+    useAppStore.getState().openAssembly(document, library);
+    const detach = attachAssembly(fake.bridge, undefined, event => { events.push(`${event.stage}:${event.reason ?? ''}`); });
+    try {
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      expect(useAppStore.getState().assemblyView?.meshOwnership?.publicationCurrent()).toBe(true);
+      expect(captures).toHaveBeenCalledTimes(2); expect(settlement).toHaveBeenCalledTimes(1);
+      const wanted = ['receipt-unknown:pending-reply', 'pending-reply-wait:settled', 'observation-restarted:pending-reply', 'publication-admitted:success'];
+      expect(stagesOf(events, wanted)).toEqual(wanted);
+      expect(events.some(event => event.startsWith('calculate-threw-before-cleanup:'))).toBe(false);
+    } finally { detach(); }
+  });
+
+  it('(b) fails closed with pending-reply-unsettled when the reply does not settle within the ledger deadline', async () => {
+    const { document, library } = await documentOf('empty');
+    const fake = fakeBridge(), captures = pendingCaptures(fake, Number.POSITIVE_INFINITY);
+    const settlement = vi.fn<Settle>(() => Promise.resolve('timeout'));
+    fake.bridge.awaitMeshReplySettlement = settlement;
+    const events: string[] = [];
+    useAppStore.getState().openAssembly(document, library);
+    const detach = attachAssembly(fake.bridge, undefined, event => { events.push(`${event.stage}:${event.reason ?? ''}`); });
+    try {
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('failed');
+      expect(useAppStore.getState().assemblyView).toBeNull();
+      expect(captures).toHaveBeenCalledTimes(1); expect(settlement).toHaveBeenCalledTimes(1);
+      const wanted = ['receipt-unknown:pending-reply', 'pending-reply-wait:timeout', 'pending-reply-unsettled:timeout',
+        'calculate-threw-before-cleanup:pending-reply-unsettled'];
+      expect(stagesOf(events, wanted)).toEqual(wanted);
+    } finally { detach(); }
+  });
+
+  it('(c) does not complete the old generation when the document changes during the wait', async () => {
+    const f = await fixture(), fake = fakeBridge();
+    pendingCaptures(fake, 1);
+    let waitedGeneration = 0, aliveAfterChange: boolean | null = null;
+    fake.bridge.awaitMeshReplySettlement = ({ alive }) => {
+      waitedGeneration = useAppStore.getState().requestedGeneration;
+      useAppStore.setState({ assembly: { ...f.document } });
+      aliveAfterChange = alive();
+      return Promise.resolve('stopped');
+    };
+    const completed: number[] = [], events: string[] = [];
+    const unsubscribe = useAppStore.subscribe((next, previous) => {
+      if (next.completedGeneration !== previous.completedGeneration) completed.push(next.completedGeneration);
+    });
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge, undefined, event => { events.push(`${event.stage}:${event.reason ?? ''}`); });
+    try {
+      await settle();
+      expect(waitedGeneration).toBeGreaterThan(0); expect(aliveAfterChange).toBe(false);
+      expect(completed).not.toContain(waitedGeneration);
+      expect(useAppStore.getState().completedGeneration).toBe(waitedGeneration + 1);
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      expect(events.some(event => event.startsWith('pending-reply-unsettled:'))).toBe(false);
+    } finally { unsubscribe(); detach(); }
+  });
+
+  it('(d) keeps the previous failed outcome for a bridge without the settlement capability', async () => {
+    const { document, library } = await documentOf('empty');
+    const fake = fakeBridge(), captures = pendingCaptures(fake, Number.POSITIVE_INFINITY);
+    expect('awaitMeshReplySettlement' in fake.bridge).toBe(false);
+    const events: string[] = [];
+    useAppStore.getState().openAssembly(document, library);
+    const detach = attachAssembly(fake.bridge, undefined, event => { events.push(`${event.stage}:${event.reason ?? ''}`); });
+    try {
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('failed');
+      expect(useAppStore.getState().assemblyView).toBeNull();
+      expect(captures).toHaveBeenCalledTimes(1);
+      const wanted = ['receipt-unknown:pending-reply', 'calculate-threw-before-cleanup:receipt-unknown'];
+      expect(stagesOf(events, wanted)).toEqual(wanted);
+      expect(events.some(event => event.startsWith('pending-reply-wait:'))).toBe(false);
+    } finally { detach(); }
+  });
+
+  it('(e) waits at most twice and then fails closed instead of waiting forever', async () => {
+    const { document, library } = await documentOf('empty');
+    const fake = fakeBridge(), captures = pendingCaptures(fake, 3);
+    const settlement = vi.fn<Settle>(() => Promise.resolve('settled'));
+    fake.bridge.awaitMeshReplySettlement = settlement;
+    const events: string[] = [];
+    useAppStore.getState().openAssembly(document, library);
+    const detach = attachAssembly(fake.bridge, undefined, event => { events.push(`${event.stage}:${event.reason ?? ''}`); });
+    try {
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('failed');
+      expect(useAppStore.getState().assemblyView).toBeNull();
+      expect(captures).toHaveBeenCalledTimes(3); expect(settlement).toHaveBeenCalledTimes(2);
+      expect(events.filter(event => event === 'pending-reply-wait:settled')).toHaveLength(2);
+      const wanted = ['pending-reply-unsettled:wait-limit', 'calculate-threw-before-cleanup:pending-reply-unsettled'];
+      expect(stagesOf(events, wanted)).toEqual(wanted);
+    } finally { detach(); }
+  });
+
+  it('(f) still restarts one explicit host epoch conflict after a settled pending reply', async () => {
+    const { document, library } = await documentOf('empty');
+    const fake = fakeBridge(), captures = pendingCaptures(fake, 1);
+    const issued = captures.getMockImplementation();
+    if (issued === undefined) throw new Error('Issued fixture required');
+    let calls = 0;
+    captures.mockImplementation(input => {
+      calls += 1;
+      return calls === 2 ? Promise.resolve({ status: 'unknown', observationId: input.observationId, reason: 'host-epoch-changed' }) : issued(input);
+    });
+    fake.bridge.awaitMeshReplySettlement = vi.fn<Settle>(() => Promise.resolve('settled'));
+    const events: string[] = [];
+    useAppStore.getState().openAssembly(document, library);
+    const detach = attachAssembly(fake.bridge, undefined, event => { events.push(`${event.stage}:${event.reason ?? ''}`); });
+    try {
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      expect(captures).toHaveBeenCalledTimes(3);
+      const wanted = ['observation-restarted:pending-reply', 'observation-restarted:host-epoch-changed', 'publication-admitted:success'];
+      expect(stagesOf(events, wanted)).toEqual(wanted);
+    } finally { detach(); }
+  });
+});

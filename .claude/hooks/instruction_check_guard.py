@@ -72,6 +72,15 @@ scan, as in check 1) must be named by its real path in the text from the "## 2" 
 full run ("<pkg> の単体を全件" / "packages/<pkg> の全検査"). Gate 20261107-010320 failed because ViewportCanvasLifecycle.test.ts,
 which imports changed viewport product files, was never run. The shared worker keeps its own check above.
 
+2026-11-12 cl-v103-instruction-guard-e2e-coverage-1112 adds check 10 (rules/06 §10.491): when the "③" paragraph allows
+changing anything under e2e/ (a file such as e2e/tests/x.ts or a config directly under e2e/, a folder such as e2e/tests/ or
+e2e/ itself, or a glob such as e2e/**), the text from the "## 2" heading to the end must contain the word "e2e_coverage"
+(the screen-test evidence check `python -B -X utf8 scratchpad/claude/tools/e2e_coverage.py check --worktree`). The paths
+are read the same way as the product-file check above (_path_entry_spans, minus words that _worker_read_only marks as
+read-only / not to be changed), so "e2e は変えない" never triggers. On 2026-11-12 01:19, 129 screen-test pairs lacked evidence
+right before a delivery because the package that changed e2e/tests/saveResponsivenessFlow.ts had no such acceptance line.
+The check only prevents that omission before launch; it never runs the evidence check and never certifies any result.
+
 Everything the check needs lives in this one file (no import of anything under scratchpad/, which
 is gitignored and absent from CI and from any hermetic checkout -- rules/06 §10.336). Only
 scratchpad/claude/instructions/*.md content is inspected; unrelated prompts, or prompts that name
@@ -2153,6 +2162,77 @@ def product_consumer_findings(root: Path, display: str, lines: list[str], scope_
     return errors, warnings
 
 
+# --- 検査10: 画面検査の部品を変える包みの、証拠の照合の合格条件(2026-11-12 cl-v103-instruction-guard-e2e-coverage-1112、rules/06 §10.491) ---
+# 2026-11-12 01:19、2 回目の送信の直前の画面検査の証拠の照合(e2e_coverage.py check --worktree)で 129 組の不足が出た。
+# e2e/tests/saveResponsivenessFlow.ts を変えた包みの指示書の合格条件にこの照合が無く、送信の直前まで分からなかった。
+#   対象 = ③の経路の語(製品ファイルの直接の検査と同じ _path_entry_spans。読取専用・変更禁止などとされた語は同じ _worker_read_only で
+#          除く)のうち、スラッシュを書いた語で根からの相対が e2e/ の下の物(e2e/tests/ の .ts、e2e/ 直下の設定、e2e/tests/ などのフォルダー、
+#          e2e/** などの glob。新規の語も含む)。SCOPE_TOKEN_PATTERN は「/」の後に何も無い根のフォルダーそのもの(e2e/)を拾わないので、
+#          それだけは E2E_ROOT_FOLDER_PATTERN で同じ文から補い、同じ _worker_read_only で除く。
+#          裸の名前(直前のフォルダーで補った語)は数えない: 一覧の続きなら前の e2e の語で既に当たり、一覧の続きでない裸の名前
+#          (progress.md など)を e2e のフォルダーへ補うと誤検出になる。スラッシュの無い「e2e」も数えない(「e2e・docs は変えない」のように
+#          否定の文脈で多用される)。
+#   照合 = 「## 2」以降の本文(製品ファイルの直接の検査と同じ _body_from_section_two。見出しが無ければ合格条件の文)に「e2e_coverage」の語。
+#   外れ = 照合の語が無い(1 つの指示書に 1 件。行は最初の対象の語の行)。走査は無い(③と本文の文だけを見る)。
+# この検査は起動の前の書き漏れを防ぐだけで、照合を実行せず、その結果を合格と認定しない。
+
+E2E_ROOT = "e2e"
+E2E_COVERAGE_WORD = "e2e_coverage"
+E2E_COVERAGE_SHOWN = 3
+E2E_ROOT_FOLDER_PATTERN = r"(?<![A-Za-z0-9_@.\-/*?])(?:\./)?e2e/(?![A-Za-z0-9_@.\-*?/])"
+E2E_COVERAGE_MESSAGE = (
+    "{display} 行{line}: 画面検査の証拠の照合: ③が {targets} の変更を許すのに、「## 2」以降の本文に e2e_coverage の語が無い{note}。"
+    "合格条件に「`python -B -X utf8 scratchpad/claude/tools/e2e_coverage.py check --worktree` の結果が足りない組 0、"
+    "または残る組の一覧を final に書く」を足す(rules/06 §10.491。2026-11-12 01:19、e2e/tests/saveResponsivenessFlow.ts を変えた"
+    "包みの合格条件にこの照合が無く、送信の直前に 129 組の不足が出た)。この検査は起動の前の書き漏れを防ぐだけで、照合を実行せず"
+    "結果を合格と認定しない")
+
+
+def e2e_scope_targets(scope_text: str) -> list[tuple[str, int]]:
+    """③が変更を許す e2e/ の下の語 [(語, ③の文の中の位置)](出現の順・重複なし)。読取専用・変更禁止とされた語は含めない。"""
+    text = scope_text.replace("\\", "/")
+    found: list[tuple[str, int]] = []
+    for entry, _token, start, end, bare in _path_entry_spans(text):
+        if bare:
+            continue
+        body = _clean_relative(entry.rstrip("/"))
+        if body is None or not (body == E2E_ROOT or body.startswith(E2E_ROOT + "/")):
+            continue
+        if not _worker_read_only(text, start, end):
+            found.append((entry, start))
+    for match in re.finditer(E2E_ROOT_FOLDER_PATTERN, _strip_command_spans(text)):
+        # 「./e2e/」は SCOPE_TOKEN_PATTERN が「.」を 1 つの部分として拾い、上で「e2e/」になっている。同じ語に揃えて重複を落とす。
+        if not _worker_read_only(text, match.start(), match.end()):
+            found.append((E2E_ROOT + "/", match.start()))
+    found.sort(key=lambda item: item[1])
+    seen: set[str] = set()
+    unique: list[tuple[str, int]] = []
+    for entry, start in found:
+        if entry not in seen:
+            seen.add(entry)
+            unique.append((entry, start))
+    return unique
+
+
+def e2e_coverage_findings(display: str, lines: list[str], scope_text: str) -> list[str]:
+    block = _scope_block(lines)
+    if block is None or not scope_text.strip():
+        return []
+    targets = e2e_scope_targets(scope_text)
+    if not targets:
+        return []
+    body, has_section = _body_from_section_two(lines)
+    if E2E_COVERAGE_WORD in body:
+        return []
+    shown = "・".join(entry for entry, _start in targets[:E2E_COVERAGE_SHOWN])
+    if len(targets) > E2E_COVERAGE_SHOWN:
+        shown += f" ほか {len(targets) - E2E_COVERAGE_SHOWN} 件"
+    line = block[0] + scope_text.count("\n", 0, targets[0][1]) + 1
+    return [E2E_COVERAGE_MESSAGE.format(
+        display=display, line=line, targets=shown,
+        note="" if has_section else "(「## 2」の見出しが無いので合格条件の文で探した)")]
+
+
 DOCS_PHASE_REASON = '利用者の指示 2026-11-01 19:2x: 取扱説明書は最後'
 DOCS_PHASE_MARKER = 'scratchpad/claude/root-runtime/docs-phase-open.json'
 
@@ -2240,6 +2320,8 @@ def check_instruction_report(root: Path, display_path: str, text: str, now: date
             root, display_path, lines, scope_text,
             max(PRODUCT_CONSUMER_SECONDS, scan_seconds - (time.monotonic() - checks_started)),
             invocation if invocation in ("auto", None) else "auto")),
+        # 検査 10(rules/06 §10.491): ③が e2e/ の下の変更を許すなら「## 2」以降に e2e_coverage の照合。既存の検査の後に足すだけ。
+        ("画面検査の証拠の照合", lambda: (e2e_coverage_findings(display_path, lines, scope_text), [])),
     )
     for name, step in steps:
         try:

@@ -1123,6 +1123,84 @@ describe('部品の所有更新中も第2ビードの1クリックを保つ', ()
   });
 });
 
+/*
+ * CI run 43102593955 の EX-18 Electron B/e: 受領が失効した表示の hover の拾いは表示を片付けて null を返し、
+ * store が変わらないので取り直しも拾い直しも起きなかった。ViewportCanvas の hover の口が押下と同じ取り直しを共有し、
+ * 公開の後に同じ点で 1 回だけ拾い直すこと(refresh-spent では拾い直さず、理由は観測口に出ること)を実配線で確かめる。
+ */
+describe('受領が失効した表示の hover を、取り直しの公開の後に同じ点で 1 回だけ拾い直す', () => {
+  function invalidatedHoverViewport() {
+    const f = deferredBeadBodyViewport();
+    // 片付いた表示(scene の印)は作り直し(setAssembly)まで続き、その間の拾いは null。作り直した後は実の層で拾う
+    // (deferredBeadBodyViewport と同じ視線。入力の x/y は世界座標で、ブラウザーの投影を通した証拠ではない)。
+    const display = { invalidated: true };
+    const layer = createAssemblyLayer(undefined, { uiBackings: new AssemblyUiBackingLedger() });
+    f.scene.setAssembly.mockImplementation((bundle: AssemblyGeometryBundle) => {
+      display.invalidated = false;
+      layer.update(bundle, 'shadedWithEdges');
+    });
+    f.scene.pickComponent.mockImplementation((x: number, y: number): string | null => {
+      if (display.invalidated) return null;
+      const eye = new Vector3(200 / Math.sqrt(3), -200 / Math.sqrt(3), 200 / Math.sqrt(3));
+      return layer.pickComponent(new Raycaster(eye, new Vector3(x, y, 24).sub(eye).normalize()));
+    });
+    f.scene.assemblyDisplayInvalidated.mockImplementation(() => display.invalidated);
+    const hover = () => { f.send('pointermove', { buttons: 0 }); };
+    return { ...f, display, hover, close: () => { f.close(); layer.dispose(); } };
+  }
+
+  it('取り直しの公開の後に同じ点を 1 回だけ拾い直して光らせ、選択・文書・履歴は変えない', async () => {
+    const f = invalidatedHoverViewport();
+    try {
+      const before = useAppStore.getState();
+      f.hover();
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      await Promise.resolve();
+      expect(f.source.refresh).toHaveBeenCalledExactlyOnceWith(f.source.owner);
+      f.source.publish(); await finishOwnershipMicrotasks();
+      expect(f.scene.pickComponent.mock.calls).toEqual([[30.75, 11], [30.75, 11]]);
+      expect(f.scene.pickComponent).toHaveLastReturnedWith('component-4');
+      expect(useAppStore.getState().hoveredElementId).toBe('component-4');
+      expect(useAppStore.getState().selection).toEqual([]);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      await finishOwnershipMicrotasks();
+      expect(f.scene.pickComponent).toHaveBeenCalledTimes(2);
+      expect(f.source.refresh).toHaveBeenCalledTimes(1);
+    } finally { f.close(); }
+  });
+
+  it('所有が今のまま表示だけ片付いた時は、今の形で作り直して同じ点を 1 回だけ拾い直す(取り直しは頼まない)', async () => {
+    const f = invalidatedHoverViewport();
+    try {
+      await Promise.resolve(); f.source.publish(); await finishOwnershipMicrotasks();
+      expect(f.display.invalidated).toBe(false);
+      const rebuilds = f.scene.setAssembly.mock.calls.length;
+      f.display.invalidated = true;
+      f.hover();
+      expect(f.scene.setAssembly).toHaveBeenCalledTimes(rebuilds + 1);
+      await finishOwnershipMicrotasks();
+      expect(f.scene.pickComponent.mock.calls).toEqual([[30.75, 11], [30.75, 11]]);
+      expect(useAppStore.getState().hoveredElementId).toBe('component-4');
+      expect(f.source.refresh).toHaveBeenCalledTimes(1);
+    } finally { f.close(); }
+  });
+
+  it('取り直しが使い切り(refresh-spent)なら拾い直さず、次の hover も繰り返さず、理由は観測口に出る', async () => {
+    const f = invalidatedHoverViewport();
+    try {
+      f.hover(); await Promise.resolve();
+      f.source.settle(null); await finishOwnershipMicrotasks();
+      expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
+      f.hover(); await finishOwnershipMicrotasks();
+      expect(f.scene.pickComponent).toHaveBeenCalledTimes(2);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      expect(f.source.refresh).toHaveBeenCalledTimes(1);
+      expect(window.pcadViewportAssemblyOwner?.()?.assemblyReadyRefusal).toBe('refresh-spent');
+    } finally { f.close(); }
+  });
+});
+
 /** 公開口から取り出すだけで、製品Storeや入力には書かない。 */
 function observedPickInputs(): readonly unknown[] {
   const read = window.pcadViewportAssemblyOwner;

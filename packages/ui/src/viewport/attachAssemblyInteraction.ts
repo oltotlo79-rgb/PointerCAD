@@ -58,6 +58,11 @@ interface AssemblyDragInput {
   /** null is ready now; a Promise belongs to one exact ownership refresh. */
   readonly prepareMateInput?: () => Promise<boolean> | null;
   readonly observeMateInput?: (observation: AssemblyMateInputObservation) => void;
+  /**
+   * hover の拾いが失効で表示を片付けた時だけ呼ぶ(押下の観測へは結ばない)。true は表示を作り直した印で、同じ点を 1 回だけ
+   * 拾い直す。false・null・拒否は拾い直さない(取り直しの使い切り refresh-spent を含む)。
+   */
+  readonly prepareHoverInput?: () => Promise<boolean> | null;
 }
 
 export function mateTargetFromFaceHit(
@@ -250,6 +255,62 @@ function releasePendingCapture(canvas: AssemblyInputCanvas, input: PendingMateIn
   if (input.capture !== 'held') return;
   input.capture = 'released';
   try { canvas.releasePointerCapture?.(input.pointerId); } catch { /* 押下は終わっている。この押下からドラッグは始めない。 */ }
+}
+
+/** 拾いの結果(部品の id・面・入れ子の葉・実らせんの組。当たり無しは null)。 */
+type AssemblyPickResult = BoltedJointPickTarget | NestedBoltedJointPick | string | null;
+
+/** hover の要素 id(押下と同じ形)。当たり無しは null。 */
+function hoverIdOf(target: AssemblyPickResult): string | null {
+  return target === null ? null : typeof target === 'string' ? target
+    : target.kind === 'modeledThreadGroup' ? threadGroupHoverId('path' in target
+      ? { kind: 'modeledThreadGroup', componentId: target.path.join('/'), group: target.group } : target)
+    : target.kind === 'jointOccurrence' ? assemblyTargetId({ kind: 'subShape', componentId: target.path.join('/'), ref: target.ref })
+    : assemblyTargetId(target);
+}
+
+interface HoverRepick { readonly defer: (event: PointerEvent, state: MateInputState) => void; readonly cancel: () => void }
+interface HoverWaiting { readonly finish: (ready: boolean) => void }
+
+/**
+ * hover を決める。repick があり、拾いが失効で表示を片付けた null(invalidated)の時だけ、取り直しの後の 1 回の拾い直しを頼む。
+ * 拾い直し自身は repick を渡さないので、頼み直さない(1 回だけ)。
+ */
+function decideHover(state: MateInputState, event: PointerEvent, target: AssemblyPickResult, invalidated: boolean,
+  repick: HoverRepick | null): void {
+  if (repick !== null && target === null && invalidated) repick.defer(event, state);
+  const id = hoverIdOf(target);
+  if (state.hoveredElementId !== id) state.setHovered(id);
+}
+
+/**
+ * 受領の失効で表示を片付けた hover の拾い直し(CI run 43102593955 の EX-18 Electron B/e: 強調は store が変わらないので
+ * 取り直しも拾い直しも起きず、ポインタを止めたままでは 30 秒付かなかった)。押下の保留と同じ取り直し・比較
+ * (awaitMateRefresh・staleMateDocumentField・staleMateInputField)を使い、頼んだ時と store・canvas の枠が同じ時だけ
+ * 同じ event で 1 回だけ拾い直す。次の移動・離脱・押下・1〜4・detach は cancel で捨てる。timer と回数の繰り返しは使わない。
+ */
+function createHoverRepick(canvas: AssemblyInputCanvas, prepare: (() => Promise<boolean> | null) | undefined,
+  repick: (event: PointerEvent) => void): HoverRepick {
+  let waiting: HoverWaiting | null = null;
+  const defer = (event: PointerEvent, state: MateInputState): void => {
+    waiting = null;
+    if (prepare === undefined) return;
+    const rect = canvas.getBoundingClientRect();
+    let refresh: Promise<boolean> | null;
+    try { refresh = prepare(); } catch { return; }
+    if (refresh === null) return;
+    const input: HoverWaiting = { finish: (ready: boolean): void => {
+      if (waiting !== input) return;
+      waiting = null;
+      const current = useAppStore.getState();
+      const stale = staleMateDocumentField(state, current) ?? staleMateInputField(state, current, rect, canvas.getBoundingClientRect());
+      if (ready && stale === null) repick(event);
+    } };
+    waiting = input;
+    // 決着しない取り直しが event・store を握り続けないよう、押下と同じく WeakRef で結ぶ。
+    awaitMateRefresh(refresh, new WeakRef(input));
+  };
+  return { defer, cancel: () => { waiting = null; } };
 }
 
 /** Assemblyの入力をpart用listenerから分離する。視点操作は先に登録されたcameraが所有する。 */
@@ -459,7 +520,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     }
   };
   const onPointerDown = (event: PointerEvent): void => {
-    cancelMate('next-input');
+    cancelMate('next-input'); hoverRepick.cancel();
     const before = useAppStore.getState();
     if (before.assembly === null) return;
     const observation: AssemblyMateInputObservation | undefined = dragInput?.observeMateInput === undefined ? undefined : {
@@ -541,7 +602,12 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     }
     applyPointerDown(event, observation);
   };
+  // 失効で片付けた表示の hover は、取り直しの後に同じ点で 1 回だけ拾い直す(拾い直しは頼み直さない)。
+  const hoverRepick = createHoverRepick(canvas, dragInput?.prepareHoverInput, (event) => {
+    if (!detached && captured === null) decideHover(useAppStore.getState(), event, pick(event), false, null);
+  });
   const onPointerMove = (event: PointerEvent): void => {
+    hoverRepick.cancel();
     const waitingPoint = pendingMate?.bodyPoint;
     if (pendingMate?.pointerId === event.pointerId && waitingPoint !== undefined && waitingPoint !== null) {
       const at = pointer(event);
@@ -562,14 +628,10 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     }
     if (event.altKey || event.buttons !== 0) return;
     const target = pick(event);
-    const id = target === null ? null : typeof target === 'string' ? target
-      : target.kind === 'modeledThreadGroup' ? threadGroupHoverId('path' in target
-        ? { kind: 'modeledThreadGroup', componentId: target.path.join('/'), group: target.group } : target)
-      : target.kind === 'jointOccurrence' ? assemblyTargetId({ kind: 'subShape', componentId: target.path.join('/'), ref: target.ref })
-      : assemblyTargetId(target);
-    if (state.hoveredElementId !== id) state.setHovered(id);
+    decideHover(state, event, target, scene.assemblyDisplayInvalidated?.() === true, hoverRepick);
   };
   const onPointerLeave = (event: PointerEvent): void => {
+    hoverRepick.cancel();
     const state = useAppStore.getState();
     if (state.assembly === null) return;
     event.stopImmediatePropagation();
@@ -632,7 +694,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const kind = kinds.get(event.key);
     if (kind !== undefined && !event.ctrlKey && !event.metaKey) {
       event.preventDefault(); event.stopImmediatePropagation();
-      useAppStore.setState({ selectionKind: kind, hoveredElementId: null });
+      hoverRepick.cancel(); useAppStore.setState({ selectionKind: kind, hoveredElementId: null });
     }
     // Unhandled keys continue to the common file and command shortcuts.
   };
@@ -651,7 +713,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
   return { cancelDrag, detach: () => {
     if (detached) return;
     detached = true;
-    cancelMate('detached');
+    cancelMate('detached'); hoverRepick.cancel();
     const actions = [
       () => canvas.removeEventListener('pointerdown', onPointerDown),
       () => canvas.removeEventListener('pointermove', onPointerMove),

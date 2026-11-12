@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { expectHoveredRow } from './assemblyCoupledDragFlow.js';
 import { chooseToolMenuItem, installAssemblyFileGateway, readAssemblyStats,
   resetAssemblyFileGateway } from './assemblyTestSupport.js';
 import { componentRows, disableFilePickers, goHome, homeViewPagePoint, placeQueuedPart, selectComponent } from './boltedJointTestSupport.js';
@@ -634,7 +635,7 @@ async function flangeContextContract(page: Page, info: TestInfo, bracket: Uint8A
   const linkedState = await expectEx18AssemblyPart(linked, EX18_B8, info, 'e-linked8');
   expect(linkedState.document.contextReferences).toHaveLength(1);
   // Move the real source component; its placement is an independent input to the reference resolver.
-  await dragContextSource(page, [0, 0, 25]);
+  await dragContextSource(page, [0, 0, 25], info, app);
   const sourcePosition = (await readAssemblyStats(page)).components[1]?.resolved?.position;
   if (sourcePosition === undefined || sourcePosition.length !== 3) throw new Error('EX18 moved source pose missing');
   expect(Math.abs(sourcePosition[0] - 0)).toBeGreaterThan(0.5);
@@ -1064,7 +1065,7 @@ async function obliqueContextContract(page: Page, info: TestInfo, bracket: Uint8
   const linkedState = await expectEx18AssemblyPart(linked, EX18_C5, info, 'e-linked-depth5');
   expect(linkedState.document.contextReferences).toHaveLength(1);
   // Move the real source component; its placement is an independent input to the reference resolver.
-  await dragContextSource(page, [0, 0, 0]);
+  await dragContextSource(page, [0, 0, 0], info, app);
   const sourcePosition = (await readAssemblyStats(page)).components[1]?.resolved?.position;
   if (sourcePosition === undefined || sourcePosition.length !== 3) throw new Error('EX18 moved source pose missing');
   expect(Math.abs(sourcePosition[0] - 0)).toBeGreaterThan(0.5);
@@ -1101,7 +1102,7 @@ async function obliqueContextContract(page: Page, info: TestInfo, bracket: Uint8
 
 
 /** A projected point may hit a different body; prove the real source hover before any drag. */
-async function dragContextSource(page: Page, center: WorldPoint): Promise<void> {
+async function dragContextSource(page: Page, center: WorldPoint, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await goHome(page);
   await page.locator('canvas.pcad-viewport__canvas').press('4');
   await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
@@ -1110,7 +1111,7 @@ async function dragContextSource(page: Page, center: WorldPoint): Promise<void> 
   const from = await homeViewPagePoint(page, center);
   const to = await homeViewPagePoint(page, [center[0] + 2, center[1], center[2]]);
   await page.mouse.move(...from);
-  await expect(source.locator('xpath=..')).toHaveClass(/pcad-tree__row--hovered/u);
+  await expectHoveredRow(page, info, source.locator('xpath=..'), from, app);
   const token = await beginRecompute(page);
   await page.mouse.down();
   try { await page.mouse.move(to[0], to[1], { steps: 8 }); }

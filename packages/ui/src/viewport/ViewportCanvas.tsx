@@ -63,7 +63,8 @@ import { componentDragPlacements } from '../assembly/dragComponentActions.js';
 import { shownOccurrencePlacements } from '../store/assemblyOccurrenceDriveSlice.js';
 import { assemblyTargetId } from '../assembly/mateCommands.js';
 import { HOME_ORBIT, viewDirection, type OrbitState } from './cameraMath.js';
-import { createViewportScene, ViewportSceneInitializationFailure, type SectionViewRender, type ViewportMeshReservation } from './createViewportScene.js';
+import { createViewportScene, ViewportSceneInitializationFailure, type SectionViewRender, type ViewportMeshReservation,
+  type ViewportScene } from './createViewportScene.js';
 import { LOCAL_DISPLAY_GPU_MESH_BUDGET, solidBodiesForAdmission, solidMeshOwnershipChanged } from './solidMeshAdmission.js';
 import type { CutPreview, PrintabilityHighlight } from './createSolidLayer.js';
 import type { SphereGridSpec } from './buildSphereGrid.js';
@@ -634,6 +635,25 @@ interface PreparedMateReadiness {
 }
 
 /**
+ * hover の拾いが失効で表示を片付けた時の口(attachAssemblyInteraction の prepareHoverInput)。押下の prepareMateInput と
+ * 同じ取り直し(pendingAssemblyRefresh・使い切りの refresh-spent)を共有し、押下の観測(preparedInput)へは結ばない。
+ * 所有が今のままなら今の形で表示を作り直して true、取り直し中ならその結果、取り直せない時は false
+ * (断った理由は assemblyReady が assemblyReadyRefusal に残す)。
+ */
+function hoverRefreshEntrance(ready: () => boolean, pending: WeakMap<AssemblyMeshOwnership, Promise<boolean>>,
+  scene: Pick<ViewportScene, 'setAssembly'>, requestDraw: () => void): () => Promise<boolean> {
+  return () => {
+    if (ready()) {
+      scene.setAssembly(assemblyBundleOf(useAppStore.getState()));
+      requestDraw();
+      return Promise.resolve(true);
+    }
+    const owner = useAppStore.getState().assemblyView?.meshOwnership;
+    return (owner === undefined ? undefined : pending.get(owner)) ?? Promise.resolve(false);
+  };
+}
+
+/**
  * 表示の持ち主の診断(公開の口が呼ばれた時だけ読む。毎フレームは観測しない)。文書・本体は弱い識別番号だけにし、
  * 値を保持しない。識別番号はこの関数を呼んだ 1 回の表示の初期化の間だけ通じる。
  */
@@ -1160,7 +1180,7 @@ export function ViewportCanvas(): React.JSX.Element {
         void Promise.resolve().then(() => { if (preparedInput === prepared) preparedInput = null; });
         return waiting;
       },
-      observeMateInput,
+      observeMateInput, prepareHoverInput: hoverRefreshEntrance(assemblyReady, pendingAssemblyRefresh, scene, requestDraw),
     });
     lifetime.register('assembly input', () => { assemblyInteraction?.detach(); });
     const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging(), sketchTiming);

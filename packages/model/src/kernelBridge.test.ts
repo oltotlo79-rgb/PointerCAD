@@ -1983,6 +1983,32 @@ describe('current global solid backing ledger through actual Comlink clones', ()
     });
     blocked.mockRestore();
   });
+  it('awaits an actual unreceived empty display reply through the bridge and settles only after its clone is adopted', async () => {
+    // CI 2026-11-12: the startup empty Part request keeps its reply reserved until the Worker answers.
+    const api = createKernelApi(loadOcctForNode), bridge = createKernelBridge();
+    Comlink.expose(api, silentWorkers.serverEndpoint());
+    cleanup.push(() => bridge.dispose());
+    const actual = api.recomputeSolids.bind(api);
+    let release: () => void = () => { throw new Error('Actual dispatch missing'); };
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const blocked = vi.spyOn(api, 'recomputeSolids').mockImplementation(async (...args) => { await held; return actual(...args); });
+    const running = bridge.recomputeSolids([], { partId: 'startup-part', generation: 1,
+      localMesh: { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } });
+    await vi.waitFor(() => expect(blocked).toHaveBeenCalledTimes(1));
+    expect(await bridge.captureCurrentMeshLedger?.({ observationId: 'startup-reply-pending', owners: [] }))
+      .toMatchObject({ status: 'unknown', reason: 'pending-reply' });
+    if (bridge.awaitMeshReplySettlement === undefined) throw new Error('Settlement capability required');
+    let settled: string | null = null;
+    const waiting = bridge.awaitMeshReplySettlement({ alive: () => true }).then(value => { settled = value; return value; });
+    expect(await bridge.captureCurrentMeshLedger?.({ observationId: 'startup-reply-still-pending', owners: [] }))
+      .toMatchObject({ status: 'unknown', reason: 'pending-reply' });
+    expect(settled).toBeNull();
+    release();
+    expect((await running).cancelled).toBe(false);
+    expect(await waiting).toBe('settled');
+    expect(await bridge.captureCurrentMeshLedger?.({ observationId: 'after-startup-reply', owners: [] }))
+      .toMatchObject({ status: 'known', pendingCloneReservedBytes: 0 });
+  });
   it.each(['workerBroken', 'dispose'] as const)('an actual reserved but unsent display slot settles after %s and a fresh real census recovers', async ending => {
     const bridge = createKernelBridge();
     cleanup.push(() => bridge.dispose());

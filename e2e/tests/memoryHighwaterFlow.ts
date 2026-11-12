@@ -841,7 +841,20 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
   expect(updates).toBe(100);
   expect(failureRecovered).toBe(true);
   expect(sampler.failures).toEqual([]);
-  expect(sampledObservation.observationValid, sampledObservation.problems.join('\n')).toBe(true);
+  // A stale frame names its own acquisition stages in the failure text (the CI log carries no attachment).
+  // The judgment and the problems are unchanged; this only shows which stage used up the age limit.
+  const staleStages = frames.flatMap((frame, index) => {
+    const age = frame.atEpochMs - frame.discoveredAtEpochMs;
+    if (age <= DISCOVERY_INTERVAL_MS) return [];
+    const timing = frame.windowsTiming, sleep = timing?.previousSleep;
+    return [`${String(frame.atEpochMs)}: age ${String(age)}ms; read start age ${String(frame.readStartedAtEpochMs - frame.discoveredAtEpochMs)}ms; `
+      + `read ${String(frame.atEpochMs - frame.readStartedAtEpochMs)}ms (native ${timing === undefined ? 'n/a' : timing.nativeCallMs.toFixed(1)}ms); `
+      + `loop start age ${timing?.loopStartedAtEpochMs === undefined ? 'n/a' : String(timing.loopStartedAtEpochMs - frame.discoveredAtEpochMs)}ms; `
+      + `previous sleep ${sleep === undefined ? 'n/a' : `${String(sleep.requestedMs)}->${String(sleep.endedAtEpochMs - sleep.startedAtEpochMs)}`}ms; `
+      + `discovery started ${timing === undefined ? 'n/a' : String(timing.discoveryStartedAtEpochMs)} exec ${timing === undefined ? 'n/a' : timing.discoveryExecutionMs.toFixed(1)}ms `
+      + `adopted ${timing === undefined ? 'n/a' : String(timing.discoveryAdoptedAtEpochMs)}; next frame discovery ${String(frames[index + 1]?.discoveredAtEpochMs ?? 'n/a')}`];
+  });
+  expect(sampledObservation.observationValid, [...sampledObservation.problems, ...staleStages].join('\n')).toBe(true);
   for (const metric of [sampledObservation.workingSet, sampledObservation.privateMemory]) {
     expect(metric.extraPeak).not.toBeNull(); expect(metric.extraAfterRelease).not.toBeNull();
   }

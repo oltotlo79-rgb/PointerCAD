@@ -78,6 +78,8 @@ export type CurrentMeshLedgerReceipt =
       readonly pendingCloneReservedBytes: number; readonly admittedBoundBytes: number;
       readonly coverage: 'registered-solid-mesh-backings-only';
       readonly unobserved: readonly ['native', 'gpu', 'wasm', 'mesh-metadata', 'other-providers']; };
+/** How a wait for every reserved reply clone of the realm ledger ended; never a release, receipt or acceptance. */
+export type MeshReplySettlement = 'settled' | 'stopped' | 'timeout' | 'unavailable';
 export type SourceMeshBackingInspection =
   | { readonly status: 'unknown'; readonly reason: string }
   | { readonly status: 'known'; readonly hostEpoch: number; readonly inputBackingBytes: number;
@@ -108,6 +110,12 @@ export interface KernelBridge {
   /** Actual part cache return or authoritative logical absence/closure, never a void fallback. */
   releasePartClaim?(claim: PartReleaseClaim): Promise<PartReleaseDisposition>;
   captureCurrentMeshLedger?(input: CurrentMeshLedgerInput): Promise<CurrentMeshLedgerReceipt>;
+  /**
+   * Waits until no reply clone is reserved, so that a capture refused as `pending-reply` (another request's reply still
+   * in flight) can be taken again. Bounded by the ledger's reply reservation deadline; `alive` false stops it.
+   * It only observes and never settles another request. Omitted means the caller keeps refusing `pending-reply`.
+   */
+  awaitMeshReplySettlement?(input: { readonly alive: () => boolean }): Promise<MeshReplySettlement>;
   currentMeshLedgerReceipt?(receipt: CurrentMeshLedgerReceipt): boolean;
   inspectSourceMeshBackings?(receipt: CurrentMeshLedgerReceipt, buffers: readonly ArrayBufferLike[]): Promise<SourceMeshBackingInspection>;
   /** Synchronous managed host/provider-lifetime freshness; publication still requires the async global observation. */

@@ -94,7 +94,9 @@ export default defineConfig({
       dependencies: ['viewport-performance'],
     },
     {
-      name: 'startup-firefox', testMatch: WEB_STARTUP_TEST, use: FIREFOX_USE,
+      // CI run 43102593955 e2e (ubuntu-latest, 5)、2026-11-12: firefox-graphicsが描画を禁じて起こすFirefoxとsmokeのFirefoxの起動が重なり、
+      // smoke:11のFirefoxがWebGLを作れなかった。2つのspecを同時に流さない。
+      name: 'startup-firefox', testMatch: WEB_STARTUP_TEST, use: FIREFOX_USE, workers: 1,
       dependencies: ['viewport-performance'],
     },
     {

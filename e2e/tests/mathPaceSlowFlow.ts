@@ -2,17 +2,19 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { expect, type ConsoleMessage, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { RECOMPUTE_TIMEOUT_MS } from '../../packages/test-utils/src/releasePerformance.js';
-import { mathInputFlow } from './mathInputFlow.js';
+import { mathInputFlow, type ActiveCancellation } from './mathInputFlow.js';
 import { functionVectorCalculusFlow } from './functionVectorCalculusFlow.js';
 import { functionHyperbolicFlow } from './functionHyperbolicFlow.js';
 import { functionDomainSurfaceFlow } from './functionPiecewiseDomainFlow.js';
 import { waitForStartupReady } from './startupHealth.js';
 
+// activeCancellation: the flow itself cancels a running calculation, so at least one actual cancellation is required.
+// The other flows only meet cancellations by chance, so they are checked when they occur but never required.
 export const W22_SCENARIOS = [
-  { id: 'input', run: mathInputFlow },
-  { id: 'ADD-23', run: functionVectorCalculusFlow },
-  { id: 'ADD-17', run: functionHyperbolicFlow },
-  { id: 'hemisphere', run: functionDomainSurfaceFlow },
+  { id: 'input', run: mathInputFlow, activeCancellation: true },
+  { id: 'ADD-23', run: functionVectorCalculusFlow, activeCancellation: false },
+  { id: 'ADD-17', run: functionHyperbolicFlow, activeCancellation: false },
+  { id: 'hemisphere', run: functionDomainSurfaceFlow, activeCancellation: false },
 ] as const;
 type Scenario = typeof W22_SCENARIOS[number];
 type RecordValue = Record<string, unknown>;
@@ -457,6 +459,7 @@ export async function mathPaceSlowFlow(page: Page, info: TestInfo, scenario: Sce
   expect(RECOMPUTE_TIMEOUT_MS, 'Original recompute deadline').toBe(150_000);
   const fingerprint = await inputFingerprint();
   const transport: RecordValue[] = [], phases: RecordValue[] = [], clients: RecordValue[] = [], editors: RecordValue[] = [], errors: string[] = [];
+  const activeCancellations: ActiveCancellation[] = [];
   let overflow = false, malformed = false, passed = false;
   const listen = (message: ConsoleMessage): void => {
     const text = message.text();
@@ -481,7 +484,8 @@ export async function mathPaceSlowFlow(page: Page, info: TestInfo, scenario: Sce
     await page.evaluate(installTransportObserver);
     await open?.();
     await waitForStartupReady(page);
-    await scenario.run(page, info, app);
+    if (scenario.activeCancellation) await scenario.run(page, info, app, { activeCancellations });
+    else await scenario.run(page, info, app);
     expect(await page.evaluate(() => Reflect.get(globalThis, Symbol.for('pcad.w22.observation-failed')) === true),
       'Payload observer failed; evidence refused').toBe(false);
     expect(errors).toEqual([]);
@@ -497,6 +501,23 @@ export async function mathPaceSlowFlow(page: Page, info: TestInfo, scenario: Sce
     expect(stages.filter(row => row.classification === 'completed').length).toBeGreaterThan(0);
     expect(stages.every(row => row.complete === true || row.classification === 'cancelled-before-adoption'),
       'Every actual request must have complete timing or actual active-request termination').toBe(true);
+    if (scenario.activeCancellation) {
+      // The exact request the flow cancelled (serial, identity, page clock), never a chance cancellation. Its Worker
+      // had started calculating it before the abort (same shared-clock comparison as pairOccurrences) and never replied.
+      const calculatingAtAbort = (row: RecordValue): boolean => {
+        const cancellation = object(row.cancellation);
+        const starts = (Array.isArray(row.observedPhases) ? row.observedPhases as unknown[] : [])
+          .map(object).filter(phase => phase?.phase === 'request-start');
+        return cancellation !== null && row.terminalObserved === false && starts.length === 1
+          && Number(starts[0]?.timeOrigin) + Number(starts[0]?.atMs) <= Number(row.hostTimeOrigin) + Number(cancellation.abortAt);
+      };
+      const caused = stages.filter(row => row.classification === 'cancelled-before-adoption' && calculatingAtAbort(row)
+        && activeCancellations.some(item => item.timeOrigin === row.hostTimeOrigin
+          && requestKey({ serial: item.serial, identity: item.identity }) === requestKey(row)));
+      expect(activeCancellations.length, 'The flow cancelled a calculation while it was running').toBeGreaterThan(0);
+      expect(caused.length, 'At least one actual active-request cancellation (abort, Worker terminate, discard, no adoption)')
+        .toBe(activeCancellations.length);
+    }
     passed = true;
   } finally {
     page.off('console', listen); page.off('pageerror', onError);

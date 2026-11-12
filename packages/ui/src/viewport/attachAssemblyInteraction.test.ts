@@ -956,3 +956,196 @@ describe('deferred component input held through the ownership refresh', () => {
       } finally { f.interaction.detach(); }
     });
 });
+
+/*
+ * CI run 43102593955 の EX-18 Electron B/e(部品の行の強調が 30 秒付かない)。受領だけが失効した表示では hover の拾いが
+ * 表示を片付けて null を返し、強調は元から null なので store は変わらない。hover は pointermove でしか決め直さないので、
+ * 表示の持ち主の取り直しを待って、同じ点で 1 回だけ拾い直す。次の移動・離脱・押下・1〜4・detach で捨てる。
+ */
+describe('hover over a display invalidated by its receipt is picked again once after the ownership refresh', () => {
+  type Prepared = 'pending' | 'ready' | 'spent' | 'reject' | 'none';
+  function hoverRepickFixture(prepared: Prepared = 'pending') {
+    const f = interactionFixture();
+    f.interaction.detach();
+    useAppStore.setState({ selectionKind: 'body', selection: [], hoveredElementId: null });
+    // 片付いた表示の拾いは null(createViewportScene の pickComponent と同じ)。作り直した後は x で部品が決まる。
+    const display = { invalidated: true };
+    const pickComponent = vi.fn((x: number): string | null =>
+      display.invalidated || x >= 500 ? null : x < 50 ? 'component-1' : 'component-2');
+    const scene = { ...f.scene, pickComponent, assemblyDisplayInvalidated: vi.fn(() => display.invalidated) };
+    let rect = { left: 0, top: 0 };
+    const canvas = Object.assign(f.canvas, { getBoundingClientRect: () => rect });
+    const settles: ((ready: boolean) => void)[] = [];
+    // ViewportCanvas の口と同じ形: 準備済みなら表示を作り直して true、取り直し中ならその Promise、使い切りなら false。
+    const prepareHoverInput = vi.fn((): Promise<boolean> | null => {
+      if (prepared === 'none') return null;
+      if (prepared === 'spent') return Promise.resolve(false);
+      if (prepared === 'reject') return Promise.reject(new Error('ownership refresh failed'));
+      if (prepared === 'ready') { display.invalidated = false; return Promise.resolve(true); }
+      return new Promise<boolean>(resolve => { settles.push(resolve); });
+    });
+    const interaction = attachAssemblyInteraction(canvas, scene, { viewDirection: () => [0, 0, 1], prepareHoverInput });
+    const move = (clientX: number): void => { f.send('pointermove', { pointerId: 1, clientX, clientY: 30 }); };
+    const microtasks = async (): Promise<void> => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); };
+    /** ViewportCanvas の取り直しと同じ順: 成功なら表示を作り直してから、待っている Promise が決着する。 */
+    const refreshed = async (ready = true): Promise<void> => {
+      if (ready) display.invalidated = false;
+      for (const settle of settles.splice(0)) settle(ready);
+      await microtasks();
+    };
+    const pickedAt = (): readonly number[] => pickComponent.mock.calls.map(call => call[0]);
+    return { ...f, scene, interaction, display, settles, prepareHoverInput, move, microtasks, refreshed, pickedAt,
+      moveCanvas: (left: number) => { rect = { left, top: 0 }; } };
+  }
+
+  it('(a) one move over the invalidated display is picked again once at the same point after the refresh', async () => {
+    const f = hoverRepickFixture();
+    try {
+      const before = useAppStore.getState();
+      f.move(100);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      expect(f.prepareHoverInput).toHaveBeenCalledTimes(1);
+      await f.refreshed();
+      expect(f.pickedAt()).toEqual([100, 100]);
+      expect(useAppStore.getState().hoveredElementId).toBe('component-2');
+      await f.refreshed();
+      expect(f.pickedAt()).toEqual([100, 100]);
+      expect(f.prepareHoverInput).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(useAppStore.getState().selection).toEqual([]);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('(a) a ready ownership rebuilds now and the one re-pick still runs after the current input', async () => {
+    const f = hoverRepickFixture('ready');
+    try {
+      f.move(100);
+      expect(f.pickedAt()).toEqual([100]);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      await f.microtasks();
+      expect(f.pickedAt()).toEqual([100, 100]);
+      expect(useAppStore.getState().hoveredElementId).toBe('component-2');
+      expect(f.prepareHoverInput).toHaveBeenCalledTimes(1);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('(b) a move while waiting discards the old re-pick and the new point decides', async () => {
+    const f = hoverRepickFixture();
+    try {
+      f.move(100); f.move(30);
+      expect(f.prepareHoverInput).toHaveBeenCalledTimes(2);
+      await f.refreshed();
+      expect(f.pickedAt()).toEqual([100, 30, 30]);
+      expect(useAppStore.getState().hoveredElementId).toBe('component-1');
+    } finally { f.interaction.detach(); }
+  });
+
+  it('(b) a later move over a display already rebuilt is not overwritten by the older point', async () => {
+    const f = hoverRepickFixture();
+    try {
+      f.move(100);
+      f.display.invalidated = false;
+      f.move(30);
+      expect(useAppStore.getState().hoveredElementId).toBe('component-1');
+      await f.refreshed();
+      expect(f.pickedAt()).toEqual([100, 30]);
+      expect(useAppStore.getState().hoveredElementId).toBe('component-1');
+      expect(f.prepareHoverInput).toHaveBeenCalledTimes(1);
+    } finally { f.interaction.detach(); }
+  });
+
+  it.each(['pointerleave', 'pointerdown', 'key-1', 'key-4', 'detach', 'canvas-moved', 'selection'] as const)(
+    '(c) %s while waiting discards the re-pick', async change => {
+      const f = hoverRepickFixture();
+      try {
+        f.move(100);
+        switch (change) {
+          case 'pointerleave': f.send('pointerleave', { pointerId: 1 }); break;
+          case 'pointerdown':
+            f.send('pointerdown', { pointerId: 1, clientX: 100, clientY: 30, buttons: 1 });
+            f.send('pointerup', { pointerId: 1, clientX: 100, clientY: 30 });
+            break;
+          case 'key-1': f.send('keydown', { key: '1' }); break;
+          case 'key-4': f.send('keydown', { key: '4' }); break;
+          case 'detach': f.interaction.detach(); break;
+          case 'canvas-moved': f.moveCanvas(10); break;
+          case 'selection': useAppStore.setState({ selection: ['component-1'] }); break;
+        }
+        const picks = f.pickedAt().length;
+        const hovered = useAppStore.getState().hoveredElementId;
+        await f.refreshed();
+        expect(f.pickedAt()).toHaveLength(picks);
+        expect(useAppStore.getState().hoveredElementId).toBe(hovered);
+        expect(hovered).toBeNull();
+        expect(f.prepareHoverInput).toHaveBeenCalledTimes(1);
+      } finally { f.interaction.detach(); }
+    });
+
+  it.each(['spent', 'reject', 'settled-false'] as const)('(d) a refresh that is %s leaves the hover off and is not repeated', async kind => {
+    const f = hoverRepickFixture(kind === 'settled-false' ? 'pending' : kind);
+    try {
+      f.move(100);
+      if (kind === 'settled-false') await f.refreshed(false);
+      await f.microtasks();
+      expect(f.prepareHoverInput).toHaveBeenCalledTimes(1);
+      expect(f.pickedAt()).toEqual([100]);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      await f.microtasks();
+      expect(f.pickedAt()).toEqual([100]);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('(d) the re-pick itself never asks again even when the display is still invalidated', async () => {
+    const f = hoverRepickFixture();
+    try {
+      f.move(100);
+      for (const settle of f.settles.splice(0)) settle(true);
+      await f.microtasks();
+      expect(f.pickedAt()).toEqual([100, 100]);
+      expect(f.prepareHoverInput).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      await f.microtasks();
+      expect(f.pickedAt()).toEqual([100, 100]);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('(d) an input without the hover entrance keeps the earlier behaviour: no refresh is asked and nothing is picked again', async () => {
+    const f = hoverRepickFixture('none');
+    try {
+      f.move(100);
+      await f.microtasks();
+      expect(f.prepareHoverInput).toHaveBeenCalledTimes(1);
+      expect(f.pickedAt()).toEqual([100]);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+    } finally { f.interaction.detach(); }
+  });
+
+  it('(e) a current display picks once per move and asks for no refresh, also over empty space', async () => {
+    const f = hoverRepickFixture();
+    try {
+      f.display.invalidated = false;
+      f.move(100);
+      expect(useAppStore.getState().hoveredElementId).toBe('component-2');
+      f.move(30);
+      expect(useAppStore.getState().hoveredElementId).toBe('component-1');
+      f.move(600);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      await f.microtasks();
+      expect(f.pickedAt()).toEqual([100, 30, 600]);
+      expect(f.prepareHoverInput).not.toHaveBeenCalled();
+      expect(f.settles).toHaveLength(0);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('(e) a held button or a drag never asks for a hover refresh', async () => {
+    const f = hoverRepickFixture();
+    try {
+      f.send('pointermove', { pointerId: 1, clientX: 100, clientY: 30, buttons: 1 });
+      f.send('pointermove', { pointerId: 1, clientX: 100, clientY: 30, altKey: true });
+      await f.microtasks();
+      expect(f.pickedAt()).toEqual([]);
+      expect(f.prepareHoverInput).not.toHaveBeenCalled();
+    } finally { f.interaction.detach(); }
+  });
+});

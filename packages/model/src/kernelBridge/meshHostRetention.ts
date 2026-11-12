@@ -1,3 +1,5 @@
+import type { MeshReplySettlement } from './bridgeContracts.js';
+
 /** Candidate only: main-realm backing reachability, never RSS/native/driver memory. */
 export type HostRetentionReading =
   | { readonly status: 'unknown'; readonly reason: string; readonly retainedBackingBytes: null; readonly pendingCloneBytes: null }
@@ -19,6 +21,11 @@ interface Owner { readonly ids: ReadonlySet<number> }
  * the same fixed per-reply metadata allowance the Worker mesh accounting uses (recomputeSolids.ts, 4,096 bytes).
  */
 export const HOST_RECORD_BYTES = 4096;
+/**
+ * The one deadline for waiting on reply clones: a reservation waiting for capacity and an observation waiting for no
+ * pending clone (CI 2026-11-12) use this same value.
+ */
+export const REPLY_RESERVATION_WAIT_MS = 10_000;
 
 export class MeshHostRetention {
   private identities = new WeakMap<ArrayBuffer, number>();
@@ -88,14 +95,14 @@ export class MeshHostRetention {
   /** Compatibility helper; detailed callers must distinguish ordinary budget refusal from transport failure. */
   async waitAndReserveReply(requestId: string, requested: number,
     shouldCancel: () => boolean | Promise<boolean>, alive: () => boolean,
-    maximumWaitMs = 10_000): Promise<number | null> {
+    maximumWaitMs = REPLY_RESERVATION_WAIT_MS): Promise<number | null> {
     const outcome = await this.reserveReplyWhenReady(requestId, requested, shouldCancel, alive, maximumWaitMs);
     return outcome.status === 'reserved' ? outcome.bytes : null;
   }
   /** The deadline includes asynchronous cancellation checks, and stop/current is rechecked after every await. */
   async reserveReplyWhenReady(requestId: string, requested: number,
     shouldCancel: () => boolean | Promise<boolean>, alive: () => boolean,
-    maximumWaitMs = 10_000): Promise<HostReservationOutcome> {
+    maximumWaitMs = REPLY_RESERVATION_WAIT_MS): Promise<HostReservationOutcome> {
     const unavailable = (reason: string): HostReservationOutcome => ({ status: 'unavailable', reason });
     if (!Number.isSafeInteger(requested) || requested <= 0 || requested > this.limitBytes
       || !Number.isSafeInteger(maximumWaitMs) || maximumWaitMs <= 0 || this.waiting >= this.maximumOwners)
@@ -147,13 +154,35 @@ export class MeshHostRetention {
         if (granted > 0 && this.reserveReply(requestId, granted)) return { status: 'reserved', bytes: granted };
         const remaining = deadline - performance.now();
         if (remaining <= 0) return { status: 'timeout', reason: 'reservation-deadline' };
-        await new Promise<void>(resolve => {
-          const notify = (): void => { clearTimeout(timer); this.changes.delete(notify); resolve(); };
-          const timer = setTimeout(notify, Math.min(remaining, 25));
-          this.changes.add(notify);
-        });
+        await this.nextChange(remaining);
       }
     } finally { this.waiting -= 1; }
+  }
+  /**
+   * Waits until no reply clone is reserved: the precondition of a fresh current-ledger capture (CI 2026-11-12: a new
+   * empty assembly observed while the startup Part reply was still reserved). It only observes; another request's
+   * reservation clears through its own adoption or settleWithoutReply, never here. Same deadline as reservations.
+   */
+  async waitForNoPendingClone(alive: () => boolean,
+    maximumWaitMs = REPLY_RESERVATION_WAIT_MS): Promise<MeshReplySettlement> {
+    const deadline = performance.now() + maximumWaitMs;
+    while (true) {
+      if (!alive()) return 'stopped';
+      const reading = this.observe();
+      if (reading.status !== 'known') return 'unavailable';
+      if (reading.pendingCloneBytes === 0) return 'settled';
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) return 'timeout';
+      await this.nextChange(remaining);
+    }
+  }
+  /** Resolves on the next ledger change, or after the existing short poll so liveness and the deadline are rechecked. */
+  private nextChange(remaining: number): Promise<void> {
+    return new Promise<void>(resolve => {
+      const notify = (): void => { clearTimeout(timer); this.changes.delete(notify); resolve(); };
+      const timer = setTimeout(notify, Math.min(remaining, 25));
+      this.changes.add(notify);
+    });
   }
   /** Register every actual received backing before clearing its request's clone reservation. */
   adoptReply(requestId: string, ownerId: string, buffers: readonly ArrayBuffer[]): HostRetentionReading {

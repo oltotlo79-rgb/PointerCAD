@@ -7,7 +7,14 @@ import { linuxProcessTreeDiscovery, type ProcessMemoryFrame, type ProcessMemoryS
 export const INTERVAL_MS = 100;
 export const DISCOVERY_INTERVAL_MS = 2_000;
 /** A discovery starts this long after the previous start, so a normal one completes inside the 2000ms age limit. */
-const DISCOVERY_START_MS = DISCOVERY_INTERVAL_MS / 2;
+export const DISCOVERY_START_MS = DISCOVERY_INTERVAL_MS / 2;
+/**
+ * Part of the 2000ms age limit kept for the frame itself (wake-up after its sleep, native reads, timing record).
+ * One period (100ms) was not enough on CI: the Windows sampler stalled 657-747ms (2026-11-10 frames 15/1069: a 90ms
+ * sleep took 747ms, reads took 672-705ms). Locally loop start to read end was at most 36ms and a 1200ms wait
+ * threshold caused 0 waits. With less than this left, a frame first binds to the running discovery.
+ */
+export const DISCOVERY_READ_RESERVE_MS = 800;
 export interface LinuxReading {
   readonly statBefore: string | null; readonly status: string | null; readonly statAfter: string | null;
   readonly stateBefore: string | null; readonly stateAfter: string | null;
@@ -412,12 +419,12 @@ $previousOutput=$null
 $previousSleep=$null
 while($true){
   $loopStartedAt=[SamplerNative]::EpochMilliseconds()
-  # The adopted set must stay inside the discovery age limit for the whole read. When it is within
-  # one period of that limit (a late discovery or a delayed loop), bind this frame to a running
+  # The adopted set must stay inside the discovery age limit for the whole read. When less than the
+  # read reserve of that limit remains (a late discovery or a delayed loop), bind this frame to a running
   # discovery instead of reading the old PID set: start one if none is running, then wait for it,
   # bounded by the age limit. The wait lies between loopStartedAt and readStartedAt of this frame.
   # A discovery that is still late leaves the frame stale, and it is rejected as before.
-  if($discoveredAt -gt 0 -and $loopStartedAt-$discoveredAt -ge ${DISCOVERY_INTERVAL_MS - INTERVAL_MS}){
+  if($discoveredAt -gt 0 -and $loopStartedAt-$discoveredAt -ge ${DISCOVERY_INTERVAL_MS - DISCOVERY_READ_RESERVE_MS}){
     if($null -eq $pending){
       $pending=Start-Discovery
       $discoveryStartedAt=$pending.startedAt

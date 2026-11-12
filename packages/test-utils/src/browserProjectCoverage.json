@@ -235,7 +235,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "8eda42ece147fbd338561ba489671a723dc7ef7482258ea902099c86e068f165",
+  "configSha256": "cc7d2877c27fef2c8cb4e2d507c0e04eaa31a51990e0f8e12a1ef3c692afbee5",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {

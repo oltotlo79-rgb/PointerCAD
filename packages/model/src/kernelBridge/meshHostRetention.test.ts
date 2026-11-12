@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOST_RECORD_BYTES, MeshHostRetention } from './meshHostRetention.js';
+import { HOST_RECORD_BYTES, MeshHostRetention, REPLY_RESERVATION_WAIT_MS } from './meshHostRetention.js';
 
 describe('host backing ownership candidate', () => {
   it('a cancelled old session still holding its body keeps whole backing counted and blocks overlapping reply', () => {
@@ -352,5 +352,54 @@ describe('non-mutating host epoch diagnostics', () => {
     expect(lost.changes).toHaveLength(128); expect(lost.dropped).toBe(5);
     expect(lost.pendingRequests).toBe(0); expect(lost.acceptanceComplete).toBe(false);
     expect(lost.changes.every((change, index) => index === 0 || change.epoch > lost.changes[index - 1].epoch)).toBe(true);
+  });
+});
+
+// CI 2026-11-12: an observation must wait for another request's in-flight reply clone, never release it itself.
+describe('waiting until no reply clone is reserved', () => {
+  afterEach(() => vi.useRealTimers());
+  it('settles only after the pending reply is adopted or settled without a clone, and at once when none is pending', async () => {
+    const ledger = new MeshHostRetention(512);
+    expect(ledger.reserveReply('startup-part', 512)).toBe(true);
+    let result: string | null = null;
+    const waiting = ledger.waitForNoPendingClone(() => true).then(value => { result = value; return value; });
+    await Promise.resolve(); await Promise.resolve();
+    expect(result).toBeNull(); expect(ledger.replyReservation('startup-part')).toBe(512);
+    ledger.adoptReply('startup-part', 'startup-owner', [new ArrayBuffer(16)]);
+    expect(await waiting).toBe('settled');
+    expect(ledger.observe()).toMatchObject({ pendingCloneBytes: 0, retainedBackingBytes: 16 });
+    expect(ledger.reserveReply('unsent', 64)).toBe(true);
+    const unsent = ledger.waitForNoPendingClone(() => true);
+    ledger.settleWithoutReply('unsent');
+    expect(await unsent).toBe('settled');
+    expect(await ledger.waitForNoPendingClone(() => true)).toBe('settled');
+  });
+  it('times out at the shared reservation deadline and keeps the unrelated pending reservation', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    expect(REPLY_RESERVATION_WAIT_MS).toBe(10_000);
+    const ledger = new MeshHostRetention(512);
+    expect(ledger.reserveReply('never-replied', 512)).toBe(true);
+    let result: string | null = null;
+    const waiting = ledger.waitForNoPendingClone(() => true).then(value => { result = value; return value; });
+    await vi.advanceTimersByTimeAsync(REPLY_RESERVATION_WAIT_MS - 1);
+    expect(result).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await waiting).toBe('timeout');
+    expect(ledger.replyReservation('never-replied')).toBe(512);
+  });
+  it('stops as soon as its owner is no longer current without touching the reservation', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const ledger = new MeshHostRetention(512);
+    expect(ledger.reserveReply('other-request', 512)).toBe(true);
+    let current = true;
+    const waiting = ledger.waitForNoPendingClone(() => current);
+    current = false; await vi.advanceTimersByTimeAsync(25);
+    expect(await waiting).toBe('stopped');
+    expect(ledger.replyReservation('other-request')).toBe(512);
+  });
+  it('an unknown ledger is unavailable, never settled', async () => {
+    const ledger = new MeshHostRetention(64);
+    ledger.markCoverageUnknown('test-unknown');
+    expect(await ledger.waitForNoPendingClone(() => true)).toBe('unavailable');
   });
 });

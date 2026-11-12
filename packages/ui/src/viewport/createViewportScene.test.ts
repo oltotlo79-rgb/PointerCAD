@@ -2311,6 +2311,31 @@ describe('BUG.VIEW-PICK-NULL: 台帳の受領だけが失効した表示での�
       expect(useAppStore.getState().selection).toEqual(['component-1']);
     } finally { interaction.detach(); f.viewport.dispose(); resetTestStore(); }
   });
+
+  // CI run 43102593955 の EX-18 Electron B/e: 同じ失効に hover の 1 回の移動が当たると、強調は 30 秒付かなかった。
+  it('hover: 1 回の移動が表示を片付けても、取り直して作り直した表示で同じ点を 1 回だけ拾い直して光らせる', async () => {
+    const f = ledgerOwnedAssembly();
+    const settles: ((ready: boolean) => void)[] = [];
+    const prepareHoverInput = vi.fn(() => new Promise<boolean>(resolve => { settles.push(resolve); }));
+    const interaction = attachAssemblyInteraction(f.canvas, f.viewport, { viewDirection: () => [0, 0, 1], prepareHoverInput });
+    try {
+      expect(f.viewport.pickComponent(320, 240)).toBe('component-1');
+      const before = useAppStore.getState();
+      f.ledger.current = false;
+      f.send('pointermove');
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      expect(f.viewport.assemblyDisplayInvalidated()).toBe(true);
+      expect(prepareHoverInput).toHaveBeenCalledTimes(1);
+      f.publishFreshOwnership();
+      for (const settle of settles.splice(0)) settle(true);
+      await Promise.resolve(); await Promise.resolve();
+      expect(useAppStore.getState().hoveredElementId).toBe('component-1');
+      expect(prepareHoverInput).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().selection).toEqual([]);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { interaction.detach(); f.viewport.dispose(); resetTestStore(); }
+  });
 });
 
 describe('native planar basis display ownership', () => {

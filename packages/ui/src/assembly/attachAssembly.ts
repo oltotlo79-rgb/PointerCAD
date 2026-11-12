@@ -278,19 +278,53 @@ export const ASSEMBLY_CONSTRAINT_EXECUTION: AssemblyConstraintExecution = {
   schedule: slice => { setTimeout(slice, 0); },
 };
 
-/** Obtain a complete fresh observation only after an explicit epoch conflict. */
+/** A refusal naming the gate stage that threw, so the cleanup gate keeps it instead of an unclassified exception. */
+class AssemblyRecomputeRefusal extends Error {
+  readonly stage: string;
+  constructor(stage: string, message: string) { super(message); this.stage = stage; }
+}
+
+interface ObservationGates {
+  readonly obsolete: (request: Request) => boolean;
+  readonly gate: (request: Request, stage: string, reason?: string | null, count?: number | null) => void;
+  readonly refuse: (request: Request, stage: string, reason: string) => never;
+}
+
+/** At most this many waits for another request's reply clone within one initial observation (a count, not a time). */
+const PENDING_REPLY_WAITS = 2;
+
+/**
+ * `pending-reply` is another request's reply clone still reserved in the realm ledger (CI 2026-11-12: the startup empty
+ * Part request while a new empty assembly observed). It is a precondition to wait for through the bridge's actual
+ * settlement, bounded by the ledger's reply reservation deadline, at most PENDING_REPLY_WAITS times. An unsettled or
+ * exhausted wait fails closed with its own stage. Returns false when the request became obsolete during the wait.
+ */
+async function awaitPendingReply(bridge: AssemblyKernelBridge, request: Request, wait: number,
+  { obsolete, gate }: ObservationGates): Promise<boolean> {
+  const unsettled = (reason: string): never => {
+    gate(request, 'pending-reply-unsettled', reason, wait);
+    throw new AssemblyRecomputeRefusal('pending-reply-unsettled', t('assembly.recomputeFailed'));
+  };
+  if (wait > PENDING_REPLY_WAITS) unsettled('wait-limit');
+  const settlement = await bridge.awaitMeshReplySettlement?.({ alive: () => !obsolete(request) }) ?? 'unavailable';
+  if (obsolete(request)) return false;
+  gate(request, 'pending-reply-wait', settlement, wait);
+  if (settlement !== 'settled') unsettled(settlement);
+  return true;
+}
+
+/** Obtain a complete fresh observation only after an explicit epoch conflict or a settled pending reply. */
 async function captureInitialAssemblyObservation(
   bridge: AssemblyKernelBridge, request: Request, sources: ReadonlyMap<string, AssemblySourceMeshOwner>,
   owners: Parameters<NonNullable<AssemblyKernelBridge['captureCurrentMeshLedger']>>[0]['owners'],
-  { obsolete, gate, refuse }: {
-    readonly obsolete: (request: Request) => boolean;
-    readonly gate: (request: Request, stage: string, reason?: string | null, count?: number | null) => void;
-    readonly refuse: (request: Request, stage: string, reason: string) => never;
-  },
+  gates: ObservationGates,
 ) {
+  const { obsolete, gate, refuse } = gates;
   let receipt: Awaited<ReturnType<NonNullable<AssemblyKernelBridge['captureCurrentMeshLedger']>>> | undefined;
   let inspection: Awaited<ReturnType<NonNullable<AssemblyKernelBridge['inspectSourceMeshBackings']>>> | undefined;
   let uiInputs: ArrayBuffer[], uiGeneration: number;
+  // The one explicit epoch-conflict restart is counted apart from pending-reply waits, so a wait never consumes it.
+  let conflictRestarts = 0, pendingWaits = 0;
   for (let attempt = 0; ; attempt += 1) {
     if (obsolete(request)) return;
     if ([...sources.values()].some(source => !source.current())) refuse(request, 'source-owner-stale', t('assembly.recomputeFailed'));
@@ -312,11 +346,18 @@ async function captureInitialAssemblyObservation(
     if ([...sources.values()].some(source => !source.current())) refuse(request, 'source-owner-stale', t('assembly.recomputeFailed'));
     if (receipt?.status === 'unknown') {
       gate(request, 'receipt-unknown', receipt.reason);
-      if (attempt === 0 && receipt.reason === 'host-epoch-changed') {
+      if (conflictRestarts === 0 && receipt.reason === 'host-epoch-changed') {
+        conflictRestarts += 1;
         gate(request, 'observation-restarted', receipt.reason, attempt + 1);
         continue;
       }
-      throw new Error(t('assembly.recomputeFailed'));
+      if (receipt.reason !== 'pending-reply' || bridge.awaitMeshReplySettlement === undefined) {
+        throw new AssemblyRecomputeRefusal('receipt-unknown', t('assembly.recomputeFailed'));
+      }
+      pendingWaits += 1;
+      if (!(await awaitPendingReply(bridge, request, pendingWaits, gates))) return;
+      gate(request, 'observation-restarted', receipt.reason, attempt + 1);
+      continue;
     }
     inspection = receipt === undefined ? undefined : await bridge.inspectSourceMeshBackings?.(receipt, uiInputs);
     if (obsolete(request)) return;
@@ -324,7 +365,8 @@ async function captureInitialAssemblyObservation(
     gate(request, 'inspection', inspection?.status ?? 'unavailable');
     if (inspection?.status === 'unknown') {
       gate(request, 'inspection-reason', inspection.reason);
-      if (attempt === 0 && inspection.reason === 'host-epoch-changed') {
+      if (conflictRestarts === 0 && inspection.reason === 'host-epoch-changed') {
+        conflictRestarts += 1;
         gate(request, 'observation-restarted', inspection.reason, attempt + 1);
         continue;
       }
@@ -369,7 +411,7 @@ export function attachAssembly(
     } catch { /* Diagnostic timing never changes recomputation or publication. */ }
   };
   function refuse(request: Request, stage: string, reason: string): never {
-    gate(request, stage, reason); throw new Error(reason);
+    gate(request, stage, reason); throw new AssemblyRecomputeRefusal(stage, reason);
   }
   let detached = false;
   let running = false;
@@ -692,7 +734,7 @@ export function attachAssembly(
     if (bridge.currentMeshLedgerReceipt?.(receipt) !== true) refuse(request, 'receipt-stale', t('assembly.recomputeFailed'));
     gate(request, 'receipt-current');
     if (inspection === undefined) refuse(request, 'inspection-unavailable', t('assembly.recomputeFailed'));
-    if (inspection.status !== 'known') { gate(request, 'inspection-unknown', inspection.reason); throw new Error(t('assembly.recomputeFailed')); }
+    if (inspection.status !== 'known') { gate(request, 'inspection-unknown', inspection.reason); throw new AssemblyRecomputeRefusal('inspection-unknown', t('assembly.recomputeFailed')); }
     if (bridge.currentSourceMeshBackingInspection?.(inspection, receipt) !== true) refuse(request, 'inspection-stale', t('assembly.recomputeFailed'));
     gate(request, 'inspection-current');
     if (assemblyUiBackings.epoch() !== uiGeneration) refuse(request, 'ui-epoch-changed', t('assembly.recomputeFailed'));
@@ -805,7 +847,7 @@ export function attachAssembly(
             useAppStore.getState().recordRecomputeCompletion(request.generation, 'cancelled');
           }
         } catch (error: unknown) {
-          gate(request, 'calculate-threw-before-cleanup', 'unclassified-exception');
+          gate(request, 'calculate-threw-before-cleanup', error instanceof AssemblyRecomputeRefusal ? error.stage : 'unclassified-exception');
           await releaseAll();
           if (!obsolete(request)) {
             const message = error instanceof Error ? error.message : String(error);

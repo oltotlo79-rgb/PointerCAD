@@ -19,6 +19,7 @@ __pycache__/
 # E2E
 playwright-report/
 test-results/
+debug.log
 
 # 環境・エディタ
 .env

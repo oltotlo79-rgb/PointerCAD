@@ -122,6 +122,8 @@ Dependabotの**通常更新は実行中だが失敗中**。10/1のsecurity job `
 | #68 高 | [GHSA-394h-qwmc-48pf](https://github.com/advisories/GHSA-394h-qwmc-48pf) | virtualenv 21.14.6 → 21.14.9 | 同上 | Xonshの有効化の台本を、別の文字の符号で読む | 同上 | 2026-12-12 |
 | #61 高 | [GHSA-v4x8-3wr5-3wq8](https://github.com/advisories/GHSA-v4x8-3wr5-3wq8) | filelock 4.1.0 → 4.2.1 | `venv-requirements.txt` 12行と台本160行だけ。filelockのコードは同梱物に0件 | 同じ機械の別の利用者が、錠のデータベースの横にリンクやジャーナルのファイルを置く | 同上 | 2026-12-12 |
 
+注記（2026-11-13）: 上の6件は、2026-11-13 14:04 JSTに取り直した未解決の一覧に無い（`open`でなくなった）。下の全37件の表の後の注記を参照。
+
 全37件（悪用に要る条件は、同じ部品の警告に共通の形で書く。題はGHSAの原文）:
 
 | 警告 | 深刻度 | 部品 | GHSA | 題 | 今の版 → 修正版 | 悪用に要る条件 | 判定 | 再確認の期限 |
@@ -164,9 +166,11 @@ Dependabotの**通常更新は実行中だが失敗中**。10/1のsecurity job `
 | #79 | 低 | filelock | [9j6q-wvj5-jgjg](https://github.com/advisories/GHSA-9j6q-wvj5-jgjg) | filelock: Symlink swap during SoftFileLock's writability check leaks whether a path exists and is writable by the lock taker | 4.1.0 → 4.2.1 | 同じ機械の別の利用者が、錠のフォルダーへリンク・ファイルを置く／名前を差し替える | 開発の時だけ届く | 2026-12-12 |
 | #85 | 低 | filelock | [wfhq-q4j2-c37m](https://github.com/advisories/GHSA-wfhq-q4j2-c37m) | filelock: SoftReadWriteLock follows a lock tree swapped in after its first acquire and writes lock records into directories of the user running the lock | 4.1.0 → 4.2.1 | 同じ機械の別の利用者が、錠のフォルダーへリンク・ファイルを置く／名前を差し替える | 開発の時だけ届く | 2026-12-12 |
 
+注記（2026-11-13 14:04 JSTに取り直し）: 上の表のうちcertifi・filelock・pip・virtualenvの36件は、取り直した未解決の一覧（`scratchpad/claude/root-runtime/r11-evidence-1112/dependabot-alerts-open-after-84547139.json`。mainの84547139aec931f1a94e3d6619d2c8b4879b4ebcへ送った後、未解決〔`state`が`open`〕だけの取得）に0件で、`open`でなくなった。`open`でなくなった後の`state`（`fixed`か`dismissed`か）は、この材料には無い。表は2026-11-12時点の記録として残す。
+
 minimatchの#86（GHSA-g3hv-75wg-m249）は上の節「minimatch GHSA-g3hv-75wg-m249」の判定と期限のまま（この記録では変えていない）。
 
-### 2026-11-12 21:04の決定: 36件の4部品の版を上げた（alertのstateは未確認）
+### 2026-11-12 21:04の決定: 36件の4部品の版を上げた（2026-11-13の取り直しで36件は`open`でなくなった。virtualenvの新しい2件は未解決）
 
 - 利用者が2026-11-12 21:04に、選択肢の質問で「今すぐ版を上げる」を選んだ（依存の変更の承認。対象はcertifi・filelock・pip・virtualenvの4つの版だけ）。作業は担当cl-v103-fem-venv-versions-1112。
 - 上げた版: certifi 2026.7.22→2026.10.18、filelock 4.1.0→4.2.1、pip 24.3.1→26.2.0、virtualenv 21.14.6→21.14.9。上の36件それぞれの`first_patched_version`以上であることを、2026-11-12 18:45に取得した警告の材料で1件ずつ確かめた（36件とも満たす）。
@@ -176,6 +180,12 @@ minimatchの#86（GHSA-g3hv-75wg-m249）は上の節「minimatch GHSA-g3hv-75wg-
 - 続き（統括の決定）: 版を上げた後に中身と合わなくなった注記を直した。`venv-requirements.txt`の1行目（上の「36件に共通の事実」で引いた「Exact post-repair build venv (CPython 3.13.2)」）は、台本が求めるvenvの版であること、4つを2026-11-12に脆弱性の修正版へ上げたこと、ほかの版は作り直しの後の環境（export logs/cli-compatibility-r1/02-after.stdout）の記録のままであること、新しい4つの版での作り直しは実行していないことを書く文に替えた。台本の3行目・6行目の注記と173行目の止まる時の文は、照合の相手を「この台本が求めるvenvの版（`venv-requirements.txt`）」と書く文に替えた（文字だけで、照合の中身・終了コード・行数は同じ）。
 - 同梱の`replay_controls.py`と`replay-status.json`は2026-10-12の作り直し（台本のSHA-256 `1eb34343…`）の記録で、版を上げた後の台本にはそのままでは使えない（`replay_controls.py`は台本のSHA-256が違うと、何も流す前に「script SHA mismatch」で止まる作り）。新しい台本用の制御は用意していない。`acquisition-request.json` 182行の「existing post-repair venv」は当時の依頼の文で、当時のvenv（4つが古い版）は今の台本の`s_venv`の版の照合で止まる作り。どちらも実行しての確認はしていない。これらの記録のファイルは変えていない。
 - alertのstate: mainへ送った後にDependabotのalertを取り直して36件の`state`を確かめるまでは「解消」と書かない。上の36件の表（期限2026-12-12の例外）は、その確認までの記録として残す。確認の後に、この節へ結果を足す。
+- 2026-11-13 14:04 JSTの取り直し（統括。mainの84547139へ送った後、材料は`scratchpad/claude/root-runtime/r11-evidence-1112/dependabot-alerts-open-after-84547139.json`）: 未解決は37件から3件になった。前回の4部品の36件は未解決の一覧に0件（`open`でなくなった。その後の`state`は材料に無い）。残る3件は、minimatchの#86（上の節のまま）と、上げた先のvirtualenv 21.14.9に2026-11-12 21:21 UTCに新しく出た2件: #87 高 GHSA-cx6f-vjhg-g3cc（範囲 >= 21.14.9, < 21.14.13、修正版21.14.13）、#88 中 GHSA-4f8h-vr72-p32c（範囲 >= 21.14.8, < 21.14.10、修正版21.14.10）。certifi・filelock・pipの未解決は0件。
+- 利用者の決定: 2026-11-13 15:06に、選択肢の質問で「9回目を最終の候補にする」を選んだ（virtualenvを21.14.13へ上げ、ほかの直しとまとめて9回目で送り、その版で導入の確認と独立評価を行う）。
+- 上げた版: virtualenv 21.14.9→21.14.13（21.14.9は#87・#88の範囲の内、21.14.13は2件の範囲の外で、どちらの修正版以上）。変えたファイル: `venv-requirements.txt`の43行と1行目の注記、台本の`s_venv`の照合の値（167行）と6行目の注記、固定値（`manifest.json`・`evidence/source-index.json`・`packet-inventory.json`の大きさとSHA-256）、手引き53行、版の検査の定数（`packages/fem/src/runtimeDelivery.test.ts`）。certifi・filelock・pipの版は変えていない。21.14.13での作り直しは実行しておらず、版どうしの両立も確かめていない（ネットワークへ取りに行っていない）。
+- #87・#88の扱い: 9回目をmainへ送った後にalertを取り直して`state`を確かめるまでは「解消」と書かない。それまでは下の運用のとおり、配布物には一覧の文字だけが入りvirtualenvのコードは入らない「開発の時だけ届く」例外として記録する（ID #87・#88、根拠は上の「36件に共通の事実」と同じ行番号、調べた担当 cl-v103-fem-venv-versions-1112／採否は統括、期限2026-12-13〔取得から30日〕）。
+
+運用（2026-11-13から）: 版を上げるたびに、mainへ送った後にDependabotのalertを取り直す。上げた先の版に新しい警告が出ることがある（2026-11-13のvirtualenv 21.14.9の#87・#88）。新しい警告が、配布物に入らず開発の時だけ届く物なら、警告のID・届かない根拠（行番号）・担当・30日以内の期限を書いた例外として記録し、次の送信で修正版へ上げる。対象外とする判定の一般の決まりは上の節「判定と期限」のとおり。
 
 ### 10/1〜10/3の失敗10本
 

@@ -1,4 +1,4 @@
-# Venv versions this recipe requires (rebuild-oofem-pyodide.sh s_venv, CPython 3.13.2). certifi, filelock, pip and virtualenv were raised to security-fix versions on 2026-11-12; the other versions remain the record of the post-repair venv from export logs/cli-compatibility-r1/02-after.stdout. No rebuild has been run with the four new versions.
+# Venv versions this recipe requires (rebuild-oofem-pyodide.sh s_venv, CPython 3.13.2). certifi, filelock, pip and virtualenv were raised to security-fix versions on 2026-11-12 (virtualenv again, to 21.14.13, on 2026-11-13); the other versions remain the record of the post-repair venv from export logs/cli-compatibility-r1/02-after.stdout. No rebuild has been run with the four new versions.
 # pyodide-build and scikit-build-core were installed from the bundled source archives listed in build-inputs.json.
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -40,5 +40,5 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 unearth==0.18.3
 urllib3==2.8.0
-virtualenv==21.14.9
+virtualenv==21.14.13
 wheel==0.48.0

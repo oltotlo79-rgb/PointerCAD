@@ -1,8 +1,10 @@
 import { test, type Page } from '@playwright/test';
 import { FIREFOX_GRAPHICS_PREFS } from '../firefoxLaunch.js';
 import { saveCancelFlow, saveDocumentSwitchFlow, saveStatusDisplayFlow } from './saveResponsivenessFlow.js';
+import { installStartupDiagnostics } from './startupHealth.js';
 
 test.use({ browserName: 'firefox', launchOptions: { firefoxUserPrefs: FIREFOX_GRAPHICS_PREFS } });
+test.beforeEach(async ({ page }) => { await installStartupDiagnostics(page); });
 
 /** Firefox の既定(File System Access API なし)と同じく、ダウンロード代替・ファイル選択の経路を通す。 */
 async function withoutPickers(page: Page): Promise<void> {

@@ -3,7 +3,7 @@
 # r15 (replay environment, see replay-environment.json; the venv versions this recipe requires are venv-requirements.txt): exact 13-file wheelhouse, all build requirements pinned,
 # no discarded exit status in the pip/emscripten set-up, aarch64 host. This recipe is UNEXECUTED as a whole. It mirrors the actually executed native build that produced
 # oofem-3.1.dev5+g214b161ed-cp313-cp313-pyodide_2025_0_wasm32.whl (aaff729b15e1cec2ef90c9c0bb2d3594b3997b523d35344b18ba9f64d4d1a7e4);
-# see packet-files.json for the exact relationship. It is not that build. Since 2026-11-12, s_venv requires certifi, filelock, pip and virtualenv at security-fix versions (venv-requirements.txt) that differ from replay-environment.json; no rebuild has been run with them.
+# see packet-files.json for the exact relationship. It is not that build. Since 2026-11-12 (virtualenv 21.14.13 since 2026-11-13), s_venv requires certifi, filelock, pip and virtualenv at security-fix versions (venv-requirements.txt) that differ from replay-environment.json; no rebuild has been run with them.
 #
 # Usage (own process group):
 #   setsid --wait bash rebuild-oofem-pyodide.sh --oofem-tar FILE --pybind11-tar FILE --timer-patch FILE \
@@ -164,7 +164,7 @@ want = {'annotated-doc': '0.0.5', 'annotated-types': '0.8.0', 'anyio': '4.15.1',
         'pyodide-lock': '0.1.3', 'pyproject-hooks': '1.3.3', 'python-discovery': '1.6.2', 'requests': '2.34.2',
         'resolvelib': '1.2.1', 'rich': '15.0.0', 'ruamel-yaml': '0.19.1', 'scikit-build-core': '0.11.6',
         'shellingham': '1.5.4', 'typer': '0.25.1', 'typing-inspection': '0.4.4', 'typing-extensions': '4.16.0',
-        'unearth': '0.18.3', 'urllib3': '2.8.0', 'virtualenv': '21.14.9', 'wheel': '0.48.0'}
+        'unearth': '0.18.3', 'urllib3': '2.8.0', 'virtualenv': '21.14.13', 'wheel': '0.48.0'}
 norm = lambda n: n.lower().replace('_', '-').replace('.', '-')
 have = {norm(d.metadata['Name']): d.version for d in distributions()}
 want = {norm(k): v for k, v in want.items()}

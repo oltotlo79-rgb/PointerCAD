@@ -162,12 +162,27 @@ function contextForm(page: Page): Locator {
   return page.getByTestId('assembly-context-form');
 }
 
-async function selectComponent(page: Page, index: number): Promise<void> {
+function componentRow(page: Page, index: number): Locator {
   const section = page.locator('.pcad-tree__sections > li').filter({
     has: page.locator('.pcad-tree__section .pcad-tree__label', { hasText: '部品' }) });
-  const row = section.locator(':scope > .pcad-tree__children > li > .pcad-tree__row').locator('.pcad-tree__select').nth(index);
+  return section.locator(':scope > .pcad-tree__children > li > .pcad-tree__row').nth(index);
+}
+
+async function selectComponent(page: Page, index: number): Promise<void> {
+  const row = componentRow(page, index).locator('.pcad-tree__select');
   await row.click();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
+}
+
+/** Diagnostic only: the viewport's last pointerdowns (gate, deferral, readiness) when the drag did not recompute. */
+async function readDragInput(page: Page): Promise<unknown> {
+  return page.evaluate(() => {
+    const read: unknown = Reflect.get(window, 'pcadViewportAssemblyOwner');
+    const value: unknown = typeof read === 'function' ? read() : null;
+    const field = (key: string): unknown => value !== null && typeof value === 'object' ? Reflect.get(value, key) : undefined;
+    return { mateInputs: field('mateInputs') ?? null, assemblyReadyRefusal: field('assemblyReadyRefusal') ?? null,
+      assemblyRefreshOutcome: field('assemblyRefreshOutcome') ?? null };
+  });
 }
 
 function expectPoint(actual: readonly number[], expected: readonly number[], tolerance: number): void {
@@ -248,11 +263,21 @@ test.describe('EX-18 流れ5 組立の文脈の参照', () => {
     expectPoint(before, [10, 15, 10], 1e-9);
     const grab = await worldOnScreen(page, [10, 15, 12]), drop = await worldOnScreen(page, [25, 15, 12]);
     await page.mouse.move(...grab);
+    // Press only once B is picked on the current display (its tree row is highlighted), as assemblyCoupledDragFlow.ts
+    // grabPoint does. A press that waits for the display ownership refresh and is moved and released meanwhile neither
+    // drags nor selects (attachAssemblyInteraction.test.ts "a held press that moved and was released before the refresh").
+    await expect(componentRow(page, 1)).toHaveClass(/pcad-tree__row--hovered/u);
     await page.mouse.down();
     await page.mouse.move(drop[0], drop[1], { steps: 8 });
     token = await beginRecompute(page);
     await page.mouse.up();
-    await waitForRecompute(page, token);
+    try {
+      await waitForRecompute(page, token);
+    } catch (error) {
+      await test.info().attach('route5-drag-input', { body: JSON.stringify(await readDragInput(page).catch(() => null), null, 2),
+        contentType: 'application/json' }).catch(() => undefined);
+      throw error;
+    }
     await expect(page.locator('.pcad-statusbar__text')).toHaveText('部品の移動を確定しました。');
     const moved = (await readAssemblyStats(page)).components[1]?.resolved?.position ?? [];
     expect(Math.abs((moved[0] ?? Number.NaN) - 10)).toBeGreaterThan(1);

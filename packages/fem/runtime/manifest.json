@@ -85,7 +85,7 @@
     },
     "evidence/source-index.json": {
       "bytes": 66382,
-      "sha256": "b966ff6d64b638f914e9cb3d6fac0f7374d47caa277a9a2434486708249124f8"
+      "sha256": "f8ba4310872ff3b48c045c5898252da9e1e8678c6892206fecbeb89acf33f740"
     },
     "evidence/source-supplement.md": {
       "bytes": 4035,
@@ -472,8 +472,8 @@
       "sha256": "3651317c63deb56ba201d1737bc12a038e579fb6986ae619b38717fc3a23eaff"
     },
     "sources/native-rebuild/portable/rebuild-oofem-pyodide.sh": {
-      "bytes": 19274,
-      "sha256": "cf15806cc115b25f39f485e3c3dd1ad0514c3541e07f1551d14a80b55b24627c"
+      "bytes": 19314,
+      "sha256": "76c7542725cfb35309cd2abb911f69a912b83a6069c24b92611317ff8cdc4638"
     },
     "sources/native-rebuild/portable/replay-environment.json": {
       "bytes": 20212,
@@ -492,8 +492,8 @@
       "sha256": "2d7dbe5e79364c106d6690b492a6dc599ebfe378bdb20c636778b880d1fb524a"
     },
     "sources/native-rebuild/portable/venv-requirements.txt": {
-      "bytes": 1231,
-      "sha256": "60a830ba3e13706d25757cf279dff38b01efb24057e19f014aa9ef9c72354e18"
+      "bytes": 1279,
+      "sha256": "8e6d4fed8a987340a8b10b63587026f773d55e670cae31a6b258725a69c4c37d"
     },
     "sources/native-rebuild/portable/wheelhouse-SHA256SUMS": {
       "bytes": 1375,
@@ -501,7 +501,7 @@
     },
     "sources/native-rebuild/portable/packet-inventory.json": {
       "bytes": 6662,
-      "sha256": "927752b3465db0b8614e570266bb2ddec7ad5acf174b3ca19f05ac9c5993b268"
+      "sha256": "a4699ceb537d8c7bd8e83ed83dd5ef93a479e46b8939143b557995ea04336bfe"
     },
     "sources/native-rebuild/portable/replay-status.json": {
       "bytes": 2759,
@@ -648,8 +648,8 @@
       "sha256": "c185ecbf3a94843a4ecc96df199ef80ec88db7825541c43976d01dcc63efdff6"
     },
     "evidence/recipient-source-replacement.md": {
-      "bytes": 32273,
-      "sha256": "126d392f928618a75a089073707646f647f70e575689fb5425d81863429a62ca"
+      "bytes": 32319,
+      "sha256": "bf30b8e37d034cea5eb74cfdd3b37caeca06cd80f076e6d3a2412e8971c8ac2d"
     },
     "sources/netgen-rebuild/fem-netgen-replacement.spec.ts": {
       "bytes": 10362,

@@ -225,7 +225,7 @@
     {
       "file": "e2e/release/packagedDesktop.spec.ts",
       "category": "release-config",
-      "sha256": "37bbebe280c75e77d8ae2243016c2f274aa2217d64f31e39385b30ad5009c915",
+      "sha256": "7101242f72f32d8e149044671e0d272bd93cd4a989a6a7d3a1cc9ddc826237ae",
       "reason": "packaged-desktop.config.ts variant"
     },
     {
@@ -476,7 +476,7 @@
       "file": "context-reference-route5.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "6a6dbaae7501c114cc74af78e335a0b1423a01394948d6c8fe67390b0a2f9406"
+      "sha256": "128bfe2fc56b7d1cb260474fee9584259165a8ad8107572bff724fc6d40596fd"
     },
     {
       "file": "control-descriptions.spec.ts",
@@ -1250,25 +1250,25 @@
       "file": "firefox-part-assets.spec.ts",
       "category": "firefox-explicit",
       "reason": "top-level test.use browserName firefox",
-      "sha256": "0484c8821efd92efb190cdd5c812245b18bbcf5e351bbe2ae0209a1e63679590"
+      "sha256": "c577738d70c3c3bd79ed0c598f5156267e9d8c459ca6cbbd64199c6fd943273b"
     },
     {
       "file": "firefox-read-response.spec.ts",
       "category": "firefox-explicit",
       "reason": "top-level test.use browserName firefox",
-      "sha256": "584e8930b5ee63bfcd69d9c84ede2e226d159c0bfd18fe364a0dd1edc88131d3"
+      "sha256": "98f416763e24a287993842dc7de80e9944566b6b5d07fcd851da55d07b9e72e3"
     },
     {
       "file": "firefox-save-performance.spec.ts",
       "category": "firefox-explicit",
       "reason": "top-level test.use browserName firefox",
-      "sha256": "00667b5fc5ac51e56ea8026c0bb2c475ea02c6ed370ac17c330c607214aaac65"
+      "sha256": "c2d769606cc1dec1f91ddf305c19965eebcf9598995f84d32cd20348278af91d"
     },
     {
       "file": "firefox-save-worker.spec.ts",
       "category": "firefox-explicit",
       "reason": "top-level test.use browserName firefox",
-      "sha256": "5f46f6b19bf5a0c33385cb75d87188feec099b8b77f8ed165eec2f90afd931c3"
+      "sha256": "973c870f6a422f2957da0da7f9c4ac9ff9d53137a979c79d23d647e250ec8676"
     },
     {
       "file": "friction-browser.spec.ts",

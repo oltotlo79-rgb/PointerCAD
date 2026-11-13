@@ -307,9 +307,10 @@ describe('licenses and notices of every shipped FEM asset', () => {
 });
 
 // The shipped rebuild list and recipe ask a recipient for these venv tools. Each must be at or above the first patched
-// version of every open Dependabot alert on venv-requirements.txt (read 2026-11-12); pinned here, not read from the alerts.
+// version of every open Dependabot alert on venv-requirements.txt (read 2026-11-12 and 2026-11-13); pinned here, not read
+// from the alerts.
 const REBUILD_VENV_SECURITY_MINIMUMS = new Map([
-  ['certifi', '2026.10.18'], ['filelock', '4.2.1'], ['pip', '26.2.0'], ['virtualenv', '21.14.9'],
+  ['certifi', '2026.10.18'], ['filelock', '4.2.1'], ['pip', '26.2.0'], ['virtualenv', '21.14.13'],
 ]);
 const PORTABLE_REBUILD = 'sources/native-rebuild/portable/';
 const projectKey = (name: string): string => name.toLowerCase().replace(/[_.]/gu, '-');

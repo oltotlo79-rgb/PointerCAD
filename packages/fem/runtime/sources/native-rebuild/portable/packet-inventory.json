@@ -8,8 +8,8 @@
    "kind": "native-rebuild-portable-environment"
   },
   "sources/native-rebuild/portable/rebuild-oofem-pyodide.sh": {
-   "sha256": "cf15806cc115b25f39f485e3c3dd1ad0514c3541e07f1551d14a80b55b24627c",
-   "bytes": 19274,
+   "sha256": "76c7542725cfb35309cd2abb911f69a912b83a6069c24b92611317ff8cdc4638",
+   "bytes": 19314,
    "kind": "native-rebuild-portable-recipe"
   },
   "sources/native-rebuild/portable/replay-environment.json": {
@@ -33,8 +33,8 @@
    "kind": "native-rebuild-portable-test"
   },
   "sources/native-rebuild/portable/venv-requirements.txt": {
-   "sha256": "60a830ba3e13706d25757cf279dff38b01efb24057e19f014aa9ef9c72354e18",
-   "bytes": 1231,
+   "sha256": "8e6d4fed8a987340a8b10b63587026f773d55e670cae31a6b258725a69c4c37d",
+   "bytes": 1279,
    "kind": "native-rebuild-portable-requirements"
   },
   "sources/native-rebuild/portable/wheelhouse-SHA256SUMS": {

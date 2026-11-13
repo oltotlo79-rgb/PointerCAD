@@ -12,6 +12,9 @@ import { expect, test, type Browser, type BrowserContext, type ElectronApplicati
   type PlaywrightWorkerArgs } from '@playwright/test';
 import { DRAWING_FONT_ASSET } from '../../packages/drawing/src/text/fontAsset.js';
 import { chooseToolMenuItem } from '../tests/assemblyTestSupport.js';
+import { readPart } from '../tests/canvasAssetLifetimeFlow.js';
+import { diskFile } from '../tests/electronAppFlow.js';
+import { fileAction } from '../tests/fileCaptureSupport.js';
 import { waitForMathEditorText } from '../tests/mathEditorReady.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, readRecomputeStats, waitForRecompute } from '../tests/recompute.js';
 import { uiMessage } from '../tests/uiMessages.js';
@@ -415,6 +418,77 @@ async function answerCloseConfirmWithDiscard(app: PackagedApplication): Promise<
   }, [CLOSE_CONFIRM_LOG, CLOSE_CONFIRM_CHOICES] as const);
 }
 
+/** 保存と開き直しの確かめで、本体の標準出力へ書く行の印。失敗の時だけ packaged-desktop-output.log と evidence.saveOpen で読む。 */
+const SAVE_OPEN_LOG = '[配布物の起動:保存と開く]';
+/** 保存先と開く元のファイルの名前。置き場は検査の一時フォルダー(isolation.base)で、利用者の実際のフォルダーに触れない。 */
+const SAVED_DOCUMENT_NAME = 'packaged-saved.pcad';
+
+/**
+ * 保存先と開く元の窓(OS の窓で Playwright から押せない)を、e2e/tests/electronAppFlow.ts の saveTarget・openTarget と同じ形で
+ * 検査の一時フォルダーの 1 つのファイルへ差し替える。差し替えた窓は呼ばれた回数を数える(pcadPackagedDialogCalls で読む)。
+ * あわせて、保存・開くの口(preload.ts の pcad:saveBegin・saveChunk・saveCommit・saveAbort、pcad:openBegin・openChunk・
+ * openFinish・openAbort・openReread)の呼出し・戻り・例外を本体の標準出力へ書く。口の中身・戻り値・例外は変えない
+ * (ipcMain の内部の表 _invokeHandlers の関数を包むだけ。読めない版ではその旨を書いて続ける)。行は出力の輪に入り、
+ * 失敗した回だけ書き出す(成功の回の所要は、この 1 回の評価の分しか増えない)。
+ */
+async function installSaveOpenTargets(app: PackagedApplication, path: string): Promise<void> {
+  await app.evaluate(({ dialog, ipcMain }, [filePath, marker]) => {
+    const log = (text: string): void => { console.log(`${marker} ${new Date().toISOString()} ${text}`); };
+    const calls = { save: 0, open: 0 };
+    Reflect.set(globalThis, 'pcadPackagedDialogCalls', () => ({ ...calls }));
+    dialog.showSaveDialog = () => {
+      calls.save += 1;
+      log(`showSaveDialog ${String(calls.save)} 回目`);
+      return Promise.resolve({ canceled: false, filePath });
+    };
+    dialog.showOpenDialog = () => {
+      calls.open += 1;
+      log(`showOpenDialog ${String(calls.open)} 回目`);
+      return Promise.resolve({ canceled: false, filePaths: [filePath] });
+    };
+    const describe = (value: unknown): string => {
+      if (value instanceof Uint8Array) return `bytes(${String(value.byteLength)})`;
+      try { return (JSON.stringify(value) ?? String(value)).slice(0, 300); } catch { return Object.prototype.toString.call(value); }
+    };
+    const handlers: unknown = Reflect.get(ipcMain, '_invokeHandlers');
+    if (!(handlers instanceof Map)) { log('ipcMain の口の表を読めません(口の記録なし)'); return; }
+    const entries: [unknown, unknown][] = [...handlers.entries()];
+    for (const [channel, handler] of entries) {
+      if (typeof channel !== 'string' || typeof handler !== 'function'
+        || !/^pcad:(?:save(?:Begin|Chunk|Commit|Abort)|open(?:Begin|Chunk|Finish|Abort|Reread))$/u.test(channel)) continue;
+      handlers.set(channel, async (...args: unknown[]) => {
+        log(`${channel} 呼出し ${args.slice(1).map(describe).join(' ')}`);
+        try {
+          const result: unknown = await Reflect.apply(handler, undefined, args);
+          log(`${channel} 戻り ${describe(result)}`);
+          return result;
+        } catch (error) {
+          log(`${channel} 例外 ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+          throw error;
+        }
+      });
+    }
+  }, [path, SAVE_OPEN_LOG] as const);
+}
+
+/** (d-1b) の保存と開き直しの進み。失敗した回だけ evidence.saveOpen へ残す。 */
+interface SaveOpenRecord {
+  stage: string;
+  savedBytes: number | null;
+  recomputeBeforeSave?: unknown;
+  dialogCalls?: unknown;
+  channelLog?: string[];
+}
+
+/** installSaveOpenTargets で差し替えた保存先・開く元の窓が呼ばれた回数({ save, open })。差し替える前は null。 */
+async function readSaveOpenDialogCalls(app: PackagedApplication): Promise<unknown> {
+  return app.evaluate(() => {
+    const read: unknown = Reflect.get(globalThis, 'pcadPackagedDialogCalls');
+    const counted: unknown = typeof read === 'function' ? Reflect.apply(read, undefined, []) : null;
+    return counted;
+  });
+}
+
 /** 配布物の起動の上限(以前の electron.launch と同じ値)。3 行の待ちと 2 つの接続をこの中で行う。 */
 const LAUNCH_TIMEOUT_MS = 60_000;
 /** 失敗の文へ入れる標準エラー・標準出力の末尾の行数。 */
@@ -740,6 +814,7 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
   } = { closed: false };
   const pageErrors: string[] = [], crashes: string[] = [], consoleErrors: string[] = [];
   let completed = false;
+  const saveOpen: SaveOpenRecord = { stage: '未着手', savedBytes: null };
   try {
     const target = await run('(0-1)', '配布物と配布物の記録を読む', () => readLaunchTarget());
     session.target = target;
@@ -855,6 +930,48 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
       const volume = page.locator('.pcad-panel--right dt.pcad-properties__key', { hasText: uiMessage('propertyPanel', 'propertyPanel.volume') })
         .locator('xpath=following-sibling::dd[1]');
       await expect(volume).toHaveText('24000 mm³', { timeout: KERNEL_TIMEOUT_MS });
+    });
+    await run('(d-1b)', '配布物の形で名前を付けて保存し、開き直す(分けて送る保存・開くの口)', async () => {
+      // 7・8 回目の版で作り直した保存・開くの口(8 MiB ずつ分けて送る)を、配布物の形(asar・app:// の配信・束ねた preload)で
+      // 通す。手順は e2e/tests/saveResponsivenessFlow.ts の saveFlowFile・openSaveFlowFile と同じ(ツールバーの保存を Shift で
+      // 押して名前を付けて保存、開くを押して開き直す。窓は差し替え)。箱だけの小さな文書なので、分けた送りは 1 回だけ通る。
+      // 2 回以上に分かれる大きな文書は、所要が延びるので作らない(複数回は apps/desktop の単体の検査が受け持つ)。
+      // 待ちの上限は既存の物(diskFile・waitForRecompute の KERNEL_TIMEOUT_MS、expect の既定)だけを使う。
+      const savePath = join(isolation.base, SAVED_DOCUMENT_NAME);
+      try {
+        saveOpen.stage = '窓の差し替え';
+        await installSaveOpenTargets(app, savePath);
+        saveOpen.recomputeBeforeSave = await readRecomputeStats(page);
+        await expect(page.locator('dialog[open]'), '保存の前に開いた dialog が無いこと').toHaveCount(0);
+        await expect(page, '保存の前は未保存の印があること').toHaveTitle(/\*/u);
+        saveOpen.stage = '保存';
+        await fileAction(page, uiMessage('toolbar', 'toolbar.file.save')).click({ modifiers: ['Shift'] });
+        const bytes = await diskFile(savePath);
+        saveOpen.savedBytes = bytes.length;
+        await expect(page.locator('[data-save-stage="complete"]'), '保存が終わったこと').toBeVisible();
+        await expect(page, '保存の後の題名にファイル名があり、未保存の印が消えること').toHaveTitle(/^(?!.*\*).*packaged-saved\.pcad/u);
+        saveOpen.stage = '保存したファイルの読み直し';
+        const saved = readPart(new Uint8Array(bytes)).document.solids.find(solid => solid.kind === 'primitive' && solid.shape.kind === 'box');
+        expect(saved, '保存したファイルが PCAD の部品として読め、20×30×40 mm の箱1 が入っていること').toMatchObject({
+          kind: 'primitive', name: '箱1', shape: { kind: 'box', sizeX: { value: 20 }, sizeY: { value: 30 }, sizeZ: { value: 40 } } });
+        saveOpen.stage = '開き直し';
+        const reopened = await beginRecompute(page);
+        await fileAction(page, uiMessage('toolbar', 'toolbar.file.open')).click();
+        await waitForRecompute(page, reopened);
+        await expect(page, '開き直した文書の題名にファイル名があり、未保存の印が無いこと').toHaveTitle(/^(?!.*\*).*packaged-saved\.pcad/u);
+        await expect(page.locator('.pcad-panel--left').getByRole('button', { name: '箱1', exact: true }), '開き直した文書のツリーに箱1 があること')
+          .toBeVisible();
+        expect(await readSaveOpenDialogCalls(app), '差し替えた保存先と開く元の窓が 1 回ずつ使われたこと').toEqual({ save: 1, open: 1 });
+        saveOpen.stage = '完了';
+      } catch (error) {
+        // 失敗した回だけ: 差し替えた窓が呼ばれた回数と、保存・開くの口の呼出し・戻り(本体の標準出力の行)を残す。画面の失敗の
+        // 表示(ステータスバー・警告)は finally の readFailureState が残す。
+        saveOpen.dialogCalls = await readSaveOpenDialogCalls(app)
+          .catch((reason: unknown) => `読めません: ${reason instanceof Error ? reason.message : String(reason)}`);
+        saveOpen.channelLog = output.lines.filter(line => line.text.includes(SAVE_OPEN_LOG)).slice(-40).map(line => line.text.slice(0, 400));
+        evidence.saveOpen = saveOpen;
+        throw error;
+      }
     });
     await run('(d-2)', '同梱の数式の計算部で積分を求める', async () => {
       // e2e/release/offlineDomainCoverage.ts の verifyOfflineExactMath と同じ入口と式(通信の見張りは無い)。

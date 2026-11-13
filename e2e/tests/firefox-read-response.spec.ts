@@ -2,9 +2,11 @@ import { test } from '@playwright/test';
 import { readOrphanIntegrityFlow, readResponsivenessFlow } from './readResponsivenessFlow.js';
 import { readLifecycleFlow } from './readLifecycleFlow.js';
 import { FIREFOX_GRAPHICS_PREFS } from '../firefoxLaunch.js';
+import { installStartupDiagnostics } from './startupHealth.js';
 test.use({ browserName: 'firefox', launchOptions: { firefoxUserPrefs: FIREFOX_GRAPHICS_PREFS } });
 
 test.beforeEach(async ({ page }) => {
+  await installStartupDiagnostics(page);
   await page.addInitScript(() => {
     for (const key of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, key, { configurable: true, value: undefined });
   });

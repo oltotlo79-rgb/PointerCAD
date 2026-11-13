@@ -418,7 +418,10 @@ async function measure(page: Page, context: BrowserContext, info: TestInfo, mode
   // frame is retained and checked; no failed frame is dropped to obtain a baseline.
   await expect.poll(() => sampler.frames.filter(frame => frame.discoveredAtEpochMs >= started && frame.processes.length > 0).length,
     { message: 'Two actual OS baseline frames before the first OCCT operation' }).toBeGreaterThan(1);
-  const baselineReadyAtEpochMs = Date.now();
+  // Frame times come from the sampler's precise system clock, Date.now() from this process's clock; the two can
+  // differ by a few milliseconds. A frame already received is inside the baseline even when its own clock reads
+  // slightly later than ours, so the end is the later of both (no received frame is dropped, none is added).
+  const baselineReadyAtEpochMs = Math.max(Date.now(), ...sampler.frames.map(frame => frame.atEpochMs));
   const baseline = resourceSummary(sampler.frames, started, baselineReadyAtEpochMs);
   expect(baseline.frames).toBe(sampler.frames.length);
   expect(baseline.frames).toBeGreaterThan(1);
@@ -764,11 +767,16 @@ export async function electronOcctPair(playwright: Playwright, info: TestInfo, o
   return { index, offline, profile, cold, warm };
 }
 
-/** 成功時にも生JSON実体を残し、添付の表示だけへ依存しない。 */
-async function persistOcctEvidence(info: TestInfo, name: string, value: unknown): Promise<void> {
-  const path = info.outputPath(`${name}.json`);
+/**
+ * 成功時にも生JSON実体を残し、添付の表示だけへ依存しない。実体のファイルは「<正規の名前>-file」で添付し、
+ * 正規の名前には同じバイトを報告へ埋め込んだ添付(body)を1つだけ付ける。公開前検査は専用の測定の報告から
+ * 正規の名前のbodyの添付を読む(scripts/release/dedicatedPerformanceEvidence.mjs の body())。
+ */
+async function persistOcctEvidence(info: TestInfo, canonical: string, value: unknown): Promise<void> {
+  const name = `${canonical}-file`, path = info.outputPath(`${canonical}.json`);
   await writeFile(path, JSON.stringify(value, null, 2), { flag: 'wx' });
   await info.attach(name, { path, contentType: 'application/json' });
+  await info.attach(canonical, { body: await readFile(path), contentType: 'application/json' });
 }
 
 export async function assertFiveOcctPairs(pairs: readonly OcctPair[], info: TestInfo): Promise<void> {

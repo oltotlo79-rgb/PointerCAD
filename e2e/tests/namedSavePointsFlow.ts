@@ -2,6 +2,7 @@ import { expect, type ElectronApplication, type Locator, type Page, type Browser
 import { zipPcadEntries, FIXED_ENTRY_MTIME, type PcadZipEntries } from '../../packages/io/src/index.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { windowsNativeSource } from './processResourceSampler.js';
 import { readFile, readdir, writeFile, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -303,16 +304,24 @@ export async function assertSavePointProcessCold(page: Page, before: SavePointAr
 }
 
 interface ColdProcessOwner { readonly pid: number; readonly created: string }
+/**
+ * One Windows query for the processes of an exact PID, or of every process whose command line contains the profile; their roots.
+ * It uses the sampler's native process list (windowsNativeSource, one definition in processResourceSampler.ts), not WMI.
+ * created is the process creation time in 100ns ticks.
+ */
+export function windowsSavePointOwnerScript(profile: string, pid: number): string {
+  const marker = Buffer.from(profile, 'utf8').toString('base64');
+  return `$ErrorActionPreference='Stop'\n` +
+    `Add-Type -TypeDefinition @'\n${windowsNativeSource}\n'@\n` +
+    `$marker=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${marker}')); ` +
+    `$rows=@([SamplerNative]::ProcessesWithEvidence(${String(pid > 0 ? pid : 0)}) | Where-Object { ${pid > 0 ? `[int]$_.ProcessId -eq ${String(pid)}` : `$_.CommandLine -and $_.CommandLine.IndexOf($marker,[StringComparison]::OrdinalIgnoreCase) -ge 0`} }); ` +
+    `$ids=@($rows | ForEach-Object {[int]$_.ProcessId}); $roots=@($rows | Where-Object {$ids -notcontains [int]$_.ParentProcessId}); ` +
+    `ConvertTo-Json -Compress -InputObject @($roots | ForEach-Object {@{pid=[int]$_.ProcessId;created=$_.CreatedTicks.ToString()}})`;
+}
 export async function readSavePointProcessOwner(profile: string, expectedPid?: number): Promise<ColdProcessOwner | null> {
   if (process.platform === 'linux') return readLinuxColdOwner(profile, expectedPid);
   if (process.platform !== 'win32') throw new Error('R16 process creation observation unavailable on this platform');
-  const marker = Buffer.from(profile, 'utf8').toString('base64');
-  const pid = expectedPid ?? 0;
-  const script = `$ErrorActionPreference='Stop'; $marker=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${marker}')); ` +
-    `$rows=@(Get-CimInstance Win32_Process | Where-Object { ${pid > 0 ? `[int]$_.ProcessId -eq ${pid}` : `$_.CommandLine -and $_.CommandLine.IndexOf($marker,[StringComparison]::OrdinalIgnoreCase) -ge 0`} }); ` +
-    `$ids=@($rows | ForEach-Object {[int]$_.ProcessId}); $roots=@($rows | Where-Object {$ids -notcontains [int]$_.ParentProcessId}); ` +
-    `ConvertTo-Json -Compress -InputObject @($roots | ForEach-Object {@{pid=[int]$_.ProcessId;created=$_.CreationDate.ToUniversalTime().Ticks.ToString()}})`;
-  const { stdout } = await executeColdRead('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+  const { stdout } = await executeColdRead('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', windowsSavePointOwnerScript(profile, expectedPid ?? 0)],
     { timeout: 10_000, maxBuffer: 1024 * 1024, windowsHide: true, env: { ...process.env } });
   const rows: unknown = JSON.parse(stdout);
   if (!Array.isArray(rows) || rows.length > 1) throw new Error('Ambiguous actual cold process owner');
@@ -414,9 +423,33 @@ export async function attachSavePointColdArchives(info: TestInfo, archive: SaveP
   }
 }
 
+interface OwnedBrowserProfile { readonly profile: string; readonly ownedRoot: string }
+/**
+ * The real persistent profile of a cold save point flow. Chromium's Windows database paths must not inherit the long
+ * diagnostic/test title: under a diagnostic RUN folder a 245-character profile could not create Default\ and a
+ * 232-character one could not create Default\IndexedDB\ (RUN 20261113-092430). Use a separate root from Electron's
+ * age-based sweep; mkdtemp atomically owns one new directory, so parallel workers never share a name.
+ */
+async function ownedShortBrowserProfile(): Promise<OwnedBrowserProfile> {
+  const workspace = await realpath(fileURLToPath(new URL('../../', import.meta.url)));
+  const profileRoot = join(workspace, 'scratchpad', 'temp', 'b');
+  if (join(profileRoot, 'pXXXXXX').length > 90) throw new Error('Browser profile exceeds existing Chromium path budget');
+  await mkdir(profileRoot, { recursive: true });
+  const ownedRoot = await realpath(profileRoot);
+  if (ownedRoot !== profileRoot) throw new Error('Browser profile root leaves owned workspace boundary');
+  return { profile: await mkdtemp(join(ownedRoot, 'p')), ownedRoot };
+}
+/** Failures retain the profile for diagnosis. Delete only our own successful, closed profile. */
+async function removeOwnedBrowserProfile(owned: OwnedBrowserProfile): Promise<void> {
+  const actualProfile = await realpath(owned.profile);
+  if (actualProfile !== owned.profile || dirname(actualProfile) !== owned.ownedRoot) throw new Error('Owned profile boundary changed');
+  await rm(actualProfile, { recursive: true });
+}
+
 export async function runNamedSavePointsWebCold(browserType: BrowserType, info: TestInfo,
   kind: 'part' | 'assembly' | 'drawing', flow: (page: Page) => Promise<void>): Promise<string[]> {
-  const profile = info.outputPath('r16-real-persistent-profile');
+  const owned = await ownedShortBrowserProfile(), { profile } = owned;
+  await writeSavePointEvidence(info, 'r16-real-persistent-profile', { profile, retainOnFailure: true });
   const use = info.project.use, errors: string[] = [];
   const launch = () => browserType.launchPersistentContext(profile, { ...use.launchOptions,
     headless: use.headless, channel: use.channel, baseURL: use.baseURL, viewport: use.viewport,
@@ -457,6 +490,7 @@ export async function runNamedSavePointsWebCold(browserType: BrowserType, info: 
       oldClosed: true, buildAndSourceSha256: buildPins, shelfMetadataAndEveryChunkByteEqual: true, unknown: ['unasserted original R16 conditions remain unaccepted'] });
   } finally { try { await second.close(); } finally { await secondNetwork.finish(); } }
   await expect.poll(() => readSavePointProcessOwner(profile), { message: 'Second owned browser process exited' }).toBeNull();
+  if (errors.length === 0) await removeOwnedBrowserProfile(owned);
   return errors;
 }
 
@@ -745,15 +779,7 @@ export async function assertSharedSavePointCold(page: Page, fixture: SharedSaveP
 }
 
 export async function runNamedSavePointsSharedWebCold(browserType: BrowserType, info: TestInfo): Promise<string[]> {
-  // Chromium's Windows database paths must not inherit the long diagnostic/test title.
-  // Use a separate root from Electron's age-based sweep and atomically own one directory.
-  const workspace = await realpath(fileURLToPath(new URL('../../', import.meta.url)));
-  const profileRoot = join(workspace, 'scratchpad', 'temp', 'b');
-  if (join(profileRoot, 'pXXXXXX').length > 90) throw new Error('Browser profile exceeds existing Chromium path budget');
-  await mkdir(profileRoot, { recursive: true });
-  const ownedRoot = await realpath(profileRoot);
-  if (ownedRoot !== profileRoot) throw new Error('Browser profile root leaves owned workspace boundary');
-  const profile = await mkdtemp(join(ownedRoot, 'p'));
+  const owned = await ownedShortBrowserProfile(), { profile } = owned;
   await writeSavePointEvidence(info, 'r16-shared-profile', { profile, retainOnFailure: true });
   const use = info.project.use, errors: string[] = [];
   const launch = () => browserType.launchPersistentContext(profile, { ...use.launchOptions,
@@ -795,12 +821,7 @@ export async function runNamedSavePointsSharedWebCold(browserType: BrowserType, 
       oldClosed: true, buildAndSourceSha256: buildPins, shelfMetadataAndEveryChunkByteEqual: true, unknown: ['unasserted original R16 conditions remain unaccepted'] });
   } finally { try { await second.close(); } finally { await secondNetwork.finish(); } }
   await expect.poll(() => readSavePointProcessOwner(profile), { message: 'Second owned browser process exited' }).toBeNull();
-  // Failures retain the profile for diagnosis. Delete only our successful, closed profile.
-  if (errors.length === 0) {
-    const actualProfile = await realpath(profile);
-    if (actualProfile !== profile || dirname(actualProfile) !== ownedRoot) throw new Error('Owned profile boundary changed');
-    await rm(actualProfile, { recursive: true });
-  }
+  if (errors.length === 0) await removeOwnedBrowserProfile(owned);
   return errors;
 }
 

@@ -116,6 +116,59 @@ def blocking_reason(delivery: dict, window: dict, now: datetime) -> str | None:
             '{"reason": "<理由>", "placedAt": "<今の時刻>"} を置く（1 回の起動で消える）。')
 
 
+# rules/06 §10.502(候補): 全体検査の起動の直後は、印があっても担当の起動を止める(c11_gate_early_launch.py の部品 G)。
+EARLY_GATE_TERMINAL = ("failed", "pushed", "succeeded", "committed", "committed-no-push", "passed", "scheduler-start-failed")
+EARLY_GATE_MARK = "段「check-ps1」の起動前確認"
+EARLY_GATE_MAX_AGE = timedelta(hours=6)
+EARLY_GATE_RULE = "rules/06 §10.502"
+
+
+def _early_gate_time(value) -> datetime:
+    parsed = datetime.fromisoformat(str(value).strip())
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
+def early_gate(deliveries: Path, now: datetime) -> dict | None:
+    """全体検査が起動の直後(2 回目の起動前検査の前)なら {"id","status","started"}、そうでなければ None(読むだけ)。"""
+    latest = None
+    try:
+        directories = [entry for entry in deliveries.iterdir() if entry.is_dir()] if deliveries.is_dir() else []
+    except OSError:
+        return None
+    for directory in directories:
+        try:
+            state = json.loads((directory / "state.json").read_text(encoding="utf-8-sig"))
+            started = _early_gate_time(state["startedAt"])
+        except (OSError, UnicodeError, ValueError, TypeError, KeyError):
+            continue
+        if latest is None or started > latest[1]:
+            latest = (directory, started, state)
+    if latest is None:
+        return None
+    directory, started, state = latest
+    status = str(state.get("status") or "")
+    if status in EARLY_GATE_TERMINAL or now - started > EARLY_GATE_MAX_AGE:
+        return None
+    try:
+        log = (directory / "gate.log").read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        log = ""
+    except OSError:
+        return None
+    if EARLY_GATE_MARK in log:
+        return None
+    return {"id": str(state.get("deliveryId") or directory.name), "status": status, "started": started}
+
+
+def early_gate_reason(gate: dict, now: datetime, what: str) -> str:
+    return (f"全体検査（delivery {gate['id']}、{gate['status']}、起動から {max(0, int((now - gate['started']).total_seconds() // 60))} 分）は、"
+            f"まだ 2 回目の起動前検査（段 check-ps1）を通っていない。今{what}と、その起動前検査が「直前 3 分以内の起動」と"
+            f"「稼働の担当」で全体検査を止める（{EARLY_GATE_RULE}。2026-11-13 04:13 に約 10 分を失った）。gate.log に"
+            f"「{EARLY_GATE_MARK}」の行が出てから{what}（全体検査の間の起動の印 launch-during-gate.json はこの間は使わない）。")
+
+
 def consume_marker(root: Path, window: dict, now: datetime, delivery: dict, payload: dict,
                    warnings: list[str]) -> tuple[str, str]:
     """("none" | "valid" | "invalid", 説明)。valid の時は印を消し、記録を 1 行足す。"""
@@ -171,6 +224,13 @@ def hook(payload: dict, now: datetime, root: Path | None = None) -> tuple[dict |
     reason = blocking_reason(delivery, window, now)
     if reason is None:
         return None, warnings
+    early = early_gate(root / DELIVERIES, now)
+    if early is not None:
+        # 印は使わずに残す(2 回目の起動前検査の後に使える)。
+        return {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny",
+            "permissionDecisionReason": early_gate_reason(early, now, "担当を起動する"),
+        }}, warnings
     status, detail = consume_marker(root, window, now, delivery, payload, warnings)
     if status == "valid":
         return {"systemMessage": detail}, warnings

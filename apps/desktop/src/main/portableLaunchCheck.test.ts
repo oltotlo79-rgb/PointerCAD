@@ -166,10 +166,19 @@ describe('単一ポータブル exe の起動検査の準備（実行ファイ�
     expect(member(step, 'if')).toBe("matrix.os == 'windows-latest'");
     expect(member(step, 'timeout-minutes')).toBe(25);
     expect(member(step, 'continue-on-error')).toBeUndefined();
-    expect(member(step, 'env')).toEqual({ PCAD_PACKAGED_CANDIDATE: 'dist/desktop-stage/candidate.json', PCAD_PACKAGED_VARIANT: 'portable' });
+    // DEBUG・DEBUG_FILE は Playwright の接続の記録(失敗の時だけ portable の出力先へ写して成果物に残す)。単一 exe へは渡さない。
+    expect(member(step, 'env')).toEqual({ PCAD_PACKAGED_CANDIDATE: 'dist/desktop-stage/candidate.json', PCAD_PACKAGED_VARIANT: 'portable',
+      DEBUG: 'pw:protocol,pw:browser', DEBUG_FILE: '${{ runner.temp }}/pointercad-playwright-debug-portable.log' });
     const run = member(step, 'run');
+    if (typeof run !== 'string') throw new Error('Portable workflow run is missing.');
     expect(run).toContain('pnpm exec playwright test --config e2e/packaged-desktop.config.ts');
-    expect(run).toContain('if ($LASTEXITCODE -ne 0) { throw');
+    // 失敗の時は記録を写してから、必ず段を失敗で終える(写しの失敗は警告だけで、throw を飛ばさない)。
+    expect(run).toContain('$launchExitCode = $LASTEXITCODE');
+    expect(run).toContain('if ($launchExitCode -ne 0) {');
+    expect(run).toContain("Copy-Item -LiteralPath $env:DEBUG_FILE -Destination 'test-results/packaged-desktop/portable/playwright-debug.log'");
+    const failed = run.indexOf('throw "単一ポータブルexeの起動・終了・片付けの確認が失敗しました(終了コード $launchExitCode)。"');
+    expect(failed).toBeGreaterThan(run.indexOf('} catch {'));
+    expect(run.indexOf('} catch {')).toBeGreaterThan(run.indexOf('if ($launchExitCode -ne 0) {'));
     expect(run).not.toContain('PCAD_PACKAGED_EXECUTABLE');
     const index = steps.indexOf(step);
     expect(steps.findIndex((entry: unknown) => member(entry, 'name') === '配布物を起動して確かめる(Windowsはwin-unpacked)')).toBeLessThan(index);

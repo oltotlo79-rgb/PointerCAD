@@ -94,6 +94,20 @@ describe('Web読み込み全入口の確保前検査（R07）', () => {
     expect(arrayBuffer).toHaveBeenCalledTimes(4);
   });
 
+  it('picker・inputの部品を開くは、読込のためだけに作った全域の並びとしてownedの印を付ける', async () => {
+    const { file } = pickedFile(3, '部品.pcad');
+    const scope = { showOpenFilePicker: () => Promise.resolve([{ name: file.name, getFile: () => Promise.resolve(file) }]) };
+    for (const picked of [await createBrowserFileGateway(scope).openPcad(), await createBrowserFileGateway(inputScope(file).scope).openPcad()]) {
+      expect(picked?.owned).toBe(true);
+      expect(picked?.bytes.byteOffset).toBe(0);
+      expect(picked?.bytes.buffer.byteLength).toBe(3);
+      // 移した後に中身が要った時は、同じ File を読み直す(別の新しい並び)。
+      const again = await picked?.reread?.();
+      expect(again).toEqual(new Uint8Array(3));
+      expect(again?.buffer).not.toBe(picked?.bytes.buffer);
+    }
+  });
+
   it('空選択は取消、不正Fileは失敗として区別し、inputを必ず除去する', async () => {
     const empty = inputScope(undefined);
     expect(await createBrowserFileGateway(empty.scope).openPcad()).toBeNull();

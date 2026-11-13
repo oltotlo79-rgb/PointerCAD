@@ -225,13 +225,13 @@
     {
       "file": "e2e/release/packagedDesktop.spec.ts",
       "category": "release-config",
-      "sha256": "bcaa36e8c25ad43d6728f024948db4bbbfe72e44a635bb3d8962398db715db32",
+      "sha256": "37bbebe280c75e77d8ae2243016c2f274aa2217d64f31e39385b30ad5009c915",
       "reason": "packaged-desktop.config.ts variant"
     },
     {
       "file": "e2e/release/portableDesktop.spec.ts",
       "category": "release-config",
-      "sha256": "784cdfa108a7d923ce81d4850a111b2904c798b26ab111c7df944af7b08cb7b9",
+      "sha256": "f7b1e0fcc9984dd67d34bd18f746aa51e4b312547db450011d7870997bfa5e57",
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
@@ -1463,6 +1463,12 @@
       "sha256": "350c26625cd1d86a0f1697fc9da2297ce96f8f405cfe05cd1952b4b8e276040e"
     },
     {
+      "file": "network-failure-evidence-contract.spec.ts",
+      "category": "synthetic-helper-representative",
+      "reason": "synthetic aborted requests and copied OS outputs verify the request-failure evidence helper and its unavailable path; Firefox-selected steel-bend.spec.ts uses the same helper; individual synthetic cases are not Firefox results",
+      "sha256": "532b4fe021415342eededcb89ab9e9e5a1ecb75d66cb109f58a866ff46e927e8"
+    },
+    {
       "file": "numeric-input.spec.ts",
       "category": "manual-capture",
       "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
@@ -1622,7 +1628,7 @@
       "file": "process-resource-sampler.spec.ts",
       "category": "node-process-contract",
       "reason": "Node OS process sampler and resident-frame checks; no page/browser/context fixture",
-      "sha256": "ff8bfb8412cb5a34cb950699d993dc6ea0457d1299dd4ae5cbfbea2f200c3a49"
+      "sha256": "cfec00d21994b1edc7c8fa2ef2ec2ebac38f5fdbf44a6a805eeb96d3da1b7a89"
     },
     {
       "file": "project-intersect.spec.ts",

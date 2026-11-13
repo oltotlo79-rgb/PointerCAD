@@ -57,7 +57,7 @@ class GateLaunchGuardTests(unittest.TestCase):
         }, ensure_ascii=False), encoding="utf-8")
         return start + timedelta(minutes=length_minutes)
 
-    def delivery(self, name, status, started_minutes_ago=3, child_minutes_ago=None, raw=None):
+    def delivery(self, name, status, started_minutes_ago=3, child_minutes_ago=None, raw=None, preflight_done=True):
         directory = self.deliveries / name
         directory.mkdir(parents=True)
         if raw is not None:
@@ -68,6 +68,9 @@ class GateLaunchGuardTests(unittest.TestCase):
         if child_minutes_ago is not None:
             state["childStartedAt"] = (datetime.now() - timedelta(minutes=child_minutes_ago)).timestamp()
         (directory / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        if preflight_done:
+            # rules/06 §10.502: 既定は 2 回目の起動前検査(段 check-ps1)を通った後の gate(起動の直後は別の試験で確かめる)。
+            (directory / "gate.log").write_text("[x] 段「check-ps1」の起動前確認: CPU=10%, []\n", encoding="utf-8")
 
     def marker(self, reason="利用者の指示で急ぎの調査", placed_minutes_ago=1):
         data = {"placedAt": (datetime.now() - timedelta(minutes=placed_minutes_ago)).isoformat(timespec="seconds")}
@@ -217,6 +220,28 @@ class GateLaunchGuardTests(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout), (0, ""))
         self.assertIn("POINTERCAD_HOOK_FAIL_OPEN", result.stderr)
 
+
+    # --- rules/06 §10.502(候補 C11): 2 回目の起動前検査(段 check-ps1)の前は、印があっても止める ---
+
+    def test_before_the_second_preflight_the_marker_is_not_used(self):
+        self.window()
+        self.delivery("20261113-040757", "waiting-for-quiet-cpu", started_minutes_ago=2, preflight_done=False)
+        self.marker()
+        data = self.output(self.invoke())
+        self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+        reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+        for expected in ("20261113-040757", "waiting-for-quiet-cpu", "段 check-ps1", "rules/06 §10.502"):
+            self.assertIn(expected, reason)
+        self.assertTrue(self.marker_path.exists(), "起動の直後に使わなかった印は残す")
+        self.assertFalse(self.marker_log.exists())
+
+    def test_after_the_second_preflight_the_marker_is_used_as_before(self):
+        self.window()
+        self.delivery("20261113-042001", "full-check-running", started_minutes_ago=10)
+        self.marker()
+        data = self.output(self.invoke())
+        self.assertNotIn("hookSpecificOutput", data)
+        self.assertFalse(self.marker_path.exists())
 
 if __name__ == "__main__":
     unittest.main()

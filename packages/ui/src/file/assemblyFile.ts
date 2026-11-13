@@ -83,7 +83,8 @@ export async function applyPickedAssembly(
   request: DocumentRequest = beginOpenRequest(),
 ): Promise<void> {
   try {
-  const result = await readForOpen(request, 'assembly', picked.bytes);
+  // 組立は読込の後に picked.bytes を読まない(学習の控えも無い)ので、自分だけの並びなら写さずに移す。
+  const result = await readForOpen(request, 'assembly', picked.bytes, picked.owned === true);
   if (result === null) return;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {

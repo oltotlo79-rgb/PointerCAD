@@ -49,6 +49,16 @@ export interface PickedFile {
   readonly bytes: Uint8Array;
   /** 開いた先を上書き先として確定するための不透明な印。上書きできない環境では null。 */
   readonly saveTargetToken: string | null;
+  /**
+   * true なら bytes は口がこの「開く」のためだけに作った全域の並びで、ほかに見せ方も持ち主もいない。読込の Worker へ
+   * 写さずに移してよい(`mayTransferPickedBytes`。移すと bytes は長さ 0 になる)。印の無い答えは今までどおり写す。
+   */
+  readonly owned?: true;
+  /**
+   * 読込の Worker へ bytes を移した後に中身が要った時(移すと決めた後に学習の控えの鍵が現れた時)だけ呼ぶ、同じファイルの
+   * 読み直し。同じ中身を返せない時(開いた後にファイルが変わった等)は失敗する。印(owned)を付ける口だけが持つ。
+   */
+  readonly reread?: () => Promise<Uint8Array>;
 }
 
 /** 種類まで分かったファイル 1 つぶん。パスは含まない(NFR-SE-1)。 */
@@ -567,9 +577,12 @@ function pickFileWithInput(accept: string, scope: object, byteLimit?: number,
       if (expectedExtension !== undefined && !file.name.toLowerCase().endsWith(expectedExtension)) {
         input.remove(); reject(new Error(t('file.openFailed'))); return;
       }
-      readBrowserFile(file, byteLimit ?? (file.name.toLowerCase().endsWith('.pcadscript') ? SCRIPT_FILE_LIMITS.bytes : undefined)).then(
+      const limit = byteLimit ?? (file.name.toLowerCase().endsWith('.pcadscript') ? SCRIPT_FILE_LIMITS.bytes : undefined);
+      readBrowserFile(file, limit).then(
         (bytes) => {
-          finish({ name: file.name, bytes, saveTargetToken: null });
+          // readBrowserFile は File の本文の新しい全域の並びを返すので、自分だけの並びとして渡す。読み直しは同じ File から
+          // (File は選んだ時の写しで、ファイルが変わっていれば読み取りは失敗する)。
+          finish({ name: file.name, bytes, saveTargetToken: null, owned: true, reread: () => readBrowserFile(file, limit) });
         },
         (error: unknown) => {
           input.remove();
@@ -806,7 +819,7 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
         nextSaveTargetToken += 1;
         pendingSaveTarget = { token: saveTargetToken, handle };
       }
-      return { name: handle.name, bytes, saveTargetToken };
+      return { name: handle.name, bytes, saveTargetToken, owned: true, reread: () => readBrowserFile(file) };
     },
 
     async savePcad(suggestedName, bytes, saveAs, kind = 'part'): Promise<string | null> {

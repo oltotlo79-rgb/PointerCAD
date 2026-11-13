@@ -20,7 +20,11 @@ import { controlledDesktopExport, desktopCamGateway } from './desktopCamGateway.
  * 何を返すかは確かめられないため。答えの形はこのファイルの中で 1 つずつ見る。
  */
 interface DesktopFileApi {
-  openPcad(kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown>;
+  beginPcadOpen(kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown>;
+  readPcadOpenChunk(readId: string, index: number): Promise<unknown>;
+  finishPcadOpen(readId: string): Promise<unknown>;
+  abortPcadOpen(readId: string): Promise<unknown>;
+  rereadPcadOpen(token: string): Promise<unknown>;
   confirmSaveTarget(token: string): Promise<unknown>;
   clearSaveTarget(): Promise<unknown>;
   beginPcadSave(suggestedName: string, saveAs: boolean, kind: 'part' | 'assembly' | 'drawing', totalBytes: number): Promise<unknown>;
@@ -55,8 +59,16 @@ function isObject(value: unknown): value is object {
 function isDesktopFileApi(value: unknown): value is DesktopFileApi {
   return (
     isObject(value) &&
-    'openPcad' in value &&
-    typeof value.openPcad === 'function' &&
+    'beginPcadOpen' in value &&
+    typeof value.beginPcadOpen === 'function' &&
+    'readPcadOpenChunk' in value &&
+    typeof value.readPcadOpenChunk === 'function' &&
+    'finishPcadOpen' in value &&
+    typeof value.finishPcadOpen === 'function' &&
+    'abortPcadOpen' in value &&
+    typeof value.abortPcadOpen === 'function' &&
+    'rereadPcadOpen' in value &&
+    typeof value.rereadPcadOpen === 'function' &&
     'confirmSaveTarget' in value &&
     typeof value.confirmSaveTarget === 'function' &&
     'clearSaveTarget' in value &&
@@ -166,21 +178,85 @@ function toBytes(value: unknown): Uint8Array | null {
   return null;
 }
 
-/** 「開く」の答えの形。 */
-interface OpenedShape {
+/** 「開く」の開始の答え。分ける大きさは本体が決め(本体の `PCAD_OPEN_CHUNK_BYTES`)、ここでは決めない。 */
+interface OpenReceipt {
+  readonly readId: string;
   readonly name: string;
-  readonly bytes: unknown;
-  readonly saveTargetToken: unknown;
+  readonly size: number;
+  readonly chunkBytes: number;
 }
 
-function isOpenedShape(value: unknown): value is OpenedShape {
-  return (
-    isObject(value) &&
-    'name' in value &&
-    typeof value.name === 'string' &&
-    'bytes' in value &&
-    'saveTargetToken' in value
-  );
+function isOpenReceipt(value: unknown): value is OpenReceipt {
+  return isObject(value) && 'readId' in value && typeof value.readId === 'string'
+    && 'name' in value && typeof value.name === 'string'
+    && 'size' in value && typeof value.size === 'number' && Number.isSafeInteger(value.size) && value.size >= 0
+    && 'chunkBytes' in value && typeof value.chunkBytes === 'number'
+    && Number.isSafeInteger(value.chunkBytes) && value.chunkBytes > 0;
+}
+
+/**
+ * 「開く」の本文を、本体が開始で答えた大きさに区切って順に受け取り、この世界(主世界)の 1 本の並びへ組む
+ * (2026-11-13。1 回で受けると、IPC の受け取り・世界の境目の写し・この世界の並びが同時に生き、読込の記憶量の山になった)。
+ * 各回の長さ・通し番号・合計を確かめ、途中や終わりで失敗したら本体に開いたファイルを閉じさせてから失敗を返す。
+ */
+async function readPcadInChunks(api: DesktopFileApi, receipt: OpenReceipt): Promise<PickedFile> {
+  const { bytes, answer } = await receiveOpenedPcad(api, receipt);
+  if (typeof answer !== 'string') throw new Error(t('file.openFailed'));
+  const saveTargetToken = answer;
+  // bytes はこの「開く」のために作った全域の並びで、ほかに持ち主はいない(読込の Worker へ写さずに移してよい)。
+  // 移した後に中身が要った時は、同じ候補の token で本体に読み直させる。
+  return { name: receipt.name, bytes, saveTargetToken, owned: true, reread: () => rereadPcad(api, saveTargetToken) };
+}
+
+/** 区切りを順に受け取って 1 本の並びへ組み、終わりの答えを返す。途中や終わりで失敗したら取消を呼んでから失敗を返す。 */
+async function receiveOpenedPcad(api: DesktopFileApi, receipt: OpenReceipt): Promise<{ bytes: Uint8Array; answer: unknown }> {
+  const { readId, size, chunkBytes } = receipt;
+  try {
+    const bytes = new Uint8Array(size);
+    for (let index = 0, offset = 0; offset < size; index += 1, offset += chunkBytes) {
+      const piece = toBytes(await api.readPcadOpenChunk(readId, index));
+      if (piece === null || piece.byteLength !== Math.min(chunkBytes, size - offset)) throw new Error(t('file.openFailed'));
+      bytes.set(piece, offset);
+    }
+    return { bytes, answer: await api.finishPcadOpen(readId) };
+  } catch (error) {
+    await api.abortPcadOpen(readId).catch(() => undefined);
+    throw openFailure(error);
+  }
+}
+
+/** 本体の拒否に心当たりの印があれば Web 版と同じ鍵の失敗へ直す。無ければ元の失敗のまま。 */
+function openFailure(error: unknown): Error {
+  const key = readFailureMessageKey(error);
+  if (key !== null) return new Error(t(key), { cause: error });
+  return error instanceof Error ? error : new Error(t('file.openFailed'), { cause: error });
+}
+
+/** 形の違う開始の答えでも識別子が読めれば、本体に開いたファイルを閉じさせる。 */
+async function abortMalformedReceipt(api: DesktopFileApi, receipt: unknown): Promise<void> {
+  if (isObject(receipt) && 'readId' in receipt && typeof receipt.readId === 'string') {
+    await api.abortPcadOpen(receipt.readId).catch(() => undefined);
+  }
+}
+
+/**
+ * 読み直し(読込の Worker へ並びを移した後に、学習の控えの照合で中身が要った時だけ)。本体は開いた時と同じファイルの時だけ
+ * 答え、終わりは同じ token を返す。同じ中身を返せない時は失敗にする(呼び手は控えを照合しない)。
+ */
+async function rereadPcad(api: DesktopFileApi, token: string): Promise<Uint8Array> {
+  let receipt: unknown;
+  try {
+    receipt = await api.rereadPcadOpen(token);
+  } catch (error) {
+    throw openFailure(error);
+  }
+  if (!isOpenReceipt(receipt)) {
+    await abortMalformedReceipt(api, receipt);
+    throw new Error(t('file.openFailed'));
+  }
+  const { bytes, answer } = await receiveOpenedPcad(api, receipt);
+  if (answer !== token) throw new Error(t('file.openFailed'));
+  return bytes;
 }
 
 /** 種類つきの「開く」の答えの形。`kind` の綴りは `matchKind` で確かめる。 */
@@ -273,29 +349,23 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
   const base: FileGateway = {
     ...desktopCamGateway(api),
     async openPcad(kind): Promise<PickedFile | null> {
-      let result: unknown;
+      let receipt: unknown;
       try {
-        result = await api.openPcad(kind);
+        receipt = await api.beginPcadOpen(kind);
       } catch (error) {
         const key = readFailureMessageKey(error);
         if (key !== null) throw new Error(t(key), { cause: error });
         throw error;
       }
-      if (result === null || result === undefined) {
+      if (receipt === null || receipt === undefined) {
         // 取り消された。
         return null;
       }
-      if (!isOpenedShape(result)) {
+      if (!isOpenReceipt(receipt)) {
+        await abortMalformedReceipt(api, receipt);
         throw new Error(t('file.openFailed'));
       }
-      const bytes = toBytes(result.bytes);
-      if (bytes === null) {
-        throw new Error(t('file.openFailed'));
-      }
-      if (typeof result.saveTargetToken !== 'string') {
-        throw new Error(t('file.openFailed'));
-      }
-      return { name: result.name, bytes, saveTargetToken: result.saveTargetToken };
+      return readPcadInChunks(api, receipt);
     },
 
     async confirmSaveTarget(token): Promise<void> {

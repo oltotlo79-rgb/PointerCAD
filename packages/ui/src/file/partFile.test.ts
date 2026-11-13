@@ -2078,6 +2078,96 @@ async function lifecycleReply(request: PcadReadRequest) {
     : request.kind === 'assembly' ? await io.readDocumentBundle(request.bytes, 'assembly') : await io.readDrawingBundle(request.bytes) };
 }
 
+/** 学習の控えの記録(本物の saveTutorialCheckpoint で作る)。part は部品、drawing は図面と参照元の部品の照合。 */
+async function checkpointRecordFor(kind: 'part' | 'drawing', bytes: Uint8Array): Promise<string> {
+  const io = await import('@pointercad/io');
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  if (kind === 'part') {
+    const read = io.readPcadFile(bytes);
+    if (!read.ok) throw new Error('part fixture refused');
+    const saved = await saveTutorialCheckpoint({ stageHint: 'pointCoordinates', owned: { sketchId: read.document.activeSketchId } },
+      { part: { document: read.document, savedBytes: bytes } }, storage);
+    if (!saved.ok) throw new Error(`checkpoint refused: ${saved.reason}`);
+  } else {
+    const read = await io.readDrawingBundle(bytes);
+    if (!read.ok || read.source.sourceKind !== 'part') throw new Error('drawing fixture refused');
+    // 図面の照合の答えは、開いた図面から作る観測で決まる(この図面の仮の参照元は staleSource になる)。記録は正しく読める
+    // 物であればよいので、参照元の部品の記録を使う。
+    return checkpointRecordFor('part', io.writePcadFile(read.source.document));
+  }
+  const record = values.get(TUTORIAL_CHECKPOINT_KEY);
+  if (record === undefined) throw new Error('checkpoint record missing');
+  return record;
+}
+
+type CheckpointRace = 'appear' | 'appearThenRemove' | 'remove' | 'change' | 'replaced';
+
+/**
+ * 読込の Worker の間に学習の控えの鍵を変え、読込の後の学習の控えの答えを返す。owned が false なら今までの写しの道、
+ * true なら移す道(読み直しは、replaced の時だけ「ファイルが変わった」として断る)。
+ */
+async function checkpointRaceOutcome(kind: 'part' | 'drawing', owned: boolean, race: CheckpointRace) {
+  const io = await import('@pointercad/io');
+  const base = await lifecyclePicked(kind), original = base.bytes.slice();
+  const record = await checkpointRecordFor(kind, original);
+  // 同じ文書で保存の時刻だけが違う中身(開いた後に同じパスへ保存し直された中身)の記録。
+  const reopened = race === 'replaced' && kind === 'part' ? io.readPcadFile(original) : null;
+  const replacedRecord = reopened?.ok === true
+    ? await checkpointRecordFor('part', io.writePcadFile(reopened.document, { savedAt: '2000-01-01T00:00:00.000Z' })) : null;
+  if (race === 'replaced' && replacedRecord === null) throw new Error('replaced fixture missing');
+  const values = new Map<string, string>();
+  if (race === 'remove' || race === 'change') values.set(TUTORIAL_CHECKPOINT_KEY, record);
+  const storage = { getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
+  const reread = vi.fn(() => race === 'replaced' ? Promise.reject(new Error('file changed')) : Promise.resolve(original.slice()));
+  const picked: PickedFile = owned ? { ...base, owned: true, reread } : base;
+  const harness = readLifecycleHarness(), previousStorage = useAppStore.getState().tutorialCheckpointStorage;
+  useAppStore.getState().setTutorialCheckpointStorage(storage);
+  useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(picked), savePcad: () => Promise.resolve(null),
+    hasSaveTarget: () => true, confirmSaveTarget: () => Promise.resolve(), clearSaveTarget: vi.fn() } });
+  try {
+    const opening = openPart({ ...createDefaultPartFileDeps(), confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null });
+    const probe = await harness.posted();
+    if (probe.request === null) throw new Error('Read request missing');
+    const transferred = picked.bytes.byteLength === 0;
+    // 移すかを決めた後(Worker の間)に鍵を変える。
+    if (race === 'appear' || race === 'appearThenRemove') values.set(TUTORIAL_CHECKPOINT_KEY, record);
+    if (race === 'appearThenRemove' || race === 'remove') values.delete(TUTORIAL_CHECKPOINT_KEY);
+    if (race === 'change') values.set(TUTORIAL_CHECKPOINT_KEY, 'previous checkpoint');
+    if (race === 'replaced') values.set(TUTORIAL_CHECKPOINT_KEY, replacedRecord ?? record);
+    probe.port.onmessage?.(new MessageEvent('message', { data: await lifecycleReply(probe.request) }));
+    await opening;
+    const state = useAppStore.getState();
+    return { transferred, failure: state.tutorialCheckpointFailure, resumed: state.tutorialSession !== null, rereads: reread.mock.calls.length,
+      fileName: kind === 'part' ? state.fileName : state.drawingFileName };
+  } finally {
+    harness.spy.mockRestore(); cancelOpenReads(); useAppStore.getState().setTutorialCheckpointStorage(previousStorage);
+  }
+}
+
+describe('移すと決めた後に学習の控えの鍵が変わっても、読込の後の学習の控えは今までの写しの道と同じ答えになる', () => {
+  const races: readonly (readonly ['part' | 'drawing', CheckpointRace])[] = [
+    ['part', 'appear'], ['drawing', 'appear'], ['part', 'appearThenRemove'], ['drawing', 'appearThenRemove'],
+    ['part', 'remove'], ['drawing', 'remove'], ['part', 'change'], ['drawing', 'change'], ['part', 'replaced'],
+  ];
+  it.each(races)('%s: %s', async (kind, race) => {
+    const before = await checkpointRaceOutcome(kind, false, race);
+    const after = await checkpointRaceOutcome(kind, true, race);
+    expect(before.transferred).toBe(false);
+    // 鍵が無い時に移すと決め、鍵がある時(remove・change)は今までどおり写す。
+    expect(after.transferred).toBe(race !== 'remove' && race !== 'change');
+    expect({ failure: after.failure, resumed: after.resumed, fileName: after.fileName })
+      .toEqual({ failure: before.failure, resumed: before.resumed, fileName: before.fileName });
+    if (race !== 'change') expect(after.failure).not.toBe('corrupt');
+    // 鍵が現れた時だけ読み直す(現れて消えた・写した時は読み直さない)。
+    expect(after.rereads).toBe(race === 'appear' || race === 'replaced' ? 1 : 0);
+    // 部品は、鍵が現れた時に読み直した同じ中身で今までどおり照合が通る(失敗の表示なし)。図面は両方とも staleSource。
+    if (race === 'appear') expect(after.failure).toBe(kind === 'part' ? null : 'staleSource');
+    if (race === 'replaced') expect(after.failure).toBe('staleContent');
+  });
+});
+
 describe('E04 open lifecycle through the real asynchronous host', () => {
   it('retains the pure synchronous readPartDocument API and its existing error translation', () => {
     const bytes = writePcadFile({ ...createEmptyPartDocument(), name: 'synchronous API' }), original = bytes.slice();
@@ -2117,6 +2207,59 @@ describe('E04 open lifecycle through the real asynchronous host', () => {
         expect(probe.terminate).toHaveBeenCalledTimes(1); expect(probe.port.onmessage).toBeNull();
       } finally { unsubscribe(); harness.spy.mockRestore(); cancelOpenReads(); }
     });
+
+    it(`${kind}: an owned picked buffer moves to the Worker without a copy and nothing reads it after the read`, async () => {
+      const picked: PickedFile = { ...await lifecyclePicked(kind), owned: true };
+      const length = picked.bytes.byteLength, harness = readLifecycleHarness(), recent = createMemoryStorage();
+      const confirmSaveTarget = vi.fn(() => Promise.resolve()), clearSaveTarget = vi.fn();
+      const previousStorage = useAppStore.getState().tutorialCheckpointStorage;
+      useAppStore.getState().setTutorialCheckpointStorage({ getItem: () => null, setItem: () => undefined });
+      useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(picked),
+        savePcad: () => Promise.resolve(null), hasSaveTarget: () => true, confirmSaveTarget, clearSaveTarget } });
+      try {
+        const opening = openPart({ ...createDefaultPartFileDeps(), confirmDiscard: () => Promise.resolve(true), recentFilesStorage: recent });
+        const probe = await harness.posted();
+        if (probe.request === null) throw new Error('Read request missing');
+        // 写しを作らずに移した: 口の並びは長さ 0、Worker の入力は元の長さ。
+        expect(picked.bytes.byteLength).toBe(0);
+        expect(probe.request.bytes.byteLength).toBe(length);
+        probe.port.onmessage?.(new MessageEvent('message', { data: await lifecycleReply(probe.request) }));
+        await opening;
+        // 移した後の並びを読む所(学習の控え・失敗の文・開いた後の確定と履歴)が無く、開くは今までどおり終わる。
+        const opened = useAppStore.getState();
+        expect(kind === 'part' ? opened.fileName : kind === 'assembly' ? opened.assemblyFileName : opened.drawingFileName).toBe(picked.name);
+        expect(opened.fileMessage?.failed ?? false).toBe(false);
+        // 学習の控えは鍵が無い時の今までの答え(missing → 失敗の表示なし)。組立は学習の控えを読まない。
+        if (kind !== 'assembly') expect(opened.tutorialCheckpointFailure).toBeNull();
+        expect(confirmSaveTarget).toHaveBeenCalledExactlyOnceWith('new-target');
+        expect(loadRecentFiles(recent).map(file => file.name)).toEqual([picked.name]);
+        expect(probe.terminate).toHaveBeenCalledTimes(1);
+      } finally {
+        harness.spy.mockRestore(); cancelOpenReads(); useAppStore.getState().setTutorialCheckpointStorage(previousStorage);
+      }
+    });
+
+    if (kind !== 'assembly') {
+      it(`${kind}: with a tutorial checkpoint key the owned buffer is copied and stays readable after the read`, async () => {
+        const picked: PickedFile = { ...await lifecyclePicked(kind), owned: true }, original = picked.bytes.slice();
+        const harness = readLifecycleHarness(), previousStorage = useAppStore.getState().tutorialCheckpointStorage;
+        useAppStore.getState().setTutorialCheckpointStorage({
+          getItem: key => key === TUTORIAL_CHECKPOINT_KEY ? 'previous checkpoint' : null, setItem: () => undefined });
+        useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(picked), savePcad: () => Promise.resolve(null),
+          hasSaveTarget: () => true, confirmSaveTarget: () => Promise.resolve(), clearSaveTarget: vi.fn() } });
+        try {
+          const opening = openPart({ ...createDefaultPartFileDeps(), confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null });
+          const probe = await harness.posted();
+          if (probe.request === null) throw new Error('Read request missing');
+          expect(picked.bytes).toEqual(original);
+          probe.port.onmessage?.(new MessageEvent('message', { data: await lifecycleReply(probe.request) }));
+          await opening;
+          expect(picked.bytes).toEqual(original);
+        } finally {
+          harness.spy.mockRestore(); cancelOpenReads(); useAppStore.getState().setTutorialCheckpointStorage(previousStorage);
+        }
+      });
+    }
 
     for (const event of ['cancel', 'switch', 'edit', 'error', 'failure', 'terminate', 'dispose', 'newRead'] as const) {
       it(`${kind}: ${event} rejects the old reply with zero changes to document/history/attachments/target`, async () => {

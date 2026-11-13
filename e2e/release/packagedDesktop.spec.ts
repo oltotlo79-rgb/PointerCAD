@@ -16,6 +16,7 @@ import { waitForMathEditorText } from '../tests/mathEditorReady.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, readRecomputeStats, waitForRecompute } from '../tests/recompute.js';
 import { uiMessage } from '../tests/uiMessages.js';
 import { verifyPackagedStartup } from './packagedStartup.js';
+import { openCdpConnection, optionalField, probeFrameUrls, withDeadline, type CdpConnection } from './portableDesktopSupport.js';
 
 /*
  * 配布物の起動の確認(P13-8・P13-9・P13-10・P13-17)。設定は e2e/packaged-desktop.config.ts、
@@ -416,8 +417,6 @@ async function answerCloseConfirmWithDiscard(app: PackagedApplication): Promise<
 
 /** 配布物の起動の上限(以前の electron.launch と同じ値)。3 行の待ちと 2 つの接続をこの中で行う。 */
 const LAUNCH_TIMEOUT_MS = 60_000;
-/** 起動に失敗した時だけ、接続口からページの確定済みの URL を読む上限。成功の時は使わない。 */
-const FAILURE_PROBE_TIMEOUT_MS = 5_000;
 /** 失敗の文へ入れる標準エラー・標準出力の末尾の行数。 */
 const OUTPUT_TAIL_LINES = 15;
 /** 配布物の出力の輪に残す行数(標準出力・標準エラー・読めなかった CDP の行の合計)。失敗の時だけ書き出す。 */
@@ -524,106 +523,6 @@ function launchFailureMessage(failure: LaunchFailure): string {
     `標準出力の末尾: ${JSON.stringify(failure.stdoutTail)}`,
     `読めなかった CDP の行: ${JSON.stringify(failure.cdpTail)}`,
   ].join('\n');
-}
-
-function optionalField(value: unknown, key: string): unknown {
-  return typeof value === 'object' && value !== null ? Reflect.get(value, key) : undefined;
-}
-
-async function withDeadline<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([work, new Promise<never>((_done, fail) => {
-      timer = setTimeout(() => { fail(new Error(`${label}が${String(timeoutMs)}ms 以内に終わりません`)); }, timeoutMs);
-    })]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-interface CdpConnection {
-  send(method: string, payload?: Record<string, unknown>, sessionId?: string): Promise<unknown>;
-  close(): void;
-}
-
-/**
- * Chrome DevTools Protocol の最小の接続(Node 主の処理の検査口と、失敗の時の Chromium の読取りに使う)。
- * WebSocket は Node の組み込み(CI の Node 22.23.3 も既定で有効)。新しい依存は足さない。知らせ(event)は読まない。
- * JSON として読めない行は捨てずに onMalformed へ渡し、どの返事か決められないので、返事を待つ全てをその行を入れた文で失敗にする。
- */
-async function openCdpConnection(url: string, timeoutMs: number, onMalformed?: (text: string) => void): Promise<CdpConnection> {
-  const socket = new WebSocket(url);
-  await new Promise<void>((done, fail) => {
-    const timer = setTimeout(() => { socket.close(); fail(new Error(`${url} へ ${String(timeoutMs)}ms 以内に接続できません`)); }, timeoutMs);
-    socket.addEventListener('open', () => { clearTimeout(timer); done(); }, { once: true });
-    socket.addEventListener('error', () => { clearTimeout(timer); fail(new Error(`${url} へ接続できません`)); }, { once: true });
-  });
-  const pending = new Map<number, { done: (value: unknown) => void; fail: (error: Error) => void }>();
-  let lastId = 0;
-  socket.addEventListener('message', (event) => {
-    const data: unknown = event.data;
-    const text = typeof data === 'string' ? data : `(文字でない行: ${Object.prototype.toString.call(data)})`;
-    let message: unknown;
-    try {
-      message = JSON.parse(text);
-    } catch (error) {
-      const broken = `${url} の CDP の行を JSON として読めません(${error instanceof Error ? error.message : String(error)}): ${text.slice(0, 300)}`;
-      onMalformed?.(broken);
-      for (const waiter of pending.values()) waiter.fail(new Error(broken));
-      pending.clear();
-      return;
-    }
-    const id = optionalField(message, 'id');
-    const waiter = typeof id === 'number' ? pending.get(id) : undefined;
-    if (typeof id !== 'number' || waiter === undefined) return;
-    pending.delete(id);
-    const failure = optionalField(message, 'error');
-    if (failure === undefined) waiter.done(optionalField(message, 'result'));
-    else waiter.fail(new Error(`CDP の返事が失敗です: ${JSON.stringify(failure).slice(0, 500)}`));
-  });
-  socket.addEventListener('close', () => {
-    for (const waiter of pending.values()) waiter.fail(new Error(`${url} の接続が切れました`));
-    pending.clear();
-  });
-  return {
-    send: (method, payload = {}, sessionId) => new Promise<unknown>((done, fail) => {
-      if (socket.readyState !== WebSocket.OPEN) { fail(new Error(`${url} の接続は閉じています`)); return; }
-      lastId += 1;
-      pending.set(lastId, { done, fail });
-      socket.send(JSON.stringify({ id: lastId, method, params: payload, ...(sessionId === undefined ? {} : { sessionId }) }));
-    }),
-    close: () => { socket.close(); },
-  };
-}
-
-/**
- * 起動に失敗した時だけ呼ぶ。接続口から全てのページの target へ別に入り、確定済みの文書の URL(Page.getFrameTree)を読む。
- * "" なら最初の空の文書のまま(確定の前)、app://pointercad/index.html なら確定の後。
- */
-async function probeFrameUrls(devtools: string): Promise<string> {
-  let connection: CdpConnection | undefined;
-  try {
-    const opened = await openCdpConnection(devtools, FAILURE_PROBE_TIMEOUT_MS);
-    connection = opened;
-    const ask = (method: string, payload?: Record<string, unknown>, sessionId?: string): Promise<unknown> =>
-      withDeadline(opened.send(method, payload, sessionId), FAILURE_PROBE_TIMEOUT_MS, method);
-    const targets = optionalField(await ask('Target.getTargets'), 'targetInfos');
-    const pages = Array.isArray(targets) ? targets.filter((info: unknown) => optionalField(info, 'type') === 'page') : [];
-    const found: string[] = [];
-    for (const info of pages) {
-      const targetId = optionalField(info, 'targetId');
-      if (typeof targetId !== 'string') continue;
-      const sessionId = optionalField(await ask('Target.attachToTarget', { targetId, flatten: true }), 'sessionId');
-      if (typeof sessionId !== 'string') continue;
-      const frame = optionalField(optionalField(await ask('Page.getFrameTree', {}, sessionId), 'frameTree'), 'frame');
-      found.push(`target の url ${JSON.stringify(optionalField(info, 'url'))}・getFrameTree の url ${JSON.stringify(optionalField(frame, 'url'))}`);
-    }
-    return found.length === 0 ? 'ページの target がありません' : found.join('、');
-  } catch (error) {
-    return `読めません: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500);
-  } finally {
-    connection?.close();
-  }
 }
 
 /**

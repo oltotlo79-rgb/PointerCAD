@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { expect, type TestInfo } from '@playwright/test';
-import { DISCOVERY_INTERVAL_MS, INTERVAL_MS, linuxSampler, windowsSampler, linuxTerminalMeasurement, type RawFrame, type Sampler } from './processResourceSampler.js';
+import { DISCOVERY_INTERVAL_MS, INTERVAL_MS, linuxSampler, windowsSampler, windowsNativeSource, linuxTerminalMeasurement, type RawFrame, type Sampler } from './processResourceSampler.js';
 
 type ReadPlatform = 'win32' | 'linux';
 export interface ResidentSample {
@@ -129,6 +129,20 @@ export function readResidentAdapter(info: Pick<TestInfo, 'outputPath' | 'attach'
   };
 }
 
+/**
+ * The one-off Windows evidence of the root and its immediate parent (PID, parent, command line, name, creation).
+ * It uses the sampler's own native process list (windowsNativeSource, one definition in processResourceSampler.ts,
+ * which this module already depends on), so the read measurement starts without any WMI query.
+ */
+export function windowsRootContextScript(root: number): string {
+  return `$ErrorActionPreference='Stop'
+[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+Add-Type -TypeDefinition @'
+${windowsNativeSource}
+'@
+@([SamplerNative]::RootContext(${String(root)})) | Select-Object ProcessId,ParentProcessId,CommandLine,Name,CimCreatedUtc,NativeCreatedTicks | ConvertTo-Json -Compress`;
+}
+
 export async function startReadResidentSampler(info: TestInfo, root: number) {
   const platform = process.platform;
   if (platform !== 'win32' && platform !== 'linux') throw new Error(`Unsupported resource sampler platform: ${platform}`);
@@ -138,8 +152,7 @@ export async function startReadResidentSampler(info: TestInfo, root: number) {
   try {
     if (platform === 'win32') {
       // Query only this anchor and its immediate parent, never measure a PC-wide set.
-      const script = `[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $r=Get-CimInstance Win32_Process -Filter 'ProcessId = ${root}'; if($null -eq $r){throw 'Root CIM identity missing'}; @($r; Get-CimInstance Win32_Process -Filter ('ProcessId = '+$r.ParentProcessId)) | Select-Object ProcessId,ParentProcessId,CommandLine,Name,@{n='CimCreatedUtc';e={$_.CreationDate.ToUniversalTime().ToString('o')}},@{n='NativeCreatedTicks';e={(Get-Process -Id $_.ProcessId).StartTime.ToUniversalTime().Ticks.ToString()}} | ConvertTo-Json -Compress`;
-      const result = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true });
+      const result = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', windowsRootContextScript(root)], { windowsHide: true });
       rootContext.rawIdentityAndCommand = JSON.parse(result.stdout) as unknown;
     } else {
       const stat = await readFile(`/proc/${root}/stat`, 'utf8');

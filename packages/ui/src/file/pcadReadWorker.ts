@@ -11,6 +11,12 @@ export interface PcadReadWorkerPort {
 export interface PcadReadControl {
   readonly signal?: AbortSignal;
   readonly isCurrent?: () => boolean;
+  /**
+   * true の時だけ、呼び手の並びを写さずに Worker へ移す(呼び手の並びは長さ 0 に切り離される)。呼び手が以後その並びを
+   * 読まず、並びが自分だけの全域の ArrayBuffer の時に限る。それ以外(既定)は今までどおり区切って写してから移す。
+   * 128MiB の読込で、Worker へ渡す前の写し(ファイルの大きさの分)を作らないため(2026-11-13)。
+   */
+  readonly transferInput?: boolean;
 }
 export interface PcadFileReader {
   <K extends PcadReadKind>(kind: K, bytes: Uint8Array, control?: PcadReadControl): Promise<PcadReadResults[K]>;
@@ -30,6 +36,11 @@ function assertCurrent(control: PcadReadControl): void {
   if (control.isCurrent?.() === false) throw new DOMException('Read is stale', 'AbortError');
 }
 
+/** 全域の自分だけの ArrayBuffer の並びか(移しても、ほかの見せ方や共有の領域を壊さない)。 */
+function wholeOwnedBuffer(bytes: Uint8Array): bytes is Uint8Array<ArrayBuffer> {
+  return bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+}
+
 /** Borrowed picked/recovery bytes stay attached. Copy in bounded chunks before transferring ownership. */
 async function ownedBytes(bytes: Uint8Array, control: PcadReadControl): Promise<Uint8Array<ArrayBuffer>> {
   assertCurrent(control);
@@ -47,7 +58,7 @@ async function ownedBytes(bytes: Uint8Array, control: PcadReadControl): Promise<
 /** A request owns exactly one short-lived Worker. There is no renderer-side reader fallback. */
 export function createPcadFileReader(createWorker: () => PcadReadWorkerPort = browserWorker): PcadFileReader {
   return async <K extends PcadReadKind>(kind: K, bytes: Uint8Array, control: PcadReadControl = {}): Promise<PcadReadResults[K]> => {
-    const owned = await ownedBytes(bytes, control);
+    const owned = control.transferInput === true && wholeOwnedBuffer(bytes) ? bytes : await ownedBytes(bytes, control);
     assertCurrent(control);
     const id = crypto.randomUUID(), worker = createWorker();
     return new Promise<PcadReadResults[K]>((resolve, reject) => {

@@ -25,8 +25,23 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
   cancelExportSave: (requestId: string): Promise<unknown> => ipcRenderer.invoke('pcad:cancelExportSave', requestId),
   openExport: (token: string): Promise<unknown> => ipcRenderer.invoke('pcad:openExport', token),
   openCamTool: (tool: string): Promise<unknown> => ipcRenderer.invoke('pcad:openCamTool', tool),
-  /** 「開く」。答えは `{ name, bytes, saveTargetToken }` か null。token に実パスは含めない。 */
-  openPcad: (kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown> => ipcRenderer.invoke('pcad:open', kind),
+  /**
+   * 「開く」の開始(2026-11-13: バイト列を 1 回で受け取らず、本体が決めた大きさに区切って受け取る)。本体が窓を出し、
+   * 答えは `{ readId, name, size, chunkBytes }` か null(取り消し)。readId は一時的な識別子で、実パスは含めない。
+   * 本文は `readPcadOpenChunk` で区切りごとに受け取る(全体をここで受けると、世界の境目で全体が写される)。
+   */
+  beginPcadOpen: (kind?: 'part' | 'assembly' | 'drawing' | 'all'): Promise<unknown> => ipcRenderer.invoke('pcad:openBegin', kind),
+  /** 区切りの 1 回分。通し番号は 0 から。答えはその回のバイト列。 */
+  readPcadOpenChunk: (readId: string, index: number): Promise<unknown> => ipcRenderer.invoke('pcad:openChunk', readId, index),
+  /** 全部受け取った後の終わり。本体が読む途中の変化が無いことを確かめて閉じる。答えは上書き先の候補の token(実パスは含めない)。 */
+  finishPcadOpen: (readId: string): Promise<unknown> => ipcRenderer.invoke('pcad:openFinish', readId),
+  /** 途中の「開く」をやめる(本体が開いたままのファイルを閉じる)。 */
+  abortPcadOpen: (readId: string): Promise<unknown> => ipcRenderer.invoke('pcad:openAbort', readId),
+  /**
+   * 読み直しの開始。読込の Worker へ並びを移した後に中身が要った時だけ使う。渡すのは終わりで受け取った token だけで、
+   * 本体は開いた時と同じファイルの時だけ答える(答えは開始と同じ形。本文は readPcadOpenChunk で受け取る)。
+   */
+  rereadPcadOpen: (token: string): Promise<unknown> => ipcRenderer.invoke('pcad:openReread', token),
   /** 読み終えた部品について、開いた先を上書き先に確定する。 */
   confirmSaveTarget: (token: string): Promise<unknown> =>
     ipcRenderer.invoke('pcad:confirmTarget', token),

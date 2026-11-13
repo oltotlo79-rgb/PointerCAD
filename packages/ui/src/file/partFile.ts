@@ -37,7 +37,8 @@ import { currentPcadAttachments } from '../store/attachKernel.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activeDocument } from '../store/documentKind.js';
 import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly } from './assemblyFile.js';
-import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, readForOpen } from './documentOpenGuard.js';
+import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, mayTransferPickedBytes,
+  readCheckpointAfterRead, readForOpen } from './documentOpenGuard.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
@@ -45,7 +46,7 @@ import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } fr
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { applyPickedDrawing, saveDrawing } from './drawingFile.js';
 import { loadedPartAttachments } from './loadedPartAttachments.js';
-import { readTutorialCheckpoint, saveTutorialCheckpoint } from '../tutorial/tutorialCheckpoint.js';
+import { saveTutorialCheckpoint } from '../tutorial/tutorialCheckpoint.js';
 import { continuingParameterSession, parameterCheckpointInput, parameterCheckpointIdentity,
   parameterCheckpointWriteGuard, parameterTutorialEvidence, parameterTutorialStep,
   resumeParameterTutorialSession } from '../tutorial/tutorialProgress.js';
@@ -297,16 +298,17 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     }
     return;
   }
-  const result = await readForOpen(request, 'part', picked.bytes);
+  // 学習の控えの鍵が無ければ、読込の後に picked.bytes を読む所は無い(学習の控えは鍵がある時だけ保存バイトを読む。
+  // 移すと決めた後に鍵が現れた時は readCheckpointAfterRead が読み直す)。
+  const transferred = mayTransferPickedBytes(picked, useAppStore.getState().tutorialCheckpointStorage);
+  const result = await readForOpen(request, 'part', picked.bytes, transferred);
   if (result === null) return;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
     return;
   }
-  const checkpoint = await readTutorialCheckpoint(
-    { part: { document: result.document, savedBytes: picked.bytes } },
-    useAppStore.getState().tutorialCheckpointStorage,
-  );
+  const checkpoint = await readCheckpointAfterRead(picked, transferred, useAppStore.getState().tutorialCheckpointStorage,
+    savedBytes => ({ part: { document: result.document, savedBytes } }));
   if (!(await mayOpenAfterRead(request, deps))) {
     return;
   }

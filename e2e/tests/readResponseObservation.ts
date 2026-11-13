@@ -185,6 +185,11 @@ self.postMessage = (...args) => {
           if (integrity && typeof request === 'object' && request !== null && 'bytes' in request && request.bytes instanceof Uint8Array) {
             // A copy is necessary because native postMessage detaches the owned input.
             observation.source = request.bytes.slice();
+            // Ownership-transfer entrance: without the bounded copy, the posted input is the borrowed UI ZIP itself.
+            // Observe it here, before the native transfer detaches it (the copy entrance above keeps priority).
+            if (observation.borrowed === null && observation.source[0] === 0x50 && observation.source[1] === 0x4b) {
+              observation.borrowed = observation.source;
+            }
           }
           return Reflect.apply(post, worker, values);
         } });

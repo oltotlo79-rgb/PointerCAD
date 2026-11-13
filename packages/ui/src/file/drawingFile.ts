@@ -2,7 +2,8 @@
 import { drawingSourceInputHash, drawingSourceInputOf } from '@pointercad/model';
 import type { DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, readForOpen } from './documentOpenGuard.js';
+import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, mayTransferPickedBytes,
+  readCheckpointAfterRead, readForOpen } from './documentOpenGuard.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { withPcaddExtension, type PickedFile } from './fileGateway.js';
@@ -11,7 +12,7 @@ import { openErrorMessageKey } from './documentReadError.js';
 import { recordRecentFile } from './recentFiles.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { saveFailureMessageKey } from './saveFailure.js';
-import { readTutorialCheckpoint, saveTutorialCheckpoint } from '../tutorial/tutorialCheckpoint.js';
+import { saveTutorialCheckpoint } from '../tutorial/tutorialCheckpoint.js';
 import { continuingParameterSession, parameterCheckpointIdentity, parameterCheckpointInput,
   parameterCheckpointWriteGuard, resumeParameterTutorialSession } from '../tutorial/tutorialProgress.js';
 
@@ -25,7 +26,10 @@ export async function applyPickedDrawing(
   request: DocumentRequest = beginOpenRequest(),
 ): Promise<void> {
   try {
-  const result = await readForOpen(request, 'drawing', picked.bytes);
+  // 学習の控えの鍵が無ければ、読込の後に picked.bytes を読む所は無い(学習の控えは鍵がある時だけ保存バイトを読む。
+  // 移すと決めた後に鍵が現れた時は readCheckpointAfterRead が読み直す)。
+  const transferred = mayTransferPickedBytes(picked, useAppStore.getState().tutorialCheckpointStorage);
+  const result = await readForOpen(request, 'drawing', picked.bytes, transferred);
   if (result === null) return;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {
@@ -33,10 +37,10 @@ export async function applyPickedDrawing(
     }
     return;
   }
-  const checkpoint = result.source.sourceKind === 'part'
-    ? await readTutorialCheckpoint({ part: { document: result.source.document }, drawing: {
-      document: result.document, source: result.source, savedBytes: picked.bytes,
-    } }, useAppStore.getState().tutorialCheckpointStorage)
+  const source = result.source;
+  const checkpoint = source.sourceKind === 'part'
+    ? await readCheckpointAfterRead(picked, transferred, useAppStore.getState().tutorialCheckpointStorage,
+      savedBytes => ({ part: { document: source.document }, drawing: { document: result.document, source, savedBytes } }))
     : null;
   if (!(await mayOpenAfterRead(request, deps))) return;
   const before = useAppStore.getState();

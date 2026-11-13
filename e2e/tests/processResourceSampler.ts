@@ -5,16 +5,11 @@ import { promisify } from 'node:util';
 import { linuxProcessTreeDiscovery, type ProcessMemoryFrame, type ProcessMemorySample } from '../../packages/test-utils/src/processMemorySamples.js';
 
 export const INTERVAL_MS = 100;
-export const DISCOVERY_INTERVAL_MS = 2_000;
-/** A discovery starts this long after the previous start, so a normal one completes inside the 2000ms age limit. */
-export const DISCOVERY_START_MS = DISCOVERY_INTERVAL_MS / 2;
 /**
- * Part of the 2000ms age limit kept for the frame itself (wake-up after its sleep, native reads, timing record).
- * One period (100ms) was not enough on CI: the Windows sampler stalled 657-747ms (2026-11-10 frames 15/1069: a 90ms
- * sleep took 747ms, reads took 672-705ms). Locally loop start to read end was at most 36ms and a 1200ms wait
- * threshold caused 0 waits. With less than this left, a frame first binds to the running discovery.
+ * The age limit of the PID set a frame reads (frame end minus its discovery). Both samplers discover in every
+ * frame, so the age is that frame's discovery and read time; a longer stall of one frame is rejected as stale.
  */
-export const DISCOVERY_READ_RESERVE_MS = 800;
+export const DISCOVERY_INTERVAL_MS = 2_000;
 export interface LinuxReading {
   readonly statBefore: string | null; readonly status: string | null; readonly statAfter: string | null;
   readonly stateBefore: string | null; readonly stateAfter: string | null;
@@ -47,6 +42,7 @@ interface WindowsTiming {
   readonly serializerReadyAtEpochMs: number;
   readonly discoveryStartedAtEpochMs: number;
   readonly discoveryAdoptedAtEpochMs: number;
+  /** The process enumeration of the discovery (the native snapshot; the field name is kept for the record format). */
   readonly cimEnumerationMs: number;
   readonly ancestryMs: number;
   readonly identityBindingMs: number;
@@ -67,9 +63,8 @@ interface WindowsTiming {
 export type RawFrame = Omit<ProcessMemoryFrame, 'phase' | 'processes'> & { readonly processes: readonly ResourceProcessSample[]; readonly readStartedAtEpochMs: number; readonly windowsTiming?: WindowsTiming; readonly linuxDiscoveryComplete?: boolean; readonly linuxDiscovery?: readonly (LinuxAncestry | LinuxAncestryFailure | null)[] };
 /** One start-up stage of the Windows sampler, written as its own stdout line before the first frame. */
 export interface SamplerStage { readonly stage: string; readonly atEpochMs: number; readonly ms: number }
-/** The Windows sampler's start-up stages, in the order its PowerShell script reaches them. */
-export const WINDOWS_SAMPLER_STAGES = ['script-start', 'native-ready', 'discovery-runspace-ready',
-  'first-discovery-started', 'first-discovery-complete'] as const;
+/** The Windows sampler's start-up stages, in the order its PowerShell script reaches them (the first frame's discovery last). */
+export const WINDOWS_SAMPLER_STAGES = ['script-start', 'native-ready', 'first-discovery-started', 'first-discovery-complete'] as const;
 export interface Sampler {
   readonly frames: RawFrame[]; readonly failures: string[];
   /** Start-up stages seen so far (Windows only). They are never frames. */
@@ -168,11 +163,14 @@ function clockTicks(): Promise<number> {
 
 // One fresh handle per read: identity, liveness and metrics refer to the same
 // process object. No native handle or dynamic value is cached between frames.
-const windowsNativeSource = `
+export const windowsNativeSource = `
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Microsoft.Win32.SafeHandles;
 public static class SamplerNative {
   [DllImport("kernel32.dll")]
@@ -282,17 +280,294 @@ public static class SamplerNative {
     }
     return sample;
   }
+
+  // Discovery without WMI. One NtQuerySystemInformation snapshot gives every PID, parent PID, creation time
+  // (100 ns, the same value GetProcessTimes reports for that process) and image name at one instant. Only the
+  // selected PIDs are opened: their creation time is checked on the handle and their command line is read
+  // through NtQueryInformationProcess on that same handle (the role comes from it, as before).
+  [StructLayout(LayoutKind.Sequential)]
+  struct UnicodeString { public ushort Length; public ushort MaximumLength; public IntPtr Buffer; }
+  [StructLayout(LayoutKind.Sequential)]
+  struct SystemProcessInformation {
+    public uint NextEntryOffset;
+    public uint NumberOfThreads;
+    public long WorkingSetPrivateSize;
+    public uint HardFaultCount;
+    public uint NumberOfThreadsHighWatermark;
+    public ulong CycleTime;
+    public long CreateTime;
+    public long UserTime;
+    public long KernelTime;
+    public UnicodeString ImageName;
+    public int BasePriority;
+    public IntPtr UniqueProcessId;
+    public IntPtr InheritedFromUniqueProcessId;
+  }
+  [DllImport("ntdll.dll")]
+  static extern int NtQuerySystemInformation(int informationClass, IntPtr information, int length, out int returnLength);
+  [DllImport("ntdll.dll")]
+  static extern int NtQueryInformationProcess(SafeProcessHandle process, int informationClass, IntPtr information, int length, out int returnLength);
+  const int SystemProcessInformationClass = 5;
+  const int ProcessCommandLineInformationClass = 60;
+  const int StatusInfoLengthMismatch = unchecked((int)0xC0000004);
+  const int StatusBufferOverflow = unchecked((int)0x80000005);
+  const int StatusBufferTooSmall = unchecked((int)0xC0000023);
+  static bool BufferTooSmall(int status) {
+    return status == StatusInfoLengthMismatch || status == StatusBufferOverflow || status == StatusBufferTooSmall;
+  }
+  public sealed class ProcessRow {
+    public int ProcessId, ParentProcessId;
+    public long CreatedTicks;
+    public string Name;
+  }
+  public static ProcessRow[] Processes() {
+    int length = 1 << 20;
+    for (int attempt = 0; attempt < 8; attempt++) {
+      IntPtr buffer = Marshal.AllocHGlobal(length);
+      try {
+        int needed;
+        int status = NtQuerySystemInformation(SystemProcessInformationClass, buffer, length, out needed);
+        if (BufferTooSmall(status)) { length = Math.Max(needed, length) * 2; continue; }
+        if (status != 0) throw new InvalidOperationException("NtQuerySystemInformation failed: 0x" + status.ToString("X8", CultureInfo.InvariantCulture));
+        List<ProcessRow> rows = new List<ProcessRow>();
+        long offset = 0;
+        while (true) {
+          SystemProcessInformation entry = (SystemProcessInformation)Marshal.PtrToStructure(
+            new IntPtr(buffer.ToInt64() + offset), typeof(SystemProcessInformation));
+          ProcessRow row = new ProcessRow();
+          row.ProcessId = entry.UniqueProcessId.ToInt32();
+          row.ParentProcessId = entry.InheritedFromUniqueProcessId.ToInt32();
+          row.CreatedTicks = DateTime.FromFileTimeUtc(entry.CreateTime).Ticks;
+          row.Name = entry.ImageName.Buffer == IntPtr.Zero ? "" : Marshal.PtrToStringUni(entry.ImageName.Buffer, entry.ImageName.Length / 2);
+          rows.Add(row);
+          if (entry.NextEntryOffset == 0) break;
+          offset += entry.NextEntryOffset;
+        }
+        return rows.ToArray();
+      } finally { Marshal.FreeHGlobal(buffer); }
+    }
+    throw new InvalidOperationException("NtQuerySystemInformation buffer size did not settle");
+  }
+  // A command line that cannot be read stays null, as the former WMI enumeration reported an unreadable one.
+  static string CommandLine(SafeProcessHandle handle) {
+    int length = 4096;
+    for (int attempt = 0; attempt < 6; attempt++) {
+      IntPtr buffer = Marshal.AllocHGlobal(length);
+      try {
+        int needed;
+        int status = NtQueryInformationProcess(handle, ProcessCommandLineInformationClass, buffer, length, out needed);
+        if (BufferTooSmall(status)) { length = Math.Max(needed, length * 2); continue; }
+        if (status != 0) return null;
+        UnicodeString text = (UnicodeString)Marshal.PtrToStructure(buffer, typeof(UnicodeString));
+        return text.Buffer == IntPtr.Zero ? "" : Marshal.PtrToStringUni(text.Buffer, text.Length / 2);
+      } finally { Marshal.FreeHGlobal(buffer); }
+    }
+    return null;
+  }
+  static string Role(string commandLine) {
+    if (commandLine == null) return "main-or-native";
+    Match type = Regex.Match(commandLine, "--type=([a-z-]+)", RegexOptions.IgnoreCase);
+    if (type.Success) return type.Groups[1].Value;
+    if (commandLine.IndexOf("-contentproc", StringComparison.OrdinalIgnoreCase) >= 0) return "firefox-content";
+    return "main-or-native";
+  }
+  public sealed class KnownProcess {
+    public int Pid, ParentPid;
+    public string Created, Name, Role;
+  }
+  public sealed class Discovery {
+    public KnownProcess[] Known;
+    public string RootCreated;
+    public double EnumerationMs, AncestryMs, IdentityBindingMs;
+  }
+  /** The failing stage and the snapshot row that could not be bound. */
+  public sealed class DiscoveryFailure : Exception {
+    public readonly string Stage;
+    public readonly ProcessRow Row;
+    public DiscoveryFailure(string stage, ProcessRow row, string message, Exception inner) : base(message, inner) {
+      Stage = stage;
+      Row = row;
+    }
+  }
+  // The same handle gives the creation time compared with the snapshot and, when asked, the command line.
+  static long Bind(ProcessRow row, bool readCommandLine, out string commandLine) {
+    commandLine = null;
+    using (SafeProcessHandle handle = Open(row.ProcessId)) {
+      Alive(handle);
+      double cpu;
+      long ticks = Times(handle, out cpu);
+      if (ticks != row.CreatedTicks) throw new InvalidOperationException("PID reused during discovery");
+      if (readCommandLine) commandLine = CommandLine(handle);
+      Alive(handle);
+      return ticks;
+    }
+  }
+  public static Discovery Discover(int rootPid, bool includeRoot, int samplerPid) {
+    string stageName = "process-enumeration";
+    ProcessRow current = null;
+    try {
+      Discovery result = new Discovery();
+      Stopwatch stage = Stopwatch.StartNew();
+      ProcessRow[] all = Processes();
+      result.EnumerationMs = stage.Elapsed.TotalMilliseconds;
+      stage.Restart();
+      stageName = "root-selection";
+      ProcessRow root = null;
+      int rootRows = 0;
+      foreach (ProcessRow row in all) if (row.ProcessId == rootPid) { root = row; rootRows++; }
+      if (rootRows != 1) throw new InvalidOperationException("Root process creation identity missing");
+      stageName = "descendant-enumeration";
+      HashSet<int> ids = new HashSet<int>();
+      ids.Add(rootPid);
+      Dictionary<int, ProcessRow> ancestry = new Dictionary<int, ProcessRow>();
+      ancestry[rootPid] = root;
+      bool added;
+      do {
+        added = false;
+        foreach (ProcessRow row in all) {
+          if (!ids.Contains(row.ParentProcessId) || row.ProcessId == samplerPid) continue;
+          // ParentProcessId can refer to a recycled PID. An older child cannot
+          // belong to this parent instance; do not open or follow that process.
+          if (row.CreatedTicks < ancestry[row.ParentProcessId].CreatedTicks) continue;
+          if (ids.Add(row.ProcessId)) { ancestry[row.ProcessId] = row; added = true; }
+        }
+      } while (added);
+      result.AncestryMs = stage.Elapsed.TotalMilliseconds;
+      stage.Restart();
+      stageName = "root-native-binding";
+      current = root;
+      string ignored;
+      result.RootCreated = Bind(root, false, out ignored).ToString(CultureInfo.InvariantCulture);
+      Dictionary<int, string> nativeIdentities = new Dictionary<int, string>();
+      nativeIdentities[rootPid] = result.RootCreated;
+      List<KnownProcess> known = new List<KnownProcess>();
+      List<ProcessRow> knownRows = new List<ProcessRow>();
+      stageName = "descendant-native-binding";
+      foreach (ProcessRow row in all) {
+        if (!ids.Contains(row.ProcessId) || (!includeRoot && row.ProcessId == rootPid)) continue;
+        current = row;
+        string commandLine;
+        KnownProcess entry = new KnownProcess();
+        entry.Created = Bind(row, true, out commandLine).ToString(CultureInfo.InvariantCulture);
+        entry.Pid = row.ProcessId;
+        entry.ParentPid = row.ParentProcessId;
+        entry.Name = row.Name;
+        entry.Role = Role(commandLine);
+        nativeIdentities[row.ProcessId] = entry.Created;
+        known.Add(entry);
+        knownRows.Add(row);
+      }
+      stageName = "native-parent-child-order";
+      for (int index = 0; index < known.Count; index++) {
+        if (known[index].Pid == rootPid) continue;
+        current = knownRows[index];
+        string parentIdentity;
+        if (!nativeIdentities.TryGetValue(known[index].ParentPid, out parentIdentity)
+          || long.Parse(known[index].Created, CultureInfo.InvariantCulture) < long.Parse(parentIdentity, CultureInfo.InvariantCulture)) {
+          throw new InvalidOperationException("Native parent-child creation order invalid");
+        }
+      }
+      stageName = "root-native-recheck";
+      current = root;
+      if (Identity(rootPid).ToString(CultureInfo.InvariantCulture) != result.RootCreated) throw new InvalidOperationException("Root PID reused during discovery");
+      result.IdentityBindingMs = stage.Elapsed.TotalMilliseconds;
+      result.Known = known.ToArray();
+      return result;
+    } catch (Exception error) {
+      throw new DiscoveryFailure(stageName, current, error.Message, error);
+    }
+  }
+  // One-off evidence of a root and its immediate parent for a measurement record (readResidentSampler).
+  // Property names are those of the former evidence rows; the creation time of the process list is
+  // CimCreatedUtc and the handle creation time is NativeCreatedTicks.
+  public sealed class ProcessEvidence {
+    public int ProcessId, ParentProcessId;
+    public long CreatedTicks;
+    public string CommandLine, Name, CimCreatedUtc, NativeCreatedTicks;
+  }
+  static ProcessEvidence Evidence(ProcessRow row) {
+    ProcessEvidence evidence = new ProcessEvidence();
+    evidence.ProcessId = row.ProcessId;
+    evidence.ParentProcessId = row.ParentProcessId;
+    evidence.CreatedTicks = row.CreatedTicks;
+    evidence.Name = row.Name;
+    evidence.CimCreatedUtc = new DateTime(row.CreatedTicks, DateTimeKind.Utc).ToString("o", CultureInfo.InvariantCulture);
+    try {
+      using (SafeProcessHandle handle = Open(row.ProcessId)) {
+        double cpu;
+        evidence.NativeCreatedTicks = Times(handle, out cpu).ToString(CultureInfo.InvariantCulture);
+        evidence.CommandLine = CommandLine(handle);
+      }
+    } catch (Exception) {
+      // A process that cannot be opened keeps null handle values, as the former evidence did.
+    }
+    return evidence;
+  }
+  public static ProcessEvidence[] RootContext(int rootPid) {
+    ProcessRow[] all = Processes();
+    ProcessRow root = null;
+    foreach (ProcessRow row in all) if (row.ProcessId == rootPid) root = row;
+    if (root == null) throw new InvalidOperationException("Root CIM identity missing");
+    List<ProcessEvidence> rows = new List<ProcessEvidence>();
+    rows.Add(Evidence(root));
+    foreach (ProcessRow row in all) if (row.ProcessId == root.ParentProcessId) { rows.Add(Evidence(row)); break; }
+    return rows.ToArray();
+  }
+  // One-off evidence of one exact PID, or of every process when pid is 0 (a command-line search; namedSavePointsFlow).
+  public static ProcessEvidence[] ProcessesWithEvidence(int pid) {
+    List<ProcessEvidence> rows = new List<ProcessEvidence>();
+    foreach (ProcessRow row in Processes()) if (pid == 0 || row.ProcessId == pid) rows.Add(Evidence(row));
+    return rows.ToArray();
+  }
 }
 `;
 
 /**
- * 保存実測と同じ全子孫CIM探索。個別PID/CreationDateと読取失敗を保持する。
- * CIM探索は同じPowerShellプロセスの別runspaceで行い、100msの読取りを止めない(task227、
- * 探索の約360msが毎回の抜けになった)。読取りは最後に完了した探索の組だけを使い、
- * 探索の時刻は実際の完了時刻のまま記録する。
+ * 根からの全子孫の探索。個別PID/生成時刻と読取失敗を保持する。探索は native のプロセス一覧
+ * (SamplerNative.Discover、WMI を使わない。外部検査の Windows で WMI の探索 1 回が最大 1746ms かかり、
+ * 古い探索・起動の停止で落ちたため)で、Linux の linuxFrame と同じく frame ごとに読取りの直前に同期で行う
+ * (手元で数 ms)。frame はその frame の探索の組だけを読み、探索の時刻は実際の完了時刻のまま記録する。
+ * 外部検査で採取のプロセスが 0.3〜0.8 秒止まっても、古さは探索と読取りの所要だけになる。
  */
 export function windowsSampler(rootPid: number, includeRoot: boolean): Sampler {
-  const script = `
+  const script = windowsSamplerScript(rootPid, includeRoot);
+  const spawnedAt = Date.now();
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+    { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const frames: RawFrame[] = [], failures: string[] = [], stages: SamplerStage[] = [];
+  let exited: string | null = null;
+  let pending = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    pending += chunk;
+    let newline = pending.indexOf('\n');
+    while (newline >= 0) {
+      const line = pending.slice(0, newline).trim(); pending = pending.slice(newline + 1);
+      try {
+        const read = readSamplerLine(line);
+        if ('frame' in read) frames.push(read.frame);
+        else stages.push(read.stage);
+      } catch (error: unknown) { failures.push(`invalid sampler JSON: ${String(error)}`); }
+      newline = pending.indexOf('\n');
+    }
+  });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => { failures.push(chunk); });
+  child.on('error', (error: Error) => { failures.push(error.message); });
+  let stopping = false;
+  const closed = new Promise<void>(resolve => { child.on('close', (code, signal) => {
+    exited = `${String(code)}/${String(signal)} +${String(Date.now() - spawnedAt)}ms`;
+    if (!stopping) failures.push(`sampler exited unexpectedly: ${String(code)}`);
+    resolve();
+  }); });
+  const describe = (): string => `spawned ${String(spawnedAt)} pid ${String(child.pid ?? 'none')} exit ${exited ?? 'running'}; stages ${
+    stages.length === 0 ? 'none' : stages.map(entry => `${entry.stage} +${String(entry.atEpochMs - spawnedAt)}ms (${entry.ms.toFixed(1)}ms)`).join(', ')}`;
+  return { frames, failures, stages, describe, async stop() { stopping = true; child.kill(); await closed; } };
+}
+
+/** The PowerShell program of the Windows sampler (one JSON line per start-up stage and per frame on stdout). */
+export function windowsSamplerScript(rootPid: number, includeRoot: boolean): string {
+  return `
 $ErrorActionPreference='Stop'
 # Node decodes both redirected streams as UTF-8; do not emit the host OEM code page.
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
@@ -321,202 +596,79 @@ $rootProcessId=${rootPid}
 $includeRoot=$${includeRoot ? 'true' : 'false'}
 $samplerProcessId=$PID
 $known=@()
-$knownProcessIds=New-Object 'System.Collections.Generic.HashSet[int]'
 $discoveredAt=0L
 $discoveryError=$null
 $rootCreated=$null
 $initialRootCreated=$null
 $discoveryTiming=$null
-$adoptedAt=0L
-$discovery={
-param($rootProcessId,$includeRoot,$samplerProcessId)
-$workerEnteredAt=[SamplerNative]::EpochMilliseconds()
-$executionClock=[System.Diagnostics.Stopwatch]::StartNew()
-$ErrorActionPreference='Stop'
-function Get-DiscoveryContext($stage,$item){
-  if($null -eq $item){return @{stage=$stage;pid=$null;name=$null;parentPid=$null;cimCreatedUtc=$null;cimCreatedTicks=$null;commandLine=$null}}
-  return @{stage=$stage;pid=[int]$item.ProcessId;name=$item.Name;parentPid=[int]$item.ParentProcessId;
-    cimCreatedUtc=$item.CreationDate.ToUniversalTime().ToString('o');cimCreatedTicks=$item.CreationDate.ToUniversalTime().Ticks.ToString();commandLine=$item.CommandLine}
-}
-function Get-NativeCreationIdentity($item){
-  [long]$nativeTicks=[SamplerNative]::Identity([int]$item.ProcessId)
-  [long]$cimTicks=$item.CreationDate.ToUniversalTime().Ticks
-  [long]$nativeRemainder=0
-  [long]$cimRemainder=0
-  # CIM_DATETIME has six fractional digits; native DateTime ticks retain 100 ns.
-  $nativeMicroseconds=[Math]::DivRem($nativeTicks,[long]10,[ref]$nativeRemainder)
-  $cimMicroseconds=[Math]::DivRem($cimTicks,[long]10,[ref]$cimRemainder)
-  if($cimRemainder -ne 0 -or $nativeMicroseconds -ne $cimMicroseconds){throw 'PID reused during CIM discovery'}
-  return $nativeTicks.ToString()
-}
-$discoveryContext=Get-DiscoveryContext 'cim-enumeration' $null
-try{
-  $stageClock=[System.Diagnostics.Stopwatch]::StartNew()
-  # Enumerate every process, but request only the five fields used for ancestry,
-  # identity and role. Unused Win32_Process metrics are not part of discovery.
-  $all=@(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,Name,CommandLine)
-  $cimEnumerationMs=$stageClock.Elapsed.TotalMilliseconds
-  $stageClock.Restart()
-  $discoveryContext=Get-DiscoveryContext 'root-cim-selection' $null
-  $rootRows=@($all | Where-Object {[int]$_.ProcessId -eq $rootProcessId})
-  if($rootRows.Count -ne 1){throw 'Root process creation identity missing'}
-  $discoveryContext=Get-DiscoveryContext 'cim-descendant-enumeration' $null
-  $ids=New-Object 'System.Collections.Generic.HashSet[int]'
-  [void]$ids.Add($rootProcessId)
-  $ancestry=@{}
-  $ancestry[$rootProcessId]=$rootRows[0]
-  do { $added=$false; foreach($item in $all){
-    if($ids.Contains([int]$item.ParentProcessId) -and [int]$item.ProcessId -ne $samplerProcessId){
-      $parent=$ancestry[[int]$item.ParentProcessId]
-      if($null -eq $item.CreationDate -or $null -eq $parent.CreationDate){throw 'CIM ancestry creation identity missing'}
-      # ParentProcessId can refer to a recycled PID. An older child cannot
-      # belong to this parent instance; do not open or follow that process.
-      if($item.CreationDate.ToUniversalTime().Ticks -lt $parent.CreationDate.ToUniversalTime().Ticks){continue}
-      if($ids.Add([int]$item.ProcessId)){$ancestry[[int]$item.ProcessId]=$item;$added=$true}
-    }
-  }}while($added)
-  $ancestryMs=$stageClock.Elapsed.TotalMilliseconds
-  $stageClock.Restart()
-  # Open only CIM-owned PIDs. The native call rejects missing/exited processes
-  # and closes its own handle; no handle crosses the runspace boundary.
-  $discoveryContext=Get-DiscoveryContext 'root-native-binding' $rootRows[0]
-  $rootCreated=Get-NativeCreationIdentity $rootRows[0]
-  $nativeIdentities=@{}
-  $nativeIdentities[$rootProcessId]=$rootCreated
-  $discovered=@(foreach($item in $all){
-    if($ids.Contains([int]$item.ProcessId) -and ($includeRoot -or [int]$item.ProcessId -ne $rootProcessId)){
-      # Bind the CIM ancestry row to a full native identity before retaining it.
-      $discoveryContext=Get-DiscoveryContext 'descendant-native-binding' $item
-      $identity=Get-NativeCreationIdentity $item
-      $nativeIdentities[[int]$item.ProcessId]=$identity
-      @{cim=$item;created=$identity}
-    }
-  })
-  foreach($entry in $discovered){
-    if([int]$entry.cim.ProcessId -eq $rootProcessId){continue}
-    $discoveryContext=Get-DiscoveryContext 'native-parent-child-order' $entry.cim
-    $parentIdentity=$nativeIdentities[[int]$entry.cim.ParentProcessId]
-    if($null -eq $parentIdentity -or [long]$entry.created -lt [long]$parentIdentity){throw 'Native parent-child creation order invalid'}
-  }
-  # Resolve immutable CIM metadata here, rather than invoking the CIM adapter
-  # in the timed read loop (including on the first frame after each adoption).
-  $known=@(foreach($entry in $discovered){
-    $item=$entry.cim
-    $role='main-or-native'
-    if($item.CommandLine -match '--type=([a-z-]+)'){$role=$Matches[1]}
-    elseif($item.CommandLine -match '-contentproc'){$role='firefox-content'}
-    @{pid=[int]$item.ProcessId;created=$entry.created;parentPid=[int]$item.ParentProcessId;name=$item.Name;role=$role}
-  })
-  $discoveryContext=Get-DiscoveryContext 'root-native-recheck' $rootRows[0]
-  if([SamplerNative]::Identity($rootProcessId).ToString() -ne $rootCreated){throw 'Root PID reused during discovery'}
-  $identityBindingMs=$stageClock.Elapsed.TotalMilliseconds
-  $completed=@{ok=$true;known=$known;rootCreated=$rootCreated;
-    timing=@{cimEnumerationMs=$cimEnumerationMs;ancestryMs=$ancestryMs;identityBindingMs=$identityBindingMs;
-      discoveryWorkerEnteredAtEpochMs=$workerEnteredAt;discoveryExecutionMs=$executionClock.Elapsed.TotalMilliseconds}}
-  $completed.discoveredAt=[SamplerNative]::EpochMilliseconds()
-  return $completed
-}catch{
-  # Preserve the failure as a failing discoveryError, with the CIM candidate
-  # that could not be bound. A missing PID is not evidence of a normal exit.
-  return @{ok=$false;error=(@{message=$_.Exception.Message;exceptionType=$_.Exception.GetType().FullName;
-    errorId=$_.FullyQualifiedErrorId;context=$discoveryContext} | ConvertTo-Json -Depth 4 -Compress)}
-}
-}.ToString()
-# Keep one runspace and one thread for discovery. Installing its function does
-# not invoke it or read any PID. Repeated starts do not reinitialize PowerShell,
-# import CIM metadata anew or dispose a runspace in the sampling loop.
-$discoverySetupClock=[System.Diagnostics.Stopwatch]::StartNew()
-$discoveryRunspace=[runspacefactory]::CreateRunspace()
-$discoveryRunspace.ThreadOptions='ReuseThread'
-$discoveryRunspace.Open()
-$discoveryShell=[powershell]::Create()
-$discoveryShell.Runspace=$discoveryRunspace
-[void]$discoveryShell.AddScript('function Invoke-SamplerDiscovery {'+$discovery+'}')
-[void]$discoveryShell.Invoke()
-if($discoveryShell.HadErrors){throw ($discoveryShell.Streams.Error | Out-String)}
-$discoveryInitializationMs=$discoverySetupClock.Elapsed.TotalMilliseconds
-Write-SamplerStage 'discovery-runspace-ready' ([SamplerNative]::EpochMilliseconds()) $discoveryInitializationMs
-function Start-Discovery{
-  $discoveryShell.Commands.Clear()
-  $discoveryShell.Streams.Error.Clear()
-  [void]$discoveryShell.AddCommand('Invoke-SamplerDiscovery').AddArgument($rootProcessId).AddArgument($includeRoot).AddArgument($samplerProcessId)
-  $startedAt=[SamplerNative]::EpochMilliseconds()
-  return @{handle=$discoveryShell.BeginInvoke();startedAt=$startedAt}
-}
-# The first set is complete before the first frame, as before.
-try{
-$pending=Start-Discovery
-Write-SamplerStage 'first-discovery-started' $pending.startedAt 0
-[void]$pending.handle.AsyncWaitHandle.WaitOne()
-$firstDiscoveryCompletedAt=[SamplerNative]::EpochMilliseconds()
-Write-SamplerStage 'first-discovery-complete' $firstDiscoveryCompletedAt ($firstDiscoveryCompletedAt-$pending.startedAt)
-$discoveryStartedAt=$pending.startedAt
-$previousOutput=$null
-$previousSleep=$null
-while($true){
-  $loopStartedAt=[SamplerNative]::EpochMilliseconds()
-  # The adopted set must stay inside the discovery age limit for the whole read. When less than the
-  # read reserve of that limit remains (a late discovery or a delayed loop), bind this frame to a running
-  # discovery instead of reading the old PID set: start one if none is running, then wait for it,
-  # bounded by the age limit. The wait lies between loopStartedAt and readStartedAt of this frame.
-  # A discovery that is still late leaves the frame stale, and it is rejected as before.
-  if($discoveredAt -gt 0 -and $loopStartedAt-$discoveredAt -ge ${DISCOVERY_INTERVAL_MS - DISCOVERY_READ_RESERVE_MS}){
-    if($null -eq $pending){
-      $pending=Start-Discovery
-      $discoveryStartedAt=$pending.startedAt
-    }
-    [void]$pending.handle.AsyncWaitHandle.WaitOne(${DISCOVERY_INTERVAL_MS})
-  }
-  if($null -ne $pending -and $pending.handle.IsCompleted){
+# The discovery runs in the sampling loop of every frame (no discovery runspace); the field stays for the record format.
+$discoveryInitializationMs=0.0
+# One native discovery per frame, as linuxFrame does: the frame reads the PID set found in its own loop,
+# so its age is that discovery and the read only. SamplerNative.Discover keeps the root tree, sampler
+# exclusion, creation order rule, native identity binding and command-line role. A failed discovery keeps
+# the previous set and reports the failure in this frame (the age of the previous set keeps growing).
+function Invoke-FrameDiscovery([long]$startedAt){
+  $executionClock=[System.Diagnostics.Stopwatch]::StartNew()
+  try{
+    $found=[SamplerNative]::Discover([int]$rootProcessId,[bool]$includeRoot,[int]$samplerProcessId)
+    $completedAt=[SamplerNative]::EpochMilliseconds()
+    $executionMs=$executionClock.Elapsed.TotalMilliseconds
     $adoptionClock=[System.Diagnostics.Stopwatch]::StartNew()
-    $completedStartedAt=$pending.startedAt
-    $result=$null
-    try{
-      $output=$discoveryShell.EndInvoke($pending.handle)
-      if($discoveryShell.HadErrors){throw ($discoveryShell.Streams.Error | Out-String)}
-      if($output.Count -ne 1){throw 'Discovery returned no single result'}
-      $result=$output[0]
-    }catch{
-      $discoveryError=@{message=$_.Exception.Message;exceptionType=$_.Exception.GetType().FullName;
-        errorId=$_.FullyQualifiedErrorId;context=@{stage='discovery-runspace'}} | ConvertTo-Json -Depth 4 -Compress
-    }finally{
-      $pending.handle.AsyncWaitHandle.Close()
-      $pending=$null
+    if($null -eq $script:initialRootCreated){$script:initialRootCreated=$found.RootCreated}
+    if($script:initialRootCreated -ne $found.RootCreated){
+      $script:discoveryError=@{message='Root PID reused after sampler start';exceptionType=$null;errorId=$null;
+        context=@{stage='root-identity'}} | ConvertTo-Json -Depth 4 -Compress
+      return
     }
-    if($null -ne $result){
-      if(-not $result.ok){$discoveryError=$result.error}
-      else{
-        if($null -eq $initialRootCreated){$initialRootCreated=$result.rootCreated}
-        if($initialRootCreated -ne $result.rootCreated){
-          $discoveryError=@{message='Root PID reused after sampler start';exceptionType=$null;errorId=$null;
-            context=@{stage='root-identity'}} | ConvertTo-Json -Depth 4 -Compress
-        }else{
-          $known=@($result.known)
-          $knownProcessIds.Clear()
-          foreach($entry in $known){[void]$knownProcessIds.Add([int]$entry.pid)}
-          $rootCreated=$result.rootCreated
-          $discoveredAt=[long]$result.discoveredAt
-          $adoptedAt=[SamplerNative]::EpochMilliseconds()
-          $discoveryTiming=@{discoveryStartedAtEpochMs=$completedStartedAt;discoveryAdoptedAtEpochMs=$adoptedAt;
-            cimEnumerationMs=$result.timing.cimEnumerationMs;ancestryMs=$result.timing.ancestryMs;
-            discoveryWorkerEnteredAtEpochMs=$result.timing.discoveryWorkerEnteredAtEpochMs;
-            discoveryExecutionMs=$result.timing.discoveryExecutionMs;
-            identityBindingMs=$result.timing.identityBindingMs;adoptionMs=$adoptionClock.Elapsed.TotalMilliseconds}
-          $discoveryError=$null
-        }
+    $script:known=@(foreach($entry in $found.Known){
+      @{pid=$entry.Pid;created=$entry.Created;parentPid=$entry.ParentPid;name=$entry.Name;role=$entry.Role}
+    })
+    $script:rootCreated=$found.RootCreated
+    $script:discoveredAt=$completedAt
+    $script:discoveryError=$null
+    $adoptedAt=[SamplerNative]::EpochMilliseconds()
+    # cimEnumerationMs keeps its frame field name; it is the time of the native process snapshot.
+    $script:discoveryTiming=@{discoveryStartedAtEpochMs=$startedAt;discoveryAdoptedAtEpochMs=$adoptedAt;
+      cimEnumerationMs=$found.EnumerationMs;ancestryMs=$found.AncestryMs;discoveryWorkerEnteredAtEpochMs=$startedAt;
+      discoveryExecutionMs=$executionMs;identityBindingMs=$found.IdentityBindingMs;adoptionMs=$adoptionClock.Elapsed.TotalMilliseconds}
+  }catch{
+    # Preserve the failure as a failing discoveryError, with the snapshot row that
+    # could not be bound. A missing PID is not evidence of a normal exit.
+    $failure=$_.Exception
+    if($null -ne $failure.InnerException -and $failure.InnerException -is [SamplerNative+DiscoveryFailure]){$failure=$failure.InnerException}
+    $context=@{stage='discovery';pid=$null;name=$null;parentPid=$null;cimCreatedUtc=$null;cimCreatedTicks=$null;commandLine=$null}
+    if($failure -is [SamplerNative+DiscoveryFailure]){
+      $context.stage=$failure.Stage
+      if($null -ne $failure.Row){
+        # The context keys are kept; the creation time is the native snapshot value.
+        $context.pid=$failure.Row.ProcessId;$context.name=$failure.Row.Name;$context.parentPid=$failure.Row.ParentProcessId
+        $context.cimCreatedUtc=(New-Object DateTime($failure.Row.CreatedTicks,[DateTimeKind]::Utc)).ToString('o')
+        $context.cimCreatedTicks=$failure.Row.CreatedTicks.ToString()
       }
     }
+    $script:discoveryError=@{message=$failure.Message;exceptionType=$failure.GetType().FullName;
+      errorId=$_.FullyQualifiedErrorId;context=$context} | ConvertTo-Json -Depth 4 -Compress
   }
-  if($null -eq $pending -and $loopStartedAt-$discoveryStartedAt -ge ${DISCOVERY_START_MS}){
-    $pending=Start-Discovery
-    $discoveryStartedAt=$pending.startedAt
+}
+$previousOutput=$null
+$previousSleep=$null
+$firstFrame=$true
+while($true){
+  $loopStartedAt=[SamplerNative]::EpochMilliseconds()
+  $discoveryStartedAt=[SamplerNative]::EpochMilliseconds()
+  if($firstFrame){Write-SamplerStage 'first-discovery-started' $discoveryStartedAt 0}
+  Invoke-FrameDiscovery $discoveryStartedAt
+  if($firstFrame){
+    $firstDiscoveryCompletedAt=[SamplerNative]::EpochMilliseconds()
+    Write-SamplerStage 'first-discovery-complete' $firstDiscoveryCompletedAt ($firstDiscoveryCompletedAt-$discoveryStartedAt)
+    $firstFrame=$false
   }
   # Precise actual UTC at the original acquisition boundary. Framework UtcNow
   # has coarser resolution than Stopwatch; never infer UTC from elapsed time.
   $readStartedAt=[SamplerNative]::EpochMilliseconds()
   $readClock=[System.Diagnostics.Stopwatch]::StartNew()
   $snapshotClock=[System.Diagnostics.Stopwatch]::StartNew()
-  # CIM already fixed the ancestry and creation identities. Do not enumerate all OS wrappers again.
+  # Discovery already fixed the ancestry and creation identities. Do not enumerate all OS wrappers again.
   # SamplerNative.Read opens only the selected PID and checks liveness/creation on that same handle.
   $selected=@($known)
   $processEnumerationMs=$null
@@ -594,43 +746,7 @@ while($true){
   $sleepRequestedMs=[Math]::Max(1,${INTERVAL_MS}-($sleepStartedAt-$loopStartedAt))
   Start-Sleep -Milliseconds $sleepRequestedMs
   $previousSleep=@{requestedMs=$sleepRequestedMs;startedAtEpochMs=$sleepStartedAt;endedAtEpochMs=[SamplerNative]::EpochMilliseconds()}
-}
-}finally{
-  $discoveryShell.Dispose()
-  $discoveryRunspace.Dispose()
 }`;
-  const spawnedAt = Date.now();
-  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
-    { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  const frames: RawFrame[] = [], failures: string[] = [], stages: SamplerStage[] = [];
-  let exited: string | null = null;
-  let pending = '';
-  child.stdout.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    pending += chunk;
-    let newline = pending.indexOf('\n');
-    while (newline >= 0) {
-      const line = pending.slice(0, newline).trim(); pending = pending.slice(newline + 1);
-      try {
-        const read = readSamplerLine(line);
-        if ('frame' in read) frames.push(read.frame);
-        else stages.push(read.stage);
-      } catch (error: unknown) { failures.push(`invalid sampler JSON: ${String(error)}`); }
-      newline = pending.indexOf('\n');
-    }
-  });
-  child.stderr.setEncoding('utf8');
-  child.stderr.on('data', (chunk: string) => { failures.push(chunk); });
-  child.on('error', (error: Error) => { failures.push(error.message); });
-  let stopping = false;
-  const closed = new Promise<void>(resolve => { child.on('close', (code, signal) => {
-    exited = `${String(code)}/${String(signal)} +${String(Date.now() - spawnedAt)}ms`;
-    if (!stopping) failures.push(`sampler exited unexpectedly: ${String(code)}`);
-    resolve();
-  }); });
-  const describe = (): string => `spawned ${String(spawnedAt)} pid ${String(child.pid ?? 'none')} exit ${exited ?? 'running'}; stages ${
-    stages.length === 0 ? 'none' : stages.map(entry => `${entry.stage} +${String(entry.atEpochMs - spawnedAt)}ms (${entry.ms.toFixed(1)}ms)`).join(', ')}`;
-  return { frames, failures, stages, describe, async stop() { stopping = true; child.kill(); await closed; } };
 }
 
 export type LinuxFileReader = (pid: number, file: 'stat' | 'status' | 'cmdline') => Promise<string>;

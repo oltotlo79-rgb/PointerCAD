@@ -800,7 +800,7 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
     environment: { node: process.version, os: platform(), release: release(), hostname: hostname(), renderer,
       priorityRequested: process.env['PCAD_DIAG_NORMAL_PRIORITY'] ?? null, rootPid, includeRoot,
       rootScope: includeRoot ? 'Electron main and descendants' : 'Playwright worker descendants; worker fixture heap excluded' },
-    method: platform() === 'win32' ? 'Win32_Process tree / CreationDate / Get-Process WorkingSet64 PrivateMemorySize64' :
+    method: platform() === 'win32' ? 'NtQuerySystemInformation process tree / GetProcessTimes creation identity / GetProcessMemoryInfo WorkingSetSize PrivateUsage' :
       '/proc/stat identity and parent tree / status VmRSS RssAnon (RssAnon is not Windows PrivateBytes)',
     intervalMs: INTERVAL_MS, discoveryIntervalMs: platform() === 'win32' ? DISCOVERY_INTERVAL_MS : INTERVAL_MS,
     limitations: ['Sampled highwater is a lower bound between samples; short-lived processes between discovery may be missed',

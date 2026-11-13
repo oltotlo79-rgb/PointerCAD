@@ -7,7 +7,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 import { assertPortableLaunchEnvironment, readPortableLaunchTarget } from '../../scripts/release/portableLaunch.mjs';
 import { uiMessage } from '../tests/uiMessages.js';
 import { verifyPackagedStartup } from './packagedStartup.js';
-import { connectPortable, EXIT_TIMEOUT_MS, LAUNCH_TIMEOUT_MS, pathExists, portableProcesses,
+import { connectPortable, createPortableConnectRecord, EXIT_TIMEOUT_MS, LAUNCH_TIMEOUT_MS, pathExists, portableProcesses,
   preparePortableIsolation, remainingPortableTime, startPortable, stopFailedPortable, verifyPortableExtraction,
   type PortableIsolation } from './portableDesktopSupport.js';
 
@@ -21,6 +21,8 @@ test('単一ポータブル exe の展開・窓の準備・正常終了・一時
   const evidence: Record<string, unknown> = {}, output: string[] = [], errors: string[] = [];
   let isolation: PortableIsolation | undefined, child: ChildProcess | undefined, browser: Browser | undefined, page: Page | undefined;
   let completed = false;
+  // 接続がどこまで進んだか(何を待って止まったか・接続の前の Target の url)。失敗の時だけ evidence へ残す。
+  const connectRecord = createPortableConnectRecord();
   try {
     const target = await test.step('候補記録から単一 portable exe を選び、中身を照合する', () => readPortableLaunchTarget(resolve(root, candidatePath)));
     evidence.source = { executable: target.executable, candidatePath, version: target.candidate.version, sourceCommit: target.candidate.sourceCommit };
@@ -33,7 +35,7 @@ test('単一ポータブル exe の展開・窓の準備・正常終了・一時
     launcher.once('exit', () => { lifetime.exitedAt = Date.now(); });
     const exitTimeLeft = (): number => remainingPortableTime(lifetime.exitedAt + EXIT_TIMEOUT_MS);
     evidence.launcherPid = child.pid;
-    browser = await test.step('単一 exe そのものを起動して接続する（60秒）', () => connectPortable(playwright, launcher, isolated));
+    browser = await test.step('単一 exe そのものを起動して接続する（60秒）', () => connectPortable(playwright, launcher, isolated, connectRecord));
     const context = browser.contexts()[0];
     if (context === undefined) throw new Error('Portable browser context is missing.');
     const first = context.pages()[0] ?? await context.waitForEvent('page', { timeout: 30_000 });
@@ -103,6 +105,7 @@ test('単一ポータブル exe の展開・窓の準備・正常終了・一時
         evidence[name] = await readFile(join(isolation.userData, name), 'utf8').catch(() => null);
       }
     }
+    if (!completed) evidence.connect = connectRecord;
     evidence.output = output; evidence.pageErrors = errors; evidence.completed = completed;
     const summary = JSON.stringify(evidence, null, 2);
     await writeFile(info.outputPath('portable-desktop-results.json'), summary + '\n');

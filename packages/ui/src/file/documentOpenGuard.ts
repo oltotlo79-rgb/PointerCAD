@@ -15,6 +15,9 @@ import { beginDocumentRequest, type DocumentRequest } from '../store/documentReq
 import { useAppStore } from '../store/useAppStore.js';
 import { readPcadInWorker } from './pcadReadWorker.js';
 import type { PcadReadKind, PcadReadResults } from './pcadReadProtocol.js';
+import type { PickedFile } from './fileGateway.js';
+import { readTutorialCheckpoint, TUTORIAL_CHECKPOINT_KEY, type TutorialCheckpointResult,
+  type TutorialCheckpointStorage, type TutorialSavedEvidence } from '../tutorial/tutorialCheckpoint.js';
 
 const openOwners = new Map<DocumentRequest, { readonly controller: AbortController; readonly unsubscribe: () => void }>();
 const cancelledOpenRequests = new WeakSet<DocumentRequest>();
@@ -51,9 +54,51 @@ export function finishOpenRequest(request: DocumentRequest): void {
   owner.controller.abort();
 }
 
-/** Read only; document/history/attachments/save target are committed by the existing caller after its guard. */
+/**
+ * 開いたバイト列の所有を読込の Worker へ移してよいか(移すと写しを作らず、picked.bytes は長さ 0 になる)。
+ * 移すのは、口が自分だけの並びとして渡した時(`picked.owned`)で、読込の後にそのバイト列を読む所が無い時だけ。
+ * 学習の控えの鍵があると、読込の後に保存バイトの SHA-256 を取る(`readTutorialCheckpoint`)ので移さない。
+ * 鍵を読めない時も移さない(読込の後に読めるようになりうるため)。控えの置き場が無い時は読込の後も読まない。
+ */
+export function mayTransferPickedBytes(picked: PickedFile, storage: TutorialCheckpointStorage | null): boolean {
+  if (picked.owned !== true) return false;
+  if (storage === null) return true;
+  try { return storage.getItem(TUTORIAL_CHECKPOINT_KEY) === null; } catch { return false; }
+}
+
+/**
+ * 読込の後に学習の控えを読む(移す道でも、今までの写しの道と同じ答えにする)。
+ * - 移していない: 今までどおり picked.bytes で読む。
+ * - 移した: 鍵が無ければ控えは保存バイトを読まないので、切り離された picked.bytes のまま読む(鍵の確かめと
+ *   readTutorialCheckpoint の呼び出しの間に await を挟まない)。移すと決めた後に鍵が現れていたら、口の読み直しで同じ中身を
+ *   取り直して照合する。読み直せない(開いた後に同じパスへ保存し直された等で同じ中身を返せない)時は staleContent
+ *   (控えを書いた時と保存ファイルの中身が違う)にし、切り離された並びで corrupt にしない。
+ */
+export async function readCheckpointAfterRead(picked: PickedFile, transferred: boolean,
+  storage: TutorialCheckpointStorage | null, evidenceOf: (savedBytes: Uint8Array) => TutorialSavedEvidence,
+): Promise<TutorialCheckpointResult> {
+  if (!transferred || storage === null || !checkpointKeyMayExist(storage)) return readTutorialCheckpoint(evidenceOf(picked.bytes), storage);
+  let reread: Uint8Array;
+  try {
+    if (picked.reread === undefined) return { ok: false, reason: 'staleContent' };
+    reread = await picked.reread();
+  } catch {
+    return { ok: false, reason: 'staleContent' };
+  }
+  return readTutorialCheckpoint(evidenceOf(reread), storage);
+}
+
+/** 鍵があるか。読めない時は「あるかもしれない」とする(読み直しの道へ。控えの読み取りが改めて今の答えを決める)。 */
+function checkpointKeyMayExist(storage: TutorialCheckpointStorage): boolean {
+  try { return storage.getItem(TUTORIAL_CHECKPOINT_KEY) !== null; } catch { return true; }
+}
+
+/**
+ * Read only; document/history/attachments/save target are committed by the existing caller after its guard.
+ * `transferInput` は呼び手が以後 bytes を読まない時だけ true(`mayTransferPickedBytes`)。
+ */
 export async function readForOpen<K extends PcadReadKind>(
-  request: DocumentRequest, kind: K, bytes: Uint8Array,
+  request: DocumentRequest, kind: K, bytes: Uint8Array, transferInput = false,
 ): Promise<PcadReadResults[K] | null> {
   const mayRead = () => !cancelledOpenRequests.has(request)
     && (request.status() === 'current' || request.status() === 'changed');
@@ -63,7 +108,7 @@ export async function readForOpen<K extends PcadReadKind>(
   }
   const owner = ownOpenRequest(request);
   try {
-    const result = await readPcadInWorker(kind, bytes, { signal: owner.controller.signal, isCurrent: mayRead });
+    const result = await readPcadInWorker(kind, bytes, { signal: owner.controller.signal, isCurrent: mayRead, transferInput });
     if (!mayRead() || owner.controller.signal.aborted) {
       if (request.status() === 'switched') reportStopped();
       return null;

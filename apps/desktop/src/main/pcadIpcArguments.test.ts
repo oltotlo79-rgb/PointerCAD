@@ -76,6 +76,27 @@ describe('許可済みsenderでも不正な形の引数は副作用より先に�
   });
 
   it.each([
+    ['識別子が無い', []],
+    ['識別子が文字列でない', [7, 0]],
+    ['知らない識別子', ['unknown-read', 0]],
+  ])('pcad:openChunk・pcad:openFinish・pcad:openReread の依頼(%s)を例外で断る', async (_label, args) => {
+    await expect(invoke('pcad:openChunk', ...args)).rejects.toThrow('読み込みの依頼の形が正しくありません。');
+    await expect(invoke('pcad:openFinish', ...args.slice(0, 1))).rejects.toThrow('読み込みの依頼の形が正しくありません。');
+    await expect(invoke('pcad:openReread', ...args.slice(0, 1))).rejects.toThrow('読み込みの依頼の形が正しくありません。');
+    expect(native.showOpenDialog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['種類が許可外', ['stl']],
+    ['種類が文字列でない', [42]],
+    ['引数が無い', []],
+    ['引数が多い', ['part', 'extra']],
+  ])('pcad:openBegin の依頼(%s)は選択ダイアログを開かずに null を返す', async (_label, args) => {
+    expect(await invoke('pcad:openBegin', ...args)).toBeNull();
+    expect(native.showOpenDialog).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['tokenが無い', []],
     ['tokenが文字列でない', [123]],
   ])('pcad:confirmTarget の依頼(%s)を例外で断る', async (_label, args) => {

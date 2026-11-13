@@ -3,12 +3,12 @@ import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
 import type { IpcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerPcadIpc, PCAD_OPEN_CHANNEL, PCAD_SAVE_AS_CHANNEL,
+import { registerPcadIpc, PCAD_SAVE_AS_CHANNEL,
   PCAD_CLEAR_TARGET_CHANNEL, PCAD_HAS_TARGET_CHANNEL } from './pcadDialogs.js';
 import type * as ImportedNodeFsTypes from 'node:fs';
 
 const memory = vi.hoisted(() => new Map<string, Uint8Array>());
-const fsHooks = vi.hoisted(() => ({ afterWrite: null as null | (() => Promise<void>) }));
+const fsHooks = vi.hoisted(() => ({ afterWrite: null as null | (() => Promise<void>), writeOptions: [] as unknown[] }));
 const electron = vi.hoisted(() => ({
   handle: vi.fn<(...args: Parameters<IpcMain['handle']>) => void>(),
   showSaveDialog: vi.fn<() => Promise<{ canceled: boolean; filePath: string }>>(),
@@ -31,10 +31,13 @@ vi.mock('node:fs', async (importOriginal) => {
           next.set(current); next.set(bytes.subarray(offset, offset + length), position); memory.set(path, next);
           return Promise.resolve({ bytesWritten: length, buffer: bytes });
         },
+        sync: () => Promise.resolve(),
         close: () => Promise.resolve(),
       });
     },
-    writeFile(path: string, bytes: Uint8Array) { memory.set(path, bytes.slice()); return fsHooks.afterWrite?.() ?? Promise.resolve(); },
+    writeFile(path: string, bytes: Uint8Array, options?: unknown) {
+      memory.set(path, bytes.slice()); fsHooks.writeOptions.push(options); return fsHooks.afterWrite?.() ?? Promise.resolve();
+    },
     rename(from: string, to: string) {
       const bytes = memory.get(from); if (bytes === undefined) throw new Error('書込対象なし');
       memory.set(to, bytes); memory.delete(from); return Promise.resolve();
@@ -69,7 +72,7 @@ async function save(name: string, bytes: Uint8Array, saveAs: boolean, kind = 'pa
 }
 
 beforeEach(() => {
-  vi.clearAllMocks(); memory.clear(); fsHooks.afterWrite = null; serial += 1;
+  vi.clearAllMocks(); memory.clear(); fsHooks.afterWrite = null; fsHooks.writeOptions.length = 0; serial += 1;
   sender = Object.assign(new EventEmitter(), { id: serial });
   registerPcadIpc();
 });
@@ -114,6 +117,20 @@ describe('書き出しの取消はpickerとtempの確定前に止める', () => 
     electron.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: current });
     expect(await invoke(PCAD_SAVE_AS_CHANNEL, 'current.stl', 'stl', Uint8Array.of(2), secondId)).toBe(true);
     expect(memory.get(current)).toEqual(Uint8Array.of(2));
+  });
+});
+
+describe('書き出しの一時ファイルはディスクへ書き出してから置き換える（レビュー M1）', () => {
+  it('書き出しの一時ファイルは排他で作り、書き終えたら flush(sync)してから閉じる', async () => {
+    const path = resolve('memory-only', 'part.stl');
+    electron.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path });
+    expect(await invoke(PCAD_SAVE_AS_CHANNEL, 'part.stl', 'stl', Uint8Array.of(1, 2))).toBe(true);
+    expect(fsHooks.writeOptions).toHaveLength(1);
+    const options = fsHooks.writeOptions[0];
+    if (typeof options !== 'object' || options === null) throw new Error('書込みの指定が無い');
+    expect('flag' in options ? options.flag : undefined).toBe('wx');
+    expect('flush' in options ? options.flush : undefined).toBe(true);
+    expect(memory.get(path)).toEqual(Uint8Array.of(1, 2));
   });
 });
 
@@ -182,7 +199,7 @@ describe('図面の保存形式をIPCから保持する（P8-64）', () => {
 describe('図面を開くときの形式を保持する（P8-64）', () => {
   it.each(['drawing', 'all'])('%sの一覧に図面が含まれ、取消で保存先を確定しない', async (kind) => {
     electron.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
-    expect(await invoke(PCAD_OPEN_CHANNEL, kind)).toBeNull();
+    expect(await invoke('pcad:openBegin', kind)).toBeNull();
     const filters = [{ name: 'PointerCAD の図面ファイル', extensions: ['pcadd'] }];
     if (kind === 'all') filters.unshift(
       { name: 'PointerCAD の部品ファイル', extensions: ['pcad'] },

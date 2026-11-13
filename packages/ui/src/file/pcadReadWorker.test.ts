@@ -221,6 +221,59 @@ describe('read host lifetime', () => {
     expect(hash(bytes)).toBe(before); expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 
+  /** 移した並び(transfer の一覧)も捕まえる偽の Worker。 */
+  function transferProbe() {
+    let request: PcadReadRequest | null = null, transfer: Transferable[] = [];
+    let started = (): void => undefined;
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    const port: PcadReadWorkerPort = { onmessage: null, onerror: null, onmessageerror: null, terminate: vi.fn(),
+      postMessage: (value, list) => { transfer = list; request = structuredClone(value, { transfer: list }); started(); } };
+    return { port, ready, transfer: () => transfer,
+      captured: () => { if (request === null) throw new Error('Read request missing'); return request; } };
+  }
+
+  it('transferInput moves a whole owned input to the Worker without a copy and detaches the caller array', async () => {
+    const bytes = writePcadFile(createEmptyPartDocument()).slice(), original = hash(bytes), backing = bytes.buffer;
+    const length = bytes.byteLength, probe = transferProbe();
+    const pending = createPcadFileReader(() => probe.port)('part', bytes, { transferInput: true });
+    await probe.ready;
+    // 写しを作らず、呼び手の領域そのものを移した(呼び手の並びは長さ 0 に切り離される)。
+    expect(probe.transfer()).toHaveLength(1);
+    expect(probe.transfer()[0]).toBe(backing);
+    expect(bytes.byteLength).toBe(0);
+    const request = probe.captured();
+    expect(request.bytes.byteLength).toBe(length); expect(hash(request.bytes)).toBe(original);
+    const result = readPcadFile(request.bytes);
+    probe.port.onmessage?.(new MessageEvent('message', { data: { id: request.id, kind: 'part', result } }));
+    await expect(pending).resolves.toEqual(result);
+  });
+
+  it('transferInput still copies a view into a larger buffer and a shared input, and keeps them attached', async () => {
+    const source = writePcadFile(createEmptyPartDocument()), original = hash(source);
+    const whole = new Uint8Array(source.byteLength + 2); whole.set(source, 1);
+    const view = whole.subarray(1, 1 + source.byteLength), probe = transferProbe();
+    const pending = createPcadFileReader(() => probe.port)('part', view, { transferInput: true });
+    await probe.ready;
+    expect(probe.transfer()[0]).not.toBe(whole.buffer);
+    expect(view.byteLength).toBe(source.byteLength); expect(whole.byteLength).toBe(source.byteLength + 2);
+    expect(hash(view)).toBe(original);
+    const request = probe.captured();
+    probe.port.onmessage?.(new MessageEvent('message', { data: { id: request.id, kind: 'part', result: readPcadFile(request.bytes) } }));
+    await pending;
+    const shared = new Uint8Array(new SharedArrayBuffer(8)), factory = vi.fn(() => transferProbe().port);
+    await expect(createPcadFileReader(factory)('part', shared, { transferInput: true })).rejects.toMatchObject({ reason: 'rejected' });
+    expect(shared.byteLength).toBe(8); expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('transferInput cancelled before posting keeps the caller array attached and creates no Worker', async () => {
+    const bytes = writePcadFile(createEmptyPartDocument()).slice(), length = bytes.byteLength;
+    const controller = new AbortController(), factory = vi.fn(() => transferProbe().port);
+    controller.abort();
+    await expect(createPcadFileReader(factory)('part', bytes, { signal: controller.signal, transferInput: true }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(bytes.byteLength).toBe(length); expect(factory).not.toHaveBeenCalled();
+  });
+
   it('cancels during copying before Worker creation and rejects unavailable production Worker without fallback', async () => {
     const factory = vi.fn(() => fixture().port), controller = new AbortController();
     const pending = createPcadFileReader(factory)('part', new Uint8Array(2 * 1024 * 1024), { signal: controller.signal });

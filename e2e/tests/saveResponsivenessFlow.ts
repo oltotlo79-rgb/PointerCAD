@@ -12,6 +12,7 @@ import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '..
 import { processTreeMemoryTotals, linuxProcessMemoryReading, linuxProcessTreeDiscovery, type LinuxProcessStatReading } from '../../packages/test-utils/src/processMemorySamples.js';
 import { observeSaveResponse, reportDuration } from '../../packages/test-utils/src/releasePerformance.js';
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
+import { windowsNativeSource } from './processResourceSampler.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 import { waitForStartupHealth } from './startupHealth.js';
@@ -174,14 +175,38 @@ const SAMPLE_INTERVAL_MS = 100;
  */
 async function startWindowsSampler(root: number, stopFile: string, scriptFile: string,
   onSample: (sample: Omit<ProcessTreeSample, 'at'>) => void): Promise<{ readonly finished: Promise<number> }> {
-  const script = [
+  await writeFile(scriptFile, windowsSaveSamplerScript());
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptFile,
+    String(root), stopFile], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let pending = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (text: string) => {
+    pending += text;
+    const lines = pending.split(/\r?\n/u); pending = lines.pop() ?? '';
+    for (const line of lines) {
+      let raw: unknown;
+      try { raw = JSON.parse(line) as unknown; }
+      catch { raw = { expectedPids: [], readings: [], discoveryError: `invalid sampler frame: ${line}` }; }
+      onSample(processTreeMemoryTotals(raw));
+    }
+  });
+  return { finished: new Promise(resolve => { child.on('close', code => { resolve(code ?? -1); }); }) };
+}
+
+/** The PowerShell file of the save responsiveness sampler (arguments: root PID, stop file). */
+export function windowsSaveSamplerScript(): string {
+  return [
     'param([int]$root, [string]$stop)',
     "$ErrorActionPreference = 'Stop'",
+    // The same native process list as the main sampler (one definition in processResourceSampler.ts), without WMI.
+    "Add-Type -TypeDefinition @'",
+    windowsNativeSource,
+    "'@",
     'function Get-Tree {',
     '  $script:discoveryError = $null',
     '  $kids = @{}',
     '  try {',
-    '  foreach ($p in (Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)) {',
+    '  foreach ($p in [SamplerNative]::Processes()) {',
     '    $parent = [int]$p.ParentProcessId',
     '    if (-not $kids.ContainsKey($parent)) { $kids[$parent] = New-Object System.Collections.Generic.List[int] }',
     '    $kids[$parent].Add([int]$p.ProcessId)',
@@ -217,22 +242,6 @@ async function startWindowsSampler(root: number, stopFile: string, scriptFile: s
     `  Start-Sleep -Milliseconds ${String(SAMPLE_INTERVAL_MS)}`,
     '}',
   ].join('\r\n');
-  await writeFile(scriptFile, script);
-  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptFile,
-    String(root), stopFile], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  let pending = '';
-  child.stdout.setEncoding('utf8');
-  child.stdout.on('data', (text: string) => {
-    pending += text;
-    const lines = pending.split(/\r?\n/u); pending = lines.pop() ?? '';
-    for (const line of lines) {
-      let raw: unknown;
-      try { raw = JSON.parse(line) as unknown; }
-      catch { raw = { expectedPids: [], readings: [], discoveryError: `invalid sampler frame: ${line}` }; }
-      onSample(processTreeMemoryTotals(raw));
-    }
-  });
-  return { finished: new Promise(resolve => { child.on('close', code => { resolve(code ?? -1); }); }) };
 }
 
 /** Linux: /proc から子孫の全プロセスの VmRSS と RssAnon を 100ms ごとに合計する。 */
@@ -285,7 +294,7 @@ async function startProcessTreeSampler(info: TestInfo): Promise<ProcessTreeSampl
   let finished: Promise<number>, method: string;
   if (process.platform === 'win32') {
     ({ finished } = await startWindowsSampler(process.pid, stopFile, info.outputPath(`memory-sampler-${randomUUID()}.ps1`), onSample));
-    method = 'Windows: Get-CimInstance Win32_Process で worker の子孫の木を作り(2秒ごと)、Get-Process の WorkingSet64・PrivateMemorySize64 を100msごとに合計';
+    method = 'Windows: NtQuerySystemInformation のプロセス一覧で worker の子孫の木を作り(2秒ごと)、Get-Process の WorkingSet64・PrivateMemorySize64 を100msごとに合計';
   } else if (process.platform === 'linux') {
     finished = startLinuxSampler(process.pid, () => stopped, onSample);
     method = 'Linux: /proc の stat で worker の子孫の木を作り(2秒ごと)、status の VmRSS・RssAnon を100msごとに合計';

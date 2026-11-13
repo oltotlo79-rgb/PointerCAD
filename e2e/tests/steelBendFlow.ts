@@ -10,6 +10,7 @@ import { chooseToolMenuItem, readAssemblyStats, resetAssemblyFileGateway } from 
 import { clickWorldPointChecked, componentRows } from './boltedJointTestSupport.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
+import { collectFailedRequests, recordRequestFailures } from './networkFailureEvidence.js';
 import { waitForStartupReady } from './startupHealth.js';
 import { chooseSteelFlatBar50x6 } from './steelPickerFlow.js';
 import { readViewportRenderStats } from './viewportRenderStats.js';
@@ -21,6 +22,7 @@ export function registerSteelBendTest(test: typeof base,
     const app = appForPage(page), errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    const failed = collectFailedRequests(page);
     if (app === undefined) {
       await page.addInitScript(() => {
         for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
@@ -167,6 +169,8 @@ export function registerSteelBendTest(test: typeof base,
     if (!reopened.ok || reopened.bundle.kind !== 'assembly') throw new Error('Reopened assembly did not decode');
     expect(reopened.bundle.document).toEqual(saved.bundle.document);
     expect(reopened.bundle.embeddedDocuments.get(source.partRef)?.document).toEqual(part);
+    // 誤りがあった時だけ、どの要求が失敗したかと通信の状態を判定の前に残す(判定は変えない)。
+    await recordRequestFailures(info, { label: 'steel bend picker placement', errors, failed });
     expect(errors).toEqual([]);
   });
 }
@@ -182,6 +186,7 @@ function registerSteelBendLifecycleTests(test: typeof base,
         const app = appForPage(page), errors: string[] = [];
         page.on('pageerror', error => errors.push(error.message));
         page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+        const failed = collectFailedRequests(page);
         if (app === undefined) {
           await page.addInitScript(() => {
             for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
@@ -312,6 +317,8 @@ function registerSteelBendLifecycleTests(test: typeof base,
         await expect(restored.getByLabel(fields[3], { exact: true })).toHaveValue(`(${125 + setback}) + 0`);
         await expect(restored.getByRole('combobox', { name: '半径の基準', exact: true })).toHaveValue(nextConvention);
         await restored.getByRole('button', { name: '取消', exact: true }).click();
+        // 誤りがあった時だけ、どの要求が失敗したかと通信の状態を判定の前に残す(判定は変えない)。
+        await recordRequestFailures(info, { label: `EX-07 current lifecycle ${direction} ${radiusConvention} ${legDimension}`, errors, failed });
         expect(errors).toEqual([]);
       });
     }

@@ -18,6 +18,15 @@ const disk = vi.hoisted(() => ({
   removed: [] as string[],
   failWriteFrom: null as number | null,
   failRename: false,
+  failSync: false,
+  /** 一時ファイルの記述子の操作と置換の順(sync・close・rename)。 */
+  calls: [] as string[],
+  /** 閉じる・置換を途中で止める(終了の片付けの検査)。 */
+  closeGate: null as Promise<void> | null,
+  renameGate: null as Promise<void> | null,
+  nextDescriptor: 500,
+  closedAtExit: [] as number[],
+  unlinkedAtExit: [] as string[],
 }));
 const electron = vi.hoisted(() => ({
   handle: vi.fn<(...args: Parameters<IpcMain['handle']>) => void>(),
@@ -31,12 +40,23 @@ vi.mock('electron', () => ({
 vi.mock('./appSender.js', () => ({ validateAppSender: () => true }));
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof ImportedNodeFsTypes>();
-  return { ...original, promises: {
+  return { ...original,
+    // アプリの終了の同期の片付けは、本物の記述子とファイルに触れないよう記録だけにする。
+    closeSync(descriptor: number) { disk.closedAtExit.push(descriptor); },
+    unlinkSync(path: string) { disk.unlinkedAtExit.push(path); disk.files.delete(path); },
+    promises: {
     open(path: string, flag: string) {
       if (flag !== 'wx' || disk.files.has(path)) return Promise.reject(new Error('EEXIST'));
       disk.files.set(path, new Uint8Array(0));
       let closed = false;
+      const descriptor = disk.nextDescriptor;
+      disk.nextDescriptor += 1;
       return Promise.resolve({
+        fd: descriptor,
+        sync() {
+          disk.calls.push('sync');
+          return disk.failSync ? Promise.reject(new Error('EIO: sync')) : Promise.resolve();
+        },
         write(bytes: Uint8Array, offset: number, length: number, position: number) {
           if (closed) return Promise.reject(new Error('closed'));
           if (disk.failWriteFrom !== null && position >= disk.failWriteFrom) return Promise.reject(new Error('disk full'));
@@ -46,11 +66,13 @@ vi.mock('node:fs', async (importOriginal) => {
           disk.files.set(path, next);
           return Promise.resolve({ bytesWritten: length, buffer: bytes });
         },
-        close() { closed = true; return Promise.resolve(); },
+        async close() { disk.calls.push('close'); await disk.closeGate; closed = true; },
       });
     },
     writeFile(path: string, bytes: Uint8Array) { disk.files.set(path, bytes.slice()); return Promise.resolve(); },
-    rename(from: string, to: string) {
+    async rename(from: string, to: string) {
+      disk.calls.push('rename');
+      await disk.renameGate;
       if (disk.failRename) return Promise.reject(new Error('rename refused'));
       const bytes = disk.files.get(from); if (bytes === undefined) return Promise.reject(new Error('書込対象なし'));
       disk.files.set(to, bytes); disk.files.delete(from); return Promise.resolve();
@@ -66,6 +88,17 @@ vi.mock('node:fs', async (importOriginal) => {
 const destination = resolve('memory-only', 'model.pcad');
 const original = Uint8Array.of(1, 2, 3);
 const REFUSED = '保存の依頼の形が正しくありません。';
+const exitListenersBefore = new Set(process.rawListeners('exit'));
+
+/** この検査のモジュールが足した終了の片付けの元の関数(process.once の包みを外さずに、片付けだけを呼ぶ)。 */
+function runExitCleanup(): void {
+  const added = process.rawListeners('exit').filter(listener => !exitListenersBefore.has(listener)
+    && Reflect.get(listener, 'listener') instanceof Function && Reflect.get(Reflect.get(listener, 'listener'), 'name') === 'removeTransfersAtExit');
+  expect(added).toHaveLength(1);
+  const cleanup: unknown = Reflect.get(added[0] ?? {}, 'listener');
+  if (!(cleanup instanceof Function)) throw new Error('終了の片付けが無い');
+  Reflect.apply(cleanup, process, [0]);
+}
 
 let serial = 0;
 let sender = Object.assign(new EventEmitter(), { id: serial });
@@ -97,6 +130,8 @@ const send = (transferId: string, index: number, bytes: Uint8Array, from: object
 
 beforeEach(() => {
   vi.clearAllMocks(); disk.files.clear(); disk.removed.length = 0; disk.failWriteFrom = null; disk.failRename = false;
+  disk.failSync = false; disk.calls.length = 0; disk.closeGate = null; disk.renameGate = null;
+  disk.closedAtExit.length = 0; disk.unlinkedAtExit.length = 0;
   disk.files.set(destination, original.slice());
   serial += 1; sender = Object.assign(new EventEmitter(), { id: serial });
   registerPcadIpc();
@@ -265,5 +300,87 @@ describe('失敗と取消で一時ファイルが残らず本物が変わらな�
     await expect(invoke('pcad:saveBegin', 'model.pcad', true, 'part', totalBytes)).rejects.toThrow(REFUSED);
     expect(electron.showSaveDialog).not.toHaveBeenCalled();
     expect(temporaries()).toEqual([]);
+  });
+});
+
+function gate(): { promise: Promise<void>; open: () => void } {
+  let open: () => void = () => { throw new Error('未初期化'); };
+  const promise = new Promise<void>(resolveGate => { open = resolveGate; });
+  return { promise, open };
+}
+
+describe('確定は一時ファイルをディスクへ書き出してから閉じ、その後に置き換える（レビュー M1）', () => {
+  it('確定の順は sync → close → rename', async () => {
+    const { transferId } = await begin(3);
+    await send(transferId, 0, Uint8Array.of(4, 5, 6));
+    disk.calls.length = 0;
+    expect(await invoke('pcad:saveCommit', transferId)).toBe('model.pcad');
+    expect(disk.calls).toEqual(['sync', 'close', 'rename']);
+    expect(disk.files.get(destination)).toEqual(Uint8Array.of(4, 5, 6));
+  });
+  it('sync が失敗したら置き換えず、一時ファイルを閉じて消し、保存の失敗にする', async () => {
+    disk.failSync = true;
+    const { transferId } = await begin(3);
+    await send(transferId, 0, Uint8Array.of(4, 5, 6));
+    disk.calls.length = 0;
+    await expect(invoke('pcad:saveCommit', transferId)).rejects.toThrow('ファイルを保存できませんでした。');
+    expect(disk.calls).toEqual(['sync', 'close']);
+    expect(disk.files.get(destination)).toEqual(original);
+    expect(temporaries()).toEqual([]);
+    expect(await invoke('pcad:hasTarget')).toBe(false);
+  });
+});
+
+describe('終了の同期の片付けは、片付けを始めた途中の保存と確定中の保存も見る（レビュー S3）', () => {
+  it('取消の片付けが閉じるのを待っている間に終了したら、終了の片付けが一時ファイルを消す', async () => {
+    const { transferId } = await begin(5);
+    await send(transferId, 0, Uint8Array.of(1, 1, 1, 1, 1));
+    const [temporary] = temporaries();
+    const held = gate();
+    disk.closeGate = held.promise;
+    const aborting = invoke('pcad:saveAbort', transferId);
+    await vi.waitFor(() => { expect(disk.calls).toContain('close'); });
+    runExitCleanup();
+    expect(disk.unlinkedAtExit).toEqual([temporary]);
+    expect(disk.closedAtExit).toHaveLength(1);
+    held.open();
+    await aborting;
+    expect(disk.files.get(destination)).toEqual(original);
+  });
+  it('確定の置き換えの前に終了したら、終了の片付けが一時ファイルを消し、本物は変えない', async () => {
+    const { transferId } = await begin(3);
+    await send(transferId, 0, Uint8Array.of(4, 5, 6));
+    const [temporary] = temporaries();
+    const held = gate();
+    disk.renameGate = held.promise;
+    const committing = invoke('pcad:saveCommit', transferId).catch((error: unknown) => error);
+    await vi.waitFor(() => { expect(disk.calls).toContain('rename'); });
+    runExitCleanup();
+    expect(disk.unlinkedAtExit).toEqual([temporary]);
+    held.open();
+    await committing;
+    expect(disk.files.get(destination)).toEqual(original);
+    expect(temporaries()).toEqual([]);
+  });
+});
+
+describe('1 つの画面が持てる途中の保存の数に上限がある（レビュー S5）', () => {
+  it('途中の保存は 1 つの画面で 4 本までで、5 本目は窓を出す前に断り、既にある保存は確定できる。別の画面は始められる', async () => {
+    const started: Receipt[] = [];
+    for (let count = 0; count < 4; count += 1) started.push(await begin(0));
+    expect(temporaries()).toHaveLength(4);
+    electron.showSaveDialog.mockClear();
+    await expect(invoke('pcad:saveBegin', 'model.pcad', true, 'part', 0)).rejects.toThrow(REFUSED);
+    expect(electron.showSaveDialog).not.toHaveBeenCalled();
+    expect(temporaries()).toHaveLength(4);
+    // 既にある保存は断られずに確定できる(最後に始めた保存が今の版なので、上書き先として名前を返す)。
+    const latest = started[3];
+    if (latest === undefined) throw new Error('開始の答えが無い');
+    expect(await invoke('pcad:saveCommit', latest.transferId)).toBe('model.pcad');
+    expect(disk.files.get(destination)).toEqual(new Uint8Array(0));
+    const other = Object.assign(new EventEmitter(), { id: serial + 3000 });
+    const otherReceipt = await begin(0, other);
+    await invokeAs(other, 'pcad:saveAbort', otherReceipt.transferId);
+    other.emit('destroyed');
   });
 });

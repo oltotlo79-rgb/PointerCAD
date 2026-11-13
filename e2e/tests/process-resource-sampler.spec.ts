@@ -1,11 +1,14 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
+import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
 import { summarizeProcessMemory, summarizeSampledProcessMemory } from '../../packages/test-utils/src/processMemorySamples.js';
-import { windowsSampler, linuxSampler, linuxFrame, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
-import { readResidentFrames } from './readResidentSampler.js';
+import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
+import { readResidentFrames, windowsRootContextScript } from './readResidentSampler.js';
+import { windowsSaveSamplerScript } from './saveResponsivenessFlow.js';
+import { windowsSavePointOwnerScript } from './namedSavePointsFlow.js';
 
 /** Bound for each owned stop; an owned process still open after this is a failure, not ignored. */
 const OWNED_STOP_MS = 10_000;
@@ -20,8 +23,8 @@ async function within<T>(work: Promise<T>, label: string): Promise<T> {
 }
 
 /** The one child this test owns. The close listener exists before any termination, as in processResourceSampler.stop(). */
-function startOwnedChild(): { readonly pid: number; stop(): Promise<{ code: number | null; signal: NodeJS.Signals | null }> } {
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => undefined, 30000)'], { stdio: 'ignore', windowsHide: true });
+function startOwnedChild(scriptArguments: readonly string[] = []): { readonly pid: number; stop(): Promise<{ code: number | null; signal: NodeJS.Signals | null }> } {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => undefined, 30000)', ...scriptArguments], { stdio: 'ignore', windowsHide: true });
   const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
     child.once('close', (code, signal) => { resolve({ code, signal }); });
     child.once('error', reject);
@@ -77,7 +80,7 @@ test(`process sampler records actual cadence quality through repeated discoverie
   expect(sampler.failures).toEqual([]);
   expect(frames.length).toBeGreaterThanOrEqual((DISCOVERY_INTERVAL_MS * 3) / (INTERVAL_MS * 2));
   if (platform() === 'win32') {
-    // The five start-up stages arrive as their own lines, in order, before the first frame read; none is a frame.
+    // The start-up stages arrive as their own lines, in order, before the first frame read; none is a frame.
     // script-start uses the framework clock (before Add-Type); every later stage uses the precise clock.
     const stages = sampler.stages ?? [];
     expect(stages.map(entry => entry.stage)).toEqual([...WINDOWS_SAMPLER_STAGES]);
@@ -122,6 +125,10 @@ test(`process sampler records actual cadence quality through repeated discoverie
       // The wait fields are recorded in every frame; rawFrame already rejected a missing or reversed time into failures.
       expect(timing.loopStartedAtEpochMs).toBeDefined();
       expect(timing.previousSleep === undefined).toBe(frameIndex === 0);
+      // One native discovery per frame, inside the frame's own loop and before its read, as linuxFrame does:
+      // it starts after this loop starts and completes after the previous frame ended.
+      expect(timing.discoveryStartedAtEpochMs).toBeGreaterThanOrEqual(timing.loopStartedAtEpochMs ?? Number.POSITIVE_INFINITY);
+      if (frameIndex > 0) expect(frame.discoveredAtEpochMs).toBeGreaterThanOrEqual(frames[frameIndex - 1]?.atEpochMs ?? Number.POSITIVE_INFINITY);
     }
     const rows = frame.processes.filter(sample => sample.pid === owned.pid);
     expect(rows).toHaveLength(1);
@@ -131,8 +138,8 @@ test(`process sampler records actual cadence quality through repeated discoverie
   }
   // The owned child keeps one full creation identity in every frame.
   expect([...ownedIdentities].filter(created => created !== '')).toHaveLength(1);
-  // At least three completed discoveries were used, so the gaps around each are covered.
-  expect(new Set(frames.map(frame => frame.discoveredAtEpochMs)).size).toBeGreaterThanOrEqual(platform() === 'win32' ? 3 : frames.length);
+  // Every frame used its own completed discovery (Windows and Linux alike).
+  expect(new Set(frames.map(frame => frame.discoveredAtEpochMs)).size).toBe(frames.length);
   const observation = summarizeSampledProcessMemory(frames, { intervalMs: INTERVAL_MS, discoveryIntervalMs: DISCOVERY_INTERVAL_MS,
     requiredPhases: ['baseline'], rootPid: process.pid, includeRoot, windows: [{ phase: 'baseline',
       startedAtEpochMs: frames[0]?.readStartedAtEpochMs ?? NaN, endedAtEpochMs: frames.at(-1)?.atEpochMs ?? NaN }] });
@@ -265,6 +272,8 @@ test('windows frame timing separates the sleep from the loop and rejects missing
 // A sampler that never reaches its first frame still shows how far it started (run 43228617681: 0 frames, no failure).
 // The start-up stage lines share stdout with the frames, so neither may be read as the other.
 test('a Windows sampler start-up stage line is kept as a stage and never counted as a frame', () => {
+  // The discovery runs in the sampling loop of every frame, so there is no discovery runspace stage.
+  expect([...WINDOWS_SAMPLER_STAGES]).toEqual(['script-start', 'native-ready', 'first-discovery-started', 'first-discovery-complete']);
   expect(readSamplerLine('{"samplerStage":"native-ready","atEpochMs":1000,"ms":86.3}'))
     .toEqual({ stage: { stage: 'native-ready', atEpochMs: 1_000, ms: 86.3 } });
   const frameLine = JSON.stringify({ atEpochMs: 1_100, readStartedAtEpochMs: 1_090, discoveredAtEpochMs: 1_000, processes: [], discoveryError: null });
@@ -277,6 +286,208 @@ test('a Windows sampler start-up stage line is kept as a stage and never counted
   }
   // A frame keeps its own validation.
   expect(() => readSamplerLine('{"atEpochMs":1}')).toThrow('Malformed OS resource sample');
+});
+
+// Windows-only CI failures of this sampler (stale frames, a silent 30s start, a 3526ms discovery age in run 43306633811)
+// share the WMI discovery: on the CI runner one Get-CimInstance discovery took up to 1746ms (c1a956ed artifact; 331ms locally).
+// The discovery reads one native process snapshot instead. The frame format and the selected PID set stay the same.
+test('the Windows sampler discovers processes without WMI', () => {
+  const script = windowsSamplerScript(1234, false);
+  for (const source of [script, windowsNativeSource]) {
+    expect(source).not.toMatch(/Get-CimInstance|Get-WmiObject|Win32_Process|ManagementObject|System\.Management/iu);
+  }
+  expect(script).toContain('[SamplerNative]::Discover(');
+});
+
+interface DiscoveredRow { readonly pid: number; readonly parentPid: number; readonly name: string; readonly created: string; readonly role: string }
+function discoveredRows(value: unknown): DiscoveredRow[] {
+  if (!Array.isArray(value)) throw new Error('Discovery comparison rows missing');
+  return value.map((row: unknown) => {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)) throw new Error('Malformed discovery comparison row');
+    const pid: unknown = Reflect.get(row, 'pid'), parentPid: unknown = Reflect.get(row, 'parentPid'), name: unknown = Reflect.get(row, 'name');
+    const created: unknown = Reflect.get(row, 'created'), role: unknown = Reflect.get(row, 'role');
+    if (typeof pid !== 'number' || typeof parentPid !== 'number' || typeof name !== 'string' || typeof created !== 'string'
+      || !/^\d+$/u.test(created) || typeof role !== 'string') throw new Error('Malformed discovery comparison row');
+    return { pid, parentPid, name, created, role };
+  });
+}
+/** Native discovery, then an independent WMI tree with the former rules, then native discovery again (one PowerShell). */
+function discoveryComparisonScript(rootPid: number): string {
+  return `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+Add-Type -TypeDefinition @'
+${windowsNativeSource}
+'@
+function Get-NativeTree { @([SamplerNative]::Discover(${String(rootPid)},$true,$PID).Known | ForEach-Object { @{pid=$_.Pid;parentPid=$_.ParentPid;name=$_.Name;created=$_.Created;role=$_.Role} }) }
+$first=Get-NativeTree
+$all=@(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,Name,CommandLine)
+$ticks=@{}
+foreach($item in $all){ if([int]$item.ProcessId -eq ${String(rootPid)}){ $ticks[${String(rootPid)}]=$item.CreationDate.ToUniversalTime().Ticks } }
+$ids=New-Object 'System.Collections.Generic.HashSet[int]'
+[void]$ids.Add(${String(rootPid)})
+do { $added=$false; foreach($item in $all){
+  $parent=[int]$item.ParentProcessId
+  if($ids.Contains($parent) -and [int]$item.ProcessId -ne $PID -and $null -ne $item.CreationDate -and $item.CreationDate.ToUniversalTime().Ticks -ge $ticks[$parent]){
+    if($ids.Add([int]$item.ProcessId)){ $ticks[[int]$item.ProcessId]=$item.CreationDate.ToUniversalTime().Ticks; $added=$true }
+  }
+}} while($added)
+$cim=@(foreach($item in $all){ if($ids.Contains([int]$item.ProcessId)){
+  $role='main-or-native'
+  if($item.CommandLine -match '--type=([a-z-]+)'){ $role=$Matches[1] } elseif($item.CommandLine -match '-contentproc'){ $role='firefox-content' }
+  @{pid=[int]$item.ProcessId;parentPid=[int]$item.ParentProcessId;name=$item.Name;created=$item.CreationDate.ToUniversalTime().Ticks.ToString();role=$role}
+}})
+$second=Get-NativeTree
+[Console]::Out.WriteLine((@{first=$first;cim=$cim;second=$second} | ConvertTo-Json -Depth 4 -Compress))
+`;
+}
+
+// The old (WMI) and new (native) enumerations are compared on this machine. WMI CreationDate keeps microseconds, the
+// native creation time 100ns. A process that starts or ends between the enumerations is in only one native list.
+test('the native Windows discovery returns the same process tree as an independent WMI enumeration', async () => {
+  test.skip(platform() !== 'win32', 'Windows discovery only');
+  const plain = startOwnedChild();
+  const roled = startOwnedChild(['--', '--type=sampler-check']);
+  try {
+    const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', discoveryComparisonScript(process.pid)],
+      { windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+    // Kept as a file too: a CI failure artifact then shows both enumerations.
+    const comparisonPath = test.info().outputPath('discovery-comparison.json');
+    await writeFile(comparisonPath, stdout, { flag: 'wx' });
+    await test.info().attach('discovery-comparison', { path: comparisonPath, contentType: 'application/json' });
+    const decoded: unknown = JSON.parse(stdout);
+    if (typeof decoded !== 'object' || decoded === null) throw new Error('Discovery comparison output missing');
+    const first = discoveredRows(Reflect.get(decoded, 'first')), second = discoveredRows(Reflect.get(decoded, 'second'));
+    const cim = discoveredRows(Reflect.get(decoded, 'cim'));
+    const exact = (row: DiscoveredRow): string => `${String(row.pid)}:${row.created}`;
+    const micro = (row: DiscoveredRow): string => `${String(row.pid)}:${String(BigInt(row.created) / 10n)}`;
+    const secondKeys = new Set(second.map(exact));
+    const stable = first.filter(row => secondKeys.has(exact(row)));
+    const cimByKey = new Map(cim.map(row => [micro(row), row]));
+    for (const row of stable) {
+      const old = cimByKey.get(micro(row));
+      expect(old, `WMI tree misses stable native row ${exact(row)} ${row.name}`).toBeDefined();
+      expect({ parentPid: old?.parentPid, name: old?.name, role: old?.role }).toEqual({ parentPid: row.parentPid, name: row.name, role: row.role });
+    }
+    const nativeKeys = new Set([...first, ...second].map(micro));
+    for (const row of cim) expect(nativeKeys.has(micro(row)), `native discovery misses WMI row ${micro(row)} ${row.name}`).toBe(true);
+    expect(stable.map(row => row.pid)).toEqual(expect.arrayContaining([process.pid, plain.pid, roled.pid]));
+    expect(stable.find(row => row.pid === plain.pid)?.role).toBe('main-or-native');
+    expect(stable.find(row => row.pid === roled.pid)?.role).toBe('sampler-check');
+  } finally {
+    await plain.stop();
+    await roled.stop();
+  }
+});
+
+// The read measurement records its root (and parent) once before the sampler starts; that probe used WMI too.
+test('the read resident root evidence is read without WMI', () => {
+  const script = windowsRootContextScript(4321);
+  expect(script).not.toMatch(/Get-CimInstance|Get-WmiObject|Win32_|ManagementObject|System\.Management/iu);
+  expect(script).toContain('[SamplerNative]::RootContext(4321)');
+});
+
+/** Ticks (100ns since 0001-01-01 UTC) of a .NET round-trip UTC time such as 2026-11-13T07:10:41.4057169Z. */
+function roundTripTicks(text: string): bigint {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{7})Z$/u.exec(text);
+  if (match === null) throw new Error(`Not a round-trip UTC time: ${text}`);
+  const [year, month, day, hour, minute, second, fraction] = match.slice(1).map(Number);
+  if ([year, month, day, hour, minute, second, fraction].some(value => value === undefined)) throw new Error(`Incomplete time: ${text}`);
+  const epochMs = Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0, second ?? 0);
+  return BigInt(epochMs) * 10_000n + BigInt(fraction ?? 0) + 621_355_968_000_000_000n;
+}
+
+test('the native read resident root evidence keeps the root, its parent and one creation time per process', async () => {
+  test.skip(platform() !== 'win32', 'Windows root evidence only');
+  const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', windowsRootContextScript(process.pid)],
+    { windowsHide: true, maxBuffer: 1024 * 1024 });
+  const decoded: unknown = JSON.parse(stdout);
+  const rows: unknown[] = Array.isArray(decoded) ? decoded.map((row: unknown) => row) : [decoded];
+  const field = (row: unknown, key: string): unknown => typeof row === 'object' && row !== null ? Reflect.get(row, key) : undefined;
+  expect(rows.map(row => field(row, 'ProcessId'))).toEqual([process.pid, process.ppid]);
+  expect(field(rows[0], 'ParentProcessId')).toBe(process.ppid);
+  for (const row of rows) {
+    const name = field(row, 'Name'), command = field(row, 'CommandLine');
+    const snapshot = field(row, 'CimCreatedUtc'), handle = field(row, 'NativeCreatedTicks');
+    expect(typeof name === 'string' && name.length > 0, 'process name').toBe(true);
+    expect(typeof command === 'string' && command.length > 0, 'command line').toBe(true);
+    if (typeof snapshot !== 'string' || typeof handle !== 'string' || !/^\d+$/u.test(handle)) throw new Error(`Creation evidence missing: ${stdout}`);
+    // The process list and the handle report the same 100ns creation time for the same process.
+    expect(roundTripTicks(snapshot)).toBe(BigInt(handle));
+  }
+});
+
+function fieldOf(value: unknown, key: string): unknown {
+  return typeof value === 'object' && value !== null ? Reflect.get(value, key) : undefined;
+}
+
+// The save responsiveness sampler (a second Windows sampler) and the save point owner probe read processes natively too.
+test('the save responsiveness sampler and the save point owner probe read processes without WMI', () => {
+  for (const script of [windowsSaveSamplerScript(), windowsSavePointOwnerScript('C:/profile', 0), windowsSavePointOwnerScript('C:/profile', 4321)]) {
+    expect(script).not.toMatch(/Get-CimInstance|Get-WmiObject|Win32_|ManagementObject|System\.Management/iu);
+    expect(script).toContain('[SamplerNative]::');
+  }
+});
+
+test('the native save point owner probe finds the owned process by its command line and by its PID', async () => {
+  test.skip(platform() !== 'win32', 'Windows owner probe only');
+  const marker = `pcad-owner-probe-${String(process.pid)}-${String(Date.now())}`;
+  const owned = startOwnedChild(['--', marker]);
+  try {
+    const read = async (pid: number): Promise<unknown> => {
+      const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', windowsSavePointOwnerScript(marker, pid)],
+        { windowsHide: true, maxBuffer: 1024 * 1024 });
+      const decoded: unknown = JSON.parse(stdout);
+      return decoded;
+    };
+    const created = new Set<unknown>();
+    for (const rows of [await read(0), await read(owned.pid)]) {
+      expect(Array.isArray(rows) ? rows.length : -1, JSON.stringify(rows)).toBe(1);
+      const row: unknown = Array.isArray(rows) ? rows.map((entry: unknown) => entry)[0] : undefined;
+      expect(fieldOf(row, 'pid')).toBe(owned.pid);
+      expect(String(fieldOf(row, 'created'))).toMatch(/^\d+$/u);
+      created.add(fieldOf(row, 'created'));
+    }
+    // The command-line query and the exact PID query name the same process instance.
+    expect(created.size).toBe(1);
+  } finally {
+    await owned.stop();
+  }
+});
+
+test('the native save responsiveness sampler reads the owned descendants and never itself', async () => {
+  test.skip(platform() !== 'win32', 'Windows save sampler only');
+  const owned = startOwnedChild();
+  const scriptFile = test.info().outputPath('save-sampler.ps1'), stopFile = test.info().outputPath('save-sampler.stop');
+  await writeFile(scriptFile, windowsSaveSamplerScript());
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptFile, String(process.pid), stopFile],
+    { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const closed = new Promise<number | null>(resolve => { child.once('close', code => { resolve(code); }); });
+  const lines: string[] = [];
+  let pending = '', errors = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (text: string) => {
+    pending += text;
+    const parts = pending.split(/\r?\n/u); pending = parts.pop() ?? '';
+    lines.push(...parts.filter(line => line.length > 0));
+  });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (text: string) => { errors += text; });
+  try {
+    await expect.poll(() => lines.length, { timeout: 30_000 }).toBeGreaterThanOrEqual(3);
+  } finally {
+    await writeFile(stopFile, 'stop');
+    await within(closed, 'Save sampler close');
+    await owned.stop();
+  }
+  expect(errors).toBe('');
+  for (const line of lines.slice(0, 3)) {
+    const frame: unknown = JSON.parse(line);
+    expect(fieldOf(frame, 'discoveryError')).toBeNull();
+    const ids = fieldOf(frame, 'expectedPids');
+    expect(Array.isArray(ids) && ids.includes(owned.pid), line).toBe(true);
+    expect(Array.isArray(ids) && ids.includes(child.pid), line).toBe(false);
+  }
 });
 
 test('Linux actual stat/status readers retain state and distinguish disappearance, reuse and denied discovery', async () => {

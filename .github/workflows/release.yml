@@ -252,9 +252,25 @@ jobs:
         env:
           PCAD_PACKAGED_CANDIDATE: dist/desktop-stage/candidate.json
           PCAD_PACKAGED_VARIANT: portable
+          # Playwrightの接続の記録(connectOverCDPのCDPの送受信)。置き場と写し方の理由はwin-unpackedの段と同じ。
+          # 単一exeへは渡さない(portableDesktopSupport.tsのstartPortable)。失敗の時だけportableの出力先へ写す。
+          DEBUG: pw:protocol,pw:browser
+          DEBUG_FILE: ${{ runner.temp }}/pointercad-playwright-debug-portable.log
         run: |
           pnpm exec playwright test --config e2e/packaged-desktop.config.ts
-          if ($LASTEXITCODE -ne 0) { throw "単一ポータブルexeの起動・終了・片付けの確認が失敗しました(終了コード $LASTEXITCODE)。" }
+          $launchExitCode = $LASTEXITCODE
+          if ($launchExitCode -ne 0) {
+            # 記録が無い時は写さない。写しに失敗しても、検査の失敗のまま終わる。
+            try {
+              if (Test-Path -LiteralPath $env:DEBUG_FILE -PathType Leaf) {
+                New-Item -ItemType Directory -Force -Path 'test-results/packaged-desktop/portable' | Out-Null
+                Copy-Item -LiteralPath $env:DEBUG_FILE -Destination 'test-results/packaged-desktop/portable/playwright-debug.log'
+              }
+            } catch {
+              Write-Warning "Playwrightの接続の記録を写せませんでした: $($_.Exception.Message)"
+            }
+            throw "単一ポータブルexeの起動・終了・片付けの確認が失敗しました(終了コード $launchExitCode)。"
+          }
 
       # Linuxの実行機には画面が無く、AppImageを普通に開くのに要るFUSE(libfuse2)も無い(ubuntu-latestの
       # 導入済みの一覧にxvfbはあり、fuse・libfuse2は無い。

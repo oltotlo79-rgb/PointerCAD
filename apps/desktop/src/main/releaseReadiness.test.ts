@@ -1,10 +1,14 @@
-import { checkDedicatedPerformanceEvidence, readDedicatedPlaywrightTests } from '../../../../scripts/release/dedicatedPerformanceEvidence.mjs';
+import { checkDedicatedPerformanceEvidence, loadDedicatedPerformanceEvidence, readDedicatedPlaywrightTests } from '../../../../scripts/release/dedicatedPerformanceEvidence.mjs';
+import {
+  DEDICATED_EVIDENCE_EXIT, DEDICATED_EVIDENCE_PLAN_FORMAT, DedicatedEvidenceUsageError, runBuildDedicatedEvidenceIndex,
+} from '../../../../scripts/performance-evidence/build-dedicated-evidence-index.mjs';
 import { createHash as performanceFixtureHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { CAPTURE_REGISTRY_FORMAT, CAPTURE_UNKNOWN_REASONS, CAPTURE_VIEWPORT_POLICY } from '../../../../scripts/manual/captureRegistry.mjs';
 import type { CaptureRegistry, CaptureRegistryEntry } from '../../../../scripts/manual/captureRegistry.mjs';
 import { verifyManualConsistency } from '../../../../scripts/manual/manualConsistency.mjs';
@@ -17,6 +21,8 @@ import {
   RELEASE_LINKS_START, RELEASE_READINESS_CHECK_IDS, RELEASE_READINESS_EXIT, ReleaseReadinessUsageError, WEB_DEFERRED_PHRASE,
   captureFreshnessFromRegistry, checkReadmeReleaseLinks, createReleaseDownloader, evaluateReleaseReadiness, formatReleaseReadinessReport,
   manualPdfReleaseAssetName, parseReleaseReadinessArguments, runReleaseReadiness,
+  W21_RATIO_EXCEPTION_DECISION, W21_RATIO_EXCEPTION_FORMAT, W21_RATIO_EXCEPTION_VERSION, applyW21RatioException, parseW21RatioException,
+  summarizeReleaseReadinessChecks,
 } from '../../../../scripts/release/releaseReadiness.mjs';
 import type {
   CaptureFreshnessHook, CaptureFreshnessRequest, CurrentHelpEdition, ManualReleaseInput, PostReleaseDesktopInput, PreReleaseInput,
@@ -979,14 +985,21 @@ function syntheticRawWork(lateReply: boolean) {
 }
 
 // Synthetic complete populations in the observed raw schemas. They certify only the reader.
-function syntheticDedicatedPopulation() {
+// warmMs (default 80, ratio 0.8) lets a test build the same population with a warm median above cold × 0.8.
+// For writing the same population to a real folder (the evidence index tool tests): productHash stands for every current
+// product input (default 'a' × 64); manifestSha256 binds the runs to a QA input manifest written by the tool (default: the
+// population's own manifest record); checkout is the launch folder (default '/synthetic/q1'); resolvePath gives the path
+// loadDedicatedPerformanceEvidence resolves a record to, for the records naming another record's file (default unchanged).
+function syntheticDedicatedPopulation(options: { readonly warmMs?: number; readonly productHash?: string; readonly manifestSha256?: string;
+  readonly checkout?: string; readonly resolvePath?: (path: string) => string } = {}) {
+  const warmMs = options.warmMs ?? 80, checkout = options.checkout ?? '/synthetic/q1', resolvePath = options.resolvePath ?? ((path: string) => path);
   const records: Record<string, { path: string; sha256: string; bytes: Buffer }> = {};
   const hash = (bytes: Buffer) => performanceFixtureHash('sha256').update(bytes).digest('hex');
   const put = (id: string, value: unknown, raw = false) => {
     const bytes = Buffer.from(raw ? String(value) : JSON.stringify(value));
     records[id] = { path: `fixture/${id}.json`, sha256: hash(bytes), bytes }; return id;
   };
-  const productHash = 'a'.repeat(64), currentInputs: Record<string, string> = { 'pnpm-lock.yaml': productHash, 'src/product.ts': productHash };
+  const productHash = options.productHash ?? 'a'.repeat(64), currentInputs: Record<string, string> = { 'pnpm-lock.yaml': productHash, 'src/product.ts': productHash };
   put('config', 'pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview\nreuseExistingServer: false', true);
   put('electronHelper', "join(root, 'apps/desktop/dist/main/main.cjs')", true);
   put('flow', "await app?.close(); const cold = await run('cold'), warm = await run('warm'); await compareInSecondWorker(page, info, mode, app); value.toBeCloseTo(expected, 6);", true);
@@ -994,8 +1007,8 @@ function syntheticDedicatedPopulation() {
   put('browserSpec', 'W21 actual OCCT online/offline', true);
   const files = [{ path: 'pnpm-lock.yaml', copy_sha256: productHash }, { path: 'src/product.ts', copy_sha256: productHash },
     ...[['config', 'e2e/playwright.config.ts'], ['electronHelper', 'e2e/tests/electronAppFlow.ts'], ['flow', 'e2e/tests/occtCompileReuseFlow.ts'], ['spec', 'e2e/tests/electron-occt-compile-reuse.spec.ts'], ['browserSpec', 'e2e/tests/occt-compile-reuse-solid.spec.ts']].map(([id, path]) => ({ path, copy_sha256: records[id].sha256 }))];
-  put('manifest', { schema_version: 1, checkout: '/synthetic/q1', files });
-  const manifestSha256 = records.manifest.sha256;
+  put('manifest', { schema_version: 1, checkout, files });
+  const manifestSha256 = options.manifestSha256 ?? records.manifest.sha256;
   const sourceInputs = { web: { 'src/product.ts': productHash }, desktop: { 'src/product.ts': productHash } };
   const report = (suites: unknown[]) => ({ errors: [], suites });
   const test = (project: string, title: string, attachments: unknown[]) => ({ title, tests: [{ projectName: project, expectedStatus: 'passed', timeout: 180000,
@@ -1007,19 +1020,19 @@ function syntheticDedicatedPopulation() {
   const w21 = ['functional', 'firefox', 'electron'].map(project => {
     const suites = ['online', 'offline'].map(network => {
       const pairs = Array.from({ length: 5 }, (_, i) => ({ index: i + 1, offline: network === 'offline', profile: `${project}/${network}/${i}`,
-        cold: { startupMs: 100, sha256: productHash }, warm: { startupMs: 80, sha256: productHash } }));
+        cold: { startupMs: 100, sha256: productHash }, warm: { startupMs: warmMs, sha256: productHash } }));
       return { title: `W21 actual ${project === 'electron' ? 'app:// ' : ''}OCCT ${network}`, specs: pairs.map(pair => {
         const attachments = [body('actual-distribution-identity', { buildSha256: records.build.sha256, files: [] })];
         for (const mode of ['cold', 'warm']) attachments.push(body(`${mode}-closed-profile`, []),
-          body(`${mode}-occt-observation`, { offline: network === 'offline', observation: { errors: [] }, measured: { startupMs: mode === 'cold' ? 100 : 80, sha256: productHash, stages: { workers: [{}, {}] } } }),
+          body(`${mode}-occt-observation`, { offline: network === 'offline', observation: { errors: [] }, measured: { startupMs: mode === 'cold' ? 100 : warmMs, sha256: productHash, stages: { workers: [{}, {}] } } }),
           body(`${mode}-two-worker-window`, { overlap: { start: 1, end: 2 }, twoWorkerResources: { unavailable: [], frames: 2, cpuMilliseconds: 1, peakWorkingSetBytes: 1, peakPrivateBytes: 1 } }));
-        if (pair.index === 5) attachments.push(body('five-pair-raw-measurements', pairs), body('five-pair-medians', { cold: 100, warm: 80, ratio: 0.8, requiredRatio: 0.8 }));
+        if (pair.index === 5) attachments.push(body('five-pair-raw-measurements', pairs), body('five-pair-medians', { cold: 100, warm: warmMs, ratio: warmMs / 100, requiredRatio: 0.8 }));
         return test(project, `cold/warm pair ${pair.index}/5: two UI Workers and actual geometry`, attachments);
       }) };
     });
     const reportId = put(`${project}-report`, report(suites));
-    const launch = put(`${project}-launch`, { cwd: '/synthetic/q1', manifestSha256, argv: ['test:e2e', 'electron-occt-compile-reuse.spec.ts', '--project=electron'], playwrightJson: records[reportId].path });
-    const inputsAfter = put(`${project}-after`, { allManifestInputsUnchanged: true, manifestSha256, commandExitCode: 0, playwrightExitCode: 0, playwrightJson: records[reportId].path, playwrightJsonSha256: records[reportId].sha256 });
+    const launch = put(`${project}-launch`, { cwd: checkout, manifestSha256, argv: ['test:e2e', 'electron-occt-compile-reuse.spec.ts', '--project=electron'], playwrightJson: resolvePath(records[reportId].path) });
+    const inputsAfter = put(`${project}-after`, { allManifestInputsUnchanged: true, manifestSha256, commandExitCode: 0, playwrightExitCode: 0, playwrightJson: resolvePath(records[reportId].path), playwrightJsonSha256: records[reportId].sha256 });
     return { project, report: reportId, command: 'command', result: 'result', build: 'build', config: 'config', electronHelper: 'electronHelper', flow: 'flow', spec: project === 'electron' ? 'spec' : 'browserSpec', launch, inputsAfter };
   });
   const w22 = ['functional', 'firefox', 'electron'].flatMap(project => ['input', 'ADD-23', 'ADD-17', 'hemisphere'].map(scenario => {
@@ -1031,11 +1044,11 @@ function syntheticDedicatedPopulation() {
         referenceMs: [1], paceMessageCount: 1, phaseMessageCount: 3,
         requestIntervals: [{ waitingBeforePaceMs: 1, calculationAndTransportMs: 1 }],
         ...syntheticRawWork(slow) });
-      const reportId = put(`${prefix}-report`, report([{ title: 'W22', specs: [test(project, `W22 ${scenario}`, [{ name: 'w22-measurement', path: records[sample].path }])] }]));
-      const attachment = put(`${prefix}-attachment`, { path: records[sample].path, sha256: records[sample].sha256, reportSha256: records[reportId].sha256 });
+      const reportId = put(`${prefix}-report`, report([{ title: 'W22', specs: [test(project, `W22 ${scenario}`, [{ name: 'w22-measurement', path: resolvePath(records[sample].path) }])] }]));
+      const attachment = put(`${prefix}-attachment`, { path: resolvePath(records[sample].path), sha256: records[sample].sha256, reportSha256: records[reportId].sha256 });
       const run = put(`${prefix}-run`, { schema: 'pcad-w22-owned-run-v1', exit_code: 0, error: null, condition, project, scenario, manifestSha256, nonce, cpu_rate: slow ? 600 : 0,
         owned_job: { nonce, assigned_before_resume: true, cleanup_complete: true, forced_owned_cleanup: false, errors: [], qualification: { descendant_identity_complete: true }, cpu_control: { flags: slow ? 5 : 0, rate: slow ? 600 : 0, readback_confirmed: true, policy_checked_before_create: true, set_before_create: slow } } });
-      const launch = put(`${prefix}-launch`, { nonce, manifestSha256, cwd: '/synthetic/q1', argv: ['test:e2e', `--project=${project}`], environment: { VITE_PCAD_E2E: '1' } });
+      const launch = put(`${prefix}-launch`, { nonce, manifestSha256, cwd: checkout, argv: ['test:e2e', `--project=${project}`], environment: { VITE_PCAD_E2E: '1' } });
       const inputsAfter = put(`${prefix}-after`, { allManifestInputsUnchanged: true });
       return [condition, { run, launch, attachment, sample, report: reportId, inputsAfter }];
     }));
@@ -1132,5 +1145,279 @@ describe('original r3 run-local qualification with coherent raw SHA mappings', (
   it('accepts original cancellation with a late reply in only slow, without equal intermediate populations', () => {
     const { evidence, sourceInputs } = syntheticDedicatedPopulation();
     expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('pass');
+  });
+});
+
+// v1.0.3 only (user decision 2026-11-13 21:23): an explicit, recorded exception for the W21 ratio condition. The 0.8
+// formula itself is unchanged; these fixtures only certify that the exception is narrow and refuses everything else.
+describe('W21 の比の例外（v1.0.3 に限る利用者の決定 2026-11-13 21:23）', () => {
+  const HEADING = '2026-11-13 21:23 の利用者の決定（起動の速さの条件は、今の改良の後に届かなくても今回のみ許容）';
+  const authorityText = `## 役割分担の要点\n\n- **${HEADING}**: 利用者（原文）「${W21_RATIO_EXCEPTION_DECISION.text}」。\n`;
+  const failingOutcome = () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation({ warmMs: 90 });
+    return checkDedicatedPerformanceEvidence('w21-dedicated', evidence, sourceInputs);
+  };
+  const measurementsOf = (outcome: ReturnType<typeof failingOutcome>) => (outcome.w21Ratios ?? []).map(row => ({
+    project: row.project, network: row.network, coldMedianMs: row.coldMedianMs, warmMedianMs: row.warmMedianMs, ratio: Number(row.ratio.toFixed(3)) }));
+  const exceptionFile = (measurements: unknown, overrides: Record<string, unknown> = {}) => {
+    const text = JSON.stringify({ format: W21_RATIO_EXCEPTION_FORMAT, version: W21_RATIO_EXCEPTION_VERSION, condition: 'w21-startup-ratio',
+      requiredRatio: 0.8, decision: { ...W21_RATIO_EXCEPTION_DECISION }, authority: { document: 'CLAUDE.md', heading: HEADING }, measurements, ...overrides });
+    return { path: 'scratchpad/w21-ratio-exception.json', sha256: performanceFixtureHash('sha256').update(text).digest('hex'), text,
+      value: parseW21RatioException(text) };
+  };
+  const context = { packageVersion: '1.0.3', authorityText };
+
+  it('例外なしでは、比だけの未達は今までと同じ文の不合格', () => {
+    const outcome = failingOutcome();
+    expect(outcome).toMatchObject({ status: 'fail', summary: 'Dedicated raw evidence refused', problems: ['W21 original twenty-percent condition failed'],
+      ratioOnly: true });
+    expect(outcome.w21Ratios).toHaveLength(6);
+    expect(applyW21RatioException(outcome, null, context)).toBe(outcome);
+  });
+
+  it('例外があれば、比だけの未達を「許容（利用者の決定）」にし、合格とは書かない', () => {
+    const outcome = failingOutcome();
+    const judged = applyW21RatioException(outcome, exceptionFile(measurementsOf(outcome)), context);
+    expect(judged.status).toBe('tolerated');
+    expect(judged.summary).toContain('利用者の決定');
+    expect(judged.summary).toContain('合格ではない');
+    const notes = judged.notes?.join('\n') ?? '';
+    expect(notes).toContain('electron offline: cold 100 ms・warm 90 ms・比 0.900（0.8 より 0.100 大きい）');
+    expect(notes).toContain(`CLAUDE.md の「${HEADING}」`);
+    expect(notes).toContain('"format":"pointercad-w21-ratio-exception/1"');
+  });
+
+  it('許容は終了コード 0 を止めず、合計に数える。ほかに保留や不合格があればそちらが勝つ', () => {
+    const check = (status: string) => ({ id: status, group: 'g', title: 't', status, summary: '', problems: [], notes: [] });
+    expect(summarizeReleaseReadinessChecks([check('pass'), check('deferred'), check('tolerated')]))
+      .toEqual({ summary: { pass: 1, fail: 0, pending: 0, notImplemented: 0, deferred: 1, tolerated: 1 }, exitCode: RELEASE_READINESS_EXIT.ready });
+    expect(summarizeReleaseReadinessChecks([check('tolerated'), check('pending')]).exitCode).toBe(RELEASE_READINESS_EXIT.pending);
+    expect(summarizeReleaseReadinessChecks([check('tolerated'), check('fail')]).exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+    expect(summarizeReleaseReadinessChecks([check('pass'), check('deferred')]).summary).toEqual({ pass: 1, fail: 0, pending: 0, notImplemented: 0, deferred: 1 });
+  });
+
+  it('版が 1.0.3 でない例外と、package.json の版と違う例外は断る', () => {
+    const outcome = failingOutcome();
+    expect(applyW21RatioException(outcome, exceptionFile(measurementsOf(outcome), { version: '1.0.4' }), { ...context, packageVersion: '1.0.4' }).status).toBe('fail');
+    const refused = applyW21RatioException(outcome, exceptionFile(measurementsOf(outcome)), { ...context, packageVersion: '1.0.2' });
+    expect(refused.status).toBe('fail');
+    expect(refused.problems?.join('\n')).toContain('package.json の版');
+  });
+
+  it('実測値が索引と違う例外は断る', () => {
+    const outcome = failingOutcome();
+    const changed = measurementsOf(outcome).map((row, index) => index === 0 ? { ...row, warmMedianMs: row.warmMedianMs - 1 } : row);
+    const refused = applyW21RatioException(outcome, exceptionFile(changed), context);
+    expect(refused.status).toBe('fail');
+    expect(refused.problems?.join('\n')).toContain('索引');
+    expect(applyW21RatioException(outcome, exceptionFile(measurementsOf(outcome).slice(0, 5)), context).status).toBe('fail');
+  });
+
+  it('例外があっても、測定の欠け・RUN の失敗・中央値の記録の食い違いは通さない', () => {
+    const exception = exceptionFile(measurementsOf(failingOutcome()));
+    const missing = syntheticDedicatedPopulation({ warmMs: 90 }); missing.evidence.w21 = missing.evidence.w21.slice(0, 2);
+    expect(applyW21RatioException(checkDedicatedPerformanceEvidence('w21-dedicated', missing.evidence, missing.sourceInputs), exception, context).status)
+      .toBe('pending');
+    const failed = syntheticDedicatedPopulation({ warmMs: 90 });
+    failed.evidence.records.result.bytes = Buffer.from('{"exitCode":1}');
+    failed.evidence.records.result.sha256 = performanceFixtureHash('sha256').update(failed.evidence.records.result.bytes).digest('hex');
+    expect(applyW21RatioException(checkDedicatedPerformanceEvidence('w21-dedicated', failed.evidence, failed.sourceInputs), exception, context).status)
+      .toBe('fail');
+    expect(applyW21RatioException(checkDedicatedPerformanceEvidence('w21-dedicated', null, null), exception, context).status).toBe('pending');
+  });
+
+  it('決定の原文・根拠の見出し・対象の条件が違う例外は断る', () => {
+    const outcome = failingOutcome(), rows = measurementsOf(outcome);
+    for (const overrides of [{ decision: { ...W21_RATIO_EXCEPTION_DECISION, text: '許容する' } }, { authority: { document: 'CLAUDE.md', heading: '別の項' } },
+      { condition: 'w22-slow' }, { requiredRatio: 0.9 }]) {
+      expect(applyW21RatioException(outcome, exceptionFile(rows, overrides), context).status).toBe('fail');
+    }
+    expect(applyW21RatioException(outcome, exceptionFile(rows), { ...context, authorityText: '見出しの無い文書' }).status).toBe('fail');
+    expect(() => parseW21RatioException('{"format":"other"}')).toThrow();
+  });
+
+  it('引数: 例外は SHA と対で、証拠の索引と一緒の pre-release の時だけ渡せる', () => {
+    const base = ['--windows', 'w', '--linux', 'l', '--web', 'b', '--release', 'r', '--sbom', 's'];
+    const evidence = ['--performance-evidence', 'e.json', '--performance-evidence-sha256', 'a'.repeat(64)];
+    const exception = ['--w21-ratio-exception', 'x.json', '--w21-ratio-exception-sha256', 'b'.repeat(64)];
+    expect(parseReleaseReadinessArguments([...base, ...evidence, ...exception])).toMatchObject({ w21RatioException: 'x.json', w21RatioExceptionSha256: 'b'.repeat(64) });
+    expect(() => parseReleaseReadinessArguments([...base, ...exception])).toThrow(ReleaseReadinessUsageError);
+    expect(() => parseReleaseReadinessArguments([...base, ...evidence, '--w21-ratio-exception', 'x.json'])).toThrow(ReleaseReadinessUsageError);
+  });
+
+  it('例外の読込みの誤りは、W21 を不合格にする（保留のまま見逃さない）', async () => {
+    const report = await evaluateReleaseReadiness({ ...await buildCandidate(), readErrors: { w21RatioException: 'W21 の比の例外の SHA-256 が違う' } });
+    expect(statusOf(report, 'w21-dedicated')).toBe('fail');
+    expect(problemsOf(report, 'w21-dedicated')).toContain('SHA-256 が違う');
+    expect(statusOf(report, 'w22-dedicated')).toBe('pending');
+  });
+});
+
+// The evidence index tool (scripts/performance-evidence) on a real folder: the synthetic population above is written to
+// disk, the tool writes the QA input manifest, copies the executed test sources and assembles the index, and the release
+// check's own loader and judgement read it. The checkout keeps CRLF files, like the send copy (core.autocrlf=true).
+interface DedicatedPlanFixture {
+  format: string;
+  manifest: string;
+  w21: Record<string, string>[];
+  w22: Record<string, string | Record<string, string>>[];
+}
+describe('専用の測定の証拠の索引の道具（scripts/performance-evidence）', () => {
+  const crlf = (text: string) => Buffer.from(text.replaceAll('\n', '\r\n'));
+  const productBytes = crlf('export const product = 1;\n');
+  const lockBytes = Buffer.from("lockfileVersion: '9.0'\n");
+  const testSources: Record<string, Buffer> = {
+    'e2e/playwright.config.ts': crlf('command: pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview\nreuseExistingServer: false\n'),
+    'e2e/tests/electronAppFlow.ts': crlf("const main = join(root, 'apps/desktop/dist/main/main.cjs');\n"),
+    'e2e/tests/occtCompileReuseFlow.ts': crlf("await app?.close();\nconst cold = await run('cold'), warm = await run('warm');\nawait compareInSecondWorker(page, info, mode, app);\nexpect(value).toBeCloseTo(expected, 6);\n"),
+    'e2e/tests/electron-occt-compile-reuse.spec.ts': crlf('W21 actual app:// OCCT online/offline\n'),
+    'e2e/tests/occt-compile-reuse-solid.spec.ts': crlf('W21 actual OCCT online/offline\n'),
+  };
+  const evidenceRoots: string[] = [];
+  afterEach(() => { for (const root of evidenceRoots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+  async function evidenceCheckout(options: { readonly warmMs?: number } = {}) {
+    const root = await realpath(mkdtempSync(join(resolve(tmpdir()), 'pointercad-evidence-index-')));
+    evidenceRoots.push(root);
+    const put = (name: string, content: Uint8Array) => {
+      const target = join(root, ...name.split('/'));
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, content);
+    };
+    put('src/product.ts', productBytes);
+    put('pnpm-lock.yaml', lockBytes);
+    for (const [name, content] of Object.entries(testSources)) put(name, content);
+    const productHash = sourceFileHash(productBytes);
+    const sourceInputs = { web: { 'src/product.ts': productHash }, desktop: { 'src/product.ts': productHash } };
+    const lines: string[] = [];
+    const tool = { root, write: (text: string) => { lines.push(text); }, captureInputs: () => Promise.resolve(sourceInputs),
+      listTestSources: () => ['pnpm-lock.yaml', ...Object.keys(testSources)] };
+    expect(await runBuildDedicatedEvidenceIndex(['manifest', '--out', 'evidence/manifest.json'], tool)).toBe(DEDICATED_EVIDENCE_EXIT.done);
+    const manifestSha256 = hash(readFileSync(join(root, 'evidence', 'manifest.json')));
+    const population = syntheticDedicatedPopulation({ warmMs: options.warmMs, productHash, manifestSha256, checkout: root,
+      resolvePath: path => resolve(root, path) });
+    const records = population.evidence.records;
+    for (const record of Object.values(records)) put(record.path, record.bytes);
+    // The population's record ids: <project>-report/-launch/-after, <project>-<scenario>-pair, <project>-<scenario>-<condition>-<role>.
+    const at = (id: string) => records[id].path;
+    const runRoles = { run: 'run', launch: 'launch', attachment: 'attachment', sample: 'sample', report: 'report', inputsAfter: 'after' };
+    const plan: DedicatedPlanFixture = {
+      format: DEDICATED_EVIDENCE_PLAN_FORMAT, manifest: 'evidence/manifest.json',
+      w21: ['functional', 'firefox', 'electron'].map(project => ({ project, result: at('result'), command: at('command'), report: at(`${project}-report`),
+        ...(project === 'electron' ? { launch: at('electron-launch'), inputsAfter: at('electron-after') } : { build: at('build') }) })),
+      w22: ['functional', 'firefox', 'electron'].flatMap(project => ['input', 'ADD-23', 'ADD-17', 'hemisphere'].map(scenario => ({
+        result: at('result'), command: at('command'), pair: at(`${project}-${scenario}-pair`),
+        ...Object.fromEntries(['normal', 'slow'].map(condition => [condition,
+          Object.fromEntries(Object.entries(runRoles).map(([role, suffix]) => [role, at(`${project}-${scenario}-${condition}-${suffix}`)]))])),
+      }))),
+    };
+    put('evidence/plan.json', Buffer.from(JSON.stringify(plan)));
+    const indexArguments = (planPath: string, out: string) => ['index', '--plan', planPath, '--out', out];
+    return { root, tool, lines, sourceInputs, plan, put, indexArguments };
+  }
+
+  it('CRLF の取り出しで、manifest を作り、索引を組み立て、公開前検査の読み取りと判定がそのまま通る', async () => {
+    const { root, tool, lines, sourceInputs, indexArguments } = await evidenceCheckout();
+    const manifest = JSON.parse(readFileSync(join(root, 'evidence', 'manifest.json'), 'utf8')) as { checkout: string; files: { path: string; copy_sha256: string }[] };
+    const row = (path: string) => manifest.files.find(item => item.path === path)?.copy_sha256;
+    expect(manifest.checkout).toBe(root);
+    expect(row('src/product.ts')).toBe(sourceInputs.web['src/product.ts']);
+    expect(row('pnpm-lock.yaml')).toBe(hash(lockBytes));
+    for (const [path, content] of Object.entries(testSources)) {
+      expect(row(path)).toBe(sourceFileHash(content));
+      expect(row(path)).not.toBe(hash(content));
+    }
+    expect(await runBuildDedicatedEvidenceIndex([...indexArguments('evidence/plan.json', 'evidence/out/index.json'), '--verify'], tool))
+      .toBe(DEDICATED_EVIDENCE_EXIT.done);
+    for (const path of Object.keys(testSources)) {
+      const copy = readFileSync(join(root, 'evidence', 'out', 'sources', ...path.split('/')));
+      expect(copy.includes(0x0d)).toBe(false);
+      expect(hash(copy)).toBe(row(path));
+    }
+    const indexBytes = readFileSync(join(root, 'evidence', 'out', 'index.json'));
+    const index = JSON.parse(indexBytes.toString('utf8')) as Record<string, unknown>;
+    expect(Object.hasOwn(index, 'accepted')).toBe(false);
+    expect(lines.join('\n')).toContain(`-PerformanceEvidence evidence/out/index.json -PerformanceEvidenceSha256 ${hash(indexBytes)}`);
+    const evidence = await loadDedicatedPerformanceEvidence(root, 'evidence/out/index.json', hash(indexBytes), sourceInputs);
+    expect(checkDedicatedPerformanceEvidence('w21-dedicated', evidence, sourceInputs).status).toBe('pass');
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('pass');
+  });
+
+  it('W21 の比だけが届かない時は、終了コード 3 で、6 組の比を出す（判定は公開前検査の側のまま）', async () => {
+    const { tool, lines, indexArguments } = await evidenceCheckout({ warmMs: 90 });
+    expect(await runBuildDedicatedEvidenceIndex([...indexArguments('evidence/plan.json', 'evidence/out/index.json'), '--verify'], tool))
+      .toBe(DEDICATED_EVIDENCE_EXIT.ratioOnly);
+    const text = lines.join('\n');
+    expect(text).toContain('w21-dedicated: fail — Dedicated raw evidence refused（W21 original twenty-percent condition failed）');
+    expect(text).toContain('w22-dedicated: pass');
+    expect(text.split('\n').filter(line => line.includes('比 0.900'))).toHaveLength(6);
+  });
+
+  it.each([
+    ['W21 の環境の重複', (plan: DedicatedPlanFixture) => { plan.w21[1] = plan.w21[0]; }, 'W21 needs each of functional, firefox, electron exactly once: functional'],
+    ['W21 の Electron の起動の記録の欠け', (plan: DedicatedPlanFixture) => { delete plan.w21[2].launch; }, 'W21 electron needs the launch file'],
+    ['W21 の知らない役割', (plan: DedicatedPlanFixture) => { plan.w21[0].config = 'e2e/playwright.config.ts'; }, 'W21 functional has unknown roles: config'],
+    ['W22 の組の重複', (plan: DedicatedPlanFixture) => { plan.w22[1] = plan.w22[0]; }, 'W22 needs each project × scenario exactly once: functional/input'],
+    ['W22 の 11 組', (plan: DedicatedPlanFixture) => { plan.w22.pop(); }, 'W22 needs 12 cells, got 11'],
+    ['根の外の file', (plan: DedicatedPlanFixture) => { plan.manifest = '../outside.json'; }, 'Path must stay inside the checkout: ../outside.json'],
+  ])('%s は索引を書かずに断る', async (_label, change, message) => {
+    const { root, tool, plan, put, indexArguments } = await evidenceCheckout();
+    const changed = structuredClone(plan);
+    change(changed);
+    put('evidence/plan-changed.json', Buffer.from(JSON.stringify(changed)));
+    await expect(runBuildDedicatedEvidenceIndex(indexArguments('evidence/plan-changed.json', 'evidence/refused/index.json'), tool)).rejects.toThrow(message);
+    expect(existsSync(join(root, 'evidence', 'refused'))).toBe(false);
+  });
+
+  it.each([
+    ['排他でない実行', { exclusive: false }, 'W21 functional: the run is not exclusive'],
+    ['別の manifest に結んだ実行', { exclusive: true, manifestSha256: 'b'.repeat(64) }, 'W21 functional: the run is not bound to this manifest'],
+  ])('%s は断る', async (_label, command, message) => {
+    const { tool, plan, put, indexArguments } = await evidenceCheckout();
+    put('fixture/other-command.json', Buffer.from(JSON.stringify(command)));
+    const changed = structuredClone(plan);
+    changed.w21[0].command = 'fixture/other-command.json';
+    put('evidence/plan-changed.json', Buffer.from(JSON.stringify(changed)));
+    await expect(runBuildDedicatedEvidenceIndex(indexArguments('evidence/plan-changed.json', 'evidence/refused/index.json'), tool)).rejects.toThrow(message);
+  });
+
+  it('終了コードが 0 でない実行・既にある出力・manifest の後に変わった検査の元は断る', async () => {
+    const { tool, plan, put, indexArguments } = await evidenceCheckout();
+    put('fixture/failed-result.json', Buffer.from(JSON.stringify({ exitCode: 1 })));
+    const failed = structuredClone(plan);
+    failed.w21[1].result = 'fixture/failed-result.json';
+    put('evidence/plan-failed.json', Buffer.from(JSON.stringify(failed)));
+    await expect(runBuildDedicatedEvidenceIndex(indexArguments('evidence/plan-failed.json', 'evidence/failed/index.json'), tool))
+      .rejects.toThrow('W21 firefox: the run did not end with exit code 0: fixture/failed-result.json');
+    expect(await runBuildDedicatedEvidenceIndex(indexArguments('evidence/plan.json', 'evidence/once/index.json'), tool)).toBe(DEDICATED_EVIDENCE_EXIT.done);
+    await expect(runBuildDedicatedEvidenceIndex(indexArguments('evidence/plan.json', 'evidence/once/index.json'), tool)).rejects.toThrow(/EEXIST/u);
+    put('e2e/tests/occtCompileReuseFlow.ts', crlf("await app?.close();\nconst cold = await run('cold'), warm = await run('warm');\n"));
+    await expect(runBuildDedicatedEvidenceIndex(indexArguments('evidence/plan.json', 'evidence/changed/index.json'), tool))
+      .rejects.toThrow('Executed test source changed after the manifest: e2e/tests/occtCompileReuseFlow.ts');
+  });
+
+  it('引数の誤りは使い方の誤りとして断る', async () => {
+    const { tool } = await evidenceCheckout();
+    await expect(runBuildDedicatedEvidenceIndex([], tool)).rejects.toThrow(DedicatedEvidenceUsageError);
+    await expect(runBuildDedicatedEvidenceIndex(['index', '--plan'], tool)).rejects.toThrow(DedicatedEvidenceUsageError);
+    await expect(runBuildDedicatedEvidenceIndex(['inputs-after', '--manifest', 'evidence/manifest.json', '--out', 'x.json', '--report', 'fixture/result.json'], tool))
+      .rejects.toThrow(DedicatedEvidenceUsageError);
+  });
+
+  it('実行の後の入力: 行末だけの違いは同じ、中身の違いは変わったファイルとして出す', async () => {
+    const { root, tool, plan, put } = await evidenceCheckout();
+    const report = plan.w21[2].report;
+    expect(await runBuildDedicatedEvidenceIndex(['inputs-after', '--manifest', 'evidence/manifest.json', '--out', 'evidence/after-1.json',
+      '--report', report, '--exit-code', '0'], tool)).toBe(DEDICATED_EVIDENCE_EXIT.done);
+    expect(JSON.parse(readFileSync(join(root, 'evidence', 'after-1.json'), 'utf8'))).toEqual({
+      manifestSha256: hash(readFileSync(join(root, 'evidence', 'manifest.json'))), allManifestInputsUnchanged: true, changed: [],
+      commandExitCode: 0, playwrightExitCode: 0, playwrightJson: resolve(root, report), playwrightJsonSha256: hash(readFileSync(resolve(root, report))) });
+    put('src/product.ts', Buffer.from('export const product = 1;\n'));
+    expect(await runBuildDedicatedEvidenceIndex(['inputs-after', '--manifest', 'evidence/manifest.json', '--out', 'evidence/after-2.json'], tool))
+      .toBe(DEDICATED_EVIDENCE_EXIT.done);
+    put('src/product.ts', crlf('export const product = 2;\n'));
+    expect(await runBuildDedicatedEvidenceIndex(['inputs-after', '--manifest', 'evidence/manifest.json', '--out', 'evidence/after-3.json'], tool))
+      .toBe(DEDICATED_EVIDENCE_EXIT.refused);
+    expect(JSON.parse(readFileSync(join(root, 'evidence', 'after-3.json'), 'utf8'))).toMatchObject({ allManifestInputsUnchanged: false, changed: ['src/product.ts'] });
   });
 });

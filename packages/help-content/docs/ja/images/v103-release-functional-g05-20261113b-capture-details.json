@@ -1,8 +1,8 @@
 {
   "format": "pointercad-capture-provenance/1",
   "releaseCertified": false,
-  "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
-  "adoptedAt": "2026-11-10T03:03:05.600Z",
+  "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
+  "adoptedAt": "2026-11-13T14:23:53.245Z",
   "scripts": {
     "e2e/tests/intersectionsFlow.ts": "343f8212ceb0a4af3adca4efaa4ee3dc4bb8c679d7f8ea01e08354de957333d5",
     "e2e/tests/shapesCaptureFlow.ts": "9e19a20e5574808e933b537955c51be0946920cea7c267b6dab050bde4a1fd35",
@@ -29,8 +29,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:01.042Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:45.216Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-1 交点の自動接続から折曲げ・区間削除・保存再開まで操作できる",
         "script": "e2e/tests/intersectionsFlow.ts",
@@ -57,8 +57,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 58,
-          "lastCompletedAtMs": 5708.020000100136
+          "completedRenders": 57,
+          "lastCompletedAtMs": 5353.219999998808
         },
         "dialogBounds": {
           "x": 1160,
@@ -88,8 +88,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:41:59.367Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:43.698Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-1 交点の自動接続から折曲げ・区間削除・保存再開まで操作できる",
         "script": "e2e/tests/intersectionsFlow.ts",
@@ -116,8 +116,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 25,
-          "lastCompletedAtMs": 4019.4500000476837
+          "completedRenders": 23,
+          "lastCompletedAtMs": 3788.0399999916553
         },
         "dialogBounds": {
           "x": 1160,
@@ -147,8 +147,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:01.990Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:46.017Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-1 交点の自動接続から折曲げ・区間削除・保存再開まで操作できる",
         "script": "e2e/tests/intersectionsFlow.ts",
@@ -175,8 +175,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 62,
-          "lastCompletedAtMs": 6599.520000100136
+          "completedRenders": 61,
+          "lastCompletedAtMs": 6163.330000013113
         },
         "dialogBounds": {
           "x": 0,
@@ -206,8 +206,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:39:19.833Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:01:09.361Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 四角・多角形・長穴・円をかく章の画面を撮る",
         "script": "e2e/tests/shapesCaptureFlow.ts",
@@ -218,7 +218,7 @@
         },
         "screen": {
           "filename": "shapes-circle-screen.png",
-          "sha256": "8d1f60bcb0596ed4bc534844ccd762f7b217629befe5b274e706a19a2e6ad48a"
+          "sha256": "d72a81e23b52ce0cfd75448674605e0da1c629ddd9300e4a178a2130eaabb726"
         },
         "detail": {
           "filename": "shapes-circle-detail.png",
@@ -235,7 +235,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 2325.0049999952316
+          "lastCompletedAtMs": 2165.435000002384
         },
         "dialogBounds": {
           "x": 714,
@@ -269,8 +269,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:39:25.901Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:01:14.479Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 四角・多角形・長穴・円をかく章の画面を撮る",
         "script": "e2e/tests/shapesCaptureFlow.ts",
@@ -298,7 +298,7 @@
         },
         "viewportRender": {
           "completedRenders": 12,
-          "lastCompletedAtMs": 8429.889999985695
+          "lastCompletedAtMs": 7280.860000014305
         },
         "dialogBounds": {
           "x": 714,
@@ -331,8 +331,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:40:24.948Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:02:10.840Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金基板とフランジを画面で作り、保存往復・式編集・Undoを通す",
         "script": "e2e/tests/sheet-metal.spec.ts",
@@ -343,11 +343,11 @@
         },
         "screen": {
           "filename": "sheet-base-input-screen.png",
-          "sha256": "165d239c0f8c307cd017bdb4d63fc73165f1138208967a24f59c9926386bea21"
+          "sha256": "66b30f2a68f653861d44b3e37851af84918039229120d8e577b1c30ff39f9e06"
         },
         "detail": {
           "filename": "sheet-base-input-detail.png",
-          "sha256": "55f14bd58f6cf175263d3f2e3eb1478bcbec84d946877247500bfaddba472a7c"
+          "sha256": "22167f9f0fef4881a5901c883f7fb116a9cf201ae17ab740282ce087184643f5"
         },
         "recompute": {
           "pendingWaiters": 0,
@@ -359,8 +359,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 24,
-          "lastCompletedAtMs": 3801.5849999189377
+          "completedRenders": 25,
+          "lastCompletedAtMs": 3706.0499999821186
         },
         "dialogBounds": {
           "x": 1161,
@@ -390,8 +390,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:39:37.823Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:01:26.134Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の構成で板厚・半径・K・両フランジを切り替え、展開・Undo・保存往復に追従する",
         "script": "e2e/tests/sheet-configuration.spec.ts",
@@ -419,7 +419,7 @@
         },
         "viewportRender": {
           "completedRenders": 22,
-          "lastCompletedAtMs": 9883.080000042915
+          "lastCompletedAtMs": 9678.685000002384
         },
         "dialogBounds": {
           "x": 1160,
@@ -450,8 +450,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:40:55.701Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:02:38.984Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開・保存・再編集・Undoする",
         "script": "e2e/tests/sheet-metal.spec.ts",
@@ -478,8 +478,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 103,
-          "lastCompletedAtMs": 20138.06000006199
+          "completedRenders": 102,
+          "lastCompletedAtMs": 17581.340000003576
         },
         "dialogBounds": {
           "x": 1160,
@@ -509,8 +509,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:40:29.378Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:02:15.510Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金基板とフランジを画面で作り、保存往復・式編集・Undoを通す",
         "script": "e2e/tests/sheet-metal.spec.ts",
@@ -537,8 +537,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 43,
-          "lastCompletedAtMs": 8187.149999976158
+          "completedRenders": 44,
+          "lastCompletedAtMs": 7921.969999998808
         },
         "dialogBounds": {
           "x": 1161,
@@ -568,8 +568,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:40:59.415Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:02:42.614Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開・保存・再編集・Undoする",
         "script": "e2e/tests/sheetDrawingFlow.ts",
@@ -624,8 +624,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:39:58.024Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:01:43.984Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の展開穴表が固定面の座標を使い、基準点・元の穴編集・保存往復に追従する",
         "script": "e2e/tests/sheet-hole-table.spec.ts",
@@ -680,8 +680,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:40:16.457Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:02:02.418Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の指定線曲げを作成・取消・再展開・保存往復し、式編集とUndoを通す",
         "script": "e2e/tests/sheet-metal.spec.ts",
@@ -708,8 +708,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 59,
-          "lastCompletedAtMs": 9792.259999990463
+          "completedRenders": 60,
+          "lastCompletedAtMs": 9939.534999996424
         },
         "dialogBounds": {
           "x": 1160,
@@ -739,8 +739,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:40:14.956Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:02:00.869Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の指定線曲げを作成・取消・再展開・保存往復し、式編集とUndoを通す",
         "script": "e2e/tests/sheet-metal.spec.ts",
@@ -767,8 +767,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 48,
-          "lastCompletedAtMs": 8077.370000004768
+          "completedRenders": 49,
+          "lastCompletedAtMs": 8153.034999996424
         },
         "dialogBounds": {
           "x": 1161,
@@ -798,8 +798,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:41:21.142Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:07.268Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の任意輪郭・穴・複数縁・曲げ条件を指定してU板を作り、展開と保存往復に保持する",
         "script": "e2e/tests/sheet-profile.spec.ts",
@@ -810,7 +810,7 @@
         },
         "screen": {
           "filename": "sheet-profile-created-screen.png",
-          "sha256": "8c53ad02f9ac66c855cb7a58493726d4dd8b136a6836b448972af4719bc3236a"
+          "sha256": "8ce66bac2c78a902c5c2f8b860476d88660f6c81809e5839bb6c6e3929de3b45"
         },
         "detail": {
           "filename": "sheet-profile-created-detail.png",
@@ -827,7 +827,7 @@
         },
         "viewportRender": {
           "completedRenders": 35,
-          "lastCompletedAtMs": 8530.014999985695
+          "lastCompletedAtMs": 7826.145000010729
         },
         "dialogBounds": {
           "x": 1160,
@@ -857,8 +857,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:41:19.997Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:06.152Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の任意輪郭・穴・複数縁・曲げ条件を指定してU板を作り、展開と保存往復に保持する",
         "script": "e2e/tests/sheet-profile.spec.ts",
@@ -869,7 +869,7 @@
         },
         "screen": {
           "filename": "sheet-profile-preview-screen.png",
-          "sha256": "670f950484f9336297f177640ac09568ed6da5d083e69693af6d4527560d54e3"
+          "sha256": "19254aab10cb924b0819e7c7ecebde328a91e40255ced3d251d247e9ee868743"
         },
         "detail": {
           "filename": "sheet-profile-preview-detail.png",
@@ -886,7 +886,7 @@
         },
         "viewportRender": {
           "completedRenders": 30,
-          "lastCompletedAtMs": 7234.055000066757
+          "lastCompletedAtMs": 6663.340000003576
         },
         "dialogBounds": {
           "x": 1161,
@@ -916,8 +916,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:40:44.185Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:02:29.459Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開・保存・再編集・Undoする",
         "script": "e2e/tests/sheet-metal.spec.ts",
@@ -944,8 +944,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 47,
-          "lastCompletedAtMs": 8246.480000019073
+          "completedRenders": 45,
+          "lastCompletedAtMs": 8009.439999997616
         },
         "dialogBounds": {
           "x": 1161,
@@ -975,8 +975,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:40:31.772Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:02:17.848Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P10 板金基板とフランジを画面で作り、保存往復・式編集・Undoを通す",
         "script": "e2e/tests/sheet-metal.spec.ts",
@@ -987,7 +987,7 @@
         },
         "screen": {
           "filename": "sheet-unfold-screen.png",
-          "sha256": "36787e36c8e986cf522eea346f7fd09cda9442144c5b6af7e97fcb8c8979113d"
+          "sha256": "48659b85d20eb1091d122c8542c7532b68519f3b2b185910d5cf337f9232caed"
         },
         "detail": {
           "filename": "sheet-unfold-detail.png",
@@ -1003,8 +1003,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 52,
-          "lastCompletedAtMs": 10375.579999923706
+          "completedRenders": 53,
+          "lastCompletedAtMs": 10453.664999991655
         },
         "dialogBounds": {
           "x": 1161,
@@ -1034,15 +1034,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:41:33.750Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:19.372Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-7 キー設定の割当の適用・保存再開・同じUndo・現在の説明",
         "script": "e2e/tests/shortcutSettingsFlow.ts",
         "scriptSha256": "fe9036dfc6fe9529f50f88ca8ea5447970dd13f75fe64df6c63fccad74a1388d",
         "fixture": {
           "filename": "shortcut-settings-fixture.json",
-          "sha256": "562de19cbfc411dbd16a5995f50ec763360e5999eb5a75a68f6dbee0d5951f1d"
+          "sha256": "51996223c2a157b31b55072055a2001a03c164e04cc9018bfef5f57be048a60f"
         },
         "screen": {
           "filename": "shortcut-settings-screen.png",
@@ -1063,7 +1063,7 @@
         },
         "viewportRender": {
           "completedRenders": 14,
-          "lastCompletedAtMs": 3204.1200000047684
+          "lastCompletedAtMs": 3201.8400000035763
         },
         "dialogBounds": {
           "x": 1171,
@@ -1083,7 +1083,7 @@
         "viewportClass": "standard"
       },
       "fixture": {
-        "id": "part-uuid:13b8573a-c96b-4e4d-aff5-6368513d1b28",
+        "id": "part-uuid:c1f254aa-bd13-4e15-9fad-f437baff871a",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -1231,8 +1231,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:41:54.442Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:38.960Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 線の角を丸める・面取りする章の画面を撮る",
         "script": "e2e/tests/sketchFilletCaptureFlow.ts",
@@ -1243,7 +1243,7 @@
         },
         "screen": {
           "filename": "sketch-chamfer-distance-screen.png",
-          "sha256": "8491075d943a646da38e04dc649a094d9138c92353fa837484deeba8163e06db"
+          "sha256": "23338ff4dde5c0a614a063859ecf73ed43c65a225adb408fa1e9273fd5186804"
         },
         "detail": {
           "filename": "sketch-chamfer-distance-detail.png",
@@ -1259,8 +1259,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 30,
-          "lastCompletedAtMs": 4165.549999952316
+          "completedRenders": 31,
+          "lastCompletedAtMs": 4034.270000010729
         },
         "dialogBounds": {
           "x": 851.5625,
@@ -1290,8 +1290,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:41:53.459Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:38.023Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 線の角を丸める・面取りする章の画面を撮る",
         "script": "e2e/tests/sketchFilletCaptureFlow.ts",
@@ -1318,8 +1318,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 23,
-          "lastCompletedAtMs": 3168.375
+          "completedRenders": 24,
+          "lastCompletedAtMs": 3051.4800000190735
         },
         "dialogBounds": {
           "x": 851.5625,
@@ -1349,8 +1349,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:06.626Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:50.370Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 点・線・円弧をかく章の画面を撮る",
         "script": "e2e/tests/sketchToolsCaptureFlow.ts",
@@ -1361,7 +1361,7 @@
         },
         "screen": {
           "filename": "sketch-tools-menu-screen.png",
-          "sha256": "47cd4d637d932e77a644907b701aa858bf9059bdb19e31ee6c55df419b2b5045"
+          "sha256": "123cc4bf04523041300d859c1df76cdf88463010ace4fce4220d1c2b581aa837"
         },
         "detail": {
           "filename": "sketch-tools-menu-detail.png",
@@ -1378,7 +1378,7 @@
         },
         "viewportRender": {
           "completedRenders": 3,
-          "lastCompletedAtMs": 1714.4049999713898
+          "lastCompletedAtMs": 1678.8400000035763
         },
         "dialogBounds": {
           "x": 360,
@@ -1408,8 +1408,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:07.517Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:51.188Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 点・線・円弧をかく章の画面を撮る",
         "script": "e2e/tests/sketchToolsCaptureFlow.ts",
@@ -1420,7 +1420,7 @@
         },
         "screen": {
           "filename": "sketch-tools-point-series-screen.png",
-          "sha256": "df13afb6db8a36ad60e5a9d3bf5b335cc5e65e4ee55d0ccb26fddfd6687656a4"
+          "sha256": "2e2979ab4c6e6bb72823b1ecb06452c68517cc1894bd6a44b4d30a26b70f50ca"
         },
         "detail": {
           "filename": "sketch-tools-point-series-detail.png",
@@ -1437,7 +1437,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 2706.7400000095367
+          "lastCompletedAtMs": 2557.699999988079
         },
         "dialogBounds": {
           "x": 714,
@@ -1471,8 +1471,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:10.357Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:53.767Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 点にぴったり合わせる(吸着)章の画面を撮る",
         "script": "e2e/tests/snapCaptureFlow.ts",
@@ -1483,7 +1483,7 @@
         },
         "screen": {
           "filename": "snap-kinds-menu-screen.png",
-          "sha256": "59126f61c61806cd8936a43c31ac9180e57a998b37ce13e653c7614df9c63a11"
+          "sha256": "9db09fc2d0af423e833d544481613ac003da2ce938abe1a4e3d2e85203a07f1f"
         },
         "detail": {
           "filename": "snap-kinds-menu-detail.png",
@@ -1500,7 +1500,7 @@
         },
         "viewportRender": {
           "completedRenders": 2,
-          "lastCompletedAtMs": 1330.9350000619888
+          "lastCompletedAtMs": 1144.2249999940395
         },
         "dialogBounds": {
           "x": 1144.46875,
@@ -1530,8 +1530,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:15.310Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:58.558Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-17 厚みをつける・回すの章の画面を撮る",
         "script": "e2e/tests/solidBasicsCaptureFlow.ts",
@@ -1558,8 +1558,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 32,
-          "lastCompletedAtMs": 4042.1349999904633
+          "completedRenders": 34,
+          "lastCompletedAtMs": 3951.719999998808
         },
         "dialogBounds": {
           "x": 714,
@@ -1590,8 +1590,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:16.261Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:03:59.387Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-17 厚みをつける・回すの章の画面を撮る",
         "script": "e2e/tests/solidBasicsCaptureFlow.ts",
@@ -1602,7 +1602,7 @@
         },
         "screen": {
           "filename": "solid-basics-rotate-screen.png",
-          "sha256": "8604550de6866ec44231eb4b537f06ca547604685e1c871a84f610efd7364b69"
+          "sha256": "91bfd077a123dc3188702ca9fd45308330c3f200ee5169b5536878e69f1e2ae5"
         },
         "detail": {
           "filename": "solid-basics-rotate-detail.png",
@@ -1618,8 +1618,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 35,
-          "lastCompletedAtMs": 5088.899999976158
+          "completedRenders": 37,
+          "lastCompletedAtMs": 4853
         },
         "dialogBounds": {
           "x": 714,
@@ -1649,8 +1649,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:25.341Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:04:08.417Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 立体をつなぐ・組み合わせるの章の画面を撮る",
         "script": "e2e/tests/solidCombineCaptureFlow.ts",
@@ -1661,7 +1661,7 @@
         },
         "screen": {
           "filename": "solid-combine-menu-screen.png",
-          "sha256": "e334fb54d5280be49bd0538c7710b6b3cc271fde0198279b6f0fc737fc889a3c"
+          "sha256": "bd8e489651953c13590025860a366c2385fa3f312633e69bd8ae63ced77fb13d"
         },
         "detail": {
           "filename": "solid-combine-menu-detail.png",
@@ -1677,8 +1677,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 75,
-          "lastCompletedAtMs": 8177.304999947548
+          "completedRenders": 72,
+          "lastCompletedAtMs": 8100.435000002384
         },
         "dialogBounds": {
           "x": 533,
@@ -1709,8 +1709,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:29.423Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:04:12.388Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 球の表面に点を置くの章の画面を撮る",
         "script": "e2e/tests/sphereGridCaptureFlow.ts",
@@ -1738,7 +1738,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 3223.1749999523163
+          "lastCompletedAtMs": 3114.875
         },
         "dialogBounds": {
           "x": 1161,
@@ -1768,8 +1768,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:30.247Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:04:13.225Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 球の表面に点を置くの章の画面を撮る",
         "script": "e2e/tests/sphereGridCaptureFlow.ts",
@@ -1780,7 +1780,7 @@
         },
         "screen": {
           "filename": "sphere-grid-point-screen.png",
-          "sha256": "5c051c8269a56aeaf6fd50c06f8c6d8469a15f036f0d623debcc0e3a9abaaecc"
+          "sha256": "52987efc11b8ca0834b6cb84eed078948a497596ee250fd364289dfeda2ffd43"
         },
         "detail": {
           "filename": "sphere-grid-point-detail.png",
@@ -1796,8 +1796,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 10,
-          "lastCompletedAtMs": 4135.5
+          "completedRenders": 11,
+          "lastCompletedAtMs": 4052.524999976158
         },
         "dialogBounds": {
           "x": 714,
@@ -1829,8 +1829,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:34.473Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:04:17.470Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 なめらかな曲線をかく(スプライン)章の画面を撮る",
         "script": "e2e/tests/splineCaptureFlow.ts",
@@ -1841,7 +1841,7 @@
         },
         "screen": {
           "filename": "spline-finish-screen.png",
-          "sha256": "322d1386422290df973cfb5b661c61c8cd966d704ae3e24d04a5ac5df27b8abf"
+          "sha256": "1b533946a79972a36fbdb43e0942a9be3d8b5f9454646c7a79caad72ea4228b6"
         },
         "detail": {
           "filename": "spline-finish-detail.png",
@@ -1857,8 +1857,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 27,
-          "lastCompletedAtMs": 3447.5900000333786
+          "completedRenders": 28,
+          "lastCompletedAtMs": 3428.1800000071526
         },
         "dialogBounds": {
           "x": 714,
@@ -1888,8 +1888,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:33.928Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:04:16.896Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 なめらかな曲線をかく(スプライン)章の画面を撮る",
         "script": "e2e/tests/splineCaptureFlow.ts",
@@ -1900,7 +1900,7 @@
         },
         "screen": {
           "filename": "spline-points-screen.png",
-          "sha256": "ace30bbde3a8076fbc439a7e3b459290836ab754d1d0fe943e71e560a6fb8457"
+          "sha256": "88af0502b9a4e16cda4c6fe6d5221f7d0aa30adc40b39b3834e67b46a25a96f9"
         },
         "detail": {
           "filename": "spline-points-detail.png",
@@ -1916,8 +1916,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 26,
-          "lastCompletedAtMs": 2879.4550000429153
+          "completedRenders": 27,
+          "lastCompletedAtMs": 2848.4149999916553
         },
         "dialogBounds": {
           "x": 714,
@@ -1964,8 +1964,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:38.525Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:04:21.504Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 ばねを作るの章の画面を撮る",
         "script": "e2e/tests/springCaptureFlow.ts",
@@ -1993,7 +1993,7 @@
         },
         "viewportRender": {
           "completedRenders": 12,
-          "lastCompletedAtMs": 2990.680000066757
+          "lastCompletedAtMs": 3018.330000013113
         },
         "dialogBounds": {
           "x": 714,
@@ -2025,8 +2025,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:42:37.981Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T14:04:20.939Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 ばねを作るの章の画面を撮る",
         "script": "e2e/tests/springCaptureFlow.ts",
@@ -2054,7 +2054,7 @@
         },
         "viewportRender": {
           "completedRenders": 11,
-          "lastCompletedAtMs": 2396.399999976158
+          "lastCompletedAtMs": 2404.3050000071526
         },
         "dialogBounds": {
           "x": 714,

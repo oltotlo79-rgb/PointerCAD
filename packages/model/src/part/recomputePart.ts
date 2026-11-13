@@ -236,8 +236,40 @@ function solidKernelFailed(featureId: string, message: string, reason?: PartErro
  */
 const SOLID_CALL_FAILED_PREFIX = '立体を作れませんでした: ';
 
+/**
+ * カーネル(OCCT)の読み込み(取得・検証・compile)に失敗したとき、同じ世代を頼み直す回数(FR-504、NFR-RE-1)。
+ * 読み込みは通信や資産の一時的な事情で失敗しうるので 1 回だけ頼み直す。計算そのものの例外・取消・古い世代
+ * (どちらも shouldCancel が真)・Worker の破損(橋が理由つきの失敗として解決し、拒否しない)は頼み直さない。
+ */
+const OCCT_LOAD_RETRIES = 1;
+
+/** 頼み直した後に失敗したとき、失敗の文の末尾へ添える(頼み直した事実を残す)。 */
+const OCCT_LOAD_RETRIED_NOTE = '(カーネルの読み込みを1回やり直しました)';
+
+/**
+ * Worker の窓口(kernel の kernelApi.ts)が OCCT の読み込みの失敗に付ける名前。Comlink は Error の name を運ぶ。
+ * kernel の公開の名前は増やさず、同じ文字をここに持つ。食い違えば recomputePart.test.ts の実物の窓口
+ * (createKernelApi)を通す検査が落ちる。
+ */
+const OCCT_LOAD_ERROR_NAME = 'OcctLoadError';
+
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isOcctLoadFailure(error: unknown): boolean {
+  return error instanceof Error && error.name === OCCT_LOAD_ERROR_NAME;
+}
+
+/**
+ * 呼び出しごとの失敗の理由。Worker の例外の種類が素の Error でなく、文が種類で始まらないときは種類も添える
+ * (RangeError・RuntimeError などは文だけでは何が起きたか分からない)。読み込みの失敗は文に元の種類を含む。
+ */
+function callFailureText(error: unknown): string {
+  const message = toMessage(error);
+  if (!(error instanceof Error) || error.name === '' || error.name === 'Error' || isOcctLoadFailure(error)
+    || message.startsWith(error.name)) return message;
+  return `${error.name}: ${message}`;
 }
 
 interface SketchOutcome {
@@ -326,22 +358,27 @@ async function callSolids(
   if (resolved.steps.length === 0 && options.localMesh === undefined) {
     return { ok: true, outcome: NO_SOLIDS };
   }
-  try {
-    return {
-      ok: true,
-      outcome: await bridge.recomputeSolids(resolved.steps, {
-        partId: options.partId,
-        generation,
-        onProgress: options.onProgress,
-        shouldCancel: options.shouldCancel,
-        appearance,
-        // 既定は測らない(NFR-PF-2〜3。「穴 20 個の性能の余裕を削らない」)。
-        measureAreas: options.measureAreas ?? false,
-        ...(options.localMesh === undefined ? {} : { localMesh: options.localMesh }),
-      }),
-    };
-  } catch (error) {
-    return { ok: false, message: `${SOLID_CALL_FAILED_PREFIX}${toMessage(error)}` };
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return {
+        ok: true,
+        outcome: await bridge.recomputeSolids(resolved.steps, {
+          partId: options.partId,
+          generation,
+          onProgress: options.onProgress,
+          shouldCancel: options.shouldCancel,
+          appearance,
+          // 既定は測らない(NFR-PF-2〜3。「穴 20 個の性能の余裕を削らない」)。
+          measureAreas: options.measureAreas ?? false,
+          ...(options.localMesh === undefined ? {} : { localMesh: options.localMesh }),
+        }),
+      };
+    } catch (error) {
+      // 同じ世代・同じ段で頼み直す(世代は増やさない)。橋は依頼ごとに新しい dispatch を台帳へ載せる。
+      if (isOcctLoadFailure(error) && attempt < OCCT_LOAD_RETRIES && options.shouldCancel?.() !== true) continue;
+      const retried = attempt === 0 ? '' : OCCT_LOAD_RETRIED_NOTE;
+      return { ok: false, message: `${SOLID_CALL_FAILED_PREFIX}${callFailureText(error)}${retried}` };
+    }
   }
 }
 

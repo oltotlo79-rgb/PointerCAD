@@ -1381,7 +1381,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
           const current = phases.snapshot();
           const allowedPhases = ['native-build-start', 'native-build-return', 'native-build-throw', 'native-build-cancelled',
             'geometry-cancel-check', 'geometry-cancel-request', 'geometry-cancel-check-throw', 'reply-preclone',
-            'reply-admission-rejected', 'owner-rejected'];
+            'reply-admission-rejected', 'owner-rejected', 'occt-load-throw'];
           if (!worker.records.every(record => Number.isSafeInteger(record.seq) && record.seq > 0
             && record.seq <= worker.lastSeq && allowedPhases.includes(record.phase)
             && (record.epochMs === null || Number.isFinite(record.epochMs) && record.epochMs >= 0)

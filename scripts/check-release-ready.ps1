@@ -30,6 +30,10 @@
 
 # W21/W22 dedicated evidence remains mandatory in All and Desktop pre-release modes.
 # Its acceptance adapter is unconnected: candidate-only, pending/nonzero, never publication-ready.
+# W21 の比の例外(v1.0.3 に限る。利用者の決定 2026-11-13 21:23、CLAUDE.md):
+#   -PerformanceEvidence <索引> -PerformanceEvidenceSha256 <SHA> に加えて -W21RatioException <JSON> -W21RatioExceptionSha256 <SHA>。
+#   W21 の比(warm <= cold × 0.8)だけの未達を[許容（利用者の決定）]として終了コード 0 を止めない(合格とは表示しない)。
+#   測定の欠け・RUN の失敗や重なり・manifest の不一致・W22 は通さない。版が 1.0.3 でなければ例外を断る。
 [CmdletBinding()]
 param(
     [ValidateSet('PreRelease', 'PostRelease', 'Manual')]
@@ -46,7 +50,9 @@ param(
     [string]$Manual = '',
     [string]$ReportPath = '',
     [string]$PerformanceEvidence = '',
-    [string]$PerformanceEvidenceSha256 = ''
+    [string]$PerformanceEvidenceSha256 = '',
+    [string]$W21RatioException = '',
+    [string]$W21RatioExceptionSha256 = ''
 )
 
 Set-StrictMode -Version Latest
@@ -75,7 +81,8 @@ if ($Scope -eq 'Desktop') {
 $pairs = @(
     @('--windows', $Windows), @('--linux', $Linux), @('--web', $Web), @('--release', $Release), @('--sbom', $Sbom),
     @('--web-url', $WebUrl), @('--download-url', $DownloadUrl), @('--manual', $Manual), @('--report', $ReportPath),
-    @('--performance-evidence', $PerformanceEvidence), @('--performance-evidence-sha256', $PerformanceEvidenceSha256)
+    @('--performance-evidence', $PerformanceEvidence), @('--performance-evidence-sha256', $PerformanceEvidenceSha256),
+    @('--w21-ratio-exception', $W21RatioException), @('--w21-ratio-exception-sha256', $W21RatioExceptionSha256)
 )
 foreach ($pair in $pairs) {
     if ($pair[1] -ne '') {
@@ -115,6 +122,9 @@ try {
         3 { '未実装: 公開後モードの全体(Web を含む)は Web 版の公開時に実装します。デスクトップ部分は -Scope Desktop で確かめられます。' }
         64 { '引数の誤り: 上の使い方を確認してください。' }
         default { '内部の誤り: 上の出力を確認してください。' }
+    }
+    if ($exitCode -eq 0 -and $W21RatioException -ne '') {
+        $meaning = "$meaning 一覧に[許容（利用者の決定）]があれば、その項目は合格ではなく v1.0.3 に限る例外です(実測の比と 0.8 との差は一覧の(参考))。"
     }
     Write-Host "check-release-ready: $meaning (終了コード $exitCode)"
     # 説明書の章に画像が要るかの判定(scripts/manual/chapterImagePolicy.mjs)は generate.mjs 自身が

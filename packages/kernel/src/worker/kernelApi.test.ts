@@ -2781,6 +2781,29 @@ describe('owned runSolidRecompute call envelope metadata', () => {
       expect(snapshot.records.filter(record => record.phase === 'reply-preclone')).toEqual([]);
     } finally { await api.acknowledgeMeshReply?.(owner); await api.releasePart(owner.partId); }
   });
+  it('OCCTの読み込みの失敗は元の種類と文を残した名前OcctLoadErrorで拒否し、段occt-load-throwを記録して計算の段へ進まない', async () => {
+    let loads = 0;
+    const api = createKernelApi(() => { loads += 1; return Promise.reject(new TypeError('fetch failed')); });
+    const steps = [extrudeStep('load', 'load', 10)];
+    const owner = { dispatchId: 'load-owner', partId: 'phase-load', generation: 4, kind: 'display' as const,
+      steps: steps.map(step => ({ id: step.id, key: step.key })) };
+    const channel = new MessageChannel();
+    expose(api, channel.port1);
+    const remote = wrap<ReturnType<typeof createKernelApi>>(channel.port2);
+    try {
+      // 名前は主スレッド(model の recomputePart.ts)との約束の文字なので、定数を経ずに文字で確かめる。
+      const expected = { name: 'OcctLoadError', message: 'カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed' };
+      await expect(api.recomputeSolids({ partId: owner.partId, generation: 4, steps }, {}, undefined, undefined, owner, () => true))
+        .rejects.toMatchObject(expected);
+      // Comlink は Error の name・message を運ぶ(主スレッドの recomputePart は name でこの失敗だけを見分ける)。
+      await expect(remote.recomputeSolids({ partId: owner.partId, generation: 5, steps })).rejects.toMatchObject(expected);
+      expect(loads).toBe(2);
+      if (api.readRuntimePhases === undefined) throw new Error('Actual phase observer required');
+      const records = (await api.readRuntimePhases()).records;
+      expect(records.filter(record => record.phase === 'occt-load-throw').map(record => record.dispatchId)).toEqual(['load-owner', null]);
+      expect(records.filter(record => record.phase.startsWith('native-build-'))).toEqual([]);
+    } finally { remote[releaseProxy](); channel.port1.close(); await api.releasePart(owner.partId); }
+  });
 });
 
 describe('EX12 current mesh accounting: records follow the capacity (1,000 distinct parts)', () => {

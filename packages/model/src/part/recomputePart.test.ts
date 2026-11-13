@@ -1,7 +1,9 @@
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import { createKernelApi } from '@pointercad/kernel';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 
 import {
+  createDirectKernelBridge,
   createKernelHealth,
   KERNEL_BROKEN_MESSAGE,
   toAppearanceMatches,
@@ -644,6 +646,50 @@ describe('部品の再計算(要件§6.3)', () => {
     expect(result.errors.map((error) => error.featureId)).toEqual(['extrude-1', 'extrude-2']);
     expect(result.errors[0].code).toBe('kernelFailed');
     expect(result.errors[0].message).toBe('立体を作れませんでした: Worker が落ちました');
+  });
+
+  it('Worker の例外の種類が素の Error でなければ、種類と文の両方を失敗の文に残し、頼み直さない(FR-504)', async () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA));
+    const recomputeSolids = vi.fn(() => Promise.reject(new RangeError('unreachable')));
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids }), { generation: 3 });
+
+    expect(recomputeSolids).toHaveBeenCalledTimes(1);
+    expect(result.cancelled).toBe(false);
+    expect(result.errors.map((error) => error.message)).toEqual(['立体を作れませんでした: RangeError: unreachable']);
+  });
+
+  it('実物の窓口が OCCT を読み込めなければ同じ世代で 1 回だけ頼み直し、理由と頼み直した事実を失敗の文に残す(NFR-RE-1)', async () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA));
+    // 面の作成(tessellateSketch)も同じ窓口で読み込みに失敗するが、頼み直すのは立体の再計算だけ。
+    const direct = createDirectKernelBridge(createKernelApi(() => Promise.reject(new TypeError('fetch failed'))));
+    const generations: (number | undefined)[] = [];
+    const bridge: KernelBridge = { ...direct, recomputeSolids: (steps, options) => {
+      generations.push(options?.generation);
+      return direct.recomputeSolids(steps, options);
+    } };
+    const result = await recomputePart(document, bridge, { generation: 7 });
+
+    expect(generations).toEqual([7, 7]);
+    expect(result.cancelled).toBe(false);
+    expect(result.bodies).toEqual([]);
+    expect(result.errors.filter((error) => error.featureId === 'extrude-1').map((error) => [error.code, error.message])).toEqual([['kernelFailed',
+      '立体を作れませんでした: カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed(カーネルの読み込みを1回やり直しました)']]);
+  });
+
+  it('OCCT の読み込みの失敗でも取消の後なら頼み直さない', async () => {
+    const fixture = createFixture();
+    const document = withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA));
+    let cancelled = false;
+    const recomputeSolids = vi.fn(() => {
+      cancelled = true;
+      return Promise.reject(Object.assign(new Error('カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed'), { name: 'OcctLoadError' }));
+    });
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids }), { shouldCancel: () => cancelled });
+
+    expect(recomputeSolids).toHaveBeenCalledTimes(1);
+    expect(result.cancelled).toBe(true);
   });
 
   it('スケッチの解決の失敗とカーネルの失敗を errors へ集める(FR-504)', async () => {

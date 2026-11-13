@@ -1,8 +1,8 @@
 {
   "format": "pointercad-capture-provenance/1",
   "releaseCertified": false,
-  "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
-  "adoptedAt": "2026-11-10T03:02:54.480Z",
+  "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
+  "adoptedAt": "2026-11-13T14:23:44.297Z",
   "scripts": {
     "e2e/tests/featureTreeRenameCaptureFlow.ts": "0ad94d552207e6720a3c44b03d9db7d59b2ac299c163549817d3682155afaa79",
     "e2e/tests/gdt-position.spec.ts": "5fdc9522c47ebeafebf15ab70fb19e40e111ccdfee48d122b8e9398992061c74",
@@ -50,8 +50,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:32:51.404Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:54:46.190Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "FIX-10 立体の行を右クリックして名前を変える一覧の画面を撮る",
         "script": "e2e/tests/featureTreeRenameCaptureFlow.ts",
@@ -79,7 +79,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 3131.860000014305
+          "lastCompletedAtMs": 3033.564999997616
         },
         "dialogBounds": {
           "x": 0,
@@ -111,8 +111,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:16:35.251Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:39:25.781Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "平面度とデータム参照付き直角度を作成し、編集・移動・削除Undo・保存・SVGでも意味が残る(P9-8〜18)",
         "script": "e2e/tests/gdt.spec.ts",
@@ -167,8 +167,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:16:17.319Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:39:09.593Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "実際の穴に直径0.1M/A/B/Cを付け、二面幅の中心平面・多段・失われた参照も編集して保存する",
         "script": "e2e/tests/gdt-position.spec.ts",
@@ -223,8 +223,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:16:23.935Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:39:15.692Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "実際の穴に直径0.1M/A/B/Cを付け、二面幅の中心平面・多段・失われた参照も編集して保存する",
         "script": "e2e/tests/gdt-position.spec.ts",
@@ -235,7 +235,7 @@
         },
         "screen": {
           "filename": "gdt-position-median-multirow-screen.png",
-          "sha256": "2f35f8a96a7dfb9c198198ca2cdd7b1fb78a77b47aeb8fd56418f0261a0a46e9"
+          "sha256": "d921a965bf7778af324efa1be552fa8619597a2b57c4c2f44ffe4704d9338025"
         },
         "detail": {
           "filename": "gdt-position-median-multirow-detail.png",
@@ -279,8 +279,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:16:38.759Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:39:29.219Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "平面度とデータム参照付き直角度を作成し、編集・移動・削除Undo・保存・SVGでも意味が残る(P9-8〜18)",
         "script": "e2e/tests/gdt.spec.ts",
@@ -335,8 +335,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:00.780Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:40:46.139Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-11/P12-12 設計メモと履歴フォルダを再計算なしで編集・取消・Undo・保存再開し、F1を開く",
         "script": "e2e/tests/historyFoldersFlow.ts",
@@ -364,7 +364,7 @@
         },
         "viewportRender": {
           "completedRenders": 15,
-          "lastCompletedAtMs": 4478.045000076294
+          "lastCompletedAtMs": 3220.6200000047684
         },
         "dialogBounds": {
           "x": 440,
@@ -416,8 +416,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:17:53.949Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:40:40.608Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-11/P12-12 設計メモと履歴フォルダを再計算なしで編集・取消・Undo・保存再開し、F1を開く",
         "script": "e2e/tests/historyNotesFlow.ts",
@@ -445,7 +445,7 @@
         },
         "viewportRender": {
           "completedRenders": 9,
-          "lastCompletedAtMs": 2866.1500000953674
+          "lastCompletedAtMs": 2757.1649999916553
         },
         "dialogBounds": {
           "x": 440,
@@ -484,8 +484,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:13.054Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:40:57.974Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-17 穴をあけるの章の画面を撮る",
         "script": "e2e/tests/holeCaptureFlow.ts",
@@ -512,8 +512,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 48,
-          "lastCompletedAtMs": 6284.084999918938
+          "completedRenders": 46,
+          "lastCompletedAtMs": 6084.840000003576
         },
         "dialogBounds": {
           "x": 825.296875,
@@ -545,8 +545,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:13.658Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:40:58.565Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-17 穴をあけるの章の画面を撮る",
         "script": "e2e/tests/holeCaptureFlow.ts",
@@ -573,8 +573,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 49,
-          "lastCompletedAtMs": 6976.7699999809265
+          "completedRenders": 47,
+          "lastCompletedAtMs": 6747.270000010729
         },
         "dialogBounds": {
           "x": 825.296875,
@@ -607,8 +607,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:18.538Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:41:03.403Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 読み込む章の画面を撮る",
         "script": "e2e/tests/importCaptureFlow.ts",
@@ -636,7 +636,7 @@
         },
         "viewportRender": {
           "completedRenders": 12,
-          "lastCompletedAtMs": 4058.149999976158
+          "lastCompletedAtMs": 4004.0750000178814
         },
         "dialogBounds": {
           "x": 593.875,
@@ -667,8 +667,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:25.797Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:41:10.408Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 部品の干渉を調べる章の画面を撮る",
         "script": "e2e/tests/interferenceCaptureFlow.ts",
@@ -695,8 +695,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 20,
-          "lastCompletedAtMs": 5557.985000014305
+          "completedRenders": 19,
+          "lastCompletedAtMs": 5374.180000007153
         },
         "dialogBounds": {
           "x": 804,
@@ -726,8 +726,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:31.068Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:41:15.465Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 ジョイントで動きを残す章の画面を撮る",
         "script": "e2e/tests/jointCaptureFlow.ts",
@@ -755,7 +755,7 @@
         },
         "viewportRender": {
           "completedRenders": 14,
-          "lastCompletedAtMs": 4316.759999990463
+          "lastCompletedAtMs": 4183.684999972582
         },
         "dialogBounds": {
           "x": 888,
@@ -788,15 +788,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:36.784Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:41:21.079Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 作図したデータの保存場所と通信章の画面を撮る",
         "script": "e2e/tests/localDataCaptureFlow.ts",
         "scriptSha256": "c3375c8aa3d77c05d46a4f9db9c8d8fe0be8103745bda53b45bdba68b5862ca3",
         "fixture": {
           "filename": "local-data-restore-fixture.json",
-          "sha256": "45297a3f918bdc239a2a25f04fe63bfa6948b1db80f38db82e807d9369d89a3f"
+          "sha256": "c08aca20c85a23af3b129cb4336da76a9e61bf02619c62eba959cd2b00f73dc2"
         },
         "screen": {
           "filename": "local-data-restore-screen.png",
@@ -817,7 +817,7 @@
         },
         "viewportRender": {
           "completedRenders": 3,
-          "lastCompletedAtMs": 1064.554999947548
+          "lastCompletedAtMs": 957.2899999916553
         },
         "dialogBounds": {
           "x": 610.265625,
@@ -838,7 +838,7 @@
       },
       "fixture": {
         "savedAt": "2026-09-03T09:30:00.000Z",
-        "savedByteLength": 56818
+        "savedByteLength": 56816
       }
     },
     {
@@ -848,8 +848,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:48.687Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:41:32.387Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 材料と重さを調べる章の画面を撮る",
         "script": "e2e/tests/massPropertiesCaptureFlow.ts",
@@ -877,7 +877,7 @@
         },
         "viewportRender": {
           "completedRenders": 9,
-          "lastCompletedAtMs": 3583.2750000953674
+          "lastCompletedAtMs": 3275.520000010729
         },
         "dialogBounds": {
           "x": 1161,
@@ -908,8 +908,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:18:53.364Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:41:37.044Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 部品どうしを合わせる章の画面を撮る",
         "script": "e2e/tests/mateCaptureFlow.ts",
@@ -920,7 +920,7 @@
         },
         "screen": {
           "filename": "mate-dialog-screen.png",
-          "sha256": "2084f9cfdbd8c9b401e0b19962043674c41c1cde8d6d8363e2c3eb06362876ef"
+          "sha256": "714a6f2852a83f37ad359df2e0fd3de2141c176082ed775299b8957e86276c7b"
         },
         "detail": {
           "filename": "mate-dialog-detail.png",
@@ -937,7 +937,7 @@
         },
         "viewportRender": {
           "completedRenders": 10,
-          "lastCompletedAtMs": 3895.5049999952316
+          "lastCompletedAtMs": 3874.699999988079
         },
         "dialogBounds": {
           "x": 888,
@@ -968,8 +968,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:19:49.098Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:42:28.604Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-18 Bessel四種類の値と原点と入力条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathBesselFunctionFlow.ts",
@@ -997,7 +997,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 17680.080000042915
+          "lastCompletedAtMs": 16024.870000004768
         },
         "dialogBounds": {
           "x": 360,
@@ -1032,8 +1032,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:20:13.015Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:42:50.871Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-18 Betaの値と正の入力条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathBetaFunctionFlow.ts",
@@ -1061,7 +1061,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 17313.40999996662
+          "lastCompletedAtMs": 15557.15000000596
         },
         "dialogBounds": {
           "x": 360,
@@ -1096,8 +1096,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:19:00.370Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:41:43.935Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-18 複素関数の主値と原式と入力条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathComplexElementaryFlow.ts",
@@ -1125,7 +1125,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 5663.169999957085
+          "lastCompletedAtMs": 5609.515000015497
         },
         "dialogBounds": {
           "x": 360,
@@ -1157,8 +1157,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:23:44.506Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:46:10.865Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-22 指定位置の微分・高階・角度・不成立と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathDerivativesFlow.ts",
@@ -1186,7 +1186,7 @@
         },
         "viewportRender": {
           "completedRenders": 6,
-          "lastCompletedAtMs": 1589.804999947548
+          "lastCompletedAtMs": 1539.0250000059605
         },
         "dialogBounds": {
           "x": 360,
@@ -1219,8 +1219,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:31:16.120Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:53:18.690Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-26 微分方程式の条件と解候補・保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathDifferentialEquationFlow.ts",
@@ -1248,7 +1248,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 13011.919999957085
+          "lastCompletedAtMs": 12293.655000001192
         },
         "dialogBounds": {
           "x": 360,
@@ -1290,8 +1290,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:26:55.870Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:49:15.039Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-26 離散フーリエ変換の符号と逆変換と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathDiscreteFourierFlow.ts",
@@ -1319,7 +1319,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 16190.164999961853
+          "lastCompletedAtMs": 14736.990000009537
         },
         "dialogBounds": {
           "x": 360,
@@ -1351,8 +1351,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:22:11.095Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:44:40.753Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-24 離散分布の分位点と境界の条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathDiscreteQuantilesFlow.ts",
@@ -1380,7 +1380,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 5217.530000090599
+          "lastCompletedAtMs": 5421.484999984503
         },
         "dialogBounds": {
           "x": 360,
@@ -1413,8 +1413,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:26:35.733Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:48:56.383Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-20 固有空間の成分選択・保存再編集・Undo・F1を独立した文書で通す",
         "script": "e2e/tests/mathEigenspaceFlow.ts",
@@ -1442,7 +1442,7 @@
         },
         "viewportRender": {
           "completedRenders": 8,
-          "lastCompletedAtMs": 3772.3799999952316
+          "lastCompletedAtMs": 3696.8700000047684
         },
         "dialogBounds": {
           "x": 360,
@@ -1475,8 +1475,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:20:25.564Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:43:03.092Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-18 誤差関数の小さい値と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathErrorFunctionsFlow.ts",
@@ -1504,7 +1504,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 5779.860000014305
+          "lastCompletedAtMs": 5680.635000020266
         },
         "dialogBounds": {
           "x": 360,
@@ -1536,8 +1536,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:28:25.699Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:50:40.246Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-26 フーリエ級数の係数と部分和と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathFourierSeriesFlow.ts",
@@ -1565,7 +1565,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 13385.019999980927
+          "lastCompletedAtMs": 13483.02500000596
         },
         "dialogBounds": {
           "x": 360,
@@ -1606,8 +1606,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:21:35.912Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:44:10.454Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-24 分布を宣言した確率と依存関係の条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathGeneralProbabilityFlow.ts",
@@ -1635,7 +1635,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 19131.985000014305
+          "lastCompletedAtMs": 18461.225000023842
         },
         "dialogBounds": {
           "x": 360,
@@ -1668,8 +1668,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:17:44.776Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:40:31.530Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "FIX-01 図形の測定値から作った係数を線積分の座標式に使い、答えを係数へ適用する",
         "script": "e2e/tests/mathGeometryIntegralCaptureFlow.ts",
@@ -1696,8 +1696,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 34,
-          "lastCompletedAtMs": 5987.1900000572205
+          "completedRenders": 33,
+          "lastCompletedAtMs": 5951.745000004768
         },
         "dialogBounds": {
           "x": 360,
@@ -2051,8 +2051,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:16:50.436Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:39:40.406Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-23 図形の測定値を道具・対象の両方の順で追加し、改名・係数作成・係数の式・形の変更・保存再開・循環・F1を通す",
         "script": "e2e/tests/mathGeometryReferenceFlow.ts",
@@ -2063,7 +2063,7 @@
         },
         "screen": {
           "filename": "math-geometry-palette-screen.png",
-          "sha256": "3cd41132460c38abb03e4daa86cde0e0d274a02651056113c3ee0e1ef7c55ded"
+          "sha256": "d18a7b575c6610f6b50a3bf933c0747bf6fd6366fc001c8ab8505cb6c98a7652"
         },
         "detail": {
           "filename": "math-geometry-palette-detail.png",
@@ -2080,7 +2080,7 @@
         },
         "viewportRender": {
           "completedRenders": 51,
-          "lastCompletedAtMs": 8390.889999985695
+          "lastCompletedAtMs": 8055.914999991655
         },
         "dialogBounds": {
           "x": 360,
@@ -2426,8 +2426,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:16:52.336Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:39:42.069Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-23 図形の測定値を道具・対象の両方の順で追加し、改名・係数作成・係数の式・形の変更・保存再開・循環・F1を通す",
         "script": "e2e/tests/mathGeometryReferenceFlow.ts",
@@ -2454,8 +2454,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 57,
-          "lastCompletedAtMs": 11214.789999961853
+          "completedRenders": 56,
+          "lastCompletedAtMs": 10678.280000001192
         },
         "dialogBounds": {
           "x": 1161,
@@ -2807,8 +2807,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:17:14.076Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:40:02.675Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-23 比べる幅で平行の判定を変え、Undo・Redo・保存再開で幅を保つ",
         "script": "e2e/tests/mathGeometryReferenceFlow.ts",
@@ -2836,7 +2836,7 @@
         },
         "viewportRender": {
           "completedRenders": 17,
-          "lastCompletedAtMs": 4767.965000033379
+          "lastCompletedAtMs": 4678.384999990463
         },
         "dialogBounds": {
           "x": 1173,
@@ -3182,8 +3182,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:24:31.833Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:46:57.092Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-22 積分の端点・内部の発散・無限区間と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathIntegralsFlow.ts",
@@ -3211,7 +3211,7 @@
         },
         "viewportRender": {
           "completedRenders": 6,
-          "lastCompletedAtMs": 1622.5349999666214
+          "lastCompletedAtMs": 1543.2599999904633
         },
         "dialogBounds": {
           "x": 360,
@@ -3244,8 +3244,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:27:38.169Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:49:54.523Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-26 連続変換の成立範囲と数値選択と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathIntegralTransformsFlow.ts",
@@ -3273,7 +3273,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 12858.024999976158
+          "lastCompletedAtMs": 12400.734999984503
         },
         "dialogBounds": {
           "x": 360,
@@ -3306,8 +3306,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:32:03.421Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:54:01.652Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-22 上極限と下極限の方向・整数条件を保ち、保存再編集・座標追従・Undo・F1を通す",
         "script": "e2e/tests/mathLimitBoundsFlow.ts",
@@ -3335,7 +3335,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 14044.629999995232
+          "lastCompletedAtMs": 13299.375
         },
         "dialogBounds": {
           "x": 360,
@@ -3368,8 +3368,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:22:36.705Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:45:05.618Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-24 正規分布の密度・累積・分位点の条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathNormalDistributionFlow.ts",
@@ -3397,7 +3397,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 5159.899999976158
+          "lastCompletedAtMs": 5014.659999996424
         },
         "dialogBounds": {
           "x": 360,
@@ -3431,8 +3431,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:20:48.895Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:43:25.419Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-21 展開の係数選択と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathTaylorCoefficientFlow.ts",
@@ -3460,7 +3460,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 16795.460000038147
+          "lastCompletedAtMs": 15972.22499999404
         },
         "dialogBounds": {
           "x": 360,
@@ -3494,8 +3494,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:22:25.113Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:44:53.936Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-24 χ²・t・F分布の密度・累積・分位点の条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathTestDistributionsFlow.ts",
@@ -3523,7 +3523,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 6840.034999966621
+          "lastCompletedAtMs": 6860.009999990463
         },
         "dialogBounds": {
           "x": 360,
@@ -3557,8 +3557,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:22:59.902Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:45:27.817Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-23 指定位置の勾配・行列成分・成立条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathVectorCalculusAtFlow.ts",
@@ -3569,11 +3569,11 @@
         },
         "screen": {
           "filename": "math-vector-calculus-at-screen.png",
-          "sha256": "1c6c3b0824d281fac45b242149f6c0c9f4dfb938e4cb17a7c1b9ed664347b70c"
+          "sha256": "1777c2b205d7be950fd8303951babacf05bd77a9b5a6d2c7251c2d0d04474ca2"
         },
         "detail": {
           "filename": "math-vector-calculus-at-detail.png",
-          "sha256": "e74329fd4106adcd371177f4143c857992a87fa633dc9e93f2e19203e5b0f285"
+          "sha256": "b0419bd3489f76b4ef082e4423eecaab095207c784dcbe6c3fda2cedff0ea70c"
         },
         "recompute": {
           "pendingWaiters": 0,
@@ -3586,7 +3586,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 16591.94000005722
+          "lastCompletedAtMs": 15387.810000002384
         },
         "dialogBounds": {
           "x": 360,
@@ -3626,8 +3626,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:19:24.781Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:42:05.981Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-18 ゼータ関数の値と微分と入力条件と保存再編集・Undo・F1を通す",
         "script": "e2e/tests/mathZetaFlow.ts",
@@ -3655,7 +3655,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 17721.324999928474
+          "lastCompletedAtMs": 15585.785000026226
         },
         "dialogBounds": {
           "x": 360,
@@ -3689,8 +3689,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:32:37.006Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:54:32.604Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 長さ・角度・面積を測る章の画面を撮る",
         "script": "e2e/tests/measureCaptureFlow.ts",
@@ -3718,7 +3718,7 @@
         },
         "viewportRender": {
           "completedRenders": 13,
-          "lastCompletedAtMs": 3826.280000090599
+          "lastCompletedAtMs": 3690.985000014305
         },
         "dialogBounds": {
           "x": 1161,
@@ -3749,8 +3749,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:32:46.928Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:54:41.783Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-15 名前検索から50部品の入れ子と非表示部品の所属を開いて対象行へ移動し、取消でも文書を保つ",
         "script": "e2e/tests/nameSearchFlow.ts",
@@ -3761,7 +3761,7 @@
         },
         "screen": {
           "filename": "name-search-assembly-matching-names-screen.png",
-          "sha256": "f83a36894e72b8f816bde8ce21b993c8c3956c1cdb553ae4a35a07aecc17d34a"
+          "sha256": "627ced9220256109de0fe3726962a34804e6677078f9a8d490d8495e77bdbe31"
         },
         "detail": {
           "filename": "name-search-assembly-matching-names-detail.png",
@@ -3778,7 +3778,7 @@
         },
         "viewportRender": {
           "completedRenders": 10,
-          "lastCompletedAtMs": 3361.5
+          "lastCompletedAtMs": 3393.0799999833107
         },
         "dialogBounds": {
           "x": 0,
@@ -6026,8 +6026,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:32:40.792Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:54:35.771Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-15 名前検索から200要素の別スケッチ同名点の所属を開いて対象行へ移動し、取消でも文書を保つ",
         "script": "e2e/tests/nameSearchFlow.ts",
@@ -6038,7 +6038,7 @@
         },
         "screen": {
           "filename": "name-search-part-matching-names-screen.png",
-          "sha256": "2714babca2b1e961b98f5bc15e9079a3573b1d69b106d31629175aa1ef736cea"
+          "sha256": "acf2a0e5d3b563a35a5303a1c7d27806b9e9fe6abd77eddca2f93e98f4be52f0"
         },
         "detail": {
           "filename": "name-search-part-matching-names-detail.png",
@@ -6055,7 +6055,7 @@
         },
         "viewportRender": {
           "completedRenders": 4,
-          "lastCompletedAtMs": 1792.3999999761581
+          "lastCompletedAtMs": 1263.5349999964237
         },
         "dialogBounds": {
           "x": 0,
@@ -11030,8 +11030,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:32:58.647Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:54:53.380Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "UX-03 入力の窓を見出しのドラッグで動かした画面を撮る",
         "script": "e2e/tests/numericInputDragCaptureFlow.ts",
@@ -11059,7 +11059,7 @@
         },
         "viewportRender": {
           "completedRenders": 12,
-          "lastCompletedAtMs": 2317.5599999427795
+          "lastCompletedAtMs": 2257.1349999904633
         },
         "dialogBounds": {
           "x": 454,
@@ -11103,8 +11103,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:32:55.251Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:54:50.082Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 数値と式の入れ方章の画面を撮る",
         "script": "e2e/tests/numericInputCaptureFlow.ts",
@@ -11131,8 +11131,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 11,
-          "lastCompletedAtMs": 2780.0099999904633
+          "completedRenders": 10,
+          "lastCompletedAtMs": 2744.405000001192
         },
         "dialogBounds": {
           "x": 714,
@@ -11162,8 +11162,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:32:54.684Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:54:49.482Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 数値と式の入れ方章の画面を撮る",
         "script": "e2e/tests/numericInputCaptureFlow.ts",
@@ -11174,7 +11174,7 @@
         },
         "screen": {
           "filename": "numeric-input-expression-screen.png",
-          "sha256": "873b383a51e0a214f8360beb521ccc76211cb6ff20c0f622e30f5795b29e0595"
+          "sha256": "c6b8dc26c8f00ae34df215a58c75a75fac2f6049b9c9f17fc171c2f1e51d464e"
         },
         "detail": {
           "filename": "numeric-input-expression-detail.png",
@@ -11190,8 +11190,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 10,
-          "lastCompletedAtMs": 2195.5
+          "completedRenders": 9,
+          "lastCompletedAtMs": 2150.225000023842
         },
         "dialogBounds": {
           "x": 714,

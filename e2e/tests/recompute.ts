@@ -102,6 +102,55 @@ async function readSnapshot(page: Page): Promise<RecomputeSnapshot> {
 }
 
 /**
+ * 失敗の文に添えるカーネルの段の読み取りの上限。Worker の往復を伴うので、止まった Worker で検査の残り時間を
+ * 使い切らないよう有限にする(診断だけで、合否はこの値で決めない)。
+ */
+const KERNEL_PHASE_READ_TIMEOUT_MS = 5_000;
+
+/** 失敗の文に添える帯の文(再計算の失敗の理由「立体を作れませんでした: …」はここに出る)。 */
+async function readStatusLine(page: Page): Promise<string> {
+  try {
+    return await page.evaluate(() => document.querySelector('.pcad-statusbar__text')?.textContent ?? '帯なし');
+  } catch (diagnosticError: unknown) {
+    return diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError);
+  }
+}
+
+/**
+ * 失敗の文に添えるカーネルの段(検査用の口 pcadRuntimePhases)。主スレッドと Worker の最後の 12 件を
+ * 「段:g世代:dispatch」で並べ、OCCT の読み込みの失敗(occt-load-throw)の数を添える。
+ */
+async function readKernelPhaseTail(page: Page): Promise<string> {
+  try {
+    return JSON.stringify(await page.evaluate(async (limitMs) => {
+      const reader: unknown = Reflect.get(window, 'pcadRuntimePhases');
+      if (typeof reader !== 'function') return { status: 'unavailable' };
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<'timeout'>((resolve) => { timer = setTimeout(() => { resolve('timeout'); }, limitMs); });
+      const value: unknown = await Promise.race([Promise.resolve(Reflect.apply(reader, window, [])), timeout])
+        .finally(() => { clearTimeout(timer); });
+      if (value === 'timeout') return { status: 'timeout', limitMs };
+      if (typeof value !== 'object' || value === null) return { status: 'invalid-diagnostic' };
+      const recordsOf = (side: string): readonly unknown[] => {
+        const part: unknown = Reflect.get(value, side);
+        const records: unknown = typeof part === 'object' && part !== null ? Reflect.get(part, 'records') : null;
+        return Array.isArray(records) ? records : [];
+      };
+      const label = (record: unknown): string => typeof record === 'object' && record !== null
+        ? `${String(Reflect.get(record, 'phase'))}:g${String(Reflect.get(record, 'generation'))}:${String(Reflect.get(record, 'dispatchId'))}`
+        : 'invalid-record';
+      const worker = recordsOf('worker');
+      return { status: Reflect.get(value, 'status'), reason: Reflect.get(value, 'reason'),
+        main: recordsOf('main').slice(-12).map(label), worker: worker.slice(-12).map(label),
+        occtLoadThrows: worker.filter((record) => typeof record === 'object' && record !== null
+          && Reflect.get(record, 'phase') === 'occt-load-throw').length };
+    }, KERNEL_PHASE_READ_TIMEOUT_MS));
+  } catch (diagnosticError: unknown) {
+    return diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError);
+  }
+}
+
+/**
  * 操作後に、その操作より後の最新世代が `success` で完了するまで待つ。
  *
  * `token` を省いた既存の呼び出しは、呼び出した時点の requestedGeneration を対象にする。
@@ -194,12 +243,15 @@ export async function waitForRecomputeOutcome(
     } catch (diagnosticError: unknown) {
       meshLedger = diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError);
     }
+    const statusLine = await readStatusLine(page);
+    const kernelPhases = await readKernelPhaseTail(page);
     throw new Error(
       `再計算待ち失敗: 期待=${outcome}, ロード/待機時間=${String(Date.now() - startedAtMs)}ms, ` +
         `操作前requestedGeneration=${String(baseline)}, ` +
         `最後のrequestedGeneration=${stats === null ? '未取得' : String(stats.requestedGeneration)}, ` +
         `completedGeneration=${stats === null ? '未取得' : String(stats.completedGeneration)}, ` +
-        `lastOutcome=${stats?.lastOutcome ?? '未取得'}, 最後の進捗=${lastProgress}\n${reason}\nAssembly recompute gates: ${assemblyGates}\nMesh ledger: ${meshLedger}`,
+        `lastOutcome=${stats?.lastOutcome ?? '未取得'}, 最後の進捗=${lastProgress}\n${reason}\nAssembly recompute gates: ${assemblyGates}\nMesh ledger: ${meshLedger}` +
+        `\n帯の文: ${statusLine}\nカーネルの段: ${kernelPhases}`,
       { cause: error },
     );
   }

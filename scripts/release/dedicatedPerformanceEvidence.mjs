@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { sourceFileHash } from './desktopFileInventory.mjs';
 
 const HOSTS = ['functional', 'firefox', 'electron'];
 const SCENARIOS = ['input', 'ADD-23', 'ADD-17', 'hemisphere'];
@@ -282,7 +283,9 @@ export async function loadDedicatedPerformanceEvidence(root, path, expectedSha25
   const relevant = new Set(['pnpm-lock.yaml', ...Object.keys(sourceInputs?.web ?? {}), ...Object.keys(sourceInputs?.desktop ?? {})]);
   for (const path of relevant) {
     requireValue(manifest.files.filter(row => row.path === path).length === 1, `Missing/duplicate relevant source path: ${path}`);
-    currentInputs[path] = digest(await readInside(path));
+    // Read the same way as the release build inputs (webBuildSources.mjs, sourceFileHash: CRLF as LF), so a CRLF
+    // checkout and inputs stored in Git with CRLF are compared on equal terms; differing content still differs.
+    currentInputs[path] = sourceFileHash(await readInside(path));
   }
   return { ...index, records, currentInputs };
 }
@@ -324,7 +327,9 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
     if (kind === 'w21-dedicated') {
       const cells = evidence.w21 ?? [];
       if (cells.length !== 3) return { status: 'pending', summary: 'W21 requires all three hosts and original thirty pairs' };
-      const seen = new Set();
+      // The original twenty-percent condition is judged after every other W21 qualification, so that a ratio-only
+      // shortfall can be reported with all six measured medians (an explicit release exception may only cover that).
+      const seen = new Set(), ratios = [];
       for (const cell of cells) {
         terminal(cell);
         const rows = readDedicatedPlaywrightTests(get(cell.report));
@@ -366,7 +371,9 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
             && same(pairs.map(pair => pair.index).sort(), [1, 2, 3, 4, 5]), 'W21 restart/profile pair population differs');
           const median = mode => pairs.map(pair => pair[mode].startupMs).sort((a, b) => a - b)[2];
           requireValue(medians.requiredRatio === 0.8 && medians.cold === median('cold') && medians.warm === median('warm')
-            && medians.cold > 0 && medians.warm <= medians.cold * 0.8, 'W21 original twenty-percent condition failed');
+            && medians.cold > 0, 'W21 original median record differs from its raw pairs');
+          ratios.push({ project: cell.project, network, coldMedianMs: medians.cold, warmMedianMs: medians.warm,
+            ratio: medians.warm / medians.cold, meetsOriginalCondition: medians.warm <= medians.cold * 0.8 });
           for (const row of group) for (const mode of ['cold', 'warm']) {
             if (cell.project !== 'electron') {
               const distribution = body(row, 'actual-distribution-identity');
@@ -389,7 +396,13 @@ export function checkDedicatedPerformanceEvidence(kind, evidence, sourceInputs) 
           }
         }
       }
-      return { status: 'pass', summary: 'All thirty original W21 pairs match current inputs, actual distribution or canonical Electron build, and original median criterion' };
+      const w21Ratios = Object.freeze(ratios.map(row => Object.freeze(row)));
+      if (ratios.some(row => !row.meetsOriginalCondition)) {
+        // Same refusal as before; ratioOnly tells the caller that every other W21 qualification was proven.
+        return { status: 'fail', summary: 'Dedicated raw evidence refused', problems: ['W21 original twenty-percent condition failed'],
+          w21Ratios, ratioOnly: true };
+      }
+      return { status: 'pass', summary: 'All thirty original W21 pairs match current inputs, actual distribution or canonical Electron build, and original median criterion', w21Ratios };
     }
     const pairs = evidence.w22 ?? [], seen = new Set();
     if (pairs.length !== 12) return { status: 'pending', summary: 'W22 requires all twelve normal/slow pairs' };

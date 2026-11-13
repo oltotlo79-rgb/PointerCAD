@@ -30,6 +30,7 @@
 | D2 | `README.md`の`pointercad:release-links`区間をデスクトップ先行の形にする | `README.md`(下の「READMEの形」) | 公開前検査の「README」が合格 |
 | D3 | 配布CIで5つの候補を作る(Web候補も作る。公開一覧と説明書のPDFの元になる) | `.github/workflows/release.yml`(対象commitとタグ`v<版>`を入力) | desktop・web・combineの3jobが成功 |
 | D4 | 公開前検査(デスクトップ先行) | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 -Scope Desktop -Windows <名前> -Linux <名前> -Web <名前> -Release <名前> -Sbom <名前>` | 終了コード0。[後回し]はWebのファイルの大きさ・数(Cloudflareの上限)の2項目だけで、ほかの12項目が[合格] |
+| D4b | (v1.0.3に限る)W21の比の例外 | D4に`-PerformanceEvidence <索引> -PerformanceEvidenceSha256 <SHA> -W21RatioException <JSON> -W21RatioExceptionSha256 <SHA>`を足す(利用者の決定 2026-11-13 21:23「3は今の改良が終わったら届かなくても今回のみ許容する」、`CLAUDE.md`) | W21が[許容（利用者の決定）]で、ほかは合格・後回し、終了コード0。比の条件以外(測定の欠け・RUNの重なり・manifestの不一致・W22)は通らない。次の版では使わない(0.8に戻る)。実測値と未達は公開の解説と次の版の計画に書く |
 | D5 | タグとGitHub Release(統括) | `git tag v<版>`、`gh release create v<版>` | 下の「Releaseに添付するもの」を全て添付する。本文は`docs/releases/v<版>.md` |
 | D6 | 公開後の確認(デスクトップ部分。通信する) | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 -Mode PostRelease -Scope Desktop -Release <名前> -DownloadUrl https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v<版>/` | 終了コード0(配布物3つとPDF全巻を取得して大きさ・SHA-256が`release-manifest.json`と一致し、READMEのDesktopの導線が同じ実物に届く)。結果を`docs/報告記録.md`へ |
 | W | Web版の公開時 | READMEのWeb行を`後日公開`から実際のWebアプリのリンクへ替え、説明書の目次(`https://<公開先>/manual/`)を説明書の行へ足す。`-Scope`なしの公開前検査と、11.のデプロイ確認 | 全体モードの公開前検査で終了コード0(公開後の全体モードはWeb版の公開時に実装する。今は終了コード3) |

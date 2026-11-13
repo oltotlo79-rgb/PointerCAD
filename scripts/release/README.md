@@ -183,6 +183,14 @@ node scripts/release/releaseReadiness.mjs --mode post-release --scope desktop --
 - 14項目を全て判定する。Web版の公開だけが要る「資産の大きさ・数」(Cloudflareの上限)の2項目は[後回し]と表示し、今の判定を参考に残して終了コードを止めない。ほかの12項目(説明書の5項目、版、公開用の版、全巻〔Web候補を含む〕、SBOM、公開一覧、README)は全体モードと同じ判定で、1つでも外れれば0以外。
 - READMEの導線: 配布物3つは全体モードと同じ。取扱説明書は同じGitHub Releaseに添付したPDF全巻(`https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/PointerCAD-<版>-manual-<巻>.pdf`。名前は`manualPdfReleaseAssetName`)で満たし、Webの説明書の目次は求めない。Webアプリ版の行は`後日公開`(`WEB_DEFERRED_PHRASE`)とだけ書いてリンクを置かないか、公開後なら実際のリンクを置く(そのときは説明書の目次も要る)。`後日公開`はWebアプリ版の行の外、リンクと同じ行、Webの公開先へのリンクと同じ区間では不合格。全体モードでは`後日公開`もGitHubのPDFも不合格(今までどおりWebアプリ版と説明書の目次を要求する)。
 
+#### W21の比の例外(v1.0.3に限る。利用者の決定 2026-11-13 21:23)
+
+利用者の決定「3は今の改良が終わったら届かなくても今回のみ許容する」(`CLAUDE.md`の同日21:23の項)により、v1.0.3に限り、W21の比(warmの中央値 ≤ coldの中央値 × 0.8)だけの未達を、明示の例外で通せる。判定の式(`dedicatedPerformanceEvidence.mjs`の0.8)は変えない。
+
+- 入口: `-PerformanceEvidence <索引> -PerformanceEvidenceSha256 <SHA>`に加えて`-W21RatioException <JSON> -W21RatioExceptionSha256 <SHA>`(node は`--w21-ratio-exception`・`--w21-ratio-exception-sha256`)。JSONの形は`releaseReadiness.mjs`の`parseW21RatioException`(`format`・`version`・`condition`・`requiredRatio`・`decision`・`authority`・`measurements`の6行)。
+- W21は[許容（利用者の決定）]と表示し、合格とは書かない。実測の比と0.8との差を(参考)に、例外の全文を報告のJSONに残し、合計の行にも数える。ほかが合格・後回し・この許容だけなら終了コード0。
+- 通さないもの: 測定の欠け・RUNの失敗や重なり(exclusiveでない)・manifestの不一致・W22・版が1.0.3でない例外・決定の原文や根拠の見出しが違う例外・索引の中央値と違う実測値。次の版からは例外を受け付けず、0.8に戻る。
+
 公開後モードのデスクトップ部分(P13-20のDesktop側)は3項目:
 
 | 項目 | 検査すること |

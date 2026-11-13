@@ -1,8 +1,8 @@
 {
   "format": "pointercad-capture-provenance/1",
   "releaseCertified": false,
-  "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
-  "adoptedAt": "2026-11-10T03:02:48.490Z",
+  "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
+  "adoptedAt": "2026-11-13T14:23:39.804Z",
   "scripts": {
     "e2e/tests/copyArrayCaptureFlow.ts": "990b16ff5a5ea1b4d39273ed869319dcff4e2154056725d5bb2b9f12062f1c79",
     "e2e/tests/cutCaptureFlow.ts": "b00848687890ff91ddeb9027b27409b18c302aa4912aaab999c10b247117753d",
@@ -38,8 +38,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:24.586Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:29:30.591Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 ミラー・複写・並べる章の画面を撮る",
         "script": "e2e/tests/copyArrayCaptureFlow.ts",
@@ -66,8 +66,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 25,
-          "lastCompletedAtMs": 7641.710000038147
+          "completedRenders": 22,
+          "lastCompletedAtMs": 7978.219999998808
         },
         "dialogBounds": {
           "x": 714,
@@ -100,8 +100,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:19.836Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:29:25.347Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 ミラー・複写・並べる章の画面を撮る",
         "script": "e2e/tests/copyArrayCaptureFlow.ts",
@@ -128,8 +128,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 15,
-          "lastCompletedAtMs": 2832.3700000047684
+          "completedRenders": 14,
+          "lastCompletedAtMs": 2705.2999999821186
         },
         "dialogBounds": {
           "x": 714,
@@ -159,8 +159,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:30.001Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:29:36.003Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 平面で切るの章の画面を撮る",
         "script": "e2e/tests/cutCaptureFlow.ts",
@@ -188,7 +188,7 @@
         },
         "viewportRender": {
           "completedRenders": 8,
-          "lastCompletedAtMs": 3447.75
+          "lastCompletedAtMs": 3440.880000025034
         },
         "dialogBounds": {
           "x": 714,
@@ -219,8 +219,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:34.921Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:29:41.142Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-13 2つの実保存ファイルの追加・削除・原式を比較し、元ファイルと編集中の部品を保持する",
         "script": "e2e/tests/documentDiffFlow.ts",
@@ -248,7 +248,7 @@
         },
         "viewportRender": {
           "completedRenders": 11,
-          "lastCompletedAtMs": 3424.0800000429153
+          "lastCompletedAtMs": 3497.5900000035763
         },
         "dialogBounds": {
           "x": 279,
@@ -709,8 +709,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:35.487Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:29:41.724Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-13 2つの実保存ファイルの追加・削除・原式を比較し、元ファイルと編集中の部品を保持する",
         "script": "e2e/tests/documentDiffFlow.ts",
@@ -738,7 +738,7 @@
         },
         "viewportRender": {
           "completedRenders": 11,
-          "lastCompletedAtMs": 3424.0800000429153
+          "lastCompletedAtMs": 3497.5900000035763
         },
         "dialogBounds": {
           "x": 279,
@@ -1199,8 +1199,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:45.314Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:29:50.137Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-14 実ファイルの穴開け前後を形と体積で比較し、中止と元の部品の保持を通す",
         "script": "e2e/tests/documentMaterialDiffFlow.ts",
@@ -1228,7 +1228,7 @@
         },
         "viewportRender": {
           "completedRenders": 11,
-          "lastCompletedAtMs": 3895.914999961853
+          "lastCompletedAtMs": 3198.0400000214577
         },
         "dialogBounds": {
           "x": 279,
@@ -1644,8 +1644,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:44.762Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:29:49.600Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-14 実ファイルの穴開け前後を形と体積で比較し、中止と元の部品の保持を通す",
         "script": "e2e/tests/documentMaterialDiffFlow.ts",
@@ -1673,7 +1673,7 @@
         },
         "viewportRender": {
           "completedRenders": 11,
-          "lastCompletedAtMs": 3895.914999961853
+          "lastCompletedAtMs": 3198.0400000214577
         },
         "dialogBounds": {
           "x": 279,
@@ -2089,8 +2089,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:53.986Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:29:58.189Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P9 図面の控えを起動時に案内し、全14公差・8溶接を復元して再保存まで保持する",
         "script": "e2e/tests/drawing-recovery.spec.ts",
@@ -2118,7 +2118,7 @@
         },
         "viewportRender": {
           "completedRenders": 4,
-          "lastCompletedAtMs": 1192.1150000095367
+          "lastCompletedAtMs": 1104.25
         },
         "dialogBounds": {
           "x": 585,
@@ -4073,8 +4073,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:06:57.310Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:00.874Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P9 図面の控えを起動時に案内し、全14公差・8溶接を復元して再保存まで保持する",
         "script": "e2e/tests/drawing-recovery.spec.ts",
@@ -6054,8 +6054,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:16.821Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:19.183Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "FIX-13 用紙の縮尺・縮尺の候補・文字高さに式を入れて適用した画面を撮る",
         "script": "e2e/tests/drawingSheetExpressionCaptureFlow.ts",
@@ -6066,7 +6066,7 @@
         },
         "screen": {
           "filename": "drawing-sheet-expression-screen.png",
-          "sha256": "6141fadef7833bf4ba0c48ce160c03504c4aff2a8918b55cffe541d466375fdd"
+          "sha256": "f7215cb7e5e71e2e336353b83a9d53a63a591ee7d4bc2d26165d5f2cd5ca1aa6"
         },
         "detail": {
           "filename": "drawing-sheet-expression-detail.png",
@@ -6116,8 +6116,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:22.367Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:24.610Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P8 元部品の100×40×60をA3の1:1で寸法記入し、元を120へ更新・Undo・保存往復する",
         "script": "e2e/tests/drawing-source-refresh.spec.ts",
@@ -6172,8 +6172,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:27.603Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:29.706Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P11b DWGは選択前に変換手順へ案内し文書を変えない",
         "script": "e2e/tests/dwgFlow.ts",
@@ -6201,7 +6201,7 @@
         },
         "viewportRender": {
           "completedRenders": 3,
-          "lastCompletedAtMs": 1612.8349999189377
+          "lastCompletedAtMs": 1530.9750000238419
         },
         "dialogBounds": {
           "x": 179,
@@ -6239,8 +6239,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:32.057Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:34.102Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 オフセット・トリム・延長章の画面を撮る",
         "script": "e2e/tests/editCurvesCaptureFlow.ts",
@@ -6268,7 +6268,7 @@
         },
         "viewportRender": {
           "completedRenders": 13,
-          "lastCompletedAtMs": 2719.485000014305
+          "lastCompletedAtMs": 2582.280000001192
         },
         "dialogBounds": {
           "x": 714,
@@ -6299,8 +6299,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:35.523Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:37.523Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 かいたものを直す章の画面を撮る",
         "script": "e2e/tests/editSketchCaptureFlow.ts",
@@ -6328,7 +6328,7 @@
         },
         "viewportRender": {
           "completedRenders": 17,
-          "lastCompletedAtMs": 2633.914999961853
+          "lastCompletedAtMs": 2614.059999972582
         },
         "dialogBounds": {
           "x": 1160,
@@ -6359,8 +6359,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:39.067Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:41.016Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 楕円をかく章の画面を撮る",
         "script": "e2e/tests/ellipseCaptureFlow.ts",
@@ -6388,7 +6388,7 @@
         },
         "viewportRender": {
           "completedRenders": 9,
-          "lastCompletedAtMs": 2778.2150000333786
+          "lastCompletedAtMs": 2769.419999986887
         },
         "dialogBounds": {
           "x": 714,
@@ -6424,8 +6424,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:38.415Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:40.382Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 楕円をかく章の画面を撮る",
         "script": "e2e/tests/ellipseCaptureFlow.ts",
@@ -6453,7 +6453,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 2136.835000038147
+          "lastCompletedAtMs": 2115.395000010729
         },
         "dialogBounds": {
           "x": 714,
@@ -6488,8 +6488,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:44.923Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:46.632Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 分解した見せ方を作る章の画面を撮る",
         "script": "e2e/tests/explodeCaptureFlow.ts",
@@ -6500,7 +6500,7 @@
         },
         "screen": {
           "filename": "explode-dialog-screen.png",
-          "sha256": "e151bff20852f78621866c2066b44d6dcd0cb151406700da3eaa67d6117c0117"
+          "sha256": "d0381d668318409e5768e2e2d95266c16739388c57fa575250e8b22d1a2edb94"
         },
         "detail": {
           "filename": "explode-dialog-detail.png",
@@ -6517,7 +6517,7 @@
         },
         "viewportRender": {
           "completedRenders": 19,
-          "lastCompletedAtMs": 4940.110000014305
+          "lastCompletedAtMs": 4770.585000008345
         },
         "dialogBounds": {
           "x": 256,
@@ -6548,8 +6548,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:49.336Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:51.005Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 書き出す章の画面を撮る",
         "script": "e2e/tests/exportCaptureFlow.ts",
@@ -6560,7 +6560,7 @@
         },
         "screen": {
           "filename": "export-panel-step-screen.png",
-          "sha256": "55fede6ecc64e540f8fc49381c8f63688d65e4cfaba645c9c2e1eb6b65a0a28a"
+          "sha256": "0021164161e9179429fe3b82799145432c89ec0ec7fe2dd1874d4e9976819a9c"
         },
         "detail": {
           "filename": "export-panel-step-detail.png",
@@ -6577,7 +6577,7 @@
         },
         "viewportRender": {
           "completedRenders": 8,
-          "lastCompletedAtMs": 3460.9400000572205
+          "lastCompletedAtMs": 3419.7399999797344
         },
         "dialogBounds": {
           "x": 179,
@@ -6609,8 +6609,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:50.019Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:51.642Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 書き出す章の画面を撮る",
         "script": "e2e/tests/exportCaptureFlow.ts",
@@ -6638,7 +6638,7 @@
         },
         "viewportRender": {
           "completedRenders": 8,
-          "lastCompletedAtMs": 3460.9400000572205
+          "lastCompletedAtMs": 3419.7399999797344
         },
         "dialogBounds": {
           "x": 179,
@@ -6669,8 +6669,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:07:54.870Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:30:56.346Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12 面を張る・色を変える章の画面を撮る",
         "script": "e2e/tests/faceAndColorCaptureFlow.ts",
@@ -6697,8 +6697,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 17,
-          "lastCompletedAtMs": 3521.310000061989
+          "completedRenders": 15,
+          "lastCompletedAtMs": 3382.1350000202656
         },
         "dialogBounds": {
           "x": 1160,
@@ -6728,8 +6728,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:08:01.850Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:31:03.261Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-17 角を丸める・面を取るの章の画面を撮る",
         "script": "e2e/tests/filletChamferCaptureFlow.ts",
@@ -6756,8 +6756,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 45,
-          "lastCompletedAtMs": 6010.195000052452
+          "completedRenders": 42,
+          "lastCompletedAtMs": 5964.965000003576
         },
         "dialogBounds": {
           "x": 1160,
@@ -6788,8 +6788,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:08:03.227Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:31:04.617Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "P12-17 角を丸める・面を取るの章の画面を撮る",
         "script": "e2e/tests/filletChamferCaptureFlow.ts",
@@ -6800,7 +6800,7 @@
         },
         "screen": {
           "filename": "fillet-chamfer-round-screen.png",
-          "sha256": "f1db5019c0bd71313ee67168f32f61040f7313bbe8d33c1449e5e0013b3d4367"
+          "sha256": "6dd56398a41c651ae2a385ab17b5ec289b500b0c48dfe7c359a0b0b5f659866c"
         },
         "detail": {
           "filename": "fillet-chamfer-round-detail.png",
@@ -6816,8 +6816,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 53,
-          "lastCompletedAtMs": 7570.955000042915
+          "completedRenders": 50,
+          "lastCompletedAtMs": 7487.449999988079
         },
         "dialogBounds": {
           "x": 714,
@@ -6848,8 +6848,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:12:07.578Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:35:00.196Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 関数曲線の必須XYZ範囲・確認・数学入力・保存再編集・Undo",
         "script": "e2e/tests/functionPlotFlow.ts",
@@ -6877,7 +6877,7 @@
         },
         "viewportRender": {
           "completedRenders": 6,
-          "lastCompletedAtMs": 2737.2099999189377
+          "lastCompletedAtMs": 2715.2100000083447
         },
         "dialogBounds": {
           "x": 360,
@@ -6907,8 +6907,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:11:47.045Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:34:40.803Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 球面の例でもXYZを必須にし、閉立体と切断後の開面を区別する",
         "script": "e2e/tests/functionClosedSurfaceFlow.ts",
@@ -6936,7 +6936,7 @@
         },
         "viewportRender": {
           "completedRenders": 3,
-          "lastCompletedAtMs": 1466.3499999046326
+          "lastCompletedAtMs": 1453.375
         },
         "dialogBounds": {
           "x": 220,
@@ -6966,15 +6966,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:11:56.283Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:34:49.387Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 球面の例でもXYZを必須にし、閉立体と切断後の開面を区別する",
         "script": "e2e/tests/functionClosedSurfaceFlow.ts",
         "scriptSha256": "9eb9dd81f59fd501ae6acdf2caec5eb18aca31c384962f8ce6a0fdc29cc22638",
         "fixture": {
           "filename": "function-cut-sphere-fixture.json",
-          "sha256": "0292cdff7b2bc8f6d31e37643add2716b53a93262b4d190aefaabed2f71aeb31"
+          "sha256": "9f25bbfa6bd7d8dc6a9952826dabc404ae5acd162952703ae000f49bf4464178"
         },
         "screen": {
           "filename": "function-cut-sphere-screen.png",
@@ -6995,7 +6995,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 5985.739999890327
+          "lastCompletedAtMs": 5477.6500000059605
         },
         "dialogBounds": {
           "x": 220,
@@ -7016,7 +7016,7 @@
       },
       "fixture": {
         "mathParameterSerial": 0,
-        "id": "part-uuid:498e4f3f-e6cd-4e94-8450-b49b4a77f9e4",
+        "id": "part-uuid:11d02651-f489-42ca-9cdb-e7f00622a87b",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -7444,8 +7444,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:09:31.853Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:32:30.521Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-22 導関数を曲線と曲面に使い、原式の保存再開・編集Undo・F1を通す",
         "script": "e2e/tests/functionDerivativesFlow.ts",
@@ -7456,11 +7456,11 @@
         },
         "screen": {
           "filename": "function-derivative-screen.png",
-          "sha256": "7463c8a41551bfe66173896bbc31933037ea45898537c15c3b9b5dde9beaf0d4"
+          "sha256": "2b7a85b3df304851000a5ae180dd7a2640e6b3bad7396a9f790c905f189384f8"
         },
         "detail": {
           "filename": "function-derivative-detail.png",
-          "sha256": "bc959b01b5de1515e515eb1ed39467f655a6bf88552dd96c693abe88b1caa0bb"
+          "sha256": "ea0c9c973f6d9c47e9a2f78f2594ae4e4e06b6aa45112042d207915f75e4d279"
         },
         "recompute": {
           "pendingWaiters": 0,
@@ -7473,7 +7473,7 @@
         },
         "viewportRender": {
           "completedRenders": 4,
-          "lastCompletedAtMs": 4089.5199999809265
+          "lastCompletedAtMs": 4021.610000014305
         },
         "dialogBounds": {
           "x": 220,
@@ -7518,15 +7518,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:12:41.763Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:35:32.759Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 座標式曲面の点から接線・法線を作り、保存再開・長さ編集・作成と編集のUndoを通す",
         "script": "e2e/tests/functionDirectionFlow.ts",
         "scriptSha256": "0faea5790bdc1842f1184399692db54f8f168281b686eb383d7ac0fc7be0c783",
         "fixture": {
           "filename": "function-direction-implicit-surface-preview-fixture.json",
-          "sha256": "57a799798a68d9f7fd647664876e7ad6b8f606ac81c5b701c4480be7c40a4193"
+          "sha256": "17558315a36232fe9f932abf73d9544469c243d6090478bb72a4dedf6e800273"
         },
         "screen": {
           "filename": "function-direction-implicit-surface-preview-screen.png",
@@ -7547,7 +7547,7 @@
         },
         "viewportRender": {
           "completedRenders": 28,
-          "lastCompletedAtMs": 9473.409999966621
+          "lastCompletedAtMs": 9153.264999985695
         },
         "dialogBounds": {
           "x": 220,
@@ -7568,7 +7568,7 @@
       },
       "fixture": {
         "mathParameterSerial": 0,
-        "id": "part-uuid:d81309fd-9f5a-4c03-a6b8-53ec38692272",
+        "id": "part-uuid:4fce228c-f49e-4dff-bdfb-17d7cab04e20",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -8045,15 +8045,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:12:51.979Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:35:42.537Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 座標式曲面の点から接線・法線を作り、保存再開・長さ編集・作成と編集のUndoを通す",
         "script": "e2e/tests/functionDirectionFlow.ts",
         "scriptSha256": "0faea5790bdc1842f1184399692db54f8f168281b686eb383d7ac0fc7be0c783",
         "fixture": {
           "filename": "function-direction-measure-fixture.json",
-          "sha256": "2eb9da4fdf6b8d81c49e5f9caa09c96389c809ec8396c2364ae5d1785459f939"
+          "sha256": "f7579074f65b0fd1f955711b0fb868af70e5787bfa8e2f89c24751fd729633a9"
         },
         "screen": {
           "filename": "function-direction-measure-screen.png",
@@ -8073,8 +8073,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 29,
-          "lastCompletedAtMs": 7919.294999957085
+          "completedRenders": 28,
+          "lastCompletedAtMs": 7620.030000001192
         },
         "dialogBounds": {
           "x": 1160,
@@ -8095,7 +8095,7 @@
       },
       "fixture": {
         "mathParameterSerial": 0,
-        "id": "part-uuid:d81309fd-9f5a-4c03-a6b8-53ec38692272",
+        "id": "part-uuid:4fce228c-f49e-4dff-bdfb-17d7cab04e20",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -8787,8 +8787,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:09:13.985Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:32:13.131Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-17 双曲線関数の曲線・逆関数の曲面を作成し、原式の保存再開・編集Undo・F1を通す",
         "script": "e2e/tests/functionHyperbolicFlow.ts",
@@ -8799,11 +8799,11 @@
         },
         "screen": {
           "filename": "function-hyperbolic-screen.png",
-          "sha256": "dd8e97c08c1f3f9067c7a1e0b4109d6fb5812523cffeb33b4cd2881316f5eade"
+          "sha256": "5293d08fbaaa45355e4efd613abd0b37d4d438509e801606c929adb292fbe6df"
         },
         "detail": {
           "filename": "function-hyperbolic-detail.png",
-          "sha256": "aef962175dd45b46ae6e9485bb04fb9509264437d3b6ab6eb9927cb7991e19a3"
+          "sha256": "4a6888666fb05c1e815cddb453659d0fc88bb04526e2e3dd10e22e628d80455b"
         },
         "recompute": {
           "pendingWaiters": 0,
@@ -8816,7 +8816,7 @@
         },
         "viewportRender": {
           "completedRenders": 4,
-          "lastCompletedAtMs": 4129.875
+          "lastCompletedAtMs": 4142.979999989271
         },
         "dialogBounds": {
           "x": 220,
@@ -8861,8 +8861,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:11:22.793Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:34:17.450Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 平面等式の全XYZ・固定軸・数学入力・保存再開・開閉とUndoを操作する",
         "script": "e2e/tests/functionImplicitCurveFlow.ts",
@@ -8890,7 +8890,7 @@
         },
         "viewportRender": {
           "completedRenders": 3,
-          "lastCompletedAtMs": 1419.4900000095367
+          "lastCompletedAtMs": 1441.4950000047684
         },
         "dialogBounds": {
           "x": 220,
@@ -8920,15 +8920,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:11:38.230Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:34:31.991Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 空間等式でもXYZを必須にし、保存再開と範囲変更で閉立体から開面へ変える",
         "script": "e2e/tests/functionClosedSurfaceFlow.ts",
         "scriptSha256": "9eb9dd81f59fd501ae6acdf2caec5eb18aca31c384962f8ce6a0fdc29cc22638",
         "fixture": {
           "filename": "function-implicit-cut-sphere-fixture.json",
-          "sha256": "dd2880f4c6e1c50b40fe3df0e94d489a1122b237761fff04d8a01ca9e1e35960"
+          "sha256": "414c027acbd454da0962ed8974048482e16be373d272a91959cfe33a48be2589"
         },
         "screen": {
           "filename": "function-implicit-cut-sphere-screen.png",
@@ -8949,7 +8949,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 2092.225000023842
+          "lastCompletedAtMs": 2016.3050000071526
         },
         "dialogBounds": {
           "x": 220,
@@ -8970,7 +8970,7 @@
       },
       "fixture": {
         "mathParameterSerial": 0,
-        "id": "part-uuid:41c744c6-a2e2-46b9-8348-2c94084add9c",
+        "id": "part-uuid:e31efe93-10bf-4740-bbd4-2f1b93709856",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -9316,15 +9316,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:11:27.591Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:34:22.074Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 平面等式の全XYZ・固定軸・数学入力・保存再開・開閉とUndoを操作する",
         "script": "e2e/tests/functionImplicitCurveFlow.ts",
         "scriptSha256": "cf1a890bf6c5124b1001aafd16997da413abd94dbb3a9b21b01273ee7cdd2728",
         "fixture": {
           "filename": "function-implicit-open-arc-fixture.json",
-          "sha256": "c565114ba1b575ebf384eadaf1b1b9925b8a4ff9154874fd0aadf757208daab9"
+          "sha256": "76a8331d9bab0006870782a33527a67a7b2e8f5ef159f9acbddcf5ecd166c48d"
         },
         "screen": {
           "filename": "function-implicit-open-arc-screen.png",
@@ -9345,7 +9345,7 @@
         },
         "viewportRender": {
           "completedRenders": 6,
-          "lastCompletedAtMs": 2203.430000066757
+          "lastCompletedAtMs": 2139.6599999964237
         },
         "dialogBounds": {
           "x": 220,
@@ -9366,7 +9366,7 @@
       },
       "fixture": {
         "mathParameterSerial": 0,
-        "id": "part-uuid:730ec30e-fa7b-41c2-8929-97334d94a80c",
+        "id": "part-uuid:cf2de85f-cf84-4124-9730-73e3f002ac21",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -9706,8 +9706,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:11:33.649Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:34:27.533Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 空間等式でもXYZを必須にし、保存再開と範囲変更で閉立体から開面へ変える",
         "script": "e2e/tests/functionClosedSurfaceFlow.ts",
@@ -9735,7 +9735,7 @@
         },
         "viewportRender": {
           "completedRenders": 3,
-          "lastCompletedAtMs": 1502.4750000238419
+          "lastCompletedAtMs": 1438.3550000190735
         },
         "dialogBounds": {
           "x": 220,
@@ -9765,15 +9765,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:11:12.336Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:34:07.385Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 関数上の点をXYZから選び、保存再開・指定座標変更で同じ点を更新する",
         "script": "e2e/tests/functionPointFlow.ts",
         "scriptSha256": "d122e7cb38412e64d65a1b27d5e27a16fd8e2f0e26f0e4c9cbfdd144b0a981cb",
         "fixture": {
           "filename": "function-point-candidates-fixture.json",
-          "sha256": "22489bc0ba72d5d1853e253fd955d6208ca66d8dd326009ed16f61913ba8d92e"
+          "sha256": "17ed5a34d94cf688e9b201d06b1579e30cd18f9b640f533ae08ecc718f9bf3e7"
         },
         "screen": {
           "filename": "function-point-candidates-screen.png",
@@ -9794,7 +9794,7 @@
         },
         "viewportRender": {
           "completedRenders": 13,
-          "lastCompletedAtMs": 5138.839999914169
+          "lastCompletedAtMs": 4649.935000002384
         },
         "dialogBounds": {
           "x": 220,
@@ -9815,7 +9815,7 @@
       },
       "fixture": {
         "mathParameterSerial": 0,
-        "id": "part-uuid:6d71fc8c-f858-458f-afa5-94a755db599d",
+        "id": "part-uuid:16d28469-0f92-4875-bf06-7cc7b21a27ab",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -10161,23 +10161,23 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:10:32.617Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:33:29.614Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 座標断面線の範囲拒否・Y座標の作成再編集・Undo・保存再開",
         "script": "e2e/tests/functionSectionFlow.ts",
         "scriptSha256": "7cd014804856103be0d416b639c91b73a710b095ac7cefe256bebe3fd9786682",
         "fixture": {
           "filename": "function-section-coordinate-fixture.json",
-          "sha256": "17874751640e416a27786418959d891bea58b294a777818248b1b8fc7e320fc0"
+          "sha256": "a2fc30393939c3312cf86c313e38fc63ad5cd3612733d6dc94f727dcdfb6939e"
         },
         "screen": {
           "filename": "function-section-coordinate-screen.png",
-          "sha256": "8ad8787c850d3aed1b05aa55c99d0936dc88fa78507f973a641bcf6ae0d81e9e"
+          "sha256": "f0f45405830807bcc9809fadbdc422ec6da6ef07cbcf600346d2cb62aa7989c3"
         },
         "detail": {
           "filename": "function-section-coordinate-detail.png",
-          "sha256": "02ee9d4480b5d9d2ec3c818ec24b459e56c0d9f22fa6cea0c7d5f1dd18169b15"
+          "sha256": "eb121614d0b7efa57d9f691f7bf44f02f49f0fa1ae4023aae814e47bda040fa4"
         },
         "recompute": {
           "pendingWaiters": 0,
@@ -10190,7 +10190,7 @@
         },
         "viewportRender": {
           "completedRenders": 17,
-          "lastCompletedAtMs": 5462.3550000190735
+          "lastCompletedAtMs": 5874.660000026226
         },
         "dialogBounds": {
           "x": 220,
@@ -10211,7 +10211,7 @@
       },
       "fixture": {
         "mathParameterSerial": 0,
-        "id": "part-uuid:71672944-b834-406e-bf2f-23609fc213a1",
+        "id": "part-uuid:5fd830d5-1fb2-4df3-9593-e3365d82246c",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -10505,15 +10505,15 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:12:30.401Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:35:21.756Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 関数曲面の必須XYZ範囲・実形状確認・保存再編集・U V・Undo",
         "script": "e2e/tests/functionSurfaceFlow.ts",
         "scriptSha256": "d91f195208355ad8bf74e82482c4711f290742a39c12ceba314c77cfae3a82ce",
         "fixture": {
           "filename": "function-surface-parametric-fixture.json",
-          "sha256": "5d2f3eb978913d1da3c7d662c70a7e2a35b53223670ccf7ec2b4c325e2b7c6d9"
+          "sha256": "1ff954e1de458767e4033f22e8be4036e2eee36ca473339d6e59f44f5eff89b3"
         },
         "screen": {
           "filename": "function-surface-parametric-screen.png",
@@ -10534,7 +10534,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 2155.329999923706
+          "lastCompletedAtMs": 2047.8149999976158
         },
         "dialogBounds": {
           "x": 220,
@@ -10555,7 +10555,7 @@
       },
       "fixture": {
         "mathParameterSerial": 0,
-        "id": "part-uuid:71f8f5b6-ba55-4c30-a8d2-83b878fec914",
+        "id": "part-uuid:16899589-caef-435b-bf42-c2242693b853",
         "name": "部品1",
         "schemaVersion": 22,
         "sketches": [
@@ -10849,8 +10849,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:12:23.346Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:35:14.852Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 関数曲面の必須XYZ範囲・実形状確認・保存再編集・U V・Undo",
         "script": "e2e/tests/functionSurfaceFlow.ts",
@@ -10878,7 +10878,7 @@
         },
         "viewportRender": {
           "completedRenders": 11,
-          "lastCompletedAtMs": 3089.454999923706
+          "lastCompletedAtMs": 2980.5450000166893
         },
         "dialogBounds": {
           "x": 220,
@@ -10908,8 +10908,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:12:16.943Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:35:09.104Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 関数曲線の必須XYZ範囲・確認・数学入力・保存再編集・Undo",
         "script": "e2e/tests/functionPlotFlow.ts",
@@ -10936,8 +10936,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 50,
-          "lastCompletedAtMs": 12644.644999980927
+          "completedRenders": 51,
+          "lastCompletedAtMs": 11986.960000008345
         },
         "dialogBounds": {
           "x": 1160,
@@ -10967,8 +10967,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:08:08.679Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:31:09.827Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-23 勾配とヘッセ行列の成分を曲線と曲面に使い、保存再開・ラプラシアンへ編集・Undo・F1を通す",
         "script": "e2e/tests/functionVectorCalculusFlow.ts",
@@ -10996,7 +10996,7 @@
         },
         "viewportRender": {
           "completedRenders": 4,
-          "lastCompletedAtMs": 4453.134999990463
+          "lastCompletedAtMs": 4259.004999995232
         },
         "dialogBounds": {
           "x": 220,
@@ -11041,8 +11041,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-11-10T02:12:03.063Z",
-        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "capturedAt": "2026-11-13T13:34:55.938Z",
+        "applicationBuildId": "7f84277be13809c2b90f6880cf94157a960257c49a70fc4ecbe8f35e0a3b572d",
         "project": "functional",
         "sourceTest": "ADD-FUNCTION 関数曲線の必須XYZ範囲・確認・数学入力・保存再編集・Undo",
         "script": "e2e/tests/functionPlotFlow.ts",
@@ -11070,7 +11070,7 @@
         },
         "viewportRender": {
           "completedRenders": 7,
-          "lastCompletedAtMs": 2464.2050000429153
+          "lastCompletedAtMs": 2284.2549999952316
         },
         "dialogBounds": {
           "x": 220,

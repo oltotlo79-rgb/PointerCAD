@@ -1,4 +1,4 @@
-import type { DedicatedPerformanceEvidence } from './dedicatedPerformanceEvidence.mjs';
+import type { DedicatedPerformanceEvidence, DedicatedW21Ratio } from './dedicatedPerformanceEvidence.mjs';
 import type { CaptureRegistry } from '../manual/captureRegistry.mjs';
 import type { OfflineAssetInput } from '../vite/offlineAssets.mjs';
 import type { ReleaseCandidateInput, ReleaseManifestInput } from './releaseManifest.mjs';
@@ -7,8 +7,11 @@ import type { ReleaseCandidateInput, ReleaseManifestInput } from './releaseManif
 export type ReleaseReadinessMode = 'pre-release' | 'post-release' | 'manual';
 /** all: every condition, the Web ones included. desktop: the desktop-first release (2026-09-27); Web-only conditions are deferred. */
 export type ReleaseReadinessScope = 'all' | 'desktop';
-/** deferred: a Web-only condition in the desktop scope, judged for reference and left for the Web publication. */
-export type ReleaseReadinessStatus = 'pass' | 'fail' | 'pending' | 'not-implemented' | 'deferred';
+/**
+ * deferred: a Web-only condition in the desktop scope, judged for reference and left for the Web publication.
+ * tolerated: the W21 ratio condition left unmet under the explicit v1.0.3 exception (user decision 2026-11-13 21:23); never pass.
+ */
+export type ReleaseReadinessStatus = 'pass' | 'fail' | 'pending' | 'not-implemented' | 'deferred' | 'tolerated';
 
 export interface ReleaseReadinessCheck {
   readonly id: string;
@@ -26,10 +29,36 @@ export interface ReleaseReadinessReport {
   /** The gate never certifies publication; the post-release check against the real URLs is separate (P13-20). */
   readonly releaseCertified: false;
   readonly checks: readonly ReleaseReadinessCheck[];
-  /** Deferred checks do not block exit code 0 (desktop scope only). */
-  readonly summary: { readonly pass: number; readonly fail: number; readonly pending: number; readonly notImplemented: number;
-    readonly deferred: number };
+  /** Deferred and tolerated checks do not block exit code 0. tolerated is present only when at least one check is tolerated. */
+  readonly summary: ReleaseReadinessSummary;
   readonly exitCode: number;
+}
+
+export interface ReleaseReadinessSummary {
+  readonly pass: number; readonly fail: number; readonly pending: number; readonly notImplemented: number; readonly deferred: number;
+  readonly tolerated?: number;
+}
+/** One row of the exception's measured medians (equal to the dedicated index); ratio may be rounded to three decimals. */
+export interface W21RatioExceptionMeasurement {
+  readonly project: string; readonly network: string; readonly coldMedianMs: number; readonly warmMedianMs: number; readonly ratio: number;
+}
+export interface W21RatioException {
+  readonly format: 'pointercad-w21-ratio-exception/1';
+  readonly version: string;
+  readonly condition: string;
+  readonly requiredRatio: number;
+  readonly decision: { readonly date: string; readonly time: string; readonly text: string };
+  readonly authority: { readonly document: string; readonly heading: string };
+  readonly measurements: readonly W21RatioExceptionMeasurement[];
+}
+export interface W21RatioExceptionFile {
+  readonly path: string; readonly sha256: string; readonly text: string; readonly value: W21RatioException;
+  /** CLAUDE.md, which must contain the decision's heading and original words. */
+  readonly authorityText?: string;
+}
+export interface W21Outcome {
+  readonly status: ReleaseReadinessStatus; readonly summary: string; readonly problems?: readonly string[]; readonly notes?: readonly string[];
+  readonly w21Ratios?: readonly DedicatedW21Ratio[]; readonly ratioOnly?: boolean;
 }
 
 export interface CurrentHelpChapter {
@@ -118,6 +147,8 @@ export interface PreReleaseInput {
   readonly currentHelp: CurrentHelpEdition | null;
   /** null makes condition ④ pending (exit code 2); loadCaptureFreshness() always returns a working hook. */
   readonly captureFreshness: CaptureFreshnessHook | null;
+  /** The loaded W21 ratio exception (--w21-ratio-exception); null or absent: none. */
+  readonly w21RatioException?: W21RatioExceptionFile | null;
   readonly readErrors?: Readonly<Record<string, string>>;
 }
 /** One download from the published release; sha256 is null unless status is 200. */
@@ -176,6 +207,8 @@ export interface ReleaseReadinessOptions {
   readonly report?: string;
   readonly performanceEvidence?: string;
   readonly performanceEvidenceSha256?: string;
+  readonly w21RatioException?: string;
+  readonly w21RatioExceptionSha256?: string;
 }
 export interface ReadmeReleaseLinkRow {
   readonly kind: 'windows-installer' | 'windows-portable' | 'linux-appimage' | 'manual' | 'web-app';
@@ -236,5 +269,14 @@ export function readPostReleaseInput(root: string, options: ReleaseReadinessOpti
 /** Streams the body into SHA-256 (redirects followed); any status but 200 is returned without reading the body. */
 export function createReleaseDownloader(options?: { readonly fetch?: typeof globalThis.fetch; readonly timeoutMs?: number;
   readonly maxBytes?: number }): ReleaseDownloadHook;
+export const W21_RATIO_EXCEPTION_FORMAT: 'pointercad-w21-ratio-exception/1';
+/** The only version the W21 ratio exception is valid for; every other version refuses it. */
+export const W21_RATIO_EXCEPTION_VERSION: '1.0.3';
+export const W21_RATIO_EXCEPTION_DECISION: { readonly date: string; readonly time: string; readonly text: string };
+export function parseW21RatioException(text: string): W21RatioException;
+export function applyW21RatioException(outcome: W21Outcome, exception: W21RatioExceptionFile | null | undefined,
+  context?: { readonly packageVersion?: string | null; readonly authorityText?: string }): W21Outcome;
+export function summarizeReleaseReadinessChecks(checks: readonly { readonly status: string }[]): {
+  readonly summary: ReleaseReadinessSummary; readonly exitCode: number };
 export function runReleaseReadiness(args: readonly string[],
   options?: { readonly root?: string; readonly write?: (text: string) => void; readonly download?: ReleaseDownloadHook | null }): Promise<number>;

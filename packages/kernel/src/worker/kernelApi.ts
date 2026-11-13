@@ -125,6 +125,22 @@ export interface ShapeAvailability {
 }
 
 /**
+ * OCCT の読み込み(取得・検証・compile)の失敗に付ける名前(FR-504、NFR-RE-1)。
+ * Comlink は Error の name・message を運ぶので、主スレッドの recomputePart(model の recomputePart.ts に
+ * 同じ文字の定数がある)はこの名前で読み込みの失敗だけを見分けて同じ世代を 1 回だけ頼み直す。
+ * 計算そのものの例外にはこの名前を付けない。kernel の公開の名前は増やさない。
+ */
+const OCCT_LOAD_ERROR_NAME = 'OcctLoadError';
+
+/** 読み込みの失敗を、元の例外の種類と文を残したまま OCCT_LOAD_ERROR_NAME の例外にして投げ直す。 */
+function markOcctLoadFailure(cause: unknown): never {
+  const detail = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
+  const error = new Error(`カーネル(OCCT)を読み込めませんでした: ${detail}`, { cause });
+  error.name = OCCT_LOAD_ERROR_NAME;
+  throw error;
+}
+
+/**
  * 投影・交差(FR-325)のもとになる立体が形状キャッシュに無いとき。
  *
  * 形は `recomputeSolids` が段を作ったときに預けられるので、通常は必ず当たる。
@@ -458,7 +474,9 @@ function capturedCurrentMeshOwner(owner: CurrentMeshOwner): CurrentMeshOwner {
 
 export type KernelRuntimePhase = 'native-build-start' | 'native-build-return' | 'native-build-throw'
   | 'native-build-cancelled' | 'geometry-cancel-check' | 'geometry-cancel-request'
-  | 'geometry-cancel-check-throw' | 'reply-preclone' | 'reply-admission-rejected' | 'owner-rejected';
+  | 'geometry-cancel-check-throw' | 'reply-preclone' | 'reply-admission-rejected' | 'owner-rejected'
+  /** OCCT の読み込みに失敗し、計算の段(native-build-*)へ進まなかった。 */
+  | 'occt-load-throw';
 export interface KernelRuntimePhaseRecord {
   readonly seq: number;
   readonly phase: KernelRuntimePhase;
@@ -765,7 +783,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
   const loadOcct = (): Promise<OpenCascadeInstance> => loadInstance().then(instance => {
     loadedOcct = instance;
     return instance;
-  });
+  }, markOcctLoadFailure);
   // 形状キャッシュは窓口 1 つにつき 1 つ。再計算をまたいで残すことで、
   // 変えていないフィーチャーを作り直さずに済ませる(NFR-PF-3)。
   // 掃除は容量 SHAPE_CACHE_CAPACITY の LRU に任せ、retain は呼ばない。
@@ -1053,7 +1071,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
         const functionLoadStarted = performance.now();
         // Empty requests still rotate display ownership and take real final receipts.
         // They need neither a first OCCT load nor a fabricated WASM-memory reading.
-        const oc = request.steps.length === 0 ? undefined : await loadOcct();
+        const oc = request.steps.length === 0 ? undefined : await loadOcct().catch((error: unknown) => { phases.record('occt-load-throw', owner); throw error; });
         if (request.steps.some(step => step.step.kind === 'functionSurface')) {
           console.debug('[pcad:function-phase]', JSON.stringify({ phase: 'load', elapsedMs: performance.now() - functionLoadStarted, generation: request.generation }));
         }

@@ -1,6 +1,14 @@
 /** 再計算の予約が古い計算を早く止めることの回帰テスト(R-7b、NFR-PF-4)。 */
 
-import { createAssemblyDocument, KERNEL_BROKEN_MESSAGE } from '@pointercad/model';
+import {
+  appendSolid,
+  createAssemblyDocument,
+  createDirectKernelBridge,
+  createEmptyPartDocument,
+  createPrimitiveFeature,
+  KERNEL_BROKEN_MESSAGE,
+  recomputePart,
+} from '@pointercad/model';
 import { createAutoSaver, createMemoryAutoSaveStorage, readPcadFile } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { newSketchCanvas } from '../file/canvasFile.js';
@@ -8,6 +16,7 @@ import { attachAutoSave } from '../file/attachAutoSave.js';
 import { createNumericInput } from '../sketch/numericInput.js';
 import { attachPartRecompute, currentPcadAttachments } from './attachKernel.js';
 import {
+  bodyFor,
   createFakeRecompute,
   documentWithPoint,
   partWithThreeSolids,
@@ -242,6 +251,94 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     expect(shouldCancel?.()).toBe(false);
     expect(shouldCancel?.()).toBe(false);
     detach();
+  });
+});
+
+describe('カーネル(OCCT)の読み込みの失敗の頼み直し(FR-504、NFR-RE-1)', () => {
+  /** Worker の createKernelApi が読み込みの失敗に付ける名前。Comlink は Error の name・message を運ぶ。 */
+  const LOAD_FAILURE_NAME = 'OcctLoadError';
+  const LOAD_FAILURE_TEXT = 'カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed';
+  type Answer = 'load-failure' | 'runtime-error' | 'success';
+
+  function unused(): never { throw new Error('Unused operation in load retry fixture'); }
+
+  /** 実物の橋・変換・recomputePart・ストアを通し、Worker の窓口の返事だけを順に差し替える。 */
+  function attachWithAnswers(answers: readonly Answer[], beforeAnswer: () => void = () => undefined) {
+    const empty = createEmptyPartDocument();
+    useAppStore.getState().applyDocument(appendSolid(empty, { ...createPrimitiveFeature(empty, 'box'), id: 'box-1' }));
+    const generations: (number | undefined)[] = [];
+    const bridge = createDirectKernelBridge({
+      readCachedBodies: unused, functionSketchCurves: unused, tessellateSketch: unused,
+      offsetSketchCurves: unused, projectSketchCurves: unused, sectionSketchCurves: unused,
+      hiddenLineViews: unused, sectionViews: unused, measure: unused, exportShapes: unused,
+      importShape: unused, inspectPrintability: unused,
+      recomputeSolids(request) {
+        generations.push(request.generation);
+        beforeAnswer();
+        const answer = answers[generations.length - 1];
+        if (answer === 'load-failure') return Promise.reject(Object.assign(new Error(LOAD_FAILURE_TEXT), { name: LOAD_FAILURE_NAME }));
+        if (answer !== 'success') return Promise.reject(new RangeError('unreachable'));
+        const localMesh = request.localMesh;
+        if (localMesh === undefined) throw new Error('Missing production local mesh policy');
+        const body = bodyFor('box-1'), mesh = body.mesh;
+        const bytes = mesh.positions.byteLength + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength;
+        return Promise.resolve({ bodies: [{ id: 'box-1', positions: mesh.positions, normals: mesh.normals,
+          indices: mesh.indices, edgePositions: mesh.edgePositions, triangleCount: mesh.triangleCount,
+          faceCount: 0, edgeCount: 0, volume: body.volume, bodyKind: 'solid' as const,
+          faces: [], edges: [], vertices: [], threadMarks: [],
+          coordinateFrame: { space: 'local' as const, origin: [0, 0, 0] as const, ...localMesh } }],
+          failures: [], cacheHits: 0, cancelled: false,
+          meshJsAccounting: { status: 'known' as const, limitBytes: localMesh.maximumLiveMeshBytes,
+            cacheActiveBytes: 0, cacheRetiredBytes: 0, cacheProtectedBytes: 0,
+            retainedReplyBytes: bytes * 2, requestPeakReservedBytes: bytes * 2 },
+          meshJsFinalAccounting: { status: 'known' as const, limitBytes: localMesh.maximumLiveMeshBytes,
+            cacheActiveBytes: 0, cacheRetiredBytes: 0, cacheProtectedBytes: 0,
+            hiddenBackingBytes: 0, displayBackingBytes: bytes, replyBackingBytes: bytes, retainedBackingBytes: bytes, replyCloneReservedBytes: bytes },
+        });
+      },
+    });
+    const detach = attachPartRecompute((document, options) => recomputePart(document, bridge, options));
+    return { generations, finish: () => { detach(); bridge.dispose(); } };
+  }
+
+  it('1 回目の読み込みの失敗は同じ世代で 1 回だけ頼み直し、2 回目の成功で success として完了する', async () => {
+    const attached = attachWithAnswers(['load-failure', 'success']);
+    try {
+      await vi.waitFor(() => expect(useAppStore.getState().lastOutcome).toBe('success'));
+      const state = useAppStore.getState();
+      expect(attached.generations).toEqual([1, 1]);
+      expect(state.completedGeneration).toBe(1);
+      expect(state.partErrors).toEqual([]);
+      expect(state.bodies.map(body => body.featureId)).toEqual(['box-1']);
+    } finally { attached.finish(); }
+  });
+
+  it('読み込み以外の Worker の例外は頼み直さず、種類と文を残して failed として完了する', async () => {
+    const attached = attachWithAnswers(['runtime-error', 'success']);
+    try {
+      await vi.waitFor(() => expect(useAppStore.getState().lastOutcome).toBe('failed'));
+      expect(attached.generations).toEqual([1]);
+      expect(useAppStore.getState().partErrors.map(error => error.message))
+        .toEqual(['立体を作れませんでした: RangeError: unreachable']);
+    } finally { attached.finish(); }
+  });
+
+  it('2 回とも読み込めなければ failed として完了し、理由と頼み直した事実が失敗の文に残る', async () => {
+    const attached = attachWithAnswers(['load-failure', 'load-failure', 'success']);
+    try {
+      await vi.waitFor(() => expect(useAppStore.getState().lastOutcome).toBe('failed'));
+      expect(attached.generations).toEqual([1, 1]);
+      expect(useAppStore.getState().partErrors.map(error => error.message))
+        .toEqual([`立体を作れませんでした: ${LOAD_FAILURE_TEXT}(カーネルの読み込みを1回やり直しました)`]);
+    } finally { attached.finish(); }
+  });
+
+  it('利用者が中止した後の読み込みの失敗は頼み直さず cancelled として完了する', async () => {
+    const attached = attachWithAnswers(['load-failure', 'success'], () => { useAppStore.getState().cancelRecompute(); });
+    try {
+      await vi.waitFor(() => expect(useAppStore.getState().lastOutcome).toBe('cancelled'));
+      expect(attached.generations).toEqual([1]);
+    } finally { attached.finish(); }
   });
 });
 

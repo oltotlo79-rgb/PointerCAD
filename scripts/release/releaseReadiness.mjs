@@ -107,7 +107,26 @@ export const RELEASE_READINESS_CHECK_IDS = Object.freeze(CHECKS.map(check => che
 /** The checks of manual mode (P12-20); pre-release mode runs them too, before the mandatory dedicated measurements. */
 export const MANUAL_CHECK_IDS = Object.freeze(CHECKS.filter(check => check.id.startsWith('manual-')).map(check => check.id));
 
-const STATUS_LABELS = Object.freeze({ pass: '合格', fail: '不合格', pending: '保留', 'not-implemented': '未実装', deferred: '後回し' });
+const STATUS_LABELS = Object.freeze({ pass: '合格', fail: '不合格', pending: '保留', 'not-implemented': '未実装', deferred: '後回し',
+  tolerated: '許容（利用者の決定）' });
+
+/**
+ * The W21 ratio exception (v1.0.3 only). The user decided on 2026-11-13 21:23 (CLAUDE.md records the original words) that,
+ * for this release only, the original W21 condition warm median <= cold median × 0.8 may stay unmet after the current
+ * improvement. The 0.8 formula in dedicatedPerformanceEvidence.mjs is not changed: an explicit, hashed exception file can
+ * only turn a W21 refusal whose sole reason is that ratio into the separate status `tolerated` (never `pass`). Missing,
+ * failed or overlapping runs, a manifest mismatch and W22 are never covered. Any other version refuses the exception.
+ */
+export const W21_RATIO_EXCEPTION_FORMAT = 'pointercad-w21-ratio-exception/1';
+export const W21_RATIO_EXCEPTION_VERSION = '1.0.3';
+export const W21_RATIO_EXCEPTION_DECISION = Object.freeze({ date: '2026-11-13', time: '21:23',
+  text: '3は今の改良が終わったら届かなくても今回のみ許容する' });
+const W21_RATIO_EXCEPTION_CONDITION = 'w21-startup-ratio';
+const W21_RATIO_EXCEPTION_AUTHORITY = 'CLAUDE.md';
+const W21_RATIO_HOSTS = Object.freeze(['functional', 'firefox', 'electron']);
+const W21_RATIO_NETWORKS = Object.freeze(['online', 'offline']);
+/** The recorded ratio may be rounded to three decimals; the medians themselves must equal the index exactly. */
+const W21_RATIO_ROUNDING = 0.0005;
 const EXIT_MEANINGS = Object.freeze({ 0: '公開前の全項目を満たす', 1: '公開できない', 2: '未接続の条件があり判定できない',
   3: '公開後モードは未実装', 64: '引数の誤り', 70: '内部の誤り' });
 const MANUAL_EXIT_MEANINGS = Object.freeze({ ...EXIT_MEANINGS, 0: '説明書の整合4条件と出力全体の一致を満たす', 1: '説明書が今のヘルプ・画面・機能・撮影と合わない' });
@@ -264,13 +283,22 @@ async function runCheck(definition, body) {
  * Deferred checks (desktop scope only) do not block exit code 0, but a report whose checks are all deferred proves
  * nothing and fails, like an empty one.
  */
-function finish(mode, checks, scope = 'all') {
+/**
+ * Counts per status and the exit code. A `tolerated` check (the v1.0.3 W21 ratio exception) does not block exit code 0,
+ * like a deferred one, and is counted only when present so that the summary of a report without it keeps its shape.
+ */
+export function summarizeReleaseReadinessChecks(checks) {
   const count = status => checks.filter(check => check.status === status).length;
+  const tolerated = count('tolerated');
   const summary = Object.freeze({ pass: count('pass'), fail: count('fail'), pending: count('pending'), notImplemented: count('not-implemented'),
-    deferred: count('deferred') });
+    deferred: count('deferred'), ...(tolerated > 0 ? { tolerated } : {}) });
   const exitCode = summary.fail > 0 || checks.length === summary.deferred ? RELEASE_READINESS_EXIT.failed
     : summary.notImplemented > 0 ? RELEASE_READINESS_EXIT.notImplemented
       : summary.pending > 0 ? RELEASE_READINESS_EXIT.pending : RELEASE_READINESS_EXIT.ready;
+  return { summary, exitCode };
+}
+function finish(mode, checks, scope = 'all') {
+  const { summary, exitCode } = summarizeReleaseReadinessChecks(checks);
   return Object.freeze({ format: RELEASE_READINESS_FORMAT, mode, scope, releaseCertified: false, checks: Object.freeze(checks), summary, exitCode });
 }
 /** A desktop-scope check that only the Web publication needs: judged for reference, reported as deferred. */
@@ -957,6 +985,100 @@ const CHECK_BODIES = Object.freeze({
   'readme-links': context => checkReadme(context),
 });
 
+const W21_RATIO_EXCEPTION_KEYS = Object.freeze(['format', 'version', 'condition', 'requiredRatio', 'decision', 'authority', 'measurements']);
+
+/** The W21 ratio exception file's own shape, read before judging (no `accepted` or other unknown field). */
+export function parseW21RatioException(text) {
+  let value;
+  try { value = JSON.parse(text); } catch { throw new Error('W21 の比の例外を JSON として読めない'); }
+  if (!record(value) || value.format !== W21_RATIO_EXCEPTION_FORMAT) throw new Error(`W21 の比の例外の形式が ${W21_RATIO_EXCEPTION_FORMAT} でない`);
+  const unknown = Object.keys(value).filter(key => !W21_RATIO_EXCEPTION_KEYS.includes(key));
+  if (unknown.length > 0) throw new Error(`W21 の比の例外に知らない欄がある: ${unknown.join('・')}`);
+  if (typeof value.version !== 'string' || typeof value.condition !== 'string' || typeof value.requiredRatio !== 'number'
+    || !record(value.decision) || !record(value.authority) || !Array.isArray(value.measurements)) throw new Error('W21 の比の例外の欄が欠けている');
+  for (const row of value.measurements) {
+    if (!record(row) || typeof row.project !== 'string' || typeof row.network !== 'string'
+      || ![row.coldMedianMs, row.warmMedianMs, row.ratio].every(number => typeof number === 'number' && Number.isFinite(number) && number > 0)) {
+      throw new Error('W21 の比の例外の実測値の行の形が違う（project・network・coldMedianMs・warmMedianMs・ratio）');
+    }
+  }
+  return value;
+}
+
+function w21RatioExceptionProblems(value, { packageVersion, authorityText }) {
+  const problems = [], decision = W21_RATIO_EXCEPTION_DECISION;
+  if (value.version !== W21_RATIO_EXCEPTION_VERSION) problems.push(`版 ${value.version} の例外は受け付けない（v${W21_RATIO_EXCEPTION_VERSION} に限る利用者の決定）`);
+  if (value.version !== packageVersion) problems.push(`例外の版 ${value.version} が package.json の版 ${String(packageVersion)} と違う`);
+  if (value.condition !== W21_RATIO_EXCEPTION_CONDITION) problems.push(`対象は W21 の比の条件（${W21_RATIO_EXCEPTION_CONDITION}）だけ: ${value.condition}`);
+  if (value.requiredRatio !== 0.8) problems.push(`元の比は 0.8: ${String(value.requiredRatio)}`);
+  if (value.decision.date !== decision.date || value.decision.time !== decision.time || value.decision.text !== decision.text) {
+    problems.push(`利用者の決定（${decision.date} ${decision.time}「${decision.text}」）と日時・原文が違う`);
+  }
+  const heading = value.authority.heading;
+  if (value.authority.document !== W21_RATIO_EXCEPTION_AUTHORITY || typeof heading !== 'string' || !heading.includes(`${decision.date} ${decision.time}`)
+    || typeof authorityText !== 'string' || !authorityText.includes(heading) || !authorityText.includes(decision.text)) {
+    problems.push(`根拠の文書（${W21_RATIO_EXCEPTION_AUTHORITY}）にこの決定の見出しと原文が無い`);
+  }
+  return problems;
+}
+
+function w21RatioMismatches(measurements, ratios) {
+  const keyOf = row => `${String(row.project)} ${String(row.network)}`;
+  const expected = W21_RATIO_HOSTS.flatMap(project => W21_RATIO_NETWORKS.map(network => `${project} ${network}`));
+  const given = measurements.map(keyOf), problems = [];
+  if (given.length !== expected.length || new Set(given).size !== given.length || !expected.every(key => given.includes(key))) {
+    problems.push(`例外の実測値は 3 環境 × online/offline の 6 行を 1 回ずつ: ${given.join('・')}`);
+  }
+  for (const row of ratios) {
+    const recorded = measurements.find(item => keyOf(item) === keyOf(row));
+    if (recorded === undefined) continue;
+    if (recorded.coldMedianMs !== row.coldMedianMs || recorded.warmMedianMs !== row.warmMedianMs || Math.abs(recorded.ratio - row.ratio) > W21_RATIO_ROUNDING) {
+      problems.push(`例外の実測値が索引と違う: ${keyOf(row)}（索引 cold ${row.coldMedianMs}・warm ${row.warmMedianMs}・比 ${row.ratio}、`
+        + `例外 cold ${recorded.coldMedianMs}・warm ${recorded.warmMedianMs}・比 ${recorded.ratio}）`);
+    }
+  }
+  return problems;
+}
+
+const w21RatioLine = row => `${row.project} ${row.network}: cold ${row.coldMedianMs} ms・warm ${row.warmMedianMs} ms・比 ${row.ratio.toFixed(3)}`
+  + `（0.8 ${row.meetsOriginalCondition ? '以下' : `より ${(row.ratio - 0.8).toFixed(3)} 大きい`}）`;
+
+/**
+ * Applies a loaded W21 ratio exception ({ path, sha256, text, value }) to the W21 outcome. Without an exception the outcome
+ * is returned as it is. Only a refusal whose sole reason is the original ratio, with all six medians equal to the
+ * exception's measurements, becomes `tolerated`; every other outcome keeps its status.
+ */
+export function applyW21RatioException(outcome, exception, { packageVersion, authorityText } = {}) {
+  if (exception === null || exception === undefined) return outcome;
+  const fullText = `例外の全文（${exception.path}、SHA-256 ${exception.sha256}）: ${exception.text}`;
+  const problems = w21RatioExceptionProblems(exception.value, { packageVersion, authorityText });
+  if (problems.length > 0) return { status: 'fail', summary: 'W21 の比の例外を受け付けない', problems, notes: [fullText] };
+  const notes = [...(outcome.notes ?? [])];
+  if (outcome.status === 'pass') return { ...outcome, notes: [...notes, 'W21 の比の例外は使っていない（6 群とも 0.8 以下）', fullText] };
+  if (outcome.status !== 'fail' || outcome.ratioOnly !== true || !Array.isArray(outcome.w21Ratios)) {
+    return { ...outcome, notes: [...notes, 'W21 の比の例外は比の条件だけに効く。測定の欠け・RUN の失敗や重なり・manifest の不一致は通さない', fullText] };
+  }
+  const mismatches = w21RatioMismatches(exception.value.measurements, outcome.w21Ratios);
+  if (mismatches.length > 0) return { status: 'fail', summary: 'W21 の比の例外の実測値が索引と違う', problems: mismatches, notes: [fullText] };
+  const unmet = outcome.w21Ratios.filter(row => !row.meetsOriginalCondition), decision = W21_RATIO_EXCEPTION_DECISION;
+  return { status: 'tolerated',
+    summary: `比が 0.8 に届かない ${unmet.length} 群を、利用者の決定（${decision.date} ${decision.time}「${decision.text}」）により`
+      + ` v${W21_RATIO_EXCEPTION_VERSION} に限り許容（合格ではない。次の版から 0.8 に戻る）。ほかの W21 の条件は全て満たす`,
+    problems: [], notes: [...outcome.w21Ratios.map(w21RatioLine), `根拠: ${exception.value.authority.document} の「${exception.value.authority.heading}」`, fullText] };
+}
+
+/** W21 with the optional exception; a read error of the exception file fails W21 instead of leaving it pending. */
+function judgeW21(input) {
+  if (input.readErrors?.w21RatioException) return { status: 'fail', summary: 'W21 の比の例外を読めない', problems: [input.readErrors.w21RatioException] };
+  const outcome = checkDedicatedPerformanceEvidence('w21-dedicated', input.dedicatedPerformanceEvidence, input.sourceInputs);
+  const exception = input.w21RatioException ?? null;
+  if (exception === null) return outcome;
+  const packageVersionText = (() => {
+    try { return packageVersion(input.packageFiles?.root, 'package.json'); } catch { return null; }
+  })();
+  return applyW21RatioException(outcome, exception, { packageVersion: packageVersionText, authorityText: exception.authorityText });
+}
+
 /**
  * Judge one candidate (pre-release) or one generated manual (manual: only MANUAL_CHECK_IDS, with the same bodies).
  * Every check runs independently, so one unreadable part does not hide the other results.
@@ -974,7 +1096,8 @@ export async function evaluateReleaseReadiness(input) {
     const body = DEDICATED_MEASUREMENT_CHECK_IDS.includes(check.id)
       ? () => input.readErrors?.dedicatedPerformanceEvidence
         ? ({ status: 'fail', summary: input.readErrors.dedicatedPerformanceEvidence })
-        : checkDedicatedPerformanceEvidence(check.id, input.dedicatedPerformanceEvidence, input.sourceInputs)
+        : check.id === 'w21-dedicated' ? judgeW21(input)
+          : checkDedicatedPerformanceEvidence(check.id, input.dedicatedPerformanceEvidence, input.sourceInputs)
       : () => CHECK_BODIES[check.id](context);
     checks.push(scope === 'desktop' && DESKTOP_DEFERRED_CHECK_IDS.includes(check.id) ? await deferredCheck(check, body) : await runCheck(check, body));
   }
@@ -995,6 +1118,7 @@ export function formatReleaseReadinessReport(report, { targets = [] } = {}) {
   const { summary } = report;
   lines.push(`合計: 合格 ${summary.pass}・不合格 ${summary.fail}・保留 ${summary.pending}・未実装 ${summary.notImplemented}`
     + (summary.deferred > 0 ? `・後回し ${summary.deferred}` : '')
+    + ((summary.tolerated ?? 0) > 0 ? `・${STATUS_LABELS.tolerated} ${summary.tolerated}` : '')
     + ` → 終了コード ${report.exitCode}（${exitMeanings(report)[report.exitCode] ?? '不明'}）`);
   return lines.join('\n');
 }
@@ -1008,9 +1132,12 @@ const USAGE = [
   '  公開後（デスクトップ先行）: node scripts/release/releaseReadiness.mjs --mode post-release --scope desktop --release <名前> --download-url https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/ [--report <JSON の保存先>]',
   '  --scope: all（既定。Web 版を含む全条件）・desktop（デスクトップ先行。Web 版だけの条件は後回し）',
   '  説明書: node scripts/release/releaseReadiness.mjs --mode manual --manual <名前（scripts/manual/generate.mjs の出力名）> [--report <JSON の保存先>]',
+  '  専用の測定: --performance-evidence <索引> --performance-evidence-sha256 <SHA-256>（pre-release。W21・W22）',
+  '  W21 の比の例外（v1.0.3 に限る。利用者の決定 2026-11-13 21:23）: --w21-ratio-exception <JSON> --w21-ratio-exception-sha256 <SHA-256>（専用の測定と一緒に）',
 ].join('\n');
 const FLAGS = Object.freeze({ '--mode': 'mode', '--windows': 'windows', '--linux': 'linux', '--web': 'web', '--release': 'release', '--sbom': 'sbom',
-  '--web-url': 'webUrl', '--download-url': 'downloadUrl', '--manual': 'manual', '--report': 'report', '--scope': 'scope', '--performance-evidence': 'performanceEvidence', '--performance-evidence-sha256': 'performanceEvidenceSha256' });
+  '--web-url': 'webUrl', '--download-url': 'downloadUrl', '--manual': 'manual', '--report': 'report', '--scope': 'scope', '--performance-evidence': 'performanceEvidence', '--performance-evidence-sha256': 'performanceEvidenceSha256',
+  '--w21-ratio-exception': 'w21RatioException', '--w21-ratio-exception-sha256': 'w21RatioExceptionSha256' });
 const MODE_KEYS = Object.freeze({ 'pre-release': ['windows', 'linux', 'web', 'release', 'sbom'], 'post-release': ['release', 'webUrl', 'downloadUrl'],
   manual: ['manual'] });
 /** The desktop-first post-release check has no Web site to visit, so it takes no --web-url. */
@@ -1034,9 +1161,13 @@ export function parseReleaseReadinessArguments(args) {
   options.scope ??= 'all';
   const performanceKeys = ['performanceEvidence', 'performanceEvidenceSha256'];
   if (performanceKeys.some(key => options[key] !== undefined) && (options.mode !== 'pre-release' || performanceKeys.some(key => options[key] === undefined))) throw new ReleaseReadinessUsageError('Performance evidence path and digest require pre-release and must be supplied together');
+  const exceptionKeys = ['w21RatioException', 'w21RatioExceptionSha256'];
+  if (exceptionKeys.some(key => options[key] !== undefined) && (exceptionKeys.some(key => options[key] === undefined) || options.performanceEvidence === undefined)) {
+    throw new ReleaseReadinessUsageError('W21 の比の例外は --w21-ratio-exception と --w21-ratio-exception-sha256 を対で、専用の測定の索引（--performance-evidence）と一緒に渡す');
+  }
   const keys = modeKeys(options);
   for (const key of Object.values(FLAGS)) {
-    if (key !== 'mode' && key !== 'report' && key !== 'scope' && !performanceKeys.includes(key) && options[key] !== undefined && !keys.includes(key)) {
+    if (key !== 'mode' && key !== 'report' && key !== 'scope' && !performanceKeys.includes(key) && !exceptionKeys.includes(key) && options[key] !== undefined && !keys.includes(key)) {
       const where = options.mode === 'post-release' && options.scope === 'desktop' ? 'post-release --scope desktop' : options.mode;
       throw new ReleaseReadinessUsageError(`${where} では使わない引数: --${key.replace(/[A-Z]/gu, letter => `-${letter.toLowerCase()}`)}`);
     }
@@ -1209,6 +1340,22 @@ export function loadCaptureFreshness() {
   };
 }
 
+/**
+ * Reads the W21 ratio exception file (inside the project, not redirected) with its SHA-256, and the authority document
+ * (CLAUDE.md) whose heading and original words the exception must quote.
+ */
+async function loadW21RatioException(root, path, expectedSha256) {
+  const target = resolve(root, path), actual = realpathSync(target), local = relative(root, actual);
+  if (actual !== target || local === '' || local === '..' || local.startsWith(`..${sep}`) || isAbsolute(local)) {
+    throw new Error(`W21 の比の例外はプロジェクトの中の実ファイルを指す: ${path}`);
+  }
+  const bytes = await readFile(target);
+  if (!/^[a-f0-9]{64}$/u.test(expectedSha256) || sha256(bytes) !== expectedSha256) throw new Error('W21 の比の例外の SHA-256 が違う');
+  const text = new globalThis.TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const authorityText = await readFile(join(root, W21_RATIO_EXCEPTION_AUTHORITY), 'utf8');
+  return { path: local.split(sep).join('/'), sha256: expectedSha256, text, value: parseW21RatioException(text), authorityText };
+}
+
 export async function readPreReleaseInput(root, options) {
   const readErrors = {};
   const attempt = async (key, action) => {
@@ -1240,8 +1387,10 @@ export async function readPreReleaseInput(root, options) {
   if (webFiles === null) readErrors.currentHelp = 'Web の候補を読めないため読み込まない';
   else currentHelp = await attempt('currentHelp', () => loadCurrentHelp(root));
   const dedicatedPerformanceEvidence = options.performanceEvidence === undefined ? null : await attempt('dedicatedPerformanceEvidence', () => loadDedicatedPerformanceEvidence(root, options.performanceEvidence, options.performanceEvidenceSha256, sourceInputs));
+  const w21RatioException = options.w21RatioException === undefined ? null
+    : await attempt('w21RatioException', () => loadW21RatioException(root, options.w21RatioException, options.w21RatioExceptionSha256));
   return { dedicatedPerformanceEvidence, mode: 'pre-release', scope: scopeOf(options.scope), packageFiles, builderConfig, readme, releaseManifest, sbom, webFiles, candidates,
-    sourceCommit, sourceInputs, currentHelp, captureFreshness: loadCaptureFreshness(), readErrors: Object.freeze(readErrors) };
+    sourceCommit, sourceInputs, currentHelp, captureFreshness: loadCaptureFreshness(), w21RatioException, readErrors: Object.freeze(readErrors) };
 }
 /** Manual mode: one generated manual, dist/<name>/, read like scripts/manual/verify.mjs, against the current help. */
 export async function readManualInput(root, options) {

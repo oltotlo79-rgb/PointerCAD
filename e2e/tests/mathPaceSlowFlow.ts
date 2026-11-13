@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { expect, type ConsoleMessage, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { RECOMPUTE_TIMEOUT_MS } from '../../packages/test-utils/src/releasePerformance.js';
+import { sourceFileHash } from '../../scripts/release/desktopFileInventory.mjs';
 import { mathInputFlow, type ActiveCancellation } from './mathInputFlow.js';
 import { functionVectorCalculusFlow } from './functionVectorCalculusFlow.js';
 import { functionHyperbolicFlow } from './functionHyperbolicFlow.js';
@@ -431,19 +432,23 @@ function stageIntervals(transport: readonly RecordValue[], phases: readonly Reco
   return result;
 }
 
-/** Kept identical across conditions; hashes cover inputs, assertions and measurement implementation. */
+/**
+ * Kept identical across conditions; hashes cover inputs, assertions and measurement implementation.
+ * Each file is hashed as the release build inputs are (sourceFileHash: every CRLF read as LF), because the release
+ * check compares these values with the same QA input manifest rows as the build inputs, also on a CRLF checkout.
+ */
 async function inputFingerprint(): Promise<{ inputSha256: string; files: Record<string, string> }> {
   const files: Record<string, string> = {};
   for (const name of ['mathPaceSlowFlow.ts', 'mathInputFlow.ts', 'mathCoordinateFlow.ts', 'mathStatisticsFlow.ts', 'mathBinomialFlow.ts',
     'functionVectorCalculusFlow.ts', 'functionHyperbolicFlow.ts', 'functionPiecewiseDomainFlow.ts',
     'mathEditorReady.ts', 'startupHealth.ts', 'waitForFunctionPreview.ts', 'recompute.ts', 'scriptsFlow.ts', 'reopenPart.ts']) {
-    files[name] = createHash('sha256').update(await readFile(new URL(name, import.meta.url))).digest('hex');
+    files[name] = sourceFileHash(await readFile(new URL(name, import.meta.url)));
   }
-  files['packages/ui/src/math/math.worker.ts'] = createHash('sha256')
-    .update(await readFile(new URL('../../packages/ui/src/math/math.worker.ts', import.meta.url))).digest('hex');
+  files['packages/ui/src/math/math.worker.ts'] = sourceFileHash(
+    await readFile(new URL('../../packages/ui/src/math/math.worker.ts', import.meta.url)));
   for (const name of ['packages/expression/src/math/boundedCalculationClient.ts', 'packages/ui/src/math/mathEditorSession.ts',
     'packages/model/src/part/evaluateDocumentMath.ts', 'packages/ui/src/math/recomputePartWithMath.ts']) {
-    files[name] = createHash('sha256').update(await readFile(new URL(`../../${name}`, import.meta.url))).digest('hex');
+    files[name] = sourceFileHash(await readFile(new URL(`../../${name}`, import.meta.url)));
   }
   return { files, inputSha256: createHash('sha256').update(JSON.stringify(files)).digest('hex') };
 }

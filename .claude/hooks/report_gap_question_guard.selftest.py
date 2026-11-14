@@ -55,6 +55,16 @@ class Base(unittest.TestCase):
         self.root = REPO / "scratchpad" / "temp" / f"cl-v103-failure-records-c2-{uuid.uuid4().hex[:8]}"
         (self.root / "docs").mkdir(parents=True)
         self.addCleanup(shutil.rmtree, self.root, True)
+        # 2026-11-13 の追加(rules/06 §10.508): 質問には印が要る。報告の空きの試験は、15 分以内の印を置いて前と同じ形で確かめる。
+        self.place_marker("2026-11-12 12:55")
+
+    def place_marker(self, placed_at: str, **fields):
+        data = {"reason": "利用者の判断が要る", "operation": "main へ送る直前", "placedAt": placed_at}
+        data.update(fields)
+        path = self.root / guard.MARKER
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return path
 
     def write_report(self, *stamps: str, filler: int = 0):
         body = "".join(f"## {stamp} JST 公開準備の進捗\n\n本文。\n\n" for stamp in stamps)
@@ -144,6 +154,123 @@ class PassExamples(Base):
         kind, _text, warnings = self.run_hook(payload(), datetime(2026, 11, 12, 13, 0))
         self.assertEqual(kind, "pass")
         self.assertIn("見出しが無い", warnings[0])
+
+
+class MarkerStopExamples(Base):
+    """2026-11-13 の追加(rules/06 §10.508): 印の無い質問・古い印・空の印・使った印・先の時刻の印・壊れた印は止める。"""
+
+    NOW = datetime(2026, 11, 13, 15, 10)
+
+    def setUp(self):
+        super().setUp()
+        self.write_report("2026-11-13 15:06")
+        (self.root / guard.MARKER).unlink()
+
+    def test_question_without_marker_is_denied_with_the_user_words(self):
+        kind, text, _ = self.run_hook(payload(), self.NOW)
+        self.assertEqual(kind, "deny")
+        self.assertIn("私の選択待ちで作業を止めるな。", text)
+        self.assertIn("§10.508", text)
+        self.assertIn("推す案で進める", text)
+
+    def test_stale_marker_is_denied(self):
+        self.place_marker("2026-11-13 14:54")
+        kind, text, _ = self.run_hook(payload(), self.NOW)
+        self.assertEqual(kind, "deny")
+        self.assertIn("16 分前", text)
+
+    def test_empty_reason_or_operation_is_denied(self):
+        self.place_marker("2026-11-13 15:08", reason=" ")
+        kind, text, _ = self.run_hook(payload(), self.NOW)
+        self.assertEqual(kind, "deny")
+        self.assertIn("reason", text)
+        self.place_marker("2026-11-13 15:08", operation="")
+        self.assertEqual(self.run_hook(payload(), self.NOW)[0], "deny")
+
+    def test_marker_is_used_only_once(self):
+        self.place_marker("2026-11-13 15:08")
+        self.assertEqual(self.run_hook(payload(), self.NOW)[0], "pass")
+        kind, text, _ = self.run_hook(payload(), self.NOW)
+        self.assertEqual(kind, "deny")
+        self.assertIn("無い", text)
+
+    def test_future_or_broken_marker_is_denied(self):
+        self.place_marker("2026-11-13 15:20")
+        kind, text, _ = self.run_hook(payload(), self.NOW)
+        self.assertEqual(kind, "deny")
+        self.assertIn("先の時刻", text)
+        (self.root / guard.MARKER).write_text("{", encoding="utf-8")
+        kind, text, _ = self.run_hook(payload(), self.NOW)
+        self.assertEqual(kind, "deny")
+        self.assertIn("読めない", text)
+        self.place_marker("15:08")
+        self.assertEqual(self.run_hook(payload(), self.NOW)[0], "deny")
+
+    def test_cli_denies_without_marker(self):
+        now = datetime.now()
+        self.write_report(f"{now:%Y-%m-%d %H:%M}")
+        cli = self.root / ".claude" / "hooks"
+        cli.mkdir(parents=True)
+        copy = cli / "report_gap_question_guard.py"
+        copy.write_bytes(HOOK.read_bytes())
+        result = subprocess.run([sys.executable, "-B", "-X", "utf8", str(copy)], input=json.dumps(payload()).encode("utf-8"),
+                                capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+        decision = json.loads(result.stdout.decode("utf-8"))
+        self.assertEqual(decision["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("§10.508", decision["hookSpecificOutput"]["permissionDecisionReason"])
+
+
+class MarkerPassExamples(Base):
+    """2026-11-13 の追加(rules/06 §10.508): 印のある質問は通して使い切る。担当・後の知らせ・ほかの道具は印を見ない。"""
+
+    NOW = datetime(2026, 11, 13, 15, 10)
+
+    def setUp(self):
+        super().setUp()
+        self.write_report("2026-11-13 15:06")
+        (self.root / guard.MARKER).unlink()
+
+    def test_valid_marker_passes_and_is_logged(self):
+        self.place_marker("2026-11-13 15:08", reason="公開の可否", operation="タグを打つ直前")
+        kind, _text, warnings = self.run_hook(payload(), self.NOW)
+        self.assertEqual((kind, warnings), ("pass", []))
+        self.assertFalse((self.root / guard.MARKER).exists())
+        lines = (self.root / guard.MARKER_LOG).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        record = json.loads(lines[0])
+        self.assertEqual(record["operation"], "タグを打つ直前")
+        self.assertEqual(record["usedAt"], "2026-11-13 15:10:00")
+
+    def test_iso_time_with_seconds_passes(self):
+        self.place_marker("2026-11-13T15:08:30")
+        self.assertEqual(self.run_hook(payload(), self.NOW)[0], "pass")
+
+    def test_subagent_post_and_other_tools_do_not_need_marker(self):
+        self.assertEqual(self.run_hook(payload(transcript=SUB), self.NOW)[0], "pass")
+        self.assertEqual(self.run_hook(payload(agent_id="a1"), self.NOW)[0], "pass")
+        self.assertEqual(self.run_hook(payload("PostToolUse"), self.NOW)[0], "pass")
+        self.assertEqual(self.run_hook(payload(tool="Bash"), self.NOW)[0], "pass")
+        self.assertFalse((self.root / guard.MARKER_LOG).exists())
+
+    def test_subagent_does_not_use_up_the_marker(self):
+        path = self.place_marker("2026-11-13 15:08")
+        self.assertEqual(self.run_hook(payload(transcript=SUB), self.NOW)[0], "pass")
+        self.assertTrue(path.exists())
+
+    def test_cli_passes_with_marker(self):
+        now = datetime.now()
+        self.write_report(f"{now:%Y-%m-%d %H:%M}")
+        self.place_marker(f"{now:%Y-%m-%d %H:%M}")
+        cli = self.root / ".claude" / "hooks"
+        cli.mkdir(parents=True)
+        copy = cli / "report_gap_question_guard.py"
+        copy.write_bytes(HOOK.read_bytes())
+        result = subprocess.run([sys.executable, "-B", "-X", "utf8", str(copy)], input=json.dumps(payload()).encode("utf-8"),
+                                capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+        self.assertEqual(result.stdout.decode("utf-8").strip(), "")
+        self.assertFalse((self.root / guard.MARKER).exists())
 
 
 def tearDownModule():

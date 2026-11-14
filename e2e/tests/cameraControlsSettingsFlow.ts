@@ -481,7 +481,11 @@ async function customOrbitAndZoom(page: Page, info: TestInfo, app?: ElectronAppl
   await open(page); await button(page, 'defaults').click(); await button(page, 'apply').click(); await close(page);
 }
 
-/** Fault fixture changes stored input only; actual host startup must perform recovery. */
+/**
+ * Fault fixture changes stored input only; actual host startup must perform recovery. Both the v2 source of truth
+ * (`viewControls`: an empty orbit, no pan, zoom or speeds) and the frozen v1 record are corrupted, so the startup must
+ * recover the v2 parts locally instead of migrating the v1 record.
+ */
 export async function prepareMalformedCameraSettings(page: Page): Promise<string> {
   return page.evaluate<string, LengthUnit>((lengthUnit: LengthUnit) => {
     const raw = localStorage.getItem('pointercad.settings');
@@ -490,7 +494,7 @@ export async function prepareMalformedCameraSettings(page: Page): Promise<string
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('Settings record is not an object');
     const malformed = JSON.stringify({ ...parsed,
       theme: 'lightModern', uiScale: 125, lengthUnit, trackAngleStep: 30,
-      cameraControls: { version: 1, orbit: [] } });
+      cameraControls: { version: 1, orbit: [] }, viewControls: { version: 2, bindings: { orbit: [] } } });
     localStorage.setItem('pointercad.settings', malformed);
     return malformed;
   }, preservedLengthUnit);
@@ -499,6 +503,8 @@ export async function prepareMalformedCameraSettings(page: Page): Promise<string
 export async function malformedCameraSettingsRestored(page: Page, info: TestInfo, malformed: string, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page);
+  // The empty orbit, the missing pan, zoom and speeds are the four unreadable parts reported once.
+  await expect(form(page).getByRole('status')).toHaveText(label('recovered').replace('{count}', '4'));
   for (const [name, inputs] of [['orbit', ['middle', 'left']], ['pan', ['right', 'middle']], ['zoom', ['wheel', 'wheel']]] as const) {
     for (const index of [0, 1]) {
       await expect(slot(page, name, index)).toHaveValue(inputs[index]);
@@ -519,6 +525,8 @@ export async function malformedCameraSettingsRestored(page: Page, info: TestInfo
   // Applying a valid camera draft must preserve the other preferences read at startup.
   await form(page).getByRole('spinbutton', { name: label('dragSensitivity'), exact: true }).fill('2');
   await button(page, 'apply').click();
+  await expect(button(page, 'apply')).toBeDisabled();
+  await expect(form(page).getByRole('status')).toHaveCount(0);
   const raw = await stored(page);
   expect(raw).not.toBeNull();
   const saved: unknown = JSON.parse(raw ?? 'null');
@@ -528,6 +536,7 @@ export async function malformedCameraSettingsRestored(page: Page, info: TestInfo
     if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Settings record is not an object');
     const fields: Record<string, unknown> = { ...value };
     delete fields.cameraControls;
+    delete fields.viewControls;
     return fields;
   };
   expect(unrelated(raw ?? 'null')).toEqual(unrelated(malformed));

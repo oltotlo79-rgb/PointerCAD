@@ -1,4 +1,4 @@
-import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, type ViewControlSettings } from '../settings/viewControlSettings.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OrthographicCamera, PerspectiveCamera, Vector3 } from 'three';
 import { createAssemblyDocument } from '@pointercad/model';
@@ -21,7 +21,7 @@ function event(target: EventTarget, type: string, props: Record<string, unknown>
   }));
 }
 
-function setup(readSettings: () => CameraControlSettings = () => DEFAULT_CAMERA_CONTROLS) {
+function setup(readSettings: () => ViewControlSettings = () => DEFAULT_VIEW_CONTROLS) {
   const windowTarget = new EventTarget();
   vi.stubGlobal('window', windowTarget);
   vi.stubGlobal('WheelEvent', { DOM_DELTA_LINE: 1, DOM_DELTA_PAGE: 2 });
@@ -281,12 +281,12 @@ describe('右ドラッグによる視点の平行移動', () => {
 
 describe('configured camera gestures at the actual dispatcher', () => {
   it('normalizes wheel units and applies live sensitivity/inversion without remounting', () => {
-    let settings = DEFAULT_CAMERA_CONTROLS;
+    let settings = DEFAULT_VIEW_CONTROLS;
     const app = setup(() => settings);
     try {
       event(app.canvas, 'wheel', { deltaMode: 1, deltaY: 2 });
       expect(app.controls.getOrbit()).toEqual({ ...HOME_ORBIT, distance: HOME_ORBIT.distance * 1.1 ** (2 * 16 / 100) });
-      settings = { ...settings, wheelSensitivity: 2, invertWheel: true };
+      settings = { ...settings, options: { ...settings.options, wheelSensitivity: 2, invertWheel: true } };
       const before = app.controls.getOrbit();
       event(app.canvas, 'wheel', { deltaMode: 2, deltaY: 1 });
       expect(app.controls.getOrbit()).toEqual({ ...before, distance: before.distance * 1.1 ** (1 * 100 * 2 * -1 / 100) });
@@ -297,13 +297,14 @@ describe('configured camera gestures at the actual dispatcher', () => {
   });
 
   it.each(['pointercancel', 'lostpointercapture', 'blur', 'detach'])('retains drag-start action/settings until %s and then releases ownership', end => {
-    let settings: CameraControlSettings = { ...DEFAULT_CAMERA_CONTROLS,
-      zoom: [{ input: 'left', alt: true, shift: true, ctrl: false, meta: false }], dragSensitivity: 2, invertDrag: true };
+    let settings: ViewControlSettings = { ...DEFAULT_VIEW_CONTROLS,
+      bindings: { ...DEFAULT_VIEW_CONTROLS.bindings, zoom: [{ kind: 'drag', button: 'left', alt: true, shift: true, ctrl: false, meta: false }] },
+      options: { ...DEFAULT_VIEW_CONTROLS.options, zoomDragSensitivity: 2, invertZoomDrag: true } };
     const app = setup(() => settings);
     try {
       event(app.canvas, 'pointerdown', { button: 0, buttons: 1, altKey: true, shiftKey: true });
       expect(app.controls.isDragging()).toBe(true);
-      settings = DEFAULT_CAMERA_CONTROLS;
+      settings = DEFAULT_VIEW_CONTROLS;
       event(app.canvas, 'pointermove', { buttons: 1, clientY: 150 });
       expect(app.controls.getOrbit()).toEqual({ ...HOME_ORBIT, distance: HOME_ORBIT.distance * 1.1 ** (10 * 2 * -1 / 100) });
       if (end === 'detach') app.controls.detach();

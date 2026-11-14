@@ -73,7 +73,7 @@ function TreeBody({ drawing, resolution, selected, gdt, welds }: {
         </summary>
         <ul className="pcad-tree">
           {group.rows.length === 0 ? <li className="pcad-drawing-tree-empty">{t('drawing.tree.empty')}</li> : null}
-          {group.rows.map((row) => <li key={row.key} className="pcad-tree__row">
+          {group.rows.map((row) => <li key={row.key} className={`pcad-tree__row${selected.includes(row.id) ? ' pcad-tree__row--selected' : ''}`}>
             <button type="button" className={`pcad-button pcad-tree__label${row.kind === 'dimension' ? ' pcad-drawing-tree-dimension' : ''}`}
               title={row.label} aria-pressed={selected.includes(row.id)}
               onClick={(event) => select(row.id, event.ctrlKey || event.metaKey)}>

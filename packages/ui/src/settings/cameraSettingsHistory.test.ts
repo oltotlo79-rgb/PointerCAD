@@ -5,11 +5,13 @@ import { readDrawingBundle, readPcadaFile, readPcadFile, writeDrawingBundle, wri
 import { absoluteCoordinate } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { CameraControlSettingsForm } from './CameraControlSettingsForm.js';
-import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from './cameraControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, type ViewControlSettings } from './viewControlSettings.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { applyCameraSettings } from './cameraSettingsApply.js';
-import { CUSTOM_CAMERA, documentFixtures, EXPECTED_PRESETS, SAVED_AT, settingsStorage } from './cameraSettingsPersistence.testSupport.js';
+import {
+  CUSTOM_VIEW, documentFixtures, EXPECTED_PRESETS, EXPECTED_VIEW_PRESETS, SAVED_AT, settingsStorage,
+} from './cameraSettingsPersistence.testSupport.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { applyNumericTransition, applySelectedFace } from '../sketch/commitToStore.js';
 import { t } from '../i18n/t.js';
@@ -20,10 +22,10 @@ beforeEach(resetTestStore);
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); resetTestStore(); });
 
 it('rejects an actual form submit after another camera setting was committed', () => {
-  const draft = { ...DEFAULT_CAMERA_CONTROLS, dragSensitivity: 2 };
+  const draft = { ...DEFAULT_VIEW_CONTROLS, options: { ...DEFAULT_VIEW_CONTROLS.options, zoomDragSensitivity: 2 } };
   vi.spyOn(React, 'useId').mockReturnValue('camera-test');
   const refused = vi.fn();
-  vi.spyOn(React, 'useState').mockReturnValueOnce([{ value: draft, expected: DEFAULT_CAMERA_CONTROLS }, vi.fn()])
+  vi.spyOn(React, 'useState').mockReturnValueOnce([{ value: draft, expected: DEFAULT_VIEW_CONTROLS }, vi.fn()])
     .mockReturnValueOnce([false, refused]);
   vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
   vi.spyOn(ReactHooks, 'useCallback').mockImplementation(callback => callback);
@@ -31,18 +33,19 @@ it('rejects an actual form submit after another camera setting was committed', (
   vi.spyOn(ReactHooks, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
   const form = CameraControlSettingsForm() as React.ReactElement<{ onSubmit: (event: { preventDefault: () => void }) => void }>;
   const state = useAppStore.getState();
-  state.setDisplaySettings({ ...state.displaySettings, cameraControls: { ...DEFAULT_CAMERA_CONTROLS, invertWheel: true } });
+  state.setDisplaySettings({ ...state.displaySettings,
+    viewControls: { ...DEFAULT_VIEW_CONTROLS, options: { ...DEFAULT_VIEW_CONTROLS.options, invertWheel: true } } });
   const before = useAppStore.getState();
   form.props.onSubmit({ preventDefault: vi.fn() });
   expect(useAppStore.getState()).toBe(before);
   expect(refused).toHaveBeenCalledWith(true);
-  vi.spyOn(React, 'useState').mockReturnValueOnce([{ value: draft, expected: DEFAULT_CAMERA_CONTROLS }, vi.fn()])
+  vi.spyOn(React, 'useState').mockReturnValueOnce([{ value: draft, expected: DEFAULT_VIEW_CONTROLS }, vi.fn()])
     .mockReturnValueOnce([true, vi.fn()]);
   expect(renderToStaticMarkup(CameraControlSettingsForm())).toContain(t('settings.camera.applyStale'));
 });
 
 it('captures the expected setting on the first real form edit and keeps it through later edits', () => {
-  interface Draft { value: CameraControlSettings; expected: CameraControlSettings }
+  interface Draft { value: ViewControlSettings; expected: ViewControlSettings }
   vi.spyOn(React, 'useId').mockReturnValue('camera-draft');
   vi.spyOn(ReactHooks, 'useCallback').mockImplementation(callback => callback);
   vi.spyOn(ReactHooks, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
@@ -63,14 +66,14 @@ it('captures the expected setting on the first real form edit and keeps it throu
   expect(capture).toHaveBeenCalledTimes(1);
   const firstUpdate = capture.mock.calls[0]?.[0] as (previous: null) => Draft;
   const first = firstUpdate(null);
-  expect(first.expected).toEqual(EXPECTED_PRESETS.pointercad);
-  expect(applyCameraSettings(CUSTOM_CAMERA, DEFAULT_CAMERA_CONTROLS)).toBe(true);
+  expect(first.expected).toEqual(EXPECTED_VIEW_PRESETS.pointercad);
+  expect(applyCameraSettings(CUSTOM_VIEW, DEFAULT_VIEW_CONTROLS)).toBe(true);
   click(render(first), t('settings.camera.presetGuide').replace('{preset}', t('settings.camera.preset.fusion')));
   expect(capture).toHaveBeenCalledTimes(2);
   const secondUpdate = capture.mock.calls[1]?.[0] as (previous: Draft) => Draft;
   const second = secondUpdate(first);
   expect(second.expected).toBe(first.expected);
-  expect(second.value).toEqual(EXPECTED_PRESETS.fusion);
+  expect(second.value).toEqual(EXPECTED_VIEW_PRESETS.fusion);
   const before = useAppStore.getState();
   const form = render(second) as React.ReactElement<{ onSubmit: (event: { preventDefault: () => void }) => void }>;
   form.props.onSubmit({ preventDefault: vi.fn() });
@@ -134,9 +137,11 @@ describe('EX-10.UNDO settings are outside each document transaction', () => {
       expect(historyOf(before, kind)?.past).toHaveLength(1);
       const bytes = await archive(kind, f);
       const memory = settingsStorage(); vi.stubGlobal('localStorage', memory.storage);
-      expect(applyCameraSettings(CUSTOM_CAMERA, DEFAULT_CAMERA_CONTROLS)).toBe(true);
+      expect(applyCameraSettings(CUSTOM_VIEW, DEFAULT_VIEW_CONTROLS)).toBe(true);
       expectOnlySettingsChanged(before);
-      expect(loadSettings(memory.storage).cameraControls).toEqual(CUSTOM_CAMERA);
+      expect(loadSettings(memory.storage).viewControls).toEqual(CUSTOM_VIEW);
+      // The frozen v1 record is written back unchanged (still the previous default), never rewritten from v2.
+      expect(loadSettings(memory.storage).cameraControls).toEqual(EXPECTED_PRESETS.pointercad);
       expect(await archive(kind, f)).toEqual(bytes);
       const reopened = kind === 'part' ? readPcadFile(bytes) : kind === 'assembly' ? await readPcadaFile(bytes) : await readDrawingBundle(bytes);
       expect(reopened.ok).toBe(true);
@@ -169,22 +174,22 @@ describe('EX-10.UNDO settings are outside each document transaction', () => {
       let before = useAppStore.getState();
       const initialBytes = memory.bytes(), initialWrites = memory.writes();
       for (const number of [NaN, Infinity, -Infinity, 0, 11]) {
-        expect(applyCameraSettings({ ...CUSTOM_CAMERA, wheelSensitivity: number }, DEFAULT_CAMERA_CONTROLS)).toBe(false);
+        expect(applyCameraSettings({ ...CUSTOM_VIEW, options: { ...CUSTOM_VIEW.options, wheelSensitivity: number } }, DEFAULT_VIEW_CONTROLS)).toBe(false);
         expect(useAppStore.getState()).toBe(before);
         expect(memory.bytes()).toBe(initialBytes);
         expect(memory.writes()).toBe(initialWrites);
       }
-      expect(applyCameraSettings(CUSTOM_CAMERA, DEFAULT_CAMERA_CONTROLS)).toBe(true);
+      expect(applyCameraSettings(CUSTOM_VIEW, DEFAULT_VIEW_CONTROLS)).toBe(true);
       before = useAppStore.getState();
       const committedBytes = memory.bytes(), committedWrites = memory.writes();
-      expect(applyCameraSettings(EXPECTED_PRESETS.fusion, DEFAULT_CAMERA_CONTROLS)).toBe(false);
+      expect(applyCameraSettings(EXPECTED_VIEW_PRESETS.fusion, DEFAULT_VIEW_CONTROLS)).toBe(false);
       expect(useAppStore.getState()).toBe(before);
       expect(memory.bytes()).toBe(committedBytes);
       expect(memory.writes()).toBe(committedWrites);
-      // Cancel the actual form's draft after another valid route has committed CUSTOM_CAMERA.
+      // Cancel the actual form's draft after another valid route has committed CUSTOM_VIEW.
       vi.spyOn(React, 'useId').mockReturnValue('camera-cancel');
       const discard = vi.fn();
-      vi.spyOn(React, 'useState').mockReturnValueOnce([{ value: EXPECTED_PRESETS.fusion, expected: DEFAULT_CAMERA_CONTROLS }, discard])
+      vi.spyOn(React, 'useState').mockReturnValueOnce([{ value: EXPECTED_VIEW_PRESETS.fusion, expected: DEFAULT_VIEW_CONTROLS }, discard])
         .mockReturnValueOnce([false, vi.fn()]);
       vi.spyOn(ReactHooks, 'useCallback').mockImplementation(callback => callback);
       vi.spyOn(ReactHooks, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
@@ -203,11 +208,11 @@ describe('EX-10.UNDO settings are outside each document transaction', () => {
       expect(useAppStore.getState()).toBe(before);
       expect(memory.bytes()).toBe(committedBytes); expect(memory.writes()).toBe(committedWrites);
       memory.failWrites();
-      expect(applyCameraSettings(EXPECTED_PRESETS.fusion, CUSTOM_CAMERA)).toBe(true);
+      expect(applyCameraSettings(EXPECTED_VIEW_PRESETS.fusion, CUSTOM_VIEW)).toBe(true);
       expectOnlySettingsChanged(before);
-      expect(useAppStore.getState().displaySettings.cameraControls).toEqual(EXPECTED_PRESETS.fusion);
+      expect(useAppStore.getState().displaySettings.viewControls).toEqual(EXPECTED_VIEW_PRESETS.fusion);
       expect(memory.bytes()).toBe(committedBytes);
-      expect(loadSettings(memory.storage).cameraControls).toEqual(CUSTOM_CAMERA);
+      expect(loadSettings(memory.storage).viewControls).toEqual(CUSTOM_VIEW);
       expect(memory.writes()).toBe(committedWrites + 1);
     });
   }
@@ -216,12 +221,23 @@ describe('EX-10.UNDO settings are outside each document transaction', () => {
     const memory = settingsStorage(); vi.stubGlobal('localStorage', memory.storage);
     const state = useAppStore.getState();
     state.setDisplaySettings({ ...state.displaySettings, theme: 'lightModern', uiScale: 125,
-      cameraControls: structuredClone(DEFAULT_CAMERA_CONTROLS) });
-    expect(applyCameraSettings(CUSTOM_CAMERA, DEFAULT_CAMERA_CONTROLS)).toBe(true);
-    expect(useAppStore.getState().displaySettings).toMatchObject({ theme: 'lightModern', uiScale: 125, cameraControls: CUSTOM_CAMERA });
+      viewControls: structuredClone(DEFAULT_VIEW_CONTROLS) });
+    expect(applyCameraSettings(CUSTOM_VIEW, DEFAULT_VIEW_CONTROLS)).toBe(true);
+    expect(useAppStore.getState().displaySettings).toMatchObject({ theme: 'lightModern', uiScale: 125, viewControls: CUSTOM_VIEW });
     const before = useAppStore.getState(), bytes = memory.bytes(), writes = memory.writes();
-    expect(applyCameraSettings({ ...CUSTOM_CAMERA }, DEFAULT_CAMERA_CONTROLS)).toBe(true);
+    expect(applyCameraSettings({ ...CUSTOM_VIEW }, DEFAULT_VIEW_CONTROLS)).toBe(true);
     expect(useAppStore.getState()).toBe(before); expect(memory.bytes()).toBe(bytes); expect(memory.writes()).toBe(writes);
+  });
+
+  it('applying reviewed settings retires the unsaved notice about unreadable parts', () => {
+    const memory = settingsStorage(); vi.stubGlobal('localStorage', memory.storage);
+    const state = useAppStore.getState();
+    state.setDisplaySettings({ ...state.displaySettings, viewControlsRecovered: 4 });
+    expect(memory.bytes()).not.toContain('viewControlsRecovered');
+    const tuned = { ...DEFAULT_VIEW_CONTROLS, options: { ...DEFAULT_VIEW_CONTROLS.options, orbitSensitivity: 1.5, invertOrbitX: true } };
+    expect(applyCameraSettings(tuned, DEFAULT_VIEW_CONTROLS)).toBe(true);
+    expect(useAppStore.getState().displaySettings.viewControlsRecovered).toBeUndefined();
+    expect(loadSettings(memory.storage).viewControls).toEqual(tuned);
   });
 
   it('the existing model confirmation and cancellation entrances preserve the previous document and history', async () => {

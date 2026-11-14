@@ -1,6 +1,11 @@
 import { t } from '../i18n/t.js';
 import { describe, expect, it } from 'vitest';
-import { buildStandardPartFromSource, STEEL_PRODUCTS, steelProductOptions } from '@pointercad/model';
+import {
+  buildStandardPartFromSource, CATALOG_ITEM_REJECTION_TEMPLATES, STEEL_MATERIAL_GRADES, STEEL_PRODUCTS, steelProductOptions,
+  type StandardPartSource,
+} from '@pointercad/model';
+import { buildStandardPartFromSourceWithReason } from '@pointercad/model/testing/ui-fixtures';
+import catalogMessages from '../i18n/ja/catalog.json';
 
 import {
   commitStandardPartChoice, DEFAULT_STANDARD_PART_PICKER, defaultStandardPartChoice,
@@ -314,5 +319,39 @@ describe('S45C treatment-free picker contract', () => {
     expect(t('assembly.steel.s45c.treatmentUnspecified')).toContain('JIS G 4051 5 c)');
     expect(t('assembly.steel.s45c.strengthSeparate')).toContain('別に選び');
     expect(t('assembly.steel.s45c.strengthSeparate')).toContain('自動設定されません');
+  });
+});
+
+describe('K0 族の部品の土台(新しい規格の行はまだ無い)', () => {
+  it('どの分類・系列・材質の選択肢も族の部品(catalogItem)を出さず、置いた出どころも従来の値のまま', () => {
+    const catalogs = new Set<string>();
+    for (const category of STANDARD_PART_CATEGORIES) {
+      for (const series of ['annexJA', 'main'] as const) {
+        for (const choice of standardPartChoices(category, series)) {
+          catalogs.add(choice.catalog);
+          const result = commitStandardPartChoice(category, choice.key, '100', series);
+          if (!result.ok) throw new Error(`Existing choice failed: ${choice.key}`);
+          catalogs.add(result.value.source.catalog);
+        }
+      }
+    }
+    for (const grade of STEEL_MATERIAL_GRADES) for (const choice of steelPartChoices(grade)) catalogs.add(choice.catalog);
+    expect(catalogs.has('catalogItem')).toBe(false);
+    expect([...catalogs].sort()).toEqual(['channel', 'deepGrooveBallBearing', 'equalAngle', 'flatBar', 'hBeam', 'hexBolt',
+      'hexNut', 'panHeadScrew', 'plainWasher', 'roundBar', 'socketHeadCapScrew', 'springWasher', 'steelPipe']);
+  });
+
+  it('族の部品の断りの文言は model の文と一字一句同じで、製品の道の理由の文とも一致する', () => {
+    const messages: Record<string, unknown> = catalogMessages;
+    const templates = Object.entries(CATALOG_ITEM_REJECTION_TEMPLATES);
+    expect(Object.keys(messages).filter((key) => key.startsWith('catalog.rejection.')).sort())
+      .toEqual(templates.map(([code]) => `catalog.rejection.${code}`).sort());
+    for (const [code, template] of templates) expect(messages[`catalog.rejection.${code}`]).toBe(template);
+    const unknownFamily: StandardPartSource = { kind: 'standardPart', catalog: 'catalogItem', size: '2',
+      options: { family: 'future-family', item: 'future-family:d2', length: '12' },
+      catalogRevision: 'future-r1', generatorRevision: 'future-1' };
+    const rejection = buildStandardPartFromSourceWithReason(unknownFamily).rejection;
+    expect(rejection?.messageKey).toBe('catalog.rejection.unknown-family');
+    expect(t('catalog.rejection.unknown-family')).toBe(rejection?.message);
   });
 });

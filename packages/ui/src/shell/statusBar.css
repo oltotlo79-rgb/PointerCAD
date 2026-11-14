@@ -8,3 +8,52 @@
   color: var(--pcad-text-muted);
   white-space: nowrap;
 }
+
+/*
+ * 保存の段階と復元用の保存の状態の印(UI の点検の指摘 1)。図柄と 1〜2 語だけを出し、段階の全文は
+ * ツールチップと読み上げへ渡す。幅が足りない時は語が縮み、図柄と中止のボタンは残る
+ * (縮む順は statusText.ts の statusBarFlexShrink)。案内の 1 文を押し出さない。
+ */
+.pcad-statusbar__mark {
+  display: inline-flex;
+  gap: var(--pcad-space-1);
+  align-items: center;
+  min-width: 0;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+  white-space: nowrap;
+}
+
+.pcad-statusbar__mark .pcad-icon,
+.pcad-statusbar__mark .pcad-spinner {
+  flex: none;
+}
+
+.pcad-statusbar__mark-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 復元用の保存の失敗は消さずに、危険の色で気づけるようにする。縮んでも危険の色の図柄は残る。 */
+.pcad-statusbar__mark--failed {
+  color: var(--pcad-danger-text);
+}
+
+.pcad-statusbar__mark--failed .pcad-icon {
+  color: var(--pcad-danger);
+}
+
+/* 画面には出さず、読み上げにだけ渡す全文(保存の段階・復元用の保存の状態)。 */
+.pcad-statusbar__spoken {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+/* ファイル名は縮めても頭の数文字を残す。 */
+.pcad-statusbar__file {
+  min-width: 4em;
+}

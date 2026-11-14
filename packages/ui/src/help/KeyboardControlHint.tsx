@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore.js';
+import { createHoverHintTimer, HOVER_HINT_DELAY_MS } from './controlHintHover.js';
 import './keyboardControlHint.css';
 
 interface ControlHint {
@@ -23,19 +24,30 @@ function controlName(control: HTMLElement, labels: readonly HTMLLabelElement[]):
   return references || control.getAttribute('aria-label')?.trim() || labelText || control.textContent?.trim() || '';
 }
 
-/** Keyboard users read the same title as mouse users; no second description dictionary is maintained. */
+/** The icon-only toolbar controls whose description box also follows a resting mouse (after HOVER_HINT_DELAY_MS). */
+const HOVER_HINT_TARGETS = '.pcad-toolbar button[title], .pcad-toolbar [role="img"][title]';
+
+function hoverHintTarget(target: EventTarget | null): HTMLElement | null {
+  return target instanceof Element ? target.closest<HTMLElement>(HOVER_HINT_TARGETS) : null;
+}
+
+/**
+ * Keyboard users read the same title as mouse users; no second description dictionary is maintained. A mouse resting
+ * on an icon-only toolbar control gets the same box after 0.3 s (the native title tooltip stays as well); keyboard focus
+ * takes precedence over the hovered control.
+ */
 export function KeyboardControlHint(): React.JSX.Element | null {
   const id = useId(), hintElement = useRef<HTMLDivElement>(null);
   const [hint, setHint] = useState<ControlHint | null>(null);
   const [position, setPosition] = useState<{ readonly left: number; readonly top: number } | null>(null);
   const scale = useAppStore(state => state.displaySettings.uiScale);
   useEffect(() => {
-    let keyboard = false, scheduled = 0, owner: HTMLElement | null = null;
+    let keyboard = false, scheduled = 0, owner: HTMLElement | null = null, hovered: HTMLElement | null = null;
     const clear = (): void => { owner = null; setHint(null); };
     const refresh = (): void => {
       scheduled = 0;
-      const active = document.activeElement;
-      if (!keyboard || document.hidden || !(active instanceof HTMLElement)) { clear(); return; }
+      const active = keyboard ? document.activeElement : hovered;
+      if (document.hidden || !(active instanceof HTMLElement)) { clear(); return; }
       const labels = active instanceof HTMLInputElement || active instanceof HTMLSelectElement || active instanceof HTMLTextAreaElement
         ? [...(active.labels ?? [])] : [];
       const titleOwner = active.hasAttribute('title') ? active : labels.find(label => label.hasAttribute('title')) ?? null;
@@ -50,15 +62,25 @@ export function KeyboardControlHint(): React.JSX.Element | null {
         ? previous : { control, titleOwner, text, host });
     };
     const schedule = (): void => { if (!scheduled) scheduled = requestAnimationFrame(refresh); };
+    const hover = createHoverHintTimer<HTMLElement>({ delayMs: HOVER_HINT_DELAY_MS,
+      show: control => { hovered = control; schedule(); }, hide: () => { hovered = null; schedule(); } });
+    const pointerOver = (event: PointerEvent): void => {
+      const control = event.pointerType === 'mouse' ? hoverHintTarget(event.target) : null;
+      if (control !== null) hover.enter(control);
+    };
+    const pointerOut = (event: PointerEvent): void => {
+      const control = hoverHintTarget(event.target);
+      if (control !== null && !(event.relatedTarget instanceof Node && control.contains(event.relatedTarget))) hover.leave(control);
+    };
     const keydown = (event: KeyboardEvent): void => {
       if (event.isComposing) return;
-      if (event.key === 'Escape') { keyboard = false; clear(); return; }
+      if (event.key === 'Escape') { keyboard = false; hover.cancel(); clear(); return; }
       if (['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
         keyboard = true; schedule();
       }
     };
-    const pointer = (): void => { keyboard = false; clear(); };
-    const blur = (): void => { keyboard = false; clear(); };
+    const pointer = (): void => { keyboard = false; hover.press(); clear(); };
+    const blur = (): void => { keyboard = false; hover.cancel(); clear(); };
     const observer = new MutationObserver(records => {
       // The update returns the same hint object when text/owner are unchanged, including changes caused by the tooltip itself.
       if (owner !== null && records.length > 0) schedule();
@@ -66,15 +88,20 @@ export function KeyboardControlHint(): React.JSX.Element | null {
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title', 'aria-label', 'aria-labelledby', 'hidden'] });
     document.addEventListener('keydown', keydown, true);
     document.addEventListener('pointerdown', pointer, true);
+    document.addEventListener('pointerover', pointerOver, true);
+    document.addEventListener('pointerout', pointerOut, true);
     document.addEventListener('focusin', schedule, true);
     document.addEventListener('focusout', schedule, true);
     document.addEventListener('visibilitychange', schedule);
     window.addEventListener('blur', blur);
     return () => {
       if (scheduled) cancelAnimationFrame(scheduled);
+      hover.cancel();
       observer.disconnect();
       document.removeEventListener('keydown', keydown, true);
       document.removeEventListener('pointerdown', pointer, true);
+      document.removeEventListener('pointerover', pointerOver, true);
+      document.removeEventListener('pointerout', pointerOut, true);
       document.removeEventListener('focusin', schedule, true);
       document.removeEventListener('focusout', schedule, true);
       document.removeEventListener('visibilitychange', schedule);

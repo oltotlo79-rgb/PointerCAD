@@ -321,7 +321,7 @@ export async function parameterSearchCsvFlow(page: Page, info: TestInfo, io: Par
   const overPath = info.outputPath('parameters-1mib-plus-1.csv');
   await writeCsv(overPath, overBody);
   await io.importFile(page, importButton(page), overPath);
-  await expect(panel(page).getByRole('alert')).toContainText('ファイルが大きすぎるため開けません。');
+  await expect(panel(page).getByRole('alert')).toContainText('ファイルが大きすぎるため開けず、いまの文書はそのままです。大きさを減らしたファイルを選び直してください。');
   await expect(preview(page)).toHaveCount(0);
   await expectAllRows(page, rows, '1MiB+1 は断られて表が同じ');
 }

@@ -1,0 +1,72 @@
+/*
+ * 設定の窓の畳める見出しと、下書きがある時の確かめ(UI/UX の点検の指摘 7)。
+ * 窓そのもの(.pcad-settings)の位置と幅は appShell.css が持つ。色は appShell.css のテーマの変数だけを使う。
+ */
+
+/* 畳める見出し 1 つ。見出しどうしは細い線で区切り、中身は見出しの下に縦に並べる。 */
+.pcad-settings__section {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--pcad-border);
+  padding-top: var(--pcad-space-2);
+}
+
+/* 見出し。押すと畳む・開く(details の既定の動き)。押せる行として、指の形と押せる高さを持たせる。 */
+.pcad-settings__section-title {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  gap: var(--pcad-space-1);
+  list-style: none;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--pcad-text);
+}
+
+/* 開いているか畳んでいるかを、図面のツリーと同じ三角で示す(display を変えると既定の印が消えるため)。 */
+.pcad-settings__section-title::-webkit-details-marker {
+  display: none;
+}
+
+.pcad-settings__section-title::before {
+  content: '▸';
+  flex: none;
+}
+
+.pcad-settings__section[open] > .pcad-settings__section-title::before {
+  content: '▾';
+}
+
+.pcad-settings__section-title:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: 2px;
+}
+
+.pcad-settings__section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-3);
+  padding-top: var(--pcad-space-2);
+}
+
+/* 下書きがある時の確かめ。題のすぐ下に出し、窓の中で選ばせる(モーダルにしない)。 */
+.pcad-settings__draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  padding: var(--pcad-space-2);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius);
+  background: var(--pcad-surface);
+  color: var(--pcad-text);
+}
+
+.pcad-settings__draft p {
+  margin: 0;
+}
+
+.pcad-settings__draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pcad-space-2);
+}

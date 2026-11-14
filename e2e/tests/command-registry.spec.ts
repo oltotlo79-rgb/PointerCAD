@@ -110,6 +110,12 @@ test('入力・IME・ダイアログのキーを横取りせずF1と生成一覧
   await expect(article.locator('text=pointercad:current-shortcuts')).toHaveCount(0);
 });
 
+test('ツールバーの図柄だけのボタンにマウスを0.3秒置くと、キー移動と同じ説明の箱が出る', async ({ page }, info) => {
+  const { toolbarHoverHintFlow } = await import('./controlHintsFlow.js');
+  await page.goto('/'); await waitForStartupHealth(page, info);
+  await toolbarHoverHintFlow(page, info);
+});
+
 test('P12-5 キー移動でも入力と同じ説明を読み、元の値・操作・拡大表示を保つ', async ({ page }, info) => {
   const { controlHintsFlow } = await import('./controlHintsFlow.js');
   await page.goto('/'); await waitForStartupHealth(page, info);

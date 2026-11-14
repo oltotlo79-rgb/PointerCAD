@@ -220,6 +220,7 @@ export function fileMenuItems(
         tooltipKey: 'toolbar.file.storedTemplateTooltip',
         Icon: TemplateNewIcon,
         label: template.name,
+        sectionKey: 'toolbar.file.section.templates',
       });
     }
   }
@@ -230,6 +231,7 @@ export function fileMenuItems(
       tooltipKey: 'toolbar.file.recentFileTooltip',
       Icon: RecentFileIcon,
       label: recent.name,
+      sectionKey: 'toolbar.file.section.recent',
     });
   }
   return rows;

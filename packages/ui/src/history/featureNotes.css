@@ -23,9 +23,9 @@
   font: inherit;
   color: inherit;
   background: var(--pcad-surface);
-  border: 1px solid var(--pcad-border);
+  border: 1px solid var(--pcad-control-border);
   padding: calc(8px * var(--pcad-scale));
 }
 .pcad-feature-note footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: calc(8px * var(--pcad-scale)); }
-.pcad-feature-note button { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-border); padding: calc(6px * var(--pcad-scale)); }
+.pcad-feature-note button { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-control-border); padding: calc(6px * var(--pcad-scale)); }
 .pcad-feature-note [role="alert"] { color: var(--pcad-danger-text); }

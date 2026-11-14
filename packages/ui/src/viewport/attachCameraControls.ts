@@ -1,5 +1,7 @@
-import { readCameraControlSettings, type CameraControlSettings } from '../settings/cameraControlSettings.js';
-import { cameraDragAction, cameraWheelMatches } from './cameraControlBindings.js';
+import { DEFAULT_VIEW_CONTROLS, type ViewAction, type ViewControlOptions, type ViewControlSettings } from '../settings/viewControlSettings.js';
+import {
+  dragZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewWheelAction, wheelDragEquivalent, wheelZoomDelta,
+} from './cameraControlBindings.js';
 import { HOME_ORBIT, orbit, pan, zoom, type OrbitState } from './cameraMath.js';
 import { exceedsRightDragThreshold } from './rightPointerGesture.js';
 
@@ -26,30 +28,28 @@ export interface CameraControlOverride {
 const MIDDLE_BUTTON = 1;
 
 /**
- * ホイールの目盛りを画素相当へ揃える係数。
- * Firefox などは 1 目盛りを「行」「頁」で送ってくるため、そのままでは拡大縮小が効かない。
+ * ドラッグ(またはホイールのドラッグ相当の移動)の 1 回分を視点へ当てる。速さと向きは設定に従う。
+ * 拡大縮小は縦の移動だけを使う。
  */
-const PIXELS_PER_WHEEL_LINE = 16;
-const PIXELS_PER_WHEEL_PAGE = 100;
-
-function wheelDeltaInPixels(event: WheelEvent): number {
-  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-    return event.deltaY * PIXELS_PER_WHEEL_LINE;
+function movedOrbit(current: OrbitState, action: ViewAction, options: ViewControlOptions,
+  delta: readonly [number, number], viewportHeight: () => number): OrbitState {
+  if (action === 'orbit') return orbit(current, ...scaledOrbitDelta(options, delta[0], delta[1]));
+  if (action === 'pan') {
+    const [deltaX, deltaY] = scaledPanDelta(options, delta[0], delta[1]);
+    return pan(current, deltaX, deltaY, viewportHeight());
   }
-  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
-    return event.deltaY * PIXELS_PER_WHEEL_PAGE;
-  }
-  return event.deltaY;
+  return zoom(current, dragZoomDelta(options, delta[1]));
 }
 
 /**
  * ビューポートの視点操作を canvas へ結びつける(FR-101)。
  *
- * 設定された最大2枠を完全一致の修飾キーで解決する。初期値:
+ * 設定された割当(1 操作に最大4つ。ドラッグとホイール)を完全一致の修飾キーで解決する。初期値:
  * - 視点回転: 中ボタンドラッグ / Alt + 左ボタンドラッグ
  * - 平行移動: 右ボタンドラッグ / Shift + 中ボタンドラッグ
  * - 拡大縮小: 修飾なしホイール / Ctrl + ホイール
  * - ホーム視点: Home キー(このビューポートに入力の焦点があるとき)
+ * ホイール(タッチパッドの 2 本指スクロール)を回転・平行移動へ割り当てた時は、ページを送る向きに動かす。
  *
  * Home キーを受けるため、呼び出し側は canvas を焦点の当たる要素にしておく(`tabIndex` を 0 以上にする)。
  * 視点が変わるたびに onChange を呼ぶ。実際の描画は呼び出し側が行う。
@@ -59,7 +59,7 @@ export function attachCameraControls(
   onChange: () => void,
   onInteractionChange: (active: boolean) => void = () => {},
   override?: CameraControlOverride,
-  readSettings: () => CameraControlSettings = () => readCameraControlSettings(undefined),
+  readSettings: () => ViewControlSettings = () => DEFAULT_VIEW_CONTROLS,
 ): CameraControls {
   let state: OrbitState = HOME_ORBIT;
   let dragMode: 'orbit' | 'pan' | 'zoom' | null = null;
@@ -83,11 +83,12 @@ export function attachCameraControls(
     else state = HOME_ORBIT;
     onChange();
   };
+  const viewportHeight = (): number => override?.getOrbit() != null ? override.viewportHeight() : canvas.clientHeight;
 
   function beginDrag(event: PointerEvent): void {
     if (dragMode !== null) return;
     const settings = readSettings();
-    const action = cameraDragAction(settings, event);
+    const action = viewDragAction(settings, event);
     if (action === null) return;
     if (action === 'orbit' && override?.getOrbit() != null && !override.canOrbit()) return;
     dragMode = action;
@@ -129,14 +130,8 @@ export function attachCameraControls(
     lastX = event.clientX;
     lastY = event.clientY;
 
-    const current = getOrbit();
-    setOrbit(
-      dragMode === 'orbit'
-        ? orbit(current, deltaX, deltaY)
-        : dragMode === 'pan'
-          ? pan(current, deltaX, deltaY, override?.getOrbit() != null ? override.viewportHeight() : canvas.clientHeight)
-          : zoom(current, deltaY * dragSettings.dragSensitivity * (dragSettings.invertDrag ? -1 : 1)),
-    );
+    if (dragMode === null) return;
+    setOrbit(movedOrbit(getOrbit(), dragMode, dragSettings.options, [deltaX, deltaY], viewportHeight));
   }
 
   function endDrag(event: PointerEvent): void {
@@ -169,12 +164,21 @@ export function attachCameraControls(
   function onWheel(event: WheelEvent): void {
     if (dragMode !== null) return;
     const settings = readSettings();
-    if (!cameraWheelMatches(settings, event)) return;
+    const action = viewWheelAction(settings, event);
+    if (action === null) return;
     // Ctrl + ホイールでの頁全体の拡大や、タッチパッドの慣性スクロールを止める。
     event.preventDefault();
-    const delta = wheelDeltaInPixels(event) * settings.wheelSensitivity * (settings.invertWheel ? -1 : 1);
-    if (!Number.isFinite(delta) || delta === 0) return;
-    setOrbit(zoom(getOrbit(), delta));
+    if (action === 'zoom') {
+      const delta = wheelZoomDelta(settings.options, event);
+      if (!Number.isFinite(delta) || delta === 0) return;
+      setOrbit(zoom(getOrbit(), delta));
+      return;
+    }
+    // 4 分割の正投影の区画は回さない(ドラッグの回転と同じ扱い)。
+    if (action === 'orbit' && override?.getOrbit() != null && !override.canOrbit()) return;
+    const delta = wheelDragEquivalent(event);
+    if (!delta.every(value => Number.isFinite(value)) || delta.every(value => value === 0)) return;
+    setOrbit(movedOrbit(getOrbit(), action, settings.options, delta, viewportHeight));
   }
 
   function onKeyDown(event: KeyboardEvent): void {

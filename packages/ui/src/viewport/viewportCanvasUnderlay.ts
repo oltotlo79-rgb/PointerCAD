@@ -1,9 +1,9 @@
 import { worldToPlane } from '@pointercad/model';
-import { readCameraControlSettings } from '../settings/cameraControlSettings.js';
+import { currentViewControls } from '../settings/viewControlSettings.js';
 import { resolveWorkPlaneOf } from '../sketch/referenceCommands.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { cameraDragAction } from './cameraControlBindings.js';
+import { viewDragAction } from './cameraControlBindings.js';
 import { canvasPixelPointOf, canvasPlacementOf } from './canvasLayer.js';
 import { createCanvasImageCache } from './createCanvasImageCache.js';
 import type { ViewportScene } from './createViewportScene.js';
@@ -73,7 +73,7 @@ export function attachUnderlayPointInput(canvas: HTMLCanvasElement, scene: Pick<
     if (target === undefined) {
       return;
     }
-    if (cameraDragAction(readCameraControlSettings(state.displaySettings.cameraControls), event) !== null) return;
+    if (viewDragAction(currentViewControls(state.displaySettings), event) !== null) return;
     if (event.button !== 0) {
       // 中ボタン・右ボタンは視点操作へそのまま通す(合わせている間も回せる)。
       return;

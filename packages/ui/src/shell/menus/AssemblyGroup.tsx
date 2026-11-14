@@ -26,8 +26,9 @@ export function AssemblyGroup(): React.JSX.Element | null {
 
   return (
     <div className="pcad-toolbar__group" role="group" aria-label={t('assembly.menu.build')}>
+      {/* 見える名前を読み上げ名とヘルプの「組む」にそろえる(UI/UX の点検の指摘 50)。文書の種類の札が「アセンブリ」を示す。 */}
       <span className="pcad-toolbar__group-label" title={t('assembly.menu.buildTooltip')}>
-        {t('assembly.mode')}
+        {t('assembly.menu.build')}
       </span>
       <div className="pcad-segmented">
       <ToolMenu

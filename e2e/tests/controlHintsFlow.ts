@@ -216,3 +216,62 @@ export async function controlHintsFlow(page: Page, info: TestInfo): Promise<void
   expect(scaled.y + scaled.height).toBeLessThanOrEqual(900);
   expect(errors).toEqual([]);
 }
+
+/**
+ * A mouse resting 0.3 s on an icon-only toolbar control shows the same description box as keyboard focus
+ * (UI/UX review finding 6). The native title and the accessible name stay unchanged. The delay is measured in the page
+ * (pointerover to the box's insertion), not by host wall time, so a slow runner cannot make it flaky.
+ */
+export async function toolbarHoverHintFlow(page: Page, info: TestInfo): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  const hint = page.locator('.pcad-keyboard-control-hint');
+  const tool = page.getByRole('group', { name: 'スケッチ', exact: true }).getByRole('button', { name: '線分', exact: true });
+  // At 1440 px the sketch tool's caption is folded away, so the name is otherwise only in the title.
+  await expect(tool.locator('.pcad-button__label')).toBeHidden();
+  const title = await tool.getAttribute('title');
+  if (title === null || title.trim() === '') throw new Error('The icon-only tool must keep its native title');
+  const toolBounds = await tool.boundingBox(), canvas = await page.locator('canvas.pcad-viewport__canvas').boundingBox();
+  if (toolBounds === null || canvas === null) throw new Error('Toolbar tool or viewport missing');
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+  await expect(hint).toHaveCount(0);
+  const timing = await page.evaluateHandle(() => {
+    const record = { over: 0, shown: 0 };
+    document.addEventListener('pointerover', event => {
+      if (record.over === 0 && event.target instanceof Element && event.target.closest('[aria-label="線分"]') !== null) record.over = performance.now();
+    }, true);
+    new MutationObserver(() => {
+      if (record.shown === 0 && document.querySelector('.pcad-keyboard-control-hint') !== null) record.shown = performance.now();
+    }).observe(document.body, { childList: true, subtree: true });
+    return record;
+  });
+  await page.mouse.move(toolBounds.x + toolBounds.width / 2, toolBounds.y + toolBounds.height / 2);
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText(title);
+  const measured = await timing.evaluate(record => ({ ...record }));
+  await info.attach('toolbar-hover-hint-timing', { contentType: 'application/json', body: JSON.stringify({ environment: info.project.name, ...measured, title }) });
+  expect(measured.over).toBeGreaterThan(0);
+  expect(measured.shown - measured.over).toBeGreaterThanOrEqual(295);
+  await expect(tool).toHaveAttribute('title', title);
+  await expect(tool).toHaveAttribute('aria-label', '線分');
+  const bounds = await hint.boundingBox();
+  if (bounds === null) throw new Error('Hover description box has no layout');
+  expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(1440);
+  // Leaving removes it; pressing removes it and it stays away while the pointer remains on the same control.
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+  await expect(hint).toHaveCount(0);
+  const undo = page.getByRole('button', { name: '元に戻す', exact: true });
+  const undoBounds = await undo.boundingBox();
+  if (undoBounds === null) throw new Error('Undo control missing');
+  await page.mouse.move(undoBounds.x + undoBounds.width / 2, undoBounds.y + undoBounds.height / 2);
+  await expect(hint).toBeVisible();
+  await page.mouse.down(); await page.mouse.up();
+  await expect(hint).toHaveCount(0);
+  await page.mouse.move(undoBounds.x + undoBounds.width / 2 + 1, undoBounds.y + undoBounds.height / 2);
+  // Still absent after more than the delay, measured in the page.
+  expect(await page.evaluate(() => new Promise<boolean>(resolve => {
+    setTimeout(() => { resolve(document.querySelector('.pcad-keyboard-control-hint') === null); }, 600);
+  }))).toBe(true);
+  await timing.dispose();
+  expect(errors).toEqual([]);
+}

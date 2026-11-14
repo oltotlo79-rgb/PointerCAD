@@ -13,6 +13,7 @@ export function AutoSaveIntervalForm(): React.JSX.Element {
   const dirty = draft !== null && minutes !== savedMinutes;
   const invalid = minutes === null;
   return <form className="pcad-settings__group pcad-auto-save-settings" aria-label={t('settings.autoSave.title')} data-help-topic="display-settings"
+    data-settings-draft={draft !== null}
     onSubmit={event => {
       event.preventDefault();
       if (minutes === null) return;

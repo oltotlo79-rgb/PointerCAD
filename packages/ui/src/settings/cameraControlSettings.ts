@@ -1,4 +1,8 @@
 import { isRecord } from '../valueGuards.js';
+/*
+ * 視点の操作の設定 v1(保存の欄 `cameraControls`)。**凍結**: 新しい版は v2(viewControlSettings.ts の
+ * `viewControls`)が正本で、この形は v2 が無い時の移行と、古い版へ戻した時の控えとして読むだけ(書き換えない)。
+ */
 export const CAMERA_ACTIONS = ['orbit', 'pan', 'zoom'] as const;
 export type CameraAction = typeof CAMERA_ACTIONS[number];
 export interface CameraBinding {
@@ -18,7 +22,7 @@ export interface CameraControlSettings {
   readonly invertWheel: boolean;
   readonly invertDrag: boolean;
 }
-export type CameraSettingsError = 'count' | 'binding' | 'collision' | 'primary' | 'sensitivity';
+type CameraSettingsError = 'count' | 'binding' | 'collision' | 'primary' | 'sensitivity';
 const binding = (input: CameraBinding['input'], alt = false, shift = false, ctrl = false): CameraBinding =>
   ({ input, alt, shift, ctrl, meta: false });
 /** Migration deliberately drops the third legacy pan (Alt+Shift+left). */
@@ -49,7 +53,7 @@ export function isCameraBinding(value: unknown): value is CameraBinding {
     && typeof value.alt === 'boolean' && typeof value.shift === 'boolean'
     && typeof value.ctrl === 'boolean' && typeof value.meta === 'boolean';
 }
-export function cameraBindingKey(value: CameraBinding): string {
+function cameraBindingKey(value: CameraBinding): string {
   return [value.input, value.alt, value.shift, value.ctrl, value.meta].join(':');
 }
 export function cameraSettingsError(value: unknown): CameraSettingsError | null {

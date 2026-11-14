@@ -121,7 +121,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
   const scalarField = (key: FunctionScalarField, label: string) => <div className="pcad-function-field" key={key}>
     <input title={t(`functionPlot.control.scalar.${key}`)} aria-label={label} aria-invalid={issues.has(key) || issues.has(`${key.split('.')[0]}.range`)} required value={draft.scalars[key].source}
       onChange={event => change({ ...draft, scalars: { ...draft.scalars, [key]: editFunctionField(draft.scalars[key], event.target.value) } })} />
-    <button type="button" title={`${label}: ${t('math.open')}`} aria-label={`${label}: ${t('math.open')}`}
+    <button type="button" title={`${label}:${t('math.open')}`} aria-label={`${label}: ${t('math.open')}`}
       onClick={() => setEditor({ kind: 'scalar', key })}>ƒ</button>
   </div>;
   const inputEditor = () => {
@@ -193,7 +193,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
             role="group" aria-label={`${axis} =`}>
             <label htmlFor={`${id}-output-${axis}`}>{axis} =</label><input id={`${id}-output-${axis}`} title={t('functionPlot.control.output')} required value={draft.outputs[axis].source}
               aria-invalid={issues.has(axis)} onChange={event => change({ ...draft, outputs: { ...draft.outputs, [axis]: editFunctionField(draft.outputs[axis], event.target.value) } })} />
-            <button title={t('functionPlot.control.mathEditor')} type="button" aria-label={`${axis}: ${t('math.open')}`} onClick={() => setEditor({ kind: 'function', axis })}>{t('math.open')}</button>
+            <button className="pcad-button" title={t('functionPlot.control.mathEditor')} type="button" aria-label={`${axis}: ${t('math.open')}`} onClick={() => setEditor({ kind: 'function', axis })}>{t('math.open')}</button>
             <small>{t('math.angleUnit')}: {t(draft.outputs[axis].angleUnit === 'degree' ? 'math.degree' : 'math.radian')}</small>
           </div>)}
           {draft.form === 'implicit' ? <>
@@ -209,7 +209,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
             <div className="pcad-function-equation" role="group" aria-label="F =">
               <label htmlFor={`${id}-equation`}>F =</label><input id={`${id}-equation`} title={t('functionPlot.control.equation')} required value={draft.equation.source} aria-invalid={issues.has('equation')}
                 onChange={event=>change({...draft,equation:editFunctionField(draft.equation,event.target.value)})} />
-              <button title={t('functionPlot.control.mathEditor')} type="button" aria-label={`F: ${t('math.open')}`} onClick={()=>setEditor({kind:'equation'})}>{t('math.open')}</button>
+              <button className="pcad-button" title={t('functionPlot.control.mathEditor')} type="button" aria-label={`F: ${t('math.open')}`} onClick={()=>setEditor({kind:'equation'})}>{t('math.open')}</button>
               <small>{t('math.angleUnit')}: {t(draft.equation.angleUnit === 'degree' ? 'math.degree' : 'math.radian')}</small>
             </div>
           </> : null}
@@ -235,11 +235,11 @@ export function FunctionPlotDialog({ featureId, onClose }: {
           ? <FunctionSurfacePreview definition={preview.feature.definition} body={preview.body} onDisplay={display} />
           : <FunctionCurvePreview definition={preview.feature.definition} curves={preview.curves} />}
         <div className="pcad-function-actions">
-          <button title={t('functionPlot.control.help')} type="button" onClick={() => useAppStore.getState().openHelpTopic(surface ? 'function-surface' : 'function-curve')}>{t(surface ? 'functionPlot.surfaceHelp' : 'functionPlot.help')}</button>
-          <button title={t('functionPlot.control.cancelPlot')} type="button" onClick={close}>{t('math.cancel')}</button>
-          {busy ? <button key="stop" title={t('functionPlot.control.stopPlot')} type="button" onClick={event => { event.preventDefault(); running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
-            : <button key="submit" title={t('functionPlot.control.previewPlot')} type="submit">{t('functionPlot.preview')}</button>}
-          <button title={t('functionPlot.control.applyPlot')} type="button" disabled={busy || !displayed || preview === null || preview.draft !== draft} onClick={() => {
+          <button className="pcad-button" title={t('functionPlot.control.help')} type="button" onClick={() => useAppStore.getState().openHelpTopic(surface ? 'function-surface' : 'function-curve')}>{t(surface ? 'functionPlot.surfaceHelp' : 'functionPlot.help')}</button>
+          <button className="pcad-button" title={t('functionPlot.control.cancelPlot')} type="button" onClick={close}>{t('math.cancel')}</button>
+          {busy ? <button className="pcad-button" key="stop" title={t('functionPlot.control.stopPlot')} type="button" onClick={event => { event.preventDefault(); running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
+            : <button className="pcad-button" key="submit" title={t('functionPlot.control.previewPlot')} type="submit">{t('functionPlot.preview')}</button>}
+          <button className="pcad-button pcad-button--primary" title={t('functionPlot.control.applyPlot')} type="button" disabled={busy || !displayed || preview === null || preview.draft !== draft} onClick={() => {
             if (!displayed || preview === null || preview.draft !== draft || !isCurrent()) return;
             useAppStore.getState().applyDocument(preview.document); close();
           }}>{t(surface ? 'functionPlot.surfaceApply' : 'functionPlot.apply')}</button>

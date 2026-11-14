@@ -94,6 +94,8 @@ export const STANDARD_CATALOG_IDS: readonly StandardCatalogId[] = [
   'hBeam',
   // 溶接のビードの区間(assembly/welding)。鋼材のカタログの並びを変えないよう、その前に置く。
   'filletWeld',
+  // 族の登録口の部品(assembly/catalog)。同じ理由で鋼材のカタログの前に置く。
+  'catalogItem',
   'flatBar',
   'roundBar',
   'steelPipe',

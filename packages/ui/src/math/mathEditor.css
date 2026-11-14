@@ -13,6 +13,9 @@
 }
 .pcad-math-dialog::backdrop { background: rgb(0 0 0 / .4); }
 .pcad-math-dialog h2 { margin: 0; font-size: 1.1em; }
+/* 送った中身が題の帯の上の内余白に透けて見えないよう、題の帯を窓の内余白の上端と左右の端まで広げて貼り付ける(指摘 33)。
+   負の margin と同じ量の padding なので、題の文字と中身の位置は変わらない。帯の地は窓と同じ色。 */
+.pcad-math-dialog > .pcad-window-title { top: calc(-16px * var(--pcad-scale)); margin-top: calc(-16px * var(--pcad-scale)); margin-inline: calc(-16px * var(--pcad-scale)); padding-top: calc(16px * var(--pcad-scale)); padding-inline: calc(16px * var(--pcad-scale)); background: var(--pcad-bg); }
 /* One cancel button, always in the same place, whether the editor is still preparing or ready
    (a click landing during that transition used to miss the button). */
 .pcad-math-dialog__actions { display: flex; justify-content: flex-end; margin-block-start: calc(10px * var(--pcad-scale)); }
@@ -37,7 +40,7 @@
 :where(.pcad-math-editor) :where(button, input, select, textarea) {
   font: inherit;
   color: inherit;
-  border: 1px solid var(--pcad-border);
+  border: 1px solid var(--pcad-control-border);
   border-radius: var(--pcad-radius-small);
   padding: calc(5px * var(--pcad-scale));
   background: var(--pcad-surface);
@@ -45,7 +48,6 @@
   max-width: 100%;
 }
 .pcad-math-editor button { cursor: pointer; }
-.pcad-math-editor button:disabled { opacity: .55; cursor: default; }
 .pcad-math-editor button:focus-visible,
 .pcad-math-editor input:focus-visible,
 .pcad-math-editor select:focus-visible,
@@ -57,7 +59,7 @@
   min-height: calc(52px * var(--pcad-scale));
   max-width: 100%;
   font-size: calc(19px * var(--pcad-scale));
-  border: 1px solid var(--pcad-border-strong);
+  border: 1px solid var(--pcad-control-border);
   border-radius: var(--pcad-radius-small);
   padding: calc(6px * var(--pcad-scale));
   color: var(--pcad-text);
@@ -119,7 +121,7 @@
   font: inherit;
   color: inherit;
   background: var(--pcad-surface);
-  border: 1px solid var(--pcad-border);
+  border: 1px solid var(--pcad-control-border);
   min-width: 0;
   padding: calc(5px * var(--pcad-scale));
 }

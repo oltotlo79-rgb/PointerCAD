@@ -1026,6 +1026,20 @@ describe('「ファイル」の一覧の、数の決まらない行(P6 タスク
     ]);
   });
 
+  it('保存したひな形と最近使ったファイルには小見出しが付き、押す前に見分けられる(決まった操作には付かない)', () => {
+    const rows = fileMenuItems(TEMPLATES, RECENT);
+    expect(rows.map((row) => row.sectionKey ?? null)).toEqual([
+      ...FILE_MENU_ITEMS.map(() => null),
+      'toolbar.file.section.templates', 'toolbar.file.section.templates',
+      'toolbar.file.section.recent', 'toolbar.file.section.recent', 'toolbar.file.section.recent',
+    ]);
+    expect(t('toolbar.file.section.templates')).toBe('保存したひな形から新規');
+    expect(t('toolbar.file.section.recent')).toBe('最近使ったファイル');
+    // An assembly lists no part templates, so only the recent-file heading remains.
+    expect(fileMenuItems(TEMPLATES, RECENT, 'assembly').flatMap((row) => row.sectionKey ?? []))
+      .toEqual(['toolbar.file.section.recent', 'toolbar.file.section.recent', 'toolbar.file.section.recent']);
+  });
+
   it('動く行の id には種類の接頭辞が付き、決まった操作と重ならない(rules/06 10.9)', () => {
     const rows = fileMenuItems(TEMPLATES, RECENT);
     const ids = rows.map((row) => row.id);

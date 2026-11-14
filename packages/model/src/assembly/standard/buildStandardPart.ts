@@ -22,6 +22,10 @@ import type {
 import {
   findMetricThread, metricThreadPitch, threadMinorDiameter, type ThreadSeries,
 } from '../../thread/metricThread.js';
+import type { CatalogItemRejectionCode } from '../catalog/rejection.js';
+import {
+  buildCatalogItemPart, catalogItemNominalVolume, catalogItemRejection, catalogItemSourceFromOptions,
+} from '../catalog/source.js';
 import { planReplacement, type ReplacementPlan, type ReplacementResolvedData } from '../replaceComponent.js';
 import type { AssemblyDocument, StandardCatalogId } from '../types.js';
 import type { StandardPartSource } from '../resolveAssembly.js';
@@ -688,6 +692,8 @@ function buildLegacyStandardPart(
     case 'steelPipe': return null;
     // 溶接のビードは自分の版を持ち、旧い表の経路では組まない。
     case 'filletWeld': return null;
+    // 族の部品は族の登録口(catalog/source.ts)だけで組む。旧い表の経路では組まない。
+    case 'catalogItem': return null;
   }
 }
 
@@ -698,6 +704,7 @@ export function buildStandardPart(
   options: Readonly<Record<string, string>> = {},
 ): PartDocument | null {
   if (catalog === 'filletWeld') return buildFilletWeldPart(createStandardPartSource(catalog, size, options));
+  if (catalog === 'catalogItem') return buildCatalogItemPart(createStandardPartSource(catalog, size, options));
   if (hasSteelOptions(options) || catalog === 'flatBar' || catalog === 'roundBar' || catalog === 'steelPipe') {
     const row = findSteelProduct(catalog, size, options);
     if (row === undefined) return null;
@@ -713,6 +720,8 @@ export function buildStandardPartFromSource(source: StandardPartSource): PartDoc
   // 溶接のビードは保存した自分の版を確かめる(知らない版からは何も組まない)。
   if (source.catalog === 'filletWeld') return source.generatorRevision === CIRCULAR_FILLET_WELD_GENERATOR_REVISION
     ? buildCircularFilletWeldPartFromSource(source) : buildFilletWeldPart(source);
+  // 族の部品は族の登録口で確かめて組む(鋼材・従来の版の道には入れない)。
+  if (source.catalog === 'catalogItem') return buildCatalogItemPart(source);
   if (source.catalogRevision === STEEL_CATALOG_REVISION
     && (source.generatorRevision === STEEL_GENERATOR_REVISION
       || source.generatorRevision === LEGACY_STEEL_GENERATOR_REVISION)) {
@@ -728,15 +737,17 @@ export function buildStandardPartFromSource(source: StandardPartSource): PartDoc
   return buildLegacyStandardPart(source.catalog, source.size, source.options, source.generatorRevision);
 }
 
-export type StandardPartRejectionCode = SteelGradeRejectionCode | 'size-not-in-catalog'
+type SteelPartRejectionCode = SteelGradeRejectionCode | 'size-not-in-catalog'
   | 'saved-fields-mismatch' | 'steel-options-with-legacy-revision' | 'unsupported-steel-catalog'
   | 'unsupported-catalog-revision' | 'unsupported-generator-revision' | 'invalid-steel-length'
   | 'generation-unavailable';
+/** 鋼材の理由と族の部品の理由(`catalog/rejection.ts`)。どちらの理由かは `messageKey` の頭で分かる。 */
+export type StandardPartRejectionCode = SteelPartRejectionCode | CatalogItemRejectionCode;
 
 /** Diagnostic data is derived, never added to the six saved steel options or the part key. */
 interface StandardPartRejection {
   readonly code: StandardPartRejectionCode;
-  readonly messageKey: `assembly.steel.rejection.${StandardPartRejectionCode}`;
+  readonly messageKey: `assembly.steel.rejection.${SteelPartRejectionCode}` | `catalog.rejection.${CatalogItemRejectionCode}`;
   readonly parameters: Readonly<Record<string, string>>;
   /** Japanese fallback for model consumers; the matching UI template lives in assembly.json. */
   readonly message: string;
@@ -751,7 +762,7 @@ function steelSectionCatalog(catalog: StandardCatalogId): catalog is SteelProduc
   return STEEL_SECTION_CATALOGS.some((candidate) => candidate === catalog);
 }
 
-function steelRejection(code: StandardPartRejectionCode, message: string,
+function steelRejection(code: SteelPartRejectionCode, message: string,
   parameters: Readonly<Record<string, string>> = {}, fields: readonly string[] = [],
   basis: readonly SteelStandardReference[] = []): StandardPartRejection {
   return { code, messageKey: `assembly.steel.rejection.${code}`, parameters, message, fields, basis };
@@ -776,6 +787,8 @@ function mismatchedSteelFields(row: SteelProduct, options: Readonly<Record<strin
  * Legacy builders remain byte-for-byte compatible; this opt-in diagnostic rejects mixed revisions.
  */
 export function standardPartRejection(source: StandardPartSource): StandardPartRejection | null {
+  // 族の部品は鋼材の指定や版を持っていても鋼材として確かめない(族の理由で断る)。
+  if (source.catalog === 'catalogItem') return catalogItemRejection(source);
   const steel = hasSteelOptions(source.options) || source.catalogRevision === STEEL_CATALOG_REVISION
     || source.generatorRevision === STEEL_GENERATOR_REVISION
     || source.generatorRevision === LEGACY_STEEL_GENERATOR_REVISION
@@ -849,6 +862,8 @@ export function createStandardPartSource(
         : options.weldCylinderRadius !== undefined ? FILLET_WELD_CYLINDRICAL_GENERATOR_REVISION
         : options.weldAngle === undefined ? FILLET_WELD_GENERATOR_REVISION : FILLET_WELD_OBLIQUE_GENERATOR_REVISION };
   }
+  // 族の部品の版は族が持つ。選ぶ画面は読み込んだ族から catalog/source.ts の createCatalogItemSource で作る。
+  if (catalog === 'catalogItem') return catalogItemSourceFromOptions(size, options);
   if (hasSteelOptions(options) || catalog === 'flatBar' || catalog === 'roundBar' || catalog === 'steelPipe') {
     return { kind: 'standardPart', catalog, size,
       options: { ...options, length: options.length ?? DEFAULT_STANDARD_SECTION_LENGTH },
@@ -912,6 +927,7 @@ export function standardPartNominalVolume(
   size: string,
   options: Readonly<Record<string, string>> = {},
 ): number | null {
+  if (catalog === 'catalogItem') return catalogItemNominalVolume(size, options);
   const steel = hasSteelOptions(options) || catalog === 'flatBar' || catalog === 'roundBar' || catalog === 'steelPipe';
   const steelRow = steel ? findSteelProduct(catalog, size, options) : undefined;
   if (steel && (steelRow === undefined || steelLength(options.length ?? DEFAULT_STANDARD_SECTION_LENGTH) === null)) return null;

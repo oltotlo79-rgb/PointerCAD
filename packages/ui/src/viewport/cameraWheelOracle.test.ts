@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, type ViewControlOptions, type ViewControlSettings, type ViewTrigger } from '../settings/viewControlSettings.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { partWithPoint, resetTestStore } from '../store/testing/createTestStore.js';
 import { attachCameraControls } from './attachCameraControls.js';
@@ -12,6 +12,10 @@ const MODES = [{ mode: 0, unit: 'pixel', conversion: 1 }, { mode: 1, unit: 'line
   { mode: 2, unit: 'page', conversion: 100 }] as const;
 const CASES = MODES.flatMap(mode => [-1, 1].flatMap(direction => [0.1, 1, 10].flatMap(sensitivity =>
   [false, true].map(invert => ({ ...mode, direction, sensitivity, invert })))));
+const wheel = (modifiers: Partial<Record<'alt' | 'shift' | 'ctrl' | 'meta', boolean>> = {}): ViewTrigger =>
+  ({ kind: 'wheel', alt: false, shift: false, ctrl: false, meta: false, ...modifiers });
+const configure = (bindings: Partial<ViewControlSettings['bindings']>, options: Partial<ViewControlOptions> = {}): ViewControlSettings =>
+  ({ ...DEFAULT_VIEW_CONTROLS, bindings: { ...DEFAULT_VIEW_CONTROLS.bindings, ...bindings }, options: { ...DEFAULT_VIEW_CONTROLS.options, ...options } });
 
 function send(target: EventTarget, type: string, properties: Record<string, unknown> = {}): Event {
   const input = Object.assign(new Event(type, { cancelable: true }), { pointerId: 7, pointerType: 'mouse',
@@ -21,7 +25,7 @@ function send(target: EventTarget, type: string, properties: Record<string, unkn
   return input;
 }
 
-function setup(readSettings: () => CameraControlSettings = () => DEFAULT_CAMERA_CONTROLS) {
+function setup(readSettings: () => ViewControlSettings = () => DEFAULT_VIEW_CONTROLS) {
   const view = new EventTarget(), captured = new Set<number>();
   // EventTarget dispatches through the installed product listener; no onWheel mock.
   const canvas = Object.assign(new EventTarget() as HTMLCanvasElement, { clientHeight: 600, ownerDocument: { defaultView: view },
@@ -44,7 +48,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('wheel distance at the actual camera dispatcher with an independent oracle', () => {
   it.each(CASES)('$unit direction=$direction sensitivity=$sensitivity invert=$invert', entry => {
-    const settings = { ...DEFAULT_CAMERA_CONTROLS, wheelSensitivity: entry.sensitivity, invertWheel: entry.invert };
+    const settings = configure({}, { wheelSensitivity: entry.sensitivity, invertWheel: entry.invert });
     const app = setup(() => settings);
     try {
       const delta = entry.direction * 0.75;
@@ -58,7 +62,7 @@ describe('wheel distance at the actual camera dispatcher with an independent ora
 
   it.each(MODES)('continuous fractional $unit input equals its sum without clamping', ({ mode, conversion }) => {
     const deltas = [-0.25, -0.5, 0.125, -0.375], sensitivity = 2.5;
-    const app = setup(() => ({ ...DEFAULT_CAMERA_CONTROLS, wheelSensitivity: sensitivity, invertWheel: true }));
+    const app = setup(() => configure({}, { wheelSensitivity: sensitivity, invertWheel: true }));
     try {
       for (const deltaY of deltas) send(app.canvas, 'wheel', { deltaMode: mode, deltaY });
       const continuous = app.controls.getOrbit().distance;
@@ -84,12 +88,12 @@ describe('wheel distance at the actual camera dispatcher with an independent ora
   });
 
   it('retains pixel behavior for an unknown deltaMode and reads sensitivity live', () => {
-    let settings = DEFAULT_CAMERA_CONTROLS;
+    let settings = DEFAULT_VIEW_CONTROLS;
     const app = setup(() => settings);
     try {
       send(app.canvas, 'wheel', { deltaMode: 99, deltaY: 25 });
       expectRelative(app.controls.getOrbit().distance, 240 * 1.1 ** 0.25);
-      settings = { ...settings, wheelSensitivity: 2, invertWheel: true };
+      settings = configure({}, { wheelSensitivity: 2, invertWheel: true });
       send(app.canvas, 'wheel', { deltaMode: 99, deltaY: 25, ctrlKey: true });
       expectRelative(app.controls.getOrbit().distance, 240 * 1.1 ** -0.25);
       expect(app.changed).toHaveBeenCalledTimes(2);
@@ -145,7 +149,7 @@ describe('wheel distance at the actual camera dispatcher with an independent ora
     });
 
   it('distinguishes line x16 from x1 and live sensitivity from ignoring it', () => {
-    const app = setup(() => ({ ...DEFAULT_CAMERA_CONTROLS, wheelSensitivity: 2 }));
+    const app = setup(() => configure({}, { wheelSensitivity: 2 }));
     try {
       send(app.canvas, 'wheel', { deltaMode: 1, deltaY: 2 });
       const expected = 255.0953606071081; // 240 * 1.1 ** (2 * 16 * 2 / 100)
@@ -159,6 +163,39 @@ describe('wheel distance at the actual camera dispatcher with an independent ora
       expect(Math.abs(before.distance * 1.1 ** 2 - before.distance)).toBeGreaterThan(50);
       expect(app.changed).toHaveBeenCalledTimes(1);
     } finally { app.controls.detach(); }
+  });
+
+  it('a wheel assigned to orbit turns like a page scroll with the rotation speed and inversion (Shift+wheel arrives horizontally)', () => {
+    const app = setup(() => configure({ orbit: [wheel({ shift: true })], pan: [wheel()], zoom: [wheel({ ctrl: true })] },
+      { orbitSensitivity: 2, invertOrbitY: true }));
+    try {
+      const event = send(app.canvas, 'wheel', { shiftKey: true, deltaMode: 1, deltaX: 1, deltaY: -0.5 });
+      expect(event.defaultPrevented).toBe(true);
+      // Line units: (16, -8) px scrolled = a (-16, 8) px drag; speed 2 and the vertical inversion give (-32, -16).
+      const orbit = app.controls.getOrbit();
+      expect(orbit.azimuth).toBeCloseTo(0.37 + 32 * 0.008, 12);
+      expect(orbit.elevation).toBeCloseTo(-0.21 - 16 * 0.008, 12);
+      expect(orbit).toEqual({ ...INITIAL, azimuth: orbit.azimuth, elevation: orbit.elevation });
+      expect(app.changed).toHaveBeenCalledTimes(1);
+    } finally { app.controls.detach(); }
+  });
+
+  it('a wheel assigned to pan moves the view exactly like the equivalent right drag at the pan speed; Ctrl+wheel still zooms', () => {
+    const app = setup(() => configure({ pan: [wheel(), { kind: 'drag', button: 'right', alt: false, shift: false, ctrl: false, meta: false }],
+      zoom: [wheel({ ctrl: true })] }, { panSensitivity: 0.5, orbitSensitivity: 9 }));
+    const reference = setup();
+    try {
+      expect(send(app.canvas, 'wheel', { deltaX: 12, deltaY: -6 }).defaultPrevented).toBe(true);
+      // The same (-6, 3) px as a default-speed right drag beyond its 6 px threshold.
+      send(reference.canvas, 'pointerdown', { button: 2, buttons: 2 });
+      send(reference.canvas, 'pointermove', { button: 2, buttons: 2, clientX: 114, clientY: 143 });
+      send(reference.canvas, 'pointerup', { button: 2, buttons: 0, clientX: 114, clientY: 143 });
+      expect(app.controls.getOrbit().target).not.toEqual(INITIAL.target);
+      expect(app.controls.getOrbit()).toEqual(reference.controls.getOrbit());
+      send(app.canvas, 'wheel', { ctrlKey: true, deltaY: 100 });
+      expectRelative(app.controls.getOrbit().distance, 240 * 1.1);
+      expect(app.changed).toHaveBeenCalledTimes(2);
+    } finally { app.controls.detach(); reference.controls.detach(); }
   });
 
   it('100 wheel operations leave document notifications, ID, version, inputs and history unchanged', () => {

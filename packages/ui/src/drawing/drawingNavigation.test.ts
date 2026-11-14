@@ -2,19 +2,22 @@ import { readFileSync } from 'node:fs';
 import { createFontStore, renderDrawing, toPdf, toSvg } from '@pointercad/drawing';
 import { createDrawingDocument } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_CAMERA_CONTROLS, type CameraBinding, type CameraControlSettings } from '../settings/cameraControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, type ViewControlOptions, type ViewControlSettings, type ViewTrigger } from '../settings/viewControlSettings.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachDrawingNavigation, drawingEditPointerMatches, drawingPaperPoint, INITIAL_DRAWING_NAVIGATION, zoomDrawingNavigation } from './drawingNavigation.js';
 
 beforeEach(resetTestStore);
-const binding = (input: CameraBinding['input'], modifiers: Partial<CameraBinding> = {}): CameraBinding =>
-  ({ input, alt: false, shift: false, ctrl: false, meta: false, ...modifiers });
-const custom: CameraControlSettings = { ...DEFAULT_CAMERA_CONTROLS,
-  pan: [binding('right'), binding('middle', { shift: true })],
-  zoom: [binding('left', { alt: true, ctrl: true }), binding('middle', { ctrl: true })], dragSensitivity: 2 };
+type Modifiers = Partial<Record<'alt' | 'shift' | 'ctrl' | 'meta', boolean>>;
+const drag = (button: 'left' | 'middle' | 'right', modifiers: Modifiers = {}): ViewTrigger =>
+  ({ kind: 'drag', button, alt: false, shift: false, ctrl: false, meta: false, ...modifiers });
+const wheel = (modifiers: Modifiers = {}): ViewTrigger => ({ kind: 'wheel', alt: false, shift: false, ctrl: false, meta: false, ...modifiers });
+const configure = (bindings: Partial<ViewControlSettings['bindings']>, options: Partial<ViewControlOptions> = {}): ViewControlSettings =>
+  ({ ...DEFAULT_VIEW_CONTROLS, bindings: { ...DEFAULT_VIEW_CONTROLS.bindings, ...bindings }, options: { ...DEFAULT_VIEW_CONTROLS.options, ...options } });
+const custom = configure({ pan: [drag('right'), drag('middle', { shift: true })],
+  zoom: [drag('left', { alt: true, ctrl: true }), drag('middle', { ctrl: true })] }, { zoomDragSensitivity: 2 });
 
-function fixture(settings = DEFAULT_CAMERA_CONTROLS) {
+function fixture(settings = DEFAULT_VIEW_CONTROLS) {
   const capture = new Set<number>();
   const surface = Object.assign(new EventTarget(), {
     setPointerCapture: (id: number) => { capture.add(id); },
@@ -38,7 +41,7 @@ function fixture(settings = DEFAULT_CAMERA_CONTROLS) {
     surface.dispatchEvent(event); return event;
   };
   return { surface, controls, view, capture, focus, changes, send, get: () => transform,
-    settings: (next: CameraControlSettings) => { currentSettings = next; }, enabled: (next: boolean) => { enabled = next; } };
+    settings: (next: ViewControlSettings) => { currentSettings = next; }, enabled: (next: boolean) => { enabled = next; } };
 }
 
 describe('drawing navigation geometry and exact binding ownership', () => {
@@ -84,7 +87,7 @@ describe('drawing navigation geometry and exact binding ownership', () => {
   const wheelCases = [0, 1, 2].flatMap(deltaMode => [0.1, 2].flatMap(sensitivity => [false, true].flatMap(invert =>
     [-12, 0, 25].map(deltaY => ({ deltaMode, sensitivity, invert, deltaY })))));
   it.each(wheelCases)('wheel mode=$deltaMode delta=$deltaY sensitivity=$sensitivity invert=$invert has an independent 16/100 oracle', value => {
-    const test = fixture({ ...DEFAULT_CAMERA_CONTROLS, wheelSensitivity: value.sensitivity, invertWheel: value.invert });
+    const test = fixture(configure({}, { wheelSensitivity: value.sensitivity, invertWheel: value.invert }));
     expect(test.send('wheel', { ...value, buttons: 0 }).defaultPrevented).toBe(true);
     const factor = value.deltaMode === 1 ? 16 : value.deltaMode === 2 ? 100 : 1;
     const expectedScale = 1.1 ** (-value.deltaY * factor * value.sensitivity * (value.invert ? -1 : 1) / 100);
@@ -99,10 +102,10 @@ describe('drawing navigation geometry and exact binding ownership', () => {
     const test = fixture();
     expect(test.send('wheel', { buttons: 0, ctrlKey: ctrl }).defaultPrevented).toBe(true);
     expect(test.get().scale).toBeCloseTo(1 / 1.1, 12); test.controls.detach();
-    const drag = fixture({ ...custom, invertDrag: true, dragSensitivity: 0.5 });
-    drag.send('pointerdown', { button: 1, buttons: 4, ctrlKey: true });
-    drag.send('pointermove', { buttons: 4, clientY: 190 });
-    expect(drag.get().scale).toBeCloseTo(1.1 ** 0.1, 12); drag.controls.detach();
+    const dragged = fixture({ ...custom, options: { ...custom.options, invertZoomDrag: true, zoomDragSensitivity: 0.5 } });
+    dragged.send('pointerdown', { button: 1, buttons: 4, ctrlKey: true });
+    dragged.send('pointermove', { buttons: 4, clientY: 190 });
+    expect(dragged.get().scale).toBeCloseTo(1.1 ** 0.1, 12); dragged.controls.detach();
   });
 
   it.each(['pointerup', 'pointercancel', 'lostpointercapture', 'blur', 'escape', 'cancel', 'detach'])('%s releases capture and never leaks an old drag', ending => {
@@ -119,7 +122,7 @@ describe('drawing navigation geometry and exact binding ownership', () => {
   it('owns the initial drag despite released modifiers/settings changes; rejects button chords, unrelated pointer and held wheel', () => {
     const test = fixture(custom);
     test.send('pointerdown', { button: 1, buttons: 4, ctrlKey: true });
-    test.settings(DEFAULT_CAMERA_CONTROLS);
+    test.settings(DEFAULT_VIEW_CONTROLS);
     test.send('pointermove', { pointerId: 2, buttons: 4, clientY: 190 }); expect(test.changes).not.toHaveBeenCalled();
     expect(test.send('wheel', { buttons: 4 }).defaultPrevented).toBe(false);
     expect(test.send('wheel', { buttons: 0 }).defaultPrevented).toBe(false);
@@ -141,6 +144,28 @@ describe('drawing navigation geometry and exact binding ownership', () => {
     test.enabled(false); expect(test.send('pointerdown').defaultPrevented).toBe(false);
     expect(test.send('wheel', { buttons: 0 }).defaultPrevented).toBe(false);
     expect(test.changes).not.toHaveBeenCalled(); test.controls.detach();
+  });
+
+  it('a wheel assigned to pan moves the paper like a page scroll at the pan speed; rotation settings do not apply on paper', () => {
+    const test = fixture(configure({ pan: [wheel(), drag('right')], zoom: [wheel({ ctrl: true })] },
+      { panSensitivity: 2, orbitSensitivity: 5, invertOrbitX: true }));
+    expect(test.send('wheel', { buttons: 0, deltaMode: 1, deltaX: 0.5, deltaY: -1 }).defaultPrevented).toBe(true);
+    // Line units are 16 px: the content moves opposite to the scroll amount, doubled by the pan speed.
+    expect(test.get()).toEqual({ x: -16, y: 32, scale: 1 });
+    test.send('pointerdown'); test.send('pointermove', { clientX: 250, clientY: 165 });
+    expect(test.get()).toEqual({ x: 4, y: 22, scale: 1 });
+    test.send('pointerup', { buttons: 0, clientX: 250, clientY: 165 });
+    expect(test.send('wheel', { buttons: 0, ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(test.get().scale).toBeCloseTo(1 / 1.1, 12);
+    expect(test.changes).toHaveBeenCalledTimes(3); test.controls.detach();
+  });
+
+  it('an orbit binding, by drag or by wheel, owns nothing on paper', () => {
+    const test = fixture(configure({ orbit: [drag('middle'), wheel({ shift: true })] })), fallback = vi.fn();
+    test.surface.addEventListener('wheel', fallback);
+    expect(test.send('wheel', { buttons: 0, shiftKey: true, deltaX: 30, deltaY: 0 }).defaultPrevented).toBe(false);
+    expect(test.send('pointerdown', { button: 1, buttons: 4 }).defaultPrevented).toBe(false);
+    expect(fallback).toHaveBeenCalledOnce(); expect(test.changes).not.toHaveBeenCalled(); test.controls.detach();
   });
 
   it('suppresses auxiliary browser defaults only for assigned pan/zoom sequences', () => {

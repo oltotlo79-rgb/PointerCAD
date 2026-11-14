@@ -20,8 +20,7 @@
 .pcad-named-save-points header { justify-content: space-between; }
 .pcad-named-save-points h2 { margin: 0; font-size: 1.25em; }
 .pcad-named-save-points button, .pcad-named-save-points input { font: inherit; }
-.pcad-named-save-points button { color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-border); padding: 6px 10px; }
-.pcad-named-save-points button:disabled { opacity: .5; }
+.pcad-named-save-points button { color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-control-border); padding: 6px 10px; }
 .pcad-named-save-points > input { display: block; width: min(100%, 360px); margin: 6px 0 12px; }
 .pcad-named-save-points ul { padding: 0; list-style: none; max-height: min(42dvh, 360px); overflow: auto; }
 .pcad-named-save-points li { display: flex; justify-content: space-between; gap: 12px; padding: 8px; border-bottom: 1px solid var(--pcad-border); }

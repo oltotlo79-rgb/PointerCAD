@@ -5,7 +5,9 @@ import { t } from '../i18n/t.js';
 import { createNumericInput } from '../sketch/numericInput.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { createAssemblyDocument } from '@pointercad/model';
 import { StatusBar } from './StatusBar.js';
+import { statusBarFlexShrink } from './statusText.js';
 import type * as ImportedReactTypes from 'react';
 
 // Nodeで進捗表示までの待ち時間だけを進める。描画とストアの読み取りは本物を使う。
@@ -147,5 +149,108 @@ describe('ステータスバーの操作案内と計算表示(FR-905)', () => {
   it('今の道具のものでない窓の段は案内に混ぜない', () => {
     useAppStore.setState({ activeTool: 'circle', numericInput: createNumericInput('line', 'lineEnd') });
     expect(primaryText(renderStatus())).toBe(t('statusBar.guide.circle'));
+  });
+});
+
+/** 画面に文字として出る部分(読み上げだけの文と、title などの属性を除く)。 */
+function visibleText(markup: string): string {
+  return markup.replace(/<span class="pcad-statusbar__spoken"[^>]*>[^<]*<\/span>/gu, '').replace(/<[^>]+>/gu, ' ');
+}
+
+/** 読み上げだけに渡す文(画面には出さない)を、帯の並びの順に返す。 */
+function spokenTexts(markup: string): string[] {
+  return Array.from(markup.matchAll(/<span class="pcad-statusbar__spoken"[^>]*>([^<]*)<\/span>/gu), (match) => match[1]);
+}
+
+/** `marker` を含む開きタグの flex-shrink(帯の幅が足りない時に縮む重み)。 */
+function flexShrinkOf(markup: string, marker: string): number | null {
+  const at = markup.indexOf(marker);
+  if (at < 0) return null;
+  const tag = markup.slice(markup.lastIndexOf('<', at), markup.indexOf('>', at));
+  const value = /flex-shrink:(\d+)/u.exec(tag)?.[1];
+  return value === undefined ? null : Number(value);
+}
+
+describe('帯の保存の印・縮む順・文書の種類ごとの札(点検の指摘 1・小 21)', () => {
+  const saver = { markDirty: () => undefined, saveNow: () => Promise.resolve(), stop: () => undefined,
+    readLatest: () => Promise.resolve(null), discard: () => Promise.resolve() };
+
+  function editedWithSaving(): void {
+    useAppStore.setState({ document: { ...useAppStore.getState().document, name: '編集した部品' } });
+    const state = useAppStore.getState();
+    useAppStore.setState({ autoSaver: saver,
+      recoverySaveState: { documentId: state.activeDocumentId, saver, stage: 'pending' },
+      documentSaveOperation: { id: 'save', documentId: state.activeDocumentId, gateway: state.fileGateway,
+        stage: 'compressing', fileName: null, cancel: vi.fn() } });
+  }
+
+  it('保存していない変更・保存中・復元の待ちがあっても、帯の文字は短い印だけにし、全文はツールチップと読み上げへ渡す', () => {
+    editedWithSaving();
+    const html = renderStatus();
+    const visible = visibleText(html);
+    expect(visible).not.toContain(t('file.unsavedChanges'));
+    expect(visible).not.toContain(t('file.save.compressing'));
+    expect(visible).not.toContain(t('file.recovery.pending'));
+    expect(visible).toContain(t('statusBar.saveMark.running'));
+    expect(visible).toContain(t('file.save.cancel'));
+    // 保存していない事はファイル名の * とツールチップで伝える。
+    expect(html).toContain(`class="pcad-statusbar__file" title="${t('file.unsavedChanges')}"`);
+    expect(spokenTexts(html)).toEqual([t('file.save.compressing'), t('file.recovery.pending')]);
+    expect(html).toContain(`title="${t('file.save.compressing')}"`);
+    expect(html).toContain(`data-recovery-stage="pending" title="${t('file.recovery.pending')}"`);
+  });
+
+  it('幅が足りない時に縮む重みを欄ごとに渡し、案内の 1 文を最後に縮める', () => {
+    editedWithSaving();
+    useAppStore.setState({ recoverySaveState: { documentId: useAppStore.getState().activeDocumentId, saver, stage: 'failed' },
+      activeTool: 'projectedCurve', isComputing: true, kernelLoaded: true,
+      recomputeProgress: { featureId: 'extrude-1', label: '押し出し1', index: 0, total: 3 } });
+    vi.mocked(useState).mockReturnValueOnce([true, vi.fn()]);
+    const html = renderStatus();
+    expect(flexShrinkOf(html, 'class="pcad-statusbar__progress"')).toBe(statusBarFlexShrink('progress'));
+    expect(flexShrinkOf(html, 'data-save-stage="compressing"')).toBe(statusBarFlexShrink('save'));
+    expect(flexShrinkOf(html, 'class="pcad-statusbar__file"')).toBe(statusBarFlexShrink('file'));
+    expect(flexShrinkOf(html, 'data-recovery-stage="failed"')).toBe(statusBarFlexShrink('recovery'));
+    expect(flexShrinkOf(html, 'class="pcad-statusbar__message"')).toBe(statusBarFlexShrink('message'));
+    expect(statusBarFlexShrink('message')).toBe(1);
+  });
+
+  it('復元用の保存の失敗は危険の色の短い印で出し、全文と理由をツールチップと読み上げへ渡す', () => {
+    const documentId = useAppStore.getState().activeDocumentId;
+    useAppStore.setState({ autoSaver: saver,
+      recoverySaveState: { documentId, saver, stage: 'failed', detail: '空き容量が足りません' } });
+    const html = renderStatus();
+    const full = `${t('file.recovery.failed')} 空き容量が足りません`;
+    expect(html).toContain('pcad-statusbar__mark--failed');
+    expect(visibleText(html)).toContain(t('statusBar.recoveryMark.failed'));
+    expect(visibleText(html)).not.toContain(t('file.recovery.failed'));
+    expect(html).toContain(`data-recovery-stage="failed" title="${full}"`);
+    expect(spokenTexts(html)).toEqual([full]);
+  });
+
+  it('保存の完了は図柄だけを出し、保存したファイル名の文はツールチップと読み上げへ渡す', () => {
+    const state = useAppStore.getState();
+    useAppStore.setState({ documentSaveOperation: { id: 'save', documentId: state.activeDocumentId,
+      gateway: state.fileGateway, stage: 'complete', fileName: '完成.pcad', cancel: null } });
+    const html = renderStatus();
+    const done = t('file.save.complete').replace('{name}', '完成.pcad');
+    expect(spokenTexts(html)).toEqual([done]);
+    expect(visibleText(html)).not.toContain(done);
+    expect(html).not.toContain('pcad-statusbar__mark-text');
+  });
+
+  it('作図面・吸着・拘束の推定の札は部品の帯だけに出し、アセンブリの帯には出さない(小 21)', () => {
+    const part = renderStatus();
+    expect(part).toContain(t('statusBar.plane'));
+    expect(part).toContain(t('statusBar.inferConstraints'));
+    expect(part.includes(t('statusBar.snapOn')) || part.includes(t('statusBar.snapOff'))).toBe(true);
+    useAppStore.setState({ assembly: createAssemblyDocument('組立') });
+    const assembly = renderStatus();
+    for (const label of [t('statusBar.plane'), t('statusBar.snapOn'), t('statusBar.snapOff'), t('statusBar.inferConstraints')]) {
+      expect(assembly).not.toContain(label);
+    }
+    // 選ぶものの札と単位の札はアセンブリでも使うので残す。
+    expect(assembly).toContain(t('statusBar.unitMillimeter'));
+    expect(assembly).toContain(t('statusBar.selectionFilterHint'));
   });
 });

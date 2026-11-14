@@ -25,7 +25,7 @@ import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './rec
 
 const SAVED_AT = '2026-10-16T00:00:00.000Z';
 const P_ID = 'refpoint-1';
-const CORRUPTED = 'ファイルが壊れているため開けませんでした。';
+const CORRUPTED = 'ファイルが壊れているため開けず、いまの文書はそのままです。壊れる前の控えか、別のファイルを選んでください。';
 const value = (n: number) => expressionValueFromNumber(n);
 
 declare global {

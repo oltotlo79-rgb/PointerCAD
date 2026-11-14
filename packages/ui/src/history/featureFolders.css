@@ -6,4 +6,4 @@
 .pcad-feature-folder__heading button:first-child { flex: 1; overflow-wrap: anywhere; text-align: left; }
 .pcad-feature-folder__heading button:last-child { flex-shrink: 0; font-size: 0.85em; }
 .pcad-feature-folder__heading button:hover { background: var(--pcad-surface); }
-.pcad-feature-note input, .pcad-feature-note select { width: 100%; box-sizing: border-box; color: var(--pcad-text); font: inherit; border: 1px solid var(--pcad-border); background: var(--pcad-surface); padding: calc(6px * var(--pcad-scale)); }
+.pcad-feature-note input, .pcad-feature-note select { width: 100%; box-sizing: border-box; color: var(--pcad-text); font: inherit; border: 1px solid var(--pcad-control-border); background: var(--pcad-surface); padding: calc(6px * var(--pcad-scale)); }

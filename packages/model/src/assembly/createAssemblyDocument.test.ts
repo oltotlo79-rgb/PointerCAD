@@ -283,9 +283,10 @@ describe('種類の一覧', () => {
     expect(new Set(JOINT_KINDS).size).toBe(JOINT_KINDS.length);
   });
 
-  it('規格部品は従来10種・鋼材3種・溶接のビード1種の14種で重複が無い(§0.a-0.32)', () => {
-    // 13 のカタログに、すみ肉溶接のビードの区間を1つ足した。
-    expect(STANDARD_CATALOG_IDS).toHaveLength(14);
+  it('規格部品は従来10種・鋼材3種・溶接のビード1種・族の部品1種の15種で重複が無い(§0.a-0.32)', () => {
+    // 13 のカタログに、すみ肉溶接のビードの区間を1つ足し、族の登録口の部品(catalogItem)を1つ足した。
+    expect(STANDARD_CATALOG_IDS).toHaveLength(15);
+    expect(STANDARD_CATALOG_IDS).toContain('catalogItem');
     expect(STANDARD_CATALOG_IDS).toContain('filletWeld');
     expect(STANDARD_CATALOG_IDS.slice(-3)).toEqual(['flatBar', 'roundBar', 'steelPipe']);
     expect(new Set(STANDARD_CATALOG_IDS).size).toBe(STANDARD_CATALOG_IDS.length);

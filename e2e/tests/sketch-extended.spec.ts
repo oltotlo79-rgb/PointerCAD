@@ -425,7 +425,7 @@ test.describe('P4 スケッチ拡張(作図面の上の図形と編集)', () => 
 
     // 歯車を押すと、非モーダルの一覧にテーマの見本 5 枚と拡大率の段が出る(§5.2)。
     await page.getByRole('button', { name: '設定', exact: true }).click();
-    const settings = page.getByRole('group', { name: '表示設定' });
+    const settings = page.getByRole('group', { name: '設定', exact: true });
     await expect(settings).toBeVisible();
     const themes = page.getByRole('radiogroup', { name: 'テーマ' });
     await expect(themes.getByRole('radio')).toHaveCount(5);

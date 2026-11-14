@@ -15,9 +15,8 @@
 .pcad-document-diff header { justify-content: space-between; }
 .pcad-document-diff h2 { margin: 0; font-size: 1.25em; }
 .pcad-document-diff h3 { font-size: 1em; }
-.pcad-document-diff button, .pcad-document-diff select { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-border); padding: 6px 10px; }
+.pcad-document-diff button, .pcad-document-diff select { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-control-border); padding: 6px 10px; }
 .pcad-document-diff select { max-width: 100%; margin: 6px; }
-.pcad-document-diff button:disabled { opacity: .5; }
 .pcad-document-diff__files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .pcad-document-diff__files section { border: 1px solid var(--pcad-border); padding: 12px; }
 .pcad-document-diff__changes { padding: 0; list-style: none; }

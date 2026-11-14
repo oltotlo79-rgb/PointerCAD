@@ -1,4 +1,4 @@
-import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, type ViewControlSettings } from '../settings/viewControlSettings.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -39,10 +39,10 @@ describe('視点を動かす間の作図入力の所有権', () => {
         screenToPlanePoint: (x: number, y: number) => [x, y, 0] as const,
       } as unknown as ViewportScene;
       // Explicitly configured replacement keeps this legacy gesture regression meaningful.
-      const settings: CameraControlSettings = mode.altKey && mode.shiftKey ? {
-        ...DEFAULT_CAMERA_CONTROLS,
-        pan: [{ input: 'left', alt: true, shift: true, ctrl: false, meta: false }, DEFAULT_CAMERA_CONTROLS.pan[0]],
-      } : DEFAULT_CAMERA_CONTROLS;
+      const settings: ViewControlSettings = mode.altKey && mode.shiftKey ? {
+        ...DEFAULT_VIEW_CONTROLS, bindings: { ...DEFAULT_VIEW_CONTROLS.bindings,
+          pan: [{ kind: 'drag', button: 'left', alt: true, shift: true, ctrl: false, meta: false }, DEFAULT_VIEW_CONTROLS.bindings.pan[0]] },
+      } : DEFAULT_VIEW_CONTROLS;
       const controls = attachCameraControls(canvas, () => {}, undefined, undefined, () => settings);
       const sketch = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging());
       const send = (type: string, props: object = {}): void => {

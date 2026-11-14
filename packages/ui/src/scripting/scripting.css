@@ -3,9 +3,8 @@
 .pcad-script h2, .pcad-script p { margin: 0; }
 .pcad-script h2 { font-size: 14px; }
 .pcad-script label { display: flex; flex-direction: column; gap: 4px; }
-.pcad-script input, .pcad-script select, .pcad-script textarea { box-sizing: border-box; width: 100%; min-width: 0; color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-border); border-radius: 3px; padding: 5px 6px; }
-.pcad-script button { font: inherit; color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-border); border-radius: 3px; padding: 4px 7px; cursor: pointer; }
-.pcad-script button:disabled { opacity: 0.5; cursor: not-allowed; }
+.pcad-script input, .pcad-script select, .pcad-script textarea { box-sizing: border-box; width: 100%; min-width: 0; color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-control-border); border-radius: 3px; padding: 5px 6px; }
+.pcad-script button { font: inherit; color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-control-border); border-radius: 3px; padding: 4px 7px; cursor: pointer; }
 .pcad-script__source { min-height: 250px; resize: vertical; padding: 8px; font-family: ui-monospace, monospace; font-size: 12px; line-height: 20px; white-space: pre; overflow: auto; tab-size: 2; }
 .pcad-script__actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .pcad-script details { display: flex; flex-direction: column; gap: 8px; }

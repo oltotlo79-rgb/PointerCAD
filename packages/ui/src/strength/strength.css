@@ -7,10 +7,9 @@
 .pcad-strength .pcad-field__message { grid-column: 1 / -1; }
 .pcad-strength__select { display: flex; flex-direction: column; gap: 0.25rem; }
 .pcad-strength__select label { font-size: var(--pcad-font-size-small); }
-.pcad-strength select { width: 100%; min-width: 0; padding: var(--pcad-space-1); color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-border); border-radius: 3px; }
+.pcad-strength select { width: 100%; min-width: 0; padding: var(--pcad-space-1); color: inherit; background: var(--pcad-bg); border: 1px solid var(--pcad-control-border); border-radius: 3px; }
 .pcad-strength__actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .pcad-strength__actions button { font: inherit; padding: var(--pcad-space-1) var(--pcad-space-2); cursor: pointer; }
-.pcad-strength__actions button:disabled { cursor: not-allowed; opacity: 0.6; }
 .pcad-strength__results { display: flex; flex-direction: column; gap: 0.6rem; }
 .pcad-strength__results h4 { margin: 0.4rem 0; }
 .pcad-strength__results .pcad-properties { display: flex; flex-direction: column; gap: 0.5rem; }

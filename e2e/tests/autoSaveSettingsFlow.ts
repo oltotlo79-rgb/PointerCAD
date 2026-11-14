@@ -6,6 +6,7 @@ import { beginRecompute, readRecomputeStats, waitForRecompute } from './recomput
 import { savePart } from './scriptsFlow.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { waitForStartupHealth } from './startupHealth.js';
+import { uiMessage } from './uiMessages.js';
 
 /** 記憶上の控えではなく、実ブラウザーのIndexedDBから保存済みのバイト列を読む。 */
 async function backupBytes(page: Page): Promise<number[][]> {
@@ -44,7 +45,18 @@ export async function autoSaveSettingsFlow(page: Page, info: TestInfo, app?: Ele
     await input.fill(value); await expect(apply).toBeDisabled(); await expect(input).toHaveAttribute('aria-invalid', 'true');
   }
   await form.getByRole('button', { name: '間隔の変更を取り消す', exact: true }).click(); await expect(input).toHaveValue('5');
-  await input.fill('1'); await settings.click(); await settings.click(); await expect(input).toHaveValue('5');
+  // An unapplied interval keeps the settings open: pressing outside and the gear both ask inside the panel instead
+  // of silently discarding it. Discarding closes the panel and the stored interval stays 5 minutes.
+  await input.fill('1');
+  const draftPrompt = page.getByRole('group', { name: uiMessage('toolbar', 'toolbar.settings.draft.message'), exact: true });
+  const viewport = await page.locator('canvas.pcad-viewport__canvas').boundingBox();
+  if (viewport === null) throw new Error('3D表示がありません');
+  await page.mouse.click(viewport.x + 12, viewport.y + 12);
+  await expect(draftPrompt).toBeVisible(); await expect(input).toHaveValue('1');
+  await settings.click(); await expect(draftPrompt).toBeVisible(); await expect(input).toHaveValue('1');
+  await draftPrompt.getByRole('button', { name: uiMessage('toolbar', 'toolbar.settings.draft.discardClose'), exact: true }).click();
+  await expect(form).toHaveCount(0);
+  await settings.click(); await expect(input).toHaveValue('5'); await expect(draftPrompt).toHaveCount(0);
   await input.fill('1'); await apply.click(); await expect(form).toContainText('現在は1分ごと');
   await form.getByRole('button', { name: '既定の5分へ戻す', exact: true }).click();
   await expect(input).toHaveValue('5'); await expect(form).toContainText('現在は1分ごと');

@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 
 import { t } from '../i18n/t.js';
+import { currentViewControls } from '../settings/viewControlSettings.js';
 import { HomeIcon } from '../shell/icons.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { scaledOrbitDelta } from '../viewport/cameraControlBindings.js';
 import { orbit, type OrbitState } from '../viewport/cameraMath.js';
 import { readThemeColors } from '../viewport/themeColors.js';
 import { createViewCubeScene } from './createViewCubeScene.js';
@@ -28,6 +30,11 @@ interface ViewTransition {
   readonly from: OrbitState;
   readonly to: OrbitState;
   readonly startedAt: number;
+}
+
+/** ドラッグで回す量。ビューポートと同じ回転の速さと左右・上下の反転を当てる(既定では動かした量そのもの)。 */
+function viewCubeOrbitDelta(deltaX: number, deltaY: number): readonly [number, number] {
+  return scaledOrbitDelta(currentViewControls(useAppStore.getState().displaySettings).options, deltaX, deltaY);
 }
 
 /** 2 つの領域が同じ向きを指しているか。どちらも null なら同じとみなす。 */
@@ -219,7 +226,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
         pressed = false;
         canvas.dataset.interaction = 'dragging';
         // setOrbit がビューポートの描画を予約し、その通知でビューキューブも描き直る。
-        setOrbit(orbit(getOrbit(), deltaX, deltaY));
+        setOrbit(orbit(getOrbit(), ...viewCubeOrbitDelta(deltaX, deltaY)));
       }
     };
 

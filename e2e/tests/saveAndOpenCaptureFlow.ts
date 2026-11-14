@@ -68,7 +68,7 @@ export async function saveAndOpenCaptureFlow(page: Page, info: TestInfo, app?: E
   await fileAction(page, '開く').click();
   if (chooser !== null) await (await chooser).setFiles(brokenPath);
   await expect(statusBar(page)).toHaveClass(/pcad-statusbar--error/);
-  await expect(page.locator('.pcad-statusbar__text')).toHaveText('ファイルが壊れているため開けませんでした。');
+  await expect(page.locator('.pcad-statusbar__text')).toHaveText('ファイルが壊れているため開けず、いまの文書はそのままです。壊れる前の控えか、別のファイルを選んでください。');
   await captureManualDetail(page, info, {
     name: 'save-and-open-file-error', dialog: statusBar(page),
     fixture: { attemptedFile: 'save-and-open-broken.pcad' }, script: new URL(import.meta.url),

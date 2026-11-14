@@ -22,6 +22,10 @@ describe('設定・出力・道具の数値欄も実際の定義から説明先�
     expect(coverage.contentCertified).toBe(false);
     expect(coverage.settings.find(item => item.id === 'cameraControls')?.topicIds)
       .toEqual(['display-settings', 'viewport']);
+    // The v2 view controls are the persisted source of truth; the startup notice count is display-only and unsaved.
+    expect(coverage.settings.find(item => item.id === 'viewControls')?.topicIds)
+      .toEqual(['display-settings', 'viewport']);
+    expect(coverage.settings.some(item => item.id === 'viewControlsRecovered')).toBe(false);
   });
   it('座標方式・板金・図面を含む既定値の全欄が実際と同じ名称と説明を持つ', () => {
     const coverage = buildSupplementaryHelpCoverage(MANUAL_CHAPTERS), actual = toolDefaultEntries();

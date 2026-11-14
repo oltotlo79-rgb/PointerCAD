@@ -94,11 +94,11 @@ export function NamedSavePointsDialog({ onClose, labels, actions: suppliedAction
     <dialog ref={element} className="pcad-named-save-points" aria-labelledby={titleId}
       data-help-topic="save-and-open" title={labels.title}
       onCancel={event => { event.preventDefault(); close(); }}>
-      <header><h2 id={titleId}>{labels.title}</h2><button type="button" title={labels.hints.close} onClick={close}>{labels.close}</button></header>
+      <header><h2 id={titleId}>{labels.title}</h2><button className="pcad-button" type="button" title={labels.hints.close} onClick={close}>{labels.close}</button></header>
       <p>{labels.limits}</p>
       <label htmlFor={nameId}>{labels.name}</label>
       <input id={nameId} title={labels.hints.name} value={name} maxLength={128} onChange={event => setName(event.currentTarget.value)} />
-      <button type="button" title={labels.hints.create} disabled={busy || name.trim().length === 0}
+      <button className="pcad-button pcad-button--primary" type="button" title={labels.hints.create} disabled={busy || name.trim().length === 0}
         onClick={() => { void run(async signal => { const created = await actions.createAndList(name, signal);
           if (signal.aborted) return; setPoints(created.points); setSelectedId(created.point.id); setName(''); }); }}>{labels.create}</button>
       {points.length === 0 ? <p>{labels.empty}</p> : <ul>{points.map(point => <li key={point.id}>
@@ -107,23 +107,23 @@ export function NamedSavePointsDialog({ onClose, labels, actions: suppliedAction
         <time dateTime={point.createdAt}>{point.createdAt}</time>
       </li>)}</ul>}
       <div className="pcad-named-save-points__actions">
-        <button type="button" title={labels.hints.clone} disabled={busy || !hasSelection || name.trim().length === 0}
+        <button className="pcad-button" type="button" title={labels.hints.clone} disabled={busy || !hasSelection || name.trim().length === 0}
           onClick={() => { void run(async signal => { const result = await actions.cloneAndList(selectedId, name, signal);
             if (signal.aborted) return;
             if (!result.listing.ok) throw new SavePointError(result.listing.reason, result.listing.message);
             setPoints(result.listing.points); setSelectedId(result.point.id); setName(''); }); }}>{labels.clone}</button>
-        <button type="button" title={labels.hints.before} disabled={busy || !hasSelection} onClick={() => setBeforeId(selectedId)}>{labels.before}</button>
-        <button type="button" title={labels.hints.after} disabled={busy || !hasSelection} onClick={() => setAfterId(selectedId)}>{labels.after}</button>
-        <button type="button" title={labels.hints.compare} disabled={busy || beforeId === '' || afterId === ''}
+        <button className="pcad-button" type="button" title={labels.hints.before} disabled={busy || !hasSelection} onClick={() => setBeforeId(selectedId)}>{labels.before}</button>
+        <button className="pcad-button" type="button" title={labels.hints.after} disabled={busy || !hasSelection} onClick={() => setAfterId(selectedId)}>{labels.after}</button>
+        <button className="pcad-button" type="button" title={labels.hints.compare} disabled={busy || beforeId === '' || afterId === ''}
           onClick={() => { void run(async signal => { const selected = await actions.comparison(beforeId, afterId, signal);
             if (!signal.aborted) setComparison(selected); }); }}>{labels.compare}</button>
-        <button type="button" title={restorable || !hasSelection ? labels.hints.restore : labels.hints.restoreKind} disabled={busy || !restorable}
+        <button className="pcad-button" type="button" title={restorable || !hasSelection ? labels.hints.restore : labels.hints.restoreKind} disabled={busy || !restorable}
           onClick={() => { void run(async signal => { await actions.restore(selectedId, signal);
             if (!signal.aborted) { setMessage({ text: labels.restored, error: false }); onClose(); } }); }}>{labels.restore}</button>
       </div>
       <p>{labels.before}: {points.find(point => point.id === beforeId)?.name ?? labels.empty}
         {' / '}{labels.after}: {points.find(point => point.id === afterId)?.name ?? labels.empty}</p>
-      {busy ? <p role="status">{labels.busy} <button type="button" title={labels.hints.cancel} onClick={stop}>{labels.cancel}</button></p> : null}
+      {busy ? <p role="status">{labels.busy} <button className="pcad-button" type="button" title={labels.hints.cancel} onClick={stop}>{labels.cancel}</button></p> : null}
       {message === null ? null : <p role={message.error ? 'alert' : 'status'}>{message.text}</p>}
     </dialog>
     {comparison === null ? null : <DocumentDiffDialog initial={comparison} onClose={() => setComparison(null)} />}

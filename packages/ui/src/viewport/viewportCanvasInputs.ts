@@ -1,4 +1,4 @@
-import { readCameraControlSettings } from '../settings/cameraControlSettings.js';
+import { currentViewControls } from '../settings/viewControlSettings.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
@@ -83,7 +83,7 @@ export function attachViewportInputs(deps: ViewportInputDependencies) {
       const pane = quadLayout(canvas.width, canvas.height).find((entry) => entry.id === useAppStore.getState().quadCamera?.active);
       return Math.max(1, (pane?.rectangle.height ?? canvas.height) * canvas.clientHeight / Math.max(1, canvas.height));
     },
-  }, () => readCameraControlSettings(useAppStore.getState().displaySettings.cameraControls));
+  }, () => currentViewControls(useAppStore.getState().displaySettings));
   lifetime.register('camera ref', () => { if (deps.controlsRef.current === controls) deps.controlsRef.current = null; });
   lifetime.register('camera input', () => { controls.detach(); });
   deps.controlsRef.current = controls;

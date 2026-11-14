@@ -31,7 +31,8 @@ describe('camera control settings descriptions', () => {
   it('gives every select, check box, number field and button a nonempty, translated description', () => {
     const found = controls(html());
     const perBinding = 1 + 4; // the input select and the Alt/Shift/Ctrl/Meta check boxes
-    expect(found).toHaveLength(CAMERA_ACTIONS.length * 2 * perBinding + 2 + 2 + CAMERA_CONTROL_PRESETS.length + 3);
+    // Four speeds (rotation, pan, wheel zoom, drag zoom) and four inversions (rotation x/y, wheel zoom, drag zoom).
+    expect(found).toHaveLength(CAMERA_ACTIONS.length * 2 * perBinding + 4 + 4 + CAMERA_CONTROL_PRESETS.length + 3);
     expect(found.filter(control => control.title.trim() === '')).toEqual([]);
     // A missing i18n key would show the key itself instead of a sentence.
     expect(found.filter(control => control.title.startsWith('settings.'))).toEqual([]);
@@ -49,6 +50,16 @@ describe('camera control settings descriptions', () => {
       .some(modifier => control.title.includes(t(`settings.camera.${modifier}`)))).map(control => control.title);
     expect(modifiers).toHaveLength(CAMERA_ACTIONS.length * 2 * 4);
     expect(new Set(modifiers).size).toBe(modifiers.length);
+  });
+
+  it('describes the four speeds and the four inversions differently', () => {
+    const scalars = controls(html()).filter(control => control.tag === 'input'
+      && !(['alt', 'shift', 'ctrl', 'meta'] as const).some(modifier => control.title.includes(t(`settings.camera.${modifier}`))));
+    expect(scalars).toHaveLength(8);
+    expect(new Set(scalars.map(control => control.title)).size).toBe(8);
+    for (const key of ['orbitSensitivityGuide', 'panSensitivityGuide', 'invertOrbitXGuide', 'invertOrbitYGuide'] as const) {
+      expect(scalars.filter(control => control.title === t(`settings.camera.${key}`))).toHaveLength(1);
+    }
   });
 
   it('describes each preset by its name and the apply, cancel and default buttons differently', () => {

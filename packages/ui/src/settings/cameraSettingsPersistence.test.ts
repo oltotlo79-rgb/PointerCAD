@@ -3,19 +3,26 @@ import {
   parseDocument, parseDrawing, readArchive, readAssemblyDocument, readDrawingBundle, readPcadaFile, readPcadFile,
   serializeDocument, serializeDrawing, writeAssemblyDocument, writeDrawingBundle, writePcadaFile, writePcadFile,
 } from '@pointercad/io';
-import { withCameraControlPreset, type CameraControlPreset } from './cameraControlSettings.js';
+import type { CameraControlPreset } from './cameraControlSettings.js';
 import { DEFAULT_DISPLAY_SETTINGS, loadSettings, saveSettings } from './settings.js';
-import { CUSTOM_CAMERA, documentFixtures, EXPECTED_PRESETS, SAVED_AT, settingsStorage } from './cameraSettingsPersistence.testSupport.js';
+import { withViewControlPreset } from './viewControlSettings.js';
+import {
+  CUSTOM_CAMERA, CUSTOM_VIEW, documentFixtures, EXPECTED_PRESETS, EXPECTED_VIEW_PRESETS, SAVED_AT, settingsStorage,
+} from './cameraSettingsPersistence.testSupport.js';
 
 /** Pinned expected values: the same literals as the product constants, kept independent of them. */
 const SETTINGS_KEY = 'pointercad.settings';
 
+// expected: the frozen v1 record as read back; view: the v2 source of truth; recovered: the unsaved startup notice count.
 const fixtures = [
-  { name: 'legacy without camera', camera: undefined, expected: EXPECTED_PRESETS.pointercad },
-  { name: 'current version 1', camera: CUSTOM_CAMERA, expected: CUSTOM_CAMERA },
-  { name: 'corrupt camera', camera: { version: 1, orbit: [] }, expected: EXPECTED_PRESETS.pointercad },
-  { name: 'unknown version', camera: { ...CUSTOM_CAMERA, version: 99 }, expected: EXPECTED_PRESETS.pointercad },
+  { name: 'legacy without camera', camera: undefined, expected: EXPECTED_PRESETS.pointercad, view: EXPECTED_VIEW_PRESETS.pointercad, recovered: 0 },
+  { name: 'current version 1', camera: CUSTOM_CAMERA, expected: CUSTOM_CAMERA, view: CUSTOM_VIEW, recovered: 0 },
+  // Unreadable: the empty orbit, the missing pan and zoom, and the four missing v1 tuning fields.
+  { name: 'corrupt camera', camera: { version: 1, orbit: [] }, expected: EXPECTED_PRESETS.pointercad, view: EXPECTED_VIEW_PRESETS.pointercad, recovered: 7 },
+  { name: 'unknown version', camera: { ...CUSTOM_CAMERA, version: 99 }, expected: EXPECTED_PRESETS.pointercad, view: EXPECTED_VIEW_PRESETS.pointercad, recovered: 1 },
 ] as const;
+const TUNING = { orbitSensitivity: 1.7, panSensitivity: 0.3, wheelSensitivity: 3.2, zoomDragSensitivity: 0.6,
+  invertWheel: true, invertZoomDrag: true, invertOrbitX: false, invertOrbitY: true } as const;
 const presets: readonly CameraControlPreset[] = ['pointercad', 'solidworks', 'fusion', 'onshape'];
 
 describe('EX-10.PERSIST terminal settings', () => {
@@ -24,24 +31,29 @@ describe('EX-10.PERSIST terminal settings', () => {
       const memory = settingsStorage(JSON.stringify({ theme: 'lightModern', uiScale: 125, cameraControls: fixture.camera }));
       const loaded = loadSettings(memory.storage);
       expect(loaded.cameraControls).toEqual(fixture.expected);
-      expect(loaded).toEqual({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'lightModern', uiScale: 125, cameraControls: fixture.expected });
+      expect(loaded).toEqual({ ...DEFAULT_DISPLAY_SETTINGS, theme: 'lightModern', uiScale: 125, cameraControls: fixture.expected,
+        viewControls: fixture.view, ...(fixture.recovered === 0 ? {} : { viewControlsRecovered: fixture.recovered }) });
       saveSettings(loaded, memory.storage);
-      expect(loadSettings(memory.storage)).toEqual(loaded);
-      expect(JSON.parse(memory.bytes() ?? '')).toEqual(loaded);
+      // The notice count is display-only: it is never written, so a reload has nothing left to report.
+      const persisted = { ...loaded, viewControlsRecovered: undefined };
+      expect(loadSettings(memory.storage)).toEqual(persisted);
+      expect(JSON.parse(memory.bytes() ?? '')).toEqual(persisted);
+      expect(memory.bytes()).not.toContain('viewControlsRecovered');
       expect([...memory.records.keys()]).toEqual([SETTINGS_KEY]);
     });
     for (const preset of presets) {
-      it(`${fixture.name} preserves every field of ${preset} and the personal tuning`, () => {
+      it(`${fixture.name} preserves every field of ${preset}, the personal tuning and the frozen v1 record`, () => {
         const memory = settingsStorage(JSON.stringify({ theme: 'lightModern', uiScale: 125, cameraControls: fixture.camera }));
         const loaded = loadSettings(memory.storage);
-        const camera = withCameraControlPreset({ ...fixture.expected, wheelSensitivity: 3.2, dragSensitivity: 0.6,
-          invertWheel: true, invertDrag: true }, preset);
-        const expected = { ...EXPECTED_PRESETS[preset], wheelSensitivity: 3.2, dragSensitivity: 0.6, invertWheel: true, invertDrag: true };
-        expect(camera).toEqual(expected);
-        const configured = { ...loaded, cameraControls: camera };
+        const view = withViewControlPreset({ ...fixture.view, options: TUNING }, preset);
+        const expected = { ...EXPECTED_VIEW_PRESETS[preset], options: TUNING };
+        expect(view).toEqual(expected);
+        const configured = { ...loaded, viewControls: view };
         saveSettings(configured, memory.storage);
-        expect(JSON.parse(memory.bytes() ?? '')).toEqual({ ...loaded, cameraControls: expected });
-        expect(loadSettings(memory.storage)).toEqual({ ...loaded, cameraControls: expected });
+        const persisted = { ...loaded, viewControls: expected, viewControlsRecovered: undefined };
+        expect(JSON.parse(memory.bytes() ?? '')).toEqual(persisted);
+        expect(loadSettings(memory.storage)).toEqual(persisted);
+        expect(loadSettings(memory.storage).cameraControls).toEqual(fixture.expected);
       });
     }
   }
@@ -57,7 +69,7 @@ describe('EX-10.PERSIST document codecs', () => {
   it('keeps runtime settings and derived caches outside the authored document codecs', async () => {
     const f = await documentFixtures();
     // Deliberately alien runtime fields, not a forged successful recompute result.
-    const runtime = { cameraControls: CUSTOM_CAMERA, displaySettings: DEFAULT_DISPLAY_SETTINGS,
+    const runtime = { cameraControls: CUSTOM_CAMERA, viewControls: CUSTOM_VIEW, displaySettings: DEFAULT_DISPLAY_SETTINGS,
       bodies: ['derived-cache-sentinel'], resolvedSketch: { diagnostic: 'derived-cache-sentinel' }, undoStack: ['history-sentinel'] };
     const part = { ...f.part, ...runtime }, assembly = { ...f.assembly, ...runtime };
     // Drawing preserves unknown authored JSON fields. Test its documented derived cache names instead;
@@ -73,6 +85,7 @@ describe('EX-10.PERSIST document codecs', () => {
       expect(text).not.toContain('derived-cache-sentinel');
       expect(text).not.toContain('history-sentinel');
       expect(text).not.toContain('cameraControls');
+      expect(text).not.toContain('viewControls');
       expect(text).not.toContain('displaySettings');
     }
   });
@@ -114,7 +127,7 @@ describe('EX-10.PERSIST document codecs', () => {
         for (const [name, entry] of archive.entries) {
           expect(name.endsWith('.json')).toBe(true);
           const text = new TextDecoder().decode(entry);
-          expect(text).not.toMatch(/"(?:cameraControls|displaySettings|wheelSensitivity|dragSensitivity|resolvedSketch|bodies|mesh|undoStack)"/u);
+          expect(text).not.toMatch(/"(?:cameraControls|viewControls|displaySettings|wheelSensitivity|dragSensitivity|orbitSensitivity|panSensitivity|resolvedSketch|bodies|mesh|undoStack)"/u);
         }
       }
     }

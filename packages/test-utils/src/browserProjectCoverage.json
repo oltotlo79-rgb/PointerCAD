@@ -446,7 +446,7 @@
       "file": "command-registry.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "b1bb34548a60e628082d232f0ec0efa0b435bd3d2985b806436f7db227b13ea5"
+      "sha256": "7e1d3aa10aba3c6c06aa30b05c29f207dc10ae744f1d9648ee5e00a72e318034"
     },
     {
       "file": "connect-points.spec.ts",
@@ -464,7 +464,7 @@
       "file": "context-reference-cycle-open.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "56012c73823854cc7ddc6923c2bc67057ebaab9cb61a1d7464485a674f8251d4"
+      "sha256": "bf39c1a6570c1c9c11901c89204efb655fdb454dccdbe53ca311876ed8d8a85b"
     },
     {
       "file": "context-reference-repair.spec.ts",
@@ -746,7 +746,7 @@
       "file": "electron-control-hints.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
-      "sha256": "51eaa631e32735106cf495b53d0f3baeb0082e6e3e8c2d694cd469d0b28c0b1b"
+      "sha256": "233934b84f45a10ec6f614ad446421991dd15494c67f4c81ab2932b739c13743"
     },
     {
       "file": "electron-cut-plane-materials.spec.ts",
@@ -1226,7 +1226,7 @@
       "file": "file-open-rejection.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "cdf2b8bf321896b667404002fc5e15b9f939d269f1e477a9d9deed2301cb672e"
+      "sha256": "8931192beef6dce5499d18fee1ce44a70be5313b8cf0a42d5a7dfdcc00cdd98d"
     },
     {
       "file": "fillet-chamfer.spec.ts",
@@ -1802,7 +1802,7 @@
       "file": "sketch-extended.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "a5eb37966423e5933f8cf51615f08215f2ca364b4114c041511a35952cec6684"
+      "sha256": "8a5883224ac9a6228725eb4b8aee4d6aa26d2a177c4bcb6246cd40e6024cd33b"
     },
     {
       "file": "sketch-fillet.spec.ts",

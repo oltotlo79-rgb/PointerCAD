@@ -226,6 +226,9 @@ function partName(choice: StandardPartChoice, length: string): string {
     case 'steelPipe':
     case 'filletWeld':
       return `${choice.size} \u9577\u3055${length}`;
+    // \u65cf\u306e\u90e8\u54c1(catalogItem)\u306f\u3053\u306e\u4e00\u89a7\u306e\u9078\u629e\u80a2\u304b\u3089\u4f5c\u3089\u306a\u3044(\u65cf\u306e\u9078\u3076\u753b\u9762\u304c\u65cf\u306e partName \u3067\u540d\u524d\u3092\u4ed8\u3051\u308b)\u3002\u7a2e\u985e\u3092\u7db2\u7f85\u3059\u308b\u305f\u3081\u306b\u7f6e\u304f\u3002
+    case 'catalogItem':
+      return choice.size;
   }
 }
 

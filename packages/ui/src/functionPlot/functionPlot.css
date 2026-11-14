@@ -4,12 +4,14 @@
 .pcad-function-dialog fieldset { min-width: 0; }
 .pcad-function-dialog::backdrop { background: rgb(0 0 0 / 40%); }
 .pcad-function-dialog h2 { margin-top: 0; }
+/* 送った中身が題の帯の上の内余白に透けて見えないよう、題の帯を窓の内余白の上端と左右の端まで広げて貼り付ける(指摘 33)。
+   負の margin と同じ量の padding なので、題の文字と中身の位置は変わらない。帯の地は窓と同じ色。 */
+.pcad-function-dialog > .pcad-window-title { top: calc(-16px * var(--pcad-scale)); margin-top: calc(-16px * var(--pcad-scale)); margin-inline: calc(-16px * var(--pcad-scale)); padding-top: calc(16px * var(--pcad-scale)); padding-inline: calc(16px * var(--pcad-scale)); background: var(--pcad-bg); }
 .pcad-function-dialog fieldset { border: 1px solid var(--pcad-border); border-radius: var(--pcad-radius-small); margin: 12px 0; padding: calc(12px * var(--pcad-scale)); }
 .pcad-function-dialog fieldset > label { margin-right: 16px; }
 .pcad-function-presets { display: block; margin-bottom: 12px; }
-.pcad-function-dialog input, .pcad-function-dialog select, .pcad-function-dialog button { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-border); border-radius: var(--pcad-radius-small); padding: calc(5px * var(--pcad-scale)); }
+.pcad-function-dialog input, .pcad-function-dialog select, .pcad-function-dialog button { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-control-border); border-radius: var(--pcad-radius-small); padding: calc(5px * var(--pcad-scale)); }
 .pcad-function-dialog button { cursor: pointer; }
-.pcad-function-dialog button:disabled { opacity: .55; cursor: default; }
 .pcad-function-dialog :is(input, button, select):focus-visible { outline: 2px solid var(--pcad-accent); outline-offset: 2px; }
 .pcad-function-dialog input { min-width: 0; width: 100%; box-sizing: border-box; }
 .pcad-function-dialog input[aria-invalid="true"] { outline: 2px solid var(--pcad-danger); }

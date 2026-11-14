@@ -711,7 +711,7 @@ export async function saveCancelFlow(page: Page, info: TestInfo, app?: ElectronA
       });
       observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-save-stage'] });
     });
-    const cancel = page.getByRole('button', { name: '保存を取り消す', exact: true });
+    const cancel = page.getByRole('button', { name: '保存を中止', exact: true });
     await cancel.focus(); const started = performance.now(); await page.keyboard.press('Enter');
     const cancelled = page.locator('[data-save-stage="cancelled"]');
     await expect(cancelled).toBeVisible();
@@ -728,7 +728,10 @@ export async function saveCancelFlow(page: Page, info: TestInfo, app?: ElectronA
     expect(timing.pressed).toBeGreaterThan(0); expect(timing.displayed).toBeGreaterThan(0);
     expect(pageDisplayMs).toBeLessThan(1000);
     expect(cancelMs).toBeLessThan(1000); expect(cancelledDownloads).toBe(0);
-    await expect(cancelled).toContainText('保存を取り消しました。変更と復元用の控えは残っています。');
+    // 帯の文字は短い印だけ(UI の点検の指摘 1)。全文は読み上げ(role=status)とツールチップに入る。
+    await expect(cancelled.locator('.pcad-statusbar__mark-text')).toHaveText('中止しました');
+    await expect(cancelled.getByRole('status')).toHaveText('保存を中止しました。変更と復元用の控えは残っています。');
+    await expect(cancelled).toHaveAttribute('title', '保存を中止しました。変更と復元用の控えは残っています。');
     if (app !== undefined) await expect(readFile(cancelledPath)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(page.locator('.pcad-statusbar__file')).toContainText('*');
   } finally { page.off('download', downloaded); }
@@ -761,6 +764,31 @@ async function addSketchPoint(page: Page, values: readonly [string, string, stri
   for (const [index, value] of values.entries()) await fields.nth(index).fill(value);
   const recompute = await beginRecompute(page); await fields.first().press('Enter'); await page.keyboard.press('Escape');
   await waitForRecompute(page, recompute);
+}
+
+/** 保存していない事を伝えるツールチップ(file.unsavedChanges の実文)。 */
+const UNSAVED_CHANGES = '保存していない変更があります。';
+
+/**
+ * 保存していない事は、ファイル名の後ろの * とツールチップで伝え、帯の文字には出さない
+ * (案内の 1 文を押し出さない。UI の点検の指摘 1)。
+ */
+async function expectUnsavedNotice(page: Page, unsaved: boolean): Promise<void> {
+  const file = page.locator('.pcad-statusbar__file');
+  if (unsaved) await expect(file).toHaveAttribute('title', UNSAVED_CHANGES);
+  else await expect(file).not.toHaveAttribute('title', UNSAVED_CHANGES);
+  await expect(page.locator('.pcad-statusbar').getByText(UNSAVED_CHANGES, { exact: true })).toHaveCount(0);
+}
+
+/**
+ * 復元用の保存の状態の印。帯には図柄(失敗だけ短い語)を出し、段階の全文はツールチップと
+ * 読み上げ(role=status)へ渡す(UI の点検の指摘 1)。
+ */
+async function expectRecoveryMark(page: Page, stage: string, text: string): Promise<void> {
+  const mark = page.locator(`.pcad-statusbar [data-recovery-stage="${stage}"]`);
+  await expect(mark).toBeVisible();
+  await expect(mark).toHaveAttribute('title', text);
+  await expect(mark.getByRole('status')).toHaveText(text);
 }
 
 /** 保存していない変更を確認の窓で捨てて「新規」へ切り替える。 */
@@ -826,13 +854,12 @@ export async function saveDocumentSwitchFlow(page: Page, info: TestInfo, app?: E
   await writeFile(fixturePath, fixture.bytes);
   await openSaveFlowFile(page, fixturePath, app);
   const file = page.locator('.pcad-statusbar__file'), bar = page.locator('.pcad-statusbar');
-  const unsaved = bar.getByText('保存していない変更があります。', { exact: true });
   await expect(file).toHaveText('switch-input.pcad');
   const workers = trackSaveWorkers(page);
   await renameTreeItem(page, '保存応答の箱', '切替前の箱');
   await expect(file).toHaveText('switch-input.pcad*');
-  await expect(unsaved).toBeVisible();
-  await expect(bar.getByText('復元用の保存を待っています。', { exact: true })).toBeVisible();
+  await expectUnsavedNotice(page, true);
+  await expectRecoveryMark(page, 'pending', '復元用の保存を待っています。');
   const abandonedPath = info.outputPath('switch-must-not-exist.pcad');
   if (app !== undefined) await countedSaveDialog(app, abandonedPath);
   let downloads = 0;
@@ -842,8 +869,10 @@ export async function saveDocumentSwitchFlow(page: Page, info: TestInfo, app?: E
     await fileAction(page, '保存').click({ modifiers: ['Shift'] });
     const compressing = page.locator('[data-save-stage="compressing"]');
     await expect(compressing).toBeVisible();
-    await expect(compressing.getByRole('status'))
-      .toHaveText('保存する内容を圧縮しています。編集を続けられます。 保存していない変更があります。');
+    // 帯の文字は「保存中…」の短い印だけ。段階の全文は読み上げとツールチップへ(UI の点検の指摘 1)。
+    await expect(compressing.locator('.pcad-statusbar__mark-text')).toHaveText('保存中…');
+    await expect(compressing.getByRole('status')).toHaveText('保存する内容を圧縮しています。編集を続けられます。');
+    await expectUnsavedNotice(page, true);
     // 圧縮中に押した2回目は1回目の後ろで待つ。どちらも切替後に書いてはいけない。
     await fileAction(page, '保存').click({ modifiers: ['Shift'] });
     await expect(compressing).toBeVisible();
@@ -853,7 +882,8 @@ export async function saveDocumentSwitchFlow(page: Page, info: TestInfo, app?: E
     expect(workers).toHaveLength(1);
     await expect(page.locator('[data-save-stage]')).toHaveCount(0);
     await expect(bar.getByText(/^復元用の/u)).toHaveCount(0);
-    await expect(unsaved).toHaveCount(0);
+    await expect(bar.locator('[data-recovery-stage]')).toHaveCount(0);
+    await expectUnsavedNotice(page, false);
     await expect(page.locator('.pcad-statusbar__text')).not.toContainText('保存しました');
     await info.attach('switch-cancelled', { contentType: 'application/json',
       body: JSON.stringify({ workers, downloads, dialogs: app === undefined ? null : await saveDialogCalls(app) }) });
@@ -865,7 +895,7 @@ export async function saveDocumentSwitchFlow(page: Page, info: TestInfo, app?: E
     expect(savedName).toBe(app === undefined ? '名称未設定.pcad' : 'switch-new.pcad');
     await expect(page.locator('[data-save-stage="complete"]')).toHaveText(`「${savedName}」を保存しました。`);
     await expect(file).toHaveText(savedName);
-    await expect(unsaved).toHaveCount(0);
+    await expectUnsavedNotice(page, false);
     if (app === undefined) expect(downloads).toBe(1);
     else {
       expect(await saveDialogCalls(app)).toBe(1);
@@ -886,41 +916,44 @@ export async function saveDocumentSwitchFlow(page: Page, info: TestInfo, app?: E
  * 自動の控え・保存・ひな形の書出し・文書切替で確かめる(R06)。表示は今の文書の分だけで、
  * 切替後は前の文書の表示を残さない。ブラウザーではダウンロード代替(Firefoxの既定の経路)で
  * 部品とひな形の両方の保存口を通す(R10)。呼出し側で `page.clock.install()` を済ませておく。
+ * 4表示は案内の 1 文を押し出さないよう、帯には図柄と短い印・ファイル名の * だけを出し、全文は
+ * ツールチップと読み上げで確かめる(UI の点検の指摘 1)。
  */
 export async function saveStatusDisplayFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await waitForStartupHealth(page, info);
   const file = page.locator('.pcad-statusbar__file'), bar = page.locator('.pcad-statusbar');
-  const unsaved = bar.getByText('保存していない変更があります。', { exact: true });
-  const recoveryPending = bar.getByText('復元用の保存を待っています。', { exact: true });
+  const recoveryPending = (): Promise<void> => expectRecoveryMark(page, 'pending', '復元用の保存を待っています。');
   await expect(file).toHaveText('名称未設定');
-  await expect(unsaved).toHaveCount(0);
+  await expectUnsavedNotice(page, false);
   await addSketchPoint(page, ['1', '2', '3']);
   await expect(file).toHaveText('名称未設定*');
-  await expect(unsaved).toBeVisible();
-  await expect(recoveryPending).toBeVisible();
+  await expectUnsavedNotice(page, true);
+  await recoveryPending();
   // 既定5分の自動の控えを実際の保存経路で書かせる。
   await page.clock.fastForward(300_000);
-  await expect(bar.getByText('復元用の控えを保存しました。', { exact: true })).toBeVisible();
+  await expectRecoveryMark(page, 'saved', '復元用の控えを保存しました。');
   expect(await recoveryCopyCount(page)).toBe(1);
 
   const savedPath = info.outputPath('status-saved.pcad'), savedName = await saveOnce(page, savedPath, app);
   expect(savedName).toBe(app === undefined ? '名称未設定.pcad' : 'status-saved.pcad');
   const complete = page.locator('[data-save-stage="complete"]');
   await expect(complete).toHaveText(`「${savedName}」を保存しました。`);
+  await expect(complete).toHaveAttribute('title', `「${savedName}」を保存しました。`);
   await expect(file).toHaveText(savedName);
-  await expect(unsaved).toHaveCount(0);
+  await expectUnsavedNotice(page, false);
   await expect(bar.getByText(/^復元用の/u)).toHaveCount(0);
   await expect.poll(() => recoveryCopyCount(page)).toBe(0);
   const saved = readPcadFile(await readFile(savedPath));
   if (!saved.ok) throw new Error(saved.error.message);
   expect(saved.document.sketches.flatMap(sketch => sketch.features).filter(feature => feature.kind === 'point')).toHaveLength(1);
 
-  // 次の編集では完了の表示に未保存を添え、復元の表示は待機へ戻る。
+  // 次の編集では完了の印を残したまま未保存を * とツールチップで示し、復元の表示は待機へ戻る。
   await addSketchPoint(page, ['4', '5', '6']);
   await expect(file).toHaveText(`${savedName}*`);
-  await expect(complete).toHaveText(`「${savedName}」を保存しました。 保存していない変更があります。`);
-  await expect(recoveryPending).toBeVisible();
+  await expect(complete).toHaveText(`「${savedName}」を保存しました。`);
+  await expectUnsavedNotice(page, true);
+  await recoveryPending();
   if (app === undefined) {
     // ひな形の書出し口(saveFileAsInBrowser)もピッカーの無い環境ではダウンロードで成功する。
     const templateDownload = page.waitForEvent('download');
@@ -943,5 +976,6 @@ export async function saveStatusDisplayFlow(page: Page, info: TestInfo, app?: El
   await expect(file).toHaveText('名称未設定');
   await expect(page.locator('[data-save-stage]')).toHaveCount(0);
   await expect(bar.getByText(/^復元用の/u)).toHaveCount(0);
-  await expect(unsaved).toHaveCount(0);
+  await expect(bar.locator('[data-recovery-stage]')).toHaveCount(0);
+  await expectUnsavedNotice(page, false);
 }

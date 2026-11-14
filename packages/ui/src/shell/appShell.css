@@ -78,6 +78,12 @@
   --pcad-border: #30353f;
   --pcad-border-strong: #3d434f;
 
+  /*
+   * 欄の枠(入力欄・選択・切替のつまみ・文字の押しボタンの縁)。区画の区切りの --pcad-border より濃く、
+   * 3 つの地(bg・surface・surface-raised)に対して 3:1 以上(形を見分けるための線、shell/themeContrast.test.ts)。
+   */
+  --pcad-control-border: #70757f;
+
   /* 文字 */
   --pcad-text: #e8eaf0;
   --pcad-text-muted: #9aa3b2;
@@ -89,9 +95,15 @@
   --pcad-accent-active: #3a74e0;
   --pcad-accent-soft: rgb(79 140 255 / 16%);
   --pcad-accent-soft-hover: rgb(79 140 255 / 24%);
-  --pcad-accent-border: rgb(79 140 255 / 45%);
+  --pcad-accent-border: rgb(79 140 255 / 75%);
 
-  /* 状態(成功・注意は今後の機能のために定義だけしておく) */
+  /*
+   * アクセント色の文字(参照先の名前・ヘルプのリンク・戻している札)。--pcad-accent は図柄と枠の色で、
+   * 文字にすると地によって 4.5:1 を割るので、文字はこちらを使う(選択中の面の上でも 4.5:1 以上)。
+   */
+  --pcad-accent-text: #659afd;
+
+  /* 状態(成功・注意は今後の機能のために定義だけしておく。文字にしても 4.5:1 以上の値にしてある) */
   --pcad-success: #3ddc97;
   --pcad-warning: #ffb454;
   --pcad-danger: #ff5c5c;
@@ -99,6 +111,12 @@
   /* 失敗の帯。半透明を重ねると下地しだいで濃さが変わるため、混色後の値を持つ。 */
   --pcad-danger-surface: #38242a;
   --pcad-danger-text: #ff8f8f;
+
+  /*
+   * 効かない物(:disabled・aria-disabled="true")の薄さ。基本は 0.5 だが、ボタンの文字色(--pcad-text-muted)を
+   * 薄めても 3 つの地に対して 3:1 以上を保つよう、テーマごとに 0.5〜0.7 の最小の値にする。
+   */
+  --pcad-disabled-opacity: 0.65;
 
   /* ビューポートの奥行き(canvas は透明で、この下地が透ける) */
   --pcad-viewport-top: #2a2e37;
@@ -236,17 +254,19 @@
  * **各テーマは自分が使う欄をすべて明示する**(:root の値への意図しない後退を避けるため、
  * 「丸ごと上書き」で 1 つも欠かさない)。
  *
- * コントラスト比は WCAG の相対輝度式で計算した実測値(2026-09-04)。文字は地・面の
- * どちらに対しても 4.5:1 以上、縁として使う --pcad-accent-border は地の面に合成した
- * 実効色で 3:1 以上を満たす(--pcad-text-faint は既存のダーク同様、装飾用の弱い文字
- * なので対象外)。
+ * コントラスト比は WCAG の相対輝度式で計算した実測値(2026-09-04、2026-11-14 見直し)。
+ * 文字(text・text-muted・accent-text・danger-text・success・warning)は 3 つの地(bg・surface・
+ * surface-raised)のどれに対しても 4.5:1 以上、形と状態を見分ける線と図柄(control-border・accent・
+ * accent-border〔地に合成した実効色〕・accent-hover・danger・text-faint)は 3:1 以上を満たす
+ * (shell/themeContrast.test.ts が 5 テーマの全ての組を固定する)。--pcad-text-faint は 4.5:1 に
+ * 届かない弱い色なので、図柄(アイコン・▸・⋮・＋)にだけ使い、文字には --pcad-text-muted を使う。
  */
 
 /*
  * ライト: 白地に暗い文字の平坦な配色(ダークと同じ形、色だけを差し替える)。
  * text/bg 15.44:1、text/surface 16.70:1、textMuted/bg 7.34:1、textMuted/surface 7.94:1、
- * accent(文字として)/surface 4.70:1、accent-border(75% 合成)/surface 3.06:1、
- * dangerText/dangerSurface 6.12:1。
+ * accent(図柄・枠)/surface 4.70:1、accent-text/bg 5.16:1、accent-border(85% 合成)/surface-raised 3.27:1、
+ * control-border/surface-raised 3.11:1、dangerText/dangerSurface 6.12:1。
  */
 [data-theme="light"] {
   color-scheme: light;
@@ -256,6 +276,7 @@
   --pcad-surface-raised: #eef0f3;
   --pcad-border: #d8dbe2;
   --pcad-border-strong: #c2c6d0;
+  --pcad-control-border: #848890;
 
   --pcad-text: #1b1e24;
   --pcad-text-muted: #4b5160;
@@ -266,13 +287,15 @@
   --pcad-accent-active: #1f56b8;
   --pcad-accent-soft: rgb(47 111 224 / 14%);
   --pcad-accent-soft-hover: rgb(47 111 224 / 20%);
-  --pcad-accent-border: rgb(47 111 224 / 75%);
+  --pcad-accent-border: rgb(47 111 224 / 85%);
+  --pcad-accent-text: #2c64c8;
 
-  --pcad-success: #1f9d64;
-  --pcad-warning: #b06a00;
+  --pcad-success: #1e7a52;
+  --pcad-warning: #995e06;
   --pcad-danger: #d23b3b;
   --pcad-danger-surface: #fbe4e4;
   --pcad-danger-text: #a3241f;
+  --pcad-disabled-opacity: 0.65;
 
   --pcad-viewport-top: #eef1f5;
   --pcad-viewport-bottom: #d7dbe3;
@@ -338,8 +361,8 @@
  * ダークモダン: ダークの配色のまま、角丸・余白を大きく、影を淡く広く、アクセントを
  * 濃いめの塗り(soft 22%/30%、ダークの 16%/24%より多め)で使う。
  * text/bg 15.87:1、text/surface 14.31:1、textMuted/bg 8.29:1、textMuted/surface 7.48:1、
- * accent(文字として)/surface 5.99:1、accent-border(60% 合成)/surface 3.03:1、
- * dangerText/dangerSurface 6.87:1。
+ * accent(図柄・枠)/surface 5.99:1、accent-text/選択中の面 4.64:1、accent-border(65% 合成)/surface-raised 3.05:1、
+ * control-border/surface-raised 3.14:1、dangerText/dangerSurface 6.87:1。
  */
 [data-theme="darkModern"] {
   color-scheme: dark;
@@ -349,6 +372,7 @@
   --pcad-surface-raised: #262b37;
   --pcad-border: #333a48;
   --pcad-border-strong: #454e60;
+  --pcad-control-border: #6f7786;
 
   --pcad-text: #eef0f6;
   --pcad-text-muted: #a7b0c2;
@@ -359,13 +383,15 @@
   --pcad-accent-active: #3f82e6;
   --pcad-accent-soft: rgb(91 157 255 / 22%);
   --pcad-accent-soft-hover: rgb(91 157 255 / 30%);
-  --pcad-accent-border: rgb(91 157 255 / 60%);
+  --pcad-accent-border: rgb(91 157 255 / 65%);
+  --pcad-accent-text: #6ea8fe;
 
   --pcad-success: #46e0a8;
   --pcad-warning: #ffc36b;
   --pcad-danger: #ff6b6b;
   --pcad-danger-surface: #3c262b;
   --pcad-danger-text: #ff9a9a;
+  --pcad-disabled-opacity: 0.6;
 
   --pcad-viewport-top: #2e333f;
   --pcad-viewport-bottom: #1b1f27;
@@ -431,8 +457,8 @@
 /*
  * ライトモダン: ライトの配色のまま、ダークモダンと同じ角丸・余白・淡い影の形にする。
  * text/bg 14.42:1、text/surface 16.32:1、textMuted/bg 6.61:1、textMuted/surface 7.48:1、
- * accent(文字として)/surface 4.70:1、accent-border(75% 合成)/surface 3.06:1、
- * dangerText/dangerSurface 6.12:1。
+ * accent(図柄・枠)/surface 4.70:1、accent-text/選択中の面 4.63:1、accent-border(85% 合成)/bg 3.29:1、
+ * control-border/bg 3.10:1、dangerText/dangerSurface 6.12:1。
  */
 [data-theme="lightModern"] {
   color-scheme: light;
@@ -442,6 +468,7 @@
   --pcad-surface-raised: #f3f5f9;
   --pcad-border: #dde1e9;
   --pcad-border-strong: #c7ccd8;
+  --pcad-control-border: #848993;
 
   --pcad-text: #1c2028;
   --pcad-text-muted: #4d5566;
@@ -452,13 +479,15 @@
   --pcad-accent-active: #1f56b8;
   --pcad-accent-soft: rgb(47 111 224 / 18%);
   --pcad-accent-soft-hover: rgb(47 111 224 / 26%);
-  --pcad-accent-border: rgb(47 111 224 / 75%);
+  --pcad-accent-border: rgb(47 111 224 / 85%);
+  --pcad-accent-text: #2c61c0;
 
-  --pcad-success: #1f9d64;
-  --pcad-warning: #b06a00;
+  --pcad-success: #1e7a52;
+  --pcad-warning: #995e06;
   --pcad-danger: #d23b3b;
   --pcad-danger-surface: #fbe4e4;
   --pcad-danger-text: #a3241f;
+  --pcad-disabled-opacity: 0.7;
 
   --pcad-viewport-top: #eef1f5;
   --pcad-viewport-bottom: #d7dbe3;
@@ -523,8 +552,9 @@
  * (accent(文字として)/surface が 4.5:1 を割らない色を実測で選んだ、他の 4 テーマの
  * アクセントより濃いのはそのため)。
  * text/bg 6.89:1、text/surface 8.69:1、textMuted/bg 5.11:1、textMuted/surface 6.44:1、
- * accent(文字として)/surface 5.05:1、accent-border(70% 合成)/surface 3.03:1、
- * dangerText/dangerSurface 7.51:1。
+ * accent(図柄・枠)/surface 5.05:1、accent-text/選択中の面 4.63:1、accent-border(85% 合成)/bg 3.27:1、
+ * control-border/bg 3.12:1、dangerText/dangerSurface 7.51:1。灰の地は明るい地より暗いので、
+ * 成功・注意・失敗の色と、ホバーのアクセントも濃くして、地(bg)に対して 4.5:1・3:1 を割らないようにする。
  */
 [data-theme="modern"] {
   color-scheme: light;
@@ -534,23 +564,26 @@
   --pcad-surface-raised: #bcc2cc;
   --pcad-border: #7c828d;
   --pcad-border-strong: #666c77;
+  --pcad-control-border: #4b4f58;
 
   --pcad-text: #14161a;
   --pcad-text-muted: #2c2f35;
   --pcad-text-faint: #45484f;
 
   --pcad-accent: #123a8a;
-  --pcad-accent-hover: #2f57ab;
+  --pcad-accent-hover: #2b4c93;
   --pcad-accent-active: #0c2c6b;
   --pcad-accent-soft: rgb(18 58 138 / 22%);
   --pcad-accent-soft-hover: rgb(18 58 138 / 30%);
-  --pcad-accent-border: rgb(18 58 138 / 70%);
+  --pcad-accent-border: rgb(18 58 138 / 85%);
+  --pcad-accent-text: #132d63;
 
-  --pcad-success: #0f7a4c;
-  --pcad-warning: #7a4c00;
-  --pcad-danger: #a8231f;
+  --pcad-success: #123d2e;
+  --pcad-warning: #48310d;
+  --pcad-danger: #97221e;
   --pcad-danger-surface: #d9b9b7;
   --pcad-danger-text: #5c110d;
+  --pcad-disabled-opacity: 0.7;
 
   --pcad-viewport-top: #b7bcc5;
   --pcad-viewport-bottom: #8b909b;
@@ -614,6 +647,56 @@
   --pcad-viewcube-face-bottom: #d5d9e0;
   --pcad-viewcube-edge: #23262c;
   --pcad-viewcube-text: #14161a;
+}
+
+/*
+ * ===== 欄・選択・枠の土台(指摘 24) =====
+ *
+ * 機能ごとの CSS が見た目を決めていない入力欄・選択(select)・文の欄・枠(fieldset)は、OS の既定の見た目
+ * (白い選択・白い溝の枠・灰の欄)のまま出ていて、同じ働きの欄が窓ごとに違って見えた。ここで数値入力の窓の欄
+ * (.pcad-field__input)と同じ見た目にそろえる。**層(@layer)に入れるので、層の外のどの決まりにも負ける**
+ * (選び方の詳細度に関係なく、機能ごとの CSS が決めた見た目はそのまま残り、決めていない所だけを埋める)。
+ * box-sizing を border-box にするのは、幅 100% の欄が内余白と縁のぶん区画の右端からはみ出していたため(指摘 47)。
+ */
+@layer pcad-base {
+  :where(select, textarea, input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"])) {
+    box-sizing: border-box;
+    max-width: 100%;
+    padding: 3px var(--pcad-space-1);
+    font: inherit;
+    color: var(--pcad-text);
+    background-color: var(--pcad-bg);
+    border: 1px solid var(--pcad-control-border);
+    border-radius: var(--pcad-radius-small);
+  }
+
+  :where(select, textarea, input):focus-visible {
+    border-color: var(--pcad-accent);
+    outline: 2px solid var(--pcad-accent);
+    outline-offset: -2px;
+  }
+
+  /* 入力の手がかりの薄い文字も、文として読めるよう 4.5:1 以上の色にする(Firefox の既定の薄さも打ち消す)。 */
+  :where(input, textarea)::placeholder {
+    color: var(--pcad-text-muted);
+    opacity: 1;
+  }
+
+  :where(input[type="checkbox"], input[type="radio"], input[type="range"]) {
+    accent-color: var(--pcad-accent);
+  }
+
+  /* まとまりの枠は、区画の区切りと同じ細い線にする(OS の既定は白い溝の線)。 */
+  :where(fieldset) {
+    min-width: 0;
+    border: 1px solid var(--pcad-border);
+    border-radius: var(--pcad-radius-small);
+  }
+
+  :where(legend) {
+    padding: 0 var(--pcad-space-1);
+    color: var(--pcad-text-muted);
+  }
 }
 
 /* ===== 全体の骨格 ===== */
@@ -811,6 +894,8 @@
 @media (max-width: 1519px) {
   .pcad-toolbar { --pcad-toolbar-gap: calc(4px * var(--pcad-scale, 1)); }
   .pcad-toolbar .pcad-toolbar__mode { width: 26px; min-width: 26px; height: 26px; padding: 0; justify-content: center; }
+  /* 畳んだ札は押せないので、枠と地を外してボタンに見せない(UI/UX の点検の小の指摘 17)。 */
+  .pcad-toolbar .pcad-toolbar__modes { border-color: transparent; background: transparent; }
   .pcad-toolbar__mode-icon { display: block; }
   .pcad-toolbar__mode-label { display: none; }
 }
@@ -899,14 +984,29 @@
   padding: 0 var(--pcad-space-2);
 }
 
-.pcad-tab:hover,
-.pcad-button:hover {
+/*
+ * 文字の押しボタンを、説明の文字と見分けられるよう 1px の縁で囲む(指摘 31)。縁の色は欄の枠と同じ
+ * --pcad-control-border(地と 3:1 以上)。ツールバーに並ぶボタン・溝(.pcad-segmented)の中・一覧の項目・帯・
+ * ツリーの中のボタンと図柄だけのボタンは、置き場所と図柄で押せると分かるので囲まない(ツールバーから開く設定・
+ * 書き出しのパネル〔.pcad-menu__panel〕の中の文字ボタンは囲む)。主のボタン(--action・--primary)と
+ * 押した状態(aria-pressed)は、後に書いた決まりの面と縁がこの縁に勝つ。inset の影なので大きさは変わらない。
+ */
+.pcad-button:where(:not(.pcad-button--icon, .pcad-menu__item, .pcad-drawing-tree-sheet, .pcad-toolbar :not(.pcad-menu__panel *), .pcad-segmented *, .pcad-statusbar *, .pcad-tree *)) {
+  box-shadow: inset 0 0 0 1px var(--pcad-control-border);
+}
+
+/*
+ * 指を乗せた・押した見え方は、効く物にだけ付ける(効かない物の色が変わると押せるように見える。指摘 2)。
+ * :where() で包むので、選び方の詳細度は除く前と同じ。
+ */
+.pcad-tab:hover:where(:not(:disabled, [aria-disabled="true"])),
+.pcad-button:hover:where(:not(:disabled, [aria-disabled="true"])) {
   color: var(--pcad-text);
   background: var(--pcad-surface-raised);
 }
 
-.pcad-tab:active,
-.pcad-button:active {
+.pcad-tab:active:where(:not(:disabled, [aria-disabled="true"])),
+.pcad-button:active:where(:not(:disabled, [aria-disabled="true"])) {
   color: var(--pcad-text);
   background: var(--pcad-border-strong);
 }
@@ -930,26 +1030,28 @@
   color: var(--pcad-accent);
 }
 
-.pcad-tab[aria-pressed="true"]:hover,
-.pcad-button[aria-pressed="true"]:hover {
+.pcad-tab[aria-pressed="true"]:hover:where(:not(:disabled, [aria-disabled="true"])),
+.pcad-button[aria-pressed="true"]:hover:where(:not(:disabled, [aria-disabled="true"])) {
   background: var(--pcad-accent-soft-hover);
 }
 
-.pcad-tab[aria-pressed="true"]:hover .pcad-icon,
-.pcad-button[aria-pressed="true"]:hover .pcad-icon {
+.pcad-tab[aria-pressed="true"]:hover:where(:not(:disabled, [aria-disabled="true"])) .pcad-icon,
+.pcad-button[aria-pressed="true"]:hover:where(:not(:disabled, [aria-disabled="true"])) .pcad-icon {
   color: var(--pcad-accent-hover);
 }
 
-/* 使えないもの(準備中のモード)。押しても何も起きないことを見た目で示す。 */
-.pcad-tab[aria-disabled="true"] {
-  color: var(--pcad-text-faint);
+/*
+ * 効かない物(準備中のモード、吸着が切のときの種別、元に戻す先が無いとき、決められないときの決定など)。
+ * NFR-UX-5・指摘 2: **:disabled と aria-disabled="true" の見た目は、この 1 か所だけで決める**
+ * (以前は機能ごとの CSS が opacity 0.5/0.55/0.6 とばらばらに付け、多くのボタンは効くボタンと同じ見た目だった)。
+ * 薄さはテーマごとの --pcad-disabled-opacity(ボタンの文字 --pcad-text-muted を薄めても地と 3:1 以上)。
+ * 押した状態(aria-pressed)や主のボタンの面は消さずに薄めるので、「選んであるが今は効かない」も読める。
+ * 選び方の詳細度を (0,2,0) にして、機能ごとの CSS の `.pcad-script button { cursor: pointer }`(0,1,1)にも勝たせる。
+ * fieldset は入れない(中の欄が重ねて薄くなるため。無効の fieldset の中の欄は、それぞれ :disabled に当たる)。
+ */
+:is(button, input, select, textarea, [role="button"]):is(:disabled, [aria-disabled="true"]) {
   cursor: not-allowed;
-}
-
-.pcad-tab[aria-disabled="true"]:hover,
-.pcad-tab[aria-disabled="true"]:active {
-  color: var(--pcad-text-faint);
-  background: transparent;
+  opacity: var(--pcad-disabled-opacity);
 }
 
 /*
@@ -963,30 +1065,8 @@
   padding: 0;
 }
 
-/*
- * いま押しても効かないボタン(吸着が切のときの種別)。選ばれている印(アクセントの面)を
- * 消して、効かないことを見た目で示す(NFR-UX-5)。文字は --pcad-text-muted のままにして
- * コントラスト 4.5:1 以上を保つ。
- */
-.pcad-button[aria-disabled="true"] {
-  color: var(--pcad-text-muted);
-  cursor: not-allowed;
-  background: transparent;
-  box-shadow: none;
-}
-
-.pcad-button[aria-disabled="true"]:hover,
-.pcad-button[aria-disabled="true"]:active {
-  color: var(--pcad-text-muted);
-  background: transparent;
-}
-
-.pcad-button[aria-disabled="true"] .pcad-icon {
-  color: var(--pcad-text-muted);
-}
-
 /* 押しボタン(トグルでないもの)は、押した瞬間だけアクセント寄りにする。 */
-.pcad-button--action:active {
+.pcad-button--action:active:where(:not(:disabled, [aria-disabled="true"])) {
   color: var(--pcad-text);
   background: var(--pcad-accent-active);
 }
@@ -1354,7 +1434,7 @@
   font: inherit;
   color: var(--pcad-text);
   background: var(--pcad-surface);
-  border: 1px solid var(--pcad-border);
+  border: 1px solid var(--pcad-control-border);
   border-radius: var(--pcad-radius);
   cursor: pointer;
 }
@@ -1395,11 +1475,11 @@
   color: var(--pcad-text-muted);
 }
 
-/* 押す前の断り(NFR-UX-5)。ここだけ赤にする(FR-504 の帯と同じ色)。 */
+/* 押す前の断り(NFR-UX-5)。ここだけ赤にする(FR-504 の帯と同じ、文字用の赤 --pcad-danger-text)。 */
 .pcad-exchange__refusal {
   margin: 0;
   font-size: var(--pcad-font-size-small);
-  color: var(--pcad-danger);
+  color: var(--pcad-danger-text);
 }
 
 .pcad-exchange__actions {
@@ -1506,7 +1586,7 @@
   min-width: 0;
   color: var(--pcad-text);
   background: var(--pcad-surface);
-  border: 1px solid var(--pcad-border-strong);
+  border: 1px solid var(--pcad-control-border);
   border-radius: var(--pcad-radius-small);
 }
 
@@ -1717,14 +1797,14 @@ button.pcad-tree__row:focus-visible {
 }
 
 .pcad-drawing-tree-group .pcad-tree__row > button[aria-pressed='true'] {
-  color: var(--pcad-accent);
+  color: var(--pcad-accent-text);
   outline: 1px solid var(--pcad-accent);
   outline-offset: -1px;
 }
 
 .pcad-drawing-tree-empty {
   padding: var(--pcad-space-1) var(--pcad-space-3);
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
 }
 
 .pcad-drawing-tree-unresolved {
@@ -1750,11 +1830,12 @@ button.pcad-tree__row:focus-visible {
 /*
  * 「＋」(スケッチを追加、FR-501)。行の「⋮」と同じ大きさ・同じ薄さの流儀にそろえるが、
  * こちらは節の見出しにいつも出しておく(新しいスケッチの作り方が画面から読めるように)。
+ * 押せる面は 24px(行の高さ 26px に収まる、押せる面の下限。指摘 18)。
  */
 .pcad-tree__add {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   margin-right: var(--pcad-space-1);
   font: inherit;
@@ -1798,13 +1879,13 @@ button.pcad-tree__row:focus-visible {
   padding-left: 56px;
 }
 
-/* 節に入っている数。畳んでいても中身の有無が読める(NFR-UX-6)。 */
+/* 節に入っている数。畳んでいても中身の有無が読める(NFR-UX-6)。読む文字なので 4.5:1 以上の色(指摘 12)。 */
 .pcad-tree__count {
   flex: none;
   margin-left: auto;
   font-size: var(--pcad-font-size-small);
   font-variant-numeric: tabular-nums;
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
 }
 
 /* 節が空のときの案内。行ではないので数には数えない。 */
@@ -1812,7 +1893,7 @@ button.pcad-tree__row:focus-visible {
   padding: 2px var(--pcad-space-3) var(--pcad-space-1) 44px;
   margin: 0;
   font-size: var(--pcad-font-size-small);
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
 }
 
 .pcad-tree__select {
@@ -1859,12 +1940,12 @@ button.pcad-tree__row:focus-visible {
 
 /*
  * 立体の行の「⋮」(FR-503)。抑制・改名・削除の入口。指を乗せるか焦点が来るまで薄くして、
- * 行の名前を読む邪魔をしない。押せる面は削除の印と同じ 18px を保つ。
+ * 行の名前を読む邪魔をしない。押せる面は 24px(行の高さ 26px に収まる、押せる面の下限。指摘 18)。
  */
 .pcad-tree__more {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   font: inherit;
   line-height: 1;
@@ -1921,7 +2002,7 @@ button.pcad-tree__row:focus-visible {
   padding: 0 5px;
   font-size: var(--pcad-font-size-small);
   line-height: 16px;
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
   white-space: nowrap;
   cursor: default;
   background: var(--pcad-bg);
@@ -1929,8 +2010,15 @@ button.pcad-tree__row:focus-visible {
   border-radius: 8px;
 }
 
-/* 抑制中の行はうすい字にして、形が計算されていないことをひと目で分かるようにする。 */
-.pcad-tree__row--suppressed .pcad-tree__label,
+/*
+ * 抑制中の行はうすい字にして、形が計算されていないことをひと目で分かるようにする。
+ * 名前は読む文字なので --pcad-text-muted(4.5:1 以上、通常の行の --pcad-text より弱い)、
+ * 図柄だけ --pcad-text-faint(3:1 以上)にする(指摘 12)。
+ */
+.pcad-tree__row--suppressed .pcad-tree__label {
+  color: var(--pcad-text-muted);
+}
+
 .pcad-tree__row--suppressed .pcad-tree__icon {
   color: var(--pcad-text-faint);
 }
@@ -2020,8 +2108,11 @@ button.pcad-tree__row:focus-visible {
  * こちらは保存されない一時の見え方なので、行そのものは消さずに字だけを弱める。
  */
 .pcad-tree__row--ahead .pcad-tree__label,
-.pcad-tree__row--ahead .pcad-tree__icon,
 .pcad-tree__row--ahead .pcad-tree__badge {
+  color: var(--pcad-text-muted);
+}
+
+.pcad-tree__row--ahead .pcad-tree__icon {
   color: var(--pcad-text-faint);
 }
 
@@ -2130,7 +2221,7 @@ button.pcad-tree__row:focus-visible {
   box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
 }
 
-.pcad-section > .pcad-button--action:hover {
+.pcad-section > .pcad-button--action:hover:where(:not(:disabled, [aria-disabled="true"])) {
   background: var(--pcad-accent-soft-hover);
 }
 
@@ -2232,7 +2323,7 @@ button.pcad-tree__row:focus-visible {
   padding: 0;
   overflow: hidden;
   font: inherit;
-  color: var(--pcad-accent);
+  color: var(--pcad-accent-text);
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -2241,8 +2332,8 @@ button.pcad-tree__row:focus-visible {
   border-radius: var(--pcad-radius-small);
 }
 
+/* 指を乗せたことは下線で示す(色は文字の対比 4.5:1 を保つ --pcad-accent-text のまま)。 */
 .pcad-reference:hover {
-  color: var(--pcad-accent-hover);
   text-decoration: underline;
 }
 
@@ -2415,7 +2506,7 @@ button.pcad-tree__row:focus-visible {
 .pcad-boundary__row::before {
   counter-increment: pcad-boundary;
   content: counter(pcad-boundary) ".";
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2715,7 +2806,7 @@ button.pcad-tree__row:focus-visible {
   box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
 }
 
-.pcad-button--primary:hover {
+.pcad-button--primary:hover:where(:not(:disabled, [aria-disabled="true"])) {
   background: var(--pcad-accent-soft-hover);
 }
 
@@ -3012,11 +3103,24 @@ button.pcad-tree__row:focus-visible {
   gap: var(--pcad-space-1);
 }
 
+/*
+ * 名前の列は 3.2em を最小に、名前の幅まで広げる(以前は 3.2em 固定で、「呼び寸法」「傾ける向き」など
+ * 4 字以上の名前が 2 行に折れていた。指摘 3)。3 字までの名前は以前と同じ 3.2em のままなので、
+ * X・Y・Z などの欄の並びは変わらない。名前の側に上限(10em)を置き、長い名前でも欄の幅を残す。
+ */
 .pcad-field {
   display: grid;
-  grid-template-columns: 3.2em minmax(0, 1fr) auto;
+  grid-template-columns: minmax(3.2em, max-content) minmax(0, 1fr) auto;
   gap: 2px var(--pcad-space-1);
   align-items: center;
+}
+
+/*
+ * 名前の上限は、名前と欄を横に並べる既定の 3 列の時だけに効かせる。名前を欄の上の行に置く所
+ * (板金・段をまたぐ連動・強度・節の欄)と、欄が 1 つで名前の列を中身に合わせる広い窓は除く。
+ */
+.pcad-field:where(:not(.pcad-sheet-metal *, .pcad-coupling-form *, .pcad-strength *, .pcad-section__fields > *, .pcad-popover__fields--wide *)) > :is(.pcad-field__label, span:first-child) {
+  max-width: 10em;
 }
 
 .pcad-field__label {
@@ -3032,7 +3136,7 @@ button.pcad-tree__row:focus-visible {
   font-variant-numeric: tabular-nums;
   color: var(--pcad-text);
   background: var(--pcad-bg);
-  border: 1px solid var(--pcad-border);
+  border: 1px solid var(--pcad-control-border);
   border-radius: var(--pcad-radius-small);
 }
 
@@ -3142,12 +3246,12 @@ button.pcad-tree__row:focus-visible {
     color var(--pcad-transition);
 }
 
-.pcad-switch:hover {
+.pcad-switch:hover:where(:not(:disabled, [aria-disabled="true"])) {
   color: var(--pcad-text);
   background: var(--pcad-surface-raised);
 }
 
-.pcad-switch:active {
+.pcad-switch:active:where(:not(:disabled, [aria-disabled="true"])) {
   color: var(--pcad-text);
   background: var(--pcad-border-strong);
 }
@@ -3163,7 +3267,7 @@ button.pcad-tree__row:focus-visible {
   width: 26px;
   height: 14px;
   background: var(--pcad-bg);
-  border: 1px solid var(--pcad-border-strong);
+  border: 1px solid var(--pcad-control-border);
   border-radius: 7px;
   transition:
     background-color var(--pcad-transition),
@@ -3223,16 +3327,9 @@ button.pcad-tree__row:focus-visible {
   box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
 }
 
-.pcad-popover__actions .pcad-button--action:hover {
+/* 決められないとき(aria-disabled)は、効かない物の 1 か所の決まりで、主のボタンの面のまま薄くなる。 */
+.pcad-popover__actions .pcad-button--action:hover:where(:not(:disabled, [aria-disabled="true"])) {
   background: var(--pcad-accent-soft-hover);
-}
-
-/* 決められないときは押しても作られない。文字は 4.5:1 以上を保つ muted のままにする。 */
-.pcad-popover__actions .pcad-button[aria-disabled="true"] {
-  color: var(--pcad-text-muted);
-  cursor: not-allowed;
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--pcad-border);
 }
 
 /* 計算中を示す回転印。 */
@@ -3374,7 +3471,7 @@ button.pcad-tree__row:focus-visible {
 .pcad-statusbar__hint {
   overflow: hidden;
   font-size: var(--pcad-font-size-small);
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3385,12 +3482,15 @@ button.pcad-tree__row:focus-visible {
   }
 }
 
-/* 中止のボタン。4 状態(通常・ホバー・押下・焦点)は .pcad-button から受け継ぐ。 */
+/*
+ * 中止のボタン。4 状態(通常・ホバー・押下・焦点)は .pcad-button から受け継ぐ。
+ * 押せる面は 24px(高さ 28px の帯に収まる、押せる面の下限。指摘 18)。縁は欄の枠と同じ色。
+ */
 .pcad-statusbar__cancel {
   flex: none;
-  height: 20px;
+  height: 24px;
   font-size: var(--pcad-font-size-small);
-  box-shadow: inset 0 0 0 1px var(--pcad-border-strong);
+  box-shadow: inset 0 0 0 1px var(--pcad-control-border);
 }
 
 .pcad-statusbar__spacer {
@@ -3414,7 +3514,7 @@ button.pcad-tree__row:focus-visible {
  */
 .pcad-statusbar__unit {
   flex: none;
-  height: 20px;
+  height: 24px;
   padding: 0 var(--pcad-space-2);
   font-family: inherit;
   font-size: var(--pcad-font-size-small);
@@ -3422,14 +3522,14 @@ button.pcad-tree__row:focus-visible {
   color: var(--pcad-text-muted);
   cursor: pointer;
   background: var(--pcad-bg);
-  border: 1px solid var(--pcad-border);
+  border: 1px solid var(--pcad-control-border);
   border-radius: 999px;
   transition: color var(--pcad-transition), border-color var(--pcad-transition);
 }
 
 .pcad-statusbar__unit:hover {
   color: var(--pcad-text);
-  border-color: var(--pcad-border-strong);
+  border-color: var(--pcad-text-muted);
 }
 
 /*
@@ -3442,7 +3542,7 @@ button.pcad-tree__row:focus-visible {
   padding: 0 var(--pcad-space-2);
   font-size: var(--pcad-font-size-small);
   font-variant-numeric: tabular-nums;
-  color: var(--pcad-accent);
+  color: var(--pcad-accent-text);
   cursor: default;
   background: var(--pcad-accent-soft);
   border: 1px solid var(--pcad-accent-border);
@@ -3477,7 +3577,7 @@ button.pcad-tree__row:focus-visible {
 .pcad-commandline__label {
   flex: none;
   font-size: var(--pcad-font-size-small);
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
 }
 
 .pcad-commandline__input {
@@ -3490,7 +3590,7 @@ button.pcad-tree__row:focus-visible {
   font-variant-numeric: tabular-nums;
   color: var(--pcad-text);
   background: var(--pcad-bg);
-  border: 1px solid var(--pcad-border);
+  border: 1px solid var(--pcad-control-border);
   border-radius: var(--pcad-radius-small);
   transition: width var(--pcad-transition);
 }
@@ -3512,7 +3612,7 @@ button.pcad-tree__row:focus-visible {
   flex: none;
   overflow: hidden;
   font-size: var(--pcad-font-size-small);
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3560,7 +3660,7 @@ button.pcad-tree__row:focus-visible {
 
 .pcad-commandline__suggestion-word {
   font-variant-numeric: tabular-nums;
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
 }
 
 /* ===== プロパティ区画のタブとパラメータ表(FR-207) ===== */
@@ -3639,9 +3739,9 @@ button.pcad-tree__row:focus-visible {
   white-space: nowrap;
 }
 
-/* 使われていない名前は薄い印(FR-207)。断りではないので赤にしない。 */
+/* 使われていない名前の印(FR-207)。断りではないので赤にしない。読む文字なので 4.5:1 以上の色(指摘 12)。 */
 .pcad-parameter__mark--unused {
-  color: var(--pcad-text-faint);
+  color: var(--pcad-text-muted);
 }
 
 .pcad-parameter__mark--circular {
@@ -3654,21 +3754,12 @@ button.pcad-tree__row:focus-visible {
   gap: 2px;
 }
 
+/* 効かないとき(先頭の ↑ など)の見た目は、効かない物の 1 か所の決まりに任せる。 */
 .pcad-parameter__action {
   width: 22px;
   height: 22px;
   padding: 0;
   justify-content: center;
-}
-
-.pcad-parameter__action:disabled {
-  color: var(--pcad-text-faint);
-  cursor: default;
-}
-
-.pcad-parameter__action:disabled:hover {
-  color: var(--pcad-text-faint);
-  background: transparent;
 }
 
 /* 単位は 3 つだけなので横並びのまま入る(mm / ° / なし)。 */
@@ -3689,7 +3780,7 @@ button.pcad-tree__row:focus-visible {
   box-shadow: inset 0 0 0 1px var(--pcad-accent-border);
 }
 
-.pcad-parameters__footer .pcad-button--action:hover {
+.pcad-parameters__footer .pcad-button--action:hover:where(:not(:disabled, [aria-disabled="true"])) {
   background: var(--pcad-accent-soft-hover);
 }
 
@@ -3796,7 +3887,7 @@ button.pcad-tree__row:focus-visible {
   color: var(--pcad-text);
   font-size: var(--pcad-font-size-small);
   background: var(--pcad-surface);
-  border: 1px solid var(--pcad-border);
+  border: 1px solid var(--pcad-control-border);
   border-radius: var(--pcad-radius-small);
 }
 
@@ -3939,4 +4030,32 @@ button.pcad-tree__row:focus-visible {
 */
 .pcad-parameters__quantity-field {
   padding: 0 var(--pcad-space-3);
+}
+
+/*
+  パラメータのタブの上の部分(構成の選択と名前、追加・改名・削除、名前・説明の検索、絞り込み、件数)と、
+  図形の測定値の「追加」、CSV の読み書きは、区画の左端に接していた(指摘 25)。
+  `.pcad-parameters__fields` の左右 padding 0(上の規則、ParameterPanel と共有)は変えず、直下の子にだけ
+  区画の左右の余白を持たせる。欄(.pcad-field)は「測る量」の欄と同じ padding、ほかは margin で寄せる。
+*/
+.pcad-parameters__fields > .pcad-field,
+.pcad-parameters__fields > .pcad-section > .pcad-field {
+  padding: 0 var(--pcad-space-3);
+}
+
+.pcad-parameters__fields > :is([role="group"], [role="status"], .pcad-button),
+.pcad-parameters__fields > .pcad-section > :is(.pcad-parameter__actions, [role="status"]),
+.pcad-parameters > [role="status"],
+.pcad-parameters__csv {
+  margin-inline: var(--pcad-space-3);
+}
+
+/* 未解決の式の節(UnresolvedMathPanel)。見出し・説明・一覧・押しボタンを区画の左右の余白にそろえる(指摘 25)。 */
+.pcad-section.pcad-unresolved-problems {
+  padding-inline: var(--pcad-space-3);
+}
+
+/* 区画の本体に直に置いた class の無い文(図面のプロパティの「n件を選択中です。」など)を、節と同じ左右の余白にする(指摘 13)。 */
+.pcad-panel__body > p:not([class]) {
+  margin-inline: var(--pcad-space-3);
 }

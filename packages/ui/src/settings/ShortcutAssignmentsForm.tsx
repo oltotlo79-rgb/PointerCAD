@@ -55,7 +55,7 @@ export function ShortcutAssignmentsForm({ current, onApply }: {
   };
   const cancel = (): void => { setDraft(null); setBase(null); setCaptureError(null); setStatus(null); };
   return <form className="pcad-settings__group pcad-shortcut-settings" aria-label={t('settings.shortcuts.title')}
-    data-help-topic="shortcuts" onSubmit={event => {
+    data-help-topic="shortcuts" data-settings-draft={draft !== null} onSubmit={event => {
       event.preventDefault();
       if (draft === null || base === null || stale || !validation.ok) return;
       if (!onApply(validation.assignments, base)) { setStatus(t('settings.shortcuts.stale')); return; }

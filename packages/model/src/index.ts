@@ -1205,6 +1205,8 @@ export {
   DEFAULT_STANDARD_FASTENER_LENGTH, DEFAULT_STANDARD_SECTION_LENGTH,
   STANDARD_PART_UNAVAILABLE_MESSAGE, standardPartNominalVolume,
 } from './assembly/standard/buildStandardPart.js';
+/** 族の部品(保存の catalog が `catalogItem`)を組めない理由の日本語の文。ui の `catalog.rejection.*` と同じ文。 */
+export { CATALOG_ITEM_REJECTION_TEMPLATES } from './assembly/catalog/rejection.js';
 export type {
   SteelEvidence,
   SteelMaterialGrade,

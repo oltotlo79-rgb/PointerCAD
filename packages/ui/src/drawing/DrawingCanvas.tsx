@@ -24,7 +24,7 @@ import { beginDrawingAnnotationDrag, finishDrawingAnnotationDrag, previewDrawing
 import { createDrawingSvgPreview, createDrawingTranslationPreview } from './drawingSvgPreview.js';
 import { beginDrawingViewDrag, finishDrawingViewDrag, previewDrawingViewDrag, type DrawingViewDrag } from './viewDragCommands.js';
 import { drawingRepairProjection } from './referenceRepairProjection.js';
-import { readCameraControlSettings } from '../settings/cameraControlSettings.js';
+import { currentViewControls } from '../settings/viewControlSettings.js';
 import { attachDrawingNavigation, drawingEditPointerMatches, drawingPaperPoint, INITIAL_DRAWING_NAVIGATION,
   type DrawingNavigationTransform } from './drawingNavigation.js';
 
@@ -86,7 +86,7 @@ export function DrawingCanvas(): React.JSX.Element {
     if (surface === null || sheet === null) return;
     const controls = attachDrawingNavigation(surface, {
       view: surface.ownerDocument.defaultView,
-      readSettings: () => readCameraControlSettings(useAppStore.getState().displaySettings.cameraControls),
+      readSettings: () => currentViewControls(useAppStore.getState().displaySettings),
       canStart: (event) => useAppStore.getState().drawing !== null && sheet.querySelector('svg') !== null
         && !(event.target instanceof Element && event.target.closest('input, textarea, select, button, [contenteditable="true"]') !== null)
         && drag.current === null && viewDrag.current === null && noteDrag.current === null

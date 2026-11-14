@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
-import { DEFAULT_CAMERA_CONTROLS, withCameraControlPreset } from './cameraControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, withViewControlPreset } from './viewControlSettings.js';
 import { CameraControlSettingsForm } from './CameraControlSettingsForm.js';
 
 beforeEach(resetTestStore);
@@ -18,7 +18,7 @@ describe('camera settings presets and named binding rows', () => {
     const markup = renderForm();
     expect(markup.match(/<select\b/g)).toHaveLength(6);
     expect(markup.match(/<fieldset>/g)).toHaveLength(3);
-    expect(markup.match(/type="checkbox"/g)).toHaveLength(26);
+    expect(markup.match(/type="checkbox"/g)).toHaveLength(28);
     expect(markup).toContain(`role="group" aria-label="${t('settings.camera.presets')}"`);
     for (const key of ['pointercad', 'solidworks', 'fusion', 'onshape'] as const) {
       expect(markup).toContain(`>${t(`settings.camera.preset.${key}`)}</button>`);
@@ -43,7 +43,7 @@ describe('camera settings presets and named binding rows', () => {
 
   it('renders a saved preset as the current bindings', () => {
     const state = useAppStore.getState();
-    state.setDisplaySettings({ ...state.displaySettings, cameraControls: withCameraControlPreset(DEFAULT_CAMERA_CONTROLS, 'onshape') });
+    state.setDisplaySettings({ ...state.displaySettings, viewControls: withViewControlPreset(DEFAULT_VIEW_CONTROLS, 'onshape') });
     const markup = renderForm();
     const values = [...markup.matchAll(/<option value="([a-z]+)" selected="">/g)].map(match => match[1]);
     // orbit: right, none; pan: middle, right(+Ctrl); zoom: wheel, none.

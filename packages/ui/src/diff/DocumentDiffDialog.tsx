@@ -104,12 +104,12 @@ export function DocumentDiffDialog({ onClose, initial }: {
   return <dialog ref={element} className="pcad-document-diff" aria-labelledby={titleId} data-help-topic="document-diff"
     onCancel={event => { event.preventDefault(); close(); }}>
     <div className="pcad-document-diff__definition">
-    <header><h2 id={titleId}>{t('documentDiff.title')}</h2><button type="button" onClick={close} title={t('documentDiff.close')}>{t('documentDiff.close')}</button></header>
+    <header><h2 id={titleId}>{t('documentDiff.title')}</h2><button className="pcad-button" type="button" onClick={close} title={t('documentDiff.close')}>{t('documentDiff.close')}</button></header>
     <p>{t('documentDiff.intro')}</p>
     <div className="pcad-document-diff__files">{(['before', 'after'] as const).map(side => {
       const file = side === 'before' ? before : after;
       return <section key={side} aria-label={t(`documentDiff.${side}`)}><h3>{t(`documentDiff.${side}`)}</h3>
-        <button type="button" disabled={busy !== null} title={t(`documentDiff.pick.${side}`)} onClick={() => { void selectFile(side); }}>{t(`documentDiff.pick.${side}`)}</button>
+        <button className="pcad-button" type="button" disabled={busy !== null} title={t(`documentDiff.pick.${side}`)} onClick={() => { void selectFile(side); }}>{t(`documentDiff.pick.${side}`)}</button>
         <p>{file === null ? t('documentDiff.unselected') : file.fileName}</p>
         {file === null ? null : <p>{file.documentName}</p>}
       </section>;
@@ -120,10 +120,10 @@ export function DocumentDiffDialog({ onClose, initial }: {
       if (value === '' || value === 'versions' || value === 'unrelated') { setRelationship(value); setResult(null); setPage(0); }
     }}><option value="">{t('documentDiff.chooseRelationship')}</option><option value="versions">{t('documentDiff.versions')}</option><option value="unrelated">{t('documentDiff.unrelated')}</option></select>
     <p>{t('documentDiff.relationshipHint')}</p>
-    <div className="pcad-document-diff__actions"><button type="button" title={t('documentDiff.compare')}
+    <div className="pcad-document-diff__actions"><button className="pcad-button pcad-button--primary" type="button" title={t('documentDiff.compare')}
       disabled={before === null || after === null || relationship === '' || busy !== null} onClick={() => { void compare(); }}>{t('documentDiff.compare')}</button>
-      {busy === null ? null : <><span role="status">{t(busy === 'compare' ? 'documentDiff.comparing' : 'documentDiff.reading')}</span><button type="button" title={t('documentDiff.cancel')} onClick={cancel}>{t('documentDiff.cancel')}</button></>}
-      <button type="button" title={t('documentDiff.help')} onClick={() => useAppStore.getState().openHelpTopic('document-diff')}>{t('documentDiff.help')}</button>
+      {busy === null ? null : <><span role="status">{t(busy === 'compare' ? 'documentDiff.comparing' : 'documentDiff.reading')}</span><button className="pcad-button" type="button" title={t('documentDiff.cancel')} onClick={cancel}>{t('documentDiff.cancel')}</button></>}
+      <button className="pcad-button" type="button" title={t('documentDiff.help')} onClick={() => useAppStore.getState().openHelpTopic('document-diff')}>{t('documentDiff.help')}</button>
     </div>
     {message === null ? null : <p role={message.error ? 'alert' : 'status'}>{message.text}</p>}
     {result === null ? null : <section aria-label={t('documentDiff.results')}>
@@ -134,9 +134,9 @@ export function DocumentDiffDialog({ onClose, initial }: {
       <p>{t('documentDiff.geometryNotice')}</p>
       <ol className="pcad-document-diff__changes">{changes.slice(page * pageSize, (page + 1) * pageSize).map(change => <Change key={change.key} change={change} />)}</ol>
       {changes.length <= pageSize ? null : <nav aria-label={t('documentDiff.pages')}>
-        <button type="button" disabled={page === 0} title={t('documentDiff.previous')} onClick={() => setPage(page - 1)}>{t('documentDiff.previous')}</button>
+        <button className="pcad-button" type="button" disabled={page === 0} title={t('documentDiff.previous')} onClick={() => setPage(page - 1)}>{t('documentDiff.previous')}</button>
         <span>{page + 1} / {Math.ceil(changes.length / pageSize)}</span>
-        <button type="button" disabled={(page + 1) * pageSize >= changes.length} title={t('documentDiff.next')} onClick={() => setPage(page + 1)}>{t('documentDiff.next')}</button>
+        <button className="pcad-button" type="button" disabled={(page + 1) * pageSize >= changes.length} title={t('documentDiff.next')} onClick={() => setPage(page + 1)}>{t('documentDiff.next')}</button>
       </nav>}
     </section>}
     </div>

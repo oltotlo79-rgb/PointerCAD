@@ -11,7 +11,8 @@
  * (`displaySettings` / `setDisplaySettings`)は `packages/ui/src/store/useAppStore.ts`。
  */
 
-import { DEFAULT_CAMERA_CONTROLS, isCameraControlSettings, readCameraControlSettings, type CameraControlSettings } from './cameraControlSettings.js';
+import { DEFAULT_CAMERA_CONTROLS, cameraSettingsError, readCameraControlSettings, type CameraControlSettings } from './cameraControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, isViewControlSettings, readStoredViewControls, type ViewControlSettings } from './viewControlSettings.js';
 
 import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
@@ -41,7 +42,18 @@ export const THEME_IDS: readonly ThemeId[] = [
 ];
 
 export interface DisplaySettings {
+  /**
+   * 視点の操作の v1。**凍結**: 新しい版は viewControls が無い時の移行にだけ読み、書き換えない
+   * (古い版へ戻した時に、古い版が読める控え)。読める値は受け取ったまま書き戻す。
+   */
   readonly cameraControls?: CameraControlSettings;
+  /** 視点の操作の v2(正本)。読むのは viewControlSettings.ts の currentViewControls だけ。 */
+  readonly viewControls?: ViewControlSettings;
+  /**
+   * 起動時に読めなかったため既定へ戻した、視点の操作の項目の数(無い・0 は知らせない)。
+   * **表示だけの値で保存しない**(saveSettings が外す)。視点の設定を適用すると消える。
+   */
+  readonly viewControlsRecovered?: number;
   readonly tutorialCompleted?: boolean;
   readonly shortcutAssignments?: ShortcutAssignments;
   readonly numericToolDefaults?: NumericDefaultSources;
@@ -98,8 +110,12 @@ export interface DisplaySettings {
   readonly inferConstraints: boolean;
 }
 
+/** 端末に保存する欄。viewControlsRecovered は表示だけの値なので含まない。 */
+export type PersistedDisplaySettings = Omit<DisplaySettings, 'viewControlsRecovered'>;
+
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   cameraControls: DEFAULT_CAMERA_CONTROLS,
+  viewControls: DEFAULT_VIEW_CONTROLS,
   tutorialCompleted: false,
   shortcutAssignments: EMPTY_SHORTCUT_ASSIGNMENTS,
   numericToolDefaults: {},
@@ -393,8 +409,12 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
     if (!hasValidDisplayCore(parsed)) {
       return DEFAULT_DISPLAY_SETTINGS;
     }
+    // 視点の操作は読めない部分だけを既定へ戻し、戻した数を表示だけの欄に置く(他の欄には影響しない)。
+    const view = readStoredViewControls(parsed);
     return {
       cameraControls: readCameraControlSettings('cameraControls' in parsed ? parsed.cameraControls : undefined),
+      viewControls: view.settings,
+      ...(view.dropped > 0 ? { viewControlsRecovered: view.dropped } : {}),
       tutorialCompleted: 'tutorialCompleted' in parsed && parsed.tutorialCompleted === true,
       shortcutAssignments: readStoredShortcutAssignments(parsed),
       theme: parsed.theme,
@@ -420,11 +440,13 @@ export function saveSettings(
   settings: DisplaySettings,
   storage: SettingsStorage | null = browserStorage(),
 ): void {
-  if (storage === null || (settings.cameraControls !== undefined && !isCameraControlSettings(settings.cameraControls))) {
+  if (storage === null || (settings.cameraControls !== undefined && cameraSettingsError(settings.cameraControls) !== null)
+    || (settings.viewControls !== undefined && !isViewControlSettings(settings.viewControls))) {
     return;
   }
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    // 読めなかった数は表示だけの値なので書かない(undefined の欄は JSON に出ない)。
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, viewControlsRecovered: undefined }));
   } catch {
     // 書き込み枠が塞がっている等。表示は既に切り替わっているので操作は止めない。
   }

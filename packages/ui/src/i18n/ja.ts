@@ -19,6 +19,7 @@ import view from './ja/view.json';
 import parameters from './ja/parameters.json';
 import assembly from './ja/assembly.json';
 import steelBend from './ja/steelBend.json';
+import catalog from './ja/catalog.json';
 import drawing from './ja/drawing.json';
 import help from './ja/help.json';
 import sheetMetal from './ja/sheetMetal.json';
@@ -67,6 +68,8 @@ export const ja = {
    * ジョイント・干渉・分解・部品表の道具名と、断りの文言がここに入る。
    */
   ...assembly,
+  // 規格部品の族(鋼材・アルミフレーム・機械要素の共通の選び方と、族の部品の断り)。鍵の先頭語は `catalog`。
+  ...catalog,
   // 図面。道具・木・プロパティと、利用者へ返す断りの正本。
   ...drawing,
   ...help,
@@ -110,6 +113,7 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['parameters', parameters],
   ['assembly', assembly],
   ['steelBend', steelBend],
+  ['catalog', catalog],
   ['drawing', drawing],
   ['help', help],
   ['sheetMetal', sheetMetal],

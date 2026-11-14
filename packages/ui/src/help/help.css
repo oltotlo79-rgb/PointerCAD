@@ -22,7 +22,7 @@
 .pcad-help__nav label { display: grid; gap: 6px; }
 .pcad-help__nav ul { list-style: none; padding: 0; }
 .pcad-help__topic { display: block; width: 100%; padding: 8px; font: inherit; line-height: 1.5; color: var(--pcad-text); text-align: left; background: transparent; border: 0; border-radius: var(--pcad-radius); cursor: pointer; }
-.pcad-help__topic[aria-current="page"] { background: var(--pcad-bg); color: var(--pcad-accent); font-weight: 600; }
+.pcad-help__topic[aria-current="page"] { background: var(--pcad-bg); color: var(--pcad-accent-text); font-weight: 600; }
 .pcad-help__topic:hover { background: var(--pcad-bg); }
 .pcad-help__article { min-width: 0; padding: 16px 24px; overflow: auto; line-height: 1.8; overflow-wrap: anywhere; }
 .pcad-help__article > :first-child { margin-top: 0; }
@@ -36,7 +36,7 @@
 .pcad-help__article pre { padding: 12px; overflow-x: auto; background: var(--pcad-bg); }
 .pcad-help__article pre code { padding: 0; }
 .pcad-help__article blockquote { margin-inline: 0; padding-left: 12px; border-left: 3px solid var(--pcad-border); }
-.pcad-help__article a, .pcad-help__link { color: var(--pcad-accent); }
+.pcad-help__article a, .pcad-help__link { color: var(--pcad-accent-text); }
 .pcad-help__link { padding: 0; font: inherit; text-align: inherit; text-decoration: underline; background: none; border: 0; cursor: pointer; }
 .pcad-help__table { overflow-x: auto; }
 .pcad-help__table table { width: 100%; border-collapse: collapse; }

@@ -29,6 +29,12 @@ export interface ToolMenuItem<Id extends string> {
    * 名前がここで差し替われば説明(`tooltipKey`)は決まった文言のままでよいからである。
    */
   readonly label?: string;
+  /**
+   * 一覧の中の小見出し。数の決まらない行(保存したひな形・最近使ったファイル)だけが持ち、`ToolMenu` は
+   * 小見出しが前の行と変わる所に見出しを 1 つ描く。押す前に、新しく始まるのか・ファイルが開くのかを見分けるため
+   * (UI/UX の点検の指摘 16)。
+   */
+  readonly sectionKey?: MessageKey;
 }
 
 /**

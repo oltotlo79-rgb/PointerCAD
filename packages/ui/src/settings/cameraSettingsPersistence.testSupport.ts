@@ -6,6 +6,7 @@ import {
 } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import type { CameraBinding, CameraControlPreset, CameraControlSettings } from './cameraControlSettings.js';
+import type { ViewControlOptions, ViewControlSettings, ViewTrigger } from './viewControlSettings.js';
 import type { SettingsStorage } from './settings.js';
 
 export const SAVED_AT = '2026-10-26T00:00:00.000Z';
@@ -48,6 +49,26 @@ export const CUSTOM_CAMERA: CameraControlSettings = {
   zoom: [{ input: 'wheel', alt: false, shift: false, ctrl: false, meta: true }],
   wheelSensitivity: 2.5, dragSensitivity: 0.4, invertWheel: true, invertDrag: true,
 };
+
+// The same independent tables in the v2 shape (viewControls). Hand-written, not produced by the product migration.
+function trigger(input: CameraBinding['input'], alt = false, shift = false, ctrl = false, meta = false): ViewTrigger {
+  return input === 'wheel' ? { kind: 'wheel', alt, shift, ctrl, meta } : { kind: 'drag', button: input, alt, shift, ctrl, meta };
+}
+const VIEW_OPTIONS: ViewControlOptions = { orbitSensitivity: 1, panSensitivity: 1, wheelSensitivity: 1, zoomDragSensitivity: 1,
+  invertWheel: false, invertZoomDrag: false, invertOrbitX: false, invertOrbitY: false };
+export const EXPECTED_VIEW_PRESETS: Readonly<Record<CameraControlPreset, ViewControlSettings>> = {
+  pointercad: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('middle'), trigger('left', true)],
+    pan: [trigger('right'), trigger('middle', false, true)], zoom: [trigger('wheel'), trigger('wheel', false, false, true)] } },
+  solidworks: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('middle')], pan: [trigger('middle', false, false, true)],
+    zoom: [trigger('wheel'), trigger('middle', false, true)] } },
+  fusion: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('middle', false, true)], pan: [trigger('middle')], zoom: [trigger('wheel')] } },
+  onshape: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('right')],
+    pan: [trigger('middle'), trigger('right', false, false, true)], zoom: [trigger('wheel')] } },
+};
+/** CUSTOM_CAMERA after the v1 to v2 migration: same bindings and zoom tuning, new rotation and pan fields at their defaults. */
+export const CUSTOM_VIEW: ViewControlSettings = { version: 2,
+  bindings: { orbit: [trigger('left', true, true)], pan: [trigger('middle', false, false, true)], zoom: [trigger('wheel', false, false, false, true)] },
+  options: { ...VIEW_OPTIONS, wheelSensitivity: 2.5, zoomDragSensitivity: 0.4, invertWheel: true, invertZoomDrag: true } };
 
 /** Small authored inputs with stable cross-document references; no kernel success is fabricated. */
 export async function documentFixtures() {

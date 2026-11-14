@@ -58,7 +58,7 @@ test('P12-26 中身が壊れた.pcadを開いても理由が出て、今の文�
 
   // 理由が赤い帯に出る。
   await expect(page.locator('.pcad-statusbar')).toHaveClass(/pcad-statusbar--error/);
-  await expect(page.locator('.pcad-statusbar__text')).toHaveText('ファイルが壊れているため開けませんでした。');
+  await expect(page.locator('.pcad-statusbar__text')).toHaveText('ファイルが壊れているため開けず、いまの文書はそのままです。壊れる前の控えか、別のファイルを選んでください。');
 
   // 今の文書は変わらない(NFR-RE-1)。点はそのまま残り、未保存の印も消えない。
   await expect(pointRow).toBeVisible();

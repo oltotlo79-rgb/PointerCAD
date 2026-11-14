@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { attachCameraControls } from '../viewport/attachCameraControls.js';
 import { attachDrawingNavigation, INITIAL_DRAWING_NAVIGATION } from '../drawing/drawingNavigation.js';
-import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, type ViewControlSettings } from '../settings/viewControlSettings.js';
 import { attachRadialMenuGesture } from './attachRadialMenuGesture.js';
 import type { RadialMenuGesture } from './radialMenuGesture.js';
 
 type RadialMenuAttachmentOptions = Parameters<typeof attachRadialMenuGesture>[1];
 
 function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeClickTarget?: RadialMenuAttachmentOptions['nativeClickTarget'],
-  clickOnly = false, cameraFirst = false, selectionModifiers = false, cameraSettings = DEFAULT_CAMERA_CONTROLS) {
+  clickOnly = false, cameraFirst = false, selectionModifiers = false, cameraSettings = DEFAULT_VIEW_CONTROLS) {
   const view = new EventTarget(), captured = new Set<number>();
   let owner: object = {}, blocked = false;
   const show = vi.fn<(gesture: RadialMenuGesture | null) => void>(), choose = vi.fn();
@@ -68,7 +68,7 @@ function drawingFixture() {
   });
   // Register navigation first: registration order on the parent cannot rescue a child listener.
   const navigation = attachDrawingNavigation(parent, { view, focus,
-    readSettings: () => DEFAULT_CAMERA_CONTROLS, canStart: () => true,
+    readSettings: () => DEFAULT_VIEW_CONTROLS, canStart: () => true,
     sheetBounds: () => ({ left: 0, top: 0 }), getTransform: () => transform,
     setTransform: next => { transform = next; changes(next); },
   });
@@ -246,10 +246,10 @@ describe('右ボタンで道具を選ぶ間の入力所有権', () => {
     { button: 0, buttons: 1, altKey: true, shiftKey: false },
     { button: 0, buttons: 1, altKey: true, shiftKey: true },
   ])('既存の視点操作$button/$altKey/$shiftKeyを奪わない', mode => {
-    const settings: CameraControlSettings = mode.altKey && mode.shiftKey ? {
-      ...DEFAULT_CAMERA_CONTROLS,
-      pan: [{ input: 'left', alt: true, shift: true, ctrl: false, meta: false }, DEFAULT_CAMERA_CONTROLS.pan[0]],
-    } : DEFAULT_CAMERA_CONTROLS;
+    const settings: ViewControlSettings = mode.altKey && mode.shiftKey ? {
+      ...DEFAULT_VIEW_CONTROLS, bindings: { ...DEFAULT_VIEW_CONTROLS.bindings,
+        pan: [{ kind: 'drag', button: 'left', alt: true, shift: true, ctrl: false, meta: false }, DEFAULT_VIEW_CONTROLS.bindings.pan[0]] },
+    } : DEFAULT_VIEW_CONTROLS;
     const f = fixture(undefined, undefined, false, false, false, settings), before = f.camera.getOrbit();
     try {
       f.send('pointerdown', mode);

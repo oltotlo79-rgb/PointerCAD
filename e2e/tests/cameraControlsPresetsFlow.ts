@@ -7,9 +7,9 @@ import { waitForStartupHealth } from './startupHealth.js';
 import { uiMessage } from './uiMessages.js';
 import { cameraDistance, expectSameCamera, observeControlsInput, rememberCamera } from './cameraControlsSettingsFlow.js';
 
-// Independent acceptance table: cameraControlSettings.ts:34-44. Never import the
-// production preset builder, validator, binding matcher, or camera math as an oracle.
-// Tuple columns: input, Alt, Shift, Ctrl, Meta. The twelve action rows are explicit.
+// Independent acceptance table: the preset table of cameraControlSettings.ts, applied through the v2 settings
+// (viewControlSettings.ts). Never import the production preset builder, validator, binding matcher, or camera math
+// as an oracle. Tuple columns: input, Alt, Shift, Ctrl, Meta. The twelve action rows are explicit.
 const presets = [
   { name: 'pointercad',
     orbit: [['middle', false, false, false, false], ['left', true, false, false, false]],
@@ -59,11 +59,37 @@ async function fields(page: Page) {
     throw new Error('Unexpected preset field');
   }));
 }
+/** The stored v2 record (`viewControls`) after a preset with both zoom speeds 2 and both zoom inversions on. */
 function expectedSettings(item: typeof presets[number]) {
   const bindings = (rows: typeof item.orbit | typeof item.pan | typeof item.zoom) =>
-    rows.map(([input, alt, shift, ctrl, meta]) => ({ input, alt, shift, ctrl, meta }));
-  return { version: 1, orbit: bindings(item.orbit), pan: bindings(item.pan), zoom: bindings(item.zoom),
-    wheelSensitivity: 2, dragSensitivity: 2, invertWheel: true, invertDrag: true };
+    rows.map(([input, alt, shift, ctrl, meta]) => input === 'wheel'
+      ? { kind: 'wheel', alt, shift, ctrl, meta } : { kind: 'drag', button: input, alt, shift, ctrl, meta });
+  return { version: 2, bindings: { orbit: bindings(item.orbit), pan: bindings(item.pan), zoom: bindings(item.zoom) },
+    options: { orbitSensitivity: 1, panSensitivity: 1, wheelSensitivity: 2, zoomDragSensitivity: 2,
+      invertWheel: true, invertZoomDrag: true, invertOrbitX: false, invertOrbitY: false } };
+}
+/** The frozen v1 record (`cameraControls`): written once from the previous default and never rewritten by v2 edits. */
+const frozenCamera = { version: 1,
+  orbit: [{ input: 'middle', alt: false, shift: false, ctrl: false, meta: false }, { input: 'left', alt: true, shift: false, ctrl: false, meta: false }],
+  pan: [{ input: 'right', alt: false, shift: false, ctrl: false, meta: false }, { input: 'middle', alt: false, shift: true, ctrl: false, meta: false }],
+  zoom: [{ input: 'wheel', alt: false, shift: false, ctrl: false, meta: false }, { input: 'wheel', alt: false, shift: false, ctrl: true, meta: false }],
+  wheelSensitivity: 1, dragSensitivity: 1, invertWheel: false, invertDrag: false };
+function expectStoredPreset(raw: string | null, item: typeof presets[number]): void {
+  if (raw === null) throw new Error('Preset not stored');
+  const settings: unknown = JSON.parse(raw);
+  if (typeof settings !== 'object' || settings === null || !('viewControls' in settings) || !('cameraControls' in settings)) {
+    throw new Error('Camera settings missing');
+  }
+  expect(settings.viewControls).toEqual(expectedSettings(item));
+  expect(settings.cameraControls).toEqual(frozenCamera);
+  expect(raw).not.toContain('viewControlsRecovered');
+}
+/** One explicit row of the independent table as a named binding. */
+function tableRow(item: typeof presets[number], name: 'orbit' | 'pan' | 'zoom', index: number) {
+  const row = item[name][index];
+  if (row === undefined) return undefined;
+  const [input, alt, shift, ctrl, meta] = row;
+  return { input, alt, shift, ctrl, meta };
 }
 async function expectPreset(page: Page, item: typeof presets[number]): Promise<void> {
   await expect(form(page).getByRole('combobox')).toHaveCount(6);
@@ -110,7 +136,7 @@ async function reopen(page: Page, info: TestInfo, fileName: string, app?: Electr
 
 async function actualGesture(page: Page, info: TestInfo, item: typeof presets[number],
   name: 'orbit' | 'pan' | 'zoom', index: number, app?: ElectronApplication, stage = 'applied'): Promise<void> {
-  const binding = expectedSettings(item)[name][index];
+  const binding = tableRow(item, name, index);
   if (binding === undefined) throw new Error('Preset gesture absent from independent table');
   await home(page);
   const before = await rememberCamera(page, info, `${item.name}-${stage}-${name}-${index}-home`, app);
@@ -216,10 +242,7 @@ export async function cameraControlsPresetsFlow(page: Page, info: TestInfo, app?
   if (previous !== undefined) {
     await open(page); await draft(page, previous); await button(page, 'apply').click();
     await expect(button(page, 'apply')).toBeDisabled(); await expectPreset(page, previous);
-    const raw = await stored(page); if (raw === null) throw new Error('Predecessor preset not stored');
-    const settings: unknown = JSON.parse(raw);
-    if (typeof settings !== 'object' || settings === null || !('cameraControls' in settings)) throw new Error('Predecessor camera settings missing');
-    expect(settings.cameraControls).toEqual(expectedSettings(previous));
+    expectStoredPreset(await stored(page), previous);
     await close(page);
     expect(await savePart(page, info, `${previous.name}-transition-before.pcad`, app)).toEqual(original);
   }
@@ -229,17 +252,19 @@ export async function cameraControlsPresetsFlow(page: Page, info: TestInfo, app?
   await draft(page, item); expect(await stored(page)).toBe(priorStorage);
   await button(page, 'cancel').click(); expect(await fields(page)).toEqual(priorFields);
   await expect(button(page, 'apply')).toBeDisabled(); expect(await stored(page)).toBe(priorStorage);
-  await draft(page, item); await close(page); await open(page);
+  // Closing with an unapplied preset asks inside the panel; discarding closes it and keeps the stored settings.
+  await draft(page, item); await page.getByRole('button', { name: '設定', exact: true }).click();
+  const draftPrompt = page.getByRole('group', { name: uiMessage('toolbar', 'toolbar.settings.draft.message'), exact: true });
+  await expect(draftPrompt).toBeVisible(); await expect(form(page)).toBeVisible();
+  await draftPrompt.getByRole('button', { name: uiMessage('toolbar', 'toolbar.settings.draft.discardClose'), exact: true }).click();
+  await expect(form(page)).toHaveCount(0); await open(page);
   expect(await fields(page)).toEqual(priorFields); expect(await stored(page)).toBe(priorStorage);
   await expect(button(page, 'apply')).toBeDisabled();
   await draft(page, item); await button(page, 'apply').click();
   await expect(button(page, 'apply')).toBeDisabled(); await expectPreset(page, item);
   const raw = await stored(page); if (raw === null) throw new Error('Applied preset not stored');
   const configured = raw;
-  const settings: unknown = JSON.parse(configured);
-  expect(settings).toMatchObject({ cameraControls: expectedSettings(item) });
-  if (typeof settings !== 'object' || settings === null || !('cameraControls' in settings)) throw new Error('Camera settings missing');
-  expect(settings.cameraControls).toEqual(expectedSettings(item));
+  expectStoredPreset(configured, item);
   await close(page);
   expect(await savePart(page, info, `${item.name}-settings-only.pcad`, app)).toEqual(saved);
   if (item.name === 'pointercad') {

@@ -1,17 +1,17 @@
 import { FILE_KIND_SPECS, type SaveFileKind } from '../file/fileContracts.js';
-import { DEFAULT_DISPLAY_SETTINGS, type DisplaySettings } from '../settings/settings.js';
+import { DEFAULT_DISPLAY_SETTINGS, type PersistedDisplaySettings } from '../settings/settings.js';
 import { toolDefaultEntries } from '../settings/numericToolDefaults.js';
 import { t } from '../i18n/t.js';
 
 /** Keys are checked against the persisted settings type, including optional and internal flags. */
 export const SETTINGS_HELP_BINDINGS = {
   theme: ['display-settings'], uiScale: ['display-settings'],
-  cameraControls: ['display-settings', 'viewport'],
+  cameraControls: ['display-settings', 'viewport'], viewControls: ['display-settings', 'viewport'],
   shortcutAssignments: ['shortcuts'], numericToolDefaults: ['display-settings', 'template'],
   autoSaveIntervalMs: ['save-and-open', 'display-settings'],
   trackAngleStep: ['tracking'], lengthUnit: ['units'], selectionFilter: ['select-subshape'],
   inferConstraints: ['constraints'], timelineHintSeen: ['timeline'], tutorialCompleted: ['tutorial'],
-} satisfies Readonly<Record<keyof DisplaySettings, readonly string[]>>;
+} satisfies Readonly<Record<keyof PersistedDisplaySettings, readonly string[]>>;
 
 /** DWG is deliberately absent: its conversion instructions are not an implemented export. */
 export const OUTPUT_HELP_BINDINGS = {

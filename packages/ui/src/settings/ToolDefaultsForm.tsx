@@ -34,6 +34,7 @@ export function ToolDefaultsForm(): React.JSX.Element {
     return message === null ? [] : [{ entry, message }];
   });
   return <form className="pcad-settings__group pcad-tool-defaults" aria-label={t('settings.toolDefaults.title')} data-help-topic="display-settings"
+    data-settings-draft={draft !== null}
     onSubmit={event => {
       event.preventDefault(); if (draft === null || errors.length > 0) return;
       const state = useAppStore.getState();

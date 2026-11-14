@@ -158,7 +158,7 @@ export async function assemblyMechanismRefusalFlow(page: Page, info: TestInfo, a
     const chooser = app === undefined ? page.waitForEvent('filechooser') : null;
     await fileAction(page, '開く').click();
     if (chooser !== null) await (await chooser).setFiles(path);
-    await expect(page.locator('.pcad-statusbar__text')).toHaveText('ファイルが壊れているため開けませんでした。');
+    await expect(page.locator('.pcad-statusbar__text')).toHaveText('ファイルが壊れているため開けず、いまの文書はそのままです。壊れる前の控えか、別のファイルを選んでください。');
     expect(await readAssemblyStats(page), `${negative}: document, displayed poses and motion unchanged`).toEqual(before);
     await expectNoHistory(page);
     // Save after refusal checks the entire original document, not just displayed positions.

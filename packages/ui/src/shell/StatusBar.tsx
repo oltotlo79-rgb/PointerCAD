@@ -1,5 +1,5 @@
 import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
-import { activeFileName } from '../store/documentKind.js';
+import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import {
   isBaseWorkPlaneId,
   isFreeWorkPlaneId,
@@ -27,7 +27,7 @@ import { solidToolReadiness } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CommandLine } from './CommandLine.js';
 import type { CommandLineFailure } from './commandLineActions.js';
-import { AlertIcon, MouseIcon, PlaneIcon, SaveIcon, SnapIcon } from './icons.js';
+import { AlertIcon, MouseIcon, PlaneIcon, RecentFileIcon, SaveIcon, SnapIcon } from './icons.js';
 import { rollbackOf } from './timelineRail.js';
 import {
   countSelectedBodies,
@@ -38,6 +38,8 @@ import {
   boltedJointStatus,
   filletWeldStatus,
   PROGRESS_DELAY_MS,
+  saveMarkLabel,
+  statusBarFlexShrink,
   type SpringNumericInputStep,
   type StatusLineKind,
   type TrackStatus,
@@ -89,13 +91,52 @@ function widthPercent(ratio: number): string {
   return `${String(Math.round(ratio * 100))}%`;
 }
 
+/** 保存の段階・復元用の保存の状態の印に渡すもの。 */
+interface StatusMarkProps {
+  readonly slot: 'save' | 'recovery';
+  /** 段階の名前。画面検査が `data-save-stage` / `data-recovery-stage` で見分ける。 */
+  readonly stage: string;
+  readonly icon: React.JSX.Element;
+  /** 画面に出す 1〜2 語。図柄だけで足りる段階は null。 */
+  readonly label: string | null;
+  /** 段階の全文。ツールチップと読み上げへ渡す。 */
+  readonly text: string;
+  readonly failed?: boolean;
+  /** 中止のボタン。縮んでも残る。 */
+  readonly children?: React.ReactNode;
+}
+
+/**
+ * 保存の段階・復元用の保存の状態の印(UI の点検の指摘 1)。図柄と 1〜2 語だけを画面に出し、全文は
+ * ツールチップと読み上げへ渡す。幅が足りない時は案内の 1 文より先に縮む(`statusBarFlexShrink`)。
+ */
+function StatusMark(props: StatusMarkProps): React.JSX.Element {
+  return (
+    <span
+      className={props.failed === true ? 'pcad-statusbar__mark pcad-statusbar__mark--failed' : 'pcad-statusbar__mark'}
+      data-save-stage={props.slot === 'save' ? props.stage : undefined}
+      data-recovery-stage={props.slot === 'recovery' ? props.stage : undefined}
+      title={props.text}
+      style={{ flexShrink: statusBarFlexShrink(props.slot) }}
+    >
+      {props.icon}
+      {props.label === null ? null : (
+        <span className="pcad-statusbar__mark-text" aria-hidden="true">{props.label}</span>
+      )}
+      <span className="pcad-statusbar__spoken" role="status" aria-live="polite">{props.text}</span>
+      {props.children}
+    </span>
+  );
+}
+
 /**
  * 下端のステータスバー(要件§7.1、FR-905)。
  *
  * 左は今の状況を伝える。計算中も道具の操作ガイドを残し、計算状態を小さく並べる。
  * どれを出すかの順番と文の組み立ては `statusText.ts` の純関数が決める。
- * 右は「作図面」「吸着」「単位」を小さな札で常に見せる。**単位の札だけは押せる**
+ * 右は「作図面」「吸着」(部品の文書だけ)と「単位」を小さな札で見せる。**単位の札だけは押せる**
  * (mm ↔ inch、FR-811)。札の数も区画も増やしていない。
+ * 帯の幅が足りない時は、案内の 1 文を最後に縮める(縮む順は `statusBarFlexShrink`。UI の点検の指摘 1)。
  * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
  *
  * 長い計算のあいだは細い進捗の帯と「中止」を出す(NFR-PF-4)。**進み具合が届いてすぐには
@@ -218,6 +259,8 @@ export function StatusBar(): React.JSX.Element {
   // 名前(「線分1」)は履歴が持っている。案内線のもとになった要素だけを引く。
   const sketchFeatures = useAppStore((state) => state.sketch.features);
   const fileName = useAppStore(activeFileName);
+  // 作図面・吸着・拘束の推定の札は部品の文書だけで使う(ツールバーと同じ判定。UI の点検の小 21)。
+  const documentKind = useAppStore((state) => activeDocumentKind(state));
   const fileMessage = useAppStore((state) => state.fileMessage);
   const saveOperation = useAppStore(state => state.documentSaveOperation?.documentId === state.activeDocumentId
     && state.documentSaveOperation.gateway === state.fileGateway ? state.documentSaveOperation : null);
@@ -409,16 +452,15 @@ export function StatusBar(): React.JSX.Element {
     .replace('{name}', saveOperation.fileName ?? fileLabel);
   // 「復元用の保存を待っています」は今の文書に保存していない変更がある間だけ示す。新規・開く・Undo で
   // 保存済みの内容になった文書へ、差し替えの途中で付いた待機の表示を残さない(復元の表示は今の世代だけに)。
-  const recoveryText = recoveryState === null || (recoveryState.stage === 'pending' && !unsaved)
-    ? null : t(`file.recovery.${recoveryState.stage}`);
+  // 失敗の理由(detail)は、帯には短い印だけを出すので、全文の後ろに添えてツールチップと読み上げへ渡す。
+  const recoveryText = recoveryState === null || (recoveryState.stage === 'pending' && !unsaved) ? null
+    : `${t(`file.recovery.${recoveryState.stage}`)}${recoveryState.detail === undefined ? '' : ` ${recoveryState.detail}`}`;
 
   return (
     <footer className={className}>
-      {/* 開いているファイルの名前。区画は増やさず、状況の1文の左へ小さく置く。 */}
-      <span
-        className="pcad-statusbar__file"
-        title={unsaved ? t('file.unsavedChanges') : fileLabel}
-      >
+      {/* 開いているファイルの名前。区画は増やさず、状況の1文の左へ小さく置く。未保存は * とツールチップで伝える(点検の指摘 1)。 */}
+      <span className="pcad-statusbar__file" title={unsaved ? t('file.unsavedChanges') : fileLabel}
+        style={{ flexShrink: statusBarFlexShrink('file') }}>
         {fileLabel}
       </span>
       {/*
@@ -427,29 +469,28 @@ export function StatusBar(): React.JSX.Element {
         欄が広がり、そのぶんを右の余白と状況の 1 文が譲る(appShell.css)。
       */}
       <CommandLine onFailureChange={setCommandFailure} />
+      {/*
+        保存の段階(実行中は回る印と「保存中…」、完了は図柄だけ)と、復元用の保存の状態(失敗だけ危険の色の
+        短い語、ほかは図柄だけ)。段階の全文はツールチップと読み上げへ渡す(UI の点検の指摘 1)。
+      */}
       {saveOperation === null ? null : (
-        <span className="pcad-statusbar__progress" data-save-stage={saveOperation.stage}>
-          <span role="status" aria-live="polite" title={saveText ?? undefined}
-            style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {saveText}{unsaved ? ` ${t('file.unsavedChanges')}` : ''}
-          </span>
+        <StatusMark slot="save" stage={saveOperation.stage} label={saveMarkLabel(saveOperation.stage)}
+          text={saveText ?? ''} icon={saveOperation.stage === 'complete' || saveOperation.stage === 'cancelled'
+            ? <SaveIcon size={12} /> : <span className="pcad-spinner" aria-hidden="true" />}>
           {saveOperation.cancel === null ? null : (
             <button type="button" className="pcad-button pcad-button--action pcad-statusbar__cancel"
               title={t('controlGuide.save.cancel')}
               onClick={saveOperation.cancel}>{t('file.save.cancel')}</button>
           )}
-        </span>
+        </StatusMark>
       )}
-      {recoveryText === null ? null : (
-        <span role="status" title={recoveryState?.detail ?? recoveryText}
-          style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {recoveryText}
-        </span>
+      {recoveryText === null || recoveryState === null ? null : (
+        <StatusMark slot="recovery" stage={recoveryState.stage} text={recoveryText}
+          failed={recoveryState.stage === 'failed'}
+          label={recoveryState.stage === 'failed' ? t('statusBar.recoveryMark.failed') : null}
+          icon={recoveryState.stage === 'failed' ? <AlertIcon size={12} /> : <RecentFileIcon size={12} />} />
       )}
-      {unsaved && saveOperation === null ? <span
-        style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-      >{t('file.unsavedChanges')}</span> : null}
-      <span className="pcad-statusbar__message" aria-live="polite">
+      <span className="pcad-statusbar__message" aria-live="polite" style={{ flexShrink: statusBarFlexShrink('message') }}>
         {statusIcon(line.kind)}
         <span className="pcad-statusbar__text" title={line.text}>
           {line.text}{fileMessage?.detail === undefined ? '' : ` ${fileMessage.detail}`}
@@ -478,7 +519,7 @@ export function StatusBar(): React.JSX.Element {
          * 計算の進み具合と中止(NFR-PF-4)。中止は段と段の間でしか効かないので、
          * 待たされることがある旨を薄い字とツールチップで先に伝える。
          */
-        <span className="pcad-statusbar__progress">
+        <span className="pcad-statusbar__progress" style={{ flexShrink: statusBarFlexShrink('progress') }}>
           <span
             className="pcad-statusbar__progress-track"
             role="progressbar"
@@ -553,6 +594,11 @@ export function StatusBar(): React.JSX.Element {
           <span className="pcad-statusbar__hint">{t('statusBar.selectionFilterNone')}</span>
         ) : null}
       </span>
+      {/*
+        作図面・吸着・拘束の推定はスケッチの道具の札なので、部品の文書だけに出す。アセンブリでは
+        ツールバーも隠しているので、帯にも使わない札を残さない(UI の点検の小 21)。
+      */}
+      {documentKind === 'part' ? <>
       <span className="pcad-statusbar__state">
         <PlaneIcon size={12} />
         {`${t('statusBar.plane')} ${planeLabel(workPlaneId, customPlanes)}`}
@@ -584,6 +630,7 @@ export function StatusBar(): React.JSX.Element {
           {t('statusBar.inferConstraints')}
         </button>
       </span>
+      </> : null}
       {/*
         表示の単位(FR-811)。押すたびに mm ↔ inch を入れ替える。**内部の値は変わらない**
         ので、切り替えても `.pcad` のバイト列は 1 バイトも変わらない(NFR-RE-3)。

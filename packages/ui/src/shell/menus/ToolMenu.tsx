@@ -210,7 +210,10 @@ export function ToolMenu<Id extends string>({
           {items.map((item, index) => {
             const readiness = readinessOf?.(item.id) ?? null;
             const ready = readiness === null || readiness.ready;
-            return (
+            // A heading starts each run of rows that share a section (saved templates, recent files).
+            const heading = item.sectionKey !== undefined && items[index - 1]?.sectionKey !== item.sectionKey
+              ? <span key={`${item.id}:section`} className="pcad-menu__section">{t(item.sectionKey)}</span> : null;
+            return [heading,
               <button
                 key={item.id}
                 type="button"
@@ -245,8 +248,8 @@ export function ToolMenu<Id extends string>({
               >
                 <item.Icon />
                 {nameOf(item)}
-              </button>
-            );
+              </button>,
+            ];
           })}
         </div>
       ) : null}

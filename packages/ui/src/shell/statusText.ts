@@ -30,7 +30,7 @@ import type { SnapKind } from '../sketch/snapMath.js';
 import type { TrackKind } from '../sketch/trackMath.js';
 import { SELECTION_KIND_LABEL_KEYS } from '../solid/selectionFilter.js';
 import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
-import type { FileMessage } from '../store/fileSlice.js';
+import type { DocumentSaveOperation, FileMessage } from '../store/fileSlice.js';
 import type { TimelineRollback } from './timelineRail.js';
 import type { NestedBoltedJointDraft } from '../assembly/nestedBoltedJointDraft.js';
 import { weldPickCount, type NestedWeldDraft } from '../assembly/nestedWeldDraft.js';
@@ -41,6 +41,36 @@ import { weldPickCount, type NestedWeldDraft } from '../assembly/nestedWeldDraft
  * 防ぐため。
  */
 export const PROGRESS_DELAY_MS = 300;
+
+/**
+ * 帯の幅が足りない時に、先に縮める欄から順に並べる(UI の点検の指摘 1)。どの欄も縮めて残るのは
+ * 図柄と中止のボタンで、全文はツールチップと読み上げで読める。計算の進み具合の但し書き、保存の段階の語、
+ * ファイル名、復元用の保存の失敗の語(危険の色の図柄は残る)の順に縮め、いまの状態と次の手を伝える
+ * 案内の 1 文(`message`)は最後に縮める。
+ */
+const STATUS_BAR_SHRINK_ORDER = ['progress', 'save', 'file', 'recovery', 'message'] as const;
+
+/**
+ * 隣の欄との縮む重みの比。CSS の flex は足りない幅を flex-shrink × 元の幅に比例して配るので、
+ * 1000 倍ずつ離すと、前の欄が最小の幅まで縮むまで後ろの欄は 1px 未満しか縮まない。
+ */
+const SHRINK_WEIGHT_STEP = 1000;
+
+/** 帯の欄の flex-shrink。案内の 1 文が 1 で、先に縮める欄ほど大きい。 */
+export function statusBarFlexShrink(slot: (typeof STATUS_BAR_SHRINK_ORDER)[number]): number {
+  return SHRINK_WEIGHT_STEP ** (STATUS_BAR_SHRINK_ORDER.length - 1 - STATUS_BAR_SHRINK_ORDER.indexOf(slot));
+}
+
+/**
+ * 保存の段階の短い印(1〜2 語。UI の点検の指摘 1)。段階の全文はツールチップと読み上げへ渡す。
+ * 完了は図柄だけにする(帯の 1 文の「保存しました」とファイル名が、保存できた事を伝える)。
+ */
+export function saveMarkLabel(stage: DocumentSaveOperation['stage']): string | null {
+  if (stage === 'complete') {
+    return null;
+  }
+  return t(stage === 'cancelled' ? 'statusBar.saveMark.cancelled' : 'statusBar.saveMark.running');
+}
 
 /**
  * 形状計算部のメモリの警告を出す割合(NFR-PF-6「WASM の実質上限(〜4GB)内で動作。上限接近時に

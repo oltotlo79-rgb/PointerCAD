@@ -72,7 +72,12 @@ export type StandardCatalogId =
    * すみ肉溶接のビード1区間（`assembly/welding/**`）。寸法表ではなく利用者が決めた脚長・長さから組む。
    * 規格部品の選択画面には出さない（溶接の操作だけが作る）。強度や溶加材の性質は持たない。
    */
-  | 'filletWeld';
+  | 'filletWeld'
+  /**
+   * 族の登録口(`assembly/catalog/**`)の部品。鋼材の追加の断面以外の新しい規格部品(機械要素・アルミフレームほか)は
+   * 全てこの 1 値で保存し、族と行は `options.family`・`options.item` で指す。既存の値の保存の形と道は変えない。
+   */
+  | 'catalogItem';
 
 /**
  * 部品の出どころ(FR-601、FR-613)。

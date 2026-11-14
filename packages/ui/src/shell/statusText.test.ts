@@ -43,6 +43,7 @@ import {
   PROGRESS_DELAY_MS,
   rollbackText,
   springGuideText,
+  statusBarFlexShrink,
   summarizeFailures,
   trackGuideText,
 } from './statusText.js';
@@ -1840,3 +1841,138 @@ it.each(['jointRecordMissing', 'jointPartsChanged', 'jointPartsConstrained', 'jo
     expect(line.kind).toBe('failure');
     expect(line.text).toBe(status?.text);
   });
+
+/** 帯の 1 欄。basis は縮める前の幅、min は縮めても残る幅(図柄や中止のボタン)。 */
+interface FlexSlot {
+  readonly basis: number;
+  readonly min: number;
+  readonly shrink: number;
+}
+
+/**
+ * CSS の flex の縮め方(Flexbox §9.7)。足りない幅は flex-shrink × 元の幅に比例して配り、最小の幅で
+ * 止まった欄を外して配り直す。ブラウザーの計算を写した検査用の物差しで、製品は重み(flex-shrink)だけを持つ。
+ */
+function shrinkToFit(slots: readonly FlexSlot[], available: number): number[] {
+  const sizes = slots.map((slot) => slot.basis);
+  const frozen = slots.map((slot) => slot.shrink === 0);
+  for (let round = 0; round < slots.length; round += 1) {
+    const free = available - slots.reduce((sum, slot, index) => sum + (frozen[index] ? sizes[index] : slot.basis), 0);
+    const scaled = slots.map((slot, index) => (frozen[index] ? 0 : slot.shrink * slot.basis));
+    const total = scaled.reduce((sum, value) => sum + value, 0);
+    let violated = false;
+    slots.forEach((slot, index) => {
+      if (frozen[index]) return;
+      const target = free >= 0 || total === 0 ? slot.basis : slot.basis + free * (scaled[index] / total);
+      sizes[index] = Math.max(target, slot.min);
+      if (target < slot.min) {
+        frozen[index] = true;
+        violated = true;
+      }
+    });
+    if (!violated) return sizes;
+  }
+  return sizes;
+}
+
+describe('帯の幅の割り当て(点検の指摘 1)', () => {
+  /*
+   * 1440 幅の帯の実測(説明書の画像 quad-four-views-screen): 左右の余白 12px×2、欄の間 12px、
+   * コマンドの欄 168px、右の札(選ぶもの〜単位)518px、statusBar.ready の 1 文と印 558px。
+   * 保存の印・復元の印・ファイル名・計算の進み具合は、縮めても図柄と中止のボタンが残る。
+   */
+  const FIXED = { shrink: 0 };
+  const scene = (save: FlexSlot | null, recovery: FlexSlot | null): Map<string, FlexSlot> => new Map<string, FlexSlot>([
+    ['file', { basis: 70, min: 44, shrink: statusBarFlexShrink('file') }],
+    ['command', { basis: 168, min: 168, ...FIXED }],
+    ...(save === null ? [] : [['save', save] as const]),
+    ...(recovery === null ? [] : [['recovery', recovery] as const]),
+    ['message', { basis: 558, min: 14, shrink: statusBarFlexShrink('message') }],
+    ['right', { basis: 518, min: 518, ...FIXED }],
+  ]);
+  const inner = (slots: Map<string, FlexSlot>, width: number): number => width - 24 - 12 * (slots.size - 1);
+  const sizesAt = (slots: Map<string, FlexSlot>, width: number): Map<string, number> => {
+    const names = [...slots.keys()];
+    const sizes = shrinkToFit([...slots.values()], inner(slots, width));
+    return new Map(names.map((name, index) => [name, sizes[index]]));
+  };
+
+  it('幅が足りない時は計算の進み具合・保存の印・ファイル名・復元の印の順に縮め、案内の 1 文は最後に縮める', () => {
+    const order = ['progress', 'save', 'file', 'recovery', 'message'] as const;
+    const weights = order.map((slot) => statusBarFlexShrink(slot));
+    expect(weights.at(-1)).toBe(1);
+    for (let index = 1; index < weights.length; index += 1) {
+      expect(weights[index - 1], order[index - 1]).toBeGreaterThanOrEqual(weights[index] * 1000);
+    }
+  });
+
+  it('1440 幅で保存していない変更と復元の待ちがあっても、案内の 1 文は全文の幅を受け取る(指摘 1 の画像の状態)', () => {
+    // 復元の待ちは図柄だけ(14px)。「保存していない変更があります。」の文は帯に出さない。
+    const slots = scene(null, { basis: 14, min: 14, shrink: statusBarFlexShrink('recovery') });
+    expect(sizesAt(slots, 1440).get('message')).toBe(558);
+  });
+
+  it('保存中・復元の失敗が重なって幅が足りない時も、先の欄が最小まで縮むまで案内の 1 文は 1px も縮まない', () => {
+    const slots = scene(
+      { basis: 150, min: 100, shrink: statusBarFlexShrink('save') },
+      { basis: 120, min: 14, shrink: statusBarFlexShrink('recovery') },
+    );
+    for (let width = 1700; width >= 1100; width -= 5) {
+      const sizes = sizesAt(slots, width);
+      const lost = 558 - (sizes.get('message') ?? 0);
+      const earlierAboveMin = ['save', 'file', 'recovery']
+        .filter((name) => (sizes.get(name) ?? 0) > (slots.get(name)?.min ?? 0) + 0.5);
+      if (earlierAboveMin.length > 0) expect(lost, `${String(width)}px: ${earlierAboveMin.join(',')}`).toBeLessThan(1);
+    }
+    // 1100 幅では先の欄が全て最小になってから、案内の 1 文が残りを譲る。
+    const narrow = sizesAt(slots, 1100);
+    expect([narrow.get('save'), narrow.get('file'), narrow.get('recovery')]).toEqual([100, 44, 14]);
+    expect(narrow.get('message')).toBeLessThan(558);
+  });
+});
+
+describe('ファイルを開けない・保存できない時の文(点検の指摘 11・2-3 (a))', () => {
+  /** 何が起きたか・いまの文書の状態・次の手を、この順で含む事を決まった語で確かめる。 */
+  const CASES: readonly (readonly [MessageKey, string, string, string])[] = [
+    ['file.error.corrupted', '壊れているため開けず', 'いまの文書はそのままです', '選んでください'],
+    ['file.error.tooOld', '古い形式のため、この版では開けず', 'いまの文書はそのままです', '保存し直してから開いてください'],
+    ['file.error.tooNew', '新しい版の PointerCAD で保存された', 'いまの文書はそのままです', '更新してから開いてください'],
+    ['file.error.wrongKind', '種類の違うファイルのため開けず', 'いまの文書はそのままです', '選び直してください'],
+    ['file.error.tooLarge', '大きすぎるため開けず', 'いまの文書はそのままです', '選び直してください'],
+    ['file.error.missingDocument', '中身が見つからないため開けず', 'いまの文書はそのままです', '選んでください'],
+    ['file.error.invalidSize', '大きさが分からないため開けず', 'いまの文書はそのままです', '選び直してください'],
+    ['file.openFailed', 'ファイルを開けず', 'いまの文書はそのままです', '選び直してください'],
+    ['file.saveFailed', '保存できませんでした', '変更は残っている', 'もう一度保存してください'],
+    ['autoSave.failed', '自動保存できませんでした', '変更はまだ保存されていない', 'ファイルへ保存してください'],
+    ['restore.exportFailed', '書き出せませんでした', '控えは残っている', 'もう一度書き出してください'],
+  ];
+
+  it.each(CASES)('%s は、何が起きたか・文書の状態・次の手を 1〜2 文で示す', (key, happened, state, next) => {
+    const line = describeStatus({ ...quiet(), fileMessage: { key, failed: true } });
+    expect(line.kind).toBe('failure');
+    const text = line.text;
+    expect(text).toBe(t(key));
+    const positions = [happened, state, next].map((phrase) => text.indexOf(phrase));
+    expect(positions.every((position) => position >= 0), `${key}: ${text}`).toBe(true);
+    expect([...positions].sort((a, b) => a - b), `${key}: 順番`).toEqual(positions);
+    expect(text.endsWith('。'), text).toBe(true);
+    expect(text.split('。').length - 1, `${key}: 文の数`).toBeLessThanOrEqual(2);
+    expect(text).not.toMatch(/カーネル|OCCT|JSON|ZIP|Worker|ワーカー/u);
+  });
+
+  it('古い形式の文は、保存した時の版で保存し直す手を先に書き、STEP は「または」で添える(150 字以内)', () => {
+    const text = t('file.error.tooOld');
+    const order = ['保存した時の版の PointerCAD で開き', '保存し直してから開いてください', 'または', 'STEP']
+      .map((phrase) => text.indexOf(phrase));
+    expect(order.every((position) => position >= 0), text).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect([...text].length).toBeLessThanOrEqual(150);
+  });
+
+  it('開けない時の 6 文(点検の指摘 11)は全て次の手を持つ', () => {
+    const keys = CASES.map(([key]) => key);
+    for (const key of ['corrupted', 'tooOld', 'wrongKind', 'tooLarge', 'missingDocument', 'invalidSize'] as const) {
+      expect(keys).toContain(`file.error.${key}`);
+    }
+  });
+});

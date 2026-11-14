@@ -1,0 +1,9 @@
+{
+  "catalog.rejection.unknown-family": "この部品の種類は、このアプリの版の部品の表にありません。アプリを新しい版にしてから開いてください。",
+  "catalog.rejection.family-not-loaded": "この部品の表を読み込んでいます。読み込みが終わってから、もう一度開いてください。",
+  "catalog.rejection.unsupported-catalog-revision": "この部品の表の版には対応していません。",
+  "catalog.rejection.unsupported-generator-revision": "この部品の形を作る版には対応していません。",
+  "catalog.rejection.unknown-item": "この部品の呼び寸法は、部品の表にありません。",
+  "catalog.rejection.saved-fields-mismatch": "保存した部品の指定のうち {count} 項目が部品の表と一致しません。",
+  "catalog.rejection.invalid-option-value": "部品の長さなどの指定が、範囲の外か数として読めません。"
+}

@@ -242,6 +242,49 @@ class OpusGuardTests(unittest.TestCase):
         self.records("hb", self.handback_records())
         self.assertIn('"deny"', self.invoke(tool="SendMessage", to="hb", message="再開").stdout)
 
+    # --- 2026-11-13(rules/06 §10.512): 最後の回で道具を並べた担当・meta の finished ---
+    def records_meta(self, agent_id, recs, **meta_extra):
+        self.records(agent_id, recs)
+        meta = {"model": "opus", "description": f"task {agent_id}", **meta_extra}
+        (self.folder / f"agent-{agent_id}.meta.json").write_text(json.dumps(meta), encoding="utf-8")
+
+    def parallel_handback(self, trailing=()):
+        # 2026-11-13 22:08 の aa8b7ff9d0973b179 と同じ形: Edit と handback を並べて呼び、結果が 2 つ続く
+        return [self.tool_use("Bash", "b0"), self.tool_result("b0"),
+                self.tool_use("Edit", "e1"), self.tool_use("SubagentHandback", "h1"),
+                self.tool_result("e1"), self.tool_result("h1"), *trailing]
+
+    def test_parallel_handback_final_turn_not_counted(self):
+        result = self.three_running_plus(lambda: self.records("par", self.parallel_handback()))
+        self.assertEqual(result.stdout, "")
+
+    def test_parallel_handback_with_attachment_not_counted(self):
+        result = self.three_running_plus(lambda: self.records("par", self.parallel_handback([self.ATTACH])))
+        self.assertEqual(result.stdout, "")
+
+    def test_meta_finished_not_counted_even_if_tail_looks_running(self):
+        result = self.three_running_plus(lambda: self.records_meta("fin", [self.tool_use("Bash", "b1")], finished=True))
+        self.assertEqual(result.stdout, "")
+
+    def test_parallel_tools_without_handback_still_counted(self):
+        recs = [self.tool_use("Edit", "e1"), self.tool_use("Bash", "b1"), self.tool_result("e1"), self.tool_result("b1")]
+        result = self.three_running_plus(lambda: self.records("busy", recs))
+        self.assertIn('"deny"', result.stdout)
+
+    def test_parallel_handback_then_new_request_still_counted(self):
+        recs = self.parallel_handback([{"type": "user", "message": {"role": "user", "content": "続きを"}}])
+        result = self.three_running_plus(lambda: self.records("resumed", recs))
+        self.assertIn('"deny"', result.stdout)
+
+    def test_meta_finished_false_or_text_still_counted(self):
+        result = self.three_running_plus(lambda: self.records_meta("run", [self.tool_use("Bash", "b1")], finished="true"))
+        self.assertIn('"deny"', result.stdout)
+
+    def test_parallel_handback_without_its_result_still_counted(self):
+        recs = [self.tool_use("Edit", "e1"), self.tool_use("SubagentHandback", "h1"), self.tool_result("e1")]
+        result = self.three_running_plus(lambda: self.records("half", recs))
+        self.assertIn('"deny"', result.stdout)
+
     def test_bad_json_fail_open(self):
         result = subprocess.run([sys.executable, "-B", "-X", "utf8", str(HOOK)],
                                 input="{", text=True, capture_output=True, cwd=ROOT)

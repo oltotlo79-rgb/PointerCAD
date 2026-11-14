@@ -3,13 +3,27 @@ import { createNamedSavePoints, SavePointError } from '../history/namedSavePoint
 import { createIndexedDbSavePointStorage } from '../history/namedSavePointStorage.js';
 import { isPcadSavePointRequest, isPcadThreeMfRequest, type PcadSavePointReply, type PcadSavePointRequest,
   type PcadSaveReply, type PcadWorkerRequest } from './pcadSaveProtocol.js';
-import { encodeOwnedSaveInput } from './pcadSaveWorkerEncoding.js';
+import { encodeOwnedSaveInput, encodeOwnedSaveInputParts } from './pcadSaveWorkerEncoding.js';
 
 let activePoint: { readonly id: string; readonly controller: AbortController } | null = null;
 const points = createNamedSavePoints(createIndexedDbSavePointStorage());
 
 function sendPoint(reply: PcadSavePointReply, transfer: Transferable[] = []): void {
   self.postMessage(reply, { transfer });
+}
+
+/**
+ * 部分の並びの各領域を 1 回ずつ移す(写さない)。同じ領域を見る部分が複数あっても移すのは 1 回で、受け手の
+ * 見せ方はそのまま残る。部分はこの Worker の符号化の出力か、この Worker へ移された入力の写しだけで、
+ * 返信の後に Worker は終了する。共有メモリーは移せないので断る。
+ */
+function partsTransfer(parts: readonly Uint8Array[]): ArrayBuffer[] {
+  const buffers = new Set<ArrayBuffer>();
+  for (const part of parts) {
+    if (!(part.buffer instanceof ArrayBuffer)) throw new Error('Unexpected shared save output');
+    buffers.add(part.buffer);
+  }
+  return [...buffers];
 }
 
 async function savePoint(request: PcadSavePointRequest, signal: AbortSignal): Promise<PcadSavePointReply> {
@@ -83,6 +97,15 @@ self.onmessage = (event: MessageEvent<PcadWorkerRequest>): void => {
   const send = (reply: PcadSaveReply, transfer: Transferable[] = []): void => {
     self.postMessage(reply, { transfer });
   };
+  if (event.data.replyAsParts === true) {
+    // 部分の並びのまま移す。全体の並びを作らないので、部分と全体の写しが同時に残る山を作らない。
+    void encodeOwnedSaveInputParts(input, stage => send({ id, kind: 'progress', stage })).then(({ parts }) => {
+      send({ id, kind: 'success', parts }, partsTransfer(parts));
+    }).catch((error: unknown) => {
+      send({ id, kind: 'failure', message: error instanceof Error ? error.message : String(error) });
+    });
+    return;
+  }
   // 入力はこのWorkerの写しだけ。項目ができた時点で三角形の写しを手放してから圧縮する(E24)。
   void encodeOwnedSaveInput(input, stage => send({ id, kind: 'progress', stage })).then(({ bytes }) => {
     // エンコーダーが所有する出力だけを渡す。入力の原本はこのWorkerには存在しない。

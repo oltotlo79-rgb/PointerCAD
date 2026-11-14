@@ -31,6 +31,7 @@ import { isObject } from '../valueGuards.js';
  * 検査から偽の相手を渡せる(本物の `globalThis` に欄を差し込むと他の検査へ漏れる)。
  */
 
+import { concatZipParts } from '@pointercad/io';
 import type { FileKind } from '@pointercad/model';
 import { SCRIPT_FILE_LIMITS } from '@pointercad/model/scripting';
 import type { CamFormat, CamTool, ExportReceipt } from './openWith.js';
@@ -96,6 +97,14 @@ export interface FileGateway {
    * 保存できたらファイル名を返す。取り消されたら null。
    */
   savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean,
+    kind?: 'part' | 'assembly' | 'drawing'): Promise<string | null>;
+  /**
+   * `savePcad` と同じ約束で保存する。中身は、順につなぐとファイルの全体になる部分の並びで受け、全体の並びを
+   * 作らずに書く(大きい保存で、部分と全体の写しが同時に残る記憶量の山を避ける)。
+   * 省略できる欄にしてあるのは、差し込み側(検査の偽の口)を壊さないため。省略された口へは
+   * `savePcadThrough` が部分をつないで `savePcad` を呼ぶ。
+   */
+  savePcadParts?(suggestedName: string, parts: readonly Uint8Array[], saveAs: boolean,
     kind?: 'part' | 'assembly' | 'drawing'): Promise<string | null>;
   /** 前に保存した先を覚えているか(「保存」を「名前を付けて保存」に落とすかの判断)。 */
   hasSaveTarget(): boolean;
@@ -312,13 +321,20 @@ async function abortWritable(writable: WritableFile): Promise<void> {
   }
 }
 
-async function writeAndClose(writable: WritableFile, bytes: Uint8Array, control?: ExportSaveControl): Promise<boolean> {
+/**
+ * 中身(順につなぐとファイルの全体になる部分の並び)を順に書いてから閉じる。部分ごとに書くので、
+ * 書く側で全体の並びを作らない。途中で失敗・失効したら閉じずに破棄する(書きかけを残さない)。
+ */
+async function writeAndClose(writable: WritableFile, parts: readonly Uint8Array[],
+  control?: ExportSaveControl): Promise<boolean> {
   try {
-    if (!mayContinueExport(control)) {
-      await abortWritable(writable);
-      return false;
+    for (const part of parts) {
+      if (!mayContinueExport(control)) {
+        await abortWritable(writable);
+        return false;
+      }
+      await writable.write(part);
     }
-    await writable.write(bytes);
     if (!mayContinueExport(control)) {
       await abortWritable(writable);
       return false;
@@ -498,6 +514,14 @@ function isFilePickerInput(value: unknown): value is FilePickerInput {
   );
 }
 
+/** 共有でない記憶を指す同じ範囲の見せ方(写さない)。共有の記憶を指すときだけ自前の記憶へ写す。 */
+function plainBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  if (bytes.buffer instanceof ArrayBuffer) return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const plain = new Uint8Array(new ArrayBuffer(bytes.byteLength));
+  plain.set(bytes);
+  return plain;
+}
+
 /**
  * ダウンロードとして保存する。場所は選べず、ブラウザのダウンロード先へ落ちる。
  *
@@ -505,16 +529,14 @@ function isFilePickerInput(value: unknown): value is FilePickerInput {
  * 直後に手放しても中身は失われない。手放さないと、その場所を指したまま
  * ファイルの中身が記憶に残り続ける。
  */
-function downloadBytes(scope: object, name: string, mimeType: string, bytes: Uint8Array): void {
+function downloadBytes(scope: object, name: string, mimeType: string, parts: readonly Uint8Array[]): void {
   if (!hasDocument(scope) || !hasObjectUrls(scope)) {
     // ダウンロードすらできない相手(ブラウザではない)。書けなかったこととして断る。
     throw new Error(t('file.saveFailed'));
   }
-  // Blob は「共有できる記憶を指していないバイト列」しか受け取らない。渡された並びが
-  // どちらの記憶を指しているかは呼び出し側次第なので、ここで自前の記憶へ写してから渡す。
-  const plain = new Uint8Array(new ArrayBuffer(bytes.byteLength));
-  plain.set(bytes);
-  const blob = new Blob([plain], { type: mimeType });
+  // Blob は「共有できる記憶を指していないバイト列」しか受け取らない。共有でない記憶を指す部分は写さずに
+  // 同じ範囲の見せ方で渡し、共有の記憶を指す部分だけ自前の記憶へ写す。中身は部分を順につないだものになる。
+  const blob = new Blob(parts.map(plainBytes), { type: mimeType });
   const url = scope.URL.createObjectURL(blob);
   const anchor = scope.document.createElement('a');
   if (!isDownloadAnchor(anchor)) {
@@ -698,7 +720,7 @@ export async function saveFileAsInBrowser(
   if (!hasSavePicker(scope)) {
     // 場所は選べないので、名前を添えてダウンロードする。
     if (!mayContinueExport(control)) return false;
-    downloadBytes(scope, fileName, primaryMimeTypeOf(kind), bytes);
+    downloadBytes(scope, fileName, primaryMimeTypeOf(kind), [bytes]);
     return true;
   }
   let picked: unknown;
@@ -725,7 +747,7 @@ export async function saveFileAsInBrowser(
   if (!isWritableFile(writable)) {
     throw new Error(t('file.saveFailed'));
   }
-  return writeAndClose(writable, bytes, control);
+  return writeAndClose(writable, [bytes], control);
 }
 
 /**
@@ -757,6 +779,22 @@ export function saveFileAsThrough(
       : gateway.saveFileAs(fileName, kind, bytes, control);
 }
 
+/**
+ * 差し込まれた口を通して、部分の並び(順につなぐとファイルの全体)のまま保存する。部分を受ける口
+ * (`savePcadParts`)を持たない口へは、部分をつないだ全体を `savePcad` で渡す(その時の記憶量は今と同じ)。
+ */
+export function savePcadThrough(
+  gateway: FileGateway,
+  suggestedName: string,
+  parts: readonly Uint8Array[],
+  saveAs: boolean,
+  kind?: 'part' | 'assembly' | 'drawing',
+): Promise<string | null> {
+  if (gateway.savePcadParts !== undefined) return gateway.savePcadParts(suggestedName, parts, saveAs, kind);
+  const bytes = concatZipParts(parts);
+  return kind === undefined ? gateway.savePcad(suggestedName, bytes, saveAs) : gateway.savePcad(suggestedName, bytes, saveAs, kind);
+}
+
 // ---------------------------------------------------------------------------
 // ブラウザ用の口
 // ---------------------------------------------------------------------------
@@ -781,6 +819,43 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
     null;
   let nextSaveTargetToken = 1;
   let targetRevision = 0;
+
+  /** `savePcad` と `savePcadParts` の共通の保存。中身は順につなぐとファイルの全体になる部分の並び。 */
+  async function saveContent(suggestedName: string, parts: readonly Uint8Array[], saveAs: boolean,
+    kind: 'part' | 'assembly' | 'drawing'): Promise<string | null> {
+    const revision = ++targetRevision;
+    if (!hasSavePicker(scope)) {
+      // 場所は選べないので、名前を添えてダウンロードする。
+      downloadBytes(scope, suggestedName, PCAD_MIME_TYPE, parts);
+      return suggestedName;
+    }
+    let target = saveAs ? null : saveTarget;
+    if (target === null) {
+      let picked: unknown;
+      try {
+        picked = await scope.showSaveFilePicker({ suggestedName, types: documentFileTypes(kind) });
+      } catch (error) {
+        if (isAbortError(error)) {
+          return null;
+        }
+        throw error;
+      }
+      if (!isWritableFileHandle(picked)) {
+        throw new Error(t('file.saveFailed'));
+      }
+      target = picked;
+    }
+    if (revision !== targetRevision) return null;
+    const writable = await target.createWritable();
+    if (!isWritableFile(writable)) {
+      throw new Error(t('file.saveFailed'));
+    }
+    await writeAndClose(writable, parts);
+    if (revision !== targetRevision) return null;
+    saveTarget = target;
+    pendingSaveTarget = null;
+    return target.name;
+  }
 
   return {
     async openPcad(kind = 'part'): Promise<PickedFile | null> {
@@ -822,39 +897,12 @@ export function createBrowserFileGateway(scope: object = globalThis): FileGatewa
       return { name: handle.name, bytes, saveTargetToken, owned: true, reread: () => readBrowserFile(file) };
     },
 
-    async savePcad(suggestedName, bytes, saveAs, kind = 'part'): Promise<string | null> {
-      const revision = ++targetRevision;
-      if (!hasSavePicker(scope)) {
-        // 場所は選べないので、名前を添えてダウンロードする。
-        downloadBytes(scope, suggestedName, PCAD_MIME_TYPE, bytes);
-        return suggestedName;
-      }
-      let target = saveAs ? null : saveTarget;
-      if (target === null) {
-        let picked: unknown;
-        try {
-          picked = await scope.showSaveFilePicker({ suggestedName, types: documentFileTypes(kind) });
-        } catch (error) {
-          if (isAbortError(error)) {
-            return null;
-          }
-          throw error;
-        }
-        if (!isWritableFileHandle(picked)) {
-          throw new Error(t('file.saveFailed'));
-        }
-        target = picked;
-      }
-      if (revision !== targetRevision) return null;
-      const writable = await target.createWritable();
-      if (!isWritableFile(writable)) {
-        throw new Error(t('file.saveFailed'));
-      }
-      await writeAndClose(writable, bytes);
-      if (revision !== targetRevision) return null;
-      saveTarget = target;
-      pendingSaveTarget = null;
-      return target.name;
+    savePcad(suggestedName, bytes, saveAs, kind = 'part'): Promise<string | null> {
+      return saveContent(suggestedName, [bytes], saveAs, kind);
+    },
+
+    savePcadParts(suggestedName, parts, saveAs, kind = 'part'): Promise<string | null> {
+      return saveContent(suggestedName, parts, saveAs, kind);
     },
 
     hasSaveTarget(): boolean {

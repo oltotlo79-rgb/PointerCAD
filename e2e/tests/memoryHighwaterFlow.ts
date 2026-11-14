@@ -19,7 +19,7 @@ import { openTarget } from './electronAppFlow.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { parseUsageCensus, parseUsageWindow, qualifyDocumentedGpuUsage } from './documentedGpuUsage.js';
 
-import { windowsSampler, linuxSampler, linuxProcess, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type RawFrame, type Sampler } from './processResourceSampler.js';
+import { windowsSampler, linuxSampler, linuxProcess, frameClockStages, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type RawFrame, type Sampler } from './processResourceSampler.js';
 const BUDGET_BYTES = 512 * 1024 * 1024;
 const SOURCE_PATHS = ['e2e/tests/memoryHighwaterFlow.ts', 'e2e/tests/processResourceSampler.ts', 'e2e/tests/memory-highwater.spec.ts',
   'e2e/tests/electron-memory-highwater.spec.ts', 'packages/test-utils/src/processMemorySamples.ts',
@@ -869,18 +869,10 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
   expect(failureRecovered).toBe(true);
   expect(sampler.failures).toEqual([]);
   // A stale frame names its own acquisition stages in the failure text (the CI log carries no attachment).
-  // The judgment and the problems are unchanged; this only shows which stage used up the age limit.
-  const staleStages = frames.flatMap((frame, index) => {
-    const age = frame.atEpochMs - frame.discoveredAtEpochMs;
-    if (age <= DISCOVERY_INTERVAL_MS) return [];
-    const timing = frame.windowsTiming, sleep = timing?.previousSleep;
-    return [`${String(frame.atEpochMs)}: age ${String(age)}ms; read start age ${String(frame.readStartedAtEpochMs - frame.discoveredAtEpochMs)}ms; `
-      + `read ${String(frame.atEpochMs - frame.readStartedAtEpochMs)}ms (native ${timing === undefined ? 'n/a' : timing.nativeCallMs.toFixed(1)}ms); `
-      + `loop start age ${timing?.loopStartedAtEpochMs === undefined ? 'n/a' : String(timing.loopStartedAtEpochMs - frame.discoveredAtEpochMs)}ms; `
-      + `previous sleep ${sleep === undefined ? 'n/a' : `${String(sleep.requestedMs)}->${String(sleep.endedAtEpochMs - sleep.startedAtEpochMs)}`}ms; `
-      + `discovery started ${timing === undefined ? 'n/a' : String(timing.discoveryStartedAtEpochMs)} exec ${timing === undefined ? 'n/a' : timing.discoveryExecutionMs.toFixed(1)}ms `
-      + `adopted ${timing === undefined ? 'n/a' : String(timing.discoveryAdoptedAtEpochMs)}; next frame discovery ${String(frames[index + 1]?.discoveredAtEpochMs ?? 'n/a')}`];
-  });
+  // The judgment and the problems are unchanged; this only shows which stage used up the age limit, and the retry if one ran
+  // (the same text as the read resident check, processResourceSampler.ts frameClockStages).
+  const staleStages = frames.flatMap((frame, index) =>
+    frame.atEpochMs - frame.discoveredAtEpochMs <= DISCOVERY_INTERVAL_MS ? [] : [frameClockStages(frame, frames[index + 1])]);
   expect(sampledObservation.observationValid, [...sampledObservation.problems, ...staleStages].join('\n')).toBe(true);
   for (const metric of [sampledObservation.workingSet, sampledObservation.privateMemory]) {
     expect(metric.extraPeak).not.toBeNull(); expect(metric.extraAfterRelease).not.toBeNull();

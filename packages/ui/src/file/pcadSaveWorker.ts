@@ -1,10 +1,10 @@
-import { admitThreeMf, checkThreeMfDeadline, threeMfDeadline,
+import { admitThreeMf, checkThreeMfDeadline, concatZipParts, threeMfDeadline,
   ThreeMfExportLimitError,
-  type SaveDocumentEncoder, type SaveDocumentInput, type SaveEncodingControl,
+  type SaveDocumentEncoder, type SaveDocumentInput, type SaveDocumentPartsEncoder, type SaveEncodingControl,
   type ThreeMfMeshInput } from '@pointercad/io';
 import { SavePointError, type CreatedSavePointListing, type NamedSavePoint, type SavePointKind } from '../history/namedSavePoints.js';
 import { isPcadSavePointReply, isPcadSaveReply, isPcadThreeMfReply, type PcadCloneAndListResult, type PcadSavePointReply,
-  type PcadSavePointRequest, type PcadWorkerRequest } from './pcadSaveProtocol.js';
+  type PcadSaveRequest, type PcadSavePointRequest, type PcadWorkerRequest } from './pcadSaveProtocol.js';
 import { captureSaveSnapshot, copySaveSnapshot } from './pcadSaveSnapshot.js';
 
 /** headlessの検査では、この小さい境界へ実IOを使う相手を明示注入する。 */
@@ -31,48 +31,85 @@ function browserWorker(): PcadSaveWorkerPort {
   }
 }
 
-/** 失敗時の同期保存への代替は設けない。取消・返信・クラッシュの全出口でWorkerを破棄する。 */
+/** 保存 Worker の成功の中身。頼んだ形(1 つの並びか部分の並び)だけを受ける。 */
+type PcadSaveOutput = { readonly bytes: Uint8Array } | { readonly parts: readonly Uint8Array[] };
+
+/**
+ * 保存 Worker の符号化器ごとの、部分の並びで受け取る道。差し替えた符号化器(検査の偽物や同じスレッドの符号化)は
+ * 持たないので、`encodeSaveParts` は今の 1 つの並びの道を通る。
+ */
+const partsEncoders = new WeakMap<SaveDocumentEncoder, SaveDocumentPartsEncoder>();
+
+/**
+ * 保存 Worker で符号化する。`replyAsParts` が true なら成功を部分の並びで受け取る(全体の並びを作らない)。
+ * 失敗時の同期保存への代替は設けない。取消・返信・クラッシュの全出口でWorkerを破棄する。
+ */
+async function encodeInWorker(createWorker: () => PcadSaveWorkerPort, input: SaveDocumentInput,
+  control: SaveEncodingControl, replyAsParts: boolean): Promise<PcadSaveOutput> {
+  const captured = captureSaveSnapshot(input);
+  control.signal?.throwIfAborted();
+  control.onProgress?.('preparing');
+  const owned = await copySaveSnapshot(captured, control.signal);
+  control.signal?.throwIfAborted();
+  const worker = createWorker();
+  const id = crypto.randomUUID();
+  return new Promise<PcadSaveOutput>((resolve, reject) => {
+    let finished = false;
+    const cleanup = (): boolean => {
+      if (finished) return false;
+      finished = true;
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.onmessageerror = null;
+      worker.terminate();
+      control.signal?.removeEventListener('abort', cancel);
+      return true;
+    };
+    const fail = (error: unknown): void => { if (cleanup()) reject(error instanceof Error ? error : new Error(String(error))); };
+    const cancel = (): void => { fail(control.signal?.reason ?? new DOMException('Save cancelled', 'AbortError')); };
+    worker.onmessage = event => {
+      if (finished) return;
+      const reply = event.data;
+      if (typeof reply === 'object' && reply !== null && 'id' in reply && typeof reply.id === 'string' && reply.id !== id) return;
+      if (!isPcadSaveReply(reply)) { fail(new PcadSaveWorkerError('rejected', 'Invalid save reply')); return; }
+      if (reply.id !== id) return;
+      if (reply.kind === 'progress') control.onProgress?.(reply.stage);
+      else if (reply.kind === 'failure') fail(new PcadSaveWorkerError('rejected', reply.message));
+      // 頼んだ形と違う成功は採らない(部分の依頼に全体、全体の依頼に部分が返るのは取り違え)。
+      else if (('parts' in reply) !== replyAsParts) fail(new PcadSaveWorkerError('rejected', 'Unexpected save reply shape'));
+      else if (cleanup()) resolve(reply);
+    };
+    worker.onerror = event => { fail(new PcadSaveWorkerError('crashed', event.message)); };
+    worker.onmessageerror = () => { fail(new PcadSaveWorkerError('crashed', 'Save reply could not be read')); };
+    control.signal?.addEventListener('abort', cancel, { once: true });
+    if (control.signal?.aborted === true) { cancel(); return; }
+    const request: PcadSaveRequest = replyAsParts ? { id, input: owned.input, replyAsParts } : { id, input: owned.input };
+    try { worker.postMessage(request, owned.transfer); }
+    catch (error) { fail(new PcadSaveWorkerError('rejected', error instanceof Error ? error.message : String(error))); }
+  });
+}
+
+/** 保存 Worker の符号化器。成功の中身は 1 つの並びで受け取る(保存点・自動保存・ひな形・組立・図面の保存が使う)。 */
 export function createPcadSaveEncoder(createWorker: () => PcadSaveWorkerPort = browserWorker): SaveDocumentEncoder {
-  return async (input: SaveDocumentInput, control: SaveEncodingControl = {}): Promise<Uint8Array> => {
-    const captured = captureSaveSnapshot(input);
-    control.signal?.throwIfAborted();
-    control.onProgress?.('preparing');
-    const owned = await copySaveSnapshot(captured, control.signal);
-    control.signal?.throwIfAborted();
-    const worker = createWorker();
-    const id = crypto.randomUUID();
-    return new Promise<Uint8Array>((resolve, reject) => {
-      let finished = false;
-      const cleanup = (): boolean => {
-        if (finished) return false;
-        finished = true;
-        worker.onmessage = null;
-        worker.onerror = null;
-        worker.onmessageerror = null;
-        worker.terminate();
-        control.signal?.removeEventListener('abort', cancel);
-        return true;
-      };
-      const fail = (error: unknown): void => { if (cleanup()) reject(error instanceof Error ? error : new Error(String(error))); };
-      const cancel = (): void => { fail(control.signal?.reason ?? new DOMException('Save cancelled', 'AbortError')); };
-      worker.onmessage = event => {
-        if (finished) return;
-        const reply = event.data;
-        if (typeof reply === 'object' && reply !== null && 'id' in reply && typeof reply.id === 'string' && reply.id !== id) return;
-        if (!isPcadSaveReply(reply)) { fail(new PcadSaveWorkerError('rejected', 'Invalid save reply')); return; }
-        if (reply.id !== id) return;
-        if (reply.kind === 'progress') control.onProgress?.(reply.stage);
-        else if (reply.kind === 'failure') fail(new PcadSaveWorkerError('rejected', reply.message));
-        else if (cleanup()) resolve(reply.bytes);
-      };
-      worker.onerror = event => { fail(new PcadSaveWorkerError('crashed', event.message)); };
-      worker.onmessageerror = () => { fail(new PcadSaveWorkerError('crashed', 'Save reply could not be read')); };
-      control.signal?.addEventListener('abort', cancel, { once: true });
-      if (control.signal?.aborted === true) { cancel(); return; }
-      try { worker.postMessage({ id, input: owned.input }, owned.transfer); }
-      catch (error) { fail(new PcadSaveWorkerError('rejected', error instanceof Error ? error.message : String(error))); }
-    });
+  const encode: SaveDocumentEncoder = async (input, control = {}) => {
+    const output = await encodeInWorker(createWorker, input, control, false);
+    return 'bytes' in output ? output.bytes : concatZipParts(output.parts);
   };
+  partsEncoders.set(encode, async (input, control = {}) => {
+    const output = await encodeInWorker(createWorker, input, control, true);
+    return 'parts' in output ? output.parts : [output.bytes];
+  });
+  return encode;
+}
+
+/**
+ * 符号化器が保存 Worker のものなら、成功を部分の並びのまま受け取る(全体の並びを作らない)。それ以外の符号化器は
+ * 今の 1 つの並びの道を 1 回だけ通し、その出力 1 つを返す。部分は順につなぐとファイルの全体になる。
+ */
+export async function encodeSaveParts(encoder: SaveDocumentEncoder, input: SaveDocumentInput,
+  control: SaveEncodingControl = {}): Promise<readonly Uint8Array[]> {
+  const partsEncoder = partsEncoders.get(encoder);
+  return partsEncoder === undefined ? [await encoder(input, control)] : await partsEncoder(input, control);
 }
 
 export const encodePcadInWorker: SaveDocumentEncoder = createPcadSaveEncoder();

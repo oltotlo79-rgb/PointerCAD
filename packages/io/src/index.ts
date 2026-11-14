@@ -4,8 +4,9 @@
  */
 
 // 圧縮入力・展開後・メッシュ配列・DXF 本文の読み込み上限（単一正本）。
-export { encodeSaveDocument, type SaveDocumentInput, type SaveDocumentEncoder,
-  type SaveEncodingControl, type SaveEncodingStage } from './pcad/saveDocumentEncoding.js';
+export { encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput, type SaveDocumentEncoder,
+  type SaveDocumentPartsEncoder, type SaveEncodingControl, type SaveEncodingStage } from './pcad/saveDocumentEncoding.js';
+export { concatZipParts } from './pcad/zipSteps.js';
 export {
   IO_LIMITS,
   isMeshAllocationWithinLimit,

@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createAssemblyDocument, createAssemblyDocumentBundle, createDrawingDocument, createEmptyPartDocument,
   embedDrawingSource, embedPart, EMPTY_PART_LIBRARY, emptyDrawingSourceLibrary, emptyEmbeddedPartAttachments } from '@pointercad/model';
-import { encodeSaveDocument, writePcadFile, type SaveDocumentInput } from '@pointercad/io';
+import { concatZipParts, encodeSaveDocument, writePcadFile, type SaveDocumentInput } from '@pointercad/io';
 import { captureSaveSnapshot, copySaveSnapshot } from './pcadSaveSnapshot.js';
-import { encodeOwnedSaveInput, releaseOwnedMeshCopies } from './pcadSaveWorkerEncoding.js';
+import { encodeOwnedSaveInput, encodeOwnedSaveInputParts, releaseOwnedMeshCopies } from './pcadSaveWorkerEncoding.js';
 
 const savedAt = '2026-10-04T00:00:00.000Z';
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -119,6 +119,22 @@ describe('保存Workerの所有する三角形の写しを圧縮の前に手放�
     if (moved.kind !== 'part') throw new Error('part expected');
     expect(moved.options.attachments?.shapes.get('shape')).toEqual(shape);
     expect(digest(result.bytes)).toBe(digest(await encodeSaveDocument(input)));
+  });
+
+  it('部分の並びで受け取る道も、圧縮の前に写しの三角形を手放し、つなぐと全体を返す道と同じZIPになる', async () => {
+    const mesh = { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+      indices: new Uint32Array([0, 1, 2]) };
+    const attachments = { ...emptyEmbeddedPartAttachments(), shapes: new Map([['shape', Uint8Array.of(1, 3, 5)]]),
+      meshes: new Map([['mesh', mesh]]) };
+    const input: SaveDocumentInput = { kind: 'part', document: createEmptyPartDocument(), options: { savedAt, attachments } };
+    const expected = digest(await encodeSaveDocument(input)), { moved } = await workerOwned(input);
+    const [owned] = ownedMeshes(moved), stages: [string, number][] = [];
+    const result = await encodeOwnedSaveInputParts(moved, stage => stages.push([stage,
+      owned.positions.byteLength + owned.normals.byteLength + owned.indices.byteLength]));
+    expect(stages).toEqual([['preparing', 84], ['compressing', 0]]);
+    expect(result.releasedMeshBytes).toBe(84);
+    expect(result.parts.length).toBeGreaterThan(0);
+    expect(digest(concatZipParts(result.parts))).toBe(expected);
   });
 
   it('128MiBの三角形の写しを圧縮の前に手放し、従来の書き手と同じZIPを作る', async () => {

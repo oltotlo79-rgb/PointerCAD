@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { unzipSync } from 'fflate';
 import { createAssemblyDocument, createAssemblyDocumentBundle, createDrawingDocument, createDrawingTemplate, createEmptyPartDocument,
   embedDrawingSource, embedPart, EMPTY_PART_LIBRARY, emptyDrawingSourceLibrary, emptyEmbeddedPartAttachments } from '@pointercad/model';
-import { encodeSaveDocument, type SaveDocumentInput } from './saveDocumentEncoding.js';
+import { encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput } from './saveDocumentEncoding.js';
+import { concatZipParts } from './zipSteps.js';
 import { readDocumentBundle, readPcadFile, writeDocumentBundle, writePcadFile } from './pcadFile.js';
 import { readDrawingBundle, writeDrawingBundle } from './drawingBundle.js';
 import { readDrawingTemplateFile, writeDrawingTemplateFile } from './drawingTemplateFile.js';
@@ -197,5 +198,32 @@ describe('保存専用エンコーダーと従来のIOの一致', () => {
       { signal: controller.signal, onProgress: stage => { stages.push(stage); controller.abort(); } }))
       .rejects.toMatchObject({ name: 'AbortError' });
     expect(stages).toEqual(['preparing']); expect(created.template).toEqual(before);
+  });
+});
+
+describe('保存の符号化を部分の並びで受け取る口', () => {
+  it('大きい部品は全体の大きさの並びを作らず、部分を順につなぐと全体を返す符号化・従来の書き手と全バイトが一致する', async () => {
+    const input = sharedMeshPart(), expected = writePcadFile(input.document, input.options), events: string[] = [];
+    const parts = await encodeSaveDocumentParts(input, { onProgress: stage => events.push(stage),
+      onEntriesBuilt: () => events.push('entries') });
+    expect(events).toEqual(['preparing', 'entries', 'compressing']);
+    // 項目ごとの見出し・圧縮した中身と、最後の目録が別の部分になる。
+    expect(parts.length).toBeGreaterThan(2);
+    expect(parts.reduce((total, part) => total + part.byteLength, 0)).toBe(expected.byteLength);
+    for (const part of parts) expect(part.byteLength).toBeLessThan(expected.byteLength);
+    expect(viewDigest(concatZipParts(parts))).toBe(viewDigest(expected));
+    expect(viewDigest(await encodeSaveDocument(input))).toBe(viewDigest(expected));
+  });
+
+  it('小さい部品は一括の書き手の出力 1 つを返し、取消済みの依頼では準備も圧縮も始めない', async () => {
+    const document = createEmptyPartDocument(), options = { savedAt };
+    const parts = await encodeSaveDocumentParts({ kind: 'part', document, options });
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual(writePcadFile(document, options));
+    const controller = new AbortController(), stages: string[] = [];
+    controller.abort();
+    await expect(encodeSaveDocumentParts({ kind: 'part', document, options },
+      { signal: controller.signal, onProgress: stage => stages.push(stage) })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(stages).toEqual([]);
   });
 });

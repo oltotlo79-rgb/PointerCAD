@@ -59,7 +59,7 @@ import {
 } from '@pointercad/model';
 import { strToU8, zipSync, type ZipOptions, type Zippable } from 'fflate';
 import { decodeUtf8 } from '../decodeUtf8.js';
-import { hasSteppedZipEntry, zipEntriesAsync, zipEntriesSync, type ZipStepsControl } from './zipSteps.js';
+import { hasSteppedZipEntry, zipEntriesPartsAsync, zipEntriesSync, type ZipStepsControl } from './zipSteps.js';
 
 import {
   IO_LIMITS,
@@ -180,13 +180,13 @@ export function zipPcadEntries(entries: ReadonlyMap<string, PcadZipEntry>): Uint
 }
 
 /**
- * 保存 Worker の圧縮。`zipPcadEntries` と同じバイト列を作り、1MiB を超える項目は 1MiB ごとに
- * 処理を返す(Worker の終了要求と取消をその間に受け付ける)。
+ * 保存 Worker の圧縮。順につなぐと `zipPcadEntries` と同じバイト列になる部分の並びを作り、1MiB を超える項目は
+ * 1MiB ごとに処理を返す(Worker の終了要求と取消をその間に受け付ける)。小さい ZIP は一括の書き手の出力 1 つ。
  */
-export async function zipPcadEntriesAsync(entries: ReadonlyMap<string, PcadZipEntry>,
-  control: ZipStepsControl = {}): Promise<Uint8Array> {
+export async function zipPcadEntriesPartsAsync(entries: ReadonlyMap<string, PcadZipEntry>,
+  control: ZipStepsControl = {}): Promise<Uint8Array[]> {
   control.signal?.throwIfAborted();
-  return hasSteppedZipEntry(entries) ? zipEntriesAsync(entries, control) : zipPcadEntries(entries);
+  return hasSteppedZipEntry(entries) ? zipEntriesPartsAsync(entries, control) : [zipPcadEntries(entries)];
 }
 
 /**

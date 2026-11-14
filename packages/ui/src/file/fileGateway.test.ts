@@ -26,6 +26,7 @@ import {
   PCAD_EXTENSION,
   saveFileAsInBrowser,
   saveFileAsThrough,
+  savePcadThrough,
   withPcadExtension,
   withPcadaExtension,
   type FileGateway,
@@ -650,5 +651,62 @@ describe('差し込まれた口を通す(openFileThrough / saveFileAsThrough)', 
     await expect(
       saveFileAsThrough(oldGateway, '部品.stl', 'stl', new Uint8Array([1])),
     ).rejects.toThrow();
+  });
+});
+
+describe('保存を部分の並びで受け取る口(savePcadParts / savePcadThrough)', () => {
+  const parts = [Uint8Array.of(0x50, 0x4b), new Uint8Array(0), Uint8Array.of(3, 4, 5)];
+
+  it('File System Access API では部分を順に1つずつ写さずに書いてから閉じ、上書き先を覚える', async () => {
+    const fake = createFakeSaveScope('部品.pcad');
+    const gateway = createBrowserFileGateway(fake.scope);
+    expect(await gateway.savePcadParts?.('部品.pcad', parts, false)).toBe('部品.pcad');
+    expect(fake.written).toHaveLength(parts.length);
+    fake.written.forEach((written, index) => { expect(written).toBe(parts[index]); });
+    expect(fake.options[0]?.suggestedName).toBe('部品.pcad');
+    expect(gateway.hasSaveTarget()).toBe(true);
+  });
+
+  it('途中の部分の書込みが失敗したら残りを書かず閉じずにabortし、元の例外と上書き先を保つ', async () => {
+    const original = new Error('write'), calls: string[] = [];
+    const scope = { showSaveFilePicker: () => Promise.resolve({ name: '部品.pcad', createWritable: () => Promise.resolve({
+      write: () => { calls.push('write'); return calls.length === 2 ? Promise.reject(original) : Promise.resolve(); },
+      close: () => { calls.push('close'); return Promise.resolve(); },
+      abort: () => { calls.push('abort'); return Promise.resolve(); },
+    }) }) };
+    const gateway = createBrowserFileGateway(scope);
+    await expect(gateway.savePcadParts?.('部品.pcad', parts, false)).rejects.toBe(original);
+    expect(calls).toEqual(['write', 'write', 'abort']);
+    expect(gateway.hasSaveTarget()).toBe(false);
+  });
+
+  it('保存の窓が無ければ部分の並びのままダウンロードし、中身は順につないだものと同じで一時的な場所を手放す', async () => {
+    const fake = createFakeDownloadScope(), blobs: Blob[] = [], revoked: string[] = [];
+    const scope = { ...fake.scope, URL: { createObjectURL: (blob: Blob): string => { blobs.push(blob); return 'blob:部分'; },
+      revokeObjectURL: (url: string): void => { revoked.push(url); } } };
+    const gateway = createBrowserFileGateway(scope);
+    expect(await gateway.savePcadParts?.('部品.pcad', parts, false)).toBe('部品.pcad');
+    expect(fake.anchor.download).toBe('部品.pcad');
+    expect(blobs).toHaveLength(1);
+    expect(new Uint8Array(await blobs[0].arrayBuffer())).toEqual(Uint8Array.of(0x50, 0x4b, 3, 4, 5));
+    expect(revoked).toEqual(['blob:部分']);
+    expect(gateway.hasSaveTarget()).toBe(false);
+  });
+
+  it('savePcadThrough は部分の口があれば部分をそのまま渡し、無ければつないで savePcad を呼ぶ(1つならそのまま)', async () => {
+    const received: { name: string; value: readonly Uint8Array[] | Uint8Array; saveAs: boolean; kind?: string }[] = [];
+    const base: FileGateway = { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false,
+      savePcad: (name, bytes, saveAs, kind) => { received.push({ name, value: bytes, saveAs, kind }); return Promise.resolve(name); } };
+    const withParts: FileGateway = { ...base,
+      savePcadParts: (name, value, saveAs, kind) => { received.push({ name, value, saveAs, kind }); return Promise.resolve('部分'); } };
+    expect(await savePcadThrough(withParts, '部品.pcad', parts, true, 'part')).toBe('部分');
+    expect(received[0]).toEqual({ name: '部品.pcad', value: parts, saveAs: true, kind: 'part' });
+    expect(received[0]?.value).toBe(parts);
+    expect(await savePcadThrough(base, '部品.pcad', parts, false)).toBe('部品.pcad');
+    expect(received[1]?.value).toEqual(Uint8Array.of(0x50, 0x4b, 3, 4, 5));
+    expect(received[1]?.kind).toBeUndefined();
+    const single = Uint8Array.of(9);
+    await savePcadThrough(base, '部品.pcad', [single], false);
+    expect(received[2]?.value).toBe(single);
   });
 });

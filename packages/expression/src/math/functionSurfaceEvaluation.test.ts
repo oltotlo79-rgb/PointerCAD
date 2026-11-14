@@ -1,11 +1,40 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { createFunctionSurfaceEvaluator } from './functionSurfaceEvaluation.js';
 import { sampleFunctionSurface, type FunctionSurfaceSamplingResult } from './adaptiveFunctionSurface.js';
+import * as adaptive from './adaptiveFunctionSurface.js';
+import * as smoothing from './smoothFunctionSurface.js';
+import { setCalculationPace } from './mathInputContract.js';
 import type { FunctionPoint } from './functionGeometryBounds.js';
 import type { SurfaceParameter } from './surfaceParameterGrid.js';
 import type { MathExecutionBackend } from './mathWorkExecution.js';
+
+// 倍率は Worker の外では 1。時間の検査が測って設定した倍率と、段の記録の差し替えを、後の検査へ持ち越さない。
+afterEach(() => { vi.restoreAllMocks(); setCalculationPace(1); });
+
+interface StageRun { readonly stage: 'sampling' | 'smoothing'; readonly ms: number; readonly status: string }
+/**
+ * 製品の入口(executeFunctionSurfaceWorkRequest)の中で標本化となめらか化が走った回数・所要・結末を記録する。
+ * 段の時計が止めると、その段だけがもう 1 回走る(functionSurfaceWorkExecution.ts の surfaceClock)。時間の検査の失敗の文に
+ * 出して、次に落ちた時にログだけで「計算し直しが起きたか」と段ごとの所要が分かるようにする。元の関数をそのまま呼ぶだけで、
+ * 計算・結果は変えない(functionSurfaceRecalculation.test.ts の watchStages と同じ差し替え方)。
+ */
+function recordStageRuns(): StageRun[] {
+  const runs: StageRun[] = [];
+  const realSample = adaptive.sampleFunctionSurface, realSmooth = smoothing.smoothFunctionSurface;
+  vi.spyOn(adaptive, 'sampleFunctionSurface').mockImplementation((...args) => {
+    const started = performance.now(), result = realSample(...args);
+    runs.push({ stage: 'sampling', ms: performance.now() - started, status: result.status });
+    return result;
+  });
+  vi.spyOn(smoothing, 'smoothFunctionSurface').mockImplementation((...args) => {
+    const started = performance.now(), result = realSmooth(...args);
+    runs.push({ stage: 'smoothing', ms: performance.now() - started, status: result.status });
+    return result;
+  });
+  return runs;
+}
 
 type FunctionSurfaceOptions = Parameters<typeof sampleFunctionSurface>[1];
 
@@ -164,23 +193,36 @@ describe('曲面の二階微分で値域だけを共有する', () => {
     } finally { spy.mockRestore(); }
   });
 
-  it('実入力の放物面を元の2秒時計内で平滑面まで完成し、独立解析値と全予算を保持する', async () => {
+  it('実入力の放物面で、製品の入口の1回の呼出しの実時間が製品と同じ倍率つきの2秒の時計の1本目の内に平滑面まで完成し、独立解析値と全予算を保持する', async () => {
     const { executeFunctionSurfaceWorkRequest } = await import('./functionSurfaceWorkExecution.js');
     const { decodeFunctionSurfaceWorkRequest, createFunctionSurfaceWorkEnvelope } = await import('./functionSurfaceWorkRequest.js');
     const { warmMathBackend } = await import('./createMathBackend.js');
     const { GEOMETRY_CALCULATION_MS } = await import('./mathWorkExecution.js');
-    const { pacedCalculationMs } = await import('./mathInputContract.js');
+    const { createCalculationPaceMeter, pacedCalculationMs } = await import('./mathInputContract.js');
     warmMathBackend(backend);
     const source = (text: string) => createFunctionMathSource(text,'text','radian',{axes:['X','Y'],parameters:[],coefficients:[]},backend);
     const input = decodeFunctionSurfaceWorkRequest({identity:{documentId:'surface-deadline',documentVersion:1,editorId:'surface',inputRevision:1},
       independent:['X','Y'],outputs:[source('X'),source('Y'),source('(X^2+Y^2)/10')],lower:[-4,-4],upper:[4,4],
       minimum:[-4,-4,-1],maximum:[4,4,4],tolerance:0.001,coefficients:[],
       budget:{maximumSamples:100_000,maximumCells:400_000,maximumTriangles:100_000,maximumDepth:24}});
+    // 製品の Worker(packages/ui/src/math/math.worker.ts の createCalculationPaceMeter・setCalculationPace)と同じ手順で、
+    // 依頼の時計が始まる前に機械の速さの倍率を測って設定する。元の値 2,000ms は変えない。倍率は 1〜4 で、速い機械では
+    // 2,000ms のまま(requirements.md の計算の壁時計の期限)。製品の段の時計も同じ倍率で伸びるので、この上限は
+    // 「1 本目の時計の内に終わる」ことを製品と同じ尺度で確かめる。
+    const pace = createCalculationPaceMeter(), requestPace = pace.current();
+    setCalculationPace(requestPace);
+    const stages = recordStageRuns();
     const started = performance.now(), result = executeFunctionSurfaceWorkRequest(createFunctionSurfaceWorkEnvelope(1,input),backend).result;
     const elapsedMs = performance.now()-started, limitMs = pacedCalculationMs(GEOMETRY_CALCULATION_MS);
-    process.stdout.write('[pcad:surface-deadline-regression] '+JSON.stringify({elapsedMs,limitMs,
-      status:result.status,stats:'stats' in result?result.stats:null,reason:'reason' in result?result.reason:null})+String.fromCharCode(10));
-    expect(GEOMETRY_CALCULATION_MS).toBe(2000); expect(elapsedMs).toBeLessThanOrEqual(limitMs);
+    // 段の時計が止めた段は 2 回走る(1 回の計算し直し)。外れた時に、計算し直しの有無・段ごとの所要・段の外の所要を示す。
+    const runsOf = (stage: StageRun['stage']) => stages.filter(run => run.stage === stage).length;
+    const diagnosis = { elapsedMs, limitMs, pace: requestPace, referenceMs: pace.elapsedMs,
+      recalculated: runsOf('sampling') > 1 || runsOf('smoothing') > 1, stages,
+      outsideStagesMs: elapsedMs - stages.reduce((sum, run) => sum + run.ms, 0),
+      status: result.status, stats: 'stats' in result ? result.stats : null, reason: 'reason' in result ? result.reason : null };
+    process.stdout.write('[pcad:surface-deadline-regression] '+JSON.stringify(diagnosis)+String.fromCharCode(10));
+    expect(GEOMETRY_CALCULATION_MS).toBe(2000);
+    expect(elapsedMs, `製品の入口の1回の呼出しが倍率つきの2秒の時計の1本目を超えた: ${JSON.stringify(diagnosis)}`).toBeLessThanOrEqual(limitMs);
     if (result.status !== 'ready') throw new Error(JSON.stringify(result));
     expect(result.spline).toBeDefined(); expect(result.stats).toEqual({samples:49666,cells:38229,triangles:32768});
     expect(result.maximumInterpolationErrorBound).toBeLessThanOrEqual(0.0005);

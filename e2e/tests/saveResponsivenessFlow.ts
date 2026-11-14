@@ -22,13 +22,17 @@ interface SaveInputAudit { readonly latencies: number[]; readonly stages: string
 interface CancelTiming { pressed: number; displayed: number }
 interface SaveWriteTiming {
   createWritableStart: number | null; createWritableEnd: number | null;
-  writeStart: number | null; writeEnd: number | null;
+  /** 最初の write の始まりと最後の write の終わり。書込みを分けた時も 1 つの区間として読む。 */
+  writeStart: number | null; writeEnd: number | null; writeCount: number;
   closeStart: number | null; closeEnd: number | null;
 }
 interface SaveClockCalibration { readonly nodeBefore: number; readonly nodeAfter: number; readonly pageNow: number }
+/** 状態欄の保存の段(data-save-stage)が替わった時刻(頁の performance.now)。 */
+interface SaveStageChange { readonly stage: string; readonly at: number }
 declare global {
   interface Window {
     pcadSaveInputAudit?: SaveInputAudit; pcadCancelTiming?: CancelTiming; pcadSaveWriteTiming?: SaveWriteTiming;
+    pcadSaveStageTimeline?: SaveStageChange[];
   }
 }
 
@@ -388,6 +392,58 @@ function peakByPid(before: readonly ProcessTreeSample[], during: readonly Proces
     extraPrivateBytes: extra(row.privateBytes, baselineOf(row.pid, 'privateBytes')) })) };
 }
 
+/** 保存の段の時刻(押してからの検査側の時刻、ms)。記憶量の要約のログにだけ使い、判定には使わない。 */
+interface SavePhaseSummary {
+  /** 頁の時刻を検査側の時刻へ写した時の誤差の幅(片側、ms)。 */
+  readonly clockUncertaintyMs: number;
+  readonly stages: readonly { readonly stage: string; readonly afterClickMs: number }[];
+  readonly opfs: {
+    readonly createWritableStartMs: number | null; readonly writeStartMs: number | null; readonly writeEndMs: number | null;
+    readonly writeCount: number; readonly closeStartMs: number | null; readonly closeEndMs: number | null;
+  } | null;
+}
+interface MemoryPeakTime { readonly afterClickMs: number; readonly phase: string }
+
+/** 頁の時刻(performance.now)の記録を、押した時刻からの検査側の時刻へ写す。読みの前後の検査側の時刻の中点を頁の時刻に合わせる。 */
+function savePhaseSummary(read: { readonly timing: SaveWriteTiming | null; readonly timeline: readonly SaveStageChange[]; readonly pageNow: number },
+  readStart: number, readEnd: number, clickedAt: number): SavePhaseSummary {
+  const offset = (readStart + readEnd) / 2 - read.pageNow - clickedAt;
+  const shift = (at: number | null): number | null => at === null ? null : Math.round(at + offset);
+  const timing = read.timing;
+  return {
+    clockUncertaintyMs: Math.round((readEnd - readStart) / 2),
+    stages: read.timeline.map(change => ({ stage: change.stage, afterClickMs: Math.round(change.at + offset) })),
+    opfs: timing === null ? null : { createWritableStartMs: shift(timing.createWritableStart), writeStartMs: shift(timing.writeStart),
+      writeEndMs: shift(timing.writeEnd), writeCount: timing.writeCount, closeStartMs: shift(timing.closeStart), closeEndMs: shift(timing.closeEnd) },
+  };
+}
+
+/** 押してからの時刻が保存のどの段か。OPFS の write・close の区間は、その名前を優先する。 */
+function phaseAt(summary: SavePhaseSummary, afterClickMs: number): string {
+  const within = (start: number | null, end: number | null): boolean => start !== null && end !== null && afterClickMs >= start && afterClickMs <= end;
+  if (summary.opfs !== null && within(summary.opfs.writeStartMs, summary.opfs.writeEndMs)) return 'opfs-write';
+  if (summary.opfs !== null && within(summary.opfs.closeStartMs, summary.opfs.closeEndMs)) return 'opfs-close';
+  let stage = 'none';
+  for (const change of summary.stages) if (change.afterClickMs <= afterClickMs) stage = change.stage;
+  return stage;
+}
+
+/** 保存中の WS と private の山の採取の時刻(押してから)と段。記録にだけ使い、判定には使わない。 */
+function memoryPeakTimes(during: readonly ProcessTreeSample[], clickedAt: number, summary: SavePhaseSummary):
+  { readonly workingSet: MemoryPeakTime | null; readonly private: MemoryPeakTime | null } {
+  const peakOf = (key: 'workingSetBytes' | 'privateBytes'): MemoryPeakTime | null => {
+    let best: ProcessTreeSample | undefined;
+    for (const sample of during) {
+      const value = sample[key], bestValue = best?.[key] ?? null;
+      if (value !== null && (best === undefined || bestValue === null || value > bestValue)) best = sample;
+    }
+    if (best === undefined) return null;
+    const afterClickMs = Math.round(best.at - clickedAt);
+    return { afterClickMs, phase: phaseAt(summary, afterClickMs) };
+  };
+  return { workingSet: peakOf('workingSetBytes'), private: peakOf('privateBytes') };
+}
+
 /** 実OPFSのファイルを、製品の File System Access API の保存の口(showSaveFilePicker)へ渡す。 */
 async function useOpfsSaveTarget(page: Page, fileName: string): Promise<SaveClockCalibration> {
   const nodeBefore = performance.now();
@@ -395,7 +451,7 @@ async function useOpfsSaveTarget(page: Page, fileName: string): Promise<SaveCloc
     const directory = await navigator.storage.getDirectory();
     const handle = await directory.getFileHandle(name, { create: true });
     const timing: SaveWriteTiming = { createWritableStart: null, createWritableEnd: null,
-      writeStart: null, writeEnd: null, closeStart: null, closeEnd: null };
+      writeStart: null, writeEnd: null, writeCount: 0, closeStart: null, closeEnd: null };
     window.pcadSaveWriteTiming = timing;
     const target = {
       name: handle.name,
@@ -406,7 +462,7 @@ async function useOpfsSaveTarget(page: Page, fileName: string): Promise<SaveCloc
           const writable = await handle.createWritable();
           return {
             write: async (data: Parameters<typeof writable.write>[0]) => {
-              timing.writeStart = performance.now();
+              timing.writeStart ??= performance.now(); timing.writeCount += 1;
               try { return await writable.write(data); }
               finally { timing.writeEnd = performance.now(); }
             },
@@ -466,6 +522,15 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
   const workers = trackSaveWorkers(page);
   await page.evaluate(() => {
     const audit: SaveInputAudit = { latencies: [], stages: [], timeStamps: [] }; window.pcadSaveInputAudit = audit;
+    // 保存の段(準備・圧縮・書込み・後始末・完了)が替わった時刻。記憶量の山がどの段かを記録に残すためだけに使う。
+    const timeline: SaveStageChange[] = []; window.pcadSaveStageTimeline = timeline;
+    const noteStage = (): void => {
+      const stage = document.querySelector('[data-save-stage]')?.getAttribute('data-save-stage') ?? 'none';
+      if (timeline.at(-1)?.stage !== stage) timeline.push({ stage, at: performance.now() });
+    };
+    noteStage();
+    new MutationObserver(noteStage).observe(document.body,
+      { subtree: true, childList: true, attributes: true, attributeFilter: ['data-save-stage'] });
     document.addEventListener('input', event => {
       if (!event.isTrusted || !(event.target instanceof HTMLInputElement) || event.target.id !== 'pcad-command-line-input') return;
       const stage = document.querySelector('[data-save-stage]')?.getAttribute('data-save-stage') ?? 'none';
@@ -522,10 +587,12 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     await releaseMeasurement();
     const memoryAfter = await readMemory();
     const phaseReadStart = performance.now();
-    const savePhaseRead = target === 'opfs' ? await page.evaluate(() => ({
-      timing: window.pcadSaveWriteTiming ?? null, pageNow: performance.now(),
-    })) : null;
+    const pageClockRead = await page.evaluate(() => ({
+      timing: window.pcadSaveWriteTiming ?? null, timeline: window.pcadSaveStageTimeline ?? [], pageNow: performance.now(),
+    }));
     const phaseReadEnd = performance.now();
+    const savePhaseRead = target === 'opfs' ? { timing: pageClockRead.timing, pageNow: pageClockRead.pageNow } : null;
+    const phaseSummary = savePhaseSummary(pageClockRead, phaseReadStart, phaseReadEnd, clickedAt);
     const savePhases = savePhaseRead === null || saveClockBefore === null ? null : {
       // Page timestamps need these calibration bounds; Node sample times are stdout receipt times.
       pageTiming: savePhaseRead.timing,
@@ -572,7 +639,7 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
         pageLatencyMs, nodeStartAfterClickMs: inputStarts[i] ?? null, roundTripMs: roundTrips[i] ?? null })),
       saveMs: completedAt - clickedAt, releaseMs: releasedAt - clickedAt,
       workers: workers.map(worker => ({ ...worker, closedAfterClickMs: worker.closedAt === null ? null : worker.closedAt - clickedAt })),
-      savePhases, originalHash, savedHash: meshHashes(savedAttachment),
+      savePhases, phaseSummary, originalHash, savedHash: meshHashes(savedAttachment),
       memory: { method: sampler.method, intervalMs: SAMPLE_INTERVAL_MS, complete: memorySamples.every(sample => sample.complete), baseline, peak, released,
         extraPeak: { workingSetBytes: difference(peak.workingSetBytes, baseline.workingSetBytes), privateBytes: difference(peak.privateBytes, baseline.privateBytes) },
         extraAfterRelease: { workingSetBytes: difference(released.workingSetBytes, baseline.workingSetBytes), privateBytes: difference(released.privateBytes, baseline.privateBytes) },
@@ -584,10 +651,12 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     await info.attach(`save-${mib}-${repeat}`, { contentType: 'application/json', body: JSON.stringify(record, null, 2) });
     // 判定の前に記憶量の要約を1行で出す(成功の回も外部検査のログで版どうしを比べ、判定で落ちた回も値を残すため)。
     // 上限・判定の式・判定の順は変えない。出力の形は [性能記録](releasePerformance.ts)と同じ「印 + JSON」。
+    // 段の時刻(saveMs・releaseMs・保存の段・OPFS の書込み)と、WS と private の山の時刻・段も出す(山がどの段かをログだけで決める)。
     console.log('[記憶量記録]', JSON.stringify({ label: responseObservation.label, environment: record.environment, target,
       budgetBytes: extraMemoryBudgetBytes, complete: record.memory.complete, baseline, peak, released,
       extraPeak: record.memory.extraPeak, extraAfterRelease: record.memory.extraAfterRelease, counts: record.memory.counts,
-      peakByPid: peakByPid(before, during, clickedAt) }));
+      saveMs: Math.round(record.saveMs), releaseMs: Math.round(record.releaseMs), phases: phaseSummary,
+      peakTimes: memoryPeakTimes(during, clickedAt, phaseSummary), peakByPid: peakByPid(before, during, clickedAt) }));
     expect(record.memory.complete, 'process-memory collection incomplete; inspect expected/observed PIDs and readings (not a product memory-budget exceedance)').toBe(true);
     // 100msは参考値(docs/requirements.md §5.2)。必要以上の遅さは共通の判定で失敗にする(元の100msの5倍、500ms超)。記録の書出しの後に判定する。
     reportDuration(p95, responseObservation.referenceTargetMs, `${responseObservation.label} p95`);

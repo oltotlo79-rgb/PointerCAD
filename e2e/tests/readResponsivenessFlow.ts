@@ -423,7 +423,7 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
       memory: { ...memory?.coverage, errors: [...memoryFailures, ...(memory?.errors ?? [])], rootPid: memory?.root ?? null,
         measurementStatus: memoryFailures.length || memory === undefined || memory.errors.length
           || before.length < 3 || during.length < 3 || after.length < 3 ? 'unavailable-or-incomplete' : 'measured-partial-set',
-        startedAt, releasedAt, extraPeak, extraReleased, samples: resident,
+        startedAt, releasedAt, extraPeak, extraReleased, staleRetries: memory?.staleRetries ?? null, samples: resident,
         counts: { before: before.length, during: during.length, after: after.length }, extraPeakBudgetBytes: memoryBudget,
         full512MiBCondition: 'not proven: partial PID set and missing GPU measurement' } });
     // 判定の前に記憶量の要約を1行で出す(成功の回も外部検査のログで版どうしを比べ、判定で落ちた回も値を残すため)。
@@ -431,6 +431,8 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
     console.log('[記憶量記録]', JSON.stringify({ label: `読込${String(mib)}MiB ${kind}`, environment: app !== undefined ? 'electron' : page.context().browser()?.browserType().name() ?? 'unknown',
       budgetBytes: memoryBudget, errorCount: memoryFailures.length + (memory?.errors.length ?? 0), extraPeak, extraReleased,
       counts: { before: before.length, during: during.length, after: after.length },
+      // Frames the sampler acquired once more after a stale first acquisition (count, rejected ages); never silent.
+      samplerStaleRetries: memory?.staleRetries ?? null,
       ...residentMemorySummary(before, during, after, startedAt) }));
     await command.press('Escape');
     // These counters describe the timed reads. The save/reopen proof below starts another real reader.

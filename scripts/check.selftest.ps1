@@ -1162,6 +1162,46 @@ if (Test-Path -LiteralPath $networkRetryLib -PathType Leaf) {
     Assert-True $false '準備の導入のやり直しの処理(scripts/lib/networkRetry.ps1)が存在すること'
 }
 
+# === シナリオ16: 段が始まってすぐ異常終了した時だけ、原因を決める記録を書く(scripts/lib/quickCrashDiagnostics.ps1。rules/06 §10.504)。
+#     2026-11-13 の 8 回目の全体検査の組み立ての段が 0.704 秒・終了コード -1073740791(0xC0000409)で落ち、記録が無かった。
+#     測る道具(実パスの解決・メモリー・イベントログ・node と pnpm の起動)は差し替え、pnpm も node も起動しない。
+$quickCrashLib = Join-Path $scriptDirectory 'lib\quickCrashDiagnostics.ps1'
+if (Test-Path -LiteralPath $quickCrashLib -PathType Leaf) {
+    . $quickCrashLib
+    Assert-True (Test-QuickCrash -ExitCode -1073740791 -ElapsedSeconds 0.704) '段のすぐの異常終了: 0xC0000409 で 0.704 秒は記録する'
+    Assert-True (Test-QuickCrash -ExitCode -1073741819 -ElapsedSeconds 4.9) '段のすぐの異常終了: 0xC0000005 で 4.9 秒は記録する'
+    Assert-True (-not (Test-QuickCrash -ExitCode -1073740791 -ElapsedSeconds 5.0)) '段のすぐの異常終了: 5 秒以上かかった失敗は記録しない'
+    Assert-True (-not (Test-QuickCrash -ExitCode 1 -ElapsedSeconds 0.5)) '段のすぐの異常終了: ふつうの失敗(終了コード 1)は記録しない'
+    Assert-True (-not (Test-QuickCrash -ExitCode 0 -ElapsedSeconds 0.1)) '段のすぐの異常終了: 成功は記録しない'
+    Assert-True (-not (Test-QuickCrash -ExitCode -1 -ElapsedSeconds 0.1)) '段のすぐの異常終了: 0xC0000000 台でない負の値は記録しない'
+    $quickLines = [Collections.Generic.List[string]]::new()
+    $quickStart = [DateTimeOffset]::new(2026, 11, 13, 11, 55, 33, 53, [TimeSpan]::FromHours(9))
+    $quickEnd = $quickStart.AddMilliseconds(704)
+    $quickCalls = [Collections.Generic.List[string]]::new()
+    Write-QuickCrashDiagnostics -Name '(4/5) pnpm run build' -Command 'pnpm' -CommandArgs @('run', 'build') -Start $quickStart -End $quickEnd -ExitCode -1073740791 `
+        -Resolve { param($CommandName) 'C:\Users\x\AppData\Roaming\npm\pnpm.ps1' } `
+        -Memory { @{ CommitUsedMB = 37208; CommitLimitMB = 50751; CommitFreeMB = 13543; PhysicalFreeMB = 8359 } } `
+        -Events { param($LogName, $From, $To) $quickCalls.Add("$LogName $($From.ToString('HH:mm:ss')) $($To.ToString('HH:mm:ss'))")
+                  if ($LogName -eq 'System') { @([pscustomobject]@{ TimeCreated = $From.AddSeconds(5); ProviderName = 'Test-Provider'; Id = 41; LevelDisplayName = 'エラー'; Message = "一行目`r`n二行目" }) } else { @() } } `
+        -Probe { param($ProbeCommand, $ProbeArgs) $quickCalls.Add("probe $ProbeCommand"); [pscustomobject]@{ ExitCode = 0; Seconds = 0.05 } } `
+        -Out { param($Line) $quickLines.Add($Line) }
+    $quickText = $quickLines -join "`n"
+    Assert-True ($quickText.Contains('0xC0000409') -and $quickText.Contains('0.704 秒')) '段のすぐの異常終了の記録: 終了コードを 16 進で、所要を秒で書く'
+    Assert-True ($quickText.Contains('npm\pnpm.ps1')) '段のすぐの異常終了の記録: 起動した命令の実パスを書く'
+    Assert-True ($quickText.Contains('commit の使用 37208MB・上限 50751MB・空き 13543MB、空きの物理メモリー 8359MB')) '段のすぐの異常終了の記録: commit と物理メモリーの値を書く'
+    Assert-True ($quickText.Contains('イベントログ Application(11:55:28〜11:55:43): 0 件') -and $quickText.Contains('イベントログ System(11:55:28〜11:55:43): 1 件') -and
+        $quickText.Contains('Test-Provider 41 エラー: 一行目 二行目')) '段のすぐの異常終了の記録: 開始の 5 秒前から終了の 10 秒後までのイベントログを、0 件なら 0 件と書く'
+    Assert-True ($quickText.Contains('node -e 0: 終了コード 0') -and $quickText.Contains('pnpm --version: 終了コード 0') -and
+        $quickCalls.Contains('probe node') -and $quickCalls.Contains('probe pnpm')) '段のすぐの異常終了の記録: node と pnpm の起動の診断を合否に数えずに書く'
+    $failedLines = [Collections.Generic.List[string]]::new()
+    Write-QuickCrashDiagnostics -Name '(4/5) pnpm run build' -Command 'pnpm' -CommandArgs @('run', 'build') -Start $quickStart -End $quickEnd -ExitCode -1073740791 `
+        -Resolve { throw 'resolve broke' } -Memory { throw 'cim broke' } -Events { param($LogName, $From, $To) throw 'log broke' } `
+        -Probe { param($ProbeCommand, $ProbeArgs) throw 'probe broke' } -Out { param($Line) $failedLines.Add($Line) }
+    Assert-True ($failedLines.Count -eq 7 -and ($failedLines -join "`n").Contains('cim broke') -and ($failedLines -join "`n").Contains('probe broke')) '段のすぐの異常終了の記録: 測る道具が失敗しても止まらず、取れなかった理由を書く'
+} else {
+    Assert-True $false '段のすぐの異常終了の記録(scripts/lib/quickCrashDiagnostics.ps1)が存在すること'
+}
+
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red
     exit 1

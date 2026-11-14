@@ -18,6 +18,7 @@ import { captureDocumentIdentity, compareDocumentIdentity } from '../store/docum
  */
 
 import {
+  concatZipParts,
   DEFAULT_AUTO_SAVE_IDENTITY,
   readPcadFile,
   type SaveDocumentEncoder,
@@ -39,11 +40,12 @@ import { activeDocument } from '../store/documentKind.js';
 import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly } from './assemblyFile.js';
 import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, mayTransferPickedBytes,
   readCheckpointAfterRead, readForOpen } from './documentOpenGuard.js';
-import { withPcadExtension, type PickedFile } from './fileGateway.js';
+import { savePcadThrough, withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
+import { encodeSaveParts } from './pcadSaveWorker.js';
 import { applyPickedDrawing, saveDrawing } from './drawingFile.js';
 import { loadedPartAttachments } from './loadedPartAttachments.js';
 import { saveTutorialCheckpoint } from '../tutorial/tutorialCheckpoint.js';
@@ -400,13 +402,15 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
       && current.cancelRequestCount === store.cancelRequestCount && current.recomputeCancelled === store.recomputeCancelled ? captured : null;
     const encoding = snapshot.kind === 'part' && thumbnailPng !== null
       ? { ...snapshot, options: { ...snapshot.options, thumbnailPng } } : snapshot;
-    const bytes = await (deps.encodeSave ?? store.saveDocumentEncoder)(encoding, control);
+    // 保存 Worker の符号化器なら、全体の並びを作らずに部分の並びのまま保存の口へ渡す(記憶量の山を写し 1 つ分下げる)。
+    const parts = await encodeSaveParts(deps.encodeSave ?? store.saveDocumentEncoder, encoding, control);
     if (!control.beginWriting()) return;
   const suggestedName = withPcadExtension(displayFileName(store.fileName));
 
-    const savedName = await store.fileGateway.savePcad(
+    const savedName = await savePcadThrough(
+      store.fileGateway,
       suggestedName,
-      bytes,
+      parts,
       saveAs || !store.fileGateway.hasSaveTarget(),
     );
   if (savedName === null || !isCurrent()) {
@@ -431,7 +435,7 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
       if (input !== null) {
         const guard = parameterCheckpointWriteGuard(activeGuide, latest.tutorialCheckpointStorage, currentGuide);
         const checkpoint = guard.ok ? await saveTutorialCheckpoint(input,
-          { part: { document, savedBytes: bytes } }, latest.tutorialCheckpointStorage, guard.isCurrent) : guard;
+          { part: { document, savedBytes: concatZipParts(parts) } }, latest.tutorialCheckpointStorage, guard.isCurrent) : guard;
         if (currentGuide()) {
           useAppStore.getState().setTutorialCheckpointFailure(checkpoint.ok ? null : checkpoint.reason);
           if (checkpoint.ok) useAppStore.getState().setTutorialSession({ ...activeGuide,

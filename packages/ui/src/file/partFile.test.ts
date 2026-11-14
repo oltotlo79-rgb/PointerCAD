@@ -10,7 +10,7 @@ import { createThumbnailCaptureReasonJournal, observeThumbnailCaptureReasons } f
  *  - 失うものがある操作の前に確認する(NFR-UX-3)。
  */
 
-import { encodeSaveDocument,
+import { concatZipParts, encodeSaveDocument, encodeSaveDocumentParts,
   DEFAULT_AUTO_SAVE_IDENTITY,
   PCAD_SCHEMA_VERSION,
   SCHEMA_MIGRATIONS,
@@ -51,6 +51,7 @@ import {
   windowTitle,
   type PartFileDeps,
 } from './partFile.js';
+import { createPcadSaveEncoder, type PcadSaveWorkerPort } from './pcadSaveWorker.js';
 import { loadRecentFiles, type RecentFilesStorage } from './recentFiles.js';
 import { readTutorialCheckpoint, saveTutorialCheckpoint, TUTORIAL_CHECKPOINT_KEY } from '../tutorial/tutorialCheckpoint.js';
 import { createParameterTutorialSession } from '../tutorial/tutorialProgress.js';
@@ -2331,4 +2332,61 @@ it('awaits the actual asynchronous viewport producer once and reports its final 
     expect(await capture()).toBeNull();
     expect(journal.snapshot().entries.map(entry => entry.reason)).toEqual(['producer:success', 'producer:throw']);
   } finally { release(); useAppStore.getState().setCaptureThumbnail(original); }
+});
+
+/** 保存 Worker の代わりに、同じ符号化を同じスレッドで行って返信する相手。部分の並びの依頼には部分で答える。 */
+function inProcessSaveWorker(): PcadSaveWorkerPort {
+  const port: PcadSaveWorkerPort = { onmessage: null, onerror: null, onmessageerror: null, terminate: () => undefined,
+    postMessage: (value, transfer) => {
+      if (!('input' in value)) return;
+      const request = structuredClone(value, { transfer });
+      const reply = (data: unknown): void => { port.onmessage?.(new MessageEvent('message', { data })); };
+      void (request.replyAsParts === true
+        ? encodeSaveDocumentParts(request.input).then(parts => { reply({ id: request.id, kind: 'success', parts }); })
+        : encodeSaveDocument(request.input).then(bytes => { reply({ id: request.id, kind: 'success', bytes }); }));
+    } };
+  return port;
+}
+
+describe('部品の保存を部分の並びのまま保存の口へ渡す', () => {
+  it('保存Workerの符号化器と部分の口があれば部分の並びのまま渡し、全体の口は呼ばず、開き直すと同じ部品に戻る', async () => {
+    const fake = createFakeGateway({ savedName: '部品1.pcad' }), partsCalls: (readonly Uint8Array[])[] = [];
+    let stored: PickedFile | null = null;
+    useGateway({ ...fake.gateway,
+      savePcadParts: (name, parts, saveAs) => {
+        partsCalls.push(parts);
+        stored = { name, bytes: concatZipParts(parts), saveTargetToken: null };
+        return Promise.resolve(saveAs ? name : '部品1.pcad');
+      },
+      openPcad: () => Promise.resolve(stored) });
+    useAppStore.setState({ saveDocumentEncoder: createPcadSaveEncoder(inProcessSaveWorker) });
+    const document = partWithPoint();
+    useAppStore.getState().applyDocument(document);
+
+    await savePart(createFakeDeps(true).deps, true);
+    expect(partsCalls).toHaveLength(1);
+    expect(partsCalls[0].length).toBeGreaterThan(0);
+    expect(fake.saveCalls).toEqual([]);
+    expect(useAppStore.getState().fileName).toBe('名称未設定.pcad');
+
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    useAppStore.getState().setFileState(null, null);
+    await openPart(createFakeDeps(true).deps);
+    expect(useAppStore.getState().document).toEqual(document);
+  });
+
+  it('部分の口を持たない口へは、部分をつないだ全体を今の savePcad で渡す', async () => {
+    const fake = createFakeGateway({ savedName: '部品1.pcad' });
+    useFake(fake);
+    useAppStore.setState({ saveDocumentEncoder: createPcadSaveEncoder(inProcessSaveWorker) });
+    const document = partWithPoint();
+    useAppStore.getState().applyDocument(document);
+
+    await savePart(createFakeDeps(true).deps, false);
+    expect(fake.saveCalls).toHaveLength(1);
+    const reread = readPcadFile(fake.saveCalls[0].bytes);
+    if (!reread.ok) throw new Error(reread.error.message);
+    expect(reread.document).toEqual(document);
+    expect(useAppStore.getState().fileName).toBe('部品1.pcad');
+  });
 });

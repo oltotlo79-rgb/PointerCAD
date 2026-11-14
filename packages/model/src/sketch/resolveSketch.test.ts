@@ -4,7 +4,9 @@ import { expectVec3CloseTo as expectCloseTo } from '../testing/vec3Assertions.te
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.js';
+import { radiusComponentKey } from './constraints/variables.js';
 import { FREE_WORK_PLANE_ID, WORK_PLANES, type WorkPlane } from './planeMath.js';
+import { vertexKey } from './resolveCoordinate.js';
 import {
   arcPointAt,
   azimuthToEllipseParameter,
@@ -3392,5 +3394,202 @@ describe('logical point-array producer roles survive layout enumeration changes'
     expectCloseTo(second.position, [10, 5, 0]);
     expect(first.id).not.toBe(second.id);
     expect(second.producerAnchor).toEqual(expected);
+  });
+});
+
+/**
+ * 1 回の解決が持つ記録(結果の配列・引く表・直前の点・断りの順)の基準。解決の関数を責務ごとに
+ * 分けても、外から見える結果が同じであることをここで固定する。
+ */
+describe('1 回の解決の記録と順序(責務を分けても変わらない動き)', () => {
+  function relativeToPrevious(id: string, dx: number): SketchFeature {
+    return {
+      id, name: id, planeId: 'xy', kind: 'point',
+      at: { mode: 'relative', base: { kind: 'previous' }, dx: num(dx), dy: num(0), dz: num(0) },
+    };
+  }
+
+  function atVertex(id: string, featureId: string, vertex: 'start' | 'end' | 'center'): SketchFeature {
+    return {
+      id, name: id, planeId: 'xy', kind: 'point',
+      at: { mode: 'relative', base: { kind: 'vertex', featureId, vertex }, dx: num(0), dy: num(0), dz: num(0) },
+    };
+  }
+
+  const RECTANGLE: SketchFeature = {
+    id: 'r1', name: 'r1', planeId: 'xy', kind: 'rectangle', construction: false,
+    corner1: absoluteCoordinate(0, 0, 0), corner2: absoluteCoordinate(40, 30, 0),
+  };
+
+  const OFFSET: SketchFeature = {
+    id: 'o1', name: 'o1', planeId: 'xy', kind: 'offset', source: [{ featureId: 'r1' }],
+    distance: num(5), side: 'outside', corner: 'round', construction: false,
+  };
+
+  it('値の不正な入力は理由を記録し、点を作るフィーチャーでは直前の点を消すが、面では消さない', () => {
+    const line: SketchFeature = {
+      id: 'l-bad', name: 'l-bad', planeId: 'xy', kind: 'line', construction: false,
+      from: absoluteCoordinate(0, 0, 0), to: absoluteCoordinate(5, 0, 0),
+    };
+    const face: SketchFeature = {
+      id: 'f-bad', name: 'f-bad', planeId: 'xy', kind: 'face', boundary: [{ featureId: 'p1' }],
+      color: DEFAULT_FACE_COLOR,
+    };
+    const resolved = resolveSketch(
+      documentOf(POINT_A, face, relativeToPrevious('q1', 1), line, relativeToPrevious('q2', 1)),
+      { invalidInputs: new Map([['f-bad', '面の式が解けません。'], ['l-bad', '線の式が解けません。']]) },
+    );
+    expect(resolved.points.map((point) => point.id)).toEqual(['p1', 'q1']);
+    expectCloseTo(resolved.points[1].position, [1, 0, 0]);
+    expect(resolved.errors).toEqual([
+      { featureId: 'f-bad', code: 'invalidValue', message: '面の式が解けません。' },
+      { featureId: 'l-bad', code: 'invalidValue', message: '線の式が解けません。' },
+      { featureId: 'q2', code: 'missingBase', message: '基準になる直前の点がありません。' },
+    ]);
+    expect(resolved.segments).toEqual([]);
+    expect(resolved.faces).toEqual([]);
+  });
+
+  it('拘束を解いた位置と半径は、点・線分・円弧・楕円・スプラインに差し込まれ下流へ伝わる', () => {
+    const line: SketchFeature = {
+      id: 'l1', name: 'l1', planeId: 'xy', kind: 'line', construction: false,
+      from: absoluteCoordinate(0, 0, 0),
+      to: { mode: 'relative', base: { kind: 'previous' }, dx: num(5), dy: num(0), dz: num(0) },
+    };
+    const arc: SketchFeature = {
+      id: 'a1', name: 'a1', planeId: 'xy', kind: 'arc', construction: false,
+      center: absoluteCoordinate(0, 0, 0), radius: num(2), startAngle: num(0), endAngle: num(90),
+    };
+    const ellipse: SketchFeature = {
+      id: 'e1', name: 'e1', planeId: 'xy', kind: 'ellipse', construction: false,
+      center: absoluteCoordinate(0, 0, 0), majorRadius: num(4), minorRadius: num(2),
+      rotation: num(0), startAngle: num(0), endAngle: num(90),
+    };
+    const spline: SketchFeature = {
+      id: 's1', name: 's1', planeId: 'xy', kind: 'spline', mode: 'interpolate', closed: false,
+      construction: false, points: [absoluteCoordinate(30, 0, 0), absoluteCoordinate(40, 0, 0)],
+    };
+    const resolved = resolveSketch(
+      documentOf(POINT_A, line, arc, ellipse, spline, relativeToPrevious('q1', 1)),
+      {
+        pointOverrides: new Map<string, Vec3>([
+          ['p1', [1, 2, 0]],
+          [vertexKey('l1', 'start'), [3, 3, 0]],
+          [vertexKey('a1', 'center'), [10, 0, 0]],
+          [vertexKey('a1', 'end'), [6, 0, 0]],
+          [vertexKey('e1', 'center'), [0, 20, 0]],
+          ['s1#1', [50, 50, 0]],
+        ]),
+        radiusOverrides: new Map([
+          [radiusComponentKey('a1', 'radius'), 4],
+          [radiusComponentKey('e1', 'major'), 8],
+          [radiusComponentKey('e1', 'minor'), 3],
+        ]),
+      },
+    );
+    expect(resolved.errors).toEqual([]);
+    expectCloseTo(resolved.points[0].position, [1, 2, 0]);
+    // 終点は上書きした始点を「直前の点」として測る。
+    expectCloseTo(resolved.segments[0].from, [3, 3, 0]);
+    expectCloseTo(resolved.segments[0].to, [8, 3, 0]);
+    const [onlyArc] = resolved.arcs;
+    expectCloseTo(onlyArc.center, [10, 0, 0]);
+    expect(onlyArc.radius).toBe(4);
+    expect(onlyArc.startAngle).toBeCloseTo(0, 12);
+    expect(onlyArc.endAngle).toBeCloseTo(Math.PI, 12);
+    const [onlyEllipse] = resolved.ellipses;
+    expectCloseTo(onlyEllipse.center, [0, 20, 0]);
+    expect([onlyEllipse.majorRadius, onlyEllipse.minorRadius]).toEqual([8, 3]);
+    expectCloseTo(curveEnd(onlyEllipse), [0, 23, 0]);
+    expectCloseTo(resolved.splines[0].points[0], [30, 0, 0]);
+    expectCloseTo(resolved.splines[0].points[1], [50, 50, 0]);
+    expectCloseTo(resolved.points[1].position, [51, 50, 0]);
+  });
+
+  it('断り・保留・curvesByFeature・種類ごとの配列は履歴の順に並ぶ', () => {
+    const badPolygon: SketchFeature = {
+      id: 'g-bad', name: 'g-bad', planeId: 'xy', kind: 'polygon', construction: false,
+      center: absoluteCoordinate(0, 0, 0), sides: num(2), radius: num(5), radiusMode: 'circumscribed',
+    };
+    const slot: SketchFeature = {
+      id: 's1', name: 's1', planeId: 'xy', kind: 'slot', construction: false,
+      center1: absoluteCoordinate(100, 0, 0), center2: absoluteCoordinate(120, 0, 0), width: num(10),
+    };
+    const section: SketchFeature = {
+      id: 'sc1', name: 'sc1', planeId: 'xy', kind: 'planeSection', targetFeatureId: 'extrude-1',
+      construction: false,
+    };
+    const copy: SketchFeature = {
+      id: 'cp1', name: 'cp1', planeId: 'xy', kind: 'copy', source: [{ featureId: 'r1', index: 0 }],
+      placement: { kind: 'translate', delta: absoluteCoordinate(0, 100, 0) }, construction: false,
+    };
+    const missingPlane: SketchFeature = { ...POINT_B, id: 'p-missing', planeId: 'referencePlane-9' };
+    const zeroLine: SketchFeature = {
+      id: 'l-zero', name: 'l-zero', planeId: 'xy', kind: 'line', construction: false,
+      from: absoluteCoordinate(1, 1, 0), to: absoluteCoordinate(1, 1, 0),
+    };
+    const resolved = resolveSketch(documentOf(
+      RECTANGLE, badPolygon, OFFSET, slot, section, copy, missingPlane, zeroLine, QUARTER_ARC,
+    ));
+    expect(resolved.errors).toEqual([
+      { featureId: 'g-bad', code: 'invalidValue', message: '辺の数は 3 以上にしてください。' },
+      { featureId: 'p-missing', code: 'missingBase', message: '作図面が見つかりません: referencePlane-9' },
+      { featureId: 'l-zero', code: 'degenerate', message: '線分の長さが 0 です。' },
+    ]);
+    expect(resolved.pendingOffsets.map((pending) => pending.featureId)).toEqual(['o1']);
+    expect(resolved.pendingOffsets[0].curves).toEqual(resolved.curvesByFeature.get('r1'));
+    expect(resolved.pendingProjections.map((pending) => [pending.featureId, pending.source])).toEqual([
+      ['sc1', { kind: 'body', bodyFeatureId: 'extrude-1' }],
+    ]);
+    expect([...resolved.curvesByFeature.keys()]).toEqual(['r1', 's1', 'cp1']);
+    expect(resolved.segments.map((segment) => segment.featureId)).toEqual([
+      'r1', 'r1', 'r1', 'r1', 's1', 's1', 'cp1',
+    ]);
+    expect(resolved.arcs.map((item) => item.featureId)).toEqual(['s1', 's1', 'a1']);
+    expect(resolved.points).toEqual([]);
+  });
+
+  it('オフセット・複製・点列・正多角形の後も、直前の点と端点の参照が引き継がれる', () => {
+    const offsetCurves: readonly ResolvedCurve[] = [
+      { kind: 'segment', featureId: 'kernel', from: [-5, -5, 0], to: [45, -5, 0] },
+      { kind: 'segment', featureId: 'kernel', from: [45, -5, 0], to: [45, 35, 0] },
+    ];
+    const afterOffset = resolveSketch(
+      documentOf(RECTANGLE, OFFSET, relativeToPrevious('q1', 1), atVertex('q2', 'o1', 'start')),
+      { offsetCurves: () => offsetCurves },
+    );
+    expect(afterOffset.errors).toEqual([]);
+    expect(afterOffset.curvesByFeature.get('o1')?.map((curve) => curve.featureId)).toEqual(['o1', 'o1']);
+    expectCloseTo(afterOffset.points[0].position, [46, 35, 0]);
+    expectCloseTo(afterOffset.points[1].position, [-5, -5, 0]);
+
+    const pointCopy: SketchFeature = {
+      id: 'cp1', name: 'cp1', planeId: 'xy', kind: 'copy', source: [{ featureId: 'p2' }],
+      placement: { kind: 'translate', delta: absoluteCoordinate(0, 5, 0) }, construction: false,
+    };
+    const afterCopy = resolveSketch(documentOf(POINT_B, pointCopy, relativeToPrevious('q1', 1)));
+    expect(afterCopy.errors).toEqual([]);
+    expect(afterCopy.points.map((point) => point.id)).toEqual(['p2', 'cp1#0', 'q1']);
+    expectCloseTo(afterCopy.points[2].position, [11, 5, 0]);
+
+    const array: SketchFeature = {
+      id: 'pa1', name: 'pa1', planeId: 'xy', kind: 'pointArray',
+      layout: { kind: 'linear', base: absoluteCoordinate(0, 0, 0), azimuth: num(0), spacing: num(10), count: num(3) },
+    };
+    const polygon: SketchFeature = {
+      id: 'g1', name: 'g1', planeId: 'xy', kind: 'polygon', construction: false,
+      center: absoluteCoordinate(5, 5, 0), sides: num(4), radius: num(2), radiusMode: 'circumscribed',
+    };
+    const afterShapes = resolveSketch(documentOf(
+      array, relativeToPrevious('q1', 1), atVertex('q2', 'pa1', 'start'), polygon,
+      relativeToPrevious('q3', 0), atVertex('q4', 'g1', 'center'),
+    ));
+    expect(afterShapes.errors).toEqual([]);
+    const byId = new Map(afterShapes.points.map((point) => [point.id, point.position]));
+    expectCloseTo(byId.get('q1') ?? [Number.NaN, 0, 0], [21, 0, 0]);
+    expectCloseTo(byId.get('q2') ?? [Number.NaN, 0, 0], [0, 0, 0]);
+    // 正多角形の終点は最後の辺の終点(= 第1頂点。中心から第1軸の向きへ外接半径 2)。
+    expectCloseTo(byId.get('q3') ?? [Number.NaN, 0, 0], [7, 5, 0]);
+    expectCloseTo(byId.get('q4') ?? [Number.NaN, 0, 0], [5, 5, 0]);
   });
 });

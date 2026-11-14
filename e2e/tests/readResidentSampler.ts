@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { expect, type TestInfo } from '@playwright/test';
-import { DISCOVERY_INTERVAL_MS, INTERVAL_MS, linuxSampler, windowsSampler, windowsNativeSource, linuxTerminalMeasurement, type RawFrame, type Sampler } from './processResourceSampler.js';
+import { DISCOVERY_INTERVAL_MS, INTERVAL_MS, frameClockStages, linuxSampler, staleRetrySummary, windowsSampler, windowsNativeSource, linuxTerminalMeasurement, type RawFrame, type Sampler } from './processResourceSampler.js';
 
 type ReadPlatform = 'win32' | 'linux';
 export interface ResidentSample {
@@ -24,7 +24,10 @@ export function readResidentFrames(frames: readonly RawFrame[], rootPid: number,
     if (!Number.isFinite(frame.atEpochMs) || !Number.isFinite(frame.readStartedAtEpochMs)
       || !Number.isFinite(frame.discoveredAtEpochMs) || frame.readStartedAtEpochMs > frame.atEpochMs
       || frame.discoveredAtEpochMs > frame.atEpochMs || frame.discoveredAtEpochMs <= 0
-      || frame.atEpochMs - frame.discoveredAtEpochMs > DISCOVERY_INTERVAL_MS) issues.push('invalid or stale frame clock');
+      || frame.atEpochMs - frame.discoveredAtEpochMs > DISCOVERY_INTERVAL_MS) {
+      // The CI log carries no attachment: name the frame's own stages, so a stalled sampler and a reversed clock differ.
+      issues.push(`invalid or stale frame clock (${frameClockStages(frame, frames[index + 1])})`);
+    }
     if (frame.discoveryError !== null) issues.push(`discovery: ${frame.discoveryError}`);
     const ids = new Set<number>();
     const verifiedTerminals: string[] = [];
@@ -102,6 +105,8 @@ export function readResidentAdapter(info: Pick<TestInfo, 'outputPath' | 'attach'
   let stopping: Promise<ResidentSample[]> | undefined;
   return { root, coverage, get samples() { return snapshot().samples; },
     get errors() { return [...sampler.failures, ...snapshot().errors]; },
+    /** Frames acquired once more because their first acquisition was stale (count and rejected ages; for the record). */
+    get staleRetries() { return staleRetrySummary(sampler.frames); },
     waitAfter: async (at: number) => {
       await expect.poll(() => {
         const current = snapshot();
@@ -119,7 +124,7 @@ export function readResidentAdapter(info: Pick<TestInfo, 'outputPath' | 'attach'
         const path = info.outputPath('read-resident-raw.json');
         await writeFile(path, JSON.stringify({ rootPid: root, ...coverage,
           measurementStatus: failures.length ? 'unavailable-or-incomplete' : 'measured-partial-set',
-          failures, frames: sampler.frames, samples: current.samples }, null, 2));
+          failures, staleRetries: staleRetrySummary(sampler.frames), frames: sampler.frames, samples: current.samples }, null, 2));
         await info.attach('read-resident-raw', { contentType: 'application/json', path });
         if (stopError !== null) throw new Error(stopError);
         return current.samples;

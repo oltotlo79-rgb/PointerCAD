@@ -60,7 +60,25 @@ interface WindowsTiming {
   /** The Start-Sleep between the previous frame's output and this loop start: requested length and actual bounds. */
   readonly previousSleep?: { readonly requestedMs: number; readonly startedAtEpochMs: number; readonly endedAtEpochMs: number };
 }
-export type RawFrame = Omit<ProcessMemoryFrame, 'phase' | 'processes'> & { readonly processes: readonly ResourceProcessSample[]; readonly readStartedAtEpochMs: number; readonly windowsTiming?: WindowsTiming; readonly linuxDiscoveryComplete?: boolean; readonly linuxDiscovery?: readonly (LinuxAncestry | LinuxAncestryFailure | null)[] };
+/**
+ * A frame whose first acquisition ended past the age limit (its read ended more than DISCOVERY_INTERVAL_MS after its
+ * discovery) is acquired once more in the same loop. The rejected attempt is kept here, never hidden: its discovery,
+ * read and age, and when the second acquisition started. The emitted frame is the second acquisition only; if that one
+ * is stale too, it is emitted and rejected as before.
+ */
+export interface StaleRetry {
+  readonly rejectedDiscoveredAtEpochMs: number;
+  readonly rejectedReadStartedAtEpochMs: number;
+  readonly rejectedAtEpochMs: number;
+  readonly rejectedAgeMs: number;
+  readonly rejectedDiscoveryError: string | null;
+  readonly retryStartedAtEpochMs: number;
+  /** Windows only: the rejected attempt's stage costs (Stopwatch). */
+  readonly rejectedReadElapsedMs?: number;
+  readonly rejectedNativeCallMs?: number;
+  readonly rejectedDiscoveryExecutionMs?: number;
+}
+export type RawFrame = Omit<ProcessMemoryFrame, 'phase' | 'processes'> & { readonly processes: readonly ResourceProcessSample[]; readonly readStartedAtEpochMs: number; readonly windowsTiming?: WindowsTiming; readonly linuxDiscoveryComplete?: boolean; readonly linuxDiscovery?: readonly (LinuxAncestry | LinuxAncestryFailure | null)[]; readonly staleRetry?: StaleRetry };
 /** One start-up stage of the Windows sampler, written as its own stdout line before the first frame. */
 export interface SamplerStage { readonly stage: string; readonly atEpochMs: number; readonly ms: number }
 /** The Windows sampler's start-up stages, in the order its PowerShell script reaches them (the first frame's discovery last). */
@@ -112,6 +130,18 @@ function waitTiming(value: Record<string, unknown>): boolean {
       !actualTime(sleep.endedAtEpochMs) || !actualTime(output.atEpochMs)) return false;
   return output.atEpochMs <= sleep.startedAtEpochMs && sleep.startedAtEpochMs <= sleep.endedAtEpochMs && sleep.endedAtEpochMs <= loop;
 }
+/** The rejected attempt's own times agree with its age, the age is past the limit, and it precedes the emitted read. */
+function staleRetry(value: unknown, readStartedAtEpochMs: number): value is StaleRetry {
+  if (!isRecord(value)) return false;
+  const times = ['rejectedDiscoveredAtEpochMs', 'rejectedReadStartedAtEpochMs', 'rejectedAtEpochMs', 'rejectedAgeMs', 'retryStartedAtEpochMs'];
+  if (!times.every(key => actualTime(value[key]))) return false;
+  const discovered = Number(value.rejectedDiscoveredAtEpochMs), readStarted = Number(value.rejectedReadStartedAtEpochMs);
+  const ended = Number(value.rejectedAtEpochMs), retry = Number(value.retryStartedAtEpochMs);
+  return Number(value.rejectedAgeMs) === ended - discovered && ended - discovered > DISCOVERY_INTERVAL_MS
+    && readStarted <= ended && ended <= retry && retry <= readStartedAtEpochMs
+    && (value.rejectedDiscoveryError === null || typeof value.rejectedDiscoveryError === 'string')
+    && ['rejectedReadElapsedMs', 'rejectedNativeCallMs', 'rejectedDiscoveryExecutionMs'].every(key => value[key] === undefined || actualTime(value[key]));
+}
 function processSample(value: unknown): value is ResourceProcessSample {
   return isRecord(value) && typeof value.pid === 'number' && typeof value.created === 'string' &&
     typeof value.parentPid === 'number' && typeof value.name === 'string' &&
@@ -130,14 +160,48 @@ export function rawFrame(value: unknown): RawFrame {
       (windowsTiming(value.windowsTiming) && value.windowsTiming.loopStartedAtEpochMs !== undefined &&
         value.windowsTiming.loopStartedAtEpochMs > value.readStartedAtEpochMs) ||
       (value.discoveryError !== null && typeof value.discoveryError !== 'string') ||
-      (value.rootCreated !== undefined && value.rootCreated !== null && typeof value.rootCreated !== 'string')) {
+      (value.rootCreated !== undefined && value.rootCreated !== null && typeof value.rootCreated !== 'string') ||
+      (value.staleRetry !== undefined && !staleRetry(value.staleRetry, value.readStartedAtEpochMs))) {
     throw new Error('Malformed OS resource sample');
   }
   return { atEpochMs: value.atEpochMs, discoveredAtEpochMs: value.discoveredAtEpochMs,
     readStartedAtEpochMs: value.readStartedAtEpochMs, processes: value.processes,
     discoveryError: value.discoveryError, ...(typeof value.rootCreated === 'string' ? { rootCreated: value.rootCreated } : {}),
     ...(typeof value.linuxDiscoveryComplete === 'boolean' ? { linuxDiscoveryComplete: value.linuxDiscoveryComplete } : {}),
-    ...(windowsTiming(value.windowsTiming) ? { windowsTiming: value.windowsTiming } : {}) };
+    ...(windowsTiming(value.windowsTiming) ? { windowsTiming: value.windowsTiming } : {}),
+    ...(staleRetry(value.staleRetry, value.readStartedAtEpochMs) ? { staleRetry: value.staleRetry } : {}) };
+}
+
+/**
+ * The acquisition stages of one frame for a failure text: the CI log carries no attachment, so a stale or reversed
+ * frame clock names its own discovery, read, loop start, previous sleep and next discovery, and its retry if it had one.
+ * Only a text; no judgment uses it.
+ */
+export function frameClockStages(frame: RawFrame, next?: Pick<RawFrame, 'discoveredAtEpochMs'>): string {
+  const timing = frame.windowsTiming, sleep = timing?.previousSleep, retry = frame.staleRetry;
+  const stages = `${String(frame.atEpochMs)}: age ${String(frame.atEpochMs - frame.discoveredAtEpochMs)}ms; `
+    + `read start age ${String(frame.readStartedAtEpochMs - frame.discoveredAtEpochMs)}ms; `
+    + `read ${String(frame.atEpochMs - frame.readStartedAtEpochMs)}ms (native ${timing === undefined ? 'n/a' : `${timing.nativeCallMs.toFixed(1)}ms`}); `
+    + `loop start age ${timing?.loopStartedAtEpochMs === undefined ? 'n/a' : `${String(timing.loopStartedAtEpochMs - frame.discoveredAtEpochMs)}ms`}; `
+    + `previous sleep ${sleep === undefined ? 'n/a' : `${String(sleep.requestedMs)}->${String(sleep.endedAtEpochMs - sleep.startedAtEpochMs)}ms`}; `
+    + `discovery started ${timing === undefined ? 'n/a' : String(timing.discoveryStartedAtEpochMs)} `
+    + `exec ${timing === undefined ? 'n/a' : `${timing.discoveryExecutionMs.toFixed(1)}ms`} `
+    + `adopted ${timing === undefined ? 'n/a' : String(timing.discoveryAdoptedAtEpochMs)}; `
+    + `next frame discovery ${String(next?.discoveredAtEpochMs ?? 'n/a')}`;
+  if (retry === undefined) return stages;
+  const costs = retry.rejectedReadElapsedMs === undefined ? '' : ` read ${retry.rejectedReadElapsedMs.toFixed(1)}ms`
+    + ` native ${(retry.rejectedNativeCallMs ?? 0).toFixed(1)}ms discovery exec ${(retry.rejectedDiscoveryExecutionMs ?? 0).toFixed(1)}ms;`;
+  return `${stages}; stale retry: rejected age ${String(retry.rejectedAgeMs)}ms (discovered ${String(retry.rejectedDiscoveredAtEpochMs)}, `
+    + `read ${String(retry.rejectedReadStartedAtEpochMs)}->${String(retry.rejectedAtEpochMs)})${costs}, retry ${String(retry.retryStartedAtEpochMs)}`
+    + `${retry.rejectedDiscoveryError === null ? '' : `, rejected discovery error ${retry.rejectedDiscoveryError}`}`;
+}
+
+/** How often frames were acquired again because the first acquisition was stale, and the rejected ages (for the record). */
+export function staleRetrySummary(frames: readonly Pick<RawFrame, 'staleRetry'>[]): {
+  readonly count: number; readonly rejectedAgesMs: readonly number[]; readonly maxRejectedAgeMs: number | null;
+} {
+  const rejectedAgesMs = frames.flatMap(frame => frame.staleRetry === undefined ? [] : [frame.staleRetry.rejectedAgeMs]);
+  return { count: rejectedAgesMs.length, rejectedAgesMs, maxRejectedAgeMs: rejectedAgesMs.length === 0 ? null : Math.max(...rejectedAgesMs) };
 }
 /**
  * One stdout line of the Windows sampler: a start-up stage line (it has `samplerStage`) or a frame.
@@ -529,8 +593,8 @@ public static class SamplerNative {
  * (手元で数 ms)。frame はその frame の探索の組だけを読み、探索の時刻は実際の完了時刻のまま記録する。
  * 外部検査で採取のプロセスが 0.3〜0.8 秒止まっても、古さは探索と読取りの所要だけになる。
  */
-export function windowsSampler(rootPid: number, includeRoot: boolean): Sampler {
-  const script = windowsSamplerScript(rootPid, includeRoot);
+export function windowsSampler(rootPid: number, includeRoot: boolean, stall?: SamplerStall): Sampler {
+  const script = windowsSamplerScript(rootPid, includeRoot, stall);
   const spawnedAt = Date.now();
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
     { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -565,8 +629,22 @@ export function windowsSampler(rootPid: number, includeRoot: boolean): Sampler {
   return { frames, failures, stages, describe, async stop() { stopping = true; child.kill(); await closed; } };
 }
 
+/**
+ * Sampler self-test only (process-resource-sampler.spec.ts): stop the sampler process for `ms` right after the discovery of
+ * frame `frame` (0-based), in the listed acquisition attempts (0 first, 1 the one retry). Measurement flows never pass it,
+ * and without it the program has no such line.
+ */
+export interface SamplerStall { readonly frame: number; readonly attempts: readonly number[]; readonly ms: number }
+function samplerStallLine(stall: SamplerStall | undefined): string {
+  if (stall === undefined) return '';
+  for (const value of [stall.frame, stall.ms, ...stall.attempts]) {
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error('Sampler stall needs non-negative integers');
+  }
+  return `if($frameIndex -eq ${String(stall.frame)} -and @(${stall.attempts.map(String).join(',')}) -contains $attempt){Start-Sleep -Milliseconds ${String(stall.ms)}}`;
+}
+
 /** The PowerShell program of the Windows sampler (one JSON line per start-up stage and per frame on stdout). */
-export function windowsSamplerScript(rootPid: number, includeRoot: boolean): string {
+export function windowsSamplerScript(rootPid: number, includeRoot: boolean, stall?: SamplerStall): string {
   return `
 $ErrorActionPreference='Stop'
 # Node decodes both redirected streams as UTF-8; do not emit the host OEM code page.
@@ -653,8 +731,14 @@ function Invoke-FrameDiscovery([long]$startedAt){
 $previousOutput=$null
 $previousSleep=$null
 $firstFrame=$true
+$frameIndex=0
 while($true){
   $loopStartedAt=[SamplerNative]::EpochMilliseconds()
+  # A frame whose first acquisition ends past the age limit is acquired once more in this same loop (the sampler process
+  # stopped for seconds inside one frame on CI). The rejected attempt is written into the frame as staleRetry, never hidden;
+  # a second stale acquisition is emitted and rejected as before. Nothing is filled in: the gap stays in the frame times.
+  $staleRetry=$null
+  for($attempt=0;$attempt -lt 2;$attempt++){
   $discoveryStartedAt=[SamplerNative]::EpochMilliseconds()
   if($firstFrame){Write-SamplerStage 'first-discovery-started' $discoveryStartedAt 0}
   Invoke-FrameDiscovery $discoveryStartedAt
@@ -663,6 +747,7 @@ while($true){
     Write-SamplerStage 'first-discovery-complete' $firstDiscoveryCompletedAt ($firstDiscoveryCompletedAt-$discoveryStartedAt)
     $firstFrame=$false
   }
+  ${samplerStallLine(stall)}
   # Precise actual UTC at the original acquisition boundary. Framework UtcNow
   # has coarser resolution than Stopwatch; never infer UTC from elapsed time.
   $readStartedAt=[SamplerNative]::EpochMilliseconds()
@@ -729,6 +814,17 @@ while($true){
   $frame=@{atEpochMs=[SamplerNative]::EpochMilliseconds();readStartedAtEpochMs=$readStartedAt;discoveredAtEpochMs=$discoveredAt;
     processes=$rows;discoveryError=$discoveryError;rootCreated=$rootCreated}
   if($null -ne $timing){$frame.windowsTiming=$timing}
+  if($attempt -eq 0 -and ($frame.atEpochMs-$discoveredAt) -gt ${DISCOVERY_INTERVAL_MS}){
+    $staleRetry=@{rejectedDiscoveredAtEpochMs=$discoveredAt;rejectedReadStartedAtEpochMs=$readStartedAt;rejectedAtEpochMs=$frame.atEpochMs;
+      rejectedAgeMs=$frame.atEpochMs-$discoveredAt;rejectedDiscoveryError=$discoveryError;
+      rejectedReadElapsedMs=$readClock.Elapsed.TotalMilliseconds;rejectedNativeCallMs=$nativeCallMs;
+      rejectedDiscoveryExecutionMs=$(if($null -ne $discoveryTiming){$discoveryTiming.discoveryExecutionMs}else{0.0});
+      retryStartedAtEpochMs=[SamplerNative]::EpochMilliseconds()}
+    continue
+  }
+  break
+  }
+  if($null -ne $staleRetry){$frame.staleRetry=$staleRetry}
   # Serialization/output can delay the next frame. Report their actual costs in
   # that next frame, explicitly keyed to this frame, without serializing twice.
   $outputClock=[System.Diagnostics.Stopwatch]::StartNew()
@@ -739,6 +835,7 @@ while($true){
   # Write the same complete UTF-8 JSON line; pipe backpressure is still timed.
   [Console]::Out.WriteLine($serialized)
   $previousOutput=@{atEpochMs=$frame.atEpochMs;serializationMs=$serializationMs;writeMs=$outputClock.Elapsed.TotalMilliseconds}
+  $frameIndex++
   # The same deadline rule as linuxSampler: the read time is part of the 100ms period.
   # One clock read gives the deadline and the recorded sleep start. The next frame reports the requested and
   # the actual sleep, so a gap is placed in the sleep or between the wake-up and the loop by records, not inference.
@@ -906,6 +1003,20 @@ export async function linuxFrame(rootPid: number, includeRoot: boolean, started:
   return { atEpochMs: source.now(), readStartedAtEpochMs: started, discoveredAtEpochMs: started, rootCreated: discovered.find(entry => entry.pid === rootPid)?.created ?? null, processes, linuxDiscoveryComplete: failures.length === 0 && discovered.some(entry => entry.pid === rootPid), discoveryError: failures.length === 0 ? null : failures.join('; '), linuxDiscovery: linuxDiscovery.filter(entry => entry === null || 'error' in entry) };
 }
 
+/**
+ * One Linux frame, acquired once more when the first acquisition ended past the age limit (as the Windows sampler does).
+ * The rejected attempt is kept as staleRetry; a second stale acquisition is returned as it is and rejected by its readers.
+ */
+export async function linuxFrameWithRetry(rootPid: number, includeRoot: boolean, source: LinuxProcSource = linuxProc): Promise<RawFrame> {
+  const first = await linuxFrame(rootPid, includeRoot, source.now(), source);
+  if (first.atEpochMs - first.discoveredAtEpochMs <= DISCOVERY_INTERVAL_MS) return first;
+  const retryStartedAtEpochMs = source.now();
+  const second = await linuxFrame(rootPid, includeRoot, retryStartedAtEpochMs, source);
+  return { ...second, staleRetry: { rejectedDiscoveredAtEpochMs: first.discoveredAtEpochMs, rejectedReadStartedAtEpochMs: first.readStartedAtEpochMs,
+    rejectedAtEpochMs: first.atEpochMs, rejectedAgeMs: first.atEpochMs - first.discoveredAtEpochMs, rejectedDiscoveryError: first.discoveryError,
+    retryStartedAtEpochMs } };
+}
+
 export function linuxSampler(rootPid: number, includeRoot: boolean, observe: (frame: RawFrame) => Promise<void>): Sampler {
   const frames: RawFrame[] = [], failures: string[] = [];
   let stopping = false;
@@ -918,7 +1029,7 @@ export function linuxSampler(rootPid: number, includeRoot: boolean, observe: (fr
     while (!stopping) {
       const started = Date.now();
       try {
-        const frame = await linuxFrame(rootPid, includeRoot, started);
+        const frame = await linuxFrameWithRetry(rootPid, includeRoot);
         frames.push(frame);
         await observe(frame);
       } catch (error: unknown) {

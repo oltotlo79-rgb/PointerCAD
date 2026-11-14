@@ -1,4 +1,5 @@
-import { encodeSaveDocument, type SaveDocumentInput, type SaveEncodingStage } from '@pointercad/io';
+import { encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput, type SaveEncodingControl,
+  type SaveEncodingStage } from '@pointercad/io';
 import type { DrawingSourceInput } from '@pointercad/model';
 
 /**
@@ -66,11 +67,33 @@ export function releaseOwnedMeshCopies(input: SaveDocumentInput): number {
   readonly releasedMeshBytes: number;
 }
 
-/** Worker が所有する入力を符号化する。項目ができた直後(圧縮の前)に三角形の写しを手放す。 */
+interface OwnedSavePartsEncoding {
+  /** 順につなぐとファイルの全体になる部分の並び。 */
+  readonly parts: readonly Uint8Array[];
+  /** 圧縮の前に手放した三角形の写しの容量。 */
+  readonly releasedMeshBytes: number;
+}
+
+/** 全体の道と部分の並びの道で同じ手放し方をする。項目ができた直後(圧縮の前)に三角形の写しを手放す。 */
+async function encodeOwned<Encoded>(input: SaveDocumentInput, onProgress: (stage: SaveEncodingStage) => void,
+  encode: (input: SaveDocumentInput, control: SaveEncodingControl) => Promise<Encoded>,
+): Promise<{ readonly encoded: Encoded; readonly releasedMeshBytes: number }> {
+  let releasedMeshBytes = 0;
+  const encoded = await encode(input, { onProgress,
+    onEntriesBuilt: () => { releasedMeshBytes = releaseOwnedMeshCopies(input); } });
+  return { encoded, releasedMeshBytes };
+}
+
+/** Worker が所有する入力を符号化し、1 つの並びで返す。 */
 export async function encodeOwnedSaveInput(input: SaveDocumentInput,
   onProgress: (stage: SaveEncodingStage) => void): Promise<OwnedSaveEncoding> {
-  let releasedMeshBytes = 0;
-  const bytes = await encodeSaveDocument(input, { onProgress,
-    onEntriesBuilt: () => { releasedMeshBytes = releaseOwnedMeshCopies(input); } });
-  return { bytes, releasedMeshBytes };
+  const { encoded, releasedMeshBytes } = await encodeOwned(input, onProgress, encodeSaveDocument);
+  return { bytes: encoded, releasedMeshBytes };
+}
+
+/** Worker が所有する入力を符号化し、全体の並びを作らずに部分の並びで返す(部品の保存で部分のまま書く道)。 */
+export async function encodeOwnedSaveInputParts(input: SaveDocumentInput,
+  onProgress: (stage: SaveEncodingStage) => void): Promise<OwnedSavePartsEncoding> {
+  const { encoded, releasedMeshBytes } = await encodeOwned(input, onProgress, encodeSaveDocumentParts);
+  return { parts: encoded, releasedMeshBytes };
 }

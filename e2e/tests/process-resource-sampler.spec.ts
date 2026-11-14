@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
 import { summarizeProcessMemory, summarizeSampledProcessMemory } from '../../packages/test-utils/src/processMemorySamples.js';
-import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
+import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxFrameWithRetry, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, staleRetrySummary, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
 import { readResidentFrames, windowsRootContextScript } from './readResidentSampler.js';
 import { windowsSaveSamplerScript } from './saveResponsivenessFlow.js';
 import { windowsSavePointOwnerScript } from './namedSavePointsFlow.js';
@@ -140,6 +140,9 @@ test(`process sampler records actual cadence quality through repeated discoverie
   expect([...ownedIdentities].filter(created => created !== '')).toHaveLength(1);
   // Every frame used its own completed discovery (Windows and Linux alike).
   expect(new Set(frames.map(frame => frame.discoveredAtEpochMs)).size).toBe(frames.length);
+  // Without a stall no frame is acquired again, and the summary says so explicitly.
+  expect(frames.filter(frame => frame.staleRetry !== undefined)).toEqual([]);
+  expect(staleRetrySummary(sampler.frames)).toEqual({ count: 0, rejectedAgesMs: [], maxRejectedAgeMs: null });
   const observation = summarizeSampledProcessMemory(frames, { intervalMs: INTERVAL_MS, discoveryIntervalMs: DISCOVERY_INTERVAL_MS,
     requiredPhases: ['baseline'], rootPid: process.pid, includeRoot, windows: [{ phase: 'baseline',
       startedAtEpochMs: frames[0]?.readStartedAtEpochMs ?? NaN, endedAtEpochMs: frames.at(-1)?.atEpochMs ?? NaN }] });
@@ -164,6 +167,111 @@ test('read resident frames reject reused ancestry, duplicates, disappearance and
   expect(readResidentFrames([frame(1000, [root, child, row(30, 2, '250')])], 10, 0).errors.join(' ')).toContain('outside recorded root ancestry');
   expect(readResidentFrames([frame(1000, [root, row(11, 10, '199')])], 10, 0).errors.join(' ')).toContain('older than recorded parent');
   expect(readResidentFrames([frame(1000, [root, row(11, 10, 'unknown')])], 10, 0).errors.join(' ')).toContain('unknown creation ordering');
+});
+
+// CI 43483431262 (e2e windows-latest, 3) and b864f52 (2026-11-09): the sampler process stopped for over 2s inside one
+// frame, so that frame was stale and the read memory could not be certified. A stalled frame is acquired once more in the
+// same loop; the rejected attempt is recorded, never hidden, and a second stale attempt is still rejected.
+// Registered on Windows only (the PowerShell sampler); the Linux retry is checked below on every platform.
+for (const [label, attempts] of platform() === 'win32' ? [['once', [0]], ['twice', [0, 1]]] as const : []) {
+  test(`windows sampler acquires a stalled frame once more and records the stall (${label})`, async () => {
+    const stallMs = DISCOVERY_INTERVAL_MS + 300;
+    const sampler = windowsSampler(process.pid, true, { frame: 2, attempts, ms: stallMs });
+    try {
+      await expect.poll(() => sampler.frames.length, { timeout: 30_000 }).toBeGreaterThanOrEqual(5);
+    } finally {
+      await within(sampler.stop(), 'Sampler stop');
+    }
+    expect(sampler.failures).toEqual([]);
+    const retried = sampler.frames.filter(frame => frame.staleRetry !== undefined);
+    expect(retried).toHaveLength(1);
+    const frame = retried[0], retry = frame?.staleRetry, timing = frame?.windowsTiming;
+    if (frame === undefined || retry === undefined || timing === undefined) throw new Error('Retried Windows frame is missing');
+    expect(sampler.frames.indexOf(frame)).toBe(2);
+    // The rejected attempt: its own discovery, its read and its age past the unchanged limit.
+    expect(retry.rejectedAgeMs).toBe(retry.rejectedAtEpochMs - retry.rejectedDiscoveredAtEpochMs);
+    expect(retry.rejectedAgeMs).toBeGreaterThan(DISCOVERY_INTERVAL_MS);
+    // The injected stall is in the rejected age; Start-Sleep may end a few ms early on the precise clock (2298 for 2300).
+    expect(retry.rejectedAgeMs).toBeGreaterThan(stallMs - INTERVAL_MS);
+    expect(retry.rejectedDiscoveryError).toBeNull();
+    expect(retry.rejectedDiscoveredAtEpochMs).toBeLessThanOrEqual(retry.rejectedReadStartedAtEpochMs);
+    expect(retry.rejectedReadStartedAtEpochMs).toBeLessThanOrEqual(retry.rejectedAtEpochMs);
+    expect(retry.rejectedAtEpochMs).toBeLessThanOrEqual(retry.retryStartedAtEpochMs);
+    expect(retry.retryStartedAtEpochMs).toBeLessThanOrEqual(timing.discoveryStartedAtEpochMs);
+    expect(timing.loopStartedAtEpochMs).toBeLessThanOrEqual(retry.rejectedReadStartedAtEpochMs);
+    // The gap stays in the actual frame times; nothing is filled in.
+    expect(frame.atEpochMs - (sampler.frames[1]?.atEpochMs ?? Number.POSITIVE_INFINITY)).toBeGreaterThan(DISCOVERY_INTERVAL_MS);
+    const clockErrors = readResidentFrames(sampler.frames, process.pid, 0).errors.filter(error => error.includes('frame clock'));
+    if (label === 'once') {
+      expect(frame.atEpochMs - frame.discoveredAtEpochMs).toBeLessThanOrEqual(DISCOVERY_INTERVAL_MS);
+      expect(clockErrors).toEqual([]);
+    } else {
+      // Acquired again and still stale: rejected as before, with both attempts in the text.
+      expect(frame.atEpochMs - frame.discoveredAtEpochMs).toBeGreaterThan(DISCOVERY_INTERVAL_MS);
+      expect(clockErrors).toHaveLength(1);
+      expect(clockErrors[0]).toMatch(/^frame 2: invalid or stale frame clock \(\d+: age \d+ms; read start age -?\d+ms; /u);
+      expect(clockErrors[0]).toContain(`; stale retry: rejected age ${String(retry.rejectedAgeMs)}ms`);
+    }
+    expect(staleRetrySummary(sampler.frames)).toEqual({ count: 1, rejectedAgesMs: [retry.rejectedAgeMs], maxRejectedAgeMs: retry.rejectedAgeMs });
+  });
+}
+
+test('stale retry records are validated, summarised and named in the clock failure text', () => {
+  const retry = { rejectedDiscoveredAtEpochMs: 1_000, rejectedReadStartedAtEpochMs: 1_002, rejectedAtEpochMs: 3_100,
+    rejectedAgeMs: 2_100, rejectedDiscoveryError: null, retryStartedAtEpochMs: 3_101 };
+  const line = (staleRetry: unknown, extra: Record<string, unknown> = {}) => ({ atEpochMs: 3_120, readStartedAtEpochMs: 3_110,
+    discoveredAtEpochMs: 3_105, processes: [], discoveryError: null, staleRetry, ...extra });
+  expect(rawFrame(line(retry)).staleRetry).toEqual(retry);
+  expect(rawFrame(line(undefined)).staleRetry).toBeUndefined();
+  // An age that does not match its own times, an age within the limit, or a retry after the emitted read is malformed.
+  for (const broken of [{ ...retry, rejectedAgeMs: 2_099 }, { ...retry, rejectedAtEpochMs: 2_000, rejectedAgeMs: 1_000 },
+    { ...retry, retryStartedAtEpochMs: 3_111 }, { ...retry, rejectedReadStartedAtEpochMs: 3_101 }, { ...retry, rejectedDiscoveryError: 7 }]) {
+    expect(() => rawFrame(line(broken))).toThrow('Malformed OS resource sample');
+  }
+  // The clock failure names the frame's own stages (same form as the memory high-water flow) and its retry.
+  const stale = { atEpochMs: 5_200, readStartedAtEpochMs: 3_110, discoveredAtEpochMs: 3_105, rootCreated: '200', discoveryError: null,
+    processes: [{ pid: 10, parentPid: 1, created: '200', name: 'owned', workingSetBytes: 10, privateBytes: 8, cpuMilliseconds: 0, error: null }],
+    staleRetry: retry };
+  const errors = readResidentFrames([stale], 10, 0).errors;
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toBe('frame 0: invalid or stale frame clock (5200: age 2095ms; read start age 5ms; read 2090ms (native n/a); '
+    + 'loop start age n/a; previous sleep n/a; discovery started n/a exec n/a adopted n/a; next frame discovery n/a; '
+    + 'stale retry: rejected age 2100ms (discovered 1000, read 1002->3100), retry 3101)');
+  expect(staleRetrySummary([stale, { ...stale, staleRetry: { ...retry, rejectedAgeMs: 2_500, rejectedAtEpochMs: 3_500, retryStartedAtEpochMs: 3_500 } }, rawFrame(line(undefined))]))
+    .toEqual({ count: 2, rejectedAgesMs: [2_100, 2_500], maxRejectedAgeMs: 2_500 });
+});
+
+test('linux frame is acquired once more after a stale attempt and a second stale attempt stays stale', async () => {
+  let clock = 10_000;
+  const table = [{ pid: 10, parentPid: 1, created: '200', name: 'owned' }, { pid: 11, parentPid: 10, created: '210', name: 'owned' }];
+  const slowReads: number[] = [];
+  const source: LinuxProcSource = {
+    list: () => Promise.resolve(table.map(entry => String(entry.pid))),
+    ancestry: pid => Promise.resolve(table.find(entry => entry.pid === pid) ?? null),
+    process: pid => {
+      clock += slowReads.shift() ?? 1;
+      const entry = table.find(candidate => candidate.pid === pid);
+      if (entry === undefined) throw new Error(`unexpected full read of PID ${String(pid)}`);
+      return Promise.resolve({ ...entry, workingSetBytes: 10, privateBytes: 8, cpuMilliseconds: 0, error: null });
+    },
+    now: () => clock,
+  };
+  const fresh = await linuxFrameWithRetry(10, true, source);
+  expect(fresh.staleRetry).toBeUndefined();
+  expect(fresh.atEpochMs - fresh.discoveredAtEpochMs).toBeLessThanOrEqual(DISCOVERY_INTERVAL_MS);
+
+  slowReads.push(DISCOVERY_INTERVAL_MS + 100);
+  const once = await linuxFrameWithRetry(10, true, source);
+  expect(once.staleRetry).toMatchObject({ rejectedAgeMs: DISCOVERY_INTERVAL_MS + 101, rejectedDiscoveryError: null });
+  expect(once.atEpochMs - once.discoveredAtEpochMs).toBeLessThanOrEqual(DISCOVERY_INTERVAL_MS);
+  expect(once.readStartedAtEpochMs).toBeGreaterThanOrEqual(once.staleRetry?.retryStartedAtEpochMs ?? Number.POSITIVE_INFINITY);
+  expect(readResidentFrames([once], 10, 0).errors).toEqual([]);
+
+  slowReads.push(DISCOVERY_INTERVAL_MS + 100, 1, DISCOVERY_INTERVAL_MS + 200);
+  const twice = await linuxFrameWithRetry(10, true, source);
+  expect(twice.staleRetry?.rejectedAgeMs).toBe(DISCOVERY_INTERVAL_MS + 101);
+  expect(twice.atEpochMs - twice.discoveredAtEpochMs).toBe(DISCOVERY_INTERVAL_MS + 201);
+  expect(readResidentFrames([twice], 10, 0).errors.join(' ')).toContain('invalid or stale frame clock (');
 });
 
 // CI 42358862597: Linux frames read status/cmdline of every PID on the runner. Discovery still

@@ -35,6 +35,16 @@ describe('保存Workerの返信境界', () => {
       expect(isPcadSaveReply(value)).toBe(true);
     }
   });
+
+  it('成功は実バイト1つか部分の並びのどちらか一方だけを受け、部分は空でないUint8Arrayの列に限る', () => {
+    const parts = [Uint8Array.of(0x50, 0x4b), new Uint8Array(0), Uint8Array.of(3)];
+    expect(isPcadSaveReply({ id: 'one', kind: 'success', parts })).toBe(true);
+    for (const value of [{ id: 'one', kind: 'success', parts: [] }, { id: 'one', kind: 'success', parts: [[1]] },
+      { id: 'one', kind: 'success', parts: Uint8Array.of(1) }, { id: 'one', kind: 'success', parts: [Uint8Array.of(1), 'x'] },
+      { id: 'one', kind: 'success', parts, bytes: Uint8Array.of(1) }, { id: 'one', kind: 'success' }]) {
+      expect(isPcadSaveReply(value)).toBe(false);
+    }
+  });
 });
 
 describe('3MF Worker 専用境界', () => {

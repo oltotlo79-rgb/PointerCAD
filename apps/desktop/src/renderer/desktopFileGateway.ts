@@ -99,22 +99,43 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 }
 
 /**
- * 「保存」のバイト列を、本体が開始で答えた大きさに分けて順に送り、確定の答え(名前か null)を返す
- * (案B、2026-11-13。1 回で送ると本体プロセスで全体の写しが 2 つ重なり、保存中の記憶量の山になった)。
- * 各回は `slice` で独立した並びにする。`subarray` の見せ方を送ると、構造化複製が元の全体を写すため。
+ * 部分の並び(順につなぐとファイルの全体)を、つないだ全体の `chunkBytes` ごとの独立した並びとして順に作る。
+ * 切れ目は全体の並びを `slice` で分けた時と同じで、部分の境目には依らない。全体の並びは作らない。
+ * 各回を独立した並びにするのは、部分や全体の見せ方(`subarray`)を送ると構造化複製が元の領域全体を写すため。
+ */
+function* savePieces(parts: readonly Uint8Array[], totalBytes: number, chunkBytes: number): Generator<Uint8Array<ArrayBuffer>> {
+  let partIndex = 0, partOffset = 0;
+  for (let offset = 0; offset < totalBytes; offset += chunkBytes) {
+    const piece = new Uint8Array(Math.min(chunkBytes, totalBytes - offset));
+    for (let filled = 0; filled < piece.byteLength;) {
+      const part = parts[partIndex], length = Math.min(part.byteLength - partOffset, piece.byteLength - filled);
+      piece.set(part.subarray(partOffset, partOffset + length), filled);
+      filled += length; partOffset += length;
+      if (partOffset === part.byteLength) { partIndex += 1; partOffset = 0; }
+    }
+    yield piece;
+  }
+}
+
+/**
+ * 「保存」の中身(順につなぐとファイルの全体になる部分の並び)を、本体が開始で答えた大きさに分けて順に送り、
+ * 確定の答え(名前か null)を返す(案B、2026-11-13。1 回で送ると本体プロセスで全体の写しが 2 つ重なり、
+ * 保存中の記憶量の山になった)。大きさ・切れ目・各回の SHA-256 は全体を 1 つで渡した時と同じ。
  * 途中や確定で失敗したら、本体に一時ファイルを捨てさせてから失敗をそのまま返す。取り消し(開始が null)は null。
  */
-async function savePcadInChunks(api: DesktopFileApi, suggestedName: string, bytes: Uint8Array, saveAs: boolean,
+async function savePcadInChunks(api: DesktopFileApi, suggestedName: string, parts: readonly Uint8Array[], saveAs: boolean,
   kind: 'part' | 'assembly' | 'drawing'): Promise<unknown> {
-  const receipt: unknown = await api.beginPcadSave(suggestedName, saveAs, kind, bytes.byteLength);
+  const totalBytes = parts.reduce((total, part) => total + part.byteLength, 0);
+  const receipt: unknown = await api.beginPcadSave(suggestedName, saveAs, kind, totalBytes);
   if (receipt === null || receipt === undefined) return null;
   if (!isSaveReceipt(receipt)) throw new Error(t('file.saveFailed'));
   const { transferId, chunkBytes } = receipt;
   try {
-    for (let index = 0, offset = 0; offset < bytes.byteLength; index += 1, offset += chunkBytes) {
-      const piece = bytes.slice(offset, Math.min(offset + chunkBytes, bytes.byteLength));
+    let index = 0;
+    for (const piece of savePieces(parts, totalBytes, chunkBytes)) {
       const accepted: unknown = await api.sendPcadSaveChunk(transferId, index, piece, await sha256Hex(piece));
       if (accepted !== true) throw new Error(t('file.saveFailed'));
+      index += 1;
     }
     return await api.commitPcadSave(transferId);
   } catch (error) {
@@ -346,6 +367,23 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
     },
   );
 
+  /** `savePcad` と `savePcadParts` の共通の保存。中身は順につなぐとファイルの全体になる部分の並び。 */
+  const saveContent = async (suggestedName: string, parts: readonly Uint8Array[], saveAs: boolean,
+    kind: 'part' | 'assembly' | 'drawing'): Promise<string | null> => {
+    const revision = ++targetStateVersion;
+    const result: unknown = await savePcadInChunks(api, suggestedName, parts, saveAs, kind);
+    if (revision !== targetStateVersion) return null;
+    if (result === null || result === undefined) {
+      // 取り消された。
+      return null;
+    }
+    if (typeof result !== 'string') {
+      throw new Error(t('file.saveFailed'));
+    }
+    hasTarget = true;
+    return result;
+  };
+
   const base: FileGateway = {
     ...desktopCamGateway(api),
     async openPcad(kind): Promise<PickedFile | null> {
@@ -383,19 +421,12 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
       void api.clearSaveTarget().catch(() => undefined);
     },
 
-    async savePcad(suggestedName, bytes, saveAs, kind): Promise<string | null> {
-      const revision = ++targetStateVersion;
-      const result: unknown = await savePcadInChunks(api, suggestedName, bytes, saveAs, kind ?? 'part');
-      if (revision !== targetStateVersion) return null;
-      if (result === null || result === undefined) {
-        // 取り消された。
-        return null;
-      }
-      if (typeof result !== 'string') {
-        throw new Error(t('file.saveFailed'));
-      }
-      hasTarget = true;
-      return result;
+    savePcad(suggestedName, bytes, saveAs, kind): Promise<string | null> {
+      return saveContent(suggestedName, [bytes], saveAs, kind ?? 'part');
+    },
+
+    savePcadParts(suggestedName, parts, saveAs, kind): Promise<string | null> {
+      return saveContent(suggestedName, parts, saveAs, kind ?? 'part');
     },
 
     hasSaveTarget(): boolean {

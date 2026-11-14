@@ -91,11 +91,22 @@ def is_complete(records: list[dict]) -> bool:
 
     if last.get("type") == "assistant":
         return bool(handback_ids(last))
-    if len(meaningful) >= 2:
-        ids = handback_ids(meaningful[-2])
-        results = {str(b.get("tool_use_id")) for b in blocks(last) if b.get("type") == "tool_result"}
-        return bool(ids & results)
-    return False
+    # 2026-11-13(rules/06 §10.512): 最後の回で道具を並べて呼ぶと(例: Edit と SubagentHandback)、assistant の記録が
+    # 2 つ以上続き、その後に tool_result だけの user の記録が 2 つ以上続く。末尾の tool_result だけの user の並びと、
+    # その前の assistant の並び(最後の回)をまとめて見る。user の記録に tool_result 以外(新しい依頼)があれば稼働中。
+    index = len(meaningful) - 1
+    results: set[str] = set()
+    while index >= 0 and meaningful[index].get("type") == "user":
+        record_blocks = blocks(meaningful[index])
+        if not record_blocks or any(b.get("type") != "tool_result" for b in record_blocks):
+            return False
+        results |= {str(b.get("tool_use_id")) for b in record_blocks}
+        index -= 1
+    ids: set[str] = set()
+    while index >= 0 and meaningful[index].get("type") == "assistant":
+        ids |= handback_ids(meaningful[index])
+        index -= 1
+    return bool(ids & results)
 
 
 def agents(transcript: str, now: datetime) -> list[dict]:
@@ -111,7 +122,9 @@ def agents(transcript: str, now: datetime) -> list[dict]:
         if not conversation.is_file():
             continue
         updated = datetime.fromtimestamp(conversation.stat().st_mtime)
-        complete = is_complete(tail_records(conversation))
+        # 2026-11-13(rules/06 §10.512): Claude Code は担当が終わると meta.json に "finished": true を書き、再開すると消す
+        # (再開中の担当の meta には無い)。これがあれば記録の末尾の形によらず完了と数える。
+        complete = meta.get("finished") is True or is_complete(tail_records(conversation))
         result.append({
             "id": agent_id, "description": str(meta.get("description", "")),
             "updated": updated, "active": not complete and now - updated <= STALE,

@@ -11,10 +11,10 @@ import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
 import { strToU8, unzipSync, zipSync, type ZipOptions } from 'fflate';
 import type * as Fflate from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
-import { FIXED_ENTRY_MTIME, readPcadFile, writePcadFile, zipPcadEntries, zipPcadEntriesAsync } from './pcadFile.js';
+import { FIXED_ENTRY_MTIME, readPcadFile, writePcadFile, zipPcadEntries, zipPcadEntriesPartsAsync } from './pcadFile.js';
 import { readArchive } from './readArchive.js';
 import { finishZipCrc32, startZipCrc32, updateZipCrc32, zipCrc32 } from './zipCrc32.js';
-import { hasSteppedZipEntry, zipEntriesSteps, zipEntriesSync, zipEntriesWithOwnedBuffersAsync,
+import { concatZipParts, hasSteppedZipEntry, zipEntriesSteps, zipEntriesSync, zipEntriesWithOwnedBuffersPartsAsync,
   zipEntriesWithOwnedBuffersSteps, type ZipStepEntry } from './zipSteps.js';
 
 // ESM namespace exports are immutable: use a hoisted module mock that delegates normally.
@@ -52,6 +52,16 @@ function digest(bytes: ArrayBufferView | undefined): string {
   if (bytes === undefined) return 'missing';
   const view = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   return `${String(bytes.byteLength)}:${createHash('sha256').update(view).digest('hex')}`;
+}
+
+/** 部分の並びを返す口の結果を順につないだ全体。各検査が従来の書き手・同期の書き手の全バイトと照合する。 */
+async function joinedPcadZip(...args: Parameters<typeof zipPcadEntriesPartsAsync>): Promise<Uint8Array> {
+  return concatZipParts(await zipPcadEntriesPartsAsync(...args));
+}
+
+/** 所有する入力を消費する内部経路の部分の並びを、順につないだ全体。 */
+async function joinedOwnedZip(...args: Parameters<typeof zipEntriesWithOwnedBuffersPartsAsync>): Promise<Uint8Array> {
+  return concatZipParts(await zipEntriesWithOwnedBuffersPartsAsync(...args));
 }
 
 function legacyZip(entries: ReadonlyMap<string, ZipStepEntry>): Uint8Array {
@@ -120,7 +130,7 @@ describe('保存が所有するscratchだけを圧縮後に切り離す内部経
     const other = new Uint8Array(bytes.buffer);
     const entries = new Map([['first.bin', entry(bytes, 6)], ['second.bin', entry(other, level)]]);
     const expected = zipEntriesSync(entries);
-    const result = await zipEntriesWithOwnedBuffersAsync(entries, new Set([bytes.buffer as ArrayBuffer]));
+    const result = await joinedOwnedZip(entries, new Set([bytes.buffer as ArrayBuffer]));
     expect(digest(bytes)).toBe(digest(original));
     expect(digest(result)).toBe(digest(expected));
     expectSameEntries(result, entries);
@@ -134,10 +144,10 @@ describe('保存が所有するscratchだけを圧縮後に切り離す内部経
       ['stored', entry(stored, 0)], ['empty', entry(empty, 6)], ['shared', entry(shared, 6)]]);
     const before = [...entries.values()].map(([bytes]) => digest(bytes));
     const owned = new Set([backing.buffer, stored.buffer, empty.buffer, shared.buffer] as ArrayBuffer[]);
-    const result = await zipEntriesWithOwnedBuffersAsync(entries, owned);
+    const result = await joinedOwnedZip(entries, owned);
     expect([...entries.values()].map(([bytes]) => digest(bytes))).toEqual(before);
-    expect(digest(await zipPcadEntriesAsync(entries))).toBe(digest(result));
-    expect(digest(await zipPcadEntriesAsync(entries))).toBe(digest(result));
+    expect(digest(await joinedPcadZip(entries))).toBe(digest(result));
+    expect(digest(await joinedPcadZip(entries))).toBe(digest(result));
     expect([...entries.values()].map(([bytes]) => digest(bytes))).toEqual(before);
     expectSameEntries(result, entries);
   });
@@ -145,7 +155,7 @@ describe('保存が所有するscratchだけを圧縮後に切り離す内部経
   it('通常の借用APIは単独の全領域compressed bufferも消費せず2回保存できる', async () => {
     const bytes = structuredBytes(2 * ZIP_STEP_BYTES + 5), before = digest(bytes);
     const entries = new Map([['borrowed', entry(bytes, 6)]]);
-    const first = await zipPcadEntriesAsync(entries), second = await zipPcadEntriesAsync(entries);
+    const first = await joinedPcadZip(entries), second = await joinedPcadZip(entries);
     expect(digest(bytes)).toBe(before);
     expect(digest(first)).toBe(digest(second));
     expectSameEntries(second, entries);
@@ -155,7 +165,7 @@ describe('保存が所有するscratchだけを圧縮後に切り離す内部経
     const bytes = structuredBytes(2 * ZIP_STEP_BYTES + 5), borrowed = Uint8Array.of(7, 8, 9);
     const before = digest(bytes), controller = new AbortController();
     const entries = new Map([['owned', entry(bytes, 6)], ['borrowed', entry(borrowed, 6)]]);
-    const running = zipEntriesWithOwnedBuffersAsync(entries, new Set([bytes.buffer as ArrayBuffer]), { signal: controller.signal });
+    const running = joinedOwnedZip(entries, new Set([bytes.buffer as ArrayBuffer]), { signal: controller.signal });
     controller.abort();
     await expect(running.then(() => 'unexpected ZIP success')).rejects.toMatchObject({ name: 'AbortError' });
     expect(digest(bytes)).toBe(before);
@@ -178,14 +188,14 @@ describe('保存が所有するscratchだけを圧縮後に切り離す内部経
     expect(bytes.byteOffset).toBe(0);
     expect(bytes.byteLength).toBe(bytes.buffer.byteLength);
     await withTransfer(undefined, async () => {
-      const output = await zipEntriesWithOwnedBuffersAsync(entries, new Set([bytes.buffer as ArrayBuffer]));
+      const output = await joinedOwnedZip(entries, new Set([bytes.buffer as ArrayBuffer]));
       expect(digest(output)).toBe(digest(expected));
       expect(digest(bytes)).toBe(before);
       expectSameEntries(output, entries);
     });
     const failure = new Error('native transfer failure');
     await withTransfer(() => { throw failure; }, async () => {
-      await expect(zipEntriesWithOwnedBuffersAsync(entries, new Set([bytes.buffer as ArrayBuffer]))
+      await expect(joinedOwnedZip(entries, new Set([bytes.buffer as ArrayBuffer]))
         .then(() => 'unexpected ZIP success')).rejects.toBe(failure);
       expect(digest(bytes)).toBe(before);
     });
@@ -195,7 +205,7 @@ describe('保存が所有するscratchだけを圧縮後に切り離す内部経
     const bytes = Uint8Array.of(1, 2, 3), before = digest(bytes);
     compressionOverride.alias = true; compressionOverride.calls = 0;
     try {
-      await zipEntriesWithOwnedBuffersAsync(new Map([['alias', entry(bytes, 6)]]), new Set([bytes.buffer]));
+      await joinedOwnedZip(new Map([['alias', entry(bytes, 6)]]), new Set([bytes.buffer]));
       expect(digest(bytes)).toBe(before);
       expect(compressionOverride.calls).toBe(1);
     } finally { compressionOverride.alias = false; }
@@ -269,10 +279,35 @@ describe('区切って圧縮する ZIP の書き手(R06)', () => {
     const entries = largeEntries();
     expect(hasSteppedZipEntry(entries)).toBe(true);
     const synchronous = zipPcadEntries(entries);
-    const asynchronous = await zipPcadEntriesAsync(entries);
+    const asynchronous = await joinedPcadZip(entries);
     expect(digest(asynchronous)).toBe(digest(synchronous));
     expect(digest(zipEntriesSync(entries))).toBe(digest(synchronous));
     expectSameEntries(synchronous, entries);
+  });
+
+  it('部分の並びの口は全体の並びを作らず、順につなぐと一括の書き手と全バイトが一致する', async () => {
+    const entries = largeEntries(), expected = zipPcadEntries(entries);
+    const parts = await zipPcadEntriesPartsAsync(entries);
+    // 項目ごとの見出し・圧縮した中身と、最後の目録が別の部分になる。
+    expect(parts.length).toBeGreaterThan(2 * entries.size);
+    // どの部分の領域も全体の半分に満たない(組み立ての最後に全体の大きさの並びを確保しない)。
+    for (const part of parts) expect(part.buffer.byteLength).toBeLessThan(expected.byteLength / 2);
+    expect(parts.reduce((total, part) => total + part.byteLength, 0)).toBe(expected.byteLength);
+    expect(digest(concatZipParts(parts))).toBe(digest(expected));
+    expectSameEntries(concatZipParts(parts), entries);
+    // 所有する入力を消費する内部経路も、同じ部分の並びの形で同じバイト列になる。
+    const ownedBytes = structuredBytes(2 * ZIP_STEP_BYTES + 9);
+    const ownedExpected = zipEntriesSync(new Map([['mesh.bin', entry(ownedBytes.slice(), 6)]]));
+    const ownedParts = await zipEntriesWithOwnedBuffersPartsAsync(new Map([['mesh.bin', entry(ownedBytes, 6)]]),
+      new Set([ownedBytes.buffer as ArrayBuffer]));
+    expect(ownedParts.length).toBeGreaterThan(2);
+    expect(digest(concatZipParts(ownedParts))).toBe(digest(ownedExpected));
+    // 小さい項目だけの ZIP は一括の書き手の出力 1 つで、つなぐ時も写さずにそのまま返す。
+    const small = new Map([['a.txt', entry(strToU8('a'), 6)]]);
+    const smallParts = await zipPcadEntriesPartsAsync(small);
+    expect(smallParts).toHaveLength(1);
+    expect(concatZipParts(smallParts)).toBe(smallParts[0]);
+    expect(smallParts[0]).toEqual(zipPcadEntries(small));
   });
 
   it('大きい項目は 1MiB ごとに処理を返す(1 回の区切りで扱うのは 1MiB 以下)', () => {
@@ -291,7 +326,7 @@ describe('区切って圧縮する ZIP の書き手(R06)', () => {
     const entries = largeEntries();
     const timers = vi.spyOn(globalThis, 'setTimeout');
     try {
-      await zipPcadEntriesAsync(entries);
+      await joinedPcadZip(entries);
       expect(timers.mock.calls.length).toBeGreaterThanOrEqual(entries.size + 6);
     } finally { timers.mockRestore(); }
   });
@@ -299,12 +334,12 @@ describe('区切って圧縮する ZIP の書き手(R06)', () => {
   it('取消は区切りで効き、途中の ZIP を返さない', async () => {
     const before = new AbortController();
     before.abort();
-    await expect(zipPcadEntriesAsync(largeEntries(), { signal: before.signal })).rejects.toMatchObject({ name: 'AbortError' });
-    await expect(zipPcadEntriesAsync(new Map([['a.txt', entry(strToU8('a'), 6)]]), { signal: before.signal }))
+    await expect(joinedPcadZip(largeEntries(), { signal: before.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(joinedPcadZip(new Map([['a.txt', entry(strToU8('a'), 6)]]), { signal: before.signal }))
       .rejects.toMatchObject({ name: 'AbortError' });
     // 圧縮を始めた後の次のタスクで取り消す(1つ目の区切りの後)。
     const during = new AbortController();
-    const running = zipPcadEntriesAsync(largeEntries(), { signal: during.signal });
+    const running = joinedPcadZip(largeEntries(), { signal: during.signal });
     setTimeout(() => { during.abort(); }, 0);
     await expect(running.then(() => 'unexpected ZIP success')).rejects.toMatchObject({ name: 'AbortError' });
     // 区切りの手順そのものも、再開した区切りで取消を確かめる。

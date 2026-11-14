@@ -21,6 +21,26 @@ configure_project_temp(Path(__file__).resolve().parents[1])
 SOURCE = Path(__file__).resolve().parent
 
 
+def copy_check_ps1_libraries(scripts: Path) -> list[str]:
+    """scripts/lib の .ps1 を全て写しへ置く(上の一覧に無い物だけ)。check.ps1 が読み込む lib を足すたびに一覧を直し忘れて、
+    写しの check.ps1 が読込みで落ちないように(rules/06 §10.507。2026-11-13 の quickCrashDiagnostics.ps1)。写した名前を返す。"""
+    copied = []
+    for library in sorted((SOURCE / 'lib').glob('*.ps1')):
+        target = scripts / 'lib' / library.name
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(library, target)
+            copied.append(library.name)
+    return copied
+
+
+def check_ps1_dot_sourced_libraries() -> list[str]:
+    """check.ps1 が `. (Join-Path $scriptDirectory "lib\\<名前>.ps1")` の形で読み込む lib の名前。"""
+    import re
+    text = (SOURCE / 'check.ps1').read_text(encoding='utf-8-sig')
+    return re.findall(r'Join-Path \$scriptDirectory "lib[\\/]([A-Za-z0-9_.-]+\.ps1)"', text)
+
+
 class ReceiptHookTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='pointercad-receipt-hooks-')
@@ -62,6 +82,7 @@ class ReceiptHookTests(unittest.TestCase):
             shutil.copyfile(SOURCE / relative, target)
             if relative.startswith('hooks/'):
                 target.chmod(0o755)
+        copy_check_ps1_libraries(self.root / 'scripts')
         # The real self-test launches a missing-test diagnostic against the same
         # repository. Its invalidation must not erase the enclosing full check.
         self.write('scripts/check.selftest.ps1', '''
@@ -401,6 +422,19 @@ process.exitCode = process.env.PCAD_PRODUCT_EXIT === '7' ? 7 : 0;
         self.assertEqual([line for line in self.calls()[len(before):] if line.startswith('run ')],
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
         self.assertTrue(proof.exists())
+
+
+class CheckPs1LibraryCopyTests(unittest.TestCase):
+    """写しの check.ps1 が読み込む lib が、写しに全てあること(rules/06 §10.507)。PowerShell も git も起動しない。"""
+
+    def test_every_dot_sourced_library_is_copied(self):
+        names = check_ps1_dot_sourced_libraries()
+        self.assertIn('networkRetry.ps1', names)
+        with tempfile.TemporaryDirectory(prefix='pointercad-lib-copy-') as folder:
+            scripts = Path(folder) / 'scripts'
+            copy_check_ps1_libraries(scripts)
+            missing = [name for name in names if not (scripts / 'lib' / name).is_file()]
+        self.assertEqual(missing, [], 'check.ps1 が読み込む lib が写しに無い')
 
 
 class ReceiptTimeoutObservationTests(unittest.TestCase):

@@ -6,17 +6,30 @@ import { isNamedSavePoint, type CreatedSavePointListing, type NamedSavePoint, ty
 export interface PcadSaveRequest {
   readonly id: string;
   readonly input: SaveDocumentInput;
+  /**
+   * true なら、成功の返信を順につなぐとファイルの全体になる部分の並び(`parts`)で返す。全体の並びを作らずに
+   * 主スレッドへ移すための依頼で、部分のまま書ける保存先へ渡す部品の保存だけが使う。省略時は今の 1 つの並び(`bytes`)。
+   */
+  readonly replyAsParts?: boolean;
 }
 export type PcadSaveReply =
   | { readonly id: string; readonly kind: 'progress'; readonly stage: SaveEncodingStage }
   | { readonly id: string; readonly kind: 'success'; readonly bytes: Uint8Array }
+  | { readonly id: string; readonly kind: 'success'; readonly parts: readonly Uint8Array[] }
   | { readonly id: string; readonly kind: 'failure'; readonly message: string };
+
+/** 成功の中身は 1 つの並びか、空でない部分の並びのどちらか一方だけ。 */
+function isSaveOutput(value: object): boolean {
+  if ('bytes' in value) return !('parts' in value) && value.bytes instanceof Uint8Array;
+  return 'parts' in value && Array.isArray(value.parts) && value.parts.length > 0
+    && value.parts.every((part: unknown) => part instanceof Uint8Array);
+}
 
 export function isPcadSaveReply(value: unknown): value is PcadSaveReply {
   if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string'
     || !('kind' in value)) return false;
   if (value.kind === 'progress') return 'stage' in value && (value.stage === 'preparing' || value.stage === 'compressing');
-  if (value.kind === 'success') return 'bytes' in value && value.bytes instanceof Uint8Array;
+  if (value.kind === 'success') return isSaveOutput(value);
   return value.kind === 'failure' && 'message' in value && typeof value.message === 'string';
 }
 

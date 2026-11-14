@@ -20,8 +20,6 @@ import type { ResolvedSubShape } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import {
   arcPointAt,
-  curveEnd,
-  curveStart,
   ellipsePointAt,
   FULL_TURN,
   FULL_TURN_EPSILON,
@@ -30,7 +28,6 @@ import {
   traceCurveChain,
 } from './intersectionMath.js';
 import { radiusComponentKey } from './constraints/variables.js';
-import { resolveCopyFeature } from './copyMath.js';
 import {
   baseWorkPlane,
   degreesToRadians,
@@ -41,7 +38,6 @@ import {
   type WorkPlane,
   type WorkPlaneId,
 } from './planeMath.js';
-import { offsetCacheKey } from './offsetMath.js';
 import {
   resolveCoordinate,
   vertexKey,
@@ -49,6 +45,24 @@ import {
   type ResolveContext,
   type ResolveOutcome,
 } from './resolveCoordinate.js';
+import {
+  resolveCopyFeatureStep,
+  resolveFunctionCurveStep,
+  resolveOffsetStep,
+  resolveProjectionStep,
+} from './resolveSketchDerived.js';
+import {
+  createSketchResolveState,
+  needsWorkPlane,
+  recordCurve,
+  recordCurveGroup,
+  recordPoints,
+  sketchError as error,
+  sketchResultOf,
+  type SketchFeatureStep,
+  type SketchResolveLookups,
+  type SketchResolveState,
+} from './resolveSketchState.js';
 import {
   hasDuplicateSplinePoint,
   MAX_SPLINE_POINTS,
@@ -62,9 +76,6 @@ import {
 } from './splineMath.js';
 import type {
   FreeArcOrientation,
-  OffsetContourShape,
-  PendingOffset,
-  PendingProjection,
   PointArrayLayout,
   ResolvedArc,
   ResolvedCurve,
@@ -74,11 +85,18 @@ import type {
   ResolvedSegment,
   ResolvedSketch,
   ResolvedSpline,
+  SketchArcFeature,
   SketchDocument,
-  SketchElementRef,
+  SketchEllipseFeature,
   SketchError,
-  SketchErrorCode,
   SketchFaceFeature,
+  SketchFeature,
+  SketchLineFeature,
+  SketchPointArrayFeature,
+  SketchPointFeature,
+  SketchPolygonFeature,
+  SketchRectangleFeature,
+  SketchSlotFeature,
   SketchSplineFeature,
 } from './types.js';
 import {
@@ -217,10 +235,6 @@ function curveSamplePoints(curve: ResolvedCurve): Vec3[] {
   }
 }
 
-function error(featureId: string, code: SketchErrorCode, message: string): SketchError {
-  return { featureId, code, message };
-}
-
 /** 直角(ラジアン)。長穴の半円弧の開始角・終了角(中心の xAxis から ±90°)に使う。 */
 const QUARTER_TURN = Math.PI / 2;
 
@@ -233,25 +247,6 @@ type PolylineCurve = ResolvedSegment | ResolvedArc;
 type CurvesOutcome =
   | { readonly ok: true; readonly curves: readonly PolylineCurve[] }
   | { readonly ok: false; readonly error: SketchError };
-
-/**
- * 複数曲線フィーチャー(矩形・正多角形・長穴)の曲線を、種類ごとに `segments` / `arcs` へ積む。
- * 線分・円弧の単体フィーチャーと同じ配列に並ぶことで、UI 側(pickMath.ts 等)が
- * 既存の `sketch.segments` / `sketch.arcs` の走査をそのまま使える。
- */
-function pushCurves(
-  curves: readonly PolylineCurve[],
-  segments: ResolvedSegment[],
-  arcs: ResolvedArc[],
-): void {
-  for (const curve of curves) {
-    if (curve.kind === 'segment') {
-      segments.push(curve);
-    } else {
-      arcs.push(curve);
-    }
-  }
-}
 
 /**
  * 矩形(FR-314)の 4 辺を対角 2 点から作る。対角の 2 点を作図面へ
@@ -588,172 +583,6 @@ function resolvePointArrayFeature(
   }
 }
 
-type OffsetSourceOutcome =
-  | { readonly ok: true; readonly curves: readonly ResolvedCurve[] }
-  | { readonly ok: false; readonly error: SketchError };
-
-/**
- * オフセット元(FR-321)の要素を、選んだ順に曲線の列へ広げる。
- *
- * 参照の解き方は面の境界(`resolveFace`)と同じ約束にそろえる: 単体の線・円弧・楕円・
- * スプラインはそのまま 1 本、矩形などの複数曲線フィーチャーは `index` を省けば全周、
- * 指定すれば n 番目だけ。点・点列は線ではないので選べない。
- */
-function collectOffsetSource(
-  featureId: string,
-  source: readonly SketchElementRef[],
-  curveByFeature: ReadonlyMap<string, ResolvedCurve>,
-  curvesByFeature: ReadonlyMap<string, readonly ResolvedCurve[]>,
-): OffsetSourceOutcome {
-  if (source.length === 0) {
-    return {
-      ok: false,
-      error: error(featureId, 'tooFewPoints', 'ずらす線・円弧が選ばれていません。'),
-    };
-  }
-  const curves: ResolvedCurve[] = [];
-  for (const reference of source) {
-    const single = curveByFeature.get(reference.featureId);
-    if (single !== undefined) {
-      curves.push(single);
-      continue;
-    }
-    const group = curvesByFeature.get(reference.featureId);
-    if (group === undefined) {
-      return {
-        ok: false,
-        error: error(
-          featureId,
-          'missingBase',
-          `ずらすもとの線が見つかりません: ${reference.featureId}`,
-        ),
-      };
-    }
-    if (reference.index === undefined) {
-      curves.push(...group);
-      continue;
-    }
-    const selected = group[reference.index];
-    if (selected === undefined) {
-      return {
-        ok: false,
-        error: error(
-          featureId,
-          'missingBase',
-          `ずらすもとの線が見つかりません: ${reference.featureId}#${String(reference.index)}`,
-        ),
-      };
-    }
-    curves.push(selected);
-  }
-  return { ok: true, curves };
-}
-
-type ContourOutcome =
-  | { readonly ok: true; readonly shape: OffsetContourShape }
-  | { readonly ok: false; readonly error: SketchError };
-
-/** 開いた輪郭の起点と進む向きをまとめる。向きが定まらなければ断る。 */
-function openContour(
-  featureId: string,
-  startPoint: Vec3,
-  towards: Vec3,
-  normal: Vec3,
-): ContourOutcome {
-  const along = subVec3(towards, startPoint);
-  if (lengthVec3(along) <= SKETCH_TOLERANCE_MM) {
-    return {
-      ok: false,
-      error: error(featureId, 'degenerate', 'ずらすもとの線の向きが定まりません。'),
-    };
-  }
-  return {
-    ok: true,
-    shape: {
-      closed: false,
-      startPoint,
-      startDirection: normalizeVec3(along),
-      normal,
-    },
-  };
-}
-
-/**
- * オフセット元の曲線の列が並んだ順につながっているかを確かめ、輪になっているか・
- * 開いているならどこからどちら向きにたどり始めるかを返す(FR-321)。
- *
- * たどり方は `resolveCurveLoop`(面の境界)と同じなので、歩き方そのものは
- * `intersectionMath.ts` の `traceCurveChain` に 1 つだけ置いてある(共通化した)。
- * 違うのは**閉じていなくてもよい**ところと、**1 本目を逆向きにたどってよい**ところで、
- * 開いた輪郭は片側へずらした 1 本の曲線になる(`makeOffsetWire.ts` の `IsOpenResult`)。
- *
- * 進む向きは 1 本目の**端から端への向き**(弦)で近似する。ずらした側の左右を見分ける
- * のに使うだけなので、接線との差が 90 度未満であれば判定は変わらない(半周までの
- * 円弧・楕円弧はこれを満たす)。
- */
-function analyzeOffsetContour(
-  featureId: string,
-  curves: readonly ResolvedCurve[],
-  normal: Vec3,
-): ContourOutcome {
-  // 1 本だけのときは `traceCurveChain` が「1 本で輪になるか」(全周の円・全周の楕円・
-  // 閉じたスプライン)をそのまま答えるので、ここで分けなくてよい。
-  const traced = traceCurveChain(curves, { allowReversedFirst: true });
-  if (!traced.ok) {
-    return {
-      ok: false,
-      error: error(featureId, 'notClosed', '選んだ線・円弧の端がつながっていません。'),
-    };
-  }
-  if (traced.chain.closed) {
-    return { ok: true, shape: { closed: true } };
-  }
-  return openContour(featureId, traced.chain.start, traced.chain.afterFirst, normal);
-}
-
-/** 覚え書きから来た曲線に、いまのオフセットフィーチャーの id を付け直す。 */
-function retagCurve(curve: ResolvedCurve, featureId: string): ResolvedCurve {
-  switch (curve.kind) {
-    case 'segment':
-      return { ...curve, featureId };
-    case 'arc':
-      return { ...curve, featureId };
-    case 'ellipse':
-      return { ...curve, featureId };
-    case 'spline':
-      return { ...curve, featureId };
-  }
-}
-
-/**
- * 解決済みの曲線を種類ごとの配列へ積む。オフセットの結果は線分・円弧しか返らない
- * (`makeOffsetWire.ts`)が、型の上では 4 種すべて来うるので全部を受ける。
- */
-function pushResolvedCurves(
-  curves: readonly ResolvedCurve[],
-  segments: ResolvedSegment[],
-  arcs: ResolvedArc[],
-  ellipses: ResolvedEllipse[],
-  splines: ResolvedSpline[],
-): void {
-  for (const curve of curves) {
-    switch (curve.kind) {
-      case 'segment':
-        segments.push(curve);
-        break;
-      case 'arc':
-        arcs.push(curve);
-        break;
-      case 'ellipse':
-        ellipses.push(curve);
-        break;
-      case 'spline':
-        splines.push(curve);
-        break;
-    }
-  }
-}
-
 /**
  * 解決のときに外から渡せる手掛かり。
  *
@@ -927,666 +756,474 @@ function resolveArcOrientation(
 }
 
 /**
- * 3D スケッチ(作図面なし、FR-330)では作れない図形を断る。
- *
- * 3D スケッチで作れるのは点・線分・円弧・スプライン・面の 5 つ(要件 FR-330)。
- * 矩形・正多角形・長穴・楕円・点列は「作図面の中の並び」で形が決まる図形なので、
- * 平面が無いと形自体が定まらない。作図面を選び直せば作れるので、そう伝える。
- */
-function needsWorkPlane(featureId: string, label: string): SketchError {
-  return error(
-    featureId,
-    'missingBase',
-    `3D スケッチでは${label}を作れません。作図面を選んでから作ってください。`,
-  );
-}
-
-/**
  * スケッチの履歴を先頭から順に解決する(要件§6.3)。
  * 途中のフィーチャーが解決できなくても止めず、そのフィーチャーだけを errors に入れて先へ進む
  * (FR-504、NFR-RE-1)。解決できなかったフィーチャーは以後の参照先にならない。
+ *
+ * 1 回の解決の記録は `resolveSketchState.ts`、種類ごとの解き方はこのファイルの resolve…Step と
+ * `resolveSketchDerived.ts` が持つ。ここは記録を作り、履歴を 1 行ずつ渡すだけ。
  */
 export function resolveSketch(
   document: SketchDocument,
   options: SketchResolveOptions = {},
 ): ResolvedSketch {
-  const lookupWorkPlane = options.workPlane ?? baseWorkPlane;
-  // 渡されなければ `resolvePointReference` が保存された指紋の位置を使う。
-  const subShape = options.subShape;
-  // 渡されなければ球面上の点(FR-431)は「球が見つかりません」で断る。
-  const sphere = options.sphere;
-  // 渡されなければ、すべてのオフセットが「まだ計算していない」扱いになる。
-  const lookupOffset = options.offsetCurves ?? ((): null => null);
-  // 渡されなければ、すべての投影・交差が「まだ計算していない」扱いになる。
-  const lookupProjection = options.projectedCurves ?? ((): null => null);
+  const lookups = createSketchResolveLookups(options);
+  const state = createSketchResolveState();
+  for (const feature of document.features) {
+    resolveHistoryStep(feature, options, lookups, state);
+  }
+  return sketchResultOf(state);
+}
+
+/** 外から渡された引き口に、渡されなかったときの既定を入れる。 */
+function createSketchResolveLookups(options: SketchResolveOptions): SketchResolveLookups {
   // 拘束を解いた結果の差し込み(FR-313)。渡されなければ何も上書きしないので、
   // 拘束を持たない文書の解決は 1 行も余分な処理を通らない。
   const pointOverrides = options.pointOverrides;
   const radiusOverrides = options.radiusOverrides;
-  const overridePoint = (key: string, value: Vec3): Vec3 => pointOverrides?.get(key) ?? value;
-  const overrideRadius = (key: string, value: number): number =>
-    radiusOverrides?.get(key) ?? value;
-  const pendingOffsets: PendingOffset[] = [];
-  const pendingProjections: PendingProjection[] = [];
-  const points: ResolvedPoint[] = [];
-  const segments: ResolvedSegment[] = [];
-  const arcs: ResolvedArc[] = [];
-  const ellipses: ResolvedEllipse[] = [];
-  const splines: ResolvedSpline[] = [];
-  const faces: ResolvedFace[] = [];
-  const errors: SketchError[] = [];
-  const vertices = new Map<string, Vec3>();
-  const curveByFeature = new Map<string, ResolvedCurve>();
-  const pointsByFeature = new Map<string, readonly ResolvedPoint[]>();
-  /**
-   * 矩形・正多角形・長穴のように「1 フィーチャーが複数の曲線を生む」結果。
-   * 既存の線分・円弧(1 フィーチャー = 1 曲線)は単数の curveByFeature のまま残す
-   * (既存の呼び出し側を壊さないため)。
-   */
-  const curvesByFeature = new Map<string, readonly ResolvedCurve[]>();
-  /**
-   * 構築線(FR-320)の featureId。線・円弧・矩形・正多角形・長穴・楕円・スプラインが
-   * `construction: true` を持つときにここへ足す。`resolveFace` が面の境界に選ばれていないか
-   * ここを見て断る(解決済みの曲線(`ResolvedCurve`)自体には construction を持たせない
-   * ため、featureId で引く)。
-   */
-  const constructionFeatureIds = new Set<string>();
-  /** 「直前の点」(FR-302)。点を作ったフィーチャーと線・円弧の終点で更新する。 */
-  let previous: Vec3 | null = null;
-
-  for (const feature of document.features) {
-    const invalid = options.invalidInputs?.get(feature.id);
-    if (invalid !== undefined) {
-      errors.push({ featureId: feature.id, code: 'invalidValue', message: invalid });
-      // A failed point-producing step must not make "previous" silently refer to an older point.
-      if (feature.kind !== 'face') previous = null;
-      continue;
-    }
-    // 面は作図面を使わない(境界に選んだ要素だけで決まる)ので、作図面を引く前に片づける。
-    if (feature.kind === 'face') {
-      const face = resolveFace(
-        feature,
-        pointsByFeature,
-        curveByFeature,
-        curvesByFeature,
-        constructionFeatureIds,
-      );
-      if (!face.ok) {
-        errors.push(face.error);
-        continue;
-      }
-      faces.push(face.value);
-      continue;
-    }
-
-    // 作図面は基準の 3 面か、部品文書の作業平面フィーチャー(FR-328)。
-    // 3D スケッチ(FR-330)だけは「作図面が無い」ことが正しい状態なので、
-    // 引く前に分ける。それ以外で見つからなければ、そのフィーチャーだけを断って先へ進む
-    // (FR-504、NFR-RE-1)。
-    const free = isFreeWorkPlaneId(feature.planeId);
-    const plane = free ? null : lookupWorkPlane(feature.planeId);
-    if (!free && plane === null) {
-      errors.push(
-        error(feature.id, 'missingBase', `作図面が見つかりません: ${feature.planeId}`),
-      );
-      continue;
-    }
-    const context: ResolveContext = { plane, points, previous, vertices, subShape, sphere, functionPoint:options.functionPoint,
-      partPoint: options.partPoint };
-
-    if (feature.kind === 'point') {
-      const at = resolveCoordinate(feature.at, context, feature.id);
-      if (!at.ok) {
-        errors.push(at.error);
-        continue;
-      }
-      // 拘束を解いた位置があればそれを使う。以後の参照(相対座標の基準・
-      // 面の境界)はすべてこの位置を見るので、上書きは下流へそのまま伝わる。
-      const position = overridePoint(feature.id, at.value);
-      const resolved: ResolvedPoint = { id: feature.id, featureId: feature.id, position,
-        producerAnchor: { kind: 'point', featureId: feature.id } };
-      points.push(resolved);
-      pointsByFeature.set(feature.id, [resolved]);
-      vertices.set(vertexKey(feature.id, 'start'), position);
-      vertices.set(vertexKey(feature.id, 'end'), position);
-      previous = position;
-      continue;
-    }
-
-    if (feature.kind === 'line') {
-      const from = resolveCoordinate(feature.from, context, feature.id);
-      if (!from.ok) {
-        errors.push(from.error);
-        continue;
-      }
-      const fromPoint = overridePoint(vertexKey(feature.id, 'start'), from.value);
-      // 終点は始点を「直前の点」として解決できるようにする(FR-307 の連続描画)。
-      // 始点が上書きされていれば、相対指定の終点はその新しい始点から測る。
-      const to = resolveCoordinate(feature.to, { ...context, previous: fromPoint }, feature.id);
-      if (!to.ok) {
-        errors.push(to.error);
-        continue;
-      }
-      const toPoint = overridePoint(vertexKey(feature.id, 'end'), to.value);
-      if (isSamePoint(fromPoint, toPoint)) {
-        errors.push(error(feature.id, 'degenerate', '線分の長さが 0 です。'));
-        continue;
-      }
-      const segment: ResolvedSegment = {
-        kind: 'segment',
-        featureId: feature.id,
-        from: fromPoint,
-        to: toPoint,
-      };
-      segments.push(segment);
-      curveByFeature.set(feature.id, segment);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      vertices.set(vertexKey(feature.id, 'start'), fromPoint);
-      vertices.set(vertexKey(feature.id, 'end'), toPoint);
-      previous = toPoint;
-      continue;
-    }
-
-    if (feature.kind === 'arc') {
-      const center = resolveCoordinate(feature.center, context, feature.id);
-      if (!center.ok) {
-        errors.push(center.error);
-        continue;
-      }
-      const centerPoint = overridePoint(vertexKey(feature.id, 'center'), center.value);
-      const radius = overrideRadius(
-        radiusComponentKey(feature.id, 'radius'),
-        feature.radius.value,
-      );
-      if (!Number.isFinite(radius) || radius < 0) {
-        errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
-        continue;
-      }
-      // 半径 0(と許容誤差に埋もれる大きさ)は円弧として成り立たない。
-      if (radius <= SKETCH_TOLERANCE_MM) {
-        errors.push(error(feature.id, 'degenerate', '半径が小さすぎて円弧になりません。'));
-        continue;
-      }
-      if (!Number.isFinite(feature.startAngle.value) || !Number.isFinite(feature.endAngle.value)) {
-        errors.push(error(feature.id, 'invalidValue', '角度の値が数になっていません。'));
-        continue;
-      }
-      const startAngle = degreesToRadians(feature.startAngle.value);
-      const endAngle = degreesToRadians(feature.endAngle.value);
-      if (Math.abs(endAngle - startAngle) <= FULL_TURN_EPSILON) {
-        errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
-        continue;
-      }
-      // 向きは作図面から借りるか、3D スケッチなら円弧自身の指定から作る(FR-330)。
-      const orientation = resolveArcOrientation(
-        feature.id,
-        plane,
-        feature.freeOrientation,
-        context,
-      );
-      if (!orientation.ok) {
-        errors.push(orientation.error);
-        continue;
-      }
-      const arc = withOverriddenEndpoints(
-        {
-          kind: 'arc',
-          featureId: feature.id,
-          center: centerPoint,
-          normal: orientation.value.normal,
-          xAxis: orientation.value.xAxis,
-          radius,
-          startAngle,
-          endAngle,
-        },
-        pointOverrides?.get(vertexKey(feature.id, 'start')),
-        pointOverrides?.get(vertexKey(feature.id, 'end')),
-      );
-      arcs.push(arc);
-      curveByFeature.set(feature.id, arc);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      vertices.set(vertexKey(feature.id, 'center'), centerPoint);
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(arc));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(arc));
-      previous = curveEnd(arc);
-      continue;
-    }
-
-    if (feature.kind === 'pointArray') {
-      if (plane === null) {
-        errors.push(needsWorkPlane(feature.id, '点列'));
-        continue;
-      }
-      const outcome = resolvePointArrayFeature(feature.id, feature.layout, plane, context);
-      if (!outcome.ok) {
-        errors.push(outcome.error);
-        continue;
-      }
-      const created = outcome.points;
-      points.push(...created);
-      pointsByFeature.set(feature.id, created);
-      const last = created[created.length - 1];
-      vertices.set(vertexKey(feature.id, 'start'), created[0].position);
-      vertices.set(vertexKey(feature.id, 'end'), last.position);
-      previous = last.position;
-      continue;
-    }
-
-    if (feature.kind === 'rectangle') {
-      if (plane === null) {
-        errors.push(needsWorkPlane(feature.id, '矩形'));
-        continue;
-      }
-      const corner1 = resolveCoordinate(feature.corner1, context, feature.id);
-      if (!corner1.ok) {
-        errors.push(corner1.error);
-        continue;
-      }
-      // 2 点目は 1 点目を「直前の点」として解決できるようにする(FR-307 と同じ考え方)。
-      const corner2 = resolveCoordinate(
-        feature.corner2,
-        { ...context, previous: corner1.value },
-        feature.id,
-      );
-      if (!corner2.ok) {
-        errors.push(corner2.error);
-        continue;
-      }
-      const rectangle = resolveRectangleCurves(feature.id, plane, corner1.value, corner2.value);
-      if (!rectangle.ok) {
-        errors.push(rectangle.error);
-        continue;
-      }
-      pushCurves(rectangle.curves, segments, arcs);
-      curvesByFeature.set(feature.id, rectangle.curves);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      const first = rectangle.curves[0];
-      const last = rectangle.curves[rectangle.curves.length - 1];
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(first));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(last));
-      previous = curveEnd(last);
-      continue;
-    }
-
-    if (feature.kind === 'polygon') {
-      if (plane === null) {
-        errors.push(needsWorkPlane(feature.id, '正多角形'));
-        continue;
-      }
-      const center = resolveCoordinate(feature.center, context, feature.id);
-      if (!center.ok) {
-        errors.push(center.error);
-        continue;
-      }
-      const sides = feature.sides.value;
-      if (!Number.isFinite(sides) || !Number.isInteger(sides) || sides < 3) {
-        errors.push(error(feature.id, 'invalidValue', '辺の数は 3 以上にしてください。'));
-        continue;
-      }
-      const radius = feature.radius.value;
-      if (!Number.isFinite(radius) || radius < 0) {
-        errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
-        continue;
-      }
-      if (radius <= SKETCH_TOLERANCE_MM) {
-        errors.push(error(feature.id, 'degenerate', '半径が小さすぎて正多角形になりません。'));
-        continue;
-      }
-      const polygon = resolvePolygonCurves(
-        feature.id,
-        plane,
-        center.value,
-        sides,
-        feature.radiusMode,
-        radius,
-      );
-      if (!polygon.ok) {
-        errors.push(polygon.error);
-        continue;
-      }
-      pushCurves(polygon.curves, segments, arcs);
-      curvesByFeature.set(feature.id, polygon.curves);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      const first = polygon.curves[0];
-      const last = polygon.curves[polygon.curves.length - 1];
-      vertices.set(vertexKey(feature.id, 'center'), center.value);
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(first));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(last));
-      previous = curveEnd(last);
-      continue;
-    }
-
-    if (feature.kind === 'slot') {
-      if (plane === null) {
-        errors.push(needsWorkPlane(feature.id, '長穴'));
-        continue;
-      }
-      const center1 = resolveCoordinate(feature.center1, context, feature.id);
-      if (!center1.ok) {
-        errors.push(center1.error);
-        continue;
-      }
-      const center2 = resolveCoordinate(
-        feature.center2,
-        { ...context, previous: center1.value },
-        feature.id,
-      );
-      if (!center2.ok) {
-        errors.push(center2.error);
-        continue;
-      }
-      const width = feature.width.value;
-      if (!Number.isFinite(width) || width < 0) {
-        errors.push(error(feature.id, 'invalidValue', '幅は 0 より大きい必要があります。'));
-        continue;
-      }
-      const slot = resolveSlotCurves(feature.id, plane, center1.value, center2.value, width);
-      if (!slot.ok) {
-        errors.push(slot.error);
-        continue;
-      }
-      pushCurves(slot.curves, segments, arcs);
-      curvesByFeature.set(feature.id, slot.curves);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      const first = slot.curves[0];
-      const last = slot.curves[slot.curves.length - 1];
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(first));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(last));
-      previous = curveEnd(last);
-      continue;
-    }
-
-    if (feature.kind === 'ellipse') {
-      if (plane === null) {
-        errors.push(needsWorkPlane(feature.id, '楕円'));
-        continue;
-      }
-      const center = resolveCoordinate(feature.center, context, feature.id);
-      if (!center.ok) {
-        errors.push(center.error);
-        continue;
-      }
-      const centerPoint = overridePoint(vertexKey(feature.id, 'center'), center.value);
-      const majorRadius = overrideRadius(
-        radiusComponentKey(feature.id, 'major'),
-        feature.majorRadius.value,
-      );
-      const minorRadius = overrideRadius(
-        radiusComponentKey(feature.id, 'minor'),
-        feature.minorRadius.value,
-      );
-      if (
-        !Number.isFinite(majorRadius) ||
-        !Number.isFinite(minorRadius) ||
-        majorRadius < 0 ||
-        minorRadius < 0
-      ) {
-        errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
-        continue;
-      }
-      // 半径 0(と許容誤差に埋もれる大きさ)は楕円として成り立たない(円弧と同じ扱い)。
-      if (majorRadius <= SKETCH_TOLERANCE_MM || minorRadius <= SKETCH_TOLERANCE_MM) {
-        errors.push(error(feature.id, 'degenerate', '半径が小さすぎて楕円になりません。'));
-        continue;
-      }
-      // 長軸と短軸が入れ替わっているとカーネルが断る(makeEllipseEdge.ts)ので、ここで先に伝える。
-      if (majorRadius < minorRadius) {
-        errors.push(
-          error(feature.id, 'invalidValue', '長軸の半径は短軸の半径より大きくしてください。'),
-        );
-        continue;
-      }
-      if (
-        !Number.isFinite(feature.rotation.value) ||
-        !Number.isFinite(feature.startAngle.value) ||
-        !Number.isFinite(feature.endAngle.value)
-      ) {
-        errors.push(error(feature.id, 'invalidValue', '角度の値が数になっていません。'));
-        continue;
-      }
-      const startAzimuth = degreesToRadians(feature.startAngle.value);
-      const endAzimuth = degreesToRadians(feature.endAngle.value);
-      if (Math.abs(endAzimuth - startAzimuth) <= FULL_TURN_EPSILON) {
-        errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
-        continue;
-      }
-      const ellipse: ResolvedEllipse = {
-        kind: 'ellipse',
-        featureId: feature.id,
-        center: centerPoint,
-        normal: plane.normal,
-        // 長軸の向きは作図面の第1軸から rotation だけ回した向き(円弧・点列と同じ規約)。
-        majorAxis: directionInPlane(plane, feature.rotation.value),
-        majorRadius,
-        minorRadius,
-        // 利用者が入れる方位角をパラメータ角へ直してから持つ。
-        startAngle: azimuthToEllipseParameter(startAzimuth, majorRadius, minorRadius),
-        endAngle: azimuthToEllipseParameter(endAzimuth, majorRadius, minorRadius),
-      };
-      ellipses.push(ellipse);
-      curveByFeature.set(feature.id, ellipse);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      vertices.set(vertexKey(feature.id, 'center'), centerPoint);
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(ellipse));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(ellipse));
-      previous = curveEnd(ellipse);
-      continue;
-    }
-
-    if (feature.kind === 'spline') {
-      const spline = resolveSplineFeature(feature, context, previous, overridePoint);
-      if (!spline.ok) {
-        errors.push(spline.error);
-        continue;
-      }
-      splines.push(spline.value);
-      curveByFeature.set(feature.id, spline.value);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(spline.value));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(spline.value));
-      previous = curveEnd(spline.value);
-      continue;
-    }
-
-    if (feature.kind === 'offset') {
-      // 左右の基準になる法線が要るので、オフセットは作図面のあるスケッチだけで作れる
-      // (3D スケッチでは断る)。
-      if (plane === null) {
-        errors.push(needsWorkPlane(feature.id, 'オフセット'));
-        continue;
-      }
-      const source = collectOffsetSource(
-        feature.id,
-        feature.source,
-        curveByFeature,
-        curvesByFeature,
-      );
-      if (!source.ok) {
-        errors.push(source.error);
-        continue;
-      }
-      const distance = feature.distance.value;
-      if (!Number.isFinite(distance) || distance < 0) {
-        errors.push(
-          error(feature.id, 'invalidValue', 'ずらす距離は 0 以上の数で指定してください。'),
-        );
-        continue;
-      }
-      const contour = analyzeOffsetContour(feature.id, source.curves, plane.normal);
-      if (!contour.ok) {
-        errors.push(contour.error);
-        continue;
-      }
-      const key = offsetCacheKey({
-        curves: source.curves,
-        distance,
-        side: feature.side,
-        corner: feature.corner,
-      });
-      const remembered = lookupOffset(key);
-      if (remembered === null) {
-        // まだ形が無いだけで失敗ではないので errors には入れない(投影・交差と同じ扱い)。
-        pendingOffsets.push({
-          featureId: feature.id,
-          key,
-          curves: source.curves,
-          distance,
-          side: feature.side,
-          corner: feature.corner,
-          contour: contour.shape,
-        });
-        continue;
-      }
-      if (remembered.length === 0) {
-        errors.push(error(feature.id, 'degenerate', 'ずらした結果が空になりました。'));
-        continue;
-      }
-      const created = remembered.map((curve) => retagCurve(curve, feature.id));
-      pushResolvedCurves(created, segments, arcs, ellipses, splines);
-      curvesByFeature.set(feature.id, created);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      const firstCreated = created[0];
-      const lastCreated = created[created.length - 1];
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(firstCreated));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(lastCreated));
-      previous = curveEnd(lastCreated);
-      continue;
-    }
-
-    if (feature.kind === 'copy') {
-      // 複製は「もとを id で参照する 1 フィーチャー」なので、ここまでに解決できた
-      // 点・曲線をそのまま写す(FR-324、`copyMath.ts` の注釈)。
-      const copied = resolveCopyFeature(
-        feature,
-        plane,
-        context,
-        { curveByFeature, curvesByFeature, pointsByFeature },
-        lookupWorkPlane,
-      );
-      if (!copied.ok) {
-        errors.push(copied.error);
-        continue;
-      }
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      // 点の複製と曲線の複製は同時に起きない(`collectCopySource` が混在を断る)。
-      if (copied.points.length > 0) {
-        points.push(...copied.points);
-        pointsByFeature.set(feature.id, copied.points);
-        const lastPoint = copied.points[copied.points.length - 1];
-        vertices.set(vertexKey(feature.id, 'start'), copied.points[0].position);
-        vertices.set(vertexKey(feature.id, 'end'), lastPoint.position);
-        previous = lastPoint.position;
-        continue;
-      }
-      pushResolvedCurves(copied.curves, segments, arcs, ellipses, splines);
-      curvesByFeature.set(feature.id, copied.curves);
-      const firstCopy = copied.curves[0];
-      const lastCopy = copied.curves[copied.curves.length - 1];
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(firstCopy));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(lastCopy));
-      previous = curveEnd(lastCopy);
-      continue;
-    }
-
-    if (feature.kind === 'functionCurve') {
-      const remembered = options.functionCurves?.(feature.id);
-      if (remembered == null || remembered.length === 0) {
-        previous = null;
-        errors.push(error(feature.id, 'invalidValue', remembered == null
-          ? '関数の再計算が完了していません。'
-          : '指定したXYZの範囲に曲線がありません。'));
-        continue;
-      }
-      const created = remembered.map(curve => retagCurve(curve, feature.id));
-      pushResolvedCurves(created, segments, arcs, ellipses, splines);
-      curvesByFeature.set(feature.id, created);
-      if (feature.construction) constructionFeatureIds.add(feature.id);
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(created[0]));
-      previous = curveEnd(created[created.length - 1]);
-      vertices.set(vertexKey(feature.id, 'end'), previous);
-      continue;
-    }
-
-    if (feature.kind === 'projectedCurve' || feature.kind === 'planeSection') {
-      // 投影先・切り口は作図面そのものなので、3D スケッチ(作図面なし)では作れない。
-      if (plane === null) {
-        errors.push(
-          needsWorkPlane(feature.id, feature.kind === 'projectedCurve' ? '投影' : '交差'),
-        );
-        continue;
-      }
-      const remembered = lookupProjection(feature.id);
-      if (remembered === null) {
-        // まだ形が無いだけで失敗ではないので errors には入れない(オフセットと同じ扱い)。
-        pendingProjections.push({
-          featureId: feature.id,
-          source:
-            feature.kind === 'projectedCurve'
-              ? { kind: 'subShape', ref: feature.source }
-              : { kind: 'body', bodyFeatureId: feature.targetFeatureId },
-          plane,
-        });
-        continue;
-      }
-      if (remembered.length === 0) {
-        // 交差は「交わらなければ 0 本」が正しい結果なので、ここで理由を出して断る
-        // (カーネルは例外を投げない。`makeSection.ts` の決め)。
-        errors.push(
-          error(
-            feature.id,
-            'degenerate',
-            feature.kind === 'projectedCurve'
-              ? '投影しても線になりませんでした。作図面の向きを見直してください。'
-              : '立体と作図面が交わりません。作図面の位置を見直してください。',
-          ),
-        );
-        continue;
-      }
-      const created = remembered.map((curve) => retagCurve(curve, feature.id));
-      pushResolvedCurves(created, segments, arcs, ellipses, splines);
-      curvesByFeature.set(feature.id, created);
-      if (feature.construction) {
-        constructionFeatureIds.add(feature.id);
-      }
-      const firstCreated = created[0];
-      const lastCreated = created[created.length - 1];
-      vertices.set(vertexKey(feature.id, 'start'), curveStart(firstCreated));
-      vertices.set(vertexKey(feature.id, 'end'), curveEnd(lastCreated));
-      previous = curveEnd(lastCreated);
-      continue;
-    }
-  }
-
   return {
-    points,
-    segments,
-    arcs,
-    ellipses,
-    splines,
-    faces,
-    errors,
-    pendingOffsets,
-    pendingProjections,
-    curvesByFeature,
+    workPlane: options.workPlane ?? baseWorkPlane,
+    // 渡されなければ、すべてのオフセットが「まだ計算していない」扱いになる。
+    offsetCurves: options.offsetCurves ?? ((): null => null),
+    // 渡されなければ、すべての投影・交差が「まだ計算していない」扱いになる。
+    projectedCurves: options.projectedCurves ?? ((): null => null),
+    // 渡されなければ、関数の曲線はすべて「再計算が完了していない」扱いになる。
+    functionCurves: (featureId) => options.functionCurves?.(featureId),
+    pointOverrides,
+    overridePoint: (key, value) => pointOverrides?.get(key) ?? value,
+    overrideRadius: (key, value) => radiusOverrides?.get(key) ?? value,
   };
+}
+
+/** 履歴の 1 行を解く。値の不正な入力 → 面 → 作図面を引く → 種類ごとの解き方、の順に見る。 */
+function resolveHistoryStep(
+  feature: SketchFeature,
+  options: SketchResolveOptions,
+  lookups: SketchResolveLookups,
+  state: SketchResolveState,
+): void {
+  const invalid = options.invalidInputs?.get(feature.id);
+  if (invalid !== undefined) {
+    state.errors.push({ featureId: feature.id, code: 'invalidValue', message: invalid });
+    // A failed point-producing step must not make "previous" silently refer to an older point.
+    if (feature.kind !== 'face') {
+      state.previous = null;
+    }
+    return;
+  }
+  // 面は作図面を使わない(境界に選んだ要素だけで決まる)ので、作図面を引く前に片づける。
+  if (feature.kind === 'face') {
+    resolveFaceStep(feature, state);
+    return;
+  }
+  // 作図面は基準の 3 面か、部品文書の作業平面フィーチャー(FR-328)。
+  // 3D スケッチ(FR-330)だけは「作図面が無い」ことが正しい状態なので、
+  // 引く前に分ける。それ以外で見つからなければ、そのフィーチャーだけを断って先へ進む
+  // (FR-504、NFR-RE-1)。
+  const free = isFreeWorkPlaneId(feature.planeId);
+  const plane = free ? null : lookups.workPlane(feature.planeId);
+  if (!free && plane === null) {
+    state.errors.push(
+      error(feature.id, 'missingBase', `作図面が見つかりません: ${feature.planeId}`),
+    );
+    return;
+  }
+  // subShape が渡されなければ `resolvePointReference` が保存された指紋の位置を使う。
+  // sphere が渡されなければ球面上の点(FR-431)は「球が見つかりません」で断る。
+  const context: ResolveContext = {
+    plane,
+    points: state.points,
+    previous: state.previous,
+    vertices: state.vertices,
+    subShape: options.subShape,
+    sphere: options.sphere,
+    functionPoint: options.functionPoint,
+    partPoint: options.partPoint,
+  };
+  resolvePlacedFeature(feature, { plane, context, state, lookups });
+}
+
+/** 面(FR-309)。境界に選んだ要素だけで決まる。解決できた面だけを faces へ積む。 */
+function resolveFaceStep(feature: SketchFaceFeature, state: SketchResolveState): void {
+  const face = resolveFace(
+    feature,
+    state.pointsByFeature,
+    state.curveByFeature,
+    state.curvesByFeature,
+    state.constructionFeatureIds,
+  );
+  if (!face.ok) {
+    state.errors.push(face.error);
+    return;
+  }
+  state.faces.push(face.value);
+}
+
+/** 作図面の上(3D スケッチを含む)のフィーチャーを、種類ごとの解き方へ渡す。 */
+function resolvePlacedFeature(
+  feature: Exclude<SketchFeature, SketchFaceFeature>,
+  step: SketchFeatureStep,
+): void {
+  switch (feature.kind) {
+    case 'point':
+      resolvePointStep(feature, step);
+      return;
+    case 'line':
+      resolveLineStep(feature, step);
+      return;
+    case 'arc':
+      resolveArcStep(feature, step);
+      return;
+    case 'pointArray':
+      resolvePointArrayStep(feature, step);
+      return;
+    case 'rectangle':
+      resolveRectangleStep(feature, step);
+      return;
+    case 'polygon':
+      resolvePolygonStep(feature, step);
+      return;
+    case 'slot':
+      resolveSlotStep(feature, step);
+      return;
+    case 'ellipse':
+      resolveEllipseStep(feature, step);
+      return;
+    case 'spline':
+      resolveSplineStep(feature, step);
+      return;
+    case 'offset':
+      resolveOffsetStep(feature, step);
+      return;
+    case 'copy':
+      resolveCopyFeatureStep(feature, step);
+      return;
+    case 'functionCurve':
+      resolveFunctionCurveStep(feature, step);
+      return;
+    case 'projectedCurve':
+    case 'planeSection':
+      resolveProjectionStep(feature, step);
+      return;
+  }
+}
+
+/** 点(FR-301)。 */
+function resolvePointStep(feature: SketchPointFeature, step: SketchFeatureStep): void {
+  const at = resolveCoordinate(feature.at, step.context, feature.id);
+  if (!at.ok) {
+    step.state.errors.push(at.error);
+    return;
+  }
+  // 拘束を解いた位置があればそれを使う。以後の参照(相対座標の基準・
+  // 面の境界)はすべてこの位置を見るので、上書きは下流へそのまま伝わる。
+  const position = step.lookups.overridePoint(feature.id, at.value);
+  const resolved: ResolvedPoint = {
+    id: feature.id,
+    featureId: feature.id,
+    position,
+    producerAnchor: { kind: 'point', featureId: feature.id },
+  };
+  recordPoints(step.state, feature.id, [resolved]);
+}
+
+/** 線分(FR-304)。 */
+function resolveLineStep(feature: SketchLineFeature, step: SketchFeatureStep): void {
+  const { context, state, lookups } = step;
+  const from = resolveCoordinate(feature.from, context, feature.id);
+  if (!from.ok) {
+    state.errors.push(from.error);
+    return;
+  }
+  const fromPoint = lookups.overridePoint(vertexKey(feature.id, 'start'), from.value);
+  // 終点は始点を「直前の点」として解決できるようにする(FR-307 の連続描画)。
+  // 始点が上書きされていれば、相対指定の終点はその新しい始点から測る。
+  const to = resolveCoordinate(feature.to, { ...context, previous: fromPoint }, feature.id);
+  if (!to.ok) {
+    state.errors.push(to.error);
+    return;
+  }
+  const toPoint = lookups.overridePoint(vertexKey(feature.id, 'end'), to.value);
+  if (isSamePoint(fromPoint, toPoint)) {
+    state.errors.push(error(feature.id, 'degenerate', '線分の長さが 0 です。'));
+    return;
+  }
+  const segment: ResolvedSegment = {
+    kind: 'segment',
+    featureId: feature.id,
+    from: fromPoint,
+    to: toPoint,
+  };
+  recordCurve(state, feature.id, feature.construction, segment);
+}
+
+/** 円弧(FR-305)。 */
+function resolveArcStep(feature: SketchArcFeature, step: SketchFeatureStep): void {
+  const { context, state, lookups } = step;
+  const center = resolveCoordinate(feature.center, context, feature.id);
+  if (!center.ok) {
+    state.errors.push(center.error);
+    return;
+  }
+  const centerPoint = lookups.overridePoint(vertexKey(feature.id, 'center'), center.value);
+  const radius = lookups.overrideRadius(
+    radiusComponentKey(feature.id, 'radius'),
+    feature.radius.value,
+  );
+  if (!Number.isFinite(radius) || radius < 0) {
+    state.errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
+    return;
+  }
+  // 半径 0(と許容誤差に埋もれる大きさ)は円弧として成り立たない。
+  if (radius <= SKETCH_TOLERANCE_MM) {
+    state.errors.push(error(feature.id, 'degenerate', '半径が小さすぎて円弧になりません。'));
+    return;
+  }
+  if (!Number.isFinite(feature.startAngle.value) || !Number.isFinite(feature.endAngle.value)) {
+    state.errors.push(error(feature.id, 'invalidValue', '角度の値が数になっていません。'));
+    return;
+  }
+  const startAngle = degreesToRadians(feature.startAngle.value);
+  const endAngle = degreesToRadians(feature.endAngle.value);
+  if (Math.abs(endAngle - startAngle) <= FULL_TURN_EPSILON) {
+    state.errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
+    return;
+  }
+  // 向きは作図面から借りるか、3D スケッチなら円弧自身の指定から作る(FR-330)。
+  const orientation = resolveArcOrientation(
+    feature.id,
+    step.plane,
+    feature.freeOrientation,
+    context,
+  );
+  if (!orientation.ok) {
+    state.errors.push(orientation.error);
+    return;
+  }
+  const arc = withOverriddenEndpoints(
+    {
+      kind: 'arc',
+      featureId: feature.id,
+      center: centerPoint,
+      normal: orientation.value.normal,
+      xAxis: orientation.value.xAxis,
+      radius,
+      startAngle,
+      endAngle,
+    },
+    lookups.pointOverrides?.get(vertexKey(feature.id, 'start')),
+    lookups.pointOverrides?.get(vertexKey(feature.id, 'end')),
+  );
+  state.vertices.set(vertexKey(feature.id, 'center'), centerPoint);
+  recordCurve(state, feature.id, feature.construction, arc);
+}
+
+/** 点列(FR-308、FR-327)。作図面の中の並びで決まるので、3D スケッチでは断る。 */
+function resolvePointArrayStep(feature: SketchPointArrayFeature, step: SketchFeatureStep): void {
+  const { plane, state } = step;
+  if (plane === null) {
+    state.errors.push(needsWorkPlane(feature.id, '点列'));
+    return;
+  }
+  const outcome = resolvePointArrayFeature(feature.id, feature.layout, plane, step.context);
+  if (!outcome.ok) {
+    state.errors.push(outcome.error);
+    return;
+  }
+  recordPoints(state, feature.id, outcome.points);
+}
+
+/** 矩形(FR-314)。 */
+function resolveRectangleStep(feature: SketchRectangleFeature, step: SketchFeatureStep): void {
+  const { plane, context, state } = step;
+  if (plane === null) {
+    state.errors.push(needsWorkPlane(feature.id, '矩形'));
+    return;
+  }
+  const corner1 = resolveCoordinate(feature.corner1, context, feature.id);
+  if (!corner1.ok) {
+    state.errors.push(corner1.error);
+    return;
+  }
+  // 2 点目は 1 点目を「直前の点」として解決できるようにする(FR-307 と同じ考え方)。
+  const corner2 = resolveCoordinate(
+    feature.corner2,
+    { ...context, previous: corner1.value },
+    feature.id,
+  );
+  if (!corner2.ok) {
+    state.errors.push(corner2.error);
+    return;
+  }
+  const rectangle = resolveRectangleCurves(feature.id, plane, corner1.value, corner2.value);
+  if (!rectangle.ok) {
+    state.errors.push(rectangle.error);
+    return;
+  }
+  recordCurveGroup(state, feature.id, feature.construction, rectangle.curves);
+}
+
+/** 正多角形(FR-315)。中心を端点の手掛かり `center` にも残す。 */
+function resolvePolygonStep(feature: SketchPolygonFeature, step: SketchFeatureStep): void {
+  const { plane, state } = step;
+  if (plane === null) {
+    state.errors.push(needsWorkPlane(feature.id, '正多角形'));
+    return;
+  }
+  const center = resolveCoordinate(feature.center, step.context, feature.id);
+  if (!center.ok) {
+    state.errors.push(center.error);
+    return;
+  }
+  const sides = feature.sides.value;
+  if (!Number.isFinite(sides) || !Number.isInteger(sides) || sides < 3) {
+    state.errors.push(error(feature.id, 'invalidValue', '辺の数は 3 以上にしてください。'));
+    return;
+  }
+  const radius = feature.radius.value;
+  if (!Number.isFinite(radius) || radius < 0) {
+    state.errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
+    return;
+  }
+  if (radius <= SKETCH_TOLERANCE_MM) {
+    state.errors.push(error(feature.id, 'degenerate', '半径が小さすぎて正多角形になりません。'));
+    return;
+  }
+  const polygon = resolvePolygonCurves(
+    feature.id,
+    plane,
+    center.value,
+    sides,
+    feature.radiusMode,
+    radius,
+  );
+  if (!polygon.ok) {
+    state.errors.push(polygon.error);
+    return;
+  }
+  state.vertices.set(vertexKey(feature.id, 'center'), center.value);
+  recordCurveGroup(state, feature.id, feature.construction, polygon.curves);
+}
+
+/** 長穴(FR-316)。2 つ目の中心は 1 つ目を「直前の点」として解決できる。 */
+function resolveSlotStep(feature: SketchSlotFeature, step: SketchFeatureStep): void {
+  const { plane, context, state } = step;
+  if (plane === null) {
+    state.errors.push(needsWorkPlane(feature.id, '長穴'));
+    return;
+  }
+  const center1 = resolveCoordinate(feature.center1, context, feature.id);
+  if (!center1.ok) {
+    state.errors.push(center1.error);
+    return;
+  }
+  const center2 = resolveCoordinate(
+    feature.center2,
+    { ...context, previous: center1.value },
+    feature.id,
+  );
+  if (!center2.ok) {
+    state.errors.push(center2.error);
+    return;
+  }
+  const width = feature.width.value;
+  if (!Number.isFinite(width) || width < 0) {
+    state.errors.push(error(feature.id, 'invalidValue', '幅は 0 より大きい必要があります。'));
+    return;
+  }
+  const slot = resolveSlotCurves(feature.id, plane, center1.value, center2.value, width);
+  if (!slot.ok) {
+    state.errors.push(slot.error);
+    return;
+  }
+  recordCurveGroup(state, feature.id, feature.construction, slot.curves);
+}
+
+/** 楕円(FR-318)。利用者が入れる方位角を、楕円の径数方程式のパラメータ角へ直してから持つ。 */
+function resolveEllipseStep(feature: SketchEllipseFeature, step: SketchFeatureStep): void {
+  const { plane, state, lookups } = step;
+  if (plane === null) {
+    state.errors.push(needsWorkPlane(feature.id, '楕円'));
+    return;
+  }
+  const center = resolveCoordinate(feature.center, step.context, feature.id);
+  if (!center.ok) {
+    state.errors.push(center.error);
+    return;
+  }
+  const centerPoint = lookups.overridePoint(vertexKey(feature.id, 'center'), center.value);
+  const majorRadius = lookups.overrideRadius(
+    radiusComponentKey(feature.id, 'major'),
+    feature.majorRadius.value,
+  );
+  const minorRadius = lookups.overrideRadius(
+    radiusComponentKey(feature.id, 'minor'),
+    feature.minorRadius.value,
+  );
+  if (
+    !Number.isFinite(majorRadius) ||
+    !Number.isFinite(minorRadius) ||
+    majorRadius < 0 ||
+    minorRadius < 0
+  ) {
+    state.errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
+    return;
+  }
+  // 半径 0(と許容誤差に埋もれる大きさ)は楕円として成り立たない(円弧と同じ扱い)。
+  if (majorRadius <= SKETCH_TOLERANCE_MM || minorRadius <= SKETCH_TOLERANCE_MM) {
+    state.errors.push(error(feature.id, 'degenerate', '半径が小さすぎて楕円になりません。'));
+    return;
+  }
+  // 長軸と短軸が入れ替わっているとカーネルが断る(makeEllipseEdge.ts)ので、ここで先に伝える。
+  if (majorRadius < minorRadius) {
+    state.errors.push(
+      error(feature.id, 'invalidValue', '長軸の半径は短軸の半径より大きくしてください。'),
+    );
+    return;
+  }
+  if (
+    !Number.isFinite(feature.rotation.value) ||
+    !Number.isFinite(feature.startAngle.value) ||
+    !Number.isFinite(feature.endAngle.value)
+  ) {
+    state.errors.push(error(feature.id, 'invalidValue', '角度の値が数になっていません。'));
+    return;
+  }
+  const startAzimuth = degreesToRadians(feature.startAngle.value);
+  const endAzimuth = degreesToRadians(feature.endAngle.value);
+  if (Math.abs(endAzimuth - startAzimuth) <= FULL_TURN_EPSILON) {
+    state.errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
+    return;
+  }
+  const ellipse: ResolvedEllipse = {
+    kind: 'ellipse',
+    featureId: feature.id,
+    center: centerPoint,
+    normal: plane.normal,
+    // 長軸の向きは作図面の第1軸から rotation だけ回した向き(円弧・点列と同じ規約)。
+    majorAxis: directionInPlane(plane, feature.rotation.value),
+    majorRadius,
+    minorRadius,
+    startAngle: azimuthToEllipseParameter(startAzimuth, majorRadius, minorRadius),
+    endAngle: azimuthToEllipseParameter(endAzimuth, majorRadius, minorRadius),
+  };
+  state.vertices.set(vertexKey(feature.id, 'center'), centerPoint);
+  recordCurve(state, feature.id, feature.construction, ellipse);
+}
+
+/** スプライン(FR-317)。1 つ目の点はこのフィーチャーを解き始めた時の直前の点を基準にできる。 */
+function resolveSplineStep(feature: SketchSplineFeature, step: SketchFeatureStep): void {
+  const spline = resolveSplineFeature(
+    feature,
+    step.context,
+    step.context.previous,
+    step.lookups.overridePoint,
+  );
+  if (!spline.ok) {
+    step.state.errors.push(spline.error);
+    return;
+  }
+  recordCurve(step.state, feature.id, feature.construction, spline.value);
 }
 
 type SplineOutcome =

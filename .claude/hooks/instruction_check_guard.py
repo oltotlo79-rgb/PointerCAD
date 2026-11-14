@@ -2476,6 +2476,56 @@ def docs_phase_findings(root: Path, display: str, scope_text: str) -> list[str]:
     return []
 
 
+# --- 検査14: 本文の実在しない実パスの警告 (2026-11-14 cl-v104-report-unified-tasks-1114、rules/06 §10.514) ---
+# 統括が UI/UX の点検の指示書に、確かめていない場所「docs/manual」(実在しない)を書いた。③の外の本文に書いた
+# リポジトリの根からの相対のパス(先頭が docs/・packages/・apps/・e2e/・scripts/・rules/・.claude/・scratchpad/claude/)が
+# 根に実在しない時に警告する(警告も起動を止める)。警告しない物: ③に書いた自担当フォルダー(scratchpad/claude/agents/<担当名>/)とその下、
+# `<` `>` `…` `*` を含む並び(書式の例)、コマンドのバッククォート(`python …` など)の中、「新規」「作る」「置く」「無い」「実在しない」「存在しない」のある行のパス。
+# 末尾の `:行番号` `:行-行` は外して確かめる。フォルダーは末尾の / の有無によらず実在を見る。
+BODY_PATH_PATTERN = (
+    r"(?<![\w/.\-])((?:docs|packages|apps|e2e|scripts|rules|\.claude|scratchpad/claude)/"
+    r"[^\s・＋〜、。，,;；()（）「」『』〔〕\[\]`'\"<>|…*]*)")
+BODY_PATH_SKIP_LINE_PATTERN = r"新規|作る|置く|無い|実在しない|存在しない"
+BODY_PATH_OWN_FOLDER_PATTERN = r"scratchpad/claude/agents/([A-Za-z0-9_\-]+)/"
+BODY_PATH_SHOWN = 6
+BODY_PATH_MESSAGE = (
+    "{display} 行{line}: 本文のパス `{path}` が根に実在しない。確かめた実パスに直す(書式の例なら <…> で書く。"
+    "これから作る物なら「新規」を付ける。rules/06 §10.514: 2026-11-14 に確かめていない docs/manual を書いた)")
+
+
+def body_path_findings(root: Path, display: str, lines: list[str], scope_text: str) -> list[str]:
+    own = set(re.findall(BODY_PATH_OWN_FOLDER_PATTERN, scope_text))
+    warnings: list[str] = []
+    # 「新規」「作る」「置く」などの行に書かれたパスは、同じ指示書の別の行に出ても警告しない(これから作る物を何度も書くため)
+    seen: set[str] = set()
+    for line in lines:
+        if re.search(BODY_PATH_SKIP_LINE_PATTERN, line):
+            for match in re.finditer(BODY_PATH_PATTERN, line):
+                seen.add(re.sub(r"(?::\d+)+(?:-\d+)?$", "", match.group(1)).rstrip(".:/、"))
+    for index, line in enumerate(lines):
+        if re.search(BODY_PATH_SKIP_LINE_PATTERN, line):
+            continue
+        for match in re.finditer(BODY_PATH_PATTERN, _strip_command_spans(line)):
+            raw = match.group(1)
+            if raw[-1:] in "<>" or line[match.end():match.end() + 1] in ("<", "*", "…"):
+                continue
+            path = re.sub(r"(?::\d+)+(?:-\d+)?$", "", raw).rstrip(".:/、")
+            if not path or path in seen or path.endswith("/…"):
+                continue
+            folder = re.match(BODY_PATH_OWN_FOLDER_PATTERN, path + "/")
+            if folder and folder.group(1) in own:
+                continue
+            if _exists_under(root, path):
+                continue
+            short = re.fullmatch(r"rules/(\d{2})", path)  # 規約の番号だけの略記(rules/06 など)
+            if short and list((root / "rules").glob(short.group(1) + "*")):
+                continue
+            seen.add(path)
+            warnings.append(BODY_PATH_MESSAGE.format(display=display, line=index + 1, path=path))
+    return warnings[:BODY_PATH_SHOWN]
+
+
+
 def check_instruction_report(root: Path, display_path: str, text: str, now: datetime, *,
                              full_lists: bool = False, scan_seconds: float = HOOK_SCAN_SECONDS,
                              invocation="auto") -> tuple[list[str], list[str]]:
@@ -2541,6 +2591,7 @@ def check_instruction_report(root: Path, display_path: str, text: str, now: date
         ("test-utils の規約の検査", lambda: (testutils_full_findings(display_path, lines, scope_text), [])),
         ("事実の出どころ", lambda: ([], fact_source_findings(display_path, lines))),
         ("独立評価の読まない物", lambda: (review_exclusion_findings(display_path, lines), [])),
+        ("本文のパスの実在", lambda: ([], body_path_findings(root, display_path, lines, scope_text))),
     )
     for name, step in steps:
         try:

@@ -326,6 +326,38 @@ describe('「保存」のバイト列は本体が決めた大きさに分けて�
     expect(sent).toEqual([]);
   });
 
+  it('部分の並びで受けても、全体と同じ大きさ・同じ切れ目・同じSHA-256で順に送る(部分の境目は切れ目とずらす)', async () => {
+    const wholeSave = transferApi({ chunkBytes: 4 });
+    expect(await wholeSave.gateway.savePcad('A.pcad', whole, true, 'part')).toBe('A.pcad');
+    const parts = [Uint8Array.of(1, 2, 3), new Uint8Array(0), Uint8Array.of(4, 5, 6, 7, 8, 9), Uint8Array.of(10)];
+    const before = parts.map(part => [...part]);
+    const split = transferApi({ chunkBytes: 4 });
+    expect(await split.gateway.savePcadParts?.('A.pcad', parts, true, 'part')).toBe('A.pcad');
+    expect(split.api.beginPcadSave.mock.calls).toEqual(wholeSave.api.beginPcadSave.mock.calls);
+    expect(split.sent.map(row => [row.index, [...row.bytes], row.digest]))
+      .toEqual(wholeSave.sent.map(row => [row.index, [...row.bytes], row.digest]));
+    for (const row of split.sent) {
+      // 各回はその回の長さだけの独立した並び。部分の領域の見せ方や、全体の大きさの並びを送らない。
+      expect(row.bytes.buffer.byteLength).toBe(row.bytes.byteLength);
+      expect(parts.some(part => part.buffer === row.bytes.buffer)).toBe(false);
+      expect(row.digest).toBe(await hex(row.bytes));
+    }
+    expect(parts.map(part => [...part])).toEqual(before);
+    expect(split.api.commitPcadSave).toHaveBeenCalledExactlyOnceWith('transfer-1');
+    expect(split.gateway.hasSaveTarget()).toBe(true);
+  });
+
+  it('部分の並びの途中の送信が失敗したら残りを送らず、取消を呼んで失敗をそのまま返す', async () => {
+    const { api, sent, gateway } = transferApi({ chunkBytes: 4, failAt: 1 });
+    await expect(gateway.savePcadParts?.('A.pcad', [whole.subarray(0, 5), whole.subarray(5)], true))
+      .rejects.toThrow('disk full');
+    expect(sent.map(row => row.index)).toEqual([0, 1]);
+    expect(api.beginPcadSave).toHaveBeenCalledExactlyOnceWith('A.pcad', true, 'part', 10);
+    expect(api.commitPcadSave).not.toHaveBeenCalled();
+    expect(api.abortPcadSave).toHaveBeenCalledExactlyOnceWith('transfer-1');
+    expect(gateway.hasSaveTarget()).toBe(false);
+  });
+
   it('旧い一括の口(savePcad)だけを出す preload は保存の口として受けない', () => {
     expect(createDesktopFileGateway({ pointercadDesktop: {
       openPcad: () => Promise.resolve(null), confirmSaveTarget: () => Promise.resolve(true),

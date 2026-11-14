@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyPartDocument, emptyEmbeddedPartAttachments } from '@pointercad/model';
-import { encodeSaveDocument, readPcadFile, writeThreeMf,
+import { concatZipParts, encodeSaveDocument, encodeSaveDocumentParts, readPcadFile, writeThreeMf,
   type SaveDocumentInput, type ThreeMfMeshInput } from '@pointercad/io';
-import { createPcadSaveEncoder, createPcadSavePointClient, createThreeMfExportEncoder,
+import { createPcadSaveEncoder, createPcadSavePointClient, createThreeMfExportEncoder, encodeSaveParts,
   type PcadSaveWorkerPort } from './pcadSaveWorker.js';
 import type { NamedSavePoint } from '../history/namedSavePoints.js';
 import type { PcadSaveRequest, PcadThreeMfRequest, PcadWorkerRequest } from './pcadSaveProtocol.js';
@@ -226,6 +226,57 @@ describe('保存Workerの寿命と応答の採用', () => {
     const worker = fixture(); worker.port.postMessage = () => { throw new Error('clone failed'); };
     await expect(worker.encode(input)).rejects.toMatchObject({ reason: 'rejected', message: 'clone failed' });
     expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('保存Workerから部分の並びのまま受け取る道', () => {
+  it('部分の並びを頼み、移された部分をつながずに返す。つなぐと全体の道と同じバイト列になる', async () => {
+    const worker = fixture(), stages: string[] = [];
+    const pending = encodeSaveParts(worker.encode, input, { onProgress: stage => stages.push(stage) });
+    await worker.ready;
+    const request = worker.captured();
+    expect(request.replyAsParts).toBe(true);
+    const parts = await encodeSaveDocumentParts(request.input, { onProgress: stage => worker.reply({ id: request.id, kind: 'progress', stage }) });
+    worker.reply({ id: request.id, kind: 'success', parts });
+    const received = await pending;
+    expect(received).toBe(parts);
+    expect(concatZipParts(received)).toEqual(await encodeSaveDocument(input));
+    expect(stages).toEqual(['preparing', 'preparing', 'compressing']);
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(worker.port.onmessage).toBeNull();
+  });
+
+  it('全体の依頼は部分の並びを頼まず、頼んだ形と違う成功の返信は断ってWorkerを終了する', async () => {
+    const whole = fixture(), wholePending = whole.encode(input);
+    const wholeRejected = expect(wholePending).rejects.toMatchObject({ name: 'PcadSaveWorkerError', reason: 'rejected' });
+    await whole.ready;
+    expect(whole.captured().replyAsParts).toBeUndefined();
+    whole.reply({ id: whole.captured().id, kind: 'success', parts: [Uint8Array.of(1)] });
+    await wholeRejected; expect(whole.terminate).toHaveBeenCalledTimes(1);
+    const split = fixture(), splitPending = encodeSaveParts(split.encode, input);
+    const splitRejected = expect(splitPending).rejects.toMatchObject({ name: 'PcadSaveWorkerError', reason: 'rejected' });
+    await split.ready;
+    split.reply({ id: split.captured().id, kind: 'success', bytes: Uint8Array.of(1) });
+    await splitRejected; expect(split.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('部分の並びの依頼も取消でWorkerを終了し、遅い成功を捨てる', async () => {
+    const worker = fixture(), controller = new AbortController();
+    const pending = encodeSaveParts(worker.encode, input, { signal: controller.signal });
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await worker.ready;
+    const request = worker.captured(), late = worker.port.onmessage;
+    controller.abort(); await rejected;
+    late?.(new MessageEvent('message', { data: { id: request.id, kind: 'success', parts: await encodeSaveDocumentParts(input) } }));
+    expect(worker.terminate).toHaveBeenCalledTimes(1); expect(worker.port.onmessage).toBeNull();
+  });
+
+  it('差し替えた符号化器(保存Workerでないもの)は今の全体の道を1回だけ通り、その出力1つを返す', async () => {
+    const bytes = await encodeSaveDocument(input), encoder = vi.fn(() => Promise.resolve(bytes));
+    const received = await encodeSaveParts(encoder, input);
+    expect(received).toHaveLength(1);
+    expect(received[0]).toBe(bytes);
+    expect(encoder).toHaveBeenCalledTimes(1);
   });
 });
 

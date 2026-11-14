@@ -83,9 +83,13 @@ function abortCheck(control: ZipStepsControl): void {
 /**
  * ZIP を 1 項目ずつ・大きい項目は 1MiB ずつ作る手順。`yield` の位置が区切りで、
  * 同期の書き手は区切りで止まらずに進め、Worker は区切りごとに処理を返す。
+ *
+ * 結果は、順につなぐと ZIP の全体になる部分の並び(各項目の見出し・圧縮した中身の各部分・最後の目録と終端)。
+ * 全体の大きさの並びをここで確保しないのは、圧縮した中身の部分と全体の写しが同時に残り、
+ * 128MiB の保存で記憶量の山が倍になるため。全体が要る呼び出し側は `concatZipParts` でつなぐ。
  */
-function* buildZipSteps(entries: ReadonlyMap<string, ZipStepEntry>,
-  control: ZipStepsControl = {}, ownedBuffers: ReadonlySet<ArrayBuffer> = new Set()): Generator<void, Uint8Array, void> {
+function* buildZipParts(entries: ReadonlyMap<string, ZipStepEntry>,
+  control: ZipStepsControl = {}, ownedBuffers: ReadonlySet<ArrayBuffer> = new Set()): Generator<void, Uint8Array[], void> {
   const written: WrittenEntry[] = [];
   let offset = 0, centralLength = 0;
   for (const [fileName, [bytes, options]] of entries) {
@@ -118,19 +122,34 @@ function* buildZipSteps(entries: ReadonlyMap<string, ZipStepEntry>,
     yield;
   }
   abortCheck(control);
-  const output = new Uint8Array(offset + centralLength + 22);
-  let cursor = 0;
+  const parts: Uint8Array[] = [];
   for (const entry of written) {
-    cursor = writeHeader(output, cursor, entry, false);
-    for (const part of entry.data) { output.set(part, cursor); cursor += part.length; }
+    const header = new Uint8Array(30 + entry.name.length);
+    writeHeader(header, 0, entry, false);
+    parts.push(header, ...entry.data);
   }
-  const centralStart = cursor;
-  for (const entry of written) cursor = writeHeader(output, cursor, entry, true);
-  writeLittle(output, cursor, 0x06054b50, 4);
-  writeLittle(output, cursor + 8, written.length, 2);
-  writeLittle(output, cursor + 10, written.length, 2);
-  writeLittle(output, cursor + 12, cursor - centralStart, 4);
-  writeLittle(output, cursor + 16, centralStart, 4);
+  // 目録は全項目の見出しと中身の後(位置 offset)から始まり、長さは centralLength。
+  const directory = new Uint8Array(centralLength + 22);
+  let cursor = 0;
+  for (const entry of written) cursor = writeHeader(directory, cursor, entry, true);
+  writeLittle(directory, cursor, 0x06054b50, 4);
+  writeLittle(directory, cursor + 8, written.length, 2);
+  writeLittle(directory, cursor + 10, written.length, 2);
+  writeLittle(directory, cursor + 12, centralLength, 4);
+  writeLittle(directory, cursor + 16, offset, 4);
+  parts.push(directory);
+  return parts;
+}
+
+/**
+ * 部分の並びを 1 つの並びにつなぐ(ファイル 1 つを丸ごと受ける口へ渡す時だけ使う)。
+ * 部分が 1 つならそのまま返し、写さない(小さい ZIP は一括の書き手の出力 1 つになる)。
+ */
+export function concatZipParts(parts: readonly Uint8Array[]): Uint8Array {
+  if (parts.length === 1) return parts[0];
+  const output = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
+  let cursor = 0;
+  for (const part of parts) { output.set(part, cursor); cursor += part.byteLength; }
   return output;
 }
 
@@ -156,13 +175,13 @@ function releaseOwnedBuffer(bytes: Uint8Array, compression: 0 | 8, data: readonl
 /** 借用entryの通常経路。元のbufferを消費せず、同じ入力を再利用できる。 */
 export function* zipEntriesSteps(entries: ReadonlyMap<string, ZipStepEntry>,
   control: ZipStepsControl = {}): Generator<void, Uint8Array, void> {
-  return yield* buildZipSteps(entries, control);
+  return concatZipParts(yield* buildZipParts(entries, control));
 }
 
 /** package indexには公開しない。保存処理自身が生成したscratchだけを消費する内部経路。 */
 export function* zipEntriesWithOwnedBuffersSteps(entries: ReadonlyMap<string, ZipStepEntry>,
   ownedBuffers: ReadonlySet<ArrayBuffer>, control: ZipStepsControl = {}): Generator<void, Uint8Array, void> {
-  return yield* buildZipSteps(entries, control, uniqueOwnedBuffers(entries, ownedBuffers));
+  return concatZipParts(yield* buildZipParts(entries, control, uniqueOwnedBuffers(entries, ownedBuffers)));
 }
 
 /** 区切りで止まらずに最後まで作る(従来の同期の書き手用)。 */
@@ -179,20 +198,20 @@ function nextTask(): Promise<void> {
   return new Promise(resolve => { setTimeout(resolve, 0); });
 }
 
-/** 区切りごとに処理を返し、取消を確かめながら作る(保存 Worker 用)。 */
-export async function zipEntriesAsync(entries: ReadonlyMap<string, ZipStepEntry>,
-  control: ZipStepsControl = {}): Promise<Uint8Array> {
-  return await finishZipEntriesAsync(zipEntriesSteps(entries, control), control);
+/** 区切りごとに処理を返し、取消を確かめながら作る(保存 Worker 用)。結果は順につなぐと ZIP になる部分の並び。 */
+export async function zipEntriesPartsAsync(entries: ReadonlyMap<string, ZipStepEntry>,
+  control: ZipStepsControl = {}): Promise<Uint8Array[]> {
+  return await finishZipEntriesAsync(buildZipParts(entries, control), control);
 }
 
-/** partの新規meshエントリー用。汎用ZIPの借用契約は変えない。 */
-export async function zipEntriesWithOwnedBuffersAsync(entries: ReadonlyMap<string, ZipStepEntry>,
-  ownedBuffers: ReadonlySet<ArrayBuffer>, control: ZipStepsControl = {}): Promise<Uint8Array> {
-  return await finishZipEntriesAsync(zipEntriesWithOwnedBuffersSteps(entries, ownedBuffers, control), control);
+/** partの新規meshエントリー用。汎用ZIPの借用契約は変えない。結果は順につなぐと ZIP になる部分の並び。 */
+export async function zipEntriesWithOwnedBuffersPartsAsync(entries: ReadonlyMap<string, ZipStepEntry>,
+  ownedBuffers: ReadonlySet<ArrayBuffer>, control: ZipStepsControl = {}): Promise<Uint8Array[]> {
+  return await finishZipEntriesAsync(buildZipParts(entries, control, uniqueOwnedBuffers(entries, ownedBuffers)), control);
 }
 
-async function finishZipEntriesAsync(steps: Generator<void, Uint8Array, void>,
-  control: ZipStepsControl): Promise<Uint8Array> {
+async function finishZipEntriesAsync<Result>(steps: Generator<void, Result, void>,
+  control: ZipStepsControl): Promise<Result> {
   for (;;) {
     const next = steps.next();
     if (next.done === true) return next.value;

@@ -110,6 +110,8 @@ $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd([char[]]"\\/")
 . (Join-Path $scriptDirectory "lib\validationReceipt.ps1")
 # 準備の導入の命令を通信の失敗の時だけやり直す関数(scripts/check.selftest.ps1 と共有する単一正本)
 . (Join-Path $scriptDirectory "lib\networkRetry.ps1")
+# 段が始まってすぐ異常終了した時だけ原因を決める記録を書く関数(scripts/check.selftest.ps1 と共有する単一正本。rules/06 §10.504)
+. (Join-Path $scriptDirectory "lib\quickCrashDiagnostics.ps1")
 # CIの画面検査の組の数(2026-11-12 に3から6へ。最も長い組の偏りを減らすため)。-E2EShard はこの値から作る
 # 1/6〜6/6 だけを通す。.github/workflows/ci.yml の matrix.shard・'/6' と scripts/lib/ci_stage_evidence.py の
 # SHARD_TOTAL と同じ値にする(ci_stage_evidence.py の自己試験が3か所の一致を確かめる)。
@@ -120,9 +122,11 @@ function Invoke-Check {
     param([string]$Name, [string]$Command, [string[]]$CommandArgs)
     Write-Host ""
     Write-Host "=== $Name ===" -ForegroundColor Cyan
-    Write-Host ("[開始] {0:yyyy-MM-ddTHH:mm:ss.fffzzz}" -f [DateTimeOffset]::Now)
+    $checkStarted = [DateTimeOffset]::Now
+    Write-Host ("[開始] {0:yyyy-MM-ddTHH:mm:ss.fffzzz}" -f $checkStarted)
     $checkTimer = [Diagnostics.Stopwatch]::StartNew()
     $checkExitCode = 1
+    $checkEnded = $checkStarted
     # 直前のコマンドの終了コードが残って偽の合格にならないよう必ずリセットする
     $global:LASTEXITCODE = 0
     # 全ての子検査を現在の検査場所へ限定する。PushでもフックのGit保存先を
@@ -138,12 +142,21 @@ function Invoke-Check {
     } finally {
         Restore-InheritedGitEnv -Saved $savedCommandGitEnvironment
         $checkTimer.Stop()
+        $checkEnded = [DateTimeOffset]::Now
         Write-Host ("[終了] {0:yyyy-MM-ddTHH:mm:ss.fffzzz} / {1} / 所要 {2:F3} 秒 / 終了コード {3}" -f `
-            [DateTimeOffset]::Now, $Name, $checkTimer.Elapsed.TotalSeconds, $checkExitCode)
+            $checkEnded, $Name, $checkTimer.Elapsed.TotalSeconds, $checkExitCode)
     }
     if ($checkExitCode -ne 0) {
         Write-Host ""
         Write-Host "[NG] $Name が失敗しました(終了コード: $checkExitCode)" -ForegroundColor Red
+        # rules/06 §10.504: 5 秒未満で異常終了の終了コード(0xC0000000 台)の時だけ、原因を決める記録を足す(合否と終了コードは変えない)
+        if (Test-QuickCrash -ExitCode $checkExitCode -ElapsedSeconds $checkTimer.Elapsed.TotalSeconds) {
+            try {
+                Write-QuickCrashDiagnostics -Name $Name -Command $Command -CommandArgs $CommandArgs -Start $checkStarted -End $checkEnded -ExitCode $checkExitCode
+            } catch {
+                Write-Host "[診断] 記録を書けなかった: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
         exit $checkExitCode
     }
 }
@@ -309,6 +322,9 @@ $receiptCompleted = $false
 $lightReceiptToken = ''
 $lightReceiptCompleted = $false
 $savedTemporaryEnvironment = @{}
+# rules/06 §10.507: 本体が最後まで来たかの印。見つからない命令などの誤りは、スクリプト全体は止めずに下の try の文を丸ごと終わらせて
+# finally の後へ進むので、印が無いまま最後の exit 0 に着いた時は成功として終わらせない。
+$checkBodyCompleted = $false
 Push-Location $root
 try {
     # Keep this project's own check output and child-process temporary files in
@@ -934,6 +950,7 @@ try {
         if ($lightReceiptCompleted) { Write-Host '[OK] 直後の同一コミット・pushに使う軽い検査の記録を保存しました(B3の全体検査の記録ではありません)' -ForegroundColor Green }
         else { Write-Host "[検査] 軽い検査の共用記録は作成しませんでした: $($lightFinish.reason)" }
     }
+    $checkBodyCompleted = $true
 }
 finally {
     try {
@@ -954,5 +971,9 @@ finally {
         }
         Pop-Location
     }
+}
+if (-not $checkBodyCompleted) {
+    Write-Host '[NG] 検査の本体が最後まで来ずに終わりました(途中の誤りの後。上の誤りの表示を見てください)。成功としては終わりません(rules/06 §10.507)' -ForegroundColor Red
+    exit 1
 }
 exit 0

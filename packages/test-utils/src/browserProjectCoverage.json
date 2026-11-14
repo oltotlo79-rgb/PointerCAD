@@ -1628,7 +1628,7 @@
       "file": "process-resource-sampler.spec.ts",
       "category": "node-process-contract",
       "reason": "Node OS process sampler and resident-frame checks; no page/browser/context fixture",
-      "sha256": "cfec00d21994b1edc7c8fa2ef2ec2ebac38f5fdbf44a6a805eeb96d3da1b7a89"
+      "sha256": "f6e90f96560ce35d2f9f0fd4b5535f673e428560db3290db219b122907ef9f17"
     },
     {
       "file": "project-intersect.spec.ts",

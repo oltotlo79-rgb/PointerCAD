@@ -721,3 +721,146 @@ it('distinguishes selected body producers even when they carry the same semantic
   expect(b?.identity).toEqual({ kind: 'semantic-subshape', bodyFeatureId: 'body-B', origin });
   expect(b?.identity).not.toEqual(a?.identity);
 });
+
+/**
+ * 解決器の記憶・履歴の順・断りの書き換え・参照の引き方の基準。解決器を責務ごとの関数・モジュールへ
+ * 分けても、外から見える結果と読みに行く回数が同じであることをここで固定する。
+ */
+describe('基準ジオメトリの解決器の境界(責務を分けても変わらない動き)', () => {
+  function countingReader(document: PartDocument) {
+    const calls: string[] = [];
+    const read = (sketchId: string) => {
+      calls.push(sketchId);
+      const found = document.sketches.find((sketch) => sketch.id === sketchId);
+      return found === undefined ? null : resolveSketch(found);
+    };
+    return { calls, read };
+  }
+
+  it('一度解いた基準は覚えて読み直さず、同じ id は先に出たほうの定義を使う', () => {
+    const document = documentWith([
+      {
+        id: 'referencePoint-1', kind: 'referencePoint', name: '基準点1', visible: true,
+        definition: { kind: 'coordinate', at: { mode: 'relative', base: { kind: 'point', pointId: 'point-1' },
+          dx: ev(1), dy: ev(0), dz: ev(0) } },
+      },
+      {
+        id: 'referencePoint-1', kind: 'referencePoint', name: '基準点1の重複', visible: false,
+        definition: { kind: 'coordinate', at: { mode: 'absolute', x: ev(9), y: ev(9), z: ev(9) } },
+      },
+    ]);
+    const reader = countingReader(document);
+    const resolver = createReferenceResolver(document, { sketch: reader.read });
+    const first = resolver.resolveAll();
+    expect(reader.calls).toEqual([document.activeSketchId]);
+    const second = resolver.resolveAll();
+    expect(reader.calls).toHaveLength(1);
+    expect(second).toEqual(first);
+    expect(first.errors).toEqual([]);
+    // 名前と表示は履歴の各行のもの、位置は先に出た定義を解いた 1 つの結果。
+    expect(first.points.map((point) => [point.featureId, point.name, point.visible])).toEqual([
+      ['referencePoint-1', '基準点1', true],
+      ['referencePoint-1', '基準点1の重複', false],
+    ]);
+    expectVec3(first.points[0].position, [1, 0, 10]);
+    expectVec3(first.points[1].position, [1, 0, 10]);
+  });
+
+  it('値の不正な入力は理由のまま断り、それを参照する基準も点が見つからないとして断る', () => {
+    const document = documentWith([
+      {
+        id: 'referencePoint-1', kind: 'referencePoint', name: '基準点1', visible: true,
+        definition: { kind: 'coordinate', at: { mode: 'absolute', x: ev(1), y: ev(2), z: ev(3) } },
+      },
+      {
+        id: 'referenceAxis-1', kind: 'referenceAxis', name: '基準軸1', visible: true,
+        definition: { kind: 'twoPoints', from: { kind: 'point', pointId: 'referencePoint-1' }, to: { kind: 'origin' } },
+      },
+    ]);
+    const resolved = createReferenceResolver(document, {
+      sketch: () => null, invalidInputs: new Map([['referencePoint-1', '式が解けません。']]),
+    }).resolveAll();
+    expect(resolved.errors).toEqual([
+      { featureId: 'referencePoint-1', code: 'invalidValue', message: '式が解けません。' },
+      { featureId: 'referenceAxis-1', code: 'missingPoint', message: '基準軸の 2 点が見つかりません。点を選び直してください。' },
+    ]);
+    expect(resolved.points).toEqual([]);
+    expect(resolved.axes).toEqual([]);
+  });
+
+  it('後から作られた基準を指すと、参照先と頼んだ側の名前を入れた文に書き換える', () => {
+    const document = documentWith([
+      {
+        id: 'referenceAxis-1', kind: 'referenceAxis', name: '基準軸1', visible: true,
+        definition: { kind: 'twoPoints', from: { kind: 'point', pointId: 'referencePoint-2' }, to: { kind: 'origin' } },
+      },
+      {
+        id: 'referencePoint-2', kind: 'referencePoint', name: '基準点2', visible: true,
+        definition: { kind: 'coordinate', at: { mode: 'absolute', x: ev(1), y: ev(2), z: ev(3) } },
+      },
+    ]);
+    const resolver = createReferenceResolver(document, { sketch: () => null });
+    const resolved = resolver.resolveAll();
+    expect(resolved.errors).toEqual([{
+      featureId: 'referenceAxis-1', code: 'missingPoint',
+      message: '基準点2は基準軸1より後から作られたので、参照できません。先に作ってください。',
+    }]);
+    expect(resolved.points.map((point) => point.featureId)).toEqual(['referencePoint-2']);
+    // 外からの問い合わせには履歴の上限が無いので、同じ参照が解ける。
+    expect(resolver.point({ kind: 'point', pointId: 'referencePoint-2' })).toEqual([1, 2, 3]);
+    expect(resolver.axis({ kind: 'reference', referenceFeatureId: 'referenceAxis-1' })).toBeNull();
+  });
+
+  it('軸は世界の軸・スケッチの線分・基準軸から引け、見つからない線分は null', () => {
+    const document = documentWith([
+      {
+        id: 'referenceAxis-1', kind: 'referenceAxis', name: '基準軸1', visible: true,
+        definition: { kind: 'twoPoints', from: { kind: 'origin' }, to: { kind: 'point', pointId: 'point-1' } },
+      },
+    ]);
+    const sketchId = document.activeSketchId;
+    const resolver = createReferenceResolver(document, { sketch: countingReader(document).read });
+    expect(resolver.axis({ kind: 'world', axis: 'y' })).toEqual({ origin: [0, 0, 0], direction: [0, 1, 0] });
+    const line = resolver.axis({ kind: 'line', line: { sketchId, lineFeatureId: 'line-1' } });
+    expectVec3(line?.origin ?? [Number.NaN, 0, 0], [0, 0, 0]);
+    expectVec3(line?.direction ?? [Number.NaN, 0, 0], [0, 1, 0]);
+    expect(resolver.axis({ kind: 'line', line: { sketchId, lineFeatureId: 'point-1' } })).toBeNull();
+    expect(resolver.axis({ kind: 'line', line: { sketchId: 'missing', lineFeatureId: 'line-1' } })).toBeNull();
+    const reference = resolver.axis({ kind: 'reference', referenceFeatureId: 'referenceAxis-1' });
+    expectVec3(reference?.direction ?? [Number.NaN, 0, 0], [0, 0, 1]);
+    expect(resolver.axis({ kind: 'reference', referenceFeatureId: 'referenceAxis-9' })).toBeNull();
+  });
+
+  it('頂点の参照は、1 本の曲線なら曲線の端、複数の曲線なら位置だけ、点列なら作った点の素性を返す', () => {
+    const features: readonly SketchFeature[] = [
+      ...sketchWithPoints().features,
+      {
+        id: 'rect-1', kind: 'rectangle', name: '矩形1', planeId: 'xy', construction: false,
+        corner1: { mode: 'absolute', x: ev(0), y: ev(0), z: ev(0) },
+        corner2: { mode: 'absolute', x: ev(4), y: ev(3), z: ev(0) },
+      },
+      {
+        id: 'array-1', kind: 'pointArray', name: '点列1', planeId: 'xy',
+        layout: { kind: 'linear', base: { mode: 'absolute', x: ev(0), y: ev(0), z: ev(5) },
+          azimuth: ev(0), spacing: ev(2), count: ev(3) },
+      },
+    ];
+    const sketch: SketchDocument = { ...createEmptySketchDocument(), features };
+    const document = documentWith([], sketch);
+    const resolver = createReferenceResolver(document, { sketch: () => resolveSketch(sketch) });
+    expect(resolver.pointWithIdentity({ kind: 'vertex', featureId: 'line-1', vertex: 'end' })).toEqual({
+      state: 'identified', position: [0, 40, 0],
+      identity: { kind: 'curve-vertex', sketchId: sketch.id, featureId: 'line-1', vertex: 'end' },
+    });
+    const corner = resolver.pointWithIdentity({ kind: 'vertex', featureId: 'rect-1', vertex: 'start' });
+    expect(corner?.state).toBe('unidentified');
+    expectVec3(corner?.position ?? [Number.NaN, 0, 0], [0, 0, 0]);
+    const last = resolver.pointWithIdentity({ kind: 'vertex', featureId: 'array-1', vertex: 'end' });
+    expectVec3(last?.position ?? [Number.NaN, 0, 0], [4, 0, 5]);
+    expect(last?.identity).toEqual({ kind: 'sketch-point', anchor: {
+      sketchId: sketch.id, producer: { kind: 'linear-point', featureId: 'array-1', step: 2 },
+    } });
+    expect(resolver.point({ kind: 'vertex', featureId: 'array-1', vertex: 'center' })).toBeNull();
+    expect(resolver.point({ kind: 'vertex', featureId: 'missing', vertex: 'start' })).toBeNull();
+  });
+});

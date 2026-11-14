@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { executeCommand, type CommandRuntimeState } from './commandRegistry.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dispatchCommandKey, executeCommand, type CommandRuntimeState } from './commandRegistry.js';
+import { validateShortcutAssignments, type ShortcutAssignments } from './shortcutAssignments.js';
 
 type CommandEnvironment = NonNullable<Parameters<typeof executeCommand>[1]>;
 type CommandActions = NonNullable<Parameters<typeof executeCommand>[1]>['actions'];
@@ -169,5 +170,110 @@ describe('command execution', () => {
       commandId: 'toolbar.mate.coincident', ready: false, reasonKey: 'assembly.mate.needTwo' });
     expect(toolbarCommand).toHaveBeenCalledOnce();
     expect(target.actions.commandFeedback).toHaveBeenLastCalledWith('assembly.mate.needTwo');
+  });
+});
+
+/** Node に DOM は無いので、判定が読む tagName と closest だけを持つ要素で焦点の場所を表す。 */
+class FocusedElement {
+  readonly isContentEditable = false;
+  constructor(readonly tagName: string, private readonly matches: readonly string[] = []) {}
+  closest(selector: string): FocusedElement | null {
+    return this.matches.some(part => selector.split(',').map(item => item.trim()).includes(part)) ? this : null;
+  }
+}
+
+class HomeKeyEvent extends Event implements KeyboardEvent {
+  readonly code = '';
+  readonly keyCode = 0;
+  readonly which = 0;
+  readonly charCode = 0;
+  readonly location = 0;
+  readonly detail = 0;
+  readonly view = null;
+  readonly ctrlKey = false;
+  readonly metaKey = false;
+  readonly altKey = false;
+  readonly shiftKey = false;
+  readonly repeat = false;
+  readonly isComposing = false;
+  readonly DOM_KEY_LOCATION_STANDARD = 0;
+  readonly DOM_KEY_LOCATION_LEFT = 1;
+  readonly DOM_KEY_LOCATION_RIGHT = 2;
+  readonly DOM_KEY_LOCATION_NUMPAD = 3;
+  constructor(readonly key: string, focused: FocusedElement, handledAlready = false) {
+    super('keydown', { cancelable: true });
+    Object.defineProperty(this, 'target', { value: focused });
+    if (handledAlready) this.preventDefault();
+  }
+  getModifierState(): boolean { return false; }
+  initKeyboardEvent(): never { throw new Error('Use the event constructor'); }
+  initUIEvent(): never { throw new Error('Use the event constructor'); }
+}
+
+describe('ホーム視点の Home キー(全体のキーの入口)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('Element', FocusedElement);
+    vi.stubGlobal('HTMLElement', FocusedElement);
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  function homeEnvironment(documentKind: 'part' | 'assembly' = 'part', shortcutAssignments?: ShortcutAssignments) {
+    const target = environment({ documentKind, shortcutAssignments });
+    const toolbarCommand = vi.fn(() => ({ ready: true as const, reasonKey: null }));
+    return { value: { ...target.value, actions: { ...target.actions, toolbarCommand } }, toolbarCommand };
+  }
+
+  it.each(['part', 'assembly'] as const)('%sでビューポートの外(ツールバーのボタン・木の行)に焦点があってもホーム視点を実行する', documentKind => {
+    for (const focused of [new FocusedElement('BUTTON', ['button']), new FocusedElement('DIV'), new FocusedElement('CANVAS')]) {
+      const home = homeEnvironment(documentKind);
+      const event = new HomeKeyEvent('Home', focused);
+      expect(dispatchCommandKey(event, 'bubble', home.value)).toEqual({ status: 'executed',
+        commandId: 'toolbar.view.home', ready: true, reasonKey: null });
+      expect(home.toolbarCommand).toHaveBeenCalledExactlyOnceWith('toolbar.view.home');
+      expect(event.defaultPrevented).toBe(true);
+      expect(dispatchCommandKey(new HomeKeyEvent('Home', focused), 'capture', home.value)).toEqual({ status: 'unmatched' });
+      expect(home.toolbarCommand).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('文字の欄・メニュー・窓の中と、先に欄や一覧が処理した Home は取らない', () => {
+    const cases = [
+      new HomeKeyEvent('Home', new FocusedElement('INPUT')), new HomeKeyEvent('Home', new FocusedElement('TEXTAREA')),
+      new HomeKeyEvent('Home', new FocusedElement('BUTTON', ['button', '.pcad-menu'])),
+      new HomeKeyEvent('Home', new FocusedElement('BUTTON', ['button', '.pcad-radial-menu'])),
+      new HomeKeyEvent('Home', new FocusedElement('BUTTON', ['button', 'dialog[open]'])),
+      new HomeKeyEvent('Home', new FocusedElement('DIV'), true),
+    ];
+    for (const event of cases) {
+      const home = homeEnvironment();
+      const prevented = event.defaultPrevented;
+      expect(dispatchCommandKey(event, 'bubble', home.value)).toEqual({ status: 'unmatched' });
+      expect(home.toolbarCommand).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(prevented);
+    }
+  });
+
+  it('ホーム視点を別のキーへ割り当てると Home では動かず割り当てたキーで動き、ほかの割当は消えない', () => {
+    const proposed = {
+      'toolbar.view.home': { key: 'h', primary: false, shift: false, alt: false },
+      'toolbar.view.front': { key: 'f2', primary: false, shift: false, alt: false },
+      'file.open': { key: 'f3', primary: false, shift: false, alt: false },
+    };
+    const validation = validateShortcutAssignments(proposed);
+    expect(validation).toEqual({ ok: true, assignments: proposed });
+    if (!validation.ok) return;
+    const home = homeEnvironment('part', validation.assignments);
+    expect(dispatchCommandKey(new HomeKeyEvent('Home', new FocusedElement('DIV')), 'bubble', home.value)).toEqual({ status: 'unmatched' });
+    expect(home.toolbarCommand).not.toHaveBeenCalled();
+    expect(dispatchCommandKey(new HomeKeyEvent('h', new FocusedElement('DIV')), 'bubble', home.value)).toMatchObject({
+      status: 'executed', commandId: 'toolbar.view.home' });
+    expect(dispatchCommandKey(new HomeKeyEvent('F2', new FocusedElement('DIV')), 'bubble', home.value)).toMatchObject({
+      status: 'executed', commandId: 'toolbar.view.front' });
+    expect(home.toolbarCommand.mock.calls).toEqual([['toolbar.view.home'], ['toolbar.view.front']]);
+    // 割当を外す(null)と、ホーム視点はキーを持たない。
+    const removed = validateShortcutAssignments({ 'toolbar.view.home': null });
+    if (!removed.ok) throw new Error('removing the Home key must be accepted');
+    const none = homeEnvironment('part', removed.assignments);
+    expect(dispatchCommandKey(new HomeKeyEvent('Home', new FocusedElement('DIV')), 'bubble', none.value)).toEqual({ status: 'unmatched' });
   });
 });

@@ -1,8 +1,13 @@
 import { useEffect, useRef } from 'react';
 
+import { currentCommandLabel } from '../commands/commandLabels.js';
+import { toolbarCommandId } from '../commands/toolbarCommandCatalog.js';
 import { t } from '../i18n/t.js';
+import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 import { currentViewControls } from '../settings/viewControlSettings.js';
 import { HomeIcon } from '../shell/icons.js';
+import type { AppState } from '../store/appState.js';
+import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { scaledOrbitDelta } from '../viewport/cameraControlBindings.js';
 import { orbit, type OrbitState } from '../viewport/cameraMath.js';
@@ -10,6 +15,7 @@ import { readThemeColors } from '../viewport/themeColors.js';
 import { createViewCubeScene } from './createViewCubeScene.js';
 import { CUBE_FACES, FACE_FONT } from './faceTexture.js';
 import {
+  FACE_REGIONS,
   interpolateOrbit,
   orbitStateForRegion,
   VIEW_TRANSITION_DURATION_MS,
@@ -45,6 +51,25 @@ function isSameRegion(a: ViewCubeRegion | null, b: ViewCubeRegion | null): boole
   return a.x === b.x && a.y === b.y && a.z === b.z;
 }
 
+/**
+ * ストアの視点の要求をビューキューブの遷移に直す。ホーム視点(FR-108)はビューポートが即時に戻すので、
+ * こちらは遷移を打ち切るだけ('home')。標準の向きの命令は、面を押した時と同じ動きで今の視点から移る。
+ * どちらの要求も無ければ null。
+ */
+function viewRequestTransition(next: AppState, previous: AppState, getOrbit: () => OrbitState): ViewTransition | 'home' | null {
+  if (next.homeViewRequestCount !== previous.homeViewRequestCount) return 'home';
+  const request = next.viewOrientationRequest;
+  if (request === null || request === previous.viewOrientationRequest) return null;
+  const current = getOrbit();
+  return { from: current, to: orbitStateForRegion(FACE_REGIONS[request.face], current), startedAt: globalThis.performance.now() };
+}
+
+/** ホームの札の説明。ツールバーのホームと同じく、命令「ホーム視点」の今のキー(割当どおり)を名前に添える。 */
+function homeButtonTitle(state: AppState): string {
+  const assignments = currentShortcutAssignments(state.displaySettings);
+  return `${currentCommandLabel(toolbarCommandId('view', 'home'), assignments, activeDocumentKind(state))}: ${t('toolbar.home.tooltip')}`;
+}
+
 export interface ViewCubeProps {
   /** 現在の視点を返す。 */
   readonly getOrbit: () => OrbitState;
@@ -63,6 +88,7 @@ export interface ViewCubeProps {
  * 描画も常時のループを持たず、本体ビューポートが描いた通知(subscribeDraw)に相乗りして
  * 同じ描画機会に 1 回だけ描く。自前でこまを進めるのはクリックの遷移中だけで、遷移が終われば
  * 予約を止める。待機中に requestAnimationFrame が回り続けないようにするため(NFR-PF-1)。
+ * 視点の命令(「正面から見る」など)の要求も、面を押した時と同じ遷移で受ける(viewRequestTransition)。
  *
  * 面を押して視点が移り始めたら、指が止まったままでも面と輪郭の強調を消す。
  * 押した後も光ったままだと、まだ押せる場所を指しているのか区別が付かないため(NFR-UX-7)。
@@ -74,6 +100,7 @@ export interface ViewCubeProps {
  */
 export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const homeTitle = useAppStore(homeButtonTitle);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) {
@@ -170,12 +197,12 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       if (next.displaySettings.theme !== previous.displaySettings.theme) {
         themeDirty = true;
       }
-      // Home must win even if it is requested during a cube transition.
-      if (next.homeViewRequestCount !== previous.homeViewRequestCount) {
-        transition = null;
-        highlighted = null;
-        pressed = false;
-      }
+      // Home must win even if it is requested during a cube transition. A view command moves like a face click.
+      const request = viewRequestTransition(next, previous, getOrbit);
+      if (request === null) return;
+      highlighted = null;
+      pressed = false;
+      if (request === 'home') transition = null; else startTransition(request);
     });
 
     /** canvas 上の位置から、指している領域を求める。 */
@@ -344,8 +371,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       <canvas
         ref={canvasRef}
         className="pcad-viewcube pcad-viewcube--detailed"
-        width={CUBE_SIZE_PIXELS}
-        height={CUBE_SIZE_PIXELS}
+        width={CUBE_SIZE_PIXELS} height={CUBE_SIZE_PIXELS}
         aria-label={t('viewCube.label')}
         title={t('viewCube.tooltip')}
       />
@@ -353,7 +379,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
         type="button"
         className="pcad-viewcube-home"
         aria-label={`${t('viewCube.label')}: ${t('toolbar.home.label')}`}
-        title={t('toolbar.home.tooltip')}
+        title={homeTitle}
         onClick={() => useAppStore.getState().requestHomeView()}
       >
         <HomeIcon />

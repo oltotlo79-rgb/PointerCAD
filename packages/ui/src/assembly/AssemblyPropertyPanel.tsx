@@ -63,18 +63,16 @@ export function AssemblyGearCouplingForm(props: {
       .filter(c => c.id !== props.coupling?.id)));
   };
   return (
-    <form aria-label={t('assembly.gear.title')} data-testid="assembly-gear-form" onSubmit={event => { event.preventDefault(); commit(); }}>
-      <h4>{t('assembly.gear.title')}</h4>
-      <p>{t('assembly.gear.equation').replace('{a}', joint.name)}</p>
-      <label className="pcad-field"><span>{t('assembly.gear.peer')}</span>
+    <form className="pcad-coupling-form" aria-label={t('assembly.gear.title')} data-testid="assembly-gear-form" onSubmit={event => { event.preventDefault(); commit(); }}>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.gear.peer')}</span>
         <select className="pcad-field__input" value={peerId} disabled={!ready}
           onChange={event => { setPeerId(event.currentTarget.value); }} title={t('assembly.guide.gearPeer')}>
           {peers.map(peer => <option key={peer.id} value={peer.id}>{peer.name}</option>)}
         </select></label>
-      <label className="pcad-field"><span>{t('assembly.gear.ratio')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.gear.ratio')}</span>
         <input className="pcad-field__input" value={ratioSource} disabled={!ready}
           onChange={event => { setRatioSource(event.currentTarget.value); }} title={t('assembly.guide.gearRatio')} /></label>
-      <label className="pcad-field"><span>{t('assembly.gear.phase')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.gear.phase')}</span>
         <input className="pcad-field__input" value={phaseSource} disabled={!ready}
           onChange={event => { setPhaseSource(event.currentTarget.value); }} title={t('assembly.guide.gearPhase')} /><span>°</span></label>
       <button type="submit" className="pcad-button" disabled={!ready || peers.length === 0} title={t('assembly.guide.gearCommit')}>
@@ -83,6 +81,24 @@ export function AssemblyGearCouplingForm(props: {
         data-testid="assembly-gear-remove" disabled={computing} onClick={remove} title={t('assembly.guide.gearRemove')}>{t('assembly.gear.remove')}</button>}
       {error ? <p role="alert">{t('assembly.gear.invalid')}</p> : null}
     </form>
+  );
+}
+
+/**
+ * 連動の種類ごとの畳める見出し(UI の点検の指摘 14)。作った連動と新しい連動の form を 1 つの見出しの下に
+ * まとめ(form の中には見出しを置かない)、式の説明は見出しのツールチップへ出す。既定は開く
+ * (今の見え方と、作る・直す操作の手順を変えない)。
+ */
+function CouplingGroup(props: {
+  readonly title: string;
+  readonly hint: string;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <details className="pcad-coupling-group" open>
+      <summary className="pcad-section__title" title={props.hint}>{props.title}</summary>
+      {props.children}
+    </details>
   );
 }
 
@@ -159,23 +175,34 @@ export function AssemblyPropertyPanel(): React.JSX.Element {
       </dl>
       <JointSliderControls joint={joint} idPrefix="property" />
       {joint.kind === 'revolute' && !joint.suppressed ? <>
-        {(document?.mechanismCouplings ?? []).filter(c => c.jointAId === joint.id || c.jointBId === joint.id)
-          .map(c => <AssemblyGearCouplingForm key={JSON.stringify([c.id, c.jointAId, c.jointBId, c.ratio.source, c.phaseDeg.source, c.referenceAngleA, c.suppressed])}
-            jointId={joint.id} coupling={c} />)}
-        <AssemblyGearCouplingForm key={`new:${joint.id}`} jointId={joint.id} />
-        {(document?.camCouplings ?? []).filter(c => c.camJointId === joint.id)
-          .map(c => <AssemblyCamCouplingForm key={JSON.stringify([c.id, c.followerJointId, c.discRadiusMm.source, c.eccentricityMm.source,
-            c.rollerRadiusMm.source, c.phaseDeg.source, c.referenceAngleCam, c.suppressed])} jointId={joint.id} coupling={c} />)}
-        <AssemblyCamCouplingForm key={`newCam:${joint.id}`} jointId={joint.id} />
-        {(document?.crossLevelGearCouplings ?? []).filter(c => c.parentJointId === joint.id)
-          .map(c => <AssemblyCrossLevelGearForm key={JSON.stringify([c.id, c.childPath, c.childJointId, c.ratio.source,
-            c.phaseDeg.source, c.suppressed])} jointId={joint.id} coupling={c} />)}
-        <AssemblyCrossLevelGearForm key={`newCross:${joint.id}`} jointId={joint.id} />
-        {(document?.crossLevelCamCouplings ?? []).filter(c => c.camJointId === joint.id)
-          .map(c => <AssemblyCrossLevelCamForm key={JSON.stringify([c.id, c.childPath, c.childJointId, c.discRadiusMm.source,
-            c.eccentricityMm.source, c.rollerRadiusMm.source, c.phaseDeg.source, c.offsetMm.source, c.direction, c.suppressed])}
-            jointId={joint.id} cam={c} />)}
-        <AssemblyCrossLevelCamForm key={`newCrossCam:${joint.id}`} jointId={joint.id} />
+        <CouplingGroup title={t('assembly.gear.title')} hint={t('assembly.gear.equation').replace('{a}', joint.name)}>
+          {(document?.mechanismCouplings ?? []).filter(c => c.jointAId === joint.id || c.jointBId === joint.id)
+            .map(c => <AssemblyGearCouplingForm key={JSON.stringify([c.id, c.jointAId, c.jointBId, c.ratio.source, c.phaseDeg.source, c.referenceAngleA, c.suppressed])}
+              jointId={joint.id} coupling={c} />)}
+          <AssemblyGearCouplingForm key={`new:${joint.id}`} jointId={joint.id} />
+        </CouplingGroup>
+        <CouplingGroup title={t('assembly.cam.title')} hint={t('assembly.cam.law')}>
+          <p>{t('assembly.cam.validity')}</p>
+          {(document?.camCouplings ?? []).filter(c => c.camJointId === joint.id)
+            .map(c => <AssemblyCamCouplingForm key={JSON.stringify([c.id, c.followerJointId, c.discRadiusMm.source, c.eccentricityMm.source,
+              c.rollerRadiusMm.source, c.phaseDeg.source, c.referenceAngleCam, c.suppressed])} jointId={joint.id} coupling={c} />)}
+          <AssemblyCamCouplingForm key={`newCam:${joint.id}`} jointId={joint.id} />
+        </CouplingGroup>
+        <CouplingGroup title={t('assembly.crossGear.title')} hint={t('assembly.crossGear.equation').replace('{a}', joint.name)}>
+          {(document?.crossLevelGearCouplings ?? []).filter(c => c.parentJointId === joint.id)
+            .map(c => <AssemblyCrossLevelGearForm key={JSON.stringify([c.id, c.childPath, c.childJointId, c.ratio.source,
+              c.phaseDeg.source, c.suppressed])} jointId={joint.id} coupling={c} />)}
+          <AssemblyCrossLevelGearForm key={`newCross:${joint.id}`} jointId={joint.id} />
+          <p>{t('assembly.crossGear.camPending')}</p>
+        </CouplingGroup>
+        <CouplingGroup title={t('assembly.crossCam.title')} hint={t('assembly.crossCam.law').replace('{a}', joint.name)}>
+          <p>{t('assembly.crossCam.authoredLaw')}</p>
+          {(document?.crossLevelCamCouplings ?? []).filter(c => c.camJointId === joint.id)
+            .map(c => <AssemblyCrossLevelCamForm key={JSON.stringify([c.id, c.childPath, c.childJointId, c.discRadiusMm.source,
+              c.eccentricityMm.source, c.rollerRadiusMm.source, c.phaseDeg.source, c.offsetMm.source, c.direction, c.suppressed])}
+              jointId={joint.id} cam={c} />)}
+          <AssemblyCrossLevelCamForm key={`newCrossCam:${joint.id}`} jointId={joint.id} />
+        </CouplingGroup>
       </> : null}
     </section>
   ) : (

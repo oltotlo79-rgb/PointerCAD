@@ -1,6 +1,7 @@
 import { test } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { saveCancelFlow, saveDocumentSwitchFlow, saveStatusDisplayFlow } from './saveResponsivenessFlow.js';
+import { crowdedSaveMarkFlow } from './statusBarCrowdedFlow.js';
 
 // 32/128MiB の保存中の入力応答とメモリーの実測は electron-save-performance.spec.ts(W05)で行う。
 test('実Electron 32MiBの圧縮中の取消は1秒未満でWorkerを止め、ファイルを作らず保存し直せる', async ({ playwright }, info) => {
@@ -22,4 +23,10 @@ test('実Electron 状態欄の4表示を今の文書だけに出す', async ({ p
     const page = await app.firstWindow(); await page.clock.install(); await page.reload();
     await saveStatusDisplayFlow(page, info, app);
   } finally { await app.close(); }
+});
+
+test('実Electron 帯が込み合っても保存の完了の印は図柄の大きさを保って見える', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try { await crowdedSaveMarkFlow(await app.firstWindow(), info, app); }
+  finally { await app.close(); }
 });

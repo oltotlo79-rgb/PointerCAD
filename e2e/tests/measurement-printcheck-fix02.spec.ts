@@ -50,6 +50,8 @@ test('FIX-02 点検の基準を式で変えて再点検し、結果に使った�
   await page.goto('/');
   await waitForStartupHealth(page, info);
   await placeAndSelectBox(page);
+  // 道具の節は畳める見出しで、点検する前は閉じている(UI の点検の指摘 5)。見出しを押して開く。
+  await page.locator('.pcad-panel--right details[data-tool="printCheck"] > summary').click();
   const section = propertySection(page, '3D プリントの点検');
   const thickness = section.getByLabel('肉厚の基準', { exact: true });
   const angle = section.getByLabel('せり出し角度の基準', { exact: true });

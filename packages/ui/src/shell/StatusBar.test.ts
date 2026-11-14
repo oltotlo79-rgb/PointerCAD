@@ -7,7 +7,7 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { createAssemblyDocument } from '@pointercad/model';
 import { StatusBar } from './StatusBar.js';
-import { statusBarFlexShrink } from './statusText.js';
+import { statusBarSlotStyle } from './statusText.js';
 import type * as ImportedReactTypes from 'react';
 
 // Nodeで進捗表示までの待ち時間だけを進める。描画とストアの読み取りは本物を使う。
@@ -171,6 +171,14 @@ function flexShrinkOf(markup: string, marker: string): number | null {
   return value === undefined ? null : Number(value);
 }
 
+/** `marker` を含む開きタグの min-width(縮めても残す最小の幅)。 */
+function minWidthOf(markup: string, marker: string): string | null {
+  const at = markup.indexOf(marker);
+  if (at < 0) return null;
+  const tag = markup.slice(markup.lastIndexOf('<', at), markup.indexOf('>', at));
+  return /min-width:([^;"]+)/u.exec(tag)?.[1] ?? null;
+}
+
 describe('帯の保存の印・縮む順・文書の種類ごとの札(点検の指摘 1・小 21)', () => {
   const saver = { markDirty: () => undefined, saveNow: () => Promise.resolve(), stop: () => undefined,
     readLatest: () => Promise.resolve(null), discard: () => Promise.resolve() };
@@ -207,12 +215,26 @@ describe('帯の保存の印・縮む順・文書の種類ごとの札(点検の
       recomputeProgress: { featureId: 'extrude-1', label: '押し出し1', index: 0, total: 3 } });
     vi.mocked(useState).mockReturnValueOnce([true, vi.fn()]);
     const html = renderStatus();
-    expect(flexShrinkOf(html, 'class="pcad-statusbar__progress"')).toBe(statusBarFlexShrink('progress'));
-    expect(flexShrinkOf(html, 'data-save-stage="compressing"')).toBe(statusBarFlexShrink('save'));
-    expect(flexShrinkOf(html, 'class="pcad-statusbar__file"')).toBe(statusBarFlexShrink('file'));
-    expect(flexShrinkOf(html, 'data-recovery-stage="failed"')).toBe(statusBarFlexShrink('recovery'));
-    expect(flexShrinkOf(html, 'class="pcad-statusbar__message"')).toBe(statusBarFlexShrink('message'));
-    expect(statusBarFlexShrink('message')).toBe(1);
+    const slots = [['class="pcad-statusbar__progress"', 'progress'], ['data-save-stage="compressing"', 'save'],
+      ['class="pcad-statusbar__file"', 'file'], ['data-recovery-stage="failed"', 'recovery'],
+      ['class="pcad-statusbar__message"', 'message']] as const;
+    for (const [marker, slot] of slots) {
+      expect(flexShrinkOf(html, marker), slot).toBe(statusBarSlotStyle(slot).flexShrink);
+      // 縮めても図柄・中止のボタンを残す最小の幅(幅 0 に潰れて見えなくならない。C-02a の直し)。
+      expect(minWidthOf(html, marker), slot).toBe(statusBarSlotStyle(slot).minWidth);
+    }
+    expect(statusBarSlotStyle('message').flexShrink).toBe(1);
+  });
+
+  it('保存の中止のボタンは保存の印の外に置き、印が縮んでもボタンは隠れない', () => {
+    editedWithSaving();
+    const html = renderStatus();
+    const start = html.indexOf('data-save-stage="compressing"');
+    const markEnd = html.indexOf(`${t('file.save.compressing')}</span></span>`, start);
+    expect(start).toBeGreaterThan(0);
+    expect(markEnd).toBeGreaterThan(start);
+    expect(html.slice(start, markEnd)).not.toContain('pcad-statusbar__cancel');
+    expect(html.slice(markEnd)).toContain(`>${t('file.save.cancel')}</button>`);
   });
 
   it('復元用の保存の失敗は危険の色の短い印で出し、全文と理由をツールチップと読み上げへ渡す', () => {

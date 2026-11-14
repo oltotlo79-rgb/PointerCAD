@@ -102,13 +102,14 @@ import {
 } from '../sketch/numericInput.js';
 import {
   COORDINATE_MODES,
+  displayNumber,
   fieldUnitLabelKey,
   fieldValueNumberText,
   fieldValueText,
   MODE_LABEL_KEYS,
   MODE_TOOLTIP_KEYS,
-  roundToSignificantDigits,
 } from '../sketch/numericInputPresentation.js';
+import { currentPrintabilityReport } from '../store/exchangeSlice.js';
 import {
   missingValueKey,
   partErrorMessage,
@@ -145,20 +146,12 @@ interface FieldDraft {
 }
 
 /**
- * 「拘束で決まった、いまの位置」の**表示だけ**を有効数字 9 桁へ丸める桁数
- * (利用者の決定「保存値・入力欄・他の『= 値』の
- * 桁は変えない」)。保存値(履歴)には一切使わない。
- */
-const SOLVED_COORDINATE_DISPLAY_DIGITS = 9;
-
-/**
  * `solvedCoordinateText`(`../sketch/featureSummary.js`)が作る
- * 「= (x, y, z)(拘束で決まった値)」の 3 つの数だけを有効数字 9 桁へ丸め直す
- * (利用者の決定「解の表示は 9 桁で丸める」)。
+ * 「= (x, y, z)(拘束で決まった値)」の 3 つの数だけを、表示の整形(`displayNumber`。有効 6 桁、
+ * 許容差以内は 0。利用者の決定 2026-11-14)へ通す。丸める前の文はこの行のツールチップに出す。
  *
- * 丸めるのは**この行の表示だけ**。座標の保存値・入力欄・他の「= 値」の行(スカラーの
- * 読み取り専用の欄など)はここを通らないので変わらない。`solvedCoordinateText` 自体は
- * 変更しない(このタスクで触れるのは `PropertyPanel.tsx` の (g) の表示だけ)。
+ * 丸めるのは**この行の表示だけ**。座標の保存値・入力欄はここを通らないので変わらない。
+ * `solvedCoordinateText` 自体は変更しない。
  *
  * 接頭辞・区切り・接尾辞は `ja.json` の `propertyPanel.solved*` を `t()` で読むので、
  * 文言が変わってもここを直す必要はない。想定と違う形(区切りの数が合わない等)が来たら
@@ -176,10 +169,44 @@ export function roundSolvedCoordinateText(text: string): string {
   if (values.length !== 3 || values.some((value) => !Number.isFinite(value))) {
     return text;
   }
-  const rounded = values.map((value) =>
-    String(roundToSignificantDigits(value, SOLVED_COORDINATE_DISPLAY_DIGITS)),
-  );
+  const rounded = values.map((value) => displayNumber(value).text);
   return `${prefix}${rounded.join(separator)}${suffix}`;
+}
+
+/**
+ * 読み取り専用の欄と「= 値」の行に出す数を、表示の整形(`displayNumber`)へ通す(UI の点検の指摘 26・48)。
+ * 式の形の表示(√ を含むなど、数として読めない物)はそのまま。値そのものは変えない。
+ */
+function shownValue<T extends { readonly value: number; readonly display: string }>(value: T): T {
+  return Number.isFinite(Number(value.display)) ? { ...value, display: displayNumber(value.value).text } : value;
+}
+
+/** 道具の節 1 つ(UI の点検の指摘 5)。 */
+interface ToolSectionProps {
+  /** 画面検査と見た目の目印(`data-tool`)。 */
+  readonly tool: string;
+  readonly titleKey: MessageKey;
+  /** 使っている間(断面表示が入・下絵がある など)。開いて出す。 */
+  readonly active: boolean;
+  readonly children: React.ReactNode;
+}
+
+/**
+ * 何も選んでいなくても並ぶ道具の節(断面表示・選択セット・下絵・3D プリントの点検・拘束の推定)を、
+ * 図面のプロパティと同じ畳める見出しにする。既定は閉じ、使っている間は開いて出す。利用者が開け閉め
+ * した状態はこの画面の間だけ覚える(表示の設定へ保存の鍵は足さない)。中の節の見出しは、summary と
+ * 二重に見えないよう appShell.css で画面からだけ隠す(見出しとしては残す)。
+ */
+function ToolSection({ tool, titleKey, active, children }: ToolSectionProps): React.JSX.Element {
+  const [open, setOpen] = useState(active);
+  useEffect(() => { if (active) setOpen(true); }, [active]);
+  return (
+    <details className="pcad-tool-section" data-tool={tool} open={open}
+      onToggle={(event) => { setOpen(event.currentTarget.open); }}>
+      <summary className="pcad-section__title">{t(titleKey)}</summary>
+      {children}
+    </details>
+  );
 }
 
 /**
@@ -452,7 +479,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
                 数字だけ表示用に有効数字 9 桁へ丸める(保存値は丸めない)。
               */}
               {group.solvedText === null ? null : (
-                <p className="pcad-coordinate__solved" title={t('propertyPanel.solvedTooltip')}>
+                <p className="pcad-coordinate__solved" title={`${t('propertyPanel.solvedTooltip')} ${group.solvedText}`}>
                   {roundSolvedCoordinateText(group.solvedText)}
                 </p>
               )}
@@ -588,7 +615,7 @@ function FeatureProperties({ feature }: { readonly feature: SketchFeature }): Re
             {computed.map((item) => (
               <Fragment key={item.labelKey}>
                 <dt className="pcad-properties__key">{t(item.labelKey)}</dt>
-                <dd className="pcad-properties__value">{item.text}</dd>
+                <dd className="pcad-properties__value" title={item.full}>{item.text}</dd>
               </Fragment>
             ))}
           </dl>
@@ -955,14 +982,14 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
           打ち込める欄と違って「保存されている式」を見せる意味が無く、横の札(in)と
           中身の数の単位が食い違うほうが読み違いを生む。
         */
-        value={evaluated.ok ? fieldValueNumberText(item.unit, evaluated.value, units.lengthUnit) : ''}
+        value={evaluated.ok ? fieldValueNumberText(item.unit, shownValue(evaluated.value), units.lengthUnit) : ''}
         aria-busy={pending || undefined}
         aria-invalid={!evaluated.ok && !pending}
         title={t(item.tooltipKey)}
       />
       <span className="pcad-field__unit">{t(fieldUnitLabelKey(item.unit, units.lengthUnit))}</span>
-      <p className="pcad-field__message">
-        {evaluated.ok ? `= ${fieldValueText(item.unit, evaluated.value, units.lengthUnit)}`
+      <p className="pcad-field__message" title={evaluated.ok ? String(evaluated.value.value) : undefined}>
+        {evaluated.ok ? `= ${fieldValueText(item.unit, shownValue(evaluated.value), units.lengthUnit)}`
           : pending ? t('mathGeometry.status.pending') : evaluated.error.message}
       </p>
     </div>
@@ -2056,6 +2083,10 @@ export function PropertyPanel(): React.JSX.Element {
   const kinds = selectionKindLabelKeys(part, selection).map((key) => t(key));
   // 「ここを原点にする」を出せる 1 点(FR-331)。立体の頂点はここだけに出る。
   const origin = useOriginSelection();
+  // 道具の節を開いて出す「使っている間」(UI の点検の指摘 5)。真偽で取り出して、変わった時だけ描き直す。
+  const sectionViewOn = useAppStore((state) => state.sectionView !== null);
+  const printCheckActive = useAppStore((state) => state.isInspectingPrint || state.printCheckErrorMessage !== null
+    || currentPrintabilityReport(state) !== null);
 
   if (scriptOpen) return <section className="pcad-panel pcad-panel--right"><ScriptPanel /></section>;
   if (sheetMetalTool !== null && sheetMetalTool.document === part) return <section className="pcad-panel pcad-panel--right">
@@ -2212,12 +2243,15 @@ export function PropertyPanel(): React.JSX.Element {
           外観・測定の節と同じくその下に続けて出す。**`key` は付けない**——条件で
           出し分ける兄弟ではなく常に同じ位置に 1 つずつ並ぶので、鍵が重なりようがない
           (rules/06 10.9 の事故は「同じ親に id を `key` にした節が並ぶ」形でだけ起きる)。
+          畳める見出しにして既定は閉じ、使っている間は開いて出す(UI の点検の指摘 5)。
         */}
-        <SectionViewSection />
-        <SelectionSetSection />
-        <CanvasSection />
-        <PrintCheckSection />
-        <InferConstraintsSection />
+        <ToolSection tool="sectionView" titleKey="sectionView.title" active={sectionViewOn}><SectionViewSection /></ToolSection>
+        <ToolSection tool="selectionSets" titleKey="propertyPanel.sectionSelectionSets" active={part.selectionSets.length > 0}>
+          <SelectionSetSection /></ToolSection>
+        <ToolSection tool="canvas" titleKey="propertyPanel.sectionCanvas" active={part.canvases.length > 0}><CanvasSection /></ToolSection>
+        <ToolSection tool="printCheck" titleKey="propertyPanel.sectionPrintCheck" active={printCheckActive}><PrintCheckSection /></ToolSection>
+        <ToolSection tool="inferConstraints" titleKey="propertyPanel.sectionInferConstraints" active={false}>
+          <InferConstraintsSection /></ToolSection>
         <ConstraintList />
       </div>
       )}

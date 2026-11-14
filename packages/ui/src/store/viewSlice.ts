@@ -26,6 +26,9 @@ export type ProjectionMode = 'perspective' | 'orthographic';
 /** 表示スタイル 3 種(FR-105)。 */
 export type DisplayStyle = 'shaded' | 'shadedWithEdges' | 'wireframe';
 
+/** 視点の命令で移れる標準の向き。名前はビューキューブの面(viewcube/viewCubeMath.ts の FACE_REGIONS)と同じ。 */
+type ViewOrientation = 'front' | 'back' | 'right' | 'left' | 'top' | 'bottom';
+
 /**
  * ビューの断面表示(FR-111)。
  *
@@ -96,6 +99,11 @@ export interface ViewSlice {
   /** ホーム視点への復帰要求を数える(FR-108)。増えるたびにビューポートが反応する。 */
   readonly homeViewRequestCount: number;
   /**
+   * 標準の向き(正面・背面・右・左・上・下)へ移る要求。要求のたびに新しい値になり(serial は 1 ずつ増える)、
+   * ビューキューブが面を押した時と同じ動き(FR-103)で移る。まだ要求が無い間は null。
+   */
+  readonly viewOrientationRequest: { readonly face: ViewOrientation; readonly serial: number } | null;
+  /**
    * 「視点に合わせる」の要求を数える。視点の正本は `attachCameraControls` に
    * あってストアからは読めないので、ビューポートが増加に気づいて今の視点を渡し返す。
    */
@@ -159,6 +167,8 @@ export interface ViewSlice {
   /** 表示テーマ・拡大率を差し替え、`localStorage` へ保存する(FR-908、FR-909)。 */
   readonly setDisplaySettings: (settings: DisplaySettings) => void;
   readonly requestHomeView: () => void;
+  /** 標準の向きへ移ってほしい、と頼む(視点の命令「正面から見る」など)。 */
+  readonly requestViewOrientation: (face: ViewOrientation) => void;
   /** ビューポート(canvas)へ焦点を戻してほしい、と頼む。 */
   readonly requestViewportFocus: () => void;
   /** コマンドラインの欄へ焦点を移してほしい、と頼む(FR-208。`Space` の受け口)。 */
@@ -246,6 +256,7 @@ export const createViewSlice: StateCreator<
   // (kernelLoaded と同じ扱い)。起動時に localStorage から読む(壊れていれば既定値)。
   displaySettings: loadSettings(),
   homeViewRequestCount: 0,
+  viewOrientationRequest: null,
   matchWorkPlaneRequestCount: 0,
   focusViewportRequestCount: 0,
   // コマンドライン(FR-208)。文書を作り直しても要求の数は戻さないので、
@@ -315,6 +326,9 @@ export const createViewSlice: StateCreator<
   },
   requestHomeView: () => {
     set((state) => ({ homeViewRequestCount: state.homeViewRequestCount + 1 }));
+  },
+  requestViewOrientation: (face) => {
+    set((state) => ({ viewOrientationRequest: { face, serial: (state.viewOrientationRequest?.serial ?? 0) + 1 } }));
   },
   requestViewportFocus: () => {
     set((state) => ({ focusViewportRequestCount: state.focusViewportRequestCount + 1 }));

@@ -1004,7 +1004,7 @@
       "file": "electron-save-worker.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
-      "sha256": "ea7e7bd10c349691fa79fdc7eba78e73a617e882f23a6c86a5543a07c25f7627"
+      "sha256": "ac2834b7d37b93502bf0fa67fe2d8bfe032d0f990197916b17eca4479bef0640"
     },
     {
       "file": "electron-scripts.spec.ts",
@@ -1418,7 +1418,7 @@
       "file": "measurement-printcheck-fix02.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "c09329df4c59410db5a0497c76ec230d5f1afac6b02dd10beca2617a3cf2a7e5"
+      "sha256": "bd94ddc8d973392e390b7eaec1b5bd5374a7606a69f85611fce18fced7b3765c"
     },
     {
       "file": "memory-highwater-ui-contract.spec.ts",
@@ -1544,7 +1544,7 @@
       "file": "p6-view.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "c826cf30cef594761b91c7e1f0aaee43e7048e8f1aa3c2697150766782e796af"
+      "sha256": "e6b7c18e5c95f8bc69f376d16aa3b35efd5a85e725fe76f5743999fb52863d26"
     },
     {
       "file": "p7-standard-parts.spec.ts",
@@ -1610,7 +1610,7 @@
       "file": "primitives.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "6c94164e7cc63d1dc551d15376f7d36347cde62549b37ae5ec18fe5f19d25037"
+      "sha256": "306b9c4e12e6f4fa560ef465ce4113fe8be38f6f15d4ce0259751af4716cc07a"
     },
     {
       "file": "print-check.spec.ts",
@@ -1640,7 +1640,7 @@
       "file": "properties-input-layout-smoke.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a95fbb43b3e64362619de1c982f1e12a84018919a328e992bd79c9acfeec2b1f"
+      "sha256": "a7bb1c07d78241f3019efad66dae1960ef8a2f5138918b94632fbfc439b9c32d"
     },
     {
       "file": "radial-menu.spec.ts",
@@ -1946,7 +1946,7 @@
       "file": "status-guidance.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "5fc0aed151d210627982b0295fa3bfd0f3dfe8f62630ba27f5cd11b0590240bd"
+      "sha256": "f89e2ef0ae98ffe0a89e163c98b403b8c8701fc4b51a6e2cf3c0d12eacb522b5"
     },
     {
       "file": "steel-bend-stock.spec.ts",
@@ -2012,7 +2012,7 @@
       "file": "tree-name-search.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "313d4a4972c6ec11b067909438fa140ca2da17890c25861ba69799def46c2ed5"
+      "sha256": "4d041e1f5a5c3fe149f9292cfb02b80bad5dfca9856a98e3c183302d8c5db76b"
     },
     {
       "file": "tutorial.spec.ts",

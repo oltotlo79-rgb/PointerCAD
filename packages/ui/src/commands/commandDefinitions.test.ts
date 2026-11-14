@@ -20,7 +20,8 @@ describe('command definitions', () => {
   it('has no duplicate command IDs and publishes every binding in the generated list', () => {
     const ids = COMMAND_DEFINITIONS.map((definition) => definition.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(currentShortcutList()).toHaveLength(22);
+    // B-04(操作の割り当て 1-2)でホーム視点の Home を一覧に足したので 22 → 23。
+    expect(currentShortcutList()).toHaveLength(23);
     expect(currentShortcutList().every((entry) => ids.includes(entry.commandId))).toBe(true);
     for (const definition of COMMAND_DEFINITIONS) {
       for (const binding of definition.shortcuts) {
@@ -104,5 +105,26 @@ describe('command definitions', () => {
       expect(resolveShortcut(input(key), context({ documentKind: 'drawing', ...blocked }))).toBeNull();
     }
     expect(resolveShortcut(input(key), context({ documentKind: 'part' }))).toBeNull();
+  });
+
+  it('ホーム視点の既定のキーは Home で、部品・組立のどこでも効き、欄・IME・メニュー・窓・ヘルプ・図面では届かない', () => {
+    for (const documentKind of ['part', 'assembly'] as const) {
+      const home = resolveShortcut(input('Home'), context({ documentKind }));
+      expect(home?.commandId).toBe('toolbar.view.home');
+      expect(home?.binding).toMatchObject({ key: 'home', display: 'Home', contextLabelKey: 'command.context.partAssembly',
+        phase: 'bubble', preventDefault: true });
+    }
+    expect(currentShortcutList().filter(entry => entry.commandId === 'toolbar.view.home')).toEqual([{
+      commandId: 'toolbar.view.home', labelKey: 'toolbar.home.label', shortcut: 'Home',
+      contextKey: 'command.context.partAssembly', helpTopic: 'viewport',
+    }]);
+    for (const blocked of [{ textEntry: true }, { composing: true }, { insideMenu: true }, { insideDialog: true },
+      { helpOpen: true }, { phase: 'capture' as const }, { documentKind: 'drawing' as const }]) {
+      expect(resolveShortcut(input('Home'), context(blocked))).toBeNull();
+    }
+    // 修飾つきの Home と押しっぱなしの繰り返しは取らない(表示どおり Home だけ)。
+    for (const modifier of [{ ctrl: true }, { meta: true }, { alt: true }, { shift: true }, { repeat: true }]) {
+      expect(resolveShortcut(input('Home', modifier), context())).toBeNull();
+    }
   });
 });

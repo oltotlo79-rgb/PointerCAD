@@ -283,7 +283,8 @@ async function expectPointNear(
       .poll(
         async () =>
           Math.abs(
-            Number.parseFloat((await computedValue(page, axis).textContent()) ?? '') -
+            // 画面の文字は有効 6 桁なので、全部の桁はツールチップ(title)から読む(UI の点検の指摘 26)。
+            Number.parseFloat((await computedValue(page, axis).getAttribute('title')) ?? '') -
               expected[index],
           ),
         { timeout: KERNEL_TIMEOUT_MS, message: `${rowName} の ${axis}(期待 ${String(expected[index])})` },
@@ -398,9 +399,11 @@ test.describe('P5 基本形状・面をつなぐ・測る', () => {
      * プロパティの「弧の長さ」は解決した曲線からしか出ないので、これを待てばよい。
      */
     await treeRow(page, '円弧1').click();
-    await expect(propertyValue(page, '弧の長さ')).toHaveText('125.663706144', {
+    // 画面の文字は有効 6 桁、全部の桁(2π×20)はツールチップに出る(UI の点検の指摘 26)。
+    await expect(propertyValue(page, '弧の長さ')).toHaveText('125.664', {
       timeout: KERNEL_TIMEOUT_MS,
     });
+    await expect(propertyValue(page, '弧の長さ')).toHaveAttribute('title', /^125\.66370614359/u);
     await sketchTool(page, '面').click();
     await page.locator('canvas.pcad-viewport__canvas').press('Enter');
     await expect(treeRow(page, '面1')).toBeVisible();

@@ -10,6 +10,7 @@ import { ReferenceRepairSection } from './referenceRepairPanel.js';
 import { ReferenceRepairDetail, REPAIR_STATUS_LABELS } from './referenceRepairDetail.js';
 import { beginReferenceRepair, cancelReferenceRepair } from './referenceRepair.js';
 import { currentRepairSlots } from './referenceRepairContext.js';
+import { repairResolution } from './referenceRepairCandidates.js';
 
 beforeEach(() => {
   resetTestStore();
@@ -49,6 +50,21 @@ describe('既存プロパティ内の修復欄', () => {
     expect(['matched', 'missing', 'ambiguous'].map(status => status === 'matched' ? t(REPAIR_STATUS_LABELS.matched)
       : status === 'missing' ? t(REPAIR_STATUS_LABELS.missing) : t(REPAIR_STATUS_LABELS.ambiguous))).toEqual(['一意', '消失', '曖昧']);
   });
+  it('直す必要のある参照が 0 件の時は、プロパティの先頭に節を出さない(点検の指摘 4)', () => {
+    const { body, reference } = repairFixture();
+    const fp = reference.fingerprint;
+    if (fp.kind !== 'edge') throw new Error('辺の参照が必要');
+    // 保存した辺と同じ長さ・位置・向きの辺だけを持つ形にして、参照を一意にする。
+    useAppStore.setState({ bodies: [{ ...body, edges: [{ index: 0, curveKind: 'line', length: fp.length,
+      midpoint: fp.position, start: [-fp.length / 2, 0, 0], end: [fp.length / 2, 0, 0], axis: [1, 0, 0], radius: null,
+      segmentOffset: 0, segmentCount: 1 }] }] });
+    const rows = currentRepairSlots(useAppStore.getState());
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.map(slot => [slot.available, repairResolution(slot).status])).toEqual(rows.map(() => [true, 'matched']));
+    expect(renderToStaticMarkup(createElement(ReferenceRepairSection))).toBe('');
+    expect(renderToStaticMarkup(createElement(PropertyPanel))).not.toContain('data-testid="reference-repair"');
+  });
+
   it('既存加工に消費された未取得bodyを消失と断定しない', () => {
     useAppStore.setState({ bodies: [] });
     const markup = renderToStaticMarkup(createElement(ReferenceRepairSection));

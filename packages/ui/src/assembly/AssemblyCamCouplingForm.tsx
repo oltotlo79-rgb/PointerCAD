@@ -59,25 +59,22 @@ export function AssemblyCamCouplingForm(props: {
     setError(!state.setAssemblyCamCouplings((document.camCouplings ?? []).filter(c => c.id !== props.coupling?.id)));
   };
   return (
-    <form aria-label={t('assembly.cam.title')} data-testid="assembly-cam-form" onSubmit={event => { event.preventDefault(); commit(); }}>
-      <h4>{t('assembly.cam.title')}</h4>
-      <p>{t('assembly.cam.law')}</p>
-      <p>{t('assembly.cam.validity')}</p>
-      <label className="pcad-field"><span>{t('assembly.cam.follower')}</span>
+    <form className="pcad-coupling-form" aria-label={t('assembly.cam.title')} data-testid="assembly-cam-form" onSubmit={event => { event.preventDefault(); commit(); }}>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.cam.follower')}</span>
         <select className="pcad-field__input" value={followerId} disabled={!ready}
           onChange={event => { setFollowerId(event.currentTarget.value); }} title={t('assembly.guide.camFollower')}>
           {followers.map(follower => <option key={follower.id} value={follower.id}>{follower.name}</option>)}
         </select></label>
-      <label className="pcad-field"><span>{t('assembly.cam.discRadius')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.cam.discRadius')}</span>
         <input className="pcad-field__input" onKeyDown={ignoreComposingEnter} value={discSource} disabled={!ready}
           onChange={event => { setDiscSource(event.currentTarget.value); }} title={t('assembly.guide.camDiscRadius')} /></label>
-      <label className="pcad-field"><span>{t('assembly.cam.eccentricity')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.cam.eccentricity')}</span>
         <input className="pcad-field__input" onKeyDown={ignoreComposingEnter} value={eccentricitySource} disabled={!ready}
           onChange={event => { setEccentricitySource(event.currentTarget.value); }} title={t('assembly.guide.camEccentricity')} /></label>
-      <label className="pcad-field"><span>{t('assembly.cam.rollerRadius')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.cam.rollerRadius')}</span>
         <input className="pcad-field__input" onKeyDown={ignoreComposingEnter} value={rollerSource} disabled={!ready}
           onChange={event => { setRollerSource(event.currentTarget.value); }} title={t('assembly.guide.camRollerRadius')} /></label>
-      <label className="pcad-field"><span>{t('assembly.cam.phase')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.cam.phase')}</span>
         <input className="pcad-field__input" onKeyDown={ignoreComposingEnter} value={phaseSource} disabled={!ready}
           onChange={event => { setPhaseSource(event.currentTarget.value); }} title={t('assembly.guide.camPhase')} /><span>°</span></label>
       <button type="submit" className="pcad-button" disabled={!ready || followers.length === 0} title={t('assembly.guide.camCommit')}>

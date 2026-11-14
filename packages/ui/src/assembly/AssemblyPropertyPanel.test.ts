@@ -219,6 +219,29 @@ describe('EX12 actual property form handlers and immutable operations', () => {
   });
 });
 
+describe('ジョイントの連動は種類ごとに畳める見出し 1 つにまとめる(点検の指摘 14・3)', () => {
+  it('作った連動と新しい連動の form が並んでも見出しは種類ごとに 1 回で、式の説明は見出しのツールチップに出す', () => {
+    const f = gearFixture();
+    gearHandlers().onSubmit({ preventDefault: vi.fn() });
+    const created = useAppStore.getState().assembly;
+    if (created === null || created.mechanismCouplings?.length !== 1) throw new Error('作った連動が必要');
+    useAppStore.setState({ selection: ['ja'], assemblyView: { ...f.view, sourceDocument: created } });
+    const html = render();
+    expect(html.match(/data-testid="assembly-gear-form"/gu)).toHaveLength(2);
+    for (const key of ['assembly.gear.title', 'assembly.cam.title', 'assembly.crossGear.title', 'assembly.crossCam.title'] as const) {
+      expect(html.match(new RegExp(`<summary class="pcad-section__title"[^>]*>${t(key)}</summary>`, 'gu')), key).toHaveLength(1);
+      expect(html).not.toContain(`<h4>${t(key)}</h4>`);
+    }
+    const equationHead = t('assembly.gear.equation').split('{a}')[0];
+    expect(html).toContain(`title="${equationHead}`);
+    expect(html).not.toContain(`<p>${equationHead}`);
+    expect(html.match(/<details class="pcad-coupling-group" open="">/gu)).toHaveLength(4);
+    expect(html).toContain(`<form class="pcad-coupling-form" aria-label="${t('assembly.gear.title')}"`);
+    expect(html).toContain(`<span class="pcad-field__label">${t('assembly.gear.ratio')}</span>`);
+    expect(html).toContain(`<span class="pcad-field__label">${t('assembly.cam.discRadius')}</span>`);
+  });
+});
+
 describe('Assembly repair entry in the actual property panel', () => {
   it('exposes unresolved repair with no selection and keeps BOM, empty state and document/history unchanged', () => {
     const before = useAppStore.getState(), html = render();

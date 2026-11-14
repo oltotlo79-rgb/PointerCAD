@@ -56,9 +56,31 @@ const STATUS_BAR_SHRINK_ORDER = ['progress', 'save', 'file', 'recovery', 'messag
  */
 const SHRINK_WEIGHT_STEP = 1000;
 
+/** 帯の欄のうち、幅が足りない時に縮む物。 */
+type StatusBarShrinkSlot = (typeof STATUS_BAR_SHRINK_ORDER)[number];
+
 /** 帯の欄の flex-shrink。案内の 1 文が 1 で、先に縮める欄ほど大きい。 */
-export function statusBarFlexShrink(slot: (typeof STATUS_BAR_SHRINK_ORDER)[number]): number {
+function statusBarFlexShrink(slot: StatusBarShrinkSlot): number {
   return SHRINK_WEIGHT_STEP ** (STATUS_BAR_SHRINK_ORDER.length - 1 - STATUS_BAR_SHRINK_ORDER.indexOf(slot));
+}
+
+/**
+ * 縮めても残す最小の幅(CSS の min-width)。保存の印・復元用の保存の印・案内の 1 文は図柄の幅(回る印の
+ * 14px)を残し、語の部分だけが省略の印つきで縮む。最小の幅が 0 だと、帯が込んだ時に縮む順の先の印が
+ * 幅 0 に潰れて見えなくなる(外部検査の Linux で保存の完了の印が見えなかった。C-02a の直し)。
+ * ファイル名は頭の 4 文字ぶん、計算の進み具合は帯の線と中止のボタンを隠さないよう中身の幅(auto)を残す。
+ */
+const STATUS_BAR_MIN_WIDTHS: Readonly<Record<StatusBarShrinkSlot, string>> = {
+  progress: 'auto',
+  save: '14px',
+  file: '4em',
+  recovery: '14px',
+  message: '14px',
+};
+
+/** 帯の欄の縮み方(縮む重みと、縮めても残す最小の幅)。`StatusBar.tsx` は各欄の style にそのまま渡す。 */
+export function statusBarSlotStyle(slot: StatusBarShrinkSlot): { readonly flexShrink: number; readonly minWidth: string } {
+  return { flexShrink: statusBarFlexShrink(slot), minWidth: STATUS_BAR_MIN_WIDTHS[slot] };
 }
 
 /**

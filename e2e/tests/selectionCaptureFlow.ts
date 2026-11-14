@@ -21,6 +21,8 @@ export async function selectionCaptureFlow(page: Page, info: TestInfo): Promise<
   // 1) 選択セット: 名前を打って「作る」。
   const sets = propertySection(page, '選択セット');
   await expect(sets).toContainText('覚えた組はまだありません。');
+  // 道具の節は畳める見出しで、組が無い間は閉じている(UI の点検の指摘 5)。見出しを押して開く。
+  await page.locator('.pcad-panel--right details[data-tool="selectionSets"] > summary').click();
   await sets.getByRole('textbox', { name: '名前', exact: true }).fill('外側');
   await sets.getByRole('button', { name: '作る', exact: true }).click();
   await expect(sets.locator('.pcad-constraint-row')).toHaveCount(1);

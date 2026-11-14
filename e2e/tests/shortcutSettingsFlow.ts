@@ -164,7 +164,8 @@ async function additionalHomeKey(page: Page, info: TestInfo, app?: ElectronAppli
   const generation = await beginRecompute(page);
   await keyInViewport(page, 'Control+y'); await waitForRecompute(page, generation);
   await expect(tree(page, '点1')).toBeVisible();
-  await keyInViewport(page, 'Home');
+  // F8 now replaces the default Home key of the home view command (an assignment overrides the command's default key).
+  await keyInViewport(page, 'F8');
   const before = await rememberCamera(page, info, 'shortcut-home-default', app);
   const canvas = page.locator('canvas.pcad-viewport__canvas');
   const bounds = await canvas.boundingBox();
@@ -177,6 +178,9 @@ async function additionalHomeKey(page: Page, info: TestInfo, app?: ElectronAppli
     await page.mouse.up({ button: 'middle' });
     const rotated = await rememberCamera(page, info, 'shortcut-home-rotated', app);
     expect(rotated.view.position).not.toEqual(before.view.position);
+    await keyInViewport(page, 'Home');
+    const replaced = await rememberCamera(page, info, 'shortcut-home-replaced-default', app);
+    expectSameCamera(replaced.view, rotated.view);
     await keyInViewport(page, 'Control+F8');
     const refused = await rememberCamera(page, info, 'shortcut-home-extra-ctrl', app);
     expectSameCamera(refused.view, rotated.view);

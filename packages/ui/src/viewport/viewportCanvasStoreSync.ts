@@ -337,6 +337,8 @@ function syncViewRequests(sync: ViewportStoreSync, next: AppState, previous: App
   if (next.homeViewRequestCount !== previous.homeViewRequestCount) {
     sync.controls.goHome();
   }
+  // 標準の向きの要求(viewOrientationRequest)はここでは扱わない。ビューキューブが面を押した時と同じ遷移で
+  // setOrbit を通して移す(viewcube/ViewCube.tsx。4 分割の向きの決まった区画では命令の側で断る)。
   // 「視点に合わせる」の要求。視点の正本はここにしか無いので、
   // 今の視点をストアへ渡し返して作図面を決めてもらう。
   if (next.matchWorkPlaneRequestCount !== previous.matchWorkPlaneRequestCount) {

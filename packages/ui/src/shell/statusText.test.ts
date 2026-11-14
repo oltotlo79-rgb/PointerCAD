@@ -43,7 +43,7 @@ import {
   PROGRESS_DELAY_MS,
   rollbackText,
   springGuideText,
-  statusBarFlexShrink,
+  statusBarSlotStyle,
   summarizeFailures,
   trackGuideText,
 } from './statusText.js';
@@ -1882,14 +1882,22 @@ describe('帯の幅の割り当て(点検の指摘 1)', () => {
    * 保存の印・復元の印・ファイル名・計算の進み具合は、縮めても図柄と中止のボタンが残る。
    */
   const FIXED = { shrink: 0 };
-  const scene = (save: FlexSlot | null, recovery: FlexSlot | null): Map<string, FlexSlot> => new Map<string, FlexSlot>([
-    ['file', { basis: 70, min: 44, shrink: statusBarFlexShrink('file') }],
-    ['command', { basis: 168, min: 168, ...FIXED }],
-    ...(save === null ? [] : [['save', save] as const]),
-    ...(recovery === null ? [] : [['recovery', recovery] as const]),
-    ['message', { basis: 558, min: 14, shrink: statusBarFlexShrink('message') }],
-    ['right', { basis: 518, min: 518, ...FIXED }],
-  ]);
+  /** 製品の表の最小の幅を px へ(em は帯の小さい字 11px で数える)。 */
+  const minPx = (slot: Parameters<typeof statusBarSlotStyle>[0]): number => {
+    const { minWidth } = statusBarSlotStyle(slot);
+    return minWidth.endsWith('em') ? Number.parseFloat(minWidth) * 11 : Number.parseFloat(minWidth);
+  };
+  const slotOf = (slot: Parameters<typeof statusBarSlotStyle>[0], basis: number): FlexSlot =>
+    ({ basis, min: minPx(slot), shrink: statusBarSlotStyle(slot).flexShrink });
+  const scene = (save: FlexSlot | null, recovery: FlexSlot | null, message = 558, right = 518): Map<string, FlexSlot> =>
+    new Map<string, FlexSlot>([
+      ['file', slotOf('file', 70)],
+      ['command', { basis: 168, min: 168, ...FIXED }],
+      ...(save === null ? [] : [['save', save] as const]),
+      ...(recovery === null ? [] : [['recovery', recovery] as const]),
+      ['message', slotOf('message', message)],
+      ['right', { basis: right, min: right, ...FIXED }],
+    ]);
   const inner = (slots: Map<string, FlexSlot>, width: number): number => width - 24 - 12 * (slots.size - 1);
   const sizesAt = (slots: Map<string, FlexSlot>, width: number): Map<string, number> => {
     const names = [...slots.keys()];
@@ -1899,35 +1907,50 @@ describe('帯の幅の割り当て(点検の指摘 1)', () => {
 
   it('幅が足りない時は計算の進み具合・保存の印・ファイル名・復元の印の順に縮め、案内の 1 文は最後に縮める', () => {
     const order = ['progress', 'save', 'file', 'recovery', 'message'] as const;
-    const weights = order.map((slot) => statusBarFlexShrink(slot));
+    const weights = order.map((slot) => statusBarSlotStyle(slot).flexShrink);
     expect(weights.at(-1)).toBe(1);
     for (let index = 1; index < weights.length; index += 1) {
       expect(weights[index - 1], order[index - 1]).toBeGreaterThanOrEqual(weights[index] * 1000);
     }
   });
 
+  it('縮めても残す最小の幅: 保存の印・復元の印・案内は図柄の幅、ファイル名は 4 文字、計算の進み具合は中身の幅', () => {
+    // 最小の幅 0 の印は、帯が込むと幅 0 に潰れて見えなくなる(Linux の外部検査の失敗。C-02a の直し)。
+    expect(Object.fromEntries((['progress', 'save', 'file', 'recovery', 'message'] as const)
+      .map((slot) => [slot, statusBarSlotStyle(slot).minWidth]))).toEqual({
+      progress: 'auto', save: '14px', file: '4em', recovery: '14px', message: '14px',
+    });
+  });
+
   it('1440 幅で保存していない変更と復元の待ちがあっても、案内の 1 文は全文の幅を受け取る(指摘 1 の画像の状態)', () => {
     // 復元の待ちは図柄だけ(14px)。「保存していない変更があります。」の文は帯に出さない。
-    const slots = scene(null, { basis: 14, min: 14, shrink: statusBarFlexShrink('recovery') });
+    const slots = scene(null, slotOf('recovery', 14));
     expect(sizesAt(slots, 1440).get('message')).toBe(558);
   });
 
   it('保存中・復元の失敗が重なって幅が足りない時も、先の欄が最小まで縮むまで案内の 1 文は 1px も縮まない', () => {
-    const slots = scene(
-      { basis: 150, min: 100, shrink: statusBarFlexShrink('save') },
-      { basis: 120, min: 14, shrink: statusBarFlexShrink('recovery') },
-    );
-    for (let width = 1700; width >= 1100; width -= 5) {
+    const slots = scene(slotOf('save', 150), slotOf('recovery', 120));
+    for (let width = 1700; width >= 1000; width -= 5) {
       const sizes = sizesAt(slots, width);
       const lost = 558 - (sizes.get('message') ?? 0);
       const earlierAboveMin = ['save', 'file', 'recovery']
         .filter((name) => (sizes.get(name) ?? 0) > (slots.get(name)?.min ?? 0) + 0.5);
       if (earlierAboveMin.length > 0) expect(lost, `${String(width)}px: ${earlierAboveMin.join(',')}`).toBeLessThan(1);
     }
-    // 1100 幅では先の欄が全て最小になってから、案内の 1 文が残りを譲る。
-    const narrow = sizesAt(slots, 1100);
-    expect([narrow.get('save'), narrow.get('file'), narrow.get('recovery')]).toEqual([100, 44, 14]);
+    // 1000 幅では先の欄が全て最小になってから、案内の 1 文が残りを譲る。
+    const narrow = sizesAt(slots, 1000);
+    expect([narrow.get('save'), narrow.get('file'), narrow.get('recovery')]).toEqual([14, 44, 14]);
     expect(narrow.get('message')).toBeLessThan(558);
+  });
+
+  it('かなが全角幅の字体(Linux)で帯が込んでも、保存の完了の印と案内の図柄は 14px を保ち、幅 0 にならない', () => {
+    // 外部検査の Linux: 右の札 584px・案内 676px(52 字 × 13px)。保存の完了は図柄だけ(14px)。
+    const slots = scene(slotOf('save', 14), null, 676 + 22, 584);
+    for (let width = 1700; width >= 700; width -= 10) {
+      const sizes = sizesAt(slots, width);
+      expect(sizes.get('save'), `${String(width)}px の保存の印`).toBeGreaterThanOrEqual(14);
+      expect(sizes.get('message'), `${String(width)}px の案内`).toBeGreaterThanOrEqual(14);
+    }
   });
 });
 

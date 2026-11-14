@@ -48,6 +48,7 @@ import {
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { DEFAULT_COORDINATE_BASE, type CoordinateMode, type FieldUnit } from './numericInput.js';
+import { displayNumber } from './numericInputPresentation.js';
 import { sampleCurve } from './sampleCurve.js';
 
 /** プロパティ欄の 1 行。式は source をそのまま出す(FR-202)。 */
@@ -1687,11 +1688,13 @@ export function faceBoundaryEntries(
 export interface ResolvedFieldSummary {
   readonly labelKey: MessageKey;
   readonly text: string;
+  /** 数の行だけ、マウスを載せた時の説明へ出す全部の桁。数え上げ(点の数など)には無い。 */
+  readonly full?: string;
 }
 
-/** 表示用の数の文字列。有効数字 12 桁で、指数表記にしない。 */
-function formatNumber(value: number): string {
-  return expressionValueFromNumber(value).display;
+/** 表示用の数(有効 6 桁と全部の桁)。整形は表示の整形の 1 か所(`displayNumber`)に任せる。 */
+function formatNumber(value: number): { readonly text: string; readonly full: string } {
+  return displayNumber(value);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1750,8 +1753,8 @@ function samePosition(a: Vec3, b: Vec3): boolean {
  * 描いている形)。2 つが同じなら拘束は何も動かしていないので null(欄の下は今までどおり
  * 式の評価値だけ)。動いていれば「= (x, y, z)(拘束で決まった値)」を返す。
  *
- * 数の書き方は読み取り専用の欄(`resolvedFields`)と同じ `formatNumber` にそろえる
- * (同じ画面の中で桁の出方が 2 通りにならないようにする)。
+ * 数は `formatNumber` の全部の桁で返す。画面の行は `PropertyPanel.tsx` の `roundSolvedCoordinateText` が
+ * 表示の整形(有効 6 桁)へ通し、この全部の桁はその行のツールチップに出す(UI の点検の指摘 26・48)。
  */
 export function solvedCoordinateText(
   feature: SketchFeature,
@@ -1767,7 +1770,7 @@ export function solvedCoordinateText(
   if (before !== null && samePosition(before, after)) {
     return null;
   }
-  const listed = [after[0], after[1], after[2]].map(formatNumber).join(t('propertyPanel.solvedSeparator'));
+  const listed = [after[0], after[1], after[2]].map((value) => formatNumber(value).full).join(t('propertyPanel.solvedSeparator'));
   return `${t('propertyPanel.solvedPrefix')}${listed}${t('propertyPanel.solvedSuffix')}`;
 }
 
@@ -1809,9 +1812,9 @@ export function resolvedFields(
         return [];
       }
       return [
-        { labelKey: FIELD_LABEL_KEYS.x, text: formatNumber(point.position[0]) },
-        { labelKey: FIELD_LABEL_KEYS.y, text: formatNumber(point.position[1]) },
-        { labelKey: FIELD_LABEL_KEYS.z, text: formatNumber(point.position[2]) },
+        { labelKey: FIELD_LABEL_KEYS.x, ...formatNumber(point.position[0]) },
+        { labelKey: FIELD_LABEL_KEYS.y, ...formatNumber(point.position[1]) },
+        { labelKey: FIELD_LABEL_KEYS.z, ...formatNumber(point.position[2]) },
       ];
     }
     case 'line': {
@@ -1822,7 +1825,7 @@ export function resolvedFields(
       return [
         {
           labelKey: 'propertyPanel.length',
-          text: formatNumber(distanceVec3(segment.from, segment.to)),
+          ...formatNumber(distanceVec3(segment.from, segment.to)),
         },
       ];
     }
@@ -1834,7 +1837,7 @@ export function resolvedFields(
       return [
         {
           labelKey: 'propertyPanel.arcLength',
-          text: formatNumber(arc.radius * Math.abs(arc.endAngle - arc.startAngle)),
+          ...formatNumber(arc.radius * Math.abs(arc.endAngle - arc.startAngle)),
         },
       ];
     }
@@ -1859,8 +1862,8 @@ export function resolvedFields(
         return [];
       }
       return [
-        { labelKey: FIELD_LABEL_KEYS.majorRadius, text: formatNumber(ellipse.majorRadius) },
-        { labelKey: FIELD_LABEL_KEYS.minorRadius, text: formatNumber(ellipse.minorRadius) },
+        { labelKey: FIELD_LABEL_KEYS.majorRadius, ...formatNumber(ellipse.majorRadius) },
+        { labelKey: FIELD_LABEL_KEYS.minorRadius, ...formatNumber(ellipse.minorRadius) },
       ];
     }
     case 'spline': {
@@ -1889,7 +1892,7 @@ export function resolvedFields(
       }
       return [
         { labelKey: 'propertyPanel.curveCount', text: String(curves.length) },
-        { labelKey: 'propertyPanel.length', text: formatNumber(totalCurveLength(curves)) },
+        { labelKey: 'propertyPanel.length', ...formatNumber(totalCurveLength(curves)) },
       ];
     }
   }

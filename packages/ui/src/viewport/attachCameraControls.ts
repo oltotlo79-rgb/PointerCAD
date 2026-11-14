@@ -48,10 +48,12 @@ function movedOrbit(current: OrbitState, action: ViewAction, options: ViewContro
  * - 視点回転: 中ボタンドラッグ / Alt + 左ボタンドラッグ
  * - 平行移動: 右ボタンドラッグ / Shift + 中ボタンドラッグ
  * - 拡大縮小: 修飾なしホイール / Ctrl + ホイール
- * - ホーム視点: Home キー(このビューポートに入力の焦点があるとき)
  * ホイール(タッチパッドの 2 本指スクロール)を回転・平行移動へ割り当てた時は、ページを送る向きに動かす。
+ * ホーム視点はここではキーを受けない。命令「ホーム視点」(toolbar.view.home。既定は Home キーで、利用者が別のキーへ
+ * 変えられる)が全体のキーの入口から届き、ストアの要求(viewportCanvasStoreSync.ts)から goHome を呼ぶ。
  *
- * Home キーを受けるため、呼び出し側は canvas を焦点の当たる要素にしておく(`tabIndex` を 0 以上にする)。
+ * スケッチと組立のキー(Esc・Enter など)を canvas で受けるため、呼び出し側は canvas を焦点の当たる要素にしておく
+ * (`tabIndex` を 0 以上にする)。
  * 視点が変わるたびに onChange を呼ぶ。実際の描画は呼び出し側が行う。
  */
 export function attachCameraControls(
@@ -108,7 +110,7 @@ export function attachCameraControls(
     // Right clicks also belong to the radial release/drag observer on this canvas.
     if (event.button === 2) event.stopPropagation();
     else event.stopImmediatePropagation();
-    // 既定動作を止めると焦点が移らないので、Home キーのために自分で当てる。
+    // 既定動作を止めると焦点が移らないので、ビューポートのキー(Esc・Enter など)のために自分で当てる。
     canvas.focus({ preventScroll: true });
   }
 
@@ -181,13 +183,6 @@ export function attachCameraControls(
     setOrbit(movedOrbit(getOrbit(), action, settings.options, delta, viewportHeight));
   }
 
-  function onKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Home') {
-      event.preventDefault();
-      goHome();
-    }
-  }
-
   // 中ボタンのドラッグでブラウザの自動スクロールが始まらないようにする。
   function onMiddleButtonMouseDown(event: MouseEvent): void {
     if (event.button === MIDDLE_BUTTON) {
@@ -209,7 +204,6 @@ export function attachCameraControls(
   canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('mousedown', onMiddleButtonMouseDown);
   canvas.addEventListener('auxclick', onAuxClick);
-  canvas.addEventListener('keydown', onKeyDown);
   view?.addEventListener('blur', cancelDrag);
 
   return {
@@ -227,7 +221,6 @@ export function attachCameraControls(
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('mousedown', onMiddleButtonMouseDown);
       canvas.removeEventListener('auxclick', onAuxClick);
-      canvas.removeEventListener('keydown', onKeyDown);
       view?.removeEventListener('blur', cancelDrag);
     },
   };

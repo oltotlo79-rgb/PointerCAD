@@ -59,15 +59,20 @@ function setup(readSettings: () => ViewControlSettings = () => DEFAULT_VIEW_CONT
 afterEach(() => vi.unstubAllGlobals());
 
 describe('実際のポインタと4区画のカメラの接続(FR-113)', () => {
-  it('起動・Homeキー・ホームボタンで同じ基準カメラを使う', () => {
+  it('起動・ホーム視点の命令・ホームボタンで同じ基準カメラを使い、canvas は Home キーを自分では扱わない', () => {
     const app = setup();
     try {
       expect(app.controls.getOrbit()).toBe(HOME_ORBIT);
       const changed: OrbitState = { ...HOME_ORBIT, azimuth: 0.4, target: [11, 22, 33], distance: 75 };
       app.controls.setOrbit(changed); app.controls.goHome();
       expect(app.controls.getOrbit()).toBe(HOME_ORBIT);
-      app.controls.setOrbit(changed); event(app.canvas, 'keydown', { key: 'Home' });
-      expect(app.controls.getOrbit()).toBe(HOME_ORBIT);
+      // Home キーは全体のキーの入口がホーム視点の命令(toolbar.view.home)として受け、ストアの要求から goHome を呼ぶ。
+      // canvas でも受けると、Home を別のキーへ割り当てた後も canvas の Home が効き続け、二重にも戻る。
+      app.controls.setOrbit(changed);
+      const key = Object.assign(new Event('keydown', { cancelable: true }), { key: 'Home' });
+      app.canvas.dispatchEvent(key);
+      expect(key.defaultPrevented).toBe(false);
+      expect(app.controls.getOrbit()).toBe(changed);
     } finally { app.detach(); }
   });
   it.each([
@@ -111,7 +116,7 @@ describe('実際のポインタと4区画のカメラの接続(FR-113)', () => {
     event(app.canvas, 'pointerdown', { button: 1, buttons: 4, clientX: 620 });
     event(app.canvas, 'pointermove', { clientX: 660, buttons: 4 });
     expect(app.getQuad().orbits.isometric.azimuth).not.toBe(before.orbits.isometric.azimuth);
-    event(app.canvas, 'pointerup'); event(app.canvas, 'keydown', { key: 'Home' });
+    event(app.canvas, 'pointerup'); app.controls.goHome();
     expect(app.getQuad().orbits.isometric).toEqual(before.orbits.isometric);
     expect(app.getQuad().orbits.front).toBe(before.orbits.front); app.detach();
   });
@@ -251,7 +256,7 @@ describe('右ドラッグによる視点の平行移動', () => {
         if (pane !== id) expect(app.getQuad().orbits[pane]).toBe(before.orbits[pane]);
       }
       event(app.canvas, 'pointerup', { button: 2, clientX: x + dx, clientY: y + dy });
-      event(app.canvas, 'keydown', { key: 'Home' });
+      app.controls.goHome();
       expect(app.getQuad().orbits[id].target).toEqual([0, 0, 0]);
     } finally { app.detach(); }
   });
@@ -273,7 +278,7 @@ describe('右ドラッグによる視点の平行移動', () => {
       if (restored === null) throw new Error('Saved camera must restore');
       app.controls.goHome(); expect(app.controls.getOrbit().target).toEqual([0, 0, 0]);
       app.controls.setOrbit(restored); expect(app.controls.getOrbit().target).toEqual(moved.target);
-      event(app.canvas, 'keydown', { key: 'Home' });
+      app.controls.goHome();
       expect(app.controls.getOrbit()).toBe(HOME_ORBIT);
     } finally { app.detach(); }
   });

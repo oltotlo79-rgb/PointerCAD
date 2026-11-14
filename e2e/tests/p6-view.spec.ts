@@ -288,6 +288,8 @@ test.describe('P6 断面表示とひな形(要件§9 P6、計画書 §0.59)', ()
 
     const sets = propertySection(page, '選択セット');
     await expect(sets).toContainText('覚えた組はまだありません。');
+    // 道具の節は畳める見出しで、組が無い間は閉じている(UI の点検の指摘 5)。見出しを押して開く。
+    await page.locator('.pcad-panel--right details[data-tool="selectionSets"] > summary').click();
 
     // 1) 名前を入れずに「作る」を押すと断られ、行は増えない(NFR-UX-5)。
     await sets.getByRole('button', { name: '作る', exact: true }).click();

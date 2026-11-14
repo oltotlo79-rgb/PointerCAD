@@ -7,6 +7,7 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { AssemblyCamCouplingForm, ignoreComposingEnter } from './AssemblyCamCouplingForm.js';
+import { AssemblyPropertyPanel } from './AssemblyPropertyPanel.js';
 import type * as ImportedReactTypes from 'react';
 
 vi.mock('react', async (importOriginal) => {
@@ -87,9 +88,13 @@ describe('EX12 actual cam form handlers and immutable operations', () => {
   it('shows the law and validity bounds, then create, update and remove each commit one Undo', async () => {
     const f = camFixture();
     const html = renderToStaticMarkup(createElement(AssemblyCamCouplingForm, { jointId: 'jc' }));
-    for (const key of ['assembly.cam.title', 'assembly.cam.law', 'assembly.cam.validity', 'assembly.cam.follower',
+    for (const key of ['assembly.cam.title', 'assembly.cam.follower',
       'assembly.cam.discRadius', 'assembly.cam.eccentricity', 'assembly.cam.rollerRadius', 'assembly.cam.phase',
       'assembly.cam.create'] as const) expect(html).toContain(renderToStaticMarkup(createElement(React.Fragment, null, t(key))));
+    // 式は連動の見出しのツールチップ、条件は見出しの下に 1 回だけ出す(UI の点検の指摘 14)。
+    const panel = renderToStaticMarkup(createElement(AssemblyPropertyPanel));
+    expect(panel).toContain(`title="${renderToStaticMarkup(createElement(React.Fragment, null, t('assembly.cam.law')))}"`);
+    expect(panel).toContain(`<p>${renderToStaticMarkup(createElement(React.Fragment, null, t('assembly.cam.validity')))}</p>`);
     const preventDefault = vi.fn();
     camHandlers().onSubmit({ preventDefault });
     expect(preventDefault).toHaveBeenCalledOnce();

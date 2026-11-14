@@ -39,7 +39,7 @@ import {
   filletWeldStatus,
   PROGRESS_DELAY_MS,
   saveMarkLabel,
-  statusBarFlexShrink,
+  statusBarSlotStyle,
   type SpringNumericInputStep,
   type StatusLineKind,
   type TrackStatus,
@@ -102,13 +102,12 @@ interface StatusMarkProps {
   /** 段階の全文。ツールチップと読み上げへ渡す。 */
   readonly text: string;
   readonly failed?: boolean;
-  /** 中止のボタン。縮んでも残る。 */
-  readonly children?: React.ReactNode;
 }
 
 /**
  * 保存の段階・復元用の保存の状態の印(UI の点検の指摘 1)。図柄と 1〜2 語だけを画面に出し、全文は
- * ツールチップと読み上げへ渡す。幅が足りない時は案内の 1 文より先に縮む(`statusBarFlexShrink`)。
+ * ツールチップと読み上げへ渡す。幅が足りない時は案内の 1 文より先に縮むが、縮むのは語の部分だけで、
+ * 図柄の幅は残す(`statusBarSlotStyle`。幅 0 に潰れて見えなくならない。C-02a の直し)。
  */
 function StatusMark(props: StatusMarkProps): React.JSX.Element {
   return (
@@ -117,14 +116,13 @@ function StatusMark(props: StatusMarkProps): React.JSX.Element {
       data-save-stage={props.slot === 'save' ? props.stage : undefined}
       data-recovery-stage={props.slot === 'recovery' ? props.stage : undefined}
       title={props.text}
-      style={{ flexShrink: statusBarFlexShrink(props.slot) }}
+      style={statusBarSlotStyle(props.slot)}
     >
       {props.icon}
       {props.label === null ? null : (
         <span className="pcad-statusbar__mark-text" aria-hidden="true">{props.label}</span>
       )}
       <span className="pcad-statusbar__spoken" role="status" aria-live="polite">{props.text}</span>
-      {props.children}
     </span>
   );
 }
@@ -136,7 +134,7 @@ function StatusMark(props: StatusMarkProps): React.JSX.Element {
  * どれを出すかの順番と文の組み立ては `statusText.ts` の純関数が決める。
  * 右は「作図面」「吸着」(部品の文書だけ)と「単位」を小さな札で見せる。**単位の札だけは押せる**
  * (mm ↔ inch、FR-811)。札の数も区画も増やしていない。
- * 帯の幅が足りない時は、案内の 1 文を最後に縮める(縮む順は `statusBarFlexShrink`。UI の点検の指摘 1)。
+ * 帯の幅が足りない時は、案内の 1 文を最後に縮める(縮む順と最小の幅は `statusBarSlotStyle`。UI の点検の指摘 1)。
  * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
  *
  * 長い計算のあいだは細い進捗の帯と「中止」を出す(NFR-PF-4)。**進み具合が届いてすぐには
@@ -460,7 +458,7 @@ export function StatusBar(): React.JSX.Element {
     <footer className={className}>
       {/* 開いているファイルの名前。区画は増やさず、状況の1文の左へ小さく置く。未保存は * とツールチップで伝える(点検の指摘 1)。 */}
       <span className="pcad-statusbar__file" title={unsaved ? t('file.unsavedChanges') : fileLabel}
-        style={{ flexShrink: statusBarFlexShrink('file') }}>
+        style={statusBarSlotStyle('file')}>
         {fileLabel}
       </span>
       {/*
@@ -476,13 +474,13 @@ export function StatusBar(): React.JSX.Element {
       {saveOperation === null ? null : (
         <StatusMark slot="save" stage={saveOperation.stage} label={saveMarkLabel(saveOperation.stage)}
           text={saveText ?? ''} icon={saveOperation.stage === 'complete' || saveOperation.stage === 'cancelled'
-            ? <SaveIcon size={12} /> : <span className="pcad-spinner" aria-hidden="true" />}>
-          {saveOperation.cancel === null ? null : (
-            <button type="button" className="pcad-button pcad-button--action pcad-statusbar__cancel"
-              title={t('controlGuide.save.cancel')}
-              onClick={saveOperation.cancel}>{t('file.save.cancel')}</button>
-          )}
-        </StatusMark>
+            ? <SaveIcon size={12} /> : <span className="pcad-spinner" aria-hidden="true" />} />
+      )}
+      {/* 中止のボタンは印の外に置く(印の語が縮んでもボタンは隠れない。C-02a の直し)。 */}
+      {saveOperation === null || saveOperation.cancel === null ? null : (
+        <button type="button" className="pcad-button pcad-button--action pcad-statusbar__cancel"
+          title={t('controlGuide.save.cancel')}
+          onClick={saveOperation.cancel}>{t('file.save.cancel')}</button>
       )}
       {recoveryText === null || recoveryState === null ? null : (
         <StatusMark slot="recovery" stage={recoveryState.stage} text={recoveryText}
@@ -490,7 +488,7 @@ export function StatusBar(): React.JSX.Element {
           label={recoveryState.stage === 'failed' ? t('statusBar.recoveryMark.failed') : null}
           icon={recoveryState.stage === 'failed' ? <AlertIcon size={12} /> : <RecentFileIcon size={12} />} />
       )}
-      <span className="pcad-statusbar__message" aria-live="polite" style={{ flexShrink: statusBarFlexShrink('message') }}>
+      <span className="pcad-statusbar__message" aria-live="polite" style={statusBarSlotStyle('message')}>
         {statusIcon(line.kind)}
         <span className="pcad-statusbar__text" title={line.text}>
           {line.text}{fileMessage?.detail === undefined ? '' : ` ${fileMessage.detail}`}
@@ -519,7 +517,7 @@ export function StatusBar(): React.JSX.Element {
          * 計算の進み具合と中止(NFR-PF-4)。中止は段と段の間でしか効かないので、
          * 待たされることがある旨を薄い字とツールチップで先に伝える。
          */
-        <span className="pcad-statusbar__progress" style={{ flexShrink: statusBarFlexShrink('progress') }}>
+        <span className="pcad-statusbar__progress" style={statusBarSlotStyle('progress')}>
           <span
             className="pcad-statusbar__progress-track"
             role="progressbar"

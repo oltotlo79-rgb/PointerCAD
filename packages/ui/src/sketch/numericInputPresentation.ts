@@ -1,5 +1,5 @@
 /** 表示用の札と値の整形。入力の遷移・確定や文書の更新を持たない。 */
-import { DEFAULT_INCH_DENOMINATOR, toDisplayLength, toFractionalInch, type LengthUnit } from '@pointercad/model';
+import { DEFAULT_INCH_DENOMINATOR, isSamePoint, toDisplayLength, toFractionalInch, type LengthUnit } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import { isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
 import type { CoordinateMode } from './numericInputTools.js';
@@ -70,6 +70,36 @@ export function roundToSignificantDigits(value: number, digits: number): number 
   const magnitude = Math.floor(Math.log10(Math.abs(value)));
   const factor = Math.pow(10, digits - 1 - magnitude);
   return Math.round(value * factor) / factor;
+}
+
+/**
+ * 画面に出す数の有効桁数(利用者の決定 2026-11-14「数値は有効 6 桁で表示し、全部の桁はマウスを載せた時の
+ * 説明に出す」)。**表示だけ**に使い、計算の中の値・保存する値・欄の中の式は変えない。
+ */
+const DISPLAY_SIGNIFICANT_DIGITS = 6;
+
+/** 画面に出す数 1 つ。`text` は画面の文字、`full` はマウスを載せた時の説明へ出す全部の桁。 */
+interface DisplayNumber {
+  readonly text: string;
+  readonly full: string;
+}
+
+/**
+ * 数の表示の整形(プロパティ・結果の表示が呼ぶ 1 か所。UI の点検の指摘 26・48)。
+ * 製品の長さの許容差(`SKETCH_TOLERANCE_MM`)以内の値は `0`(計算の端数の 9e-16 などを出さない)、
+ * ほかは有効 6 桁へ丸める(末尾の 0 は落ちる。-0 は 0)。有限でない値はそのまま出す。
+ * 許容差で 0 とみなす判定は新しく書かず、model の点の一致の判定(`isSamePoint`。既定の許容差が
+ * `SKETCH_TOLERANCE_MM`)で原点と一致するかを見る(許容差の比較を 1 か所に保つ。toleranceBaseline)。
+ */
+export function displayNumber(value: number): DisplayNumber {
+  const full = String(value);
+  if (!Number.isFinite(value)) {
+    return { text: full, full };
+  }
+  if (isSamePoint([value, 0, 0], [0, 0, 0])) {
+    return { text: '0', full };
+  }
+  return { text: String(Number(value.toPrecision(DISPLAY_SIGNIFICANT_DIGITS))), full };
 }
 
 /** 1/64 インチの刻みに「ちょうど」乗っているとみなす、刻みの数の誤差(浮動小数の丸めの分だけ)。 */

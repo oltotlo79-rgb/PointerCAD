@@ -26,7 +26,10 @@ export function ReferenceRepairSection(): React.ReactElement | null {
   const impacts = useMemo(() => review === null || review.tokens[2] !== state.activeDocumentId
     || review.tokens[1] !== activeDocument(state).document ? null : referenceRepairImpacts(state, review.slot), [state, review]);
   const ready = repairContextReady(state);
-  if (rows.length === 0 && session === null && review === null) return null;
+  // 直す必要のある参照(一意でない・今の形を取れない)が 0 件で、修復も確認もしていない間は、プロパティの先頭に
+  // 節を出さない(何も直す物が無いのに説明と入口が選んだ物の値より先に並ぶため。UI の点検の指摘 4)。
+  const attention = rows.filter(row => row.status !== 'matched' || !row.slot.available).length;
+  if (attention === 0 && session === null && review === null) return null;
   const fresh = session !== null && referenceRepairCurrent(session, state);
   const visible = rows.filter(row => showAll || row.status !== 'matched');
   function open(key: string): void {

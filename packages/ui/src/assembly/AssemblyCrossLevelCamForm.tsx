@@ -92,18 +92,15 @@ export function AssemblyCrossLevelCamForm(props: {
   const followerValue = cam === undefined ? undefined : currentOccurrenceDrive({ assembly: document, assemblyView: view,
     assemblyOccurrenceDrives: drives }, cam.childPath)?.values.get(jointValueKey(cam.childJointId, 'translation'));
   const field = (key: keyof Sources, label: MessageKey, unit: string): React.JSX.Element => (
-    <label className="pcad-field"><span>{t(label)}</span>
+    <label className="pcad-field"><span className="pcad-field__label">{t(label)}</span>
       <input className="pcad-field__input" value={sources[key]} disabled={!ready}
         onChange={event => { const value = event.currentTarget.value; setSources(current => ({ ...current, [key]: value })); }} title={t(CAM_FIELD_GUIDES[key])} />
       <span>{unit}</span></label>);
   return (
     <form className="pcad-coupling-form" aria-label={t('assembly.crossCam.title')} data-testid="assembly-cross-cam-form"
       onSubmit={event => { event.preventDefault(); commit(); }}>
-      <h4>{t('assembly.crossCam.title')}</h4>
-      <p>{t('assembly.crossCam.law').replace('{a}', joint.name)}</p>
-      <p>{t('assembly.crossCam.authoredLaw')}</p>
       {targets.length === 0 ? <p>{t('assembly.crossCam.none')}</p> : (
-        <label className="pcad-field"><span>{t('assembly.crossCam.target')}</span>
+        <label className="pcad-field"><span className="pcad-field__label">{t('assembly.crossCam.target')}</span>
           <select className="pcad-field__input" value={target} disabled={!ready}
             onChange={event => { setTarget(event.currentTarget.value); }} title={t('assembly.guide.crossCamTarget')}>
             {targets.map(item => <option key={targetKey(item.path, item.jointId)} value={targetKey(item.path, item.jointId)}>{item.label}</option>)}
@@ -113,7 +110,7 @@ export function AssemblyCrossLevelCamForm(props: {
       {field('roller', 'assembly.crossCam.rollerRadius', 'mm')}
       {field('phase', 'assembly.crossCam.phase', '°')}
       {field('offset', 'assembly.crossCam.offset', 'mm')}
-      <label className="pcad-field"><span>{t('assembly.crossCam.direction')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.crossCam.direction')}</span>
         <select className="pcad-field__input" value={String(direction)} disabled={!ready}
           onChange={event => { setDirection(event.currentTarget.value === '-1' ? -1 : 1); }} title={t('assembly.guide.crossCamDirection')}>
           <option value="1">{t('assembly.crossCam.directionPlus')}</option>
@@ -125,7 +122,7 @@ export function AssemblyCrossLevelCamForm(props: {
         {t('assembly.crossCam.remove')}</button>}
       {cam === undefined || cam.suppressed ? null : <>
         <p>{t('assembly.crossCam.driveHint')}</p>
-        <label className="pcad-field"><span>{t('assembly.crossCam.camAngle').replace('{joint}', joint.name)}</span>
+        <label className="pcad-field"><span className="pcad-field__label">{t('assembly.crossCam.camAngle').replace('{joint}', joint.name)}</span>
           <input type="number" className="pcad-field__input" disabled={!ready} value={camValue ?? ''}
             aria-label={t('assembly.crossCam.camAngle').replace('{joint}', joint.name)}
             onChange={event => { drive(event.currentTarget.value); }} title={t('assembly.guide.crossCamDrive')} /><span>°</span></label>

@@ -11,14 +11,14 @@
 
 /*
  * 保存の段階と復元用の保存の状態の印(UI の点検の指摘 1)。図柄と 1〜2 語だけを出し、段階の全文は
- * ツールチップと読み上げへ渡す。幅が足りない時は語が縮み、図柄と中止のボタンは残る
- * (縮む順は statusText.ts の statusBarFlexShrink)。案内の 1 文を押し出さない。
+ * ツールチップと読み上げへ渡す。幅が足りない時は語だけが縮み、図柄は残る。縮む重みと最小の幅(図柄の幅)は
+ * statusText.ts の statusBarSlotStyle が決めて style で渡す(ここに min-width を書かない。最小の幅 0 で
+ * 印が幅 0 に潰れて見えなくなった。C-02a の直し)。中止のボタンは印の外に置く。案内の 1 文を押し出さない。
  */
 .pcad-statusbar__mark {
   display: inline-flex;
   gap: var(--pcad-space-1);
   align-items: center;
-  min-width: 0;
   font-size: var(--pcad-font-size-small);
   color: var(--pcad-text-muted);
   white-space: nowrap;
@@ -51,9 +51,4 @@
   overflow: hidden;
   white-space: nowrap;
   clip-path: inset(50%);
-}
-
-/* ファイル名は縮めても頭の数文字を残す。 */
-.pcad-statusbar__file {
-  min-width: 4em;
 }

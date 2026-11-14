@@ -9,6 +9,13 @@ export const VIEW_COMMAND_ITEMS = [
   { id: 'chaining', labelKey: 'toolbar.chain.label', tooltipKey: 'toolbar.chain.tooltip' },
   { id: 'snap', labelKey: 'toolbar.snap.label', tooltipKey: 'toolbar.snap.tooltip' },
   { id: 'home', labelKey: 'toolbar.home.label', tooltipKey: 'toolbar.home.tooltip' },
+  // 標準の向き。ID はビューキューブの面(viewcube/viewCubeMath.ts の FACE_REGIONS)と同じ名前にする。
+  { id: 'front', labelKey: 'toolbar.viewOrientation.front', tooltipKey: 'toolbar.viewOrientation.frontTooltip' },
+  { id: 'back', labelKey: 'toolbar.viewOrientation.back', tooltipKey: 'toolbar.viewOrientation.backTooltip' },
+  { id: 'right', labelKey: 'toolbar.viewOrientation.right', tooltipKey: 'toolbar.viewOrientation.rightTooltip' },
+  { id: 'left', labelKey: 'toolbar.viewOrientation.left', tooltipKey: 'toolbar.viewOrientation.leftTooltip' },
+  { id: 'top', labelKey: 'toolbar.viewOrientation.top', tooltipKey: 'toolbar.viewOrientation.topTooltip' },
+  { id: 'bottom', labelKey: 'toolbar.viewOrientation.bottom', tooltipKey: 'toolbar.viewOrientation.bottomTooltip' },
   { id: 'matchWorkPlane', labelKey: 'toolbar.plane.matchView', tooltipKey: 'toolbar.plane.matchViewTooltip' },
 ] as const satisfies readonly { readonly id: string; readonly labelKey: MessageKey; readonly tooltipKey: MessageKey }[];
 

@@ -7,7 +7,17 @@ import {
   cancelPopover, chooseShapeTool, chooseSketchTool, commitPopover, fillFields, popoverTitle, useAbsolute,
 } from './sketchDrawCaptureSupport.js';
 import { waitForStartupHealth } from './startupHealth.js';
+import { crowdedSaveMarkFlow } from './statusBarCrowdedFlow.js';
 import { uiMessage } from './uiMessages.js';
+
+test('帯が込み合っても保存の完了の印は図柄の大きさを保って見える(帯の縮む順の直し)', async ({ page }, info) => {
+  // 製品のダウンロード代替の保存口を通す(保存の窓を出さない。saveFlowFile を読む検査と同じ)。
+  await page.addInitScript(() => {
+    for (const key of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, key, { configurable: true, value: undefined });
+  });
+  await page.goto('/');
+  await crowdedSaveMarkFlow(page, info);
+});
 
 test('形の計算中も投影の次の操作と計算状況を同時に読める(FR-905)', async ({ page }, info) => {
   await page.setViewportSize({ width: 1440, height: 900 });

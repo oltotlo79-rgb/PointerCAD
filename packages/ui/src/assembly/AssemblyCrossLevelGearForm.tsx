@@ -122,18 +122,16 @@ export function AssemblyCrossLevelGearForm(props: {
   return (
     <form className="pcad-coupling-form" aria-label={t('assembly.crossGear.title')} data-testid="assembly-cross-gear-form"
       onSubmit={event => { event.preventDefault(); commit(); }}>
-      <h4>{t('assembly.crossGear.title')}</h4>
-      <p>{t('assembly.crossGear.equation').replace('{a}', joint.name)}</p>
       {targets.length === 0 ? <p>{t('assembly.crossGear.none')}</p> : (
-        <label className="pcad-field"><span>{t('assembly.crossGear.target')}</span>
+        <label className="pcad-field"><span className="pcad-field__label">{t('assembly.crossGear.target')}</span>
           <select className="pcad-field__input" value={target} disabled={!ready}
             onChange={event => { setTarget(event.currentTarget.value); }} title={t('assembly.guide.crossGearTarget')}>
             {targets.map(item => <option key={targetKey(item.path, item.jointId)} value={targetKey(item.path, item.jointId)}>{item.label}</option>)}
           </select></label>)}
-      <label className="pcad-field"><span>{t('assembly.crossGear.ratio')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.crossGear.ratio')}</span>
         <input className="pcad-field__input" value={ratioSource} disabled={!ready}
           onChange={event => { setRatioSource(event.currentTarget.value); }} title={t('assembly.guide.crossGearRatio')} /></label>
-      <label className="pcad-field"><span>{t('assembly.crossGear.phase')}</span>
+      <label className="pcad-field"><span className="pcad-field__label">{t('assembly.crossGear.phase')}</span>
         <input className="pcad-field__input" value={phaseSource} disabled={!ready}
           onChange={event => { setPhaseSource(event.currentTarget.value); }} title={t('assembly.guide.crossGearPhase')} /><span>°</span></label>
       <button type="submit" className="pcad-button" disabled={!ready || chosen === undefined} title={t('assembly.guide.crossGearCommit')}>
@@ -142,16 +140,15 @@ export function AssemblyCrossLevelGearForm(props: {
         {t('assembly.crossGear.remove')}</button>}
       {coupling === undefined || coupling.suppressed ? null : <>
         <p>{t('assembly.crossGear.driveHint')}</p>
-        <label className="pcad-field"><span>{t('assembly.crossGear.parentAngle').replace('{joint}', joint.name)}</span>
+        <label className="pcad-field"><span className="pcad-field__label">{t('assembly.crossGear.parentAngle').replace('{joint}', joint.name)}</span>
           <input type="number" className="pcad-field__input" disabled={!ready} value={parentValue ?? ''}
             aria-label={t('assembly.crossGear.parentAngle').replace('{joint}', joint.name)}
             onChange={event => { drive('parent', event.currentTarget.value); }} title={t('assembly.guide.crossGearParentAngle')} /><span>°</span></label>
-        <label className="pcad-field"><span>{t('assembly.crossGear.childAngle').replace('{joint}', childName)}</span>
+        <label className="pcad-field"><span className="pcad-field__label">{t('assembly.crossGear.childAngle').replace('{joint}', childName)}</span>
           <input type="number" className="pcad-field__input" disabled={!ready} value={childValue ?? ''}
             aria-label={t('assembly.crossGear.childAngle').replace('{joint}', childName)}
             onChange={event => { drive('child', event.currentTarget.value); }} title={t('assembly.guide.crossGearChildAngle')} /><span>°</span></label>
       </>}
-      <p>{t('assembly.crossGear.camPending')}</p>
       {refusal === null ? null : <p role="alert">{crossLevelGearRefusal(refusal)}</p>}
     </form>
   );

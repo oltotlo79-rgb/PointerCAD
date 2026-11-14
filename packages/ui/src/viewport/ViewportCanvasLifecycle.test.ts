@@ -828,7 +828,7 @@ describe('ownership refresh preserves one fenced real mate input', () => {
           case 'quad-camera': useAppStore.getState().setQuadViewEnabled(true); break;
           case 'camera': f.controls.changed(); break;
           case 'wheel': f.send('wheel', { deltaMode: 0, deltaY: 100, shiftKey: false, ctrlKey: false, metaKey: false }); break;
-          case 'home': f.send('keydown', { key: 'Home', isComposing: false }); break;
+          case 'home': useAppStore.getState().requestHomeView(); break; // The Home key reaches the viewport as this request.
           case 'resize': f.observer.changed(); break;
           case 'pointercancel': f.send('pointercancel'); break;
           case 'escape': f.send('keydown', { key: 'Escape', isComposing: false }); break;

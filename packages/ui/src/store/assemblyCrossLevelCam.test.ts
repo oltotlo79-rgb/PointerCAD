@@ -11,6 +11,7 @@ import {
   type Placement, type PresentationStep, type PrimitiveFeature, type RigidPlacement,
 } from '@pointercad/model';
 import { AssemblyCrossLevelCamForm } from '../assembly/AssemblyCrossLevelCamForm.js';
+import { AssemblyPropertyPanel } from '../assembly/AssemblyPropertyPanel.js';
 import { AssemblyCrossLevelGearRepairs } from '../assembly/AssemblyCrossLevelGearRepairs.js';
 import { deleteAssemblyComponents } from '../assembly/placeComponentActions.js';
 import { t } from '../i18n/t.js';
@@ -324,7 +325,11 @@ describe('the public cam form', () => {
     await open({ cams: [] });
     const created = renderToStaticMarkup(React.createElement(AssemblyCrossLevelCamForm, { jointId: 'cam' }));
     expect(created).toContain(t('assembly.crossCam.title'));
-    expect(created).toContain(t('assembly.crossCam.authoredLaw'));
+    // 「補正と向きは利用者が決める」の文は、連動の種類の見出しの下に 1 回だけ出す(UI の点検の指摘 14)。
+    const selection = store().selection;
+    useAppStore.setState({ selection: ['cam'] });
+    expect(renderToStaticMarkup(React.createElement(AssemblyPropertyPanel))).toContain(t('assembly.crossCam.authoredLaw'));
+    useAppStore.setState({ selection });
     expect(created).toContain('A : push');
     expect(created).toContain('B : push');
     expect(created).not.toContain('twist');

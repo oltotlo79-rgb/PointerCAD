@@ -61,6 +61,10 @@ for (const viewport of [{ width: 1479, height: 812 }, { width: 1024, height: 768
     await page.setViewportSize(viewport);
     await page.goto('/');
     await waitForStartupHealth(page, info);
+    // 道具の節は畳める見出しで既定は閉じている(UI の点検の指摘 5)。測る 2 つの節の見出しを押して開く。
+    for (const tool of ['selectionSets', 'printCheck']) {
+      await page.locator(`.pcad-panel--right details[data-tool="${tool}"] > summary`).click();
+    }
     const sets = propertySection(page, uiMessage('propertyPanel', 'propertyPanel.sectionSelectionSets'));
     await expectStackedFields(sets, 1);
     const name = sets.getByRole('textbox', { name: uiMessage('propertyPanel', 'propertyPanel.selectionSetName'), exact: true });

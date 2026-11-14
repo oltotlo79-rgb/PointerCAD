@@ -1,4 +1,4 @@
-import type { EffectCallback } from 'react';
+import { Children, isValidElement, type EffectCallback, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
@@ -6,23 +6,42 @@ import { ViewCube } from './ViewCube.js';
 import type { ViewCubeRegion } from './viewCubeMath.js';
 import type * as ImportedReactTypes from 'react';
 
-const harness = vi.hoisted(() => ({
-  effect: null as EffectCallback | null,
-  canvas: null as EventTarget | null,
-  render: vi.fn(), resize: vi.fn(), dispose: vi.fn(), setThemeColors: vi.fn(),
-  pick: vi.fn<() => ViewCubeRegion | null>(),
-  storeListener: null as ((next: { displaySettings: { theme: string }; homeViewRequestCount: number }, previous: { displaySettings: { theme: string }; homeViewRequestCount: number }) => void) | null,
-}));
+const harness = vi.hoisted(() => {
+  // What the render-time store selector reads (the home button title).
+  const state: SelectorState = { displaySettings: {}, drawing: null, assembly: null, document: {} };
+  return {
+    effect: null as EffectCallback | null,
+    canvas: null as EventTarget | null,
+    render: vi.fn(), resize: vi.fn(), dispose: vi.fn(), setThemeColors: vi.fn(),
+    pick: vi.fn<() => ViewCubeRegion | null>(),
+    storeListener: null as ((next: StoreSnapshot, previous: StoreSnapshot) => void) | null,
+    state,
+  };
+});
+
+interface SelectorState {
+  displaySettings: { shortcutAssignments?: Record<string, unknown> };
+  readonly drawing: null;
+  readonly assembly: null;
+  readonly document: object;
+}
+
+interface StoreSnapshot {
+  readonly displaySettings: { readonly theme: string };
+  readonly homeViewRequestCount: number;
+  readonly viewOrientationRequest?: { readonly face: string; readonly serial: number } | null;
+}
 
 vi.mock('react', async importOriginal => ({
   ...await importOriginal<typeof ImportedReactTypes>(),
   useRef: () => ({ current: harness.canvas }),
   useEffect: (effect: EffectCallback) => { harness.effect = effect; },
 }));
-vi.mock('../store/useAppStore.js', () => ({ useAppStore: {
-  subscribe: (listener: typeof harness.storeListener) => { harness.storeListener = listener; return vi.fn(); },
-  getState: () => ({ requestHomeView: vi.fn() }),
-} }));
+vi.mock('../store/useAppStore.js', () => ({ useAppStore: Object.assign(
+  (select: (state: typeof harness.state) => unknown) => select(harness.state), {
+    subscribe: (listener: typeof harness.storeListener) => { harness.storeListener = listener; return vi.fn(); },
+    getState: () => ({ requestHomeView: vi.fn() }),
+  }) }));
 vi.mock('../viewport/themeColors.js', () => ({ readThemeColors: () => ({}) }));
 vi.mock('./createViewCubeScene.js', () => ({ createViewCubeScene: () => harness }));
 
@@ -68,6 +87,7 @@ const setOrbit = vi.fn((next: OrbitState) => { current = next; onDraw(); });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  harness.state.displaySettings = {};
   canvas = new Canvas();
   harness.canvas = canvas;
   harness.pick.mockReturnValue({ x: 0, y: -1, z: 0 });
@@ -94,6 +114,19 @@ afterEach(() => {
   cleanup = undefined;
   vi.unstubAllGlobals();
 });
+
+function requestOrientation(next: StoreSnapshot['viewOrientationRequest'], previous: StoreSnapshot['viewOrientationRequest']): void {
+  harness.storeListener?.({ displaySettings: { theme: 'dark' }, homeViewRequestCount: 0, viewOrientationRequest: next },
+    { displaySettings: { theme: 'dark' }, homeViewRequestCount: 0, viewOrientationRequest: previous });
+}
+
+/** The title the home button renders now (the component is a plain function under the mocked hooks). */
+function renderedHomeTitle(): unknown {
+  const root = ViewCube({ getOrbit: () => current, setOrbit, subscribeDraw: () => vi.fn() });
+  const button = Children.toArray((root.props as { readonly children: ReactNode }).children)
+    .find(child => isValidElement<{ readonly className?: string }>(child) && child.props.className === 'pcad-viewcube-home');
+  return isValidElement<{ readonly title?: string }>(button) ? button.props.title : null;
+}
 
 function finishTransition(): void {
   now += 301;
@@ -190,6 +223,56 @@ describe('view cube pointer feedback and lifecycle', () => {
     finishTransition();
     expect(current).toBe(HOME_ORBIT);
     expect(setOrbit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['front', -Math.PI / 2, 0],
+    ['top', 0, Math.PI / 2 - 1e-4],
+  ] as const)('moves to the %s view on a command request over the same 300 ms as a face click', (face, azimuth, elevation) => {
+    requestOrientation({ face, serial: 1 }, null);
+    expect(nextFrame).not.toBeNull();
+    now += 150;
+    const half = nextFrame;
+    nextFrame = null;
+    half?.(now);
+    expect(nextFrame).not.toBeNull();
+    expect(Math.abs(current.azimuth - azimuth) + Math.abs(current.elevation - elevation)).toBeGreaterThan(1e-3);
+    finishTransition();
+    expect(current.azimuth).toBeCloseTo(azimuth, 12);
+    expect(current.elevation).toBeCloseTo(elevation, 12);
+    expect(current.target).toEqual([4, 5, 6]);
+    expect(current.distance).toBe(77);
+    expect(nextFrame).toBeNull();
+  });
+
+  it('ignores an unchanged or cleared orientation request and lets Home cancel a requested move', () => {
+    const top = { face: 'top', serial: 1 };
+    requestOrientation(top, top);
+    requestOrientation(null, top);
+    expect(nextFrame).toBeNull();
+    requestOrientation(top, null);
+    harness.storeListener?.({ displaySettings: { theme: 'dark' }, homeViewRequestCount: 1, viewOrientationRequest: top },
+      { displaySettings: { theme: 'dark' }, homeViewRequestCount: 0, viewOrientationRequest: top });
+    finishTransition();
+    expect(setOrbit).not.toHaveBeenCalled();
+  });
+
+  it('restarts a click transition from the current view when a command asks for another face', () => {
+    canvas.pointer('pointerdown');
+    canvas.pointer('pointerup');
+    requestOrientation({ face: 'right', serial: 1 }, null);
+    finishTransition();
+    expect(current.azimuth).toBeCloseTo(0, 12);
+    expect(current.elevation).toBe(0);
+    expect(nextFrame).toBeNull();
+  });
+
+  it('names the current key of the home command in the home button title and follows a new assignment', () => {
+    expect(renderedHomeTitle()).toBe('ホーム視点 (Home): ホーム視点: 斜め上から見た最初の向きに戻します');
+    harness.state.displaySettings = { shortcutAssignments: { 'toolbar.view.home': { key: 'h', primary: false, shift: false, alt: false } } };
+    expect(renderedHomeTitle()).toBe('ホーム視点 (H): ホーム視点: 斜め上から見た最初の向きに戻します');
+    harness.state.displaySettings = { shortcutAssignments: { 'toolbar.view.home': null } };
+    expect(renderedHomeTitle()).toBe('ホーム視点: ホーム視点: 斜め上から見た最初の向きに戻します');
   });
 
   it('rebuilds the labels when the font arrives but never draws after unmount', async () => {

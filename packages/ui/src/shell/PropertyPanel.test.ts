@@ -5,10 +5,14 @@
  * (vitest の include は `src/**\/*.test.ts` のみで `.tsx` を含まないので、
  * このファイルはコンポーネントを描画せず純関数だけを呼ぶ)。
  */
+import React, { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { appendSolid, createEmptyPartDocument, findSolid, FREE_WORK_PLANE_ID, replaceSolid,
+import { appendSolid, createEmptyPartDocument, findSolid, FREE_WORK_PLANE_ID, replaceSolid, SKETCH_TOLERANCE_MM,
   type HoleFeature, type SketchFeature, type ThreadHoleFeature } from '@pointercad/model';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { t } from '../i18n/t.js';
+import { displayNumber } from '../sketch/numericInputPresentation.js';
 import { initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { historyFormula, nativeHistoryHarness, shapeSha } from '../solid/holeThreadHistory.testSupport.js';
 import { summarizeSolid } from '../solid/solidSummary.js';
@@ -24,6 +28,7 @@ import {
   massSectionKey,
   measureSectionKey,
   primitiveSectionKey,
+  PropertyPanel,
   roundSolvedCoordinateText,
   reconcileCylindricalPropertySelection,
   ruledSectionKey,
@@ -169,16 +174,22 @@ describe('円筒複数位置のPropertyPanelと実native履歴', () => {
 });
 
 describe('roundSolvedCoordinateText', () => {
-  it('残差でずれた値を有効数字 9 桁へ丸める(末尾の 0 は落ちる)', () => {
+  it('残差でずれた値を有効数字 6 桁へ丸める(末尾の 0 は落ちる)', () => {
     expect(roundSolvedCoordinateText('= (0, 0.999999999989, 0)(拘束で決まった値)')).toBe(
       '= (0, 1, 0)(拘束で決まった値)',
     );
   });
 
-  it('12 桁の表示から 9 桁へ丸め、他の 2 つの数と接頭辞・接尾辞は変えない', () => {
+  it('12 桁の表示から 6 桁へ丸め、他の 2 つの数と接頭辞・接尾辞は変えない(利用者の決定 2026-11-14)', () => {
     expect(
       roundSolvedCoordinateText('= (10.1234567890123, -3, 0.000123456789012)(拘束で決まった値)'),
-    ).toBe('= (10.1234568, -3, 0.000123456789)(拘束で決まった値)');
+    ).toBe('= (10.1235, -3, 0.000123457)(拘束で決まった値)');
+  });
+
+  it('許容差より小さい端数は 0 と出す(点検の指摘 48)', () => {
+    expect(roundSolvedCoordinateText('= (9.18485099361e-16, 2, -3e-9)(拘束で決まった値)')).toBe(
+      '= (0, 2, 0)(拘束で決まった値)',
+    );
   });
 
   it('想定と違う形の文字列はそのまま返す(壊れた文字列を作らない)', () => {
@@ -483,5 +494,46 @@ describe('EX05 planar property position and history', () => {
     expect(oldEdit.replaceValue(replaced, value)).toBe(replaced);
     const draft = { draft: { key: edit.key, source: '2 *' }, seenVersion: before.documentVersion };
     expect(reconcileDraftVersion(draft, useAppStore.getState().documentVersion).draft).toBeNull();
+  });
+});
+
+describe('数の表示の整形(利用者の決定 2026-11-14: 有効 6 桁、全部の桁はツールチップ、許容差未満は 0)', () => {
+  it.each([
+    [18571.6814693, '18571.7'], [4.917468245269452, '4.91747'], [0.0000572957795131, '0.0000572958'],
+    [9.18485099361e-16, '0'], [-1e-7, '0'], [20, '20'], [1234567, '1234570'], [-3, '-3'], [0.1 + 0.2, '0.3'],
+  ])('%s は %s と出し、全部の桁をツールチップへ渡す', (value, text) => {
+    expect(displayNumber(value)).toEqual({ text, full: String(value) });
+  });
+
+  it('許容差は製品の既にある長さの許容差(SKETCH_TOLERANCE_MM。点の一致の判定と同じく以内を 0)をそのまま使う', () => {
+    expect(displayNumber(SKETCH_TOLERANCE_MM * 1.01).text).not.toBe('0');
+    expect(displayNumber(SKETCH_TOLERANCE_MM).text).toBe('0');
+    expect(displayNumber(-SKETCH_TOLERANCE_MM).text).toBe('0');
+  });
+});
+
+describe('道具の節は畳める見出しにし、既定は閉じる(点検の指摘 5)', () => {
+  beforeEach(() => {
+    resetTestStore();
+    vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
+  });
+  afterEach(() => { vi.restoreAllMocks(); resetTestStore(); });
+  const TOOL_TITLES = ['sectionView.title', 'propertyPanel.sectionSelectionSets', 'propertyPanel.sectionCanvas',
+    'propertyPanel.sectionPrintCheck', 'propertyPanel.sectionInferConstraints'] as const;
+  const toolTags = (html: string): string[] => html.match(/<details class="pcad-tool-section"[^>]*>/gu) ?? [];
+
+  it('何も選ばない時は、5 つの道具の節が閉じた見出しだけで並ぶ', () => {
+    const html = renderToStaticMarkup(createElement(PropertyPanel));
+    expect(toolTags(html)).toHaveLength(5);
+    expect(toolTags(html).filter(tag => / open=""/u.test(tag))).toEqual([]);
+    for (const key of TOOL_TITLES) {
+      expect(html).toContain(`<summary class="pcad-section__title">${t(key)}</summary>`);
+    }
+  });
+
+  it('断面表示を入れている間は、断面表示の節だけを開いて出す', () => {
+    useAppStore.getState().toggleSectionView();
+    const tags = toolTags(renderToStaticMarkup(createElement(PropertyPanel)));
+    expect(tags.filter(tag => / open=""/u.test(tag))).toEqual(['<details class="pcad-tool-section" data-tool="sectionView" open="">']);
   });
 });

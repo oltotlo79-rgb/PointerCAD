@@ -2640,6 +2640,23 @@ button.pcad-tree__row:focus-visible {
 .pcad-drawing-property-section { border-block-end: 1px solid var(--pcad-border); padding-block: 5px; }
 .pcad-drawing-property-section > summary { cursor: pointer; padding: 8px; box-sizing: border-box; }
 .pcad-drawing-property-section > .pcad-section, .pcad-drawing-property-section > form { padding: 8px; }
+/*
+  部品のプロパティの道具の節(PropertyPanel.tsx の ToolSection。UI の点検の指摘 5)と、アセンブリのジョイントの
+  連動の種類ごとの見出し(AssemblyPropertyPanel.tsx の CouplingGroup。指摘 14)。図面のプロパティの畳む見出しと
+  同じ並べ方。道具の節の名前は summary が出すので、中の節の見出しは画面からだけ隠す(同じ見出しを 2 回
+  見せない。見出しとしては残すので、読み上げと見出しでの移動は今までどおり使える)。
+*/
+.pcad-tool-section, .pcad-coupling-group { border-block-end: 1px solid var(--pcad-border); }
+.pcad-tool-section > summary, .pcad-coupling-group > summary { cursor: pointer; padding: 8px; box-sizing: border-box; }
+.pcad-tool-section > .pcad-section > .pcad-section__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.pcad-coupling-group > p { padding: 0 var(--pcad-space-3); }
 .pcad-drawing-property-hint { padding: 8px; color: var(--pcad-text-muted); }
 .pcad-drawing-element-layer { display: grid; gap: 5px; padding: 8px; }
 .pcad-drawing-settings__field { border-block-end: 1px solid var(--pcad-border); padding-block: 6px; }

@@ -311,11 +311,19 @@ describe('resolvedFields(読み取り専用の計算結果)', () => {
   it('線分は長さ、点列は点の数を出す', () => {
     const resolved = resolveSketch(documentOf());
     expect(resolvedFields(LINE, resolved, null)).toEqual([
-      { labelKey: 'propertyPanel.length', text: '50' },
+      { labelKey: 'propertyPanel.length', text: '50', full: '50' },
     ]);
     expect(resolvedFields(POINT_ARRAY, resolved, null)).toEqual([
       { labelKey: 'propertyPanel.pointCount', text: '3' },
     ]);
+  });
+
+  it('計算した値は有効 6 桁で出し、全部の桁はツールチップへ渡す(許容差未満は 0。点検の指摘 26・48)', () => {
+    const fine: SketchPointFeature = { ...POINT, id: 'point-fine', at: absolute(9.18485099361e-16, 14.142135623730951, -3) };
+    const fields = resolvedFields(fine, resolveSketch(appendFeature(createEmptySketchDocument(), fine)), null);
+    expect(fields.map((field) => field.text)).toEqual(['0', '14.1421', '-3']);
+    // 全部の桁は解いた位置そのもの(入力の式の値は 12 桁で持つので 14.1421356237)。
+    expect(fields.map((field) => field.full)).toEqual(['9.18485099361e-16', '14.1421356237', '-3']);
   });
 
   it('解決できていない要素では何も出さない', () => {

@@ -78,6 +78,8 @@ test('FIX-10 部品の⋮をキーで巡回し、名前と選択セットの変�
     });
     await expect(renamedRow.getByRole('button', { name: view('featureTree.menuTooltip'), exact: true })).toBeFocused();
     await renamed.click();
+    // 道具の節は畳める見出しで、組が無い間は閉じている(UI の点検の指摘 5)。見出しを押して開く。
+    await page.locator('.pcad-panel--right details[data-tool="selectionSets"] > summary').click();
     const sets = page.locator('.pcad-panel--right .pcad-section').filter({
       has: page.getByRole('heading', { name: property('propertyPanel.sectionSelectionSets'), exact: true }),
     });

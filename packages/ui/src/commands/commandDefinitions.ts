@@ -187,11 +187,21 @@ export type CoreCommandId = (typeof CORE_COMMAND_DEFINITIONS)[number]['id'];
 export type CommandId = CoreCommandId | ToolbarCommandId;
 export type RegisteredCommandDefinition = CommandDefinition & { readonly id: CommandId };
 const coreIds: ReadonlySet<string> = new Set(CORE_COMMAND_DEFINITIONS.map(item => item.id));
+/**
+ * 目録(toolbarCommandCatalog)由来の命令の既定のキー。目録の命令はここに書いた物だけがキーを持つ。
+ * 利用者の割当(shortcutAssignments)があれば effectiveBindings がこれを置き換え、割当の束の基にもなる。
+ */
+const TOOLBAR_DEFAULT_SHORTCUTS: Readonly<Partial<Record<ToolbarCommandId, readonly ShortcutBinding[]>>> = {
+  // ホーム視点(FR-108)。ビューポートに焦点が無くても効く。文字の欄・メニュー・窓の中では、欄や一覧の Home を先にする。
+  'toolbar.view.home': [{ key: 'home', display: 'Home', contextLabelKey: 'command.context.partAssembly', phase: 'bubble',
+    primary: 'none', shift: 'forbidden', documentKinds: PART_AND_ASSEMBLY, allowInMenu: false, rejectRepeat: true,
+    preventDefault: true }],
+};
 export const COMMAND_DEFINITIONS: readonly RegisteredCommandDefinition[] = Object.freeze([
   ...CORE_COMMAND_DEFINITIONS,
   ...TOOLBAR_COMMAND_CATALOG.filter(item => !coreIds.has(item.id)).map(item => ({
     id: item.id, documentKinds: item.documentKinds, labelKey: item.labelKey, helpTopic: item.helpTopic,
-    enabledBy: 'always' as const, shortcuts: [],
+    enabledBy: 'always' as const, shortcuts: TOOLBAR_DEFAULT_SHORTCUTS[item.id] ?? [],
   })),
 ]);
 

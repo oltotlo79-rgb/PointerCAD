@@ -3,6 +3,7 @@ import {
   COMMAND_DEFINITIONS,
   currentShortcutList,
   resolveShortcut,
+  shortcutMatches,
   type CommandKeyContext,
   type CommandKeyInput,
 } from './commandDefinitions.js';
@@ -105,6 +106,15 @@ describe('command definitions', () => {
       expect(resolveShortcut(input(key), context({ documentKind: 'drawing', ...blocked }))).toBeNull();
     }
     expect(resolveShortcut(input(key), context({ documentKind: 'part' }))).toBeNull();
+  });
+
+  it('位置(code)を持つ束は key ではなく物理の位置だけで合わせる(テンキーの 8 は NumLock によらず同じ)', () => {
+    const numpad = { key: '', code: 'Numpad8', display: 'テンキー8', contextLabelKey: 'command.context.assigned', phase: 'bubble',
+      primary: 'none', shift: 'forbidden', documentKinds: ['part'], preventDefault: true } as const;
+    expect(shortcutMatches(numpad, input('ArrowUp', { code: 'Numpad8' }), context())).toBe(true);
+    expect(shortcutMatches(numpad, input('8', { code: 'Numpad8' }), context())).toBe(true);
+    expect(shortcutMatches(numpad, input('8', { code: 'Digit8' }), context())).toBe(false);
+    expect(shortcutMatches(numpad, input('ArrowUp'), context())).toBe(false);
   });
 
   it('ホーム視点の既定のキーは Home で、部品・組立のどこでも効き、欄・IME・メニュー・窓・ヘルプ・図面では届かない', () => {

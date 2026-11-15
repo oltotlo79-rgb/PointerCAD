@@ -8,6 +8,8 @@ export type ShiftRequirement = 'forbidden' | 'required' | 'either';
 
 export interface CommandKeyInput {
   readonly key: string;
+  /** 物理の位置(KeyboardEvent.code)。位置で合わせる割当(テンキー・記号・矢印など)だけが見る。 */
+  readonly code?: string;
   readonly ctrl: boolean;
   readonly meta: boolean;
   readonly alt: boolean;
@@ -28,6 +30,8 @@ export interface CommandKeyContext {
 
 export interface ShortcutBinding {
   readonly key: string;
+  /** 指定した時は key ではなく物理の位置(KeyboardEvent.code)で合わせる。 */
+  readonly code?: string;
   readonly display: string;
   readonly contextLabelKey: MessageKey;
   readonly phase: CommandPhase;
@@ -217,7 +221,8 @@ export function shortcutMatches(
   input: CommandKeyInput,
   context: CommandKeyContext,
 ): boolean {
-  if (binding.phase !== context.phase || binding.key !== input.key.toLowerCase()) return false;
+  if (binding.phase !== context.phase) return false;
+  if (binding.code !== undefined ? binding.code !== input.code : binding.key !== input.key.toLowerCase()) return false;
   if (input.alt && binding.allowAlt !== true) return false;
   if (!primaryMatches(binding, input)) return false;
   if (binding.shift === 'required' && !input.shift) return false;

@@ -79,7 +79,8 @@ describe('W6d independent angle and channel additions', () => {
     expect(STEEL_SECTION_ADDITION_ORACLE).toHaveLength(22);
     expect(new Set(STEEL_SECTION_ADDITION_ORACLE.map(row => row.key)).size).toBe(22);
     expect(STEEL_PRODUCTS).toHaveLength(459);
-    expect(steelProducts('SS400')).toHaveLength(253);
+    // r2（2026-11-14）の SS400 の不等辺山形鋼 13 行・I 形鋼 20 行と、2026-11-15 の CT 形鋼 53 行を含む。
+    expect(steelProducts('SS400')).toHaveLength(339);
     expect(steelProducts('SS400', 'equalAngle')).toHaveLength(17);
     expect(steelProducts('SS400', 'channel')).toHaveLength(11);
     expect([...EQUAL_ANGLE_TABLE, ...CHANNEL_TABLE, ...H_BEAM_TABLE]).toHaveLength(109);

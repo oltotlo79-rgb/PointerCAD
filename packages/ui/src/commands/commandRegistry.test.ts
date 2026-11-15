@@ -183,7 +183,6 @@ class FocusedElement {
 }
 
 class HomeKeyEvent extends Event implements KeyboardEvent {
-  readonly code = '';
   readonly keyCode = 0;
   readonly which = 0;
   readonly charCode = 0;
@@ -200,7 +199,7 @@ class HomeKeyEvent extends Event implements KeyboardEvent {
   readonly DOM_KEY_LOCATION_LEFT = 1;
   readonly DOM_KEY_LOCATION_RIGHT = 2;
   readonly DOM_KEY_LOCATION_NUMPAD = 3;
-  constructor(readonly key: string, focused: FocusedElement, handledAlready = false) {
+  constructor(readonly key: string, focused: FocusedElement, handledAlready = false, readonly code = '') {
     super('keydown', { cancelable: true });
     Object.defineProperty(this, 'target', { value: focused });
     if (handledAlready) this.preventDefault();
@@ -260,7 +259,9 @@ describe('ホーム視点の Home キー(全体のキーの入口)', () => {
       'file.open': { key: 'f3', primary: false, shift: false, alt: false },
     };
     const validation = validateShortcutAssignments(proposed);
-    expect(validation).toEqual({ ok: true, assignments: proposed });
+    expect(validation).toEqual({ ok: true, assignments: {
+      'toolbar.view.home': [proposed['toolbar.view.home']], 'toolbar.view.front': [proposed['toolbar.view.front']],
+      'file.open': [proposed['file.open']] } });
     if (!validation.ok) return;
     const home = homeEnvironment('part', validation.assignments);
     expect(dispatchCommandKey(new HomeKeyEvent('Home', new FocusedElement('DIV')), 'bubble', home.value)).toEqual({ status: 'unmatched' });
@@ -275,5 +276,19 @@ describe('ホーム視点の Home キー(全体のキーの入口)', () => {
     if (!removed.ok) throw new Error('removing the Home key must be accepted');
     const none = homeEnvironment('part', removed.assignments);
     expect(dispatchCommandKey(new HomeKeyEvent('Home', new FocusedElement('DIV')), 'bubble', none.value)).toEqual({ status: 'unmatched' });
+  });
+
+  it('位置の組(テンキー)は押した時の code で合わせ、NumLock の有無によらず同じ命令を動かす', () => {
+    const validation = validateShortcutAssignments({
+      'toolbar.view.top': { code: 'Numpad8', label: '8', primary: false, shift: false, alt: false },
+    });
+    if (!validation.ok) throw new Error('numpad assignment must be accepted');
+    const top = homeEnvironment('part', validation.assignments);
+    for (const [key, code] of [['8', 'Numpad8'], ['ArrowUp', 'Numpad8']] as const) {
+      expect(dispatchCommandKey(new HomeKeyEvent(key, new FocusedElement('DIV'), false, code), 'bubble', top.value))
+        .toMatchObject({ status: 'executed', commandId: 'toolbar.view.top' });
+    }
+    expect(dispatchCommandKey(new HomeKeyEvent('8', new FocusedElement('DIV'), false, 'Digit8'), 'bubble', top.value)).toEqual({ status: 'unmatched' });
+    expect(top.toolbarCommand.mock.calls).toEqual([['toolbar.view.top'], ['toolbar.view.top']]);
   });
 });

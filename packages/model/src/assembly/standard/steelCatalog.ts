@@ -2,19 +2,48 @@ import { evaluateExpression, type ExpressionValue } from '@pointercad/expression
 
 import type { StandardCatalogId } from '../types.js';
 import type { StandardPartSource } from '../resolveAssembly.js';
+import { G3192_CT_ROWS } from './steelRows/g3192CtRows.js';
+import { G3192_I_BEAM_ROWS, G3192_UNEQUAL_ANGLE_ROWS } from './steelRows/g3192ExtraRows.js';
+import {
+  G3350_HAT_ROWS, G3350_LIGHT_ANGLE_ROWS, G3350_LIGHT_CHANNEL_ROWS, G3350_LIGHT_Z_ROWS, G3350_LIP_CHANNEL_ROWS,
+  G3350_LIP_Z_ROWS,
+} from './steelRows/g3350Rows.js';
+import { G3444_STRUCTURAL_PIPE_ROWS } from './steelRows/g3444Rows.js';
+import { G3459_TABLE7_ROWS, G3459_TABLE8_ROWS } from './steelRows/g3459Rows.js';
+import { G3466_RECT_TUBE_ROWS } from './steelRows/g3466Rows.js';
 import { STEEL_PROFILE_EVIDENCE } from './steelSectionProfiles.js';
 import { STEEL_STANDARDS, type SteelProductStandardReferences, type SteelStandard } from './steelStandards.js';
 
 /** Separate from r1: a saved r1 section never acquires an inferred steel grade. */
 export const STEEL_CATALOG_REVISION = 'jp-steel-2026-10-10-r1';
+/**
+ * 2026-11-14 に足した行（角形鋼管・一般構造用炭素鋼鋼管・不等辺山形鋼・I 形鋼）だけが持つ表の版。
+ * r1 の行の鍵・保存の文字列・版は変えず、r2 の行は r2 の保存だけに一致する（行の catalogRevision）。
+ */
+export const STEEL_CATALOG_REVISION_R2 = 'jp-steel-2026-11-14-r2';
 export const LEGACY_STEEL_GENERATOR_REVISION = '2-steel-1';
 export const STEEL_GENERATOR_REVISION = '3-steel-profile-1';
+/** r1 の鋼種。この一覧と r1 の表(STEEL_PRODUCTS)は凍結し、r2 の鋼種は STEEL_R2_MATERIAL_GRADES に置く。 */
 export const STEEL_MATERIAL_GRADES = ['SS400', 'S45C', 'SGP'] as const;
-export type SteelMaterialGrade = typeof STEEL_MATERIAL_GRADES[number];
+/**
+ * r2 で足した鋼種（JIS G 3466 の STKR400・JIS G 3444 の STK400、2026-11-15 に JIS G 3350 の SSC400・
+ * JIS G 3459 の SUS304TP。記号は各原案の表1）。
+ */
+export const STEEL_R2_MATERIAL_GRADES = ['STKR400', 'STK400', 'SSC400', 'SUS304TP'] as const;
+export type SteelMaterialGrade = typeof STEEL_MATERIAL_GRADES[number] | typeof STEEL_R2_MATERIAL_GRADES[number];
 export type SteelSectionCatalog = Extract<StandardCatalogId,
-  'flatBar' | 'roundBar' | 'steelPipe' | 'equalAngle' | 'channel' | 'hBeam'>;
+  'flatBar' | 'roundBar' | 'steelPipe' | 'equalAngle' | 'channel' | 'hBeam' | 'rectTube' | 'unequalAngle' | 'iBeam'
+  | 'lightChannel' | 'lightZ' | 'lightAngle' | 'lipChannel' | 'lipZ' | 'hatSection' | 'ctSection'>;
 export type SteelCondition = 'hotRolled-heatTreatmentUnspecified'
-  | 'brightBar-heatTreatmentUnspecified' | 'blackPipe-plainEnds' | 'whitePipe-zincCoated';
+  | 'brightBar-heatTreatmentUnspecified' | 'blackPipe-plainEnds' | 'whitePipe-zincCoated'
+  /** JIS G 3466 5: 製造のまま（製造方法・熱処理・めっきは指定しない）、管端は指定が無ければプレンエンド。 */
+  | 'rectTube-asManufactured'
+  /** JIS G 3444 5: 製管方法と仕上げ方法は指定しない、管端は指定が無ければプレンエンド。 */
+  | 'structuralPipe-plainEnds'
+  /** JIS G 3350 5: 熱間圧延・冷間圧延・めっきの鋼板又は鋼帯から冷間成形（素材の鋼板の種類・めっきは指定しない）。 */
+  | 'lightGauge-coldFormed'
+  /** JIS G 3459 5: 製管方法・仕上方法は指定しない、表2 の固溶化熱処理と酸洗（又は準じる処理）、管端は指定が無ければプレンエンド。 */
+  | 'stainlessPipe-solutionTreated-plainEnds';
 
 export interface SteelEvidence {
   readonly title: string;
@@ -141,6 +170,63 @@ export const STEEL_EVIDENCE = {
     sha256: 'e0790c1900aa6eedeb7c51dc18916c7c506c02765550e8a5a2ca642b7096d0be',
     fetchedDate: '2026-10-10',
   },
+  // r2（2026-11-14）。PDF のバイトの SHA-256 は取得した資料から計算した値で、規格の台帳（steelStandards.ts）の値と一致する。
+  stkrDraft: {
+    title: '日本鉄鋼連盟 JIS G 3466 改正原案 一般構造用角形鋼管', edition: null,
+    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_1600_JISG3466_20241220.pdf',
+    locator: 'JISF G 3466 原案 2024-12-20 表5（正方形）PDF p9〜10・表6（長方形）PDF p11〜12、'
+      + '角部の外側及び内側の半径 2t・t（表5・表6 の注a）、8.1 標準長さ 6・8・10・12 m、表1 STKR400 PDF p6。最終規格票・供給は未確認',
+    sha256: 'ce00863b95e73a2dd116459bf75595ac6a21779961406cef8d149791af012752',
+    fetchedDate: '2026-11-14',
+  },
+  stkDraft: {
+    title: '日本鉄鋼連盟 JIS G 3444 改正原案 一般構造用炭素鋼鋼管', edition: null,
+    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_1400_JISG3444_20241220.pdf',
+    locator: 'JISF G 3444 原案 2024-12-20 表6 管の寸法 PDF p10〜12、表1 STK400 PDF p6、5 c) 管端はプレンエンド。'
+      + '標準長さの規定は無い。最終規格票・供給は未確認',
+    sha256: '755e8484f4006043ff5592f0f0baba5524f86d4aac777aca25f25827483e5fa3',
+    fetchedDate: '2026-11-14',
+  },
+  ssUnequalAngleDraft: {
+    title: '日本鉄鋼連盟 JIS G 3192 改正原案 不等辺山形鋼', edition: null,
+    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
+    locator: 'JISF G 3192 原案 2024-07-24 表9 PDF p15、表2 標準長さ PDF p7、表6 質量の計算方法 PDF p12。最終規格票・供給は未確認',
+    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
+    fetchedDate: '2026-11-14',
+  },
+  ssIBeamDraft: {
+    title: '日本鉄鋼連盟 JIS G 3192 改正原案 I形鋼', edition: null,
+    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
+    locator: 'JISF G 3192 原案 2024-07-24 表11 PDF p17（図: 内面の角度 98°、t2 は (B−t1)/4 の位置）、表2 標準長さ PDF p7、'
+      + '表6 質量の計算方法 PDF p12。最終規格票・供給は未確認',
+    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
+    fetchedDate: '2026-11-14',
+  },
+  // r2 に 2026-11-15 に足した行の資料（G 3350・G 3459 は 2020-12-02 の三者委員会の改正案）。
+  sscDraft: {
+    title: '日本鉄鋼連盟 JIS G 3350 改正原案 一般構造用軽量形鋼', edition: null,
+    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai004_jis03G3350_20201202.pdf',
+    locator: 'JISF G 3350 原案 2020-12-02 表1 SSC400 PDF p4、表5〜表10 PDF p6〜10（図と標準断面寸法）、'
+      + '8.1 角部の曲率半径は厚さの中心線で通常 1.5t PDF p5、表11 標準長さ PDF p10、表12 質量の計算方法 PDF p11。最終規格票・供給は未確認',
+    sha256: '386086a3b2af48d82e049f1bbdb1a6a187721eb156acdd4c2c9e8927bca26fe5',
+    fetchedDate: '2026-11-15',
+  },
+  ssCtDraft: {
+    title: '日本鉄鋼連盟 JIS G 3192 改正原案 CT形鋼', edition: null,
+    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
+    locator: 'JISF G 3192 原案 2024-07-24 表17 PDF p30〜31（図: フランジの外面が上、t2 は B/4 の位置、根元の丸み r）、'
+      + '表2 標準長さ PDF p7、表6 質量の計算方法 PDF p12。最終規格票・供給は未確認',
+    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
+    fetchedDate: '2026-11-15',
+  },
+  susPipeDraft: {
+    title: '日本鉄鋼連盟 JIS G 3459 改正原案 配管用ステンレス鋼鋼管', edition: null,
+    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai004_jis05G3459_20201202.pdf',
+    locator: 'JISF G 3459 原案 2020-12-02 表1 SUS304TP PDF p4、5 製造方法 PDF p4〜5、表7 PDF p12〜13、表8 溶接鋼管 PDF p14〜15、'
+      + '表9 単位質量の算出式 PDF p16、箇条15 の呼び方の例 PDF p21。標準長さの規定は無い。最終規格票・供給は未確認',
+    sha256: 'cd9247d629dfc9656e0a2fd5941bc043e341cdcc23ad95e4bcb010bb5e3bcdab',
+    fetchedDate: '2026-11-15',
+  },
 } as const satisfies Readonly<Record<string, SteelEvidence>>;
 
 /**
@@ -203,6 +289,8 @@ export interface SteelProduct {
   readonly standardLengthsMm: readonly number[];
   readonly dimensions?: { readonly width?: number; readonly thickness?: number;
     readonly diameter?: number; readonly outsideDiameter?: number; readonly wallThickness?: number };
+  /** The saved table revision. Absent means STEEL_CATALOG_REVISION (every r1 row); only r2 rows carry a value. */
+  readonly catalogRevision?: string;
 }
 
 function standardEdition(references: SteelProductStandardReferences): SteelProduct['standardEdition'] {
@@ -484,9 +572,153 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
   }),
 ];
 
+/** JIS G 3466 8.1（PDF p8）の標準長さ。供給の約束ではない。 */
+const G3466_STANDARD_LENGTHS_MM = [6000, 8000, 10000, 12000];
+/** JIS G 3192 表2（PDF p7）の標準長さ。アプリで作図できる長さの上限（12,000 mm）とは別。供給の約束ではない。 */
+const G3192_STANDARD_LENGTHS_MM = [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000];
+const R2_NOTE_TAIL = '最終規格票・供給は未確認。';
+
+/** r2 rows: JISF draft table values with their PDF page; never stock, supply or certification. */
+function r2Product(fields: Omit<SteelProduct, 'standardEdition' | 'catalogRevision'>): SteelProduct {
+  return { ...fields, catalogRevision: STEEL_CATALOG_REVISION_R2,
+    get standardEdition() { return standardEdition(this.standardReferences); } };
+}
+function rectTubeProduct([a, b, t, mass, area, page, table]: typeof G3466_RECT_TUBE_ROWS[number]): SteelProduct {
+  const size = `□ ${a}×${b}×${t}`;
+  return r2Product({ key: `STKR400:rectTube:${size}`, catalog: 'rectTube', size, materialGrade: 'STKR400',
+    materialStandard: 'JIS G 3466', productStandard: 'JIS G 3466', condition: 'rectTube-asManufactured',
+    note: `JISF G 3466 2024-12-20原案 表${table} PDF p${page}。単位質量 ${mass} kg/m・断面積 ${area} cm²（原案の参考の値）。`
+      + `角部の外側の半径 2t・内側の半径 t（表${table}の注a）。製造方法・熱処理・めっき・管端は形状に含まない。${R2_NOTE_TAIL}`,
+    evidence: 'stkrDraft', standardReferences: { material: 'jis-g-3466-2025', dimensions: 'jis-g-3466-2025' },
+    geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE.stkrDraft, standardLengthsMm: G3466_STANDARD_LENGTHS_MM });
+}
+function structuralPipeProduct([diameter, thickness, mass, area, page]: typeof G3444_STRUCTURAL_PIPE_ROWS[number]): SteelProduct {
+  const size = `φ${diameter}×${thickness}`;
+  return r2Product({ key: `STK400:steelPipe:${size}`, catalog: 'steelPipe', size, materialGrade: 'STK400',
+    materialStandard: 'JIS G 3444', productStandard: 'JIS G 3444', condition: 'structuralPipe-plainEnds',
+    note: `JISF G 3444 2024-12-20原案 表6 PDF p${page}。単位質量 ${mass} kg/m・断面積 ${area} cm²（原案の参考の値）。`
+      + `製管方法・仕上げ方法・めっき・管端は形状に含まない。${R2_NOTE_TAIL}`,
+    evidence: 'stkDraft', standardReferences: { material: 'jis-g-3444-2025', dimensions: 'jis-g-3444-2025' },
+    geometry: 'nominal', standardLengthsMm: [],
+    dimensions: { outsideDiameter: Number(diameter), wallThickness: Number(thickness) } });
+}
+function ss400R2Section(catalog: 'unequalAngle' | 'iBeam', size: string, table: string, page: number,
+  printed: string): SteelProduct {
+  const evidence = catalog === 'unequalAngle' ? 'ssUnequalAngleDraft' : 'ssIBeamDraft';
+  return r2Product({ key: `SS400:${catalog}:${size}`, catalog, size, materialGrade: 'SS400',
+    materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192', condition: hot,
+    note: `JISF G 3192 2024-07-24原案 表${table} PDF p${page}。${printed}（表6 の計算方法による原案の値）。${R2_NOTE_TAIL}`,
+    evidence, materialEvidence: 'ss400GradeDraft',
+    standardReferences: { material: 'jis-g-3101-2024', dimensions: 'jis-g-3192-2024' },
+    geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE[evidence], standardLengthsMm: G3192_STANDARD_LENGTHS_MM });
+}
+
+/** JIS G 3350 表11（PDF p10）の標準長さ。供給の約束ではない。 */
+const G3350_STANDARD_LENGTHS_MM = [6000, 7000, 8000, 9000, 10000, 11000, 12000];
+type LightGaugeCatalog = Extract<SteelSectionCatalog,
+  'lightChannel' | 'lightZ' | 'lightAngle' | 'lipChannel' | 'lipZ' | 'hatSection'>;
+/** 軽量形鋼の断面の種類ごとの呼び寸法の頭（形の通称の記号。steelCatalogProfile.ts の振り分けと同じ）。 */
+const LIGHT_GAUGE_SIZE_PREFIXES = {
+  lightChannel: '[', lightZ: 'Z', lightAngle: 'L', lipChannel: 'C', lipZ: 'Z', hatSection: 'ハット',
+} as const satisfies Readonly<Record<LightGaugeCatalog, string>>;
+const LIGHT_GAUGE_TABLES = {
+  lightChannel: '5', lightZ: '6', lightAngle: '7', lipChannel: '8', lipZ: '9', hatSection: '10',
+} as const satisfies Readonly<Record<LightGaugeCatalog, string>>;
+/** 印刷の値が表12 の計算方法と食い違う行（原案の印刷の値はそのまま持ち、食い違いを書き添える）。 */
+const LIGHT_GAUGE_PRINT_REMARKS: Readonly<Record<string, string>> = {
+  'lipChannel:4367': '印刷の単位質量 8.32 は丸めた断面積 10.59 からの値 8.31 と違い、丸める前の断面積からの値と一致する。',
+};
+
+/** SSC400 の軽量形鋼の行。寸法は表の記号の順（H×A×B・H×A×C・軽山形は A×B）に厚さを続ける。 */
+interface LightGaugeRow {
+  readonly code: string; readonly dims: readonly string[]; readonly t: string;
+  readonly area: string; readonly mass: string; readonly page: number;
+}
+function lightGaugeProduct(catalog: LightGaugeCatalog, { code, dims, t, area, mass, page }: LightGaugeRow): SteelProduct {
+  const size = `${LIGHT_GAUGE_SIZE_PREFIXES[catalog]} ${[...dims, t].join('×')}`;
+  return r2Product({ key: `SSC400:${catalog}:${size}`, catalog, size, materialGrade: 'SSC400',
+    materialStandard: 'JIS G 3350', productStandard: 'JIS G 3350', condition: 'lightGauge-coldFormed',
+    note: `JISF G 3350 2020-12-02原案 表${LIGHT_GAUGE_TABLES[catalog]} PDF p${page}。呼び名 ${code}。`
+      + `断面積 ${area} cm²・単位質量 ${mass} kg/m（表12 の計算方法による原案の値）。`
+      + (LIGHT_GAUGE_PRINT_REMARKS[`${catalog}:${code}`] ?? '')
+      + `角部の曲率半径は厚さの中心線で 1.5t（外側 2t・内側 t、8.1）。素材の鋼板の種類・めっきは形状に含まない。${R2_NOTE_TAIL}`,
+    evidence: 'sscDraft', standardReferences: { material: 'jis-g-3350-2021', dimensions: 'jis-g-3350-2021' },
+    geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE.sscDraft, standardLengthsMm: G3350_STANDARD_LENGTHS_MM });
+}
+function ctProduct([h, b, t1, t2, , area, mass, , page]: typeof G3192_CT_ROWS[number]): SteelProduct {
+  const size = `CT ${h}×${b}×${t1}×${t2}`;
+  return r2Product({ key: `SS400:ctSection:${size}`, catalog: 'ctSection', size, materialGrade: 'SS400',
+    materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192', condition: hot,
+    note: `JISF G 3192 2024-07-24原案 表17 PDF p${page}。断面積 ${area} cm²・単位質量 ${mass} kg/m（表6 の計算方法による原案の値）。`
+      + R2_NOTE_TAIL,
+    evidence: 'ssCtDraft', materialEvidence: 'ss400GradeDraft',
+    standardReferences: { material: 'jis-g-3101-2024', dimensions: 'jis-g-3192-2024' },
+    geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE.ssCtDraft, standardLengthsMm: G3192_STANDARD_LENGTHS_MM });
+}
+/** SUS304TP の鋼管の行。表7 は呼び径×Sch、表8 の括弧の厚さ（表7 と違う寸法）は外径×厚さで呼ぶ（各表の注a、箇条15）。 */
+function stainlessPipeProduct(size: string, note: string, diameter: string, thickness: string): SteelProduct {
+  return r2Product({ key: `SUS304TP:steelPipe:${size}`, catalog: 'steelPipe', size, materialGrade: 'SUS304TP',
+    materialStandard: 'JIS G 3459', productStandard: 'JIS G 3459', condition: 'stainlessPipe-solutionTreated-plainEnds',
+    note: `${note}製管方法・仕上方法・熱処理・管端は形状に含まない。${R2_NOTE_TAIL}`,
+    evidence: 'susPipeDraft', standardReferences: { material: 'jis-g-3459-2021', dimensions: 'jis-g-3459-2021' },
+    geometry: 'nominal', standardLengthsMm: [],
+    dimensions: { outsideDiameter: Number(diameter), wallThickness: Number(thickness) } });
+}
+const G3459_NOTE_HEAD = 'JISF G 3459 2020-12-02原案';
+const g3459Mass = (mass: string): string => `単位質量 ${mass} kg/m（SUS304TP の列、表9 の式による原案の値）。`;
+const STAINLESS_PIPE_PRODUCTS: readonly SteelProduct[] = [
+  ...G3459_TABLE7_ROWS.map(([a, b, d, sch, t, mass, page]) => stainlessPipeProduct(`${a}A×Sch${sch}`,
+    `${G3459_NOTE_HEAD} 表7 PDF p${page}。呼び径 ${a}A（${b}B）・Sch${sch}、外径 ${d} mm・厚さ ${t} mm・${g3459Mass(mass)}`, d, t)),
+  // 表8 の括弧の無い厚さは表7 と同じ寸法、括弧の厚さのうち表7 の同じ外径の別の Sch と同じ寸法の 3 組も表7 の行で足りる。
+  ...G3459_TABLE8_ROWS.filter(([, , d, , t, , , bracketed]) => bracketed
+    && !G3459_TABLE7_ROWS.some((row) => row[2] === d && row[4] === t))
+    .map(([a, b, d, sch, t, mass, page]) => stainlessPipeProduct(`φ${d}×${t}`,
+      `${G3459_NOTE_HEAD} 表8 PDF p${page}。溶接鋼管の呼び径 ${a}A（${b}B）・Sch${sch} の厚さ（表7 と違う寸法）、`
+      + `外径 ${d} mm・厚さ ${t} mm・${g3459Mass(mass)}`, d, t)),
+];
+
+/**
+ * r2 の行（2026-11-14 の 273 行の後に、2026-11-15 の軽量形鋼 91 行・CT 形鋼 53 行・SUS304TP の鋼管 190 行の 334 行）。
+ * r1 の STEEL_PRODUCTS の後に置き、探す関数は ALL_STEEL_PRODUCTS（両方）を見る。
+ */
+const STEEL_R2_PRODUCTS: readonly SteelProduct[] = [
+  ...G3466_RECT_TUBE_ROWS.map(rectTubeProduct),
+  ...G3444_STRUCTURAL_PIPE_ROWS.map(structuralPipeProduct),
+  ...G3192_UNEQUAL_ANGLE_ROWS.map(([a, b, t, , , area, mass, page]) => ss400R2Section('unequalAngle',
+    `L ${a}×${b}×${t}`, '9', page, `断面積 ${area} cm²・単位質量 ${mass} kg/m`)),
+  ...G3192_I_BEAM_ROWS.map(([h, b, t1, t2, , , area, mass, page]) => ss400R2Section('iBeam',
+    `I ${h}×${b}×${t1}×${t2}`, '11', page, `断面積 ${area} cm²・単位質量 ${mass} kg/m`)),
+  ...G3350_LIGHT_CHANNEL_ROWS.map(([code, h, a, b, t, area, mass, page]) =>
+    lightGaugeProduct('lightChannel', { code, dims: [h, a, b], t, area, mass, page })),
+  ...G3350_LIGHT_Z_ROWS.map(([code, h, a, b, t, area, mass, page]) =>
+    lightGaugeProduct('lightZ', { code, dims: [h, a, b], t, area, mass, page })),
+  ...G3350_LIGHT_ANGLE_ROWS.map(([code, a, b, t, area, mass, page]) =>
+    lightGaugeProduct('lightAngle', { code, dims: [a, b], t, area, mass, page })),
+  ...G3350_LIP_CHANNEL_ROWS.map(([code, h, a, c, t, area, mass, page]) =>
+    lightGaugeProduct('lipChannel', { code, dims: [h, a, c], t, area, mass, page })),
+  ...G3350_LIP_Z_ROWS.map(([code, h, a, c, t, area, mass, page]) =>
+    lightGaugeProduct('lipZ', { code, dims: [h, a, c], t, area, mass, page })),
+  ...G3350_HAT_ROWS.map(([code, h, a, c, t, area, mass, page]) =>
+    lightGaugeProduct('hatSection', { code, dims: [h, a, c], t, area, mass, page })),
+  ...G3192_CT_ROWS.map(ctProduct),
+  ...STAINLESS_PIPE_PRODUCTS,
+];
+
+/** 選ぶ画面・保存の確かめ・切断の一覧が見る全ての材質別の鋼材（r1 の 459 行と r2 の行）。 */
+export const ALL_STEEL_PRODUCTS: readonly SteelProduct[] = [...STEEL_PRODUCTS, ...STEEL_R2_PRODUCTS];
+
+/** 行の保存の版。r1 の行は STEEL_CATALOG_REVISION。 */
+export function steelProductCatalogRevision(row: SteelProduct): string {
+  return row.catalogRevision ?? STEEL_CATALOG_REVISION;
+}
+/** 材質別の鋼材の表の版か（r1 か r2）。 */
+export function isSteelCatalogRevision(revision: string): boolean {
+  return revision === STEEL_CATALOG_REVISION || revision === STEEL_CATALOG_REVISION_R2;
+}
+
 export function steelProducts(material: SteelMaterialGrade,
   catalog?: SteelSectionCatalog): readonly SteelProduct[] {
-  return STEEL_PRODUCTS.filter((row) => row.materialGrade === material
+  return ALL_STEEL_PRODUCTS.filter((row) => row.materialGrade === material
     && (catalog === undefined || row.catalog === catalog));
 }
 export function steelSectionCatalogs(material: SteelMaterialGrade): readonly SteelSectionCatalog[] {
@@ -503,7 +735,7 @@ export function hasSteelOptions(options: Readonly<Record<string, string>>): bool
 }
 export function findSteelProduct(catalog: StandardCatalogId, size: string,
   options: Readonly<Record<string, string>>): SteelProduct | undefined {
-  const row = STEEL_PRODUCTS.find((candidate) => candidate.key === options.steelProduct
+  const row = ALL_STEEL_PRODUCTS.find((candidate) => candidate.key === options.steelProduct
     && candidate.catalog === catalog && candidate.size === size);
   if (row === undefined) return undefined;
   const canonical = steelProductOptions(row);
@@ -520,10 +752,13 @@ export function steelLength(source: string): ExpressionValue | null {
     && result.value.value <= STEEL_LENGTH_LIMITS_MM.max ? result.value : null;
 }
 export function steelProductFromSource(source: StandardPartSource): SteelProduct | undefined {
-  if (source.catalogRevision !== STEEL_CATALOG_REVISION
+  if (!isSteelCatalogRevision(source.catalogRevision)
     || (source.generatorRevision !== STEEL_GENERATOR_REVISION
       && source.generatorRevision !== LEGACY_STEEL_GENERATOR_REVISION)) return undefined;
   const row = findSteelProduct(source.catalog, source.size, source.options);
+  // An r1 row matches only an r1 save and an r2 row only an r2 save; r2 rows never had the legacy generator.
+  if (row !== undefined && (steelProductCatalogRevision(row) !== source.catalogRevision
+    || (row.catalogRevision !== undefined && source.generatorRevision !== STEEL_GENERATOR_REVISION))) return undefined;
   if (row === undefined || source.generatorRevision !== LEGACY_STEEL_GENERATOR_REVISION
     || row.geometry !== 'profileSection') return row;
   // The old generator retains its exact simplified geometry and provenance; the product standard (not geometry) is shared.

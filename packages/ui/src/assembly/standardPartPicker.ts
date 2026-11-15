@@ -1,12 +1,38 @@
 import { evaluateExpression } from '@pointercad/expression';
 import {
-  createStandardPartSource, DEEP_GROOVE_BALL_BEARINGS, EQUAL_ANGLE_TABLE,
+  ALL_STEEL_PRODUCTS, createStandardPartSource, DEEP_GROOVE_BALL_BEARINGS, EQUAL_ANGLE_TABLE,
   type FastenerDimensionSeries, HEX_BOLT_TABLE, HEX_NUT_TABLE, H_BEAM_TABLE, CHANNEL_TABLE,
   PAN_HEAD_SCREW_TABLE, PLAIN_WASHER_TABLE, SOCKET_HEAD_CAP_SCREW_TABLE,
   SPRING_WASHER_TABLE, type StandardCatalogId, type StandardPartSource, type ThreadSeries,
-  STEEL_MATERIAL_GRADES, STEEL_PRODUCTS, steelLength, steelProductOptions, steelProducts,
+  STEEL_MATERIAL_GRADES, STEEL_R2_MATERIAL_GRADES, steelLength, steelProductOptions, steelProducts,
   type SteelMaterialGrade, type SteelProduct, type SteelSectionCatalog,
 } from '@pointercad/model';
+
+import type { MessageKey } from '../i18n/t.js';
+
+/** 断面の種類の名前の鍵。選ぶ画面・切断の一覧の CSV・図面の表で同じ名前を出す。 */
+const STEEL_SHAPE_LABEL_KEYS: Readonly<Record<SteelSectionCatalog, MessageKey>> = {
+  flatBar: 'assembly.steel.flatBar', roundBar: 'assembly.steel.roundBar',
+  steelPipe: 'assembly.steel.steelPipe', equalAngle: 'assembly.steel.equalAngle',
+  channel: 'assembly.steel.channel', hBeam: 'assembly.steel.hBeam',
+  rectTube: 'assembly.steel.rectTube', unequalAngle: 'assembly.steel.unequalAngle', iBeam: 'assembly.steel.iBeam',
+  lightChannel: 'assembly.steel.lightChannel', lightZ: 'assembly.steel.lightZ', lightAngle: 'assembly.steel.lightAngle',
+  lipChannel: 'assembly.steel.lipChannel', lipZ: 'assembly.steel.lipZ', hatSection: 'assembly.steel.hatSection',
+  ctSection: 'assembly.steel.ctSection',
+};
+/** 鋼管の名前は鋼種で違う（SGP は今の「配管用鋼管」の名前のまま）。 */
+const STEEL_PIPE_LABEL_KEYS: Readonly<Partial<Record<SteelMaterialGrade, MessageKey>>> = {
+  STK400: 'assembly.steel.structuralPipe', SUS304TP: 'assembly.steel.stainlessPipe',
+};
+
+/**
+ * 断面の名前の鍵。鋼管は鋼種で名前が違う（SGP は配管用、STK400 は JIS G 3444 の一般構造用炭素鋼鋼管、
+ * SUS304TP は JIS G 3459 の配管用ステンレス鋼鋼管）ので、鋼種も渡す。
+ */
+export function steelShapeLabelKey(catalog: SteelSectionCatalog, materialGrade?: SteelMaterialGrade): MessageKey {
+  const pipe = catalog === 'steelPipe' && materialGrade !== undefined ? STEEL_PIPE_LABEL_KEYS[materialGrade] : undefined;
+  return pipe ?? STEEL_SHAPE_LABEL_KEYS[catalog];
+}
 
 export type StandardPartCategory =
   | 'hexBolt'
@@ -147,7 +173,7 @@ export function steelPartChoiceAtDimension(choices: readonly StandardPartChoice[
 }
 
 /** Explicitly keep unassigned legacy rows selectable without inventing a steel grade. */
-export const STRUCTURAL_MATERIAL_CHOICES = [...STEEL_MATERIAL_GRADES, 'unspecified'] as const;
+export const STRUCTURAL_MATERIAL_CHOICES = [...STEEL_MATERIAL_GRADES, ...STEEL_R2_MATERIAL_GRADES, 'unspecified'] as const;
 export type StructuralMaterialChoice = typeof STRUCTURAL_MATERIAL_CHOICES[number];
 export function structuralPartChoices(material: StructuralMaterialChoice,
   catalog?: SteelSectionCatalog): readonly StandardPartChoice[] {
@@ -199,7 +225,7 @@ export function findStandardPartChoice(
   dimensionSeries: FastenerDimensionSeries = DEFAULT_DIMENSION_SERIES,
 ): StandardPartChoice | undefined {
   if (category === 'structuralSection' && choiceKey.startsWith('steel:')) {
-    const row = STEEL_PRODUCTS.find((candidate) => `steel:${candidate.key}` === choiceKey);
+    const row = ALL_STEEL_PRODUCTS.find((candidate) => `steel:${candidate.key}` === choiceKey);
     return row === undefined ? undefined : steelChoice(row);
   }
   return standardPartChoices(category, dimensionSeries).find((choice) => choice.key === choiceKey);
@@ -224,6 +250,16 @@ function partName(choice: StandardPartChoice, length: string): string {
     case 'flatBar':
     case 'roundBar':
     case 'steelPipe':
+    case 'rectTube':
+    case 'unequalAngle':
+    case 'iBeam':
+    case 'lightChannel':
+    case 'lightZ':
+    case 'lightAngle':
+    case 'lipChannel':
+    case 'lipZ':
+    case 'hatSection':
+    case 'ctSection':
     case 'filletWeld':
       return `${choice.size} \u9577\u3055${length}`;
     // \u65cf\u306e\u90e8\u54c1(catalogItem)\u306f\u3053\u306e\u4e00\u89a7\u306e\u9078\u629e\u80a2\u304b\u3089\u4f5c\u3089\u306a\u3044(\u65cf\u306e\u9078\u3076\u753b\u9762\u304c\u65cf\u306e partName \u3067\u540d\u524d\u3092\u4ed8\u3051\u308b)\u3002\u7a2e\u985e\u3092\u7db2\u7f85\u3059\u308b\u305f\u3081\u306b\u7f6e\u304f\u3002

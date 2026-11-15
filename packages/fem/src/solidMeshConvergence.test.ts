@@ -1,12 +1,13 @@
 import { locallyGradedPlateBoundary } from './solidMeshConvergenceFixture.js';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { countTetraMeshVolumes } from './assemblyTetraMesh.js';
 import { boundCurvedPlc, type CurvedSurface } from './curvedPlcBound.js';
+import { writeEvidenceSync, type EvidenceWriteIo } from './evidenceWrite.testSupport.js';
 import { analyzeSolid, isLoader, isRuntime, meshTetrahedra, type PyodideRuntime } from './runtime.js';
 import { SOLID_LIMITS } from './solidAnalysisTranslation.js';
 import type { SolidAnalysisInput, SolidAnalysisResult, SolidVector3 } from './solidAnalysisModel.js';
@@ -189,7 +190,7 @@ function sample(input: SolidAnalysisInput, result: SolidAnalysisResult, at: Soli
         weights.reduce((sum, weight, i) => sum + weight * nodes[i][axis], 0) - coordinate)) });
   });
   expect(hits, `fixed probe outside mesh: ${at.join(',')}`).toBeGreaterThan(0);
-  writeSync(1, 'SOLID_FIXED_POINT_SELECTION ' + JSON.stringify({ source: input.source, at, hits, selection })
+  writeEvidenceSync(1, 'SOLID_FIXED_POINT_SELECTION ' + JSON.stringify({ source: input.source, at, hits, selection })
     + String.fromCharCode(10));
   return { displacementMm: displacementMm / hits, stressMPa: stressMPa / hits };
 }
@@ -210,6 +211,81 @@ function difference(previous: Observation, current: Observation) {
   return { displacement, energy, stress, refined,
     status: refined && displacement <= 0.01 && energy <= 0.01 && stress <= 0.05 ? '収束' : '未収束' };
 }
+const evidenceLf = String.fromCharCode(10);
+function evidenceEagain(): NodeJS.ErrnoException {
+  return Object.assign(new Error('EAGAIN: resource temporarily unavailable, write'), { code: 'EAGAIN' });
+}
+interface EvidenceHarness { io: EvidenceWriteIo; written: Buffer[]; waits: number[]; calls: () => number }
+// `script` gives, per call, the number of bytes accepted or an error to throw.
+function evidenceHarness(script: (call: number, remaining: number) => number | Error): EvidenceHarness {
+  const written: Buffer[] = [], waits: number[] = [];
+  let calls = 0;
+  const io: EvidenceWriteIo = {
+    write: (fd, chunk) => {
+      expect(fd).toBe(1);
+      const result = script(calls, chunk.length);
+      calls += 1;
+      if (result instanceof Error) throw result;
+      written.push(Buffer.from(chunk.subarray(0, result)));
+      return result;
+    },
+    wait: (ms) => { waits.push(ms); },
+    maxWaitMs: 30_000,
+  };
+  return { io, written, waits, calls: () => calls };
+}
+// The evidence lines go to the RUN stream; a full non-blocking pipe makes fs.writeSync throw EAGAIN (A-15).
+describe('writeEvidenceSync', () => {
+  it('writes everything in one call when the stream accepts all bytes', () => {
+    const h = evidenceHarness((_call, remaining) => remaining);
+    writeEvidenceSync(1, 'SOLID_X {"a":1}' + evidenceLf, h.io);
+    expect(Buffer.concat(h.written).toString('utf8')).toBe('SOLID_X {"a":1}' + evidenceLf);
+    expect(h.calls()).toBe(1);
+    expect(h.waits).toEqual([]);
+  });
+
+  it('continues after partial writes and keeps the bytes identical', () => {
+    const text = 'SOLID_Y ' + JSON.stringify({ name: 'multi-byte ' + String.fromCharCode(0x7a74, 0x3042, 0x304d),
+      values: Array.from({ length: 50 }, (_, i) => i) }) + evidenceLf;
+    const h = evidenceHarness((_call, remaining) => Math.min(remaining, 7));
+    writeEvidenceSync(1, text, h.io);
+    expect(Buffer.concat(h.written).equals(Buffer.from(text, 'utf8'))).toBe(true);
+    expect(h.calls()).toBe(Math.ceil(Buffer.byteLength(text, 'utf8') / 7));
+    expect(h.waits).toEqual([]);
+  });
+
+  it('waits and retries while the stream reports EAGAIN, then finishes', () => {
+    const text = 'SOLID_Z ' + 'x'.repeat(100) + evidenceLf;
+    const h = evidenceHarness((call, remaining) => (call < 3 ? evidenceEagain() : remaining));
+    writeEvidenceSync(1, text, h.io);
+    expect(Buffer.concat(h.written).toString('utf8')).toBe(text);
+    expect(h.waits).toHaveLength(3);
+    expect(h.waits.every((ms) => ms > 0)).toBe(true);
+  });
+
+  it('keeps writing after EAGAIN in the middle of a partially written line', () => {
+    const text = 'a'.repeat(40) + evidenceLf;
+    const h = evidenceHarness((call, remaining) => (call === 0 ? 10 : call === 1 ? evidenceEagain() : remaining));
+    writeEvidenceSync(1, text, h.io);
+    expect(Buffer.concat(h.written).toString('utf8')).toBe(text);
+    expect(h.waits).toHaveLength(1);
+  });
+
+  it('throws with the written byte count when EAGAIN lasts past the wait limit', () => {
+    const text = 'b'.repeat(100);
+    const h = evidenceHarness((call) => (call === 0 ? 30 : evidenceEagain()));
+    h.io.maxWaitMs = 50;
+    expect(() => writeEvidenceSync(1, text, h.io)).toThrowError(/30 of 100 bytes/);
+    expect(h.waits.reduce((sum, ms) => sum + ms, 0)).toBeGreaterThanOrEqual(50);
+  });
+
+  it('rethrows errors other than EAGAIN unchanged and does not wait', () => {
+    const failure = Object.assign(new Error('EPIPE: broken pipe, write'), { code: 'EPIPE' });
+    const h = evidenceHarness(() => failure);
+    expect(() => writeEvidenceSync(1, 'c' + evidenceLf, h.io)).toThrow(failure);
+    expect(h.waits).toEqual([]);
+  });
+});
 describe('fixed convergence criteria', () => {
   const previous: Observation = { elements: 10, displacementMm: 100, energyNmm: 100, stressMPa: 100 };
   const fine: Observation = { ...previous, elements: 20 };
@@ -249,7 +325,7 @@ function admissionEvidence(prefix: string, value: unknown): void {
   const encoded = prefix + ' ' + JSON.stringify(value) + String.fromCharCode(10);
   admissionEvidenceBytes += Buffer.byteLength(encoded, 'utf8');
   if (admissionEvidenceBytes > 16_000_000) throw new Error('Bounded admission evidence exceeded 16000000 bytes');
-  writeSync(1, encoded);
+  writeEvidenceSync(1, encoded);
 }
 function meshContentSha256(mesh: TetraMeshResult): string {
   return createHash('sha256').update(JSON.stringify({ coordinates: mesh.coordinates,
@@ -286,7 +362,7 @@ describe('real offline solid mesh convergence (unconverged is reported, never re
         const previous = observations.get(shape)?.[2];
         if (previous === undefined) throw new Error('Missing completed baseline');
         expect(deniedRequests).toBe(0);
-        writeSync(1, 'SOLID_CONTINUATION_ADMISSION ' + JSON.stringify({ shape, level, boundaryLevel,
+        writeEvidenceSync(1, 'SOLID_CONTINUATION_ADMISSION ' + JSON.stringify({ shape, level, boundaryLevel,
           targetSizeMm, nodes: mesh.coordinates.length / 3,
           elements: mesh.tetrahedra.length / 4, previousElements: previous.elements,
           meshingElapsedMs: meshedAt - start }) + String.fromCharCode(10));
@@ -335,7 +411,7 @@ describe('real offline solid mesh convergence (unconverged is reported, never re
       expect(rows).toHaveLength(level - 1);
       const change = rows.length > 0 ? difference(rows[rows.length - 1], row) : null;
       // Write the evidence to the RUN stream even when the reporter hides console output from passing tests.
-      writeSync(1, 'SOLID_MESH_CONVERGENCE ' + JSON.stringify({ shape, level, nodes: solid.nodes.length, ...quality, ...row,
+      writeEvidenceSync(1, 'SOLID_MESH_CONVERGENCE ' + JSON.stringify({ shape, level, nodes: solid.nodes.length, ...quality, ...row,
         change, final: level === (shape === 'perforated-plate' ? 4 : 3), boundaryLevel,
         targetSizeMm, meshingElapsedMs: meshedAt - start,
         solveAndValidationElapsedMs: solvedAt - meshedAt, elapsedMs: performance.now() - start }) + String.fromCharCode(10));

@@ -20,8 +20,11 @@ const DRAFTS = [
   ['jis-g-3192-2024', '2024-07-24', 'docs_kouzai_0400JISG3192_20240724.pdf', 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa'],
   ['jis-g-3192-2024', '2020-12-02', 'docs_kouzai004_jis02G3192_20201202.pdf', '000c5bf453e141191151608e424731322155f88a4f756a450abd14c8c573a935'],
   ['jis-g-3194-2024', '2024-07-24', 'docs_kouzai_0500JISG3194_20240724.pdf', '07cca88a466a190142c87b74eb6c53c3c72e0c66433d3e120e2af497512b7dea'],
+  // 2026-11-15 の追加（鋼材の第 2 弾）: G 3350・G 3459 の 2020-12-02 の改正案。
+  ['jis-g-3350-2021', '2020-12-02', 'docs_kouzai004_jis03G3350_20201202.pdf', '386086a3b2af48d82e049f1bbdb1a6a187721eb156acdd4c2c9e8927bca26fe5'],
   ['jis-g-3444-2025', '2024-12-20', 'docs_kouzai_1400_JISG3444_20241220.pdf', '755e8484f4006043ff5592f0f0baba5524f86d4aac777aca25f25827483e5fa3'],
   ['jis-g-3452-2026', '2025-12-17', 'docs_kouzai_0500_JISG3452_20251217.pdf', '03b3975041cee440fd7be67ef7928089158cc8d7e7d1fc584399cfb282170318'],
+  ['jis-g-3459-2021', '2020-12-02', 'docs_kouzai004_jis05G3459_20201202.pdf', 'cd9247d629dfc9656e0a2fd5941bc043e341cdcc23ad95e4bcb010bb5e3bcdab'],
   ['jis-g-3466-2025', '2024-12-20', 'docs_kouzai_1600_JISG3466_20241220.pdf', 'ce00863b95e73a2dd116459bf75595ac6a21779961406cef8d149791af012752'],
   ['jis-g-4051-2026', '2025-12-17', 'docs_kouzai_0700_JISG4051_20251217.pdf', '158ac7b25b0c1cda41ae5cdf68cfe37530b73f1288b9cacf62c2d45584664245'],
 ] as const;
@@ -36,6 +39,12 @@ const STANDARDS = [
   ['jis-g-3452-2026', 'JIS G 3452', '配管用炭素鋼鋼管', '2026', '2026-05-20', 'search-summary'],
   ['jis-g-3466-2025', 'JIS G 3466', '一般構造用角形鋼管', '2025', '2025-04-21', 'secondary-source'],
   ['jis-g-4051-2026', 'JIS G 4051', '機械構造用炭素鋼鋼材', '2026', '2026-05-20', 'search-summary'],
+] as const;
+
+// 2026-11-15 の追加（鋼材の第 2 弾）。確認日が違うので上の 9 行とは別の表で確かめる。
+const K3_STANDARDS = [
+  ['jis-g-3350-2021', 'JIS G 3350', '一般構造用軽量形鋼', '2021', '2021-04-20', 'search-summary'],
+  ['jis-g-3459-2021', 'JIS G 3459', '配管用ステンレス鋼鋼管', '2021', '2021-04-20', 'search-summary'],
 ] as const;
 
 // Saved r1 contract: all six strings are literal constants, independent of the catalog builders.
@@ -75,10 +84,22 @@ const FROZEN_OPTIONS = [
 ] as const;
 
 describe('steel standards evidence ledger', () => {
-  it('contains exactly the nine distinct standards and edition IDs', () => {
-    expect(Object.keys(STEEL_STANDARDS).sort()).toEqual(STANDARDS.map(([id]) => id).sort());
-    expect(new Set(Object.values(STEEL_STANDARDS).map((row) => row.number)).size).toBe(9);
+  it('contains exactly the eleven distinct standards and edition IDs', () => {
+    expect(Object.keys(STEEL_STANDARDS).sort()).toEqual([...STANDARDS, ...K3_STANDARDS].map(([id]) => id).sort());
+    expect(new Set(Object.values(STEEL_STANDARDS).map((row) => row.number)).size).toBe(11);
   });
+
+  it.each(K3_STANDARDS)('%s keeps its bibliographic facts and the draft-only verification limit',
+    (id, number, name, edition, revisedOn, revisionDateBasis) => {
+      const row: SteelStandard = STEEL_STANDARDS[id];
+      expect(row).toMatchObject({ number, name, edition, revisedOn, revisionDateBasis, checkedOn: '2026-11-15',
+        verification: 'draft', editionStatus: 'reported' });
+      expect(row.draft?.meetingDate).toBe('2020-12-02');
+      expect(row.verificationNote).toContain('JSA');
+      expect(row.verificationNote).toContain('未確認');
+      expect(row.verificationNote).toContain('2020-12-02');
+      expect(row.historicalDrafts).toEqual([]);
+    });
 
   it.each(STANDARDS)('%s keeps its bibliographic facts and their verification limits',
     (id, number, name, edition, revisedOn, revisionDateBasis) => {
@@ -95,7 +116,7 @@ describe('steel standards evidence ledger', () => {
       if (row.revisedOn === null) expect(row.verification).toBe('draft');
     });
 
-  it('retains all nine exact URL/hash pairs without assigning a nonexistent draft to G 3123', () => {
+  it('retains all eleven exact URL/hash pairs without assigning a nonexistent draft to G 3123', () => {
     const actual = Object.entries(STEEL_STANDARDS).flatMap(([id, row]) => {
       const drafts = row.draft === null ? row.historicalDrafts : [row.draft, ...row.historicalDrafts];
       return drafts.map((draft) => [id, draft.meetingDate, draft.url, draft.sha256]);
@@ -103,8 +124,8 @@ describe('steel standards evidence ledger', () => {
     const expected = DRAFTS.map(([id, date, file, hash]) =>
       [id, date, `https://www.jisf.or.jp/business/standard/jis/documents/${file}`, hash]);
     expect(actual).toEqual(expected);
-    expect(actual).toHaveLength(9);
-    expect(new Set(actual.map((row) => row[2])).size).toBe(9);
+    expect(actual).toHaveLength(11);
+    expect(new Set(actual.map((row) => row[2])).size).toBe(11);
     for (const [, , , hash] of actual) expect(hash).toMatch(/^[0-9a-f]{64}$/);
     expect(STEEL_STANDARDS['jis-g-3123-2004'].draft).toBeNull();
     expect(STEEL_STANDARDS['jis-g-3123-2004'].verificationNote).toContain('寸法表は未確認');

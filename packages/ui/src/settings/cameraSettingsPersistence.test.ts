@@ -37,7 +37,8 @@ describe('EX-10.PERSIST terminal settings', () => {
       // The notice count is display-only: it is never written, so a reload has nothing left to report.
       const persisted = { ...loaded, viewControlsRecovered: undefined };
       expect(loadSettings(memory.storage)).toEqual(persisted);
-      expect(JSON.parse(memory.bytes() ?? '')).toEqual(persisted);
+      // Key assignments are written in the v2 field; the v1 field keeps only what was stored before (none here).
+      expect(JSON.parse(memory.bytes() ?? '')).toEqual({ ...persisted, shortcutAssignments: undefined, inputAssignments: { version: 2, keys: {} } });
       expect(memory.bytes()).not.toContain('viewControlsRecovered');
       expect([...memory.records.keys()]).toEqual([SETTINGS_KEY]);
     });
@@ -51,7 +52,7 @@ describe('EX-10.PERSIST terminal settings', () => {
         const configured = { ...loaded, viewControls: view };
         saveSettings(configured, memory.storage);
         const persisted = { ...loaded, viewControls: expected, viewControlsRecovered: undefined };
-        expect(JSON.parse(memory.bytes() ?? '')).toEqual(persisted);
+        expect(JSON.parse(memory.bytes() ?? '')).toEqual({ ...persisted, shortcutAssignments: undefined, inputAssignments: { version: 2, keys: {} } });
         expect(loadSettings(memory.storage)).toEqual(persisted);
         expect(loadSettings(memory.storage).cameraControls).toEqual(fixture.expected);
       });

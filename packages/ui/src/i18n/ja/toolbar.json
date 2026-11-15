@@ -220,7 +220,7 @@
   "toolbar.view.groupLabel": "視点",
   "toolbar.view.tooltip": "見る向きを操作します",
   "toolbar.home.label": "ホーム視点",
-  "toolbar.home.tooltip": "ホーム視点: 斜め上から見た最初の向きに戻します",
+  "toolbar.home.tooltip": "斜め上から見た最初の向きに戻します",
   "toolbar.viewOrientation.front": "正面から見る",
   "toolbar.viewOrientation.frontTooltip": "正面から見る: ビューキューブの「前」の面と同じ、正面から見た向きへ移ります",
   "toolbar.viewOrientation.back": "背面から見る",

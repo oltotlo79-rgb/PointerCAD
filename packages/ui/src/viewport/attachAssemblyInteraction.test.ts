@@ -5,6 +5,7 @@ import { attachAssemblyInteraction, mateTargetFromFaceHit, pickAssemblyMateTarge
 import { assemblyTargetId } from '../assembly/mateCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
+import { validateShortcutAssignments } from '../commands/shortcutAssignments.js';
 import { commitMateDraft, editAssemblyMate, mateKindReadiness, startMate } from '../assembly/mateActions.js';
 import { parseAssemblyTargetId } from '../assembly/mateCommands.js';
 
@@ -293,6 +294,24 @@ describe('assemblyの実listener', () => {
       expect(useAppStore.getState().assemblyMateDraft).toBeNull();
       useAppStore.getState().closeAssembly();
       f.send('pointerdown');
+      expect(f.downstream).toHaveBeenCalledTimes(1);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('組立の 3D の 1〜4 もキーの割当に従い、1 を別の命令へ割り当てると選択の種類を変えずに後続へ渡す', () => {
+    const validation = validateShortcutAssignments({ 'selection.vertex': { key: 'v', primary: false, shift: false, alt: false },
+      'toolbar.view.grid': { key: '1', primary: false, shift: false, alt: false } });
+    if (!validation.ok) throw new Error('assignment rejected');
+    useAppStore.setState({ displaySettings: { ...useAppStore.getState().displaySettings, shortcutAssignments: validation.assignments } });
+    const f = interactionFixture();
+    try {
+      useAppStore.setState({ selectionKind: 'face' });
+      const one = f.send('keydown', { key: '1', code: 'Digit1' });
+      expect(useAppStore.getState().selectionKind).toBe('face');
+      expect(one.defaultPrevented).toBe(false);
+      expect(f.downstream).toHaveBeenCalledTimes(1);
+      f.send('keydown', { key: 'v', code: 'KeyV' });
+      expect(useAppStore.getState().selectionKind).toBe('vertex');
       expect(f.downstream).toHaveBeenCalledTimes(1);
     } finally { f.interaction.detach(); }
   });

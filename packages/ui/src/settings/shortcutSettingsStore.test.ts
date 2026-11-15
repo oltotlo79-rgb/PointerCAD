@@ -13,7 +13,7 @@ describe('キー割当の適用は文書・入力・保存先・履歴を変更�
     const proposed = { 'history.undo': { key: 'f2', primary: false, shift: false, alt: false } } as const;
     expect(applyShortcutSettings(proposed, currentShortcutAssignments(before.displaySettings))).toBe(true);
     const after = useAppStore.getState();
-    expect(after).toEqual({ ...before, displaySettings: { ...before.displaySettings, shortcutAssignments: proposed } });
+    expect(after).toEqual({ ...before, displaySettings: { ...before.displaySettings, shortcutAssignments: { 'history.undo': [proposed['history.undo']] } } });
     expect(after.document).toBe(before.document);
   });
   it('別の割当変更と衝突した古い編集や、固定キーの変更はストアを書き換えない', () => {

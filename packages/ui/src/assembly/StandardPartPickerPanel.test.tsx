@@ -1,6 +1,6 @@
 import React, { Children, isValidElement, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { buildStandardPartFromSource, createAssemblyDocument, createStandardPartSource,
+import { ALL_STEEL_PRODUCTS, buildStandardPartFromSource, createAssemblyDocument, createStandardPartSource,
   DEFAULT_COMPONENT_PLACEMENT, EMPTY_PART_LIBRARY, STEEL_PRODUCTS, steelProductOptions,
   steelProducts, type AssemblyComponent, type ComponentSource, type StandardPartSource } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -214,7 +214,9 @@ describe('actual structural picker selection and store commits', () => {
     const nodes = structuralPanel();
     const material = select(nodes, 'assembly.steel.materialGuide');
     expect(material.props.value).toBe('SS400');
-    expect(optionValues(material)).toEqual(['SS400', 'S45C', 'SGP', 'unspecified']);
+    // r2（2026-11-14）の STKR400・STK400 が r1 の鋼種の後、指定なしの前に加わった。
+    // 2026-11-15 に SSC400・SUS304TP が r2 の鋼種の後に加わった。
+    expect(optionValues(material)).toEqual(['SS400', 'S45C', 'SGP', 'STKR400', 'STK400', 'SSC400', 'SUS304TP', 'unspecified']);
     expect(elements(material.props.children as ReactNode).find((item) => item.props.value === 'unspecified')?.props.children)
       .toBe(t('assembly.steel.unspecified'));
     expect(optionValues(select(nodes, 'assembly.guide.standardSize')))
@@ -252,8 +254,12 @@ describe('actual structural picker selection and store commits', () => {
     for (const row of STEEL_PRODUCTS) {
       nodes = change(select(nodes, 'assembly.steel.materialGuide'), row.materialGrade);
       expect(optionValues(select(nodes, 'assembly.steel.shapeGuide'))).toEqual({
-        SS400: ['flatBar', 'roundBar', 'equalAngle', 'channel', 'hBeam'],
-        S45C: ['roundBar', 'flatBar'], SGP: ['steelPipe'],
+        // r2（2026-11-14）で SS400 の不等辺山形鋼・I 形鋼が末尾に加わった。r2 の鋼種は型の網羅のために置く
+        // （この繰り返しは r1 の STEEL_PRODUCTS だけを回す）。
+        // 2026-11-15 に SS400 の CT 形鋼が末尾に加わった。SSC400・SUS304TP の鍵も型の網羅のために置く。
+        SS400: ['flatBar', 'roundBar', 'equalAngle', 'channel', 'hBeam', 'unequalAngle', 'iBeam', 'ctSection'],
+        S45C: ['roundBar', 'flatBar'], SGP: ['steelPipe'], STKR400: ['rectTube'], STK400: ['steelPipe'],
+        SSC400: [], SUS304TP: [],
       }[row.materialGrade]);
       nodes = change(select(nodes, 'assembly.steel.shapeGuide'), row.catalog);
       const sizes = select(nodes, 'assembly.guide.standardSize');
@@ -280,6 +286,65 @@ describe('actual structural picker selection and store commits', () => {
     nodes = change(select(nodes, 'assembly.steel.materialGuide'), 'unspecified');
     expect(optionValues(select(nodes, 'assembly.guide.standardSize'))).toHaveLength(109);
     expect(select(nodes, 'assembly.guide.standardSize').props.value).toBe(standardPartChoices('structuralSection')[0].key);
+  });
+
+  it('reaches all 273 r2 rows (rectangular tube, STK pipe, unequal angle, I section) through real handlers', () => {
+    let nodes = structuralPanel();
+    // 2026-11-14 の 273 行（r2 の行の先頭）。2026-11-15 の行は下の別の件で回す。
+    const r2 = ALL_STEEL_PRODUCTS.filter((row) => row.catalogRevision !== undefined).slice(0, 273);
+    expect(r2).toHaveLength(273);
+    const expectedShapes: Readonly<Record<string, readonly string[]>> = {
+      SS400: ['flatBar', 'roundBar', 'equalAngle', 'channel', 'hBeam', 'unequalAngle', 'iBeam', 'ctSection'],
+      STKR400: ['rectTube'], STK400: ['steelPipe'],
+    };
+    for (const row of r2) {
+      nodes = change(select(nodes, 'assembly.steel.materialGuide'), row.materialGrade);
+      const shapes = select(nodes, 'assembly.steel.shapeGuide');
+      expect(optionValues(shapes)).toEqual(expectedShapes[row.materialGrade]);
+      const label = elements(shapes.props.children as ReactNode).find((item) => item.props.value === row.catalog);
+      expect(label?.props.children).toBe(t(row.materialGrade === 'STK400' ? 'assembly.steel.structuralPipe'
+        : row.catalog === 'rectTube' ? 'assembly.steel.rectTube'
+          : row.catalog === 'unequalAngle' ? 'assembly.steel.unequalAngle' : 'assembly.steel.iBeam'));
+      nodes = change(shapes, row.catalog);
+      nodes = change(select(nodes, 'assembly.guide.standardSize'), `steel:${row.key}`);
+      const source = submit(nodes);
+      expect(source).toMatchObject({ catalog: row.catalog, size: row.size,
+        catalogRevision: 'jp-steel-2026-11-14-r2', generatorRevision: '3-steel-profile-1' });
+      expect(source.options).toEqual({ ...steelProductOptions(row), length: '1000' });
+      expect(buildStandardPartFromSource(source)).not.toBeNull();
+      nodes = render();
+    }
+    expect(useAppStore.getState().assembly?.components).toHaveLength(273);
+  });
+
+  it('reaches all 334 r2 rows added on 2026-11-15 (light gauge sections, CT sections, SUS304TP pipes) through real handlers', () => {
+    let nodes = structuralPanel();
+    const added = ALL_STEEL_PRODUCTS.filter((row) => row.catalogRevision !== undefined).slice(273);
+    expect(added).toHaveLength(334);
+    const expectedShapes: Readonly<Record<string, readonly string[]>> = {
+      SS400: ['flatBar', 'roundBar', 'equalAngle', 'channel', 'hBeam', 'unequalAngle', 'iBeam', 'ctSection'],
+      SSC400: ['lightChannel', 'lightZ', 'lightAngle', 'lipChannel', 'lipZ', 'hatSection'], SUS304TP: ['steelPipe'],
+    };
+    const labels: Readonly<Record<string, string>> = {
+      ctSection: 'CT形鋼', lightChannel: '軽溝形鋼', lightZ: '軽Z形鋼', lightAngle: '軽山形鋼', lipChannel: 'リップ溝形鋼',
+      lipZ: 'リップZ形鋼', hatSection: 'ハット形鋼', steelPipe: '配管用ステンレス鋼鋼管',
+    };
+    for (const row of added) {
+      nodes = change(select(nodes, 'assembly.steel.materialGuide'), row.materialGrade);
+      const shapes = select(nodes, 'assembly.steel.shapeGuide');
+      expect(optionValues(shapes)).toEqual(expectedShapes[row.materialGrade]);
+      const label = elements(shapes.props.children as ReactNode).find((item) => item.props.value === row.catalog);
+      expect(label?.props.children).toBe(labels[row.catalog]);
+      nodes = change(shapes, row.catalog);
+      nodes = change(select(nodes, 'assembly.guide.standardSize'), `steel:${row.key}`);
+      const source = submit(nodes);
+      expect(source).toMatchObject({ catalog: row.catalog, size: row.size,
+        catalogRevision: 'jp-steel-2026-11-14-r2', generatorRevision: '3-steel-profile-1' });
+      expect(source.options).toEqual({ ...steelProductOptions(row), length: '1000' });
+      expect(buildStandardPartFromSource(source)).not.toBeNull();
+      nodes = render();
+    }
+    expect(useAppStore.getState().assembly?.components).toHaveLength(334);
   });
 
   it('shows repeated nested quantities and plain omissions, and the real CSV button saves that same report', async () => {

@@ -1,8 +1,8 @@
 import { t } from '../i18n/t.js';
 import { describe, expect, it } from 'vitest';
 import {
-  buildStandardPartFromSource, CATALOG_ITEM_REJECTION_TEMPLATES, STEEL_MATERIAL_GRADES, STEEL_PRODUCTS, steelProductOptions,
-  type StandardPartSource,
+  ALL_STEEL_PRODUCTS, buildStandardPartFromSource, CATALOG_ITEM_REJECTION_TEMPLATES, STEEL_MATERIAL_GRADES, STEEL_PRODUCTS,
+  STEEL_R2_MATERIAL_GRADES, steelProductOptions, type StandardPartSource,
 } from '@pointercad/model';
 import { buildStandardPartFromSourceWithReason } from '@pointercad/model/testing/ui-fixtures';
 import catalogMessages from '../i18n/ja/catalog.json';
@@ -11,7 +11,7 @@ import {
   commitStandardPartChoice, DEFAULT_STANDARD_PART_PICKER, defaultStandardPartChoice,
   findStandardPartChoice, STANDARD_PART_CATEGORIES, standardPartChoices,
   standardPartUsesDimensionSeries, standardPartUsesThreadSeries, steelPartChoices, structuralPartChoices,
-  steelPartDimensionGroups, steelPartChoiceAtDimension,
+  steelPartDimensionGroups, steelPartChoiceAtDimension, steelShapeLabelKey, STRUCTURAL_MATERIAL_CHOICES,
 } from './standardPartPicker.js';
 
 describe('standard-part picker choices', () => {
@@ -240,7 +240,8 @@ describe('explicit unassigned legacy selection', () => {
     }
   });
   it('keeps the known-grade path restricted to confirmed rows', () => {
-    expect(structuralPartChoices('SS400')).toHaveLength(253);
+    // r2（2026-11-14）の SS400 の不等辺山形鋼 13 行・I 形鋼 20 行と、2026-11-15 の CT 形鋼 53 行を含む。
+    expect(structuralPartChoices('SS400')).toHaveLength(339);
     expect(structuralPartChoices('S45C')).toHaveLength(158);
     expect(structuralPartChoices('SGP')).toHaveLength(48);
     expect(structuralPartChoices('S45C', 'hBeam')).toEqual([]);
@@ -335,10 +336,16 @@ describe('K0 族の部品の土台(新しい規格の行はまだ無い)', () =>
         }
       }
     }
-    for (const grade of STEEL_MATERIAL_GRADES) for (const choice of steelPartChoices(grade)) catalogs.add(choice.catalog);
+    for (const grade of [...STEEL_MATERIAL_GRADES, ...STEEL_R2_MATERIAL_GRADES]) {
+      for (const choice of steelPartChoices(grade)) catalogs.add(choice.catalog);
+    }
     expect(catalogs.has('catalogItem')).toBe(false);
-    expect([...catalogs].sort()).toEqual(['channel', 'deepGrooveBallBearing', 'equalAngle', 'flatBar', 'hBeam', 'hexBolt',
-      'hexNut', 'panHeadScrew', 'plainWasher', 'roundBar', 'socketHeadCapScrew', 'springWasher', 'steelPipe']);
+    // r2（2026-11-14）の角形鋼管・不等辺山形鋼・I 形鋼は鋼材の行で、族の部品ではない。
+    // r2 に 2026-11-15 に足した軽量形鋼 6 つ・CT 形鋼も鋼材の行。
+    expect([...catalogs].sort()).toEqual(['channel', 'ctSection', 'deepGrooveBallBearing', 'equalAngle', 'flatBar',
+      'hBeam', 'hatSection', 'hexBolt', 'hexNut', 'iBeam', 'lightAngle', 'lightChannel', 'lightZ', 'lipChannel', 'lipZ',
+      'panHeadScrew', 'plainWasher', 'rectTube', 'roundBar', 'socketHeadCapScrew', 'springWasher', 'steelPipe',
+      'unequalAngle']);
   });
 
   it('族の部品の断りの文言は model の文と一字一句同じで、製品の道の理由の文とも一致する', () => {
@@ -353,5 +360,68 @@ describe('K0 族の部品の土台(新しい規格の行はまだ無い)', () =>
     const rejection = buildStandardPartFromSourceWithReason(unknownFamily).rejection;
     expect(rejection?.messageKey).toBe('catalog.rejection.unknown-family');
     expect(t('catalog.rejection.unknown-family')).toBe(rejection?.message);
+  });
+});
+
+describe('材質別の鋼材の表 r2（角形鋼管・一般構造用炭素鋼鋼管・不等辺山形鋼・I 形鋼）の選択肢', () => {
+  const r2 = ALL_STEEL_PRODUCTS.filter((row) => row.catalogRevision !== undefined);
+
+  it('STKR400 は角形鋼管 112 行、STK400 は鋼管 128 行で、鋼種の選択肢に r1 の鋼種の後から加わる', () => {
+    expect(STRUCTURAL_MATERIAL_CHOICES).toEqual(['SS400', 'S45C', 'SGP', 'STKR400', 'STK400', 'SSC400', 'SUS304TP',
+      'unspecified']);
+    expect(structuralPartChoices('STKR400')).toHaveLength(112);
+    expect(structuralPartChoices('STKR400', 'rectTube')).toHaveLength(112);
+    expect(structuralPartChoices('STK400')).toHaveLength(128);
+    expect(structuralPartChoices('SS400', 'unequalAngle')).toHaveLength(13);
+    expect(structuralPartChoices('SS400', 'iBeam')).toHaveLength(20);
+    expect(structuralPartChoices('STKR400', 'steelPipe')).toEqual([]);
+    expect(r2).toHaveLength(607);
+  });
+
+  it('607 行の全てが r2 の版の出どころと「鋼種 呼び 長さ」の名前で置け、組める', () => {
+    for (const row of r2) {
+      const result = commitStandardPartChoice('structuralSection', `steel:${row.key}`, '2500');
+      if (!result.ok) throw new Error(`r2 choice failed: ${row.key}`);
+      expect(result.value.name).toBe(`${row.materialGrade} ${row.size} 長さ2500`);
+      expect(result.value.source).toEqual({ kind: 'standardPart', catalog: row.catalog, size: row.size,
+        options: { ...steelProductOptions(row), length: '2500' },
+        catalogRevision: 'jp-steel-2026-11-14-r2', generatorRevision: '3-steel-profile-1' });
+      expect(buildStandardPartFromSource(result.value.source)).not.toBeNull();
+    }
+  });
+
+  it('断面の名前は CAD の一般の用語と JIS の呼び方で、鋼管は鋼種で配管用と一般構造用を分ける', () => {
+    expect(t(steelShapeLabelKey('rectTube', 'STKR400'))).toBe('角形鋼管');
+    expect(t(steelShapeLabelKey('steelPipe', 'STK400'))).toBe('一般構造用炭素鋼鋼管');
+    expect(steelShapeLabelKey('steelPipe', 'SGP')).toBe('assembly.steel.steelPipe');
+    expect(steelShapeLabelKey('steelPipe')).toBe('assembly.steel.steelPipe');
+    expect(t(steelShapeLabelKey('unequalAngle', 'SS400'))).toBe('不等辺山形鋼（L）');
+    expect(t(steelShapeLabelKey('iBeam', 'SS400'))).toBe('I形鋼');
+    expect(steelShapeLabelKey('hBeam', 'SS400')).toBe('assembly.steel.hBeam');
+  });
+});
+
+describe('r2 に 2026-11-15 に足した軽量形鋼・CT 形鋼・SUS304TP の鋼管の選択肢', () => {
+  it('SSC400 は軽量形鋼 6 つの 91 行、SS400 の CT 形鋼は 53 行、SUS304TP は鋼管 190 行', () => {
+    expect(structuralPartChoices('SSC400')).toHaveLength(91);
+    expect(structuralPartChoices('SSC400', 'lipChannel')).toHaveLength(37);
+    expect(structuralPartChoices('SSC400', 'lightChannel')).toHaveLength(31);
+    expect(structuralPartChoices('SS400', 'ctSection')).toHaveLength(53);
+    expect(structuralPartChoices('SUS304TP')).toHaveLength(190);
+    expect(structuralPartChoices('SUS304TP', 'steelPipe').slice(0, 2).map((choice) => choice.size))
+      .toEqual(['6A×Sch5S', '6A×Sch10S']);
+    expect(structuralPartChoices('SSC400', 'steelPipe')).toEqual([]);
+    expect(structuralPartChoices('SUS304TP', 'lipChannel')).toEqual([]);
+  });
+
+  it('断面の名前は JIS G 3350 表1 の名称・JIS G 3192 の CT 形鋼で、SUS304TP の鋼管は配管用ステンレス鋼鋼管', () => {
+    expect(t(steelShapeLabelKey('lightChannel', 'SSC400'))).toBe('軽溝形鋼');
+    expect(t(steelShapeLabelKey('lightZ', 'SSC400'))).toBe('軽Z形鋼');
+    expect(t(steelShapeLabelKey('lightAngle', 'SSC400'))).toBe('軽山形鋼');
+    expect(t(steelShapeLabelKey('lipChannel', 'SSC400'))).toBe('リップ溝形鋼');
+    expect(t(steelShapeLabelKey('lipZ', 'SSC400'))).toBe('リップZ形鋼');
+    expect(t(steelShapeLabelKey('hatSection', 'SSC400'))).toBe('ハット形鋼');
+    expect(t(steelShapeLabelKey('ctSection', 'SS400'))).toBe('CT形鋼');
+    expect(t(steelShapeLabelKey('steelPipe', 'SUS304TP'))).toBe('配管用ステンレス鋼鋼管');
   });
 });

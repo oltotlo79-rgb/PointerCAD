@@ -6,10 +6,10 @@ import { BOM_COLUMN_IDS, resolveDrawingAnnotationTarget, type DrawingSourceResol
 import { steelStockIssueText } from '../assembly/steelStockCsvExport.js';
 import { materialLabel } from '../assembly/BomTable.js';
 import { formatBomMass } from '../assembly/bomTableRows.js';
-import { t, type MessageKey } from '../i18n/t.js';
+import { t } from '../i18n/t.js';
+import { steelShapeLabelKey } from '../assembly/standardPartPicker.js';
 import { drawingNoteGeometryElement } from './noteDisplay.js';
 import { drawingTableRowOwner } from './drawingSelection.js';
-import type { SteelSectionCatalog as TypeSteelSectionCatalog } from '@pointercad/model';
 
 
 export interface DrawingTableDisplay {
@@ -50,10 +50,6 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
   const paper = paperSizeOf(document.sheet.paperSizeId);
   if (paper === undefined) return { elements, items, unresolved: document.tables.map((table) => table.id) };
   const bounds = createPaperFrame(paper).inner;
-  const steelShapes: Readonly<Record<TypeSteelSectionCatalog, MessageKey>> = {
-    flatBar: 'assembly.steel.flatBar', roundBar: 'assembly.steel.roundBar', steelPipe: 'assembly.steel.steelPipe',
-    equalAngle: 'assembly.steel.equalAngle', channel: 'assembly.steel.channel', hBeam: 'assembly.steel.hBeam',
-  };
   const measureText = (text: string, size: number) => outline(text, size).metrics;
   for (const table of document.tables) {
     let geometry: TableGeometry | null = null;
@@ -64,7 +60,7 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
       const stock = source.steelStockList;
       const headings = [t('assembly.steel.shape'), t('assembly.steel.material'), t('assembly.steel.csv.productStandard'),
         `${t('assembly.steel.stockLength')} (mm)`, t('assembly.steel.quantity'), `${t('assembly.steel.finishedLength')} (mm)`];
-      const rows = stock.rows.map((row) => [`${t(steelShapes[row.product.catalog])} ${row.product.size}`, row.product.materialGrade,
+      const rows = stock.rows.map((row) => [`${t(steelShapeLabelKey(row.product.catalog, row.product.materialGrade))} ${row.product.size}`, row.product.materialGrade,
         `${row.product.productStandard} / ${row.product.materialStandard}\n${t('assembly.steel.csv.catalogRevision')}: ${row.catalogRevision}\n${t('assembly.steel.csv.generatorRevision')}: ${row.generatorRevision}`, String(row.lengthMm), String(row.quantity),
         row.finishedLengthMm === null ? t('assembly.steel.finishedUnknown') : String(row.finishedLengthMm)]);
       rows.push(...stock.issues.map((issue) => [t('assembly.steel.csv.omitted'), '', '', '', '', steelStockIssueText(issue)]));

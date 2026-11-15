@@ -3,6 +3,7 @@ import * as ts from 'typescript';
 import { expect, it } from 'vitest';
 
 const expected = [
+  "ALL_STEEL_PRODUCTS",
   "ASSEMBLY_SCHEMA_VERSION",
   "AnalysisBoundary",
   "AnalysisBoundaryMesh",
@@ -761,6 +762,7 @@ const expected = [
   "STEEL_LENGTH_LIMITS_MM",
   "STEEL_MATERIAL_GRADES",
   "STEEL_PRODUCTS",
+  "STEEL_R2_MATERIAL_GRADES",
   "STEEL_SECTION_CATALOGS",
   "STEEL_STANDARDS",
   "STRENGTH_MATERIALS",

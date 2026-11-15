@@ -48,6 +48,23 @@ describe('editable straight steel stock from the picker source', () => {
         .toEqual([[productKey, 1000, 1000, 1]]);
     });
 
+  it.each(['STKR400:rectTube:□ 100×100×3.2', 'STK400:steelPipe:φ48.6×2.3', 'SS400:unequalAngle:L 100×75×7',
+    'SS400:iBeam:I 200×100×7×10'])('r2 %s: the editable part keeps the r2 source, generator solids and finished length', (productKey) => {
+    const committed = commitStandardPartChoice('structuralSection', `steel:${productKey}`, '1000');
+    if (!committed.ok) throw new Error('Picker refused an r2 catalog row');
+    expect(committed.value.source.catalogRevision).toBe('jp-steel-2026-11-14-r2');
+    const built = buildEditableSteelPart(`steel:${productKey}`, '1000', lineage);
+    if (!built.ok) throw new Error(`Refused ${productKey}: ${built.reason}`);
+    expect(built.document).toEqual({ ...buildStandardPartFromSource(committed.value.source), id: LINEAGE });
+    expect(built.document.steelStockSource).toEqual(committed.value.source);
+    const assembly = { ...createAssemblyDocument('Root'), components: [{ id: 'bar', name: 'bar',
+      source: { kind: 'part' as const, partRef: 'bar' }, placement: DEFAULT_COMPONENT_PLACEMENT,
+      fixed: false, visible: true, suppressed: false }] };
+    const rows = buildSteelStockList(assembly, new Map(), new Map([['bar', built.document]])).rows;
+    expect(rows.map(row => [row.product.key, row.catalogRevision, row.lengthMm, row.finishedLengthMm, row.quantity]))
+      .toEqual([[productKey, 'jp-steel-2026-11-14-r2', 1000, 1000, 1]]);
+  });
+
   it('covers SS400 and S45C flat and round bars, a hollow pipe and a profile section', () => {
     const grades = new Set(STEEL_PRODUCTS.map(row => `${row.materialGrade}:${row.catalog}`));
     for (const required of ['SS400:flatBar', 'SS400:roundBar', 'S45C:flatBar', 'S45C:roundBar', 'SGP:steelPipe']) {

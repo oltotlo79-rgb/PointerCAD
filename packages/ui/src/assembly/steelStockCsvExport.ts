@@ -1,22 +1,22 @@
 import { serializeCsvReport } from '../file/csvReport.js';
 import { buildSteelStockList, STEEL_EVIDENCE, type AssemblyDocument, type PartLibrary, type SteelEvidence,
-  type SteelStockList, type SteelSectionCatalog } from '@pointercad/model';
+  type SteelStockList } from '@pointercad/model';
 
 import { saveFileAsThrough } from '../file/fileGateway.js';
 import { t } from '../i18n/t.js';
+import { steelShapeLabelKey } from './standardPartPicker.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 
-const SHAPES: Readonly<Record<SteelSectionCatalog, Parameters<typeof t>[0]>> = {
-  flatBar: 'assembly.steel.flatBar', roundBar: 'assembly.steel.roundBar',
-  steelPipe: 'assembly.steel.steelPipe', equalAngle: 'assembly.steel.equalAngle',
-  channel: 'assembly.steel.channel', hBeam: 'assembly.steel.hBeam',
-};
 const CONDITIONS = {
   'hotRolled-heatTreatmentUnspecified': 'assembly.steel.hotRolled',
   'brightBar-heatTreatmentUnspecified': 'assembly.steel.brightBar',
   'blackPipe-plainEnds': 'assembly.steel.blackPipe',
   'whitePipe-zincCoated': 'assembly.steel.whitePipe',
+  'rectTube-asManufactured': 'assembly.steel.rectTubeAsManufactured',
+  'structuralPipe-plainEnds': 'assembly.steel.structuralPipePlainEnds',
+  'lightGauge-coldFormed': 'assembly.steel.lightGaugeColdFormed',
+  'stainlessPipe-solutionTreated-plainEnds': 'assembly.steel.stainlessPipeSolutionTreated',
 } as const;
 const GEOMETRIES = {
   profileSection: 'assembly.steel.csv.geometryProfile',
@@ -94,7 +94,7 @@ export function serializeSteelStockCsv(stock: SteelStockList): Uint8Array {
   rows.push([t('assembly.steel.csv.scope'), '', '', '', '', '', '', '', '', '', '', t('assembly.steel.stockScope'), '', '', ...NO_PROVENANCE, ...NO_STANDARD_EDITION]);
   for (const row of stock.rows) {
     rows.push([t('assembly.steel.csv.cut'), row.product.materialGrade, row.product.materialStandard,
-      row.product.productStandard, t(SHAPES[row.product.catalog]), row.product.size,
+      row.product.productStandard, t(steelShapeLabelKey(row.product.catalog, row.product.materialGrade)), row.product.size,
       t(CONDITIONS[row.product.condition]), row.lengthMm, row.quantity, row.totalLengthMm,
       JSON.stringify(row.occurrencePaths), '', '', row.finishedLengthMm ?? t('assembly.steel.finishedUnknown'),
       ...provenance(row), ...standardEditionCells(row.product)]);

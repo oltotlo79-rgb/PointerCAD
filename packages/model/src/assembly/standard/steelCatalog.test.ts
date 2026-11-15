@@ -50,7 +50,9 @@ describe('material-compatible steel catalog', () => {
   it('offers an explicit producer-backed matrix rather than every grade/shape combination', () => {
     expect(STEEL_PRODUCTS).toHaveLength(459);
     expect(new Set(STEEL_PRODUCTS.map((row) => row.key)).size).toBe(459);
-    expect(steelSectionCatalogs('SS400')).toEqual(['flatBar', 'roundBar', 'equalAngle', 'channel', 'hBeam']);
+    // r2（2026-11-14）で SS400 の不等辺山形鋼・I 形鋼が、2026-11-15 に CT 形鋼が末尾に加わった。
+    expect(steelSectionCatalogs('SS400')).toEqual(['flatBar', 'roundBar', 'equalAngle', 'channel', 'hBeam', 'unequalAngle', 'iBeam',
+      'ctSection']);
     expect(steelSectionCatalogs('S45C')).toEqual(['roundBar', 'flatBar']);
     expect(steelSectionCatalogs('SGP')).toEqual(['steelPipe']);
     expect(steelProducts('S45C', 'hBeam')).toEqual([]);
@@ -272,7 +274,8 @@ function assertSS400Editions(rows: readonly Pick<SteelProduct,
 
 describe('non-persisted steel standard editions', () => {
   it('matches all 253 SS400 rows against independent standard, edition, status and catalog revision constants', () => {
-    assertSS400Editions(steelProducts('SS400'));
+    // r1 の SS400 の行（r2 の 2026-11-14 の行は steelR2Catalog・steelG3192ExtraOracle の検査が照らす）。
+    assertSS400Editions(STEEL_PRODUCTS.filter((row) => row.materialGrade === 'SS400'));
   });
 
   it.each(STEEL_PRODUCTS)('$key derives both editions from the ledger without adding saved options', (row) => {
@@ -296,7 +299,7 @@ describe('non-persisted steel standard editions', () => {
   it('rejects a copied ledger with an empty edition using the same independent SS400 oracle', () => {
     const copiedLedger = { ...STEEL_STANDARDS,
       'jis-g-3101-2024': { ...STEEL_STANDARDS['jis-g-3101-2024'], edition: '' } };
-    const rows = steelProducts('SS400').map((row) => ({ ...row, standardEdition: {
+    const rows = STEEL_PRODUCTS.filter((row) => row.materialGrade === 'SS400').map((row) => ({ ...row, standardEdition: {
       material: copiedLedger[row.standardReferences.material], dimensions: copiedLedger[row.standardReferences.dimensions],
     } }));
     expect(() => assertSS400Editions(rows)).toThrow();

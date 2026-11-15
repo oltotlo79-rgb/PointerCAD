@@ -39,13 +39,17 @@ import {
 import { hexBoltMainEvidence, hexBoltMainThreadLength } from './hexBoltEvidence.js';
 import { findChannel, findEqualAngle, findHBeam } from './sections.js';
 import {
-  findSteelProduct, hasSteelOptions, LEGACY_STEEL_GENERATOR_REVISION, STEEL_CATALOG_REVISION, STEEL_GENERATOR_REVISION,
-  steelLength, steelProductOptions, steelProducts, steelProductFromSource, type SteelProduct,
-  STEEL_PRODUCTS,
+  ALL_STEEL_PRODUCTS, findSteelProduct, hasSteelOptions, isSteelCatalogRevision, LEGACY_STEEL_GENERATOR_REVISION,
+  STEEL_CATALOG_REVISION, STEEL_GENERATOR_REVISION, STEEL_MATERIAL_GRADES, STEEL_R2_MATERIAL_GRADES,
+  steelLength, steelProductCatalogRevision, steelProductOptions, steelProducts, steelProductFromSource,
+  type SteelMaterialGrade, type SteelProduct,
 } from './steelCatalog.js';
-import { STEEL_SECTION_CATALOGS, steelGradeRule, type SteelGradeRejectionCode } from './steelGradeRules.js';
+import {
+  STEEL_R2_SECTION_CATALOGS, STEEL_SECTION_CATALOGS, steelGradeRule, type SteelGradeRejectionCode,
+} from './steelGradeRules.js';
 import { STEEL_STANDARDS, type SteelStandardReference } from './steelStandards.js';
-import { steelSectionProfile, type SteelSectionProfile } from './steelSectionProfiles.js';
+import { steelCatalogProfile, type SteelCatalogProfile } from './steelProfiles/steelCatalogProfile.js';
+import type { SteelProfileSegment } from './steelSectionProfiles.js';
 import { buildFilletWeldPart, filletWeldLegs, filletWeldNominalVolume, filletWeldOptionAngle } from '../welding/filletWeldPart.js';
 import { buildCircularFilletWeldPartFromSource, CIRCULAR_FILLET_WELD_GENERATOR_REVISION } from '../welding/circularFilletWeldSource.js';
 import { cylindricalWeldSection } from '../welding/cylindricalWeld.js';
@@ -597,11 +601,12 @@ function buildHBeam(
   ], length);
 }
 
-function buildProfileSection(section: SteelSectionProfile, length: ExpressionValue): PartDocument {
-  let document = createEmptyPartDocument();
-  let sketch = activeSketch(document);
+/** One closed profile loop and its face. The r1 sections use exactly one loop, with the original feature order. */
+function appendProfileLoop(start: SketchDocument, segments: readonly SteelProfileSegment[]):
+{ readonly sketch: SketchDocument; readonly faceId: string } {
+  let sketch = start;
   const boundary: { featureId: string }[] = [];
-  for (const segment of section.segments) {
+  for (const segment of segments) {
     const feature: SketchLineFeature | SketchArcFeature = segment.kind === 'line' ? {
       id: nextFeatureId(sketch, 'line'), name: nextFeatureName(sketch, 'line'),
       planeId: DEFAULT_WORK_PLANE_ID, kind: 'line', construction: false,
@@ -622,9 +627,34 @@ function buildProfileSection(section: SteelSectionProfile, length: ExpressionVal
     id: nextFeatureId(sketch, 'face'), name: nextFeatureName(sketch, 'face'),
     planeId: DEFAULT_WORK_PLANE_ID, kind: 'face', boundary, color: DEFAULT_FACE_COLOR,
   };
-  sketch = appendFeature(sketch, face);
+  return { sketch: appendFeature(sketch, face), faceId: face.id };
+}
+
+/**
+ * Extrude the outer loop; a hollow section (rectangular tube) also extrudes each inner loop and subtracts it,
+ * like the round pipe's two cylinders. The first solid stays the outer stock extrude (steelFinishedLength).
+ */
+function buildProfileSection(section: SteelCatalogProfile, length: ExpressionValue): PartDocument {
+  let document = createEmptyPartDocument();
+  const outer = appendProfileLoop(activeSketch(document), section.segments);
+  let sketch = outer.sketch;
+  const holeFaceIds: string[] = [];
+  for (const hole of section.holes) {
+    const added = appendProfileLoop(sketch, hole);
+    sketch = added.sketch;
+    holeFaceIds.push(added.faceId);
+  }
   document = replaceSketch(document, sketch);
-  return appendExtrude(document, { sketchId: sketch.id, faceFeatureId: face.id }, length).document;
+  const body = appendExtrude(document, { sketchId: sketch.id, faceFeatureId: outer.faceId }, length);
+  document = body.document;
+  let targetId = body.feature.id;
+  for (const faceId of holeFaceIds) {
+    const hole = appendExtrude(document, { sketchId: sketch.id, faceFeatureId: faceId }, length);
+    const hollow = appendBoolean(hole.document, 'subtract', targetId, hole.feature.id);
+    document = hollow.document;
+    targetId = hollow.feature.id;
+  }
+  return document;
 }
 
 function buildSteelProduct(row: SteelProduct, options: Readonly<Record<string, string>>,
@@ -633,7 +663,7 @@ function buildSteelProduct(row: SteelProduct, options: Readonly<Record<string, s
   if (length === null) return null;
   let document: PartDocument | null = null;
   if (revision === STEEL_GENERATOR_REVISION && row.geometry === 'profileSection') {
-    const section = steelSectionProfile(row.catalog, row.size);
+    const section = steelCatalogProfile(row.catalog, row.size);
     if (section === undefined) return null;
     return withName(buildProfileSection(section, length), `${row.materialGrade} ${row.size} 長さ${length.source}`);
   }
@@ -661,6 +691,17 @@ function buildSteelProduct(row: SteelProduct, options: Readonly<Record<string, s
       document = appendBoolean(inside.document, 'subtract', outside.feature.id, inside.feature.id).document;
       break;
     }
+    // The r2 sections exist only as source-backed profiles (above); they have no simplified generator.
+    case 'rectTube':
+    case 'unequalAngle':
+    case 'iBeam':
+    case 'lightChannel':
+    case 'lightZ':
+    case 'lightAngle':
+    case 'lipChannel':
+    case 'lipZ':
+    case 'hatSection':
+    case 'ctSection': return null;
   }
   return document === null ? null : withName(document,
     `${row.materialGrade} ${row.size} 長さ${length.source}`);
@@ -689,7 +730,17 @@ function buildLegacyStandardPart(
     case 'hBeam': return buildHBeam(size, options);
     case 'flatBar':
     case 'roundBar':
-    case 'steelPipe': return null;
+    case 'steelPipe':
+    case 'rectTube':
+    case 'unequalAngle':
+    case 'iBeam':
+    case 'lightChannel':
+    case 'lightZ':
+    case 'lightAngle':
+    case 'lipChannel':
+    case 'lipZ':
+    case 'hatSection':
+    case 'ctSection': return null;
     // 溶接のビードは自分の版を持ち、旧い表の経路では組まない。
     case 'filletWeld': return null;
     // 族の部品は族の登録口(catalog/source.ts)だけで組む。旧い表の経路では組まない。
@@ -722,10 +773,12 @@ export function buildStandardPartFromSource(source: StandardPartSource): PartDoc
     ? buildCircularFilletWeldPartFromSource(source) : buildFilletWeldPart(source);
   // 族の部品は族の登録口で確かめて組む(鋼材・従来の版の道には入れない)。
   if (source.catalog === 'catalogItem') return buildCatalogItemPart(source);
-  if (source.catalogRevision === STEEL_CATALOG_REVISION
+  if (isSteelCatalogRevision(source.catalogRevision)
     && (source.generatorRevision === STEEL_GENERATOR_REVISION
       || source.generatorRevision === LEGACY_STEEL_GENERATOR_REVISION)) {
-    const row = findSteelProduct(source.catalog, source.size, source.options);
+    // The r1 and r2 tables match only their own saved revision; an r2 row never had the legacy generator.
+    const row = steelProductFromSource(source) === undefined ? undefined
+      : findSteelProduct(source.catalog, source.size, source.options);
     if (row === undefined) return null;
     const document = buildSteelProduct(row, source.options, source.generatorRevision);
     return document === null ? null : { ...document, steelStockSource: { ...source, options: { ...source.options } } };
@@ -759,7 +812,13 @@ export type StandardPartBuildResult = { readonly document: PartDocument; readonl
   | { readonly document: null; readonly rejection: StandardPartRejection };
 
 function steelSectionCatalog(catalog: StandardCatalogId): catalog is SteelProduct['catalog'] {
-  return STEEL_SECTION_CATALOGS.some((candidate) => candidate === catalog);
+  return STEEL_SECTION_CATALOGS.some((candidate) => candidate === catalog)
+    || STEEL_R2_SECTION_CATALOGS.some((candidate) => candidate === catalog);
+}
+
+function steelMaterialGrade(grade: string | undefined): grade is SteelMaterialGrade {
+  return STEEL_MATERIAL_GRADES.some((candidate) => candidate === grade)
+    || STEEL_R2_MATERIAL_GRADES.some((candidate) => candidate === grade);
 }
 
 function steelRejection(code: SteelPartRejectionCode, message: string,
@@ -789,7 +848,7 @@ function mismatchedSteelFields(row: SteelProduct, options: Readonly<Record<strin
 export function standardPartRejection(source: StandardPartSource): StandardPartRejection | null {
   // 族の部品は鋼材の指定や版を持っていても鋼材として確かめない(族の理由で断る)。
   if (source.catalog === 'catalogItem') return catalogItemRejection(source);
-  const steel = hasSteelOptions(source.options) || source.catalogRevision === STEEL_CATALOG_REVISION
+  const steel = hasSteelOptions(source.options) || isSteelCatalogRevision(source.catalogRevision)
     || source.generatorRevision === STEEL_GENERATOR_REVISION
     || source.generatorRevision === LEGACY_STEEL_GENERATOR_REVISION
     || source.catalog === 'flatBar' || source.catalog === 'roundBar' || source.catalog === 'steelPipe';
@@ -798,7 +857,7 @@ export function standardPartRejection(source: StandardPartSource): StandardPartR
     return steelRejection('steel-options-with-legacy-revision',
       '従来カタログの部品には鋼材の指定を組み合わせられません。材質別カタログから選び直してください。');
   }
-  if (source.catalogRevision !== STEEL_CATALOG_REVISION) {
+  if (!isSteelCatalogRevision(source.catalogRevision)) {
     return steelRejection('unsupported-catalog-revision', 'この鋼材カタログの版には対応していません。');
   }
   if (!steelSectionCatalog(source.catalog)) {
@@ -809,17 +868,25 @@ export function standardPartRejection(source: StandardPartSource): StandardPartR
     return steelRejection('unsupported-generator-revision', 'この鋼材の形状を作る版には対応していません。');
   }
   const { catalog, size, options } = source;
-  const keyed = STEEL_PRODUCTS.find((row) => row.key === options.steelProduct
+  const keyed = ALL_STEEL_PRODUCTS.find((row) => row.key === options.steelProduct
     && row.catalog === catalog && row.size === size);
+  // A row of one table revision never answers a save of the other (r1 saves stay r1, r2 saves stay r2).
+  if (keyed !== undefined && steelProductCatalogRevision(keyed) !== source.catalogRevision) {
+    return steelRejection('unsupported-catalog-revision', 'この鋼材カタログの版には対応していません。');
+  }
+  if (keyed?.catalogRevision !== undefined && source.generatorRevision !== STEEL_GENERATOR_REVISION) {
+    return steelRejection('unsupported-generator-revision', 'この鋼材の形状を作る版には対応していません。');
+  }
   const grade = options.materialGrade;
-  const rule = grade === 'SS400' || grade === 'S45C' || grade === 'SGP' ? steelGradeRule(grade, catalog) : null;
+  const rule = steelMaterialGrade(grade) ? steelGradeRule(grade, catalog) : null;
   if (keyed === undefined && rule?.allowed === false) {
     const basis = steelBasisText(rule.basis);
     return steelRejection(rule.reasonCode, `${rule.reason}（${basis}）`,
       { reason: rule.reason, basis }, [], rule.basis);
   }
   // Consider all matching rows: a single changed key must still identify steelProduct as the bad field.
-  const candidates = STEEL_PRODUCTS.filter((row) => row.catalog === catalog && row.size === size
+  const candidates = ALL_STEEL_PRODUCTS.filter((row) => row.catalog === catalog && row.size === size
+    && steelProductCatalogRevision(row) === source.catalogRevision
     && (keyed !== undefined || grade === undefined || row.materialGrade === grade));
   const nearest = candidates.map((row) => ({ row, fields: mismatchedSteelFields(row, options) }))
     .sort((left, right) => left.fields.length - right.fields.length)[0];
@@ -865,9 +932,12 @@ export function createStandardPartSource(
   // 族の部品の版は族が持つ。選ぶ画面は読み込んだ族から catalog/source.ts の createCatalogItemSource で作る。
   if (catalog === 'catalogItem') return catalogItemSourceFromOptions(size, options);
   if (hasSteelOptions(options) || catalog === 'flatBar' || catalog === 'roundBar' || catalog === 'steelPipe') {
+    // The row's own table revision (r2 rows); every r1 row and every unknown input keep the r1 revision.
+    const row = findSteelProduct(catalog, size, options);
     return { kind: 'standardPart', catalog, size,
       options: { ...options, length: options.length ?? DEFAULT_STANDARD_SECTION_LENGTH },
-      catalogRevision: STEEL_CATALOG_REVISION, generatorRevision: STEEL_GENERATOR_REVISION };
+      catalogRevision: row === undefined ? STEEL_CATALOG_REVISION : steelProductCatalogRevision(row),
+      generatorRevision: STEEL_GENERATOR_REVISION };
   }
   const normalizedOptions: Readonly<Record<string, string>> = (() => {
     switch (catalog) {
@@ -932,12 +1002,23 @@ export function standardPartNominalVolume(
   const steelRow = steel ? findSteelProduct(catalog, size, options) : undefined;
   if (steel && (steelRow === undefined || steelLength(options.length ?? DEFAULT_STANDARD_SECTION_LENGTH) === null)) return null;
   if (steelRow?.geometry === 'profileSection') {
-    const section = steelSectionProfile(catalog, size);
+    const section = steelCatalogProfile(catalog, size);
     const sectionLength = steelLength(options.length ?? DEFAULT_STANDARD_SECTION_LENGTH);
     return section === undefined || sectionLength === null ? null : section.areaMm2 * sectionLength.value;
   }
   const length = positiveExpression(options.length ?? DEFAULT_STANDARD_FASTENER_LENGTH)?.value ?? null;
   switch (catalog) {
+    // The r2 sections have only source-backed profiles (above).
+    case 'rectTube':
+    case 'unequalAngle':
+    case 'iBeam':
+    case 'lightChannel':
+    case 'lightZ':
+    case 'lightAngle':
+    case 'lipChannel':
+    case 'lipZ':
+    case 'hatSection':
+    case 'ctSection': return null;
     case 'filletWeld': {
       if (Object.hasOwn(options, 'weldCircular')) return null;
       const legs = filletWeldLegs(size);

@@ -267,5 +267,161 @@ export function registerSteelStockCsvTests(
       expect(second.equals(first)).toBe(true);
       expect(errors).toEqual([]);
     });
+
+    test('r2 の角形鋼管・一般構造用炭素鋼鋼管・不等辺山形鋼・I形鋼を画面から置き、切断リストのCSVに名前・規格・版が出て、保存と開き直しでも同じCSVになる', async ({ page }, info: TestInfo) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      const app = appForPage(page);
+      if (app === undefined) {
+        await disableFilePickers(page);
+        await page.goto('/');
+      } else {
+        expect(page.url()).toBe('app://pointercad/index.html');
+      }
+      await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+      const start = await beginRecompute(page);
+      await chooseToolMenuItem(page, 'ファイルのほかの操作', '新しいアセンブリ');
+      await waitForRecompute(page, start);
+      await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'assembly');
+
+      const dialog = await openPicker(page);
+      for (const item of R2_FIXTURE) await placeR2Section(page, dialog, item.product, item.lengthMm);
+      const details = stockDetails(dialog);
+      if (await details.getAttribute('open') === null) await details.locator('summary').click();
+      await expect(details.locator('tbody tr')).toHaveCount(R2_EXPECTED_ROWS.length);
+      const first = await exportCsv(page, dialog, info.outputPath('steel-r2-stock-list.csv'), app);
+      expectR2StockCsv(first);
+
+      await dialog.getByRole('button', { name: '閉じる', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      const savedPath = info.outputPath('steel-r2-stock.pcada');
+      await saveFlowFile(page, savedPath, app);
+      await openSaveFlowFile(page, savedPath, app);
+      const reopened = await openPicker(page);
+      const second = await exportCsv(page, reopened, info.outputPath('steel-r2-stock-list-reopened.csv'), app);
+      expectR2StockCsv(second);
+      expect(second.equals(first)).toBe(true);
+      expect(errors).toEqual([]);
+    });
+
+    test('r2 に足した軽量形鋼・CT形鋼・配管用ステンレス鋼鋼管を画面から置き、切断リストのCSVに名前・規格・版が出て、保存と開き直しでも同じCSVになる', async ({ page }, info: TestInfo) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      const app = appForPage(page);
+      if (app === undefined) {
+        await disableFilePickers(page);
+        await page.goto('/');
+      } else {
+        expect(page.url()).toBe('app://pointercad/index.html');
+      }
+      await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+      const start = await beginRecompute(page);
+      await chooseToolMenuItem(page, 'ファイルのほかの操作', '新しいアセンブリ');
+      await waitForRecompute(page, start);
+      await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'assembly');
+
+      const dialog = await openPicker(page);
+      for (const item of R2_ADDED_FIXTURE) await placeR2Section(page, dialog, item.product, item.lengthMm);
+      const details = stockDetails(dialog);
+      if (await details.getAttribute('open') === null) await details.locator('summary').click();
+      await expect(details.locator('tbody tr')).toHaveCount(R2_ADDED_EXPECTED_ROWS.length);
+      const first = await exportCsv(page, dialog, info.outputPath('steel-r2-added-stock-list.csv'), app);
+      expectR2RowsCsv(first, R2_ADDED_EXPECTED_ROWS, ['3', '4500']);
+
+      await dialog.getByRole('button', { name: '閉じる', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      const savedPath = info.outputPath('steel-r2-added-stock.pcada');
+      await saveFlowFile(page, savedPath, app);
+      await openSaveFlowFile(page, savedPath, app);
+      const reopened = await openPicker(page);
+      const second = await exportCsv(page, reopened, info.outputPath('steel-r2-added-stock-list-reopened.csv'), app);
+      expectR2RowsCsv(second, R2_ADDED_EXPECTED_ROWS, ['3', '4500']);
+      expect(second.equals(first)).toBe(true);
+      expect(errors).toEqual([]);
+    });
   });
+}
+
+/*
+ * r2（2026-11-14）の 4 断面。値は steelRows/*.ts の資料の行と ja の文言（assembly.json）から書き写した文字で、
+ * 書き出しの結果から作らない。角形鋼管は同じ鋼材・同じ長さを 2 本置き、1 行・数量 2 にまとまる事も確かめる。
+ */
+interface R2Product {
+  readonly grade: 'STKR400' | 'STK400' | 'SS400' | 'SSC400' | 'SUS304TP';
+  readonly shape: 'rectTube' | 'steelPipe' | 'unequalAngle' | 'iBeam' | 'lipChannel' | 'ctSection';
+  readonly size: string;
+  /** 断面形状の選択肢の表示。 */
+  readonly shapeLabel: string;
+  /** 鋼種, 材料規格, 寸法・製品規格, 断面形状, 呼び寸法, 供給条件。 */
+  readonly columns: readonly string[];
+}
+const R2_RECT: R2Product = { grade: 'STKR400', shape: 'rectTube', size: '□ 100×100×3.2', shapeLabel: '角形鋼管',
+  columns: ['STKR400', 'JIS G 3466', 'JIS G 3466', '角形鋼管', '□ 100×100×3.2',
+    '一般構造用角形鋼管・製造のまま（製造方法・熱処理・めっきは未指定）・管端は指定が無ければプレンエンド'] };
+const R2_PIPE: R2Product = { grade: 'STK400', shape: 'steelPipe', size: 'φ48.6×2.3', shapeLabel: '一般構造用炭素鋼鋼管',
+  columns: ['STK400', 'JIS G 3444', 'JIS G 3444', '一般構造用炭素鋼鋼管', 'φ48.6×2.3',
+    '一般構造用炭素鋼鋼管・製管方法と仕上げ方法は未指定・管端は指定が無ければプレンエンド'] };
+const R2_ANGLE: R2Product = { grade: 'SS400', shape: 'unequalAngle', size: 'L 100×75×7', shapeLabel: '不等辺山形鋼（L）',
+  columns: ['SS400', 'JIS G 3101', 'JIS G 3192', '不等辺山形鋼（L）', 'L 100×75×7', '熱間圧延材・熱処理条件未指定'] };
+const R2_BEAM: R2Product = { grade: 'SS400', shape: 'iBeam', size: 'I 200×100×7×10', shapeLabel: 'I形鋼',
+  columns: ['SS400', 'JIS G 3101', 'JIS G 3192', 'I形鋼', 'I 200×100×7×10', '熱間圧延材・熱処理条件未指定'] };
+const R2_FIXTURE: readonly { readonly product: R2Product; readonly lengthMm: number }[] = [
+  { product: R2_RECT, lengthMm: 1000 }, { product: R2_RECT, lengthMm: 1000 }, { product: R2_PIPE, lengthMm: 1500 },
+  { product: R2_ANGLE, lengthMm: 1200 }, { product: R2_BEAM, lengthMm: 2000 },
+];
+const R2_EXPECTED_ROWS: readonly (readonly string[])[] = [
+  ['切断明細', ...R2_RECT.columns, '1000', '2', '2000', '1000'],
+  ['切断明細', ...R2_PIPE.columns, '1500', '1', '1500', '1500'],
+  ['切断明細', ...R2_ANGLE.columns, '1200', '1', '1200', '1200'],
+  ['切断明細', ...R2_BEAM.columns, '2000', '1', '2000', '2000'],
+];
+
+/* r2 に 2026-11-15 に足した 3 断面（軽量形鋼の代表のリップ溝形鋼・CT 形鋼・SUS304TP の鋼管）。書き写し方は上と同じ。 */
+const R2_LIP: R2Product = { grade: 'SSC400', shape: 'lipChannel', size: 'C 100×50×20×2.3', shapeLabel: 'リップ溝形鋼',
+  columns: ['SSC400', 'JIS G 3350', 'JIS G 3350', 'リップ溝形鋼', 'C 100×50×20×2.3',
+    '一般構造用軽量形鋼・鋼板又は鋼帯から冷間成形（素材の鋼板の種類・めっきは未指定）'] };
+const R2_CT: R2Product = { grade: 'SS400', shape: 'ctSection', size: 'CT 100×200×8×12', shapeLabel: 'CT形鋼',
+  columns: ['SS400', 'JIS G 3101', 'JIS G 3192', 'CT形鋼', 'CT 100×200×8×12', '熱間圧延材・熱処理条件未指定'] };
+const R2_SUS: R2Product = { grade: 'SUS304TP', shape: 'steelPipe', size: '25A×Sch10S', shapeLabel: '配管用ステンレス鋼鋼管',
+  columns: ['SUS304TP', 'JIS G 3459', 'JIS G 3459', '配管用ステンレス鋼鋼管', '25A×Sch10S',
+    '配管用ステンレス鋼鋼管・製管方法と仕上方法は未指定・固溶化熱処理と酸洗・管端は指定が無ければプレンエンド'] };
+const R2_ADDED_FIXTURE: readonly { readonly product: R2Product; readonly lengthMm: number }[] = [
+  { product: R2_LIP, lengthMm: 1000 }, { product: R2_CT, lengthMm: 1500 }, { product: R2_SUS, lengthMm: 2000 },
+];
+const R2_ADDED_EXPECTED_ROWS: readonly (readonly string[])[] = [
+  ['切断明細', ...R2_LIP.columns, '1000', '1', '1000', '1000'],
+  ['切断明細', ...R2_CT.columns, '1500', '1', '1500', '1500'],
+  ['切断明細', ...R2_SUS.columns, '2000', '1', '2000', '2000'],
+];
+
+async function placeR2Section(page: Page, dialog: Locator, product: R2Product, lengthMm: number): Promise<void> {
+  await choice(dialog, '鋼種').selectOption(product.grade);
+  await expect(choice(dialog, '断面形状').locator(`option[value="${product.shape}"]`)).toHaveText(product.shapeLabel);
+  await choice(dialog, '断面形状').selectOption(product.shape);
+  // 鋼管では欄の中に外径と肉厚の注記が出て、選択肢の欄の名前が「呼び寸法 外径 … mm」になるので、欄の見出しで探す。
+  await field(dialog, '呼び寸法').locator('select').selectOption(`steel:${product.grade}:${product.shape}:${product.size}`);
+  await field(dialog, '長さ').locator('input').fill(String(lengthMm));
+  const token = await beginRecompute(page);
+  await dialog.getByRole('button', { name: '置く', exact: true }).click();
+  await waitForRecompute(page, token);
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+}
+
+/** 切断明細の行が独立の期待と一致し、どの行も r2 の表の版と形状生成の版を持つ。 */
+function expectR2StockCsv(bytes: Buffer): void {
+  expectR2RowsCsv(bytes, R2_EXPECTED_ROWS, ['5', '6700']);
+}
+
+/** 切断明細の行が期待の行と一致し、r2 の版を持ち、合計の本数・長さが期待どおりで、集計対象外が無い。 */
+function expectR2RowsCsv(bytes: Buffer, expected: readonly (readonly string[])[], total: readonly [string, string]): void {
+  expect([...bytes.subarray(0, 3)], 'UTF-8 BOM').toEqual([0xef, 0xbb, 0xbf]);
+  const rows = parseCsv(bytes.subarray(3).toString('utf8'));
+  expect(rows[0]).toEqual(HEADER);
+  const cut = rows.filter(row => row[COLUMN.kind] === '切断明細');
+  expect(cut.map(row => [...row.slice(0, COLUMN.paths), row[COLUMN.finished] ?? '']).sort())
+    .toEqual(expected.map(row => [...row]).sort());
+  expect(cut.map(row => [row[14], row[15]])).toEqual(cut.map(() => ['jp-steel-2026-11-14-r2', '3-steel-profile-1']));
+  const sums = rows.filter(row => row[COLUMN.kind] === '集計できた鋼材の合計');
+  expect([sums[0]?.[COLUMN.quantity], sums[0]?.[COLUMN.totalLength]]).toEqual([...total]);
+  expect(rows.filter(row => row[COLUMN.kind] === '集計対象外')).toHaveLength(0);
 }

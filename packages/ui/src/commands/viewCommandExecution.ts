@@ -23,7 +23,7 @@ export function runViewCommand(group: 'view' | 'plane' | 'reference' | 'snap' | 
       case 'home': state.requestHomeView(); return ready;
       case 'front': case 'back': case 'right': case 'left': case 'top': case 'bottom':
         // 4 分割の平面・正面・右側面の区画は向きが決まっている(回せず、ビューキューブも出ない)。
-        if (state.quadCamera !== null && state.quadCamera.active !== 'isometric') return unavailable;
+        if (state.quadCamera !== null && state.quadCamera.active !== 'isometric') return { ready: false, reasonKey: 'command.unavailable.quadPane' };
         state.requestViewOrientation(item.id); return ready;
       case 'matchWorkPlane': state.requestMatchWorkPlaneToView(); return ready;
     }

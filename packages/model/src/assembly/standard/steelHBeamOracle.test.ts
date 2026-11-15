@@ -45,7 +45,8 @@ describe('W7 independent H beam table 15 oracle', () => {
     expect(H_BEAM_ADDITION_SAVED_OPTIONS).toHaveLength(46);
     expect(new Set(H_BEAM_ORACLE.map(row => row.size)).size).toBe(53);
     expect(STEEL_PRODUCTS).toHaveLength(459);
-    expect(steelProducts('SS400')).toHaveLength(253);
+    // r2（2026-11-14）の SS400 の不等辺山形鋼 13 行・I 形鋼 20 行と、2026-11-15 の CT 形鋼 53 行を含む。
+    expect(steelProducts('SS400')).toHaveLength(339);
     expect(steelProducts('SS400', 'hBeam')).toHaveLength(49);
     expect(H_BEAM_ADDITION_ORACLE.filter(row => row.flange === '細幅')).toHaveLength(29);
     expect(H_BEAM_ADDITION_ORACLE.filter(row => row.flange === '中幅')).toHaveLength(11);

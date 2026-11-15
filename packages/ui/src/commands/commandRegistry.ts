@@ -7,6 +7,7 @@ import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/
 import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 import { connectSelectedPoints, selectedPointsConnection } from '../sketch/connectSelectedPoints.js';
 import { faceFromSelectedPoints, selectedPointsFace } from '../sketch/faceSelectedPoints.js';
 import { placePointAtReferencePoint, pointAtReferenceDecision } from '../sketch/pointAtReferencePoint.js';
@@ -71,7 +72,7 @@ interface CommandEnvironment {
 function browserRuntimeState(): CommandRuntimeState {
   const state = useAppStore.getState();
   return {
-    shortcutAssignments: state.displaySettings.shortcutAssignments ?? EMPTY_SHORTCUT_ASSIGNMENTS,
+    shortcutAssignments: currentShortcutAssignments(state.displaySettings),
     documentKind: activeDocumentKind(state),
     helpOpen: state.helpTopicId !== null,
     canUndo: state.canUndo,
@@ -214,7 +215,7 @@ export function isInsideDialog(target: EventTarget | null): boolean {
 }
 
 function keyInput(event: KeyboardEvent): CommandKeyInput {
-  return { key: event.key, ctrl: event.ctrlKey, meta: event.metaKey, alt: event.altKey,
+  return { key: event.key, code: event.code, ctrl: event.ctrlKey, meta: event.metaKey, alt: event.altKey,
     shift: event.shiftKey, repeat: event.repeat };
 }
 

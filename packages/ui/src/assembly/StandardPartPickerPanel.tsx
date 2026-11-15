@@ -17,7 +17,7 @@ import {
   findStandardPartChoice, STANDARD_PART_CATEGORIES, standardPartChoices,
   standardPartUsesDimensionSeries, standardPartUsesThreadSeries, structuralPartChoices,
   STRUCTURAL_MATERIAL_CHOICES, type StructuralMaterialChoice, type StandardPartCategory,
-  steelPartDimensionGroups, steelPartChoiceAtDimension,
+  steelPartDimensionGroups, steelPartChoiceAtDimension, steelShapeLabelKey,
 } from './standardPartPicker.js';
 
 const CATEGORY_LABELS: Readonly<Record<StandardPartCategory, Parameters<typeof t>[0]>> = {
@@ -31,16 +31,15 @@ const CATEGORY_LABELS: Readonly<Record<StandardPartCategory, Parameters<typeof t
   structuralSection: 'assembly.standardPart.structuralSection',
 };
 
-const STEEL_SHAPE_LABELS: Readonly<Record<SteelSectionCatalog, Parameters<typeof t>[0]>> = {
-  flatBar: 'assembly.steel.flatBar', roundBar: 'assembly.steel.roundBar',
-  steelPipe: 'assembly.steel.steelPipe', equalAngle: 'assembly.steel.equalAngle',
-  channel: 'assembly.steel.channel', hBeam: 'assembly.steel.hBeam',
-};
 const STEEL_CONDITION_LABELS = {
   'hotRolled-heatTreatmentUnspecified': 'assembly.steel.hotRolled',
   'brightBar-heatTreatmentUnspecified': 'assembly.steel.brightBar',
   'blackPipe-plainEnds': 'assembly.steel.blackPipe',
   'whitePipe-zincCoated': 'assembly.steel.whitePipe',
+  'rectTube-asManufactured': 'assembly.steel.rectTubeAsManufactured',
+  'structuralPipe-plainEnds': 'assembly.steel.structuralPipePlainEnds',
+  'lightGauge-coldFormed': 'assembly.steel.lightGaugeColdFormed',
+  'stainlessPipe-solutionTreated-plainEnds': 'assembly.steel.stainlessPipeSolutionTreated',
 } as const;
 type EditableMessage = Exclude<EditableSteelPlacementOutcome, 'placing' | 'invalidLength' | 'unknownChoice'>;
 const EDITABLE_MESSAGES: Readonly<Record<EditableMessage, Parameters<typeof t>[0]>> = {
@@ -262,7 +261,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
                 setChoiceKey(structuralPartChoices(steelMaterial, next)[0].key);
                 setError(null);
               }}>
-              {shapes.map((item) => <option key={item} value={item}>{t(STEEL_SHAPE_LABELS[item])}</option>)}
+              {shapes.map((item) => <option key={item} value={item}>{t(steelShapeLabelKey(item, steelMaterial))}</option>)}
             </select>
           </label>}
         </> : null}

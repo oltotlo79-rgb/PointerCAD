@@ -2,7 +2,7 @@ import type { PartDocument } from '../../part/types.js';
 import { steelFinishedLength } from './steelFinishedLength.js';
 import type { AssemblyDocument } from '../types.js';
 import { MAX_SUB_ASSEMBLY_DEPTH } from '../resolveAssembly.js';
-import { hasSteelOptions, STEEL_CATALOG_REVISION, STEEL_GENERATOR_REVISION,
+import { hasSteelOptions, isSteelCatalogRevision, STEEL_GENERATOR_REVISION,
   steelLength, steelProductFromSource, type SteelProduct } from './steelCatalog.js';
 
 export interface SteelStockRow {
@@ -73,7 +73,7 @@ export function buildSteelStockList(assembly: AssemblyDocument,
       if (source.kind !== 'standardPart') continue;
       const product = steelProductFromSource(source);
       if (product === undefined) {
-        if (hasSteelOptions(source.options) || source.catalogRevision === STEEL_CATALOG_REVISION
+        if (hasSteelOptions(source.options) || isSteelCatalogRevision(source.catalogRevision)
           || source.generatorRevision === STEEL_GENERATOR_REVISION || source.catalog === 'flatBar'
           || source.catalog === 'roundBar' || source.catalog === 'steelPipe') {
           unresolvedComponentIds.push(component.id);

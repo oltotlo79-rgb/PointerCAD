@@ -9,7 +9,11 @@ import { nestedWeldPickKind } from '../assembly/nestedWeldDraft.js';
 import { childWeldDefinitionTarget } from '../assembly/childWeldDefinitionEdit.js';
 import { addMateTarget, handleMateKey } from '../assembly/mateActions.js';
 import { assemblyTargetId } from '../assembly/mateCommands.js';
+import type { CommandId } from '../commands/commandDefinitions.js';
 import { isCompositionKey } from '../commands/compositionKey.js';
+import { resolveAssignedShortcut, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
+import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
+import type { AppState } from '../store/appState.js';
 import { pickSolidSubShape } from '../solid/pickSubShape.js';
 import { subShapeElementId, subShapeRefOf, type SelectionKind } from '../solid/subShapeSelection.js';
 import type { AssemblyView } from '../store/assemblySlice.js';
@@ -18,6 +22,24 @@ import { flattenAssemblyGeometry } from './createAssemblyLayer.js';
 import type { AssemblyComponentPickObservation, AssemblyFacePickObservation, ViewportScene } from './createViewportScene.js';
 import { componentDragPlane } from './dragComponent.js';
 import { jointOccurrenceInputsOf, pickJointOccurrenceTarget, resolveJointOccurrencePick } from './pickJointOccurrence.js';
+
+/** 選択の種類を切り替える命令(既定のキーは 1〜4)。 */
+const SELECTION_KIND_COMMANDS: Readonly<Partial<Record<CommandId, SelectionKind>>> = {
+  'selection.vertex': 'vertex', 'selection.edge': 'edge', 'selection.face': 'face', 'selection.body': 'body',
+};
+
+/**
+ * 組立の 3D で押したキーが、キーの割当(既定は 1〜4)で選択の種類の命令に当たるならその種類。
+ * 部品と同じ割当の判定を使うので、1〜4 を別の命令へ割り当てるとこの canvas でもその命令が動く(設計 1-3)。
+ */
+function assignedSelectionKind(event: KeyboardEvent, state: AppState, assignments: ShortcutAssignments): SelectionKind | null {
+  const resolved = resolveAssignedShortcut(
+    { key: event.key, code: event.code, ctrl: event.ctrlKey, meta: event.metaKey, alt: event.altKey, shift: event.shiftKey, repeat: event.repeat },
+    { documentKind: 'assembly', phase: 'bubble', helpOpen: state.helpTopicId !== null, textEntry: false, composing: false,
+      activatedBySpace: false, insideMenu: false, insideDialog: false },
+    assignments, () => true);
+  return resolved === null ? null : SELECTION_KIND_COMMANDS[resolved.commandId] ?? null;
+}
 
 export interface AssemblyInteraction { readonly detach: () => void; readonly cancelDrag: () => void; }
 type AssemblyPickScene = Pick<ViewportScene, 'pickAssemblyFace' | 'pickComponent' | 'worldToScreen'>
@@ -690,9 +712,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       else state.commitFilletWeld();
       return;
     }
-    const kinds = new Map<string, SelectionKind>([['1', 'vertex'], ['2', 'edge'], ['3', 'face'], ['4', 'body']]);
-    const kind = kinds.get(event.key);
-    if (kind !== undefined && !event.ctrlKey && !event.metaKey) {
+    const assignments = currentShortcutAssignments(state.displaySettings);
+    const kind = assignedSelectionKind(event, state, assignments);
+    if (kind !== null) {
       event.preventDefault(); event.stopImmediatePropagation();
       hoverRepick.cancel(); useAppStore.setState({ selectionKind: kind, hoveredElementId: null });
     }

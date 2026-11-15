@@ -13,5 +13,6 @@ export function applyShortcutSettings(proposed: ShortcutAssignments, expected: S
 
 export function ShortcutSettingsForm(): React.JSX.Element {
   const current = useAppStore(state => currentShortcutAssignments(state.displaySettings));
-  return <ShortcutAssignmentsForm current={current} onApply={applyShortcutSettings} />;
+  const recovered = useAppStore(state => state.displaySettings.shortcutAssignmentsRecovered ?? 0);
+  return <ShortcutAssignmentsForm current={current} onApply={applyShortcutSettings} recovered={recovered} />;
 }

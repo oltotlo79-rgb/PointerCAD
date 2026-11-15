@@ -26,11 +26,15 @@ export interface SteelStandard {
 }
 
 const draftNote = '原案で確認（2026-10-24調査時、JSAの規格票は保守中で未確認）。公布本文との差は未確認。';
+/** 2026-11-15 に足した G 3350・G 3459: 原案は 2020-12-02 の三者委員会の改正案。版と改正日は JSA の規格票の見本の検索要約による。 */
+const k3DraftNote = '原案（2020-12-02 三者委員会の改正案）で確認。2021年版・改正日 2021-04-20 は JSA の規格票の見本の検索要約によるもので、'
+  + 'JSA の規格票の本文は未確認。公布本文との差は未確認。';
 
 /**
- * Nine standards, with nine JISF PDFs across eight standards (G 3192 has two drafts).
+ * Eleven standards, with eleven JISF PDFs across ten standards (G 3192 has two drafts).
  * G 3123 has no JISF draft in the investigation; G 3444's edition remains inferred.
  * URL/hash pairs are transcribed from the steel standards investigation, not fetched at runtime.
+ * G 3350 and G 3459 (2026-11-15) are transcribed from the PDFs fetched for the catalog expansion design.
  */
 export const STEEL_STANDARDS = {
   'jis-g-3101-2024': {
@@ -91,6 +95,17 @@ export const STEEL_STANDARDS = {
     },
     historicalDrafts: [],
   },
+  'jis-g-3350-2021': {
+    number: 'JIS G 3350', name: '一般構造用軽量形鋼', edition: '2021', editionStatus: 'reported',
+    revisedOn: '2021-04-20', revisionDateBasis: 'search-summary', verification: 'draft',
+    verificationNote: k3DraftNote, checkedOn: '2026-11-15',
+    draft: {
+      url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai004_jis03G3350_20201202.pdf',
+      sha256: '386086a3b2af48d82e049f1bbdb1a6a187721eb156acdd4c2c9e8927bca26fe5',
+      meetingDate: '2020-12-02',
+    },
+    historicalDrafts: [],
+  },
   'jis-g-3444-2025': {
     number: 'JIS G 3444', name: '一般構造用炭素鋼鋼管', edition: '2025', editionStatus: 'inferred',
     revisedOn: null, revisionDateBasis: 'unverified', verification: 'draft',
@@ -111,6 +126,17 @@ export const STEEL_STANDARDS = {
       url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0500_JISG3452_20251217.pdf',
       sha256: '03b3975041cee440fd7be67ef7928089158cc8d7e7d1fc584399cfb282170318',
       meetingDate: '2025-12-17',
+    },
+    historicalDrafts: [],
+  },
+  'jis-g-3459-2021': {
+    number: 'JIS G 3459', name: '配管用ステンレス鋼鋼管', edition: '2021', editionStatus: 'reported',
+    revisedOn: '2021-04-20', revisionDateBasis: 'search-summary', verification: 'draft',
+    verificationNote: k3DraftNote, checkedOn: '2026-11-15',
+    draft: {
+      url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai004_jis05G3459_20201202.pdf',
+      sha256: 'cd9247d629dfc9656e0a2fd5941bc043e341cdcc23ad95e4bcb010bb5e3bcdab',
+      meetingDate: '2020-12-02',
     },
     historicalDrafts: [],
   },

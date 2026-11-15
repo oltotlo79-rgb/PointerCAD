@@ -1218,6 +1218,8 @@ export {
   STEEL_GENERATOR_REVISION, STEEL_LENGTH_LIMITS_MM, STEEL_MATERIAL_GRADES, STEEL_PRODUCTS,
   steelLength, steelProductFromSource, steelProductOptions, steelProducts, steelSectionCatalogs,
 } from './assembly/standard/steelCatalog.js';
+/** 材質別の鋼材の表 r2（角形鋼管・一般構造用炭素鋼鋼管・不等辺山形鋼・I 形鋼）を含む全ての行と、r2 の鋼種。 */
+export { ALL_STEEL_PRODUCTS, STEEL_R2_MATERIAL_GRADES } from './assembly/standard/steelCatalog.js';
 export type { SteelStockList } from './assembly/standard/steelStockList.js';
 export { buildSteelStockList } from './assembly/standard/steelStockList.js';
 export { createSteelBend, steelBendInputState } from './assembly/standard/steelBend.js';

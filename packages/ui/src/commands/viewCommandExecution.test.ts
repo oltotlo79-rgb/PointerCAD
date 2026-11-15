@@ -62,7 +62,7 @@ describe('標準の向き(正面・背面・右・左・上・下)の命令', ()
     state().setQuadViewEnabled(true);
     for (const pane of ['top', 'front', 'right'] as const) {
       state().setQuadActivePane(pane);
-      expect(runViewCommand('view', 'bottom')).toEqual({ ready: false, reasonKey: 'command.unavailable.action' });
+      expect(runViewCommand('view', 'bottom')).toEqual({ ready: false, reasonKey: 'command.unavailable.quadPane' });
       expect(state().viewOrientationRequest).toBeNull();
     }
     state().setQuadActivePane('isometric');

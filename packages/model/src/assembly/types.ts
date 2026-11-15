@@ -64,10 +64,30 @@ export type StandardCatalogId =
   | 'channel'
   /** H 形鋼 */
   | 'hBeam'
-  /** 平鋼・丸鋼・配管用鋼管（材質別カタログ） */
+  /** 平鋼・丸鋼・鋼管（材質別カタログ。鋼管は配管用 SGP・一般構造用 STK400・配管用ステンレス SUS304TP） */
   | 'flatBar'
   | 'roundBar'
   | 'steelPipe'
+  /** 角形鋼管（JIS G 3466、STKR400。材質別カタログ r2） */
+  | 'rectTube'
+  /** 不等辺山形鋼（JIS G 3192 表9、SS400。材質別カタログ r2） */
+  | 'unequalAngle'
+  /** I 形鋼（JIS G 3192 表11、SS400。材質別カタログ r2） */
+  | 'iBeam'
+  /** 軽溝形鋼（JIS G 3350 表5、SSC400。材質別カタログ r2） */
+  | 'lightChannel'
+  /** 軽 Z 形鋼（JIS G 3350 表6、SSC400。材質別カタログ r2） */
+  | 'lightZ'
+  /** 軽山形鋼（JIS G 3350 表7、SSC400。材質別カタログ r2） */
+  | 'lightAngle'
+  /** リップ溝形鋼（JIS G 3350 表8、SSC400。材質別カタログ r2） */
+  | 'lipChannel'
+  /** リップ Z 形鋼（JIS G 3350 表9、SSC400。材質別カタログ r2） */
+  | 'lipZ'
+  /** ハット形鋼（JIS G 3350 表10、SSC400。材質別カタログ r2） */
+  | 'hatSection'
+  /** CT 形鋼（JIS G 3192 表17、SS400。材質別カタログ r2） */
+  | 'ctSection'
   /**
    * すみ肉溶接のビード1区間（`assembly/welding/**`）。寸法表ではなく利用者が決めた脚長・長さから組む。
    * 規格部品の選択画面には出さない（溶接の操作だけが作る）。強度や溶加材の性質は持たない。

@@ -38,4 +38,24 @@ describe('割当欄で押したキーを文字入力やウィンドウ操作と�
     '表現できない押し方を別のキーへ変換しない: %j', event => {
       expect(captureShortcutKey(event)).toEqual({ status: 'rejected', reason: 'unsupported' });
     });
+  it.each([
+    [key('ArrowUp', { code: 'ArrowUp' }), { code: 'ArrowUp', label: 'ArrowUp', primary: false, shift: false, alt: false }],
+    [key('PageDown', { code: 'PageDown', altKey: true }), { code: 'PageDown', label: 'PageDown', primary: false, shift: false, alt: true }],
+    [key('ArrowUp', { code: 'Numpad8' }), { code: 'Numpad8', label: 'ArrowUp', primary: false, shift: false, alt: false }],
+    [key('8', { code: 'Numpad8' }), { code: 'Numpad8', label: '8', primary: false, shift: false, alt: false }],
+    [key('!', { code: 'Digit1', shiftKey: true }), { code: 'Digit1', label: '!', primary: false, shift: true, alt: false }],
+    [key('-', { code: 'Minus', ctrlKey: true }), { code: 'Minus', label: '-', primary: true, shift: false, alt: false }],
+    [key('ろ', { code: 'IntlRo' }), { code: 'IntlRo', label: 'ろ', primary: false, shift: false, alt: false }],
+    [key(' ', { code: 'Space', shiftKey: true }), { code: 'Space', label: ' ', primary: false, shift: true, alt: false }],
+  ])('矢印・テンキー・記号・Shift＋数字は位置(code)と見えた文字(label)で取り込む: %j', (event, chord) => {
+    expect(captureShortcutKey(event)).toEqual({ status: 'captured', chord });
+  });
+  it('数字の段の数字は今どおり見えた文字で取り込み、Ctrl＋Space は断る', () => {
+    expect(captureShortcutKey(key('1', { code: 'Digit1' }))).toEqual({
+      status: 'captured', chord: { key: '1', primary: false, shift: false, alt: false },
+    });
+    expect(captureShortcutKey(key(' ', { code: 'Space', ctrlKey: true }))).toEqual({ status: 'rejected', reason: 'reserved' });
+    expect(captureShortcutKey(key('Tab', { code: 'Tab' }))).toEqual({ status: 'pass-through' });
+    expect(captureShortcutKey(key('Enter', { code: 'Enter' }))).toEqual({ status: 'rejected', reason: 'unsupported' });
+  });
 });

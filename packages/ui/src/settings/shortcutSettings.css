@@ -8,4 +8,7 @@
 .pcad-shortcut-settings > h3, .pcad-shortcut-settings > p { margin: 0; }
 .pcad-shortcut-settings > h3 { font-size: var(--pcad-font-size-heading); }
 .pcad-shortcut-settings__actions { display: flex; flex-wrap: wrap; gap: var(--pcad-space-1); }
+/* 2 つ目のキーは、見出し・欄・外すボタンを 1 行にまとめる(フォームの高さを増やさない)。 */
+.pcad-shortcut-settings__second { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pcad-space-1); }
+.pcad-shortcut-settings__second > input { flex: 1 1 6em; }
 .pcad-shortcut-settings [role="alert"] { color: var(--pcad-danger-text); overflow-wrap: anywhere; }

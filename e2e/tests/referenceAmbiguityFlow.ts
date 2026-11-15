@@ -647,11 +647,16 @@ export async function referenceRepairNativePreviewFlow(page: Page, info: TestInf
   const choiceIndex = use === 'part' ? fixture.choiceEdgeIndex : fixture.assemblyChoiceEdgeIndex;
   const choice = (detail: Locator) => detail.getByRole('button').filter({ hasText: ` / 辺 ${String(choiceIndex)} / ` }).filter({ hasText: '長さ 10 mm' });
   const paint = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  // 3D の画面の画素は、canvas の上に重なる DOM の札(ビューキューブのホーム)を塗りつぶして比べる。札の丸い角の
+  // 縁取りは、プロパティの列の層の作り直しで色が 1 段ずれる事がある(a4cc30a2 の外部検査の Linux・Windows。c02c-fix)。
+  // 札そのものは、箱が前後で同じ事を DOM で確かめる(下の homeBox)。
+  const viewportShot = () => canvas(page).screenshot({ mask: [page.locator('.pcad-viewcube-home')], maskColor: '#ff00ff' });
   const detail = await open(), candidate = choice(detail);
   await expect(candidate).toHaveCount(1); await expect(candidate).toHaveAttribute('title', 'この候補を選ぶ');
   await expect(detail.getByRole('button', { name: 'この参照で確定', exact: true })).toBeDisabled();
   await paint();
-  const originalPNG = await canvas(page).screenshot(), original = await nativePreviewPixels(page, originalPNG);
+  const originalPNG = await viewportShot(), original = await nativePreviewPixels(page, originalPNG);
+  const homeBox = await page.locator('.pcad-viewcube-home').boundingBox(); expect(homeBox).not.toBeNull();
   const before = await nativePreviewObservation(page), generation = (await readRecomputeStats(page)).completedGeneration;
   const sequence = Math.max(0, ...before.events.map(event => event.sequence));
   const openedPartOwner = use === 'part' ? await openedPartPreviewOwner(page, generation) : null;
@@ -717,7 +722,7 @@ export async function referenceRepairNativePreviewFlow(page: Page, info: TestInf
   if (use === 'assembly') expect(await openedAssemblyPreviewOwner(page, generation)).toEqual(openedAssemblyOwner);
   assertNativePublication(hover.events, published, generation);
   await paint();
-  const hoverPNG = await canvas(page).screenshot(), highlighted = await nativePreviewPixels(page, hoverPNG);
+  const hoverPNG = await viewportShot(), highlighted = await nativePreviewPixels(page, hoverPNG);
   expect([highlighted.width, highlighted.height]).toEqual([original.width, original.height]);
   expect(highlighted.rgba.equals(original.rgba), 'Actual decoded viewport pixels must change').toBe(false);
   expect(highlighted.outlinePixels, 'Actual hover blue pixels must increase').toBeGreaterThan(original.outlinePixels);
@@ -750,11 +755,12 @@ export async function referenceRepairNativePreviewFlow(page: Page, info: TestInf
     expect(terminals[0].sequence).toBeGreaterThan(publication.sequence);
     expect([terminals[0].hostDisplayCopyBytes, terminals[0].hostGpuAttributeBytes, terminals[0].hostGpuReservedBytes]).toEqual([0, 0, 0]);
   }
-  await paint(); expect((await nativePreviewPixels(page, await canvas(page).screenshot())).rgba.equals(original.rgba)).toBe(true);
+  await paint(); expect((await nativePreviewPixels(page, await viewportShot())).rgba.equals(original.rgba)).toBe(true);
   await candidate.click(); await expect(candidate).toHaveAttribute('aria-pressed', 'true');
   await detail.getByRole('button', { name: '修復を取り消す', exact: true }).click();
   await expect(repair.getByTestId('reference-repair-detail')).toHaveCount(0);
-  await paint(); expect((await nativePreviewPixels(page, await canvas(page).screenshot())).rgba.equals(original.rgba)).toBe(true);
+  await expect.poll(() => page.locator('.pcad-viewcube-home').boundingBox()).toEqual(homeBox);
+  await paint(); expect((await nativePreviewPixels(page, await viewportShot())).rgba.equals(original.rgba)).toBe(true);
   expect(await saved(`native-${use}-cancel`)).toEqual(baseline);
   await expect(undoButton(page)).toBeDisabled(); await expect(redoButton(page)).toBeDisabled();
   // Capture a real publication-provider await window if the OS/browser exposes one.

@@ -268,11 +268,11 @@ describe('view cube pointer feedback and lifecycle', () => {
   });
 
   it('names the current key of the home command in the home button title and follows a new assignment', () => {
-    expect(renderedHomeTitle()).toBe('ホーム視点 (Home): ホーム視点: 斜め上から見た最初の向きに戻します');
+    expect(renderedHomeTitle()).toBe('ホーム視点 (Home): 斜め上から見た最初の向きに戻します');
     harness.state.displaySettings = { shortcutAssignments: { 'toolbar.view.home': { key: 'h', primary: false, shift: false, alt: false } } };
-    expect(renderedHomeTitle()).toBe('ホーム視点 (H): ホーム視点: 斜め上から見た最初の向きに戻します');
+    expect(renderedHomeTitle()).toBe('ホーム視点 (H): 斜め上から見た最初の向きに戻します');
     harness.state.displaySettings = { shortcutAssignments: { 'toolbar.view.home': null } };
-    expect(renderedHomeTitle()).toBe('ホーム視点: ホーム視点: 斜め上から見た最初の向きに戻します');
+    expect(renderedHomeTitle()).toBe('ホーム視点: 斜め上から見た最初の向きに戻します');
   });
 
   it('rebuilds the labels when the font arrives but never draws after unmount', async () => {

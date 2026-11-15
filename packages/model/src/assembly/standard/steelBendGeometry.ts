@@ -1,5 +1,6 @@
 import type { SteelProduct } from './steelCatalog.js';
-import { steelSectionProfile, type SteelProfilePoint, type SteelProfileSegment } from './steelSectionProfiles.js';
+import { steelCatalogProfile } from './steelProfiles/steelCatalogProfile.js';
+import type { SteelProfilePoint, SteelProfileSegment } from './steelSectionProfiles.js';
 
 export interface SteelBendDimensions {
   /** Original expressions, when available from the authoring caller. Each must evaluate to its numeric input. */
@@ -115,11 +116,13 @@ function boundaryRadius(segments: readonly SteelProfileSegment[], centroid: Stee
 
 /** Preserves the actual sourced outline. Old simplified section revisions are intentionally not reinterpreted. */
 export function steelBendSection(product: SteelProduct): SteelBendSection | null {
-  const profile = product.geometry === 'profileSection' ? steelSectionProfile(product.catalog, product.size) : undefined;
+  const profile = product.geometry === 'profileSection' ? steelCatalogProfile(product.catalog, product.size) : undefined;
   if (profile !== undefined) {
-    const moments = firstMoments(profile.segments);
+    // A hollow section (rectangular tube) subtracts the first moments of its inner loops; areaMm2 is the net area.
+    const moments = profile.holes.map(firstMoments).reduce<SteelProfilePoint>(
+      (sum, hole) => [sum[0] - hole[0], sum[1] - hole[1]], firstMoments(profile.segments));
     const centroid: SteelProfilePoint = [moments[0] / profile.areaMm2, moments[1] / profile.areaMm2];
-    return { loops: [profile.segments], areaMm2: profile.areaMm2, centroid,
+    return { loops: [profile.segments, ...profile.holes], areaMm2: profile.areaMm2, centroid,
       minX: 0, maxX: profile.width, boundaryRadius: boundaryRadius(profile.segments, centroid) };
   }
   const d = product.dimensions;

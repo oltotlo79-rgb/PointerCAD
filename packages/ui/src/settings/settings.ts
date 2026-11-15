@@ -18,7 +18,7 @@ import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
-import { readStoredShortcutAssignments } from './shortcutSettings.js';
+import { readStoredShortcutAssignments, storedShortcutFields } from './shortcutSettings.js';
 import type { NumericDefaultSources } from '../sketch/numericDefaultSources.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
@@ -56,6 +56,11 @@ export interface DisplaySettings {
   readonly viewControlsRecovered?: number;
   readonly tutorialCompleted?: boolean;
   readonly shortcutAssignments?: ShortcutAssignments;
+  /**
+   * 起動時に読めなかったため外したキーの割当の件数(無い・0 は知らせない)。**表示だけの値で保存しない**。
+   * キーの割当を適用すると消える(shortcutSettings.ts の prepareShortcutSettings)。
+   */
+  readonly shortcutAssignmentsRecovered?: number;
   readonly numericToolDefaults?: NumericDefaultSources;
   /** 旧設定は未指定のまま5分。1～60分の間隔を端末へ保存する。 */
   readonly autoSaveIntervalMs?: number;
@@ -110,8 +115,8 @@ export interface DisplaySettings {
   readonly inferConstraints: boolean;
 }
 
-/** 端末に保存する欄。viewControlsRecovered は表示だけの値なので含まない。 */
-export type PersistedDisplaySettings = Omit<DisplaySettings, 'viewControlsRecovered'>;
+/** 端末に保存する欄。viewControlsRecovered と shortcutAssignmentsRecovered は表示だけの値なので含まない。 */
+export type PersistedDisplaySettings = Omit<DisplaySettings, 'viewControlsRecovered' | 'shortcutAssignmentsRecovered'>;
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   cameraControls: DEFAULT_CAMERA_CONTROLS,
@@ -411,12 +416,15 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
     }
     // 視点の操作は読めない部分だけを既定へ戻し、戻した数を表示だけの欄に置く(他の欄には影響しない)。
     const view = readStoredViewControls(parsed);
+    // キーの割当も読めない 1 件だけを外し、外した数を表示だけの欄に置く(設計 R6)。
+    const shortcuts = readStoredShortcutAssignments(parsed);
     return {
       cameraControls: readCameraControlSettings('cameraControls' in parsed ? parsed.cameraControls : undefined),
       viewControls: view.settings,
       ...(view.dropped > 0 ? { viewControlsRecovered: view.dropped } : {}),
       tutorialCompleted: 'tutorialCompleted' in parsed && parsed.tutorialCompleted === true,
-      shortcutAssignments: readStoredShortcutAssignments(parsed),
+      shortcutAssignments: shortcuts.assignments,
+      ...(shortcuts.dropped > 0 ? { shortcutAssignmentsRecovered: shortcuts.dropped } : {}),
       theme: parsed.theme,
       uiScale: parsed.uiScale,
       trackAngleStep: readTrackAngleStep(parsed),
@@ -429,6 +437,17 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;
+  }
+}
+
+/** 端末に保存されている v1 のキーの割当(読めない・無い時は undefined)。新しい版は書き換えず、そのまま書き戻す。 */
+function storedLegacyShortcuts(storage: SettingsStorage): unknown {
+  try {
+    const raw = storage.getItem(STORAGE_KEY);
+    const parsed: unknown = raw === null ? null : JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null && 'shortcutAssignments' in parsed ? parsed.shortcutAssignments : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -445,8 +464,10 @@ export function saveSettings(
     return;
   }
   try {
-    // 読めなかった数は表示だけの値なので書かない(undefined の欄は JSON に出ない)。
-    storage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, viewControlsRecovered: undefined }));
+    // 読めなかった数は表示だけの値なので書かない(undefined の欄は JSON に出ない)。キーの割当は新しい形で書き、
+    // v1 の欄は保存されていた値をそのまま残す(storedShortcutFields)。
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, viewControlsRecovered: undefined, shortcutAssignmentsRecovered: undefined,
+      ...storedShortcutFields(settings.shortcutAssignments, storedLegacyShortcuts(storage)) }));
   } catch {
     // 書き込み枠が塞がっている等。表示は既に切り替わっているので操作は止めない。
   }

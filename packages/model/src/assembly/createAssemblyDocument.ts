@@ -96,6 +96,18 @@ export const STANDARD_CATALOG_IDS: readonly StandardCatalogId[] = [
   'filletWeld',
   // 族の登録口の部品(assembly/catalog)。同じ理由で鋼材のカタログの前に置く。
   'catalogItem',
+  // 材質別の鋼材の表 r2 の断面(角形鋼管・不等辺山形鋼・I 形鋼)。同じ理由で r1 の鋼材のカタログの前に置く。
+  'rectTube',
+  'unequalAngle',
+  'iBeam',
+  // r2 に 2026-11-15 に足した断面(軽量形鋼 6 つ・CT 形鋼)。同じ理由で r1 の鋼材のカタログの前に置く。
+  'lightChannel',
+  'lightZ',
+  'lightAngle',
+  'lipChannel',
+  'lipZ',
+  'hatSection',
+  'ctSection',
   'flatBar',
   'roundBar',
   'steelPipe',

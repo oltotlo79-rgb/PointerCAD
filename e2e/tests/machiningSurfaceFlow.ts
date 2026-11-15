@@ -220,7 +220,7 @@ export async function pressHistory(page: Page, shortcut: 'Control+z' | 'Control+
 }
 function surfaceEdit(original: SurfaceMachiningExpected): { label: string; before: string; after: string } {
   return original.surface === 'cylinder' ? { label: uiMessage('numericInput', 'numericInput.field.holeCylinderHeight'), before: '13', after: '17' }
-    : !original.through ? { label: uiMessage('propertyPanel', 'propertyPanel.depth'), before: '4', after: '5' }
+    : !original.through ? { label: uiMessage('numericInput', 'numericInput.field.depth'), before: '4', after: '5' }
       : original.operation === 'thread' ? { label: uiMessage('propertyPanel', 'propertyPanel.threadLength'), before: '1', after: '2' }
         : { label: uiMessage('propertyPanel', 'propertyPanel.diameter'), before: '4', after: '6' };
 }

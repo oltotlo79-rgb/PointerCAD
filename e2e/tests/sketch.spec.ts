@@ -91,7 +91,8 @@ test('座標と式で点・線分をかき、面を張れる(要件§9 P1 の完
   await expect(page.locator('.pcad-popover__title')).toHaveText('点を作る');
   await fillFields(page, ['10', '√2*10', '0']);
   // 打った瞬間に評価値が欄の下へ出る(FR-202)。
-  await expect(popoverMessages(page).nth(1)).toHaveText(`= ${SQRT2_TIMES_TEN}`);
+  // 「= 値」の行は有効 6 桁で、全部の桁は title(UI の点検の指摘 26)。
+  await expect(popoverMessages(page).nth(1)).toHaveAttribute('title', `= ${SQRT2_TIMES_TEN}`);
   await commitPopover(page);
   // 続けてかくが入なので、次の点の欄が開いたままになる(FR-307)。
   await expect(popover(page)).toBeVisible();
@@ -103,7 +104,7 @@ test('座標と式で点・線分をかき、面を張れる(要件§9 P1 の完
   // 選ぶと、入れた式そのものが欄に戻り(FR-202)、評価値が「計算した値」に出る。
   await treeRow(page, '点1').click();
   await expect(propertyPanel(page).locator('input.pcad-field__input').nth(1)).toHaveValue('√2*10');
-  await expect(propertyPanel(page)).toContainText(SQRT2_TIMES_TEN);
+  await expect(propertyPanel(page).locator('.pcad-field__message').nth(1)).toHaveAttribute('title', `= ${SQRT2_TIMES_TEN}`);
 
   // 3) 線分を 4 本、続けてかいて閉じた四角にする(FR-304、FR-307)。
   //    始点だけ絶対で入れ、終点は既定の相対のままずれで入れる。

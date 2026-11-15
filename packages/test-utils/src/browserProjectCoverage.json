@@ -1826,7 +1826,7 @@
       "file": "sketch.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "8f4e0c3e048a382b936f7025e2d86be7a3c111bd380cf83d01732a0adf8300ca"
+      "sha256": "bea9f171877e65ad4b5abf5fccb002a9889c350b1bbd1069f26900c952eb070e"
     },
     {
       "file": "smoke.spec.ts",

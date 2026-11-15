@@ -82,10 +82,14 @@ interface StressPoint { readonly positionM: readonly number[]; readonly traction
 interface StressPatch { readonly id: string; readonly points: readonly StressPoint[] }
 
 /** Independent display precision bound: the published UI uses nine significant decimal digits. */
-async function expectDisplayedSI(cell: Locator, unit: string, multiplier: number): Promise<number> {
-  await expect(cell).toHaveAttribute('data-unit', unit);
-  const value = Number(await cell.getAttribute('data-value') ?? 'NaN');
-  const displayed = Number(await cell.innerText());
+/** One displayed table cell as read in the page: its unit and SI value attributes and its rendered text. */
+interface DisplayedCell { readonly unit: string | null; readonly value: string | null; readonly text: string }
+
+/** The SI value of a cell whose text shows value * multiplier rounded to 9 significant digits (the same checks as before). */
+function displayedSI(cell: DisplayedCell, unit: string, multiplier: number): number {
+  expect(cell.unit).toBe(unit);
+  const value = Number(cell.value ?? 'NaN');
+  const displayed = Number(cell.text);
   expect(Number.isFinite(value)).toBe(true); expect(Number.isFinite(displayed)).toBe(true);
   const expected = value * multiplier;
   const quantum = expected === 0 ? 0 : .5 * 10 ** (Math.floor(Math.log10(Math.abs(expected))) - 8);
@@ -110,25 +114,36 @@ async function readStress(page: Page, factor: number, ids: readonly string[]): P
       await details.locator('summary').focus(); await details.locator('summary').press('Enter');
     }
     await expect(details).toHaveAttribute('open', '');
-    const points = details.locator('tr[data-point]'), count = await points.count();
-    expect(count).toBeGreaterThan(0); expect(count % 8).toBe(0); // Existing 4x2 Gauss cells, no endpoint substitution.
-    const observed: StressPoint[] = [];
-    for (let i = 0; i < count; i++) {
-      const row = points.nth(i);
-      await expect(row).toBeVisible(); await expect(row).toHaveAttribute('data-point', String(i));
-      await expect(row).toHaveAttribute('data-load-factor', String(factor));
-      const coordinates = row.locator('td[data-coordinate]'), stresses = row.locator('td[data-stress]');
-      await expect(coordinates).toHaveCount(3); await expect(stresses).toHaveCount(3);
-      const positionM: number[] = [], tractionPa: number[] = [];
-      for (let axis = 0; axis < 3; axis++) {
-        await expect(coordinates.nth(axis)).toHaveAttribute('data-coordinate', String(axis));
-        positionM.push(await expectDisplayedSI(coordinates.nth(axis), 'm', 1000));
-      }
-      for (const quantity of ['normalPa', 'shearAlongPa', 'shearAcrossPa']) {
-        tractionPa.push(await expectDisplayedSI(row.locator(`td[data-stress="${quantity}"]`), 'Pa', 1e-6));
-      }
-      observed.push({ positionM, tractionPa });
-    }
+    // CI run 43622465673 (firefox, Windows): this test ran past its 180 s limit. Every row used to cost about 25 page round trips
+    // (visibility, attributes, counts, then three reads per cell); the opened table is read once here instead and every
+    // check below is the same one, on the same values (visible = a non-empty box and not visibility:hidden, as Playwright).
+    const rows = await details.locator('tr[data-point]').evaluateAll(nodes => nodes.map(node => {
+      const box = node.getBoundingClientRect();
+      const cell = (element: Element) => ({ unit: element.getAttribute('data-unit'), value: element.getAttribute('data-value'),
+        text: element instanceof HTMLElement ? element.innerText : element.textContent ?? '' });
+      return {
+        visible: box.width > 0 && box.height > 0 && getComputedStyle(node).visibility !== 'hidden',
+        point: node.getAttribute('data-point'), loadFactor: node.getAttribute('data-load-factor'),
+        coordinates: Array.from(node.querySelectorAll('td[data-coordinate]'), element => ({ axis: element.getAttribute('data-coordinate'), ...cell(element) })),
+        stresses: Array.from(node.querySelectorAll('td[data-stress]'), element => ({ quantity: element.getAttribute('data-stress'), ...cell(element) })),
+      };
+    }));
+    expect(rows.length).toBeGreaterThan(0); expect(rows.length % 8).toBe(0); // Existing 4x2 Gauss cells, no endpoint substitution.
+    const observed: StressPoint[] = rows.map((row, i) => {
+      expect(row.visible, `stress row ${String(i)} of ${ids[at]} is visible`).toBe(true);
+      expect(row.point).toBe(String(i)); expect(row.loadFactor).toBe(String(factor));
+      expect(row.coordinates).toHaveLength(3); expect(row.stresses).toHaveLength(3);
+      const positionM = row.coordinates.map((coordinate, axis) => {
+        expect(coordinate.axis).toBe(String(axis));
+        return displayedSI(coordinate, 'm', 1000);
+      });
+      const tractionPa = ['normalPa', 'shearAlongPa', 'shearAcrossPa'].map(quantity => {
+        const matches = row.stresses.filter(stress => stress.quantity === quantity);
+        expect(matches, `one ${quantity} cell in stress row ${String(i)}`).toHaveLength(1);
+        return displayedSI(matches[0], 'Pa', 1e-6);
+      });
+      return { positionM, tractionPa };
+    });
     patches.push({ id: ids[at], points: observed });
   }
   return patches;

@@ -2,7 +2,7 @@ import { buildSteelStockList, buildBom, buildStandardPartFromSource, drawingSour
   type AssemblyDocument, type AssemblyKernelBridge, type BomResolvedData, type DrawingDimensionInstance,
   type DrawingSourceInput, type DrawingSourceResolution, type ResolvedAssembly, type ResolvedPart,
   type PartDocument, type SolidBody } from '@pointercad/model';
-import { collectAssemblyPartSources } from '../assembly/attachAssembly.js';
+import { collectLoadedAssemblyPartSources } from '../assembly/attachAssembly.js';
 import { flattenAssemblyGeometry } from '../viewport/createAssemblyLayer.js';
 import { t } from '../i18n/t.js';
 import type { DrawingPartRecomputer } from './attachDrawing.js';
@@ -27,7 +27,9 @@ export async function prepareAssemblyDrawingSource(source: Extract<DrawingSource
   sourceRef: string, documentId: string, bridge: AssemblyKernelBridge, recompute: DrawingPartRecomputer,
   shouldCancel: () => boolean, retain: (id: string) => void): Promise<PreparedAssemblyDrawing> {
   const library = source.library ?? EMPTY_PART_LIBRARY;
-  const { references, standardSources } = collectAssemblyPartSources(source.document, library);
+  // 図面の文書に入っている組図は、画面で開いていない事があるので、族の部品の表をここでも読み込んで待つ。
+  const { references, standardSources, catalogFailures } = await collectLoadedAssemblyPartSources(source.document, library);
+  if (catalogFailures.length > 0) throw new Error(catalogFailures.join('\n'));
   const resolvedParts = new Map<string, ResolvedPart>();
   const bodies = new Map<string, readonly SolidBody[]>();
   const documents = new Map<string, PartDocument>();

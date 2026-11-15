@@ -1207,6 +1207,9 @@ export {
 } from './assembly/standard/buildStandardPart.js';
 /** 族の部品(保存の catalog が `catalogItem`)を組めない理由の日本語の文。ui の `catalog.rejection.*` と同じ文。 */
 export { CATALOG_ITEM_REJECTION_TEMPLATES } from './assembly/catalog/rejection.js';
+/** 規格部品の族の登録口(族の表は必要な時だけ読む)。ui の文書を開く道・図面・選ぶ画面が ensure を待つ。 */
+export { PRODUCT_CATALOG_REGISTRY } from './assembly/catalog/registry.js';
+export type { CatalogRegistry } from './assembly/catalog/registry.js';
 export type {
   SteelEvidence,
   SteelMaterialGrade,

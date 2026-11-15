@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
+import { CatalogLoadStatus, useCatalogFamilies } from './CatalogLoadStatus.js';
 import { SteelBendEditForm, SteelBendFields } from './SteelBendFields.js';
 import { beginSteelBendPlacement, buildSteelBendChoice, DEFAULT_STEEL_BEND_SOURCES,
   selectedSteelBendEditTarget, type SteelBendEditTarget, type SteelBendSources } from './steelBendPicker.js';
@@ -81,9 +82,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
   const [category, setCategory] = useState(DEFAULT_STANDARD_PART_PICKER.category);
   const [choiceKey, setChoiceKey] = useState(DEFAULT_STANDARD_PART_PICKER.choiceKey);
   const [lengthSource, setLengthSource] = useState(DEFAULT_STANDARD_PART_PICKER.lengthSource);
-  const [dimensionSeries, setDimensionSeries] = useState<FastenerDimensionSeries>(
-    DEFAULT_STANDARD_PART_PICKER.dimensionSeries,
-  );
+  const [dimensionSeries, setDimensionSeries] = useState<FastenerDimensionSeries>(DEFAULT_STANDARD_PART_PICKER.dimensionSeries);
   const [threadSeries, setThreadSeries] = useState<ThreadSeries>(
     DEFAULT_STANDARD_PART_PICKER.threadSeries,
   );
@@ -104,6 +103,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
   const [csvStatus, setCsvStatus] = useState('');
   const [stockOpen, setStockOpen] = useState(false);
   const [bendEdit, setBendEdit] = useState<SteelBendEditTarget | null>(null);
+  const catalogState = useCatalogFamilies(open);
 
   useEffect(() => {
     composing.current = false;
@@ -213,6 +213,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         useAppStore.getState().closeStandardPartPicker();
       }}>
       <DraggableWindowTitle className="pcad-popover__title">{t('assembly.standardPart.title')}</DraggableWindowTitle>
+      <CatalogLoadStatus state={catalogState} />
       {selectedBend === null ? null : <button type="button" className="pcad-button"
         title={t('assembly.steel.bend.reedit.entryGuide')} onClick={() => { setBendEdit(selectedBend); }}>
         {t('assembly.steel.bend.reedit.entry')}</button>}

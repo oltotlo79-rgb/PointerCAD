@@ -1,6 +1,7 @@
 import { startRefreshPartSource } from './replaceActions.js';
 import { readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
-import { createPartDocumentBundle, replacePartDocument } from '@pointercad/model';
+import { createPartDocumentBundle, PRODUCT_CATALOG_REGISTRY, replacePartDocument, type ComponentSource } from '@pointercad/model';
+import { t } from '../i18n/t.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import {
@@ -418,6 +419,76 @@ describe('アセンブリの実経路', () => {
       expect(useAppStore.getState().lastOutcome).toBe('success');
     } finally {
       detach();
+    }
+  });
+
+  // K1（設計 §5.4）: 族の部品（catalogItem）の族の表は、組む前に登録口から読み込んで待つ。
+  const catalogItemSource: ComponentSource = {
+    kind: 'standardPart', catalog: 'catalogItem', size: '3',
+    options: { family: 'attach-test-family', item: 'attach-test-family:3', length: '10' },
+    catalogRevision: 'attach-test-r1', generatorRevision: 'attach-test-1',
+  };
+  function documentWithCatalogItem(): { readonly document: AssemblyDocument; readonly bolt: ComponentSource } {
+    let document = createAssemblyDocument('族の部品');
+    const bolt = createStandardPartSource('hexBolt', 'M8', { length: '30' });
+    document = addComponent(document, createComponentFor(document, bolt));
+    document = addComponent(document, createComponentFor(document, catalogItemSource));
+    return { document, bolt };
+  }
+
+  it('族の表の読み込みが断られた時は、文書を変えずに帯へ 150 字以内の文を出し、ほかの部品は今までどおり表示する', async () => {
+    const ensure = vi.spyOn(PRODUCT_CATALOG_REGISTRY, 'ensure').mockRejectedValue(new Error('network'));
+    const { document, bolt } = documentWithCatalogItem();
+    useAppStore.getState().openAssembly(document);
+    const detach = attachAssembly(fakeBridge().bridge);
+    try {
+      await settle();
+      expect(ensure).toHaveBeenCalledWith(['attach-test-family']);
+      const state = useAppStore.getState();
+      const failure = t('catalog.loading.documentFailed');
+      expect(failure.length).toBeLessThanOrEqual(150);
+      expect(state.errorMessage?.split('\n')[0]).toBe(failure);
+      expect(state.assembly).toBe(document);
+      expect(state.assembly?.components[1].source).toEqual(catalogItemSource);
+      expect(state.lastOutcome).toBe('failed');
+      expect(state.assemblyView?.bodies.has(partKeyOf(bolt))).toBe(true);
+    } finally {
+      detach();
+      ensure.mockRestore();
+    }
+  });
+
+  it('族の表を読み込めた時は帯に読み込みの失敗を出さず、族の部品は model の型付きの理由のまま残る', async () => {
+    const ensure = vi.spyOn(PRODUCT_CATALOG_REGISTRY, 'ensure').mockResolvedValue();
+    const { document } = documentWithCatalogItem();
+    useAppStore.getState().openAssembly(document);
+    const detach = attachAssembly(fakeBridge().bridge);
+    try {
+      await settle();
+      expect(ensure).toHaveBeenCalledTimes(1);
+      const state = useAppStore.getState();
+      expect(state.errorMessage ?? '').not.toContain(t('catalog.loading.documentFailed'));
+      expect(state.errorMessage ?? '').toContain(t('catalog.rejection.unknown-family'));
+      expect(state.assembly).toBe(document);
+    } finally {
+      detach();
+      ensure.mockRestore();
+    }
+  });
+
+  it('族の部品が無い文書では登録口を呼ばない', async () => {
+    const ensure = vi.spyOn(PRODUCT_CATALOG_REGISTRY, 'ensure');
+    let document = createAssemblyDocument('規格部品だけ');
+    document = addComponent(document, createComponentFor(document, createStandardPartSource('hexBolt', 'M8', { length: '30' })));
+    useAppStore.getState().openAssembly(document);
+    const detach = attachAssembly(fakeBridge().bridge);
+    try {
+      await settle();
+      expect(ensure).not.toHaveBeenCalled();
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+    } finally {
+      detach();
+      ensure.mockRestore();
     }
   });
 

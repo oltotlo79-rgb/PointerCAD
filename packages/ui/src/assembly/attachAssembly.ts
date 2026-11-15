@@ -11,6 +11,7 @@ import {
 } from '@pointercad/model';
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
 import { t } from '../i18n/t.js';
+import { ensureDocumentCatalogFamilies } from './catalogFamilyLoading.js';
 import type { AssemblySnapshot } from '../store/assemblySlice.js';
 import { captureMeshBodyLayout } from '../store/recomputeSlice.js';
 import { assemblyUiBackings, currentAssemblyMeshPublication, type AssemblyMeshOwnership, type AssemblySourceMeshOwner } from '../viewport/assemblyMeshAdmission.js';
@@ -197,6 +198,19 @@ export function collectAssemblyPartSources(
 
   visit(document);
   return { references, standardSources };
+}
+
+/**
+ * collectAssemblyPartSources と同じ物を集め、族の部品(catalogItem)の族の表を登録口から読み込んで待つ
+ * (model の組み立ては同期なので、組む前に読む)。読み込みが断られた時は、帯に出す文を catalogFailures に返し、
+ * 文書は変えない(その部品は型付きの拒否のまま残る)。
+ */
+export async function collectLoadedAssemblyPartSources(
+  document: AssemblyDocument,
+  library: PartLibrary,
+): Promise<ReturnType<typeof collectAssemblyPartSources> & { readonly catalogFailures: readonly string[] }> {
+  const sources = collectAssemblyPartSources(document, library);
+  return { ...sources, catalogFailures: await ensureDocumentCatalogFamilies(sources.standardSources.values()) };
 }
 
 /**
@@ -626,7 +640,7 @@ export function attachAssembly(
     }
     gate(request, 'initial');
     const releaseStartedAt = performance.now();
-    const { standardSources, references } = collectAssemblyPartSources(
+    const { standardSources, references, catalogFailures } = await collectLoadedAssemblyPartSources(
       request.document,
       request.library,
     );
@@ -654,7 +668,7 @@ export function attachAssembly(
     const resolvedParts = new Map<string, ResolvedPart>();
     const bodies = new Map<string, readonly SolidBody[]>();
     const appearances = new Map<string, AppearanceInput>();
-    const messages: string[] = [];
+    const messages: string[] = [...catalogFailures];
     let cacheHits = 0;
     const partsStartedAt = performance.now();
     timing.parts = references.size;

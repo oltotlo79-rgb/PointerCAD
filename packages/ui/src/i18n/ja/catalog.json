@@ -5,5 +5,9 @@
   "catalog.rejection.unsupported-generator-revision": "この部品の形を作る版には対応していません。",
   "catalog.rejection.unknown-item": "この部品の呼び寸法は、部品の表にありません。",
   "catalog.rejection.saved-fields-mismatch": "保存した部品の指定のうち {count} 項目が部品の表と一致しません。",
-  "catalog.rejection.invalid-option-value": "部品の長さなどの指定が、範囲の外か数として読めません。"
+  "catalog.rejection.invalid-option-value": "部品の長さなどの指定が、範囲の外か数として読めません。",
+  "catalog.loading.inProgress": "部品の表を読み込んでいます。",
+  "catalog.loading.ready": "部品の表を読み込みました。",
+  "catalog.loading.failed": "部品の表を読み込めませんでした。窓を閉じて開き直すと、もう一度読み込みます。",
+  "catalog.loading.documentFailed": "部品の表を読み込めませんでした。その部品は形を作らずに残しています（文書は変えていません）。開き直すと、もう一度読み込みます。"
 }

@@ -53,7 +53,6 @@ import {
   type ExtrudeEnd,
   type ExtrudeFeature,
   type PlaneSpec,
-  type HoleDepth,
   type HoleEntry,
   type HoleFeature,
   type MirrorFeature,
@@ -217,17 +216,12 @@ function holeTiltField(
     : { ...field, tooltipKey: 'numericInput.tooltip.cylinderHoleTiltUnsupported' };
 }
 
-/** 深さの種類(貫通/止まり)を選ぶ欄。穴・ねじ穴で共用する。 */
-function depthKindChoice(kind: HoleDepth['kind']): SolidChoiceSummary {
-  return {
-    key: 'depthKind',
-    labelKey: 'propertyPanel.depth',
-    value: kind,
-    options: [
-      { value: 'through', labelKey: 'propertyPanel.through' },
-      { value: 'blind', labelKey: 'propertyPanel.blind' },
-    ],
-  };
+/**
+ * 穴・ねじ穴の「貫通」のつまみ(切ると止まり)。その場入力の窓と同じ入切にそろえる
+ * (以前はプロパティだけ「深さ: 貫通/止まり」の 2 択で、同じ設定の見せ方が窓と違った。UI の点検の指摘 38)。
+ */
+function throughToggle(feature: HoleFeature | ThreadHoleFeature): SolidToggleSummary {
+  return toggleSummary('through', feature.depth.kind === 'through');
 }
 
 /** ねじの呼び(M2〜M64)。一覧が長いので `label` に文字をそのまま入れる(numericInput.ts と同じ流儀)。 */
@@ -862,21 +856,21 @@ export function summarizeSolid(
       // 入口(ざぐり・皿もみ、FR-422)は **`holeEntryOf` を通して**読む(既定は「広げない」)。
       return {
         ...base,
-        fields: [...holeFields(feature, cylindricalLocationIndex), ...holeEntryFields(holeEntryOf(feature))],
-        toggles: [],
-        choices: [depthKindChoice(feature.depth.kind), holeEntryChoice(holeEntryOf(feature), feature.cylindrical !== undefined)],
+        fields: [...holeFields(feature, cylindricalLocationIndex),
+          ...holeEntryFields(holeEntryOf(feature))],
+        toggles: [throughToggle(feature)],
+        choices: [holeEntryChoice(holeEntryOf(feature), feature.cylindrical !== undefined)],
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: holeSubShapeCounts(feature),
       };
     case 'threadHole':
-      // 深さの種類(貫通/止まり)は穴と同じ選択肢を先頭に置き、続けて呼び・種類・見せ方を出す
-      // (深さ・傾きの欄と選択肢も持つ)。
+      // 貫通か止まりかは穴と同じ「貫通」のつまみ。選択肢は入口・呼び・種類・見せ方
+      // (深さ・傾きの欄も持つ)。
       return {
         ...base,
         fields: [...threadHoleFields(feature, cylindricalLocationIndex), ...holeEntryFields(holeEntryOf(feature))],
-        toggles: [],
+        toggles: [throughToggle(feature)],
         choices: [
-          depthKindChoice(feature.depth.kind),
           holeEntryChoice(holeEntryOf(feature), feature.cylindrical !== undefined),
           threadDesignationChoice(feature.designation),
           threadSeriesChoice(feature.series),
@@ -1521,8 +1515,6 @@ export function setSolidChoice(
     case 'sheetFixedSide': return feature.kind === 'sheetBend' && (value === 'left' || value === 'right') ? { ...feature, fixedSide: value } : feature;
     case 'sheetLengthBasis': return feature.kind === 'sheetFlange' && (value === 'tangent' || value === 'inner' || value === 'outer')
       ? { ...feature, lengthBasis: value } : feature;
-    case 'depthKind':
-      return value === 'through' || value === 'blind' ? setSolidDepthKind(feature, value) : feature;
     case 'threadDesignation':
       return setThreadDesignation(feature, value);
     case 'threadSeries':
@@ -1685,6 +1677,9 @@ export function setSolidToggle(
 ): SolidFeature {
   if (feature.kind === 'extrude') {
     return setExtrudeToggle(feature, key, value);
+  }
+  if (feature.kind === 'hole' || feature.kind === 'threadHole') {
+    return key === 'through' ? setSolidDepthKind(feature, value ? 'through' : 'blind') : feature;
   }
   if (feature.kind === 'revolve' || feature.kind === 'sheetBase') {
     return key === 'reversed' ? { ...feature, reversed: value } : feature;

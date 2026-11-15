@@ -14,6 +14,7 @@ import { volumeNumber } from './workPlaneCaptureSupport.js';
 
 /** ビューポートの上で、ワールド座標の点が見えている場所を押す(FR-106)。 */
 import { clickWorldPoint, worldToCanvas } from './homeViewProjection.js';
+import { waitForSettledRecompute } from './recompute.js';
 import { readFileSync, statSync } from 'node:fs';
 
 import { expect, test, type Browser, type Locator, type Page, type TestInfo } from '@playwright/test';
@@ -399,8 +400,11 @@ async function drawRectangle(
 /**
  * 線分を順に選んでから面の道具にして Enter で面を張る(FR-106、FR-309)。
  * 面の道具を選ぶとビューポートへ焦点が戻るので、選択はその前に済ませる。
+ * 張る前に形の計算の終わりを待つ(計算の途中は製品が面の作成を断る。負荷のある時に solid.spec.ts:683 で
+ * 2 枚目の面が作られなかった)。
  */
 async function makeFace(page: Page, lineNames: readonly string[]): Promise<void> {
+  await waitForSettledRecompute(page);
   await treeRow(page, lineNames[0]).click();
   for (const name of lineNames.slice(1)) {
     await treeRow(page, name).click({ modifiers: ['Shift'] });
@@ -1192,6 +1196,7 @@ test.describe('P3 加工フィーチャー', () => {
 
     // 4) 立体の上面の中央を押し(押し出したもとのスケッチ面より立体の面が優先して当たる)、
     //    Shift でツリーの 点1 を足す。両方そろって初めて「穴」が押せる。
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, topFaceCenter(10));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
     await openToolMenu(page, '加工');
@@ -1320,6 +1325,7 @@ test.describe('P3 加工フィーチャー', () => {
     await expect(threadHoleButton).toBeDisabled();
     await threadHoleButton.click({ force: true });
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, topFaceCenter(15));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
     await openToolMenu(page, '加工');
@@ -1386,6 +1392,7 @@ test.describe('P3 加工フィーチャー', () => {
     await expect(machiningTool(page, 'C面取り')).toBeDisabled();
     // 開いた一覧はビューポートに重なるので、押さずに確かめただけのときは閉じてから進む。
     await closeToolMenu(page, '加工');
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, [20, 0, 10]);
     await openToolMenu(page, '加工');
     await expect(machiningTool(page, 'C面取り')).toBeEnabled();
@@ -1414,6 +1421,7 @@ test.describe('P3 加工フィーチャー', () => {
     //    取れる量は (R² − πR²/4)·10 = 10·(4 − π)。
     await page.keyboard.press('2');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, [0, 0, 5]);
     await openToolMenu(page, '加工');
     await expect(machiningTool(page, 'R面取り')).toBeEnabled();
@@ -1503,6 +1511,7 @@ test.describe('P3 加工フィーチャー', () => {
     const holeButton = machiningTool(page, '穴');
     await holeButton.click({ force: true });
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, topFaceCenter(10));
     await treeRow(page, '点1').click({ modifiers: ['Shift'] });
     await openToolMenu(page, '加工');
@@ -1565,6 +1574,7 @@ test.describe('P3 加工フィーチャー', () => {
 
     // 2) 面だけでも位置の指定方法を選ぶために入力を開ける。
     //    既定の「点を選ぶ」のまま確定すると、中心の点が無い理由で作成を断る。
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, topFaceCenter(10));
     await openToolMenu(page, '加工');
     await expect(holeButton).toBeEnabled();
@@ -1623,6 +1633,7 @@ test.describe('P3 加工フィーチャー', () => {
     await sketchTool(page, '選択').click();
     await page.keyboard.press('2');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, [0, 0, 5]);
     await openToolMenu(page, '加工');
     await machiningTool(page, 'R面取り').click();

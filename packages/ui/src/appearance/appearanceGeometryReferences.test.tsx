@@ -46,7 +46,7 @@ const FIELDS = ['transmission', 'gloss', 'roughness', 'spacing', 'color'] as con
 type Field = typeof FIELDS[number];
 const LABELS: Readonly<Record<Field, MessageKey>> = {
   transmission: 'propertyPanel.appearanceTransmission', gloss: 'propertyPanel.appearanceGloss',
-  roughness: 'propertyPanel.appearanceRoughness', spacing: 'propertyPanel.appearanceSpacing', color: 'propertyPanel.appearanceColor',
+  roughness: 'propertyPanel.appearanceRoughness', spacing: 'propertyPanel.appearanceSpacing', color: 'propertyPanel.appearanceColorCode',
 };
 const legacy = (source: string, value = 10): ExpressionValue => ({ ...number(value), source });
 function formula(label: string, id: string, value = 10): ExpressionValue {
@@ -201,6 +201,14 @@ describe('GR-20c A5 appearance fields', () => {
     render();
     change('color', '#ABCDEF');
     expect(appearanceOf(useAppStore.getState().document).entries[0].appearance.color).toBe('#abcdef');
+  });
+  it('names the hexadecimal field apart from the swatch group (UI review finding 39)', () => {
+    const markup = render();
+    expect(t('propertyPanel.appearanceColorCode')).toBe('カラーコード');
+    expect(input('color').title).toBe('カラーコード');
+    expect(rendered.inputs.filter(item => item.title === t('propertyPanel.appearanceColor'))).toEqual([]);
+    expect(markup).toContain('>カラーコード</span>');
+    expect(markup).toContain(`aria-label="${t('propertyPanel.appearanceColor')}"`);
   });
 });
 

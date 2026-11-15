@@ -10,10 +10,10 @@ import { countAffectedFeatures, countParameterUsageSites, inspectInputExpression
 import { usesDisplayInputUnit } from './numericFieldUnits.js';
 import {
   fieldUnitLabelKey,
-  fieldValueText,
   type NumericField,
   type NumericFieldResult,
 } from './numericInput.js';
+import { fieldValueDisplay, restingFieldValue, stacksFieldLabel } from './numericInputPresentation.js';
 
 export interface ExpressionFieldProps {
   /** Explicit owner parameters for fields outside the active Part, such as assembly analysis. */
@@ -43,17 +43,22 @@ export interface ExpressionFieldProps {
 /**
  * 欄の下に出す 1 行。妥当なら評価値(FR-202)、間違いなら理由をそのまま出す(FR-204)。
  * 文言は式エンジンが組み立てた日本語で、位置や文字を差し込んだ文になるため ja.json では持てない。
+ * 評価値は有効 6 桁で出し、全部の桁は `full`(行のツールチップ)へ渡す(UI の点検の指摘 26)。
  */
 function fieldMessage(
   field: NumericField,
   result: NumericFieldResult,
   lengthUnit: LengthUnit,
-): string {
+): { readonly text: string; readonly full?: string } {
   if (result.error !== null) {
-    return result.error.message;
+    return { text: result.error.message };
+  }
+  if (result.value === null) {
+    return { text: '' };
   }
   // 値だけを表示の単位で出す。**欄の中の式は 1 文字も書き換えない**(FR-202)。
-  return result.value === null ? '' : `= ${fieldValueText(field.unit, result.value, lengthUnit)}`;
+  const shown = fieldValueDisplay(field.unit, result.value, lengthUnit);
+  return { text: `= ${shown.text}`, full: `= ${shown.full}` };
 }
 
 /**
@@ -61,6 +66,9 @@ function fieldMessage(
  * 間違いは打った瞬間に赤で出す。実行してから失敗させない(NFR-UX-5、FR-204)。
  *
  * 表示だけを受け持ち、値も焦点も自分では覚えない(rules/04-設計の規律.md)。
+ * 焦点の無い数だけの欄は、input の値(中身)を変えずに、有効 6 桁の見せ方を欄に重ねる(UI の点検の指摘 26・45・48)。
+ * 重ねた表示は CSS で焦点が入ると消え、読み上げ(aria-hidden)とポインター(pointer-events)を通すので、
+ * 打つ・読む・押すはいつも中身に対して行われる(値を入れ替えると、入ってすぐ打った文字が失われる事があった)。
  */
 export function ExpressionField({
   inspectionParameters,
@@ -91,6 +99,14 @@ export function ExpressionField({
   const hasError = result.error !== null && !pending;
   // fieldExpressionと同じ条件。内部mmの初期値をinchと表示しない。
   const sourceUnit = usesDisplayInputUnit(field) ? lengthUnit : 'mm';
+  // 札を呼び出し側が決める欄(物理量を別に確かめた欄)は、数を表示の単位へ直さない。焦点のある欄には重ねない。
+  const resting = focused ? null
+    : restingFieldValue(field.source, field.unit, unitLabel === undefined ? sourceUnit : lengthUnit, lengthUnit);
+  const label = t(field.labelKey);
+  const message = pending ? { text: t('mathGeometry.status.pending') } : fieldMessage(field, result, lengthUnit);
+  const rootClass = [hasError ? 'pcad-field pcad-field--error' : 'pcad-field',
+    stacksFieldLabel(label) ? 'pcad-field--stacked' : '', resting?.inDisplayUnit === true ? 'pcad-field--resting-unit' : '']
+    .filter(name => name !== '').join(' ');
   const parameterUnits = useMemo(() => new Map(parameters.map(parameter => [parameter.name, parameter.unit])), [parameters]);
   const inspection = focused && field.mathValue?.mathDefinition === undefined
     ? inspectInputExpression(inspectionSource ?? field.source, {
@@ -122,11 +138,11 @@ export function ExpressionField({
   }, [focused]);
 
   return (
-    <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'}>
+    <div className={rootClass}>
       <label className="pcad-field__label" htmlFor={inputId} title={t(field.tooltipKey)}>
-        {t(field.labelKey)}
+        {label}
       </label>
-      <span className="pcad-field__expression-input"><input
+      <span className="pcad-field__expression-input"><span className="pcad-field__input-box"><input
         ref={inputRef}
         id={inputId}
         className="pcad-field__input"
@@ -144,6 +160,11 @@ export function ExpressionField({
           onChange(event.target.value);
         }}
       />
+      {resting === null ? null : (
+        <span className="pcad-field__resting" aria-hidden="true">
+          {resting.inDisplayUnit ? `${resting.text} ${t(fieldUnitLabelKey(field.unit, lengthUnit))}` : resting.text}
+        </span>
+      )}</span>
       {onMath === undefined ? null : <button type="button" className="pcad-button pcad-field__math"
         title={`${t(field.labelKey)}: ${t('math.open')}`} aria-label={`${t(field.labelKey)}: ${t('math.open')}`}
         onKeyDown={event => {
@@ -157,8 +178,9 @@ export function ExpressionField({
         className={
           hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'
         }
+        title={message.full !== undefined && message.full !== message.text ? message.full : undefined}
       >
-        {pending ? t('mathGeometry.status.pending') : fieldMessage(field, result, lengthUnit)}
+        {message.text}
       </p>
       {inspectionVisible ? <ExpressionInspectionPreview id={inspectionId} context={inspection}
         unitLabel={unitLabel ?? t(fieldUnitLabelKey(field.unit, sourceUnit))} parameterUnits={parameterUnits}

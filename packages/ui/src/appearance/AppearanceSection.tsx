@@ -81,8 +81,8 @@ export function AppearanceSection({
     const hasError = refusal !== null || normalizeHexColor(source) === null;
     return (
       <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'}>
-        <span className="pcad-field__label" title={t('propertyPanel.appearanceColor')}>
-          {t('propertyPanel.appearanceColor')}
+        <span className="pcad-field__label" title={t('propertyPanel.appearanceColorCode')}>
+          {t('propertyPanel.appearanceColorCode')}
         </span>
         <input
           className="pcad-field__input"
@@ -93,7 +93,7 @@ export function AppearanceSection({
           value={source}
           aria-invalid={hasError}
           aria-describedby={`${inputId}-color-message`}
-          title={t('propertyPanel.appearanceColor')}
+          title={t('propertyPanel.appearanceColorCode')}
           onChange={(event) => {
             const next = event.target.value;
             setDraftState({ draft: { key: 'color', source: next }, seenVersion: documentVersion });

@@ -28,7 +28,9 @@ export async function numericInputCaptureFlow(page: Page, info: TestInfo): Promi
 
   // 1) 式`10*√2`を入れた状態(下に計算結果が出る)。
   await popoverInputs(page).first().fill('10*√2');
-  await expect(popover(page).locator('.pcad-field__message').first()).toHaveText(/^= 14\.1421356/);
+  // 「= 値」の行は有効 6 桁で、全部の桁はツールチップ(UI の点検の指摘 26)。
+  await expect(popover(page).locator('.pcad-field__message').first()).toHaveText('= 14.1421');
+  await expect(popover(page).locator('.pcad-field__message').first()).toHaveAttribute('title', /^= 14\.1421356/);
   await captureManualDetail(page, info, {
     name: 'numeric-input-expression', dialog: popover(page),
     fixture: { expression: '10*√2', expected: 10 * Math.SQRT2 }, script: new URL(import.meta.url),

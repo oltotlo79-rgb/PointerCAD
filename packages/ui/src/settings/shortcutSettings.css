@@ -3,12 +3,20 @@
   flex-direction: column;
   gap: var(--pcad-space-2);
   min-width: 0;
+  /*
+   * 設定の欄(.pcad-settings。高さの上限 min(70dvh, 100dvh - 100px)、上下の余白 --pcad-space-3)の中に、フォームの全体が
+   * 必ず収まる高さで止め、超えた分はフォームの中で縦に送る。字の幅と行の高さは環境で違う(CI run 43669816930 の
+   * Linux の Electron では、同じ版のフォームが Windows より 29px 高く、欄の下端 729.5 を越えて 758.1 まで伸びた)。
+   */
+  max-height: calc(min(70dvh, calc(100dvh - 100px)) - 2 * var(--pcad-space-3));
+  overflow-y: auto;
 }
 .pcad-shortcut-settings select { max-width: 100%; }
 .pcad-shortcut-settings > h3, .pcad-shortcut-settings > p { margin: 0; }
 .pcad-shortcut-settings > h3 { font-size: var(--pcad-font-size-heading); }
 .pcad-shortcut-settings__actions { display: flex; flex-wrap: wrap; gap: var(--pcad-space-1); }
 /* 2 つ目のキーは、見出し・欄・外すボタンを 1 行にまとめる(フォームの高さを増やさない)。 */
-.pcad-shortcut-settings__second { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pcad-space-1); }
-.pcad-shortcut-settings__second > input { flex: 1 1 6em; }
+.pcad-shortcut-settings__second { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--pcad-space-1); }
+.pcad-shortcut-settings__second > label, .pcad-shortcut-settings__second > button { flex: none; white-space: nowrap; }
+.pcad-shortcut-settings__second > input { flex: 1 1 0; min-width: 0; }
 .pcad-shortcut-settings [role="alert"] { color: var(--pcad-danger-text); overflow-wrap: anywhere; }

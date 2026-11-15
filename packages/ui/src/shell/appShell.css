@@ -3145,6 +3145,25 @@ button.pcad-tree__row:focus-visible {
   color: var(--pcad-text-muted);
 }
 
+/*
+ * 7 字以上の名前(「入口の中心位置」「可動範囲の下限」など)は、名前の列へ押し込んで何行にも折らず、
+ * 欄の上の行に置く(UI の点検の指摘 3。ExpressionField が名前の字数で付ける)。欄・単位・評価値の行は
+ * 名前の列の分だけ左へ広がる。上の名前の上限(10em)の決まりより強くする。
+ */
+.pcad-field.pcad-field--stacked {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.pcad-field.pcad-field--stacked > .pcad-field__label {
+  grid-column: 1 / -1;
+  max-width: none;
+}
+
+.pcad-field.pcad-field--stacked > .pcad-field__message,
+.pcad-field.pcad-field--stacked > .pcad-expression-inspection {
+  grid-column: 1 / -1;
+}
+
 .pcad-field__input {
   box-sizing: border-box;
   min-width: 0;
@@ -3169,6 +3188,40 @@ button.pcad-tree__row:focus-visible {
   min-width: 0;
 }
 .pcad-field__expression-input > .pcad-field__input { width: 100%; flex: 1; }
+.pcad-field__input-box { position: relative; display: flex; flex: 1; min-width: 0; }
+.pcad-field__input-box > .pcad-field__input { width: 100%; flex: 1; }
+
+/*
+ * 焦点の無い数だけの欄に重ねる有効 6 桁の見せ方(ExpressionField。UI の点検の指摘 26・45・48)。input の値(中身)は
+ * 変えない。焦点が入ると消えて中身が見える。読み上げは aria-hidden で、押す・クリックは pointer-events: none で中身へ通す。
+ */
+.pcad-field__resting {
+  position: absolute;
+  inset: 1px;
+  display: flex;
+  align-items: center;
+  padding: 2px var(--pcad-space-1);
+  overflow: hidden;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--pcad-text);
+  pointer-events: none;
+  background: var(--pcad-bg);
+  border-radius: var(--pcad-radius-small);
+}
+
+.pcad-field__input-box:focus-within > .pcad-field__resting {
+  display: none;
+}
+
+.pcad-field--error .pcad-field__resting {
+  color: var(--pcad-danger-text);
+}
+
+/* inch の見せ方は重ねた表示が札 in を持つので、焦点の無い間は横の札(中身の mm)を見えなくする(文字は残す)。 */
+.pcad-field--resting-unit:not(:focus-within) > .pcad-field__unit {
+  visibility: hidden;
+}
 .pcad-field__math { flex: none; padding: 2px 5px; }
 
 .pcad-field__unit {

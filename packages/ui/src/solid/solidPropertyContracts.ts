@@ -155,7 +155,6 @@ export interface SolidChoiceSummary {
   readonly presentation?: 'menu';
   readonly key:
     | 'sweepGuide'
-    | 'depthKind'
     | 'threadDesignation'
     | 'threadSeries'
     | 'threadRepresentation'

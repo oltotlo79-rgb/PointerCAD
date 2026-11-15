@@ -133,10 +133,67 @@ export function fieldValueText(
   value: { readonly value: number; readonly display: string },
   lengthUnit: LengthUnit = 'mm',
 ): string {
-  const text = fieldValueNumberText(unit, value, lengthUnit);
+  return withInchLabel(fieldValueNumberText(unit, value, lengthUnit), unit, value.value, lengthUnit);
+}
+
+/** 長さの欄で表示が inch の時だけ、数の後ろに札 `in` と(ちょうど表せれば)分数インチを添える。 */
+function withInchLabel(text: string, unit: FieldUnit, millimeters: number, lengthUnit: LengthUnit): string {
   if (!isLengthFieldUnit(unit) || lengthUnit !== 'inch') return text;
-  const fraction = exactFractionalInchText(value.value);
+  const fraction = exactFractionalInchText(millimeters);
   return fraction === null ? `${text} ${t(INCH_FIELD_UNIT_KEY)}` : `${text} ${t(INCH_FIELD_UNIT_KEY)} (${fraction})`;
+}
+
+/**
+ * 「= 値」の行の文字(UI の点検の指摘 26)。`text` は画面に出す有効 6 桁(`displayNumber`)、`full` はマウスを
+ * 載せた時の説明に出す従来の文字(`fieldValueText`。mm は式エンジンの 12 桁、inch は 9 桁)。
+ * 数でない表示(式エンジンが数の形にしない値)はそのまま出す。
+ */
+export function fieldValueDisplay(
+  unit: FieldUnit,
+  value: { readonly value: number; readonly display: string },
+  lengthUnit: LengthUnit = 'mm',
+): DisplayNumber {
+  const full = fieldValueText(unit, value, lengthUnit);
+  const inch = isLengthFieldUnit(unit) && lengthUnit === 'inch';
+  if (!inch && !Number.isFinite(Number(value.display))) return { text: full, full };
+  const shown = displayNumber(inch ? toDisplayLength(value.value, 'inch') : value.value).text;
+  return { text: withInchLabel(shown, unit, value.value, lengthUnit), full };
+}
+
+/** 名前を欄の上の行に置く字数(UI の点検の指摘 3。「入口の中心位置」「可動範囲の下限」が名前の列で何行にも折れた)。 */
+const STACKED_LABEL_MIN_CHARACTERS = 7;
+
+/** 欄の名前が長く、欄の上の行に置く(`pcad-field--stacked`)か。字数は符号位置で数える。 */
+export function stacksFieldLabel(label: string): boolean {
+  return [...label].length >= STACKED_LABEL_MIN_CHARACTERS;
+}
+
+/** 数だけ(式・変数・単位を含まない)の欄の中身。 */
+const PLAIN_NUMBER_SOURCE = /^\s*[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?\s*$/u;
+
+/** 焦点の無い欄に見せる値。`inDisplayUnit` は内部 mm の数を表示の単位(inch)へ直したか(札も表示の単位にする)。 */
+interface RestingFieldValue {
+  readonly text: string;
+  readonly inDisplayUnit: boolean;
+}
+
+/**
+ * 焦点の無い欄に見せる値(UI の点検の指摘 26・45・48)。数だけの欄は有効 6 桁(長さの許容差以内は 0)で見せ、
+ * 表示が inch で中身が内部 mm の数(設定値・クリック値・計算で入れた値)なら inch へ直して見せる。
+ * 式・空欄と、見せ方が中身と同じ値は null(中身をそのまま見せる)。**見せるだけで、欄の中身(保存する式)は
+ * 1 文字も変えない**。焦点が入ると呼び出し側が中身をそのまま見せ、利用者が打つまで何も書き戻さない。
+ */
+export function restingFieldValue(
+  source: string,
+  unit: FieldUnit,
+  sourceUnit: LengthUnit,
+  lengthUnit: LengthUnit,
+): RestingFieldValue | null {
+  if (!PLAIN_NUMBER_SOURCE.test(source)) return null;
+  const value = Number(source);
+  const convert = isLengthFieldUnit(unit) && lengthUnit === 'inch' && sourceUnit === 'mm';
+  const text = displayNumber(convert ? toDisplayLength(value, 'inch') : value).text;
+  return !convert && text === source.trim() ? null : { text, inDisplayUnit: convert };
 }
 
 /**

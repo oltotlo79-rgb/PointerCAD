@@ -320,7 +320,7 @@
       "file": "appearance.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "91898ce4e9fe4943df1110c07a215a38577e4c25ae18b719644767c0d91165d2"
+      "sha256": "23cf89d01cc0470d5c9c54a9165e8dfef7f8b9e20ef4f1c6a47c282de1554c27"
     },
     {
       "file": "assembly-1000-host.spec.ts",
@@ -1904,7 +1904,7 @@
       "file": "solid.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "1517b407291ef8df11efa23c0d21cc577fedb2112a6d352b6b39bc51b980a0da"
+      "sha256": "f808bd0d3a443b6af4d1b8011acbfe2db930f5c4c4d00a40e09817ea1f755554"
     },
     {
       "file": "sphere-grid.spec.ts",
@@ -2084,7 +2084,7 @@
       "file": "workplane-3d.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "3c6efeeb59463a1f0d36587ef178893a4cb6a26a4ad0f6cb0442fe9a8542b09c"
+      "sha256": "5307f288e1df35f6bb5b70ab7c09076007e8db946a6841d403283aa379f9e5a2"
     },
     {
       "file": "z-math-input.spec.ts",

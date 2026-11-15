@@ -359,8 +359,8 @@ test.describe('P5 外観', () => {
      *    走らないことなので、材質の読みは追わない。
      */
     await chooseAppearance(page, '材質', 'アルミ');
-    await appearanceField(page, '色').fill('#ff8800');
-    await expect(appearanceField(page, '色')).toHaveValue('#ff8800');
+    await appearanceField(page, 'カラーコード').fill('#ff8800');
+    await expect(appearanceField(page, 'カラーコード')).toHaveValue('#ff8800');
     await appearanceField(page, '光沢').fill('80');
     await expect(appearanceField(page, '光沢')).toHaveValue('80');
     await appearanceField(page, '粗さ').fill('5*2');

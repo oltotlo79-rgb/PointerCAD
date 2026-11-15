@@ -741,7 +741,7 @@ describe('buildTreeSections(FR-501、FR-503、FR-504)', () => {
 });
 
 describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチャー.md タスク27)', () => {
-  it('穴(止まり)は直径・深さ・傾き・傾ける向きの欄、深さの種類の選択肢、選んだ面・中心の点の数を返す', () => {
+  it('穴(止まり)は直径・深さ・傾き・傾ける向きの欄、貫通のつまみ(切)、入口の選択肢、選んだ面・中心の点の数を返す', () => {
     const summary = summarizeSolid(documentWith(EXTRUDE, HOLE_BLIND), HOLE_BLIND);
     expect(summary.fields.map((field) => field.key)).toEqual([
       'diameter',
@@ -749,16 +749,9 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
       'tiltAngle',
       'tiltAzimuth',
     ]);
+    // 貫通か止まりかは、その場入力の窓と同じ「貫通」のつまみ(UI の点検の指摘 38。2 択の選択肢は出さない)。
+    expect(summary.toggles).toEqual([{ key: 'through', labelKey: 'numericInput.toggle.through', value: false }]);
     expect(summary.choices).toEqual([
-      {
-        key: 'depthKind',
-        labelKey: 'propertyPanel.depth',
-        value: 'blind',
-        options: [
-          { value: 'through', labelKey: 'propertyPanel.through' },
-          { value: 'blind', labelKey: 'propertyPanel.blind' },
-        ],
-      },
       // 入口(ざぐり・皿もみ、FR-422。タスク52)。省略は「広げない」。
       {
         key: 'holeEntry',
@@ -783,10 +776,11 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
   it('貫通の穴は深さの欄が出ない', () => {
     const summary = summarizeSolid(documentWith(EXTRUDE, HOLE_THROUGH), HOLE_THROUGH);
     expect(summary.fields.map((field) => field.key)).toEqual(['diameter', 'tiltAngle', 'tiltAzimuth']);
-    expect(summary.choices[0].value).toBe('through');
+    expect(summary.toggles).toEqual([{ key: 'through', labelKey: 'numericInput.toggle.through', value: true }]);
+    expect(summary.choices.map((choice) => choice.key)).toEqual(['holeEntry']);
   });
 
-  it('ねじ穴(貫通)は呼び・種類・見せ方・深さの種類の選択肢と、ピッチ・下穴径・ねじ部の長さ・傾き・傾ける向きの欄を返す(§0.a-0.13、0.14、タスク28)', () => {
+  it('ねじ穴(貫通)は貫通のつまみ(入)、入口・呼び・種類・見せ方の選択肢と、ピッチ・下穴径・ねじ部の長さ・傾き・傾ける向きの欄を返す(§0.a-0.13、0.14、タスク28)', () => {
     const summary = summarizeSolid(documentWith(EXTRUDE, THREAD_HOLE), THREAD_HOLE);
     expect(summary.fields.map((field) => field.key)).toEqual([
       'pitch',
@@ -795,25 +789,24 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
       'tiltAngle',
       'tiltAzimuth',
     ]);
+    expect(summary.toggles).toEqual([{ key: 'through', labelKey: 'numericInput.toggle.through', value: true }]);
     expect(summary.choices.map((choice) => choice.key)).toEqual([
-      'depthKind',
       'holeEntry',
       'threadDesignation',
       'threadSeries',
       'threadRepresentation',
     ]);
-    expect(summary.choices[0].value).toBe('through');
-    expect(summary.choices[1].value).toBe('plain');
-    expect(summary.choices[2].value).toBe('M6');
-    expect(summary.choices[3].value).toBe('coarse');
-    expect(summary.choices[4].value).toBe('simplified');
+    expect(summary.choices[0].value).toBe('plain');
+    expect(summary.choices[1].value).toBe('M6');
+    expect(summary.choices[2].value).toBe('coarse');
+    expect(summary.choices[3].value).toBe('simplified');
     expect(summary.subShapeCounts).toEqual([
       { labelKey: 'propertyPanel.selectedFaces', count: 1 },
       { labelKey: 'propertyPanel.centerPoints', count: 1 },
     ]);
   });
 
-  it('ねじ穴(止まり)は深さの欄も返し、深さの種類の選択肢の値が blind になる(タスク28)', () => {
+  it('ねじ穴(止まり)は深さの欄も返し、貫通のつまみが切になる(タスク28、UI の点検の指摘 38)', () => {
     const threadHoleBlind: ThreadHoleFeature = {
       ...THREAD_HOLE,
       id: 'threadHole-2',
@@ -829,7 +822,7 @@ describe('summarizeSolid(加工6種、計画書 docs/plans/P3-加工フィーチ
       'tiltAngle',
       'tiltAzimuth',
     ]);
-    expect(summary.choices[0].value).toBe('blind');
+    expect(summary.toggles).toEqual([{ key: 'through', labelKey: 'numericInput.toggle.through', value: false }]);
   });
 
   it('R面取りは半径の欄と、選んだ辺の数、可変半径のつまみを返す', () => {
@@ -1208,11 +1201,19 @@ describe('setSolidChoice / setSolidDepthKind(FR-406、§0.a-0.18)', () => {
     ).toBe(10);
   });
 
-  it("setSolidChoice('depthKind', 'blind') はねじ穴でも効く(穴と同じ setSolidDepthKind を使う、タスク28)", () => {
-    const next = setSolidChoice(THREAD_HOLE, 'depthKind', 'blind');
+  it("setSolidToggle('through', false) はねじ穴でも効く(穴と同じ setSolidDepthKind を使う、タスク28・指摘 38)", () => {
+    const next = setSolidToggle(THREAD_HOLE, 'through', false);
     expect(
       next.kind === 'threadHole' && next.depth.kind === 'blind' ? next.depth.depth.value : null,
     ).toBe(10);
+  });
+
+  it("穴の貫通のつまみ: 入で貫通、切で既定の深さの止まり穴(プロパティのつまみ = その場入力の窓と同じ入切、指摘 38)", () => {
+    const through = setSolidToggle(HOLE_BLIND, 'through', true);
+    expect(through.kind === 'hole' ? through.depth.kind : null).toBe('through');
+    const blind = setSolidToggle(HOLE_THROUGH, 'through', false);
+    expect(blind.kind === 'hole' && blind.depth.kind === 'blind' ? blind.depth.depth.value : null).toBe(10);
+    expect(setSolidToggle(HOLE_BLIND, 'modeledThread', true)).toBe(HOLE_BLIND);
   });
 
   it("setSolidDepthKind('through') → 'blind' は既定値に戻る(前の止まりの値を覚えない)", () => {
@@ -1231,10 +1232,10 @@ describe('setSolidChoice / setSolidDepthKind(FR-406、§0.a-0.18)', () => {
   });
 
   it('穴・ねじ穴・面取り・パターン以外、または妥当でない値は同じものを返す', () => {
-    expect(setSolidChoice(EXTRUDE, 'depthKind', 'blind')).toBe(EXTRUDE);
+    expect(setSolidToggle(FILLET, 'through', false)).toBe(FILLET);
     expect(setSolidDepthKind(EXTRUDE, 'blind')).toBe(EXTRUDE);
     expect(setSolidChoice(FILLET, 'chamferMode', 'equal')).toBe(FILLET);
-    expect(setSolidChoice(HOLE_BLIND, 'depthKind', 'diagonal')).toBe(HOLE_BLIND);
+    expect(setSolidChoice(HOLE_BLIND, 'threadSeries', 'diagonal')).toBe(HOLE_BLIND);
   });
 });
 
@@ -2836,7 +2837,8 @@ describe('プロパティの節の鍵(タスク52・27f・55)', () => {
     // `end` / `taperAngle` / `thickness` / `entry` / `radiusEnd` を 1 つも持たない見本。
     expect(summarizeSolid(documentWith(EXTRUDE), EXTRUDE).choices[0]?.value).toBe('distance');
     expect(
-      summarizeSolid(documentWith(EXTRUDE, HOLE_THROUGH), HOLE_THROUGH).choices[1]?.value,
+      // 貫通は選択肢でなくつまみになった(指摘 38)ので、入口の選択肢が先頭。
+      summarizeSolid(documentWith(EXTRUDE, HOLE_THROUGH), HOLE_THROUGH).choices[0]?.value,
     ).toBe('plain');
     expect(
       summarizeSolid(documentWith(EXTRUDE, FILLET), FILLET).toggles[0]?.value,

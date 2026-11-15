@@ -5,6 +5,7 @@ import { collectErrors } from './runtimeErrors.js';
 import { openToolMenu } from './toolMenus.js';
 import { fillFields, popover, popoverInputs } from './popoverFields.js';
 import { clickWorldPoint } from './homeViewProjection.js';
+import { waitForSettledRecompute } from './recompute.js';
 
 /**
  * P4「スケッチ拡張」の完了条件のうち、**任意の作業平面・基準ジオメトリ・3D スケッチ**を
@@ -189,8 +190,12 @@ async function drawRectangle(
   await cancelPopover(page);
 }
 
-/** 要素を順に選んでから面の道具にして Enter で面を張る。 */
+/**
+ * 要素を順に選んでから面の道具にして Enter で面を張る。張る前に形の計算の終わりを待つ(計算の途中は製品が
+ * 「まだ計算が終わっていません」と面の作成を断る。負荷のある時に workplane-3d.spec.ts:344 で起きた)。
+ */
 async function makeFace(page: Page, elementNames: readonly string[]): Promise<void> {
+  await waitForSettledRecompute(page);
   await treeRow(page, elementNames[0]).click();
   for (const name of elementNames.slice(1)) {
     await treeRow(page, name).click({ modifiers: ['Shift'] });
@@ -373,6 +378,7 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
       [[40, 0, 10], '点2'],
       [[40, 30, 10], '点3'],
     ] as const) {
+      await waitForSettledRecompute(page);
       await clickWorldPoint(page, world);
       await expect(treeRow(page, name)).toBeVisible();
       await cancelPopover(page);
@@ -441,7 +447,9 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
      * 3 点は 1 辺 10√2 の正三角形なので、外接円の半径は 10√2/√3 = 10√(2/3) で
      * 変える前と同じ値になる(計画書タスク36 の検算表)。
      */
-    const arcText = await propertyPanel(page).innerText();
+    // 欄の下の「= 値」の行は有効 6 桁で、全部の桁はツールチップ(UI の点検の指摘 26)。
+    const arcText = (await propertyPanel(page).locator('.pcad-field__message')
+      .evaluateAll(lines => lines.map(line => line.getAttribute('title') ?? line.textContent ?? ''))).join('\n');
     expect(arcText).toContain('3.33333333333');
     expect(arcText).toContain('6.66666666667');
     expect(arcText).toContain('8.16496580928');
@@ -526,6 +534,7 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
     // 3) 板の上面を押すと、その輪郭がいまの作図面(XY)に線として現れる。
     await chooseEditTool(page, '投影');
     await expect(statusText(page)).toContainText('写したい立体の面か辺をクリック');
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, [20, 15, 10]);
     await expect(sketchGroupRow(page, 'スケッチ2', '投影1')).toBeVisible({
       timeout: KERNEL_TIMEOUT_MS,
@@ -597,6 +606,7 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
 
     await chooseEditTool(page, '断面');
     await expect(statusText(page)).toContainText('断面をとりたい立体をクリック');
+    await waitForSettledRecompute(page);
     await clickWorldPoint(page, [10, 10, 10]);
     await expect(sketchGroupRow(page, 'スケッチ2', '断面1')).toBeVisible({
       timeout: KERNEL_TIMEOUT_MS,
@@ -673,10 +683,8 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
     await treeRow(page, '点2').click();
     await expect(propertyInputs(page).nth(0)).toHaveValue('3 - (10 + π/2)');
     // 欄の下の「計算した値」は 3 − (10 + π/2) = −8.5707963268(π = 3.14159265…)。
-    const shownValue = await propertyPanel(page)
-      .locator('.pcad-field__message')
-      .first()
-      .innerText();
+    const shownLine = propertyPanel(page).locator('.pcad-field__message').first();
+    const shownValue = (await shownLine.getAttribute('title')) ?? (await shownLine.innerText());
     expect(Number.parseFloat(shownValue.replace('=', '').replace('−', '-').trim())).toBeCloseTo(
       3 - (10 + Math.PI / 2),
       9,

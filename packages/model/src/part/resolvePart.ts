@@ -1146,16 +1146,16 @@ const EXTRUDE_TO_FACE_BEHIND_MESSAGE =
  * **文言はカーネル(`makeSolidSweep.ts` の `NO_MATERIAL_AHEAD_MESSAGE`)と 1 字も違えずに
  * 揃える**(基本形状の断りと同じ決め。片方だけ直すと理由が食い違う)。
  */
-const EXTRUDE_TO_NEXT_MISSING_MESSAGE = '押し出す先に立体がありません。';
+const EXTRUDE_TO_NEXT_MISSING_MESSAGE = '押し出す先にソリッドがありません。';
 
 /**
  * 「対象を貫く」の対象が、履歴で自分より前に無い・自分自身・すでに別のところで消費されているとき。
  * 先にある立体(前方参照)は `bodyKeys` にまだ無いので「見つからない」に入る。
  */
 const EXTRUDE_THROUGH_TARGET_MISSING_MESSAGE =
-  '貫いて切る対象の立体が見つかりません。切る立体を選び直してください。';
+  '貫いて切る対象のソリッドが見つかりません。切るソリッドを選び直してください。';
 const EXTRUDE_THROUGH_TARGET_CONSUMED_MESSAGE =
-  '貫いて切る対象の立体は、すでに別のところで使われています。切る立体を選び直してください。';
+  '貫いて切る対象のソリッドは、すでに別のところで使われています。切るソリッドを選び直してください。';
 
 /** 向きと面の法線がこれ以下しか噛み合っていなければ「平行」とみなす(平面の当てはめと同じ桁)。 */
 const EXTRUDE_TO_FACE_EPSILON = 1e-9;
@@ -1469,10 +1469,10 @@ function planSew(
 ): PlanOutcome {
   if (feature.surfaceFaces !== undefined && feature.surfaceFaces.length > 0) {
     if (feature.faces.length > 0) {
-      return fail(feature.id, 'invalidValue', 'スケッチの面と立体・曲面の面は一緒に縫い合わせられません。');
+      return fail(feature.id, 'invalidValue', 'スケッチの面とソリッド・曲面の面は一緒に縫い合わせられません。');
     }
     if (feature.surfaceFaces.length < 2) {
-      return fail(feature.id, 'degenerate', '立体にするには面が 2 枚以上必要です。');
+      return fail(feature.id, 'degenerate', 'ソリッドにするには面が 2 枚以上必要です。');
     }
     const faces: { readonly targetKey: string; readonly query: SubShapeRef }[] = [];
     for (const query of feature.surfaceFaces) {
@@ -1490,7 +1490,7 @@ function planSew(
     return { ok: true, plan: { kind: 'sew', profiles: [], faces, tolerance } };
   }
   if (feature.faces.length < 2) {
-    return fail(feature.id, 'degenerate', '立体にするには面が 2 枚以上必要です。');
+    return fail(feature.id, 'degenerate', 'ソリッドにするには面が 2 枚以上必要です。');
   }
   const profiles: (readonly ResolvedCurve[])[] = [];
   for (const reference of feature.faces) {
@@ -1512,7 +1512,7 @@ function planSew(
 }
 
 /** 閉じた輪郭の切断の対が、同じ立体・同じ輪郭・反対の残す側になっていない。 */
-const PROFILE_CUT_PAIR_MESSAGE = '対になっている切断には、同じ立体と輪郭、反対の残す側が必要です。';
+const PROFILE_CUT_PAIR_MESSAGE = '対になっている切断には、同じソリッドと輪郭、反対の残す側が必要です。';
 
 /** 閉じた輪郭の切断のブーリアンか。残す側は差 = 輪郭の外側、積 = 輪郭の内側。 */
 function isProfileCut(feature: BooleanFeature): boolean {
@@ -1576,7 +1576,7 @@ function planBoolean(
     return fail(
       feature.id,
       'invalidValue',
-      '同じ立体どうしは組み合わせられません。別の立体を選んでください。',
+      '同じソリッドどうしは組み合わせられません。別のソリッドを選んでください。',
     );
   }
   // 対は消費済みのときだけ引く(結びの無い従来のブーリアンは、文書を見ずに以前と同じ判定になる)。
@@ -1585,17 +1585,17 @@ function planBoolean(
   const sharedWithPartner = pair.kind === 'paired' && bodyKeys.has(pair.partner.id);
   const consumedElsewhere = (): PlanOutcome => pair.kind === 'broken'
     ? fail(feature.id, 'invalidValue', PROFILE_CUT_PAIR_MESSAGE)
-    : fail(feature.id, 'consumedTwice', 'その立体はすでに別のところで使われています。');
+    : fail(feature.id, 'consumedTwice', 'そのソリッドはすでに別のところで使われています。');
   const targetKey = bodyKeys.get(feature.targetFeatureId);
   if (targetKey === undefined) {
-    return fail(feature.id, 'missingBody', '組み合わせるもとの立体が見つかりません。');
+    return fail(feature.id, 'missingBody', '組み合わせるもとのソリッドが見つかりません。');
   }
   if (consumed.has(feature.targetFeatureId) && !sharedWithPartner) {
     return consumedElsewhere();
   }
   const toolKey = bodyKeys.get(feature.toolFeatureId);
   if (toolKey === undefined) {
-    return fail(feature.id, 'missingBody', '組み合わせるもとの立体が見つかりません。');
+    return fail(feature.id, 'missingBody', '組み合わせるもとのソリッドが見つかりません。');
   }
   if (consumed.has(feature.toolFeatureId) && !sharedWithPartner) {
     return consumedElsewhere();
@@ -1633,13 +1633,13 @@ export function resolveMachiningTarget(
   if (targetKey === undefined) {
     return {
       ok: false,
-      error: partError(featureId, 'missingBody', '加工するもとの立体が見つかりません。'),
+      error: partError(featureId, 'missingBody', '加工するもとのソリッドが見つかりません。'),
     };
   }
   if (consumed.has(targetFeatureId)) {
     return {
       ok: false,
-      error: partError(featureId, 'consumedTwice', 'その立体はすでに別のところで使われています。'),
+      error: partError(featureId, 'consumedTwice', 'そのソリッドはすでに別のところで使われています。'),
     };
   }
   return { ok: true, targetKey };
@@ -1965,7 +1965,7 @@ function resolveHoleBase(
       error: partError(
         feature.id,
         'invalidValue',
-        '穴をあける面は、加工するもとの立体の面にしてください。',
+        '穴をあける面は、加工するもとのソリッドの面にしてください。',
       ),
     };
   }
@@ -2838,7 +2838,7 @@ const MISSING_PRIMITIVE_POINT_MESSAGE = '中心にする点が見つかりませ
 const MISSING_PRIMITIVE_VERTEX_MESSAGE =
   '中心にする頂点が見つかりません。形が大きく変わったため、選び直してください。';
 /** 面・辺を中心に選ぼうとした。FR-429 が中心にできるとしているのは頂点だけ。 */
-const PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE = '中心にできるのは立体の頂点だけです。頂点を選び直してください。';
+const PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE = '中心にできるのはソリッドの頂点だけです。頂点を選び直してください。';
 /** 向き(軸)が解決できない。ばね・パターンの言い回しに揃える。 */
 const MISSING_PRIMITIVE_AXIS_MESSAGE =
   '向きにする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
@@ -3081,12 +3081,12 @@ const THRU_SECTIONS_TWIST_MESSAGE = 'ねじれの補正は整数にしてくだ�
  * カーネルの中でしか行えないため、model にはその時点の中心が無い。
  */
 const THRU_SECTIONS_SPHERE_ORIGIN_MESSAGE =
-  '中心を立体の頂点で決めた球は、まだ面をつなぐ相手にできません。球の中心を座標かスケッチの点で決めてください。';
+  '中心をソリッドの頂点で決めた球は、まだ面をつなぐ相手にできません。球の中心を座標かスケッチの点で決めてください。';
 /** 輪郭にできるのは面だけ(辺・頂点には外周が無い)。穴の「面だけ」と同じ守り。 */
-const THRU_SECTIONS_NOT_FACE_MESSAGE = '輪郭にできるのは立体の面だけです。面を選び直してください。';
+const THRU_SECTIONS_NOT_FACE_MESSAGE = '輪郭にできるのはソリッドの面だけです。面を選び直してください。';
 /** 面を持つ立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。 */
 const THRU_SECTIONS_MISSING_BODY_MESSAGE =
-  'つなぐもとの立体が見つかりません。立体を選び直してください。';
+  'つなぐもとのソリッドが見つかりません。ソリッドを選び直してください。';
 
 type ThruSectionOutcome =
   | { readonly ok: true; readonly section: ThruSectionPlan }
@@ -3336,7 +3336,7 @@ const DRAFT_NOT_FACE_MESSAGE = '傾けられるのは面だけです。面を選
 const DRAFT_NEUTRAL_NOT_FLAT_MESSAGE =
   '基準にする面は平らな面にしてください。平らな面を選び直してください。';
 /** 別のボディの面を指した(穴の同じ守りと同じ理由。カーネルは対象の中から選び直す)。 */
-const DRAFT_OTHER_BODY_MESSAGE = '傾ける面は、加工するもとの立体の面にしてください。';
+const DRAFT_OTHER_BODY_MESSAGE = '傾ける面は、加工するもとのソリッドの面にしてください。';
 
 /**
  * 抜き勾配(FR-417)。対象のボディを消費して 1 つの新しいボディを作る。
@@ -3419,11 +3419,11 @@ function planFaceOffset(
 }
 
 /** 鏡に映すもとの立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。 */
-const MIRROR_MISSING_BODY_MESSAGE = '鏡に映すもとの立体が見つかりません。立体を選び直してください。';
+const MIRROR_MISSING_BODY_MESSAGE = '鏡に映すもとのソリッドが見つかりません。ソリッドを選び直してください。';
 /** 鏡にする作業平面が引けない(任意の作業平面が消された・解決に失敗した)。 */
 const MIRROR_MISSING_PLANE_MESSAGE = '鏡にする平面が見つかりません。平面を選び直してください。';
 /** 鏡にできるのは面だけ(辺・頂点は平面を決めない)。 */
-const MIRROR_NOT_FACE_MESSAGE = '鏡にできるのは立体の平らな面だけです。面を選び直してください。';
+const MIRROR_NOT_FACE_MESSAGE = '鏡にできるのはソリッドの平らな面だけです。面を選び直してください。';
 /** 曲面は鏡にならない(法線が場所によって変わる)。 */
 const MIRROR_NOT_FLAT_MESSAGE = '鏡にできるのは平らな面だけです。平らな面を選び直してください。';
 
@@ -3849,7 +3849,7 @@ function ribExtendDirection(extend: Vec3): Vec3 {
 const WORLD_DOWN: Vec3 = [0, 0, -1];
 
 /** エンボスの断りの文言(FR-421、FR-504)。 */
-const EMBOSS_OTHER_BODY_MESSAGE = '彫る面は、加工するもとの立体の面にしてください。';
+const EMBOSS_OTHER_BODY_MESSAGE = '彫る面は、加工するもとのソリッドの面にしてください。';
 const EMBOSS_NOT_FACE_MESSAGE = '彫れるのは面だけです。面を選び直してください。';
 /** 曲面へのラップは未対応。いまは平らな面だけ。 */
 const EMBOSS_NOT_FLAT_MESSAGE = '彫れるのは平らな面だけです。平らな面を選び直してください。';
@@ -3912,7 +3912,7 @@ function planEmboss(
 }
 
 /** 外ねじの断りの文言(FR-423、FR-504)。 */
-const THREAD_SHAFT_OTHER_BODY_MESSAGE = 'ねじを切る面は、加工するもとの立体の面にしてください。';
+const THREAD_SHAFT_OTHER_BODY_MESSAGE = 'ねじを切る面は、加工するもとのソリッドの面にしてください。';
 const THREAD_SHAFT_NOT_CYLINDER_MESSAGE =
   'ねじを切れるのは円柱の面だけです。円柱の面を選び直してください。';
 /**
@@ -4006,9 +4006,9 @@ const SURFACE_NOT_PLANAR_MESSAGE =
   '曲面のもとの線が 1 つの平面に乗っていません。輪郭をかき直してください。';
 const SURFACE_MISSING_AXIS_MESSAGE =
   '回転の軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
-const SURFACE_NOT_FACE_MESSAGE = '取り出せるのは立体の面だけです。面を選び直してください。';
+const SURFACE_NOT_FACE_MESSAGE = '取り出せるのはソリッドの面だけです。面を選び直してください。';
 const SURFACE_MISSING_BODY_MESSAGE =
-  '面を借りるもとの立体が見つかりません。立体を選び直してください。';
+  '面を借りるもとのソリッドが見つかりません。ソリッドを選び直してください。';
 /** 距離 0 のオフセットは元の面と同じ形になる(同じ形に 2 通りの書き方を残さない)。 */
 const SURFACE_OFFSET_ZERO_MESSAGE = '離す距離は 0 以外の数にしてください。';
 
@@ -4252,7 +4252,7 @@ function planSurface(
 
 /** くり抜きの断りの文言(FR-418、FR-504)。 */
 const SHELL_NOT_FACE_MESSAGE = '開けられるのは面だけです。面を選び直してください。';
-const SHELL_OTHER_BODY_MESSAGE = '開ける面は、くり抜くもとの立体の面にしてください。';
+const SHELL_OTHER_BODY_MESSAGE = '開ける面は、くり抜くもとのソリッドの面にしてください。';
 /** 厚さが 0 以下。**カーネル(`makeShell.ts`)と同じ状況の断り。** */
 const SHELL_THICKNESS_MESSAGE = '壁の厚さは 0 より大きい数にしてください。';
 
@@ -4303,9 +4303,9 @@ function planShell(
  * ------------------------------------------------------------------ */
 
 /** 切るもとの立体が引けない(未作成・抑制中・上流が失敗・前方参照)。 */
-const CUT_MISSING_BODY_MESSAGE = '切るもとの立体が見つかりません。';
+const CUT_MISSING_BODY_MESSAGE = '切るもとのソリッドが見つかりません。';
 /** 対でないのに、すでに使われた立体をもう一度切ろうとした。 */
-const CUT_CONSUMED_TWICE_MESSAGE = 'その立体はすでに別のところで使われています。';
+const CUT_CONSUMED_TWICE_MESSAGE = 'そのソリッドはすでに別のところで使われています。';
 
 /**
  * 対になっている切断を文書から引く。
@@ -4884,14 +4884,14 @@ function resolveSketchesAndReferences(
 /** 参照先の立体が見つからない(未作成・抑制中・上流が失敗・削除された)。 */
 function missingProjectionBodyMessage(source: ProjectionSource): string {
   return source.kind === 'subShape'
-    ? '投影のもとになる立体が見つかりません。立体を選び直してください。'
-    : '断面をとる立体が見つかりません。立体を選び直してください。';
+    ? '投影のもとになるソリッドが見つかりません。ソリッドを選び直してください。'
+    : '断面をとるソリッドが見つかりません。ソリッドを選び直してください。';
 }
 
 /** 順序違反(自分より後に作られる立体を指した)。順序の制約。 */
 function laterProjectionBodyMessage(source: ProjectionSource): string {
   const what = source.kind === 'subShape' ? '投影' : '断面';
-  return `${what}のもとにできるのは、このスケッチを使う立体より前に作られた立体だけです。履歴の順序を見直してください。`;
+  return `${what}のもとにできるのは、このスケッチを使うソリッドより前に作られたソリッドだけです。履歴の順序を見直してください。`;
 }
 
 /**

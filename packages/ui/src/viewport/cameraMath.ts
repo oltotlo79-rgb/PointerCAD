@@ -168,6 +168,40 @@ export function orthographicFrustumHeight(distance: number): number {
   return 2 * distance * Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
 }
 
+type Point3 = readonly [number, number, number];
+
+/** ベクトル v を単位ベクトル axis の周りに angle(ラジアン、右ねじ)回す(ロドリゲスの式)。 */
+function rotateAboutAxis(v: Point3, axis: Point3, angle: number): Point3 {
+  const cos = Math.cos(angle), sin = Math.sin(angle), dot = v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
+  const cross: Point3 = [axis[1] * v[2] - axis[2] * v[1], axis[2] * v[0] - axis[0] * v[2], axis[0] * v[1] - axis[1] * v[0]];
+  const at = (i: 0 | 1 | 2): number => v[i] * cos + cross[i] * sin + axis[i] * dot * (1 - cos);
+  return [at(0), at(1), at(2)];
+}
+
+/**
+ * 点 pivot の周りに回す(回転の中心、設計 2-3・B-08d)。向きの変わり方は orbit と同じ(方位角と、仰角の上限で
+ * 止めた後の変化)。カメラと注視点を同じ剛体の回転で pivot の周りに動かすので、pivot は画面の同じ所に残る。
+ * 仰角の変化は水平の軸 (sin 方位角, −cos 方位角, 0) の周り、方位角の変化は +Z の周り。
+ */
+export function orbitAround(state: OrbitState, deltaXPixels: number, deltaYPixels: number, pivot: Point3): OrbitState {
+  const next = orbit(state, deltaXPixels, deltaYPixels);
+  const offset: Point3 = [state.target[0] - pivot[0], state.target[1] - pivot[1], state.target[2] - pivot[2]];
+  const tilted = rotateAboutAxis(offset, [Math.sin(state.azimuth), -Math.cos(state.azimuth), 0], next.elevation - state.elevation);
+  const turned = rotateAboutAxis(tilted, [0, 0, 1], next.azimuth - state.azimuth);
+  return { ...next, target: [pivot[0] + turned[0], pivot[1] + turned[1], pivot[2] + turned[2]] };
+}
+
+/**
+ * 点 point へ向けて拡大縮小する(拡大の中心、設計 2-3・B-08d)。距離の変わり方は zoom と同じ(上限・下限で止めた後の
+ * 比)。注視点も同じ比で point へ寄せる(point を中心にした相似)ので、透視投影でも平行投影でも point は画面の同じ所に残る。
+ */
+export function zoomToward(state: OrbitState, wheelDeltaY: number, point: Point3): OrbitState {
+  const next = zoom(state, wheelDeltaY);
+  const scale = next.distance / state.distance;
+  return { ...next, target: [point[0] + (state.target[0] - point[0]) * scale, point[1] + (state.target[1] - point[1]) * scale,
+    point[2] + (state.target[2] - point[2]) * scale] };
+}
+
 /**
  * 名前の札(基準軸・座標系、`createReferenceLayer.ts`)を画面上でおよそ一定の大きさに保つための、
  * その時点のワールド単位での高さ(mm)。

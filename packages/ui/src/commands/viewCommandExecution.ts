@@ -7,6 +7,20 @@ import { selectWorkPlane } from '../shell/menus/sketchToolTables.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { VIEW_COMMAND_ITEMS } from './viewCommandItems.js';
 
+/**
+ * 全体を表示・選択に合わせる・直前の視点へ戻る(B-08c)。視点の正本はビューポートにあるので、ストアに置かれた
+ * 視点の口(viewCameraController)へ頼み、できなかった時は理由を返す。4 分割の表示の間は区画ごとの視点なので使わない。
+ */
+function runCameraCommand(id: 'fitAll' | 'fitSelection' | 'previousView'): EditToolReadiness {
+  const state = useAppStore.getState(), controller = state.viewCameraController;
+  if (state.quadCamera !== null) return { ready: false, reasonKey: 'command.unavailable.quadView' };
+  if (controller === null) return { ready: false, reasonKey: 'command.unavailable.viewport' };
+  if (id === 'fitSelection' && state.selection.length === 0) return { ready: false, reasonKey: 'command.unavailable.selectionEmpty' };
+  if (id === 'previousView') return controller.previous() ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'command.unavailable.noPreviousView' };
+  return controller.fit(id === 'fitAll' ? 'all' : 'selection', state.selection) ? { ready: true, reasonKey: null }
+    : { ready: false, reasonKey: 'command.unavailable.nothingToFit' };
+}
+
 export function runViewCommand(group: 'view' | 'plane' | 'reference' | 'snap' | 'assemblyUtility', source: string): EditToolReadiness {
   const state = useAppStore.getState();
   const ready: EditToolReadiness = { ready: true, reasonKey: null };
@@ -26,6 +40,7 @@ export function runViewCommand(group: 'view' | 'plane' | 'reference' | 'snap' | 
         if (state.quadCamera !== null && state.quadCamera.active !== 'isometric') return { ready: false, reasonKey: 'command.unavailable.quadPane' };
         state.requestViewOrientation(item.id); return ready;
       case 'matchWorkPlane': state.requestMatchWorkPlaneToView(); return ready;
+      case 'fitAll': case 'fitSelection': case 'previousView': return runCameraCommand(item.id);
     }
   }
   if (group === 'plane') {

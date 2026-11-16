@@ -41,8 +41,8 @@ export async function documentMaterialDiffFlow(page: Page, info: TestInfo, app?:
   await dialog.getByRole('button', { name: '変更を比較する', exact: true }).click();
   const definitions = dialog.getByRole('region', { name: '比較結果', exact: true });
   await expect(definitions.locator('[data-diff-status="added"]')).toHaveCount(2);
-  const panel = dialog.getByRole('region', { name: '立体の形の比較', exact: true });
-  const start = panel.getByRole('button', { name: '立体の形を比較する', exact: true });
+  const panel = dialog.getByRole('region', { name: 'ソリッドの形の比較', exact: true });
+  const start = panel.getByRole('button', { name: 'ソリッドの形を比較する', exact: true });
   // 実Workerの初回読込み中に中止する。前に完了した定義比較はそのまま残る。
   await start.click(); await panel.getByRole('button', { name: '形の比較を中止', exact: true }).click();
   await expect(start).toBeEnabled(); await expect(panel.getByRole('status')).toContainText('中止');

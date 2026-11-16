@@ -137,7 +137,7 @@ export async function parameterSearchCsvFlow(page: Page, info: TestInfo, io: Par
   await expect(preview(page).locator('li')).toHaveCount(100);
   await expect(preview(page).getByText('追加', { exact: false }).first()).toBeVisible();
   await expect(panel(page).locator('.pcad-parameter')).toHaveCount(0);
-  await preview(page).getByRole('button', { name: '取り消す', exact: true }).click();
+  await preview(page).getByRole('button', { name: '取消', exact: true }).click();
   await expect(preview(page)).toHaveCount(0);
   await expect(panel(page)).toContainText('名前を付けた数値はまだありません。');
   await expect(undoButton(page), '取消では履歴が増えない').toBeDisabled();
@@ -264,7 +264,7 @@ export async function parameterSearchCsvFlow(page: Page, info: TestInfo, io: Par
   await expect(preview(page).locator('li')).toHaveCount(101);
   await expect(preview(page).locator('li', { hasText: '追加寸法' })).toContainText('追加');
   await expect(preview(page).locator('li', { hasText: '寸法099' })).toContainText('更新');
-  await preview(page).getByRole('button', { name: '取り消す', exact: true }).click();
+  await preview(page).getByRole('button', { name: '取消', exact: true }).click();
   await expectAllRows(page, rows, '取消では表が変わらない');
   await io.importFile(page, importButton(page), changedPath);
   await preview(page).getByRole('button', { name: '変更を適用', exact: true }).click();
@@ -292,7 +292,7 @@ export async function parameterSearchCsvFlow(page: Page, info: TestInfo, io: Par
   await writeCsv(thousandPath, csvOf(many(1000)));
   await io.importFile(page, importButton(page), thousandPath);
   await expect(preview(page).locator('li')).toHaveCount(1000, { timeout: 60_000 });
-  await preview(page).getByRole('button', { name: '取り消す', exact: true }).click();
+  await preview(page).getByRole('button', { name: '取消', exact: true }).click();
   await expectAllRows(page, rows, '1000 行の確認を取り消しても表は同じ');
 
   const overRowsPath = info.outputPath('parameters-1001.csv');
@@ -314,7 +314,7 @@ export async function parameterSearchCsvFlow(page: Page, info: TestInfo, io: Par
   await writeCsv(exactPath, exactBody);
   await io.importFile(page, importButton(page), exactPath);
   await expect(preview(page).locator('li')).toHaveCount(900, { timeout: 60_000 });
-  await preview(page).getByRole('button', { name: '取り消す', exact: true }).click();
+  await preview(page).getByRole('button', { name: '取消', exact: true }).click();
 
   const overBody = exactText(mebibyte + 1);
   expect(Buffer.byteLength(overBody, 'utf8')).toBe(mebibyte + 1);

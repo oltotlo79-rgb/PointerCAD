@@ -29,12 +29,20 @@ function button(markup: string, command: string): string {
   return tag;
 }
 
-function expectReason(markup: string, id: string, key: MessageKey): void {
+/** 効かないボタンは、焦点の入る aria-disabled で、理由をボタンの title に持つ(UI の点検の指摘 10。R20 の理由はキーボードでも読める)。 */
+function expectFocusableReason(markup: string, command: string, key: MessageKey): void {
+  const tag = button(markup, command);
   const text = renderToStaticMarkup(<>{t(key)}</>);
-  expect(markup).toContain(`<span id="${id}" role="note" tabindex="0">${text}</span>`);
-  const aside = markup.match(/<aside\b[^>]*>([\s\S]*?)<\/aside>/u);
-  expect(aside?.[0]).toContain(`id="${id}"`);
-  expect(aside?.[0]).not.toMatch(/hidden|aria-hidden|display:\s*none|visibility:\s*hidden/u);
+  expect(tag).toContain('aria-disabled="true"');
+  expect(tag).not.toContain('disabled=""');
+  expect(tag).not.toMatch(/tabindex="-1"|aria-hidden/u);
+  expect(tag.match(/title="([^"]*)"/u)?.[1]).toContain(text);
+}
+
+function expectNoStandingNotes(markup: string): void {
+  expect(markup).not.toContain('role="note"');
+  expect(markup).not.toMatch(/<aside\b/u);
+  expect(markup).not.toMatch(/aria-describedby="drawing-[a-z]+-unavailable"/u);
 }
 
 describe('DrawingToolbar readable explanations and command associations', () => {
@@ -42,57 +50,57 @@ describe('DrawingToolbar readable explanations and command associations', () => 
     const markup = render(source, true, true, false);
     expect(markup.match(/class="pcad-button pcad-menu__trigger /gu)).toHaveLength(5);
     for (const match of markup.matchAll(/<button\b[^>]*>/gu)) expect(match[0]).toMatch(/title="[^"]+"/u);
-    expect(button(markup, 'history.undo')).not.toContain('aria-describedby');
-    expect(button(markup, 'history.redo')).not.toContain('aria-describedby');
-    expect(markup).not.toContain('id="drawing-busy-unavailable"');
+    expect(button(markup, 'history.undo')).not.toContain('aria-disabled');
+    expect(button(markup, 'history.redo')).not.toContain('aria-disabled');
+    expectNoStandingNotes(markup);
     if (source === 'assembly') {
       expect(button(markup, 'toolbar.drawing.bom')).not.toContain('disabled');
-      expect(markup).not.toContain('id="drawing-bom-unavailable"');
     } else {
-      expect(button(markup, 'toolbar.drawing.bom')).toContain('aria-describedby="drawing-bom-unavailable"');
-      expectReason(markup, 'drawing-bom-unavailable', 'drawing.toolbar.assemblyOnly');
+      expectFocusableReason(markup, 'toolbar.drawing.bom', 'drawing.toolbar.assemblyOnly');
     }
   });
 
-  it.each(['part', 'assembly'] as const)('keeps unavailable history reasons focusable in %s drawings', source => {
+  it.each(['part', 'assembly'] as const)('keeps unavailable history reasons readable from the focusable buttons in %s drawings', source => {
     const markup = render(source, false, false, false);
-    expect(button(markup, 'history.undo')).toContain('disabled=""');
-    expect(button(markup, 'history.undo')).toContain('aria-describedby="drawing-undo-unavailable"');
-    expect(button(markup, 'history.redo')).toContain('disabled=""');
-    expect(button(markup, 'history.redo')).toContain('aria-describedby="drawing-redo-unavailable"');
-    expectReason(markup, 'drawing-undo-unavailable', 'toolbar.history.undoUnavailable');
-    expectReason(markup, 'drawing-redo-unavailable', 'toolbar.history.redoUnavailable');
+    expectFocusableReason(markup, 'history.undo', 'toolbar.history.undoUnavailable');
+    expectFocusableReason(markup, 'history.redo', 'toolbar.history.redoUnavailable');
+    expectNoStandingNotes(markup);
   });
 
   it.each(['part', 'assembly'] as const)('retains computing and source explanations together in %s drawings', source => {
     const markup = render(source, false, false, true);
-    expectReason(markup, 'drawing-busy-unavailable', 'drawing.status.computing');
-    expectReason(markup, 'drawing-undo-unavailable', 'toolbar.history.undoUnavailable');
-    expectReason(markup, 'drawing-redo-unavailable', 'toolbar.history.redoUnavailable');
-    for (const command of ['toolbar.drawing.bom', 'toolbar.drawing.table']) {
-      expect(button(markup, command)).toContain('disabled=""');
-      expect(button(markup, command)).toContain('aria-describedby="drawing-busy-unavailable"');
-      expect(button(markup, command)).toContain(t('drawing.status.computing'));
-    }
-    if (source === 'part') expectReason(markup, 'drawing-bom-unavailable', 'drawing.toolbar.assemblyOnly');
-    // Every disabled control still points to an existing explanation, including print.
+    expectFocusableReason(markup, 'history.undo', 'toolbar.history.undoUnavailable');
+    expectFocusableReason(markup, 'history.redo', 'toolbar.history.redoUnavailable');
+    for (const command of ['toolbar.drawing.bom', 'toolbar.drawing.table']) expectFocusableReason(markup, command, 'drawing.status.computing');
+    expectNoStandingNotes(markup);
+    // The print window explains the refusal inside the window and its print button keeps the reason, without a standing note.
     useAppStore.getState().setUtilityPanelOpen('drawingPrint', true);
     const withPrint = renderToStaticMarkup(<DrawingToolbar />);
-    for (const match of withPrint.matchAll(/aria-describedby="([^"]+)"/gu)) {
-      for (const id of (match[1] ?? '').split(' ')) expect(withPrint).toContain(`id="${id}"`);
-    }
+    const computing = renderToStaticMarkup(<>{t('drawing.status.computing')}</>);
+    expect(withPrint).toContain(`<p role="status">${computing}</p>`);
+    const print = withPrint.match(/<button[^>]*>[^<]*<\/button>/gu)?.find(tag => tag.includes('>' + t('drawing.print.title') + '</button>'));
+    expect(print).toContain('aria-disabled="true"');
+    expect(print).not.toContain('disabled=""');
+    expect(print?.match(/title="([^"]*)"/u)?.[1]).toBe(computing);
+    expectNoStandingNotes(withPrint);
   });
 
-  it('places visible reasons beside controls with drawing-only CSS, leaving pixel validation to P8-66', () => {
+  it('keeps the drawing toolbar on one row without a reasons column (UI の点検の指摘 10)', () => {
     const markup = render('part', false, false, true);
     expect(markup).toContain('class="pcad-toolbar pcad-toolbar--drawing"');
-    expect(markup).toContain('class="pcad-toolbar__group-label pcad-drawing-toolbar__reasons"');
-    expect(markup.match(/<aside\b[^>]*>/u)?.[0]).not.toContain('style=');
+    expect(markup).not.toContain('pcad-drawing-toolbar__reasons');
     const css = readFileSync(new URL('../shell/appShell.css', import.meta.url), 'utf8');
     expect(css).toMatch(/\.pcad-toolbar--drawing\s*\{[^}]*padding-block:\s*var\(--pcad-space-1\)/u);
-    const reasons = css.match(/\.pcad-drawing-toolbar__reasons\s*\{([^}]*)\}/u)?.[1];
-    expect(reasons).toContain('display: flex;');
-    expect(reasons).toContain('flex-direction: column;');
-    expect(reasons).not.toMatch(/100%|hidden|clip|ellipsis|height:|position:/u);
+    expect(css).not.toContain('.pcad-drawing-toolbar__reasons');
+  });
+
+  it('図面のツリーの選んだ行は、部品のツリーと同じ行の淡い面だけで示す(枠を付けない。UI の点検の指摘 13)', () => {
+    const css = readFileSync(new URL('../shell/appShell.css', import.meta.url), 'utf8');
+    const pressed = css.match(/\.pcad-drawing-tree-group \.pcad-tree__row > button\[aria-pressed='true'\]\s*\{([^}]*)\}/u)?.[1];
+    expect(pressed).toBeDefined();
+    expect(pressed).not.toMatch(/outline:\s*1px/u);
+    expect(pressed).toMatch(/background:\s*transparent;/u);
+    expect(pressed).toMatch(/box-shadow:\s*none;/u);
+    expect(css).toMatch(/\.pcad-tree__row--selected\s*\{\s*background:\s*var\(--pcad-accent-soft\);/u);
   });
 });

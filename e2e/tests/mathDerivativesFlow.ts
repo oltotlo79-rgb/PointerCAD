@@ -4,6 +4,7 @@ import { reopenPart } from './reopenPart.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { undoMathEdit, waitForMathEditorText } from './mathEditorReady.js';
 import { uiMessage } from './uiMessages.js';
+import { mathResultValueText } from './mathResultValue.js';
 
 /** Original point domains, order, angle units and bound-variable identity use the ordinary editor. */
 export async function mathDerivativesFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -26,14 +27,14 @@ export async function mathDerivativesFlow(page: Page, info: TestInfo, app?: Elec
   }
   await input.fill('derivativeat(sin(t),t,0)');
   await expect.poll(async () => {
-    const text = await result.innerText(); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
+    const text = await mathResultValueText(result); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
   }, { timeout: 225_000 }).toBeCloseTo(Math.PI / 180, 12);
   await angle.selectOption('radian'); await expect(result).toHaveText('= 1', { timeout: 225_000 });
   await angle.selectOption('degree');
   // Wait for the degree result first: typing or switching notation while it runs cancels it, and a cancelled
   // calculation part is replaced and prepares the exact runtime again (rules/06 §10.149).
   await expect.poll(async () => {
-    const text = await result.innerText(); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
+    const text = await mathResultValueText(result); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
   }, { timeout: 225_000 }).toBeCloseTo(Math.PI / 180, 12);
   await input.fill('derivativeat(derivativeat(x^2*y,x,2),y,3)');
   await expect(result).toHaveText('= 4', { timeout: 225_000 });

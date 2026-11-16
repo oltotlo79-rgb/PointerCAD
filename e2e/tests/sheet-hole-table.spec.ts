@@ -23,7 +23,7 @@ test('P10 板金の展開穴表が固定面の座標を使い、基準点・元�
   await unfold.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 2' });
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  expect(Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(5000 + 174 * Math.PI, 4);
+  expect(Number(await unfold.getByRole('status').getAttribute('title'))).toBeCloseTo(5000 + 174 * Math.PI, 4);
   await unfold.getByRole('button', { name: '展開から図面を作成', exact: true }).click();
   await expect(page.locator('.pcad-drawing-svg [aria-label="上 90° R3"]')).toHaveCount(1, { timeout: 60_000 });
   const section = page.locator('.pcad-drawing-property-section[data-property-kind="table"]');
@@ -49,7 +49,7 @@ test('P10 板金の展開穴表が固定面の座標を使い、基準点・元�
     fixture: { datumX: 5 }, script: new URL(import.meta.url) });
   await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイル/ }).first().click();
   const refreshing = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: '元の部品・組立を取り込み直す', exact: true }).click();
+  await page.getByRole('button', { name: '元の部品・アセンブリを取り込み直す', exact: true }).click();
   await (await refreshing).setFiles({ name: '穴位置変更.pcad', mimeType: 'application/zip', buffer: Buffer.from(sheetHolePartFile(12)) });
   await expect(table.locator('[aria-label="33"]')).toHaveCount(1, { timeout: 60_000 });
   await expect(table.locator('[aria-label="35"]')).toHaveCount(0);

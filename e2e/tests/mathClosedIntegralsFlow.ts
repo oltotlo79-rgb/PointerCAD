@@ -4,6 +4,7 @@ import { exactMathScenarioTimeout, undoMathEdit, waitForMathEditorText } from '.
 import { reopenPart } from './reopenPart.js';
 import { savePart } from './scriptsFlow.js';
 import { uiMessage } from './uiMessages.js';
+import { mathResultValueText } from './mathResultValue.js';
 
 /*
  * MC-21b (ADD-23 item 23-04): ∮ and ∯ on the real screen, the real calculation Worker and the real exact runtime, in
@@ -46,7 +47,8 @@ async function expectRefused(dialog: Locator, reason: string, label: string): Pr
 
 async function expectValue(dialog: Locator, value: RegExp, label: string): Promise<void> {
   const result = dialog.locator('.pcad-math-editor__result[role="status"]');
-  await expect(result).toHaveText(value, { timeout: RESULT_TIMEOUT_MS });
+  // 値の全体で照らすのは、畳んだ全部の桁の値の文(1 行目は「≈ 6 桁」。UI の点検の指摘 36)。
+  await expect.poll(() => mathResultValueText(result), { timeout: RESULT_TIMEOUT_MS }).toMatch(value);
   console.log(`[実測] ${label}: ${await result.innerText()}`);
   await expect(dialog.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
 }

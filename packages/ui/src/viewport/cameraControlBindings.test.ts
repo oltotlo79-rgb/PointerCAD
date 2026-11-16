@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VIEW_CONTROLS, type ViewControlOptions } from '../settings/viewControlSettings.js';
+import { DEFAULT_VIEW_CONTROLS, withViewControlPreset, type ViewControlOptions } from '../settings/viewControlSettings.js';
 import {
-  dragZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewWheelAction, wheelDragEquivalent, wheelZoomDelta,
+  dragZoomDelta, keyOrbitPixels, keyZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewKeyMove, viewWheelAction,
+  wheelDragEquivalent, wheelZoomDelta,
 } from './cameraControlBindings.js';
+import { ORBIT_RADIANS_PER_PIXEL } from './cameraMath.js';
 
 const modifiers = { altKey: false, shiftKey: false, ctrlKey: false, metaKey: false };
 const options = (changes: Partial<ViewControlOptions> = {}): ViewControlOptions => ({ ...DEFAULT_VIEW_CONTROLS.options, ...changes });
@@ -111,5 +113,41 @@ describe('wheel units, speeds and directions in one place', () => {
       const source = readFileSync(new URL(file, import.meta.url), 'utf8');
       expect(source, file).not.toMatch(/deltaMode|PIXELS_PER_WHEEL|DOM_DELTA/u);
     }
+  });
+});
+
+describe('view key bindings (B-08)', () => {
+  const keyboard = withViewControlPreset(DEFAULT_VIEW_CONTROLS, 'keyboard');
+  it('matches the physical key group and every modifier exactly', () => {
+    expect(viewKeyMove(keyboard, { ...modifiers, code: 'ArrowLeft' })).toEqual({ action: 'orbit', direction: [-1, 0] });
+    expect(viewKeyMove(keyboard, { ...modifiers, code: 'ArrowDown' })).toEqual({ action: 'orbit', direction: [0, 1] });
+    expect(viewKeyMove(keyboard, { ...modifiers, shiftKey: true, code: 'ArrowRight' })).toEqual({ action: 'pan', direction: [1, 0] });
+    expect(viewKeyMove(keyboard, { ...modifiers, code: 'Equal' })).toEqual({ action: 'zoom', direction: [0, -1] });
+    expect(viewKeyMove(keyboard, { ...modifiers, code: 'NumpadSubtract' })).toEqual({ action: 'zoom', direction: [0, 1] });
+    // Ctrl+arrow and Alt+arrow belong to no binding; the numeric keypad is its own group, unbound in this preset.
+    expect(viewKeyMove(keyboard, { ...modifiers, ctrlKey: true, code: 'ArrowLeft' })).toBeNull();
+    expect(viewKeyMove(keyboard, { ...modifiers, altKey: true, code: 'ArrowUp' })).toBeNull();
+    expect(viewKeyMove(keyboard, { ...modifiers, code: 'Numpad4' })).toBeNull();
+    expect(viewKeyMove(keyboard, { ...modifiers, code: 'KeyA' })).toBeNull();
+  });
+  it('binds no key by default, so the default settings leave every key to the commands', () => {
+    for (const code of ['ArrowLeft', 'ArrowUp', 'Numpad8', 'NumpadAdd', 'Equal', 'Minus']) {
+      expect(viewKeyMove(DEFAULT_VIEW_CONTROLS, { ...modifiers, code }), code).toBeNull();
+    }
+  });
+  it('turns by the set angle per press whatever the rotation speed, and keeps the inversion', () => {
+    const radians = (changes: Partial<ViewControlOptions>): number => {
+      const settings = options(changes);
+      return scaledOrbitDelta(settings, keyOrbitPixels(settings), 0)[0] * ORBIT_RADIANS_PER_PIXEL;
+    };
+    expect(radians({})).toBeCloseTo(Math.PI / 12, 12);
+    expect(radians({ orbitSensitivity: 3 })).toBeCloseTo(Math.PI / 12, 12);
+    expect(radians({ keyStepDegrees: 90, orbitSensitivity: 0.1 })).toBeCloseTo(Math.PI / 2, 12);
+    expect(radians({ keyStepDegrees: 1, invertOrbitX: true })).toBeCloseTo(-Math.PI / 180, 12);
+  });
+  it('zooms one wheel notch per press, with the wheel speed and inversion', () => {
+    expect(keyZoomDelta(options(), -1)).toBe(-100);
+    expect(keyZoomDelta(options({ wheelSensitivity: 2 }), 1)).toBe(200);
+    expect(keyZoomDelta(options({ invertWheel: true }), -1)).toBe(100);
   });
 });

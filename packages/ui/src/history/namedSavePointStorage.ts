@@ -9,8 +9,13 @@ const POINTS = 'points', BLOBS = 'blobs', CHUNKS = 'chunks';
 const META_ID = '__meta__';
 interface RevisionRecord { id: typeof META_ID; version: 1; revision: number }
 
-function error(reason: ConstructorParameters<typeof SavePointError>[0], message: string): SavePointError {
-  return new SavePointError(reason, message);
+function error(reason: ConstructorParameters<typeof SavePointError>[0], message: string, detail?: string): SavePointError {
+  return new SavePointError(reason, message, detail);
+}
+/** 取引の中断の細目(A-25): どの取引か + IndexedDB の誤りの名前(DOMException の name だけ。無ければ付けない)。 */
+function abortDetail(site: 'storage-read-abort' | 'storage-chunk-abort' | 'storage-write-abort', tx: IDBTransaction): string {
+  const name: unknown = tx.error?.name;
+  return typeof name === 'string' && /^[A-Za-z0-9_-]{1,64}$/u.test(name) ? `${site}:${name}` : site;
 }
 function isRevision(value: unknown): value is RevisionRecord {
   if (typeof value !== 'object' || value === null || Object.getPrototypeOf(value) !== Object.prototype) return false;
@@ -62,7 +67,7 @@ async function load(db: IDBDatabase): Promise<SavePointState> {
     const blobRequest = tx.objectStore(BLOBS).getAll();
     const chunkRequest = tx.objectStore(CHUNKS).getAllKeys();
     tx.onerror = () => reject(failureFrom(tx.error));
-    tx.onabort = () => reject(error('aborted', '保存点DBの読取りが中断されました。'));
+    tx.onabort = () => reject(error('aborted', '保存点DBの読取りが中断されました。', abortDetail('storage-read-abort', tx)));
     tx.oncomplete = () => {
       const points: unknown = pointRequest.result, blobs: unknown = blobRequest.result, chunkKeys: unknown = chunkRequest.result;
       if (!Array.isArray(points) || !Array.isArray(blobs) || !Array.isArray(chunkKeys)) {
@@ -115,7 +120,7 @@ async function readBlob(db: IDBDatabase, blob: SavePointBlob, signal?: AbortSign
     };
     tx.onerror = () => { if (!rejected) rejected = failureFrom(tx.error); };
     tx.onabort = () => { signal?.removeEventListener('abort', onCancel);
-      reject(rejected ?? error('aborted', '保存点blobの読取りが中断されました。')); };
+      reject(rejected ?? error('aborted', '保存点blobの読取りが中断されました。', abortDetail('storage-chunk-abort', tx))); };
     tx.oncomplete = () => { signal?.removeEventListener('abort', onCancel);
       if (rejected) reject(rejected);
       else if (finished === blob.chunkCount) resolve(bytes);
@@ -178,7 +183,7 @@ async function commit(db: IDBDatabase, revision: number, change: SavePointChange
       request.onsuccess = () => { if (index < steps.length) { finished += 1; execute(); } };
     };
     tx.onerror = () => { if (!failure) failure = failureFrom(tx.error); };
-    tx.onabort = () => { signal?.removeEventListener('abort', onCancel); reject(failure ?? error('aborted', '保存点の書込みが中断されました。')); };
+    tx.onabort = () => { signal?.removeEventListener('abort', onCancel); reject(failure ?? error('aborted', '保存点の書込みが中断されました。', abortDetail('storage-write-abort', tx))); };
     tx.oncomplete = () => { completed = true; signal?.removeEventListener('abort', onCancel);
       if (failure) reject(failure); else resolve(); };
     let request: IDBRequest<unknown>;

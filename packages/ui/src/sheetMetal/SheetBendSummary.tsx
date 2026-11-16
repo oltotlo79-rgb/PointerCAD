@@ -1,5 +1,6 @@
 import { resolveSheetRule, sheetBendMetrics, sheetStraightLength, type LengthUnit, type SheetMetalFeature, type SheetMetalRule } from '@pointercad/model';
 import { t } from '../i18n/t.js';
+import { displayNumber } from '../sketch/numericInputPresentation.js';
 import { referencesPendingVariable, useFieldUnits } from '../shell/propertyFieldUnits.js';
 import { evaluateSheetDraft } from './sheetDraft.js';
 import type { SheetFieldKey } from './sheetFields.js';
@@ -23,10 +24,12 @@ export function SheetBendSummary({ feature, rule, sources, lengthUnit, millimetr
   const metrics = sheetBendMetrics({ ...resolved.rule, angle: candidate.angle.value }); if (!metrics.ok) return null;
   const straight = candidate.kind === 'sheetFlange' && candidate.profile === null
     ? sheetStraightLength(candidate.length.value, candidate.lengthBasis, metrics.metrics) : null;
-  const text = (value: number) => Number(value.toPrecision(12)).toString();
+  // 画面は有効 6 桁(UI の点検の指摘 26。曲げ部の展開長など)、全桁は title。計算の中の値は変えない。
+  const text = (value: number) => displayNumber(value).text;
+  const full = (value: number) => Number(value.toPrecision(12)).toString();
   return <dl className="pcad-properties pcad-sheet-metal__dimensions" aria-label={t('sheetMetal.convertedDimensions')}>
-    <dt className="pcad-properties__key">{t('sheetMetal.bendAllowance')}</dt><dd>{text(metrics.metrics.bendAllowance)} mm</dd>
-    <dt className="pcad-properties__key">{t('sheetMetal.bendDeduction')}</dt><dd>{text(metrics.metrics.bendDeduction)} mm</dd>
-    {straight === null ? null : <><dt className="pcad-properties__key">{t('sheetMetal.straightLength')}</dt><dd>{text(straight)} mm</dd></>}
+    <dt className="pcad-properties__key">{t('sheetMetal.bendAllowance')}</dt><dd title={`${full(metrics.metrics.bendAllowance)} mm`}>{text(metrics.metrics.bendAllowance)} mm</dd>
+    <dt className="pcad-properties__key">{t('sheetMetal.bendDeduction')}</dt><dd title={`${full(metrics.metrics.bendDeduction)} mm`}>{text(metrics.metrics.bendDeduction)} mm</dd>
+    {straight === null ? null : <><dt className="pcad-properties__key">{t('sheetMetal.straightLength')}</dt><dd title={`${full(straight)} mm`}>{text(straight)} mm</dd></>}
   </dl>;
 }

@@ -326,7 +326,7 @@ export function resolveProjectionStep(
         'degenerate',
         feature.kind === 'projectedCurve'
           ? '投影しても線になりませんでした。作図面の向きを見直してください。'
-          : '立体と作図面が交わりません。作図面の位置を見直してください。',
+          : 'ソリッドと作図面が交わりません。作図面の位置を見直してください。',
       ),
     );
     return;

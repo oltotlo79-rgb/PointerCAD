@@ -42,7 +42,7 @@ export async function projectIntersectCaptureFlow(page: Page, info: TestInfo): P
   await expect(treeRow(page, 'スケッチ2')).toBeVisible();
   await waitForRecompute(page);
   await chooseEditTool(page, '投影');
-  await expect(statusText(page)).toContainText('写したい立体の面か辺をクリック');
+  await expect(statusText(page)).toContainText('写したいソリッドの面か辺をクリック');
   await clickWorldPoint(page, [20, 15, 10]);
   await expect(featureTree(page).getByRole('button', { name: '投影1', exact: true })).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
   await captureManualDetail(page, info, {
@@ -63,7 +63,7 @@ export async function projectIntersectCaptureFlow(page: Page, info: TestInfo): P
   await expect(planeBadge(page)).toContainText('作業平面1');
   await waitForRecompute(page);
   await chooseEditTool(page, '断面');
-  await expect(statusText(page)).toContainText('断面をとりたい立体をクリック');
+  await expect(statusText(page)).toContainText('断面をとりたいソリッドをクリック');
   await clickWorldPoint(page, [20, 15, 10]);
   await expect(featureTree(page).getByRole('button', { name: '断面1', exact: true })).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
   await captureManualDetail(page, info, {

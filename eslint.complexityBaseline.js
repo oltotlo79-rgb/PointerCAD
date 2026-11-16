@@ -59,7 +59,6 @@ export const PARAMS_BASELINE = [
   { file: 'packages/model/src/assembly/constraints/mateResiduals.ts', functions: [['directionRow', 7], ['projectedRow', 7]] },
   { file: 'packages/model/src/assembly/constraints/solveRigid.ts', functions: [['assembleNormalSystemSteps', 9]] },
   { file: 'packages/model/src/assembly/fastening/bindHoleSelection.ts', functions: [['threadStartOf', 7]] },
-  { file: 'packages/model/src/assembly/standard/buildStandardPart.ts', functions: [['appendExternalThread', 7]] },
   { file: 'packages/model/src/assembly/standard/steelAngleChannelOracle.fixture.ts', functions: [['section', 10]] },
   { file: 'packages/model/src/assembly/standard/steelCatalogOracle.fixture.ts', functions: [['section', 10]] },
   { file: 'packages/model/src/assembly/standard/steelSectionProfiles.ts', functions: [['profile', 7]] },

@@ -7,7 +7,8 @@ import { t } from '../i18n/t.js';
 export const SETTINGS_HELP_BINDINGS = {
   theme: ['display-settings'], uiScale: ['display-settings'],
   cameraControls: ['display-settings', 'viewport'], viewControls: ['display-settings', 'viewport'],
-  shortcutAssignments: ['shortcuts'], numericToolDefaults: ['display-settings', 'template'],
+  // マウスの戻る・進む・中ボタンのダブルクリックの命令(B-08e)は、キーと同じ操作の割り当ての窓の章。
+  shortcutAssignments: ['shortcuts'], mouseButtonCommands: ['shortcuts'], numericToolDefaults: ['display-settings', 'template'],
   autoSaveIntervalMs: ['save-and-open', 'display-settings'],
   trackAngleStep: ['tracking'], lengthUnit: ['units'], selectionFilter: ['select-subshape'],
   inferConstraints: ['constraints'], timelineHintSeen: ['timeline'], tutorialCompleted: ['tutorial'],

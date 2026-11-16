@@ -242,9 +242,9 @@ describe('段取り(planMathGeometryStages。OCCT を使わない)', () => {
     expect(isMathGeometryValue({ ...base, status: 'value', kind: 'boolean', value: true, representation: 'geometry-double',
       tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE })).toBe(false);
     expect(isMathGeometryValue({ ...base, status: 'unresolved', reason: 'missing-reference', message: MISSING_MESSAGE })).toBe(false);
-    expect(unmeasuredMathGeometryOutcomes([volumeOf('g-box1', '箱1体積', 'box-1')], DOCUMENT_ID, 7, '立体を作れませんでした: 切断'))
+    expect(unmeasuredMathGeometryOutcomes([volumeOf('g-box1', '箱1体積', 'box-1')], DOCUMENT_ID, 7, 'ソリッドを作れませんでした: 切断'))
       .toEqual([{ id: 'g-box1', documentId: DOCUMENT_ID, generation: 7, status: 'unresolved', reason: 'failed-geometry',
-        message: '立体を作れませんでした: 切断' }]);
+        message: 'ソリッドを作れませんでした: 切断' }]);
   });
 });
 
@@ -418,7 +418,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     spy.mockRejectedValueOnce(new Error('計算部との通信が切れました。'));
     const result = await recomputePart(document, bridge, { math: mathContext(document).context });
     expect(result.cancelled).toBe(false);
-    expect(messageOf(result, '幅B')).toBe(mathGeometryUnresolvedMessage('箱1体積', '幅B', '立体を作れませんでした: 計算部との通信が切れました。'));
+    expect(messageOf(result, '幅B')).toBe(mathGeometryUnresolvedMessage('箱1体積', '幅B', 'ソリッドを作れませんでした: 計算部との通信が切れました。'));
     expect(messageOf(result, 'box-2')).toBeDefined();
     expect(result.bodies.map(body => body.featureId)).toEqual(['box-1']);
     expect(numberOf(measured(result).get('g-box1'))).toBeCloseTo(24_000, 6);

@@ -42,11 +42,14 @@ describe('設定の窓の題・見出し・入口(報告の指摘 7、統括の�
     expect(markup.match(/<details class="pcad-settings__section" open="">/gu)).toHaveLength(SECTIONS.length);
   });
 
-  it('視点の操作とキーの割り当ては「操作の割り当て」の 1 つの見出しの下にまとまる', () => {
+  it('「操作の割り当て」の見出しには、視点の操作とキーの割り当ての窓を開くボタンだけがある(B-06)', () => {
     const markup = renderPanel();
     const controls = section(markup, 'controls');
-    expect(controls).toContain(`aria-label="${t('settings.camera.title')}"`);
-    expect(controls).toContain(`aria-label="${t('settings.shortcuts.title')}"`);
+    expect(controls).toContain(`title="${t('settings.inputBindings.openGuide')}"`);
+    expect(controls).toContain(`>${t('settings.inputBindings.open')}</button>`);
+    // 2 つの form は窓の中へ移った(一覧の中には無い。窓を開くまで描かない)。
+    expect(markup).not.toContain(`aria-label="${t('settings.camera.title')}"`);
+    expect(markup).not.toContain(`aria-label="${t('settings.shortcuts.title')}"`);
     expect(section(markup, 'display')).toContain(`aria-label="${t('settings.theme.label')}"`);
     expect(section(markup, 'autoSave')).toContain(`aria-label="${t('settings.autoSave.title')}"`);
     expect(section(markup, 'toolDefaults')).toContain(`aria-label="${t('settings.toolDefaults.title')}"`);

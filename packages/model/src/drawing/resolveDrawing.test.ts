@@ -123,7 +123,7 @@ describe('resolveDrawing', () => {
 
   it('立体が0個なら理由を返しHLRを呼ばない', async () => {
     const fake = fakeKernel([]);
-    expect(await resolveDrawing(documentWith([baseView]), fake.kernel)).toEqual({ ok: false, message: '図にできる立体がありません。' });
+    expect(await resolveDrawing(documentWith([baseView]), fake.kernel)).toEqual({ ok: false, message: '図にできるソリッドがありません。' });
     expect(fake.calls).toEqual([]);
   });
 

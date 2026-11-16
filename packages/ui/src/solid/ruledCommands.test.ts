@@ -272,7 +272,7 @@ describe('面をつなぐが押せる条件(FR-430、NFR-UX-5)', () => {
     );
   });
 
-  it('中心を立体の頂点で決めた球は押せない(model の解決と同じ理由、NFR-UX-5)', () => {
+  it('中心をソリッドの頂点で決めた球は押せない(model の解決と同じ理由、NFR-UX-5)', () => {
     const document = withSphere(documentWithFaces(['face-1']));
     const sphere = document.solids.find((solid) => solid.id === 'sphere-1');
     expect(sphere?.kind).toBe('primitive');

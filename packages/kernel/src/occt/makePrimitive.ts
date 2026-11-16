@@ -98,9 +98,9 @@ export const MISSING_PRIMITIVE_VERTEX_MESSAGE =
  * 面や辺に当てはめる意味が無い(外観が面以外を断るのと同じ考え方)。
  */
 export const PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE =
-  '中心にできるのは立体の頂点だけです。頂点を選び直してください。';
+  '中心にできるのはソリッドの頂点だけです。頂点を選び直してください。';
 const AXIS_LENGTH_MESSAGE = '向きの長さが 0 です。別の向きを選んでください。';
-const NOT_SOLID_MESSAGE = '立体になりませんでした。寸法を見直してください。';
+const NOT_SOLID_MESSAGE = 'ソリッドになりませんでした。寸法を見直してください。';
 
 /** 「〜は 0 より大きい数にしてください。」(欄の名前を差し込む)。 */
 function positiveMessage(fieldName: string): string {

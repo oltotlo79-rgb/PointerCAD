@@ -36,7 +36,7 @@ export async function exportCaptureFlow(page: Page, info: TestInfo): Promise<voi
     fixture: { format: 'STL', scope: 'all' }, script: new URL(import.meta.url),
   });
 
-  await panel.getByRole('button', { name: 'やめる', exact: true }).click();
+  await panel.getByRole('button', { name: '取消', exact: true }).click();
   await expect(panel).toHaveCount(0);
 }
 
@@ -94,7 +94,7 @@ async function placeBox(page: Page): Promise<void> {
   await openSolidSection(page);
   await solidRows(page).first().click();
   await waitForRecompute(page);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
 }
 function exchangePanel(page: Page): Locator {
   return page.locator('.pcad-exchange');

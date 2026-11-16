@@ -26,6 +26,6 @@ export async function explodeCaptureFlow(page: Page, info: TestInfo): Promise<vo
     name: 'explode-dialog', dialog,
     fixture: { direction: 'z', distance: '50' }, script: new URL(import.meta.url),
   });
-  await dialog.getByRole('button', { name: '取り消す', exact: true }).click();
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
   await expect(dialog).toHaveCount(0);
 }

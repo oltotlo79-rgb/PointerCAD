@@ -395,7 +395,7 @@ export function registerFilletWeldAcceptTests(
       // 2) 欄を直してから「やめる」で閉じても、文書は 1 バイトも同じ。
       await field(page, 'fillet-weld-lengths', EDIT_TITLE).fill('10, 18.5, 9');
       await expectReady(page, '37.5', '900', EDIT_TITLE);
-      await weldDialog(page, EDIT_TITLE).getByRole('button', { name: 'やめる', exact: true }).click();
+      await weldDialog(page, EDIT_TITLE).getByRole('button', { name: '取消', exact: true }).click();
       await expect(weldDialog(page, EDIT_TITLE)).toHaveCount(0);
       expect((await saveAndRead(page, info, 'edit-cancelled', app)).bytes).toBe(welded.bytes);
 

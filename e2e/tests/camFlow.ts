@@ -114,7 +114,7 @@ export async function camFlow(page: Page, info: TestInfo, app?: ElectronApplicat
     const panel = page.getByRole('form', { name: '書き出し', exact: true });
     await panel.getByRole('button', { name: '書き出す', exact: true }).click();
     await expect(handoff(page)).toHaveCount(0); await expect(panel.getByRole('button', { name: '書き出す', exact: true })).toBeEnabled();
-    await panel.getByRole('button', { name: 'やめる', exact: true }).click();
+    await panel.getByRole('button', { name: '取消', exact: true }).click();
   }
   expect(await readRecomputeStats(page)).toEqual(before); expect(await readFile(original)).toEqual(sourceBytes);
   await page.getByRole('button', { name: '新規', exact: true }).click();

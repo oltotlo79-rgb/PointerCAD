@@ -688,7 +688,7 @@ describe('buildTreeSections(FR-501、FR-503、FR-504)', () => {
       documentWith(EXTRUDE, REVOLVE, SUBTRACT),
       'sketch-1',
       [],
-      [{ featureId: 'subtract-1', code: 'missingBody', message: '組み合わせる立体がありません' }],
+      [{ featureId: 'subtract-1', code: 'missingBody', message: '組み合わせるソリッドがありません' }],
     );
     expect(sections[1].rows.map((row) => row.consumed)).toEqual([false, false, false]);
     expect(sections[1].rows.map((row) => row.hasError)).toEqual([false, false, true]);

@@ -4,7 +4,8 @@
  * 1. `.pcad-properties` (`packages/ui/src/shell/appShell.css`) の `minmax(0, 1fr) auto` は
  *    値の幅を優先し、見出しの列を0まで縮めていた。まず `.pcad-parameter__properties` で
  *    測定値の一覧を保護した。長い慣性値で質量特性の見出しも消えたため、P102で共有gridにも
- *    保護を広げた。板金と強度のレイアウトは独自の上書きを保つ。
+ *    保護を広げた。板金のレイアウトは独自の上書きを保つ。強度の結果は共通の二列配置で、名前を省略せずに折り返す
+ *    (UI の点検の指摘 27「名前を左、値を右にそろえた 2 列の表にする」)。
  * 2. 「測る量」の `.pcad-field` と `.pcad-section` までの祖先には横余白がない。
  *    `ParameterPanel` と共有する `.pcad-parameters__fields { padding: 0 }` は変えず、
  *    専用 `.pcad-parameters__quantity-field` で余白を付ける。他の欄は
@@ -66,12 +67,13 @@ describe('P102・GR-19d: 共通プロパティと図形の測定値の見出し�
     expect(fields).toContain('padding: 0;');
   });
 
-  it('板金の曲げ要約と強度結果は共通の二列配置より専用の縦並びを優先する', () => {
+  it('板金の曲げ要約は共通の二列配置より専用の縦並びを優先し、強度結果は共通の二列配置で名前を折り返す(UI の点検の指摘 27)', () => {
     const directory = dirname(cssPath);
     const sheet = readFileSync(resolve(directory, '../sheetMetal/sheetMetal.css'), 'utf8');
     const strength = readFileSync(resolve(directory, '../strength/strength.css'), 'utf8');
     expect(sheet).toMatch(/\.pcad-properties\.pcad-sheet-metal__dimensions\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);\s*\}/);
     expect(sheet).toMatch(/\.pcad-sheet-metal__dimensions\s+\.pcad-properties__key\s*\{[^}]*white-space:\s*normal;[^}]*overflow:\s*visible;/);
-    expect(strength).toMatch(/\.pcad-strength__results\s+\.pcad-properties\s*\{\s*display:\s*flex;\s*flex-direction:\s*column;/);
+    expect(strength).not.toMatch(/\.pcad-strength__results\s+\.pcad-properties\s*\{[^}]*display:\s*flex/);
+    expect(strength).toMatch(/\.pcad-strength__results\s+\.pcad-properties__key\s*\{[^}]*white-space:\s*normal;[^}]*overflow:\s*visible;/);
   });
 });

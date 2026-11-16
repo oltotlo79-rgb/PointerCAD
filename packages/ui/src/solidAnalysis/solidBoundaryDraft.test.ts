@@ -3,7 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { readSolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { createSolidAnalysisSession, solidSavedInput } from './solidAnalysisSession.js';
 import { createSolidBoundaryDraft, createSolidSupport, solidBoundarySaved,
-  solidGravityExpressionField, solidSupportExpressionField } from './solidBoundaryDraft.js';
+  solidGravityExpressionField, solidRunFailure, solidSupportExpressionField } from './solidBoundaryDraft.js';
+import { t } from '../i18n/t.js';
+
+// A-24: 静解析の断り。支持の 3 種(入力の誤り)は今の文、計算部の code は日本語、形状や入力の断りは今のまま。
+describe('solidRunFailure', () => {
+  it.each([
+    ['solver-failed', 'solid-input: Conflicting prescribed displacement on node 3', t('solidAnalysis.supportConflict')],
+    ['solver-failed', 'unrestrained component rigid-body motion', t('solidAnalysis.supportRigid')],
+    ['asset-missing', 'asset-missing: python_stdlib.zip (HTTP 404)', t('strength.femFailure.assetMissing')],
+    ['asset-corrupt', 'asset-corrupt: oofem.whl (SHA-256)', t('strength.femFailure.assetCorrupt')],
+    ['worker-failed', 'FEM Worker error', t('strength.femFailure.runtime').replace('{code}', 'worker-failed')],
+    ['deadline', 'FEM solve exceeded 180000 ms', t('strength.femFailure.runtime').replace('{code}', 'deadline')],
+    ['cad-solid', t('solidAnalysis.changed'), t('solidAnalysis.changed')],
+  ] as const)('%s / %s', (code, message, expected) => {
+    expect(solidRunFailure(code, message)).toBe(expected);
+  });
+});
 
 const supports = [
   { face: 'left', fixed: [true, false, false], prescribedMm: [0.125, 0, 0] },

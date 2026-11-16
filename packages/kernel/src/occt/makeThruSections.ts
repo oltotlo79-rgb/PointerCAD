@@ -175,7 +175,7 @@ const SPHERE_NEEDS_ONE_PROFILE_MESSAGE = '球とつなげる輪郭は 1 つだ�
 const NO_TANGENT_MESSAGE =
   '球を直線でつなぐには、丸い輪郭の中心が球の中心の真上か真下にある必要があります。';
 const BUILD_FAILED_MESSAGE = '面と面をつなげませんでした。輪郭の形を見直してください。';
-const NOT_SOLID_MESSAGE = '立体になりませんでした。輪郭の位置を見直してください。';
+const NOT_SOLID_MESSAGE = 'ソリッドになりませんでした。輪郭の位置を見直してください。';
 const TWIST_MESSAGE = 'ひねりの数は整数にしてください。';
 const SPHERE_SIZE_MESSAGE = '球の半径は 0 より大きい数にしてください。';
 const SEGMENT_COUNT_MESSAGE = '断面の分割数は 24・48・72 のいずれかにしてください。';

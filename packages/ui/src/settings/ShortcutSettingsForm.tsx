@@ -2,6 +2,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import type { ShortcutAssignments } from '../commands/shortcutAssignments.js';
 import { ShortcutAssignmentsForm } from './ShortcutAssignmentsForm.js';
 import { currentShortcutAssignments, prepareShortcutSettings } from './shortcutSettings.js';
+import { currentViewControls } from './viewControlSettings.js';
 
 export function applyShortcutSettings(proposed: ShortcutAssignments, expected: ShortcutAssignments): boolean {
   const state = useAppStore.getState();
@@ -14,5 +15,6 @@ export function applyShortcutSettings(proposed: ShortcutAssignments, expected: S
 export function ShortcutSettingsForm(): React.JSX.Element {
   const current = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const recovered = useAppStore(state => state.displaySettings.shortcutAssignmentsRecovered ?? 0);
-  return <ShortcutAssignmentsForm current={current} onApply={applyShortcutSettings} recovered={recovered} />;
+  const viewControls = useAppStore(state => currentViewControls(state.displaySettings));
+  return <ShortcutAssignmentsForm current={current} onApply={applyShortcutSettings} recovered={recovered} viewControls={viewControls} />;
 }

@@ -121,7 +121,7 @@ const TILT_AZIMUTH_MESSAGE = '穴の傾きの向きは数にしてください�
 const HOLE_FAILED_MESSAGE = '穴をあけられませんでした。位置や径を見直してください。';
 
 /** 対象が丸ごと削れてしまったとき。 */
-const NOTHING_LEFT_MESSAGE = '穴をあけたら立体が残りませんでした。径か深さを小さくしてください。';
+const NOTHING_LEFT_MESSAGE = '穴をあけたらソリッドが残りませんでした。径か深さを小さくしてください。';
 
 /**
  * 削れた量が 0 だったとき(中心が材料から外れている、向きが材料をかすめない)。
@@ -899,7 +899,7 @@ function cutHoles(
     return booleanOp(oc, 'subtract', target, tools, semantic);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(reason.includes('立体が残りませんでした') ? NOTHING_LEFT_MESSAGE : HOLE_FAILED_MESSAGE, {
+    throw new Error(reason.includes('ソリッドが残りませんでした') ? NOTHING_LEFT_MESSAGE : HOLE_FAILED_MESSAGE, {
       cause: error,
     });
   }

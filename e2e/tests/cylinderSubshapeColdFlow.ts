@@ -296,8 +296,8 @@ export async function reopenCylinderColdScenario(page: Page, info: TestInfo,
   await expect(treeRow(page, '円柱2')).toBeVisible();
   await treeRow(page, name).click();
   if (scenario.nativeVolume === null) throw new Error('保存ZIPの新native計算が未確認です');
-  await expect(volumeText(page)).toHaveText(`${expressionValueFromNumber(scenario.nativeVolume).display} mm³`);
-  const value = Number((await volumeText(page).textContent())?.replaceAll(',', '').match(/[\d.]+/u)?.[0] ?? NaN);
+  await expect(volumeText(page)).toHaveAttribute('title', `${expressionValueFromNumber(scenario.nativeVolume).display} mm³`);
+  const value = Number(((await volumeText(page).getAttribute('title')) ?? (await volumeText(page).textContent()))?.replaceAll(',', '').match(/[\d.]+/u)?.[0] ?? NaN);
   expect(value).toBeCloseTo((scenario.operation === 'hole' ? 160 : 180) * Math.PI, 5);
   const reopenedPath = info.outputPath(`cylinder-${scenario.operation}-reopened.pcad`);
   const reopened = savedDocument(await saveUiPart(page, reopenedPath, app));
@@ -338,7 +338,7 @@ async function reorderAndUndoCylinderScenario(page: Page, info: TestInfo,
   await expect.poll(() => solidLabels(page)).toEqual(['円柱1', '円柱2', name]);
   await waitForSettledRecompute(page);
   await treeRow(page, name).click();
-  await expect.poll(async () => Number((await volumeText(page).textContent())?.replaceAll(',', '')
+  await expect.poll(async () => Number(((await volumeText(page).getAttribute('title')) ?? (await volumeText(page).textContent()))?.replaceAll(',', '')
     .match(/[\d.]+/u)?.[0] ?? NaN)).toBeCloseTo(expectedVolume, 3);
   const reordered = savedDocument(await saveUiPart(page,
     info.outputPath(`cylinder-${scenario.operation}-reordered.pcad`), app));
@@ -358,7 +358,7 @@ async function reorderAndUndoCylinderScenario(page: Page, info: TestInfo,
   await expect.poll(() => solidLabels(page)).toEqual(['円柱1', name, '円柱2']);
   await waitForSettledRecompute(page);
   await treeRow(page, name).click();
-  await expect.poll(async () => Number((await volumeText(page).textContent())?.replaceAll(',', '')
+  await expect.poll(async () => Number(((await volumeText(page).getAttribute('title')) ?? (await volumeText(page).textContent()))?.replaceAll(',', '')
     .match(/[\d.]+/u)?.[0] ?? NaN)).toBeCloseTo(expectedVolume, 3);
   const undone = savedDocument(await saveUiPart(page,
     info.outputPath(`cylinder-${scenario.operation}-undone.pcad`), app));
@@ -465,7 +465,7 @@ export async function reopenImportedHoleScenario(page: Page, info: TestInfo,
   await waitForSettledRecompute(page);
   await expect(treeRow(page, '穴1')).toBeVisible();
   await treeRow(page, '穴1').click();
-  await expect.poll(async () => Number((await volumeText(page).textContent())?.replaceAll(',', '')
+  await expect.poll(async () => Number(((await volumeText(page).getAttribute('title')) ?? (await volumeText(page).textContent()))?.replaceAll(',', '')
     .match(/[\d.]+/u)?.[0] ?? NaN)).toBeCloseTo(IMPORT_HOLE_VOLUME, 3);
   const reopened = savedDocument(await saveUiPart(page, info.outputPath('imported-hole-reopened.pcad'), app));
   expect(reopened).toEqual(scenario.originalDocument);
@@ -562,7 +562,7 @@ async function buildCurrentHoleWallPart(page: Page): Promise<void> {
   await waitForRecompute(page, holeToken);
   await expect(treeRow(page, '穴1')).toBeVisible();
   await treeRow(page, '穴1').click();
-  await expect.poll(async () => Math.abs(Number.parseFloat(await volumeText(page).innerText())
+  await expect.poll(async () => Math.abs(Number.parseFloat(((await volumeText(page).getAttribute('title')) ?? (await volumeText(page).innerText())))
     - (12000 - 90 * Math.PI)), { timeout: KERNEL_TIMEOUT_MS }).toBeLessThanOrEqual(0.01);
 }
 
@@ -1260,7 +1260,7 @@ export async function updateHoleWallMatePhi8Scenario(page: Page, info: TestInfo,
   await waitForSettledRecompute(page);
   await treeRow(page, '穴1').click();
   await expect(diameter).toHaveValue('2*4');
-  await expect.poll(async () => Math.abs(Number((await volumeText(page).innerText()).replaceAll(',', '')
+  await expect.poll(async () => Math.abs(Number(((await volumeText(page).getAttribute('title')) ?? (await volumeText(page).innerText())).replaceAll(',', '')
     .match(/[\d.]+/u)?.[0]) - (12000 - 160 * Math.PI)), { timeout: KERNEL_TIMEOUT_MS }).toBeLessThanOrEqual(0.01);
   const selectedFileName = confirmationAcceptance ? 'actual-$&-hole-wall-part-phi8.pcad' : 'actual-hole-wall-part-phi8.pcad';
   const updatedPartPath = info.outputPath(selectedFileName);
@@ -1478,7 +1478,7 @@ function savedRim(document: PartDocument, operation: HoleRimOperation) {
 
 async function expectRimUiVolume(page: Page, operation: HoleRimOperation, radius: number): Promise<void> {
   await treeRow(page, `${operation}1`).click();
-  await expect.poll(async () => Math.abs(Number.parseFloat((await volumeText(page).innerText()).replaceAll(',', ''))
+  await expect.poll(async () => Math.abs(Number.parseFloat((((await volumeText(page).getAttribute('title')) ?? (await volumeText(page).innerText()))).replaceAll(',', ''))
     - holeRimVolume(operation, radius)), { timeout: KERNEL_TIMEOUT_MS }).toBeLessThanOrEqual(0.01);
 }
 
@@ -1762,7 +1762,7 @@ export async function updateIndependentHoleWallMatePhi8Scenario(page: Page, info
   await waitForSettledRecompute(page);
   await treeRow(page, '穴1').click();
   await expect(diameter).toHaveValue('2*4');
-  await expect.poll(async () => Math.abs(Number((await volumeText(page).innerText()).replaceAll(',', '')
+  await expect.poll(async () => Math.abs(Number(((await volumeText(page).getAttribute('title')) ?? (await volumeText(page).innerText())).replaceAll(',', '')
     .match(/[\d.]+/u)?.[0]) - (12000 - 160 * Math.PI)), { timeout: KERNEL_TIMEOUT_MS }).toBeLessThanOrEqual(0.01);
   const selectedFileName = confirmationAcceptance ? 'actual-$&-hole-wall-part-phi8.pcad' : 'actual-hole-wall-part-phi8.pcad';
   const updatedPartPath = info.outputPath(selectedFileName);

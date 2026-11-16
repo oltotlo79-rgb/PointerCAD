@@ -478,7 +478,8 @@ const TREE_PRINTS: readonly string[] = [
   'folders = 28bcd2bb7cee0dd4',
   'single-sketch = 528c675d26e77fc5',
   'single-sketch-menu = bbb72db1d8846b97',
-  'empty = 2291fe5209b88543',
+  // 空の文書では「履歴フォルダを作る」を出さない(UI の点検の指摘 23。2026-11-16 に指紋を記録し直した)。
+  'empty = 6fb08952db431ef0',
 ];
 
 describe('R07 FeatureTree lifetime', () => {

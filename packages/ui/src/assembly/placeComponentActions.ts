@@ -95,7 +95,8 @@ export async function startPlaceComponent(deps: PlaceComponentDeps = DEFAULT_DEP
     assemblyPlacement: {
       kind: 'ready', requestId, documentId, fileName: picked.fileName,
       document: result.bundle.document, attachments: result.bundle.attachments,
-      sources: ['', '', ''],
+      // 欄は 0 から始め、窓を開いた時に全選択する(打てばそのまま置き換わる。UI の点検の指摘 20)。
+      sources: ['0', '0', '0'],
     },
   });
 }

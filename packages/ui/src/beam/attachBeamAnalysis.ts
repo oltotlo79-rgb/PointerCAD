@@ -5,6 +5,7 @@ import type { StoreApi } from 'zustand';
 import type { AppState } from '../store/appState.js';
 import type { BeamRunner, BoltPreloadRunner } from '../store/beamSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { femAssetFailureKey } from '../femFailureMessage.js';
 import { beamDefinition, invalidateBeamSession, type BeamSession } from './beamSession.js';
 import { beamSourceIsCurrent, type BeamSourceSnapshot } from './beamSource.js';
 import { prepareBeamAnalysis } from './prepareBeamAnalysis.js';
@@ -114,7 +115,7 @@ export function attachBeamAnalysis(
       } else {
         store.setState({ beamSession: { ...next, result: null, transientAxial: null, impactMembers: null, phase: null,
           status: completion.kind === 'cancelled' ? 'cancelled' : 'failed',
-          errorKey: completion.kind === 'failed' ? 'beam.error.runtime' : null,
+          errorKey: completion.kind === 'failed' ? femAssetFailureKey(completion.failure.code) ?? 'beam.error.runtime' : null,
           diagnostic: completion.kind === 'failed' ? `${completion.failure.code}: ${completion.failure.message}` : null } });
       }
     }).catch((error: unknown) => {

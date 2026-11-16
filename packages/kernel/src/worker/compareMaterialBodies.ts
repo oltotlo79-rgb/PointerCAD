@@ -20,10 +20,10 @@ export async function compareMaterialBodies(
   }
   async function joined(bodies: readonly CachedSolid[]): Promise<TopoDS_Shape | null> {
     await checkpoint();
-    if (bodies.length > 1024) throw new Error('比較する立体が多すぎます。部品を分けて比較してください。');
+    if (bodies.length > 1024) throw new Error('比較するソリッドが多すぎます。部品を分けて比較してください。');
     if (bodies.length === 0) return null;
     for (const body of bodies) {
-      if (body.shape.IsNull() || body.mesh.bodyKind !== 'solid') throw new Error('形の比較は閉じた立体を対象にしています。');
+      if (body.shape.IsNull() || body.mesh.bodyKind !== 'solid') throw new Error('形の比較は閉じたソリッドを対象にしています。');
     }
     if (bodies.length === 1) return bodies[0].shape;
     // 重なったボディの体積を二重に数えず、離れた全成分も同じ材料集合へ含める。

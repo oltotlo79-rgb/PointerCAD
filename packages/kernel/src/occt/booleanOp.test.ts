@@ -27,9 +27,9 @@ import { distanceBetween } from './measureShape.js';
 type BooleanOptions = NonNullable<Parameters<typeof booleanOp>[6]>;
 
 /** Pinned expected values: the same literals as the product constants, kept independent of them. */
-const NOTHING_INSIDE_MESSAGE = '切る輪郭が立体に届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
-const NOTHING_OUTSIDE_MESSAGE = '切る輪郭が立体をまるごと囲んでいて、何も削れませんでした。輪郭の位置や大きさを見直してください。';
-const NOTHING_REMOVED_MESSAGE = '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
+const NOTHING_INSIDE_MESSAGE = '切る輪郭がソリッドに届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
+const NOTHING_OUTSIDE_MESSAGE = '切る輪郭がソリッドをまるごと囲んでいて、何も削れませんでした。輪郭の位置や大きさを見直してください。';
+const NOTHING_REMOVED_MESSAGE = '切る輪郭がソリッドに届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
 
 /** R22 の近接の入力(tolerances.test.ts と同じ値。もとは geometryAcceptanceFixtures.ts の検査用の値)。 */
 const R22_NEAR_CONTACT = {
@@ -540,7 +540,7 @@ describe('立体の和・差・積(ブーリアン)', () => {
       const empty = keep(new oc.TopoDS_Shape());
       const tool = keep(makeBox(oc, SMALL_BOX));
       expect(() => booleanOp(oc, operation, a.shape, empty)).toThrow(
-        '2 つの立体を組み合わせられませんでした。位置や形を見直してください。',
+        '2 つのソリッドを組み合わせられませんでした。位置や形を見直してください。',
       );
       const result = keep(booleanOp(oc, 'subtract', a.shape, tool.shape));
       const fresh = keep(makeBox(oc, BIG_BOX));
@@ -559,7 +559,7 @@ describe('立体の和・差・積(ブーリアン)', () => {
       const a = keep(makeBox(oc, BIG_BOX));
       const far = keep(makeTranslatedBox(oc, SMALL_BOX, FAR_OFFSET));
       expect(() => booleanOp(oc, 'intersect', a.shape, far.shape)).toThrow(
-        '組み合わせた結果、立体が残りませんでした。',
+        '組み合わせた結果、ソリッドが残りませんでした。',
       );
       const result = keep(booleanOp(oc, 'union', a.shape, far.shape));
       expect(result.volume).toBeCloseTo(UNION_DISJOINT, 6);
@@ -812,7 +812,7 @@ describe('立体の和・差・積(ブーリアン)', () => {
     const small = makeBox(oc, SMALL_BOX);
     try {
       expect(() => booleanOp(oc, 'subtract', small.shape, big.shape)).toThrow(
-        '組み合わせた結果、立体が残りませんでした。',
+        '組み合わせた結果、ソリッドが残りませんでした。',
       );
     } finally {
       small.delete();
@@ -825,7 +825,7 @@ describe('立体の和・差・積(ブーリアン)', () => {
     const far = makeTranslatedBox(oc, SMALL_BOX, FAR_OFFSET);
     try {
       expect(() => booleanOp(oc, 'intersect', big.shape, far.shape)).toThrow(
-        '組み合わせた結果、立体が残りませんでした。',
+        '組み合わせた結果、ソリッドが残りませんでした。',
       );
     } finally {
       far.delete();
@@ -1305,11 +1305,11 @@ describe('EX-04 W3 閉じた輪郭の切断の残す側(requireRemoval を立て
       expect(() => booleanOp(oc, 'subtract', box.shape, far.shape, undefined, undefined, options))
         .toThrow(NOTHING_REMOVED_MESSAGE);
       expect(() => booleanOp(oc, 'subtract', box.shape, enclosing.shape, undefined, undefined, options))
-        .toThrow('組み合わせた結果、立体が残りませんでした。');
+        .toThrow('組み合わせた結果、ソリッドが残りませんでした。');
       // 印の無い積は従来どおり(囲む輪郭は立方体のまま 1000、届かない輪郭は「何も残らない」)。
       const plain = owned.keep(booleanOp(oc, 'intersect', box.shape, enclosing.shape));
       expect(relativeError(plain.volume, BOX_VOLUME)).toBeLessThanOrEqual(RELATIVE);
-      expect(() => booleanOp(oc, 'intersect', box.shape, far.shape)).toThrow('組み合わせた結果、立体が残りませんでした。');
+      expect(() => booleanOp(oc, 'intersect', box.shape, far.shape)).toThrow('組み合わせた結果、ソリッドが残りませんでした。');
       // 断っても入力の形は変わらない(再計算は直前の正しい形を残せる)。
       expect(relativeError(measureVolume(oc, box.shape), BOX_VOLUME)).toBeLessThanOrEqual(RELATIVE);
     } finally {

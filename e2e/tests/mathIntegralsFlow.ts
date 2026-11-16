@@ -53,7 +53,7 @@ export async function mathIntegralsFlow(page: Page, info: TestInfo, app?: Electr
     await popover.getByRole('button', { name: /数式で入力/u }).nth(axis).click();
     await waitForMathEditorText(dialog); await input.fill(expression);
     if (axis === 0) await expect(result).toHaveText('= 2', { timeout: 225_000 });
-    else await expect(result).toHaveText(/^= 3\.14159265358/u, { timeout: 225_000 });
+    else await expect(result.locator('.pcad-math-editor__full p')).toHaveText(/^= 3\.14159265358/u, { timeout: 225_000 });
     await apply.click(); await expect(dialog).toHaveCount(0);
   }
   await popover.locator('input.pcad-field__input').nth(2).fill('0');

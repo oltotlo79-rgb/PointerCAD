@@ -31,9 +31,9 @@ const FACE_ROTATION_COLLISION_MESSAGE = '面を回すと反対側の面に届く
 const FACE_ROTATION_CURVED_EDGE_MESSAGE = '回転の軸にできるのは直線の辺だけです。';
 const FACE_ROTATION_EDGE_NOT_ON_FACE_MESSAGE = '回転の軸には、回す面の縁にある辺を選んでください。';
 const FACE_ROTATION_FAILED_MESSAGE = '面を回せませんでした。面・辺・角度を見直してください。';
-const FACE_ROTATION_FOREIGN_EDGE_MESSAGE = '選んだ辺は対象の立体に属していません。回転の軸にする辺を選び直してください。';
-const FACE_ROTATION_FOREIGN_FACE_MESSAGE = '選んだ面は対象の立体に属していません。回す面を選び直してください。';
-const FACE_ROTATION_INVALID_BODY_MESSAGE = '元の立体の形が正しくないため、面を回せません。元の立体を直してください。';
+const FACE_ROTATION_FOREIGN_EDGE_MESSAGE = '選んだ辺は対象のソリッドに属していません。回転の軸にする辺を選び直してください。';
+const FACE_ROTATION_FOREIGN_FACE_MESSAGE = '選んだ面は対象のソリッドに属していません。回す面を選び直してください。';
+const FACE_ROTATION_INVALID_BODY_MESSAGE = '元のソリッドの形が正しくないため、面を回せません。元のソリッドを直してください。';
 const FACE_ROTATION_NOT_PLANAR_MESSAGE = '回せるのは平らな面だけです。';
 
 /** An actual reversed parameterization: the polygon's first edge is constructed from +X to -X. */

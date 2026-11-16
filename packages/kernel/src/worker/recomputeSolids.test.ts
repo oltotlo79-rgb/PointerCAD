@@ -1301,7 +1301,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       { id: '押し出し1', message: '押し出す長さは 0 より大きい数にしてください。' },
       {
         id: '組み合わせ1',
-        message: 'もとになる立体「押し出し1」を作れなかったため、この立体も作れませんでした。',
+        message: 'もとになるソリッド「押し出し1」を作れなかったため、このソリッドも作れませんでした。',
       },
     ]);
     // 巻き添えにならない段は最後まで計算される。
@@ -1309,7 +1309,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
     expect(result.cancelled).toBe(false);
   });
 
-  it('どこにも無い鍵を指すブーリアンは、もとになる立体が無いと断る', async () => {
+  it('どこにも無い鍵を指すブーリアンは、もとになるソリッドが無いと断る', async () => {
     const { cache } = newCache();
     const result = await recomputeSolids(
       { oc, cache },
@@ -1320,7 +1320,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
     );
 
     expect(result.failures).toEqual([
-      { id: 'boolean-1', message: 'もとになる立体が見つかりませんでした。' },
+      { id: 'boolean-1', message: 'もとになるソリッドが見つかりませんでした。' },
     ]);
     expect(result.bodies).toEqual([]);
   });
@@ -1636,7 +1636,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
     );
 
     expect(result.failures).toEqual([
-      { id: '穴1', message: 'もとになる立体が見つかりませんでした。' },
+      { id: '穴1', message: 'もとになるソリッドが見つかりませんでした。' },
     ]);
   });
 
@@ -2509,7 +2509,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       );
 
       expect(result.failures).toEqual([
-        { id: '球1', message: '中心にする頂点を持つ立体が見つかりません。頂点を選び直してください。' },
+        { id: '球1', message: '中心にする頂点を持つソリッドが見つかりません。頂点を選び直してください。' },
       ]);
       expect(result.bodies.map((body) => body.id)).toEqual(['箱1']);
     });
@@ -2532,7 +2532,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
 
       expect(result.failures).toEqual([
         { id: '箱1', message: 'X の長さは 0 より大きい数にしてください。' },
-        { id: '球1', message: 'もとになる立体「箱1」を作れなかったため、この立体も作れませんでした。' },
+        { id: '球1', message: 'もとになるソリッド「箱1」を作れなかったため、このソリッドも作れませんでした。' },
       ]);
       expect(result.bodies).toEqual([]);
     });
@@ -2762,7 +2762,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       );
 
       expect(result.failures).toEqual([
-        { id: '罫線面1', message: 'もとになる立体が見つかりませんでした。' },
+        { id: '罫線面1', message: 'もとになるソリッドが見つかりませんでした。' },
       ]);
       expect(result.bodies).toEqual([]);
     });
@@ -3629,7 +3629,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       expect(result.failures).toEqual([
         {
           id: '押し出し1',
-          message: '「次の面まで」の相手になる立体が見つかりません。相手の立体を選び直してください。',
+          message: '「次の面まで」の相手になるソリッドが見つかりません。相手のソリッドを選び直してください。',
         },
       ]);
       expect(result.bodies).toEqual([]);
@@ -3679,7 +3679,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       );
 
       expect(result.failures).toEqual([
-        { id: '切断1', message: 'もとになる立体が見つかりませんでした。' },
+        { id: '切断1', message: 'もとになるソリッドが見つかりませんでした。' },
       ]);
       expect(result.bodies).toHaveLength(1);
       expect(result.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);

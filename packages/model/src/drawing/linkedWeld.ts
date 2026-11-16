@@ -134,9 +134,9 @@ export function linkedWeldSymbolValues(data: LinkedWeldData): LinkedWeldSymbolVa
 }
 
 const MISSING_MESSAGES: Readonly<Record<LinkedWeldMissingReason, string>> = {
-  sourceNotEmbedded: '結び付けた溶接の元の組立が図面に取り込まれていないため、溶接記号を溶接と照合できません。元を取り込み直してください。',
-  notAssembly: '溶接への結び付けは、組立を元にした図面だけで使えます。',
-  weldMissing: '結び付けた溶接が元の組立に見つかりません(消されたか、別の溶接に置き換わりました)。結び付けを外すか、溶接を選び直してください。',
+  sourceNotEmbedded: '結び付けた溶接の元のアセンブリが図面に取り込まれていないため、溶接記号を溶接と照合できません。元を取り込み直してください。',
+  notAssembly: '溶接への結び付けは、アセンブリを元にした図面だけで使えます。',
+  weldMissing: '結び付けた溶接が元のアセンブリに見つかりません(消されたか、別の溶接に置き換わりました)。結び付けを外すか、溶接を選び直してください。',
   weldDamaged: '結び付けた溶接のビードの記録が読めないか食い違っているため、溶接記号を照合できません。',
 };
 const LIMITATION_MESSAGES: Readonly<Record<LinkedWeldLimitation, string>> = {

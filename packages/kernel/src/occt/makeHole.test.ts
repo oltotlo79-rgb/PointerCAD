@@ -1030,7 +1030,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
     try {
       expect(() =>
         makeHole(oc, holeSpec({ face: faceQuery(top), diameter: 100 }), handle.shape, faces),
-      ).toThrow(/立体が残りませんでした/);
+      ).toThrow(/ソリッドが残りませんでした/);
     } finally {
       handle.delete();
     }

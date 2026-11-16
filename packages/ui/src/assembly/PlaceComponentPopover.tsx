@@ -20,6 +20,7 @@ export function PlaceComponentPopover(): React.JSX.Element | null {
   useEffect(() => {
     if (placement?.kind === 'ready') {
       firstField.current?.focus();
+      firstField.current?.select();
     }
   }, [placement?.requestId, placement?.kind]);
 

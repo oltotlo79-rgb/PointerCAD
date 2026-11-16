@@ -70,7 +70,7 @@ export function createCatalogItemSource(family: CatalogFamily, row: CatalogItemR
   return {
     kind: 'standardPart', catalog: 'catalogItem', size: row.size,
     options: { [FAMILY_KEY]: family.id, [ITEM_KEY]: row.key,
-      ...Object.fromEntries(family.options.map((spec) => [spec.key, values[spec.key] ?? spec.defaultValue])) },
+      ...Object.fromEntries(family.options.map((spec) => [spec.key, values[spec.key] ?? spec.rowDefault?.(row) ?? spec.defaultValue])) },
     catalogRevision: family.catalogRevision, generatorRevision: family.generatorRevision,
   };
 }

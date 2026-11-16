@@ -11,7 +11,7 @@ export async function chooseSheet(page: Page, name: string) {
   await expect(page.getByRole('form', { name, exact: true })).toBeVisible();
 }
 export async function volume(page: Page): Promise<number> {
-  const value = await page.locator('.pcad-panel--right dt.pcad-properties__key').filter({ hasText: /^体積$/ }).locator('xpath=following-sibling::dd[1]').textContent();
+  const value = await page.locator('.pcad-panel--right dt.pcad-properties__key').filter({ hasText: /^体積$/ }).locator('xpath=following-sibling::dd[1]').evaluate(node => node.getAttribute('title') ?? node.textContent);
   return Number(value?.replaceAll(',', '').match(/[\d.]+/u)?.[0] ?? NaN);
 }
 export async function rectangleFace(page: Page, width = 50, height = 30) {

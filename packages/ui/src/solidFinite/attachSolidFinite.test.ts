@@ -3,6 +3,7 @@ import { decodeTetraMesh, tetraMeshInputSha256, type FemWorkerPort } from '@poin
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTestStore, resultFor, extrudeFeature } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { t } from '../i18n/t.js';
 import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { boundaryMesh, context } from '../solidAnalysis/solidAnalysis.testSupport.js';
 import { attachSolidFinite } from './attachSolidFinite.js';
@@ -67,6 +68,18 @@ describe('finite CAD attachment: real store and synthetic mesh worker only', () 
     expect(useAppStore.getState().solidFiniteSession).toEqual(current);
     expect(current?.status).toBe('editing'); expect(current?.result).toBeNull();
     expect(rig.ports).toHaveLength(1);
+  });
+  // A-24: 計算部の断りは内部の英語の文を出さない。計算の準備のファイルは共通の文、ほかの計算部の code は code を添えた文。
+  it.each([['asset-missing', t('strength.femFailure.assetMissing')], ['asset-corrupt', t('strength.femFailure.assetCorrupt')],
+    ['worker-failed', t('strength.femFailure.runtime').replace('{code}', 'worker-failed')]] as const)('shows a Japanese message for a %s refusal', async (code, text) => {
+    const rig = install(); live.push(rig); useAppStore.getState().solidFiniteRunner?.run();
+    await vi.waitFor(() => expect(rig.ports[0]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
+    const request = rig.ports[0].request();
+    if (request === null) throw new Error('No mesh request');
+    rig.ports[0].worker.onmessage?.(new MessageEvent<unknown>('message', { data: { protocol: request.protocol, kind: 'failure',
+      identity: request.identity, failure: { code, message: `${code}: internal English detail` } } }));
+    await vi.waitFor(() => expect(useAppStore.getState().solidFiniteSession?.status).toBe('failed'));
+    expect(useAppStore.getState().solidFiniteSession?.error).toBe(text);
   });
   it('reloads the finite draft on Undo and Redo without restoring a result', () => {
     const rig = install(); live.push(rig);

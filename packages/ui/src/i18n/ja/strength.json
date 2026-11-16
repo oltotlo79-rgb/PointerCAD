@@ -3,6 +3,7 @@
   "strength.unit.MPa": "MPa",
   "strength.unit.Nmm": "N·mm",
   "strength.title": "簡易強度計算",
+  "strength.otherAnalyses": "ほかの解析を開く",
   "strength.tooltip": "寸法と力から、梁の曲げ・軸のねじり・ボルトの引張を計算します。",
   "strength.kind": "計算の種類",
   "strength.beam": "梁の曲げ",
@@ -87,5 +88,8 @@
   "strength.guide.areaMethod": "有効断面積を表の値から選ぶか、表示した式で近似するかを選びます。",
   "strength.guide.material": "材質と状態が合う条件を選びます。独自の値を使う場合は材料値を入力します。",
   "strength.guide.close": "強度計算の入力と結果を閉じます。作成した形や文書は変更しません。",
-  "strength.guide.help": "計算の前提、単位、材料条件と結果の読み方を説明する章を開きます。"
+  "strength.guide.help": "計算の前提、単位、材料条件と結果の読み方を説明する章を開きます。",
+  "strength.femFailure.assetMissing": "計算の準備のファイルを読み込めませんでした。もう一度計算を始めてください。続けて起きる時は、アプリを再起動してください（Web 版はページを再読み込み）。",
+  "strength.femFailure.assetCorrupt": "計算の準備のファイルが壊れているため、もう一度計算しても直りません。アプリを入れ直してください（Web 版はページを再読み込み）。",
+  "strength.femFailure.runtime": "計算部で計算できませんでした（{code}）。"
 }

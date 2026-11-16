@@ -117,6 +117,26 @@ async function readStatusLine(page: Page): Promise<string> {
 }
 
 /**
+ * 失敗の文に添える組立のビューの入力の観測(検査用の口 pcadViewportAssemblyOwner。読み方は assemblyCoupledDragFlow の
+ * attachDragInputObservation と同じ)。最後の 2 件の押下の判定・保留と、表示の準備の最後の断り・所有の取り直しの結果。
+ * 操作の後に依頼が起きなかった時、押下が保留・破棄されたか、取り直しが起きたかを読む(A-26)。読むだけで、待ちは変えない。
+ */
+async function readViewportInputObservation(page: Page): Promise<string> {
+  try {
+    return JSON.stringify(await page.evaluate(() => {
+      const read: unknown = Reflect.get(window, 'pcadViewportAssemblyOwner');
+      if (typeof read !== 'function') return { status: 'unavailable' };
+      const value: unknown = Reflect.apply(read, window, []);
+      const field = (key: string): unknown => value !== null && typeof value === 'object' ? Reflect.get(value, key) : undefined;
+      return { mateInputs: field('mateInputs') ?? null, assemblyReadyRefusal: field('assemblyReadyRefusal') ?? null,
+        assemblyRefreshOutcome: field('assemblyRefreshOutcome') ?? null };
+    }));
+  } catch (diagnosticError: unknown) {
+    return diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError);
+  }
+}
+
+/**
  * 失敗の文に添えるカーネルの段(検査用の口 pcadRuntimePhases)。主スレッドと Worker の最後の 12 件を
  * 「段:g世代:dispatch」で並べ、OCCT の読み込みの失敗(occt-load-throw)の数を添える。
  */
@@ -245,13 +265,14 @@ export async function waitForRecomputeOutcome(
     }
     const statusLine = await readStatusLine(page);
     const kernelPhases = await readKernelPhaseTail(page);
+    const viewportInput = await readViewportInputObservation(page);
     throw new Error(
       `再計算待ち失敗: 期待=${outcome}, ロード/待機時間=${String(Date.now() - startedAtMs)}ms, ` +
         `操作前requestedGeneration=${String(baseline)}, ` +
         `最後のrequestedGeneration=${stats === null ? '未取得' : String(stats.requestedGeneration)}, ` +
         `completedGeneration=${stats === null ? '未取得' : String(stats.completedGeneration)}, ` +
         `lastOutcome=${stats?.lastOutcome ?? '未取得'}, 最後の進捗=${lastProgress}\n${reason}\nAssembly recompute gates: ${assemblyGates}\nMesh ledger: ${meshLedger}` +
-        `\n帯の文: ${statusLine}\nカーネルの段: ${kernelPhases}`,
+        `\n帯の文: ${statusLine}\nカーネルの段: ${kernelPhases}\n組立のビューの入力: ${viewportInput}`,
       { cause: error },
     );
   }

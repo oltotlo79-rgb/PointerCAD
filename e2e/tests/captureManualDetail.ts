@@ -295,7 +295,13 @@ function encodeScreenshotPng(image: ScreenshotPixels): Buffer {
 
 /**
  * The dialog image of a real Electron capture, cut out of the screen image just taken (the same pixels of the same
- * picture), or null when the dialog does not lie wholly on that picture; then the element itself is photographed.
+ * picture). A dialog that reaches past the window keeps only its part on that picture; only a dialog wholly outside the
+ * window (null) is photographed as an element. Real Electron never supplies manual images (captureManualDetail below,
+ * scripts/manual/captureRegistry.mjs), so its dialog image only has to show what the window shows.
+ * CI run 43622465673 (commit a4cc30a2, electron-scripts): the 279x1067 script panel is taller than the 1440x900 window, so
+ * all 3 attempts photographed the element and each drew twice (14 -> 19) from pointerout/pointerleave and pointerover/
+ * pointermove at (640, 450), although the test had last clicked inside that panel (x >= 1161): the events come from the
+ * desktop cursor, not from Playwright's mouse, so moving Playwright's mouse away cannot stop them.
  *
  * Chromium photographs an element (Page.captureScreenshot with a clip) by shrinking the web view to the clip for that
  * one picture and growing it back. In a real window the windowing system answers each change with a pointer event at
@@ -313,10 +319,12 @@ async function dialogImageFromScreen(page: Page, dialog: Locator, screen: Buffer
   if (box === null) return null;
   // The size the screen image was taken at: Playwright's emulated viewport, else the window's inner size.
   const viewport = page.viewportSize() ?? await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-  // The rectangle Playwright's element screenshot takes (its enclosingIntRect), in CSS pixels.
-  const left = Math.floor(box.x + 1e-3), top = Math.floor(box.y + 1e-3);
-  const right = Math.ceil(box.x + box.width - 1e-3), bottom = Math.ceil(box.y + box.height - 1e-3);
-  if (left < 0 || top < 0 || right > viewport.width || bottom > viewport.height || right <= left || bottom <= top) return null;
+  // The rectangle Playwright's element screenshot takes (its enclosingIntRect), in CSS pixels, limited to the window:
+  // a dialog taller than the window (the 279x1067 script panel, the 920x802 quad view) keeps the part that is shown.
+  const left = Math.max(0, Math.floor(box.x + 1e-3)), top = Math.max(0, Math.floor(box.y + 1e-3));
+  const right = Math.min(viewport.width, Math.ceil(box.x + box.width - 1e-3));
+  const bottom = Math.min(viewport.height, Math.ceil(box.y + box.height - 1e-3));
+  if (right <= left || bottom <= top) return null;
   const image = decodeScreenshotPng(screen);
   const scaleX = image.width / viewport.width, scaleY = image.height / viewport.height;
   const x0 = Math.round(left * scaleX), y0 = Math.round(top * scaleY);
@@ -340,7 +348,7 @@ async function dialogImageFromScreen(page: Page, dialog: Locator, screen: Buffer
  * Electron captures of the same size and place (e.g. loft-spline-smooth, 280x802 at the right edge) did not.
  * The cause, found from CI runs 37248862600 and 39927472338: photographing the dialog element resized the web view,
  * and the desktop's cursor then sent pointer events into the 3D view (see dialogImageFromScreen). Real Electron
- * therefore cuts the dialog image out of the screen image whenever the dialog lies wholly on it.
+ * therefore cuts the dialog image out of the screen image whenever any part of the dialog lies on it.
  * The view redraws on every store change (packages/ui/src/viewport/ViewportCanvas.tsx), and on Windows the
  * same images come out byte for byte the same from run to run, so such a redraw does not have to change a
  * single pixel. What such a redraw leaves on the pictures is therefore judged by the pictures themselves: a pair

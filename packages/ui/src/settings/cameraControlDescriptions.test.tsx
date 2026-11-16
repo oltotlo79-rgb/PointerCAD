@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { CameraControlSettingsForm } from './CameraControlSettingsForm.js';
-import { CAMERA_ACTIONS, CAMERA_CONTROL_PRESETS } from './cameraControlSettings.js';
+import { CAMERA_ACTIONS } from './cameraControlSettings.js';
+import { VIEW_CONTROL_PRESETS } from './viewControlSettings.js';
 
 /*
  * Every native control of the camera settings form carries a meaningful description (its title, the settings tooltip
@@ -30,9 +31,12 @@ describe('camera control settings descriptions', () => {
 
   it('gives every select, check box, number field and button a nonempty, translated description', () => {
     const found = controls(html());
-    const perBinding = 1 + 4; // the input select and the Alt/Shift/Ctrl/Meta check boxes
-    // Four speeds (rotation, pan, wheel zoom, drag zoom) and four inversions (rotation x/y, wheel zoom, drag zoom).
-    expect(found).toHaveLength(CAMERA_ACTIONS.length * 2 * perBinding + 4 + 4 + CAMERA_CONTROL_PRESETS.length + 3);
+    // The input select, the Alt/Shift/Ctrl/Meta check boxes, the input's chip (B-06: press to replace by capture) and its remove (×).
+    const perBinding = 1 + 4 + 1 + 1;
+    // Four speeds (rotation, pan, wheel zoom, drag zoom), the key rotation step (B-08) and four inversions (rotation x/y,
+    // wheel zoom, drag zoom); per action an add (+) and a restore-this-action button (B-06); the presets; apply, cancel and defaults.
+    // The rotation and zoom center selects (B-08d) add 2.
+    expect(found).toHaveLength(CAMERA_ACTIONS.length * 2 * perBinding + 4 + 1 + 2 + 4 + CAMERA_ACTIONS.length * 2 + VIEW_CONTROL_PRESETS.length + 3);
     expect(found.filter(control => control.title.trim() === '')).toEqual([]);
     // A missing i18n key would show the key itself instead of a sentence.
     expect(found.filter(control => control.title.startsWith('settings.'))).toEqual([]);
@@ -40,7 +44,9 @@ describe('camera control settings descriptions', () => {
 
   it('names the action, binding number and modifier in the binding descriptions, so they are not interchangeable', () => {
     const found = controls(html());
-    const selects = found.filter(control => control.tag === 'select').map(control => control.title);
+    const centers = [t('settings.camera.orbitCenterGuide'), t('settings.camera.zoomCenterGuide')];
+    expect(found.filter(control => control.tag === 'select' && centers.includes(control.title))).toHaveLength(2);
+    const selects = found.filter(control => control.tag === 'select' && !centers.includes(control.title)).map(control => control.title);
     expect(selects).toHaveLength(CAMERA_ACTIONS.length * 2);
     expect(new Set(selects).size).toBe(selects.length);
     for (const action of ['settings.camera.orbit', 'settings.camera.pan', 'settings.camera.zoom'] as const) {
@@ -52,12 +58,12 @@ describe('camera control settings descriptions', () => {
     expect(new Set(modifiers).size).toBe(modifiers.length);
   });
 
-  it('describes the four speeds and the four inversions differently', () => {
+  it('describes the four speeds, the key rotation step and the four inversions differently', () => {
     const scalars = controls(html()).filter(control => control.tag === 'input'
       && !(['alt', 'shift', 'ctrl', 'meta'] as const).some(modifier => control.title.includes(t(`settings.camera.${modifier}`))));
-    expect(scalars).toHaveLength(8);
-    expect(new Set(scalars.map(control => control.title)).size).toBe(8);
-    for (const key of ['orbitSensitivityGuide', 'panSensitivityGuide', 'invertOrbitXGuide', 'invertOrbitYGuide'] as const) {
+    expect(scalars).toHaveLength(9);
+    expect(new Set(scalars.map(control => control.title)).size).toBe(9);
+    for (const key of ['orbitSensitivityGuide', 'panSensitivityGuide', 'keyStepDegreesGuide', 'invertOrbitXGuide', 'invertOrbitYGuide'] as const) {
       expect(scalars.filter(control => control.title === t(`settings.camera.${key}`))).toHaveLength(1);
     }
   });
@@ -66,7 +72,7 @@ describe('camera control settings descriptions', () => {
     const buttons = controls(html()).filter(control => control.tag === 'button').map(control => control.title);
     expect(new Set(buttons).size).toBe(buttons.length);
     for (const key of ['settings.camera.preset.pointercad', 'settings.camera.preset.solidworks', 'settings.camera.preset.fusion',
-      'settings.camera.preset.onshape'] as const) {
+      'settings.camera.preset.onshape', 'settings.camera.preset.touchpad'] as const) {
       expect(buttons.filter(title => title.includes(t(key)))).toHaveLength(1);
     }
   });

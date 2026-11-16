@@ -42,6 +42,7 @@ import {
 
 import type { ResolvedSketch } from '@pointercad/model';
 import { partMeasureReadiness } from '../sketch/sketchMeasure.js';
+import { displayNumber } from '../sketch/numericInputPresentation.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import type { MeasureAngleSpec, MeasurementState } from '../viewport/createMeasureLayer.js';
 
@@ -176,25 +177,33 @@ const ANGLE_FRACTION_DIGITS = 2;
  * `formatDisplayLength`、角度は度で小数 2 桁)。mm の長さは 1000mm 以上で m へ、
  * mm の面積・体積は有効数字 12 桁、inch の長さ・面積・体積は小数 3 桁で出す。
  */
-export function formatMeasureValue(result: LocalMeasureResult, unit: LengthUnit = 'mm'): string {
+export function formatMeasureValue(result: LocalMeasureResult, unit: LengthUnit = 'mm', digits: 'display' | 'full' = 'display'): string {
   switch (result.unit) {
     case 'mm':
       return formatDisplayLength(result.value, unit);
     case 'degree':
       return `${result.value.toFixed(ANGLE_FRACTION_DIGITS)} ${t('measure.unit.degree')}`;
     case 'mm2':
-      return `${formatArea(result.value, unit)} ${t(AREA_UNIT_KEYS[unit])}`;
+      return `${formatArea(result.value, unit, digits === 'full' ? undefined : shortNumber)} ${t(AREA_UNIT_KEYS[unit])}`;
     case 'mm3':
-      return `${formatVolume(result.value, unit)} ${t(VOLUME_UNIT_KEYS[unit])}`;
+      return `${formatVolume(result.value, unit, digits === 'full' ? undefined : shortNumber)} ${t(VOLUME_UNIT_KEYS[unit])}`;
   }
 }
 
 /** 数を並べるときの区切り。言葉に依らない記号なので `ja.json` へ分けない。 */
 const NUMBER_SEPARATOR = ', ';
 
-/** 数 1 つの表示。式エンジンの表示規則(有効数字 12 桁、指数表記にしない)に任せる。 */
-function displayNumber(value: number): string {
-  return expressionValueFromNumber(value).display;
+/**
+ * 数 1 つの表示。画面は有効 6 桁(sketch/numericInputPresentation.ts の displayNumber。UI の点検の指摘 26)、
+ * 説明(title)へ渡す全桁は式エンジンの表示規則(有効数字 12 桁、指数表記にしない)。
+ */
+function measureNumber(value: number, digits: 'display' | 'full'): string {
+  return digits === 'full' ? expressionValueFromNumber(value).display : shortNumber(value);
+}
+
+/** 画面の短い数(有効 6 桁)。measureFormatting.ts の formatVolume・formatArea へ渡す。 */
+export function shortNumber(value: number): string {
+  return displayNumber(value).text;
 }
 
 /**
@@ -221,7 +230,7 @@ function roundForDisplay(value: number): number {
  * 座標の書き方は `featureSummary.ts` の「= (x, y, z)」と違うが、あちらは**入力の解**で、
  * こちらは**測った値**なので、括弧で囲まずに単位を添える書き方にそろえる。
  */
-export function formatMeasurePoint(point: Vec3, unit: LengthUnit = 'mm'): string {
+export function formatMeasurePoint(point: Vec3, unit: LengthUnit = 'mm', digits: 'display' | 'full' = 'display'): string {
   if (unit === 'inch') {
     const numbers = point.map(value => {
       const text = (value / MM_PER_INCH).toFixed(INCH_DISPLAY_DIGITS);
@@ -230,14 +239,14 @@ export function formatMeasurePoint(point: Vec3, unit: LengthUnit = 'mm'): string
     return `${numbers.join(NUMBER_SEPARATOR)} ${t('measure.unit.inch')}`;
   }
   const numbers = [point[0], point[1], point[2]].map((value) =>
-    displayNumber(roundForDisplay(value)),
+    measureNumber(roundForDisplay(value), digits),
   );
   return `${numbers.join(NUMBER_SEPARATOR)} ${t('measure.unit.millimeter')}`;
 }
 
 /** 主軸まわりの慣性モーメント 3 つの表示(単位は g·mm²)。 */
-export function formatMoments(moments: readonly [number, number, number]): string {
-  const numbers = moments.map((value) => displayNumber(value));
+export function formatMoments(moments: readonly [number, number, number], digits: 'display' | 'full' = 'display'): string {
+  const numbers = moments.map((value) => measureNumber(value, digits));
   return `${numbers.join(NUMBER_SEPARATOR)} ${t('propertyPanel.unitGramMillimeterSquared')}`;
 }
 

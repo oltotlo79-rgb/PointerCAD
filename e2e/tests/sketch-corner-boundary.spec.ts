@@ -16,7 +16,7 @@ async function expectVolume(page: Page, expected: number): Promise<void> {
   await expect.poll(async () => {
     const value = propertyValue(page, '体積');
     return await value.count() === 0 ? Number.POSITIVE_INFINITY
-      : Math.abs(Number.parseFloat(await value.innerText()) - expected);
+      : Math.abs(Number.parseFloat(((await value.getAttribute('title')) ?? (await value.innerText()))) - expected);
   }, { timeout: KERNEL_TIMEOUT_MS }).toBeLessThanOrEqual(0.01);
 }
 

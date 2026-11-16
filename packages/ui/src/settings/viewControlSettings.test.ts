@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAMERA_CONTROLS, type CameraBinding, type CameraControlSettings } from './cameraControlSettings.js';
 import { loadSettings, saveSettings, type SettingsStorage } from './settings.js';
 import {
-  currentViewControls, DEFAULT_VIEW_CONTROLS, isViewControlSettings, readStoredViewControls, viewControlProblems, withViewControlPreset,
+  currentViewControls, DEFAULT_VIEW_CONTROLS, isViewControlSettings, readStoredViewControls, sameViewControls, viewControlProblems,
+  viewOrbitCenter, viewZoomCenter, withViewControlPreset,
   type ViewControlOptions, type ViewControlSettings, type ViewTrigger,
 } from './viewControlSettings.js';
 
@@ -139,13 +140,63 @@ describe('読む時の救い出し(R4・R5・R8)', () => {
     expect(readStoredViewControls({})).toEqual({ settings: EXPECTED_DEFAULT, dropped: 0 });
   });
 
-  it('R8: 後の版の欄は無視し、後の版の入力の種類(キー・タッチ)はその項目だけ捨てて知らせる', () => {
+  it('R8: 後の版の欄は無視し、後の版の入力の種類(タッチ)はその項目だけ捨てて知らせる。キーと回転の中心は第 2 段(B-08)で読む', () => {
     const later = { version: 2, sixDof: { enabled: true },
       bindings: { orbit: [drag('middle'), { kind: 'keys', keys: 'arrows', ...OFF }], pan: [drag('right'), { kind: 'touch', gesture: 'twoFinger' }],
         zoom: [wheel()] },
       options: { ...OPTIONS, orbitCenter: 'pointer', keyStepDegrees: 15 } };
     expect(readStoredViewControls({ viewControls: later })).toEqual({ settings: { version: 2,
-      bindings: { orbit: [drag('middle')], pan: [drag('right')], zoom: [wheel()] }, options: OPTIONS }, dropped: 2 });
+      bindings: { orbit: [drag('middle'), { kind: 'keys', keys: 'arrows', ...OFF }], pan: [drag('right')], zoom: [wheel()] },
+      options: { ...OPTIONS, orbitCenter: 'pointer', keyStepDegrees: 15 } }, dropped: 1 });
+  });
+
+  it('B-08d: 回転と拡大縮小の中心は、無ければ注視点(今の動き)。知らない値は適用を断り、読む時は欄ごと捨てて知らせる', () => {
+    expect(viewOrbitCenter(EXPECTED_DEFAULT.options)).toBe('target');
+    expect(viewZoomCenter(EXPECTED_DEFAULT.options)).toBe('target');
+    for (const orbitCenter of ['target', 'pointer', 'selection'] as const) {
+      expect(viewControlProblems({ ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, orbitCenter } })).toEqual([]);
+    }
+    expect(viewControlProblems({ ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, orbitCenter: 'cursor', zoomCenter: 'selection' } }))
+      .toEqual([{ code: 'shape', at: 'options.orbitCenter' }, { code: 'shape', at: 'options.zoomCenter' }]);
+    const stored = { ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, orbitCenter: 'selection', zoomCenter: 7 } };
+    expect(readStoredViewControls({ viewControls: stored })).toEqual({
+      settings: { ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, orbitCenter: 'selection' } }, dropped: 1 });
+    const pointer = { ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, zoomCenter: 'pointer' as const } };
+    expect(sameViewControls(pointer, EXPECTED_DEFAULT)).toBe(false);
+    expect(sameViewControls({ ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, zoomCenter: 'target' } }, EXPECTED_DEFAULT)).toBe(true);
+  });
+
+  it('B-08: キーの組は合う操作だけ・1 つの操作に 2 つまで・マウスの割当は 1 つ以上残す。キーの角度は 1〜90', () => {
+    const keys = (group: 'arrows' | 'numpad' | 'plusMinus', modifiers: Modifiers = {}): ViewTrigger => ({ kind: 'keys', keys: group, ...OFF, ...modifiers });
+    const base = EXPECTED_DEFAULT.bindings;
+    const ok = { ...EXPECTED_DEFAULT, bindings: { ...base, orbit: [...base.orbit, keys('arrows'), keys('numpad')], zoom: [...base.zoom, keys('plusMinus')] } };
+    expect(viewControlProblems(ok)).toEqual([]);
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, zoom: [...base.zoom, keys('arrows')] } }))
+      .toEqual([{ code: 'not-allowed', action: 'zoom', at: 'bindings.zoom.2' }]);
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, orbit: [...ok.bindings.orbit, keys('arrows', { shift: true })] } }))
+      .toEqual([{ code: 'too-many', action: 'orbit' }]);
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, pan: [keys('arrows', { shift: true })] } }))
+      .toEqual([{ code: 'mouse-required', action: 'pan' }]);
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, pan: [...base.pan, keys('arrows')] } }))
+      .toEqual([{ code: 'duplicate', first: 'orbit', second: 'pan', trigger: keys('arrows') }]);
+    for (const keyStepDegrees of [0.5, 91, Number.NaN]) {
+      expect(viewControlProblems({ ...ok, options: { ...ok.options, keyStepDegrees } })).toEqual([{ code: 'range', field: 'keyStepDegrees' }]);
+    }
+    expect(viewControlProblems({ ...ok, options: { ...ok.options, keyStepDegrees: 30 } })).toEqual([]);
+    // 読む時は合わない組・3 つ目のキー・読めない角度だけ捨てる。
+    const stored = { ...ok, bindings: { ...ok.bindings, zoom: [...base.zoom, keys('arrows', { alt: true }), keys('plusMinus')],
+      orbit: [...ok.bindings.orbit, keys('arrows', { ctrl: true })] }, options: { ...ok.options, keyStepDegrees: 200 } };
+    expect(readStoredViewControls({ viewControls: stored })).toEqual({ settings: ok, dropped: 3 });
+  });
+
+  it('B-08: 雛形「キーボードで視点」は既定のマウスに矢印＝回転・Shift＋矢印＝平行移動・＋−＝拡大縮小を足す', () => {
+    const value = withViewControlPreset(EXPECTED_DEFAULT, 'keyboard');
+    expect(viewControlProblems(value)).toEqual([]);
+    expect(value.bindings).toEqual({
+      orbit: [...EXPECTED_DEFAULT.bindings.orbit, { kind: 'keys', keys: 'arrows', ...OFF }],
+      pan: [...EXPECTED_DEFAULT.bindings.pan, { kind: 'keys', keys: 'arrows', ...OFF, shift: true }],
+      zoom: [...EXPECTED_DEFAULT.bindings.zoom, { kind: 'keys', keys: 'plusMinus', ...OFF }],
+    });
   });
 
   it('読み込みで直した数は保存しない表示だけの値で、壊れた視点の欄はテーマ・単位・選択フィルタを捨てない', () => {
@@ -180,6 +231,17 @@ describe('既定と雛形', () => {
       expect(viewControlProblems(value), preset).toEqual([]);
       expect(value).toEqual({ ...tuned, bindings: table[preset] });
     }
+  });
+
+  it('雛形「タッチパッド向け」(B-06)は問題 0 件で、2 本指で平行移動・つまんで拡大・Shift＋2 本指で回転になり、速さと反転は残す', () => {
+    const tuned: ViewControlSettings = { ...EXPECTED_DEFAULT, options: { ...OPTIONS, panSensitivity: 0.5, invertWheel: true } };
+    const value = withViewControlPreset(tuned, 'touchpad');
+    expect(viewControlProblems(value)).toEqual([]);
+    expect(value).toEqual({ ...tuned, bindings: {
+      orbit: [drag('middle'), drag('left', { alt: true }), wheel({ shift: true })],
+      pan: [wheel(), drag('right'), drag('middle', { shift: true })],
+      zoom: [wheel({ ctrl: true })],
+    } });
   });
 
   it('読む入口は設定が無い・読めない時に既定を返す', () => {

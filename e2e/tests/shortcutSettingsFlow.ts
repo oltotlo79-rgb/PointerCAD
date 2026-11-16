@@ -7,20 +7,27 @@ import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { expectSameCamera, observeControlsInput, rememberCamera } from './cameraControlsSettingsFlow.js';
+import { closeInputBindings, inputBindingsWindow, openInputBindings } from './inputBindingsWindowSupport.js';
 
 const settings = (page: Page) => page.getByRole('form', { name: 'キーの割当', exact: true });
+/** 操作の割り当ての窓(B-06)のキーのタブを開く。 */
 async function openSettings(page: Page): Promise<void> {
   if (await settings(page).isVisible()) return;
-  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await openInputBindings(page, 'keys');
   await expect(settings(page)).toBeVisible();
 }
+/** 表の行(操作)を選ぶ。 */
+async function choose(page: Page, id: string): Promise<void> {
+  const row = settings(page).locator(`[data-command-id="${id}"]`);
+  await row.scrollIntoViewIfNeeded(); await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+}
 async function assign(page: Page, id: string, key: string): Promise<void> {
-  const form = settings(page);
-  await form.getByLabel('割当を変える操作', { exact: true }).selectOption(id);
-  await form.getByLabel('新しいキー', { exact: true }).press(key);
+  await choose(page, id);
+  await settings(page).getByLabel('新しいキー', { exact: true }).press(key);
 }
 async function closeSettings(page: Page): Promise<void> {
-  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await closeInputBindings(page);
   await expect(settings(page)).toHaveCount(0);
 }
 async function point(page: Page): Promise<void> {
@@ -43,11 +50,19 @@ export async function shortcutSettingsFlow(page: Page, info: TestInfo, app?: Ele
   await assign(page, 'history.redo', 'F3');
   await settings(page).getByRole('button', { name: '割当を適用', exact: true }).click();
   await expect(settings(page).getByRole('status')).toHaveText('キーの割当を適用しました。');
-  await settings(page).scrollIntoViewIfNeeded();
-  const settingBounds = await settings(page).boundingBox(), panelBounds = await page.locator('.pcad-settings').boundingBox();
-  if (settingBounds === null || panelBounds === null) throw new Error('キー設定の画面がありません。');
-  expect(settingBounds.y).toBeGreaterThanOrEqual(panelBounds.y);
-  expect(settingBounds.y + settingBounds.height).toBeLessThanOrEqual(panelBounds.y + panelBounds.height);
+  // 窓は画面の中に収まり(A-21 と同じく、字の幅や行の高さの違いで画面の外へ伸びない)、中の操作はすべて窓の中へ送って届く。
+  const windowBounds = await inputBindingsWindow(page).boundingBox(), viewport = page.viewportSize();
+  if (windowBounds === null || viewport === null) throw new Error('キー設定の画面がありません。');
+  expect(windowBounds.y).toBeGreaterThanOrEqual(0);
+  expect(windowBounds.y + windowBounds.height).toBeLessThanOrEqual(viewport.height);
+  for (const name of ['割当を適用', '全操作を元の割当へ戻す'] as const) {
+    const control = settings(page).getByRole('button', { name, exact: true });
+    await control.scrollIntoViewIfNeeded();
+    const bounds = await control.boundingBox();
+    if (bounds === null) throw new Error(`${name} がありません。`);
+    expect(bounds.y).toBeGreaterThanOrEqual(windowBounds.y);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(windowBounds.y + windowBounds.height);
+  }
   const settled = await waitForSettledRecompute(page);
   expect(settled.isComputing).toBe(false);
   expect(settled.lastOutcome).toBe('success');
@@ -67,7 +82,7 @@ export async function shortcutSettingsFlow(page: Page, info: TestInfo, app?: Ele
   await page.reload();
   await waitForStartupHealth(page, info);
   await openSettings(page);
-  await settings(page).getByLabel('割当を変える操作', { exact: true }).selectOption('history.undo');
+  await choose(page, 'history.undo');
   await expect(settings(page).getByLabel('新しいキー', { exact: true })).toHaveValue('F2');
   await settings(page).getByLabel('新しいキー', { exact: true }).press('F1');
   const help = page.locator('.pcad-help');

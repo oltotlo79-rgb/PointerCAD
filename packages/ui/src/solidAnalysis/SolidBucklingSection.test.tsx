@@ -92,6 +92,19 @@ describe('SolidBucklingSection', () => {
     expect(markup).not.toContain('solid-buckling-factor-');
   });
 
+  // A-24: 計算の準備のファイルの断りは共通の文(読めない・壊れている)。「入力と形状を確認」の文と内部の英語の文を出さない。
+  it.each([['asset-missing: python_stdlib.zip (HTTP 404)', 'strength.femFailure.assetMissing'],
+    ['asset-corrupt: oofem.whl (SHA-256)', 'strength.femFailure.assetCorrupt']] as const)('shows the shared preparation-file message for %s', (message, key) => {
+    open();
+    const id = useAppStore.getState().startSolidBuckling();
+    useAppStore.getState().receiveSolidBuckling(id, { kind: 'failed', code: 'buckling-asset', message });
+    const markup = markupOf(<SolidBucklingSection />);
+    expect(markup).toContain(t(key));
+    expect(markup).not.toContain(t('solidAnalysis.bucklingFailed'));
+    expect(markup).not.toContain(message);
+    expect(markup).not.toContain('solid-buckling-error');
+  });
+
   it('shows an independently held reference with the explicit adopt action', () => {
     open();
     useAppStore.setState({ solidBucklingReference: { schema: 'pointercad-solid-cad-input/2', id: 'solid-cad', source: { documentId: 'doc-1' },

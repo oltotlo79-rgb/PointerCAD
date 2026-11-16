@@ -286,7 +286,7 @@ describe('旧式の欄の値の古さ対策(GR-20)', () => {
     failed.settle({
       ...resultFor(failed.document),
       generation: failed.options.generation ?? 0,
-      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: '立体を作れませんでした' }],
+      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
     });
     await tick();
     expect(statusNow()).toBe('notEvaluated');

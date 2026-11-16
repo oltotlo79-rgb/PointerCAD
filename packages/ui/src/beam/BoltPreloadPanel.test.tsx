@@ -211,4 +211,17 @@ describe('bolt preload panel/current association with real store and CAD adapter
     expect(renderToStaticMarkup(<StrengthPropertyPanel />)).toContain('pcad-beam');
     expect(useAppStore.getState().beamSession).toBe(standard.session);
   });
+  // run 43711424272: 資産の読み込みの失敗に、入力の誤りと同じ文と入力の確かめの案内を出していた。
+  it.each([['asset-missing', 'asset-missing: python_stdlib.zip (network: Failed to fetch)', 'strength.femFailure.assetMissing'],
+    ['asset-corrupt', 'asset-corrupt: python_stdlib.zip (SHA-256)', 'strength.femFailure.assetCorrupt'],
+    ['solver-failed', 'Native preload solve failed', null]] as const)('shows the shared preparation-file message only for an asset failure (%s)', async (code, message, key) => {
+    const f = setup(); await review(); const port = await start(f.ports), request = port.request;
+    if (request === null) throw new Error('Request missing');
+    port.onmessage?.(new MessageEvent('message', { data: { protocol: request.protocol, identity: request.identity, kind: 'failure', failure: { code, message } } }));
+    await vi.waitFor(() => expect(useAppStore.getState().boltPreloadStatus).toBe('failed'));
+    const markup = renderToStaticMarkup(<BoltPreloadPanel />);
+    for (const shared of ['strength.femFailure.assetMissing', 'strength.femFailure.assetCorrupt'] as const) expect(markup.includes(t(shared))).toBe(shared === key);
+    expect(markup.includes(t('beam.preload.failed'))).toBe(key === null); expect(markup.includes(t('beam.preload.error'))).toBe(key === null);
+    expect(one('preload-run').disabled).toBe(false); expect(port.terminated).toBe(1);
+  });
 });

@@ -18,6 +18,7 @@
 
 import { expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 import { extrudeOperationSelection } from './extrudeOperation.js';
+import { activeSketchHasRegions, appendRegionFace } from './regionFace.js';
 import { deriveSpringValue } from './springExpressions.js';
 import {
   appendSolid,
@@ -694,6 +695,8 @@ export function solidToolReadiness(
     case 'extrude':
     case 'revolve': {
       const face = selectedFaceRef(document, selection);
+      // 押し出しは、面を選んでいなくても閉じた領域があれば開く(押した点の領域を、確定で面にする。M-01)。
+      if (!face.ok && tool === 'extrude' && activeSketchHasRegions(document)) return READY;
       return face.ok ? READY : { ready: false, reasonKey: face.reasonKey };
     }
     case 'sew': {
@@ -838,6 +841,12 @@ export function commitSolidInput(
       基本の押し出しとまったく同じ文書**になる(足した欄を作らない)。
     */
     case 'extrude': {
+      // 面を選ばずに領域を選んだ時は、確定の文書に今の形の面を先に足し、その面で押し出す(M-01。取り消しは 1 回)。
+      if (!selectedFaceRef(document, selection).ok && commit.extrudeRegion !== undefined) {
+        const region = appendRegionFace(document, commit.extrudeRegion);
+        return region.ok ? commitSolidInput(region.document, [region.faceElementId, ...selection], commit, bodies, variables, options,
+          resolvedSketches) : region;
+      }
       const face = selectedFaceRef(document, selection);
       if (!face.ok) {
         return { ok: false, reasonKey: face.reasonKey };

@@ -415,7 +415,7 @@ async function expectRefusedQuads(page: Page, info: TestInfo, filename: string):
     await field.getByRole('button', { name: '補正する', exact: true }).click();
     await expect(field.getByRole('status'), `${name} は拒否理由を出す`).toContainText(invalid);
     reasons.push(`${name}: ${(await field.getByRole('status').textContent()) ?? ''}`);
-    await field.getByRole('button', { name: 'やめる', exact: true }).click();
+    await field.getByRole('button', { name: '取消', exact: true }).click();
     await expect(field).toHaveCount(0);
     await expect(row.getByRole('button', { name: `${filename} の補正を解除する`, exact: true }),
       `${name} は補正を作らない`).toHaveCount(0);
@@ -424,7 +424,7 @@ async function expectRefusedQuads(page: Page, info: TestInfo, filename: string):
   await clickWorldPoint(page, imageWorld([1.3, 0.5]));
   await expect(field.getByRole('status'), '画像の外の点は拒否理由を出す').toContainText(invalid);
   reasons.push(`画像の外: ${(await field.getByRole('status').textContent()) ?? ''}`);
-  await field.getByRole('button', { name: 'やめる', exact: true }).click();
+  await field.getByRole('button', { name: '取消', exact: true }).click();
   await expect(field).toHaveCount(0);
   await info.attach(`canvas-refused-${filename}`, { contentType: 'application/json', body: JSON.stringify(reasons) });
 }
@@ -448,7 +448,7 @@ export async function canvasPerspectiveFlow(page: Page, info: TestInfo, app?: El
     await begin.click();
     await expect(field).toContainText('写真の左上の隅を指してください');
     for (const corner of OUTPUT_CORNERS) await clickWorldPoint(page, imageWorld(knownPoint(matrix, corner)));
-    await field.getByRole('button', { name: 'やめる', exact: true }).click();
+    await field.getByRole('button', { name: '取消', exact: true }).click();
     await expect(field).toHaveCount(0);
     const cancelled = readPart(await savePerspective(page, info, `perspective-${name}-cancel.pcad`, app));
     expect(cancelled.document.canvases).toHaveLength(1);

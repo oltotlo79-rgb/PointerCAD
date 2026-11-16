@@ -1,6 +1,6 @@
 import { METRIC_THREADS, type BeamSectionKind, type StrengthCalculation, type TensileAreaMethod, type ThreadSeries } from '@pointercad/model';
 import { t } from '../i18n/t.js';
-import { FIELD_VALUE_DISPLAY_DIGITS, roundToSignificantDigits } from '../sketch/numericInputPresentation.js';
+import { displayNumber } from '../sketch/numericInputPresentation.js';
 import { StrengthSelect } from './StrengthSelect.js';
 import { strengthSessionArea, type StrengthEdit, type StrengthSession } from './strengthSession.js';
 
@@ -31,7 +31,7 @@ export function StrengthOptions({ session, edit }: {
       <StrengthSelect<TensileAreaMethod> labelKey="strength.areaMethod" value={session.areaMethod}
         options={[{ value: 'table', label: t('strength.table') }, { value: 'approximation', label: t('strength.approximation') }]}
         onChange={method => edit({ kind: 'area-method', method })} />
-      <p>{t('strength.field.tensileArea')}: {area?.ok ? String(roundToSignificantDigits(area.area.value, FIELD_VALUE_DISPLAY_DIGITS)) : '—'}</p>
+      <p title={area?.ok ? area.area.exact : undefined}>{t('strength.field.tensileArea')}: {area?.ok ? displayNumber(area.area.value).text : '—'}</p>
       {session.areaMethod === 'approximation' ? <p>{t('strength.areaFormula')}</p> : null}
     </>}
   </>;

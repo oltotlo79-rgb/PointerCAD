@@ -759,7 +759,7 @@ describe('EX-04.02 切断の実stagerは成功した形を1回だけ採用する
       const after = useAppStore.getState(), errors = harness.results.at(-1)?.errors;
       if (reason !== null) expect(errors?.some(error => 'reason' in error && error.reason === reason)).toBe(true);
       else expect(errors?.some(error => error.message ===
-        '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。')).toBe(true);
+        '切る輪郭がソリッドに届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。')).toBe(true);
       expect(after.document).toBe(before.document);
       expect(documentSha(after.document)).toBe(sha);
       expect(after.undoStack).toBe(before.undoStack);

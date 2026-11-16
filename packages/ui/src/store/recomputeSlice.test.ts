@@ -613,7 +613,7 @@ describe('文書の変化に応じた再計算の予約(要件§6.3)', () => {
     useAppStore.getState().applyRecompute(document, {
       ...resultFor(document),
       bodies: [bodyFor('extrude-1')],
-      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: '立体を作れませんでした' }],
+      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
       cacheHits: 3,
     });
 

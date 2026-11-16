@@ -48,7 +48,7 @@ export async function tutorialFlow(page: Page, info: TestInfo, app?: ElectronApp
   await expect(panel(page)).toHaveAttribute('data-tutorial-step', 'save');
   const volume = page.locator('.pcad-panel--right dt.pcad-properties__key', { hasText: /^体積$/u })
     .locator('xpath=following-sibling::dd[1]');
-  await expect.poll(async () => Math.abs(Number.parseFloat((await volume.innerText()).replaceAll(',', '')) - (60 * 40 * 8 - Math.PI * 25 * 8))).toBeLessThan(0.01);
+  await expect.poll(async () => Math.abs(Number.parseFloat(((await volume.getAttribute('title')) ?? (await volume.innerText())).replaceAll(',', '')) - (60 * 40 * 8 - Math.PI * 25 * 8))).toBeLessThan(0.01);
 
   if (app !== undefined) {
     await app.evaluate(({ dialog }) => {

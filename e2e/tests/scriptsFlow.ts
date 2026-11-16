@@ -6,11 +6,12 @@ import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
 import { SCRIPT_LIMITS } from '../../packages/model/src/scripting/scriptTypes.js';
 import { captureManualDetail } from './captureManualDetail.js';
+import { uiMessagePattern } from './uiMessages.js';
 
 export const panel = (page: Page): Locator => page.getByRole('region', { name: '自動作図', exact: true });
 export const source = (page: Page): Locator => panel(page).getByRole('textbox', { name: 'JavaScript user-script.js', exact: true });
 export async function writeDraft(page: Page, name: string, code: string): Promise<void> {
-  await panel(page).getByRole('textbox', { name: '処理の名前', exact: true }).fill(name);
+  await panel(page).getByRole('textbox', { name: '自動作図の名前', exact: true }).fill(name);
   await source(page).fill(code);
 }
 export async function savePart(page: Page, info: TestInfo, name: string, app?: ElectronApplication) {
@@ -67,7 +68,7 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   await expect(source(page)).toHaveValue(originalSource);
   await panel(page).getByText('再実行の入力', { exact: true }).click();
   await panel(page).getByLabel('乱数の種（0〜4294967295）', { exact: true }).fill('123');
-  await panel(page).getByLabel('処理へ渡す時刻（UTC）', { exact: true }).fill('2026-09-11T00:00:00.000Z');
+  await panel(page).getByLabel('自動作図へ渡す時刻（UTC）', { exact: true }).fill('2026-09-11T00:00:00.000Z');
   await panel(page).getByText('再実行の入力', { exact: true }).click();
   await successfulRun(page);
   await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
@@ -86,7 +87,7 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   const scriptPath = info.outputPath('plate.pcadscript');
   if (app !== undefined) await saveTarget(app, scriptPath);
   const download = app === undefined ? page.waitForEvent('download') : undefined;
-  await panel(page).getByRole('button', { name: '処理ファイルを保存', exact: true }).click();
+  await panel(page).getByRole('button', { name: '自動作図のファイルを保存', exact: true }).click();
   if (download !== undefined) await (await download).saveAs(scriptPath); else await diskFile(scriptPath);
   const loaded = await decodeScriptFile(new Uint8Array(await readFile(scriptPath)));
   expect(loaded.ok).toBe(true);
@@ -94,12 +95,12 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   if (app !== undefined) await openTarget(app, scriptPath);
   const chooser = app === undefined ? page.waitForEvent('filechooser') : undefined;
   const beforeOpen = await readRecomputeStats(page);
-  await panel(page).getByRole('button', { name: '処理ファイルを開く', exact: true }).click();
+  await panel(page).getByRole('button', { name: '自動作図のファイルを開く', exact: true }).click();
   if (chooser !== undefined) await (await chooser).setFiles(scriptPath);
-  await expect(panel(page).getByRole('textbox', { name: '処理の名前', exact: true })).toHaveValue('穴あき板');
+  await expect(panel(page).getByRole('textbox', { name: '自動作図の名前', exact: true })).toHaveValue('穴あき板');
   expect((await readRecomputeStats(page)).requestedGeneration).toBe(beforeOpen.requestedGeneration);
-  await panel(page).getByRole('button', { name: '道具に登録・更新', exact: true }).click();
-  await expect(panel(page)).toContainText('道具を保存しました');
+  await panel(page).getByRole('button', { name: 'ツールバーに登録・更新', exact: true }).click();
+  await expect(panel(page)).toContainText('登録した自動作図を保存しました');
   await page.screenshot({ path: info.outputPath('script-tool-registered.png') });
   await openToolMenu(page, '自動作図');
   await expect(toolMenuPanel(page, '自動作図').getByRole('button', { name: '穴あき板', exact: true })).toBeVisible();
@@ -125,7 +126,7 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   // Real user cancellation while VM execution is active.
   await writeDraft(page, '中止の例', 'while (true) {}');
   await panel(page).getByRole('button', { name: '実行', exact: true }).first().click();
-  await expect(panel(page).getByRole('status').filter({ hasText: /^処理を実行中$/u })).toBeVisible();
+  await expect(panel(page).getByRole('status').filter({ hasText: uiMessagePattern('script', 'script.phase.running') })).toBeVisible();
   await panel(page).getByRole('button', { name: '中止', exact: true }).click();
   await expect(panel(page)).toContainText('中止しました。文書は変更していません');
   expect(await savePart(page, info, 'script-after-cancel.pcad', app)).toEqual(beforeFailure);
@@ -143,7 +144,7 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   await expect(help).toContainText(`${SCRIPT_LIMITS.totalMs / 1000}秒`);
   await expect.poll(() => help.locator('img').evaluateAll(images => images.filter(image => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0).length)).toBeGreaterThanOrEqual(2);
   await page.keyboard.press('Escape');
-  for (const chapter of [{ button: 'APIの説明', title: '自動作図APIリファレンス', images: 1 }, { button: '道具登録の説明', title: '処理を保存し、道具として登録する', images: 2 }]) {
+  for (const chapter of [{ button: 'APIの説明', title: '自動作図APIリファレンス', images: 1 }, { button: '登録の説明', title: '処理を保存し、道具として登録する', images: 2 }]) {
     await panel(page).getByRole('button', { name: chapter.button, exact: true }).click();
     await expect(help.getByRole('heading', { level: 1 })).toHaveText(chapter.title);
     await expect.poll(() => help.locator('img').evaluateAll(images => images.filter(image => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0).length)).toBeGreaterThanOrEqual(chapter.images);

@@ -37,7 +37,7 @@ describe('実立体の追加・削除・共通部分を比較し、元の形を�
     try {
       const result = compareMaterialRegions(oc, box.shape, box.shape);
       expect(result.added.kind).toBe('empty'); expect(result.removed.kind).toBe('empty'); closeVolume(result.common.volume, 8000);
-      expect(() => booleanOp(oc, 'subtract', box.shape, box.shape)).toThrow('立体が残りませんでした');
+      expect(() => booleanOp(oc, 'subtract', box.shape, box.shape)).toThrow('ソリッドが残りませんでした');
     } finally { box.delete(); }
   });
   it('立体がない文書を片側に選べ、両側が空なら3領域とも空になる', () => {

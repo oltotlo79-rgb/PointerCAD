@@ -33,7 +33,7 @@
   "sheetMetal.editHint": "元の面・縁・線分・曲げ条件を選び直し、後続の形状まで確認してから適用します。",
   "sheetMetal.editPreviewHint": "変更後の形を表示中です。「変更を適用」で確定し、「取消」で元の形に戻します。",
   "sheetMetal.editSuppressed": "抑制を解除すると、形状を確認しながら参照と条件を編集できます。",
-  "sheetMetal.previewTotalVolume": "表示する全立体の合計体積: {volume} mm³",
+  "sheetMetal.previewTotalVolume": "表示する全ソリッドの合計体積: {volume} mm³",
   "sheetMetal.chooseReference": "参照先を選んでください",
   "sheetMetal.missingReferences": "見つからない穴や縁があります。解除して必要な参照を選び直してください。",
   "sheetMetal.removeMissing": "見つからない参照を解除",

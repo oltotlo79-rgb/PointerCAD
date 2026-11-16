@@ -113,7 +113,7 @@ export async function verifyOfflineAssemblyPlacement(
  */
 export async function verifyOfflineDrawingSheet(page: Page, server: OfflineCandidateServer): Promise<void> {
   await verifyOffline(server, '図面(組立から1枚作成)', async () => {
-    await chooseToolMenuItem(page, 'ファイルのほかの操作', 'この組立から図面を作成');
+    await chooseToolMenuItem(page, 'ファイルのほかの操作', 'このアセンブリから図面を作成');
     await expect(page.locator('.pcad-drawing-svg svg')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
     const paths = page.locator('.pcad-drawing-svg [data-owner-id^="projection:"] path');
     await expect.poll(() => paths.count(), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);

@@ -2,6 +2,8 @@ import type { PartDocument } from '../../part/types.js';
 import { steelFinishedLength } from './steelFinishedLength.js';
 import type { AssemblyDocument } from '../types.js';
 import { MAX_SUB_ASSEMBLY_DEPTH } from '../resolveAssembly.js';
+import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry } from '../catalog/registry.js';
+import { catalogStockItem, type CatalogStockItem } from '../catalog/stockList.js';
 import { hasSteelOptions, isSteelCatalogRevision, STEEL_GENERATOR_REVISION,
   steelLength, steelProductFromSource, type SteelProduct } from './steelCatalog.js';
 
@@ -23,6 +25,17 @@ export interface SteelStockRow {
 }
 export interface SteelStockList {
   readonly rows: readonly SteelStockRow[];
+  /**
+   * 長さを持つ族(フレームなど)の部品の行。同じ族・版・行・長さを束ね、鋼材の行・合計とは別に持つ(族の部品が無い文書では空)。
+   * massTotalG は 1 本の質量 × 本数(1 本の質量が出せない時は null)。K-06 段 2 の土台。
+   */
+  readonly catalogRows: readonly (CatalogStockItem & {
+    readonly quantity: number;
+    readonly totalLengthMm: number;
+    readonly massTotalG: number | null;
+    readonly componentIds: readonly string[];
+    readonly occurrencePaths: readonly (readonly string[])[];
+  })[];
   readonly totalQuantity: number;
   readonly totalLengthMm: number;
   readonly unresolvedComponentIds: readonly string[];
@@ -38,11 +51,22 @@ export interface SteelStockList {
 
 /** Expand each occurrence using the same flat library and branch/depth contract as resolveAssembly.
  * Hidden parts count; suppressed parts and their descendants do not. No material is inferred.
+ * Catalog family parts of a 'linear' family are grouped into `catalogRows` (never into the steel rows or totals).
  */
 export function buildSteelStockList(assembly: AssemblyDocument,
   subAssemblies: ReadonlyMap<string, AssemblyDocument> = new Map(),
-  parts: ReadonlyMap<string, PartDocument> = new Map()): SteelStockList {
+  parts: ReadonlyMap<string, PartDocument> = new Map(),
+  registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): SteelStockList {
   const groups = new Map<string, SteelStockRow>();
+  const catalogGroups = new Map<string, SteelStockList['catalogRows'][number]>();
+  const addCatalogRow = (item: CatalogStockItem, componentId: string, occurrencePath: readonly string[]): void => {
+    const current = catalogGroups.get(item.key);
+    const quantity = (current?.quantity ?? 0) + 1;
+    catalogGroups.set(item.key, { ...item, quantity, totalLengthMm: item.lengthMm * quantity,
+      massTotalG: item.massEachG === null ? null : item.massEachG * quantity,
+      componentIds: [...(current?.componentIds ?? []), componentId],
+      occurrencePaths: [...(current?.occurrencePaths ?? []), occurrencePath] });
+  };
   const unresolvedComponentIds: string[] = [];
   const unassignedSectionComponentIds: string[] = [];
   const subAssemblyComponentIds: string[] = [];
@@ -71,6 +95,11 @@ export function buildSteelStockList(assembly: AssemblyDocument,
         continue;
       }
       if (source.kind !== 'standardPart') continue;
+      if (source.catalog === 'catalogItem') {
+        const item = catalogStockItem(source, registry);
+        if (item !== null) addCatalogRow(item, component.id, occurrencePath);
+        continue;
+      }
       const product = steelProductFromSource(source);
       if (product === undefined) {
         if (hasSteelOptions(source.options) || isSteelCatalogRevision(source.catalogRevision)
@@ -106,7 +135,7 @@ export function buildSteelStockList(assembly: AssemblyDocument,
   };
   visit(assembly, [], [], []);
   const rows = [...groups.values()];
-  return { rows, totalQuantity: rows.reduce((total, row) => total + row.quantity, 0),
+  return { rows, catalogRows: [...catalogGroups.values()], totalQuantity: rows.reduce((total, row) => total + row.quantity, 0),
     totalLengthMm: rows.reduce((total, row) => total + row.totalLengthMm, 0), unresolvedComponentIds,
     unassignedSectionComponentIds, subAssemblyComponentIds, issues };
 }

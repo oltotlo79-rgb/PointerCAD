@@ -92,6 +92,17 @@ describe('plastic-bar attachment, conversion and stale/cancelled responses', () 
     expect(port.terminated).toBe(1);
   });
 
+  // A-24: 計算の準備のファイルの断りは共通の文。ほかの計算部の断りは今の文のまま。
+  it.each([['asset-missing', 'strength.femFailure.assetMissing'], ['asset-corrupt', 'strength.femFailure.assetCorrupt'],
+    ['solver-failed', 'plasticBar.error.runtime']] as const)('shows the shared preparation-file message only for %s', async (code, key) => {
+    const { port } = await dispatched();
+    message(port, { protocol: 'pointercad-fem/1', kind: 'failure', identity: port.request?.identity, failure: { code, message: `${code}: python_stdlib.zip` } });
+    await vi.waitFor(() => expect(session().status).toBe('failed'));
+    expect(session().errorKey).toBe(key);
+    expect(session().diagnostic).toBe(`${code}: ${code}: python_stdlib.zip`);
+    expect(port.terminated).toBe(1);
+  });
+
   it('an edit while solving cancels and terminates the Worker; the captured late result is ignored', async () => {
     const { port, input } = await dispatched();
     const callback = port.onmessage, identity = port.request?.identity, before = session().revision;

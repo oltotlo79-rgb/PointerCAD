@@ -59,4 +59,19 @@ describe('SolidModalSection', () => {
     expect(rendered).toContain(t('solidAnalysis.modalFailed'));
     expect(rendered).not.toContain('solid-modal-mode-');
   });
+
+  // A-24: 計算の準備のファイルの断りは共通の文。「入力と形状を確認」の見出しと code の生の文を出さない。
+  it.each([['asset-missing', 'strength.femFailure.assetMissing'], ['asset-corrupt', 'strength.femFailure.assetCorrupt']] as const)(
+    'shows the shared preparation-file message for %s instead of the input-check heading', (code, key) => {
+      useAppStore.getState().toggleStrength();
+      useAppStore.setState({ solidAnalysisRunner: runner() });
+      useAppStore.getState().openSolidAnalysis();
+      const id = useAppStore.getState().startSolidModal();
+      useAppStore.getState().receiveSolidModal(id, { kind: 'failed', message: code });
+      const rendered = markup(<SolidModalSection />);
+      expect(rendered).toContain(t(key));
+      expect(rendered).not.toContain(t('solidAnalysis.modalFailed'));
+      expect(rendered).not.toContain(`>${code}<`);
+      expect(rendered).not.toContain('solid-modal-mode-');
+    });
 });

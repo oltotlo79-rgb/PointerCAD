@@ -43,6 +43,7 @@ import { t } from '../i18n/t.js';
 import {
   commitStandardPartChoice, type StandardPartCategory,
 } from '../assembly/standardPartPicker.js';
+import { commitCatalogItemChoice } from '../assembly/catalogFamilyChoices.js';
 import type {
   AssemblyReplacementPreview,
   AssemblyReplacementRunner,
@@ -67,7 +68,7 @@ import {
   nestedWeldChoices, nestedWeldEditDisplayPreview, nestedWeldEditPreviewFor,
   nestedWeldDisplayPreview, nestedWeldPreviewFor, type NestedWeldDraft, type NestedWeldPreview,
 } from '../assembly/nestedWeldDraft.js';
-import { partKeyOf, removeFilletWeld, weldSegmentsOf, type AssemblyComponent, type MateTarget, type OccurrenceWeldPick } from '@pointercad/model';
+import { partKeyOf, removeFilletWeld, weldSegmentsOf, type AssemblyComponent, type ComponentSource, type MateTarget, type OccurrenceWeldPick } from '@pointercad/model';
 import { boltedJointRecordForComponent } from '@pointercad/model';
 import {
   childWeldDefinitionTarget, commitChildWeldDefinitionEdit, type ChildWeldDefinitionScope, type ChildWeldDefinitionTarget,
@@ -180,6 +181,8 @@ export interface AssemblySlice extends CircularWeldSlice {
     dimensionSeries?: 'annexJA' | 'main',
     threadSeries?: 'coarse' | 'fine',
   ) => boolean;
+  /** 選ぶ画面の機械要素(登録口の族)の行を、長さなどの指定の値で置く。族が未読込・行が無い・値が範囲の外の時は置かずに false。 */
+  readonly placeCatalogItem: (familyId: string, itemKey: string, values?: Readonly<Record<string, string>>) => boolean;
   /** サブアセンブリ配置・部品置換の非同期処理と、確認が必要な置換予告。 */
   readonly assemblyReplacementRunner: AssemblyReplacementRunner | null;
   readonly assemblyReplacementPreview: AssemblyReplacementPreview | null;
@@ -371,6 +374,22 @@ function childWeldPreviewFor(
 }
 
 /** 文書を替える全経路で解析結果と非同期要求を同時に失効させる正本。 */
+/**
+ * 選ぶ画面で選んだ部品(規格部品・族の部品)を 1 つ置く。窓が閉じている・アセンブリが無い時は置かない。
+ * 確定後も窓と選択を残す。次の Enter を同じ 1 操作としてもう 1 個置ける(NFR-UX-4)。
+ * 族の部品は行の密度の材質を部品の材質に付ける(部品表の材質と質量。K-06)。材質を持たない選び方(今の規格部品)は前と同じ形。
+ */
+function placePickedPart(get: () => AppState, set: (partial: Pick<AppState, 'standardPartPickerOpen'>) => void,
+  picked: { readonly source: ComponentSource; readonly name: string; readonly materialId?: string }): boolean {
+  const state = get();
+  if (!state.standardPartPickerOpen || state.assembly === null) return false;
+  const component = createComponentFor(state.assembly, picked.source, { partName: picked.name });
+  get().applyAssembly(addComponent(state.assembly,
+    picked.materialId === undefined ? component : { ...component, materialId: picked.materialId }));
+  set({ standardPartPickerOpen: true });
+  return true;
+}
+
 function emptyInterferenceState(): InterferenceTransientState {
   return {
     assemblyInterferenceOpen: false,
@@ -695,19 +714,12 @@ export const createAssemblySlice: StateCreator<
       set({ standardPartPickerOpen: false });
     },
     placeStandardPart: (category, choiceKey, lengthSource, dimensionSeries, threadSeries) => {
-      const state = get();
-      if (!state.standardPartPickerOpen || state.assembly === null) return false;
-      const selected = commitStandardPartChoice(
-        category, choiceKey, lengthSource, dimensionSeries, threadSeries,
-      );
-      if (!selected.ok) return false;
-      const component = createComponentFor(state.assembly, selected.value.source, {
-        partName: selected.value.name,
-      });
-      get().applyAssembly(addComponent(state.assembly, component));
-      // 確定後も同じ選択を残す。次のEnterを同じ1操作としてもう1個置ける(NFR-UX-4)。
-      set({ standardPartPickerOpen: true });
-      return true;
+      const selected = commitStandardPartChoice(category, choiceKey, lengthSource, dimensionSeries, threadSeries);
+      return selected.ok && placePickedPart(get, set, selected.value);
+    },
+    placeCatalogItem: (familyId, itemKey, values) => {
+      const selected = commitCatalogItemChoice(familyId, itemKey, values);
+      return selected.ok && placePickedPart(get, set, selected.value);
     },
     beginBoltedJoint: (selection) => {
       const state = get();

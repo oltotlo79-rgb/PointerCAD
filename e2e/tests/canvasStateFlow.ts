@@ -88,7 +88,7 @@ export async function canvasStateFlow(page: Page, info: TestInfo, app?: Electron
   await expect(row).toContainText('128 × 64 px'); await expectImage(page, 'A', retryBackground);
   await scale.focus(); await scale.press('Enter');
   await expect(page.locator('.pcad-canvas-scale')).toContainText('1 点目を押してください');
-  await page.locator('.pcad-canvas-scale').getByRole('button', { name: 'やめる', exact: true }).click();
+  await page.locator('.pcad-canvas-scale').getByRole('button', { name: '取消', exact: true }).click();
   const retried = readPart(await save(page, info, 'canvas-retried.pcad', app));
   // 開き直すと画像番号は資産の衝突を避けて振り直される。名前・寸法・濃さ・画像のSHA-256で同一性を見る。
   const retriedCanvas = retried.document.canvases[0];

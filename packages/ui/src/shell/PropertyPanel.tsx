@@ -1152,10 +1152,10 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         <h3 className="pcad-section__title">{t('propertyPanel.sectionResult')}</h3>
         <dl className="pcad-properties">
           <dt className="pcad-properties__key">{t('propertyPanel.volume')}</dt>
-          <dd className="pcad-properties__value">
+          <dd className="pcad-properties__value" title={body === undefined ? undefined : `${formatVolume(body.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}>
             {body === undefined
               ? missing
-              : `${formatVolume(body.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
+              : `${formatVolume(body.volume, units.lengthUnit, (value) => displayNumber(value).text)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.triangleCount')}</dt>
           <dd className="pcad-properties__value">

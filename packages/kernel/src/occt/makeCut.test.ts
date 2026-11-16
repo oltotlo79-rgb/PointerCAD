@@ -22,8 +22,8 @@ import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
 import { unit } from './pointAssertions.testSupport.js';
 
 /** Pinned expected values: the same literals as the product constants, kept independent of them. */
-const NOTHING_INSIDE_MESSAGE = '切る輪郭が立体に届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
-const NOTHING_REMOVED_MESSAGE = '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
+const NOTHING_INSIDE_MESSAGE = '切る輪郭がソリッドに届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
+const NOTHING_REMOVED_MESSAGE = '切る輪郭がソリッドに届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
 
 /**
  * 平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)の検査。
@@ -384,7 +384,7 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
             normal: [0, 0, 1],
             keepPositive: true,
           }),
-        ).toThrow('切った先に立体が残りません');
+        ).toThrow('切った先にソリッドが残りません');
         expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
         expect(isValidShape(oc, plate.shape)).toBe(true);
         expect(measureVolume(oc, plate.shape)).toBeCloseTo(PLATE_VOLUME, 6);
@@ -407,7 +407,7 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
             normal: [0, 0, 1],
             keepPositive: true,
           }),
-        ).toThrow('切った先に立体が残りません');
+        ).toThrow('切った先にソリッドが残りません');
         expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
         expect(isValidShape(oc, plate.shape)).toBe(true);
         expect(measureVolume(oc, plate.shape)).toBeCloseTo(PLATE_VOLUME, 6);

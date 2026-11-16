@@ -41,7 +41,7 @@ test('P8 元部品の100×40×60をA3の1:1で寸法記入し、元を120へ更�
   await page.mouse.click(point.x, point.y); await page.keyboard.press('Enter');
   const dimension = (value: string) => page.locator(`.pcad-drawing-svg [data-owner-id="dim-1"] [aria-label="${value}"]`);
   await expect(dimension('100')).toHaveCount(1);
-  const updating = page.waitForEvent('filechooser'); await chooseDrawingMenu(page, 'ファイル', '元の部品・組立を取り込み直す');
+  const updating = page.waitForEvent('filechooser'); await chooseDrawingMenu(page, 'ファイル', '元の部品・アセンブリを取り込み直す');
   await (await updating).setFiles({ name: '板.pcad', mimeType: 'application/zip', buffer: Buffer.from(changed) });
   await expect(dimension('120')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
   await page.keyboard.press('Control+z'); await expect(dimension('100')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });

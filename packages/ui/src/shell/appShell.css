@@ -755,17 +755,10 @@
   box-shadow: var(--pcad-shadow-soft);
 }
 
-/* Keep drawing reasons readable beside the controls without a forced extra row. */
+/* 図面のツールバー(効かないボタンの理由は、常時の注記ではなく title と焦点の案内の箱で出す。UI の点検の指摘 10)。 */
 .pcad-toolbar--drawing {
   align-items: center;
   padding-block: var(--pcad-space-1);
-}
-
-.pcad-drawing-toolbar__reasons {
-  display: flex;
-  flex: 1 1 18rem;
-  flex-direction: column;
-  min-width: 0;
 }
 
 .pcad-toolbar__brand {
@@ -1578,8 +1571,12 @@
 .pcad-bom__expand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--pcad-space-2);
+}
+
+/* 並び順は札と選ぶ欄を両端へ離す。「組の中身も出す」はチェックの箱と名前を隣に置く(UI の点検の指摘 40)。 */
+.pcad-bom__sort {
+  justify-content: space-between;
 }
 
 .pcad-bom__sort select {
@@ -1796,10 +1793,12 @@ button.pcad-tree__row:focus-visible {
   white-space: nowrap;
 }
 
+/* 図面のツリーの選んだ行は、部品のツリーと同じく行の淡い面(.pcad-tree__row--selected)だけで示す。
+   ボタンの押した状態の面・縁と枠は付けない(UI の点検の指摘 13。前は青い枠で、部品のツリーと見え方が違った)。 */
 .pcad-drawing-tree-group .pcad-tree__row > button[aria-pressed='true'] {
-  color: var(--pcad-accent-text);
-  outline: 1px solid var(--pcad-accent);
-  outline-offset: -1px;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
 }
 
 .pcad-drawing-tree-empty {
@@ -3715,10 +3714,11 @@ button.pcad-tree__row:focus-visible {
 }
 
 /* 候補 1 件。4 状態(通常・ホバー・押下・焦点)は .pcad-button から受け継ぐ。 */
+/* 押せる面は 24px(押せる面の下限。UI の点検の指摘 18)。 */
 .pcad-commandline__suggestion {
   gap: var(--pcad-space-2);
   justify-content: space-between;
-  height: 22px;
+  height: 24px;
   padding: 0 var(--pcad-space-2);
   font-size: var(--pcad-font-size-small);
 }
@@ -3791,7 +3791,7 @@ button.pcad-tree__row:focus-visible {
   gap: var(--pcad-space-1);
   align-items: center;
   justify-content: space-between;
-  min-height: 22px;
+  min-height: 24px;
 }
 
 .pcad-parameter__marks {
@@ -3824,10 +3824,10 @@ button.pcad-tree__row:focus-visible {
   gap: 2px;
 }
 
-/* 効かないとき(先頭の ↑ など)の見た目は、効かない物の 1 か所の決まりに任せる。 */
+/* 効かないとき(先頭の ↑ など)の見た目は、効かない物の 1 か所の決まりに任せる。押せる面は 24px(指摘 18)。 */
 .pcad-parameter__action {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   justify-content: center;
 }
@@ -3965,10 +3965,11 @@ button.pcad-tree__row:focus-visible {
   border-color: var(--pcad-danger);
 }
 
+/* 押せる面は 24px(押せる面の下限。UI の点検の指摘 18)。 */
 .pcad-constraint-row__remove {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   justify-content: center;
 }

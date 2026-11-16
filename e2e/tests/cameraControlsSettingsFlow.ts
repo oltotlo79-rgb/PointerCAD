@@ -5,6 +5,7 @@ import { savePart } from './scriptsFlow.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { pointOnScreen } from './connectPointsFlow.js';
 import { uiMessage } from './uiMessages.js';
+import { closeInputBindings, openInputBindings } from './inputBindingsWindowSupport.js';
 
 // A valid nondefault unit isolates malformed camera data from unrelated validation.
 const preservedLengthUnit = 'inch' satisfies LengthUnit;
@@ -22,11 +23,11 @@ const menu = (page: Page) => page.getByRole('menu', { name: uiMessage('commands'
 const stored = (page: Page) => page.evaluate(() => localStorage.getItem('pointercad.settings'));
 
 async function open(page: Page): Promise<void> {
-  if (!await form(page).isVisible()) await page.getByRole('button', { name: '設定', exact: true }).click();
+  if (!await form(page).isVisible()) await openInputBindings(page, 'view');
   await expect(form(page)).toBeVisible();
 }
 async function close(page: Page): Promise<void> {
-  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await closeInputBindings(page);
   await expect(form(page)).toHaveCount(0);
 }
 async function centre(page: Page): Promise<{ x: number; y: number }> {
@@ -139,7 +140,8 @@ export async function cameraControlsSettingsFlow(page: Page, info: TestInfo, app
   let original = initial.document;
   const storageBefore = await stored(page);
   await open(page);
-  await expect(form(page).getByRole('combobox')).toHaveCount(6);
+  // Two binding rows per action and the rotation and zoom centers (B-08d).
+  await expect(form(page).getByRole('combobox')).toHaveCount(6 + 2);
   for (const name of ['orbit', 'pan', 'zoom'] as const) {
     await expect(action(page, name).getByRole('combobox')).toHaveCount(2);
   }
@@ -502,6 +504,10 @@ export async function prepareMalformedCameraSettings(page: Page): Promise<string
 
 export async function malformedCameraSettingsRestored(page: Page, info: TestInfo, malformed: string, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
+  // The other preferences read at startup are kept. The theme lives in the settings list, which closes when the bindings
+  // window opens (B-06), so it is read in the list first and the window is opened from the same list.
+  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await expect(page.getByRole('radio', { name: uiMessage('view', 'settings.theme.lightModern'), exact: true })).toHaveAttribute('aria-checked', 'true');
   await open(page);
   // The empty orbit, the missing pan, zoom and speeds are the four unreadable parts reported once.
   await expect(form(page).getByRole('status')).toHaveText(label('recovered').replace('{count}', '4'));
@@ -521,7 +527,6 @@ export async function malformedCameraSettingsRestored(page: Page, info: TestInfo
   await expect(form(page).getByRole('checkbox', { name: label('invertDrag'), exact: true })).not.toBeChecked();
   await expect(form(page).getByRole('checkbox', { name: label('invertWheel'), exact: true })).not.toBeChecked();
   await expect(button(page, 'apply')).toBeDisabled();
-  await expect(page.getByRole('radio', { name: uiMessage('view', 'settings.theme.lightModern'), exact: true })).toHaveAttribute('aria-checked', 'true');
   // Applying a valid camera draft must preserve the other preferences read at startup.
   await form(page).getByRole('spinbutton', { name: label('dragSensitivity'), exact: true }).fill('2');
   await button(page, 'apply').click();

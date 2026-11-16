@@ -7,6 +7,16 @@
   padding-inline-start: var(--pcad-space-1);
 }
 .pcad-field > .pcad-expression-inspection { grid-column: 2 / 4; }
+/*
+ * 名前を欄の上の行に置く窓(板金・段をまたぐ連動・強度・節の欄。名前の列と単位の 2 列だけの格子)では、点検の行が 2 / 4 だと、
+ * 焦点を入れた時に暗黙の 3 列目を作り、欄が縮んで単位が次の行へ落ちる(UI の点検の指摘 30)。名前を上に置く欄は
+ * 点検の行も全幅(1 / -1)にする。`.pcad-field--stacked` は appShell.css の同じ規則(1 / -1)が持つ。名前が左にある普通の 3 列の欄
+ * (`.pcad-popover__fields--wide` を含む)は上の 2 / 4 のまま。
+ */
+.pcad-sheet-metal .pcad-field > .pcad-expression-inspection,
+.pcad-coupling-form .pcad-field > .pcad-expression-inspection,
+.pcad-strength .pcad-field > .pcad-expression-inspection,
+.pcad-section__fields > .pcad-field > .pcad-expression-inspection { grid-column: 1 / -1; }
 .pcad-expression-inspection p { margin: 2px 0; }
 .pcad-expression-inspection ul { margin: 2px 0; padding-inline-start: 1.4em; }
 .pcad-expression-inspection code { white-space: pre-wrap; overflow-wrap: anywhere; }

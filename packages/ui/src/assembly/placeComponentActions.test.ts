@@ -77,8 +77,9 @@ describe('部品配置の非同期入口', () => {
       kind: 'ready', sources: ['10*2', '3', '-4'],
     });
     await ready(deps);
+    // 新しい要求の欄は 0 から始まる(空欄ではない。UI の点検の指摘 20)。
     expect(useAppStore.getState().assemblyPlacement).toMatchObject({
-      kind: 'ready', sources: ['', '', ''],
+      kind: 'ready', sources: ['0', '0', '0'],
     });
     enterSources(['1', '2', '3']);
     cancelPlaceComponent();

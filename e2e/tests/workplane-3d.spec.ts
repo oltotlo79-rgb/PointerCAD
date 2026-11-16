@@ -533,7 +533,7 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
 
     // 3) 板の上面を押すと、その輪郭がいまの作図面(XY)に線として現れる。
     await chooseEditTool(page, '投影');
-    await expect(statusText(page)).toContainText('写したい立体の面か辺をクリック');
+    await expect(statusText(page)).toContainText('写したいソリッドの面か辺をクリック');
     await waitForSettledRecompute(page);
     await clickWorldPoint(page, [20, 15, 10]);
     await expect(sketchGroupRow(page, 'スケッチ2', '投影1')).toBeVisible({
@@ -605,7 +605,7 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
     await expect(planeBadge(page)).toContainText('作業平面1');
 
     await chooseEditTool(page, '断面');
-    await expect(statusText(page)).toContainText('断面をとりたい立体をクリック');
+    await expect(statusText(page)).toContainText('断面をとりたいソリッドをクリック');
     await waitForSettledRecompute(page);
     await clickWorldPoint(page, [10, 10, 10]);
     await expect(sketchGroupRow(page, 'スケッチ2', '断面1')).toBeVisible({

@@ -33,14 +33,14 @@ test('FIX-02 密度の不正式から復帰し、測定済みの結果をイン�
     await expect(value(mass, '質量')).toHaveText('4 g');
   }
   await page.locator('.pcad-statusbar__unit').click();
-  await expect(value(measurement, '結果')).toHaveText('立体の体積: 0.488 in³');
+  await expect(value(measurement, '結果')).toHaveText('ソリッドの体積: 0.488 in³');
   await expect(value(mass, '体積')).toHaveText('0.488 in³');
   await expect(value(mass, '重心')).toHaveText('0.000, 0.000, 0.000 in');
   await expect(value(mass, '慣性モーメント')).toContainText('g·mm²');
   await expect(density).toHaveValue('1/2');
   await expect(value(mass, '質量')).toHaveText('4 g');
   await page.locator('.pcad-statusbar__unit').click();
-  await expect(value(measurement, '結果')).toHaveText('立体の体積: 8000 mm³');
+  await expect(value(measurement, '結果')).toHaveText('ソリッドの体積: 8000 mm³');
   expect(errors).toEqual([]);
 });
 

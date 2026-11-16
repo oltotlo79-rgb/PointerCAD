@@ -765,7 +765,7 @@ describe('座標の基準の表示(FR-302、FR-303、FR-330)', () => {
       },
       { bodyName: (featureId) => (featureId === 'extrude-1' ? '押し出し1' : null) },
     );
-    expect(summary.text).toBe('押し出し1 / 立体の頂点');
+    expect(summary.text).toBe('押し出し1 / ソリッドの頂点');
   });
 
   it('相対で入れた点の欄には基準が付き、絶対では付かない', () => {

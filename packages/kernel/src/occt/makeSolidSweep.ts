@@ -72,7 +72,7 @@ const TAPER_RANGE_MESSAGE = '押し出しの傾きは 0 度以上 90 度未満�
 const TAPER_FAILED_MESSAGE = '押し出しに傾きを付けられませんでした。角度を小さくしてください。';
 
 /** 「次の面まで」で、押し出す先に材料が無かったとき(NFR-UX-5)。 */
-const NO_MATERIAL_AHEAD_MESSAGE = '押し出す先に立体がありません。';
+const NO_MATERIAL_AHEAD_MESSAGE = '押し出す先にソリッドがありません。';
 
 /**
  * 押し出しの終端の指定(FR-415)。
@@ -385,7 +385,7 @@ function advanceOfCentre(
  * 「次の面まで」(FR-415)。長い角柱と対象の共通部分を取り、手前の塊だけを残す。
  *
  * ブーリアンは `booleanOp.ts` を通さず直に組み立てている。断りの文言が
- * 押し出し専用(「押し出す先に立体がありません。」)であることと、
+ * 押し出し専用(「押し出す先にソリッドがありません。」)であることと、
  * 結果の塊を 1 つ選び出す後処理がここにしか無いため。
  */
 function keepNearestChunk(

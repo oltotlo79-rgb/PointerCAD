@@ -5910,7 +5910,7 @@ describe('断りの網羅(P5 タスク47、FR-504、NFR-UX-5)', () => {
 });
 
 describe('読み込んだ形のベースボディ 2 種の読み書き(FR-802、P6 §2.8、タスク20)', () => {
-  it('閉じた立体と開いた面が混在するB-repの種類を保存往復で維持する', () => {
+  it('閉じたソリッドと開いた面が混在するB-repの種類を保存往復で維持する', () => {
     const feature = { ...allSolidFeatures().importedSolid, bodyKind: 'mixed' as const };
     const document = documentWithSolid(feature);
     expect(roundTrip(document)).toEqual(document);

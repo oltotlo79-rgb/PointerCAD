@@ -40,7 +40,8 @@ const readyGuide = (count: number): string => fill(m('mathGeometry.guide.ready')
 const toleranceText = (linear: string, angular: string): string =>
   fill(m('mathGeometry.toleranceValue'), { linear: `${linear} ${MM}`, angular: `${angular} ${DEGREE}` });
 const volumeText = (value: number): string => `${String(value)} ${MM3}`;
-const lineTargets = [line1, line2].map(line => `${sketch.name} / ${line.name} (${EDGE}: ${line.id})`).join(' / ');
+// 線が見つかる時は内部の id を添えない(UI の点検の指摘 37。mathGeometryRows.ts の targetText)。
+const lineTargets = [line1, line2].map(line => `${sketch.name} / ${line.name} (${EDGE})`).join(' / ');
 const referencedBy = (names: readonly string[]): string => fill(m('mathGeometry.error.referencedBy'), { names: names.join(' / ') });
 
 const statusText = (page: Page): Locator => page.locator('.pcad-statusbar__text');

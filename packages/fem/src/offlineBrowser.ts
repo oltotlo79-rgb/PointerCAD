@@ -61,6 +61,27 @@ import type { ShellAnalysisInput } from './shellAnalysisModel.js';
 
 declare const self: DedicatedWorkerGlobalScope;
 
+/** Transient transport failures of a pinned asset (a rejected fetch or body read, e.g. Windows net::ERR_NO_BUFFER_SPACE)
+ * are re-read from the same URL with the same request: three reads in total, 200 ms then 400 ms apart. HTTP errors,
+ * size and SHA-256 mismatches stay final. The Worker is terminated on cancel, which also ends a pending pause. */
+const ASSET_RETRY_PAUSES_MS: readonly number[] = [200, 400];
+async function readPinnedAsset(read: typeof fetch, url: string, file: string): Promise<ArrayBuffer> {
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response;
+    try { response = await read(url, { redirect: 'error', credentials: 'same-origin', cache: 'no-store' }); }
+    catch (error) { await pauseBeforeReread(attempt, file, error); continue; }
+    if (!response.ok) throw new Error(`asset-missing: ${file} (HTTP ${response.status})`);
+    try { return await response.arrayBuffer(); }
+    catch (error) { await pauseBeforeReread(attempt, file, error); }
+  }
+}
+async function pauseBeforeReread(attempt: number, file: string, error: unknown): Promise<void> {
+  if (attempt >= ASSET_RETRY_PAUSES_MS.length) {
+    throw new Error(`asset-missing: ${file} (network: ${error instanceof Error ? error.message : String(error)})`);
+  }
+  await new Promise(resolve => { setTimeout(resolve, ASSET_RETRY_PAUSES_MS[attempt]); });
+}
+
 /** Fixed classic Worker only: Pyodide 0.29.3 loads its glue with importScripts.
  * The app integration must place the frozen assets beside worker.js in assets/.
  * Blob script execution requires a narrowly reviewed CSP allowance before adoption.
@@ -115,9 +136,7 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
   for (let start = 0; start < pins.length; start += 4) {
     await Promise.all(pins.slice(start, start + 4).map(async pin => {
       const url = new URL(pin.file, base).href;
-      const response = await originalFetch(url, { redirect: 'error', credentials: 'same-origin', cache: 'no-store' });
-      if (!response.ok) throw new Error(`asset-missing: ${pin.file} (HTTP ${response.status})`);
-      const buffer = await response.arrayBuffer();
+      const buffer = await readPinnedAsset(originalFetch, url, pin.file);
       if (buffer.byteLength !== pin.bytes) throw new Error(`asset-corrupt: ${pin.file} (size)`);
       const digest = await sha256Hex(buffer);
       if (digest !== pin.sha256) throw new Error(`asset-corrupt: ${pin.file} (SHA-256)`);

@@ -1,6 +1,6 @@
 import { evaluateExpression } from '@pointercad/expression';
 import {
-  ALL_STEEL_PRODUCTS, createStandardPartSource, DEEP_GROOVE_BALL_BEARINGS, EQUAL_ANGLE_TABLE,
+  ALL_DEEP_GROOVE_BALL_BEARINGS, ALL_STEEL_PRODUCTS, createStandardPartSource, EQUAL_ANGLE_TABLE,
   type FastenerDimensionSeries, HEX_BOLT_TABLE, HEX_NUT_TABLE, H_BEAM_TABLE, CHANNEL_TABLE,
   PAN_HEAD_SCREW_TABLE, PLAIN_WASHER_TABLE, SOCKET_HEAD_CAP_SCREW_TABLE,
   SPRING_WASHER_TABLE, type StandardCatalogId, type StandardPartSource, type ThreadSeries,
@@ -66,7 +66,19 @@ export interface StandardPartPickerDefaults {
 export interface StandardPartCommit {
   readonly source: StandardPartSource;
   readonly name: string;
+  /** 置いた部品に付ける質量の材料(鋼種が材料の台帳の行に対応する鋼材の行だけ。K-06)。無い時は付けない。 */
+  readonly materialId?: string;
 }
+
+/**
+ * 鋼種から質量の材料(appearance/densityMaterials.ts の行の id)への対応。台帳の行の出どころ(source.condition)が名指しする
+ * 鋼種だけを対応させる: steel の行は「SS400・S45C」と「JIS G 3350 に準じた軽量形鋼」(SSC400)、stainless の行は SUS304
+ * (SUS304TP は JIS G 3459 の SUS304 の鋼管)。台帳が名指ししない鋼種(SGP・STK400・STKR400)は推測で対応させず null
+ * (付けない。部品表は今の既定の鋼のまま)。鋼種が増えた時は、この表が型で埋めるよう求める。
+ */
+const STEEL_GRADE_DENSITY_MATERIALS: Readonly<Record<SteelMaterialGrade, string | null>> = {
+  SS400: 'steel', S45C: 'steel', SSC400: 'steel', SUS304TP: 'stainless', SGP: null, STK400: null, STKR400: null,
+};
 
 export type StandardPartCommitResult =
   | { readonly ok: true; readonly value: StandardPartCommit }
@@ -112,7 +124,7 @@ const CHOICES: Readonly<Record<StandardPartCategory, readonly StandardPartChoice
     'socketHeadCapScrew', SOCKET_HEAD_CAP_SCREW_TABLE.filter((row) => row.available), false,
   ),
   panHeadScrew: choicesFromRows('panHeadScrew', PAN_HEAD_SCREW_TABLE, false),
-  deepGrooveBallBearing: choicesFromRows('deepGrooveBallBearing', DEEP_GROOVE_BALL_BEARINGS, false),
+  deepGrooveBallBearing: choicesFromRows('deepGrooveBallBearing', ALL_DEEP_GROOVE_BALL_BEARINGS, false),
   structuralSection: [
     ...choicesFromRows('equalAngle', EQUAL_ANGLE_TABLE, true),
     ...choicesFromRows('channel', CHANNEL_TABLE, true),
@@ -294,11 +306,13 @@ export function commitStandardPartChoice(
   }
   if (standardPartUsesDimensionSeries(category)) options.dimensionSeries = dimensionSeries;
   if (standardPartUsesThreadSeries(category)) options.threadSeries = threadSeries;
+  const materialId = choice.steelProduct === undefined ? null : STEEL_GRADE_DENSITY_MATERIALS[choice.steelProduct.materialGrade];
   return {
     ok: true,
     value: {
       source: createStandardPartSource(choice.catalog, choice.size, options),
       name: partName(choice, normalizedLength),
+      ...(materialId === null ? {} : { materialId }),
     },
   };
 }

@@ -86,7 +86,7 @@ export async function sheetBendDefaultsFlow(page: Page, info: TestInfo, app?: El
   const unfold = page.getByRole('form', { name: '板金の展開', exact: true });
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  expect(Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(3000, 4);
+  expect(Number(await unfold.getByRole('status').getAttribute('title'))).toBeCloseTo(3000, 4);
 }
 
 /** Use a flat rectangular cut so an independent width × depth × thickness checks the configured shape. */

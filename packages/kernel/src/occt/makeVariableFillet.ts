@@ -60,7 +60,7 @@ const KERNEL_NOT_READY_MESSAGE =
 const BUILD_FAILED_MESSAGE = '丸められませんでした。半径を小さくするか、辺を選び直してください。';
 
 /** 丸められたが、結果が立体になっていないとき(makeFillet.ts と同じ文言)。 */
-const NOT_SOLID_MESSAGE = '丸めた結果が立体になりませんでした。半径を小さくしてください。';
+const NOT_SOLID_MESSAGE = '丸めた結果がソリッドになりませんでした。半径を小さくしてください。';
 
 /** 丸められなかった輪郭の本数を添えた理由(makeFillet.ts と同じ文言)。 */
 function faultyContourMessage(count: number): string {

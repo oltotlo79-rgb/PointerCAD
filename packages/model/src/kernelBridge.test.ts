@@ -862,10 +862,10 @@ describe('current native shape survives export preview cancellation', () => {
       expect(await bridge.checkShapeAvailability('part:current', [steps[0].key, 'missing-key']))
         .toEqual({ partId: 'part:current', missingKeys: ['missing-key'] });
       await expect(bridge.exportShapes([], options)).resolves.toEqual({ kind: 'failed',
-        message: 'もとになる立体が見つかりませんでした。もう一度計算し直してください。' });
+        message: 'もとになるソリッドが見つかりませんでした。もう一度計算し直してください。' });
       await expect(bridge.exportShapes(steps.map(step => ({ ...step, key: 'missing-key' })), options))
         .resolves.toEqual({ kind: 'failed',
-          message: 'もとになる立体が見つかりませんでした。もう一度計算し直してください。' });
+          message: 'もとになるソリッドが見つかりませんでした。もう一度計算し直してください。' });
     } finally { release(); exported.mockRestore(); bridge.dispose(); created.mockRestore(); }
   });
 

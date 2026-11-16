@@ -87,7 +87,7 @@ describe('書き出す対象の決め方(FR-427、FR-803、計画書 P6 タス�
     expect([...outcome.selection.featureIds]).toEqual(['f2']);
   });
 
-  it('「選んだ立体」で 1 つも当たらなければ書き出せる立体が無い(§2.8)', () => {
+  it('「選んだソリッド」で 1 つも当たらなければ書き出せるソリッドが無い(§2.8)', () => {
     const outcome = selectExportBodies(
       THREE_SOLIDS,
       createExportRequest('stl', { scope: 'selected', selectedFeatureIds: ['無い id'] }),
@@ -95,7 +95,7 @@ describe('書き出す対象の決め方(FR-427、FR-803、計画書 P6 タス�
     expect(outcome).toEqual({ ok: false, reason: 'nothingToExport' });
   });
 
-  it('立体が 1 つも無ければ書き出せる立体が無い(§2.8)', () => {
+  it('ソリッドが 1 つも無ければ書き出せるソリッドが無い(§2.8)', () => {
     expect(selectExportBodies([], createExportRequest('stl'))).toEqual({
       ok: false,
       reason: 'nothingToExport',
@@ -326,7 +326,7 @@ describe('書き出しの依頼の既定値(§0.a-0.12、§0.a-0.14、§0.a-0.22
     expect(createExportRequest('stl').withColors).toBe(true);
   });
 
-  it('対象の既定はすべての立体、なめらかさの既定は標準、STL はバイナリ', () => {
+  it('対象の既定はすべてのソリッド、なめらかさの既定は標準、STL はバイナリ', () => {
     expect(DEFAULT_EXPORT_SCOPE).toBe('all');
     expect(DEFAULT_EXPORT_QUALITY).toBe('normal');
     expect(DEFAULT_EXPORT_ASCII).toBe(false);

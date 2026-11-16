@@ -30,14 +30,14 @@ export interface SewFacesInput {
 }
 
 const SEW_FACES_MESSAGES = {
-  'insufficient-faces': '立体にするには面が 2 枚以上必要です。',
+  'insufficient-faces': 'ソリッドにするには面が 2 枚以上必要です。',
   'invalid-tolerance': 'つなぎ目の許容量は 0 より大きい有限の数にしてください。',
   'invalid-face': '縫い合わせる面が正しくありません。面を選び直してください。',
   'duplicate-face': '同じ面が重複しています。面を選び直してください。',
-  'open-shell': '面のつながりに隙間があるため、立体にできませんでした。',
+  'open-shell': '面のつながりに隙間があるため、ソリッドにできませんでした。',
   'non-manifold': '面のつなぎ目に 3 枚以上の面が重なっています。',
   'multiple-shells': '面が 2 つ以上の閉じた殻に分かれています。面を選び直してください。',
-  'invalid-solid': '面が閉じた 1 つの立体になっていません。面を選び直してください。',
+  'invalid-solid': '面が閉じた 1 つのソリッドになっていません。面を選び直してください。',
   'sewing-failed': '面を縫い合わせられませんでした。面と許容量を見直してください。',
   'missing-face': '縫い合わせる面が見つかりません。面を選び直してください。',
 } as const;
@@ -181,7 +181,7 @@ export function sewSolid(
   options: TessellationOptions = {},
 ): OcctShapeHandle {
   if (spec.profiles.length < MINIMUM_PROFILE_COUNT) {
-    throw new Error('立体にするには面が 2 枚以上必要です。');
+    throw new Error('ソリッドにするには面が 2 枚以上必要です。');
   }
   const tolerance = validateToleranceMm(spec.tolerance);
 
@@ -195,20 +195,20 @@ export function sewSolid(
     finally { progressOwner.release(); }
 
     const freeEdgeCount = Number(sewing.NbFreeEdges());
-    if (freeEdgeCount !== 0) throw new Error(`面のつながりに隙間があるため、立体にできませんでした。隙間は ${freeEdgeCount} 本です。`);
+    if (freeEdgeCount !== 0) throw new Error(`面のつながりに隙間があるため、ソリッドにできませんでした。隙間は ${freeEdgeCount} 本です。`);
     const sewed = keep(sewing.SewedShape());
     const shells = findShells(oc, sewed, keep);
     if (shells.length === 0) throw new Error('面をつなげませんでした。面が重なっていないか確かめてください。');
     if (shells.length > 1) throw new Error('面が 2 つ以上の閉じた殻に分かれています。面を選び直してください。');
     const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shells[0]));
-    if (!solidMaker.IsDone()) throw new Error('つないだ面から立体を作れませんでした。');
+    if (!solidMaker.IsDone()) throw new Error('つないだ面からソリッドを作れませんでした。');
     const solid = keep(solidMaker.Solid());
     const rawVolume = measureVolume(oc, solid);
     const reversed = rawVolume < 0 ? keep(solid.Reversed()) : null;
     const shape = reversed ?? solid;
     const volume = reversed === null ? rawVolume : measureVolume(oc, shape);
     if (!(volume >= MINIMUM_VOLUME) || !hasSolid(oc, shape) || !isValidShape(oc, shape)) {
-      throw new Error('面が閉じた立体になっていません。足りない面を足してください。');
+      throw new Error('面が閉じたソリッドになっていません。足りない面を足してください。');
     }
     return { shape, delete: release };
   } catch (error) {

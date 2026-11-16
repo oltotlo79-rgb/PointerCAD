@@ -297,7 +297,7 @@ describe('STL座標変換の出力前の注意', () => {
         && (element.props as { title?: string }).title === t('controlGuide.exchange.ascii'));
       expect(current.props).toMatchObject({ checked: ascii });
       const markup = renderToStaticMarkup(root);
-      expect(t('exchange.stlCoordinatePrecision')).toContain('このアプリではSTLへの変換中に座標を32ビットで扱います。');
+      expect(t('exchange.stlCoordinatePrecision')).toContain('精度を保つ必要がある時は STEP を選んでください。');
       expect(markup).toContain(t('exchange.stlCoordinatePrecision'));
       expect(markup).toContain(t('exchange.stlNoColor'));
       expect(panel.save).not.toHaveBeenCalled();

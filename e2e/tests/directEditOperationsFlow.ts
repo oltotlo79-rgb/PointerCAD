@@ -239,7 +239,7 @@ export async function directEditOperationsFlow(page: Page, info: TestInfo, entry
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
   await extrudeFace(page, '面1', '8');
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, { timeout: KERNEL_TIMEOUT_MS });
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, { timeout: KERNEL_TIMEOUT_MS });
   if (tool === 'holeTranslate') {
     await sketchTool(page, '点').click();
     await fillFields(page, HOLE_CENTER);

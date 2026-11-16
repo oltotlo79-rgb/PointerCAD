@@ -1,0 +1,28 @@
+/*
+ * 操作の割り当ての窓(設計 1-4・§6.2)。設定の一覧(幅 248px)の外に、動かせる窓として浮かぶ。
+ * 高さは画面の 8 割(上下の帯を除いた高さ)までで、超えた分は窓の中で縦に送る。字の幅と行の高さは環境で違う
+ * (CI run 43669816930 の Linux の Electron は Windows より行が高い。A-21)ので、中の表も高さの上限を持ち、表の中で送る。
+ */
+.pcad-input-bindings {
+  position: fixed;
+  inset: 64px 16px auto auto;
+  z-index: 20;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  width: min(calc(560px * var(--pcad-scale)), calc(100vw - 32px));
+  max-height: min(80dvh, calc(100dvh - 100px));
+  margin: 0;
+  padding: var(--pcad-space-3);
+  overflow-y: auto;
+  color: var(--pcad-text);
+  background: var(--pcad-surface);
+  border: 1px solid var(--pcad-border-strong);
+  border-radius: var(--pcad-radius);
+  box-shadow: var(--pcad-shadow-soft-raised);
+}
+.pcad-input-bindings__header { display: flex; align-items: center; gap: var(--pcad-space-2); }
+.pcad-input-bindings__title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: var(--pcad-font-size-heading); }
+.pcad-input-bindings__hint { margin: 0; }
+.pcad-input-bindings [role="tabpanel"][hidden] { display: none; }

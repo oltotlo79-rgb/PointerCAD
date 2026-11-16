@@ -243,7 +243,7 @@ describe('Should 群の押せる条件(タスク50、NFR-UX-5)', () => {
     }
   });
 
-  it('ミラー: 立体を 2 つ選ぶと決まらないので押せない', () => {
+  it('ミラー: ソリッドを 2 つ選ぶと決まらないので押せない', () => {
     const base = fixture();
     const two = appendSolid(base.document, extrudeFeature('extrude-2'));
     const context: MachiningContext = {
@@ -679,7 +679,7 @@ describe('Should 群の確定(タスク50)', () => {
     expect(faceOnly).toEqual({ ok: false, reasonKey: 'shapeError.noSurfaceSource' });
   });
 
-  it('曲面: 「立体の面を離す」は対象を消費しない参照だけを持つ(§0.a-0.45)', () => {
+  it('曲面: 「ソリッドの面を離す」は対象を消費しない参照だけを持つ(§0.a-0.45)', () => {
     const outcome = commitShapeEdit(
       contextOf([FACE_0]),
       commitOf({

@@ -43,11 +43,11 @@ import { updateHoleWallMatePhi8Scenario, inspectFreshNativeHoleWallMatePhi8, reo
 const KERNEL_TIMEOUT_MS = 60_000;
 
 /** 立体を作れなかったときに帯の頭へ付く言葉(ja.json の statusBar.solidError)。 */
-const SOLID_ERROR_PREFIX = '立体を作れませんでした:';
+const SOLID_ERROR_PREFIX = 'ソリッドを作れませんでした:';
 /** ja.json の solidError.noFace。 */
 const NO_FACE_REASON = '面が選ばれていません。先に面を張ってください。';
 /** ja.json の solidError.needTwoBodies。 */
-const NEED_TWO_BODIES_REASON = '立体を 2 つ選んでください。';
+const NEED_TWO_BODIES_REASON = 'ソリッドを 2 つ選んでください。';
 /** ja.json の propertyPanel.unitCubicMillimeter。 */
 const VOLUME_UNIT = 'mm³';
 /** ja.json の statusBar.ready。何も選んでいないときに帯へ出る案内。 */
@@ -586,7 +586,7 @@ test('点→線→面→押し出し→保存→再読込→編集ができる(�
   //    ここで初めて幾何カーネル(Worker + OCCT)を通るので、この待ちだけ上限を延ばす。
   await expect(solidRow(page, '押し出し1')).toBeVisible();
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `12000 ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
   await expect(propertyValue(page, '三角形の数')).toHaveText('12');
@@ -623,13 +623,13 @@ test('点→線→面→押し出し→保存→再読込→編集ができる(�
   // 10) 距離の欄には**入れた式そのもの**が戻る(FR-202)。P2 の「再編集できる」の本体。
   await solidRow(page, '押し出し1').click();
   await expect(propertyInputs(page).first()).toHaveValue('5*2');
-  await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `12000 ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 
   // 11) 距離を書き換えると下流が追従する(FR-311、FR-502)。
   await propertyInputs(page).first().fill('20');
-  await expect(propertyValue(page, '体積')).toHaveText(`24000 ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `24000 ${VOLUME_UNIT}`);
 
   // 12) 保存していない変更があるまま「新規」を押すと、今度は確認が出る(NFR-UX-3)。
   //     「はい」は acceptConfirms が答える。
@@ -696,7 +696,7 @@ test('立体どうしを組み合わせられる(FR-404)', async ({ page }) => {
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
   await extrudeFace(page, '面1', '20');
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`8000 ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `8000 ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 
@@ -705,7 +705,7 @@ test('立体どうしを組み合わせられる(FR-404)', async ({ page }) => {
   await makeFace(page, ['線分5', '線分6', '線分7', '線分8']);
   await extrudeFace(page, '面2', null);
   await solidRow(page, '押し出し2').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`1000 ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `1000 ${VOLUME_UNIT}`);
 
   // 3) もとになる立体を選び、Shift で相手を足して「差」を押す(§0.a-0.6)。
   //    和・差・積は数値を聞かないので、押した瞬間に決まる。
@@ -718,7 +718,7 @@ test('立体どうしを組み合わせられる(FR-404)', async ({ page }) => {
   // 4) 差1 ができ、体積は 8000 − 1000 = 7000。
   await expect(solidRow(page, '差1')).toBeVisible();
   await solidRow(page, '差1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`7000 ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `7000 ${VOLUME_UNIT}`);
 
   // もとの 2 つは履歴なので行は消えない。ただし「統合済み」の札が付き、
   // 単独では表示されない=ビューポートに出る立体は 差1 の 1 つだけになる(§0.a-0.5)。
@@ -773,7 +773,7 @@ test('間違った操作は理由が出て、何も作られない(NFR-UX-5、FR
   await extrudeFace(page, '面1', null);
   await expect(solidRows(page)).toHaveCount(1);
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`4000 ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `4000 ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 
@@ -808,7 +808,7 @@ test('前回の作業の控えから復元でき、破棄と手動保存で控�
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
   await extrudeFace(page, '面1', null);
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `12000 ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
   // ここまで控えを書く間隔(5 分)は来ていないので、まだ案内は出ない。
@@ -890,7 +890,7 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
   await extrudeFace(page, '面1', null);
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `12000 ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
   // 読み込みを含む 1 回目の控えは捨てる。終わった時点で帯が残っていないことだけを見る。
@@ -910,7 +910,7 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
    */
   const shortStart = Date.now();
   await propertyInputs(page).first().fill('12');
-  await expect(propertyValue(page, '体積')).toHaveText(`14400 ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `14400 ${VOLUME_UNIT}`);
   const shortElapsed = Date.now() - shortStart;
   const shortSightings = await takeProgressSightings(page);
   if (shortElapsed < PROGRESS_DELAY_MS) {
@@ -925,7 +925,7 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
 
   // 距離を既定へ戻し、この後の段数と体積の期待値を元のままにする。
   await propertyInputs(page).first().fill('10');
-  await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `12000 ${VOLUME_UNIT}`);
   await takeProgressSightings(page);
 
   // 2) 段を積む。距離を段ごとに変えて、同じ形の使い回しが起きないようにする。
@@ -935,7 +935,7 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
   }
   const lastVolume = 40 * 30 * (10 + PROGRESS_STEP_COUNT);
   await solidRow(page, `押し出し${String(PROGRESS_STEP_COUNT)}`).click();
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(lastVolume)} ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(lastVolume)} ${VOLUME_UNIT}`);
   await takeProgressSightings(page);
 
   /*
@@ -1002,7 +1002,7 @@ test('長い計算のあいだだけ進み具合と「中止」が出る(NFR-PF-
   // 6) 中止の知らせは時間では消えない。選び直しても(文書を変えない操作では)残る。
   //    途中で打ち切った形には差し替えないので、前の計算で作れていた立体はそのまま見える。
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `12000 ${VOLUME_UNIT}`);
   await expect(statusText(page)).toHaveText('計算を中止しました。');
 
   // 7) 文書が変わる操作(元に戻す)で計算し直され、知らせは消える。
@@ -1025,7 +1025,7 @@ test('式の欄に焦点があっても Ctrl+S で保存される(§0.a-0.23 ⑪
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
   await extrudeFace(page, '面1', null);
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`12000 ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `12000 ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 
@@ -1175,7 +1175,7 @@ test.describe('P3 加工フィーチャー', () => {
     await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
     await extrudeFace(page, '面1', null);
     await solidRow(page, '押し出し1').click();
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
 
@@ -1222,7 +1222,7 @@ test.describe('P3 加工フィーチャー', () => {
     await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
     await expect(propertyValue(page, '選んだ面')).toHaveText('1');
     await expect(propertyValue(page, '中心の点')).toHaveText('1');
-    await expect(propertyValue(page, '加工するもとの立体')).toHaveText('押し出し1');
+    await expect(propertyValue(page, '加工するもとのソリッド')).toHaveText('押し出し1');
     await expect(solidRowBox(page, '押し出し1')).toContainText('統合済み');
 
     // 7) その穴を選んだまま「直線パターン」で 3 つ並べる(FR-411、§0.a-0.20)。
@@ -1308,7 +1308,7 @@ test.describe('P3 加工フィーチャー', () => {
     await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
     await extrudeFace(page, '面1', '15');
     await solidRow(page, '押し出し1').click();
-    await expect(propertyValue(page, '体積')).toHaveText(`18000 ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `18000 ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
 
@@ -1379,7 +1379,7 @@ test.describe('P3 加工フィーチャー', () => {
     await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
     await extrudeFace(page, '面1', null);
     await solidRow(page, '押し出し1').click();
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
 
@@ -1415,7 +1415,7 @@ test.describe('P3 加工フィーチャー', () => {
     await page.keyboard.press('Control+z');
     await expect(solidRow(page, 'C面取り1')).toHaveCount(0);
     await solidRow(page, '押し出し1').click();
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`);
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`);
 
     // 4) 手前の左(x = 0, y = 0)の縦の辺(長さ 10)を押して R 面取り。半径の既定は 2。
     //    取れる量は (R² − πR²/4)·10 = 10·(4 − π)。
@@ -1498,7 +1498,7 @@ test.describe('P3 加工フィーチャー', () => {
     await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
     await extrudeFace(page, '面1', null);
     await solidRow(page, '押し出し1').click();
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
 
@@ -1555,7 +1555,7 @@ test.describe('P3 加工フィーチャー', () => {
     await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
     await extrudeFace(page, '面1', null);
     await solidRow(page, '押し出し1').click();
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
 
@@ -1594,7 +1594,7 @@ test.describe('P3 加工フィーチャー', () => {
 
     // 3) 穴でない立体を選んで「直線パターン」(§0.a-0.20 の「対象は穴とねじ穴だけ」)。
     await page.keyboard.press('4');
-    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
     await solidRow(page, '押し出し1').click();
     await openToolMenu(page, '加工');
     const patternButton = machiningTool(page, '直線パターン');
@@ -1613,17 +1613,17 @@ test.describe('P3 加工フィーチャー', () => {
     await page.keyboard.press('3');
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
     await page.keyboard.press('4');
-    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
 
     // 5) 式の欄に文字を打っているあいだは横取りしない(数字はそのまま欄へ入る)。
     await solidRow(page, '押し出し1').click();
     const distanceInput = propertyField(page, '距離');
     await distanceInput.click();
     await distanceInput.press('2');
-    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
     await expect(distanceInput).toHaveValue('102');
     await distanceInput.fill('10');
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`);
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`);
 
     /*
      * 6) 大きすぎる半径の R 面取りは、赤い印と理由が出るだけでアプリは落ちない(NFR-RE-1)。
@@ -1785,7 +1785,7 @@ test.describe('P3 加工フィーチャー', () => {
     await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
     await extrudeFace(page, '面1', null);
     await solidRow(page, '押し出し1').click();
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
 

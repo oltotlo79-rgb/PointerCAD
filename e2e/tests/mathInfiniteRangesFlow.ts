@@ -44,7 +44,7 @@ export async function mathInfiniteRangesFlow(page: Page, info: TestInfo, app?: E
     await waitForMathEditorText(dialog);
     await input.fill(expression);
     if (axis === 0) await expect(result).toHaveText('= 2', { timeout: 225_000 });
-    else await expect(result).toHaveText(/^= 1\.57079632679/u, { timeout: 225_000 });
+    else await expect(result.locator('.pcad-math-editor__full p')).toHaveText(/^= 1\.57079632679/u, { timeout: 225_000 });
     await expect(apply).toBeEnabled();
     await apply.click(); await expect(dialog).toHaveCount(0);
   }

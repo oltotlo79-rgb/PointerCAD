@@ -1,6 +1,7 @@
 import { type ViewControlSettings } from '../settings/viewControlSettings.js';
 import {
-  dragZoomDelta, scaledPanDelta, viewDragAction, viewWheelAction, wheelDragEquivalent, wheelZoomDelta,
+  dragZoomDelta, KEY_PAN_PIXELS, keyZoomDelta, scaledPanDelta, viewDragAction, viewKeyMove, viewWheelAction, wheelDragEquivalent,
+  wheelZoomDelta,
 } from '../viewport/cameraControlBindings.js';
 import { HOME_ORBIT, MAX_DISTANCE, MIN_DISTANCE, ZOOM_FACTOR_PER_NOTCH } from '../viewport/cameraMath.js';
 
@@ -145,13 +146,28 @@ export function attachDrawingNavigation(surface: NavigationSurface, options: Nav
     const event = input as MouseEvent;
     if (auxiliaryButton === event.button && (event.button === 1 || event.button === 2)) own(event);
   };
+  /** 最後のポインターの位置(キーの拡大縮小の中心)。 */
+  const pointer = { x: 0, y: 0 };
+  const track = (input: Event): void => { const event = input as PointerEvent; pointer.x = event.clientX; pointer.y = event.clientY; };
   const key = (input: Event): void => {
-    if ((input as KeyboardEvent).key === 'Escape' && drag !== null) { cancel(); own(input); }
+    const event = input as KeyboardEvent;
+    if (event.key === 'Escape' && drag !== null) { cancel(); own(input); return; }
+    // キーの割当(B-08)の平行移動と拡大縮小。紙は回さない(回転の割当のキーは受けない)。拡大の中心は最後のポインターの位置。
+    // 注記の入力欄など、紙の上の入力欄で押した矢印は欄の中のカーソルの移動に残す(canStart が断る)。
+    const settings = options.readSettings();
+    const move = drag === null && !event.isComposing && options.canStart(event) ? viewKeyMove(settings, event) : null;
+    if (move === null || move.action === 'orbit') return;
+    const current = options.getTransform();
+    const next = move.action === 'zoom'
+      ? zoomDrawingNavigation(current, keyZoomDelta(settings.options, move.direction[1]), anchorAt(pointer.x, pointer.y))
+      : panDrawingNavigation(current, settings, move.direction[0] * KEY_PAN_PIXELS, move.direction[1] * KEY_PAN_PIXELS);
+    if (next !== current) options.setTransform(next);
+    own(event);
   };
   const listeners = [
     ['pointerdown', down], ['pointermove', move], ['pointerup', up], ['pointercancel', interrupted],
     ['lostpointercapture', interrupted], ['wheel', wheel], ['mousedown', auxiliary], ['auxclick', auxiliary],
-    ['contextmenu', auxiliary], ['keydown', key],
+    ['contextmenu', auxiliary], ['keydown', key], ['pointermove', track],
   ] as const;
   for (const [type, listener] of listeners) surface.addEventListener(type, listener, { capture: true, passive: false });
   options.view?.addEventListener('blur', cancel);

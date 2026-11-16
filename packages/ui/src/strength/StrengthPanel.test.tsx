@@ -1,4 +1,6 @@
 import React, { type KeyboardEvent, type ReactElement } from 'react';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -48,6 +50,36 @@ afterEach(() => {
   vi.restoreAllMocks(); vi.unstubAllGlobals();
   useAppStore.setState({ closeStrength: originalClose, calculateStrength: originalCalculate });
   resetTestStore();
+});
+
+describe('strength form layout (UI の点検の指摘 27・28)', () => {
+  it('ほかの解析の入口は、今の計算の欄と操作の後ろに、見出しつきの 1 つの組で出す', () => {
+    const html = renderToStaticMarkup(form());
+    const group = html.indexOf('<nav class="pcad-strength__others" aria-label="ほかの解析を開く">');
+    expect(group).toBeGreaterThan(0);
+    expect(html.indexOf('<h4>ほかの解析を開く</h4>', group)).toBeGreaterThan(group);
+    for (const id of ['plastic-bar-open', 'fatigue-open', 'fatigue-strain-open', 'fatigue-local-cycle-open', 'solid-analysis-open',
+      'solid-plastic-open', 'solid-finite-open']) {
+      expect(html.indexOf(`data-testid="${id}"`), id).toBeGreaterThan(group);
+    }
+    expect(html.indexOf('計算の種類')).toBeLessThan(group);
+    expect(html.indexOf('class="pcad-strength__actions"')).toBeLessThan(group);
+  });
+
+  it('計算結果は名前と値の 2 列の表(dt と dd を dl の直下)で出し、値は有効 6 桁で全桁は title', () => {
+    const html = renderToStaticMarkup(form());
+    expect(html).toMatch(/<dl class="pcad-properties"><dt class="pcad-properties__key">/u);
+    expect(html).not.toMatch(/<dl class="pcad-properties"><div>/u);
+    expect(html).toMatch(/data-strength-result="deflection" title="0\.0195121951[0-9]*">0\.0195122<\/dd>/u);
+  });
+});
+
+describe('strength form fields (UI の点検の指摘 30)', () => {
+  it('焦点の時の式の点検は、名前を上に置く欄の共通の規則で全幅(1 / -1)に置き、強度の窓に個別の規則を持たない', () => {
+    const css = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+    expect(css('../math/expressionInspection.css')).toMatch(/\.pcad-strength \.pcad-field > \.pcad-expression-inspection,[^{]*\{ grid-column: 1 \/ -1; \}/u);
+    expect(css('./strength.css')).not.toContain('.pcad-expression-inspection');
+  });
 });
 
 describe('strength form keyboard ownership (Node handlers)', () => {

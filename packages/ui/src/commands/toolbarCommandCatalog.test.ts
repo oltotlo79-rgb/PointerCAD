@@ -104,8 +104,21 @@ it('視点の命令に標準の 6 方向を実名で持ち、部品・組立で�
   // 視点の群は上の数の分割から外してあるので、群の並びと 6 方向をここで実名で確かめる。
   expect(TOOLBAR_COMMAND_CATALOG.filter(entry => entry.group === 'view').map(entry => entry.sourceId)).toEqual([
     'shaded', 'shadedWithEdges', 'wireframe', 'section', 'grid', 'chaining', 'snap', 'home',
-    'front', 'back', 'right', 'left', 'top', 'bottom', 'matchWorkPlane',
+    'front', 'back', 'right', 'left', 'top', 'bottom', 'fitAll', 'fitSelection', 'previousView', 'matchWorkPlane',
   ]);
+  // 全体を表示・選択に合わせる・直前の視点へ戻る(B-08c)も、部品・組立で使え、視点の章を開き、既定のキーは持たない。
+  for (const [sourceId, labelKey, label] of [
+    ['fitAll', 'toolbar.viewFit.all', '全体を表示'], ['fitSelection', 'toolbar.viewFit.selection', '選択に合わせる'],
+    ['previousView', 'toolbar.viewHistory.previous', '直前の視点へ戻る'],
+  ] as const) {
+    const id = `toolbar.view.${sourceId}` as const;
+    expect(TOOLBAR_COMMAND_CATALOG.filter(entry => entry.id === id)).toEqual([{
+      id, group: 'view', sourceId, labelKey, tooltipKey: `${labelKey}Tooltip`, documentKinds: ['part', 'assembly'], helpTopic: 'viewport',
+    }]);
+    expect(t(labelKey)).toBe(label);
+    expect(t(`${labelKey}Tooltip`).startsWith(`${label}: `)).toBe(true);
+    expect(commandDefinition(id)?.shortcuts).toEqual([]);
+  }
   const expected = [
     ['front', '正面から見る'], ['back', '背面から見る'], ['right', '右から見る'],
     ['left', '左から見る'], ['top', '上から見る'], ['bottom', '下から見る'],

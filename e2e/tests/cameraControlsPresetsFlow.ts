@@ -6,6 +6,7 @@ import { beginRecompute, waitForRecompute } from './recompute.js';
 import { waitForStartupHealth } from './startupHealth.js';
 import { uiMessage } from './uiMessages.js';
 import { cameraDistance, expectSameCamera, observeControlsInput, rememberCamera } from './cameraControlsSettingsFlow.js';
+import { closeInputBindings, inputBindingsWindow, openInputBindings } from './inputBindingsWindowSupport.js';
 
 // Independent acceptance table: the preset table of cameraControlSettings.ts, applied through the v2 settings
 // (viewControlSettings.ts). Never import the production preset builder, validator, binding matcher, or camera math
@@ -42,11 +43,11 @@ const canvas = (page: Page) => page.locator('canvas.pcad-viewport__canvas');
 const stored = (page: Page) => page.evaluate(() => localStorage.getItem('pointercad.settings'));
 
 async function open(page: Page): Promise<void> {
-  if (!await form(page).isVisible()) await page.getByRole('button', { name: '設定', exact: true }).click();
+  if (!await form(page).isVisible()) await openInputBindings(page, 'view');
   await expect(form(page)).toBeVisible();
 }
 async function close(page: Page): Promise<void> {
-  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await closeInputBindings(page);
   await expect(form(page)).toHaveCount(0);
 }
 async function home(page: Page): Promise<void> {
@@ -92,7 +93,8 @@ function tableRow(item: typeof presets[number], name: 'orbit' | 'pan' | 'zoom', 
   return { input, alt, shift, ctrl, meta };
 }
 async function expectPreset(page: Page, item: typeof presets[number]): Promise<void> {
-  await expect(form(page).getByRole('combobox')).toHaveCount(6);
+  // Two binding rows per action and the rotation and zoom centers (B-08d).
+  await expect(form(page).getByRole('combobox')).toHaveCount(6 + 2);
   for (const name of ['orbit', 'pan', 'zoom'] as const) {
     await expect(action(page, name).getByRole('combobox')).toHaveCount(2);
     for (const index of [0, 1]) {
@@ -252,11 +254,12 @@ export async function cameraControlsPresetsFlow(page: Page, info: TestInfo, app?
   await draft(page, item); expect(await stored(page)).toBe(priorStorage);
   await button(page, 'cancel').click(); expect(await fields(page)).toEqual(priorFields);
   await expect(button(page, 'apply')).toBeDisabled(); expect(await stored(page)).toBe(priorStorage);
-  // Closing with an unapplied preset asks inside the panel; discarding closes it and keeps the stored settings.
-  await draft(page, item); await page.getByRole('button', { name: '設定', exact: true }).click();
-  const draftPrompt = page.getByRole('group', { name: uiMessage('toolbar', 'toolbar.settings.draft.message'), exact: true });
+  // Closing with an unapplied preset asks inside the window; discarding closes it and keeps the stored settings.
+  await draft(page, item);
+  await inputBindingsWindow(page).getByRole('button', { name: uiMessage('view', 'settings.inputBindings.close'), exact: true }).click();
+  const draftPrompt = page.getByRole('group', { name: uiMessage('view', 'settings.inputBindings.draft.message'), exact: true });
   await expect(draftPrompt).toBeVisible(); await expect(form(page)).toBeVisible();
-  await draftPrompt.getByRole('button', { name: uiMessage('toolbar', 'toolbar.settings.draft.discardClose'), exact: true }).click();
+  await draftPrompt.getByRole('button', { name: uiMessage('view', 'settings.inputBindings.draft.discardClose'), exact: true }).click();
   await expect(form(page)).toHaveCount(0); await open(page);
   expect(await fields(page)).toEqual(priorFields); expect(await stored(page)).toBe(priorStorage);
   await expect(button(page, 'apply')).toBeDisabled();

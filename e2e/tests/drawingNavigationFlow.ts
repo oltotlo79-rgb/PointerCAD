@@ -8,6 +8,7 @@ import { twoBoxAssemblyFile } from './assemblyTestSupport.js';
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { waitForDrawingReady } from './drawingManufacturingFixture.js';
 import { uiMessage } from './uiMessages.js';
+import { closeInputBindings, openInputBindings } from './inputBindingsWindowSupport.js';
 
 async function fixture(): Promise<Uint8Array> {
   const read = await readDocumentBundle(await twoBoxAssemblyFile(), 'assembly');
@@ -178,7 +179,7 @@ export async function drawingNavigationFlow(page: Page, info: TestInfo, app?: El
   };
   await open(); const original = await save('navigation-before');
   const label = (key: string) => uiMessage('view', `settings.camera.${key}`);
-  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await openInputBindings(page, 'view');
   const form = page.getByRole('form', { name: label('title'), exact: true }); await expect(form).toBeVisible();
   await form.getByRole('button', { name: label('defaults'), exact: true }).click();
   const zoom = form.getByRole('group', { name: label('zoom'), exact: true });
@@ -188,7 +189,7 @@ export async function drawingNavigationFlow(page: Page, info: TestInfo, app?: El
   await pan.getByRole('checkbox', { name: label('alt'), exact: true }).nth(1).check();
   await form.getByRole('button', { name: label('apply'), exact: true }).click();
   await expect(form.getByRole('button', { name: label('apply'), exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await closeInputBindings(page);
   const initialMatrix = await matrix(page);
 
   // Both pan slots: the same physical point follows the actual mouse in CSS pixels.

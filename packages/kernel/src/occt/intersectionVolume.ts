@@ -158,7 +158,7 @@ export function intersectionVolume(
     const certifiedBoxOverlap = options.certifiedBoxOverlap === true;
     if (aIsNull || bIsNull || (!certifiedBoxOverlap
       && (!containsSolid(oc, a, cleanupMessages) || !containsSolid(oc, b, cleanupMessages)))) {
-      return failed({ code: 'invalidInput', stage, message: '重なりを調べる立体がありません。' });
+      return failed({ code: 'invalidInput', stage, message: '重なりを調べるソリッドがありません。' });
     }
 
     stage = 'createBuilder';
@@ -197,7 +197,7 @@ export function intersectionVolume(
 
     stage = 'checkBuild';
     if (maker.HasErrors() || !maker.IsDone()) {
-      return failed({ code: 'buildFailed', stage, message: '立体の重なりを計算できませんでした。位置や形を見直してください。' });
+      return failed({ code: 'buildFailed', stage, message: 'ソリッドの重なりを計算できませんでした。位置や形を見直してください。' });
     }
     stage = 'readShape';
     const shape = allocations.keep(maker.Shape());
@@ -231,7 +231,7 @@ export function intersectionVolume(
   } catch (error) {
     result = failed({
       code: 'occtException', stage,
-      message: '立体の重なりを調べられませんでした。位置や形を見直してください。',
+      message: 'ソリッドの重なりを調べられませんでした。位置や形を見直してください。',
       detail: exceptionDetail(error),
     });
   }

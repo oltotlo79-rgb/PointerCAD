@@ -233,7 +233,7 @@ function registerSteelBendLifecycleTests(test: typeof base,
         await picker.getByRole('button', { name: '曲げ部品の配置へ', exact: true }).click();
         const placement = page.getByRole('dialog', { name: '部品を置く位置', exact: true });
         await expect(placement).toBeVisible();
-        await placement.getByRole('button', { name: '取り消す', exact: true }).click();
+        await placement.getByRole('button', { name: '取消', exact: true }).click();
         await expect(placement).toHaveCount(0);
         expect(await snapshot('bend-placement-cancel')).toEqual(empty);
         picker = await openPicker();

@@ -138,7 +138,7 @@ export interface XcafDocumentBuilder extends XcafDocument {
 const STORAGE_FORMAT = 'BinXCAF';
 
 /** 書き出す立体が 1 つも無いとき(NFR-UX-5)。 */
-const NO_SHAPE_MESSAGE = '書き出せる立体がありません。';
+const NO_SHAPE_MESSAGE = '書き出せるソリッドがありません。';
 
 
 /**

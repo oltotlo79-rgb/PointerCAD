@@ -32,7 +32,8 @@ export async function mathErrorFunctionsFlow(page: Page, info: TestInfo, app?: E
     await input.fill(formula); await expect(result).toContainText(value); await expect(apply).toBeEnabled();
   }
   const source = 'erfc(1)', changed = 'erfc(2)', initialValue = 0.15729920705028513, changedValue = 0.004677734981047266;
-  await input.fill(source); await expect(result).toHaveText('= 0.1572992070502851306587793649173907407039');
+  await input.fill(source); await expect(result.locator('.pcad-math-editor__full p')).toHaveText('= 0.1572992070502851306587793649173907407039');
+  await expect(result.locator('p').first()).toHaveText('≈ 0.157299');
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
   await expect(dialog.locator('math-field')).toBeFocused();
   const palette = dialog.locator('summary').filter({ hasText: '記号と演算を探す' });
@@ -42,7 +43,7 @@ export async function mathErrorFunctionsFlow(page: Page, info: TestInfo, app?: E
   await expect(dialog.getByRole('button', { name: /相補誤差関数 erfc/u })).toBeVisible();
   await palette.click();
   await dialog.getByRole('button', { name: 'テキスト入力', exact: true }).click();
-  await expect(input).toHaveValue(source); await expect(result).toHaveText('= 0.1572992070502851306587793649173907407039');
+  await expect(input).toHaveValue(source); await expect(result.locator('.pcad-math-editor__full p')).toHaveText('= 0.1572992070502851306587793649173907407039');
   await page.setViewportSize({ width: 1440, height: 1100 });
   await captureManualDetail(page, info, { name: 'math-error-functions', dialog, script: new URL(import.meta.url),
     fixture: { source, expected: initialValue, argument: 1 } });

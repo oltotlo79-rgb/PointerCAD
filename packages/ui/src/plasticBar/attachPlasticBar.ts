@@ -5,6 +5,7 @@ import type { StoreApi } from 'zustand';
 import type { AppState } from '../store/appState.js';
 import type { PlasticBarRunner } from '../store/plasticBarSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { femAssetFailureKey } from '../femFailureMessage.js';
 import type { BeamAttachment } from '../beam/attachBeamAnalysis.js';
 import { plasticBarInput, type PlasticBarSession } from './plasticBarSession.js';
 
@@ -94,7 +95,7 @@ export function attachPlasticBar(
       } else {
         store.setState({ plasticBarSession: { ...next, result: null, phase: null,
           status: completion.kind === 'cancelled' ? 'cancelled' : 'failed',
-          errorKey: completion.kind === 'failed' ? 'plasticBar.error.runtime' : null,
+          errorKey: completion.kind === 'failed' ? femAssetFailureKey(completion.failure.code) ?? 'plasticBar.error.runtime' : null,
           diagnostic: completion.kind === 'failed' ? `${completion.failure.code}: ${completion.failure.message}` : null } });
       }
     }).catch((error: unknown) => {

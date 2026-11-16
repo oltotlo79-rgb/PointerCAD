@@ -103,12 +103,23 @@ describe('窓を開いた時に族の表を読み込む口', () => {
     expect(hooks.state).toBe('loading');
   });
 
-  it('製品の登録口（まだ族が無い）では なし のままで、窓の見た目を変えない', async () => {
-    expect(PRODUCT_CATALOG_REGISTRY.entries).toEqual([]);
-    useCatalogFamilies(true);
-    expect(hooks.deps).toEqual([true, PRODUCT_CATALOG_REGISTRY]);
+  it('族の無い登録口では なし のままで、窓の見た目を変えない', async () => {
+    const { registry, ensure } = pendingRegistry([]);
+    useCatalogFamilies(true, registry);
     hooks.effect?.();
     await flush();
     expect(hooks.state).toBe('none');
+    expect(ensure).not.toHaveBeenCalled();
+  });
+
+  it('製品の登録口（K4a の族）では、開くと 読み込み中 → 済み になる', async () => {
+    expect(PRODUCT_CATALOG_REGISTRY.entries.length).toBeGreaterThan(0);
+    useCatalogFamilies(true);
+    expect(hooks.deps).toEqual([true, PRODUCT_CATALOG_REGISTRY]);
+    hooks.effect?.();
+    expect(hooks.state).toBe('loading');
+    await PRODUCT_CATALOG_REGISTRY.ensure(PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id));
+    await flush();
+    expect(hooks.state).toBe('ready');
   });
 });

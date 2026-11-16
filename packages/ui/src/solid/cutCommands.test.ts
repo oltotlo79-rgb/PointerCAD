@@ -280,7 +280,7 @@ describe('選んだものから切る面を推測する(タスク27e、NFR-UX-4)
  * ------------------------------------------------------------------ */
 
 describe('切断の先出し検査(タスク27e 手順3、NFR-UX-5)', () => {
-  it('対象の立体が選ばれていなければ押せない', () => {
+  it('対象のソリッドが選ばれていなければ押せない', () => {
     expect(cutToolReadiness(contextOf([]))).toEqual({
       ready: false,
       reasonKey: 'shapeError.noTargetBody',
@@ -288,7 +288,7 @@ describe('切断の先出し検査(タスク27e 手順3、NFR-UX-5)', () => {
     expect(cutTargetOf(contextOf([BODY]))).toBe(BODY);
   });
 
-  it('立体を 2 つ選ぶと対象が決まらない', () => {
+  it('ソリッドを 2 つ選ぶと対象が決まらない', () => {
     const document = appendSolid(documentWithPlate(), extrudeFeature('extrude-2'));
     const context: CutContext = {
       document,

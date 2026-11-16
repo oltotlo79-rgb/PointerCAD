@@ -1266,6 +1266,7 @@ describe('合致を保つ部品ドラッグの帯(P7 タスク18)', () => {
     ['waiting', 'failure', 'assembly.drag.waiting'],
     ['unavailable', 'failure', 'assembly.drag.unavailable'],
     ['failed', 'failure', 'assembly.drag.failed'],
+    ['interrupted', 'failure', 'assembly.drag.interrupted'],
   ] as const)('%s の結果を1文で知らせる', (notice, kind, key) => {
     const line = describeStatus({ ...quiet(), assemblyDragNotice: notice });
     expect(line.kind).toBe(kind);
@@ -1293,6 +1294,15 @@ describe('合致を保つ部品ドラッグの帯(P7 タスク18)', () => {
 
   it('知らせが無い既存状態は従来どおり準備完了を出す', () => {
     expect(describeStatus({ ...quiet(), assemblyDragNotice: null }).text).toBe(t('statusBar.ready'));
+  });
+
+  it('操作していない理由の取り消しは保存の文に隠さず、利用者の取り消しは今までどおり保存の文の下にする(A-26)', () => {
+    const saved = { key: 'file.saved', failed: false } as const;
+    const interrupted = describeStatus({ ...quiet(), fileMessage: saved, assemblyDragNotice: 'interrupted' });
+    expect(interrupted.kind).toBe('failure');
+    expect(interrupted.text).toBe(t('assembly.drag.interrupted'));
+    expect([...t('assembly.drag.interrupted')].length).toBeLessThanOrEqual(150);
+    expect(describeStatus({ ...quiet(), fileMessage: saved, assemblyDragNotice: 'cancelled' }).text).toBe(t('file.saved'));
   });
 });
 

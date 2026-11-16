@@ -8,6 +8,7 @@ import { addSelectedOriginTarget, cancelMate, commitJointDraft, commitMateDraft,
   jointDraftCheck, jointFailureText, mateDraftCheck, mateFailureText, mateKindReadiness, removeDraftTarget,
   startJoint, startMate, toggleDraftFlipped, updateJointRangeSource, updateMateSource } from './mateActions.js';
 import { mateKindNeedsValue } from './mateCommands.js';
+import { focusFirstTextField } from './popoverFocus.js';
 
 export function MatePopover(): React.JSX.Element | null {
   const state = useAppStore();
@@ -19,11 +20,7 @@ export function MatePopover(): React.JSX.Element | null {
   const jointKind = draft?.jointKind;
   const editingId = draft?.editingMateId;
   useEffect(() => {
-    if (open) {
-      const input = panel.current?.querySelector<HTMLInputElement>('.pcad-field__input');
-      if (input != null) { input.focus(); input.select(); }
-      else panel.current?.focus();
-    }
+    if (open) focusFirstTextField(panel.current);
   }, [open, pair, kind, editingId]);
   if (draft === null || state.assemblyPlacement !== null) return null;
   const check = jointKind === undefined ? mateDraftCheck(state) : null;
@@ -54,7 +51,7 @@ export function MatePopover(): React.JSX.Element | null {
       </p>
       {jointKind === undefined ? <label className="pcad-field">
         <span className="pcad-field__label">{t('assembly.mate.kind')}</span>
-        <select title={t('assembly.guide.mateKind')} value={draft.kind} onChange={(event) => {
+        <select className="pcad-field__input" title={t('assembly.guide.mateKind')} value={draft.kind} onChange={(event) => {
           const item = ASSEMBLY_MATE_TOOLS.find((candidate) => candidate.kind === event.target.value);
           if (item !== undefined) startMate(item.kind);
         }}>
@@ -67,7 +64,7 @@ export function MatePopover(): React.JSX.Element | null {
         </select>
       </label> : <label className="pcad-field">
         <span className="pcad-field__label">{t('assembly.tool.joint')}</span>
-        <select title={t('assembly.guide.jointKind')} value={jointKind} onChange={(event) => {
+        <select className="pcad-field__input" title={t('assembly.guide.jointKind')} value={jointKind} onChange={(event) => {
           const item = ASSEMBLY_JOINT_TOOLS.find((candidate) => candidate.kind === event.target.value);
           if (item !== undefined) startJoint(item.kind);
         }}>

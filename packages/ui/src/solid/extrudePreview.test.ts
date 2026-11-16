@@ -259,7 +259,7 @@ describe('段階計算の採用(成功・1回のUndo・自動の再計算を重�
 describe('計算の失敗は文書・形・取り消しの段に触れない', () => {
   it.each([
     { kind: 'failed', failure: 'failed', settle: (call: ControlledCall) => call.settle({ ...success(call, ['first']),
-      errors: [{ featureId: 'extrude-new', code: 'kernelFailed', message: '立体を作れませんでした' }] }) },
+      errors: [{ featureId: 'extrude-new', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }] }) },
     { kind: 'workerBroken', failure: 'workerBroken', settle: (call: ControlledCall) => call.settle({ ...success(call, ['first']),
       errors: [{ featureId: 'extrude-new', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE }] }) },
     { kind: 'missing final body', failure: 'missingBody', settle: (call: ControlledCall) => call.settle(success(call, ['first'])) },

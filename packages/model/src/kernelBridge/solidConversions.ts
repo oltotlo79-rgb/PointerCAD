@@ -279,7 +279,7 @@ function accountingReceipt(
 }
 
 /** 立体が消えたとき(画面に出すはずの段の結果も理由も返らなかったとき)に付ける理由。 */
-const MISSING_BODY_MESSAGE = 'カーネルから立体が返りませんでした。';
+const MISSING_BODY_MESSAGE = 'カーネルからソリッドが返りませんでした。';
 
 /**
  * カーネルの結果を model のボディへ詰め替える。妥当性の判定は SolidBody.isValid の注釈のとおり。

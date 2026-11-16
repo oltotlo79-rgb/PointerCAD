@@ -14,6 +14,7 @@ import { COORDINATE_SELECTABLE, coordinateSystemKeyword } from './vectorCalculus
 import { CLOSED_INTEGRAL_SYMBOLS, LINE_INTEGRAL_IDS, validateLineIntegral } from './lineIntegrals.js';
 import { REGION_INTEGRAL_IDS, validateRegionIntegral } from './regionIntegrals.js';
 import { GENERAL_PROBABILITY_IDS, probabilityFunction } from './generalProbability.js';
+import { formatInfixOperation } from './mathTextInfix.js';
 
 const CONSTANTS: Readonly<Record<Extract<MathNode, { kind: 'constant' }>['name'], string>> = {
   pi: 'pi', e: 'e', 'imaginary-unit': 'i', infinity: '∞', true: 'true', false: 'false',
@@ -24,7 +25,9 @@ const SYMBOLS: Readonly<Record<string, string>> = {
   superset: '⊃', 'superset-equal': '⊇', 'approximately-equal': '≈',
 };
 
-export function formatMathText(expression: MathNode, operations: ReadonlyMap<string, MathOperationDefinition>): string {
+/** `infix` を指定すると、足す・引く・掛ける・割る・冪・符号反転を利用者の書き方(a+b)で表す(名前の変更後の式の文字用。C-02k)。既定は従来どおり。 */
+export function formatMathText(expression: MathNode, operations: ReadonlyMap<string, MathOperationDefinition>,
+  options: { readonly infix?: boolean } = {}): string {
   let remaining = MATH_INPUT_LIMITS.nodes;
   function format(node: MathNode, depth: number): string {
     if (--remaining < 0 || depth > MATH_INPUT_LIMITS.depth) throw new MathInputProblem('budget', '表示する数式が複雑すぎます。');
@@ -38,6 +41,8 @@ export function formatMathText(expression: MathNode, operations: ReadonlyMap<str
     const operation = operations.get(node.operation);
     if (!operation || operation.structural) throw new MathInputProblem('unsupported', 'この演算のテキスト表記を確認できません。');
     if (node.kind === 'operation') {
+      const infix = options.infix === true ? formatInfixOperation(node, child => format(child, depth + 1)) : null;
+      if (infix !== null) return infix;
       const symbol = SYMBOLS[node.operation];
       if (symbol && node.operands.length === 2) return node.operands.map(child => `(${format(child, depth + 1)})`).join(symbol);
       if (['plus-minus', 'minus-plus'].includes(node.operation) && node.operands.length === 1) {

@@ -234,7 +234,7 @@ function solidKernelFailed(featureId: string, message: string, reason?: PartErro
  * 呼び出しごと失敗したときの前置き。この場合の理由は Worker の内部事情
  * (通信の切断など)で利用者向けの文になっていないため、何ができなかったかを添える。
  */
-const SOLID_CALL_FAILED_PREFIX = '立体を作れませんでした: ';
+const SOLID_CALL_FAILED_PREFIX = 'ソリッドを作れませんでした: ';
 
 /**
  * カーネル(OCCT)の読み込み(取得・検証・compile)に失敗したとき、同じ世代を頼み直す回数(FR-504、NFR-RE-1)。

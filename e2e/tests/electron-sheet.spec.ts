@@ -57,7 +57,7 @@ test('P10 板金を実Electronで基板・フランジ・リリーフから作�
     await flat.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 2' });
     await flat.getByRole('button', { name: '展開を表示', exact: true }).click();
     await expect(flat.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-    expect(Number((await flat.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(4976 + 186 * Math.PI, 4);
+    expect(Number(await flat.getByRole('status').getAttribute('title'))).toBeCloseTo(4976 + 186 * Math.PI, 4);
     await sheetHelpFlow(page, '板金を展開し、穴表・図面・加工用ファイルを作る', info, 'native-sheet-help.png');
     for (const [label, filename] of [['展開DXF', '展開.dxf'], ['展開STEP', '展開.step'], ['折曲げSTEP', '折曲げ.step']]) {
       const path = join(directory, filename); await saveTarget(app, path);

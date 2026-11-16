@@ -90,7 +90,7 @@ const MAX_REVOLVE_ANGLE = 2 * Math.PI + 1e-9;
 const SURFACE_FAILED_MESSAGE = '面を作れませんでした。輪郭と向きを見直してください。';
 
 /** 掃いた結果が立体になってしまったとき。曲面の段は面だけの形しか返さない。 */
-const NOT_A_SURFACE_MESSAGE = '面を作れませんでした。立体になったので、押し出しの段を使ってください。';
+const NOT_A_SURFACE_MESSAGE = '面を作れませんでした。ソリッドになったので、押し出しの段を使ってください。';
 
 /** 曲線が 1 本も無いとき(`makePlanarFace.ts` と同じ文言)。 */
 const NO_CURVE_MESSAGE = '面を作るには曲線が 1 本以上必要です。';
@@ -114,7 +114,7 @@ const AXIS_MESSAGE = '回転の軸が決まりません。軸を選び直して�
 const TOO_FEW_SECTIONS_MESSAGE = 'つなぐ面を 2 つ選んでください。';
 
 /** 面を取り出す相手の立体が渡されていないとき(呼び出し側の組み立ての誤り)。 */
-const NO_TARGET_MESSAGE = '面を取り出す立体が選ばれていません。立体を選び直してください。';
+const NO_TARGET_MESSAGE = '面を取り出すソリッドが選ばれていません。ソリッドを選び直してください。';
 
 /** 面ではないもの(辺・頂点)の指紋が来たとき。 */
 const NOT_A_FACE_QUERY_MESSAGE = '面を選んでください。線や点からは面を作れません。';

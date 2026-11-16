@@ -8,9 +8,17 @@ import { useAppStore } from '../store/useAppStore.js';
 import { measureKindLabel, measurementProvenanceLabel } from './measure.js';
 import {
   defaultDensityMaterialId, densityOf, describeMeasureKinds, describeMeasureTargets,
-  formatMeasurePoint, formatMeasureValue, formatMoments, isValidDensity, massPropertiesView,
+  formatMeasurePoint, formatMeasureValue, formatMoments, isValidDensity, massPropertiesView, shortNumber,
 } from './measureCommands.js';
 import { formatArea, formatVolume, AREA_UNIT_KEYS, VOLUME_UNIT_KEYS } from './measureFormatting.js';
+
+/**
+ * 質量の画面の文字(有効 6 桁。UI の点検の指摘 26)。kg と g の境目は model の formatMass と同じ 1000 g。
+ * 全桁は formatMass(説明の title)で出す。計算の中の値は変えない。
+ */
+function massText(grams: number): string {
+  return Math.abs(grams) >= 1000 ? `${shortNumber(grams / 1000)} kg` : `${shortNumber(grams)} g`;
+}
 
 /**
  * 質量の材料 19 種の見出し(`densityMaterials.ts` の `DENSITY_MATERIALS` と同じ id)。
@@ -80,7 +88,8 @@ export function MeasureSection({
           {readiness.ready ? describeMeasureKinds(readiness.kinds) : ''}
         </dd>
         <dt className="pcad-properties__key">{t('propertyPanel.measureResult')}</dt>
-        <dd className="pcad-properties__value">
+        <dd className="pcad-properties__value"
+          title={measurement === null ? undefined : formatMeasureValue(measurement.result, unit, 'full')}>
           {measurement === null
             ? t('propertyPanel.measureNotYet')
             : `${measureKindLabel(measurement.result.kind)}: ${formatMeasureValue(measurement.result, unit)}`}
@@ -213,21 +222,27 @@ export function MassPropertiesSection({
         </p>
         <dl className="pcad-properties">
           <dt className="pcad-properties__key">{t('propertyPanel.massVolume')}</dt>
-          <dd className="pcad-properties__value">
-            {`${formatVolume(massProperties.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
+          <dd className="pcad-properties__value"
+            title={`${formatVolume(massProperties.volume, units.lengthUnit)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}>
+            {`${formatVolume(massProperties.volume, units.lengthUnit, shortNumber)} ${t(VOLUME_UNIT_KEYS[units.lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massArea')}</dt>
-          <dd className="pcad-properties__value">
-            {`${formatArea(massProperties.area, units.lengthUnit)} ${t(AREA_UNIT_KEYS[units.lengthUnit])}`}
+          <dd className="pcad-properties__value"
+            title={`${formatArea(massProperties.area, units.lengthUnit)} ${t(AREA_UNIT_KEYS[units.lengthUnit])}`}>
+            {`${formatArea(massProperties.area, units.lengthUnit, shortNumber)} ${t(AREA_UNIT_KEYS[units.lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massMass')}</dt>
-          <dd className="pcad-properties__value">{view === null ? t('propertyPanel.massUncomputed') : formatMass(view.mass)}</dd>
+          <dd className="pcad-properties__value" title={view === null ? undefined : formatMass(view.mass)}>
+            {view === null ? t('propertyPanel.massUncomputed') : massText(view.mass)}
+          </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massCentre')}</dt>
-          <dd className="pcad-properties__value">
+          <dd className="pcad-properties__value" title={formatMeasurePoint(massProperties.centreOfMass, units.lengthUnit, 'full')}>
             {formatMeasurePoint(massProperties.centreOfMass, units.lengthUnit)}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massInertia')}</dt>
-          <dd className="pcad-properties__value">{view === null ? t('propertyPanel.massUncomputed') : formatMoments(view.moments)}</dd>
+          <dd className="pcad-properties__value" title={view === null ? undefined : formatMoments(view.moments, 'full')}>
+            {view === null ? t('propertyPanel.massUncomputed') : formatMoments(view.moments)}
+          </dd>
         </dl>
       </>)}
       {density === null && <p className="pcad-panel__note" role="status">

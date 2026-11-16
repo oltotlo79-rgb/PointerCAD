@@ -285,6 +285,19 @@ describe('owned product FEM lifetime (protocol fixtures, not numerical qualifica
     expect(attachment?.statistics().live).toBe(0);
   });
 
+  // A-24: 計算の準備のファイルの断りに「入力と解析ファイルを確認」の文を出さない。ほかの断りは今の文のまま。
+  it.each([['asset-missing', 'strength.femFailure.assetMissing'], ['asset-corrupt', 'strength.femFailure.assetCorrupt'],
+    ['solver-failed', 'beam.error.runtime']] as const)('shows the shared preparation-file message only for %s', async (code, key) => {
+    const { port } = await running(), request = port.request;
+    if (request === null) throw new Error('Expected request');
+    port.onmessage?.(new MessageEvent('message', { data: { protocol: request.protocol, identity: request.identity,
+      kind: 'failure', failure: { code, message: `${code}: python_stdlib.zip` } } }));
+    await vi.waitFor(() => expect(requireBeamSession().status).toBe('failed'));
+    expect(requireBeamSession().errorKey).toBe(key);
+    expect(requireBeamSession().diagnostic).toBe(`${code}: ${code}: python_stdlib.zip`);
+    expect(port.terminated).toBe(1);
+  });
+
   it('cancels from the user action and cannot use an unreviewed edit to start a replacement Worker', async () => {
     const { fixture, port, ports } = await running();
     useAppStore.getState().cancelBeam();

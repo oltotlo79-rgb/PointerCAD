@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { MatePopover } from './MatePopover.js';
+import { focusFirstTextField } from './popoverFocus.js';
 import { t } from '../i18n/t.js';
-import { addMateTarget, startMate, updateMateSource } from './mateActions.js';
+import { addMateTarget, startJoint, startMate, updateMateSource } from './mateActions.js';
 
 interface KeyInput {
   readonly key: string;
@@ -90,3 +91,35 @@ describe('MatePopover real React handler and store (node, not DOM)', () => {
     expect(stopPropagation).not.toHaveBeenCalled();
   });
 });
+
+describe('合致の窓の選ぶ欄と最初の焦点(UI の点検の指摘 9)', () => {
+  it('合致とジョイントの種類の選ぶ欄は、ほかの欄と同じ見た目の class を持つ', () => {
+    expect(renderToStaticMarkup(<MatePopover />)).toMatch(/<select class="pcad-field__input" title="[^"]*">/u);
+    startJoint('revolute');
+    expect(renderToStaticMarkup(<MatePopover />)).toMatch(/<select class="pcad-field__input" title="[^"]*">/u);
+  });
+  // 選ぶ欄も同じ class を持つので、class だけで探すと select を拾い、select() が無くて例外になる(窓が描けない)。
+  function panelWith(children: readonly FakeField[]) {
+    return { focus: vi.fn(), querySelector: (selector: string) => children.find(child => matches(child, selector)) ?? null };
+  }
+  it('最初の焦点は文字の欄へ置いて全選択し、前にある選ぶ欄は選ばない', () => {
+    const select: FakeField = { tagName: 'SELECT', className: 'pcad-field__input', focus: vi.fn() };
+    const input: FakeField = { tagName: 'INPUT', className: 'pcad-field__input', focus: vi.fn(), select: vi.fn() };
+    const panel = panelWith([select, input]);
+    focusFirstTextField(panel as unknown as HTMLElement);
+    expect(input.focus).toHaveBeenCalledOnce(); expect(input.select).toHaveBeenCalledOnce();
+    expect(select.focus).not.toHaveBeenCalled(); expect(panel.focus).not.toHaveBeenCalled();
+  });
+  it('文字の欄が無ければ窓そのものへ焦点を置く', () => {
+    const panel = panelWith([{ tagName: 'SELECT', className: 'pcad-field__input', focus: vi.fn() }]);
+    focusFirstTextField(panel as unknown as HTMLElement);
+    expect(panel.focus).toHaveBeenCalledOnce();
+  });
+});
+
+interface FakeField { readonly tagName: string; readonly className: string; readonly focus: () => void; readonly select?: () => void }
+/** 'tag.class' と '.class' の 2 つの形だけを読む、試験の中の小さな選び方。 */
+function matches(field: FakeField, selector: string): boolean {
+  const [tag, className] = selector.split('.');
+  return (tag === '' || field.tagName === tag.toUpperCase()) && field.className.split(' ').includes(className);
+}

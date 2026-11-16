@@ -10,13 +10,13 @@ async function checkShape(page: Page, expected: { readonly folded: number; reado
   await page.getByRole('tab', { name: 'プロパティ', exact: true }).click();
   await page.locator('.pcad-panel--left').getByRole('button', { name: '切欠き付きU板1', exact: true }).click();
   const value = page.locator('.pcad-panel--right dt.pcad-properties__key').filter({ hasText: /^体積$/ }).locator('xpath=following-sibling::dd[1]');
-  await expect.poll(async () => Number((await value.textContent())?.replaceAll(',', '').match(/[\d.]+/u)?.[0])).toBeCloseTo(expected.folded, 4);
+  await expect.poll(async () => Number(((await value.getAttribute('title')) ?? (await value.textContent()))?.replaceAll(',', '').match(/[\d.]+/u)?.[0])).toBeCloseTo(expected.folded, 4);
   await page.locator('.pcad-toolbar').getByRole('button', { name: /^板金/ }).first().click();
   await page.locator('.pcad-menu__panel[aria-label="板金"]').getByRole('button', { name: '板金の展開', exact: true }).click();
   const flat = page.getByRole('form', { name: '板金の展開', exact: true });
   await flat.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(flat.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  expect(Number((await flat.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(expected.flat, 4);
+  expect(Number(await flat.getByRole('status').getAttribute('title'))).toBeCloseTo(expected.flat, 4);
   await flat.getByRole('button', { name: '折曲げを表示', exact: true }).click();
   await flat.getByRole('button', { name: '閉じる', exact: true }).click();
 }

@@ -19,7 +19,7 @@ export async function compareCachedMaterials(
   request: unknown, cache: AcquiringShapeCache<CachedSolid>, loadOcct: () => Promise<OpenCascadeInstance>,
   shouldCancel?: SolidCancelToken,
 ): Promise<MaterialComparisonOutcome> {
-  if (!validRequest(request)) return { kind: 'failed', message: '比較する立体の指定が正しくありません。' };
+  if (!validRequest(request)) return { kind: 'failed', message: '比較するソリッドの指定が正しくありません。' };
   const beforeKeys = [...new Set(request.beforeKeys)], afterKeys = [...new Set(request.afterKeys)];
   const keys = [...new Set([...beforeKeys, ...afterKeys])];
   let token: AcquireToken | undefined, result: MaterialComparisonOutcome;
@@ -28,12 +28,12 @@ export async function compareCachedMaterials(
     const bodies = new Map<string, CachedSolid>();
     for (const key of keys) {
       const body = cache.get(key);
-      if (body === undefined) throw new Error('比較する立体が見つかりません。形を再計算してください。');
+      if (body === undefined) throw new Error('比較するソリッドが見つかりません。形を再計算してください。');
       bodies.set(key, body);
     }
     const select = (source: readonly string[]): CachedSolid[] => source.map(key => {
       const body = bodies.get(key);
-      if (body === undefined) throw new Error('比較する立体が見つかりません。');
+      if (body === undefined) throw new Error('比較するソリッドが見つかりません。');
       return body;
     });
     if (await shouldCancel?.()) result = { kind: 'cancelled' };
@@ -43,7 +43,7 @@ export async function compareCachedMaterials(
   }
   if (token !== undefined) try { cache.release(token); } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    result = { kind: 'failed', message: `${result.kind === 'failed' ? result.message + '\n' : ''}比較中の立体を返せませんでした。${detail}` };
+    result = { kind: 'failed', message: `${result.kind === 'failed' ? result.message + '\n' : ''}比較中のソリッドを返せませんでした。${detail}` };
   }
   return result;
 }

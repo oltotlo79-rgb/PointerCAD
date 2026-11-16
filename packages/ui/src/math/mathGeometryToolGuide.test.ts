@@ -232,13 +232,13 @@ describe('道具が先のときの段(mathGeometryToolGuide)', () => {
     const guide = mathGeometryToolGuide(useAppStore.getState());
     expect(guide).toEqual({ stage: 'nothingSelected', key: 'statusBar.guide.mathGeometry', values: {} });
     expect(guideTextNow()).toBe(
-      '測りたい点・辺・面・立体を選んでください。1つで座標・長さ・面積・体積、2つで距離・角度、3つの点で角度を測れます。',
+      '測りたい点・辺・面・ソリッドを選んでください。1つで座標・長さ・面積・体積、2つで距離・角度、3つの点で角度を測れます。',
     );
     // 状態欄がこの欄を受け取らないときの後退先(GUIDE_KEYS.mathGeometry)と同じ文。
     expect(guideTextNow()).toBe(t(guideKeyFor('mathGeometry', 0)));
   });
 
-  it('段1: 立体を 1 つ選ぶと、体積と面積の 2 件を測れると案内する', async () => {
+  it('段1: ソリッドを 1 つ選ぶと、体積と面積の 2 件を測れると案内する', async () => {
     await toolFirst();
     useAppStore.getState().setSelection([BODY_1]);
     expect(mathGeometryToolGuide(useAppStore.getState())).toEqual({

@@ -28,7 +28,7 @@ function curvedWire(oc: OpenCascadeInstance, curves: readonly CurveSpec[], surfa
       : new oc.BRepBuilderAPI_MakeEdge_31(uv.curve, surface, uv.bounds[0], uv.bounds[1]));
     if (!edgeMaker.IsDone()) throw new Error('曲げ部分の境界を円筒面に作れませんでした。');
     const edge = keep(edgeMaker.Edge());
-    if (!oc.BRepLib.BuildCurves3d_1(edge, 1e-9, continuity, 14, 0)) throw new Error('曲げ部分の境界を立体へ結び付けられませんでした。');
+    if (!oc.BRepLib.BuildCurves3d_1(edge, 1e-9, continuity, 14, 0)) throw new Error('曲げ部分の境界をソリッドへ結び付けられませんでした。');
     maker.Add_1(edge);
   }
   if (!maker.IsDone()) throw new Error('曲げ部分の輪郭がつながっていません。');
@@ -74,7 +74,7 @@ export function makeSheetMetalCurvedPanel(oc: OpenCascadeInstance, input: SheetM
     thick.MakeThickSolidBySimple(face, t);
     if (!thick.IsDone()) throw new Error('曲げ部分へ一定の板厚を付けられませんでした。');
     const shape = keep(thick.Shape());
-    if (!hasSolid(oc, shape) || !isValidShape(oc, shape)) throw new Error('穴や外周を含む曲げが有効な立体になりませんでした。');
+    if (!hasSolid(oc, shape) || !isValidShape(oc, shape)) throw new Error('穴や外周を含む曲げが有効なソリッドになりませんでした。');
     // Simpleの生成殻は内向きになる。新しく所有した結果だけを外向きへ揃える。
     const volume = measureVolume(oc, shape);
     if (!Number.isFinite(volume) || Math.abs(volume) <= 1e-9) throw new Error('曲げ部分の厚みが失われました。');

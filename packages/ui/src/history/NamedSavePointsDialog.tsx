@@ -29,6 +29,16 @@ export interface NamedSavePointsLabels {
   readonly errors: Readonly<Record<SavePointErrorCode, string>>;
 }
 
+/**
+ * 失敗の表示。利用者に見せる文は reason だけで決まる(変えない)。細目(A-25: 中断がどこで起きたか)は、
+ * 窓の alert の data-save-point-detail と console の debug に残す。個人の情報は含まない(固定の語と IndexedDB の誤りの名前だけ)。
+ */
+function failureMessage(error: unknown, errors: NamedSavePointsLabels['errors']): { text: string; error: true; detail?: string } {
+  if (!(error instanceof SavePointError)) return { text: errors.unavailable, error: true };
+  if (error.detail !== null) console.debug('[pcad:save-point]', JSON.stringify({ reason: error.reason, detail: error.detail }));
+  return { text: errors[error.reason], error: true, ...(error.detail === null ? {} : { detail: error.detail }) };
+}
+
 export function NamedSavePointsDialog({ onClose, labels, actions: suppliedActions }: {
   readonly onClose: () => void;
   readonly labels: NamedSavePointsLabels;
@@ -42,7 +52,7 @@ export function NamedSavePointsDialog({ onClose, labels, actions: suppliedAction
   const nameId = useId(), titleId = useId();
   const [name, setName] = useState(''), [points, setPoints] = useState<readonly NamedSavePoint[]>([]);
   const [selectedId, setSelectedId] = useState(''), [beforeId, setBeforeId] = useState(''), [afterId, setAfterId] = useState('');
-  const [busy, setBusy] = useState(false), [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [busy, setBusy] = useState(false), [message, setMessage] = useState<{ text: string; error: boolean; detail?: string } | null>(null);
   const activeKind = useAppStore(state => activeDocumentKind(state));
   const [comparison, setComparison] = useState<SavePointComparison | null>(null);
 
@@ -62,8 +72,7 @@ export function NamedSavePointsDialog({ onClose, labels, actions: suppliedAction
       setPoints(items); setSelectedId(items[0]?.id ?? '');
     }).catch(error => {
       if (operation.current === controller && !controller.signal.aborted)
-        setMessage({ text: error instanceof SavePointError ? latestLabels.current.errors[error.reason]
-          : latestLabels.current.errors.unavailable, error: true });
+        setMessage(failureMessage(error, latestLabels.current.errors));
     }).finally(() => {
       if (operation.current === controller) { operation.current = null; setBusy(false); }
     });
@@ -81,8 +90,7 @@ export function NamedSavePointsDialog({ onClose, labels, actions: suppliedAction
     try { await task(controller.signal); }
     catch (error) {
       if (operation.current === controller && !controller.signal.aborted)
-        setMessage({ text: error instanceof ComparisonLimitError ? error.message
-          : error instanceof SavePointError ? labels.errors[error.reason] : labels.errors.unavailable, error: true });
+        setMessage(error instanceof ComparisonLimitError ? { text: error.message, error: true } : failureMessage(error, labels.errors));
     } finally {
       if (operation.current === controller) { operation.current = null; setBusy(false); }
     }
@@ -124,7 +132,7 @@ export function NamedSavePointsDialog({ onClose, labels, actions: suppliedAction
       <p>{labels.before}: {points.find(point => point.id === beforeId)?.name ?? labels.empty}
         {' / '}{labels.after}: {points.find(point => point.id === afterId)?.name ?? labels.empty}</p>
       {busy ? <p role="status">{labels.busy} <button className="pcad-button" type="button" title={labels.hints.cancel} onClick={stop}>{labels.cancel}</button></p> : null}
-      {message === null ? null : <p role={message.error ? 'alert' : 'status'}>{message.text}</p>}
+      {message === null ? null : <p role={message.error ? 'alert' : 'status'} data-save-point-detail={message.detail}>{message.text}</p>}
     </dialog>
     {comparison === null ? null : <DocumentDiffDialog initial={comparison} onClose={() => setComparison(null)} />}
   </>;

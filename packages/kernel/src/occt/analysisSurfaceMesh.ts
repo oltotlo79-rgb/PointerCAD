@@ -1069,7 +1069,7 @@ function auditBoundaryWithShells(coordinates: Float64Array, triangles: Uint32Arr
   }
   if (boundary === 'closed') {
     if (freeEdges > 0) {
-      refuse('open-boundary', `閉じた境界を求めましたが、開いた辺が ${String(freeEdges)} 本あります。形が閉じた立体か確かめてください。`);
+      refuse('open-boundary', `閉じた境界を求めましたが、開いた辺が ${String(freeEdges)} 本あります。形が閉じたソリッドか確かめてください。`);
     }
     if (mixedComponent) {
       refuse('orientation-conflict', '1 つの閉じた殻に外側の面と空洞の面が混在しています。形を確かめてください。');

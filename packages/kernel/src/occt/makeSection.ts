@@ -48,7 +48,7 @@ export interface PlaneSectionSpec {
 
 /** 交差そのものが成立しなかったとき(FR-504、NFR-RE-1)。 */
 const SECTION_FAILED_MESSAGE =
-  '立体と作図面の交わりを求められませんでした。作図面の位置を見直してください。';
+  'ソリッドと作図面の交わりを求められませんでした。作図面の位置を見直してください。';
 
 /** 結果の形の中の辺をすべて集める。 */
 function collectSectionEdges(

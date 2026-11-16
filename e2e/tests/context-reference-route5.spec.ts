@@ -154,7 +154,7 @@ function treeRow(page: Page, name: string): Locator {
 async function expectVolume(page: Page, expected: number): Promise<void> {
   const cell = page.locator('.pcad-panel--right').locator('dt.pcad-properties__key', { hasText: '体積' })
     .locator('xpath=following-sibling::dd[1]');
-  await expect.poll(async () => (await cell.count()) === 0 ? Number.NaN : Math.abs(Number.parseFloat(await cell.innerText()) - expected),
+  await expect.poll(async () => (await cell.count()) === 0 ? Number.NaN : Math.abs(Number.parseFloat(((await cell.getAttribute('title')) ?? (await cell.innerText()))) - expected),
     { timeout: KERNEL_TIMEOUT_MS }).toBeLessThanOrEqual(0.01);
 }
 
@@ -258,7 +258,7 @@ test.describe('EX-18 流れ5 組立の文脈の参照', () => {
     //    (attachAssemblyInteraction.ts 195-215・297-337: 部品の上で左を押すと選んで掴み、離すと確定する)。
     await page.locator('canvas.pcad-viewport__canvas').focus();
     await page.keyboard.press('4');
-    await expect(page.locator('.pcad-statusbar__state').first()).toHaveText('選ぶもの 立体');
+    await expect(page.locator('.pcad-statusbar__state').first()).toHaveText('選ぶもの ソリッド');
     const before = (await readAssemblyStats(page)).components[1]?.resolved?.position ?? [];
     expectPoint(before, [10, 15, 10], 1e-9);
     const grab = await worldOnScreen(page, [10, 15, 12]), drop = await worldOnScreen(page, [25, 15, 12]);

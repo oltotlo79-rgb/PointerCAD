@@ -161,7 +161,7 @@ function byName(stats: AssemblyBrowserStats): Map<string, AssemblyBrowserStats['
 
 /** r143: drive slider groups 0 and 1 one after the other; only the driven member moves, 998 never do. */
 async function driveTwoGroups(page: Page, initial: AssemblyBrowserStats): Promise<void> {
-  const motion = page.getByRole('group', { name: '組み立ての動き' });
+  const motion = page.getByRole('group', { name: 'アセンブリの動き' });
   const translationOf = async (jointId: string): Promise<number | undefined> => (await readAssemblyStats(page)).jointValues
     .find((entry) => entry.key === `${jointId}${String.fromCharCode(0)}translation`)?.value;
   let previous = byName(initial);

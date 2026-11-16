@@ -3,10 +3,10 @@ import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/open
 import { createAllocations } from './allocations.js';
 
 export type CadBodyKind = 'solid' | 'shell' | 'mixed';
-export const OPEN_FACES_NOT_SUPPORTED = '閉じていない面を含む形には使えません。立体を選び直してください。';
+export const OPEN_FACES_NOT_SUPPORTED = '閉じていない面を含む形には使えません。ソリッドを選び直してください。';
 export function shapeBodyKind(oc: OpenCascadeInstance, shape: TopoDS_Shape): CadBodyKind {
   // ShapeType dereferences a null native TShape; guard before entering that OCCT call.
-  if (shape.IsNull()) throw new Error('形状が空のため、立体か面かを判定できません。');
+  if (shape.IsNull()) throw new Error('形状が空のため、ソリッドか面かを判定できません。');
   const kind = shape.ShapeType(), types = oc.TopAbs_ShapeEnum;
   if (kind === types.TopAbs_SOLID || kind === types.TopAbs_COMPSOLID) return 'solid';
   if (kind !== types.TopAbs_COMPOUND) return 'shell';

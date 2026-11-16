@@ -5,6 +5,10 @@ import { cameraPosition, type OrbitState } from './cameraMath.js';
 export interface ViewCameraController {
   capture(): CameraSnapshot;
   restore(camera: CameraSnapshot): boolean;
+  /** 直前の視点へ戻る(B-08c)。戻れる視点が無ければ false。 */
+  previous(): boolean;
+  /** 表示中の形の全体、または選んだ物が収まる視点へ寄せる(B-08c)。収める形が無ければ false。 */
+  fit(scope: 'all' | 'selection', selection: readonly string[]): boolean;
 }
 
 /** 保存位置を球面座標へ戻す。上向きとレンズのズームも保持する。 */

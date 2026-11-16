@@ -33,7 +33,8 @@
   align-items: center;
   gap: calc(6px * var(--pcad-scale));
 }
-.pcad-math-editor__header h3 { flex: 1; margin: 0; font-size: 1em; }
+/* 見出しは窓の題だけにしたので、使い方のボタンを右へ寄せる(UI の点検の指摘 36)。 */
+.pcad-math-editor__header { justify-content: flex-end; }
 .pcad-math-editor__options label,
 .pcad-math-editor__palette label { display: grid; gap: calc(4px * var(--pcad-scale)); }
 .pcad-math-editor__options button[aria-pressed="true"] { background: var(--pcad-accent-soft); border-color: var(--pcad-accent); }
@@ -87,7 +88,11 @@
 .pcad-math-editor__palette li { display: grid; gap: calc(3px * var(--pcad-scale)); }
 .pcad-math-editor__palette button { text-align: start; }
 .pcad-math-editor__result { overflow-wrap: anywhere; border-inline-start: 3px solid var(--pcad-accent); padding-inline-start: calc(8px * var(--pcad-scale)); }
-.pcad-math-editor__result p { margin: calc(4px * var(--pcad-scale)) 0; }
+.pcad-math-editor__result p { margin: calc(4px * var(--pcad-scale)) 0; white-space: pre-line; }
+/* 全部の桁は畳んで置く(開くと、そのまま選んで複写できる)。空の挿入の枠と、使えない理由の行。UI の点検の指摘 36。 */
+.pcad-math-editor__full summary { cursor: pointer; color: var(--pcad-text-muted); }
+.pcad-math-editor__empty { margin: 0; color: var(--pcad-text-muted); }
+.pcad-math-editor__apply-reason { flex-basis: 100%; margin: 0; text-align: end; color: var(--pcad-text-muted); }
 .pcad-math-editor__result--error { color: var(--pcad-danger-text); border-color: var(--pcad-danger); }
 .pcad-math-editor__actions { justify-content: flex-end; }
 .pcad-math-editor__component {

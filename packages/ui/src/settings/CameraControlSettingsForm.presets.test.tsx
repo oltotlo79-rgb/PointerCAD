@@ -16,7 +16,8 @@ function renderForm(): string {
 describe('camera settings presets and named binding rows', () => {
   it('offers four labelled preset buttons without adding selects, fieldsets or check boxes', () => {
     const markup = renderForm();
-    expect(markup.match(/<select\b/g)).toHaveLength(6);
+    // Two binding rows per action and the rotation and zoom centers (B-08d); the presets add none.
+    expect(markup.match(/<select\b/g)).toHaveLength(6 + 2);
     expect(markup.match(/<fieldset>/g)).toHaveLength(3);
     expect(markup.match(/type="checkbox"/g)).toHaveLength(28);
     expect(markup).toContain(`role="group" aria-label="${t('settings.camera.presets')}"`);
@@ -46,7 +47,8 @@ describe('camera settings presets and named binding rows', () => {
     state.setDisplaySettings({ ...state.displaySettings, viewControls: withViewControlPreset(DEFAULT_VIEW_CONTROLS, 'onshape') });
     const markup = renderForm();
     const values = [...markup.matchAll(/<option value="([a-z]+)" selected="">/g)].map(match => match[1]);
-    // orbit: right, none; pan: middle, right(+Ctrl); zoom: wheel, none.
-    expect(values).toEqual(['right', 'none', 'middle', 'right', 'wheel', 'none']);
+    // orbit: right, none; pan: middle, right(+Ctrl); zoom: wheel, none. Then the rotation and zoom centers (B-08d), which a
+    // preset does not change: both stay at the view center.
+    expect(values).toEqual(['right', 'none', 'middle', 'right', 'wheel', 'none', 'target', 'target']);
   });
 });

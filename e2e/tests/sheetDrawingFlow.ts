@@ -34,7 +34,7 @@ export async function sheetFlatDrawingFlow(page: Page, testInfo: TestInfo, partP
   const updated = writePcadFile(changed);
   await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイル/ }).first().click();
   const choosing = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: '元の部品・組立を取り込み直す', exact: true }).click();
+  await page.getByRole('button', { name: '元の部品・アセンブリを取り込み直す', exact: true }).click();
   await (await choosing).setFiles({ name: '板厚変更.pcad', mimeType: 'application/zip', buffer: Buffer.from(updated) });
   await expect.poll(shapeText, { timeout: 60_000 }).not.toBe(originalOutline);
   await expect.poll(() => paths.count()).toBeGreaterThan(0);

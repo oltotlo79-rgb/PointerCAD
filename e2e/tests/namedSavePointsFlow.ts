@@ -140,15 +140,15 @@ export async function namedSavePointsAssemblyFlow(page: Page): Promise<void> {
   await waitForRecompute(page, token);
   await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'assembly');
   const dialog = await open(page);
-  await create(dialog, '組立A', '組立');
-  await clone(dialog, '組立A', '組立Aの複製', '組立');
-  const diff = await compare(page, dialog, '組立A', '組立Aの複製', '組立');
+  await create(dialog, '組立A', 'アセンブリ');
+  await clone(dialog, '組立A', '組立Aの複製', 'アセンブリ');
+  const diff = await compare(page, dialog, '組立A', '組立Aの複製', 'アセンブリ');
   await expect(diff.getByText('組立A.pcada', { exact: true })).toBeVisible();
   await expect(diff.getByRole('combobox', { name: '2つのファイルの関係', exact: true })).toHaveValue('versions');
   await diff.getByRole('button', { name: '変更を比較する', exact: true }).click();
-  await expect(diff.getByRole('region', { name: '比較結果', exact: true }).getByRole('status').first()).toHaveText('履歴の定義と保存値に変更はありません。');
+  await expect(diff.getByRole('region', { name: '比較結果', exact: true }).getByRole('status').first()).toHaveText('履歴の定義と保存した値に変更はありません。');
   await closeDiff(diff);
-  await point(dialog, '組立A', '組立').check();
+  await point(dialog, '組立A', 'アセンブリ').check();
   await expect(dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true })).toBeEnabled();
   await dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true }).click();
   await expect(dialog).toHaveCount(0);
@@ -175,7 +175,7 @@ export async function namedSavePointsDrawingFlow(page: Page): Promise<void> {
   const diff = await compare(page, dialog, '図面A', '図面Aの複製', '図面');
   await expect(diff.getByText('図面A.pcadd', { exact: true })).toBeVisible();
   await diff.getByRole('button', { name: '変更を比較する', exact: true }).click();
-  await expect(diff.getByRole('region', { name: '比較結果', exact: true }).getByRole('status').first()).toHaveText('履歴の定義と保存値に変更はありません。');
+  await expect(diff.getByRole('region', { name: '比較結果', exact: true }).getByRole('status').first()).toHaveText('履歴の定義と保存した値に変更はありません。');
   await closeDiff(diff);
   await point(dialog, '図面A', '図面').check();
   await dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true }).click();
@@ -261,10 +261,10 @@ export async function assertSavePointProcessCold(page: Page, before: SavePointAr
   const names = kind === 'part' ? ['試作A', '発注前', '試作Aの複製'] : kind === 'assembly' ? ['組立A', '組立Aの複製'] : ['部品の点', '図面A', '図面Aの複製'];
   await expect(dialog.getByRole('radio')).toHaveCount(names.length);
   for (const name of names) await expect(dialog.getByRole('radio', { name: new RegExp('^' + name + ' \\(') })).toBeVisible();
-  await point(dialog, names[0]!, kind === 'part' ? '部品' : kind === 'assembly' ? '組立' : '部品').check();
+  await point(dialog, names[0]!, kind === 'part' ? '部品' : kind === 'assembly' ? 'アセンブリ' : '部品').check();
   if (kind === 'drawing') await expect(dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true })).toBeDisabled();
   const restoreName = kind === 'part' ? '試作A' : kind === 'assembly' ? '組立A' : '図面A';
-  await point(dialog, restoreName, kind === 'part' ? '部品' : kind === 'assembly' ? '組立' : '図面').check();
+  await point(dialog, restoreName, kind === 'part' ? '部品' : kind === 'assembly' ? 'アセンブリ' : '図面').check();
   await expect(dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true })).toBeEnabled();
   const restoreToken = kind === 'drawing' ? undefined : await beginRecompute(page);
   await dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true }).click();
@@ -732,7 +732,7 @@ export async function namedSavePointsSharedAssetFlow(page: Page, info: TestInfo,
   const baseline = await canvas.save(page, info, '実共有基準.pcada', app);
   await assertSharedAssembly(page, baseline, Buffer.from(fixture));
   const dialog = await open(page);
-  await create(dialog, '実共有A', '組立'); await clone(dialog, '実共有A', '実共有Aの複製', '組立');
+  await create(dialog, '実共有A', 'アセンブリ'); await clone(dialog, '実共有A', '実共有Aの複製', 'アセンブリ');
   await dialog.getByRole('button', { name: '閉じる', exact: true }).click();
   const archive = await readSavePointColdArchive(page);
   const changed = await addThirdBoxAssemblyFile(baseline);
@@ -767,8 +767,8 @@ export async function assertSharedSavePointCold(page: Page, fixture: SharedSaveP
     await point(dialog, name, '部品').check();
     await expect(dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true })).toBeDisabled();
   }
-  await expect(point(dialog, '実共有Aの複製', '組立')).toBeVisible();
-  await point(dialog, '実共有A', '組立').check();
+  await expect(point(dialog, '実共有Aの複製', 'アセンブリ')).toBeVisible();
+  await point(dialog, '実共有A', 'アセンブリ').check();
   await expect(dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true })).toBeEnabled();
   const token = await beginRecompute(page);
   await dialog.getByRole('button', { name: '選んだ保存点へ戻す', exact: true }).click();

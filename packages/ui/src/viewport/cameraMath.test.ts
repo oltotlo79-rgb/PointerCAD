@@ -10,12 +10,15 @@ import {
   MAX_ELEVATION,
   MIN_DISTANCE,
   orbit,
+  orbitAround,
   ORBIT_RADIANS_PER_PIXEL,
   orthographicFrustumHeight,
   pan,
   viewDirection,
   worldUnitsPerPixel,
   zoom,
+  zoomToward,
+  type OrbitState,
 } from './cameraMath.js';
 
 describe('視点の回転(FR-101)', () => {
@@ -149,6 +152,51 @@ describe('名前の札の画面上の大きさ(P4 仕上げ (f)、統括の目�
   it('UI の拡大率が 150% なら、ワールド高さも 1.5 倍になる', () => {
     const base = labelWorldHeight(13, 100, 800, 100);
     expect(labelWorldHeight(13, 100, 800, 150)).toBeCloseTo(base * 1.5, 12);
+  });
+});
+
+/** 点 p のカメラ座標(右・上・視線の向きの成分)。右は (−sin 方位角, cos 方位角, 0)、上は 右 × 視線 の逆。 */
+function inCamera(state: OrbitState, p: readonly [number, number, number]): readonly [number, number, number] {
+  const c = cameraPosition(state), f = viewDirection(state);
+  const r = [-Math.sin(state.azimuth), Math.cos(state.azimuth), 0] as const;
+  const u = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]] as const;
+  const d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]] as const;
+  const dot = (a: readonly [number, number, number]): number => a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
+  return [dot(r), dot(u), dot(f)];
+}
+function expectNear(actual: readonly number[], expected: readonly number[]): void {
+  actual.forEach((value, index) => { expect(value).toBeCloseTo(expected[index] ?? Number.NaN, 9); });
+}
+
+describe('回転の中心・拡大の中心(設計 2-3・B-08d)', () => {
+  const state: OrbitState = { ...HOME_ORBIT, target: [5, -3, 2] };
+  const pivot = [20, 10, -4] as const;
+
+  it('点の周りの回転は向きを orbit と同じに変え、点をカメラから見て同じ所に残す', () => {
+    const next = orbitAround(state, 37, -21, pivot), plain = orbit(state, 37, -21);
+    expect([next.azimuth, next.elevation, next.distance]).toEqual([plain.azimuth, plain.elevation, plain.distance]);
+    expectNear(inCamera(next, pivot), inCamera(state, pivot));
+    expect(next.target).not.toEqual(state.target);
+    // 注視点の周りなら、今の orbit と同じ(注視点は動かない)。
+    expectNear(orbitAround(state, 37, -21, state.target).target, state.target);
+  });
+
+  it('仰角の上限で止まった時は、止まった後の変化だけ回す(点は同じ所に残る)', () => {
+    const top: OrbitState = { ...state, elevation: MAX_ELEVATION - 0.01 };
+    const next = orbitAround(top, 0, 500, pivot);
+    expect(next.elevation).toBe(MAX_ELEVATION);
+    expectNear(inCamera(next, pivot), inCamera(top, pivot));
+  });
+
+  it('点へ向けた拡大縮小は距離を zoom と同じに変え、点のカメラ座標を同じ比で縮める(画面の同じ所に残る)', () => {
+    const point = [12, 4, 1] as const;
+    const next = zoomToward(state, -300, point), ratio = next.distance / state.distance;
+    expect(next.distance).toBe(zoom(state, -300).distance);
+    expectNear(inCamera(next, point), inCamera(state, point).map(value => value * ratio));
+    // 下限で止まった時も、止まった後の比で寄せる。
+    const near = zoomToward({ ...state, distance: MIN_DISTANCE * 1.05 }, -1000, point);
+    expect(near.distance).toBe(MIN_DISTANCE);
+    expectNear(near.target, [0, 1, 2].map(axis => (point[axis] ?? 0) + ((state.target[axis] ?? 0) - (point[axis] ?? 0)) / 1.05));
   });
 });
 

@@ -276,7 +276,7 @@ export type SolidProgressCallback = (progress: SolidProgress) => void;
 export type SolidCancelToken = () => boolean | Promise<boolean>;
 
 /** ブーリアンの相手がキャッシュにも失敗の記録にも無いとき(FR-504、NFR-RE-1)。 */
-const MISSING_INPUT_MESSAGE = 'もとになる立体が見つかりませんでした。';
+const MISSING_INPUT_MESSAGE = 'もとになるソリッドが見つかりませんでした。';
 
 /**
  * 読み込んだ三角形の形(`bodyKind: 'mesh'`)を段の材料にしようとしたとき
@@ -290,7 +290,7 @@ const MESH_NOT_MACHINABLE_MESSAGE = '読み込んだ三角形の形には、穴�
 
 /** ブーリアンの相手が、同じ再計算の中で作れなかった段だったとき(FR-504)。 */
 function upstreamFailedMessage(label: string): string {
-  return `もとになる立体「${label}」を作れなかったため、この立体も作れませんでした。`;
+  return `もとになるソリッド「${label}」を作れなかったため、このソリッドも作れませんでした。`;
 }
 
 /**
@@ -326,7 +326,7 @@ import { yieldToMessages } from './yieldToMessages.js';
  * 同じ再計算の中で作れなかった段が入力なら、その段の名前を出す(下流も理由つきで失敗させる)。
  *
  * ブーリアンと加工(穴・ねじ穴・R 面取り・C 面取り)の両方が使うので、
- * どちらも同じ「もとになる立体が見つかりませんでした。」の文言で断る
+ * どちらも同じ「もとになるソリッドが見つかりませんでした。」の文言で断る
  * (もとは findBooleanInput という名前だった)。
  *
  * **「読み込んだ三角形の形(`bodyKind: 'mesh'`)は材料にできない」の断りもここ 1 か所。**
@@ -377,7 +377,7 @@ function createBooleanSolid(
  * ここへ来るのは組み立て側の取りこぼしだが、画面を止めずに理由を出す(NFR-RE-1)。
  */
 const MISSING_PRIMITIVE_TARGET_MESSAGE =
-  '中心にする頂点を持つ立体が見つかりません。頂点を選び直してください。';
+  '中心にする頂点を持つソリッドが見つかりません。頂点を選び直してください。';
 
 /**
  * 基本形状の段(FR-429)。ふつうは中心・向き・寸法だけで決まるので上流の形を見ない。
@@ -473,11 +473,11 @@ function createThruSectionsSolid(
  * ここへ来るのは組み立て側の取りこぼしだが、画面を止めずに理由を出す(NFR-RE-1)。
  */
 const MISSING_EXTRUDE_TARGET_MESSAGE =
-  '「次の面まで」の相手になる立体が見つかりません。相手の立体を選び直してください。';
+  '「次の面まで」の相手になるソリッドが見つかりません。相手のソリッドを選び直してください。';
 
 /** 「対象を貫く」押し出し(輪郭による貫通切断)に、貫く対象の鍵が入っていないとき(FR-504)。 */
 const MISSING_THROUGH_TARGET_MESSAGE =
-  '貫いて切る対象の立体が見つかりません。切る立体を選び直してください。';
+  '貫いて切る対象のソリッドが見つかりません。切るソリッドを選び直してください。';
 
 /**
  * 薄板押し出し(FR-416)に、終端の指定やテーパ角が一緒に来たとき(FR-504)。

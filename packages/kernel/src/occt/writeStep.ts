@@ -44,7 +44,7 @@ import { buildXcafDocument } from './xcafDocument.js';
  *   (`xcafDocument.ts` の `resolveColorEnums` の注釈に根拠を書いた)。
  *   ただし**純色(赤など)は `DRAUGHTING_PRE_DEFINED_COLOUR('red')` になり `COLOUR_RGB` は出ない。**
  * - **立体が 1 つも無いと `Perform_2` は true を返すのにファイルを 1 つも作らない。**
- *   だから `buildXcafDocument` が先に断る(「書き出せる立体がありません。」)。
+ *   だから `buildXcafDocument` が先に断る(「書き出せるソリッドがありません。」)。
  * - 所要は 20³ の箱 1 つで約 100ms、箱 10 個で **494ms**(上限 5 秒に対して十分速い)。
  */
 

@@ -190,15 +190,15 @@ function propertyValue(page: Page, key: string): Locator {
 async function expectVolume(page: Page, rowName: string, volume: number, token?: RecomputeToken): Promise<void> {
   await solidRow(page, rowName).click();
   await waitForRecompute(page, token);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(volume)} ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(volume)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 }
 
 async function volumeOf(page: Page, rowName: string): Promise<number> {
   await solidRow(page, rowName).click();
-  await expect(propertyValue(page, '体積')).toHaveText(new RegExp(`${VOLUME_UNIT}$`), { timeout: KERNEL_TIMEOUT_MS });
-  return Number.parseFloat(await propertyValue(page, '体積').innerText());
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', new RegExp(`${VOLUME_UNIT}$`), { timeout: KERNEL_TIMEOUT_MS });
+  return Number.parseFloat(((await propertyValue(page, '体積').getAttribute('title')) ?? (await propertyValue(page, '体積').innerText())));
 }
 
 /** 「作る」の一覧から基本形状の箱を、既定の 20×20×20 のまま原点へ置く(p5-cut-mirror.spec.ts と同じ)。 */
@@ -510,7 +510,7 @@ export async function cutPlaneMaterialsFlow(page: Page, entry: string): Promise<
   await expectVolumeFromPreview(page, '切断2', edgePreview, 'negative');
   await undoCut(page, ['切断1', '切断2']);
   await page.keyboard.press('4');
-  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
 
   // 5) 作業平面: 箱と「作業平面1」(z = 3)を選び、「選んだ作業平面」。z = 3〜10 が残る。
   //    予告は作業平面そのもの(以前は基準の 3 面以外の作業平面では出なかった)。

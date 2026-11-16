@@ -107,7 +107,9 @@ export function FeatureTree(): React.JSX.Element {
           selectSearchedRow(entry.selectionId, entry.sketchId);
         }} />
       <div className="pcad-panel__body">
-        <button type="button" className="pcad-button" data-help-topic="history-notes" title={t('historyFolder.create')} onClick={() => input.setFolderDraft({ ...folderContext(), mode: 'create' })}>{t('historyFolder.create')}</button>
+        {/* 行もフォルダも無い空の文書では出さない(入れる物が無い。空の状態の案内だけにする。UI の点検の指摘 23)。 */}
+        {view.rowCount === 0 && folders.length === 0 ? null
+          : <button type="button" className="pcad-button" data-help-topic="history-notes" title={t('historyFolder.create')} onClick={() => input.setFolderDraft({ ...folderContext(), mode: 'create' })}>{t('historyFolder.create')}</button>}
         {renderFeatureTreeBody(context)}
       </div>
 

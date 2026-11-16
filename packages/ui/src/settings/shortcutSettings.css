@@ -3,14 +3,25 @@
   flex-direction: column;
   gap: var(--pcad-space-2);
   min-width: 0;
-  /*
-   * 設定の欄(.pcad-settings。高さの上限 min(70dvh, 100dvh - 100px)、上下の余白 --pcad-space-3)の中に、フォームの全体が
-   * 必ず収まる高さで止め、超えた分はフォームの中で縦に送る。字の幅と行の高さは環境で違う(CI run 43669816930 の
-   * Linux の Electron では、同じ版のフォームが Windows より 29px 高く、欄の下端 729.5 を越えて 758.1 まで伸びた)。
-   */
-  max-height: calc(min(70dvh, calc(100dvh - 100px)) - 2 * var(--pcad-space-3));
-  overflow-y: auto;
 }
+/*
+ * 操作の表は、操作の割り当ての窓(高さの上限 min(80dvh, 100dvh - 100px))の中で高さの上限を持ち、表の中で縦に送る
+ * (412 行を窓へそのまま並べない)。字の幅と行の高さは環境で違う(CI run 43669816930 の Linux の Electron では、同じ版の
+ * フォームが Windows より 29px 高かった。A-21)ので、行の高さではなく窓の高さの割合で止める。
+ */
+.pcad-shortcut-settings__table-scroll {
+  max-height: min(32dvh, calc(32 * var(--pcad-space-3)));
+  overflow-y: auto;
+  border: 1px solid var(--pcad-border);
+}
+.pcad-shortcut-settings__table { width: 100%; border-collapse: collapse; }
+.pcad-shortcut-settings__table th,
+.pcad-shortcut-settings__table td { padding: 2px var(--pcad-space-1); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.pcad-shortcut-settings__table thead th { position: sticky; top: 0; background: var(--pcad-surface); }
+.pcad-shortcut-settings__table tr[aria-selected="true"] { background: var(--pcad-accent-soft, var(--pcad-border)); }
+.pcad-shortcut-settings__row-button { width: 100%; padding: 0; text-align: left; color: inherit; background: none; border: 0; cursor: pointer; }
+.pcad-shortcut-settings__filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pcad-space-1); }
+.pcad-shortcut-settings__conflict { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pcad-space-1); }
 .pcad-shortcut-settings select { max-width: 100%; }
 .pcad-shortcut-settings > h3, .pcad-shortcut-settings > p { margin: 0; }
 .pcad-shortcut-settings > h3 { font-size: var(--pcad-font-size-heading); }

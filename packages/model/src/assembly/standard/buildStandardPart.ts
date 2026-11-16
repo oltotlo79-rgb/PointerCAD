@@ -1,15 +1,13 @@
 import {
-  evaluateExpression, exactExpressionValueFromNumber, expressionValueFromNumber, type ExpressionValue,
+  evaluateExpression, expressionValueFromNumber, type ExpressionValue,
 } from '@pointercad/expression';
 
-import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import {
   appendSolid, createEmptyPartDocument, createPrimitiveFeature, nextSolidId, nextSolidName,
   replaceSketch,
 } from '../../part/createPartDocument.js';
 import type {
-  BooleanFeature, ExtrudeFeature, HoleFeature, PartDocument, PrimitiveFeature, SketchFaceRef,
-  SolidOrigin, ThreadHoleFeature, ThreadShaftFeature,
+  HoleFeature, PartDocument, PrimitiveFeature, SketchFaceRef,
 } from '../../part/types.js';
 import {
   absoluteCoordinate, appendFeature, createPointFeature, DEFAULT_FACE_COLOR, nextFeatureId,
@@ -17,7 +15,7 @@ import {
 } from '../../sketch/createSketchDocument.js';
 import { DEFAULT_WORK_PLANE_ID } from '../../sketch/planeMath.js';
 import type {
-  SketchArcFeature, SketchDocument, SketchFaceFeature, SketchLineFeature, SketchPointFeature, SketchPolygonFeature,
+  SketchArcFeature, SketchDocument, SketchFaceFeature, SketchLineFeature, SketchPointFeature,
 } from '../../sketch/types.js';
 import {
   findMetricThread, metricThreadPitch, threadMinorDiameter, type ThreadSeries,
@@ -37,6 +35,10 @@ import {
   findSpringWasher,
 } from './fasteners.js';
 import { hexBoltMainEvidence, hexBoltMainThreadLength } from './hexBoltEvidence.js';
+import {
+  activeSketch, appendBoolean, appendCylinder, appendExternalThread, appendExtrude, appendRing, buildHexNutBody, centerPoint,
+  origin, planeFace, regularPolygonProfile, withName,
+} from './partPrimitives.js';
 import { findChannel, findEqualAngle, findHBeam } from './sections.js';
 import {
   ALL_STEEL_PRODUCTS, findSteelProduct, hasSteelOptions, isSteelCatalogRevision, LEGACY_STEEL_GENERATOR_REVISION,
@@ -67,12 +69,6 @@ export const STANDARD_PART_UNAVAILABLE_MESSAGE = 'この呼び寸法は用意さ
 
 type Point2 = readonly [number, number];
 
-function activeSketch(document: PartDocument): SketchDocument {
-  const sketch = document.sketches.find((candidate) => candidate.id === document.activeSketchId);
-  if (sketch === undefined) throw new Error('規格部品の作図面が見つかりません。');
-  return sketch;
-}
-
 function positiveExpression(source: string): ExpressionValue | null {
   const result = evaluateExpression(source);
   return result.ok && result.value.value > 0 ? result.value : null;
@@ -93,48 +89,6 @@ function threadFrom(
   if (series !== 'coarse' && series !== 'fine') return null;
   const row = findMetricThread(size);
   return row === undefined ? null : { series, pitch: metricThreadPitch(row, series) };
-}
-
-function origin(x: number, y: number, z: number): SolidOrigin {
-  return { kind: 'coordinate', value: absoluteCoordinate(x, y, z) };
-}
-
-function withName(document: PartDocument, name: string): PartDocument {
-  return { ...document, name };
-}
-
-function regularPolygonProfile(
-  document: PartDocument,
-  sides: number,
-  inscribedRadius: number,
-): { readonly document: PartDocument; readonly profile: SketchFaceRef; readonly area: number } {
-  let sketch = activeSketch(document);
-  const polygon: SketchPolygonFeature = {
-    id: nextFeatureId(sketch, 'polygon'),
-    name: nextFeatureName(sketch, 'polygon'),
-    planeId: DEFAULT_WORK_PLANE_ID,
-    kind: 'polygon',
-    center: absoluteCoordinate(0, 0, 0),
-    sides: expressionValueFromNumber(sides),
-    radius: expressionValueFromNumber(inscribedRadius),
-    radiusMode: 'inscribed',
-    construction: false,
-  };
-  sketch = appendFeature(sketch, polygon);
-  const face: SketchFaceFeature = {
-    id: nextFeatureId(sketch, 'face'),
-    name: nextFeatureName(sketch, 'face'),
-    planeId: DEFAULT_WORK_PLANE_ID,
-    kind: 'face',
-    boundary: [{ featureId: polygon.id }],
-    color: DEFAULT_FACE_COLOR,
-  };
-  sketch = appendFeature(sketch, face);
-  return {
-    document: replaceSketch(document, sketch),
-    profile: { sketchId: sketch.id, faceFeatureId: face.id },
-    area: sides * inscribedRadius * inscribedRadius * Math.tan(Math.PI / sides),
-  };
 }
 
 function polygonProfile(
@@ -160,49 +114,6 @@ function polygonProfile(
   return { document: replaceSketch(document, sketch), profile: { sketchId: sketch.id, faceFeatureId: face.id } };
 }
 
-function centerPoint(document: PartDocument): {
-  readonly document: PartDocument;
-  readonly point: SketchPointFeature;
-} {
-  let sketch = activeSketch(document);
-  const point = createPointFeature(sketch, absoluteCoordinate(0, 0, 0));
-  sketch = appendFeature(sketch, point);
-  return { document: replaceSketch(document, sketch), point };
-}
-
-function appendExtrude(
-  document: PartDocument,
-  profile: SketchFaceRef,
-  distance: ExpressionValue,
-  reversed = false,
-): { readonly document: PartDocument; readonly feature: ExtrudeFeature } {
-  const feature: ExtrudeFeature = {
-    id: nextSolidId(document, 'extrude'),
-    name: nextSolidName(document, 'extrude'),
-    suppressed: false,
-    kind: 'extrude',
-    profile,
-    distance,
-    reversed,
-    symmetric: false,
-  };
-  return { document: appendSolid(document, feature), feature };
-}
-
-function appendCylinder(
-  document: PartDocument,
-  radius: number,
-  height: ExpressionValue,
-  z = 0,
-): { readonly document: PartDocument; readonly feature: PrimitiveFeature } {
-  const created = createPrimitiveFeature(document, 'cylinder', origin(0, 0, z));
-  const feature: PrimitiveFeature = {
-    ...created,
-    shape: { kind: 'cylinder', radius: expressionValueFromNumber(radius), height },
-  };
-  return { document: appendSolid(document, feature), feature };
-}
-
 function appendBox(
   document: PartDocument,
   center: readonly [number, number, number],
@@ -217,81 +128,6 @@ function appendBox(
       sizeY: expressionValueFromNumber(sizes[1]),
       sizeZ: expressionValueFromNumber(sizes[2]),
     },
-  };
-  return { document: appendSolid(document, feature), feature };
-}
-
-function appendBoolean(
-  document: PartDocument,
-  operation: BooleanFeature['operation'],
-  targetFeatureId: string,
-  toolFeatureId: string,
-): { readonly document: PartDocument; readonly feature: BooleanFeature } {
-  const feature: BooleanFeature = {
-    id: nextSolidId(document, operation),
-    name: nextSolidName(document, operation),
-    suppressed: false,
-    kind: 'boolean',
-    operation,
-    targetFeatureId,
-    toolFeatureId,
-  };
-  return { document: appendSolid(document, feature), feature };
-}
-
-function planeFace(
-  bodyFeatureId: string,
-  area: number,
-  z: number,
-): SubShapeRef {
-  return {
-    bodyFeatureId,
-    index: 0,
-    fingerprint: {
-      kind: 'face', surfaceKind: 'plane', area, position: [0, 0, z], axis: [0, 0, 1], radius: null,
-    },
-  };
-}
-
-function cylinderFace(
-  bodyFeatureId: string,
-  radius: number,
-  height: number,
-): SubShapeRef {
-  return {
-    bodyFeatureId,
-    index: 0,
-    fingerprint: {
-      kind: 'face', surfaceKind: 'cylinder', area: 2 * Math.PI * radius * height,
-      position: [0, 0, height / 2], axis: [0, 0, 1], radius,
-    },
-  };
-}
-
-function appendExternalThread(
-  document: PartDocument,
-  shaft: PrimitiveFeature,
-  nominal: string,
-  pitch: number,
-  series: ThreadSeries,
-  shaftLength: ExpressionValue,
-  threadLength: number,
-): { readonly document: PartDocument; readonly feature: ThreadShaftFeature } {
-  if (shaft.shape.kind !== 'cylinder') throw new Error('外ねじの対象が円柱ではありません。');
-  const radius = shaft.shape.radius.value;
-  const feature: ThreadShaftFeature = {
-    id: nextSolidId(document, 'threadShaft'),
-    name: nextSolidName(document, 'threadShaft'),
-    suppressed: false,
-    kind: 'threadShaft',
-    targetFeatureId: shaft.id,
-    face: cylinderFace(shaft.id, radius, shaftLength.value),
-    nominal,
-    series,
-    pitch: expressionValueFromNumber(pitch),
-    length: expressionValueFromNumber(threadLength),
-    fromEnd: 'last',
-    modeled: false,
   };
   return { document: appendSolid(document, feature), feature };
 }
@@ -356,10 +192,10 @@ function buildHexBolt(
   document = head.document;
   const shaft = appendCylinder(document, row.d / 2, length);
   document = shaft.document;
-  const threaded = appendExternalThread(
-    document, shaft.feature, row.size, thread.pitch, thread.series, length,
-    hexBoltThreadLength(row, thread.series, length.value, revision),
-  );
+  const threaded = appendExternalThread(document, shaft.feature, {
+    nominal: row.size, pitch: thread.pitch, series: thread.series, shaftLength: length,
+    threadLength: hexBoltThreadLength(row, thread.series, length.value, revision),
+  });
   document = threaded.document;
   document = appendBoolean(document, 'union', head.feature.id, threaded.feature.id).document;
   return withName(document, `六角ボルト ${row.size}×${length.source}`);
@@ -370,32 +206,8 @@ function buildHexNut(size: string, options: Readonly<Record<string, string>>): P
   const row = dimensionSeries === null ? undefined : findHexNut(size, dimensionSeries);
   const thread = threadFrom(size, options);
   if (row === undefined || thread === null) return null;
-  let document = createEmptyPartDocument();
-  const profile = regularPolygonProfile(document, 6, row.s / 2);
-  document = profile.document;
-  const head = appendExtrude(document, profile.profile, expressionValueFromNumber(row.mMax));
-  document = head.document;
-  const center = centerPoint(document);
-  document = center.document;
-  const feature: ThreadHoleFeature = {
-    id: nextSolidId(document, 'threadHole'),
-    name: nextSolidName(document, 'threadHole'),
-    suppressed: false,
-    kind: 'threadHole',
-    targetFeatureId: head.feature.id,
-    face: planeFace(head.feature.id, profile.area, row.mMax),
-    centers: [{ sketchId: document.activeSketchId, pointFeatureId: center.point.id }],
-    designation: row.size,
-    series: thread.series,
-    pitch: expressionValueFromNumber(thread.pitch),
-    drillDiameter: exactExpressionValueFromNumber(threadMinorDiameter(row.d, thread.pitch)),
-    depth: { kind: 'through' },
-    threadLength: expressionValueFromNumber(row.mMax),
-    representation: 'simplified',
-    tiltAngle: expressionValueFromNumber(0),
-    tiltAzimuth: expressionValueFromNumber(0),
-  };
-  return withName(appendSolid(document, feature), `六角ナット ${row.size}`);
+  return buildHexNutBody({ designation: row.size, nominalDiameter: row.d, acrossFlats: row.s, height: row.mMax },
+    thread, `六角ナット ${row.size}`);
 }
 
 function buildPlainWasher(size: string): PartDocument | null {
@@ -412,18 +224,6 @@ function buildPlainWasher(size: string): PartDocument | null {
     document, outer.feature, center.point, row.d1, row.thickness,
   ).document;
   return withName(document, `平座金 ${row.size}`);
-}
-
-function appendRing(
-  document: PartDocument,
-  innerRadius: number,
-  outerRadius: number,
-  height: number,
-): { readonly document: PartDocument; readonly featureId: string } {
-  const outer = appendCylinder(document, outerRadius, expressionValueFromNumber(height));
-  const inner = appendCylinder(outer.document, innerRadius, expressionValueFromNumber(height));
-  const ring = appendBoolean(inner.document, 'subtract', outer.feature.id, inner.feature.id);
-  return { document: ring.document, featureId: ring.feature.id };
 }
 
 function buildSpringWasher(size: string): PartDocument | null {
@@ -457,10 +257,10 @@ function buildSocketHeadCapScrew(
   document = head.document;
   const shaft = appendCylinder(document, row.d / 2, length);
   document = shaft.document;
-  const threaded = appendExternalThread(
-    document, shaft.feature, row.size, thread.pitch, thread.series, length,
-    Math.min(length.value, row.d * 2 + 12),
-  );
+  const threaded = appendExternalThread(document, shaft.feature, {
+    nominal: row.size, pitch: thread.pitch, series: thread.series, shaftLength: length,
+    threadLength: Math.min(length.value, row.d * 2 + 12),
+  });
   document = threaded.document;
   const united = appendBoolean(document, 'union', head.feature.id, threaded.feature.id);
   document = united.document;
@@ -504,9 +304,9 @@ function buildPanHeadScrew(
   document = head.document;
   const shaft = appendCylinder(document, row.d / 2, length);
   document = shaft.document;
-  const threaded = appendExternalThread(
-    document, shaft.feature, row.size, thread.pitch, thread.series, length, length.value,
-  );
+  const threaded = appendExternalThread(document, shaft.feature, {
+    nominal: row.size, pitch: thread.pitch, series: thread.series, shaftLength: length, threadLength: length.value,
+  });
   document = threaded.document;
   const united = appendBoolean(document, 'union', head.feature.id, threaded.feature.id);
   document = united.document;

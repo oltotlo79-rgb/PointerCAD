@@ -105,7 +105,7 @@ test.describe('P7 規格部品とジョイント', () => {
     await expect(treeSectionRows(page, 'ジョイント')).toHaveCount(1);
     const before = await readAssemblyStats(page);
 
-    const motion = page.getByRole('group', { name: '組み立ての動き' });
+    const motion = page.getByRole('group', { name: 'アセンブリの動き' });
     const numberInput = motion.locator('.pcad-assembly-motion__joint input[type="number"]');
     await expect(numberInput).toBeVisible();
     await numberInput.fill('60');

@@ -31,9 +31,9 @@ function inputVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape | null): numbe
   if (shape === null) return 0;
   if (shape.IsNull()) throw new Error('比較する形を取得できませんでした。');
   if (shapeBodyKind(oc, shape) !== 'solid') throw new Error(OPEN_FACES_NOT_SUPPORTED);
-  if (!isValidShape(oc, shape)) throw new Error('比較する立体の形が正しくありません。');
+  if (!isValidShape(oc, shape)) throw new Error('比較するソリッドの形が正しくありません。');
   const volume = measureVolume(oc, shape);
-  if (!Number.isFinite(volume) || volume <= 0) throw new Error('比較する立体の体積を測れませんでした。');
+  if (!Number.isFinite(volume) || volume <= 0) throw new Error('比較するソリッドの体積を測れませんでした。');
   return volume;
 }
 

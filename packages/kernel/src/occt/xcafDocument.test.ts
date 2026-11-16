@@ -102,7 +102,7 @@ describe('XCAF の文書の組み立て(P6 タスク7)', () => {
   });
 
   it('空の一覧は日本語の理由で断る', () => {
-    expect(() => buildXcafDocument(oc, [])).toThrow('書き出せる立体がありません。');
+    expect(() => buildXcafDocument(oc, [])).toThrow('書き出せるソリッドがありません。');
   });
 
   it('色を渡さなければ色は載らない', () => {

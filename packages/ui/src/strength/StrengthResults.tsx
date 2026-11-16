@@ -1,10 +1,16 @@
+import { Fragment } from 'react';
 import { findStrengthMaterial, strengthCalculationFields } from '@pointercad/model';
 import { t } from '../i18n/t.js';
+import { displayNumber } from '../sketch/numericInputPresentation.js';
 import { STRENGTH_FIELD_LABELS } from './strengthFields.js';
 import { StrengthMaterialSource } from './StrengthMaterialFields.js';
 import { strengthResultRows } from './strengthResultView.js';
 import type { StrengthSnapshot } from './strengthSession.js';
 
+/**
+ * 計算結果。名前を左、値を右にそろえた 2 列の表(dl の直下に dt と dd。UI の点検の指摘 27)。
+ * 値・代入の値・入力の評価値は有効 6 桁で見せ、全部の桁は説明(title)へ出す。
+ */
 export function StrengthResults({ snapshot, edited }: { readonly snapshot: StrengthSnapshot; readonly edited: boolean }): React.JSX.Element {
   const preset = findStrengthMaterial(snapshot.materialId);
   const rows = strengthResultRows(snapshot);
@@ -16,22 +22,24 @@ export function StrengthResults({ snapshot, edited }: { readonly snapshot: Stren
       {t(snapshot.value.meetsSpecifiedFactor ? 'strength.meets' : 'strength.below')}
     </p>
     <p>{t(snapshot.value.criterion === 'von-mises' ? 'strength.misesCriterion' : 'strength.normalCriterion')}</p>
-    <dl className="pcad-properties">{rows.map(row => <div key={row.name}>
+    <dl className="pcad-properties">{rows.map(row => <Fragment key={row.name}>
       <dt className="pcad-properties__key">{row.label}</dt>
       <dd className="pcad-properties__value" data-strength-result={row.name} title={row.exact}>{row.display}</dd>
-    </div>)}</dl>
+    </Fragment>)}</dl>
     <details><summary>{t('strength.inputs')}</summary>
       {preset?.thicknessMm == null ? null : <p>{t('strength.productThickness')}: {snapshot.productThicknessSource}</p>}
       {snapshot.materialValuesEdited ? <p>{t('strength.customValues')}</p> : null}
       {strengthCalculationFields(snapshot.value.calculation).map(([name]) => {
         const input = snapshot.value.inputs.get(name);
-        return <p key={name}>{t(STRENGTH_FIELD_LABELS[name])}: {input?.source} = {input?.canonical.exact}</p>;
+        return <p key={name} title={input?.canonical.exact}>
+          {t(STRENGTH_FIELD_LABELS[name])}: {input?.source} = {input === undefined ? '' : displayNumber(input.canonical.value).text}</p>;
       })}
       {preset === undefined ? <p>{t('strength.customMaterial')}</p> : <StrengthMaterialSource material={preset} />}
       {snapshot.value.calculation.kind === 'bolt' ? <p>{snapshot.threadDesignation} · {t(snapshot.threadSeries === 'coarse' ? 'strength.coarse' : 'strength.fine')} · {t(snapshot.areaMethod === 'table' ? 'strength.table' : 'strength.approximation')}</p> : null}
     </details>
-    <details><summary>{t('strength.formulas')}</summary>{rows.map(row => <p key={row.name} className="pcad-strength__formula">
-      {row.label}<br />{row.formula}<br />{row.substituted} = {row.exact}
+    <details><summary>{t('strength.formulas')}</summary>{rows.map(row => <p key={row.name} className="pcad-strength__formula"
+      title={`${row.substituted} = ${row.exact}`}>
+      {row.label}<br />{row.formula}<br />{row.substitutedDisplay} = {row.display}
     </p>)}</details>
   </section>;
 }

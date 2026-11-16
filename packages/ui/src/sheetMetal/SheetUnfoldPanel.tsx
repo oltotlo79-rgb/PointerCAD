@@ -3,6 +3,7 @@ import { resolveSheetSeams } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import { formatVolume } from '../solid/solidSummary.js';
+import { displayNumber } from '../sketch/numericInputPresentation.js';
 import type { SheetMetalToolSession } from '../store/sheetMetalSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { showSheetUnfold } from './sheetUnfoldActions.js';
@@ -52,8 +53,8 @@ export function SheetUnfoldPanel({ session }: { readonly session: SheetMetalTool
       </fieldset>
     </>}
     {error === null ? null : <p role="alert" className="pcad-field__error">{error}</p>}
-    {requested ? <p role="status">{t('sheetMetal.computing')}</p> : preview?.flat === undefined ? null : <p role="status">
-      {t('sheetMetal.flatVisible')} {t('sheetMetal.previewVolume').replace('{volume}', formatVolume(preview.volume))}</p>}
+    {requested ? <p role="status">{t('sheetMetal.computing')}</p> : preview?.flat === undefined ? null : <p role="status" title={formatVolume(preview.volume)}>
+      {t('sheetMetal.flatVisible')} {t('sheetMetal.previewVolume').replace('{volume}', formatVolume(preview.volume, 'mm', (value) => displayNumber(value).text))}</p>}
     <div className="pcad-sheet-metal__actions"><button className="pcad-button pcad-button--primary" type="submit" title={t('sheetMetal.guide.showFlat')} disabled={target === undefined || computing || requested}>{t('sheetMetal.showFlat')}</button>
       <button className="pcad-button" type="button" title={t('sheetMetal.guide.showFolded')} onClick={clear}>{t('sheetMetal.showFolded')}</button></div>
     <button className="pcad-button" type="button" disabled={preview?.flat === undefined || computing || requested}

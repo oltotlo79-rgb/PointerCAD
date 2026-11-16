@@ -16,6 +16,10 @@ export const VIEW_COMMAND_ITEMS = [
   { id: 'left', labelKey: 'toolbar.viewOrientation.left', tooltipKey: 'toolbar.viewOrientation.leftTooltip' },
   { id: 'top', labelKey: 'toolbar.viewOrientation.top', tooltipKey: 'toolbar.viewOrientation.topTooltip' },
   { id: 'bottom', labelKey: 'toolbar.viewOrientation.bottom', tooltipKey: 'toolbar.viewOrientation.bottomTooltip' },
+  // 全体を表示・選択に合わせる・直前の視点へ戻る(B-08c)。既定のキーは持たない(キーの表で割り当てる)。
+  { id: 'fitAll', labelKey: 'toolbar.viewFit.all', tooltipKey: 'toolbar.viewFit.allTooltip' },
+  { id: 'fitSelection', labelKey: 'toolbar.viewFit.selection', tooltipKey: 'toolbar.viewFit.selectionTooltip' },
+  { id: 'previousView', labelKey: 'toolbar.viewHistory.previous', tooltipKey: 'toolbar.viewHistory.previousTooltip' },
   { id: 'matchWorkPlane', labelKey: 'toolbar.plane.matchView', tooltipKey: 'toolbar.plane.matchViewTooltip' },
 ] as const satisfies readonly { readonly id: string; readonly labelKey: MessageKey; readonly tooltipKey: MessageKey }[];
 

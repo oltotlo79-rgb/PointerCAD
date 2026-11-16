@@ -3,7 +3,7 @@ import { createMathBackend, executeMathWorkRequest } from '@pointercad/expressio
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expression/math/contracts';
 import { mathNumericalRootResult } from './mathNumericalRootResult.js';
 
-const select = '候補は小さい順です。rootinterval(...,番号)で[下限,上限]を選び、component(...,1または2)で上下限を使えます。上下限は解そのものの正確な値ではありません。未解決の範囲がある場合は選択できません。表示の小数は区間を狭めない向きに丸めます。';
+const select = '候補は小さい順です。rootinterval(...,番号)で[下限,上限]を選びます。component(...,1または2)で、上限か下限を使えます。上下限は解そのものの正確な値ではありません。未解決の範囲がある場合は選択できません。表示の小数は区間を狭めない向きに丸めます。';
 describe('数値の解を区間と未解決の範囲で表示する', () => {
   it.each([
     { source: 'numericroots(x,x,-1,1,0.000001)', message: '指定範囲の解を区間で確認しました。',

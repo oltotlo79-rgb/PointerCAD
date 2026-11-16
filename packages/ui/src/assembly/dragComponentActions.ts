@@ -10,7 +10,9 @@ import type { AssemblyView } from '../store/assemblySlice.js';
 import { coupledDragFollow, type CoupledDragOutcome } from './coupledComponentDrag.js';
 import { resolveCurrentMateTarget } from './mateCommands.js';
 
-export type AssemblyDragNotice = 'dragging' | 'fixed' | 'waiting' | 'unavailable' | 'cancelled' | 'failed' | 'complete' | 'limited';
+/** interrupted: the drag ended for a change the user did not make in this drag (shown above the save message, A-26). */
+export type AssemblyDragNotice = 'dragging' | 'fixed' | 'waiting' | 'unavailable' | 'cancelled' | 'failed' | 'complete' | 'limited'
+  | 'interrupted';
 export interface AssemblyDragState {
   readonly token: string;
   readonly document: AssemblyDocument;
@@ -40,14 +42,44 @@ export interface AssemblyDragOverlay {
 }
 type DragRequestOptions = Pick<MateDragOptions, 'maxIterations' | 'maxTimeMs' | 'now'>;
 
+/**
+ * The same published geometry. The same-publication ownership refresh (attachAssembly refreshOwnership) republishes a
+ * copy that differs only in meshOwnership, so that alone does not end a drag (A-26); every other field is compared by
+ * reference, so a new solve, document or body set still does.
+ */
+function samePublishedView(current: AssemblyView | null, view: AssemblyView): boolean {
+  if (current === view) return true;
+  if (current === null) return false;
+  const keys = new Set([...Object.keys(current), ...Object.keys(view)]);
+  keys.delete('meshOwnership');
+  return [...keys].every(key => Reflect.get(current, key) === Reflect.get(view, key));
+}
+
+/**
+ * Why the drag no longer holds: 'input' when the user changed the pick kind, tool, mate or placement (a quiet cancel),
+ * 'state' when the document, generation, computation or published geometry changed under it. null while it holds.
+ */
+function componentDragStaleness(drag: AssemblyDragState): 'input' | 'state' | null {
+  const state = useAppStore.getState();
+  if (state.assemblyDrag?.token !== drag.token) return 'state';
+  if (state.assemblyMateDraft !== null || state.assemblyPlacement !== null || state.selectionKind !== 'body'
+    || state.activeTool !== 'select') return 'input';
+  return state.assembly === drag.document && state.assemblyLibrary === drag.library
+    && state.activeDocumentId === drag.documentId && state.documentVersion === drag.version
+    && state.requestedGeneration === drag.generation && !state.isComputing && samePublishedView(state.assemblyView, drag.view)
+    ? null : 'state';
+}
+
 /** A result belongs to one document, geometry generation and input operation. */
 export function currentComponentDrag(drag: AssemblyDragState): boolean {
-  const state = useAppStore.getState();
-  return state.assemblyDrag?.token === drag.token && state.assembly === drag.document
-    && state.assemblyLibrary === drag.library && state.activeDocumentId === drag.documentId
-    && state.documentVersion === drag.version && state.requestedGeneration === drag.generation
-    && state.assemblyView === drag.view && !state.isComputing && state.assemblyMateDraft === null
-    && state.assemblyPlacement === null && state.selectionKind === 'body' && state.activeTool === 'select';
+  return componentDragStaleness(drag) === null;
+}
+
+/** Ends a drag that no longer holds: quietly for the user's own switch, visibly for any other change. */
+function cancelStaleComponentDrag(drag: AssemblyDragState): boolean {
+  const staleness = componentDragStaleness(drag);
+  if (staleness !== null) cancelOwnedComponentDrag(drag, staleness === 'input' ? 'cancelled' : 'interrupted');
+  return staleness !== null;
 }
 
 export function beginComponentDrag(componentId: string, plane: WorkPlane, grab: Vec3): boolean {
@@ -127,14 +159,14 @@ interface DragStep {
 function requestComponentDrag(pointer: Vec3, phase: 'frame' | 'release', options: DragRequestOptions): DragStep | null {
   const drag = useAppStore.getState().assemblyDrag;
   if (drag === null) return null;
-  if (!currentComponentDrag(drag)) { cancelOwnedComponentDrag(drag); return null; }
+  if (cancelStaleComponentDrag(drag)) return null;
   const target = componentDragTarget(drag.origin, drag.grab, pointer);
   if (target === null) { cancelOwnedComponentDrag(drag, 'failed'); return null; }
   try {
     const result = solveMateDrag(drag.prepared, target, { ...options, phase,
       maxIterations: options.maxIterations ?? (phase === 'frame' ? 5 : 50), placements: drag.placements,
       shouldCancel: () => !currentComponentDrag(drag) });
-    if (!currentComponentDrag(drag)) { cancelOwnedComponentDrag(drag); return null; }
+    if (cancelStaleComponentDrag(drag)) return null;
     if (!result.hardSatisfied || !confinedPlacements(drag, result.placements)) {
       if (phase === 'release') cancelOwnedComponentDrag(drag, 'failed');
       else useAppStore.setState({ assemblyDragNotice: 'failed' });

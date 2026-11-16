@@ -12,12 +12,12 @@ import { parseSubShapeId, type SubShapeId } from '../solid/subShapeSelection.js'
 import { t } from '../i18n/t.js';
 import { solidSavedInput } from './solidAnalysisSession.js';
 import { analyzeCadSolidModal, type CadSolidModalSettings } from './cadSolidModal.js';
-import { invalidateSolidModal, solidModalRequestValues } from './solidModalState.js';
+import { invalidateSolidModal, solidModalFailureMessage, solidModalRequestValues } from './solidModalState.js';
 import { solidModalEffectiveShared } from './solidModalShared.js';
 import { analyzeCadSolidBuckling, cadSolidBucklingFailureCode } from './cadSolidBuckling.js';
 import { invalidateSolidBuckling, solidBucklingModeCount } from './solidBucklingState.js';
 import { solidBucklingEffectiveReference } from './solidBucklingSaved.js';
-import { createSolidSupport, solidBoundaryFailure } from './solidBoundaryDraft.js';
+import { createSolidSupport, solidBoundaryFailure, solidRunFailure } from './solidBoundaryDraft.js';
 
 /** The same part with the same geometry. Saving the analysis inputs (or any other non-shape field such as appearance)
  * replaces the document object without touching a shape field (`affectsShape`), so it must neither invalidate a result
@@ -171,7 +171,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
         const next = store.getState().solidAnalysisSession;
         if (next) store.setState({ solidAnalysisSession: { ...next, status: outcome.kind === 'result' ? 'complete'
           : outcome.kind === 'cancelled' ? 'cancelled' : 'failed', stage: null, result: outcome.kind === 'result' ? outcome : null,
-        error: outcome.kind === 'failed' ? solidBoundaryFailure(outcome.message) : null } });
+        error: outcome.kind === 'failed' ? solidRunFailure(outcome.code, outcome.message) : null } });
       }).catch((error: unknown) => { if (current()) { active = null; failure(error); } });
     } catch (error) { failure(error); }
   };
@@ -217,7 +217,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
         if (!live()) return;
         modalActive = null;
         if (outcome.kind === 'result') store.getState().receiveSolidModal(id, { kind: 'result', input: outcome.input, result: outcome.result });
-        else if (outcome.kind === 'failed') store.getState().receiveSolidModal(id, { kind: 'failed', message: outcome.message });
+        else if (outcome.kind === 'failed') store.getState().receiveSolidModal(id, { kind: 'failed', message: solidModalFailureMessage(outcome.code, outcome.message) });
         else store.getState().cancelSolidModal();
       }).catch((error: unknown) => { if (live()) { modalActive = null; fail(error); } });
     } catch (error) { fail(error); }

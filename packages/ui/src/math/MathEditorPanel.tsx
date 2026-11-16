@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { MATH_INPUT_LIMITS } from '@pointercad/expression/math/contracts';
 import { MathEditorSurface, type MathInsertGroup } from './MathEditorSurface.js';
 import type { MathEditorController } from './MathEditorController.js';
+import type { MathEditorOutput } from './mathEditorSession.js';
 import type { MathPaletteItem } from './mathPalette.js';
 import type { StructuredMathField } from './mathFieldHost.js';
 import { mathEditorLabels } from './mathEditorLabels.js';
@@ -21,6 +22,8 @@ export interface MathEditorPanelProps {
   readonly readOnly: boolean;
   readonly acceptLabel?: string;
   readonly onHelp: () => void;
+  /** 計算の済んだ結果を、この欄に使えない理由(使える時は null)。「この式を使う」の直前に 1 行で出す(UI の点検の指摘 36)。 */
+  readonly applyBlockedReason?: (output: MathEditorOutput) => string | null;
 }
 
 /** Shared coordinate/coefficient/function view. It never owns another copy of the input or accepted value. */
@@ -58,7 +61,9 @@ export function MathEditorPanel(props: MathEditorPanelProps): React.JSX.Element 
       key={snapshot.state.input.identity.inputRevision} axes={axes}
       disabled={props.readOnly || !props.controller.isCurrent()}
       onChoose={indices => props.controller.chooseResultComponent(snapshot.state.input, indices)}/>}
-    resultDetail={description.detail} hasError={description.hasError} busy={description.busy}
+    resultDetail={description.detail} resultFull={description.full} hasError={description.hasError} busy={description.busy}
+    applyBlockedReason={snapshot.state.status === 'evaluated' && !snapshot.state.canApply && !description.hasError
+      ? props.applyBlockedReason?.(snapshot.state.output) ?? null : null}
     inspection={inspection} parameterUnits={parameterUnits} usageCounts={usageCounts}
     canApply={snapshot.state.status === 'evaluated' && snapshot.state.canApply}
     canChangeNotation={props.controller.isCurrent()} readOnly={props.readOnly}

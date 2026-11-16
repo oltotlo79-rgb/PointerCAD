@@ -255,7 +255,7 @@ const MEASURE_MISSING_SHAPE_MESSAGE = '測れませんでした。もう一度�
  * **1 つでも引けなければ書き出しごと断る**——一部だけ入ったファイルを渡すと、利用者は
  * 欠けに気づかないまま他の CAD へ持っていくことになる(NFR-UX-5)。
  */
-const EXPORT_MISSING_SHAPE_MESSAGE = 'もとになる立体が見つかりませんでした。もう一度計算し直してください。';
+const EXPORT_MISSING_SHAPE_MESSAGE = 'もとになるソリッドが見つかりませんでした。もう一度計算し直してください。';
 
 /** カーネルが投げた理由を、そのまま画面へ出せる 1 行にする(文言の正本はカーネル側)。 */
 function toFailureMessage(error: unknown): string {
@@ -861,15 +861,15 @@ function toInterferenceRequest(input: AssemblyInterferenceInput, options: Assemb
       if (placement === undefined) return { kind: 'unavailable', componentId, code: 'invalidPlacement', message: '部品の現在の位置がありません。' };
       const completed = input.bodies.get(partKey);
       if (completed === undefined || part.liveBodyIds.length === 0) return { kind: 'unavailable', componentId,
-        code: 'missingBody', message: '部品の立体の計算が完了していません。' };
+        code: 'missingBody', message: '部品のソリッドの計算が完了していません。' };
       const bodyKeys: string[] = [];
       for (const id of part.liveBodyIds) {
         const body = completed.find((entry) => entry.featureId === id);
         const step = part.steps.find((entry) => entry.featureId === id && entry.visible);
         if (body === undefined) return { kind: 'unavailable', componentId, code: 'missingBody',
-          message: '部品の立体の計算が完了していません。', ...(step === undefined ? {} : { missingKeys: [step.key] }) };
+          message: '部品のソリッドの計算が完了していません。', ...(step === undefined ? {} : { missingKeys: [step.key] }) };
         if (body.bodyKind !== 'solid') return { kind: 'unavailable', componentId, code: 'unsupportedBody', message: '面や三角形だけの部品は調べられません。' };
-        if (step === undefined || !body.isValid) return { kind: 'unavailable', componentId, code: 'missingBody', message: '部品の立体を取得できません。' };
+        if (step === undefined || !body.isValid) return { kind: 'unavailable', componentId, code: 'missingBody', message: '部品のソリッドを取得できません。' };
         bodyKeys.push(step.key);
       }
       return { kind: 'ready', componentId, bodyKeys: [...new Set(bodyKeys)].sort(), placement: {

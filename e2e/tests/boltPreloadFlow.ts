@@ -8,6 +8,8 @@ import { savedBoltFixture } from '../../packages/model/src/analysis/cadNativeBol
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
+import { collectFailedRequests, recordRequestFailures } from './networkFailureEvidence.js';
+import { uiMessage } from './uiMessages.js';
 import type { BeamWorkerStatistics } from '../../packages/ui/src/beam/attachBeamAnalysis.js';
 
 declare global { interface Window { pcadBeamWorkers?: () => BeamWorkerStatistics } }
@@ -15,6 +17,7 @@ declare global { interface Window { pcadBeamWorkers?: () => BeamWorkerStatistics
 const SAVED_AT = '2026-10-27T00:00:00.000Z';
 const FIXTURE_SHA256 = '125d8c98eb2422f9ca48d5f48691dfb0127aff4926e0476b130a961719526dcb';
 const hash = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 /** Real serializable input only. No world positions/results/Worker tokens are introduced into saved inputs.
  * Independent approved fixture: two FB50x6/50mm members, E200000MPa/A300mm²;
  * 100mm bolt E200000MPa/A100mm² plus explicit 2+1+2nm/N. Fi4000N, cm=1/600000000m/N, cb=1e-8m/N. */
@@ -77,6 +80,8 @@ async function confirmReview(page: Page): Promise<void> {
 /** Normal file open, visible controls, real native Worker dispatch; read-only diagnostics are never setters. */
 export async function boltPreloadFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
+  // Worker の資産の取得を含む失敗した要求を集める(run 43711424272 は python_stdlib.zip の net::ERR_NO_BUFFER_SPACE で断られた)。
+  const failed = collectFailedRequests(page);
   const fixture = await boltPreloadFixture(); expect(hash(fixture.bytes)).toBe(FIXTURE_SHA256);
   const path = info.outputPath('explicit-bolt-input.pcada'); await writeFile(path, fixture.bytes, { flag: 'wx' });
   await info.attach('bolt-fixture-provenance', { body: Buffer.from(JSON.stringify({ fixtureSHA256: FIXTURE_SHA256,
@@ -113,7 +118,15 @@ export async function boltPreloadFlow(page: Page, info: TestInfo, app?: Electron
   expect((await saved(page, info, 'native-cancel', app)).canonical).toBe(before.canonical);
   await expect(panel.getByTestId('preload-result')).toHaveCount(0);
   await confirmReview(page); const completedBefore = await workers(page); await panel.getByTestId('preload-run').click();
-  await expect(panel.getByTestId('preload-status')).toHaveText('計算結果を表示', { timeout: KERNEL_TIMEOUT_MS });
+  // 断られた(終わりの)状態のまま上限まで待たず、判定の前に失敗した要求と通信の状態を残す。成功の条件と上限は変えない。
+  const status = panel.getByTestId('preload-status'), completeText = uiMessage('beam', 'beam.preload.complete');
+  const endTexts = [completeText, uiMessage('beam', 'beam.preload.failed'), uiMessage('strength', 'strength.femFailure.assetMissing'),
+    uiMessage('strength', 'strength.femFailure.assetCorrupt')];
+  await expect(status).toHaveText(new RegExp(`^(?:${endTexts.map(escapeRegExp).join('|')})$`, 'u'), { timeout: KERNEL_TIMEOUT_MS });
+  const finalStatus = await status.textContent();
+  if (finalStatus !== completeText) await recordRequestFailures(info, { label: 'bolt preload real native run', failed,
+    errors: [`preload-status: ${String(finalStatus)}`, `workers: ${JSON.stringify(await workers(page))}`] });
+  expect(finalStatus, 'bolt preload real native run status').toBe('計算結果を表示');
   const rows = panel.getByTestId('preload-result').locator('tbody tr'); await expect(rows).toHaveCount(3);
   const force = Number(await rows.nth(1).locator('td').nth(1).textContent()), contact = Number(await rows.nth(1).locator('td').nth(2).textContent());
   expect(Math.abs(force - 29000 / 7) / (29000 / 7)).toBeLessThanOrEqual(1e-9);

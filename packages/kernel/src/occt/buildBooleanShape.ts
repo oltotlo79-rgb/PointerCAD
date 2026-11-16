@@ -5,7 +5,7 @@ import { conditionEllipseBoolean, type BooleanHistory } from './ellipseBoolean.j
 import type { BooleanOperation } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
 
-const COMBINE_FAILED_MESSAGE = '2 つの立体を組み合わせられませんでした。位置や形を見直してください。';
+const COMBINE_FAILED_MESSAGE = '2 つのソリッドを組み合わせられませんでした。位置や形を見直してください。';
 
 /**
  * 演算前に非破壊モードを指定できるよう、空の maker を作る。

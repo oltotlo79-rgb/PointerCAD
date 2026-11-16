@@ -22,7 +22,9 @@ import {
   toModelMeasureTargets,
   type MassPropertiesResult,
   type PartMeasurer,
+  shortNumber,
 } from './measureCommands.js';
+import { formatArea, formatVolume } from './measureFormatting.js';
 import {
   measureLocally,
   measureReadiness,
@@ -198,7 +200,9 @@ describe('FIX-02 display conversion and density bounds', () => {
     expect(formatMeasureValue({ ...distance, unit: 'mm2', value: 25.4 ** 2 }, 'inch')).toBe('1.000 in²');
     expect(formatMeasureValue({ ...distance, unit: 'mm3', value: 25.4 ** 3 }, 'inch')).toBe('1.000 in³');
     expect(formatMeasurePoint([25.4, -25.4, -1e-18], 'inch')).toBe('1.000, -1.000, 0.000 in');
-    expect(formatMeasurePoint([1.23456789, 0, 0])).toBe('1.234568, 0, 0 mm');
+    // 画面は有効 6 桁(UI の点検の指摘 26、利用者の決定 2026-11-14)。全桁は digits='full' で説明へ。
+    expect(formatMeasurePoint([1.23456789, 0, 0])).toBe('1.23457, 0, 0 mm');
+    expect(formatMeasurePoint([1.23456789, 0, 0], 'mm', 'full')).toBe('1.234568, 0, 0 mm');
     expect(distance.value).toBe(25.4);
   });
 
@@ -239,7 +243,7 @@ describe('選んでいるものと測れるものの要約(プロパティ欄)',
     expect(describeMeasureTargets(targetsOf(['extrude-1#face:0', 'extrude-1#face:1']))).toBe(
       '面 / 面',
     );
-    expect(describeMeasureTargets(targetsOf(['extrude-1', 'extrude-2']))).toBe('立体 / 立体');
+    expect(describeMeasureTargets(targetsOf(['extrude-1', 'extrude-2']))).toBe('ソリッド / ソリッド');
   });
 
   it('測れる種類は見出しで並べ、先頭が既定', () => {
@@ -274,6 +278,23 @@ describe('プロパティ欄の値の書式(統括の指示: 距離・角度・�
     expect(
       formatMeasureValue({ kind: 'bodyVolume', value: 12000, unit: 'mm3', segment: null }),
     ).toBe('12000 mm³');
+  });
+
+  it('体積・面積・重心・慣性は画面に有効 6 桁、全桁は説明へ、許容差以内は 0、渡した値は変えない(指摘 26)', () => {
+    const volume = 18571.68146928204;
+    const before = volume;
+    expect(formatMeasureValue({ kind: 'bodyVolume', value: volume, unit: 'mm3', segment: null })).toBe('18571.7 mm³');
+    expect(formatMeasureValue({ kind: 'faceArea', value: 1234.5678912, unit: 'mm2', segment: null })).toBe('1234.57 mm²');
+    // 値・単位の担当は渡されなければ全桁、表示の側が短い数(有効 6 桁)を渡す。
+    expect(formatVolume(volume)).toBe('18571.6814693');
+    expect(formatArea(0.0729868291265)).toBe('0.0729868291265');
+    expect(formatVolume(0.0729868291265, 'mm', shortNumber)).toBe('0.0729868');
+    expect(formatVolume(4e-7, 'mm', shortNumber)).toBe('0');
+    expect(volume).toBe(before);
+    expect(formatMoments([4186.666666666667, 1, 2])).toBe('4186.67, 1, 2 g·mm²');
+    expect(formatMoments([4186.666666666667, 1, 2], 'full')).toBe('4186.66666667, 1, 2 g·mm²');
+    // inch の表示は今の決まり(小数 3 桁)のまま。
+    expect(formatVolume(25.4 ** 3, 'inch')).toBe('1.000');
   });
 
   it('重心と慣性モーメントは 3 つ並べて単位を添える', () => {

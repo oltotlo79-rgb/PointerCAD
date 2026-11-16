@@ -4,6 +4,7 @@ import { reopenPart } from './reopenPart.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { undoMathEdit, waitForMathEditorText } from './mathEditorReady.js';
 import { uiMessage } from './uiMessages.js';
+import { mathResultValueText } from './mathResultValue.js';
 
 /** Side and angle choices must survive actual editing and document round trips. */
 export async function mathLimitsFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -26,7 +27,7 @@ export async function mathLimitsFlow(page: Page, info: TestInfo, app?: ElectronA
   }
   await input.fill('limit(sin(t)/t,t,0)');
   await expect.poll(async () => {
-    const text = await result.innerText(); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
+    const text = await mathResultValueText(result); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
   }, { timeout: 225_000 }).toBeCloseTo(Math.PI/180, 12);
   await angle.selectOption('radian'); await expect(result).toHaveText('= 1', { timeout: 225_000 });
   await angle.selectOption('degree');

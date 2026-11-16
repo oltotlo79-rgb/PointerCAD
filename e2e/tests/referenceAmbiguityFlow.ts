@@ -1159,7 +1159,7 @@ export async function referenceRepairDrawingFlow(page: Page, info: TestInfo,
   await page.locator('.pcad-panel--left').getByRole('button', { name: '正面図', exact: true }).click();
   const view = page.locator('[data-property-kind="view"]');
   await view.getByLabel('図の縮尺（空欄は用紙と同じ）', { exact: true }).fill('0.5');
-  await view.getByRole('button', { name: '投影図の設定を適用', exact: true }).click();
+  await view.getByRole('button', { name: '適用', exact: true }).click();
   await waitForDrawingReady(page);
   await expect(detail).toContainText('文書または形が変わりました。候補を更新してください。');
   await expect(detail.getByRole('button', { name: 'この参照で確定', exact: true })).toBeDisabled();

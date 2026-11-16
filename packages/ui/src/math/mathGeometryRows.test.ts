@@ -105,7 +105,7 @@ describe('math geometry rows: values and status', () => {
   it('reads a current real row, its units, margins, unused badge and buttons', () => {
     const row = mathGeometryRows(stateFor())[0];
     expect(row).toMatchObject({ id: 'g', name: 'V', kindLabel: '体積', valueText: '24000 mm³', statusKey: null,
-      statusText: null, targetsSummary: '箱 (立体)', usageCount: 0, usageText: '未使用', circular: false,
+      statusText: null, targetsSummary: '箱 (ソリッド)', usageCount: 0, usageText: '未使用', circular: false,
       angleUnit: null, remove: { ready: true }, createParameter: { ready: true } });
     expect(row.toleranceText).toBe('長さ 0.000001 mm / 角度 0.0000572957795131 度');
     expect(row.toleranceNote).toBe('平行・垂直などを判定する幅です。値の誤差の保証ではありません。');
@@ -262,7 +262,7 @@ describe('quantity headings, candidates and reselection', () => {
     const document = documentWith();
     const renamed = { ...document, solids: document.solids.map(item => ({ ...item, name: '新しい箱' })) };
     expect(mathGeometryTargetsSummary(renamed, QUANTITIES.area)).toBe('新しい箱 (面 1)');
-    expect(mathGeometryTargetsSummary({ ...document, solids: [] }, QUANTITIES.volume)).toBe('box (立体)');
+    expect(mathGeometryTargetsSummary({ ...document, solids: [] }, QUANTITIES.volume)).toBe('box (ソリッド)');
   });
 
   it('reads sketch point names through the current document and keeps the point identity', () => {
@@ -271,6 +271,15 @@ describe('quantity headings, candidates and reselection', () => {
     const quantity: MathGeometryQuantity = { kind: 'coordinate', component: 'Z', point: { kind: 'sketch-point',
       sketchId: sketch.id, reference: { kind: 'point', pointId: feature.id } } };
     expect(mathGeometryTargetsSummary(document, quantity)).toBe(`${sketch.name} / ${feature.name} (点: ${feature.id})`);
+  });
+
+  it('reads sketch curve names without the internal id while the curve exists (UI の点検の指摘 37)', () => {
+    const document = documentWith();
+    const sketch = document.sketches[0], feature = sketch.features[0];
+    const quantity: MathGeometryQuantity = { kind: 'length', curve: { kind: 'sketch-curve', sketchId: sketch.id, featureId: feature.id } };
+    expect(mathGeometryTargetsSummary(document, quantity)).toBe(`${sketch.name} / ${feature.name} (辺)`);
+    const missing: PartDocument = { ...document, sketches: [{ ...sketch, features: [] }] };
+    expect(mathGeometryTargetsSummary(missing, quantity)).toBe(`${sketch.name} / ${feature.id} (辺: ${feature.id})`);
   });
 
   it.each(['original', 'renamed', 'missing'] as const)('includes the coordinate frame with its %s identity', status => {

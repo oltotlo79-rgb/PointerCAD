@@ -65,6 +65,7 @@
     "geometry-math-input.spec.ts",
     "history-notes.spec.ts",
     "impact-browser.spec.ts",
+    "input-bindings.spec.ts",
     "local-data.spec.ts",
     "machining-surface.spec.ts",
     "math-high-dpi.spec.ts",
@@ -235,7 +236,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "cc7d2877c27fef2c8cb4e2d507c0e04eaa31a51990e0f8e12a1ef3c692afbee5",
+  "configSha256": "984514e80d680a882e245f4b66271aa07b8990e26969ee2e06cb7b9420cb23b7",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
@@ -320,7 +321,7 @@
       "file": "appearance.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "23cf89d01cc0470d5c9c54a9165e8dfef7f8b9e20ef4f1c6a47c282de1554c27"
+      "sha256": "e548d21e6474045388f187b1ec4cbe9851675f8022ce5224ae929e4e6e7b6d01"
     },
     {
       "file": "assembly-1000-host.spec.ts",
@@ -476,7 +477,7 @@
       "file": "context-reference-route5.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "128bfe2fc56b7d1cb260474fee9584259165a8ad8107572bff724fc6d40596fd"
+      "sha256": "58117dcc5b5213b638d8f4d67aeeb283053316c5ad862b45a29f720fec4ec414"
     },
     {
       "file": "control-descriptions.spec.ts",
@@ -560,7 +561,7 @@
       "file": "drawing-source-refresh.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "ed970adf271ea978f63f064f8662e3109864ab25bacade63b33043c8b41eb3a7"
+      "sha256": "39e05022726ed71fc54d46484511d951dd578c8ca4ccd510ec6e3c79d19b0ae0"
     },
     {
       "file": "dwg.spec.ts",
@@ -881,6 +882,12 @@
       "sha256": "c80b9f75f74581d679c4e0cca97e2fec98f684adb8e3dba9196fd7a2a66c5ab3"
     },
     {
+      "file": "electron-input-bindings.spec.ts",
+      "category": "electron",
+      "reason": "electron project filename rule",
+      "sha256": "a0d948c85002fd739b1d5bbb595d3e9122b86b91f78df74f2c050787db366f59"
+    },
+    {
       "file": "electron-intersections.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
@@ -1022,7 +1029,7 @@
       "file": "electron-sheet.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
-      "sha256": "92e34d0c8eca139af8d602b87f29f74b669722e68422c7c422860b326097afe9"
+      "sha256": "ba265861e018fbc1737aaae11578b2d05a5c8946e2cd9fd90c5b2658f576ed1a"
     },
     {
       "file": "electron-shell-analysis-connections.spec.ts",
@@ -1142,7 +1149,7 @@
       "file": "ex18-math-bracket.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "3f0d4ffdc65d479ff0ec887fdc61579cf7d1026c09fd4675494d002268971574"
+      "sha256": "c04322cb2402844f91a68f6a676dc4a1d00292b997a6a7ca383432c563752f38"
     },
     {
       "file": "ex18-routes-solid.spec.ts",
@@ -1154,7 +1161,7 @@
       "file": "ex18-sew-bracket.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "6580ce31179822dc524ed7c2a07349e9d6a005a082ce06e9cbc54930523c8e26"
+      "sha256": "8b7d55cb90edca16d99c54cc9493c5251573653d3b673a180299225d86885bfc"
     },
     {
       "file": "ex18-surface-sew-solid.spec.ts",
@@ -1166,7 +1173,7 @@
       "file": "exchange.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "bca349218a79c5f324c01851ca5f865a9a227c0252d1ab3a3b42bf1b70e363e0"
+      "sha256": "a08c31af4ebf3fcf8c9d1f5ca108b0d4c97745ca5dd5768b8472aab854bb9f5f"
     },
     {
       "file": "explode.spec.ts",
@@ -1349,6 +1356,12 @@
       "sha256": "f2fdf019ac9fbe55a788d11c46ecf2d243f2241cef2b481c0b13565371c77edd"
     },
     {
+      "file": "input-bindings.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "cc0e2f821793bc52248ee4b810297d500b95aa2d30ce741789e30b396c7c8d25"
+    },
+    {
       "file": "interference.spec.ts",
       "category": "manual-capture",
       "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
@@ -1418,7 +1431,7 @@
       "file": "measurement-printcheck-fix02.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "bd94ddc8d973392e390b7eaec1b5bd5374a7606a69f85611fce18fced7b3765c"
+      "sha256": "3a38c7899b128c6d0c25c2eff21e20ed2fe8f99f938bb1c0a84dee8241934955"
     },
     {
       "file": "memory-highwater-ui-contract.spec.ts",
@@ -1532,31 +1545,31 @@
       "file": "p5-cut-mirror.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "4a46fe4b90d8ea4cb8f53a411285d682bed5459e85f48bbafd445cef60193de2"
+      "sha256": "7cbdd7f896a18526078925d2776f21a02032856dcddd812df3aea42b20b3c195"
     },
     {
       "file": "p5-primitive-pick.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "b9696f0290e179cce489ff2c31682d0f82a00742daa965112d191ab36f42bf9c"
+      "sha256": "1bd413aea85e4e948c9c1c6933a838f0f12883b08c78738589d3d76c32e39d4d"
     },
     {
       "file": "p6-view.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "e6b7c18e5c95f8bc69f376d16aa3b35efd5a85e725fe76f5743999fb52863d26"
+      "sha256": "33ad6c0440b4e9ccb129630e1e8cefdae04034dadbada41e40455b6d52ba20be"
     },
     {
       "file": "p7-standard-parts.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "32a78037ae61511c499eec7e92e825117c0a82eb6a6d0c24d10ef22815e3e68d"
+      "sha256": "d73a32d4a5f1f8e6453c206ed335a5f65fca28570bd46af112ba408e59ceb679"
     },
     {
       "file": "p8-drawing.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c"
+      "sha256": "183cd4cce2ef1eb8296becdeea0c72f2cd74fdeaaa279d605939d66ca411a89c"
     },
     {
       "file": "parameter-math-name-blur.spec.ts",
@@ -1610,7 +1623,7 @@
       "file": "primitives.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "306b9c4e12e6f4fa560ef465ce4113fe8be38f6f15d4ce0259751af4716cc07a"
+      "sha256": "daabebb396b6392208ad2a6bb78f76ed27e4a12d80462051ae60e126baa5392b"
     },
     {
       "file": "print-check.spec.ts",
@@ -1694,7 +1707,7 @@
       "file": "script-performance.spec.ts",
       "category": "performance-project",
       "reason": "exclusive one-worker Chromium viewport performance project in playwright.config.ts",
-      "sha256": "2c1c678c959a6c118dadb7d3c9bdfe57d308797ab373e10682a78e5be0f1de45"
+      "sha256": "cdc30e554ba5dac90f9c6f4fc1348be95fb968cc538c7f2a84aa78206b741650"
     },
     {
       "file": "scripts.spec.ts",
@@ -1736,13 +1749,13 @@
       "file": "sheet-configuration.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "710ecddd444f2b4eb8b0f65fc4435bd6abfe49ca4b4d22614c99ad1afa2bc51d"
+      "sha256": "e6dc60c26fddba95f268bf07e6195afd4a63ff0d523cc2b4893fe6f5bae4cbf7"
     },
     {
       "file": "sheet-hole-table.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "d56187eba3111ff7f8d90459840dba39155e255b21ea06a6b46cc9cdec2b79dd"
+      "sha256": "b4cc1bede69487b6809d361185e6e45fb1cd2039ab9ff2da5d870cb4f46466c2"
     },
     {
       "file": "sheet-layout.spec.ts",
@@ -1754,7 +1767,7 @@
       "file": "sheet-metal.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "8098fbed64e3df079b3d7c8b2145564770b6fcaca73df388ff0c69ed99826335"
+      "sha256": "e5e07bb8274f5461472dbb371e483559a074696dd6652c27163ee48eb495ded9"
     },
     {
       "file": "sheet-performance.spec.ts",
@@ -1766,7 +1779,7 @@
       "file": "sheet-profile.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "5905bd23154e215c841f89c97b74923e7b9f9d2981d844d11e1f3f0929d30e4b"
+      "sha256": "ba3e3d3a870149c865af1ac646232594b4e22de516d4750b54e34aff93402571"
     },
     {
       "file": "sheet-tool-defaults.spec.ts",
@@ -1796,7 +1809,7 @@
       "file": "sketch-corner-boundary.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "0985acdd5de1c7de47fb61853c20839cc030d04a9d33988d84e0ac3540d478ef"
+      "sha256": "c6667f67ccadc8924c1fcb472d0f1ff17f4edab639beebb559e7fbd1a5845b48"
     },
     {
       "file": "sketch-extended.spec.ts",
@@ -1904,7 +1917,7 @@
       "file": "solid.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "f808bd0d3a443b6af4d1b8011acbfe2db930f5c4c4d00a40e09817ea1f755554"
+      "sha256": "f89fb9c406a421c0eb8856b34c5b22003d6e28c9191c1bd918ed1da30dde7e81"
     },
     {
       "file": "sphere-grid.spec.ts",
@@ -1946,7 +1959,7 @@
       "file": "status-guidance.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "f89e2ef0ae98ffe0a89e163c98b403b8c8701fc4b51a6e2cf3c0d12eacb522b5"
+      "sha256": "b804cf958ebdb057f4bb0d6649ad235f763d12272c266cc7f03ccc6889ac3042"
     },
     {
       "file": "steel-bend-stock.spec.ts",
@@ -2084,7 +2097,7 @@
       "file": "workplane-3d.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "5307f288e1df35f6bb5b70ab7c09076007e8db946a6841d403283aa379f9e5a2"
+      "sha256": "5a9a77866e514f29b1eb0e4bdbd0fc77bfed12218a9c6378be6523d790877f8c"
     },
     {
       "file": "z-math-input.spec.ts",

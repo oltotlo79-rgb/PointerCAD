@@ -21,7 +21,7 @@ type CatalogVerification = 'draft' | 'final-standard' | 'manufacturer-catalog' |
 
 /** 寸法を添えて描く簡単な線図の種類。製造元の図・画像は使わない。 */
 type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChannel' | 'pipe'
-  | 'pin' | 'nut' | 'bolt' | 'washer' | 'bearing' | 'camFollower' | 'bush' | 'compressionSpring' | 'tSlotFrame';
+  | 'pin' | 'nut' | 'bolt' | 'washer' | 'bearing' | 'camFollower' | 'bush' | 'compressionSpring' | 'tSlotFrame' | 'key' | 'sealRing' | 'oRing';
 
 /**
  * 族の options の 1 つの鍵の指定。**鍵の名前は保存されるので、版の中で変えない。**
@@ -41,6 +41,8 @@ export interface CatalogOptionSpec {
   readonly max?: number;
   /** 新しく置く時の既定の値。保存の時は必ず書き出す。 */
   readonly defaultValue: string;
+  /** 行ごとに作れる範囲が違う族(呼びごとに長さの範囲がある止めねじなど)の、その行の既定の値。無い時は `defaultValue`。 */
+  readonly rowDefault?: (row: CatalogItemRow) => string;
 }
 
 /** 族の 1 行。保存されるのは `key` と `size` だけで、ほかは導出と表示に使う。 */

@@ -37,6 +37,7 @@ import type {
 import type { SectionPlaneNumbers } from './sectionView.js';
 import { gridSpacing } from './gridMath.js';
 import type { ThemeColors } from './themeColors.js';
+import type { ViewFitSource } from './viewFit.js';
 import { createViewportLifetime, ViewportResourceInitializationFailure, type ViewportLifetime } from './viewportLifetime.js';
 import type { createViewportMeshObservation } from './viewportMeshObservation.js';
 import type { QuadViewId } from './quadLayout.js';
@@ -267,6 +268,8 @@ export interface ViewportScene {
    * **非表示にした部品には当たらない**(`createAssemblyLayer.ts` の `pickComponent`)。
    */
   pickComponent(screenX: number, screenY: number, observation?: AssemblyComponentPickObservation): string | null;
+  /** 「全体を表示」「選択に合わせる」(B-08c)が収める描画の一式。組立の画面は組立、部品の画面は立体とスケッチ。 */
+  viewFitSource(kind: 'part' | 'assembly'): ViewFitSource;
   pickAssemblyFace(screenX: number, screenY: number, observation?: AssemblyFacePickObservation): TypeAssemblyMateFaceHit | null;
   /**
    * 部品の表示を、持ち主の失効(store に出ない台帳の受領の失効を含む)で片付けたまま、まだ作り直していないか。
@@ -437,6 +440,10 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     ...sketch.methods, ...solid.methods, ...assembly.methods, ...overlays.methods, ...pointer.methods, ...output.methods,
     ...frame.methods, ...capture.methods,
     setReferenceRepairPreview: repairPreviews.setReferenceRepairPreview,
+
+    viewFitSource(kind): ViewFitSource {
+      return kind === 'assembly' ? { kind, assembly: assembly.bundle() } : { kind, solid: solid.bundle(), sketch: sketch.bundle() };
+    },
 
     setThemeColors(next): void {
       // 方眼と軸は頂点ごとの色を持つので、いまの間隔のまま組み立て直してから各層へ配る。

@@ -154,7 +154,7 @@ export async function analysisResultBindingFlow(page: Page, info: TestInfo, desk
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
 
     await openToolMenu(page, '解析');
-    await toolMenuPanel(page, '解析').getByRole('button', { name: '現在の立体を解析', exact: true }).click();
+    await toolMenuPanel(page, '解析').getByRole('button', { name: '現在のソリッドを解析', exact: true }).click();
     const panel = page.getByTestId('solid-analysis-panel');
     await expect(panel).toBeVisible();
     await clickWorldPoint(page, [20, 0, 0]);

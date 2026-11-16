@@ -31,22 +31,6 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
     onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) return; if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
     <h3 className="pcad-section__title">{t('strength.title')}</h3>
     <details><summary>{t('strength.help')}</summary><p>{t('strength.assumptions')}</p></details>
-    {assembly === null ? null : <button type="button" className="pcad-button" data-testid="beam-open"
-      title={t('beam.openHelp')} onClick={openBeam}>{t('beam.open')}</button>}
-    <button type="button" className="pcad-button" data-testid="plastic-bar-open"
-      title={t('plasticBar.openHelp')} onClick={openPlasticBar}>{t('plasticBar.open')}</button>
-    <button type="button" className="pcad-button" data-testid="fatigue-open"
-      title={t('fatigue.openHelp')} onClick={openFatigue}>{t('fatigue.open')}</button>
-    <button type="button" className="pcad-button" data-testid="fatigue-strain-open"
-      onClick={openFatigueStrain} title={t('fatigueStrain.openHelp')}>{t('fatigueStrain.open')}</button>
-    <button type="button" className="pcad-button" data-testid="fatigue-local-cycle-open"
-      onClick={openFatigueLocalCycle} title={t('fatigueLocalCycle.openHelp')}>{t('fatigueLocalCycle.open')}</button>
-    {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-analysis-open"
-      onClick={openSolidAnalysis} title={t('solidAnalysis.openHelp')}>{t('solidAnalysis.open')}</button> : null}
-    {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-plastic-open"
-      onClick={openSolidPlastic} title={t('solidPlastic.openHelp')}>{t('solidPlastic.open')}</button> : null}
-    {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-finite-open"
-      onClick={openSolidFinite} title={t('solidFinite.openHelp')}>{t('solidFinite.open')}</button> : null}
     <StrengthOptions session={session} edit={edit} />
     <StrengthMaterialFields session={session} parameters={parameters} edit={edit} />
     {strengthCalculationFields(session.calculation).filter(([name]) => name !== 'tensileArea').map(([name, quantity, allowZero]) =>
@@ -62,5 +46,27 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
       <button type="button" className="pcad-button" title={t('strength.guide.help')} onClick={() => help('strength')}>{t('strength.help')}</button>
     </div>
     {session.result === null ? null : <StrengthResults snapshot={session.result} edited={session.edited} />}
+    {/* ほかの解析の入口は、今の計算の欄と区別して最後に 1 つの組で出す(UI の点検の指摘 28)。ツールバーの「解析」の一覧と同じ入口。 */}
+    <nav className="pcad-strength__others" aria-label={t('strength.otherAnalyses')}>
+      <h4>{t('strength.otherAnalyses')}</h4>
+      <div className="pcad-strength__actions">
+        {assembly === null ? null : <button type="button" className="pcad-button" data-testid="beam-open"
+          title={t('beam.openHelp')} onClick={openBeam}>{t('beam.open')}</button>}
+        <button type="button" className="pcad-button" data-testid="plastic-bar-open"
+          title={t('plasticBar.openHelp')} onClick={openPlasticBar}>{t('plasticBar.open')}</button>
+        <button type="button" className="pcad-button" data-testid="fatigue-open"
+          title={t('fatigue.openHelp')} onClick={openFatigue}>{t('fatigue.open')}</button>
+        <button type="button" className="pcad-button" data-testid="fatigue-strain-open"
+          onClick={openFatigueStrain} title={t('fatigueStrain.openHelp')}>{t('fatigueStrain.open')}</button>
+        <button type="button" className="pcad-button" data-testid="fatigue-local-cycle-open"
+          onClick={openFatigueLocalCycle} title={t('fatigueLocalCycle.openHelp')}>{t('fatigueLocalCycle.open')}</button>
+        {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-analysis-open"
+          onClick={openSolidAnalysis} title={t('solidAnalysis.openHelp')}>{t('solidAnalysis.open')}</button> : null}
+        {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-plastic-open"
+          onClick={openSolidPlastic} title={t('solidPlastic.openHelp')}>{t('solidPlastic.open')}</button> : null}
+        {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-finite-open"
+          onClick={openSolidFinite} title={t('solidFinite.openHelp')}>{t('solidFinite.open')}</button> : null}
+      </div>
+    </nav>
   </form>;
 }

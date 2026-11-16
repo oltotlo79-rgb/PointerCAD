@@ -972,8 +972,8 @@ function planReorder(
       ok: false,
       reason:
         moved.section === 'reference'
-          ? `${moved.name}は基準ジオメトリなので、立体の間へは動かせません。`
-          : `${moved.name}は立体なので、基準ジオメトリの間へは動かせません。`,
+          ? `${moved.name}は基準ジオメトリなので、ソリッドの間へは動かせません。`
+          : `${moved.name}はソリッドなので、基準ジオメトリの間へは動かせません。`,
       blockingFeatureId: moved.featureId,
     };
   }

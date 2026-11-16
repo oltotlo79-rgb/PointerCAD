@@ -607,7 +607,7 @@ describe('押し出しの終端の指定(FR-415)', () => {
     try {
       expect(() =>
         makeExtrudeSolid(oc, EXTRUDE_UP, {}, { end: TO_NEXT, target: plate.shape }),
-      ).toThrow('押し出す先に立体がありません。');
+      ).toThrow('押し出す先にソリッドがありません。');
     } finally {
       plate.delete();
     }
@@ -615,7 +615,7 @@ describe('押し出しの終端の指定(FR-415)', () => {
 
   it('「次の面まで」相手の立体が渡されていないときも同じ理由で断る', () => {
     expect(() => makeExtrudeSolid(oc, EXTRUDE_UP, {}, { end: TO_NEXT })).toThrow(
-      '押し出す先に立体がありません。',
+      '押し出す先にソリッドがありません。',
     );
   });
 
@@ -891,7 +891,7 @@ describe('対象を両側へ貫く押し出しの終端(EX04、throughTarget)', 
 
   it('対象の形が無ければ理由をつけて断る(何も作らない)', () => {
     expect(() => makeExtrudeSolid(oc, circleTool(5, 5, 0), {}, { end: { kind: 'throughTarget' }, target: null }))
-      .toThrow('押し出す先に立体がありません。');
+      .toThrow('押し出す先にソリッドがありません。');
   });
 
   it('ほかの終端は対象を渡しても従来どおり(両側 5/5 の体積は 40·30·10 のまま)', () => {

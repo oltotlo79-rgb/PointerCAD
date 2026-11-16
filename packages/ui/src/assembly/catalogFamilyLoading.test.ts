@@ -1,6 +1,6 @@
 /**
  * 規格部品の族の表の読み込みを待つ口（文書を開く道・図面・選ぶ画面）。登録口は検査の中だけの物を使う
- * （製品の登録口 PRODUCT_CATALOG_REGISTRY には、まだ族が無い）。
+ * （製品の登録口 PRODUCT_CATALOG_REGISTRY の族に左右されないため）。
  */
 import { createStandardPartSource, type CatalogRegistry, type ComponentSource } from '@pointercad/model';
 import { describe, expect, it, vi } from 'vitest';

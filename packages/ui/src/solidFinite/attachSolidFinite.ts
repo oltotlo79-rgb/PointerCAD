@@ -10,6 +10,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { hasCurrentConnectionGeometry } from '../sketch/connectionSelection.js';
 import { parseSubShapeId } from '../solid/subShapeSelection.js';
 import { t } from '../i18n/t.js';
+import { femRuntimeFailureText } from '../femFailureMessage.js';
 import { createSolidFiniteSession, solidFiniteSavedInput } from './solidFiniteSession.js';
 import { createSolidSupport } from '../solidAnalysis/solidBoundaryDraft.js';
 
@@ -147,7 +148,7 @@ export function attachSolidFinite(kernel: AnalysisBoundarySource, store: StoreAp
         const next = store.getState().solidFiniteSession;
         if (next) store.setState({ solidFiniteSession: { ...next, status: outcome.kind === 'result' ? 'complete'
           : outcome.kind === 'cancelled' ? 'cancelled' : 'failed', result: outcome.kind === 'result' ? outcome : null,
-        error: outcome.kind === 'failed' ? outcome.message : null } });
+        error: outcome.kind === 'failed' ? femRuntimeFailureText(outcome.code) ?? outcome.message : null } });
       }).catch((error: unknown) => { if (current()) { active = null; failure(error); } });
     } catch (error) { failure(error); }
   };

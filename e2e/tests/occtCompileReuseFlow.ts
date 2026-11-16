@@ -234,8 +234,8 @@ async function compareInSecondWorker(page: Page, info: TestInfo, mode: Mode, app
   await dialog.getByLabel('2つのファイルの関係', { exact: true }).selectOption('versions');
   await dialog.getByRole('button', { name: '変更を比較する', exact: true }).click();
   await expect(dialog.getByRole('region', { name: '比較結果', exact: true }).locator('[data-diff-status="added"]')).toHaveCount(2);
-  const panel = dialog.getByRole('region', { name: '立体の形の比較', exact: true });
-  await panel.getByRole('button', { name: '立体の形を比較する', exact: true }).click();
+  const panel = dialog.getByRole('region', { name: 'ソリッドの形の比較', exact: true });
+  await panel.getByRole('button', { name: 'ソリッドの形を比較する', exact: true }).click();
   const volume = (name: string) => panel.locator(`[data-material-volume="${name}"]`);
   await expect(volume('removed')).toBeVisible({ timeout: 90_000 });
   const removed = Math.PI * 3 ** 2 * 20;

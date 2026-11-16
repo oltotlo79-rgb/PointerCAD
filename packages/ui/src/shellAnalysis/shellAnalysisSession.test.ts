@@ -80,6 +80,10 @@ describe('shell analysis draft', () => {
     expect(shellFailureMessage('edge-load-drilling', 'x')).toContain(t('shellAnalysis.failure.drilling'));
     expect(shellFailureMessage('worker-crashed', 'detail')).toContain('worker-crashed');
   });
+  it.each([['asset-missing', 'strength.femFailure.assetMissing'], ['asset-corrupt', 'strength.femFailure.assetCorrupt']] as const)(
+    'shows the shared preparation-file message for %s without the internal text (A-24)', (code, key) => {
+      expect(shellFailureMessage(code, `${code}: python_stdlib.zip (HTTP 404)`)).toBe(t(key));
+    });
 
   it('keys a captured row by its semantic origin only (key order does not matter, the role does)', () => {
     const origin = saved.supports[0].origin;

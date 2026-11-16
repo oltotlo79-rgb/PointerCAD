@@ -47,6 +47,6 @@ export async function verifySheetStepFiles(page: Page, partPath: string, files: 
     await expect(rows).toHaveCount(count + 1, { timeout: 60_000 });
     await rows.last().click();
     const value = page.locator('.pcad-panel--right dt.pcad-properties__key').filter({ hasText: /^体積$/ }).locator('xpath=following-sibling::dd[1]');
-    await expect.poll(async () => Number((await value.textContent())?.replaceAll(',', '').match(/[\d.]+/u)?.[0] ?? NaN), { timeout: 60_000 }).toBeCloseTo(expectedVolume, 4);
+    await expect.poll(async () => Number(((await value.getAttribute('title')) ?? (await value.textContent()))?.replaceAll(',', '').match(/[\d.]+/u)?.[0] ?? NaN), { timeout: 60_000 }).toBeCloseTo(expectedVolume, 4);
   }
 }

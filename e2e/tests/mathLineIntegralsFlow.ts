@@ -32,7 +32,7 @@ export async function mathLineIntegralsFlow(page: Page, info: TestInfo, app?: El
     await input.fill(source); await expect(result).toHaveText(`= ${value}`, { timeout: 225_000 });
   }
   await input.fill('lineintegral(1,[x,y],[cos(t),sin(t)],t,0,360)');
-  await expect(result).toHaveText(/^= 6\.28318530717/u, { timeout: 225_000 });
+  await expect(result.locator('.pcad-math-editor__full p')).toHaveText(/^= 6\.28318530717/u, { timeout: 225_000 });
   await angle.selectOption('radian');
   // In radians the same parameter range traverses length 360, not one circle.
   await expect(result).toHaveText('= 360', { timeout: 225_000 });

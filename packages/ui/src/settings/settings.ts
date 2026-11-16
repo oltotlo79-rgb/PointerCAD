@@ -18,6 +18,7 @@ import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
+import { readMouseButtonCommands, type MouseButtonCommands } from '../commands/pointerCommandGesture.js';
 import { readStoredShortcutAssignments, storedShortcutFields } from './shortcutSettings.js';
 import type { NumericDefaultSources } from '../sketch/numericDefaultSources.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
@@ -61,6 +62,10 @@ export interface DisplaySettings {
    * キーの割当を適用すると消える(shortcutSettings.ts の prepareShortcutSettings)。
    */
   readonly shortcutAssignmentsRecovered?: number;
+  /** マウスの戻る・進むボタンと中ボタンのダブルクリックの命令(B-08e)。既定は無し。 */
+  readonly mouseButtonCommands?: MouseButtonCommands;
+  /** 起動時に読めなかったため外したマウスのボタンの割当の件数(無い・0 は知らせない)。**表示だけの値で保存しない**。 */
+  readonly mouseButtonCommandsRecovered?: number;
   readonly numericToolDefaults?: NumericDefaultSources;
   /** 旧設定は未指定のまま5分。1～60分の間隔を端末へ保存する。 */
   readonly autoSaveIntervalMs?: number;
@@ -116,13 +121,16 @@ export interface DisplaySettings {
 }
 
 /** 端末に保存する欄。viewControlsRecovered と shortcutAssignmentsRecovered は表示だけの値なので含まない。 */
-export type PersistedDisplaySettings = Omit<DisplaySettings, 'viewControlsRecovered' | 'shortcutAssignmentsRecovered'>;
+export type PersistedDisplaySettings = Omit<DisplaySettings, 'viewControlsRecovered' | 'shortcutAssignmentsRecovered'
+  | 'mouseButtonCommandsRecovered'>;
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   cameraControls: DEFAULT_CAMERA_CONTROLS,
   viewControls: DEFAULT_VIEW_CONTROLS,
   tutorialCompleted: false,
   shortcutAssignments: EMPTY_SHORTCUT_ASSIGNMENTS,
+  // 読み込みの時の循環でも初期化の前の値を読まないよう、空の値はここで作る(readMouseButtonCommands の空と同じ形)。
+  mouseButtonCommands: Object.freeze({}),
   numericToolDefaults: {},
   autoSaveIntervalMs: readAutoSaveIntervalMs({}),
   theme: 'dark',
@@ -418,6 +426,8 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
     const view = readStoredViewControls(parsed);
     // キーの割当も読めない 1 件だけを外し、外した数を表示だけの欄に置く(設計 R6)。
     const shortcuts = readStoredShortcutAssignments(parsed);
+    // マウスのボタンの割当(B-08e)も、知らない入力・無い命令の 1 件だけを外す。
+    const mouse = readMouseButtonCommands('mouseButtonCommands' in parsed ? parsed.mouseButtonCommands : undefined);
     return {
       cameraControls: readCameraControlSettings('cameraControls' in parsed ? parsed.cameraControls : undefined),
       viewControls: view.settings,
@@ -425,6 +435,8 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       tutorialCompleted: 'tutorialCompleted' in parsed && parsed.tutorialCompleted === true,
       shortcutAssignments: shortcuts.assignments,
       ...(shortcuts.dropped > 0 ? { shortcutAssignmentsRecovered: shortcuts.dropped } : {}),
+      mouseButtonCommands: mouse.commands,
+      ...(mouse.dropped > 0 ? { mouseButtonCommandsRecovered: mouse.dropped } : {}),
       theme: parsed.theme,
       uiScale: parsed.uiScale,
       trackAngleStep: readTrackAngleStep(parsed),
@@ -467,6 +479,7 @@ export function saveSettings(
     // 読めなかった数は表示だけの値なので書かない(undefined の欄は JSON に出ない)。キーの割当は新しい形で書き、
     // v1 の欄は保存されていた値をそのまま残す(storedShortcutFields)。
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, viewControlsRecovered: undefined, shortcutAssignmentsRecovered: undefined,
+      mouseButtonCommandsRecovered: undefined,
       ...storedShortcutFields(settings.shortcutAssignments, storedLegacyShortcuts(storage)) }));
   } catch {
     // 書き込み枠が塞がっている等。表示は既に切り替わっているので操作は止めない。

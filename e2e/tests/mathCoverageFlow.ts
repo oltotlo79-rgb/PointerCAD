@@ -77,7 +77,12 @@ async function settledResult(editor: MathEditor, what: string): Promise<Shown> {
     const read = await editor.page.evaluate(selector => {
       const results = document.querySelectorAll(selector);
       const result = results.length === 1 ? results[0] : undefined;
-      return result === undefined ? null : { paragraphs: Array.from(result.querySelectorAll('p'), paragraph => paragraph.innerText),
+      // 1 行目と説明は欄の直下の段落。全部の桁を畳んで持つ時は、1 行目の代わりにその値の文を読む(UI の点検の指摘 36。
+      // mathResultValue.ts の mathResultValueText と同じ読み方を、1 回の評価の中で行う)。
+      const lines = result === undefined ? [] : Array.from(result.querySelectorAll<HTMLParagraphElement>(':scope > p'), paragraph => paragraph.innerText);
+      const full = result?.querySelector('.pcad-math-editor__full-value');
+      if (full !== null && full !== undefined && lines.length > 0) lines[0] = (full.textContent ?? '').trim();
+      return result === undefined ? null : { paragraphs: lines,
         error: result.classList.contains('pcad-math-editor__result--error') };
     }, RESULT_SELECTOR);
     const [message = '', detail = ''] = read?.paragraphs ?? [];

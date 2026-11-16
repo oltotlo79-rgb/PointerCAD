@@ -13,16 +13,17 @@ function evaluated(evaluation: MathEvaluation): MathEditorSnapshot {
 }
 describe('数学の型と未確定状態を数値の成功と混同しない表示', () => {
   it.each([
-    ['im(erf(i))', '= 1.650425758797542876025337729561362443896'],
-    ['im(erfc(i))', '= -1.650425758797542876025337729561362443896'],
-    ['im(erf(sqrt(-1)))', '= 1.650425758797542876025337729561362443896'],
-  ])('%sを実計算・公開返信から読みやすい小数の全文へ表示する', (source, expected) => {
+    ['im(erf(i))', '= 1.650425758797542876025337729561362443896', '≈ 1.65043'],
+    ['im(erfc(i))', '= -1.650425758797542876025337729561362443896', '≈ -1.65043'],
+    ['im(erf(sqrt(-1)))', '= 1.650425758797542876025337729561362443896', '≈ 1.65043'],
+  ])('%sを実計算・公開返信から読みやすい小数の全文へ表示する(1 行目は有効 6 桁、全文は full。UI の点検の指摘 36)', (source, expected, short) => {
     const request = { ...input, source, coefficients: [] };
     const reply = executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request }, createMathBackend());
     const output = decodeMathWorkReply(reply, request, { operationsById: CANDIDATE_MATH_BY_ID,
       coefficientIds: new Set(), declaredIds: new Set() }).result;
     const view = mathEditorResultText(evaluated(output.evaluation));
-    expect(view.message).toBe(expected);
+    expect(view.full).toBe(expected);
+    expect(view.message).toBe(short);
     expect(view.hasError).toBe(false);
   });
   it.each(['zeta(129)', 'zetaderivative(18,2)', '0*zeta(129)', 'component([7,zeta(129)],1)'])('%sの計算上限を公開返信から画面へ伝え、値や内部の例外文にしない', source => {
@@ -73,7 +74,8 @@ describe('数学の型と未確定状態を数値の成功と混同しない表�
   it('数値積分の推定値は≈で示し、推定誤差を保証値と呼ばない', () => {
     const view = mathEditorResultText(evaluated({ status: 'value', kind: 'real', decimal: '0.3102683017233811', coordinate: 0.3102683017233811,
       exact: null, approximation: { absoluteError: null, estimatedAbsoluteError: 1e-12 } }));
-    expect(view.message).toBe('≈ 0.3102683017233811');
+    expect(view.message).toBe('≈ 0.310268');
+    expect(view.full).toBe('≈ 0.3102683017233811');
     expect(view.detail).toContain('推定誤差');
     expect(view.detail).toContain('保証値ではありません');
     expect(view.detail).toContain('1e-12');
@@ -83,6 +85,7 @@ describe('数学の型と未確定状態を数値の成功と混同しない表�
     const view = mathEditorResultText(evaluated({ status: 'value', kind: 'real', decimal: '0.5', coordinate: 0.5,
       exact: null, approximation: { absoluteError: null } }));
     expect(view.message).toBe('= 0.5');
+    expect(view.full).toBeUndefined();
     expect(view.detail).toContain('誤差上限を確認できません');
   });
   it('網羅されていない解候補には、そのことを添える', () => {

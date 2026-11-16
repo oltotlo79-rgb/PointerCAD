@@ -352,7 +352,7 @@ describe('KernelApiの使用中保護', () => {
     await target.releasePart('a');
     expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(1);
     expect((await target.inspectPrintability({ partId: 'b', bodies: [item('shared')], deviationMm: 0.1 })).meshes[0].meshRevision).toBe(1);
-    await expect(target.inspectPrintability({ partId: 'a', bodies: [item('replacement')], deviationMm: 0.1 })).rejects.toThrow(/もとになる立体/);
+    await expect(target.inspectPrintability({ partId: 'a', bodies: [item('replacement')], deviationMm: 0.1 })).rejects.toThrow(/もとになるソリッド/);
     await target.releasePart('b');
     expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
   });
@@ -465,7 +465,7 @@ describe('KernelApiの使用中保護', () => {
     });
     expect(result.failures).toEqual([]);
     expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
-    await expect(target.inspectPrintability({ partId: 'removed', bodies: [item('a')], deviationMm: 0.1 })).rejects.toThrow(/もとになる立体/);
+    await expect(target.inspectPrintability({ partId: 'removed', bodies: [item('a')], deviationMm: 0.1 })).rejects.toThrow(/もとになるソリッド/);
   });
 
   it('同じ部品の新jobが先に完了した場合、後から終わる旧jobで最終形や表示を戻さない', async () => {
@@ -483,7 +483,7 @@ describe('KernelApiの使用中保護', () => {
     expect(newerRuns).toBe(1);
     expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(1);
     expect((await target.inspectPrintability({ partId: 'part', bodies: [item('new')], deviationMm: 0.1 })).meshes[0].meshRevision).toBe(1);
-    await expect(target.inspectPrintability({ partId: 'part', bodies: [item('old-a')], deviationMm: 0.1 })).rejects.toThrow(/もとになる立体/);
+    await expect(target.inspectPrintability({ partId: 'part', bodies: [item('old-a')], deviationMm: 0.1 })).rejects.toThrow(/もとになるソリッド/);
     await target.releasePart('part');
     expect((await target.getShapeCacheStats()).protectedKeyCount).toBe(0);
   });
@@ -494,7 +494,7 @@ describe('KernelApiの使用中保護', () => {
     expose(target, channel.port1);
     const remote = wrap<ReturnType<typeof createKernelApi>>(channel.port2);
     try {
-      await expect(remote.exportShapes({ partId: 'lost', format: 'step', bodies: [item('missing')] })).rejects.toMatchObject({ name: 'MissingBodiesError', message: 'もとになる立体が見つかりませんでした。もう一度計算し直してください。' });
+      await expect(remote.exportShapes({ partId: 'lost', format: 'step', bodies: [item('missing')] })).rejects.toMatchObject({ name: 'MissingBodiesError', message: 'もとになるソリッドが見つかりませんでした。もう一度計算し直してください。' });
       expect(await remote.checkShapeAvailability('lost', ['missing', 'missing', 'other'])).toEqual({ partId: 'lost', missingKeys: ['missing', 'other'] });
       expect((await remote.getShapeCacheStats()).protectedKeyCount).toBe(0);
       await remote.releasePart('lost');
@@ -1212,7 +1212,7 @@ describe('KernelApi', () => {
     expect(result.failures).toEqual([
       {
         id: 'proj-3',
-        message: 'もとになる立体が見つかりませんでした。もう一度計算し直してください。',
+        message: 'もとになるソリッドが見つかりませんでした。もう一度計算し直してください。',
       },
     ]);
   });
@@ -1516,7 +1516,7 @@ describe('KernelApi', () => {
     });
     expect(two).toEqual({
       kind: 'failed',
-      message: '体積と重心を測るには立体を 1 つ選んでください。',
+      message: '体積と重心を測るにはソリッドを 1 つ選んでください。',
     });
   });
 
@@ -1896,7 +1896,7 @@ describe('KernelApi', () => {
   it('鍵の見つからない立体を書き出そうとすると、日本語の理由で断る', async () => {
     await expect(
       api.exportShapes({ format: 'brep', bodies: [exportItem('api-export-missing')] }),
-    ).rejects.toThrow('もとになる立体が見つかりませんでした。もう一度計算し直してください。');
+    ).rejects.toThrow('もとになるソリッドが見つかりませんでした。もう一度計算し直してください。');
   });
 
   it('importShape({ format: "step" }) は形・体積・単位を返す(タスク8)', async () => {
@@ -2650,7 +2650,7 @@ describe('KernelApi', () => {
         bodies: [exportItem('api-inspect-missing')],
         deviationMm: 0.1,
       }),
-    ).rejects.toThrow('もとになる立体が見つかりませんでした。もう一度計算し直してください。');
+    ).rejects.toThrow('もとになるソリッドが見つかりませんでした。もう一度計算し直してください。');
   });
 
   it('進捗の ratio は段が進むにつれて単調に増える(NFR-PF-4)', async () => {

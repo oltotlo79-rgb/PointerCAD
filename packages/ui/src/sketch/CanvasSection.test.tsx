@@ -93,7 +93,9 @@ describe('CanvasSection status and action reasons', () => {
     expect(loaded).toContain('800 × 400 px'); expect(loaded).toContain('100 × 50 mm');
     expect(control('button', label('propertyPanel.canvasScaleLabel')).disabled).toBe(false);
     expect(control('button', label('propertyPanel.canvasRectifyLabel')).disabled).toBe(false);
-    expect(control('button', label('propertyPanel.canvasRemoveLabel'))).toBeDefined();
+    // 消すボタンは「×」だけでなく文字で示し、見える名前を読み上げ名に含める(UI の点検の指摘 41)。
+    expect(control('button', label('propertyPanel.canvasRemoveLabel')).children).toBe(t('propertyPanel.canvasRemove'));
+    expect(label('propertyPanel.canvasRemoveLabel')).toContain(t('propertyPanel.canvasRemove'));
     expect(control('button', label('propertyPanel.canvasVisibleLabel'))).toBeDefined();
     useAppStore.setState({ displaySettings: { ...state().displaySettings, lengthUnit: 'inch' } });
     expect(render()).toContain('3.93700787402 × 1.96850393701 in');

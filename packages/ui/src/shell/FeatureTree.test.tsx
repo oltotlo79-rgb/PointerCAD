@@ -495,3 +495,16 @@ describe.each([
     expect(render().filter(element => element.props.className === 'pcad-tree__rename')).toHaveLength(0);
   });
 });
+
+describe('履歴フォルダを作るボタン(UI の点検の指摘 23)', () => {
+  const createButtons = () => render().filter(element => element.type === 'button' && element.props.title === t('historyFolder.create'));
+  it('行もフォルダも無い空の文書では出さず、空の状態の案内だけにする', () => {
+    useAppStore.getState().resetDocument(createEmptyPartDocument());
+    expect(createButtons()).toHaveLength(0);
+    expect(render().some(element => element.props.className === 'pcad-panel__empty')).toBe(true);
+  });
+  it('行があれば出す', () => {
+    useAppStore.getState().resetDocument(partWithMixedFeatures());
+    expect(createButtons()).toHaveLength(1);
+  });
+});

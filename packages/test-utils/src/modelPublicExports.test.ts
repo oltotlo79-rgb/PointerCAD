@@ -3,6 +3,7 @@ import * as ts from 'typescript';
 import { expect, it } from 'vitest';
 
 const expected = [
+  "ALL_DEEP_GROOVE_BALL_BEARINGS",
   "ALL_STEEL_PRODUCTS",
   "ASSEMBLY_SCHEMA_VERSION",
   "AnalysisBoundary",
@@ -1096,6 +1097,7 @@ const expected = [
   "createAssemblyDocumentBundle",
   "createBodyMateTargetOptions",
   "createBodyMateTargetResolver",
+  "createCatalogItemSource",
   "createComponentFor",
   "createConfiguration",
   "createConstrainedSketchJob",
@@ -1270,6 +1272,8 @@ const expected = [
   "findReference",
   "findSelectionSet",
   "findSketch",
+  // M-01 面を張らずに押し出す: ui の押し出しの入口(packages/ui/src/solid/regionFace.ts)が、作図面の閉じた領域を探して選ぶのに使う。
+  "findSketchRegions",
   "findSocketHeadCapScrew",
   "findSolid",
   "findSpringWasher",
@@ -1516,6 +1520,8 @@ const expected = [
   "referencedSketchIds",
   "referencesTo",
   "refreshDrawing",
+  // M-01 面を張らずに押し出す: ui の押し出しの入口(packages/ui/src/solid/regionFace.ts)が、作図面の閉じた領域を探して選ぶのに使う。
+  "regionAtPoint",
   "relativePlacement",
   "releaseRigidGroup",
   "remainingMessage",

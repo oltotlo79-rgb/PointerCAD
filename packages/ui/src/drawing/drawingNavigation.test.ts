@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { createFontStore, renderDrawing, toPdf, toSvg } from '@pointercad/drawing';
 import { createDrawingDocument } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_VIEW_CONTROLS, type ViewControlOptions, type ViewControlSettings, type ViewTrigger } from '../settings/viewControlSettings.js';
+import {
+  DEFAULT_VIEW_CONTROLS, withViewControlPreset, type ViewControlOptions, type ViewControlSettings, type ViewTrigger,
+} from '../settings/viewControlSettings.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachDrawingNavigation, drawingEditPointerMatches, drawingPaperPoint, INITIAL_DRAWING_NAVIGATION, zoomDrawingNavigation } from './drawingNavigation.js';
@@ -166,6 +168,30 @@ describe('drawing navigation geometry and exact binding ownership', () => {
     expect(test.send('wheel', { buttons: 0, shiftKey: true, deltaX: 30, deltaY: 0 }).defaultPrevented).toBe(false);
     expect(test.send('pointerdown', { button: 1, buttons: 4 }).defaultPrevented).toBe(false);
     expect(fallback).toHaveBeenCalledOnce(); expect(test.changes).not.toHaveBeenCalled(); test.controls.detach();
+  });
+
+  it('keys bound to pan and zoom (B-08) move and scale the paper; a rotation key, a key during a drag and IME input own nothing', () => {
+    const keyboard = withViewControlPreset(DEFAULT_VIEW_CONTROLS, 'keyboard');
+    const test = fixture({ ...keyboard, options: { ...keyboard.options, panSensitivity: 2 } });
+    expect(test.send('keydown', { code: 'ArrowLeft', key: 'ArrowLeft' }).defaultPrevented).toBe(false);
+    // One press pans 40 px like a 40 px drag to the right, doubled by the pan speed.
+    expect(test.send('keydown', { code: 'ArrowRight', key: 'ArrowRight', shiftKey: true }).defaultPrevented).toBe(true);
+    expect(test.get()).toEqual({ x: 80, y: 0, scale: 1 });
+    // The key zoom is centred on the last pointer position: sheet offset (140 - 120, 120 - 70) = (20, 50).
+    test.send('pointermove', { buttons: 0, clientX: 140, clientY: 120 });
+    expect(test.send('keydown', { code: 'Equal', key: '=' }).defaultPrevented).toBe(true);
+    expect(test.get().scale).toBeCloseTo(1.1, 12);
+    expect(test.get().x).toBeCloseTo(80 + 20 * (1 - 1.1), 9);
+    expect(test.get().y).toBeCloseTo(50 * (1 - 1.1), 9);
+    expect(test.send('keydown', { code: 'Minus', key: '-', isComposing: true }).defaultPrevented).toBe(false);
+    // A key typed into a field on the sheet (canStart refuses it) stays with the field.
+    test.enabled(false);
+    expect(test.send('keydown', { code: 'ArrowRight', key: 'ArrowRight', shiftKey: true }).defaultPrevented).toBe(false);
+    test.enabled(true);
+    test.send('pointerdown');
+    expect(test.send('keydown', { code: 'ArrowRight', key: 'ArrowRight', shiftKey: true }).defaultPrevented).toBe(false);
+    test.send('pointerup', { buttons: 0 });
+    expect(test.changes).toHaveBeenCalledTimes(2); test.controls.detach();
   });
 
   it('suppresses auxiliary browser defaults only for assigned pan/zoom sequences', () => {

@@ -149,7 +149,7 @@ function markOcctLoadFailure(cause: unknown): never {
  * どれも「もう一度計算し直せば直る」ので、そう伝える(FR-504、NFR-RE-1)。
  */
 const MISSING_BODY_MESSAGE =
-  'もとになる立体が見つかりませんでした。もう一度計算し直してください。';
+  'もとになるソリッドが見つかりませんでした。もう一度計算し直してください。';
 
 /**
  * 測る形が形状キャッシュに無いとき(FR-1101、FR-1102)。
@@ -164,7 +164,7 @@ const MEASURE_MISSING_SHAPE_MESSAGE = '測れませんでした。もう一度�
 const MEASURE_NEEDS_TWO_MESSAGE = '距離を測るには 2 つ選んでください。';
 
 /** 質量特性を測るのに対象が 1 つでないとき。 */
-const MEASURE_NEEDS_ONE_MESSAGE = '体積と重心を測るには立体を 1 つ選んでください。';
+const MEASURE_NEEDS_ONE_MESSAGE = '体積と重心を測るにはソリッドを 1 つ選んでください。';
 
 /**
  * 読み込んだ形へ付ける、画面用の三角形の粗さ(FR-802)。
@@ -981,7 +981,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
           const cleanup = error instanceof Error ? error.message : String(error);
           result = interferenceRootFailure(result, result.kind === 'failed'
             ? { ...result.failure, cleanupMessages: [...(result.failure.cleanupMessages ?? []), cleanup] }
-            : { code: 'cleanupFailed', message: '使用中の立体を返せませんでした。', cleanupMessages: [cleanup] });
+            : { code: 'cleanupFailed', message: '使用中のソリッドを返せませんでした。', cleanupMessages: [cleanup] });
         }
       }
       return result;
@@ -1455,7 +1455,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
         // ことで配線し忘れが分かる(`ShapeExportRequest` の注釈)。
         switch (request.format) {
           case 'step': {
-            // 立体が 1 つも無いときの断り(「書き出せる立体がありません。」)は
+            // 立体が 1 つも無いときの断り(「書き出せるソリッドがありません。」)は
             // `buildXcafDocument` が持っている。ここで先回りして数えないのは、
             // 同じ文言を 2 か所に置かないため(model の `selectExportBodies` も
             // `nothingToExport` で先に断る)。

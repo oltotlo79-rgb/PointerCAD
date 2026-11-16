@@ -3,7 +3,7 @@ import type {SolidBody,ResolvedSpline,Vec3} from '@pointercad/model';
 import type {PointCalculationCandidate} from '@pointercad/expression/math/contracts';
 import {useFunctionPreviewFocus} from './useFunctionPreviewFocus.js';
 import {t} from '../i18n/t.js';
-import {createFunctionPointPreviewProjection} from './functionPreviewProjection.js';
+import {axisLabelSlots,createFunctionPointPreviewProjection,functionAxisEnds} from './functionPreviewProjection.js';
 import {drawFunctionCurve} from './drawFunctionCurve.js';
 
 const initialRotation={yaw:-Math.PI/4,pitch:0.6};
@@ -18,6 +18,7 @@ export function FunctionPointPreview({minimum,maximum,body,curves,candidates,sel
   const drag=useRef<{x:number;y:number}|null>(null),[rotation,setRotation]=useState(initialRotation);
   const [size,setSize]=useState({width:1,height:1});
   const project=createFunctionPointPreviewProjection(minimum,maximum,rotation);
+  const labelSlots=axisLabelSlots(functionAxisEnds(minimum,maximum).map(corner=>project(corner,size.width,size.height)),size.width,size.height);
   useEffect(()=>{
     const element=canvas.current,context=element?.getContext('2d');if(!element||!context)return;
     const projection=createFunctionPointPreviewProjection(minimum,maximum,rotation);
@@ -45,10 +46,13 @@ export function FunctionPointPreview({minimum,maximum,body,curves,candidates,sel
       context.stroke();
       // Keep every axis name outside the candidate buttons, including when an
       // axis corner projects onto the centre of the box. Leaders retain its meaning.
+      // 段は引き出し線の交差の最も少ない並び(UI の点検の指摘 35)。
+      const ends=functionAxisEnds(minimum,maximum);
+      const slots=axisLabelSlots(ends.map(corner=>projection(corner,size.width,size.height)),size.width,size.height);
       context.globalAlpha=0.35;context.beginPath();
-      for(const [index,corner]of [corners[1],corners[2],corners[4]].entries()) {
+      for(const [index,corner]of ends.entries()) {
         context.moveTo(...project(corner));
-        context.lineTo((size.width-30)*ratio,size.height*(index+1)/4*ratio);
+        context.lineTo((size.width-30)*ratio,size.height*((slots[index]??index)+1)/4*ratio);
       }
       context.stroke();context.globalAlpha=1;context.fillStyle=context.strokeStyle;
       if(direction){
@@ -70,7 +74,7 @@ export function FunctionPointPreview({minimum,maximum,body,curves,candidates,sel
         setRotation(value=>({yaw:value.yaw+dx*0.01,pitch:Math.max(-Math.PI/2,Math.min(Math.PI/2,value.pitch+dy*0.01))}));
       }} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}/>
       {['X','Y','Z'].map((axis,index)=><span key={axis} className="pcad-function-axis-label"
-        style={{left:size.width-20,top:size.height*(index+1)/4}}>{axis}</span>)}
+        style={{left:size.width-20,top:size.height*((labelSlots[index]??index)+1)/4}}>{axis}</span>)}
       {candidates.map((candidate,index)=>{
         const [left,top]=project(candidate.point,size.width,size.height);
         return <button title={t('controlGuide.button.pointCandidate')} type="button" className="pcad-function-point-marker" key={index} aria-pressed={selected===candidate}

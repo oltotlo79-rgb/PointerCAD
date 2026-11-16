@@ -81,7 +81,7 @@ export const STEP_NO_SHAPE_MESSAGE = 'このファイルには形が入ってい
 
 /** 形はあるが閉じた立体が 1 つも無かったときの断り(「面だけの立体」に対応)。 */
 export const STEP_NO_SOLID_MESSAGE =
-  'このファイルには立体が入っていません。面だけの形は読み込めません。';
+  'このファイルにはソリッドが入っていません。面だけの形は読み込めません。';
 
 /** 読み込んだ形の長さの単位。`'other'` は mm でも inch でもなかったもの。 */
 export type StepFileLengthUnit = 'mm' | 'inch' | 'other';

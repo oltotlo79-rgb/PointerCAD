@@ -15,7 +15,7 @@ const right = (page: Page): Locator => page.locator('.pcad-panel--right');
 const tree = (page: Page, name: string): Locator => page.locator('.pcad-panel--left').getByRole('button', { name, exact: true });
 async function volume(page: Page): Promise<number> {
   const entry = right(page).locator('dt.pcad-properties__key').filter({ hasText: /^体積$/u }).locator('xpath=following-sibling::dd[1]');
-  return Number((await entry.textContent())?.replaceAll(',', '').match(/[\d.]+/u)?.[0] ?? NaN);
+  return Number(((await entry.getAttribute('title')) ?? (await entry.textContent()))?.replaceAll(',', '').match(/[\d.]+/u)?.[0] ?? NaN);
 }
 async function frameForCapture(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();

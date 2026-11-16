@@ -117,9 +117,12 @@ function targetText(document: PartDocument, target: MathGeometryTarget): string 
       const sketch = document.sketches.find(item => item.id === target.sketchId);
       const id = target.kind === 'sketch-point' ? target.reference.pointId : target.featureId;
       const featureId = target.kind === 'sketch-point' ? featureIdOfPointKey(id) : id;
-      const name = sketch?.features.find(item => item.id === featureId)?.name ?? id;
+      const found = sketch?.features.find(item => item.id === featureId);
+      const name = found?.name ?? id;
       const label = t(target.kind === 'sketch-point' ? 'propertyPanel.base.point' : 'selection.kind.edge');
-      return `${sketch?.name ?? target.sketchId} / ${name} (${label}: ${id})`;
+      // 内部の id は、線が見つからない時と、点(どちらの端かの手がかり)の時だけ添える(UI の点検の指摘 37)。
+      const detail = target.kind === 'sketch-curve' && found !== undefined ? label : `${label}: ${id}`;
+      return `${sketch?.name ?? target.sketchId} / ${name} (${detail})`;
     }
     case 'body': {
       const name = document.solids.find(item => item.id === target.featureId)?.name ?? target.featureId;

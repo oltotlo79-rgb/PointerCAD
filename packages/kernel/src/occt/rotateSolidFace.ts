@@ -68,11 +68,11 @@ const MIN_REMAINING_HEIGHT_MM = 1e-6;
 const FACE_ROTATION_ANGLE_MESSAGE =
   '面を回す角度は、0 度でなく、絶対値が 90 度より小さい値にしてください。';
 const FACE_ROTATION_INVALID_BODY_MESSAGE =
-  '元の立体の形が正しくないため、面を回せません。元の立体を直してください。';
+  '元のソリッドの形が正しくないため、面を回せません。元のソリッドを直してください。';
 const FACE_ROTATION_FOREIGN_FACE_MESSAGE =
-  '選んだ面は対象の立体に属していません。回す面を選び直してください。';
+  '選んだ面は対象のソリッドに属していません。回す面を選び直してください。';
 const FACE_ROTATION_FOREIGN_EDGE_MESSAGE =
-  '選んだ辺は対象の立体に属していません。回転の軸にする辺を選び直してください。';
+  '選んだ辺は対象のソリッドに属していません。回転の軸にする辺を選び直してください。';
 const FACE_ROTATION_EDGE_NOT_ON_FACE_MESSAGE =
   '回転の軸には、回す面の縁にある辺を選んでください。';
 const FACE_ROTATION_NOT_PLANAR_MESSAGE = '回せるのは平らな面だけです。';

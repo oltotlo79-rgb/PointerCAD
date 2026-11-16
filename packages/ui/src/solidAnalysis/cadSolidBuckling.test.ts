@@ -76,6 +76,8 @@ describe('cadSolidBucklingFailureCode', () => {
     ['Mesh belongs to another CAD revision', 'buckling-stale'],
     ['solid-buckling-budget: dense buckling reservation exceeds the numeric budget', 'buckling-unsupported'],
     ['solid-buckling-native: native element initial-stress matrix differs', 'cad-solid-buckling'],
+    ['asset-missing: python_stdlib.zip (HTTP 404)', 'buckling-asset'],
+    ['asset-corrupt: oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl (SHA-256)', 'buckling-asset'],
   ])('classifies %s', (message, code) => {
     expect(cadSolidBucklingFailureCode(message)).toBe(code);
   });

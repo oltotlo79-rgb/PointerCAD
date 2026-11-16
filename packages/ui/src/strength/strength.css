@@ -12,7 +12,10 @@
 .pcad-strength__actions button { font: inherit; padding: var(--pcad-space-1) var(--pcad-space-2); cursor: pointer; }
 .pcad-strength__results { display: flex; flex-direction: column; gap: 0.6rem; }
 .pcad-strength__results h4 { margin: 0.4rem 0; }
-.pcad-strength__results .pcad-properties { display: flex; flex-direction: column; gap: 0.5rem; }
+/* 名前を左、値を右にそろえた 2 列の表(共通の .pcad-properties の grid。UI の点検の指摘 27)。 */
+.pcad-strength__results .pcad-properties { padding: 0; }
+/* 名前の列を詰めても名前を省略せずに折り返す(共通の .pcad-properties__key は nowrap と ellipsis)。 */
+.pcad-strength__results .pcad-properties__key { white-space: normal; overflow: visible; }
 .pcad-strength__results dd { margin: 0; }
 .pcad-strength__assessment { border-inline-start: 3px solid currentColor; padding-inline-start: 0.5rem; font-weight: bold; }
 .pcad-strength__assessment--below { color: var(--pcad-danger-text); }
@@ -20,3 +23,6 @@
 .pcad-strength summary { cursor: pointer; font-size: var(--pcad-font-size-small); }
 .pcad-strength details p { margin-block-start: 0.5rem; }
 .pcad-strength__formula { overflow-wrap: anywhere; }
+/* ほかの解析の入口の組。今の計算の欄・操作・結果と線で分ける(UI の点検の指摘 28)。 */
+.pcad-strength__others { display: flex; flex-direction: column; gap: 0.4rem; padding-top: var(--pcad-space-2); border-top: 1px solid var(--pcad-border); }
+.pcad-strength__others h4 { margin: 0; font-size: var(--pcad-font-size-small); color: var(--pcad-text-muted); }

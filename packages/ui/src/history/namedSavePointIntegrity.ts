@@ -10,8 +10,16 @@ export const SAVE_POINT_CHUNK_BYTES = 1024 * 1024;
 const SHA = /^[0-9a-f]{64}$/;
 const POINT_ID = /^point:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+/** 細目(A-25)は、作業者の返事(reason と message だけ)を越えて残るよう、message の末尾に ` [detail: 語]` の印で付ける。 */
+const DETAIL_MARK = / \[detail: ([A-Za-z0-9:_-]{1,96})\]$/u;
 export class SavePointError extends Error {
-  constructor(readonly reason: SavePointErrorCode, message: string) { super(message); this.name = 'SavePointError'; }
+  /** reason が同じでも、どこで・何の誤りの名前で起きたかを区別する語(診断用。利用者に見せる文は reason だけで決まる)。 */
+  readonly detail: string | null;
+  constructor(readonly reason: SavePointErrorCode, message: string, detail?: string) {
+    super(detail === undefined ? message : `${message} [detail: ${detail}]`);
+    this.name = 'SavePointError';
+    this.detail = detail ?? DETAIL_MARK.exec(message)?.[1] ?? null;
+  }
 }
 
 export function refuse(reason: SavePointErrorCode, message: string): never { throw new SavePointError(reason, message); }

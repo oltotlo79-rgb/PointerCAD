@@ -10,7 +10,7 @@ const FEM_WORKER = /\/fem\/worker\.js$/u;
 
 async function openAnalysis(page: Page): Promise<Locator> {
   await openToolMenu(page, '解析');
-  await toolMenuPanel(page, '解析').getByRole('button', { name: '現在の立体を解析', exact: true }).click();
+  await toolMenuPanel(page, '解析').getByRole('button', { name: '現在のソリッドを解析', exact: true }).click();
   const panel = page.getByTestId('solid-analysis-panel');
   await expect(panel).toBeVisible();
   return panel;

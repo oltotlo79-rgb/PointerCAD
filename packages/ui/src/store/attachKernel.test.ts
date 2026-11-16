@@ -218,7 +218,7 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     const detach = attachPartRecompute(fake.recompute);
     fake.calls[0].settle({
       ...resultFor(fake.calls[0].document),
-      errors: [{ featureId: 'solid-1', code: 'kernelFailed', message: '立体を作れませんでした' }],
+      errors: [{ featureId: 'solid-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
     });
     await tick();
 
@@ -319,7 +319,7 @@ describe('カーネル(OCCT)の読み込みの失敗の頼み直し(FR-504、NFR
       await vi.waitFor(() => expect(useAppStore.getState().lastOutcome).toBe('failed'));
       expect(attached.generations).toEqual([1]);
       expect(useAppStore.getState().partErrors.map(error => error.message))
-        .toEqual(['立体を作れませんでした: RangeError: unreachable']);
+        .toEqual(['ソリッドを作れませんでした: RangeError: unreachable']);
     } finally { attached.finish(); }
   });
 
@@ -329,7 +329,7 @@ describe('カーネル(OCCT)の読み込みの失敗の頼み直し(FR-504、NFR
       await vi.waitFor(() => expect(useAppStore.getState().lastOutcome).toBe('failed'));
       expect(attached.generations).toEqual([1, 1]);
       expect(useAppStore.getState().partErrors.map(error => error.message))
-        .toEqual([`立体を作れませんでした: ${LOAD_FAILURE_TEXT}(カーネルの読み込みを1回やり直しました)`]);
+        .toEqual([`ソリッドを作れませんでした: ${LOAD_FAILURE_TEXT}(カーネルの読み込みを1回やり直しました)`]);
     } finally { attached.finish(); }
   });
 

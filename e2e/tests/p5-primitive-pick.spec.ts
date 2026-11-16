@@ -166,7 +166,7 @@ async function placeBox(page: Page): Promise<void> {
   // 幾何カーネルが箱を作り終えるまで待つ(体積が出れば当たり判定の的も揃っている)。
   await solidRow(page, '箱1').click();
   await waitForRecompute(page, token);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 }
@@ -192,11 +192,11 @@ test.describe('P5 基本形状の当たり判定', () => {
 
     // 1) 何も切り替えずに立体を押す(選ぶものは「立体」のまま)。
     await sketchTool(page, '選択').click();
-    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
     await clickWorldPoint(page, EMPTY_SPOT);
     await expect(selectedTargets(page)).toHaveCount(0);
     await clickWorldPoint(page, BOX_TOP_CENTER);
-    await expect(selectedTargets(page)).toHaveText('立体');
+    await expect(selectedTargets(page)).toHaveText('ソリッド');
 
     // 2) `3` で面にして上面の中心を押す。
     await page.keyboard.press('3');
@@ -237,10 +237,10 @@ test.describe('P5 基本形状の当たり判定', () => {
     await menuTool(page, '見た目', '外観').click();
     await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
     await page.keyboard.press('4');
-    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
     await expect(selectedTargets(page)).toHaveCount(0);
     await clickWorldPoint(page, BOX_TOP_CENTER);
-    await expect(selectedTargets(page)).toHaveText('立体');
+    await expect(selectedTargets(page)).toHaveText('ソリッド');
 
     /*
      * 2) 測るは選ぶ種類を切り替えない(§2.15)ので「立体」のまま。体積・質量特性・
@@ -253,12 +253,12 @@ test.describe('P5 基本形状の当たり判定', () => {
      */
     await openToolMenu(page, '見た目');
     await menuTool(page, '見た目', '測る').click();
-    await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+    await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
     await clickWorldPoint(page, EMPTY_SPOT);
     await expect(selectedTargets(page)).toHaveText('測りたいものを 1 つか 2 つ選んでください。');
     await clickWorldPoint(page, BOX_TOP_CENTER);
-    await expect(selectedTargets(page)).toHaveText('立体');
-    await expect(propertyValue(page, '測れるもの')).toHaveText('立体の体積 / 体積と重さ');
+    await expect(selectedTargets(page)).toHaveText('ソリッド');
+    await expect(propertyValue(page, '測れるもの')).toHaveText('ソリッドの体積 / 体積と重さ');
 
     expect(errors).toEqual([]);
   });
@@ -294,12 +294,12 @@ test.describe('P5 基本形状の当たり判定', () => {
     await expect(solidRow(page, '箱2')).toBeVisible();
     await solidRow(page, '箱2').click();
     await waitForRecompute(page, token);
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
     // 中心の欄が座標 3 つではなく「立体の頂点」になっている(PropertyPanel の中心の節)。
     await expect(
-      propertyPanel(page).locator('dt.pcad-properties__key', { hasText: '立体の頂点' }),
+      propertyPanel(page).locator('dt.pcad-properties__key', { hasText: 'ソリッドの頂点' }),
     ).toHaveCount(1);
 
     expect(errors).toEqual([]);

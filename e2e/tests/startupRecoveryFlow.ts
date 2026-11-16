@@ -8,7 +8,7 @@ export async function startupRecoveryFlow(page: Page, info: TestInfo, persistent
   await page.goto('/');
   await chooseToolMenuItem(page, '自動作図', '自動作図');
   await writeDraft(page, '起動後も残る道具', "console.log('復旧後の道具');");
-  await panel(page).getByRole('button', { name: '道具に登録・更新', exact: true }).click();
+  await panel(page).getByRole('button', { name: 'ツールバーに登録・更新', exact: true }).click();
   await expect(panel(page).locator('.pcad-script__tool')).toHaveCount(1);
   const saved = await page.evaluate(() => localStorage.getItem('pointercad.script-tools.v1'));
   expect(saved).not.toBeNull();

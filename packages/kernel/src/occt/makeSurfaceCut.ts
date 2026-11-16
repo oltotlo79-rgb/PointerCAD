@@ -33,10 +33,10 @@ const MESSAGES: Readonly<Record<SurfaceCutReason, string>> = {
   'non-planar-profile': '切断の曲線が指定したスケッチ平面に載っていません。',
   'self-intersection': '切断の曲線または面が自分自身と交わっています。',
   'no-intersection': '切断面が対象に届いていません。位置と範囲を見直してください。',
-  'touch-only': '切断面が対象に接するだけで、立体を分けられません。',
-  'incomplete-cut': '切断面の端が対象の中で止まるため、立体を完全に分けられません。',
+  'touch-only': '切断面が対象に接するだけで、ソリッドを分けられません。',
+  'incomplete-cut': '切断面の端が対象の中で止まるため、ソリッドを完全に分けられません。',
   'ambiguous-side': '切断面に対する断片の側を一意に決められません。',
-  'invalid-target': '切断する対象には有効な正の体積の立体が必要です。',
+  'invalid-target': '切断する対象には有効な正の体積のソリッドが必要です。',
   'boolean-failed': '面による切断を計算できませんでした。形と範囲を見直してください。',
   'volume-mismatch': '切断前後の体積が必要な精度で一致しませんでした。',
 };

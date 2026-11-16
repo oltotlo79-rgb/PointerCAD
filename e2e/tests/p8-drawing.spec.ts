@@ -302,7 +302,7 @@ test.describe('P8 図面の実操作', () => {
     const volume = page.locator('.pcad-panel--right dt.pcad-properties__key', { hasText: /^体積$/u }).locator('xpath=following-sibling::dd[1]');
     const expectVolume = async (expected: number): Promise<void> => {
       await propertiesTab.click(); await box.click();
-      await expect.poll(async () => Math.abs(Number.parseFloat(await volume.innerText()) - expected), { timeout: KERNEL_TIMEOUT_MS }).toBeLessThan(0.01);
+      await expect.poll(async () => Math.abs(Number.parseFloat((await volume.getAttribute('title')) ?? (await volume.innerText())) - expected), { timeout: KERNEL_TIMEOUT_MS }).toBeLessThan(0.01);
     };
     await expectVolume(8000);
     await parametersTab.click();
@@ -563,7 +563,7 @@ test.describe('P8 図面の実操作', () => {
     await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'assembly');
     await waitForRecompute(page, token);
     await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイル/u }).first().click();
-    await page.getByRole('button', { name: 'この組立から図面を作成', exact: true }).click();
+    await page.getByRole('button', { name: 'このアセンブリから図面を作成', exact: true }).click();
     await expect(page.locator('.pcad-drawing-svg svg')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
     const paths = page.locator('.pcad-drawing-svg [data-owner-id^="projection:"] path');
     await expect.poll(() => paths.count(), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
@@ -609,7 +609,7 @@ test.describe('P8 図面の実操作', () => {
     await captureManualDetail(page, testInfo, { name: 'drawing-bom-balloon', dialog: page.locator('.pcad-drawing-sheet'),
       fixture: { step: 'bom-balloon' }, script: new URL(import.meta.url) });
     const updating = page.waitForEvent('filechooser');
-    await chooseDrawingMenu(page, 'ファイル', '元の部品・組立を取り込み直す');
+    await chooseDrawingMenu(page, 'ファイル', '元の部品・アセンブリを取り込み直す');
     await (await updating).setFiles({ name: '2部品.pcada', mimeType: 'application/zip', buffer: Buffer.from(await addThirdBoxAssemblyFile(originalAssembly)) });
     await expect(row.locator('[aria-label="3"]')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
     await expect(balloon.locator('[aria-label="1"]')).toHaveCount(1);
@@ -651,7 +651,7 @@ test.describe('P8 図面の実操作', () => {
       await canvas.focus(); await page.keyboard.press('Escape'); await page.keyboard.press('4');
       await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
       const selected = page.locator('.pcad-panel--right dt').filter({ hasText: /^選んでいるもの$/u }).locator('xpath=following-sibling::dd[1]');
-      await expect(selected).toHaveText('立体');
+      await expect(selected).toHaveText('ソリッド');
     }
     await captureManualDetail(page, testInfo, { name: 'quad-four-views', dialog: page.locator('.pcad-quad'),
       fixture: { step: 'quad' }, script: new URL(import.meta.url) });
@@ -720,7 +720,7 @@ test.describe('P8 図面の実操作', () => {
     const settings = page.locator('.pcad-drawing-property-section[data-property-kind="sheet"]');
     await settings.getByLabel('図名', { exact: true }).fill('ひな形の製品図');
     await settings.getByLabel('文字の高さ（mm）', { exact: true }).fill('2.5');
-    await settings.getByRole('button', { name: '用紙設定を適用', exact: true }).click();
+    await settings.getByRole('button', { name: '適用', exact: true }).click();
     await expect(page.locator('.pcad-drawing-svg [aria-label="ひな形の製品図"]')).toHaveCount(1);
     await settings.getByLabel('図面ひな形の名前', { exact: true }).fill('社内A3標準');
     const downloading = page.waitForEvent('download');
@@ -973,12 +973,12 @@ test.describe('P8 図面の出力と文字注記', () => {
     const form = page.getByRole('form', { name: drawingMessage('drawing.property.layer'), exact: true });
     const text = page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]');
     await form.getByLabel('印刷・書き出しに含める', { exact: true }).uncheck();
-    await form.getByRole('button', { name: '決定', exact: true }).click();
+    await form.getByRole('button', { name: '適用', exact: true }).click();
     await expect(text).toHaveCount(1);
     const { bytes } = await downloadFormat(page, 'svg');
     expect(bytes.toString('utf8')).not.toContain('8 日 φ');
     await form.getByLabel('画面に表示する', { exact: true }).uncheck();
-    await form.getByRole('button', { name: '決定', exact: true }).click();
+    await form.getByRole('button', { name: '適用', exact: true }).click();
     await expect(text).toHaveCount(0);
     await page.getByRole('button', { name: '元に戻す', exact: true }).click();
     await expect(text).toHaveCount(1);

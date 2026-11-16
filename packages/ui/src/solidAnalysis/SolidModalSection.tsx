@@ -1,4 +1,5 @@
 import { t } from '../i18n/t.js';
+import { femAssetFailureKey } from '../femFailureMessage.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { SolidModePanel } from './SolidModePanel.js';
 import { solidModalPreview, solidModalRequestValues } from './solidModalState.js';
@@ -26,6 +27,8 @@ export function SolidModalSection(): React.JSX.Element {
   // Same identity rule as the viewport (solidModalViewport.ts solidModalCurrentSource).
   const preview = modal.display === null ? null
     : solidModalPreview(modal, { documentId, revision: generation, meshKey: modal.display.source.meshKey });
+  // A-24: 計算の準備のファイルの断り(attachSolidAnalysis が code のまま渡す)は共通の文にし、「入力と形状を確認」の見出しを出さない。
+  const assetKey = modal.status === 'failed' ? femAssetFailureKey(modal.error) : null;
   // SolidModePanel reports the amplitude text first, then the display; each callback reads the latest other half.
   return <section aria-label={t('solidAnalysis.modalSection')} data-testid="solid-modal-section">
     <h4>{t('solidAnalysis.modalSection')}</h4>
@@ -49,14 +52,14 @@ export function SolidModalSection(): React.JSX.Element {
         onChange={event => { edit('modeCount', event.currentTarget.value); }} title={t('solidAnalysis.guide.modalCount')} /></label>
     {valid ? null : <p role="alert">{t('solidAnalysis.modalInputInvalid')}</p>}
     {modal.status === 'running' ? <p role="status">{t('solidAnalysis.modalRunning')}</p> : null}
-    {modal.error !== null ? <p role="alert" data-testid="solid-modal-error">{modal.error}</p> : null}
+    {modal.error !== null ? <p role="alert" data-testid="solid-modal-error">{assetKey === null ? modal.error : t(assetKey)}</p> : null}
     <button type="button" className="pcad-button pcad-button--primary" data-testid="solid-modal-run"
       disabled={runner?.runModal === undefined || !valid || modal.status === 'running'} onClick={() => { runner?.runModal?.(); }} title={t('solidAnalysis.guide.modalRun')}>
       {t('solidAnalysis.modalRun')}</button>
     <button type="button" className="pcad-button" data-testid="solid-modal-cancel" disabled={modal.status !== 'running'}
       onClick={cancel} title={t('solidAnalysis.guide.modalCancel')}>{t('solidAnalysis.modalCancel')}</button>
     <button type="button" className="pcad-button" data-testid="solid-modal-save" onClick={save} title={t('solidAnalysis.guide.modalSave')}>{t('solidAnalysis.modalSave')}</button>
-    <SolidModePanel result={modal.status === 'result' ? modal.display : null} failed={modal.status === 'failed'}
+    <SolidModePanel result={modal.status === 'result' ? modal.display : null} failed={modal.status === 'failed' && assetKey === null}
       display={modal.view} amplitudeText={modal.amplitudeText} preview={preview}
       onAmplitudeTextChange={text => { setView(useAppStore.getState().solidModal.view, text); }}
       onDisplayChange={view => { setView(view, useAppStore.getState().solidModal.amplitudeText); }} />

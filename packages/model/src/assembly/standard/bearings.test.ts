@@ -6,11 +6,11 @@ import {
 } from './bearings.js';
 
 describe('深溝玉軸受の寸法表', () => {
-  it('3系列×内径5段階の15行を持つ', () => {
+  it('今の表は3系列×内径5段階の15行のまま、探す口は42行を足した57行(3系列×19段階)を使う', () => {
     expect(DEEP_GROOVE_BALL_BEARINGS).toHaveLength(15);
-    expect(bearingSizes('6000')).toHaveLength(5);
-    expect(bearingSizes('6200')).toHaveLength(5);
-    expect(bearingSizes('6300')).toHaveLength(5);
+    expect(bearingSizes('6000')).toHaveLength(19);
+    expect(bearingSizes('6200')).toHaveLength(19);
+    expect(bearingSizes('6300')).toHaveLength(19);
   });
 
   it('呼び番号は重複せず、全行で外径が内径より大きい', () => {

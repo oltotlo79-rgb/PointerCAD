@@ -287,7 +287,7 @@ export function createPcadSavePointClient(createWorker: () => PcadSaveWorkerPort
         try { worker.postMessage({ id, kind: 'savePointCancel' }, []); }
         catch (cause) { fail(new PcadSaveWorkerError('rejected', cause instanceof Error ? cause.message : String(cause))); return; }
         // A crashed or unresponsive Worker cannot prove whether IDB committed; never roll back a point here.
-        timeout = setTimeout(() => fail(new SavePointError('aborted', 'Save point cancellation did not finish')), 25_000);
+        timeout = setTimeout(() => fail(new SavePointError('aborted', 'Save point cancellation did not finish', 'worker-cancel-timeout')), 25_000);
       };
       worker.onmessage = event => {
         if (finished) return;
@@ -307,7 +307,7 @@ export function createPcadSavePointClient(createWorker: () => PcadSaveWorkerPort
       if (signal?.aborted === true) {
         fail(signal.reason ?? new DOMException('Save point cancelled', 'AbortError')); return;
       }
-      timeout = setTimeout(() => fail(new SavePointError('aborted', 'Save point operation did not finish')), 25_000);
+      timeout = setTimeout(() => fail(new SavePointError('aborted', 'Save point operation did not finish', 'worker-request-timeout')), 25_000);
       const transfer: Transferable[] = (request.operation === 'create' || request.operation === 'createAndList')
         && request.bytes.buffer instanceof ArrayBuffer && request.bytes.byteOffset === 0
         && request.bytes.byteLength === request.bytes.buffer.byteLength ? [request.bytes.buffer] : [];

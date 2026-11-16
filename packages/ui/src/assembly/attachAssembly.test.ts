@@ -22,7 +22,7 @@ import { assemblyUiBackings, captureAssemblyMeshAdmission, currentAssemblyMeshAd
 import { addMateTarget, commitMateDraft, startMate, updateMateSource } from './mateActions.js';
 import { subShapeRefOf } from '../solid/subShapeSelection.js';
 import { assemblyMateStatus } from '../shell/statusText.js';
-import { beginComponentDrag, finishComponentDrag, moveComponentDrag } from './dragComponentActions.js';
+import { beginComponentDrag, cancelComponentDrag, finishComponentDrag, moveComponentDrag } from './dragComponentActions.js';
 import { componentDragPlane } from '../viewport/dragComponent.js';
 import { resolveCurrentMateTarget } from './mateCommands.js';
 
@@ -1158,6 +1158,120 @@ describe('same-publication ownership refresh (issued metadata fixture, not nativ
       expect(await owner.refreshOwnership(owner)).toBeNull();
       expect(useAppStore.getState().assembly).toBe(before.assembly);
       expect(useAppStore.getState().requestedGeneration).toBe(before.requestedGeneration);
+    } finally { detach(); }
+  });
+});
+
+/*
+ * A-26 (CI run 43727594281, EX-18 A/e): a component drag that was running when the next draw found the host mesh ledger
+ * moved (a collected ownerless backing there; an unrelated owner here) was cancelled without a visible word, because the
+ * same-publication ownership refresh republishes the view object. The refresh alone must not end the drag; the user's own
+ * cancel and mode switch stay quiet; another edit still ends the drag as before; a change the user did not make says so.
+ */
+describe('component drag across a same-publication ownership refresh (A-26)', () => {
+  function startDrag(f: Awaited<ReturnType<typeof fixture>>) {
+    const before = useAppStore.getState(), owner = before.assemblyView?.meshOwnership;
+    if (owner?.refreshOwnership === undefined) throw new Error('Published refresh capability required');
+    const id = f.document.components[1].id;
+    const origin = before.assemblyView?.resolved.placements.get(id)?.position;
+    if (origin === undefined) throw new Error('drag origin');
+    const plane = componentDragPlane(origin, [0, 0, 1]);
+    if (plane === null) throw new Error('drag plane');
+    expect(beginComponentDrag(id, plane, origin)).toBe(true);
+    expect(moveComponentDrag([origin[0] + 5, origin[1], origin[2]])?.hardSatisfied).toBe(true);
+    return { before, owner, refreshOwnership: owner.refreshOwnership, id, origin };
+  }
+
+  it('keeps the drag through the refresh, then moves the part and writes the document once', async () => {
+    const f = await fixture(), fake = fakeBridge();
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge);
+    try {
+      await settle();
+      const { before, owner, refreshOwnership, id, origin } = startDrag(f);
+      // The same ledger move as the published-refresh test above; the next draw (assemblyReady) asks for this refresh.
+      await fake.recomputeSolids([], { partId: 'unrelated-fixture-owner', generation: 1 });
+      expect(owner.receiptCurrent()).toBe(false);
+      expect(await refreshOwnership(owner)).not.toBeNull();
+      const refreshed = useAppStore.getState();
+      expect(refreshed.assemblyView).not.toBe(before.assemblyView);
+      expect(refreshed.assemblyView?.resolved).toBe(before.assemblyView?.resolved);
+      expect(refreshed.requestedGeneration).toBe(before.requestedGeneration);
+      expect(moveComponentDrag([origin[0] + 10, origin[1], origin[2]])?.hardSatisfied).toBe(true);
+      expect(useAppStore.getState().assemblyDragNotice).toBe('dragging');
+      expect(finishComponentDrag([origin[0] + 10, origin[1], origin[2]])).toBe(true);
+      const committed = useAppStore.getState();
+      expect(committed.assemblyDragNotice).toBe('complete');
+      expect(committed.assemblyUndoStack?.past).toHaveLength(1);
+      expect(committed.requestedGeneration).toBe(before.requestedGeneration + 1);
+      const moved = committed.assembly?.components.find(component => component.id === id)?.placement.position[0];
+      expect(moved?.value).toBeCloseTo(origin[0] + 10, 9);
+    } finally { detach(); }
+  });
+
+  it('ends quietly when the user cancels (Esc reaches cancelComponentDrag) or switches what to pick', async () => {
+    const f = await fixture(), fake = fakeBridge();
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge);
+    try {
+      await settle();
+      const { before, origin } = startDrag(f);
+      cancelComponentDrag();
+      let after = useAppStore.getState();
+      expect(after.assemblyDrag).toBeNull();
+      expect(after.assemblyDragOverlay).toBeNull();
+      expect(after.assemblyDragNotice).toBe('cancelled');
+      expect(after.assembly).toBe(before.assembly);
+      expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(after.requestedGeneration).toBe(before.requestedGeneration);
+      startDrag(f);
+      // The 1 to 3 keys in the view set the pick kind this way (attachAssemblyInteraction onKeyDown).
+      useAppStore.setState({ selectionKind: 'face' });
+      expect(moveComponentDrag([origin[0] + 10, origin[1], origin[2]])).toBeNull();
+      after = useAppStore.getState();
+      expect(after.assemblyDrag).toBeNull();
+      expect(after.assemblyDragNotice).toBe('cancelled');
+      expect(after.assembly).toBe(before.assembly);
+    } finally { detach(); }
+  });
+
+  it('still ends the drag when another edit changes the document, and the drag writes nothing', async () => {
+    const f = await fixture(), fake = fakeBridge();
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge);
+    try {
+      await settle();
+      const { before, origin } = startDrag(f);
+      if (before.assembly === null) throw new Error('assembly');
+      const edited = removeComponent(before.assembly, f.document.components[2].id);
+      useAppStore.getState().applyAssembly(edited);
+      expect(moveComponentDrag([origin[0] + 10, origin[1], origin[2]])).toBeNull();
+      expect(finishComponentDrag([origin[0] + 10, origin[1], origin[2]])).toBe(false);
+      const after = useAppStore.getState();
+      expect(after.assemblyDrag).toBeNull();
+      expect(after.assemblyDragOverlay).toBeNull();
+      expect(after.assembly).toBe(edited);
+      expect(after.assemblyUndoStack?.past).toHaveLength(1);
+    } finally { detach(); }
+  });
+
+  it('says the drag was interrupted when a change the user did not make (a recompute from outside) ends it', async () => {
+    const f = await fixture(), fake = fakeBridge();
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge);
+    try {
+      await settle();
+      const { before, origin } = startDrag(f);
+      // A recompute started elsewhere: the document stays, only the generation and the computing flag move.
+      useAppStore.setState(state => ({ requestedGeneration: state.requestedGeneration + 1, isComputing: true }));
+      expect(moveComponentDrag([origin[0] + 10, origin[1], origin[2]])).toBeNull();
+      expect(finishComponentDrag([origin[0] + 10, origin[1], origin[2]])).toBe(false);
+      const after = useAppStore.getState();
+      expect(after.assemblyDrag).toBeNull();
+      expect(after.assemblyDragOverlay).toBeNull();
+      expect(after.assemblyDragNotice).toBe('interrupted');
+      expect(after.assembly).toBe(before.assembly);
+      expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
     } finally { detach(); }
   });
 });

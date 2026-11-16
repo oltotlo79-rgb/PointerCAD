@@ -82,7 +82,7 @@ const THREAD_FAILED_MESSAGE = 'ねじ穴をあけられませんでした。位�
 
 /** 対象が丸ごと削れてしまったとき。 */
 const NOTHING_LEFT_MESSAGE =
-  'ねじ穴をあけたら立体が残りませんでした。呼び径か深さを小さくしてください。';
+  'ねじ穴をあけたらソリッドが残りませんでした。呼び径か深さを小さくしてください。';
 
 /** 削れた量が 0 だったとき(中心が材料から外れている)。makeHole.ts と同じ考え。 */
 const NOTHING_REMOVED_MESSAGE =
@@ -108,7 +108,7 @@ const SHAFT_TOO_THIN_MESSAGE = 'ねじのピッチが軸の太さに対して大
 const SHAFT_FAILED_MESSAGE = 'おねじを作れませんでした。ねじ部の長さや向きを見直してください。';
 
 /** おねじで軸が丸ごと削れてしまったとき。 */
-const SHAFT_NOTHING_LEFT_MESSAGE = 'おねじを切ったら立体が残りませんでした。呼び径を見直してください。';
+const SHAFT_NOTHING_LEFT_MESSAGE = 'おねじを切ったらソリッドが残りませんでした。呼び径を見直してください。';
 
 /** おねじの溝が材料に当たらなかったとき(makeHole.ts と同じ考え)。 */
 const SHAFT_NOTHING_REMOVED_MESSAGE =
@@ -607,7 +607,7 @@ function toJapaneseFailure<T extends OcctShapeHandle>(
     return run();
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(reason.includes('立体が残りませんでした') ? nothingLeft : fallback, {
+    throw new Error(reason.includes('ソリッドが残りませんでした') ? nothingLeft : fallback, {
       cause: error,
     });
   }

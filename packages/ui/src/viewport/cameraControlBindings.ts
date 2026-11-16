@@ -1,4 +1,7 @@
-import { VIEW_ACTIONS, type ViewAction, type ViewControlOptions, type ViewControlSettings, type ViewTrigger } from '../settings/viewControlSettings.js';
+import {
+  VIEW_ACTIONS, viewKeyStepDegrees, type ViewAction, type ViewControlOptions, type ViewControlSettings, type ViewKeyGroup, type ViewTrigger,
+} from '../settings/viewControlSettings.js';
+import { ORBIT_RADIANS_PER_PIXEL } from './cameraMath.js';
 
 /*
  * 入力から視点の操作への判定と、速さ・向きの換算(FR-101)。3D(attachCameraControls)・図面(attachDrawingNavigation)・
@@ -62,6 +65,51 @@ export function dragZoomDelta(options: ViewControlOptions, deltaY: number): numb
 /** 回転の量に速さと左右・上下の反転を掛ける。既定(1 倍・反転なし)では入力と同じ値になる。 */
 export function scaledOrbitDelta(options: ViewControlOptions, dx: number, dy: number): readonly [number, number] {
   return [dx * options.orbitSensitivity * (options.invertOrbitX ? -1 : 1), dy * options.orbitSensitivity * (options.invertOrbitY ? -1 : 1)];
+}
+
+/**
+ * キーで視点を動かす入力(第 2 段、B-08)。物理の位置(KeyboardEvent.code)ごとの組と、ドラッグに相当する向き(右・下が正)。
+ * ＋はホイールを上へ回すのと同じ拡大、−は縮小。押している間はキーの繰り返しで同じ量ずつ動かす。
+ */
+const KEY_MOVES: Readonly<Record<string, { readonly group: ViewKeyGroup; readonly direction: readonly [number, number] }>> = {
+  ArrowLeft: { group: 'arrows', direction: [-1, 0] }, ArrowRight: { group: 'arrows', direction: [1, 0] },
+  ArrowUp: { group: 'arrows', direction: [0, -1] }, ArrowDown: { group: 'arrows', direction: [0, 1] },
+  Numpad4: { group: 'numpad', direction: [-1, 0] }, Numpad6: { group: 'numpad', direction: [1, 0] },
+  Numpad8: { group: 'numpad', direction: [0, -1] }, Numpad2: { group: 'numpad', direction: [0, 1] },
+  NumpadAdd: { group: 'plusMinus', direction: [0, -1] }, Equal: { group: 'plusMinus', direction: [0, -1] },
+  NumpadSubtract: { group: 'plusMinus', direction: [0, 1] }, Minus: { group: 'plusMinus', direction: [0, 1] },
+};
+/** キー 1 回で平行移動する画面の画素(平行移動の速さを掛ける)。 */
+export const KEY_PAN_PIXELS = 40;
+/** キー 1 回の拡大縮小(ホイール 1 目盛りの量。ホイールの速さと反転を掛ける)。 */
+const KEY_ZOOM_WHEEL_DELTA = 100;
+
+export interface ViewKeyMove {
+  readonly action: ViewAction;
+  /** ドラッグに相当する向き(-1・0・1)。拡大縮小は縦だけを使う。 */
+  readonly direction: readonly [number, number];
+}
+
+/** 押したキーと修飾キーが完全に一致したキーの割当の操作と向き。割当が無いキーは null。 */
+export function viewKeyMove(settings: ViewControlSettings, event: Modifiers & Pick<KeyboardEvent, 'code'>): ViewKeyMove | null {
+  const move = KEY_MOVES[event.code];
+  if (move === undefined) return null;
+  const action = VIEW_ACTIONS.find(candidate => settings.bindings[candidate].some(trigger => trigger.kind === 'keys'
+    && trigger.keys === move.group && cameraModifiersMatch(trigger, event)));
+  return action === undefined ? null : { action, direction: move.direction };
+}
+
+/**
+ * キー 1 回の回転を、ドラッグに相当する画素で表す(角度 ÷ 1 画素の角度)。呼び手が scaledOrbitDelta で回転の速さと反転を
+ * 掛けるので、ここで速さを割り戻す(設定の「キーで回す角度」がそのまま 1 回の角度になる。反転は効く)。
+ */
+export function keyOrbitPixels(options: ViewControlOptions): number {
+  return viewKeyStepDegrees(options) * Math.PI / 180 / ORBIT_RADIANS_PER_PIXEL / options.orbitSensitivity;
+}
+
+/** キー 1 回の拡大縮小の量(向き -1 が拡大)。ホイールの速さと反転を掛ける。 */
+export function keyZoomDelta(options: ViewControlOptions, direction: number): number {
+  return direction * KEY_ZOOM_WHEEL_DELTA * options.wheelSensitivity * (options.invertWheel ? -1 : 1);
 }
 
 /** 平行移動の量に速さを掛ける。既定(1 倍)では入力と同じ値になる。 */

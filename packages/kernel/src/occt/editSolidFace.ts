@@ -51,7 +51,7 @@ export const FACE_OFFSET_MISSING_FACE_MESSAGE =
   '動かす面が見つかりません。形が変わったため、面を選び直してください。';
 const FACE_OFFSET_NOT_PLANAR_MESSAGE = '動かせるのは平らな面だけです。';
 export const FACE_OFFSET_INVALID_BODY_MESSAGE =
-  '元の立体の形が正しくないため、面を動かせません。元の立体を直してください。';
+  '元のソリッドの形が正しくないため、面を動かせません。元のソリッドを直してください。';
 export const FACE_OFFSET_ADJACENT_MESSAGE =
   'この面の隣に、面に直角でない面があるため動かせません。隣の面が直角な平らな面だけ動かせます。';
 export const FACE_OFFSET_COLLISION_MESSAGE =

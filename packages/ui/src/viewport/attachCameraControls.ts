@@ -1,9 +1,13 @@
-import { DEFAULT_VIEW_CONTROLS, type ViewAction, type ViewControlOptions, type ViewControlSettings } from '../settings/viewControlSettings.js';
 import {
-  dragZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewWheelAction, wheelDragEquivalent, wheelZoomDelta,
+  DEFAULT_VIEW_CONTROLS, viewOrbitCenter, viewZoomCenter, type ViewAction, type ViewControlOptions, type ViewControlSettings,
+} from '../settings/viewControlSettings.js';
+import {
+  dragZoomDelta, KEY_PAN_PIXELS, keyOrbitPixels, keyZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewKeyMove,
+  viewWheelAction, wheelDragEquivalent, wheelZoomDelta,
 } from './cameraControlBindings.js';
-import { HOME_ORBIT, orbit, pan, zoom, type OrbitState } from './cameraMath.js';
+import { HOME_ORBIT, orbit, orbitAround, pan, zoom, zoomToward, type OrbitState } from './cameraMath.js';
 import { exceedsRightDragThreshold } from './rightPointerGesture.js';
+import { createViewHistory } from './viewHistory.js';
 
 /** 視点の正本。ビューキューブなど外側の部品もここを通してだけ視点を読み書きする。 */
 export interface CameraControls {
@@ -13,6 +17,8 @@ export interface CameraControls {
   /** ビューキューブなど、外から視点を差し替えるための入口。視点の正本はこの1箇所に置く。 */
   setOrbit(next: OrbitState): void;
   goHome(): void;
+  /** 直前の視点へ戻る(B-08c)。戻れる視点が無い時と 4 分割の表示の間は何もせず false。 */
+  previousView(): boolean;
   detach(): void;
 }
 
@@ -25,6 +31,15 @@ export interface CameraControlOverride {
   canOrbit(): boolean;
 }
 
+/**
+ * 回転の中心・拡大の中心の点を決める口(B-08d)。画面の座標は clientX/clientY(キーの時は NaN)。決まらなければ null
+ * (今までどおり注視点の周りに回し、注視点へ寄せる)。
+ */
+export interface ViewCenterResolver {
+  orbitPivot(center: 'pointer' | 'selection', clientX: number, clientY: number): readonly [number, number, number] | null;
+  zoomPoint(clientX: number, clientY: number, current: OrbitState): readonly [number, number, number] | null;
+}
+
 const MIDDLE_BUTTON = 1;
 
 /**
@@ -32,13 +47,17 @@ const MIDDLE_BUTTON = 1;
  * 拡大縮小は縦の移動だけを使う。
  */
 function movedOrbit(current: OrbitState, action: ViewAction, options: ViewControlOptions,
-  delta: readonly [number, number], viewportHeight: () => number): OrbitState {
-  if (action === 'orbit') return orbit(current, ...scaledOrbitDelta(options, delta[0], delta[1]));
+  delta: readonly [number, number], viewportHeight: () => number, center: readonly [number, number, number] | null = null): OrbitState {
+  if (action === 'orbit') {
+    const [deltaX, deltaY] = scaledOrbitDelta(options, delta[0], delta[1]);
+    return center === null ? orbit(current, deltaX, deltaY) : orbitAround(current, deltaX, deltaY, center);
+  }
   if (action === 'pan') {
     const [deltaX, deltaY] = scaledPanDelta(options, delta[0], delta[1]);
     return pan(current, deltaX, deltaY, viewportHeight());
   }
-  return zoom(current, dragZoomDelta(options, delta[1]));
+  const deltaZoom = dragZoomDelta(options, delta[1]);
+  return center === null ? zoom(current, deltaZoom) : zoomToward(current, deltaZoom, center);
 }
 
 /**
@@ -62,6 +81,7 @@ export function attachCameraControls(
   onInteractionChange: (active: boolean) => void = () => {},
   override?: CameraControlOverride,
   readSettings: () => ViewControlSettings = () => DEFAULT_VIEW_CONTROLS,
+  centers?: ViewCenterResolver,
 ): CameraControls {
   let state: OrbitState = HOME_ORBIT;
   let dragMode: 'orbit' | 'pan' | 'zoom' | null = null;
@@ -72,20 +92,38 @@ export function attachCameraControls(
   let dragSettings = readSettings();
   let lastX = 0;
   let lastY = 0;
+  /** このドラッグの回転・拡大の中心(押した時に 1 回決める)。null は注視点。 */
+  let dragCenter: readonly [number, number, number] | null = null;
   const view = canvas.ownerDocument?.defaultView;
 
+  // 単一の視点の履歴(4 分割の区画の視点は積まない)。
+  const history = createViewHistory(() => globalThis.performance.now());
   const getOrbit = (): OrbitState => override?.getOrbit() ?? state;
   const setOrbit = (next: OrbitState): void => {
     if (override?.getOrbit() != null) override.setOrbit(next);
-    else state = next;
+    else { history.beforeChange(state); state = next; }
     onChange();
   };
   const goHome = (): void => {
     if (override?.getOrbit() != null) override.goHome();
-    else state = HOME_ORBIT;
+    else { history.beforeChange(state); state = HOME_ORBIT; }
     onChange();
   };
+  const previousView = (): boolean => {
+    const previous = override?.getOrbit() != null ? null : history.takePrevious(state);
+    if (previous === null) return false;
+    state = previous;
+    onChange();
+    return true;
+  };
   const viewportHeight = (): number => override?.getOrbit() != null ? override.viewportHeight() : canvas.clientHeight;
+  /** 回転・拡大の中心の点(B-08d)。設定が注視点・平行移動・4 分割の区画・決まらない時は null。 */
+  const centerFor = (action: ViewAction, options: ViewControlOptions, clientX: number, clientY: number): readonly [number, number, number] | null => {
+    if (centers === undefined || override?.getOrbit() != null || action === 'pan') return null;
+    if (action === 'zoom') return viewZoomCenter(options) === 'pointer' ? centers.zoomPoint(clientX, clientY, getOrbit()) : null;
+    const kind = viewOrbitCenter(options);
+    return kind === 'target' ? null : centers.orbitPivot(kind, clientX, clientY);
+  };
 
   function beginDrag(event: PointerEvent): void {
     if (dragMode !== null) return;
@@ -94,6 +132,7 @@ export function attachCameraControls(
     if (action === null) return;
     if (action === 'orbit' && override?.getOrbit() != null && !override.canOrbit()) return;
     dragMode = action;
+    dragCenter = centerFor(action, settings.options, event.clientX, event.clientY);
     dragButtons = event.buttons;
     dragSettings = settings;
     const isRightPan = event.button === 2;
@@ -133,7 +172,7 @@ export function attachCameraControls(
     lastY = event.clientY;
 
     if (dragMode === null) return;
-    setOrbit(movedOrbit(getOrbit(), dragMode, dragSettings.options, [deltaX, deltaY], viewportHeight));
+    setOrbit(movedOrbit(getOrbit(), dragMode, dragSettings.options, [deltaX, deltaY], viewportHeight, dragCenter));
   }
 
   function endDrag(event: PointerEvent): void {
@@ -149,6 +188,7 @@ export function attachCameraControls(
     if (dragMode === null) return;
     const pointer = dragPointer;
     dragMode = null;
+    dragCenter = null;
     dragPointer = null;
     rightStart = null;
     rightPanning = false;
@@ -173,14 +213,36 @@ export function attachCameraControls(
     if (action === 'zoom') {
       const delta = wheelZoomDelta(settings.options, event);
       if (!Number.isFinite(delta) || delta === 0) return;
-      setOrbit(zoom(getOrbit(), delta));
+      const point = centerFor('zoom', settings.options, event.clientX, event.clientY);
+      setOrbit(point === null ? zoom(getOrbit(), delta) : zoomToward(getOrbit(), delta, point));
       return;
     }
     // 4 分割の正投影の区画は回さない(ドラッグの回転と同じ扱い)。
     if (action === 'orbit' && override?.getOrbit() != null && !override.canOrbit()) return;
     const delta = wheelDragEquivalent(event);
     if (!delta.every(value => Number.isFinite(value)) || delta.every(value => value === 0)) return;
-    setOrbit(movedOrbit(getOrbit(), action, settings.options, delta, viewportHeight));
+    setOrbit(movedOrbit(getOrbit(), action, settings.options, delta, viewportHeight, centerFor(action, settings.options, event.clientX, event.clientY)));
+  }
+
+  /** キーの割当(B-08): 押している間(キーの繰り返し)ずつ回す・動かす・拡大縮小する。割当の無いキーは触らない。 */
+  function onKeyDown(event: KeyboardEvent): void {
+    if (dragMode !== null || event.isComposing) return;
+    const settings = readSettings(), move = viewKeyMove(settings, event);
+    if (move === null) return;
+    if (move.action === 'orbit' && override?.getOrbit() != null && !override.canOrbit()) return;
+    // 命令のキーと重ならないよう窓で断っているが、ブラウザーの画面送り(矢印)と全体のキーの入口へは渡さない。
+    // 同じ canvas の後ろの受け手(組立の 1〜4・スケッチ)へも渡さない(NumLock のテンキーの数字は文字の数字としても届く)。
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    // キーには押した所が無いので、中心は「選んだもの」だけが効く(カーソルの下は注視点のまま)。
+    const center = centerFor(move.action, settings.options, Number.NaN, Number.NaN);
+    if (move.action === 'zoom') {
+      const delta = keyZoomDelta(settings.options, move.direction[1]);
+      setOrbit(center === null ? zoom(getOrbit(), delta) : zoomToward(getOrbit(), delta, center));
+      return;
+    }
+    const step = move.action === 'orbit' ? keyOrbitPixels(settings.options) : KEY_PAN_PIXELS;
+    setOrbit(movedOrbit(getOrbit(), move.action, settings.options, [move.direction[0] * step, move.direction[1] * step], viewportHeight, center));
   }
 
   // 中ボタンのドラッグでブラウザの自動スクロールが始まらないようにする。
@@ -204,6 +266,7 @@ export function attachCameraControls(
   canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('mousedown', onMiddleButtonMouseDown);
   canvas.addEventListener('auxclick', onAuxClick);
+  canvas.addEventListener('keydown', onKeyDown);
   view?.addEventListener('blur', cancelDrag);
 
   return {
@@ -211,6 +274,7 @@ export function attachCameraControls(
     isDragging: () => dragMode !== null,
     setOrbit,
     goHome,
+    previousView,
     detach: () => {
       cancelDrag();
       canvas.removeEventListener('pointerdown', beginDrag);
@@ -221,6 +285,7 @@ export function attachCameraControls(
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('mousedown', onMiddleButtonMouseDown);
       canvas.removeEventListener('auxclick', onAuxClick);
+      canvas.removeEventListener('keydown', onKeyDown);
       view?.removeEventListener('blur', cancelDrag);
     },
   };

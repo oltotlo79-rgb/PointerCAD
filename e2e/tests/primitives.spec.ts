@@ -190,15 +190,15 @@ const CORNER_DISTANCE = '28.2842712475 mm';
 /**
  * その行を選び、体積が期待どおりになるまで待ってから、**数として**照合する。
  *
- * 文字列の完全一致にしないのは、球やトーラスの体積が割り切れない数で、画面の表示が
- * 有効数字 12 桁に丸められるため(`formatVolume`)。§2.7.3 の表が ± 1e-6 で書かれている
- * のと同じ読み方をここでもする。**期待値そのものは 1 つも緩めていない。**
+ * 文字列の完全一致にしないのは、球やトーラスの体積が割り切れない数で、説明(title)の表示が
+ * 有効数字 12 桁に丸められるため(`formatVolume`。画面の文字は有効 6 桁なので、title から読む)。
+ * §2.7.3 の表が ± 1e-6 で書かれているのと同じ読み方をここでもする。**期待値そのものは 1 つも緩めていない。**
  */
 async function expectVolumeNear(page: Page, rowName: string, expected: number): Promise<void> {
   await solidRow(page, rowName).click();
   const cell = propertyValue(page, '体積');
-  await expect(cell).toHaveText(new RegExp(`${VOLUME_UNIT}$`), { timeout: KERNEL_TIMEOUT_MS });
-  const text = (await cell.textContent()) ?? '';
+  await expect(cell).toHaveAttribute('title', new RegExp(`${VOLUME_UNIT}$`), { timeout: KERNEL_TIMEOUT_MS });
+  const text = ((await cell.getAttribute('title')) ?? (await cell.textContent())) ?? '';
   const value = Number.parseFloat(text);
   expect(
     Math.abs(value - expected),
@@ -423,10 +423,10 @@ test.describe('P5 基本形状・面をつなぐ・測る', () => {
     // 5) 立体ができ、体積が出る(球 r=10・円 r=20・距離 30 の外接直線でつないだ形)。
     await expect(solidRow(page, '面をつなぐ1')).toBeVisible();
     await solidRow(page, '面をつなぐ1').click();
-    await expect(propertyValue(page, '体積')).toHaveText(new RegExp(`${VOLUME_UNIT}$`), {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', new RegExp(`${VOLUME_UNIT}$`), {
       timeout: KERNEL_TIMEOUT_MS,
     });
-    const volumeText = (await propertyValue(page, '体積').textContent()) ?? '';
+    const volumeText = (((await propertyValue(page, '体積').getAttribute('title')) ?? (await propertyValue(page, '体積').textContent()))) ?? '';
     const volume = Number.parseFloat(volumeText);
     /*
      * 手計算できる軸対称の値は 24741.124688560(計画書 §2.9.3、kernel タスク24 の検査)。
@@ -538,7 +538,7 @@ test.describe('P5 基本形状・面をつなぐ・測る', () => {
       .poll(
         async () =>
           Math.abs(
-            Number.parseFloat((await propertyValue(page, '体積').textContent()) ?? '') -
+            Number.parseFloat((((await propertyValue(page, '体積').getAttribute('title')) ?? (await propertyValue(page, '体積').textContent()))) ?? '') -
               SPHERE_VOLUME_R20,
           ),
         { timeout: KERNEL_TIMEOUT_MS, message: '半径 20 の球の体積' },

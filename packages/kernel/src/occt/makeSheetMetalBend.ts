@@ -99,7 +99,7 @@ function buildBend(oc: OpenCascadeInstance, input: SheetMetalLBendInput, frame: 
     const maker = keep(new oc.BRepPrimAPI_MakePrism_1(face.face, vector, false, true));
     if (!maker.IsDone()) throw new Error('板金の幅方向へ形を作れませんでした。');
     const shape = keep(maker.Shape());
-    if (!hasSolid(oc, shape) || !isValidShape(oc, shape)) throw new Error('曲げた板金が有効な立体になりませんでした。');
+    if (!hasSolid(oc, shape) || !isValidShape(oc, shape)) throw new Error('曲げた板金が有効なソリッドになりませんでした。');
     return { shape, delete: release };
   } catch (error) { release(); throw error; }
 }

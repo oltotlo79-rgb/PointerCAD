@@ -69,7 +69,7 @@ describe('selectionFilter の並びと札', () => {
       expect(t(SELECTION_KIND_LABEL_KEYS[kind]).length).toBeGreaterThan(0);
     }
     expect(t(SELECTION_KIND_LABEL_KEYS.face)).toBe('面');
-    expect(t(SELECTION_KIND_LABEL_KEYS.body)).toBe('立体');
+    expect(t(SELECTION_KIND_LABEL_KEYS.body)).toBe('ソリッド');
   });
 });
 

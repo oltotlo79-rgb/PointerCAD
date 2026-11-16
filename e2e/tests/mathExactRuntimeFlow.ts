@@ -3,6 +3,7 @@ import { savePart } from './scriptsFlow.js';
 import { reopenPart } from './reopenPart.js';
 import { uiMessage } from './uiMessages.js';
 import { captureManualDetail } from './captureManualDetail.js';
+import { mathResultValueText } from './mathResultValue.js';
 
 /** The second matrix row is sqrt(2) times the first: its exact rank is one.
  * This exercises the bundled interpreter, including cancellation of old runtimes,
@@ -51,7 +52,7 @@ export async function mathExactRuntimeFlow(page: Page, info: TestInfo, app?: Ele
       fixture: saved, script: new URL('./mathExactRuntimeFlow.ts', import.meta.url) });
     await angle.selectOption('radian');
     await expect.poll(async () => {
-      const text = await status.innerText(); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
+      const text = await mathResultValueText(status); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
     }, { timeout: 225_000 }).toBeCloseTo(1 + Math.sin(30), 12);
     await dialog.getByRole('button', { name: 'この式を使う', exact: true }).click(); await expect(dialog).toHaveCount(0);
     const changed = await savePart(page, info, 'math-exact-radian.pcad', app);

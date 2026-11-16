@@ -1,4 +1,5 @@
 import { t } from '../i18n/t.js';
+import { femAssetFailureKey } from '../femFailureMessage.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { CadSolidBucklingFailureCode } from './cadSolidBuckling.js';
 import { solidBucklingModeCount, solidBucklingPreview } from './solidBucklingState.js';
@@ -6,7 +7,7 @@ import { solidBucklingModeCount, solidBucklingPreview } from './solidBucklingSta
 const FAILURE_KEYS = {
   'cad-solid-buckling': 'solidAnalysis.bucklingFailed', 'buckling-no-compression': 'solidAnalysis.bucklingNoCompression',
   'buckling-mechanism': 'solidAnalysis.bucklingMechanism', 'buckling-unsupported': 'solidAnalysis.bucklingUnsupported',
-  'buckling-stale': 'solidAnalysis.bucklingStale',
+  'buckling-stale': 'solidAnalysis.bucklingStale', 'buckling-asset': 'strength.femFailure.assetMissing',
 } as const satisfies Record<CadSolidBucklingFailureCode, string>;
 function validAmplitude(text: string): boolean {
   return text.trim() !== '' && Number.isFinite(Number(text)) && Number(text) >= 0;
@@ -36,6 +37,8 @@ export function SolidBucklingSection(): React.JSX.Element {
   const preview = display === null || buckling.input === null ? null
     : solidBucklingPreview(buckling, { documentId, revision: generation, meshKey: buckling.input.reference.source.meshKey });
   const amplitudeValid = validAmplitude(buckling.amplitudeText);
+  // A-24: 計算の準備のファイルの断りは共通の文(読めない・壊れている)にし、「入力と形状を確認」の文と内部の英語の文を出さない。
+  const assetKey = buckling.code === 'buckling-asset' ? femAssetFailureKey(buckling.error) ?? FAILURE_KEYS['buckling-asset'] : null;
   return <section aria-label={t('solidAnalysis.bucklingSection')} data-testid="solid-buckling-section">
     <h4>{t('solidAnalysis.bucklingSection')}</h4>
     <p>{t('solidAnalysis.bucklingHelp')}</p>
@@ -59,8 +62,8 @@ export function SolidBucklingSection(): React.JSX.Element {
     {valid ? null : <p role="alert">{t('solidAnalysis.bucklingInputInvalid')}</p>}
     {buckling.status === 'running' ? <p role="status">{t('solidAnalysis.bucklingRunning')}</p> : null}
     {buckling.status === 'failed'
-      ? <p role="alert" data-testid="solid-buckling-failed">{t(FAILURE_KEYS[buckling.code ?? 'cad-solid-buckling'])}</p> : null}
-    {buckling.error !== null ? <p role="alert" data-testid="solid-buckling-error">{buckling.error}</p> : null}
+      ? <p role="alert" data-testid="solid-buckling-failed">{t(assetKey ?? FAILURE_KEYS[buckling.code ?? 'cad-solid-buckling'])}</p> : null}
+    {buckling.error !== null && assetKey === null ? <p role="alert" data-testid="solid-buckling-error">{buckling.error}</p> : null}
     <button type="button" className="pcad-button pcad-button--primary" data-testid="solid-buckling-run"
       disabled={runner?.runBuckling === undefined || !valid || buckling.status === 'running'} onClick={() => { runner?.runBuckling?.(); }} title={t('solidAnalysis.guide.bucklingRun')}>
       {t('solidAnalysis.bucklingRun')}</button>

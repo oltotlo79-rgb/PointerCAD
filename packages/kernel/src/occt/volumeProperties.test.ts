@@ -339,7 +339,7 @@ it('閉じた非周期母線を分割してもGK精度不足を拒否し借用�
   const before = writeBrepBytes(oc, handle.shape);
   const gk = vi.spyOn(oc.BRepGProp, 'VolumePropertiesGK_1').mockReturnValue(1.1e-12);
   try {
-    expect(() => measureVolume(oc, handle.shape)).toThrow('立体の体積を必要な精度で計算できませんでした。');
+    expect(() => measureVolume(oc, handle.shape)).toThrow('ソリッドの体積を必要な精度で計算できませんでした。');
     expect(gk).toHaveBeenCalledTimes(1);
     expect(writeBrepBytes(oc, handle.shape)).toEqual(before);
   } finally { gk.mockRestore(); handle.delete(); }

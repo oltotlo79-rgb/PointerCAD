@@ -36,7 +36,7 @@ export async function dwgFlow(page: Page, info: TestInfo): Promise<void> {
     await expect(help.getByRole('link', { name: /ODA DWG-DXF Converter/u })).toHaveAttribute('href', 'https://www.opendesign.com/guestfiles/oda_file_converter');
     await page.screenshot({ path: info.outputPath('dwg-help.png') });
     await page.keyboard.press('Escape'); await expect(help).toHaveCount(0);
-    await panel.getByRole('button', { name: 'やめる', exact: true }).click();
+    await panel.getByRole('button', { name: '取消', exact: true }).click();
     await expect(panel).toHaveCount(0);
     expect(chooserCount).toBe(0); expect(await readRecomputeStats(page)).toEqual(before);
   } finally { page.off('filechooser', opened); }

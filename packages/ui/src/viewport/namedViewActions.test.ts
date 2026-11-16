@@ -15,7 +15,8 @@ describe('名前付き視点の文書操作とUndo(FR-113)', () => {
   beforeEach(() => {
     useAppStore.setState(createInitialDocumentState());
     restore.mockClear();
-    state().setViewCameraController({ capture: () => captured, restore });
+    // 直前の視点・全体を表示(B-08c)は名前付き視点の操作から呼ばれない。
+    state().setViewCameraController({ capture: () => captured, restore, previous: () => false, fit: () => false });
   });
   it('保存は部品文書に1件追加するが形の再計算を始めない', () => {
     const before = state().document;
@@ -103,7 +104,7 @@ describe('名前付き視点の文書操作とUndo(FR-113)', () => {
     for (const action of ['save', 'restore', 'quad']) {
       const tag = button(html, action);
       expect(tag).toContain('aria-disabled="true"');
-      expect(tag).toContain('立体の画面が表示されてから、もう一度試してください。');
+      expect(tag).toContain('ソリッドの画面が表示されてから、もう一度試してください。');
       expect(tag).not.toMatch(/\sdisabled(?:=|\s|>)/u);
     }
   });

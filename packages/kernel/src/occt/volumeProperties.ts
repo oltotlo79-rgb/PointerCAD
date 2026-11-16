@@ -93,7 +93,7 @@ function hasCurvedCylinderBoundary(oc: OpenCascadeInstance, shape: TopoDS_Shape)
 function computeGkProperties(oc: OpenCascadeInstance, shape: TopoDS_Shape, properties: GProp_GProps, massOnly: boolean): void {
   const error = oc.BRepGProp.VolumePropertiesGK_1(shape, properties, 1e-12, false, true, !massOnly, !massOnly, false);
   if (!Number.isFinite(error) || error < 0 || error > 1e-12 || !Number.isFinite(properties.Mass())) {
-    throw new Error('立体の体積を必要な精度で計算できませんでした。');
+    throw new Error('ソリッドの体積を必要な精度で計算できませんでした。');
   }
 }
 
@@ -116,7 +116,7 @@ export function computeVolumeProperties(oc: OpenCascadeInstance, shape: TopoDS_S
       // 円筒の曲線境界は固定次数では配置により誤差が変わる。同じ面を適応積分する。
       const error = oc.BRepGProp.VolumeProperties_2(shape, properties, 1e-9, false, false);
       if (!Number.isFinite(error) || error < 0 || error > 1e-9) {
-        throw new Error('立体の体積を必要な精度で計算できませんでした。');
+        throw new Error('ソリッドの体積を必要な精度で計算できませんでした。');
       }
     } else {
       oc.BRepGProp.VolumeProperties_1(shape, properties, false, false, false);
@@ -142,10 +142,10 @@ export function computeVolumeProperties(oc: OpenCascadeInstance, shape: TopoDS_S
     const divided = keep(converter.Result());
     const failed = oc.ShapeExtend_Status.ShapeExtend_FAIL;
     if (!isFailureStatus(failed, oc.ShapeExtend_Status) || divided.IsNull() || converter.Status(failed)) {
-      throw new Error('立体の体積を必要な精度で計算できませんでした。');
+      throw new Error('ソリッドの体積を必要な精度で計算できませんでした。');
     }
     if (closedSpline) computeGkProperties(oc, divided, properties, massOnly);
     else oc.BRepGProp.VolumeProperties_1(divided, properties, false, false, false);
-    if (!Number.isFinite(properties.Mass())) throw new Error('立体の体積を必要な精度で計算できませんでした。');
+    if (!Number.isFinite(properties.Mass())) throw new Error('ソリッドの体積を必要な精度で計算できませんでした。');
   } finally { release(); }
 }

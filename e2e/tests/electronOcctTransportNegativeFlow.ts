@@ -97,10 +97,10 @@ async function openAndCheckCube(page: Page, app: ElectronApplication, fixture: s
   const volume = page.locator('.pcad-panel--right').locator('dt.pcad-properties__key', { hasText: '体積' })
     .locator('xpath=following-sibling::dd[1]');
   // Same independent 20x20x20 mm cube used by W21's original material comparison.
-  await expect.poll(async () => Math.abs(Number.parseFloat(await volume.innerText()) - 8000),
+  await expect.poll(async () => Math.abs(Number.parseFloat((await volume.getAttribute('title')) ?? (await volume.innerText())) - 8000),
     { timeout: KERNEL_TIMEOUT_MS }).toBeLessThanOrEqual(0.01);
   await expect(page.locator('.pcad-tree__alert')).toHaveCount(0);
-  return Number.parseFloat(await volume.innerText());
+  return Number.parseFloat((await volume.getAttribute('title')) ?? (await volume.innerText()));
 }
 
 export async function electronOcctTransportNegative(

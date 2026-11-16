@@ -3,6 +3,12 @@ import { INCH_DISPLAY_DIGITS, MM_PER_INCH, type LengthUnit } from '@pointercad/m
 import type { MessageKey } from '../i18n/t.js';
 
 /**
+ * 画面の短い数を作る関数(有効 6 桁。sketch/numericInputPresentation.ts の displayNumber)。値・単位の担当は表示の桁の決まりを
+ * 持たず(import を値・単位の純粋な処理に限る。レビュー R14/F11)、表示の側から受け取る。渡さなければ今までの全桁。
+ */
+type ShortNumber = (value: number) => string;
+
+/**
  * 体積の表示(FR-811)。**単位の記号は付けずに数だけ**を返す
  * (記号は呼び出し側が `VOLUME_UNIT_KEYS` を引いて添える。既存の呼び出しと同じ形)。
  *
@@ -13,10 +19,11 @@ import type { MessageKey } from '../i18n/t.js';
  *   例: `formatVolume(8000, 'inch')` = `(20/25.4)³` = `0.488189952757…` → `'0.488'`。
  *   **inch の桁を長さと体積で変えない**(`formatDisplayLength` と同じ 1 つの定数を見る)。
  */
-export function formatVolume(volume: number, unit: LengthUnit = 'mm'): string {
+export function formatVolume(volume: number, unit: LengthUnit = 'mm', shorten?: ShortNumber): string {
   switch (unit) {
     case 'mm':
-      return expressionValueFromNumber(volume).display;
+      // 画面は表示の側が渡す有効 6 桁(UI の点検の指摘 26)。渡さなければ全桁(説明の title)。計算の中の値は変えない。
+      return shorten === undefined ? expressionValueFromNumber(volume).display : shorten(volume);
     case 'inch':
       return (volume / (MM_PER_INCH * MM_PER_INCH * MM_PER_INCH)).toFixed(INCH_DISPLAY_DIGITS);
   }
@@ -30,10 +37,10 @@ export function formatVolume(volume: number, unit: LengthUnit = 'mm'): string {
  * なる)。inch では次数が違うと値そのものが間違うので、ここで分ける。`unit` を省いた
  * 呼び出しは `formatVolume` と 1 文字も変わらない。
  */
-export function formatArea(area: number, unit: LengthUnit = 'mm'): string {
+export function formatArea(area: number, unit: LengthUnit = 'mm', shorten?: ShortNumber): string {
   switch (unit) {
     case 'mm':
-      return expressionValueFromNumber(area).display;
+      return shorten === undefined ? expressionValueFromNumber(area).display : shorten(area);
     case 'inch':
       return (area / (MM_PER_INCH * MM_PER_INCH)).toFixed(INCH_DISPLAY_DIGITS);
   }

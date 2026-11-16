@@ -4,9 +4,11 @@ import { buildSteelStockList, STEEL_EVIDENCE, steelSectionCatalogs,
   type SteelProduct, type SteelSectionCatalog } from '@pointercad/model';
 import { useEffect, useRef, useState } from 'react';
 
-import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
-import { CatalogLoadStatus, useCatalogFamilies } from './CatalogLoadStatus.js';
+import { CatalogFamilyPicker } from './CatalogFamilyPicker.js';
+import { MECHANICAL_PICKER_CATEGORY } from './catalogFamilyChoices.js';
+import { useCatalogFamilies } from './CatalogLoadStatus.js';
+import { pickerFormProps } from './pickerFormHandlers.js';
 import { SteelBendEditForm, SteelBendFields } from './SteelBendFields.js';
 import { beginSteelBendPlacement, buildSteelBendChoice, DEFAULT_STEEL_BEND_SOURCES,
   selectedSteelBendEditTarget, type SteelBendEditTarget, type SteelBendSources } from './steelBendPicker.js';
@@ -53,6 +55,12 @@ function categoryFrom(value: string): StandardPartCategory | null {
   return STANDARD_PART_CATEGORIES.find((category) => category === value) ?? null;
 }
 
+/** 分類の欄の選択肢: 今の 8 分類と、登録口の族の「機械要素」(保存には使わない値)。 */
+function categoryOptions(): React.JSX.Element[] {
+  return [...STANDARD_PART_CATEGORIES.map((item) => <option key={item} value={item}>{t(CATEGORY_LABELS[item])}</option>),
+    <option key={MECHANICAL_PICKER_CATEGORY} value={MECHANICAL_PICKER_CATEGORY}>{t('catalog.mechanical.category')}</option>];
+}
+
 const STANDARD_VERIFICATION_LABELS = {
   draft: 'assembly.steel.standardDraft', 'final-standard': 'assembly.steel.standardFinal',
   unverified: 'assembly.steel.standardUnverified',
@@ -79,7 +87,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
   const assembly = useAppStore((state) => state.assembly);
   const library = useAppStore((state) => state.assemblyLibrary);
   const selection = useAppStore((state) => state.selection);
-  const [category, setCategory] = useState(DEFAULT_STANDARD_PART_PICKER.category);
+  const [category, setCategory] = useState<StandardPartCategory | typeof MECHANICAL_PICKER_CATEGORY>(DEFAULT_STANDARD_PART_PICKER.category);
   const [choiceKey, setChoiceKey] = useState(DEFAULT_STANDARD_PART_PICKER.choiceKey);
   const [lengthSource, setLengthSource] = useState(DEFAULT_STANDARD_PART_PICKER.lengthSource);
   const [dimensionSeries, setDimensionSeries] = useState<FastenerDimensionSeries>(DEFAULT_STANDARD_PART_PICKER.dimensionSeries);
@@ -126,6 +134,16 @@ export function StandardPartPicker(): React.JSX.Element | null {
   if (bendEdit !== null) return <SteelBendEditForm target={bendEdit} onClose={() => {
     setBendEdit(null); useAppStore.getState().closeStandardPartPicker();
   }} />;
+  const changeCategory = (value: string): void => {
+    const next = value === MECHANICAL_PICKER_CATEGORY ? value : categoryFrom(value);
+    if (next === null) return;
+    setCategory(next);
+    if (next !== MECHANICAL_PICKER_CATEGORY) setChoiceKey(defaultStandardPartChoice(next, dimensionSeries).key);
+    setLengthSource(next === 'structuralSection' ? '1000' : '30');
+    setError(null);
+  };
+  if (category === MECHANICAL_PICKER_CATEGORY) return <CatalogFamilyPicker firstRef={first} catalogState={catalogState}
+    onCategory={changeCategory} categoryOptions={categoryOptions()} />;
   const selectedBend = selectedSteelBendEditTarget({ ...useAppStore.getState(), assembly, assemblyLibrary: library, selection });
   const isSteel = category === 'structuralSection';
   const stock = isSteel && stockOpen && assembly !== null
@@ -196,24 +214,8 @@ export function StandardPartPicker(): React.JSX.Element | null {
 
   return (
     <form className="pcad-popover pcad-popover--standard-part" role="dialog"
-      aria-label={t('assembly.standardPart.title')}
-      onCompositionStart={() => { composing.current = true; }}
-      onCompositionEnd={() => { composing.current = false; }}
-      onPointerDownCapture={() => { compositionKey.current = false; }}
-      onSubmit={(event) => {
-        event.preventDefault();
-        // The confirming Enter may submit after compositionend; only a new key/pointer clears it.
-        if (!composing.current && !compositionKey.current) submit();
-      }}
-      onKeyDown={(event) => {
-        compositionKey.current = composing.current || isCompositionKey(event.nativeEvent);
-        if (compositionKey.current || event.key !== 'Escape') return;
-        event.preventDefault();
-        event.stopPropagation();
-        useAppStore.getState().closeStandardPartPicker();
-      }}>
+      aria-label={t('assembly.standardPart.title')} {...pickerFormProps({ composing, compositionKey }, submit)}>
       <DraggableWindowTitle className="pcad-popover__title">{t('assembly.standardPart.title')}</DraggableWindowTitle>
-      <CatalogLoadStatus state={catalogState} />
       {selectedBend === null ? null : <button type="button" className="pcad-button"
         title={t('assembly.steel.bend.reedit.entryGuide')} onClick={() => { setBendEdit(selectedBend); }}>
         {t('assembly.steel.bend.reedit.entry')}</button>}
@@ -221,17 +223,8 @@ export function StandardPartPicker(): React.JSX.Element | null {
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.standardPart.category')}</span>
           <select title={t('assembly.guide.standardCategory')} ref={first} className="pcad-field__input" value={category}
-            onChange={(event) => {
-              const next = categoryFrom(event.currentTarget.value);
-              if (next === null) return;
-              setCategory(next);
-              setChoiceKey(defaultStandardPartChoice(next, dimensionSeries).key);
-              setLengthSource(next === 'structuralSection' ? '1000' : '30');
-              setError(null);
-            }}>
-            {STANDARD_PART_CATEGORIES.map((item) => (
-              <option key={item} value={item}>{t(CATEGORY_LABELS[item])}</option>
-            ))}
+            onChange={(event) => { changeCategory(event.currentTarget.value); }}>
+            {categoryOptions()}
           </select>
         </label>
         {isSteel ? <>

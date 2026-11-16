@@ -100,6 +100,25 @@ describe('簡易強度計算の入力・結果・材料条件', () => {
     expect(rows.find(row => row.name === 'stress')?.substituted).toBe('6*(1000)/((10)*(10)^2)');
     expect(calculateStrengthSession(changed, []).result?.value.calculation.kind).toBe('shaft');
   });
+  it('結果と代入の値は画面では有効 6 桁で見せ、全部の桁は exact と substituted に残す(UI の点検の指摘 27)', () => {
+    const beam = calculateStrengthSession(createStrengthSession('mm'), []).result;
+    if (beam === null) throw new Error('missing result');
+    const deflection = strengthResultRows(beam).find(row => row.name === 'deflection');
+    expect(deflection?.display).toBe('0.0195122');
+    expect(deflection?.exact.startsWith('0.0195121951')).toBe(true);
+    const stress = strengthResultRows(beam).find(row => row.name === 'stress');
+    expect(stress).toMatchObject({ substituted: '6*(1000)/((10)*(10)^2)', substitutedDisplay: '6*(1000)/((10)*(10)^2)', display: '6' });
+    const shaft = calculateStrengthSession(editStrengthSession(createStrengthSession('mm'), { kind: 'calculation', calculation: { kind: 'shaft' } }), []).result;
+    if (shaft === null) throw new Error('missing shaft result');
+    const longest = (text: string) => Math.max(0, ...(text.match(/\d[\d.]*/gu) ?? []).map(number => number.replace('.', '').replace(/^0+/u, '').length));
+    const rows = strengthResultRows(shaft);
+    const long = rows.filter(row => longest(row.substituted) > 6);
+    expect(long.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(longest(row.substitutedDisplay), row.name).toBeLessThanOrEqual(6);
+      expect(longest(row.display), row.name).toBeLessThanOrEqual(6);
+    }
+  });
   it('パラメータの更新は明示的に計算した時点で取り込み、式は数値へ置き換えない', () => {
     const load: Parameter = { name: '荷重', value: { source: '10', value: 10, display: '10' }, unit: 'none', description: '' };
     const session = editStrengthSession(createStrengthSession('mm'), { kind: 'source', field: 'force', source: '荷重' });

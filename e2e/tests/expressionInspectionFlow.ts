@@ -4,6 +4,8 @@ import {
   cancelPopover, chooseShapeTool, chooseSketchTool, commitPopover, fillFields, pickInPopover, popover,
   popoverInputs, popoverTitle, treeRow, useAbsolute,
 } from './sketchDrawCaptureSupport.js';
+import { chooseToolMenuItem } from './assemblyTestSupport.js';
+import { uiMessage } from './uiMessages.js';
 
 /**
  * R19「数式候補に単位・参照元・影響数・エラー位置」の実画面検査(Web・Electron共通)。
@@ -72,6 +74,57 @@ async function typeInto(page: Page, index: number, source: string): Promise<void
   const input = popoverInputs(page).nth(index);
   await input.fill(source);
   await input.focus();
+}
+
+interface FieldGeometry { readonly input: { x: number; width: number; y: number; height: number };
+  readonly unit: { x: number; width: number; y: number; height: number } }
+
+async function readFieldGeometry(field: Locator): Promise<FieldGeometry> {
+  const input = await field.locator('input.pcad-field__input').boundingBox();
+  const unit = await field.locator('.pcad-field__unit').boundingBox();
+  if (input === null || unit === null) throw new Error('欄の入力欄と単位の札の位置を読めません。');
+  return { input, unit };
+}
+
+/**
+ * C-02j: 名前を欄の上の行に置く窓(`.pcad-strength` の薄板の解析の窓)で、欄に焦点を入れて式の点検の行が出ても、
+ * 入力欄の幅と位置、単位の札が同じ行にある事が変わらず、欄の格子の列が増えない(点検の行が暗黙の 3 列目を作らない)。
+ * 許す差は小数の丸めの 1 画素。最初の欄「板厚 t」は短い名前なので、7 字以上の名前に付く `.pcad-field--stacked` の守りを受けず、
+ * `.pcad-strength .pcad-field` の規則だけが全幅にしている欄(7 字以上の欄を選ぶとこの確かめは何も確かめない)。
+ */
+async function inspectionKeepsFieldLayout(page: Page): Promise<void> {
+  await chooseToolMenuItem(page, uiMessage('toolbar', 'toolbar.analysis.groupLabel'), uiMessage('shellAnalysis', 'shellAnalysis.open'));
+  const panel = page.getByTestId('shell-analysis-panel');
+  await expect(panel).toBeVisible();
+  const field = panel.locator('.pcad-field').first();
+  await expect(field).not.toHaveClass(/pcad-field--stacked/u);
+  await expect(field.locator('aside.pcad-expression-inspection')).toHaveCount(0);
+  const input = field.locator('input.pcad-field__input');
+  // 長い窓なので、焦点で窓が勝手にスクロールして座標が動かないよう、先に欄を見える所へ出しておく。
+  await input.scrollIntoViewIfNeeded();
+  const before = await readFieldGeometry(field);
+  // 欄の格子の列(使われている列の幅)。点検の行が暗黙の 3 列目を作ると、焦点を入れた後に列が増える(C-02j の根本の原因)。
+  const columnsOf = (target: Locator): Promise<string[]> => target.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').filter(width => width !== ''));
+  const columnsBefore = await columnsOf(field);
+  await input.fill('板厚');
+  await expect(field.locator('aside.pcad-expression-inspection')).toBeVisible();
+  const after = await readFieldGeometry(field);
+  expect(await columnsOf(field), `焦点の前の列 ${columnsBefore.join(' ')} から列が増えない(暗黙の 3 列目を作らない)`).toHaveLength(columnsBefore.length);
+  for (const key of ['x', 'width', 'height'] as const) {
+    expect(Math.abs(after.input[key] - before.input[key]), `入力欄の ${key}`).toBeLessThanOrEqual(1);
+  }
+  // 窓の縦のスクロールは座標を動かすので、単位の札は入力欄からの相対の位置で比べる。
+  for (const key of ['x', 'y'] as const) {
+    const offset = (geometry: FieldGeometry): number => geometry.unit[key] - geometry.input[key];
+    expect(Math.abs(offset(after) - offset(before)), `単位の札の入力欄からの ${key} のずれ`).toBeLessThanOrEqual(1);
+  }
+  // 単位の札は入力欄と同じ行(縦の中央が入力欄の上下の内側)にある。
+  const unitMiddle = after.unit.y + after.unit.height / 2;
+  expect(unitMiddle).toBeGreaterThanOrEqual(after.input.y);
+  expect(unitMiddle).toBeLessThanOrEqual(after.input.y + after.input.height);
+  await input.fill('');
+  await panel.getByRole('button', { name: uiMessage('shellAnalysis', 'shellAnalysis.close'), exact: true }).click();
+  await expect(panel).toHaveCount(0);
 }
 
 export async function expressionInspectionFlow(page: Page): Promise<void> {
@@ -194,4 +247,7 @@ export async function expressionInspectionFlow(page: Page): Promise<void> {
   await treeRow(page, '押し出し1').click();
   await expect(propertyPanel(page).locator('.pcad-field').filter({ hasText: '距離' }).locator('input'))
     .toHaveValue('板厚 * 2');
+
+  // 6) C-02j: 名前を上に置く窓でも、焦点を入れて点検の行が出ても、欄の幅と単位の札の位置は変わらない。
+  await inspectionKeepsFieldLayout(page);
 }

@@ -34,7 +34,7 @@ async function libraryDigestOf(library: PartLibrary): Promise<AssemblyLibraryDig
 async function readAssembly(bytes: Uint8Array) {
   const result = await readDocumentBundle(bytes, 'assembly', { limits });
   if (!result.ok) throw new Error(result.error.message);
-  if (result.bundle.kind !== 'assembly') throw new Error('比較には組立の.pcadaを選んでください。');
+  if (result.bundle.kind !== 'assembly') throw new Error('比較にはアセンブリの.pcadaを選んでください。');
   return { document: result.bundle.document, library: await libraryDigestOf(partLibraryOfBundle(result.bundle)) };
 }
 async function readDrawing(bytes: Uint8Array) {

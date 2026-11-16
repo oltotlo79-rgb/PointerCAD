@@ -73,7 +73,7 @@ export function createFaceRotateFeature(input: Omit<FaceRotateFeature, 'kind' | 
 /** 現在の実体の照合は worker が行う。保存参照を番号や保存座標で代用しない。 */
 export function directEditPlan(feature: HoleTranslateFeature | FaceRotateFeature, targetKey: string): DirectEditPlanOutcome {
   if (feature.face.bodyFeatureId !== feature.targetFeatureId || feature.face.fingerprint.kind !== 'face') {
-    return { ok: false, message: '編集する立体に属する面を選んでください。' };
+    return { ok: false, message: '編集するソリッドに属する面を選んでください。' };
   }
   if (feature.kind === 'holeTranslate') {
     const translation: readonly [number, number, number] = [
@@ -85,7 +85,7 @@ export function directEditPlan(feature: HoleTranslateFeature | FaceRotateFeature
     return { ok: true, plan: { kind: feature.kind, targetKey, face: feature.face, translation } };
   }
   if (feature.hinge.bodyFeatureId !== feature.targetFeatureId || feature.hinge.fingerprint.kind !== 'edge') {
-    return { ok: false, message: '回転の軸には、編集する立体に属する辺を選んでください。' };
+    return { ok: false, message: '回転の軸には、編集するソリッドに属する辺を選んでください。' };
   }
   const angle = feature.angle.value * Math.PI / 180;
   if (!Number.isFinite(angle) || angle === 0) {

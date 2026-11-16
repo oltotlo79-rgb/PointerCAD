@@ -60,7 +60,7 @@ test('P10 板金の指定線曲げを作成・取消・再展開・保存往復�
   await unfold.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 2' });
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  await expect.poll(async () => Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1]), { timeout: 60_000 }).toBeCloseTo(3000, 4);
+  await expect.poll(async () => Number(await unfold.getByRole('status').getAttribute('title')), { timeout: 60_000 }).toBeCloseTo(3000, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-line-flat.png') });
   stage('展開後の文書を保存');
   const [downloaded] = await Promise.all([page.waitForEvent('download'), fileAction(page, '保存').click()]);
@@ -113,7 +113,8 @@ test('P10 板金基板とフランジを画面で作り、保存往復・式編�
   await flange.getByRole('textbox', { name: /^フランジの長さ/ }).fill('10*2');
   const converted = flange.locator('dl[aria-label="曲げ寸法の換算"]');
   const straight = converted.locator('dt').filter({ hasText: /^接線からの直線長$/ }).locator('xpath=following-sibling::dd[1]');
-  await expect(converted).toContainText('5.96902604182 mm');
+  // 曲げの寸法の文字は有効 6 桁、全部の桁は title(UI の点検の指摘 26)。
+  await expect(converted.locator('dd[title="5.96902604182 mm"]')).toHaveCount(1);
   await flange.getByRole('combobox', { name: '長さの基準', exact: true }).selectOption('outer');
   await expect(straight).toHaveText('15 mm');
   await flange.getByRole('combobox', { name: '長さの基準', exact: true }).selectOption('inner');
@@ -136,7 +137,7 @@ test('P10 板金基板とフランジを画面で作り、保存往復・式編�
   const fixedPanelId = await unfold.getByRole('combobox', { name: '固定面', exact: true }).inputValue();
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  await expect.poll(async () => Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1]), { timeout: 60_000 }).toBeCloseTo(5000 + 190 * Math.PI, 4);
+  await expect.poll(async () => Number(await unfold.getByRole('status').getAttribute('title')), { timeout: 60_000 }).toBeCloseTo(5000 + 190 * Math.PI, 4);
   await captureManualDetail(page, testInfo, { name: 'sheet-unfold', dialog: unfold, fixture: { fixedPanelId }, script: new URL(import.meta.url) });
   await unfold.getByRole('button', { name: '折曲げを表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toHaveCount(0);
@@ -214,7 +215,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await unfold.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 2' });
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  await expect.poll(async () => Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1]), { timeout: 60_000 }).toBeCloseTo(4976 + 186 * Math.PI, 4);
+  await expect.poll(async () => Number(await unfold.getByRole('status').getAttribute('title')), { timeout: 60_000 }).toBeCloseTo(4976 + 186 * Math.PI, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-relief-flat.png') });
   stage('保存した板金の再読込');
   const downloaded = page.waitForEvent('download'); await fileAction(page, '保存').click();

@@ -102,6 +102,7 @@ import {
 } from '@pointercad/model';
 
 import { DEFAULT_HOLE_TRANSLATION_MM, DEFAULT_FACE_ROTATION_DEGREES } from '../solid/directEditCommands.js';
+import type { ExtrudeRegionChoice } from '../solid/regionFace.js';
 import { t, type MessageKey } from '../i18n/t.js';
 
 // 道具と入力段の契約は状態機械から独立した定義を参照する。
@@ -397,6 +398,8 @@ export interface NumericInputState {
   readonly textOrigin?: readonly [number, number, number];
   readonly toolId: NumericInputToolId;
   readonly step: NumericInputStep;
+  /** 押し出しで、面を選ばずに押して選んだ閉じた領域(M-01)。確定の時に面を作る材料で、保存はしない。 */
+  readonly extrudeRegion?: ExtrudeRegionChoice;
   readonly mode: CoordinateMode;
   readonly fields: readonly NumericField[];
   /**
@@ -3191,6 +3194,8 @@ export interface SolidCommitFlags {
 export interface SolidInputCommit {
   readonly kind: 'solid';
   readonly tool: SolidToolId;
+  /** 押し出しで、面を選ばずに選んだ閉じた領域(M-01)。確定の時に今の形の面を足してから押し出す。 */
+  readonly extrudeRegion?: ExtrudeRegionChoice;
   readonly step: SolidNumericInputStep;
   readonly values: SolidCommitValues;
   readonly flags: SolidCommitFlags;
@@ -3912,6 +3917,7 @@ function buildSolidCommit(
       choiceValueFrom(combinedChoices, 'ruledSphereSegments'),
     ),
     shapeChoices: shapeChoicesFrom(combinedChoices),
+    ...(filled.extrudeRegion === undefined ? {} : { extrudeRegion: filled.extrudeRegion }),
   };
 }
 
@@ -4483,6 +4489,7 @@ export function numericInputSemanticKey(state: NumericInputState): string {
     toggles: state.toggles.map((toggle) => [toggle.key, toggle.value]),
     choices: state.choices.map((choice) => [choice.key, choice.value]),
     axisLine: state.axisLine ?? null,
+    extrudeRegion: state.extrudeRegion ?? null,
     carried: state.carriedStage1 === undefined ? null : {
       fields: state.carriedStage1.fields.map((field) => [field.key, field.source, field.typed === true, field.mathValue ?? null]),
       choices: state.carriedStage1.choices.map((choice) => [choice.key, choice.value]),

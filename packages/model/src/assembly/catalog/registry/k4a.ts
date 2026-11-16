@@ -7,4 +7,9 @@ import type { CatalogFamilyEntry } from '../types.js';
  *   load: async () => (await import('../families/<族>.js')).<族の定数> }`。
  * 表は `load` の中の動的な読み込みで必要な時だけ読む(起動の時に読まない)。
  */
-export const K4A_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [];
+export const K4A_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
+  { id: 'cam-follower-stud-metric', group: 'mechanical', kindKey: 'catalog.mechanical.kind.camFollower',
+    load: async () => (await import('../families/camFollower.js')).CAM_FOLLOWER_FAMILY },
+  { id: 'wrapped-bush', group: 'mechanical', kindKey: 'catalog.mechanical.kind.wrappedBush',
+    load: async () => (await import('../families/wrappedBush.js')).WRAPPED_BUSH_FAMILY },
+];

@@ -1,5 +1,5 @@
 import {
-  COMMAND_DEFINITIONS, shortcutMatches, type CommandDefinition, type CommandId,
+  COMMAND_DEFINITIONS, shortcutMatches, type CommandDefinition, type CommandDocumentKind, type CommandId,
   type CommandKeyContext, type CommandKeyInput, type ShortcutBinding,
 } from './commandDefinitions.js';
 import {
@@ -239,9 +239,28 @@ function readEntries(raw: unknown): ReadEntries {
 export function validateShortcutAssignments(raw: unknown, applied: ShortcutAssignments = EMPTY_SHORTCUT_ASSIGNMENTS): AssignmentValidation {
   const read = readEntries(raw);
   if (!read.ok) return read;
+  const assignments = entryMap(read.entries);
+  const first = conflictsOf(read.entries, assignments, applied).next();
+  if (first.done !== true) {
+    return { ok: false, problem: { kind: 'conflict', commandId: first.value.commandId, otherCommandId: first.value.otherCommandId } };
+  }
+  return { ok: true, assignments: Object.freeze(assignments) };
+}
+
+/** 下書きの衝突の 1 件。chord は commandId の側の組。 */
+export interface ShortcutConflict { readonly commandId: CommandId; readonly otherCommandId: CommandId; readonly chord: CommandChord }
+
+/** 割当(組)と命令の対応。 */
+function entryMap(entries: ReadonlyMap<RegisteredDefinition, readonly CommandChord[] | null>): Partial<Record<CommandId, readonly CommandChord[] | null>> {
   const assignments: Partial<Record<CommandId, readonly CommandChord[] | null>> = {};
-  for (const [definition, entry] of read.entries) assignments[definition.id] = entry;
-  for (const [definition, entry] of read.entries) {
+  for (const [definition, entry] of entries) assignments[definition.id] = entry;
+  return assignments;
+}
+
+/** 衝突を 1 件ずつ出す(validateShortcutAssignments は最初の 1 件、shortcutConflicts は全部)。判定はここ 1 か所。 */
+function* conflictsOf(entries: ReadonlyMap<RegisteredDefinition, readonly CommandChord[] | null>,
+  assignments: Partial<Record<CommandId, readonly CommandChord[] | null>>, applied: ShortcutAssignments): Generator<ShortcutConflict> {
+  for (const [definition, entry] of entries) {
     for (const chord of entry ?? []) {
       const kept = chordsOf(applied[definition.id]).some(previous => sameChord(previous, chord));
       for (const other of COMMAND_DEFINITIONS) {
@@ -250,11 +269,58 @@ export function validateShortcutAssignments(raw: unknown, applied: ShortcutAssig
         const collides = otherEntry === undefined
           ? (!kept || FIXED_COMMANDS.has(other.id)) && other.shortcuts.some(binding => chordTakesDefault(chord, definition, binding))
           : chordsOf(otherEntry).some(otherChord => chordsCollide(chord, definition, otherChord, other));
-        if (collides) return { ok: false, problem: { kind: 'conflict', commandId: definition.id, otherCommandId: other.id } };
+        if (collides) yield { commandId: definition.id, otherCommandId: other.id, chord };
       }
     }
   }
-  return { ok: true, assignments: Object.freeze(assignments) };
+}
+
+/**
+ * 下書きの全ての衝突(操作の割り当ての窓の表の印と件数)。validateShortcutAssignments と同じ判定で、最初の 1 件で止めずに集める。
+ * 2 つの命令の利用者の割当どうしの衝突は、両方の向きで出る。形が読めない下書きは空(適用の検査が断る)。
+ */
+export function shortcutConflicts(raw: unknown, applied: ShortcutAssignments = EMPTY_SHORTCUT_ASSIGNMENTS): readonly ShortcutConflict[] {
+  const read = readEntries(raw);
+  return read.ok ? [...conflictsOf(read.entries, entryMap(read.entries), applied)] : [];
+}
+
+/** NumLock を切ったテンキーが届ける key(ブラウザーと Electron。テンキーの 5 は Clear、小数点は Delete)。 */
+const NUMPAD_NAVIGATION_KEYS: Readonly<Record<string, string>> = {
+  Numpad0: 'insert', Numpad1: 'end', Numpad2: 'arrowdown', Numpad3: 'pagedown', Numpad4: 'arrowleft', Numpad5: 'clear',
+  Numpad6: 'arrowright', Numpad7: 'home', Numpad8: 'arrowup', Numpad9: 'pageup', NumpadDecimal: 'delete',
+};
+const DOCUMENT_KINDS: readonly CommandDocumentKind[] = ['part', 'assembly', 'drawing'];
+
+/**
+ * その組を押した時に届きうる入力。位置の組のテンキーは、NumLock が入っている時(数字)と切れている時(移動のキーの名前)の
+ * 両方(受け口の shortcutMatches は、位置の束は code で、文字の束は届いた key で合わせる)。
+ */
+function pressedInputs(chord: CommandChord, ctrl: boolean, meta: boolean): readonly CommandKeyInput[] {
+  const base = chordInput(chord, ctrl, meta);
+  if (!isCodeChord(chord)) return [base];
+  const keys = [/^Numpad([0-9])$/u.exec(chord.code)?.[1], NUMPAD_NAVIGATION_KEYS[chord.code]];
+  return [base, ...keys.filter((key): key is string => key !== undefined).map(key => ({ ...base, key }))];
+}
+
+/** 1 つの入力で動く命令。実行(resolveAssignedShortcut)と同じく、利用者の割当に当たればそれだけ、無ければ既定の束。 */
+function commandsForInput(input: CommandKeyInput, context: CommandKeyContext, assignments: ShortcutAssignments): readonly CommandId[] {
+  const assigned = COMMAND_DEFINITIONS.filter(definition => chordsOf(assignments[definition.id]).some(chord => chord.alt === input.alt
+    && assignedBindings(definition, chord).some(binding => shortcutMatches(binding, input, context))));
+  if (assigned.length > 0) return assigned.map(definition => definition.id);
+  return COMMAND_DEFINITIONS.filter(definition => assignments[definition.id] === undefined
+    && effectiveBindings(definition, assignments).some(binding => shortcutMatches(binding, input, context))).map(definition => definition.id);
+}
+
+/**
+ * その組を押した時に動く命令(キーで探す)。実行と同じ順(利用者の割当が既定より先に勝つ)で、どれかの文書の種類・段・
+ * NumLock の入切で動く物。探した結果は、そのキーを押した時に実際に動く命令と一致する。
+ */
+export function commandsUsingChord(chord: CommandChord, assignments: ShortcutAssignments): readonly CommandId[] {
+  const contexts = DOCUMENT_KINDS.flatMap(documentKind => (['capture', 'bubble'] as const).map((phase): CommandKeyContext => ({
+    documentKind, phase, helpOpen: false, textEntry: false, composing: false, activatedBySpace: false, insideMenu: false, insideDialog: false })));
+  const inputs = ([[chord.primary, false], [false, chord.primary]] as const).flatMap(([ctrl, meta]) => pressedInputs(chord, ctrl, meta));
+  const found = new Set(contexts.flatMap(context => inputs.flatMap(input => commandsForInput(input, context, assignments))));
+  return COMMAND_DEFINITIONS.filter(definition => found.has(definition.id)).map(definition => definition.id);
 }
 
 /**

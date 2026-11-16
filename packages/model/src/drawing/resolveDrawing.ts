@@ -197,7 +197,7 @@ export async function resolveDrawing(
 ): Promise<ResolvedDrawing> {
   let source: DrawingSourceResolution;
   try { source = await kernel.prepareDrawingSource(document.source); }
-  catch (error) { return { ok: false, message: error instanceof Error ? error.message : '図にできる立体がありません。' }; }
+  catch (error) { return { ok: false, message: error instanceof Error ? error.message : '図にできるソリッドがありません。' }; }
   return resolveDrawingWithSource(document, kernel, source, options);
 }
 
@@ -206,7 +206,7 @@ export async function resolveDrawingWithSource(
   document: DrawingDocument, kernel: DrawingResolveKernel, source: DrawingSourceResolution,
   options: DrawingResolutionOptions = {},
 ): Promise<ResolvedDrawing> {
-  if (source.bodyIds.length === 0) return { ok: false, message: '図にできる立体がありません。' };
+  if (source.bodyIds.length === 0) return { ok: false, message: '図にできるソリッドがありません。' };
   const construction = resolveViewConstructions(document, source);
   if (!construction.ok) return construction;
   const viewFrames = construction.views;

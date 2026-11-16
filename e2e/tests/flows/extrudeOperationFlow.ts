@@ -11,7 +11,7 @@ import { readViewportRenderStats } from '../viewportRenderStats.js';
 import { captureManualDetail } from '../captureManualDetail.js';
 
 export type ExtrudeOperation = 'new' | 'join' | 'cut';
-const LABELS = { new: '新しい立体', join: '結合', cut: '切り抜き' } as const;
+const LABELS = { new: '新しいソリッド', join: '結合', cut: '切り抜き' } as const;
 const READY = '計算した形を表示しています。この形で確定するには「決定」を押します。';
 
 function solidRows(page: Page) {
@@ -31,7 +31,7 @@ async function geometry(page: Page, name: string, volume: number): Promise<void>
   await treeRow(page, name).click();
   const value = (key: string) => propertyPanel(page).locator('dt.pcad-properties__key')
     .filter({ hasText: new RegExp(`^${key}$`, 'u') }).locator('xpath=following-sibling::dd[1]');
-  await expect(value('体積')).toHaveText(`${String(volume)} mm³`, { timeout: KERNEL_TIMEOUT_MS });
+  await expect(value('体積')).toHaveAttribute('title', `${String(volume)} mm³`, { timeout: KERNEL_TIMEOUT_MS });
   await expect.poll(async () => Number(await value('三角形の数').innerText()),
     { timeout: KERNEL_TIMEOUT_MS, message: 'Actual OCCT result has rendered triangles' }).toBeGreaterThan(0);
   await expect.poll(async () => (await framedBodies(page)).length,
@@ -68,15 +68,15 @@ async function openExtrusion(page: Page, operation: ExtrudeOperation): Promise<v
   await expect(popoverTitle(page)).toHaveText('押し出す');
   await fillFields(page, ['10']);
   const choices = popover(page).getByRole('group', { name: '押し出しの結果', exact: true });
-  await expect(choices.getByRole('button')).toHaveText(['新しい立体', '結合', '切り抜き']);
+  await expect(choices.getByRole('button')).toHaveText(['新しいソリッド', '結合', '切り抜き']);
   await choices.getByRole('button', { name: LABELS[operation], exact: true }).click();
   await expect(choices.getByRole('button', { name: LABELS[operation], exact: true })).toHaveAttribute('aria-pressed', 'true');
   if (operation !== 'new') {
     // No implicit first-body target: the actual commit is refused until the user chooses.
     await popoverInputs(page).first().press('Enter');
     await expect(popover(page)).toBeVisible();
-    await expect(page.locator('.pcad-statusbar__text')).toContainText('対象となる立体を選んでください');
-    const target = popover(page).locator('.pcad-popover__choice').filter({ hasText: '対象の立体' });
+    await expect(page.locator('.pcad-statusbar__text')).toContainText('対象となるソリッドを選んでください');
+    const target = popover(page).locator('.pcad-popover__choice').filter({ hasText: '対象のソリッド' });
     await target.getByRole('button', { name: '対象を選んでください', exact: true }).click();
     await target.getByRole('menuitem', { name: '押し出し1', exact: true }).click();
     await expect(target.getByRole('button', { name: '押し出し1', exact: true })).toBeVisible();
@@ -231,7 +231,7 @@ export async function extrudeStaleTargetFlow(page: Page, info: TestInfo, app?: E
   const rows = await solidRows(page).allTextContents();
   await popoverInputs(page).first().press('Enter');
   await expect(popover(page)).toBeVisible();
-  await expect(page.locator('.pcad-statusbar__text')).toContainText('対象の立体が見つからないか');
+  await expect(page.locator('.pcad-statusbar__text')).toContainText('対象のソリッドが見つからないか');
   await expect(solidRows(page)).toHaveText(rows);
   await expect(treeRow(page, '押し出し2')).toHaveCount(0);
   await expect(treeRow(page, '差1')).toHaveCount(0);

@@ -16,11 +16,12 @@ describe('camera settings accessible form', () => {
     const before = useAppStore.getState();
     const markup = renderForm();
     expect(markup.match(/<fieldset>/g)).toHaveLength(3);
-    expect(markup.match(/<select\b/g)).toHaveLength(6);
+    // Two binding rows per action, and the rotation and zoom centers (B-08d).
+    expect(markup.match(/<select\b/g)).toHaveLength(6 + 2);
     // 6 rows x Alt/Shift/Ctrl/Meta, plus the rotation left-right/up-down and the wheel/drag zoom inversions.
     expect(markup.match(/type="checkbox"/g)).toHaveLength(28);
-    // Rotation, pan, wheel zoom and drag zoom speeds.
-    expect(markup.match(/type="number"/g)).toHaveLength(4);
+    // Rotation, pan, wheel zoom and drag zoom speeds, and the key rotation step (B-08).
+    expect(markup.match(/type="number"/g)).toHaveLength(5);
     expect(markup).toContain(t('settings.camera.title'));
     expect(markup).toContain(t('settings.camera.hint'));
     expect(markup).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
@@ -47,7 +48,7 @@ describe('camera settings accessible form', () => {
     state.setDisplaySettings({ ...state.displaySettings, viewControls: { ...DEFAULT_VIEW_CONTROLS, bindings: {
       ...DEFAULT_VIEW_CONTROLS.bindings, pan: [...DEFAULT_VIEW_CONTROLS.bindings.pan, wheel] } } });
     const markup = renderForm();
-    expect(markup.match(/<select\b/g)).toHaveLength(7);
+    expect(markup.match(/<select\b/g)).toHaveLength(7 + 2);
     expect(markup.match(new RegExp(`<option value="wheel"[^>]*>${t('settings.camera.wheel')}</option>`, 'g'))).toHaveLength(7);
     // Zoom rows 1 and 2 and the stored third pan row.
     expect(markup.match(/<option value="wheel" selected="">/g)).toHaveLength(3);

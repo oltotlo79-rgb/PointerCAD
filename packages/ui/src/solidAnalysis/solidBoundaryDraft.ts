@@ -2,6 +2,7 @@ import type { Parameter } from '@pointercad/model';
 import type { SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { beamExpressionField, plasticBarExpressionField } from '../beam/beamFields.js';
 import { t } from '../i18n/t.js';
+import { femRuntimeFailureText } from '../femFailureMessage.js';
 
 export const SOLID_BOUNDARY_AXES = ['x', 'y', 'z'] as const;
 export type SolidBoundaryAxis = typeof SOLID_BOUNDARY_AXES[number];
@@ -88,4 +89,10 @@ export function solidBoundaryFailure(message: string): string {
   if (message.includes('unrestrained component rigid-body motion')) return t('solidAnalysis.supportRigid');
   if (message.includes('Invalid translation restraints')) return t('solidAnalysis.supportAllFree');
   return message;
+}
+/** 解析の断り(A-24): 支持の 3 種は今の文、計算部の code は共通の文(資産)か code を添えた文にし、内部の英語の文を出さない。
+ * 計算部の code でない断り(形状や入力の断り)は今のまま message を出す。 */
+export function solidRunFailure(code: string, message: string): string {
+  const boundary = solidBoundaryFailure(message);
+  return boundary !== message ? boundary : femRuntimeFailureText(code) ?? message;
 }

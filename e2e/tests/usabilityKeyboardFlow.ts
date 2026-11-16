@@ -109,15 +109,17 @@ async function unavailableEntranceProof(page: Page, info: TestInfo, kind: Docume
       disabled: element.getAttribute('aria-disabled') ?? element.hasAttribute('disabled').toString() })));
   const beforeHistory = await historyState();
   if (kind === 'drawing') {
-    for (const [id, noteId] of [['history.undo', 'drawing-undo-unavailable'], ['history.redo', 'drawing-redo-unavailable']] as const) {
+    // 図面の効かない元に戻す・やり直すは、常時の注記ではなく、焦点の入る aria-disabled のボタンが理由の title を持つ(UI の点検の指摘 10)。
+    await expect(page.locator('.pcad-toolbar [role="note"]')).toHaveCount(0);
+    for (const id of ['history.undo', 'history.redo'] as const) {
       const button = page.locator('.pcad-toolbar [data-command-id="' + id + '"]');
-      if (await button.isDisabled()) {
-        const reason = page.locator('#' + noteId); await expect(reason).toBeVisible();
-        await expect(button).toHaveAttribute('aria-describedby', noteId);
-        await reason.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
-        await expect(reason).toBeFocused();
-        await expect(reason).toHaveText((await button.getAttribute('title')) ?? 'missing explicit history reason');
-        await reason.press('Enter');
+      if (await button.getAttribute('aria-disabled') === 'true') {
+        expect(await button.evaluate(element => element.hasAttribute('disabled'))).toBe(false);
+        await button.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
+        await expect(button).toBeFocused();
+        const hint = page.locator('.pcad-keyboard-control-hint'); await expect(hint).toBeVisible();
+        await expect(hint).toContainText((await button.getAttribute('title')) ?? 'missing explicit history reason');
+        await button.press('Enter');
         expect(await savedDocument(page, kind)).toEqual(original);
         expect(await historyState()).toEqual(beforeHistory);
       }
@@ -444,29 +446,26 @@ export async function drawingBusyReasonProof(page: Page, info: TestInfo): Promis
     .evaluateAll(elements => elements.map(element => ({ id: element.getAttribute('data-command-id'),
       disabled: element.hasAttribute('disabled'), ariaDisabled: element.getAttribute('aria-disabled') })));
   const bomHistoryBefore = await bomHistoryState();
-  const bom = page.locator('.pcad-toolbar button:disabled[data-help-topic="drawing-bom"]');
+  // 効かない部品表は焦点の入る aria-disabled のボタンで、理由は title と焦点の案内の箱に出る(常時の注記は無い。UI の点検の指摘 10)。
+  const bom = page.locator('.pcad-toolbar button[aria-disabled="true"][data-help-topic="drawing-bom"]');
   await expect(bom).toHaveCount(1);
+  expect(await bom.evaluate(element => element.hasAttribute('disabled'))).toBe(false);
   expect(await bom.getAttribute('title')).toContain(drawingMessage('drawing.toolbar.assemblyOnly'));
-  const bomReason = page.locator('#drawing-bom-unavailable');
-  await expect(bomReason).toBeVisible();
-  await expect(bomReason).toHaveAttribute('role', 'note');
-  await expect(bomReason).toHaveAttribute('tabindex', '0');
-  await expect(bomReason).toHaveText(drawingMessage('drawing.toolbar.assemblyOnly'));
-  await expect(bom).toHaveAttribute('aria-describedby', 'drawing-bom-unavailable');
-  const precedingNotes = page.locator('.pcad-toolbar aside [role="note"]:not(#drawing-bom-unavailable)');
-  // DrawingToolbar orders Undo/Redo/busy notes before BOM, after the Help button.
-  const precedingCount = await precedingNotes.count();
-  expect(precedingCount).toBeLessThanOrEqual(2);
-  const tabOrigin = precedingCount > 0 ? precedingNotes.last() : page.locator('.pcad-toolbar button').last();
+  await expect(page.locator('.pcad-toolbar [role="note"]')).toHaveCount(0);
+  const tabOrigin = page.locator('.pcad-toolbar [data-help-topic="drawing-table"]');
   await expect(tabOrigin).toBeVisible();
   await tabOrigin.focus();
   await expect(tabOrigin).toBeFocused();
-  await page.keyboard.press('Tab');
-  await expect(bomReason).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(tabOrigin).toBeFocused();
+  await expect(bom).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(bomReason).toBeFocused();
+  await expect(tabOrigin).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(bom).toBeFocused();
+  const bomReason = page.locator('.pcad-keyboard-control-hint');
+  await expect(bomReason).toBeVisible();
+  await expect(bomReason).toContainText(drawingMessage('drawing.toolbar.assemblyOnly'));
+  const bomReasonText = await bomReason.innerText();
   // A browser pointer gesture on the actual disabled target must not execute BOM.
   // This is not an OS hover-bubble or OS IME observation.
   const bomBounds = await bom.boundingBox();
@@ -479,8 +478,8 @@ export async function drawingBusyReasonProof(page: Page, info: TestInfo): Promis
   await writeFile(bomEvidencePath, JSON.stringify({
     environment: info.project.name, sourceKind: 'part', disabled: true, title: await bom.getAttribute('title'),
     titleOnly: false, nativeHoverCertified: false, keyboardReachable: true, documentSha256: documentSha(original),
-    visibleReason: await bomReason.innerText(), ariaDescribedBy: await bom.getAttribute('aria-describedby'),
-    keyboardTraversal: ['Tab', 'Shift+Tab', 'Tab'],
+    visibleReason: bomReasonText, ariaDescribedBy: await bom.getAttribute('aria-describedby'),
+    keyboardTraversal: ['Shift+Tab', 'Tab', 'Shift+Tab'],
     browserPointerRefused: true, sourceAndAttachmentsUnchanged: true, historyAvailabilityUnchanged: true,
   }), { encoding: 'utf8', flag: 'wx' });
   await info.attach('r20-unsupported-bom', { contentType: 'application/json', path: bomEvidencePath });
@@ -525,10 +524,14 @@ export async function drawingBusyReasonProof(page: Page, info: TestInfo): Promis
     expect(await page.evaluate(() => window.pcadR20RefreshOpens)).toBe(1);
     heldDocument = await savedDocument(page, 'drawing');
     expect((await capturedDrawingBundle(page)).document.source.contentHash).toBe(changedHash);
-    const busyReason = page.locator('#drawing-busy-unavailable'); await expect(busyReason).toBeVisible();
-    await busyReason.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
-    await expect(busyReason).toBeFocused(); await expect(busyReason).toHaveText(drawingMessage('drawing.status.computing'));
-    await expect(page.locator('.pcad-toolbar [data-help-topic="drawing-table"]')).toBeDisabled();
+    // 計算中の表のボタンは焦点の入る aria-disabled で、焦点の案内の箱に理由が出る(常時の注記は無い。UI の点検の指摘 10)。
+    const busyTable = page.locator('.pcad-toolbar [data-help-topic="drawing-table"]');
+    await expect(busyTable).toHaveAttribute('aria-disabled', 'true');
+    await busyTable.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
+    await expect(busyTable).toBeFocused();
+    const busyReason = page.locator('.pcad-keyboard-control-hint'); await expect(busyReason).toBeVisible();
+    await expect(busyReason).toContainText(drawingMessage('drawing.status.computing'));
+    await expect(page.locator('.pcad-toolbar [role="note"]')).toHaveCount(0);
     // No waitForDrawingReady helper while held: enumerate live ToolMenu controls directly.
     await unavailableEntranceProof(page, info, 'drawing', heldDocument, drawingMessage('drawing.status.computing'));
     expect(await savedDocument(page, 'drawing')).toEqual(heldDocument);

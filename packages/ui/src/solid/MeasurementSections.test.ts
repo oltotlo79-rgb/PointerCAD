@@ -36,11 +36,13 @@ describe('P102: 測定の見出しと長い値を共通のプロパティ列へ�
       t('propertyPanel.massVolume'), t('propertyPanel.massArea'), t('propertyPanel.massMass'),
       t('propertyPanel.massCentre'), t('propertyPanel.massInertia'),
     ]);
-    expect(list).toContain('<dd class="pcad-properties__value">62.8 g</dd>');
-    const inertia = formatMoments(massPropertiesView(massProperties, 7.85).moments);
-    expect(inertia.length).toBeGreaterThan(40);
-    expect(list).toContain(`<dd class="pcad-properties__value">${inertia}</dd>`);
-    expect([...list.matchAll(/<dd class="pcad-properties__value">/g)]).toHaveLength(5);
+    // 値の文字は有効 6 桁、全桁は title(UI の点検の指摘 26)。
+    expect(list).toContain('<dd class="pcad-properties__value" title="62.8 g">62.8 g</dd>');
+    const moments = massPropertiesView(massProperties, 7.85).moments;
+    const inertia = formatMoments(moments), inertiaFull = formatMoments(moments, 'full');
+    expect(inertiaFull.length).toBeGreaterThan(40);
+    expect(list).toContain(`<dd class="pcad-properties__value" title="${inertiaFull}">${inertia}</dd>`);
+    expect([...list.matchAll(/<dd class="pcad-properties__value"[ >]/g)]).toHaveLength(5);
     expect(useAppStore.getState()).toBe(before);
   });
 
@@ -55,9 +57,8 @@ describe('P102: 測定の見出しと長い値を共通のプロパティ列へ�
     expect(markup).toContain(t('propertyPanel.measureNotYet'));
     expect(markup).toContain(t('propertyPanel.measurePrecisionSource'));
     expect(markup).toContain(t('propertyPanel.measurePrecisionLimits'));
-    expect(markup).toContain('0.01 mm');
-    expect(markup).toContain('1e-7 mm');
-    expect(markup).toContain('1e-6 mm');
+    // 内部の許容差の値は画面に出さず、ヘルプ(measure.md)に任せる(UI の点検の指摘 34)。
+    for (const internal of ['0.01 mm', '1e-7 mm', '1e-6 mm']) expect(markup).not.toContain(internal);
   });
 });
 
@@ -116,7 +117,7 @@ describe('R21 result-bound measurement provenance', () => {
     expect(markup).toContain(t('measureProvenance.brep'));
     expect(markup).not.toContain(t('measureProvenance.unknown'));
     expect(markup).toContain('1000 mm');
-    expect([...markup.matchAll(/<dd class="pcad-properties__value">/g)]).toHaveLength(5);
+    expect([...markup.matchAll(/<dd class="pcad-properties__value"[ >]/g)]).toHaveLength(5);
     expect(useAppStore.getState().massProperties?.volume).toBe(1000);
   });
 });

@@ -11,6 +11,7 @@
  */
 import { K4A_CATALOG_FAMILIES } from './registry/k4a.js';
 import { K4B_CATALOG_FAMILIES } from './registry/k4b.js';
+import { K5_CATALOG_FAMILIES } from './registry/k5.js';
 import { K6_CATALOG_FAMILIES } from './registry/k6.js';
 import type { CatalogFamily, CatalogFamilyEntry } from './types.js';
 
@@ -87,5 +88,6 @@ export function createCatalogRegistry(entries: readonly CatalogFamilyEntry[]): C
 export const PRODUCT_CATALOG_REGISTRY: CatalogRegistry = createCatalogRegistry([
   ...K4A_CATALOG_FAMILIES,
   ...K4B_CATALOG_FAMILIES,
+  ...K5_CATALOG_FAMILIES,
   ...K6_CATALOG_FAMILIES,
 ]);

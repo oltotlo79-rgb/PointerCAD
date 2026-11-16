@@ -112,7 +112,7 @@ async function expectVolume(page: Page, expected: number): Promise<void> {
   await expect.poll(async () => {
     const cell = propertyValue(page, '体積');
     return await cell.count() === 0 ? Number.POSITIVE_INFINITY
-      : Math.abs(Number.parseFloat(await cell.innerText()) - expected);
+      : Math.abs(Number.parseFloat(((await cell.getAttribute('title')) ?? (await cell.innerText()))) - expected);
   }, { timeout: 60_000, message: `Volume ${String(expected)} mm³, display tolerance 0.01 mm³` }).toBeLessThanOrEqual(0.01);
 }
 
@@ -201,7 +201,7 @@ export async function ex18SurfaceSewSolidFlow(
   await waitForRecompute(page, token);
   await treeRow(page, '穴1').click();
   await expectVolume(page, DRILLED_VOLUME);
-  await expect(propertyValue(page, '加工するもとの立体')).toHaveText('縫合1');
+  await expect(propertyValue(page, '加工するもとのソリッド')).toHaveText('縫合1');
 
   // (5) The saved references are the original three faces; reopening keeps the source, volume and a clean tree.
   const savedPath = info.outputPath('ex18-surface-sew-hole.pcad');
@@ -215,7 +215,7 @@ export async function ex18SurfaceSewSolidFlow(
   await openSaveFlowFile(page, savedPath, app);
   await treeRow(page, '穴1').click();
   await expectVolume(page, DRILLED_VOLUME);
-  await expect(propertyValue(page, '加工するもとの立体')).toHaveText('縫合1');
+  await expect(propertyValue(page, '加工するもとのソリッド')).toHaveText('縫合1');
   await expectSurfacesConsumed(page, true);
   await expect(page.locator('.pcad-panel--left .pcad-tree__alert')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('ex18-surface-sew-solid.png'), fullPage: true });

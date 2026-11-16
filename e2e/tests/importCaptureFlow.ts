@@ -119,7 +119,7 @@ async function placeBox(page: Page): Promise<void> {
   await openSolidSection(page);
   await solidRows(page).first().click();
   await waitForRecompute(page);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, { timeout: KERNEL_TIMEOUT_MS });
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`, { timeout: KERNEL_TIMEOUT_MS });
 }
 function exchangePanel(page: Page): Locator {
   return page.locator('.pcad-exchange');

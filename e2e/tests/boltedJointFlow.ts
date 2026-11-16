@@ -9,6 +9,7 @@ import {
   PICK_TEXT, placeQueuedPart, plateTopPoint, READY_STATUS, resolvedPoses, SECOND_PLATE_OFFSET, selectComponent,
   statusBar, statusText, stepStatus, type ComponentPose,
 } from './boltedJointTestSupport.js';
+import { expectHoveredRow } from './assemblyCoupledDragFlow.js';
 import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 
@@ -109,10 +110,16 @@ function expectFastenedPoses(poses: readonly ComponentPose[]): void {
   expectVectorClose(nut?.position ?? [], [20, 15, 20]);
 }
 
-async function dragWorldPoint(page: Page, world: readonly [number, number, number], dx: number): Promise<void> {
+/**
+ * 板B(部品の 2 行目)の上の点を押して横へ引く。押す前に、その点で板B の行が hover になる事を確かめる
+ * (ex18RoutesFlow の dragContextSource と同じ。表示の所有の取り直しを押す前に済ませる。A-26)。
+ */
+async function dragWorldPoint(page: Page, info: TestInfo, app: ElectronApplication | undefined,
+  world: readonly [number, number, number], dx: number): Promise<void> {
   await waitForSettledRecompute(page);
   const [x, y] = await homeViewPagePoint(page, world);
   await page.mouse.move(x, y);
+  await expectHoveredRow(page, info, componentRows(page).nth(1).locator('xpath=..'), [x, y], app);
   await page.mouse.down();
   await page.mouse.move(x + dx, y, { steps: 8 });
   await page.mouse.up();
@@ -201,7 +208,7 @@ export function registerBoltedJointTests(
     await expect(componentRows(page)).toHaveCount(2);
     await chooseToolMenuItem(page, '組む', 'ボルトで締結');
     await expect(statusText(page)).toHaveText(stepStatus(1, PICK_TEXT.holeA));
-    await boltedJointDialog(page).getByRole('button', { name: 'やめる', exact: true }).click();
+    await boltedJointDialog(page).getByRole('button', { name: '取消', exact: true }).click();
     await expect(boltedJointDialog(page)).toHaveCount(0);
     await expect(fastenedBadges(page)).toHaveCount(0);
 
@@ -308,7 +315,7 @@ export function registerBoltedJointTests(
 
     // 2) 板A が固定なので組全体が動かない。板B(上面 z=20)を引っぱっても配置は変わらない。
     const plateBTop = plateTopPoint([0, 0, 0], 20);
-    await dragWorldPoint(page, plateBTop, 80);
+    await dragWorldPoint(page, info, appForPage(page), plateBTop, 80);
     await waitForSettledRecompute(page);
     expect(await resolvedPoses(page)).toEqual(fastened);
 
@@ -318,7 +325,7 @@ export function registerBoltedJointTests(
     await chooseToolMenuItem(page, '組む', '固定を解除する');
     await waitForRecompute(page, history);
     await expect(page.locator('.pcad-tree__badge').filter({ hasText: /^固定$/u })).toHaveCount(0);
-    await dragWorldPoint(page, plateBTop, 80);
+    await dragWorldPoint(page, info, appForPage(page), plateBTop, 80);
     await expect.poll(async () => (await resolvedPoses(page))[1]?.position)
       .not.toEqual(fastened[1]?.position);
     await waitForSettledRecompute(page);
@@ -348,7 +355,7 @@ export function registerBoltedJointTests(
     const released = await resolvedPoses(page);
     const plateBTopNow: readonly [number, number, number] = [
       plateBTop[0] + delta[0], plateBTop[1] + delta[1], plateBTop[2] + delta[2]];
-    await dragWorldPoint(page, plateBTopNow, 60);
+    await dragWorldPoint(page, info, appForPage(page), plateBTopNow, 60);
     await expect.poll(async () => (await resolvedPoses(page))[1]?.position)
       .not.toEqual(released[1]?.position);
     await waitForSettledRecompute(page);

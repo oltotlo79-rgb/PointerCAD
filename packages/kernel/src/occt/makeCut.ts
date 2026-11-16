@@ -68,13 +68,13 @@ const NORMAL_MESSAGE = '切断面の向きを決められません。';
 const ORIGIN_MESSAGE = '切断面の位置を決められません。';
 
 /** 平面が対象と交わらず、しかも対象が丸ごと捨てる側にあるとき。 */
-const NOTHING_ON_KEEP_SIDE_MESSAGE = '切った先に立体が残りません。切断面の位置を見直してください。';
+const NOTHING_ON_KEEP_SIDE_MESSAGE = '切った先にソリッドが残りません。切断面の位置を見直してください。';
 
 /** 切る演算そのものが成立しなかったとき。 */
-const CUT_FAILED_MESSAGE = '立体を切れませんでした。切断面の位置を見直してください。';
+const CUT_FAILED_MESSAGE = 'ソリッドを切れませんでした。切断面の位置を見直してください。';
 
 /** 切れたが、残す側に材料が無かったとき(L 字の腕の外を切るなど)。 */
-const NOTHING_LEFT_MESSAGE = '切ったら立体が残りませんでした。残す側を切り替えてください。';
+const NOTHING_LEFT_MESSAGE = '切ったらソリッドが残りませんでした。残す側を切り替えてください。';
 
 /** 切断 1 段の依頼。 */
 export interface CutInput {
@@ -271,7 +271,7 @@ function intersectWithHalfSpace(
     return booleanOp(oc, 'intersect', target, halfSpace);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(reason.includes('立体が残りませんでした') ? NOTHING_LEFT_MESSAGE : CUT_FAILED_MESSAGE, {
+    throw new Error(reason.includes('ソリッドが残りませんでした') ? NOTHING_LEFT_MESSAGE : CUT_FAILED_MESSAGE, {
       cause: error,
     });
   }

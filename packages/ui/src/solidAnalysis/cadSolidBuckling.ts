@@ -2,6 +2,7 @@ import { cadSolidSourceKey, meshCadBoundary, meshCadCurvedBoundary, prepareCadSo
   type CadTetraContext, type FemClient, type FemOptions, type SolidBucklingInput, type SolidBucklingResult } from '@pointercad/fem';
 import type { AnalysisBoundarySource } from '@pointercad/model';
 import { t } from '../i18n/t.js';
+import { femAssetFailureKey } from '../femFailureMessage.js';
 
 /**
  * UI adapter (no FEM runtime of its own) for linear prestress buckling of one CAD solid. The reference state is EXACTLY the
@@ -12,7 +13,7 @@ import { t } from '../i18n/t.js';
  */
 export type CadSolidBucklingSettings = (CadSolidSettings | CadSolidPressureSettings) & { readonly modeCount: number };
 export type CadSolidBucklingFailureCode = 'cad-solid-buckling' | 'buckling-no-compression' | 'buckling-mechanism'
-  | 'buckling-unsupported' | 'buckling-stale';
+  | 'buckling-unsupported' | 'buckling-stale' | 'buckling-asset';
 export type CadSolidBucklingOutcome =
   | { readonly kind: 'result'; readonly input: SolidBucklingInput; readonly result: SolidBucklingResult;
       readonly loadedAreaMm2: number; readonly totalForceN: readonly [number, number, number] }
@@ -54,6 +55,8 @@ export function cadSolidBucklingInput(prepared: CadSolidPrepared, modeCount: num
 
 /** Native refusal text (solidBuckling.py prefixes) to a user-facing category; the message itself is kept verbatim. */
 export function cadSolidBucklingFailureCode(message: string): CadSolidBucklingFailureCode {
+  // A-24: 計算の準備のファイルの断り(Worker の message は `asset-missing: …`)。SolidBucklingSection が共通の文にする。
+  if (femAssetFailureKey(message) !== null) return 'buckling-asset';
   if (message === t('solidAnalysis.bucklingGravityUnsupported') || message === t('solidAnalysis.bucklingDisplacementUnsupported'))
     return 'buckling-unsupported';
   if (message.includes('solid-buckling-no-positive-mode')) return 'buckling-no-compression';

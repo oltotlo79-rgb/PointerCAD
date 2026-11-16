@@ -26,32 +26,32 @@ import { semanticOperationOrigins } from './semanticOperationOrigins.js';
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
 
 /** 演算そのものが成立しなかったとき(FR-504、NFR-RE-1)。 */
-const COMBINE_FAILED_MESSAGE = '2 つの立体を組み合わせられませんでした。位置や形を見直してください。';
+const COMBINE_FAILED_MESSAGE = '2 つのソリッドを組み合わせられませんでした。位置や形を見直してください。';
 
 /** 演算はできたが立体が残らなかったとき(交わらない 2 体の積など)。 */
-const NOTHING_LEFT_MESSAGE = '組み合わせた結果、立体が残りませんでした。';
+const NOTHING_LEFT_MESSAGE = '組み合わせた結果、ソリッドが残りませんでした。';
 
 /** 立体は残ったが B-rep として壊れているとき。 */
 const INVALID_RESULT_MESSAGE =
-  '組み合わせた立体の形が正しくありませんでした。位置や形を見直してください。';
+  '組み合わせたソリッドの形が正しくありませんでした。位置や形を見直してください。';
 
 /** 差で何も削れなかったとき(`requireRemoval` を立てた差だけが断る)。 */
 const NOTHING_REMOVED_MESSAGE =
-  '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
+  '切る輪郭がソリッドに届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
 
 /**
  * 輪郭の内側を残す積で、輪郭が立体に届かず内側に何も残らなかったとき
  * (`requireRemoval` を立てた積だけが断る)。
  */
 const NOTHING_INSIDE_MESSAGE =
-  '切る輪郭が立体に届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
+  '切る輪郭がソリッドに届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
 
 /**
  * 輪郭の内側を残す積で、立体がまるごと輪郭の中にあり何も削れなかったとき
  * (`requireRemoval` を立てた積だけが断る)。
  */
 const NOTHING_OUTSIDE_MESSAGE =
-  '切る輪郭が立体をまるごと囲んでいて、何も削れませんでした。輪郭の位置や大きさを見直してください。';
+  '切る輪郭がソリッドをまるごと囲んでいて、何も削れませんでした。輪郭の位置や大きさを見直してください。';
 
 /** ブーリアンの任意の条件。省略すると従来どおり(何も削れない差・積も成立させる)。 */
 interface BooleanOptions {
@@ -276,7 +276,7 @@ function buildInsideResult(build: () => BooleanResult): BooleanResult {
 
 /** 全入力を一度に交差計算する。中間の結合体を繰り返し分割・検査しない。 */
 export function unionShapes(oc: OpenCascadeInstance, shapes: readonly TopoDS_Shape[]): BooleanResult {
-  if (shapes.length < 2) throw new Error('結合する立体を2つ以上指定してください。');
+  if (shapes.length < 2) throw new Error('結合するソリッドを2つ以上指定してください。');
   const allocations = createAllocations();
   try {
     const range = allocations.keep(new oc.Message_ProgressRange_1());

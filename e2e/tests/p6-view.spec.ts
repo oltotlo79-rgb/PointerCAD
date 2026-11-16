@@ -134,7 +134,7 @@ async function placeBox(page: Page): Promise<void> {
   await openSolidSection(page);
   await solidRows(page).first().click();
   await waitForRecompute(page);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 }
@@ -221,14 +221,14 @@ test.describe('P6 断面表示とひな形(要件§9 P6、計画書 §0.59)', ()
       **形は切らない**(FR-111)。体積は 1 文字も変わらず、再計算そのものが走っていない
       (`cacheHits` が動いていない = 段を 1 つも作り直していない。§2.14 の表)。
     */
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
     expect(await readCacheHits(page)).toBe(cacheHitsBefore);
 
     // やめると元の見た目に戻る。
     await sectionViewButton(page).click();
     await expect(sectionViewButton(page)).toHaveAttribute('aria-pressed', 'false');
     await expect(propertySection(page, '断面表示')).toContainText('切っていません。');
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
 
     expect(errors).toEqual([]);
   });
@@ -328,7 +328,7 @@ test.describe('P6 断面表示とひな形(要件§9 P6、計画書 §0.59)', ()
     // 単位の案内はどちらの形式でも出る(§0.7)。
     await expect(panel).toContainText('ファイルはミリメートルで書き出します。');
 
-    await panel.getByRole('button', { name: 'やめる', exact: true }).click();
+    await panel.getByRole('button', { name: '取消', exact: true }).click();
     await expect(panel).toHaveCount(0);
 
     expect(errors).toEqual([]);

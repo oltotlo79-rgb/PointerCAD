@@ -26,8 +26,8 @@ import { boundingBoxOf, boundingBoxRange } from './placeBodies.js';
 import { planeBasisOf, projectPointToPlane } from './makeProjection.js';
 import { hasSolid } from './solidMesh.js';
 
-export const NO_DRAWABLE_SOLID_MESSAGE = '図にできる立体がありません。';
-const HLR_FAILED_MESSAGE = 'この形からは図を作れませんでした。';
+export const NO_DRAWABLE_SOLID_MESSAGE = '図にできるソリッドがありません。';
+const HLR_FAILED_MESSAGE = 'この形からは図を作れませんでした。ビューの向きを変えるか、元の部品を取り込み直してください。';
 
 export interface HiddenLineSource {
   readonly bodyId: string;

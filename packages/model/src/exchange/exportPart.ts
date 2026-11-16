@@ -188,7 +188,7 @@ function addNotice(notices: ExportNoticeKey[], key: ExportNoticeKey): void {
  *
  * 立体が 1 つも残らないときの理由は、**最初に弾いた立体の種類**のキーにする
  * (画面は 1 行だけ出す。NFR-UX-5)。1 つも渡されなかった・選ばれなかったときは
- * `nothingToExport`(「書き出せる立体がありません。」)。
+ * `nothingToExport`(「書き出せるソリッドがありません。」)。
  */
 export function selectExportBodies(
   bodies: readonly SolidBody[],

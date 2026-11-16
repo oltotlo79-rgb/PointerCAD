@@ -233,7 +233,7 @@ async function placeBox(page: Page): Promise<void> {
   await openSolidSection(page);
   await solidRows(page).first().click();
   await waitForRecompute(page);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 }
@@ -400,7 +400,7 @@ test.describe('P6 ファイルの往復(要件§9 P6、計画書 §0.59)', () =>
 
     // 読み込んだほう(2 つ目)の体積が、元の箱と 1 文字も違わない。
     await solidRows(page).nth(1).click();
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
     await expect(exactPropertyValue(page, '形式')).toHaveText('STEP');
@@ -408,7 +408,7 @@ test.describe('P6 ファイルの往復(要件§9 P6、計画書 §0.59)', () =>
 
     // 元の箱も変わっていない(読み込みが今の文書を壊していない。NFR-RE-1)。
     await solidRows(page).first().click();
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
 
     expect(errors).toEqual([]);
   });

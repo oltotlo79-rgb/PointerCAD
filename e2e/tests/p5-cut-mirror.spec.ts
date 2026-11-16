@@ -156,7 +156,7 @@ async function expectVolume(
 ): Promise<void> {
   await solidRow(page, rowName).click();
   await waitForRecompute(page, token);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(volume)} ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(volume)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 }
@@ -277,7 +277,7 @@ test.describe('P5 平面による切断とミラー', () => {
     const distanceToken = await beginRecompute(page);
     await propertyField(page, '距離').fill('5');
     await waitForRecompute(page, distanceToken);
-    await expect(propertyValue(page, '体積')).toHaveText(
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', 
       `${String(QUARTER_VOLUME)} ${VOLUME_UNIT}`,
       { timeout: KERNEL_TIMEOUT_MS },
     );
@@ -286,7 +286,7 @@ test.describe('P5 平面による切断とミラー', () => {
     const reverseToken = await beginRecompute(page);
     await propertyToggle(page, '反対側を残す').click();
     await waitForRecompute(page, reverseToken);
-    await expect(propertyValue(page, '体積')).toHaveText(
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', 
       `${String(BOX_VOLUME - QUARTER_VOLUME)} ${VOLUME_UNIT}`,
       { timeout: KERNEL_TIMEOUT_MS },
     );
@@ -330,7 +330,7 @@ test.describe('P5 平面による切断とミラー', () => {
     await expect(solidRow(page, '円柱1')).toBeVisible();
     // 体積が出るまで待って、カーネルが 2 つとも作り終えたことを確かめる。
     await waitForRecompute(page, primitivesToken);
-    await expect(propertyValue(page, '体積')).toHaveText(new RegExp(`${VOLUME_UNIT}$`), {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', new RegExp(`${VOLUME_UNIT}$`), {
       timeout: KERNEL_TIMEOUT_MS,
     });
 

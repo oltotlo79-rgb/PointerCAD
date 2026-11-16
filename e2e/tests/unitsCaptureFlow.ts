@@ -17,7 +17,7 @@ export async function unitsCaptureFlow(page: Page, info: TestInfo): Promise<void
   await waitForStartupHealth(page, info);
 
   await placeBox(page);
-  await expect(propertyValue(page, '体積')).toHaveText('8000 mm³');
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', '8000 mm³');
 
   // 1) 単位ボタンをインチへ切り替える。
   const unitButton = page.locator('.pcad-statusbar__unit');
@@ -30,7 +30,7 @@ export async function unitsCaptureFlow(page: Page, info: TestInfo): Promise<void
   });
 
   // 2) プロパティの体積がインチの単位(in³)で出る。
-  await expect(propertyValue(page, '体積')).toHaveText('0.488 in³');
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', '0.488 in³');
   await captureManualDetail(page, info, {
     name: 'units-inch-volume', dialog: propertyPanel(page),
     fixture: { volumeMm3: 8000, unit: 'inch' }, script: new URL(import.meta.url),
@@ -98,5 +98,5 @@ async function placeBox(page: Page): Promise<void> {
   await openSolidSection(page);
   await solidRows(page).first().click();
   await waitForRecompute(page);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOX_VOLUME)} ${VOLUME_UNIT}`);
 }

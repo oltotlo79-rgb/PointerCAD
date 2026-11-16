@@ -285,6 +285,26 @@ async function createCapacityOracle(page: Page, baseline: Awaited<ReturnType<typ
   }, { databaseName, baseline, nativeTransport });
 }
 
+/**
+ * A-25: 窓に「保存点の処理が中断されました」が出て落ちた時の診断。中断がどこで起きたか(細目 data-save-point-detail:
+ * storage-read-abort・storage-chunk-abort・storage-write-abort〔:IndexedDB の誤りの名前〕、worker-request-timeout、
+ * worker-cancel-timeout)を、落ちた原因はそのまま、出力と注記に残す。読めない時(窓が閉じた等)は何もしない(元の失敗を隠さない)。
+ */
+async function reportSavePointAbortDetail(page: Page, info: TestInfo): Promise<void> {
+  try {
+    const alerts = page.getByRole('dialog', { name: '名前付き保存点', exact: true }).getByRole('alert');
+    const count = await alerts.count();
+    const found: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const alert = alerts.nth(index);
+      found.push(`${(await alert.textContent({ timeout: 2_000 })) ?? ''} / detail=${(await alert.getAttribute('data-save-point-detail', { timeout: 2_000 })) ?? '無し'}`);
+    }
+    const description = found.length === 0 ? '窓の alert は無い' : found.join(' | ');
+    console.log(`[保存点の中断の細目] ${description}`);
+    info.annotations.push({ type: 'save-point-abort-detail', description });
+  } catch { /* 診断の読み取りの失敗で、元の失敗を隠さない */ }
+}
+
 export async function namedSavePointCapacityFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   const network = observeSavePointNetwork(page.context(), info, 'r16-capacity-network');
   let oracle: Awaited<ReturnType<typeof createCapacityOracle>> | undefined;
@@ -496,6 +516,7 @@ export async function namedSavePointCapacityFlow(page: Page, info: TestInfo, app
       createRefusedWithoutShelfMutation: true, cloneAdditionalBytes: 0, fullDocumentAttachmentsAndUndoRetained: true });
   } catch (error) {
     failure = { error };
+    await reportSavePointAbortDetail(page, info);
   }
   const cleanupErrors: unknown[] = [];
   if (oracle !== undefined) {

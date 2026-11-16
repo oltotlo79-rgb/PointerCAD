@@ -59,14 +59,14 @@ const THICKNESS_MESSAGE = '肉厚は 0 より大きい数にしてください�
 const TOO_THICK_MESSAGE = '肉厚が大きすぎます。小さくしてください。';
 
 /** くり抜くもとの立体が空だったとき。 */
-const EMPTY_TARGET_MESSAGE = 'くり抜くもとの立体がありません。';
+const EMPTY_TARGET_MESSAGE = 'くり抜くもとのソリッドがありません。';
 
 /** 指紋から開ける面を選び直せなかったとき(makeDraft.ts と同じ言い回し)。 */
 const MISSING_FACE_MESSAGE =
   '開ける面が見つかりません。形が大きく変わったため、選び直してください。';
 
 /** くり抜いた結果が立体になっていないとき。 */
-const NOT_SOLID_MESSAGE = 'くり抜いた結果が立体になりませんでした。肉厚を小さくしてください。';
+const NOT_SOLID_MESSAGE = 'くり抜いた結果がソリッドになりませんでした。肉厚を小さくしてください。';
 
 /** 述語ガードが偽になったとき(下の isOffsetMode / isJoinType の注釈を参照)。 */
 const KERNEL_NOT_READY_MESSAGE =

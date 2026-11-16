@@ -1926,7 +1926,7 @@ describe('resolvePart 穴', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('もとの立体の面');
+    expect(result.errors[0].message).toContain('もとのソリッドの面');
   });
 
   it('面でなく辺を指していたら invalidValue', () => {
@@ -3714,7 +3714,7 @@ describe('投影・交差の解決順序(FR-325、§0.a-0.11、タスク25)', ()
     expect(resolved.projections).toEqual([]);
     const failure = resolved.errors.find((error) => error.featureId === 'pj1');
     expect(failure?.code).toBe('missingBody');
-    expect(failure?.message).toContain('投影のもとになる立体が見つかりません');
+    expect(failure?.message).toContain('投影のもとになるソリッドが見つかりません');
     // もとの立体そのものは作れている(文書は壊れない)。
     expect(resolved.steps.map((step) => step.featureId)).toEqual(['extrude-1']);
   });
@@ -3755,7 +3755,7 @@ describe('投影・交差の解決順序(FR-325、§0.a-0.11、タスク25)', ()
     expect(resolved.projections).toEqual([]);
     const failure = resolved.errors.find((error) => error.featureId === 'pj1');
     expect(failure?.code).toBe('missingBody');
-    expect(failure?.message).toContain('このスケッチを使う立体より前に作られた立体だけ');
+    expect(failure?.message).toContain('このスケッチを使うソリッドより前に作られたソリッドだけ');
     // 後ろの立体そのものは作れている(FR-504「止めずに警告する」)。
     expect(resolved.steps.map((step) => step.featureId)).toEqual(['extrude-2']);
   });
@@ -4211,7 +4211,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('立体の頂点だけ');
+    expect(result.errors[0].message).toContain('ソリッドの頂点だけ');
   });
 
   it('中心の式が評価できなければ invalidValue(式のエラーをそのまま見せる)', () => {
@@ -4771,7 +4771,7 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
     const result = resolvePart(document);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('立体の面だけ');
+    expect(result.errors[0].message).toContain('ソリッドの面だけ');
   });
 
   it('輪郭にした立体が無ければ断る(FR-504)', () => {
@@ -5341,7 +5341,7 @@ describe('押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)',
     const result = resolvePart(document);
     expect(result.steps).toEqual([]);
     expect(result.errors[0].code).toBe('missingBody');
-    expect(result.errors[0].message).toBe('押し出す先に立体がありません。');
+    expect(result.errors[0].message).toBe('押し出す先にソリッドがありません。');
   });
 
   it('テーパ 5 度は 5π/180 ラジアンで段に乗る', () => {
@@ -5464,7 +5464,7 @@ describe('抜き勾配(FR-417)', () => {
   it('別の立体の面を指したら断る(カーネルは対象の中から選び直すため)', () => {
     const result = resolvePart(draftDocument({ faces: [sideFaceRef('extrude-9')] }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('もとの立体の面');
+    expect(result.errors[0].message).toContain('もとのソリッドの面');
   });
 
   it('中立面が平らでなければ断る', () => {
@@ -6068,7 +6068,7 @@ describe('エンボス(FR-421、P5 タスク46)', () => {
   it('別のボディの面を指したら断る', () => {
     const result = resolvePart(embossDocument({ face: topFaceRef('extrude-9') }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('もとの立体の面');
+    expect(result.errors[0].message).toContain('もとのソリッドの面');
   });
 
   it('面でないもの(辺)を指したら断る', () => {
@@ -6305,7 +6305,7 @@ describe('外ねじ(FR-423、P5 タスク46)', () => {
   it('別のボディの面を指したら断る', () => {
     const result = resolvePart(shaftDocument({ face: threadFaceRef('extrude-9', 5) }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('もとの立体の面');
+    expect(result.errors[0].message).toContain('もとのソリッドの面');
   });
 
   it('知らない呼びは断る', () => {
@@ -6670,7 +6670,7 @@ describe('曲面(FR-428、P5 タスク46)', () => {
       }),
     );
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('立体の面だけ');
+    expect(result.errors[0].message).toContain('ソリッドの面だけ');
   });
 
   it('面を借りる立体が無ければ断る', () => {
@@ -6773,7 +6773,7 @@ describe('くり抜き(FR-418、P5 タスク46)', () => {
   it('別のボディの面を開けようとしたら断る', () => {
     const result = resolvePart(shellDocument({ openFaces: [topFaceRef('extrude-9')] }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('もとの立体の面');
+    expect(result.errors[0].message).toContain('もとのソリッドの面');
   });
 
   it('くり抜きは対象を消費するので、残るのはくり抜いた立体だけ', () => {
@@ -7541,7 +7541,7 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
     const resolved = resolvePart(document);
     expect(resolved.meshBodies).toEqual([]);
     expect(resolved.errors).toEqual([
-      { featureId: 'hole-1', code: 'missingBody', message: '加工するもとの立体が見つかりません。' },
+      { featureId: 'hole-1', code: 'missingBody', message: '加工するもとのソリッドが見つかりません。' },
     ]);
   });
 
@@ -8104,7 +8104,7 @@ describe('surface-face sewing takes in its surface bodies (EX-18 W15c)', () => {
  * 「pairedWith は形にも鍵にも効かない」「結びの無いブーリアンは以前と同じ」から決める。
  */
 describe('EX-04 W3 閉じた輪郭の切断の残す側(差 = 外側、積 = 内側、差と積の対 = 両方)', () => {
-  const PAIR_MESSAGE = '対になっている切断には、同じ立体と輪郭、反対の残す側が必要です。';
+  const PAIR_MESSAGE = '対になっている切断には、同じソリッドと輪郭、反対の残す側が必要です。';
 
   /** 閉じた輪郭の切断のブーリアン(輪郭の切断の入口だけが立てる requireRemoval つき)。 */
   function profileCut(

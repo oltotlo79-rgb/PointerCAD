@@ -419,7 +419,7 @@
   "math.paletteDomain.setsLogic.finite-distribution": "有限な実数の結果と同数の確率1〜256組。確率は0〜1で正確な合計1。結合分布の各行は宣言した変数と同じ成分数。",
   "math.paletteDomain.setsLogic.joint-finite-distribution": "有限な実数の結果と同数の確率1〜256組。確率は0〜1で正確な合計1。結合分布の各行は宣言した変数と同じ成分数。",
   "math.paletteDomain.setsLogic.independent-distributions": "宣言した変数と同数（1〜8）の一次元分布。各分布の条件を満たすもの。有限分布を組み合わせる列挙は4096組まで。",
-  "math.paletteDomain.setsLogic.partial-equations": "独立変数2〜3個、求める関数1〜4個、等式1〜16個、条件0〜16個。宣言として原式と条件を保存するだけで、一般解を作らず未評価と示します。",
+  "math.paletteDomain.setsLogic.partial-equations": "独立変数2〜3個、求める関数1〜4個、等式1〜16個、条件0〜16個。宣言として式と条件を保存するだけで、一般解を作らず未評価と示します。",
   "math.palette.not-element.label": "非所属",
   "math.palette.not-element.meaning": "値または式が集合に属さないことを表します。所属を決定できない場合は未評価に保ちます。",
   "math.palette.not-element.keyword0": "notelement",

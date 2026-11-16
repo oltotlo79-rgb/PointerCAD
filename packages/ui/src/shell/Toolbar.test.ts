@@ -67,39 +67,39 @@ describe('図面のnative拒否とキーボード用可視理由', () => {
   };
   const render = () => renderToStaticMarkup(createElement(DrawingToolbar));
   const command = (html: string, id: string) => html.match(/<button[^>]*>/gu)?.find(button => button.includes(`data-command-id="${id}"`));
-  const note = (html: string, id: string) => html.match(/<span[^>]*>[^<]*<\/span>/gu)?.find(span => span.includes(`id="${id}"`));
-  const explains = (html: string, id: string, text: string) => {
-    const element = note(html, id); expect(element).toContain('role="note"'); expect(element).toContain('tabindex="0"');
-    expect(element).toContain(text); expect(element).not.toMatch(/hidden|aria-hidden|display:none/u);
+  // 効かないボタンは焦点の入る aria-disabled で、理由をボタンの title に持つ(UI の点検の指摘 10。R20 の理由はキーボードでも読める)。
+  const explains = (button: string | undefined, text: string) => {
+    expect(button).toContain('aria-disabled="true"'); expect(button).not.toContain('disabled=""');
+    expect(button).not.toMatch(/tabindex="-1"|aria-hidden/u); expect(button?.match(/title="([^"]*)"/u)?.[1]).toContain(text);
   };
+  const available = (button: string | undefined) => { expect(button).not.toContain('aria-disabled'); expect(button).not.toContain('disabled=""'); };
+  const noStandingNotes = (html: string) => { expect(html).not.toContain('role="note"'); expect(html).not.toMatch(/<aside\b/u); };
   it('履歴なしを可視説明に結び、実undo/redo拒否で文書を変えない', () => {
     open(); const before = useAppStore.getState().drawing; const html = render();
-    for (const [id, reason, key] of [['history.undo', 'drawing-undo-unavailable', 'toolbar.history.undoUnavailable'],
-      ['history.redo', 'drawing-redo-unavailable', 'toolbar.history.redoUnavailable']] as const) {
-      expect(command(html, id)).toContain('disabled=""'); expect(command(html, id)).toContain(`aria-describedby="${reason}"`);
-      explains(html, reason, t(key)); expect(executeCommand(id)).toMatchObject({ status: 'disabled' });
+    noStandingNotes(html);
+    for (const [id, key] of [['history.undo', 'toolbar.history.undoUnavailable'], ['history.redo', 'toolbar.history.redoUnavailable']] as const) {
+      explains(command(html, id), t(key)); expect(executeCommand(id)).toMatchObject({ status: 'disabled' });
       expect(useAppStore.getState().drawing).toBe(before);
     }
   });
   it('公開apply/undoに応じて履歴説明だけが切り替わる', () => {
     open(); const drawing = useAppStore.getState().drawing; if (drawing === null) throw new Error('No drawing');
     useAppStore.getState().applyDrawing({ ...drawing, name: '変更' });
-    expect(note(render(), 'drawing-undo-unavailable')).toBeUndefined();
-    explains(render(), 'drawing-redo-unavailable', t('toolbar.history.redoUnavailable'));
+    available(command(render(), 'history.undo'));
+    explains(command(render(), 'history.redo'), t('toolbar.history.redoUnavailable'));
     useAppStore.getState().undoDrawing();
-    explains(render(), 'drawing-undo-unavailable', t('toolbar.history.undoUnavailable'));
-    expect(note(render(), 'drawing-redo-unavailable')).toBeUndefined();
+    explains(command(render(), 'history.undo'), t('toolbar.history.undoUnavailable'));
+    available(command(render(), 'history.redo'));
   });
   it.each(['part', 'assembly'] as const)('BOMは%s sourceの実ready/refusalに対応する', sourceKind => {
     open(sourceKind); const before = useAppStore.getState().drawing; const html = render();
     const button = command(html, toolbarCommandId('drawing', 'bom'));
     if (sourceKind === 'part') {
-      expect(button).toContain('disabled=""'); expect(button).toContain('aria-describedby="drawing-bom-unavailable"');
-      explains(html, 'drawing-bom-unavailable', t('drawing.toolbar.assemblyOnly'));
+      explains(button, t('drawing.toolbar.assemblyOnly')); noStandingNotes(html);
       expect(executeCommand(toolbarCommandId('drawing', 'bom'))).toMatchObject({ status: 'executed' });
       expect(useAppStore.getState().drawingEditor).toBeNull();
       expect(useAppStore.getState().drawingMessage).toBe(t('drawing.toolbar.assemblyOnly'));
-    } else { expect(button).not.toContain('disabled=""'); expect(note(html, 'drawing-bom-unavailable')).toBeUndefined(); }
+    } else { available(button); noStandingNotes(html); }
     expect(useAppStore.getState().drawing).toBe(before);
   });
   it('実attachDrawingの計算中はtablesとprintを拒否し、同じ可視理由へ結ぶ', () => {
@@ -119,15 +119,14 @@ describe('図面のnative拒否とキーボード用可視理由', () => {
     const detach = attachDrawing(bridge);
     try {
       expect(useAppStore.getState().drawingBusy).toBe(true); const before = useAppStore.getState().drawing; const html = render();
-      explains(html, 'drawing-busy-unavailable', t('drawing.status.computing'));
+      noStandingNotes(html); expect(html).toContain(`<p role="status">${t('drawing.status.computing')}</p>`);
       for (const id of ['table', 'bom', 'print'] as const) {
         expect(executeCommand(toolbarCommandId('drawing', id))).toMatchObject({ status: 'disabled' });
         expect(useAppStore.getState().drawing).toBe(before);
       }
-      expect(command(html, toolbarCommandId('drawing', 'table'))).toContain('disabled=""');
-      expect(command(html, toolbarCommandId('drawing', 'table'))).toContain('aria-describedby="drawing-busy-unavailable"');
+      explains(command(html, toolbarCommandId('drawing', 'table')), t('drawing.status.computing'));
       const print = html.match(/<button[^>]*>[^<]*<\/button>/gu)?.find(button => button.includes('>' + t('drawing.print.title') + '</button>'));
-      expect(print).toContain('disabled=""'); expect(print).toContain('aria-describedby="drawing-busy-unavailable"');
+      explains(print, t('drawing.status.computing'));
     } finally { detach(); }
   });
 });

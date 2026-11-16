@@ -607,7 +607,7 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
         }
         expect(() =>
           makeSurface(oc, { kind: 'offset', face: faceQuery(top), distance: 5 }),
-        ).toThrow('面を取り出す立体が選ばれていません。');
+        ).toThrow('面を取り出すソリッドが選ばれていません。');
       } finally {
         box.delete();
       }
@@ -725,7 +725,7 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
       try {
         expect(() =>
           makeSurface(oc, { kind: 'face', face: faceQuery(box.tables.faces[0]) }),
-        ).toThrow('面を取り出す立体が選ばれていません。立体を選び直してください。');
+        ).toThrow('面を取り出すソリッドが選ばれていません。ソリッドを選び直してください。');
       } finally {
         box.delete();
       }

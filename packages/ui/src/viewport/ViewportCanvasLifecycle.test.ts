@@ -528,8 +528,9 @@ describe('ViewportCanvas effect の所有と破棄', () => {
       expect(window.pcadViewportFramedBodies).toBeUndefined();
       expect(window.pcadViewportMemoryStats).toBeUndefined();
     }
-    expect(fixture.canvas.addEventListener).toHaveBeenCalledTimes(100);
-    expect(fixture.canvas.removeEventListener).toHaveBeenCalledTimes(100);
+    // 1 寿命に canvas の受け手は 5 つ(下絵の寸法合わせの押下 1、マウスのボタンの命令〔B-08e〕の押下・離し・mouseup・auxclick 4)。
+    expect(fixture.canvas.addEventListener).toHaveBeenCalledTimes(100 * 5);
+    expect(fixture.canvas.removeEventListener).toHaveBeenCalledTimes(100 * 5);
     expect(fixture.cancelledFrames).toHaveLength(100);
   });
 

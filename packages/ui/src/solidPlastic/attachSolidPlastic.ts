@@ -10,6 +10,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { hasCurrentConnectionGeometry } from '../sketch/connectionSelection.js';
 import { parseSubShapeId } from '../solid/subShapeSelection.js';
 import { t } from '../i18n/t.js';
+import { femRuntimeFailureText } from '../femFailureMessage.js';
 import { solidPlasticSavedInput } from './solidPlasticSession.js';
 
 /**
@@ -135,7 +136,7 @@ export function attachSolidPlastic(kernel: AnalysisBoundarySource, store: StoreA
         const next = store.getState().solidPlasticSession;
         if (next) store.setState({ solidPlasticSession: { ...next, status: outcome.kind === 'result' ? 'complete'
           : outcome.kind === 'cancelled' ? 'cancelled' : 'failed', result: outcome.kind === 'result' ? outcome : null,
-        error: outcome.kind === 'failed' ? outcome.message : null } });
+        error: outcome.kind === 'failed' ? femRuntimeFailureText(outcome.code) ?? outcome.message : null } });
       }).catch((error: unknown) => { if (current()) { active = null; failure(error); } });
     } catch (error) { failure(error); }
   };

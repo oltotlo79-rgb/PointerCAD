@@ -87,7 +87,7 @@ export function executeMathWorkRequest(value:unknown,backend:MathExecutionBacken
             ? { ...value, label: rename.label } : value) } };
         const renameDefinition = request.renameDeclaration === undefined ? renameMathCoefficient : renameMathDeclaration;
         renamedDefinition = renameDefinition({ ...request.definition, expression }, rename.id, rename.label, {
-          format: (node, notation) => notation === 'text' ? formatMathText(node, backend.operationsById)
+          format: (node, notation) => notation === 'text' ? formatMathText(node, backend.operationsById, { infix: true })
             : backend.serializeLatex(displayMathJson(node, backend.operationsById)),
           parse: (source, notation) => notation === 'text' ? parseMathText(source, renamedOptions)
             : decodeMathJson(backend.parseLatex(source), { ...renamedOptions, allowRenderedProducts: true }),

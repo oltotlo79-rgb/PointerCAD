@@ -110,7 +110,7 @@ function propertyField(page: Page, label: string): Locator {
     .locator('input.pcad-field__input');
 }
 async function volumeOf(page: Page): Promise<number> {
-  return Number((await propertyValue(page, '体積').innerText()).replaceAll(',', '').match(/[\d.]+/u)?.[0]);
+  return Number((((await propertyValue(page, '体積').getAttribute('title')) ?? (await propertyValue(page, '体積').innerText()))).replaceAll(',', '').match(/[\d.]+/u)?.[0]);
 }
 /** The ⋯ menu of the n-th row in the 部品 section (placement order). */
 async function componentMenu(page: Page, index: number): Promise<Locator> {
@@ -294,7 +294,7 @@ async function refreshFromFile(page: Page, path: string, app: ElectronApplicatio
 /** The assembly drawing's cut-list table, row by row, in the same order as the CSV cut rows. */
 async function expectDrawingStockTable(page: Page, csvCut: readonly string[][]): Promise<void> {
   await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイル/u }).first().click();
-  await page.getByRole('button', { name: 'この組立から図面を作成', exact: true }).click();
+  await page.getByRole('button', { name: 'このアセンブリから図面を作成', exact: true }).click();
   await expect(page.locator('.pcad-drawing-svg svg')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
   const section = page.locator('.pcad-drawing-property-section[data-property-kind="table"]');
   if (await section.getAttribute('open') === null) await section.locator(':scope > summary').click();
@@ -556,7 +556,7 @@ export function registerSteelUiAcceptanceTests(test: typeof baseTest,
       savedParts.push({ product, path, part });
       const placement = page.getByRole('dialog', { name: '部品を置く位置', exact: true });
       await expect(placement).toBeVisible();
-      await placement.getByRole('button', { name: '取り消す', exact: true }).click();
+      await placement.getByRole('button', { name: '取消', exact: true }).click();
       await expect(placement).toHaveCount(0); await expect(componentRows(page)).toHaveCount(0);
       expect(await steelAssemblySnapshot(page, info.outputPath(`steel-ui-${product.grade}-cancel.pcada`), app)).toEqual(baseline);
       await expect(undo()).toHaveAttribute('aria-disabled', 'true');

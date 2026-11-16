@@ -1,6 +1,7 @@
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { savePart } from './scriptsFlow.js';
 import { reopenPart } from './reopenPart.js';
+import { mathResultValueText } from './mathResultValue.js';
 
 /** Independent known solutions exercise the bundled interpreter through the ordinary editor. */
 export async function mathExactLinearFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -49,7 +50,7 @@ export async function mathExactLinearFlow(page: Page, info: TestInfo, app?: Elec
   for (const [source, expected] of samples) {
     await input.fill(source);
     await expect.poll(async () => {
-      const text = await status.innerText();
+      const text = await mathResultValueText(status);
       return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
     }, { timeout: 225_000 }).toBeCloseTo(expected, 10);
     await expect(apply).toBeEnabled();

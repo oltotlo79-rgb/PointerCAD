@@ -396,7 +396,7 @@ export async function shellAnalysisSolidRefusalFlow(page: Page, info: TestInfo, 
     await clickWorldPoint(page, [0, 0, 5]);
     await panel.getByTestId('shell-capture-midsurface').click();
     await expect(panel.getByTestId('shell-error'))
-      .toHaveText('選んだ立体は面（シート）の立体ではありません。ソリッドの中央面は推定しません。');
+      .toHaveText('選んだ形はシートボディ（面だけの形）ではありません。ソリッドの中央面は推定しません。');
     await expect(panel.getByTestId('shell-midsurface')).toContainText('中央面の数: 0');
     // Without a midsurface the input is incomplete: the run cannot start.
     await expect(panel.getByTestId('shell-run')).toBeDisabled();

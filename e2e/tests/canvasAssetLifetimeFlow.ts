@@ -68,7 +68,7 @@ export async function addImage(page: Page, name: string, bytes: Buffer): Promise
   await (await choosing).setFiles({ name, mimeType: 'image/png', buffer: bytes });
   const scale = page.locator('.pcad-canvas-scale');
   await expect(scale).toContainText('1 点目を押してください');
-  await scale.getByRole('button', { name: 'やめる', exact: true }).click();
+  await scale.getByRole('button', { name: '取消', exact: true }).click();
   await expect(canvasRow(page, name)).toBeVisible();
 }
 

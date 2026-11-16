@@ -77,7 +77,7 @@ const NOT_CONNECTED_MESSAGE = '選んだ線・円弧がつながっていない�
 const NO_THICKNESS_MESSAGE = 'リブに厚みが出ませんでした。厚みと伸ばす向きを見直してください。';
 
 /** 伸ばした先に材料が無かったとき(検証の表の文言、NFR-UX-5)。 */
-const NOT_REACHED_MESSAGE = 'リブが立体に届いていません。位置を見直してください。';
+const NOT_REACHED_MESSAGE = 'リブがソリッドに届いていません。位置を見直してください。';
 
 /**
  * 「材料まで伸ばさない」リブ(`extendToBody: false`)の壁が材料へ届かないとき。
@@ -89,7 +89,7 @@ const NOT_REACHED_MESSAGE = 'リブが立体に届いていません。位置を
 const NOT_TOUCHING_MESSAGE = 'リブが材料に届きません。';
 
 /** 輪郭がすでに材料の中(または面の上)にあり、足すものが無いとき。 */
-const INSIDE_MESSAGE = 'リブの輪郭が立体の中にあります。輪郭を立体の外へ置いてください。';
+const INSIDE_MESSAGE = 'リブの輪郭がソリッドの中にあります。輪郭をソリッドの外へ置いてください。';
 
 /** ブーリアンそのものが成立しなかったとき(FR-504、NFR-RE-1)。 */
 const RIB_FAILED_MESSAGE = 'リブを作れませんでした。輪郭の位置と向きを見直してください。';

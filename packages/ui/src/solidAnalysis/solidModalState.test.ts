@@ -2,7 +2,20 @@ import type { SolidModalInput, SolidModalResult } from '@pointercad/fem';
 import { describe, expect, it } from 'vitest';
 import { solidModeResultFor } from './solidModalDisplay.js';
 import { cancelSolidModal, editSolidModalInput, initialSolidModalState, invalidateSolidModal, receiveSolidModal,
-  setSolidModalView, solidModalPreview, solidModalRequestValues, startSolidModal } from './solidModalState.js';
+  setSolidModalView, solidModalFailureMessage, solidModalPreview, solidModalRequestValues, startSolidModal } from './solidModalState.js';
+import { t } from '../i18n/t.js';
+
+// A-24: 固有値の断り。計算の準備のファイルは code のまま(SolidModalSection が共通の文にする)、ほかの計算部の code は日本語。
+describe('solidModalFailureMessage', () => {
+  it.each([
+    ['asset-missing', 'asset-missing: python_stdlib.zip (HTTP 404)', 'asset-missing'],
+    ['asset-corrupt', 'asset-corrupt: oofem.whl (size)', 'asset-corrupt'],
+    ['solver-failed', 'solid-modal: eigen solve failed', t('strength.femFailure.runtime').replace('{code}', 'solver-failed')],
+    ['cad-solid-modal', t('solidAnalysis.changed'), t('solidAnalysis.changed')],
+  ] as const)('%s / %s', (code, message, expected) => {
+    expect(solidModalFailureMessage(code, message)).toBe(expected);
+  });
+});
 
 const source = { documentId: 'doc-1', revision: 4, meshKey: 'mesh-a' };
 

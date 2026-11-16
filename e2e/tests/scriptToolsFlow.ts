@@ -14,7 +14,7 @@ export async function scriptToolsFlow(page: Page, info: TestInfo, app?: Electron
   for (let index = 1; index <= 20; index++) {
     await panel(page).getByRole('combobox', { name: '例を開く', exact: true }).selectOption('read');
     await writeDraft(page, `道具${index}`, `console.log('道具${index}');`);
-    await panel(page).getByRole('button', { name: '道具に登録・更新', exact: true }).click();
+    await panel(page).getByRole('button', { name: 'ツールバーに登録・更新', exact: true }).click();
     await expect(panel(page).locator('.pcad-script__tool')).toHaveCount(index);
   }
   expect((await readRecomputeStats(page)).requestedGeneration).toBe(generation);
@@ -23,7 +23,7 @@ export async function scriptToolsFlow(page: Page, info: TestInfo, app?: Electron
   const first = panel(page).locator('.pcad-script__tool').filter({ has: page.getByText('道具1', { exact: true }) });
   await first.getByRole('button', { name: '編集', exact: true }).click();
   await writeDraft(page, '名前を変えた道具', "console.log('改名後に実行');");
-  await panel(page).getByRole('button', { name: '道具に登録・更新', exact: true }).click();
+  await panel(page).getByRole('button', { name: 'ツールバーに登録・更新', exact: true }).click();
   await expect(panel(page).locator('.pcad-script__tool')).toHaveCount(20);
   const edited = panel(page).locator('.pcad-script__tool').filter({ hasText: '名前を変えた道具' });
   await edited.getByRole('button', { name: '削除', exact: true }).click();
@@ -38,7 +38,7 @@ export async function scriptToolsFlow(page: Page, info: TestInfo, app?: Electron
   expect((await readRecomputeStats(page)).requestedGeneration).toBe(reloadedGeneration);
   // A local module is edited, resolved and evaluated by the shipped Worker.
   await panel(page).getByRole('combobox', { name: '例を開く', exact: true }).selectOption('read');
-  await panel(page).getByRole('textbox', { name: '処理の名前', exact: true }).fill('モジュールで箱を作る');
+  await panel(page).getByRole('textbox', { name: '自動作図の名前', exact: true }).fill('モジュールで箱を作る');
   await panel(page).locator('summary').filter({ hasText: /^同梱するモジュール$/u }).click();
   await panel(page).getByRole('textbox', { name: 'モジュール名（例: helpers.js）', exact: true }).fill('helpers.js');
   await panel(page).getByRole('button', { name: 'モジュールを追加', exact: true }).click();

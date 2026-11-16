@@ -33,7 +33,7 @@ async function expectVolume(page: Page, name: string, volume: number): Promise<v
   if (await header.getAttribute('aria-expanded') === 'false') await header.click();
   await section.locator('.pcad-tree__row--child').filter({ hasText: `${name} BRep` }).click();
   const value = page.locator('.pcad-panel--right dt.pcad-properties__key').filter({ hasText: /^体積$/u }).locator('xpath=following-sibling::dd[1]');
-  await expect(value).toHaveText(`${volume} mm³`);
+  await expect(value).toHaveAttribute('title', `${volume} mm³`);
 }
 
 /**

@@ -43,7 +43,7 @@ function LayerForm({ drawing, layer }: { readonly drawing: DrawingDocument; read
     }}>{lineTypes.map((entry) => <option key={entry.kind} value={entry.kind}>{t(entry.key)}</option>)}</select></label>
     <label title={t('drawing.layer.width.controlHint')}>{t('drawing.layer.width')}<input className="pcad-field__input" value={width} inputMode="decimal" onChange={(event) => setWidth(event.target.value)} /></label>
     <div className="pcad-segmented">
-      <button title={t('drawing.controlHint.applyLayer')} type="submit" className="pcad-button" disabled={busy}>{t(layer === undefined ? 'drawing.layer.add' : 'drawing.action.apply')}</button>
+      <button title={t('drawing.controlHint.applyLayer')} type="submit" className="pcad-button" disabled={busy}>{t(layer === undefined ? 'drawing.layer.add' : 'drawing.layer.apply')}</button>
       <button title={t('drawing.controlHint.closeLayer')} type="button" className="pcad-button" onClick={close}>{t('drawing.action.close')}</button>
     </div>
     {layer === undefined ? null : <>

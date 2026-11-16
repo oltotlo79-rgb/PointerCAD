@@ -595,7 +595,7 @@ describe('並べ替えの妥当性(FR-507、FR-504)', () => {
       return;
     }
     expect(outcome.blockingFeatureId).toBe('referencePoint-1');
-    expect(outcome.reason).toContain('立体');
+    expect(outcome.reason).toContain('ソリッド');
   });
 
   it('基準ジオメトリどうしは並べ替えられる', () => {
@@ -823,7 +823,7 @@ describe('基準ジオメトリが立体に依存する文書の並べ替え(TL-
     const document = withPlaneUser();
     expect(canMoveHistoryItem(document, 'referencePlane-2', 2)).toEqual({
       ok: false, blockingFeatureId: 'referencePlane-2',
-      reason: '作業平面2は基準ジオメトリなので、立体の間へは動かせません。',
+      reason: '作業平面2は基準ジオメトリなので、ソリッドの間へは動かせません。',
     });
   });
 

@@ -197,7 +197,7 @@ export function resolvePointReference(
         return failure(
           featureId,
           'missingSubShape',
-          '基準にする立体の形が見つかりません。形が大きく変わったため、選び直してください。',
+          '基準にするソリッドの形が見つかりません。形が大きく変わったため、選び直してください。',
         );
       }
       return { ok: true, value: found.position };

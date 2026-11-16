@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_VIEW_CONTROLS, type ViewControlOptions, type ViewControlSettings, type ViewTrigger } from '../settings/viewControlSettings.js';
+import {
+  DEFAULT_VIEW_CONTROLS, withViewControlPreset, type ViewControlOptions, type ViewControlSettings, type ViewTrigger,
+} from '../settings/viewControlSettings.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { partWithPoint, resetTestStore } from '../store/testing/createTestStore.js';
-import { attachCameraControls } from './attachCameraControls.js';
-import type { OrbitState } from './cameraMath.js';
+import { attachCameraControls, type ViewCenterResolver } from './attachCameraControls.js';
+import { HOME_ORBIT, orbitAround, zoomToward, type OrbitState } from './cameraMath.js';
 
 // No product zoom/normalizer/constants are used to calculate an expected distance.
 const INITIAL: OrbitState = { distance: 240, azimuth: 0.37, elevation: -0.21,
@@ -25,7 +27,7 @@ function send(target: EventTarget, type: string, properties: Record<string, unkn
   return input;
 }
 
-function setup(readSettings: () => ViewControlSettings = () => DEFAULT_VIEW_CONTROLS) {
+function setup(readSettings: () => ViewControlSettings = () => DEFAULT_VIEW_CONTROLS, centers?: ViewCenterResolver) {
   const view = new EventTarget(), captured = new Set<number>();
   // EventTarget dispatches through the installed product listener; no onWheel mock.
   const canvas = Object.assign(new EventTarget() as HTMLCanvasElement, { clientHeight: 600, ownerDocument: { defaultView: view },
@@ -34,7 +36,7 @@ function setup(readSettings: () => ViewControlSettings = () => DEFAULT_VIEW_CONT
   vi.stubGlobal('WheelEvent', { DOM_DELTA_LINE: 1, DOM_DELTA_PAGE: 2 });
   const changed = vi.fn(), interaction = vi.fn();
   // This dispatcher uses only the canvas members supplied above.
-  const controls = attachCameraControls(canvas, changed, interaction, undefined, readSettings);
+  const controls = attachCameraControls(canvas, changed, interaction, undefined, readSettings, centers);
   controls.setOrbit(INITIAL); changed.mockClear();
   return { canvas, view, captured, changed, interaction, controls };
 }
@@ -196,6 +198,100 @@ describe('wheel distance at the actual camera dispatcher with an independent ora
       expectRelative(app.controls.getOrbit().distance, 240 * 1.1);
       expect(app.changed).toHaveBeenCalledTimes(2);
     } finally { app.controls.detach(); reference.controls.detach(); }
+  });
+
+  it('keys of the keyboard preset (B-08) pan like the same drag, turn by the set angle at any speed and zoom one notch per press', () => {
+    const keyboard = withViewControlPreset(DEFAULT_VIEW_CONTROLS, 'keyboard');
+    const app = setup(() => ({ ...keyboard, options: { ...keyboard.options, keyStepDegrees: 30, orbitSensitivity: 4 } }));
+    const reference = setup();
+    try {
+      expect(send(app.canvas, 'keydown', { code: 'ArrowLeft', key: 'ArrowLeft', shiftKey: true }).defaultPrevented).toBe(true);
+      // One press = a 40 px drag to the left with the right button (the default pan).
+      send(reference.canvas, 'pointerdown', { button: 2, buttons: 2 });
+      send(reference.canvas, 'pointermove', { button: 2, buttons: 2, clientX: 80 });
+      send(reference.canvas, 'pointerup', { button: 2, buttons: 0, clientX: 80 });
+      expect(app.controls.getOrbit().target).not.toEqual(INITIAL.target);
+      expect(app.controls.getOrbit()).toEqual(reference.controls.getOrbit());
+      send(app.canvas, 'keydown', { code: 'ArrowRight', key: 'ArrowRight' });
+      send(app.canvas, 'keydown', { code: 'ArrowUp', key: 'ArrowUp' });
+      // 30 degrees (pi/6) per press although the rotation speed is 4; right and up turn like a drag to the right and up.
+      expect(app.controls.getOrbit().azimuth).toBeCloseTo(0.37 - Math.PI / 6, 12);
+      expect(app.controls.getOrbit().elevation).toBeCloseTo(-0.21 - Math.PI / 6, 12);
+      send(app.canvas, 'keydown', { code: 'Equal', key: '=' });
+      expectRelative(app.controls.getOrbit().distance, 240 / 1.1);
+      expect(send(app.canvas, 'keydown', { code: 'Numpad4', key: '4' }).defaultPrevented).toBe(false);
+      expect(send(app.canvas, 'keydown', { code: 'ArrowRight', key: 'Process', isComposing: true }).defaultPrevented).toBe(false);
+      expect(app.changed).toHaveBeenCalledTimes(4);
+    } finally { app.controls.detach(); reference.controls.detach(); }
+  });
+
+  it('a view key the camera takes reaches no later listener on the canvas (assembly 1 to 4, sketch); other keys still do', () => {
+    const keyboard = withViewControlPreset(DEFAULT_VIEW_CONTROLS, 'keyboard');
+    // The numeric keypad group bound to rotation: with NumLock, Numpad4 also arrives as the character 4 (selection.body).
+    const app = setup(() => ({ ...keyboard, bindings: { ...keyboard.bindings,
+      orbit: [...DEFAULT_VIEW_CONTROLS.bindings.orbit, { kind: 'keys', keys: 'numpad', alt: false, shift: false, ctrl: false, meta: false }] } }));
+    const later = vi.fn();
+    app.canvas.addEventListener('keydown', later);
+    try {
+      expect(send(app.canvas, 'keydown', { code: 'Numpad4', key: '4' }).defaultPrevented).toBe(true);
+      expect(app.controls.getOrbit().azimuth).not.toBe(INITIAL.azimuth);
+      expect(later).not.toHaveBeenCalled();
+      expect(send(app.canvas, 'keydown', { code: 'Digit4', key: '4' }).defaultPrevented).toBe(false);
+      expect(later).toHaveBeenCalledOnce();
+    } finally { app.controls.detach(); }
+  });
+
+  it('previous view (B-08c) walks back one gesture at a time through home, wheel and the start, and never stores the restored view', () => {
+    let clock = 0;
+    vi.spyOn(globalThis.performance, 'now').mockImplementation(() => clock);
+    // setup() moves from the home view to INITIAL at time 0, so the home view is the first step back.
+    const app = setup();
+    try {
+      clock = 1000; send(app.canvas, 'wheel', { deltaY: 100 });
+      clock = 1100; send(app.canvas, 'wheel', { deltaY: 100 });
+      const zoomed = app.controls.getOrbit();
+      expectRelative(zoomed.distance, 240 * 1.1 ** 2);
+      clock = 3000; app.controls.goHome();
+      for (const expected of [zoomed, INITIAL, HOME_ORBIT]) {
+        expect(app.controls.previousView()).toBe(true);
+        expect(app.controls.getOrbit()).toEqual(expected);
+      }
+      expect(app.controls.previousView()).toBe(false);
+      expect(app.controls.getOrbit()).toEqual(HOME_ORBIT);
+    } finally { app.controls.detach(); vi.restoreAllMocks(); }
+  });
+
+  it('rotation and zoom centers (B-08d): a pointer-centered drag turns about the resolved point and the wheel zooms toward it', () => {
+    const pivot = [30, -10, 5] as const, toward = [12, 4, -6] as const;
+    const centers = { orbitPivot: vi.fn(() => pivot), zoomPoint: vi.fn(() => toward) };
+    const app = setup(() => configure({}, { orbitCenter: 'pointer', zoomCenter: 'pointer' }), centers);
+    try {
+      // The default rotation is the middle-button drag; the pivot is asked once, where the button went down.
+      send(app.canvas, 'pointerdown', { button: 1, buttons: 4 });
+      send(app.canvas, 'pointermove', { button: 1, buttons: 4, clientX: 150, clientY: 130 });
+      send(app.canvas, 'pointerup', { button: 1, buttons: 0, clientX: 150, clientY: 130 });
+      expect(centers.orbitPivot).toHaveBeenCalledOnce();
+      expect(centers.orbitPivot).toHaveBeenCalledWith('pointer', 120, 140);
+      expect(app.controls.getOrbit()).toEqual(orbitAround(INITIAL, 30, -10, pivot));
+      const before = app.controls.getOrbit();
+      send(app.canvas, 'wheel', { deltaY: 100, clientX: 200, clientY: 100 });
+      expect(centers.zoomPoint).toHaveBeenCalledWith(200, 100, before);
+      expect(app.controls.getOrbit()).toEqual(zoomToward(before, 100, toward));
+    } finally { app.controls.detach(); }
+  });
+
+  it('the default centers (the view center) never ask for a point and keep the earlier motion', () => {
+    const centers = { orbitPivot: vi.fn(() => [1, 2, 3] as const), zoomPoint: vi.fn(() => [1, 2, 3] as const) };
+    const app = setup(() => DEFAULT_VIEW_CONTROLS, centers);
+    try {
+      send(app.canvas, 'pointerdown', { button: 1, buttons: 4 });
+      send(app.canvas, 'pointermove', { button: 1, buttons: 4, clientX: 150, clientY: 130 });
+      send(app.canvas, 'pointerup', { button: 1, buttons: 0, clientX: 150, clientY: 130 });
+      send(app.canvas, 'wheel', { deltaY: 100 });
+      expect(app.controls.getOrbit().target).toEqual(INITIAL.target);
+      expect(centers.orbitPivot).not.toHaveBeenCalled();
+      expect(centers.zoomPoint).not.toHaveBeenCalled();
+    } finally { app.controls.detach(); }
   });
 
   it('100 wheel operations leave document notifications, ID, version, inputs and history unchanged', () => {

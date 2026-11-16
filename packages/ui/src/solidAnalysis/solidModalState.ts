@@ -1,4 +1,5 @@
 import type { SolidModalInput, SolidModalResult, SolidSource } from '@pointercad/fem';
+import { femAssetFailureKey, femRuntimeFailureText } from '../femFailureMessage.js';
 import { solidModeResultFor } from './solidModalDisplay.js';
 import { projectSolidMode, type SolidModeDisplay, type SolidModePreview, type SolidModeResult } from './solidModeView.js';
 
@@ -39,6 +40,11 @@ export function editSolidModalInput(state: SolidModalRunState, field: 'density' 
 export type SolidModalReply =
   | { readonly kind: 'result'; readonly input: SolidModalInput; readonly result: SolidModalResult }
   | { readonly kind: 'failed'; readonly message: string | null };
+/** 固有値の断りの文(A-24)。計算の準備のファイルの断りは code のまま返し、SolidModalSection が共通の文にして「入力と形状を確認」の
+ * 見出しを出さない。ほかの計算部の code は内部の英語の文を出さず code を添えた文、形状や入力の断りは今のまま message。 */
+export function solidModalFailureMessage(code: string, message: string): string {
+  return femAssetFailureKey(code) !== null ? code : femRuntimeFailureText(code) ?? message;
+}
 
 export const SOLID_MODAL_DEFAULT_AMPLITUDE_MM = 10;
 

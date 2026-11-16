@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { femAssetFailureKey } from '../femFailureMessage.js';
 import { BOLT_AUTHOR_NUMBERS, BOLT_AUTHOR_EVIDENCE, boltAuthorTemplates, type BoltAuthorForm } from '../store/beamSlice.js';
 import { beamOccurrences, captureBeamSource } from './beamSource.js';
 import type { BoltDraftNumber, BoltDraftSource } from './boltPreloadDraft.js';
@@ -93,6 +94,8 @@ export function BoltPreloadPanel(): React.JSX.Element | null {
   useEffect(() => () => { const current = useAppStore.getState(); if (strength !== null && current.boltPreloadOwner === strength) current.closeBoltPreload(); }, [strength]);
   if (strength === null || state.assembly === null) return null;
   const running = state.boltPreloadStatus === 'running', source = captureBeamSource(state);
+  // 計算の準備のファイルの断り(attachBeamAnalysis は `${code}: ${message}` を持つ)には、入力の誤りと同じ文と入力の案内を出さない。
+  const assetKey = state.boltPreloadStatus === 'failed' ? femAssetFailureKey(state.boltPreloadError) : null;
   return <section className="pcad-panel__body pcad-beam" aria-label={t('beam.preload.title')} data-testid="bolt-preload-panel">
     <h3>{t('beam.preload.title')}</h3><p>{t('beam.preload.scope')}</p>
     {draft !== null || form !== null ? <button type="button" data-testid="preload-close" title={t('beam.preload.closeHelp')} onClick={state.closeBoltPreload}>{t('beam.close')}</button> : <>
@@ -121,7 +124,7 @@ export function BoltPreloadPanel(): React.JSX.Element | null {
         <th>{t('beam.preload.externalN')}</th><th>{t('beam.preload.tensionN')}</th><th>{t('beam.preload.compressionN')}</th><th>{t('beam.preload.gapM')}</th>
       </tr></thead><tbody>{draft.result.states.map((row, index) => <tr key={index}><td>{row.externalLoadN}</td><td>{row.boltTensionN}</td><td>{row.memberCompressionN}</td><td>{row.gapM}</td></tr>)}</tbody></table>}
     </>}
-    <p role="status" data-testid="preload-status">{t(statusKeys[state.boltPreloadStatus])}</p>
-    {state.boltPreloadError === null ? null : <p role="alert">{t('beam.preload.error')}</p>}
+    <p role="status" data-testid="preload-status">{t(assetKey ?? statusKeys[state.boltPreloadStatus])}</p>
+    {state.boltPreloadError === null || assetKey !== null ? null : <p role="alert">{t('beam.preload.error')}</p>}
   </section>;
 }

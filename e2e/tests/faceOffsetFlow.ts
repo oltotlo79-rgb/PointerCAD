@@ -185,12 +185,12 @@ async function extrudeFace(page: Page, faceName: string, distance: string | null
 
 async function selectBodiesOnly(page: Page): Promise<void> {
   const status = page.locator('.pcad-statusbar');
-  for (const [name, enabled] of [['頂点', false], ['辺', false], ['面', false], ['立体', true]] as const) {
+  for (const [name, enabled] of [['頂点', false], ['辺', false], ['面', false], ['ソリッド', true]] as const) {
     const button = status.getByRole('button', { name, exact: true });
     if ((await button.getAttribute('aria-pressed')) !== String(enabled)) await button.click();
     await expect(button).toHaveAttribute('aria-pressed', String(enabled));
   }
-  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
 }
 
 
@@ -254,7 +254,7 @@ export async function faceOffsetFlow(page: Page, info: TestInfo, entry: string):
   await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
   await extrudeFace(page, '面1', null);
   await solidRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
 

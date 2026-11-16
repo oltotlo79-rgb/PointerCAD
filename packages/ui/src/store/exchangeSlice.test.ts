@@ -291,14 +291,14 @@ describe('3D プリントの点検を走らせる(FR-815、P6 タスク46)', () 
 
   it('カーネルが断ったらその日本語をそのまま帯へ出す(文言の正本は 1 つ)', async () => {
     const inspector = vi.fn<PartInspector>(() =>
-      Promise.resolve({ kind: 'failed', message: 'もとになる立体が見つかりませんでした。' }),
+      Promise.resolve({ kind: 'failed', message: 'もとになるソリッドが見つかりませんでした。' }),
     );
     useAppStore.setState({ bodies: [bodyOf('box-1', 12)] });
     useAppStore.getState().setPartInspector(inspector);
     useAppStore.getState().inspectPrintability();
     await vi.waitFor(() => {
       expect(useAppStore.getState().printCheckErrorMessage).toBe(
-        'もとになる立体が見つかりませんでした。',
+        'もとになるソリッドが見つかりませんでした。',
       );
     });
     expect(useAppStore.getState().printability).toBeNull();

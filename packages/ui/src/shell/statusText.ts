@@ -1230,6 +1230,8 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     case 'waiting': return failureLine(null, t('assembly.drag.waiting'));
     case 'unavailable': return failureLine(null, t('assembly.drag.unavailable'));
     case 'failed': return failureLine(null, t('assembly.drag.failed'));
+    // 利用者がこのドラッグで行っていない変化で取り消した時は、保存の文に隠さない(A-26)。
+    case 'interrupted': return failureLine(null, t('assembly.drag.interrupted'));
   }
   if (input.timelineRefusalMessage !== undefined && input.timelineRefusalMessage !== null) {
     // 順序の入れ替えの断り(FR-507)。いま離したドラッグへの返事なので、

@@ -540,14 +540,14 @@ export async function checkInterference(
     if (!validPlacement(spec.placement)) return { stage: 'input', code: 'invalidPlacement', message: '部品の位置や向きが正しくありません。' };
     const missing = spec.bodyKeys.filter((key) => borrowed.get(key) === undefined);
     if (missing.length > 0 || spec.bodyKeys.length === 0) return { stage: 'input', code: 'missingBody',
-      message: 'もとになる立体が見つかりませんでした。', missingKeys: missing };
+      message: 'もとになるソリッドが見つかりませんでした。', missingKeys: missing };
     const shapes: TopoDS_Shape[] = [];
     for (const key of spec.bodyKeys) {
       let validated = validatedBodies.get(key);
       if (validated === undefined) {
         if (!await checkpoint('prepare')) return null;
         const body = borrowed.get(key);
-        if (body === undefined || body.shape.IsNull()) validated = { stage: 'input', code: 'missingBody', message: 'もとになる立体がありません。', missingKeys: [key] };
+        if (body === undefined || body.shape.IsNull()) validated = { stage: 'input', code: 'missingBody', message: 'もとになるソリッドがありません。', missingKeys: [key] };
         else if (body.mesh.bodyKind !== 'solid' || !containsSolid(oc, body.shape)) validated = { stage: 'input', code: 'unsupportedBody', message: '面や三角形だけの部品は調べられません。' };
         else validated = body.shape;
         validatedBodies.set(key, validated);

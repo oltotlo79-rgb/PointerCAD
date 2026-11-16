@@ -6,6 +6,7 @@ import { t } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import { parseSubShapeId } from '../solid/subShapeSelection.js';
 import { formatVolume } from '../solid/solidSummary.js';
+import { displayNumber } from '../sketch/numericInputPresentation.js';
 import { fieldUnitLabelKey } from '../sketch/numericInput.js';
 import type { SheetMetalToolSession } from '../store/sheetMetalSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -210,8 +211,8 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
     {session.kind === 'sheetRelief' ? null : <p>{t('sheetMetal.kFactorHint')}</p>}
     {message === null ? null : <p role="alert" className="pcad-field__error">{message}</p>}
     {computeError === null ? null : <p role="alert" className="pcad-field__error">{computeError}</p>}
-    {requested ? <p role="status">{t('sheetMetal.computing')}</p> : preview?.session !== session ? null : <p role="status">
-      {t(editing === undefined ? 'sheetMetal.previewHint' : 'sheetMetal.editPreviewHint')} {t(editing === undefined ? 'sheetMetal.previewVolume' : 'sheetMetal.previewTotalVolume').replace('{volume}', formatVolume(preview.volume))}</p>}
+    {requested ? <p role="status">{t('sheetMetal.computing')}</p> : preview?.session !== session ? null : <p role="status" title={formatVolume(preview.volume)}>
+      {t(editing === undefined ? 'sheetMetal.previewHint' : 'sheetMetal.editPreviewHint')} {t(editing === undefined ? 'sheetMetal.previewVolume' : 'sheetMetal.previewTotalVolume').replace('{volume}', formatVolume(preview.volume, 'mm', (value) => displayNumber(value).text))}</p>}
     <button className="pcad-button" type="button" title={t('sheetMetal.guide.preview')} disabled={candidate === null || computing || requested} onClick={() => submit(false)}>{t('sheetMetal.preview')}</button>
     <div className="pcad-sheet-metal__actions"><button className="pcad-button pcad-button--primary" type="submit" title={t('sheetMetal.guide.commit')} disabled={candidate === null || computing || requested}>{t(editing === undefined ? 'sheetMetal.create' : 'sheetMetal.applyEdit')}</button>
       <button className="pcad-button" type="button" title={t('sheetMetal.guide.cancel')} onClick={() => useAppStore.getState().closeSheetMetalTool()}>{t('sheetMetal.cancel')}</button></div>

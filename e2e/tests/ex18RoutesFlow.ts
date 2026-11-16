@@ -285,11 +285,8 @@ async function contextContract(page: Page, info: TestInfo, bracket: Uint8Array, 
   const linkedState = await expectEx18AssemblyPart(linked, EX18_A8, info, 'e-linked8');
   expect(linkedState.document.contextReferences).toHaveLength(1);
   // Move the real source component; its placement is an independent input to the reference resolver.
-  await page.locator('canvas.pcad-viewport__canvas').press('4');
-  const from = await homeViewPagePoint(page, [10, 15, 12]);
-  const to = await homeViewPagePoint(page, [12, 15, 12]);
-  await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(to[0], to[1], { steps: 8 });
-  token = await beginRecompute(page); await page.mouse.up(); await waitForRecompute(page, token);
+  // The same drag as routes B/e and C/e (A-26): home view, solid selection, and the hover on the source proven before the press.
+  await dragContextSource(page, [10, 15, 12], info, app);
   const sourcePosition = (await readAssemblyStats(page)).components[1]?.resolved?.position;
   if (sourcePosition === undefined || sourcePosition.length !== 3) throw new Error('EX18 moved source pose missing');
   expect(Math.abs(sourcePosition[0] - 10)).toBeGreaterThan(0.5);
@@ -1105,7 +1102,7 @@ async function obliqueContextContract(page: Page, info: TestInfo, bracket: Uint8
 async function dragContextSource(page: Page, center: WorldPoint, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await goHome(page);
   await page.locator('canvas.pcad-viewport__canvas').press('4');
-  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの ソリッド');
   await expect(componentRows(page)).toHaveCount(2);
   const source = componentRows(page).nth(1);
   const from = await homeViewPagePoint(page, center);

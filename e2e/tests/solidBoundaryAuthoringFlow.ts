@@ -13,7 +13,7 @@ const FACE_CENTERS: readonly WorldPoint[] = [[20, 0, 0], [0, -15, 0], [0, 0, 5]]
 
 async function openAnalysis(page: Page): Promise<Locator> {
   await openToolMenu(page, '解析');
-  await toolMenuPanel(page, '解析').getByRole('button', { name: '現在の立体を解析', exact: true }).click();
+  await toolMenuPanel(page, '解析').getByRole('button', { name: '現在のソリッドを解析', exact: true }).click();
   const panel = page.getByTestId('solid-analysis-panel');
   await expect(panel).toBeVisible();
   return panel;
@@ -119,7 +119,7 @@ export async function solidBoundaryAuthoringFlow(page: Page, info: TestInfo, app
   await panel.getByTestId('solid-support-remove-1').click();
   await expect(result).toHaveCount(0);
   await panel.getByTestId('solid-run').click();
-  await expect(panel.locator(':scope > [role="alert"]')).toContainText('立体全体が移動または回転できる固定条件です');
+  await expect(panel.locator(':scope > [role="alert"]')).toContainText('ソリッド全体が移動または回転できる固定条件です');
   await expect(result).toHaveCount(0);
 
   await panel.getByTestId('solid-modal-density').fill('7800');

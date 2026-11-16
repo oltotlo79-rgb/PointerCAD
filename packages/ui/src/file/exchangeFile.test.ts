@@ -303,7 +303,7 @@ describe('押す前の断り(NFR-UX-5)', () => {
     expect(exportRefusalKey(bodies, createExportRequest('step'))).toBeNull();
   });
 
-  it('書き出せる立体が 0 個なら、押す前に断る', () => {
+  it('書き出せるソリッドが 0 個なら、押す前に断る', () => {
     expect(exportRefusalKey([], createExportRequest('stl')))
       .toBe('exchangeError.nothingToExport');
   });

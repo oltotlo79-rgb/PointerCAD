@@ -67,6 +67,18 @@ function geometryProblem(document: PartDocument, target: MathGeometryEditorTarge
     { source: output.definition.source, value: 0, display: '', mathDefinition: output.definition }));
 }
 
+/**
+ * 計算の済んだ結果を、この欄に使えない理由(UI の点検の指摘 36。前は結果の説明の中に埋もれていた)。
+ * 数の欄は値を受け入れる境界(mathScalarExpression)の文、関数と未解決の式は共通の 1 文。図形の参照の問題は、
+ * 窓の上の GeometryEditorFeedback が既に知らせるので重ねない。
+ */
+function applyBlockedReason(owner: MathExpressionDialogProps | FunctionExpressionDialogProps | ProblemExpressionDialogProps,
+  output: MathEditorOutput): string | null {
+  if (owner.kind === 'function' || owner.kind === 'problem') return t('math.applyUnavailable');
+  const scalar = mathScalarExpression(output);
+  return scalar.ok ? null : scalar.message;
+}
+
 function GeometryEditorFeedback({ ready, target }: { readonly ready: ReadyEditor; readonly target: MathGeometryEditorTarget }): React.JSX.Element | null {
   const snapshot = useSyncExternalStore(ready.controller.subscribe, ready.controller.getSnapshot, ready.controller.getSnapshot);
   if (snapshot.state.status !== 'evaluated') return null;
@@ -193,7 +205,8 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
       {ready.coefficientProblem === null ? null : <p role="status">{t('math.coefficientsUnavailable')} {ready.coefficientProblem}</p>}
       {owner.kind !== 'function' && owner.kind !== 'problem' && owner.geometry !== undefined
         ? <GeometryEditorFeedback ready={ready} target={owner.geometry} /> : null}
-      <MathEditorPanel {...ready} acceptLabel={owner.kind === 'problem' ? t('math.problem.apply') : undefined} palette={MATH_INPUT_PALETTE} readOnly={busy} onHelp={() => useAppStore.getState().openHelpTopic('math-input')} />
+      <MathEditorPanel {...ready} acceptLabel={owner.kind === 'problem' ? t('math.problem.apply') : undefined} palette={MATH_INPUT_PALETTE} readOnly={busy} onHelp={() => useAppStore.getState().openHelpTopic('math-input')}
+        applyBlockedReason={output => applyBlockedReason(owner, output)} />
     </>}
     {/* Same button in the same place whether the editor is still preparing or ready, so a click or Esc that
         lands during the preparation-to-ready transition still closes the dialog (regression guard). */}

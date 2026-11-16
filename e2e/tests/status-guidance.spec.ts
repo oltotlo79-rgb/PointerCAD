@@ -40,7 +40,7 @@ test('形の計算中も投影の次の操作と計算状況を同時に読め�
   const edit = await beginRecompute(page);
   await distance.fill('12');
   await waitForRecompute(page, edit);
-  await expect(propertyValue(page, '体積')).toHaveText('14400 mm³');
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', '14400 mm³');
   // 入力中の変更は計算中の札を立てないため、欄を離れてUndoで同じ寸法を戻す。
   await treeRow(page, '押し出し1').click();
   const recalculation = await beginRecompute(page);
@@ -55,7 +55,7 @@ test('形の計算中も投影の次の操作と計算状況を同時に読め�
     await expect(statusText(page)).toContainText('押し出し1 を計算しています');
     await chooseEditTool(page, '投影');
     await expect(statusText(page)).toBeVisible();
-    await expect(statusText(page)).toContainText('写したい立体の面か辺をクリック');
+    await expect(statusText(page)).toContainText('写したいソリッドの面か辺をクリック');
     const activity = page.locator('.pcad-statusbar__activity');
     await expect(activity).toBeVisible();
     await expect(activity).toContainText('計算中');
@@ -70,14 +70,14 @@ test('形の計算中も投影の次の操作と計算状況を同時に読め�
     await page.evaluate(() => { delete window.pcadDebugStepDelayMs; });
   }
   await waitForRecompute(page, recalculation);
-  await expect(statusText(page)).toContainText('写したい立体の面か辺をクリック');
+  await expect(statusText(page)).toContainText('写したいソリッドの面か辺をクリック');
   await expect(page.locator('.pcad-statusbar__activity')).toHaveCount(0);
   await expect(page.getByRole('progressbar')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '中止', exact: true })).toHaveCount(0);
   // 投影の道具は面の選択へ切り替わるため、案内の保持を確認してから立体を選び直す。
   await sketchTool(page, '選択').click();
   await treeRow(page, '押し出し1').click();
-  await expect(propertyValue(page, '体積')).toHaveText('12000 mm³');
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', '12000 mm³');
 });
 
 test('作図の道具は入力の窓の段が進むごとに状態の欄の案内が替わる(矩形・円弧・長穴、FR-905)', async ({ page }, info) => {

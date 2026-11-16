@@ -1,7 +1,7 @@
 import { strengthFormulas, type StrengthFieldName, type StrengthResultName } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import type { StrengthSnapshot } from './strengthSession.js';
-import { FIELD_VALUE_DISPLAY_DIGITS, roundToSignificantDigits } from '../sketch/numericInputPresentation.js';
+import { displayNumber } from '../sketch/numericInputPresentation.js';
 
 const resultLabels: Readonly<Record<StrengthResultName, MessageKey>> = {
   secondMoment: 'strength.result.secondMoment', sectionModulus: 'strength.result.sectionModulus', innerDiameter: 'strength.result.innerDiameter',
@@ -19,14 +19,28 @@ const symbols: Readonly<Record<StrengthResultName | StrengthFieldName, string>> 
   reserveFactor: 'R', polarMoment: 'Ip', polarModulus: 'Zp', shearStress: 'τ', twist: 'θ',
 };
 const symbolMap = new Map(Object.entries(symbols));
+/** 公式の名前の所へ値を入れる。値は括弧で囲む。 */
+function substitute(source: string, values: ReadonlyMap<string, string>): string {
+  return source.replace(/[A-Za-z]+/gu, token => values.has(token) ? `(${values.get(token) ?? ''})` : token === 'pi' ? 'π' : token === 'sqrt' ? '√' : token);
+}
+
+/**
+ * 結果の 1 行。画面の文字(display・substitutedDisplay)は有効 6 桁(UI の点検の指摘 27、利用者の決定 2026-11-14)、
+ * 全部の桁(exact・substituted)は説明の title へ出す。計算の中の値は変えない。
+ */
 export function strengthResultRows(snapshot: StrengthSnapshot) {
   const variables = new Map(Array.from(snapshot.value.inputs, ([key, input]) => [key, input.canonical.exact]));
+  const shortValues = new Map(Array.from(snapshot.value.inputs, ([key, input]) => [key, displayNumber(input.canonical.value).text]));
   return strengthFormulas(snapshot.value.calculation).map(([name, source]) => {
     const result = snapshot.value.results.get(name);
-    const substituted = source.replace(/[A-Za-z]+/gu, token => variables.has(token) ? `(${variables.get(token) ?? ''})` : token === 'pi' ? 'π' : token === 'sqrt' ? '√' : token);
+    const substituted = substitute(source, variables);
+    const substitutedDisplay = substitute(source, shortValues);
     const formula = source.replace(/[A-Za-z]+/gu, token => symbolMap.get(token) ?? (token === 'pi' ? 'π' : token === 'sqrt' ? '√' : token));
-    if (result !== undefined) variables.set(name, result.exact);
-    return { name, label: t(resultLabels[name]), formula: `${symbols[name]} = ${formula}`, substituted,
-      exact: result?.exact ?? '', display: result === undefined ? '—' : String(roundToSignificantDigits(result.value, FIELD_VALUE_DISPLAY_DIGITS)) };
+    if (result !== undefined) {
+      variables.set(name, result.exact);
+      shortValues.set(name, displayNumber(result.value).text);
+    }
+    return { name, label: t(resultLabels[name]), formula: `${symbols[name]} = ${formula}`, substituted, substitutedDisplay,
+      exact: result?.exact ?? '', display: result === undefined ? '—' : displayNumber(result.value).text };
   });
 }

@@ -13,7 +13,7 @@ export function countSheetMetalSolids(oc: OpenCascadeInstance, shape: TopoDS_Sha
 
 export function joinSheetMetalShapes(oc: OpenCascadeInstance, target: TopoDS_Shape, tool: TopoDS_Shape, context: 'flange' | 'flat' = 'flange'): OcctShapeHandle {
   if (countSheetMetalSolids(oc, target) !== 1 || countSheetMetalSolids(oc, tool) !== 1) throw new Error(context === 'flat'
-    ? '展開のパネルが1つの立体になっていません。輪郭を確認してください。' : 'フランジは1つの板金ボディの縁から作成してください。');
+    ? '展開のパネルが1つのソリッドになっていません。輪郭を確認してください。' : 'フランジは1つの板金ボディの縁から作成してください。');
   const totalVolume = measureVolume(oc, target) + measureVolume(oc, tool);
   const { keep, release } = createAllocations();
   try {

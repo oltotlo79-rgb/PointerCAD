@@ -81,7 +81,12 @@ interface WaitObservation {
 type DiagnosticReaders = 'absent' | 'readable' | 'failing' | 'hanging';
 const assemblyDiagnostic = { status: 'idle', events: [{ gate: 'fake-gate' }], dropped: 0, observerFailures: 0 };
 const meshDiagnostic = { host: { epoch: 3, changes: [{ change: 'fake-change' }], dropped: 0, failures: 0 }, validations: [], dropped: 0, failures: 0 };
-const statusDiagnostic = 'エラー: 立体を作れませんでした: カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed';
+const statusDiagnostic = 'エラー: ソリッドを作れませんでした: カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed';
+// The viewport's assembly input observation (A-26): only the three named fields are copied into the notice.
+const viewportDiagnostic = { mateInputs: [{ deferred: 'applied', deferredReason: null }], assemblyReadyRefusal: 'refresh-pending',
+  assemblyRefreshOutcome: 'applied', unrelated: 'not copied' };
+const viewportText = JSON.stringify({ mateInputs: viewportDiagnostic.mateInputs, assemblyReadyRefusal: 'refresh-pending',
+  assemblyRefreshOutcome: 'applied' });
 const runtimeRecord = (seq: number, phase: string) => ({ seq, phase, dispatchId: 'mesh-1-1-2', partId: 'part:current', generation: 9 });
 const runtimeDiagnostic = { status: 'observed', reason: null,
   main: { records: [runtimeRecord(1, 'dispatch'), runtimeRecord(2, 'reply-rejected')] },
@@ -106,6 +111,7 @@ function observedPage(observations: readonly WaitObservation[], diagnostics: Dia
     pcadAssemblyRecomputeGates: diagnostic('assembly', assemblyDiagnostic),
     pcadMeshLedgerDiagnostics: diagnostic('mesh', meshDiagnostic),
     pcadRuntimePhases: diagnostic('runtime', diagnostics === 'hanging' ? new Promise(() => undefined) : Promise.resolve(runtimeDiagnostic)),
+    pcadViewportAssemblyOwner: diagnostic('viewport', viewportDiagnostic),
   };
   // The progress snapshot only looks the status line up; the failure diagnostic reads its text.
   const statusLine = { get textContent(): unknown { return diagnostic('status', statusDiagnostic)(); } };
@@ -177,12 +183,13 @@ describe('実待機関数の有限上限と終端の挙動', () => {
   });
   it('最新世代の失敗はpendingが残っていても次の観測を待たず通知する', async () => {
     const expectedDiagnostics: Record<Exclude<DiagnosticReaders, 'hanging'>, string> = {
-      absent: '{"status":"unavailable"}\nMesh ledger: {"status":"unavailable"}\n帯の文: 帯なし\nカーネルの段: {"status":"unavailable"}',
+      absent: '{"status":"unavailable"}\nMesh ledger: {"status":"unavailable"}\n帯の文: 帯なし\nカーネルの段: {"status":"unavailable"}' +
+        '\n組立のビューの入力: {"status":"unavailable"}',
       readable: `${JSON.stringify(assemblyDiagnostic)}\nMesh ledger: ${JSON.stringify(meshDiagnostic)}\n帯の文: ${statusDiagnostic}\n` +
         'カーネルの段: {"status":"observed","reason":null,"main":["dispatch:g9:mesh-1-1-2","reply-rejected:g9:mesh-1-1-2"],' +
-        '"worker":["occt-load-throw:g9:mesh-1-1-2"],"occtLoadThrows":1}',
+        `"worker":["occt-load-throw:g9:mesh-1-1-2"],"occtLoadThrows":1}\n組立のビューの入力: ${viewportText}`,
       failing: 'assembly diagnostic read failed\nMesh ledger: mesh diagnostic read failed\n' +
-        '帯の文: status diagnostic read failed\nカーネルの段: runtime diagnostic read failed',
+        '帯の文: status diagnostic read failed\nカーネルの段: runtime diagnostic read failed\n組立のビューの入力: viewport diagnostic read failed',
     };
     const notices: string[] = [];
     for (const diagnostics of ['absent', 'readable', 'failing'] as const) {
@@ -197,7 +204,7 @@ describe('実待機関数の有限上限と終端の挙動', () => {
       expect(pollState.outcomes, diagnostics).toEqual(['failed']);
       expect(pollState.timeouts, diagnostics).toEqual([math.EXACT_MATH_ENGINE_LIMITS.totalMs]);
       // Diagnostics run after the terminal observation, separately from it, once per reader.
-      expect(page.diagnosticReads(), diagnostics).toEqual(diagnostics === 'absent' ? [] : ['assembly', 'mesh', 'status', 'runtime']);
+      expect(page.diagnosticReads(), diagnostics).toEqual(diagnostics === 'absent' ? [] : ['assembly', 'mesh', 'status', 'runtime', 'viewport']);
       const [notice = '', diagnosticText = ''] = error.message.split('\nAssembly recompute gates: ');
       expect(cause.message, diagnostics).toContain('最新世代の結末が期待と異なる場合は上限まで待たず知らせる');
       expect(notice.endsWith(`\n${cause.message}`), diagnostics).toBe(true);
@@ -215,8 +222,9 @@ describe('実待機関数の有限上限と終端の挙動', () => {
       await vi.advanceTimersByTimeAsync(5_000);
       const error = await pending;
       if (!(error instanceof Error)) throw new Error('missing terminal notice');
-      expect(error.message.endsWith(`\n帯の文: ${statusDiagnostic}\nカーネルの段: {"status":"timeout","limitMs":5000}`)).toBe(true);
-      expect(page.diagnosticReads()).toEqual(['assembly', 'mesh', 'status', 'runtime']);
+      expect(error.message.endsWith(`\n帯の文: ${statusDiagnostic}\nカーネルの段: {"status":"timeout","limitMs":5000}` +
+        `\n組立のビューの入力: ${viewportText}`)).toBe(true);
+      expect(page.diagnosticReads()).toEqual(['assembly', 'mesh', 'status', 'runtime', 'viewport']);
     } finally { vi.useRealTimers(); }
   });
   it('明示的な失敗期待も実Outcome関数で直ちに完了する', async () => {

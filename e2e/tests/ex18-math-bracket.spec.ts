@@ -50,7 +50,7 @@ function machiningTool(page: Page, label: string): Locator {
 async function volumeNumber(page: Page): Promise<number> {
   const cell = propertyValue(page, '体積');
   if ((await cell.count()) === 0) return Number.NaN;
-  return Number.parseFloat(await cell.innerText());
+  return Number.parseFloat(((await cell.getAttribute('title')) ?? (await cell.innerText())));
 }
 
 /** 体積を許容差 0.01 mm³ で比べる(solid.spec.ts の expectVolume と同じ基準)。 */
@@ -136,7 +136,7 @@ test.describe('EX-18 数式の座標の画面', () => {
     await expect(solidRow(page, '穴1')).toBeVisible();
     await solidRow(page, '穴1').click();
     await expectVolume(page, BRACKET_40);
-    await expect(propertyValue(page, '加工するもとの立体')).toHaveText('箱1');
+    await expect(propertyValue(page, '加工するもとのソリッド')).toHaveText('箱1');
 
     // 4) 保存して開き直す。式のまま戻り、同じ体積になる。
     const savedPath = info.outputPath('ex18-math-bracket.pcad');

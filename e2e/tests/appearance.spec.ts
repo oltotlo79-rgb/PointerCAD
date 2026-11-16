@@ -249,7 +249,7 @@ async function makePlate(page: Page): Promise<void> {
 
   await solidRow(page, '押し出し1').click();
   await waitForRecompute(page, token);
-  await expect(propertyValue(page, '体積')).toHaveText(`${String(PLATE_VOLUME)} ${VOLUME_UNIT}`, {
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(PLATE_VOLUME)} ${VOLUME_UNIT}`, {
     timeout: KERNEL_TIMEOUT_MS,
   });
   await expect(propertyValue(page, '三角形の数')).toHaveText(PLATE_TRIANGLES);
@@ -318,7 +318,7 @@ test.describe('P5 外観', () => {
     await expect(solidRow(page, '押し出し1')).toBeVisible();
     await solidRow(page, '押し出し1').click();
     await waitForRecompute(page, openToken);
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(PLATE_VOLUME)} ${VOLUME_UNIT}`, {
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(PLATE_VOLUME)} ${VOLUME_UNIT}`, {
       timeout: KERNEL_TIMEOUT_MS,
     });
 
@@ -382,7 +382,7 @@ test.describe('P5 外観', () => {
     expect(after.lastOutcome).toBe(before.lastOutcome);
     expect(await takeProgress(page)).toEqual([]);
     await expect(page.locator('[role="progressbar"]')).toHaveCount(0);
-    await expect(propertyValue(page, '体積')).toHaveText(`${String(PLATE_VOLUME)} ${VOLUME_UNIT}`);
+    await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(PLATE_VOLUME)} ${VOLUME_UNIT}`);
     await expect(propertyValue(page, '三角形の数')).toHaveText(PLATE_TRIANGLES);
 
     /*

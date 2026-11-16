@@ -168,8 +168,16 @@ describe('K0 (b) 登録口は族の定義の誤りを断る', () => {
 describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部品だけを登録口へ回す', () => {
   const unknown: StandardPartSource = { ...SAVED, options: { ...SAVED.options, family: 'future-family' } };
 
-  it('K0 の製品の登録口は族を 1 つも持たない(新しい規格の行を入れない)', () => {
-    expect(PRODUCT_CATALOG_REGISTRY.entries).toEqual([]);
+  it('製品の登録口の族は、包みの一覧に足した物だけ(K0 は 0 族、K4a でカムフォロア・巻きブシュ、K4b で平行ピン・ナット 3 種・ばね、K-05 でローラフォロア)', () => {
+    expect(PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id)).toEqual(['cam-follower-stud-metric', 'wrapped-bush',
+      'parallel-pin', 'hex-nut-style1-extended', 'hex-nut-style2', 'hex-nut-thin', 'compression-spring', 'roller-follower-yoke-metric', 'angular-contact-ball-bearing',
+      'thrust-ball-bearing-flat-seat', 'cylindrical-roller-bearing-nu', 'cylindrical-roller-bearing-nj',
+      'cylindrical-roller-bearing-nup', 'cylindrical-roller-bearing-n', 'cylindrical-roller-bearing-nf', 'needle-roller-bearing-rna',
+      'cross-recessed-pan-head-screw', 'cross-recessed-countersunk-screw', 'plain-washer-normal', 'plain-washer-small',
+      'spring-washer-number2', 'spring-washer-number3', 'socket-head-cap-screw', 'countersunk-socket-screw',
+      'hex-bolt-main', 'button-head-socket-screw', 'e-ring', 'plain-washer-large', 'parallel-key-square',
+      'taper-pin', 'split-pin', 'flange-nut', 'cross-recessed-cheese-head-screw', 'set-screw-cup-point', 'set-screw-flat-point',
+      'set-screw-dog-point', 'set-screw-cone-point', 'oil-seal-specified', 'o-ring-p', 'o-ring-g']);
   });
 
   it('知らない族は standardPartRejection・組み立て・理由つきの組み立てで同じ型付きの拒否になる', () => {

@@ -400,14 +400,14 @@ describe('いまの値の判定(currentMathGeometry)', () => {
       ...resultFor(fake.calls[0].document),
       generation: 1,
       errors: [
-        { featureId: 'extrude-1', code: 'kernelFailed', message: '立体を作れませんでした' },
+        { featureId: 'extrude-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' },
         { featureId: 'extrude-1', code: 'kernelFailed', message: '二つ目の理由' },
       ],
     });
     await tick();
     const state = useAppStore.getState();
     expect(state.mathGeometryResult?.evaluated).toBe(false);
-    expect(currentMathGeometry(state)).toEqual({ status: 'notEvaluated', message: '立体を作れませんでした' });
+    expect(currentMathGeometry(state)).toEqual({ status: 'notEvaluated', message: 'ソリッドを作れませんでした' });
     expect(inputsNow()).toBeNull();
   });
 
@@ -431,7 +431,7 @@ describe('いまの値の判定(currentMathGeometry)', () => {
     fake.calls[0].settle({
       ...resultFor(fake.calls[0].document),
       generation: 1,
-      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: '立体を作れませんでした' }],
+      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
     });
     await tick();
     expect(useAppStore.getState().mathGeometryResult?.evaluated).toBe(false);
@@ -567,10 +567,10 @@ describe('いまの値になるまで待つ(waitForCurrentMathGeometry)', () => 
     fake.calls[2].settle({
       ...resultFor(fake.calls[2].document),
       generation: 3,
-      errors: [{ featureId: 'extrude-3', code: 'kernelFailed', message: '立体を作れませんでした' }],
+      errors: [{ featureId: 'extrude-3', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
     });
     await tick();
-    await expect(waitForCurrentMathGeometry()).resolves.toEqual({ status: 'notEvaluated', message: '立体を作れませんでした' });
+    await expect(waitForCurrentMathGeometry()).resolves.toEqual({ status: 'notEvaluated', message: 'ソリッドを作れませんでした' });
 
     useAppStore.getState().openAssembly(createAssemblyDocument('組み立て1'));
     await expect(waitForCurrentMathGeometry()).resolves.toEqual({ status: 'notPart' });

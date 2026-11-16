@@ -373,7 +373,7 @@ describe('アセンブリのツールバー(P7 タスク45)', () => {
     const rows = fileMenuItems([{ id: 'template', name: 'ひな形' }], [{ id: 'recent', name: '最近' }], 'assembly');
     expect(rows.map((item) => item.id)).toEqual(['savePoints', 'newDrawingFromPart', 'newDrawingFromTemplate', 'newAssembly', 'saveAs', 'recentFile:recent']);
     expect(rows.map((item) => item.label ?? t(item.labelKey))).toEqual([
-      '名前付き保存点', 'この組立から図面を作成', '図面ひな形から作成',
+      '名前付き保存点', 'このアセンブリから図面を作成', '図面ひな形から作成',
       '新しいアセンブリ', '名前を付けて保存', '最近',
     ]);
   });

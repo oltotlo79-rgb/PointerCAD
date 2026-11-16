@@ -195,9 +195,7 @@ export function CanvasSection(): React.JSX.Element {
                       state.removeCanvas(canvas.id);
                     }
                   }}
-                >
-                  ×
-                </button>
+                >{t('propertyPanel.canvasRemove')}</button>
               </div>
               {action.status === 'failed' ? <div className="pcad-appearance__actions">
                 <button type="button" className="pcad-button" title={t('propertyPanel.canvasRetryTooltip')}

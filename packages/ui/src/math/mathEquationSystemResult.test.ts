@@ -45,6 +45,6 @@ describe('複数の方程式の実結果に候補・自由変数・条件を表�
     if (result.evaluation.status !== 'value' || result.evaluation.kind !== 'equation-system') throw new Error('解がありません');
     const display = mathEquationSystemResult(result.evaluation);
     expect(display.message).toBe(example.row === '' ? '指定した範囲に解はありません。' : '複数の方程式の解');
-    expect(display.detail).toBe(`指定範囲: ℝ。${example.row}\nsystemsolution(...,候補番号,[自由変数の値])で選び、component(...,成分番号)で座標に使う成分を指定します。番号は1からです。有限個の解は未知数の順に実部、次に虚部の小さい順、自由変数がある場合は表示順です。条件を満たさない値は使えません。`);
+    expect(display.detail).toBe(`指定範囲: ℝ。${example.row}\nsystemsolution(...,候補番号,[自由変数の値])で選びます。component(...,成分番号)で、座標に使う成分を指定します。番号は1からです。有限個の解は未知数の順に実部、次に虚部の小さい順、自由変数がある場合は表示順です。条件を満たさない値は使えません。`);
   });
 });

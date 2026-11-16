@@ -323,7 +323,7 @@ describe('リブ(FR-420)', () => {
   it('板に届かない位置の輪郭は断る', () => {
     withPlate((plate) => {
       expect(() => makeRib(oc, plate.shape, withInput(RIB_ACROSS, { profile: LINE_BESIDE }))).toThrow(
-        'リブが立体に届いていません。位置を見直してください。',
+        'リブがソリッドに届いていません。位置を見直してください。',
       );
     });
   });
@@ -331,7 +331,7 @@ describe('リブ(FR-420)', () => {
   it('板の中にある輪郭は断る', () => {
     withPlate((plate) => {
       expect(() => makeRib(oc, plate.shape, withInput(RIB_ACROSS, { profile: LINE_INSIDE }))).toThrow(
-        'リブの輪郭が立体の中にあります。',
+        'リブの輪郭がソリッドの中にあります。',
       );
     });
   });

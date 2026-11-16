@@ -1,4 +1,3 @@
-import { CameraControlSettingsForm } from './CameraControlSettingsForm.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { t, type MessageKey } from '../i18n/t.js';
@@ -14,7 +13,8 @@ import {
 } from './settings.js';
 import { settingsCloseRequest, submitSettingsDrafts } from './settingsDrafts.js';
 import { ToolDefaultsForm } from './ToolDefaultsForm.js';
-import { ShortcutSettingsForm } from './ShortcutSettingsForm.js';
+import { InputBindingsWindow } from './InputBindingsWindow.js';
+import { SettingsDraftPrompt, type DraftPromptTexts } from './SettingsDraftPrompt.js';
 import { openTutorial } from '../tutorial/tutorialActions.js';
 import { OfflineSettings } from './OfflineSettings.js';
 import './settingsPanel.css';
@@ -31,8 +31,9 @@ import './settingsPanel.css';
  * (要件§7.1、rules/04-設計の規律.md)。
  *
  * 中身は畳める見出し(表示・操作の割り当て・自動保存・道具の初期値・その他)に分ける(UI/UX の点検の指摘 7)。
- * 視点の操作とキーの割り当ては「操作の割り当て」の 1 つの見出しの下に置く(後の操作の割り当ての窓が、
- * この見出しの中身を差し替える)。最初は全て開いている。
+ * 「操作の割り当て」の見出しには、視点の操作とキーの割り当てを変える窓(InputBindingsWindow。動かせる・外を押しても
+ * 閉じない・一覧を閉じても残る)を開くボタンだけを置く。押すと一覧を閉じてから窓を開く(一覧の下書きは閉じる時と同じく
+ * 確かめる。窓と一覧を重ねない)。最初は全て開いている。
  *
  * 適用していない変更(下書き)がある間は、外を押す・Esc・歯車・チュートリアルで閉じない。閉じる代わりに
  * 窓の中で[適用して閉じる][捨てて閉じる][続ける]を出す(下書きを黙って捨てない。`settingsDrafts.ts`)。
@@ -188,31 +189,13 @@ function DisplaySettingsGroups(): React.JSX.Element {
   );
 }
 
-/** 下書きがある時の確かめ。窓の中に出し、モーダルにしない(NFR-UX-3)。 */
-function DraftPrompt({ failed, onApply, onDiscard, onContinue }: {
-  readonly failed: boolean;
-  readonly onApply: () => void;
-  readonly onDiscard: () => void;
-  readonly onContinue: () => void;
-}): React.JSX.Element {
-  const firstRef = useRef<HTMLButtonElement>(null);
-  // 確かめが出たら、キーボードの人がすぐ選べるよう最初の選択へ焦点を移す。
-  useEffect(() => { firstRef.current?.focus(); }, []);
-  return (
-    <div className="pcad-settings__draft" role="group" aria-label={t('toolbar.settings.draft.message')}>
-      <p role="status">{t('toolbar.settings.draft.message')}</p>
-      {failed ? <p role="alert">{t('toolbar.settings.draft.applyFailed')}</p> : null}
-      <div className="pcad-settings__draft-actions">
-        <button ref={firstRef} type="button" className="pcad-button" title={t('toolbar.settings.draft.applyCloseGuide')}
-          onClick={onApply}>{t('toolbar.settings.draft.applyClose')}</button>
-        <button type="button" className="pcad-button" title={t('toolbar.settings.draft.discardCloseGuide')}
-          onClick={onDiscard}>{t('toolbar.settings.draft.discardClose')}</button>
-        <button type="button" className="pcad-button" title={t('toolbar.settings.draft.continueGuide')}
-          onClick={onContinue}>{t('toolbar.settings.draft.continue')}</button>
-      </div>
-    </div>
-  );
-}
+/** 設定の一覧の下書きの確かめの文言。 */
+const PANEL_DRAFT_TEXTS: DraftPromptTexts = {
+  message: 'toolbar.settings.draft.message', applyFailed: 'toolbar.settings.draft.applyFailed',
+  applyClose: 'toolbar.settings.draft.applyClose', applyCloseGuide: 'toolbar.settings.draft.applyCloseGuide',
+  discardClose: 'toolbar.settings.draft.discardClose', discardCloseGuide: 'toolbar.settings.draft.discardCloseGuide',
+  continue: 'toolbar.settings.draft.continue', continueGuide: 'toolbar.settings.draft.continueGuide',
+};
 
 export function SettingsPanel(): React.JSX.Element {
   const [open, setOpen] = useState(false);
@@ -220,6 +203,8 @@ export function SettingsPanel(): React.JSX.Element {
   const [closing, setClosing] = useState<'confirm' | 'failed' | null>(null);
   /** 「適用して閉じる」で各 form を送った回数。送った後の描画で、下書きが残ったかを確かめる。 */
   const [applyRequest, setApplyRequest] = useState(0);
+  /** 操作の割り当ての窓。設定の一覧を閉じても残る(一覧の開閉とは別の状態)。 */
+  const [bindingsOpen, setBindingsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   /** 確かめの後に続ける操作(チュートリアルを始めるなど)。 */
@@ -302,7 +287,7 @@ export function SettingsPanel(): React.JSX.Element {
           ref={panelRef}
         >
           <span className="pcad-settings__title">{t('settings.title')}</span>
-          {closing === null ? null : <DraftPrompt failed={closing === 'failed'}
+          {closing === null ? null : <SettingsDraftPrompt texts={PANEL_DRAFT_TEXTS} failed={closing === 'failed'}
             onApply={() => {
               const panel = panelRef.current;
               if (panel !== null) submitSettingsDrafts({ querySelectorAll: (selectors) => panel.querySelectorAll<HTMLFormElement>(selectors) });
@@ -311,8 +296,9 @@ export function SettingsPanel(): React.JSX.Element {
             onDiscard={finishClose} onContinue={() => { afterCloseRef.current = null; setClosing(null); }} />}
           <SettingsSection titleKey="toolbar.settings.section.display"><DisplaySettingsGroups /></SettingsSection>
           <SettingsSection titleKey="toolbar.settings.section.controls">
-            <CameraControlSettingsForm />
-            <ShortcutSettingsForm />
+            <button type="button" className="pcad-button" data-help-topic="shortcuts" aria-expanded={bindingsOpen}
+              title={t('settings.inputBindings.openGuide')} onClick={() => { requestClose(() => { setBindingsOpen(true); }); }}>
+              {t('settings.inputBindings.open')}</button>
           </SettingsSection>
           <SettingsSection titleKey="toolbar.settings.section.autoSave"><AutoSaveIntervalForm /></SettingsSection>
           <SettingsSection titleKey="toolbar.settings.section.toolDefaults"><ToolDefaultsForm /></SettingsSection>
@@ -324,6 +310,7 @@ export function SettingsPanel(): React.JSX.Element {
           <p className="pcad-settings__hint">{t('settings.hint')}</p>
         </div>
       ) : null}
+      {bindingsOpen ? <InputBindingsWindow onClose={() => { setBindingsOpen(false); }} /> : null}
     </div>
   );
 }

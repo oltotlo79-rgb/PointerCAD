@@ -1,9 +1,9 @@
 {
   "solidPlastic.title": "小変形の弾塑性解析",
   "solidPlastic.open": "小変形の弾塑性",
-  "solidPlastic.assumptions": "選んだ一つの立体を、均質な等方材料として静的に解析します。降伏後は線形の等方硬化(ミーゼス)に従います。ひずみが小さい範囲(0.05まで)に限り、大変形・接触・部品間の結合・損傷・移動硬化は含みません。",
-  "solidPlastic.selectionHelp": "画面で同じ立体の面を選び、固定面と荷重面をそれぞれ登録してください。固定面の三方向の変位をゼロにします。面荷重は全体座標のX・Y・Z方向の基準値で、荷重の履歴の倍率を掛けて加えます。",
-  "solidPlastic.body": "対象の立体",
+  "solidPlastic.assumptions": "選んだ一つのソリッドを、均質な等方材料として静的に解析します。降伏後は線形の等方硬化(ミーゼス)に従います。ひずみが小さい範囲(0.05まで)に限り、大変形・接触・部品間の結合・損傷・移動硬化は含みません。",
+  "solidPlastic.selectionHelp": "画面で同じソリッドの面を選び、固定面と荷重面をそれぞれ登録してください。固定面の三方向の変位をゼロにします。面荷重は全体座標のX・Y・Z方向の基準値で、荷重の履歴の倍率を掛けて加えます。",
+  "solidPlastic.body": "対象のソリッド",
   "solidPlastic.none": "未選択",
   "solidPlastic.fixed": "選択面を固定",
   "solidPlastic.loaded": "選択面に荷重",
@@ -31,8 +31,8 @@
   "solidPlastic.cancelled": "計算を中止しました。結果はありません。",
   "solidPlastic.failed": "解析を完了できませんでした。入力と形状を確認してください。",
   "solidPlastic.changed": "形状または解析入力が変わりました。現在の面と条件を確認して解析し直してください。",
-  "solidPlastic.reselect": "現在の立体の面を画面で選び直してください。",
-  "solidPlastic.selectBody": "同じ有効な立体の面を選んでください。別の立体へ変えるときは一度戻って開き直してください。",
+  "solidPlastic.reselect": "現在のソリッドの面を画面で選び直してください。",
+  "solidPlastic.selectBody": "同じ有効なソリッドの面を選んでください。別のソリッドへ変えるときは一度戻って開き直してください。",
   "solidPlastic.historyInvalid": "荷重の履歴は、0から始まる数値をカンマで区切って入力してください。",
   "solidPlastic.results": "解析結果(履歴の区切りごと)",
   "solidPlastic.factor": "荷重の倍率",
@@ -52,5 +52,5 @@
   "solidPlastic.guide.cancel": "計算中の解析を止めます。止めた解析の結果は残りません。",
   "solidPlastic.guide.save": "いまの入力をこの文書に保存します。解析の結果は保存しません。",
   "solidPlastic.guide.close": "実行中の計算を止めて、この画面を閉じます。保存していない入力は残りません。",
-  "solidPlastic.openHelp": "選んだ立体を、荷重の履歴に沿って弾塑性解析する画面を開きます。"
+  "solidPlastic.openHelp": "選んだソリッドを、荷重の履歴に沿って弾塑性解析する画面を開きます。"
 }

@@ -32,6 +32,6 @@ export async function jointCaptureFlow(page: Page, info: TestInfo): Promise<void
     name: 'joint-dialog', dialog,
     fixture: { kind: '回転', axis: 'Z軸', rangeMin: '30', rangeMax: '120' }, script: new URL(import.meta.url),
   });
-  await dialog.getByRole('button', { name: '取り消す', exact: true }).click();
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
   await expect(dialog).toHaveCount(0);
 }

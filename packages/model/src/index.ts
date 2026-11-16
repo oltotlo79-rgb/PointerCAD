@@ -289,6 +289,7 @@ export {
 } from './sketch/intersectionMath.js';
 export type { TrimErrorKey } from './sketch/trimExtend.js';
 export { splitLineIntersections } from './sketch/splitLineIntersections.js';
+export { findSketchRegions, regionAtPoint } from './sketch/sketchRegions.js';
 export { calculateStrength, strengthCalculationFields } from './measure/strengthCalculation.js';
 export type { StrengthCalculationValue, StrengthCalculationOutcome, StrengthFieldName } from './measure/strengthCalculation.js';
 export { readStrengthInputs } from './measure/strengthInputs.js';
@@ -1193,7 +1194,7 @@ export {
   SOCKET_HEAD_CAP_SCREW_TABLE, SPRING_WASHER_TABLE,
 } from './assembly/standard/fasteners.js';
 export {
-  bearingBoreFromDesignation, bearingSizes, DEEP_GROOVE_BALL_BEARINGS,
+  ALL_DEEP_GROOVE_BALL_BEARINGS, bearingBoreFromDesignation, bearingSizes, DEEP_GROOVE_BALL_BEARINGS,
   findDeepGrooveBallBearing,
 } from './assembly/standard/bearings.js';
 export {
@@ -1210,6 +1211,8 @@ export { CATALOG_ITEM_REJECTION_TEMPLATES } from './assembly/catalog/rejection.j
 /** 規格部品の族の登録口(族の表は必要な時だけ読む)。ui の文書を開く道・図面・選ぶ画面が ensure を待つ。 */
 export { PRODUCT_CATALOG_REGISTRY } from './assembly/catalog/registry.js';
 export type { CatalogRegistry } from './assembly/catalog/registry.js';
+/** 読み込んだ族と行から、置く族の部品の保存の形を作る(ui の選ぶ画面が使う。版の書き忘れを起こさない)。 */
+export { createCatalogItemSource } from './assembly/catalog/source.js';
 export type {
   SteelEvidence,
   SteelMaterialGrade,

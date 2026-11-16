@@ -4,6 +4,7 @@ import { readShellCadAnalysisInput, SHELL_CAD_ANALYSIS_SCHEMA, SHELL_CAD_SCHEMA,
   type ShellCadAnalysisInput } from '@pointercad/model/beam-analysis';
 import { plasticBarExpressionField } from '../beam/beamFields.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { femAssetFailureKey } from '../femFailureMessage.js';
 
 /**
  * Screen draft of one thin-sheet (shell) analysis: explicit midsurface faces of one CAD sheet body, thickness and
@@ -189,6 +190,9 @@ const FAILURE_KEYS: Readonly<Record<string, MessageKey>> = {
   'result-binding': 'shellAnalysis.failure.resultBinding', stale: 'shellAnalysis.changed',
 };
 export function shellFailureMessage(code: string, message: string): string {
+  // A-24: 計算の準備のファイルの断りは、ほかの解析の窓と同じ共通の文(code と内部の文を添えない)。
+  const asset = femAssetFailureKey(code);
+  if (asset !== null) return t(asset);
   const key = FAILURE_KEYS[code];
   return key === undefined ? `${t('shellAnalysis.failed')} (${code}) ${message}` : `${t(key)} (${code})`;
 }

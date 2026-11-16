@@ -12,7 +12,7 @@ async function choose(page: Page, name: string) {
   await page.locator('.pcad-menu__panel[aria-label="板金"]').getByRole('button', { name, exact: true }).click();
 }
 async function volume(page: Page) {
-  const value = await page.locator('.pcad-panel--right dt.pcad-properties__key').filter({ hasText: /^体積$/ }).locator('xpath=following-sibling::dd[1]').textContent();
+  const value = await page.locator('.pcad-panel--right dt.pcad-properties__key').filter({ hasText: /^体積$/ }).locator('xpath=following-sibling::dd[1]').evaluate(node => node.getAttribute('title') ?? node.textContent);
   return Number(value?.replaceAll(',', '').match(/[\d.]+/u)?.[0] ?? NaN);
 }
 
@@ -58,7 +58,7 @@ test('P10 板金の任意輪郭・穴・複数縁・曲げ条件を指定してU
   await flat.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 3' });
   await flat.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(flat.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  expect(Number((await flat.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(6200 + 444 * Math.PI, 4);
+  expect(Number(await flat.getByRole('status').getAttribute('title'))).toBeCloseTo(6200 + 444 * Math.PI, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-profile-flat.png') });
   const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
   const path = testInfo.outputPath('sheet-profile.pcad'); await (await saving).saveAs(path);

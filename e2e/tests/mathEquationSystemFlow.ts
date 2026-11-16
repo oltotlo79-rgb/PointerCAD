@@ -19,7 +19,7 @@ export async function mathEquationSystemFlow(page: Page, info: TestInfo, app?: E
   await input.fill('solvesystem([x*y=1],[x,y],ℝ)');
   await expectResult(result.locator(':scope > p')).toHaveText([
     '複数の方程式の解',
-    '指定範囲: ℝ。候補 1: x = 1/y, y = y。値を指定する変数の順番: y。成立条件: y ≠ 0\nsystemsolution(...,候補番号,[自由変数の値])で選び、component(...,成分番号)で座標に使う成分を指定します。番号は1からです。有限個の解は未知数の順に実部、次に虚部の小さい順、自由変数がある場合は表示順です。条件を満たさない値は使えません。',
+    '指定範囲: ℝ。候補 1: x = 1/y, y = y。値を指定する変数の順番: y。成立条件: y ≠ 0\nsystemsolution(...,候補番号,[自由変数の値])で選びます。component(...,成分番号)で、座標に使う成分を指定します。番号は1からです。有限個の解は未知数の順に実部、次に虚部の小さい順、自由変数がある場合は表示順です。条件を満たさない値は使えません。',
   ]);
   await expect(apply).toBeDisabled();
   await page.setViewportSize({ width: 1440, height: 1100 });

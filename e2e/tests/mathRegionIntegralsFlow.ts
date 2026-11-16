@@ -33,13 +33,13 @@ export async function mathRegionIntegralsFlow(page: Page, info: TestInfo, app?: 
     await input.fill(source); await expect(result).toHaveText(`= ${value}`, { timeout: 225_000 });
   }
   await input.fill('surfaceintegral(1,[x,y,z],[cos(u),sin(u),v],[u,v],[0,0],[360,2])');
-  await expect(result).toHaveText(/^= 12\.5663706143/u, { timeout: 225_000 });
+  await expect(result.locator('.pcad-math-editor__full p')).toHaveText(/^= 12\.5663706143/u, { timeout: 225_000 });
   await angle.selectOption('radian');
   await expect(result).toHaveText('= 720', { timeout: 225_000 });
   await angle.selectOption('degree');
   // Wait for the degree result first: typing or switching notation while it runs cancels it, and a cancelled
   // calculation part is replaced and prepares the exact runtime again (rules/06 §10.149).
-  await expect(result).toHaveText(/^= 12\.5663706143/u, { timeout: 225_000 });
+  await expect(result.locator('.pcad-math-editor__full p')).toHaveText(/^= 12\.5663706143/u, { timeout: 225_000 });
   const source = 'surfaceintegral(1,[x,y,z],[2*u,3*v,0],[u,v],[0,0],[1,1])';
   const changedSource = 'surfaceintegral(1,[x,y,z],[2*u,3*v,0],[u,v],[0,0],[2,1])';
   await input.fill(source); await expect(result).toHaveText('= 6', { timeout: 225_000 });

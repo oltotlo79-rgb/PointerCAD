@@ -1,7 +1,11 @@
+import { attachPointerCommands } from '../commands/attachPointerCommands.js';
+import { executeCommand } from '../commands/commandRegistry.js';
+import { EMPTY_MOUSE_BUTTON_COMMANDS } from '../commands/pointerCommandGesture.js';
 import { currentViewControls } from '../settings/viewControlSettings.js';
+import { activeAssemblyDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
-import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
+import { attachCameraControls, type CameraControls, type ViewCenterResolver } from './attachCameraControls.js';
 import { attachQuadInput } from './attachQuadInput.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { HOME_ORBIT, viewDirection } from './cameraMath.js';
@@ -11,6 +15,8 @@ import { quadLayout } from './quadLayout.js';
 import type { sketchDragTimingForE2E } from './sketchDragTiming.js';
 import type { ViewportAssemblyInput } from './viewportCanvasAssemblyInput.js';
 import type { ViewportLifetime } from './viewportLifetime.js';
+import { fitOrbitToBounds, viewFitBounds } from './viewFit.js';
+import { assemblySurfacePoint, boundsCenter, partSurfacePoint, rayPointAtTargetDepth } from './viewCenters.js';
 
 /*
  * ViewportCanvas の入力の結線(FR-102・FR-108・FR-106・FR-605)。4 区画の切り替え・視点の操作・名前付きの視点・
@@ -33,9 +39,64 @@ interface ViewportInputDependencies {
   readonly setControlsReady: (ready: boolean) => void;
 }
 
-/** 名前付きの視点の取り込みと戻し(視点の正本はここにしか無いので、今の視点から写す)。 */
-function createViewCameraController(controls: CameraControls, isAlive: () => boolean): ViewCameraController {
+/**
+ * 回転の中心・拡大の中心の点(B-08d)。押した所の形の上の点は scene の当たりの面と光線の交点、選んだ物の中心は
+ * 「選択に合わせる」と同じ外接箱の中心。形に当たらない所の拡大は、注視点の深さの面の上の点へ向ける。
+ */
+function createViewCenters(scene: Pick<ViewportScene, 'viewFitSource' | 'pointerRay' | 'pickFaceAt' | 'pickAssemblyFace'>,
+  canvas: Pick<HTMLCanvasElement, 'getBoundingClientRect'>): ViewCenterResolver {
+  const canvasPoint = (clientX: number, clientY: number): readonly [number, number] | null => {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
+    const rect = canvas.getBoundingClientRect();
+    return [clientX - rect.left, clientY - rect.top];
+  };
+  const assemblyMode = (): boolean => activeAssemblyDocument(useAppStore.getState()) !== null;
+  const surface = (x: number, y: number) => {
+    const ray = scene.pointerRay(x, y);
+    if (ray === null) return { ray, point: null };
+    if (assemblyMode()) {
+      const hit = scene.pickAssemblyFace(x, y), source = scene.viewFitSource('assembly');
+      return { ray, point: hit === null || source.kind !== 'assembly' ? null : assemblySurfacePoint(source.assembly, hit, ray) };
+    }
+    const hit = scene.pickFaceAt(x, y), source = scene.viewFitSource('part');
+    return { ray, point: hit === null || source.kind !== 'part' ? null : partSurfacePoint(source.solid, hit, ray) };
+  };
   return {
+    orbitPivot: (center, clientX, clientY) => {
+      if (center === 'selection') {
+        const bounds = viewFitBounds(scene.viewFitSource(assemblyMode() ? 'assembly' : 'part'), 'selection', useAppStore.getState().selection);
+        return bounds === null ? null : boundsCenter(bounds);
+      }
+      const at = canvasPoint(clientX, clientY);
+      return at === null ? null : surface(at[0], at[1]).point;
+    },
+    zoomPoint: (clientX, clientY, current) => {
+      const at = canvasPoint(clientX, clientY);
+      if (at === null) return null;
+      const { ray, point } = surface(at[0], at[1]);
+      return point ?? (ray === null ? null : rayPointAtTargetDepth(ray, current.target, viewDirection(current)));
+    },
+  };
+}
+
+/**
+ * 名前付きの視点の取り込みと戻し(視点の正本はここにしか無いので、今の視点から写す)。直前の視点と、全体を表示・
+ * 選択に合わせる(B-08c)もここから行う。収める形は scene の描画の一式から、今の画面(組立か部品か)の物を使う。
+ */
+function createViewCameraController(controls: CameraControls, isAlive: () => boolean,
+  scene: Pick<ViewportScene, 'viewFitSource'>, canvas: Pick<HTMLCanvasElement, 'clientWidth' | 'clientHeight'>): ViewCameraController {
+  return {
+    previous: () => isAlive() && controls.previousView(),
+    fit: (scope, selection) => {
+      if (!isAlive()) return false;
+      const source = scene.viewFitSource(activeAssemblyDocument(useAppStore.getState()) === null ? 'part' : 'assembly');
+      const bounds = viewFitBounds(source, scope, selection);
+      const fitted = bounds === null ? null
+        : fitOrbitToBounds(controls.getOrbit(), bounds, canvas.clientWidth / Math.max(1, canvas.clientHeight));
+      if (fitted === null) return false;
+      controls.setOrbit(fitted);
+      return true;
+    },
     capture: () => {
       if (!isAlive()) return namedCameraFromOrbit(HOME_ORBIT, useAppStore.getState().projection);
       const { quadCamera, projection } = useAppStore.getState();
@@ -83,11 +144,15 @@ export function attachViewportInputs(deps: ViewportInputDependencies) {
       const pane = quadLayout(canvas.width, canvas.height).find((entry) => entry.id === useAppStore.getState().quadCamera?.active);
       return Math.max(1, (pane?.rectangle.height ?? canvas.height) * canvas.clientHeight / Math.max(1, canvas.height));
     },
-  }, () => currentViewControls(useAppStore.getState().displaySettings));
+  }, () => currentViewControls(useAppStore.getState().displaySettings), createViewCenters(scene, canvas));
   lifetime.register('camera ref', () => { if (deps.controlsRef.current === controls) deps.controlsRef.current = null; });
   lifetime.register('camera input', () => { controls.detach(); });
+  // マウスの戻る・進む・中ボタンのダブルクリックの命令(B-08e)。割り当てた入力だけを受ける。
+  const detachPointerCommands = attachPointerCommands(canvas,
+    () => useAppStore.getState().displaySettings.mouseButtonCommands ?? EMPTY_MOUSE_BUTTON_COMMANDS, (id) => { if (isAlive()) executeCommand(id); });
+  lifetime.register('pointer commands', detachPointerCommands);
   deps.controlsRef.current = controls;
-  const viewCameraController = createViewCameraController(controls, isAlive);
+  const viewCameraController = createViewCameraController(controls, isAlive, scene, canvas);
   lifetime.register('camera producer', () => {
     if (useAppStore.getState().viewCameraController === viewCameraController) useAppStore.getState().setViewCameraController(null);
   });

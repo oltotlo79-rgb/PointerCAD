@@ -58,8 +58,8 @@ export interface FaceOffsetKeyMaterial {
   readonly offset: number;
 }
 
-const FACE_OFFSET_NOT_FACE_MESSAGE = '動かせるのは立体の面だけです。平らな面を選び直してください。';
-const FACE_OFFSET_OTHER_BODY_MESSAGE = '動かす面は、編集するもとの立体の面にしてください。';
+const FACE_OFFSET_NOT_FACE_MESSAGE = '動かせるのはソリッドの面だけです。平らな面を選び直してください。';
+const FACE_OFFSET_OTHER_BODY_MESSAGE = '動かす面は、編集するもとのソリッドの面にしてください。';
 const FACE_OFFSET_NOT_PLANAR_MESSAGE = '動かせるのは平らな面だけです。';
 const FACE_OFFSET_DISTANCE_MESSAGE = '面を動かす距離は 0 でない数で指定してください。';
 

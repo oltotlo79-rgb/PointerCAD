@@ -17,7 +17,7 @@ const BOUND = 1e-8; // Native and decoder acceptance in solidModal.py / solidBuc
 function input(panel: Locator, name: string): Locator { return panel.getByRole('textbox', { name, exact: true }); }
 async function panelOf(page: Page): Promise<Locator> {
   await openToolMenu(page, '解析');
-  await toolMenuPanel(page, '解析').getByRole('button', { name: '現在の立体を解析', exact: true }).click();
+  await toolMenuPanel(page, '解析').getByRole('button', { name: '現在のソリッドを解析', exact: true }).click();
   const panel = page.getByTestId('solid-analysis-panel');
   await expect(panel).toBeVisible();
   return panel;

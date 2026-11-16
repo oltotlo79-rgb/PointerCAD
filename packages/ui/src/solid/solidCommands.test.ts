@@ -1385,7 +1385,7 @@ describe('solidToolReadiness の「測る」(P5 タスク32)', () => {
     });
   });
 
-  it('立体を 2 つ選んでいれば押せる(隙間が測れる、§0.a-0.69)', () => {
+  it('ソリッドを 2 つ選んでいれば押せる(隙間が測れる、§0.a-0.69)', () => {
     const document = documentWithFaces(['face-1']);
     const bodies: readonly SubShapeBody[] = [
       makeHoleTargetBody('extrude-1'),

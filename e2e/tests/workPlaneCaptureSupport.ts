@@ -114,5 +114,5 @@ export async function volumeNumber(page: Page): Promise<number> {
   if ((await cell.count()) === 0) {
     return Number.NaN;
   }
-  return Number.parseFloat(await cell.innerText());
+  return Number.parseFloat(((await cell.getAttribute('title')) ?? (await cell.innerText())));
 }

@@ -25,8 +25,9 @@ import { createDrawingSvgPreview, createDrawingTranslationPreview } from './draw
 import { beginDrawingViewDrag, finishDrawingViewDrag, previewDrawingViewDrag, type DrawingViewDrag } from './viewDragCommands.js';
 import { drawingRepairProjection } from './referenceRepairProjection.js';
 import { currentViewControls } from '../settings/viewControlSettings.js';
-import { attachDrawingNavigation, drawingEditPointerMatches, drawingPaperPoint, INITIAL_DRAWING_NAVIGATION,
+import { drawingEditPointerMatches, drawingPaperPoint, INITIAL_DRAWING_NAVIGATION,
   type DrawingNavigationTransform } from './drawingNavigation.js';
+import { attachDrawingSurfaceInputs } from './drawingSurfaceInputs.js';
 
 export function DrawingCanvas(): React.JSX.Element {
   const drawing = useAppStore((state) => state.drawing);
@@ -48,7 +49,7 @@ export function DrawingCanvas(): React.JSX.Element {
   const container = useRef<HTMLDivElement>(null);
   const [navigation, setNavigation] = useState(INITIAL_DRAWING_NAVIGATION);
   const navigationTransform = useRef(navigation);
-  const navigationControls = useRef<ReturnType<typeof attachDrawingNavigation> | null>(null);
+  const navigationControls = useRef<ReturnType<typeof attachDrawingSurfaceInputs> | null>(null);
   const changeNavigation = useCallback((next: DrawingNavigationTransform): void => {
     navigationTransform.current = next;
     // Native wheel events can arrive before React commits the preceding one.
@@ -84,7 +85,7 @@ export function DrawingCanvas(): React.JSX.Element {
   useLayoutEffect(() => {
     const surface = viewport.current, sheet = container.current;
     if (surface === null || sheet === null) return;
-    const controls = attachDrawingNavigation(surface, {
+    const controls = attachDrawingSurfaceInputs(surface, {
       view: surface.ownerDocument.defaultView,
       readSettings: () => currentViewControls(useAppStore.getState().displaySettings),
       canStart: (event) => useAppStore.getState().drawing !== null && sheet.querySelector('svg') !== null

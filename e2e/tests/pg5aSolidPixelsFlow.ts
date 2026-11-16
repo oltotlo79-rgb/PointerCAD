@@ -12,6 +12,7 @@ import { readViewportRenderStats } from './viewportRenderStats.js';
 import { openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
 import { saveTarget } from './electronAppFlow.js';
 import { statusBar } from './fileCaptureSupport.js';
+import { uiMessage } from './uiMessages.js';
 
 const OFFSETS = [0, 1e6, 1e9] as const;
 const SIZES = [0.5, 0.375, 0.25] as const;
@@ -186,7 +187,7 @@ function mismatchesBeyondOnePixel(a: Pixels, b: Pixels): number {
 
 /** The same saved/reopened Part warns at 1e6; its collapsed 1e9 STL must be refused. */
 async function inspectStlLimit(page: Page, info: TestInfo, offset: number, app?: ElectronApplication): Promise<void> {
-  const notice = 'このアプリではSTLへの変換中に座標を32ビットで扱います。大きい座標では小さい寸法や位置が丸められます。偏差を小さくしても、この丸めは戻りません。絶対座標の精度を保つ必要がある場合はSTEPを選んでください。';
+  const notice = uiMessage('file', 'exchange.stlCoordinatePrecision');
   await openToolMenu(page, 'ファイルのほかの操作');
   await toolMenuPanel(page, 'ファイルのほかの操作').getByRole('button', { name: '書き出す', exact: true }).click();
   const panel = page.locator('.pcad-exchange');
@@ -217,7 +218,7 @@ async function inspectStlLimit(page: Page, info: TestInfo, offset: number, app?:
       await info.attach('pg5a-stl-limit-refusal.png', { body: await page.screenshot(), contentType: 'image/png' });
     } finally { page.off('download', recordDownload); }
   }
-  await panel.getByRole('button', { name: 'やめる', exact: true }).click();
+  await panel.getByRole('button', { name: '取消', exact: true }).click();
   await expect(panel).toHaveCount(0);
 }
 

@@ -441,7 +441,7 @@ describe('createPartExchanger(タスク32 が空けた口を埋める)', () => {
   });
 
   it('カーネルが断ったら、書き出しも同じ理由の例外になる', async () => {
-    const refused: ShapeExportOutcome = { kind: 'failed', message: 'もとになる立体が見つかりません。' };
+    const refused: ShapeExportOutcome = { kind: 'failed', message: 'もとになるソリッドが見つかりません。' };
     const exchanger = createPartExchanger({
       ...caches(),
       snapshot: () => snapshotOf(DOCUMENT),
@@ -457,6 +457,6 @@ describe('createPartExchanger(タスク32 が空けた口を埋める)', () => {
         ascii: false,
         baseName: 'model',
       }),
-    ).rejects.toThrow('もとになる立体が見つかりません。');
+    ).rejects.toThrow('もとになるソリッドが見つかりません。');
   });
 });

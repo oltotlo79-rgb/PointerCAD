@@ -645,7 +645,7 @@ describe('部品の再計算(要件§6.3)', () => {
     expect(result.errors).toHaveLength(2);
     expect(result.errors.map((error) => error.featureId)).toEqual(['extrude-1', 'extrude-2']);
     expect(result.errors[0].code).toBe('kernelFailed');
-    expect(result.errors[0].message).toBe('立体を作れませんでした: Worker が落ちました');
+    expect(result.errors[0].message).toBe('ソリッドを作れませんでした: Worker が落ちました');
   });
 
   it('Worker の例外の種類が素の Error でなければ、種類と文の両方を失敗の文に残し、頼み直さない(FR-504)', async () => {
@@ -656,7 +656,7 @@ describe('部品の再計算(要件§6.3)', () => {
 
     expect(recomputeSolids).toHaveBeenCalledTimes(1);
     expect(result.cancelled).toBe(false);
-    expect(result.errors.map((error) => error.message)).toEqual(['立体を作れませんでした: RangeError: unreachable']);
+    expect(result.errors.map((error) => error.message)).toEqual(['ソリッドを作れませんでした: RangeError: unreachable']);
   });
 
   it('実物の窓口が OCCT を読み込めなければ同じ世代で 1 回だけ頼み直し、理由と頼み直した事実を失敗の文に残す(NFR-RE-1)', async () => {
@@ -675,7 +675,7 @@ describe('部品の再計算(要件§6.3)', () => {
     expect(result.cancelled).toBe(false);
     expect(result.bodies).toEqual([]);
     expect(result.errors.filter((error) => error.featureId === 'extrude-1').map((error) => [error.code, error.message])).toEqual([['kernelFailed',
-      '立体を作れませんでした: カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed(カーネルの読み込みを1回やり直しました)']]);
+      'ソリッドを作れませんでした: カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed(カーネルの読み込みを1回やり直しました)']]);
   });
 
   it('OCCT の読み込みの失敗でも取消の後なら頼み直さない', async () => {
@@ -1405,7 +1405,7 @@ describe('結果の詰め替え', () => {
     });
 
     expect(outcome.failures).toEqual([
-      { featureId: 'extrude-1', message: 'カーネルから立体が返りませんでした。' },
+      { featureId: 'extrude-1', message: 'カーネルからソリッドが返りませんでした。' },
     ]);
   });
 
@@ -1558,7 +1558,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
           Promise.resolve({
             bodies: [],
             failures: [
-              { featureId: 'extrude-1', message: 'もとになる立体が見つかりませんでした。' },
+              { featureId: 'extrude-1', message: 'もとになるソリッドが見つかりませんでした。' },
             ],
             cacheHits: 0,
             cancelled: false,
@@ -1570,7 +1570,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
       {
         featureId: 'extrude-1',
         code: 'kernelFailed',
-        message: 'もとになる立体が見つかりませんでした。',
+        message: 'もとになるソリッドが見つかりませんでした。',
       },
     ]);
   });

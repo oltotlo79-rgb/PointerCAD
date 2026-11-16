@@ -1,5 +1,5 @@
 import { createAssemblyDocument, createDrawingDocument } from '@pointercad/model';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FACE_REGIONS } from '../viewcube/viewCubeMath.js';
@@ -75,5 +75,53 @@ describe('標準の向き(正面・背面・右・左・上・下)の命令', ()
     expect(executeCommand('toolbar.view.home').status).toBe('executed');
     expect(state().homeViewRequestCount).toBe(home + 1);
     expect(state().viewOrientationRequest).toBeNull();
+  });
+});
+
+describe('全体を表示・選択に合わせる・直前の視点へ戻る(B-08c)', () => {
+  function controller(done: boolean) {
+    const fake = { capture: vi.fn(), restore: vi.fn(), previous: vi.fn(() => done), fit: vi.fn(() => done) };
+    state().setViewCameraController(fake);
+    return fake;
+  }
+
+  it('視点の口へ頼み、文書・履歴・視点の要求は変えない', () => {
+    const fake = controller(true), document = state().document, home = state().homeViewRequestCount;
+    expect(runViewCommand('view', 'fitAll')).toEqual({ ready: true, reasonKey: null });
+    expect(fake.fit).toHaveBeenCalledWith('all', []);
+    state().setSelection(['body-1']);
+    expect(runViewCommand('view', 'fitSelection')).toEqual({ ready: true, reasonKey: null });
+    expect(fake.fit).toHaveBeenLastCalledWith('selection', ['body-1']);
+    expect(runViewCommand('view', 'previousView')).toEqual({ ready: true, reasonKey: null });
+    expect(fake.previous).toHaveBeenCalledOnce();
+    expect(state().document).toBe(document);
+    expect(state().canUndo).toBe(false);
+    expect(state().homeViewRequestCount).toBe(home);
+    expect(state().viewOrientationRequest).toBeNull();
+  });
+
+  it('できなかった時は理由を返す(収める形が無い・戻れる視点が無い・何も選んでいない・表示の準備中・4 分割)', () => {
+    const fake = controller(false);
+    expect(runViewCommand('view', 'fitAll')).toEqual({ ready: false, reasonKey: 'command.unavailable.nothingToFit' });
+    expect(runViewCommand('view', 'previousView')).toEqual({ ready: false, reasonKey: 'command.unavailable.noPreviousView' });
+    expect(runViewCommand('view', 'fitSelection')).toEqual({ ready: false, reasonKey: 'command.unavailable.selectionEmpty' });
+    expect(fake.fit).toHaveBeenCalledOnce();
+    state().setQuadViewEnabled(true);
+    expect(runViewCommand('view', 'fitAll')).toEqual({ ready: false, reasonKey: 'command.unavailable.quadView' });
+    expect(runViewCommand('view', 'previousView')).toEqual({ ready: false, reasonKey: 'command.unavailable.quadView' });
+    state().setQuadViewEnabled(false);
+    state().setViewCameraController(null);
+    expect(runViewCommand('view', 'fitAll')).toEqual({ ready: false, reasonKey: 'command.unavailable.viewport' });
+  });
+
+  it('命令として部品・組立で使え、既定のキーは持たない', () => {
+    controller(true);
+    for (const id of ['toolbar.view.fitAll', 'toolbar.view.fitSelection', 'toolbar.view.previousView'] as const) {
+      state().setSelection(['body-1']);
+      expect(executeCommand(id)).toEqual({ status: 'executed', commandId: id, ready: true, reasonKey: null });
+    }
+    state().openAssembly(createAssemblyDocument('組立'));
+    controller(true);
+    expect(executeCommand('toolbar.view.fitAll').status).toBe('executed');
   });
 });

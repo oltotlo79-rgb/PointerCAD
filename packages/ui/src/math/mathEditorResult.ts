@@ -91,9 +91,28 @@ export interface MathEditorResultText {
   readonly detail: string;
   readonly hasError: boolean;
   readonly busy: boolean;
+  /** 1 行目を丸めた時の全部の桁(畳んだ「全部の桁」に出す)。丸めていない時は無い。 */
+  readonly full?: string;
 }
+
+/** 画面の 1 行目の有効桁数(UI の点検の指摘 26・36、利用者の決定 2026-11-14「有効 6 桁で表示。全桁は説明に出す」)。 */
+const RESULT_SIGNIFICANT_DIGITS = 6;
+
+/** 小数の文字の有効桁数(符号・小数点・指数・前後の 0 を除いた数字の数)。 */
+function significantDigits(decimal: string): number {
+  const mantissa = decimal.replace(/^[-+]/u, '').split(/e/iu)[0] ?? '';
+  return mantissa.replace('.', '').replace(/^0+/u, '').replace(/0+$/u, '').length;
+}
+
+/** 小数の文字を有効 6 桁へ丸めた文字。6 桁以内と、有限の数に読めない時はそのまま返す。計算の中の値は変えない。 */
+function shortDecimal(decimal: string): string {
+  const value = Number(decimal);
+  return !Number.isFinite(value) || significantDigits(decimal) <= RESULT_SIGNIFICANT_DIGITS ? decimal
+    : String(Number(value.toPrecision(RESULT_SIGNIFICANT_DIGITS)));
+}
+
 export function mathEditorResultText(snapshot: MathEditorSnapshot): MathEditorResultText {
-  const result = (message: string, detail = '', hasError = false, busy = false): MathEditorResultText => ({ message, detail, hasError, busy });
+  const result = (message: string, detail = '', hasError = false, busy = false, full?: string): MathEditorResultText => ({ message, detail, hasError, busy, full });
   if (snapshot.problem === 'source-limit') return result(t('math.sourceTooLong'), '', true);
   if (snapshot.problem === 'conversion') return result(t('math.conversionFailed'), '', true);
   if (snapshot.problem === 'insertion') return result(t('math.insertionFailed'), '', true);
@@ -167,5 +186,8 @@ export function mathEditorResultText(snapshot: MathEditorSnapshot): MathEditorRe
   const detail = estimate !== undefined ? `${t('math.errorEstimate')}: ${estimate}。${t('math.errorUnknown')}`
     : approximation === null ? '' : approximation.absoluteError === null ? t('math.errorUnknown')
     : `${t('math.errorBound')}: ${approximation.absoluteError}`;
-  return result(`${estimate === undefined ? '=' : '≈'} ${evaluation.decimal}`, detail);
+  const sign = estimate === undefined ? '=' : '≈', short = shortDecimal(evaluation.decimal);
+  // 丸めた時は 1 行目を ≈ にし、全部の桁は畳んだ「全部の桁」へ(書いた式の値は変えない)。
+  return short === evaluation.decimal ? result(`${sign} ${evaluation.decimal}`, detail)
+    : result(`≈ ${short}`, detail, false, false, `${sign} ${evaluation.decimal}`);
 }

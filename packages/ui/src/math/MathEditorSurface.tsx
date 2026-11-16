@@ -47,6 +47,10 @@ interface MathEditorSurfaceProps {
   readonly query:string;readonly onQuery:(query:string)=>void;
   readonly resultActions?:React.ReactNode;
   readonly resultMessage:string;readonly resultDetail:string;readonly hasError:boolean;readonly busy:boolean;
+  /** 1 行目を丸めた時の全部の桁(畳んだ「全部の桁」に出す)。'' か省略で出さない。 */
+  readonly resultFull?:string;
+  /** 「この式を使う」が使えない理由。使えない時だけボタンの直前に 1 行で出す。 */
+  readonly applyBlockedReason?:string|null;
   readonly canApply:boolean;readonly canChangeNotation:boolean;readonly readOnly:boolean;
   readonly onHelp:()=>void;readonly maximumSourceLength:number;
   readonly inspection?:InputExpressionInspection|null;
@@ -92,8 +96,9 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
   const editingBlocked=props.readOnly;
   const hasInspection=input.notation==='text' && props.inspection!==undefined && props.inspection!==null
     && (props.inspection.references.length>0||props.inspection.inspection.units.length>0);
-  return <section className="pcad-math-editor" aria-labelledby={`${id}-title`}>
-    <header className="pcad-math-editor__header"><h3 id={`${id}-title`}>{labels.title}</h3>
+  // 見出しは窓の題(MathExpressionDialog の h2)と同じ語なので、中では繰り返さず領域の名前だけにする(UI の点検の指摘 36)。
+  return <section className="pcad-math-editor" aria-label={labels.title}>
+    <header className="pcad-math-editor__header">
       <button type="button" className="pcad-button" onClick={props.onHelp} title={labels.hints.help}>{labels.help}</button>
     </header>
     <div className="pcad-math-editor__options">
@@ -129,6 +134,7 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
     <p id={hintId} className="pcad-math-editor__hint">{labels.keyboardHint}</p>
     <div className="pcad-math-editor__symbols">
       {props.groups.map(group=><fieldset key={group.id}><legend>{group.label}</legend>
+        {group.choices.length===0?<p className="pcad-math-editor__empty">{t('math.groupEmpty')}</p>:null}
         {group.choices.map(choice=><button type="button" key={choice.id} disabled={editingBlocked} title={choice.meaning}
           onClick={()=>controller.insert(choice.template)}>{choice.label}</button>)}
       </fieldset>)}
@@ -150,11 +156,14 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
     </details>
     <div id={messageId} className={props.hasError?'pcad-math-editor__result pcad-math-editor__result--error':'pcad-math-editor__result'}
       role="status" aria-live="polite" aria-atomic="true"><p>{props.resultMessage}</p>
-      {props.resultDetail===''?null:<p>{props.resultDetail}</p>}</div>
+      {props.resultDetail===''?null:<p>{props.resultDetail}</p>}
+      {props.resultFull===undefined||props.resultFull===''?null:<details className="pcad-math-editor__full"><summary>{t('math.fullDigits')}</summary><p className="pcad-math-editor__full-value">{props.resultFull}</p></details>}</div>
     {props.resultActions}
     {/* Cancel lives outside this panel (MathExpressionDialog's persistent footer) so the same button, in the
         same place, closes the dialog whether the panel is still loading or ready (regression guard). */}
     <footer className="pcad-math-editor__actions">
+      {props.canApply||props.applyBlockedReason===undefined||props.applyBlockedReason===null?null
+        :<p className="pcad-math-editor__apply-reason">{props.applyBlockedReason}</p>}
       <button type="button" className="pcad-button pcad-button--primary" title={labels.hints.apply} disabled={!props.canApply||editingBlocked} onClick={controller.apply}>{labels.apply}</button>
     </footer>
   </section>;

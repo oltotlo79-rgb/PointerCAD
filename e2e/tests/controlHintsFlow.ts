@@ -3,6 +3,7 @@ import { beginRecompute, readRecomputeStats, waitForRecompute } from './recomput
 import { tree } from './sheetUiFlow.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 import { uiMessage } from './uiMessages.js';
+import { closeInputBindings, openInputBindings } from './inputBindingsWindowSupport.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { installSaveCapture, savedDocument } from './usabilityKeyboardFlow.js';
 
@@ -201,10 +202,14 @@ export async function controlHintsFlow(page: Page, info: TestInfo): Promise<void
   await radialSelectionReasons(page, info, originalDocument);
 
   await page.getByRole('button', { name: '設定', exact: true }).click();
-  await assertRenderedControlDescriptions(page.getByRole('form', { name: uiMessage('commands', 'settings.shortcuts.title'), exact: true }));
   await assertRenderedControlDescriptions(page.getByRole('form', { name: uiMessage('view', 'settings.toolDefaults.title'), exact: true }));
-  await keyboardFocus(page, page.getByLabel(uiMessage('commands', 'settings.shortcuts.command'), { exact: true }));
-  await expect(hint).toHaveText(`${uiMessage('commands', 'settings.shortcuts.command')}: ${uiMessage('commands', 'settings.shortcuts.commandGuide')}`);
+  // キーの割当は操作の割り当ての窓(B-06)のキーのタブにある。
+  await openInputBindings(page, 'keys');
+  await assertRenderedControlDescriptions(page.getByRole('form', { name: uiMessage('commands', 'settings.shortcuts.title'), exact: true }));
+  await keyboardFocus(page, page.getByLabel(uiMessage('commands', 'settings.shortcuts.search'), { exact: true }));
+  await expect(hint).toHaveText(`${uiMessage('commands', 'settings.shortcuts.search')}: ${uiMessage('commands', 'settings.shortcuts.searchGuide')}`);
+  await closeInputBindings(page);
+  await page.getByRole('button', { name: '設定', exact: true }).click();
   await page.getByRole('group', { name: '拡大率', exact: true }).getByRole('button', { name: '150%', exact: true }).click();
   await page.getByRole('button', { name: '設定', exact: true }).click();
   await keyboardFocus(page, save);

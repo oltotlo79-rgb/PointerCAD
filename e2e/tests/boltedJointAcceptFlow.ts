@@ -283,7 +283,7 @@ export function registerBoltedJointAcceptTests(
       // 2) 欄を変えてから「やめる」で閉じても、文書は 1 バイトも同じ。
       await dialog.locator('select').first().selectOption('annexJA');
       await expect(dialog.getByTestId('bolted-joint-bolt')).toHaveText('ボルト M8 呼び長さ(mm) 30');
-      await dialog.getByRole('button', { name: 'やめる', exact: true }).click();
+      await dialog.getByRole('button', { name: '取消', exact: true }).click();
       await expect(dialog).toHaveCount(0);
       expect((await saveAndRead(page, info, 'edit-cancelled', app)).bytes).toBe(fastened.bytes);
 

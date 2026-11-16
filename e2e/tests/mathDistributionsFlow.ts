@@ -25,8 +25,8 @@ export async function mathDistributionsFlow(page: Page, info: TestInfo, app?: El
     ['exponentialquantile(2,0)', '= 0'], ['poissonpmf(0,0)', '= 1'], ['poissoncdf(0,3)', '= 1']] as const) {
     await input.fill(source); await expect(result).toHaveText(value);
   }
-  await input.fill('poissoncdf(2,2)'); await expect(result).toHaveText(/^= 0\.6766764161/u);
-  await input.fill('exponentialquantile(2,3/4)'); await expect(result).toHaveText(/^= 0\.6931471805/u);
+  await input.fill('poissoncdf(2,2)'); await expect(result.locator('.pcad-math-editor__full p')).toHaveText(/^= 0\.6766764161/u);
+  await input.fill('exponentialquantile(2,3/4)'); await expect(result.locator('.pcad-math-editor__full p')).toHaveText(/^= 0\.6931471805/u);
   const source = 'uniformquantile(2,6,1/4)', changed = 'uniformquantile(2,10,1/4)';
   await input.fill(source); await expect(result).toHaveText('= 3');
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();

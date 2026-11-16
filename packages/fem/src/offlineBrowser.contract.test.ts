@@ -97,6 +97,48 @@ describe('verified offline fetch contract', () => {
   });
 });
 
+// run 43711424272: python_stdlib.zip の取得が net::ERR_NO_BUFFER_SPACE で 1 回だけ断られ、計算全体が断られた。
+// 通信の段の失敗(fetch・本文の読み取りの reject)だけを、同じ URL で合わせて 3 回まで、200・400ms を空けて読み直す。
+const GLUE = 'https://pointercad.invalid/fem/assets/pyodide.asm.js';
+function transientWorker(failures: number, kind: 'fetch' | 'body'): string[] {
+  const reads: string[] = [];
+  vi.stubGlobal('self', { location: new URL('https://pointercad.invalid/fem/worker.js'),
+    fetch: (url: string): Promise<Response> => {
+      reads.push(url);
+      if (url !== GLUE || reads.filter(read => read === GLUE).length > failures) return Promise.resolve(new Response(Uint8Array.of(1)));
+      return kind === 'fetch' ? Promise.reject(new TypeError('Failed to fetch'))
+        : Promise.resolve(new Response(new ReadableStream({ start(controller) { controller.error(new TypeError('network error')); } })));
+    }, importScripts: () => undefined });
+  return reads;
+}
+describe('transient network failures while reading pinned assets', () => {
+  it.each(['fetch', 'body'] as const)('re-reads after one %s failure and continues to the runtime', async kind => {
+    const reads = transientWorker(1, kind), phases: string[] = [], stop = new Error('Stop before importing the actual interpreter');
+    const started = performance.now();
+    await expect(qualifyInBrowser(phase => { phases.push(phase); if (phase === 'loading-runtime') throw stop; })).rejects.toBe(stop);
+    expect(reads.filter(read => read === GLUE)).toHaveLength(2); expect(phases).toEqual(['loading-assets', 'loading-runtime']);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(190);
+  });
+  it.each(['fetch', 'body'] as const)('refuses with asset-missing after three %s failures, before the runtime', async kind => {
+    const reads = transientWorker(3, kind), phases: string[] = [], started = performance.now();
+    await expect(qualifyInBrowser(phase => { phases.push(phase); })).rejects.toThrow('asset-missing: pyodide.asm.js (network: ');
+    expect(reads.filter(read => read === GLUE)).toHaveLength(3); expect(phases).toEqual(['loading-assets']);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(590);
+  });
+  it.each([['missing', 'asset-missing: pyodide.asm.js (HTTP 404)'], ['size', 'asset-corrupt: pyodide.asm.js (size)']] as const)(
+    'does not re-read a %s reply', async (failure, message) => {
+      const reads: string[] = [];
+      vi.stubGlobal('self', { location: new URL('https://pointercad.invalid/fem/worker.js'),
+        fetch: (url: string): Promise<Response> => {
+          reads.push(url);
+          return Promise.resolve(url !== GLUE ? new Response(Uint8Array.of(1))
+            : failure === 'missing' ? new Response(null, { status: 404 }) : new Response(Uint8Array.of(1, 1)));
+        }, importScripts: () => undefined });
+      await expect(qualifyInBrowser(() => undefined)).rejects.toThrow(message);
+      expect(reads.filter(read => read === GLUE)).toHaveLength(1);
+    });
+});
+
 const source = { kind: 'user-supplied', reference: 'Independent synthetic frame fixture', condition: 'Linear centroidal Timoshenko shank only' } as const;
 const quantity = (role: string, value: number) => ({ role, value, source });
 function frameInput(): FrameBoltContactInput {

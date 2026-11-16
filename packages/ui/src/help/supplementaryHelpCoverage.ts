@@ -7,9 +7,12 @@ import { t } from '../i18n/t.js';
 export const SETTINGS_HELP_BINDINGS = {
   theme: ['display-settings'], uiScale: ['display-settings'],
   cameraControls: ['display-settings', 'viewport'], viewControls: ['display-settings', 'viewport'],
-  // マウスの戻る・進む・中ボタンのダブルクリックの命令(B-08e)は、キーと同じ操作の割り当ての窓の章。
-  shortcutAssignments: ['shortcuts'], mouseButtonCommands: ['shortcuts'], numericToolDefaults: ['display-settings', 'template'],
+  // マウスの戻る・進む・中ボタンのダブルクリックの命令(B-08e)と放射メニューの中身(B-08f)は、キーと同じ操作の割り当ての窓の章。
+  shortcutAssignments: ['shortcuts'], mouseButtonCommands: ['shortcuts'], radialCommands: ['shortcuts'],
+  numericToolDefaults: ['display-settings', 'template'],
   autoSaveIntervalMs: ['save-and-open', 'display-settings'],
+  // 切断の一覧の定尺・切断代(J-01)は、規格部品の窓の切断の一覧の章。
+  stockCutting: ['standard-parts'],
   trackAngleStep: ['tracking'], lengthUnit: ['units'], selectionFilter: ['select-subshape'],
   inferConstraints: ['constraints'], timelineHintSeen: ['timeline'], tutorialCompleted: ['tutorial'],
 } satisfies Readonly<Record<keyof PersistedDisplaySettings, readonly string[]>>;

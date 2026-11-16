@@ -65,8 +65,9 @@ export function RadialCommandMenu({ viewport }: { readonly viewport: RefObject<H
         },
         show: (gesture, latched = false, preserveFocus = false) => {
           if (gesture !== null) {
+            // 利用者が選んだ並び(B-08f。設定の radialCommands)があればそれ、無ければ既定。
             shownIds.current = radialCommandIds(kind, selectedPointsConnection().showInMenu, selectedPointsFace().showInMenu,
-              pointAtReferenceShownInMenu());
+              pointAtReferenceShownInMenu(), useAppStore.getState().displaySettings.radialCommands);
           }
           if (!preserveFocus) setFocusedSlot(null);
           setShown(gesture === null ? null : { gesture, latched });

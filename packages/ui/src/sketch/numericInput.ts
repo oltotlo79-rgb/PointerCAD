@@ -103,6 +103,7 @@ import {
 
 import { DEFAULT_HOLE_TRANSLATION_MM, DEFAULT_FACE_ROTATION_DEGREES } from '../solid/directEditCommands.js';
 import type { ExtrudeRegionChoice } from '../solid/regionFace.js';
+import { followExtrudeSuggestion, type ExtrudeSuggestions } from '../solid/extrudeSuggestion.js';
 import { t, type MessageKey } from '../i18n/t.js';
 
 // 道具と入力段の契約は状態機械から独立した定義を参照する。
@@ -377,6 +378,11 @@ export interface NumericChoice {
   readonly labelKey: MessageKey;
   readonly value: string;
   readonly options: readonly NumericChoiceOption[];
+  /**
+   * 今の値が提案で入った物か(押し出しの「提案して見せる」、M-01)。欄は見出しに「提案」の札を付け、`reasonKey`
+   * があれば理由の一言(`{name}` に相手の名前)を添える。手で選んだら消える(`solid/extrudeSuggestion.ts`)。
+   */
+  readonly suggestion?: { readonly reasonKey?: MessageKey; readonly name?: string };
 }
 
 /** 選択肢の表示文字列。label があればそのまま、無ければ labelKey から引く。 */
@@ -400,6 +406,10 @@ export interface NumericInputState {
   readonly step: NumericInputStep;
   /** 押し出しで、面を選ばずに押して選んだ閉じた領域(M-01)。確定の時に面を作る材料で、保存はしない。 */
   readonly extrudeRegion?: ExtrudeRegionChoice;
+  /** 選んだ領域の位置と押す向きから決めた、向きごとの結果と相手の提案(M-01。保存はしない)。 */
+  readonly extrudeSuggestions?: ExtrudeSuggestions;
+  /** 押し出しの結果か相手を手で選んだか。立っていれば提案で欄を上書きしない。 */
+  readonly extrudeChoiceManual?: boolean;
   readonly mode: CoordinateMode;
   readonly fields: readonly NumericField[];
   /**
@@ -2806,8 +2816,18 @@ function rebuiltFields(
   return { ...state, fields, focusedIndex };
 }
 
-/** 欄の操作を 1 つ受けて次の状態を返す。副作用を持たないのでそのまま検査できる。 */
+/**
+ * 欄の操作を 1 つ受けて次の状態を返す。副作用を持たないのでそのまま検査できる。
+ * 押し出しの提案(M-01)は、操作の後に `followExtrudeSuggestion` が向きに合わせて入れ直す・手で選んだ印を立てる。
+ */
 export function reduceNumericInput(
+  state: NumericInputState,
+  event: NumericInputEvent,
+): NumericInputState {
+  return followExtrudeSuggestion(state, event, reduceNumericInputEvent(state, event));
+}
+
+function reduceNumericInputEvent(
   state: NumericInputState,
   event: NumericInputEvent,
 ): NumericInputState {

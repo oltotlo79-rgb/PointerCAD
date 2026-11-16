@@ -4,6 +4,12 @@ import type { ResolvedSolidStep, SolidStepPlan, SurfaceShapePlan, ThruSectionPla
 import { toCurveSpec } from './curveConversions.js';
 import { toSubShapeQuery } from './subShapeQuery.js';
 
+/** 押し出しの外周と穴を一緒にカーネルへ渡す。 */
+function extrudeProfileRequest(plan: Extract<SolidStepPlan, { readonly kind: 'extrude' }>) {
+  return { profile: plan.profile.map(toCurveSpec),
+    ...(plan.holes === undefined || plan.holes.length === 0 ? {} : { holes: plan.holes.map(loop => loop.map(toCurveSpec)) }) };
+}
+
 
 /**
  * 罫線面・ロフトの断面 1 つをカーネルの言葉へ直す(FR-430、FR-410)。
@@ -59,7 +65,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
       // 従来の押し出しの依頼は 1 ドットも変わらない(`ExtrudeStepSpec` の注釈)。
       return {
         kind: 'extrude',
-        profile: plan.profile.map((curve) => toCurveSpec(curve)),
+        ...extrudeProfileRequest(plan),
         ...(plan.profileOrigin === undefined ? {} : { profileOrigin: plan.profileOrigin }),
         direction: plan.direction,
         distance: plan.distance,

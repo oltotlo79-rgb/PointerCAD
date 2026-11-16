@@ -17,21 +17,21 @@ function renderWindow(tab: 'view' | 'keys', closing: 'confirm' | 'failed' | null
   return renderToStaticMarkup(React.createElement(InputBindingsWindow, { onClose: vi.fn() }));
 }
 /** The opening tag of one tab panel. */
-function panel(markup: string, name: 'view' | 'keys'): string {
+function panel(markup: string, name: 'view' | 'keys' | 'radial'): string {
   const tag = new RegExp(`<div role="tabpanel" id="[^"]*-panel-${name}"[^>]*>`, 'u').exec(markup)?.[0];
   expect(tag, name).toBeDefined();
   return tag ?? '';
 }
 
 describe('操作の割り当ての窓(設計 1-4・§6)', () => {
-  it('動かせる非モーダルの窓で、題・閉じるボタン・3 つのタブ(B-08e でマウスのボタンを足した)・開いたまま試せる案内を持つ', () => {
+  it('動かせる非モーダルの窓で、題・閉じるボタン・4 つのタブ(B-08e でマウスのボタン、B-08f で放射メニューを足した)・開いたまま試せる案内を持つ', () => {
     const markup = renderWindow('view');
     expect(markup).toMatch(/^<dialog open="" class="pcad-input-bindings"/u);
     expect(markup).toContain(t('settings.inputBindings.title'));
     expect(markup).toContain(`title="${t('settings.inputBindings.closeGuide')}"`);
     expect(markup).toContain(`role="tablist" aria-label="${t('settings.inputBindings.tabs')}"`);
-    expect(markup.match(/role="tab"/gu)).toHaveLength(3);
-    for (const key of ['view', 'keys', 'mouse'] as const) {
+    expect(markup.match(/role="tab"/gu)).toHaveLength(4);
+    for (const key of ['view', 'keys', 'mouse', 'radial'] as const) {
       expect(markup).toContain(`>${t(`settings.inputBindings.tab.${key}`)}</button>`);
       expect(markup).toContain(`title="${t(`settings.inputBindings.tab.${key}Guide`)}"`);
     }
@@ -44,7 +44,9 @@ describe('操作の割り当ての窓(設計 1-4・§6)', () => {
     expect(view).toContain(`aria-label="${t('settings.camera.title')}"`);
     expect(view).toContain(`aria-label="${t('settings.shortcuts.title')}"`);
     expect(view).toContain(`aria-label="${t('settings.mouseButtons.title')}"`);
+    expect(view).toContain(`aria-label="${t('settings.radial.title')}"`);
     expect(panel(view, 'view')).not.toContain('hidden');
+    expect(panel(view, 'radial')).toContain('hidden=""');
     expect(panel(view, 'keys')).toContain('hidden=""');
     const keys = renderWindow('keys');
     expect(panel(keys, 'view')).toContain('hidden=""');

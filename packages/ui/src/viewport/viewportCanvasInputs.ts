@@ -1,13 +1,14 @@
 import { attachPointerCommands } from '../commands/attachPointerCommands.js';
 import { executeCommand } from '../commands/commandRegistry.js';
 import { EMPTY_MOUSE_BUTTON_COMMANDS } from '../commands/pointerCommandGesture.js';
-import { currentViewControls } from '../settings/viewControlSettings.js';
+import { currentViewControls, viewZoomCenter } from '../settings/viewControlSettings.js';
 import { activeAssemblyDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
 import { attachCameraControls, type CameraControls, type ViewCenterResolver } from './attachCameraControls.js';
 import { attachQuadInput } from './attachQuadInput.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
+import { attachTouchCamera } from './attachTouchCamera.js';
 import { HOME_ORBIT, viewDirection } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { namedCameraFromOrbit, orbitFromNamedCamera, type ViewCameraController } from './namedCamera.js';
@@ -114,6 +115,32 @@ function createViewCameraController(controls: CameraControls, isAlive: () => boo
   };
 }
 
+/** 4 分割の時の、選んでいる区画の高さ(CSS 画素。平行移動の換算に使う)。 */
+function quadPaneHeight(canvas: HTMLCanvasElement): number {
+  const pane = quadLayout(canvas.width, canvas.height).find((entry) => entry.id === useAppStore.getState().quadCamera?.active);
+  return Math.max(1, (pane?.rectangle.height ?? canvas.height) * canvas.clientHeight / Math.max(1, canvas.height));
+}
+
+/**
+ * タッチ画面の指(B-08g・B-08h)。割り当てた時だけ視点を動かす。捕捉の段で受け、視点の操作の間の指の入力は後ろ(作図・選択)へ
+ * 渡さない。4 分割の時は選んでいる区画の視点を動かし、正投影の区画は回さない。つまむ拡大の中心は拡大の中心の設定に従う。
+ */
+function attachViewportTouch(canvas: HTMLCanvasElement, controls: CameraControls, centers: ViewCenterResolver): () => void {
+  const settings = () => currentViewControls(useAppStore.getState().displaySettings);
+  return attachTouchCamera(canvas, {
+    getOrbit: () => controls.getOrbit(),
+    setOrbit: (next) => { controls.setOrbit(next); },
+    viewportHeight: () => useAppStore.getState().quadCamera === null ? canvas.clientHeight : quadPaneHeight(canvas),
+    canOrbit: () => {
+      const quad = useAppStore.getState().quadCamera;
+      return quad === null || quad.active === 'isometric';
+    },
+    zoomPoint: (clientX, clientY, current) => useAppStore.getState().quadCamera === null
+      && viewZoomCenter(settings().options) === 'pointer' ? centers.zoomPoint(clientX, clientY, current) : null,
+    focus: () => { canvas.focus({ preventScroll: true }); },
+  }, settings);
+}
+
 export function attachViewportInputs(deps: ViewportInputDependencies) {
   const { canvas, scene, lifetime, isAlive, requestDraw, assemblyInput } = deps;
   let assemblyInteraction: ReturnType<typeof attachAssemblyInteraction> | null = null;
@@ -123,6 +150,7 @@ export function attachViewportInputs(deps: ViewportInputDependencies) {
     scene.setActivePane(pane);
   });
   lifetime.register('quad input', detachQuadInput);
+  const centers = createViewCenters(scene, canvas);
   const controls = attachCameraControls(canvas, () => {
     if (!isAlive()) return;
     assemblyInteraction?.cancelDrag();
@@ -140,13 +168,11 @@ export function attachViewportInputs(deps: ViewportInputDependencies) {
     setOrbit: (next) => useAppStore.getState().setQuadOrbit(next),
     goHome: () => useAppStore.getState().resetQuadOrbit(),
     canOrbit: () => useAppStore.getState().quadCamera?.active === 'isometric',
-    viewportHeight: () => {
-      const pane = quadLayout(canvas.width, canvas.height).find((entry) => entry.id === useAppStore.getState().quadCamera?.active);
-      return Math.max(1, (pane?.rectangle.height ?? canvas.height) * canvas.clientHeight / Math.max(1, canvas.height));
-    },
-  }, () => currentViewControls(useAppStore.getState().displaySettings), createViewCenters(scene, canvas));
+    viewportHeight: () => quadPaneHeight(canvas),
+  }, () => currentViewControls(useAppStore.getState().displaySettings), centers);
   lifetime.register('camera ref', () => { if (deps.controlsRef.current === controls) deps.controlsRef.current = null; });
   lifetime.register('camera input', () => { controls.detach(); });
+  lifetime.register('touch camera', attachViewportTouch(canvas, controls, centers));
   // マウスの戻る・進む・中ボタンのダブルクリックの命令(B-08e)。割り当てた入力だけを受ける。
   const detachPointerCommands = attachPointerCommands(canvas,
     () => useAppStore.getState().displaySettings.mouseButtonCommands ?? EMPTY_MOUSE_BUTTON_COMMANDS, (id) => { if (isAlive()) executeCommand(id); });

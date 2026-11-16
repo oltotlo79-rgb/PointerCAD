@@ -102,6 +102,17 @@ export function buildCatalogItemPart(source: StandardPartSource,
   return item === null ? null : item.family.build(item.row, item.values);
 }
 
+/**
+ * 族の部品の 1 個の質量(g)を、族が形の体積からでなく持つ時の値(フレームの系列の単位質量 × 長さ)。族が持たない・確かめに通らない時は null
+ * (呼ぶ側は今の体積 × 密度にする)。
+ */
+export function catalogItemNominalMass(source: StandardPartSource,
+  registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): number | null {
+  if (source.catalog !== 'catalogItem') return null;
+  const { item } = resolveCatalogItem(source, registry);
+  return item?.family.nominalMassG?.(item.row, item.values) ?? null;
+}
+
 /** 族の台本どおりの体積(実カーネルの体積の検査の独立した期待値)。確かめに通らなければ null。 */
 export function catalogItemNominalVolume(size: string, options: Readonly<Record<string, string>>,
   registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): number | null {

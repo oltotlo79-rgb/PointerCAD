@@ -2,7 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SteelStandardEditionNote } from './StandardPartPickerPanel.js';
 import { buildSteelStockList, createAssemblyDocument, createStandardPartSource,
-  buildStandardPartFromSource, DEFAULT_COMPONENT_PLACEMENT, EMPTY_PART_LIBRARY, STEEL_PRODUCTS, steelProductOptions, steelProducts,
+  buildStandardPartFromSource, DEFAULT_COMPONENT_PLACEMENT, EMPTY_PART_LIBRARY, PRODUCT_CATALOG_REGISTRY, STEEL_PRODUCTS,
+  steelProductOptions, steelProducts,
   type AssemblyComponent, type ComponentSource, type SteelMaterialGrade, type SteelSectionCatalog } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -183,6 +184,24 @@ describe('steel stock CSV report', () => {
       // An omitted occurrence never receives catalog evidence.
       expect(rows[3].slice(P)).toEqual(Array.from({ length: COLUMNS - P }, () => ''));
     });
+
+  it('J-01 包み 7: 定尺が無い時は前と同じバイトで、定尺を入れると鋼材ごとの割り付けの行が合計の後に 1 行増える(30 列)', () => {
+    const root = { ...createAssemblyDocument('Root'), components: [component('a', steelSource()), component('b', steelSource())] };
+    const stock = buildSteelStockList(root);
+    const plain = serializeSteelStockCsv(stock);
+    expect(serializeSteelStockCsv(stock, { stockLengthMm: null, kerfMm: 3 })).toEqual(plain);
+    const rows = csvRows(serializeSteelStockCsv(stock, { stockLengthMm: 4000, kerfMm: 3 }));
+    expect(rows).toHaveLength(csvRows(plain).length + 1);
+    const cutting = rows.filter((row) => row[0] === t('catalog.stockCutting.title'));
+    expect(cutting).toHaveLength(1);
+    // 丸鋼 1000 × 2 本は定尺 4000 の 1 本に入る(1000 + 3 + 1000 = 2003、残り 1997、歩留まり 2000 ÷ 4000 = 50.0%)。
+    const product = steelProducts('SS400', 'roundBar')[0];
+    const label = `SS400 ${product.size}`;
+    expect(cutting[0]?.slice(7, 9)).toEqual(['4000', '1']);
+    expect(cutting[0]?.[11]).toBe([t('catalog.stockCutting.summary').replace('{label}', label).replace('{count}', '1').replace('{yield}', '50.0'),
+      t('catalog.stockCutting.bar').replace('{n}', '1').replace('{cuts}', '1000 + 1000').replace('{offcut}', '1997')].join(' / '));
+    expect(cutting[0]?.length).toBe(COLUMNS);
+  });
 
   it('allows an empty report while explicitly retaining the scope and zero totals', () => {
     const rows = csvRows(serializeSteelStockCsv(buildSteelStockList(createAssemblyDocument('Empty'))));
@@ -504,5 +523,62 @@ describe('steel standard edition CSV columns', () => {
     for (const row of rows) expect(row.slice(26)).toEqual(['JIS G 3101:2024', '原案で確認', 'JIS G 3192:2024', '原案で確認']);
     expect(Object.keys(current.options)).toEqual(['steelProduct', 'materialGrade', 'materialStandard',
       'productStandard', 'condition', 'evidence', 'length']);
+  });
+});
+
+describe('E-03 長さを持つ族の部品の行', () => {
+  it('族の部品がある時だけ、鋼材の合計の行の後に同じ 30 列で族の行と族の合計の行を足し、鋼材の行は族の部品が無い時と同じ', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-specified']);
+    const frame = (length: string) => createStandardPartSource('catalogItem', '寸法指定',
+      { family: 't-slot-frame-specified', item: 'specified', length });
+    const steel = productSource('SS400', 'flatBar', 'FB 50×6');
+    const steelOnly = exported(steel);
+    const withFrames = exported(steel, frame('600'), frame('300*2'), frame('900'));
+    const total = withFrames.findIndex((row) => row[0] === t('assembly.steel.stockTotal'));
+    expect(withFrames.slice(0, total + 1)).toEqual(steelOnly.slice(0, total + 1));
+    const family = withFrames.slice(total + 1, total + 4);
+    for (const row of family) expect(row).toHaveLength(COLUMNS);
+    expect(family.map((row) => [row[0], row[1], row[3], row[4], row[5], row[7], row[8], row[9]])).toEqual([
+      [t('assembly.steel.csv.cut'), 'アルミ', '寸法指定(規格の行ではない)', t('catalog.frame.kind.tSlotSpecified'), '寸法指定', '600', '2', '1200'],
+      [t('assembly.steel.csv.cut'), 'アルミ', '寸法指定(規格の行ではない)', t('catalog.frame.kind.tSlotSpecified'), '寸法指定', '900', '1', '900'],
+      [t('catalog.stock.total'), '', '', '', '', '', '3', '2100'],
+    ]);
+    expect(family[0]?.[P]).toBe('t-slot-frame-specified-2026-11-r1');
+    expect(family[0]?.slice(26)).toEqual(['', '', '', '']);
+    expect(withFrames.slice(total + 4)).toEqual(steelOnly.slice(total + 1));
+  });
+});
+
+describe('製造元の寸法に合わせたフレームの系列の行', () => {
+  it('族の行の注記の列に単位質量を入れ、鋼材の行と合計は族の部品が無い時と同じ(質量の列は足さない)', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-series']);
+    const series = createStandardPartSource('catalogItem', '溝幅 8 30×30', { family: 't-slot-frame-series', item: 's8-30x30',
+      length: '750' });
+    const steel = productSource('SS400', 'flatBar', 'FB 50×6');
+    const steelOnly = exported(steel);
+    const withSeries = exported(steel, series);
+    const total = withSeries.findIndex((row) => row[0] === t('assembly.steel.stockTotal'));
+    expect(withSeries.slice(0, total + 1)).toEqual(steelOnly.slice(0, total + 1));
+    expect(withSeries[0]).toHaveLength(COLUMNS);
+    const row = withSeries[total + 1];
+    expect([row?.[3], row?.[4], row?.[5], row?.[7], row?.[8], row?.[11], row?.[17]]).toEqual(['製造元の寸法に合わせた物',
+      t('catalog.frame.kind.tSlotSeries'), '溝幅 8 30×30', '750', '1', '単位質量 0.9 kg/m（内側の形は簡略）',
+      '販売店の公開の頁の数値(製造元の寸法に合わせた物)']);
+    expect(row?.slice(19, 23)).toEqual(['', '', '', '']);
+  });
+});
+
+describe('資料 SF-1 の溝つきフレームと形材の行の注記', () => {
+  it('溝つきの行は単位質量に「内側の形は簡略」を添え、実物どおりの断面の形材の行は単位質量だけ。鋼材の行は族の部品が無い時と同じ', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-s6', 'aluminum-flat-bar']);
+    const slot = createStandardPartSource('catalogItem', '溝幅 6 20×20', { family: 't-slot-frame-s6', item: 's6-20x20', length: '500' });
+    const bar = createStandardPartSource('catalogItem', 'フラットバー 20×5', { family: 'aluminum-flat-bar', item: 'fb-20x5', length: '400' });
+    const steel = productSource('SS400', 'flatBar', 'FB 50×6');
+    const steelOnly = exported(steel);
+    const withFrames = exported(steel, slot, bar);
+    const total = withFrames.findIndex((row) => row[0] === t('assembly.steel.stockTotal'));
+    expect(withFrames.slice(0, total + 1)).toEqual(steelOnly.slice(0, total + 1));
+    expect(withFrames.slice(total + 1, total + 3).map((row) => [row[5], row[11]])).toEqual([
+      ['溝幅 6 20×20', '単位質量 0.49 kg/m（内側の形は簡略）'], ['フラットバー 20×5', '単位質量 0.27 kg/m']]);
   });
 });

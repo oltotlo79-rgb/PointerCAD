@@ -38,9 +38,10 @@ describe('押した点から押し出す領域を選ぶ(M-01)', () => {
       .toEqual({ ok: true, region: { sketchId: sketch.id, planeId: 'xy', boundary: [{ featureId: 'rectangle-1' }] } });
   });
 
-  it('穴の候補のある領域・交わる曲線・領域の外は、次にする操作が分かる理由で断る', () => {
+  it('穴の候補を保持し、交わる曲線・領域の外は理由で断る', () => {
     const holed = activeSketch(partWith(rectangle('rectangle-1', [0, 0], [60, 40]), circle('arc-1', [30, 20], 5)));
-    expect(pickExtrudeRegion(holed, resolveSketch(holed), [5, 5, 0])).toEqual({ ok: false, reasonKey: 'solidError.regionHasHoles' });
+    expect(pickExtrudeRegion(holed, resolveSketch(holed), [5, 5, 0]))
+      .toEqual({ ok: true, region: { sketchId: holed.id, planeId: 'xy', boundary: [{ featureId: 'rectangle-1' }], holes: [[{ featureId: 'arc-1' }]] } });
     expect(pickExtrudeRegion(holed, resolveSketch(holed), [30, 20, 0]).ok).toBe(true);
     const crossing = activeSketch(partWith(rectangle('rectangle-1', [0, 0], [60, 40]), circle('arc-1', [60, 20], 5)));
     expect(pickExtrudeRegion(crossing, resolveSketch(crossing), [5, 5, 0])).toEqual({ ok: false, reasonKey: 'solidError.regionCrossing' });
@@ -72,9 +73,14 @@ describe('領域から面と押し出しを 1 回で作る(M-01)', () => {
     expect(document.solids).toHaveLength(0);
   });
 
-  it('領域も面も無い確定は今までどおり断り、消えた要素を指す領域は古いとして断る', () => {
+  it('領域も面も選ばない確定は断り(閉じた領域があれば領域を押すよう案内する)、消えた要素を指す領域は古いとして断る', () => {
     const document = partWith(rectangle('rectangle-1', [0, 0], [60, 40]));
-    expect(commitSolidInput(document, [], extrudeCommit())).toEqual({ ok: false, reasonKey: 'solidError.noFace' });
+    expect(commitSolidInput(document, [], extrudeCommit())).toEqual({ ok: false, reasonKey: 'solidError.regionNotChosen' });
+    expect(commitSolidInput(createEmptyPartDocument(), [], extrudeCommit())).toEqual({ ok: false, reasonKey: 'solidError.noFace' });
+    // 面が張ってある領域しか無ければ、面を選ぶよう今までどおり案内する(線分を選んで確定した時など)。
+    const faced = appendRegionFace(document, { ...region, sketchId: activeSketch(document).id });
+    if (!faced.ok) throw new Error(faced.reasonKey);
+    expect(commitSolidInput(faced.document, ['rectangle-1'], extrudeCommit())).toEqual({ ok: false, reasonKey: 'solidError.noFace' });
     const stale = { ...region, sketchId: activeSketch(document).id, boundary: [{ featureId: 'rectangle-9' }] };
     expect(commitSolidInput(document, [], extrudeCommit({ extrudeRegion: stale }))).toEqual({ ok: false, reasonKey: 'solidError.regionStale' });
   });

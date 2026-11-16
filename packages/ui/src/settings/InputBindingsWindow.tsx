@@ -3,6 +3,7 @@ import { t } from '../i18n/t.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { CameraControlSettingsForm } from './CameraControlSettingsForm.js';
 import { MouseButtonsForm } from './MouseButtonsForm.js';
+import { RadialMenuForm } from './RadialMenuForm.js';
 import { settingsCloseRequest, submitSettingsDrafts } from './settingsDrafts.js';
 import { SettingsDraftPrompt, type DraftPromptTexts } from './SettingsDraftPrompt.js';
 import { ShortcutSettingsForm } from './ShortcutSettingsForm.js';
@@ -15,7 +16,7 @@ import './inputBindingsWindow.css';
  * タブを替えても下書きを失わないよう、両方の form を置いたまま、見えない方を hidden にする。
  * ×・Esc で閉じる時に下書きがあれば、窓の中で［適用して閉じる］［捨てて閉じる］［続ける］を出す(settingsDrafts.ts の印)。
  */
-type BindingsTab = 'view' | 'keys' | 'mouse';
+type BindingsTab = 'view' | 'keys' | 'mouse' | 'radial';
 /** 最後に開いたタブ(窓を開き直した時に同じタブで開く。端末には残さない一時の表示の状態)。 */
 let lastTab: BindingsTab = 'view';
 
@@ -77,6 +78,9 @@ export function InputBindingsWindow({ onClose }: { readonly onClose: () => void 
         <button type="button" role="tab" className="pcad-tab" id={`${id}-tab-mouse`} aria-controls={`${id}-panel-mouse`}
           aria-selected={tab === 'mouse'} title={t('settings.inputBindings.tab.mouseGuide')} onClick={() => { choose('mouse'); }}>
           {t('settings.inputBindings.tab.mouse')}</button>
+        <button type="button" role="tab" className="pcad-tab" id={`${id}-tab-radial`} aria-controls={`${id}-panel-radial`}
+          aria-selected={tab === 'radial'} title={t('settings.inputBindings.tab.radialGuide')} onClick={() => { choose('radial'); }}>
+          {t('settings.inputBindings.tab.radial')}</button>
       </div>
       <div role="tabpanel" id={`${id}-panel-view`} aria-labelledby={`${id}-tab-view`} hidden={tab !== 'view'}>
         <CameraControlSettingsForm />
@@ -86,6 +90,9 @@ export function InputBindingsWindow({ onClose }: { readonly onClose: () => void 
       </div>
       <div role="tabpanel" id={`${id}-panel-mouse`} aria-labelledby={`${id}-tab-mouse`} hidden={tab !== 'mouse'}>
         <MouseButtonsForm />
+      </div>
+      <div role="tabpanel" id={`${id}-panel-radial`} aria-labelledby={`${id}-tab-radial`} hidden={tab !== 'radial'}>
+        <RadialMenuForm />
       </div>
       <p className="pcad-input-bindings__hint">{t('settings.inputBindings.hint')}</p>
     </dialog>

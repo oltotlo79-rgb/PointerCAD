@@ -61,3 +61,20 @@ describe('camera settings accessible form', () => {
     expect(markup).not.toContain('role="alert"');
   });
 });
+
+describe('タッチの指の割当(B-08g・B-08h)', () => {
+  it('指の操作は合う操作の選択にだけ出し、1 本指の行の説明に引っぱる操作の注意を出す。下書きが無い時は窓の注意を出さない', () => {
+    const state = useAppStore.getState(), base = DEFAULT_VIEW_CONTROLS.bindings;
+    const off = { alt: false, shift: false, ctrl: false, meta: false } as const;
+    state.setDisplaySettings({ ...state.displaySettings, viewControls: { ...DEFAULT_VIEW_CONTROLS, bindings: { ...base,
+      orbit: [...base.orbit, { kind: 'touch', gesture: 'oneFinger', ...off }] } } });
+    const markup = renderForm();
+    // 行は回転 3(既定の 2＋1 本指)・平行移動 2・拡大縮小 2。1 本指・2 本指は回転と平行移動の選択に、つまむは拡大縮小の選択にだけ出る。
+    expect(markup.match(/<option value="oneFinger"/gu)).toHaveLength(5);
+    expect(markup.match(/<option value="twoFinger"/gu)).toHaveLength(5);
+    expect(markup.match(/<option value="pinch"/gu)).toHaveLength(2);
+    expect(markup).toContain('<option value="oneFinger" selected="">');
+    expect(markup).toContain(t('settings.camera.touch.oneFingerNotice'));
+    expect(markup).not.toContain('role="note"');
+  });
+});

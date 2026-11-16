@@ -94,6 +94,12 @@
 .pcad-math-editor__empty { margin: 0; color: var(--pcad-text-muted); }
 .pcad-math-editor__apply-reason { flex-basis: 100%; margin: 0; text-align: end; color: var(--pcad-text-muted); }
 .pcad-math-editor__result--error { color: var(--pcad-danger-text); border-color: var(--pcad-danger); }
+/* 入力中・計算中は前の結果を薄い影として残し、1 行目に計算中の印を付ける(欄の高さを変えない。外部検査 run 43803122461 の調べ)。
+   影の文字は ::before の data-text だけに持たせ、欄の文字(読み上げと検査が読む文字)には入れない。全部の桁の行は summary と同じ高さ。 */
+.pcad-math-editor__shadow { opacity: .6; }
+.pcad-math-editor__shadow::before { content: attr(data-text); }
+.pcad-math-editor__result p.pcad-math-editor__shadow--summary { margin: 0; }
+.pcad-math-editor__stale { margin-inline-end: .5em; font-weight: 600; }
 .pcad-math-editor__actions { justify-content: flex-end; }
 .pcad-math-editor__component {
   display: grid;

@@ -1019,7 +1019,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       // 面が 1 枚失敗しても残りは作る。失敗は理由つきで返す(FR-504、NFR-RE-1)。
       for (const faceRequest of sketch.faces) {
         try {
-          const handle = makePlanarFace(oc, faceRequest.curves, options);
+          const handle = makePlanarFace(oc, faceRequest.curves, options, undefined, undefined, faceRequest.holes);
           try {
             const surface = tessellate(oc, handle.face, options);
             faces.push({

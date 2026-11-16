@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAMERA_CONTROLS, type CameraBinding, type CameraControlSettings } from './cameraControlSettings.js';
 import { loadSettings, saveSettings, type SettingsStorage } from './settings.js';
 import {
-  currentViewControls, DEFAULT_VIEW_CONTROLS, isViewControlSettings, readStoredViewControls, sameViewControls, viewControlProblems,
+  currentViewControls, DEFAULT_VIEW_CONTROLS, hasOneFingerTouch, isViewControlSettings, readStoredViewControls, sameViewControls, viewControlProblems,
   viewOrbitCenter, viewZoomCenter, withViewControlPreset,
   type ViewControlOptions, type ViewControlSettings, type ViewTrigger,
 } from './viewControlSettings.js';
@@ -140,9 +140,9 @@ describe('読む時の救い出し(R4・R5・R8)', () => {
     expect(readStoredViewControls({})).toEqual({ settings: EXPECTED_DEFAULT, dropped: 0 });
   });
 
-  it('R8: 後の版の欄は無視し、後の版の入力の種類(タッチ)はその項目だけ捨てて知らせる。キーと回転の中心は第 2 段(B-08)で読む', () => {
+  it('R8: 後の版の欄は無視し、後の版の入力(知らない指の操作)はその項目だけ捨てて知らせる。キーと回転の中心は第 2 段(B-08)で読む', () => {
     const later = { version: 2, sixDof: { enabled: true },
-      bindings: { orbit: [drag('middle'), { kind: 'keys', keys: 'arrows', ...OFF }], pan: [drag('right'), { kind: 'touch', gesture: 'twoFinger' }],
+      bindings: { orbit: [drag('middle'), { kind: 'keys', keys: 'arrows', ...OFF }], pan: [drag('right'), { kind: 'touch', gesture: 'threeFinger', ...OFF }],
         zoom: [wheel()] },
       options: { ...OPTIONS, orbitCenter: 'pointer', keyStepDegrees: 15 } };
     expect(readStoredViewControls({ viewControls: later })).toEqual({ settings: { version: 2,
@@ -187,6 +187,51 @@ describe('読む時の救い出し(R4・R5・R8)', () => {
     const stored = { ...ok, bindings: { ...ok.bindings, zoom: [...base.zoom, keys('arrows', { alt: true }), keys('plusMinus')],
       orbit: [...ok.bindings.orbit, keys('arrows', { ctrl: true })] }, options: { ...ok.options, keyStepDegrees: 200 } };
     expect(readStoredViewControls({ viewControls: stored })).toEqual({ settings: ok, dropped: 3 });
+  });
+
+  it('B-08g: タッチの 2 本指は平行移動か回転、つまむは拡大縮小だけ。修飾キーは使わず、マウスの割当は 1 つ以上残す', () => {
+    const touch = (gesture: 'twoFinger' | 'pinch', modifiers: Modifiers = {}): ViewTrigger => ({ kind: 'touch', gesture, ...OFF, ...modifiers });
+    const base = EXPECTED_DEFAULT.bindings;
+    const ok = { ...EXPECTED_DEFAULT, bindings: { ...base, pan: [...base.pan, touch('twoFinger')], zoom: [...base.zoom, touch('pinch')] } };
+    expect(viewControlProblems(ok)).toEqual([]);
+    // 2 本指を回転へ移すのも使える。
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, pan: base.pan, orbit: [...base.orbit, touch('twoFinger')] } })).toEqual([]);
+    const at = (action: 'orbit' | 'pan' | 'zoom', index: number) => ({ code: 'not-allowed', action, at: `bindings.${action}.${index}` });
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, pan: [...base.pan, touch('pinch')] } })).toEqual([at('pan', base.pan.length)]);
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, zoom: [...base.zoom, touch('twoFinger')] } }))
+      .toEqual([at('zoom', base.zoom.length)]);
+    // 修飾キーの付いたタッチは読めない(後の版の入力として断る)。
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, zoom: [...base.zoom, touch('pinch', { ctrl: true })] } }))
+      .toEqual([at('zoom', base.zoom.length)]);
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, orbit: [...base.orbit, touch('twoFinger')] } }))
+      .toEqual([{ code: 'duplicate', first: 'orbit', second: 'pan', trigger: touch('twoFinger') }]);
+    expect(viewControlProblems({ ...ok, bindings: { ...ok.bindings, pan: [touch('twoFinger')] } }))
+      .toEqual([{ code: 'mouse-required', action: 'pan' }]);
+    // 読む時は合わない指の操作と修飾キーの付いた物だけ捨て、残りは修飾キーを全部 false にして写す。
+    const stored = { ...ok, bindings: { ...ok.bindings, orbit: [...base.orbit, touch('pinch')], zoom: [...ok.bindings.zoom, touch('twoFinger', { alt: true })] } };
+    expect(readStoredViewControls({ viewControls: stored })).toEqual({ settings: ok, dropped: 2 });
+    expect(sameViewControls(ok, EXPECTED_DEFAULT)).toBe(false);
+  });
+
+  it('B-08h: 1 本指は回転か平行移動に使え、拡大縮小には使えない。雛形「タッチ画面向け」は既定のマウスに指の 3 つを足す', () => {
+    const one: ViewTrigger = { kind: 'touch', gesture: 'oneFinger', ...OFF };
+    const base = EXPECTED_DEFAULT.bindings;
+    expect(viewControlProblems({ ...EXPECTED_DEFAULT, bindings: { ...base, orbit: [...base.orbit, one] } })).toEqual([]);
+    expect(viewControlProblems({ ...EXPECTED_DEFAULT, bindings: { ...base, pan: [...base.pan, one] } })).toEqual([]);
+    expect(viewControlProblems({ ...EXPECTED_DEFAULT, bindings: { ...base, zoom: [...base.zoom, one] } }))
+      .toEqual([{ code: 'not-allowed', action: 'zoom', at: `bindings.zoom.${base.zoom.length}` }]);
+    expect(hasOneFingerTouch(EXPECTED_DEFAULT)).toBe(false);
+    const value = withViewControlPreset(EXPECTED_DEFAULT, 'touchscreen');
+    expect(viewControlProblems(value)).toEqual([]);
+    expect(value.bindings).toEqual({
+      orbit: [...base.orbit, one],
+      pan: [...base.pan, { kind: 'touch', gesture: 'twoFinger', ...OFF }],
+      zoom: [...base.zoom, { kind: 'touch', gesture: 'pinch', ...OFF }],
+    });
+    expect(hasOneFingerTouch(value)).toBe(true);
+    // 速さと反転は雛形で変えない。
+    const tuned = { ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, panSensitivity: 3 } };
+    expect(withViewControlPreset(tuned, 'touchscreen').options).toEqual(tuned.options);
   });
 
   it('B-08: 雛形「キーボードで視点」は既定のマウスに矢印＝回転・Shift＋矢印＝平行移動・＋−＝拡大縮小を足す', () => {
@@ -259,7 +304,7 @@ describe('適用の時の問題(設計 §4.5 の code 7 種)', () => {
   it.each([
     { name: 'shape', value: withBindings({ orbit: [drag('middle'), { kind: 'drag', button: 'back', ...OFF }] }),
       expected: [{ code: 'shape', at: 'bindings.orbit.1' }] },
-    { name: 'not-allowed', value: withBindings({ zoom: [wheel(), { kind: 'touch', gesture: 'pinch' }] }),
+    { name: 'not-allowed', value: withBindings({ zoom: [wheel(), { kind: 'touch', gesture: 'oneFinger', ...OFF }] }),
       expected: [{ code: 'not-allowed', action: 'zoom', at: 'bindings.zoom.1' }] },
     { name: 'left-needs-alt', value: withBindings({ orbit: [drag('middle'), drag('left', { shift: true })] }),
       expected: [{ code: 'left-needs-alt', action: 'orbit' }] },

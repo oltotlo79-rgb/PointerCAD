@@ -44,6 +44,17 @@ describe('高精度計算の期限を準備の前から依頼全体へ適用す�
     expect(evaluate(request('1+2'))).toEqual({ status: 'stopped', reason: 'budget' });
   });
 
+  // 2026-11-16 RUN 20261116-193506: 冷えた Worker の初回の特異値分解(798ms)が通常の式の 200ms で止まった。
+  it.each(['svds', 'svdu', 'svdv'])('%sは準備に250msかかっても通常式の期限で停止しない(1秒の枠)', name => {
+    delayedPreparation(250);
+    expect(evaluate(request(`tensorelement(${name}([[3,0],[4,0]]),[1,1])`))).toMatchObject({ status: 'value', kind: 'real' });
+  });
+
+  it('特異値分解も開始から1秒を超えると停止する(上限は緩めない)', () => {
+    delayedPreparation(1001);
+    expect(evaluate(request('tensorelement(svds([[3,0],[4,0]]),[1,1])'))).toEqual({ status: 'stopped', reason: 'budget' });
+  });
+
   it.each([['ellipticf(0,0)', 3001], ['gamma(1)', 1001]] as const)(
     '%sは計算に着いても開始からの期限を更新しない', (source, delay) => {
       delayedPreparation(delay);

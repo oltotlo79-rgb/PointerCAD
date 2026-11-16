@@ -1,3 +1,5 @@
+/** 数の大きさを許容差と比べる共通の口(許容差の比較を手書きで足さずここへ集める。ui の面と押し出しの判定が使う)。 */
+export { belowMagnitude, withinMagnitude } from './numericTolerance.js';
 export {
   FUNCTION_PLOT_AXES,
   FunctionPlotBounds,
@@ -1213,6 +1215,11 @@ export { PRODUCT_CATALOG_REGISTRY } from './assembly/catalog/registry.js';
 export type { CatalogRegistry } from './assembly/catalog/registry.js';
 /** 読み込んだ族と行から、置く族の部品の保存の形を作る(ui の選ぶ画面が使う。版の書き忘れを起こさない)。 */
 export { createCatalogItemSource } from './assembly/catalog/source.js';
+/** フレームの一括配置(J-01): 線の列から、長さを持つ部材 1 本ごとの長さと配置を出す(ui の店の動作が使う)。 */
+export { planFrameMembers } from './assembly/frame/frameMembers.js';
+/** 置いた部品のまっすぐな辺(部品の指紋)を世界の座標の線にする(J-01 包み 4a。ui の辺の一覧が使う)。 */
+export { frameLineFromEdge } from './assembly/frame/frameEdges.js';
+export type { FrameCornerRule, FrameLine, FrameMembersResult } from './assembly/frame/frameMembers.js';
 export type {
   SteelEvidence,
   SteelMaterialGrade,
@@ -1226,6 +1233,11 @@ export {
 } from './assembly/standard/steelCatalog.js';
 /** 材質別の鋼材の表 r2（角形鋼管・一般構造用炭素鋼鋼管・不等辺山形鋼・I 形鋼）を含む全ての行と、r2 の鋼種。 */
 export { ALL_STEEL_PRODUCTS, STEEL_R2_MATERIAL_GRADES } from './assembly/standard/steelCatalog.js';
+/** 鋼材の断面の外形(線に沿って並べる時に外形の中心を線に乗せる。J-01)。 */
+export { steelSectionBounds } from './assembly/standard/steelSectionBounds.js';
+/** 定尺の棒への切り出しの割り付けと歩留まり(J-01 包み 7。ui の切断の一覧が使う)。 */
+export { planStockCutting } from './assembly/standard/stockCutting.js';
+export type { StockCut, StockCuttingResult } from './assembly/standard/stockCutting.js';
 export type { SteelStockList } from './assembly/standard/steelStockList.js';
 export { buildSteelStockList } from './assembly/standard/steelStockList.js';
 export { createSteelBend, steelBendInputState } from './assembly/standard/steelBend.js';

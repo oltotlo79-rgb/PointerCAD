@@ -16,6 +16,7 @@ import type { AssemblyPlacementState } from '../store/assemblySlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { duplicateComponent as duplicateComponentDocument, placePart, placementFromSources, removeComponents,
   type PlacementInputOutcome } from './placeComponent.js';
+import { steelStockMaterialId } from './standardPartPicker.js';
 
 interface PlaceComponentDeps {
   readonly choose: (gateway: FileGateway) => Promise<PickedTypedFile | null>;
@@ -132,7 +133,9 @@ export async function commitPlaceComponent(
     if (!isCurrentPlacement(current.assemblyPlacement, pending.requestId, pending.documentId) ||
         current.activeDocumentId !== pending.documentId || current.assembly !== assembly ||
         current.assemblyLibrary !== library) return placement;
-    const placed = placePart(assembly, embedded.partRef, pending.document.name, placement.placement);
+    // 鋼材の部品文書(編集できる鋼材)は、元の鋼材の鋼種の材質を部品に付ける(K-06)。部品文書の形は変えない。
+    const placed = placePart(assembly, embedded.partRef, pending.document.name, placement.placement,
+      steelStockMaterialId(pending.document.steelStockSource));
     current.applyAssembly(placed.document, embedded.library);
     current.setSelection([placed.component.id]);
   } catch {

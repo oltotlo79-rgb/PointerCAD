@@ -22,6 +22,23 @@ import { createSolidSupport } from './solidBoundaryDraft.js';
 
 type SolidAnalysisMaterialFieldsProps = Parameters<typeof SolidAnalysisMaterialFields>[0];
 
+it('routes catalogue E through the existing editor, preserving independent values and later hand edits', () => {
+  resetTestStore();
+  useAppStore.getState().toggleStrength(); useAppStore.getState().openSolidAnalysis();
+  useAppStore.getState().editSolidAnalysis('poisson', '0.28');
+  useAppStore.getState().editSolidAnalysis('young', '123456');
+  const before = useAppStore.getState().solidAnalysisSession;
+  const props = materialProps();
+  expect(props.young).toBe('123456');
+  props.onYoungChange?.('205000');
+  const after = useAppStore.getState().solidAnalysisSession;
+  expect(after?.values).toEqual({ ...before?.values, young: '205000' });
+  expect(after?.revision).toBe((before?.revision ?? 0) + 1);
+  elements().find(row => row.field?.key === 'young')?.onChange?.('201234');
+  expect(materialProps().young).toBe('201234');
+  expect(useAppStore.getState().solidAnalysisSession?.values.poisson).toBe('0.28');
+});
+
 vi.mock('react', async importOriginal => {
   const actual = await importOriginal<typeof ReactTypes>();
   return { ...actual, useState: vi.fn(actual.useState), useEffect: vi.fn(actual.useEffect), useRef: vi.fn(actual.useRef) };

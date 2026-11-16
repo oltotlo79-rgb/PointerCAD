@@ -3,6 +3,7 @@ import { savePart } from './scriptsFlow.js';
 import { reopenPart } from './reopenPart.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { undoMathEdit, waitForMathEditorText } from './mathEditorReady.js';
+import { openMathPalette } from './mathPaletteSupport.js';
 
 /** Legendre input retains its degree, original domain and editable document source. */
 export async function mathLegendreFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -44,8 +45,7 @@ export async function mathLegendreFlow(page: Page, info: TestInfo, app?: Electro
   await input.fill(source); await expectResult(result).toHaveText('= 17');
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
   await expect(dialog.locator('math-field')).toBeFocused();
-  const palette = dialog.locator('summary').filter({ hasText: '記号と演算を探す' });
-  await palette.click();
+  const palette = await openMathPalette(dialog, info);
   await dialog.getByLabel('数学の分野', { exact: true }).selectOption({ label: '関数' });
   await dialog.getByRole('searchbox', { name: '名前・記号で検索', exact: true }).fill('Legendre多項式');
   await expect(dialog.getByRole('button', { name: /Legendre多項式/u })).toBeVisible();

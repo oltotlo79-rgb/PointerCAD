@@ -1,7 +1,8 @@
 import {
-  VIEW_ACTIONS, viewKeyStepDegrees, type ViewAction, type ViewControlOptions, type ViewControlSettings, type ViewKeyGroup, type ViewTrigger,
+  VIEW_ACTIONS, viewKeyStepDegrees, type ViewAction, type ViewControlOptions, type ViewControlSettings, type ViewKeyGroup,
+  type ViewTouchGesture, type ViewTrigger,
 } from '../settings/viewControlSettings.js';
-import { ORBIT_RADIANS_PER_PIXEL } from './cameraMath.js';
+import { ORBIT_RADIANS_PER_PIXEL, ZOOM_FACTOR_PER_NOTCH } from './cameraMath.js';
 
 /*
  * 入力から視点の操作への判定と、速さ・向きの換算(FR-101)。3D(attachCameraControls)・図面(attachDrawingNavigation)・
@@ -24,6 +25,22 @@ export function viewDragAction(settings: ViewControlSettings,
   if (button === null || event.buttons !== buttons) return null;
   return VIEW_ACTIONS.find(action => settings.bindings[action].some(trigger => trigger.kind === 'drag'
     && trigger.button === button && cameraModifiersMatch(trigger, event))) ?? null;
+}
+
+/** タッチの指の操作(2 本指ドラッグ・つまむ。B-08g)の割当の操作。割当が無ければ null(既定は無し)。 */
+export function viewTouchAction(settings: ViewControlSettings, gesture: ViewTouchGesture): ViewAction | null {
+  return VIEW_ACTIONS.find(action => settings.bindings[action].some(trigger => trigger.kind === 'touch'
+    && trigger.gesture === gesture)) ?? null;
+}
+
+/**
+ * つまむ拡大の量を、ホイールの量(zoom・zoomToward の wheelDeltaY)で表す。指の間の距離の比 scale の逆数だけ距離が
+ * 変わる(広げると近づく。指の下の物が指についてくる)。速さと反転は掛けない(直接さわる操作のため)。
+ * 比が正の有限の数でなければ 0(動かさない)。
+ */
+export function pinchZoomDelta(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) return 0;
+  return -100 * Math.log(scale) / Math.log(ZOOM_FACTOR_PER_NOTCH);
 }
 
 /** 修飾キーが完全に一致したホイールの割当の操作。ボタンを押している間(ドラッグ中)は当たらない。 */

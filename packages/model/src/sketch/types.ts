@@ -430,6 +430,8 @@ export interface SketchFaceFeature extends SketchFeatureBase {
   readonly kind: 'face';
   /** 順序が意味を持つ。点だけ、または線・円弧だけを並べる。 */
   readonly boundary: readonly SketchElementRef[];
+  /** 外周の内側にある、互いに接しない閉じた穴の境界。空なら穴なし。 */
+  readonly holes?: readonly (readonly SketchElementRef[])[];
   /** 塗り色(FR-310)。"#rrggbb"。 */
   readonly color: string;
 }
@@ -597,6 +599,8 @@ export interface ResolvedFace {
   readonly color: string;
   /** 閉ループの順に並んだ曲線。 */
   readonly curves: readonly ResolvedCurve[];
+  /** 外周と同じ平面上の、互いに接しない穴。穴なしでは欄を持たない。 */
+  readonly holes?: readonly (readonly ResolvedCurve[])[];
 }
 
 export type SketchErrorCode =

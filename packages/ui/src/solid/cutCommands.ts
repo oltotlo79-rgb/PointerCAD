@@ -545,6 +545,10 @@ export function profileCutGeometry(context: CutContext, targetFeatureId: string,
   profile: SketchFaceRef): ProfileCutGeometry {
   const sketch = context.document.sketches.find((candidate) => candidate.id === profile.sketchId);
   if (sketch === undefined) return { ok: false, reasonKey: 'cutError.noProfile' };
+  const definition = sketch.features.find(feature => feature.id === profile.faceFeatureId);
+  if (definition?.kind === 'face' && (definition.holes?.length ?? 0) > 0) {
+    return { ok: false, reasonKey: 'solidError.holedFaceCut' };
+  }
   const snapshot = context.resolvedSketches;
   const current = snapshot !== undefined && snapshot.document.id === context.document.id
     && !affectsShape(snapshot.document, context.document);

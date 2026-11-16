@@ -266,5 +266,15 @@
   "solidAnalysis.material.evidence.measured": "測定に基づく参考資料",
   "solidAnalysis.material.evidence.draft": "規格案（最終規格票との相違は未確認）",
   "solidAnalysis.material.basis.minimum": "下限値",
-  "solidAnalysis.material.basis.reference": "参考値"
+  "solidAnalysis.material.basis.reference": "参考値",
+  "solidAnalysis.material.fillElastic": "材料と板厚を選ぶと、出典のあるヤング率と降伏点・耐力を入れます。ヤング率は後から直せます。降伏材料を選ばない場合、降伏比は表示しません。",
+  "solidAnalysis.material.tableCaption": "選択時に入れる掲載値（MPa）",
+  "solidAnalysis.material.property": "項目",
+  "solidAnalysis.material.tableValue": "掲載値",
+  "solidAnalysis.material.manualValues": "ポアソン比・密度・硬化・疲労の係数は、出どころの記録がないため入れません。必要な値は手入力してください。降伏点・耐力は掲載値だけを使います。",
+  "solidAnalysis.material.noYoung": "出どころの記録がないため入れません。現在の欄を保ちます。",
+  "solidAnalysis.material.youngDifferent": "現在のヤング率欄は掲載値と異なります。手入力の値・式の根拠は、この出典とは別に確認してください。",
+  "solidAnalysis.material.youngSource": "ヤング率の出典",
+  "solidAnalysis.material.standardUnspecified": "規格番号の記載なし",
+  "solidAnalysis.material.tableSummary": "入力する値・入れない値と出典"
 }

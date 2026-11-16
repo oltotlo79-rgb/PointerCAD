@@ -12,6 +12,7 @@ import {
 } from '../appearance/densityMaterials.js';
 import { massFromVolume } from '../measure/massProperties.js';
 import type { MaterialBearingPartDocument } from './massProperties.js';
+import { catalogItemNominalMass } from './catalog/source.js';
 import { materialOf } from './massProperties.js';
 import { partKeyOf } from './resolveAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, BomSettings } from './types.js';
@@ -107,6 +108,14 @@ function massOf(partKey: string, materialId: string, resolved: BomResolvedData):
     : massFromVolume(volume, material.density);
 }
 
+/**
+ * 形の体積からでなく族が持つ 1 個の質量(製造元の寸法に合わせたフレームの系列の単位質量 × 長さ)。持たない部品は null
+ * (今の体積 × 密度にする)。簡略形状の体積で質量を出すと実物と大きく違う族のため。
+ */
+function nominalMassOf(component: AssemblyComponent): number | null {
+  return component.source.kind === 'standardPart' ? catalogItemNominalMass(component.source) : null;
+}
+
 function compareNullableNumber(left: number | null, right: number | null): number {
   if (left === null) return right === null ? 0 : 1;
   if (right === null) return -1;
@@ -158,7 +167,7 @@ export function buildBom(
       found.occurrencePaths.push(path);
       return;
     }
-    const massEach = massOf(partKey, materialId, currentResolved);
+    const massEach = nominalMassOf(component) ?? massOf(partKey, materialId, currentResolved);
     grouped.set(identity, {
       rowKey: rowKeyOf(scope, partKey, materialId),
       number: nextNumber,

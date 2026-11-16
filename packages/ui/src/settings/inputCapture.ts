@@ -1,10 +1,14 @@
 import { t, type MessageKey } from '../i18n/t.js';
-import { VIEW_KEY_GROUP_ACTIONS, type ViewAction, type ViewKeyGroup, type ViewTrigger } from './viewControlSettings.js';
+import {
+  touchTriggersFull, VIEW_KEY_GROUP_ACTIONS, VIEW_TOUCH_GESTURE_ACTIONS, type ViewAction, type ViewControlSettings, type ViewKeyGroup,
+  type ViewTouchGesture, type ViewTrigger,
+} from './viewControlSettings.js';
 
 /*
  * 操作の割り当ての窓の取り込み(設計 1-4・§6.2)。取り込みの枠の中で、マウスのボタンを押す・ホイールを回すと、
  * 視点の操作の入力になる。左ボタンは選択と作図に使うので、Alt を一緒に押した時だけ受ける(viewControlSettings.ts の
- * left-needs-alt と同じ決まり)。キー(矢印・テンキー 8・2・4・6・＋−)は captureViewKey が受ける(B-08)。タッチはまだ受けない。
+ * left-needs-alt と同じ決まり)。キー(矢印・テンキー 8・2・4・6・＋−)は captureViewKey が受ける(B-08)。タッチの指の操作は
+ * 枠の中では取り込まず(触れる画面が無い時も足せるように)、枠の外の選択肢から captureViewTouch で足す(B-08h)。
  */
 
 /** 取り込みの枠が受け取る出来事(PointerEvent と WheelEvent の必要な所だけ)。 */
@@ -55,10 +59,25 @@ export function captureViewKey(event: Pick<KeyboardEvent, 'code' | 'altKey' | 's
   return { status: 'captured', trigger: { kind: 'keys', keys: group, alt: event.altKey, shift: event.shiftKey, ctrl: event.ctrlKey, meta: event.metaKey } };
 }
 
-const INPUT_KEYS: Readonly<Record<'left' | 'middle' | 'right' | 'wheel' | ViewKeyGroup, MessageKey>> = {
+type CapturedViewTouch =
+  | { readonly status: 'captured'; readonly trigger: ViewTrigger }
+  | { readonly status: 'refused'; readonly reason: 'not-for-action' | 'touch-full' };
+
+/**
+ * 取り込みの枠の「タッチの指の操作」の選択肢(B-08h) → 視点の入力。マウスの割当を残したまま足せる。その操作に使えない
+ * 指の操作は断り、その操作のタッチの割当が上限(2 つ)に達していれば足せない。
+ */
+export function captureViewTouch(value: ViewControlSettings, action: ViewAction, gesture: ViewTouchGesture): CapturedViewTouch {
+  if (!VIEW_TOUCH_GESTURE_ACTIONS[gesture].includes(action)) return { status: 'refused', reason: 'not-for-action' };
+  if (touchTriggersFull(value, action)) return { status: 'refused', reason: 'touch-full' };
+  return { status: 'captured', trigger: { kind: 'touch', gesture, alt: false, shift: false, ctrl: false, meta: false } };
+}
+
+const INPUT_KEYS: Readonly<Record<'left' | 'middle' | 'right' | 'wheel' | ViewKeyGroup | ViewTouchGesture, MessageKey>> = {
   left: 'settings.camera.chip.left', middle: 'settings.camera.chip.middle', right: 'settings.camera.chip.right',
   wheel: 'settings.camera.chip.wheel',
   arrows: 'settings.camera.keys.arrows', numpad: 'settings.camera.keys.numpad', plusMinus: 'settings.camera.keys.plusMinus',
+  oneFinger: 'settings.camera.touch.oneFinger', twoFinger: 'settings.camera.touch.twoFinger', pinch: 'settings.camera.touch.pinch',
 };
 const MODIFIER_KEYS: Readonly<Record<'ctrl' | 'alt' | 'shift' | 'meta', MessageKey>> = {
   ctrl: 'settings.camera.ctrl', alt: 'settings.camera.alt', shift: 'settings.camera.shift', meta: 'settings.camera.meta',
@@ -67,6 +86,7 @@ const MODIFIER_KEYS: Readonly<Record<'ctrl' | 'alt' | 'shift' | 'meta', MessageK
 /** 札の表記(「Shift＋中ボタン ドラッグ」「Ctrl＋ホイール・2 本指スクロール」)。 */
 export function viewTriggerLabel(trigger: ViewTrigger): string {
   const modifiers = (['ctrl', 'alt', 'shift', 'meta'] as const).filter(modifier => trigger[modifier]).map(modifier => t(MODIFIER_KEYS[modifier]));
-  const input = trigger.kind === 'wheel' ? 'wheel' : trigger.kind === 'keys' ? trigger.keys : trigger.button;
+  const input = trigger.kind === 'wheel' ? 'wheel' : trigger.kind === 'keys' ? trigger.keys
+    : trigger.kind === 'touch' ? trigger.gesture : trigger.button;
   return [...modifiers, t(INPUT_KEYS[input])].join(t('settings.camera.chip.join'));
 }

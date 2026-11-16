@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_VIEW_CONTROLS, withViewControlPreset, type ViewControlOptions } from '../settings/viewControlSettings.js';
 import {
-  dragZoomDelta, keyOrbitPixels, keyZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewKeyMove, viewWheelAction,
-  wheelDragEquivalent, wheelZoomDelta,
+  dragZoomDelta, keyOrbitPixels, keyZoomDelta, pinchZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewKeyMove,
+  viewTouchAction, viewWheelAction, wheelDragEquivalent, wheelZoomDelta,
 } from './cameraControlBindings.js';
 import { ORBIT_RADIANS_PER_PIXEL } from './cameraMath.js';
 
@@ -149,5 +149,30 @@ describe('view key bindings (B-08)', () => {
     expect(keyZoomDelta(options(), -1)).toBe(-100);
     expect(keyZoomDelta(options({ wheelSensitivity: 2 }), 1)).toBe(200);
     expect(keyZoomDelta(options({ invertWheel: true }), -1)).toBe(100);
+  });
+});
+
+describe('タッチの指の操作(B-08g)', () => {
+  const OFF = { alt: false, shift: false, ctrl: false, meta: false } as const;
+  it('既定には割当が無く、割り当てた指の操作だけが当たる', () => {
+    expect(viewTouchAction(DEFAULT_VIEW_CONTROLS, 'twoFinger')).toBeNull();
+    expect(viewTouchAction(DEFAULT_VIEW_CONTROLS, 'pinch')).toBeNull();
+    const bindings = DEFAULT_VIEW_CONTROLS.bindings;
+    const touched = { ...DEFAULT_VIEW_CONTROLS, bindings: { ...bindings,
+      orbit: [...bindings.orbit, { kind: 'touch' as const, gesture: 'twoFinger' as const, ...OFF }],
+      zoom: [...bindings.zoom, { kind: 'touch' as const, gesture: 'pinch' as const, ...OFF }] } };
+    expect(viewTouchAction(touched, 'twoFinger')).toBe('orbit');
+    expect(viewTouchAction(touched, 'pinch')).toBe('zoom');
+  });
+
+  it('つまむ量は、指の間の比の逆数だけ距離が変わるホイールの量(1.1 倍で 1 目盛り=100)', () => {
+    // 1.1 倍に広げると 1 目盛り分近づく(-100)、1/1.1 にすぼめると 1 目盛り分遠ざかる(+100)。
+    expect(pinchZoomDelta(1.1)).toBeCloseTo(-100, 9);
+    expect(pinchZoomDelta(1 / 1.1)).toBeCloseTo(100, 9);
+    expect(pinchZoomDelta(1.21)).toBeCloseTo(-200, 9);
+    expect(pinchZoomDelta(1)).toBeCloseTo(0, 12);
+    for (const scale of [0, -1, Number.NaN, Infinity]) expect(pinchZoomDelta(scale)).toBe(0);
+    // 速さと反転は掛けない(直接さわる操作)。
+    expect(pinchZoomDelta(2)).toBeCloseTo(-100 * Math.log(2) / Math.log(1.1), 9);
   });
 });

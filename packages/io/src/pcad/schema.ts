@@ -86,6 +86,8 @@ import { isRecord } from './guards.js';
  */
 /** 版14: 数学定義と係数ID。旧アプリが式を落としてキャッシュだけで作図することを防ぐ。 */
 export const PCAD_SCHEMA_VERSION = 22;
+/** 穴を持つスケッチ面だけが必要とする版。通常の文書の保存版22は維持する。 */
+export const PCAD_MAX_SCHEMA_VERSION = 23;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -441,6 +443,10 @@ function migrateAssemblyDocumentToV8(
 }
 
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
+  22: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 23, document: { ...raw['document'], schemaVersion: 23 } };
+  },
   21: (raw) => {
     if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
     return { ...raw, schema: 22, document: { ...raw['document'], schemaVersion: 22 } };

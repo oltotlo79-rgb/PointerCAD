@@ -10,7 +10,8 @@ import { massFromVolume } from '../../measure/massProperties.js';
 import type { StandardPartSource } from '../resolveAssembly.js';
 import { lengthOf } from './lengthOption.js';
 import type { CatalogRegistry } from './registry.js';
-import { catalogItemNominalVolume, catalogItemRejection } from './source.js';
+import { catalogItemNominalMass, catalogItemNominalVolume, catalogItemRejection } from './source.js';
+import type { CatalogItemRow } from './types.js';
 
 /** 切断の一覧の 1 本(族の部品 1 つ)。 */
 export interface CatalogStockItem {
@@ -22,13 +23,19 @@ export interface CatalogStockItem {
   readonly itemKey: string;
   /** 呼び(保存の size)。 */
   readonly size: string;
+  /** 規格の欄(例 `JIS B 1354`。規格の行でない族は「寸法指定(規格の行ではない)」)。 */
+  readonly standardLabel: string;
+  /** 寸法の出どころ(切断の一覧の CSV の出どころの列に写す)。 */
+  readonly evidence: CatalogItemRow['evidence'];
   /** 部品表の材質の表示(行が持つ時だけ)。 */
   readonly materialLabel: string | null;
   readonly densityMaterialId: string;
   readonly catalogRevision: string;
   readonly generatorRevision: string;
   readonly lengthMm: number;
-  /** 1 本の質量(g)。体積か密度が出せない時は null。 */
+  /** 行が持つ単位質量(kg/m。製造元の寸法に合わせたフレームの系列だけ。無い行は null)。 */
+  readonly unitMassKgPerM: number | null;
+  /** 1 本の質量(g)。単位質量を持つ行は単位質量 × 長さ、無い行は体積 × 密度。出せない時は null。 */
   readonly massEachG: number | null;
 }
 
@@ -43,11 +50,15 @@ export function catalogStockItem(source: StandardPartSource, registry: CatalogRe
   if (row === undefined || length === null || !(length.value > 0)) return null;
   const volume = catalogItemNominalVolume(source.size, source.options, registry);
   const density = findDensityMaterial(row.densityMaterialId)?.density;
+  const nominalMass = catalogItemNominalMass(source, registry);
   return {
     key: `${familyId}@${family.catalogRevision}/${family.generatorRevision}:${row.key}:${length.value}`,
-    familyId, kindKey: family.kindKey, itemKey: row.key, size: row.size, materialLabel: row.materialLabel ?? null,
+    familyId, kindKey: family.kindKey, itemKey: row.key, size: row.size, standardLabel: row.standardLabel, evidence: row.evidence,
+    materialLabel: row.materialLabel ?? null,
     densityMaterialId: row.densityMaterialId, catalogRevision: family.catalogRevision, generatorRevision: family.generatorRevision,
     lengthMm: length.value,
-    massEachG: volume === null || density === undefined ? null : massFromVolume(volume, density),
+    unitMassKgPerM: row.dims.unitMassKgPerM ?? null,
+    // 族が単位質量を持つ時はその値(× 長さ)、無い時は形の体積 × 行の材質の密度。
+    massEachG: nominalMass ?? (volume === null || density === undefined ? null : massFromVolume(volume, density)),
   };
 }

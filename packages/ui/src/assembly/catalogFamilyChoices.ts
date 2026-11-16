@@ -14,12 +14,31 @@ import { MESSAGE_KEYS, t, type MessageKey } from '../i18n/t.js';
 type LoadedFamily = NonNullable<ReturnType<CatalogRegistry['loaded']>>;
 type FamilyRow = LoadedFamily['rows'][number];
 
-/** 選ぶ画面の分類の値(今の 8 分類とは別の値。保存には使わない)。 */
+/** 選ぶ画面の分類の値(今の 8 分類とは別の値。保存には使わない)。族の分類(group)と同じ文字。 */
 export const MECHANICAL_PICKER_CATEGORY = 'mechanical';
+export const ALUMINUM_FRAME_PICKER_CATEGORY = 'aluminumFrame';
+export type FamilyPickerCategory = typeof MECHANICAL_PICKER_CATEGORY | typeof ALUMINUM_FRAME_PICKER_CATEGORY;
 
-/** 機械要素の族の入口(登録の順)。 */
-export function mechanicalFamilyEntries(registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): CatalogRegistry['entries'] {
-  return registry.entries.filter((entry) => entry.group === 'mechanical');
+/** 分類の欄の値が族の分類(機械要素・アルミフレーム)か。 */
+export function isFamilyPickerCategory(value: string): value is FamilyPickerCategory {
+  return value === MECHANICAL_PICKER_CATEGORY || value === ALUMINUM_FRAME_PICKER_CATEGORY;
+}
+
+/** 分類の欄の値が族の分類なら、その値。今の 8 分類なら null。 */
+export function familyPickerCategory(value: string): FamilyPickerCategory | null {
+  return isFamilyPickerCategory(value) ? value : null;
+}
+
+/** 族の分類ごとの種類の欄の名前と案内の鍵(アルミフレームの分類で「機械要素の種類」と出さない)。 */
+export const FAMILY_KIND_FIELD_KEYS: Readonly<Record<FamilyPickerCategory, { readonly label: MessageKey; readonly guide: MessageKey }>> = {
+  [MECHANICAL_PICKER_CATEGORY]: { label: 'catalog.mechanical.kind', guide: 'catalog.mechanical.kindGuide' },
+  [ALUMINUM_FRAME_PICKER_CATEGORY]: { label: 'catalog.frame.kind', guide: 'catalog.frame.kindGuide' },
+};
+
+/** 族の分類の族の入口(登録の順)。 */
+export function catalogFamilyEntries(group: FamilyPickerCategory,
+  registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): CatalogRegistry['entries'] {
+  return registry.entries.filter((entry) => entry.group === group);
 }
 
 /** 登録口・族が持つ i18n の鍵。i18n に無い時(作る側の誤り)は、内部の鍵を出さず `fallback` にする。 */
@@ -37,13 +56,21 @@ export function familyMaterials(family: LoadedFamily): readonly string[] {
   return [...new Set(family.rows.flatMap((row) => row.materialLabel === undefined ? [] : [row.materialLabel]))];
 }
 
+/** 寸法を指定して作る族(表を持たない族)の線図の種類と、その説明の 1 行の鍵(形が作れる条件と、規格の寸法ではない事)。 */
+const SPECIFIED_FAMILY_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], MessageKey>>> = {
+  compressionSpring: 'catalog.mechanical.spring.hint', sealRing: 'catalog.mechanical.sealRing.hint',
+  tSlotFrame: 'catalog.frame.tSlot.hint', angleBracket: 'catalog.frame.bracket.hint', joinPlate: 'catalog.frame.plate.hint',
+  slotNut: 'catalog.frame.nut.hint',
+};
+
 /**
  * 族の指定の欄の説明の 1 行の鍵。長さを式で入れる族は「長さは自由に入力(規格の呼び長さとは名乗らない)」
  * (小ねじは頭の高さとの関係、ピンは面取りとの関係を添える)、寸法を指定して作るばねは形が作れる条件。どれでもない族は null。
  */
 export function familyHintKey(family: LoadedFamily): MessageKey | null {
-  if (family.diagram === 'compressionSpring') return 'catalog.mechanical.spring.hint';
-  if (family.diagram === 'sealRing') return 'catalog.mechanical.sealRing.hint';
+  const specified = SPECIFIED_FAMILY_HINTS[family.diagram];
+  if (specified !== undefined) return specified;
+  if (family.diagram === 'tSlotSeries') return 'catalog.frame.series.hint';
   if (family.diagram === 'bolt') {
     if (family.rows.some((row) => row.dims.shortLengthMax !== undefined)) return 'catalog.mechanical.setScrew.hint';
     return family.rows.some((row) => row.dims.acrossFlats !== undefined) ? 'catalog.mechanical.hexBolt.hint' : 'catalog.mechanical.screw.hint';
@@ -111,7 +138,11 @@ export function catalogRowLabel(family: LoadedFamily, row: FamilyRow): string {
     return fill(t('catalog.mechanical.row.bush'), { inner: dims.innerDiameter, outer: dims.outerDiameter, length: dims.length });
   }
   if (family.diagram === 'pin') return pinRowLabel(row);
-  if (family.diagram === 'compressionSpring' || family.diagram === 'sealRing') return t('catalog.mechanical.row.spring');
+  if (SPECIFIED_FAMILY_HINTS[family.diagram] !== undefined) return t('catalog.mechanical.row.spring');
+  if (family.diagram === 'tSlotSeries') {
+    return fill(t('catalog.frame.row.series'), { size: row.size, opening: dims.slotOpening, inner: dims.slotInnerWidth,
+      mass: dims.unitMassKgPerM });
+  }
   if (family.diagram === 'oRing') {
     return fill(t('catalog.mechanical.row.oRing'), { size: row.size, inner: dims.innerDiameter, section: dims.crossSection });
   }

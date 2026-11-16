@@ -79,6 +79,7 @@ import {
   PCAD_DOCUMENT_KIND,
   PCAD_DOCUMENT_KINDS,
   PCAD_SCHEMA_VERSION,
+  PCAD_MAX_SCHEMA_VERSION,
   type PcadDocumentKind,
   type PcadEnvelope,
   type PcadToolDefaults,
@@ -95,6 +96,7 @@ import {
 
 import { readSheetUnfolds, serializeSheetUnfold } from './codecs/sheetUnfold.js';
 import { assertReferenceOriginVersion } from './referenceOriginVersion.js';
+import { assertSketchFaceHolesVersion, hasSketchFaceHolesField } from './sketchFaceHolesVersion.js';
 
 export { serializeExpression } from './codecs/fields.js';
 export { serializeRevolveAxis } from './codecs/shapeReferences.js';
@@ -236,6 +238,7 @@ function serializeToolDefaults(toolDefaults: PcadToolDefaults): PcadToolDefaults
  */
 export function serializeDocument(document: PartDocument, options: SerializeOptions = {}): string {
   assertReferenceOriginVersion(document, document.schemaVersion);
+  assertSketchFaceHolesVersion(document);
   const envelope: PcadEnvelope = {
     // 封筒の版は文書の版と同じ値を書く。
     schema: document.schemaVersion,
@@ -737,11 +740,14 @@ function decodeFile(raw: unknown): ParseDocumentResult {
           || constraint['kind'] === 'midpoint' || constraint['kind'] === 'pointOnCurve'));
     })) return fail('notPcad', 'Extended sketch constraints require document schema22');
   }
-  if (schema.value > PCAD_SCHEMA_VERSION) {
+  if (schema.value > PCAD_MAX_SCHEMA_VERSION) {
     return fail(
       'unsupportedNewVersion',
       `このファイルは新しい版の PointerCAD で保存されています(版 ${String(schema.value)})。アプリを更新してください。`,
     );
+  }
+  if (schema.value < 23 && hasSketchFaceHolesField(raw['document'])) {
+    return fail('notPcad', '穴つきの面を読むには保存形式の版23が必要です。');
   }
   if (schema.value < PCAD_SCHEMA_VERSION) {
     // 移行先(`SCHEMA_MIGRATIONS[schema.value]`)が無い版(例: 版1)は、この時点では

@@ -12,6 +12,7 @@
  * | 道具と選択の種類の判定 | このファイルの公開の関数(`picksBodies` ほか) | 文書は変えない | — |
  * | 座標(作図面・吸着・向き・基準点・欄への詰め替え) | `sketchInteractionCoordinates.ts` | 文書は変えない | — |
  * | 立体・部分形状・3D スケッチの頂点の当たり判定 | `sketchInteractionSolidPicking.ts` | 文書は変えない | — |
+ * | 押し出しの閉じた領域(面を選んでいない時、M-01) | `sketchInteractionRegions.ts` | 文書は変えない(欄の中身だけ) | 断られたら理由だけ出す |
  * | 選択と、押した瞬間に処理する道具への振り分け | `sketchInteractionSelection.ts` | 文書は変えない(選択・注目点だけ) | Esc で選択を解く |
  * | 作図(欄を開く・3D スケッチの頂点の点) | `sketchInteractionDrawing.ts` | 数値入力の確定(`commitToStore.ts`)か頂点の点の1回。押下は欄を開くだけ | Esc で欄を閉じる |
  * | トリム・延長・投影・断面 | `sketchInteractionEditTools.ts` | 押した1回(1クリック = Undo 1回) | 断られたら文書は変えず理由だけ出す |
@@ -40,6 +41,7 @@ import { createSketchDrawingInput, FIRST_STEP, type DrawingToolId } from './sket
 import { createSketchEditTools } from './sketchInteractionEditTools.js';
 import { createSketchInteractionIndicators } from './sketchInteractionIndicators.js';
 import { createSketchInteractionResources } from './sketchInteractionResources.js';
+import { createSketchRegionInput } from './sketchInteractionRegions.js';
 import { createSketchSelectionInput } from './sketchInteractionSelection.js';
 import { createSketchSolidPicking } from './sketchInteractionSolidPicking.js';
 import { createSketchSphereGridInput } from './sketchInteractionSphereGrid.js';
@@ -189,6 +191,7 @@ export function attachSketchInteraction(
   const indicators = createSketchInteractionIndicators();
   const coordinates = createSketchCoordinates({ scene, project, getOrbit, tracksDirection });
   const solids = createSketchSolidPicking({ scene, project, picksBodies, picksSubShapes, toSubShapeBodies });
+  const regions = createSketchRegionInput({ scene, project });
   const sphereGrid = createSketchSphereGridInput({ scene, project });
   const edits = createSketchEditTools({ project, indicators, pointAt: coordinates.pointAt,
     pickSubShapeAt: solids.pickSubShapeAt, pickBodyAt: solids.pickBodyAt, toSubShapeBodies });
@@ -200,14 +203,14 @@ export function attachSketchInteraction(
     pickedPointAt: coordinates.pickedPointAt, fillClickedPoint: coordinates.fillClickedPoint,
     pickConstraintMark: constraints.pickConstraintMark, commitEditClick: edits.commitEditClick,
     commitProjectionClick: edits.commitProjectionClick, openCornerInput: corners.openCornerInput,
-    commitSphereGridClick: sphereGrid.commitSphereGridClick });
+    commitSphereGridClick: sphereGrid.commitSphereGridClick, commitRegionClick: regions.commitRegionClick });
   const drawing = createSketchDrawingInput({ isDrawingTool, freeVertexRefAt: solids.freeVertexRefAt,
     interactionPlane: coordinates.interactionPlane, pickedPointAt: coordinates.pickedPointAt,
     fillClickedPoint: coordinates.fillClickedPoint });
   const resources = createSketchInteractionResources({ canvas, scene, project, getOrbit, isCameraDragging, timing,
     indicators, addsToSketchSelection, skipsSketchElements, tracksDirection, findSnap: coordinates.findSnap,
     findTrack: coordinates.findTrack, pickBodyAt: solids.pickBodyAt, pickSubShapeAt: solids.pickSubShapeAt,
-    pickFreeVertexAt: solids.pickFreeVertexAt, updateCornerPreview: corners.updateCornerPreview,
+    pickFreeVertexAt: solids.pickFreeVertexAt, regionHoverAt: regions.regionHoverAt, updateCornerPreview: corners.updateCornerPreview,
     updateEditPreview: edits.updateEditPreview, updateSphereGridInput: sphereGrid.updateSphereGridInput,
     updateInferredConstraints: constraints.updateInferredConstraints, pickConstraintAt: constraints.pickConstraintAt,
     handleSelectionInput: selection.handleSelectionInput, handleDrawingInput: drawing.handleDrawingInput });

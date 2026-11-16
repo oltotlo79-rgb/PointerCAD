@@ -6,6 +6,7 @@ import {
 import { massFromVolume } from '../measure/massProperties.js';
 import type { PartDocument } from '../part/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
+import { catalogItemNominalMass } from './catalog/source.js';
 import { applyPlacementToPoint, type RigidPlacement } from './placementMath.js';
 import type { AssemblyComponent, AssemblyDocument } from './types.js';
 
@@ -96,8 +97,13 @@ export function assemblyMassProperties(
       partial = true;
       continue;
     }
+    // 族が 1 個の質量を持つ部品(フレームの系列の単位質量 × 長さ)は、その質量に合わせてボディの質量を一様に縮める
+    // (一様な断面の押し出しなので重心は変わらない)。持たない部品は今の体積 × 密度。
+    const nominal = component.source.kind === 'standardPart' ? catalogItemNominalMass(component.source) : null;
+    const total = bodies.reduce((sum, body) => sum + massFromVolume(body.volume, material.density), 0);
+    const scale = nominal !== null && total > 0 ? nominal / total : 1;
     for (const body of bodies) {
-      const mass = massFromVolume(body.volume, material.density);
+      const mass = massFromVolume(body.volume, material.density) * scale;
       const center = applyPlacementToPoint(placement, body.centroid);
       volume += body.volume;
       knownMass += mass;

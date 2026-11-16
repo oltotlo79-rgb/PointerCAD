@@ -37,6 +37,13 @@ function flangeFor(panelId: string, boundaryIds: readonly string[]): SheetFlange
 const edgeId = (name: string) => JSON.stringify(['sheet-edge', name, 0]);
 
 describe('P10 保存入力から形状段・隣接パネル・鍵への解決', () => {
+  it.each(['outer', 'hole'])('穴つきの面を基板の%sとして使うと理由つきで断る', selected => {
+    const feature = { ...base, holes: [{ sketchId: 'sketch', faceFeatureId: 'hole' }] };
+    const result = resolveSheetBase(feature, ref => ({ ...face(), ...(ref.faceFeatureId === selected ? { holes: [face(5).curves] } : {}) }));
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('穴つきの面を断る必要があります');
+    expect(result.message).toContain('穴つき');
+  });
   it('基板・穴の輪郭と板厚を保持し、反転は明示した法線に対して適用する', () => {
     const hole = { ...face(5), featureId: 'hole' };
     const feature = { ...base, holes: [{ sketchId: 'sketch', faceFeatureId: 'hole' }], reversed: true };

@@ -19,6 +19,7 @@ import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 import type { MessageKey } from '../i18n/t.js';
 import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
 import { readMouseButtonCommands, type MouseButtonCommands } from '../commands/pointerCommandGesture.js';
+import { readRadialCommands, type RadialCommands } from '../commands/radialCommandSettings.js';
 import { readStoredShortcutAssignments, storedShortcutFields } from './shortcutSettings.js';
 import type { NumericDefaultSources } from '../sketch/numericDefaultSources.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
@@ -29,6 +30,7 @@ import {
 } from '../solid/selectionFilter.js';
 import { readAutoSaveIntervalMs } from './autoSaveSettings.js';
 import { readNumericToolDefaults } from './numericToolDefaults.js';
+import { DEFAULT_STOCK_CUTTING, readStockCuttingSettings, type StockCuttingSettings } from '../assembly/stockCuttingSettings.js';
 
 /** 表示テーマ 5 種(FR-908)。既定は `dark`(現状の配色をそのまま複製)。 */
 export type ThemeId = 'dark' | 'light' | 'darkModern' | 'lightModern' | 'modern';
@@ -66,9 +68,15 @@ export interface DisplaySettings {
   readonly mouseButtonCommands?: MouseButtonCommands;
   /** 起動時に読めなかったため外したマウスのボタンの割当の件数(無い・0 は知らせない)。**表示だけの値で保存しない**。 */
   readonly mouseButtonCommandsRecovered?: number;
+  /** 放射メニューの中身(B-08f)。文書の種類ごとの 8 つ。欄の無い種類は既定。 */
+  readonly radialCommands?: RadialCommands;
+  /** 起動時に読めなかったため既定へ戻した放射メニューの種類の数(無い・0 は知らせない)。**表示だけの値で保存しない**。 */
+  readonly radialCommandsRecovered?: number;
   readonly numericToolDefaults?: NumericDefaultSources;
   /** 旧設定は未指定のまま5分。1～60分の間隔を端末へ保存する。 */
   readonly autoSaveIntervalMs?: number;
+  /** 切断の一覧の定尺・切断代(J-01)。端末に覚え、文書には保存しない。無い時は 定尺 なし・切断代 0。 */
+  readonly stockCutting?: StockCuttingSettings;
   readonly theme: ThemeId;
   /** 表示の拡大率(%)。90〜150(FR-909)。 */
   readonly uiScale: number;
@@ -122,7 +130,7 @@ export interface DisplaySettings {
 
 /** 端末に保存する欄。viewControlsRecovered と shortcutAssignmentsRecovered は表示だけの値なので含まない。 */
 export type PersistedDisplaySettings = Omit<DisplaySettings, 'viewControlsRecovered' | 'shortcutAssignmentsRecovered'
-  | 'mouseButtonCommandsRecovered'>;
+  | 'mouseButtonCommandsRecovered' | 'radialCommandsRecovered'>;
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   cameraControls: DEFAULT_CAMERA_CONTROLS,
@@ -131,8 +139,10 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   shortcutAssignments: EMPTY_SHORTCUT_ASSIGNMENTS,
   // 読み込みの時の循環でも初期化の前の値を読まないよう、空の値はここで作る(readMouseButtonCommands の空と同じ形)。
   mouseButtonCommands: Object.freeze({}),
+  radialCommands: Object.freeze({}),
   numericToolDefaults: {},
   autoSaveIntervalMs: readAutoSaveIntervalMs({}),
+  stockCutting: DEFAULT_STOCK_CUTTING,
   theme: 'dark',
   uiScale: 100,
   trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
@@ -428,6 +438,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
     const shortcuts = readStoredShortcutAssignments(parsed);
     // マウスのボタンの割当(B-08e)も、知らない入力・無い命令の 1 件だけを外す。
     const mouse = readMouseButtonCommands('mouseButtonCommands' in parsed ? parsed.mouseButtonCommands : undefined);
+    const radial = readRadialCommands('radialCommands' in parsed ? parsed.radialCommands : undefined);
     return {
       cameraControls: readCameraControlSettings('cameraControls' in parsed ? parsed.cameraControls : undefined),
       viewControls: view.settings,
@@ -437,6 +448,8 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       ...(shortcuts.dropped > 0 ? { shortcutAssignmentsRecovered: shortcuts.dropped } : {}),
       mouseButtonCommands: mouse.commands,
       ...(mouse.dropped > 0 ? { mouseButtonCommandsRecovered: mouse.dropped } : {}),
+      radialCommands: radial.commands,
+      ...(radial.dropped > 0 ? { radialCommandsRecovered: radial.dropped } : {}),
       theme: parsed.theme,
       uiScale: parsed.uiScale,
       trackAngleStep: readTrackAngleStep(parsed),
@@ -446,6 +459,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       inferConstraints: readInferConstraints(parsed),
       numericToolDefaults: readNumericToolDefaults('numericToolDefaults' in parsed ? parsed.numericToolDefaults : undefined),
       autoSaveIntervalMs: readAutoSaveIntervalMs('autoSaveIntervalMs' in parsed ? { autoSaveIntervalMs: parsed.autoSaveIntervalMs } : {}),
+      stockCutting: readStockCuttingSettings('stockCutting' in parsed ? parsed.stockCutting : undefined),
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;
@@ -479,7 +493,7 @@ export function saveSettings(
     // 読めなかった数は表示だけの値なので書かない(undefined の欄は JSON に出ない)。キーの割当は新しい形で書き、
     // v1 の欄は保存されていた値をそのまま残す(storedShortcutFields)。
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, viewControlsRecovered: undefined, shortcutAssignmentsRecovered: undefined,
-      mouseButtonCommandsRecovered: undefined,
+      mouseButtonCommandsRecovered: undefined, radialCommandsRecovered: undefined,
       ...storedShortcutFields(settings.shortcutAssignments, storedLegacyShortcuts(storage)) }));
   } catch {
     // 書き込み枠が塞がっている等。表示は既に切り替わっているので操作は止めない。

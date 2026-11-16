@@ -48,13 +48,15 @@ interface SketchSelectionContext {
   readonly commitProjectionClick: (tool: PickEditToolId, pointer: Pointer) => void;
   readonly openCornerInput: (tool: CornerEditToolId, pointer: Pointer) => void;
   readonly commitSphereGridClick: (pointer: Pointer) => boolean;
+  /** 押し出しで面を選んでいない時の、閉じた領域の押下(`sketchInteractionRegions.ts`)。扱ったら true。 */
+  readonly commitRegionClick: (pointer: Pointer) => boolean;
 }
 
 /** 1 つの canvas の選択の押下。返す関数はどれも呼ばれた時点のストアを読む。 */
 export function createSketchSelectionInput(context: SketchSelectionContext) {
   const { project, addsToSketchSelection, skipsSketchElements, picksBodies, picksSubShapes, pickSubShapeAt,
     pickBodyAt, pickedPointAt, fillClickedPoint, pickConstraintMark, commitEditClick, commitProjectionClick,
-    openCornerInput, commitSphereGridClick } = context;
+    openCornerInput, commitSphereGridClick, commitRegionClick } = context;
 
   /**
    * 選択の道具・面の道具・立体の道具・部分形状(面・辺・頂点)を選ぶ加工の道具。押した順が
@@ -177,6 +179,12 @@ export function createSketchSelectionInput(context: SketchSelectionContext) {
       if (!commitSphereGridClick(pointer)) {
         pickInto(pointer, addsToSketchSelection(event));
       }
+      return true;
+    }
+
+    if (commitRegionClick(pointer)) {
+      // 押し出しで面を選んでいない時は、押した所の閉じた領域を選ぶ(M-01)。焦点は欄に残す(NFR-UX-2)。
+      event.preventDefault();
       return true;
     }
 

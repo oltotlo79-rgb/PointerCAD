@@ -130,6 +130,7 @@ export interface PlanarFaceRequest {
   /** 呼び出し側が付ける識別子。結果の対応づけに使う。 */
   readonly id: string;
   readonly curves: readonly CurveSpec[];
+  readonly holes?: readonly (readonly CurveSpec[])[];
 }
 
 /** スケッチ 1 つ分のテッセレーションの依頼。 */
@@ -425,6 +426,7 @@ export interface ExtrudeStepSpec {
   readonly kind: 'extrude';
   /** 断面の閉ループ。makePlanarFace と同じ並び。 */
   readonly profile: readonly CurveSpec[];
+  readonly holes?: readonly (readonly CurveSpec[])[];
   /** Proven saved whole-curve region, paired with profile edges; legacy four-line IDs are retained. */
   readonly profileOrigin?: ProfileRegionAnchor | Extract<FaceOrigin, { readonly kind: 'extrude-curve-cap' }>['profile'];
   /** 押し出す向き(単位ベクトル)。 */

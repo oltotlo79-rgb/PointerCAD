@@ -52,3 +52,37 @@ describe('「数式を編集」の窓の読みやすさ(UI の点検の指摘 36
     expect(render({ canApply: false })).not.toContain('pcad-math-editor__apply-reason');
   });
 });
+
+describe('計算中も前の結果を薄く残す(外部検査 run 43803122461 の調べ、統括の決定)', () => {
+  const previous = { resultMessage: '≈ 1.85407', resultDetail: '誤差の上限: 1e-12', resultFull: '= 1.8540746773013719184',
+    canApply: false, applyBlockedReason: '数の欄には実数の値が要ります。' };
+  /** 結果の欄(role=status)の中身。 */
+  const status = (markup: string) => /<div id="[^"]*-message" class="pcad-math-editor__result[^"]*"[^>]*>([\s\S]*?)<\/div>/u.exec(markup)?.[1] ?? '';
+  /** 欄の見えている行(1 行目・説明・全部の桁)の数。畳んだ details は summary の 1 行と数える(中の値の行は見えない)。 */
+  const rows = (inner: string) => (inner.replace(/<details[\s\S]*?<\/details>/gu, '<details>').match(/<p[ >]|<details>/gu) ?? []).length;
+  const text = (inner: string) => inner.replace(/<[^>]+>/gu, '');
+  it('前の結果を残す時は、同じ数の行を、文字を持たない影(data-text と aria-hidden)として置き、計算中と分かる印を付ける', () => {
+    const settled = render(previous), stale = render({ ...previous, resultStale: true });
+    expect(stale).toContain('pcad-math-editor__result pcad-math-editor__result--stale');
+    expect(stale).toContain('aria-busy="true"');
+    expect(stale).toContain('<span class="pcad-math-editor__stale">数式を計算しています。</span>');
+    expect(stale).toContain('data-text="≈ 1.85407" aria-hidden="true"');
+    expect(stale).toContain('data-text="誤差の上限: 1e-12" aria-hidden="true"');
+    expect(stale).toContain('<p class="pcad-math-editor__apply-reason pcad-math-editor__shadow" data-text="数の欄には実数の値が要ります。" aria-hidden="true">');
+    // 行の数が同じ(高さが変わらない)。
+    expect(rows(status(stale))).toBe(rows(status(settled)));
+  });
+
+  it('前の結果を残す間、欄の文字(読み上げと検査が読む文字)は「計算中」だけで、古い値と全部の桁を持たない', () => {
+    const inner = status(render({ ...previous, resultStale: true }));
+    expect(text(inner)).toBe('数式を計算しています。');
+    expect(inner).not.toContain('pcad-math-editor__full-value');
+    expect(inner).not.toContain('1.85407</');
+  });
+
+  it('前の結果を残さない時は印を付けない', () => {
+    const markup = render(previous);
+    expect(markup).not.toContain('pcad-math-editor__stale');
+    expect(markup).not.toContain('pcad-math-editor__result--stale');
+  });
+});

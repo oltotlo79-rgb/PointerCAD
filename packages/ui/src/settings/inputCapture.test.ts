@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { t } from '../i18n/t.js';
-import { captureViewInput, captureViewKey, viewTriggerLabel, type ViewCaptureEvent } from './inputCapture.js';
+import { captureViewInput, captureViewKey, captureViewTouch, viewTriggerLabel, type ViewCaptureEvent } from './inputCapture.js';
+import { DEFAULT_VIEW_CONTROLS } from './viewControlSettings.js';
 
 /*
  * 設計 1-4・§7.1: 押下・ホイールの出来事 → 視点の入力(左で Alt 無しは断る)。キーの押下(B-08)は captureViewKey が
@@ -63,5 +64,27 @@ describe('取り込みの枠のキー → キーの組の入力(B-08)', () => {
       expect(captureViewKey(key(code), 'orbit'), code).toEqual({ status: 'ignored' });
     }
     expect(captureViewKey(key('ArrowLeft', { isComposing: true }), 'orbit')).toEqual({ status: 'ignored' });
+  });
+});
+
+describe('取り込みの枠のタッチの指の操作(B-08h)', () => {
+  const touch = (gesture: 'oneFinger' | 'twoFinger' | 'pinch') => ({ kind: 'touch', gesture, ...OFF } as const);
+  const base = DEFAULT_VIEW_CONTROLS.bindings;
+  it.each([
+    ['oneFinger', 'orbit'], ['twoFinger', 'orbit'], ['oneFinger', 'pan'], ['twoFinger', 'pan'], ['pinch', 'zoom'],
+  ] as const)('%s を %s に取り込む(マウスの割当はそのまま残す)', (gesture, action) => {
+    expect(captureViewTouch(DEFAULT_VIEW_CONTROLS, action, gesture)).toEqual({ status: 'captured', trigger: touch(gesture) });
+  });
+  it('その操作に使えない指の操作は断る(つまむを回転・平行移動へ、ドラッグを拡大縮小へ)', () => {
+    expect(captureViewTouch(DEFAULT_VIEW_CONTROLS, 'orbit', 'pinch')).toEqual({ status: 'refused', reason: 'not-for-action' });
+    expect(captureViewTouch(DEFAULT_VIEW_CONTROLS, 'zoom', 'oneFinger')).toEqual({ status: 'refused', reason: 'not-for-action' });
+  });
+  it('その操作のタッチの割当が 2 つに達していれば足せない(上限はタッチ 2 のまま)', () => {
+    const full = { ...DEFAULT_VIEW_CONTROLS, bindings: { ...base, pan: [...base.pan, touch('oneFinger'), touch('twoFinger')] } };
+    expect(captureViewTouch(full, 'pan', 'oneFinger')).toEqual({ status: 'refused', reason: 'touch-full' });
+    // ほかの操作は数えない。
+    expect(captureViewTouch(full, 'orbit', 'oneFinger')).toEqual({ status: 'captured', trigger: touch('oneFinger') });
+    const one = { ...DEFAULT_VIEW_CONTROLS, bindings: { ...base, pan: [...base.pan, touch('twoFinger')] } };
+    expect(captureViewTouch(one, 'pan', 'oneFinger')).toEqual({ status: 'captured', trigger: touch('oneFinger') });
   });
 });

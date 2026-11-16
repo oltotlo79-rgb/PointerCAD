@@ -20,6 +20,12 @@ function holePlacementKeyMaterial(plan: Extract<SolidStepPlan, { readonly kind: 
   };
 }
 
+/** 押し出しの外周と穴を一緒に鍵へ渡す。 */
+function extrudeProfileKey(plan: Extract<SolidStepPlan, { readonly kind: 'extrude' }>) {
+  return { profile: plan.profile.map(toKeyCurve),
+    ...(plan.holes === undefined || plan.holes.length === 0 ? {} : { holes: plan.holes.map(loop => loop.map(toKeyCurve)) }) };
+}
+
 /** 1段ぶんの鍵の材料。名前・抑制・色は混ぜない(形が変わらないため)。 */
 export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): SolidStepKeyMaterial {
   switch (plan.kind) {
@@ -29,7 +35,7 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
       // 「欄を省いた押し出し」と「既定を明示した押し出し」も同じ鍵になる。
       return {
         kind: 'extrude',
-        profile: plan.profile.map(toKeyCurve),
+        ...extrudeProfileKey(plan),
         direction: toKeyVec3(plan.direction),
         distance: plan.distance,
         end:

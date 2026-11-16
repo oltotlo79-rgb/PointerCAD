@@ -157,6 +157,29 @@ interface ChoiceGroupProps {
 }
 
 /**
+ * 選択肢の見出し。値が提案で入った時(押し出しの「提案して見せる」、M-01)は「提案」の札を添える。
+ * 札の見た目は木の札(.pcad-tree__badge。小さな文字・控えめの色・枠)と同じにして、新しい規則を足さない。
+ */
+function ChoiceLabel({ choice, groupLabel }: { readonly choice: NumericChoice; readonly groupLabel: string }): React.JSX.Element {
+  return (
+    <span className="pcad-popover__choice-label">
+      {groupLabel}
+      {choice.suggestion === undefined ? null : (
+        <> <span className="pcad-tree__badge" title={t('numericInput.extrudeSuggestion.badgeTooltip')}>
+          {t('numericInput.extrudeSuggestion.badge')}</span></>
+      )}
+    </span>
+  );
+}
+
+/** 提案の理由の一言(`{name}` に相手の名前)。理由の無い選択肢では何も出さない。 */
+function ChoiceNote({ choice }: { readonly choice: NumericChoice }): React.JSX.Element | null {
+  const reasonKey = choice.suggestion?.reasonKey;
+  if (reasonKey === undefined) return null;
+  return <p className="pcad-field__message">{t(reasonKey).replace('{name}', choice.suggestion?.name ?? '')}</p>;
+}
+
+/**
  * 選択肢1つぶんの見出しと並び。
  * 短い一覧(4個以下)は横並びのボタン、長い一覧(呼び径28個)は畳んだ一覧
  * (Toolbar.tsx の吸着の種別の一覧と同じ pcad-menu の作り)にする。
@@ -190,7 +213,7 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
   if (!isLong) {
     return (
       <div className="pcad-popover__choice">
-        <span className="pcad-popover__choice-label">{groupLabel}</span>
+        <ChoiceLabel choice={choice} groupLabel={groupLabel} />
         <div
           className="pcad-segmented pcad-popover__choice-options"
           role="group"
@@ -212,6 +235,7 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
             </button>
           ))}
         </div>
+        <ChoiceNote choice={choice} />
       </div>
     );
   }
@@ -220,7 +244,7 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
 
   return (
     <div className="pcad-popover__choice">
-      <span className="pcad-popover__choice-label">{groupLabel}</span>
+      <ChoiceLabel choice={choice} groupLabel={groupLabel} />
       <div className="pcad-menu" ref={containerRef}>
         <button title={t('controlGuide.button.expand').replace('{group}', groupLabel)}
           ref={registerRef}
@@ -256,6 +280,7 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
           </div>
         ) : null}
       </div>
+      <ChoiceNote choice={choice} />
     </div>
   );
 }

@@ -849,7 +849,8 @@ export function commitSolidInput(
       }
       const face = selectedFaceRef(document, selection);
       if (!face.ok) {
-        return { ok: false, reasonKey: face.reasonKey };
+        // 閉じた領域があれば、面を張らなくても領域を押して選べることを伝える(M-01)。
+        return { ok: false, reasonKey: activeSketchHasRegions(document) ? 'solidError.regionNotChosen' : face.reasonKey };
       }
       const solidFaces = selectedSubShapeRefs(bodies, selection, 'face');
       const end = extrudeEndOf(commit.shapeChoices?.extrudeEnd, solidFaces);

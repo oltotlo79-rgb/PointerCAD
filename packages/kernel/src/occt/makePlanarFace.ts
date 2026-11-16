@@ -6,6 +6,7 @@ import { continuousCurvePieces } from './continuousCurvePieces.js';
 import type { NativeProfileCurve, NativeProfileLine } from './subShapeOrigins.js';
 import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 import { createAllocations } from './allocations.js';
+import { addPlanarFaceHoles } from './planarFaceHoles.js';
 
 /** OCCT の面と、そのために確保した領域の解放手続き。 */
 export interface OcctFaceHandle {
@@ -62,6 +63,7 @@ export function makePlanarFace(
   options: TessellationOptions = {},
   profileOrigin?: ExtrudeStepSpec['profileOrigin'],
   frame?: MeshCoordinateFrame,
+  holes: readonly (readonly CurveSpec[])[] = [],
 ): OcctFaceHandle {
   if (curves.length === 0) {
     throw new Error('面を作るには曲線が 1 本以上必要です。');
@@ -166,7 +168,7 @@ export function makePlanarFace(
       throw new Error('輪郭が自分自身と交わっているため、面を張れませんでした。');
     }
 
-    return {
+    const outer: OcctFaceHandle = {
       face,
       boundaryPositions: new Float32Array(boundary),
       boundaryEdgeCount: edges.length,
@@ -174,6 +176,8 @@ export function makePlanarFace(
       ...(nativeProfileCurves.length === curves.length ? { nativeProfileCurves } : {}),
       delete: owned.release,
     };
+    return holes.length === 0 ? outer : addPlanarFaceHoles(oc, outer,
+      holes.map(loop => owned.keep(makePlanarFace(oc, loop, options, undefined, frame))), owned.keep);
   } catch (error) {
     owned.release();
     throw error;

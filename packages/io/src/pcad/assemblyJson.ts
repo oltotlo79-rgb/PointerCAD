@@ -105,6 +105,7 @@ import {
   PCAD_ASSEMBLY_KIND,
   PCAD_ASSEMBLY_KINDS,
   PCAD_SCHEMA_VERSION,
+  PCAD_MAX_SCHEMA_VERSION,
   SCHEMA_MIGRATIONS,
   type PcadAssemblyEnvelope,
   type PcadAssemblyKind,
@@ -1491,7 +1492,7 @@ function decodeFile(raw: unknown): ReadAssemblyDocumentResult {
   if (!schema.ok) {
     return fail('notPcad', NOT_ASSEMBLY_MESSAGE);
   }
-  if (schema.value > PCAD_SCHEMA_VERSION) {
+  if (schema.value > PCAD_MAX_SCHEMA_VERSION) {
     return fail(
       'unsupportedNewVersion',
       `このファイルは新しい版の PointerCAD で保存されています(版 ${String(schema.value)})。アプリを更新してください。`,

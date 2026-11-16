@@ -3,6 +3,7 @@ import { savePart } from './scriptsFlow.js';
 import { reopenPart } from './reopenPart.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { undoMathEdit, waitForMathEditorText } from './mathEditorReady.js';
+import { openMathPalette } from './mathPaletteSupport.js';
 
 /** Real Beta input, original positive inputs, immutable source and document edits. */
 export async function mathBetaFunctionFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -39,8 +40,7 @@ export async function mathBetaFunctionFlow(page: Page, info: TestInfo, app?: Ele
   await input.fill(source); await expect(result).toHaveText('= 0.25');
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
   await expect(dialog.locator('math-field')).toBeFocused();
-  const palette = dialog.locator('summary').filter({ hasText: '記号と演算を探す' });
-  await palette.click();
+  const palette = await openMathPalette(dialog, info);
   await dialog.getByLabel('数学の分野', { exact: true }).selectOption({ label: '関数' });
   await dialog.getByRole('searchbox', { name: '名前・記号で検索', exact: true }).fill('Beta関数');
   await expect(dialog.getByRole('button', { name: /Beta関数/u })).toBeVisible();

@@ -64,12 +64,14 @@ export function resolveSheetBase(feature: SheetBaseFeature, face: SheetFaceResol
   const rule = resolveSheetRule(feature.rule); if (!rule.ok) return rule;
   const profile = face(feature.profile);
   if (profile === undefined) return { ok: false, message: '板金基板の外周が見つかりません。スケッチの面を選び直してください。' };
+  if ((profile.holes?.length ?? 0) > 0) return { ok: false, message: '穴つきの面は板金基板に対応していません。外周と穴を別の面で指定してください。' };
   const normal = fitPlaneNormal(profile.curves.flatMap(curveSamplePoints));
   if (normal === null || !normal.every(Number.isFinite)) return { ok: false, message: '基板の平面を決められません。平らな閉輪郭を選んでください。' };
   const holes: (readonly ResolvedCurve[])[] = [];
   for (const reference of feature.holes) {
     const hole = face(reference);
     if (hole === undefined) return { ok: false, message: '板金基板の穴の輪郭が見つかりません。穴の面を選び直してください。' };
+    if ((hole.holes?.length ?? 0) > 0) return { ok: false, message: '板金基板の穴には穴つきの面を使えません。穴のない面を指定してください。' };
     holes.push(hole.curves);
   }
   const direction = feature.reversed ? scaleVec3(normal, -1) : normal;

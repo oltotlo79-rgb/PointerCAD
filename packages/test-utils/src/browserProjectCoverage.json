@@ -1,6 +1,7 @@
 {
   "firefox-project": [
     "a-math-input.spec.ts",
+    "aluminum-frame-catalog.spec.ts",
     "analysis-advanced.spec.ts",
     "analysis-bolt-persistence.spec.ts",
     "analysis-connections-persistence.spec.ts",
@@ -236,7 +237,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "984514e80d680a882e245f4b66271aa07b8990e26969ee2e06cb7b9420cb23b7",
+  "configSha256": "111277d43ad78403d13b1cb766560a30bf0969934bdc01c54986a2c6ba67a3d7",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
@@ -244,6 +245,12 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "46b883b228e4304712a9112f11c497cd047d53a123101c7fac5c52519fed803f"
+    },
+    {
+      "file": "aluminum-frame-catalog.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "0bb79200fc21d251db201fb5aba58142568fe5a71ddd21304d0b26e5f5f34934"
     },
     {
       "file": "analysis-advanced.spec.ts",
@@ -582,6 +589,12 @@
       "sha256": "84e5043c60432504eff6daa7f893c59979a058939d3cd0d0064a1368577f24d3"
     },
     {
+      "file": "electron-aluminum-frame-catalog.spec.ts",
+      "category": "electron",
+      "reason": "electron project filename rule",
+      "sha256": "8cf9837b92bc48dd5c3e625bb8089eb10db66bfb2084c7bfe4312b17c0c8cb72"
+    },
+    {
       "file": "electron-analysis-advanced.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
@@ -807,7 +820,7 @@
       "file": "electron-extrude-operation.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
-      "sha256": "2560aae3cbabdeab72008df4c4e4b08ea4a1660de44541ca6e14244b410d8601"
+      "sha256": "58d7fe3838e32af6d1c7cccc7cead2fb97420792eeed11e2f0ff70603db301d1"
     },
     {
       "file": "electron-face-offset.spec.ts",
@@ -1122,6 +1135,12 @@
       "sha256": "6a9b6aed19587d8aeea2d518e527fc3ab49f1f877836e3aafac4a5e8c11d2410"
     },
     {
+      "file": "electron-touch-view.spec.ts",
+      "category": "electron",
+      "reason": "electron project filename rule",
+      "sha256": "d960b183e1f7f620858f44c416e7e87df4e0ac5c0a663b7b54ff9b95f798b610"
+    },
+    {
       "file": "electron-tutorial.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
@@ -1197,7 +1216,7 @@
       "file": "extrude-operation.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a56482ed831525e0c91b81f92c07f67776cf1e1120b1ac615e02361a59d0d11b"
+      "sha256": "5e18d6690cc71efeec53e46630911cbfe995a9f98cb1c397a209414d60c0360a"
     },
     {
       "file": "face-and-color.spec.ts",
@@ -1359,7 +1378,7 @@
       "file": "input-bindings.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "cc0e2f821793bc52248ee4b810297d500b95aa2d30ce741789e30b396c7c8d25"
+      "sha256": "1764d800404733a90292d02df7c1768670755225c151e476ebcf7f336f16a01f"
     },
     {
       "file": "interference.spec.ts",
@@ -1773,7 +1792,7 @@
       "file": "sheet-performance.spec.ts",
       "category": "performance-project",
       "reason": "exclusive one-worker Chromium viewport performance project in playwright.config.ts",
-      "sha256": "a4ff45c16ce2f5fe290c1b0023296b033dfe98c017c2c2692b7e6058b7520576"
+      "sha256": "46102e2aaa1786d2a5ffd67068277826b6ebe9cb21023cc85aaa9c81fa73e30d"
     },
     {
       "file": "sheet-profile.spec.ts",
@@ -2014,6 +2033,12 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "0cd2cabb14f621e65ea175ff63bb452f758ecee50a3b68a568129db259da0fbf"
+    },
+    {
+      "file": "touch-view.spec.ts",
+      "category": "chromium-cdp-input",
+      "reason": "touch input is dispatched only through Chromium CDP Input.dispatchTouchEvent; Firefox has no CDP touch input. The same touchViewFlow runs in electron-touch-view.spec.ts",
+      "sha256": "e98ee953092c6db43be6a1c968d9c1078917b2d3dc70f88ba7eec02aa3579e7a"
     },
     {
       "file": "tracking.spec.ts",

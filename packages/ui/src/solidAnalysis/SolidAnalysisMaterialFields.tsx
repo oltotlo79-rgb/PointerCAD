@@ -4,7 +4,8 @@ import type { StrengthSource } from '@pointercad/model';
 import { useEffect, useRef, useState } from 'react';
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
-import { selectSolidMaterial, solidMaterialCapacityMatches, solidMaterialDraftOf, solidMaterialSourceUrl } from './solidMaterialSelection.js';
+import { selectSolidMaterial, solidMaterialCapacityMatches, solidMaterialDraftOf, solidMaterialSourceUrl, solidMaterialYoung } from './solidMaterialSelection.js';
+import { SolidAnalysisMaterialValues } from './SolidAnalysisMaterialValues.js';
 import type { SolidMaterialDraft, SolidMaterialIssue } from './solidMaterialSelection.js';
 import './solidAnalysisMaterialFields.css';
 
@@ -19,11 +20,13 @@ interface SolidAnalysisMaterialFieldsProps {
   /** Changes for another document/opening, including null → null. */
   readonly selectionKey: string;
   readonly onChange: (capacity: AnalysisMaterialCapacity | null, valid: boolean) => void;
+  readonly young?: string;
+  readonly onYoungChange?: (mpa: string) => void;
   readonly disabled?: boolean;
 }
 interface DraftState extends SolidMaterialDraft { readonly base: AnalysisMaterialCapacity | null }
 
-function MaterialFields({ value, onChange, disabled = false }: SolidAnalysisMaterialFieldsProps): React.JSX.Element {
+function MaterialFields({ value, onChange, young, onYoungChange, disabled = false }: SolidAnalysisMaterialFieldsProps): React.JSX.Element {
   const [local, setLocal] = useState<DraftState>(() => ({ base: value, ...solidMaterialDraftOf(value) }));
   const composing = useRef(false);
   // Parent acknowledgements retain unfinished text; a different saved value replaces it immediately.
@@ -50,6 +53,8 @@ function MaterialFields({ value, onChange, disabled = false }: SolidAnalysisMate
     current.current = next;
     setLocal({ ...next, base: capacity });
     notify(capacity, !composing.current && selected.ok);
+    const elastic = capacity !== null && selected.ok ? solidMaterialYoung(selected.preset) : null;
+    if (elastic !== null) onYoungChange?.(elastic.mpa);
   };
   const preset = findStrengthMaterial(draft.materialConditionId);
   // Stale saved evidence displays its own snapshot; legacy values never borrow current catalogue metadata.
@@ -65,7 +70,7 @@ function MaterialFields({ value, onChange, disabled = false }: SolidAnalysisMate
       if (event.key === 'Enter' || composing.current || isCompositionKey(event.nativeEvent)) event.stopPropagation();
     }}>
     <legend>{t('strength.material')}</legend>
-    <p>{t('solidAnalysis.material.independentElastic')}</p>
+    <p>{t(onYoungChange === undefined ? 'solidAnalysis.material.independentElastic' : 'solidAnalysis.material.fillElastic')}</p>
     <label>{t('strength.material')}
       <select data-testid="solid-material-condition" value={draft.materialConditionId} title={t('strength.guide.material')}
         onChange={event => { change({ ...draft, materialConditionId: event.target.value }); }}>
@@ -79,6 +84,8 @@ function MaterialFields({ value, onChange, disabled = false }: SolidAnalysisMate
         aria-invalid={problem !== null} title={t('strength.productThickness')}
         onChange={event => { change({ ...draft, thickness: event.target.value }); }} /></label>
     {problem === null ? null : <p role="alert">{problem}</p>}
+    {onYoungChange === undefined || !valid || preset === undefined || source === undefined ? null
+      : <SolidAnalysisMaterialValues preset={preset} young={young} />}
     {preset === undefined || source === undefined ? null : <section aria-label={t('strength.source')}>
       <p>{`${preset.grade} — ${preset.condition}`}</p>
       <p>{range == null ? t('solidAnalysis.material.thicknessUnspecified')

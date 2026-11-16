@@ -37,6 +37,7 @@ import type {
 import type { SectionPlaneNumbers } from './sectionView.js';
 import { gridSpacing } from './gridMath.js';
 import type { ThemeColors } from './themeColors.js';
+import type { RegionFillInput } from './buildRegionFill.js';
 import type { ViewFitSource } from './viewFit.js';
 import { createViewportLifetime, ViewportResourceInitializationFailure, type ViewportLifetime } from './viewportLifetime.js';
 import type { createViewportMeshObservation } from './viewportMeshObservation.js';
@@ -171,6 +172,11 @@ export interface ViewportScene {
   setConstrainedFeatureIds(ids: ReadonlySet<string>): void;
   /** ホバー・選択の強調を差し替える(FR-106)。 */
   setSketchHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
+  /**
+   * 押し出しで面を選んでいない間の、閉じた領域の塗りを差し替える(M-01)。`null` で塗りを消す。
+   * 材料は `solid/regionPick.ts` の `regionFillInputOf`、組み立ては `buildRegionFill.ts`。
+   */
+  setSketchRegions(input: RegionFillInput | null): void;
   /** ソリッドの表示を差し替える(FR-105)。ボディの id はフィーチャーの id。 */
   setBodies(bodies: readonly SolidBody[]): void;
   /**

@@ -1,10 +1,11 @@
-import { STRENGTH_SOURCES } from '@pointercad/model';
+import { findStrengthMaterial, STRENGTH_SOURCES } from '@pointercad/model';
 import React, { Children, isValidElement, useEffect, useRef, useState } from 'react';
 import type * as ReactTypes from 'react';
 import type { AnalysisMaterialCapacity } from '@pointercad/model/beam-analysis';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SolidAnalysisMaterialFields } from './SolidAnalysisMaterialFields.js';
+import { SolidAnalysisMaterialValues } from './SolidAnalysisMaterialValues.js';
 
 type SolidAnalysisMaterialFieldsProps = Parameters<typeof SolidAnalysisMaterialFields>[0];
 
@@ -31,7 +32,7 @@ interface FieldProps {
 }
 
 /** Existing SSR handler technique with persistent useState slots, not a DOM/browser acceptance. */
-async function harness(initial: AnalysisMaterialCapacity | null = SS400) {
+async function harness(initial: AnalysisMaterialCapacity | null = SS400, onYoungChange = vi.fn()) {
   const actual = await vi.importActual<typeof ReactTypes>('react');
   const values: unknown[] = [];
   const effects: React.EffectCallback[] = [];
@@ -60,7 +61,7 @@ async function harness(initial: AnalysisMaterialCapacity | null = SS400) {
     function Probe(): null {
       const [parentValue, setParentValue] = useState(value);
       setParent = setParentValue;
-      const outer = SolidAnalysisMaterialFields({ value: parentValue, selectionKey: key, onChange: change, disabled });
+      const outer = SolidAnalysisMaterialFields({ value: parentValue, selectionKey: key, onChange: change, onYoungChange, disabled });
       expect(outer.key).toBe(key);
       // The public keyed element uses the same typed component props.
       const element: React.ReactElement<SolidAnalysisMaterialFieldsProps, (props: SolidAnalysisMaterialFieldsProps) => React.JSX.Element> = outer;
@@ -88,6 +89,58 @@ afterEach(async () => {
 });
 
 describe('solid material fields real React handlers (pure SSR)', () => {
+  it('lets Enter toggle the source details without the material fieldset swallowing it', () => {
+    const preset = findStrengthMaterial('ss400-plate-0-16');
+    if (preset === undefined) throw new Error('Missing material fixture');
+    const toggles: FieldProps[] = [];
+    const walk = (node: React.ReactNode): void => { Children.forEach(node, child => {
+      if (!isValidElement<FieldProps>(child)) return;
+      if (child.props['data-testid']?.endsWith('-toggle')) toggles.push(child.props);
+      walk(child.props.children);
+    }); };
+    walk(SolidAnalysisMaterialValues({ preset, young: '205000' }));
+    expect(toggles).toHaveLength(2);
+    for (const toggle of toggles) {
+      const preventDefault = vi.fn(), stopPropagation = vi.fn();
+      toggle.onKeyDown?.({ key: 'Enter', nativeEvent: { key: 'Enter', keyCode: 13, isComposing: false }, preventDefault, stopPropagation });
+      expect(stopPropagation).toHaveBeenCalledOnce(); expect(preventDefault).not.toHaveBeenCalled();
+    }
+  });
+  it('fills E only on valid explicit selection, never on opening or parent echo', async () => {
+    const fill = vi.fn(), h = await harness(SS400, fill);
+    h.render(); expect(fill).not.toHaveBeenCalled();
+    h.field('solid-material-condition').onChange?.({ target: { value: 'sus304-solution-cold-rolled' } });
+    expect(fill).toHaveBeenLastCalledWith('193000');
+    fill.mockClear(); h.render(); h.setValue(S45C); h.render();
+    expect(fill).not.toHaveBeenCalled();
+    h.field('solid-material-condition').onChange?.({ target: { value: '' } });
+    expect(fill).not.toHaveBeenCalled();
+  });
+  it('does not fill E without an applicable row, during composition, or while disabled', async () => {
+    const fill = vi.fn(), h = await harness(SS400, fill);
+    h.field('solid-material-thickness').onChange?.({ target: { value: '17' } });
+    expect(fill).not.toHaveBeenCalled();
+    h.field('solid-material-fields').onCompositionStart?.();
+    h.field('solid-material-thickness').onChange?.({ target: { value: '１６' } });
+    expect(fill).not.toHaveBeenCalled();
+    h.field('solid-material-fields').onCompositionEnd?.();
+    expect(fill).toHaveBeenLastCalledWith('205000');
+    fill.mockClear();
+    h.field('solid-material-condition', true).onChange?.({ target: { value: 'sus304-solution-cold-rolled' } });
+    expect(fill).not.toHaveBeenCalled();
+    h.field('solid-material-condition').onChange?.({ target: { value: 'a5052p-h34-0.2-1.3' } });
+    h.field('solid-material-thickness').onChange?.({ target: { value: '1' } });
+    expect(h.value()?.yieldMPa).toBe(180); expect(fill).not.toHaveBeenCalled();
+  });
+  it('shows both input properties, missing-property reasons and the separate elastic provenance', () => {
+    const html = renderToStaticMarkup(<SolidAnalysisMaterialFields value={SS400} selectionKey="table"
+      onChange={vi.fn()} onYoungChange={vi.fn()} />);
+    expect(html).toContain('<table'); expect(html).toContain('205000 MPa'); expect(html).toContain('245 MPa');
+    expect(html).toContain(STRENGTH_SOURCES['jfe-steel-elastic'].sha256);
+    expect(html).toContain(STRENGTH_SOURCES['jfe-steel-elastic'].url);
+    expect(html).toContain(STRENGTH_SOURCES['jfe-steel-elastic'].checkedDate);
+    expect(html).toContain('PDF2ページ'); expect(html).toContain('出どころの記録がない');
+  });
   it('keeps legacy source data unchanged on opening, marks it stale, and requires explicit current-source reselection', async () => {
     const { sourceSnapshot, ...legacy } = SS400;
     void sourceSnapshot;

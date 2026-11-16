@@ -39,6 +39,8 @@ interface SketchInteractionOptions {
   readonly pickBodyAt: (pointer: Pointer) => string | null;
   readonly pickSubShapeAt: (pointer: Pointer) => string | null;
   readonly pickFreeVertexAt: (pointer: Pointer) => string | null;
+  /** 押し出しで面を選んでいない時の、カーソルの下の閉じた領域の id(`sketchInteractionRegions.ts`)。 */
+  readonly regionHoverAt: (pointer: Pointer) => string | null;
   readonly updateCornerPreview: (tool: CornerEditToolId, pointer: Pointer) => void;
   readonly updateEditPreview: (tool: ClickEditToolId, pointer: Pointer) => void;
   readonly updateSphereGridInput: (pointer: Pointer) => void;
@@ -60,7 +62,7 @@ interface InputContext extends SketchInteractionOptions {
 function createPointerMoveHandler(context: InputContext): (event: PointerEvent) => void {
   const { lifetime, project, indicators, section, drag, isCameraDragging, pointerPosition, releaseActiveCapture,
     updateCornerPreview, updateEditPreview, skipsSketchElements, pickSubShapeAt, updateSphereGridInput,
-    pickBodyAt, tracksDirection, findSnap, findTrack, pickFreeVertexAt, updateInferredConstraints } = context;
+    pickBodyAt, tracksDirection, findSnap, findTrack, pickFreeVertexAt, regionHoverAt, updateInferredConstraints } = context;
   function onPointerMove(event: PointerEvent): void {
     if (lifetime.disposed) return;
     const state = useAppStore.getState();
@@ -123,7 +125,7 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
       const connectionPick = state.selectionKind === 'vertex' && state.activeTool === 'select'
         ? pickConnectionPoint(state, project, pointer) : null;
       const nextHovered = state.selectionKind === 'vertex' && state.activeTool === 'select'
-        ? connectionPick?.kind === 'hit' ? connectionPick.elementId : null : pickSubShapeAt(pointer);
+        ? connectionPick?.kind === 'hit' ? connectionPick.elementId : null : regionHoverAt(pointer) ?? pickSubShapeAt(pointer);
       if (nextHovered !== state.hoveredElementId) {
         state.setHovered(nextHovered);
       }
@@ -156,13 +158,13 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
 
     // 当たり判定(6 画素)から外れていても、吸着(12 画素)が拾った要素は強調して
     // 「どこへ吸い付くのか」を見せる(FR-106、FR-107)。
-    // スケッチにも吸着にも当たらなかったときだけ、3D スケッチの頂点、
+    // スケッチにも吸着にも当たらなかったときだけ、押し出しの閉じた領域(M-01)、3D スケッチの頂点、
     // 続いて奥にある立体を拾う。頂点は既存の強調(setSubShapeHighlight)でそのまま光る。
     const picked = pickSketchElement(hoverSketch, project, pointer);
     const nextHovered =
       picked !== null
         ? picked.elementId
-        : (snap?.elementId ?? pickFreeVertexAt(pointer) ?? pickBodyAt(pointer));
+        : (snap?.elementId ?? regionHoverAt(pointer) ?? pickFreeVertexAt(pointer) ?? pickBodyAt(pointer));
     if (nextHovered !== state.hoveredElementId) {
       state.setHovered(nextHovered);
     }

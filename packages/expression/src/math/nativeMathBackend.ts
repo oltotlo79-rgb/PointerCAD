@@ -80,6 +80,22 @@ const QUANTILE_HEAD_MEASUREMENTS = {
     + 'warm中央値=54.484ms warm最大=86.100ms。最大86.100msが50msの基準を大きく超え、5倍で430msとなり'
     + '200msを超え得るためdistributionへ変更(1秒の猶予)。' },
 };
+// 2026-11-16: 準備の段(exactLinearOperations など。visit() の外)で計算する頭も、createMathBackend.ts の prepareDeadline が
+// この表を読む。開き直した後の冷えた Worker で tensorelement(svds([[3,0],[4,0]]),[1,1]) の初回が 798ms(pace 1.405)かかり、
+// 通常の式の 200ms で止まった(RUN 20261116-193506、z-math-input ADD-20)。実測で通常の枠を超えた特異値分解と、同じ計算を
+// 使う頭だけを 1 秒の枠へ入れる(統括の決定 2026-11-16 21:3x)。測った値が通常の枠に入っている頭(QR・Legendre・NextPrime
+// など)は、落ちた証拠が無いので入れない(5 倍の時間を許すと上限を緩める事になる)。
+const SVD_REASON = '同じ exactSvdDecomposition を使う特異値分解。冷えた Worker の初回 798ms(pace 1.405)が200msを超えた'
+  + '(RUN 20261116-193506)。';
+const PREPARED_HEAD_MEASUREMENTS: Readonly<Record<string, NumericHeadEntry>> = {
+  SvdS: { kind: 'distribution', reason: SVD_REASON },
+  SvdU: { kind: 'distribution', reason: SVD_REASON },
+  SvdV: { kind: 'distribution', reason: SVD_REASON },
+  SingularValues: { kind: 'distribution', reason:
+    '特異値分解の最初の段と同じ計算(exactSvdDecomposition が呼ぶ exactSingularValues)。冷えた Worker で最初に来ると同じ初回の負担を持つ。' },
+  Eigenspace: { kind: 'distribution', reason:
+    '特異値分解の向きを求める段と同じ計算(exactSvdDecomposition が呼ぶ exactEigenspace と exactQuadraticField)。' },
+};
 export const NUMERIC_HEAD_ALLOWANCE: ReadonlyMap<string, NumericHeadEntry> = new Map([
   ...[...ELLIPTIC_HEADS.keys()].map(head => headEntry(head, { kind: 'elliptic' })),
   ...[...AIRY_HEADS.keys(), ...BESSEL_HEADS.keys(), ...TEST_DISTRIBUTION_HEADS.keys(), ...GAMMA_BETA_HEADS.keys(),
@@ -87,6 +103,7 @@ export const NUMERIC_HEAD_ALLOWANCE: ReadonlyMap<string, NumericHeadEntry> = new
     .map(head => headEntry(head, { kind: 'distribution' })),
   ...[...NORMAL_HEADS.keys()].map(head => headEntry(head, NORMAL_HEAD_MEASUREMENTS[head as keyof typeof NORMAL_HEAD_MEASUREMENTS])),
   ...[...QUANTILE_HEADS].map(head => headEntry(head, QUANTILE_HEAD_MEASUREMENTS[head as keyof typeof QUANTILE_HEAD_MEASUREMENTS])),
+  ...Object.entries(PREPARED_HEAD_MEASUREMENTS).map(([head, entry]) => headEntry(head, entry)),
 ]);
 /** Same allowance classes used by the numeric branches below; inspect before evaluation starts. */
 export function nativeMathDeadlineKind(head: string): NumericHeadKind | null {

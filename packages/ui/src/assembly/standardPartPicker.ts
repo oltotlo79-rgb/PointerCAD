@@ -71,14 +71,30 @@ export interface StandardPartCommit {
 }
 
 /**
- * 鋼種から質量の材料(appearance/densityMaterials.ts の行の id)への対応。台帳の行の出どころ(source.condition)が名指しする
- * 鋼種だけを対応させる: steel の行は「SS400・S45C」と「JIS G 3350 に準じた軽量形鋼」(SSC400)、stainless の行は SUS304
- * (SUS304TP は JIS G 3459 の SUS304 の鋼管)。台帳が名指ししない鋼種(SGP・STK400・STKR400)は推測で対応させず null
- * (付けない。部品表は今の既定の鋼のまま)。鋼種が増えた時は、この表が型で埋めるよう求める。
+ * 鋼種から質量の材料(appearance/densityMaterials.ts の行の id)への対応。出どころのある物だけを対応させる:
+ * - 台帳の行の出どころ(source.condition)が名指しする鋼種: steel の行は「SS400・S45C」と「JIS G 3350 に準じた軽量形鋼」(SSC400)、
+ *   stainless の行は SUS304(SUS304TP は JIS G 3459 の SUS304 の鋼管)。
+ * - 製品の規格の原案が、単位質量の計算に台帳の steel と同じ密度を書く鋼種(「1 cm3 の鋼を 7.85 g とし」): SGP は JIS G 3452 原案
+ *   2025-12-17(規格の台帳 jis-g-3452-2026、SHA-256 03b39750…)PDF 9 頁 11 a)、STK400 は JIS G 3444 原案 2024-12-20
+ *   (STEEL_EVIDENCE.stkDraft)PDF 9 頁 8.1、STKR400 は JIS G 3466 原案 2024-12-20(STEEL_EVIDENCE.stkrDraft)PDF 8 頁 8.1。
+ * 対応の無い鋼種は null(付けない)。鋼種が増えた時は、この表が型で埋めるよう求める。
  */
 const STEEL_GRADE_DENSITY_MATERIALS: Readonly<Record<SteelMaterialGrade, string | null>> = {
-  SS400: 'steel', S45C: 'steel', SSC400: 'steel', SUS304TP: 'stainless', SGP: null, STK400: null, STKR400: null,
+  SS400: 'steel', S45C: 'steel', SSC400: 'steel', SUS304TP: 'stainless', SGP: 'steel', STK400: 'steel', STKR400: 'steel',
 };
+
+function isSteelMaterialGrade(grade: string): grade is SteelMaterialGrade {
+  return Object.hasOwn(STEEL_GRADE_DENSITY_MATERIALS, grade);
+}
+
+/**
+ * 鋼材の部品文書の元の鋼材(steelStockSource)から、置く部品に付ける質量の材料(K-06)。鋼材の規格部品を置く時と同じ表で引き、
+ * 元の鋼材が無い・鋼種が表に無い・対応の無い鋼種は undefined(付けない)。
+ */
+export function steelStockMaterialId(source: StandardPartSource | undefined): string | undefined {
+  const grade = source?.options.materialGrade;
+  return grade !== undefined && isSteelMaterialGrade(grade) ? STEEL_GRADE_DENSITY_MATERIALS[grade] ?? undefined : undefined;
+}
 
 export type StandardPartCommitResult =
   | { readonly ok: true; readonly value: StandardPartCommit }

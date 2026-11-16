@@ -1,6 +1,7 @@
 /**
- * 選ぶ窓の「機械要素」(登録口の族)の中身: 分類 → 種類 → 材質(行の材質が 2 つ以上ある族だけ) → 呼び → 長さなどの指定 → 置く
- * (設計 §5.6 の最小の所)。族の表は窓を開いた時に登録口が読み込み(`useCatalogFamilies`)、読み込みの状態の 1 行をここに出す。
+ * 選ぶ窓の族の分類(「機械要素」「アルミフレーム」。登録口の族)の中身: 分類 → 種類 → 材質(行の材質が 2 つ以上ある族だけ) → 呼び →
+ * 長さなどの指定 → 置く(設計 §5.6 の最小の所)。族の表は窓を開いた時に登録口が読み込み(`useCatalogFamilies`)、読み込みの状態の 1 行をここに出す。
+ * 長さを持つ族(フレームなど)は、置いた部品の切断の一覧の表(`CatalogStockTable`)も出す。
  * 置いた後も窓と選択を残し、Enter でもう 1 個置ける(今の規格部品の窓と同じ。NFR-UX-4)。
  */
 import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry } from '@pointercad/model';
@@ -10,16 +11,20 @@ import { t } from '../i18n/t.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
-  catalogRowLabel, familyHintKey, familyKindKey, familyMaterials, MECHANICAL_PICKER_CATEGORY, mechanicalFamilyEntries, messageKeyOr,
-  optionDefault,
+  catalogFamilyEntries, catalogRowLabel, FAMILY_KIND_FIELD_KEYS, familyHintKey, familyKindKey, familyMaterials, messageKeyOr,
+  optionDefault, type FamilyPickerCategory,
 } from './catalogFamilyChoices.js';
 import type { CatalogLoadState } from './catalogFamilyLoading.js';
 import { CatalogLoadStatus } from './CatalogLoadStatus.js';
+import { CatalogStockTable } from './CatalogStockTable.js';
+import { FrameLayoutDetails } from './FrameLayoutDetails.js';
 import { pickerFormProps } from './pickerFormHandlers.js';
 
 type LoadedFamily = NonNullable<ReturnType<CatalogRegistry['loaded']>>;
 
 export interface CatalogFamilyPickerProps {
+  /** 族の分類(機械要素・アルミフレーム)。種類の一覧をこの分類の族で絞る。 */
+  readonly group: FamilyPickerCategory;
   /** 分類の欄(窓を開いた時に焦点を置く)。 */
   readonly firstRef: RefObject<HTMLSelectElement | null>;
   readonly catalogState: CatalogLoadState;
@@ -44,8 +49,9 @@ function optionFields(family: LoadedFamily, row: LoadedFamily['rows'][number] | 
   </label>);
 }
 
-export function CatalogFamilyPicker({ firstRef, catalogState, onCategory, categoryOptions }: CatalogFamilyPickerProps): React.JSX.Element {
-  const entries = mechanicalFamilyEntries();
+export function CatalogFamilyPicker({ group, firstRef, catalogState, onCategory, categoryOptions }: CatalogFamilyPickerProps):
+React.JSX.Element {
+  const entries = catalogFamilyEntries(group);
   const [familyId, setFamilyId] = useState(entries[0]?.id ?? '');
   const [material, setMaterial] = useState('');
   const [itemKey, setItemKey] = useState('');
@@ -75,13 +81,13 @@ export function CatalogFamilyPicker({ firstRef, catalogState, onCategory, catego
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.standardPart.category')}</span>
           <select title={t('assembly.guide.standardCategory')} ref={firstRef} className="pcad-field__input"
-            value={MECHANICAL_PICKER_CATEGORY} onChange={(event) => { onCategory(event.currentTarget.value); }}>
+            value={group} onChange={(event) => { onCategory(event.currentTarget.value); }}>
             {categoryOptions}
           </select>
         </label>
         <label className="pcad-field">
-          <span className="pcad-field__label">{t('catalog.mechanical.kind')}</span>
-          <select title={t('catalog.mechanical.kindGuide')} className="pcad-field__input" value={entry?.id ?? ''}
+          <span className="pcad-field__label">{t(FAMILY_KIND_FIELD_KEYS[group].label)}</span>
+          <select title={t(FAMILY_KIND_FIELD_KEYS[group].guide)} className="pcad-field__input" value={entry?.id ?? ''}
             onChange={(event) => {
               if (!entries.some((candidate) => candidate.id === event.currentTarget.value)) return;
               choose(setFamilyId, event.currentTarget.value); setMaterial(''); setValues({});
@@ -114,6 +120,9 @@ export function CatalogFamilyPicker({ firstRef, catalogState, onCategory, catego
       </div>
       {hintKey === null ? null : <p className="pcad-popover__hint">{t(hintKey)}</p>}
       <p className="pcad-popover__hint">{t('catalog.mechanical.simplified')}</p>
+      {family?.stock === 'linear' ? <CatalogStockTable /> : null}
+      {family?.sectionBounds === undefined || row === undefined ? null
+        : <FrameLayoutDetails member={{ kind: 'catalogItem', familyId: family.id, itemKey: row.key, values }} />}
       {error === null ? null : <p className="pcad-field__message" role="alert">
         {t(error === 'invalidOption' ? 'catalog.mechanical.invalidOption' : 'assembly.standardPart.unknownChoice')}</p>}
       <p className="pcad-popover__hint">{t('assembly.standardPart.hint')}</p>

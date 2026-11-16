@@ -1,10 +1,13 @@
 import { serializeCsvReport } from '../file/csvReport.js';
-import { buildSteelStockList, STEEL_EVIDENCE, type AssemblyDocument, type PartLibrary, type SteelEvidence,
+import { buildSteelStockList, PRODUCT_CATALOG_REGISTRY, STEEL_EVIDENCE, type AssemblyDocument, type PartLibrary, type SteelEvidence,
   type SteelStockList } from '@pointercad/model';
 
 import { saveFileAsThrough } from '../file/fileGateway.js';
 import { t } from '../i18n/t.js';
+import { familyKindKey } from './catalogFamilyChoices.js';
 import { steelShapeLabelKey } from './standardPartPicker.js';
+import { DEFAULT_STOCK_CUTTING, type StockCuttingSettings } from './stockCuttingSettings.js';
+import { catalogStockCuttingRows, steelStockCuttingRows, stockCuttingView } from './stockCuttingView.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 
@@ -81,8 +84,50 @@ function provenance(row: SteelStockList['rows'][number]): string[] {
       : evidenceCell(product.productStandardEvidence)];
 }
 
+/** 実物どおりの断面の形材の族(チャンネル・角パイプ・丸棒・フラットバー・アングル)の線図。この族の行の注記に「内側の形は簡略」を添えない。 */
+const EXACT_SECTION_DIAGRAMS: ReadonlySet<string> = new Set(['channel', 'rectTube', 'roundBar', 'flatBar', 'angle']);
+
+/**
+ * 族の行の注記の列: 単位質量を持つ行だけ「単位質量 … kg/m」。断面の内側を簡略にした族(溝つきのフレーム)の行は「(内側の形は簡略)」を添える。
+ * CSV に質量の列は足さない。
+ */
+function unitMassNote(row: SteelStockList['catalogRows'][number]): string {
+  if (row.unitMassKgPerM === null) return '';
+  const exact = EXACT_SECTION_DIAGRAMS.has(PRODUCT_CATALOG_REGISTRY.loaded(row.familyId)?.diagram ?? '');
+  return t(exact ? 'catalog.stock.unitMassNoteExact' : 'catalog.stock.unitMassNote').split('{mass}').join(String(row.unitMassKgPerM));
+}
+
+/**
+ * 長さを持つ族(フレームなど)の部品の行と、その合計の行(E-03)。鋼材の 30 列と同じ列に、族の種類・呼び・規格の欄・材質の表示・長さ・本数・
+ * 出どころ(資料の題・頁・SHA。規格の行でない族は空)を入れる。族の部品が無い文書では行を作らない(鋼材だけの CSV は前と同じバイト)。
+ */
+function catalogStockRows(stock: SteelStockList): (string | number)[][] {
+  if (stock.catalogRows.length === 0) return [];
+  const rows: (string | number)[][] = stock.catalogRows.map((row) => [t('assembly.steel.csv.cut'), row.materialLabel ?? '', '',
+    row.standardLabel, t(familyKindKey(row.kindKey)), row.size, '', row.lengthMm, row.quantity, row.totalLengthMm,
+    JSON.stringify(row.occurrencePaths), unitMassNote(row), '', t('assembly.steel.finishedUnknown'),
+    row.catalogRevision, row.generatorRevision, t('assembly.steel.csv.geometrySimplified'), row.evidence.title, edition(row.evidence),
+    row.evidence.locator, row.evidence.url, row.evidence.sha256, row.evidence.fetchedDate, t('assembly.steel.csv.profileSourceNone'),
+    t('assembly.steel.csv.sameAsDimensionSource'), t('assembly.steel.csv.sameAsDimensionSource'), ...NO_STANDARD_EDITION]);
+  rows.push([t('catalog.stock.total'), '', '', '', '', '', '', '', stock.catalogRows.reduce((total, row) => total + row.quantity, 0),
+    stock.catalogRows.reduce((total, row) => total + row.totalLengthMm, 0), '', '', '', '', ...NO_PROVENANCE, ...NO_STANDARD_EDITION]);
+  return rows;
+}
+
+/**
+ * 定尺への割り付けの行(J-01 包み 7)。定尺を入れた時だけ、組(同じ鋼材・同じ族の呼び)ごとに 1 行: 種類の欄に「定尺への割り付け」、
+ * 素材購入長の列に定尺、数量の列に棒の本数、注記の列に要約と棒ごとの切り出し。定尺が無い時は行を作らない(前と同じバイト)。
+ */
+function stockCuttingCsvRows(stock: SteelStockList, settings: StockCuttingSettings): (string | number)[][] {
+  const view = stockCuttingView([...steelStockCuttingRows(stock.rows),
+    ...catalogStockCuttingRows(stock.catalogRows, (kindKey) => t(familyKindKey(kindKey)))], settings);
+  if (view.kind === 'noStock') return [];
+  return view.groups.map((group) => [t('catalog.stockCutting.title'), '', '', '', '', '', '', settings.stockLengthMm ?? '',
+    group.bars.length, '', '', [group.summary, ...group.bars].join(' / '), '', '', ...NO_PROVENANCE, ...NO_STANDARD_EDITION]);
+}
+
 /** UTF-8 BOM for Japanese spreadsheets; every report includes scope, totals and all omissions. */
-export function serializeSteelStockCsv(stock: SteelStockList): Uint8Array {
+export function serializeSteelStockCsv(stock: SteelStockList, stockCutting: StockCuttingSettings = DEFAULT_STOCK_CUTTING): Uint8Array {
   const rows: (string | number)[][] = [[
     t('assembly.steel.csv.kind'), t('assembly.steel.material'), t('assembly.steel.csv.materialStandard'),
     t('assembly.steel.csv.productStandard'), t('assembly.steel.shape'), t('assembly.standardPart.size'),
@@ -101,6 +146,8 @@ export function serializeSteelStockCsv(stock: SteelStockList): Uint8Array {
   }
   rows.push([t('assembly.steel.stockTotal'), '', '', '', '', '', '', '', stock.totalQuantity, stock.totalLengthMm, '',
     stock.issues.length === 0 ? '' : t('assembly.steel.stockPartial'), '', '', ...NO_PROVENANCE, ...NO_STANDARD_EDITION]);
+  rows.push(...catalogStockRows(stock));
+  rows.push(...stockCuttingCsvRows(stock, stockCutting));
   for (const issue of stock.issues) {
     rows.push([t('assembly.steel.csv.omitted'), '', '', '', '', '', '', '', '', '',
       JSON.stringify(issue.occurrencePath), steelStockIssueText(issue), issue.assemblyRef ?? '', '', ...NO_PROVENANCE, ...NO_STANDARD_EDITION]);
@@ -144,7 +191,7 @@ export async function exportSteelStockCsv(attempt: SteelStockCsvAttempt): Promis
   try {
     const stock = buildSteelStockList(assembly, library.assemblies, library.parts);
     const saved = await saveFileAsThrough(owner.fileGateway, 'steel-stock-list.csv', 'csv',
-      serializeSteelStockCsv(stock), { signal: controller.signal, isCurrent: current });
+      serializeSteelStockCsv(stock, owner.displaySettings.stockCutting), { signal: controller.signal, isCurrent: current });
     if (current()) attempt.status(t(saved ? 'assembly.steel.csv.saved' : 'assembly.steel.csv.cancelled'));
   } catch (error) {
     if (current()) attempt.error(error instanceof Error ? error.message : t('assembly.steel.csv.failed'));

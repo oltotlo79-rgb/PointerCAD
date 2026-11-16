@@ -3,6 +3,7 @@ import { savePart } from './scriptsFlow.js';
 import { reopenPart } from './reopenPart.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { undoMathEdit, waitForMathEditorText } from './mathEditorReady.js';
+import { openMathPalette } from './mathPaletteSupport.js';
 
 /** Real Riemann zeta values and derivatives, original source and document edits. */
 export async function mathZetaFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -37,8 +38,7 @@ export async function mathZetaFlow(page: Page, info: TestInfo, app?: ElectronApp
   await input.fill(source); await expect(result).toContainText('1.644934066');
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
   await expect(dialog.locator('math-field')).toBeFocused();
-  const palette = dialog.locator('summary').filter({ hasText: '記号と演算を探す' });
-  await palette.click();
+  const palette = await openMathPalette(dialog, info);
   await dialog.getByLabel('数学の分野', { exact: true }).selectOption({ label: '関数' });
   await dialog.getByRole('searchbox', { name: '名前・記号で検索', exact: true }).fill('ゼータ');
   await expect(dialog.getByRole('button', { name: 'ゼータ関数', exact: true })).toBeVisible();

@@ -667,6 +667,14 @@ function pcadWithSchema(schema: number): Uint8Array {
 const OLDEST_UNMIGRATABLE_SCHEMA_VERSION =
   Math.min(...Object.keys(SCHEMA_MIGRATIONS).map(Number)) - 1;
 
+/**
+ * 開ける最も新しい版の次の版(`SCHEMA_MIGRATIONS` の最大の鍵 + 2)。移行は版を 1 つずつ持ち上げるので、最大の鍵の
+ * 次の版が開ける最も新しい版になる。保存の既定の版(`PCAD_SCHEMA_VERSION`)より新しい版も開ける事がある
+ * (穴つきの面だけが要る版 23 は、既定の版 22 の次)ので、`PCAD_SCHEMA_VERSION + 1` は「新しすぎる版」にならない。
+ */
+const NEWER_THAN_READABLE_SCHEMA_VERSION =
+  Math.max(...Object.keys(SCHEMA_MIGRATIONS).map(Number)) + 2;
+
 /** `document.json` が入っていない ZIP。 */
 function zipWithoutDocument(): Uint8Array {
   return replaceAscii(writePcadFile(createEmptyPartDocument()), 'document.json', 'contents.json');
@@ -1140,7 +1148,7 @@ describe('開く(FR-806、NFR-RE-1)', () => {
   });
 
   it('新しい版のファイルは「アプリを更新してください」と断る', async () => {
-    const fake = createFakeGateway({ openBytes: pcadWithSchema(PCAD_SCHEMA_VERSION + 1) });
+    const fake = createFakeGateway({ openBytes: pcadWithSchema(NEWER_THAN_READABLE_SCHEMA_VERSION) });
     useFake(fake);
 
     await openPart(createFakeDeps(true).deps);

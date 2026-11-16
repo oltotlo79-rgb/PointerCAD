@@ -5,7 +5,8 @@ import { applyCameraSettings } from './cameraSettingsApply.js';
 import { currentViewControls, DEFAULT_VIEW_CONTROLS, VIEW_ACTIONS, VIEW_CONTROL_PRESETS, VIEW_KEY_GROUP_ACTIONS, VIEW_KEY_GROUPS, viewControlProblems,
   withViewControlPreset, type ViewAction, type ViewControlOptions, type ViewControlPreset, type ViewControlSettings, type ViewKeyGroup,
   type ViewSettingsProblem, type ViewTrigger, viewKeyStepDegrees, ORBIT_CENTERS, viewOrbitCenter, viewZoomCenter, ZOOM_CENTERS,
-  type OrbitCenter, type ZoomCenter } from './viewControlSettings.js';
+  type OrbitCenter, type ZoomCenter, VIEW_TOUCH_GESTURE_ACTIONS, VIEW_TOUCH_GESTURES, type ViewTouchGesture, hasOneFingerTouch,
+} from './viewControlSettings.js';
 import { placeViewTrigger, restoreViewAction, swapViewTrigger, takeViewTrigger, viewKeyCollisions } from './inputBindingsDraft.js';
 import { commandDefinition } from '../commands/commandDefinitions.js';
 import { currentShortcutAssignments } from './shortcutSettings.js';
@@ -22,25 +23,36 @@ const ERROR_KEYS: Record<ViewSettingsProblem['code'], MessageKey> = {
   'mouse-required': 'settings.camera.error.mouseRequired', 'too-many': 'settings.camera.error.count',
   range: 'settings.camera.error.sensitivity',
 };
-/** The select of one binding row: a mouse button drag, the wheel (a touchpad's two-finger scroll) or a key group (B-08). */
-type SlotInput = 'left' | 'middle' | 'right' | 'wheel' | ViewKeyGroup;
+/**
+ * The select of one binding row: a mouse button drag, the wheel (a touchpad's two-finger scroll), a key group (B-08)
+ * or a touch-screen finger gesture (B-08g).
+ */
+type SlotInput = 'left' | 'middle' | 'right' | 'wheel' | ViewKeyGroup | ViewTouchGesture;
 const POINTER_INPUTS: readonly SlotInput[] = ['left', 'middle', 'right', 'wheel'];
 const INPUT_KEYS: Record<SlotInput, MessageKey> = {
   left: 'settings.camera.left', middle: 'settings.camera.middle', right: 'settings.camera.right', wheel: 'settings.camera.wheel',
   arrows: 'settings.camera.keys.arrows', numpad: 'settings.camera.keys.numpad', plusMinus: 'settings.camera.keys.plusMinus',
+  oneFinger: 'settings.camera.touch.oneFinger', twoFinger: 'settings.camera.touch.twoFinger', pinch: 'settings.camera.touch.pinch',
 };
-/** Mouse inputs for every action, and only the key groups that fit the action (arrows and numpad move, plus/minus zooms). */
+/**
+ * Mouse inputs for every action, and only the key groups and finger gestures that fit the action (arrows and numpad move,
+ * plus/minus zooms; two fingers move, pinching zooms).
+ */
 function inputsFor(action: ViewAction): readonly SlotInput[] {
-  return [...POINTER_INPUTS, ...VIEW_KEY_GROUPS.filter(group => VIEW_KEY_GROUP_ACTIONS[group].includes(action))];
+  return [...POINTER_INPUTS, ...VIEW_KEY_GROUPS.filter(group => VIEW_KEY_GROUP_ACTIONS[group].includes(action)),
+    ...VIEW_TOUCH_GESTURES.filter(gesture => VIEW_TOUCH_GESTURE_ACTIONS[gesture].includes(action))];
 }
 function isKeyGroup(input: SlotInput): input is ViewKeyGroup {
   return (VIEW_KEY_GROUPS as readonly string[]).includes(input);
+}
+function isTouchGesture(input: SlotInput): input is ViewTouchGesture {
+  return (VIEW_TOUCH_GESTURES as readonly string[]).includes(input);
 }
 const MODIFIERS = ['alt', 'shift', 'ctrl', 'meta'] as const;
 const PRESET_KEYS: Record<ViewControlPreset, MessageKey> = {
   pointercad: 'settings.camera.preset.pointercad', solidworks: 'settings.camera.preset.solidworks',
   fusion: 'settings.camera.preset.fusion', onshape: 'settings.camera.preset.onshape', touchpad: 'settings.camera.preset.touchpad',
-  keyboard: 'settings.camera.preset.keyboard',
+  keyboard: 'settings.camera.preset.keyboard', touchscreen: 'settings.camera.preset.touchscreen',
 };
 /** 4 つまで(viewControlSettings.ts の too-many と同じ数)。 */
 const MAX_TRIGGERS = 4;
@@ -66,13 +78,16 @@ function bindingGuide(key: MessageKey, action: ViewAction, index: number, modifi
 }
 function slotInput(trigger: ViewTrigger | undefined): SlotInput | 'none' {
   if (trigger === undefined) return 'none';
-  return trigger.kind === 'wheel' ? 'wheel' : trigger.kind === 'keys' ? trigger.keys : trigger.button;
+  return trigger.kind === 'wheel' ? 'wheel' : trigger.kind === 'keys' ? trigger.keys
+    : trigger.kind === 'touch' ? trigger.gesture : trigger.button;
 }
 /** A new input for a row keeps that row's modifiers; a fresh left drag starts with Alt (plain left is selection). */
 function triggerFor(input: SlotInput, previous: ViewTrigger | undefined): ViewTrigger {
   const modifiers = { alt: previous?.alt ?? input === 'left', shift: previous?.shift ?? false,
     ctrl: previous?.ctrl ?? false, meta: previous?.meta ?? false };
   if (isKeyGroup(input)) return { kind: 'keys', keys: input, ...modifiers };
+  // Finger gestures take no modifier keys (the row's check boxes are disabled for them).
+  if (isTouchGesture(input)) return { kind: 'touch', gesture: input, alt: false, shift: false, ctrl: false, meta: false };
   return input === 'wheel' ? { kind: 'wheel', ...modifiers } : { kind: 'drag', button: input, ...modifiers };
 }
 /** 視点のキーと命令のキーの重なりの文(キーの組の名前と命令の名前)。 */
@@ -156,7 +171,8 @@ function ViewActionFieldset({ id, action, value, bindingError, onReplace, onDraf
         aria-label={t('settings.camera.binding').replace('{number}', String(index + 1))}>
         <label htmlFor={`${id}-${action}-${index}`}>{t('settings.camera.binding').replace('{number}', String(index + 1))}</label>
         <select id={`${id}-${action}-${index}`} value={slotInput(trigger)}
-          title={bindingGuide('settings.camera.bindingGuide', action, index)}
+          title={bindingGuide('settings.camera.bindingGuide', action, index) + (trigger?.kind === 'touch' && trigger.gesture === 'oneFinger'
+            ? t('settings.camera.touch.oneFingerNotice') : '')}
           aria-invalid={bindingError} aria-describedby={bindingError ? `${id}-error` : undefined}
           onChange={event => {
             const input = inputsFor(action).find(input => input === event.currentTarget.value);
@@ -174,7 +190,7 @@ function ViewActionFieldset({ id, action, value, bindingError, onReplace, onDraf
             onClick={() => { onReplace(action, index, null); }}>×</button>
         </>}
         {MODIFIERS.map(modifier => <label key={modifier}>
-          <input type="checkbox" disabled={trigger === undefined} checked={trigger?.[modifier] ?? false}
+          <input type="checkbox" disabled={trigger === undefined || trigger.kind === 'touch'} checked={trigger?.[modifier] ?? false}
             title={bindingGuide('settings.camera.modifierGuide', action, index, t(`settings.camera.${modifier}`))}
             onChange={event => { if (trigger !== undefined) onReplace(action, index, { ...trigger, [modifier]: event.currentTarget.checked }); }} />
           {t(`settings.camera.${modifier}`)}
@@ -247,6 +263,8 @@ export function CameraControlSettingsForm(): React.JSX.Element {
     {error === null ? null : <p role="alert" id={`${id}-error`}>{problemText(error)}</p>}
     {collision === null ? null : <p role="alert">{keyCollisionText(collision.trigger, collision.commandId)}</p>}
     {applyRefused ? <p role="alert">{t('settings.camera.applyStale')}</p> : null}
+    {/* 1 本指のドラッグを割り当てた下書きを適用する時の注意(B-08h。適用は止めない)。 */}
+    {draft !== null && hasOneFingerTouch(value) ? <p role="note">{t('settings.camera.touch.oneFingerNotice')}</p> : null}
     <div role="group" aria-label={t('settings.camera.presets')} aria-describedby={`${id}-preset-hint`} className="pcad-camera-settings__actions">
       {VIEW_CONTROL_PRESETS.map(preset => <button key={preset} type="button" className="pcad-button"
         title={t('settings.camera.presetGuide').replace('{preset}', t(PRESET_KEYS[preset]))}

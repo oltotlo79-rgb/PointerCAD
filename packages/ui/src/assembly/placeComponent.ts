@@ -40,18 +40,20 @@ export function placementFromSources(
   return { ok: true, placement: { position: [x, y, z], rotation: [0, 0, 0, 1] } };
 }
 
-/** 抱き込み済みの参照を1インスタンスとして置く。 */
+/** 抱き込み済みの参照を1インスタンスとして置く。材質(質量の材料の id)を渡した時だけ部品に付ける(K-06。省くと前と同じ形)。 */
 export function placePart(
   document: AssemblyDocument,
   partRef: string,
   partName: string,
   placement: Placement,
+  materialId?: string,
 ): { readonly document: AssemblyDocument; readonly component: AssemblyComponent } {
-  const component = createComponentFor(
+  const created = createComponentFor(
     document,
     { kind: 'part', partRef },
     { partName, placement },
   );
+  const component = materialId === undefined ? created : { ...created, materialId };
   return { document: addComponent(document, component), component };
 }
 

@@ -210,7 +210,9 @@ describe('MC-27 読み上げと Tab 順(画面の構造)', () => {
     const view = renderSurface({ busy: true, resultDetail: '正確な値' });
     const status = elementOf(view.tree, element => element.props.role === 'status');
     expect([status.props['aria-live'], status.props['aria-atomic']]).toEqual(['polite', 'true']);
-    expect(elementsOf(status.props.children).map(element => element.props.children)).toEqual(['3', '正確な値']);
+    // 結果の行は部品 ResultRows が描く(計算中は前の結果を aria-hidden の影の行で置く。mathEditorShownResult.ts)。
+    // 読み上げる中身は、描いた状態表示の中の、属性を持たない段落(影でない行)の文字を文書順に読む。
+    expect([...renderToStaticMarkup(status).matchAll(/<p>([^<]*)<\/p>/gu)].map(match => match[1])).toEqual(['3', '正確な値']);
     const hint = elementOf(view.tree, element => element.props.className === 'pcad-math-editor__hint');
     expect(hint.props.children).toBe(view.labels.keyboardHint);
     const input = elementOf(view.tree, element => element.type === 'textarea');

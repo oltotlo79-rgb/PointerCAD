@@ -11,6 +11,7 @@
  * 必要な時だけ読む入口(`load`)を足す。
  */
 import type { PartDocument } from '../../part/types.js';
+import type { FrameSectionBounds } from '../frame/frameMembers.js';
 import type { SteelEvidence } from '../standard/steelCatalog.js';
 
 /** 選ぶ画面の分類(鋼材・アルミフレーム・機械要素)。 */
@@ -21,7 +22,8 @@ type CatalogVerification = 'draft' | 'final-standard' | 'manufacturer-catalog' |
 
 /** 寸法を添えて描く簡単な線図の種類。製造元の図・画像は使わない。 */
 type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChannel' | 'pipe'
-  | 'pin' | 'nut' | 'bolt' | 'washer' | 'bearing' | 'camFollower' | 'bush' | 'compressionSpring' | 'tSlotFrame' | 'key' | 'sealRing' | 'oRing';
+  | 'pin' | 'nut' | 'bolt' | 'washer' | 'bearing' | 'camFollower' | 'bush' | 'compressionSpring' | 'tSlotFrame' | 'key' | 'sealRing' | 'oRing'
+  | 'angleBracket' | 'joinPlate' | 'slotNut' | 'tSlotSeries' | 'flatBar' | 'roundBar';
 
 /**
  * 族の options の 1 つの鍵の指定。**鍵の名前は保存されるので、版の中で変えない。**
@@ -89,6 +91,16 @@ export interface CatalogFamily<Row extends CatalogItemRow = CatalogItemRow> {
   build(row: Row, values: Readonly<Record<string, string>>): PartDocument | null;
   nominalVolume(row: Row, values: Readonly<Record<string, string>>): number | null;
   partName(row: Row, values: Readonly<Record<string, string>>): string;
+  /**
+   * 1 個の質量(g)を形の体積から計算せずに持つ族だけが持つ(製造元の寸法に合わせたフレームの系列は、単位質量 × 長さ)。
+   * 部品表・切断の一覧の質量はこれを先に使い、無い族は体積 × 行の材質の密度。形を簡略にした族の質量を実物に近づけるため。
+   */
+  nominalMassG?(row: Row, values: Readonly<Record<string, string>>): number | null;
+  /**
+   * 長さを持つ族の断面の外形(部品の XY 面、mm)。線に沿って並べる時に外形の中心を線に乗せる(J-01)。
+   * 欄の値で形が作れない時は null。持たない族は線に沿って並べられない。
+   */
+  sectionBounds?(row: Row, values: Readonly<Record<string, string>>): FrameSectionBounds | null;
 }
 
 /**

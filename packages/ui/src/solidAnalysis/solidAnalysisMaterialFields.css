@@ -7,3 +7,6 @@
 .pcad-solid-material label { display: flex; flex-direction: column; gap: var(--pcad-space-1); min-width: 0; }
 .pcad-solid-material select, .pcad-solid-material input { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; }
 .pcad-solid-material section { min-width: 0; }
+.pcad-solid-material table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.pcad-solid-material th, .pcad-solid-material td { text-align: start; vertical-align: top; padding: var(--pcad-space-1); }
+.pcad-solid-material details { min-width: 0; }

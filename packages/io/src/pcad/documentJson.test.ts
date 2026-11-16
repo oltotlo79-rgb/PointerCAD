@@ -64,6 +64,7 @@ import {
   PCAD_APP_NAME,
   PCAD_DOCUMENT_KIND,
   PCAD_SCHEMA_VERSION,
+  PCAD_MAX_SCHEMA_VERSION,
   PCAD_TEMPLATE_KIND,
   SCHEMA_MIGRATIONS,
   type PcadToolDefaults,
@@ -1015,7 +1016,7 @@ describe(
         '(P3・P4 タスク31・P4b タスク21・P5 タスク5・P6 タスク21・P7 タスク3が' +
         '版を1つずつ足したため)',
       () => {
-        expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(Array.from({ length: PCAD_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)));
+        expect(Object.keys(SCHEMA_MIGRATIONS)).toEqual(Array.from({ length: PCAD_MAX_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)));
       },
     );
   },
@@ -3043,10 +3044,10 @@ describe('読み込みの断り方(FR-504、NFR-UX-5)', () => {
 
   // 新しすぎる版は、現在の版に1を加えた値で検証する。
   it('現在より1つ新しい版は「新しい版で保存されています」と断る', () => {
-    const error = expectError(parseDocument(rawFile({ schema: PCAD_SCHEMA_VERSION + 1 })));
+    const error = expectError(parseDocument(rawFile({ schema: PCAD_MAX_SCHEMA_VERSION + 1 })));
     expect(error.code).toBe('unsupportedNewVersion');
     expect(error.message).toContain('新しい版の PointerCAD で保存されています');
-    expect(error.message).toContain(String(PCAD_SCHEMA_VERSION + 1));
+    expect(error.message).toContain(String(PCAD_MAX_SCHEMA_VERSION + 1));
   });
 
   it('版 1 は「対応していない古い版です」と断る(版2への移行表が無いため)', () => {
@@ -5590,7 +5591,7 @@ describe('古いファイルの読み込み(NFR-RE-3、P5 タスク47)', () => {
   });
 
   it('移行表が版2から現行版の直前まで揃う', () => {
-    expect(Object.keys(SCHEMA_MIGRATIONS).sort()).toEqual(Array.from({ length: PCAD_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)).sort());
+    expect(Object.keys(SCHEMA_MIGRATIONS).sort()).toEqual(Array.from({ length: PCAD_MAX_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)).sort());
     expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
     expect(PART_SCHEMA_VERSION).toBe(PCAD_SCHEMA_VERSION);
   });
@@ -6877,7 +6878,7 @@ describe('schema19 purchased-steel compatibility boundary', () => {
     const raw: unknown = JSON.parse(serializeDocument(part));
     if (typeof raw !== 'object' || raw === null || !('document' in raw)) throw new Error('Missing envelope');
     expect(parseDocument(JSON.stringify({ ...raw, schema: 18 })).ok).toBe(false);
-    const future = parseDocument(JSON.stringify({ ...raw, schema: PCAD_SCHEMA_VERSION + 1 }));
+    const future = parseDocument(JSON.stringify({ ...raw, schema: PCAD_MAX_SCHEMA_VERSION + 1 }));
     expect(future.ok).toBe(false);
     if (!future.ok) expect(future.error.code).toBe('unsupportedNewVersion');
   });
@@ -6995,7 +6996,7 @@ describe('schema22 signed axis constraint persistence', () => {
     if (!isRecord(raw) || !isRecord(raw['document'])) throw new Error('invalid envelope');
     const forged = { ...raw, schema: 21, document: { ...raw['document'], schemaVersion: 21 } };
     expect(parseDocument(JSON.stringify(forged)).ok).toBe(false);
-    expect(parseDocument(JSON.stringify({ ...raw, schema: PCAD_SCHEMA_VERSION + 1 })).ok).toBe(false);
+    expect(parseDocument(JSON.stringify({ ...raw, schema: PCAD_MAX_SCHEMA_VERSION + 1 })).ok).toBe(false);
   });
 
   it('migrates legacy21 without inventing new constraints', () => {

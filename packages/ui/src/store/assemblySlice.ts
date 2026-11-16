@@ -44,6 +44,7 @@ import {
   commitStandardPartChoice, type StandardPartCategory,
 } from '../assembly/standardPartPicker.js';
 import { commitCatalogItemChoice } from '../assembly/catalogFamilyChoices.js';
+import { frameMembersDocument, type FrameMembersPlacement, type FrameMembersRequest } from '../assembly/frameMembersPlacement.js';
 import type {
   AssemblyReplacementPreview,
   AssemblyReplacementRunner,
@@ -183,6 +184,8 @@ export interface AssemblySlice extends CircularWeldSlice {
   ) => boolean;
   /** 選ぶ画面の機械要素(登録口の族)の行を、長さなどの指定の値で置く。族が未読込・行が無い・値が範囲の外の時は置かずに false。 */
   readonly placeCatalogItem: (familyId: string, itemKey: string, values?: Readonly<Record<string, string>>) => boolean;
+  /** 長さを持つ族の行を、線の列に沿って 1 本ずつ並べる(J-01)。全部を 1 回で入れる(Undo 1 回)。作れない時は何も置かずに理由。 */
+  readonly placeFrameMembers: (request: FrameMembersRequest) => FrameMembersPlacement;
   /** サブアセンブリ配置・部品置換の非同期処理と、確認が必要な置換予告。 */
   readonly assemblyReplacementRunner: AssemblyReplacementRunner | null;
   readonly assemblyReplacementPreview: AssemblyReplacementPreview | null;
@@ -388,6 +391,26 @@ function placePickedPart(get: () => AppState, set: (partial: Pick<AppState, 'sta
     picked.materialId === undefined ? component : { ...component, materialId: picked.materialId }));
   set({ standardPartPickerOpen: true });
   return true;
+}
+
+/** 選ぶ画面の族の行を、長さなどの指定の値で置く(`placeCatalogItem`)。 */
+function placeCatalogItemFor(get: () => AppState, set: (partial: Pick<AppState, 'standardPartPickerOpen'>) => void,
+  familyId: string, itemKey: string, values: Readonly<Record<string, string>> | undefined): boolean {
+  const selected = commitCatalogItemChoice(familyId, itemKey, values);
+  return selected.ok && placePickedPart(get, set, selected.value);
+}
+
+/** 長さを持つ族の行を線の列に沿って並べる(`placeFrameMembers`、J-01)。全部を 1 回で入れるので Undo 1 回で戻る。 */
+function placeFrameMembersFor(get: () => AppState, set: (partial: Pick<AppState, 'standardPartPickerOpen'>) => void,
+  request: FrameMembersRequest): FrameMembersPlacement {
+  const state = get();
+  if (!state.standardPartPickerOpen || state.assembly === null) return { ok: false, reason: 'unavailable', lineIndex: null };
+  const planned = frameMembersDocument(state.assembly, request);
+  if (!planned.ok) return planned;
+  get().applyAssembly(planned.document);
+  // 1 本ずつ置く時と同じく、置いた後も窓を残す(文書を入れると窓が閉じるため)。
+  set({ standardPartPickerOpen: true });
+  return { ok: true, componentIds: planned.componentIds };
 }
 
 function emptyInterferenceState(): InterferenceTransientState {
@@ -717,10 +740,8 @@ export const createAssemblySlice: StateCreator<
       const selected = commitStandardPartChoice(category, choiceKey, lengthSource, dimensionSeries, threadSeries);
       return selected.ok && placePickedPart(get, set, selected.value);
     },
-    placeCatalogItem: (familyId, itemKey, values) => {
-      const selected = commitCatalogItemChoice(familyId, itemKey, values);
-      return selected.ok && placePickedPart(get, set, selected.value);
-    },
+    placeCatalogItem: (familyId, itemKey, values) => placeCatalogItemFor(get, set, familyId, itemKey, values),
+    placeFrameMembers: (request) => placeFrameMembersFor(get, set, request),
     beginBoltedJoint: (selection) => {
       const state = get();
       if (state.assembly === null || state.assemblyPlacement !== null || state.assemblyMateDraft !== null

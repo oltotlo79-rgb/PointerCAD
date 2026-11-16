@@ -13,7 +13,8 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CatalogFamilyPicker, type CatalogFamilyPickerProps } from './CatalogFamilyPicker.js';
-import { commitCatalogItemChoice, MECHANICAL_PICKER_CATEGORY } from './catalogFamilyChoices.js';
+import { ALUMINUM_FRAME_PICKER_CATEGORY, commitCatalogItemChoice, MECHANICAL_PICKER_CATEGORY } from './catalogFamilyChoices.js';
+import { CatalogStockTable } from './CatalogStockTable.js';
 import { StandardPartPicker } from './StandardPartPickerPanel.js';
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], state: 0 }));
@@ -51,6 +52,13 @@ function render(): Element[] {
   function Inner(): null { inner = CatalogFamilyPicker(props); return null; }
   renderToStaticMarkup(<Inner />);
   return [root, ...elements(inner)];
+}
+/** 切断の一覧の表(族の窓の中の部品)を描いて、その中身を返す。 */
+function stockTable(): Element[] {
+  let tree: ReactNode = null;
+  function Probe(): null { tree = CatalogStockTable(); return null; }
+  renderToStaticMarkup(<Probe />);
+  return elements(tree);
 }
 function one(nodes: Element[], predicate: (element: Element) => boolean): Element {
   const matches = nodes.filter(predicate);
@@ -330,6 +338,75 @@ describe('選ぶ窓の機械要素', () => {
     expect(useAppStore.getState().assembly?.components.at(-1)?.name).toBe('オイルシール(寸法指定) 内径35×外径50×幅10:1');
     nodes = change(render().filter((item) => item.type === 'input')[0], '50');
     expect(submit(nodes)).toBeNull();
+  });
+
+  it('分類「アルミフレーム」は T スロットフレームを 8 つの欄で作り、置いた部品は切断の一覧の表に出て、作れない組は置かない', async () => {
+    await loadAll();
+    const categories = options(select(render(), 'assembly.guide.standardCategory')).map((item) => item.props.value);
+    expect(categories.slice(-2)).toEqual([ALUMINUM_FRAME_PICKER_CATEGORY, MECHANICAL_PICKER_CATEGORY]);
+    let nodes = change(select(render(), 'assembly.guide.standardCategory'), ALUMINUM_FRAME_PICKER_CATEGORY);
+    expect(nodes[0]?.type).toBe(CatalogFamilyPicker);
+    expect(select(nodes, 'assembly.guide.standardCategory').props.value).toBe(ALUMINUM_FRAME_PICKER_CATEGORY);
+    // 種類の欄の名前はアルミフレームの分類の物(「機械要素の種類」と出さない)。
+    expect(nodes.filter((item) => item.type === 'span' && item.props.className === 'pcad-field__label')
+      .map((item) => item.props.children)).toContain(t('catalog.frame.kind'));
+    expect(nodes.some((item) => item.type === 'span' && item.props.children === t('catalog.mechanical.kind'))).toBe(false);
+    expect(options(select(nodes, 'catalog.frame.kindGuide')).map((item) => item.props.children))
+      .toEqual([t('catalog.frame.kind.tSlotSpecified'), t('catalog.frame.kind.tSlotSeries'), t('catalog.frame.kind.angleBracket'),
+        t('catalog.frame.kind.joinPlate'), t('catalog.frame.kind.slotNut'), t('catalog.frame.kind.tSlotS6'), t('catalog.frame.kind.tSlotS8'),
+        t('catalog.frame.kind.tSlotS10'), t('catalog.frame.kind.channel'), t('catalog.frame.kind.squarePipe'), t('catalog.frame.kind.roundBar'),
+        t('catalog.frame.kind.flatBar'), t('catalog.frame.kind.angle')]);
+    expect(nodes.some((item) => item.type === 'p' && item.props.children === t('catalog.frame.tSlot.hint'))).toBe(true);
+    expect(nodes.some((item) => item.type === CatalogStockTable)).toBe(true);
+    const inputs = nodes.filter((item) => item.type === 'input');
+    expect(inputs.map((item) => item.props.value)).toEqual(['40', '8', '4', '18', '7', '8', '2', '1000']);
+    expect(submit(nodes)?.options).toEqual({ family: 't-slot-frame-specified', item: 'specified', width: '40', slotOpening: '8',
+      shoulder: '4', slotInnerWidth: '18', slotDepth: '7', centerHole: '8', cornerRadius: '2', length: '1000' });
+    expect(useAppStore.getState().assembly?.components.at(-1)?.name).toBe('アルミフレーム(寸法指定) 40角×1000:1');
+    expect(useAppStore.getState().assembly?.components.at(-1)?.materialId).toBe('aluminum');
+    nodes = change(render().filter((item) => item.type === 'input')[7], '500*2');
+    expect(submit(nodes)?.options.length).toBe('500*2');
+    const cells = stockTable().filter((item) => item.type === 'td').map((item) => item.props.children);
+    expect(cells.slice(0, 5)).toEqual([t('catalog.frame.kind.tSlotSpecified'), '寸法指定', '1000', '2', '2000']);
+    expect(String(cells[5])).toMatch(/^[0-9.]+ (g|kg)$/u);
+    nodes = change(render().filter((item) => item.type === 'input')[1], '18');
+    expect(submit(nodes)).toBeNull();
+  });
+
+  it('製造元の寸法に合わせたフレームの系列は、呼びと溝・単位質量の文字の一覧から選んで長さを入れて置け、切断の一覧の質量は単位質量 × 長さ', async () => {
+    await loadAll();
+    let nodes = change(select(render(), 'assembly.guide.standardCategory'), ALUMINUM_FRAME_PICKER_CATEGORY);
+    nodes = change(select(nodes, 'catalog.frame.kindGuide'), 't-slot-frame-series');
+    const sizes = options(select(nodes, 'catalog.mechanical.sizeGuide'));
+    expect(sizes.map((item) => item.props.value)).toEqual(['s6-20x20', 's6-20x40', 's8-30x30', 's8-30x60', 's10-40x40', 's10-40x80']);
+    expect(sizes[0]?.props.children).toBe('溝幅 6 20×20（溝の口 6・中の幅 12、単位質量 0.49 kg/m）');
+    expect(nodes.some((item) => item.type === 'p' && item.props.children === t('catalog.frame.series.hint'))).toBe(true);
+    expect(nodes.some((item) => item.type === CatalogStockTable)).toBe(true);
+    expect(submit(nodes)?.options).toEqual({ family: 't-slot-frame-series', item: 's6-20x20', length: '1000' });
+    expect(useAppStore.getState().assembly?.components.at(-1)?.name).toBe('アルミフレーム 溝幅 6 20×20×1000:1');
+    const cells = stockTable().filter((item) => item.type === 'td').map((item) => item.props.children);
+    expect(cells).toEqual([t('catalog.frame.kind.tSlotSeries'), '溝幅 6 20×20', '1000', '1', '1000', '490.00 g']);
+  });
+
+  it('アルミフレームの汎用の部品(直角のブラケット・T 溝用のナット)は欄で作って置け、部品に材質が付き、作れない組は置かない', async () => {
+    await loadAll();
+    let nodes = change(select(mechanical(), 'assembly.guide.standardCategory'), ALUMINUM_FRAME_PICKER_CATEGORY);
+    nodes = change(select(nodes, 'catalog.frame.kindGuide'), 'angle-bracket-specified');
+    expect(nodes.some((item) => item.type === 'p' && item.props.children === t('catalog.frame.bracket.hint'))).toBe(true);
+    expect(nodes.some((item) => item.type === CatalogStockTable)).toBe(false);
+    expect(nodes.filter((item) => item.type === 'input').map((item) => item.props.value)).toEqual(['40', '40', '20', '5', '10', '6', '25']);
+    expect(submit(nodes)?.options.family).toBe('angle-bracket-specified');
+    expect(useAppStore.getState().assembly?.components.at(-1)?.name).toBe('直角のブラケット(寸法指定) 40×40×幅20:1');
+    expect(useAppStore.getState().assembly?.components.at(-1)?.materialId).toBe('aluminum');
+    nodes = change(render().filter((item) => item.type === 'input')[6], '16');
+    expect(submit(nodes)).toBeNull();
+    nodes = change(select(render(), 'catalog.frame.kindGuide'), 'slot-nut-specified');
+    const thread = one(nodes, (item) => item.type === 'select' && item.props.title === t('catalog.mechanical.optionGuide'));
+    expect(thread.props.value).toBe('M5');
+    nodes = change(thread, 'M6');
+    expect(submit(nodes)?.options).toEqual({ family: 'slot-nut-specified', item: 'specified', thread: 'M6', flangeWidth: '16',
+      nutLength: '16', flangeThickness: '4', neckWidth: '7', neckHeight: '2' });
+    expect(useAppStore.getState().assembly?.components.at(-1)?.materialId).toBe('steel');
   });
 
   it('O リングは系列ごとの種類で、呼び番号と内径・太さの文字の一覧から選んで置ける', async () => {

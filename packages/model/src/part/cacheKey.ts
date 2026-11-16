@@ -150,6 +150,7 @@ export interface ThinExtrudeKeyMaterial {
 export interface ExtrudeKeyMaterial {
   readonly kind: 'extrude';
   readonly profile: readonly KeyCurve[];
+  readonly holes?: readonly (readonly KeyCurve[])[];
   readonly direction: KeyVec3;
   readonly distance: number;
   /** どこまで押し出すか(FR-415)。省略は `{ kind: 'distance', distance }` と同じ。 */
@@ -1154,6 +1155,13 @@ function keySurfaceShape(shape: SurfaceShapeKeyMaterial): string {
   }
 }
 
+/** 穴が無いときの断面の文字列は従来のまま保つ。 */
+function keyExtrudeProfile(material: ExtrudeKeyMaterial): string {
+  const profile = keyCurveList(material.profile);
+  return material.holes === undefined || material.holes.length === 0 ? profile
+    : `${profile};holes=${keyCurveListGroup(material.holes)}`;
+}
+
 /**
  * 鍵の材料を、`hash64` に渡す前の1本の文字列にする。
  * 段の種類(先頭のキーワード)と各配列の長さを混ぜてあるので、
@@ -1164,7 +1172,7 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
     case 'extrude':
       // 後から足した5欄は既定なら出さない(keyExtrudeExtras の注釈、冒頭の決め 3)。
       return (
-        `extrude{profile=${keyCurveList(material.profile)}` +
+        `extrude{profile=${keyExtrudeProfile(material)}` +
         `;direction=${keyVec3(material.direction)}` +
         `;distance=${keyNumber(material.distance)}` +
         `${keyExtrudeExtras(material)}}`

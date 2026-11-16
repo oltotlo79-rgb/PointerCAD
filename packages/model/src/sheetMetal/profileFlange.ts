@@ -11,6 +11,7 @@ import { rigidSheetCurve } from './rigidCurve.js';
 
 /** 作成画面も保存した基準縁と同じ識別方法で候補を表示する。 */
 export function sheetFlangeProfileEdges(face: ResolvedFace) {
+  if ((face.holes?.length ?? 0) > 0) return { ok: false as const, message: '穴つきの面はフランジに対応していません。外周と穴を別の面で指定してください。' };
   const normal = fitPlaneNormal(face.curves.flatMap(curveSamplePoints));
   if (normal === null || !normal.every(Number.isFinite))
     return { ok: false as const, message: 'フランジには平らな閉輪郭を選んでください。' };
@@ -22,12 +23,14 @@ export function profileFlangePanel(featureId: string, boundaryId: string, profil
   width: number, thickness: number, radius: number, angle: number): SheetGeometryResult<RectangularFlangeGeometry> {
   const outer = face(profile.face);
   if (outer === undefined) return { ok: false, message: 'フランジの輪郭が見つかりません。スケッチの面を選び直してください。' };
+  if ((outer.holes?.length ?? 0) > 0) return { ok: false, message: '穴つきの面はフランジに対応していません。外周と穴を別の面で指定してください。' };
   const normal = fitPlaneNormal(outer.curves.flatMap(curveSamplePoints));
   if (normal === null || !normal.every(Number.isFinite)) return { ok: false, message: 'フランジには平らな閉輪郭を選んでください。' };
   const holes: (readonly ResolvedCurve[])[] = [];
   for (const reference of profile.holes) {
     const hole = face(reference);
     if (hole === undefined) return { ok: false, message: 'フランジの穴の輪郭が見つかりません。穴の面を選び直してください。' };
+    if ((hole.holes?.length ?? 0) > 0) return { ok: false, message: 'フランジの穴には穴つきの面を使えません。穴のない面を指定してください。' };
     holes.push(hole.curves);
   }
   const sourcePanel: SheetPanelGeometry = { id: outer.featureId, normal, outer: outer.curves, holes };

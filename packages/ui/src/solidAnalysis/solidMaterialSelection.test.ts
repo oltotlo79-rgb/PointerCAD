@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { STRENGTH_SOURCES } from '@pointercad/model';
+import { findStrengthMaterial, STRENGTH_SOURCES } from '@pointercad/model';
 import { readSolidCadSavedInput } from '@pointercad/model/beam-analysis';
-import { selectSolidMaterial, solidMaterialCapacityMatches, solidMaterialDraftOf, solidMaterialSourceUrl } from './solidMaterialSelection.js';
+import { selectSolidMaterial, solidMaterialCapacityMatches, solidMaterialDraftOf, solidMaterialSourceUrl,
+  solidMaterialSourceComplete, solidMaterialYoung } from './solidMaterialSelection.js';
+
+describe('source-backed analysis Young modulus', () => {
+  it('uses the separate elastic source and never invents missing aluminium values', () => {
+    const young = solidMaterialYoung(findStrengthMaterial('ss400-plate-0-16'));
+    expect(young).toEqual({ mpa: '205000', basis: 'reference', source: STRENGTH_SOURCES['jfe-steel-elastic'] });
+    expect(solidMaterialYoung(findStrengthMaterial('sus304-solution-cold-rolled'))?.mpa).toBe('193000');
+    expect(solidMaterialYoung(findStrengthMaterial('a5052p-h34-0.2-1.3'))).toBeNull();
+    expect(solidMaterialYoung(undefined)).toBeNull();
+  });
+  it('requires a complete source record, including a real calendar date and locator', () => {
+    const source = STRENGTH_SOURCES['jfe-steel-elastic'];
+    expect(solidMaterialSourceComplete(source)).toBe(true);
+    for (const change of [{ url: 'file:///private' }, { sha256: '' }, { locator: ' ' },
+      { checkedDate: '' }, { checkedDate: '2026-02-30' }, { checkedDate: 'yesterday' }]) {
+      expect(solidMaterialSourceComplete({ ...source, ...change })).toBe(false);
+    }
+    expect(solidMaterialSourceComplete(undefined)).toBe(false);
+  });
+});
 
 describe('solid material yield selection, independent catalogue values', () => {
   it('binds a new choice to the actual source SHA/edition and refuses same-ID same-yield stale snapshots', () => {

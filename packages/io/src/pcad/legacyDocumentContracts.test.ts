@@ -5,7 +5,7 @@ import { migrateToCurrentSchema, parseDocument, serializeDocument } from './docu
 import { readPcadFile, writePcadFile } from './pcadFile.js';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDrawing, serializeDrawing } from './drawingJson.js';
-import { SCHEMA_MIGRATIONS } from './schema.js';
+import { PCAD_MAX_SCHEMA_VERSION, SCHEMA_MIGRATIONS } from './schema.js';
 
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
 const VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
@@ -124,9 +124,10 @@ describe('legacy saved-document contracts with independently derived meanings', 
     expect(archive.ok).toBe(true);
   });
 
-  it('refuses unsupported schema1 and future schema23 without relabelling them as current', () => {
+  it('refuses unsupported schema1 and a schema newer than the newest readable one without relabelling them as current', () => {
     expect(parseDocument(JSON.stringify(envelope(1)))).toMatchObject({ ok: false, error: { code: 'unsupportedOldVersion' } });
-    expect(parseDocument(JSON.stringify(envelope(23)))).toMatchObject({ ok: false, error: { code: 'unsupportedNewVersion' } });
+    expect(parseDocument(JSON.stringify(envelope(PCAD_MAX_SCHEMA_VERSION + 1))))
+      .toMatchObject({ ok: false, error: { code: 'unsupportedNewVersion' } });
   });
 
   it('does not repair present malformed optional contracts while migrating old documents', () => {
@@ -174,7 +175,7 @@ describe('legacy saved-document contracts with independently derived meanings', 
     expect(Object.hasOwn(opened.document, 'jointOccurrenceConnections')).toBe(false);
     const again = readAssemblyDocument(writeAssemblyDocument(opened.document, { savedAt: SAVED_AT }));
     expect(again).toMatchObject({ ok: true, document: opened.document });
-    expect(readAssemblyDocument(JSON.stringify({ ...raw, schema: 23 })))
+    expect(readAssemblyDocument(JSON.stringify({ ...raw, schema: PCAD_MAX_SCHEMA_VERSION + 1 })))
       .toMatchObject({ ok: false, error: { code: 'unsupportedNewVersion' } });
     expect(readAssemblyDocument(JSON.stringify({ ...raw, document: { ...document, schemaVersion: 9 } })))
       .toMatchObject({ ok: false, error: { code: 'versionMismatch' } });
@@ -195,7 +196,7 @@ describe('legacy saved-document contracts with independently derived meanings', 
       annotations: [{ id: 'note-1', position: [20, 30], height: 3.5 }], datums: [], gdtFrames: [], weldSymbols: [] } });
     expect(parseDrawing(serializeDrawing(opened.document, { savedAt: SAVED_AT, kind: opened.kind })))
       .toMatchObject({ ok: true, kind, document: opened.document });
-    expect(parseDrawing(JSON.stringify({ ...raw, schema: 23 })))
+    expect(parseDrawing(JSON.stringify({ ...raw, schema: PCAD_MAX_SCHEMA_VERSION + 1 })))
       .toMatchObject({ ok: false, error: { code: 'unsupportedNewVersion' } });
     expect(parseDrawing(JSON.stringify({ ...raw, document: { ...document, schemaVersion: 10 } })))
       .toMatchObject({ ok: false, error: { code: 'versionMismatch' } });

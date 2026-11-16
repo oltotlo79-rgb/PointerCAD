@@ -1,8 +1,7 @@
 import { type CommandDocumentKind, type CommandId } from './commandDefinitions.js';
+import { EMPTY_RADIAL_COMMANDS, type EightCommands, type RadialCommands } from './radialCommandSettings.js';
 import { toolbarCommand } from './toolbarCommandCatalog.js';
 import { t } from '../i18n/t.js';
-
-type EightCommands = readonly [CommandId, CommandId, CommandId, CommandId, CommandId, CommandId, CommandId, CommandId];
 
 /** Up, upper-right, right, lower-right, down, lower-left, left, upper-left. */
 const RADIAL_COMMANDS = {
@@ -14,23 +13,25 @@ const RADIAL_COMMANDS = {
     'toolbar.drawing.centerMark', 'toolbar.drawing.export', 'file.save', 'drawing.cancelTool', 'history.undo'],
 } as const satisfies Readonly<Record<CommandDocumentKind, EightCommands>>;
 
-export function radialCommandIds(kind: CommandDocumentKind, connectPoints = false, faceFromPoints = false,
-  pointAtReference = false): EightCommands {
-  if (kind === 'part' && faceFromPoints) {
-    // Three or more selected points offer the face in the same place as the two-point connection.
-    const [select, , ...rest] = RADIAL_COMMANDS.part;
-    return [select, 'sketch.faceFromPoints', ...rest];
-  }
-  if (kind === 'part' && pointAtReference) {
-    // One selected part reference point offers a sketch point that follows it, in the same place as the point commands.
-    const [select, , ...rest] = RADIAL_COMMANDS.part;
-    return [select, 'sketch.pointAtReference', ...rest];
-  }
-  if (kind === 'part' && connectPoints) {
-    const [select, , ...rest] = RADIAL_COMMANDS.part;
-    return [select, 'sketch.connectPoints', ...rest];
-  }
+/** 既定の 8 つ(利用者が選ばなかった種類と、「既定に戻す」で使う)。 */
+export function defaultRadialCommandIds(kind: CommandDocumentKind): EightCommands {
   return RADIAL_COMMANDS[kind];
+}
+
+/**
+ * 今の 8 つ。利用者が選んだ並び(B-08f)があればそれ、無ければ既定。部品で点を選んでいる時の 3 つの命令は、
+ * 選んだ並びでも 2 番目(右上)に出す(既定の「線分」の場所。選択の文脈の命令を見つけやすい場所に保つ)。
+ */
+export function radialCommandIds(kind: CommandDocumentKind, connectPoints = false, faceFromPoints = false,
+  pointAtReference = false, custom: RadialCommands = EMPTY_RADIAL_COMMANDS): EightCommands {
+  const base = custom[kind] ?? RADIAL_COMMANDS[kind];
+  const contextual = kind !== 'part' ? null : faceFromPoints ? 'sketch.faceFromPoints'
+    : pointAtReference ? 'sketch.pointAtReference' : connectPoints ? 'sketch.connectPoints' : null;
+  if (contextual === null) return base;
+  // Three or more selected points offer the face in the same place as the two-point connection; one selected part
+  // reference point offers a sketch point that follows it, in the same place as the point commands.
+  const [select, , ...rest] = base;
+  return [select, contextual, ...rest];
 }
 
 /** The same action explanation is visible with mouse movement and keyboard focus. */

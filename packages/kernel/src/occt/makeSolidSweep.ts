@@ -471,7 +471,8 @@ export function makeExtrudeSolid(
   const { keep, release } = createAllocations();
 
   try {
-    const profileFace = keep(makePlanarFace(oc, spec.profile, options, spec.profileOrigin));
+    const profileFace = keep(makePlanarFace(oc, spec.profile, options,
+      (spec.holes?.length ?? 0) === 0 ? spec.profileOrigin : undefined, undefined, spec.holes));
     const { startOffset, length } = fixedRange
       ?? throughTargetRange(oc, keep, profileFace.face, direction, target);
     const baseFace = shiftFace(oc, keep, profileFace.face, direction, startOffset);

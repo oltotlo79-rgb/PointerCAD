@@ -54,4 +54,23 @@ describe('nativeMathDeadlineKindの分類漏れを防ぐ網羅の検査', () => 
     expect(nativeMathDeadlineKind('NormalQuantile')).toBe('distribution');
     expect(nativeMathDeadlineKind('PoissonQuantile')).toBe('distribution');
   });
+  // 2026-11-16 RUN 20261116-193506(z-math-input ADD-20 特異値分解): 開き直した後の冷えた Worker で
+  // tensorelement(svds([[3,0],[4,0]]),[1,1]) の初回が 798ms(pace 1.405)かかり、通常の式の 200ms で止まった。
+  it('特異値分解の 3 つの頭(同じ exactSvdDecomposition を使う)は 1 秒の枠に分類される(再発防止)', () => {
+    for (const head of ['SvdS', 'SvdU', 'SvdV']) {
+      expect(nativeMathDeadlineKind(head), head).toBe('distribution');
+      expect(NUMERIC_HEAD_ALLOWANCE.get(head)?.reason, `${head}: 分類の根拠が必要`).toBeTruthy();
+    }
+  });
+  it('特異値分解と同じ計算を使う頭は根拠つきで 1 秒の枠、測った値が通常の枠に入る頭は 200ms のまま', () => {
+    for (const head of ['SingularValues', 'Eigenspace']) {
+      expect(nativeMathDeadlineKind(head), head).toBe('distribution');
+      expect(NUMERIC_HEAD_ALLOWANCE.get(head)?.reason, `${head}: 分類の根拠が必要`).toBeTruthy();
+    }
+    // 実測(2026-11-16)の最大 38〜103ms は通常の枠(200ms×pace)に入り、落ちた証拠が無いので 1 秒の枠にしない(統括の決定)。
+    for (const head of ['QrQ', 'QrR', 'Legendre', 'NextPrime', 'Eigenvalues', 'CharacteristicCoefficients', 'LuP', 'LuL', 'LuU',
+      'RowReduce', 'LinearSolve', 'Divisors', 'Sum', 'Product']) {
+      expect(nativeMathDeadlineKind(head), head).toBeNull();
+    }
+  });
 });

@@ -158,16 +158,22 @@ function paperDelta(transform: Awaited<ReturnType<typeof matrix>>, movement: Awa
   return { x: end.x - start.x, y: start.y - end.y };
 }
 
+/**
+ * 移動の確かめに使う図面(2 つの箱の組立から作った正面の図・注記・寸法)を書き出して開く。タッチの画面検査(touchViewFlow)も使う。
+ * 返り値は書き出した .pcadd の場所(開き直しに使う)。
+ */
+export async function openNavigationDrawing(page: Page, info: TestInfo, app?: ElectronApplication): Promise<string> {
+  const input = info.outputPath('navigation-original.pcadd'); await writeFile(input, await fixture());
+  if (app !== undefined) await openTarget(app, input);
+  const chooser = app === undefined ? page.waitForEvent('filechooser') : undefined;
+  await page.getByRole('button', { name: '開く', exact: true }).click();
+  if (chooser !== undefined) await (await chooser).setFiles(input);
+  await waitForDrawingReady(page); await expect(owner(page, 'note-nav').locator('g[aria-label]').first()).toBeVisible();
+  return input;
+}
+
 export async function drawingNavigationFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const input = info.outputPath('navigation-original.pcadd'); await writeFile(input, await fixture());
-  const open = async (): Promise<void> => {
-    if (app !== undefined) await openTarget(app, input);
-    const chooser = app === undefined ? page.waitForEvent('filechooser') : undefined;
-    await page.getByRole('button', { name: '開く', exact: true }).click();
-    if (chooser !== undefined) await (await chooser).setFiles(input);
-    await waitForDrawingReady(page); await expect(owner(page, 'note-nav').locator('g[aria-label]').first()).toBeVisible();
-  };
   const save = async (name: string): Promise<DrawingDocument> => {
     const path = info.outputPath(`${name}.pcadd`);
     if (app !== undefined) await saveTarget(app, path);
@@ -177,7 +183,7 @@ export async function drawingNavigationFlow(page: Page, info: TestInfo, app?: El
     const result = await readDrawingBundle(await readFile(path)); if (!result.ok) throw new Error(result.error.message);
     return result.document;
   };
-  await open(); const original = await save('navigation-before');
+  const input = await openNavigationDrawing(page, info, app); const original = await save('navigation-before');
   const label = (key: string) => uiMessage('view', `settings.camera.${key}`);
   await openInputBindings(page, 'view');
   const form = page.getByRole('form', { name: label('title'), exact: true }); await expect(form).toBeVisible();

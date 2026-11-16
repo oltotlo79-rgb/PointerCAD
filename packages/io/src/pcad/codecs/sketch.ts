@@ -129,6 +129,7 @@ function serializeSketchFeature(feature: SketchFeature): SketchFeature {
         planeId: feature.planeId,
         boundary: feature.boundary.map(serializeElementRef),
         color: feature.color,
+        ...((feature.holes?.length ?? 0) === 0 ? {} : { holes: feature.holes?.map(loop => loop.map(serializeElementRef)) }),
       };
     case 'rectangle':
       return {

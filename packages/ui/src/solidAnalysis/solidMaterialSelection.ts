@@ -11,7 +11,7 @@ export type SolidMaterialIssue = 'material' | 'thickness' | 'outside' | 'source'
  type SolidMaterialSelection = { readonly ok: false; readonly issue: SolidMaterialIssue }
   | { readonly ok: true; readonly capacity: AnalysisMaterialCapacity | null; readonly preset: StrengthMaterialPreset | null; readonly source: StrengthSource | null };
 
-/** Yield evidence only. Never fills the independent elastic-analysis inputs. */
+/** Select condition-specific yield evidence. Elastic values are checked independently. */
 export function selectSolidMaterial(draft: SolidMaterialDraft): SolidMaterialSelection {
   if (draft.materialConditionId === '') return { ok: true, capacity: null, preset: null, source: null };
   const preset = findStrengthMaterial(draft.materialConditionId);
@@ -24,7 +24,7 @@ export function selectSolidMaterial(draft: SolidMaterialDraft): SolidMaterialSel
   if (!checkStrengthMaterialCondition(preset, thickness).ok) return { ok: false, issue: 'outside' };
   const property = preset.yieldStress, source = STRENGTH_SOURCES[property.sourceId];
   const yieldMPa = Number(property.mpa);
-  if (source === undefined || solidMaterialSourceUrl(source) === null || !/^[0-9a-f]{64}$/u.test(source.sha256) || !Number.isFinite(yieldMPa) || yieldMPa <= 0) {
+  if (!solidMaterialSourceComplete(source) || !Number.isFinite(yieldMPa) || yieldMPa <= 0) {
     return { ok: false, issue: 'source' };
   }
   return { ok: true, preset, source, capacity: { materialConditionId: preset.id, condition: preset.condition,
@@ -53,4 +53,20 @@ export function solidMaterialSourceUrl(source: Pick<StrengthSource, 'url'>): str
     const url = new URL(source.url);
     return url.protocol === 'http:' || url.protocol === 'https:' ? source.url : null;
   } catch { return null; }
+}
+
+/** A catalogue value may be copied only with its own complete, inspectable provenance. */
+export function solidMaterialSourceComplete(source: StrengthSource | undefined): source is StrengthSource {
+  if (source === undefined || solidMaterialSourceUrl(source) === null || !/^[0-9a-f]{64}$/u.test(source.sha256)
+    || source.locator.trim() === '' || !/^\d{4}-\d{2}-\d{2}$/u.test(source.checkedDate)) return false;
+  const date = new Date(source.checkedDate);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === source.checkedDate;
+}
+
+export function solidMaterialYoung(preset: StrengthMaterialPreset | null | undefined):
+  { readonly mpa: string; readonly basis: 'minimum' | 'reference'; readonly source: StrengthSource } | null {
+  const property = preset?.youngModulus;
+  if (property == null || !Number.isFinite(Number(property.mpa)) || Number(property.mpa) <= 0) return null;
+  const source = STRENGTH_SOURCES[property.sourceId];
+  return solidMaterialSourceComplete(source) ? { mpa: property.mpa, basis: property.basis, source } : null;
 }

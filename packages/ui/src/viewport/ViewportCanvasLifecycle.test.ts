@@ -528,9 +528,10 @@ describe('ViewportCanvas effect の所有と破棄', () => {
       expect(window.pcadViewportFramedBodies).toBeUndefined();
       expect(window.pcadViewportMemoryStats).toBeUndefined();
     }
-    // 1 寿命に canvas の受け手は 5 つ(下絵の寸法合わせの押下 1、マウスのボタンの命令〔B-08e〕の押下・離し・mouseup・auxclick 4)。
-    expect(fixture.canvas.addEventListener).toHaveBeenCalledTimes(100 * 5);
-    expect(fixture.canvas.removeEventListener).toHaveBeenCalledTimes(100 * 5);
+    // 1 寿命に canvas の受け手は 9 つ(下絵の寸法合わせの押下 1、マウスのボタンの命令〔B-08e〕の押下・離し・mouseup・auxclick 4、
+    // タッチの 2 本指〔B-08g〕の押下・移動・離し・取り消し 4)。
+    expect(fixture.canvas.addEventListener).toHaveBeenCalledTimes(100 * 9);
+    expect(fixture.canvas.removeEventListener).toHaveBeenCalledTimes(100 * 9);
     expect(fixture.cancelledFrames).toHaveLength(100);
   });
 

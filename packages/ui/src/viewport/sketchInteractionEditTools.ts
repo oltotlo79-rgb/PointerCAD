@@ -9,6 +9,7 @@ import { baseWorkPlane, type SketchResolveOptions, type Vec3 } from '@pointercad
 
 import { applyProjectionCommit } from '../sketch/commitToStore.js';
 import { commitExtend, commitTrim } from '../sketch/editCommands.js';
+import { touchesHoledFace } from '../sketch/faceHoleEditing.js';
 import type { ClickEditToolId, PickEditToolId } from '../sketch/numericInput.js';
 import { pickSketchElement, sketchForSelection } from '../sketch/pickMath.js';
 import { projectionSourceOf, projectionTakesSubShape } from '../sketch/projectionCommands.js';
@@ -82,7 +83,7 @@ export function createSketchEditTools(context: SketchEditToolContext) {
     }
     indicators.clearSnapIndicators();
     const outcome =
-      target === null
+      target === null || touchesHoledFace(state.sketch, [target.elementId])
         ? null
         : tool === 'trim'
           ? trimPreviewAt(state.resolvedSketch, target.elementId, target.at)

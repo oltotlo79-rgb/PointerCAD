@@ -1,5 +1,6 @@
 import type { ResolvedSketch, SketchMesh } from '@pointercad/model';
-import { buildSketchGeometry, EMPTY_RESOLVED_SKETCH, NO_HIGHLIGHT, type SketchHighlight } from './buildSketchGeometry.js';
+import { appendRegionFills, buildRegionFills } from './buildRegionFill.js';
+import { buildSketchGeometry, EMPTY_RESOLVED_SKETCH, NO_HIGHLIGHT, type SketchFaceDraw, type SketchHighlight } from './buildSketchGeometry.js';
 import type { ViewportScene } from './createViewportScene.js';
 import type { ViewportSceneLayers } from './viewportSceneResources.js';
 
@@ -10,7 +11,7 @@ import type { ViewportSceneLayers } from './viewportSceneResources.js';
  */
 
 type SketchInputMethods = Pick<ViewportScene, 'setSketch' | 'setConstructionIds' | 'setConstrainedFeatureIds'
-  | 'setSketchHighlight' | 'setWorkPlane' | 'setWorkPlaneVisible' | 'setEditPreview' | 'setTracking' | 'setConstraintMarks'
+  | 'setSketchHighlight' | 'setSketchRegions' | 'setWorkPlane' | 'setWorkPlaneVisible' | 'setEditPreview' | 'setTracking' | 'setConstraintMarks'
   | 'setSelectedConstraint' | 'setInferredConstraintMarks'>;
 type SketchLayers = Pick<ViewportSceneLayers, 'sketchLayer' | 'trackingLayer' | 'constraintLayer' | 'inferenceLayer'>;
 
@@ -24,16 +25,20 @@ export function createSceneSketchInputs(layers: SketchLayers) {
   let constructionIds: ReadonlySet<string> = new Set<string>();
   /** 完全に決まった要素(FR-313)の id。これも外から入れてもらう。 */
   let constrainedIds: ReadonlySet<string> = new Set<string>();
-  let sketchBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
+  let baseBundle = buildSketchGeometry(resolvedSketch, sketchMesh, sketchHighlight);
+  /** 押し出しの領域の塗り(M-01)。領域を選ぶ状態でない間は空で、一式は `baseBundle` そのもの。 */
+  let regionFills: readonly SketchFaceDraw[] = [];
+  let sketchBundle = baseBundle;
   /** スケッチの入力のどれかが変わったときに、描画用の並びを組み立て直す。 */
   function rebuildSketchBundle(): void {
-    sketchBundle = buildSketchGeometry(
+    baseBundle = buildSketchGeometry(
       resolvedSketch,
       sketchMesh,
       sketchHighlight,
       constructionIds,
       constrainedIds,
     );
+    sketchBundle = appendRegionFills(baseBundle, regionFills);
   }
 
   const methods: SketchInputMethods = {
@@ -56,6 +61,12 @@ export function createSceneSketchInputs(layers: SketchLayers) {
     setSketchHighlight(hoveredElementId, selection): void {
       sketchHighlight = { hoveredElementId, selection };
       rebuildSketchBundle();
+    },
+
+    setSketchRegions(input): void {
+      // 塗りだけを組み直す(スケッチの線・点の並びは変わらない)。
+      regionFills = buildRegionFills(input);
+      sketchBundle = appendRegionFills(baseBundle, regionFills);
     },
 
     setWorkPlaneVisible(visible): void {

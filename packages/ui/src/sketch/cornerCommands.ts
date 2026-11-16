@@ -62,6 +62,7 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
+import { touchesHoledFace } from './faceHoleEditing.js';
 import {
   DEFAULT_SKETCH_CHAMFER_DISTANCE_MM,
   DEFAULT_SKETCH_FILLET_RADIUS_MM,
@@ -534,6 +535,7 @@ export function commitSketchFillet(
   if (elements === null) {
     return { ok: false, reasonKey: 'corner.error.needTwoLines' };
   }
+  if (touchesHoledFace(document, selection)) return { ok: false, reasonKey: 'solidError.holedFaceCorner' };
   const outcome = filletCorner(
     document,
     {
@@ -560,6 +562,7 @@ export function commitSketchChamfer(
   if (elements === null) {
     return { ok: false, reasonKey: 'corner.error.needTwoLines' };
   }
+  if (touchesHoledFace(document, selection)) return { ok: false, reasonKey: 'solidError.holedFaceCorner' };
   const distance1 = valueOf(commit.values.cornerDistance1, DEFAULT_SKETCH_CHAMFER_DISTANCE_MM);
   const distance2 =
     commit.choices.chamferMode === 'twoDistances'

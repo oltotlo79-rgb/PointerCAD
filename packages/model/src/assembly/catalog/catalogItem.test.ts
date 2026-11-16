@@ -177,7 +177,9 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
       'spring-washer-number2', 'spring-washer-number3', 'socket-head-cap-screw', 'countersunk-socket-screw',
       'hex-bolt-main', 'button-head-socket-screw', 'e-ring', 'plain-washer-large', 'parallel-key-square',
       'taper-pin', 'split-pin', 'flange-nut', 'cross-recessed-cheese-head-screw', 'set-screw-cup-point', 'set-screw-flat-point',
-      'set-screw-dog-point', 'set-screw-cone-point', 'oil-seal-specified', 'o-ring-p', 'o-ring-g']);
+      'set-screw-dog-point', 'set-screw-cone-point', 'oil-seal-specified', 'o-ring-p', 'o-ring-g', 't-slot-frame-specified', 't-slot-frame-series',
+      'angle-bracket-specified', 'join-plate-specified', 'slot-nut-specified', 't-slot-frame-s6', 't-slot-frame-s8', 't-slot-frame-s10',
+      'aluminum-channel', 'aluminum-square-pipe', 'aluminum-round-bar', 'aluminum-flat-bar', 'aluminum-angle']);
   });
 
   it('知らない族は standardPartRejection・組み立て・理由つきの組み立てで同じ型付きの拒否になる', () => {

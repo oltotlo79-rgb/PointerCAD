@@ -33,6 +33,39 @@ async function run(panel: Locator): Promise<number> {
   return displacement;
 }
 
+/** The table edits only sourced fields; the existing save/reopen flow below checks the hand-edited E. */
+async function selectMaterialValues(panel: Locator): Promise<void> {
+  const young = input(panel, 'ヤング率 E (MPa)'), poisson = input(panel, 'ポアソン比 ν');
+  const material = panel.getByTestId('solid-material-condition'), thickness = panel.getByTestId('solid-material-thickness');
+  await young.fill('123456');
+  await material.selectOption('ss400-plate-0-16');
+  await expect(young).toHaveValue('123456');
+  await thickness.fill('16');
+  await expect(young).toHaveValue('205000'); await expect(poisson).toHaveValue('0.3');
+  const values = panel.getByTestId('solid-material-values');
+  await values.getByTestId('solid-material-values-toggle').focus();
+  await values.getByTestId('solid-material-values-toggle').press('Enter');
+  await expect(values.getByRole('table')).toContainText('205000 MPa');
+  await expect(values.getByRole('table')).toContainText('245 MPa');
+  await expect(values).toContainText('出どころの記録がない');
+  const source = values.getByTestId('solid-material-young-source');
+  await source.getByTestId('solid-material-young-source-toggle').focus();
+  await source.getByTestId('solid-material-young-source-toggle').press('Enter');
+  await expect(source).toContainText('PDF2ページ');
+  await expect(source).toContainText('6ad196dbd6c400cada7ee28d6b2fd0c37b8d3f4c6ce51d923a5778909966db5f');
+  await expect(source.getByRole('link')).toHaveAttribute('href', 'https://www.jfe-steel.co.jp/products/building/assets/pdf/binran/binran_chapter04.pdf');
+  await source.locator('summary').click();
+  await young.fill('210000');
+  await expect(panel.getByTestId('solid-material-young-edited')).toBeVisible();
+  await material.selectOption('a5052p-h34-0.2-1.3'); await thickness.fill('1');
+  await expect(young).toHaveValue('210000'); await expect(poisson).toHaveValue('0.3');
+  await values.getByTestId('solid-material-values-details').locator(':scope > summary').click();
+  await expect(values.getByRole('table')).toContainText('現在の欄を保ちます');
+  await material.selectOption('ss400-plate-0-16'); await thickness.fill('16');
+  await expect(young).toHaveValue('205000'); await young.fill('210000');
+  await values.getByTestId('solid-material-values-details').locator(':scope > summary').click();
+}
+
 /** Real tools, real saved file and two actual Worker runs. A page reload discards the first document/session. */
 export async function analysisStaticPersistenceFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   const errors: string[] = [];
@@ -65,6 +98,7 @@ export async function analysisStaticPersistenceFlow(page: Page, info: TestInfo, 
   await input(panel, '面荷重 Z (N/mm²)').fill('-0.001');
   await input(panel, 'ヤング率 E (MPa)').fill('210000');
   await input(panel, 'ポアソン比 ν').fill('0.3');
+  await selectMaterialValues(panel);
   await input(panel, '曲面の最大体積差 (mm³)').fill('1');
   const first = await run(panel);
   await quiet();
@@ -83,6 +117,9 @@ export async function analysisStaticPersistenceFlow(page: Page, info: TestInfo, 
   await expect(input(panel, '面荷重 Z (N/mm²)')).toHaveValue('-0.001');
   await expect(input(panel, 'ヤング率 E (MPa)')).toHaveValue('210000');
   await expect(input(panel, 'ポアソン比 ν')).toHaveValue('0.3');
+  await expect(panel.getByTestId('solid-material-condition')).toHaveValue('ss400-plate-0-16');
+  await expect(panel.getByTestId('solid-material-thickness')).toHaveValue('16');
+  await expect(panel.getByTestId('solid-material-young-edited')).toBeVisible();
   await expect(input(panel, '曲面の最大体積差 (mm³)')).toHaveValue('1');
   const previousWorkers = started;
   const second = await run(panel);

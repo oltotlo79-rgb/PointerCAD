@@ -12,6 +12,7 @@ import {
   buildReferenceAmbiguityScenario, nativeRepairPreviewFixture, referenceRepairDrawingFixture, type ReferenceAmbiguityScenario,
 } from './referenceAmbiguityFixture.js';
 import { referenceRepairAppearanceFixture } from './referenceRepairAppearanceFixture.js';
+import { wheelToDeliveredTotal } from './wheelDelivery.js';
 
 /**
  * R01: 参照が曖昧(ambiguous)・消失(missing)になった時、寸法・合致・加工面・外観のどれも正常な値として採らず、
@@ -361,7 +362,9 @@ export async function referenceRepairAppearanceFlow(page: Page, info: TestInfo,
   await page.mouse.down({ button: 'middle' });
   await page.mouse.move(x - 200, y);
   await page.mouse.up({ button: 'middle' });
-  await page.mouse.wheel(0, 1800);
+  // 届いた量の合計で縮める(Electron の高精細の窓は量を倍にして届けるので、送った量を決め打ちしない)。
+  const wheel = await wheelToDeliveredTotal(page, 1800);
+  console.log(`[ホイールの届き] ${JSON.stringify({ flow: 'reference-appearance', ...wheel })}`);
   await expect.poll(() => page.evaluate(() => window.pcadViewportFramedBodies?.() ?? []),
     { message: 'Actual U body must be fully framed before the appearance comparison' }).toContain(scenario.body.featureId);
   await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'part');

@@ -51,6 +51,8 @@ interface MathEditorSurfaceProps {
   readonly resultFull?:string;
   /** 「この式を使う」が使えない理由。使えない時だけボタンの直前に 1 行で出す。 */
   readonly applyBlockedReason?:string|null;
+  /** 入力中・計算中で、前に計算の済んだ結果を残している(薄く見せ、1 行目に計算中の印を付ける。欄の高さを変えない)。 */
+  readonly resultStale?:boolean;
   readonly canApply:boolean;readonly canChangeNotation:boolean;readonly readOnly:boolean;
   readonly onHelp:()=>void;readonly maximumSourceLength:number;
   readonly inspection?:InputExpressionInspection|null;
@@ -82,6 +84,27 @@ function StructuredField({input,controller,createField,readOnly,maximumSourceLen
   useEffect(()=>{binding.current?.updateSource(input.source);},[input.source]);
   useEffect(()=>{binding.current?.setReadOnly(readOnly);},[readOnly]);
   return <div className="pcad-math-editor__structured" ref={container}/>;
+}
+
+/**
+ * 結果の欄の行。前の結果を残す時(stale。入力中・計算中)は、前の行を文字に持たない影(CSS の ::before で data-text を見せる。
+ * aria-hidden)として同じ数だけ置き、欄の高さを変えない。欄の文字(読み上げと検査が読む文字)は「計算中」だけにし、
+ * 古い値を今の値として読ませない(外部検査 run 43803122461 の調べ、統括の決定)。
+ */
+function ResultRows({message,detail,full,stale}:{
+  readonly message:string;readonly detail:string;readonly full:string|undefined;readonly stale:boolean;
+}):React.JSX.Element {
+  const hasFull=full!==undefined&&full!=='';
+  if(stale)return <>
+    <p><span className="pcad-math-editor__stale">{t('math.calculating')}</span><span className="pcad-math-editor__shadow" data-text={message} aria-hidden="true"/></p>
+    {detail===''?null:<p className="pcad-math-editor__shadow" data-text={detail} aria-hidden="true"/>}
+    {hasFull?<p className="pcad-math-editor__shadow pcad-math-editor__shadow--summary" data-text={t('math.fullDigits')} aria-hidden="true"/>:null}
+  </>;
+  return <>
+    <p>{message}</p>
+    {detail===''?null:<p>{detail}</p>}
+    {hasFull?<details className="pcad-math-editor__full"><summary>{t('math.fullDigits')}</summary><p className="pcad-math-editor__full-value">{full}</p></details>:null}
+  </>;
 }
 
 export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Element {
@@ -154,16 +177,17 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
         </button><span className="pcad-math-editor__meaning">{item.meaning}</span>
       </li>)}</ul>}
     </details>
-    <div id={messageId} className={props.hasError?'pcad-math-editor__result pcad-math-editor__result--error':'pcad-math-editor__result'}
-      role="status" aria-live="polite" aria-atomic="true"><p>{props.resultMessage}</p>
-      {props.resultDetail===''?null:<p>{props.resultDetail}</p>}
-      {props.resultFull===undefined||props.resultFull===''?null:<details className="pcad-math-editor__full"><summary>{t('math.fullDigits')}</summary><p className="pcad-math-editor__full-value">{props.resultFull}</p></details>}</div>
+    <div id={messageId} className={props.hasError?'pcad-math-editor__result pcad-math-editor__result--error'
+      :props.resultStale===true?'pcad-math-editor__result pcad-math-editor__result--stale':'pcad-math-editor__result'}
+      role="status" aria-live="polite" aria-atomic="true" aria-busy={props.resultStale===true?true:undefined}>
+      <ResultRows message={props.resultMessage} detail={props.resultDetail} full={props.resultFull} stale={props.resultStale===true}/></div>
     {props.resultActions}
     {/* Cancel lives outside this panel (MathExpressionDialog's persistent footer) so the same button, in the
         same place, closes the dialog whether the panel is still loading or ready (regression guard). */}
     <footer className="pcad-math-editor__actions">
       {props.canApply||props.applyBlockedReason===undefined||props.applyBlockedReason===null?null
-        :<p className="pcad-math-editor__apply-reason">{props.applyBlockedReason}</p>}
+        :props.resultStale===true?<p className="pcad-math-editor__apply-reason pcad-math-editor__shadow" data-text={props.applyBlockedReason} aria-hidden="true"/>
+          :<p className="pcad-math-editor__apply-reason">{props.applyBlockedReason}</p>}
       <button type="button" className="pcad-button pcad-button--primary" title={labels.hints.apply} disabled={!props.canApply||editingBlocked} onClick={controller.apply}>{labels.apply}</button>
     </footer>
   </section>;

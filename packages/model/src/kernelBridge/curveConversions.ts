@@ -61,7 +61,8 @@ export function toCurveSpec(curve: ResolvedCurve): CurveSpec {
 
 /** 面 1 枚の依頼を作る。結果との対応づけには面フィーチャーの id を使う。 */
 export function toFaceRequest(face: ResolvedFace): PlanarFaceRequest {
-  return { id: face.featureId, curves: face.curves.map((curve) => toCurveSpec(curve)) };
+  return { id: face.featureId, curves: face.curves.map((curve) => toCurveSpec(curve)),
+    ...(face.holes === undefined || face.holes.length === 0 ? {} : { holes: face.holes.map(loop => loop.map(toCurveSpec)) }) };
 }
 
 /** 全周(ラジアン)。カーネルが角度を省いた楕円は全周の意味になる。 */

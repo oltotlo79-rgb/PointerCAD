@@ -143,7 +143,8 @@ export function pickSketchElement(
       outline.push(...sampleCurve(curve));
     }
     const screen = projectAll(outline, project);
-    if (screen.length >= 3 && isInsidePolygon2d(pointer, screen)) {
+    const inHole = face.holes?.some(hole => isInsidePolygon2d(pointer, projectAll(hole.flatMap(curve => sampleCurve(curve)), project))) ?? false;
+    if (screen.length >= 3 && isInsidePolygon2d(pointer, screen) && !inHole) {
       return { kind: 'face', featureId: face.featureId, elementId: face.featureId };
     }
   }

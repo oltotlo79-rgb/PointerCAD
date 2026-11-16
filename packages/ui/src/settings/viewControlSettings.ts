@@ -31,13 +31,26 @@ export const VIEW_KEY_GROUP_ACTIONS: Readonly<Record<ViewKeyGroup, readonly View
 };
 
 /**
+ * タッチ画面の指の操作(第 2 段)。1 本指ドラッグ(B-08h。割り当てた時だけ。軽く触れて離すのは今どおり作図・選択)、
+ * 2 本指ドラッグ(中点の移動。B-08g)と、つまむ(指の間の距離。B-08g)。
+ */
+export const VIEW_TOUCH_GESTURES = ['oneFinger', 'twoFinger', 'pinch'] as const;
+export type ViewTouchGesture = (typeof VIEW_TOUCH_GESTURES)[number];
+/** 指の操作ごとに使える操作。ドラッグは回転か平行移動、つまむは拡大縮小だけ。 */
+export const VIEW_TOUCH_GESTURE_ACTIONS: Readonly<Record<ViewTouchGesture, readonly ViewAction[]>> = {
+  oneFinger: ['orbit', 'pan'], twoFinger: ['pan', 'orbit'], pinch: ['zoom'],
+};
+
+/**
  * 視点を連続して動かす入力。修飾キーは押している組合せと完全に一致した時だけ当たる。
  * ホイールはタッチパッドの 2 本指スクロール(Ctrl 付きはつまむ)を含み、縦と横の量を両方使う。
+ * タッチは修飾キーを使わない(形を揃えるために欄は持ち、全部 false の時だけ読む。設計 §5 の形からの差)。
  */
 export type ViewTrigger =
   | (ModifierFlags & { readonly kind: 'drag'; readonly button: 'left' | 'middle' | 'right' })
   | (ModifierFlags & { readonly kind: 'wheel' })
-  | (ModifierFlags & { readonly kind: 'keys'; readonly keys: ViewKeyGroup });
+  | (ModifierFlags & { readonly kind: 'keys'; readonly keys: ViewKeyGroup })
+  | (ModifierFlags & { readonly kind: 'touch'; readonly gesture: ViewTouchGesture });
 
 /** 速さ(0.1〜10 倍)と向き。拡大縮小の 4 つは v1 の欄をそのまま移したもの。 */
 export interface ViewControlOptions {
@@ -91,13 +104,14 @@ export type ViewSettingsProblem =
   | { readonly code: 'duplicate'; readonly first: ViewAction; readonly second: ViewAction; readonly trigger: ViewTrigger }
   /** ドラッグかホイールの割当が 1 つも無い。 */
   | { readonly code: 'mouse-required'; readonly action: ViewAction }
-  /** ドラッグとホイールの割当が 4 つを超える、またはキーの割当が 2 つを超える。 */
+  /** ドラッグとホイールの割当が 4 つを超える、またはキー・タッチの割当がそれぞれ 2 つを超える。 */
   | { readonly code: 'too-many'; readonly action: ViewAction }
   /** 速さが 0.1〜10 の有限の数でない、またはキーの角度が 1〜90 でない。 */
   | { readonly code: 'range'; readonly field: string };
 
 const MAX_TRIGGERS_PER_ACTION = 4;
 const MAX_KEY_TRIGGERS_PER_ACTION = 2;
+const MAX_TOUCH_TRIGGERS_PER_ACTION = 2;
 const DEFAULT_KEY_STEP_DEGREES = 15;
 const MIN_KEY_STEP_DEGREES = 1;
 const MAX_KEY_STEP_DEGREES = 90;
@@ -105,7 +119,10 @@ const MIN_SPEED = 0.1;
 const MAX_SPEED = 10;
 const SPEED_OPTIONS = ['orbitSensitivity', 'panSensitivity', 'wheelSensitivity', 'zoomDragSensitivity'] as const;
 const INVERT_OPTIONS = ['invertWheel', 'invertZoomDrag', 'invertOrbitX', 'invertOrbitY'] as const;
-/** 後の版で足す入力の種類(タッチ)。この版では使えないので、読む時はその項目だけ捨てて知らせる。 */
+/**
+ * 後の版で足しうる入力の種類。形が読めない時でも、この種類なら not-allowed として捨てて知らせる(タッチの知らない指の操作や、
+ * 修飾キーの付いたタッチ)。
+ */
 const LATER_TRIGGER_KINDS: readonly unknown[] = ['touch'];
 /** v1 に無かった欄の既定。今の動き(感度 1・反転なし)と同じ。 */
 const NEW_OPTION_DEFAULTS = { orbitSensitivity: 1, panSensitivity: 1, invertOrbitX: false, invertOrbitY: false } as const;
@@ -134,8 +151,8 @@ function migrateCameraControlsV1(v1: CameraControlSettings): ViewControlSettings
 export const DEFAULT_VIEW_CONTROLS: ViewControlSettings = migrateCameraControlsV1(DEFAULT_CAMERA_CONTROLS);
 
 /** 雛形。v1 の 4 つ(他の CAD に近い割当)に、v2 だけの「タッチパッド向け」を足す(設計 1-4・§6.2)。 */
-export const VIEW_CONTROL_PRESETS = [...CAMERA_CONTROL_PRESETS, 'touchpad', 'keyboard'] as const;
-export type ViewControlPreset = CameraControlPreset | 'touchpad' | 'keyboard';
+export const VIEW_CONTROL_PRESETS = [...CAMERA_CONTROL_PRESETS, 'touchpad', 'keyboard', 'touchscreen'] as const;
+export type ViewControlPreset = CameraControlPreset | 'touchpad' | 'keyboard' | 'touchscreen';
 
 const NO_MODIFIERS = { alt: false, shift: false, ctrl: false, meta: false } as const;
 /** タッチパッド向け: 2 本指スクロール(修飾なしのホイール)で平行移動、つまむ(Ctrl＋ホイール)で拡大、Shift＋2 本指で回転。 */
@@ -157,27 +174,66 @@ const KEYBOARD_BINDINGS: ViewControlSettings['bindings'] = {
   zoom: [...DEFAULT_VIEW_CONTROLS.bindings.zoom, { kind: 'keys', keys: 'plusMinus', ...NO_MODIFIERS }],
 };
 
+/**
+ * タッチ画面向け(B-08h。設計 §0.3-3「既定はなし・雛形で入れる」): 既定のマウスの割当に、1 本指ドラッグ＝回転・
+ * 2 本指ドラッグ＝平行移動・つまむ＝拡大縮小を足す(マウスの割当は既定のまま)。1 本指で点や部品を引っぱる操作は
+ * できなくなる(窓の注意で知らせる)。
+ */
+const TOUCHSCREEN_BINDINGS: ViewControlSettings['bindings'] = {
+  orbit: [...DEFAULT_VIEW_CONTROLS.bindings.orbit, { kind: 'touch', gesture: 'oneFinger', ...NO_MODIFIERS }],
+  pan: [...DEFAULT_VIEW_CONTROLS.bindings.pan, { kind: 'touch', gesture: 'twoFinger', ...NO_MODIFIERS }],
+  zoom: [...DEFAULT_VIEW_CONTROLS.bindings.zoom, { kind: 'touch', gesture: 'pinch', ...NO_MODIFIERS }],
+};
+
+/** この操作のタッチの指の割当が上限(2 つ)に達しているか(取り込みの枠で足せない理由を出す。B-08h)。 */
+export function touchTriggersFull(settings: ViewControlSettings, action: ViewAction): boolean {
+  return settings.bindings[action].filter(trigger => trigger.kind === 'touch').length >= MAX_TOUCH_TRIGGERS_PER_ACTION;
+}
+
+/** 1 本指のドラッグを視点に割り当てているか(窓の注意を出す。B-08h)。 */
+export function hasOneFingerTouch(settings: ViewControlSettings): boolean {
+  return VIEW_ACTIONS.some(action => settings.bindings[action].some(trigger => trigger.kind === 'touch' && trigger.gesture === 'oneFinger'));
+}
+
 /** 雛形の割当を入れる。v1 の雛形は v1 の表を移行して作り、速さと反転はそのまま残す。 */
 export function withViewControlPreset(settings: ViewControlSettings, preset: ViewControlPreset): ViewControlSettings {
   if (preset === 'touchpad') return { ...settings, bindings: TOUCHPAD_BINDINGS };
   if (preset === 'keyboard') return { ...settings, bindings: KEYBOARD_BINDINGS };
+  if (preset === 'touchscreen') return { ...settings, bindings: TOUCHSCREEN_BINDINGS };
   return { ...settings, bindings: migrateCameraControlsV1(withCameraControlPreset(DEFAULT_CAMERA_CONTROLS, preset)).bindings };
 }
 
 function isViewTrigger(value: unknown): value is ViewTrigger {
   if (!isRecord(value) || !MODIFIERS.every(modifier => typeof value[modifier] === 'boolean')) return false;
   return value.kind === 'wheel' || (value.kind === 'drag' && DRAG_BUTTONS.includes(value.button))
-    || (value.kind === 'keys' && (VIEW_KEY_GROUPS as readonly unknown[]).includes(value.keys));
+    || (value.kind === 'keys' && (VIEW_KEY_GROUPS as readonly unknown[]).includes(value.keys))
+    || (value.kind === 'touch' && (VIEW_TOUCH_GESTURES as readonly unknown[]).includes(value.gesture)
+      && MODIFIERS.every(modifier => value[modifier] === false));
 }
 
-/** マウス(ドラッグかホイール)の入力か。キーの入力は数えない。 */
+/** 入力の種類の組(数の上限を分けて数える): マウス(ドラッグとホイール)・キー・タッチ。 */
+const TRIGGER_FAMILIES = ['mouse', 'keys', 'touch'] as const;
+type TriggerFamily = (typeof TRIGGER_FAMILIES)[number];
+function triggerFamily(trigger: ViewTrigger): TriggerFamily {
+  return trigger.kind === 'keys' ? 'keys' : trigger.kind === 'touch' ? 'touch' : 'mouse';
+}
+const FAMILY_LIMITS: Readonly<Record<TriggerFamily, number>> = {
+  mouse: MAX_TRIGGERS_PER_ACTION, keys: MAX_KEY_TRIGGERS_PER_ACTION, touch: MAX_TOUCH_TRIGGERS_PER_ACTION,
+};
+
+/** マウス(ドラッグかホイール)の入力か。キーとタッチの入力は数えない。 */
 function isPointerTrigger(trigger: ViewTrigger): boolean {
-  return trigger.kind !== 'keys';
+  return triggerFamily(trigger) === 'mouse';
 }
 
-/** キーの組がこの操作に使えるか(矢印・テンキーは回転と平行移動、＋−は拡大縮小)。 */
-function keysFitAction(trigger: ViewTrigger, action: ViewAction): boolean {
-  return trigger.kind !== 'keys' || VIEW_KEY_GROUP_ACTIONS[trigger.keys].includes(action);
+/**
+ * キーの組・タッチの指の操作がこの操作に使えるか(矢印・テンキーは回転と平行移動、＋−は拡大縮小、
+ * 2 本指は平行移動と回転、つまむは拡大縮小)。マウスの入力はどの操作にも使える。
+ */
+function triggerFitsAction(trigger: ViewTrigger, action: ViewAction): boolean {
+  if (trigger.kind === 'keys') return VIEW_KEY_GROUP_ACTIONS[trigger.keys].includes(action);
+  if (trigger.kind === 'touch') return VIEW_TOUCH_GESTURE_ACTIONS[trigger.gesture].includes(action);
+  return true;
 }
 
 function isKeyStep(value: unknown): value is number {
@@ -218,7 +274,8 @@ function needsAlt(trigger: ViewTrigger): boolean {
 
 /** 入力の同じさを比べる鍵(種類・ボタンかキーの組・修飾キー)。重なりの判定はこれ 1 つで行う。 */
 export function viewTriggerKey(trigger: ViewTrigger): string {
-  const detail = trigger.kind === 'drag' ? trigger.button : trigger.kind === 'keys' ? trigger.keys : '';
+  const detail = trigger.kind === 'drag' ? trigger.button : trigger.kind === 'keys' ? trigger.keys
+    : trigger.kind === 'touch' ? trigger.gesture : '';
   return [trigger.kind, detail, trigger.alt, trigger.shift, trigger.ctrl, trigger.meta].join(':');
 }
 const triggerKey = viewTriggerKey;
@@ -229,14 +286,15 @@ function actionProblems(action: ViewAction, list: unknown, owners: Map<string, V
   const problems: ViewSettingsProblem[] = [];
   const triggers = items.filter(isViewTrigger), mouse = triggers.filter(isPointerTrigger).length;
   if (mouse === 0) problems.push({ code: 'mouse-required', action });
-  if (mouse > MAX_TRIGGERS_PER_ACTION || triggers.length - mouse > MAX_KEY_TRIGGERS_PER_ACTION) problems.push({ code: 'too-many', action });
+  const over = TRIGGER_FAMILIES.some(family => triggers.filter(trigger => triggerFamily(trigger) === family).length > FAMILY_LIMITS[family]);
+  if (over) problems.push({ code: 'too-many', action });
   for (const [index, item] of items.entries()) {
     const at = `bindings.${action}.${index}`;
     if (!isViewTrigger(item)) {
       problems.push(isLaterTrigger(item) ? { code: 'not-allowed', action, at } : { code: 'shape', at });
       continue;
     }
-    if (!keysFitAction(item, action)) { problems.push({ code: 'not-allowed', action, at }); continue; }
+    if (!triggerFitsAction(item, action)) { problems.push({ code: 'not-allowed', action, at }); continue; }
     if (needsAlt(item)) { problems.push({ code: 'left-needs-alt', action }); continue; }
     const key = triggerKey(item), first = owners.get(key);
     if (first === undefined) owners.set(key, action);
@@ -285,13 +343,14 @@ interface StoredViewControls {
 function copyTrigger(trigger: ViewTrigger): ViewTrigger {
   const { alt, shift, ctrl, meta } = trigger;
   if (trigger.kind === 'keys') return { kind: 'keys', keys: trigger.keys, alt, shift, ctrl, meta };
+  if (trigger.kind === 'touch') return { kind: 'touch', gesture: trigger.gesture, alt, shift, ctrl, meta };
   return trigger.kind === 'wheel' ? { kind: 'wheel', alt, shift, ctrl, meta } : { kind: 'drag', button: trigger.button, alt, shift, ctrl, meta };
 }
 
-/** この操作にもう置けない入力か(マウスは 4 つ、キーは 2 つまで)。 */
+/** この操作にもう置けない入力か(マウスは 4 つ、キーとタッチはそれぞれ 2 つまで)。 */
 function actionFull(kept: readonly ViewTrigger[], trigger: ViewTrigger): boolean {
-  const same = kept.filter(item => isPointerTrigger(item) === isPointerTrigger(trigger)).length;
-  return same >= (isPointerTrigger(trigger) ? MAX_TRIGGERS_PER_ACTION : MAX_KEY_TRIGGERS_PER_ACTION);
+  const family = triggerFamily(trigger);
+  return kept.filter(item => triggerFamily(item) === family).length >= FAMILY_LIMITS[family];
 }
 
 function salvageOptions(raw: unknown): { readonly options: ViewControlOptions; readonly dropped: number } {
@@ -339,7 +398,7 @@ function salvageV2(raw: Record<string, unknown>): StoredViewControls {
     const items: readonly unknown[] = list;
     if (items.length === 0) dropped++;
     for (const item of items) {
-      if (!isViewTrigger(item) || needsAlt(item) || !keysFitAction(item, action) || seen.has(triggerKey(item))
+      if (!isViewTrigger(item) || needsAlt(item) || !triggerFitsAction(item, action) || seen.has(triggerKey(item))
         || actionFull(kept[action], item)) {
         dropped++;
         continue;

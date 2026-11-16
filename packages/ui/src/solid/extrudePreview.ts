@@ -20,6 +20,7 @@ import {
   type StagedSolidState,
 } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { extrudeRegionHintKey } from './regionPick.js';
 
 /** 押し出しの候補。`document` は `base` から純関数で作り、末尾へ積んだ形のもの。 */
 export interface ExtrudeStageCandidate {
@@ -88,7 +89,8 @@ export function stagedExtrusionMessageKey(state: ReturnType<typeof useAppStore.g
   const current = currentStagedSolid(state);
   if (current === null) {
     const latest = state.stagedSolid;
-    return refused || (latest !== null && latest.confirmRequested) ? 'solidError.extrudeStale' : null;
+    // 計算の知らせが無い間は、面を選ばずに開いた時の「領域を押して選ぶ」案内を出す(M-01)。
+    return refused || (latest !== null && latest.confirmRequested) ? 'solidError.extrudeStale' : extrudeRegionHintKey(state);
   }
   if (current.status === 'failed') {
     return current.failure === null ? 'solidError.extrudeFailed' : FAILURE_MESSAGE_KEYS[current.failure];

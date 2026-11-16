@@ -1,14 +1,17 @@
 /// <reference lib="dom" />
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { readPcadFile } from '../../../packages/io/src/index.js';
-import { openToolMenu, toolMenuPanel } from '../assemblyTestSupport.js';
+import { chooseToolMenuItem, openToolMenu, toolMenuPanel } from '../assemblyTestSupport.js';
 import { drawRectangle, extrudeFace, fillFields, makeFace, popover, popoverInputs,
   popoverTitle, propertyPanel, treeRow } from '../solidCaptureSupport.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from '../recompute.js';
 import { openSaveFlowFile, saveFlowFile } from '../saveResponsivenessFlow.js';
 import { waitForStartupHealth } from '../startupHealth.js';
 import { readViewportRenderStats } from '../viewportRenderStats.js';
+import { wheelToDeliveredTotal } from '../wheelDelivery.js';
 import { captureManualDetail } from '../captureManualDetail.js';
+import { clickWorldPoint, type WorldPoint } from '../solidCaptureSupport.js';
+import { uiMessage } from '../uiMessages.js';
 
 export type ExtrudeOperation = 'new' | 'join' | 'cut';
 const LABELS = { new: '新しいソリッド', join: '結合', cut: '切り抜き' } as const;
@@ -117,12 +120,13 @@ async function framePreviewForCapture(page: Page, operation: 'join' | 'cut'): Pr
   expect(previewBodies.length).toBeGreaterThan(0);
   // Existing camera-control flows use real wheel input. No camera/DOM state is injected.
   await page.mouse.move(view.x + view.width / 2, view.y + view.height / 2);
-  for (let notch = 0; notch < 2; notch += 1) {
-    const rendered = await readViewportRenderStats(page);
-    await page.mouse.wheel(0, -300);
-    await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders)
-      .toBeGreaterThan(rendered.completedRenders);
-  }
+  // 2 回分(-300 を 2 回)と同じ拡大になるよう、届いた量の合計 -600 で送る(Electron の高精細の窓は量を倍にして届ける)。
+  let rendered = await readViewportRenderStats(page);
+  const wheel = await wheelToDeliveredTotal(page, -600, async () => {
+    await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders).toBeGreaterThan(rendered.completedRenders);
+    rendered = await readViewportRenderStats(page);
+  });
+  console.log(`[ホイールの届き] ${JSON.stringify({ flow: 'extrude-preview', ...wheel })}`);
   if (operation === 'cut') {
     // The actual cut opens at z=0: tilt the real view cube below the base to expose that cavity.
     // cameraMath.orbit adds vertical pointer movement to elevation; an upward drag lowers the view.
@@ -243,4 +247,189 @@ export async function extrudeStaleTargetFlow(page: Page, info: TestInfo, app?: E
   await waitForRecompute(page, undo);
   await geometry(page, '押し出し1', 8000);
   expect((await stored(page, info, 'stale-one-undo', app)).solids).toHaveLength(1);
+}
+
+/** Open Extrude with no face selected; the window asks for a closed region (M-01). */
+async function openRegionExtrusion(page: Page): Promise<void> {
+  await openToolMenu(page, '作る');
+  await toolMenuPanel(page, '作る').getByRole('button', { name: '押し出し', exact: true }).click();
+  await expect(popoverTitle(page)).toHaveText('押し出す');
+  await expect(popover(page).getByRole('status')).toHaveText(uiMessage('numericInput', 'numericInput.extrudeRegionPick'));
+  // Move the real window by its title to the viewport's top-left so it never covers the region pixel near the centre.
+  const canvas = page.locator('canvas.pcad-viewport__canvas');
+  const view = await canvas.boundingBox(), window = await popover(page).boundingBox();
+  const heading = await popover(page).locator('.pcad-window-title').first().boundingBox();
+  if (view === null || window === null || heading === null) throw new Error('Region extrusion rectangles are missing');
+  const grab = { x: heading.x + 16, y: heading.y + heading.height / 2 };
+  await page.mouse.move(grab.x, grab.y);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(grab.x + view.x + 8 - window.x, grab.y + view.y + 8 - window.y, { steps: 8 });
+  } finally { await page.mouse.up(); }
+}
+
+/** Click a closed region by its world point on the unchanged home view, and wait for the window to take it. */
+async function pickRegion(page: Page, world: WorldPoint): Promise<void> {
+  await clickWorldPoint(page, world);
+  await expect(popover(page).getByRole('status'), 'The chosen region replaces the pick hint').toHaveCount(0);
+}
+
+/**
+ * M-01: extrude a closed region without the Face tool (same saved face as the Face tool, one Undo), extrude a rectangle on
+ * another work plane of the same sketch (regions are found per plane, the nearest one along the view ray), then on a solid's
+ * top face the window suggests Join/Cut from position and direction, follows the Reverse toggle, and keeps a manual choice.
+ */
+export async function extrudeRegionFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await waitForStartupHealth(page, info);
+  await drawRectangle(page, ['0', '0'], ['20', '20']);
+  await waitForRecompute(page);
+  const drawn = await stored(page, info, 'region-drawn', app);
+  await openRegionExtrusion(page);
+  await pickRegion(page, [10, 10, 0]);
+  await fillFields(page, ['20']);
+  await popoverInputs(page).first().press('Enter');
+  await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
+  await geometry(page, '押し出し1', 8000);
+  await expect(treeRow(page, '面1')).toBeVisible();
+  const based = await stored(page, info, 'region-extruded', app);
+  const lines = (based.sketches[0]?.features ?? []).filter(feature => feature.kind === 'line').map(feature => ({ featureId: feature.id }));
+  const face = based.sketches[0]?.features.find(feature => feature.kind === 'face');
+  // Same saved shape as the Face tool: the four whole lines in loop order and the default face colour.
+  expect(face).toMatchObject({ kind: 'face', boundary: lines, color: '#7aa2f7' });
+  expect(based.solids).toHaveLength(1);
+  expect(based.solids[0]).toMatchObject({ kind: 'extrude', profile: { sketchId: based.sketches[0]?.id, faceFeatureId: face?.id } });
+  const undo = await beginRecompute(page);
+  await page.keyboard.press('Control+z');
+  await waitForRecompute(page, undo);
+  expect(await stored(page, info, 'region-one-undo', app), 'One Undo removes both the region face and the extrusion').toEqual(drawn);
+  const redo = await beginRecompute(page);
+  await page.keyboard.press('Control+y');
+  await waitForRecompute(page, redo);
+  await geometry(page, '押し出し1', 8000);
+
+  // A rectangle on another work plane (z=30) of the same sketch is its own region: click it and extrude it alone.
+  await drawRectangle(page, ['30', '0'], ['10', '10'], '30');
+  await waitForRecompute(page);
+  await openRegionExtrusion(page);
+  await pickRegion(page, [35, 5, 30]);
+  await fillFields(page, ['5']);
+  await popoverInputs(page).first().press('Enter');
+  await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
+  await geometry(page, '押し出し2', 500);
+  const layered = await stored(page, info, 'region-other-plane', app);
+  const upper = layered.sketches[0]?.features.filter(feature => feature.kind === 'face').at(-1);
+  expect(upper).toMatchObject({ kind: 'face', boundary: layered.sketches[0]?.features
+    .filter(feature => feature.kind === 'line').slice(4).map(feature => ({ featureId: feature.id })) });
+  expect(layered.solids.at(-1)).toMatchObject({ kind: 'extrude', profile: { faceFeatureId: upper?.id } });
+
+  await page.getByRole('button', { name: uiMessage('view', 'featureTree.addSketch'), exact: true }).click();
+  await drawRectangle(page, ['5', '5'], ['5', '5'], '20');
+  await waitForRecompute(page);
+  const topDrawn = await stored(page, info, 'region-top-drawn', app);
+  await openRegionExtrusion(page);
+  await pickRegion(page, [7.5, 7.5, 20]);
+  const result = popover(page).getByRole('group', { name: '押し出しの結果', exact: true });
+  const resultChoice = popover(page).locator('.pcad-popover__choice').filter({ hasText: '押し出しの結果' });
+  const target = popover(page).locator('.pcad-popover__choice').filter({ hasText: '対象のソリッド' });
+  const badge = uiMessage('numericInput', 'numericInput.extrudeSuggestion.badge');
+  await expect(result.getByRole('button', { name: LABELS.join, exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(resultChoice.locator('.pcad-tree__badge')).toHaveText(badge);
+  await expect(resultChoice.locator('.pcad-field__message')).toHaveText(
+    uiMessage('numericInput', 'numericInput.extrudeSuggestion.join').replace('{name}', '押し出し1'));
+  await expect(target.getByRole('button', { name: '押し出し1', exact: true })).toBeVisible();
+  const reverse = popover(page).getByRole('switch', { name: uiMessage('numericInput', 'numericInput.toggle.reversed') });
+  await reverse.click();
+  await expect(result.getByRole('button', { name: LABELS.cut, exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(resultChoice.locator('.pcad-field__message')).toHaveText(
+    uiMessage('numericInput', 'numericInput.extrudeSuggestion.cut').replace('{name}', '押し出し1'));
+  // A manual choice wins: the badge goes away and later direction changes keep it.
+  await result.getByRole('button', { name: LABELS.new, exact: true }).click();
+  await expect(resultChoice.locator('.pcad-tree__badge')).toHaveCount(0);
+  for (let flip = 0; flip < 2; flip += 1) {
+    await reverse.click();
+    await expect(result.getByRole('button', { name: LABELS.new, exact: true })).toHaveAttribute('aria-pressed', 'true');
+  }
+  await result.getByRole('button', { name: LABELS.cut, exact: true }).click();
+  await expect(target.getByRole('button', { name: '押し出し1', exact: true })).toBeVisible();
+  await fillFields(page, ['5']);
+  await popoverInputs(page).first().press('Enter');
+  await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
+  await geometry(page, '差1', 7875);
+  const cut = await stored(page, info, 'region-top-cut', app);
+  const topSketch = cut.sketches.find(sketch => sketch.id === cut.activeSketchId);
+  const topFace = topSketch?.features.find(feature => feature.kind === 'face');
+  expect(cut.solids.slice(2)).toMatchObject([
+    { kind: 'extrude', reversed: true, profile: { sketchId: topSketch?.id, faceFeatureId: topFace?.id } },
+    { kind: 'boolean', operation: 'subtract', targetFeatureId: based.solids[0]?.id },
+  ]);
+  const cutUndo = await beginRecompute(page);
+  await page.keyboard.press('Control+z');
+  await waitForRecompute(page, cutUndo);
+  expect(await stored(page, info, 'region-top-one-undo', app), 'One Undo removes face, extrusion and Boolean').toEqual(topDrawn);
+  await extrudeHoledRegion(page, info, app);
+}
+
+/** M01-5: one saved face with a circular hole; real OCCT volume, atomic Undo and reload. */
+async function extrudeHoledRegion(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  await page.getByRole('button', { name: uiMessage('view', 'featureTree.addSketch'), exact: true }).click();
+  await drawRectangle(page, ['0', '0'], ['60', '40'], '50');
+  await chooseToolMenuItem(page, uiMessage('toolbar', 'toolbar.shape.groupLabel'), uiMessage('toolbar', 'toolbar.tool.circle'));
+  await expect(popoverTitle(page)).toHaveText(uiMessage('numericInput', 'numericInput.title.circleCenter'));
+  await fillFields(page, ['30', '20', '50']);
+  await popoverInputs(page).first().press('Enter');
+  await expect(popoverTitle(page)).toHaveText(uiMessage('numericInput', 'numericInput.title.circleRadius'));
+  await fillFields(page, ['5']);
+  const circle = await beginRecompute(page);
+  await popoverInputs(page).first().press('Enter');
+  await waitForRecompute(page, circle);
+  await popoverInputs(page).first().press('Escape');
+  await expect(popover(page)).toHaveCount(0);
+  const drawn = await stored(page, info, 'region-hole-drawn', app);
+  expect(drawn.schemaVersion).toBe(22);
+  await openRegionExtrusion(page);
+  await pickRegion(page, [5, 5, 50]);
+  await fillFields(page, ['8']);
+  const commit = await beginRecompute(page);
+  await popoverInputs(page).first().press('Enter');
+  await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
+  await waitForRecompute(page, commit);
+  const saved = await stored(page, info, 'region-hole-saved', app);
+  expect(saved.schemaVersion).toBe(23);
+  expect(saved.solids).toHaveLength(drawn.solids.length + 1);
+  const sketch = saved.sketches.find(item => item.id === saved.activeSketchId);
+  const face = sketch?.features.find(item => item.kind === 'face');
+  const arc = sketch?.features.find(item => item.kind === 'arc');
+  expect(face).toMatchObject({ kind: 'face', holes: [[{ featureId: arc?.id }]] });
+  const extrusion = saved.solids.at(-1);
+  if (extrusion?.kind !== 'extrude') throw new Error('Holed region extrusion missing');
+  const checkVolume = async () => {
+    await treeRow(page, extrusion.name).click();
+    const cell = propertyPanel(page).locator('dt.pcad-properties__key')
+      .filter({ hasText: uiMessage('propertyPanel', 'propertyPanel.volume') }).locator('xpath=following-sibling::dd[1]');
+    const expected = (60 * 40 - Math.PI * 5 ** 2) * 8;
+    await expect.poll(async () => {
+      const actual = Number((await cell.getAttribute('title'))?.replace(` ${uiMessage('propertyPanel', 'propertyPanel.unitCubicMillimeter')}`, ''));
+      return Math.abs(actual - expected) / expected;
+    }, { timeout: KERNEL_TIMEOUT_MS }).toBeLessThanOrEqual(1e-9);
+    expect((await framedBodies(page)).length).toBeGreaterThan(0);
+  };
+  await checkVolume();
+  const undo = await beginRecompute(page);
+  await page.keyboard.press('Control+z');
+  await waitForRecompute(page, undo);
+  expect(await stored(page, info, 'region-hole-one-undo', app)).toEqual(drawn);
+  const redo = await beginRecompute(page);
+  await page.keyboard.press('Control+y');
+  await waitForRecompute(page, redo);
+  await checkVolume();
+  // The last save was the Undo state, so Redo leaves unsaved changes (generic dirty check against the last saved content).
+  // Save again before opening, as extrudeOperationFlow does; it also proves Redo restored exactly the saved holed face.
+  expect(await stored(page, info, 'region-hole-redo', app), 'Redo restores the saved holed face').toEqual(saved);
+  await openSaveFlowFile(page, info.outputPath('region-hole-saved.pcad'), app);
+  await checkVolume();
+  expect(await stored(page, info, 'region-hole-reopened', app)).toEqual(saved);
+  // Opening a document starts a new Undo history; one Undo must not restore the prior document or fill the hole.
+  await page.keyboard.press('Control+z');
+  expect(await stored(page, info, 'region-hole-reopened-undo', app)).toEqual(saved);
 }

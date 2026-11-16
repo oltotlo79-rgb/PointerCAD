@@ -4,7 +4,7 @@ import {
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
-import { PCAD_SCHEMA_VERSION } from './schema.js';
+import { PCAD_MAX_SCHEMA_VERSION, PCAD_SCHEMA_VERSION } from './schema.js';
 
 const SAVED_AT = '2026-10-16T00:00:00.000Z';
 const FIRST = 'owner/日本:[]';
@@ -13,7 +13,8 @@ const GENERATED = 'generated/ボルト:1';
 /** The current versions come from the product (envelope constant and a freshly created document), never literals. */
 const CURRENT_ENVELOPE = PCAD_SCHEMA_VERSION;
 const CURRENT_BODY = createAssemblyDocument('schema probe').schemaVersion;
-const FUTURE = CURRENT_ENVELOPE + 1;
+/** The newest readable version can be above the default save version (holed faces need 23), so the future is max + 1. */
+const FUTURE = PCAD_MAX_SCHEMA_VERSION + 1;
 /** Historical versions: 20 is the last body without occurrence provenance, 21 the first that persisted it. */
 const LEGACY = 20;
 const LEGACY_PROVENANCE = 21;

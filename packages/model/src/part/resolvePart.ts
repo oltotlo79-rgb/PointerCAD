@@ -373,6 +373,7 @@ export type SolidStepPlan =
       readonly kind: 'extrude';
       /** 断面の閉ループ。両側(symmetric)のときは平行移動した後の座標。 */
       readonly profile: readonly ResolvedCurve[];
+      readonly holes?: readonly (readonly ResolvedCurve[])[];
       /** Proven saved whole line/spline region, paired with profile curves; legacy four-line IDs are retained. */
       readonly profileOrigin?: IndependentProfileOrigin | IndependentCurveProfileOrigin;
       /** 押し出す向き(単位ベクトル)。反転(reversed)を適用した後の向き。 */
@@ -1357,6 +1358,9 @@ function planExtrude(
   }
   const direction = feature.reversed ? negateVec3(normal) : normal;
   const shaping = extrudeShapingOf(feature);
+  if ((face.holes?.length ?? 0) > 0 && shaping.thickness !== null) {
+    return fail(feature.id, 'invalidValue', '穴つきの面は薄板の押し出しに対応していません。中実の押し出しを選んでください。');
+  }
 
   // 面の平面上の 1 点。断面は平らなのでどの点で測っても同じ距離になる(標本点の先頭を使う)。
   const endOutcome = resolveExtrudeEnd(
@@ -1397,6 +1401,8 @@ function planExtrude(
           translateCurve(curve, scaleVec3(negateVec3(direction), entered / 2)),
         )
       : face.curves;
+  const holes = (face.holes ?? []).map(loop => shaping.end.kind === 'symmetric'
+    ? loop.map(curve => translateCurve(curve, scaleVec3(negateVec3(direction), entered / 2))) : loop);
   const profileOrigin = shaping.end.kind === 'toNext' || shaping.end.kind === 'throughTarget'
     || taperDegrees !== 0 || thin !== null
     ? null
@@ -1408,6 +1414,7 @@ function planExtrude(
     plan: {
       kind: 'extrude',
       profile,
+      ...(holes.length === 0 ? {} : { holes }),
       ...(profileOrigin === null ? {} : { profileOrigin }),
       direction,
       distance,
@@ -1436,6 +1443,7 @@ function planRevolve(
       '回転させるもとの面が見つかりません。スケッチで面を張ってからやり直してください。',
     );
   }
+  if ((face.holes?.length ?? 0) > 0) return fail(feature.id, 'invalidValue', '穴つきの面は回転に対応していません。穴のない面を選んでください。');
   const degrees = feature.angle.value;
   if (!Number.isFinite(degrees) || degrees <= 0 || degrees > MAX_REVOLVE_DEGREES) {
     return fail(feature.id, 'invalidValue', '回転の角度は 0 より大きく 360 以下にしてください。');
@@ -1502,6 +1510,7 @@ function planSew(
         '縫い合わせるもとの面が見つかりません。スケッチで面を張ってからやり直してください。',
       );
     }
+    if ((face.holes?.length ?? 0) > 0) return fail(feature.id, 'invalidValue', '穴つきの面は縫合に対応していません。穴のない面を選んでください。');
     profiles.push(face.curves);
   }
   const tolerance = feature.tolerance.value;
@@ -3168,6 +3177,8 @@ function resolveRuledSection(
           error: partError(featureId, 'missingProfile', THRU_SECTIONS_MISSING_FACE_MESSAGE),
         };
       }
+      if ((face.holes?.length ?? 0) > 0) return { ok: false, error: partError(featureId, 'invalidValue',
+        '穴つきの面はロフト・罫線面に対応していません。穴のない断面を選んでください。') };
       return { ok: true, section: { kind: 'curves', curves: face.curves } };
     }
     case 'sphere':
@@ -3738,6 +3749,7 @@ function planSweep(feature: SweepFeature, sketches: readonly ResolvedPartSketch[
   if (face === undefined) {
     return fail(feature.id, 'missingProfile', SWEEP_MISSING_PROFILE_MESSAGE);
   }
+  if ((face.holes?.length ?? 0) > 0) return fail(feature.id, 'invalidValue', '穴つきの面はスイープに対応していません。穴のない断面を選んでください。');
   const path = findResolvedCurves(sketches, feature.path);
   if (path === null) {
     return fail(feature.id, 'missingProfile', SWEEP_MISSING_PATH_MESSAGE);
@@ -3892,6 +3904,7 @@ function planEmboss(
   if (profile === undefined) {
     return fail(feature.id, 'missingProfile', EMBOSS_MISSING_PROFILE_MESSAGE);
   }
+  if ((profile.holes?.length ?? 0) > 0) return fail(feature.id, 'invalidValue', '穴つきの面はエンボスに対応していません。穴のない輪郭を選んでください。');
   const depth = feature.height.value;
   if (!isPositiveFinite(depth)) {
     return fail(feature.id, 'invalidValue', '彫る深さは 0 より大きい数にしてください。');

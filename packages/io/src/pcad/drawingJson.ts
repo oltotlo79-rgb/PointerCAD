@@ -31,6 +31,7 @@ import {
   PCAD_DRAWING_KIND,
   PCAD_DRAWING_KINDS,
   PCAD_SCHEMA_VERSION,
+  PCAD_MAX_SCHEMA_VERSION,
   type PcadDrawingEnvelope,
   type PcadDrawingKind,
 } from './schema.js';
@@ -647,10 +648,10 @@ function readCurrentEnvelope(raw: Record<string, unknown>): ParseDrawingResult {
   if (!isDrawingDocument(raw['document'])) {
     return failure('invalidField', 'ファイルの中身が壊れています(document の形が違います)。');
   }
-  if (raw['document'].schemaVersion !== PCAD_SCHEMA_VERSION) {
+  if (raw['document'].schemaVersion !== raw['schema']) {
     return failure(
       'versionMismatch',
-      `ファイルの版の記録が食い違っています(封筒 ${String(PCAD_SCHEMA_VERSION)} / 文書 ${String(raw['document'].schemaVersion)})。`,
+      `ファイルの版の記録が食い違っています(封筒 ${String(raw['schema'])} / 文書 ${String(raw['document'].schemaVersion)})。`,
     );
   }
   const numberIssue = drawingNumberIssue(raw['document']);
@@ -676,7 +677,7 @@ export function parseDrawing(text: string): ParseDrawingResult {
     return failure('notPcad', NOT_DRAWING_MESSAGE);
   }
   const schema = parsed['schema'];
-  if (schema > PCAD_SCHEMA_VERSION) {
+  if (schema > PCAD_MAX_SCHEMA_VERSION) {
     return failure(
       'unsupportedNewVersion',
       `この図面は新しい版の PointerCAD で保存されています(版 ${String(schema)})。`,

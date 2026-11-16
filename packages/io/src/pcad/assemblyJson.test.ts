@@ -28,6 +28,7 @@ import {
   PCAD_ASSEMBLY_KIND,
   PCAD_DOCUMENT_KIND,
   PCAD_SCHEMA_VERSION,
+  PCAD_MAX_SCHEMA_VERSION,
   SCHEMA_MIGRATIONS,
   type PcadPartFile,
 } from './schema.js';
@@ -503,7 +504,7 @@ describe('壊れたアセンブリのファイルを断る(FR-504、NFR-UX-5)', 
   });
 
   it('現在より1つ新しい版は「新しい版で保存されています」と断る', () => {
-    const error = expectError(readAssemblyDocument(rawFile({ schema: PCAD_SCHEMA_VERSION + 1 })));
+    const error = expectError(readAssemblyDocument(rawFile({ schema: PCAD_MAX_SCHEMA_VERSION + 1 })));
     expect(error.code).toBe('unsupportedNewVersion');
   });
 

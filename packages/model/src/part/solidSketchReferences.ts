@@ -256,7 +256,7 @@ export function sketchProfileFeatureIds(sketch: SketchDocument, rootId: string):
   for (let at = 0; at < queue.length; at += 1) {
     const id = queue[at], feature = features.get(id);
     if (feature === undefined) continue;
-    if (feature.kind === 'face') feature.boundary.forEach((item) => add(item.featureId));
+    if (feature.kind === 'face') [...feature.boundary, ...(feature.holes ?? []).flat()].forEach((item) => add(item.featureId));
     if (feature.kind === 'copy' || feature.kind === 'offset') feature.source.forEach((item) => add(item.featureId));
     if (feature.kind === 'copy' && feature.placement.kind === 'mirror' && feature.placement.basis.kind === 'axis') {
       add(feature.placement.basis.axis.featureId);

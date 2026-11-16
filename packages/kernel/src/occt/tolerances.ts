@@ -18,6 +18,15 @@ const MAXIMUM_SEWING_REPAIR_TOLERANCE_MM = 1;
  * `worker/recomputeSolids.ts` の 0.15 mm / 0.7 rad を正本のまま使う。
  */
 
+/**
+ * 値の大きさ(絶対値)が許容差を超えるか(|value| > bound)。許容差の比較を製品のあちこちに手書きせず、
+ * この 1 か所に集める共通の口(kernel の中だけで使う。kernel は model を読めないため ui・model とは別に置く)。
+ * 許容差は呼ぶ側が名前のある定数で渡す。値か許容差が NaN の時は false(`Math.abs(value) > bound` と同じ真偽)。
+ */
+export function exceedsMagnitude(value: number, bound: number): boolean {
+  return value > bound || value < -bound;
+}
+
 /** 有限で正、かつ文書尺度に対して過大でない修復幅を返す。 */
 export function validateToleranceMm(value: number): number {
   if (!Number.isFinite(value) || !(value > 0)) {

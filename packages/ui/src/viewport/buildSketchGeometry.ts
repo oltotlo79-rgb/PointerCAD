@@ -190,7 +190,7 @@ function faceOutlineValues(
   faceMesh: SketchFaceMesh | undefined,
   drawnCurveFeatureIds: ReadonlySet<string>,
 ): number[] {
-  const own = face.curves.filter((curve) => !drawnCurveFeatureIds.has(curve.featureId));
+  const own = [...face.curves, ...(face.holes ?? []).flat()].filter((curve) => !drawnCurveFeatureIds.has(curve.featureId));
   if (own.length === 0) {
     return [];
   }

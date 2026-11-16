@@ -33,7 +33,8 @@ function remapElements(refs: readonly SketchElementRef[], split: ReadonlyMap<str
 /** Last piece retains the original id and end. Boundaries retain the entire original path. */
 export function remapSplitFeature(feature: SketchFeature, split: ReadonlyMap<string, SplitLineIdentity>): SketchFeature {
   const mapped = mapSketchCoordinates(feature, (input) => remapSplitCoordinate(input, split));
-  if (mapped.kind === 'face') return { ...mapped, boundary: remapElements(mapped.boundary, split) };
+  if (mapped.kind === 'face') return { ...mapped, boundary: remapElements(mapped.boundary, split),
+    ...(mapped.holes === undefined ? {} : { holes: mapped.holes.map(loop => remapElements(loop, split)) }) };
   if (mapped.kind === 'offset') return { ...mapped, source: remapElements(mapped.source, split) };
   if (mapped.kind === 'copy') return { ...mapped, source: remapElements(mapped.source, split) };
   return mapped;

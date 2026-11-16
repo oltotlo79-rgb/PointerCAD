@@ -1670,9 +1670,10 @@ export function faceBoundaryEntries(
   document: SketchDocument,
   feature: SketchFaceFeature,
 ): FaceBoundaryEntry[] {
-  return feature.boundary.map((reference) => {
+  return [feature.boundary, ...(feature.holes ?? [])].flatMap((loop, loopIndex) => loop.map((reference) => {
     const found = document.features.find((candidate) => candidate.id === reference.featureId);
-    const name = found?.name ?? reference.featureId;
+    const rawName = found?.name ?? reference.featureId;
+    const name = loopIndex === 0 ? rawName : `${t('solidError.faceHoleLabel')} ${String(loopIndex)}: ${rawName}`;
     if (reference.index === undefined) {
       return { elementId: reference.featureId, label: name };
     }
@@ -1681,7 +1682,7 @@ export function faceBoundaryEntries(
       // 何番目かは 1 から数える。記号だけなので言葉の資源は要らない。
       label: `${name} #${String(reference.index + 1)}`,
     };
-  });
+  }));
 }
 
 /** 読み取り専用で出す計算結果の 1 行。数字は等幅で右へそろえる。 */

@@ -18,6 +18,7 @@
 
 import type { ResolvedSubShape } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
+import { faceHolesError } from './faceHoles.js';
 import {
   arcPointAt,
   ellipsePointAt,
@@ -856,7 +857,23 @@ function resolveFaceStep(feature: SketchFaceFeature, state: SketchResolveState):
     state.errors.push(face.error);
     return;
   }
-  state.faces.push(face.value);
+  const holes: (readonly ResolvedCurve[])[] = [];
+  for (const boundary of feature.holes ?? []) {
+    const hole = resolveFace({ ...feature, boundary }, state.pointsByFeature, state.curveByFeature,
+      state.curvesByFeature, state.constructionFeatureIds);
+    if (!hole.ok) {
+      state.errors.push({ ...hole.error, message: `穴${String(holes.length + 1)}: ${hole.error.message}` });
+      return;
+    }
+    holes.push(hole.value.curves);
+  }
+  const problem = holes.length === 0 ? null
+    : faceHolesError(face.value.curves, holes, fitPlaneNormal(face.value.curves.flatMap(curveSamplePoints)));
+  if (problem !== null) {
+    state.errors.push({ featureId: feature.id, ...problem });
+    return;
+  }
+  state.faces.push(holes.length === 0 ? face.value : { ...face.value, holes });
 }
 
 /** 作図面の上(3D スケッチを含む)のフィーチャーを、種類ごとの解き方へ渡す。 */

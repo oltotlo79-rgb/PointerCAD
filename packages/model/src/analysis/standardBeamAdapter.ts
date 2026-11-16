@@ -1,6 +1,7 @@
 import type { SolidBody } from '../kernelBridge.js';
 import { findDensityMaterial } from '../appearance/densityMaterials.js';
 import { massFromVolume } from '../measure/massProperties.js';
+import { catalogItemNominalMass } from '../assembly/catalog/source.js';
 import { materialOf } from '../assembly/massProperties.js';
 import { applyPlacementToDirection, applyPlacementToPoint } from '../assembly/placementMath.js';
 import { resolveConstrainedAssembly } from '../assembly/resolveConstrainedAssembly.js';
@@ -31,7 +32,10 @@ export interface StandardBeamAdapterContext {
  interface ExcludedBeamParts {
   readonly kind: StandardCatalogId | 'part';
   readonly count: number;
-  /** Sum in kg, or null if any current body volume/material in this group is unavailable. Never a nominal estimate. */
+  /**
+   * Sum in kg, or null if any current body volume/material in this group is unavailable. Never a nominal estimate from the
+   * generated shape; a catalog family that carries a published per-item mass (unit mass × length) is counted with that mass.
+   */
   readonly massKg: number | null;
 }
 
@@ -64,7 +68,10 @@ function excludedParts(
       const material = findDensityMaterial(materialOf(component, part));
       const known = material !== undefined && bodies !== undefined && bodies.length > 0
         && bodies.every(body => body.isValid && Number.isFinite(body.volume) && body.volume >= 0);
-      const mass = known ? bodies.reduce((sum, body) => sum + massFromVolume(body.volume, material.density) / 1000, 0) : null;
+      // 族が 1 個の質量を持つ部品(フレームの系列の単位質量 × 長さ。g)は、ボディが分かる時にその質量で数える。
+      const nominal = component.source.kind === 'standardPart' ? catalogItemNominalMass(component.source) : null;
+      const mass = !known ? null : nominal !== null ? nominal / 1000
+        : bodies.reduce((sum, body) => sum + massFromVolume(body.volume, material.density) / 1000, 0);
       const previous = groups.get(kind);
       const sum = mass === null || previous?.massKg === null ? null : (previous?.massKg ?? 0) + mass;
       groups.set(kind, { kind, count: (previous?.count ?? 0) + 1, massKg: sum !== null && Number.isFinite(sum) ? sum : null });

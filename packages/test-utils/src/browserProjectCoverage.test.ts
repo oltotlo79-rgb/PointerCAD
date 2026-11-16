@@ -19,7 +19,9 @@ function missingClassifications(current: readonly string[], classified: readonly
   const allowed = new Set(['firefox-project', 'firefox-explicit', 'chromium-with-firefox-counterpart',
     'chromium-picker-with-firefox-counterpart', 'manual-capture', 'performance-project', 'dedicated',
     'desktop-renderer-contract', 'node-process-contract', 'numerical-worker-representative',
-    'synthetic-helper-representative', 'electron']);
+    'synthetic-helper-representative', 'electron',
+    // B-08g・B-08h: タッチの指は CDP の Input.dispatchTouchEvent でしか送れないので chromium だけ(同じ流れは electron の spec でも流す)。
+    'chromium-cdp-input']);
   const counts = new Map<string, number>();
   for (const row of classified) counts.set(row.file, (counts.get(row.file) ?? 0) + 1);
   return current.filter(file => counts.get(file) !== 1 || !classified.some(row => row.file === file
@@ -157,7 +159,7 @@ describe('確認済みブラウザー検査の名簿', () => {
     const config = read('e2e/playwright.config.ts');
     const pattern = firefoxPattern(config);
     const startup = startupFirefoxPattern(config);
-    expect(baseline['firefox-project']).toHaveLength(139);
+    expect(baseline['firefox-project']).toHaveLength(140);
     expect(baseline['firefox-added']).toHaveLength(49);
     expect(textSha256(config)).toBe(baseline.configSha256);
     for (const name of baseline['firefox-added']) {

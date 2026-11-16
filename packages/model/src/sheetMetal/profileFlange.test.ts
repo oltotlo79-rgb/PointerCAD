@@ -2,7 +2,7 @@ import { exactExpressionValueFromNumber as n } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 import type { ResolvedArc, ResolvedCurve, ResolvedFace } from '../sketch/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
-import { profileFlangePanel } from './profileFlange.js';
+import { profileFlangePanel, sheetFlangeProfileEdges } from './profileFlange.js';
 import { resolveSheetFlange, type ResolvedSheetBody } from './resolveSheetGeometry.js';
 import { sheetShapeKey } from './shapeKey.js';
 import type { SheetFlangeFeature, SheetFlangeProfile } from './types.js';
@@ -26,6 +26,21 @@ const feature: SheetFlangeFeature = { kind: 'sheetFlange', id: 'flange', name: '
   startOffset: n(0), endOffset: n(0), rule: { innerRadius: null, kFactor: null } };
 
 describe('P10 任意輪郭の基準縁・剛体配置・更新', () => {
+  it('穴つきの面からフランジの基準縁を選ぶことを断る', () => {
+    const result = sheetFlangeProfileEdges({ ...outline, holes: [[hole]] });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('穴つきの面を断る必要があります');
+    expect(result.message).toContain('穴つき');
+  });
+  it.each(['outline', 'hole'])('穴つきの面をフランジの%sとして使うと理由つきで断る', selected => {
+    const result = profileFlangePanel('flange', 'top', profile, ref => {
+      const resolved = face(ref);
+      return resolved !== undefined && ref.faceFeatureId === selected ? { ...resolved, holes: [[hole]] } : resolved;
+    }, frame, 50, 2, 3, 90);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('穴つきの面を断る必要があります');
+    expect(result.message).toContain('穴つき');
+  });
   it.each([90, -90, 0])('%d°でも台形の各頂点・穴の半径と位置を厳密な曲線として保つ', (angle) => {
     const result = profileFlangePanel('flange', 'top', profile, face, frame, 50, 2, 3, angle);
     expect(result.ok).toBe(true); if (!result.ok) throw new Error(result.message);

@@ -6,8 +6,13 @@ import { useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
 import { CatalogFamilyPicker } from './CatalogFamilyPicker.js';
-import { MECHANICAL_PICKER_CATEGORY } from './catalogFamilyChoices.js';
+import {
+  ALUMINUM_FRAME_PICKER_CATEGORY, familyPickerCategory, isFamilyPickerCategory, MECHANICAL_PICKER_CATEGORY, type FamilyPickerCategory,
+} from './catalogFamilyChoices.js';
 import { useCatalogFamilies } from './CatalogLoadStatus.js';
+import { FrameLayoutDetails } from './FrameLayoutDetails.js';
+import { StockCuttingFields } from './StockCuttingFields.js';
+import { steelStockCuttingRows } from './stockCuttingView.js';
 import { pickerFormProps } from './pickerFormHandlers.js';
 import { SteelBendEditForm, SteelBendFields } from './SteelBendFields.js';
 import { beginSteelBendPlacement, buildSteelBendChoice, DEFAULT_STEEL_BEND_SOURCES,
@@ -55,9 +60,13 @@ function categoryFrom(value: string): StandardPartCategory | null {
   return STANDARD_PART_CATEGORIES.find((category) => category === value) ?? null;
 }
 
-/** 分類の欄の選択肢: 今の 8 分類と、登録口の族の「機械要素」(保存には使わない値)。 */
+/** 選ぶ窓の分類: 今の 8 分類と、登録口の族の分類(「アルミフレーム」「機械要素」。保存には使わない値)。 */
+type PickerCategory = StandardPartCategory | FamilyPickerCategory;
+
+/** 分類の欄の選択肢: 今の 8 分類と、登録口の族の「アルミフレーム」「機械要素」(保存には使わない値)。 */
 function categoryOptions(): React.JSX.Element[] {
   return [...STANDARD_PART_CATEGORIES.map((item) => <option key={item} value={item}>{t(CATEGORY_LABELS[item])}</option>),
+    <option key={ALUMINUM_FRAME_PICKER_CATEGORY} value={ALUMINUM_FRAME_PICKER_CATEGORY}>{t('catalog.frame.category')}</option>,
     <option key={MECHANICAL_PICKER_CATEGORY} value={MECHANICAL_PICKER_CATEGORY}>{t('catalog.mechanical.category')}</option>];
 }
 
@@ -87,7 +96,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
   const assembly = useAppStore((state) => state.assembly);
   const library = useAppStore((state) => state.assemblyLibrary);
   const selection = useAppStore((state) => state.selection);
-  const [category, setCategory] = useState<StandardPartCategory | typeof MECHANICAL_PICKER_CATEGORY>(DEFAULT_STANDARD_PART_PICKER.category);
+  const [category, setCategory] = useState<PickerCategory>(DEFAULT_STANDARD_PART_PICKER.category);
   const [choiceKey, setChoiceKey] = useState(DEFAULT_STANDARD_PART_PICKER.choiceKey);
   const [lengthSource, setLengthSource] = useState(DEFAULT_STANDARD_PART_PICKER.lengthSource);
   const [dimensionSeries, setDimensionSeries] = useState<FastenerDimensionSeries>(DEFAULT_STANDARD_PART_PICKER.dimensionSeries);
@@ -135,15 +144,15 @@ export function StandardPartPicker(): React.JSX.Element | null {
     setBendEdit(null); useAppStore.getState().closeStandardPartPicker();
   }} />;
   const changeCategory = (value: string): void => {
-    const next = value === MECHANICAL_PICKER_CATEGORY ? value : categoryFrom(value);
+    const next = familyPickerCategory(value) ?? categoryFrom(value);
     if (next === null) return;
     setCategory(next);
-    if (next !== MECHANICAL_PICKER_CATEGORY) setChoiceKey(defaultStandardPartChoice(next, dimensionSeries).key);
+    if (!isFamilyPickerCategory(next)) setChoiceKey(defaultStandardPartChoice(next, dimensionSeries).key);
     setLengthSource(next === 'structuralSection' ? '1000' : '30');
     setError(null);
   };
-  if (category === MECHANICAL_PICKER_CATEGORY) return <CatalogFamilyPicker firstRef={first} catalogState={catalogState}
-    onCategory={changeCategory} categoryOptions={categoryOptions()} />;
+  if (isFamilyPickerCategory(category)) return <CatalogFamilyPicker key={category} group={category} firstRef={first}
+    catalogState={catalogState} onCategory={changeCategory} categoryOptions={categoryOptions()} />;
   const selectedBend = selectedSteelBendEditTarget({ ...useAppStore.getState(), assembly, assemblyLibrary: library, selection });
   const isSteel = category === 'structuralSection';
   const stock = isSteel && stockOpen && assembly !== null
@@ -348,8 +357,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         ) : null}
       </div>
       {isSteel && steelMaterial === 'unspecified' ? <p className="pcad-popover__hint" role="status">
-        {t('assembly.steel.unspecifiedHint')}
-      </p> : null}
+        {t('assembly.steel.unspecifiedHint')}</p> : null}
       {steel === undefined ? null : (
         <div className="pcad-popover__hint" role="status">
           <p>{steel.materialStandard} / {steel.evidence === 'flat' && steel.materialGrade === 'SS400'
@@ -375,6 +383,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
           <p>{t('assembly.steel.referenceOnly')}</p>
         </div>
       )}
+      {steel === undefined || bending || editing ? null : <FrameLayoutDetails member={{ kind: 'steel', choiceKey: choice.key }} />}
       {!isSteel || assembly === null ? null : (
         <details className="pcad-popover__hint" open={stockOpen}
           onToggle={(event) => { setStockOpen(event.currentTarget.open); }}>
@@ -410,6 +419,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
               {issue.occurrenceNames.join(' › ')}: {steelStockIssueText(issue)}
             </li>)}
           </ul>}
+          {stock.rows.length === 0 ? null : <StockCuttingFields rows={steelStockCuttingRows(stock.rows)} />}
           <button type="button" className="pcad-button" disabled={csvBusy}
             title={t('assembly.steel.csv.exportGuide')} onClick={() => {
               if (assembly !== null) void exportSteelStockCsv({ pending: pendingCsv, assembly, library,
@@ -424,11 +434,8 @@ export function StandardPartPicker(): React.JSX.Element | null {
           </>}
         </details>
       )}
-      {!choice.verified ? (
-        <p className="pcad-popover__hint" role="status">
-          {t('assembly.standardPart.unverified').replace('{reason}', choice.note)}
-        </p>
-      ) : null}
+      {choice.verified ? null : <p className="pcad-popover__hint" role="status">
+        {t('assembly.standardPart.unverified').replace('{reason}', choice.note)}</p>}
       {error === null ? null : (
         <p className="pcad-field__message" role="alert">
           {t(error === 'invalidLength'

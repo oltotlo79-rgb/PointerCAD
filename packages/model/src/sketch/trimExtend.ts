@@ -283,7 +283,8 @@ function remapFeature(
   createdIds: readonly string[],
 ): SketchFeature {
   if (feature.kind === 'face') {
-    return { ...feature, boundary: remapElementRefs(feature.boundary, featureId, createdIds) };
+    return { ...feature, boundary: remapElementRefs(feature.boundary, featureId, createdIds),
+      ...(feature.holes === undefined ? {} : { holes: feature.holes.map(loop => remapElementRefs(loop, featureId, createdIds)) }) };
   }
   if (feature.kind === 'offset') {
     return { ...feature, source: remapElementRefs(feature.source, featureId, createdIds) };

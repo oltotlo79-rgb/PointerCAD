@@ -1,14 +1,15 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { MATH_INPUT_LIMITS } from '@pointercad/expression/math/contracts';
 import { MathEditorSurface, type MathInsertGroup } from './MathEditorSurface.js';
-import type { MathEditorController } from './MathEditorController.js';
+import type { MathEditorController, MathEditorSnapshot } from './MathEditorController.js';
 import type { MathEditorOutput } from './mathEditorSession.js';
 import type { MathPaletteItem } from './mathPalette.js';
 import type { StructuredMathField } from './mathFieldHost.js';
 import { mathEditorLabels } from './mathEditorLabels.js';
 import { mathResultAxes } from './mathResultComponent.js';
 import { MathResultComponentPicker } from './MathResultComponentPicker.js';
-import { mathEditorResultText } from './mathEditorResult.js';
+import { mathEditorResultText, type MathEditorResultText } from './mathEditorResult.js';
+import { mathResultPending, shownMathResult, type ShownMathResult } from './mathEditorShownResult.js';
 import { MathDeclarationEditor } from './MathDeclarationEditor.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { countParameterUsageSites, inspectInputExpression, matchesMathParameterBindings } from './expressionInspectionContext.js';
@@ -26,6 +27,22 @@ export interface MathEditorPanelProps {
   readonly applyBlockedReason?: (output: MathEditorOutput) => string | null;
 }
 
+/**
+ * 結果の欄に見せる物(mathEditorShownResult.ts)。入力中・計算中は、前に計算の済んだ結果を計算中の印つきで残し、
+ * 欄の高さを変えない。計算が済むたびに覚え直し、誤りの時は忘れる。
+ */
+function useShownResult(snapshot: MathEditorSnapshot, description: MathEditorResultText, reason: string | null): ShownMathResult {
+  const pending = mathResultPending(snapshot);
+  const [settled, setSettled] = useState<ShownMathResult | null>(null);
+  const { message, detail, hasError, busy, full } = description;
+  useEffect(() => {
+    // 覚えるのは計算の済んだ結果だけ(準備の段の文は、次の計算中に残さない)。
+    if (pending || busy) return;
+    setSettled(hasError ? null : { text: { message, detail, hasError, busy, full }, applyBlockedReason: reason, stale: false });
+  }, [pending, message, detail, hasError, busy, full, reason]);
+  return shownMathResult(settled, description, reason, pending);
+}
+
 /** Shared coordinate/coefficient/function view. It never owns another copy of the input or accepted value. */
 export function MathEditorPanel(props: MathEditorPanelProps): React.JSX.Element {
   const snapshot = useSyncExternalStore(props.controller.subscribe, props.controller.getSnapshot, props.controller.getSnapshot);
@@ -33,6 +50,8 @@ export function MathEditorPanel(props: MathEditorPanelProps): React.JSX.Element 
   const parameters = useAppStore(state => state.document.parameters);
   const document = useAppStore(state => state.document);
   const description = mathEditorResultText(snapshot);
+  const shown = useShownResult(snapshot, description, snapshot.state.status === 'evaluated' && !snapshot.state.canApply
+    && !description.hasError ? props.applyBlockedReason?.(snapshot.state.output) ?? null : null);
   const labels = mathEditorLabels();
   const appliedLabels = props.acceptLabel === undefined ? labels
     : { ...labels, apply: props.acceptLabel, hints: { ...labels.hints, apply: props.acceptLabel } };
@@ -56,14 +75,13 @@ export function MathEditorPanel(props: MathEditorPanelProps): React.JSX.Element 
   return <><MathDeclarationEditor controller={props.controller} declarations={snapshot.state.input.declarations ?? []}
     disabled={props.readOnly || !props.controller.isCurrent()}/><MathEditorSurface input={snapshot.state.input} controller={props.controller}
     createField={props.createField} labels={appliedLabels} groups={props.groups} palette={props.palette}
-    query={snapshot.query} onQuery={props.controller.setQuery} resultMessage={description.message}
+    query={snapshot.query} onQuery={props.controller.setQuery} resultMessage={shown.text.message}
     resultActions={axes === null ? null : <MathResultComponentPicker
       key={snapshot.state.input.identity.inputRevision} axes={axes}
       disabled={props.readOnly || !props.controller.isCurrent()}
       onChoose={indices => props.controller.chooseResultComponent(snapshot.state.input, indices)}/>}
-    resultDetail={description.detail} resultFull={description.full} hasError={description.hasError} busy={description.busy}
-    applyBlockedReason={snapshot.state.status === 'evaluated' && !snapshot.state.canApply && !description.hasError
-      ? props.applyBlockedReason?.(snapshot.state.output) ?? null : null}
+    resultDetail={shown.text.detail} resultFull={shown.text.full} hasError={shown.text.hasError} busy={description.busy}
+    applyBlockedReason={shown.applyBlockedReason} resultStale={shown.stale}
     inspection={inspection} parameterUnits={parameterUnits} usageCounts={usageCounts}
     canApply={snapshot.state.status === 'evaluated' && snapshot.state.canApply}
     canChangeNotation={props.controller.isCurrent()} readOnly={props.readOnly}

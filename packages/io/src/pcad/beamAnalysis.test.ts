@@ -12,7 +12,7 @@ import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { isRecord } from './guards.js';
-import { PCAD_SCHEMA_VERSION } from './schema.js';
+import { PCAD_MAX_SCHEMA_VERSION, PCAD_SCHEMA_VERSION } from './schema.js';
 import { findStrengthMaterial, STRENGTH_SOURCES } from '@pointercad/model';
 import type { AnalysisMaterialCapacity, SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 
@@ -252,7 +252,8 @@ describe('current schema combined purchased steel and persisted analysis inputs'
     }
     const raw: unknown = JSON.parse(text);
     if (!isRecord(raw) || !isRecord(raw.document)) throw new Error('Missing public envelope');
-    const future = readAssemblyDocument(JSON.stringify({ ...raw, schema: PCAD_SCHEMA_VERSION + 1, document: { ...raw.document, schemaVersion: PCAD_SCHEMA_VERSION + 1 } }));
+    const future = readAssemblyDocument(JSON.stringify({ ...raw, schema: PCAD_MAX_SCHEMA_VERSION + 1,
+      document: { ...raw.document, schemaVersion: PCAD_MAX_SCHEMA_VERSION + 1 } }));
     expect(future.ok).toBe(false);
     if (!future.ok) expect(future.error.code).toBe('unsupportedNewVersion');
     expect(readAssemblyDocument(JSON.stringify({ ...raw, schema: 19 })).ok).toBe(false);

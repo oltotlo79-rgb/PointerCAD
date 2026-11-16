@@ -5,11 +5,13 @@ import { isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
+import { regionFillInputOf } from '../solid/regionPick.js';
 import { solidAnalysisLayersChanged, solidAnalysisLayersOf } from '../solidAnalysis/solidModalViewport.js';
 import type { AppState } from '../store/appState.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { CameraControls } from './attachCameraControls.js';
+import { sameRegionFillInput } from './buildRegionFill.js';
 import type { CutPreview } from './createSolidLayer.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { cylinderBasisGuide } from './cylinderBasisGuide.js';
@@ -61,6 +63,9 @@ export function syncInitialScene(sync: ViewportStoreSync): void {
   const initialSketchHidden = activePartDocument(initial) === null || isSheetFlatDisplayed(initial);
   sync.publishSketch(initial, initialSketchHidden);
   scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
+  // 押し出しの領域の塗り(M-01)は、領域を選ぶ状態で開いた時だけ渡す。
+  const initialRegions = regionFillInputOf(initial);
+  if (initialRegions !== null) scene.setSketchRegions(initialRegions);
   scene.setBodies(solidBodiesForAdmission(initial));
   // 配置した部品(FR-605)。アセンブリを開いていないあいだは空のまま。
   if (sync.assemblyInput.assemblyReady()) scene.setAssembly(assemblyBundleOf(useAppStore.getState()));
@@ -149,6 +154,20 @@ function syncShapesAndHighlights(sync: ViewportStoreSync, next: AppState, previo
     scene.setBodyHighlight(next.hoveredElementId, next.selection);
     scene.setSubShapeHighlight(next.hoveredElementId, next.selection);
   }
+  syncRegionFills(sync, next, previous);
+}
+
+/**
+ * 押し出しで面を選んでいない間の、閉じた領域の塗り(M-01)。材料(道具・欄・選択・スケッチ・ホバー)が変わった時だけ
+ * 組み直し、前と同じ塗りなら渡さない(領域を選ぶ状態の前後とも塗りが無い間は scene に何も渡さない)。
+ */
+function syncRegionFills(sync: ViewportStoreSync, next: AppState, previous: AppState): void {
+  if (next.activeTool === previous.activeTool && next.numericInput === previous.numericInput && next.document === previous.document
+    && next.selection === previous.selection && next.sketch === previous.sketch && next.resolvedSketch === previous.resolvedSketch
+    && next.workPlaneId === previous.workPlaneId && next.assembly === previous.assembly
+    && next.hoveredElementId === previous.hoveredElementId) return;
+  const before = regionFillInputOf(previous), after = regionFillInputOf(next);
+  if (!sameRegionFillInput(before, after)) sync.scene.setSketchRegions(after);
 }
 
 /** 配置した部品と干渉の表示(FR-605、FR-606)。 */

@@ -21,6 +21,11 @@ function circle(id: string, center: Vec3, radius: number, construction = false):
   return { id, name: id, planeId: 'xy', kind: 'arc', center: absoluteCoordinate(...center), radius: num(radius),
     startAngle: num(0), endAngle: num(360), construction };
 }
+/** 線分 4 本の正方形(反時計回り)。矩形の図形は作図面の上に置かれるので、高さの違う輪は線分でつくる。 */
+function square(prefix: string, x: number, y: number, size: number, z: number): SketchFeature[] {
+  const corners: Vec3[] = [[x, y, z], [x + size, y, z], [x + size, y + size, z], [x, y + size, z]];
+  return corners.map((corner, index) => line(`${prefix}-${String(index + 1)}`, corner, corners[(index + 1) % 4]));
+}
 function regionsOf(document: SketchDocument) {
   return findSketchRegions(document, resolveSketch(document));
 }
@@ -81,12 +86,14 @@ describe('閉じた輪を領域として探す(M-01)', () => {
   });
 
   // 3 点は必ず 1 つの平面に乗るので、平面に乗らない輪は 4 点でつくる(1 点だけ z を上げる)。
-  it('作図面に乗らない 3D の曲線があれば、領域を出さない', () => {
-    const result = regionsOf(documentOf(
-      line('line-1', [0, 0, 0], [10, 0, 0]), line('line-2', [10, 0, 0], [10, 10, 5]),
-      line('line-3', [10, 10, 5], [0, 10, 0]), line('line-4', [0, 10, 0], [0, 0, 0])));
-    expect(result.regions).toEqual([]);
-    expect(result.frame).toBeNull();
+  it('平面に乗らない輪は領域にしない(ほかの作図面の輪は領域のまま)', () => {
+    const skew = [line('line-1', [0, 0, 0], [10, 0, 0]), line('line-2', [10, 0, 0], [10, 10, 5]),
+      line('line-3', [10, 10, 5], [0, 10, 0]), line('line-4', [0, 10, 0], [0, 0, 0])];
+    const alone = regionsOf(documentOf(...skew));
+    expect(alone.regions).toEqual([]);
+    expect(alone.frames).toEqual([]);
+    const mixed = regionsOf(documentOf(...skew, rectangle('rectangle-1', [30, 0, 0], [40, 10, 0])));
+    expect(mixed.regions.map(region => region.boundary)).toEqual([[{ featureId: 'rectangle-1' }]]);
   });
 
   it('押した点を含むいちばん内側の領域を引く(円の内側は円の領域、矩形の残りは矩形の領域)', () => {
@@ -95,6 +102,50 @@ describe('閉じた輪を領域として探す(M-01)', () => {
     expect(regionAtPoint(result, [30, 20, 0])?.boundary[0].featureId).toBe('arc-1');
     expect(regionAtPoint(result, [5, 5, 0])?.boundary[0].featureId).toBe('rectangle-1');
     expect(regionAtPoint(result, [100, 100, 0])).toBeNull();
+  });
+
+  it('領域の向きは、境界をたどる向きで決まる(反時計回りは +Z、時計回りは -Z)', () => {
+    const counterclockwise = regionsOf(documentOf(
+      line('line-1', [0, 0, 0], [10, 0, 0]), line('line-2', [10, 0, 0], [10, 10, 0]), line('line-3', [10, 10, 0], [0, 0, 0])));
+    expect(counterclockwise.regions[0].normal).toEqual([0, 0, 1]);
+    const clockwise = regionsOf(documentOf(
+      line('line-1', [0, 0, 0], [10, 10, 0]), line('line-2', [10, 10, 0], [10, 0, 0]), line('line-3', [10, 0, 0], [0, 0, 0])));
+    expect(clockwise.regions[0].normal).toEqual([0, 0, -1]);
+  });
+
+  it('高さの違う 2 つの作図面の正方形は、それぞれの作図面の領域になる', () => {
+    const result = regionsOf(documentOf(...square('low', 0, 0, 10, 0), ...square('high', 20, 0, 10, 5)));
+    expect(result.regions.map(region => region.boundary[0].featureId)).toEqual(['low-1', 'high-1']);
+    expect(result.frames).toHaveLength(2);
+    expect(result.regions[0].frame).not.toBe(result.regions[1].frame);
+    for (const region of result.regions) expect(region.area).toBeCloseTo(100, 6);
+  });
+
+  it('入れ子は同じ作図面の輪どうしだけで決める(上から見て内側でも、高さが違えば穴の候補にしない)', () => {
+    const inner = (z: number) => square('inner', 10, 10, 10, z);
+    const innerRefs = ['inner-1', 'inner-2', 'inner-3', 'inner-4'].map(featureId => ({ featureId }));
+    const same = regionsOf(documentOf(...square('outer', 0, 0, 40, 0), ...inner(0)));
+    expect(same.regions.find(region => region.boundary[0].featureId === 'outer-1')?.holes).toEqual([innerRefs]);
+    const apart = regionsOf(documentOf(...square('outer', 0, 0, 40, 0), ...inner(5)));
+    expect(apart.regions.map(region => region.holes)).toEqual([[], []]);
+    expect(apart.frames).toHaveLength(2);
+  });
+
+  it('同じ作図面かは 1 つの閾値(SKETCH_TOLERANCE_MM = 1e-6 mm)で決める: 閾値の内は同じ、外は別', () => {
+    const innerRefs = ['inner-1', 'inner-2', 'inner-3', 'inner-4'].map(featureId => ({ featureId }));
+    const within = regionsOf(documentOf(...square('outer', 0, 0, 40, 0), ...square('inner', 10, 10, 10, 5e-7)));
+    expect(within.frames).toHaveLength(1);
+    expect(within.regions.find(region => region.boundary[0].featureId === 'outer-1')?.holes).toEqual([innerRefs]);
+    const beyond = regionsOf(documentOf(...square('outer', 0, 0, 40, 0), ...square('inner', 10, 10, 10, 2e-6)));
+    expect(beyond.frames).toHaveLength(2);
+    expect(beyond.regions.map(region => region.holes)).toEqual([[], []]);
+  });
+
+  it('押した点は、その点が乗る作図面の領域だけから引く', () => {
+    const result = regionsOf(documentOf(...square('low', 0, 0, 10, 0), ...square('high', 0, 0, 10, 5)));
+    expect(regionAtPoint(result, [5, 5, 0])?.boundary[0].featureId).toBe('low-1');
+    expect(regionAtPoint(result, [5, 5, 5])?.boundary[0].featureId).toBe('high-1');
+    expect(regionAtPoint(result, [5, 5, 2.5])).toBeNull();
   });
 
   // 時間の上限は単体に書かない(外部検査の負荷で揺れるため。2026-11-14 の検査の安定化の決まり)。数だけを確かめる。

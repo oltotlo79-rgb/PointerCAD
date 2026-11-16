@@ -12,6 +12,7 @@ import { appendSolid, type PartDocument } from '@pointercad/model';
 import { attachPartRecompute } from '../store/attachKernel.js';
 import { extrudeFeature, resultFor, tick } from '../store/testing/createTestStore.js';
 import { confirmExtrusion } from '../solid/extrudePreview.js';
+import { withExtrudeSuggestions } from '../solid/extrudeSuggestion.js';
 import { NumericMathDialog } from './NumericMathDialog.js';
 
 interface KeyInput {
@@ -127,6 +128,22 @@ describe('Extrusion input commits through geometry calculation (EX-14)', () => {
     useAppStore.setState({ numericInput: createNumericInput('point', 'point', 'absolute') });
     expect(renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />))
       .not.toContain(t('numericInput.extrudePreview'));
+  });
+
+  it('shows the suggestion badge and its reason beside suggested choices, and drops them after a manual choice (M-01)', () => {
+    const suggested = withExtrudeSuggestions(
+      createNumericInput('extrude', 'extrudeDistance', undefined, { extrudeTargets: [{ value: 'extrude-1', label: '箱1' }] }),
+      { forward: { operation: 'cut', target: 'extrude-1' }, reverse: { operation: 'join', target: 'extrude-1' },
+        symmetric: { operation: 'join', target: 'extrude-1' } });
+    useAppStore.setState({ numericInput: suggested });
+    const markup = renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />);
+    // 札は結果と相手の 2 つ(理由の文にも「提案」の字があるので、札の説明の数で数える)。
+    expect(markup.split(t('numericInput.extrudeSuggestion.badgeTooltip')).length - 1).toBe(2);
+    expect(markup).toContain(t('numericInput.extrudeSuggestion.cut').replace('{name}', '箱1'));
+    useAppStore.setState({ numericInput: chooseNumericInput(suggested, 'extrudeOperation', 'new') });
+    const manual = renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />);
+    expect(manual).not.toContain(t('numericInput.extrudeSuggestion.badgeTooltip'));
+    expect(manual).not.toContain(t('numericInput.extrudeSuggestion.cut').replace('{name}', '箱1'));
   });
 
   it('Alt+P previews through the same path without touching the document, Undo or the open input', () => {

@@ -51,6 +51,7 @@ import {
   type EditMenuToolId,
 } from './numericInput.js';
 import { boundaryElementKind, toElementRef } from './sketchCommands.js';
+import { touchesHoledFace } from './faceHoleEditing.js';
 
 /** オフセットの既定距離(mm、NFR-UX-4)。5mm は板物・ブラケットの縁取りでよく使う値。 */
 export const DEFAULT_OFFSET_DISTANCE_MM = 5;
@@ -152,6 +153,7 @@ export function commitTrim(
   at: Vec3,
   options: SketchResolveOptions = {},
 ): TrimCommitOutcome {
+  if (touchesHoledFace(document, [elementId])) return { ok: false, reasonKey: 'solidError.holedFaceTrim' };
   const outcome = trimCurve(document, { elementId, at }, options);
   return outcome.ok
     ? { ok: true, document: outcome.document }
@@ -168,6 +170,7 @@ export function commitExtend(
   at: Vec3,
   options: SketchResolveOptions = {},
 ): TrimCommitOutcome {
+  if (touchesHoledFace(document, [elementId])) return { ok: false, reasonKey: 'solidError.holedFaceTrim' };
   const outcome = extendCurve(document, { elementId, at }, options);
   return outcome.ok
     ? { ok: true, document: outcome.document }

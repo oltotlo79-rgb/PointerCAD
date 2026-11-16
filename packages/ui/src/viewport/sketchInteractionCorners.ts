@@ -9,6 +9,7 @@ import { isFreeWorkPlaneId, lengthVec3, subVec3, type Vec3, type WorkPlane } fro
 
 import { createConfiguredNumericInput as createNumericInput } from '../settings/createConfiguredNumericInput.js';
 import { cornerNear, cornerPreview, type CornerHit, type CornerShape } from '../sketch/cornerCommands.js';
+import { touchesHoledFace } from '../sketch/faceHoleEditing.js';
 import {
   DEFAULT_SKETCH_CHAMFER_DISTANCE_MM,
   DEFAULT_SKETCH_FILLET_RADIUS_MM,
@@ -99,7 +100,8 @@ export function createSketchCornerTools(context: SketchCornerContext) {
       state.setHovered(nextHovered);
     }
     indicators.clearSnapIndicators();
-    indicators.showEdit(hit === null ? null : cornerPreview(hit, cornerPlane(), cornerShapeOf(tool)));
+    const refused = hit === null || touchesHoledFace(state.sketch, [hit.firstElementId, hit.secondElementId]);
+    indicators.showEdit(refused ? null : cornerPreview(hit, cornerPlane(), cornerShapeOf(tool)));
   }
 
   /** 角の丸め・面取りのクリック(FR-323)。指した角の 2 本を選び、半径/距離の欄をその場に開く。 */
@@ -108,6 +110,10 @@ export function createSketchCornerTools(context: SketchCornerContext) {
     const hit = cornerTargetAt(pointer);
     if (hit === null) {
       state.setEditError('corner.error.noCornerHere');
+      return;
+    }
+    if (touchesHoledFace(state.sketch, [hit.firstElementId, hit.secondElementId])) {
+      state.setEditError('solidError.holedFaceCorner');
       return;
     }
     state.setSelection([hit.firstElementId, hit.secondElementId]);

@@ -6,6 +6,7 @@ import { beginRecompute, waitForRecompute } from './recompute.js';
 import { pointOnScreen } from './connectPointsFlow.js';
 import { uiMessage } from './uiMessages.js';
 import { closeInputBindings, openInputBindings } from './inputBindingsWindowSupport.js';
+import { deliveredWheelPixels, observeWheel } from './wheelDelivery.js';
 
 // A valid nondefault unit isolates malformed camera data from unrelated validation.
 const preservedLengthUnit = 'inch' satisfies LengthUnit;
@@ -54,19 +55,8 @@ async function drag(page: Page, keys: readonly string[]): Promise<void> {
 async function wheel(page: Page) {
   const start = await centre(page);
   await page.mouse.move(start.x, start.y);
-  // Observe delivered native DOM input without changing it or installing product hooks.
-  const observation = await canvas(page).evaluateHandle(element => {
-    const events: { deltaX: number; deltaY: number; deltaMode: number; isTrusted: boolean;
-      ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }[] = [];
-    const record = (event: Event) => {
-      if (!(event instanceof WheelEvent)) return;
-      events.push({ deltaX: event.deltaX, deltaY: event.deltaY,
-        deltaMode: event.deltaMode, isTrusted: event.isTrusted, ctrlKey: event.ctrlKey,
-        altKey: event.altKey, shiftKey: event.shiftKey, metaKey: event.metaKey });
-    };
-    element.addEventListener('wheel', record, { capture: true, passive: true });
-    return { events, stop: () => element.removeEventListener('wheel', record, { capture: true }) };
-  });
+  // Observe delivered native DOM input without changing it or installing product hooks (the shared wheelDelivery helper).
+  const observation = await observeWheel(page, canvas(page));
   try {
     const previous = await page.evaluate(() => window.pcadViewportRenderStats?.().completedRenders ?? 0);
     await page.mouse.wheel(0, 100);
@@ -113,7 +103,7 @@ function deliveredWheelNotches(events: Awaited<ReturnType<typeof wheel>>): numbe
     ctrlKey: false, altKey: false, shiftKey: false, metaKey: false });
   expect(Number.isFinite(event.deltaY)).toBe(true);
   expect(event.deltaY).toBeGreaterThan(0);
-  return event.deltaY / 100;
+  return deliveredWheelPixels(event) / 100;
 }
 
 async function expectCustomForm(page: Page): Promise<void> {

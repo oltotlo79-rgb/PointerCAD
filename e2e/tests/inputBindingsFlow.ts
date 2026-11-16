@@ -34,6 +34,14 @@ async function settle(page: Page, previous: number): Promise<void> {
     return stats !== undefined && stats.completedRenders > count && performance.now() - stats.lastCompletedAtMs > 350;
   }, previous), { timeout: 10_000, message: '視点の遷移が描画を終えて止まる' }).toBe(true);
 }
+/** 描画が 400ms 止まるのを待ち、その時の描画の回数を返す(前の操作の描き直しを、次の「描かれない」の基準に含めない)。 */
+async function quietRenders(page: Page): Promise<number> {
+  await expect.poll(() => page.evaluate(() => {
+    const stats = window.pcadViewportRenderStats?.();
+    return stats !== undefined && performance.now() - stats.lastCompletedAtMs > 400;
+  }), { timeout: 10_000, message: '前の操作の描画が止まる' }).toBe(true);
+  return renders(page);
+}
 /** 何も描かれないまま 400ms が過ぎる(キーが視点を動かさなかった)。 */
 async function stayStill(page: Page, previous: number): Promise<void> {
   await expect.poll(() => page.evaluate(count => {
@@ -222,7 +230,8 @@ export async function exerciseViewKeysFlow(page: Page, info: TestInfo, app?: Ele
   expect(front.view.position[2]).toBeCloseTo(front.view.target[2], 6);
   expect(front.view.position[1]).toBeLessThan(front.view.target[1]);
   await canvas(page).focus();
-  previous = await renders(page);
+  // 直前の保存(名前付きビューの欄の開け閉め・保存の後の描き直し)が描き終わってから基準を取る。Home で描かれない事だけを見る。
+  previous = await quietRenders(page);
   await page.keyboard.press('Home'); await stayStill(page, previous);
   expectSameCamera((await rememberCamera(page, info, 'keys-after-home', app)).view, front.view);
   await canvas(page).focus();

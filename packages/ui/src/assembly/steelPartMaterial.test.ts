@@ -1,8 +1,8 @@
 /**
  * K-06 (2): 鋼材の規格部品を新しく置く時に、行の鋼種が質量の材料の台帳(densityMaterials.ts)の行に対応する物だけ、部品に材質を付ける。
- * 台帳の行の出どころが名指しする鋼種だけを対応させ(SS400・S45C・SSC400 → steel、SUS304TP → stainless)、名指しの無い鋼種
- * (SGP・STK400・STKR400)と鋼種の無い規格部品(鋼種なしの形鋼・ボルトなど)は付けない(部品表は今の既定の鋼のまま)。
- * 鋼の行の部品表の質量は前と同じで、ステンレスの行は台帳のステンレスの密度になる。
+ * 対応は出どころのある物だけ: 台帳の行の出どころが名指しする鋼種(SS400・S45C・SSC400 → steel、SUS304TP → stainless)と、
+ * 製品の規格の原案が単位質量の計算に台帳の steel と同じ密度(1 cm³ の鋼を 7.85 g)を書く鋼種(SGP・STK400・STKR400 → steel)。
+ * 鋼種の無い規格部品(鋼種なしの形鋼・ボルトなど)は付けない。鋼の行の部品表の質量は前と同じで、ステンレスの行は台帳のステンレスの密度になる。
  */
 import {
   buildBom, createAssemblyDocument, findDensityMaterial, massFromVolume, partKeyOf, standardPartNominalVolume,
@@ -16,7 +16,7 @@ import { commitStandardPartChoice, standardPartChoices, steelPartChoices, type S
 
 /** [鋼種, 付く材質(付けない時は null)]。今の表の全ての鋼種。 */
 const GRADES: readonly (readonly [SteelMaterialGrade, string | null])[] = [
-  ['SS400', 'steel'], ['S45C', 'steel'], ['SGP', null], ['STKR400', null], ['STK400', null], ['SSC400', 'steel'],
+  ['SS400', 'steel'], ['S45C', 'steel'], ['SGP', 'steel'], ['STKR400', 'steel'], ['STK400', 'steel'], ['SSC400', 'steel'],
   ['SUS304TP', 'stainless'],
 ];
 

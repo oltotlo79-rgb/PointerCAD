@@ -84,6 +84,7 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
     <p>{t('solidAnalysis.selectionHelp')}</p>
     <p>{t('solidAnalysis.body')}: {session.bodyFeatureId ?? t('solidAnalysis.none')}</p>
     <SolidAnalysisMaterialFields value={session.capacity ?? null} onChange={setMaterial}
+      young={session.values.young} onYoungChange={value => edit('young', value)}
       selectionKey={JSON.stringify([activeOwner, documentId, session.materialSelectionKey ?? session.ownerId])} />
     <button type="button" className="pcad-button" data-testid="solid-fixed" onClick={() => runner?.captureFaces('fixed')} title={t('solidAnalysis.guide.fixed')}>
       {t('solidAnalysis.fixed')} ({session.fixedFaces.length})</button>

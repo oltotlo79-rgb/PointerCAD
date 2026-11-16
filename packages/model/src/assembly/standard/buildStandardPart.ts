@@ -14,9 +14,7 @@ import {
   nextFeatureName,
 } from '../../sketch/createSketchDocument.js';
 import { DEFAULT_WORK_PLANE_ID } from '../../sketch/planeMath.js';
-import type {
-  SketchArcFeature, SketchDocument, SketchFaceFeature, SketchLineFeature, SketchPointFeature,
-} from '../../sketch/types.js';
+import type { SketchFaceFeature, SketchPointFeature } from '../../sketch/types.js';
 import {
   findMetricThread, metricThreadPitch, threadMinorDiameter, type ThreadSeries,
 } from '../../thread/metricThread.js';
@@ -50,8 +48,8 @@ import {
   STEEL_R2_SECTION_CATALOGS, STEEL_SECTION_CATALOGS, steelGradeRule, type SteelGradeRejectionCode,
 } from './steelGradeRules.js';
 import { STEEL_STANDARDS, type SteelStandardReference } from './steelStandards.js';
-import { steelCatalogProfile, type SteelCatalogProfile } from './steelProfiles/steelCatalogProfile.js';
-import type { SteelProfileSegment } from './steelSectionProfiles.js';
+import { buildProfileSection } from './profileExtrusion.js';
+import { steelCatalogProfile } from './steelProfiles/steelCatalogProfile.js';
 import { buildFilletWeldPart, filletWeldLegs, filletWeldNominalVolume, filletWeldOptionAngle } from '../welding/filletWeldPart.js';
 import { buildCircularFilletWeldPartFromSource, CIRCULAR_FILLET_WELD_GENERATOR_REVISION } from '../welding/circularFilletWeldSource.js';
 import { cylindricalWeldSection } from '../welding/cylindricalWeld.js';
@@ -399,62 +397,6 @@ function buildHBeam(
     [0, 0], [w, 0], [w, tf], [right, tf], [right, h - tf], [w, h - tf],
     [w, h], [0, h], [0, h - tf], [left, h - tf], [left, tf], [0, tf],
   ], length);
-}
-
-/** One closed profile loop and its face. The r1 sections use exactly one loop, with the original feature order. */
-function appendProfileLoop(start: SketchDocument, segments: readonly SteelProfileSegment[]):
-{ readonly sketch: SketchDocument; readonly faceId: string } {
-  let sketch = start;
-  const boundary: { featureId: string }[] = [];
-  for (const segment of segments) {
-    const feature: SketchLineFeature | SketchArcFeature = segment.kind === 'line' ? {
-      id: nextFeatureId(sketch, 'line'), name: nextFeatureName(sketch, 'line'),
-      planeId: DEFAULT_WORK_PLANE_ID, kind: 'line', construction: false,
-      from: absoluteCoordinate(segment.from[0], segment.from[1], 0),
-      to: absoluteCoordinate(segment.to[0], segment.to[1], 0),
-    } : {
-      id: nextFeatureId(sketch, 'arc'), name: nextFeatureName(sketch, 'arc'),
-      planeId: DEFAULT_WORK_PLANE_ID, kind: 'arc', construction: false,
-      center: absoluteCoordinate(segment.center[0], segment.center[1], 0),
-      radius: expressionValueFromNumber(segment.radius),
-      startAngle: expressionValueFromNumber(segment.startAngle * 180 / Math.PI),
-      endAngle: expressionValueFromNumber(segment.endAngle * 180 / Math.PI),
-    };
-    sketch = appendFeature(sketch, feature);
-    boundary.push({ featureId: feature.id });
-  }
-  const face: SketchFaceFeature = {
-    id: nextFeatureId(sketch, 'face'), name: nextFeatureName(sketch, 'face'),
-    planeId: DEFAULT_WORK_PLANE_ID, kind: 'face', boundary, color: DEFAULT_FACE_COLOR,
-  };
-  return { sketch: appendFeature(sketch, face), faceId: face.id };
-}
-
-/**
- * Extrude the outer loop; a hollow section (rectangular tube) also extrudes each inner loop and subtracts it,
- * like the round pipe's two cylinders. The first solid stays the outer stock extrude (steelFinishedLength).
- */
-function buildProfileSection(section: SteelCatalogProfile, length: ExpressionValue): PartDocument {
-  let document = createEmptyPartDocument();
-  const outer = appendProfileLoop(activeSketch(document), section.segments);
-  let sketch = outer.sketch;
-  const holeFaceIds: string[] = [];
-  for (const hole of section.holes) {
-    const added = appendProfileLoop(sketch, hole);
-    sketch = added.sketch;
-    holeFaceIds.push(added.faceId);
-  }
-  document = replaceSketch(document, sketch);
-  const body = appendExtrude(document, { sketchId: sketch.id, faceFeatureId: outer.faceId }, length);
-  document = body.document;
-  let targetId = body.feature.id;
-  for (const faceId of holeFaceIds) {
-    const hole = appendExtrude(document, { sketchId: sketch.id, faceFeatureId: faceId }, length);
-    const hollow = appendBoolean(hole.document, 'subtract', targetId, hole.feature.id);
-    document = hollow.document;
-    targetId = hollow.feature.id;
-  }
-  return document;
 }
 
 function buildSteelProduct(row: SteelProduct, options: Readonly<Record<string, string>>,

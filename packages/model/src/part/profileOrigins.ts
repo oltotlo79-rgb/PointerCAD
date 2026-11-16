@@ -17,6 +17,7 @@ export function independentProfileOrigin(
   sketch: SketchDocument | undefined,
   face: ResolvedFace,
 ): IndependentProfileOrigin | IndependentCurveProfileOrigin | null {
+  if ((face.holes?.length ?? 0) > 0) return null;
   const legacy = independentFourLineProfile(sketch, face);
   if (legacy !== null) return legacy;
   if (sketch === undefined || face.curves.length < 3 || face.curves.length > 32) return null;
@@ -56,6 +57,7 @@ export function independentFourLineProfile(
   sketch: SketchDocument | undefined,
   face: ResolvedFace,
 ): IndependentProfileOrigin | null {
+  if ((face.holes?.length ?? 0) > 0) return null;
   if (sketch === undefined || face.curves.length !== 4) return null;
   const savedFace = sketch.features.find((feature) =>
     feature.id === face.featureId && feature.kind === 'face');

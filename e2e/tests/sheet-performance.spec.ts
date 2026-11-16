@@ -5,6 +5,7 @@ import { sheetPerformanceFixture } from '../../packages/model/src/sheetMetal/tes
 import { openSheetPart } from './sheetPartFlow.js';
 import { measureViewportFps, readViewportRenderStats } from './viewportRenderStats.js';
 import { readRecomputeStats } from './recompute.js';
+import { wheelToDeliveredTotal } from './wheelDelivery.js';
 
 test('P10 板金100段の実描画性能を記録し、オービットによる再計算を発生させない', async ({ page }, testInfo) => {
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
@@ -19,7 +20,10 @@ test('P10 板金100段の実描画性能を記録し、オービットによる�
   await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
   await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders).toBeGreaterThan(render.completedRenders);
   // ホームは原点へ戻す操作。25個すべての実メッシュが画面内へ収まる距離にする。
-  await page.locator('canvas.pcad-viewport__canvas').hover(); await page.mouse.wheel(0, 1500);
+  // 届いた量の合計 1500 で縮める(送った量を決め打ちしない。wheelDelivery.ts)。
+  await page.locator('canvas.pcad-viewport__canvas').hover();
+  const wheel = await wheelToDeliveredTotal(page, 1500);
+  console.log(`[ホイールの届き] ${JSON.stringify({ flow: 'sheet-performance', ...wheel })}`);
   const ids = Array.from({ length: 25 }, (_, i) => `relief-${i}`).sort();
   const framed = () => page.evaluate(() => [...(window.pcadViewportFramedBodies?.() ?? [])].sort());
   await expect.poll(framed).toEqual(ids);

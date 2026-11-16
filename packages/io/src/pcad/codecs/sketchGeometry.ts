@@ -2,6 +2,8 @@
 
 import {
   type Checked,
+  fieldProblem,
+  isUnknownArray,
   readBoolean,
   readExpression,
   readLiteral,
@@ -27,6 +29,7 @@ import {
   type OffsetCornerKind,
   type OffsetSide,
   type SketchArcFeature,
+  type SketchElementRef,
   type SketchFeature,
 } from '@pointercad/model';
 
@@ -132,6 +135,17 @@ export function readArcFeature(
   return { ok: true, value: { ...arc, freeOrientation: freeOrientation.value } };
 }
 
+function readFaceHole(value: unknown, path: string): Checked<readonly SketchElementRef[]> {
+  if (!isUnknownArray(value) || value.length === 0) return fieldProblem(path, 'type');
+  const loop = [];
+  for (const [index, reference] of value.entries()) {
+    const item = readElementRef(reference, `${path}[${String(index)}]`);
+    if (!item.ok) return item;
+    loop.push(item.value);
+  }
+  return { ok: true as const, value: loop };
+}
+
 export function readFaceFeature(
   record: Record<string, unknown>,
   path: string,
@@ -145,9 +159,13 @@ export function readFaceFeature(
   if (!color.ok) {
     return color;
   }
+  const holes = Object.hasOwn(record, 'holes')
+    ? readList(record, 'holes', path, readFaceHole) : { ok: true as const, value: [] };
+  if (!holes.ok) return holes;
   return {
     ok: true,
-    value: { ...base, kind: 'face', boundary: boundary.value, color: color.value },
+    value: { ...base, kind: 'face', boundary: boundary.value, color: color.value,
+      ...(holes.value.length === 0 ? {} : { holes: holes.value }) },
   };
 }
 

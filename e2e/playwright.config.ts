@@ -1,5 +1,7 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 import { FIREFOX_GRAPHICS_PREFS } from './firefoxLaunch.js';
+import { e2eBuildTargets, e2eWebServer } from '../scripts/lib/e2eWebServer.mjs';
 
 // Dedicated measurements require the existing owned-input runners, never ordinary CI.
 const MEASUREMENT_FILES = {
@@ -32,6 +34,11 @@ const ELECTRON_TEST_FILE = /electron-[\w-]+\.spec\.ts$/u;
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
 const VIEWPORT_PERFORMANCE_TEST = /見分けられる同じ箱50個|4分割の実描画性能|100フィーチャー・三面図・50寸法|板金100段の実描画性能|自動作図実行中の実描画性能/u;
+// 読込・保存の中の100入力の応答(p95)を測る6本(chromium・firefox・electron)。2本の worker で並ぶと、読込と保存の検査が
+// CPU を取り合って p95 が上限を超えた(A-20、2026-11-17 の実測: 1 本ずつなら p95 21.7〜32.5ms、並ぶと 77.2〜207.4ms。
+// 外部検査 43755857947・43622465673 の windows 第3組)。専用の project で 1 本ずつ流す。上限・測り方・回数は変えない。
+// 名前はパスの区切りの直後からファイル名の全体で一致させる(末尾だけの一致で別の spec が入らないように)。
+const RESPONSE_PERFORMANCE_TEST = /(?:^|[\\/])(?:electron-|firefox-)?(?:read-response|save-performance)\.spec\.ts$/u;
 
 const FIREFOX_USE = {
   ...devices['Desktop Firefox'],
@@ -39,6 +46,10 @@ const FIREFOX_USE = {
   // Mozilla: modules/libpref/init/StaticPrefList.yaml, webgl.angle.force-warp.
   launchOptions: { firefoxUserPrefs: FIREFOX_GRAPHICS_PREFS },
 };
+// 外部検査(GitHub Actions)の中だけ、落ちた操作の検査をその場で 1 回やり直す(利用者の決定 2026-11-17「その場で 1 回やり直す」)。
+// 見分けは scripts/check.ps1 の $isRunningOnCI と同じ CI=true。手元(diag.py は CI を消し、全体検査も CI を持たない)は 0 のまま。
+// やり直しで通った検査は Playwright の list の最後のまとめに「N flaky」と名前が出る(外部検査のログに残る)。2 回とも落ちれば失敗。
+const CI_RETRIES = process.env.CI === 'true' ? 1 : 0;
 const WEB_STARTUP_TEST = /(?:^|[\\/])(?:smoke|firefox-graphics)\.spec\.ts$/u;
 const FIREFOX_GRAPHICS_TEST = /(?:^|[\\/])firefox-graphics\.spec\.ts$/u;
 const ELECTRON_STARTUP_TEST = /electron-startup\.spec\.ts$/u;
@@ -62,6 +73,8 @@ export default defineConfig({
    * FPS・図面応答の測定は先行projectで専有し、残りの操作検査は2並列で実行する。
    */
   workers: 2,
+  // 上限つきの測定(描画・応答)と起動の確かめの project は、下で 0 に戻す(やり直しで通すと測定の意味が変わる)。
+  retries: CI_RETRIES,
   use: {
     ...devices['Desktop Chrome'],
     baseURL: BASE_URL,
@@ -76,6 +89,7 @@ export default defineConfig({
       name: 'viewport-performance',
       testMatch: /(?:assembly|p8-drawing|drawing-performance|sheet-performance|script-performance)\.spec\.ts$/u,
       workers: 1,
+      retries: 0,
       grep: VIEWPORT_PERFORMANCE_TEST,
       // GPUの有無を揃え、別テストのWASM初期化とCPUを奪い合わずに測る。
       // 50部品・実描画回数・releasePerformanceの下限は手元でもCIでも同じ。
@@ -86,9 +100,15 @@ export default defineConfig({
       use: { trace: 'off', launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader'] } },
     },
     {
+      // 応答の検査どうしを重ねない(上の RESPONSE_PERFORMANCE_TEST)。ほかの project の依存にはしない(依存にすると CI の6組の
+      // 全部で重ねて流れる)。firefox・electron の版は spec の中の browserName と起動で動く(functional・electron の中と同じ形)。
+      name: 'response-performance', testMatch: RESPONSE_PERFORMANCE_TEST, workers: 1, retries: 0,
+      dependencies: ['viewport-performance'],
+    },
+    {
       name: 'functional',
       ...(manualCapture === '1' ? { workers: 1 } : {}),
-      testIgnore: [ELECTRON_TEST_FILE, FIREFOX_GRAPHICS_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
+      testIgnore: [ELECTRON_TEST_FILE, FIREFOX_GRAPHICS_TEST, RESPONSE_PERFORMANCE_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
       ...(selectedMeasurement === null ? {} : { testMatch: dedicatedMatch(false) }),
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       dependencies: ['viewport-performance'],
@@ -96,7 +116,7 @@ export default defineConfig({
     {
       // CI run 43102593955 e2e (ubuntu-latest, 5)、2026-11-12: firefox-graphicsが描画を禁じて起こすFirefoxとsmokeのFirefoxの起動が重なり、
       // smoke:11のFirefoxがWebGLを作れなかった。2つのspecを同時に流さない。
-      name: 'startup-firefox', testMatch: WEB_STARTUP_TEST, use: FIREFOX_USE, workers: 1,
+      name: 'startup-firefox', testMatch: WEB_STARTUP_TEST, use: FIREFOX_USE, workers: 1, retries: 0,
       dependencies: ['viewport-performance'],
     },
     {
@@ -113,13 +133,13 @@ export default defineConfig({
       dependencies: ['viewport-performance', 'startup-firefox'],
     },
     {
-      name: 'startup-electron', testMatch: ELECTRON_STARTUP_TEST, workers: 1,
+      name: 'startup-electron', testMatch: ELECTRON_STARTUP_TEST, workers: 1, retries: 0,
       dependencies: ['viewport-performance'],
     },
     {
       name: 'electron',
       testMatch: dedicatedMatch(true) ?? ELECTRON_TEST_FILE,
-      testIgnore: [ELECTRON_STARTUP_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
+      testIgnore: [ELECTRON_STARTUP_TEST, RESPONSE_PERFORMANCE_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
       workers: 1,
       dependencies: ['viewport-performance', 'startup-electron'],
     },
@@ -129,9 +149,10 @@ export default defineConfig({
     // apps/web の preview は COOP/COEP ヘッダーを付ける(vite.config.ts)。
     // --host 127.0.0.1 を明示しないと、この環境の vite preview は IPv6 ループバック(::1)
     // だけに bind し、127.0.0.1 への接続が確立できず webServer の起動待ちがタイムアウトする(実測)。
-    command: `pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview --port ${PREVIEW_PORT} --strictPort --host 127.0.0.1`,
+    // --project=名前 が全部 Electron か全部 Web で --no-deps の時だけ、要る側だけを組み立てる(scripts/lib/e2eWebServer.mjs)。
+    // CI と手元の全体検査は --project を付けないか混ぜるので、今までどおり両方を組み立てる。
+    ...e2eWebServer(e2eBuildTargets(process.argv), PREVIEW_PORT, fileURLToPath(new URL('../scripts/lib/e2eBuildReady.mjs', import.meta.url))),
     env: { VITE_PCAD_E2E: '1' },
-    url: BASE_URL,
     reuseExistingServer: false,
     timeout: 180_000,
   },

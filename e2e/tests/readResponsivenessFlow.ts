@@ -434,6 +434,8 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
       // Frames the sampler acquired once more after a stale first acquisition (count, rejected ages); never silent.
       samplerStaleRetries: memory?.staleRetries ?? null,
       ...residentMemorySummary(before, during, after, startedAt) }));
+    // 通った回も p95 と有効な入力の数を 1 行出す(A-20。外部検査のログで余裕を見るため)。判定(下の p95 < 100)は変えない。
+    console.log('[応答記録]', JSON.stringify({ label: `読込${String(mib)}MiB ${kind} p95`, p95: metrics.p95, inputs: metrics.active.length, targetMs: 100 }));
     await command.press('Escape');
     // These counters describe the timed reads. The save/reopen proof below starts another real reader.
     expect(audit.sent).toBe(attempts.length); expect(audit.replied).toBe(attempts.length); expect(audit.terminated).toBe(attempts.length);

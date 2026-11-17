@@ -1,5 +1,5 @@
 {
-  "actualTime": "2026-11-17T15:42:08.805669+09:00",
+  "actualTime": "2026-11-17T23:13:49.367380+09:00",
   "format": "pointercad-fem-application-source/1",
   "files": {
     "LICENSE": {
@@ -14408,7 +14408,7 @@
       "source": "packages/test-utils/src/beamAssertionPolicy.test.ts"
     },
     "packages/test-utils/src/browserProjectCoverage.json": {
-      "sha256": "a4f38d68c68d26412577c84b104aad174808e3aae8106534153a938e4832a50c",
+      "sha256": "45fab3d866fde81c54454d26957de180f0b23237d28ff64a2231f46e4c6bf07f",
       "bytes": 92060,
       "source": "packages/test-utils/src/browserProjectCoverage.json"
     },
@@ -14416,6 +14416,11 @@
       "sha256": "4598f6199623ff6915190f8a8a1784edee8bee54ff04560f1b94fd64662de105",
       "bytes": 12484,
       "source": "packages/test-utils/src/browserProjectCoverage.test.ts"
+    },
+    "packages/test-utils/src/ciRetryPolicy.test.ts": {
+      "sha256": "47c668233a1960f76261919fbebd93197523be687dbfa1855104d1f028f14354",
+      "bytes": 7920,
+      "source": "packages/test-utils/src/ciRetryPolicy.test.ts"
     },
     "packages/test-utils/src/ciSharding.test.ts": {
       "sha256": "2b262f0a9b7fcae6c267a201583c9b0d1328fa10d7bbd4d1dab2855eb5ba2aac",
@@ -14466,6 +14471,11 @@
       "sha256": "ec501f9d74652b2b428982a4e8e6d83755673f34e66e3d9b26742e9b1a030926",
       "bytes": 4459,
       "source": "packages/test-utils/src/e2eRelativeImportBoundary.test.ts"
+    },
+    "packages/test-utils/src/e2eWebServer.test.ts": {
+      "sha256": "7d0c710f4ed5a1b47b0c798a6742494b20b2ec38080cbe8167ac8f83fce7d71c",
+      "bytes": 5717,
+      "source": "packages/test-utils/src/e2eWebServer.test.ts"
     },
     "packages/test-utils/src/femBoundaries.test.ts": {
       "sha256": "4c380f5b48e113d71d9e6648033be899f0fc0a476e521e180a9fdc2eb51808e6",
@@ -14666,6 +14676,11 @@
       "sha256": "4551908885df53b362925cd3273bda0bc7bfa0cf26be333fbaa01b53c5c7a6f5",
       "bytes": 11264,
       "source": "packages/test-utils/src/releasePerformance.ts"
+    },
+    "packages/test-utils/src/responsePerformanceProject.test.ts": {
+      "sha256": "4f324b12eb769ac7a34dd2d02eb7ecce3f9c9cd5a722b1a16d5e457e69379d52",
+      "bytes": 4963,
+      "source": "packages/test-utils/src/responsePerformanceProject.test.ts"
     },
     "packages/test-utils/src/reviewBoundaries.test.ts": {
       "sha256": "d0b6c0a5dbc73c2742c07dea8d63afcb8af2e713b4c03aee8cf35005b950ccfc",
@@ -15228,8 +15243,8 @@
       "source": "packages/ui/src/assembly/frameCatalogChoices.test.ts"
     },
     "packages/ui/src/assembly/frameEdgeChoices.test.ts": {
-      "sha256": "07d9bcd67d069238e94b0a3dc80a29e569a07d7f8bd5e079a811c46ad55696b9",
-      "bytes": 5611,
+      "sha256": "b607c2b64b252b6666a69eccb55e2fb8622ec59f71c807c459fc2f9abfe2f74e",
+      "bytes": 5535,
       "source": "packages/ui/src/assembly/frameEdgeChoices.test.ts"
     },
     "packages/ui/src/assembly/frameEdgeChoices.ts": {
@@ -21483,8 +21498,8 @@
       "source": "packages/ui/src/store/assemblySlice.test.ts"
     },
     "packages/ui/src/store/assemblySlice.ts": {
-      "sha256": "4352101e8a0aa1399f2d358a6846e6b9fc212c25123f5cf43f6ee1d488385f9b",
-      "bytes": 76392,
+      "sha256": "71db4bbb92cf833eff4ff1e8c504032bacf20321167cf6570e3632d7cd1f23a3",
+      "bytes": 75188,
       "source": "packages/ui/src/store/assemblySlice.ts"
     },
     "packages/ui/src/store/attachKernel.test.ts": {
@@ -22093,13 +22108,13 @@
       "source": "packages/ui/src/viewport/assemblyOccurrenceRayHit.test.ts"
     },
     "packages/ui/src/viewport/attachAssemblyInteraction.test.ts": {
-      "sha256": "fe5adc4022fba87a2a071fc9be2deb04c71a0ca332da2300a3dc494ddb788f71",
-      "bytes": 72158,
+      "sha256": "2803d1c14762c12ff7ccbbd1f7cd913f530a22a290fec13dd6f973cb8fa1a2b3",
+      "bytes": 70939,
       "source": "packages/ui/src/viewport/attachAssemblyInteraction.test.ts"
     },
     "packages/ui/src/viewport/attachAssemblyInteraction.ts": {
-      "sha256": "f260cd949acb38b7df2681229cd3e4610472eb0cd2ba8e69e22be9fe45db6bf4",
-      "bytes": 51472,
+      "sha256": "76231f340fa9208c742c6bde3a6d0c1235d229552a47853fa151dc37cbb75225",
+      "bytes": 50713,
       "source": "packages/ui/src/viewport/attachAssemblyInteraction.ts"
     },
     "packages/ui/src/viewport/attachCameraControls.ts": {
@@ -22972,6 +22987,16 @@
       "bytes": 1370,
       "source": "scripts/lib/directoryLinks.ps1"
     },
+    "scripts/lib/e2eBuildReady.mjs": {
+      "sha256": "140fdd4a49c0ec223b1880aa8b443dc5ff5b8cbd750837d9c759437102baaea0",
+      "bytes": 506,
+      "source": "scripts/lib/e2eBuildReady.mjs"
+    },
+    "scripts/lib/e2eWebServer.mjs": {
+      "sha256": "80671ae3a0b3db4c117fc10dca0f11b9b99c5dfc9bf66ce1b12801c7cfd45b77",
+      "bytes": 3036,
+      "source": "scripts/lib/e2eWebServer.mjs"
+    },
     "scripts/lib/gitEnvironment.mjs": {
       "sha256": "cef09df7d8f39017b75a2e27e2e4ac4e563ba55957382d86a6f12ddd46f02b93",
       "bytes": 507,
@@ -23358,7 +23383,7 @@
       "source": "tsconfig.tools.json"
     }
   },
-  "archiveSha256": "49237ae7613b5aa6a81d42f4e56d2a4cb4c0a71c0e116e19c6d4253c1542f5ec",
+  "archiveSha256": "dccbf2c791acdf26c7505b69dba4f5436875c1a98fa2e4f7fe80e5ed28ccc60f",
   "scope": "Exact integrated application/bridge/tests/build source; native rebuild and legal clearance remain incomplete",
   "excluded": [
     "fixed upstream runtime closure",
@@ -23368,7 +23393,7 @@
   ],
   "correspondingSourceComplete": false,
   "nativeRebuildExecuted": false,
-  "derivedFrom": "f62b6eb1483cbf8dab50d4c1069facc9e1a6d732ef11e66197a54b5a0e222942",
+  "derivedFrom": "4af4220e3ebb92f8e88a6c343d9880a2e5efc81e0e9a01baa0693db8168d8bf0",
   "timestampMeaning": "Actual private source archive regeneration from the current working tree (every selected tracked or untracked-not-ignored file) by the r5 successor; native/legal/release acceptance remain separate",
   "proposedUnion": {
     "materializer": {
@@ -23384,12 +23409,12 @@
       "sha256": "09739bab7fc7a94f6a671022dab4e9a918861cd2474a8a87410b10255a82c66d"
     },
     "previousIndex": {
-      "sha256": "8390add46dd78a79719bb669fda6d9838b2af3ece8c15ed0783bcec63feab313",
-      "bytes": 1117958
+      "sha256": "ec5a5ba435cf154f8d8561fdce5f2135b1aa26b5d8078ba5380b7b115656e4ba",
+      "bytes": 1117077
     },
     "previousArchive": {
-      "sha256": "7781e7935fe2fdb5701a8a13fcdae6b51b6cc71e06b29217ffa467e57542951e",
-      "bytes": 15483865
+      "sha256": "49237ae7613b5aa6a81d42f4e56d2a4cb4c0a71c0e116e19c6d4253c1542f5ec",
+      "bytes": 15477119
     },
     "r5ProposedUnion": {
       "source": {
@@ -23447,27 +23472,27 @@
         "path": "scratchpad/claude/agents/cl-v103-delivery-env-1101/regen_index.py",
         "sha256": "6bca734ffd2629f714ab0cfc55d43836ec36490e601ada73802ebbf2d9a86972"
       },
-      "actualTime": "2026-11-17T14:31:06.487644+09:00",
-      "derivedFrom": "e0bb6e7932a6adfa58c1b5495957adeb9076155b5c901a2ce444d5313b0e44d6",
+      "actualTime": "2026-11-17T15:42:08.805669+09:00",
+      "derivedFrom": "f62b6eb1483cbf8dab50d4c1069facc9e1a6d732ef11e66197a54b5a0e222942",
       "delta": {
-        "updated": 69,
-        "new": 32,
-        "removed": 0,
+        "updated": 3,
+        "new": 0,
+        "removed": 4,
         "sourceFieldChanged": 0
       }
     },
     "domain": {
       "rule": "git ls-files -co --exclude-standard; existing regular files; archivePattern selected()",
-      "gitHead": "3a0094e9385a06ad439b1d5a92a58af841b27eca",
-      "members": 4671,
-      "membersSha256": "81eb420f020eca5f9c2c2404b8ca6613b34e8d2e151f9eccd0b5fe692a643e44"
+      "gitHead": "34690fab92aeb71063c0f2ca32511c0736bc9ddd",
+      "members": 4676,
+      "membersSha256": "1558f708abf7adbd26e525a27d6b72835b062c9f90747db86b460aba692147bd"
     },
     "delta": {
-      "updated": 3,
-      "new": 0,
-      "removed": 4,
+      "updated": 5,
+      "new": 5,
+      "removed": 0,
       "sourceFieldChanged": 0
     },
-    "deltaSha256": "23d2f89bc61b53808805f8d88e5e5960e51001d29a35c7771cfd79eb78418c27"
+    "deltaSha256": "4655671faec5d6435403ca62bbf3ebc881d599e121b8cceaef25e3d256fb5bac"
   }
 }

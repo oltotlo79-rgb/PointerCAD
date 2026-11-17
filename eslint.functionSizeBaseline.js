@@ -50,7 +50,7 @@ export const FUNCTION_SIZE_BASELINE = [
   { file: 'packages/ui/src/sketch/NumericInputPopover.tsx', functions: [['NumericInputPopover', 259]] },
   { file: 'packages/ui/src/solid/solidSummary.ts', functions: [['summarizeSolid', 419]] },
   { file: 'packages/ui/src/solidAnalysis/attachSolidAnalysis.ts', functions: [['attachSolidAnalysis', 264]] },
-  { file: 'packages/ui/src/store/assemblySlice.ts', functions: [['createAssemblySlice', 688]] },
+  { file: 'packages/ui/src/store/assemblySlice.ts', functions: [['createAssemblySlice', 647]] },
   { file: 'packages/ui/src/store/attachKernel.ts', functions: [['attachPartRecompute', 299]] },
   { file: 'packages/ui/src/store/beamSlice.ts', functions: [['createBeamSlice', 227]] },
   { file: 'packages/ui/src/store/canvasSlice.ts', functions: [['createCanvasSlice', 263]] },

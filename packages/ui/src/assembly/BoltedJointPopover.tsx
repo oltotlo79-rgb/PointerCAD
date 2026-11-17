@@ -1,12 +1,13 @@
-import { HEX_BOLT_TABLE, type BoltedJointPlan, type FasteningWasherKind } from '@pointercad/model';
+import { HEX_BOLT_TABLE, type BoltedJointPlan, type BoltedJointSetPlan, type FasteningWasherKind } from '@pointercad/model';
 import { useEffect, useRef } from 'react';
 
 import { isCompositionKey } from '../commands/compositionKey.js';
-import { t } from '../i18n/t.js';
+import { t, type MessageKey } from '../i18n/t.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
-  BOLTED_JOINT_PICK_GUIDE_KEYS as PICK_PROMPTS, type BoltedJointDraftIssue, type BoltedJointDraftPatch,
+  BOLTED_JOINT_PICK_GUIDE_KEYS as PICK_PROMPTS, boltedJointHoleCounts, boltedJointPreviewReady, boltedJointReasonLines,
+  boltedJointReasonText, type AssemblyBoltedJointDraft, type BoltedJointDraftIssue, type BoltedJointDraftPatch,
   type BoltedJointDraftPreview,
 } from './boltedJointDraft.js';
 import { nestedBoltedJointRefusalKey } from './nestedBoltedJointDisplay.js';
@@ -64,14 +65,57 @@ function PlanSummary({ plan }: { readonly plan: BoltedJointPlan }): React.JSX.El
   </div>;
 }
 
+type HeadKind = BoltedJointSetPlan['joints'][number]['headKind'];
+
+/** 穴の入口から決めた頭の形(入口なし→六角、ざぐり→六角穴付き、皿もみ→皿頭)。 */
+const HEAD_KEYS = {
+  hex: 'assembly.boltedJoint.head.hex', socket: 'assembly.boltedJoint.head.socket', countersunk: 'assembly.boltedJoint.head.countersunk',
+} as const satisfies Record<HeadKind, MessageKey>;
+
+function setRowText(joint: BoltedJointSetPlan['joints'][number], index: number): string {
+  return t('assembly.boltedJoint.setRow').replace('{index}', String(index + 1)).replace('{head}', t(HEAD_KEYS[joint.headKind]))
+    .replace('{nominal}', joint.joint.nominal).replace('{length}', numberText(joint.joint.boltLength));
+}
+
+/** 新しい締結の提案。1 組目の提案を今までの形で見せ、頭の形と、2 組以上の時は組ごとの長さを添える。 */
+function SetSummary({ plan }: { readonly plan: BoltedJointSetPlan }): React.JSX.Element | null {
+  const [first] = plan.joints;
+  if (first === undefined) return null;
+  return <>
+    <PlanSummary plan={first.joint} />
+    <div className="pcad-popover__fields" data-testid="bolted-joint-set">
+      <p data-testid="bolted-joint-head">{`${t('assembly.boltedJoint.head')} ${t(HEAD_KEYS[first.headKind])}`}</p>
+      {plan.joints.length < 2 ? null : <>
+        <p data-testid="bolted-joint-set-count">{`${t('assembly.boltedJoint.setCount')} ${String(plan.joints.length)}`}</p>
+        {plan.joints.map((joint, index) => <p key={`joint-${String(index)}`} data-testid="bolted-joint-set-row">
+          {setRowText(joint, index)}</p>)}
+      </>}
+    </div>
+  </>;
+}
+
 function PreviewView({ preview }: { readonly preview: BoltedJointDraftPreview | null }): React.JSX.Element | null {
   if (preview === null) return null;
   if (preview.kind === 'issue') return <p role="status" data-testid="bolted-joint-issue">{issueText(preview.issue)}</p>;
-  if (preview.result.ok) return <PlanSummary plan={preview.result.plan} />;
+  if (preview.kind === 'set' && preview.result.ok) return <SetSummary plan={preview.result.plan} />;
+  if (preview.kind === 'plan' && preview.result.ok) return <PlanSummary plan={preview.result.plan} />;
+  // 1 組でも断られたら確定は押せない(統括の決定 ③)。組全体の断りを先に、2 組以上の時の穴の組ごとの断りは、
+  // 番号とその組の頭側・相手側の穴を添えて並べる(押した順を間違えた時に、どの穴とどの穴かが分かるように)。
   return <ul role="alert" data-testid="bolted-joint-reasons">
-    {preview.result.rejections.map((rejection, index) => <li key={`${rejection.code}-${String(index)}`}>
-      {t(`assembly.boltedJoint.reason.${rejection.code}`)}</li>)}
+    {boltedJointReasonLines(preview).map((line, index) => <li key={`${line.key}-${String(index)}`}
+      data-hole={line.hole === null ? undefined : String(line.hole.number)}>{boltedJointReasonText(line)}</li>)}
   </ul>;
+}
+
+/** 4 面がそろった新しい締結だけ: 締結する穴の数と、Shift で 2 組目からの穴を足す案内。 */
+function HoleCounts({ draft }: { readonly draft: AssemblyBoltedJointDraft }): React.JSX.Element | null {
+  const counts = boltedJointHoleCounts(draft);
+  if (draft.editRecordId !== undefined || counts.first === 0) return null;
+  return <div className="pcad-popover__fields">
+    <p data-testid="bolted-joint-hole-counts">{t('assembly.boltedJoint.holeCounts')
+      .replace('{first}', String(counts.first)).replace('{second}', String(counts.second))}</p>
+    <p className="pcad-field__hint">{t('assembly.boltedJoint.addHolesGuide')}</p>
+  </div>;
 }
 
 /** 4 つの面を選ぶ間も開いたままの、モーダルにしない締結の窓。確定だけが文書を変える。 */
@@ -92,7 +136,7 @@ export function BoltedJointPopover(): React.JSX.Element | null {
   }, [open]);
   if (draft === null) return null;
   const store = useAppStore.getState;
-  const ready = preview?.kind === 'plan' && preview.result.ok;
+  const ready = boltedJointPreviewReady(preview);
   const picked = nested !== null ? nested.picks.length : draft.picks.length;
   const prompt = picked < PICK_PROMPTS.length ? PICK_PROMPTS[picked] : undefined;
   // 直す時は面を選び直さない(記録した選び方を使う)。題と案内だけを変え、欄・予告・確定は同じ窓を使う。
@@ -121,6 +165,7 @@ export function BoltedJointPopover(): React.JSX.Element | null {
         {editing ? t('assembly.boltedJoint.editPrompt')
           : prompt === undefined ? `${t('assembly.boltedJoint.pickedCount')} ${String(picked)}` : t(prompt)}
       </p>
+      {nested === null ? <HoleCounts draft={draft} /> : null}
       <div className="pcad-popover__fields">
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.standardPart.dimensionSeries')}</span>

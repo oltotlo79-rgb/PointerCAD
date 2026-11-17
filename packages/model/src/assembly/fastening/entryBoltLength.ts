@@ -1,9 +1,12 @@
 import type { EntryHeadSpec } from './holeEntry.js';
+import { entryLengthAvailability } from './entryLengthAvailability.js';
 import type { LengthChoice, LengthLimits } from './selectFastener.js';
 import { FASTENING_LENGTH_TOLERANCE_MM, type BoltedJointRejection, type BoltLengthAvailability } from './types.js';
 
+export { entryLengthAvailability } from './entryLengthAvailability.js';
+
 /** Family lengths are user candidates, not certified standard nominal lengths. Countersunk length includes the head. */
-export function selectEntryBoltLength(head: EntryHeadSpec, availability: readonly BoltLengthAvailability[],
+export function selectEntryBoltLength(head: EntryHeadSpec, availability: readonly BoltLengthAvailability[] = entryLengthAvailability(),
   limits: LengthLimits): LengthChoice | BoltedJointRejection {
   const candidates = availability.find(item => item.boltRowKey === head.rowKey
     && (item.threadSeries === undefined || item.threadSeries === 'coarse'));

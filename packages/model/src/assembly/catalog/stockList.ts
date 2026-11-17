@@ -3,7 +3,7 @@
  * 鋼材の切断の一覧(`standard/steelStockList.ts`)が、族の部品の時にここを呼び、鋼材の行とは別の並び(`catalogRows`)に束ねる。
  * 鋼材の行の作り方・順・鍵は変えない。'count' の族(ナット・座金・軸受・ねじ・ピンなど 1 個ずつ数える物)・読み込んでいない族・
  * 確かめに通らない保存は数えない(切断の一覧に出す物が無いだけで、理由の行も足さない)。
- * 質量は 形の台本どおりの体積 × 行の材質(densityMaterialId)の密度。
+ * 質量は 形の台本どおりの体積 × 行の材質(densityMaterialId)の密度。密度の材質を持たない行は、行の単位質量だけから出す(無ければ null)。
  */
 import { findDensityMaterial } from '../../appearance/densityMaterials.js';
 import { massFromVolume } from '../../measure/massProperties.js';
@@ -29,7 +29,8 @@ export interface CatalogStockItem {
   readonly evidence: CatalogItemRow['evidence'];
   /** 部品表の材質の表示(行が持つ時だけ)。 */
   readonly materialLabel: string | null;
-  readonly densityMaterialId: string;
+  /** 行の密度の材質 id(密度の表に無い材料の行は null。その時の 1 本の質量は行の単位質量だけから出す)。 */
+  readonly densityMaterialId: string | null;
   readonly catalogRevision: string;
   readonly generatorRevision: string;
   readonly lengthMm: number;
@@ -59,7 +60,8 @@ export function catalogStockItem(source: StandardPartSource, registry: CatalogRe
   const length = lengthOf(source.options);
   if (row === undefined || length === null || !(length.value > 0)) return null;
   const volume = catalogItemNominalVolume(source.size, source.options, registry);
-  const density = findDensityMaterial(row.densityMaterialId)?.density;
+  // 密度の材質を持たない行は、密度を引かない(体積 × 密度で質量を作らない)。
+  const density = row.densityMaterialId === undefined ? undefined : findDensityMaterial(row.densityMaterialId)?.density;
   const nominalMass = catalogItemNominalMass(source, registry);
   const miterEnds = miterEndsOf(source.options);
   // 留めの部材は、留めの向きごとに別の行に束ねる(留めの無い部材の鍵は前と同じ)。
@@ -68,7 +70,7 @@ export function catalogStockItem(source: StandardPartSource, registry: CatalogRe
     key: `${familyId}@${family.catalogRevision}/${family.generatorRevision}:${row.key}:${length.value}${miterKey}`,
     familyId, kindKey: family.kindKey, itemKey: row.key, size: row.size, standardLabel: row.standardLabel, evidence: row.evidence,
     materialLabel: row.materialLabel ?? null,
-    densityMaterialId: row.densityMaterialId, catalogRevision: family.catalogRevision, generatorRevision: family.generatorRevision,
+    densityMaterialId: row.densityMaterialId ?? null, catalogRevision: family.catalogRevision, generatorRevision: family.generatorRevision,
     lengthMm: length.value,
     unitMassKgPerM: row.dims.unitMassKgPerM ?? null,
     // 族が単位質量を持つ時はその値(× 長さ)、無い時は形の体積 × 行の材質の密度。

@@ -117,6 +117,18 @@ export function catalogItemNominalMass(source: StandardPartSource,
   return item?.family.nominalMassG?.(item.row, item.values) ?? null;
 }
 
+/**
+ * 部品表の材質の欄に出す、族の行の材質の表示(統括の決定 2026-11-17 22:5x の (d))。密度の材質を持たない行(LDPE・導電 PP など)で、
+ * 行が materialLabel を持つ時だけ、その表示を返す。密度の材質を持つ行・族の部品でない・確かめに通らない時は null
+ * (部品表は今までどおり材質の id の名前を出す。今ある部品の出力は変わらない)。
+ */
+export function catalogItemFallbackMaterialLabel(source: StandardPartSource,
+  registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): string | null {
+  if (source.catalog !== 'catalogItem') return null;
+  const { item } = resolveCatalogItem(source, registry);
+  return item === null || item.row.densityMaterialId !== undefined ? null : item.row.materialLabel ?? null;
+}
+
 /** 族の台本どおりの体積(実カーネルの体積の検査の独立した期待値)。確かめに通らなければ null。 */
 export function catalogItemNominalVolume(size: string, options: Readonly<Record<string, string>>,
   registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): number | null {

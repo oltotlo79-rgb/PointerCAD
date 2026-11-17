@@ -52,4 +52,23 @@ export const K6_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
     load: async () => (await import('../families/framePartCatalog.js')).FOOT_BASE_FAMILY },
   { id: 't-slot-adjuster', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.adjuster',
     load: async () => (await import('../families/framePartCatalog.js')).ADJUSTER_FAMILY },
+  // 資料 GF-2 のパイプ形のフレーム(1 本・溝つき・2 本つなぎ)。独立の読みの 2 つ以上が一致した行だけ。形は記入のある寸法だけで作る包む形。
+  { id: 'pipe-frame', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.pipeFrame',
+    load: async () => (await import('../families/pipeFrameCatalog.js')).PIPE_FRAME_FAMILIES.single },
+  { id: 'pipe-frame-slotted', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.pipeFrameSlotted',
+    load: async () => (await import('../families/pipeFrameCatalog.js')).PIPE_FRAME_FAMILIES.slotted },
+  { id: 'pipe-frame-twin', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.pipeFrameTwin',
+    load: async () => (await import('../families/pipeFrameCatalog.js')).PIPE_FRAME_FAMILIES.twin },
+  // 資料 SF-1 の共通パーツの頁(PDF 337〜339)の小さい溝つきフレーム・その端のキャップ・ブラケット素材。2 本の読みが一致した行だけ。
+  { id: 't-slot-frame-small', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.smallFrame',
+    load: async () => (await import('../families/smallFrameCatalog.js')).SMALL_T_SLOT_FRAME_FAMILY },
+  { id: 't-slot-frame-cap-small', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.smallFrameCap',
+    load: async () => (await import('../families/smallFrameCatalog.js')).SMALL_FRAME_CAP_FAMILY },
+  { id: 'bracket-stock', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.bracketStock',
+    load: async () => (await import('../families/smallFrameCatalog.js')).BRACKET_STOCK_FAMILY },
+  // 資料 GF-2 のパイプ形のフレームのキャップとフット(段の並びの部品)。2 本の独立の読みで段が一致した行だけ。
+  { id: 'pipe-frame-cap', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.pipeFrameCap',
+    load: async () => (await import('../families/pipeFramePartCatalog.js')).PIPE_FRAME_CAP_FAMILY },
+  { id: 'pipe-frame-foot', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.pipeFrameFoot',
+    load: async () => (await import('../families/pipeFramePartCatalog.js')).PIPE_FRAME_FOOT_FAMILY },
 ];

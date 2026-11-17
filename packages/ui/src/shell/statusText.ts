@@ -15,7 +15,8 @@ import {
 } from '@pointercad/model';
 import type { MateDiagnosis } from '@pointercad/model';
 import {
-  BOLTED_JOINT_PICK_GUIDE_KEYS, type AssemblyBoltedJointDraft, type BoltedJointDraftPreview,
+  BOLTED_JOINT_PICK_GUIDE_KEYS, boltedJointPreviewReady, boltedJointReasonLines, boltedJointReasonText,
+  type AssemblyBoltedJointDraft, type BoltedJointDraftPreview,
 } from '../assembly/boltedJointDraft.js';
 import type { AssemblyDragNotice } from '../assembly/dragComponentActions.js';
 import {
@@ -559,10 +560,15 @@ export function boltedJointStatus(
     return { text: fill(t('assembly.status.boltedJointIssue'), { reason: t(`assembly.boltedJoint.issue.${preview.issue.kind}`) }),
       failed: true };
   }
-  if (preview.result.ok) return { text: t('assembly.status.boltedJointReady'), failed: false };
-  const first = preview.result.rejections[0];
+  if (boltedJointPreviewReady(preview)) {
+    const count = preview.kind === 'set' ? preview.result.plan.joints.length : 1;
+    return { text: count > 1 ? fill(t('assembly.status.boltedJointSetReady'), { count: String(count) })
+      : t('assembly.status.boltedJointReady'), failed: false };
+  }
+  // 状態欄は 1 行なので、穴の組の断りは番号だけを添える(どの穴かは窓の行が出す)。
+  const first = boltedJointReasonLines(preview)[0];
   return { text: fill(t('assembly.status.boltedJointIssue'), {
-    reason: first === undefined ? t('assembly.boltedJoint.issue.needPicks') : t(`assembly.boltedJoint.reason.${first.code}`),
+    reason: first === undefined ? t('assembly.boltedJoint.issue.needPicks') : boltedJointReasonText(first, false),
   }), failed: true };
 }
 

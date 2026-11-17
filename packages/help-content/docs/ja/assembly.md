@@ -127,6 +127,24 @@
 - **{{ui:assembly.boltedJoint.nested.partKey}}**
 - **{{ui:assembly.boltedJoint.nested.occurrence}}**
 
+### 複数の穴をまとめて締結する
+
+4つの面を選び終えた後、Shiftを押しながら穴の内側の面を押すと、2組目からの穴を足せます(もう一度押すと外れます)。1つ目の部品の穴は頭側に、2つ目の部品の穴は相手側に入り、頭側と相手側の同じ順番の穴どうしが1組になります。当てる面は1組目の面を全部の組で使います。
+
+全部の組に合うボルトを提案できたときだけ、**{{ui:assembly.boltedJoint.commit}}** を押せます。1組でも断られたときは、断られた組の番号と、その組の頭側・相手側の穴(部品の名前と座標)を添えて理由を出します。締結すると全部の組を足し、組ごとに締結の記録を残します。1回の「元に戻す」で全部の組が消えます。
+
+### ざぐり・皿もみの穴
+
+穴の入口にざぐり・皿もみがあるときは、入口に合う頭のボルトを選びます。
+
+| 穴の入口 | 足すボルト |
+|---|---|
+| なし | {{ui:assembly.boltedJoint.head.hex}} |
+| ざぐり | {{ui:assembly.boltedJoint.head.socket}} |
+| 皿もみ | {{ui:assembly.boltedJoint.head.countersunk}} |
+
+ざぐりの穴では **{{ui:assembly.boltedJoint.nominal}}** を選びます。皿もみの穴では、頭の側に座金を入れられません。ざぐり・皿もみは、1つ目の部品の、相手と反対の面にある必要があります。締め付ける厚さは、ざぐりの底、または皿もみの円錐と穴が接する所から測ります。六角穴付きボルト・六角穴付き皿ボルトの呼び長さは全径に共通の長さの一覧から選び、「{{ui:assembly.boltedJoint.fact.perDiameterLengthAvailability}}」と添えます。
+
 ### 部品が動く位置
 
 2つ目の部品を、面どうしが接して2つの穴の軸が一致する位置へ動かします。動かすのは **{{ui:assembly.boltedJoint.commit}}** を押したときだけで、面を選んでいる間や提案を見ている間は、部品は動きません。向きは最小の回転で合わせ、穴の軸のまわりの向きは今のままです。動かす部品が、ほかの部品と互いに固定した組になっているときは、組ごと動きます。部品を動かす提案のときは、提案に「{{ui:assembly.boltedJoint.moves}}」と出ます。
@@ -209,8 +227,17 @@
 | **{{ui:assembly.boltedJoint.reason.holeFaceMissing}}** | 穴の面として円筒でない面を押したとき、または面が今の形に見つからないとき。 |
 | **{{ui:assembly.boltedJoint.reason.holeFaceMismatch}}** | 押した面の径が、その部品の穴の指定と合わないとき。 |
 | **{{ui:assembly.boltedJoint.reason.matingFaceMissing}}** | 当てる面として平らでない面を押したとき、または面が今の形に見つからないとき。 |
-| **{{ui:assembly.boltedJoint.reason.holeNotOnMatingFace}}** | 穴が、選んだ当てる面から始まっていないとき。 |
-| **{{ui:assembly.boltedJoint.reason.unsupportedHole}}** | ねじのない止まりの穴を選んだとき。 |
+| **{{ui:assembly.boltedJoint.reason.holeNotOnMatingFace}}** | 穴が、選んだ当てる面まで届いていないとき。 |
+| **{{ui:assembly.boltedJoint.unsupported.blindPlainHole}}** | ねじのない止まりの穴を選んだとき。 |
+| **{{ui:assembly.boltedJoint.reason.counterboreTooSmall}}** | ボルトの頭か座金が、ざぐりの径・深さに収まらないとき。 |
+| **{{ui:assembly.boltedJoint.reason.countersinkMismatch}}** | 皿もみの角度か入口の径が、皿頭のボルトと合わないとき。 |
+| **{{ui:assembly.boltedJoint.reason.entryOnFarSide}}** | ざぐり・皿もみが、頭側の部品の外側ではなく、当てる面の側や相手の部品にあるとき。 |
+| **{{ui:assembly.boltedJoint.detail.counterboreRequiresExplicitNominal}}** | ざぐりの穴で、ボルトの呼びを選んでいないとき。 |
+| **{{ui:assembly.boltedJoint.detail.countersunkHeadWasher}}** | 皿もみの穴で、頭の側に座金を選んだとき。 |
+| **{{ui:assembly.boltedJoint.reason.holeCountMismatch}}** | まとめて締結するとき、頭側と相手側の穴の数が違うとき。 |
+| **{{ui:assembly.boltedJoint.unsupported.duplicateHole}}** | まとめて締結するとき、同じ穴を2回選んだとき。 |
+| **{{ui:assembly.boltedJoint.unsupported.mixedComponents}}** | まとめて締結するとき、片側に別の部品の穴が混ざったとき。 |
+| **{{ui:assembly.boltedJoint.unsupported.unrecordableHoleGroup}}** | まとめて締結するとき、ねじ山を作ったねじ穴をねじ山の面で選んだとき。 |
 | **{{ui:assembly.boltedJoint.reason.alignmentBlocked}}** | 両方の組に固定した部品があって動かせず、穴と面がまだ合っていないとき。次の4つのうち合わないものが一緒に出ます。 |
 | **{{ui:assembly.boltedJoint.reason.axesNotOpposed}}** | 2つの穴が向かい合っていないとき。 |
 | **{{ui:assembly.boltedJoint.reason.axesNotCoaxial}}** | 2つの穴の軸がずれているとき。 |
@@ -243,6 +270,10 @@
 - **{{ui:assembly.boltedJoint.reason.washerRowMissing}}**
 - **{{ui:assembly.boltedJoint.reason.lengthAvailabilityMissing}}**
 - **{{ui:assembly.boltedJoint.reason.threadEntryUnknown}}**
+- **{{ui:assembly.boltedJoint.detail.entryPlaneMissing}}**
+- **{{ui:assembly.boltedJoint.detail.entryDepthMismatch}}**
+- **{{ui:assembly.boltedJoint.unsupported.entryAwareCommandRequired}}**
+- **{{ui:assembly.boltedJoint.reason.unsupportedHole}}**
 - **{{ui:assembly.boltedJoint.reason.missingSourceRevision}}**
 - **{{ui:assembly.boltedJoint.reason.componentMissing}}**
 - **{{ui:assembly.boltedJoint.reason.holeFeatureMissing}}**
@@ -264,8 +295,10 @@
 ### ボルトの締結でできないこと
 
 - 両方がねじ穴の締結(植込みボルトなど)はできません。
-- 座ぐり・皿もみの穴、ねじのない止まりの穴は使えません。
-- 足せるのは六角ボルト・六角ナット・平座金・ばね座金です。座金は片側に1枚までです。
+- ねじのない止まりの穴は使えません。ざぐり・皿もみは、頭側の部品の外側の入口だけに使えます。
+- 足せるのは六角ボルト・六角穴付きボルト・六角穴付き皿ボルト・六角ナット・平座金・ばね座金です。座金は片側に1枚までです。
+- まとめて締結できるのは、一番上の組立の部品の穴だけです。サブアセンブリの中の部品の穴は、1組ずつ締結します。
+- 穴の組の対応は押した順番で決まり、自動では組み合わせません。
 - 強度区分の選択、強度・締め付け力・ねじ込みの十分さの確認はしません。
 - ボルトとナットの寸法表はM3からM20です(**{{ui:assembly.standardPart.dimensionSeries.annexJA}}** にはM14とM18がありません)。これより太いボルトは使えません。
 - 通し穴の表はM6からM24です。M3・M4・M5の通し穴は、呼びを選んだときだけ締結できます。M22とM24の範囲の穴は、ボルトの寸法表にないため断られます。

@@ -18,7 +18,7 @@ import {
 import type { CatalogLoadState } from './catalogFamilyLoading.js';
 import { CatalogLoadStatus } from './CatalogLoadStatus.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
-import { FrameLayoutDetails } from './FrameLayoutDetails.js';
+import { FrameMemberTools } from './FrameMemberTools.js';
 import { pickerFormProps } from './pickerFormHandlers.js';
 
 type LoadedFamily = NonNullable<ReturnType<CatalogRegistry['loaded']>>;
@@ -127,7 +127,7 @@ React.JSX.Element {
       <p className="pcad-popover__hint">{t('catalog.mechanical.simplified')}</p>
       {family?.stock === 'linear' ? <CatalogStockTable /> : null}
       {family?.sectionBounds === undefined || row === undefined ? null
-        : <FrameLayoutDetails member={{ kind: 'catalogItem', familyId: family.id, itemKey: row.key, values }} />}
+        : <FrameMemberTools member={{ kind: 'catalogItem', familyId: family.id, itemKey: row.key, values }} />}
       {error === null ? null : <p className="pcad-field__message" role="alert">
         {t(error === 'invalidOption' ? 'catalog.mechanical.invalidOption' : 'assembly.standardPart.unknownChoice')}</p>}
       <p className="pcad-popover__hint">{t('assembly.standardPart.hint')}</p>

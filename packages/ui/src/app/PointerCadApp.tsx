@@ -93,6 +93,8 @@ interface AssemblyTestStats {
   } | null;
   readonly jointValues: readonly { readonly key: string; readonly value: number }[];
   readonly interferenceSelectedKey: string | null;
+  /** 2 部品を選んだ時に出している隙間(mm)。出していなければ null。 */
+  readonly gapMm: number | null;
 }
 
 declare global {
@@ -201,6 +203,7 @@ export function PointerCadApp(): React.JSX.Element {
           },
           jointValues: [...state.assemblyMotionJointValues].map(([key, value]) => ({ key, value })),
           interferenceSelectedKey: state.assemblyInterferenceSelectedKey,
+          gapMm: state.measurement?.result.kind === 'bodyDistance' ? state.measurement.result.value : null,
         };
       };
     }

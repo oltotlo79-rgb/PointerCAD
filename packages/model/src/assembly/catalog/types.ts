@@ -24,7 +24,8 @@ type CatalogVerification = 'draft' | 'final-standard' | 'manufacturer-catalog' |
 type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChannel' | 'pipe'
   | 'pin' | 'nut' | 'bolt' | 'washer' | 'bearing' | 'camFollower' | 'bush' | 'compressionSpring' | 'tSlotFrame' | 'key' | 'sealRing' | 'oRing'
   | 'angleBracket' | 'joinPlate' | 'slotNut' | 'tSlotSeries' | 'flatBar' | 'roundBar' | 'tSlotNutBar' | 'tSlotNut' | 'roundNut' | 'frameCap'
-  | 'flatPlate' | 'shapedPlate' | 'angleBracketCatalog' | 'footBase' | 'adjuster';
+  | 'flatPlate' | 'shapedPlate' | 'angleBracketCatalog' | 'footBase' | 'adjuster' | 'pipeFrame' | 'pipeFrameSlotted' | 'pipeFrameTwin'
+  | 'smallFrame' | 'smallFrameCap' | 'bracketStock' | 'pipeFrameCap' | 'pipeFrameFoot';
 
 /**
  * 族の options の 1 つの鍵の指定。**鍵の名前は保存されるので、版の中で変えない。**
@@ -64,8 +65,12 @@ export interface CatalogItemRow {
   readonly standardLabel: string;
   /** 部品表の材質の表示。 */
   readonly materialLabel?: string;
-  /** 質量に使う密度の材質 id(`appearance/densityMaterials.ts` の steel・stainless・aluminum ほか)。 */
-  readonly densityMaterialId: string;
+  /**
+   * 質量に使う密度の材質 id(`appearance/densityMaterials.ts` の steel・stainless・aluminum ほか)。
+   * 密度の表に無い材料(LDPE・導電 PP・PU・NBR・部位ごとに材料の違う物)の行は持たない。持たない行は、質量を行の値(資料の 1 個の値)だけで出し、
+   * 置いた部品に材質を付けない(統括の決定 2026-11-17 19:5x の (1))。
+   */
+  readonly densityMaterialId?: string;
   readonly dims: Readonly<Record<string, number>>;
   /** 寸法の出どころ。形は鋼材と同じ(題名・版・URL・頁・SHA-256・取得日)。 */
   readonly evidence: SteelEvidence;

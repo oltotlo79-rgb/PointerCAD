@@ -12,7 +12,8 @@ import type { AssemblyView } from '../store/assemblySlice.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
-  appendBoltedJointPick, commitBoltedJointDraft, createBoltedJointDraft, previewBoltedJointDraft, type AssemblyBoltedJointDraft,
+  appendBoltedJointPick, boltedJointHoleCounts, commitBoltedJointDraft, commitBoltedJointSetDraft, createBoltedJointDraft,
+  previewBoltedJointDraft, toggleBoltedJointExtraHole, type AssemblyBoltedJointDraft, type BoltedJointDraftPreview,
   type BoltedJointThreadGroupTarget,
 } from './boltedJointDraft.js';
 
@@ -88,24 +89,33 @@ function withOrigins(view: AssemblyView, key: string, current: SolidBody, origin
   return { ...view, bodies };
 }
 
+/** 新しい締結の予告(一括の口)で、締結できる時の計画を取り出す。違えば予告の中身で落とす。 */
+function readySet(preview: BoltedJointDraftPreview) {
+  if (preview.kind !== 'set' || !preview.result.ok) throw new Error(JSON.stringify(preview));
+  return preview.result.plan;
+}
+
 describe('画面で選んだ同径穴を今の壁の由来へ結び付ける', () => {
   it.each([false, true])('文書の穴の順序によらず、選んだ位置へM8を予告・確定する(reverse=%s)', reverse => {
     const { document, library, view, draft } = fixtures(reverse);
     const original = JSON.stringify(document);
     for (const [index, x] of [[1, 20], [3, 40]] as const) {
       const picked = draft(index);
-      const preview = previewBoltedJointDraft(document, view, library, picked);
-      if (preview.kind !== 'plan' || !preview.result.ok) throw new Error(JSON.stringify(preview));
-      const plan = preview.result.plan;
+      // 穴が 1 組でも新しい締結は一括の口で予告する(入口の無い穴は六角ボルト)。
+      const set = readySet(previewBoltedJointDraft(document, view, library, picked));
+      expect(set.joints.map((joint) => joint.headKind)).toEqual(['hex']);
+      const plan = set.joints[0]?.joint;
+      if (plan === undefined) throw new Error('joint');
       // M8本体規格の実収録候補は40mmから。板28+ねじ込み12=40、上限28+16-2=42。
       expect([plan.nominal, plan.gripLength, plan.boltLength, plan.engagedLength]).toEqual(['M8', 28, 40, 12]);
       const bolt = plan.operations.find(operation => operation.role === 'bolt');
       expect(bolt?.placement.position[0].value).toBeCloseTo(x, 10);
       expect(bolt?.placement.position[1].value).toBeCloseTo(0, 10);
-      const committed = commitBoltedJointDraft(document, view, library, picked, plan);
+      const committed = commitBoltedJointSetDraft(document, view, library, picked, set);
       if (!committed.ok) throw new Error(JSON.stringify(committed));
       expect(committed.document).not.toBe(document);
       expect(committed.document.components).toHaveLength(document.components.length + plan.operations.length);
+      expect(committed.componentIds).toHaveLength(1);
       expect(JSON.stringify(document)).toBe(original);
     }
   });
@@ -113,35 +123,40 @@ describe('画面で選んだ同径穴を今の壁の由来へ結び付ける', (
   it.each(['untracked', 'unnamed', 'ambiguous'] as const)('形と径が同じでも由来が%sなら予告も確定も断る', state => {
     const { document, library, view, draft, first, keyA } = fixtures();
     const picked = draft(1);
-    const preview = previewBoltedJointDraft(document, view, library, picked);
-    if (preview.kind !== 'plan' || !preview.result.ok) throw new Error(JSON.stringify(preview));
+    const set = readySet(previewBoltedJointDraft(document, view, library, picked));
     const origins: CurrentOriginIndex = state === 'untracked' ? { version: 1, state: 'untracked', reason: 'limit' }
       : { version: 1, state: 'tracked', bindings: state === 'unnamed' ? []
         : [{ ...wall('hole-left', 1), state: 'split', candidates: [{ kind: 'face', index: 1 }, { kind: 'face', index: 3 }] }] };
     const changed = withOrigins(view, keyA, first, origins);
     const issue = { kind: 'holeFeatureUnknown', componentId: 'component-1' };
     expect(previewBoltedJointDraft(document, changed, library, picked)).toEqual({ kind: 'issue', issue });
-    expect(commitBoltedJointDraft(document, changed, library, picked, preview.result.plan)).toEqual({ ok: false, issue });
+    expect(commitBoltedJointSetDraft(document, changed, library, picked, set)).toEqual({ ok: false, issue });
     expect(document.components).toHaveLength(2);
   });
 
   it('予告後に面の由来が別の穴へ変われば、径や番地が同じでも確定しない', () => {
     const { document, library, view, draft, first, keyA } = fixtures();
     const picked = draft(1);
-    const preview = previewBoltedJointDraft(document, view, library, picked);
-    if (preview.kind !== 'plan' || !preview.result.ok) throw new Error(JSON.stringify(preview));
+    const set = readySet(previewBoltedJointDraft(document, view, library, picked));
     const changed = withOrigins(view, keyA, first, { version: 1, state: 'tracked', bindings: [wall('another-hole', 1)] });
-    expect(commitBoltedJointDraft(document, changed, library, picked, preview.result.plan))
+    expect(commitBoltedJointSetDraft(document, changed, library, picked, set))
       .toEqual({ ok: false, issue: { kind: 'holeFeatureUnknown', componentId: 'component-1' } });
   });
 
-  it('必要な長さに規格候補が無ければ、近い長さで代用せず理由を返す', () => {
+  it('必要な長さに規格候補が無ければ、近い長さで代用せず、穴の組の番号つきで理由を返す', () => {
     // 初稿の不適合条件を否定試験として残す。板10+ねじ込み12=22、上限10+16-2=24。
     const { document, library, view, draft } = fixtures(false, 10);
     const preview = previewBoltedJointDraft(document, view, library, draft(1));
-    expect(preview).toEqual({ kind: 'plan', result: { ok: false, rejections: [{ code: 'noStandardLengthFits', detail: {
-      boltRowKey: 'JIS-B-1180:2014:M8:P1.25:main', minimum: 22, maximum: 24, reason: 'noCandidate',
-    } }] } });
+    if (preview.kind !== 'set') throw new Error(JSON.stringify(preview));
+    expect(preview.result).toEqual({ ok: false, rejections: [], holes: [{ index: 0, entryRejections: [],
+      rejections: [{ code: 'noStandardLengthFits', detail: {
+        boltRowKey: 'JIS-B-1180:2014:M8:P1.25:main', minimum: 22, maximum: 24, reason: 'noCandidate',
+      } }] }] });
+    // 押した順の組の穴(部品の名前と、選んだ面の中心の組立の座標)。板A の穴は (20, 0, -5)、板B は原点に置いたまま。
+    expect(preview.pairs.map((pair) => [pair.first?.component, pair.second?.component])).toEqual([[
+      document.components[0]?.name, document.components[1]?.name]]);
+    const position = preview.pairs[0]?.first?.position ?? [Number.NaN, Number.NaN, Number.NaN];
+    [20, 0, -5].forEach((value, axis) => expect(position[axis]).toBeCloseTo(value, 9));
     expect(document.components).toHaveLength(2);
   });
 
@@ -253,12 +268,11 @@ describe('実らせんの穴(分かれた壁と溝)を組の選択で予告・�
   it('同じ寸法の普通の穴と同じ計画を予告・確定し、元の文書は変えない', () => {
     const { document, library, view, draft, plain, plainView } = setup();
     const original = JSON.stringify(document);
-    const expected = previewBoltedJointDraft(document, plainView, library, plain);
+    // 普通の穴の 1 組は一括の口、実らせんの組で選んだ 1 組は今までの口。入口の無い穴なら同じ計画になる。
+    const expected = readySet(previewBoltedJointDraft(document, plainView, library, plain)).joints[0]?.joint;
     const preview = previewBoltedJointDraft(document, view, library, draft);
-    if (preview.kind !== 'plan' || !preview.result.ok || expected.kind !== 'plan' || !expected.result.ok) {
-      throw new Error(JSON.stringify([preview, expected]));
-    }
-    expect(preview.result.plan).toEqual(expected.result.plan);
+    if (preview.kind !== 'plan' || !preview.result.ok) throw new Error(JSON.stringify(preview));
+    expect(preview.result.plan).toEqual(expected);
     const committed = commitBoltedJointDraft(document, view, library, draft, preview.result.plan);
     if (!committed.ok) throw new Error(JSON.stringify(committed));
     expect(committed.document.components).toHaveLength(document.components.length + preview.result.plan.operations.length);
@@ -291,6 +305,84 @@ describe('実らせんの穴(分かれた壁と溝)を組の選択で予告・�
     useAppStore.getState().updateBoltedJointDraft({ engagementSource: draft.engagementSource,
       bottomClearanceSource: draft.bottomClearanceSource });
     expect(useAppStore.getState().assemblyBoltedJointPreview).toMatchObject({ kind: 'plan', result: { ok: true } });
+    expect(useAppStore.getState().commitBoltedJoint()).toBe(true);
+    expect(useAppStore.getState().assembly).not.toBe(opened);
+    useAppStore.getState().undoAssembly();
+    expect(useAppStore.getState().assembly).toEqual(opened);
+  });
+});
+
+describe('Shift で 2 組目からの穴を足し、全部の組をまとめて予告・確定する(J-02 P4)', () => {
+  /** 板 B に、板 A の 2 つの通し穴(x 20・40)と同じ間隔 20 のねじ穴を 2 つ(x 0・20)持たせる。 */
+  function pairFixtures() {
+    const base = fixtures();
+    const twin = body('final-b', [cylinder(1, 0, 10, DRILL / 2, 20), cylinder(3, 20, 10, DRILL / 2, 20)],
+      [wall('thread-b', 1), wall('thread-c', 3)]);
+    const partB = ['thread-b', 'thread-c'].reduce<PartDocument>((part, id) => appendSolid(part, {
+      id, name: 'M8', suppressed: false, kind: 'threadHole', targetFeatureId: 'plate', face: reference(twin, 2),
+      centers: [{ sketchId: 'centers', pointFeatureId: `${id}-center` }], designation: 'M8', series: 'coarse', pitch: value(1.25),
+      drillDiameter: value(DRILL), depth: { kind: 'blind', depth: value(20) }, threadLength: value(16), representation: 'simplified',
+      tiltAngle: value(0), tiltAzimuth: value(0) }), createEmptyPartDocument());
+    const parts = new Map(base.library.parts);
+    parts.set('plate-b', partB);
+    const library: PartLibrary = { ...base.library, parts };
+    const keyB = partKeyOf({ kind: 'part', partRef: 'plate-b' });
+    const view: AssemblyView = { ...base.view, bodies: new Map([[base.keyA, [base.first]], [keyB, [twin]]]) };
+    const face = (componentId: string, current: SolidBody, index: number): Extract<MateTarget, { readonly kind: 'subShape' }> =>
+      ({ kind: 'subShape', componentId, ref: reference(current, index) });
+    const draft: AssemblyBoltedJointDraft = { ...createBoltedJointDraft('assembly'), engagementSource: '12', bottomClearanceSource: '2',
+      picks: [face('component-1', base.first, 1), face('component-1', base.first, 2), face('component-2', twin, 1), face('component-2', twin, 2)] };
+    return { document: base.document, library, view, draft, first: base.first, twin, face };
+  }
+
+  it('4 面の後だけ、どちらかの穴の部品の面を足し外しし、1 組目の穴・別の部品・実らせんの組は受けない', () => {
+    const { draft, first, twin, face } = pairFixtures();
+    const right = face('component-1', first, 3), second = face('component-2', twin, 3);
+    expect(toggleBoltedJointExtraHole({ ...draft, picks: draft.picks.slice(0, 3) }, right)).toBeNull();
+    expect(toggleBoltedJointExtraHole(draft, face('component-1', first, 1))).toBeNull();
+    expect(toggleBoltedJointExtraHole(draft, face('component-3', first, 3))).toBeNull();
+    expect(toggleBoltedJointExtraHole({ ...draft, editRecordId: 'joint-1' }, right)).toBeNull();
+    const added = toggleBoltedJointExtraHole(draft, right);
+    if (added === null) throw new Error('added');
+    const both = toggleBoltedJointExtraHole(added, second);
+    if (both === null) throw new Error('both');
+    expect(both.extraHoles).toEqual({ first: [right], second: [second] });
+    expect(boltedJointHoleCounts(both)).toEqual({ first: 2, second: 2 });
+    expect(toggleBoltedJointExtraHole(both, right)?.extraHoles).toEqual({ first: [], second: [second] });
+    expect(boltedJointHoleCounts({ ...draft, picks: draft.picks.slice(0, 2) })).toEqual({ first: 0, second: 0 });
+  });
+
+  it('2 組を予告し、確定は 1 つの新しい文書に 2 組の部品と記録を入れる。数が合わなければ組の数で断る', () => {
+    const { document, library, view, draft, first, twin, face } = pairFixtures();
+    const original = JSON.stringify(document);
+    const paired: AssemblyBoltedJointDraft = { ...draft,
+      extraHoles: { first: [face('component-1', first, 3)], second: [face('component-2', twin, 3)] } };
+    const set = readySet(previewBoltedJointDraft(document, view, library, paired));
+    expect(set.joints).toHaveLength(2);
+    const committed = commitBoltedJointSetDraft(document, view, library, paired, set);
+    if (!committed.ok) throw new Error(JSON.stringify(committed));
+    const added = set.joints.reduce((sum, joint) => sum + joint.joint.operations.length, 0);
+    expect(committed.document.components).toHaveLength(document.components.length + added);
+    expect(committed.componentIds).toHaveLength(2);
+    expect(JSON.stringify(document)).toBe(original);
+    const uneven: AssemblyBoltedJointDraft = { ...draft, extraHoles: { first: [face('component-1', first, 3)], second: [] } };
+    const refused = previewBoltedJointDraft(document, view, library, uneven);
+    expect(refused).toMatchObject({ kind: 'set', result: { ok: false, rejections: [{ code: 'holeCountMismatch' }] } });
+  });
+
+  it('store: Shift の選択で穴を足し、1 回の確定と 1 回の取り消しで全部の組が入り・消える', () => {
+    resetTestStore();
+    const { document, library, view, draft, first, twin, face } = pairFixtures();
+    useAppStore.getState().openAssembly(document, library);
+    useAppStore.setState({ assemblyView: { ...view, sourceDocument: useAppStore.getState().assembly ?? document }, isComputing: false });
+    const opened = useAppStore.getState().assembly;
+    expect(useAppStore.getState().beginBoltedJoint()).toBe(true);
+    for (const target of draft.picks) expect(useAppStore.getState().pickBoltedJointFace(target)).toBe(true);
+    useAppStore.getState().updateBoltedJointDraft({ engagementSource: '12', bottomClearanceSource: '2' });
+    expect(useAppStore.getState().pickBoltedJointFace(face('component-1', first, 3), true)).toBe(true);
+    expect(useAppStore.getState().pickBoltedJointFace(face('component-2', twin, 3), true)).toBe(true);
+    const preview = useAppStore.getState().assemblyBoltedJointPreview;
+    expect(preview?.kind === 'set' && preview.result.ok ? preview.result.plan.joints.length : null).toBe(2);
     expect(useAppStore.getState().commitBoltedJoint()).toBe(true);
     expect(useAppStore.getState().assembly).not.toBe(opened);
     useAppStore.getState().undoAssembly();

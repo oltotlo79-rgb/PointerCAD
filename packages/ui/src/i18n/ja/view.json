@@ -114,6 +114,7 @@
   "measureError.unsupportedPair": "この組み合わせでは測れません。2 点・2 面・2 辺・点と面・ソリッド 2 つのいずれかを選んでください。",
   "measureError.missingTarget": "選んだものが見つかりません。形が変わったため、選び直してください。",
   "measureError.failed": "測れませんでした。もう一度お試しください。",
+  "measureError.gapTimeout": "隙間の測定が 10 秒で終わらなかったため、表示をやめました。部品を選び直すと測り直します。",
   "sectionView.title": "断面表示",
   "sectionView.offset": "切る位置",
   "sectionView.flip": "裏返す",

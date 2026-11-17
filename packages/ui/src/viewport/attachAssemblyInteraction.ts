@@ -538,8 +538,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       reportMateInput(observation, dragInput);
     } else if (target !== null) {
       // 実らせんの組は締結の穴の枠だけのもの。合致・溶接へは渡さない。フレームの辺を選ぶ途中は、辺の一覧のチェックを入れ替える。
+      // 締結の 4 面の後に Shift で押した穴は、2 組目からの穴として足し外しする(J-02 P4)。
       const accepted = state.frameEdgePick !== null ? target.kind !== 'modeledThreadGroup' && state.toggleFrameEdgePick(assemblyTargetId(target))
-        : state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target)
+        : state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target, event.shiftKey)
         : target.kind === 'modeledThreadGroup' ? false
           : state.assemblyFilletWeldDraft !== null ? state.pickFilletWeldTarget(target) : addMateTarget(target);
       if (observation !== undefined) observation.addAccepted = accepted;

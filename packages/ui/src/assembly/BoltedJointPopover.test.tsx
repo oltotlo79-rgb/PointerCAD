@@ -1,7 +1,8 @@
 import React, { isValidElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { addComponent, createAssemblyDocument, createComponentFor } from '@pointercad/model';
+import { addComponent, createAssemblyDocument, createComponentFor, type BoltedJointPlan, type MateTarget } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { BoltedJointPopover } from './BoltedJointPopover.js';
@@ -103,5 +104,56 @@ describe('BoltedJointPopover real React form handlers (node, synthetic events)',
     expect(useAppStore.getState().assembly).toBe(before.assembly);
     expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
     expect(event.preventDefault).toHaveBeenCalledOnce(); expect(event.stopPropagation).toHaveBeenCalledOnce();
+  });
+});
+
+describe('まとめて締結する時の窓(J-02 P4)', () => {
+  const face = (componentId: string, index: number): Extract<MateTarget, { readonly kind: 'subShape' }> => ({ kind: 'subShape',
+    componentId, ref: { bodyFeatureId: 'body',
+    index, fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1, position: [0, 0, 0], axis: [0, 0, 1], radius: null } } });
+  function readyPlan(): BoltedJointPlan {
+    const preview = useAppStore.getState().assemblyBoltedJointPreview;
+    if (preview?.kind !== 'plan' || !preview.result.ok) throw new Error('fixture plan');
+    return preview.result.plan;
+  }
+  const commitDisabled = (markup: string): boolean => /<button type="submit"[^>]*disabled=""/u.test(markup);
+
+  it('4 面の後は締結する穴の数と Shift の案内、提案は頭の形と組ごとの長さを出し、確定を押せる', () => {
+    const draft = useAppStore.getState().assemblyBoltedJointDraft;
+    if (draft === null) throw new Error('draft');
+    const plan = readyPlan();
+    useAppStore.setState({
+      assemblyBoltedJointDraft: { ...draft, picks: [face('component-1', 1), face('component-1', 2), face('component-2', 1),
+        face('component-2', 2)], extraHoles: { first: [face('component-1', 3)], second: [face('component-2', 3)] } },
+      assemblyBoltedJointPreview: { kind: 'set', result: { ok: true, plan: { joints: [
+        { joint: plan, headKind: 'socket' }, { joint: { ...plan, boltLength: 45 }, headKind: 'socket' }] } }, pairs: [] },
+    });
+    const markup = renderToStaticMarkup(<BoltedJointPopover />);
+    expect(markup).toContain(t('assembly.boltedJoint.holeCounts').replace('{first}', '2').replace('{second}', '2'));
+    expect(markup).toContain(t('assembly.boltedJoint.addHolesGuide'));
+    expect(markup).toContain(`${t('assembly.boltedJoint.head')} ${t('assembly.boltedJoint.head.socket')}`);
+    expect(markup.match(/data-testid="bolted-joint-set-row"/gu)).toHaveLength(2);
+    expect(markup).toContain(t('assembly.boltedJoint.setRow').replace('{index}', '2').replace('{head}', t('assembly.boltedJoint.head.socket'))
+      .replace('{nominal}', 'M8').replace('{length}', '45'));
+    expect(commitDisabled(markup)).toBe(false);
+  });
+
+  it('1 組でも断られたら、組全体の理由と、穴の組の番号・その組の穴を添えた理由を並べ、確定を押せない', () => {
+    useAppStore.setState({ assemblyBoltedJointPreview: { kind: 'set', result: { ok: false,
+      rejections: [{ code: 'holeCountMismatch', detail: { first: 2, second: 1 } }],
+      holes: [{ index: 1, rejections: [], entryRejections: [{ code: 'holeCountMismatch', detail: { first: 2, second: 1 } }] },
+        { index: 0, rejections: [{ code: 'unsupportedHole', detail: { reason: 'duplicateHole' } }], entryRejections: [] }] },
+    pairs: [{ first: { component: '板A', position: [20, 15, 5] }, second: { component: '板B', position: [0, 15, 5] } },
+      { first: { component: '板A', position: [40, 15, 5] }, second: null }] } });
+    const markup = renderToStaticMarkup(<BoltedJointPopover />);
+    expect(markup).toContain(t('assembly.boltedJoint.reason.holeCountMismatch'));
+    const label = (component: string, x: string) => t('assembly.boltedJoint.holeLabel').replace('{component}', component)
+      .replace('{x}', x).replace('{y}', '15').replace('{z}', '5');
+    expect(markup).toContain(t('assembly.boltedJoint.holeReason').replace('{hole}', '1').replace('{first}', label('板A', '20'))
+      .replace('{second}', label('板B', '0')).replace('{reason}', t('assembly.boltedJoint.unsupported.duplicateHole')));
+    // 組全体と同じ「組の数」の断りは、穴の組の行として重ねて出さない。
+    expect(markup.match(/<li/gu)).toHaveLength(2);
+    expect(markup).toContain('data-hole="1"');
+    expect(commitDisabled(markup)).toBe(true);
   });
 });

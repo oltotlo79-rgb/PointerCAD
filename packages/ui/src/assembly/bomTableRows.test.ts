@@ -78,6 +78,12 @@ describe('bomTableRows', () => {
     expect(tableRow?.cells.material).toBe('鋼(SS400)');
   });
 
+  it('族の行の材質の表示を持つ行(材質の無い部品で、行が密度の材質を持たない)は、その表示を材質へ出し、持たない行は翻訳関数のまま', () => {
+    const label = (id: string): string => (id === 'steel' ? '鋼' : id);
+    const [catalog, plain] = bomTableRows([row({ catalogMaterialLabel: '樹脂(LDPE)' }), row({ rowKey: 'bom:root:part-b:steel' })], [], label);
+    expect([catalog?.cells.material, plain?.cells.material]).toEqual(['樹脂(LDPE)', '鋼']);
+  });
+
   it('質量nullを文字列nullやNaNにせず空欄にする', () => {
     const tableRow = bomTableRows([row({ massEach: null, massTotal: null })], [])[0];
     expect(tableRow?.cells.mass).toBe('');

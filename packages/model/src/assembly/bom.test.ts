@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
 import { buildBom, bomPartName, type BomResolvedData } from './bom.js';
+import { PRODUCT_CATALOG_REGISTRY } from './catalog/registry.js';
+import { createStandardPartSource } from './standard/buildStandardPart.js';
 import type { AssemblyComponent, AssemblyDocument, BomSortKey, ComponentSource } from './types.js';
 
 function component(
@@ -185,5 +187,37 @@ describe('bomPartName', () => {
   it('既定の末尾採番だけを落とす', () => {
     expect(bomPartName(component('a', 'ブラケット:12'))).toBe('ブラケット');
     expect(bomPartName(component('a', 'ブラケット:A'))).toBe('ブラケット:A');
+  });
+});
+
+describe('部品表の材質の欄に出す族の行の材質の表示(統括の決定 2026-11-17 22:5x の (d))', () => {
+  const source = (family: string, item: string, size: string): ComponentSource => createStandardPartSource('catalogItem', size, { family, item });
+  const LDPE = 'p19-insert-cap-r19x3-r16.7x10-ldpe';
+  const NYLON = 'p28-cap-r30x7-r23.6x16-pa';
+
+  async function rowOf(item: string): Promise<{ readonly size: string; readonly massG: number }> {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['pipe-frame-cap']);
+    const row = PRODUCT_CATALOG_REGISTRY.loaded('pipe-frame-cap')?.rows.find((candidate) => candidate.key === item);
+    if (row === undefined) throw new Error(`行 ${item} が無い`);
+    return { size: row.size, massG: row.dims.massG ?? NaN };
+  }
+
+  it('材質の無い部品で、行が密度の材質を持たない時だけ、行の材質の表示を持つ(材質の id・行の鍵・質量は今までどおり)', async () => {
+    const ldpe = await rowOf(LDPE);
+    const [row] = buildBom(assembly(component('c', 'キャップ', source('pipe-frame-cap', LDPE, ldpe.size))), resolved({}));
+    expect([row?.materialId, row?.materialName, row?.catalogMaterialLabel, row?.massEach]).toEqual(['steel', 'steel', '樹脂(LDPE)', ldpe.massG]);
+  });
+
+  it('部品に材質が有る時・行が密度の材質を持つ時・族の部品でない時は、行の材質の表示を持たない(出力は前と同じ形)', async () => {
+    const ldpe = await rowOf(LDPE);
+    const nylon = await rowOf(NYLON);
+    const rows = buildBom(assembly(
+      component('a', 'キャップ A', source('pipe-frame-cap', LDPE, ldpe.size), { materialId: 'abs' }),
+      component('b', 'キャップ B', source('pipe-frame-cap', NYLON, nylon.size)),
+      component('p', '板'),
+    ), resolved());
+    expect(rows.map((row) => [row.name, row.materialId, Object.hasOwn(row, 'catalogMaterialLabel')])).toEqual([
+      ['キャップ A', 'abs', false], ['キャップ B', 'steel', false], ['板', 'steel', false],
+    ]);
   });
 });

@@ -257,26 +257,27 @@ describe('EX-06.UNDO the saved bytes and ids through the store', () => {
   it('an incompatible bolt, a bottoming engagement, a plan made before the part changed and a cancel keep the exact bytes and the Undo stack', () => {
     const { library, opened } = pickedNewJoint();
     // An M10 bolt in the M8 tapped hole: the planner refuses and the commit changes nothing.
+    // A new joint previews through the set command even for one pair; a refusal belongs to pair 1 (index 0).
     useAppStore.getState().updateBoltedJointDraft({ engagementSource: '12', bottomClearanceSource: '2', nominal: 'M10' });
-    expect(useAppStore.getState().assemblyBoltedJointPreview).toMatchObject({ kind: 'plan',
-      result: { ok: false, rejections: [{ code: 'nominalMismatch' }] } });
+    expect(useAppStore.getState().assemblyBoltedJointPreview).toMatchObject({ kind: 'set',
+      result: { ok: false, rejections: [], holes: [{ index: 0, rejections: [{ code: 'nominalMismatch' }] }] } });
     expectRefusedCommit(opened);
     // Engagement 15 > usable thread 16 - 2 = 14: the bolt would bottom out.
     useAppStore.getState().updateBoltedJointDraft({ nominal: '', engagementSource: '15' });
-    expect(useAppStore.getState().assemblyBoltedJointPreview).toMatchObject({ kind: 'plan',
-      result: { ok: false, rejections: [{ code: 'blindBottoming' }] } });
+    expect(useAppStore.getState().assemblyBoltedJointPreview).toMatchObject({ kind: 'set',
+      result: { ok: false, rejections: [], holes: [{ index: 0, rejections: [{ code: 'blindBottoming' }] }] } });
     expectRefusedCommit(opened);
     // A valid preview, then plate A's file is imported again with other contents (a new revision) before the commit:
     // the previewed plan no longer matches, so nothing is added and the window shows the current plan instead.
     useAppStore.getState().updateBoltedJointDraft({ engagementSource: '12' });
     const previewed = useAppStore.getState().assemblyBoltedJointPreview;
-    if (previewed?.kind !== 'plan' || !previewed.result.ok) throw new Error(JSON.stringify(previewed));
+    if (previewed?.kind !== 'set' || !previewed.result.ok) throw new Error(JSON.stringify(previewed));
     useAppStore.setState({ assemblyLibrary: { ...library, partFiles: library.partFiles.map((file) =>
       (file.ref === 'plate-a' ? { ...file, contentHash: 'revision-plate-a-2' } : file)) } });
     expectRefusedCommit(opened);
     const refreshed = useAppStore.getState().assemblyBoltedJointPreview;
-    if (refreshed?.kind !== 'plan' || !refreshed.result.ok) throw new Error(JSON.stringify(refreshed));
-    expect(refreshed.result.plan.sourceIdentities).not.toEqual(previewed.result.plan.sourceIdentities);
+    if (refreshed?.kind !== 'set' || !refreshed.result.ok) throw new Error(JSON.stringify(refreshed));
+    expect(refreshed.result.plan.joints[0]?.joint.sourceIdentities).not.toEqual(previewed.result.plan.joints[0]?.joint.sourceIdentities);
     // Cancelling the draft keeps the exact bytes and the history as well.
     const undo = useAppStore.getState().assemblyUndoStack;
     useAppStore.getState().cancelBoltedJoint();

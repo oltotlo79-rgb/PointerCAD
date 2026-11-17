@@ -1219,6 +1219,8 @@ export { createCatalogItemSource } from './assembly/catalog/source.js';
 export { planFrameMembers } from './assembly/frame/frameMembers.js';
 /** 置いた部品のまっすぐな辺(部品の指紋)を世界の座標の線にする(J-01 包み 4a。ui の辺の一覧が使う)。 */
 export { frameLineFromEdge } from './assembly/frame/frameEdges.js';
+/** 置いた部材の一括の書き換え(J-01 包み 8): 同じ族か同じ鋼材の製品の部品の行・長さを替えた次の保存の形(ui の選ぶ窓が使う)。 */
+export { planMemberBulkEdit, type MemberBulkChange } from './assembly/frame/memberBulkEdit.js';
 export type { FrameCornerRule, FrameLine, FrameMembersResult } from './assembly/frame/frameMembers.js';
 export type {
   SteelEvidence,
@@ -1425,6 +1427,19 @@ export {
   type BoltedJointRecordedPick,
   type BoltedJointUserChoices,
 } from './assembly/fastening/boltedJointEdit.js';
+// J-02: 穴の入口(ざぐり・皿もみ)に合う頭の締結と、複数の穴をまとめる締結の口(画面の締結の窓が使う)。
+export { previewEntryBoltedJoint, commitEntryBoltedJoint, type CommitEntryBoltedJointResult } from './assembly/fastening/entryBoltedJointCommand.js';
+export { previewBoltedJointSet, commitBoltedJointSet } from './assembly/fastening/boltedJointSetCommand.js';
+export { fastenerHeadForEntry } from './assembly/fastening/holeEntry.js';
+export { entryLengthAvailability } from './assembly/fastening/entryBoltLength.js';
+export type {
+  FastenerHeadKind, FasteningHoleEntry, EntryHoleSelection, EntryBoltedJointPlan,
+  EntryBoltedJointResult, FasteningExtensionCode, FasteningExtensionRejection,
+} from './assembly/fastening/holeEntryTypes.js';
+export type {
+  BoltedJointSetPicks, BoltedJointSetPlan, BoltedJointSetResult,
+  BoltedJointHoleFailure, ApplyBoltedJointSetResult,
+} from './assembly/fastening/boltedJointSetTypes.js';
 export { globalUnverifiedLengthAvailability } from './assembly/fastening/selectFastener.js';
 export type {
   BoltedJointPlan,

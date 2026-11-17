@@ -9,7 +9,7 @@
 import { addComponent, createAssemblyDocument, createComponentFor, diagnoseMates, resolveAssembly, solveMates,
   type AssemblyDocument, type Mate, type MateResidualTargetPair, type SolveMatesOptions,
   type PartProgress, type PartRecomputeError, type SketchError, type BoltedJointPlan, type BoltedJointRejectionCode,
-  type MateTarget } from '@pointercad/model';
+  type BoltedJointSetPlan, type FasteningExtensionCode, type MateTarget } from '@pointercad/model';
 import {
   BOLTED_JOINT_PICK_GUIDE_KEYS, createBoltedJointDraft, type AssemblyBoltedJointDraft, type BoltedJointDraftIssue,
 } from '../assembly/boltedJointDraft.js';
@@ -1342,6 +1342,22 @@ const REJECTION_CODES = Object.keys({
   lengthAvailabilityMissing: true, noStandardLengthFits: true,
   existingConstraintConflict: true, existingConstraintUnresolved: true,
 } satisfies Record<BoltedJointRejectionCode, true>) as BoltedJointRejectionCode[];
+/** 穴の入口(ざぐり・皿もみ)と、まとめて締結する組の数の断り(J-02。足し忘れは型で落ちる)。 */
+const EXTENSION_CODES = Object.keys({
+  counterboreTooSmall: true, countersinkMismatch: true, entryOnFarSide: true, holeCountMismatch: true,
+} satisfies Record<FasteningExtensionCode, true>) as FasteningExtensionCode[];
+/** 同じ code でも選び直し方が違うため、detail の reason で案内を分ける断り(model の detail の文字のとおり)。 */
+const DETAIL_GUIDES: readonly (readonly [BoltedJointRejectionCode, string, MessageKey])[] = [
+  ['unsupportedHole', 'blindPlainHole', 'assembly.boltedJoint.unsupported.blindPlainHole'],
+  ['unsupportedHole', 'entryAwareCommandRequired', 'assembly.boltedJoint.unsupported.entryAwareCommandRequired'],
+  ['unsupportedHole', 'unrecordableHoleGroup', 'assembly.boltedJoint.unsupported.unrecordableHoleGroup'],
+  ['unsupportedHole', 'duplicateHole', 'assembly.boltedJoint.unsupported.duplicateHole'],
+  ['unsupportedHole', 'mixedComponents', 'assembly.boltedJoint.unsupported.mixedComponents'],
+  ['boltSizeUnspecified', 'counterboreRequiresExplicitNominal', 'assembly.boltedJoint.detail.counterboreRequiresExplicitNominal'],
+  ['washerDoesNotFit', 'countersunkHeadWasher', 'assembly.boltedJoint.detail.countersunkHeadWasher'],
+  ['threadEntryUnknown', 'entryPlaneMissing', 'assembly.boltedJoint.detail.entryPlaneMissing'],
+  ['holeFaceMismatch', 'entryDepthMismatch', 'assembly.boltedJoint.detail.entryDepthMismatch'],
+];
 const DRAFT_ISSUES = Object.keys({
   needPicks: true, notFace: true, holeFeatureUnknown: true, value: true, stale: true,
   jointRecordMissing: true, jointPartsChanged: true, jointPartsConstrained: true, jointGeometryChanged: true,
@@ -1422,6 +1438,41 @@ describe('ボルト締結の打ちかけの帯(追加要件6)', () => {
       const status = boltedJointStatus(boltedDraft(4), { kind: 'plan', result: { ok: false, rejections: [{ code, detail: {} }] } });
       expect(status?.text).toContain(t(`assembly.boltedJoint.reason.${code}`));
     }
+  });
+
+  it('入口と組の数の断り・detail ごとの案内・まとめての締結の文が翻訳にあり、状態欄が同じ文を出す', () => {
+    const keys: readonly string[] = MESSAGE_KEYS;
+    const required = [...EXTENSION_CODES.map((code) => `assembly.boltedJoint.reason.${code}`),
+      ...DETAIL_GUIDES.map(([, , key]) => key), 'assembly.status.boltedJointSetReady', 'assembly.boltedJoint.holeReason',
+      'assembly.boltedJoint.holeReasonShort', 'assembly.boltedJoint.holeLabel', 'assembly.boltedJoint.holeMissing'];
+    expect(required.filter((key) => !keys.includes(key))).toEqual([]);
+    for (const code of EXTENSION_CODES) {
+      const status = boltedJointStatus(boltedDraft(4), { kind: 'set', result: { ok: false, rejections: [{ code, detail: {} }], holes: [] },
+        pairs: [] });
+      expect(status).toEqual({ failed: true,
+        text: t('assembly.status.boltedJointIssue').replace('{reason}', t(`assembly.boltedJoint.reason.${code}`)) });
+    }
+    for (const [code, reason, key] of DETAIL_GUIDES) {
+      const status = boltedJointStatus(boltedDraft(4), { kind: 'plan', result: { ok: false, rejections: [{ code, detail: { reason } }] } });
+      expect(status?.text).toBe(t('assembly.status.boltedJointIssue').replace('{reason}', t(key)));
+    }
+  });
+
+  it('まとめて締結する時は、組の数を案内し、断られた組は番号を付けて出す。1 組だけの時の文は今までのまま', () => {
+    const joint: BoltedJointSetPlan['joints'][number] = { joint: READY_PLAN, headKind: 'hex' };
+    const pair = { first: { component: '板A', position: [20, 15, 5] as const }, second: { component: '板B', position: [0, 15, 5] as const } };
+    expect(boltedJointStatus(boltedDraft(4), { kind: 'set', result: { ok: true, plan: { joints: [joint] } }, pairs: [pair] }))
+      .toEqual({ failed: false, text: t('assembly.status.boltedJointReady') });
+    expect(boltedJointStatus(boltedDraft(4), { kind: 'set', result: { ok: true, plan: { joints: [joint, joint, joint] } },
+      pairs: [pair, pair, pair] })).toEqual({ failed: false, text: t('assembly.status.boltedJointSetReady').replace('{count}', '3') });
+    const coaxial = t('assembly.boltedJoint.reason.axesNotCoaxial');
+    const refused = boltedJointStatus(boltedDraft(4), { kind: 'set', result: { ok: false, rejections: [], holes: [
+      { index: 1, rejections: [{ code: 'axesNotCoaxial', detail: {} }], entryRejections: [] }] }, pairs: [pair, pair] });
+    const reason = t('assembly.boltedJoint.holeReasonShort').replace('{hole}', '2').replace('{reason}', coaxial);
+    expect(refused).toEqual({ failed: true, text: t('assembly.status.boltedJointIssue').replace('{reason}', reason) });
+    const single = boltedJointStatus(boltedDraft(4), { kind: 'set', result: { ok: false, rejections: [], holes: [
+      { index: 0, rejections: [{ code: 'axesNotCoaxial', detail: {} }], entryRejections: [] }] }, pairs: [pair] });
+    expect(single).toEqual({ failed: true, text: t('assembly.status.boltedJointIssue').replace('{reason}', coaxial) });
   });
 });
 

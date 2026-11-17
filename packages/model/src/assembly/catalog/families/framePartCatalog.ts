@@ -2,7 +2,8 @@
  * 族: 資料 SF-1(アルミ構造材の総合カタログ)で寸法が確認できるフレームの部品(統括の決定 2026-11-17)。製造元の名前・型番は書かない。
  * T 溝用ナットの素材(棒材。長さを入れる)・T 溝用ナット・丸ナット・端のキャップ・平板のブラケットの 5 族。行は、資料の 2 回の独立の読みで、形を作るのに
  * 要る欄が全部一致した物だけ(行の表 `framePartRows.ts` は道具が生成し、検査が 2 回目の読みの fixture と 1 行ずつ照らす)。
- * 形は記入のある寸法だけで作る簡略の形で、簡略にした所は行の `simplified` に持つ(頭の斜面・首の長さ・穴の位置・取付けの脚と穴・角の形)。
+ * 形は記入のある寸法だけで作る簡略の形で、簡略にした所は行の `simplified` に持つ(頭の斜面・首の長さ・穴の位置・取付けの脚と穴・角の形・
+ * 1 個のナットのボールとストッパー〔全高まで包む〕・決まらない止めねじの穴)。
  * **質量は形から計算せず、資料の値**(棒材は単位質量 × 長さ、ほかは 1 個の質量)。形は `profiles/framePartShapes.ts` と
  * 今ある汎用の T 溝用ナットの形(`profiles/frameParts.ts`)。
  */
@@ -46,7 +47,11 @@ export interface TSlotNutBarRecord {
   readonly simplified: readonly string[];
 }
 
-/** T 溝用ナット(1 個)の行。ねじ穴は 1 つで長さの中央(道具がそうでない行を入れない)。 */
+/**
+ * T 溝用ナット(1 個)の行。主のねじ穴は、holeOffset が無い行は長さの中央、有る行は長さの端の面から holeOffset。
+ * ロック付きで止めねじの呼びが決まった行は、止めねじの穴(setScrewThread・setScrewOffset)も開ける。ボール付き・ストッパー付きの行は、
+ * totalHeight がボール・ストッパーの先までを包んだ高さで、slotPartHeightUnknown(溝に入る所の高さが資料に無い)を持つ。
+ */
 export interface TSlotNutRecord {
   readonly key: string;
   readonly size: string;
@@ -64,6 +69,14 @@ export interface TSlotNutRecord {
   /** 溝の向きの全長。 */
   readonly length: number;
   readonly massG: number;
+  /** 長さの端の面から主のねじ穴の中心まで(穴が中央でない行だけ)。 */
+  readonly holeOffset?: number;
+  /** 止めねじの呼び(ロック付きで、呼びが 2 つの独立の読みで一致した行だけ)。 */
+  readonly setScrewThread?: string;
+  /** 長さの端の面(holeOffset と同じ端)から止めねじの穴の中心まで。 */
+  readonly setScrewOffset?: number;
+  /** 溝に入る所の高さが資料に無い(全高がボール・ストッパーの先までを包んだ高さ)。 */
+  readonly slotPartHeightUnknown?: true;
   readonly simplified: readonly string[];
 }
 
@@ -200,7 +213,10 @@ export interface AdjusterRecord {
   readonly thread: string;
   readonly padDiameter: number;
   readonly padThickness: number;
+  /** おねじの長さ(資料の記入のまま。六角部が有る行は六角部の上の面から先まで)。 */
   readonly threadLength: number;
+  /** 皿とねじの間の六角部の高さ(寸法線の起点が六角部の上の行だけ。対辺の記入が無いので、ねじの径の円柱で表す)。 */
+  readonly hexHeight?: number;
   readonly massG: number;
   readonly simplified: readonly string[];
 }
@@ -283,19 +299,37 @@ export const T_SLOT_NUT_BAR_FAMILY: CatalogFamily = {
 
 const nutRecord = recordLookup(T_SLOT_NUT_RECORDS);
 
+/** 1 個のナットの形の寸法(主のねじ穴の位置と止めねじの穴は、行に有る時だけ)。 */
+function slotNutDimensionsOf(record: TSlotNutRecord): SlotNutDimensions {
+  return { thread: record.thread, flangeWidth: record.headWidth, length: record.length, flangeThickness: record.totalHeight - record.neckHeight,
+    neckWidth: record.neckWidth, neckHeight: record.neckHeight,
+    ...(record.holeOffset === undefined ? {} : { holeOffset: record.holeOffset }),
+    ...(record.setScrewThread === undefined || record.setScrewOffset === undefined ? {}
+      : { setScrew: { thread: record.setScrewThread, offset: record.setScrewOffset } }) };
+}
+
 function nutDimensions(row: CatalogItemRow): SlotNutDimensions | null {
   const record = nutRecord(row);
-  if (record === undefined) return null;
-  return { thread: record.thread, flangeWidth: record.headWidth, length: record.length, flangeThickness: record.totalHeight - record.neckHeight,
-    neckWidth: record.neckWidth, neckHeight: record.neckHeight };
+  return record === undefined ? null : slotNutDimensionsOf(record);
+}
+
+/**
+ * 1 個のナットの行の dims。締結(frameSlotFastening)が読む鍵: holeOffset(長さの端の面から主のねじ穴の中心まで。無い行は length / 2)と、
+ * slotPartHeightUnknown = 1(溝に入る所の高さが資料に無い行。totalHeight − neckHeight を深さとボルトの長さに使わない)。今の中央の行は鍵を持たない。
+ */
+function nutDims(record: TSlotNutRecord): Readonly<Record<string, number>> {
+  return { slot: record.slot, headWidth: record.headWidth, neckWidth: record.neckWidth, neckHeight: record.neckHeight,
+    totalHeight: record.totalHeight, length: record.length, massG: record.massG,
+    ...(record.holeOffset === undefined ? {} : { holeOffset: record.holeOffset }),
+    ...(record.setScrewOffset === undefined ? {} : { setScrewOffset: record.setScrewOffset }),
+    ...(record.slotPartHeightUnknown === true ? { slotPartHeightUnknown: 1 } : {}) };
 }
 
 export const T_SLOT_NUT_FAMILY: CatalogFamily = {
   ...familyBase('t-slot-nut', 'catalog.frame.kind.catalogNut', 'tSlotNut'),
   options: [],
   stock: 'count',
-  rows: T_SLOT_NUT_RECORDS.map((record) => baseRow(record, { slot: record.slot, headWidth: record.headWidth, neckWidth: record.neckWidth,
-    neckHeight: record.neckHeight, totalHeight: record.totalHeight, length: record.length, massG: record.massG }, '資料の 1 個の値')),
+  rows: T_SLOT_NUT_RECORDS.map((record) => baseRow(record, nutDims(record), '資料の 1 個の値')),
   build: (row) => {
     const dims = nutDimensions(row);
     const part = dims === null ? null : buildSlotNutPart(dims);
@@ -490,7 +524,7 @@ const adjusterRecord = recordLookup(ADJUSTER_RECORDS);
 function adjusterDimensions(row: CatalogItemRow): AdjusterDimensions | null {
   const record = adjusterRecord(row);
   return record === undefined ? null : { thread: record.thread, padDiameter: record.padDiameter, padThickness: record.padThickness,
-    threadLength: record.threadLength };
+    threadLength: record.threadLength, ...(record.hexHeight === undefined ? {} : { hexHeight: record.hexHeight }) };
 }
 
 export const ADJUSTER_FAMILY: CatalogFamily = {
@@ -498,7 +532,8 @@ export const ADJUSTER_FAMILY: CatalogFamily = {
   options: [],
   stock: 'count',
   rows: ADJUSTER_RECORDS.map((record) => baseRow(record, { padDiameter: record.padDiameter, padThickness: record.padThickness,
-    threadLength: record.threadLength, massG: record.massG }, '資料の 1 個の値')),
+    threadLength: record.threadLength, ...(record.hexHeight === undefined ? {} : { hexHeight: record.hexHeight }), massG: record.massG },
+  '資料の 1 個の値')),
   build: (row) => {
     const dims = adjusterDimensions(row);
     const part = dims === null ? null : buildAdjusterPart(dims);

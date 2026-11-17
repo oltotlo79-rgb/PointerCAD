@@ -5,15 +5,21 @@
  *   縦の辺(x 向きの厚さ)に 1 つずつ、幅の中央を通る円柱の穴を引く。
  * - つなぎ板: 長方形(中心が原点)に、長さの向きに中心で揃えた n 個の円の穴(内の輪)を書いて厚さ t だけ押し出す。
  * - T 溝用のナット: つばの直方体(l × wf × tf)と首の直方体(l × wn × (tf + hn)、底は z = 0)の和に、首の上面から通しのめねじ
- *   (下穴径は並目の谷の径、簡略の表し方)を開ける。
+ *   (下穴径は並目の谷の径、簡略の表し方)を開ける。めねじは長さの中央か、端の面から holeOffset。止めねじの穴(setScrew)は
+ *   並目の谷の径の円柱を引いて表す(資料の部品の形の拡張。汎用の族は使わない)。
  */
 import { exactExpressionValueFromNumber, expressionValueFromNumber } from '@pointercad/expression';
 
-import { appendSolid, createEmptyPartDocument, createPrimitiveFeature, nextSolidId, nextSolidName } from '../../../part/createPartDocument.js';
+import { exceedsMagnitude } from '../../../numericTolerance.js';
+import {
+  appendSolid, createEmptyPartDocument, createPrimitiveFeature, nextSolidId, nextSolidName, replaceSketch,
+} from '../../../part/createPartDocument.js';
 import type { PartDocument, PrimitiveFeature, ThreadHoleFeature } from '../../../part/types.js';
+import { absoluteCoordinate, appendFeature, createPointFeature } from '../../../sketch/createSketchDocument.js';
+import type { SketchPointFeature } from '../../../sketch/types.js';
 import { findMetricThread, metricThreadPitch, threadMinorDiameter } from '../../../thread/metricThread.js';
 import { buildProfileSection } from '../../standard/profileExtrusion.js';
-import { appendBoolean, centerPoint, origin, planeFace } from '../../standard/partPrimitives.js';
+import { activeSketch, appendBoolean, centerPoint, origin, planeFace } from '../../standard/partPrimitives.js';
 import type { SteelProfilePoint, SteelProfileSegment } from '../../standard/steelSectionProfiles.js';
 
 export interface AngleBracketDimensions {
@@ -50,6 +56,10 @@ export interface SlotNutDimensions {
   readonly flangeThickness: number;
   readonly neckWidth: number;
   readonly neckHeight: number;
+  /** 長さの端の面から主のめねじの中心まで。省略は長さの中央(今までの形)。 */
+  readonly holeOffset?: number;
+  /** 止めねじの穴(呼びと、holeOffset と同じ端の面からの中心の位置)。省略は無し。並目の谷の径の通し穴で表す(簡略の表し方)。 */
+  readonly setScrew?: { readonly thread: string; readonly offset: number };
 }
 
 const positive = (values: readonly number[]): boolean => values.every((value) => Number.isFinite(value) && value > 0);
@@ -122,15 +132,45 @@ export function joinPlateVolume(dims: JoinPlateDimensions): number | null {
 }
 
 /** 並目の谷の径(ねじの呼びが表に無い時は NaN)。 */
-function nutMinorDiameter(dims: SlotNutDimensions): number {
-  const size = findMetricThread(dims.thread);
+function minorDiameterOf(thread: string): number {
+  const size = findMetricThread(thread);
   return size === undefined ? NaN : threadMinorDiameter(size.diameter, metricThreadPitch(size, 'coarse'));
+}
+
+function nutMinorDiameter(dims: SlotNutDimensions): number {
+  return minorDiameterOf(dims.thread);
+}
+
+/** 主のめねじの中心の x(原点は長さの中央。holeOffset が無ければ 0)。 */
+function holeCenterX(dims: SlotNutDimensions): number {
+  return dims.holeOffset === undefined ? 0 : dims.holeOffset - dims.length / 2;
+}
+
+/** 長さの端の面から offset の穴(径 d)が、長さの内に収まるか。 */
+function insideLength(offset: number, diameter: number, length: number): boolean {
+  return Number.isFinite(offset) && offset - diameter / 2 > 0 && offset + diameter / 2 < length;
 }
 
 function nutValid(dims: SlotNutDimensions): boolean {
   const minor = nutMinorDiameter(dims);
-  return positive([dims.flangeWidth, dims.length, dims.flangeThickness, dims.neckWidth, dims.neckHeight, minor])
+  const base = positive([dims.flangeWidth, dims.length, dims.flangeThickness, dims.neckWidth, dims.neckHeight, minor])
     && dims.neckWidth < dims.flangeWidth && minor < dims.neckWidth && minor < dims.length;
+  if (!base) return false;
+  const mainOffset = dims.holeOffset ?? dims.length / 2;
+  if (!insideLength(mainOffset, minor, dims.length)) return false;
+  if (dims.setScrew === undefined) return true;
+  const screwMinor = minorDiameterOf(dims.setScrew.thread);
+  // 止めねじの穴は長さの内に収まり、首より細く、主のめねじと重ならない。
+  return positive([screwMinor]) && screwMinor < dims.neckWidth && insideLength(dims.setScrew.offset, screwMinor, dims.length)
+    && exceedsMagnitude(dims.setScrew.offset - mainOffset, (minor + screwMinor) / 2);
+}
+
+/** 作図面に (x, 0, 0) の点を足す(めねじの中心)。 */
+function pointAt(document: PartDocument, x: number): { readonly document: PartDocument; readonly point: SketchPointFeature } {
+  let sketch = activeSketch(document);
+  const point = createPointFeature(sketch, absoluteCoordinate(x, 0, 0));
+  sketch = appendFeature(sketch, point);
+  return { document: replaceSketch(document, sketch), point };
 }
 
 function appendBox(document: PartDocument, sizes: readonly [number, number, number], centerZ: number): {
@@ -148,7 +188,7 @@ export function buildSlotNutPart(dims: SlotNutDimensions): PartDocument | null {
   const flange = appendBox(createEmptyPartDocument(), [dims.length, dims.flangeWidth, dims.flangeThickness], dims.flangeThickness / 2);
   const neck = appendBox(flange.document, [dims.length, dims.neckWidth, height], height / 2);
   const united = appendBoolean(neck.document, 'union', flange.feature.id, neck.feature.id);
-  const center = centerPoint(united.document);
+  const center = dims.holeOffset === undefined ? centerPoint(united.document) : pointAt(united.document, holeCenterX(dims));
   const document = center.document;
   const pitch = metricThreadPitch(size, 'coarse');
   const hole: ThreadHoleFeature = {
@@ -169,12 +209,23 @@ export function buildSlotNutPart(dims: SlotNutDimensions): PartDocument | null {
     tiltAngle: expressionValueFromNumber(0),
     tiltAzimuth: expressionValueFromNumber(0),
   };
-  return appendSolid(document, hole);
+  const threaded = appendSolid(document, hole);
+  return dims.setScrew === undefined ? threaded : subtractSetScrew(threaded, hole.id, dims.setScrew, dims.length, height);
+}
+
+/** 止めねじの穴: 並目の谷の径の円柱(軸 Z)を、底の面の 1 mm 下から上の面の 1 mm 上まで引く(端の面が外形に接しない様に)。 */
+function subtractSetScrew(document: PartDocument, targetId: string, setScrew: NonNullable<SlotNutDimensions['setScrew']>, length: number,
+  height: number): PartDocument {
+  const created = createPrimitiveFeature(document, 'cylinder', origin(setScrew.offset - length / 2, 0, -1));
+  const radius = expressionValueFromNumber(minorDiameterOf(setScrew.thread) / 2);
+  const screw: PrimitiveFeature = { ...created, shape: { kind: 'cylinder', radius, height: expressionValueFromNumber(height + 2) } };
+  return appendBoolean(appendSolid(document, screw), 'subtract', targetId, screw.id).document;
 }
 
 export function slotNutVolume(dims: SlotNutDimensions): number | null {
   if (!nutValid(dims)) return null;
   const height = dims.flangeThickness + dims.neckHeight;
+  const screw = dims.setScrew === undefined ? 0 : circleArea(minorDiameterOf(dims.setScrew.thread)) * height;
   return dims.length * dims.flangeWidth * dims.flangeThickness + dims.length * dims.neckWidth * dims.neckHeight
-    - circleArea(nutMinorDiameter(dims)) * height;
+    - circleArea(nutMinorDiameter(dims)) * height - screw;
 }

@@ -394,7 +394,7 @@
       "file": "bolted-joint.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "8446fcfba31315dee3fb8d2387b1c91b86fe3d1ef89b6f8c8369aa72b9f8bbce"
+      "sha256": "dbba83b71138e79df5c2c52ce7f817ac9652980a48801a6e8918b98a745a9d88"
     },
     {
       "file": "bom.spec.ts",
@@ -694,7 +694,7 @@
       "file": "electron-bolted-joint.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
-      "sha256": "be9ac00dbd038afb886354db98ba050e7976d59bc67754fe30c199e81cd5c88e"
+      "sha256": "31c19c5fc9909bb35e7619f90dbe32048d5bb9ed633f2090a1280d3bea00aae0"
     },
     {
       "file": "electron-cam.spec.ts",

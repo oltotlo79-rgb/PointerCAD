@@ -59,13 +59,13 @@ function threadOf(text: string | undefined): string {
   return /^(?:[0-9]+-)?(M[0-9]+(?:\.[0-9]+)?)$/u.exec((text ?? '').replace(/ /gu, ''))?.[1] ?? '';
 }
 
-/** 材質の文字の種類(ステンレス・SUS → stainless、アルミ → aluminum、PA・樹脂 → nylon、鋼 → steel)。 */
+/** 材質の文字の種類(ステンレス・SUS → stainless、アルミ → aluminum、PA・樹脂 → nylon、鋼・一般構造用圧延鋼材の記号 SS400 など → steel)。 */
 function materialOf(text: string | undefined): string {
   const value = text ?? '';
   if (/ステンレス|SUS/u.test(value)) return 'stainless';
   if (/アルミ/u.test(value)) return 'aluminum';
   if (/PA|樹脂|ナイロン/u.test(value)) return 'nylon';
-  return /鋼/u.test(value) ? 'steel' : '';
+  return /鋼|(?<![A-Z])SS[0-9]{3}(?![0-9])/u.test(value) ? 'steel' : '';
 }
 
 /** 種類の文字の入れ方の語(「素材・」を除いた「・」区切りの語)。 */
@@ -92,16 +92,52 @@ describe('資料 SF-1 のフレームの部品の 2 回目の読みとの照ら�
     }
   });
 
-  it('ナットの行は、溝幅・入れ方・材質・質量・頭の幅・首の幅・首の高さ・全高・長さ・ねじ・穴 1 つが長さの中央にある事が 2 回目の文字と一致', () => {
+  it('ナットの行は、溝幅・入れ方・材質・質量・頭の幅・首の幅・首の高さ・全高・長さ・ねじ・ねじ穴の数が 2 回目の文字と一致', () => {
     for (const record of T_SLOT_NUT_RECORDS) {
       const cells = cellsOf('nuts', record.key);
+      const lock = entryOf(cells['種類']).includes('ロック付き');
       expect([record.slot, record.entry, record.material, record.page, record.massG, record.headWidth, record.neckWidth, record.neckHeight,
-        record.totalHeight, record.length, record.thread, 1, record.length / 2], record.key).toEqual([numberOf(cells['合う溝幅']),
+        record.totalHeight, record.length, record.thread, lock ? 2 : 1], record.key).toEqual([numberOf(cells['合う溝幅']),
         entryOf(cells['種類']), materialOf(cells['材質']), numberOf(cells['PDF頁']), numberOf(cells['質量_g']), numberOf(cells['頭の幅']),
         numberOf(cells['首の幅']), numberOf(cells['首の高さ']), numberOf(cells['全高']), numberOf(cells['長さ']), threadOf(cells['ねじの呼び']),
-        numberOf(cells['ねじ穴の数']), numberOf(cells['ねじ穴の位置'])]);
-      // 首の長さは 1 回目の読みに記入が無いので、首は頭と同じ長さの簡略の形(印「首の長さ」)。
-      expect(record.simplified, record.key).toEqual(['頭の斜面', '首の長さ']);
+        numberOf(cells['ねじ穴の数'])]);
+    }
+  });
+
+  it('ナットの主のねじ穴は 2 回目の位置の小さい方で、中央でない行だけ holeOffset を持つ(今の中央の行は鍵を持たない)', () => {
+    for (const record of T_SLOT_NUT_RECORDS) {
+      const positions = (cellsOf('nuts', record.key)['ねじ穴の位置'] ?? '').split(';').map(numberOf);
+      const main = Math.min(...positions);
+      expect(positions.every(Number.isFinite), record.key).toBe(true);
+      expect(record.holeOffset ?? record.length / 2, record.key).toBe(main);
+      expect(record.holeOffset === undefined, record.key).toBe(main * 2 === record.length);
+    }
+  });
+
+  it('ロック付きの止めねじの穴は、2 回目の止めねじの呼びがある行だけ開け、位置は 2 回目の位置の大きい方。ほかの行は開けない', () => {
+    for (const record of T_SLOT_NUT_RECORDS) {
+      const cells = cellsOf('nuts', record.key);
+      const positions = (cells['ねじ穴の位置'] ?? '').split(';').map(numberOf);
+      const screw = cells['止めねじの呼び'];
+      if (entryOf(cells['種類']).includes('ロック付き') && screw !== undefined) {
+        expect([record.setScrewThread, record.setScrewOffset], record.key).toEqual([threadOf(screw), Math.max(...positions)]);
+      } else {
+        expect([record.setScrewThread, record.setScrewOffset], record.key).toEqual([undefined, undefined]);
+      }
+    }
+  });
+
+  it('ナットの簡略の印: 頭の斜面・首の長さに、ボールとストッパーは全高まで包んだ印、止めねじの呼びが無いロック付きは穴を開けない印', () => {
+    const envelope: readonly (readonly [string, string])[] = [['ボール付き', 'ボール(全高はボールの先まで。ボールは作らず包んだ)'],
+      ['ストッパー付き', 'ストッパー(全高はストッパーの先まで。ストッパーは作らず包んだ)']];
+    for (const record of T_SLOT_NUT_RECORDS) {
+      const cells = cellsOf('nuts', record.key);
+      const entry = entryOf(cells['種類']);
+      const marks = envelope.filter(([word]) => entry.includes(word)).map(([, mark]) => mark);
+      const noScrew = entry.includes('ロック付き') && cells['止めねじの呼び'] === undefined ? ['止めねじの穴(呼びが決まらないので開けていない)'] : [];
+      // 首の長さは読みに記入が無いので、首は頭と同じ長さの簡略の形(印「首の長さ」)。
+      expect(record.simplified, record.key).toEqual(['頭の斜面', '首の長さ', ...marks, ...noScrew]);
+      expect(record.slotPartHeightUnknown === true, record.key).toBe(marks.length > 0);
     }
   });
 
@@ -261,10 +297,18 @@ describe('資料 SF-1 の読み直しで足した 4 族と照らす側の読み'
   it('アジャスターは、皿の径と厚さ・ねじの呼びと長さ・質量が照らす側の読みと一致', () => {
     for (const record of ADJUSTER_RECORDS) {
       const cells = cellsOf('adjusters', record.key);
-      expect([record.material, record.page, record.padDiameter, record.padThickness, record.thread, record.threadLength, record.massG], record.key)
-        .toEqual([materialOf(cells['材質']), numberOf(cells['PDF頁']), numberOf(cells['皿の径']), numberOf(cells['皿の厚さ']),
-          threadOf((cells['ねじの呼び'] ?? '').replace(/\([^)]*\)/gu, '').replace(/[×x][0-9.]+$/u, '')), numberOf(cells['ねじの長さ']),
-          numberOf(cells['質量_g'])]);
+      // ねじの長さの寸法線が六角部の上からの行は、記入のままの長さと六角部の高さを照らす(足し引きで作った長さは使わない)。
+      const hexed = record.hexHeight !== undefined;
+      expect([record.material, record.page, record.padDiameter, record.padThickness, record.thread, record.threadLength, record.hexHeight,
+        record.massG], record.key).toEqual([materialOf(cells['材質']), numberOf(cells['PDF頁']), numberOf(cells['皿の径']),
+        numberOf(cells['皿の厚さ']), threadOf((cells['ねじの呼び'] ?? '').replace(/\([^)]*\)/gu, '').replace(/[×x][0-9.]+$/u, '')),
+        numberOf(cells[hexed ? 'ねじの長さ_記入' : 'ねじの長さ']), hexed ? numberOf(cells['六角部の高さ']) : undefined, numberOf(cells['質量_g'])]);
+      if (hexed) {
+        expect(cells['ねじの長さの起点'], record.key).toBe('六角部の上の面');
+        // 全高の記入が括弧の無い数の行は、皿 + 六角部 + ねじの長さと合う(形の高さが資料の全高と同じ)。
+        const total = numberOf(cells['全高']);
+        if (Number.isFinite(total)) expect(record.padThickness + (record.hexHeight ?? NaN) + record.threadLength, record.key).toBe(total);
+      }
     }
   });
 });

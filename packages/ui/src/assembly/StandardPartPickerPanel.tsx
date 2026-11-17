@@ -10,7 +10,7 @@ import {
   ALUMINUM_FRAME_PICKER_CATEGORY, familyPickerCategory, isFamilyPickerCategory, MECHANICAL_PICKER_CATEGORY, type FamilyPickerCategory,
 } from './catalogFamilyChoices.js';
 import { useCatalogFamilies } from './CatalogLoadStatus.js';
-import { FrameLayoutDetails } from './FrameLayoutDetails.js';
+import { FrameMemberTools } from './FrameMemberTools.js';
 import { StockCuttingFields } from './StockCuttingFields.js';
 import { catalogMiterNote, steelStockCuttingRows } from './stockCuttingView.js';
 import { pickerFormProps } from './pickerFormHandlers.js';
@@ -383,7 +383,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
           <p>{t('assembly.steel.referenceOnly')}</p>
         </div>
       )}
-      {steel === undefined || bending || editing ? null : <FrameLayoutDetails member={{ kind: 'steel', choiceKey: choice.key }} />}
+      {steel === undefined || bending || editing ? null : <FrameMemberTools member={{ kind: 'steel', choiceKey: choice.key }} />}
       {!isSteel || assembly === null ? null : (
         <details className="pcad-popover__hint" open={stockOpen}
           onToggle={(event) => { setStockOpen(event.currentTarget.open); }}>

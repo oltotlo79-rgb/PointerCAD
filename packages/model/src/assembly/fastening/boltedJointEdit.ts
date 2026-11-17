@@ -13,9 +13,13 @@
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import { removeComponent } from '../assemblyEdit.js';
 import type { AssemblyComponent, AssemblyDocument } from '../types.js';
+import { SOCKET_HEAD_CAP_SCREW_FAMILY } from '../catalog/families/socketHeadCapScrew.js';
+import { COUNTERSUNK_SOCKET_SCREW_FAMILY } from '../catalog/families/countersunkSocketScrew.js';
 import type { FasteningGeometryContext, FasteningHolePick } from './bindHoleSelection.js';
 import { commitBoltedJoint, previewBoltedJoint, type BoltedJointChoices } from './boltedJointCommand.js';
-import type { BoltedJointPlan, BoltedJointPlanResult, BoltedJointRejection } from './types.js';
+import { commitEntryBoltedJoint, previewEntryBoltedJoint } from './entryBoltedJointCommand.js';
+import type { EntryBoltedJointPlan, FasteningExtensionRejection } from './holeEntryTypes.js';
+import type { BoltedJointPlan, BoltedJointRejection } from './types.js';
 
 /** 寸法表から毎回作る指定(記録しない)。通し穴の根拠と長さの候補。 */
 export type BoltedJointCatalogChoices = Pick<BoltedJointChoices, 'clearanceEvidence' | 'lengthAvailability'>;
@@ -53,16 +57,29 @@ export type BoltedJointEditFailure =
   /** 計画が断った(理由は `rejections`)。 */
   | 'planRejected';
 
+/** Transient preview identity; never added to BoltedJointRecord or the saved document. */
+interface BoltedJointEditPlan extends BoltedJointPlan {
+  readonly entryPlan?: EntryBoltedJointPlan;
+}
+
 export type BoltedJointEditPreview =
-  | { readonly ok: true; readonly plan: BoltedJointPlan; readonly record: BoltedJointRecord }
-  | { readonly ok: false; readonly reason: BoltedJointEditFailure; readonly rejections: readonly BoltedJointRejection[] };
+  | { readonly ok: true; readonly plan: BoltedJointEditPlan; readonly record: BoltedJointRecord }
+  | { readonly ok: false; readonly reason: BoltedJointEditFailure; readonly rejections: readonly BoltedJointRejection[];
+      readonly entryRejections?: readonly FasteningExtensionRejection[] };
 
 export type BoltedJointEditResult =
   | { readonly ok: true; readonly document: AssemblyDocument; readonly record: BoltedJointRecord }
   | { readonly ok: false; readonly document: AssemblyDocument; readonly reason: BoltedJointEditFailure;
-      readonly rejections: readonly BoltedJointRejection[] };
+      readonly rejections: readonly BoltedJointRejection[]; readonly entryRejections?: readonly FasteningExtensionRejection[] };
 
 const FASTENER_CATALOGS: ReadonlySet<string> = new Set(['hexBolt', 'hexNut', 'plainWasher', 'springWasher']);
+
+function entryBoltFamily(part: AssemblyComponent | undefined): string | undefined {
+  const source = part?.source;
+  if (source?.kind !== 'standardPart' || source.catalog !== 'catalogItem') return undefined;
+  const family = source.options.family;
+  return family === SOCKET_HEAD_CAP_SCREW_FAMILY.id || family === COUNTERSUNK_SOCKET_SCREW_FAMILY.id ? family : undefined;
+}
 
 export function boltedJointRecords(document: AssemblyDocument): readonly BoltedJointRecord[] {
   return document.boltedJoints ?? [];
@@ -128,13 +145,28 @@ function jointPartsIssue(document: AssemblyDocument, record: BoltedJointRecord):
     return 'jointPartsChanged';
   }
   const intact = (part: AssemblyComponent | undefined): boolean => part !== undefined && !part.suppressed
-    && part.source.kind === 'standardPart' && FASTENER_CATALOGS.has(part.source.catalog) && part.rigidGroupId === group;
+    && part.source.kind === 'standardPart' && (FASTENER_CATALOGS.has(part.source.catalog) || entryBoltFamily(part) !== undefined)
+    && part.rigidGroupId === group;
   if (record.componentIds.length === 0 || !record.componentIds.map(find).every(intact)) return 'jointPartsChanged';
   const ids = new Set(record.componentIds);
   if ([...document.mates, ...document.joints].some((entry) => referencesAny(entry.a, ids) || referencesAny(entry.b, ids))) {
     return 'jointPartsConstrained';
   }
   return null;
+}
+
+/** Only a family implied by the currently bound entry can replace recorded catalog hardware. */
+function previewRecordedEntry(context: FasteningGeometryContext, record: BoltedJointRecord,
+  choices: BoltedJointChoices, families: readonly string[]): BoltedJointEditPreview {
+  const result = previewEntryBoltedJoint(context, record.first, record.second, choices);
+  if (!result.ok) return { ok: false, reason: 'planRejected', rejections: result.rejections, entryRejections: result.entryRejections };
+  if (result.plan.bolt === undefined || families.some(family => family !== result.plan.bolt?.source.options.family)) {
+    return { ok: false, reason: 'jointPartsChanged', rejections: [] };
+  }
+  if (result.plan.joint.alignment.movedComponentIds.length > 0) {
+    return { ok: false, reason: 'jointGeometryChanged', rejections: [] };
+  }
+  return { ok: true, plan: { ...result.plan.joint, entryPlan: result.plan }, record };
 }
 
 /**
@@ -149,7 +181,10 @@ export function previewBoltedJointEdit(
   if (record === undefined) return { ok: false, reason: 'jointRecordMissing', rejections: [] };
   const issue = jointPartsIssue(context.document, record);
   if (issue !== null) return { ok: false, reason: issue, rejections: [] };
-  const result: BoltedJointPlanResult = previewBoltedJoint(context, record.first, record.second, { ...choices, ...catalog });
+  const families = context.document.components.filter(part => record.componentIds.includes(part.id))
+    .flatMap(part => entryBoltFamily(part) ?? []);
+  if (families.length > 0) return previewRecordedEntry(context, record, { ...choices, ...catalog }, families);
+  const result = previewBoltedJoint(context, record.first, record.second, { ...choices, ...catalog });
   if (!result.ok) return { ok: false, reason: 'planRejected', rejections: result.rejections };
   // 板は同じ組なので整列は動かさない(alignment.ts の sameGroup)。動く計画は直す操作として受けない。
   if (result.plan.alignment.movedComponentIds.length > 0) return { ok: false, reason: 'jointGeometryChanged', rejections: [] };
@@ -162,13 +197,22 @@ export function previewBoltedJointEdit(
  */
 export function commitBoltedJointEdit(
   context: FasteningGeometryContext, recordId: string, choices: BoltedJointUserChoices, catalog: BoltedJointCatalogChoices,
-  previewed: BoltedJointPlan,
+  previewed: BoltedJointEditPlan,
 ): BoltedJointEditResult {
   const original = context.document;
   const preview = previewBoltedJointEdit(context, recordId, choices, catalog);
-  if (!preview.ok) return { ok: false, document: original, reason: preview.reason, rejections: preview.rejections };
-  const committed = commitBoltedJoint(context, preview.record.first, preview.record.second, { ...choices, ...catalog }, previewed);
-  if (!committed.ok) return { ok: false, document: original, reason: 'planRejected', rejections: committed.rejections };
+  if (!preview.ok) return { ok: false, document: original, reason: preview.reason, rejections: preview.rejections,
+    ...(preview.entryRejections === undefined ? {} : { entryRejections: preview.entryRejections }) };
+  if (preview.plan.entryPlan !== undefined && JSON.stringify(preview.plan) !== JSON.stringify(previewed)) {
+    return { ok: false, document: original, reason: 'planRejected',
+      rejections: [{ code: 'staleSource', detail: { reason: 'previewChanged' } }], entryRejections: [] };
+  }
+  const committed: ReturnType<typeof commitBoltedJoint> & { readonly entryRejections?: readonly FasteningExtensionRejection[] }
+    = preview.plan.entryPlan === undefined
+    ? commitBoltedJoint(context, preview.record.first, preview.record.second, { ...choices, ...catalog }, previewed)
+    : commitEntryBoltedJoint(context, preview.record.first, preview.record.second, { ...choices, ...catalog }, preview.plan.entryPlan);
+  if (!committed.ok) return { ok: false, document: original, reason: 'planRejected', rejections: committed.rejections,
+    ...(committed.entryRejections === undefined ? {} : { entryRejections: committed.entryRejections }) };
   // 古い部品は公開の削除で外す(分解のステップ・入れ子の結び付けからも抜ける)。合致・ジョイントは付いていないと確かめ済み。
   let next = committed.document;
   for (const id of preview.record.componentIds) next = removeComponent(next, id);

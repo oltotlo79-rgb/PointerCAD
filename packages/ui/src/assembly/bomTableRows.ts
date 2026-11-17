@@ -43,7 +43,8 @@ export function bomTableRows(
         name: row.name,
         configuration: row.configurationName ?? '',
         quantity: String(row.quantity),
-        material: materialLabel(row.materialId, row.materialName),
+        // 材質の無い族の部品で、行が密度の材質を持たない時は行の材質の表示(既定の鋼と出さない。統括 22:5x の (d))。
+        material: row.catalogMaterialLabel ?? materialLabel(row.materialId, row.materialName),
         mass: formatBomMass(row.massTotal),
       },
     };

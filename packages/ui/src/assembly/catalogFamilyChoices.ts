@@ -68,6 +68,9 @@ const FRAME_PART_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], Message
   tSlotNutBar: 'catalog.frame.nutBar.hint', tSlotNut: 'catalog.frame.catalogNut.hint', roundNut: 'catalog.frame.roundNut.hint',
   frameCap: 'catalog.frame.cap.hint', flatPlate: 'catalog.frame.flatPlate.hint', shapedPlate: 'catalog.frame.shapedPlate.hint',
   angleBracketCatalog: 'catalog.frame.angleBracketCatalog.hint', footBase: 'catalog.frame.footBase.hint', adjuster: 'catalog.frame.adjuster.hint',
+  pipeFrame: 'catalog.frame.pipeFrame.hint', pipeFrameSlotted: 'catalog.frame.pipeFrameSlotted.hint', pipeFrameTwin: 'catalog.frame.pipeFrameTwin.hint',
+  smallFrame: 'catalog.frame.smallFrame.hint', smallFrameCap: 'catalog.frame.smallFrameCap.hint', bracketStock: 'catalog.frame.bracketStock.hint',
+  pipeFrameCap: 'catalog.frame.pipeFrameCap.hint', pipeFrameFoot: 'catalog.frame.pipeFrameFoot.hint',
 };
 
 /**
@@ -183,8 +186,8 @@ export function catalogRowLabel(family: LoadedFamily, row: FamilyRow): string {
 export interface CatalogItemCommit {
   readonly source: StandardPartSource;
   readonly name: string;
-  /** 置いた部品に付ける材質(行の密度の材質。部品表の材質と質量に使う。K-06)。 */
-  readonly materialId: string;
+  /** 置いた部品に付ける材質(行の密度の材質。部品表の材質と質量に使う。K-06)。密度の材質を持たない行は付けない(省く)。 */
+  readonly materialId?: string;
 }
 
 export type CatalogItemCommitResult = { readonly ok: true; readonly value: CatalogItemCommit }
@@ -203,5 +206,6 @@ export function commitCatalogItemChoice(familyId: string, itemKey: string,
   const source = createCatalogItemSource(family, row, values);
   if (buildStandardPartFromSource(source) === null) return { ok: false, reason: 'invalidOption' };
   const saved = Object.fromEntries(family.options.map((spec) => [spec.key, source.options[spec.key] ?? spec.defaultValue]));
-  return { ok: true, value: { source, name: family.partName(row, saved), materialId: row.densityMaterialId } };
+  return { ok: true, value: { source, name: family.partName(row, saved),
+    ...(row.densityMaterialId === undefined ? {} : { materialId: row.densityMaterialId }) } };
 }

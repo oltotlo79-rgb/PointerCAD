@@ -20,9 +20,9 @@ import type { CatalogFamily, CatalogItemRow } from './types.js';
 
 const EVIDENCE = { title: '検査だけの族', edition: null, url: '', locator: '', sha256: '', fetchedDate: '' } as const;
 
-function row(key: string, side: number, densityMaterialId: string, materialLabel?: string): CatalogItemRow {
-  return { key, size: `□${side}`, standardLabel: '検査', densityMaterialId, dims: { side }, evidence: EVIDENCE,
-    verification: 'unverified', verified: false, note: '', ...(materialLabel === undefined ? {} : { materialLabel }) };
+function row(key: string, side: number, densityMaterialId: string | null, materialLabel?: string): CatalogItemRow {
+  return { key, size: `□${side}`, standardLabel: '検査', ...(densityMaterialId === null ? {} : { densityMaterialId }), dims: { side },
+    evidence: EVIDENCE, verification: 'unverified', verified: false, note: '', ...(materialLabel === undefined ? {} : { materialLabel }) };
 }
 
 /** 角棒の族(長さ × 一辺² の体積)。stock だけを変えて 'linear' と 'count' の 2 つを作る。 */
@@ -30,7 +30,7 @@ function family(id: string, stock: CatalogFamily['stock']): CatalogFamily {
   return {
     id, group: 'mechanical', kindKey: `catalog.test.${id}`, catalogRevision: `${id}-r1`, generatorRevision: 'test-bar-1',
     options: [lengthOptionSpec('1000')], stock, diagram: 'key',
-    rows: [row('a20', 20, 'aluminum', 'アルミ'), row('s10', 10, 'steel')],
+    rows: [row('a20', 20, 'aluminum', 'アルミ'), row('s10', 10, 'steel'), row('p15', 15, null, '樹脂(LDPE)')],
     build: () => null,
     nominalVolume: (item, values) => ((item.dims.side ?? NaN) ** 2) * (lengthOf(values)?.value ?? NaN),
     partName: (item, values) => `角棒 ${item.size}×${values.length ?? ''}`,
@@ -110,6 +110,12 @@ describe('K-06 段 2 長さを持つ族の部品の切断の一覧の行', () =>
     expect(expected.catalogRows).toEqual([]);
     expect({ ...list, catalogRows: [] }).toEqual(expected);
     expect(list.rows.map((item) => [item.quantity, item.totalLengthMm])).toEqual([[2, 2000]]);
+  });
+
+  it('密度の材質を持たない行は、密度を引かず、材質の id は null、単位質量も無ければ 1 本の質量は出さない(体積 × 密度で作らない)', async () => {
+    const list = buildSteelStockList(assemblyOf([placed('p', itemSource(LINEAR, 'p15', '1200'))]), new Map(), new Map(), await registry());
+    expect(list.catalogRows.map((item) => [item.itemKey, item.materialLabel, item.densityMaterialId, item.lengthMm, item.quantity,
+      item.massEachG])).toEqual([['p15', '樹脂(LDPE)', null, 1200, 1, null]]);
   });
 
   it('登録口を渡さない時は製品の登録口を使い、鋼材だけの文書の族の行は空で、鋼材の行は前と同じ', () => {

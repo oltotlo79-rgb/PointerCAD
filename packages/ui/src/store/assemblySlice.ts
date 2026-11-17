@@ -24,6 +24,7 @@ import {
 import type { StateCreator } from 'zustand';
 import { createCircularWeldActions, selectedCircularWeldId, type CircularWeldSlice } from './circularWeldActions.js';
 import { createFrameEdgePickActions, type FrameEdgePickSlice } from './frameEdgePickActions.js';
+import { boltedJointPreviewFor, createBoltedJointActions } from './boltedJointActions.js';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
 import { emptySheetMetalTool } from './sheetMetalSlice.js';
@@ -51,12 +52,11 @@ import type {
   AssemblyReplacementRunner,
 } from '../assembly/replaceCommands.js';
 import {
-  appendBoltedJointPick, commitBoltedJointDraft, createBoltedJointDraft, previewBoltedJointDraft,
-  createBoltedJointEditDraft,
+  createBoltedJointDraft, createBoltedJointEditDraft,
   type AssemblyBoltedJointDraft, type BoltedJointDraftPatch, type BoltedJointDraftPreview, type BoltedJointPickTarget,
 } from '../assembly/boltedJointDraft.js';
 import {
-  appendNestedBoltedJointPick, commitNestedBoltedJoint, createNestedBoltedJointDraft, nestedBoltedJointCommandContext,
+  appendNestedBoltedJointPick, createNestedBoltedJointDraft, nestedBoltedJointCommandContext,
   previewNestedBoltedJoint, type NestedBoltedJointDraft, type NestedBoltedJointPick, type NestedBoltedJointPreview,
 } from '../assembly/nestedBoltedJointDraft.js';
 import { nestedBoltedJointDisplayPreview, rootBoltedJointPicks } from '../assembly/nestedBoltedJointDisplay.js';
@@ -234,8 +234,11 @@ export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice {
   readonly assemblyBoltedJointPreview: BoltedJointDraftPreview | null;
   /** `selection` は道具を開く直前の選択(メニューは合致の打ちかけを消す前に読んで渡す)。省くと今の選択。 */
   readonly beginBoltedJoint: (selection?: readonly string[]) => boolean;
-  /** 面(または穴の枠だけで、実らせんの組)を1つ足す。 */
-  readonly pickBoltedJointFace: (target: BoltedJointPickTarget) => boolean;
+  /**
+   * 面(または穴の枠だけで、実らせんの組)を1つ足す。`add` が真(Shift)で 4 面がそろった後は、2 組目からの穴を
+   * 足し外しする(全部の組を 1 回の確定で締結する。J-02 P4)。
+   */
+  readonly pickBoltedJointFace: (target: BoltedJointPickTarget, add?: boolean) => boolean;
   readonly updateBoltedJointDraft: (patch: BoltedJointDraftPatch) => void;
   readonly cancelBoltedJoint: () => void;
   readonly commitBoltedJoint: () => boolean;
@@ -337,14 +340,6 @@ function endedDragDrives(state: AppState): Pick<AppState, 'assemblyOccurrenceDri
     && state.assembly === drag.document && state.assemblyLibrary === drag.library
     && state.activeDocumentId === drag.documentId && state.documentVersion === drag.version
     ? { assemblyOccurrenceDrives: drag.occurrenceDrives } : null;
-}
-
-function boltedJointPreviewFor(state: AppState, draft: AssemblyBoltedJointDraft): BoltedJointDraftPreview {
-  const view = state.assemblyView;
-  if (state.assembly === null || view === null || view.sourceDocument !== state.assembly) {
-    return { kind: 'issue', issue: { kind: 'stale' } };
-  }
-  return previewBoltedJointDraft(state.assembly, view, state.assemblyLibrary, draft);
 }
 
 /** いまの文書・表示の形・部品の一式で溶接を予告する。表示が古ければ予告しない。 */
@@ -548,7 +543,7 @@ export const createAssemblySlice: StateCreator<
   }
   return {
     ...empty(),
-    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get),
+    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get), ...createBoltedJointActions(set, get),
     recoveryRecord: null,
     resetAssembly: (update, session) => {
       const initial = empty(session);
@@ -772,15 +767,6 @@ export const createAssemblySlice: StateCreator<
         standardPartPickerOpen: false, assemblyExplodeDraft: null, assemblyExplodeError: null });
       return true;
     },
-    pickBoltedJointFace: (target) => {
-      const state = get();
-      const draft = state.assemblyBoltedJointDraft;
-      if (draft === null || draft.documentId !== state.activeDocumentId || state.assembly === null) return false;
-      const next = appendBoltedJointPick(draft, target);
-      if (next === null) return false;
-      set({ assemblyBoltedJointDraft: next, assemblyBoltedJointPreview: boltedJointPreviewFor(state, next) });
-      return true;
-    },
     updateBoltedJointDraft: (patch) => {
       const state = get();
       const draft = state.assemblyBoltedJointDraft;
@@ -817,40 +803,6 @@ export const createAssemblySlice: StateCreator<
       const preview = previewNestedBoltedJoint(context, next, cleared);
       set({ assemblyBoltedJointDraft: cleared, assemblyNestedBoltDraft: next, assemblyNestedBoltPreview: preview,
         assemblyBoltedJointPreview: nestedBoltedJointDisplayPreview(preview) });
-      return true;
-    },
-    commitBoltedJoint: () => {
-      const nested = get();
-      const nestedDraft = nested.assemblyNestedBoltDraft;
-      if (nestedDraft !== null) {
-        // 入れ子の葉の穴を選んだ締結: 予告どおりの時だけ model の入れ子の締結で確定する。失敗は文書を変えずに理由を見せる。
-        const fields = nested.assemblyBoltedJointDraft, preview = nested.assemblyNestedBoltPreview;
-        if (fields === null || nested.assembly === null || nested.assemblyView === null || nested.isComputing
-          || preview?.kind !== 'plan' || !preview.result.ok) return false;
-        const context = nestedBoltedJointCommandContext(nested.assembly, nested.assemblyLibrary, nested.assemblyView);
-        const result = context === null ? null : commitNestedBoltedJoint(context, nestedDraft, fields, preview.result);
-        if (result === null || !result.ok) {
-          const again = previewNestedBoltedJoint(context, nestedDraft, fields);
-          set({ assemblyNestedBoltPreview: again, assemblyBoltedJointPreview: nestedBoltedJointDisplayPreview(again) });
-          return false;
-        }
-        get().applyAssembly(result.document);
-        set({ assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null });
-        return true;
-      }
-      const state = get();
-      const draft = state.assemblyBoltedJointDraft;
-      const preview = state.assemblyBoltedJointPreview;
-      const view = state.assemblyView;
-      if (draft === null || draft.documentId !== state.activeDocumentId || state.assembly === null || view === null
-        || preview?.kind !== 'plan' || !preview.result.ok || state.isComputing) return false;
-      const result = commitBoltedJointDraft(state.assembly, view, state.assemblyLibrary, draft, preview.result.plan);
-      if (!result.ok) {
-        // 予告の後に形・版・配置が変わった。文書は変えず、いまの状態で予告し直して理由を見せる。
-        set({ assemblyBoltedJointPreview: boltedJointPreviewFor(state, draft) });
-        return false;
-      }
-      get().applyAssembly(result.document);
       return true;
     },
     beginFilletWeld: () => {

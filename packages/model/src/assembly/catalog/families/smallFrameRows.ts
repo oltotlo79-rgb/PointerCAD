@@ -1,0 +1,84 @@
+/**
+ * 生成物(手で直さない): 資料 SF-1 の共通パーツの頁(PDF 337〜339)の、小さい溝つきフレーム・端のキャップ・ブラケット素材のうち、2 本の独立の読みが
+ * 一致した行だけの表。担当の道具 compare_stage2.py・make_stage2_rows.py が、一致した読みの 1 本目の値から書いた(2 本目の文字は fixture
+ * `smallFrameOracle.fixture.json` に文字のまま書き、検査が 1 行ずつ照らす)。製造元の名前・型番・図の名前は書かない。
+ * 溝・穴は作った物だけ(位置は断面の中心から。ブラケット素材の穴は外の角から)。Ix・Iy は cm⁴、Zx・Zy は cm³(資料の mm⁴・mm³ の桁を動かしただけ)。
+ */
+import type { BracketStockRecord, SmallFrameCapRecord, SmallFrameRecord } from './smallFrameCatalog.js';
+
+export const SMALL_FRAME_RECORDS: readonly SmallFrameRecord[] = [
+  { key: 'small-16x8.5-t6', size: '小さい溝つきフレーム 16×8.5（溝: 上 口 6）', page: 338, width: 16, height: 8.5,
+    slots: [{ face: 'top', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }], holes: [], unitMassKgPerM: 0.23,
+    simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み'] },
+  { key: 'small-20x10-t6', size: '小さい溝つきフレーム 20×10（溝: 上 口 6）', page: 338, width: 20, height: 10,
+    slots: [{ face: 'top', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }],
+    holes: [{ diameter: 3.3, x: -7, y: -2.4 }, { diameter: 3.3, x: 7, y: -2.4 }], unitMassKgPerM: 0.35,
+    simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み', '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'] },
+  { key: 'small-20x12-t8', size: '小さい溝つきフレーム 20×12（溝: 上 口 8）', page: 338, width: 20, height: 12,
+    slots: [{ face: 'top', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: 0 }], holes: [], unitMassKgPerM: 0.33,
+    simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み'] },
+  { key: 'small-30x15-t8', size: '小さい溝つきフレーム 30×15（溝: 上 口 8）', page: 338, width: 30, height: 15,
+    slots: [{ face: 'top', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: 0 }],
+    holes: [{ diameter: 4.3, x: -10, y: -3 }, { diameter: 4.3, x: 10, y: -3 }], unitMassKgPerM: 0.82,
+    simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み', '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'] },
+  { key: 'small-30x18-t10', size: '小さい溝つきフレーム 30×18（溝: 上 口 10）', page: 338, width: 30, height: 18,
+    slots: [{ face: 'top', mouthWidth: 10, roomWidth: 20, shoulder: 5.5, roomHeight: 7, position: 0 }], holes: [], unitMassKgPerM: 0.98,
+    simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み'] },
+  { key: 'small-20x10-l4.5-r4.5', size: '小さい溝つきフレーム 20×10（溝: 左右 口 4.5）', page: 338, width: 20, height: 10,
+    slots: [{ face: 'right', mouthWidth: 4.5, roomWidth: 7.2, shoulder: 2, roomHeight: 4, position: 0 }, { face: 'left', mouthWidth: 4.5, roomWidth: 7.2, shoulder: 2, roomHeight: 4, position: 0 }],
+    holes: [], unitMassKgPerM: 0.24, simplified: ['中の空洞', '外形の段・V の切れ込み', '溝の角', '角の丸み'] },
+  { key: 'small-20x15-l6-r6', size: '小さい溝つきフレーム 20×15（溝: 左右 口 6）', page: 338, width: 20, height: 15,
+    slots: [{ face: 'right', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }, { face: 'left', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }],
+    holes: [{ diameter: 3.3, x: 0, y: 0 }], unitMassKgPerM: 0.51,
+    simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み', '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'] },
+  { key: 'small-30x10-l4.5-r4.5-t6', size: '小さい溝つきフレーム 30×10（溝: 上 口 6・左右 口 4.5）', page: 338, width: 30, height: 10,
+    slots: [{ face: 'top', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }, { face: 'right', mouthWidth: 4.5, roomWidth: 7.2, shoulder: 2, roomHeight: 4, position: 0 }, { face: 'left', mouthWidth: 4.5, roomWidth: 7.2, shoulder: 2, roomHeight: 4, position: 0 }],
+    holes: [], unitMassKgPerM: 0.47, simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み'] },
+  { key: 'small-40x15-l6-r6-t8', size: '小さい溝つきフレーム 40×15（溝: 上 口 8・左右 口 6）', page: 338, width: 40, height: 15,
+    slots: [{ face: 'top', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: 0 }, { face: 'right', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }, { face: 'left', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }],
+    holes: [{ diameter: 4.3, x: -9.5, y: -3 }, { diameter: 4.3, x: 9.5, y: -3 }], unitMassKgPerM: 0.95,
+    simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み', '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'] },
+  { key: 'small-50x20-l6-r6-t10', size: '小さい溝つきフレーム 50×20（溝: 上 口 10・左右 口 6）', page: 338, width: 50, height: 20,
+    slots: [{ face: 'top', mouthWidth: 10, roomWidth: 20, shoulder: 5.5, roomHeight: 7, position: 0 }, { face: 'right', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }, { face: 'left', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }],
+    holes: [{ diameter: 4.3, x: -13, y: -4 }, { diameter: 4.3, x: 13, y: -4 }], unitMassKgPerM: 1.85,
+    simplified: ['外形の段・V の切れ込み', '溝の角', '角の丸み', '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'] },
+  { key: 'small-19x15-r6', size: '小さい溝つきフレーム 19×15（溝: 右 口 6）', page: 339, width: 19, height: 15,
+    slots: [{ face: 'right', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }], holes: [], unitMassKgPerM: 0.39,
+    simplified: ['端の半円のくぼみ', '中の空洞', '外形の段・V の切れ込み', '溝の角', '角の丸み'] },
+  { key: 'small-38x15-t8', size: '小さい溝つきフレーム 38×15（溝: 上 口 8）', page: 339, width: 38, height: 15,
+    slots: [{ face: 'top', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: 0 }], holes: [], unitMassKgPerM: 0.62,
+    simplified: ['端の半円のくぼみ', '中の空洞', '外形の段・V の切れ込み', '溝の角', '角の丸み'] },
+  { key: 'small-180x15-l6-t10', size: '小さい溝つきフレーム 180×15（溝: 上 4 本 口 10・左 口 6）', page: 339, width: 180, height: 15,
+    slots: [{ face: 'top', mouthWidth: 10, roomWidth: 20, shoulder: 6, roomHeight: 7, position: -67.5 }, { face: 'top', mouthWidth: 10, roomWidth: 20, shoulder: 6, roomHeight: 7, position: -22.5 }, { face: 'top', mouthWidth: 10, roomWidth: 20, shoulder: 6, roomHeight: 7, position: 22.5 }, { face: 'top', mouthWidth: 10, roomWidth: 20, shoulder: 6, roomHeight: 7, position: 67.5 }, { face: 'left', mouthWidth: 6, roomWidth: 12, shoulder: 2, roomHeight: 4, position: 0 }],
+    holes: [], unitMassKgPerM: 3.17,
+    simplified: ['下の面の溝（寸法の記入が無いため作っていない）', '右の端の溝（寸法の記入が無いため作っていない）', '中の空洞', '溝の角', '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'] },
+  { key: 'small-120x15-b8-l6-t8', size: '小さい溝つきフレーム 120×15（溝: 上 4 本 口 8・下 3 本 口 8・左 口 6）', page: 339, width: 120, height: 15,
+    slots: [{ face: 'top', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: -45 }, { face: 'top', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: -15 }, { face: 'top', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: 15 }, { face: 'top', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: 45 }, { face: 'bottom', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: -30 }, { face: 'bottom', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: 0 }, { face: 'bottom', mouthWidth: 8, roomWidth: 16.5, shoulder: 2, roomHeight: 7, position: 30 }, { face: 'left', mouthWidth: 6, roomWidth: 12, shoulder: 1.5, roomHeight: 3.6, position: 0 }],
+    holes: [], unitMassKgPerM: 2.39, simplified: ['右の端の溝（寸法の記入が無いため作っていない）', '溝の角', '角の丸み', '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'] },
+];
+
+export const SMALL_FRAME_CAP_RECORDS: readonly SmallFrameCapRecord[] = [
+  { key: 'cap-small-20x10-t6', size: '端のキャップ 20×10（溝: 上 口 6 の 20×10 用）', page: 339, width: 20, height: 10, thickness: 3, massG: 0.7,
+    simplified: ['取付けの脚と穴'] },
+  { key: 'cap-small-30x15-t8', size: '端のキャップ 30×15（溝: 上 口 8 の 30×15 用）', page: 339, width: 30, height: 15, thickness: 3, massG: 1.6,
+    simplified: ['取付けの脚と穴'] },
+  { key: 'cap-small-20x10-l4.5-r4.5', size: '端のキャップ 20×10（溝: 左右 口 4.5 の 20×10 用）', page: 339, width: 20, height: 10, thickness: 3,
+    massG: 0.9, simplified: ['取付けの脚と穴'] },
+  { key: 'cap-small-30x10-l4.5-r4.5-t6', size: '端のキャップ 30×10（溝: 上 口 6・左右 口 4.5 の 30×10 用）', page: 339, width: 30, height: 10, thickness: 3,
+    massG: 1.2, simplified: ['取付けの脚と穴'] },
+  { key: 'cap-small-20x15-l6-r6', size: '端のキャップ 20×15（溝: 左右 口 6 の 20×15 用）', page: 339, width: 20, height: 15, thickness: 3, massG: 1.1,
+    simplified: ['取付けの脚と穴'] },
+  { key: 'cap-small-40x15-l6-r6-t8', size: '端のキャップ 40×15（溝: 上 口 8・左右 口 6 の 40×15 用）', page: 339, width: 40, height: 15, thickness: 3,
+    massG: 2.2, simplified: ['取付けの脚と穴'] },
+];
+
+export const BRACKET_STOCK_RECORDS: readonly BracketStockRecord[] = [
+  { key: 'bracket-stock-51.4x51.4', size: 'ブラケット素材 51.4×51.4（板の厚さ 9.4・角の肉つき）', page: 337, width: 51.4, height: 51.4,
+    horizontalThickness: 9.4, verticalThickness: 9.4, cornerX: 31.4, cornerY: 31.4, holes: [{ diameter: 4.2, x: 12.4, y: 12.4 }],
+    unitMassKgPerM: 2.4, ixCm4: 19.7, iyCm4: 19.7, zxCm3: 5.69, zyCm3: 5.69,
+    simplified: ['斜めの面の端は参考寸法', '穴の口のくぼみ（φ9）', '角の空洞（寸法の記入が無いため作っていない）'] },
+  { key: 'bracket-stock-80.2x80.2', size: 'ブラケット素材 80.2×80.2（板の厚さ 14.2・角の肉つき）', page: 337, width: 80.2, height: 80.2,
+    horizontalThickness: 14.2, verticalThickness: 14.2, cornerX: 60.2, cornerY: 60.2, holes: [{ diameter: 4.2, x: 12.2, y: 12.2 }],
+    unitMassKgPerM: 5.4, ixCm4: 112.9, iyCm4: 112.9, zxCm3: 21.46, zyCm3: 21.46,
+    simplified: ['斜めの面の端は参考寸法', '穴の口のくぼみ（φ9）', '角の空洞（寸法の記入が無いため作っていない）'] },
+];

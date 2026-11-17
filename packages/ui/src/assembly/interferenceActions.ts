@@ -82,7 +82,7 @@ export async function measureAssemblyGap(
 }
 
 export function createAssemblyInterferenceRunner(
-  bridge: InterferenceKernelBridge,
+  bridge: Pick<InterferenceKernelBridge, 'measure' | 'checkInterference'>,
 ): AssemblyInterferenceRunner {
   return {
     check: (input, options) => bridge.checkInterference(input, options),

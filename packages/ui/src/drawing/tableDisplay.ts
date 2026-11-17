@@ -74,7 +74,9 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
         && (sortBy === 'number' || sortBy === 'name' || sortBy === 'quantity' || sortBy === 'mass')) {
         const columnWidths: Partial<Record<BomColumnId, number>> = {};
         for (const id of columns) if (table.options[`width.${id}`] !== undefined) columnWidths[id] = numericOption(table, `width.${id}`, NaN);
-        const rows = source.bomRows.map((row) => ({ ...row, materialName: materialLabel(row.materialId, row.materialName) }));
+        // 部品表の画面と同じ決まり: 材質の無い族の部品で行が密度の材質を持たない時は行の材質の表示(統括 22:5x の (d))。
+        const rows = source.bomRows.map((row) => ({ ...row,
+          materialName: row.catalogMaterialLabel ?? materialLabel(row.materialId, row.materialName) }));
         const bom = bomTable({ ...common, rows, columns, direction, sortBy, columnWidths,
           sortDescending: table.options.sortDescending === true, formatMass: formatBomMass, unknownMassText: '',
           headings: { number: t('assembly.bom.column.number'), name: t('assembly.bom.column.name'),

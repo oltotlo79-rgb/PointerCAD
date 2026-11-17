@@ -6,10 +6,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { withinMagnitude } from '../../../numericTolerance.js';
+import { findMetricThread, metricThreadPitch, threadMinorDiameter } from '../../../thread/metricThread.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from '../../createAssemblyDocument.js';
 import { buildSteelStockList } from '../../standard/steelStockList.js';
 import type { AssemblyComponent } from '../../types.js';
-import { slotNutVolume } from '../profiles/frameParts.js';
+import { buildSlotNutPart, slotNutVolume } from '../profiles/frameParts.js';
 import {
   adjusterVolume, angleBracketCatalogVolume, flatPlateProfile, footBaseProfile, frameCapProfile, roundNutVolume, shapedPlateProfile,
   tSlotNutBarProfile,
@@ -58,7 +59,7 @@ describe('資料 SF-1 のフレームの部品の 9 族', () => {
       ANGLE_BRACKET_RECORDS, FOOT_BASE_RECORDS, ADJUSTER_RECORDS];
     expect(FAMILIES.map((family) => family.rows.map((row) => [row.key, row.size])))
       .toEqual(records.map((list) => list.map((record) => [record.key, record.size])));
-    expect(records.map((list) => list.length)).toEqual([12, 50, 4, 51, 11, 15, 42, 14, 4]);
+    expect(records.map((list) => list.length)).toEqual([12, 120, 4, 51, 11, 15, 43, 47, 5]);
   });
 
   it('行は規格の行を名乗らず、出どころは資料の番号と頁だけで、note と簡略の印は行の表の印から作る', () => {
@@ -122,9 +123,13 @@ describe('資料 SF-1 のフレームの部品の 9 族', () => {
         maxX: record.headWidth / 2, maxY: record.totalHeight / 2 });
     }
     for (const record of T_SLOT_NUT_RECORDS) {
-      expect(T_SLOT_NUT_FAMILY.nominalVolume(rowOf(T_SLOT_NUT_FAMILY, record.key), {})).toBeCloseTo(slotNutVolume({ thread: record.thread,
-        flangeWidth: record.headWidth, length: record.length, flangeThickness: record.totalHeight - record.neckHeight, neckWidth: record.neckWidth,
-        neckHeight: record.neckHeight }) ?? NaN, 9);
+      // 主のねじ穴の位置は体積を変えない。止めねじの穴は、並目の谷の径の円柱 × 全高だけ体積を減らす。
+      const plain = slotNutVolume({ thread: record.thread, flangeWidth: record.headWidth, length: record.length,
+        flangeThickness: record.totalHeight - record.neckHeight, neckWidth: record.neckWidth, neckHeight: record.neckHeight }) ?? NaN;
+      const screwSize = record.setScrewThread === undefined ? undefined : findMetricThread(record.setScrewThread);
+      const screwMinor = screwSize === undefined ? 0 : threadMinorDiameter(screwSize.diameter, metricThreadPitch(screwSize, 'coarse'));
+      expect(T_SLOT_NUT_FAMILY.nominalVolume(rowOf(T_SLOT_NUT_FAMILY, record.key), {}), record.key)
+        .toBeCloseTo(plain - Math.PI * (screwMinor / 2) ** 2 * record.totalHeight, 9);
     }
     for (const record of ROUND_NUT_RECORDS) {
       expect(ROUND_NUT_FAMILY.nominalVolume(rowOf(ROUND_NUT_FAMILY, record.key), {})).toBeCloseTo(roundNutVolume(record) ?? NaN, 9);
@@ -186,7 +191,12 @@ describe('資料 SF-1 の部品の読み直しで足した 4 族(平板の L・T
     for (const record of ADJUSTER_RECORDS) {
       const row = rowOf(ADJUSTER_FAMILY, record.key);
       expect(ADJUSTER_FAMILY.nominalVolume(row, {})).toBeCloseTo(adjusterVolume(record) ?? NaN, 9);
-      expect([ADJUSTER_FAMILY.nominalMassG?.(row, {}), row.simplified]).toEqual([record.massG, ['ねじの山']]);
+      // 六角部の有る行は、六角部をねじの径の円柱で表した印も持つ(対辺の記入が無い)。体積は皿 + 呼びの径の円柱 ×(六角部 + ねじの長さ)。
+      const hex = record.hexHeight === undefined ? [] : ['六角部(対辺の記入が無いので、ねじの径の円柱で表した)'];
+      expect([ADJUSTER_FAMILY.nominalMassG?.(row, {}), row.simplified], record.key).toEqual([record.massG, ['ねじの山', ...hex]]);
+      const radius = (findMetricThread(record.thread)?.diameter ?? NaN) / 2;
+      expect(adjusterVolume(record), record.key).toBeCloseTo(Math.PI * (record.padDiameter / 2) ** 2 * record.padThickness
+        + Math.PI * radius ** 2 * ((record.hexHeight ?? 0) + record.threadLength), 9);
     }
   });
 
@@ -203,6 +213,44 @@ describe('資料 SF-1 の部品の読み直しで足した 4 族(平板の L・T
     for (const [mass, computed, key] of checks) {
       if (mass !== null) expect(withinMagnitude(mass - computed, 0.1 * computed), key).toBe(true);
     }
-    expect(checks.filter(([mass]) => mass === null).length).toBe(9);
+    expect(checks.filter(([mass]) => mass === null).length).toBe(27);
+  });
+});
+
+describe('1 個のナットの形の拡張(穴の位置・ボールとストッパーを包む・ロック付きの止めねじの穴)', () => {
+  it('締結が読む dims の鍵: holeOffset は穴が中央でない行だけ、slotPartHeightUnknown = 1 はボール付き・ストッパー付きの行だけ、止めねじはロック付きだけ', () => {
+    for (const record of T_SLOT_NUT_RECORDS) {
+      const dims = rowOf(T_SLOT_NUT_FAMILY, record.key).dims;
+      expect(dims.holeOffset, record.key).toBe(record.holeOffset);
+      expect(dims.slotPartHeightUnknown, record.key).toBe(/ボール付き|ストッパー付き/u.test(record.entry) ? 1 : undefined);
+      expect(dims.setScrewOffset, record.key).toBe(record.setScrewOffset);
+      if (record.setScrewThread !== undefined) expect(record.entry, record.key).toContain('ロック付き');
+    }
+  });
+
+  it('穴が中央で止めねじもボールも無い行は、今までの形の欄だけを持つ(今の 50 行の欄と同じ並び)', () => {
+    const plain = T_SLOT_NUT_RECORDS.filter((record) => record.holeOffset === undefined && record.setScrewThread === undefined
+      && record.slotPartHeightUnknown === undefined);
+    expect(plain.length).toBeGreaterThanOrEqual(50);
+    for (const record of plain) {
+      expect(Object.keys(rowOf(T_SLOT_NUT_FAMILY, record.key).dims), record.key)
+        .toEqual(['slot', 'headWidth', 'neckWidth', 'neckHeight', 'totalHeight', 'length', 'massG']);
+    }
+  });
+
+  it('形の関数は、主のねじ穴と止めねじの穴が長さの内に収まり重ならない時だけ形を作る(汎用の寸法で確かめる)', () => {
+    const base = { thread: 'M5', flangeWidth: 16, length: 20, flangeThickness: 4, neckWidth: 8, neckHeight: 2 };
+    expect(buildSlotNutPart({ ...base, holeOffset: 6 })).not.toBeNull();
+    expect(buildSlotNutPart({ ...base, holeOffset: 1 })).toBeNull();
+    expect(buildSlotNutPart({ ...base, holeOffset: 6, setScrew: { thread: 'M4', offset: 14 } })).not.toBeNull();
+    expect(buildSlotNutPart({ ...base, holeOffset: 6, setScrew: { thread: 'M4', offset: 9 } })).toBeNull();
+    expect(buildSlotNutPart({ ...base, holeOffset: 6, setScrew: { thread: 'M4', offset: 19 } })).toBeNull();
+    // 主のねじ穴の位置は体積を変えず、止めねじの穴は谷の径の円柱 × 全高だけ減らす。
+    const plain = slotNutVolume(base) ?? NaN;
+    expect(slotNutVolume({ ...base, holeOffset: 6 })).toBeCloseTo(plain, 9);
+    const size = findMetricThread('M4');
+    const minor = size === undefined ? NaN : threadMinorDiameter(size.diameter, metricThreadPitch(size, 'coarse'));
+    const withScrew = slotNutVolume({ ...base, holeOffset: 6, setScrew: { thread: 'M4', offset: 14 } });
+    expect(withScrew).toBeCloseTo(plain - Math.PI * (minor / 2) ** 2 * 6, 9);
   });
 });

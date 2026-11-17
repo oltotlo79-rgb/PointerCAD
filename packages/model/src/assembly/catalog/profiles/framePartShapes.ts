@@ -354,26 +354,33 @@ export interface AdjusterDimensions {
   readonly thread: string;
   readonly padDiameter: number;
   readonly padThickness: number;
+  /** おねじの長さ(資料の記入のまま。六角部が有る行は六角部の上の面から先まで)。 */
   readonly threadLength: number;
+  /** 皿とねじの間の六角部の高さ(省略は六角部が無い)。対辺の記入が無いので、ねじの呼びの径の円柱で表す(簡略の印)。 */
+  readonly hexHeight?: number;
 }
 
 function adjusterValid(dims: AdjusterDimensions): boolean {
   const size = findMetricThread(dims.thread);
-  return size !== undefined && positive([dims.padDiameter, dims.padThickness, dims.threadLength]) && size.diameter < dims.padDiameter;
+  const hex = dims.hexHeight ?? 0;
+  return size !== undefined && positive([dims.padDiameter, dims.padThickness, dims.threadLength]) && Number.isFinite(hex) && hex >= 0
+    && size.diameter < dims.padDiameter;
 }
 
-/** アジャスターの形: 皿の円柱(z 0〜t)と、その上のおねじの呼びの径の円柱(ねじの山は入れない)の和。 */
+/** アジャスターの形: 皿の円柱(z 0〜t)と、その上の六角部とおねじを合わせた呼びの径の円柱(ねじの山は入れない)の和。 */
 export function buildAdjusterPart(dims: AdjusterDimensions): PartDocument | null {
   const size = findMetricThread(dims.thread);
   if (size === undefined || !adjusterValid(dims)) return null;
   const pad = appendCylinder(createEmptyPartDocument(), dims.padDiameter / 2, expressionValueFromNumber(dims.padThickness));
-  const rod = appendCylinder(pad.document, size.diameter / 2, expressionValueFromNumber(dims.threadLength), dims.padThickness);
+  const rod = appendCylinder(pad.document, size.diameter / 2, expressionValueFromNumber((dims.hexHeight ?? 0) + dims.threadLength),
+    dims.padThickness);
   return appendBoolean(rod.document, 'union', pad.feature.id, rod.feature.id).document;
 }
 
-/** アジャスターの体積(皿 + 呼びの径の円柱)。形が成り立たない時は null。 */
+/** アジャスターの体積(皿 + 六角部とおねじを合わせた呼びの径の円柱)。形が成り立たない時は null。 */
 export function adjusterVolume(dims: AdjusterDimensions): number | null {
   const size = findMetricThread(dims.thread);
   if (size === undefined || !adjusterValid(dims)) return null;
-  return Math.PI * (dims.padDiameter / 2) ** 2 * dims.padThickness + Math.PI * (size.diameter / 2) ** 2 * dims.threadLength;
+  return Math.PI * (dims.padDiameter / 2) ** 2 * dims.padThickness
+    + Math.PI * (size.diameter / 2) ** 2 * ((dims.hexHeight ?? 0) + dims.threadLength);
 }

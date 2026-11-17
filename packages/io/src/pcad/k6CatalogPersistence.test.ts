@@ -87,8 +87,76 @@ describe('アルミフレームの族の部品の保存と開き直し', () => {
     // 長さの欄はナットの素材(棒材)だけが持つ。ほかの族は保存の形に長さを書かない。
     const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
       'catalogItem', row.size, family === 't-slot-nut-bar' ? { family, item: row.key, length: '120' } : { family, item: row.key })) ?? []);
-    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([12, 50, 4, 51, 11, 15, 42, 14, 4]);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([12, 120, 4, 51, 11, 15, 43, 47, 5]);
     let document: AssemblyDocument = createAssemblyDocument('資料 SF-1 の部品の保存');
+    for (const source of sources) document = addComponent(document, createComponentFor(document, source));
+    const text = writeAssemblyDocument(document, SAVE_OPTIONS);
+    const bytes = await writePcadaFile(document, SAVE_OPTIONS);
+    const json = readAssemblyDocument(text);
+    const zip = await readPcadaFile(bytes);
+    if (!json.ok || !zip.ok) throw new Error('reopen failed');
+    for (const reopened of [json.document, zip.document]) {
+      expect(reopened).toEqual(document);
+      expect(writeAssemblyDocument(reopened, SAVE_OPTIONS)).toBe(text);
+      const resolved = resolveAssembly(reopened, { standardPart: buildStandardPartFromSource });
+      expect(resolved.errors).toEqual([]);
+      expect(resolved.parts.size).toBe(sources.length);
+    }
+  });
+
+  it('資料 GF-2 のパイプ形のフレームの 3 族(1 本・溝つき・2 本つなぎ)の全部の行を置いて保存し、開き直しても同じで、組み立てで形ができる', async () => {
+    const families = ['pipe-frame', 'pipe-frame-slotted', 'pipe-frame-twin'];
+    await PRODUCT_CATALOG_REGISTRY.ensure(families);
+    const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
+      'catalogItem', row.size, { family, item: row.key, length: '500' })) ?? []);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([18, 3, 10]);
+    let document: AssemblyDocument = createAssemblyDocument('資料 GF-2 のパイプ形のフレームの保存');
+    for (const source of sources) document = addComponent(document, createComponentFor(document, source));
+    const text = writeAssemblyDocument(document, SAVE_OPTIONS);
+    const bytes = await writePcadaFile(document, SAVE_OPTIONS);
+    const json = readAssemblyDocument(text);
+    const zip = await readPcadaFile(bytes);
+    if (!json.ok || !zip.ok) throw new Error('reopen failed');
+    for (const reopened of [json.document, zip.document]) {
+      expect(reopened).toEqual(document);
+      expect(writeAssemblyDocument(reopened, SAVE_OPTIONS)).toBe(text);
+      const resolved = resolveAssembly(reopened, { standardPart: buildStandardPartFromSource });
+      expect(resolved.errors).toEqual([]);
+      expect(resolved.parts.size).toBe(sources.length);
+    }
+  });
+
+  it('資料 GF-2 のパイプ形のフレームのキャップとフットの 2 族の全部の行を置いて保存し、開き直しても同じで、組み立てで形ができる', async () => {
+    const families = ['pipe-frame-cap', 'pipe-frame-foot'];
+    await PRODUCT_CATALOG_REGISTRY.ensure(families);
+    // どちらも 1 個ずつ数える族で、保存の形に長さを書かない。密度の材質を持たない行(LDPE など)も同じ形で保存する。
+    const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
+      'catalogItem', row.size, { family, item: row.key })) ?? []);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([18, 15]);
+    let document: AssemblyDocument = createAssemblyDocument('資料 GF-2 のキャップとフットの保存');
+    for (const source of sources) document = addComponent(document, createComponentFor(document, source));
+    const text = writeAssemblyDocument(document, SAVE_OPTIONS);
+    const bytes = await writePcadaFile(document, SAVE_OPTIONS);
+    const json = readAssemblyDocument(text);
+    const zip = await readPcadaFile(bytes);
+    if (!json.ok || !zip.ok) throw new Error('reopen failed');
+    for (const reopened of [json.document, zip.document]) {
+      expect(reopened).toEqual(document);
+      expect(writeAssemblyDocument(reopened, SAVE_OPTIONS)).toBe(text);
+      const resolved = resolveAssembly(reopened, { standardPart: buildStandardPartFromSource });
+      expect(resolved.errors).toEqual([]);
+      expect(resolved.parts.size).toBe(sources.length);
+    }
+  });
+
+  it('資料 SF-1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の 3 族の全部の行を置いて保存し、開き直しても同じで、組み立てで形ができる', async () => {
+    const families = ['t-slot-frame-small', 't-slot-frame-cap-small', 'bracket-stock'];
+    await PRODUCT_CATALOG_REGISTRY.ensure(families);
+    // 長さの欄は小さい溝つきフレームとブラケット素材だけが持つ。キャップは保存の形に長さを書かない。
+    const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
+      'catalogItem', row.size, family === 't-slot-frame-cap-small' ? { family, item: row.key } : { family, item: row.key, length: '400' })) ?? []);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([14, 6, 2]);
+    let document: AssemblyDocument = createAssemblyDocument('資料 SF-1 の小さい溝つきフレームの保存');
     for (const source of sources) document = addComponent(document, createComponentFor(document, source));
     const text = writeAssemblyDocument(document, SAVE_OPTIONS);
     const bytes = await writePcadaFile(document, SAVE_OPTIONS);

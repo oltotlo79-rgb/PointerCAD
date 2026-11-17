@@ -12,7 +12,7 @@ import {
 } from '../appearance/densityMaterials.js';
 import { massFromVolume } from '../measure/massProperties.js';
 import type { MaterialBearingPartDocument } from './massProperties.js';
-import { catalogItemNominalMass } from './catalog/source.js';
+import { catalogItemFallbackMaterialLabel, catalogItemNominalMass } from './catalog/source.js';
 import { materialOf } from './massProperties.js';
 import { partKeyOf } from './resolveAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, BomSettings } from './types.js';
@@ -51,6 +51,11 @@ export interface BomRow {
   readonly materialId: string;
   /** model では翻訳を持たないため安定した材料名として id を渡す。UI が表示名へ訳す。 */
   readonly materialName: string;
+  /**
+   * 部品にも部品文書にも材質が無く、族の行が密度の材質を持たずに材質の表示(例「樹脂(LDPE)」)を持つ時だけ、その表示。
+   * 部品表の材質の欄は、これが有ればこれを出す(既定の鋼と出さない。統括の決定 2026-11-17 22:5x の (d))。無い行は今までどおり。
+   */
+  readonly catalogMaterialLabel?: string;
   readonly massEach: number | null;
   readonly massTotal: number | null;
   readonly componentIds: readonly string[];
@@ -67,6 +72,7 @@ interface MutableBomRow {
   readonly configurationName: string | null;
   readonly materialId: string;
   readonly materialName: string;
+  readonly catalogMaterialLabel?: string;
   readonly massEach: number | null;
   quantity: number;
   readonly componentIds: string[];
@@ -114,6 +120,12 @@ function massOf(partKey: string, materialId: string, resolved: BomResolvedData):
  */
 function nominalMassOf(component: AssemblyComponent): number | null {
   return component.source.kind === 'standardPart' ? catalogItemNominalMass(component.source) : null;
+}
+
+/** 部品にも部品文書にも材質が無い族の部品の、行の材質の表示(密度の材質を持たない行だけ)。ほかは null(今までどおり)。 */
+function catalogMaterialLabelOf(component: AssemblyComponent, partDocument: MaterialBearingPartDocument | undefined): string | null {
+  if (component.materialId !== undefined || partDocument?.materialId !== undefined || component.source.kind !== 'standardPart') return null;
+  return catalogItemFallbackMaterialLabel(component.source);
 }
 
 function compareNullableNumber(left: number | null, right: number | null): number {
@@ -168,6 +180,7 @@ export function buildBom(
       return;
     }
     const massEach = nominalMassOf(component) ?? massOf(partKey, materialId, currentResolved);
+    const catalogLabel = catalogMaterialLabelOf(component, partDocument);
     grouped.set(identity, {
       rowKey: rowKeyOf(scope, partKey, materialId),
       number: nextNumber,
@@ -176,6 +189,7 @@ export function buildBom(
       quantity: 1,
       materialId,
       materialName: materialId,
+      ...(catalogLabel === null ? {} : { catalogMaterialLabel: catalogLabel }),
       massEach,
       componentIds: [component.id],
       occurrencePath: path,

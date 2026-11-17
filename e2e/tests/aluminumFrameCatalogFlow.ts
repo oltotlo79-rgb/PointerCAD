@@ -34,7 +34,11 @@ const FRAME_KINDS: readonly (readonly [string, string])[] = [
   ['t-slot-round-nut', 'catalog.frame.kind.roundNut'], ['t-slot-frame-cap', 'catalog.frame.kind.cap'],
   ['t-slot-flat-plate', 'catalog.frame.kind.flatPlate'], ['t-slot-shaped-plate', 'catalog.frame.kind.shapedPlate'],
   ['t-slot-angle-bracket', 'catalog.frame.kind.angleBracketCatalog'], ['t-slot-foot-base', 'catalog.frame.kind.footBase'],
-  ['t-slot-adjuster', 'catalog.frame.kind.adjuster'],
+  ['t-slot-adjuster', 'catalog.frame.kind.adjuster'], ['pipe-frame', 'catalog.frame.kind.pipeFrame'],
+  ['pipe-frame-slotted', 'catalog.frame.kind.pipeFrameSlotted'], ['pipe-frame-twin', 'catalog.frame.kind.pipeFrameTwin'],
+  ['t-slot-frame-small', 'catalog.frame.kind.smallFrame'], ['t-slot-frame-cap-small', 'catalog.frame.kind.smallFrameCap'],
+  ['bracket-stock', 'catalog.frame.kind.bracketStock'], ['pipe-frame-cap', 'catalog.frame.kind.pipeFrameCap'],
+  ['pipe-frame-foot', 'catalog.frame.kind.pipeFrameFoot'],
 ];
 
 function picker(page: Page): Locator {
@@ -454,5 +458,99 @@ export function registerAluminumFrameCatalogTests(test: typeof base,
       await expect(stock.locator('tbody tr td:nth-child(3)')).toHaveText(['550', '350']);
       expect(errors).toEqual([]);
     });
+
+    test('J-01 包み 8 置いた後の一括の書き換え: 並べた 2 本を木で選び、長さを 600 に替えると切断の一覧が 600 × 2 になり、Undo 1 回で戻る', async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      const app = appForPage(page);
+      await startAssembly(page, app);
+      const dialog = await openFramePicker(page);
+      await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption('t-slot-frame-series');
+      await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption('s6-20x20');
+      const layout = dialog.locator('details').filter({
+        has: page.locator('summary', { hasText: uiMessagePattern('catalog', 'catalog.frameLayout.title') }),
+      });
+      await layout.locator('summary').click();
+      await layout.getByRole('textbox', { name: uiMessage('catalog', 'catalog.frameLayout.points'), exact: true })
+        .fill(['0\t0\t0', '500\t0\t0', '500\t300\t0'].join('\n'));
+      await choice(layout, 'catalog', 'catalog.frameLayout.corners').selectOption('none');
+      await expectPreviewLengths(layout, ['500', '300']);
+      let token = await beginRecompute(page);
+      await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
+      await waitForRecompute(page, token);
+      await expect(componentRows(page)).toHaveCount(2);
+      // 木で 2 本を選ぶ(2 本目は Shift で足す)。
+      await componentRows(page).nth(0).click();
+      await componentRows(page).nth(1).click({ modifiers: ['Shift'] });
+      const bulk = dialog.locator('details').filter({
+        has: page.locator('summary', { hasText: uiMessagePattern('catalog', 'catalog.memberBulk.title') }),
+      });
+      await bulk.locator('summary').click();
+      await expect(bulk.getByText(uiMessage('catalog', 'catalog.memberBulk.hint').replace('{count}', '2'), { exact: true })).toBeVisible();
+      // 欄は「名前・入力・単位(mm)」の 1 つの label なので、名前の文字で label を選んで入力を探す(選ぶ窓のほかの欄と同じ探し方)。
+      await bulk.locator('label.pcad-field').filter({
+        has: page.locator('.pcad-field__label', { hasText: uiMessagePattern('catalog', 'catalog.memberBulk.length') }),
+      }).locator('input').fill('600');
+      token = await beginRecompute(page);
+      await bulk.getByRole('button', { name: uiMessage('catalog', 'catalog.memberBulk.apply'), exact: true }).click();
+      await waitForRecompute(page, token);
+      await expect(bulk.getByRole('status')).toHaveText(uiMessage('catalog', 'catalog.memberBulk.applied').replace('{count}', '2'));
+      expect((await stockRows(dialog, 1)).map(row => row.slice(1, 5))).toEqual([['溝幅 6 20×20', '600', '2', '1200']]);
+      token = await beginRecompute(page);
+      await page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.history.undo'), exact: true }).click();
+      await waitForRecompute(page, token);
+      await expect(componentRows(page)).toHaveCount(2);
+      expect((await stockRows(await openFramePicker(page), 2)).map(row => row.slice(1, 5)))
+        .toEqual([['溝幅 6 20×20', '500', '1', '500'], ['溝幅 6 20×20', '300', '1', '300']]);
+      expect(errors).toEqual([]);
+    });
+
+    test('2 部品の隙間: 離して置いた 2 本を木で選ぶと隙間(80)が出て測り直しが続かず、1 本に選び直すと消え、2 本に戻すとまた出る', async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      const app = appForPage(page);
+      await startAssembly(page, app);
+      const dialog = await openFramePicker(page);
+      await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption('t-slot-frame-series');
+      await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption('s6-20x20');
+      const layout = dialog.locator('details').filter({
+        has: page.locator('summary', { hasText: uiMessagePattern('catalog', 'catalog.frameLayout.title') }),
+      });
+      await layout.locator('summary').click();
+      const points = layout.getByRole('textbox', { name: uiMessage('catalog', 'catalog.frameLayout.points'), exact: true });
+      // 中心線を y 方向に 100 離した、x 方向の平行な 2 本。断面は 20 角(線を中心に ±10)なので、向かい合う面の隙間は
+      // 100 − 20 = 80 になる(配置と断面の外形だけで決まる値)。
+      for (const y of ['0', '100']) {
+        await points.fill([`0\t${y}\t0`, `500\t${y}\t0`].join('\n'));
+        await expectPreviewLengths(layout, ['500']);
+        const token = await beginRecompute(page);
+        await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
+        await waitForRecompute(page, token);
+      }
+      await expect(componentRows(page)).toHaveCount(2);
+      await componentRows(page).nth(0).click();
+      await componentRows(page).nth(1).click({ modifiers: ['Shift'] });
+      await expect.poll(() => readGap(page), { message: '2 部品を選ぶと隙間を測って出す' }).toBeCloseTo(80, 6);
+      // 測り終えた後に測り直しの頼みが続かない(カーネルの待ちが 0 に戻る)。
+      await waitForRecompute(page);
+      await componentRows(page).nth(0).click();
+      await expect.poll(() => readGap(page), { message: '1 部品に選び直すと隙間を消す' }).toBeNull();
+      await componentRows(page).nth(1).click({ modifiers: ['Shift'] });
+      await expect.poll(() => readGap(page), { message: '2 部品に戻すとまた測って出す' }).toBeCloseTo(80, 6);
+      await waitForRecompute(page);
+      expect(errors).toEqual([]);
+    });
+  });
+}
+
+/** 検査の口 pcadAssemblyStats の 2 部品の隙間(mm)。出ていなければ null。欄が無い時は理由を出して落とす。 */
+async function readGap(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const read: unknown = Reflect.get(window, 'pcadAssemblyStats');
+    if (typeof read !== 'function') throw new Error('検査専用の口 pcadAssemblyStats が見つかりません。');
+    const stats: unknown = Reflect.apply(read, window, []);
+    if (typeof stats !== 'object' || stats === null || !('gapMm' in stats)) throw new Error('検査の口に隙間の欄(gapMm)がありません。');
+    const gap: unknown = stats.gapMm;
+    return typeof gap === 'number' ? gap : null;
   });
 }

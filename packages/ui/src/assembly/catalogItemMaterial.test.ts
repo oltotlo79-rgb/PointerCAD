@@ -113,4 +113,20 @@ describe('K-06 段 1 族の部品の材質と部品表の質量', () => {
     expect(bomOf(old)[0]?.materialId).toBe('steel');
     expect(bomOf(current)[0]?.materialId).toBe('rubber');
   });
+
+  it('密度の材質を持たない行(資料 GF-2 の LDPE のキャップ)は、置く時の中身にも置いた部品にも材質を付けず、部品表の質量は行の 1 個の値', () => {
+    const family = 'pipe-frame-cap';
+    const item = 'p19-insert-cap-r19x3-r16.7x10-ldpe';
+    const committed = commitCatalogItemChoice(family, item, {});
+    expect(committed.ok).toBe(true);
+    expect(committed.ok ? Object.hasOwn(committed.value, 'materialId') : true).toBe(false);
+    expect(useAppStore.getState().placeCatalogItem(family, item, {})).toBe(true);
+    const component = placedComponents().at(-1);
+    expect(component === undefined ? true : Object.hasOwn(component, 'materialId')).toBe(false);
+    const row = PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.find((candidate) => candidate.key === item);
+    expect(row === undefined ? true : Object.hasOwn(row, 'densityMaterialId')).toBe(false);
+    const assembly: AssemblyDocument = { ...createAssemblyDocument('密度の材質を持たない行'), components: [...placedComponents()] };
+    // 材質を変える操作をしない限り、密度は付かない。質量は行の 1 個の値(形 × 密度にしない)。
+    expect(bomOf(assembly).at(-1)?.massEach).toBe(row?.dims.massG);
+  });
 });

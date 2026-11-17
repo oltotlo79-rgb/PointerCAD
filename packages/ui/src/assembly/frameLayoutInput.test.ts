@@ -19,7 +19,7 @@ function linesOf(pointsText: string, closed: boolean): readonly (readonly unknow
   return view.request.lines.map((line) => [line.start, line.end]);
 }
 
-beforeAll(async () => { await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-series']); });
+beforeAll(async () => { await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-series', 't-slot-nut-bar']); });
 
 describe('フレームの一括配置の窓の欄', () => {
   it('タブ・カンマ・空白のどれで区切っても同じ線の列になり、空の行は飛ばし、閉じると最後から最初へも 1 本', () => {
@@ -72,5 +72,20 @@ describe('フレームの一括配置の窓の欄', () => {
     expect(frameLayoutView({ ...INITIAL_FRAME_LAYOUT, pointsText: PASTED, startExtension: 'abc' }, SERIES))
       .toEqual({ kind: 'error', message: t('catalog.frameLayout.error.badExtension') });
     expect(frameLayoutView(INITIAL_FRAME_LAYOUT, SERIES)).toEqual({ kind: 'empty' });
+  });
+
+  it('留め(J-01 包み 5): 閉じた長方形は 4 本とも長い側 520・320 で、端の欄に留めの印、角は 4 つとも留めで入れ替えられない', () => {
+    const view = frameLayoutView({ ...INITIAL_FRAME_LAYOUT, pointsText: PASTED, closed: true, corners: 'miter' }, SERIES);
+    if (view.kind !== 'ready') throw new Error(`not ready: ${view.kind === 'error' ? view.message : view.kind}`);
+    const mark = t('catalog.frameLayout.miterMark');
+    expect(view.rows.map((row) => row.cells.slice(1))).toEqual([['520', `+10${mark}`, `+10${mark}`], ['320', `+10${mark}`, `+10${mark}`],
+      ['520', `+10${mark}`, `+10${mark}`], ['320', `+10${mark}`, `+10${mark}`]]);
+    expect(view.request.corners).toBe('miter');
+    expect(view.corners.map((corner) => corner.swappable)).toEqual([false, false, false, false]);
+    expect(view.corners[0]?.text).toBe(t('catalog.frameLayout.corner.miter').replace('{n}', '1').replace('{lines}', '1・4'));
+    // 留めの欄を持たない族(T 溝用ナットの素材)は理由を出す。
+    expect(frameLayoutView({ ...INITIAL_FRAME_LAYOUT, pointsText: PASTED, closed: true, corners: 'miter' },
+      { kind: 'catalogItem', familyId: 't-slot-nut-bar', itemKey: 's6-post-stainless', values: {} }))
+      .toEqual({ kind: 'error', message: t('catalog.frameLayout.error.miterUnsupported') });
   });
 });

@@ -8,9 +8,9 @@
  */
 import { evaluateExpression } from '@pointercad/expression';
 
-import { buildProfileSection } from '../../standard/profileExtrusion.js';
 import { withName } from '../../standard/partPrimitives.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
+import { buildMiteredSection, MITER_OPTION_SPECS, miteredSectionVolume } from '../miterOption.js';
 import { tSlotProfile, tSlotSectionBounds, type TSlotDimensions } from '../profiles/tSlot.js';
 import type { CatalogFamily, CatalogItemRow, CatalogOptionSpec } from '../types.js';
 
@@ -47,6 +47,8 @@ const OPTIONS: readonly CatalogOptionSpec[] = [
   ...SECTION_OPTIONS.map(([key, defaultValue]): CatalogOptionSpec => ({ key, kind: 'lengthExpression',
     labelKey: `catalog.frame.option.${key}`, defaultValue })),
   lengthOptionSpec('1000'),
+  // 一括配置の留めの角だけが書く任意の欄(J-01 包み 5)。
+  ...MITER_OPTION_SPECS,
 ];
 
 function numberOf(values: Readonly<Record<string, string>>, key: string): number {
@@ -80,12 +82,13 @@ export const T_SLOT_FRAME_FAMILY: CatalogFamily = {
     const profile = tSlotProfile(dimensionsOf(values));
     const length = lengthOf(values);
     if (profile === null || length === null || !(length.value > 0)) return null;
-    return withName(buildProfileSection(profile, length), frameName(values));
+    const document = buildMiteredSection(profile, length, tSlotSectionBounds(dimensionsOf(values)), values);
+    return document === null ? null : withName(document, frameName(values));
   },
   nominalVolume: (_row, values) => {
     const profile = tSlotProfile(dimensionsOf(values));
     const length = lengthOf(values)?.value ?? NaN;
-    return profile === null || !(length > 0) ? null : profile.areaMm2 * length;
+    return profile === null || !(length > 0) ? null : miteredSectionVolume(profile, tSlotSectionBounds(dimensionsOf(values)), values, length);
   },
   sectionBounds: (_row, values) => tSlotSectionBounds(dimensionsOf(values)),
   partName: (_row, values) => frameName(values),

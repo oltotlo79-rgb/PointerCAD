@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { t } from '../i18n/t.js';
 import { DEFAULT_DISPLAY_SETTINGS, loadSettings } from '../settings/settings.js';
 import { DEFAULT_STOCK_CUTTING, readStockCuttingSettings } from './stockCuttingSettings.js';
-import { stockCuttingView, type StockCuttingRow } from './stockCuttingView.js';
+import { catalogMiterNote, stockCuttingView, type StockCuttingRow } from './stockCuttingView.js';
 
 const ROWS: readonly StockCuttingRow[] = [
   { group: 'a', label: '溝幅 6 20×20', lengthMm: 2500, quantity: 2 }, { group: 'a', label: '溝幅 6 20×20', lengthMm: 1500, quantity: 3 },
@@ -54,5 +54,13 @@ describe('定尺への割り付けの設定と文字', () => {
     const view = stockCuttingView([{ group: 'a', label: '長い', lengthMm: 7000, quantity: 1 }], { stockLengthMm: 6000, kerfMm: 0 });
     expect(view).toEqual({ kind: 'groups', groups: [{ summary: t('catalog.stockCutting.tooLong').replace('{label}', '長い')
       .replace('{length}', '7000'), bars: [] }] });
+  });
+});
+
+describe('留めの部材の添え書き(J-01 包み 5)', () => {
+  it('留めの端の数を「長さは長い側」と共に添え、留めの無い行は空(前と同じ文字)', () => {
+    expect(catalogMiterNote({ miterEnds: 0 })).toBe('');
+    expect(catalogMiterNote({ miterEnds: 2 })).toBe(t('catalog.stock.miterNote').replace('{count}', '2'));
+    expect(catalogMiterNote({ miterEnds: 1 })).toContain('1');
   });
 });

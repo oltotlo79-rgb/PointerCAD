@@ -91,6 +91,7 @@ export function frameRejectionText(rejection: Extract<FrameMembersPlacement, { r
     case 'degenerateLine': return fill('catalog.frameLayout.error.degenerateLine', { line });
     case 'nonPositiveLength': return fill('catalog.frameLayout.error.nonPositiveLength', { line });
     case 'invalidOption': return t('catalog.frameLayout.error.invalidOption');
+    case 'miterUnsupported': return t('catalog.frameLayout.error.miterUnsupported');
     default: return t('catalog.frameLayout.error.other');
   }
 }
@@ -101,10 +102,20 @@ function cornerText(corner: Extract<ReturnType<typeof frameMembersPreview>, { re
   if (corner.treatment === 'butt' && corner.through !== null) {
     return fill('catalog.frameLayout.corner.butt', { n: index + 1, a: lines[0] ?? '', b: lines[1] ?? '', through: corner.through + 1 });
   }
-  const key: MessageKey = corner.reason === 'moreThanTwo' ? 'catalog.frameLayout.corner.moreThanTwo'
-    : corner.reason === 'notPerpendicular' ? 'catalog.frameLayout.corner.notPerpendicular' : 'catalog.frameLayout.corner.rule';
+  const key: MessageKey = corner.treatment === 'miter' ? 'catalog.frameLayout.corner.miter' : CORNER_REASON_KEYS[corner.reason ?? 'rule'];
   return fill(key, { n: index + 1, lines: lines.join('・') });
 }
+
+type CornerReason = NonNullable<Extract<ReturnType<typeof frameMembersPreview>, { readonly ok: true }>['corners'][number]['reason']>;
+const CORNER_REASON_KEYS: Readonly<Record<CornerReason, MessageKey>> = {
+  rule: 'catalog.frameLayout.corner.rule', moreThanTwo: 'catalog.frameLayout.corner.moreThanTwo',
+  notPerpendicular: 'catalog.frameLayout.corner.notPerpendicular', miterNotAligned: 'catalog.frameLayout.corner.miterNotAligned',
+  miterUnequal: 'catalog.frameLayout.corner.miterUnequal',
+};
+
+/** 予告の表の端の文字: 伸び縮みの量と、留めで 45° に切る端の印。 */
+const endCell = (adjustment: number, miter: string | null): string => signed(adjustment)
+  + (miter === null ? '' : t('catalog.frameLayout.miterMark'));
 
 /** 欄の値と部材から予告を作る(点が無い時は空、読めない・作れない時は理由の文字)。 */
 export function frameLayoutView(state: FrameLayoutState, member: FrameMemberChoice): FrameLayoutView {
@@ -121,7 +132,7 @@ export function frameLayoutView(state: FrameLayoutState, member: FrameMemberChoi
   return {
     kind: 'ready', request,
     rows: preview.members.map((planned) => ({ line: planned.lineIndex, cells: [fill('catalog.frameLayout.lineName', { n: planned.lineIndex + 1 }),
-      String(planned.lengthMm), signed(planned.startAdjustment), signed(planned.endAdjustment)] })),
+      String(planned.lengthMm), endCell(planned.startAdjustment, planned.startMiter), endCell(planned.endAdjustment, planned.endMiter)] })),
     corners: preview.corners.map((corner, index) => ({ index, text: cornerText(corner, index),
       swappable: corner.treatment === 'butt' })),
   };
@@ -143,11 +154,13 @@ export function frameEdgeText(edge: FrameEdgeChoice): string {
     x: edge.midpoint[0], y: edge.midpoint[1], z: edge.midpoint[2] });
 }
 
-/** 辺のチェックを付け外す(角の並びが変わるので入れ替えは初めに戻す)。 */
-export function toggleFrameEdge(state: FrameLayoutState, targetId: string): FrameLayoutState {
-  const checkedEdges = state.checkedEdges.includes(targetId)
-    ? state.checkedEdges.filter((id) => id !== targetId) : [...state.checkedEdges, targetId];
-  return { ...state, checkedEdges, swapThrough: [] };
+/**
+ * 店の「辺を選ぶ途中」のチェック(一覧と 3D の画面のクリックの両方が入れ替える。J-01 包み 4b)を欄の値に入れる。
+ * 欄の `checkedEdges` は角の入れ替えをした時のチェックで、チェックが変わっていれば角の並びも変わるので入れ替えは初めに戻す。
+ */
+export function withPickedEdges(state: FrameLayoutState, checked: readonly string[]): FrameLayoutState {
+  const same = checked.length === state.checkedEdges.length && checked.every((id, index) => state.checkedEdges[index] === id);
+  return { ...state, checkedEdges: checked, swapThrough: same ? state.swapThrough : [] };
 }
 
 /** 角の通す線を入れ替える(もう一度押すと元に戻る)。 */

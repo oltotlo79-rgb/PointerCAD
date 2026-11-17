@@ -1,6 +1,7 @@
 /**
- * 選ぶ画面を開いた時に、規格部品の族の表を登録口から読み込み、「読み込み中・済み・失敗」を窓に出す。
- * 登録された族が無い時は何も出さない(今の窓の見た目を変えない)。
+ * 選ぶ画面で族の分類(機械要素・アルミフレーム)を選んだ時に、その分類の族の表だけを登録口から読み込み、
+ * 「読み込み中・済み・失敗」を窓に出す。従来の分類(六角ボルト・鋼材など)では族を 1 つも読まない。
+ * その分類に登録された族が無い時は何も出さない(今の窓の見た目を変えない)。
  */
 import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry } from '@pointercad/model';
 import { useEffect, useState } from 'react';
@@ -14,16 +15,20 @@ const MESSAGES = {
   failed: 'catalog.loading.failed',
 } as const satisfies Readonly<Record<Exclude<CatalogLoadState, 'none'>, Parameters<typeof t>[0]>>;
 
-/** 窓を開いている間に族の表を読み込み、その状態を返す。閉じた後に終わった読み込みは状態を書かない。 */
-export function useCatalogFamilies(open: boolean, registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): CatalogLoadState {
+/**
+ * 窓を開いていて族の分類を選んでいる間に、その分類の族の表を読み込み、その状態を返す。族の分類でない時(`group` が null)は
+ * 読まずに なし。閉じた・分類を替えた後に終わった読み込みは状態を書かない。
+ */
+export function useCatalogFamilies(open: boolean, group: string | null,
+  registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): CatalogLoadState {
   const [state, setState] = useState<CatalogLoadState>('none');
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || group === null) return undefined;
     let alive = true;
-    void loadRegisteredCatalogFamilies(registry, setState, () => alive);
+    void loadRegisteredCatalogFamilies(registry, setState, () => alive, group);
     return () => { alive = false; };
-  }, [open, registry]);
-  return state;
+  }, [open, group, registry]);
+  return group === null ? 'none' : state;
 }
 
 /** 族の表の状態の 1 行。失敗は警告として読み上げる。 */

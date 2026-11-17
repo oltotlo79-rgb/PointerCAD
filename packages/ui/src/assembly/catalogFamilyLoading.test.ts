@@ -23,15 +23,16 @@ const familyOf = (id: string): Family => ({ id, group: 'mechanical', kindKey: `k
   generatorRevision: `${id}-1`, options: [], stock: 'count', diagram: 'pin', rows: [],
   build: () => null, nominalVolume: () => null, partName: () => id });
 
-/** 族の表を読む約束を外から決められる、検査の中だけの登録口。 */
-function fakeRegistry(ids: readonly string[], loaded: readonly string[] = []) {
+/** 族の表を読む約束を外から決められる、検査の中だけの登録口。族の分類は `groups` で決め、無い族は機械要素。 */
+function fakeRegistry(ids: readonly string[], loaded: readonly string[] = [],
+  groups: Readonly<Record<string, 'mechanical' | 'aluminumFrame'>> = {}) {
   const done = new Set(loaded);
   let settle: { resolve: () => void; reject: (error: Error) => void } | null = null;
   const ensure = vi.fn((requested: Iterable<string>) => new Promise<void>((resolve, reject) => {
     settle = { resolve: () => { for (const id of requested) done.add(id); resolve(); }, reject };
   }));
   const registry: CatalogRegistry = {
-    entries: ids.map((id) => ({ id, group: 'mechanical', kindKey: `kind.${id}`, load: () => Promise.resolve(familyOf(id)) })),
+    entries: ids.map((id) => ({ id, group: groups[id] ?? 'mechanical', kindKey: `kind.${id}`, load: () => Promise.resolve(familyOf(id)) })),
     entry: (id) => registry.entries.find((entry) => entry.id === id),
     loaded: (id) => (done.has(id) ? familyOf(id) : undefined),
     ensure,
@@ -80,12 +81,30 @@ describe('文書の族の部品の族を読み込んで待つ', () => {
   });
 });
 
-describe('選ぶ画面を開いた時に登録口の全ての族を読み込む', () => {
-  const run = (registry: CatalogRegistry, alive = () => true) => {
+describe('選ぶ画面で族の分類を選んだ時に、その分類の族だけを読み込む', () => {
+  const run = (registry: CatalogRegistry, alive = () => true, group: 'mechanical' | 'aluminumFrame' = 'mechanical') => {
     const states: CatalogLoadState[] = [];
-    const done = loadRegisteredCatalogFamilies(registry, (state) => { states.push(state); }, alive);
+    const done = loadRegisteredCatalogFamilies(registry, (state) => { states.push(state); }, alive, group);
     return { states, done };
   };
+
+  it('選んだ分類の族だけを 1 回で読み、ほかの分類の族は読まない', async () => {
+    const { registry, ensure, resolve } = fakeRegistry(['m1', 'f1', 'm2', 'f2'], [], { f1: 'aluminumFrame', f2: 'aluminumFrame' });
+    const { states, done } = run(registry, () => true, 'aluminumFrame');
+    expect([...ensure.mock.calls[0][0]]).toEqual(['f1', 'f2']);
+    resolve();
+    await done;
+    expect(states).toEqual(['loading', 'ready']);
+    expect(registry.loaded('m1')).toBeUndefined();
+  });
+
+  it('選んだ分類の族が 1 つも無い時は何も読まず「なし」', async () => {
+    const { registry, ensure } = fakeRegistry(['m1']);
+    const { states, done } = run(registry, () => true, 'aluminumFrame');
+    await done;
+    expect(states).toEqual(['none']);
+    expect(ensure).not.toHaveBeenCalled();
+  });
 
   it('登録された族が無い時は何も読まず「なし」（窓に何も出さない）', async () => {
     const { registry, ensure } = fakeRegistry([]);
@@ -103,7 +122,7 @@ describe('選ぶ画面を開いた時に登録口の全ての族を読み込む'
     expect(ensure).not.toHaveBeenCalled();
   });
 
-  it('読み込み中 → 済み の順に知らせ、登録された全ての族を 1 回で読む', async () => {
+  it('読み込み中 → 済み の順に知らせ、その分類の全ての族を 1 回で読む', async () => {
     const { registry, ensure, resolve } = fakeRegistry(['a', 'b'], ['a']);
     const { states, done } = run(registry);
     expect(states).toEqual(['loading']);

@@ -8,6 +8,8 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { validateShortcutAssignments } from '../commands/shortcutAssignments.js';
 import { commitMateDraft, editAssemblyMate, mateKindReadiness, startMate } from '../assembly/mateActions.js';
 import { parseAssemblyTargetId } from '../assembly/mateCommands.js';
+import { frameEdgeChoices } from '../assembly/frameEdgeChoices.js';
+import { planeBody } from '../assembly/filletWeldBodies.testSupport.js';
 
 function body(): SolidBody {
   return {
@@ -1165,6 +1167,53 @@ describe('hover over a display invalidated by its receipt is picked again once a
       await f.microtasks();
       expect(f.pickedAt()).toEqual([]);
       expect(f.prepareHoverInput).not.toHaveBeenCalled();
+    } finally { f.interaction.detach(); }
+  });
+});
+
+describe('フレームの辺を選ぶ途中(J-01 包み 4b)の 3D の画面のクリック', () => {
+  /** 200×100 の長方形の面 1 枚。辺 4 本を画面に写せるよう、辺ごとに線分 1 本を持たせる。 */
+  function plateFixture() {
+    const f = interactionFixture();
+    const plate = planeBody([[0, 0, 0], [200, 0, 0], [200, 100, 0], [0, 100, 0]], [0, 0, 1]);
+    const segments = plate.edges.flatMap((edge) => [...edge.start, ...edge.end]);
+    const body: SolidBody = { ...plate, edges: plate.edges.map((edge, index) => ({ ...edge, segmentOffset: index, segmentCount: 1 })),
+      mesh: { ...plate.mesh, edgePositions: new Float32Array(segments) } };
+    const view = { ...f.view, bodies: new Map([['part', [body]]]) };
+    useAppStore.setState({ assemblyView: view, selectionKind: 'body' });
+    const edges = (frameEdgeChoices(f.document, view, 'component-1') ?? []).map((edge) => edge.targetId);
+    return { ...f, edges };
+  }
+
+  it('部品の選択のままでも辺を選び、クリックで一覧のチェックを付け外し、合致の打ちかけは始めない', () => {
+    const f = plateFixture();
+    try {
+      expect(f.edges).toHaveLength(4);
+      useAppStore.getState().beginFrameEdgePick('component-1', f.edges);
+      f.send('pointerdown', { clientX: 100, clientY: 1 });
+      expect(useAppStore.getState().frameEdgePick?.checked).toEqual([f.edges[0]]);
+      expect(useAppStore.getState().selection).toEqual([f.edges[0]]);
+      f.send('pointerdown', { clientX: 199, clientY: 50 });
+      expect(useAppStore.getState().frameEdgePick?.checked).toEqual([f.edges[0], f.edges[1]]);
+      f.send('pointerdown', { clientX: 100, clientY: 1 });
+      expect(useAppStore.getState().frameEdgePick?.checked).toEqual([f.edges[1]]);
+      expect(useAppStore.getState().assemblyMateDraft).toBeNull();
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+    } finally { f.interaction.detach(); }
+  });
+
+  it('何も無い所を押しても選択とチェックを空にせず、やめた後は前と同じく部品を選ぶ', () => {
+    const f = plateFixture();
+    try {
+      useAppStore.getState().beginFrameEdgePick('component-1', f.edges);
+      f.send('pointerdown', { clientX: 100, clientY: 1 });
+      f.send('pointerdown', { clientX: 600, clientY: 600 });
+      expect(useAppStore.getState().frameEdgePick?.checked).toEqual([f.edges[0]]);
+      expect(useAppStore.getState().selection).toEqual([f.edges[0]]);
+      useAppStore.getState().endFrameEdgePick();
+      f.send('pointerdown', { clientX: 100, clientY: 1 });
+      expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().selection).toEqual(['component-1']);
     } finally { f.interaction.detach(); }
   });
 });

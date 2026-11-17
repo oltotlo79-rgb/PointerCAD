@@ -3,12 +3,12 @@
  * 長さ(突き当ての伸び縮みを含む)・名前・材質・配置が入り、Undo 1 回で全部戻り、作れない時は何も置かずに理由を返す事。
  */
 import { evaluateExpression } from '@pointercad/expression';
-import { createAssemblyDocument, PRODUCT_CATALOG_REGISTRY, type AssemblyComponent } from '@pointercad/model';
+import { buildStandardPartFromSource, createAssemblyDocument, PRODUCT_CATALOG_REGISTRY, type AssemblyComponent } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
-import type { FrameMembersRequest } from './frameMembersPlacement.js';
+import { frameMemberMiterSupported, type FrameMembersRequest } from './frameMembersPlacement.js';
 
 const SERIES = { kind: 'catalogItem', familyId: 't-slot-frame-series', itemKey: 's6-20x20', values: {} } as const;
 const GENERIC = { kind: 'catalogItem', familyId: 't-slot-frame-specified', itemKey: 'specified', values: {} } as const;
@@ -38,7 +38,7 @@ const positionOf = (component: AssemblyComponent | undefined): readonly number[]
 
 beforeEach(async () => {
   resetTestStore();
-  await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-series', 't-slot-frame-specified', 'angle-bracket-specified']);
+  await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-series', 't-slot-frame-specified', 'angle-bracket-specified', 'aluminum-flat-bar', 't-slot-nut-bar']);
   useAppStore.getState().openAssembly(createAssemblyDocument('フレームの一括配置'));
   expect(useAppStore.getState().openStandardPartPicker()).toBe(true);
 });
@@ -107,5 +107,45 @@ describe('J-01 フレームの一括配置の店の動作', () => {
     expect(components().map((component) => component.materialId)).toEqual(['steel', 'steel', 'steel', 'steel']);
     // 断面の (25, 3) が線の始点(線 0 は x = -25 から)に乗る: 位置 = 始点 − 25·線の向き − (25·局所の X + 3·局所の Y)。
     expect(positionOf(components()[0])).toEqual([-25, -25, -3]);
+  });
+});
+
+describe('留め(J-01 包み 5)', () => {
+  it('長方形の枠を留めで並べると、4 本とも長い側 520・320 で両端に留めの欄(角の内側 = 局所の +X)が書かれ、部品が組める', () => {
+    const placed = useAppStore.getState().placeFrameMembers({ ...REQUEST, corners: 'miter' });
+    expect(placed.ok).toBe(true);
+    expect(lengths()).toEqual(['520', '320', '520', '320']);
+    expect(components().map((component) => component.source.kind === 'standardPart'
+      ? [component.source.options.startMiter, component.source.options.endMiter] : null))
+      .toEqual(components().map(() => ['x+', 'x+']));
+  });
+
+  it('留めの無い角の扱いでは留めの欄を書かない(保存の形は前と同じ)', () => {
+    expect(useAppStore.getState().placeFrameMembers(REQUEST).ok).toBe(true);
+    expect(components().every((component) => component.source.kind === 'standardPart'
+      && !('startMiter' in component.source.options) && !('endMiter' in component.source.options))).toBe(true);
+  });
+
+  it('留めは留めの欄を持つ族(フレーム・形材)と鋼材(包み 6)で使え、欄を持たない族(T 溝用ナットの素材)は何も置かずに理由を返す', () => {
+    const steel = { kind: 'steel', choiceKey: 'steel:SS400:flatBar:FB 50×6' } as const;
+    const flatBar = { kind: 'catalogItem', familyId: 'aluminum-flat-bar', itemKey: 'fb-20x5', values: {} } as const;
+    const nutBar = { kind: 'catalogItem', familyId: 't-slot-nut-bar', itemKey: 's6-post-stainless', values: {} } as const;
+    expect([frameMemberMiterSupported(SERIES), frameMemberMiterSupported(GENERIC), frameMemberMiterSupported(steel),
+      frameMemberMiterSupported(flatBar), frameMemberMiterSupported(nutBar)]).toEqual([true, true, true, true, false]);
+    expect(useAppStore.getState().placeFrameMembers({ ...REQUEST, member: nutBar, corners: 'miter' }))
+      .toEqual({ ok: false, reason: 'miterUnsupported', lineIndex: null });
+    expect(components()).toHaveLength(0);
+  });
+
+  it('鋼材(平鋼 50×6)を留めで並べると、両方を相手の外の面まで伸ばし(50 の半分の 25)、留めの端だけ欄を書き、形が組める', () => {
+    const placed = useAppStore.getState().placeFrameMembers({ ...REQUEST, member: { kind: 'steel', choiceKey: 'steel:SS400:flatBar:FB 50×6' },
+      corners: 'miter' });
+    expect(placed.ok).toBe(true);
+    expect(lengths()).toEqual(['550', '350', '550', '350']);
+    expect(components().map((component) => component.source.kind === 'standardPart'
+      ? [component.source.options.startMiter, component.source.options.endMiter] : null))
+      .toEqual(components().map(() => ['x+', 'x+']));
+    expect(components().every((component) => component.source.kind === 'standardPart'
+      && buildStandardPartFromSource(component.source) !== null)).toBe(true);
   });
 });

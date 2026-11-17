@@ -57,7 +57,7 @@ describe('製造元の寸法に合わせたフレームの系列', () => {
       row.dims.cornerHoleInset, row.dims.unitMassKgPerM])).toEqual(READINGS.map((reading) => [...reading]));
     for (const row of ROWS) {
       expect([row.standardLabel, row.note, row.materialLabel, row.densityMaterialId, row.verification])
-        .toEqual(['製造元の寸法に合わせた物', '内側の形は簡略。質量は単位質量の値（解析の自重は簡略の形の値）', 'アルミ', 'aluminum',
+        .toEqual(['製造元の寸法に合わせた物', '内側の形は簡略。質量は単位質量の値', 'アルミ', 'aluminum',
           'manufacturer-catalog']);
       expect(row.evidence).toEqual({ title: '販売店の公開の頁の数値(製造元の寸法に合わせた物)', edition: null, url: '', locator: '',
         sha256: '', fetchedDate: '' });
@@ -65,7 +65,8 @@ describe('製造元の寸法に合わせたフレームの系列', () => {
     }
     expect([T_SLOT_FRAME_SERIES_FAMILY.id, T_SLOT_FRAME_SERIES_FAMILY.group, T_SLOT_FRAME_SERIES_FAMILY.stock,
       T_SLOT_FRAME_SERIES_FAMILY.diagram, T_SLOT_FRAME_SERIES_FAMILY.catalogRevision, T_SLOT_FRAME_SERIES_FAMILY.options.map((spec) => spec.key)])
-      .toEqual(['t-slot-frame-series', 'aluminumFrame', 'linear', 'tSlotSeries', 't-slot-frame-series-2026-11-r1', ['length']]);
+      .toEqual(['t-slot-frame-series', 'aluminumFrame', 'linear', 'tSlotSeries', 't-slot-frame-series-2026-11-r1',
+        ['length', 'startMiter', 'endMiter']]);
   });
 
   it('簡略形状の面積は式と合い、面積 × 2.68 の質量は単位質量と違う(差を記録するだけで合わせ込まない)', () => {

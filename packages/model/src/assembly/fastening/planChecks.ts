@@ -16,7 +16,8 @@ import {
 
 export interface ClearanceInput {
   readonly thread: ThreadChoice;
-  readonly bolt: HexBoltRow;
+  readonly bolt: HexBoltRow | null;
+  readonly headBearing?: { readonly value: number; readonly verified: boolean };
   readonly nut: HexNutRow | null;
   readonly head: WorldHole;
   readonly far: WorldHole;
@@ -59,9 +60,10 @@ function bearingRejections(
  * それ以外は二面幅 s を上限に使い、座面径は未確認のまま残す。
  */
 function headBearing(input: ClearanceInput): { readonly value: number; readonly verified: boolean } {
-  const evidence = input.bolt.dimensionSeries === 'main' && input.thread.series === 'coarse'
+  if (input.headBearing !== undefined) return input.headBearing;
+  const evidence = input.bolt !== null && input.bolt.dimensionSeries === 'main' && input.thread.series === 'coarse'
     ? hexBoltMainEvidence(input.bolt.size) : undefined;
-  return evidence === undefined ? { value: input.bolt.s, verified: false } : { value: evidence.bearingDiameterMin, verified: true };
+  return evidence === undefined ? { value: input.bolt?.s ?? 0, verified: false } : { value: evidence.bearingDiameterMin, verified: true };
 }
 
 /** 通し穴がボルトより大きく、頭・ナット(または座金)より小さいこと。 */

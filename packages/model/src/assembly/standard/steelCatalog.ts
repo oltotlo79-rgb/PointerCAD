@@ -1,5 +1,6 @@
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 
+import { FRAME_MITERS } from '../frame/frameMembers.js';
 import type { StandardCatalogId } from '../types.js';
 import type { StandardPartSource } from '../resolveAssembly.js';
 import { G3192_CT_ROWS } from './steelRows/g3192CtRows.js';
@@ -740,8 +741,16 @@ export function findSteelProduct(catalog: StandardCatalogId, size: string,
   if (row === undefined) return undefined;
   const canonical = steelProductOptions(row);
   return Object.entries(canonical).every(([key, value]) => options[key] === value)
-    && Object.keys(options).every((key) => key === 'length' || Object.hasOwn(canonical, key))
+    && Object.keys(options).every((key) => key === 'length' || steelMiterField(key, options[key]) || Object.hasOwn(canonical, key))
     ? row : undefined;
+}
+
+/**
+ * 留めの欄(J-01 包み 6。一括配置の留めの角だけが書く任意の鍵 startMiter・endMiter。値は短くする側 x+・x-・y+・y-)。
+ * 留めの無い部材は欄を持たず、保存の形と形は前と同じ。前の版はこの鍵を「保存の欄が合わない」で断る(黙って直角にしない)。
+ */
+export function steelMiterField(key: string, value: string | undefined): boolean {
+  return (key === 'startMiter' || key === 'endMiter') && FRAME_MITERS.some((side) => side === value);
 }
 /** Application modeling bounds, not a claim about JIS limits or producer stock. */
 export const STEEL_LENGTH_LIMITS_MM = { min: 1, max: 12000 } as const;

@@ -6,8 +6,9 @@
  */
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
-  addComponent, createCatalogItemSource, createComponentFor, planFrameMembers, PRODUCT_CATALOG_REGISTRY, steelProductFromSource,
-  steelSectionBounds, type AssemblyDocument, type ComponentSource, type FrameCornerRule, type FrameLine, type FrameMembersResult,
+  addComponent, buildStandardPartFromSource, createCatalogItemSource, createComponentFor, planFrameMembers, PRODUCT_CATALOG_REGISTRY,
+  steelProductFromSource, steelSectionBounds, type AssemblyDocument, type ComponentSource, type FrameCornerRule, type FrameLine,
+  type FrameMembersResult,
 } from '@pointercad/model';
 
 import { commitCatalogItemChoice } from './catalogFamilyChoices.js';
@@ -32,12 +33,16 @@ export interface FrameMembersRequest {
 }
 
 type PlanRejection = Extract<FrameMembersResult, { readonly ok: false }>['reason'];
+type FrameMembersPlan = Extract<FrameMembersResult, { readonly ok: true }>;
 
-/** 並べた結果(置いた部品の id)か、置かなかった理由(部材が無い・長さを持たない部材・欄の値で作れない・線の計画の理由)。 */
+/**
+ * 並べた結果(置いた部品の id)か、置かなかった理由(部材が無い・長さを持たない部材・欄の値で作れない・留めの欄を持たない部材
+ * 〔留めの欄を持たない族〕・線の計画の理由)。
+ */
 export type FrameMembersPlacement =
   | { readonly ok: true; readonly componentIds: readonly string[] }
-  | { readonly ok: false; readonly reason: 'unavailable' | 'unknownChoice' | 'notLinear' | 'invalidOption' | PlanRejection;
-    readonly lineIndex: number | null };
+  | { readonly ok: false; readonly reason: 'unavailable' | 'unknownChoice' | 'notLinear' | 'invalidOption' | 'miterUnsupported'
+    | PlanRejection; readonly lineIndex: number | null };
 
 type Rejected = Extract<FrameMembersPlacement, { readonly ok: false }>;
 type SectionBounds = Parameters<typeof planFrameMembers>[1]['section'];
@@ -49,10 +54,16 @@ interface PlacedPart {
   readonly materialId?: string;
 }
 
+type MiterEnd = FrameMembersPlan['members'][number]['startMiter'];
+
 interface MemberKind {
   readonly section: SectionBounds;
-  readonly partFor: (lengthMm: number) => PlacedPart | null;
+  /** 留めの欄(始点・終点)を持つ部材か(アルミフレームの族)。 */
+  readonly miter: boolean;
+  readonly partFor: (lengthMm: number, startMiter: MiterEnd, endMiter: MiterEnd) => PlacedPart | null;
 }
+
+const MITER_KEYS = ['startMiter', 'endMiter'];
 
 function catalogMember(choice: Extract<FrameMemberChoice, { readonly kind: 'catalogItem' }>): MemberKind | Rejected {
   const family = PRODUCT_CATALOG_REGISTRY.loaded(choice.familyId);
@@ -62,10 +73,19 @@ function catalogMember(choice: Extract<FrameMemberChoice, { readonly kind: 'cata
   // 入れていない欄は族の初めの値で読む(保存の形を作る道と同じ)。
   const section = family.sectionBounds(row, createCatalogItemSource(family, row, choice.values).options);
   if (section === null) return { ok: false, reason: 'invalidOption', lineIndex: null };
-  return { section, partFor: (lengthMm) => {
-    const committed = commitCatalogItemChoice(choice.familyId, choice.itemKey, { ...choice.values, length: String(lengthMm) });
+  const miter = MITER_KEYS.every((key) => family.options.some((spec) => spec.key === key));
+  return { section, miter, partFor: (lengthMm, startMiter, endMiter) => {
+    // 留めの端だけ欄を書く(切らない端は書かない。保存の形は留めを使わない部品と同じ)。
+    const committed = commitCatalogItemChoice(choice.familyId, choice.itemKey, { ...choice.values, length: String(lengthMm),
+      ...(startMiter === null ? {} : { startMiter }), ...(endMiter === null ? {} : { endMiter }) });
     return committed.ok ? committed.value : null;
   } };
+}
+
+/** 選んだ部材が角の扱い「留め」を使えるか(留めの欄を持つアルミフレームの族と、鋼材。J-01 包み 5・6)。 */
+export function frameMemberMiterSupported(choice: FrameMemberChoice): boolean {
+  const member = choice.kind === 'steel' ? steelMember(choice) : catalogMember(choice);
+  return !('ok' in member) && member.miter;
 }
 
 function steelMember(choice: Extract<FrameMemberChoice, { readonly kind: 'steel' }>): MemberKind | Rejected {
@@ -74,17 +94,23 @@ function steelMember(choice: Extract<FrameMemberChoice, { readonly kind: 'steel'
   if (row === undefined) return { ok: false, reason: 'unknownChoice', lineIndex: null };
   const section = steelSectionBounds(row);
   if (section === null) return { ok: false, reason: 'notLinear', lineIndex: null };
-  return { section, partFor: (lengthMm) => {
+  return { section, miter: true, partFor: (lengthMm, startMiter, endMiter) => {
     const committed = commitStandardPartChoice('structuralSection', choice.choiceKey, String(lengthMm));
-    return committed.ok ? committed.value : null;
+    if (!committed.ok) return null;
+    if (startMiter === null && endMiter === null || committed.value.source.kind !== 'standardPart') return committed.value;
+    // 留めの端だけ欄を書き(J-01 包み 6)、その保存で形が組める事を確かめる(切らない端は書かない)。
+    const source = { ...committed.value.source, options: { ...committed.value.source.options,
+      ...(startMiter === null ? {} : { startMiter }), ...(endMiter === null ? {} : { endMiter }) } };
+    return buildStandardPartFromSource(source) === null ? null : { ...committed.value, source };
   } };
 }
 
-type FramePlan = Extract<FrameMembersResult, { readonly ok: true }>;
+type FramePlan = FrameMembersPlan;
 
 function resolvePlan(request: FrameMembersRequest): { readonly member: MemberKind; readonly plan: FramePlan } | Rejected {
   const member = request.member.kind === 'steel' ? steelMember(request.member) : catalogMember(request.member);
   if ('ok' in member) return member;
+  if (request.corners === 'miter' && !member.miter) return { ok: false, reason: 'miterUnsupported', lineIndex: null };
   const plan = planFrameMembers(request.lines, { section: member.section, up: request.up, quarterTurns: request.quarterTurns,
     startExtension: request.startExtension, endExtension: request.endExtension, corners: request.corners,
     swapThrough: request.swapThrough });
@@ -107,7 +133,7 @@ export function frameMembersDocument(assembly: AssemblyDocument, request: FrameM
   const componentIds: string[] = [];
   for (const planned of plan.members) {
     // 長さは planFrameMembers が mm の 1e-6 で丸めた値(端数で切断の一覧の行が分かれない)。
-    const part = member.partFor(planned.lengthMm);
+    const part = member.partFor(planned.lengthMm, planned.startMiter, planned.endMiter);
     if (part === null) return { ok: false, reason: 'invalidOption', lineIndex: planned.lineIndex };
     const [x, y, z] = planned.placement.position;
     const component = createComponentFor(document, part.source, { partName: part.name, placement: {

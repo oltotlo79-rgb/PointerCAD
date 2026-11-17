@@ -7,9 +7,9 @@
  * 簡略の形(`profiles/tSlot.ts`。溝の部屋の側面 45°、四隅の中空・中心の穴の周りの形・仕切りは作らない)。**質量は形から計算せず、
  * 行の単位質量 × 長さ**(`nominalMassG`。資料の断面性能の表、表に行が無い断面は図の頁の箱の値)。断面積・Ix・Iy・Zx・Zy は表の値を持つ(表示と記録用)。
  */
-import { buildProfileSection } from '../../standard/profileExtrusion.js';
 import { withName } from '../../standard/partPrimitives.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
+import { buildMiteredSection, MITER_OPTION_SPECS, miteredMassLength, miteredSectionVolume } from '../miterOption.js';
 import { tSlotProfile, tSlotSectionBounds, type TSlotDimensions } from '../profiles/tSlot.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
@@ -109,7 +109,8 @@ function familyOf(slot: (typeof SLOTS)[number], rows: readonly CatalogItemRow[])
     kindKey: `catalog.frame.kind.tSlotS${slot}`,
     catalogRevision: `t-slot-frame-s${slot}-2026-11-r1`,
     generatorRevision: 't-slot-2',
-    options: [lengthOptionSpec('1000')],
+    // 留めの欄は一括配置の留めの角だけが書く任意の欄(J-01 包み 5。miterOption.ts)。
+    options: [lengthOptionSpec('1000'), ...MITER_OPTION_SPECS],
     stock: 'linear',
     diagram: 'tSlotSeries',
     rows,
@@ -117,18 +118,21 @@ function familyOf(slot: (typeof SLOTS)[number], rows: readonly CatalogItemRow[])
       const profile = tSlotProfile(dimensionsOf(row));
       const length = lengthOf(values);
       if (profile === null || length === null || !(length.value > 0)) return null;
-      return withName(buildProfileSection(profile, length), frameName(row, values));
+      const document = buildMiteredSection(profile, length, tSlotSectionBounds(dimensionsOf(row)), values);
+      return document === null ? null : withName(document, frameName(row, values));
     },
     nominalVolume: (row, values) => {
       const profile = tSlotProfile(dimensionsOf(row));
       const length = lengthOf(values)?.value ?? NaN;
-      return profile === null || !(length > 0) ? null : profile.areaMm2 * length;
+      return profile === null || !(length > 0) ? null : miteredSectionVolume(profile, tSlotSectionBounds(dimensionsOf(row)), values, length);
     },
-    // 単位質量(kg/m)× 長さ(mm)= 質量(g)。
+    // 単位質量(kg/m)× 長さ(mm)= 質量(g)。留めの部材の長さは、留めを引いた後の体積 ÷ 断面積(miterOption.ts)。
     nominalMassG: (row, values) => {
       const length = lengthOf(values)?.value ?? NaN;
       const unitMass = row.dims.unitMassKgPerM ?? NaN;
-      return length > 0 && unitMass > 0 ? unitMass * length : null;
+      const massLength = length > 0 ? miteredMassLength(tSlotProfile(dimensionsOf(row)), tSlotSectionBounds(dimensionsOf(row)), values, length)
+        : null;
+      return massLength !== null && unitMass > 0 ? unitMass * massLength : null;
     },
     sectionBounds: (row) => tSlotSectionBounds(dimensionsOf(row)),
     partName: (row, values) => frameName(row, values),

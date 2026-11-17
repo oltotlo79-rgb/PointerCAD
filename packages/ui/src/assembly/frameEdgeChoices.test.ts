@@ -12,7 +12,7 @@ import { t } from '../i18n/t.js';
 import type { AssemblyView } from '../store/assemblySlice.js';
 import { filterFrameEdges, frameEdgeChoices } from './frameEdgeChoices.js';
 import { planeBody } from './filletWeldBodies.testSupport.js';
-import { frameEdgeText, frameLayoutView, INITIAL_FRAME_LAYOUT, toggleFrameEdge, type FrameLayoutState } from './frameLayoutInput.js';
+import { frameEdgeText, frameLayoutView, INITIAL_FRAME_LAYOUT, toggleFrameCornerSwap, withPickedEdges, type FrameLayoutState } from './frameLayoutInput.js';
 import { parseAssemblyTargetId } from './mateCommands.js';
 
 const COMPONENT: AssemblyComponent = { id: 'plate', name: '板:1', source: { kind: 'part', partRef: 'plate' },
@@ -55,12 +55,22 @@ describe('選んだ部品のまっすぐな辺の一覧', () => {
 
   it('チェックした辺が予告の線になり(辺の順)、4 本で閉じた枠は突き当てで 220・100・200・80', () => {
     const edges = frameEdgeChoices(DOCUMENT, VIEW, 'plate') ?? [];
-    let state: FrameLayoutState = { ...INITIAL_FRAME_LAYOUT, source: 'edges', edges };
-    expect(frameLayoutView(state, SERIES)).toEqual({ kind: 'empty' });
-    for (const edge of edges) state = toggleFrameEdge(state, edge.targetId);
+    const loaded: FrameLayoutState = { ...INITIAL_FRAME_LAYOUT, source: 'edges', edges };
+    expect(frameLayoutView(withPickedEdges(loaded, []), SERIES)).toEqual({ kind: 'empty' });
+    const state = withPickedEdges(loaded, edges.map((edge) => edge.targetId));
     const view = frameLayoutView(state, SERIES);
     expect(view.kind === 'ready' ? view.request.lines : null).toEqual(edges.map((edge) => edge.line));
     expect(view.kind === 'ready' ? view.rows.map((row) => row.cells[1]) : null).toEqual(['220', '100', '200', '80']);
-    expect(toggleFrameEdge(state, edges[0]?.targetId ?? '').checkedEdges).toHaveLength(3);
+  });
+
+  it('店のチェック(一覧と 3D の画面のクリック)を欄に入れ、チェックが同じなら角の入れ替えを保ち、変わったら初めに戻す(包み 4b)', () => {
+    const edges = frameEdgeChoices(DOCUMENT, VIEW, 'plate') ?? [];
+    const all = edges.map((edge) => edge.targetId);
+    const swapped = toggleFrameCornerSwap(withPickedEdges({ ...INITIAL_FRAME_LAYOUT, source: 'edges', edges }, all), 0);
+    expect(swapped.swapThrough).toEqual([0]);
+    expect(withPickedEdges(swapped, all).swapThrough).toEqual([0]);
+    const fewer = withPickedEdges(swapped, all.slice(1));
+    expect([fewer.checkedEdges, fewer.swapThrough]).toEqual([all.slice(1), []]);
+    expect(withPickedEdges(swapped, [...all].reverse()).swapThrough).toEqual([]);
   });
 });

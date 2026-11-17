@@ -36,6 +36,14 @@ export function steelStockCuttingRows(rows: SteelStockList['rows']): readonly St
     lengthMm: row.lengthMm, quantity: row.quantity }));
 }
 
+/**
+ * 留めで 45° に切った族の部材の添え書き(J-01 包み 5。留めの無い行は空)。切断の一覧の表の呼びと、CSV の注記の列に同じ文字を使う。
+ * 定尺の割り付けは長い側の長さ(行の長さ)で数える(切る前の棒の長さ)。
+ */
+export function catalogMiterNote(row: Pick<SteelStockList['catalogRows'][number], 'miterEnds'>): string {
+  return row.miterEnds === 0 ? '' : t('catalog.stock.miterNote').split('{count}').join(String(row.miterEnds));
+}
+
 /** 族の切断の一覧の行(同じ族の同じ呼びを同じ組にする)。`kindLabel` は種類の名前。 */
 export function catalogStockCuttingRows(rows: SteelStockList['catalogRows'], kindLabel: (kindKey: string) => string):
 readonly StockCuttingRow[] {

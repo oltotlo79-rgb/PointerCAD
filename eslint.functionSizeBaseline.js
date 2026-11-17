@@ -57,7 +57,7 @@ export const FUNCTION_SIZE_BASELINE = [
   { file: 'packages/ui/src/store/fatigueSlice.ts', functions: [['createFatigueSlice', 212]] },
   { file: 'packages/ui/src/store/solidAnalysisSlice.ts', functions: [['createSolidAnalysisSlice', 219]] },
   { file: 'packages/ui/src/viewcube/ViewCube.tsx', functions: [['ViewCube', 233], ['ViewCube::useEffect(#0)', 209]] },
-  { file: 'packages/ui/src/viewport/attachAssemblyInteraction.ts', functions: [['attachAssemblyInteraction', 372]] },
+  { file: 'packages/ui/src/viewport/attachAssemblyInteraction.ts', functions: [['attachAssemblyInteraction', 368]] },
   { file: 'packages/ui/src/viewport/createAssemblyLayer.ts', functions: [['createAssemblyLayer', 894]] },
   { file: 'packages/ui/src/viewport/createSketchLayer.ts', functions: [['createSketchLayer', 222]] },
   { file: 'packages/ui/src/viewport/sketchDragSession.ts', functions: [['createSketchDragSession', 292]] },

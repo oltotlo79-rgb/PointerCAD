@@ -147,3 +147,72 @@ describe('フレームの一括配置の純関数', () => {
     expect(planFrameMembers(RECTANGLE, { ...OPTIONS, up: [0, 0, 0] })).toEqual({ ok: false, reason: 'invalidUp', lineIndex: null });
   });
 });
+
+describe('留め(J-01 包み 5): 直角に会う 2 本を 45° に切って合わせる', () => {
+  const MITER: FrameMemberOptions = { ...OPTIONS, corners: 'miter' };
+
+  it('閉じた長方形は 4 本とも両端を相手の外の面まで 10 伸ばし(長い側 520・320 = 外形)、角の内側(局所の +X = 長方形の中)を短くする', () => {
+    const result = planFrameMembers(RECTANGLE, MITER);
+    const members = membersOf(result);
+    expect(members.map((member) => [member.lengthMm, member.startAdjustment, member.endAdjustment])).toEqual([
+      [520, 10, 10], [320, 10, 10], [520, 10, 10], [320, 10, 10]]);
+    // 線 0 は +X 向き・上は +Z なので局所の X は世界の +Y(長方形の中の側)。どの線でも中の側は局所の +X になる(反時計回り)。
+    expect(members.map((member) => [member.startMiter, member.endMiter])).toEqual([
+      ['x+', 'x+'], ['x+', 'x+'], ['x+', 'x+'], ['x+', 'x+']]);
+    expectVec(rotateVector(members[0]?.placement.rotation ?? [0, 0, 0, 1], [1, 0, 0]), [0, 1, 0]);
+    if (!result.ok) throw new Error('rejected');
+    expect(result.corners.map((corner) => [corner.lines, corner.treatment, corner.reason, corner.through])).toEqual([
+      [[0, 3], 'miter', null, null], [[0, 1], 'miter', null, null], [[1, 2], 'miter', null, null], [[2, 3], 'miter', null, null]]);
+    // 長い側の面(局所の -X の面)の両端は、外形の角 (-10, -10) と (510, -10)(線 0 の外の面 y = -10 の上)。
+    const first = members[0];
+    if (first === undefined) throw new Error('no member');
+    expectVec(toWorld(first, [-10, 0, 0]), [-10, -10, 0]);
+    expectVec(toWorld(first, [-10, 0, 520]), [510, -10, 0]);
+  });
+
+  it('開いた折れ線は角だけを留めにし、角の無い端は切らない(伸ばす量だけ)', () => {
+    const open = membersOf(planFrameMembers(RECTANGLE.slice(0, 2), MITER));
+    expect(open.map((member) => [member.lengthMm, member.startMiter, member.endMiter])).toEqual([[510, null, 'x+'], [310, 'x+', null]]);
+  });
+
+  it('短い側の面が残らない部材(両端の留めで 2h + 2h = 40 以上縮む)は作らない', () => {
+    // 20×20 の正方形の枠: 部材の長い側は 40 で、短い側は 40 − 2·10 − 2·10 = 0。
+    const square = (size: number): readonly FrameLine[] => [line([0, 0, 0], [size, 0, 0]), line([size, 0, 0], [size, size, 0]),
+      line([size, size, 0], [0, size, 0]), line([0, size, 0], [0, 0, 0])];
+    expect(planFrameMembers(square(20), MITER)).toEqual({ ok: false, reason: 'nonPositiveLength', lineIndex: 0 });
+    // 40 の枠なら長い側 60、短い側 20 が残る。
+    expect(membersOf(planFrameMembers(square(40), MITER)).map((member) => member.lengthMm)).toEqual([60, 60, 60, 60]);
+  });
+
+  it('時計回りの角は中の側が局所の -X になる', () => {
+    const clockwise = membersOf(planFrameMembers([line([0, 0, 0], [0, 300, 0]), line([0, 300, 0], [500, 300, 0])], MITER));
+    expect(clockwise.map((member) => [member.startMiter, member.endMiter])).toEqual([[null, 'x-'], ['x-', null]]);
+  });
+
+  it('断面の軸が角の内側に沿わない(上の向きを斜めにした)角と、角の面までの距離が違う(20×40 を縦と横に)角は留めにせず、理由を出す', () => {
+    const tilted = planFrameMembers(RECTANGLE.slice(0, 2), { ...MITER, up: [0, 1, 1] });
+    if (!tilted.ok) throw new Error('rejected');
+    expect(tilted.corners.map((corner) => [corner.treatment, corner.reason])).toEqual([['none', 'miterNotAligned']]);
+    expect(tilted.members.map((member) => [member.lengthMm, member.startMiter, member.endMiter])).toEqual([[500, null, null], [300, null, null]]);
+    // 横の線(局所の Y = +Z、角の内側 +Z の距離 20)と縦の線(局所の Y = +Y、角の内側 -X の距離 10)。
+    const unequal = planFrameMembers([line([0, 0, 0], [500, 0, 0]), line([500, 0, 0], [500, 0, 300])],
+      { ...MITER, section: { minX: -10, minY: -20, maxX: 10, maxY: 20 } });
+    if (!unequal.ok) throw new Error('rejected');
+    expect(unequal.corners.map((corner) => [corner.treatment, corner.reason])).toEqual([['none', 'miterUnequal']]);
+  });
+
+  it('3 本が会う角と直角でない角は留めにせず理由を出し、突き当てと「そのまま」では切る端は無い', () => {
+    const corner3 = planFrameMembers([line([0, 0, 0], [100, 0, 0]), line([0, 0, 0], [0, 100, 0]), line([0, 0, 0], [0, 0, 100])], MITER);
+    if (!corner3.ok) throw new Error('rejected');
+    expect(corner3.corners.map((corner) => [corner.treatment, corner.reason])).toEqual([['none', 'moreThanTwo']]);
+    const oblique = planFrameMembers([line([0, 0, 0], [100, 0, 0]), line([100, 0, 0], [150, 100, 0])], MITER);
+    if (!oblique.ok) throw new Error('rejected');
+    expect(oblique.corners.map((corner) => [corner.treatment, corner.reason])).toEqual([['none', 'notPerpendicular']]);
+    expect(oblique.members.map((member) => [member.startMiter, member.endMiter])).toEqual([[null, null], [null, null]]);
+    const rules: readonly FrameMemberOptions['corners'][] = ['butt', 'none'];
+    for (const corners of rules) {
+      const members = membersOf(planFrameMembers(RECTANGLE, { ...OPTIONS, corners }));
+      expect(members.every((member) => member.startMiter === null && member.endMiter === null)).toBe(true);
+    }
+  });
+});

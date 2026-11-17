@@ -161,11 +161,22 @@ export function pickAssemblyMateTarget(
  * それ以外は選ぶ種類の設定(部品のままなら面)。
  */
 function subShapePickKind(state: ReturnType<typeof useAppStore.getState>): Exclude<SelectionKind, 'body'> {
+  // フレームの辺を選ぶ途中(J-01 包み 4b)は、選ぶ種類の設定によらず辺を選ぶ。
+  if (state.frameEdgePick !== null) return 'edge';
   if (state.assemblyCircularWeldDraft !== null) return circularFilletWeldPickKind(state.assemblyCircularWeldDraft) === 'edge' ? 'edge' : 'face';
   // 入れ子の葉を1つでも選んだ溶接は、選んだものが入れ子の下書きにある(平らな picks は空)ので、そちらの数で決める。
   if (state.assemblyNestedWeldDraft !== null) return nestedWeldPickKind(state.assemblyNestedWeldDraft);
   if (state.assemblyFilletWeldDraft !== null) return filletWeldPickKind(state.assemblyFilletWeldDraft);
   return state.selectionKind === 'body' ? 'face' : state.selectionKind;
+}
+
+/**
+ * 合致・ボルト締結・溶接の打ちかけか、フレームの辺を選ぶ途中(J-01 包み 4b)か。どれも部品ではなく面・辺を選び、
+ * 何も無い所の押下で選択を空にしない。
+ */
+function pickDraftActive(state: ReturnType<typeof useAppStore.getState>): boolean {
+  return state.assemblyMateDraft !== null || state.assemblyBoltedJointDraft !== null || state.assemblyFilletWeldDraft !== null
+    || state.assemblyCircularWeldDraft !== null || state.frameEdgePick !== null;
 }
 
 // Keep Promise callbacks outside the input closure: a cancelled refresh must not
@@ -398,9 +409,8 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       return state.displaySettings.selectionFilter[kind]
         ? pickJointOccurrenceTarget(state.assembly, state.assemblyView, scene, at, kind) : null;
     }
-    // 合致・ボルト締結・溶接の打ちかけでは、部品ではなく面(溶接は面と辺)を選ぶ。
-    if (state.selectionKind === 'body' && state.assemblyMateDraft === null && state.assemblyBoltedJointDraft === null
-      && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null) {
+    // 合致・ボルト締結・溶接の打ちかけでは、部品ではなく面(溶接は面と辺)を選ぶ。フレームの辺を選ぶ途中は辺を選ぶ。
+    if (state.selectionKind === 'body' && !pickDraftActive(state)) {
       try {
         return observation?.componentPick === undefined ? scene.pickComponent(at[0], at[1])
           : scene.pickComponent(at[0], at[1], observation.componentPick);
@@ -527,8 +537,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       if (observation !== undefined) observation.addAccepted = accepted;
       reportMateInput(observation, dragInput);
     } else if (target !== null) {
-      // 実らせんの組は締結の穴の枠だけのもの。合致・溶接へは渡さない。
-      const accepted = state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target)
+      // 実らせんの組は締結の穴の枠だけのもの。合致・溶接へは渡さない。フレームの辺を選ぶ途中は、辺の一覧のチェックを入れ替える。
+      const accepted = state.frameEdgePick !== null ? target.kind !== 'modeledThreadGroup' && state.toggleFrameEdgePick(assemblyTargetId(target))
+        : state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target)
         : target.kind === 'modeledThreadGroup' ? false
           : state.assemblyFilletWeldDraft !== null ? state.pickFilletWeldTarget(target) : addMateTarget(target);
       if (observation !== undefined) observation.addAccepted = accepted;
@@ -536,8 +547,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     } else {
       // 失効で片付けたままの表示(BUG.VIEW-PICK-NULL)の拾いの null は「何も無い所を押した」証拠ではない。
       // 古い表示の部品を選ばず、選択も空にしない(押下を断る。作り直しは表示の持ち主の取り直しが行う)。
-      if (scene.assemblyDisplayInvalidated?.() !== true && state.assemblyMateDraft === null && state.assemblyBoltedJointDraft === null
-        && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null) state.setSelection([]);
+      if (scene.assemblyDisplayInvalidated?.() !== true && !pickDraftActive(state)) state.setSelection([]);
       reportMateInput(observation, dragInput);
     }
   };
@@ -548,9 +558,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const observation: AssemblyMateInputObservation | undefined = dragInput?.observeMateInput === undefined ? undefined : {
       eventTimeMs: event.timeStamp, clientPoint: [event.clientX, event.clientY], button: event.button, altKey: event.altKey,
       draftBefore: before.assemblyMateDraft?.targets.length ?? null,
-      ...(before.selectionKind === 'body' && before.assemblyMateDraft === null
-        && before.assemblyBoltedJointDraft === null && before.assemblyFilletWeldDraft === null && before.assemblyCircularWeldDraft === null
-        ? { componentPick: {} } : {}),
+      ...(before.selectionKind === 'body' && !pickDraftActive(before) ? { componentPick: {} } : {}),
     };
     event.stopImmediatePropagation();
     if (event.button !== 0 || event.altKey) {
@@ -561,8 +569,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     event.preventDefault();
     canvas.focus({ preventScroll: true });
     const state = useAppStore.getState();
-    const bodySelection = state.selectionKind === 'body' && state.assemblyMateDraft === null
-      && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null;
+    const bodySelection = state.selectionKind === 'body' && !pickDraftActive(state);
     // 部品の選択も同じ公開形状の所有証明が戻るまで保留し、失効した表示で空選択にしない。
     if (dragInput?.prepareMateInput !== undefined && state.assemblyView !== null
       && state.assemblyPlacement === null && !state.isComputing

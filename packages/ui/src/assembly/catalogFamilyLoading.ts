@@ -38,16 +38,17 @@ export async function ensureDocumentCatalogFamilies(sources: Iterable<StandardPa
   }
 }
 
-/** 選ぶ画面の族の表の状態。'none' は登録された族が無い時(画面には何も出さない)。 */
+/** 選ぶ画面の族の表の状態。'none' はその分類に登録された族が無い時(画面には何も出さない)。 */
 export type CatalogLoadState = 'none' | 'loading' | 'ready' | 'failed';
 
 /**
- * 登録口の全ての族を読み込み、状態を「読み込み中 → 済み／失敗」の順に知らせる。読み込み済みなら待たずに「済み」。
- * `alive()` が偽になった後(窓を閉じた後)は、終わっても知らせない。
+ * 選ぶ画面で選んだ族の分類(機械要素・アルミフレーム)の族だけを読み込み、状態を「読み込み中 → 済み／失敗」の順に知らせる。
+ * 窓を開いた時に全部の族を読まない(族が増えても開く時が重くならないように。統括の決定 2026-11-17)。読み込み済みなら待たずに「済み」。
+ * `alive()` が偽になった後(窓を閉じた・分類を替えた後)は、終わっても知らせない。
  */
 export async function loadRegisteredCatalogFamilies(registry: CatalogRegistry,
-  report: (state: CatalogLoadState) => void, alive: () => boolean): Promise<void> {
-  const ids = registry.entries.map((entry) => entry.id);
+  report: (state: CatalogLoadState) => void, alive: () => boolean, group: string): Promise<void> {
+  const ids = registry.entries.filter((entry) => entry.group === group).map((entry) => entry.id);
   if (ids.length === 0) { report('none'); return; }
   if (ids.every((id) => registry.loaded(id) !== undefined)) { report('ready'); return; }
   report('loading');

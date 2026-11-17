@@ -581,4 +581,18 @@ describe('資料 SF-1 の溝つきフレームと形材の行の注記', () => {
     expect(withFrames.slice(total + 1, total + 3).map((row) => [row[5], row[11]])).toEqual([
       ['溝幅 6 20×20', '単位質量 0.49 kg/m（内側の形は簡略）'], ['フラットバー 20×5', '単位質量 0.27 kg/m']]);
   });
+
+  it('形の扱いの列は、実物どおりの断面の形材の行が「資料の寸法どおりの断面」、溝つき・ナットの素材の行が「簡略の形」(簡略にした所を添える)', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-s6', 'aluminum-flat-bar', 't-slot-nut-bar']);
+    const slot = createStandardPartSource('catalogItem', '溝幅 6 20×20', { family: 't-slot-frame-s6', item: 's6-20x20', length: '500' });
+    const bar = createStandardPartSource('catalogItem', 'フラットバー 20×5', { family: 'aluminum-flat-bar', item: 'fb-20x5', length: '400' });
+    const nutBar = createStandardPartSource('catalogItem', 'T 溝用ナットの素材 溝幅 8（先入れ・鋼）', { family: 't-slot-nut-bar',
+      item: 's8-pre-steel', length: '450' });
+    const rows = exported(productSource('SS400', 'flatBar', 'FB 50×6'), slot, bar, nutBar);
+    const total = rows.findIndex((row) => row[0] === t('assembly.steel.stockTotal'));
+    expect(rows.slice(total + 1, total + 4).map((row) => [row[5], row[11], row[16]])).toEqual([
+      ['溝幅 6 20×20', '単位質量 0.49 kg/m（内側の形は簡略）', t('catalog.stock.geometrySimplified')],
+      ['フラットバー 20×5', '単位質量 0.27 kg/m', t('catalog.stock.geometrySource')],
+      ['T 溝用ナットの素材 溝幅 8（先入れ・鋼）', '単位質量 0.653 kg/m（内側の形は簡略）', `${t('catalog.stock.geometrySimplified')}: 頭の斜面`]]);
+  });
 });

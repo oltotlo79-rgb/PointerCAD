@@ -79,4 +79,28 @@ describe('アルミフレームの族の部品の保存と開き直し', () => {
       expect(resolved.parts.size).toBe(sources.length);
     }
   });
+
+  it('資料 SF-1 の部品の 9 族(ナットの素材・ナット・丸ナット・端のキャップ・平板のブラケット・平板の L・T・十字・L 形のブラケット・ベースの板・アジャスター)の全部の行を置いた文書は、JSON と ZIP で開き直しても同じで、全部組める', async () => {
+    const families = ['t-slot-nut-bar', 't-slot-nut', 't-slot-round-nut', 't-slot-frame-cap', 't-slot-flat-plate', 't-slot-shaped-plate',
+      't-slot-angle-bracket', 't-slot-foot-base', 't-slot-adjuster'];
+    await PRODUCT_CATALOG_REGISTRY.ensure(families);
+    // 長さの欄はナットの素材(棒材)だけが持つ。ほかの族は保存の形に長さを書かない。
+    const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
+      'catalogItem', row.size, family === 't-slot-nut-bar' ? { family, item: row.key, length: '120' } : { family, item: row.key })) ?? []);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([12, 50, 4, 51, 11, 15, 42, 14, 4]);
+    let document: AssemblyDocument = createAssemblyDocument('資料 SF-1 の部品の保存');
+    for (const source of sources) document = addComponent(document, createComponentFor(document, source));
+    const text = writeAssemblyDocument(document, SAVE_OPTIONS);
+    const bytes = await writePcadaFile(document, SAVE_OPTIONS);
+    const json = readAssemblyDocument(text);
+    const zip = await readPcadaFile(bytes);
+    if (!json.ok || !zip.ok) throw new Error('reopen failed');
+    for (const reopened of [json.document, zip.document]) {
+      expect(reopened).toEqual(document);
+      expect(writeAssemblyDocument(reopened, SAVE_OPTIONS)).toBe(text);
+      const resolved = resolveAssembly(reopened, { standardPart: buildStandardPartFromSource });
+      expect(resolved.errors).toEqual([]);
+      expect(resolved.parts.size).toBe(sources.length);
+    }
+  });
 });

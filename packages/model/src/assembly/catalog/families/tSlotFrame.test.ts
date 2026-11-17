@@ -33,8 +33,11 @@ describe('E-03 汎用の T スロットフレーム', () => {
     expect([T_SLOT_FRAME_FAMILY.id, T_SLOT_FRAME_FAMILY.group, T_SLOT_FRAME_FAMILY.kindKey, T_SLOT_FRAME_FAMILY.catalogRevision,
       T_SLOT_FRAME_FAMILY.generatorRevision, T_SLOT_FRAME_FAMILY.stock, T_SLOT_FRAME_FAMILY.diagram]).toEqual(['t-slot-frame-specified',
       'aluminumFrame', 'catalog.frame.kind.tSlotSpecified', 't-slot-frame-specified-2026-11-r1', 't-slot-1', 'linear', 'tSlotFrame']);
-    expect(T_SLOT_FRAME_FAMILY.options.map((spec) => [spec.key, spec.kind, spec.min, spec.max, spec.defaultValue]))
+    // 最後の 2 つは一括配置の留めの任意の欄(J-01 包み 5。miterOption.test.ts)。
+    expect(T_SLOT_FRAME_FAMILY.options.filter((spec) => spec.optional !== true)
+      .map((spec) => [spec.key, spec.kind, spec.min, spec.max, spec.defaultValue]))
       .toEqual(Object.entries(DEFAULTS).map(([key, value]) => [key, 'lengthExpression', undefined, undefined, value]));
+    expect(T_SLOT_FRAME_FAMILY.options.map((spec) => spec.key).slice(-2)).toEqual(['startMiter', 'endMiter']);
     expect(T_SLOT_FRAME_FAMILY.rows.map((row) => [row.key, row.size, row.standardLabel, row.materialLabel, row.densityMaterialId,
       row.verification, row.verified, Object.keys(row.dims).length])).toEqual([['specified', '寸法指定', '寸法指定(規格の行ではない)',
       'アルミ', 'aluminum', 'unverified', false, 0]]);

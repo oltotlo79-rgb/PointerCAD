@@ -10,12 +10,15 @@ import { useAppStore } from '../store/useAppStore.js';
 import { formatBomMass } from './bomTableRows.js';
 import { familyKindKey } from './catalogFamilyChoices.js';
 import { StockCuttingFields } from './StockCuttingFields.js';
-import { catalogStockCuttingRows } from './stockCuttingView.js';
+import { catalogMiterNote, catalogStockCuttingRows } from './stockCuttingView.js';
 
-/** 表の 1 行の文字(種類・呼び・長さ・本数・合計の長さ・合計の質量)。 */
+/**
+ * 表の 1 行の文字(種類・呼び・長さ・本数・合計の長さ・合計の質量)。留めの部材は呼びに「留め 45° の端の数・長さは長い側」を添える
+ * (J-01 包み 5。留めの無い行の文字は前と同じ)。
+ */
 function catalogStockCells(row: SteelStockList['catalogRows'][number]): readonly string[] {
-  return [t(familyKindKey(row.kindKey)), row.size, String(row.lengthMm), String(row.quantity), String(row.totalLengthMm),
-    formatBomMass(row.massTotalG)];
+  return [t(familyKindKey(row.kindKey)), row.size + catalogMiterNote(row), String(row.lengthMm), String(row.quantity),
+    String(row.totalLengthMm), formatBomMass(row.massTotalG)];
 }
 
 export function CatalogStockTable(): React.JSX.Element | null {

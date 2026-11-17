@@ -12,7 +12,7 @@ import {
 import { useCatalogFamilies } from './CatalogLoadStatus.js';
 import { FrameLayoutDetails } from './FrameLayoutDetails.js';
 import { StockCuttingFields } from './StockCuttingFields.js';
-import { steelStockCuttingRows } from './stockCuttingView.js';
+import { catalogMiterNote, steelStockCuttingRows } from './stockCuttingView.js';
 import { pickerFormProps } from './pickerFormHandlers.js';
 import { SteelBendEditForm, SteelBendFields } from './SteelBendFields.js';
 import { beginSteelBendPlacement, buildSteelBendChoice, DEFAULT_STEEL_BEND_SOURCES,
@@ -120,7 +120,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
   const [csvStatus, setCsvStatus] = useState('');
   const [stockOpen, setStockOpen] = useState(false);
   const [bendEdit, setBendEdit] = useState<SteelBendEditTarget | null>(null);
-  const catalogState = useCatalogFamilies(open);
+  const catalogState = useCatalogFamilies(open, familyPickerCategory(category));
 
   useEffect(() => {
     composing.current = false;
@@ -404,7 +404,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
                 <th scope="col">{t('assembly.steel.csv.generatorRevision')}</th>
               </tr></thead>
               <tbody>{stock.rows.map((row) => <tr key={row.key}>
-                <td>{row.product.materialGrade}</td><td>{row.product.size}</td>
+                <td>{row.product.materialGrade}</td><td>{row.product.size + catalogMiterNote(row)}</td>
                 <td>{row.lengthMm}</td><td>{row.finishedLengthMm ?? t('assembly.steel.finishedUnknown')}</td><td>{row.quantity}</td><td>{row.totalLengthMm}</td>
                 <td>{row.catalogRevision}</td><td>{row.generatorRevision}</td>
               </tr>)}</tbody>

@@ -39,7 +39,7 @@ import {
 } from './partPrimitives.js';
 import { findChannel, findEqualAngle, findHBeam } from './sections.js';
 import {
-  ALL_STEEL_PRODUCTS, findSteelProduct, hasSteelOptions, isSteelCatalogRevision, LEGACY_STEEL_GENERATOR_REVISION,
+  ALL_STEEL_PRODUCTS, findSteelProduct, hasSteelOptions, isSteelCatalogRevision, LEGACY_STEEL_GENERATOR_REVISION, steelMiterField,
   STEEL_CATALOG_REVISION, STEEL_GENERATOR_REVISION, STEEL_MATERIAL_GRADES, STEEL_R2_MATERIAL_GRADES,
   steelLength, steelProductCatalogRevision, steelProductOptions, steelProducts, steelProductFromSource,
   type SteelMaterialGrade, type SteelProduct,
@@ -49,7 +49,9 @@ import {
 } from './steelGradeRules.js';
 import { STEEL_STANDARDS, type SteelStandardReference } from './steelStandards.js';
 import { buildProfileSection } from './profileExtrusion.js';
+import { applyMiterCuts, miterEndsOf } from './profileMiter.js';
 import { steelCatalogProfile } from './steelProfiles/steelCatalogProfile.js';
+import { steelSectionBounds } from './steelSectionBounds.js';
 import { buildFilletWeldPart, filletWeldLegs, filletWeldNominalVolume, filletWeldOptionAngle } from '../welding/filletWeldPart.js';
 import { buildCircularFilletWeldPartFromSource, CIRCULAR_FILLET_WELD_GENERATOR_REVISION } from '../welding/circularFilletWeldSource.js';
 import { cylindricalWeldSection } from '../welding/cylindricalWeld.js';
@@ -399,10 +401,21 @@ function buildHBeam(
   ], length);
 }
 
+/**
+ * 鋼材の形。留めの欄(J-01 包み 6)があれば、押し出した形の端を留めの 45° に切る(切る面は断面の外形 `steelSectionBounds` の
+ * 中心で決まる)。留めの欄の無い部材の形は前と同じ。
+ */
 function buildSteelProduct(row: SteelProduct, options: Readonly<Record<string, string>>,
   revision: string = STEEL_GENERATOR_REVISION): PartDocument | null {
   const length = steelLength(options.length ?? DEFAULT_STANDARD_SECTION_LENGTH);
   if (length === null) return null;
+  const document = buildSteelStock(row, options, revision, length);
+  const cuts = miterEndsOf(options);
+  return document === null || cuts.length === 0 ? document : applyMiterCuts(document, steelSectionBounds(row), cuts, length.value);
+}
+
+function buildSteelStock(row: SteelProduct, options: Readonly<Record<string, string>>, revision: string,
+  length: ExpressionValue): PartDocument | null {
   let document: PartDocument | null = null;
   if (revision === STEEL_GENERATOR_REVISION && row.geometry === 'profileSection') {
     const section = steelCatalogProfile(row.catalog, row.size);
@@ -578,7 +591,8 @@ function steelBasisText(basis: readonly SteelStandardReference[]): string {
 
 function mismatchedSteelFields(row: SteelProduct, options: Readonly<Record<string, string>>): readonly string[] {
   const canonical = steelProductOptions(row);
-  return [...new Set([...Object.keys(canonical), ...Object.keys(options).filter((key) => key !== 'length')])]
+  // 長さと留めの欄(J-01 包み 6)は行の指定ではないので、値が正しい時は合わない欄に数えない。
+  return [...new Set([...Object.keys(canonical), ...Object.keys(options).filter((key) => key !== 'length' && !steelMiterField(key, options[key]))])]
     .filter((key) => options[key] !== canonical[key]).sort();
 }
 

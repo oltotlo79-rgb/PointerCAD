@@ -11,13 +11,15 @@ import type { CurrentOriginIndex, HoleFaceOrigin, HoleThreadGrooveOrigin, Origin
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import type { MateSubShapeGeometry, SolidBody, SubShapeReferenceResolution } from '../../kernelBridge.js';
 import type { PartDocument } from '../../part/types.js';
-import { addVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
+import { addVec3, cleanZeroVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import { findComponent } from '../assemblyEdit.js';
 import type { AssemblyComponent, AssemblyDocument } from '../types.js';
 import { componentSourceKey } from './frames.js';
+import { bindHoleEntry } from './bindHoleEntry.js';
+import type { EntryHoleSelection } from './holeEntryTypes.js';
 import {
   type BoltedJointRejection, FASTENING_DIRECTION_TOLERANCE, FASTENING_LENGTH_TOLERANCE_MM,
-  type FasteningHoleSelection, type FasteningHoleSpec,
+  type FasteningHoleSpec,
 } from './types.js';
 
 /**
@@ -384,11 +386,11 @@ function wallMismatch(wall: HoleWallOrigin, featureId: string): BoltedJointRejec
 
 /**
  * 選んだものを現在の形へ結び付ける。合えば部品の局所座標の選択を返す。
- * 座ぐり・皿もみの入口がある穴は、円筒の端が合わせ面に載らないので `holeNotOnMatingFace` で断る。
+ * 座ぐり・皿もみは現在の入口面を照合し、円筒の範囲へ入口の深さを戻す。
  */
 export function bindHoleSelection(
   context: FasteningGeometryContext, pick: FasteningHolePick,
-): FasteningHoleSelection | BoltedJointRejection {
+): EntryHoleSelection | BoltedJointRejection {
   const component = findComponent(context.document, pick.componentId);
   if (component === undefined) return reject('componentMissing', { componentId: pick.componentId });
   if (component.suppressed) return reject('componentSuppressed', { componentId: component.id });
@@ -436,15 +438,19 @@ type HoleFeature = Extract<NonNullable<ReturnType<FasteningGeometryContext['part
 /** 結び直した円筒から、径・合わせ面・入口・ねじの範囲を確かめて選択を作る(面の選択と組の選択で同じ)。 */
 function boundSelection(
   context: FasteningGeometryContext, component: AssemblyComponent, pick: FasteningHolePick, feature: HoleFeature,
-  sourceKey: string, cylinder: BoundCylinder,
-): FasteningHoleSelection | BoltedJointRejection {
+  sourceKey: string, bore: BoundCylinder,
+): EntryHoleSelection | BoltedJointRejection {
   const drill = feature.kind === 'hole' ? feature.diameter.value : feature.drillDiameter.value;
-  if (!sameDiameter(cylinder.radius, drill)) {
-    return reject('holeFaceMismatch', { componentId: component.id, diameter: 2 * cylinder.radius, featureDiameter: drill });
+  if (!sameDiameter(bore.radius, drill)) {
+    return reject('holeFaceMismatch', { componentId: component.id, diameter: 2 * bore.radius, featureDiameter: drill });
   }
   const mating = context.resolveFace(component, pick.matingFace);
   const plane = mating.status === 'matched' ? planeOf(mating.geometry) : null;
   if (plane === null) return reject('matingFaceMissing', { componentId: component.id, status: mating.status });
+  const bodyId = pick.holeGroup === undefined ? pick.holeFace.bodyFeatureId : pick.holeGroup.bodyFeatureId;
+  const bound = bindHoleEntry(context, component, feature, bodyId, bore, plane);
+  if ('code' in bound) return bound;
+  const cylinder = bound.cylinder;
   if (Math.abs(dotVec3(cylinder.axis, plane.normal)) < 1 - FASTENING_DIRECTION_TOLERANCE) {
     return reject('faceAxisMismatch', { componentId: component.id, holeFeatureId: feature.id });
   }
@@ -467,6 +473,8 @@ function boundSelection(
   }
   return {
     componentId: component.id, sourceKey, holeFeatureId: feature.id, matingFace: pick.matingFace, hole,
-    axisOrigin: entry.origin, axisDirection: entry.into, matingFaceNormal: scaleVec3(entry.into, -1),
+    axisOrigin: entry.origin, axisDirection: bound.entry === undefined ? entry.into : cleanZeroVec3(entry.into),
+    matingFaceNormal: scaleVec3(entry.into, -1),
+    ...(bound.entry === undefined ? {} : { entry: bound.entry }),
   };
 }

@@ -63,12 +63,19 @@ const SPECIFIED_FAMILY_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], M
   slotNut: 'catalog.frame.nut.hint',
 };
 
+/** 資料の寸法に合わせたフレームの部品の族(行を選ぶ族。形は簡略)の説明の 1 行。行の文字に簡略の印を添える。 */
+const FRAME_PART_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], MessageKey>>> = {
+  tSlotNutBar: 'catalog.frame.nutBar.hint', tSlotNut: 'catalog.frame.catalogNut.hint', roundNut: 'catalog.frame.roundNut.hint',
+  frameCap: 'catalog.frame.cap.hint', flatPlate: 'catalog.frame.flatPlate.hint', shapedPlate: 'catalog.frame.shapedPlate.hint',
+  angleBracketCatalog: 'catalog.frame.angleBracketCatalog.hint', footBase: 'catalog.frame.footBase.hint', adjuster: 'catalog.frame.adjuster.hint',
+};
+
 /**
  * 族の指定の欄の説明の 1 行の鍵。長さを式で入れる族は「長さは自由に入力(規格の呼び長さとは名乗らない)」
  * (小ねじは頭の高さとの関係、ピンは面取りとの関係を添える)、寸法を指定して作るばねは形が作れる条件。どれでもない族は null。
  */
 export function familyHintKey(family: LoadedFamily): MessageKey | null {
-  const specified = SPECIFIED_FAMILY_HINTS[family.diagram];
+  const specified = SPECIFIED_FAMILY_HINTS[family.diagram] ?? FRAME_PART_HINTS[family.diagram];
   if (specified !== undefined) return specified;
   if (family.diagram === 'tSlotSeries') return 'catalog.frame.series.hint';
   if (family.diagram === 'bolt') {
@@ -139,6 +146,9 @@ export function catalogRowLabel(family: LoadedFamily, row: FamilyRow): string {
   }
   if (family.diagram === 'pin') return pinRowLabel(row);
   if (SPECIFIED_FAMILY_HINTS[family.diagram] !== undefined) return t('catalog.mechanical.row.spring');
+  if (FRAME_PART_HINTS[family.diagram] !== undefined && row.simplified !== undefined && row.simplified.length > 0) {
+    return fill(t('catalog.frame.row.simplified'), { size: row.size, parts: row.simplified.join('・') });
+  }
   if (family.diagram === 'tSlotSeries') {
     return fill(t('catalog.frame.row.series'), { size: row.size, opening: dims.slotOpening, inner: dims.slotInnerWidth,
       mass: dims.unitMassKgPerM });

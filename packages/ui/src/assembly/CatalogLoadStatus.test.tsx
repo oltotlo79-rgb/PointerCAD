@@ -61,30 +61,39 @@ describe('族の表の状態の 1 行', () => {
   });
 });
 
-describe('窓を開いた時に族の表を読み込む口', () => {
+describe('窓で族の分類を選んだ時に、その分類の族の表を読み込む口', () => {
   it('窓が閉じている間は読み込まない', () => {
     const { registry, ensure } = pendingRegistry(['a']);
-    expect(useCatalogFamilies(false, registry)).toBe('none');
-    expect(hooks.deps).toEqual([false, registry]);
+    expect(useCatalogFamilies(false, 'mechanical', registry)).toBe('none');
+    expect(hooks.deps).toEqual([false, 'mechanical', registry]);
     expect(hooks.effect?.()).toBeUndefined();
     expect(ensure).not.toHaveBeenCalled();
   });
 
+  it('従来の分類(六角ボルト・鋼材など。族の分類でない時)は、窓を開いていても族を 1 つも読まず なし のまま', async () => {
+    const { registry, ensure } = pendingRegistry(['a']);
+    expect(useCatalogFamilies(true, null, registry)).toBe('none');
+    expect(hooks.effect?.()).toBeUndefined();
+    await flush();
+    expect(ensure).not.toHaveBeenCalled();
+    expect(useCatalogFamilies(true, null, registry)).toBe('none');
+  });
+
   it('開くと 読み込み中 → 済み になる', async () => {
     const { registry, ensure, resolve } = pendingRegistry(['a', 'b']);
-    useCatalogFamilies(true, registry);
+    useCatalogFamilies(true, 'mechanical', registry);
     hooks.effect?.();
     expect(hooks.state).toBe('loading');
     expect(ensure).toHaveBeenCalledTimes(1);
     resolve();
     await flush();
     expect(hooks.state).toBe('ready');
-    expect(useCatalogFamilies(true, registry)).toBe('ready');
+    expect(useCatalogFamilies(true, 'mechanical', registry)).toBe('ready');
   });
 
   it('断られると 読み込み中 → 失敗 になる', async () => {
     const { registry, reject } = pendingRegistry(['a']);
-    useCatalogFamilies(true, registry);
+    useCatalogFamilies(true, 'mechanical', registry);
     hooks.effect?.();
     reject();
     await flush();
@@ -93,7 +102,7 @@ describe('窓を開いた時に族の表を読み込む口', () => {
 
   it('閉じた（効果の後始末の）後に終わった読み込みは状態を書かない', async () => {
     const { registry, resolve } = pendingRegistry(['a']);
-    useCatalogFamilies(true, registry);
+    useCatalogFamilies(true, 'mechanical', registry);
     const cleanup = hooks.effect?.();
     expect(hooks.state).toBe('loading');
     if (typeof cleanup !== 'function') throw new Error('expected a cleanup');
@@ -105,21 +114,27 @@ describe('窓を開いた時に族の表を読み込む口', () => {
 
   it('族の無い登録口では なし のままで、窓の見た目を変えない', async () => {
     const { registry, ensure } = pendingRegistry([]);
-    useCatalogFamilies(true, registry);
+    useCatalogFamilies(true, 'mechanical', registry);
     hooks.effect?.();
     await flush();
     expect(hooks.state).toBe('none');
     expect(ensure).not.toHaveBeenCalled();
   });
 
-  it('製品の登録口（K4a の族）では、開くと 読み込み中 → 済み になる', async () => {
-    expect(PRODUCT_CATALOG_REGISTRY.entries.length).toBeGreaterThan(0);
-    useCatalogFamilies(true);
-    expect(hooks.deps).toEqual([true, PRODUCT_CATALOG_REGISTRY]);
+  it('製品の登録口では、分類「アルミフレーム」を選ぶとその分類の族だけを読み 読み込み中 → 済み になり、機械要素の族は読まない', async () => {
+    const frames = PRODUCT_CATALOG_REGISTRY.entries.filter((entry) => entry.group === 'aluminumFrame').map((entry) => entry.id);
+    const mechanical = PRODUCT_CATALOG_REGISTRY.entries.filter((entry) => entry.group === 'mechanical').map((entry) => entry.id);
+    expect(frames.length).toBeGreaterThan(0);
+    expect(mechanical.length).toBeGreaterThan(0);
+    useCatalogFamilies(true, 'aluminumFrame');
+    expect(hooks.deps).toEqual([true, 'aluminumFrame', PRODUCT_CATALOG_REGISTRY]);
     hooks.effect?.();
     expect(hooks.state).toBe('loading');
-    await PRODUCT_CATALOG_REGISTRY.ensure(PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id));
+    await PRODUCT_CATALOG_REGISTRY.ensure(frames);
     await flush();
     expect(hooks.state).toBe('ready');
+    // 族の鍵の重なりの確かめ(読む時の catalogFamilyIssues)は読んだ族について働き、読んでいない機械要素の族は読まれていない。
+    expect(frames.every((id) => PRODUCT_CATALOG_REGISTRY.loaded(id) !== undefined)).toBe(true);
+    expect(mechanical.some((id) => PRODUCT_CATALOG_REGISTRY.loaded(id) !== undefined)).toBe(false);
   });
 });

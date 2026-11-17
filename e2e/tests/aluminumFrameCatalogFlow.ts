@@ -2,10 +2,11 @@
 import { writeFile } from 'node:fs/promises';
 import { expect, test as base, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { chooseToolMenuItem, readAssemblyStats, resetAssemblyFileGateway, twoBoxAssemblyFile } from './assemblyTestSupport.js';
-import { componentRows } from './boltedJointTestSupport.js';
+import { clickWorldPointChecked, componentRows, goHome } from './boltedJointTestSupport.js';
 import { disableFilePickers } from './filePickers.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
+import { chooseSteelFlatBar50x6 } from './steelPickerFlow.js';
 import { waitForStartupReady } from './startupHealth.js';
 import { uiMessage, uiMessagePattern } from './uiMessages.js';
 
@@ -29,6 +30,11 @@ const FRAME_KINDS: readonly (readonly [string, string])[] = [
   ['t-slot-frame-s10', 'catalog.frame.kind.tSlotS10'], ['aluminum-channel', 'catalog.frame.kind.channel'],
   ['aluminum-square-pipe', 'catalog.frame.kind.squarePipe'], ['aluminum-round-bar', 'catalog.frame.kind.roundBar'],
   ['aluminum-flat-bar', 'catalog.frame.kind.flatBar'], ['aluminum-angle', 'catalog.frame.kind.angle'],
+  ['t-slot-nut-bar', 'catalog.frame.kind.nutBar'], ['t-slot-nut', 'catalog.frame.kind.catalogNut'],
+  ['t-slot-round-nut', 'catalog.frame.kind.roundNut'], ['t-slot-frame-cap', 'catalog.frame.kind.cap'],
+  ['t-slot-flat-plate', 'catalog.frame.kind.flatPlate'], ['t-slot-shaped-plate', 'catalog.frame.kind.shapedPlate'],
+  ['t-slot-angle-bracket', 'catalog.frame.kind.angleBracketCatalog'], ['t-slot-foot-base', 'catalog.frame.kind.footBase'],
+  ['t-slot-adjuster', 'catalog.frame.kind.adjuster'],
 ];
 
 function picker(page: Page): Locator {
@@ -153,10 +159,12 @@ async function startAssembly(page: Page, app: ElectronApplication | undefined): 
   await expect(componentRows(page)).toHaveCount(0);
 }
 
-/** 予告の表の長さの列(線ごと)。 */
-async function previewLengths(layout: Locator): Promise<string[]> {
-  const rows = layout.locator('tbody tr');
-  return Promise.all((await rows.all()).map(row => row.locator('td').nth(1).innerText()));
+/**
+ * 予告の表の長さの列(線ごと)が `lengths` になるまで待って確かめる。角の扱いなどを替えた直後は行の数が同じまま中身だけが
+ * 描き直されるので、1 回だけ読んで比べず、Playwright の待つ形で確かめる。
+ */
+async function expectPreviewLengths(layout: Locator, lengths: readonly string[]): Promise<void> {
+  await expect(layout.locator('tbody tr td:nth-child(2)')).toHaveText([...lengths]);
 }
 
 /**
@@ -175,12 +183,12 @@ async function layoutRectangle(page: Page): Promise<Locator> {
     .fill(['0\t0\t0', '500\t0\t0', '500\t300\t0', '0\t300\t0'].join('\n'));
   await layout.getByRole('checkbox', { name: uiMessage('catalog', 'catalog.frameLayout.closed'), exact: true }).check();
   await expect(layout.locator('tbody tr')).toHaveCount(4);
-  expect(await previewLengths(layout)).toEqual(['520', '300', '500', '280']);
+  await expectPreviewLengths(layout, ['520', '300', '500', '280']);
   const swap = layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.swap'), exact: true });
   await expect(swap).toHaveCount(4);
   await swap.nth(1).click();
   await expect(layout.locator('tbody tr').nth(1).locator('td').nth(1)).toHaveText('320');
-  expect(await previewLengths(layout)).toEqual(['500', '320', '500', '280']);
+  await expectPreviewLengths(layout, ['500', '320', '500', '280']);
   await swap.nth(1).click();
   await expect(layout.locator('tbody tr').nth(1).locator('td').nth(1)).toHaveText('300');
   const token = await beginRecompute(page);
@@ -311,12 +319,139 @@ export function registerAluminumFrameCatalogTests(test: typeof base,
       // 角の扱いを「そのまま」にすると、4 本とも辺の長さ 20 で予告する。
       await choice(layout, 'catalog', 'catalog.frameLayout.corners').selectOption('none');
       await expect(layout.locator('tbody tr')).toHaveCount(4);
-      expect(await previewLengths(layout)).toEqual(['20', '20', '20', '20']);
+      await expectPreviewLengths(layout, ['20', '20', '20', '20']);
       const token = await beginRecompute(page);
       await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
       await waitForRecompute(page, token);
       await expect(layout.getByRole('status')).toHaveText(uiMessage('catalog', 'catalog.frameLayout.placed').replace('{count}', '4'));
       await expect(componentRows(page)).toHaveCount(6);
+      expect(errors).toEqual([]);
+    });
+
+    test('J-01 包み 4b 3D の画面で辺をクリックして選ぶ: 辺を読み込んだ後、画面の上の面の辺を押すと一覧のチェックが付き、もう一度押すと外れる', async ({ page }, info: TestInfo) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      const app = appForPage(page);
+      await startAssembly(page, app);
+      const fixturePath = info.outputPath('two-box-pick.pcada');
+      await writeFile(fixturePath, await twoBoxAssemblyFile(40));
+      await openSaveFlowFile(page, fixturePath, app);
+      await expect(componentRows(page)).toHaveCount(2);
+      await goHome(page);
+      await componentRows(page).nth(0).click();
+
+      const dialog = await openFramePicker(page);
+      await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption('t-slot-frame-series');
+      const layout = dialog.locator('details').filter({
+        has: page.locator('summary', { hasText: uiMessagePattern('catalog', 'catalog.frameLayout.title') }),
+      });
+      await layout.locator('summary').click();
+      await choice(layout, 'catalog', 'catalog.frameLayout.source').selectOption('edges');
+      await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.loadEdges'), exact: true }).click();
+      const edges = layout.getByRole('checkbox');
+      await expect(edges).toHaveCount(12);
+      // 一覧の行の「中点 (x, y, z)」(世界の座標)から、上の面の 4 辺の中点を読む。
+      const texts = await layout.locator('li').allInnerTexts();
+      const midpoints = texts.map((text): readonly [number, number, number] => {
+        const match = /\(([-0-9.]+),\s*([-0-9.]+),\s*([-0-9.]+)\)\s*$/u.exec(text);
+        return [Number(match?.[1]), Number(match?.[2]), Number(match?.[3])];
+      });
+      const top = Math.max(...midpoints.map(point => point[2]));
+      const topIndexes = midpoints.flatMap((point, index) => point[2] === top ? [index] : []);
+      expect(topIndexes).toHaveLength(4);
+      const [first, second] = topIndexes;
+      if (first === undefined || second === undefined) throw new Error('上の面の辺が 2 本ありません。');
+      // 画面で上の面の辺 2 本の中点を押すと、その 2 行だけにチェックが付く(合致の打ちかけは始まらない)。
+      for (const index of [first, second]) await clickWorldPointChecked(page, midpoints[index] ?? [0, 0, 0]);
+      await expect(edges.nth(first)).toBeChecked();
+      await expect(edges.nth(second)).toBeChecked();
+      await expect(layout.getByRole('checkbox', { checked: true })).toHaveCount(2);
+      // もう一度押すと外れる。
+      await clickWorldPointChecked(page, midpoints[first] ?? [0, 0, 0]);
+      await expect(edges.nth(first)).not.toBeChecked();
+      await expect(layout.getByRole('checkbox', { checked: true })).toHaveCount(1);
+      // 一覧のチェックと画面のクリックは同じチェックを入れ替える: 一覧で残りの 3 本を付けると 4 本になり、角を「そのまま」で 4 本を予告する。
+      for (const index of topIndexes) if (index !== second) await edges.nth(index).check();
+      await expect(layout.getByRole('checkbox', { checked: true })).toHaveCount(4);
+      await choice(layout, 'catalog', 'catalog.frameLayout.corners').selectOption('none');
+      await expect(layout.locator('tbody tr')).toHaveCount(4);
+      await expectPreviewLengths(layout, ['20', '20', '20', '20']);
+      expect(errors).toEqual([]);
+    });
+
+    test('J-01 包み 5 留め: 貼り付けた長方形を留めで並べると 4 本とも長い側 520・320 で、切断の一覧に留めの印が出て、保存・開き直しで同じ', async ({ page }, info: TestInfo) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      const app = appForPage(page);
+      await startAssembly(page, app);
+      const dialog = await openFramePicker(page);
+      await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption('t-slot-frame-series');
+      await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption('s6-20x20');
+      const layout = dialog.locator('details').filter({
+        has: page.locator('summary', { hasText: uiMessagePattern('catalog', 'catalog.frameLayout.title') }),
+      });
+      await layout.locator('summary').click();
+      await layout.getByRole('textbox', { name: uiMessage('catalog', 'catalog.frameLayout.points'), exact: true })
+        .fill(['0\t0\t0', '500\t0\t0', '500\t300\t0', '0\t300\t0'].join('\n'));
+      await layout.getByRole('checkbox', { name: uiMessage('catalog', 'catalog.frameLayout.closed'), exact: true }).check();
+      await choice(layout, 'catalog', 'catalog.frameLayout.corners').selectOption('miter');
+      // 両方を相手の外の面まで 10 伸ばす(断面 20×20 の半分。手で解いた値)ので、長い側は外形 520×320 の辺の長さ。
+      await expect(layout.locator('tbody tr')).toHaveCount(4);
+      await expectPreviewLengths(layout, ['520', '320', '520', '320']);
+      await expect(layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.swap'), exact: true })).toHaveCount(0);
+      const token = await beginRecompute(page);
+      await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
+      await waitForRecompute(page, token);
+      await expect(layout.getByRole('status')).toHaveText(uiMessage('catalog', 'catalog.frameLayout.placed').replace('{count}', '4'));
+      await expect(componentRows(page)).toHaveCount(4);
+      const note = uiMessage('catalog', 'catalog.stock.miterNote').replace('{count}', '2');
+      const stock = await stockRows(dialog, 2);
+      expect(stock.map(row => row.slice(1, 5))).toEqual([[`溝幅 6 20×20${note}`, '520', '2', '1040'], [`溝幅 6 20×20${note}`, '320', '2', '640']]);
+      await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.close'), exact: true }).click();
+
+      const savedPath = info.outputPath('frame-miter.pcada');
+      await saveFlowFile(page, savedPath, app);
+      await openSaveFlowFile(page, savedPath, app);
+      await expect(componentRows(page)).toHaveCount(4);
+      expect(await stockRows(await openFramePicker(page), 2)).toEqual(stock);
+      expect(errors).toEqual([]);
+    });
+
+    test('J-01 包み 6 鋼材の留め: 平鋼 50×6 で貼り付けた長方形を留めで並べると 4 本とも長い側 550・350 で、鋼材の切断の一覧に留めの印が出る', async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      const app = appForPage(page);
+      await startAssembly(page, app);
+      await chooseToolMenuItem(page, uiMessage('assembly', 'assembly.menu.build'), uiMessage('assembly', 'assembly.tool.placeStandardPart'));
+      const dialog = picker(page);
+      await expect(dialog).toBeVisible();
+      await dialog.getByTitle(uiMessage('assembly', 'assembly.guide.standardCategory'), { exact: true }).selectOption('structuralSection');
+      await chooseSteelFlatBar50x6(dialog, { grade: 'SS400', size: 'FB 50×6', condition: '熱間圧延材・熱処理条件未指定' });
+      const layout = dialog.locator('details').filter({
+        has: page.locator('summary', { hasText: uiMessagePattern('catalog', 'catalog.frameLayout.title') }),
+      });
+      await layout.locator('summary').click();
+      await layout.getByRole('textbox', { name: uiMessage('catalog', 'catalog.frameLayout.points'), exact: true })
+        .fill(['0\t0\t0', '500\t0\t0', '500\t300\t0', '0\t300\t0'].join('\n'));
+      await layout.getByRole('checkbox', { name: uiMessage('catalog', 'catalog.frameLayout.closed'), exact: true }).check();
+      await choice(layout, 'catalog', 'catalog.frameLayout.corners').selectOption('miter');
+      // 平鋼の幅 50 が枠の面の中に入るので、両方を相手の外の面まで 25 伸ばす(手で解いた値)。
+      await expect(layout.locator('tbody tr')).toHaveCount(4);
+      await expectPreviewLengths(layout, ['550', '350', '550', '350']);
+      const token = await beginRecompute(page);
+      await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
+      await waitForRecompute(page, token);
+      await expect(layout.getByRole('status')).toHaveText(uiMessage('catalog', 'catalog.frameLayout.placed').replace('{count}', '4'));
+      await expect(componentRows(page)).toHaveCount(4);
+      const stock = dialog.locator('details').filter({
+        has: page.locator('summary', { hasText: uiMessagePattern('assembly', 'assembly.steel.stockList') }),
+      });
+      if (await stock.getAttribute('open') === null) await stock.locator('summary').click();
+      const note = uiMessage('catalog', 'catalog.stock.miterNote').replace('{count}', '2');
+      // 表は置いた後の組み直しで描き直されるので、行が出るのを待ってから読む(読む時の一瞬の空の表を拾わない)。
+      await expect(stock.locator('tbody tr')).toHaveCount(2);
+      await expect(stock.locator('tbody tr td:nth-child(2)')).toHaveText([`FB 50×6${note}`, `FB 50×6${note}`]);
+      await expect(stock.locator('tbody tr td:nth-child(3)')).toHaveText(['550', '350']);
       expect(errors).toEqual([]);
     });
   });

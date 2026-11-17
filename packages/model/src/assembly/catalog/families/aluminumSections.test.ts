@@ -71,8 +71,9 @@ function printedTolerance(value: number): number {
 
 describe('資料 SF-1 の共通フレームの 5 族', () => {
   it('族は種類ごとに 5 つで、版・欄・線図を凍結し、行は規格の行を名乗らず出どころは資料の番号と表の頁だけ', () => {
+    // 欄は任意の留めの欄(J-01 包み 5・6。miterOption.test.ts)を除いて凍結する。
     expect(KINDS.map((kind) => FAMILIES[kind]).map((family) => [family.id, family.group, family.kindKey, family.catalogRevision,
-      family.generatorRevision, family.stock, family.diagram, family.options.map((spec) => spec.key)]))
+      family.generatorRevision, family.stock, family.diagram, family.options.filter((spec) => spec.optional !== true).map((spec) => spec.key)]))
       .toEqual([
         ['aluminum-channel', 'aluminumFrame', 'catalog.frame.kind.channel', 'aluminum-channel-2026-11-r1', 'aluminum-section-1', 'linear',
           'channel', ['length']],

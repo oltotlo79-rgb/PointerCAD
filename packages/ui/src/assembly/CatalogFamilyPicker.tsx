@@ -1,6 +1,7 @@
 /**
  * 選ぶ窓の族の分類(「機械要素」「アルミフレーム」。登録口の族)の中身: 分類 → 種類 → 材質(行の材質が 2 つ以上ある族だけ) → 呼び →
- * 長さなどの指定 → 置く(設計 §5.6 の最小の所)。族の表は窓を開いた時に登録口が読み込み(`useCatalogFamilies`)、読み込みの状態の 1 行をここに出す。
+ * 長さなどの指定 → 置く(設計 §5.6 の最小の所)。族の表はこの分類を選んだ時にその分類の分だけ登録口が読み込み(`useCatalogFamilies`)、
+ * 読み込みの状態の 1 行をここに出す。
  * 長さを持つ族(フレームなど)は、置いた部品の切断の一覧の表(`CatalogStockTable`)も出す。
  * 置いた後も窓と選択を残し、Enter でもう 1 個置ける(今の規格部品の窓と同じ。NFR-UX-4)。
  */
@@ -34,10 +35,14 @@ export interface CatalogFamilyPickerProps {
   readonly categoryOptions: readonly React.JSX.Element[];
 }
 
-/** 族の長さなどの指定の欄(式の欄は入力、選択肢の欄は選ぶ欄)。入れていない欄は選んだ行の既定の値を出す。 */
+/**
+ * 族の長さなどの指定の欄(式の欄は入力、選択肢の欄は選ぶ欄)。入れていない欄は選んだ行の既定の値を出す。
+ * 任意の欄(フレームの留め)は一括配置だけが書くので、ここには出さない。
+ */
 function optionFields(family: LoadedFamily, row: LoadedFamily['rows'][number] | undefined, values: Readonly<Record<string, string>>,
   invalid: boolean, change: (key: string, value: string) => void): React.JSX.Element[] {
-  return family.options.map((spec) => <label key={spec.key} className={'pcad-field' + (invalid ? ' pcad-field--error' : '')}>
+  return family.options.filter((spec) => spec.optional !== true).map((spec) => <label key={spec.key}
+    className={'pcad-field' + (invalid ? ' pcad-field--error' : '')}>
     <span className="pcad-field__label">{t(messageKeyOr(spec.labelKey, 'catalog.mechanical.length'))}</span>
     {spec.kind === 'choice' ? <select title={t('catalog.mechanical.optionGuide')} className="pcad-field__input"
       value={values[spec.key] ?? optionDefault(spec, row)} onChange={(event) => { change(spec.key, event.currentTarget.value); }}>

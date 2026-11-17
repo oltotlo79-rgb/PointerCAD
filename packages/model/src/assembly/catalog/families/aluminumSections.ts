@@ -6,9 +6,9 @@
  * 形は表の寸法で作る実物どおりの断面(角の丸みは表に記入が無く、表の値も角の丸み無しの形と合う。`profiles/aluminumSection.ts`)。
  * 質量は行の単位質量 × 長さ(`nominalMassG`。表の値)。Ix・Iy・Zx・Zy は表の値を持つ(表示と記録用)。
  */
-import { buildProfileSection } from '../../standard/profileExtrusion.js';
 import { withName } from '../../standard/partPrimitives.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
+import { buildMiteredSection, MITER_OPTION_SPECS, miteredMassLength, miteredSectionVolume } from '../miterOption.js';
 import { aluminumSectionBounds, aluminumSectionProfile, type AluminumSection } from '../profiles/aluminumSection.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { ALUMINUM_SECTION_RECORDS } from './frameCatalogRows.js';
@@ -84,7 +84,8 @@ function familyOf(kind: SectionKind, rows: readonly CatalogItemRow[]): CatalogFa
     kindKey,
     catalogRevision: `${id}-2026-11-r1`,
     generatorRevision: 'aluminum-section-1',
-    options: [lengthOptionSpec('1000')],
+    // 留めの欄は一括配置の留めの角だけが書く任意の欄(J-01 包み 5・6。miterOption.ts)。
+    options: [lengthOptionSpec('1000'), ...MITER_OPTION_SPECS],
     stock: 'linear',
     diagram,
     rows,
@@ -92,18 +93,22 @@ function familyOf(kind: SectionKind, rows: readonly CatalogItemRow[]): CatalogFa
       const profile = aluminumSectionProfile(sectionOf(kind, row));
       const length = lengthOf(values);
       if (profile === null || length === null || !(length.value > 0)) return null;
-      return withName(buildProfileSection(profile, length), partName(row, values));
+      const document = buildMiteredSection(profile, length, aluminumSectionBounds(sectionOf(kind, row)), values);
+      return document === null ? null : withName(document, partName(row, values));
     },
     nominalVolume: (row, values) => {
       const profile = aluminumSectionProfile(sectionOf(kind, row));
       const length = lengthOf(values)?.value ?? NaN;
-      return profile === null || !(length > 0) ? null : profile.areaMm2 * length;
+      return profile === null || !(length > 0) ? null
+        : miteredSectionVolume(profile, aluminumSectionBounds(sectionOf(kind, row)), values, length);
     },
-    // 単位質量(kg/m)× 長さ(mm)= 質量(g)。
+    // 単位質量(kg/m)× 長さ(mm)= 質量(g)。留めの部材の長さは、留めを引いた後の体積 ÷ 断面積(miterOption.ts)。
     nominalMassG: (row, values) => {
       const length = lengthOf(values)?.value ?? NaN;
       const unitMass = row.dims.unitMassKgPerM ?? NaN;
-      return length > 0 && unitMass > 0 ? unitMass * length : null;
+      const massLength = length > 0 ? miteredMassLength(aluminumSectionProfile(sectionOf(kind, row)),
+        aluminumSectionBounds(sectionOf(kind, row)), values, length) : null;
+      return massLength !== null && unitMass > 0 ? unitMass * massLength : null;
     },
     sectionBounds: (row) => aluminumSectionBounds(sectionOf(kind, row)),
     partName,

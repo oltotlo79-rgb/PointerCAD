@@ -1,5 +1,6 @@
 import type { PartDocument } from '../../part/types.js';
 import { steelFinishedLength } from './steelFinishedLength.js';
+import { miterEndsOf } from './profileMiter.js';
 import type { AssemblyDocument } from '../types.js';
 import { MAX_SUB_ASSEMBLY_DEPTH } from '../resolveAssembly.js';
 import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry } from '../catalog/registry.js';
@@ -22,6 +23,8 @@ export interface SteelStockRow {
   readonly componentIds: readonly string[];
   /** Component ids at each level, as in BOM; ids containing '/' remain unambiguous. */
   readonly occurrencePaths: readonly (readonly string[])[];
+  /** 留めで 45° に切った端の数(0〜2。J-01 包み 6)。`lengthMm` は長い側の長さ(切る前の棒の長さ)。 */
+  readonly miterEnds: number;
 }
 export interface SteelStockList {
   readonly rows: readonly SteelStockRow[];
@@ -123,14 +126,17 @@ export function buildSteelStockList(assembly: AssemblyDocument,
       // A part lengthened past its purchased stock cannot be cut from it; never report that length as finished.
       const finishedLengthMm = proved !== null && proved > length.value + 1e-9 * Math.max(1, length.value)
         ? null : proved;
-      const key = `${product.key}@${source.catalogRevision}/${source.generatorRevision}:${length.value}:finished:${finishedLengthMm ?? 'unknown'}`;
+      // 留めの部材は留めの向きごとに別の行に束ねる(留めの無い部材の鍵は前と同じ)。
+      const miterEnds = miterEndsOf(source.options).length;
+      const miterKey = miterEnds === 0 ? '' : `:miter=${source.options.startMiter ?? 'none'}/${source.options.endMiter ?? 'none'}`;
+      const key = `${product.key}@${source.catalogRevision}/${source.generatorRevision}:${length.value}:finished:${finishedLengthMm ?? 'unknown'}${miterKey}`;
       const current = groups.get(key);
       const quantity = (current?.quantity ?? 0) + 1;
       groups.set(key, { key, product, catalogRevision: source.catalogRevision, generatorRevision: source.generatorRevision,
         lengthMm: length.value, finishedLengthMm, quantity,
         totalLengthMm: length.value * quantity,
         componentIds: [...(current?.componentIds ?? []), component.id],
-        occurrencePaths: [...(current?.occurrencePaths ?? []), occurrencePath] });
+        occurrencePaths: [...(current?.occurrencePaths ?? []), occurrencePath], miterEnds });
     }
   };
   visit(assembly, [], [], []);

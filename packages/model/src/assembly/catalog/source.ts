@@ -54,7 +54,7 @@ function resolveCatalogItem(source: StandardPartSource, registry: CatalogRegistr
   const allowed = new Set([FAMILY_KEY, ITEM_KEY, ...family.options.map((spec) => spec.key)]);
   const fields = [
     ...Object.keys(source.options).filter((key) => !allowed.has(key)),
-    ...family.options.filter((spec) => !Object.hasOwn(source.options, spec.key)).map((spec) => spec.key),
+    ...family.options.filter((spec) => spec.optional !== true && !Object.hasOwn(source.options, spec.key)).map((spec) => spec.key),
     ...(source.size === row.size ? [] : ['size']),
   ];
   if (fields.length > 0) return rejected('saved-fields-mismatch', fields);
@@ -67,10 +67,14 @@ function resolveCatalogItem(source: StandardPartSource, registry: CatalogRegistr
 /** 新しく置く族の部品の保存の形。選ぶ画面は読み込んだ族と行から、必ずここで作る(版の書き忘れを起こさない)。 */
 export function createCatalogItemSource(family: CatalogFamily, row: CatalogItemRow,
   values: Readonly<Record<string, string>> = {}): StandardPartSource {
+  // 任意の欄(留め)は既定の値の時に書き出さない(欄を使わない部品の保存の形を、欄を足す前と同じにする)。
+  const written = family.options.flatMap((spec): (readonly [string, string])[] => {
+    const value = values[spec.key] ?? spec.rowDefault?.(row) ?? spec.defaultValue;
+    return spec.optional === true && value === spec.defaultValue ? [] : [[spec.key, value]];
+  });
   return {
     kind: 'standardPart', catalog: 'catalogItem', size: row.size,
-    options: { [FAMILY_KEY]: family.id, [ITEM_KEY]: row.key,
-      ...Object.fromEntries(family.options.map((spec) => [spec.key, values[spec.key] ?? spec.rowDefault?.(row) ?? spec.defaultValue])) },
+    options: { [FAMILY_KEY]: family.id, [ITEM_KEY]: row.key, ...Object.fromEntries(written) },
     catalogRevision: family.catalogRevision, generatorRevision: family.generatorRevision,
   };
 }

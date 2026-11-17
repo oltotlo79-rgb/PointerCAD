@@ -3,18 +3,19 @@
  * 点の表(貼り付けられる 1 行に X Y Z)・閉じる・断面の向き・角の扱い・伸ばす量から予告(1 本ごとの長さと角の扱い)を出し、
  * 「並べる」で店の動作(`placeFrameMembers`)へ渡す。欄の中身と予告は `frameLayoutInput.ts` の純関数。
  */
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { filterFrameEdges, frameEdgeChoices, type FrameEdgeFilter } from './frameEdgeChoices.js';
 import {
-  frameEdgeText, frameLayoutView, frameRejectionText, INITIAL_FRAME_LAYOUT, toggleFrameCornerSwap, toggleFrameEdge, type FrameLayoutState,
+  frameEdgeText, frameLayoutView, frameRejectionText, INITIAL_FRAME_LAYOUT, toggleFrameCornerSwap, withPickedEdges, type FrameLayoutState,
   type FrameLayoutView, type FrameUp,
 } from './frameLayoutInput.js';
-import type { FrameMemberChoice } from './frameMembersPlacement.js';
+import { frameMemberMiterSupported, type FrameMemberChoice } from './frameMembersPlacement.js';
 
 const UP_CHOICES: readonly FrameUp[] = ['z', 'y', 'x'];
+const CORNER_RULES: readonly FrameLayoutState['corners'][] = ['butt', 'miter', 'none'];
 const TURNS: readonly number[] = [0, 1, 2, 3];
 const EDGE_FILTERS: readonly FrameEdgeFilter[] = ['all', 'x', 'y', 'z', 'other'];
 /** 辺がこの本数を超える時だけ、並びと向きの絞り込みを出す(統括の決定 2026-11-16)。 */
@@ -58,7 +59,10 @@ function FramePointFields({ state, update }: { readonly state: FrameLayoutState;
   </>;
 }
 
-/** 選んだ部品(選択が部品 1 つの時)のまっすぐな辺を読み込む。読めない時は理由。 */
+/**
+ * 選んだ部品(選択が部品 1 つの時)のまっすぐな辺を読み込み、店の「辺を選ぶ途中」を始める(3D の画面で辺をクリックしても選べる)。
+ * 読めない時は理由。
+ */
 function loadEdges(state: FrameLayoutState): { readonly state: FrameLayoutState; readonly name: string } | string {
   const app = useAppStore.getState();
   const id = app.selection.length === 1 ? app.selection[0] : undefined;
@@ -67,19 +71,18 @@ function loadEdges(state: FrameLayoutState): { readonly state: FrameLayoutState;
     : frameEdgeChoices(app.assembly, app.assemblyView, component.id);
   if (component === undefined || edges === null) return t('catalog.frameLayout.error.noComponent');
   if (edges.length === 0) return t('catalog.frameLayout.error.noEdges');
+  app.beginFrameEdgePick(component.id, edges.map((edge) => edge.targetId));
   return { state: { ...state, edges, checkedEdges: [], swapThrough: [] }, name: component.name };
 }
 
-/** 辺の一覧(チェックで選ぶ。行に乗せるとビューでその辺を強調し、チェックした辺は選択として強調する)。100 本を超える時は並びと向きで絞る。 */
+/**
+ * 辺の一覧(チェックで選ぶ。3D の画面で辺をクリックしても同じチェックが入れ替わる。行に乗せるとビューでその辺を強調し、
+ * チェックした辺は選択として強調する)。100 本を超える時は並びと向きで絞る。チェックは店の「辺を選ぶ途中」が持つ。
+ */
 function FrameEdgeFields({ state, onState, onMessage }: { readonly state: FrameLayoutState;
   readonly onState: (next: FrameLayoutState) => void; readonly onMessage: (message: Message) => void }): React.JSX.Element {
   const [loadedName, setLoadedName] = useState('');
   const shown = filterFrameEdges(state.edges, state.edgeOrder, state.edgeFilter);
-  const toggle = (targetId: string): void => {
-    const next = toggleFrameEdge(state, targetId);
-    onState(next);
-    useAppStore.getState().setSelection(next.checkedEdges);
-  };
   return <>
     <button type="button" className="pcad-button" title={t('catalog.frameLayout.loadEdgesGuide')} onClick={() => {
       const loaded = loadEdges(state);
@@ -87,12 +90,13 @@ function FrameEdgeFields({ state, onState, onMessage }: { readonly state: FrameL
       setLoadedName(loaded.name); onState(loaded.state);
     }}>{t('catalog.frameLayout.loadEdges')}</button>
     {state.edges.length === 0 ? null : <p>{t('catalog.frameLayout.edgesLoaded').replace('{name}', loadedName)
-      .replace('{count}', String(state.edges.length))}</p>}
+      .replace('{count}', String(state.edges.length))} {t('catalog.frameLayout.edgesPickHint')}</p>}
     {state.edges.length <= EDGE_FILTER_THRESHOLD ? null : <FrameEdgeFilters state={state} onState={onState} />}
     <ul>{shown.map((edge) => <li key={edge.targetId}>
       <label title={t('catalog.frameLayout.edgeGuide')} onMouseEnter={() => { useAppStore.getState().setHovered(edge.targetId); }}
         onMouseLeave={() => { useAppStore.getState().setHovered(null); }}>
-        <input type="checkbox" checked={state.checkedEdges.includes(edge.targetId)} onChange={() => { toggle(edge.targetId); }} />
+        <input type="checkbox" checked={state.checkedEdges.includes(edge.targetId)}
+          onChange={() => { useAppStore.getState().toggleFrameEdgePick(edge.targetId); }} />
         {frameEdgeText(edge)}
       </label>
     </li>)}</ul>
@@ -123,11 +127,16 @@ React.JSX.Element {
 }
 
 export function FrameLayoutDetails({ member }: { readonly member: FrameMemberChoice }): React.JSX.Element {
-  const [state, setState] = useState<FrameLayoutState>(INITIAL_FRAME_LAYOUT);
+  const [local, setState] = useState<FrameLayoutState>(INITIAL_FRAME_LAYOUT);
   const [message, setMessage] = useState<Message>(null);
+  const picked = useAppStore((app) => app.frameEdgePick?.checked);
+  // 窓を閉じた(この欄が消えた)時は、辺を選ぶ途中をやめる。
+  useEffect(() => () => { useAppStore.getState().endFrameEdgePick(); }, []);
+  const state = local.source === 'edges' ? withPickedEdges(local, picked ?? []) : local;
   const view = frameLayoutView(state, member);
-  // 点・閉じる・角の扱いを変えると角の並びが変わるので、入れ替えは初めに戻す。
+  // 点・閉じる・角の扱いを変えると角の並びが変わるので、入れ替えは初めに戻す。点を入れる形に替えたら辺を選ぶ途中をやめる。
   const update = (patch: Partial<FrameLayoutState>, resetSwap = false): void => {
+    if (patch.source === 'points') useAppStore.getState().endFrameEdgePick();
     setState({ ...state, ...patch, ...(resetSwap ? { swapThrough: [] } : {}) });
     setMessage(null);
   };
@@ -168,8 +177,10 @@ export function FrameLayoutDetails({ member }: { readonly member: FrameMemberCho
       <label className="pcad-field">
         <span className="pcad-field__label">{t('catalog.frameLayout.corners')}</span>
         <select title={t('catalog.frameLayout.cornersGuide')} className="pcad-field__input" value={state.corners}
-          onChange={(event) => { update({ corners: event.currentTarget.value === 'none' ? 'none' : 'butt' }, true); }}>
+          onChange={(event) => { update({ corners: CORNER_RULES.find((rule) => rule === event.currentTarget.value) ?? 'butt' }, true); }}>
           <option value="butt">{t('catalog.frameLayout.corners.butt')}</option>
+          {/* 留めは留めの欄を持つ部材だけ(アルミフレームの族と鋼材)。 */}
+          <option value="miter" disabled={!frameMemberMiterSupported(member)}>{t('catalog.frameLayout.corners.miter')}</option>
           <option value="none">{t('catalog.frameLayout.corners.none')}</option>
         </select>
       </label>

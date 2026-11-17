@@ -23,6 +23,7 @@ import {
 } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import { createCircularWeldActions, selectedCircularWeldId, type CircularWeldSlice } from './circularWeldActions.js';
+import { createFrameEdgePickActions, type FrameEdgePickSlice } from './frameEdgePickActions.js';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
 import { emptySheetMetalTool } from './sheetMetalSlice.js';
@@ -126,7 +127,7 @@ export type AssemblyMotionNotice =
   | { readonly kind: 'failed' };
 
 /** アセンブリのスライスが持つ欄と操作。 */
-export interface AssemblySlice extends CircularWeldSlice {
+export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice {
   /**
    * 開いているアセンブリ文書(FR-601)。**開いていなければ null**(= 部品を開いている)。
    *
@@ -303,7 +304,8 @@ export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   | 'assemblyBoltedJointDraft' | 'assemblyBoltedJointPreview' | 'assemblyNestedBoltDraft' | 'assemblyNestedBoltPreview'
   | 'assemblyFilletWeldDraft' | 'assemblyFilletWeldPreview'
   | 'assemblyCircularWeldDraft' | 'assemblyCircularWeldPreview'
-  | 'assemblyNestedWeldDraft' | 'assemblyNestedWeldPreview' | 'assemblyChildWeldEdit' | 'assemblyJointDrive'>;
+  | 'assemblyNestedWeldDraft' | 'assemblyNestedWeldPreview' | 'assemblyChildWeldEdit' | 'assemblyJointDrive'
+  | 'frameEdgePick'>;
 
 /** 協調の関節の駆動の持ち主。この記録そのものがストアに残っている間だけ結果を反映できる。 */
 export interface AssemblyJointDrive {
@@ -464,6 +466,7 @@ export function createAssemblyInitialState(session?: PreparedDocumentSession): A
     assemblyNestedWeldDraft: null,
     assemblyNestedWeldPreview: null,
     assemblyChildWeldEdit: null,
+    frameEdgePick: null,
     assemblyJointDrive: null,
     ...emptyInterferenceState(),
     activeDocumentId,
@@ -535,7 +538,7 @@ export const createAssemblySlice: StateCreator<
       assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
       assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
       assemblyExplodeDraft: null, assemblyExplodeError: null,
-      standardPartPickerOpen: false,
+      standardPartPickerOpen: false, frameEdgePick: null,
       assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
       assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
       assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
@@ -545,7 +548,7 @@ export const createAssemblySlice: StateCreator<
   }
   return {
     ...empty(),
-    ...createCircularWeldActions(set, get),
+    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get),
     recoveryRecord: null,
     resetAssembly: (update, session) => {
       const initial = empty(session);
@@ -594,7 +597,7 @@ export const createAssemblySlice: StateCreator<
           assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
           assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
           assemblyExplodeDraft: null, assemblyExplodeError: null,
-          standardPartPickerOpen: false,
+          standardPartPickerOpen: false, frameEdgePick: null,
           assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
           assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
           assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,

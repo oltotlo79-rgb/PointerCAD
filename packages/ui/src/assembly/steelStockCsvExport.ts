@@ -7,7 +7,7 @@ import { t } from '../i18n/t.js';
 import { familyKindKey } from './catalogFamilyChoices.js';
 import { steelShapeLabelKey } from './standardPartPicker.js';
 import { DEFAULT_STOCK_CUTTING, type StockCuttingSettings } from './stockCuttingSettings.js';
-import { catalogStockCuttingRows, steelStockCuttingRows, stockCuttingView } from './stockCuttingView.js';
+import { catalogMiterNote, catalogStockCuttingRows, steelStockCuttingRows, stockCuttingView } from './stockCuttingView.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 
@@ -98,6 +98,18 @@ function unitMassNote(row: SteelStockList['catalogRows'][number]): string {
 }
 
 /**
+ * 族の行の形の扱いの列: 実物どおりの断面の形材の行は「資料の寸法どおりの断面」、ほか(溝つきのフレーム・ナットの素材など)は
+ * 「資料の寸法で作った簡略の形」で、行が簡略にした所を持つ時はそれを添える(鋼材の旧版の簡略断面の文字は使わない)。
+ */
+function catalogGeometry(row: SteelStockList['catalogRows'][number]): string {
+  const family = PRODUCT_CATALOG_REGISTRY.loaded(row.familyId);
+  const simplified = family?.rows.find((candidate) => candidate.key === row.itemKey)?.simplified ?? [];
+  if (EXACT_SECTION_DIAGRAMS.has(family?.diagram ?? '') && simplified.length === 0) return t('catalog.stock.geometrySource');
+  const base = t('catalog.stock.geometrySimplified');
+  return simplified.length === 0 ? base : `${base}: ${simplified.join('・')}`;
+}
+
+/**
  * 長さを持つ族(フレームなど)の部品の行と、その合計の行(E-03)。鋼材の 30 列と同じ列に、族の種類・呼び・規格の欄・材質の表示・長さ・本数・
  * 出どころ(資料の題・頁・SHA。規格の行でない族は空)を入れる。族の部品が無い文書では行を作らない(鋼材だけの CSV は前と同じバイト)。
  */
@@ -105,8 +117,8 @@ function catalogStockRows(stock: SteelStockList): (string | number)[][] {
   if (stock.catalogRows.length === 0) return [];
   const rows: (string | number)[][] = stock.catalogRows.map((row) => [t('assembly.steel.csv.cut'), row.materialLabel ?? '', '',
     row.standardLabel, t(familyKindKey(row.kindKey)), row.size, '', row.lengthMm, row.quantity, row.totalLengthMm,
-    JSON.stringify(row.occurrencePaths), unitMassNote(row), '', t('assembly.steel.finishedUnknown'),
-    row.catalogRevision, row.generatorRevision, t('assembly.steel.csv.geometrySimplified'), row.evidence.title, edition(row.evidence),
+    JSON.stringify(row.occurrencePaths), unitMassNote(row) + catalogMiterNote(row), '', t('assembly.steel.finishedUnknown'),
+    row.catalogRevision, row.generatorRevision, catalogGeometry(row), row.evidence.title, edition(row.evidence),
     row.evidence.locator, row.evidence.url, row.evidence.sha256, row.evidence.fetchedDate, t('assembly.steel.csv.profileSourceNone'),
     t('assembly.steel.csv.sameAsDimensionSource'), t('assembly.steel.csv.sameAsDimensionSource'), ...NO_STANDARD_EDITION]);
   rows.push([t('catalog.stock.total'), '', '', '', '', '', '', '', stock.catalogRows.reduce((total, row) => total + row.quantity, 0),
@@ -141,7 +153,7 @@ export function serializeSteelStockCsv(stock: SteelStockList, stockCutting: Stoc
     rows.push([t('assembly.steel.csv.cut'), row.product.materialGrade, row.product.materialStandard,
       row.product.productStandard, t(steelShapeLabelKey(row.product.catalog, row.product.materialGrade)), row.product.size,
       t(CONDITIONS[row.product.condition]), row.lengthMm, row.quantity, row.totalLengthMm,
-      JSON.stringify(row.occurrencePaths), '', '', row.finishedLengthMm ?? t('assembly.steel.finishedUnknown'),
+      JSON.stringify(row.occurrencePaths), catalogMiterNote(row), '', row.finishedLengthMm ?? t('assembly.steel.finishedUnknown'),
       ...provenance(row), ...standardEditionCells(row.product)]);
   }
   rows.push([t('assembly.steel.stockTotal'), '', '', '', '', '', '', '', stock.totalQuantity, stock.totalLengthMm, '',

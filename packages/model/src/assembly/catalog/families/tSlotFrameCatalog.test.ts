@@ -48,14 +48,16 @@ function rowOfRecord(item: TSlotCatalogRecord): CatalogItemRow {
 
 describe('資料 SF-1 の溝つきフレームの 3 族', () => {
   it('族は溝幅ごとに 3 つで、版・欄・線図を凍結し、行は溝幅で分かれる', () => {
+    // 長さの後の 2 つは一括配置の留めの任意の欄(J-01 包み 5。miterOption.test.ts)。
+    const MITER_KEYS = [['startMiter', 'none'], ['endMiter', 'none']];
     expect([FAMILIES.s6, FAMILIES.s8, FAMILIES.s10].map((family) => [family.id, family.group, family.kindKey, family.catalogRevision,
       family.generatorRevision, family.stock, family.diagram, family.options.map((spec) => [spec.key, spec.defaultValue])])).toEqual([
       ['t-slot-frame-s6', 'aluminumFrame', 'catalog.frame.kind.tSlotS6', 't-slot-frame-s6-2026-11-r1', 't-slot-2', 'linear', 'tSlotSeries',
-        [['length', '1000']]],
+        [['length', '1000'], ...MITER_KEYS]],
       ['t-slot-frame-s8', 'aluminumFrame', 'catalog.frame.kind.tSlotS8', 't-slot-frame-s8-2026-11-r1', 't-slot-2', 'linear', 'tSlotSeries',
-        [['length', '1000']]],
+        [['length', '1000'], ...MITER_KEYS]],
       ['t-slot-frame-s10', 'aluminumFrame', 'catalog.frame.kind.tSlotS10', 't-slot-frame-s10-2026-11-r1', 't-slot-2', 'linear', 'tSlotSeries',
-        [['length', '1000']]],
+        [['length', '1000'], ...MITER_KEYS]],
     ]);
     for (const [slot, family] of [[6, FAMILIES.s6], [8, FAMILIES.s8], [10, FAMILIES.s10]] as const) {
       expect(family.rows.map((row) => row.key)).toEqual(T_SLOT_CATALOG_RECORDS.filter((item) => item.slot === slot).map((item) => item.key));

@@ -23,7 +23,8 @@ type CatalogVerification = 'draft' | 'final-standard' | 'manufacturer-catalog' |
 /** 寸法を添えて描く簡単な線図の種類。製造元の図・画像は使わない。 */
 type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChannel' | 'pipe'
   | 'pin' | 'nut' | 'bolt' | 'washer' | 'bearing' | 'camFollower' | 'bush' | 'compressionSpring' | 'tSlotFrame' | 'key' | 'sealRing' | 'oRing'
-  | 'angleBracket' | 'joinPlate' | 'slotNut' | 'tSlotSeries' | 'flatBar' | 'roundBar';
+  | 'angleBracket' | 'joinPlate' | 'slotNut' | 'tSlotSeries' | 'flatBar' | 'roundBar' | 'tSlotNutBar' | 'tSlotNut' | 'roundNut' | 'frameCap'
+  | 'flatPlate' | 'shapedPlate' | 'angleBracketCatalog' | 'footBase' | 'adjuster';
 
 /**
  * 族の options の 1 つの鍵の指定。**鍵の名前は保存されるので、版の中で変えない。**
@@ -41,10 +42,16 @@ export interface CatalogOptionSpec {
   /** 式の値の下限・上限(両端を含む。アプリの範囲で、規格や供給の約束ではない)。 */
   readonly min?: number;
   readonly max?: number;
-  /** 新しく置く時の既定の値。保存の時は必ず書き出す。 */
+  /** 新しく置く時の既定の値。保存の時は必ず書き出す(`optional` の欄だけは、既定の値の時に書き出さない)。 */
   readonly defaultValue: string;
   /** 行ごとに作れる範囲が違う族(呼びごとに長さの範囲がある止めねじなど)の、その行の既定の値。無い時は `defaultValue`。 */
   readonly rowDefault?: (row: CatalogItemRow) => string;
+  /**
+   * 後から足した任意の欄(フレームの留め。J-01 包み 5)。保存に無ければ既定の値として読み、既定の値の時は書き出さないので、
+   * 欄を使わない部品の保存の形は欄を足す前と同じ(前の版でも開ける)。欄を使った部品は前の版が「保存の欄が合わない」で断る。
+   * 選ぶ画面の欄には出さず、置く道(一括配置の留めの角)だけが書く。
+   */
+  readonly optional?: boolean;
 }
 
 /** 族の 1 行。保存されるのは `key` と `size` だけで、ほかは導出と表示に使う。 */
@@ -67,6 +74,11 @@ export interface CatalogItemRow {
   readonly verified: boolean;
   /** 未確認または欠測の理由。確認済みなら空文字。 */
   readonly note: string;
+  /**
+   * 形のうち、資料の寸法で作らず簡略にした所(例「穴の位置」「取付けの脚と穴」)。選ぶ画面の行と切断の一覧に簡略の印として出す。
+   * 資料の寸法どおりに作る行・印を持たない今までの族は持たない。
+   */
+  readonly simplified?: readonly string[];
 }
 
 /**

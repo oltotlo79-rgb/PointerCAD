@@ -24,8 +24,11 @@ import {
 import {
   type BoltedJointPlan, type BoltedJointPlanResult, type BoltedJointRejection, type BoltedJointRequest,
   FASTENING_LENGTH_TOLERANCE_MM, type FastenerOperation, type FasteningMissingFact,
+  type FasteningHoleSelection,
 } from './types.js';
 import { clearanceRejections, lengthLimits } from './planChecks.js';
+import type { EntryHeadSpec } from './holeEntry.js';
+import { selectEntryBoltLength } from './entryBoltLength.js';
 
 function failed(rejections: readonly BoltedJointRejection[]): BoltedJointPlanResult {
   return { ok: false, rejections };
@@ -43,8 +46,9 @@ function orderHoles(
   return aClear ? { head: a, far: b } : { head: b, far: a };
 }
 
-function threadFor(request: BoltedJointRequest, head: WorldHole, far: WorldHole): ThreadChoice | BoltedJointRejection {
-  const hole = far.selection.hole;
+export function threadForSelections(request: BoltedJointRequest, head: FasteningHoleSelection,
+  far: FasteningHoleSelection): ThreadChoice | BoltedJointRejection {
+  const hole = far.hole;
   if (hole.kind !== 'clearance') {
     const thread = threadChoiceFor(hole.nominal, hole.pitch);
     if (isRejection(thread) || request.explicitBolt === undefined) return thread;
@@ -61,7 +65,7 @@ function threadFor(request: BoltedJointRequest, head: WorldHole, far: WorldHole)
   if (request.explicitBolt !== undefined) {
     return explicitThreadChoice(request.explicitBolt.nominal, request.explicitBolt.threadSeries);
   }
-  const headHole = head.selection.hole;
+  const headHole = head.hole;
   const diameters = [headHole.kind === 'clearance' ? headHole.diameter : NaN, hole.diameter];
   const matches = (request.clearanceEvidence ?? []).filter((row) => row.verified
     && diameters.every((value) => value >= row.minimumHoleDiameter - FASTENING_LENGTH_TOLERANCE_MM
@@ -134,6 +138,16 @@ export function planBoltedJoint(
   request: BoltedJointRequest,
   partRevisions: ReadonlyMap<string, string> = new Map(),
 ): BoltedJointPlanResult {
+  if (('entry' in request.first && request.first.entry !== undefined)
+    || ('entry' in request.second && request.second.entry !== undefined)) {
+    return failed([{ code: 'unsupportedHole', detail: { reason: 'entryAwareCommandRequired' } }]);
+  }
+  return planBoltedJointForHead(document, request, partRevisions);
+}
+
+/** Shared dimension/alignment calculation. Entry callers provide the catalog head and add its operation separately. */
+export function planBoltedJointForHead(document: AssemblyDocument, request: BoltedJointRequest,
+  partRevisions: ReadonlyMap<string, string>, entryHead?: EntryHeadSpec): BoltedJointPlanResult {
   const local = [...localSelectionRejections(request.first), ...localSelectionRejections(request.second)];
   if (local.length > 0) return failed(local);
   if (request.first.componentId === request.second.componentId) {
@@ -155,16 +169,17 @@ export function planBoltedJoint(
   }
   const ordered = orderHoles(first, second);
   if (isRejection(ordered)) return failed([ordered]);
-  return planOrdered(request, ordered.head, ordered.far, document, alignment);
+  return planOrdered(request, ordered.head, ordered.far, document, alignment, entryHead);
 }
 
 function planOrdered(
   request: BoltedJointRequest, head: WorldHole, far: WorldHole, document: AssemblyDocument, alignment: AlignmentPlan,
+  entryHead?: EntryHeadSpec,
 ): BoltedJointPlanResult {
-  const thread = threadFor(request, head, far);
+  const thread = threadForSelections(request, head.selection, far.selection);
   if (isRejection(thread)) return failed([thread]);
-  const bolt = boltRowFor(thread, request.dimensionSeries);
-  if (isRejection(bolt)) return failed([bolt]);
+  const bolt = entryHead === undefined ? boltRowFor(thread, request.dimensionSeries) : null;
+  if (bolt !== null && isRejection(bolt)) return failed([bolt]);
   const withNut = far.selection.hole.kind === 'clearance';
   const nut = withNut ? nutRowFor(thread, request.dimensionSeries) : null;
   if (nut !== null && isRejection(nut)) return failed([nut]);
@@ -176,26 +191,32 @@ function planOrdered(
   if (isRejection(headStack)) return failed([headStack]);
   if (isRejection(nutStack)) return failed([nutStack]);
   const missing = new Set<FasteningMissingFact>();
-  const clearance = clearanceRejections({ thread, bolt, nut, head, far, headStack, nutStack, missing });
+  const clearance = clearanceRejections({ thread, bolt, nut, head, far, headStack, nutStack, missing,
+    ...(entryHead === undefined ? {} : { headBearing: { value: entryHead.headDiameter, verified: false } }) });
   if (clearance.length > 0) return failed(clearance);
-  const headLength = plateLength(head);
+  const headLength = plateLength(head) - (entryHead?.seatDepth ?? 0);
+  if (entryHead !== undefined && headLength <= FASTENING_LENGTH_TOLERANCE_MM) {
+    return failed([{ code: 'invalidDimension', detail: { name: 'headSeat', headLength } }]);
+  }
   const farLength = plateLength(far);
   const grip = headLength + sumThickness(headStack) + (withNut ? farLength + sumThickness(nutStack) : 0);
   const limits = lengthLimits(request, far, grip, nut);
   if (isRejection(limits)) return failed([limits]);
-  const length = selectBoltLength(bolt, request.lengthAvailability, limits, thread.series);
+  const length = entryHead === undefined && bolt !== null ? selectBoltLength(bolt, request.lengthAvailability, limits, thread.series)
+    : entryHead === undefined ? null : selectEntryBoltLength(entryHead, request.lengthAvailability, limits);
+  if (length === null) return failed([{ code: 'boltRowMissing', detail: {} }]);
   if (isRejection(length)) return failed([length]);
   for (const fact of length.missingFacts) missing.add(fact);
-  if (!bolt.verified || (nut !== null && !nut.verified)) missing.add('catalogRowUnverified');
+  if (bolt?.verified === false || entryHead?.row.verified === false || (nut !== null && !nut.verified)) missing.add('catalogRowUnverified');
   if ([...headStack, ...nutStack].some((washer) => !washer.verified)) missing.add('washerTableUnverified');
   const towardFar = scaleVec3(head.into, -1);
   const operations: FastenerOperation[] = [
     ...washerOperations('headWasher', head, headLength, headStack, thread.nominal),
-    {
-      role: 'bolt', catalog: 'hexBolt', size: thread.nominal, rowKey: bolt.key, rowVerified: bolt.verified,
+    ...(bolt === null ? [] : [{
+      role: 'bolt' as const, catalog: 'hexBolt' as const, size: thread.nominal, rowKey: bolt.key, rowVerified: bolt.verified,
       options: { length: String(length.length), dimensionSeries: request.dimensionSeries, threadSeries: thread.series },
       placement: placementOnAxis(head.matingPoint, head.into, headLength + sumThickness(headStack), towardFar),
-    },
+    }]),
     ...washerOperations('nutWasher', far, farLength, nutStack, thread.nominal),
     ...(nut === null ? [] : [{
       role: 'nut' as const, catalog: 'hexNut' as const, size: thread.nominal, rowKey: nut.key, rowVerified: nut.verified,
@@ -216,7 +237,7 @@ function planOrdered(
       headSideComponentId: head.component.id, farSideComponentId: far.component.id,
       nominal: thread.nominal, pitch: thread.pitch, threadSeries: thread.series,
       gripLength: grip, boltLength: length.length,
-      ...tipMeasures(far, grip, length.length, length.threadLength, nut?.mMax ?? null),
+      ...tipMeasures(far, grip, length.length - (entryHead?.includesHead === true ? entryHead.seatDepth : 0), length.threadLength, nut?.mMax ?? null),
       lengthBasis: length.basis, lengthVerified: length.verified,
       missingFacts: [...missing].sort(),
       sourceIdentities: { [head.component.id]: identity(head), [far.component.id]: identity(far) },

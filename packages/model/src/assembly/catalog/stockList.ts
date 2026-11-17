@@ -37,6 +37,16 @@ export interface CatalogStockItem {
   readonly unitMassKgPerM: number | null;
   /** 1 本の質量(g)。単位質量を持つ行は単位質量 × 長さ、無い行は体積 × 密度。出せない時は null。 */
   readonly massEachG: number | null;
+  /**
+   * 留めで 45° に切った端の数(0〜2。J-01 包み 5)。留めの部材の `lengthMm` は長い側の長さ(切る前の棒の長さ)で、
+   * 質量は部品表と同じ値(単位質量 × 留めを引いた後の体積 ÷ 断面積)。
+   */
+  readonly miterEnds: number;
+}
+
+/** 留めの欄の値の端の数(切らない端・欄の無い保存は数えない)。 */
+function miterEndsOf(options: Readonly<Record<string, string>>): number {
+  return [options.startMiter, options.endMiter].filter((value) => value !== undefined && value !== 'none').length;
 }
 
 /** 族の部品の保存の形から、切断の一覧の 1 本を作る。'linear' でない族・読み込んでいない族・確かめに通らない保存は null。 */
@@ -51,8 +61,11 @@ export function catalogStockItem(source: StandardPartSource, registry: CatalogRe
   const volume = catalogItemNominalVolume(source.size, source.options, registry);
   const density = findDensityMaterial(row.densityMaterialId)?.density;
   const nominalMass = catalogItemNominalMass(source, registry);
+  const miterEnds = miterEndsOf(source.options);
+  // 留めの部材は、留めの向きごとに別の行に束ねる(留めの無い部材の鍵は前と同じ)。
+  const miterKey = miterEnds === 0 ? '' : `:miter=${source.options.startMiter ?? 'none'}/${source.options.endMiter ?? 'none'}`;
   return {
-    key: `${familyId}@${family.catalogRevision}/${family.generatorRevision}:${row.key}:${length.value}`,
+    key: `${familyId}@${family.catalogRevision}/${family.generatorRevision}:${row.key}:${length.value}${miterKey}`,
     familyId, kindKey: family.kindKey, itemKey: row.key, size: row.size, standardLabel: row.standardLabel, evidence: row.evidence,
     materialLabel: row.materialLabel ?? null,
     densityMaterialId: row.densityMaterialId, catalogRevision: family.catalogRevision, generatorRevision: family.generatorRevision,
@@ -60,5 +73,6 @@ export function catalogStockItem(source: StandardPartSource, registry: CatalogRe
     unitMassKgPerM: row.dims.unitMassKgPerM ?? null,
     // 族が単位質量を持つ時はその値(× 長さ)、無い時は形の体積 × 行の材質の密度。
     massEachG: nominalMass ?? (volume === null || density === undefined ? null : massFromVolume(volume, density)),
+    miterEnds,
   };
 }

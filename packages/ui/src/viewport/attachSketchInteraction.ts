@@ -35,6 +35,7 @@ import type { OrbitState } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
 import type { SketchDragTiming } from './sketchDragTiming.js';
 import { createSketchCoordinates } from './sketchInteractionCoordinates.js';
+import { createSketchSnapPause } from './sketchSnapPause.js';
 import { createSketchConstraintInput } from './sketchInteractionConstraints.js';
 import { createSketchCornerTools } from './sketchInteractionCorners.js';
 import { createSketchDrawingInput, FIRST_STEP, type DrawingToolId } from './sketchInteractionDrawing.js';
@@ -189,7 +190,9 @@ export function attachSketchInteraction(
   const project: ProjectToScreen = (point) => scene.worldToScreen(point);
   // 一時表示は store で共有する。古い canvas は自分が最後に公開した参照だけを消す。
   const indicators = createSketchInteractionIndicators();
-  const coordinates = createSketchCoordinates({ scene, project, getOrbit, tracksDirection });
+  // 吸着を一時止める修飾キー(B-09 3-2)。当たり判定(findSnap・findTrack)と出来事の扱いで同じ控えを使う。
+  const snapPause = createSketchSnapPause(isDrawingTool);
+  const coordinates = createSketchCoordinates({ scene, project, getOrbit, tracksDirection, snapPaused: snapPause.active });
   const solids = createSketchSolidPicking({ scene, project, picksBodies, picksSubShapes, toSubShapeBodies });
   const regions = createSketchRegionInput({ scene, project });
   const sphereGrid = createSketchSphereGridInput({ scene, project });
@@ -213,6 +216,6 @@ export function attachSketchInteraction(
     pickFreeVertexAt: solids.pickFreeVertexAt, regionHoverAt: regions.regionHoverAt, updateCornerPreview: corners.updateCornerPreview,
     updateEditPreview: edits.updateEditPreview, updateSphereGridInput: sphereGrid.updateSphereGridInput,
     updateInferredConstraints: constraints.updateInferredConstraints, pickConstraintAt: constraints.pickConstraintAt,
-    handleSelectionInput: selection.handleSelectionInput, handleDrawingInput: drawing.handleDrawingInput });
+    handleSelectionInput: selection.handleSelectionInput, handleDrawingInput: drawing.handleDrawingInput, snapPause });
   return resources.attach();
 }

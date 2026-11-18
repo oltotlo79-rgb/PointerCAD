@@ -7,7 +7,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '../../../part/createPartDocument.js';
 import type { PartDocument, PrimitiveFeature } from '../../../part/types.js';
-import { findMetricThread } from '../../../thread/metricThread.js';
+import { findMetricThread, metricThreadPitch, threadMinorDiameter } from '../../../thread/metricThread.js';
 import { appendBoolean, appendCylinder, origin } from '../../standard/partPrimitives.js';
 
 /** 段 1 つ(mm)。bore は段を通す中の穴の径(無ければ null)。 */
@@ -19,6 +19,11 @@ export interface StackedPartDimensions {
   readonly segments: readonly StackSegment[];
   /** 一番上の段の上に立てるおねじ(呼びと長さ)。無ければ null。 */
   readonly thread: { readonly size: string; readonly length: number } | null;
+  /**
+   * 中心の線に沿って全部の段を通すめねじの呼び(ローレットナットなど。統括の決定 2026-11-18 07:5x)。並目の谷の径の円柱で抜く(簡略の表し方。
+   * ねじの山は入れない)。おねじ・段の中の穴と一緒には持たない。無ければ省く。
+   */
+  readonly threadHole?: string;
 }
 
 const positive = (...values: readonly number[]): boolean => values.every((value) => Number.isFinite(value) && value > 0);
@@ -33,9 +38,19 @@ function segmentValid(segment: StackSegment): boolean {
   return sized && (segment.bore === null || (positive(segment.bore) && segment.bore < narrowest(segment)));
 }
 
+/** めねじの並目の谷の径(呼びが表に無い時は NaN)。 */
+function threadHoleDiameter(designation: string): number {
+  const size = findMetricThread(designation);
+  return size === undefined ? NaN : threadMinorDiameter(size.diameter, metricThreadPitch(size, 'coarse'));
+}
+
 function stackValid(dims: StackedPartDimensions): boolean {
   const top = dims.segments[dims.segments.length - 1];
   if (top === undefined || !dims.segments.every(segmentValid)) return false;
+  if (dims.threadHole !== undefined) {
+    const minor = threadHoleDiameter(dims.threadHole);
+    return dims.thread === null && positive(minor) && dims.segments.every((segment) => segment.bore === null && minor < narrowest(segment));
+  }
   if (dims.thread === null) return true;
   const size = findMetricThread(dims.thread.size);
   return size !== undefined && positive(dims.thread.length) && size.diameter < narrowest(top) && top.bore === null;
@@ -81,6 +96,11 @@ export function buildStackedPart(dims: StackedPartDimensions): PartDocument | nu
     const rod = appendCylinder(document, size.diameter / 2, expressionValueFromNumber(dims.thread.length), z);
     document = appendBoolean(rod.document, 'union', body, rod.feature.id).document;
   }
+  if (dims.threadHole !== undefined && body !== null) {
+    // めねじは、底の面の 1 mm 下から上の面の 1 mm 上まで抜く(端の面が外形に接しない様に)。
+    const hole = appendCylinder(document, threadHoleDiameter(dims.threadHole) / 2, expressionValueFromNumber(z + 2), -1);
+    document = appendBoolean(hole.document, 'subtract', body, hole.feature.id).document;
+  }
   return document;
 }
 
@@ -94,7 +114,9 @@ export function stackedPartVolume(dims: StackedPartDimensions): number | null {
   }, 0);
   const size = dims.thread === null ? undefined : findMetricThread(dims.thread.size);
   const rod = dims.thread === null || size === undefined ? 0 : Math.PI * size.diameter ** 2 / 4 * dims.thread.length;
-  return segments + rod;
+  const height = dims.segments.reduce((sum, segment) => sum + segment.height, 0);
+  const hole = dims.threadHole === undefined ? 0 : Math.PI * threadHoleDiameter(dims.threadHole) ** 2 / 4 * height;
+  return segments + rod - hole;
 }
 
 /** 段の並びの部品の高さ(段の高さの和 + おねじの長さ)。 */

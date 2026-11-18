@@ -18,6 +18,7 @@ const FRAME_SLOT_REASON_KEYS: Readonly<Record<FrameSlotHoleFailure['code'], Mess
   holeNotClearance: 'assembly.frameSlot.reason.holeNotClearance', holeNotPlaceable: 'assembly.frameSlot.reason.holeNotPlaceable',
   notOnSlotFace: 'assembly.frameSlot.reason.notOnSlotFace', offSlot: 'assembly.frameSlot.reason.offSlot',
   outsideSlotEnd: 'assembly.frameSlot.reason.outsideSlotEnd', slotWidthUnknown: 'assembly.frameSlot.reason.slotWidthUnknown',
+  slotNominalUnknown: 'assembly.frameSlot.reason.slotNominalUnknown', boltWiderThanSlot: 'assembly.frameSlot.reason.boltWiderThanSlot',
   noSlotNut: 'assembly.frameSlot.reason.noSlotNut', slotPartHeightUnknown: 'assembly.frameSlot.reason.slotPartHeightUnknown',
   noBoltLength: 'assembly.frameSlot.reason.noBoltLength',
 };

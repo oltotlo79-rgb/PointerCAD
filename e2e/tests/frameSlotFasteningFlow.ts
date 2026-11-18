@@ -14,6 +14,8 @@ import { uiMessage, uiMessagePattern } from './uiMessages.js';
  * ブラケット 溝幅 6 36×16×2(穴 2・φ5.5。穴の中心は外形の中心から x = ±10、y = 0。資料の行の値)を原点に置く(板の下の面 z = 0 が
  * フレームの上の面に当たる)。y = 0 なら穴は溝の中心線の上、y = 3 なら 3 mm ずれる(通るずれは (口の幅 − 径)/2 で 1 mm 未満)。
  * 期待: 溝用のナットは溝幅 6・M5・後入れ・鋼の行(資料の行の呼び)、ボルトは M5。部品は 2 + ナット 2 + ボルト 2 = 6、Undo 1 回で 2。
+ * 溝の情報: 溝の位置を対称に置いた印つきの小さい溝つきフレーム(20×10・上の溝 口 6)では予告に位置の簡略の知らせが出て、溝幅の呼びが
+ * 決まらない溝(20×10 の左右の口 4.5。90° 回して上へ向ける)では、予告の行が専用の理由になる。
  */
 const PLATE_HOLES: readonly WorldPoint[] = [[-10, 0, 2], [10, 0, 2]];
 /** ホーム視点の視線の水平の向き(カメラは +X・−Y の側)。穴の上の面の点を奥の壁の側へ 1 mm 寄せて押すと、視線は穴の中の奥の壁に当たる。 */
@@ -24,17 +26,40 @@ function frameSlotDialog(page: Page): Locator {
   return page.getByRole('dialog', { name: uiMessage('assembly', 'assembly.frameSlot.title'), exact: true });
 }
 
+/** 置くフレーム: 族と行、線の z(断面の外形の中心を線に乗せるので、上の面が z = 0 になる値)、断面を線のまわりに回す 90° の回数。 */
+interface FrameSetup {
+  readonly kind: string;
+  readonly size: string;
+  readonly z: number;
+  readonly quarterTurns: number;
+}
+
+/** 系列の溝幅 6 20×20(断面の半分 10)。 */
+const SERIES_FRAME: FrameSetup = { kind: 't-slot-frame-series', size: 's6-20x20', z: -10, quarterTurns: 0 };
+/**
+ * 小さい溝つきフレーム 20×10・上の溝 口 6(呼び 6。溝と穴の横の位置は、図に記入が無いので幅の中央に対して対称に置いた印つきの行)。
+ * 溝の形(口 6・中の幅 12・肩 2・中の高さ 4)は系列の溝幅 6 と同じなので、同じナットとボルトが入る。断面の高さ 10 の半分で線は z = −5。
+ */
+const SMALL_FRAME_SYMMETRIC: FrameSetup = { kind: 't-slot-frame-small', size: 'small-20x10-t6', z: -5, quarterTurns: 0 };
+/**
+ * 小さい溝つきフレーム 20×10・左右の溝 口 4.5(標準の溝の組に当たらないので溝幅の呼びが決まらない溝)。90° 回して左右の溝の 1 つを
+ * 上へ向ける(左右どちらでも呼びは決まらない)。回すと幅 20 が縦になるので、線は z = −10。
+ */
+const SMALL_FRAME_NO_NOMINAL: FrameSetup = { kind: 't-slot-frame-small', size: 'small-20x10-l4.5-r4.5', z: -10, quarterTurns: 1 };
+
 /** フレーム 1 本(中心線の y を指定)と平板のブラケット 1 つを置き、選ぶ窓を閉じる。 */
-async function placeFrameAndPlate(page: Page, frameY: number): Promise<void> {
+async function placeFrameAndPlate(page: Page, frameY: number, frame: FrameSetup = SERIES_FRAME): Promise<void> {
   const dialog = await openFramePicker(page);
-  await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption('t-slot-frame-series');
-  await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption('s6-20x20');
+  await choice(dialog, 'catalog', 'catalog.frame.kind').selectOption(frame.kind);
+  await choice(dialog, 'assembly', 'assembly.standardPart.size').selectOption(frame.size);
   const layout = dialog.locator('details').filter({
     has: page.locator('summary', { hasText: uiMessagePattern('catalog', 'catalog.frameLayout.title') }),
   });
   await layout.locator('summary').click();
+  if (frame.quarterTurns !== 0) await choice(layout, 'catalog', 'catalog.frameLayout.turn').selectOption(String(frame.quarterTurns));
+  const z = String(frame.z);
   await layout.getByRole('textbox', { name: uiMessage('catalog', 'catalog.frameLayout.points'), exact: true })
-    .fill([`-250\t${String(frameY)}\t-10`, `250\t${String(frameY)}\t-10`].join('\n'));
+    .fill([`-250\t${String(frameY)}\t${z}`, `250\t${String(frameY)}\t${z}`].join('\n'));
   await expectPreviewLengths(layout, ['500']);
   let token = await beginRecompute(page);
   await layout.getByRole('button', { name: uiMessage('catalog', 'catalog.frameLayout.place'), exact: true }).click();
@@ -133,6 +158,36 @@ export function registerFrameSlotFasteningTests(test: typeof base,
       await expect(dialog.getByTestId('frame-slot-commit')).toBeDisabled();
       await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.frameSlot.cancel'), exact: true }).click();
       await expect(componentRows(page)).toHaveCount(2);
+      expect(errors).toEqual([]);
+    });
+
+    test('溝の位置を中央に対して対称に置いた印つきの小さい溝つきフレームに留めると、予告の 2 行の下に溝の位置の簡略の知らせが出る', async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await startAssembly(page, appForPage(page));
+      await placeFrameAndPlate(page, 0, SMALL_FRAME_SYMMETRIC);
+      await componentRows(page).nth(1).click();
+      const dialog = await openFrameSlotTool(page);
+      await expect(previewRows(dialog)).toHaveCount(2);
+      for (const row of await previewRows(dialog).all()) await expect(row).toContainText(NUT_NAME);
+      await expect(dialog.getByText(uiMessage('assembly', 'assembly.frameSlot.positionSimplified'), { exact: true })).toBeVisible();
+      await expect(dialog.getByTestId('frame-slot-commit')).toBeEnabled();
+      expect(errors).toEqual([]);
+    });
+
+    test('溝幅の呼びが決まらない溝(口 4.5)に穴を合わせると、予告の 2 行が専用の理由になり、締結を押せない', async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await startAssembly(page, appForPage(page));
+      await placeFrameAndPlate(page, 0, SMALL_FRAME_NO_NOMINAL);
+      await componentRows(page).nth(1).click();
+      const dialog = await openFrameSlotTool(page);
+      await expect(previewRows(dialog).and(page.getByRole('alert'))).toHaveCount(2);
+      for (const row of await previewRows(dialog).all()) {
+        await expect(row).toContainText(uiMessage('assembly', 'assembly.frameSlot.reason.slotNominalUnknown'));
+      }
+      await expect(dialog.getByText(uiMessage('assembly', 'assembly.frameSlot.positionSimplified'), { exact: true })).toHaveCount(0);
+      await expect(dialog.getByTestId('frame-slot-commit')).toBeDisabled();
       expect(errors).toEqual([]);
     });
   });

@@ -52,6 +52,13 @@ export const K6_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
     load: async () => (await import('../families/framePartCatalog.js')).FOOT_BASE_FAMILY },
   { id: 't-slot-adjuster', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.adjuster',
     load: async () => (await import('../families/framePartCatalog.js')).ADJUSTER_FAMILY },
+  // 資料 SF-1 の溝に入れる小物(ジョイントバー・スタッド・ローレットナット)。8 回目の記入のままの読み 2 本で形の値が同じになった行だけ。
+  { id: 't-slot-joint-bar', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.jointBar',
+    load: async () => (await import('../families/tSlotFittingCatalog.js')).JOINT_BAR_FAMILY },
+  { id: 't-slot-stud', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.tSlotStud',
+    load: async () => (await import('../families/tSlotFittingCatalog.js')).STUD_FAMILY },
+  { id: 't-slot-knurled-nut', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.knurledNut',
+    load: async () => (await import('../families/tSlotFittingCatalog.js')).KNURLED_NUT_FAMILY },
   // 資料 GF-2 のパイプ形のフレーム(1 本・溝つき・2 本つなぎ)。独立の読みの 2 つ以上が一致した行だけ。形は記入のある寸法だけで作る包む形。
   { id: 'pipe-frame', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.pipeFrame',
     load: async () => (await import('../families/pipeFrameCatalog.js')).PIPE_FRAME_FAMILIES.single },

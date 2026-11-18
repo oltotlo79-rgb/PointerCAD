@@ -2,9 +2,11 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { CameraControlSettingsForm } from './CameraControlSettingsForm.js';
+import { InputSettingsFileBar } from './InputSettingsFileBar.js';
 import { MouseButtonsForm } from './MouseButtonsForm.js';
 import { RadialMenuForm } from './RadialMenuForm.js';
 import { settingsCloseRequest, submitSettingsDrafts } from './settingsDrafts.js';
+import { SnapPauseForm } from './SnapPauseForm.js';
 import { SettingsDraftPrompt, type DraftPromptTexts } from './SettingsDraftPrompt.js';
 import { ShortcutSettingsForm } from './ShortcutSettingsForm.js';
 import './inputBindingsWindow.css';
@@ -15,6 +17,7 @@ import './inputBindingsWindow.css';
  * ShortcutSettingsForm・MouseButtonsForm)。
  * タブを替えても下書きを失わないよう、両方の form を置いたまま、見えない方を hidden にする。
  * ×・Esc で閉じる時に下書きがあれば、窓の中で［適用して閉じる］［捨てて閉じる］［続ける］を出す(settingsDrafts.ts の印)。
+ * 下端の「書き出す」「読み込む」(B-09 3-1)は、適用済みの割り当てを 1 つのファイルで出し入れする。読み込みは下書きがある間は断る。
  */
 type BindingsTab = 'view' | 'keys' | 'mouse' | 'radial';
 /** 最後に開いたタブ(窓を開き直した時に同じタブで開く。端末には残さない一時の表示の状態)。 */
@@ -90,10 +93,12 @@ export function InputBindingsWindow({ onClose }: { readonly onClose: () => void 
       </div>
       <div role="tabpanel" id={`${id}-panel-mouse`} aria-labelledby={`${id}-tab-mouse`} hidden={tab !== 'mouse'}>
         <MouseButtonsForm />
+        <SnapPauseForm />
       </div>
       <div role="tabpanel" id={`${id}-panel-radial`} aria-labelledby={`${id}-tab-radial`} hidden={tab !== 'radial'}>
         <RadialMenuForm />
       </div>
+      <InputSettingsFileBar hasDraft={() => settingsCloseRequest(windowRef.current) === 'confirm'} />
       <p className="pcad-input-bindings__hint">{t('settings.inputBindings.hint')}</p>
     </dialog>
   );

@@ -23,6 +23,7 @@ import {
   ADJUSTER_RECORDS, ANGLE_BRACKET_RECORDS, FLAT_PLATE_RECORDS, FOOT_BASE_RECORDS, FRAME_CAP_RECORDS, ROUND_NUT_RECORDS, SHAPED_PLATE_RECORDS,
   T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS,
 } from './framePartRows.js';
+import { HARD_BRACKET_RECORDS } from './hardBracketRows.js';
 
 type DensityMaterial = 'steel' | 'stainless' | 'aluminum' | 'nylon';
 /**
@@ -169,7 +170,10 @@ export interface ShapedPlateRecord {
 
 /**
  * L 形のブラケット(寝た脚 a と立つ脚 b の L の断面を幅だけ押し出した形)。穴は脚ごとに、角の外の面からの位置の列 × 幅の端からの位置の列の格子。
- * 立つ脚の厚さは記入が無いので寝た脚と同じ(簡略の印)。リブつきの形はリブを省く(簡略の印)。
+ * 厚さの記入は片方の脚にだけあり、記入の無い脚も同じ厚さで作る(簡略の印に、どちらの脚の記入が無く、どう作ったかを書く。多くは立つ脚の記入が無い。
+ * V の形の図の 5 行は、厚さの寸法線が立つ脚にだけあり、寝た脚の記入が無い)。リブつきの形はリブを省く(簡略の印)。
+ * 穴の列が空の脚は穴を作らない: 寝た脚の穴の幅の向きの位置の記入が無い図の行(`hardBracketRows.ts`。統括の決定 2026-11-18 08:4x の (B))で、
+ * 印と呼びの「寝た脚の穴なし」で示す。その脚はフレームの溝への締結で留められない。
  */
 export interface AngleBracketRecord {
   readonly key: string;
@@ -208,6 +212,11 @@ export interface FootBaseRecord {
   readonly thickness: number;
   /** 穴(外形の左下からの x・y と径)。 */
   readonly holes: readonly (readonly [number, number, number])[];
+  /**
+   * L の外形の板だけ: 外形の頂点(左下を原点に反時計回り。直角の多角形で、外接の長方形が幅 × 奥行)。2 組の読みが共通の線((h))まで一致した行
+   * (統括の決定 2026-11-18 09:3x の 3)。省略は幅 × 奥行の長方形。
+   */
+  readonly outline?: readonly (readonly [number, number])[];
   readonly massG: number | null;
   readonly simplified: readonly string[];
 }
@@ -480,7 +489,9 @@ export const SHAPED_PLATE_FAMILY: CatalogFamily = {
   partName: (row) => row.size,
 };
 
-const angleRecord = recordLookup(ANGLE_BRACKET_RECORDS);
+/** L 形のブラケットの族の行: 2 本の読みで両脚の穴が決まった行(framePartRows.ts)の後に、寝た脚の穴を作らない行(hardBracketRows.ts)。 */
+const ANGLE_RECORDS: readonly AngleBracketRecord[] = [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS];
+const angleRecord = recordLookup(ANGLE_RECORDS);
 
 function angleDimensions(row: CatalogItemRow): AngleBracketCatalogDimensions | null {
   const record = angleRecord(row);
@@ -493,7 +504,8 @@ export const ANGLE_BRACKET_CATALOG_FAMILY: CatalogFamily = {
   options: [],
   stock: 'count',
   // リブつきの形はリブを省くので、質量は資料の値(形 × 密度より実物に近い)。一定の幅の形は検算と合う時だけ資料の値。
-  rows: ANGLE_BRACKET_RECORDS.map((record) => baseRow(record, { slot: record.slot, legA: record.legA, legB: record.legB, width: record.width,
+  // 寝た脚の穴を作らない行は、資料の質量が形 × 密度より軽い時だけ入れてある(道具が確かめた。補強の抜き穴を作らない行の決まり)。
+  rows: ANGLE_RECORDS.map((record) => baseRow(record, { slot: record.slot, legA: record.legA, legB: record.legB, width: record.width,
     thickness: record.thickness, holeDiameter: record.holeDiameter, ...(record.massG === null ? {} : { massG: record.massG }) },
   massTextOf(record.massG))),
   build: (row) => {
@@ -513,7 +525,8 @@ const baseRecord = recordLookup(FOOT_BASE_RECORDS);
 
 function baseDimensions(row: CatalogItemRow): FootBaseDimensions | null {
   const record = baseRecord(row);
-  return record === undefined ? null : { width: record.width, depth: record.depth, thickness: record.thickness, holes: record.holes };
+  return record === undefined ? null : { width: record.width, depth: record.depth, thickness: record.thickness, holes: record.holes,
+    ...(record.outline === undefined ? {} : { outline: record.outline }) };
 }
 
 export const FOOT_BASE_FAMILY: CatalogFamily = {

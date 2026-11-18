@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import { FILE_KINDS } from '@pointercad/model';
+import { SCRIPT_FILE_LIMITS } from '@pointercad/model/scripting';
 import { extensionsOf } from './fileGateway.js';
-import { nativeFileFilter, isFileDialogKind, FILE_KIND_SPECS } from '@pointercad/ui/file-contracts';
+import {
+  nativeFileFilter, isFileDialogKind, typedReadLimitOf, FILE_KIND_SPECS, INPUT_SETTINGS_FILE_BYTES, MAX_COMPRESSED_INPUT_BYTES,
+} from '@pointercad/ui/file-contracts';
 
 // The file contract is also imported by Electron's main process; it must not load React.
 vi.mock('react', () => { throw new Error('ファイル契約の読込にReactは不要です'); });
@@ -19,6 +23,19 @@ describe('Web/Desktop共通のファイル選択契約', () => {
       expect(filter.extensions.map(extension => `.${extension}`)).toEqual(extensionsOf(kind));
       expect(filter.name.length).toBeGreaterThan(0);
     }
+  });
+
+  it('種類つきの読込の上限が全ての種類に決まっていて、その種類のどの拡張子からも同じ値を引ける(大文字も)', () => {
+    for (const kind of FILE_KINDS) {
+      const limits = extensionsOf(kind).flatMap(extension => [typedReadLimitOf(`a${extension}`), typedReadLimitOf(`A${extension.toUpperCase()}`)]);
+      expect(limits.length, kind).toBeGreaterThan(0);
+      expect(limits.every(limit => Number.isSafeInteger(limit) && limit > 0), kind).toBe(true);
+      expect(new Set(limits).size, kind).toBe(1);
+    }
+    expect(typedReadLimitOf('a.pcadscript')).toBe(SCRIPT_FILE_LIMITS.bytes);
+    expect(typedReadLimitOf('a.pcadinput')).toBe(INPUT_SETTINGS_FILE_BYTES);
+    expect(typedReadLimitOf('a.step')).toBe(MAX_COMPRESSED_INPUT_BYTES);
+    expect(typedReadLimitOf('a.pcada')).toBe(MAX_COMPRESSED_INPUT_BYTES);
   });
 
   it.each(['__proto__', 'constructor', 'toString', '', 'STEP', 'unknown'])(

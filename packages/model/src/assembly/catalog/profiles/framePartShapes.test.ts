@@ -179,6 +179,27 @@ describe('フットベース・アジャスターベースの板', () => {
   it('穴が板からはみ出す時は断る', () => {
     expect(footBaseProfile({ ...base, holes: [[2, 10, 7]] })).toBeNull();
   });
+
+  it('L の外形(直角の多角形)は、面積が頂点の多角形の面積 − 穴、穴は外形の内で辺から半径より離れる時だけ', () => {
+    // 汎用の寸法: 幅 60・奥行 58、立つ腕の幅 30・寝た腕の高さ 28。
+    const outline = [[0, 0], [60, 0], [60, 28], [30, 28], [30, 58], [0, 58]] as const;
+    const lShape = { width: 60, depth: 58, thickness: 12, holes: [[15, 14, 9], [45, 14, 9], [15, 44, 9]] as const, outline };
+    expect(footBaseProfile(lShape)?.areaMm2).toBeCloseTo(60 * 28 + 30 * 30 - 3 * Math.PI * 81 / 4, 9);
+    expect(buildFootBasePart(lShape)?.solids.filter((feature) => feature.kind === 'boolean')).toHaveLength(3);
+    // 切り欠きの中の穴・辺にかかる穴は断る。
+    expect(footBaseProfile({ ...lShape, holes: [[45, 44, 9]] })).toBeNull();
+    expect(footBaseProfile({ ...lShape, holes: [[40, 25, 9]] })).toBeNull();
+    expect(footBaseProfile({ ...lShape, holes: [[33, 14, 9]] })).not.toBeNull();
+    expect(footBaseProfile({ ...lShape, holes: [[27, 44, 9]] })).toBeNull();
+    // 直角でない辺・外接の長方形が幅 × 奥行と違う・時計回りの外形は断る。
+    expect(footBaseProfile({ ...lShape, outline: [[0, 0], [60, 0], [30, 58], [0, 58]] })).toBeNull();
+    expect(footBaseProfile({ ...lShape, width: 70 })).toBeNull();
+    expect(footBaseProfile({ ...lShape, outline: [...outline].reverse() })).toBeNull();
+  });
+
+  it('外形を省いた時は今までの長方形と同じ輪と面積', () => {
+    expect(footBaseProfile({ ...base, outline: [[0, 0], [75, 0], [75, 75], [0, 75]] })).toEqual(footBaseProfile(base));
+  });
 });
 
 describe('アジャスター', () => {

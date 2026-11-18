@@ -181,7 +181,8 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
       'angle-bracket-specified', 'join-plate-specified', 'slot-nut-specified', 't-slot-frame-s6', 't-slot-frame-s8', 't-slot-frame-s10',
       'aluminum-channel', 'aluminum-square-pipe', 'aluminum-round-bar', 'aluminum-flat-bar', 'aluminum-angle', 't-slot-nut-bar', 't-slot-nut',
       't-slot-round-nut', 't-slot-frame-cap', 't-slot-flat-plate', 't-slot-shaped-plate', 't-slot-angle-bracket', 't-slot-foot-base',
-      't-slot-adjuster', 'pipe-frame', 'pipe-frame-slotted', 'pipe-frame-twin', 't-slot-frame-small', 't-slot-frame-cap-small',
+      't-slot-adjuster', 't-slot-joint-bar', 't-slot-stud', 't-slot-knurled-nut', 'pipe-frame', 'pipe-frame-slotted', 'pipe-frame-twin',
+      't-slot-frame-small', 't-slot-frame-cap-small',
       'bracket-stock', 'pipe-frame-cap', 'pipe-frame-foot']);
   });
 

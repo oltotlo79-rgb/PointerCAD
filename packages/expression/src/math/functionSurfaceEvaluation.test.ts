@@ -13,7 +13,10 @@ import type { MathExecutionBackend } from './mathWorkExecution.js';
 // 倍率は Worker の外では 1。時間の検査が測って設定した倍率と、段の記録の差し替えを、後の検査へ持ち越さない。
 afterEach(() => { vi.restoreAllMocks(); setCalculationPace(1); });
 
-interface StageRun { readonly stage: 'sampling' | 'smoothing'; readonly ms: number; readonly status: string }
+interface StageRun {
+  readonly stage: 'sampling' | 'smoothing'; readonly ms: number; readonly status: string;
+  readonly samples: number; readonly cells: number;
+}
 /**
  * 製品の入口(executeFunctionSurfaceWorkRequest)の中で標本化となめらか化が走った回数・所要・結末を記録する。
  * 段の時計が止めると、その段だけがもう 1 回走る(functionSurfaceWorkExecution.ts の surfaceClock)。時間の検査の失敗の文に
@@ -25,12 +28,14 @@ function recordStageRuns(): StageRun[] {
   const realSample = adaptive.sampleFunctionSurface, realSmooth = smoothing.smoothFunctionSurface;
   vi.spyOn(adaptive, 'sampleFunctionSurface').mockImplementation((...args) => {
     const started = performance.now(), result = realSample(...args);
-    runs.push({ stage: 'sampling', ms: performance.now() - started, status: result.status });
+    runs.push({ stage: 'sampling', ms: performance.now() - started, status: result.status,
+      samples: result.stats.samples, cells: result.stats.cells });
     return result;
   });
   vi.spyOn(smoothing, 'smoothFunctionSurface').mockImplementation((...args) => {
     const started = performance.now(), result = realSmooth(...args);
-    runs.push({ stage: 'smoothing', ms: performance.now() - started, status: result.status });
+    runs.push({ stage: 'smoothing', ms: performance.now() - started, status: result.status,
+      samples: result.used.samples, cells: result.used.cells });
     return result;
   });
   return runs;
@@ -223,6 +228,7 @@ describe('曲面の二階微分で値域だけを共有する', () => {
     process.stdout.write('[pcad:surface-deadline-regression] '+JSON.stringify(diagnosis)+String.fromCharCode(10));
     expect(GEOMETRY_CALCULATION_MS).toBe(2000);
     expect(elapsedMs, `製品の入口の1回の呼出しが倍率つきの2秒の時計の1本目を超えた: ${JSON.stringify(diagnosis)}`).toBeLessThanOrEqual(limitMs);
+    expect(stages.map(({ stage, status }) => [stage, status])).toEqual([['sampling', 'ready'], ['smoothing', 'ready']]);
     if (result.status !== 'ready') throw new Error(JSON.stringify(result));
     expect(result.spline).toBeDefined(); expect(result.stats).toEqual({samples:49666,cells:38229,triangles:32768});
     expect(result.maximumInterpolationErrorBound).toBeLessThanOrEqual(0.0005);
@@ -278,6 +284,14 @@ describe('返信取消E2Eの元の[-4,4]の実曲面入力と、標本化・な�
       samplingStats: sampled.stats, smoothingUsed: smooth.used }) + String.fromCharCode(10));
     expect(sampled.vertices.length).toBeGreaterThan(1024);
     expect(sampled.triangles).toHaveLength(32_768);
+    // 格子の外側や小数の添字は、平滑化のために保持した別の標本に一致しない。
+    const gridSize = 2 ** (input.budget.maximumDepth + 1), stride = gridSize + 1;
+    expect(knownSample([0, 0])).toBeDefined();
+    expect(knownSample([-1, stride])).toBeUndefined();
+    expect(knownSample([1, -stride])).toBeUndefined();
+    const center = gridSize / 2;
+    expect(knownSample([center, center])).toBeDefined();
+    expect(knownSample([center + 0.25, center - stride / 4])).toBeUndefined();
     expect({ samples: sampled.stats.samples + smooth.used.samples, cells: sampled.stats.cells + smooth.used.cells })
       .toEqual({ samples: 49_666, cells: 38_229 });
     expect(sampled.maximumInterpolationErrorBound).toBeLessThanOrEqual(0.001);

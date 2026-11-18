@@ -26,6 +26,7 @@ import {
   ADJUSTER_RECORDS, ANGLE_BRACKET_RECORDS, FLAT_PLATE_RECORDS, FOOT_BASE_RECORDS, FRAME_CAP_RECORDS, ROUND_NUT_RECORDS, SHAPED_PLATE_RECORDS,
   T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS,
 } from './framePartRows.js';
+import { HARD_BRACKET_RECORDS } from './hardBracketRows.js';
 
 const FAMILIES = [T_SLOT_NUT_BAR_FAMILY, T_SLOT_NUT_FAMILY, ROUND_NUT_FAMILY, FRAME_CAP_FAMILY, FLAT_PLATE_FAMILY, SHAPED_PLATE_FAMILY,
   ANGLE_BRACKET_CATALOG_FAMILY, FOOT_BASE_FAMILY, ADJUSTER_FAMILY];
@@ -55,11 +56,13 @@ describe('資料 SF-1 のフレームの部品の 9 族', () => {
       ['t-slot-foot-base', 'aluminumFrame', 'catalog.frame.kind.footBase', 't-slot-foot-base-2026-11-r1', 'frame-part-1', 'footBase', 'count', []],
       ['t-slot-adjuster', 'aluminumFrame', 'catalog.frame.kind.adjuster', 't-slot-adjuster-2026-11-r1', 'frame-part-1', 'adjuster', 'count', []],
     ]);
+    // L 形のブラケットの族は、両脚の穴が決まった行の後に、寝た脚の穴を作らない行(統括の決定 2026-11-18 08:4x の (B))を持つ。
     const records = [T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS, ROUND_NUT_RECORDS, FRAME_CAP_RECORDS, FLAT_PLATE_RECORDS, SHAPED_PLATE_RECORDS,
-      ANGLE_BRACKET_RECORDS, FOOT_BASE_RECORDS, ADJUSTER_RECORDS];
+      [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS], FOOT_BASE_RECORDS, ADJUSTER_RECORDS];
     expect(FAMILIES.map((family) => family.rows.map((row) => [row.key, row.size])))
       .toEqual(records.map((list) => list.map((record) => [record.key, record.size])));
-    expect(records.map((list) => list.length)).toEqual([12, 120, 4, 51, 11, 15, 48, 55, 6]);
+    expect(records.map((list) => list.length)).toEqual([12, 120, 4, 51, 11, 15, 51, 66, 6]);
+    expect(HARD_BRACKET_RECORDS.length).toBe(3);
   });
 
   it('行は規格の行を名乗らず、出どころは資料の番号と頁だけで、note と簡略の印は行の表の印から作る', () => {
@@ -175,11 +178,17 @@ describe('資料 SF-1 の部品の読み直しで足した 4 族(平板の L・T
       expect(SHAPED_PLATE_FAMILY.nominalVolume(row, {})).toBeCloseTo((shapedPlateProfile(record)?.areaMm2 ?? NaN) * record.thickness, 9);
       expect([SHAPED_PLATE_FAMILY.nominalMassG?.(row, {}) ?? null, row.simplified]).toEqual([record.massG, ['角の形']]);
     }
+    // 厚さの印は、どちらの脚の厚さの記入が無く、どう作ったかの文(統括の決定 2026-11-18 09:0x の (a))。V の形の図の 5 行は、厚さの寸法線が
+    // 立つ脚にだけあった(行の出どころの記録 thickness-mark-audit で確かめた)ので寝た脚の文、ほかの行は立つ脚の文。
+    const lowerMissing = ['s6-20x20x50-t3-h4-aluminum', 's8-30x30x50-t5-h3-aluminum', 's8-30x30x60-t5-h4-aluminum',
+      's10-40x40x70-t5-h4-aluminum-67g-a20', 's10-40x40x70-t5-h4-aluminum-67g-a22.5'];
     for (const record of ANGLE_BRACKET_RECORDS) {
       const row = rowOf(ANGLE_BRACKET_CATALOG_FAMILY, record.key);
       expect(ANGLE_BRACKET_CATALOG_FAMILY.nominalVolume(row, {})).toBeCloseTo(angleBracketCatalogVolume(record) ?? NaN, 9);
-      expect([ANGLE_BRACKET_CATALOG_FAMILY.nominalMassG?.(row, {}) ?? null, row.simplified]).toEqual([record.massG,
-        record.ribbed ? ['立つ脚の厚さ', 'リブ'] : ['立つ脚の厚さ']]);
+      const thickness = lowerMissing.includes(record.key) ? '寝た脚の厚さは記入が無いので、立つ脚の厚さで作った'
+        : '立つ脚の厚さは記入が無いので、寝た脚の厚さで作った';
+      expect([ANGLE_BRACKET_CATALOG_FAMILY.nominalMassG?.(row, {}) ?? null, row.simplified], record.key).toEqual([record.massG,
+        record.ribbed ? [thickness, 'リブ'] : [thickness]]);
       // リブつきの形はリブを省くので、質量は必ず資料の値を持つ。
       if (record.ribbed) expect(record.massG, record.key).not.toBeNull();
     }
@@ -207,13 +216,19 @@ describe('資料 SF-1 の部品の読み直しで足した 4 族(平板の L・T
         (shapedPlateProfile(record)?.areaMm2 ?? NaN) * record.thickness * (density[record.material] ?? NaN) / 1000, record.key]),
       ...ANGLE_BRACKET_RECORDS.filter((record) => !record.ribbed).map((record): readonly [number | null, number, string] => [record.massG,
         (angleBracketCatalogVolume(record) ?? NaN) * (density[record.material] ?? NaN) / 1000, record.key]),
-      ...FOOT_BASE_RECORDS.map((record): readonly [number | null, number, string] => [record.massG,
+      ...FOOT_BASE_RECORDS.filter((record) => record.outline === undefined).map((record): readonly [number | null, number, string] => [record.massG,
         (footBaseProfile(record)?.areaMm2 ?? NaN) * record.thickness * (density[record.material] ?? NaN) / 1000, record.key]),
     ];
     for (const [mass, computed, key] of checks) {
       if (mass !== null) expect(withinMagnitude(mass - computed, 0.1 * computed), key).toBe(true);
     }
     expect(checks.filter(([mass]) => mass === null).length).toBe(31);
+    // L の外形の板は、作っていない所(めねじ・座ぐり)の印があり、資料の質量が形 × 密度より軽い向きなので資料の値(07:2x の決まり。統括 09:5x の 3)。
+    for (const record of FOOT_BASE_RECORDS.filter((candidate) => candidate.outline !== undefined)) {
+      const computed = (footBaseProfile(record)?.areaMm2 ?? NaN) * record.thickness * (density[record.material] ?? NaN) / 1000;
+      expect(record.simplified.filter((mark) => mark === 'アジャスターのめねじ' || mark === '取付け穴の座ぐり').length, record.key).toBeGreaterThan(0);
+      expect(record.massG ?? NaN, record.key).toBeLessThan(computed);
+    }
   });
 });
 
@@ -257,7 +272,7 @@ describe('1 個のナットの形の拡張(穴の位置・ボールとストッ�
 
 describe('部位ごとに材料の違う行(密度なし。統括の決定 2026-11-18 08:1x)', () => {
   it('材料が mixed の行は密度を持たず、部品表の材質は資料の材質の文字、質量は資料の 1 個の値。ほかの行は今までどおり材料の密度を持つ', () => {
-    const records = [...ANGLE_BRACKET_RECORDS, ...FOOT_BASE_RECORDS, ...ADJUSTER_RECORDS];
+    const records = [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...FOOT_BASE_RECORDS, ...ADJUSTER_RECORDS];
     const mixed = records.filter((record) => record.material === 'mixed');
     // 今の製品の 2 行(座が樹脂でねじが鋼)も部位ごとに材料の違う行に直した(統括の決定 2026-11-18 08:1x。鍵は変えない)。
     expect(mixed.map((record) => record.key)).toEqual(['m8-d20-l15-nylon', 'm8-d30-l34-mixed', 'm8-d40-l24-nylon']);
@@ -285,6 +300,26 @@ describe('今の製品のアジャスター 2 行を、部位ごとに材料の�
       expect([row?.materialLabel, row?.densityMaterialId], key).toEqual([label, undefined]);
       expect(row === undefined ? null : ADJUSTER_FAMILY.nominalMassG?.(row, {}), key).toBe(mass);
       expect(row?.size, key).not.toContain('ナイロン');
+    }
+  });
+});
+
+describe('L の外形のベースの板(統括の決定 2026-11-18 09:3x の 3)', () => {
+  it('外形の頂点を持つ行は 6 行で、頂点は直角の 6 つ、外接の長方形が幅 × 奥行、体積は多角形の面積 − 穴の面積 × 厚さ、呼びに「L 形」', () => {
+    const shaped = FOOT_BASE_RECORDS.filter((record) => record.outline !== undefined);
+    expect(shaped.length).toBe(6);
+    for (const record of shaped) {
+      const outline = record.outline ?? [];
+      const area = outline.reduce((sum, [x1, y1], index) => {
+        const [x2, y2] = outline[(index + 1) % outline.length] ?? [x1, y1];
+        return sum + (x1 * y2 - x2 * y1) / 2;
+      }, 0);
+      expect([outline.length, Math.max(...outline.map(([x]) => x)), Math.max(...outline.map(([, y]) => y)), record.key.includes('-l'),
+        record.size.includes('L 形')], record.key).toEqual([6, record.width, record.depth, true, true]);
+      const holes = record.holes.reduce((sum, [, , size]) => sum + Math.PI * size ** 2 / 4, 0);
+      const row = rowOf(FOOT_BASE_FAMILY, record.key);
+      expect(FOOT_BASE_FAMILY.nominalVolume(row, {}), record.key).toBeCloseTo((area - holes) * record.thickness, 9);
+      expect(FOOT_BASE_FAMILY.build(row, {}), record.key).not.toBeNull();
     }
   });
 });

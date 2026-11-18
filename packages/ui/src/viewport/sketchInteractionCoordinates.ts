@@ -62,6 +62,8 @@ interface SketchCoordinateContext {
   readonly getOrbit: () => OrbitState;
   /** 向きの吸着(案内線)を効かせる道具か。押した場所が座標そのものになる道具だけが真。 */
   readonly tracksDirection: (tool: NumericInputToolId) => boolean;
+  /** 吸着を一時止める修飾キーを押している間か(B-09 3-2。既定の設定では常に false。sketchSnapPause.ts)。 */
+  readonly snapPaused: () => boolean;
 }
 
 /**
@@ -140,7 +142,7 @@ function polarValues(offset: Vec3, plane: WorkPlane): readonly [number, number, 
 
 /** 1 つの canvas の座標の決め方。返す関数はどれも呼ばれた時点のストアを読む。 */
 export function createSketchCoordinates(context: SketchCoordinateContext) {
-  const { scene, project, getOrbit, tracksDirection } = context;
+  const { scene, project, getOrbit, tracksDirection, snapPaused } = context;
 
   /**
    * 操作に使う作図面。任意の作業平面(FR-328)は部品文書を見ないと決まらないので、
@@ -164,10 +166,10 @@ export function createSketchCoordinates(context: SketchCoordinateContext) {
     return baseWorkPlane(planeId) ?? WORK_PLANES[DEFAULT_WORK_PLANE_ID];
   }
 
-  /** いま吸い付いている候補。吸着が切なら null(FR-107)。 */
+  /** いま吸い付いている候補。吸着が切、または一時止めるキーを押している間は null(FR-107、B-09 3-2)。 */
   function findSnap(pointer: Pointer, sketch?: ResolvedSketch): SnapCandidate | null {
     const state = useAppStore.getState();
-    if (!state.snapEnabled) {
+    if (!state.snapEnabled || snapPaused()) {
       return null;
     }
     const plane = interactionPlane(state.workPlaneId);
@@ -197,7 +199,7 @@ export function createSketchCoordinates(context: SketchCoordinateContext) {
    */
   function findTrack(pointer: Pointer, snap: SnapCandidate | null): TrackResult | null {
     const state = useAppStore.getState();
-    if (snap !== null || !state.snapEnabled || !tracksDirection(state.activeTool)) {
+    if (snap !== null || !state.snapEnabled || snapPaused() || !tracksDirection(state.activeTool)) {
       return null;
     }
     const kinds = enabledTrackKinds(new Set(state.snapKinds));

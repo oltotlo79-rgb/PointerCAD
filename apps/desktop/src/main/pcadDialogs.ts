@@ -5,7 +5,7 @@ import type { FileHandle } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { SAVE_RECOVERY_COPY_MARKER, hasSaveRecoveryCopy } from '@pointercad/ui/save-errors';
 
-import { nativeFileFilter, isFileDialogKind, MAX_COMPRESSED_INPUT_BYTES,
+import { nativeFileFilter, isFileDialogKind, MAX_COMPRESSED_INPUT_BYTES, typedReadLimitOf,
   PCAD_EXTENSION as PCAD_DOTTED_EXTENSION, type NativeFileFilter as KindFilter } from '@pointercad/ui/file-contracts';
 
 import { validateAppSender } from './appSender.js';
@@ -152,12 +152,12 @@ function withPcadExtension(filePath: string): string {
     : `${filePath}.${PCAD_EXTENSION}`;
 }
 
-/** 種類ごとの読込の上限。部品などの「開く」(区切って読む)と種類つきの「開く」(readBytesFrom)の両方が使う。 */
+/**
+ * 種類ごとの読込の上限。部品などの「開く」(区切って読む)と種類つきの「開く」(readBytesFrom)の両方が使う。
+ * CSV だけは種類の表の外(1 MiB)。ほかはブラウザーと同じ種類ごとの表(typedReadLimitOf)を引く。
+ */
 function readLimitOf(filePath: string): number {
-  // Script JSON may escape each source byte six times. Mirrors SCRIPT_FILE_LIMITS.bytes.
-  const extension = extname(filePath).toLowerCase();
-  return extension === '.csv' ? 1024 * 1024
-    : extension === '.pcadscript' ? 6 * 1024 * 1024 + 65536 : MAX_COMPRESSED_INPUT_BYTES;
+  return extname(filePath).toLowerCase() === '.csv' ? 1024 * 1024 : typedReadLimitOf(basename(filePath));
 }
 
 /**

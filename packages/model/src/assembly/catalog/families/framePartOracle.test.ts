@@ -298,6 +298,11 @@ describe('資料 SF-1 の読み直しで足した 4 族と照らす側の読み'
       const holes = pairs.map(([x, y], index): readonly [number, number, number] => [x, y, expanded[index] ?? NaN]);
       expect([...record.holes].sort((a, b) => a[0] - b[0] || a[1] - b[1]), record.key).toEqual(holes);
       if (record.massG !== null) expect(record.massG, record.key).toBe(numberOf(cells['質量_g']));
+      // L の外形の行だけ、照らす側の読みに外形の頂点(「左下から反時計回り: x,y;…」)があり、行の頂点と同じ。ほかの行は外形の頂点を持たない。
+      const outlineText = cells['外形の頂点'];
+      const outline = outlineText === undefined ? undefined : (outlineText.split(':')[1] ?? '').split(';')
+        .map((part) => (part.match(/[0-9]+(?:\.[0-9]+)?/gu) ?? []).map(Number));
+      expect(record.outline?.map((point) => [...point]), record.key).toEqual(outline);
     }
   });
 

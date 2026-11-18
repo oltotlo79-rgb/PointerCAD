@@ -13,6 +13,8 @@ export const SETTINGS_HELP_BINDINGS = {
   autoSaveIntervalMs: ['save-and-open', 'display-settings'],
   // 切断の一覧の定尺・切断代(J-01)は、規格部品の窓の切断の一覧の章。
   stockCutting: ['standard-parts'],
+  // 吸着を一時止める修飾キー(B-09 3-2)は、吸着の章と、操作の割り当ての窓の章。
+  snapPauseModifier: ['snap', 'shortcuts'],
   trackAngleStep: ['tracking'], lengthUnit: ['units'], selectionFilter: ['select-subshape'],
   inferConstraints: ['constraints'], timelineHintSeen: ['timeline'], tutorialCompleted: ['tutorial'],
 } satisfies Readonly<Record<keyof PersistedDisplaySettings, readonly string[]>>;
@@ -22,6 +24,8 @@ export const OUTPUT_HELP_BINDINGS = {
   pcad: ['save-and-open'], pcada: ['assembly', 'save-and-open'], pcadd: ['drawing-export'],
   csv: ['parameters'],
   pcadt: ['template'], pcadscript: ['script-tools'], zip: ['joint', 'explode'],
+  // 操作の割り当ての設定ファイル(B-09 3-1)は、操作の割り当ての窓の章。
+  pcadinput: ['shortcuts'],
   step: ['export', 'cam'], stl: ['export', 'print-check', 'cam'], '3mf': ['export', 'cam'],
   obj: ['export'], glb: ['export'], dxf: ['dxf', 'drawing-export', 'sheet-metal-flat'],
   svg: ['drawing-export', 'sheet-metal-flat'], pdf: ['drawing-export'],

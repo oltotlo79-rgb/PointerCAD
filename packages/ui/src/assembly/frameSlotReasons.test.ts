@@ -10,7 +10,8 @@ import { frameSlotReasonText } from './frameSlotReasons.js';
 /** 計画の code の全部と、文が使う数(code の文に {名前} があれば全部をここに持つ)。 */
 const PLAN_CODES = {
   holeNotClearance: {}, holeNotPlaceable: {}, notOnSlotFace: {}, offSlot: { offsetMm: 3, allowedMm: 0.6 },
-  outsideSlotEnd: { alongMm: 2, slotLengthMm: 500 }, slotWidthUnknown: {}, noSlotNut: { slot: 6, thread: 'M5' },
+  outsideSlotEnd: { alongMm: 2, slotLengthMm: 500 }, slotWidthUnknown: {}, slotNominalUnknown: {}, boltWiderThanSlot: { thread: 'M8', openingMm: 6 },
+  noSlotNut: { slot: 6, thread: 'M5' },
   slotPartHeightUnknown: { nut: 'T 溝用ナット 溝幅 6 M5（後入れ・ボール付き・鋼）' }, noBoltLength: {},
 } satisfies Record<FrameSlotHoleFailure['code'], FrameSlotHoleFailure['detail']>;
 

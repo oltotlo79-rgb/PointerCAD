@@ -37,6 +37,7 @@ function PreviewTable({ preview }: { readonly preview: FrameSlotDraftPreview | n
     return { index, label, failures, entry };
   });
   const simplified = preview.result.ok && preview.result.entries.some((entry) => entry.nutDepthSimplified);
+  const positionSimplified = preview.result.ok && preview.result.entries.some((entry) => entry.slotPositionSimplified);
   return <>
     <table className="pcad-table" data-testid="frame-slot-preview">
       <thead><tr>
@@ -52,6 +53,7 @@ function PreviewTable({ preview }: { readonly preview: FrameSlotDraftPreview | n
       </tbody>
     </table>
     {simplified ? <p className="pcad-field__hint">{t('assembly.frameSlot.depthSimplified')}</p> : null}
+    {positionSimplified ? <p className="pcad-field__hint">{t('assembly.frameSlot.positionSimplified')}</p> : null}
     <p className="pcad-field__hint">{t('assembly.frameSlot.noRecord')}</p>
   </>;
 }

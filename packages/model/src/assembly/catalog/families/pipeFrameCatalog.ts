@@ -11,6 +11,7 @@ import { withName } from '../../standard/partPrimitives.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildMiteredSection, MITER_OPTION_SPECS, miteredMassLength, miteredSectionVolume } from '../miterOption.js';
 import { pipeFrameBounds, pipeFrameProfile, type PipeFrameSection } from '../profiles/pipeFrameSection.js';
+import type { FrameSectionSlot } from '../../frame/frameSlots.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { PIPE_FRAME_RECORDS } from './pipeFrameRows.js';
 
@@ -48,6 +49,8 @@ export interface PipeFrameRecord {
   readonly zyCm3: number | null;
   /** 形に入れていない所(記入の無い所)。 */
   readonly simplified: readonly string[];
+  /** 溝幅の呼び(溝つきで溝を作る行のうち、溝の 4 つの寸法が 1 冊目の標準のフレームの溝と同じ組の行だけ。道具が決める)。 */
+  readonly slotWidth?: number;
 }
 
 /** 種類ごとの族の id・種類の名前の鍵・線図。 */
@@ -58,12 +61,12 @@ const KINDS: Readonly<Record<PipeFrameKind, { readonly id: string; readonly kind
 };
 
 const DIMENSION_KEYS = ['series', 'width', 'height', 'outerDiameter', 'innerDiameter', 'finThickness', 'finTop', 'mouthWidth', 'roomWidth',
-  'shoulder', 'roomHeight', 'pitch', 'webWidth', 'unitMassKgPerM', 'ixCm4', 'iyCm4', 'zxCm3', 'zyCm3'] as const;
+  'shoulder', 'roomHeight', 'pitch', 'webWidth', 'unitMassKgPerM', 'ixCm4', 'iyCm4', 'zxCm3', 'zyCm3', 'slotWidth'] as const;
 
 function rowOf(record: PipeFrameRecord): CatalogItemRow {
   const dims = Object.fromEntries(DIMENSION_KEYS.flatMap((key): (readonly [string, number])[] => {
     const value = record[key];
-    return value === null ? [] : [[key, value]];
+    return value === null || value === undefined ? [] : [[key, value]];
   }));
   return {
     key: record.key,
@@ -102,6 +105,20 @@ function sectionOf(kind: PipeFrameKind, row: CatalogItemRow): PipeFrameSection {
     webWidth: value('webWidth'), innerDiameter: optional('innerDiameter') };
 }
 
+/**
+ * 溝つきの行の、締結に出す溝(J-02 P6a)。溝は下の面の中心の 1 本で、溝幅の呼び(行の slotWidth)が決まった行だけ出す。
+ * 口の中心は外の面の上 (0, −高さ/2)、内向きは +Y、面に沿う向きは +X(1 冊目の tSlotSlots の下の面と同じ)。溝の角は直角の簡略なので roomSimplified。
+ * 溝を作らない行は溝なし(空の並び)、形が成り立たない行は null。溝の呼びは行の呼び(dims.slotWidth)で、呼びの無い行の溝は呼び null
+ * (溝はあるが、溝用のナットの溝幅が決まらない。統括 2026-11-18 10:0x)。
+ */
+function slottedSectionSlots(row: CatalogItemRow): readonly FrameSectionSlot[] | null {
+  const section = sectionOf('slotted', row);
+  if (section.kind !== 'slotted' || pipeFrameProfile(section) === null) return null;
+  if (section.shoulder === null || section.roomHeight === null) return [];
+  return [{ face: 'bottom', center: [0, -section.height / 2], inward: [0, 1], across: [1, 0], opening: section.mouthWidth, shoulder: section.shoulder,
+    slotDepth: section.roomHeight, roomSimplified: true, nominalWidth: row.dims.slotWidth ?? null }];
+}
+
 function partName(row: CatalogItemRow, values: Readonly<Record<string, string>>): string {
   return `${row.size}×${lengthText(values)}`;
 }
@@ -109,6 +126,7 @@ function partName(row: CatalogItemRow, values: Readonly<Record<string, string>>)
 function familyOf(kind: PipeFrameKind, rows: readonly CatalogItemRow[]): CatalogFamily {
   const { id, kindKey, diagram } = KINDS[kind];
   return {
+    ...(kind === 'slotted' ? { sectionSlots: (row: CatalogItemRow) => slottedSectionSlots(row) } : {}),
     id,
     group: 'aluminumFrame',
     kindKey,

@@ -21,6 +21,7 @@ import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../command
 import { readMouseButtonCommands, type MouseButtonCommands } from '../commands/pointerCommandGesture.js';
 import { readRadialCommands, type RadialCommands } from '../commands/radialCommandSettings.js';
 import { readStoredShortcutAssignments, storedShortcutFields } from './shortcutSettings.js';
+import { DEFAULT_SNAP_PAUSE_MODIFIER, snapPauseModifierOf, type SnapPauseModifier } from './snapPauseSetting.js';
 import type { NumericDefaultSources } from '../sketch/numericDefaultSources.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
@@ -77,6 +78,8 @@ export interface DisplaySettings {
   readonly autoSaveIntervalMs?: number;
   /** 切断の一覧の定尺・切断代(J-01)。端末に覚え、文書には保存しない。無い時は 定尺 なし・切断代 0。 */
   readonly stockCutting?: StockCuttingSettings;
+  /** 作図で、押している間だけ吸着と推定を止める修飾キー(B-09 3-2)。既定は 'none'(止めない)。 */
+  readonly snapPauseModifier?: SnapPauseModifier;
   readonly theme: ThemeId;
   /** 表示の拡大率(%)。90〜150(FR-909)。 */
   readonly uiScale: number;
@@ -143,6 +146,7 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   numericToolDefaults: {},
   autoSaveIntervalMs: readAutoSaveIntervalMs({}),
   stockCutting: DEFAULT_STOCK_CUTTING,
+  snapPauseModifier: DEFAULT_SNAP_PAUSE_MODIFIER,
   theme: 'dark',
   uiScale: 100,
   trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
@@ -460,6 +464,8 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       numericToolDefaults: readNumericToolDefaults('numericToolDefaults' in parsed ? parsed.numericToolDefaults : undefined),
       autoSaveIntervalMs: readAutoSaveIntervalMs('autoSaveIntervalMs' in parsed ? { autoSaveIntervalMs: parsed.autoSaveIntervalMs } : {}),
       stockCutting: readStockCuttingSettings('stockCutting' in parsed ? parsed.stockCutting : undefined),
+      // 知らない値は既定へ戻す(止めない側へ倒す。今までと同じ動き)。
+      snapPauseModifier: snapPauseModifierOf('snapPauseModifier' in parsed ? parsed.snapPauseModifier : undefined) ?? DEFAULT_SNAP_PAUSE_MODIFIER,
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;

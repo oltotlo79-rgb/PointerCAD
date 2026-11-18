@@ -358,6 +358,7 @@ describe('選ぶ窓の機械要素', () => {
         t('catalog.frame.kind.flatBar'), t('catalog.frame.kind.angle'), t('catalog.frame.kind.nutBar'), t('catalog.frame.kind.catalogNut'),
         t('catalog.frame.kind.roundNut'), t('catalog.frame.kind.cap'), t('catalog.frame.kind.flatPlate'), t('catalog.frame.kind.shapedPlate'),
         t('catalog.frame.kind.angleBracketCatalog'), t('catalog.frame.kind.footBase'), t('catalog.frame.kind.adjuster'),
+        t('catalog.frame.kind.jointBar'), t('catalog.frame.kind.tSlotStud'), t('catalog.frame.kind.knurledNut'),
         t('catalog.frame.kind.pipeFrame'), t('catalog.frame.kind.pipeFrameSlotted'), t('catalog.frame.kind.pipeFrameTwin'),
         t('catalog.frame.kind.smallFrame'), t('catalog.frame.kind.smallFrameCap'), t('catalog.frame.kind.bracketStock'),
         t('catalog.frame.kind.pipeFrameCap'), t('catalog.frame.kind.pipeFrameFoot')]);

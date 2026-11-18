@@ -67,7 +67,7 @@ function candidateOf(family: CatalogFamily, row: CatalogItemRow, options: Readon
   const length = evaluateExpression(Object.hasOwn(values, 'length') ? values.length : '');
   if (slots === null || slots.length === 0 || !length.ok || !(length.value.value > 0)) return null;
   return { componentId, lines: frameSlotLines(slots, placement, length.value.value, bounds, miterEndsOf(values)),
-    slotWidth: frameSlotWidthOf(row) };
+    slotWidth: frameSlotWidthOf(row), slotPositionSimplified: row.simplifiedKinds?.includes('slotPositionSymmetric') === true };
 }
 
 /**

@@ -216,21 +216,33 @@ const COVER_RINGS = 6;
  * there is covered by a drawn vertex of a proven cell: the continued branch distance plus that vertex error
  * is part of the reported bound. Triangles never join two branches or cross outside the condition.
  */
+function canonicalSurfaceGrid(grid: SurfaceParameter, topology: FunctionSurfaceOptions['boundary'], gridSize: number): SurfaceParameter {
+  let [u,v] = grid;
+  if (topology === undefined) return grid;
+  if (topology.periodic[0] && u === gridSize) u = 0;
+  if (topology.periodic[1] && v === gridSize) v = 0;
+  if ((u === 0 && topology.poles[0][0]) || (u === gridSize && topology.poles[0][1])) v = 0;
+  if ((v === 0 && topology.poles[1][0]) || (v === gridSize && topology.poles[1][1])) u = 0;
+  return [u,v];
+}
 function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: FunctionSurfaceOptions,
   initial: FunctionPointRanges, initialStopChecked = false, conditions: FunctionConditionDomain | null = null,
   observer?: FunctionSurfaceLeafObserver): FunctionSurfaceSamplingResult {
   // One extra integer bit keeps leaf centres integral at the maximum permitted depth.
-  const gridSize = 2**(options.maximumDepth+1), cache = new Map<string, Sample | null>(), leaves: SurfaceLeaf[] = [];
-  const vertices: FunctionSurfaceVertex[] = [], triangles: [number, number, number][] = [], vertexIndexes = new Map<string, number>();
+  const gridSize = 2**(options.maximumDepth+1), cache = new Map<number, Sample | null>(), leaves: SurfaceLeaf[] = [];
+  const vertices: FunctionSurfaceVertex[] = [], triangles: [number, number, number][] = [], vertexIndexes = new Map<number, number>();
   let cells = 0, failure: StopReason | undefined, maximumInterpolationErrorBound = 0;
   const stats = (): FunctionSurfaceStats => ({ samples: cache.size, cells, triangles: triangles.length });
   const stopped = (reason: StopReason): FunctionSurfaceSamplingResult => ({ status: 'stopped', reason, stats: stats() });
-  const key = (grid: SurfaceParameter) => `${grid[0]},${grid[1]}`;
+  // Both grid indices are integers in [0, 2^25] at the maximum depth of 24.
+  const stride = gridSize + 1;
+  const key = (grid: SurfaceParameter) => grid[0] * stride + grid[1];
   const parameter = (index: number, axis: number) => index === 0 ? options.lower[axis] : index === gridSize ? options.upper[axis]
     : options.lower[axis]+(options.upper[axis]-options.lower[axis])*(index/gridSize);
   const parameters = (grid: SurfaceParameter): SurfaceParameter => [parameter(grid[0],0),parameter(grid[1],1)];
   const sample = (grid: SurfaceParameter): Sample | null => {
-    const id = key(grid); if (cache.has(id)) return cache.get(id) ?? null;
+    const id = key(grid), cached = cache.get(id);
+    if (cached !== undefined) return cached;
     if (cache.size >= options.maximumSamples) { failure = 'samples'; return null; }
     const input = parameters(grid), point = evaluator.point(input);
     if (point === null || point.length !== 3 || !point.every(Number.isFinite)) { cache.set(id,null); return null; }
@@ -240,7 +252,7 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
   };
   const stack: SurfaceCell[] = [{ u: 0, v: 0, span: gridSize, depth: 0 }];
   // Condition boundaries only: drawn leaves by lower corner, omitted cells and the vertices covering them.
-  const omitted: OmittedSurfaceCell[] = [], covers: SurfaceCover[] = [], coverPoints = new Map<string, SurfaceParameter>();
+  const omitted: OmittedSurfaceCell[] = [], covers: SurfaceCover[] = [], coverPoints = new Map<number, SurfaceParameter>();
   const leafCorners = new Map<number, SurfaceLeaf>(), leafSelections = new Map<SurfaceLeaf, string | null>();
   const box = (lower: SurfaceParameter, upper: SurfaceParameter): MathInterval[] =>
     [{ lower: lower[0], upper: upper[0] }, { lower: lower[1], upper: upper[1] }];
@@ -323,7 +335,7 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
       }
       return leafSelections.get(leaf) ?? null;
     };
-    const selectionsAt = new Map<string, readonly string[]>();
+    const selectionsAt = new Map<number, readonly string[]>();
     const drawnSelections = (grid: SurfaceParameter, span: number): readonly string[] => {
       const id = key(grid), cached = selectionsAt.get(id);
       if (cached !== undefined) return cached;
@@ -404,28 +416,26 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
   if (leaves.length === 0) return { status: 'empty', stats: stats() };
   // Covering corners become ring vertices of the drawn leaves that contain them.
   const extra = [...coverPoints.values()].map(([u, v]): SurfaceLeaf => ({ u, v, span: 0, depth: 0, interpolationError: 0 }));
-  const boundary = createSurfaceBoundary(extra.length === 0 ? leaves : [...leaves, ...extra], options.boundary?.periodic, gridSize);
-  const canonicalGrid = (grid: SurfaceParameter): SurfaceParameter => {
-    let [u,v] = grid;
-    const topology = options.boundary;
-    if (topology === undefined) return grid;
-    if (topology.periodic[0] && u === gridSize) u = 0;
-    if (topology.periodic[1] && v === gridSize) v = 0;
-    if ((u === 0 && topology.poles[0][0]) || (u === gridSize && topology.poles[0][1])) v = 0;
-    if ((v === 0 && topology.poles[1][0]) || (v === gridSize && topology.poles[1][1])) u = 0;
-    return [u,v];
-  };
+  // Equal dyadic spans align on both axes, including across a periodic seam.
+  // Only a smaller span or an explicit covering corner can introduce an extra edge vertex.
+  const uniform = extra.length === 0 && leaves.every(leaf => leaf.span === leaves[0].span);
+  const boundary = uniform ? corners : createSurfaceBoundary(extra.length === 0 ? leaves : [...leaves, ...extra], options.boundary?.periodic, gridSize);
+  const canonicalGrid = (grid: SurfaceParameter): SurfaceParameter => canonicalSurfaceGrid(grid, options.boundary, gridSize);
   const vertexIndex = (grid: SurfaceParameter): number | null => {
     const canonical = canonicalGrid(grid), id = key(canonical), existing = vertexIndexes.get(id);
     const point = sample(grid); if (point === null) { failure ??= 'roundoff'; return null; }
+    const gridKey = key(grid);
     const representative = existing === undefined ? sample(canonical)?.vertex : vertices[existing];
     if (representative === undefined) { failure ??= 'roundoff'; return null; }
     // Shared topology may change a floating approximation by a few ulps. Recheck the full point enclosure.
-    const error = id === key(grid) ? point.error : functionPointError(evaluator.enclosure(point.vertex.parameters,point.vertex.parameters),representative.point);
+    const error = id === gridKey ? point.error : functionPointError(evaluator.enclosure(point.vertex.parameters,point.vertex.parameters),representative.point);
     if (error > options.tolerance/2) { failure = 'roundoff'; return null; }
-    cache.set(key(grid),{vertex:{parameters:point.vertex.parameters,point:representative.point},error});
+    if (id !== gridKey) cache.set(gridKey,{vertex:{parameters:point.vertex.parameters,point:representative.point},error});
     if (existing !== undefined) return existing;
-    const index = vertices.length; vertices.push(representative); vertexIndexes.set(id,index); return index;
+    // Keep the public vertex separate from the sampler's evidence. Both share frozen coordinate arrays.
+    const index = vertices.length;
+    vertices.push({ parameters: representative.parameters, point: representative.point });
+    vertexIndexes.set(id,index); return index;
   };
   for (const leaf of leaves) {
     const stop = options.shouldStop?.(); if (stop !== undefined) return stopped(stop);
@@ -460,7 +470,10 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
   }
   if (observer !== undefined && conditions === null && covers.length === 0 && options.boundary?.periodic.some(Boolean) !== true) {
     // The patch is complete: expose only reads of its existing samples, never a sampling callback.
-    observer.leaves(leaves, (index, axis) => parameter(index, axis), grid => cache.get(key(grid)) ?? undefined);
+    observer.leaves(leaves, (index, axis) => parameter(index, axis), ([u, v]) => {
+      if (!Number.isInteger(u) || !Number.isInteger(v) || u < 0 || u > gridSize || v < 0 || v > gridSize) return undefined;
+      return cache.get(u * stride + v) ?? undefined;
+    });
   }
   return { status: 'ready', vertices, triangles, maximumInterpolationErrorBound, stats: stats() };
 }

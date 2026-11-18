@@ -25,4 +25,9 @@
 .pcad-input-bindings__header { display: flex; align-items: center; gap: var(--pcad-space-2); }
 .pcad-input-bindings__title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: var(--pcad-font-size-heading); }
 .pcad-input-bindings__hint { margin: 0; }
+/* 設定のファイルの帯(B-09 3-1)。ボタンは横に並べ、結果と知らせは帯の幅いっぱいに折り返す。 */
+.pcad-input-bindings__file { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pcad-space-2); }
+.pcad-input-bindings__file-preview { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: var(--pcad-space-2); }
+.pcad-input-bindings__file-note { flex: 1 1 100%; margin: 0; }
+.pcad-input-bindings__file-result { flex: 1 1 100%; margin: 0; padding-inline-start: 1.25em; }
 .pcad-input-bindings [role="tabpanel"][hidden] { display: none; }

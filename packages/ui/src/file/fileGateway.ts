@@ -33,9 +33,10 @@ import { isObject } from '../valueGuards.js';
 
 import { concatZipParts } from '@pointercad/io';
 import type { FileKind } from '@pointercad/model';
-import { SCRIPT_FILE_LIMITS } from '@pointercad/model/scripting';
 import type { CamFormat, CamTool, ExportReceipt } from './openWith.js';
-import { FILE_KIND_SPECS, PCAD_EXTENSION, PCADA_EXTENSION, PCADD_EXTENSION, PCAD_MIME_TYPE, type SaveFileKind } from './fileContracts.js';
+import {
+  FILE_KIND_SPECS, PCAD_EXTENSION, PCADA_EXTENSION, PCADD_EXTENSION, PCAD_MIME_TYPE, typedReadLimitOf, type SaveFileKind,
+} from './fileContracts.js';
 export { PCAD_EXTENSION, PCADA_EXTENSION, PCADD_EXTENSION, type SaveFileKind } from './fileContracts.js';
 
 import { t } from '../i18n/t.js';
@@ -599,7 +600,7 @@ function pickFileWithInput(accept: string, scope: object, byteLimit?: number,
       if (expectedExtension !== undefined && !file.name.toLowerCase().endsWith(expectedExtension)) {
         input.remove(); reject(new Error(t('file.openFailed'))); return;
       }
-      const limit = byteLimit ?? (file.name.toLowerCase().endsWith('.pcadscript') ? SCRIPT_FILE_LIMITS.bytes : undefined);
+      const limit = byteLimit ?? typedReadLimitOf(file.name);
       readBrowserFile(file, limit).then(
         (bytes) => {
           // readBrowserFile は File の本文の新しい全域の並びを返すので、自分だけの並びとして渡す。読み直しは同じ File から
@@ -700,7 +701,7 @@ export async function openFileInBrowser(
   if (!isReadableFile(file)) {
     throw new Error(t('file.openFailed'));
   }
-  return { kind, fileName: handle.name, bytes: await readBrowserFile(file, kind === 'pcadscript' ? SCRIPT_FILE_LIMITS.bytes : undefined) };
+  return { kind, fileName: handle.name, bytes: await readBrowserFile(file, typedReadLimitOf(handle.name)) };
 }
 
 /**

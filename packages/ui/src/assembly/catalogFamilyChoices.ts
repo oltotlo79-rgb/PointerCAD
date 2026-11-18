@@ -68,6 +68,7 @@ const FRAME_PART_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], Message
   tSlotNutBar: 'catalog.frame.nutBar.hint', tSlotNut: 'catalog.frame.catalogNut.hint', roundNut: 'catalog.frame.roundNut.hint',
   frameCap: 'catalog.frame.cap.hint', flatPlate: 'catalog.frame.flatPlate.hint', shapedPlate: 'catalog.frame.shapedPlate.hint',
   angleBracketCatalog: 'catalog.frame.angleBracketCatalog.hint', footBase: 'catalog.frame.footBase.hint', adjuster: 'catalog.frame.adjuster.hint',
+  jointBar: 'catalog.frame.jointBar.hint', tSlotStud: 'catalog.frame.tSlotStud.hint', knurledNut: 'catalog.frame.knurledNut.hint',
   pipeFrame: 'catalog.frame.pipeFrame.hint', pipeFrameSlotted: 'catalog.frame.pipeFrameSlotted.hint', pipeFrameTwin: 'catalog.frame.pipeFrameTwin.hint',
   smallFrame: 'catalog.frame.smallFrame.hint', smallFrameCap: 'catalog.frame.smallFrameCap.hint', bracketStock: 'catalog.frame.bracketStock.hint',
   pipeFrameCap: 'catalog.frame.pipeFrameCap.hint', pipeFrameFoot: 'catalog.frame.pipeFrameFoot.hint',

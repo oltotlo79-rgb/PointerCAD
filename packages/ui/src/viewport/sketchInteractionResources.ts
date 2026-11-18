@@ -18,6 +18,7 @@ import type { SketchDragTiming } from './sketchDragTiming.js';
 import { exposeSketchDragObservation } from './sketchDragObservation.js';
 import { createSketchDragSession } from './sketchDragSession.js';
 import type { SketchInteractionIndicators } from './sketchInteractionIndicators.js';
+import type { SketchSnapPause } from './sketchSnapPause.js';
 
 const LEFT_BUTTON = 0;
 type Pointer = readonly [number, number];
@@ -49,6 +50,8 @@ interface SketchInteractionOptions {
   readonly pickConstraintAt: (pointer: Pointer) => void;
   readonly handleSelectionInput: (event: PointerEvent, pointer: Pointer, state: StoreState, tool: NumericInputToolId) => boolean;
   readonly handleDrawingInput: (event: PointerEvent, pointer: Pointer, state: StoreState, tool: NumericInputToolId) => void;
+  /** 吸着を一時止める修飾キーの押下の控え(B-09 3-2)。findSnap・findTrack も同じ控えを見る。 */
+  readonly snapPause: SketchSnapPause;
 }
 
 interface InputContext extends SketchInteractionOptions {
@@ -62,9 +65,11 @@ interface InputContext extends SketchInteractionOptions {
 function createPointerMoveHandler(context: InputContext): (event: PointerEvent) => void {
   const { lifetime, project, indicators, section, drag, isCameraDragging, pointerPosition, releaseActiveCapture,
     updateCornerPreview, updateEditPreview, skipsSketchElements, pickSubShapeAt, updateSphereGridInput,
-    pickBodyAt, tracksDirection, findSnap, findTrack, pickFreeVertexAt, regionHoverAt, updateInferredConstraints } = context;
+    pickBodyAt, tracksDirection, findSnap, findTrack, pickFreeVertexAt, regionHoverAt, updateInferredConstraints, snapPause } = context;
   function onPointerMove(event: PointerEvent): void {
     if (lifetime.disposed) return;
+    // 吸着を一時止めるキーの押下は、下の findSnap・findTrack より先に控える(B-09 3-2)。
+    snapPause.update(event);
     const state = useAppStore.getState();
     // 視点操作の間は吸着・当たり判定・編集予告を更新しない。古い予告は最初の1回で消す。
     // ボタンの現在値ではなく、視点操作側が保持する開始から解除までの状態を使う。
@@ -191,15 +196,15 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
     indicators.showSnap(nextIndicator);
     indicators.showTrack(track === null ? null : track.candidates);
 
-    // 拘束の自動推定の予告(FR-333)。Shift を押している間は止める。
-    updateInferredConstraints(pointer, event.shiftKey, snap, track);
+    // 拘束の自動推定の予告(FR-333)。Shift を押している間と、吸着を一時止めるキーを押している間(B-09 3-2)は止める。
+    updateInferredConstraints(pointer, event.shiftKey || snapPause.active(), snap, track);
   }
   return onPointerMove;
 }
 
 function createPointerDownHandler(context: InputContext): (event: PointerEvent) => void {
   const { lifetime, canvas, project, section, drag, pointerPosition, addsToSketchSelection,
-    skipsSketchElements, pickConstraintAt, handleSelectionInput, handleDrawingInput } = context;
+    skipsSketchElements, pickConstraintAt, handleSelectionInput, handleDrawingInput, snapPause } = context;
   function startSectionInput(event: PointerEvent, pointer: readonly [number, number]): boolean {
     if (!section.begin(pointer)) return false;
     canvas.setPointerCapture(event.pointerId);
@@ -225,6 +230,8 @@ function createPointerDownHandler(context: InputContext): (event: PointerEvent) 
     if (lifetime.disposed || lifetime.activePointerId !== null || event.button !== LEFT_BUTTON || event.altKey) {
       return;
     }
+    // 押した場所の座標(pickedPointAt)も、押した時の修飾キーで吸着を止めるかを決める(B-09 3-2)。
+    snapPause.update(event);
     const state = useAppStore.getState();
     if (state.commandLineFocused) {
       /*
@@ -356,7 +363,7 @@ function createKeyHandler(context: InputContext): (event: KeyboardEvent) => void
 
 /** Owns one canvas's pointer capture, sessions, listeners, subscription and observation. */
 export function createSketchInteractionResources(options: SketchInteractionOptions) {
-  const { canvas, scene, project, getOrbit, indicators, timing } = options;
+  const { canvas, scene, project, getOrbit, indicators, timing, snapPause } = options;
   const lifetime = { disposed: false, activePointerId: null as number | null };
   const section = createSectionHandleDrag(scene, project);
   const drag = createSketchDragSession({ scene, project, getOrbit, indicators,
@@ -419,6 +426,18 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
     }
   }
 
+  /**
+   * 吸着を一時止めるキーの押し離し(B-09 3-2)。作図の間は焦点が数値の欄にあることが多いので window で聞く。
+   * 止まり始めたら、マウスを動かす前でも吸着・案内線・推定の印をすぐ消す(押している間だけ効く事が見て分かる)。
+   * 離した時は、次にマウスを動かした時に戻る(Shift の推定の停止と同じ)。
+   */
+  function onModifierKey(event: KeyboardEvent): void {
+    if (lifetime.disposed || !snapPause.update(event)) return;
+    indicators.clearSnapIndicators();
+    indicators.clearInferredConstraints();
+  }
+  function onWindowBlur(): void { snapPause.release(); }
+
   const context: InputContext = { ...options, lifetime, section, drag, pointerPosition, releaseActiveCapture };
   const onPointerMove = createPointerMoveHandler(context);
   const onPointerDown = createPointerDownHandler(context);
@@ -431,6 +450,10 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerCancel);
   canvas.addEventListener('keydown', onKeyDown);
+  const keyTarget = typeof window === 'undefined' ? null : window;
+  keyTarget?.addEventListener('keydown', onModifierKey);
+  keyTarget?.addEventListener('keyup', onModifierKey);
+  keyTarget?.addEventListener('blur', onWindowBlur);
 
   /*
    * ビューポートへ焦点を戻す要求(ツールバーで面や選択を選んだ直後)。canvas を持っているのは
@@ -467,6 +490,9 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerCancel);
       canvas.removeEventListener('keydown', onKeyDown);
+      keyTarget?.removeEventListener('keydown', onModifierKey);
+      keyTarget?.removeEventListener('keyup', onModifierKey);
+      keyTarget?.removeEventListener('blur', onWindowBlur);
       unexposeDrag();
     },
   };

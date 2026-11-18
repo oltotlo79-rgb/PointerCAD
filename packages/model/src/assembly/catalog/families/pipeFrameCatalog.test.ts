@@ -110,3 +110,21 @@ describe('資料 GF-2 のパイプ形のフレームの 3 族', () => {
     }
   });
 });
+
+// 下書き(統括の決定 2026-11-18 07:2x。型 FrameSectionSlot.nominalWidth が入った後に、--slot-info で作った行の表で流す)。
+describe('溝つきのパイプ形のフレームの締結に出す溝', () => {
+  it('溝を作る 2 行は下の面の中心の 1 本(口・肩・深さ・呼び 10)を出し、溝を作らない 19 の行は溝なし、ほかの 2 族は溝を出さない', () => {
+    const family = PIPE_FRAME_FAMILIES.slotted;
+    for (const [key, height] of [['slotted-28', 24], ['slotted-43', 39]] as const) {
+      const row = rowOf('slotted', key);
+      expect(row.dims.slotWidth, key).toBe(10);
+      expect(family.sectionSlots?.(row, values(600)), key).toEqual([{ face: 'bottom', center: [0, -height / 2], inward: [0, 1], across: [1, 0],
+        opening: row.dims.mouthWidth, shoulder: row.dims.shoulder, slotDepth: row.dims.roomHeight, roomSimplified: true, nominalWidth: 10 }]);
+    }
+    const plain = rowOf('slotted', 'slotted-19');
+    expect([plain.dims.slotWidth, family.sectionSlots?.(plain, values(600))]).toEqual([undefined, []]);
+    // ほかの 2 族は溝を出す口を持たない(口を呼んでも何も返らない)。
+    expect([PIPE_FRAME_FAMILIES.single, PIPE_FRAME_FAMILIES.twin].map((other) => other.sectionSlots?.(other.rows[0] ?? plain, values(600))))
+      .toEqual([undefined, undefined]);
+  });
+});

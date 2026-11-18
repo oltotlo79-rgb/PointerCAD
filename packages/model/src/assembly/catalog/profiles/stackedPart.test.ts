@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { findMetricThread } from '../../../thread/metricThread.js';
+import { findMetricThread, metricThreadPitch, threadMinorDiameter } from '../../../thread/metricThread.js';
 import { buildStackedPart, stackedPartHeight, stackedPartVolume, type StackedPartDimensions } from './stackedPart.js';
 
 const CAP: StackedPartDimensions = {
@@ -39,6 +39,26 @@ describe('段の並びの部品の形', () => {
       { segments: [{ shape: 'circle', diameter: 30, height: 5, bore: null }], thread: { size: 'M7.3', length: 10 } },
     ];
     for (const dims of cases) {
+      expect(buildStackedPart(dims)).toBeNull();
+      expect(stackedPartVolume(dims)).toBeNull();
+    }
+  });
+});
+
+describe('段の並びの部品の、全部の段を通すめねじ(統括の決定 2026-11-18 07:5x)', () => {
+  const size = findMetricThread('M5');
+  const minor = size === undefined ? NaN : threadMinorDiameter(size.diameter, metricThreadPitch(size, 'coarse'));
+  const NUT: StackedPartDimensions = { segments: [{ shape: 'circle', diameter: 12, height: 9, bore: null }], thread: null, threadHole: 'M5' };
+
+  it('めねじは並目の谷の径の円柱で全部の段を抜き、体積は段の体積 − 谷の径の円 × 全高、高さは段の高さの和', () => {
+    expect(buildStackedPart(NUT)).not.toBeNull();
+    expect(stackedPartVolume(NUT)).toBeCloseTo(Math.PI * 6 ** 2 * 9 - Math.PI * (minor / 2) ** 2 * 9, 9);
+    expect(stackedPartHeight(NUT)).toBe(9);
+  });
+
+  it('呼びが表に無い・段より太い・おねじや段の中の穴と一緒のめねじは断る', () => {
+    for (const dims of [{ ...NUT, threadHole: 'M0' }, { ...NUT, threadHole: 'M20' }, { ...NUT, thread: { size: 'M5', length: 10 } },
+      { ...NUT, segments: [{ shape: 'circle' as const, diameter: 12, height: 9, bore: 3 }] }]) {
       expect(buildStackedPart(dims)).toBeNull();
       expect(stackedPartVolume(dims)).toBeNull();
     }

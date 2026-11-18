@@ -41,7 +41,10 @@ const SLOT_PART_HEIGHT_UNKNOWN = 1;
 export interface FrameSlotCandidate {
   readonly componentId: string;
   readonly lines: readonly FrameSlotLine[];
+  /** 行の溝幅の呼び(行の dims.slotWidth → 鍵の頭)。溝ごとの呼び(線の nominalWidth)がある溝は、そちらを先に使う。 */
   readonly slotWidth: number | null;
+  /** 行の簡略の印の鍵に、溝の横の位置の対称の簡略(slotPositionSymmetric)があるか(予告に知らせる)。無い時は false と同じ。 */
+  readonly slotPositionSimplified?: boolean;
 }
 
 export interface FrameSlotFasteningRequest {
@@ -62,7 +65,7 @@ export interface FrameSlotFasteningRequest {
 }
 
 type FrameSlotCode = 'holeNotClearance' | 'holeNotPlaceable' | 'notOnSlotFace' | 'offSlot' | 'outsideSlotEnd' | 'slotWidthUnknown'
-  | 'noSlotNut' | 'slotPartHeightUnknown' | 'noBoltLength';
+  | 'slotNominalUnknown' | 'boltWiderThanSlot' | 'noSlotNut' | 'slotPartHeightUnknown' | 'noBoltLength';
 
 export interface FrameSlotHoleFailure {
   readonly holeIndex: number;
@@ -82,6 +85,8 @@ interface FrameSlotEntry {
   readonly bolt: { readonly source: ComponentSource; readonly placement: Placement; readonly name: string; readonly length: number };
   /** 溝用のナットを置く深さが、簡略形状の部屋の形に頼るか(予告に出す)。 */
   readonly nutDepthSimplified: boolean;
+  /** 当たった溝の横の位置が、資料の図に記入の無い対称の簡略か(予告に出す)。 */
+  readonly slotPositionSimplified: boolean;
 }
 
 export type FrameSlotFasteningResult =
@@ -177,17 +182,24 @@ HolePlan {
   const hole = resolved.hole;
   const hit = nearestSlot(hole, request.frames);
   if (hit === null) return fail('notOnSlotFace');
+  // 呼びが決まらない溝(null。標準の溝の組に当たらない)は、行の呼びに戻らず専用の理由で断る。ずれの判定より先に見る
+  // (そうした溝は口がボルトより狭い事があり、ずれの判定が先だと「通るのは負の mm まで」という意味の無い理由になる)。
+  if (hit.line.nominalWidth === null) return fail('slotNominalUnknown');
   const head = request.bolt.head, diameter = rowDimension(head.row, 'nominalDiameter') ?? NaN;
+  // ボルトの径が溝の口より太い時は、ずれに依らず通らない(許すずれが負になるので、負の mm を見せずに専用の理由で断る)。
+  if (diameter > hit.line.opening) return fail('boltWiderThanSlot', { thread: head.row.size, openingMm: hit.line.opening });
   // ボルトの軸が口の中を通れるずれの大きさ(口の幅と呼びの径の差の半分。どちらも行の値)。
   const allowed = (hit.line.opening - diameter) / 2;
   if (!withinMagnitude(hit.lateral, allowed)) return fail('offSlot', { offsetMm: Math.hypot(hit.lateral), allowedMm: allowed });
-  if (hit.frame.slotWidth === null) return fail('slotWidthUnknown');
-  const nut = slotNut(request, hit.frame.slotWidth, head.row.size, hit.line.opening);
-  if (nut === null) return fail('noSlotNut', { slot: hit.frame.slotWidth, thread: head.row.size });
+  // 溝幅の呼びは、溝ごとの呼び → 行の呼び(dims.slotWidth → 鍵の頭)の順。どちらも無ければ選べない。理由には使った呼びを入れる。
+  const slotWidth = hit.line.nominalWidth ?? hit.frame.slotWidth;
+  if (slotWidth === null) return fail('slotWidthUnknown');
+  const nut = slotNut(request, slotWidth, head.row.size, hit.line.opening);
+  if (nut === null) return fail('noSlotNut', { slot: slotWidth, thread: head.row.size });
   const shape = nutGeometry(nut.row);
   // 溝に入る所の高さが資料に無い行は、全高を深さとボルトの長さに使わない(選べない理由を返す)。
   if (shape === 'slotPartHeightUnknown') return fail('slotPartHeightUnknown', { nut: nut.row.size });
-  if (shape === null) return fail('noSlotNut', { slot: hit.frame.slotWidth, thread: head.row.size });
+  if (shape === null) return fail('noSlotNut', { slot: slotWidth, thread: head.row.size });
   // ナットは穴の点から −X へ holeOffset、+X へ length − holeOffset 伸びる。
   if (hit.along - shape.holeOffset < 0 || hit.along - shape.holeOffset + shape.length > hit.length) {
     return fail('outsideSlotEnd', { alongMm: hit.along, slotLengthMm: hit.length });
@@ -207,6 +219,7 @@ HolePlan {
         scaleVec3(hole.into, -1)),
       name: head.family.partName(head.row, { length: String(length.length) }) },
     nutDepthSimplified: hit.line.roomSimplified,
+    slotPositionSimplified: hit.frame.slotPositionSimplified === true,
   } };
 }
 

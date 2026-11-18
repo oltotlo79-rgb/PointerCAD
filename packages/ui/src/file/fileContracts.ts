@@ -11,6 +11,13 @@ export const PCADA_EXTENSION = '.pcada';
 export const PCADD_EXTENSION = '.pcadd';
 export const PCAD_MIME_TYPE = 'application/octet-stream';
 export const MAX_COMPRESSED_INPUT_BYTES = IO_LIMITS.archiveCompressedBytes;
+/**
+ * 操作の割り当ての設定ファイル(`.pcadinput`。B-09 3-1)の読込の上限。中身は数 KB の JSON なので、
+ * これより大きいファイルは本文を読まずに断る(ブラウザーの読込とデスクトップの読込の両方が使う)。
+ */
+export const INPUT_SETTINGS_FILE_BYTES = 256 * 1024;
+/** 自動作図の処理ファイルの読込の上限。JSON は元の 1 バイトを最大 6 倍に書くので、model の SCRIPT_FILE_LIMITS.bytes と同じ値(単体で照らす)。 */
+const SCRIPT_READ_BYTES = 6 * 1024 * 1024 + 65536;
 
 const descriptions = {
   'file.typeDescription': fileMessages['file.typeDescription'],
@@ -27,6 +34,7 @@ interface FileKindSpec {
 /** One table drives the browser MIME filters and Electron extension filters. */
 export const FILE_KIND_SPECS: Readonly<Record<SaveFileKind | FileKind, FileKindSpec>> = {
   pcadscript: { label: 'PointerCAD Script', accept: { 'application/json': ['.pcadscript'] } },
+  pcadinput: { label: 'PointerCAD Input Settings', accept: { 'application/json': ['.pcadinput'] } },
   csv: { label: 'CSV', accept: { 'text/csv': ['.csv'] } },
   zip: { label: 'ZIP', accept: { 'application/zip': ['.zip'] } },
   pcada: { label: 'PointerCAD', descriptionKey: 'assembly.fileType', accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } },
@@ -61,4 +69,27 @@ export function nativeFileFilter(kind: FileKind | SaveFileKind): NativeFileFilte
 
 export function isFileDialogKind(kind: string): kind is FileKind | SaveFileKind {
   return Object.hasOwn(FILE_KIND_SPECS, kind);
+}
+
+/** 種類つきの読込の上限(バイト)。Record なので、種類を足すと、ここに上限を決めるまで型の誤りになる。 */
+const TYPED_READ_LIMITS: Readonly<Record<FileKind, number>> = {
+  pcad: MAX_COMPRESSED_INPUT_BYTES, pcadt: MAX_COMPRESSED_INPUT_BYTES, pcadscript: SCRIPT_READ_BYTES,
+  pcadinput: INPUT_SETTINGS_FILE_BYTES, step: MAX_COMPRESSED_INPUT_BYTES, stl: MAX_COMPRESSED_INPUT_BYTES,
+  obj: MAX_COMPRESSED_INPUT_BYTES, glb: MAX_COMPRESSED_INPUT_BYTES, '3mf': MAX_COMPRESSED_INPUT_BYTES,
+  dxf: MAX_COMPRESSED_INPUT_BYTES, dwg: MAX_COMPRESSED_INPUT_BYTES,
+};
+
+/**
+ * ファイル名の拡張子から、種類つきの読込の上限を引く(大文字小文字は問わない)。ブラウザーの読込(fileGateway.ts)と
+ * デスクトップの読込(pcadDialogs.ts の readLimitOf)の両方がここを引く。どの種類でもない名前(.pcada・.pcadd など)は
+ * 圧縮した入力の上限。
+ */
+export function typedReadLimitOf(fileName: string): number {
+  const lower = fileName.toLowerCase();
+  for (const [kind, limit] of Object.entries(TYPED_READ_LIMITS)) {
+    if (isFileDialogKind(kind) && Object.values(FILE_KIND_SPECS[kind].accept).flat().some(extension => lower.endsWith(extension))) {
+      return limit;
+    }
+  }
+  return MAX_COMPRESSED_INPUT_BYTES;
 }

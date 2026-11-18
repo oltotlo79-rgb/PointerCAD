@@ -26,7 +26,8 @@ type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChann
   | 'pin' | 'nut' | 'bolt' | 'washer' | 'bearing' | 'camFollower' | 'bush' | 'compressionSpring' | 'tSlotFrame' | 'key' | 'sealRing' | 'oRing'
   | 'angleBracket' | 'joinPlate' | 'slotNut' | 'tSlotSeries' | 'flatBar' | 'roundBar' | 'tSlotNutBar' | 'tSlotNut' | 'roundNut' | 'frameCap'
   | 'flatPlate' | 'shapedPlate' | 'angleBracketCatalog' | 'footBase' | 'adjuster' | 'pipeFrame' | 'pipeFrameSlotted' | 'pipeFrameTwin'
-  | 'smallFrame' | 'smallFrameCap' | 'bracketStock' | 'pipeFrameCap' | 'pipeFrameFoot';
+  | 'smallFrame' | 'smallFrameCap' | 'bracketStock' | 'pipeFrameCap' | 'pipeFrameFoot'
+  | 'jointBar' | 'tSlotStud' | 'knurledNut';
 
 /**
  * 族の options の 1 つの鍵の指定。**鍵の名前は保存されるので、版の中で変えない。**
@@ -55,6 +56,12 @@ export interface CatalogOptionSpec {
    */
   readonly optional?: boolean;
 }
+
+/**
+ * 簡略の印の種類の鍵(判定に使う。表示は行の `simplified` の文)。`slotPositionSymmetric`: 溝と穴の横の位置を、資料の図に記入が
+ * 無いので幅の中央に対して対称に置いた(フレームの溝への締結は、予告に溝の位置の簡略の知らせを出す)。種類を増やす時はここに足す。
+ */
+export type CatalogSimplifiedKind = 'slotPositionSymmetric';
 
 /** 族の 1 行。保存されるのは `key` と `size` だけで、ほかは導出と表示に使う。 */
 export interface CatalogItemRow {
@@ -85,6 +92,11 @@ export interface CatalogItemRow {
    * 資料の寸法どおりに作る行・印を持たない今までの族は持たない。
    */
   readonly simplified?: readonly string[];
+  /**
+   * 簡略の印の種類の鍵(判定だけに使う。印の文 `simplified` と同じ並びで持つ。行の表の道具が、印の文と鍵を対で書く)。
+   * 鍵を持たない行・族は持たない(保存しない導出の欄なので、足しても保存の形と catalogRevision は変わらない)。
+   */
+  readonly simplifiedKinds?: readonly CatalogSimplifiedKind[];
 }
 
 /**

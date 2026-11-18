@@ -18,7 +18,8 @@ import {
 } from '../profiles/smallFrameSection.js';
 import type { ProfileLoops } from '../../standard/profileExtrusion.js';
 import type { FrameSectionBounds } from '../../frame/frameMembers.js';
-import type { CatalogFamily, CatalogItemRow } from '../types.js';
+import type { FrameSectionSlot } from '../../frame/frameSlots.js';
+import type { CatalogFamily, CatalogItemRow, CatalogSimplifiedKind } from '../types.js';
 import { BRACKET_STOCK_RECORDS, SMALL_FRAME_CAP_RECORDS, SMALL_FRAME_RECORDS } from './smallFrameRows.js';
 
 /** 小さい溝つきフレームの行(道具が生成。数は資料の記入のまま。溝・穴は作った物だけ)。 */
@@ -28,11 +29,19 @@ export interface SmallFrameRecord {
   readonly page: number;
   readonly width: number;
   readonly height: number;
+  /**
+   * 作った溝。nominalWidth は溝幅の呼び(溝の 4 つの寸法が 1 冊目の標準のフレームの溝と同じ組の溝は数、同じ組の無い溝は null。道具が決める)。
+   * 作った溝は全部締結に出す(sectionSlots)。null の溝は、溝用のナットの溝幅が決まらないので留められない(統括 2026-11-18 10:0x)。
+   */
   readonly slots: readonly { readonly face: SmallFrameFace; readonly mouthWidth: number; readonly roomWidth: number; readonly shoulder: number;
-    readonly roomHeight: number; readonly position: number }[];
+    readonly roomHeight: number; readonly position: number; readonly nominalWidth?: number | null }[];
   readonly holes: readonly { readonly diameter: number; readonly x: number; readonly y: number }[];
   readonly unitMassKgPerM: number;
   readonly simplified: readonly string[];
+  /** 行の溝幅の呼び(溝が全部呼びを持ち、全部同じ呼びの行だけ)。 */
+  readonly slotWidth?: number;
+  /** 簡略の印の種類の鍵(印の文と道具が対で書く)。 */
+  readonly simplifiedKinds?: readonly CatalogSimplifiedKind[];
 }
 
 /** 端のキャップの行(板だけの簡略の形)。 */
@@ -78,11 +87,13 @@ function noteOf(simplified: readonly string[], mass: string): string {
   return simplified.length > 0 ? `形は簡略(${simplified.join('・')})。${mass}` : mass;
 }
 
-function baseRow(record: { readonly key: string; readonly size: string; readonly simplified: readonly string[] }, material: 'aluminum' | 'nylon',
-  dims: Readonly<Record<string, number>>, evidenceRow: CatalogItemRow['evidence'], mass: string): CatalogItemRow {
+function baseRow(record: { readonly key: string; readonly size: string; readonly simplified: readonly string[];
+  readonly simplifiedKinds?: readonly CatalogSimplifiedKind[] }, material: 'aluminum' | 'nylon', dims: Readonly<Record<string, number>>,
+  evidenceRow: CatalogItemRow['evidence'], mass: string): CatalogItemRow {
   return {
     key: record.key, size: record.size, standardLabel: '製造元の寸法に合わせた物', materialLabel: material === 'aluminum' ? 'アルミ' : '樹脂(PA)',
     densityMaterialId: material, dims, evidence: evidenceRow, verification: 'manufacturer-catalog', verified: true, simplified: record.simplified,
+    ...(record.simplifiedKinds === undefined ? {} : { simplifiedKinds: record.simplifiedKinds }),
     note: noteOf(record.simplified, mass),
   };
 }
@@ -97,11 +108,43 @@ function smallRow(record: SmallFrameRecord): CatalogItemRow {
   record.slots.forEach((slot, index) => {
     Object.assign(dims, { [`slot${index}Face`]: FACES.indexOf(slot.face), [`slot${index}Mouth`]: slot.mouthWidth, [`slot${index}Room`]: slot.roomWidth,
       [`slot${index}Shoulder`]: slot.shoulder, [`slot${index}RoomHeight`]: slot.roomHeight, [`slot${index}Position`]: slot.position });
+    // 呼びの数だけを dims に持つ(null の溝は欄を持たず、締結に出す時に呼び null になる)。
+    if (typeof slot.nominalWidth === 'number') dims[`slot${index}Nominal`] = slot.nominalWidth;
   });
   record.holes.forEach((hole, index) => {
     Object.assign(dims, { [`hole${index}D`]: hole.diameter, [`hole${index}X`]: hole.x, [`hole${index}Y`]: hole.y });
   });
+  if (record.slotWidth !== undefined) dims.slotWidth = record.slotWidth;
   return baseRow(record, 'aluminum', dims, evidence(record.page, '断面の図(外形・溝・穴の寸法と単位質量)'), '質量は単位質量の値');
+}
+
+/** 締結に出す溝の面の順と、面ごとの内向きの法線・面に沿う向き(1 冊目の溝つきのフレームの tSlotSlots と同じ決まり)。 */
+const SLOT_FACE_ORDER: readonly SmallFrameFace[] = ['top', 'left', 'bottom', 'right'];
+const FACE_AXES: Readonly<Record<SmallFrameFace, { readonly inward: readonly [number, number]; readonly across: readonly [number, number] }>> = {
+  top: { inward: [0, -1], across: [-1, 0] }, left: { inward: [1, 0], across: [0, -1] }, bottom: { inward: [0, 1], across: [1, 0] },
+  right: { inward: [-1, 0], across: [0, 1] },
+};
+
+/**
+ * 締結に出す溝(J-02 P6a。作った溝は全部。標準の溝と大きさの違う溝は呼び null で出し、締結が専用の理由で断る。統括 2026-11-18 10:0x)。
+ * 口の中心は外の面の上(上下の面は x = 位置、左右の面は y = 位置)。
+ * 部屋の形は両側 45° の簡略なので roomSimplified。並びは面の順(上・左・下・右)、面の中は輪の進む向き(面に沿う向きの小さい方から)。
+ * 形が成り立たない行は null。
+ */
+function smallSectionSlots(row: CatalogItemRow): readonly FrameSectionSlot[] | null {
+  const section = smallSection(row);
+  if (smallFrameProfile(section) === null) return null;
+  const [hx, hy] = [section.width / 2, section.height / 2];
+  const slots = section.slots.flatMap((slot, index): FrameSectionSlot[] => {
+    const nominalWidth = row.dims[`slot${index}Nominal`] ?? null;
+    const { inward, across } = FACE_AXES[slot.face];
+    const center: readonly [number, number] = slot.face === 'top' ? [slot.position, hy] : slot.face === 'bottom' ? [slot.position, -hy]
+      : slot.face === 'left' ? [-hx, slot.position] : [hx, slot.position];
+    return [{ face: slot.face, center, inward, across, opening: slot.mouthWidth, shoulder: slot.shoulder, slotDepth: slot.roomHeight,
+      roomSimplified: true, nominalWidth }];
+  });
+  const along = (slot: FrameSectionSlot): number => slot.center[0] * slot.across[0] + slot.center[1] * slot.across[1];
+  return [...slots].sort((a, b) => SLOT_FACE_ORDER.indexOf(a.face) - SLOT_FACE_ORDER.indexOf(b.face) || along(a) - along(b));
 }
 
 function smallSection(row: CatalogItemRow): SmallFrameSection {
@@ -168,8 +211,12 @@ function linearFamily(id: string, kindKey: string, diagram: CatalogFamily['diagr
   };
 }
 
-export const SMALL_T_SLOT_FRAME_FAMILY = linearFamily('t-slot-frame-small', 'catalog.frame.kind.smallFrame', 'smallFrame',
-  SMALL_FRAME_RECORDS.map(smallRow), (row) => smallFrameProfile(smallSection(row)), (row) => smallFrameBounds(smallSection(row)));
+// 締結に出す溝(sectionSlots)は小さい溝つきフレームの族だけが持つ(長さの族の作り方の引数を増やさず、族に足す)。
+export const SMALL_T_SLOT_FRAME_FAMILY: CatalogFamily = {
+  ...linearFamily('t-slot-frame-small', 'catalog.frame.kind.smallFrame', 'smallFrame', SMALL_FRAME_RECORDS.map(smallRow),
+    (row) => smallFrameProfile(smallSection(row)), (row) => smallFrameBounds(smallSection(row))),
+  sectionSlots: (row: CatalogItemRow) => smallSectionSlots(row),
+};
 
 export const BRACKET_STOCK_FAMILY = linearFamily('bracket-stock', 'catalog.frame.kind.bracketStock', 'bracketStock',
   BRACKET_STOCK_RECORDS.map(bracketRow), (row) => bracketStockProfile(bracketSection(row)), (row) => bracketStockBounds(bracketSection(row)));

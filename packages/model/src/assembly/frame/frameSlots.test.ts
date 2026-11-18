@@ -114,4 +114,14 @@ describe('置いた部材の溝の中心線', () => {
     const lines = frameSlotLines(slots, { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, 40, bounds, cuts);
     expect(lines.map((line) => line.face).sort()).toEqual(['bottom', 'left', 'top']);
   });
+
+  it('溝ごとの呼び(nominalWidth)は、数も「決まらない」(null)も線にそのまま写り、持たない溝の線は欄を持たない', () => {
+    if (slots === null) throw new Error('slots');
+    const [first, second, ...rest] = slots;
+    if (first === undefined || second === undefined) throw new Error('slots');
+    const lines = frameSlotLines([{ ...first, nominalWidth: 8 }, { ...second, nominalWidth: null }, ...rest],
+      { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, 500, bounds, []);
+    expect(lines.map((line) => (Object.hasOwn(line, 'nominalWidth') ? line.nominalWidth : 'none')))
+      .toEqual([8, null, ...rest.map(() => 'none')]);
+  });
 });

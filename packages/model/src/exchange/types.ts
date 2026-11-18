@@ -15,17 +15,17 @@
  * このアプリの種類一覧に載るファイル。DWGは変換案内だけ。
  *
  * `'pcad'` は部品の文書、`'pcadt'` はそのひな形(中身は同じで拡張子と封筒の
- * `kind` だけが違う)。`'pcadscript'`は自動作図の処理ファイル。残りは他の CAD・スライサーとやり取りする形式で、`'glb'` は
+ * `kind` だけが違う)。`'pcadscript'`は自動作図の処理ファイル、`'pcadinput'` は操作の割り当ての設定(B-09 3-1)。残りは他の CAD・スライサーとやり取りする形式で、`'glb'` は
  * glTF のバイナリ 1 ファイル版である。
  *
  * **「書き出せる形式」「読み込める形式」はこれの部分集合**で、下の `ExportFormat` /
  * `ImportFormat` が正本になる。
  */
-export type FileKind = 'pcad' | 'pcadt' | 'pcadscript' | 'step' | 'stl' | 'obj' | 'glb' | '3mf' | 'dxf' | 'dwg';
+export type FileKind = 'pcad' | 'pcadt' | 'pcadscript' | 'pcadinput' | 'step' | 'stl' | 'obj' | 'glb' | '3mf' | 'dxf' | 'dwg';
 
 /** ファイルの種類の実行時の一覧(`LENGTH_UNITS` と同じ流儀。同じ並びを 2 か所に書かない)。 */
 export const FILE_KINDS: readonly FileKind[] = [
-  'pcad', 'pcadt', 'pcadscript', 'step', 'stl', 'obj', 'glb', '3mf', 'dxf', 'dwg',
+  'pcad', 'pcadt', 'pcadscript', 'pcadinput', 'step', 'stl', 'obj', 'glb', '3mf', 'dxf', 'dwg',
 ];
 
 /**

@@ -229,3 +229,68 @@ export function slotNutVolume(dims: SlotNutDimensions): number | null {
   return dims.length * dims.flangeWidth * dims.flangeThickness + dims.length * dims.neckWidth * dims.neckHeight
     - circleArea(nutMinorDiameter(dims)) * height - screw;
 }
+
+/**
+ * ジョイントバー(溝に先に入れる T 形の断面の棒に、めねじが幾つか並ぶ部品)の包む形(統括の決定 2026-11-18 07:5x)。首の高さ(頭の厚さ)の寸法線が
+ * 資料に無いので、T の断面を作らず、頭の幅 × 全厚の箱で包む(行の簡略の印に出す)。めねじは箱の上の面から通す(ThreadHoleFeature、表し方は簡略)。
+ */
+export interface JointBarDimensions {
+  /** 長さ(溝の向き)。 */
+  readonly length: number;
+  /** 頭の幅(箱の幅)。 */
+  readonly width: number;
+  /** 全厚(頭の底の面から首の上の面まで。箱の高さ)。 */
+  readonly thickness: number;
+  /** めねじの呼び。 */
+  readonly thread: string;
+  /** 長さの端の面から各めねじの中心まで(小さい順)。 */
+  readonly holeOffsets: readonly number[];
+}
+
+function jointBarValid(dims: JointBarDimensions): boolean {
+  const minor = minorDiameterOf(dims.thread);
+  if (!positive([dims.length, dims.width, dims.thickness, minor]) || !(minor < dims.width) || dims.holeOffsets.length === 0) return false;
+  // めねじは長さの内に収まり、隣のめねじと重ならない。
+  return dims.holeOffsets.every((offset, index) => insideLength(offset, minor, dims.length)
+    && (index === 0 || offset - (dims.holeOffsets[index - 1] ?? NaN) > minor));
+}
+
+/** ジョイントバーの形(箱と、並んだめねじ)。形が成り立たない時は null。 */
+export function buildJointBarPart(dims: JointBarDimensions): PartDocument | null {
+  const size = findMetricThread(dims.thread);
+  if (!jointBarValid(dims) || size === undefined) return null;
+  const box = appendBox(createEmptyPartDocument(), [dims.length, dims.width, dims.thickness], dims.thickness / 2);
+  let document = box.document;
+  const points: SketchPointFeature[] = [];
+  for (const offset of dims.holeOffsets) {
+    const added = pointAt(document, offset - dims.length / 2);
+    document = added.document;
+    points.push(added.point);
+  }
+  const pitch = metricThreadPitch(size, 'coarse');
+  const hole: ThreadHoleFeature = {
+    id: nextSolidId(document, 'threadHole'),
+    name: nextSolidName(document, 'threadHole'),
+    suppressed: false,
+    kind: 'threadHole',
+    targetFeatureId: box.feature.id,
+    face: planeFace(box.feature.id, dims.length * dims.width, dims.thickness),
+    centers: points.map((point) => ({ sketchId: document.activeSketchId, pointFeatureId: point.id })),
+    designation: size.designation,
+    series: 'coarse',
+    pitch: expressionValueFromNumber(pitch),
+    drillDiameter: exactExpressionValueFromNumber(threadMinorDiameter(size.diameter, pitch)),
+    depth: { kind: 'through' },
+    threadLength: expressionValueFromNumber(dims.thickness),
+    representation: 'simplified',
+    tiltAngle: expressionValueFromNumber(0),
+    tiltAzimuth: expressionValueFromNumber(0),
+  };
+  return appendSolid(document, hole);
+}
+
+/** ジョイントバーの体積(箱 − めねじの数 × 谷の径の円 × 全厚)。形が成り立たない時は null。 */
+export function jointBarVolume(dims: JointBarDimensions): number | null {
+  if (!jointBarValid(dims)) return null;
+  return dims.length * dims.width * dims.thickness - dims.holeOffsets.length * circleArea(minorDiameterOf(dims.thread)) * dims.thickness;
+}

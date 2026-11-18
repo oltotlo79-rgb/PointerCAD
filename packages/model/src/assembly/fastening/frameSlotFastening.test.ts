@@ -206,5 +206,68 @@ describe('フレームの締結の計画', () => {
     expect(row).toBeDefined();
     expect(planFrameSlotFastening(document, request([], [], 'M5', 0.8))).toEqual({ ok: false, failures: [] });
   });
+
+  it('溝幅の呼びは、溝ごとの呼び(線の nominalWidth)を行の呼びより先に使い、どちらも無ければ選べない。合うナットが無い時の理由は使った呼び。呼びが決まらない溝(null)は行の呼びに戻らず専用の理由', () => {
+    const item = CASES[1];
+    const row = item.family.rows.find((candidate) => candidate.key === item.rowKey);
+    if (row === undefined) throw new Error('row');
+    const frame = frameOn(item.family, row, { start: [0, 0, 0], end: [500, 0, 0] }, 'frame');
+    const plate = plateComponent('plate');
+    const document: AssemblyDocument = { ...createAssemblyDocument('締結'), components: [frame.component, plate] };
+    const outcome = (rowWidth: number | null, slotWidth?: number | null): unknown => {
+      const candidate: FrameSlotCandidate = { ...frame.candidate, slotWidth: rowWidth,
+        lines: frame.candidate.lines.map((line) => (slotWidth === undefined ? line : { ...line, nominalWidth: slotWidth })) };
+      const result = planFrameSlotFastening(document, request([plateHole(plate, [100, 0, frame.halfHeight], 6, 4)], [candidate], item.nominal,
+        item.pitch));
+      if (!result.ok) return result.failures.map((failure) => [failure.code, failure.detail]);
+      const nut = result.entries[0]?.nut.source;
+      return nut?.kind === 'standardPart' ? nut.options.item : null;
+    };
+    expect(outcome(null, 8)).toBe('s8-m6-post-steel');
+    expect(outcome(6, 8)).toBe('s8-m6-post-steel');
+    expect(outcome(8)).toBe('s8-m6-post-steel');
+    expect(outcome(null)).toEqual([['slotWidthUnknown', {}]]);
+    expect(outcome(8, 12)).toEqual([['noSlotNut', { slot: 12, thread: 'M6' }]]);
+    expect(outcome(8, null)).toEqual([['slotNominalUnknown', {}]]);
+    // 呼びが決まらない溝は、口がボルトより狭くても(4.5 < M6)、ずれの理由ではなく専用の理由で断る。
+    const narrow: FrameSlotCandidate = { ...frame.candidate,
+      lines: frame.candidate.lines.map((line) => ({ ...line, opening: 4.5, nominalWidth: null })) };
+    const narrowed = planFrameSlotFastening(document, request([plateHole(plate, [100, 0, frame.halfHeight], 6, 4)], [narrow], item.nominal,
+      item.pitch));
+    expect(narrowed.ok ? null : narrowed.failures.map((failure) => failure.code)).toEqual(['slotNominalUnknown']);
+  });
+
+  it('候補の溝の位置の簡略の印は、計画の行にそのまま出る(印の無い候補は false)', () => {
+    const item = CASES[0];
+    const row = item.family.rows.find((candidate) => candidate.key === item.rowKey);
+    if (row === undefined) throw new Error('row');
+    const frame = frameOn(item.family, row, { start: [0, 0, 0], end: [500, 0, 0] }, 'frame');
+    const plate = plateComponent('plate');
+    const document: AssemblyDocument = { ...createAssemblyDocument('締結'), components: [frame.component, plate] };
+    const flagOf = (candidate: FrameSlotCandidate): boolean | null => {
+      const result = planFrameSlotFastening(document, request([plateHole(plate, [100, 0, frame.halfHeight], 6, 4)], [candidate], item.nominal,
+        item.pitch));
+      return result.ok ? result.entries[0]?.slotPositionSimplified ?? null : null;
+    };
+    expect([flagOf({ ...frame.candidate, slotPositionSimplified: true }), flagOf(frame.candidate)]).toEqual([true, false]);
+  });
+
+  it('ボルトの径が溝の口より太い時(溝幅 6 の口 6 に M8)は、負のずれを出さずに専用の理由で断る(口と同じ径は今までどおりずれで見る)', () => {
+    const item = CASES[0];
+    const row = item.family.rows.find((candidate) => candidate.key === item.rowKey);
+    if (row === undefined) throw new Error('row');
+    const frame = frameOn(item.family, row, { start: [0, 0, 0], end: [500, 0, 0] }, 'frame');
+    const plate = plateComponent('plate');
+    const document: AssemblyDocument = { ...createAssemblyDocument('締結'), components: [frame.component, plate] };
+    const wide = planFrameSlotFastening(document, request([plateHole(plate, [100, 0, frame.halfHeight], 9, 4)], [frame.candidate], 'M8',
+      1.25));
+    expect(wide.ok ? null : wide.failures.map((failure) => [failure.code, failure.detail]))
+      .toEqual([['boltWiderThanSlot', { thread: 'M8', openingMm: 6 }]]);
+    const narrowOpening: FrameSlotCandidate = { ...frame.candidate,
+      lines: frame.candidate.lines.map((line) => ({ ...line, opening: 5 })) };
+    const equal = planFrameSlotFastening(document, request([plateHole(plate, [100, 1, frame.halfHeight], 6, 4)], [narrowOpening], item.nominal,
+      item.pitch));
+    expect(equal.ok ? null : equal.failures.map((failure) => failure.code)).toEqual(['offSlot']);
+  });
 });
 

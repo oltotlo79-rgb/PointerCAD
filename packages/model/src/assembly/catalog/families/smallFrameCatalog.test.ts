@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
-import { BRACKET_STOCK_FAMILY, SMALL_FRAME_CAP_FAMILY, SMALL_T_SLOT_FRAME_FAMILY } from './smallFrameCatalog.js';
+import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
+import { BRACKET_STOCK_FAMILY, SMALL_FRAME_CAP_FAMILY, SMALL_T_SLOT_FRAME_FAMILY, type SmallFrameRecord } from './smallFrameCatalog.js';
 import { BRACKET_STOCK_RECORDS, SMALL_FRAME_CAP_RECORDS, SMALL_FRAME_RECORDS } from './smallFrameRows.js';
 
 const FAMILIES = [SMALL_T_SLOT_FRAME_FAMILY, SMALL_FRAME_CAP_FAMILY, BRACKET_STOCK_FAMILY] as const;
@@ -119,5 +120,61 @@ describe('資料 SF-1 の小さい溝つきフレーム・端のキャップ・�
     for (const record of SMALL_FRAME_CAP_RECORDS) {
       expect(SMALL_FRAME_RECORDS.some((frame) => record.key === `cap-${frame.key}`), record.key).toBe(true);
     }
+  });
+});
+
+// 下書き(統括の決定 2026-11-18 07:2x。型 FrameSectionSlot.nominalWidth・CatalogItemRow.simplifiedKinds が入った後に、--slot-info で作った行の表で流す)。
+describe('小さい溝つきフレームの締結に出す溝(溝ごとの呼び・行の呼び・印の鍵)', () => {
+  const ORDER = ['top', 'left', 'bottom', 'right'];
+  // 1 冊目の標準のフレームの溝の組(口・中の幅・肩・深さ → 呼び)を、検査が自分で行の表から作る(道具の決め方と別に照らす)。
+  const STANDARD = new Map<string, Set<number>>();
+  for (const record of T_SLOT_CATALOG_RECORDS) {
+    const key = [record.slotOpening, record.slotInnerWidth, record.shoulder, record.slotDepth].join('/');
+    STANDARD.set(key, new Set([...(STANDARD.get(key) ?? []), record.slot]));
+  }
+  // 標準の組に当たる溝は呼びの数、当たらない溝は null(溝はあるが、溝用のナットの溝幅が決まらない。統括 2026-11-18 10:0x)。
+  const nominalOf = (slot: SmallFrameRecord['slots'][number]): number | null => {
+    const hit = STANDARD.get([slot.mouthWidth, slot.roomWidth, slot.shoulder, slot.roomHeight].join('/'));
+    return hit?.size === 1 ? [...hit][0] ?? null : null;
+  };
+
+  it('溝の呼びは、溝の 4 つの寸法が標準の溝と同じ組の溝は数、ほかの溝は null。行の呼びは溝が全部同じ数の呼びの行だけが持つ', () => {
+    for (const record of SMALL_FRAME_RECORDS) {
+      expect(record.slots.map((slot) => slot.nominalWidth), record.key).toEqual(record.slots.map(nominalOf));
+      const nominals = new Set(record.slots.map(nominalOf));
+      const uniform = record.slots.length > 0 && !nominals.has(null) && nominals.size === 1;
+      expect(rowOf(SMALL_T_SLOT_FRAME_FAMILY, record.key).dims.slotWidth, record.key).toBe(uniform ? [...nominals][0] : undefined);
+    }
+  });
+
+  it('締結に出す溝は作った溝の全部で、面の順(上・左・下・右)・外の面の上の口の中心・向き・口・肩・深さ・呼び(数か null)が行の値と同じ', () => {
+    for (const record of SMALL_FRAME_RECORDS) {
+      const slots = SMALL_T_SLOT_FRAME_FAMILY.sectionSlots?.(rowOf(SMALL_T_SLOT_FRAME_FAMILY, record.key), values(600)) ?? [];
+      const expected = record.slots;
+      expect(slots.length, record.key).toBe(expected.length);
+      expect(slots.map((slot) => ORDER.indexOf(slot.face)), record.key).toEqual([...slots.map((slot) => ORDER.indexOf(slot.face))].sort((a, b) => a - b));
+      for (const slot of slots) {
+        const along = slot.face === 'top' || slot.face === 'bottom' ? slot.center[0] : slot.center[1];
+        const source = expected.find((candidate) => candidate.face === slot.face && candidate.position === along);
+        expect(source, `${record.key} ${slot.face} ${along}`).toBeDefined();
+        expect([slot.opening, slot.shoulder, slot.slotDepth, slot.nominalWidth, slot.roomSimplified], record.key)
+          .toEqual([source?.mouthWidth, source?.shoulder, source?.roomHeight, source?.nominalWidth, true]);
+        const outer = { top: [along, record.height / 2], bottom: [along, -record.height / 2], left: [-record.width / 2, along],
+          right: [record.width / 2, along] }[slot.face];
+        expect(slot.center, record.key).toEqual(outer);
+      }
+    }
+    // 代表: 30×10 は上の口 6(呼び 6)と、左右の口 4.5(標準に同じ組が無いので呼び null)。40×15 は上の口 8 と左右の口 6 を溝ごとの呼びで出す。
+    const narrow = SMALL_T_SLOT_FRAME_FAMILY.sectionSlots?.(rowOf(SMALL_T_SLOT_FRAME_FAMILY, 'small-30x10-l4.5-r4.5-t6'), values(600)) ?? [];
+    expect(narrow.map((slot) => [slot.face, slot.nominalWidth])).toEqual([['top', 6], ['left', null], ['right', null]]);
+    const mixed = SMALL_T_SLOT_FRAME_FAMILY.sectionSlots?.(rowOf(SMALL_T_SLOT_FRAME_FAMILY, 'small-40x15-l6-r6-t8'), values(600)) ?? [];
+    expect(mixed.map((slot) => [slot.face, slot.nominalWidth])).toEqual([['top', 8], ['left', 6], ['right', 6]]);
+  });
+
+  it('印の鍵 slotPositionSymmetric は、対称に置いた印の文を持つ行と同じ並びで、選ぶ画面の行にそのまま渡る', () => {
+    const byText = SMALL_FRAME_RECORDS.filter((record) => record.simplified.includes(SYMMETRIC)).map((record) => record.key);
+    const byKind = SMALL_FRAME_RECORDS.filter((record) => record.simplifiedKinds?.includes('slotPositionSymmetric') === true).map((record) => record.key);
+    expect(byKind).toEqual(byText);
+    for (const key of byKind) expect(rowOf(SMALL_T_SLOT_FRAME_FAMILY, key).simplifiedKinds).toEqual(['slotPositionSymmetric']);
   });
 });

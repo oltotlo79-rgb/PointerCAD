@@ -11,8 +11,9 @@ import { T_SLOT_NUT_RECORDS } from '../catalog/families/framePartRows.js';
 import { SOCKET_HEAD_CAP_SCREW_FAMILY } from '../catalog/families/socketHeadCapScrew.js';
 import { T_SLOT_FRAME_FAMILY } from '../catalog/families/tSlotFrame.js';
 import { T_SLOT_CATALOG_FAMILIES } from '../catalog/families/tSlotFrameCatalog.js';
-import { PRODUCT_CATALOG_REGISTRY } from '../catalog/registry.js';
+import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry } from '../catalog/registry.js';
 import { createCatalogItemSource } from '../catalog/source.js';
+import type { CatalogFamily, CatalogItemRow } from '../catalog/types.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from '../createAssemblyDocument.js';
 import { planFrameMembers } from '../frame/frameMembers.js';
 import type { RigidPlacement } from '../placementMath.js';
@@ -226,5 +227,23 @@ describe('弧に分かれた輪の穴(資料のブラケットは輪の円を半
     expect(read(halves[0] ?? BORE, halves, [...arcEdges(0, 2), ...arcEdges(1, 2)])).toBe('partialCylinder');
     const quarters = [arcWall(2, 0, 4, { neighbours: [3] }), arcWall(3, 1, 4, { neighbours: [2] })];
     expect(read(quarters[0] ?? BORE, quarters, [...arcEdges(0, 4), ...arcEdges(1, 4)])).toBe('partialCylinder');
+  });
+});
+
+describe('溝の位置の簡略の印', () => {
+  it('行の簡略の印の鍵に溝の位置の対称の簡略(slotPositionSymmetric)がある時だけ、候補に印を付ける(印の文では見分けない)', () => {
+    if (ROW === undefined) throw new Error('row');
+    const frame = placedFrame('frame');
+    const document: AssemblyDocument = { ...createAssemblyDocument('締結'), components: [frame.component] };
+    const placements = new Map([['frame', frame.placement]]);
+    const flagOf = (row: CatalogItemRow): readonly (boolean | undefined)[] => {
+      const family: CatalogFamily = { ...FAMILY, rows: FAMILY.rows.map((candidate) => (candidate.key === row.key ? row : candidate)) };
+      const registry: CatalogRegistry = { entries: [], entry: () => undefined, loaded: (id) => (id === FAMILY.id ? family : undefined),
+        ensure: () => Promise.resolve() };
+      return frameSlotCandidates(document, placements, null, registry).map((candidate) => candidate.slotPositionSimplified);
+    };
+    expect(flagOf({ ...ROW, simplified: ['溝の位置'], simplifiedKinds: ['slotPositionSymmetric'] })).toEqual([true]);
+    expect(flagOf({ ...ROW, simplified: ['溝の位置'] })).toEqual([false]);
+    expect(flagOf(ROW)).toEqual([false]);
   });
 });

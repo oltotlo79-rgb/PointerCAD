@@ -332,16 +332,52 @@ export interface FootBaseDimensions {
   readonly thickness: number;
   /** 穴(外形の左下からの x・y と径)。 */
   readonly holes: readonly (readonly [number, number, number])[];
+  /**
+   * 長方形でない外形の頂点(外形の左下を原点に、反時計回り。統括の決定 2026-11-18 09:0x の 2 の (1))。直角の多角形(L の形)だけで、
+   * 頂点の外接の長方形は幅 × 奥行と同じ。省略は幅 × 奥行の長方形。
+   */
+  readonly outline?: readonly (readonly [number, number])[];
 }
 
-/** フットベース・アジャスターベースの板の輪(外形の中心が原点)と面積。穴が板からはみ出す時は null。 */
+/** 点から線分までの距離。 */
+function distanceToSegment(px: number, py: number, [ax, ay]: readonly [number, number], [bx, by]: readonly [number, number]): number {
+  const length = (bx - ax) ** 2 + (by - ay) ** 2;
+  const t = length === 0 ? 0 : Math.min(1, Math.max(0, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / length));
+  return Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay)));
+}
+
+/** 点が多角形の内か(水平の半直線と辺の交わりの数)。 */
+function insidePolygon(px: number, py: number, points: readonly (readonly [number, number])[]): boolean {
+  return points.reduce((inside, [x1, y1], index) => {
+    const [x2, y2] = points[(index + 1) % points.length] ?? [x1, y1];
+    return (y1 > py) !== (y2 > py) && px < x1 + (py - y1) * (x2 - x1) / (y2 - y1) ? !inside : inside;
+  }, false);
+}
+
+/** 外形の頂点が直角の多角形で、外接の長方形が幅 × 奥行と同じで、反時計回りか。 */
+function outlineValid(points: readonly (readonly [number, number])[], w: number, d: number): boolean {
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const rightAngles = points.every(([x1, y1], index) => {
+    const [x2, y2] = points[(index + 1) % points.length] ?? [x1, y1];
+    return (x1 === x2) !== (y1 === y2);
+  });
+  return points.length >= 4 && rightAngles && Math.min(...xs) === 0 && Math.min(...ys) === 0 && Math.max(...xs) === w && Math.max(...ys) === d
+    && polygonArea(points) > 0;
+}
+
+/** フットベース・アジャスターベースの板の輪(外形の外接の長方形の中心が原点)と面積。穴が板からはみ出す時・外形が成り立たない時は null。 */
 export function footBaseProfile(dims: FootBaseDimensions): (ProfileLoops & { readonly areaMm2: number }) | null {
   const { width: w, depth: d } = dims;
-  const fits = dims.holes.every(([x, y, size]) => size > 0 && size / 2 < x && x + size / 2 < w && size / 2 < y && y + size / 2 < d);
-  if (!positive([w, d, dims.thickness]) || !fits) return null;
-  return { segments: polygonLoop([[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]),
+  const outline = dims.outline ?? [[0, 0], [w, 0], [w, d], [0, d]];
+  if (!positive([w, d, dims.thickness]) || !outlineValid(outline, w, d)) return null;
+  // 穴は外形の内にあり、どの辺からも半径より離れる(長方形の時は今までの判定と同じ)。
+  const fits = dims.holes.every(([x, y, size]) => size > 0 && insidePolygon(x, y, outline) && outline.every((point, index) =>
+    distanceToSegment(x, y, point, outline[(index + 1) % outline.length] ?? point) > size / 2));
+  if (!fits) return null;
+  return { segments: polygonLoop(outline.map(([x, y]): SteelProfilePoint => [x - w / 2, y - d / 2])),
     holes: dims.holes.map(([x, y, size]) => circleAt(x - w / 2, y - d / 2, size)),
-    areaMm2: w * d - dims.holes.reduce((sum, [, , size]) => sum + Math.PI * size ** 2 / 4, 0) };
+    areaMm2: polygonArea(outline) - dims.holes.reduce((sum, [, , size]) => sum + Math.PI * size ** 2 / 4, 0) };
 }
 
 /** フットベース・アジャスターベースの板の形(厚さ t を Z へ押し出し、穴を引く)。 */

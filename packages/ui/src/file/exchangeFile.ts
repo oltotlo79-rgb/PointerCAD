@@ -106,7 +106,7 @@ export const EXPORT_PANEL_FORMAT_ORDER: readonly ExportPanelFormat[] = [
  * スケッチの線として出入りする(立体にはならない)。
  */
 /** DWGは変換案内を表示する種類。ネイティブ読込には渡さない。 */
-export type ImportFileKind = Exclude<FileKind, 'pcad' | 'pcadt' | 'pcadscript'>;
+export type ImportFileKind = Exclude<FileKind, 'pcad' | 'pcadt' | 'pcadscript' | 'pcadinput'>;
 export const IMPORT_FILE_KINDS: readonly ImportFileKind[] = ['step', 'stl', 'obj', '3mf', 'glb', 'dxf', 'dwg'];
 const READABLE_FILE_KINDS = IMPORT_FILE_KINDS.filter(kind => kind !== 'dwg');
 
@@ -156,6 +156,7 @@ export function importedSourceFormatOf(kind: FileKind): ImportedSourceFormat | n
     case 'pcad':
     case 'pcadt':
     case 'pcadscript':
+    case 'pcadinput':
     case 'dxf':
     case 'dwg':
       return null;

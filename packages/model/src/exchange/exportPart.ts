@@ -98,6 +98,7 @@ export function usesTriangles(kind: FileKind): boolean {
     case 'pcad':
     case 'pcadt':
     case 'pcadscript':
+    case 'pcadinput':
     case 'step':
     case 'dxf':
     case 'dwg':
@@ -248,6 +249,6 @@ export function selectExportBodies(
  */
 export function canRoundTrip(format: FileKind): boolean {
   // DWGは変換案内だけ。読書きできる文書・DXFと、立体出力形式を区別する。
-  return format === 'pcad' || format === 'pcadt' || format === 'pcadscript' || format === 'dxf'
+  return format === 'pcad' || format === 'pcadt' || format === 'pcadscript' || format === 'pcadinput' || format === 'dxf'
     || EXPORT_FORMATS.some((candidate) => candidate === format);
 }

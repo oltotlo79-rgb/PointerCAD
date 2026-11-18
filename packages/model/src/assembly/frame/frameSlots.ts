@@ -23,6 +23,12 @@ export interface FrameSectionSlot {
   readonly slotDepth: number;
   /** 肩の裏の部屋の形が簡略形状か(溝用のナットを置く深さが簡略になる事を予告に出すため)。 */
   readonly roomSimplified: boolean;
+  /**
+   * 溝幅の呼び(溝用のナットの記録の `slot` と照らす。行の dims.slotWidth と同じ単位と意味)。数: 族が溝ごとに決めた呼び(締結は行の
+   * 呼びより先に使う。呼びの違う溝が混ざる行のため)。null: 溝はあるが呼びが決まらない(標準の溝の組に当たらない。締結は行の呼びに
+   * 戻らず、専用の理由で断る)。持たない: 行の呼びを使う(今までの族)。
+   */
+  readonly nominalWidth?: number | null;
 }
 
 /** 置いた部材の溝 1 本の中心線(世界の座標。口の中心を長さの向きに伸ばした線)。 */
@@ -36,6 +42,8 @@ export interface FrameSlotLine {
   readonly shoulder: number;
   readonly slotDepth: number;
   readonly roomSimplified: boolean;
+  /** 溝の呼び(断面の溝の `nominalWidth` を null も含めてそのまま写す。持たない溝は持たない)。 */
+  readonly nominalWidth?: number | null;
 }
 
 /**
@@ -54,6 +62,7 @@ export function frameSlotLines(slots: readonly FrameSectionSlot[], placement: Ri
       inward: applyPlacementToDirection(placement, [slot.inward[0], slot.inward[1], 0]),
       across: applyPlacementToDirection(placement, [slot.across[0], slot.across[1], 0]),
       opening: slot.opening, shoulder: slot.shoulder, slotDepth: slot.slotDepth, roomSimplified: slot.roomSimplified,
+      ...(slot.nominalWidth === undefined ? {} : { nominalWidth: slot.nominalWidth }),
     }];
   });
 }

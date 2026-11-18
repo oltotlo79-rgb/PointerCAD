@@ -389,15 +389,6 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
       if (area[cell] < full * (1 - AREA_TOLERANCE)) return rejected('coverage');
       coveredCells++;
       const width = high[0] - low[0], height = high[1] - low[1];
-      /** B at a cell-local parameter point. */
-      const bilinear = (point: Planar): Vector => {
-        const a = point[0] / width, b = point[1] / height;
-        const w00 = (1 - a) * (1 - b), w10 = a * (1 - b), w01 = (1 - a) * b, w11 = a * b;
-        // Preserve the grouped scalar operations without six temporary vector arrays per evaluation.
-        return [(c00[0] * w00 + c10[0] * w10) + (c01[0] * w01 + c11[0] * w11),
-          (c00[1] * w00 + c10[1] * w10) + (c01[1] * w01 + c11[1] * w11),
-          (c00[2] * w00 + c10[2] * w10) + (c01[2] * w01 + c11[2] * w11)];
-      };
       let meshGap = 0;
       for (const [member, t] of members[cell].entries()) {
         // A single cell can contain thousands of triangles. Its error proof must yield too, after the overlap proof.
@@ -407,27 +398,36 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
         const e2: Planar = [c.parameters[0] - a.parameters[0], c.parameters[1] - a.parameters[1]];
         const determinant = e1[0] * e2[1] - e1[1] * e2[0];
         const d1 = subtract(b.point, a.point), d2 = subtract(c.point, a.point);
-        /** L_T at a cell-local point of the clip (inside T: barycentric weights in [0, 1] up to rounding). */
-        const affine = (point: Planar): Vector => {
-          const du = point[0] + low[0] - a.parameters[0], dv = point[1] + low[1] - a.parameters[1];
+        /** B - L_T at a cell-local point of this clip. Keep each coordinate's rounding order. */
+        const differenceAt = (x: number, y: number): Vector | null => {
+          const u = x / width, v = y / height;
+          const w00 = (1 - u) * (1 - v), w10 = u * (1 - v), w01 = (1 - u) * v, w11 = u * v;
+          const du = x + low[0] - a.parameters[0], dv = y + low[1] - a.parameters[1];
           const alpha = (du * e2[1] - dv * e2[0]) / determinant, beta = (e1[0] * dv - e1[1] * du) / determinant;
-          return [a.point[0] + (d1[0] * alpha + d2[0] * beta), a.point[1] + (d1[1] * alpha + d2[1] * beta),
-            a.point[2] + (d1[2] * alpha + d2[2] * beta)];
+          const difference: [number, number, number] = [0, 0, 0];
+          for (let axis = 0; axis < 3; axis++) {
+            const mapped = a.point[axis] + (d1[axis] * alpha + d2[axis] * beta);
+            const patch = (c00[axis] * w00 + c10[axis] * w10) + (c01[axis] * w01 + c11[axis] * w11);
+            if (!Number.isFinite(mapped) || !Number.isFinite(patch)) return null;
+            magnitude = Math.max(magnitude, Math.abs(mapped), Math.abs(patch));
+            difference[axis] = patch - mapped;
+          }
+          return difference;
         };
         const clip = clips[member];
+        if (clip.length === 0) continue;
         const extreme = [0, 0, 0];
+        const first = differenceAt(clip[0][0], clip[0][1]);
+        if (first === null) return rejected('nonfinite');
+        let start = first;
         for (let index = 0; index < clip.length; index++) {
-          const p = clip[index], q = clip[(index + 1) % clip.length], m: Planar = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
-          const values = [p, m, q].map(point => {
-            const mapped = affine(point), patch = bilinear(point);
-            if (!finite(mapped) || !finite(patch)) return null;
-            magnitude = Math.max(magnitude, ...mapped.map(Math.abs), ...patch.map(Math.abs));
-            return subtract(patch, mapped);
-          });
-          const [start, middle, end] = values;
-          if (start === null || middle === null || end === null) return rejected('nonfinite');
+          const p = clip[index], q = clip[(index + 1) % clip.length];
+          const middle = differenceAt((p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
+          const end = index + 1 === clip.length ? first : differenceAt(q[0], q[1]);
+          if (middle === null || end === null) return rejected('nonfinite');
           // Along the edge each component of B - L_T is exactly quadratic; the clip's extremes lie on its edges.
           for (let axis = 0; axis < 3; axis++) extreme[axis] = Math.max(extreme[axis], quadraticMaximum(start[axis], middle[axis], end[axis]));
+          start = end;
         }
         meshGap = Math.max(meshGap, Math.hypot(extreme[0], extreme[1], extreme[2]));
       }

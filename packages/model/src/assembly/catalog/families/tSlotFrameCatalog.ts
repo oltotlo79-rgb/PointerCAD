@@ -10,7 +10,7 @@
 import { withName } from '../../standard/partPrimitives.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildMiteredSection, MITER_OPTION_SPECS, miteredMassLength, miteredSectionVolume } from '../miterOption.js';
-import { tSlotProfile, tSlotSectionBounds, type TSlotDimensions } from '../profiles/tSlot.js';
+import { tSlotProfile, tSlotSectionBounds, tSlotSlots, type TSlotDimensions } from '../profiles/tSlot.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
 
@@ -135,6 +135,7 @@ function familyOf(slot: (typeof SLOTS)[number], rows: readonly CatalogItemRow[])
       return massLength !== null && unitMass > 0 ? unitMass * massLength : null;
     },
     sectionBounds: (row) => tSlotSectionBounds(dimensionsOf(row)),
+    sectionSlots: (row) => tSlotSlots(dimensionsOf(row)),
     partName: (row, values) => frameName(row, values),
   };
 }

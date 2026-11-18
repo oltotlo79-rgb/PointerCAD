@@ -117,6 +117,20 @@ describe('まとめて締結する時の窓(J-02 P4)', () => {
     return preview.result.plan;
   }
   const commitDisabled = (markup: string): boolean => /<button type="submit"[^>]*disabled=""/u.test(markup);
+  /** 4 面と 2 組目の穴を選んだ下書きに、組ごとの計画を並べた予告を置いて描く。 */
+  function renderSet(joints: readonly BoltedJointPlan[]): string {
+    const draft = useAppStore.getState().assemblyBoltedJointDraft;
+    if (draft === null) throw new Error('draft');
+    useAppStore.setState({
+      assemblyBoltedJointDraft: { ...draft, picks: [face('component-1', 1), face('component-1', 2), face('component-2', 1),
+        face('component-2', 2)], extraHoles: { first: [face('component-1', 3)], second: [face('component-2', 3)] } },
+      assemblyBoltedJointPreview: { kind: 'set', result: { ok: true, plan: {
+        joints: joints.map((joint) => ({ joint, headKind: 'socket' as const })) } }, pairs: [] },
+    });
+    return renderToStaticMarkup(<BoltedJointPopover />);
+  }
+  const shownFacts = (markup: string): string[] =>
+    Array.from(markup.matchAll(/data-testid="bolted-joint-fact">([^<]*)</gu), (match) => match[1] ?? '');
 
   it('4 面の後は締結する穴の数と Shift の案内、提案は頭の形と組ごとの長さを出し、確定を押せる', () => {
     const draft = useAppStore.getState().assemblyBoltedJointDraft;
@@ -136,6 +150,17 @@ describe('まとめて締結する時の窓(J-02 P4)', () => {
     expect(markup).toContain(t('assembly.boltedJoint.setRow').replace('{index}', '2').replace('{head}', t('assembly.boltedJoint.head.socket'))
       .replace('{nominal}', 'M8').replace('{length}', '45'));
     expect(commitDisabled(markup)).toBe(false);
+  });
+
+  it('未確認の注は全部の組の分を重ねずに出し、1 組目が根拠ありでも 2 組目が根拠なしなら長さの注を出す', () => {
+    const verified = readyPlan();
+    const unverified: BoltedJointPlan = { ...verified, lengthBasis: 'globalUnverifiedList', lengthVerified: false,
+      missingFacts: ['catalogRowUnverified', 'perDiameterLengthAvailability'] };
+    expect(shownFacts(renderSet([verified, verified]))).toEqual([]);
+    expect(shownFacts(renderSet([verified, unverified, { ...unverified, boltLength: 45 }]))).toEqual([
+      t('assembly.boltedJoint.fact.catalogRowUnverified'), t('assembly.boltedJoint.fact.perDiameterLengthAvailability')]);
+    expect(shownFacts(renderSet([unverified, verified]))).toEqual([
+      t('assembly.boltedJoint.fact.catalogRowUnverified'), t('assembly.boltedJoint.fact.perDiameterLengthAvailability')]);
   });
 
   it('1 組でも断られたら、組全体の理由と、穴の組の番号・その組の穴を添えた理由を並べ、確定を押せない', () => {

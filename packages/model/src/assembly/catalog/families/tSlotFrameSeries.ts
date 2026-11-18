@@ -11,7 +11,7 @@
 import { withName } from '../../standard/partPrimitives.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildMiteredSection, MITER_OPTION_SPECS, miteredMassLength, miteredSectionVolume } from '../miterOption.js';
-import { tSlotProfile, tSlotSectionBounds, type TSlotDimensions } from '../profiles/tSlot.js';
+import { tSlotProfile, tSlotSectionBounds, tSlotSlots, type TSlotDimensions } from '../profiles/tSlot.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
 /** 出どころの欄は値の種類だけを書く(頁の URL・読んだ日時は製品に入れない。統括の決定 案 A)。 */
@@ -94,5 +94,6 @@ export const T_SLOT_FRAME_SERIES_FAMILY: CatalogFamily = {
     return massLength !== null && unitMass > 0 ? unitMass * massLength : null;
   },
   sectionBounds: (row) => tSlotSectionBounds(dimensionsOf(row)),
+  sectionSlots: (row) => tSlotSlots(dimensionsOf(row)),
   partName: (row, values) => frameName(row, values),
 };

@@ -1221,6 +1221,11 @@ export { planFrameMembers } from './assembly/frame/frameMembers.js';
 export { frameLineFromEdge } from './assembly/frame/frameEdges.js';
 /** 置いた部材の一括の書き換え(J-01 包み 8): 同じ族か同じ鋼材の製品の部品の行・長さを替えた次の保存の形(ui の選ぶ窓が使う)。 */
 export { planMemberBulkEdit, type MemberBulkChange } from './assembly/frame/memberBulkEdit.js';
+export { applyFrameSlotFastening, loadSlotNutRecords, type FrameSlotFasteningResult, type FrameSlotHoleFailure } from './assembly/fastening/frameSlotFastening.js';
+export {
+  frameSlotBoltNominals, frameSlotCandidates, planFrameSlotHoles, profileClearanceHole, profileHoleSpan, type FrameSlotPlanInputs,
+  type ProfileHoleRejection,
+} from './assembly/fastening/frameSlotRequest.js';
 export type { FrameCornerRule, FrameLine, FrameMembersResult } from './assembly/frame/frameMembers.js';
 export type {
   SteelEvidence,
@@ -1430,6 +1435,7 @@ export {
 // J-02: 穴の入口(ざぐり・皿もみ)に合う頭の締結と、複数の穴をまとめる締結の口(画面の締結の窓が使う)。
 export { previewEntryBoltedJoint, commitEntryBoltedJoint, type CommitEntryBoltedJointResult } from './assembly/fastening/entryBoltedJointCommand.js';
 export { previewBoltedJointSet, commitBoltedJointSet } from './assembly/fastening/boltedJointSetCommand.js';
+export { arrangeBoltedJointSetPicks } from './assembly/fastening/pairBoltedJointHoles.js';
 export { fastenerHeadForEntry } from './assembly/fastening/holeEntry.js';
 export { entryLengthAvailability } from './assembly/fastening/entryBoltLength.js';
 export type {
@@ -1444,6 +1450,7 @@ export { globalUnverifiedLengthAvailability } from './assembly/fastening/selectF
 export type {
   BoltedJointPlan,
   BoltedJointPlanResult,
+  BoltedJointRejection,
   BoltedJointRejectionCode,
   FasteningWasherKind,
 } from './assembly/fastening/types.js';

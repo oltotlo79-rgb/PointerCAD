@@ -163,6 +163,8 @@ export function pickAssemblyMateTarget(
 function subShapePickKind(state: ReturnType<typeof useAppStore.getState>): Exclude<SelectionKind, 'body'> {
   // フレームの辺を選ぶ途中(J-01 包み 4b)は、選ぶ種類の設定によらず辺を選ぶ。
   if (state.frameEdgePick !== null) return 'edge';
+  // フレームの溝に締結する途中(J-02 P6b)は、穴の内側の面を選ぶ。
+  if (state.assemblyFrameSlotDraft !== null) return 'face';
   if (state.assemblyCircularWeldDraft !== null) return circularFilletWeldPickKind(state.assemblyCircularWeldDraft) === 'edge' ? 'edge' : 'face';
   // 入れ子の葉を1つでも選んだ溶接は、選んだものが入れ子の下書きにある(平らな picks は空)ので、そちらの数で決める。
   if (state.assemblyNestedWeldDraft !== null) return nestedWeldPickKind(state.assemblyNestedWeldDraft);
@@ -176,7 +178,7 @@ function subShapePickKind(state: ReturnType<typeof useAppStore.getState>): Exclu
  */
 function pickDraftActive(state: ReturnType<typeof useAppStore.getState>): boolean {
   return state.assemblyMateDraft !== null || state.assemblyBoltedJointDraft !== null || state.assemblyFilletWeldDraft !== null
-    || state.assemblyCircularWeldDraft !== null || state.frameEdgePick !== null;
+    || state.assemblyCircularWeldDraft !== null || state.frameEdgePick !== null || state.assemblyFrameSlotDraft !== null;
 }
 
 // Keep Promise callbacks outside the input closure: a cancelled refresh must not
@@ -540,7 +542,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       // 実らせんの組は締結の穴の枠だけのもの。合致・溶接へは渡さない。フレームの辺を選ぶ途中は、辺の一覧のチェックを入れ替える。
       // 締結の 4 面の後に Shift で押した穴は、2 組目からの穴として足し外しする(J-02 P4)。
       const accepted = state.frameEdgePick !== null ? target.kind !== 'modeledThreadGroup' && state.toggleFrameEdgePick(assemblyTargetId(target))
-        : state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target, event.shiftKey)
+        : state.assemblyFrameSlotDraft !== null ? target.kind !== 'modeledThreadGroup' && state.pickFrameSlotFace(target, event.shiftKey) : state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target, event.shiftKey)
         : target.kind === 'modeledThreadGroup' ? false
           : state.assemblyFilletWeldDraft !== null ? state.pickFilletWeldTarget(target) : addMateTarget(target);
       if (observation !== undefined) observation.addAccepted = accepted;

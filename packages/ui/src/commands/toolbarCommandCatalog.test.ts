@@ -13,7 +13,14 @@ describe('toolbar command catalog', () => {
       labelKey: 'assembly.circularFilletWeld.title', tooltipKey: 'assembly.circularFilletWeld.pickPlane',
       documentKinds: ['assembly'], helpTopic: 'assembly-place',
     }]);
-    const originalGroups = expandedGroups.filter(entry => entry.id !== 'toolbar.assembly.circularFilletWeld');
+    // フレームの溝に締結(J-02 P6b)は「組む」の 1 項目。下の今までの数の区切りから外して、ここで確かめる。
+    expect(expandedGroups.filter(entry => entry.sourceId === 'frameSlotFastening')).toEqual([{
+      id: 'toolbar.assembly.frameSlotFastening', group: 'assembly', sourceId: 'frameSlotFastening',
+      labelKey: 'assembly.frameSlot.tool', tooltipKey: 'assembly.frameSlot.toolTooltip',
+      documentKinds: ['assembly'], helpTopic: 'assembly-place',
+    }]);
+    const originalGroups = expandedGroups.filter(entry => entry.id !== 'toolbar.assembly.circularFilletWeld'
+      && entry.id !== 'toolbar.assembly.frameSlotFastening');
     // GR-30 が「見た目」へ「図形の測定値」を1行足したので 109 → 110(Q1=A4)。
     // R16 adds exactly one shared save-point command; drawing aliases it.
     // 追加要件6 が「組む」へ「ボルトで締結」「締結を外す」の2項目を足したので 111 → 113。

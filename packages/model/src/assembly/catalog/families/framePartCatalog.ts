@@ -24,7 +24,12 @@ import {
   T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS,
 } from './framePartRows.js';
 
-type PartMaterial = 'steel' | 'stainless' | 'aluminum' | 'nylon';
+type DensityMaterial = 'steel' | 'stainless' | 'aluminum' | 'nylon';
+/**
+ * 行の材料。'mixed' は部位ごとに材料の違う行(密度の表に無い材料を含む。統括の決定 2026-11-18 08:1x)で、密度を持たず、
+ * 部品表の材質は行の materialText(資料の材質の文字)、質量は資料の 1 個の値(massG)だけで出す(2 冊目のキャップとフットと同じ仕組み)。
+ */
+type PartMaterial = DensityMaterial | 'mixed';
 
 /** T 溝用ナットの素材(棒材)の行(道具が生成する。数は資料の記入のまま、単位質量だけ kg/m に直した)。 */
 export interface TSlotNutBarRecord {
@@ -170,7 +175,9 @@ export interface AngleBracketRecord {
   readonly key: string;
   readonly size: string;
   readonly slot: number;
-  readonly material: 'steel' | 'stainless' | 'aluminum';
+  readonly material: 'steel' | 'stainless' | 'aluminum' | 'mixed';
+  /** 部位ごとに材料の違う行('mixed')だけ: 資料の材質の文字。 */
+  readonly materialText?: string;
   readonly page: number;
   readonly ribbed: boolean;
   readonly legA: number;
@@ -191,7 +198,9 @@ export interface FootBaseRecord {
   readonly key: string;
   readonly size: string;
   readonly slot: number;
-  readonly material: 'steel' | 'stainless' | 'aluminum';
+  readonly material: 'steel' | 'stainless' | 'aluminum' | 'mixed';
+  /** 部位ごとに材料の違う行('mixed')だけ: 資料の材質の文字。 */
+  readonly materialText?: string;
   readonly page: number;
   readonly kind: string;
   readonly width: number;
@@ -208,7 +217,9 @@ export interface AdjusterRecord {
   readonly key: string;
   readonly size: string;
   readonly slot: number;
-  readonly material: 'steel' | 'stainless' | 'aluminum' | 'nylon';
+  readonly material: 'steel' | 'stainless' | 'aluminum' | 'nylon' | 'mixed';
+  /** 部位ごとに材料の違う行('mixed')だけ: 資料の材質の文字(例: ねじと座の材料)。 */
+  readonly materialText?: string;
   readonly page: number;
   readonly thread: string;
   readonly padDiameter: number;
@@ -221,18 +232,24 @@ export interface AdjusterRecord {
   readonly simplified: readonly string[];
 }
 
-const MATERIALS: Readonly<Record<PartMaterial, string>> = { steel: '鋼', stainless: 'ステンレス', aluminum: 'アルミ', nylon: '樹脂(ナイロン)' };
+const MATERIALS: Readonly<Record<DensityMaterial, string>> = { steel: '鋼', stainless: 'ステンレス', aluminum: 'アルミ', nylon: '樹脂(ナイロン)' };
 const GENERATOR_REVISION = 'frame-part-1';
+
+/** 行の材質の表示と密度の材料(部位ごとに材料の違う行は、資料の材質の文字だけで密度を持たない)。 */
+function materialFields(record: { readonly material: PartMaterial; readonly materialText?: string }):
+Pick<CatalogItemRow, 'materialLabel' | 'densityMaterialId'> {
+  return record.material === 'mixed' ? { materialLabel: record.materialText ?? '' }
+    : { materialLabel: MATERIALS[record.material], densityMaterialId: record.material };
+}
 
 /** 共通の行の欄(出どころは資料の番号と頁だけ。SHA-256 と URL は製品に入れない)。 */
 function baseRow(record: { readonly key: string; readonly size: string; readonly page: number; readonly material: PartMaterial;
-  readonly simplified: readonly string[] }, dims: Readonly<Record<string, number>>, massText: string): CatalogItemRow {
+  readonly materialText?: string; readonly simplified: readonly string[] }, dims: Readonly<Record<string, number>>, massText: string): CatalogItemRow {
   return {
     key: record.key,
     size: record.size,
     standardLabel: '製造元の寸法に合わせた物',
-    materialLabel: MATERIALS[record.material],
-    densityMaterialId: record.material,
+    ...materialFields(record),
     dims,
     evidence: { title: '資料 SF-1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null, url: '',
       locator: `PDF ${record.page} 頁 部品の図(寸法)と質量の記入`, sha256: '', fetchedDate: '' },

@@ -19,6 +19,7 @@ import {
 } from '../file/fileGateway.js';
 import { openErrorMessageKey } from '../file/partFile.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { boltedJointRebuildNotice, componentsUsingPart } from './boltedJointRebuild.js';
 import { cancelMate } from './mateActions.js';
 import {
   confirmComponentReplacement,
@@ -65,6 +66,16 @@ function currentRequest(
     && state.activeDocumentId === documentId
     && state.assembly === assembly
     && state.assemblyLibrary === library;
+}
+
+/**
+ * 差し替え・取り込み直しを確定した直後に、替わった部品を板に持つ締結を「作り直しを待つ」一覧にする(J-02 P8)。
+ * 締結が無ければ一覧を閉じる。確定(applyAssembly)の後の文書と元部品の一式で数える。
+ */
+function noticeBoltedJointRebuild(componentIds: readonly string[]): void {
+  const state = useAppStore.getState();
+  useAppStore.setState({ assemblyBoltedJointRebuild: state.assembly === null ? null
+    : boltedJointRebuildNotice(state.activeDocumentId, state.assembly, state.assemblyLibrary, componentIds) });
 }
 
 function finishRequest(requestId: string): void {
@@ -162,6 +173,7 @@ export async function startReplaceSelectedComponent(
       const current = useAppStore.getState();
       current.applyAssembly(confirmComponentReplacement(prepared), embedded.library);
       current.setSelection([componentId]);
+      noticeBoltedJointRebuild([componentId]);
       return;
     }
     useAppStore.setState({
@@ -184,6 +196,7 @@ export function confirmReplacementPreview(): void {
   const componentId = preview.prepared.plan.componentId;
   state.applyAssembly(confirmComponentReplacement(preview.prepared), preview.library);
   useAppStore.getState().setSelection([componentId]);
+  noticeBoltedJointRebuild([componentId]);
 }
 
 export function cancelReplacementPreview(): void {
@@ -326,6 +339,7 @@ export async function startRefreshPartSource(
       if (!approved || !ownsRequest()) return;
     }
     useAppStore.getState().applyAssembly(assembly, next);
+    noticeBoltedJointRebuild(componentsUsingPart(assembly, partRef));
   } catch {
     if (ownsRequest()) useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
   } finally {

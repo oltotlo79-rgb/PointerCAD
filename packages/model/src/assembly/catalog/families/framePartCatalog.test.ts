@@ -59,7 +59,7 @@ describe('資料 SF-1 のフレームの部品の 9 族', () => {
       ANGLE_BRACKET_RECORDS, FOOT_BASE_RECORDS, ADJUSTER_RECORDS];
     expect(FAMILIES.map((family) => family.rows.map((row) => [row.key, row.size])))
       .toEqual(records.map((list) => list.map((record) => [record.key, record.size])));
-    expect(records.map((list) => list.length)).toEqual([12, 120, 4, 51, 11, 15, 43, 47, 5]);
+    expect(records.map((list) => list.length)).toEqual([12, 120, 4, 51, 11, 15, 48, 55, 6]);
   });
 
   it('行は規格の行を名乗らず、出どころは資料の番号と頁だけで、note と簡略の印は行の表の印から作る', () => {
@@ -213,7 +213,7 @@ describe('資料 SF-1 の部品の読み直しで足した 4 族(平板の L・T
     for (const [mass, computed, key] of checks) {
       if (mass !== null) expect(withinMagnitude(mass - computed, 0.1 * computed), key).toBe(true);
     }
-    expect(checks.filter(([mass]) => mass === null).length).toBe(27);
+    expect(checks.filter(([mass]) => mass === null).length).toBe(31);
   });
 });
 
@@ -252,5 +252,39 @@ describe('1 個のナットの形の拡張(穴の位置・ボールとストッ�
     const minor = size === undefined ? NaN : threadMinorDiameter(size.diameter, metricThreadPitch(size, 'coarse'));
     const withScrew = slotNutVolume({ ...base, holeOffset: 6, setScrew: { thread: 'M4', offset: 14 } });
     expect(withScrew).toBeCloseTo(plain - Math.PI * (minor / 2) ** 2 * 6, 9);
+  });
+});
+
+describe('部位ごとに材料の違う行(密度なし。統括の決定 2026-11-18 08:1x)', () => {
+  it('材料が mixed の行は密度を持たず、部品表の材質は資料の材質の文字、質量は資料の 1 個の値。ほかの行は今までどおり材料の密度を持つ', () => {
+    const records = [...ANGLE_BRACKET_RECORDS, ...FOOT_BASE_RECORDS, ...ADJUSTER_RECORDS];
+    const mixed = records.filter((record) => record.material === 'mixed');
+    // 今の製品の 2 行(座が樹脂でねじが鋼)も部位ごとに材料の違う行に直した(統括の決定 2026-11-18 08:1x。鍵は変えない)。
+    expect(mixed.map((record) => record.key)).toEqual(['m8-d20-l15-nylon', 'm8-d30-l34-mixed', 'm8-d40-l24-nylon']);
+    for (const family of [ANGLE_BRACKET_CATALOG_FAMILY, FOOT_BASE_FAMILY, ADJUSTER_FAMILY]) {
+      for (const row of family.rows) {
+        const record = records.find((candidate) => candidate.key === row.key);
+        if (record?.material === 'mixed') {
+          expect([row.densityMaterialId, row.materialLabel], row.key).toEqual([undefined, record.materialText]);
+          expect(record.materialText?.length ?? 0, row.key).toBeGreaterThan(0);
+          expect(family.nominalMassG?.(row, {}), row.key).toBe(record.massG);
+        } else {
+          expect(row.densityMaterialId, row.key).toBe(record?.material);
+          expect(record?.materialText, row.key).toBeUndefined();
+        }
+      }
+    }
+  });
+});
+
+describe('今の製品のアジャスター 2 行を、部位ごとに材料の違う行に直した(統括の決定 2026-11-18 08:1x)', () => {
+  it('鍵は今のまま、部品表の材質は資料の材質の文字、密度を持たず、質量は今と同じ資料の値(11 g・35 g)', () => {
+    const cases = [['m8-d20-l15-nylon', 'PA(座)・鋼(SWCH, ねじ)', 11], ['m8-d40-l24-nylon', '軟鋼(線材)・PA(底部)', 35]] as const;
+    for (const [key, label, mass] of cases) {
+      const row = ADJUSTER_FAMILY.rows.find((candidate) => candidate.key === key);
+      expect([row?.materialLabel, row?.densityMaterialId], key).toEqual([label, undefined]);
+      expect(row === undefined ? null : ADJUSTER_FAMILY.nominalMassG?.(row, {}), key).toBe(mass);
+      expect(row?.size, key).not.toContain('ナイロン');
+    }
   });
 });

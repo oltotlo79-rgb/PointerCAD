@@ -68,6 +68,13 @@ function materialOf(text: string | undefined): string {
   return /鋼|(?<![A-Z])SS[0-9]{3}(?![0-9])/u.test(value) ? 'steel' : '';
 }
 
+/** 材質の文字が名指しする材料の数(部位ごとに材料の違う行の確かめ。同じ材料の別の書き方は 1 つに数える)。 */
+function materialCount(text: string | undefined): number {
+  const words: readonly (readonly [string, RegExp])[] = [['stainless', /ステンレス|SUS/u], ['steel', /鋼|(?<![A-Z])SS[0-9]{3}|SWCH/u],
+    ['aluminum', /アルミ/u], ['pa', /PA|ナイロン/u], ['pom', /POM/u], ['pu', /PU/u], ['rubber', /ゴム|エラストマー/u]];
+  return words.filter(([, pattern]) => pattern.test(text ?? '')).length;
+}
+
 /** 種類の文字の入れ方の語(「素材・」を除いた「・」区切りの語)。 */
 function entryOf(text: string | undefined): string {
   return (text ?? '').replace(/^素材・/u, '');
@@ -299,8 +306,13 @@ describe('資料 SF-1 の読み直しで足した 4 族と照らす側の読み'
       const cells = cellsOf('adjusters', record.key);
       // ねじの長さの寸法線が六角部の上からの行は、記入のままの長さと六角部の高さを照らす(足し引きで作った長さは使わない)。
       const hexed = record.hexHeight !== undefined;
-      expect([record.material, record.page, record.padDiameter, record.padThickness, record.thread, record.threadLength, record.hexHeight,
-        record.massG], record.key).toEqual([materialOf(cells['材質']), numberOf(cells['PDF頁']), numberOf(cells['皿の径']),
+      // 部位ごとに材料の違う行('mixed')は、照らす側の材質の文字が 2 つ以上の材料を名指しし、行の材質の文字も 2 つ以上を名指しする(統括 08:1x)。
+      const mixed = record.material === 'mixed';
+      if (mixed) {
+        expect([materialCount(cells['材質']) >= 2, materialCount(record.materialText) >= 2], record.key).toEqual([true, true]);
+      }
+      expect([mixed ? 'mixed' : record.material, record.page, record.padDiameter, record.padThickness, record.thread, record.threadLength,
+        record.hexHeight, record.massG], record.key).toEqual([mixed ? 'mixed' : materialOf(cells['材質']), numberOf(cells['PDF頁']), numberOf(cells['皿の径']),
         numberOf(cells['皿の厚さ']), threadOf((cells['ねじの呼び'] ?? '').replace(/\([^)]*\)/gu, '').replace(/[×x][0-9.]+$/u, '')),
         numberOf(cells[hexed ? 'ねじの長さ_記入' : 'ねじの長さ']), hexed ? numberOf(cells['六角部の高さ']) : undefined, numberOf(cells['質量_g'])]);
       if (hexed) {

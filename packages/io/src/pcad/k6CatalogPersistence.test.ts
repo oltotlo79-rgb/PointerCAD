@@ -87,7 +87,7 @@ describe('アルミフレームの族の部品の保存と開き直し', () => {
     // 長さの欄はナットの素材(棒材)だけが持つ。ほかの族は保存の形に長さを書かない。
     const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
       'catalogItem', row.size, family === 't-slot-nut-bar' ? { family, item: row.key, length: '120' } : { family, item: row.key })) ?? []);
-    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([12, 120, 4, 51, 11, 15, 43, 47, 5]);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([12, 120, 4, 51, 11, 15, 48, 55, 6]);
     let document: AssemblyDocument = createAssemblyDocument('資料 SF-1 の部品の保存');
     for (const source of sources) document = addComponent(document, createComponentFor(document, source));
     const text = writeAssemblyDocument(document, SAVE_OPTIONS);

@@ -158,3 +158,18 @@ export function appendMiterCut(document: PartDocument, targetId: string, bounds:
   const cutDocument = appendBoolean(appendSolid(withSketch, tool), 'subtract', targetId, tool.id);
   return { document: cutDocument.document, targetId: cutDocument.feature.id };
 }
+/**
+ * 断面の点 `point`(局所の XY)の、留めで切った後に材料が残る長さの向きの範囲 [始め, 終わり](J-02 P6a の溝の線)。
+ * 始点の留めは z ≥ h + s·(u − c)、終点の留めは z ≤ L − h − s·(u − c)(u は短くする向きの軸の座標)。残らない時は null。
+ */
+export function miterKeptRange(bounds: FrameSectionBounds, cuts: readonly ProfileMiterEnd[], point: readonly [number, number],
+  length: number): readonly [number, number] | null {
+  let low = 0, high = length;
+  for (const cut of cuts) {
+    const { center, half } = miterAxes(bounds, cut.side);
+    const sign = cut.side === 'x+' || cut.side === 'y+' ? 1 : -1;
+    const offset = sign * ((cut.side === 'x+' || cut.side === 'x-' ? point[0] : point[1]) - center);
+    if (cut.end === 'start') low = Math.max(low, half + offset); else high = Math.min(high, length - half - offset);
+  }
+  return low < high ? [low, high] : null;
+}

@@ -14,7 +14,12 @@ export interface EntryHoleSelection extends FasteningHoleSelection {
   readonly entry?: FasteningHoleEntry;
 }
 
-export type FasteningExtensionCode = 'counterboreTooSmall' | 'countersinkMismatch' | 'entryOnFarSide' | 'holeCountMismatch';
+/**
+ * holePairMissing: まとめて締結する時、基準の組で整列した後に、同じ軸の上で向かい合う相手の穴がちょうど 1 つ見つからない
+ * (detail の side が first なら頭側の穴、second なら相手側の穴。index はその側の選んだ順の番号)。
+ */
+export type FasteningExtensionCode = 'counterboreTooSmall' | 'countersinkMismatch' | 'entryOnFarSide' | 'holeCountMismatch'
+  | 'holePairMissing';
 
 export interface FasteningExtensionRejection {
   readonly code: FasteningExtensionCode;

@@ -11,7 +11,7 @@ import { evaluateExpression } from '@pointercad/expression';
 import { withName } from '../../standard/partPrimitives.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildMiteredSection, MITER_OPTION_SPECS, miteredSectionVolume } from '../miterOption.js';
-import { tSlotProfile, tSlotSectionBounds, type TSlotDimensions } from '../profiles/tSlot.js';
+import { tSlotProfile, tSlotSectionBounds, tSlotSlots, type TSlotDimensions } from '../profiles/tSlot.js';
 import type { CatalogFamily, CatalogItemRow, CatalogOptionSpec } from '../types.js';
 
 /** 資料の値を使わない族の出どころの欄(題に、規格の行ではない事を書く。資料の番号・SHA・頁は無い)。 */
@@ -91,5 +91,6 @@ export const T_SLOT_FRAME_FAMILY: CatalogFamily = {
     return profile === null || !(length > 0) ? null : miteredSectionVolume(profile, tSlotSectionBounds(dimensionsOf(values)), values, length);
   },
   sectionBounds: (_row, values) => tSlotSectionBounds(dimensionsOf(values)),
+  sectionSlots: (_row, values) => tSlotSlots(dimensionsOf(values)),
   partName: (_row, values) => frameName(values),
 };

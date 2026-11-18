@@ -44,7 +44,7 @@ const FRAME_KINDS: readonly (readonly [string, string])[] = [
 function picker(page: Page): Locator {
   return page.getByRole('dialog', { name: uiMessage('assembly', 'assembly.standardPart.title'), exact: true });
 }
-function choice(dialog: Locator, catalog: string, key: string): Locator {
+export function choice(dialog: Locator, catalog: string, key: string): Locator {
   return dialog.getByRole('combobox', { name: uiMessage(catalog, key), exact: true });
 }
 /** Text fields are found by their visible label (the label also holds the unit), as in steelStockCsvFlow.ts. */
@@ -59,7 +59,7 @@ function stockDetails(dialog: Locator): Locator {
   });
 }
 
-async function openFramePicker(page: Page): Promise<Locator> {
+export async function openFramePicker(page: Page): Promise<Locator> {
   await chooseToolMenuItem(page, uiMessage('assembly', 'assembly.menu.build'), uiMessage('assembly', 'assembly.tool.placeStandardPart'));
   const dialog = picker(page);
   await expect(dialog).toBeVisible();
@@ -148,7 +148,7 @@ async function placeFrames(page: Page): Promise<string[][]> {
 }
 
 /** Web は保存の窓を消してから開き、Electron はそのまま。起動を待ち、空のアセンブリを新しく作る。 */
-async function startAssembly(page: Page, app: ElectronApplication | undefined): Promise<void> {
+export async function startAssembly(page: Page, app: ElectronApplication | undefined): Promise<void> {
   if (app === undefined) {
     await disableFilePickers(page);
     await page.goto('/');
@@ -167,7 +167,7 @@ async function startAssembly(page: Page, app: ElectronApplication | undefined): 
  * 予告の表の長さの列(線ごと)が `lengths` になるまで待って確かめる。角の扱いなどを替えた直後は行の数が同じまま中身だけが
  * 描き直されるので、1 回だけ読んで比べず、Playwright の待つ形で確かめる。
  */
-async function expectPreviewLengths(layout: Locator, lengths: readonly string[]): Promise<void> {
+export async function expectPreviewLengths(layout: Locator, lengths: readonly string[]): Promise<void> {
   await expect(layout.locator('tbody tr td:nth-child(2)')).toHaveText([...lengths]);
 }
 

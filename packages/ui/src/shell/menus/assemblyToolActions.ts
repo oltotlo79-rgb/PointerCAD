@@ -1,4 +1,4 @@
-import { findComponent, releaseRigidGroup, rigidGroupsOf, type AssemblyDocument, type MateKind } from '@pointercad/model';
+import { findComponent, frameSlotCandidates, releaseRigidGroup, rigidGroupsOf, type AssemblyDocument, type MateKind } from '@pointercad/model';
 import type { AppState } from '../../store/appState.js';
 import { useAppStore } from '../../store/useAppStore.js';
 import type { EditToolReadiness } from '../../sketch/editCommands.js';
@@ -54,7 +54,14 @@ export function explodeActionReadiness(
 export function assemblyToolbarIdle(state: AppState): boolean {
   return state.assemblyPlacement === null && state.assemblyMateDraft === null && state.assemblyDrag === null
     && !state.isComputing && !state.assemblyReplacementBusy && state.assemblyReplacementPreview === null
-    && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null;
+    && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null
+    && state.assemblyFrameSlotDraft === null;
+}
+
+/** 組立の溝つきのフレームの部品(表示の解が無い時は無い)。フレームの溝に締結する道具の押せる条件とブラケットの見分けに使う。 */
+function frameSlotFrameIds(state: AppState): ReadonlySet<string> {
+  return new Set(state.assembly === null || state.assemblyView === null ? []
+    : frameSlotCandidates(state.assembly, state.assemblyView.resolved.placements).map((candidate) => candidate.componentId));
 }
 
 export function assemblyBuildReadiness(state: AppState, id: AssemblyMenuActionId): EditToolReadiness {
@@ -70,6 +77,11 @@ export function assemblyBuildReadiness(state: AppState, id: AssemblyMenuActionId
     if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
     return state.assembly.components.filter((component) => !component.suppressed).length >= 2
       ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.boltedJoint.needTwoComponents' };
+  }
+  if (id === 'frameSlotFastening') {
+    if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
+    return frameSlotFrameIds(state).size > 0
+      ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.frameSlot.needFrame' };
   }
   if (id === 'releaseFastening') {
     if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
@@ -110,6 +122,14 @@ export function chooseAssemblyBuild(id: AssemblyMenuActionId): void {
     const selection = state.selection;
     cancelMate();
     useAppStore.getState().beginBoltedJoint(selection);
+  }
+  else if (id === 'frameSlotFastening') {
+    // 溝つきのフレームでない選んだ部品をブラケットとして渡す(P7)。無ければ穴を選ぶ形(P6b)。
+    const frames = frameSlotFrameIds(state);
+    const brackets = state.selection.filter((selected) => !frames.has(selected)
+      && state.assembly?.components.some((component) => component.id === selected) === true);
+    cancelMate();
+    useAppStore.getState().beginFrameSlotFastening(brackets.length > 0 ? brackets : null);
   }
   else if (id === 'releaseFastening') {
     const group = state.assembly === null ? null : selectedFastening(state.assembly, state.selection);

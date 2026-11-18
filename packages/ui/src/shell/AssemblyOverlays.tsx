@@ -4,7 +4,8 @@ import { AssemblyInterferencePanel } from '../assembly/AssemblyInterferencePanel
 import { StandardPartPicker } from '../assembly/StandardPartPickerPanel.js';
 import { ExplodePopover } from '../assembly/ExplodePopover.js';
 import { ReplacementPopover } from '../assembly/ReplacementPopover.js';
-import { BoltedJointPopover } from '../assembly/BoltedJointPopover.js';
+import { BoltedJointPopover, BoltedJointRebuildPanel } from '../assembly/BoltedJointPopover.js';
+import { FrameSlotFasteningPopover } from '../assembly/FrameSlotFasteningPopover.js';
 import { FilletWeldPopover } from '../assembly/FilletWeldPopover.js';
 import { CircularFilletWeldPopover } from '../assembly/CircularFilletWeldPopover.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -25,6 +26,8 @@ export function AssemblyOverlays(): React.JSX.Element {
     <ExplodePopover />
     <ReplacementPopover />
     <BoltedJointPopover />
+    <FrameSlotFasteningPopover />
+    <BoltedJointRebuildPanel />
     <FilletWeldPopover />
     <CircularWeldOverlay />
     <AssemblyMotionControls />

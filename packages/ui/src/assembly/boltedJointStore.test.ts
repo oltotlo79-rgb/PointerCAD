@@ -114,9 +114,17 @@ describe('選択の下書きの規則', () => {
     const lastVerified = choices.lengthAvailability.map((entry) => entry.verified).lastIndexOf(true);
     expect(lastVerified).toBeGreaterThanOrEqual(0);
     expect(lastVerified).toBeLessThan(firstUnverified);
-    // 確認済みの根拠は本体規格・並目の行だけ。附属書JA の行には付けない。
-    expect(choices.lengthAvailability.filter((entry) => entry.verified)
-      .every((entry) => entry.boltRowKey.endsWith(':main') && entry.threadSeries === 'coarse')).toBe(true);
+    // 確認済みの根拠は、本体規格・並目の六角ボルトの行と、径ごとの表のある六角穴付きの行(JIS B 1176)だけ。
+    // 附属書JA の六角ボルトと皿頭の行には付けない。
+    const verified = choices.lengthAvailability.filter((entry) => entry.verified);
+    const hexMain = (key: string): boolean => key.endsWith(':main');
+    const socket = (key: string): boolean => key.startsWith('socket-head-cap-screw:');
+    expect(verified.every((entry) => entry.threadSeries === 'coarse' && (hexMain(entry.boltRowKey)
+      || (socket(entry.boltRowKey) && entry.basis === 'perDiameterEvidence')))).toBe(true);
+    expect(verified.some((entry) => hexMain(entry.boltRowKey))).toBe(true);
+    expect(verified.some((entry) => socket(entry.boltRowKey))).toBe(true);
+    expect(verified.some((entry) => entry.boltRowKey.startsWith('countersunk-socket-screw:') || entry.boltRowKey.endsWith(':annexJA')))
+      .toBe(false);
   });
 });
 

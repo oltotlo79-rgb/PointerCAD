@@ -2933,12 +2933,14 @@ button.pcad-tree__row:focus-visible {
 
 /* Keep the active fastening and weld forms above the persistent assembly timeline (z-index: 2). */
 .pcad-popover--bolted-joint,
+.pcad-popover--frame-slot,
 .pcad-popover--fillet-weld {
   z-index: 3;
 }
 
-/* Three translated weld actions must stay inside the narrow form. */
-.pcad-popover--circular-weld .pcad-popover__actions {
+/* Three translated actions (weld, frame slot fastening) must stay inside the narrow form: a single right-aligned row clips the first button. */
+.pcad-popover--circular-weld .pcad-popover__actions,
+.pcad-popover--frame-slot .pcad-popover__actions {
   flex-wrap: wrap;
 }
 

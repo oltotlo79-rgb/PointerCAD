@@ -9,6 +9,7 @@
  * 溝は外へ開くので外の輪の切り欠きで、穴だけが内の輪になる。輪は鋼材の断面と同じ線分・円弧の形(押し出しは profileExtrusion.ts)。
  */
 import type { FrameSectionBounds } from '../../frame/frameMembers.js';
+import type { FrameSectionSlot } from '../../frame/frameSlots.js';
 import type { ProfileLoops } from '../../standard/profileExtrusion.js';
 import type { SteelProfilePoint, SteelProfileSegment } from '../../standard/steelSectionProfiles.js';
 import { belowMagnitude } from '../../../numericTolerance.js';
@@ -220,4 +221,19 @@ export function tSlotProfile(dims: TSlotDimensions): (ProfileLoops & { readonly 
 export function tSlotSectionBounds(dims: TSlotDimensions): FrameSectionBounds | null {
   if (!dimensionsValid(dims)) return null;
   return { minX: -dims.width / 2, minY: -dims.height / 2, maxX: dims.width / 2, maxY: dims.height / 2 };
+}
+const FACE_NAMES: readonly FrameSectionSlot['face'][] = ['top', 'left', 'bottom', 'right'];
+
+/**
+ * 断面の溝の全部(J-02 P6a のフレームの締結。面の順は上・左・下・右、面の中は断面の輪の進む順)。位置は行の欄(溝のある面・
+ * 面ごとの溝の数・列の間隔・外形)だけから出し、断面の形の溝の切り欠き(`slotPoints`)と同じ中心を使う。口の幅と肩の厚さは行の値。
+ * 肩の裏の部屋の形(45° の側面)は簡略形状の決まりなので、それに頼る置き方(溝用のナットを置く深さ)は簡略と知らせる。
+ * 形が成り立たない時は null。
+ */
+export function tSlotSlots(dims: TSlotDimensions): readonly FrameSectionSlot[] | null {
+  if (!dimensionsValid(dims)) return null;
+  return faces(dims).flatMap((face, index) => face.centers.map((center): FrameSectionSlot => ({
+    face: FACE_NAMES[index] ?? 'top', center, inward: face.v, across: face.u, opening: dims.slotOpening, shoulder: dims.shoulder,
+    slotDepth: dims.slotDepth, roomSimplified: true,
+  })));
 }

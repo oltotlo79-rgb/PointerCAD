@@ -5,10 +5,13 @@
  * 新しい締結は穴が 1 組でも一括の口で予告・確定し、4 面の後に Shift で選んだ穴は 2 組目からの穴として足し外しする。
  * 確定は全部の組を 1 つの新しい文書にして `applyAssembly` を 1 回だけ呼ぶ(元に戻す 1 回で全部が消える)。
  */
+import { findBoltedJointRecord } from '@pointercad/model';
+
 import {
   appendBoltedJointPick, BOLTED_JOINT_PICK_COUNT, boltedJointPreviewReady, commitBoltedJointDraft, commitBoltedJointSetDraft,
   previewBoltedJointDraft, toggleBoltedJointExtraHole, type AssemblyBoltedJointDraft, type BoltedJointDraftPreview,
 } from '../assembly/boltedJointDraft.js';
+import { pendingBoltedJointRebuilds, withoutRebuiltRecord } from '../assembly/boltedJointRebuild.js';
 import { nestedBoltedJointDisplayPreview } from '../assembly/nestedBoltedJointDisplay.js';
 import { commitNestedBoltedJoint, nestedBoltedJointCommandContext, previewNestedBoltedJoint } from '../assembly/nestedBoltedJointDraft.js';
 import type { AppState } from './appState.js';
@@ -42,8 +45,25 @@ function commitNestedBoltedJointDraft(set: SetState, get: () => AppState): boole
   return true;
 }
 
-export function createBoltedJointActions(set: SetState, get: () => AppState): Pick<AppState, 'pickBoltedJointFace' | 'commitBoltedJoint'> {
+/** 作り直しを待つ締結の 1 つ目を、今ある「直す」の窓で開く(その締結のボルトなどを選んで開くのと同じ)。 */
+function beginNextRebuild(set: SetState, get: () => AppState): boolean {
+  const state = get();
+  const [recordId] = pendingBoltedJointRebuilds(state.assemblyBoltedJointRebuild, state.activeDocumentId, state.assembly,
+    state.assemblyLibrary);
+  const record = recordId === undefined || state.assembly === null ? undefined : findBoltedJointRecord(state.assembly, recordId);
+  const [part] = record?.componentIds ?? [];
+  if (part === undefined) {
+    set({ assemblyBoltedJointRebuild: null });
+    return false;
+  }
+  return state.beginBoltedJoint([part]);
+}
+
+export function createBoltedJointActions(set: SetState, get: () => AppState):
+Pick<AppState, 'pickBoltedJointFace' | 'commitBoltedJoint' | 'beginBoltedJointRebuild' | 'dismissBoltedJointRebuild'> {
   return {
+    beginBoltedJointRebuild: () => beginNextRebuild(set, get),
+    dismissBoltedJointRebuild: () => { set({ assemblyBoltedJointRebuild: null }); },
     pickBoltedJointFace: (target, add = false) => {
       const state = get();
       const draft = state.assemblyBoltedJointDraft;
@@ -71,6 +91,9 @@ export function createBoltedJointActions(set: SetState, get: () => AppState): Pi
         return false;
       }
       get().applyAssembly(result.document);
+      // 作り直しを待っていた締結を直したら、待つ一覧から外す(元に戻しても一覧へは戻さない)。
+      const notice = get().assemblyBoltedJointRebuild;
+      if (notice !== null && draft.editRecordId !== undefined) set({ assemblyBoltedJointRebuild: withoutRebuiltRecord(notice, draft.editRecordId) });
       return true;
     },
   };

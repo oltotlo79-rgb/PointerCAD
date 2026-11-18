@@ -56,6 +56,7 @@
     "file-open-rejection.spec.ts",
     "fillet-weld.spec.ts",
     "firefox-graphics.spec.ts",
+    "frame-slot-fastening.spec.ts",
     "friction-browser.spec.ts",
     "friction-cancel-browser.spec.ts",
     "function-plot.spec.ts",
@@ -237,7 +238,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "48ee657eb4709bcbee6b0285dd198b02b5517cbcf5da13b1b88675871fd2ada3",
+  "configSha256": "c1897aa27e6009ecdb1a00c5d7cc8fc1a2709b0178690e803fde31c549b57fcf",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
@@ -859,6 +860,12 @@
       "sha256": "33afe04198806bf9eb04b795562257f4fcd42b29196043f3ec9c902c35c56105"
     },
     {
+      "file": "electron-frame-slot-fastening.spec.ts",
+      "category": "electron",
+      "reason": "electron project filename rule",
+      "sha256": "3c24d61b012608652368cd9db6de194bd8e2de3b8c597fad611918f76b35a214"
+    },
+    {
       "file": "electron-friction-cancel.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
@@ -1295,6 +1302,12 @@
       "category": "firefox-explicit",
       "reason": "top-level test.use browserName firefox",
       "sha256": "973c870f6a422f2957da0da7f9c4ac9ff9d53137a979c79d23d647e250ec8676"
+    },
+    {
+      "file": "frame-slot-fastening.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "ede690ddcd652e2569c888987aa21a95c6fe564bd60c25db6b3ac5675db0b6d4"
     },
     {
       "file": "friction-browser.spec.ts",

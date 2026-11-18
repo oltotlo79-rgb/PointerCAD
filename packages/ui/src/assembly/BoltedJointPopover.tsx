@@ -10,6 +10,7 @@ import {
   boltedJointReasonText, type AssemblyBoltedJointDraft, type BoltedJointDraftIssue, type BoltedJointDraftPatch,
   type BoltedJointDraftPreview,
 } from './boltedJointDraft.js';
+import { pendingBoltedJointRebuilds } from './boltedJointRebuild.js';
 import { nestedBoltedJointRefusalKey } from './nestedBoltedJointDisplay.js';
 
 const WASHER_CHOICES = ['none', 'plainWasher', 'springWasher'] as const;
@@ -48,7 +49,10 @@ function numberText(value: number | null): string {
   return value === null ? '-' : String(Math.round(value * 1000) / 1000);
 }
 
-function PlanSummary({ plan }: { readonly plan: BoltedJointPlan }): React.JSX.Element {
+/** 提案の要約。`facts` は出す未確認の注(既定はこの計画の注。まとめて締結する時は全部の組の注を渡す)。 */
+function PlanSummary({ plan, facts = plan.missingFacts }: {
+  readonly plan: BoltedJointPlan; readonly facts?: BoltedJointPlan['missingFacts'];
+}): React.JSX.Element {
   return <div className="pcad-popover__fields" data-testid="bolted-joint-plan">
     <p>{t('assembly.boltedJoint.proposal')}</p>
     <p data-testid="bolted-joint-bolt">{`${t('assembly.boltedJoint.bolt')} ${plan.nominal} ${t('assembly.boltedJoint.length')} ${numberText(plan.boltLength)}`}</p>
@@ -59,7 +63,7 @@ function PlanSummary({ plan }: { readonly plan: BoltedJointPlan }): React.JSX.El
       : <p data-testid="bolted-joint-engaged">{`${t('assembly.boltedJoint.engaged')} ${numberText(plan.engagedLength)}`}</p>}
     {plan.protrusion === null ? null : <p>{`${t('assembly.boltedJoint.protrusionResult')} ${numberText(plan.protrusion)}`}</p>}
     {plan.alignment.movedComponentIds.length === 0 ? null : <p>{t('assembly.boltedJoint.moves')}</p>}
-    {plan.missingFacts.map((fact) => <p key={fact} className="pcad-field__hint" data-testid="bolted-joint-fact">
+    {facts.map((fact) => <p key={fact} className="pcad-field__hint" data-testid="bolted-joint-fact">
       {t(`assembly.boltedJoint.fact.${fact}`)}</p>)}
     <p className="pcad-field__hint">{t('assembly.boltedJoint.fastenNote')}</p>
   </div>;
@@ -81,8 +85,10 @@ function setRowText(joint: BoltedJointSetPlan['joints'][number], index: number):
 function SetSummary({ plan }: { readonly plan: BoltedJointSetPlan }): React.JSX.Element | null {
   const [first] = plan.joints;
   if (first === undefined) return null;
+  // 未確認の注は全部の組の分を重ねずに出す(1 組目の注だけでは、未確認の値で選んだ組を見せない組み合わせが出る)。
+  const facts = [...new Set(plan.joints.flatMap((joint) => joint.joint.missingFacts))].sort();
   return <>
-    <PlanSummary plan={first.joint} />
+    <PlanSummary plan={first.joint} facts={facts} />
     <div className="pcad-popover__fields" data-testid="bolted-joint-set">
       <p data-testid="bolted-joint-head">{`${t('assembly.boltedJoint.head')} ${t(HEAD_KEYS[first.headKind])}`}</p>
       {plan.joints.length < 2 ? null : <>
@@ -116,6 +122,36 @@ function HoleCounts({ draft }: { readonly draft: AssemblyBoltedJointDraft }): Re
       .replace('{first}', String(counts.first)).replace('{second}', String(counts.second))}</p>
     <p className="pcad-field__hint">{t('assembly.boltedJoint.addHolesGuide')}</p>
   </div>;
+}
+
+/**
+ * 部品の差し替え・取り込み直しで板が替わった締結の知らせ(J-02 P8)。締結の窓が閉じている間だけ出す。
+ * 「作り直す」は待つ締結の 1 つ目を「直す」の窓で開く(確定は直す窓の「締結する」。元に戻す 1 回)。
+ */
+export function BoltedJointRebuildPanel(): React.JSX.Element | null {
+  const notice = useAppStore((state) => state.assemblyBoltedJointRebuild);
+  const draft = useAppStore((state) => state.assemblyBoltedJointDraft);
+  const documentId = useAppStore((state) => state.activeDocumentId);
+  const assembly = useAppStore((state) => state.assembly);
+  const library = useAppStore((state) => state.assemblyLibrary);
+  const pending = pendingBoltedJointRebuilds(notice, documentId, assembly, library);
+  if (draft !== null || pending.length === 0) return null;
+  const store = useAppStore.getState;
+  const title = t('assembly.boltedJoint.rebuild.title');
+  return (
+    <section className="pcad-popover pcad-popover--bolted-joint" role="dialog" aria-label={title} data-testid="bolted-joint-rebuild">
+      <DraggableWindowTitle className="pcad-popover__title">{title}</DraggableWindowTitle>
+      <p role="status" data-testid="bolted-joint-rebuild-count">
+        {t('assembly.boltedJoint.rebuild.notice').replace('{count}', String(pending.length))}</p>
+      <div className="pcad-popover__actions">
+        <button type="button" className="pcad-button" title={t('assembly.boltedJoint.rebuild.actionTooltip')}
+          data-testid="bolted-joint-rebuild-start" onClick={() => store().beginBoltedJointRebuild()}>
+          {t('assembly.boltedJoint.rebuild.action')}</button>
+        <button type="button" className="pcad-button" title={t('assembly.boltedJoint.rebuild.dismissTooltip')}
+          onClick={() => store().dismissBoltedJointRebuild()}>{t('assembly.boltedJoint.rebuild.dismiss')}</button>
+      </div>
+    </section>
+  );
 }
 
 /** 4 つの面を選ぶ間も開いたままの、モーダルにしない締結の窓。確定だけが文書を変える。 */

@@ -12,6 +12,7 @@
  */
 import type { PartDocument } from '../../part/types.js';
 import type { FrameSectionBounds } from '../frame/frameMembers.js';
+import type { FrameSectionSlot } from '../frame/frameSlots.js';
 import type { SteelEvidence } from '../standard/steelCatalog.js';
 
 /** 選ぶ画面の分類(鋼材・アルミフレーム・機械要素)。 */
@@ -118,6 +119,11 @@ export interface CatalogFamily<Row extends CatalogItemRow = CatalogItemRow> {
    * 欄の値で形が作れない時は null。持たない族は線に沿って並べられない。
    */
   sectionBounds?(row: Row, values: Readonly<Record<string, string>>): FrameSectionBounds | null;
+  /**
+   * 溝つきのフレームの族の断面の溝(部品の XY 面、J-02 P6a)。フレームの締結で溝の中心線を出す。位置は行の欄だけから出す。
+   * 欄の値で形が作れない時は null。持たない族は溝の締結の相手にならない。
+   */
+  sectionSlots?(row: Row, values: Readonly<Record<string, string>>): readonly FrameSectionSlot[] | null;
 }
 
 /**

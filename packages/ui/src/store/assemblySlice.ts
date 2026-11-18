@@ -24,6 +24,7 @@ import {
 import type { StateCreator } from 'zustand';
 import { createCircularWeldActions, selectedCircularWeldId, type CircularWeldSlice } from './circularWeldActions.js';
 import { createFrameEdgePickActions, type FrameEdgePickSlice } from './frameEdgePickActions.js';
+import { createFrameSlotFasteningActions, type FrameSlotFasteningSlice } from './frameSlotFasteningActions.js';
 import { boltedJointPreviewFor, createBoltedJointActions } from './boltedJointActions.js';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
@@ -55,6 +56,7 @@ import {
   createBoltedJointDraft, createBoltedJointEditDraft,
   type AssemblyBoltedJointDraft, type BoltedJointDraftPatch, type BoltedJointDraftPreview, type BoltedJointPickTarget,
 } from '../assembly/boltedJointDraft.js';
+import type { BoltedJointRebuildNotice } from '../assembly/boltedJointRebuild.js';
 import {
   appendNestedBoltedJointPick, createNestedBoltedJointDraft, nestedBoltedJointCommandContext,
   previewNestedBoltedJoint, type NestedBoltedJointDraft, type NestedBoltedJointPick, type NestedBoltedJointPreview,
@@ -127,7 +129,7 @@ export type AssemblyMotionNotice =
   | { readonly kind: 'failed' };
 
 /** アセンブリのスライスが持つ欄と操作。 */
-export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice {
+export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, FrameSlotFasteningSlice {
   /**
    * 開いているアセンブリ文書(FR-601)。**開いていなければ null**(= 部品を開いている)。
    *
@@ -243,6 +245,15 @@ export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice {
   readonly cancelBoltedJoint: () => void;
   readonly commitBoltedJoint: () => boolean;
   /**
+   * 部品の差し替え・取り込み直しで板が替わった締結(作り直しを待つ一覧。J-02 P8)。保存・Undo へは入れない。
+   * 待つ物が無ければ null。
+   */
+  readonly assemblyBoltedJointRebuild: BoltedJointRebuildNotice | null;
+  /** 作り直しを待つ締結の 1 つ目を「直す」の窓で開く。開けない(待つ物が無い)時は一覧を閉じて false。 */
+  readonly beginBoltedJointRebuild: () => boolean;
+  /** 作り直しの知らせを閉じる(文書は変えない)。 */
+  readonly dismissBoltedJointRebuild: () => void;
+  /**
    * 入れ子の組の葉の部品の穴どうしの締結(新しい締結の打ちかけの間だけ)。部品は根からの経路で指し、径・長さ・ナットは
    * 締結の打ちかけの欄をそのまま使う。予告と確定は model の入れ子の締結の命令。確定は applyAssembly を 1 回(Undo 1段)。
    */
@@ -305,10 +316,11 @@ export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   | 'isCheckingAssemblyInterference' | 'assemblyInterferenceError' | 'standardPartPickerOpen'
   | 'assemblyReplacementPreview' | 'assemblyReplacementBusy' | 'assemblyReplacementRequestId'
   | 'assemblyBoltedJointDraft' | 'assemblyBoltedJointPreview' | 'assemblyNestedBoltDraft' | 'assemblyNestedBoltPreview'
+  | 'assemblyBoltedJointRebuild'
   | 'assemblyFilletWeldDraft' | 'assemblyFilletWeldPreview'
   | 'assemblyCircularWeldDraft' | 'assemblyCircularWeldPreview'
   | 'assemblyNestedWeldDraft' | 'assemblyNestedWeldPreview' | 'assemblyChildWeldEdit' | 'assemblyJointDrive'
-  | 'frameEdgePick'>;
+  | 'frameEdgePick' | 'assemblyFrameSlotDraft' | 'assemblyFrameSlotPreview' | 'assemblyFrameSlotNut'>;
 
 /** 協調の関節の駆動の持ち主。この記録そのものがストアに残っている間だけ結果を反映できる。 */
 export interface AssemblyJointDrive {
@@ -454,6 +466,7 @@ export function createAssemblyInitialState(session?: PreparedDocumentSession): A
     assemblyBoltedJointPreview: null,
     assemblyNestedBoltDraft: null,
     assemblyNestedBoltPreview: null,
+    assemblyBoltedJointRebuild: null,
     assemblyFilletWeldDraft: null,
     assemblyFilletWeldPreview: null,
     assemblyCircularWeldDraft: null,
@@ -462,6 +475,9 @@ export function createAssemblyInitialState(session?: PreparedDocumentSession): A
     assemblyNestedWeldPreview: null,
     assemblyChildWeldEdit: null,
     frameEdgePick: null,
+    assemblyFrameSlotDraft: null,
+    assemblyFrameSlotPreview: null,
+    assemblyFrameSlotNut: null,
     assemblyJointDrive: null,
     ...emptyInterferenceState(),
     activeDocumentId,
@@ -533,7 +549,7 @@ export const createAssemblySlice: StateCreator<
       assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
       assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
       assemblyExplodeDraft: null, assemblyExplodeError: null,
-      standardPartPickerOpen: false, frameEdgePick: null,
+      standardPartPickerOpen: false, frameEdgePick: null, assemblyFrameSlotDraft: null, assemblyFrameSlotPreview: null,
       assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
       assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
       assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
@@ -543,7 +559,7 @@ export const createAssemblySlice: StateCreator<
   }
   return {
     ...empty(),
-    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get), ...createBoltedJointActions(set, get),
+    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get), ...createFrameSlotFasteningActions(set, get), ...createBoltedJointActions(set, get),
     recoveryRecord: null,
     resetAssembly: (update, session) => {
       const initial = empty(session);
@@ -592,7 +608,7 @@ export const createAssemblySlice: StateCreator<
           assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: null,
           assemblyMotionSourceDocument: null, assemblyMotionJointValues: new Map(), assemblyMotionNotice: null,
           assemblyExplodeDraft: null, assemblyExplodeError: null,
-          standardPartPickerOpen: false, frameEdgePick: null,
+          standardPartPickerOpen: false, frameEdgePick: null, assemblyFrameSlotDraft: null, assemblyFrameSlotPreview: null,
           assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
           assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
           assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,

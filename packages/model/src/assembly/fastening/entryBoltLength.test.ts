@@ -6,21 +6,30 @@ import { entryLengthAvailability as availability, selectEntryBoltLength } from '
 import { entryHeadSpec } from './holeEntry.js';
 
 describe('entry length candidates', () => {
-  it('keys every row by family and item and keeps the existing unverified 12–150 mm list', () => {
+  it('keys every row by family and item and keeps the existing unverified 12–150 mm list for every row', () => {
     const candidates = availability();
     const keys = [SOCKET_HEAD_CAP_SCREW_FAMILY, COUNTERSUNK_SOCKET_SCREW_FAMILY]
       .flatMap(family => family.rows.map(row => `${family.id}:${row.key}`));
-    expect(candidates.map(candidate => candidate.boltRowKey)).toEqual(keys);
+    const shared = candidates.filter(candidate => candidate.basis === 'globalUnverifiedList');
+    expect(shared.map(candidate => candidate.boltRowKey)).toEqual(keys);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(candidates.length).toBeGreaterThan(0);
-    for (const candidate of candidates) {
+    expect(shared.length).toBeGreaterThan(0);
+    for (const candidate of shared) {
       expect(candidate.lengths).toEqual(HEX_BOLT_NOMINAL_LENGTHS);
       expect(candidate.lengths[0]).toBe(12);
       expect(candidate.lengths.at(-1)).toBe(150);
-      expect(candidate.basis).toBe('globalUnverifiedList');
       expect(candidate.verified).toBe(false);
       expect(candidate.source).not.toBe('');
     }
+  });
+
+  it('adds a verified per-diameter list only to the socket head cap screw rows M2–M24, listed just before the shared list of the same row', () => {
+    const candidates = availability();
+    const evidence = candidates.flatMap((candidate, index) => candidate.basis === 'perDiameterEvidence'
+      ? [[candidate.boltRowKey, candidate.verified, candidates[index + 1]?.boltRowKey, candidates[index + 1]?.basis]] : []);
+    const sizes = ['M2', 'M2.5', 'M3', 'M4', 'M5', 'M6', 'M8', 'M10', 'M12', 'M14', 'M16', 'M20', 'M24'];
+    expect(evidence).toEqual(sizes.map(size => [`${SOCKET_HEAD_CAP_SCREW_FAMILY.id}:${size}`, true,
+      `${SOCKET_HEAD_CAP_SCREW_FAMILY.id}:${size}`, 'globalUnverifiedList']));
   });
 
   it('does not share mutable length arrays between calls or rows', () => {
@@ -40,7 +49,7 @@ describe('entry length candidates', () => {
     expect(selectEntryBoltLength(head, [{ boltRowKey: head.rowKey, lengths: [], basis: 'globalUnverifiedList',
       verified: false, source: 'explicit empty candidates' }], limits)).toMatchObject({ code: 'noStandardLengthFits' });
     expect(selectEntryBoltLength(head, availability(), limits)).toEqual({ length: 35, threadLength: 28,
-      basis: 'globalUnverifiedList', verified: false, missingFacts: ['perDiameterLengthAvailability'] });
+      basis: 'perDiameterEvidence', verified: true, missingFacts: [] });
     expect(selectEntryBoltLength(head, undefined, limits)).toEqual(selectEntryBoltLength(head, availability(), limits));
   });
 });

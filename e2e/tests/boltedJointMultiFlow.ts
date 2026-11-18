@@ -2,7 +2,9 @@
 import { statSync } from 'node:fs';
 import { watch } from './runtimeErrors.js';
 import { expect, test as baseTest, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { chooseToolMenuItem, installAssemblyFileGateway, openToolMenu, resetAssemblyFileGateway, toolMenuPanel } from './assemblyTestSupport.js';
+import {
+  chooseToolMenuItem, installAssemblyFileGateway, openToolMenu, readAssemblyStats, resetAssemblyFileGateway, toolMenuPanel,
+} from './assemblyTestSupport.js';
 import {
   boltedJointDialog, clickWorldPointChecked, componentRows, disableFilePickers, expectVectorClose, fastenedBadges, goHome,
   PICK_TEXT, placeQueuedPart, resolvedPoses, SECOND_PLATE_OFFSET, statusBar, statusText, stepStatus,
@@ -11,7 +13,7 @@ import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './rec
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import {
   cancelPopover, commitPopover, drawRectangle, extrudeFace, fillFields, makeFace, popover, popoverInputs, popoverTitle,
-  selectionKindLabel, sketchTool, treeRow, type WorldPoint,
+  propertyPanel, selectionKindLabel, sketchTool, treeRow, type WorldPoint,
 } from './solidCaptureSupport.js';
 
 /*
@@ -21,10 +23,14 @@ import {
  * 1) 穴 2 つの板(60×30×10、φ9 の貫通穴が (15, 15) と (45, 15) の 1 つの穴のフィーチャー)を 2 枚。
  *    2 つ目の板(y=−50)は締結で −Y 軸まわりに裏返る(boltedJointFlow.ts の実測 [0, −1, 0, 0])ので、x が
  *    鏡に映る: 頭側の (15, 15) と組むのは、相手側の板の部品の x=45 の穴(画面の (45, −35))。
- *    逆の順で押すと 1 組目は合うが 2 組目の軸がずれ、断りの行に「穴の組 2」とその組の穴が出る。
+ *    1 組目を鏡の相手でない穴と組むと、2 組目の頭側の穴に同じ軸の相手が無く(自動の対応付けが断る)、断りの行に「穴の組 2」とその組の穴が出る。2 組目からの穴の組み合わせは押した順に依らない(単体 pairBoltedJointHoles.test.ts)。
  * 2) ざぐりの穴(φ9 の貫通、入口 φ14・深さ 5)の板の上面を当てる面に選ぶと、入口が当てる面の側にあるので断る
  *    (入口の向きの照合が実アプリで働く確かめ。頭側の外の面は、ホーム視点から押せない下面なので、通る締結は
  *    model の単体 entryBoltedJointCommand.test.ts が受け持つ)。
+ * 3) 締結の後の部品の取り込み直し(J-02 P8)。φ9 の穴 1 つの板を、穴を φ11 に直した板・さらに厚みを 12 に直した板として
+ *    部品の画面で保存し直し(同じ部品文書なのでフィーチャーの id はそのまま)、「元の部品を取り込み直す」で 2 枚とも替える
+ *    (同じ中身の板 2 枚は 1 つの元部品を共有する)。φ11 は作り直しで M10 になり、元に戻す 1 回で M8 に戻る。厚みが
+ *    変わると当てる面が食い込むので、直す窓が理由を出して断る(板を動かして作り直すのは第 3 の版の P8b)。
  * 登録は bolted-joint.spec.ts と electron-bolted-joint.spec.ts(新しい spec を作ると Firefox の対象の正規表現と名簿を
  * 変えることになるため、今ある 2 本に足した)。
  */
@@ -108,9 +114,8 @@ async function createPlatePartFile(page: Page, info: TestInfo, app: ElectronAppl
   return bytes;
 }
 
-/** 画面の操作だけで、同じ板を 2 枚置いた組立を用意してホーム視点にする(boltedJointFlow.ts の holedPlateAssembly と同じ流れ)。 */
-async function plateAssembly(page: Page, info: TestInfo, app: ElectronApplication | undefined, spec: PlateSpec,
-  counterbore: typeof COUNTERBORE | null): Promise<void> {
+/** 空の部品の画面から始める(ブラウザーはファイルの選択の窓を止めてから開く。Electron は起動した窓のまま)。 */
+async function startFromEmptyPart(page: Page, app: ElectronApplication | undefined): Promise<void> {
   if (app === undefined) {
     await disableFilePickers(page);
     await page.goto('/');
@@ -118,7 +123,17 @@ async function plateAssembly(page: Page, info: TestInfo, app: ElectronApplicatio
     expect(page.url()).toBe('app://pointercad/index.html');
   }
   await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
-  const part = await createPlatePartFile(page, info, app, spec, counterbore);
+}
+
+/** 画面の操作だけで、同じ板を 2 枚置いた組立を用意してホーム視点にする(boltedJointFlow.ts の holedPlateAssembly と同じ流れ)。 */
+async function plateAssembly(page: Page, info: TestInfo, app: ElectronApplication | undefined, spec: PlateSpec,
+  counterbore: typeof COUNTERBORE | null): Promise<void> {
+  await startFromEmptyPart(page, app);
+  await assembleTwoPlates(page, await createPlatePartFile(page, info, app, spec, counterbore));
+}
+
+/** 新しい組立に、同じ板のファイルを原点と相手側の位置へ 1 枚ずつ置き、ホーム視点にする。 */
+async function assembleTwoPlates(page: Page, part: Uint8Array): Promise<void> {
   const token = await beginRecompute(page);
   await chooseToolMenuItem(page, 'ファイルのほかの操作', '新しいアセンブリ');
   await waitForRecompute(page, token);
@@ -163,6 +178,94 @@ async function clickHistory(page: Page, name: '元に戻す' | 'やり直す'): 
   await waitForRecompute(page, token);
 }
 
+const ONE_HOLE_PLATE = { width: 40, depth: 30, thickness: 10, holes: [[20, 15]] as const, diameter: 9 } as const;
+const EDIT_DIALOG = 'ボルトの締結を直す';
+const REBUILD_NOTICE = '部品が替わり、作り直しを待つ締結が 1 件あります。記録した指定で、ボルト・ナット・座金を入れ替えます。';
+const FACES_OVERLAP = '当てる面どうしが食い込んでいます。';
+
+/** 右のプロパティの欄(見出しが label と一致する欄の入力。ex18-sew-bracket.spec.ts の同名補助と同じ探し方)。 */
+function propertyField(page: Page, label: string): Locator {
+  return propertyPanel(page).locator('.pcad-field')
+    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`, 'u') }) })
+    .locator('input.pcad-field__input');
+}
+
+interface PlateEdit {
+  readonly row: string;
+  readonly label: string;
+  readonly from: string;
+  readonly to: string;
+  readonly fileName: string;
+}
+
+/** 部品の画面に開いたままの板の欄を 1 つ直し、別の名前で保存した .pcad を返す(フィーチャーの id はそのまま)。 */
+async function savePlateVariant(page: Page, info: TestInfo, app: ElectronApplication | undefined, edit: PlateEdit): Promise<Uint8Array> {
+  await treeRow(page, edit.row).click();
+  await expect(propertyField(page, edit.label)).toHaveValue(edit.from);
+  const token = await beginRecompute(page);
+  await propertyField(page, edit.label).fill(edit.to);
+  // 欄から焦点を外して確定する(木の行を押す。ex18-sew-bracket.spec.ts と同じ)。
+  await treeRow(page, edit.row).click();
+  await waitForRecompute(page, token);
+  await expect(propertyField(page, edit.label)).toHaveValue(edit.to);
+  const bytes = new Uint8Array(await saveFlowFile(page, info.outputPath(edit.fileName), app));
+  await expect(statusText(page)).toHaveText('保存しました');
+  return bytes;
+}
+
+/** φ9 の穴 1 つの板(組立に置く元)と、穴を φ11 に・厚みを 12 に直した板(差し替える先)を作り、元の板 2 枚の組立にする。 */
+async function rebuildPlateAssembly(page: Page, info: TestInfo, app: ElectronApplication | undefined): Promise<{
+  readonly wider: Uint8Array; readonly thicker: Uint8Array;
+}> {
+  await startFromEmptyPart(page, app);
+  const part = await createPlatePartFile(page, info, app, ONE_HOLE_PLATE, null);
+  const wider = await savePlateVariant(page, info, app, { row: '穴1', label: '直径', from: '9', to: '11', fileName: 'plate-hole-11.pcad' });
+  const thicker = await savePlateVariant(page, info, app,
+    { row: '押し出し1', label: '距離', from: '10', to: '12', fileName: 'plate-hole-11-thickness-12.pcad' });
+  await assembleTwoPlates(page, part);
+  return { wider, thicker };
+}
+
+function rebuildPanel(page: Page): Locator {
+  return page.getByTestId('bolted-joint-rebuild');
+}
+
+/** 「締結する」を押し、窓が閉じて計算が終わるまで待つ。 */
+async function commitAndWait(page: Page, dialog: Locator): Promise<void> {
+  const token = await beginRecompute(page);
+  await dialog.getByTestId('bolted-joint-commit').click();
+  await expect(dialog).toHaveCount(0);
+  await waitForRecompute(page, token);
+}
+
+/**
+ * 部品の木の 1 行目の「⋮」から「元の部品を取り込み直す」で、ファイル口に入れた板を読む(cylinderSubshapeColdFlow.ts と
+ * 同じ操作)。同じ元部品を使う板 2 枚がまとめて替わる。
+ */
+async function refreshPlates(page: Page, bytes: Uint8Array): Promise<void> {
+  const [first, second] = (await readAssemblyStats(page)).components;
+  expect(first?.sourceRef).toBe(second?.sourceRef);
+  await installAssemblyFileGateway(page, { parts: [{ fileName: '板.pcad', bytes }] });
+  const section = page.locator('.pcad-tree__sections > li').filter({
+    has: page.locator('.pcad-tree__section .pcad-tree__label', { hasText: /^部品$/u }),
+  });
+  await section.locator(':scope > .pcad-tree__children > li > .pcad-tree__row .pcad-tree__more').first().click();
+  const action = page.locator('.pcad-tree__menu').getByRole('menuitem', { name: '元の部品を取り込み直す', exact: true });
+  await expect(action).toHaveAttribute('aria-disabled', 'false');
+  const token = await beginRecompute(page);
+  await action.click();
+  await waitForRecompute(page, token);
+}
+
+/** 足した部品(部品の木の 3 行目から。ボルト・ナット)の名前と出どころ。どちらにも呼び(M8 など)が入る。 */
+async function hardwareText(page: Page): Promise<string> {
+  const stats = await readAssemblyStats(page);
+  return stats.components.slice(2).map((component) => `${component.name} ${component.sourceRef}`).join(' / ');
+}
+
+const M8_ONLY = /^(?!.*M10).*M8(?!\d)/u;
+const M10_ONLY = /^(?!.*M8(?!\d)).*M10/u;
+
 const SET_READY_STATUS = 'ボルトで締結: 2 組の提案を確かめ、Enter か「締結する」でまとめて締結します。Esc でやめます。';
 const SECOND_PLATE = { position: [60, 0, 20], rotation: [0, -1, 0, 0] } as const;
 
@@ -193,7 +296,7 @@ export function registerBoltedJointMultiTests(
     await plateAssembly(page, info, appForPage(page), spec, null);
     const before = await resolvedPoses(page);
 
-    // 1) 逆の順: 1 組目 (15, 15)↔画面の (15, −35)、2 組目 (45, 15)↔(45, −35)。1 組目は合うが、2 組目は軸がずれる。
+    // 1) 1 組目の組み違い: (15, 15)↔画面の (15, −35)。1 組目は合うが、(45, 15) と同じ軸の相手が無い。
     await pickFourFaces(page, wallPoint(zero, left, spec.thickness), topPoint(zero, spec),
       wallPoint(second, left, spec.thickness), topPoint(second, spec));
     await expect(statusText(page)).toHaveText('ボルトで締結: 提案を確かめ、Enter か「締結する」で締結します。Esc でやめます。');
@@ -277,5 +380,58 @@ export function registerBoltedJointMultiTests(
     expect(seen.dialogs).toEqual([]);
     expect(seen.errors).toEqual([]);
   });
+
+  test('板を取り込み直すと作り直しを知らせ、作り直すと新しい穴に合うボルトになって 1 回の元に戻すで戻り、厚みが変わった時は理由を出して断る(J-02 P8)',
+    async ({ page }, info) => {
+      const seen = watch(page);
+      const spec = ONE_HOLE_PLATE, second = SECOND_PLATE_OFFSET, zero = [0, 0, 0] as const;
+      const [hole] = spec.holes;
+      const variants = await rebuildPlateAssembly(page, info, appForPage(page));
+
+      // 1) φ9 の穴の組を締結する(穴径 9 は通し穴の表で M8)。知らせはまだ出ない。
+      await pickFourFaces(page, wallPoint(zero, hole, spec.thickness), topPoint(zero, spec),
+        wallPoint(second, hole, spec.thickness), topPoint(second, spec));
+      await expect(boltedJointDialog(page).getByTestId('bolted-joint-bolt')).toContainText('ボルト M8 ');
+      await commitAndWait(page, boltedJointDialog(page));
+      await expect(componentRows(page)).toHaveCount(4);
+      expect(await hardwareText(page)).toMatch(M8_ONLY);
+      await expect(rebuildPanel(page)).toHaveCount(0);
+
+      // 2) 板を φ11 の穴の板に取り込み直すと、作り直しを待つ締結 1 件を知らせる(締結はまだ M8 のまま)。
+      await refreshPlates(page, variants.wider);
+      await expect(rebuildPanel(page).getByTestId('bolted-joint-rebuild-count')).toHaveText(REBUILD_NOTICE);
+      expect(await hardwareText(page)).toMatch(M8_ONLY);
+
+      // 3) 「作り直す」で直す窓が開き、φ11 の穴に合う M10 を提案する。「締結する」で入れ替え、知らせは消える。
+      await rebuildPanel(page).getByTestId('bolted-joint-rebuild-start').click();
+      const dialog = page.getByRole('dialog', { name: EDIT_DIALOG, exact: true });
+      await expect(dialog.getByTestId('bolted-joint-bolt')).toContainText('ボルト M10 ');
+      await commitAndWait(page, dialog);
+      await expect(componentRows(page)).toHaveCount(4);
+      await expect(fastenedBadges(page)).toHaveCount(4);
+      expect(await hardwareText(page)).toMatch(M10_ONLY);
+      await expect(rebuildPanel(page)).toHaveCount(0);
+
+      // 4) 1 回の元に戻すで M8 に戻り、やり直すで M10 に戻る。
+      await clickHistory(page, '元に戻す');
+      expect(await hardwareText(page)).toMatch(M8_ONLY);
+      await clickHistory(page, 'やり直す');
+      expect(await hardwareText(page)).toMatch(M10_ONLY);
+
+      // 5) 厚み 12 の板に取り込み直すと、当てる面が食い込むので、直す窓が理由を出して断り、文書を変えない。
+      await refreshPlates(page, variants.thicker);
+      await expect(rebuildPanel(page).getByTestId('bolted-joint-rebuild-count')).toHaveText(REBUILD_NOTICE);
+      await rebuildPanel(page).getByTestId('bolted-joint-rebuild-start').click();
+      await expect(dialog.getByTestId('bolted-joint-reasons')).toContainText(FACES_OVERLAP);
+      await expect(dialog.getByTestId('bolted-joint-commit')).toBeDisabled();
+      const before = await resolvedPoses(page);
+      await dialog.getByRole('button', { name: '取消', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      expect(await resolvedPoses(page)).toEqual(before);
+      expect(await hardwareText(page)).toMatch(M10_ONLY);
+
+      expect(seen.dialogs).toEqual([]);
+      expect(seen.errors).toEqual([]);
+    });
 });
 }

@@ -9,6 +9,7 @@ export type AssemblyMenuActionId =
   | 'replacePart'
   | 'toggleFixed'
   | 'boltedJoint'
+  | 'frameSlotFastening'
   | 'releaseFastening'
   | 'filletWeld'
   | 'circularFilletWeld';
@@ -24,6 +25,7 @@ export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] 
   { id: 'replacePart', labelKey: 'assembly.tool.replacePart', tooltipKey: 'assembly.tool.replacePartTooltip', Icon: TransformIcon },
   { id: 'toggleFixed', labelKey: 'assembly.tool.fixComponent', tooltipKey: 'assembly.tool.fixComponentTooltip', Icon: FixConstraintIcon },
   { id: 'boltedJoint', labelKey: 'assembly.boltedJoint.tool', tooltipKey: 'assembly.boltedJoint.toolTooltip', Icon: ThreadShaftIcon },
+  { id: 'frameSlotFastening', labelKey: 'assembly.frameSlot.tool', tooltipKey: 'assembly.frameSlot.toolTooltip', Icon: ThreadShaftIcon },
   { id: 'releaseFastening', labelKey: 'assembly.boltedJoint.release', tooltipKey: 'assembly.boltedJoint.releaseTooltip', Icon: TransformIcon },
   { id: 'filletWeld', labelKey: 'assembly.filletWeld.tool', tooltipKey: 'assembly.filletWeld.toolTooltip', Icon: ChamferIcon },
   { id: 'circularFilletWeld', labelKey: 'assembly.circularFilletWeld.title', tooltipKey: 'assembly.circularFilletWeld.pickPlane', Icon: ChamferIcon },

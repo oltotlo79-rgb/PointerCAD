@@ -1344,8 +1344,15 @@ const REJECTION_CODES = Object.keys({
 } satisfies Record<BoltedJointRejectionCode, true>) as BoltedJointRejectionCode[];
 /** 穴の入口(ざぐり・皿もみ)と、まとめて締結する組の数の断り(J-02。足し忘れは型で落ちる)。 */
 const EXTENSION_CODES = Object.keys({
-  counterboreTooSmall: true, countersinkMismatch: true, entryOnFarSide: true, holeCountMismatch: true,
+  counterboreTooSmall: true, countersinkMismatch: true, entryOnFarSide: true, holeCountMismatch: true, holePairMissing: true,
 } satisfies Record<FasteningExtensionCode, true>) as FasteningExtensionCode[];
+/** 自動の対応付けの断り(holePairMissing)の detail ごとの案内(side・reason)。 */
+const PAIR_GUIDES: readonly (readonly [Readonly<Record<string, string | number>>, MessageKey])[] = [
+  [{ side: 'first', index: 1 }, 'assembly.boltedJoint.reason.holePairMissing'],
+  [{ side: 'first', index: 1, reason: 'ambiguous' }, 'assembly.boltedJoint.detail.holePairAmbiguous'],
+  [{ side: 'first', index: 1, reason: 'shared' }, 'assembly.boltedJoint.detail.holePairShared'],
+  [{ side: 'second', index: 1 }, 'assembly.boltedJoint.detail.holePairUnused'],
+];
 /** 同じ code でも選び直し方が違うため、detail の reason で案内を分ける断り(model の detail の文字のとおり)。 */
 const DETAIL_GUIDES: readonly (readonly [BoltedJointRejectionCode, string, MessageKey])[] = [
   ['unsupportedHole', 'blindPlainHole', 'assembly.boltedJoint.unsupported.blindPlainHole'],
@@ -1473,6 +1480,18 @@ describe('ボルト締結の打ちかけの帯(追加要件6)', () => {
     const single = boltedJointStatus(boltedDraft(4), { kind: 'set', result: { ok: false, rejections: [], holes: [
       { index: 0, rejections: [{ code: 'axesNotCoaxial', detail: {} }], entryRejections: [] }] }, pairs: [pair] });
     expect(single).toEqual({ failed: true, text: t('assembly.status.boltedJointIssue').replace('{reason}', coaxial) });
+  });
+
+  it('組めない穴(自動の対応付け)は、頭側か相手側か・見つからない・2 つ以上・取り合いで案内を分ける', () => {
+    const pair = { first: { component: '板A', position: [20, 15, 5] as const }, second: null };
+    for (const [detail, key] of PAIR_GUIDES) {
+      const status = boltedJointStatus(boltedDraft(4), { kind: 'set', result: { ok: false, rejections: [], holes: [
+        { index: 1, rejections: [], entryRejections: [{ code: 'holePairMissing', detail }] }] }, pairs: [pair, pair] });
+      expect(status?.text).toBe(t('assembly.status.boltedJointIssue')
+        .replace('{reason}', t('assembly.boltedJoint.holeReasonShort').replace('{hole}', '2').replace('{reason}', t(key))));
+    }
+    const keys: readonly string[] = MESSAGE_KEYS;
+    expect(PAIR_GUIDES.map(([, key]) => key).filter((key) => !keys.includes(key))).toEqual([]);
   });
 });
 

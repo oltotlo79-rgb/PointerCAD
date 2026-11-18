@@ -2,7 +2,7 @@
  * ボルト締結の操作の下書き(追加要件6)。画面の状態は store の 1 か所に置き、ここは純関数だけ。
  *
  * 選ぶ順は「1 つ目の穴の円筒面 → その合わせ面 → 2 つ目の穴の円筒面 → その合わせ面」。4 面がそろった後は、
- * Shift を押して選んだ穴を 2 組目から足す(頭側・相手側を同じ順に。合わせ面は 1 組目の物を共有する。J-02 P4)。
+ * Shift を押して選んだ穴を 2 組目から足す(相手側の穴は、1 組目で合わせた後の同じ軸の穴へ自動で組み合わせる。合わせ面は 1 組目の物を共有する。J-02)。
  * 新しい締結の予告と確定は model の `previewBoltedJointSet` / `commitBoltedJointSet` に任せる(穴が 1 組でも同じ口。
  * 穴の入口のざぐり・皿もみに合う頭を選ぶ)。実らせんの組で選んだ 1 組だけは、記録を残せないので今までの
  * `previewBoltedJoint` / `commitBoltedJoint` を使う。確定の直前に同じ選択をいまの形へ結び直す(選んだ面の指紋を
@@ -11,7 +11,7 @@
 
 import { evaluateExpression } from '@pointercad/expression';
 import {
-  applyPlacementToPoint, buildStandardPartFromSource, CLEARANCE_EVIDENCE, commitBoltedJoint, commitBoltedJointSet,
+  applyPlacementToPoint, arrangeBoltedJointSetPicks, buildStandardPartFromSource, CLEARANCE_EVIDENCE, commitBoltedJoint, commitBoltedJointSet,
   entryLengthAvailability, faceResolverFromBodies, findComponent, isSameSubShape,
   globalUnverifiedLengthAvailability, HEX_BOLT_TABLE, holeFeatureForSelection, modeledThreadResolverFromBodies, previewBoltedJoint,
   previewBoltedJointSet, resolveMateTarget, resolveSubShapeReference,
@@ -41,7 +41,7 @@ export type BoltedJointPickTarget = MateTarget | BoltedJointThreadGroupTarget;
 /** 穴の内側の面の選択(2 組目からの穴は面だけで足す。実らせんの組は記録を残せないので足さない)。 */
 type BoltedJointHoleFaceTarget = Extract<MateTarget, { readonly kind: 'subShape' }>;
 
-/** 2 組目からの穴。頭側は 1 つ目の穴の部品、相手側は 2 つ目の穴の部品の穴。n 番目どうしを 1 組にする。 */
+/** 2 組目からの穴。頭側は 1 つ目の穴の部品、相手側は 2 つ目の穴の部品の穴。組み合わせは予告の時に自動で決める。 */
 interface BoltedJointExtraHoles {
   readonly first: readonly BoltedJointHoleFaceTarget[];
   readonly second: readonly BoltedJointHoleFaceTarget[];
@@ -122,7 +122,7 @@ function sameHoleFace(target: BoltedJointPickTarget, hole: BoltedJointHoleFaceTa
 /**
  * 2 組目からの穴を足すか外す(足した穴をもう一度選ぶと外す)。4 面がそろった新しい締結だけで受ける。
  * 1 組目の穴・どちらの穴の部品でもない部品の面・実らせんの組・部分形状でない選択は受けない(`null`)。
- * 頭側の n 番目と相手側の n 番目が 1 組になる(数が合わない時は、予告が組の数の断りを出す)。
+ * どの穴どうしが組になるかは予告が自動で決める(数が合わない時は、予告が組の数の断りを出す)。
  */
 export function toggleBoltedJointExtraHole(draft: AssemblyBoltedJointDraft, target: BoltedJointPickTarget): AssemblyBoltedJointDraft | null {
   if (draft.editRecordId !== undefined || draft.picks.length < BOLTED_JOINT_PICK_COUNT || target.kind !== 'subShape') return null;
@@ -205,6 +205,18 @@ function measured(source: string, allowZero: boolean): number | undefined | null
 }
 
 /** 下書きの欄を計画の指定へ直す。空欄は「指定なし」(必要なら計画が理由付きで断る)。 */
+/**
+ * 呼び長さの候補。本体規格・並目は径ごとの推奨呼び長さ(確認済みの抜粋)、根拠の無い系列・呼びは全径共通の一覧を
+ * 「未確認」の印のまま候補にする。ざぐり・皿もみの入口に置く六角穴付き・皿頭のボルトの候補は、族の行ごとの鍵で model が
+ * 作る(画面は鍵を組み立てない。六角穴付きは径ごとの表が確認済み)。確認済みの一覧を全部先に、未確認の一覧を後に並べる
+ * (それぞれの中の並びは保つ)。同じ鍵の行を先頭から探す選び方(selectBoltLength)が、確認済みの長さを先に使うため。
+ */
+function lengthAvailabilityCandidates(): BoltedJointChoices['lengthAvailability'] {
+  const all = [...verifiedMainLengthAvailability(), ...HEX_BOLT_TABLE.map((row) => globalUnverifiedLengthAvailability(row.key)),
+    ...entryLengthAvailability()];
+  return [...all.filter((entry) => entry.verified), ...all.filter((entry) => !entry.verified)];
+}
+
 export function boltedJointChoices(draft: AssemblyBoltedJointDraft): BoltedJointChoices | BoltedJointDraftIssue {
   const engagement = measured(draft.engagementSource, false);
   const blindBottomClearance = measured(draft.bottomClearanceSource, true);
@@ -218,11 +230,8 @@ export function boltedJointChoices(draft: AssemblyBoltedJointDraft): BoltedJoint
     clearanceEvidence: CLEARANCE_EVIDENCE,
     engagement, blindBottomClearance, minimumProtrusion,
     headWashers: draft.headWashers, nutWashers: draft.nutWashers,
-    // 本体規格・並目は径ごとの推奨呼び長さ(確認済みの抜粋)を先に使う。根拠の無い系列・呼びだけ、
-    // 全径共通の一覧を「未確認」の印のまま候補にし、計画にもその事実を残す。ざぐり・皿もみの入口に置く
-    // 六角穴付き・皿頭のボルトの候補は、族の行ごとの鍵で model が作る(画面は鍵を組み立てない)。
-    lengthAvailability: [...verifiedMainLengthAvailability(),
-      ...HEX_BOLT_TABLE.map((row) => globalUnverifiedLengthAvailability(row.key)), ...entryLengthAvailability()],
+    // 未確認の一覧で選んだ長さは、計画にもその事実(missingFacts)を残す。
+    lengthAvailability: lengthAvailabilityCandidates(),
   };
 }
 
@@ -268,7 +277,7 @@ function isIssue(value: object): value is BoltedJointDraftIssue {
 
 interface DraftInputs {
   readonly context: FasteningGeometryContext;
-  /** 頭側と相手側の穴。n 番目どうしが 1 組(1 組目は 4 面の選択、2 組目からは足した穴と 1 組目の合わせ面)。 */
+  /** 頭側と相手側の穴(押した順。1 組目は 4 面の選択、2 組目からは足した穴と 1 組目の合わせ面)。組み合わせは予告で決める。 */
   readonly first: readonly FasteningHolePick[];
   readonly second: readonly FasteningHolePick[];
   readonly choices: BoltedJointChoices;
@@ -309,10 +318,15 @@ function holeLabel(document: AssemblyDocument, view: AssemblyView, target: Bolte
     position: target.kind === 'subShape' && placement !== undefined ? applyPlacementToPoint(placement, target.ref.fingerprint.position) : null };
 }
 
-/** 押した順の組ごとの穴(頭側の n 番目と相手側の n 番目)。 */
-function pairHoles(document: AssemblyDocument, view: AssemblyView, draft: AssemblyBoltedJointDraft): BoltedJointPairHoles[] {
+/**
+ * 組ごとの穴(頭側の n 番目と、組み合わせた相手側の穴)。`order` は自動の対応付けの結果(頭側 n 番と組む相手側の押した順の
+ * 番号)で、無い時(組み合わせられなかった時)は押した順のまま並べる。
+ */
+function pairHoles(document: AssemblyDocument, view: AssemblyView, draft: AssemblyBoltedJointDraft,
+  order?: readonly number[]): BoltedJointPairHoles[] {
   const [holeA, , holeB] = draft.picks;
-  const first = [holeA, ...(draft.extraHoles?.first ?? [])], second = [holeB, ...(draft.extraHoles?.second ?? [])];
+  const picked = [holeB, ...(draft.extraHoles?.second ?? [])];
+  const first = [holeA, ...(draft.extraHoles?.first ?? [])], second = order === undefined ? picked : order.map((index) => picked[index]);
   const pairs: BoltedJointPairHoles[] = [];
   for (let index = 0; index < Math.max(first.length, second.length); index += 1) {
     pairs.push({ first: holeLabel(document, view, first[index]), second: holeLabel(document, view, second[index]) });
@@ -387,8 +401,10 @@ export function previewBoltedJointDraft(document: AssemblyDocument, view: Assemb
   if (isIssue(inputs)) return { kind: 'issue', issue: inputs };
   const single = singleThreadGroupPair(inputs);
   if (single !== null) return { kind: 'plan', result: previewBoltedJoint(inputs.context, single.first, single.second, inputs.choices) };
-  return { kind: 'set', result: previewBoltedJointSet(inputs.context, { first: inputs.first, second: inputs.second, choices: inputs.choices }),
-    pairs: pairHoles(document, view, draft) };
+  // 相手側の穴は、1 組目で整列した後の同じ軸の穴へ自動で組み合わせる(押した順に依らない。組めない穴は番号つきで断る)。
+  const arranged = arrangeBoltedJointSetPicks(inputs.context, { first: inputs.first, second: inputs.second, choices: inputs.choices });
+  if (!arranged.ok) return { kind: 'set', result: { ok: false, rejections: [], holes: arranged.holes }, pairs: pairHoles(document, view, draft) };
+  return { kind: 'set', result: previewBoltedJointSet(inputs.context, arranged.picks), pairs: pairHoles(document, view, draft, arranged.order) };
 }
 
 interface DraftCommitIssue { readonly ok: false; readonly issue: BoltedJointDraftIssue }
@@ -419,11 +435,14 @@ export function commitBoltedJointSetDraft(document: AssemblyDocument, view: Asse
   if (draft.editRecordId !== undefined) return { ok: false, issue: { kind: 'stale' } };
   const inputs = draftInputs(document, view, library, draft);
   if (isIssue(inputs)) return { ok: false, issue: inputs };
-  return commitBoltedJointSet(inputs.context, { first: inputs.first, second: inputs.second, choices: inputs.choices }, previewed);
+  // 予告と同じ組み合わせを作り直してから確定する(同じ入力なら同じ並び。形が変わっていれば一括の口が予告との違いで断る)。
+  const arranged = arrangeBoltedJointSetPicks(inputs.context, { first: inputs.first, second: inputs.second, choices: inputs.choices });
+  if (!arranged.ok) return { ok: false, document, rejections: [], holes: arranged.holes };
+  return commitBoltedJointSet(inputs.context, arranged.picks, previewed);
 }
 
 /** model の断り(今までの code と、入口・組の数の code)。画面は code と detail の reason だけを読む。 */
-interface BoltedJointReasonSource {
+export interface BoltedJointReasonSource {
   readonly code: BoltedJointRejectionCode | FasteningExtensionCode;
   readonly detail: Readonly<Record<string, string | number>>;
 }
@@ -435,7 +454,7 @@ const UNSUPPORTED_HOLE_DETAILS = ['blindPlainHole', 'entryAwareCommandRequired',
  * 断りの文言の鍵。同じ code でも、選び直し方が違う物は detail の reason で案内を分ける(穴が対応しない理由、ざぐりの
  * 呼びの指定、皿頭の座金、入口の面・深さ)。それ以外は code の文言。
  */
-function boltedJointReasonKey(rejection: BoltedJointReasonSource): MessageKey {
+export function boltedJointReasonKey(rejection: BoltedJointReasonSource): MessageKey {
   const reason = rejection.detail.reason;
   switch (rejection.code) {
     case 'unsupportedHole': {
@@ -452,6 +471,10 @@ function boltedJointReasonKey(rejection: BoltedJointReasonSource): MessageKey {
       return reason === 'entryPlaneMissing' ? 'assembly.boltedJoint.detail.entryPlaneMissing' : 'assembly.boltedJoint.reason.threadEntryUnknown';
     case 'holeFaceMismatch':
       return reason === 'entryDepthMismatch' ? 'assembly.boltedJoint.detail.entryDepthMismatch' : 'assembly.boltedJoint.reason.holeFaceMismatch';
+    case 'holePairMissing':
+      return rejection.detail.side === 'second' ? 'assembly.boltedJoint.detail.holePairUnused'
+        : reason === 'ambiguous' ? 'assembly.boltedJoint.detail.holePairAmbiguous'
+          : reason === 'shared' ? 'assembly.boltedJoint.detail.holePairShared' : 'assembly.boltedJoint.reason.holePairMissing';
     default:
       return `assembly.boltedJoint.reason.${rejection.code}`;
   }

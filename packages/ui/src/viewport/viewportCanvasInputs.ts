@@ -1,6 +1,7 @@
 import { attachPointerCommands } from '../commands/attachPointerCommands.js';
 import { executeCommand } from '../commands/commandRegistry.js';
 import { EMPTY_MOUSE_BUTTON_COMMANDS } from '../commands/pointerCommandGesture.js';
+import { getSixDofAccess, subscribeSixDofChange } from '../settings/sixDofAccess.js';
 import { currentViewControls, viewZoomCenter } from '../settings/viewControlSettings.js';
 import { activeAssemblyDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -13,6 +14,8 @@ import { HOME_ORBIT, viewDirection } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { namedCameraFromOrbit, orbitFromNamedCamera, type ViewCameraController } from './namedCamera.js';
 import { quadLayout } from './quadLayout.js';
+import { attachSixDofInput, hidOf } from './sixDofInput.js';
+import { DEFAULT_SIX_DOF_MOTION } from './sixDofMotion.js';
 import type { sketchDragTimingForE2E } from './sketchDragTiming.js';
 import type { ViewportAssemblyInput } from './viewportCanvasAssemblyInput.js';
 import type { ViewportLifetime } from './viewportLifetime.js';
@@ -141,6 +144,39 @@ function attachViewportTouch(canvas: HTMLCanvasElement, controls: CameraControls
   }, settings);
 }
 
+/**
+ * 3D マウス(多軸の入力機器。B-09 3-5)。デスクトップ版の口が入っている時だけ結ぶ(Web 版は navigator.hid に触らない)。
+ * 本体の印が入の時だけ機器を開き、タブで入・切にした時・機器をつないだ時に開き直す。窓が焦点を失ったら止める。
+ * 4 分割の時は選んでいる区画の視点を動かし、正投影の区画は回さない。
+ */
+function attachViewportSixDof(canvas: HTMLCanvasElement, controls: CameraControls): () => void {
+  const access = getSixDofAccess();
+  const hid = access === undefined ? undefined : hidOf(globalThis.navigator);
+  if (access === undefined || hid === undefined) return () => undefined;
+  const view = canvas.ownerDocument.defaultView;
+  const input = attachSixDofInput({
+    hid, enabled: access.enabled,
+    getOrbit: () => controls.getOrbit(),
+    setOrbit: (next) => { controls.setOrbit(next); },
+    viewportHeight: () => useAppStore.getState().quadCamera === null ? canvas.clientHeight : quadPaneHeight(canvas),
+    canOrbit: () => {
+      const quad = useAppStore.getState().quadCamera;
+      return quad === null || quad.active === 'isometric';
+    },
+    settings: () => DEFAULT_SIX_DOF_MOTION,
+    frame: { request: (callback) => globalThis.requestAnimationFrame(callback), cancel: (id) => { globalThis.cancelAnimationFrame(id); } },
+  });
+  const unsubscribe = subscribeSixDofChange(() => { void input.refresh(); });
+  const onBlur = (): void => { input.stop(); };
+  view?.addEventListener('blur', onBlur);
+  void input.refresh();
+  return () => {
+    unsubscribe();
+    view?.removeEventListener('blur', onBlur);
+    input.detach();
+  };
+}
+
 export function attachViewportInputs(deps: ViewportInputDependencies) {
   const { canvas, scene, lifetime, isAlive, requestDraw, assemblyInput } = deps;
   let assemblyInteraction: ReturnType<typeof attachAssemblyInteraction> | null = null;
@@ -173,6 +209,7 @@ export function attachViewportInputs(deps: ViewportInputDependencies) {
   lifetime.register('camera ref', () => { if (deps.controlsRef.current === controls) deps.controlsRef.current = null; });
   lifetime.register('camera input', () => { controls.detach(); });
   lifetime.register('touch camera', attachViewportTouch(canvas, controls, centers));
+  lifetime.register('six dof camera', attachViewportSixDof(canvas, controls));
   // マウスの戻る・進む・中ボタンのダブルクリックの命令(B-08e)。割り当てた入力だけを受ける。
   const detachPointerCommands = attachPointerCommands(canvas,
     () => useAppStore.getState().displaySettings.mouseButtonCommands ?? EMPTY_MOUSE_BUTTON_COMMANDS, (id) => { if (isAlive()) executeCommand(id); });
@@ -193,7 +230,8 @@ export function attachViewportInputs(deps: ViewportInputDependencies) {
     observeMateInput: assemblyInput.observeMateInput, prepareHoverInput: assemblyInput.prepareHoverInput,
   });
   lifetime.register('assembly input', () => { assemblyInteraction?.detach(); });
-  const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging(), deps.sketchTiming);
+  const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging(), deps.sketchTiming,
+    (event, onClick) => controls.beginEmptyLeftDrag(event, onClick));
   lifetime.register('sketch input', () => { interaction.detach(); });
   lifetime.register('view controls', () => { deps.setControlsReady(false); });
   deps.setControlsReady(true);

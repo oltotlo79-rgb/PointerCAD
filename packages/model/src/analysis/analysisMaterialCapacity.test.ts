@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it } from 'vitest';
 import type { AnalysisMaterialCapacity } from './analysisModel.js';
 import { InputIssue, readAnalysisMaterialCapacity, readBeamMaterials } from './analysisValidation.js';
@@ -7,11 +8,11 @@ import { readSolidCadSavedInput } from './solidCadInput.js';
 import { findStrengthMaterial, STRENGTH_SOURCES } from '../measure/strengthMaterials.js';
 
 const cases = [
-  ['ss400-plate-0-16', 245, 'jisf-g3101-draft', 16, '圧延鋼板（熱処理の指定なし）', 'standard-draft', 'minimum'],
-  ['ss400-plate-16-40', 235, 'jisf-g3101-draft', 40, '圧延鋼板（熱処理の指定なし）', 'standard-draft', 'minimum'],
-  ['ss400-plate-40-100', 215, 'jisf-g3101-draft', 100, '圧延鋼板（熱処理の指定なし）', 'standard-draft', 'minimum'],
-  ['s45c-normalized-reference', 345, 'tsubaki-s45c', null, '焼ならし・適用寸法未指定の参考値', 'manufacturer-reference', 'reference'],
-  ['s45c-quenched-tempered-reference', 490, 'tsubaki-s45c', null, '焼入焼戻・適用寸法未指定の参考値', 'manufacturer-reference', 'reference'],
+  ['ss400-plate-0-16', 245, 'g3101-draft', 16, '圧延鋼板（熱処理の指定なし）', 'standard-draft', 'minimum'],
+  ['ss400-plate-16-40', 235, 'g3101-draft', 40, '圧延鋼板（熱処理の指定なし）', 'standard-draft', 'minimum'],
+  ['ss400-plate-40-100', 215, 'g3101-draft', 100, '圧延鋼板（熱処理の指定なし）', 'standard-draft', 'minimum'],
+  ['s45c-normalized-reference', 345, 's45c-heat-treatment', null, '焼ならし・適用寸法未指定の参考値', 'manufacturer-reference', 'reference'],
+  ['s45c-quenched-tempered-reference', 490, 's45c-heat-treatment', null, '焼入焼戻・適用寸法未指定の参考値', 'manufacturer-reference', 'reference'],
 ] as const;
 
 function capacity(index = 0): AnalysisMaterialCapacity {
@@ -59,25 +60,38 @@ describe('source-bound FE yield capacity', () => {
     expect(JSON.stringify(document)).toBe(before);
     expect(resaved).toEqual(document);
     expect(JSON.stringify(resaved)).not.toContain('sourceSnapshot');
-    expect(JSON.stringify(resaved)).toContain('jisf-g3101-draft');
+    expect(JSON.stringify(resaved)).toContain('g3101-draft');
     expect(readAnalysisMaterialCapacity(original)).toEqual(original);
     expect(Object.keys(readAnalysisMaterialCapacity(original))).toHaveLength(7);
     expect(readSolidCadSavedInput(JSON.parse(JSON.stringify({ ...solidSaved(), capacity: original }))).capacity).toEqual(original);
   });
 
-  it('retains a well-formed historical snapshot rather than silently updating its SHA during read/re-save', () => {
-    const historical = { ...capacity(), sourceSnapshot: { ...STRENGTH_SOURCES['jisf-g3101-draft'], sha256: '0'.repeat(64) } };
+  it('migrates the old yield ID without adding an absent snapshot or accepting an incorrect source', () => {
+    const oldId = String.fromCharCode(106, 105, 115, 102, 45, 103, 51, 49, 48, 49, 45, 100, 114, 97, 102, 116);
+    const saved = { ...capacity(), sourceId: oldId };
+    expect(readAnalysisMaterialCapacity(saved)).toEqual(capacity());
+    const snapshot = { url: 'https://example.invalid/source', publisher: 'fixture', locator: 'table 3', checkedDate: '2026-10-25',
+      standard: 'JIS G 3101', standardEdition: null, evidence: 'standard-draft', sha256: 'f'.repeat(64) };
+    const historical = readAnalysisMaterialCapacity({ ...saved, sourceSnapshot: snapshot });
+    expect(historical).toEqual({ ...capacity(), sourceSnapshot: { label: '保存時の材料資料', standard: 'JIS G 3101',
+      standardEdition: null, evidence: 'standard-draft', revision: 0 } });
+    expect(readAnalysisMaterialCapacity(JSON.parse(JSON.stringify(historical)))).toEqual(historical);
+    expect(() => readAnalysisMaterialCapacity({ ...saved, sourceSnapshot: { ...snapshot, sha256: 'invalid' } })).toThrow(InputIssue);
+  });
+
+  it('retains a well-formed historical snapshot rather than silently updating its revision during read/re-save', () => {
+    const historical = { ...capacity(), sourceSnapshot: { ...STRENGTH_SOURCES['g3101-draft'], revision: 2 } };
     const read = readAnalysisMaterialCapacity(historical);
     expect(read).toEqual(historical);
     expect(readSolidCadSavedInput(JSON.parse(JSON.stringify({ ...solidSaved(), capacity: read }))).capacity).toEqual(historical);
-    expect(read.sourceSnapshot?.sha256).not.toBe(STRENGTH_SOURCES['jisf-g3101-draft'].sha256);
+    expect(read.sourceSnapshot?.revision).not.toBe(STRENGTH_SOURCES['g3101-draft'].revision);
   });
 
-  it.each([undefined, null, { ...STRENGTH_SOURCES['jisf-g3101-draft'], sha256: 'not-a-digest' },
-    { ...STRENGTH_SOURCES['jisf-g3101-draft'], sha256: 'A'.repeat(64) },
-    { ...STRENGTH_SOURCES['jisf-g3101-draft'], verified: true },
-    { ...STRENGTH_SOURCES['jisf-g3101-draft'], [Symbol('hidden')]: true },
-    Object.fromEntries(Object.entries(STRENGTH_SOURCES['jisf-g3101-draft']).filter(([key]) => key !== 'standardEdition')),
+  it.each([undefined, null, { ...STRENGTH_SOURCES['g3101-draft'], revision: -1 },
+    { ...STRENGTH_SOURCES['g3101-draft'], revision: 0.5 },
+    { ...STRENGTH_SOURCES['g3101-draft'], verified: true },
+    { ...STRENGTH_SOURCES['g3101-draft'], [Symbol('hidden')]: true },
+    Object.fromEntries(Object.entries(STRENGTH_SOURCES['g3101-draft']).filter(([key]) => key !== 'standardEdition')),
   ])('refuses malformed explicitly present source snapshots without replacing them from the catalogue: %j', sourceSnapshot => {
     expect(() => readAnalysisMaterialCapacity({ ...capacity(), sourceSnapshot })).toThrow(InputIssue);
   });
@@ -148,7 +162,7 @@ describe('source-bound FE yield capacity', () => {
     ['missing source key', Object.fromEntries(Object.entries(capacity()).filter(([key]) => key !== 'sourceId')), 'source-missing'],
     ['empty source', { ...capacity(), sourceId: '' }, 'source-missing'],
     ['unknown source', { ...capacity(), sourceId: 'not-a-source' }, 'source-mismatch'],
-    ['different source', { ...capacity(), sourceId: 'nippon-ss400' }, 'source-mismatch'],
+    ['different source', { ...capacity(), sourceId: 'ss400-plate' }, 'source-mismatch'],
     ['reference promoted to minimum', { ...capacity(3), basis: 'minimum' }, 'source-mismatch'],
     ['reference promoted to draft', { ...capacity(3), evidence: 'standard-draft' }, 'source-mismatch'],
     ['different yield', { ...capacity(), yieldMPa: 235 }, 'value-mismatch'],

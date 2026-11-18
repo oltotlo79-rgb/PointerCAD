@@ -32,6 +32,13 @@ describe('フレームの一括配置の窓の欄', () => {
     expect(linesOf('0 0 0\n100 0 0', true)).toHaveLength(1);
   });
 
+  it('一筆書き(E-08)で打った点も同じ欄の文字として読み、予告と置く中身は「点を入れる」と同じ', () => {
+    const points = frameLayoutView({ ...INITIAL_FRAME_LAYOUT, pointsText: PASTED, closed: true }, SERIES);
+    const stroke = frameLayoutView({ ...INITIAL_FRAME_LAYOUT, source: 'stroke', pointsText: PASTED, closed: true }, SERIES);
+    expect(stroke).toEqual(points);
+    expect(frameLayoutView({ ...INITIAL_FRAME_LAYOUT, source: 'stroke', pointsText: ' ' }, SERIES)).toEqual({ kind: 'empty' });
+  });
+
   it('3 つの数でない行は行の番号つきで断り、点が 1 つ以下なら 2 つ以上を求める', () => {
     const view = (pointsText: string): ReturnType<typeof frameLayoutView> =>
       frameLayoutView({ ...INITIAL_FRAME_LAYOUT, pointsText }, SERIES);

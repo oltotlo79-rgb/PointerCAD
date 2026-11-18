@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-23 単列アンギュラ玉軸受の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の angularContactBallBearing)の突合せ、
  * 同じ寸法系列の深溝玉軸受との照合、寸法の整合と形の体積の検査。fixture は PDF の文字の流れから、
@@ -66,11 +67,11 @@ describe('M-23 単列アンギュラ玉軸受 資料の表との突合せ', () =
   });
 
   it('出どころは資料の番号・SHA・頁だけを持ち、行は系列 → 内径 → 記号の順で、寸法は 内径 < 外径・r1 ≦ r', () => {
-    expect(ANGULAR_CONTACT_BALL_BEARING_EVIDENCE.sha256).toBe(ANGULAR_CONTACT_BALL_BEARING_ORACLE.pdfSha256);
+    expect(ANGULAR_CONTACT_BALL_BEARING_EVIDENCE.reference).toBe(ANGULAR_CONTACT_BALL_BEARING_ORACLE.reference);
     const [first, last] = ANGULAR_CONTACT_BALL_BEARING_ORACLE.pages;
     expect(ANGULAR_CONTACT_BALL_BEARING_EVIDENCE.locator).toContain(`PDF ${first}〜${last} 頁`);
     expect(ANGULAR_CONTACT_BALL_BEARING_EVIDENCE.title.startsWith('資料 K4-1 ')).toBe(true);
-    expect(ANGULAR_CONTACT_BALL_BEARING_EVIDENCE.url).toBe('');
+    expect(ANGULAR_CONTACT_BALL_BEARING_EVIDENCE).not.toHaveProperty('url');
     const order = ANGULAR_CONTACT_BALL_BEARING_ROWS.map((row) => [seriesOf(row.size), row.dims.boreDiameter, row.size] as const);
     expect(order).toEqual([...order].sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1] || a[2].localeCompare(b[2])));
     for (const row of ANGULAR_CONTACT_BALL_BEARING_ROWS) {

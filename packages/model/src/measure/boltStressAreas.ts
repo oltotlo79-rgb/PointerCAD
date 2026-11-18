@@ -1,5 +1,4 @@
 /** Transcription of the visually inspected supplier excerpt.
- * Source: https://www.milcon.co.jp/data/pdf/product_2669.pdf, PDF page 2.
  * Label in source: JIS B1082-2009. Units: diameter/pitch mm, area mm².
  * This is the published nominal area, not an unrounded approximation.
  */
@@ -8,7 +7,7 @@ export interface BoltStressArea {
   readonly pitchMm: number;
   readonly areaMm2: number;
   readonly series: 'coarse' | 'fine';
-  readonly sourceId: 'milcon-jis-2009' | 'hardlock-table';
+  readonly sourceId: 'jis-b1082-2009' | 'supplementary-table';
 }
 
 const coarse: readonly (readonly [number, number, number])[] = [
@@ -30,13 +29,13 @@ const smallCoarse: readonly (readonly [number, number, number])[] = [
 const largeFine: readonly (readonly [number, number, number])[] = [
   [42, 3, 1210], [45, 3, 1410], [48, 3, 1600], [56, 4, 2140], [60, 4, 2480], [64, 4, 2850],
 ];
-// Hardlock's M36/M39 fine-pitch labels disagree with the source-backed Milcon rows.
+// The supplementary table’s M36/M39 fine-pitch labels disagree with the JIS B 1082 rows.
 // Keep the independently verified M36x3/M39x3 rows above; do not import those conflicting labels.
 export const BOLT_TENSILE_AREAS: readonly BoltStressArea[] = [
-  ...coarse.map(([diameterMm, pitchMm, areaMm2]): BoltStressArea => ({ diameterMm, pitchMm, areaMm2, series: 'coarse', sourceId: 'milcon-jis-2009' })),
-  ...fine.map(([diameterMm, pitchMm, areaMm2]): BoltStressArea => ({ diameterMm, pitchMm, areaMm2, series: 'fine', sourceId: 'milcon-jis-2009' })),
-  ...smallCoarse.map(([diameterMm, pitchMm, areaMm2]): BoltStressArea => ({ diameterMm, pitchMm, areaMm2, series: 'coarse', sourceId: 'hardlock-table' })),
-  ...largeFine.map(([diameterMm, pitchMm, areaMm2]): BoltStressArea => ({ diameterMm, pitchMm, areaMm2, series: 'fine', sourceId: 'hardlock-table' })),
+  ...coarse.map(([diameterMm, pitchMm, areaMm2]): BoltStressArea => ({ diameterMm, pitchMm, areaMm2, series: 'coarse', sourceId: 'jis-b1082-2009' })),
+  ...fine.map(([diameterMm, pitchMm, areaMm2]): BoltStressArea => ({ diameterMm, pitchMm, areaMm2, series: 'fine', sourceId: 'jis-b1082-2009' })),
+  ...smallCoarse.map(([diameterMm, pitchMm, areaMm2]): BoltStressArea => ({ diameterMm, pitchMm, areaMm2, series: 'coarse', sourceId: 'supplementary-table' })),
+  ...largeFine.map(([diameterMm, pitchMm, areaMm2]): BoltStressArea => ({ diameterMm, pitchMm, areaMm2, series: 'fine', sourceId: 'supplementary-table' })),
 ];
 
 /** Undefined explicitly means this source does not verify that diameter/pitch. */

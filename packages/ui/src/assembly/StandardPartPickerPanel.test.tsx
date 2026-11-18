@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import React, { Children, isValidElement, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ALL_STEEL_PRODUCTS, buildStandardPartFromSource, createAssemblyDocument, createStandardPartSource,
@@ -268,10 +269,10 @@ describe('actual structural picker selection and store commits', () => {
       nodes = change(sizes, `steel:${row.key}`);
       if (row.geometry === 'profileSection') {
         expect(nodes.some((item) => item.props.children === t('assembly.steel.profile'))).toBe(true);
-        const evidence = one(nodes, (item) => item.type === 'a'
-          && item.props.children === t('assembly.steel.profileSource'));
-        expect(evidence.props.href).toBe(row.profileEvidence?.url);
-        expect(evidence.props.title).toBe(row.profileEvidence?.locator);
+        const evidence = one(nodes, (item) => item.type === 'p' && Array.isArray(item.props.children)
+          && item.props.children.includes(t('assembly.steel.profileSource')));
+        expect(evidence.props.children).toContain(row.profileEvidence?.title);
+        expect(nodes.filter((item) => item.type === 'a')).toHaveLength(0);
       }
       const source = submit(nodes);
       expect(source).toMatchObject({ catalog: row.catalog, size: row.size,

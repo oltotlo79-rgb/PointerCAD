@@ -14,6 +14,7 @@ import { treeRowTakesOrigin } from '../sketch/originCommands.js';
 import type { SketchTreeGroup, TreeSection } from '../solid/solidSummary.js';
 import { addNewSketch, moveTreeRow, noteTargetForRow, removeTreeRow, setTreeOrigin, toggleReferenceVisible,
   toggleSolidSuppressed } from './featureTreeCommands.js';
+import { noteMenuOpener } from './dialogFocusRules.js';
 import { nextHighlightIndex } from './menus/menuItem.js';
 import { timelineMoveOffer, type TimelineMoveOffer } from './timelineMove.js';
 import type { FeatureTreeInput, RowMenuState } from './useFeatureTreeInput.js';
@@ -232,11 +233,14 @@ export function renderFeatureTreeRowMenu(context: FeatureTreeRowMenuContext): Re
         {t('featureTree.rename')}
       </button>
       <button type="button" role="menuitem" className="pcad-button pcad-menu__item" data-help-topic="history-notes" title={t('historyNote.edit')} onClick={() => {
+        // 項目は一覧と一緒に消えるので、窓を閉じた時に一覧を開いた釦へ焦点を戻せるよう覚える(C-03)。
+        noteMenuOpener(input.menuTriggerRef.current);
         const target = noteTargetForRow(part, menu.featureId, menu.sectionKey, menu.sketchId);
         input.setNoteDraft({ target, name: menu.name, documentId: part.id, documentVersion, original: featureNoteOf(part, target) });
         input.closeMenu();
       }}>{t('historyNote.edit')}</button>
       <button type="button" role="menuitem" className="pcad-button pcad-menu__item" data-help-topic="history-notes" title={t('historyFolder.moveTitle')} onClick={() => {
+        noteMenuOpener(input.menuTriggerRef.current);
         input.setFolderDraft({ ...folderContext(), mode: 'move', target: noteTargetForRow(part, menu.featureId, menu.sectionKey, menu.sketchId), name: menu.name });
         input.closeMenu();
       }}>{t('historyFolder.moveTitle')}</button>

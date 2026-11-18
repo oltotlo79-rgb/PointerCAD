@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -77,7 +78,7 @@ const CASES = [
 ] as const;
 function capacity(value: typeof CASES[number]): AnalysisMaterialCapacity {
   return { materialConditionId: value.conditionId, condition: '圧延鋼板（熱処理の指定なし）',
-    thicknessMm: value.thicknessMm, yieldMPa: value.yieldMPa, sourceId: 'jisf-g3101-draft',
+    thicknessMm: value.thicknessMm, yieldMPa: value.yieldMPa, sourceId: 'g3101-draft',
     evidence: 'standard-draft', basis: 'minimum' };
 }
 function inputOf(value: typeof CASES[number]): SolidAnalysisInput {

@@ -1,7 +1,7 @@
 /**
  * 族: E 形止め輪 JIS B 2804-2010(呼び 0.8〜24)。M-14(設計 §2.3)。
  *
- * 寸法は資料 K5-6(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の表の
+ * 寸法は資料 K5-6(規格の抜粋)の表の
  * 内径 d・外径 D・切口幅 H・厚さ t(いずれも基準寸法)・止め輪部分の幅 b(約)・適用する軸径 d1(超え・以下、資料の注で推奨の参考)・
  * 溝底径 d2・溝幅 m(基準寸法)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の eRing で、検査が照らす。
@@ -11,14 +11,13 @@
 import { buildRetainingRingPart, retainingRingVolume, type RetainingRingDimensions } from '../profiles/retainingRing.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const E_RING_EVIDENCE = {
   title: '資料 K5-6 E 形止め輪の規格の抜粋(JIS B 2804-2010)',
   edition: '2010',
-  url: '',
+
   locator: 'PDF 35 頁(冊子 208 頁)E 形止め輪の表: d・D・H・t・b(約)・適用する軸径 d1・d2・m、表の注',
-  sha256: '901e5bdacea3014bdf2bea82ec3fbd19a4184974c00489c2ffabf109454f86fa',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-6',
 } as const;
 
 /** [呼び, d, D, H, t, b, d1 超え, d1 以下, d2, m](mm)。 */

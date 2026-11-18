@@ -4,8 +4,9 @@ import { useAppStore } from '../store/useAppStore.js';
 import { applyCameraSettings } from './cameraSettingsApply.js';
 import { currentViewControls, DEFAULT_VIEW_CONTROLS, VIEW_ACTIONS, VIEW_CONTROL_PRESETS, VIEW_KEY_GROUP_ACTIONS, VIEW_KEY_GROUPS, viewControlProblems,
   withViewControlPreset, type ViewAction, type ViewControlOptions, type ViewControlPreset, type ViewControlSettings, type ViewKeyGroup,
-  type ViewSettingsProblem, type ViewTrigger, viewKeyStepDegrees, ORBIT_CENTERS, viewOrbitCenter, viewZoomCenter, ZOOM_CENTERS,
+  type ViewSettingsProblem, type ViewTrigger, viewKeyStepDegrees, ORBIT_CENTERS, viewOrbitCenter, viewZoomCenter, ZOOM_CENTERS, viewLeftEmptyOrbit,
   type OrbitCenter, type ZoomCenter, VIEW_TOUCH_GESTURE_ACTIONS, VIEW_TOUCH_GESTURES, type ViewTouchGesture, hasOneFingerTouch,
+  VIEW_PEN_BUTTONS, type ViewPenButton,
 } from './viewControlSettings.js';
 import { placeViewTrigger, restoreViewAction, swapViewTrigger, takeViewTrigger, viewKeyCollisions } from './inputBindingsDraft.js';
 import { commandDefinition } from '../commands/commandDefinitions.js';
@@ -27,10 +28,12 @@ const ERROR_KEYS: Record<ViewSettingsProblem['code'], MessageKey> = {
  * The select of one binding row: a mouse button drag, the wheel (a touchpad's two-finger scroll), a key group (B-08)
  * or a touch-screen finger gesture (B-08g).
  */
-type SlotInput = 'left' | 'middle' | 'right' | 'wheel' | ViewKeyGroup | ViewTouchGesture;
-const POINTER_INPUTS: readonly SlotInput[] = ['left', 'middle', 'right', 'wheel'];
+type SlotInput = 'left' | 'middle' | 'right' | ViewPenButton | 'wheel' | ViewKeyGroup | ViewTouchGesture;
+/** マウスのボタン・ホイールと、ペンの側面のボタン・消しゴムの端(B-09 3-4。どの操作にも使える)。 */
+const POINTER_INPUTS: readonly SlotInput[] = ['left', 'middle', 'right', 'wheel', ...VIEW_PEN_BUTTONS];
 const INPUT_KEYS: Record<SlotInput, MessageKey> = {
   left: 'settings.camera.left', middle: 'settings.camera.middle', right: 'settings.camera.right', wheel: 'settings.camera.wheel',
+  penBarrel: 'settings.camera.penBarrel', penEraser: 'settings.camera.penEraser',
   arrows: 'settings.camera.keys.arrows', numpad: 'settings.camera.keys.numpad', plusMinus: 'settings.camera.keys.plusMinus',
   oneFinger: 'settings.camera.touch.oneFinger', twoFinger: 'settings.camera.touch.twoFinger', pinch: 'settings.camera.touch.pinch',
 };
@@ -255,6 +258,13 @@ export function CameraControlSettingsForm(): React.JSX.Element {
         onChange={event => updateOption('keyStepDegrees', event.currentTarget.valueAsNumber)} />
     </label>
     <ViewCenterFields value={value} onOrbit={center => updateOption('orbitCenter', center)} onZoom={center => updateOption('zoomCenter', center)} />
+    {/* 何も無い所からの左ドラッグで回す(B-09 3-3。既定は切)。入れている間は、将来の範囲の選択と同じ入力である事を出す。 */}
+    <label>
+      <input type="checkbox" checked={viewLeftEmptyOrbit(value.options)} title={t('settings.camera.leftEmptyOrbitGuide')}
+        onChange={event => updateOption('leftEmptyOrbit', event.currentTarget.checked)} />
+      {t('settings.camera.leftEmptyOrbit')}
+    </label>
+    {viewLeftEmptyOrbit(value.options) ? <p role="note">{t('settings.camera.leftEmptyOrbitNote')}</p> : null}
     {INVERT_FIELDS.map(({ field, label, guide }) => <label key={field}>
       <input type="checkbox" checked={value.options[field]} title={t(guide)}
         onChange={event => updateOption(field, event.currentTarget.checked)} />

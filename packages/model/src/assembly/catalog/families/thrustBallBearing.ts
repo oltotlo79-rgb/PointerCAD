@@ -2,7 +2,7 @@
  * 族: 単式スラスト玉軸受 平面座形(511・512 系、内径 10〜100)。M-26(設計 §2.3)。
  *
  * 寸法は資料 K4-1(深溝玉軸受と同じ転がり軸受の寸法表の分冊、下の `THRUST_BALL_BEARING_EVIDENCE`、
- * PDF の SHA-256 と頁を記録)の主要寸法 d・D・T・r(最小)と寸法 d1(最大)・D1(最小)を、頁の画像から読んだ 1 回目の転記。
+ * 資料の番号 と頁を記録)の主要寸法 d・D・T・r(最小)と寸法 d1(最大)・D1(最小)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の thrustBallBearing で、検査が照らす。
  * 行は平面座形の呼び番号ごと(40 行)。調心座形・調心座金付きと 513・514 系は入れない。
  * 形は軸軌道盤(d・d1)・玉の帯・ハウジング軌道盤(D1・D)の 3 つの輪の簡略形状(`profiles/thrustBearing.ts`)。
@@ -11,14 +11,13 @@
 import { buildThrustBearingPart, thrustBearingVolume, type ThrustBearingDimensions } from '../profiles/thrustBearing.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const THRUST_BALL_BEARING_EVIDENCE = {
   title: '資料 K4-1 単式スラスト玉軸受の寸法表(製造元の公開カタログ)',
   edition: null,
-  url: '',
+
   locator: 'PDF 166〜168 頁(冊子 B330〜B335)単式スラスト玉軸受の表: 主要寸法 d・D・T・r(最小)、寸法 d1(最大)・D1(最小)',
-  sha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
-  fetchedDate: '2026-11-15',
+  reference: 'K4-1',
 } as const;
 
 /** [呼び番号, d, D, T, r(最小), d1(最大), D1(最小)](mm)。系列ごとに内径の順。 */

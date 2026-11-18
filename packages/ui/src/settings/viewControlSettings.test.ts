@@ -3,7 +3,7 @@ import { DEFAULT_CAMERA_CONTROLS, type CameraBinding, type CameraControlSettings
 import { loadSettings, saveSettings, type SettingsStorage } from './settings.js';
 import {
   currentViewControls, DEFAULT_VIEW_CONTROLS, hasOneFingerTouch, isViewControlSettings, readStoredViewControls, sameViewControls, viewControlProblems,
-  viewOrbitCenter, viewZoomCenter, withViewControlPreset,
+  viewLeftEmptyOrbit, viewOrbitCenter, viewZoomCenter, withViewControlPreset,
   type ViewControlOptions, type ViewControlSettings, type ViewTrigger,
 } from './viewControlSettings.js';
 
@@ -164,6 +164,21 @@ describe('読む時の救い出し(R4・R5・R8)', () => {
     const pointer = { ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, zoomCenter: 'pointer' as const } };
     expect(sameViewControls(pointer, EXPECTED_DEFAULT)).toBe(false);
     expect(sameViewControls({ ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, zoomCenter: 'target' } }, EXPECTED_DEFAULT)).toBe(true);
+  });
+
+  it('B-09 3-3: 何も無い所からの左ドラッグで回すのは、無ければ切(今の動き)。真偽でない値は適用を断り、読む時は欄ごと捨てて知らせる', () => {
+    expect(viewLeftEmptyOrbit(EXPECTED_DEFAULT.options)).toBe(false);
+    expect(viewLeftEmptyOrbit(OPTIONS)).toBe(false);
+    const on = { ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, leftEmptyOrbit: true } };
+    expect(viewControlProblems(on)).toEqual([]);
+    expect(viewLeftEmptyOrbit(on.options)).toBe(true);
+    expect(viewControlProblems({ ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, leftEmptyOrbit: 'yes' } }))
+      .toEqual([{ code: 'shape', at: 'options.leftEmptyOrbit' }]);
+    expect(readStoredViewControls({ viewControls: on })).toEqual({ settings: on, dropped: 0 });
+    expect(readStoredViewControls({ viewControls: { ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, leftEmptyOrbit: 1 } } }))
+      .toEqual({ settings: EXPECTED_DEFAULT, dropped: 1 });
+    expect(sameViewControls(on, EXPECTED_DEFAULT)).toBe(false);
+    expect(sameViewControls({ ...EXPECTED_DEFAULT, options: { ...EXPECTED_DEFAULT.options, leftEmptyOrbit: false } }, EXPECTED_DEFAULT)).toBe(true);
   });
 
   it('B-08: キーの組は合う操作だけ・1 つの操作に 2 つまで・マウスの割当は 1 つ以上残す。キーの角度は 1〜90', () => {
@@ -335,5 +350,40 @@ describe('適用の時の問題(設計 §4.5 の code 7 種)', () => {
   it('v1 では断ったホイールの回転・平行移動と 4 つまでの割当は v2 では受ける', () => {
     expect(viewControlProblems(withBindings({ orbit: [wheel({ shift: true })], pan: [wheel(), drag('right'), drag('middle', { shift: true }), drag('left', { alt: true })],
       zoom: [wheel({ ctrl: true })] }))).toEqual([]);
+  });
+});
+
+describe('ペンの入力(B-09 3-4)', () => {
+  const pen = (button: 'penBarrel' | 'penEraser', modifiers: Modifiers = {}): ViewTrigger => ({ kind: 'drag', button, ...OFF, ...modifiers });
+  const withPenBindings = (bindings: Partial<Record<'orbit' | 'pan' | 'zoom', readonly ViewTrigger[]>>): ViewControlSettings =>
+    ({ ...EXPECTED_DEFAULT, bindings: { ...EXPECTED_DEFAULT.bindings, ...bindings } });
+
+  it('既定の割当にペンの入力は無い(今の動きを変えない)', () => {
+    for (const list of Object.values(DEFAULT_VIEW_CONTROLS.bindings)) {
+      expect(list.some((trigger) => trigger.kind === 'drag' && (trigger.button === 'penBarrel' || trigger.button === 'penEraser'))).toBe(false);
+    }
+  });
+
+  it('ペンの入力はどの操作にも置け、マウスとは別に 2 つまで数え、マウスの入力の代わりにはならない', () => {
+    expect(viewControlProblems(withPenBindings({ orbit: [drag('middle'), pen('penBarrel'), pen('penEraser', { shift: true })] }))).toEqual([]);
+    expect(viewControlProblems(withPenBindings({ orbit: [drag('middle'), pen('penBarrel'), pen('penBarrel', { shift: true }),
+      pen('penEraser')] }))).toContainEqual({ code: 'too-many', action: 'orbit' });
+    expect(viewControlProblems(withPenBindings({ orbit: [pen('penBarrel')] }))).toContainEqual({ code: 'mouse-required', action: 'orbit' });
+  });
+
+  it('知らない種類のボタンは、その 1 件だけ捨てて残りを読む(古い版がペンの入力を読んだ時と同じ扱い)', () => {
+    const stored = { viewControls: { version: 2, bindings: { orbit: [drag('middle'), { kind: 'drag', button: 'futurePen', ...OFF }],
+      pan: [drag('right')], zoom: [wheel()] }, options: OPTIONS } };
+    const read = readStoredViewControls(stored);
+    expect(read.dropped).toBe(1);
+    expect(read.settings.bindings.orbit).toEqual([drag('middle')]);
+    expect(isViewControlSettings(read.settings)).toBe(true);
+  });
+
+  it('ペンの入力を入れた設定は、保存して読み戻しても同じ', () => {
+    const settings = withPenBindings({ orbit: [drag('middle'), pen('penBarrel', { alt: true })], zoom: [wheel(), pen('penEraser')] });
+    const read = readStoredViewControls({ viewControls: JSON.parse(JSON.stringify(settings)) as unknown });
+    expect(read.dropped).toBe(0);
+    expect(sameViewControls(read.settings, settings)).toBe(true);
   });
 });

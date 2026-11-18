@@ -35,8 +35,9 @@ describe('camera control settings descriptions', () => {
     const perBinding = 1 + 4 + 1 + 1;
     // Four speeds (rotation, pan, wheel zoom, drag zoom), the key rotation step (B-08) and four inversions (rotation x/y,
     // wheel zoom, drag zoom); per action an add (+) and a restore-this-action button (B-06); the presets; apply, cancel and defaults.
-    // The rotation and zoom center selects (B-08d) add 2.
-    expect(found).toHaveLength(CAMERA_ACTIONS.length * 2 * perBinding + 4 + 1 + 2 + 4 + CAMERA_ACTIONS.length * 2 + VIEW_CONTROL_PRESETS.length + 3);
+    // The rotation and zoom center selects (B-08d) add 2. The left drag from empty space check box (B-09 3-3) adds 1.
+    expect(found).toHaveLength(CAMERA_ACTIONS.length * 2 * perBinding + 4 + 1 + 2 + 4 + CAMERA_ACTIONS.length * 2 + VIEW_CONTROL_PRESETS.length + 3
+      + 1);
     expect(found.filter(control => control.title.trim() === '')).toEqual([]);
     // A missing i18n key would show the key itself instead of a sentence.
     expect(found.filter(control => control.title.startsWith('settings.'))).toEqual([]);
@@ -61,9 +62,11 @@ describe('camera control settings descriptions', () => {
   it('describes the four speeds, the key rotation step and the four inversions differently', () => {
     const scalars = controls(html()).filter(control => control.tag === 'input'
       && !(['alt', 'shift', 'ctrl', 'meta'] as const).some(modifier => control.title.includes(t(`settings.camera.${modifier}`))));
-    expect(scalars).toHaveLength(9);
-    expect(new Set(scalars.map(control => control.title)).size).toBe(9);
-    for (const key of ['orbitSensitivityGuide', 'panSensitivityGuide', 'keyStepDegreesGuide', 'invertOrbitXGuide', 'invertOrbitYGuide'] as const) {
+    // 10: the four speeds, the key rotation step, the four inversions and the left drag from empty space check box (B-09 3-3).
+    expect(scalars).toHaveLength(10);
+    expect(new Set(scalars.map(control => control.title)).size).toBe(10);
+    for (const key of ['orbitSensitivityGuide', 'panSensitivityGuide', 'keyStepDegreesGuide', 'invertOrbitXGuide', 'invertOrbitYGuide',
+      'leftEmptyOrbitGuide'] as const) {
       expect(scalars.filter(control => control.title === t(`settings.camera.${key}`))).toHaveLength(1);
     }
   });

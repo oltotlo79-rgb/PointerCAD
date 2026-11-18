@@ -1,5 +1,6 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
- * 資料 SF-1 のジョイントバー・スタッド・ローレットナットの 3 族の検査: 族の版と欄、行の名乗りと出どころ、形(包む形・段の並び)と体積、
+ * 資料 1 のジョイントバー・スタッド・ローレットナットの 3 族の検査: 族の版と欄、行の名乗りと出どころ、形(包む形・段の並び)と体積、
  * 質量は資料の 1 個の値で包む形 × 密度より軽い事、簡略の印。製品が使う口(族の定数と行の表)だけを通して確かめる。
  */
 import { describe, expect, it } from 'vitest';
@@ -24,7 +25,7 @@ function rowOf(family: CatalogFamily, key: string): CatalogItemRow {
   return row;
 }
 
-describe('資料 SF-1 のジョイントバー・スタッド・ローレットナット', () => {
+describe('資料 1 のジョイントバー・スタッド・ローレットナット', () => {
   it('族は 3 つで、版・欄・線図・数え方を凍結し、行の数は 6・2・1、行は規格の行を名乗らず、密度は行の材料', () => {
     expect(FAMILIES.map((family) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision, family.stock,
       family.diagram, family.options.length, family.rows.length])).toEqual([
@@ -36,8 +37,8 @@ describe('資料 SF-1 のジョイントバー・スタッド・ローレット�
     for (const family of FAMILIES) {
       expect(new Set(family.rows.map((row) => row.size)).size).toBe(family.rows.length);
       for (const row of family.rows) {
-        expect([row.standardLabel, row.verification, row.verified, row.evidence.sha256, row.evidence.url], row.key)
-          .toEqual(['製造元の寸法に合わせた物', 'manufacturer-catalog', true, '', '']);
+        expect([row.standardLabel, row.verification, row.verified, row.evidence.reference], row.key)
+          .toEqual(['製造元の寸法に合わせた物', 'manufacturer-catalog', true, '']);
         expect(row.size + row.key, row.key).not.toMatch(/[A-Z]{2,}-?[0-9]/u);
         expect(row.simplified?.length ?? 0, row.key).toBeGreaterThan(0);
       }

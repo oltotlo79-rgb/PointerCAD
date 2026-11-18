@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
@@ -282,7 +283,7 @@ describe('寸法表の選択', () => {
     const annex = findHexBolt('M20', 'annexJA');
     const second = findHexBolt('M14', 'main');
     if (main === undefined || annex === undefined || second === undefined) throw new Error('M20/M14 row missing');
-    // ミスミの JIS B 1180:2014 抜粋の M20: b=46(ℓ≤125)・52(125<ℓ≤200)・65(ℓ>200)。
+    //  JIS B 1180:2014 抜粋の M20: b=46(ℓ≤125)・52(125<ℓ≤200)・65(ℓ>200)。
     expect([30, 125, 126, 200, 201].map((length) => boltThreadLength(main, length))).toEqual([30, 46, 52, 52, 65]);
     expect(boltThreadLength(main, 150, 'fine')).toBeNull();
     expect(boltThreadLength(annex, 125)).toBe(46);

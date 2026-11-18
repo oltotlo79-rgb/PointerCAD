@@ -1,7 +1,7 @@
 /**
  * 族: カムフォロア(スタッド形、メートル系)。M-28(設計 §2.3)。
  *
- * 寸法は製造元の公開の寸法表(下の `CAM_FOLLOWER_EVIDENCE`、PDF の SHA-256 と頁を記録)の主要寸法 D・C・d と、
+ * 寸法は製造元の公開の寸法表(下の `CAM_FOLLOWER_EVIDENCE`、資料の番号 と頁を記録)の主要寸法 D・C・d と、
  * 各部寸法 G(ねじ)・G1(ねじの長さ)・B1(全長)・B2(スタッドの長さ)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の camFollower で、検査が 1 行ずつ照らす。
  * 総ころ形と保持器付き(と六角穴付き)は寸法が同じなので、形の行は外径ごとに 1 つにする。
@@ -11,14 +11,13 @@
 import { buildCamFollowerPart, camFollowerVolume, type CamFollowerDimensions } from '../profiles/camFollower.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const CAM_FOLLOWER_EVIDENCE = {
   title: '資料 K4-2 カムフォロアの寸法表(製造元の公開カタログ、2006 年版)',
   edition: '2006',
-  url: '',
+
   locator: 'PDF 5 頁(冊子 7〜8 頁)カムフォロア(メートル系)の表: 主要寸法 D・C・d、各部寸法 G・G1・B1・B2',
-  sha256: 'daa923f4475f5b102e412990f22749962e1f238164c717d42b6c50eb4e9e7875',
-  fetchedDate: '2026-11-14',
+  reference: 'K4-2',
 } as const;
 
 /** [外径 D, 外輪の幅 C, スタッドの径 d, ねじのピッチ, ねじの長さ G1, 全長 B1, スタッドの長さ B2](mm)。ねじの呼びは M d。 */

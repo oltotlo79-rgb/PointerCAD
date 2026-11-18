@@ -1,7 +1,7 @@
 /**
  * 族: 六角穴付き皿ボルト JIS B 1194-2006(M3〜M20)。M-34(設計 §2.3)。
  *
- * 寸法は資料 K5-4(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の規格寸法の表の
+ * 寸法は資料 K5-4(規格の抜粋)の規格寸法の表の
  * ピッチ P・b(参考)・dk(理論寸法の最大)・k(最大)・s(呼び)・t(最小)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の countersunkSocketScrew で、検査が照らす。
  * 資料の表の括弧の中の値は団体規格(JIS ではない)の値なので使わない。
@@ -13,14 +13,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildCountersunkSocketScrewPart, countersunkSocketScrewVolume, type SocketHeadDimensions } from '../profiles/screw.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const COUNTERSUNK_SOCKET_SCREW_EVIDENCE = {
   title: '資料 K5-4 六角穴付き皿ボルトの規格の抜粋(JIS B 1194-2006)',
   edition: '2006',
-  url: '',
+
   locator: 'PDF 19 頁(冊子 78 頁)規格寸法の表: d・P・b(参考)・dk(理論寸法 最大)・k(最大)・s(呼び)・t(最小)',
-  sha256: '908dc5efd20f7d017641ad4d2e0e6c53082687067dcd152d42f3986168312d71',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-4',
 } as const;
 
 /** [ねじの呼び, d, P, b, dk(理論), k, s, t](mm)。 */

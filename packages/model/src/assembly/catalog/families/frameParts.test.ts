@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * E-04 T スロットフレーム用の汎用の部品(直角のブラケット・つなぎ板・T 溝用のナット。寸法を指定して作る): 規格の行を名乗らない事、欄、
  * 形のフィーチャーの並び、体積が式どおり、形が成り立つ条件の外を断る事、保存の形の検査。表を持たない族なので、照合の fixture は無い。
@@ -33,8 +34,8 @@ describe('E-04 T スロットフレーム用の汎用の部品', () => {
         .toEqual([id, 'aluminumFrame', kindKey, 'count', diagram, `${id}-2026-11-r1`]);
       expect(Object.fromEntries(family.options.map((spec) => [spec.key, spec.defaultValue]))).toEqual(defaults);
       expect(family.rows.map((row) => [row.key, row.size, row.standardLabel, row.densityMaterialId, row.verification, row.verified,
-        Object.keys(row.dims).length, row.evidence.url, row.evidence.sha256]))
-        .toEqual([['specified', '寸法指定', '寸法指定(規格の行ではない)', material, 'unverified', false, 0, '', '']]);
+        Object.keys(row.dims).length, row.evidence.reference]))
+        .toEqual([['specified', '寸法指定', '寸法指定(規格の行ではない)', material, 'unverified', false, 0, '']]);
     }
     const thread = SLOT_NUT_FAMILY.options.find((spec) => spec.key === 'thread');
     expect([thread?.kind, thread?.choices]).toEqual(['choice', METRIC_THREAD_DESIGNATIONS]);

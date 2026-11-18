@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-31 O リング(JIS B 2401 P 系列・G 系列)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の oRing)の突合せ、
  * 寸法の整合と形の体積の検査。fixture は語の位置と太さの欄の区切りの線から、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -38,10 +39,10 @@ describe('M-31 O リング 資料の表との突合せ', () => {
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結し、形はトーラスで体積は 2π² R r²', () => {
     const evidence = O_RING_FAMILIES.P.rows[0]?.evidence;
     expect(SERIES.every(([, family]) => family.rows.every((row) => row.evidence === evidence))).toBe(true);
-    expect(evidence?.sha256).toBe(ORACLE.pdfSha256);
+    expect(evidence?.reference).toBe(ORACLE.reference);
     expect(evidence?.locator).toContain(`PDF ${ORACLE.pages[0]}〜${ORACLE.pages[1]} 頁`);
     expect(evidence?.title.startsWith('資料 K5-9 ')).toBe(true);
-    expect(evidence?.url).toBe('');
+    expect(evidence).not.toHaveProperty('url');
     expect(SERIES.map(([, family]) => [family.id, family.kindKey, family.catalogRevision, family.generatorRevision, family.options]))
       .toEqual([['o-ring-p', 'catalog.mechanical.kind.oRingP', 'o-ring-2026-11-r1', 'o-ring-1', []],
         ['o-ring-g', 'catalog.mechanical.kind.oRingG', 'o-ring-2026-11-r1', 'o-ring-1', []]]);

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { H_BEAM_PROFILE_ADDITIONS, H_BEAM_ADDITION_ORACLE } from './steelHBeamOracle.fixture.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -53,8 +54,8 @@ function restoreProfileCross(text: string, helper: string): string {
 function frozenProfileHash(text: string, helper: string): string {
   const restored = restoreProfileCross(text, helper);
   const original = restored.split(String.fromCharCode(10)).filter(line =>
-    !line.startsWith('  // JISF G 3192 原案 表8;')
-    && !line.startsWith('  // W7 JISF G 3192 原案 表15;')
+    !line.startsWith('  // JIS G 3192 原案 表8;')
+    && !line.startsWith('  // W7 JIS G 3192 原案 表15;')
     && !H_BEAM_PROFILE_ADDITIONS.some(row => line.startsWith(`  '${row.size}':`))
     && !ANGLE_ADDITION_ORACLE.some(row => line.startsWith(`  '${row.size}':`))).join(String.fromCharCode(10));
   return sourceHash(original);
@@ -97,13 +98,13 @@ describe('W6d independent angle and channel additions', () => {
       line.startsWith(`  { key: 'JIS-G-3192:2024:${row.size}',`)));
     expect(added).toHaveLength(22);
     const original = lines.filter(line => !added.includes(line)).join(String.fromCharCode(10));
-    expect(sourceHash(original)).toBe('6f3aaa7dac50b89a8a0592bc7ffe1c5c7105b5519ed62b05ffff42e110dbca56');
+    expect(sourceHash(original)).toBe('eaa55f9fe3111ad9058a4853dbe95d9363974220ea9d9bf9eeac55352e766988');
   });
 
   it.each([
-    ['steelCatalogOracle.fixture.ts', 'd891a8cc6918188b576e7a967062e84830b5e9c75e38fc56a435ddfb92b3cfce'],
-    ['steelS45cOracle.testSupport.ts', '51d3342fd50345c4e7a97f42c07cbfb301202d4b642b077b4cd5443cd834276d'],
-    ['steelGolden.testSupport.ts', 'bb738d3bcc4f7571816aa3f406f8968c16b16540af388350ad23086c64e77cca'],
+    ['steelCatalogOracle.fixture.ts', 'f9f8f93563d55da93536272fef4afa38236bcafd89cdd81c91f6f1130ccba928'],
+    ['steelS45cOracle.testSupport.ts', 'c556011d8a8ef8176f45b03dd1414c10992201deb18ff893b1311423068ac405'],
+    ['steelGolden.testSupport.ts', 'ff8b6fcaee9d335b3a650eb6b95d3614dff48547186cf6941821f2f59ce9adb6'],
   ])('%s retains the frozen W1/W4b/W5 bytes', (name, sha256) => {
     const text = readFileSync(new URL('./' + name, import.meta.url), 'utf8');
     expect(frozenOracleHash(name, text)).toBe(sha256);
@@ -113,7 +114,7 @@ describe('W6d independent angle and channel additions', () => {
     const lf = readFileSync(new URL('./steelCatalogOracle.fixture.ts', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
     const text = eol === 'CRLF' ? lf.replaceAll('\n', '\r\n') : lf;
     expect(frozenOracleHash('steelCatalogOracle.fixture.ts', text))
-      .toBe('d891a8cc6918188b576e7a967062e84830b5e9c75e38fc56a435ddfb92b3cfce');
+      .toBe('f9f8f93563d55da93536272fef4afa38236bcafd89cdd81c91f6f1130ccba928');
   });
 
   it.each(['LF', 'CRLF'] as const)('%s checkout still rejects changed or appended frozen content', eol => {
@@ -124,7 +125,7 @@ describe('W6d independent angle and channel additions', () => {
       lf.slice(0, end) + ' ' + lf.slice(end)]) {
       const text = eol === 'CRLF' ? changed.replaceAll('\n', '\r\n') : changed;
       expect(frozenOracleHash('steelCatalogOracle.fixture.ts', text))
-        .not.toBe('d891a8cc6918188b576e7a967062e84830b5e9c75e38fc56a435ddfb92b3cfce');
+        .not.toBe('f9f8f93563d55da93536272fef4afa38236bcafd89cdd81c91f6f1130ccba928');
     }
   });
 
@@ -132,7 +133,7 @@ describe('W6d independent angle and channel additions', () => {
     const text = readFileSync(new URL('./steelSectionProfiles.ts', import.meta.url), 'utf8');
     const helper = readFileSync(new URL('../../sketch/vec2.ts', import.meta.url), 'utf8');
     expect(frozenProfileHash(text, helper))
-      .toBe('9bc0e9f3e842118d67da94b7d5a4661eb602e7753ec479980124e10951557c9f');
+      .toBe('6d58da4d387f0b495083ddbd0513f5532f026ad729179b3cd8cb72142489f5de');
     expect(CHANNEL_ADDITION_CATALOG_ORACLE.map(row => [row.key, row.exactAreaMm2.value]))
       .toEqual(CHANNEL_ADDITION_ORACLE.map(row => [row.key, row.exactAreaMm2.value]));
   });
@@ -170,7 +171,7 @@ describe('W6d independent angle and channel additions', () => {
     const changed = text.replace('Math.atan2(cross(u, v)', 'Math.atan2(cross(v, u)');
     expect(changed).not.toBe(text);
     expect(frozenProfileHash(changed, helper))
-      .not.toBe('9bc0e9f3e842118d67da94b7d5a4661eb602e7753ec479980124e10951557c9f');
+      .not.toBe('6d58da4d387f0b495083ddbd0513f5532f026ad729179b3cd8cb72142489f5de');
   });
 
 
@@ -197,7 +198,7 @@ describe('W6d independent angle and channel additions', () => {
     if (row === undefined) throw new Error('Missing W6d legacy section');
     const table = oracle.catalog === 'equalAngle' ? 8 : 12;
     expect(row.verified).toBe(true);
-    expect(row.note).toContain(`JISF G 3192 原案 2024-07-24 表 ${table}、転記 g3192-tables.json`);
+    expect(row.note).toContain(`JIS G 3192 原案 2024-07-24 表 ${table}、転記 g3192-tables.json`);
     expect(row.note).toContain(SECTION_ADDITION_TRANSCRIPT);
     expect(row.areaCm2).toBe(Number(oracle.printedAreaCm2.value));
     expect(row.massKgPerM).toBe(Number(oracle.printedMassKgPerM.value));
@@ -208,9 +209,9 @@ describe('W6d independent angle and channel additions', () => {
     expect((oracle.jisAreaMm2.value / 100).toPrecision(4)).toBe(oracle.printedAreaCm2.value);
     expect((Number(oracle.printedAreaCm2.value) * 0.785).toPrecision(3)).toBe(oracle.printedMassKgPerM.value);
     expect(product.profileEvidence).toEqual(STEEL_EVIDENCE[product.evidence]);
-    expect(STEEL_EVIDENCE[product.evidence].sha256)
-      .toBe('ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa');
-    expect(STEEL_EVIDENCE[product.evidence].locator).toContain(`JISF G 3192 原案 2024-07-24 表${table}`);
+    expect(STEEL_EVIDENCE[product.evidence].reference)
+      .toBe('JIS G 3192 原案 2024-07-24');
+    expect(STEEL_EVIDENCE[product.evidence].locator).toContain(`JIS G 3192 原案 2024-07-24 表${table}`);
     expect(STEEL_EVIDENCE[product.evidence].locator).toContain(SECTION_ADDITION_TRANSCRIPT);
     expect(product.standardEdition.dimensions.verification).toBe('draft');
     expect(product.standardLengthsMm).toEqual([]);
@@ -218,7 +219,7 @@ describe('W6d independent angle and channel additions', () => {
     for (const quantity of [...Object.values(oracle.dimensions), oracle.rootRadiusMm, oracle.tipRadiusMm,
       oracle.printedAreaCm2, oracle.printedMassKgPerM, oracle.areaMm2, oracle.massKgPerM]) {
       expect(quantity.kind).toBe('source');
-      expect(quantity.citation.locator).toContain(`JISF G 3192 原案 表${table}`);
+      expect(quantity.citation.locator).toContain(`JIS G 3192 原案 表${table}`);
       expect(quantity.citation.locator).toContain(SECTION_ADDITION_TRANSCRIPT);
     }
     expect(oracle.exactAreaMm2.kind).toBe('computed');

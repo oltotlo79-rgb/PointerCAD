@@ -22,6 +22,11 @@ import { anyNeedsEnvironment } from '../appearance/createAppearanceMaterial.js';
 import type { AppearanceInput } from './buildSolidGeometry.js';
 import { createEnvironmentStore, createEnvironmentTarget } from './createEnvironment.js';
 import type { SphereGridSpec } from './buildSphereGrid.js';
+import type { FrameJointMarker } from '../assembly/frameJointCheckView.js';
+import type { MemberStretchMarkers } from '../assembly/memberStretchDraft.js';
+import type { BoltedJointHoleHint } from '../assembly/boltedJointHoleHints.js';
+import type { FrameStroke } from '../assembly/frameStroke.js';
+import type { FrameStrokeView } from './createFrameStrokeLayer.js';
 import { HOME_ORBIT, type OrbitState } from './cameraMath.js';
 import type { ConstraintMark } from '../sketch/constraintPicking.js';
 import type { CanvasDraw } from './canvasLayer.js';
@@ -190,6 +195,18 @@ export interface ViewportScene {
   setAssembly(bundle: AssemblyGeometryBundle): void;
   /** 干渉解析の共通形状と、一覧で選んだ組を独立層へ渡す。 */
   setInterference(result: AssemblyInterferenceResult | null, selectedKey: string | null): void;
+  /** 接合チェック(E-09)の印(留めていない・片側だけの接続)を独立層へ渡す。 */
+  setJointCheck(markers: readonly FrameJointMarker[]): void;
+  /** 伸縮(E-13)の予告の印(面と、動く部品・伸び縮みする部材・断る部品の外接箱)を独立層へ渡す。 */
+  setMemberStretch(markers: MemberStretchMarkers | null): void;
+  /** ボルト締結の窓の当たり(J-02c。同じ穴フィーチャーのほかの穴)の破線の輪を独立層へ渡す。 */
+  setHoleHints(hints: readonly BoltedJointHoleHint[]): void;
+  /** 検査専用の口が読む、当たりの輪の数。 */
+  holeHintCount(): number;
+  /** 3D の画面で打った点と、点を結ぶ一時の線(E-08 第 2 段・E-12)を独立層へ渡す。null で隠す。 */
+  setFrameStroke(stroke: FrameStroke | null): void;
+  /** 検査専用の口が読む、一時の線の点の数・線の本数・閉じているか。 */
+  frameStrokeView(): FrameStrokeView;
   /**
    * 外観の割り当てを差し替える(FR-1106〜1109)。文書の割り当てと、
    * カーネルが選び直した面の対応から `createSolidLayer.ts` の `buildAppearanceInput` が

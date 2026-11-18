@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { AutoSaveIntervalForm } from './AutoSaveIntervalForm.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { GearIcon } from '../shell/icons.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
@@ -207,6 +208,9 @@ export function SettingsPanel(): React.JSX.Element {
   const [bindingsOpen, setBindingsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const gearRef = useRef<HTMLButtonElement>(null);
+  // 開いた時は一覧の中へ焦点を入れ、閉じた時は歯車へ戻す(C-03。外を押して焦点を移した時は奪わない)。
+  useDialogFocus(() => panelRef.current, open, { fallback: () => gearRef.current });
   /** 確かめの後に続ける操作(チュートリアルを始めるなど)。 */
   const afterCloseRef = useRef<(() => void) | null>(null);
 
@@ -268,6 +272,7 @@ export function SettingsPanel(): React.JSX.Element {
       <button
         type="button"
         className="pcad-button pcad-button--icon"
+        ref={gearRef}
         title={t('toolbar.settings.openTooltip')}
         aria-label={t('toolbar.settings.open')}
         aria-haspopup="true"
@@ -310,7 +315,7 @@ export function SettingsPanel(): React.JSX.Element {
           <p className="pcad-settings__hint">{t('settings.hint')}</p>
         </div>
       ) : null}
-      {bindingsOpen ? <InputBindingsWindow onClose={() => { setBindingsOpen(false); }} /> : null}
+      {bindingsOpen ? <InputBindingsWindow onClose={() => { setBindingsOpen(false); }} returnFocus={() => gearRef.current} /> : null}
     </div>
   );
 }

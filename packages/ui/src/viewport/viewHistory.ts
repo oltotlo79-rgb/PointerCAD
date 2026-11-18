@@ -11,7 +11,7 @@ export const VIEW_HISTORY_LIMIT = 20;
 /** これより短い間隔で続く視点の変化は、1 つの操作(1 回のドラッグ・連続したホイール・キーの繰り返し・遷移)とみなす。 */
 export const VIEW_STEP_GAP_MS = 400;
 
-export interface ViewHistory {
+interface ViewHistory {
   /** 視点を変える直前に呼ぶ。前の変化から VIEW_STEP_GAP_MS 以上空いていれば、今の視点を 1 つ積む。 */
   beforeChange(current: OrbitState): void;
   /** 直前の視点を取り出す(今と同じ視点は飛ばす)。無ければ null。取り出した後の最初の変化は新しい操作として積む。 */

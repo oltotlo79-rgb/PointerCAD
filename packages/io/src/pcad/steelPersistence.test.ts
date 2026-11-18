@@ -1,3 +1,5 @@
+// 規格資料の出典は規格番号と一般名で照合する。
+import { readComponentSource } from './codecs/componentSource.js';
 import { createKernelApi } from '@pointercad/kernel';
 import {
   addComponent, canonicalPartDocumentText, createAssemblyDocument, createComponentFor, createDirectKernelBridge,
@@ -230,5 +232,21 @@ describe('EX03 W10 representative real OCCT volumes before and after persistence
     for (const volume of volumes.slice(1)) expect(Math.abs(volume - volumes[0]) / volumes[0]).toBeLessThan(1e-9);
     process.stdout.write(`STEEL_PERSISTENCE_VOLUME ${JSON.stringify({ key: row.key, before: volumes[0],
       json: volumes[1], zip: volumes[2], maxRelativeError: Math.max(...volumes.slice(1).map(v => Math.abs(v - volumes[0]) / volumes[0])) })}\n`);
+  });
+});
+
+describe('旧鋼材の出典を規格と一般名で読み直す', () => {
+  it.each([
+    ['flatBar', 'productStandard', String.fromCharCode(29579, 23376, 35069, 37444, 32, 20844, 34920, 26029, 38754, 23544, 27861), '公表平鋼寸法'],
+    ['roundBar', 'productStandard', String.fromCharCode(22823, 38442, 35069, 37941, 32, 20844, 34920, 20024, 37628, 23544, 27861), '公表丸鋼寸法'],
+    ['equalAngle', 'evidence', String.fromCharCode(111, 115, 97, 107, 97), 'rolledSections'],
+    ['channel', 'evidence', String.fromCharCode(111, 115, 97, 107, 97), 'rolledSections'],
+    ['hBeam', 'evidence', String.fromCharCode(121, 97, 109, 97, 116, 111), 'wideFlange'],
+  ] as const)('%s keeps authored options when normalizing the legacy %s', (catalog, field, historical, expected) => {
+    const source = { kind: 'standardPart', catalog, size: 'fixture', catalogRevision: 'jp-steel-2026-10-10-r1',
+      generatorRevision: '2-steel-1', options: { materialGrade: 'SS400', length: '250*2', [field]: historical } };
+    const decoded = readComponentSource({ source }, 'source', 'component');
+    expect(decoded).toEqual({ ok: true, value: { ...source, options: { ...source.options, [field]: expected } } });
+    expect(source.options[field]).toBe(historical);
   });
 });

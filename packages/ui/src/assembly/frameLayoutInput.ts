@@ -3,7 +3,7 @@
  * 並べる部材の予告(1 本ごとの長さ・端の伸び縮み・角の扱い)と、店の動作に渡す中身を作る。画面を持たない純関数(検査はここで行う)。
  */
 import { evaluateExpression } from '@pointercad/expression';
-import type { FrameCornerRule, FrameLine } from '@pointercad/model';
+import type { FrameCornerRule, FrameLine, Vec3 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import type { FrameEdgeChoice, FrameEdgeFilter, FrameEdgeOrder } from './frameEdgeChoices.js';
@@ -11,8 +11,11 @@ import { frameMembersPreview, type FrameMemberChoice, type FrameMembersPlacement
 
 export type FrameUp = 'z' | 'y' | 'x';
 
-/** 線の決め方: 点を入れる(貼り付け)か、選んだ部品のまっすぐな辺から(包み 4a)。 */
-type FrameLineSource = 'points' | 'edges';
+/**
+ * 線の決め方: 点を入れる(貼り付け)か、選んだ部品のまっすぐな辺から(包み 4a)か、3D の画面で点を順に打つ(一筆書き、E-08)。
+ * 一筆書きで打った点は点の文字の欄に入るので、読み方・予告・置く中身は「点を入れる」と同じ。
+ */
+type FrameLineSource = 'points' | 'edges' | 'stroke';
 
 /** 窓の欄の値(文字のまま持ち、予告のたびに読み直す)。辺は読み込んだ時の一覧を持つ(読み直すまで変えない)。 */
 export interface FrameLayoutState {
@@ -62,9 +65,10 @@ type ParsedLines = { readonly ok: true; readonly lines: readonly FrameLine[] } |
 const fill = (key: MessageKey, values: Readonly<Record<string, string | number>>): string =>
   Object.entries(values).reduce((text, [name, value]) => text.split(`{${name}}`).join(String(value)), t(key));
 
-/** 点の文字を線の列にする。区切りはタブ・カンマ・空白(表計算の表の貼り付け)。空の行は飛ばす。閉じる時は 3 点以上で最後から最初へも 1 本。 */
-function parseFrameLines(text: string, closed: boolean): ParsedLines {
-  const points: (readonly [number, number, number])[] = [];
+/** 点の文字を点の列にする。区切りはタブ・カンマ・空白(表計算の表の貼り付け)。空の行は飛ばす。読めない行は行の番号つきの理由。 */
+export function parseFramePoints(text: string):
+{ readonly ok: true; readonly points: readonly Vec3[] } | { readonly ok: false; readonly message: string } {
+  const points: Vec3[] = [];
   for (const [index, raw] of text.split('\n').entries()) {
     const tokens = raw.split(/[\s,、，]+/u).filter((token) => token !== '');
     if (tokens.length === 0) continue;
@@ -75,6 +79,14 @@ function parseFrameLines(text: string, closed: boolean): ParsedLines {
     }
     points.push([x, y, z]);
   }
+  return { ok: true, points };
+}
+
+/** 点の文字を線の列にする。点は 2 つ以上。閉じる時は 3 点以上で最後から最初へも 1 本。 */
+function parseFrameLines(text: string, closed: boolean): ParsedLines {
+  const parsed = parseFramePoints(text);
+  if (!parsed.ok) return parsed;
+  const points = parsed.points;
   if (points.length < 2) return { ok: false, message: t('catalog.frameLayout.error.tooFew') };
   const lines = points.slice(1).map((end, index): FrameLine => ({ start: points[index] ?? end, end }));
   const first = points[0], last = points.at(-1);
@@ -119,9 +131,9 @@ const endCell = (adjustment: number, miter: string | null): string => signed(adj
 
 /** 欄の値と部材から予告を作る(点が無い時は空、読めない・作れない時は理由の文字)。 */
 export function frameLayoutView(state: FrameLayoutState, member: FrameMemberChoice): FrameLayoutView {
-  if (state.source === 'points' ? state.pointsText.trim() === '' : state.checkedEdges.length === 0) return { kind: 'empty' };
-  const parsed: ParsedLines = state.source === 'points' ? parseFrameLines(state.pointsText, state.closed)
-    : { ok: true, lines: checkedEdgeLines(state) };
+  const fromPoints = state.source !== 'edges';
+  if (fromPoints ? state.pointsText.trim() === '' : state.checkedEdges.length === 0) return { kind: 'empty' };
+  const parsed: ParsedLines = fromPoints ? parseFrameLines(state.pointsText, state.closed) : { ok: true, lines: checkedEdgeLines(state) };
   if (!parsed.ok) return { kind: 'error', message: parsed.message };
   const start = evaluateExpression(state.startExtension), end = evaluateExpression(state.endExtension);
   if (!start.ok || !end.ok) return { kind: 'error', message: t('catalog.frameLayout.error.badExtension') };

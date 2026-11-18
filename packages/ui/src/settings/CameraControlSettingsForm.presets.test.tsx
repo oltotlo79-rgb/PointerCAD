@@ -19,7 +19,8 @@ describe('camera settings presets and named binding rows', () => {
     // Two binding rows per action and the rotation and zoom centers (B-08d); the presets add none.
     expect(markup.match(/<select\b/g)).toHaveLength(6 + 2);
     expect(markup.match(/<fieldset>/g)).toHaveLength(3);
-    expect(markup.match(/type="checkbox"/g)).toHaveLength(28);
+    // 29: B-09 3-3 の「何も無い所からの左ドラッグで回す」のチェックが 1 つ増えた(CameraControlSettingsForm.test.tsx と同じ数)。
+    expect(markup.match(/type="checkbox"/g)).toHaveLength(29);
     expect(markup).toContain(`role="group" aria-label="${t('settings.camera.presets')}"`);
     for (const key of ['pointercad', 'solidworks', 'fusion', 'onshape'] as const) {
       expect(markup).toContain(`>${t(`settings.camera.preset.${key}`)}</button>`);

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it } from 'vitest';
 import { analyzeFatigueDetail, FATIGUE_DETAIL_INPUT_SCHEMA, fatigueDetailAreaMm2, validateFatigueDetailInput,
   type FatigueDetailResult } from './fatigueDetail.js';
@@ -6,7 +7,7 @@ import { analyzeFatigueDetail, FATIGUE_DETAIL_INPUT_SCHEMA, fatigueDetailAreaMm2
  * Expected values are written from the published formulas and tables below, independently of the implementation.
  * The S-N constants are TEST calibrations copied from a published recommended practice, not product defaults.
  *
- * [DNV] DNV-RP-C203 (August 2005, amended October 2006), https://rules.dnv.com/docs/pdf/dnvpm/codes/docs/2006-10/RP-C203.pdf:
+ * [DNV] DNV-RP-C203 (August 2005, amended October 2006),
  *   2.4.1 log N = log a - m log(Delta sigma); Table 2-1 (air): N <= 1e7 cycles m1 = 3, N > 1e7 cycles m2 = 5,
  *     F1: log a1 = 11.699, log a2 = 14.832, fatigue limit at 1e7 cycles 36.84 MPa;
  *     E:  log a1 = 12.010, log a2 = 15.350, fatigue limit at 1e7 cycles 46.78 MPa. Stress ranges in MPa.
@@ -15,9 +16,8 @@ import { analyzeFatigueDetail, FATIGUE_DETAIL_INPUT_SCHEMA, fatigueDetailAreaMm2
  *   Table A-8 details 6 and 7 (category E): fillet welds transmitting shear / fillet welded lap joint, stress range from
  *     the weld throat area considering the total length of the weld.
  *   Thickness effect (2.4.3): t = tref for t < tref = 25 mm, so no correction for the M20 bolt and the plates assumed here.
- * [ISO] Tensile stress area As = 0.7854 ((d2 + d3) / 2)^2 (Fastenal, Mechanical Properties per ISO 898-1, Rev 3-6-09,
- *   page 2, "Metric Thread Stress Areas", with its table of As in mm2,
- *   https://crafter.fastenal.com/static-assets/pdfs/Mechanical_Properties_of_Metric_Fasteners.pdf);
+ * [ISO] Tensile stress area As = 0.7854 ((d2 + d3) / 2)^2 (Mechanical Properties per ISO 898-1, Rev 3-6-09,
+ *   page 2, "Metric Thread Stress Areas", with its table of As in mm2).
  *   (d2 + d3) / 2 = d - 0.938194 P for ISO metric threads.
  */
 const DNV_SOURCE = { kind: 'user-supplied', reference: 'DNV-RP-C203 (2005, amended 2006) Table 2-1, air',
@@ -77,7 +77,7 @@ const WELD_INPUT = (rangeN = 80_000): Record<string, unknown> =>
   input(lapWeld(), forceLoading('W1', 'weld-group-concentric-shear-force', [forceHistory([0, rangeN])]), E_WELD_THROAT());
 
 describe('tensile stress area of ISO metric threads (independent oracle: published table)', () => {
-  // [ISO] Fastenal page 2 table, As in mm2 as printed; tolerance = half a unit of the last printed digit.
+  // [ISO] reference table page 2 table, As in mm2 as printed; tolerance = half a unit of the last printed digit.
   const table: readonly (readonly [number, number, number, number])[] = [
     [3, 0.5, 5.03, 0.005], [3.5, 0.6, 6.78, 0.005], [4, 0.7, 8.78, 0.005], [5, 0.8, 14.2, 0.05], [6, 1, 20.1, 0.05],
     [7, 1, 28.9, 0.05], [8, 1.25, 36.6, 0.05], [10, 1.5, 58, 0.5], [12, 1.75, 84.3, 0.05], [14, 2, 115, 0.5], [16, 2, 157, 0.5],

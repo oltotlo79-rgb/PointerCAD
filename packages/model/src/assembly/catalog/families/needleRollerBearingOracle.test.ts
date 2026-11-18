@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-25 ソリッド形針状ころ軸受 内輪なし(RNA48・RNA49 系)の表と、資料の 2 回目の独立の読み
  * (catalogOracles.fixture.ts の needleRollerBearing)の突合せ、寸法の整合と形の体積の検査。
@@ -30,11 +31,11 @@ describe('M-25 ソリッド形針状ころ軸受 内輪なし 資料の表との
   });
 
   it('出どころは資料の番号・SHA・頁だけを持ち、行は系列 → Fw の順で、寸法は Fw < D', () => {
-    expect(NEEDLE_ROLLER_BEARING_EVIDENCE.sha256).toBe(NEEDLE_ROLLER_BEARING_ORACLE.pdfSha256);
+    expect(NEEDLE_ROLLER_BEARING_EVIDENCE.reference).toBe(NEEDLE_ROLLER_BEARING_ORACLE.reference);
     const [first, last] = NEEDLE_ROLLER_BEARING_ORACLE.pages;
     expect(NEEDLE_ROLLER_BEARING_EVIDENCE.locator).toContain(`PDF ${first}〜${last} 頁`);
     expect(NEEDLE_ROLLER_BEARING_EVIDENCE.title.startsWith('資料 K4-1 ')).toBe(true);
-    expect(NEEDLE_ROLLER_BEARING_EVIDENCE.url).toBe('');
+    expect(NEEDLE_ROLLER_BEARING_EVIDENCE).not.toHaveProperty('url');
     const order = NEEDLE_ROLLER_BEARING_ROWS.map((row) => [row.size.slice(0, 5), row.dims.rollerInscribedDiameter] as const);
     expect(order).toEqual([...order].sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1]));
     for (const row of NEEDLE_ROLLER_BEARING_ROWS) {

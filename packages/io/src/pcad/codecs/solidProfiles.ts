@@ -27,7 +27,7 @@ import {
 import {
   type SolidFeatureBase,
 } from './solidBase.js';
-import { readComponentSource } from './componentSource.js';
+import { canonicalSteelOptions, readComponentSource } from './componentSource.js';
 import {
   DEFAULT_RULED_SPHERE_SEGMENTS,
   type RibSide,
@@ -81,7 +81,7 @@ function serializeSteelBendInput(input: SteelBendInput): SteelBendInput {
   const saved: SteelBendInput = {
     id: input.id, generatorRevision: input.generatorRevision, productKey: input.productKey,
     stockSource: { kind: 'standardPart', catalog: source.catalog, size: source.size,
-      options: Object.fromEntries(Object.entries(source.options).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)),
+      options: Object.fromEntries(Object.entries(canonicalSteelOptions(source)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)),
       catalogRevision: source.catalogRevision, generatorRevision: source.generatorRevision },
     radiusConvention: input.radiusConvention, legDimension: input.legDimension,
     radius: serializeExpression(input.radius), angleDegrees: serializeExpression(input.angleDegrees),

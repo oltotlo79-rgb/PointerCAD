@@ -1,5 +1,5 @@
 /**
- * 資料 SF-1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の製品の行(smallFrameRows.ts。1 本目の読みの値)が、2 本目の読みの文字
+ * 資料 1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の製品の行(smallFrameRows.ts。1 本目の読みの値)が、2 本目の読みの文字
  * (smallFrameOracle.fixture.json。読みの文字のまま)と 1 行ずつ一致する事の検査。fixture の文字は、この検査が自分で読み解く(行の表を作る道具の
  * 読み解きと別にする): 溝の組(面・口・中の幅・肩・中の高さ・口の中心〔中心・下から N・鎖寸法 P;…;本数=n の対称の並び〕)、穴(中心間 N の対・中心)、
  * ブラケット素材の角の面の端(右の端から・上の端から)、技術データ(a×10^n)。半円溝の組と寸法の記入の無い組は、作らない溝として数えない。
@@ -87,10 +87,11 @@ function holesOf(text: string, height: number): readonly string[] {
   return [...holes].sort();
 }
 
-describe('資料 SF-1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の製品の行と 2 本目の読み', () => {
+describe('資料 1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の製品の行と 2 本目の読み', () => {
   it('fixture の行は製品の行と同じ鍵の並びで、図の名前・型番の形の文字を持たない', () => {
     expect(FIXTURE.map((row) => row.key)).toEqual([...SMALL_FRAME_RECORDS, ...SMALL_FRAME_CAP_RECORDS, ...BRACKET_STOCK_RECORDS].map((record) => record.key));
-    for (const row of FIXTURE) expect(JSON.stringify(row), row.key).not.toMatch(/UF-|SS[0-9]|SF-15|S[0-9]{4}|M4[0-9]{4}/u);
+    // 型番の形の文字は、資料の型番の一部を書かずに一般の形(英字 2〜4 字 + ハイフン + 英数字)で確かめる(統括の決定 2026-11-18 14:4x)。
+    for (const row of FIXTURE) expect(JSON.stringify(row), row.key).not.toMatch(/UF-|SS[0-9]|[A-Z]{2,4}-[0-9A-Z]{2,}|S[0-9]{4}|M4[0-9]{4}/u);
   });
 
   it('小さい溝つきフレームの外形・作る溝・穴・単位質量・頁が 2 本目の文字と合う', () => {

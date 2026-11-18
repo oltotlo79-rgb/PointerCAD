@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-03 十字穴付き小ねじ(JIS B 1111-2017 本体規格のなべ・皿・チーズ)の表と、資料の 2 回目の独立の読み
  * (catalogOracles.fixture.ts の crossRecessedScrew)の突合せ、ねじの表との照合、長さの決まりと形の体積の検査。
@@ -58,11 +59,11 @@ describe('M-03 十字穴付き小ねじ 資料の表との突合せ', () => {
 
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版と長さの指定を凍結する', () => {
     expect(FAMILIES.every(([, family]) => family.rows.every((row) => row.evidence === CROSS_RECESSED_SCREW_EVIDENCE))).toBe(true);
-    expect(CROSS_RECESSED_SCREW_EVIDENCE?.sha256).toBe(CROSS_RECESSED_SCREW_ORACLE.pdfSha256);
+    expect(CROSS_RECESSED_SCREW_EVIDENCE?.reference).toBe(CROSS_RECESSED_SCREW_ORACLE.reference);
     expect(CROSS_RECESSED_SCREW_EVIDENCE?.locator).toContain(`PDF ${CROSS_RECESSED_SCREW_ORACLE.pages.pan} 頁`);
     expect(CROSS_RECESSED_SCREW_EVIDENCE?.locator).toContain(`PDF ${CROSS_RECESSED_SCREW_ORACLE.pages.countersunk} 頁`);
     expect(CROSS_RECESSED_SCREW_EVIDENCE?.title.startsWith('資料 K5-1 ')).toBe(true);
-    expect(CROSS_RECESSED_SCREW_EVIDENCE?.url).toBe('');
+    expect(CROSS_RECESSED_SCREW_EVIDENCE).not.toHaveProperty('url');
     expect(FAMILIES.map(([, family]) => [family.id, family.kindKey, family.catalogRevision, family.generatorRevision])).toEqual([
       ['cross-recessed-pan-head-screw', 'catalog.mechanical.kind.panHeadScrew', 'cross-recessed-screw-2026-11-r1', 'screw-1'],
       ['cross-recessed-countersunk-screw', 'catalog.mechanical.kind.countersunkScrew', 'cross-recessed-screw-2026-11-r1', 'screw-1'],

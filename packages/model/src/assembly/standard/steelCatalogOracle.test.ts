@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { H_BEAM_ADDITION_ORACLE } from './steelHBeamOracle.fixture.js';
 import { STEEL_SECTION_ADDITION_ORACLE } from './steelAngleChannelOracle.fixture.js';
 import { readFileSync } from 'node:fs';
@@ -168,7 +169,7 @@ describe('independent 31-row steel catalog oracle', () => {
       expect(row.exactAreaMm2.kind).toBe('computed');
       for (const value of Object.values(row.dimensions)) {
         expect(value.kind).toBe('source');
-        expect(value.citation.url).toMatch(/^https:/);
+        expect(value.citation.reference).not.toBe('');
         expect(value.citation.locator.length).toBeGreaterThan(0);
       }
       if (row.grade === 'S45C') {
@@ -208,7 +209,7 @@ describe('independent 31-row steel catalog oracle', () => {
       expect(row.standardLengthsMm).toMatchObject({ kind: 'unverified', value: null });
       for (const dimension of Object.values(row.dimensions)) {
         expect(dimension.kind).toBe('source');
-        expect(dimension.citation.url).toMatch(/^https:/);
+        expect(dimension.citation.reference).not.toBe('');
         expect(dimension.citation.locator.length).toBeGreaterThan(0);
       }
     }

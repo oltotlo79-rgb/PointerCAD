@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-16 圧縮コイルばね(寸法を指定して作る): 指定の範囲、形が成り立つ条件、形(今のばねのフィーチャー)と体積、保存の形の検査。
  * 表を持たない族なので、照合の fixture は無い(設計 §5.9「ばねは形の検査と範囲の外の拒否の検査にする」)。
@@ -38,7 +39,7 @@ describe('M-16 圧縮コイルばね', () => {
       ['wireDiameter', 'lengthExpression', undefined, undefined, '2'], ['meanDiameter', 'lengthExpression', undefined, undefined, '16'],
       ['freeLength', 'lengthExpression', undefined, undefined, '50'], ['totalCoils', 'numberExpression', 1, undefined, '8']]);
     expect(COMPRESSION_SPRING_EVIDENCE.title.startsWith('資料 K4-6 ')).toBe(true);
-    expect(COMPRESSION_SPRING_EVIDENCE.url).toBe('');
+    expect(COMPRESSION_SPRING_EVIDENCE).not.toHaveProperty('url');
   });
 
   it('既定の寸法で組め、今のばねのフィーチャーの値は らせんの長さ L0 − d・ピッチ (L0 − d)/Nt・右巻き', async () => {

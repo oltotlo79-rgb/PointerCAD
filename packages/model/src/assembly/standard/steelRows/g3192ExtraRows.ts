@@ -1,6 +1,5 @@
 /**
- * JISF JIS G 3192（熱間圧延形鋼）改正原案 2024-07-24 の表9（不等辺山形鋼）・表11（I 形鋼）の行。
- * 資料: docs_kouzai_0400JISG3192_20240724.pdf（SHA-256 は steelCatalog.ts の STEEL_EVIDENCE.ssUnequalAngleDraft・ssIBeamDraft）。
+ * JIS G 3192（熱間圧延形鋼）改正原案 2024-07-24 の表9（不等辺山形鋼）・表11（I 形鋼）の行。
  * 値は印刷の文字のまま。断面積と単位質量は原案の表6 の式による原案の値。
  */
 /** 表9: [A, B, t, r1, r2, 断面積（cm²）, 単位質量（kg/m）, PDF の頁] */

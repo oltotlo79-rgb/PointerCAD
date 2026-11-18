@@ -35,7 +35,7 @@ export const FUNCTION_SIZE_BASELINE = [
   { file: 'packages/model/src/sketch/constraints/solve.ts', functions: [['createLevenbergMarquardtJob', 218]] },
   { file: 'packages/model/src/sketch/constraints/variables.ts', functions: [['collectVariables', 228]] },
   { file: 'packages/ui/src/appearance/AppearanceSection.tsx', functions: [['AppearanceSection', 299]] },
-  { file: 'packages/ui/src/assembly/StandardPartPickerPanel.tsx', functions: [['StandardPartPicker', 368]] },
+  { file: 'packages/ui/src/assembly/StandardPartPickerPanel.tsx', functions: [['StandardPartPicker', 353]] },
   { file: 'packages/ui/src/assembly/attachAssembly.ts', functions: [['attachAssembly', 507], ['attachAssembly::calculate', 294]] },
   { file: 'packages/ui/src/commands/attachRadialMenuGesture.ts', functions: [['attachRadialMenuGesture', 204]] },
   { file: 'packages/ui/src/drawing/DrawingCanvas.tsx', functions: [['DrawingCanvas', 332]] },

@@ -2,11 +2,13 @@
  * ボルト締結(追加要件6・J-02)の打ちかけで面を選ぶ操作と、確定の操作。状態の欄と操作の宣言は `AssemblySlice` のまま、
  * 動作だけを `createAssemblySlice` から取り出した(円の溶接・フレームの辺を選ぶ途中と同じ形)。
  *
- * 新しい締結は穴が 1 組でも一括の口で予告・確定し、4 面の後に Shift で選んだ穴は 2 組目からの穴として足し外しする。
+ * 新しい締結は穴が 1 組でも一括の口で予告・確定し、4 面の後に Shift で選んだ穴と、当たり(同じ穴フィーチャーのほかの穴。J-02c)の穴は
+ * 2 組目からの穴として足し外しする。
  * 確定は全部の組を 1 つの新しい文書にして `applyAssembly` を 1 回だけ呼ぶ(元に戻す 1 回で全部が消える)。
  */
-import { findBoltedJointRecord } from '@pointercad/model';
+import { findBoltedJointRecord, isSameSubShape } from '@pointercad/model';
 
+import { boltedJointHoleHints } from '../assembly/boltedJointHoleHints.js';
 import {
   appendBoltedJointPick, BOLTED_JOINT_PICK_COUNT, boltedJointPreviewReady, commitBoltedJointDraft, commitBoltedJointSetDraft,
   previewBoltedJointDraft, toggleBoltedJointExtraHole, type AssemblyBoltedJointDraft, type BoltedJointDraftPreview,
@@ -68,8 +70,12 @@ Pick<AppState, 'pickBoltedJointFace' | 'commitBoltedJoint' | 'beginBoltedJointRe
       const state = get();
       const draft = state.assemblyBoltedJointDraft;
       if (draft === null || draft.documentId !== state.activeDocumentId || state.assembly === null) return false;
-      const next = add && draft.picks.length >= BOLTED_JOINT_PICK_COUNT ? toggleBoltedJointExtraHole(draft, target)
-        : appendBoltedJointPick(draft, target);
+      // 4 面の後は、Shift で選んだ穴か、当たり(同じ穴フィーチャーのほかの穴。J-02c)の穴を 2 組目からの穴として足し外しする。
+      const full = draft.picks.length >= BOLTED_JOINT_PICK_COUNT;
+      const view = state.assemblyView;
+      const hinted = full && !add && view !== null && target.kind === 'subShape' && boltedJointHoleHints(state.assembly, view, draft)
+        .some((hint) => hint.target.componentId === target.componentId && isSameSubShape(hint.target.ref, target.ref));
+      const next = full && (add || hinted) ? toggleBoltedJointExtraHole(draft, target) : appendBoltedJointPick(draft, target);
       if (next === null) return false;
       set({ assemblyBoltedJointDraft: next, assemblyBoltedJointPreview: boltedJointPreviewFor(state, next) });
       return true;

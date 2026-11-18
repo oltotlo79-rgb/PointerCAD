@@ -1,5 +1,6 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
- * 資料 SF-1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の 3 族の検査: 族の版と欄、行の名乗りと出どころ、形の押し出しと名前、
+ * 資料 1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の 3 族の検査: 族の版と欄、行の名乗りと出どころ、形の押し出しと名前、
  * 体積は面積 × 長さ(キャップは面積 × 厚さ)、質量は単位質量 × 長さ(キャップは資料の 1 個の値)、作った溝だけを行が持つ事、簡略の印、全部の行で形が作れる事。
  * 製品が使う口(族の定数と行の表)だけを通して確かめる。
  */
@@ -21,7 +22,7 @@ function rowOf(family: CatalogFamily, key: string): CatalogItemRow {
   return row;
 }
 
-describe('資料 SF-1 の小さい溝つきフレーム・端のキャップ・ブラケット素材', () => {
+describe('資料 1 の小さい溝つきフレーム・端のキャップ・ブラケット素材', () => {
   // 小さい溝つきフレームは 14 行(左右の形が 2 本の読みとも違って見えた 2 品目は入れない。統括 2026-11-18 02:2x)。
   it('族は 3 つで、版・欄・線図・数え方を凍結し、行の数は 14・6・2、行は規格の行を名乗らない', () => {
     expect(FAMILIES.map((family) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision, family.stock,
@@ -39,8 +40,8 @@ describe('資料 SF-1 の小さい溝つきフレーム・端のキャップ・�
     for (const family of FAMILIES) {
       expect(new Set(family.rows.map((row) => row.size)).size).toBe(family.rows.length);
       for (const row of family.rows) {
-        expect([row.standardLabel, row.verification, row.verified, row.evidence.sha256, row.evidence.url], row.key)
-          .toEqual(['製造元の寸法に合わせた物', 'manufacturer-catalog', true, '', '']);
+        expect([row.standardLabel, row.verification, row.verified, row.evidence.reference], row.key)
+          .toEqual(['製造元の寸法に合わせた物', 'manufacturer-catalog', true, '']);
         expect(row.evidence.locator, row.key).toMatch(/^PDF 33[789] 頁 /);
         expect(row.size + row.key, row.key).not.toMatch(/[A-Z]{2,}-?[0-9]|UF|SS[0-9]/);
         expect(row.simplified?.length ?? 0, row.key).toBeGreaterThan(0);

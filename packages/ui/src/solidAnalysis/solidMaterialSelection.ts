@@ -41,26 +41,15 @@ export function solidMaterialCapacityMatches(value: AnalysisMaterialCapacity | n
   const selection = selectSolidMaterial(solidMaterialDraftOf(value));
   if (!selection.ok || selection.capacity === null || selection.source === null || value.sourceSnapshot === undefined) return false;
   const source = value.sourceSnapshot, current = selection.source;
-  const keys: readonly (keyof StrengthSource)[] = ['url', 'publisher', 'locator', 'checkedDate', 'standard', 'standardEdition', 'evidence', 'sha256'];
+  const keys: readonly (keyof StrengthSource)[] = ['label', 'standard', 'standardEdition', 'evidence', 'revision'];
   return value.condition === selection.capacity.condition && value.yieldMPa === selection.capacity.yieldMPa
     && value.sourceId === selection.capacity.sourceId && value.evidence === selection.capacity.evidence
     && value.basis === selection.capacity.basis && Reflect.ownKeys(source).length === keys.length
     && keys.every(key => source[key] === current[key]);
 }
 
-export function solidMaterialSourceUrl(source: Pick<StrengthSource, 'url'>): string | null {
-  try {
-    const url = new URL(source.url);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? source.url : null;
-  } catch { return null; }
-}
-
-/** A catalogue value may be copied only with its own complete, inspectable provenance. */
 export function solidMaterialSourceComplete(source: StrengthSource | undefined): source is StrengthSource {
-  if (source === undefined || solidMaterialSourceUrl(source) === null || !/^[0-9a-f]{64}$/u.test(source.sha256)
-    || source.locator.trim() === '' || !/^\d{4}-\d{2}-\d{2}$/u.test(source.checkedDate)) return false;
-  const date = new Date(source.checkedDate);
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === source.checkedDate;
+  return source !== undefined && source.label.trim() !== '' && Number.isSafeInteger(source.revision) && source.revision > 0;
 }
 
 export function solidMaterialYoung(preset: StrengthMaterialPreset | null | undefined):

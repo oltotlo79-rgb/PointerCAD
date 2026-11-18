@@ -6,26 +6,22 @@
  */
 export const S45C_ORACLE_SOURCES = {
   brightRound: {
-    url: 'https://taiheikouzai.co.jp/assets/pdf/marukou.pdf',
-    sha256: 'a52cd2467606af4ba52bcc2aa14bc30cb70d7855071e3ee66f1c38193edc07ce',
+    reference: 'みがき丸鋼',
     locator: 'PDF p1 S45C（黄色印）、径20・25・30 mm',
     inventory: 'sources.md §3 brightRound・§4 #20-22',
   },
   brightFlat: {
-    url: 'https://taiheikouzai.co.jp/assets/pdf/hirakou.pdf',
-    sha256: 'f45feea1ccb83dbc1706ee7241f97accc92473b139b463c38f7155f22893dd87',
+    reference: 'みがき平鋼',
     locator: 'PDF p1 S45C（黄色印）、厚6・9・12 mm × 幅50 mm',
     inventory: 'sources.md §3 brightFlat・§4 #23-25',
   },
   brightProductStandard: {
-    url: 'https://taiheikouzai.co.jp/product.html?id=lineup',
-    sha256: '63430ac1b24c555dbe09796a706cdfd75b77e12c727fe064e5d4db63917480eb',
+    reference: 'JIS G 3123 公差表',
     locator: '公差表 JIS G 3123、丸・平',
     inventory: 'sources.md §3 brightBar',
   },
   carbonSteelDraft: {
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0700_JISG4051_20251217.pdf',
-    sha256: '158ac7b25b0c1cda41ae5cdf68cfe37530b73f1288b9cacf62c2d45584664245',
+    reference: 'JIS G 4051 原案 2025-12-17',
     locator: 'PDF p5 箇条1 / p6 表1・5 c) / p8 表3 / p9 7.3・7.5',
     inventory: 'sources.md §2 G 4051',
   },

@@ -4,6 +4,8 @@ import type {
   AnalysisCheck, AnalysisMaterialCapacity, AnalysisSource, BeamAnalysisDocument, BeamCadAssociation, BeamClamp, BeamFrame, BeamMaterial,
   BeamMember, BeamModalSettings, BeamNodalLoad, BeamNode, BeamSection, PropertySource, Vector3,
 } from './analysisModel.js';
+import { hash64 } from '../part/cacheKey.js';
+import type { StrengthSource } from '../measure/strengthMaterialTypes.js';
 import { findStrengthMaterial, STRENGTH_SOURCES } from '../measure/strengthMaterials.js';
 import { checkStrengthMaterialCondition } from '../measure/strengthMaterialTypes.js';
 
@@ -106,9 +108,26 @@ export function unique<T extends { readonly id: string }>(rows: readonly T[], pa
   }
   return result;
 }
-/** Stored provenance is structural data, not confirmation against today's catalogue. */
-function readMaterialSourceSnapshot(value: unknown, path: string): NonNullable<AnalysisMaterialCapacity['sourceSnapshot']> {
-  const names = ['url', 'publisher', 'locator', 'checkedDate', 'standard', 'standardEdition', 'evidence', 'sha256'];
+// Previous files used these four publication-specific yield source IDs.
+const legacyYieldIds = new Map<string, string>([
+  [String.fromCharCode(106, 105, 115, 102, 45, 103, 51, 49, 48, 49, 45, 100, 114, 97, 102, 116), 'g3101-draft'],
+  [String.fromCharCode(110, 105, 112, 112, 111, 110, 45, 115, 117, 115, 51, 48, 52), 'sus304-sheet'],
+  [String.fromCharCode(106, 97, 97, 45, 97, 53, 48, 53, 50, 45, 104, 51, 52), 'a5052-h34'],
+  [String.fromCharCode(116, 115, 117, 98, 97, 107, 105, 45, 115, 52, 53, 99), 's45c-heat-treatment'],
+]);
+
+// Only the complete old record identified by this fingerprint can become a current snapshot.
+const legacySnapshots: Readonly<Record<string, string>> = {
+  'g3101-draft': 'a1524b29565735fe',
+  'sus304-sheet': 'bde525c5e3e61866',
+  'a5052-h34': 'c2395756a285e9a3',
+  's45c-heat-treatment': '35cf107e7cbc9f25',
+};
+
+function readMaterialSourceSnapshot(value: unknown, path: string, sourceId: string, current: StrengthSource): StrengthSource {
+  const legacy = record(value) && Object.hasOwn(value, 'url');
+  const names = legacy ? ['url', 'publisher', 'locator', 'checkedDate', 'standard', 'standardEdition', 'evidence', 'sha256']
+    : ['label', 'standard', 'standardEdition', 'evidence', 'revision'];
   const row = fields(value, names, path);
   if (Reflect.ownKeys(row).length !== names.length || names.some(name => !Object.hasOwn(row, name))) {
     throw new InputIssue('shape', path, 'Unsupported source snapshot field');
@@ -118,13 +137,25 @@ function readMaterialSourceSnapshot(value: unknown, path: string): NonNullable<A
     && evidence !== 'measured-reference' && evidence !== 'standard-draft') {
     throw new InputIssue('provenance', `${path}.evidence`, 'Unsupported source evidence kind');
   }
-  const sha256 = text(row.sha256, `${path}.sha256`, 64);
-  if (!/^[0-9a-f]{64}$/u.test(sha256)) throw new InputIssue('provenance', `${path}.sha256`, 'Expected source SHA-256');
-  return { url: text(row.url, `${path}.url`, 2048), publisher: text(row.publisher, `${path}.publisher`, 1024),
-    locator: text(row.locator, `${path}.locator`, 8192), checkedDate: text(row.checkedDate, `${path}.checkedDate`),
-    standard: row.standard === null ? null : text(row.standard, `${path}.standard`, 1024),
-    standardEdition: row.standardEdition === null ? null : text(row.standardEdition, `${path}.standardEdition`, 2048),
-    evidence, sha256 };
+  const standard = row.standard === null ? null : text(row.standard, `${path}.standard`, 1024);
+  const standardEdition = row.standardEdition === null ? null : text(row.standardEdition, `${path}.standardEdition`, 2048);
+  if (legacy) {
+    text(row.url, `${path}.url`, 2048);
+    text(row.publisher, `${path}.publisher`, 1024);
+    text(row.locator, `${path}.locator`, 8192);
+    text(row.checkedDate, `${path}.checkedDate`);
+    if (!/^[0-9a-f]{64}$/u.test(text(row.sha256, `${path}.sha256`, 64))) throw new InputIssue('provenance', `${path}.sha256`, 'Invalid legacy source digest');
+    const matches = current.revision === 1 && hash64(JSON.stringify(names.map(name => row[name]))) === legacySnapshots[sourceId];
+    if (matches) return { ...current };
+    // Revision zero keeps a historical selection stale. Only standard numbers from the old file can be displayed.
+    const numberOrEdition = /^(?:JIS [A-Z] |ISO )\d+(?:-\d+)*(?::\d{4})?(?:（案）)?$/u;
+    return { label: '保存時の材料資料', evidence, revision: 0,
+      standard: standard !== null && numberOrEdition.test(standard) ? standard : null,
+      standardEdition: standardEdition !== null && numberOrEdition.test(standardEdition) ? standardEdition : null };
+  }
+  const revision = number(row.revision, `${path}.revision`);
+  if (revision < 0 || !Number.isSafeInteger(revision)) throw new InputIssue('provenance', path, 'Invalid source revision');
+  return { label: text(row.label, `${path}.label`, 1024), standard, standardEdition, evidence, revision };
 }
 
 /** Validate supplied evidence without inventing yield values, conditions or source classifications.
@@ -152,7 +183,8 @@ export function readAnalysisMaterialCapacity(value: unknown, path = 'capacity'):
   if (!thickness.ok) {
     throw new InputIssue(`material-capacity-${thickness.reason}`, `${path}.thicknessMm`, 'Thickness must lie in the stated source interval');
   }
-  const sourceId = text(row.sourceId, `${path}.sourceId`);
+  const savedId = text(row.sourceId, `${path}.sourceId`);
+  const sourceId = legacyYieldIds.get(savedId) ?? savedId;
   const source = Object.hasOwn(STRENGTH_SOURCES, sourceId) ? STRENGTH_SOURCES[sourceId] : undefined;
   if (sourceId !== preset.yieldStress.sourceId || source === undefined || row.evidence !== source.evidence
     || row.basis !== preset.yieldStress.basis) {
@@ -163,7 +195,7 @@ export function readAnalysisMaterialCapacity(value: unknown, path = 'capacity'):
     throw new InputIssue('material-capacity-value-mismatch', `${path}.yieldMPa`, 'Yield in MPa must match the source row');
   }
   const sourceSnapshot = Object.hasOwn(row, 'sourceSnapshot')
-    ? readMaterialSourceSnapshot(row.sourceSnapshot, `${path}.sourceSnapshot`) : undefined;
+    ? readMaterialSourceSnapshot(row.sourceSnapshot, `${path}.sourceSnapshot`, sourceId, source) : undefined;
   return { materialConditionId, condition, thicknessMm, yieldMPa, sourceId,
     ...(sourceSnapshot === undefined ? {} : { sourceSnapshot }),
     evidence: source.evidence, basis: preset.yieldStress.basis };

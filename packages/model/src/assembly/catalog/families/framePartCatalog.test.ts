@@ -1,5 +1,6 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
- * 資料 SF-1 のフレームの部品の 4 族(T 溝用ナットの素材・T 溝用ナット・丸ナット・端のキャップ)の検査: 族の版・欄・線図・数え方、
+ * 資料 1 のフレームの部品の 4 族(T 溝用ナットの素材・T 溝用ナット・丸ナット・端のキャップ)の検査: 族の版・欄・線図・数え方、
  * 行の名乗り(規格の欄・出どころ・note・簡略の印)、全部の行で形が作れる事、質量が資料の値(素材は単位質量 × 長さ、ほかは 1 個の値)である事、
  * 体積が形の式と合う事、素材の断面の外形、登録口を通した保存の形と切断の一覧。製品が使う口(族の書き出しと行の表)を通して確かめる。
  */
@@ -18,6 +19,7 @@ import {
 import { createCatalogRegistry } from '../registry.js';
 import { catalogItemNominalMass, catalogItemRejection, createCatalogItemSource } from '../source.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
+import { BOSS_FOOT_RECORDS } from './bossFootRows.js';
 import {
   ADJUSTER_FAMILY, ANGLE_BRACKET_CATALOG_FAMILY, FLAT_PLATE_FAMILY, FOOT_BASE_FAMILY, FRAME_CAP_FAMILY, ROUND_NUT_FAMILY, SHAPED_PLATE_FAMILY,
   T_SLOT_NUT_BAR_FAMILY, T_SLOT_NUT_FAMILY,
@@ -38,7 +40,7 @@ function rowOf(family: CatalogFamily, key: string): CatalogItemRow {
   return row;
 }
 
-describe('資料 SF-1 のフレームの部品の 9 族', () => {
+describe('資料 1 のフレームの部品の 9 族', () => {
   it('族の id・群・種類の鍵・版・線図・数え方・欄を凍結し、行は行の表の行を同じ順で持つ', () => {
     expect(FAMILIES.map((family) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision, family.diagram,
       family.stock, family.options.map((spec) => [spec.key, spec.defaultValue])])).toEqual([
@@ -57,12 +59,13 @@ describe('資料 SF-1 のフレームの部品の 9 族', () => {
       ['t-slot-adjuster', 'aluminumFrame', 'catalog.frame.kind.adjuster', 't-slot-adjuster-2026-11-r1', 'frame-part-1', 'adjuster', 'count', []],
     ]);
     // L 形のブラケットの族は、両脚の穴が決まった行の後に、寝た脚の穴を作らない行(統括の決定 2026-11-18 08:4x の (B))を持つ。
+    // ベースの板の族は、穴の決まった板の後に、ボス付きの板(取付け穴は作らず印。統括の決定 2026-11-18 13:4x の (1))を持つ。
     const records = [T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS, ROUND_NUT_RECORDS, FRAME_CAP_RECORDS, FLAT_PLATE_RECORDS, SHAPED_PLATE_RECORDS,
-      [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS], FOOT_BASE_RECORDS, ADJUSTER_RECORDS];
+      [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS], [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS], ADJUSTER_RECORDS];
     expect(FAMILIES.map((family) => family.rows.map((row) => [row.key, row.size])))
       .toEqual(records.map((list) => list.map((record) => [record.key, record.size])));
-    expect(records.map((list) => list.length)).toEqual([12, 120, 4, 51, 11, 15, 51, 66, 6]);
-    expect(HARD_BRACKET_RECORDS.length).toBe(3);
+    expect(records.map((list) => list.length)).toEqual([12, 120, 4, 51, 11, 15, 51, 69, 6]);
+    expect([HARD_BRACKET_RECORDS.length, BOSS_FOOT_RECORDS.length]).toEqual([3, 1]);
   });
 
   it('行は規格の行を名乗らず、出どころは資料の番号と頁だけで、note と簡略の印は行の表の印から作る', () => {
@@ -77,8 +80,8 @@ describe('資料 SF-1 のフレームの部品の 9 族', () => {
       const row = rowOf(family, key);
       expect([row.standardLabel, row.materialLabel, row.densityMaterialId, row.verification, row.verified, row.simplified, row.note])
         .toEqual(['製造元の寸法に合わせた物', materialLabel, density, 'manufacturer-catalog', true, simplified, note]);
-      expect([row.evidence.title, row.evidence.edition, row.evidence.url, row.evidence.sha256, row.evidence.fetchedDate]).toEqual([
-        '資料 SF-1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', null, '', '', '']);
+      expect([row.evidence.title, row.evidence.edition, row.evidence.reference]).toEqual([
+        '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', null, '']);
       expect(row.evidence.locator).toMatch(/^PDF [0-9]+ 頁 部品の図\(寸法\)と質量の記入$/u);
     }
   });
@@ -171,7 +174,7 @@ describe('資料 SF-1 のフレームの部品の 9 族', () => {
   });
 });
 
-describe('資料 SF-1 の部品の読み直しで足した 4 族(平板の L・T・十字、L 形のブラケット、ベースの板、アジャスター)', () => {
+describe('資料 1 の部品の読み直しで足した 4 族(平板の L・T・十字、L 形のブラケット、ベースの板、アジャスター)', () => {
   it('体積は形の関数と同じ式、質量は持つ行だけ資料の値で、簡略の印は族ごとの決まりどおり', () => {
     for (const record of SHAPED_PLATE_RECORDS) {
       const row = rowOf(SHAPED_PLATE_FAMILY, record.key);
@@ -272,7 +275,7 @@ describe('1 個のナットの形の拡張(穴の位置・ボールとストッ�
 
 describe('部位ごとに材料の違う行(密度なし。統括の決定 2026-11-18 08:1x)', () => {
   it('材料が mixed の行は密度を持たず、部品表の材質は資料の材質の文字、質量は資料の 1 個の値。ほかの行は今までどおり材料の密度を持つ', () => {
-    const records = [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...FOOT_BASE_RECORDS, ...ADJUSTER_RECORDS];
+    const records = [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS, ...ADJUSTER_RECORDS];
     const mixed = records.filter((record) => record.material === 'mixed');
     // 今の製品の 2 行(座が樹脂でねじが鋼)も部位ごとに材料の違う行に直した(統括の決定 2026-11-18 08:1x。鍵は変えない)。
     expect(mixed.map((record) => record.key)).toEqual(['m8-d20-l15-nylon', 'm8-d30-l34-mixed', 'm8-d40-l24-nylon']);
@@ -305,9 +308,9 @@ describe('今の製品のアジャスター 2 行を、部位ごとに材料の�
 });
 
 describe('L の外形のベースの板(統括の決定 2026-11-18 09:3x の 3)', () => {
-  it('外形の頂点を持つ行は 6 行で、頂点は直角の 6 つ、外接の長方形が幅 × 奥行、体積は多角形の面積 − 穴の面積 × 厚さ、呼びに「L 形」', () => {
+  it('外形の頂点を持つ行は 8 行(23 回目の読みで 2 行足した)で、頂点は直角の 6 つ、外接の長方形が幅 × 奥行、体積は多角形の面積 − 穴の面積 × 厚さ、呼びに「L 形」', () => {
     const shaped = FOOT_BASE_RECORDS.filter((record) => record.outline !== undefined);
-    expect(shaped.length).toBe(6);
+    expect(shaped.length).toBe(8);
     for (const record of shaped) {
       const outline = record.outline ?? [];
       const area = outline.reduce((sum, [x1, y1], index) => {

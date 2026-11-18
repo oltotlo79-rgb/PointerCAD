@@ -1,5 +1,6 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
- * 資料 SF-1 の共通フレームの 5 族(チャンネル・角パイプ・丸棒〔カラーを含む〕・フラットバー・アングル)の検査: 族の版と行の名乗り、
+ * 資料 1 の共通フレームの 5 族(チャンネル・角パイプ・丸棒〔カラーを含む〕・フラットバー・アングル)の検査: 族の版と行の名乗り、
  * 実物どおりの断面(角の丸み無し)の輪の面積と断面 2 次モーメント・断面係数が式と合い、製品の行は表の Ix・Iy・Zx・Zy と
  * 印字の最後の桁の半分 + 1% の内で合う事、質量が単位質量 × 長さ、断面の外形、成り立たない寸法を断る事。
  * 製品が使う口(登録口が読む `ALUMINUM_SECTION_FAMILIES` と、族が読む行の表 `ALUMINUM_SECTION_RECORDS`)だけを通して確かめる。種類ごとの代表の行を使う。
@@ -69,7 +70,7 @@ function printedTolerance(value: number): number {
   return 0.5 * 10 ** -decimals + 0.01 * value;
 }
 
-describe('資料 SF-1 の共通フレームの 5 族', () => {
+describe('資料 1 の共通フレームの 5 族', () => {
   it('族は種類ごとに 5 つで、版・欄・線図を凍結し、行は規格の行を名乗らず出どころは資料の番号と表の頁だけ', () => {
     // 欄は任意の留めの欄(J-01 包み 5・6。miterOption.test.ts)を除いて凍結する。
     expect(KINDS.map((kind) => FAMILIES[kind]).map((family) => [family.id, family.group, family.kindKey, family.catalogRevision,
@@ -92,9 +93,9 @@ describe('資料 SF-1 の共通フレームの 5 族', () => {
     }
     const row = FAMILIES.flatBar.rows.find((candidate) => candidate.key === 'fb-20x5');
     expect([row?.standardLabel, row?.materialLabel, row?.densityMaterialId, row?.verification, row?.verified, row?.note,
-      row?.evidence.title, row?.evidence.locator, row?.evidence.sha256, row?.evidence.url]).toEqual(['製造元の寸法に合わせた物', 'アルミ',
-      'aluminum', 'manufacturer-catalog', true, '質量は単位質量の値', '資料 SF-1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)',
-      'PDF 334 頁 共通フレームの表(寸法・単位質量・Ix・Iy・Zx・Zy)', '', '']);
+      row?.evidence.title, row?.evidence.locator, row?.evidence.reference]).toEqual(['製造元の寸法に合わせた物', 'アルミ',
+      'aluminum', 'manufacturer-catalog', true, '質量は単位質量の値', '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)',
+      'PDF 334 頁 共通フレームの表(寸法・単位質量・Ix・Iy・Zx・Zy)', '']);
     expect(row?.dims).toEqual({ height: 20, thickness: 5, unitMassKgPerM: 0.27, ixCm4: 0.3333, iyCm4: 0.0208, zxCm3: 0.333, zyCm3: 0.083 });
   });
 

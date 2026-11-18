@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it } from 'vitest';
 import type { AnalysisMaterialCapacity } from '@pointercad/model/beam-analysis';
 import type { SolidAnalysisInput } from './solidAnalysisModel.js';
@@ -8,7 +9,7 @@ import { summarizeSolidYield } from './solidYieldSummary.js';
 function capacity(thick = false): AnalysisMaterialCapacity {
   // Existing W01 catalog / analysisMaterialCapacity.test.ts independent published-draft rows.
   return { materialConditionId: thick ? 'ss400-plate-16-40' : 'ss400-plate-0-16',
-    yieldMPa: thick ? 235 : 245, sourceId: 'jisf-g3101-draft', thicknessMm: thick ? 40 : 16,
+    yieldMPa: thick ? 235 : 245, sourceId: 'g3101-draft', thicknessMm: thick ? 40 : 16,
     condition: '圧延鋼板（熱処理の指定なし）', evidence: 'standard-draft', basis: 'minimum' };
 }
 function fixture(force = 1): SolidAnalysisInput {

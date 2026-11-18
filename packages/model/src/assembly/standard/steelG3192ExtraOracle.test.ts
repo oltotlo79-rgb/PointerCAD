@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * S-03 不等辺山形鋼（JIS G 3192 表9）と S-05 I 形鋼（表11）の独立の転記との突合せ、質量の検算、断面の形の検査。
  *
@@ -56,8 +57,8 @@ describe('JIS G 3192 表9・表11 の独立の転記との突合せ', () => {
     const text = readFileSync(new URL('./steelG3192ExtraOracle.fixture.ts', import.meta.url), 'utf8');
     const file = ts.createSourceFile('fixture.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     expect(file.statements.filter((node) => ts.isImportDeclaration(node) || ts.isExportDeclaration(node))).toEqual([]);
-    expect(STEEL_EVIDENCE.ssUnequalAngleDraft.sha256).toBe(G3192_EXTRA_ORACLE.pdfSha256);
-    expect(STEEL_EVIDENCE.ssIBeamDraft.sha256).toBe(G3192_EXTRA_ORACLE.pdfSha256);
+    expect(STEEL_EVIDENCE.ssUnequalAngleDraft.reference).toBe(G3192_EXTRA_ORACLE.reference);
+    expect(STEEL_EVIDENCE.ssIBeamDraft.reference).toBe(G3192_EXTRA_ORACLE.reference);
   });
 });
 

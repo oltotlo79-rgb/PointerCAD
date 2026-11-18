@@ -1,7 +1,7 @@
 /**
  * 族: 六角ボルト JIS B 1180-2014 本体規格の呼び径六角ボルト(並目ねじ、M2〜M64)。M-01(設計 §2.3、M22 以上・150 mm を超える長さの拡張)。
  *
- * 寸法は資料 K5-5(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の表の
+ * 寸法は資料 K5-5(規格の抜粋)の表の
  * ピッチ P・ねじ長さ b(参考。呼び長さ ℓ≦125・125＜ℓ≦200・ℓ＞200 の 3 欄)・k(基準寸法)・s(基準寸法＝最大)を、
  * 頁の画像から読んだ 1 回目の転記。2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の hexBoltMain で、検査が照らす。
  * 資料の表は M1.6〜M64 だが、M1.6 はねじの表(`thread/metricThread.ts`)に無いので入れない(28 行)。第 2 選択の呼びは行の note に書く。
@@ -15,14 +15,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildHexBoltPart, hexBoltVolume, type HexBoltDimensions } from '../profiles/screw.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const HEX_BOLT_MAIN_EVIDENCE = {
   title: '資料 K5-5 六角ボルトの規格の抜粋(JIS B 1180-2014 本体規格 呼び径六角ボルト)',
   edition: '2014',
-  url: '',
+
   locator: 'PDF 60 頁(冊子 57 頁)呼び径六角ボルト並目ねじの表: d・P・b(参考、3 欄)・k(基準寸法)・s(基準寸法＝最大)、表の注',
-  sha256: '3190760da7e0f1fca1d90282bb7165f3f07c23ac7616f6c8abe49e413ad64227',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-5',
 } as const;
 
 /** 資料の第 2 選択の呼び。 */

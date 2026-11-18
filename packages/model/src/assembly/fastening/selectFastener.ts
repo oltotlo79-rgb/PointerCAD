@@ -14,7 +14,7 @@
 import {
   findHexBolt, findHexNut, findPlainWasher, findSpringWasher, HEX_BOLT_NOMINAL_LENGTHS, HEX_BOLT_TABLE,
 } from '../standard/fasteners.js';
-import { hexBoltMainEvidence, hexBoltMainThreadLength, MISUMI_HEX_BOLT_SOURCE } from '../standard/hexBoltEvidence.js';
+import { hexBoltMainEvidence, hexBoltMainThreadLength, HEX_BOLT_SOURCE } from '../standard/hexBoltEvidence.js';
 import type { FastenerDimensionSeries, HexBoltRow, HexNutRow } from '../standard/types.js';
 import { findMetricThread, metricThreadPitch, type ThreadSeries } from '../../thread/metricThread.js';
 import {
@@ -131,7 +131,7 @@ export function globalUnverifiedLengthAvailability(boltRowKey: string): BoltLeng
 }
 
 /**
- * 本体規格・並目の六角ボルトの、径ごとの推奨呼び長さ(ミスミの JIS B 1180:2014 抜粋。`hexBoltEvidence.ts`)。
+ * 本体規格・並目の六角ボルトの、径ごとの推奨呼び長さ( JIS B 1180:2014 抜粋。`hexBoltEvidence.ts`)。
  * 実行時の寸法表の本体規格の行と、ねじ部の長さ b が一致する呼びだけを確認済みとして返す
  * (表どうしの食い違いを黙って採らない)。附属書JA・細目ねじには使わない。
  */
@@ -140,7 +140,7 @@ export function verifiedMainLengthAvailability(): BoltLengthAvailability[] {
     const evidence = row.dimensionSeries === 'main' ? hexBoltMainEvidence(row.size) : undefined;
     if (evidence === undefined || evidence.threadLength.upTo125 !== row.b1) return [];
     return [{ boltRowKey: row.key, lengths: evidence.recommendedLengths, basis: 'perDiameterEvidence' as const,
-      verified: true, source: MISUMI_HEX_BOLT_SOURCE, threadSeries: 'coarse' as const }];
+      verified: true, source: HEX_BOLT_SOURCE, threadSeries: 'coarse' as const }];
   });
 }
 

@@ -1,5 +1,6 @@
 import {
-  DEFAULT_VIEW_CONTROLS, viewOrbitCenter, viewZoomCenter, type ViewAction, type ViewControlOptions, type ViewControlSettings,
+  DEFAULT_VIEW_CONTROLS, viewLeftEmptyOrbit, viewOrbitCenter, viewZoomCenter, type ViewAction, type ViewControlOptions,
+  type ViewControlSettings,
 } from '../settings/viewControlSettings.js';
 import {
   dragZoomDelta, KEY_PAN_PIXELS, keyOrbitPixels, keyZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewKeyMove,
@@ -19,6 +20,11 @@ export interface CameraControls {
   goHome(): void;
   /** 直前の視点へ戻る(B-08c)。戻れる視点が無い時と 4 分割の表示の間は何もせず false。 */
   previousView(): boolean;
+  /**
+   * 何も当たらない所の左の押下を預かる(B-09 3-3)。設定が切・ドラッグ中・回せない区画なら false(預からない)。
+   * 預かったら 6px を超えて動いた時から回し、動かさずに離した時は onClick を呼ぶ(呼ぶ側が今までどおり選択を解く)。
+   */
+  beginEmptyLeftDrag(event: PointerEvent, onClick: () => void): boolean;
   detach(): void;
 }
 
@@ -86,8 +92,9 @@ export function attachCameraControls(
   let state: OrbitState = HOME_ORBIT;
   let dragMode: 'orbit' | 'pan' | 'zoom' | null = null;
   let dragPointer: number | null = null;
-  let rightStart: { readonly x: number; readonly y: number } | null = null;
-  let rightPanning = false;
+  // 押した所から 6px を超えるまで動かさない押下(右の平行移動と、B-09 3-3 の左の回転)。動かさずに離した左は click を呼ぶ。
+  let thresholdStart: { readonly x: number; readonly y: number; readonly button: number; readonly click: (() => void) | null } | null = null;
+  let thresholdPassed = false;
   let dragButtons = 0;
   let dragSettings = readSettings();
   let lastX = 0;
@@ -131,17 +138,28 @@ export function attachCameraControls(
     const action = viewDragAction(settings, event);
     if (action === null) return;
     if (action === 'orbit' && override?.getOrbit() != null && !override.canOrbit()) return;
+    startDrag(event, action, settings, event.button === 2 ? null : undefined);
+  }
+
+  function beginEmptyLeftDrag(event: PointerEvent, onClick: () => void): boolean {
+    const settings = readSettings();
+    if (dragMode !== null || event.button !== 0 || !viewLeftEmptyOrbit(settings.options)
+      || (override?.getOrbit() != null && !override.canOrbit())) return false;
+    startDrag(event, 'orbit', settings, onClick);
+    return true;
+  }
+
+  /** click が undefined でなければ、6px を超えるまで動かさない(null は右の平行移動、関数は左の回転の預かり)。 */
+  function startDrag(event: PointerEvent, action: ViewAction, settings: ViewControlSettings, click: (() => void) | null | undefined): void {
     dragMode = action;
     dragCenter = centerFor(action, settings.options, event.clientX, event.clientY);
     dragButtons = event.buttons;
     dragSettings = settings;
-    const isRightPan = event.button === 2;
-
     lastX = event.clientX;
     lastY = event.clientY;
     dragPointer = event.pointerId;
-    rightStart = isRightPan ? { x: lastX, y: lastY } : null;
-    rightPanning = false;
+    thresholdStart = click === undefined ? null : { x: lastX, y: lastY, button: event.button, click };
+    thresholdPassed = false;
     // ビューポートの外へ出ても操作が続くようにする。
     canvas.setPointerCapture(event.pointerId);
     onInteractionChange(true);
@@ -160,9 +178,9 @@ export function attachCameraControls(
   }
 
   function updateDrag(event: PointerEvent): void {
-    if (rightStart !== null && !rightPanning) {
-      if (!exceedsRightDragThreshold(rightStart, event)) return;
-      rightPanning = true;
+    if (thresholdStart !== null && !thresholdPassed) {
+      if (!exceedsRightDragThreshold(thresholdStart, event)) return;
+      thresholdPassed = true;
       // Include the initial six pixels so the grabbed point stays under the pointer.
     }
     const deltaX = event.clientX - lastX;
@@ -177,11 +195,14 @@ export function attachCameraControls(
 
   function endDrag(event: PointerEvent): void {
     if (dragMode === null || event.pointerId !== dragPointer) return;
-    if (rightStart !== null && event.type === 'pointerup') {
-      if (event.button !== 2) return;
+    if (thresholdStart !== null && event.type === 'pointerup') {
+      if (event.button !== thresholdStart.button) return;
       if (event.buttons === 0) updateDrag(event);
     }
+    // 預かった左を動かさずに離した時だけ、呼ぶ側の押下(選択を解く)を行う。取り消し・捕捉が外れた時は呼ばない。
+    const click = event.type === 'pointerup' && !thresholdPassed ? thresholdStart?.click ?? null : null;
     cancelDrag();
+    click?.();
   }
 
   function cancelDrag(): void {
@@ -190,8 +211,8 @@ export function attachCameraControls(
     dragMode = null;
     dragCenter = null;
     dragPointer = null;
-    rightStart = null;
-    rightPanning = false;
+    thresholdStart = null;
+    thresholdPassed = false;
     onInteractionChange(false);
     if (pointer !== null && canvas.hasPointerCapture(pointer)) {
       canvas.releasePointerCapture(pointer);
@@ -275,6 +296,7 @@ export function attachCameraControls(
     setOrbit,
     goHome,
     previousView,
+    beginEmptyLeftDrag,
     detach: () => {
       cancelDrag();
       canvas.removeEventListener('pointerdown', beginDrag);

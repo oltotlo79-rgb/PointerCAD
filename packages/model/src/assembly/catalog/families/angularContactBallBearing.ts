@@ -2,7 +2,7 @@
  * 族: 単列アンギュラ玉軸受(70・72・73 系、内径 10〜100)。M-23(設計 §2.3)。
  *
  * 寸法は資料 K4-1(深溝玉軸受と同じ転がり軸受の寸法表の分冊、下の `ANGULAR_CONTACT_BALL_BEARING_EVIDENCE`、
- * PDF の SHA-256 と頁を記録)の主要寸法 d・D・B・r(最小)・r1(最小)を、頁の画像から読んだ 1 回目の転記。
+ * 資料の番号 と頁を記録)の主要寸法 d・D・B・r(最小)・r1(最小)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の angularContactBallBearing で、検査が照らす。
  * 行は呼び番号ごと。接触角の記号 無表示・B・C と呼び接触角 30°・40°・15° の割り当ては、資料の表(PDF 29〜37 頁の
  * 各頁)の注 2) による(規格の決まりではなく資料の注記を根拠にする。行の `note` に頁と一緒に書く)。主要寸法は記号に
@@ -13,14 +13,13 @@
 import { buildRadialBearingPart, radialBearingVolume, type RadialBearingDimensions } from '../profiles/radialBearing.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const ANGULAR_CONTACT_BALL_BEARING_EVIDENCE = {
   title: '資料 K4-1 単列アンギュラ玉軸受の寸法表(製造元の公開カタログ)',
   edition: null,
-  url: '',
+
   locator: 'PDF 29〜37 頁(冊子 B56〜B73)単列アンギュラ玉軸受の表: 主要寸法 d・D・B・r(最小)・r1(最小)、注 2)(接触角の記号と呼び接触角)',
-  sha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
-  fetchedDate: '2026-11-15',
+  reference: 'K4-1',
 } as const;
 
 /** [記号なしの呼び番号, d, D, B, r(最小), r1(最小)](mm)。系列ごとに内径の順。 */

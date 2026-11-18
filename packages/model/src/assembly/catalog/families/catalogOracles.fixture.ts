@@ -116,7 +116,7 @@
  */
 export const CATALOG_ORACLES = {
   camFollower: {
-    pdfSha256: 'daa923f4475f5b102e412990f22749962e1f238164c717d42b6c50eb4e9e7875',
+    reference: 'K4-2',
     page: 5,
     rows: [
       ['10', '7', '3', 'M3×0.5', '5', '17', '9'],
@@ -155,7 +155,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   wrappedBush: {
-    pdfSha256: '0a678b4ffc91f638d54202b00266ddd292719ebbde506ebb8829bcab4903637c',
+    reference: 'K4-3',
     page: 1,
     rows: [
       [3, 5, '1.0', [3, 4, 5, 6]],
@@ -183,7 +183,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   parallelPin: {
-    pdfSha256: 'a504c54f1c2a59acae3e3c309de11f2fa5e7b7661112469d816b67c9afba912c',
+    reference: 'K4-4',
     rows: [
       ['0.6', '0.12'],
       ['0.8', '0.16'],
@@ -208,7 +208,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   hexNut: {
-    pdfSha256: 'dc474470742c2ef7bd48178fd3823f57e09278dca3c38e91be676b1df9d7bec2',
+    reference: 'K4-5',
     rows: [
       ['M1.6', '1.30', '1.05', '−', '−', '−', '−', '1.00', '0.75', '0.75', '3.20', '3.02', '2.90', '−'],
       ['M2', '1.60', '1.35', '−', '−', '−', '−', '1.20', '0.95', '0.95', '4.00', '3.82', '3.70', '−'],
@@ -242,7 +242,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   rollerFollower: {
-    pdfSha256: 'daa923f4475f5b102e412990f22749962e1f238164c717d42b6c50eb4e9e7875',
+    reference: 'K4-2',
     page: 9,
     rows: [
       ['5', '16', '11', '12', '0.3'],
@@ -276,7 +276,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   angularContactBallBearing: {
-    pdfSha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
+    reference: 'K4-1',
     pages: [29, 37],
     contactAngles: [['', '30'], ['B', '40'], ['C', '15']],
     rows: [
@@ -466,7 +466,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   thrustBallBearing: {
-    pdfSha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
+    reference: 'K4-1',
     pages: [166, 168],
     rows: [
       ['51100', '10', '24', '9', '0.3', '24', '11'],
@@ -512,7 +512,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   cylindricalRollerBearing: {
-    pdfSha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
+    reference: 'K4-1',
     pages: [68, 75],
     rows: [
       ['N204', '0', '20', '47', '14', '1', '0.6'],
@@ -1026,7 +1026,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   needleRollerBearing: {
-    pdfSha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
+    reference: 'K4-1',
     pages: [210, 213],
     rows: [
       ['RNA4900', '14', '22', '13', '0.3'],
@@ -1066,7 +1066,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   crossRecessedScrew: {
-    pdfSha256: 'efb714eb3395e71e3a0106b93898cc096bdaa3520cbe77c2f1d7cf014eaf8ee2',
+    reference: 'K5-1',
     pages: { pan: 12, cheese: 12, countersunk: 13, raisedCountersunk: 13 },
     pan: [
         ['M1.6', '0.35', '25', '3.2', '1.30'],
@@ -1118,7 +1118,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   plainWasher: {
-    pdfSha256: '0e1f80e2c1f45ef4d8a6bdc5905c1d3eb10668c171f23cd78b340904c4eb3a15',
+    reference: 'K5-2',
     page: 1,
     normal: [
       ['1.6', '1', '1.70', '4.0', '0.3'],
@@ -1176,7 +1176,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   springWasher: {
-    pdfSha256: 'ff5daab30f540dbc5a99db6aae28851a4ca35ee29b9a5dc4fd79d494b1ad42c6',
+    reference: 'K5-3',
     page: 1,
     number2: [
       ['2', '0', '2.1', '4.4', '0.9', '0.5'],
@@ -1219,7 +1219,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   socketHeadCapScrew: {
-    pdfSha256: '908dc5efd20f7d017641ad4d2e0e6c53082687067dcd152d42f3986168312d71',
+    reference: 'K5-4',
     pages: [1, 2],
     rows: [
       ['M1.6', '', '0.35', '15', '3.00', '1.60', '1.5', '0.7'],
@@ -1252,7 +1252,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   countersunkSocketScrew: {
-    pdfSha256: '908dc5efd20f7d017641ad4d2e0e6c53082687067dcd152d42f3986168312d71',
+    reference: 'K5-4',
     page: 19,
     rows: [
       ['M3', '0.5', '18', '6.72', '1.86', '2', '1.1'],
@@ -1268,7 +1268,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   hexBoltMain: {
-    pdfSha256: '3190760da7e0f1fca1d90282bb7165f3f07c23ac7616f6c8abe49e413ad64227',
+    reference: 'K5-5',
     page: 60,
     rows: [
       ['M1.6', '1', '0.35', '9', '(15)', '(28)', '1.1', '3.20'],
@@ -1303,7 +1303,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   buttonHeadScrew: {
-    pdfSha256: '908dc5efd20f7d017641ad4d2e0e6c53082687067dcd152d42f3986168312d71',
+    reference: 'K5-4',
     page: 20,
     rows: [
       ['M3', '0.5', '18', '5.70', '1.65', '2', '1.04'],
@@ -1317,7 +1317,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   eRing: {
-    pdfSha256: '901e5bdacea3014bdf2bea82ec3fbd19a4184974c00489c2ffabf109454f86fa',
+    reference: 'K5-6',
     page: 35,
     rows: [
       ['0.8', '', '0.8', '2', '0.7', '0.2', '0.3', '1.0', '1.4', '0.82', '0.30'],
@@ -1341,7 +1341,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   largePlainWasher: {
-    pdfSha256: '901e5bdacea3014bdf2bea82ec3fbd19a4184974c00489c2ffabf109454f86fa',
+    reference: 'K5-6',
     page: 10,
     rows: [
       ['3', '1', '3.20', '9.00', '0.8'],
@@ -1365,7 +1365,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   parallelKey: {
-    pdfSha256: '21d6ba014768c639a5eca26039584e519189ba55bc1a2b3d517c39e46a8febfe',
+    reference: 'K5-7',
     page: 13,
     rows: [
       ['2×2', '2', '2'],
@@ -1403,7 +1403,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   taperPin: {
-    pdfSha256: '21d6ba014768c639a5eca26039584e519189ba55bc1a2b3d517c39e46a8febfe',
+    reference: 'K5-7',
     page: 9,
     rows: [
       ['0.6', '0.08'],
@@ -1429,7 +1429,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   splitPin: {
-    pdfSha256: '21d6ba014768c639a5eca26039584e519189ba55bc1a2b3d517c39e46a8febfe',
+    reference: 'K5-7',
     page: 4,
     rows: [
       ['0.6', '', '0.5', '1', '2', '1.6'],
@@ -1459,7 +1459,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   flangeNut: {
-    pdfSha256: 'e931685e59ad349d57ff22f63fbe10bc4f9e9868f2b667bb541943440e37ae1a',
+    reference: 'K5-8',
     page: 1,
     rows: [
       ['M5', '', '0.8', '1.0', '11.8', '5.00', '8.00'],
@@ -1473,7 +1473,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   setScrew: {
-    pdfSha256: '908dc5efd20f7d017641ad4d2e0e6c53082687067dcd152d42f3986168312d71',
+    reference: 'K5-4',
     pages: [28, 30],
     dims: [
       ['M2', '0.4', '0.9', '0.8', '1.7', '1.00', '1.00', '1.00', '0.75', '1.25', '0.5'],
@@ -1547,7 +1547,7 @@ export const CATALOG_ORACLES = {
     ],
   },
   oRing: {
-    pdfSha256: 'b4053026976f6e8f77252b784957e414d2d83f406897402b886069929ae3f6dd',
+    reference: 'K5-9',
     pages: [83, 87],
     P: [
       ['P3', '2.8', '1.9'],

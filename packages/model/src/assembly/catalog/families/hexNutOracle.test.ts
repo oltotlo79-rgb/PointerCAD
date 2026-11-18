@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-05 六角ナットの拡張(JIS B 1181:2014 本体)の 3 つの族と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の hexNut)の突合せ、
  * 今の六角ナットの表との重なりが無い事、形と体積の検査。
@@ -56,9 +57,9 @@ describe('M-05 六角ナットの拡張 資料の表との突合せ', () => {
   });
 
   it('出どころは資料の番号・SHA・頁だけを持ち、行の鍵は種類の記号とねじの呼びで重ならない', () => {
-    expect(HEX_NUT_EXTENDED_EVIDENCE.sha256).toBe(HEX_NUT_ORACLE.pdfSha256);
+    expect(HEX_NUT_EXTENDED_EVIDENCE.reference).toBe(HEX_NUT_ORACLE.reference);
     expect(HEX_NUT_EXTENDED_EVIDENCE.title.startsWith('資料 K4-5 ')).toBe(true);
-    expect(HEX_NUT_EXTENDED_EVIDENCE.url).toBe('');
+    expect(HEX_NUT_EXTENDED_EVIDENCE).not.toHaveProperty('url');
     const keys = [...HEX_NUT_STYLE1_ROWS, ...HEX_NUT_STYLE2_ROWS, ...HEX_NUT_THIN_ROWS].map((row) => row.key);
     expect(new Set(keys).size).toBe(60);
     for (const key of keys) expect(key).toMatch(/^(S1|S2|T)-M[0-9.]+$/u);

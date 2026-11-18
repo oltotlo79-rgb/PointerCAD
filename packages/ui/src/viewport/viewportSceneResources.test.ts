@@ -58,13 +58,15 @@ describe('光源・方眼・各層の作成と破棄の登録', () => {
     const scene = new THREE.Scene();
     const { layers, labels, assemblyAfter } = layersWithLabels(scene);
     expect(labels).toEqual(['sky light', 'key light', 'grid material', 'grid geometry', 'axis geometry', 'solidLayer',
-      'interferenceLayer', 'analysisFieldLayer', 'analysisModeLayer', 'canvasLayer', 'sketchLayer', 'referenceLayer',
+      'interferenceLayer', 'jointCheckLayer', 'stretchPreviewLayer', 'holeHintLayer', 'frameStrokeLayer', 'analysisFieldLayer',
+      'analysisModeLayer', 'canvasLayer', 'sketchLayer', 'referenceLayer',
       'trackingLayer', 'constraintLayer', 'inferenceLayer', 'measureLayer', 'cylinderBasisLayer',
       'planar basis origin', 'planar basis x', 'planar basis y']);
     // 配置した部品の層は Scene 側が作って台帳へ入れる。呼ぶ位置は立体の層の直後。
     expect(assemblyAfter).toEqual(['solidLayer']);
     const expected: THREE.Object3D[] = [layers.skyLight, layers.keyLight, layers.gridGroup, layers.solidLayer.group,
-      layers.assemblyLayer.group, layers.interferenceLayer.group, layers.analysisFieldLayer.group,
+      layers.assemblyLayer.group, layers.interferenceLayer.group, layers.jointCheckLayer.group, layers.stretchPreviewLayer.group,
+      layers.holeHintLayer.group, layers.frameStrokeLayer.group, layers.analysisFieldLayer.group,
       layers.analysisModeLayer.group, layers.canvasLayer.group, layers.sketchLayer.group, layers.referenceLayer.group,
       layers.trackingLayer.group, layers.constraintLayer.group, layers.inferenceLayer.group, layers.measureLayer.group,
       layers.cylinderBasisLayer.group, ...layers.planarBasisLayers.map(layer => layer.group)];
@@ -99,7 +101,8 @@ describe('光源・方眼・各層の作成と破棄の登録', () => {
     registerSceneLayerCleanup(recorder, layers, { dispose: () => { environmentDisposals += 1; } },
       { returnResources: () => { repairReturns += 1; return true; } }, { dispose: () => { rendererDisposals += 1; } });
     expect(registered).toEqual(['environment', 'reference repair preview', 'solid layer', 'assembly layer',
-      'interference layer', 'analysis field layer', 'analysis mode layer', 'canvas images and textures', 'sketch layer',
+      'interference layer', 'joint check layer', 'stretch preview layer', 'hole hint layer', 'frame stroke layer',
+      'analysis field layer', 'analysis mode layer', 'canvas images and textures', 'sketch layer',
       'reference layer', 'tracking layer', 'constraint layer', 'inference layer', 'measure layer', 'cylinder basis layer',
       'planar basis layer 0', 'planar basis layer 1', 'planar basis layer 2', 'grid geometry', 'axis geometry',
       'grid material', 'sky light', 'key light', 'renderer']);

@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { buildSteelStockList, STEEL_EVIDENCE, steelSectionCatalogs,
   type FastenerDimensionSeries, type ThreadSeries,
@@ -6,8 +7,16 @@ import { useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
 import { CatalogFamilyPicker } from './CatalogFamilyPicker.js';
+import { DimensionFigure } from './DimensionFigure.js';
+import { standardFigurePart } from './dimensionTable.js';
 import {
-  ALUMINUM_FRAME_PICKER_CATEGORY, familyPickerCategory, isFamilyPickerCategory, MECHANICAL_PICKER_CATEGORY, type FamilyPickerCategory,
+  defaultLengthSource, pickerJumpState, STANDARD_PART_CATEGORY_LABELS, type CatalogFamilyStart, type PickerCategory,
+  type PickerJumpTarget, standardPlacedTarget,
+} from './catalogSearch.js';
+import { PickerSearch } from './PickerSearch.js';
+import { rememberPlacedPart } from './recentStandardParts.js';
+import {
+  ALUMINUM_FRAME_PICKER_CATEGORY, familyPickerCategory, isFamilyPickerCategory, MECHANICAL_PICKER_CATEGORY,
 } from './catalogFamilyChoices.js';
 import { useCatalogFamilies } from './CatalogLoadStatus.js';
 import { FrameMemberTools } from './FrameMemberTools.js';
@@ -27,17 +36,6 @@ import {
   STRUCTURAL_MATERIAL_CHOICES, type StructuralMaterialChoice, type StandardPartCategory,
   steelPartDimensionGroups, steelPartChoiceAtDimension, steelShapeLabelKey,
 } from './standardPartPicker.js';
-
-const CATEGORY_LABELS: Readonly<Record<StandardPartCategory, Parameters<typeof t>[0]>> = {
-  hexBolt: 'assembly.standardPart.hexBolt',
-  hexNut: 'assembly.standardPart.hexNut',
-  plainWasher: 'assembly.standardPart.plainWasher',
-  springWasher: 'assembly.standardPart.springWasher',
-  socketHeadCapScrew: 'assembly.standardPart.socketHeadCapScrew',
-  panHeadScrew: 'assembly.standardPart.panHeadScrew',
-  deepGrooveBallBearing: 'assembly.standardPart.deepGrooveBallBearing',
-  structuralSection: 'assembly.standardPart.structuralSection',
-};
 
 const STEEL_CONDITION_LABELS = {
   'hotRolled-heatTreatmentUnspecified': 'assembly.steel.hotRolled',
@@ -60,12 +58,9 @@ function categoryFrom(value: string): StandardPartCategory | null {
   return STANDARD_PART_CATEGORIES.find((category) => category === value) ?? null;
 }
 
-/** 選ぶ窓の分類: 今の 8 分類と、登録口の族の分類(「アルミフレーム」「機械要素」。保存には使わない値)。 */
-type PickerCategory = StandardPartCategory | FamilyPickerCategory;
-
 /** 分類の欄の選択肢: 今の 8 分類と、登録口の族の「アルミフレーム」「機械要素」(保存には使わない値)。 */
 function categoryOptions(): React.JSX.Element[] {
-  return [...STANDARD_PART_CATEGORIES.map((item) => <option key={item} value={item}>{t(CATEGORY_LABELS[item])}</option>),
+  return [...STANDARD_PART_CATEGORIES.map((item) => <option key={item} value={item}>{t(STANDARD_PART_CATEGORY_LABELS[item])}</option>),
     <option key={ALUMINUM_FRAME_PICKER_CATEGORY} value={ALUMINUM_FRAME_PICKER_CATEGORY}>{t('catalog.frame.category')}</option>,
     <option key={MECHANICAL_PICKER_CATEGORY} value={MECHANICAL_PICKER_CATEGORY}>{t('catalog.mechanical.category')}</option>];
 }
@@ -88,6 +83,28 @@ export function SteelStandardEditionNote({ standardEdition }: {
       <br /><span>{standard.verificationNote}</span>
     </p>;
   })}</>;
+}
+
+/** 選んだ鋼材の規格・状態・形の種類・長さ・出どころの注(窓の下の状態の欄。StandardPartPicker から分けた。K-07a)。 */
+function steelChoiceNotes(steel: SteelProduct): React.JSX.Element {
+  return (
+    <div className="pcad-popover__hint" role="status">
+      <p>{steel.materialStandard} / {steel.evidence === 'flat' && steel.materialGrade === 'SS400'
+        ? t('assembly.steel.producerFlatDimensions') : steel.productStandard}</p>
+      <SteelStandardEditionNote standardEdition={steel.standardEdition} />
+      <p>{t(STEEL_CONDITION_LABELS[steel.condition])}</p>
+      <p>{t(steel.geometry === 'simplifiedSection'
+        ? 'assembly.steel.simplified' : steel.geometry === 'profileSection'
+          ? 'assembly.steel.profile' : 'assembly.steel.nominal')}</p>
+      <p>{t('assembly.steel.lengthBounds')}</p>
+      <p>{t('assembly.steel.catalogLengths')} {steel.standardLengthsMm.length === 0
+        ? t('assembly.steel.unknownLength') : `${steel.standardLengthsMm.join(' / ')} mm`}</p>
+      <p>{STEEL_EVIDENCE[steel.evidence].title}</p>
+      {steel.materialEvidence === undefined ? null : <p>{t('assembly.steel.gradeSource')} · {STEEL_EVIDENCE[steel.materialEvidence].title}</p>}
+      {steel.profileEvidence === undefined ? null : <p>{t('assembly.steel.profileSource')} · {steel.profileEvidence.title}</p>}
+      <p>{t('assembly.steel.referenceOnly')}</p>
+    </div>
+  );
 }
 
 /** Non-modal picker that keeps the last choice so Enter can place repeated parts. */
@@ -120,13 +137,16 @@ export function StandardPartPicker(): React.JSX.Element | null {
   const [csvStatus, setCsvStatus] = useState('');
   const [stockOpen, setStockOpen] = useState(false);
   const [bendEdit, setBendEdit] = useState<SteelBendEditTarget | null>(null);
+  const [jump, setJump] = useState<{ readonly count: number; readonly family: CatalogFamilyStart | null }>({ count: 0, family: null });
   const catalogState = useCatalogFamilies(open, familyPickerCategory(category));
+  // 開いた時は最初の欄(分類)へ焦点を入れ、閉じた時は開いた元(メニューから開いた時はメニューの釦)へ戻す(C-03)。
+  // 分類によって窓の form が替わる(族の分類は CatalogFamilyPicker)ので、窓の箱は両方の form が持つ class で探す。
+  useDialogFocus(() => document.querySelector<HTMLElement>('.pcad-popover--standard-part'), open, { initial: () => first.current });
 
   useEffect(() => {
     composing.current = false;
     compositionKey.current = false;
-    if (open) first.current?.focus();
-    else setBendEdit(null);
+    if (!open) setBendEdit(null);
   }, [open]);
   useEffect(() => () => {
     const pending = pendingCsv.current;
@@ -148,11 +168,19 @@ export function StandardPartPicker(): React.JSX.Element | null {
     if (next === null) return;
     setCategory(next);
     if (!isFamilyPickerCategory(next)) setChoiceKey(defaultStandardPartChoice(next, dimensionSeries).key);
-    setLengthSource(next === 'structuralSection' ? '1000' : '30');
-    setError(null);
+    setLengthSource(defaultLengthSource(next));
+    setError(null); setJump({ count: jump.count, family: null });
   };
-  if (isFamilyPickerCategory(category)) return <CatalogFamilyPicker key={category} group={category} firstRef={first}
-    catalogState={catalogState} onCategory={changeCategory} categoryOptions={categoryOptions()} />;
+  // 検索の行を選んだ時: 分類・寸法系・鋼材の材質と断面・呼びを選び直す。族の窓は初めの値を渡して作り直す(K-07a)。
+  const jumpTo = (target: PickerJumpTarget): void => {
+    const next = pickerJumpState(target, { category, choiceKey, lengthSource, dimensionSeries });
+    setCategory(next.category); setChoiceKey(next.choiceKey); setLengthSource(next.lengthSource); setDimensionSeries(next.dimensionSeries);
+    if (next.steel !== null) { setSteelMaterial(next.steel.material); if (next.steel.shape !== null) setSteelShape(next.steel.shape); }
+    setJump({ count: jump.count + 1, family: next.family }); setError(null);
+  };
+  if (isFamilyPickerCategory(category)) return <CatalogFamilyPicker key={`${category}:${String(jump.count)}`} group={category}
+    firstRef={first} catalogState={catalogState} onCategory={changeCategory} categoryOptions={categoryOptions()} start={jump.family}
+    onJump={jumpTo} />;
   const selectedBend = selectedSteelBendEditTarget({ ...useAppStore.getState(), assembly, assemblyLibrary: library, selection });
   const isSteel = category === 'structuralSection';
   const stock = isSteel && stockOpen && assembly !== null
@@ -218,13 +246,14 @@ export function StandardPartPicker(): React.JSX.Element | null {
     }
     if (useAppStore.getState().placeStandardPart(
       category, choice.key, lengthSource, dimensionSeries, threadSeries,
-    )) setError(null);
+    )) { setError(null); rememberPlacedPart(standardPlacedTarget(category, choice.key, dimensionSeries, { material: steelMaterial, shape: activeShape ?? null }, lengthSource)); }
   };
 
   return (
     <form className="pcad-popover pcad-popover--standard-part" role="dialog"
       aria-label={t('assembly.standardPart.title')} {...pickerFormProps({ composing, compositionKey }, submit)}>
       <DraggableWindowTitle className="pcad-popover__title">{t('assembly.standardPart.title')}</DraggableWindowTitle>
+      <PickerSearch onPick={jumpTo} />
       {selectedBend === null ? null : <button type="button" className="pcad-button"
         title={t('assembly.steel.bend.reedit.entryGuide')} onClick={() => { setBendEdit(selectedBend); }}>
         {t('assembly.steel.bend.reedit.entry')}</button>}
@@ -356,33 +385,9 @@ export function StandardPartPicker(): React.JSX.Element | null {
           </label>
         ) : null}
       </div>
-      {isSteel && steelMaterial === 'unspecified' ? <p className="pcad-popover__hint" role="status">
-        {t('assembly.steel.unspecifiedHint')}</p> : null}
-      {steel === undefined ? null : (
-        <div className="pcad-popover__hint" role="status">
-          <p>{steel.materialStandard} / {steel.evidence === 'flat' && steel.materialGrade === 'SS400'
-            ? t('assembly.steel.producerFlatDimensions') : steel.productStandard}</p>
-          <SteelStandardEditionNote standardEdition={steel.standardEdition} />
-          <p>{t(STEEL_CONDITION_LABELS[steel.condition])}</p>
-          <p>{t(steel.geometry === 'simplifiedSection'
-            ? 'assembly.steel.simplified' : steel.geometry === 'profileSection'
-              ? 'assembly.steel.profile' : 'assembly.steel.nominal')}</p>
-          <p>{t('assembly.steel.lengthBounds')}</p>
-          <p>{t('assembly.steel.catalogLengths')} {steel.standardLengthsMm.length === 0
-            ? t('assembly.steel.unknownLength') : `${steel.standardLengthsMm.join(' / ')} mm`}</p>
-          <a href={STEEL_EVIDENCE[steel.evidence].url} target="_blank" rel="noreferrer"
-            title={STEEL_EVIDENCE[steel.evidence].locator}>{STEEL_EVIDENCE[steel.evidence].title}</a>
-          {steel.materialEvidence === undefined ? null : <p>
-            <a href={STEEL_EVIDENCE[steel.materialEvidence].url} target="_blank" rel="noreferrer"
-              title={STEEL_EVIDENCE[steel.materialEvidence].locator}>{t('assembly.steel.gradeSource')}</a>
-          </p>}
-          {steel.profileEvidence === undefined ? null : <p>
-            <a href={steel.profileEvidence.url} target="_blank" rel="noreferrer"
-              title={steel.profileEvidence.locator}>{t('assembly.steel.profileSource')}</a>
-          </p>}
-          <p>{t('assembly.steel.referenceOnly')}</p>
-        </div>
-      )}
+      <DimensionFigure part={standardFigurePart(category, choice, dimensionSeries, threadSeries)} />
+      {isSteel && steelMaterial === 'unspecified' ? <p className="pcad-popover__hint" role="status">{t('assembly.steel.unspecifiedHint')}</p> : null}
+      {steel === undefined ? null : steelChoiceNotes(steel)}
       {steel === undefined || bending || editing ? null : <FrameMemberTools member={{ kind: 'steel', choiceKey: choice.key }} />}
       {!isSteel || assembly === null ? null : (
         <details className="pcad-popover__hint" open={stockOpen}

@@ -20,4 +20,7 @@ export { attachUnsavedChangesGuard } from './file/unsavedChangesGuard.js';
 // デスクトップ版の入口が preload の口を確かめて渡す形。
 export type { CloseRequestTarget } from './file/unsavedChangesGuard.js';
 export { setOfflineGateway } from './settings/offlineGateway.js';
+// デスクトップ版の入口だけが入れる 3D マウス(多軸の入力機器)の印の口(B-09 3-5)。
+export { setSixDofAccess } from './settings/sixDofAccess.js';
+export type { SixDofAccess } from './settings/sixDofAccess.js';
 export type { OfflineGateway, OfflineStatus } from './settings/offlineGateway.js';

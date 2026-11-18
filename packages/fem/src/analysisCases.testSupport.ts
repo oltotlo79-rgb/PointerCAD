@@ -86,11 +86,11 @@ export async function analysisInputChecks():Promise<string[]>{
 
 async function analysisCapacityChecks(checks: string[]): Promise<void> {
   const rows = [
-    ['ss400-plate-0-16', 245, 'jisf-g3101-draft', 16],
-    ['ss400-plate-16-40', 235, 'jisf-g3101-draft', 40],
-    ['ss400-plate-40-100', 215, 'jisf-g3101-draft', 100],
-    ['s45c-normalized-reference', 345, 'tsubaki-s45c', null],
-    ['s45c-quenched-tempered-reference', 490, 'tsubaki-s45c', null],
+    ['ss400-plate-0-16', 245, 'g3101-draft', 16],
+    ['ss400-plate-16-40', 235, 'g3101-draft', 40],
+    ['ss400-plate-40-100', 215, 'g3101-draft', 100],
+    ['s45c-normalized-reference', 345, 's45c-heat-treatment', null],
+    ['s45c-quenched-tempered-reference', 490, 's45c-heat-treatment', null],
   ] as const;
   for (const [materialConditionId, yieldMPa, sourceId, thicknessMm] of rows) {
     const preset = findStrengthMaterial(materialConditionId); assert(preset);
@@ -112,7 +112,7 @@ async function analysisCapacityChecks(checks: string[]): Promise<void> {
       assert.deepEqual(constants, elastic.plan.materials[0]);
       assert.equal(carried?.yieldMPa, yieldMPa);
       assert.equal(carried?.sourceId, sourceId);
-      if (sourceId === 'tsubaki-s45c') {
+      if (sourceId === 's45c-heat-treatment') {
         assert.equal(carried?.evidence, 'manufacturer-reference');
         assert.equal(carried?.basis, 'reference');
       }
@@ -141,7 +141,7 @@ async function analysisCapacityChecks(checks: string[]): Promise<void> {
       const makeInput = (materialConditionId: string, yieldMPa: number, thickness: number) => {
         const preset = findStrengthMaterial(materialConditionId); assert(preset);
         return { ...base, materials: base.materials.map(material => ({ ...material,
-          capacity: { materialConditionId, yieldMPa, sourceId: 'jisf-g3101-draft', thicknessMm: thickness,
+          capacity: { materialConditionId, yieldMPa, sourceId: 'g3101-draft', thicknessMm: thickness,
             condition: preset.condition, evidence: 'standard-draft', basis: 'minimum' } })) };
       };
       const lower = makeInput(lowerId, lowerYield, thicknessMm);

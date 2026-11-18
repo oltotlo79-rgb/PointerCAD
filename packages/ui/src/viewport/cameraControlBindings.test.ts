@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VIEW_CONTROLS, withViewControlPreset, type ViewControlOptions } from '../settings/viewControlSettings.js';
+import {
+  DEFAULT_VIEW_CONTROLS, withViewControlPreset, type ViewAction, type ViewControlOptions, type ViewControlSettings, type ViewPenButton,
+  type ViewTrigger,
+} from '../settings/viewControlSettings.js';
 import {
   dragZoomDelta, keyOrbitPixels, keyZoomDelta, pinchZoomDelta, scaledOrbitDelta, scaledPanDelta, viewDragAction, viewKeyMove,
   viewTouchAction, viewWheelAction, wheelDragEquivalent, wheelZoomDelta,
@@ -174,5 +177,36 @@ describe('タッチの指の操作(B-08g)', () => {
     for (const scale of [0, -1, Number.NaN, Infinity]) expect(pinchZoomDelta(scale)).toBe(0);
     // 速さと反転は掛けない(直接さわる操作)。
     expect(pinchZoomDelta(2)).toBeCloseTo(-100 * Math.log(2) / Math.log(1.1), 9);
+  });
+});
+
+describe('ペンの側面のボタン・消しゴムの端(B-09 3-4)', () => {
+  const pen = (button: number, buttons: number, extra: Partial<typeof modifiers> = {}) =>
+    ({ ...modifiers, pointerType: 'pen', button, buttons, ...extra });
+  function withPen(action: ViewAction, button: ViewPenButton): ViewControlSettings {
+    const trigger: ViewTrigger = { kind: 'drag', button, alt: false, shift: false, ctrl: false, meta: false };
+    const bindings = DEFAULT_VIEW_CONTROLS.bindings;
+    return { ...DEFAULT_VIEW_CONTROLS, bindings: { ...bindings, [action]: [...bindings[action], trigger] } };
+  }
+
+  it('既定では側面のボタンは今までどおり右ボタンと同じ(平行移動)で、消しゴムの端は何もしない', () => {
+    expect(viewDragAction(DEFAULT_VIEW_CONTROLS, pen(2, 2))).toBe('pan');
+    expect(viewDragAction(DEFAULT_VIEW_CONTROLS, pen(5, 32))).toBeNull();
+  });
+
+  it('側面のボタンを割り当てると、ペンはその割当だけで動き、マウスの右ボタンは今のまま', () => {
+    const settings = withPen('orbit', 'penBarrel');
+    expect(viewDragAction(settings, pen(2, 2))).toBe('orbit');
+    expect(viewDragAction(settings, pen(2, 2, { shiftKey: true }))).toBeNull();
+    expect(viewDragAction(settings, pen(2, 3))).toBeNull();
+    expect(viewDragAction(settings, { ...modifiers, pointerType: 'mouse', button: 2, buttons: 2 })).toBe('pan');
+  });
+
+  it('消しゴムの端を割り当てると、押下の印 32 の時だけ動く。マウスのボタン 5 とタッチには当たらない', () => {
+    const settings = withPen('zoom', 'penEraser');
+    expect(viewDragAction(settings, pen(5, 32))).toBe('zoom');
+    expect(viewDragAction(settings, pen(5, 33))).toBeNull();
+    expect(viewDragAction(settings, { ...modifiers, pointerType: 'mouse', button: 5, buttons: 32 })).toBeNull();
+    expect(viewDragAction(settings, { ...modifiers, pointerType: 'touch', button: 5, buttons: 32 })).toBeNull();
   });
 });

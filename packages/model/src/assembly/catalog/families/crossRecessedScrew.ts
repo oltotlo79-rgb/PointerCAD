@@ -2,7 +2,7 @@
  * 族: 十字穴付き小ねじ JIS B 1111-2017(本体規格)のなべ・皿(タイプ 1)・チーズ。M-03(設計 §2.3)。
  * 丸皿は資料の表で dk・k が皿と同じで、頭の丸み f を形に入れない簡略形状では皿と同じ形になるので入れない(検査が dk・k の一致を照らす)。
  *
- * 寸法は資料 K5-1(規格の抜粋の資料、下の `CROSS_RECESSED_SCREW_EVIDENCE`、PDF の SHA-256 と頁を記録)の
+ * 寸法は資料 K5-1(規格の抜粋の資料、下の `CROSS_RECESSED_SCREW_EVIDENCE`、資料の番号 と頁を記録)の
  * ピッチ P・b(最小)・dk(呼び＝最大)・k(呼び＝最大)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の crossRecessedScrew で、検査が照らす。
  * 資料の表は M1.6〜M10 だが、M1.6 はねじの表(`thread/metricThread.ts`)に無いので入れない(六角ナットの族と同じ扱い)。
@@ -16,14 +16,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildScrewPart, screwVolume, type ScrewDimensions, type ScrewHead } from '../profiles/screw.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const CROSS_RECESSED_SCREW_EVIDENCE = {
   title: '資料 K5-1 十字穴付き小ねじの規格の抜粋(JIS B 1111-2017 本体)',
   edition: '2017',
-  url: '',
+
   locator: 'PDF 12 頁(冊子 225 頁)なべ小ねじ・チーズ小ねじの表・PDF 13 頁(冊子 226 頁)皿小ねじの表: d・P・b(最小)・dk(最大)・k(最大)、表の注',
-  sha256: 'efb714eb3395e71e3a0106b93898cc096bdaa3520cbe77c2f1d7cf014eaf8ee2',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-1',
 } as const;
 
 /** [ねじの呼び, d, P, b(最小), dk(呼び＝最大), k(呼び＝最大)](mm)。 */

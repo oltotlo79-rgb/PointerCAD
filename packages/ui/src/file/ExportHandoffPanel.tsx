@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { t, type MessageKey } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { openCamWebsite, openWith, type ExportHandoff, type OpenWithAction } from './openWith.js';
 
@@ -10,6 +11,9 @@ function HandoffContent({ handoff }: { readonly handoff: ExportHandoff }): React
   const gateway = useAppStore((state) => state.fileGateway);
   const close = useAppStore((state) => state.clearExportHandoff);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const root = useRef<HTMLElement>(null);
+  // 閉じた時に、開いた元(書き出しを選んだメニューの釦など)へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, true, { initial: () => closeRef.current });
   const [running, setRunning] = useState(false), [failed, setFailed] = useState(false);
   useEffect(() => { closeRef.current?.focus(); }, []);
   const act = (action: OpenWithAction): void => {
@@ -25,7 +29,7 @@ function HandoffContent({ handoff }: { readonly handoff: ExportHandoff }): React
       : gateway.openCamTool?.(action) ?? Promise.resolve(false);
     void opening.then((ok) => { setFailed(!ok); setRunning(false); }, () => { setFailed(true); setRunning(false); });
   };
-  return <section className="pcad-card pcad-cam-handoff" role="dialog" aria-label={t('cam.title')} data-help-topic="cam"
+  return <section ref={root} className="pcad-card pcad-cam-handoff" role="dialog" aria-label={t('cam.title')} data-help-topic="cam"
     onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }}>
     <div className="pcad-cam-handoff__heading"><h2>{t('cam.title')}</h2>
       <button title={t('controlGuide.button.handoffClose')} className="pcad-button" type="button" ref={closeRef} onClick={close}>{t('cam.close')}</button></div>

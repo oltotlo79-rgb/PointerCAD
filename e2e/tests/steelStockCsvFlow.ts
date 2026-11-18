@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /// <reference lib="dom" />
 import { readFile } from 'node:fs/promises';
 import { expect, test as baseTest, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
@@ -25,11 +26,11 @@ interface Product {
   readonly columns: readonly string[];
 }
 const SS400_FLAT: Product = { grade: 'SS400', shape: 'flatBar', size: 'FB 50×6',
-  columns: ['SS400', 'JIS G 3101', '王子製鉄 公表断面寸法', '平鋼', 'FB 50×6', '熱間圧延材・熱処理条件未指定'] };
+  columns: ['SS400', 'JIS G 3101', '公表平鋼寸法', '平鋼', 'FB 50×6', '熱間圧延材・熱処理条件未指定'] };
 const S45C_FLAT: Product = { grade: 'S45C', shape: 'flatBar', size: 'FB 50×6',
   columns: ['S45C', 'JIS G 4051', 'JIS G 3123', '平鋼', 'FB 50×6', 'みがき棒鋼・加工方法と熱処理条件未指定'] };
 const SS400_ROUND: Product = { grade: 'SS400', shape: 'roundBar', size: 'φ16',
-  columns: ['SS400', 'JIS G 3101', '大阪製鐵 公表丸鋼寸法', '丸鋼', 'φ16', '熱間圧延材・熱処理条件未指定'] };
+  columns: ['SS400', 'JIS G 3101', '公表丸鋼寸法', '丸鋼', 'φ16', '熱間圧延材・熱処理条件未指定'] };
 
 const FIXTURE: readonly { readonly product: Product; readonly lengthMm: number }[] = [
   { product: SS400_FLAT, lengthMm: 1000 }, { product: SS400_FLAT, lengthMm: 1000 },
@@ -40,7 +41,7 @@ const FIXTURE: readonly { readonly product: Product; readonly lengthMm: number }
 const HEADER = ['集計区分', '鋼種', '材料規格', '寸法・製品規格', '断面形状', '呼び寸法', '供給条件', '素材購入長 (mm)',
   '数量', '総延長 (mm)', '配置の階層（ID）', '対象範囲・除外理由', 'サブアセンブリの参照', '完成長 (mm)',
   'カタログの版', '形状生成の版', '形状の解釈', '寸法の出典', '寸法の出典の版', '寸法の出典の掲載箇所',
-  '寸法の出典のURL', '寸法の出典のSHA-256（取得時のファイル）', '出典の取得日', '断面形状の出典', '鋼種分類の出典',
+  '寸法規格番号', '寸法の出典のSHA-256（取得時のファイル）', '出典の取得日', '断面形状の出典', '鋼種分類の出典',
   '寸法・製品規格の出典', '材料規格の版', '材料規格の確認の程度', '寸法規格の版', '寸法規格の確認の程度'];
 const COLUMN = { kind: 0, stockLength: 7, quantity: 8, totalLength: 9, paths: 10, notice: 11, finished: 13 } as const;
 
@@ -48,20 +49,14 @@ const COLUMN = { kind: 0, stockLength: 7, quantity: 8, totalLength: 9, paths: 10
 const NOMINAL_PROVENANCE = ['jp-steel-2026-10-10-r1', '3-steel-profile-1', '呼び寸法による単純な形状'] as const;
 const NO_PROFILE = 'なし（この形状は出典の断面形状を使わない）';
 const SAME_SOURCE = '寸法の出典と同じ資料';
-const GRADE_SOURCE = '合同製鐵 構造用棒鋼 ｜ 資料に版の記載なし ｜ PDF p5 機械構造用炭素鋼鋼材（JIS G4051）S45C行（鋼種分類のみ） ｜ https://www.godo-steel.co.jp/seihin/pdf/The_structural_bars_of_Godo_Steel_20221116.pdf ｜ SHA-256 f19cd3ea52561f00bf43149748d4b924227f06e59ede71fe42bb0680612b2b70 ｜ 出典の取得日 2026-10-10';
-const STANDARD_SOURCE = '太平鋼材工業 製品情報 公差表 ｜ 資料に版の記載なし ｜ 公差表（JIS G 3123）、適用形状 丸・平 ｜ https://taiheikouzai.co.jp/product.html?id=lineup ｜ SHA-256 63430ac1b24c555dbe09796a706cdfd75b77e12c727fe064e5d4db63917480eb ｜ 出典の取得日 2026-10-10';
+const GRADE_SOURCE = 'JIS G 4051 構造用棒鋼';
+const STANDARD_SOURCE = 'JIS G 3123 公差表';
 const PROVENANCE: Readonly<Record<string, readonly string[]>> = {
-  'SS400:平鋼': [...NOMINAL_PROVENANCE, '日本製鉄 建設用資材ハンドブック 王子製鉄 平鋼', '2025年9月改訂版',
-    'PDF p1 規格 / p2 標準断面寸法 / p4 製造寸法', 'https://www.nipponsteel.com/product/construction/handbook/pdf/3-52.pdf',
-    '50b0a027712a8a0991f52b33896309c3c3f4f83ec3c3704d54eaecb76a87ac3b', '2026-10-10',
+  'SS400:平鋼': [...NOMINAL_PROVENANCE, '平鋼', '', '', 'JIS G 3194', '', '',
     NO_PROFILE, SAME_SOURCE, SAME_SOURCE, 'JIS G 3101:2024', '原案で確認', 'JIS G 3194:2024', '原案で確認'],
-  'S45C:平鋼': [...NOMINAL_PROVENANCE, '太平鋼材工業 みがき平鋼サイズ表', '資料に版の記載なし',
-    'PDF p1 S45C（黄色印）、幅50×厚6・9・12 mmの交点', 'https://taiheikouzai.co.jp/assets/pdf/hirakou.pdf',
-    'f45feea1ccb83dbc1706ee7241f97accc92473b139b463c38f7155f22893dd87', '2026-10-10',
+  'S45C:平鋼': [...NOMINAL_PROVENANCE, 'みがき平鋼', '', '', 'JIS G 3123', '', '',
     NO_PROFILE, GRADE_SOURCE, STANDARD_SOURCE, 'JIS G 4051:2026', '原案で確認', 'JIS G 3123:2004', '未確認'],
-  'SS400:丸鋼': [...NOMINAL_PROVENANCE, '日本製鉄 建設用資材ハンドブック 大阪製鐵 一般構造用丸鋼', '2025年9月改訂版',
-    'PDF p1 SS400標準断面寸法・標準長さ', 'https://www.nipponsteel.com/product/construction/handbook/pdf/5-33.pdf',
-    '5e9fbba2c98ccadfaf0f88497af97664393234e4da8b5bb23606997909ef542c', '2026-10-10',
+  'SS400:丸鋼': [...NOMINAL_PROVENANCE, '一般構造用丸鋼', '', '', 'JIS G 3191', '', '',
     NO_PROFILE, SAME_SOURCE, SAME_SOURCE, 'JIS G 3101:2024', '原案で確認', 'JIS G 3191:2022', '原案で確認'],
 };
 

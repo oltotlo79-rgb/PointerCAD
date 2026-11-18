@@ -2,7 +2,23 @@ import {
   readBeamAnalysisInputs,
   type BeamAnalysisInputs,
 } from '@pointercad/model/beam-analysis';
-import { fieldProblem, type Checked } from '../guards.js';
+import { fieldProblem, isRecord, type Checked } from '../guards.js';
+import { canonicalSteelPartKey } from './componentSource.js';
+
+/**
+ * 入力の中の部品の鍵(`expectedPartKey`)を、部品の options と同じ表で今の表記へ直す(旧版の鋼材の古い表記を持つ古いファイル)。
+ * 読む時は読んだ部品の今の鍵と合わせ、書く時は古い表記を書かない。直す物が無い枝は元の値をそのまま返す。
+ */
+function canonicalPartKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const items: unknown[] = value.map(canonicalPartKeys);
+    return items.every((item, index) => item === value[index]) ? value : items;
+  }
+  if (!isRecord(value)) return value;
+  const entries = Object.entries(value).map(([name, item]): [string, unknown] =>
+    [name, name === 'expectedPartKey' && typeof item === 'string' ? canonicalSteelPartKey(item) : canonicalPartKeys(item)]);
+  return entries.every(([name, item]) => item === value[name]) ? value : Object.fromEntries(entries);
+}
 
 /** Single-solid definitions refer to a part's feature/face identities. Keep both codec boundaries identical. */
 function requiresPartDocument(input: BeamAnalysisInputs['analyses'][number]): boolean {
@@ -23,7 +39,7 @@ export function readOptionalBeamAnalysisInputs(
   if (!Object.hasOwn(record, 'beamAnalysisInputs')) {
     return { ok: true, value: undefined };
   }
-  const checked = readBeamAnalysisInputs(record.beamAnalysisInputs, ownerId);
+  const checked = readBeamAnalysisInputs(canonicalPartKeys(record.beamAnalysisInputs), ownerId);
   if (!checked.ok) {
     return fieldProblem(`${path}.beamAnalysisInputs.${checked.issue.path}`, 'type');
   }
@@ -41,7 +57,7 @@ export function serializeBeamAnalysisInputs(
   ownerId: string,
   ownerKind: 'part' | 'assembly',
 ): BeamAnalysisInputs {
-  const checked = readBeamAnalysisInputs(value, ownerId);
+  const checked = readBeamAnalysisInputs(canonicalPartKeys(value), ownerId);
   if (!checked.ok) {
     throw new RangeError(`${checked.issue.code}: beamAnalysisInputs.${checked.issue.path}: ${checked.issue.message}`);
   }

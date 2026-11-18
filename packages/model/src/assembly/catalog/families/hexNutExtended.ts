@@ -5,7 +5,7 @@
  * - 六角低ナット(両面取り、M2〜M64)
  * 今の六角ナットの分類(スタイル 1 の本体 M3〜M20 と附属書JA)は残し、ここで重ねて持たない。
  *
- * 全高 m(最大)と対辺 S(基準寸法)は、規格の抜粋の頁(下の `HEX_NUT_EXTENDED_EVIDENCE`、PDF の SHA-256 と頁を記録)の表を、
+ * 全高 m(最大)と対辺 S(基準寸法)は、規格の抜粋の頁(下の `HEX_NUT_EXTENDED_EVIDENCE`、資料の番号 と頁を記録)の表を、
  * 頁の画像から読んだ 1 回目の転記。2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の hexNut で、検査が照らす。
  * M1.6 はねじの表(`thread/metricThread.ts`、M2〜M64)に無いので入れない。ねじは並目だけ(細目は今の分類で選べる M3〜M20)。
  * 形は今の六角ナットと同じ作り(`buildHexNutBody`: 対辺 S の六角柱・高さ m 最大・下穴径の通しのねじ穴)。
@@ -14,14 +14,13 @@ import { findMetricThread, threadMinorDiameter } from '../../../thread/metricThr
 import { buildHexNutBody } from '../../standard/partPrimitives.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const HEX_NUT_EXTENDED_EVIDENCE = {
   title: '資料 K4-5 六角ナットの規格の抜粋(JIS B 1181-2014 本体)',
   edition: '2014',
-  url: '',
+
   locator: 'PDF 1 頁(冊子 134 頁)の表: スタイル1・スタイル2 の全高 m(最大・最小)、六角低ナット 両面取りの m(基準・最小)、対辺 S(基準)',
-  sha256: 'dc474470742c2ef7bd48178fd3823f57e09278dca3c38e91be676b1df9d7bec2',
-  fetchedDate: '2026-11-14',
+  reference: 'K4-5',
 } as const;
 
 type NutStyle = 'style1' | 'style2' | 'thin';

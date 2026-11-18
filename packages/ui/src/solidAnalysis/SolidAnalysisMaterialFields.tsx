@@ -4,7 +4,7 @@ import type { StrengthSource } from '@pointercad/model';
 import { useEffect, useRef, useState } from 'react';
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
-import { selectSolidMaterial, solidMaterialCapacityMatches, solidMaterialDraftOf, solidMaterialSourceUrl, solidMaterialYoung } from './solidMaterialSelection.js';
+import { selectSolidMaterial, solidMaterialCapacityMatches, solidMaterialDraftOf, solidMaterialYoung } from './solidMaterialSelection.js';
 import { SolidAnalysisMaterialValues } from './SolidAnalysisMaterialValues.js';
 import type { SolidMaterialDraft, SolidMaterialIssue } from './solidMaterialSelection.js';
 import './solidAnalysisMaterialFields.css';
@@ -59,7 +59,6 @@ function MaterialFields({ value, onChange, young, onYoungChange, disabled = fals
   const preset = findStrengthMaterial(draft.materialConditionId);
   // Stale saved evidence displays its own snapshot; legacy values never borrow current catalogue metadata.
   const source = value?.sourceSnapshot;
-  const url = source === undefined ? null : solidMaterialSourceUrl(source);
   const range = preset?.thicknessMm;
   const problem = !selection.ok ? t(ISSUES[selection.issue]) : !valid ? t('solidAnalysis.material.stale') : null;
   return <fieldset className="pcad-solid-material" disabled={disabled} data-testid="solid-material-fields"
@@ -94,11 +93,8 @@ function MaterialFields({ value, onChange, young, onYoungChange, disabled = fals
       <p>{t('solidAnalysis.material.temperatureUnspecified')}</p>
       <p>{`${t('strength.field.yieldStress')}: ${preset.yieldStress.mpa} MPa (${t(BASIS[preset.yieldStress.basis])})`}</p>
       <p>{t(EVIDENCE[source.evidence])}</p>
-      <p>{source.publisher}</p><p>{source.locator}</p>
+      <p>{source.label}</p>
       <p>{source.standard}</p><p>{source.standardEdition ?? t('strength.unknownEdition')}</p>
-      <p>{`${t('solidAnalysis.material.checkedDate')}: ${source.checkedDate}`}</p>
-      <p>{`${t('solidAnalysis.material.sourceDigest')}: ${source.sha256}`}</p>
-      {url === null ? null : <a href={url} target="_blank" rel="noopener noreferrer">{url}</a>}
     </section>}
   </fieldset>;
 }

@@ -1,10 +1,10 @@
-/** Independent literal transcription of JISF G 3192 draft 2024-07-24 table 17 (CT sections).
- * PDF SHA-256: ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa.
+/** Independent literal transcription of JIS G 3192 draft 2024-07-24 table 17 (CT sections).
+ * PDF SHA-256: JIS G 3192 原案 2024-07-24.
  * Second reading from the PDF text-stream order, made without reading the product table. No application imports.
  * Printed precision is retained as strings: [standard H×B as printed, t1, t2, r, area cm2, unit mass kg/m, Cx cm, PDF page].
  */
 export const CT_ORACLE = {
-  pdfSha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
+  reference: 'JIS G 3192 原案 2024-07-24',
   rows: [
   ['50×50', '5', '7', '8', '5.925', '4.65', '1.28', 30],
   ['50×100', '6', '8', '8', '10.79', '8.47', '1.00', 30],

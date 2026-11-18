@@ -155,3 +155,15 @@ describe('選ぶ画面で族の分類を選んだ時に、その分類の族だ�
     expect(ng.states).toEqual(['loading']);
   });
 });
+
+describe('選ぶ窓の検索では、分類を問わず全部の族を読み込む(K-07a)', () => {
+  it('分類を null にすると、機械要素とアルミフレームの族を 1 回で読み、読み込み中 → 済み の順に知らせる', async () => {
+    const { registry, ensure, resolve } = fakeRegistry(['m1', 'f1', 'm2'], [], { f1: 'aluminumFrame' });
+    const states: CatalogLoadState[] = [];
+    const done = loadRegisteredCatalogFamilies(registry, (state) => { states.push(state); }, () => true, null);
+    expect([...ensure.mock.calls[0][0]]).toEqual(['m1', 'f1', 'm2']);
+    resolve();
+    await done;
+    expect(states).toEqual(['loading', 'ready']);
+  });
+});

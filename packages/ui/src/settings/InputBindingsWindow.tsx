@@ -1,11 +1,14 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
+import type { FocusTarget } from '../shell/dialogFocusRules.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { CameraControlSettingsForm } from './CameraControlSettingsForm.js';
 import { InputSettingsFileBar } from './InputSettingsFileBar.js';
 import { MouseButtonsForm } from './MouseButtonsForm.js';
 import { RadialMenuForm } from './RadialMenuForm.js';
 import { settingsCloseRequest, submitSettingsDrafts } from './settingsDrafts.js';
+import { SixDofForm } from './SixDofForm.js';
 import { SnapPauseForm } from './SnapPauseForm.js';
 import { SettingsDraftPrompt, type DraftPromptTexts } from './SettingsDraftPrompt.js';
 import { ShortcutSettingsForm } from './ShortcutSettingsForm.js';
@@ -19,7 +22,7 @@ import './inputBindingsWindow.css';
  * ×・Esc で閉じる時に下書きがあれば、窓の中で［適用して閉じる］［捨てて閉じる］［続ける］を出す(settingsDrafts.ts の印)。
  * 下端の「書き出す」「読み込む」(B-09 3-1)は、適用済みの割り当てを 1 つのファイルで出し入れする。読み込みは下書きがある間は断る。
  */
-type BindingsTab = 'view' | 'keys' | 'mouse' | 'radial';
+type BindingsTab = 'view' | 'keys' | 'mouse' | 'radial' | 'sixDof';
 /** 最後に開いたタブ(窓を開き直した時に同じタブで開く。端末には残さない一時の表示の状態)。 */
 let lastTab: BindingsTab = 'view';
 
@@ -30,13 +33,22 @@ const WINDOW_DRAFT_TEXTS: DraftPromptTexts = {
   continue: 'settings.inputBindings.draft.continue', continueGuide: 'settings.inputBindings.draft.continueGuide',
 };
 
-export function InputBindingsWindow({ onClose }: { readonly onClose: () => void }): React.JSX.Element {
+export function InputBindingsWindow({ onClose, returnFocus }: {
+  readonly onClose: () => void;
+  /** 閉じた時に焦点を戻す物(開いた元のボタンは設定の一覧と一緒に消えるので、一覧の歯車。C-03)。 */
+  readonly returnFocus?: () => FocusTarget | null;
+}): React.JSX.Element {
   const id = useId();
   const [tab, setTab] = useState<BindingsTab>(lastTab);
   const [closing, setClosing] = useState<'confirm' | 'failed' | null>(null);
   /** 「適用して閉じる」で各 form を送った回数。送った後の描画で、下書きが残ったかを確かめる。 */
   const [applyRequest, setApplyRequest] = useState(0);
   const windowRef = useRef<HTMLDialogElement>(null);
+  // 開いた時は選んでいるタブへ焦点を入れ、閉じた時は開いた元(消えていれば returnFocus)へ戻す(C-03)。
+  useDialogFocus(() => windowRef.current, true, {
+    initial: () => windowRef.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]') ?? null,
+    fallback: () => returnFocus?.() ?? null,
+  });
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const choose = (next: BindingsTab): void => { lastTab = next; setTab(next); };
@@ -84,6 +96,9 @@ export function InputBindingsWindow({ onClose }: { readonly onClose: () => void 
         <button type="button" role="tab" className="pcad-tab" id={`${id}-tab-radial`} aria-controls={`${id}-panel-radial`}
           aria-selected={tab === 'radial'} title={t('settings.inputBindings.tab.radialGuide')} onClick={() => { choose('radial'); }}>
           {t('settings.inputBindings.tab.radial')}</button>
+        <button type="button" role="tab" className="pcad-tab" id={`${id}-tab-sixDof`} aria-controls={`${id}-panel-sixDof`}
+          aria-selected={tab === 'sixDof'} title={t('settings.inputBindings.tab.sixDofGuide')} onClick={() => { choose('sixDof'); }}>
+          {t('settings.inputBindings.tab.sixDof')}</button>
       </div>
       <div role="tabpanel" id={`${id}-panel-view`} aria-labelledby={`${id}-tab-view`} hidden={tab !== 'view'}>
         <CameraControlSettingsForm />
@@ -97,6 +112,9 @@ export function InputBindingsWindow({ onClose }: { readonly onClose: () => void 
       </div>
       <div role="tabpanel" id={`${id}-panel-radial`} aria-labelledby={`${id}-tab-radial`} hidden={tab !== 'radial'}>
         <RadialMenuForm />
+      </div>
+      <div role="tabpanel" id={`${id}-panel-sixDof`} aria-labelledby={`${id}-tab-sixDof`} hidden={tab !== 'sixDof'}>
+        <SixDofForm />
       </div>
       <InputSettingsFileBar hasDraft={() => settingsCloseRequest(windowRef.current) === 'confirm'} />
       <p className="pcad-input-bindings__hint">{t('settings.inputBindings.hint')}</p>

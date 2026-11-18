@@ -101,9 +101,14 @@ interface SlotHit {
   readonly lateral: number;
   readonly along: number;
   readonly length: number;
+  /** 穴の軸が線の端を越えた長さ(線の内なら 0)。 */
+  readonly beyond: number;
 }
 
-/** 穴の合わせ面が乗っている溝(面の向きが合い、面の間が許容の内の溝のうち、横のずれが一番小さい物)。 */
+/**
+ * 穴の合わせ面が乗っている溝(面の向きが合い、面の間が許容の内の溝のうち、線の端を越えた長さが一番小さく、その中で横のずれが
+ * 一番小さい物)。同じ直線に並ぶ部材の溝(突き合わせ)では、穴の軸が帯の内に入る方の部材の溝を選ぶ。
+ */
 function nearestSlot(hole: WorldHole, frames: readonly FrameSlotCandidate[]): SlotHit | null {
   const toward = scaleVec3(hole.into, -1);
   let best: SlotHit | null = null;
@@ -118,7 +123,11 @@ function nearestSlot(hole: WorldHole, frames: readonly FrameSlotCandidate[]): Sl
       // 横のずれ(符号つき。溝の口の幅の向き)。許容の比較は withinMagnitude、どの溝に一番近いかは 2 乗で比べる。
       const lateral = dotVec3(offset, line.across);
       const point = addVec3(line.start, scaleVec3(span, along / length));
-      if (best === null || lateral ** 2 < best.lateral ** 2) best = { frame, line, point, lateral, along, length };
+      const beyond = Math.max(0, -along, along - length);
+      const sameReach = best !== null && withinMagnitude(beyond - best.beyond, FACE_CONTACT_TOLERANCE_MM);
+      if (best === null || (sameReach ? lateral ** 2 < best.lateral ** 2 : beyond < best.beyond)) {
+        best = { frame, line, point, lateral, along, length, beyond };
+      }
     }
   }
   return best;

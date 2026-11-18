@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-08 ばね座金(JIS B 1251-2018 2 号・3 号、メートルねじ用)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の springWasher)の
  * 突合せ、寸法の整合と形の体積の検査。fixture は PDF の文字の流れから、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -51,10 +52,10 @@ describe('M-08 ばね座金 資料の表との突合せ', () => {
 
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結し、形は輪で体積は π/4 (D² − d²) t', () => {
     expect(FAMILIES.every(([, family]) => family.rows.every((row) => row.evidence === SPRING_WASHER_EVIDENCE))).toBe(true);
-    expect(SPRING_WASHER_EVIDENCE?.sha256).toBe(SPRING_WASHER_ORACLE.pdfSha256);
+    expect(SPRING_WASHER_EVIDENCE?.reference).toBe(SPRING_WASHER_ORACLE.reference);
     expect(SPRING_WASHER_EVIDENCE?.locator).toContain(`PDF ${SPRING_WASHER_ORACLE.page} 頁`);
     expect(SPRING_WASHER_EVIDENCE?.title.startsWith('資料 K5-3 ')).toBe(true);
-    expect(SPRING_WASHER_EVIDENCE?.url).toBe('');
+    expect(SPRING_WASHER_EVIDENCE).not.toHaveProperty('url');
     expect(FAMILIES.map(([, family]) => [family.id, family.kindKey, family.catalogRevision, family.generatorRevision])).toEqual([
       ['spring-washer-number2', 'catalog.mechanical.kind.springWasherNumber2', 'spring-washer-2026-11-r1', 'washer-1'],
       ['spring-washer-number3', 'catalog.mechanical.kind.springWasherNumber3', 'spring-washer-2026-11-r1', 'washer-1'],

@@ -1,7 +1,7 @@
 /**
  * 族: 平座金 JIS B 1256-2008 の並形・小形(部品等級 A)。M-07(設計 §2.3)。
  *
- * 寸法は資料 K5-2(規格の抜粋の資料、下の `PLAIN_WASHER_EVIDENCE`、PDF の SHA-256 と頁を記録)の
+ * 寸法は資料 K5-2(規格の抜粋の資料、下の `PLAIN_WASHER_EVIDENCE`、資料の番号 と頁を記録)の
  * 内径 d1(基準寸法＝最小)・外径 d2(基準寸法＝最大)・厚さ h(基準寸法)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の plainWasher で、検査が照らす。
  * 行は平座金の呼び径(ねじの呼び径)ごと。並形は 1.6〜64(29 行)、小形は 1.6〜36(21 行)。資料の第 2 選択の呼び径は
@@ -12,14 +12,13 @@
 import { buildBushPart, bushVolume, type BushDimensions } from '../profiles/bush.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const PLAIN_WASHER_EVIDENCE = {
   title: '資料 K5-2 平座金の規格の抜粋(JIS B 1256-2008 並形・並形面取り・小形 部品等級 A)',
   edition: '2008',
-  url: '',
+
   locator: 'PDF 1 頁(冊子 181 頁)規格寸法の表: 平座金の呼び径・内径 d1(基準寸法)・外径 d2(基準寸法)・厚さ h(基準寸法)',
-  sha256: '0e1f80e2c1f45ef4d8a6bdc5905c1d3eb10668c171f23cd78b340904c4eb3a15',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-2',
 } as const;
 
 /** 資料の第 2 選択の呼び径。 */

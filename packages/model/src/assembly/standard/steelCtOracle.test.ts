@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * S-06 CT 形鋼（JIS G 3192 表17、SS400）の独立の転記との突合せと、質量の検算・断面の形（重心の位置）の検査。
  *
@@ -72,7 +73,7 @@ describe('S-06 CT 形鋼 JIS G 3192 表17 の独立の転記との突合せ', ()
     const text = readFileSync(new URL('./steelCtOracle.fixture.ts', import.meta.url), 'utf8');
     const file = ts.createSourceFile('fixture.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     expect(file.statements.filter((node) => ts.isImportDeclaration(node) || ts.isExportDeclaration(node))).toEqual([]);
-    expect(STEEL_EVIDENCE.ssCtDraft.sha256).toBe(CT_ORACLE.pdfSha256);
+    expect(STEEL_EVIDENCE.ssCtDraft.reference).toBe(CT_ORACLE.reference);
   });
 
   it.each(CT_ORACLE.rows)('CT %s×%s×%s: 表6 の式の断面積・単位質量と、形の面積・重心の位置が印刷の値に一致する',

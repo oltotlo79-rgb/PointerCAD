@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { evaluateExpression } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -13,7 +14,7 @@ import {
   standardPartNominalVolume,
 } from './buildStandardPart.js';
 import { findHexBolt } from './fasteners.js';
-import { MISUMI_HEX_BOLT_MAIN_EVIDENCE } from './hexBoltEvidence.js';
+import { HEX_BOLT_MAIN_EVIDENCE } from './hexBoltEvidence.js';
 import {
   HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION, STANDARD_CATALOG_REVISION, STANDARD_PART_GENERATOR_REVISION,
 } from './types.js';
@@ -345,7 +346,7 @@ describe('六角ボルトの長さの区分ごとのねじ部の版(追加要件
     expect(boltShape(buildStandardPartFromSource(source)).thread).toBe(thread);
   });
 
-  const evidenceRows = MISUMI_HEX_BOLT_MAIN_EVIDENCE.filter((row) => findHexBolt(row.nominal, 'main') !== undefined);
+  const evidenceRows = HEX_BOLT_MAIN_EVIDENCE.filter((row) => findHexBolt(row.nominal, 'main') !== undefined);
 
   it('根拠のある全ての呼びで、125mm 以下は新旧の版の形が一致する', () => {
     expect(evidenceRows.map((row) => row.nominal)).toEqual(['M3', 'M4', 'M5', 'M6', 'M8', 'M10', 'M12', 'M16', 'M20']);

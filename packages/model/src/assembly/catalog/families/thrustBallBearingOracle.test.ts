@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-26 単式スラスト玉軸受(平面座形)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の thrustBallBearing)の突合せ、
  * 寸法の整合と形の体積の検査。fixture は PDF の文字の流れから、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -28,11 +29,11 @@ describe('M-26 単式スラスト玉軸受 資料の表との突合せ', () => {
   });
 
   it('出どころは資料の番号・SHA・頁だけを持ち、行は系列 → 内径の順で、寸法は d < D1・d < d1 ≦ D・D1 < D', () => {
-    expect(THRUST_BALL_BEARING_EVIDENCE.sha256).toBe(THRUST_BALL_BEARING_ORACLE.pdfSha256);
+    expect(THRUST_BALL_BEARING_EVIDENCE.reference).toBe(THRUST_BALL_BEARING_ORACLE.reference);
     const [first, last] = THRUST_BALL_BEARING_ORACLE.pages;
     expect(THRUST_BALL_BEARING_EVIDENCE.locator).toContain(`PDF ${first}〜${last} 頁`);
     expect(THRUST_BALL_BEARING_EVIDENCE.title.startsWith('資料 K4-1 ')).toBe(true);
-    expect(THRUST_BALL_BEARING_EVIDENCE.url).toBe('');
+    expect(THRUST_BALL_BEARING_EVIDENCE).not.toHaveProperty('url');
     const order = THRUST_BALL_BEARING_ROWS.map((row) => [row.size.slice(0, 3), row.dims.boreDiameter] as const);
     expect(order).toEqual([...order].sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1]));
     for (const row of THRUST_BALL_BEARING_ROWS) {

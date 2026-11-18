@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-06 フランジ付き六角ナット(JIS B 1190-2014)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の flangeNut)の突合せ、
  * ねじの表との照合と形の体積の検査。fixture は PDF の文字の流れ(呼びは語の位置)から、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -27,10 +28,10 @@ describe('M-06 フランジ付き六角ナット 資料の表との突合せ', (
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結し、体積は 六角柱 + フランジの外の部分 − 下穴', () => {
     const evidence = ROWS[0]?.evidence;
     expect(ROWS.every((row) => row.evidence === evidence)).toBe(true);
-    expect(evidence?.sha256).toBe(ORACLE.pdfSha256);
+    expect(evidence?.reference).toBe(ORACLE.reference);
     expect(evidence?.locator).toContain(`PDF ${ORACLE.page} 頁`);
     expect(evidence?.title.startsWith('資料 K5-8 ')).toBe(true);
-    expect(evidence?.url).toBe('');
+    expect(evidence).not.toHaveProperty('url');
     expect([FLANGE_NUT_FAMILY.id, FLANGE_NUT_FAMILY.catalogRevision, FLANGE_NUT_FAMILY.generatorRevision])
       .toEqual(['flange-nut', 'flange-nut-2026-11-r1', 'flange-nut-1']);
     for (const row of ROWS) {

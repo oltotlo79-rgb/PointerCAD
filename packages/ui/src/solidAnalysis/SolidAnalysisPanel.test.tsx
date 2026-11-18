@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { appendSolid, createEmptyPartDocument, type AnalysisBoundarySource } from '@pointercad/model';
 import { parseDocument, serializeDocument } from '@pointercad/io';
 import { readSolidCadSavedInput, type AnalysisMaterialCapacity } from '@pointercad/model/beam-analysis';
@@ -215,7 +216,7 @@ function installYieldFixture() {
 }
 
 function yieldCapacity(): AnalysisMaterialCapacity {
-  return { materialConditionId: 'ss400-plate-0-16', yieldMPa: 245, sourceId: 'jisf-g3101-draft', thicknessMm: 16,
+  return { materialConditionId: 'ss400-plate-0-16', yieldMPa: 245, sourceId: 'g3101-draft', thicknessMm: 16,
     condition: '圧延鋼板（熱処理の指定なし）', evidence: 'standard-draft', basis: 'minimum' };
 }
 function savedYieldInput() {
@@ -355,7 +356,7 @@ describe('reachable source-bound solid yield display', () => {
       const markup = renderToStaticMarkup(<SolidYieldSummaryView request={viewRequest} completion={{ ...viewRequest, summary }} />);
       const displayed = markup.match(/data-testid="solid-yield-minimum" data-unit="1" data-value="([^"]+)"/u)?.[1];
       expect(displayed).toBeDefined(); expect(Number(displayed)).toBeCloseTo(122.5, 12);
-      expect(markup).toContain('jisf-g3101-draft');
+      expect(markup).toContain('g3101-draft');
       expect(markup).toContain('16 mm'); expect(markup).toContain(t('solidAnalysis.yieldScope'));
       expect(markup).toContain('data-structural-certification="false"');
       const full = renderToStaticMarkup(<StrengthPropertyPanel />);

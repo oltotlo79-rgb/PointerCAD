@@ -24,7 +24,11 @@ import {
 import type { StateCreator } from 'zustand';
 import { createCircularWeldActions, selectedCircularWeldId, type CircularWeldSlice } from './circularWeldActions.js';
 import { createFrameEdgePickActions, type FrameEdgePickSlice } from './frameEdgePickActions.js';
+import { createFrameStrokeActions, type FrameStrokeSlice } from './frameStrokeActions.js';
 import { createFrameSlotFasteningActions, type FrameSlotFasteningSlice } from './frameSlotFasteningActions.js';
+import { createFrameJointCheckActions, type FrameJointCheckSlice } from './frameJointCheckActions.js';
+import { createFrameJointBracketActions, emptyJointBracketState, type FrameJointBracketSlice } from './frameJointBracketActions.js';
+import { createMemberStretchActions, emptyMemberStretchState, type MemberStretchSlice } from './memberStretchActions.js';
 import { boltedJointPreviewFor, createBoltedJointActions } from './boltedJointActions.js';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
@@ -129,7 +133,7 @@ export type AssemblyMotionNotice =
   | { readonly kind: 'failed' };
 
 /** アセンブリのスライスが持つ欄と操作。 */
-export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, FrameSlotFasteningSlice {
+export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, FrameStrokeSlice, FrameSlotFasteningSlice, FrameJointCheckSlice, FrameJointBracketSlice, MemberStretchSlice {
   /**
    * 開いているアセンブリ文書(FR-601)。**開いていなければ null**(= 部品を開いている)。
    *
@@ -320,7 +324,10 @@ export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   | 'assemblyFilletWeldDraft' | 'assemblyFilletWeldPreview'
   | 'assemblyCircularWeldDraft' | 'assemblyCircularWeldPreview'
   | 'assemblyNestedWeldDraft' | 'assemblyNestedWeldPreview' | 'assemblyChildWeldEdit' | 'assemblyJointDrive'
-  | 'frameEdgePick' | 'assemblyFrameSlotDraft' | 'assemblyFrameSlotPreview' | 'assemblyFrameSlotNut'>;
+  | 'frameEdgePick' | 'frameStroke' | 'assemblyFrameSlotDraft' | 'assemblyFrameSlotPreview' | 'assemblyFrameSlotNut'
+  | 'assemblyJointCheckOpen' | 'assemblyJointCheck' | 'assemblyJointCheckSelectedKey'
+  | 'assemblyJointBracketDraft' | 'assemblyJointBracketPreview' | 'assemblyJointBracketData'
+  | 'assemblyMemberStretchDraft' | 'assemblyMemberStretchPreview'>;
 
 /** 協調の関節の駆動の持ち主。この記録そのものがストアに残っている間だけ結果を反映できる。 */
 export interface AssemblyJointDrive {
@@ -475,9 +482,18 @@ export function createAssemblyInitialState(session?: PreparedDocumentSession): A
     assemblyNestedWeldPreview: null,
     assemblyChildWeldEdit: null,
     frameEdgePick: null,
+    frameStroke: null,
     assemblyFrameSlotDraft: null,
     assemblyFrameSlotPreview: null,
     assemblyFrameSlotNut: null,
+    assemblyJointCheckOpen: false,
+    assemblyJointCheck: null,
+    assemblyJointCheckSelectedKey: null,
+    assemblyJointBracketDraft: null,
+    assemblyJointBracketPreview: null,
+    assemblyJointBracketData: null,
+    assemblyMemberStretchDraft: null,
+    assemblyMemberStretchPreview: null,
     assemblyJointDrive: null,
     ...emptyInterferenceState(),
     activeDocumentId,
@@ -554,12 +570,12 @@ export const createAssemblySlice: StateCreator<
       assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
       assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
       assemblyJointDrive: null,
-      ...emptyInterferenceState(), ...endedDragDrives(state),
+      ...emptyInterferenceState(), assemblyJointCheckSelectedKey: null, ...emptyJointBracketState(), ...emptyMemberStretchState(), ...endedDragDrives(state),
     }));
   }
   return {
     ...empty(),
-    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get), ...createFrameSlotFasteningActions(set, get), ...createBoltedJointActions(set, get),
+    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get), ...createFrameStrokeActions(set, get), ...createFrameSlotFasteningActions(set, get), ...createFrameJointCheckActions(set, get), ...createFrameJointBracketActions(set, get), ...createMemberStretchActions(set, get), ...createBoltedJointActions(set, get),
     recoveryRecord: null,
     resetAssembly: (update, session) => {
       const initial = empty(session);
@@ -614,7 +630,7 @@ export const createAssemblySlice: StateCreator<
           assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
           assemblyJointDrive: null,
           assemblyCrossLevelGearRepairs: repaired.repairs,
-          ...emptyInterferenceState(), ...endedDragDrives(current) };
+          ...emptyInterferenceState(), assemblyJointCheckSelectedKey: null, ...emptyJointBracketState(), ...emptyMemberStretchState(), ...endedDragDrives(current) };
       });
     },
     setAssemblyMechanismCouplings: (couplings) => {

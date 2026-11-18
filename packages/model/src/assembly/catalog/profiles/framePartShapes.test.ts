@@ -1,5 +1,5 @@
 /**
- * 資料 SF-1 のフレームの部品の簡略の形の検査: 棒材の T 形の断面の面積と外形、丸ナットの体積(横の穴の重なりを別の求め方で照らす)と
+ * 資料 1 のフレームの部品の簡略の形の検査: 棒材の T 形の断面の面積と外形、丸ナットの体積(横の穴の重なりを別の求め方で照らす)と
  * 形の台本、端のキャップの板の面積(長方形・丸み・L 形)、成り立たない寸法を断る事。
  */
 import { describe, expect, it } from 'vitest';
@@ -8,7 +8,7 @@ import { belowMagnitude } from '../../../numericTolerance.js';
 import type { SteelProfileSegment } from '../../standard/steelSectionProfiles.js';
 import {
   adjusterVolume, angleBracketCatalogVolume, buildAdjusterPart, buildAngleBracketCatalogPart, buildFootBasePart, buildShapedPlatePart,
-  footBaseProfile, shapedPlateProfile,
+  footBaseBossVolume, footBaseProfile, shapedPlateProfile,
   buildFlatPlatePart, buildFrameCapPart, buildRoundNutPart, flatPlateProfile, frameCapProfile, roundNutVolume, tSlotNutBarBounds,
   tSlotNutBarProfile, type FlatPlateDimensions, type FrameCapDimensions,
 } from './framePartShapes.js';
@@ -199,6 +199,18 @@ describe('フットベース・アジャスターベースの板', () => {
 
   it('外形を省いた時は今までの長方形と同じ輪と面積', () => {
     expect(footBaseProfile({ ...base, outline: [[0, 0], [75, 0], [75, 75], [0, 75]] })).toEqual(footBaseProfile(base));
+  });
+
+  it('ボスは板を通る円柱で、体積の足し分は π·r²·(高さ − 板厚)。板の外・辺にかかる・穴と重なる・板より短いボスは作らない', () => {
+    // 汎用の寸法: 75 角・板厚 6 の板の中央に、径 25・下へ 5・上へ 5 出るボス。
+    const boss = { x: 37.5, y: 37.5, diameter: 25, bottom: -5, top: 11 };
+    const bossed = { ...base, bosses: [boss] };
+    expect(footBaseBossVolume(bossed)).toBeCloseTo(Math.PI * 12.5 ** 2 * 10, 9);
+    expect(footBaseBossVolume(base)).toBe(0);
+    expect(buildFootBasePart(bossed)?.solids.filter((feature) => feature.kind === 'boolean')).toHaveLength(4);
+    for (const bad of [{ ...boss, x: 5 }, { ...boss, diameter: 0 }, { ...boss, x: 20, y: 55 }, { ...boss, bottom: 0, top: 6 }, { ...boss, bottom: 1 }]) {
+      expect(buildFootBasePart({ ...base, bosses: [bad] }), JSON.stringify(bad)).toBeNull();
+    }
   });
 });
 

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { createHash } from 'node:crypto';
 import React, { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -92,7 +93,7 @@ function expectClose(actual: readonly number[] | undefined, expected: readonly n
 }
 
 /** Independent published-draft SS400 row (t <= 16 mm, 245 MPa), the same row as readSolidElementProbe.test.ts. */
-const SS400 = { materialConditionId: 'ss400-plate-0-16', yieldMPa: 245, sourceId: 'jisf-g3101-draft', thicknessMm: 16,
+const SS400 = { materialConditionId: 'ss400-plate-0-16', yieldMPa: 245, sourceId: 'g3101-draft', thicknessMm: 16,
   condition: '圧延鋼板（熱処理の指定なし）', evidence: 'standard-draft', basis: 'minimum' } as const;
 
 function meshOf(source: SolidAnalysisInput['source'], nodes: readonly V3[], elements: readonly Tet[], boundary: readonly number[],

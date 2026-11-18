@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it, vi } from 'vitest';
 
 import { findStrengthMaterial, STRENGTH_MATERIALS } from '../../measure/strengthMaterials.js';
@@ -69,10 +70,9 @@ describe('independent S45C product and treatment oracle', () => {
       expect(Object.keys(steelProductOptions(row))).toHaveLength(6);
       expect(row.standardReferences).toEqual({ material: 'jis-g-4051-2026', dimensions: 'jis-g-3123-2004' });
       const evidence = S45C_ORACLE_SOURCES[expected.source];
-      expect(STEEL_EVIDENCE[row.evidence]).toMatchObject({ url: evidence.url, sha256: evidence.sha256 });
+      expect(STEEL_EVIDENCE[row.evidence]).toMatchObject({ reference: evidence.reference });
       expect(row.productStandardEvidence).toMatchObject({
-        url: S45C_ORACLE_SOURCES.brightProductStandard.url,
-        sha256: S45C_ORACLE_SOURCES.brightProductStandard.sha256,
+        reference: S45C_ORACLE_SOURCES.brightProductStandard.reference,
       });
       expect(row.standardLengthsMm).toEqual([]);
       expect(row.geometry).toBe('nominal');
@@ -86,7 +86,7 @@ describe('independent S45C product and treatment oracle', () => {
 
   it('pins the provisional G 4051 evidence used for product and treatment reasons', () => {
     expect(STEEL_STANDARDS['jis-g-4051-2026'].draft).toMatchObject({
-      url: S45C_ORACLE_SOURCES.carbonSteelDraft.url, sha256: S45C_ORACLE_SOURCES.carbonSteelDraft.sha256,
+      reference: S45C_ORACLE_SOURCES.carbonSteelDraft.reference,
     });
     expect(STEEL_STANDARDS['jis-g-4051-2026'].verification).toBe('draft');
   });
@@ -149,8 +149,8 @@ describe('independent S45C product and treatment oracle', () => {
       const material = findStrengthMaterial(id);
       expect(material).toMatchObject({ id, grade: 'S45C', condition, product: 'general', thicknessMm: null,
         temperature: 'not-specified',
-        yieldStress: { mpa: yieldMpa, basis: 'reference', sourceId: 'tsubaki-s45c' },
-        tensileStrength: { mpa: tensileMpa, basis: 'reference', sourceId: 'tsubaki-s45c' } });
+        yieldStress: { mpa: yieldMpa, basis: 'reference', sourceId: 's45c-heat-treatment' },
+        tensileStrength: { mpa: tensileMpa, basis: 'reference', sourceId: 's45c-heat-treatment' } });
       expect(STEEL_PRODUCTS.some((row) => row.key === id || String(row.condition) === condition)).toBe(false);
     }
     for (const row of STEEL_PRODUCTS) {

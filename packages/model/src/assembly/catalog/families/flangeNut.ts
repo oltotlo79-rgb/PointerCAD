@@ -1,7 +1,7 @@
 /**
  * 族: フランジ付き六角ナット JIS B 1190-2014(M5〜M20)。M-06(設計 §2.3)。
  *
- * 寸法は資料 K5-8(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の「JIS B 1190-2014 －抜粋－(参考掲載)」の
+ * 寸法は資料 K5-8(規格の抜粋)の「JIS B 1190-2014 －抜粋－(参考掲載)」の
  * 1) 寸法表のピッチ P(並目)・c(最小)・dc(最大)・m(最大)・s(最大)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の flangeNut で、検査が照らす。
  * 同じ頁の上半分(販売店の在庫の表)と附属書 JA の表は入れない。M14 は資料で括弧付き(なるべく用いない)の呼びで、行の note に書く。
@@ -10,14 +10,13 @@
 import { buildFlangeNutPart, flangeNutVolume, type FlangeNutDimensions } from '../profiles/flangeNut.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const FLANGE_NUT_EVIDENCE = {
   title: '資料 K5-8 フランジ付き六角ナットの規格の抜粋(JIS B 1190-2014)',
   edition: '2014',
-  url: '',
+
   locator: 'PDF 1 頁(冊子 162 頁)JIS B 1190-2014 －抜粋－ の 1) 寸法表: D・P(並目)・c(最小)・dc(最大)・m(最大)・s(最大)',
-  sha256: 'e931685e59ad349d57ff22f63fbe10bc4f9e9868f2b667bb541943440e37ae1a',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-8',
 } as const;
 
 /** [ねじの呼び, d, P, c, dc, m, s](mm)。 */

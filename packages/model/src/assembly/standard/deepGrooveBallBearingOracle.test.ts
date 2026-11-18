@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-22 深溝玉軸受 60・62・63 系(内径 10〜100、57 行)の表と、寸法表の PDF の 2 回目の独立の読み
  * (deepGrooveBallBearingOracle.fixture.ts、PDF の文字の流れから道具で作った)の突合せと、寸法の整合・保存の形・組み立ての検査。
@@ -51,11 +52,11 @@ describe('M-22 深溝玉軸受 寸法表との突合せ', () => {
   });
 
   it('出どころは寸法表の PDF の SHA-256 と頁を持つ', () => {
-    expect(DEEP_GROOVE_BALL_BEARING_EVIDENCE.sha256).toBe(DEEP_GROOVE_BALL_BEARING_ORACLE.pdfSha256);
+    expect(DEEP_GROOVE_BALL_BEARING_EVIDENCE.reference).toBe(DEEP_GROOVE_BALL_BEARING_ORACLE.reference);
     expect(DEEP_GROOVE_BALL_BEARING_EVIDENCE.locator).toContain('PDF 5〜8 頁');
     // 出どころの欄は資料の番号・SHA・頁だけ(URL と発行元は製品に書かない)。
     expect(DEEP_GROOVE_BALL_BEARING_EVIDENCE.title.startsWith('資料 K4-1 ')).toBe(true);
-    expect(DEEP_GROOVE_BALL_BEARING_EVIDENCE.url).toBe('');
+    expect(DEEP_GROOVE_BALL_BEARING_EVIDENCE).not.toHaveProperty('url');
     expect(new Set(DEEP_GROOVE_BALL_BEARING_ORACLE.rows.map((row) => row[5]))).toEqual(new Set([5, 6, 7, 8]));
   });
 

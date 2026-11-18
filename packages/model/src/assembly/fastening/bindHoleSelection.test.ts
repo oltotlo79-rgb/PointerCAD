@@ -16,7 +16,7 @@ import {
   bindHoleSelection, faceResolverFromBodies, type FaceResolution, type FasteningGeometryContext, type FasteningHolePick,
   holeFeatureForSelection, holeWallOriginAt,
   modeledThreadEvidence, modeledThreadGroupPickAt,
-  modeledThreadResolverFromBodies, modeledThreadWallAt,
+  modeledThreadResolverFromBodies, modeledThreadWallAt, sameHoleFeatureWalls,
 } from './bindHoleSelection.js';
 
 type HoleWallOrigin = ReturnType<typeof holeWallOriginAt>;
@@ -193,6 +193,30 @@ describe('今の番地から下穴の壁の由来を引く', () => {
     expect(holeWallOriginAt(tracked(), 3)).toEqual({ status: 'unnamed' });
     expect(holeWallOriginAt({ version: 1, state: 'untracked', reason: 'limit' }, 3)).toEqual({ status: 'untracked' });
     expect(holeWallOriginAt(undefined, 3)).toEqual({ status: 'untracked' });
+  });
+});
+
+describe('同じ穴フィーチャーのほかの穴の壁(J-02c の当たり)', () => {
+  const face = (index: number): { readonly kind: 'face'; readonly index: number } => ({ kind: 'face', index });
+  const wall = (featureId: string, point: string, index: number): OriginBinding =>
+    ({ origin: { version: 1, shapeKind: 'face', identity: boreWall(featureId, point) }, state: 'unique', current: face(index) });
+
+  it('選んだ壁と同じ featureId の、ほかの中心の bore/wall の今の番地を、番地の小さい順に返す(選んだ穴と別のフィーチャーは入れない)', () => {
+    const origins = tracked(wall('hole', 'c1', 7), wall('hole', 'c2', 3), wall('hole', 'c3', 5), wall('hole-b', 'c4', 9));
+    expect(sameHoleFeatureWalls(origins, 7)).toEqual([3, 5]);
+    expect(sameHoleFeatureWalls(origins, 9)).toEqual([]);
+  });
+
+  it('選んだ面が下穴の壁でない・由来の表が無い時は無い。分かれた面と、番地を 2 つの由来が主張する面は入れない', () => {
+    const floor: OriginBinding = { origin: { version: 1, shapeKind: 'face', identity: { ...boreWall('hole', 'c5'), role: 'floor' } },
+      state: 'unique', current: face(11) };
+    const split: OriginBinding = { origin: { version: 1, shapeKind: 'face', identity: boreWall('hole', 'c6') }, state: 'split',
+      candidates: [face(12), face(13)] };
+    const origins = tracked(wall('hole', 'c1', 7), wall('hole', 'c2', 3), wall('hole', 'c3', 4), wall('hole-b', 'c4', 4), floor, split);
+    expect(sameHoleFeatureWalls(origins, 7)).toEqual([3]);
+    expect(sameHoleFeatureWalls(origins, 11)).toEqual([]);
+    expect(sameHoleFeatureWalls(tracked(), 7)).toEqual([]);
+    expect(sameHoleFeatureWalls(undefined, 7)).toEqual([]);
   });
 });
 

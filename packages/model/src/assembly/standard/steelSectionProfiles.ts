@@ -17,26 +17,20 @@ export interface SteelSectionProfile {
 }
 
 export const STEEL_PROFILE_EVIDENCE = {
-  jfeAngle: {
-    title: 'JFE条鋼 形鋼・平鋼・丸鋼 寸法表', edition: null,
-    url: 'https://www.jfe-bs.co.jp/files/size_kata-hira-maru.pdf',
+  angleProfile: {
+    title: '形鋼・平鋼・丸鋼 寸法表', edition: null,
     locator: 'PDF p11（冊子p9）等辺山形鋼 AB：40×40×5、50×50×6、65×65×6 の r1/r2',
-    sha256: '031d35df73d5681c7ad7cb721eea4838e80624c9ca7092a69c8e83641c5d65de',
-    fetchedDate: '2026-10-10',
+    reference: '形鋼・平鋼・丸鋼 寸法表',
   },
-  jfeChannel: {
-    title: 'JFE条鋼 形鋼・平鋼・丸鋼 寸法表', edition: null,
-    url: 'https://www.jfe-bs.co.jp/files/size_kata-hira-maru.pdf',
+  channelProfile: {
+    title: '形鋼・平鋼・丸鋼 寸法表', edition: null,
     locator: 'PDF p14（冊子p12）溝形鋼 CB：75・100・125 の r1/r2、95°図・t2測定位置',
-    sha256: '031d35df73d5681c7ad7cb721eea4838e80624c9ca7092a69c8e83641c5d65de',
-    fetchedDate: '2026-10-10',
+    reference: '形鋼・平鋼・丸鋼 寸法表',
   },
-  yamatoH: {
-    title: 'ヤマトスチール株式会社 会社案内', edition: '2025.12',
-    url: 'https://www.yamatokogyo.co.jp/steel/en/catalog/pdf/company-brochureA3.pdf',
+  wideFlangeH: {
+    title: 'H形鋼', edition: '2025.12',
     locator: 'PDF p3（冊子p3/4）広幅H形鋼：150×150、200×200、300×300 の r',
-    sha256: '69774143c7a64e457b72f06cc4180f2b3a2bb3cc82aadebb347f3543fa8d6a22',
-    fetchedDate: '2026-10-10',
+    reference: 'H形鋼',
   },
 } as const;
 
@@ -44,7 +38,7 @@ const angles: Readonly<Record<string, readonly [number, number, number, number]>
   'L 40×40×5': [40, 5, 4.5, 3],
   'L 50×50×6': [50, 6, 6.5, 4.5],
   'L 65×65×6': [65, 6, 8.5, 4],
-  // JISF G 3192 原案 表8; steelCatalog.ts の出典locator（最終規格票は未確認）。
+  // JIS G 3192 原案 表8; steelCatalog.ts の出典locator（最終規格票は未確認）。
   'L 120×120×8': [120, 8, 12, 5],
   'L 130×130×9': [130, 9, 12, 6],
   'L 130×130×12': [130, 12, 12, 8.5],
@@ -64,7 +58,7 @@ const channels: Readonly<Record<string, readonly [number, number, number, number
   '[ 75×40×5×7': [75, 40, 5, 7],
   '[ 100×50×5×7.5': [100, 50, 5, 7.5],
   '[ 125×65×6×8': [125, 65, 6, 8],
-  // JISF G 3192 原案 表12; docs/standards/jis/channel-jis-g-3192.json, last eight rows.
+  // JIS G 3192 原案 表12; docs/standards/jis/channel-jis-g-3192.json, last eight rows.
   '[ 250×90×9×13': [250, 90, 9, 13, 14, 7],
   '[ 250×90×11×14.5': [250, 90, 11, 14.5, 17, 8.5],
   '[ 300×90×9×13': [300, 90, 9, 13, 14, 7],
@@ -78,7 +72,7 @@ const beams: Readonly<Record<string, readonly [number, number, number, number, n
   'H 150×150×7×10': [150, 150, 7, 10, 8],
   'H 200×200×8×12': [200, 200, 8, 12, 13],
   'H 300×300×10×15': [300, 300, 10, 15, 13],
-  // W7 JISF G 3192 原案 表15; steelCatalog.ts の出典locator（最終規格票は未確認）。
+  // W7 JIS G 3192 原案 表15; steelCatalog.ts の出典locator（最終規格票は未確認）。
   'H 100×100×6×8': [100, 100, 6, 8, 8],
   'H 125×125×6.5×9': [125, 125, 6.5, 9, 8],
   'H 175×175×7.5×11': [175, 175, 7.5, 11, 13],

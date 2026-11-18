@@ -19,8 +19,21 @@ describe('toolbar command catalog', () => {
       labelKey: 'assembly.frameSlot.tool', tooltipKey: 'assembly.frameSlot.toolTooltip',
       documentKinds: ['assembly'], helpTopic: 'assembly-place',
     }]);
+    // 結合の入れ替えと伸縮(E-13)も「組む」の項目。同じく数の区切りから外して、ここで確かめる。
+    expect(expandedGroups.filter(entry => entry.sourceId === 'jointSwap' || entry.sourceId === 'memberStretch')
+      .map(entry => [entry.id, entry.labelKey, entry.helpTopic])).toEqual([
+      ['toolbar.assembly.jointSwap', 'assembly.tool.jointSwap', 'assembly-place'],
+      ['toolbar.assembly.memberStretch', 'assembly.tool.memberStretch', 'assembly-place'],
+    ]);
+    // 接合チェック(E-09)も「組む」の 1 項目。同じく数の区切りから外して、ここで確かめる。
+    expect(expandedGroups.filter(entry => entry.sourceId === 'jointCheck')).toEqual([{
+      id: 'toolbar.assembly.jointCheck', group: 'assembly', sourceId: 'jointCheck',
+      labelKey: 'assembly.tool.jointCheck', tooltipKey: 'assembly.jointCheck.tooltip',
+      documentKinds: ['assembly'], helpTopic: 'assembly-place',
+    }]);
     const originalGroups = expandedGroups.filter(entry => entry.id !== 'toolbar.assembly.circularFilletWeld'
-      && entry.id !== 'toolbar.assembly.frameSlotFastening');
+      && entry.id !== 'toolbar.assembly.frameSlotFastening' && entry.id !== 'toolbar.assembly.jointCheck'
+      && entry.id !== 'toolbar.assembly.jointSwap' && entry.id !== 'toolbar.assembly.memberStretch');
     // GR-30 が「見た目」へ「図形の測定値」を1行足したので 109 → 110(Q1=A4)。
     // R16 adds exactly one shared save-point command; drawing aliases it.
     // 追加要件6 が「組む」へ「ボルトで締結」「締結を外す」の2項目を足したので 111 → 113。

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   addComponent, applyReplacement, changeStandardSize, createAssemblyDocument,
@@ -33,13 +34,13 @@ const CASES: readonly SteelCase[] = [
     condition: 'brightBar-heatTreatmentUnspecified', evidence: 'brightRound' },
   { catalog: 'equalAngle', grade: 'SS400', size: 'L 40×40×5', nextSize: 'L 50×50×6',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192',
-    condition: 'hotRolled-heatTreatmentUnspecified', evidence: 'osaka' },
+    condition: 'hotRolled-heatTreatmentUnspecified', evidence: 'rolledSections' },
   { catalog: 'channel', grade: 'SS400', size: '[ 75×40×5×7', nextSize: '[ 100×50×5×7.5',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192',
-    condition: 'hotRolled-heatTreatmentUnspecified', evidence: 'osaka' },
+    condition: 'hotRolled-heatTreatmentUnspecified', evidence: 'rolledSections' },
   { catalog: 'hBeam', grade: 'SS400', size: 'H 150×150×7×10', nextSize: 'H 200×200×8×12',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192',
-    condition: 'hotRolled-heatTreatmentUnspecified', evidence: 'yamato' },
+    condition: 'hotRolled-heatTreatmentUnspecified', evidence: 'wideFlange' },
   { catalog: 'steelPipe', grade: 'SGP', size: '15A', nextSize: '20A',
     materialStandard: 'JIS G 3452', productStandard: 'JIS G 3452',
     condition: 'blackPipe-plainEnds', evidence: 'pipe' },

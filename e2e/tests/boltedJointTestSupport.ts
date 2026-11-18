@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /// <reference lib="dom" />
 import { worldToCanvas } from './homeViewProjection.js';
 import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
@@ -14,7 +15,7 @@ import { saveFlowFile } from './saveResponsivenessFlow.js';
  * ボルト締結(追加要件6)の画面検査の補助。穴付きの板は部品の画面の実操作(長方形→面→押し出し→点→穴)で作り、
  * 製品の「保存」で落としたバイト列を組立の「部品を置く」へ渡す。完成した組立をAPIで作って注入しない。
  *
- * 板は 40×30×10。穴は上面の (20, 15) に φ9 の貫通穴(M8 の通し穴。NBK の表の 2 級 9.0)。
+ * 板は 40×30×10。穴は上面の (20, 15) に φ9 の貫通穴(M8 の通し穴。JIS B 1001 の 2 級 9.0)。
  */
 export const PLATE = { width: 40, depth: 30, thickness: 10, holeX: 20, holeY: 15, holeDiameter: 9 } as const;
 

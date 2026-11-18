@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { DocumentDefinitionComparison, DocumentDefinitionChange, DocumentRelationship, DefinitionDifference } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
+import { takeMenuOpener } from '../shell/dialogFocusRules.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { runDefinitionDiff } from './definitionDiffClient.js';
 import { createDefinitionDiffWorker } from './browserDefinitionDiffWorker.js';
@@ -63,9 +64,14 @@ export function DocumentDiffDialog({ onClose, initial }: {
   const [message, setMessage] = useState<{ readonly error: boolean; readonly text: string } | null>(null);
   const [result, setResult] = useState<DocumentDefinitionComparison | null>(null), [page, setPage] = useState(0);
   useEffect(() => {
-    const dialog = element.current, previous = document.activeElement;
+    // メニューの項目から開いた時は、項目が消えるので、そのメニューの釦を戻り先の代わりにする(C-03)。
+    const dialog = element.current, previous = document.activeElement, menuOpener = takeMenuOpener();
     dialog?.showModal(); dialog?.querySelector<HTMLElement>('button')?.focus();
-    return () => { controller.current?.abort(); controller.current = null; dialog?.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+    return () => {
+      controller.current?.abort(); controller.current = null; dialog?.close();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+      else if (menuOpener?.isConnected === true) menuOpener.focus();
+    };
   }, []);
   const close = (): void => { controller.current?.abort(); onClose(); };
   const selectFile = async (side: 'before' | 'after'): Promise<void> => {

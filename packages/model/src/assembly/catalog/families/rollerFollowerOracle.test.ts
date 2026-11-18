@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-29 ローラフォロア(ヨーク形、メートル系)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の rollerFollower)の
  * 突合せ、寸法の整合と形の体積の検査。fixture は PDF の文字の流れから、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -27,10 +28,10 @@ describe('M-29 ローラフォロア 資料の表との突合せ', () => {
 
   it('出どころは資料の番号・SHA・頁だけを持ち、寸法は 内径 < 外径・外輪の幅 < 内輪の幅', () => {
     const evidence = ROWS[0]?.evidence;
-    expect(evidence?.sha256).toBe(ORACLE.pdfSha256);
+    expect(evidence?.reference).toBe(ORACLE.reference);
     expect(evidence?.locator).toContain(`PDF ${ORACLE.page} 頁`);
     expect(evidence?.title.startsWith('資料 K4-2 ')).toBe(true);
-    expect(evidence?.url).toBe('');
+    expect(evidence).not.toHaveProperty('url');
     for (const row of ROWS) {
       expect(row.evidence).toBe(evidence);
       expect(row.dims.boreDiameter).toBeLessThan(row.dims.outsideDiameter);

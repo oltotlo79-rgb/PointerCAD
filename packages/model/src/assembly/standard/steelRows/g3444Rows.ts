@@ -1,6 +1,5 @@
 /**
- * JISF JIS G 3444（一般構造用炭素鋼鋼管）改正原案 2024-12-20 の表6（管の寸法）の行。
- * 資料: docs_kouzai_1400_JISG3444_20241220.pdf（SHA-256 は steelCatalog.ts の STEEL_EVIDENCE.stkDraft）。
+ * JIS G 3444（一般構造用炭素鋼鋼管）改正原案 2024-12-20 の表6（管の寸法）の行。
  * 値は印刷の文字のまま: [外径 D, 厚さ t, 単位質量 W（kg/m）, 断面積 A（cm²）, PDF の頁]。外径の桁区切りの空白は詰めた。
  */
 export const G3444_STRUCTURAL_PIPE_ROWS = [

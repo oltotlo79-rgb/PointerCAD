@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-07 平座金(JIS B 1256-2008 並形・小形 部品等級 A)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の plainWasher)の
  * 突合せ、寸法の整合と形の体積の検査。fixture は PDF の文字の流れから、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -42,10 +43,10 @@ describe('M-07 平座金 資料の表との突合せ', () => {
 
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結し、形は輪で体積は π/4 (d2² − d1²) h', () => {
     expect(FAMILIES.every(([, family]) => family.rows.every((row) => row.evidence === PLAIN_WASHER_EVIDENCE))).toBe(true);
-    expect(PLAIN_WASHER_EVIDENCE?.sha256).toBe(PLAIN_WASHER_ORACLE.pdfSha256);
+    expect(PLAIN_WASHER_EVIDENCE?.reference).toBe(PLAIN_WASHER_ORACLE.reference);
     expect(PLAIN_WASHER_EVIDENCE?.locator).toContain(`PDF ${PLAIN_WASHER_ORACLE.page} 頁`);
     expect(PLAIN_WASHER_EVIDENCE?.title.startsWith('資料 K5-2 ')).toBe(true);
-    expect(PLAIN_WASHER_EVIDENCE?.url).toBe('');
+    expect(PLAIN_WASHER_EVIDENCE).not.toHaveProperty('url');
     expect(FAMILIES.map(([, family]) => [family.id, family.kindKey, family.catalogRevision, family.generatorRevision])).toEqual([
       ['plain-washer-normal', 'catalog.mechanical.kind.plainWasherNormal', 'plain-washer-2026-11-r1', 'washer-1'],
       ['plain-washer-small', 'catalog.mechanical.kind.plainWasherSmall', 'plain-washer-2026-11-r1', 'washer-1'],

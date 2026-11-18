@@ -1,0 +1,47 @@
+/* 規格部品の選ぶ窓の検索(K-07a)。窓の中だけで、固定区画は増やさない。色と間隔は今の窓の変数を使う。 */
+.pcad-picker-search { display: grid; gap: var(--pcad-space-1); }
+
+.pcad-picker-search__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 3px var(--pcad-space-1);
+  font: inherit;
+  color: var(--pcad-text);
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-control-border);
+  border-radius: var(--pcad-radius-small);
+}
+
+/* 結果は 8 件ほどの高さで止めて、窓の中で巻き取る。 */
+.pcad-picker-search__results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 216px;
+  overflow-y: auto;
+  padding: var(--pcad-space-1);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+}
+
+/* 押せる面は 24px 以上(押せる面の下限)。4 状態は .pcad-button から受け継ぐ。 */
+.pcad-picker-search__result {
+  flex: none;
+  justify-content: space-between;
+  gap: var(--pcad-space-2);
+  min-height: 24px;
+  padding: 0 var(--pcad-space-2);
+  font-size: var(--pcad-font-size-small);
+  text-align: left;
+}
+
+/* ↑↓ で選んでいる行(Enter で選び直す行)。 */
+.pcad-picker-search__result[aria-selected='true'] { box-shadow: inset 0 0 0 1px var(--pcad-accent); }
+
+/* 最近使った物(検索の欄が空の時。K-07b)。 */
+.pcad-picker-search__recent { display: flex; flex-direction: column; gap: 2px; }
+.pcad-picker-search__recent-title { color: var(--pcad-text-muted); font-size: var(--pcad-font-size-small); }
+
+.pcad-picker-search__label { overflow-wrap: anywhere; }
+.pcad-picker-search__detail { flex: none; color: var(--pcad-text-muted); font-variant-numeric: tabular-nums; }

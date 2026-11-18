@@ -1,11 +1,7 @@
 /**
  * 六角ボルト(JIS B 1180:2014 本体規格)の、径ごとの推奨呼び長さと座面径の根拠(追加要件6)。
  *
- * 出典: ミスミ〔技術データ〕六角ボルト「JIS B 1180(2014)より抜粋」、呼び径六角ボルト・並目ねじ・
- * 部品等級A(第1選択)の寸法表(2021年6月時点の PDF、https://jp.c.misumi-ec.com/book/MSM1_11/pdf/2895.pdf 、
- * 保存した原本 SHA-256 4885b71b0a19f2e2560a40b2894501f3769000887c110f7ff81568fd76438af4 の 1 頁。
- * 頁の画像を目で読んで転記した)。表の注のとおり「推奨する呼び長さは、表中で ls 及び lg の欄に
- * 数値が記載されたもの」を径ごとの候補とする。
+ * JIS B 1180:2014。ls・lg に数値がある行を推奨呼び長さの候補とする。
  *
  * 範囲の限界(黙って広げない):
  * - 並目ねじ・部品等級A・第1選択・半ねじの本体規格だけ。附属書JA(旧JIS)の系列、細目ねじ、全ねじ、
@@ -20,9 +16,7 @@
  * - 店の在庫一覧ではなく、抜粋した規格表の値である。強度区分・材料の根拠ではない。
  */
 
-export const MISUMI_HEX_BOLT_SOURCE =
-  'Misumi technical data, hex bolt, excerpt of JIS B 1180:2014 (PDF as of 2021-06), coarse thread, product grade A, '
-  + 'first selection, partial thread; https://jp.c.misumi-ec.com/book/MSM1_11/pdf/2895.pdf p.1';
+export const HEX_BOLT_SOURCE = 'JIS B 1180:2014 六角ボルト（並目・部品等級A・第1選択・半ねじ）';
 
 export interface HexBoltMainEvidenceRow {
   readonly nominal: string;
@@ -35,7 +29,7 @@ export interface HexBoltMainEvidenceRow {
 }
 
 /** M3〜M24 の第1選択(並目)。M1.6〜M2.5 は実行時の寸法表に無いので持たない。 */
-export const MISUMI_HEX_BOLT_MAIN_EVIDENCE: readonly HexBoltMainEvidenceRow[] = [
+export const HEX_BOLT_MAIN_EVIDENCE: readonly HexBoltMainEvidenceRow[] = [
   { nominal: 'M3', recommendedLengths: [20, 25, 30], threadLength: { upTo125: 12, upTo200: 18, over200: 31 }, bearingDiameterMin: 4.57 },
   { nominal: 'M4', recommendedLengths: [25, 30, 35, 40], threadLength: { upTo125: 14, upTo200: 20, over200: 33 }, bearingDiameterMin: 5.88 },
   { nominal: 'M5', recommendedLengths: [25, 30, 35, 40, 45, 50], threadLength: { upTo125: 16, upTo200: 22, over200: 35 }, bearingDiameterMin: 6.88 },
@@ -50,7 +44,7 @@ export const MISUMI_HEX_BOLT_MAIN_EVIDENCE: readonly HexBoltMainEvidenceRow[] = 
 
 /** 本体規格・並目の呼びの根拠。無ければ `undefined`(推定しない)。 */
 export function hexBoltMainEvidence(nominal: string): HexBoltMainEvidenceRow | undefined {
-  return MISUMI_HEX_BOLT_MAIN_EVIDENCE.find((row) => row.nominal === nominal);
+  return HEX_BOLT_MAIN_EVIDENCE.find((row) => row.nominal === nominal);
 }
 
 /** 呼び長さ `length`(mm)の区分 ℓ≤125・125<ℓ≤200・ℓ>200 に当たる、ねじ部の長さの参考値(mm)。 */

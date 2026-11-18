@@ -1,5 +1,5 @@
 /**
- * 資料 SF-1 のジョイントバー・スタッド・ローレットナットの製品の行(tSlotFittingRows.ts)が、照らす側の読み(tSlotFittingOracle.fixture.json。
+ * 資料 1 のジョイントバー・スタッド・ローレットナットの製品の行(tSlotFittingRows.ts)が、照らす側の読み(tSlotFittingOracle.fixture.json。
  * 8 回目の 2 本目の記入のままの寸法の文字と、今までの欄の読みの合う溝幅・材質)と 1 行ずつ合う事の検査。fixture の文字は、この検査が自分で読み解く
  * (行の表を作る道具の読み解きと別にする)。めねじの位置は鎖寸法の累積、スタッドのおねじの長さは張り出しの下の面からの 2 つの位置の差を、文字から確かめる。
  */
@@ -64,7 +64,7 @@ function materialOf(text: string | undefined): string {
 
 const pick = (list: readonly Dimension[], test: (dimension: Dimension) => boolean): number => list.find(test)?.value ?? NaN;
 
-describe('資料 SF-1 のジョイントバー・スタッド・ローレットナットの製品の行と照らす側の読み', () => {
+describe('資料 1 のジョイントバー・スタッド・ローレットナットの製品の行と照らす側の読み', () => {
   it('製品の行と fixture は同じ鍵の並びで、型番の形の文字を持たず、溝幅・材質・質量・頁が照らす側と合う', () => {
     const groups: readonly (readonly [string, readonly Common[]])[] = [['joint-bars', JOINT_BAR_RECORDS], ['studs', STUD_RECORDS],
       ['knurled-nuts', KNURLED_NUT_RECORDS]];

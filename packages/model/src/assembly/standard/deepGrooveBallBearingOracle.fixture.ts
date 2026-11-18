@@ -4,7 +4,7 @@
  * 1 行は [呼び番号, d, D, B, r(最小), PDF の頁]（mm。印刷の桁のまま文字列）。
  */
 export const DEEP_GROOVE_BALL_BEARING_ORACLE = {
-  pdfSha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
+  reference: 'K4-1',
   rows: [
     ['6000', '10', '26', '8', '0.3', 5],
     ['6001', '12', '28', '8', '0.3', 5],

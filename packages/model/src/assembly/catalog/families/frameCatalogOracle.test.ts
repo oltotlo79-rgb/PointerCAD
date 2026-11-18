@@ -1,5 +1,5 @@
 /**
- * 資料 SF-1 のフレームの製品の行(frameCatalogRows.ts。1 回目の読みの値)が、全部 2 回目の独立の読み(frameCatalogOracle.fixture.json。
+ * 資料 1 のフレームの製品の行(frameCatalogRows.ts。1 回目の読みの値)が、全部 2 回目の独立の読み(frameCatalogOracle.fixture.json。
  * 読みの文字のまま)と 1 行ずつ一致する事の検査。fixture の文字は、この検査が自分で読み解く(行の表を作る道具の読み解きと別にする)。
  * 2 回目の読みが置かれていない間(available が false)は、製品の行が 0 である事を確かめる(照らしていない行を製品に入れない)。
  * fixture は JSON のファイルで、この検査がファイルとして読む(アプリのモジュールを持たない)。
@@ -135,7 +135,7 @@ function readSection(cells: readonly string[]): Omit<AluminumSectionRecord, 'siz
   return { ...common, height: value('H') ?? NaN, width: value('h') ?? NaN, thickness: thickness ?? NaN };
 }
 
-describe('資料 SF-1 のフレームの製品の行と 2 回目の独立の読みの突合せ', () => {
+describe('資料 1 のフレームの製品の行と 2 回目の独立の読みの突合せ', () => {
   it('2 回目の読みが置かれていない間は、製品の行が 0(照らしていない行を製品に入れない)', () => {
     if (READING.available) {
       expect(READING.tSlot.length + READING.sections.length).toBeGreaterThan(0);

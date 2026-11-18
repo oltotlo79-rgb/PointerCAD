@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { isAllowedCamUrl } from '@pointercad/ui/open-with';
 import { denyBrowserPermissions } from './sessionPermissions.js';
+import { installSixDofAccess } from './sixDofAccess.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import { join } from 'node:path';
 import { readDrawingPrintOptions, type DrawingPrintOptions } from '@pointercad/ui/print-settings';
@@ -195,6 +196,8 @@ async function ownedOcctTransportOrigin(transport: ReturnType<typeof createOcctH
 
 void app.whenReady().then(async () => {
   denyBrowserPermissions(session.defaultSession);
+  // 3D マウス(多軸の入力機器)だけの狭い例外。利用者が OS の確かめの窓で認めた時だけ HID の口を許す(B-09 3-5)。
+  installSixDofAccess(session.defaultSession, ipcMain, app.getPath('userData'));
   session.defaultSession.on('will-download', (event) => { event.preventDefault(); });
   // 既定のメニューバー(File / Edit / View / Window)は使わないので消す。
   Menu.setApplicationMenu(null);

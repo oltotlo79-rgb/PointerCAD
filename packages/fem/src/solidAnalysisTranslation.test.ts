@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it } from 'vitest';
 import type { SolidAnalysisInput } from './solidAnalysisModel.js';
 import { solidStrainStress, solidTetGeometry, translateSolidAnalysis } from './solidAnalysisTranslation.js';
@@ -178,11 +179,11 @@ describe('solid tet4 translation and independent continuum identities', () => {
 
 describe('solid yield capacity input contract', () => {
   const rows = [
-    ['ss400-plate-0-16', 245, 'jisf-g3101-draft', 16],
-    ['ss400-plate-16-40', 235, 'jisf-g3101-draft', 40],
-    ['ss400-plate-40-100', 215, 'jisf-g3101-draft', 100],
-    ['s45c-normalized-reference', 345, 'tsubaki-s45c', null],
-    ['s45c-quenched-tempered-reference', 490, 'tsubaki-s45c', null],
+    ['ss400-plate-0-16', 245, 'g3101-draft', 16],
+    ['ss400-plate-16-40', 235, 'g3101-draft', 40],
+    ['ss400-plate-40-100', 215, 'g3101-draft', 100],
+    ['s45c-normalized-reference', 345, 's45c-heat-treatment', null],
+    ['s45c-quenched-tempered-reference', 490, 's45c-heat-treatment', null],
   ] as const;
   it.each(rows)('carries the exact W01 yield/source and evidence for %s', async (materialConditionId, yieldMPa, sourceId, thicknessMm) => {
     const preset = findStrengthMaterial(materialConditionId);
@@ -201,7 +202,7 @@ describe('solid yield capacity input contract', () => {
       .toThrow('unexpected fields');
     expect(() => translateSolidAnalysis({ ...supplied,
       materials: [{ ...supplied.materials[0], capacity: { ...capacity, unexpected: true } }] })).toThrow();
-    if (sourceId === 'tsubaki-s45c') expect(input.materials[0].capacity)
+    if (sourceId === 's45c-heat-treatment') expect(input.materials[0].capacity)
       .toMatchObject({ evidence: 'manufacturer-reference', basis: 'reference' });
     expect(plan.forcesN).toEqual(translateSolidAnalysis(base).plan.forcesN);
     expect(plan.fixed).toEqual(translateSolidAnalysis(base).plan.fixed);
@@ -234,7 +235,7 @@ describe('solid yield capacity input contract', () => {
         const preset = findStrengthMaterial(materialConditionId);
         if (preset === undefined) throw new Error('Missing W01 row');
         return { ...base, materials: base.materials.map(material => ({ ...material,
-          capacity: { materialConditionId, yieldMPa, sourceId: 'jisf-g3101-draft', thicknessMm: thickness,
+          capacity: { materialConditionId, yieldMPa, sourceId: 'g3101-draft', thicknessMm: thickness,
             condition: preset.condition, evidence: 'standard-draft', basis: 'minimum' } })) };
       };
       const lower = makeInput(lowerId, lowerYield, thicknessMm);
@@ -250,7 +251,7 @@ describe('solid yield capacity input contract', () => {
     const base = fixture();
     expect(translateSolidAnalysis(base).input.materials).toEqual(base.materials);
     expect(Object.hasOwn(translateSolidAnalysis(base).input.materials[0], 'capacity')).toBe(false);
-    for (const extra of [{ unexpected: true }, { yieldMPa: 245 }, { sourceId: 'jisf-g3101-draft' },
+    for (const extra of [{ unexpected: true }, { yieldMPa: 245 }, { sourceId: 'g3101-draft' },
       { [Symbol('hidden')]: true }]) {
       expect(() => translateSolidAnalysis({ ...base, materials: [{ ...base.materials[0], ...extra }] })).toThrow('unexpected fields');
     }

@@ -1,5 +1,8 @@
 import { appearanceOf, isFreeWorkPlaneId } from '@pointercad/model';
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
+import { frameJointMarkers } from '../assembly/frameJointCheckView.js';
+import { memberStretchMarkers } from '../assembly/memberStretchDraft.js';
+import { holeHintsOf } from '../assembly/boltedJointHoleHints.js';
 import { t } from '../i18n/t.js';
 import { isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
@@ -70,6 +73,15 @@ export function syncInitialScene(sync: ViewportStoreSync): void {
   // 配置した部品(FR-605)。アセンブリを開いていないあいだは空のまま。
   if (sync.assemblyInput.assemblyReady()) scene.setAssembly(assemblyBundleOf(useAppStore.getState()));
   scene.setInterference(initial.assemblyInterferenceResult, initial.assemblyInterferenceSelectedKey);
+  // 打った点の層も空で作るので、点を打つ形の時だけ初めの点を渡す(打っていない時の受け渡しの並びを変えない。E-08 第 2 段)。
+  if (initial.frameStroke !== null) scene.setFrameStroke(initial.frameStroke);
+  // 接合チェックの層は空で作るので、一覧を開いている時だけ初めの印を渡す(開いていない時の受け渡しの並びを変えない)。
+  if (initial.assemblyJointCheck !== null) {
+    scene.setJointCheck(frameJointMarkers(initial.assemblyJointCheck, initial.assemblyJointCheckSelectedKey));
+  }
+  // 伸縮の予告の層も空で作るので、窓を開いている時だけ初めの印を渡す。
+  if (initial.assemblyMemberStretchPreview !== null) scene.setMemberStretch(memberStretchMarkers(initial.assemblyMemberStretchPreview));
+  if (initial.assemblyBoltedJointDraft !== null) scene.setHoleHints(holeHintsOf(initial));
   // 外観の割り当て(FR-1106〜1109)。文書の割り当てと、カーネルが選び直した面の対応から
   // 組み立てる。割り当てが 1 つも無ければ既定の外観 1 色になる。
   scene.setAppearance(
@@ -197,6 +209,18 @@ function syncAssemblyDisplay(sync: ViewportStoreSync, next: AppState, previous: 
   if (next.assemblyInterferenceResult !== previous.assemblyInterferenceResult
     || next.assemblyInterferenceSelectedKey !== previous.assemblyInterferenceSelectedKey) {
     scene.setInterference(next.assemblyInterferenceResult, next.assemblyInterferenceSelectedKey);
+  }
+  // 3D の画面で打った点(E-08 第 2 段・E-12)。層は点の列と閉じるが同じなら作り直さない。
+  if (next.frameStroke !== previous.frameStroke) scene.setFrameStroke(next.frameStroke);
+  if (next.assemblyJointCheck !== previous.assemblyJointCheck
+    || next.assemblyJointCheckSelectedKey !== previous.assemblyJointCheckSelectedKey) {
+    scene.setJointCheck(frameJointMarkers(next.assemblyJointCheck, next.assemblyJointCheckSelectedKey));
+  }
+  if (next.assemblyMemberStretchPreview !== previous.assemblyMemberStretchPreview) {
+    scene.setMemberStretch(memberStretchMarkers(next.assemblyMemberStretchPreview));
+  }
+  if (next.assemblyBoltedJointDraft !== previous.assemblyBoltedJointDraft || next.assemblyView !== previous.assemblyView) {
+    scene.setHoleHints(holeHintsOf(next));
   }
 }
 

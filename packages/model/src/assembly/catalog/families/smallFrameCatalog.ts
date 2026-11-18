@@ -1,5 +1,5 @@
 /**
- * 族: 資料 SF-1 の共通パーツの頁(PDF 337〜339)で寸法が確認できる、小さい溝つきフレーム・その端のキャップ・ブラケット素材
+ * 族: 資料 1 の共通パーツの頁(PDF 337〜339)で寸法が確認できる、小さい溝つきフレーム・その端のキャップ・ブラケット素材
  * (3 族。統括の決定 2026-11-17 18:1x・18:2x)。製造元の名前・型番は書かない(呼びは外形の寸法と溝の面の一般の語)。
  *
  * 行は、資料の 2 本の独立の読みが一致した物だけ(行の表 `smallFrameRows.ts` は道具が生成し、検査が 2 本目の読みの fixture と 1 行ずつ照らす)。
@@ -76,11 +76,11 @@ export interface BracketStockRecord {
   readonly simplified: readonly string[];
 }
 
-const EVIDENCE_TITLE = '資料 SF-1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)';
+const EVIDENCE_TITLE = '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)';
 const FACES: readonly SmallFrameFace[] = ['top', 'bottom', 'left', 'right'];
 
 function evidence(page: number, what: string): CatalogItemRow['evidence'] {
-  return { title: EVIDENCE_TITLE, edition: null, url: '', locator: `PDF ${page} 頁 ${what}`, sha256: '', fetchedDate: '' };
+  return { title: EVIDENCE_TITLE, edition: null, locator: `PDF ${page} 頁 ${what}`, reference: '' };
 }
 
 function noteOf(simplified: readonly string[], mass: string): string {

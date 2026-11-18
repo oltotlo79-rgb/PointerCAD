@@ -15,7 +15,7 @@ import type { BeamWorkerStatistics } from '../../packages/ui/src/beam/attachBeam
 declare global { interface Window { pcadBeamWorkers?: () => BeamWorkerStatistics } }
 
 const SAVED_AT = '2026-10-27T00:00:00.000Z';
-const FIXTURE_SHA256 = '125d8c98eb2422f9ca48d5f48691dfb0127aff4926e0476b130a961719526dcb';
+const FIXTURE_SHA256 = 'e1434dab8e19653c1d7f84e82a9019057c47e963d8b268068f471afb48133943';
 const hash = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 /** Real serializable input only. No world positions/results/Worker tokens are introduced into saved inputs.

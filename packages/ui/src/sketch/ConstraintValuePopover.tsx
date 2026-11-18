@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type ExpressionError, type ExpressionValue } from '@pointercad/expression';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { evaluateFieldSource, isPendingFieldError, useFieldUnits } from '../shell/propertyFieldUnits.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { cancelConstraintPrompt, commitConstraintPrompt } from './constraintActions.js';
@@ -58,6 +59,8 @@ export function ConstraintValuePopover(): React.JSX.Element | null {
   const units = useFieldUnits();
   const [source, setSource] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  // 閉じた時に、開いた元(3D の画面など)へ焦点を戻す(C-03)。開いた時の焦点は数式の欄が自分で持つ。
+  useDialogFocus(() => containerRef.current, prompt !== null);
 
   // 開き直したら打ちかけを捨てる(前の拘束の値を持ち越さない、NFR-UX-3)。
   const promptKey = prompt === null ? null : `${prompt.kind}:${String(prompt.targets.length)}`;

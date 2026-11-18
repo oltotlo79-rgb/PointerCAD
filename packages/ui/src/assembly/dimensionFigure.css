@@ -1,0 +1,16 @@
+/* 規格部品の選ぶ窓の寸法の図と表(K-07c)。窓の中だけで、固定区画は増やさない。色と間隔は今の窓の変数を使う。 */
+.pcad-dimension-figure { display: grid; gap: var(--pcad-space-1); }
+.pcad-dimension-figure > summary { cursor: pointer; }
+
+/* 線図は窓の幅に収め、縦横の比を保つ(線の太さは px の座標で 1px)。 */
+.pcad-dimension-figure__svg { display: block; max-width: 100%; height: auto; color: var(--pcad-text); }
+.pcad-dimension-figure__outline { fill: none; stroke: currentColor; stroke-width: 1.25; stroke-linejoin: round; }
+.pcad-dimension-figure__dimension { fill: none; stroke: var(--pcad-text-muted); stroke-width: 1; }
+.pcad-dimension-figure__value { fill: var(--pcad-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.pcad-dimension-figure__table { border-collapse: collapse; font-size: var(--pcad-font-size-small); }
+.pcad-dimension-figure__table caption { text-align: left; color: var(--pcad-text-muted); }
+.pcad-dimension-figure__table th,
+.pcad-dimension-figure__table td { padding: 1px var(--pcad-space-2) 1px 0; text-align: left; font-weight: normal; }
+.pcad-dimension-figure__table thead th { color: var(--pcad-text-muted); }
+.pcad-dimension-figure__number { text-align: right; font-variant-numeric: tabular-nums; }

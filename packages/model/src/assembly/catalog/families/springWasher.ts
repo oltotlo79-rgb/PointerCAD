@@ -1,7 +1,7 @@
 /**
  * 族: ばね座金 JIS B 1251-2018 の 2 号(一般用)・3 号(重荷重用)、メートルねじ用。M-08(設計 §2.3)。
  *
- * 寸法は資料 K5-3(規格の抜粋の資料、下の `SPRING_WASHER_EVIDENCE`、PDF の SHA-256 と頁を記録)の
+ * 寸法は資料 K5-3(規格の抜粋の資料、下の `SPRING_WASHER_EVIDENCE`、資料の番号 と頁を記録)の
  * 内径 d(基準寸法)・外径 D(最大)・幅 b × 厚さ t(最小)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の springWasher で、検査が照らす。
  * 行はメートルねじ用の呼びごと。資料の注のとおり JIS の範囲は呼び 39 までで、42 以上(製造元の参考の値)とウィットねじ用
@@ -12,14 +12,13 @@
 import { buildBushPart, bushVolume, type BushDimensions } from '../profiles/bush.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const SPRING_WASHER_EVIDENCE = {
   title: '資料 K5-3 ばね座金の規格の抜粋(JIS B 1251-2018 2 号・3 号)',
   edition: '2018',
-  url: '',
+
   locator: 'PDF 1 頁(冊子 193 頁)の表: メートルねじ用の呼び・内径 d(基準寸法)・外径 D(最大)・幅 b × 厚さ t(最小)、表の注',
-  sha256: 'ff5daab30f540dbc5a99db6aae28851a4ca35ee29b9a5dc4fd79d494b1ad42c6',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-3',
 } as const;
 
 /** 資料で括弧付きの呼び(資料の注: なるべく用いない)。 */

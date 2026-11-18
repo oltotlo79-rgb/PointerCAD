@@ -72,6 +72,10 @@ const FRAME_PART_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], Message
   pipeFrame: 'catalog.frame.pipeFrame.hint', pipeFrameSlotted: 'catalog.frame.pipeFrameSlotted.hint', pipeFrameTwin: 'catalog.frame.pipeFrameTwin.hint',
   smallFrame: 'catalog.frame.smallFrame.hint', smallFrameCap: 'catalog.frame.smallFrameCap.hint', bracketStock: 'catalog.frame.bracketStock.hint',
   pipeFrameCap: 'catalog.frame.pipeFrameCap.hint', pipeFrameFoot: 'catalog.frame.pipeFrameFoot.hint',
+  panelBoardFixed: 'catalog.board.fixed.hint', panelBoardOrder: 'catalog.board.order.hint',
+  panelPartBox: 'catalog.board.partBox.hint', panelCoverFrame: 'catalog.board.coverFrame.hint', connectorBox: 'catalog.frame.connectorBox.hint',
+  capFootBox: 'catalog.frame.capFootBox.hint', movableBox: 'catalog.frame.movableBox.hint', accessoryBox: 'catalog.frame.accessoryBox.hint',
+  caster: 'catalog.frame.caster.hint',
 };
 
 /**

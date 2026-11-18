@@ -16,14 +16,13 @@ import {
 } from '../profiles/spring.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const COMPRESSION_SPRING_EVIDENCE = {
   title: '資料 K4-6 コイルばねの仕様の表し方(JIS B 2704-2:2018 のプレビュー。入力の項目の名前の根拠だけ)',
   edition: '2018',
-  url: '',
+
   locator: '目次 5 圧縮コイルばね(本文の表と値は使わない)',
-  sha256: '9ae56b3b13f6f8cbeea222ce3607244b42c5b57a469d48759cbb7cb448278ef1',
-  fetchedDate: '2026-11-14',
+  reference: 'K4-6',
 } as const;
 
 /** 表を持たない族の 1 行(寸法は全て指定の値から作る)。 */

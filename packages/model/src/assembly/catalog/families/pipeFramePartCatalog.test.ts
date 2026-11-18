@@ -1,5 +1,6 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
- * 資料 GF-2 のパイプ形のフレームのキャップとフットの 2 族の検査: 族の版・線図・数え方、行の名乗り(出どころ・note・簡略の印)、
+ * 資料 2 のパイプ形のフレームのキャップとフットの 2 族の検査: 族の版・線図・数え方、行の名乗り(出どころ・note・簡略の印)、
  * 全部の行で形が作れる事、体積が段の形の式と合う事、質量が資料の値である事、密度の材質を持たない行の扱い。製品が使う口(族の書き出しと行の表)で確かめる。
  */
 import { describe, expect, it } from 'vitest';
@@ -18,7 +19,7 @@ function rowOf(rows: readonly CatalogItemRow[], record: PipeFramePartRecord): Ca
   return row;
 }
 
-describe('資料 GF-2 のパイプ形のフレームのキャップとフット', () => {
+describe('資料 2 のパイプ形のフレームのキャップとフット', () => {
   it('族の id・群・種類の鍵・版・線図・数え方を凍結し、行は行の表の行を同じ順で持ち、鍵と呼びは族の中で重ならない', () => {
     expect(PAIRS.map(([family]) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision, family.diagram,
       family.stock, family.options.length])).toEqual([
@@ -43,8 +44,8 @@ describe('資料 GF-2 のパイプ形のフレームのキャップとフット'
         const row = rowOf(family.rows, record);
         expect([row.standardLabel, row.materialLabel, row.verification, row.verified, row.simplified], record.key)
           .toEqual(['製造元の寸法に合わせた物', record.materialLabel, 'manufacturer-catalog', true, record.simplified]);
-        expect([row.evidence.title, row.evidence.url, row.evidence.sha256], record.key)
-          .toEqual(['資料 GF-2 パイプ形のフレームの総合カタログ(製造元の寸法に合わせた物)', '', '']);
+        expect([row.evidence.title, row.evidence.reference], record.key)
+          .toEqual(['資料 2 パイプ形のフレームの総合カタログ(製造元の寸法に合わせた物)', '']);
         expect(row.evidence.locator).toBe(`PDF ${record.page} 頁 部品の図(段の寸法)と質量の記入`);
         const mass = record.massG === null ? '質量は資料に記入が無いので、形 × 密度' : '質量は資料の 1 個の値';
         expect(row.note, record.key).toBe(record.simplified.length > 0 ? `形は簡略(${record.simplified.join('・')})。${mass}` : mass);

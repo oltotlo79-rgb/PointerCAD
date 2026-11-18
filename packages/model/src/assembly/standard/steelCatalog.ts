@@ -50,183 +50,135 @@ export interface SteelEvidence {
   readonly title: string;
   /** Null means the publication itself does not state an edition. */
   readonly edition: string | null;
-  readonly url: string;
   readonly locator: string;
-  readonly sha256: string;
-  readonly fetchedDate: string;
+  readonly reference: string;
 }
 
 /** Producer catalogs substantiate nominal sizes and grades, not inventory or certification. */
 export const STEEL_EVIDENCE = {
   ssHBeamDraft: {
-    title: '日本鉄鋼連盟 JIS G 3192 改正原案 H形鋼', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
-    locator: 'JISF G 3192 原案 2024-07-24 表15 PDF p21–22; 転記 g3192-tables.json。最終規格票・供給長さは未確認',
-    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
-    fetchedDate: '2026-10-25',
+    title: 'JIS G 3192 改正原案 H形鋼', edition: null,
+    locator: 'JIS G 3192 原案 2024-07-24 表15 PDF p21–22; 転記 g3192-tables.json。最終規格票・供給長さは未確認',
+    reference: 'JIS G 3192 原案 2024-07-24',
   },
   ssAngleDraft: {
-    title: '日本鉄鋼連盟 JIS G 3192 改正原案 等辺山形鋼', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
-    locator: 'JISF G 3192 原案 2024-07-24 表8 PDF p14; scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json。最終規格票・供給長さは未確認',
-    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
-    fetchedDate: '2026-10-25',
+    title: 'JIS G 3192 改正原案 等辺山形鋼', edition: null,
+    locator: 'JIS G 3192 原案 2024-07-24 表8 PDF p14; scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json。最終規格票・供給長さは未確認',
+    reference: 'JIS G 3192 原案 2024-07-24',
   },
   ssChannelDraft: {
-    title: '日本鉄鋼連盟 JIS G 3192 改正原案 溝形鋼', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
-    locator: 'JISF G 3192 原案 2024-07-24 表12 PDF p18; scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json。最終規格票・供給長さは未確認',
-    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
-    fetchedDate: '2026-10-25',
+    title: 'JIS G 3192 改正原案 溝形鋼', edition: null,
+    locator: 'JIS G 3192 原案 2024-07-24 表12 PDF p18; scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json。最終規格票・供給長さは未確認',
+    reference: 'JIS G 3192 原案 2024-07-24',
   },
   ssFlatDraft: {
-    title: '日本鉄鋼連盟 JIS G 3194 改正原案', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0500JISG3194_20240724.pdf',
+    title: 'JIS G 3194 改正原案', edition: null,
     locator: '2024-07-24原案 PDF p6 JIS G 3194 箇条5・表1 標準厚さ / 表2 標準幅（11厚さ×12幅）。製造元の供給寸法・長さは未確認',
-    sha256: '07cca88a466a190142c87b74eb6c53c3c72e0c66433d3e120e2af497512b7dea',
-    fetchedDate: '2026-10-24',
+    reference: 'JIS G 3194 原案 2024-07-24',
   },
   ssRoundDraft: {
-    title: '日本鉄鋼連盟 JIS G 3191 改正原案', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai010_jis12G3191_20210728.pdf',
+    title: 'JIS G 3191 改正原案', edition: null,
     locator: '2021-07-28原案 PDF p6 表1 括弧なし推奨径 / 5.1 径9 mm未満はバーインコイル。製造元の供給寸法・長さは未確認',
-    sha256: '8ea886730b59558553d49f395e7ada43c093210c51e00e3080c08f2163c0e313',
-    fetchedDate: '2026-10-24',
+    reference: 'JIS G 3191 原案 2021-07-28',
   },
   ss400GradeDraft: {
-    title: '日本鉄鋼連盟 JIS G 3101 改正原案', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3101_20230726.pdf',
+    title: 'JIS G 3101 改正原案', edition: null,
     locator: '2023-07-26原案 PDF p6 表1 SS400 棒鋼・平鋼（平鋼は厚さ100 mm以下）',
-    sha256: '797fe421e44bfce54f53b6b89073e4ce488343f59d733288ca9996a26db44893',
-    fetchedDate: '2026-10-24',
+    reference: 'JIS G 3101 原案 2023-07-26',
   },
   hotRound: {
-    title: '日本鉄鋼連盟 JIS G 4051 改正原案', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0700_JISG4051_20251217.pdf',
+    title: 'JIS G 4051 改正原案', edition: null,
     locator: '2025-12-17原案 PDF p8 7.1.1・表3 熱間圧延丸鋼の括弧なし推奨径 / p6 5 c) 熱処理未指定',
-    sha256: '158ac7b25b0c1cda41ae5cdf68cfe37530b73f1288b9cacf62c2d45584664245',
-    fetchedDate: '2026-10-24',
+    reference: 'JIS G 4051 原案 2025-12-17',
   },
   hotFlat: {
-    title: '日本製鉄 建設用資材ハンドブック 王子製鉄 平鋼', edition: '2025年9月改訂版',
-    url: 'https://www.nipponsteel.com/product/construction/handbook/pdf/3-52.pdf',
+    title: '平鋼', edition: '2025年9月改訂版',
     locator: 'PDF p1 JIS G 4051 S10C〜S58C / p2〜3 標準断面寸法の厚さ×幅（G 3194原案の標準格子との共通部分）',
-    sha256: '50b0a027712a8a0991f52b33896309c3c3f4f83ec3c3704d54eaecb76a87ac3b',
-    fetchedDate: '2026-10-24',
+    reference: '平鋼',
   },
-  osaka: {
-    title: '大阪製鐵 製品カタログ', edition: null,
-    url: 'https://www.osaka-seitetu.co.jp/wp/wp-content/themes/osaka-seitetu/pdf/catalog_2403.pdf',
+  rolledSections: {
+    title: '圧延形鋼', edition: null,
     locator: 'PDF p3 製品・規格 / p4 等辺山形鋼・溝形鋼寸法表',
-    sha256: '6921b44fe26e066498d5e4257067cdc5e1f5aca6f7e307481095a658f8ddf109',
-    fetchedDate: '2026-10-10',
+    reference: '圧延形鋼',
   },
-  yamato: {
-    title: '大和工業グループ 会社案内', edition: '2025.12',
-    url: 'https://www.yamatokogyo.co.jp/steel/en/catalog/pdf/company-brochureA3.pdf',
+  wideFlange: {
+    title: 'H形鋼', edition: '2025.12',
     locator: 'PDF p4 製品規格 / p6 H形鋼標準寸法表',
-    sha256: '69774143c7a64e457b72f06cc4180f2b3a2bb3cc82aadebb347f3543fa8d6a22',
-    fetchedDate: '2026-10-10',
+    reference: 'H形鋼',
   },
   flat: {
-    title: '日本製鉄 建設用資材ハンドブック 王子製鉄 平鋼', edition: '2025年9月改訂版',
-    url: 'https://www.nipponsteel.com/product/construction/handbook/pdf/3-52.pdf',
+    title: '平鋼', edition: '2025年9月改訂版',
     locator: 'PDF p1 規格 / p2 標準断面寸法 / p4 製造寸法',
-    sha256: '50b0a027712a8a0991f52b33896309c3c3f4f83ec3c3704d54eaecb76a87ac3b',
-    fetchedDate: '2026-10-10',
+    reference: '平鋼',
   },
   round: {
-    title: '日本製鉄 建設用資材ハンドブック 大阪製鐵 一般構造用丸鋼',
+    title: '一般構造用丸鋼',
     edition: '2025年9月改訂版',
-    url: 'https://www.nipponsteel.com/product/construction/handbook/pdf/5-33.pdf',
     locator: 'PDF p1 SS400標準断面寸法・標準長さ',
-    sha256: '5e9fbba2c98ccadfaf0f88497af97664393234e4da8b5bb23606997909ef542c',
-    fetchedDate: '2026-10-10',
+    reference: '一般構造用丸鋼',
   },
   brightRound: {
-    title: '太平鋼材工業 みがき丸鋼サイズ表', edition: null,
-    url: 'https://taiheikouzai.co.jp/assets/pdf/marukou.pdf',
+    title: 'みがき丸鋼', edition: null,
     locator: 'PDF p1 S45C（黄色印）の径20・25・30行',
-    sha256: 'a52cd2467606af4ba52bcc2aa14bc30cb70d7855071e3ee66f1c38193edc07ce',
-    fetchedDate: '2026-10-10',
+    reference: 'みがき丸鋼',
   },
   brightFlat: {
-    title: '太平鋼材工業 みがき平鋼サイズ表', edition: null,
-    url: 'https://taiheikouzai.co.jp/assets/pdf/hirakou.pdf',
+    title: 'みがき平鋼', edition: null,
     locator: 'PDF p1 S45C（黄色印）、幅50×厚6・9・12 mmの交点',
-    sha256: 'f45feea1ccb83dbc1706ee7241f97accc92473b139b463c38f7155f22893dd87',
-    fetchedDate: '2026-10-10',
+    reference: 'みがき平鋼',
   },
   carbonGrade: {
-    title: '合同製鐵 構造用棒鋼', edition: null,
-    url: 'https://www.godo-steel.co.jp/seihin/pdf/The_structural_bars_of_Godo_Steel_20221116.pdf',
+    title: 'JIS G 4051 構造用棒鋼', edition: null,
     locator: 'PDF p5 機械構造用炭素鋼鋼材（JIS G4051）S45C行（鋼種分類のみ）',
-    sha256: 'f19cd3ea52561f00bf43149748d4b924227f06e59ede71fe42bb0680612b2b70',
-    fetchedDate: '2026-10-10',
+    reference: 'JIS G 4051 構造用棒鋼',
   },
   pipe: {
-    title: 'JFEスチール 配管用鋼管', edition: null,
-    url: 'https://www.jfe-steel.co.jp/products/koukan/catalog/e1j-001.pdf',
+    title: '配管用鋼管', edition: null,
     locator: 'PDF p12（冊子p10）SGP種類・寸法・標準長さ / p13管端形状',
-    sha256: 'e0790c1900aa6eedeb7c51dc18916c7c506c02765550e8a5a2ca642b7096d0be',
-    fetchedDate: '2026-10-10',
+    reference: '配管用鋼管',
   },
-  // r2（2026-11-14）。PDF のバイトの SHA-256 は取得した資料から計算した値で、規格の台帳（steelStandards.ts）の値と一致する。
+  // r2 の規格の原案。
   stkrDraft: {
-    title: '日本鉄鋼連盟 JIS G 3466 改正原案 一般構造用角形鋼管', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_1600_JISG3466_20241220.pdf',
-    locator: 'JISF G 3466 原案 2024-12-20 表5（正方形）PDF p9〜10・表6（長方形）PDF p11〜12、'
+    title: 'JIS G 3466 改正原案 一般構造用角形鋼管', edition: null,
+    locator: 'JIS G 3466 原案 2024-12-20 表5（正方形）PDF p9〜10・表6（長方形）PDF p11〜12、'
       + '角部の外側及び内側の半径 2t・t（表5・表6 の注a）、8.1 標準長さ 6・8・10・12 m、表1 STKR400 PDF p6。最終規格票・供給は未確認',
-    sha256: 'ce00863b95e73a2dd116459bf75595ac6a21779961406cef8d149791af012752',
-    fetchedDate: '2026-11-14',
+    reference: 'JIS G 3466 原案 2024-12-20',
   },
   stkDraft: {
-    title: '日本鉄鋼連盟 JIS G 3444 改正原案 一般構造用炭素鋼鋼管', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_1400_JISG3444_20241220.pdf',
-    locator: 'JISF G 3444 原案 2024-12-20 表6 管の寸法 PDF p10〜12、表1 STK400 PDF p6、5 c) 管端はプレンエンド。'
+    title: 'JIS G 3444 改正原案 一般構造用炭素鋼鋼管', edition: null,
+    locator: 'JIS G 3444 原案 2024-12-20 表6 管の寸法 PDF p10〜12、表1 STK400 PDF p6、5 c) 管端はプレンエンド。'
       + '標準長さの規定は無い。最終規格票・供給は未確認',
-    sha256: '755e8484f4006043ff5592f0f0baba5524f86d4aac777aca25f25827483e5fa3',
-    fetchedDate: '2026-11-14',
+    reference: 'JIS G 3444 原案 2024-12-20',
   },
   ssUnequalAngleDraft: {
-    title: '日本鉄鋼連盟 JIS G 3192 改正原案 不等辺山形鋼', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
-    locator: 'JISF G 3192 原案 2024-07-24 表9 PDF p15、表2 標準長さ PDF p7、表6 質量の計算方法 PDF p12。最終規格票・供給は未確認',
-    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
-    fetchedDate: '2026-11-14',
+    title: 'JIS G 3192 改正原案 不等辺山形鋼', edition: null,
+    locator: 'JIS G 3192 原案 2024-07-24 表9 PDF p15、表2 標準長さ PDF p7、表6 質量の計算方法 PDF p12。最終規格票・供給は未確認',
+    reference: 'JIS G 3192 原案 2024-07-24',
   },
   ssIBeamDraft: {
-    title: '日本鉄鋼連盟 JIS G 3192 改正原案 I形鋼', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
-    locator: 'JISF G 3192 原案 2024-07-24 表11 PDF p17（図: 内面の角度 98°、t2 は (B−t1)/4 の位置）、表2 標準長さ PDF p7、'
+    title: 'JIS G 3192 改正原案 I形鋼', edition: null,
+    locator: 'JIS G 3192 原案 2024-07-24 表11 PDF p17（図: 内面の角度 98°、t2 は (B−t1)/4 の位置）、表2 標準長さ PDF p7、'
       + '表6 質量の計算方法 PDF p12。最終規格票・供給は未確認',
-    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
-    fetchedDate: '2026-11-14',
+    reference: 'JIS G 3192 原案 2024-07-24',
   },
   // r2 に 2026-11-15 に足した行の資料（G 3350・G 3459 は 2020-12-02 の三者委員会の改正案）。
   sscDraft: {
-    title: '日本鉄鋼連盟 JIS G 3350 改正原案 一般構造用軽量形鋼', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai004_jis03G3350_20201202.pdf',
-    locator: 'JISF G 3350 原案 2020-12-02 表1 SSC400 PDF p4、表5〜表10 PDF p6〜10（図と標準断面寸法）、'
+    title: 'JIS G 3350 改正原案 一般構造用軽量形鋼', edition: null,
+    locator: 'JIS G 3350 原案 2020-12-02 表1 SSC400 PDF p4、表5〜表10 PDF p6〜10（図と標準断面寸法）、'
       + '8.1 角部の曲率半径は厚さの中心線で通常 1.5t PDF p5、表11 標準長さ PDF p10、表12 質量の計算方法 PDF p11。最終規格票・供給は未確認',
-    sha256: '386086a3b2af48d82e049f1bbdb1a6a187721eb156acdd4c2c9e8927bca26fe5',
-    fetchedDate: '2026-11-15',
+    reference: 'JIS G 3350 原案 2020-12-02',
   },
   ssCtDraft: {
-    title: '日本鉄鋼連盟 JIS G 3192 改正原案 CT形鋼', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
-    locator: 'JISF G 3192 原案 2024-07-24 表17 PDF p30〜31（図: フランジの外面が上、t2 は B/4 の位置、根元の丸み r）、'
+    title: 'JIS G 3192 改正原案 CT形鋼', edition: null,
+    locator: 'JIS G 3192 原案 2024-07-24 表17 PDF p30〜31（図: フランジの外面が上、t2 は B/4 の位置、根元の丸み r）、'
       + '表2 標準長さ PDF p7、表6 質量の計算方法 PDF p12。最終規格票・供給は未確認',
-    sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
-    fetchedDate: '2026-11-15',
+    reference: 'JIS G 3192 原案 2024-07-24',
   },
   susPipeDraft: {
-    title: '日本鉄鋼連盟 JIS G 3459 改正原案 配管用ステンレス鋼鋼管', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai004_jis05G3459_20201202.pdf',
-    locator: 'JISF G 3459 原案 2020-12-02 表1 SUS304TP PDF p4、5 製造方法 PDF p4〜5、表7 PDF p12〜13、表8 溶接鋼管 PDF p14〜15、'
+    title: 'JIS G 3459 改正原案 配管用ステンレス鋼鋼管', edition: null,
+    locator: 'JIS G 3459 原案 2020-12-02 表1 SUS304TP PDF p4、5 製造方法 PDF p4〜5、表7 PDF p12〜13、表8 溶接鋼管 PDF p14〜15、'
       + '表9 単位質量の算出式 PDF p16、箇条15 の呼び方の例 PDF p21。標準長さの規定は無い。最終規格票・供給は未確認',
-    sha256: 'cd9247d629dfc9656e0a2fd5941bc043e341cdcc23ad95e4bcb010bb5e3bcdab',
-    fetchedDate: '2026-11-15',
+    reference: 'JIS G 3459 原案 2020-12-02',
   },
 } as const satisfies Readonly<Record<string, SteelEvidence>>;
 
@@ -236,32 +188,24 @@ export const STEEL_EVIDENCE = {
  */
 export const STEEL_PRODUCT_STANDARD_EVIDENCE = {
   hotFlatDraft: {
-    title: '日本鉄鋼連盟 JIS G 3194 改正原案', edition: null,
-    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0500JISG3194_20240724.pdf',
+    title: 'JIS G 3194 改正原案', edition: null,
     locator: '2024-07-24原案 PDF p6 JIS G 3194 箇条5・表1 標準厚さ / 表2 標準幅（G 4051原案7.3が引用）',
-    sha256: '07cca88a466a190142c87b74eb6c53c3c72e0c66433d3e120e2af497512b7dea',
-    fetchedDate: '2026-10-24',
+    reference: 'JIS G 3194 原案 2024-07-24',
   },
-  jfeSections: {
-    title: 'JFE条鋼 形鋼・平鋼・丸鋼 寸法表', edition: null,
-    url: 'https://www.jfe-bs.co.jp/files/size_kata-hira-maru.pdf',
+  rolledSections: {
+    title: '形鋼・平鋼・丸鋼 寸法表', edition: null,
     locator: 'PDF p26（冊子p24）形状・寸法の許容差表：等辺山形鋼 AB・溝形鋼 CB に JIS G 3192',
-    sha256: '031d35df73d5681c7ad7cb721eea4838e80624c9ca7092a69c8e83641c5d65de',
-    fetchedDate: '2026-10-10',
+    reference: '形鋼・平鋼・丸鋼 寸法表',
   },
-  yamatoH: {
-    title: '大和工業グループ 会社案内', edition: '2025.12',
-    url: 'https://www.yamatokogyo.co.jp/steel/en/catalog/pdf/company-brochureA3.pdf',
+  wideFlangeH: {
+    title: 'H形鋼', edition: '2025.12',
     locator: 'PDF p9 H形鋼の形状・寸法の許容差表：JIS G 3192',
-    sha256: '69774143c7a64e457b72f06cc4180f2b3a2bb3cc82aadebb347f3543fa8d6a22',
-    fetchedDate: '2026-10-10',
+    reference: 'H形鋼',
   },
   brightBar: {
-    title: '太平鋼材工業 製品情報 公差表', edition: null,
-    url: 'https://taiheikouzai.co.jp/product.html?id=lineup',
+    title: 'JIS G 3123 公差表', edition: null,
     locator: '公差表（JIS G 3123）、適用形状 丸・平',
-    sha256: '63430ac1b24c555dbe09796a706cdfd75b77e12c727fe064e5d4db63917480eb',
-    fetchedDate: '2026-10-10',
+    reference: 'JIS G 3123 公差表',
   },
 } as const satisfies Readonly<Record<string, SteelEvidence>>;
 
@@ -300,23 +244,23 @@ function standardEdition(references: SteelProductStandardReferences): SteelProdu
 
 const hot = 'hotRolled-heatTreatmentUnspecified';
 function ssSection(catalog: SteelSectionCatalog, size: string,
-  evidence: 'osaka' | 'yamato'): SteelProduct {
+  evidence: 'rolledSections' | 'wideFlange'): SteelProduct {
   return { key: `SS400:${catalog}:${size}`, catalog, size, materialGrade: 'SS400',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192', condition: hot,
     standardReferences: { material: 'jis-g-3101-2024', dimensions: 'jis-g-3192-2024' },
     get standardEdition() { return standardEdition(this.standardReferences); },
-    evidence, productStandardEvidence: catalog === 'hBeam' ? STEEL_PRODUCT_STANDARD_EVIDENCE.yamatoH
-      : STEEL_PRODUCT_STANDARD_EVIDENCE.jfeSections,
+    evidence, productStandardEvidence: catalog === 'hBeam' ? STEEL_PRODUCT_STANDARD_EVIDENCE.wideFlangeH
+      : STEEL_PRODUCT_STANDARD_EVIDENCE.rolledSections,
     geometry: 'profileSection',
-    profileEvidence: catalog === 'equalAngle' ? STEEL_PROFILE_EVIDENCE.jfeAngle
-      : catalog === 'channel' ? STEEL_PROFILE_EVIDENCE.jfeChannel : STEEL_PROFILE_EVIDENCE.yamatoH,
+    profileEvidence: catalog === 'equalAngle' ? STEEL_PROFILE_EVIDENCE.angleProfile
+      : catalog === 'channel' ? STEEL_PROFILE_EVIDENCE.channelProfile : STEEL_PROFILE_EVIDENCE.wideFlangeH,
     standardLengthsMm: [] };
 }
 function flat(thickness: number, width: number, materialGrade: 'SS400' | 'S45C' = 'SS400'): SteelProduct {
   const size = `FB ${width}×${thickness}`;
   return { key: `${materialGrade}:flatBar:${size}`, catalog: 'flatBar', size, materialGrade,
     materialStandard: materialGrade === 'SS400' ? 'JIS G 3101' : 'JIS G 4051',
-    productStandard: materialGrade === 'SS400' ? '王子製鉄 公表断面寸法' : 'JIS G 3123',
+    productStandard: materialGrade === 'SS400' ? '公表平鋼寸法' : 'JIS G 3123',
     standardReferences: materialGrade === 'SS400'
       ? { material: 'jis-g-3101-2024', dimensions: 'jis-g-3194-2024' }
       : { material: 'jis-g-4051-2026', dimensions: 'jis-g-3123-2004' },
@@ -332,7 +276,7 @@ function round(diameter: number, materialGrade: 'SS400' | 'S45C'): SteelProduct 
   const size = `φ${diameter}`;
   return { key: `${materialGrade}:roundBar:${size}`, catalog: 'roundBar', size, materialGrade,
     materialStandard: materialGrade === 'SS400' ? 'JIS G 3101' : 'JIS G 4051',
-    productStandard: materialGrade === 'SS400' ? '大阪製鐵 公表丸鋼寸法' : 'JIS G 3123',
+    productStandard: materialGrade === 'SS400' ? '公表丸鋼寸法' : 'JIS G 3123',
     standardReferences: materialGrade === 'SS400'
       ? { material: 'jis-g-3101-2024', dimensions: 'jis-g-3191-2022' }
       : { material: 'jis-g-4051-2026', dimensions: 'jis-g-3123-2004' },
@@ -366,7 +310,7 @@ function hotS45c(catalog: 'roundBar' | 'flatBar', size: string, dimensions: Stee
     geometry: 'nominal', standardLengthsMm: [], dimensions };
 }
 
-/** Only SS400 dimensions present in the JISF drafts, separate from frozen producer rows. */
+/** Only SS400 dimensions present in the JIS drafts, separate from frozen producer rows. */
 function ss400Standard(catalog: 'flatBar' | 'roundBar', size: string,
   dimensions: SteelProduct['dimensions']): SteelProduct {
   return { key: `SS400:${catalog}:${size}`, catalog, size, materialGrade: 'SS400',
@@ -386,7 +330,7 @@ function ss400SectionStandard(catalog: 'equalAngle' | 'channel', size: string): 
   return { key: `SS400:${catalog}:${size}`, catalog, size, materialGrade: 'SS400',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192', condition: hot,
     evidence, materialEvidence: 'ss400GradeDraft',
-    productStandardEvidence: STEEL_PRODUCT_STANDARD_EVIDENCE.jfeSections,
+    productStandardEvidence: STEEL_PRODUCT_STANDARD_EVIDENCE.rolledSections,
     standardReferences: { material: 'jis-g-3101-2024', dimensions: 'jis-g-3192-2024' },
     get standardEdition() { return standardEdition(this.standardReferences); },
     geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE[evidence], standardLengthsMm: [] };
@@ -397,7 +341,7 @@ function ss400HBeamStandard(size: string): SteelProduct {
   return { key: `SS400:hBeam:${size}`, catalog: 'hBeam', size, materialGrade: 'SS400',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192', condition: hot,
     evidence: 'ssHBeamDraft', materialEvidence: 'ss400GradeDraft',
-    productStandardEvidence: STEEL_PRODUCT_STANDARD_EVIDENCE.yamatoH,
+    productStandardEvidence: STEEL_PRODUCT_STANDARD_EVIDENCE.wideFlangeH,
     standardReferences: { material: 'jis-g-3101-2024', dimensions: 'jis-g-3192-2024' },
     get standardEdition() { return standardEdition(this.standardReferences); },
     geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE.ssHBeamDraft, standardLengthsMm: [] };
@@ -407,15 +351,15 @@ function ss400HBeamStandard(size: string): SteelProduct {
 export const STEEL_PRODUCTS: readonly SteelProduct[] = [
   flat(6, 50), flat(9, 50), flat(12, 50), flat(6, 100), flat(9, 100),
   ...[13, 16, 19, 22, 25].map((diameter) => round(diameter, 'SS400')),
-  ssSection('equalAngle', 'L 40×40×5', 'osaka'),
-  ssSection('equalAngle', 'L 50×50×6', 'osaka'),
-  ssSection('equalAngle', 'L 65×65×6', 'osaka'),
-  ssSection('channel', '[ 75×40×5×7', 'osaka'),
-  ssSection('channel', '[ 100×50×5×7.5', 'osaka'),
-  ssSection('channel', '[ 125×65×6×8', 'osaka'),
-  ssSection('hBeam', 'H 150×150×7×10', 'yamato'),
-  ssSection('hBeam', 'H 200×200×8×12', 'yamato'),
-  ssSection('hBeam', 'H 300×300×10×15', 'yamato'),
+  ssSection('equalAngle', 'L 40×40×5', 'rolledSections'),
+  ssSection('equalAngle', 'L 50×50×6', 'rolledSections'),
+  ssSection('equalAngle', 'L 65×65×6', 'rolledSections'),
+  ssSection('channel', '[ 75×40×5×7', 'rolledSections'),
+  ssSection('channel', '[ 100×50×5×7.5', 'rolledSections'),
+  ssSection('channel', '[ 125×65×6×8', 'rolledSections'),
+  ssSection('hBeam', 'H 150×150×7×10', 'wideFlange'),
+  ssSection('hBeam', 'H 200×200×8×12', 'wideFlange'),
+  ssSection('hBeam', 'H 300×300×10×15', 'wideFlange'),
   ...[20, 25, 30].map((diameter) => round(diameter, 'S45C')),
   flat(6, 50, 'S45C'), flat(9, 50, 'S45C'), flat(12, 50, 'S45C'),
   pipe('15A', 21.7, 2.8), pipe('20A', 27.2, 2.8), pipe('25A', 34, 3.2),
@@ -460,7 +404,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
   ...[5.5, 6, 7, 8, 9, 10, 11, 12, 20, 24, 28, 30, 32, 36, 38, 42, 46, 48, 50,
     55, 56, 60, 64, 65, 70, 75, 80, 85, 90, 95, 100, 110, 120, 130, 140, 150, 160, 180, 200]
     .map((diameter) => ss400Standard('roundBar', `φ${diameter}`, { diameter })),
-  // JISF G 3192 draft tables 8/12, transcribed g3192-tables.json.
+  // JIS G 3192 draft tables 8/12, transcribed g3192-tables.json.
   ...[
     'L 120×120×8',
     'L 130×130×9',
@@ -487,7 +431,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     '[ 380×100×13×16.5',
     '[ 380×100×13×20',
   ].map((size) => ss400SectionStandard('channel', size)),
-  // JISF G 3192 draft 2024-07-24, table 15, PDF p21–22; final standard and supply lengths unverified.
+  // JIS G 3192 draft 2024-07-24, table 15, PDF p21–22; final standard and supply lengths unverified.
   ...[
     'H 100×50×5×7',
     'H 125×60×6×8',
@@ -536,7 +480,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     'H 912×302×18×34',
     'H 918×303×19×37',
   ].map(ss400HBeamStandard),
-  // JISF G 3452 draft table 4, PDF p10 / printed p6; black additions and all -ZN white pipes.
+  // JIS G 3452 draft table 4, PDF p10 / printed p6; black additions and all -ZN white pipes.
   ...([
     ['6A', 10.5, 2.0, 'T4-01', true],
     ['8A', 13.8, 2.3, 'T4-02', true],
@@ -563,7 +507,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     ['450A', 457.2, 7.9, 'T4-23', true],
     ['500A', 508.0, 7.9, 'T4-24', true],
   ] as const).flatMap(([size, diameter, thickness, sourceRow, missingBlack]) => {
-    const note = `JISF G 3452 2025-12-17原案 表4 PDF p10（印刷p6）${sourceRow}。`
+    const note = `JIS G 3452 2025-12-17原案 表4 PDF p10（印刷p6）${sourceRow}。`
       + '転記: g3452-tables.json。'
       + '表 4 の単位質量はソケットを含まない参考値。めっき・ねじの分は含まない。'
       + (Number.parseInt(size, 10) <= 300 ? '300A以下はねじ付又はプレンエンド。' : '350A以上はプレンエンド。')
@@ -579,7 +523,7 @@ const G3466_STANDARD_LENGTHS_MM = [6000, 8000, 10000, 12000];
 const G3192_STANDARD_LENGTHS_MM = [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000];
 const R2_NOTE_TAIL = '最終規格票・供給は未確認。';
 
-/** r2 rows: JISF draft table values with their PDF page; never stock, supply or certification. */
+/** r2 rows: JIS draft table values with their PDF page; never stock, supply or certification. */
 function r2Product(fields: Omit<SteelProduct, 'standardEdition' | 'catalogRevision'>): SteelProduct {
   return { ...fields, catalogRevision: STEEL_CATALOG_REVISION_R2,
     get standardEdition() { return standardEdition(this.standardReferences); } };
@@ -588,7 +532,7 @@ function rectTubeProduct([a, b, t, mass, area, page, table]: typeof G3466_RECT_T
   const size = `□ ${a}×${b}×${t}`;
   return r2Product({ key: `STKR400:rectTube:${size}`, catalog: 'rectTube', size, materialGrade: 'STKR400',
     materialStandard: 'JIS G 3466', productStandard: 'JIS G 3466', condition: 'rectTube-asManufactured',
-    note: `JISF G 3466 2024-12-20原案 表${table} PDF p${page}。単位質量 ${mass} kg/m・断面積 ${area} cm²（原案の参考の値）。`
+    note: `JIS G 3466 2024-12-20原案 表${table} PDF p${page}。単位質量 ${mass} kg/m・断面積 ${area} cm²（原案の参考の値）。`
       + `角部の外側の半径 2t・内側の半径 t（表${table}の注a）。製造方法・熱処理・めっき・管端は形状に含まない。${R2_NOTE_TAIL}`,
     evidence: 'stkrDraft', standardReferences: { material: 'jis-g-3466-2025', dimensions: 'jis-g-3466-2025' },
     geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE.stkrDraft, standardLengthsMm: G3466_STANDARD_LENGTHS_MM });
@@ -597,7 +541,7 @@ function structuralPipeProduct([diameter, thickness, mass, area, page]: typeof G
   const size = `φ${diameter}×${thickness}`;
   return r2Product({ key: `STK400:steelPipe:${size}`, catalog: 'steelPipe', size, materialGrade: 'STK400',
     materialStandard: 'JIS G 3444', productStandard: 'JIS G 3444', condition: 'structuralPipe-plainEnds',
-    note: `JISF G 3444 2024-12-20原案 表6 PDF p${page}。単位質量 ${mass} kg/m・断面積 ${area} cm²（原案の参考の値）。`
+    note: `JIS G 3444 2024-12-20原案 表6 PDF p${page}。単位質量 ${mass} kg/m・断面積 ${area} cm²（原案の参考の値）。`
       + `製管方法・仕上げ方法・めっき・管端は形状に含まない。${R2_NOTE_TAIL}`,
     evidence: 'stkDraft', standardReferences: { material: 'jis-g-3444-2025', dimensions: 'jis-g-3444-2025' },
     geometry: 'nominal', standardLengthsMm: [],
@@ -608,7 +552,7 @@ function ss400R2Section(catalog: 'unequalAngle' | 'iBeam', size: string, table: 
   const evidence = catalog === 'unequalAngle' ? 'ssUnequalAngleDraft' : 'ssIBeamDraft';
   return r2Product({ key: `SS400:${catalog}:${size}`, catalog, size, materialGrade: 'SS400',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192', condition: hot,
-    note: `JISF G 3192 2024-07-24原案 表${table} PDF p${page}。${printed}（表6 の計算方法による原案の値）。${R2_NOTE_TAIL}`,
+    note: `JIS G 3192 2024-07-24原案 表${table} PDF p${page}。${printed}（表6 の計算方法による原案の値）。${R2_NOTE_TAIL}`,
     evidence, materialEvidence: 'ss400GradeDraft',
     standardReferences: { material: 'jis-g-3101-2024', dimensions: 'jis-g-3192-2024' },
     geometry: 'profileSection', profileEvidence: STEEL_EVIDENCE[evidence], standardLengthsMm: G3192_STANDARD_LENGTHS_MM });
@@ -639,7 +583,7 @@ function lightGaugeProduct(catalog: LightGaugeCatalog, { code, dims, t, area, ma
   const size = `${LIGHT_GAUGE_SIZE_PREFIXES[catalog]} ${[...dims, t].join('×')}`;
   return r2Product({ key: `SSC400:${catalog}:${size}`, catalog, size, materialGrade: 'SSC400',
     materialStandard: 'JIS G 3350', productStandard: 'JIS G 3350', condition: 'lightGauge-coldFormed',
-    note: `JISF G 3350 2020-12-02原案 表${LIGHT_GAUGE_TABLES[catalog]} PDF p${page}。呼び名 ${code}。`
+    note: `JIS G 3350 2020-12-02原案 表${LIGHT_GAUGE_TABLES[catalog]} PDF p${page}。呼び名 ${code}。`
       + `断面積 ${area} cm²・単位質量 ${mass} kg/m（表12 の計算方法による原案の値）。`
       + (LIGHT_GAUGE_PRINT_REMARKS[`${catalog}:${code}`] ?? '')
       + `角部の曲率半径は厚さの中心線で 1.5t（外側 2t・内側 t、8.1）。素材の鋼板の種類・めっきは形状に含まない。${R2_NOTE_TAIL}`,
@@ -650,7 +594,7 @@ function ctProduct([h, b, t1, t2, , area, mass, , page]: typeof G3192_CT_ROWS[nu
   const size = `CT ${h}×${b}×${t1}×${t2}`;
   return r2Product({ key: `SS400:ctSection:${size}`, catalog: 'ctSection', size, materialGrade: 'SS400',
     materialStandard: 'JIS G 3101', productStandard: 'JIS G 3192', condition: hot,
-    note: `JISF G 3192 2024-07-24原案 表17 PDF p${page}。断面積 ${area} cm²・単位質量 ${mass} kg/m（表6 の計算方法による原案の値）。`
+    note: `JIS G 3192 2024-07-24原案 表17 PDF p${page}。断面積 ${area} cm²・単位質量 ${mass} kg/m（表6 の計算方法による原案の値）。`
       + R2_NOTE_TAIL,
     evidence: 'ssCtDraft', materialEvidence: 'ss400GradeDraft',
     standardReferences: { material: 'jis-g-3101-2024', dimensions: 'jis-g-3192-2024' },
@@ -665,7 +609,7 @@ function stainlessPipeProduct(size: string, note: string, diameter: string, thic
     geometry: 'nominal', standardLengthsMm: [],
     dimensions: { outsideDiameter: Number(diameter), wallThickness: Number(thickness) } });
 }
-const G3459_NOTE_HEAD = 'JISF G 3459 2020-12-02原案';
+const G3459_NOTE_HEAD = 'JIS G 3459 2020-12-02原案';
 const g3459Mass = (mass: string): string => `単位質量 ${mass} kg/m（SUS304TP の列、表9 の式による原案の値）。`;
 const STAINLESS_PIPE_PRODUCTS: readonly SteelProduct[] = [
   ...G3459_TABLE7_ROWS.map(([a, b, d, sch, t, mass, page]) => stainlessPipeProduct(`${a}A×Sch${sch}`,

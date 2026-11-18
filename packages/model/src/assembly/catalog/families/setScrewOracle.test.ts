@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-04 六角穴付き止めねじ(JIS B 1177-2007)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の setScrew)の突合せ、
  * 長さの範囲と短い形の決まり、形の体積の検査。fixture は規格寸法の表の語の位置・在庫表の画素と線から、
@@ -93,11 +94,11 @@ describe('M-04 六角穴付き止めねじ 資料の表との突合せ', () => {
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結する', () => {
     const evidence = familyOf('cup').rows[0]?.evidence;
     expect(KINDS.every(([kind]) => familyOf(kind).rows.every((row) => row.evidence === evidence))).toBe(true);
-    expect(evidence?.sha256).toBe(ORACLE.pdfSha256);
+    expect(evidence?.reference).toBe(ORACLE.reference);
     expect(evidence?.locator).toContain('PDF 28 頁');
     expect(evidence?.locator).toContain(`PDF 29〜${ORACLE.pages[1]} 頁`);
     expect(evidence?.title.startsWith('資料 K5-4 ')).toBe(true);
-    expect(evidence?.url).toBe('');
+    expect(evidence).not.toHaveProperty('url');
     expect(KINDS.map(([kind]) => [familyOf(kind).id, familyOf(kind).kindKey, familyOf(kind).catalogRevision,
       familyOf(kind).generatorRevision])).toEqual([
       ['set-screw-cup-point', 'catalog.mechanical.kind.setScrewCup', 'set-screw-2026-11-r1', 'set-screw-1'],

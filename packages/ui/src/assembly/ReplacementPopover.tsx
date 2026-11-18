@@ -1,5 +1,7 @@
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
+import { useRef } from 'react';
 import { t } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { cancelReplacementPreview, confirmReplacementPreview } from './replaceActions.js';
 
@@ -12,10 +14,14 @@ export function replacementPreviewText(total: number, unmatched: number): string
 /** 選び直せない参照があるときだけ出る、その場の確認。背景の操作は塞がない。 */
 export function ReplacementPopover(): React.JSX.Element | null {
   const preview = useAppStore((state) => state.assemblyReplacementPreview);
+  const root = useRef<HTMLDivElement>(null);
+  // 開いた時は窓の中へ、閉じた時は開いた元へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, preview !== null);
   if (preview === null) return null;
   const plan = preview.prepared.plan;
   return (
     <div
+      ref={root}
       className="pcad-popover"
       role="dialog"
       aria-label={t('assembly.tool.replacePart')}

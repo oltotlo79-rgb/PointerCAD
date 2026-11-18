@@ -1,5 +1,6 @@
 import { observeThumbnailCaptureReasons, type createThumbnailCaptureReasonJournal } from '../file/thumbnail.js';
 import { useAppStore } from '../store/useAppStore.js';
+import type { FrameStrokeView } from './createFrameStrokeLayer.js';
 import type { CutPreview } from './createSolidLayer.js';
 import type { ViewportMeshReservation, ViewportScene } from './createViewportScene.js';
 import type { ViewportAssemblyInput } from './viewportCanvasAssemblyInput.js';
@@ -27,9 +28,13 @@ declare global {
     pcadViewportRenderStats?: () => ViewportRenderStats;
     pcadViewportAssemblyOwner?: () => Readonly<Record<string, unknown>> | null;
     pcadViewportFramedBodies?: () => readonly string[];
+    /** 検査専用。ボルト締結の窓の当たり(J-02c)の輪の数。 */
+    pcadViewportHoleHints?: () => number;
     pcadThumbnailCaptureReasons?: () => ReturnType<ReturnType<typeof createThumbnailCaptureReasonJournal>['snapshot']>;
     /** 検査専用の表示コピー/属性予約会計。driverのGPU actualではない。 */
     pcadViewportMemoryStats?: () => ViewportMeshReservation | null;
+    /** 検査専用。3D の画面で打った点の一時の線(E-08 第 2 段)の点の数・線の本数・閉じているか。 */
+    pcadViewportFrameStroke?: () => FrameStrokeView;
     pcadViewportMeshObservation?: () => ViewportMeshObservationSnapshot;
     /** 検査専用。scene へ渡した最後の切断の予告(切断の予告の画面検査が予告の面を読む)。 */
     pcadViewportCutPreview?: () => CutPreview | null;
@@ -180,11 +185,21 @@ export function publishSceneDiagnostics(sources: SceneDiagnosticsSources) {
     if (window.pcadViewportFramedBodies === readFramedBodies) delete window.pcadViewportFramedBodies;
   });
   window.pcadViewportFramedBodies = readFramedBodies;
+  const readHoleHints = (): number => isAlive() ? scene.holeHintCount() : 0;
+  lifetime.register('hole hint observation', () => {
+    if (window.pcadViewportHoleHints === readHoleHints) delete window.pcadViewportHoleHints;
+  });
+  window.pcadViewportHoleHints = readHoleHints;
   const readMemoryStats = (): ViewportMeshReservation | null => isAlive() ? scene.meshReservation() : null;
   lifetime.register('memory observation', () => {
     if (window.pcadViewportMemoryStats === readMemoryStats) delete window.pcadViewportMemoryStats;
   });
   window.pcadViewportMemoryStats = readMemoryStats;
+  const readFrameStroke = (): FrameStrokeView => isAlive() ? scene.frameStrokeView() : { points: 0, segments: 0, closed: false };
+  lifetime.register('frame stroke observation', () => {
+    if (window.pcadViewportFrameStroke === readFrameStroke) delete window.pcadViewportFrameStroke;
+  });
+  window.pcadViewportFrameStroke = readFrameStroke;
   // 切断の予告は、scene へ渡した最後の値だけを検査専用の口から読めるようにする(製品の状態には含めない)。
   let lastCutPreview: CutPreview | null = null;
   const showCutPreview = (preview: CutPreview | null): void => {

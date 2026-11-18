@@ -1,6 +1,7 @@
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { cancelPlaceComponent, commitPlaceComponent, updatePlaceComponentSource } from './placeComponentActions.js';
 import { placementFromSources } from './placeComponent.js';
@@ -16,6 +17,9 @@ export function PlaceComponentPopover(): React.JSX.Element | null {
   const placement = useAppStore((state) => state.assemblyPlacement);
   const assembly = useAppStore((state) => state.assembly);
   const firstField = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // 部品を選んだ後に開く窓。閉じた時に、開いた元(「組む」のメニューの釦)へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, placement !== null && placement.kind !== 'choosing', { initial: () => firstField.current });
 
   useEffect(() => {
     if (placement?.kind === 'ready') {
@@ -42,6 +46,7 @@ export function PlaceComponentPopover(): React.JSX.Element | null {
 
   return (
     <div
+      ref={root}
       className="pcad-popover"
       role="dialog"
       aria-label={t('assembly.place.title')}

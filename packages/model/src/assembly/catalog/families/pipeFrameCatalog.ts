@@ -1,5 +1,5 @@
 /**
- * 族: 資料 GF-2(2 冊目の総合カタログ)のパイプ形のフレーム(外径の呼び 19・28・43・53 の系列)で寸法が確認できる物
+ * 族: 資料 2(2 冊目の総合カタログ)のパイプ形のフレーム(外径の呼び 19・28・43・53 の系列)で寸法が確認できる物
  * (1 本・溝つき・2 本つなぎの 3 族。統括の決定 2026-11-17 13:1x・13:4x)。製造元の名前・型番は書かない。
  *
  * 行は、資料の独立の読み(1 回目の 2 本と読み直しの 2 本)のうち 2 つ以上が一致した物だけ(行の表 `pipeFrameRows.ts` は道具が生成し、
@@ -75,8 +75,8 @@ function rowOf(record: PipeFrameRecord): CatalogItemRow {
     materialLabel: 'アルミ',
     densityMaterialId: 'aluminum',
     dims,
-    evidence: { title: '資料 GF-2 パイプ形のフレームの総合カタログ(製造元の寸法に合わせた物)', edition: null, url: '',
-      locator: `PDF ${record.page} 頁 断面の図と技術データ(寸法・単位質量・Ix・Iy・Zx・Zy)`, sha256: '', fetchedDate: '' },
+    evidence: { title: '資料 2 パイプ形のフレームの総合カタログ(製造元の寸法に合わせた物)', edition: null,
+      locator: `PDF ${record.page} 頁 断面の図と技術データ(寸法・単位質量・Ix・Iy・Zx・Zy)`, reference: '' },
     verification: 'manufacturer-catalog',
     verified: true,
     simplified: record.simplified,

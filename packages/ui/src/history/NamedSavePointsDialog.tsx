@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { activeDocumentKind } from '../store/documentKind.js';
+import { takeMenuOpener } from '../shell/dialogFocusRules.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { DocumentDiffDialog } from '../diff/DocumentDiffDialog.js';
 import { ComparisonLimitError, createNamedSavePointActions, type NamedSavePointActions, type SavePointComparison } from './namedSavePointActions.js';
@@ -57,11 +58,13 @@ export function NamedSavePointsDialog({ onClose, labels, actions: suppliedAction
   const [comparison, setComparison] = useState<SavePointComparison | null>(null);
 
   useEffect(() => {
-    const dialog = element.current, previous = document.activeElement;
+    // メニューの項目から開いた時は、項目が消えるので、そのメニューの釦を戻り先の代わりにする(C-03)。
+    const dialog = element.current, previous = document.activeElement, menuOpener = takeMenuOpener();
     dialog?.showModal(); dialog?.querySelector<HTMLElement>('input')?.focus();
     return () => {
       operation.current?.abort(); operation.current = null; dialog?.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+      else if (menuOpener?.isConnected === true) menuOpener.focus();
     };
   }, []);
   useEffect(() => {

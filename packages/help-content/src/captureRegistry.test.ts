@@ -28,6 +28,8 @@ const REGISTER = 'node scripts/manual/captureRegistry.mjs register で登録し�
  * 撮り直しは後の撮影の作業（計画 P12-16・P12-17）で行う。
  */
 const KNOWN_UNREFERENCED: Readonly<Record<string, string>> = {
+  // 利用者の回答 2026-11-18 19:5x: 最後の版まで例外として残す。
+  'strength-material-source-detail.png': '発行元の名前を外した直し〔2026-11-18〕で本文から外した。最後の版の説明書の撮り直しで差し替えて、この行を消す（利用者の回答 2026-11-18 19:5x）',
   'sheet-edit-flange-preview.png': 'フランジの編集中の見た目を撮った画像だが、どの章も参照していない。章へ載せるか削除するかを後の撮影の作業で決める（2026-09-24 棚卸し PLAN-01）。',
 };
 const KNOWN_OUTSIDE_VIEWPORT_POLICY: Readonly<Record<string, string>> = {

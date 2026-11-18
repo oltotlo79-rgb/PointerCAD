@@ -21,6 +21,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { flattenAssemblyGeometry } from './createAssemblyLayer.js';
 import type { AssemblyComponentPickObservation, AssemblyFacePickObservation, ViewportScene } from './createViewportScene.js';
 import { componentDragPlane } from './dragComponent.js';
+import { frameStrokeHitAt } from './frameStrokePick.js';
 import { jointOccurrenceInputsOf, pickJointOccurrenceTarget, resolveJointOccurrencePick } from './pickJointOccurrence.js';
 
 /** 選択の種類を切り替える命令(既定のキーは 1〜4)。 */
@@ -198,6 +199,31 @@ function reportMateInput(observation: AssemblyMateInputObservation | undefined, 
 }
 
 type MateInputState = ReturnType<typeof useAppStore.getState>;
+
+/**
+ * 一筆書きの配置(E-08)で点を打っている間の押下: 押した所(頂点か、前の点の高さの面の上)を点の列へ足す。Shift は軸に縛る。
+ * 部品の選択・合致・ドラッグへは渡さない(点の列は文書に書かないので、表示の失効を待たない)。打っていなければ false。
+ */
+function frameStrokePointerDown(state: MateInputState, scene: AssemblyPickScene, at: readonly [number, number], lockAxis: boolean,
+  observation: AssemblyMateInputObservation | undefined, dragInput: AssemblyDragInput | undefined): boolean {
+  if (state.frameStroke?.active !== true) return false;
+  const hit = state.assembly === null || state.assemblyView === null ? null : frameStrokeHitAt({
+    components: state.assembly.components, placements: state.assemblyView.resolved.placements,
+    partKeys: state.assemblyView.resolved.partKeys, bodies: state.assemblyView.bodies,
+  }, scene, at, state.frameStroke);
+  const added = hit !== null && state.addFrameStrokeHit(hit, lockAxis) !== 'unchanged';
+  if (observation !== undefined) observation.addAccepted = added;
+  reportMateInput(observation, dragInput);
+  return true;
+}
+
+/** 一筆書きの点を打っている間のキー: Backspace は最後の点を消し、Esc は打つのをやめる(点は窓の欄に残る)。受けたら true。 */
+function frameStrokeKey(state: MateInputState, key: string): boolean {
+  if (state.frameStroke?.active !== true || (key !== 'Escape' && key !== 'Backspace')) return false;
+  if (key === 'Escape') state.pauseFrameStroke();
+  else state.undoFrameStrokePoint();
+  return true;
+}
 
 /**
  * 保留した入力を採用してよいかの比較のうち、文書・計算の世代・表示の元(BUG.VIEW-PICK-NULL)。
@@ -541,7 +567,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     } else if (target !== null) {
       // 実らせんの組は締結の穴の枠だけのもの。合致・溶接へは渡さない。フレームの辺を選ぶ途中は、辺の一覧のチェックを入れ替える。
       // 締結の 4 面の後に Shift で押した穴は、2 組目からの穴として足し外しする(J-02 P4)。
-      const accepted = state.frameEdgePick !== null ? target.kind !== 'modeledThreadGroup' && state.toggleFrameEdgePick(assemblyTargetId(target))
+      const accepted = state.frameEdgePick !== null ? target.kind !== 'modeledThreadGroup' && state.toggleFrameEdgePick(assemblyTargetId(target), target.componentId)
         : state.assemblyFrameSlotDraft !== null ? target.kind !== 'modeledThreadGroup' && state.pickFrameSlotFace(target, event.shiftKey) : state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target, event.shiftKey)
         : target.kind === 'modeledThreadGroup' ? false
           : state.assemblyFilletWeldDraft !== null ? state.pickFilletWeldTarget(target) : addMateTarget(target);
@@ -569,9 +595,10 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       reportMateInput(observation, dragInput);
       return;
     }
-    event.preventDefault();
-    canvas.focus({ preventScroll: true });
+    event.preventDefault(); canvas.focus({ preventScroll: true });
     const state = useAppStore.getState();
+    // 一筆書きの配置(E-08)で点を打っている間は、押した所を点の列へ足し、ほかの押下の流れへ渡さない。
+    if (frameStrokePointerDown(state, scene, pointer(event), event.shiftKey, observation, dragInput)) return;
     const bodySelection = state.selectionKind === 'body' && !pickDraftActive(state);
     // 部品の選択も同じ公開形状の所有証明が戻るまで保留し、失効した表示で空選択にしない。
     if (dragInput?.prepareMateInput !== undefined && state.assemblyView !== null
@@ -697,7 +724,8 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     if (event.key === 'Escape' && captured !== null) {
       event.preventDefault(); event.stopImmediatePropagation(); cancelDrag(); return;
     }
-    if (handleMateKey(event.key, event.isComposing)) {
+    // 一筆書きの点を打っている間の Backspace・Esc も、ここで受ける(frameStrokeKey)。
+    if (handleMateKey(event.key, event.isComposing) || frameStrokeKey(state, event.key)) {
       event.preventDefault(); event.stopImmediatePropagation(); return;
     }
     // 面を選んだ後は焦点がビューにあるので、締結の打ちかけの Esc(やめる)と Enter(予告どおり締結)もここで受ける。

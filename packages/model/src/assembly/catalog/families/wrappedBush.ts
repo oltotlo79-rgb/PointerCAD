@@ -1,7 +1,7 @@
 /**
  * 族: 巻きブシュ(すべり軸受の巻いた管、内径 3〜28)。M-20(設計 §2.3)。
  *
- * 寸法は製造元の公開の寸法表(下の `WRAPPED_BUSH_EVIDENCE`、PDF の SHA-256 と頁を記録)の内径 φd・外径 φD・肉厚 T と、
+ * 寸法は製造元の公開の寸法表(下の `WRAPPED_BUSH_EVIDENCE`、資料の番号 と頁を記録)の内径 φd・外径 φD・肉厚 T と、
  * 作れる長さ L(部品番号の表に載っている組だけ)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の wrappedBush で、検査が 1 行ずつ照らす。
  * 作れる長さが内径ごとに違うので、行は(内径, 長さ)の組ごとに持つ(表に無い長さは置けない)。
@@ -11,14 +11,13 @@
 import { buildBushPart, bushVolume, type BushDimensions } from '../profiles/bush.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const WRAPPED_BUSH_EVIDENCE = {
   title: '資料 K4-3 巻きブシュの寸法表(製造元の公開カタログ、英語版、内径 3〜28)',
   edition: null,
-  url: '',
+
   locator: 'PDF 1 頁(冊子 155〜156 頁)の表: 内径 φd・外径 φD・肉厚 T(155 頁)、長さ L ごとの品番の表(155〜156 頁)',
-  sha256: '0a678b4ffc91f638d54202b00266ddd292719ebbde506ebb8829bcab4903637c',
-  fetchedDate: '2026-11-14',
+  reference: 'K4-3',
 } as const;
 
 /** [内径 d, 外径 D, 肉厚 T, 作れる長さ L の一覧](mm)。 */

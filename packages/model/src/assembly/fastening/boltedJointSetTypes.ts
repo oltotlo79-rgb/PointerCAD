@@ -27,7 +27,7 @@ export interface BoltedJointSetPlan {
   readonly joints: readonly EntryBoltedJointPlan[];
 }
 
-export interface BoltedJointSetFailure {
+interface BoltedJointSetFailure {
   readonly ok: false;
   readonly rejections: readonly FasteningExtensionRejection[];
   readonly holes: readonly BoltedJointHoleFailure[];

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it } from 'vitest';
 import { createPiecewiseDraft, editPiecewiseDraft, type FatiguePiecewiseCommon, type FatiguePiecewiseDraft,
   type FatiguePiecewiseEdit } from './fatiguePiecewiseDraft.js';
@@ -10,7 +11,7 @@ import { relative } from './fatigue.testSupport.js';
  * Expected values are written from published formulas, independently of the implementation. The S-N constants are TEST
  * calibrations copied from DNV-RP-C203 (2005, amended 2006) Table 2-1 (air; m = 3 to 1e7 cycles, then m = 5), not
  * product defaults: E (fillet weld throat shear, Table A-8) log a1 = 12.010, F1 (bolt in tension, Table A-2) log a1 = 11.699.
- * ISO metric tensile stress area As = pi/4 (d - 0.938194 P)^2 (ISO 898-1, as tabulated by Fastenal).
+ * ISO metric tensile stress area As = pi/4 (d - 0.938194 P)^2 (ISO 898-1, tabulated values).
  */
 const stressAt = (logA: number, slope: number, cycles: number): number => (10 ** logA / cycles) ** (1 / slope);
 const COMMON: FatiguePiecewiseCommon = { stressDefinition: 'range', meanStressAssumption: 'mean-independent',

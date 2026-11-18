@@ -1,13 +1,11 @@
 /** Material strength is condition-specific. Never infer it from a body's display material. */
 export interface StrengthSource {
-  readonly url: string;
-  readonly publisher: string;
-  readonly locator: string;
-  readonly checkedDate: string;
+  readonly label: string;
+  /** Positive revisions identify catalogue sources. Zero denotes an unmatched historical record. */
+  readonly revision: number;
   readonly standard: string | null;
   readonly standardEdition: string | null;
   readonly evidence: 'supplier-excerpt' | 'manufacturer-reference' | 'measured-reference' | 'standard-draft';
-  readonly sha256: string;
 }
 export interface StrengthMaterialProperty {
   /** Minimum or reference value in MPa; a printed upper limit is kept separately. */

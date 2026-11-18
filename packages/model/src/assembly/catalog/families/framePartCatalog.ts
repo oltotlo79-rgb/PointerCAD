@@ -1,5 +1,5 @@
 /**
- * 族: 資料 SF-1(アルミ構造材の総合カタログ)で寸法が確認できるフレームの部品(統括の決定 2026-11-17)。製造元の名前・型番は書かない。
+ * 族: 資料 1(アルミ構造材の総合カタログ)で寸法が確認できるフレームの部品(統括の決定 2026-11-17)。製造元の名前・型番は書かない。
  * T 溝用ナットの素材(棒材。長さを入れる)・T 溝用ナット・丸ナット・端のキャップ・平板のブラケットの 5 族。行は、資料の 2 回の独立の読みで、形を作るのに
  * 要る欄が全部一致した物だけ(行の表 `framePartRows.ts` は道具が生成し、検査が 2 回目の読みの fixture と 1 行ずつ照らす)。
  * 形は記入のある寸法だけで作る簡略の形で、簡略にした所は行の `simplified` に持つ(頭の斜面・首の長さ・穴の位置・取付けの脚と穴・角の形・
@@ -13,12 +13,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildSlotNutPart, slotNutVolume, type SlotNutDimensions } from '../profiles/frameParts.js';
 import {
   adjusterVolume, angleBracketCatalogVolume, buildAdjusterPart, buildAngleBracketCatalogPart, buildFlatPlatePart, buildFootBasePart,
-  buildFrameCapPart, buildRoundNutPart, buildShapedPlatePart, flatPlateProfile, footBaseProfile, frameCapProfile, roundNutVolume,
+  buildFrameCapPart, buildRoundNutPart, buildShapedPlatePart, flatPlateProfile, footBaseBossVolume, footBaseProfile, frameCapProfile, roundNutVolume,
   shapedPlateProfile, tSlotNutBarBounds, tSlotNutBarProfile, type AdjusterDimensions, type AngleBracketCatalogDimensions,
   type FlatPlateDimensions, type FootBaseDimensions, type FrameCapDimensions, type RoundNutDimensions, type ShapedPlateDimensions,
   type TSlotNutBarSection,
 } from '../profiles/framePartShapes.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
+import { BOSS_FOOT_RECORDS } from './bossFootRows.js';
 import {
   ADJUSTER_RECORDS, ANGLE_BRACKET_RECORDS, FLAT_PLATE_RECORDS, FOOT_BASE_RECORDS, FRAME_CAP_RECORDS, ROUND_NUT_RECORDS, SHAPED_PLATE_RECORDS,
   T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS,
@@ -217,6 +218,8 @@ export interface FootBaseRecord {
    * (統括の決定 2026-11-18 09:3x の 3)。省略は幅 × 奥行の長方形。
    */
   readonly outline?: readonly (readonly [number, number])[];
+  /** ボス付きの板だけ: 板を通る円柱のボス(中心 x・y・径・下の端・上の端。統括の決定 2026-11-18 13:3x の (2))。省略はボスなし。 */
+  readonly bosses?: readonly { readonly x: number; readonly y: number; readonly diameter: number; readonly bottom: number; readonly top: number }[];
   readonly massG: number | null;
   readonly simplified: readonly string[];
 }
@@ -260,8 +263,8 @@ function baseRow(record: { readonly key: string; readonly size: string; readonly
     standardLabel: '製造元の寸法に合わせた物',
     ...materialFields(record),
     dims,
-    evidence: { title: '資料 SF-1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null, url: '',
-      locator: `PDF ${record.page} 頁 部品の図(寸法)と質量の記入`, sha256: '', fetchedDate: '' },
+    evidence: { title: '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null,
+      locator: `PDF ${record.page} 頁 部品の図(寸法)と質量の記入`, reference: '' },
     verification: 'manufacturer-catalog',
     verified: true,
     note: record.simplified.length > 0 ? `形は簡略(${record.simplified.join('・')})。質量は${massText}` : `質量は${massText}`,
@@ -521,19 +524,21 @@ export const ANGLE_BRACKET_CATALOG_FAMILY: CatalogFamily = {
   partName: (row) => row.size,
 };
 
-const baseRecord = recordLookup(FOOT_BASE_RECORDS);
+/** ベースの板の族の行: 穴の決まった板の後に、ボス付きの板(取付け穴は作らず印。統括の決定 2026-11-18 13:4x の (1))。 */
+const FOOT_BASE_ROWS: readonly FootBaseRecord[] = [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS];
+const baseRecord = recordLookup(FOOT_BASE_ROWS);
 
 function baseDimensions(row: CatalogItemRow): FootBaseDimensions | null {
   const record = baseRecord(row);
   return record === undefined ? null : { width: record.width, depth: record.depth, thickness: record.thickness, holes: record.holes,
-    ...(record.outline === undefined ? {} : { outline: record.outline }) };
+    ...(record.outline === undefined ? {} : { outline: record.outline }), ...(record.bosses === undefined ? {} : { bosses: record.bosses }) };
 }
 
 export const FOOT_BASE_FAMILY: CatalogFamily = {
   ...familyBase('t-slot-foot-base', 'catalog.frame.kind.footBase', 'footBase'),
   options: [],
   stock: 'count',
-  rows: FOOT_BASE_RECORDS.map((record) => baseRow(record, { width: record.width, depth: record.depth, thickness: record.thickness,
+  rows: FOOT_BASE_ROWS.map((record) => baseRow(record, { width: record.width, depth: record.depth, thickness: record.thickness,
     holeCount: record.holes.length, ...(record.massG === null ? {} : { massG: record.massG }) }, massTextOf(record.massG))),
   build: (row) => {
     const dims = baseDimensions(row);
@@ -543,7 +548,8 @@ export const FOOT_BASE_FAMILY: CatalogFamily = {
   nominalVolume: (row) => {
     const dims = baseDimensions(row);
     const profile = dims === null ? null : footBaseProfile(dims);
-    return dims === null || profile === null ? null : profile.areaMm2 * dims.thickness;
+    // ボスの板の外へ出る分を足す(ボスの無い行は 0)。
+    return dims === null || profile === null ? null : profile.areaMm2 * dims.thickness + footBaseBossVolume(dims);
   },
   nominalMassG: pieceMass,
   partName: (row) => row.size,

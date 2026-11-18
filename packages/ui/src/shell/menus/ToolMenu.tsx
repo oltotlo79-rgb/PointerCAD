@@ -13,6 +13,7 @@ import { useAppStore } from '../../store/useAppStore.js';
 import { useEffect, useRef, useState } from 'react';
 import { type MessageKey, t } from '../../i18n/t.js';
 import type { EditToolReadiness } from '../../sketch/editCommands.js';
+import { useMenuOpenerTracking } from '../dialogFocus.js';
 import { ChevronRightIcon, type IconComponent } from '../icons.js';
 import {
   nextHighlightIndex,
@@ -88,6 +89,8 @@ export function ToolMenu<Id extends string>({
   const assignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const [open, setOpen] = useState(false);
   const [recentId, setRecentId] = useState<Id | null>(null);
+  // 項目から開いた窓を閉じた時に、この釦へ焦点を戻せるよう、項目の押下を見張る(C-03)。
+  useMenuOpenerTracking();
   /** キーボードで選んでいる位置(0 起点)。開くたびに今の道具の行から始める。 */
   const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -194,6 +197,7 @@ export function ToolMenu<Id extends string>({
         aria-haspopup="true"
         aria-expanded={open}
         aria-pressed={showPressed ? activeHere : undefined}
+        data-menu-trigger=""
         onClick={() => {
           if (open) {
             setOpen(false);

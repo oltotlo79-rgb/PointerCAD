@@ -35,13 +35,13 @@ function sameSphereGridSpec(a: SphereGridSpec | null, b: SphereGridSpec | null):
   );
 }
 
-type OverlayMethods = Pick<ViewportScene, 'setInterference' | 'setCutPreview' | 'setSectionView' | 'setAnalysisField'
+type OverlayMethods = Pick<ViewportScene, 'setInterference' | 'setJointCheck' | 'setMemberStretch' | 'setHoleHints' | 'holeHintCount' | 'setCutPreview' | 'setSectionView' | 'setAnalysisField'
   | 'setAnalysisMode' | 'setCanvases' | 'setCylinderBasisGuide' | 'setPlanarBasisGuide' | 'setSphereGrid' | 'setReferences'
-  | 'setMeasurement'>;
+  | 'setMeasurement' | 'setFrameStroke' | 'frameStrokeView'>;
 
 export function createSceneOverlays(layers: ViewportSceneLayers, options: ViewportSceneOptions, isDisposed: () => boolean) {
-  const { solidLayer, interferenceLayer, analysisFieldLayer, analysisModeLayer, canvasLayer, cylinderBasisLayer,
-    planarBasisLayers, referenceLayer, measureLayer } = layers;
+  const { solidLayer, interferenceLayer, jointCheckLayer, stretchPreviewLayer, holeHintLayer, analysisFieldLayer, analysisModeLayer, canvasLayer, cylinderBasisLayer,
+    planarBasisLayers, referenceLayer, measureLayer, frameStrokeLayer } = layers;
   let cylinderGuide: CylinderBasisGuide | null = null;
   let planarGuide: PlanarBasisGuide | null = null;
   /** 切断面の予告(FR-432)。道具を使っている間だけ入り、確定・取消で null に戻る。 */
@@ -54,6 +54,30 @@ export function createSceneOverlays(layers: ViewportSceneLayers, options: Viewpo
   const methods: OverlayMethods = {
     setInterference(result, selectedKey): void {
       interferenceLayer.update(result, selectedKey);
+    },
+
+    setJointCheck(markers): void {
+      jointCheckLayer.update(markers);
+    },
+
+    setMemberStretch(markers): void {
+      stretchPreviewLayer.update(markers);
+    },
+
+    setHoleHints(hints): void {
+      holeHintLayer.update(hints);
+    },
+
+    holeHintCount(): number {
+      return holeHintLayer.group.children.length;
+    },
+
+    setFrameStroke(stroke): void {
+      frameStrokeLayer.update(stroke);
+    },
+
+    frameStrokeView(): ReturnType<ViewportScene['frameStrokeView']> {
+      return frameStrokeLayer.view();
     },
 
     setCutPreview(preview): void {

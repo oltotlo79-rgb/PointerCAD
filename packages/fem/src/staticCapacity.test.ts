@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it } from 'vitest';
 import type { AnalysisMaterialCapacity, BeamAnalysisDocument, BeamAnalysisResult, Vector6 } from './analysisModel.js';
 import { compareWithYield, elementFibreStresses, type BeamFibreSection } from './beamFibreStress.js';
@@ -6,10 +7,10 @@ import { beamStaticCapacity, solidStaticCapacity } from './staticCapacity.js';
 
 // W02b table: SS400 <=16 mm (G3101 draft table 3), S45C condition-specific reference values.
 const ss400: AnalysisMaterialCapacity = { materialConditionId: 'ss400-plate-0-16', condition: '圧延鋼板（熱処理の指定なし）',
-  thicknessMm: 16, yieldMPa: 245, sourceId: 'jisf-g3101-draft', evidence: 'standard-draft', basis: 'minimum' };
+  thicknessMm: 16, yieldMPa: 245, sourceId: 'g3101-draft', evidence: 'standard-draft', basis: 'minimum' };
 const normalized: AnalysisMaterialCapacity = { materialConditionId: 's45c-normalized-reference',
   condition: '焼ならし・適用寸法未指定の参考値', thicknessMm: null, yieldMPa: 345,
-  sourceId: 'tsubaki-s45c', evidence: 'manufacturer-reference', basis: 'reference' };
+  sourceId: 's45c-heat-treatment', evidence: 'manufacturer-reference', basis: 'reference' };
 const tempered: AnalysisMaterialCapacity = { ...normalized, materialConditionId: 's45c-quenched-tempered-reference',
   condition: '焼入焼戻・適用寸法未指定の参考値', yieldMPa: 490 };
 const capacities = new Map([['steel', ss400]]);

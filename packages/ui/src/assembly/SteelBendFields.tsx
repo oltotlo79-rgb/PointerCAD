@@ -79,7 +79,13 @@ export function SteelBendEditForm({ target, onClose }: {
   const composing = useRef(false);
   const compositionKey = useRef(false);
   const request = useRef<AbortController | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => () => { request.current?.abort(); }, []);
+  // 規格部品の窓から入れ替わった時は、押した釦が消えるので、最初の欄へ焦点を入れる(C-03)。
+  useEffect(() => {
+    const form = formRef.current;
+    (form?.querySelector<HTMLElement>('input, select') ?? form?.querySelector<HTMLElement>('button'))?.focus();
+  }, []);
   const result = sources === null ? null : buildSteelBendEdit(target.document, sources);
   const cancel = (): void => { request.current?.abort(); onClose(); };
   const submit = (): void => {
@@ -97,7 +103,7 @@ export function SteelBendEditForm({ target, onClose }: {
       if (!controller.signal.aborted) setBusy(false);
     });
   };
-  return <form className="pcad-popover pcad-popover--standard-part" role="dialog"
+  return <form ref={formRef} className="pcad-popover pcad-popover--standard-part" role="dialog"
     aria-label={t('assembly.steel.bend.reedit.title')} aria-busy={busy}
     onCompositionStart={() => { composing.current = true; }}
     onCompositionEnd={() => { composing.current = false; }}

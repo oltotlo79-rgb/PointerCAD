@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import * as ts from 'typescript';
@@ -62,13 +63,13 @@ describe('W7 independent H beam table 15 oracle', () => {
       line.startsWith(`  { key: 'JIS-G-3192:2024:${row.size}',`)));
     expect(added).toHaveLength(46);
     const original = lines.filter(line => !added.includes(line)).join(String.fromCharCode(10));
-    expect(sourceHash(original)).toBe('181e670b83167652610bd66466ea80de8b9095dfe2da93bb03ce8813db902612');
+    expect(sourceHash(original)).toBe('6f32c0b650f9906e0bc1f112a49eaea2c9e00319e330e7d9e5087ce3bb4205d8');
     expect(H_BEAM_TABLE.filter(row => !row.verified).map(row => row.size)).toEqual(['H 175×175×7.5×11']);
   });
 
   it('preserves the frozen W6d fixture in addition to the old W1/W4b/W5 fixtures', () => {
     const text = readFileSync(new URL('./steelAngleChannelOracle.fixture.ts', import.meta.url), 'utf8');
-    expect(sourceHash(text)).toBe('f737c8d77d6bb831ce1ce9d0c954228597efa63e8921aa78a12ab86d0d292e5c');
+    expect(sourceHash(text)).toBe('c4a00d3d59153766a84a6a55a686ffd9fd1ea05e04a8d3015628cdae34f38985');
   });
 
   it('keeps the standalone fixture independent of application modules and scratchpad at runtime', () => {
@@ -105,7 +106,7 @@ describe('W7 independent H beam table 15 oracle', () => {
     for (const [name, quantity] of Object.entries(oracle.dimensions)) {
       expect(row).toHaveProperty(name, quantity.value);
       expect(quantity.kind).toBe('source');
-      expect(quantity.citation.locator).toContain('JISF G 3192 原案 表15');
+      expect(quantity.citation.locator).toContain('JIS G 3192 原案 表15');
       expect(quantity.citation.locator).toContain(H_BEAM_TRANSCRIPT);
     }
     expect(row.innerRadius).toBe(oracle.rootRadiusMm.value);
@@ -124,7 +125,7 @@ describe('W7 independent H beam table 15 oracle', () => {
       10n ** BigInt(printed.split('.')[1]?.length ?? 0) * 1000n, 3)).toBe(oracle.printedMassKgPerM.value);
     if (oracle.added) {
       expect(row.verified).toBe(true);
-      expect(row.note).toContain('JISF G 3192 原案 2024-07-24 表 15、転記 g3192-tables.json');
+      expect(row.note).toContain('JIS G 3192 原案 2024-07-24 表 15、転記 g3192-tables.json');
       expect(row.note).toContain(H_BEAM_TRANSCRIPT);
       const line = readFileSync(new URL('./sections.ts', import.meta.url), 'utf8')
         .split(String.fromCharCode(10)).find(item => item.startsWith(`  { key: '${row.key}',`));
@@ -134,8 +135,8 @@ describe('W7 independent H beam table 15 oracle', () => {
       if (product === undefined) throw new Error('Missing W7 material product');
       expect(product.evidence).toBe('ssHBeamDraft');
       expect(product.profileEvidence).toEqual(STEEL_EVIDENCE.ssHBeamDraft);
-      expect(product.profileEvidence?.sha256).toBe('ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa');
-      expect(product.profileEvidence?.locator).toContain('JISF G 3192 原案 2024-07-24 表15');
+      expect(product.profileEvidence?.reference).toBe('JIS G 3192 原案 2024-07-24');
+      expect(product.profileEvidence?.locator).toContain('JIS G 3192 原案 2024-07-24 表15');
       expect(product.profileEvidence?.locator).toContain(H_BEAM_TRANSCRIPT);
       expect(product.standardEdition.dimensions.verification).toBe('draft');
       expect(product.standardLengthsMm).toEqual([]);

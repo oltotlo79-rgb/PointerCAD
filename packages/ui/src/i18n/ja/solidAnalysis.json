@@ -255,8 +255,7 @@
   "solidAnalysis.material.independentElastic": "ここでは降伏点の出典を選びます。ヤング率・ポアソン比は別の入力で、変更されません。降伏材料を選ばない場合、降伏比は表示しません。",
   "solidAnalysis.material.thicknessUnspecified": "この出典は適用する板厚・寸法の範囲を指定していません。板厚の入力は任意です。入力した厚さで使えることを保証する値ではありません。",
   "solidAnalysis.material.temperatureUnspecified": "この掲載値の適用温度は出典から確認できません。",
-  "solidAnalysis.material.checkedDate": "出典確認日",
-  "solidAnalysis.material.sourceDigest": "出典資料のSHA-256",
+
   "solidAnalysis.material.stale": "保存された材料値と現在の出典・条件が一致しません。材料と板厚を確認して選び直してください。",
   "solidAnalysis.material.issue.material": "掲載されている材料・製品条件を選んでください。",
   "solidAnalysis.material.issue.thickness": "素材の板厚をmmで有限の正数として入力してください。",

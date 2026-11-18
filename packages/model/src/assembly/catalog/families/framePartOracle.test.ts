@@ -1,5 +1,5 @@
 /**
- * 資料 SF-1 のフレームの部品の製品の行(framePartRows.ts。1 回目の読みの値)が、全部 2 回目の独立の読み(framePartOracle.fixture.json。
+ * 資料 1 のフレームの部品の製品の行(framePartRows.ts。1 回目の読みの値)が、全部 2 回目の独立の読み(framePartOracle.fixture.json。
  * 読みの文字のまま)と 1 行ずつ一致する事の検査。fixture の文字は、この検査が自分で読み解く(行の表を作る道具の読み解きと別にする)。
  * 簡略の印と導いた値(丸ナットの穴の位置・キャップの角)も、2 回目の文字から決まる通りか確かめる。
  * fixture は JSON のファイルで、この検査がファイルとして読む(アプリのモジュールを持たない)。
@@ -80,7 +80,7 @@ function entryOf(text: string | undefined): string {
   return (text ?? '').replace(/^素材・/u, '');
 }
 
-describe('資料 SF-1 のフレームの部品の 2 回目の読みとの照らし', () => {
+describe('資料 1 のフレームの部品の 2 回目の読みとの照らし', () => {
   it('fixture の行の鍵は製品の行の鍵と同じ並び', () => {
     expect(FIXTURE.brackets.map((row) => row.key)).toEqual(FLAT_PLATE_RECORDS.map((record) => record.key));
     expect(FIXTURE['nut-bars'].map((row) => row.key)).toEqual(T_SLOT_NUT_BAR_RECORDS.map((record) => record.key));
@@ -252,7 +252,7 @@ function sidesOf(outline: readonly (readonly [number, number])[]): readonly numb
   });
 }
 
-describe('資料 SF-1 の読み直しで足した 4 族と照らす側の読み', () => {
+describe('資料 1 の読み直しで足した 4 族と照らす側の読み', () => {
   it('平板の L・T・十字は、辺の長さ・穴の組・径・厚さが照らす側の読みと一致し、外形は辺の長さの並びどおりの直角の輪', () => {
     for (const record of SHAPED_PLATE_RECORDS) {
       const cells = cellsOf('shaped-plates', record.key);

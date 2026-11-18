@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
 import { disableFilePickers } from './boltedJointTestSupport.js';
@@ -51,9 +52,8 @@ async function selectMaterialValues(panel: Locator): Promise<void> {
   const source = values.getByTestId('solid-material-young-source');
   await source.getByTestId('solid-material-young-source-toggle').focus();
   await source.getByTestId('solid-material-young-source-toggle').press('Enter');
-  await expect(source).toContainText('PDF2ページ');
-  await expect(source).toContainText('6ad196dbd6c400cada7ee28d6b2fd0c37b8d3f4c6ce51d923a5778909966db5f');
-  await expect(source.getByRole('link')).toHaveAttribute('href', 'https://www.jfe-steel.co.jp/products/building/assets/pdf/binran/binran_chapter04.pdf');
+  await expect(source).toContainText('鋼・鋳鋼・鍛鋼の弾性定数');
+  await expect(source.getByRole('link')).toHaveCount(0);
   await source.locator('summary').click();
   await young.fill('210000');
   await expect(panel.getByTestId('solid-material-young-edited')).toBeVisible();

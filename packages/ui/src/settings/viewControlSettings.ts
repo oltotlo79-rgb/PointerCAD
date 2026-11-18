@@ -17,7 +17,13 @@ export type ViewAction = CameraAction;
 
 type ModifierFlags = Readonly<Record<'alt' | 'shift' | 'ctrl' | 'meta', boolean>>;
 const MODIFIERS = ['alt', 'shift', 'ctrl', 'meta'] as const;
-const DRAG_BUTTONS: readonly unknown[] = ['left', 'middle', 'right'];
+/**
+ * ドラッグに使うボタン。ペンの側面のボタン(押した時の button 2)と消しゴムの端(button 5)は、マウスの右ボタンと別の入力
+ * (B-09 3-4)。ペンの側面のボタンをどの操作にも割り当てていない時は、今までどおり右ボタンとして働く(cameraControlBindings.ts)。
+ */
+export const VIEW_PEN_BUTTONS = ['penBarrel', 'penEraser'] as const;
+export type ViewPenButton = (typeof VIEW_PEN_BUTTONS)[number];
+const DRAG_BUTTONS: readonly unknown[] = ['left', 'middle', 'right', ...VIEW_PEN_BUTTONS];
 
 /**
  * キーで視点を動かす入力の組(第 2 段、B-08)。押している間(キーの繰り返しの間)動かす。
@@ -47,7 +53,7 @@ export const VIEW_TOUCH_GESTURE_ACTIONS: Readonly<Record<ViewTouchGesture, reado
  * タッチは修飾キーを使わない(形を揃えるために欄は持ち、全部 false の時だけ読む。設計 §5 の形からの差)。
  */
 export type ViewTrigger =
-  | (ModifierFlags & { readonly kind: 'drag'; readonly button: 'left' | 'middle' | 'right' })
+  | (ModifierFlags & { readonly kind: 'drag'; readonly button: 'left' | 'middle' | 'right' | ViewPenButton })
   | (ModifierFlags & { readonly kind: 'wheel' })
   | (ModifierFlags & { readonly kind: 'keys'; readonly keys: ViewKeyGroup })
   | (ModifierFlags & { readonly kind: 'touch'; readonly gesture: ViewTouchGesture });
@@ -76,6 +82,11 @@ export interface ViewControlOptions {
   readonly orbitCenter?: OrbitCenter;
   /** 拡大縮小の中心(B-08d。3D だけ。図面は今どおりカーソル)。無ければ 'target'(今までどおり画面の中心へ)。 */
   readonly zoomCenter?: ZoomCenter;
+  /**
+   * 何も当たらない所からの、修飾キーの無い左ドラッグで回す(B-09 3-3。利用者が明示で入れる。無ければ切)。
+   * 部品の 3D の選択の道具だけで効き、動かさずに離した時は今までどおり選択を解く。将来の範囲の選択(FR-106)と同じ入力。
+   */
+  readonly leftEmptyOrbit?: boolean;
 }
 
 /** 回転の中心: 画面の中心(注視点)・押した所の形の上の点(当たらなければ画面の中心)・選んだ物の中心(無ければ画面の中心)。 */
@@ -112,6 +123,8 @@ export type ViewSettingsProblem =
 const MAX_TRIGGERS_PER_ACTION = 4;
 const MAX_KEY_TRIGGERS_PER_ACTION = 2;
 const MAX_TOUCH_TRIGGERS_PER_ACTION = 2;
+/** ペンの入力(側面のボタン・消しゴムの端)は 1 つの操作に 2 つまで(マウスの数とは別に数える)。 */
+const MAX_PEN_TRIGGERS_PER_ACTION = 2;
 const DEFAULT_KEY_STEP_DEGREES = 15;
 const MIN_KEY_STEP_DEGREES = 1;
 const MAX_KEY_STEP_DEGREES = 90;
@@ -211,17 +224,21 @@ function isViewTrigger(value: unknown): value is ViewTrigger {
       && MODIFIERS.every(modifier => value[modifier] === false));
 }
 
-/** 入力の種類の組(数の上限を分けて数える): マウス(ドラッグとホイール)・キー・タッチ。 */
-const TRIGGER_FAMILIES = ['mouse', 'keys', 'touch'] as const;
+/** 入力の種類の組(数の上限を分けて数える): マウス(ドラッグとホイール)・キー・タッチ・ペン。 */
+const TRIGGER_FAMILIES = ['mouse', 'keys', 'touch', 'pen'] as const;
 type TriggerFamily = (typeof TRIGGER_FAMILIES)[number];
+function isPenButton(button: unknown): button is ViewPenButton {
+  return VIEW_PEN_BUTTONS.some(item => item === button);
+}
 function triggerFamily(trigger: ViewTrigger): TriggerFamily {
+  if (trigger.kind === 'drag' && isPenButton(trigger.button)) return 'pen';
   return trigger.kind === 'keys' ? 'keys' : trigger.kind === 'touch' ? 'touch' : 'mouse';
 }
 const FAMILY_LIMITS: Readonly<Record<TriggerFamily, number>> = {
-  mouse: MAX_TRIGGERS_PER_ACTION, keys: MAX_KEY_TRIGGERS_PER_ACTION, touch: MAX_TOUCH_TRIGGERS_PER_ACTION,
+  mouse: MAX_TRIGGERS_PER_ACTION, keys: MAX_KEY_TRIGGERS_PER_ACTION, touch: MAX_TOUCH_TRIGGERS_PER_ACTION, pen: MAX_PEN_TRIGGERS_PER_ACTION,
 };
 
-/** マウス(ドラッグかホイール)の入力か。キーとタッチの入力は数えない。 */
+/** マウス(ドラッグかホイール)の入力か。キー・タッチ・ペンの入力は数えない(ペンだけの操作はマウスで使えないため)。 */
 function isPointerTrigger(trigger: ViewTrigger): boolean {
   return triggerFamily(trigger) === 'mouse';
 }
@@ -258,6 +275,10 @@ export function viewOrbitCenter(options: ViewControlOptions): OrbitCenter {
 /** 拡大縮小の中心(欄が無ければ画面の中心)。 */
 export function viewZoomCenter(options: ViewControlOptions): ZoomCenter {
   return options.zoomCenter ?? 'target';
+}
+/** 何も当たらない所からの左ドラッグで回すか(欄が無ければ切)。 */
+export function viewLeftEmptyOrbit(options: ViewControlOptions): boolean {
+  return options.leftEmptyOrbit === true;
 }
 
 function isLaterTrigger(value: unknown): boolean {
@@ -315,6 +336,9 @@ export function viewControlProblems(value: unknown): readonly ViewSettingsProble
   if (options.keyStepDegrees !== undefined && !isKeyStep(options.keyStepDegrees)) problems.push({ code: 'range', field: 'keyStepDegrees' });
   if (options.orbitCenter !== undefined && !isOrbitCenter(options.orbitCenter)) problems.push({ code: 'shape', at: 'options.orbitCenter' });
   if (options.zoomCenter !== undefined && !isZoomCenter(options.zoomCenter)) problems.push({ code: 'shape', at: 'options.zoomCenter' });
+  if (options.leftEmptyOrbit !== undefined && typeof options.leftEmptyOrbit !== 'boolean') {
+    problems.push({ code: 'shape', at: 'options.leftEmptyOrbit' });
+  }
   return problems;
 }
 
@@ -331,7 +355,8 @@ export function sameViewControls(a: ViewControlSettings, b: ViewControlSettings)
     }))
     && [...SPEED_OPTIONS, ...INVERT_OPTIONS].every(field => a.options[field] === b.options[field])
     && viewKeyStepDegrees(a.options) === viewKeyStepDegrees(b.options)
-    && viewOrbitCenter(a.options) === viewOrbitCenter(b.options) && viewZoomCenter(a.options) === viewZoomCenter(b.options);
+    && viewOrbitCenter(a.options) === viewOrbitCenter(b.options) && viewZoomCenter(a.options) === viewZoomCenter(b.options)
+    && viewLeftEmptyOrbit(a.options) === viewLeftEmptyOrbit(b.options);
 }
 
 /** 読む時の結果。dropped は読めずに捨てた・既定へ戻した項目の数(0 なら知らせない)。 */
@@ -379,8 +404,10 @@ function salvageOptions(raw: unknown): { readonly options: ViewControlOptions; r
   const keyStep = raw.keyStepDegrees === undefined ? {} : isKeyStep(raw.keyStepDegrees) ? { keyStepDegrees: raw.keyStepDegrees } : null;
   const orbitCenter = raw.orbitCenter === undefined ? {} : isOrbitCenter(raw.orbitCenter) ? { orbitCenter: raw.orbitCenter } : null;
   const zoomCenter = raw.zoomCenter === undefined ? {} : isZoomCenter(raw.zoomCenter) ? { zoomCenter: raw.zoomCenter } : null;
-  return { options: { ...options, ...keyStep, ...orbitCenter, ...zoomCenter },
-    dropped: dropped + [keyStep, orbitCenter, zoomCenter].filter(field => field === null).length };
+  // 第 3 段の欄(B-09 3-3)。真偽でない値は欄ごと外す(切のまま)。
+  const leftEmpty = raw.leftEmptyOrbit === undefined ? {} : typeof raw.leftEmptyOrbit === 'boolean' ? { leftEmptyOrbit: raw.leftEmptyOrbit } : null;
+  return { options: { ...options, ...keyStep, ...orbitCenter, ...zoomCenter, ...leftEmpty },
+    dropped: dropped + [keyStep, orbitCenter, zoomCenter, leftEmpty].filter(field => field === null).length };
 }
 
 /**

@@ -1,10 +1,10 @@
-/** Independent literal transcription of JISF G 3192 draft 2024-07-24 table 9 (unequal angle) and table 11 (I section).
- * PDF SHA-256: ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa.
+/** Independent literal transcription of JIS G 3192 draft 2024-07-24 table 9 (unequal angle) and table 11 (I section).
+ * PDF SHA-256: JIS G 3192 原案 2024-07-24.
  * Second reading from the PDF text-stream order, made without reading the product table. No application imports.
  * Printed precision is retained as strings.
  */
 export const G3192_EXTRA_ORACLE = {
-  pdfSha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
+  reference: 'JIS G 3192 原案 2024-07-24',
   /** Table 9: [A, B, t, r1, r2, area cm2, unit mass kg/m, PDF page] */
   unequalAngle: [
   ['90', '75', '9', '8.5', '6', '14.04', '11.0', 15],

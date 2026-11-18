@@ -1,7 +1,5 @@
 /** W6d independent literal transcription, no application imports.
- * JISF G 3192 draft 2024-07-24 tables 8/12; PDF SHA-256:
- * ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa.
- * Transcript SHA-256: 0a44913287b067333e137fe3f8d0b5d8478e80cd2145fefc08691793b0df17ac.
+ * JIS G 3192 draft 2024-07-24 tables 8/12.
  * Printed significant digits are strings. No final-edition or stock claim is made.
  */
 export const ANGLE_ADDITION_PRINTED = [
@@ -32,12 +30,11 @@ export const CHANNEL_ADDITION_2024_PRINTED = [
 ] as const;
 
 export const SECTION_ADDITION_TRANSCRIPT = 'scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json';
-const draftUrl = 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf';
 function section(catalog: 'equalAngle' | 'channel', size: string, h: number, b: number,
   tw: number, tf: number, root: number, tip: number, area: string, mass: string) {
   const table = catalog === 'equalAngle' ? 8 : 12;
-  const citation = { url: draftUrl,
-    locator: `JISF G 3192 原案 表${table}, 2024-07-24 PDF p${table === 8 ? 14 : 18}; ${SECTION_ADDITION_TRANSCRIPT}` };
+  const citation = { reference: 'JIS G 3192',
+    locator: `JIS G 3192 原案 表${table}, 2024-07-24 PDF p${table === 8 ? 14 : 18}; ${SECTION_ADDITION_TRANSCRIPT}` };
   const source = <T>(value: T) => ({ kind: 'source' as const, value, citation });
   const computed = (value: number, formula: string) => ({ kind: 'computed' as const, value, formula, citation });
   const dimensions: Readonly<Record<string, ReturnType<typeof dimension>>> = catalog === 'equalAngle'

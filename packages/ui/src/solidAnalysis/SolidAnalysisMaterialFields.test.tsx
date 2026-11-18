@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { findStrengthMaterial, STRENGTH_SOURCES } from '@pointercad/model';
 import React, { Children, isValidElement, useEffect, useRef, useState } from 'react';
 import type * as ReactTypes from 'react';
@@ -15,9 +16,9 @@ vi.mock('react', async importOriginal => {
 });
 
 const SS400: AnalysisMaterialCapacity = { materialConditionId: 'ss400-plate-0-16', condition: '圧延鋼板（熱処理の指定なし）',
-  thicknessMm: 16, yieldMPa: 245, sourceId: 'jisf-g3101-draft', sourceSnapshot: { ...STRENGTH_SOURCES['jisf-g3101-draft'] }, evidence: 'standard-draft', basis: 'minimum' };
+  thicknessMm: 16, yieldMPa: 245, sourceId: 'g3101-draft', sourceSnapshot: { ...STRENGTH_SOURCES['g3101-draft'] }, evidence: 'standard-draft', basis: 'minimum' };
 const S45C: AnalysisMaterialCapacity = { materialConditionId: 's45c-quenched-tempered-reference', condition: '焼入焼戻・適用寸法未指定の参考値',
-  thicknessMm: 17, yieldMPa: 490, sourceId: 'tsubaki-s45c', sourceSnapshot: { ...STRENGTH_SOURCES['tsubaki-s45c'] }, evidence: 'manufacturer-reference', basis: 'reference' };
+  thicknessMm: 17, yieldMPa: 490, sourceId: 's45c-heat-treatment', sourceSnapshot: { ...STRENGTH_SOURCES['s45c-heat-treatment'] }, evidence: 'manufacturer-reference', basis: 'reference' };
 interface FieldProps {
   readonly children?: React.ReactNode;
   readonly 'data-testid'?: string;
@@ -136,10 +137,8 @@ describe('solid material fields real React handlers (pure SSR)', () => {
     const html = renderToStaticMarkup(<SolidAnalysisMaterialFields value={SS400} selectionKey="table"
       onChange={vi.fn()} onYoungChange={vi.fn()} />);
     expect(html).toContain('<table'); expect(html).toContain('205000 MPa'); expect(html).toContain('245 MPa');
-    expect(html).toContain(STRENGTH_SOURCES['jfe-steel-elastic'].sha256);
-    expect(html).toContain(STRENGTH_SOURCES['jfe-steel-elastic'].url);
-    expect(html).toContain(STRENGTH_SOURCES['jfe-steel-elastic'].checkedDate);
-    expect(html).toContain('PDF2ページ'); expect(html).toContain('出どころの記録がない');
+    expect(html).toContain(STRENGTH_SOURCES['steel-elastic'].label);
+    expect(html).not.toContain('href='); expect(html).toContain('出どころの記録がない');
   });
   it('keeps legacy source data unchanged on opening, marks it stale, and requires explicit current-source reselection', async () => {
     const { sourceSnapshot, ...legacy } = SS400;
@@ -147,7 +146,7 @@ describe('solid material fields real React handlers (pure SSR)', () => {
     const before = structuredClone(legacy);
     const html = renderToStaticMarkup(<SolidAnalysisMaterialFields value={legacy} selectionKey="legacy" onChange={vi.fn()} />);
     expect(html).toContain('role="alert"');
-    expect(html).not.toContain(STRENGTH_SOURCES['jisf-g3101-draft'].sha256);
+    expect(html).not.toContain('href=');
     const h = await harness(legacy); h.render();
     expect(h.change).toHaveBeenLastCalledWith(null, false);
     expect(h.valid()).toBe(false);
@@ -157,16 +156,16 @@ describe('solid material fields real React handlers (pure SSR)', () => {
     expect(h.value()).toBeNull();
     h.field('solid-material-condition').onChange?.({ target: { value: legacy.materialConditionId } });
     expect(h.valid()).toBe(true);
-    expect(h.value()?.sourceSnapshot).toEqual(STRENGTH_SOURCES['jisf-g3101-draft']);
+    expect(h.value()?.sourceSnapshot).toEqual(STRENGTH_SOURCES['g3101-draft']);
     expect(legacy).toEqual(before);
   });
 
-  it('displays the stored stale SHA rather than borrowing current metadata with the same source ID/value', async () => {
-    const stored = { ...SS400, sourceSnapshot: { ...STRENGTH_SOURCES['jisf-g3101-draft'], sha256: '0'.repeat(64) } };
+  it('displays the stored historical label rather than borrowing current metadata with the same source ID/value', async () => {
+    const stored = { ...SS400, sourceSnapshot: { ...STRENGTH_SOURCES['g3101-draft'], label: '旧版の材料条件' } };
     const before = structuredClone(stored);
     const html = renderToStaticMarkup(<SolidAnalysisMaterialFields value={stored} selectionKey="stale" onChange={vi.fn()} />);
-    expect(html).toContain('role="alert"'); expect(html).toContain('0'.repeat(64));
-    expect(html).not.toContain(STRENGTH_SOURCES['jisf-g3101-draft'].sha256);
+    expect(html).toContain('role="alert"'); expect(html).toContain('旧版の材料条件');
+    expect(html).not.toContain('href=');
     const h = await harness(stored); h.render();
     expect(h.change).toHaveBeenLastCalledWith(null, false);
     expect(h.valid()).toBe(false); expect(stored).toEqual(before);
@@ -253,9 +252,9 @@ describe('solid material fields real React handlers (pure SSR)', () => {
     const html = renderToStaticMarkup(<SolidAnalysisMaterialFields value={SS400} selectionKey="one" onChange={vi.fn()} disabled />);
     expect(html).toContain('disabled=""'); expect(html.match(/<label>/gu)).toHaveLength(2);
     expect(html).toContain('245 MPa'); expect(html).toContain('下限値'); expect(html).toContain('規格案');
-    expect(html).toContain('797fe421e44bfce54f53b6b89073e4ce488343f59d733288ca9996a26db44893');
-    expect(html).toContain('2023-07-26'); expect(html).toContain('ヤング率・ポアソン比');
-    expect(html).toContain('href="https://www.jisf.or.jp/'); expect(html).toContain('0 &lt; t ≤ 16 mm');
+    expect(html).toContain('SS400 鋼板 表3');
+    expect(html).toContain('JIS G 3101:9999（案）'); expect(html).toContain('ヤング率・ポアソン比');
+    expect(html).not.toContain('href='); expect(html).toContain('0 &lt; t ≤ 16 mm');
     const reference = renderToStaticMarkup(<SolidAnalysisMaterialFields value={S45C} selectionKey="two" onChange={vi.fn()} />);
     expect(reference).toContain('参考値'); expect(reference).toContain('板厚・寸法の範囲を指定していません');
     expect(reference).toContain('490 MPa');

@@ -2,6 +2,7 @@ import { DENSITY_MATERIALS } from '@pointercad/model';
 import { useEffect, useRef, useState } from 'react';
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { densityMaterialLabelKey } from '../solid/MeasurementSections.js';
 import type { CircularDraftFields, CircularDraftPreview, CircularFilletWeldDraft } from './circularFilletWeldDraft.js';
@@ -58,6 +59,9 @@ function PlanSummary({ preview }: { readonly preview: Extract<CircularDraftPrevi
 /** Props own the draft and preview. Only callbacks cross the document/history boundary. */
 export function CircularFilletWeldPopover({ draft, preview, onChange, onCommit, onCancel, onReselect }: CircularFilletWeldPopoverProps): React.JSX.Element | null {
   const first = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLFormElement>(null);
+  // 閉じた時に、開いた元へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, draft !== null, { initial: () => first.current });
   const composing = useRef(false), compositionKey = useRef(false), pending = useRef(false), cancelled = useRef(false);
   const invalidatedPreview = useRef<CircularDraftPreview | null>(null);
   const [editing, setEditing] = useState(false), [ime, setIme] = useState(false);
@@ -89,7 +93,7 @@ export function CircularFilletWeldPopover({ draft, preview, onChange, onCommit, 
     if (cancelled.current) return;
     cancelled.current = true; onCancel();
   };
-  return <form className="pcad-popover pcad-popover--fillet-weld pcad-popover--circular-weld" role="dialog" aria-label={title}
+  return <form ref={root} className="pcad-popover pcad-popover--fillet-weld pcad-popover--circular-weld" role="dialog" aria-label={title}
     onCompositionStart={() => { composing.current = true; compositionKey.current = true; setIme(true); }}
     onCompositionEnd={() => { composing.current = false; setIme(false); }}
     onPointerDownCapture={() => { compositionKey.current = false; }}

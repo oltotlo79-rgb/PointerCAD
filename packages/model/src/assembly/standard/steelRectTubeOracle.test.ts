@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * S-01 角形鋼管（JIS G 3466 表5・表6、STKR400）の独立の転記との突合せと、質量の検算・断面の形の検査。
  *
@@ -57,7 +58,7 @@ describe('S-01 角形鋼管 JIS G 3466 表5・表6 の独立の転記との突�
     const text = readFileSync(new URL('./steelRectTubeOracle.fixture.ts', import.meta.url), 'utf8');
     const file = ts.createSourceFile('fixture.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     expect(file.statements.filter((node) => ts.isImportDeclaration(node) || ts.isExportDeclaration(node))).toEqual([]);
-    expect(STEEL_EVIDENCE.stkrDraft.sha256).toBe(RECT_TUBE_ORACLE.pdfSha256);
+    expect(STEEL_EVIDENCE.stkrDraft.reference).toBe(RECT_TUBE_ORACLE.reference);
   });
 
   it.each(RECT_TUBE_ORACLE.rows)('%s×%s×%s: 単位質量は式(1)、断面積は注a の式と形の面積が印刷の値に一致する',

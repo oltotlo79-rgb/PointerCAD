@@ -31,12 +31,9 @@ export function SolidAnalysisMaterialValues({ preset, young }: {
       <summary data-testid="solid-material-young-source-toggle" onKeyDown={event => {
         if (event.key === 'Enter') event.stopPropagation();
       }}>{t('solidAnalysis.material.youngSource')}</summary>
-      <p>{elastic.source.publisher}</p><p>{elastic.source.locator}</p>
+      <p>{elastic.source.label}</p>
       <p>{elastic.source.standard ?? t('solidAnalysis.material.standardUnspecified')}</p>
       <p>{elastic.source.standardEdition ?? t('strength.unknownEdition')}</p>
-      <p>{`${t('solidAnalysis.material.checkedDate')}: ${elastic.source.checkedDate}`}</p>
-      <p>{`${t('solidAnalysis.material.sourceDigest')}: ${elastic.source.sha256}`}</p>
-      <a href={elastic.source.url} target="_blank" rel="noopener noreferrer">{elastic.source.url}</a>
     </details>}
     </details>
   </div>;

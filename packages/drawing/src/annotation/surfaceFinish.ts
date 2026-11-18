@@ -25,7 +25,6 @@ export interface SurfaceFinishGeometry extends SymbolGeometry {
 }
 
 /** JIS B 0031/B 0601の基本・横棒・丸の区別とRa/Rzの意味:
- * https://jp.meviy.misumi-ec.com/info/ja/howto/54355/
  * 記号の60°、高さ2倍、字の左配置・間隔はP8 §0.27の慣用値(原典との照合は要確認)。 */
 export function surfaceFinish(input: SurfaceFinishInput): SurfaceFinishGeometry | null {
   const size = input.sizeMm ?? 3.5;

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from './useAppStore.js';
 import { resetTestStore } from './testing/createTestStore.js';
@@ -82,7 +83,7 @@ describe('solid analysis store and expression input', () => {
     const runner = { run: vi.fn(), cancel: vi.fn(), cancelModal: vi.fn(), cancelBuckling: vi.fn(),
       captureFaces: vi.fn(), validate: vi.fn() };
     useAppStore.setState({ solidAnalysisRunner: runner }); useAppStore.getState().openSolidAnalysis();
-    const capacity = { materialConditionId: 'ss400-plate-0-16', yieldMPa: 245, sourceId: 'jisf-g3101-draft', thicknessMm: 16,
+    const capacity = { materialConditionId: 'ss400-plate-0-16', yieldMPa: 245, sourceId: 'g3101-draft', thicknessMm: 16,
       condition: '圧延鋼板（熱処理の指定なし）', evidence: 'standard-draft', basis: 'minimum' } as const;
     useAppStore.getState().setSolidAnalysisMaterial(capacity, true);
     const session = useAppStore.getState().solidAnalysisSession;

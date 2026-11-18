@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * E-03 汎用の T スロットフレーム(寸法を指定して作る): 規格の行を名乗らない事、欄、断面の面積(式と輪の両方)、形が成り立つ条件、
  * 形と体積、保存の形、長さを持つ族として切断の一覧に出る事の検査。表を持たない族なので、照合の fixture は無い。
@@ -41,7 +42,7 @@ describe('E-03 汎用の T スロットフレーム', () => {
     expect(T_SLOT_FRAME_FAMILY.rows.map((row) => [row.key, row.size, row.standardLabel, row.materialLabel, row.densityMaterialId,
       row.verification, row.verified, Object.keys(row.dims).length])).toEqual([['specified', '寸法指定', '寸法指定(規格の行ではない)',
       'アルミ', 'aluminum', 'unverified', false, 0]]);
-    expect([ROW?.evidence.url, ROW?.evidence.sha256]).toEqual(['', '']);
+    expect(ROW?.evidence.reference).toBe('');
   });
 
   it('断面の面積は設計の式と輪の面積(線分と円弧)が合い、外の輪は 1 本で中心の穴は内の輪 1 本', () => {

@@ -18,10 +18,9 @@ import type { CatalogFamily, CatalogItemRow } from '../types.js';
 const T_SLOT_SERIES_EVIDENCE = {
   title: '販売店の公開の頁の数値(製造元の寸法に合わせた物)',
   edition: null,
-  url: '',
+
   locator: '',
-  sha256: '',
-  fetchedDate: '',
+  reference: '',
 } as const;
 
 /** [鍵, 呼び, W, H, 溝の口, 中の幅, 肩, 中の深さ, 中心の穴, 角 R, 列の間隔, 四隅の穴の径, 四隅の穴の位置, 単位質量 kg/m]。 */

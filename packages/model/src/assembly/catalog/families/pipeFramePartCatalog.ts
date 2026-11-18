@@ -1,5 +1,5 @@
 /**
- * 族: 資料 GF-2(パイプ形のフレームの総合カタログ)で寸法が確認できる、パイプの端のキャップとフット(2 族。統括の決定 2026-11-17 19:1x・19:2x・20:2x)。
+ * 族: 資料 2(パイプ形のフレームの総合カタログ)で寸法が確認できる、パイプの端のキャップとフット(2 族。統括の決定 2026-11-17 19:1x・19:2x・20:2x)。
  * 製造元の名前・型番は書かない(呼びは合うパイプの系列・種類の一般の語・段の寸法)。
  *
  * 形は段の並び(`profiles/stackedPart.ts`): 中心の線のまわりに、2 本の独立の読みで形・寸法・高さが一致した段だけを積む(円柱か四角の柱)。
@@ -33,7 +33,7 @@ export interface PipeFramePartRecord {
 }
 
 const GENERATOR_REVISION = 'pipe-frame-part-1';
-const EVIDENCE_TITLE = '資料 GF-2 パイプ形のフレームの総合カタログ(製造元の寸法に合わせた物)';
+const EVIDENCE_TITLE = '資料 2 パイプ形のフレームの総合カタログ(製造元の寸法に合わせた物)';
 
 function dimensionsOf(record: PipeFramePartRecord): StackedPartDimensions {
   return { segments: record.segments, thread: record.thread };
@@ -52,8 +52,7 @@ function rowOf(record: PipeFramePartRecord): CatalogItemRow {
     materialLabel: record.materialLabel,
     ...(record.densityMaterialId === null ? {} : { densityMaterialId: record.densityMaterialId }),
     dims: { series: record.series, height: stackedPartHeight(dimensionsOf(record)), ...(record.massG === null ? {} : { massG: record.massG }) },
-    evidence: { title: EVIDENCE_TITLE, edition: null, url: '', locator: `PDF ${record.page} 頁 部品の図(段の寸法)と質量の記入`, sha256: '',
-      fetchedDate: '' },
+    evidence: { title: EVIDENCE_TITLE, edition: null, locator: `PDF ${record.page} 頁 部品の図(段の寸法)と質量の記入`, reference: '' },
     verification: 'manufacturer-catalog',
     verified: true,
     note: noteOf(record),

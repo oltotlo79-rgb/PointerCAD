@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * K-06 段 2 の土台: 長さを持つ族('linear')の部品を、鋼材の切断の一覧の中で別の並び(catalogRows)に束ねる事。
  * 製品にはまだ 'linear' の族が無いので、検査の中だけで作る族(登録口も検査の中で作る)で確かめる。
@@ -18,7 +19,7 @@ import { createCatalogRegistry } from './registry.js';
 import { createCatalogItemSource } from './source.js';
 import type { CatalogFamily, CatalogItemRow } from './types.js';
 
-const EVIDENCE = { title: '検査だけの族', edition: null, url: '', locator: '', sha256: '', fetchedDate: '' } as const;
+const EVIDENCE = { title: '検査だけの族', edition: null, locator: '', reference: '' } as const;
 
 function row(key: string, side: number, densityMaterialId: string | null, materialLabel?: string): CatalogItemRow {
   return { key, size: `□${side}`, standardLabel: '検査', ...(densityMaterialId === null ? {} : { densityMaterialId }), dims: { side },

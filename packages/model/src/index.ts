@@ -1221,11 +1221,31 @@ export { planFrameMembers } from './assembly/frame/frameMembers.js';
 export { frameLineFromEdge } from './assembly/frame/frameEdges.js';
 /** 置いた部材の一括の書き換え(J-01 包み 8): 同じ族か同じ鋼材の製品の部品の行・長さを替えた次の保存の形(ui の選ぶ窓が使う)。 */
 export { planMemberBulkEdit, type MemberBulkChange } from './assembly/frame/memberBulkEdit.js';
+export {
+  componentReferenceCount, planMemberMerge, planMemberSplit, type MemberSplitMergeResult,
+} from './assembly/frame/memberSplitMerge.js';
 export { applyFrameSlotFastening, loadSlotNutRecords, type FrameSlotFasteningResult, type FrameSlotHoleFailure } from './assembly/fastening/frameSlotFastening.js';
 export {
   frameSlotBoltNominals, frameSlotCandidates, planFrameSlotHoles, profileClearanceHole, profileHoleSpan, type FrameSlotPlanInputs,
   type ProfileHoleRejection,
 } from './assembly/fastening/frameSlotRequest.js';
+export {
+  classifyFrameJoints, placedFrameMembers, recordedFrameJoint, splitCrossJoints, type FrameJoint, type FrameJointKind,
+} from './assembly/frame/frameJoints.js';
+export { detachFrameJointRecord, swapFrameJointBracket } from './assembly/frame/frameJointSwap.js';
+export { planMemberStretch, type MemberStretchDirection, type MemberStretchPlan } from './assembly/frame/memberStretch.js';
+export { frameScribeMarks, type FrameScribeMember } from './assembly/frame/frameScribeMarks.js';
+export { planSafetyFence, type SafetyFenceResult } from './assembly/frame/safetyFence.js';
+export { framePanelOpening, type FramePanelOpeningResult } from './assembly/frame/framePanelOpening.js';
+export { planFrameDoor, type FrameDoorResult } from './assembly/frame/frameDoor.js';
+export {
+  checkFrameJoints, slotFastenerParts, type FrameJointCheckResult, type FrameJointFastening, type PartBox,
+} from './assembly/frame/frameJointCheck.js';
+export {
+  applyJointBracket, jointBracketChoices, loadJointBracketRecords, type JointBracketChoice, type JointBracketChoices,
+  type JointBracketInputs, type JointBracketRecords,
+} from './assembly/frame/frameJointBrackets.js';
+export type { FrameJointRecord } from './assembly/frame/frameJointRecord.js';
 export type { FrameCornerRule, FrameLine, FrameMembersResult } from './assembly/frame/frameMembers.js';
 export type {
   SteelEvidence,
@@ -1455,9 +1475,9 @@ export type {
   FasteningWasherKind,
 } from './assembly/fastening/types.js';
 export {
-  CLEARANCE_EVIDENCE, CLEARANCE_EVIDENCE_SOURCE, NBK_CLEARANCE_GRADES,
+  CLEARANCE_EVIDENCE, CLEARANCE_EVIDENCE_SOURCE, CLEARANCE_GRADES,
 } from './assembly/fastening/clearanceEvidence.js';
-export { holeFeatureForSelection, holeWallOriginAt } from './assembly/fastening/bindHoleSelection.js';
+export { holeFeatureForSelection, holeWallOriginAt, sameHoleFeatureWalls } from './assembly/fastening/bindHoleSelection.js';
 export {
   applyContextReference,
   commitContextReference,
@@ -1511,8 +1531,8 @@ export type {
 export {
   hexBoltMainEvidence,
   hexBoltMainThreadLength,
-  MISUMI_HEX_BOLT_MAIN_EVIDENCE,
-  MISUMI_HEX_BOLT_SOURCE,
+  HEX_BOLT_MAIN_EVIDENCE,
+  HEX_BOLT_SOURCE,
 } from './assembly/standard/hexBoltEvidence.js';
 export { standardMembersToBeamAnalysis, BEAM_CONNECTION_TOLERANCE_MM } from './analysis/standardBeamAdapter.js';
 export type { StandardBeamAdapterContext } from './analysis/standardBeamAdapter.js';

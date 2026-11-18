@@ -185,6 +185,7 @@ export function attachSketchInteraction(
   getOrbit: () => OrbitState,
   isCameraDragging: () => boolean,
   timing?: SketchDragTiming,
+  beginEmptyLeftDrag: (event: PointerEvent, onClick: () => void) => boolean = () => false,
 ): SketchInteraction {
   // メソッドをそのまま値として渡さない(@typescript-eslint/unbound-method)。
   const project: ProjectToScreen = (point) => scene.worldToScreen(point);
@@ -206,7 +207,7 @@ export function attachSketchInteraction(
     pickedPointAt: coordinates.pickedPointAt, fillClickedPoint: coordinates.fillClickedPoint,
     pickConstraintMark: constraints.pickConstraintMark, commitEditClick: edits.commitEditClick,
     commitProjectionClick: edits.commitProjectionClick, openCornerInput: corners.openCornerInput,
-    commitSphereGridClick: sphereGrid.commitSphereGridClick, commitRegionClick: regions.commitRegionClick });
+    commitSphereGridClick: sphereGrid.commitSphereGridClick, commitRegionClick: regions.commitRegionClick, beginEmptyLeftDrag });
   const drawing = createSketchDrawingInput({ isDrawingTool, freeVertexRefAt: solids.freeVertexRefAt,
     interactionPlane: coordinates.interactionPlane, pickedPointAt: coordinates.pickedPointAt,
     fillClickedPoint: coordinates.fillClickedPoint });

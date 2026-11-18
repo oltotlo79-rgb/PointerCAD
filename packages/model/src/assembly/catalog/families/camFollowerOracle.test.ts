@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-28 カムフォロア(スタッド形、メートル系)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の camFollower)の突合せ、
  * 寸法の整合と形の体積の検査。fixture は PDF の文字の流れから、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -38,12 +39,12 @@ describe('M-28 カムフォロア 資料の表との突合せ', () => {
     expect(CAM_FOLLOWER_ROWS.map(fromProduct)).toEqual(unique);
   });
 
-  it('出どころは資料の PDF の SHA-256 と頁を持ち、全ての行が同じ出どころを指す', () => {
-    expect(CAM_FOLLOWER_EVIDENCE.sha256).toBe(CAM_FOLLOWER_ORACLE.pdfSha256);
+  it('出どころは資料の 資料の番号 と頁を持ち、全ての行が同じ出どころを指す', () => {
+    expect(CAM_FOLLOWER_EVIDENCE.reference).toBe(CAM_FOLLOWER_ORACLE.reference);
     expect(CAM_FOLLOWER_EVIDENCE.locator).toContain(`PDF ${CAM_FOLLOWER_ORACLE.page} 頁`);
     // 出どころの欄は資料の番号・SHA・頁だけ(URL と発行元は製品に書かない)。
     expect(CAM_FOLLOWER_EVIDENCE.title.startsWith('資料 K4-2 ')).toBe(true);
-    expect(CAM_FOLLOWER_EVIDENCE.url).toBe('');
+    expect(CAM_FOLLOWER_EVIDENCE).not.toHaveProperty('url');
     expect(CAM_FOLLOWER_ROWS.every((row) => row.evidence === CAM_FOLLOWER_EVIDENCE
       && row.verification === 'manufacturer-catalog' && row.verified && row.note === '')).toBe(true);
   });

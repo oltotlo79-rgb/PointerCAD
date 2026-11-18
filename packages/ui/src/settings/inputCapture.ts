@@ -1,7 +1,7 @@
 import { t, type MessageKey } from '../i18n/t.js';
 import {
   touchTriggersFull, VIEW_KEY_GROUP_ACTIONS, VIEW_TOUCH_GESTURE_ACTIONS, type ViewAction, type ViewControlSettings, type ViewKeyGroup,
-  type ViewTouchGesture, type ViewTrigger,
+  type ViewPenButton, type ViewTouchGesture, type ViewTrigger,
 } from './viewControlSettings.js';
 
 /*
@@ -12,9 +12,11 @@ import {
  */
 
 /** 取り込みの枠が受け取る出来事(PointerEvent と WheelEvent の必要な所だけ)。 */
-export interface ViewCaptureEvent {
+interface ViewCaptureEvent {
   readonly type: string;
   readonly button?: number;
+  /** ペンの側面のボタン・消しゴムの端を見分ける(B-09 3-4)。 */
+  readonly pointerType?: string;
   readonly altKey: boolean;
   readonly shiftKey: boolean;
   readonly ctrlKey: boolean;
@@ -27,12 +29,16 @@ export type CapturedViewInput =
   | { readonly status: 'ignored' };
 
 const BUTTONS: Readonly<Record<number, 'left' | 'middle' | 'right'>> = { 0: 'left', 1: 'middle', 2: 'right' };
+/** ペンの側面のボタン(button 2)と消しゴムの端(button 5)。マウスの右ボタンと別の入力(B-09 3-4)。 */
+const PEN_BUTTONS: Readonly<Record<number, ViewPenButton>> = { 2: 'penBarrel', 5: 'penEraser' };
 
 /** 出来事 → 視点の入力。押下(pointerdown)はボタンのドラッグ、ホイール(wheel)はホイール・2 本指スクロール。 */
 export function captureViewInput(event: ViewCaptureEvent): CapturedViewInput {
   const modifiers = { alt: event.altKey, shift: event.shiftKey, ctrl: event.ctrlKey, meta: event.metaKey };
   if (event.type === 'wheel') return { status: 'captured', trigger: { kind: 'wheel', ...modifiers } };
   if (event.type !== 'pointerdown' || event.button === undefined) return { status: 'ignored' };
+  const pen = event.pointerType === 'pen' ? PEN_BUTTONS[event.button] : undefined;
+  if (pen !== undefined) return { status: 'captured', trigger: { kind: 'drag', button: pen, ...modifiers } };
   const button = BUTTONS[event.button];
   if (button === undefined) return { status: 'ignored' };
   if (button === 'left' && !event.altKey) return { status: 'refused', reason: 'left-needs-alt' };
@@ -45,7 +51,7 @@ const KEY_GROUP_OF: Readonly<Record<string, ViewKeyGroup>> = {
   Numpad8: 'numpad', Numpad2: 'numpad', Numpad4: 'numpad', Numpad6: 'numpad',
   NumpadAdd: 'plusMinus', NumpadSubtract: 'plusMinus', Equal: 'plusMinus', Minus: 'plusMinus',
 };
-export type CapturedViewKey =
+type CapturedViewKey =
   | { readonly status: 'captured'; readonly trigger: ViewTrigger }
   | { readonly status: 'refused'; readonly reason: 'not-for-action' }
   | { readonly status: 'ignored' };
@@ -73,8 +79,9 @@ export function captureViewTouch(value: ViewControlSettings, action: ViewAction,
   return { status: 'captured', trigger: { kind: 'touch', gesture, alt: false, shift: false, ctrl: false, meta: false } };
 }
 
-const INPUT_KEYS: Readonly<Record<'left' | 'middle' | 'right' | 'wheel' | ViewKeyGroup | ViewTouchGesture, MessageKey>> = {
+const INPUT_KEYS: Readonly<Record<'left' | 'middle' | 'right' | ViewPenButton | 'wheel' | ViewKeyGroup | ViewTouchGesture, MessageKey>> = {
   left: 'settings.camera.chip.left', middle: 'settings.camera.chip.middle', right: 'settings.camera.chip.right',
+  penBarrel: 'settings.camera.chip.penBarrel', penEraser: 'settings.camera.chip.penEraser',
   wheel: 'settings.camera.chip.wheel',
   arrows: 'settings.camera.keys.arrows', numpad: 'settings.camera.keys.numpad', plusMinus: 'settings.camera.keys.plusMinus',
   oneFinger: 'settings.camera.touch.oneFinger', twoFinger: 'settings.camera.touch.twoFinger', pinch: 'settings.camera.touch.pinch',

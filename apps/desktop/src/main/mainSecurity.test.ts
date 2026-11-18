@@ -33,11 +33,13 @@ const native = await vi.hoisted(async () => {
     closeOcctTransport: vi.fn(() => Promise.resolve()),
     openExternal: vi.fn(() => Promise.resolve()),
     denyBrowserPermissions: vi.fn(),
+    installSixDofAccess: vi.fn(),
+    getPath: vi.fn((name: string) => `C:/fake-${name}`),
   };
 });
 
 vi.mock('electron', () => ({
-  app: { isPackaged: true, whenReady: native.whenReady,
+  app: { isPackaged: true, whenReady: native.whenReady, getPath: native.getPath,
     commandLine: { getSwitchValue: native.getSwitchValue, appendSwitch: native.appendSwitch },
     once: (name: string, listener: () => void) => { native.appListeners.once(name, listener); },
     on: (name: string, listener: () => void) => { native.appListeners.on(name, listener); }, quit: vi.fn() },
@@ -56,6 +58,7 @@ vi.mock('./appProtocol.js', () => ({
 }));
 vi.mock('./pcadDialogs.js', () => ({ PCAD_PRINT_CHANNEL: 'pcad:print', registerPcadIpc: vi.fn() }));
 vi.mock('./sessionPermissions.js', () => ({ denyBrowserPermissions: native.denyBrowserPermissions }));
+vi.mock('./sixDofAccess.js', () => ({ installSixDofAccess: native.installSixDofAccess }));
 vi.mock('./occtHttpTransport.js', () => ({ createOcctHttpTransport: () => ({
   prepare: native.prepareOcctTransport, close: native.closeOcctTransport,
 }) }));
@@ -168,6 +171,11 @@ describe('主窓と印刷窓の境界', () => {
 
   it('sessionのブラウザーダウンロードを拒否する', () => {
     expect(native.denyBrowserPermissions).toHaveBeenCalledOnce();
+    // 3D マウスの狭い例外は、全面拒否の後に 1 回だけ組み込む(B-09 3-5)。
+    expect(native.installSixDofAccess).toHaveBeenCalledOnce();
+    expect(native.denyBrowserPermissions.mock.invocationCallOrder[0])
+      .toBeLessThan(native.installSixDofAccess.mock.invocationCallOrder[0] ?? 0);
+    expect(native.installSixDofAccess.mock.calls[0]?.[2]).toBe('C:/fake-userData');
     const download = native.sessionListeners.get('will-download');
     if (download === undefined) throw new Error('ダウンロード拒否なし');
     const attempted = event();

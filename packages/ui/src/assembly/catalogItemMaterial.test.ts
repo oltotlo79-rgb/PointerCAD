@@ -114,7 +114,7 @@ describe('K-06 段 1 族の部品の材質と部品表の質量', () => {
     expect(bomOf(current)[0]?.materialId).toBe('rubber');
   });
 
-  it('密度の材質を持たない行(資料 GF-2 の LDPE のキャップ)は、置く時の中身にも置いた部品にも材質を付けず、部品表の質量は行の 1 個の値', () => {
+  it('密度の材質を持たない行(資料 2 の LDPE のキャップ)は、置く時の中身にも置いた部品にも材質を付けず、部品表の質量は行の 1 個の値', () => {
     const family = 'pipe-frame-cap';
     const item = 'p19-insert-cap-r19x3-r16.7x10-ldpe';
     const committed = commitCatalogItemChoice(family, item, {});

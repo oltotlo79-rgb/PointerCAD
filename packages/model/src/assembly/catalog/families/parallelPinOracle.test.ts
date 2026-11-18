@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-09 平行ピン JIS B 1354:2012 の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の parallelPin)の突合せ、長さの指定の範囲、
  * 形と体積、保存の形の検査。長さは資料に一覧が無いので式で入れる(規格の呼び長さとして名乗らない)。
@@ -39,9 +40,9 @@ describe('M-09 平行ピン 資料の表との突合せ', () => {
   });
 
   it('出どころは資料の番号・SHA・頁だけを持ち、行の鍵は材料の記号と呼び径で重ならない', () => {
-    expect(PARALLEL_PIN_EVIDENCE.sha256).toBe(PARALLEL_PIN_ORACLE.pdfSha256);
+    expect(PARALLEL_PIN_EVIDENCE.reference).toBe(PARALLEL_PIN_ORACLE.reference);
     expect(PARALLEL_PIN_EVIDENCE.title.startsWith('資料 K4-4 ')).toBe(true);
-    expect(PARALLEL_PIN_EVIDENCE.url).toBe('');
+    expect(PARALLEL_PIN_EVIDENCE).not.toHaveProperty('url');
     const keys = PARALLEL_PIN_ROWS.map((row) => row.key);
     expect(new Set(keys).size).toBe(40);
     for (const row of PARALLEL_PIN_ROWS) {

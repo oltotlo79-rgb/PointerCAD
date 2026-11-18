@@ -141,14 +141,14 @@ export function swapViewTrigger(value: ViewControlSettings, action: ViewAction, 
 }
 
 /** キーの組の物理の位置(KeyboardEvent.code)。＋−はテンキーと、記号のキー(−と＝＋)の両方。 */
-export const VIEW_KEY_CODES: Readonly<Record<ViewKeyGroup, readonly CodeChord['code'][]>> = {
+const VIEW_KEY_CODES: Readonly<Record<ViewKeyGroup, readonly CodeChord['code'][]>> = {
   arrows: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'],
   numpad: ['Numpad8', 'Numpad2', 'Numpad4', 'Numpad6'],
   plusMinus: ['NumpadAdd', 'NumpadSubtract', 'Equal', 'Minus'],
 };
 
 /** 視点のキーと命令のキーの重なり(設計 §5 の key-collision)。 */
-export interface ViewKeyCollision {
+interface ViewKeyCollision {
   readonly action: ViewAction;
   readonly trigger: ViewTrigger;
   readonly commandId: CommandId;

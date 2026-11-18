@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { H_BEAM_ADDITION_EDITION_ORACLE } from './steelHBeamOracle.fixture.js';
 import { SECTION_ADDITION_EDITION_ORACLE } from './steelAngleChannelOracle.fixture.js';
 import { SS400_EXPANSION_EDITION_ORACLE } from './steelCatalogOracle.fixture.js';
@@ -58,7 +59,7 @@ describe('material-compatible steel catalog', () => {
     expect(steelProducts('S45C', 'hBeam')).toEqual([]);
     expect(steelProducts('SS400', 'steelPipe')).toEqual([]);
     for (const row of STEEL_PRODUCTS) {
-      expect(STEEL_EVIDENCE[row.evidence].sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(STEEL_EVIDENCE[row.evidence].reference).not.toBe('');
       expect(findSteelProduct(row.catalog, row.size, steelProductOptions(row))).toBe(row);
     }
   });
@@ -66,12 +67,12 @@ describe('material-compatible steel catalog', () => {
   it('ties each stated product standard to a pinned source without persisting it or claiming final JIS verification', () => {
     // Independent expectations: which producer page states which standard (task240/241 reconciled evidence).
     const expected = new Map<string, readonly [string, string]>([
-      ['JIS G 3194:flatBar', ['PDF p6 JIS G 3194', '07cca88a466a190142c87b74eb6c53c3c72e0c66433d3e120e2af497512b7dea']],
-      ['JIS G 3192:equalAngle', ['PDF p26（冊子p24）', '031d35df73d5681c7ad7cb721eea4838e80624c9ca7092a69c8e83641c5d65de']],
-      ['JIS G 3192:channel', ['PDF p26（冊子p24）', '031d35df73d5681c7ad7cb721eea4838e80624c9ca7092a69c8e83641c5d65de']],
-      ['JIS G 3192:hBeam', ['PDF p9 ', '69774143c7a64e457b72f06cc4180f2b3a2bb3cc82aadebb347f3543fa8d6a22']],
-      ['JIS G 3123:roundBar', ['公差表（JIS G 3123）', '63430ac1b24c555dbe09796a706cdfd75b77e12c727fe064e5d4db63917480eb']],
-      ['JIS G 3123:flatBar', ['公差表（JIS G 3123）', '63430ac1b24c555dbe09796a706cdfd75b77e12c727fe064e5d4db63917480eb']],
+      ['JIS G 3194:flatBar', ['PDF p6 JIS G 3194', 'JIS G 3194 原案 2024-07-24']],
+      ['JIS G 3192:equalAngle', ['PDF p26（冊子p24）', '形鋼・平鋼・丸鋼 寸法表']],
+      ['JIS G 3192:channel', ['PDF p26（冊子p24）', '形鋼・平鋼・丸鋼 寸法表']],
+      ['JIS G 3192:hBeam', ['PDF p9 ', 'H形鋼']],
+      ['JIS G 3123:roundBar', ['公差表（JIS G 3123）', 'JIS G 3123 公差表']],
+      ['JIS G 3123:flatBar', ['公差表（JIS G 3123）', 'JIS G 3123 公差表']],
     ]);
     for (const row of STEEL_PRODUCTS) {
       const target = expected.get(`${row.productStandard}:${row.catalog}`);
@@ -82,7 +83,7 @@ describe('material-compatible steel catalog', () => {
       }
       expect(row.productStandardEvidence?.locator, row.key).toContain(target[0]);
       expect(row.productStandardEvidence?.locator, row.key).toContain(row.productStandard);
-      expect(row.productStandardEvidence?.sha256, row.key).toBe(target[1]);
+      expect(row.productStandardEvidence?.reference, row.key).toBe(target[1]);
       // Producer editions or a draft with no final edition claim.
       expect([null, '2025.12'], row.key).toContain(row.productStandardEvidence?.edition);
       // Saved options and lookups are unchanged, so existing saved parts keep resolving.
@@ -197,12 +198,28 @@ describe('material-compatible steel catalog', () => {
   });
 });
 
+// 断面の詳細の出典の参照の文。コメントの 8 桁は、外す前の資料の SHA-256 の先頭（同じ指紋の種類は同じ文）。
+const PROFILE_REFERENCE_BY_KIND: Readonly<Record<string, string>> = {
+  'equalAngle/rolledSections': '形鋼・平鋼・丸鋼 寸法表', // 031d35df
+  'channel/rolledSections': '形鋼・平鋼・丸鋼 寸法表', // 031d35df
+  'hBeam/wideFlange': 'H形鋼', // 69774143
+  'equalAngle/ssAngleDraft': 'JIS G 3192 原案 2024-07-24', // ca399bdf
+  'channel/ssChannelDraft': 'JIS G 3192 原案 2024-07-24', // ca399bdf
+  'hBeam/ssHBeamDraft': 'JIS G 3192 原案 2024-07-24', // ca399bdf
+};
+
 describe('profile version provenance and stock-list compatibility', () => {
   it.each(STEEL_PRODUCTS.filter((row) => row.geometry === 'profileSection'))('$key keeps old and new geometry provenance separate', (row) => {
     const current = createStandardPartSource(row.catalog, row.size, { ...steelProductOptions(row), length: '100' });
     const old = { ...current, generatorRevision: '2-steel-1' };
     expect(steelProductFromSource(current)?.geometry).toBe('profileSection');
-    expect(steelProductFromSource(current)?.profileEvidence?.sha256).toMatch(/^[0-9a-f]{64}$/);
+    // 鋼材の種類（鋼材の種類 / 出典の種類）ごとに、期待する参照の文を 1 つに決める。資料の SHA-256 は製品に持たなくなったので、
+    // 外す前に同じ資料の指紋だった種類は同じ文、違う指紋だった種類は違う文にしてある（表は PROFILE_REFERENCE_BY_KIND）。
+    const kind = `${row.catalog}/${row.evidence}`;
+    expect(Object.keys(PROFILE_REFERENCE_BY_KIND), kind).toContain(kind);
+    const profileReference = steelProductFromSource(current)?.profileEvidence?.reference;
+    expect(profileReference).toBe(PROFILE_REFERENCE_BY_KIND[kind]);
+    expect(profileReference).toBe(row.profileEvidence?.reference);
     expect(steelProductFromSource(old)?.geometry).toBe('simplifiedSection');
     expect(steelProductFromSource(old)?.profileEvidence).toBeUndefined();
     // The product standard is a property of the product, not of the generated geometry: both revisions keep it.
@@ -241,16 +258,16 @@ describe('profile version provenance and stock-list compatibility', () => {
  * These expected numbers, editions, statuses and keys are not obtained from the product ledger.
  */
 const SS400_EDITION_ORACLE = [
-  ['SS400:flatBar:FB 50×6', '王子製鉄 公表断面寸法', 'JIS G 3194', '2024'],
-  ['SS400:flatBar:FB 50×9', '王子製鉄 公表断面寸法', 'JIS G 3194', '2024'],
-  ['SS400:flatBar:FB 50×12', '王子製鉄 公表断面寸法', 'JIS G 3194', '2024'],
-  ['SS400:flatBar:FB 100×6', '王子製鉄 公表断面寸法', 'JIS G 3194', '2024'],
-  ['SS400:flatBar:FB 100×9', '王子製鉄 公表断面寸法', 'JIS G 3194', '2024'],
-  ['SS400:roundBar:φ13', '大阪製鐵 公表丸鋼寸法', 'JIS G 3191', '2022'],
-  ['SS400:roundBar:φ16', '大阪製鐵 公表丸鋼寸法', 'JIS G 3191', '2022'],
-  ['SS400:roundBar:φ19', '大阪製鐵 公表丸鋼寸法', 'JIS G 3191', '2022'],
-  ['SS400:roundBar:φ22', '大阪製鐵 公表丸鋼寸法', 'JIS G 3191', '2022'],
-  ['SS400:roundBar:φ25', '大阪製鐵 公表丸鋼寸法', 'JIS G 3191', '2022'],
+  ['SS400:flatBar:FB 50×6', '公表平鋼寸法', 'JIS G 3194', '2024'],
+  ['SS400:flatBar:FB 50×9', '公表平鋼寸法', 'JIS G 3194', '2024'],
+  ['SS400:flatBar:FB 50×12', '公表平鋼寸法', 'JIS G 3194', '2024'],
+  ['SS400:flatBar:FB 100×6', '公表平鋼寸法', 'JIS G 3194', '2024'],
+  ['SS400:flatBar:FB 100×9', '公表平鋼寸法', 'JIS G 3194', '2024'],
+  ['SS400:roundBar:φ13', '公表丸鋼寸法', 'JIS G 3191', '2022'],
+  ['SS400:roundBar:φ16', '公表丸鋼寸法', 'JIS G 3191', '2022'],
+  ['SS400:roundBar:φ19', '公表丸鋼寸法', 'JIS G 3191', '2022'],
+  ['SS400:roundBar:φ22', '公表丸鋼寸法', 'JIS G 3191', '2022'],
+  ['SS400:roundBar:φ25', '公表丸鋼寸法', 'JIS G 3191', '2022'],
   ['SS400:equalAngle:L 40×40×5', 'JIS G 3192', 'JIS G 3192', '2024'],
   ['SS400:equalAngle:L 50×50×6', 'JIS G 3192', 'JIS G 3192', '2024'],
   ['SS400:equalAngle:L 65×65×6', 'JIS G 3192', 'JIS G 3192', '2024'],

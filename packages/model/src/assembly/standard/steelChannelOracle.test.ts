@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { readFileSync } from 'node:fs';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -56,7 +57,7 @@ describe('W6c independent channel profiles', () => {
     expect(row.standardLengthsMm).toMatchObject({ kind: 'unverified', value: null });
     for (const quantity of [...Object.values(row.dimensions), row.rootRadiusMm, row.tipRadiusMm,
       row.printedAreaCm2, row.printedMassKgPerM]) {
-      expect(quantity.citation.locator).toContain('JISF G 3192 原案 表12');
+      expect(quantity.citation.locator).toContain('JIS G 3192 原案 表12');
       expect(quantity.citation.locator).toContain('docs/standards/jis/channel-jis-g-3192.json');
     }
     process.stdout.write('W6C_CHANNEL_AREA ' + JSON.stringify({ size: row.size, printedAreaMm2: printed,

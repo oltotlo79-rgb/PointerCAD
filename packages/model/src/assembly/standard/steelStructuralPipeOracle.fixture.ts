@@ -1,10 +1,10 @@
-/** Independent literal transcription of JISF G 3444 draft 2024-12-20 table 6.
- * PDF SHA-256: 755e8484f4006043ff5592f0f0baba5524f86d4aac777aca25f25827483e5fa3.
+/** Independent literal transcription of JIS G 3444 draft 2024-12-20 table 6.
+ * PDF SHA-256: JIS G 3444 原案 2024-12-20.
  * Second reading from the PDF text-stream order, made without reading the product table. No application imports.
  * Printed precision is retained as strings: [outside diameter D, thickness t, unit mass W kg/m, area A cm2, PDF page].
  */
 export const STRUCTURAL_PIPE_ORACLE = {
-  pdfSha256: '755e8484f4006043ff5592f0f0baba5524f86d4aac777aca25f25827483e5fa3',
+  reference: 'JIS G 3444 原案 2024-12-20',
   rows: [
   ['21.7', '2.0', '0.972', '1.238', 10],
   ['27.2', '2.0', '1.24', '1.583', 10],

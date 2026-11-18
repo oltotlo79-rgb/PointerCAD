@@ -89,6 +89,25 @@ export function holeWallOriginAt(origins: CurrentOriginIndex | undefined, faceIn
 }
 
 /**
+ * 同じ穴フィーチャーのほかの穴の壁の面(J-02c。締結の窓で、1 組目の穴と同じ穴フィーチャーの穴を当たりとして光らせる)。
+ * 選んだ面の今の由来が下穴の壁(`holeWallOriginAt` が 'hole')の時だけ、同じ featureId の bore/wall で、由来が unique な面の今の番地を返す
+ * (選んだ穴と同じ穴〔中心と置き方が同じ〕の面は入れない。分かれた・まとまった面は当て推量になるので入れない)。番地の小さい順。
+ */
+export function sameHoleFeatureWalls(origins: CurrentOriginIndex | undefined, faceIndex: number): readonly number[] {
+  const picked = holeWallOriginAt(origins, faceIndex);
+  if (picked.status !== 'hole' || origins === undefined || origins.state !== 'tracked') return [];
+  const faces = origins.bindings.flatMap((binding): number[] => {
+    if (binding.state !== 'unique' || binding.current.kind !== 'face' || binding.origin.shapeKind !== 'face') return [];
+    const identity = binding.origin.identity;
+    if (identity.kind !== 'hole-face' || identity.stage !== 'bore' || identity.role !== 'wall' || identity.featureId !== picked.origin.featureId
+      || sameHole(identity, picked.origin)) return [];
+    // 同じ番地を別の由来も主張する面は、その面の由来が 1 つに決まらないので入れない(holeWallOriginAt と同じ決まり)。
+    return holeWallOriginAt(origins, binding.current.index).status === 'hole' ? [binding.current.index] : [];
+  });
+  return [...new Set(faces)].sort((left, right) => left - right);
+}
+
+/**
  * 実らせんの明示経路だけが使う、壁の小片と自分の溝の面(kernel の makeThread が native の履歴で付けた由来)。
  * 選んだ面は bore/wall の split の候補の1枚で、溝は同じ穴(featureId・center・placement の全て)の thread/groove が
  * ちょうど1つ。どの面も他の binding に主張されていない。普通の split は `holeWallOriginAt` が今までどおり断る。

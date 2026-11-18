@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-01 六角ボルト(JIS B 1180-2014 本体規格の呼び径六角ボルト)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の
  * hexBoltMain)の突合せ、今の規格部品の本体規格の表との照合、ねじ長さの区分と形の体積の検査。
@@ -43,10 +44,10 @@ describe('M-01 六角ボルト 本体規格 資料の表との突合せ', () => 
   it('ねじ長さは呼び長さの区分の b で、b の無い区分の長さは作らない。体積は 六角柱 + 軸', () => {
     const evidence = ROWS[0]?.evidence;
     expect(ROWS.every((row) => row.evidence === evidence)).toBe(true);
-    expect(evidence?.sha256).toBe(ORACLE.pdfSha256);
+    expect(evidence?.reference).toBe(ORACLE.reference);
     expect(evidence?.locator).toContain(`PDF ${ORACLE.page} 頁`);
     expect(evidence?.title.startsWith('資料 K5-5 ')).toBe(true);
-    expect(evidence?.url).toBe('');
+    expect(evidence).not.toHaveProperty('url');
     expect([HEX_BOLT_MAIN_FAMILY.id, HEX_BOLT_MAIN_FAMILY.catalogRevision, HEX_BOLT_MAIN_FAMILY.generatorRevision])
       .toEqual(['hex-bolt-main', 'hex-bolt-main-2026-11-r1', 'hex-bolt-main-1']);
     for (const row of ROWS) {

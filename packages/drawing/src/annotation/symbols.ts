@@ -17,11 +17,9 @@ export interface SymbolGeometry {
   readonly texts: readonly SymbolText[];
 }
 
-/** 第三角法の配置: SOLIDWORKS公式ヘルプ「Customizing a Symbol」。
- * https://help.solidworks.com/2018/english/SolidWorks/sldworks/t_customizing_a_symbol.htm
+/** 第三角法の配置。
  * 同心円を左、小径端を左にした円錐台を右へ置く。20×8mmは慣用値(要確認)。
- * 深さ/ざぐり/皿もみの形: MISUMI JIS B 0001:2010抜粋。
- * https://sg.misumi-ec.com/tech-info/categories/technical_data/td01/g0049.html
+ * 深さ/ざぐり/皿もみの形: JIS B 0001:2010抜粋。
  * 深さは上横棒・縦棒・矢印の両翼の4線。旧計画の2線では記号を表せない。
  * 比率・寸法は規格原典との照合が未完了のため、すべて慣用値・要確認。 */
 export function drawingSymbol(kind: DrawingSymbolKind, sizeMm = 3.5, origin: Point2 = [0, 0]): SymbolGeometry | null {

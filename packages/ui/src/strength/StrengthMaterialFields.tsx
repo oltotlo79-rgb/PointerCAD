@@ -46,8 +46,8 @@ export function StrengthMaterialSource({ material }: { readonly material: Streng
     <p>σt {material.tensileStrength.mpa} MPa · {t(material.tensileStrength.basis === 'minimum' ? 'strength.minimum' : 'strength.reference')}</p>
     {ids.map(id => {
       const source = id === undefined ? undefined : STRENGTH_SOURCES[id];
-      return source === undefined ? null : <p key={id}>{source.publisher} · {source.locator}<br />
-        {source.standard} · {source.standardEdition ?? t('strength.unknownEdition')}</p>;
+      return source === undefined ? null : <p key={id}>{source.label}<br />
+        {[source.standard, source.standardEdition ?? t('strength.unknownEdition')].filter(Boolean).join(' · ')}</p>;
     })}
   </details>;
 }

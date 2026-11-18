@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAssemblyDocument, createEmptyPartDocument, DEFAULT_COMPONENT_PLACEMENT, IDENTITY_PLACEMENT, resolvePart } from '@pointercad/model';
 import type { DrawingDocument } from '@pointercad/drawing';
 import type { AppState } from '../store/appState.js';
+import type { FrameStrokeDraft } from '../store/frameStrokeActions.js';
 import { bodyFor, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { captureMeshBodyLayout } from '../store/recomputeSlice.js';
@@ -224,6 +225,21 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); resetTestStore(); });
 
 describe('ViewportCanvas effect の所有と破棄', () => {
+  it('E-08 第 2 段: 打った点が変わった時だけ一時の線の層へ渡し、ほかの更新では渡し直さない', async () => {
+    const current = mount();
+    try {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      expect(current.scene.setFrameStroke).not.toHaveBeenCalled();
+      const stroke: FrameStrokeDraft = { points: [[0, 0, 0], [600, 0, 0]], closed: false, up: 'z', active: true, owner: 'layout' };
+      useAppStore.setState({ frameStroke: stroke });
+      expect(current.scene.setFrameStroke).toHaveBeenLastCalledWith(stroke);
+      useAppStore.setState({ selection: ['changed-selection'] });
+      expect(current.scene.setFrameStroke).toHaveBeenCalledTimes(1);
+      useAppStore.setState({ frameStroke: null });
+      expect(current.scene.setFrameStroke).toHaveBeenLastCalledWith(null);
+    } finally { useAppStore.setState({ frameStroke: null }); current.cleanup(); }
+  });
+
   it('reports retired and admitted viewport owners separately through failure and retry', () => {
     vi.useFakeTimers();
     const active = mount();

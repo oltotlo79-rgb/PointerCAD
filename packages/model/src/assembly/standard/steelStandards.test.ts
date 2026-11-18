@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { H_BEAM_ADDITION_SAVED_OPTIONS } from './steelHBeamOracle.fixture.js';
 import { SECTION_ADDITION_SAVED_OPTIONS } from './steelAngleChannelOracle.fixture.js';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +7,7 @@ import { createStandardPartSource } from './buildStandardPart.js';
 import {
   findSteelProduct, STEEL_PRODUCTS, steelProductFromSource, steelProductOptions,
 } from './steelCatalog.js';
-import { SGP_ADDITION_SAVED_OPTIONS, SGP_TABLE4_PDF_SHA256, SS400_EXPANSION_SAVED_OPTIONS } from './steelCatalogOracle.fixture.js';
+import { SGP_ADDITION_SAVED_OPTIONS, SGP_TABLE4_REFERENCE, SS400_EXPANSION_SAVED_OPTIONS } from './steelCatalogOracle.fixture.js';
 import { S45C_HOT_SAVED_OPTIONS } from './steelS45cOracle.testSupport.js';
 import { STEEL_STANDARDS, type SteelStandard, type SteelStandardReference } from './steelStandards.js';
 
@@ -15,18 +16,18 @@ type SteelStandardId = SteelStandardReference['standardId'];
 // Independent transcription of the EX-03 evidence inventory (2026-10-24).
 // The G 3192 2020 draft is historical evidence, not evidence for G 3123.
 const DRAFTS = [
-  ['jis-g-3101-2024', '2023-07-26', 'docs_kouzai_0400JISG3101_20230726.pdf', '797fe421e44bfce54f53b6b89073e4ce488343f59d733288ca9996a26db44893'],
-  ['jis-g-3191-2022', '2021-07-28', 'docs_kouzai010_jis12G3191_20210728.pdf', '8ea886730b59558553d49f395e7ada43c093210c51e00e3080c08f2163c0e313'],
-  ['jis-g-3192-2024', '2024-07-24', 'docs_kouzai_0400JISG3192_20240724.pdf', 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa'],
-  ['jis-g-3192-2024', '2020-12-02', 'docs_kouzai004_jis02G3192_20201202.pdf', '000c5bf453e141191151608e424731322155f88a4f756a450abd14c8c573a935'],
-  ['jis-g-3194-2024', '2024-07-24', 'docs_kouzai_0500JISG3194_20240724.pdf', '07cca88a466a190142c87b74eb6c53c3c72e0c66433d3e120e2af497512b7dea'],
+  ['jis-g-3101-2024', '2023-07-26', 'JIS G 3101 原案 2023-07-26'],
+  ['jis-g-3191-2022', '2021-07-28', 'JIS G 3191 原案 2021-07-28'],
+  ['jis-g-3192-2024', '2024-07-24', 'JIS G 3192 原案 2024-07-24'],
+  ['jis-g-3192-2024', '2020-12-02', 'JIS G 3192 原案 2020-12-02'],
+  ['jis-g-3194-2024', '2024-07-24', 'JIS G 3194 原案 2024-07-24'],
   // 2026-11-15 の追加（鋼材の第 2 弾）: G 3350・G 3459 の 2020-12-02 の改正案。
-  ['jis-g-3350-2021', '2020-12-02', 'docs_kouzai004_jis03G3350_20201202.pdf', '386086a3b2af48d82e049f1bbdb1a6a187721eb156acdd4c2c9e8927bca26fe5'],
-  ['jis-g-3444-2025', '2024-12-20', 'docs_kouzai_1400_JISG3444_20241220.pdf', '755e8484f4006043ff5592f0f0baba5524f86d4aac777aca25f25827483e5fa3'],
-  ['jis-g-3452-2026', '2025-12-17', 'docs_kouzai_0500_JISG3452_20251217.pdf', '03b3975041cee440fd7be67ef7928089158cc8d7e7d1fc584399cfb282170318'],
-  ['jis-g-3459-2021', '2020-12-02', 'docs_kouzai004_jis05G3459_20201202.pdf', 'cd9247d629dfc9656e0a2fd5941bc043e341cdcc23ad95e4bcb010bb5e3bcdab'],
-  ['jis-g-3466-2025', '2024-12-20', 'docs_kouzai_1600_JISG3466_20241220.pdf', 'ce00863b95e73a2dd116459bf75595ac6a21779961406cef8d149791af012752'],
-  ['jis-g-4051-2026', '2025-12-17', 'docs_kouzai_0700_JISG4051_20251217.pdf', '158ac7b25b0c1cda41ae5cdf68cfe37530b73f1288b9cacf62c2d45584664245'],
+  ['jis-g-3350-2021', '2020-12-02', 'JIS G 3350 原案 2020-12-02'],
+  ['jis-g-3444-2025', '2024-12-20', 'JIS G 3444 原案 2024-12-20'],
+  ['jis-g-3452-2026', '2025-12-17', 'JIS G 3452 原案 2025-12-17'],
+  ['jis-g-3459-2021', '2020-12-02', 'JIS G 3459 原案 2020-12-02'],
+  ['jis-g-3466-2025', '2024-12-20', 'JIS G 3466 原案 2024-12-20'],
+  ['jis-g-4051-2026', '2025-12-17', 'JIS G 4051 原案 2025-12-17'],
 ] as const;
 
 const STANDARDS = [
@@ -50,25 +51,25 @@ const K3_STANDARDS = [
 // Saved r1 contract: all six strings are literal constants, independent of the catalog builders.
 // Do not regenerate this table from STEEL_PRODUCTS when adding provenance or new product rows.
 const FROZEN_OPTIONS = [
-  ['SS400:flatBar:FB 50×6', 'SS400', 'JIS G 3101', '王子製鉄 公表断面寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
-  ['SS400:flatBar:FB 50×9', 'SS400', 'JIS G 3101', '王子製鉄 公表断面寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
-  ['SS400:flatBar:FB 50×12', 'SS400', 'JIS G 3101', '王子製鉄 公表断面寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
-  ['SS400:flatBar:FB 100×6', 'SS400', 'JIS G 3101', '王子製鉄 公表断面寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
-  ['SS400:flatBar:FB 100×9', 'SS400', 'JIS G 3101', '王子製鉄 公表断面寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
-  ['SS400:roundBar:φ13', 'SS400', 'JIS G 3101', '大阪製鐵 公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
-  ['SS400:roundBar:φ16', 'SS400', 'JIS G 3101', '大阪製鐵 公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
-  ['SS400:roundBar:φ19', 'SS400', 'JIS G 3101', '大阪製鐵 公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
-  ['SS400:roundBar:φ22', 'SS400', 'JIS G 3101', '大阪製鐵 公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
-  ['SS400:roundBar:φ25', 'SS400', 'JIS G 3101', '大阪製鐵 公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
-  ['SS400:equalAngle:L 40×40×5', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'osaka'],
-  ['SS400:equalAngle:L 50×50×6', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'osaka'],
-  ['SS400:equalAngle:L 65×65×6', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'osaka'],
-  ['SS400:channel:[ 75×40×5×7', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'osaka'],
-  ['SS400:channel:[ 100×50×5×7.5', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'osaka'],
-  ['SS400:channel:[ 125×65×6×8', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'osaka'],
-  ['SS400:hBeam:H 150×150×7×10', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'yamato'],
-  ['SS400:hBeam:H 200×200×8×12', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'yamato'],
-  ['SS400:hBeam:H 300×300×10×15', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'yamato'],
+  ['SS400:flatBar:FB 50×6', 'SS400', 'JIS G 3101', '公表平鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
+  ['SS400:flatBar:FB 50×9', 'SS400', 'JIS G 3101', '公表平鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
+  ['SS400:flatBar:FB 50×12', 'SS400', 'JIS G 3101', '公表平鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
+  ['SS400:flatBar:FB 100×6', 'SS400', 'JIS G 3101', '公表平鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
+  ['SS400:flatBar:FB 100×9', 'SS400', 'JIS G 3101', '公表平鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'flat'],
+  ['SS400:roundBar:φ13', 'SS400', 'JIS G 3101', '公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
+  ['SS400:roundBar:φ16', 'SS400', 'JIS G 3101', '公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
+  ['SS400:roundBar:φ19', 'SS400', 'JIS G 3101', '公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
+  ['SS400:roundBar:φ22', 'SS400', 'JIS G 3101', '公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
+  ['SS400:roundBar:φ25', 'SS400', 'JIS G 3101', '公表丸鋼寸法', 'hotRolled-heatTreatmentUnspecified', 'round'],
+  ['SS400:equalAngle:L 40×40×5', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'rolledSections'],
+  ['SS400:equalAngle:L 50×50×6', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'rolledSections'],
+  ['SS400:equalAngle:L 65×65×6', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'rolledSections'],
+  ['SS400:channel:[ 75×40×5×7', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'rolledSections'],
+  ['SS400:channel:[ 100×50×5×7.5', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'rolledSections'],
+  ['SS400:channel:[ 125×65×6×8', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'rolledSections'],
+  ['SS400:hBeam:H 150×150×7×10', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'wideFlange'],
+  ['SS400:hBeam:H 200×200×8×12', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'wideFlange'],
+  ['SS400:hBeam:H 300×300×10×15', 'SS400', 'JIS G 3101', 'JIS G 3192', 'hotRolled-heatTreatmentUnspecified', 'wideFlange'],
   ['S45C:roundBar:φ20', 'S45C', 'JIS G 4051', 'JIS G 3123', 'brightBar-heatTreatmentUnspecified', 'brightRound'],
   ['S45C:roundBar:φ25', 'S45C', 'JIS G 4051', 'JIS G 3123', 'brightBar-heatTreatmentUnspecified', 'brightRound'],
   ['S45C:roundBar:φ30', 'S45C', 'JIS G 4051', 'JIS G 3123', 'brightBar-heatTreatmentUnspecified', 'brightRound'],
@@ -92,10 +93,10 @@ describe('steel standards evidence ledger', () => {
   it.each(K3_STANDARDS)('%s keeps its bibliographic facts and the draft-only verification limit',
     (id, number, name, edition, revisedOn, revisionDateBasis) => {
       const row: SteelStandard = STEEL_STANDARDS[id];
-      expect(row).toMatchObject({ number, name, edition, revisedOn, revisionDateBasis, checkedOn: '2026-11-15',
+      expect(row).toMatchObject({ number, name, edition, revisedOn, revisionDateBasis,
         verification: 'draft', editionStatus: 'reported' });
       expect(row.draft?.meetingDate).toBe('2020-12-02');
-      expect(row.verificationNote).toContain('JSA');
+      expect(row.verificationNote).toContain('規格票');
       expect(row.verificationNote).toContain('未確認');
       expect(row.verificationNote).toContain('2020-12-02');
       expect(row.historicalDrafts).toEqual([]);
@@ -104,29 +105,26 @@ describe('steel standards evidence ledger', () => {
   it.each(STANDARDS)('%s keeps its bibliographic facts and their verification limits',
     (id, number, name, edition, revisedOn, revisionDateBasis) => {
       const row: SteelStandard = STEEL_STANDARDS[id];
-      expect(row).toMatchObject({ number, name, edition, revisedOn, revisionDateBasis, checkedOn: '2026-10-24' });
+      expect(row).toMatchObject({ number, name, edition, revisedOn, revisionDateBasis });
       expect(row.verificationNote.trim().length).toBeGreaterThan(0);
       expect(row.verification).toBe(id === 'jis-g-3123-2004' ? 'unverified' : 'draft');
       expect(row.editionStatus).toBe(id === 'jis-g-3444-2025' ? 'inferred' : 'reported');
       if (row.verification === 'draft') {
         expect(row.draft).not.toBeNull();
-        expect(row.verificationNote).toContain('JSA');
+        expect(row.verificationNote).toContain('規格票');
         expect(row.verificationNote).toContain('未確認');
       }
       if (row.revisedOn === null) expect(row.verification).toBe('draft');
     });
 
-  it('retains all eleven exact URL/hash pairs without assigning a nonexistent draft to G 3123', () => {
+  it('retains all eleven exact draft references without assigning a nonexistent draft to G 3123', () => {
     const actual = Object.entries(STEEL_STANDARDS).flatMap(([id, row]) => {
       const drafts = row.draft === null ? row.historicalDrafts : [row.draft, ...row.historicalDrafts];
-      return drafts.map((draft) => [id, draft.meetingDate, draft.url, draft.sha256]);
+      return drafts.map((draft) => [id, draft.meetingDate, draft.reference]);
     });
-    const expected = DRAFTS.map(([id, date, file, hash]) =>
-      [id, date, `https://www.jisf.or.jp/business/standard/jis/documents/${file}`, hash]);
-    expect(actual).toEqual(expected);
+    expect(actual).toEqual(DRAFTS);
     expect(actual).toHaveLength(11);
     expect(new Set(actual.map((row) => row[2])).size).toBe(11);
-    for (const [, , , hash] of actual) expect(hash).toMatch(/^[0-9a-f]{64}$/);
     expect(STEEL_STANDARDS['jis-g-3123-2004'].draft).toBeNull();
     expect(STEEL_STANDARDS['jis-g-3123-2004'].verificationNote).toContain('寸法表は未確認');
     expect(STEEL_STANDARDS['jis-g-3444-2025'].verificationNote).toContain('2025年版は推測');
@@ -182,8 +180,8 @@ describe('frozen steel catalog saved options', () => {
   });
 });
 
-it('pins the SGP table 4 PDF hash without changing the provisional standard ledger', () => {
-  expect(STEEL_STANDARDS['jis-g-3452-2026'].draft?.sha256).toBe(SGP_TABLE4_PDF_SHA256);
-  expect(SGP_TABLE4_PDF_SHA256).toBe('03b3975041cee440fd7be67ef7928089158cc8d7e7d1fc584399cfb282170318');
+it('pins the SGP table 4 reference without changing the provisional standard ledger', () => {
+  expect(STEEL_STANDARDS['jis-g-3452-2026'].draft?.reference).toBe(SGP_TABLE4_REFERENCE);
+  expect(SGP_TABLE4_REFERENCE).toBe('JIS G 3452 原案 2025-12-17');
   expect(SGP_ADDITION_SAVED_OPTIONS).toHaveLength(42);
 });

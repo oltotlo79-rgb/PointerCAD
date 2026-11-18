@@ -28,6 +28,7 @@ import type { AxisSpec } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import type { Parameter } from '../parameters/types.js';
 import type { BoltedJointRecord as TypeBoltedJointRecord } from './fastening/boltedJointEdit.js';
+import type { FrameJointRecord } from './frame/frameJointRecord.js';
 import type { BeamAnalysisInputs as TypeBeamAnalysisInputs } from '../analysis/beamInputs.js';
 import type { CrossLevelGearCouplingDefinition as TypeCrossLevelGearCouplingDefinition } from './joints/crossLevelGearDocument.js';
 import type { CrossLevelCamCouplingDefinition as TypeCrossLevelCamCouplingDefinition } from './joints/crossLevelCamLifecycle.js';
@@ -390,6 +391,8 @@ export interface AssemblyDocument {
   readonly jointOccurrenceConnections?: readonly JointOccurrenceConnection[];
   /** Flat bolted joints' recorded inputs for editing: picks, user choices, generated part ids. */
   readonly boltedJoints?: readonly TypeBoltedJointRecord[];
+  /** フレームどうしの接続の記録(E-07 締結部品の自動判別)。欄が無い文書は記録が空。保存形式の版 23 以上の文書だけが持つ。 */
+  readonly frameJoints?: readonly FrameJointRecord[];
   /** Optional versioned user inputs; no solver results or derived CAD node positions. */
   readonly beamAnalysisInputs?: TypeBeamAnalysisInputs;
   readonly id: string;

@@ -361,7 +361,10 @@ describe('選ぶ窓の機械要素', () => {
         t('catalog.frame.kind.jointBar'), t('catalog.frame.kind.tSlotStud'), t('catalog.frame.kind.knurledNut'),
         t('catalog.frame.kind.pipeFrame'), t('catalog.frame.kind.pipeFrameSlotted'), t('catalog.frame.kind.pipeFrameTwin'),
         t('catalog.frame.kind.smallFrame'), t('catalog.frame.kind.smallFrameCap'), t('catalog.frame.kind.bracketStock'),
-        t('catalog.frame.kind.pipeFrameCap'), t('catalog.frame.kind.pipeFrameFoot')]);
+        t('catalog.frame.kind.pipeFrameCap'), t('catalog.frame.kind.pipeFrameFoot'), t('catalog.board.kind.fixed'), t('catalog.board.kind.order'),
+        t('catalog.board.kind.partBox'), t('catalog.board.kind.coverFrame'), t('catalog.frame.kind.connectorBox'),
+        t('catalog.frame.kind.capFootBox'), t('catalog.frame.kind.movableBox'), t('catalog.frame.kind.accessoryBox'),
+        t('catalog.frame.kind.caster')]);
     expect(nodes.some((item) => item.type === 'p' && item.props.children === t('catalog.frame.tSlot.hint'))).toBe(true);
     expect(nodes.some((item) => item.type === CatalogStockTable)).toBe(true);
     const inputs = nodes.filter((item) => item.type === 'input');

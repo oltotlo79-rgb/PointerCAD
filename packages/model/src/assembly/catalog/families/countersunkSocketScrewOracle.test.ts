@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-34 六角穴付き皿ボルト(JIS B 1194-2006)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の
  * countersunkSocketScrew)の突合せ、皿の角度・ねじの表との照合、長さの決まりと形の体積の検査。
@@ -32,10 +33,10 @@ describe('M-34 六角穴付き皿ボルト 資料の表との突合せ', () => {
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版と長さの指定を凍結し、体積は 円すい台 + 軸 − 六角穴(ℓ は頭を含む)', () => {
     const evidence = ROWS[0]?.evidence;
     expect(ROWS.every((row) => row.evidence === evidence)).toBe(true);
-    expect(evidence?.sha256).toBe(ORACLE.pdfSha256);
+    expect(evidence?.reference).toBe(ORACLE.reference);
     expect(evidence?.locator).toContain(`PDF ${ORACLE.page} 頁`);
     expect(evidence?.title.startsWith('資料 K5-4 ')).toBe(true);
-    expect(evidence?.url).toBe('');
+    expect(evidence).not.toHaveProperty('url');
     expect([COUNTERSUNK_SOCKET_SCREW_FAMILY.id, COUNTERSUNK_SOCKET_SCREW_FAMILY.catalogRevision,
       COUNTERSUNK_SOCKET_SCREW_FAMILY.generatorRevision])
       .toEqual(['countersunk-socket-screw', 'countersunk-socket-screw-2026-11-r1', 'countersunk-socket-screw-1']);

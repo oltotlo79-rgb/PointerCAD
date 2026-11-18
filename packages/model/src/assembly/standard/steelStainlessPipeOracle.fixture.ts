@@ -1,11 +1,11 @@
-/** Independent literal transcription of JISF G 3459 draft 2020-12-02 tables 7 and 8 (stainless steel pipes).
- * PDF SHA-256: cd9247d629dfc9656e0a2fd5941bc043e341cdcc23ad95e4bcb010bb5e3bcdab.
+/** Independent literal transcription of JIS G 3459 draft 2020-12-02 tables 7 and 8 (stainless steel pipes).
+ * PDF SHA-256: JIS G 3459 原案 2020-12-02.
  * Second reading from the PDF text-stream order, made without reading the product table. No application imports.
  * Only the first unit-mass column (the group containing SUS304TP) is transcribed. Table 8 thicknesses keep their
  * printed parentheses (dimensions differing from table 7). [nominal A, nominal B, D, schedule, t, unit mass kg/m, PDF page].
  */
 export const STAINLESS_PIPE_ORACLE = {
-  pdfSha256: 'cd9247d629dfc9656e0a2fd5941bc043e341cdcc23ad95e4bcb010bb5e3bcdab',
+  reference: 'JIS G 3459 原案 2020-12-02',
   table7: [
   ['6A', '1/8', '10.5', 'Sch5S', '1.0', '0.237', 12],
   ['6A', '1/8', '10.5', 'Sch10S', '1.2', '0.278', 12],

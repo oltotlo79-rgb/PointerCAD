@@ -1,6 +1,6 @@
 import {
   VIEW_ACTIONS, viewKeyStepDegrees, type ViewAction, type ViewControlOptions, type ViewControlSettings, type ViewKeyGroup,
-  type ViewTouchGesture, type ViewTrigger,
+  type ViewPenButton, type ViewTouchGesture, type ViewTrigger,
 } from '../settings/viewControlSettings.js';
 import { ORBIT_RADIANS_PER_PIXEL, ZOOM_FACTOR_PER_NOTCH } from './cameraMath.js';
 
@@ -16,15 +16,41 @@ export function cameraModifiersMatch(binding: Pick<ViewTrigger, 'alt' | 'shift' 
     && binding.ctrl === event.ctrlKey && binding.meta === event.metaKey;
 }
 
+type DragButton = Extract<ViewTrigger, { readonly kind: 'drag' }>['button'];
+
+function dragActionFor(settings: ViewControlSettings, button: DragButton, event: Modifiers): ViewAction | null {
+  return VIEW_ACTIONS.find(action => settings.bindings[action].some(trigger => trigger.kind === 'drag'
+    && trigger.button === button && cameraModifiersMatch(trigger, event))) ?? null;
+}
+
+/** ペンの側面のボタン(button 2・押下の印 2)と消しゴムの端(button 5・押下の印 32)。 */
+const PEN_INPUTS: Readonly<Record<number, { readonly button: ViewPenButton; readonly buttons: number }>> = {
+  2: { button: 'penBarrel', buttons: 2 }, 5: { button: 'penEraser', buttons: 32 },
+};
+
+/**
+ * ペンの側面のボタン・消しゴムの端の割当の操作(B-09 3-4)。決まらなければ undefined(マウスと同じ判定へ進む)。
+ * 側面のボタンをどの操作にも割り当てていない時は、今までどおり右ボタンとして扱う(既定の動きを変えない)。
+ */
+function penDragAction(settings: ViewControlSettings,
+  event: Modifiers & Pick<PointerEvent, 'button' | 'buttons'>): ViewAction | null | undefined {
+  const pen = PEN_INPUTS[event.button];
+  if (pen === undefined) return undefined;
+  const assigned = VIEW_ACTIONS.some(action => settings.bindings[action].some(trigger => trigger.kind === 'drag' && trigger.button === pen.button));
+  if (pen.button === 'penBarrel' && !assigned) return undefined;
+  return event.buttons === pen.buttons ? dragActionFor(settings, pen.button, event) : null;
+}
+
 /** 押したボタンと修飾キーが完全に一致したドラッグの割当の操作。ほかのボタンを同時に押していれば当たらない。 */
 export function viewDragAction(settings: ViewControlSettings,
   event: Modifiers & Pick<PointerEvent, 'pointerType' | 'button' | 'buttons'>): ViewAction | null {
   if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return null;
+  const pen = event.pointerType === 'pen' ? penDragAction(settings, event) : undefined;
+  if (pen !== undefined) return pen;
   const button = event.button === 0 ? 'left' : event.button === 1 ? 'middle' : event.button === 2 ? 'right' : null;
   const buttons = button === 'left' ? 1 : button === 'middle' ? 4 : button === 'right' ? 2 : 0;
   if (button === null || event.buttons !== buttons) return null;
-  return VIEW_ACTIONS.find(action => settings.bindings[action].some(trigger => trigger.kind === 'drag'
-    && trigger.button === button && cameraModifiersMatch(trigger, event))) ?? null;
+  return dragActionFor(settings, button, event);
 }
 
 /** タッチの指の操作(2 本指ドラッグ・つまむ。B-08g)の割当の操作。割当が無ければ null(既定は無し)。 */
@@ -101,7 +127,7 @@ export const KEY_PAN_PIXELS = 40;
 /** キー 1 回の拡大縮小(ホイール 1 目盛りの量。ホイールの速さと反転を掛ける)。 */
 const KEY_ZOOM_WHEEL_DELTA = 100;
 
-export interface ViewKeyMove {
+interface ViewKeyMove {
   readonly action: ViewAction;
   /** ドラッグに相当する向き(-1・0・1)。拡大縮小は縦だけを使う。 */
   readonly direction: readonly [number, number];

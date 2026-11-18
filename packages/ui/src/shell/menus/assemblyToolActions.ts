@@ -7,6 +7,7 @@ import { startPlaceSubAssembly, startReplaceSelectedComponent } from '../../asse
 import { startPlaceComponent, toggleSelectedFixed } from '../../assembly/placeComponentActions.js';
 import { selectedWeldId } from '../../assembly/filletWeldDraft.js';
 import { selectedCircularWeldId } from '../../store/circularWeldActions.js';
+import { selectedJointRecordId } from '../../assembly/frameJointBracketDraft.js';
 import type { AssemblyMenuActionId, MateMenuAction } from './assemblyMenuItems.js';
 
 export function isMateMenuAction(id: MateMenuAction): id is MateKind {
@@ -55,7 +56,8 @@ export function assemblyToolbarIdle(state: AppState): boolean {
   return state.assemblyPlacement === null && state.assemblyMateDraft === null && state.assemblyDrag === null
     && !state.isComputing && !state.assemblyReplacementBusy && state.assemblyReplacementPreview === null
     && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null
-    && state.assemblyFrameSlotDraft === null;
+    && state.assemblyFrameSlotDraft === null && state.assemblyJointBracketDraft === null
+    && state.assemblyMemberStretchDraft === null;
 }
 
 /** 組立の溝つきのフレームの部品(表示の解が無い時は無い)。フレームの溝に締結する道具の押せる条件とブラケットの見分けに使う。 */
@@ -95,6 +97,22 @@ export function assemblyBuildReadiness(state: AppState, id: AssemblyMenuActionId
       || (id === 'filletWeld' && selectedWeldId(state.assembly, state.selection) !== null)) return { ready: true, reasonKey: null };
     return state.assembly.components.filter((component) => !component.suppressed).length >= 2
       ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.filletWeld.needTwoComponents' };
+  }
+  if (id === 'jointCheck') {
+    if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
+    // 一覧は表示中の配置から作るので、組立の形の解が今の文書の物である事が要る(干渉を調べると同じ)。
+    return state.assemblyView?.sourceDocument === state.assembly
+      ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'command.unavailable.geometry' };
+  }
+  if (id === 'jointSwap') {
+    if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
+    return selectedJointRecordId(state.assembly, state.selection) !== null
+      ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.jointSwap.selectBracket' };
+  }
+  if (id === 'memberStretch') {
+    if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
+    return state.assemblyView?.sourceDocument === state.assembly && state.assembly.components.length > 0
+      ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'command.unavailable.geometry' };
   }
   return selected;
 }
@@ -142,6 +160,13 @@ export function chooseAssemblyBuild(id: AssemblyMenuActionId): void {
     // 上の準備の判定 idle で確かめ済み)。始めた後は他の道具と同じく選択と強調を消す。
     if (state.beginFilletWeld()) cancelMate();
   }
+  else if (id === 'jointCheck') state.openAssemblyJointCheck();
+  else if (id === 'jointSwap') {
+    // 記録の接続が今の組立に無い(部材が動いた・長さが変わった)時は、理由と「記録を外す」が出る接合チェックの一覧を開く。
+    const recordId = state.assembly === null ? null : selectedJointRecordId(state.assembly, state.selection);
+    if (recordId !== null && !state.beginJointBracketSwap(recordId)) state.openAssemblyJointCheck();
+  }
+  else if (id === 'memberStretch') state.beginMemberStretch();
   else toggleSelectedFixed();
 }
 

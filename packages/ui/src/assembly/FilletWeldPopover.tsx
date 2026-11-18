@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { densityMaterialLabelKey } from '../solid/MeasurementSections.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -68,6 +69,9 @@ export function FilletWeldPopover(): React.JSX.Element | null {
   const composing = useRef(false);
   const compositionKey = useRef(false);
   const open = draft !== null;
+  const root = useRef<HTMLFormElement>(null);
+  // 閉じた時に、開いた元へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, open, { initial: () => first.current });
   useEffect(() => {
     composing.current = false;
     compositionKey.current = false;
@@ -92,7 +96,7 @@ export function FilletWeldPopover(): React.JSX.Element | null {
       affectedPlacements: childEdit.affectedPlacements } : null);
   };
   return (
-    <form className="pcad-popover pcad-popover--fillet-weld" role="dialog" aria-label={title}
+    <form ref={root} className="pcad-popover pcad-popover--fillet-weld" role="dialog" aria-label={title}
       onCompositionStart={() => { composing.current = true; }}
       onCompositionEnd={() => { composing.current = false; }}
       onPointerDownCapture={() => { compositionKey.current = false; }}

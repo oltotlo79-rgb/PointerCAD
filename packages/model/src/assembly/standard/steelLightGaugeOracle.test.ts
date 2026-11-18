@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * S-10・S-11 軽量形鋼（JIS G 3350 表5〜表10、SSC400）の独立の転記との突合せと、質量の検算・断面の形の検査。
  *
@@ -105,7 +106,7 @@ describe('S-10・S-11 軽量形鋼 JIS G 3350 表5〜表10 の独立の転記と
     const text = readFileSync(new URL('./steelLightGaugeOracle.fixture.ts', import.meta.url), 'utf8');
     const file = ts.createSourceFile('fixture.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     expect(file.statements.filter((node) => ts.isImportDeclaration(node) || ts.isExportDeclaration(node))).toEqual([]);
-    expect(STEEL_EVIDENCE.sscDraft.sha256).toBe(LIGHT_GAUGE_ORACLE.pdfSha256);
+    expect(STEEL_EVIDENCE.sscDraft.reference).toBe(LIGHT_GAUGE_ORACLE.reference);
   });
 
   it.each(LIGHT_GAUGE_ORACLE.rows)('%s %s %s×%s: 表12 の式の断面積・単位質量と、呼び名の末尾の厚さの記号が一致する',

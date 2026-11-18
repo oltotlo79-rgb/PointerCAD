@@ -25,15 +25,14 @@ export const DEEP_GROOVE_BALL_BEARINGS = [
  * 深溝玉軸受の表の出どころ(寸法の数値だけを読んだ。図・文は写さない)。上の 15 行と下の 42 行の全て(57 行)の d・D・B・r(最小)が、
  * この寸法表の「単列深溝玉軸受 開放形」の頁と一致する(deepGrooveBallBearingOracle.test.ts が 2 回目の独立の読みと照らす)。
  * 主要寸法は JIS B 1512(ISO 15)の境界寸法で、製造元によらない。呼び番号は JIS B 1513 の物(製造元の型番ではない)。
- * 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。
+ * 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。
  */
 export const DEEP_GROOVE_BALL_BEARING_EVIDENCE = {
   title: '資料 K4-1 深溝玉軸受の寸法表(製造元の公開カタログ)',
   edition: null,
-  url: '',
+
   locator: 'PDF 5〜8 頁(冊子 B8〜B14)単列深溝玉軸受 開放形の表: 主要寸法 d・D・B・r(最小)',
-  sha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
-  fetchedDate: '2026-11-15',
+  reference: 'K4-1',
 } as const;
 
 /** [呼び番号, d, D, B, r(最小)](mm)。上の 15 行に無い 60・62・63 系の内径 12〜100 の行。 */

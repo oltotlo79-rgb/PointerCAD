@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SteelStandardEditionNote } from './StandardPartPickerPanel.js';
@@ -93,16 +94,16 @@ describe('two-stage SS400 selection CSV compatibility', () => {
     expect(rows.every((row) => row.length === 30)).toBe(true);
     const cuts = cutRows(rows);
     expect(cuts).toHaveLength(7);
-    expect(cuts.filter((row) => row[3] === '王子製鉄 公表断面寸法')).toEqual(before);
+    expect(cuts.filter((row) => row[3] === '公表平鋼寸法')).toEqual(before);
     const addedFlat = cuts.find((row) => row[5] === 'FB 100×28');
     const addedRound = cuts.find((row) => row[5] === 'φ5.5');
     if (addedFlat === undefined || addedRound === undefined) throw new Error('Missing added CSV rows');
     expect(addedFlat.slice(1, 9)).toEqual(['SS400', 'JIS G 3101', 'JIS G 3194', t('assembly.steel.flatBar'),
       'FB 100×28', t('assembly.steel.hotRolled'), '1000', '1']);
-    expect(addedFlat[P + 7]).toBe('07cca88a466a190142c87b74eb6c53c3c72e0c66433d3e120e2af497512b7dea');
+    expect(addedFlat.slice(P + 6, P + 9)).toEqual(['JIS G 3194', '', '']);
     expect(addedRound.slice(1, 4)).toEqual(['SS400', 'JIS G 3101', 'JIS G 3191']);
-    expect(addedRound[P + 7]).toBe('8ea886730b59558553d49f395e7ada43c093210c51e00e3080c08f2163c0e313');
-    expect(addedRound[P + 5]).toContain('9 mm未満はバーインコイル');
+    expect(addedRound.slice(P + 6, P + 9)).toEqual(['JIS G 3191', '', '']);
+    expect(addedRound[P + 3]).toBe('JIS G 3191 改正原案');
     expect(addedFlat.slice(26)).toEqual(['JIS G 3101:2024', '原案で確認', 'JIS G 3194:2024', '原案で確認']);
     expect(addedRound.slice(26)).toEqual(['JIS G 3101:2024', '原案で確認', 'JIS G 3191:2022', '原案で確認']);
   });
@@ -139,10 +140,10 @@ describe('steel stock CSV report', () => {
     expect(bright).toHaveLength(2);
     expect(hot.map((row) => row[3])).toEqual(['JIS G 4051', 'JIS G 3194']);
     expect(bright.map((row) => row[3])).toEqual(['JIS G 3123', 'JIS G 3123']);
-    expect(hot[0][P + 5]).toContain('表3');
-    expect(hot[0][P + 7]).toBe('158ac7b25b0c1cda41ae5cdf68cfe37530b73f1288b9cacf62c2d45584664245');
+    expect(hot[0][P + 3]).toBe('JIS G 4051 改正原案');
+    expect(hot[0].slice(P + 6, P + 9)).toEqual(['JIS G 4051', '', '']);
     expect(hot[1][P + 11]).toContain('JIS G 3194');
-    expect(hot[1][P + 11]).toContain('表1');
+    expect(hot[1][P + 11]).toBe('JIS G 3194 改正原案');
     expect(hot.every((row) => row.length === 30)).toBe(true);
   });
 
@@ -160,7 +161,7 @@ describe('steel stock CSV report', () => {
     const rows = csvRows(bytes);
     expect(rows.every(row => row.length === COLUMNS)).toBe(true);
     expect(rows[1][11]).toBe(t('assembly.steel.stockScope'));
-    expect(rows[2].slice(1, 4)).toEqual(['SS400', 'JIS G 3101', '大阪製鐵 公表丸鋼寸法']);
+    expect(rows[2].slice(1, 4)).toEqual(['SS400', 'JIS G 3101', '公表丸鋼寸法']);
     expect(rows[2].slice(7, 10)).toEqual(['1000', '2', '2000']);
     expect(JSON.parse(rows[2][10])).toEqual([['left', 'bar/one'], ['right', 'bar/one']]);
     expect(rows[3].slice(8, 10)).toEqual(['2', '2000']);
@@ -218,7 +219,7 @@ describe('steel CSV source and geometry provenance', () => {
     expect(header[0]).toBe(t('assembly.steel.csv.kind'));
     expect(header[13]).toBe(`${t('assembly.steel.finishedLength')} (mm)`);
     expect(header.slice(P, ORIGINAL_COLUMNS)).toEqual(['カタログの版', '形状生成の版', '形状の解釈', '寸法の出典', '寸法の出典の版',
-      '寸法の出典の掲載箇所', '寸法の出典のURL', '寸法の出典のSHA-256（取得時のファイル）', '出典の取得日',
+      '寸法の出典の掲載箇所', '寸法規格番号', '寸法の出典のSHA-256（取得時のファイル）', '出典の取得日',
       '断面形状の出典', '鋼種分類の出典', '寸法・製品規格の出典']);
   });
 
@@ -236,77 +237,56 @@ describe('steel CSV source and geometry provenance', () => {
     for (const row of [now, old]) {
       expect(row.slice(1, 6)).toEqual(['SS400', 'JIS G 3101', 'JIS G 3192', t('assembly.steel.hBeam'), 'H 150×150×7×10']);
       expect(row[P]).toBe('jp-steel-2026-10-10-r1');
-      expect(row.slice(P + 3, P + 9)).toEqual(['大和工業グループ 会社案内', '2025.12', 'PDF p4 製品規格 / p6 H形鋼標準寸法表',
-        'https://www.yamatokogyo.co.jp/steel/en/catalog/pdf/company-brochureA3.pdf',
-        '69774143c7a64e457b72f06cc4180f2b3a2bb3cc82aadebb347f3543fa8d6a22', '2026-10-10']);
+      expect(row.slice(P + 3, P + 9)).toEqual(['H形鋼', '', '', 'JIS G 3192', '', '']);
       expect(row[P + 10]).toBe('寸法の出典と同じ資料');
-      expect(row[P + 11]).toContain('PDF p9 H形鋼の形状・寸法の許容差表：JIS G 3192');
+      expect(row[P + 11]).toBe('H形鋼');
     }
     expect(now[P + 2]).toBe('出典の断面形状（資料の角のRなどを反映）');
-    expect(now[P + 9]).toContain('PDF p3（冊子p3/4）広幅H形鋼');
-    expect(now[P + 9]).toContain('SHA-256 69774143c7a64e457b72f06cc4180f2b3a2bb3cc82aadebb347f3543fa8d6a22');
+    expect(now[P + 9]).toBe('H形鋼');
     expect(old[P + 2]).toBe('旧版の簡略断面（保存時の形のまま。出典の断面形状ではない）');
     expect(old[P + 9]).toBe('なし（この形状は出典の断面形状を使わない）');
     expect(old.join('\n')).not.toContain('PDF p3（冊子p3/4）');
   });
 
-  it('shows an unprinted producer edition explicitly and associates S45C grade and JIS G 3123 sources', () => {
+  it('keeps private metadata cells empty and associates S45C grade and JIS G 3123 sources', () => {
     const rows = cutRows(exported(productSource('S45C', 'roundBar', 'φ25'), productSource('SS400', 'roundBar', 'φ25')));
     const carbon = rows.find((row) => row[1] === 'S45C');
     const ss = rows.find((row) => row[1] === 'SS400');
     if (carbon === undefined || ss === undefined) throw new Error('Missing round bar rows');
     expect(carbon.slice(2, 4)).toEqual(['JIS G 4051', 'JIS G 3123']);
-    expect(carbon.slice(P + 2, P + 9)).toEqual(['呼び寸法による単純な形状', '太平鋼材工業 みがき丸鋼サイズ表', '資料に版の記載なし',
-      'PDF p1 S45C（黄色印）の径20・25・30行', 'https://taiheikouzai.co.jp/assets/pdf/marukou.pdf',
-      'a52cd2467606af4ba52bcc2aa14bc30cb70d7855071e3ee66f1c38193edc07ce', '2026-10-10']);
+    expect(carbon.slice(P + 2, P + 9)).toEqual(['呼び寸法による単純な形状', 'みがき丸鋼', '', '', 'JIS G 3123', '', '']);
     expect(carbon[P + 9]).toBe('なし（この形状は出典の断面形状を使わない）');
-    expect(carbon[P + 10]).toContain('合同製鐵 構造用棒鋼 ｜ 資料に版の記載なし ｜ PDF p5 機械構造用炭素鋼鋼材（JIS G4051）S45C行');
-    expect(carbon[P + 10]).toContain('SHA-256 f19cd3ea52561f00bf43149748d4b924227f06e59ede71fe42bb0680612b2b70');
-    expect(carbon[P + 11]).toContain('公差表（JIS G 3123）');
-    expect(carbon[P + 11]).toContain('https://taiheikouzai.co.jp/product.html?id=lineup');
-    expect(carbon[P + 11]).toContain('SHA-256 63430ac1b24c555dbe09796a706cdfd75b77e12c727fe064e5d4db63917480eb');
-    // A printed edition is exported as printed; no edition is inferred for the other rows.
-    expect(ss.slice(P + 3, P + 5)).toEqual(['日本製鉄 建設用資材ハンドブック 大阪製鐵 一般構造用丸鋼', '2025年9月改訂版']);
+    expect(carbon[P + 10]).toBe('JIS G 4051 構造用棒鋼');
+    expect(carbon[P + 11]).toBe('JIS G 3123 公差表');
+    expect(ss.slice(P + 3, P + 9)).toEqual(['一般構造用丸鋼', '', '', 'JIS G 3191', '', '']);
     expect(ss.slice(P + 10, ORIGINAL_COLUMNS)).toEqual(['寸法の出典と同じ資料', '寸法の出典と同じ資料']);
   });
 
   it.each([
-    ['equalAngle', 'L 50×50×6', 'PDF p11（冊子p9）', 'PDF p26（冊子p24）'],
-    ['channel', '[ 100×50×5×7.5', 'PDF p14（冊子p12）', 'PDF p26（冊子p24）'],
-  ] as const)('%s %s cites the JFE profile page and the JFE JIS G 3192 page separately', (catalog, size, profilePage, standardPage) => {
+    ['equalAngle', 'L 50×50×6'], ['channel', '[ 100×50×5×7.5'],
+  ] as const)('%s %s exports the section reference and dimensional standard', (catalog, size) => {
     const [row] = cutRows(exported(productSource('SS400', catalog, size)));
-    expect(row[P + 3]).toBe('大阪製鐵 製品カタログ');
-    expect(row[P + 4]).toBe('資料に版の記載なし');
-    expect(row[P + 9]).toContain(profilePage);
-    expect(row[P + 9]).toContain('SHA-256 031d35df73d5681c7ad7cb721eea4838e80624c9ca7092a69c8e83641c5d65de');
-    expect(row[P + 11]).toContain(standardPage);
-    expect(row[P + 11]).toContain('JIS G 3192');
+    expect(row.slice(P + 3, P + 9)).toEqual(['圧延形鋼', '', '', 'JIS G 3192', '', '']);
+    expect(row[P + 9]).toBe('形鋼・平鋼・丸鋼 寸法表');
+    expect(row[P + 11]).toBe('形鋼・平鋼・丸鋼 寸法表');
   });
 
   it('keeps SGP as its own grade with its pipe source and no section or separate standard source', () => {
     const [row] = cutRows(exported(productSource('SGP', 'steelPipe', '15A')));
     expect(row.slice(1, 4)).toEqual(['SGP', 'JIS G 3452', 'JIS G 3452']);
-    expect(row.slice(P + 2, P + 4)).toEqual(['呼び寸法による単純な形状', 'JFEスチール 配管用鋼管']);
-    expect(row[P + 7]).toBe('e0790c1900aa6eedeb7c51dc18916c7c506c02765550e8a5a2ca642b7096d0be');
+    expect(row.slice(P + 2, P + 4)).toEqual(['呼び寸法による単純な形状', '配管用鋼管']);
+    expect(row.slice(P + 6, P + 9)).toEqual(['JIS G 3452', '', '']);
     expect(row.slice(P + 9, ORIGINAL_COLUMNS)).toEqual(['なし（この形状は出典の断面形状を使わない）', '寸法の出典と同じ資料', '寸法の出典と同じ資料']);
   });
 
   it('exports every catalog product as one well-formed row with a pinned dimensional source', () => {
-    const pinned = new Set(['07cca88a466a190142c87b74eb6c53c3c72e0c66433d3e120e2af497512b7dea',
-      '8ea886730b59558553d49f395e7ada43c093210c51e00e3080c08f2163c0e313',
-      'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
-      '158ac7b25b0c1cda41ae5cdf68cfe37530b73f1288b9cacf62c2d45584664245',
-      '6921b44fe26e066498d5e4257067cdc5e1f5aca6f7e307481095a658f8ddf109',
-      '69774143c7a64e457b72f06cc4180f2b3a2bb3cc82aadebb347f3543fa8d6a22', '50b0a027712a8a0991f52b33896309c3c3f4f83ec3c3704d54eaecb76a87ac3b',
-      '5e9fbba2c98ccadfaf0f88497af97664393234e4da8b5bb23606997909ef542c', 'a52cd2467606af4ba52bcc2aa14bc30cb70d7855071e3ee66f1c38193edc07ce',
-      'f45feea1ccb83dbc1706ee7241f97accc92473b139b463c38f7155f22893dd87', 'e0790c1900aa6eedeb7c51dc18916c7c506c02765550e8a5a2ca642b7096d0be']);
     const rows = exported(...STEEL_PRODUCTS.map((row) => productSource(row.materialGrade, row.catalog, row.size, row.key)));
     expect(rows.every((row) => row.length === COLUMNS)).toBe(true);
     const cuts = cutRows(rows);
     expect(cuts).toHaveLength(459);
     for (const row of cuts) {
-      expect(pinned.has(row[P + 7]), row[5]).toBe(true);
-      expect(row[P + 6], row[5]).toMatch(/^https:\/\//u);
+      expect(row[P + 6], row[5]).toBe(row[28].split(':')[0]);
+      expect(row.slice(P + 7, P + 9), row[5]).toEqual(['', '']);
       // Catalog constants need no spreadsheet-text prefix; nothing in the evidence cells was rewritten.
       expect(row.slice(P).some((value) => value.startsWith('text:')), row[5]).toBe(false);
     }
@@ -448,7 +428,7 @@ describe('saved steel part CSV source parity', () => {
     expect(row[13]).toBe(String(stock.rows[0].finishedLengthMm));
     // The embedded part's saved steel source keeps the same revisions and dimensional source in the report.
     expect(row.slice(P, P + 2)).toEqual(['jp-steel-2026-10-10-r1', '3-steel-profile-1']);
-    expect(row[P + 7]).toBe('5e9fbba2c98ccadfaf0f88497af97664393234e4da8b5bb23606997909ef542c');
+    expect(row.slice(P + 6, P + 9)).toEqual(['JIS G 3191', '', '']);
     const edited = { ...part, solids: [] };
     const after = buildSteelStockList(root, new Map(), new Map([['steel', edited]]));
     const changedRow = csvRows(serializeSteelStockCsv(after))[2];
@@ -563,12 +543,12 @@ describe('製造元の寸法に合わせたフレームの系列の行', () => {
     const row = withSeries[total + 1];
     expect([row?.[3], row?.[4], row?.[5], row?.[7], row?.[8], row?.[11], row?.[17]]).toEqual(['製造元の寸法に合わせた物',
       t('catalog.frame.kind.tSlotSeries'), '溝幅 8 30×30', '750', '1', '単位質量 0.9 kg/m（内側の形は簡略）',
-      '販売店の公開の頁の数値(製造元の寸法に合わせた物)']);
+      '製造元の寸法に合わせた物']);
     expect(row?.slice(19, 23)).toEqual(['', '', '', '']);
   });
 });
 
-describe('資料 SF-1 の溝つきフレームと形材の行の注記', () => {
+describe('資料 1 の溝つきフレームと形材の行の注記', () => {
   it('溝つきの行は単位質量に「内側の形は簡略」を添え、実物どおりの断面の形材の行は単位質量だけ。鋼材の行は族の部品が無い時と同じ', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-s6', 'aluminum-flat-bar']);
     const slot = createStandardPartSource('catalogItem', '溝幅 6 20×20', { family: 't-slot-frame-s6', item: 's6-20x20', length: '500' });

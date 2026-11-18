@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-14 E 形止め輪(JIS B 2804-2010)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の eRing)の突合せ、
  * 寸法の整合と形の体積の検査。fixture は PDF の文字の流れから、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -33,10 +34,10 @@ describe('M-14 E 形止め輪 資料の表との突合せ', () => {
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結し、体積は 輪 − 切口の帯', () => {
     const evidence = ROWS[0]?.evidence;
     expect(ROWS.every((row) => row.evidence === evidence)).toBe(true);
-    expect(evidence?.sha256).toBe(ORACLE.pdfSha256);
+    expect(evidence?.reference).toBe(ORACLE.reference);
     expect(evidence?.locator).toContain(`PDF ${ORACLE.page} 頁`);
     expect(evidence?.title.startsWith('資料 K5-6 ')).toBe(true);
-    expect(evidence?.url).toBe('');
+    expect(evidence).not.toHaveProperty('url');
     expect([E_RING_FAMILY.id, E_RING_FAMILY.catalogRevision, E_RING_FAMILY.generatorRevision])
       .toEqual(['e-ring', 'e-ring-2026-11-r1', 'retaining-ring-1']);
     for (const row of ROWS) {

@@ -16,10 +16,9 @@ import type { CatalogFamily, CatalogItemRow } from '../types.js';
 const OIL_SEAL_EVIDENCE = {
   title: '寸法は利用者の指定(資料・規格の値を使わない汎用の形)',
   edition: null,
-  url: '',
+
   locator: '初めの値は丸めた例(どの製造元の値でもない)',
-  sha256: '',
-  fetchedDate: '',
+  reference: '',
 } as const;
 
 const OIL_SEAL_ROWS: readonly CatalogItemRow[] = [{

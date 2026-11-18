@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-27 単列円筒ころ軸受の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の cylindricalRollerBearing)の突合せ、
  * 製造元の補助の記号の付いた行が同じ基本番号の記号の無い行と同じ寸法である事の確かめ、寸法の整合と形の体積の検査。
@@ -51,11 +52,11 @@ describe('M-27 単列円筒ころ軸受 資料の表との突合せ', () => {
 
   it('出どころは資料の番号・SHA・頁だけを持ち、形式ごとの族の行は資料にある組だけで、寸法は 内径 < 外径・r1 ≦ r', () => {
     expect(ROWS.every(({ row }) => row.evidence === CYLINDRICAL_ROLLER_BEARING_EVIDENCE)).toBe(true);
-    expect(CYLINDRICAL_ROLLER_BEARING_EVIDENCE?.sha256).toBe(CYLINDRICAL_ROLLER_BEARING_ORACLE.pdfSha256);
+    expect(CYLINDRICAL_ROLLER_BEARING_EVIDENCE?.reference).toBe(CYLINDRICAL_ROLLER_BEARING_ORACLE.reference);
     const [first, last] = CYLINDRICAL_ROLLER_BEARING_ORACLE.pages;
     expect(CYLINDRICAL_ROLLER_BEARING_EVIDENCE?.locator).toContain(`PDF ${first}〜${last} 頁`);
     expect(CYLINDRICAL_ROLLER_BEARING_EVIDENCE?.title.startsWith('資料 K4-1 ')).toBe(true);
-    expect(CYLINDRICAL_ROLLER_BEARING_EVIDENCE?.url).toBe('');
+    expect(CYLINDRICAL_ROLLER_BEARING_EVIDENCE).not.toHaveProperty('url');
     expect(FAMILIES.map(([type, family]) => [type, family.id, family.kindKey, family.rows.length])).toEqual([
       ['NU', 'cylindrical-roller-bearing-nu', 'catalog.mechanical.kind.cylindricalRollerBearingNU', 129],
       ['NJ', 'cylindrical-roller-bearing-nj', 'catalog.mechanical.kind.cylindricalRollerBearingNJ', 83],

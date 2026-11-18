@@ -12,13 +12,13 @@
  * なので、この表には含めない。ui の材料の一覧では「自分で決める」を別枠で扱う。
  *
  * 密度は自分で知る出典(機械便覧・JIS の比重表・Wood Handbook 相当の気乾比重の目安)と
- * 2026-09-05 に照合した。鋼 7.85・ステンレス 7.93・銅 8.96・チタン 4.51・アクリル 1.19 など
+ * 照合した。鋼 7.85・ステンレス 7.93・銅 8.96・チタン 4.51・アクリル 1.19 など
  * 定番の数値と一致し、A5052 の 2.68 g/cm³ も純アルミ(2.70)よりわずかに軽いという知られた
  * 傾向と一致する。黄銅は組成により 8.4〜8.7 g/cm³ の幅があり、当初の案の 8.40 はその範囲の
  * 下限だが範囲内(要検証なら成分を絞って再確認)。木材 6 種は `materialPresets.ts` の注釈を
  * 参照。値はいずれも変えていない(rules/02-禁止事項.md)。
  *
- * 一次資料への紐付け(2026-11-09): steel・stainless・aluminum の 3 行だけ、掲載元の値・条件が
+ * 一次資料への紐付け: steel・stainless・aluminum の 3 行だけ、掲載元の値・条件が
  * 表の値と一致する資料を各行の `source` に直接結ぶ。どれも取引の質量計算に
  * 使う基本質量や代表の比重であり、SS400・S45C などの各ロットの実測値ではない。残りの 16 行は
  * 一次資料を確かめていないので `source` を持たない(未確認の出典を作らない)。
@@ -40,41 +40,32 @@ export interface DensityMaterial {
  * `condition` は値の種類(質量計算の基本質量か比重か)と対象の材質・調質。
  */
 interface DensitySource {
-  readonly url: string;
-  readonly publisher: string;
-  readonly locator: string;
+  readonly label: string;
   readonly condition: string;
   readonly statedValue: number;
   /** `kg/(cm2*m)` は断面積 1 cm²・長さ 1 m の質量(10 倍で g/cm³)。`specific-gravity` は水を 1 g/cm³ として読む比重。 */
   readonly statedUnit: 'g/cm3' | 'kg/(cm2*m)' | 'specific-gravity';
-  readonly checkedDate: string;
   /** 資料の全文を取得して指紋を取ったものではなく、検索の抜粋で値・位置・条件を確かめたもの。 */
   readonly evidence: 'search-excerpt';
 }
 
 /** 一次資料で値と条件を確かめた密度の掲載元(steel・stainless・aluminum の 3 行だけ)。 */
 const STEEL_DENSITY_SOURCE: DensitySource = {
-  url: 'https://www.niscs.nipponsteel.com/products/ac/forming/data/forming_15.pdf',
-  publisher: '日本製鉄グループ(niscs.nipponsteel.com)',
-  locator: '軽量形鋼の重量計算方法の表、計算順序の最初の行(基本質量)',
+  label: 'JIS G 3350 軽量形鋼',
   condition: 'JIS G 3350 に準じた軽量形鋼の計算質量の基本質量。鋼の密度の目安で、SS400・S45C の各ロットの実測値ではない',
-  statedValue: 0.785, statedUnit: 'kg/(cm2*m)', checkedDate: '2026-11-09', evidence: 'search-excerpt',
+  statedValue: 0.785, statedUnit: 'kg/(cm2*m)', evidence: 'search-excerpt',
 };
 
 const STAINLESS_DENSITY_SOURCE: DensitySource = {
-  url: 'https://www.jfe-steel.co.jp/products/stainless/catalog/g1j-001.pdf',
-  publisher: 'JFEスチール',
-  locator: 'JFEのステンレス薄鋼板、物理的性質の表の SUS304 の行と表の注記',
+  label: 'SUS304 ステンレス薄鋼板',
   condition: 'SUS304。表の注記により SUS 規格の密度は JIS で規定された基本質量(取引の質量計算は JIS G 4304・G 4305)で、実測値ではない',
-  statedValue: 7.93, statedUnit: 'g/cm3', checkedDate: '2026-11-09', evidence: 'search-excerpt',
+  statedValue: 7.93, statedUnit: 'g/cm3', evidence: 'search-excerpt',
 };
 
 const ALUMINUM_DENSITY_SOURCE: DensitySource = {
-  url: 'https://www.aluminum.or.jp/fields/kenchiku/kenzai/guide/a/',
-  publisher: '日本アルミニウム協会',
-  locator: '建材ガイド「1.特長」、A5052P-H34 の物理的・機械的性質の表、比重の行',
+  label: 'A5052P-H34 板材',
   condition: 'A5052P-H34 の比重(代表値)。他の調質や他の掲載元の値には結ばず、各ロットの実測値ではない',
-  statedValue: 2.68, statedUnit: 'specific-gravity', checkedDate: '2026-11-09', evidence: 'search-excerpt',
+  statedValue: 2.68, statedUnit: 'specific-gravity', evidence: 'search-excerpt',
 };
 
 /** 木材以外の材料 13 種(材料の表の行から `wood-*` と `custom` を除いたもの)。 */

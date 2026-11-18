@@ -1,7 +1,7 @@
 /**
  * 族: ローラフォロア(ヨーク形トラックローラ、メートル系)。M-29(設計 §2.3)。
  *
- * 寸法は資料 K4-2(カムフォロアと同じ製造元の公開の寸法表、下の `ROLLER_FOLLOWER_EVIDENCE`、PDF の SHA-256 と頁を記録)の
+ * 寸法は資料 K4-2(カムフォロアと同じ製造元の公開の寸法表、下の `ROLLER_FOLLOWER_EVIDENCE`、資料の番号 と頁を記録)の
  * 主要寸法 d(内径)・D(外径)・C(外輪の幅)・B(内輪の幅)・r(最小)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の rollerFollower で、検査が照らす。
  * 総ころ形と保持器付き(とシール付き)は寸法が同じなので、形の行は内径ごとに 1 つ(14 行)。
@@ -12,14 +12,13 @@
 import { buildBushPart, bushVolume, type BushDimensions } from '../profiles/bush.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const ROLLER_FOLLOWER_EVIDENCE = {
   title: '資料 K4-2 ローラフォロアの寸法表(製造元の公開カタログ、2006 年版)',
   edition: '2006',
-  url: '',
+
   locator: 'PDF 9 頁(冊子 15〜16 頁)ローラフォロア(メートル系)の表: 主要寸法 d・D・C・B・r(最小)',
-  sha256: 'daa923f4475f5b102e412990f22749962e1f238164c717d42b6c50eb4e9e7875',
-  fetchedDate: '2026-11-14',
+  reference: 'K4-2',
 } as const;
 
 /** [内径 d, 外径 D, 外輪の幅 C, 内輪の幅 B, r(最小)](mm)。 */

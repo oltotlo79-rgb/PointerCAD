@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_DENSITY_MATERIAL_ID, DENSITY_MATERIALS, findDensityMaterial } from './densityMaterials.js';
@@ -54,11 +55,11 @@ describe('CAD density to analysis units', () => {
   });
 
   it.each([
-    ['ss400-plate-0-16', 'jisf-g3101-draft'],
-    ['ss400-plate-16-40', 'jisf-g3101-draft'],
-    ['ss400-plate-40-100', 'jisf-g3101-draft'],
-    ['s45c-normalized-reference', 'tsubaki-s45c'],
-    ['s45c-quenched-tempered-reference', 'tsubaki-s45c'],
+    ['ss400-plate-0-16', 'g3101-draft'],
+    ['ss400-plate-16-40', 'g3101-draft'],
+    ['ss400-plate-40-100', 'g3101-draft'],
+    ['s45c-normalized-reference', 's45c-heat-treatment'],
+    ['s45c-quenched-tempered-reference', 's45c-heat-treatment'],
   ])('keeps the recorded density association and strength source for %s', (id, sourceId) => {
     const material = findStrengthMaterial(id);
     expect(material?.densityMaterialId).toBe('steel');
@@ -85,20 +86,20 @@ describe('DensityMaterial source', () => {
     for (const source of used) {
       expect(Number.isFinite(source.statedValue)).toBe(true);
       expect(source.statedValue).toBeGreaterThan(0);
-      expect(source.url.startsWith('https://')).toBe(true);
+      expect(source.label.length > 0).toBe(true);
     }
   });
 
-  const sourceCases: readonly (readonly [id: string, density: number, url: string, condition: string])[] = [
-    ['steel', 7.85, 'https://www.niscs.nipponsteel.com/products/ac/forming/data/forming_15.pdf', 'JIS G 3350'],
-    ['stainless', 7.93, 'https://www.jfe-steel.co.jp/products/stainless/catalog/g1j-001.pdf', 'SUS304'],
-    ['aluminum', 2.68, 'https://www.aluminum.or.jp/fields/kenchiku/kenzai/guide/a/', 'A5052P-H34'],
+  const sourceCases: readonly (readonly [id: string, density: number, label: string, condition: string])[] = [
+    ['steel', 7.85, 'JIS G 3350 軽量形鋼', 'JIS G 3350'],
+    ['stainless', 7.93, 'SUS304 ステンレス薄鋼板', 'SUS304'],
+    ['aluminum', 2.68, 'A5052P-H34 板材', 'A5052P-H34'],
   ];
-  it.each(sourceCases)('%s の表の値 %s は出典 %s の掲載値・条件(%s)と一致し、実測値とは称さない', (id, density, url, condition) => {
+  it.each(sourceCases)('%s の表の値 %s は出典 %s の掲載値・条件(%s)と一致し、実測値とは称さない', (id, density, label, condition) => {
     const material = findDensityMaterial(id);
     expect(material?.density).toBe(density);
     const source: DensitySource | undefined = material?.source;
-    expect(source?.url).toBe(url);
+    expect(source?.label).toBe(label);
     expect(source).toBeDefined();
     if (source === undefined) return;
     expect(source.condition).toContain(condition);

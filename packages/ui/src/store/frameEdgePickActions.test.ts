@@ -43,6 +43,22 @@ describe('フレームの辺を選ぶ途中', () => {
     expect(useAppStore.getState()).toMatchObject({ frameEdgePick: null, selection: ['other'] });
   });
 
+  it('B-10: 読み込まずに空で始められ、一覧に無い辺は部品を渡さない時と表示が無い時は入れ替えず、理由の印も立てない', () => {
+    // 空で始めても、選んである部品は残す(続けてその部品の辺を読み込む流れ。包み 4a)。
+    useAppStore.setState({ selection: ['plate'] });
+    useAppStore.getState().beginFrameEdgePick(null, []);
+    expect(useAppStore.getState().frameEdgePick).toEqual({ componentId: null, edgeIds: [], checked: [], added: [], notice: null });
+    expect(useAppStore.getState().selection).toEqual(['plate']);
+    expect(useAppStore.getState().toggleFrameEdgePick('plate::e1')).toBe(false);
+    // 表示(assemblyView)が無いので部品の辺が読めず、まっすぐかどうかも決められないので、印は立てない(まっすぐでない時の印は画面検査)。
+    expect(useAppStore.getState().toggleFrameEdgePick('plate::e1', 'plate')).toBe(false);
+    expect(useAppStore.getState().frameEdgePick).toMatchObject({ checked: [], notice: null });
+    // 一覧にある辺を入れ替えると印は消える。
+    useAppStore.getState().beginFrameEdgePick('plate', EDGES);
+    expect(useAppStore.getState().toggleFrameEdgePick('plate::e2', 'plate')).toBe(true);
+    expect(useAppStore.getState().frameEdgePick).toMatchObject({ checked: ['plate::e2'], notice: null });
+  });
+
   it('取り消し・やり直しで文書を戻すと、選ぶ途中は残らない', () => {
     let document = createAssemblyDocument('枠');
     useAppStore.getState().openAssembly(document, EMPTY_PART_LIBRARY);

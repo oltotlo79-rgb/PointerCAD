@@ -160,6 +160,20 @@ describe('フレームの締結の計画', () => {
     expect(result.entries.map((entry) => entry.frameComponentId)).toEqual(['below', 'side']);
   });
 
+  it('同じ直線に並ぶ 2 本(突き合わせ)の溝は、穴の軸が帯の内に入る方の部材を選ぶ(並びの先の部材の溝の端の外と見ない)', () => {
+    const item = CASES[0];
+    const row = item.family.rows.find((candidate) => candidate.key === item.rowKey);
+    if (row === undefined) throw new Error('row');
+    const first = frameOn(item.family, row, { start: [0, 0, 0], end: [500, 0, 0] }, 'first');
+    const second = frameOn(item.family, row, { start: [500, 0, 0], end: [1000, 0, 0] }, 'second');
+    const plate = plateComponent('plate');
+    const document: AssemblyDocument = { ...createAssemblyDocument('締結'), components: [first.component, second.component, plate] };
+    const holes = [plateHole(plate, [490, 0, first.halfHeight], 6, 4), plateHole(plate, [510, 0, first.halfHeight], 6, 4)];
+    const result = planFrameSlotFastening(document, request(holes, [first.candidate, second.candidate], item.nominal, item.pitch));
+    if (!result.ok) throw new Error(JSON.stringify(result.failures));
+    expect(result.entries.map((entry) => entry.frameComponentId)).toEqual(['first', 'second']);
+  });
+
   it('ナットの行の dims.holeOffset: 穴の軸をボルトの軸に合わせて置き(中央でない分だけずらす)、溝の端の判定も穴の位置から測る', () => {
     const item = CASES[0];
     const row = item.family.rows.find((candidate) => candidate.key === item.rowKey);

@@ -2,20 +2,17 @@
  * フレームの締結の入口(J-02 P6b・P7): 組立の部品から溝つきのフレームの候補(溝の中心線)を作り、結び付けた穴の選択と
  * 画面の指定(ボルトの呼び・溝用のナットの入れ方と材質)から、P6a の計画(`planFrameSlotFastening`)を作る。
  *
- * - 候補: 族が `sectionSlots` と `sectionBounds` を持つ部品(読み込み済みの族だけ)。長さは保存の形の欄、留めの端は欄の
- *   startMiter・endMiter、配置は表示中の配置。溝の呼びの幅は行の dims の slotWidth、無ければ行の鍵の頭(s6- など)。
- *   どちらも無い族(寸法を指定する汎用の形)は null で、計画が slotWidthUnknown の理由で断る。
+ * - 候補: 置いた部材(`placedFrameMembers`。族が `sectionSlots` と `sectionBounds` を持つ部品、読み込み済みの族だけ)のうち、
+ *   族が溝を出す物。長さは保存の形の欄、留めの端は欄の startMiter・endMiter、配置は表示中の配置。溝の呼びの幅は行の dims の
+ *   slotWidth、無ければ行の鍵の頭(s6- など)。どちらも無い族(寸法を指定する汎用の形)は null で、計画が slotWidthUnknown の理由で断る。
  * - ボルト: 六角穴付きボルトの行(呼びの並目のピッチ)。穴の入口がざぐり・皿もみならその頭(座の深さつき)、入口の無い
  *   通し穴は座の深さ 0。頭が穴ごとに違えるので、穴ごとに計画し、1 つでも断られたら全部やめる(穴ごとの理由を返す)。
  */
-import { evaluateExpression } from '@pointercad/expression';
-
 import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry } from '../catalog/registry.js';
 import { SOCKET_HEAD_CAP_SCREW_FAMILY } from '../catalog/families/socketHeadCapScrew.js';
-import type { CatalogFamily, CatalogItemRow } from '../catalog/types.js';
-import { frameSlotLines } from '../frame/frameSlots.js';
+import type { CatalogFamily } from '../catalog/types.js';
+import { placedFrameMembers } from '../frame/frameJoints.js';
 import type { RigidPlacement } from '../placementMath.js';
-import { miterEndsOf } from '../standard/profileMiter.js';
 import type { AssemblyComponent, AssemblyDocument } from '../types.js';
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import type { SolidEdgeEntry, SolidFaceEntry } from '../../kernelBridge/solidContracts.js';
@@ -32,9 +29,6 @@ import { entryHeadSpec } from './holeEntry.js';
 import type { EntryHoleSelection, FasteningHoleEntry } from './holeEntryTypes.js';
 import type { BoltedJointRejection } from './types.js';
 
-const FAMILY_KEY = 'family', ITEM_KEY = 'item';
-/** 行の鍵の頭の溝の呼びの幅(資料の族・系列の族の鍵 `s6-20x20` の形)。 */
-const SLOT_WIDTH_KEY_PATTERN = /^s([0-9]+)-/u;
 /** 入口の無い通し穴の頭(六角穴付きボルトを座の深さ 0 で面に座らせる。径は頭の判定に使わない)。 */
 const FLAT_SEAT: FasteningHoleEntry = { kind: 'counterbore', diameter: 0, depth: 0, side: 'outer' };
 
@@ -50,41 +44,16 @@ export function frameSlotBoltNominals(): readonly string[] {
   return [...new Set(SOCKET_HEAD_CAP_SCREW_FAMILY.rows.map((row) => row.size))];
 }
 
-/** 溝の呼びの幅: 行の dims の slotWidth、無ければ行の鍵の頭。どちらも無ければ null(寸法を指定する汎用の形)。 */
-function frameSlotWidthOf(row: CatalogItemRow): number | null {
-  const own = Object.hasOwn(row.dims, 'slotWidth') ? row.dims.slotWidth : undefined;
-  if (own !== undefined && Number.isFinite(own) && own > 0) return own;
-  const match = SLOT_WIDTH_KEY_PATTERN.exec(row.key);
-  return match?.[1] === undefined ? null : Number(match[1]);
-}
-
-/** 部品 1 つの溝の候補。溝を持たない族・読み込んでいない族・長さが読めない部品は null。 */
-function candidateOf(family: CatalogFamily, row: CatalogItemRow, options: Readonly<Record<string, string>>, componentId: string,
-  placement: RigidPlacement): FrameSlotCandidate | null {
-  const values = Object.fromEntries(Object.entries(options).filter(([key]) => key !== FAMILY_KEY && key !== ITEM_KEY));
-  const slots = family.sectionSlots?.(row, values) ?? null;
-  const bounds = family.sectionBounds?.(row, values) ?? null;
-  const length = evaluateExpression(Object.hasOwn(values, 'length') ? values.length : '');
-  if (slots === null || slots.length === 0 || !length.ok || !(length.value.value > 0)) return null;
-  return { componentId, lines: frameSlotLines(slots, placement, length.value.value, bounds, miterEndsOf(values)),
-    slotWidth: frameSlotWidthOf(row), slotPositionSimplified: row.simplifiedKinds?.includes('slotPositionSymmetric') === true };
-}
-
 /**
- * 組立の溝つきのフレームの全部(`only` を渡すとその部品だけ)。配置は表示中の配置(動きの配置を含む)を渡す。
- * 隠した・抑制した部品は候補にしない。
+ * 組立の溝つきのフレームの全部(`only` を渡すとその部品だけ)。置いた部材(`placedFrameMembers`)のうち、族が溝を出す物を候補にする。
+ * 配置は表示中の配置(動きの配置を含む)を渡す。隠した・抑制した部品・読み込んでいない族・長さが読めない部品は候補にしない。
  */
 export function frameSlotCandidates(document: AssemblyDocument, placements: ReadonlyMap<string, RigidPlacement>,
   only: ReadonlySet<string> | null = null, registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): readonly FrameSlotCandidate[] {
-  return document.components.flatMap((component): FrameSlotCandidate[] => {
-    const source = component.source;
-    const placement = placements.get(component.id);
-    if (source.kind !== 'standardPart' || source.catalog !== 'catalogItem' || placement === undefined || component.suppressed
-      || !component.visible || (only !== null && !only.has(component.id))) return [];
-    const family = registry.loaded(source.options[FAMILY_KEY] ?? '');
-    const row = family?.rows.find((candidate) => candidate.key === source.options[ITEM_KEY]);
-    const candidate = family === undefined || row === undefined ? null : candidateOf(family, row, source.options, component.id, placement);
-    return candidate === null ? [] : [candidate];
+  return placedFrameMembers(document, placements, registry).flatMap((member): FrameSlotCandidate[] => {
+    const spec = member.slotSpec;
+    if (spec === null || (only !== null && !only.has(member.componentId))) return [];
+    return [{ componentId: member.componentId, lines: member.slotLines, slotWidth: spec.width, slotPositionSimplified: spec.positionSimplified }];
   });
 }
 

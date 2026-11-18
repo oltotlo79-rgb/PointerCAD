@@ -17,6 +17,7 @@
     "assembly.spec.ts",
     "auto-save-settings.spec.ts",
     "bolt-preload.spec.ts",
+    "bolted-joint-same-holes.spec.ts",
     "bolted-joint-tapped.spec.ts",
     "bolted-joint-through-thread.spec.ts",
     "bolted-joint.spec.ts",
@@ -33,6 +34,8 @@
     "context-reference-repair.spec.ts",
     "context-reference-route5.spec.ts",
     "cut-plane-materials.spec.ts",
+    "dialog-focus-assembly.spec.ts",
+    "dialog-focus.spec.ts",
     "direct-edit-operations.spec.ts",
     "document-diff.spec.ts",
     "draggable-input-solid.spec.ts",
@@ -56,7 +59,15 @@
     "file-open-rejection.spec.ts",
     "fillet-weld.spec.ts",
     "firefox-graphics.spec.ts",
+    "frame-door-parts.spec.ts",
+    "frame-door.spec.ts",
+    "frame-edge-direct.spec.ts",
+    "frame-joint-bracket.spec.ts",
+    "frame-joint-check.spec.ts",
+    "frame-joint-swap-stretch.spec.ts",
+    "frame-panel.spec.ts",
     "frame-slot-fastening.spec.ts",
+    "frame-stroke-line.spec.ts",
     "friction-browser.spec.ts",
     "friction-cancel-browser.spec.ts",
     "function-plot.spec.ts",
@@ -99,6 +110,7 @@
     "properties-input-layout-smoke.spec.ts",
     "radial-menu.spec.ts",
     "reference-ambiguity.spec.ts",
+    "safety-fence-feet.spec.ts",
     "scripts.spec.ts",
     "semantic-origin-reopen.spec.ts",
     "sheet-configuration.spec.ts",
@@ -121,6 +133,7 @@
     "solid-finite-worker.spec.ts",
     "solid-material-authoring.spec.ts",
     "solid.spec.ts",
+    "standard-part-search.spec.ts",
     "startup-failed-overlay-smoke.spec.ts",
     "startup-navigation-smoke.spec.ts",
     "status-guidance.spec.ts",
@@ -238,7 +251,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "c1897aa27e6009ecdb1a00c5d7cc8fc1a2709b0178690e803fde31c549b57fcf",
+  "configSha256": "213ee0be939990f494ada3b66b4b7d7936b4f717411676ef47c553287a6b8001",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
@@ -251,7 +264,7 @@
       "file": "aluminum-frame-catalog.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "0bb79200fc21d251db201fb5aba58142568fe5a71ddd21304d0b26e5f5f34934"
+      "sha256": "90858457f6a3974bb2b81eceb3031f1dfa8c5c544e137e9297cd709b87c86f55"
     },
     {
       "file": "analysis-advanced.spec.ts",
@@ -378,6 +391,12 @@
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
       "sha256": "34e50ffb75eb94e6280baca4afc1db98259d6d62d1d96f373e55150091e213ab"
+    },
+    {
+      "file": "bolted-joint-same-holes.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "5c107ddee4c36353371a3ac4f95c612b05fdd8ec49c4d9ca6971e197e59399d5"
     },
     {
       "file": "bolted-joint-tapped.spec.ts",
@@ -516,6 +535,18 @@
       "category": "desktop-renderer-contract",
       "reason": "serves the desktop distribution renderer and checks its packaged raw-WASM paths; desktop-specific contract",
       "sha256": "2423d52fefd912e4df177bc67296a3ea4cf75f207370f74704873e7e15c1fabf"
+    },
+    {
+      "file": "dialog-focus-assembly.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "b91d2be53333fa2d89d01ba46c253e99346f4b413ba561697573ccdbbfac80ea"
+    },
+    {
+      "file": "dialog-focus.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "43366a9da7e49fd4df7038daa564c942521ecfd069620afc97c8c3683c40161e"
     },
     {
       "file": "direct-edit-operations.spec.ts",
@@ -1304,10 +1335,58 @@
       "sha256": "973c870f6a422f2957da0da7f9c4ac9ff9d53137a979c79d23d647e250ec8676"
     },
     {
+      "file": "frame-door-parts.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "228555a8975598ed981f7c322fe146c845a680008916256af0ce3602870b2852"
+    },
+    {
+      "file": "frame-door.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "d583d4eaf3b724c4283943849a5d1519fbeac822fa51eeb5fae358314f31ef8e"
+    },
+    {
+      "file": "frame-edge-direct.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "5ba1c49e0292b827b1ef85485991f4b7993af8511ab66f547d2ff7392ee6f195"
+    },
+    {
+      "file": "frame-joint-bracket.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "1f42032f3c4f4521da38e29856134cf4ecf188f13949df3086c9a57911fd880b"
+    },
+    {
+      "file": "frame-joint-check.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "786e49a39c65926caab0b8dbb23474850da6902ec393ba707f0ecda066275bc9"
+    },
+    {
+      "file": "frame-joint-swap-stretch.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "b6fd30918b109d313c098459926c8a65e33f9a141772ff407faf370d2af779cc"
+    },
+    {
+      "file": "frame-panel.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "ab21df50e46d057f55ded8a9d3d2b39776d98d75388f0d0777657ce0dfa2bccc"
+    },
+    {
       "file": "frame-slot-fastening.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "ede690ddcd652e2569c888987aa21a95c6fe564bd60c25db6b3ac5675db0b6d4"
+    },
+    {
+      "file": "frame-stroke-line.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "f55eae4cd1333b22bd13200e89ba6244cd20f87b9e5f0131f5d23a6d2d0751ae"
     },
     {
       "file": "friction-browser.spec.ts",
@@ -1718,6 +1797,12 @@
       "sha256": "8a8046d6bf5807cbadeed9d4c47809ab336dec80a5c2c1f2c47257ba7dee0bf0"
     },
     {
+      "file": "safety-fence-feet.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "7f2215d974300072ad5df6e15308415ae1fd99d60c4b949e4b98c0346fc91ee7"
+    },
+    {
       "file": "save-and-open.spec.ts",
       "category": "manual-capture",
       "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
@@ -1931,7 +2016,7 @@
       "file": "solid-material-authoring.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "5964c09de3a2d13c76128a69a4e0d1882cd726f1966ec85f99a11766e51873b8"
+      "sha256": "bc72b314804931cb30e5a9c107045ded1016bab7e77414698a597f513966177e"
     },
     {
       "file": "solid-modal-worker.spec.ts",
@@ -1943,7 +2028,7 @@
       "file": "solid-yield-worker.spec.ts",
       "category": "numerical-worker-representative",
       "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success",
-      "sha256": "8a1fd2cbd43bd429be769c75ef7a3fa290f7632980fd46c50f65d31bc8aa284d"
+      "sha256": "3ded9adfb5c41119cf525ad1cbbe70d3f15a9b7ef422661563b0edc549e23ce6"
     },
     {
       "file": "solid.spec.ts",
@@ -1968,6 +2053,12 @@
       "category": "manual-capture",
       "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
       "sha256": "4fb1b8f9210c8875c45986fd3f8b640588cfd3ecb92ec3d9619b8886971e0ad3"
+    },
+    {
+      "file": "standard-part-search.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "86398a2267c144f1030455537ef94192be3b110ba1312be01b00fe9502a1423d"
     },
     {
       "file": "standard-parts.spec.ts",

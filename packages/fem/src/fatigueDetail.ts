@@ -21,13 +21,12 @@ import { MAX_FATIGUE_HISTORIES, MAX_FATIGUE_HISTORY_POINTS, type FatigueSequence
  *   determined by the user. An external joint force is refused: its share depends on the preload, the load-introduction
  *   and stiffness factors of the joint (NASA-STD-5020A Eq. 8 and 9), which are not inferred. Compression is refused.
  * Primary sources of the stress definitions (units N, mm, MPa):
- * - DNV-RP-C203 (2005, amended 2006) https://rules.dnv.com/docs/pdf/dnvpm/codes/docs/2006-10/RP-C203.pdf: Table A-2
+ * - DNV-RP-C203 (2005, amended 2006), Table A-2
  *   detail 3 (bolts in tension, stress on the tensile stress area, preload effect from the connection), Table A-8
  *   details 6-7 (fillet welds in shear, stress range from the weld throat area over the total weld length).
- * - NASA-STD-5020A https://www.nasa.gov/wp-content/uploads/2018/01/nasa-std-5020a_w-chg_1_nasa_fastener_standards.pdf:
+ * - NASA-STD-5020A,
  *   section 4.4, Eq. 8 (bolt load = preload + n phi x applied load) and Eq. 9 (stiffness factor).
- * - Tensile stress area 0.7854 ((d2 + d3) / 2)^2 per ISO 898-1, as tabulated in
- *   https://crafter.fastenal.com/static-assets/pdfs/Mechanical_Properties_of_Metric_Fasteners.pdf (page 2).
+ * - Tensile stress area 0.7854 ((d2 + d3) / 2)^2 per the ISO 898-1 reference table.
  */
 export const FATIGUE_DETAIL_INPUT_SCHEMA = 'pointercad-fatigue-detail/1';
  const FATIGUE_DETAIL_RESULT_SCHEMA = 'pointercad-fatigue-detail-result/1';

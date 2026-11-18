@@ -39,7 +39,7 @@ const TWO_HOLE_PLATE = { width: 60, depth: 30, thickness: 10, holes: [[15, 15], 
 const COUNTERBORE_PLATE = { width: 40, depth: 30, thickness: 10, holes: [[20, 15]] as const, diameter: 9 } as const;
 const COUNTERBORE = { diameter: 14, depth: 5 } as const;
 
-interface PlateSpec {
+export interface PlateSpec {
   readonly width: number;
   readonly depth: number;
   readonly thickness: number;
@@ -48,7 +48,7 @@ interface PlateSpec {
 }
 
 /** 穴の軸の上面の点(視線は穴の中を通って奥の内壁に当たる。boltedJointTestSupport.ts の holeWallPoint と同じ考え)。 */
-function wallPoint(offset: readonly [number, number, number], hole: readonly [number, number], topZ: number): WorldPoint {
+export function wallPoint(offset: readonly [number, number, number], hole: readonly [number, number], topZ: number): WorldPoint {
   return [offset[0] + hole[0], offset[1] + hole[1], offset[2] + topZ];
 }
 
@@ -126,7 +126,7 @@ async function startFromEmptyPart(page: Page, app: ElectronApplication | undefin
 }
 
 /** 画面の操作だけで、同じ板を 2 枚置いた組立を用意してホーム視点にする(boltedJointFlow.ts の holedPlateAssembly と同じ流れ)。 */
-async function plateAssembly(page: Page, info: TestInfo, app: ElectronApplication | undefined, spec: PlateSpec,
+export async function plateAssembly(page: Page, info: TestInfo, app: ElectronApplication | undefined, spec: PlateSpec,
   counterbore: typeof COUNTERBORE | null): Promise<void> {
   await startFromEmptyPart(page, app);
   await assembleTwoPlates(page, await createPlatePartFile(page, info, app, spec, counterbore));
@@ -152,7 +152,7 @@ async function shiftClickWorldPoint(page: Page, world: WorldPoint): Promise<void
 }
 
 /** 締結の窓を開き、穴A・当てる面A・穴B・当てる面B を順に選ぶ(各段の状態欄も確かめる)。 */
-async function pickFourFaces(page: Page, holeA: WorldPoint, faceA: WorldPoint, holeB: WorldPoint, faceB: WorldPoint): Promise<void> {
+export async function pickFourFaces(page: Page, holeA: WorldPoint, faceA: WorldPoint, holeB: WorldPoint, faceB: WorldPoint): Promise<void> {
   await chooseToolMenuItem(page, '組む', 'ボルトで締結');
   await expect(boltedJointDialog(page)).toBeVisible();
   const steps: readonly [WorldPoint, string | null][] = [[holeA, stepStatus(2, PICK_TEXT.faceA)], [faceA, stepStatus(3, PICK_TEXT.holeB)],
@@ -164,15 +164,15 @@ async function pickFourFaces(page: Page, holeA: WorldPoint, faceA: WorldPoint, h
   await expect(statusText(page)).not.toContainText('/4:');
 }
 
-function holeCounts(page: Page): Locator {
+export function holeCounts(page: Page): Locator {
   return boltedJointDialog(page).getByTestId('bolted-joint-hole-counts');
 }
 
-function commitButton(page: Page): Locator {
+export function commitButton(page: Page): Locator {
   return boltedJointDialog(page).getByTestId('bolted-joint-commit');
 }
 
-async function clickHistory(page: Page, name: '元に戻す' | 'やり直す'): Promise<void> {
+export async function clickHistory(page: Page, name: '元に戻す' | 'やり直す'): Promise<void> {
   const token = await beginRecompute(page);
   await page.getByRole('button', { name, exact: true }).click();
   await waitForRecompute(page, token);

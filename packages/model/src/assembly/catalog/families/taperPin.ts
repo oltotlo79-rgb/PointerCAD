@@ -1,7 +1,7 @@
 /**
  * 族: テーパピン JIS B 1352-1988 本体規格(呼び径 0.6〜50)。M-10(設計 §2.3)。
  *
- * 寸法は資料 K5-7(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の本体規格の表の呼び径 d・a(約)と、
+ * 寸法は資料 K5-7(規格の抜粋)の本体規格の表の呼び径 d・a(約)と、
  * 同じ頁の図の注のテーパ比 1/50 を、頁の画像から読んだ 1 回目の転記。2 回目の独立の読み(文字の流れから)は
  * catalogOracles.fixture.ts の taperPin で、検査が照らす。附属書の規定は入れない。
  * **長さは資料に呼び長さの一覧が無いので、規格の呼び長さとして名乗らず、利用者が式で入れる**(平行ピンと同じ)。
@@ -14,14 +14,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildTaperPinPart, taperPinVolume } from '../profiles/taperPin.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const TAPER_PIN_EVIDENCE = {
   title: '資料 K5-7 テーパピンの規格の抜粋(JIS B 1352-1988 本体規格)',
   edition: '1988',
-  url: '',
+
   locator: 'PDF 9 頁(冊子 244 頁)JIS B 1352-1988 本体規格の表: 呼び径 d・a(約)、図の注のテーパ比 1/50',
-  sha256: '21d6ba014768c639a5eca26039584e519189ba55bc1a2b3d517c39e46a8febfe',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-7',
 } as const;
 
 /** [呼び径 d, a(約)](mm)。 */

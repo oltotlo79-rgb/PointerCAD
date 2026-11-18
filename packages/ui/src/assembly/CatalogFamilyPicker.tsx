@@ -16,10 +16,15 @@ import {
   optionDefault, type FamilyPickerCategory,
 } from './catalogFamilyChoices.js';
 import type { CatalogLoadState } from './catalogFamilyLoading.js';
+import type { CatalogFamilyStart, PickerJumpTarget } from './catalogSearch.js';
 import { CatalogLoadStatus } from './CatalogLoadStatus.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
+import { DimensionFigure } from './DimensionFigure.js';
+import { familyFigurePart } from './dimensionTable.js';
 import { FrameMemberTools } from './FrameMemberTools.js';
 import { pickerFormProps } from './pickerFormHandlers.js';
+import { PickerSearch } from './PickerSearch.js';
+import { rememberPlacedPart } from './recentStandardParts.js';
 
 type LoadedFamily = NonNullable<ReturnType<CatalogRegistry['loaded']>>;
 
@@ -33,6 +38,10 @@ export interface CatalogFamilyPickerProps {
   readonly onCategory: (value: string) => void;
   /** 分類の欄の選択肢(今の窓と同じ物)。 */
   readonly categoryOptions: readonly React.JSX.Element[];
+  /** 検索で選び直した時の初めの種類・材質・呼び(無ければ最初の種類。K-07a)。 */
+  readonly start: CatalogFamilyStart | null;
+  /** 検索の行を選んだ時(窓をその行へ選び直す)。 */
+  readonly onJump: (target: PickerJumpTarget) => void;
 }
 
 /**
@@ -54,13 +63,13 @@ function optionFields(family: LoadedFamily, row: LoadedFamily['rows'][number] | 
   </label>);
 }
 
-export function CatalogFamilyPicker({ group, firstRef, catalogState, onCategory, categoryOptions }: CatalogFamilyPickerProps):
+export function CatalogFamilyPicker({ group, firstRef, catalogState, onCategory, categoryOptions, start, onJump }: CatalogFamilyPickerProps):
 React.JSX.Element {
   const entries = catalogFamilyEntries(group);
-  const [familyId, setFamilyId] = useState(entries[0]?.id ?? '');
-  const [material, setMaterial] = useState('');
-  const [itemKey, setItemKey] = useState('');
-  const [values, setValues] = useState<Readonly<Record<string, string>>>({});
+  const [familyId, setFamilyId] = useState(start?.familyId ?? entries[0]?.id ?? '');
+  const [material, setMaterial] = useState(start?.material ?? '');
+  const [itemKey, setItemKey] = useState(start?.itemKey ?? '');
+  const [values, setValues] = useState<Readonly<Record<string, string>>>(start?.values ?? {});
   const [error, setError] = useState<'unknownChoice' | 'invalidOption' | null>(null);
   const composing = useRef(false);
   const compositionKey = useRef(false);
@@ -74,6 +83,9 @@ React.JSX.Element {
   const submit = (): void => {
     if (family === undefined || row === undefined) { setError('unknownChoice'); return; }
     const placed = useAppStore.getState().placeCatalogItem(family.id, row.key, values);
+    // 置けた物を最近使った物に覚える(材質の欄を出さない族は材質を持たない。K-07b)。
+    if (placed) rememberPlacedPart({ kind: 'family', group, start: { familyId: family.id,
+      material: materials.length >= 2 ? activeMaterial ?? '' : '', itemKey: row.key, values } });
     setError(placed ? null : family.options.length > 0 ? 'invalidOption' : 'unknownChoice');
   };
   const choose = (setter: (value: string) => void, value: string): void => { setter(value); setItemKey(''); setError(null); };
@@ -81,6 +93,7 @@ React.JSX.Element {
     <form className="pcad-popover pcad-popover--standard-part" role="dialog"
       aria-label={t('assembly.standardPart.title')} {...pickerFormProps({ composing, compositionKey }, submit)}>
       <DraggableWindowTitle className="pcad-popover__title">{t('assembly.standardPart.title')}</DraggableWindowTitle>
+      <PickerSearch onPick={onJump} />
       <CatalogLoadStatus state={catalogState} />
       <div className="pcad-popover__fields">
         <label className="pcad-field">
@@ -123,6 +136,7 @@ React.JSX.Element {
           setValues({ ...values, [key]: value }); setError(null);
         })}
       </div>
+      <DimensionFigure part={family === undefined || row === undefined ? null : familyFigurePart(family, row, values)} />
       {hintKey === null ? null : <p className="pcad-popover__hint">{t(hintKey)}</p>}
       <p className="pcad-popover__hint">{t('catalog.mechanical.simplified')}</p>
       {family?.stock === 'linear' ? <CatalogStockTable /> : null}

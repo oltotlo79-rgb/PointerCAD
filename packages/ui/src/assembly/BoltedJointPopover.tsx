@@ -1,10 +1,12 @@
 import { HEX_BOLT_TABLE, type BoltedJointPlan, type BoltedJointSetPlan, type FasteningWasherKind } from '@pointercad/model';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
+import { addAllBoltedJointSameHoles, type BoltedJointSameHolesResult } from '../store/boltedJointSameHoles.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { boltedJointAllSameHoles, boltedJointHoleHints } from './boltedJointHoleHints.js';
 import {
   BOLTED_JOINT_PICK_GUIDE_KEYS as PICK_PROMPTS, boltedJointHoleCounts, boltedJointPreviewReady, boltedJointReasonLines,
   boltedJointReasonText, type AssemblyBoltedJointDraft, type BoltedJointDraftIssue, type BoltedJointDraftPatch,
@@ -113,14 +115,35 @@ function PreviewView({ preview }: { readonly preview: BoltedJointDraftPreview | 
   </ul>;
 }
 
-/** 4 面がそろった新しい締結だけ: 締結する穴の数と、Shift で 2 組目からの穴を足す案内。 */
+/** 「同じ穴を全部足す」の結果の文(足した時は出さない)。 */
+function sameHolesText(result: BoltedJointSameHolesResult | null): string | null {
+  if (result === null || result.ok) return null;
+  return t(`assembly.boltedJoint.sameHoles.${result.reason}`).replace('{first}', String(result.first)).replace('{second}', String(result.second));
+}
+
+/**
+ * 4 面がそろった新しい締結だけ: 締結する穴の数と、Shift で 2 組目からの穴を足す案内。同じ穴フィーチャーのほかの穴(当たり。3D に破線の輪で
+ * 示す)があれば、足した後の数を添えた「同じ穴を全部足す」を出す(J-02c。組が 1 つに決まらない時は足さずに理由)。
+ */
 function HoleCounts({ draft }: { readonly draft: AssemblyBoltedJointDraft }): React.JSX.Element | null {
+  const document = useAppStore((state) => state.assembly);
+  const view = useAppStore((state) => state.assemblyView);
+  const [result, setResult] = useState<BoltedJointSameHolesResult | null>(null);
+  const hints = useMemo(() => (document === null || view === null ? [] : boltedJointHoleHints(document, view, draft)), [document, view, draft]);
   const counts = boltedJointHoleCounts(draft);
   if (draft.editRecordId !== undefined || counts.first === 0) return null;
+  const all = boltedJointAllSameHoles(draft, hints);
+  const issue = sameHolesText(result);
   return <div className="pcad-popover__fields">
     <p data-testid="bolted-joint-hole-counts">{t('assembly.boltedJoint.holeCounts')
       .replace('{first}', String(counts.first)).replace('{second}', String(counts.second))}</p>
     <p className="pcad-field__hint">{t('assembly.boltedJoint.addHolesGuide')}</p>
+    {all === null ? null : (
+      <button type="button" className="pcad-button" data-testid="bolted-joint-add-same-holes" title={t('assembly.boltedJoint.sameHoles.tooltip')}
+        onClick={() => { setResult(addAllBoltedJointSameHoles()); }}>
+        {t('assembly.boltedJoint.sameHoles.action').replace('{first}', String(all.first)).replace('{second}', String(all.second))}</button>
+    )}
+    {issue === null ? null : <p role="alert" data-testid="bolted-joint-same-holes-issue">{issue}</p>}
   </div>;
 }
 

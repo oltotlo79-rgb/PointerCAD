@@ -1,7 +1,7 @@
 /**
  * 族: 両角平行キー JIS B 1301-1996(新 JIS、呼び 2×2〜100×50)。M-15(設計 §2.3)。
  *
- * 寸法は資料 K5-7(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の新 JIS 両角平行キーの表の
+ * 寸法は資料 K5-7(規格の抜粋)の新 JIS 両角平行キーの表の
  * b・h(基準寸法)を、頁の画像から読んだ 1 回目の転記。2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の
  * parallelKey で、検査が照らす。面取り c は形に入れないので持たない。旧 JIS の 1 種は入れない。
  * **長さは資料に呼び長さの一覧が無いので、規格の呼び長さとして名乗らず、利用者が式で入れる**(上限は置かない)。
@@ -11,14 +11,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildKeyPart, keyVolume } from '../profiles/key.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const PARALLEL_KEY_EVIDENCE = {
   title: '資料 K5-7 両角平行キーの規格の抜粋(JIS B 1301-1996 新 JIS)',
   edition: '1996',
-  url: '',
+
   locator: 'PDF 13 頁(冊子 248 頁)新 JIS 規格 両角平行キーの表: キーの呼び・b・h(基準寸法)',
-  sha256: '21d6ba014768c639a5eca26039584e519189ba55bc1a2b3d517c39e46a8febfe',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-7',
 } as const;
 
 /** [b, h](mm)。呼びは b×h。 */

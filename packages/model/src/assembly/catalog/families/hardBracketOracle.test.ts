@@ -1,5 +1,5 @@
 /**
- * 資料 SF-1 のリブつきの L 形のブラケットのうち、寝た脚の穴を作らない行(hardBracketRows.ts。統括の決定 2026-11-18 08:4x の (B))の検査。
+ * 資料 1 のリブつきの L 形のブラケットのうち、寝た脚の穴を作らない行(hardBracketRows.ts。統括の決定 2026-11-18 08:4x の (B))の検査。
  * 照らす側の読み(hardBracketOracle.fixture.json。2 つ目の組の、9 回目の記入のままの寸法・材質・質量と 10 回目の合う溝幅・寝た脚の穴の幅の中心線)を、
  * この検査が自分で読み解く(行の表を作る道具の読み解きと別にする): 脚の長さ・幅・寝た脚の厚さは外の面から外の面まで、立つ脚の穴の高さは
  * 寝た脚の下の面からの鎖の累積、幅の向きは立つ脚の幅の左の端の面からの鎖の累積(右の端の面に着く時は和が幅と合う)か、右の端の面からの全体 − 値。
@@ -78,7 +78,7 @@ function walk(items: readonly Dimension[], start: readonly string[], usable: (na
   }
 }
 
-describe('資料 SF-1 のリブつきの L 形のブラケットの、寝た脚の穴を作らない行と照らす側の読み', () => {
+describe('資料 1 のリブつきの L 形のブラケットの、寝た脚の穴を作らない行と照らす側の読み', () => {
   it('製品の行と fixture は同じ鍵の並びで、溝幅・材質・質量・頁が照らす側と合い、寝た脚の幅の中心線は引かれていると読まれていない', () => {
     expect(FIXTURE.map((row) => row.key)).toEqual(HARD_BRACKET_RECORDS.map((record) => record.key));
     for (const record of HARD_BRACKET_RECORDS) {

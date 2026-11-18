@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { describe, expect, it } from 'vitest';
 
 import { CHANNEL_BEFORE_PARAMETERIZATION } from './steelChannelRegressionOracle.fixture.js';
@@ -113,8 +114,8 @@ describe('source-backed analytic steel section boundaries', () => {
     expect(steelSectionProfile('channel', '__proto__')).toBeUndefined();
     expect(steelSectionProfile('hBeam', 'constructor')).toBeUndefined();
     for (const evidence of Object.values(STEEL_PROFILE_EVIDENCE)) {
-      expect(evidence.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(evidence.url).toMatch(/^https:/);
+      expect(evidence.reference).toBe(evidence.title);
+      expect(evidence).not.toHaveProperty('url');
       expect(evidence.locator).toContain('PDF p');
     }
   });

@@ -30,8 +30,8 @@ describe('操作の割り当ての窓(設計 1-4・§6)', () => {
     expect(markup).toContain(t('settings.inputBindings.title'));
     expect(markup).toContain(`title="${t('settings.inputBindings.closeGuide')}"`);
     expect(markup).toContain(`role="tablist" aria-label="${t('settings.inputBindings.tabs')}"`);
-    expect(markup.match(/role="tab"/gu)).toHaveLength(4);
-    for (const key of ['view', 'keys', 'mouse', 'radial'] as const) {
+    expect(markup.match(/role="tab"/gu)).toHaveLength(5);
+    for (const key of ['view', 'keys', 'mouse', 'radial', 'sixDof'] as const) {
       expect(markup).toContain(`>${t(`settings.inputBindings.tab.${key}`)}</button>`);
       expect(markup).toContain(`title="${t(`settings.inputBindings.tab.${key}Guide`)}"`);
     }

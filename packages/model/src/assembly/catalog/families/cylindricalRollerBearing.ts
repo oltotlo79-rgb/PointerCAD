@@ -2,7 +2,7 @@
  * 族: 単列円筒ころ軸受(内径 20〜100)。M-27(設計 §2.3)。形式(NU・NJ・NUP・N・NF)ごとに 1 つの族にする(呼びの一覧を短くする)。
  *
  * 寸法は資料 K4-1(深溝玉軸受と同じ転がり軸受の寸法表の分冊、下の `CYLINDRICAL_ROLLER_BEARING_EVIDENCE`、
- * PDF の SHA-256 と頁を記録)の主要寸法 d・D・B・r(最小)・r1(最小)を、頁の画像から読んだ 1 回目の転記。
+ * 資料の番号 と頁を記録)の主要寸法 d・D・B・r(最小)・r1(最小)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の cylindricalRollerBearing で、検査が照らす。
  * 行の鍵と呼びは JIS の形式記号と基本番号(例 NU204)。資料の呼び番号に付く製造元の補助の記号(末尾の R)は出さない
  * (統括の決定 2026-11-16 02:5x)。主要寸法は基本番号ごとに同じで、記号の付いた行も、同じ基本番号の記号の無い行と
@@ -13,14 +13,13 @@
 import { buildRadialBearingPart, radialBearingVolume, type RadialBearingDimensions } from '../profiles/radialBearing.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const CYLINDRICAL_ROLLER_BEARING_EVIDENCE = {
   title: '資料 K4-1 単列円筒ころ軸受の寸法表(製造元の公開カタログ)',
   edition: null,
-  url: '',
+
   locator: 'PDF 68〜75 頁(冊子 B134〜B149)単列円筒ころ軸受の表: 主要寸法 d・D・B・r(最小)・r1(最小)、形式ごとの呼び番号',
-  sha256: '7d0d6dd4a346fadb61c0678659f9801a3d136fa12dc40e2081b41c006293d1af',
-  fetchedDate: '2026-11-15',
+  reference: 'K4-1',
 } as const;
 
 type CylindricalRollerBearingType = 'NU' | 'NJ' | 'NUP' | 'N' | 'NF';

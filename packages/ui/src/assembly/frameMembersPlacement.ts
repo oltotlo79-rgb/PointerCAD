@@ -88,6 +88,12 @@ export function frameMemberMiterSupported(choice: FrameMemberChoice): boolean {
   return !('ok' in member) && member.miter;
 }
 
+/** 選んだ部材の断面の外形(局所。外形の中心を線に乗せて置く)。作れない部材は null(安全柵の柱と横の材の面の位置に使う。E-12)。 */
+export function frameMemberSection(choice: FrameMemberChoice): SectionBounds | null {
+  const member = choice.kind === 'steel' ? steelMember(choice) : catalogMember(choice);
+  return 'ok' in member ? null : member.section;
+}
+
 function steelMember(choice: Extract<FrameMemberChoice, { readonly kind: 'steel' }>): MemberKind | Rejected {
   const probe = commitStandardPartChoice('structuralSection', choice.choiceKey, '1000');
   const row = probe.ok ? steelProductFromSource(probe.value.source) : undefined;

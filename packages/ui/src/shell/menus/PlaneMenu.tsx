@@ -91,6 +91,7 @@ export function PlaneMenu({ workPlaneId, activeTool, customPlanes }: PlaneMenuPr
         aria-label={`${t('toolbar.plane.groupLabel')}${LABEL_SEPARATOR}${currentLabel}`}
         aria-haspopup="true"
         aria-expanded={open}
+        data-menu-trigger=""
         onClick={() => {
           setOpen(!open);
         }}

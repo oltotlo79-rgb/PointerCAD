@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-30 オイルシール(寸法を指定して作る汎用の形): 規格の行を名乗らない事、指定の欄、形が成り立つ条件、形と体積、保存の形の検査。
  * 表を持たない族なので、照合の fixture は無い。
@@ -22,7 +23,7 @@ describe('M-30 オイルシール(寸法指定)', () => {
     expect(ROWS.map((row) => [row.key, row.size, row.standardLabel, row.verification, row.verified, Object.keys(row.dims).length]))
       .toEqual([['specified', '寸法指定', '寸法指定(規格の行ではない)', 'unverified', false, 0]]);
     const evidence = ROWS[0]?.evidence;
-    expect([evidence?.url, evidence?.sha256]).toEqual(['', '']);
+    expect(evidence?.reference).toBe('');
     expect(evidence?.title).toContain('規格の値を使わない');
   });
 

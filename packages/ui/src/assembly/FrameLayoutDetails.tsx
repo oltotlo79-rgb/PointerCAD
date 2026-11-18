@@ -1,18 +1,20 @@
 /**
- * 選ぶ窓の「線に沿って並べる」(J-01 包み 3)。長さを持つ部材(アルミフレームの族・鋼材)の窓の中に畳んで置き、
+ * 選ぶ窓の「線に沿って並べる」(J-01 包み 3。3D の画面で点を打つ一筆書きは E-08)。長さを持つ部材(アルミフレームの族・鋼材)の窓の中に畳んで置き、
  * 点の表(貼り付けられる 1 行に X Y Z)・閉じる・断面の向き・角の扱い・伸ばす量から予告(1 本ごとの長さと角の扱い)を出し、
  * 「並べる」で店の動作(`placeFrameMembers`)へ渡す。欄の中身と予告は `frameLayoutInput.ts` の純関数。
  */
 import { useEffect, useState, type KeyboardEvent } from 'react';
 
 import { t } from '../i18n/t.js';
+import type { FrameStrokeDraft } from '../store/frameStrokeActions.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { filterFrameEdges, frameEdgeChoices, type FrameEdgeFilter } from './frameEdgeChoices.js';
+import { filterFrameEdges, frameEdgeChoices, type FrameEdgeChoice, type FrameEdgeFilter } from './frameEdgeChoices.js';
 import {
   frameEdgeText, frameLayoutView, frameRejectionText, INITIAL_FRAME_LAYOUT, toggleFrameCornerSwap, withPickedEdges, type FrameLayoutState,
   type FrameLayoutView, type FrameUp,
 } from './frameLayoutInput.js';
 import { frameMemberMiterSupported, type FrameMemberChoice } from './frameMembersPlacement.js';
+import { framePointsOrNull, frameStrokeFromLayout, withStrokePoints } from './frameStroke.js';
 
 const UP_CHOICES: readonly FrameUp[] = ['z', 'y', 'x'];
 const CORNER_RULES: readonly FrameLayoutState['corners'][] = ['butt', 'miter', 'none'];
@@ -60,6 +62,54 @@ function FramePointFields({ state, update }: { readonly state: FrameLayoutState;
 }
 
 /**
+ * 3D の画面で点を打つ(一筆書き、E-08): 打った点の数と、打ち始める・最後の点を消す・打ち直す・やめる。点の欄と閉じるは
+ * 「点を入れる」と同じ欄で、数を直すと店の点の列も直す(読めない途中の文字の間は直さない)。
+ */
+function FrameStrokeFields({ state, stroke, update }: { readonly state: FrameLayoutState; readonly stroke: FrameStrokeDraft | null;
+  readonly update: (patch: Partial<FrameLayoutState>, resetSwap?: boolean) => void }): React.JSX.Element {
+  const edit = (patch: Partial<FrameLayoutState>, resetSwap?: boolean): void => {
+    update(patch, resetSwap);
+    const points = patch.pointsText === undefined ? null : framePointsOrNull(patch.pointsText);
+    useAppStore.getState().updateFrameStroke({ ...(points === null ? {} : { points }),
+      ...(patch.closed === undefined ? {} : { closed: patch.closed }) });
+  };
+  // やめた後に打ち始める時は、残っている点の列の続きから打つ(状態が無ければ欄の点から)。
+  const begin = (): void => {
+    const app = useAppStore.getState();
+    if (stroke === null) app.beginFrameStroke(frameStrokeFromLayout(state), state.up);
+    else app.updateFrameStroke({ active: true });
+  };
+  return <>
+    <p aria-live="polite">{stroke?.active !== true ? t('catalog.frameLayout.stroke.idle')
+      : t('catalog.frameLayout.stroke.active').replace('{count}', String(stroke.points.length))}</p>
+    {stroke?.active !== true
+      ? <button type="button" className="pcad-button" title={t('catalog.frameLayout.stroke.beginGuide')} onClick={begin}>
+        {t('catalog.frameLayout.stroke.begin')}</button>
+      : <>
+        <button type="button" className="pcad-button" disabled={stroke.points.length === 0 && !stroke.closed}
+          title={t('catalog.frameLayout.stroke.undoGuide')} onClick={() => { useAppStore.getState().undoFrameStrokePoint(); }}>
+          {t('catalog.frameLayout.stroke.undo')}</button>
+        <button type="button" className="pcad-button" disabled={stroke.points.length === 0}
+          title={t('catalog.frameLayout.stroke.clearGuide')}
+          onClick={() => { useAppStore.getState().updateFrameStroke({ points: [], closed: false }); }}>
+          {t('catalog.frameLayout.stroke.clear')}</button>
+        <button type="button" className="pcad-button" title={t('catalog.frameLayout.stroke.endGuide')}
+          onClick={() => { useAppStore.getState().pauseFrameStroke(); }}>{t('catalog.frameLayout.stroke.end')}</button>
+      </>}
+    <FramePointFields state={state} update={edit} />
+  </>;
+}
+
+/** 読み込んだ辺の一覧に、3D の画面で押して足した辺(B-10)を重ねる(同じ対象の id は読み込んだ方を使う)。 */
+function withAddedEdges(state: FrameLayoutState, added: readonly FrameEdgeChoice[]): FrameLayoutState {
+  const fresh = added.filter((edge) => !state.edges.some((loaded) => loaded.targetId === edge.targetId));
+  return fresh.length === 0 ? state : { ...state, edges: [...state.edges, ...fresh] };
+}
+
+/** 線の決め方の欄の値を読む(知らない値は点を入れる)。 */
+const lineSourceOf = (value: string): FrameLayoutState['source'] => value === 'edges' || value === 'stroke' ? value : 'points';
+
+/**
  * 選んだ部品(選択が部品 1 つの時)のまっすぐな辺を読み込み、店の「辺を選ぶ途中」を始める(3D の画面で辺をクリックしても選べる)。
  * 読めない時は理由。
  */
@@ -82,6 +132,7 @@ function loadEdges(state: FrameLayoutState): { readonly state: FrameLayoutState;
 function FrameEdgeFields({ state, onState, onMessage }: { readonly state: FrameLayoutState;
   readonly onState: (next: FrameLayoutState) => void; readonly onMessage: (message: Message) => void }): React.JSX.Element {
   const [loadedName, setLoadedName] = useState('');
+  const notice = useAppStore((app) => app.frameEdgePick?.notice ?? null);
   const shown = filterFrameEdges(state.edges, state.edgeOrder, state.edgeFilter);
   return <>
     <button type="button" className="pcad-button" title={t('catalog.frameLayout.loadEdgesGuide')} onClick={() => {
@@ -89,8 +140,11 @@ function FrameEdgeFields({ state, onState, onMessage }: { readonly state: FrameL
       if (typeof loaded === 'string') { onMessage({ role: 'alert', text: loaded }); return; }
       setLoadedName(loaded.name); onState(loaded.state);
     }}>{t('catalog.frameLayout.loadEdges')}</button>
-    {state.edges.length === 0 ? null : <p>{t('catalog.frameLayout.edgesLoaded').replace('{name}', loadedName)
-      .replace('{count}', String(state.edges.length))} {t('catalog.frameLayout.edgesPickHint')}</p>}
+    {state.edges.length === 0 ? <p>{t('catalog.frameLayout.edgesDirectHint')}</p>
+      : <p>{loadedName === '' ? t('catalog.frameLayout.edgesPicked').replace('{count}', String(state.edges.length))
+        : t('catalog.frameLayout.edgesLoaded').replace('{name}', loadedName).replace('{count}', String(state.edges.length))}
+        {' '}{t('catalog.frameLayout.edgesPickHint')}</p>}
+    {notice === 'notStraight' ? <p role="alert">{t('catalog.frameLayout.error.notStraight')}</p> : null}
     {state.edges.length <= EDGE_FILTER_THRESHOLD ? null : <FrameEdgeFilters state={state} onState={onState} />}
     <ul>{shown.map((edge) => <li key={edge.targetId}>
       <label title={t('catalog.frameLayout.edgeGuide')} onMouseEnter={() => { useAppStore.getState().setHovered(edge.targetId); }}
@@ -129,20 +183,34 @@ React.JSX.Element {
 export function FrameLayoutDetails({ member }: { readonly member: FrameMemberChoice }): React.JSX.Element {
   const [local, setState] = useState<FrameLayoutState>(INITIAL_FRAME_LAYOUT);
   const [message, setMessage] = useState<Message>(null);
-  const picked = useAppStore((app) => app.frameEdgePick?.checked);
-  // 窓を閉じた(この欄が消えた)時は、辺を選ぶ途中をやめる。
-  useEffect(() => () => { useAppStore.getState().endFrameEdgePick(); }, []);
-  const state = local.source === 'edges' ? withPickedEdges(local, picked ?? []) : local;
+  const pick = useAppStore((app) => app.frameEdgePick);
+  // 安全柵の欄が持つ点は読まない(同じ窓の 2 つの欄が取り合わないため。E-12 第 2 段)。
+  const stroke = useAppStore((app) => app.frameStroke?.owner === 'layout' ? app.frameStroke : null);
+  // 窓を閉じた(この欄が消えた)時は、辺を選ぶ途中と点を打つ途中をやめる。
+  useEffect(() => () => { const app = useAppStore.getState(); app.endFrameEdgePick(); app.endFrameStroke(); }, []);
+  // 3D の画面で打った点は、点の欄の文字に入れて見せる(同じ点の列を表している文字はそのまま。欄を直すと店の点の列も直す)。
+  // 辺から選ぶ形では、読み込んだ辺に 3D の画面で押して足した辺を重ねた一覧で読む(B-10)。
+  const state = local.source === 'edges' ? withPickedEdges(withAddedEdges(local, pick?.added ?? []), pick?.checked ?? [])
+    : local.source === 'stroke' && stroke !== null ? withStrokePoints(local, stroke) : local;
   const view = frameLayoutView(state, member);
-  // 点・閉じる・角の扱いを変えると角の並びが変わるので、入れ替えは初めに戻す。点を入れる形に替えたら辺を選ぶ途中をやめる。
+  // 点・閉じる・角の扱いを変えると角の並びが変わるので、入れ替えは初めに戻す。辺から以外に替えたら辺を選ぶ途中をやめ、
+  // 3D で点を打つ形に替えたら、点の欄の点から打ち始める(ほかに替えたらやめる)。
   const update = (patch: Partial<FrameLayoutState>, resetSwap = false): void => {
-    if (patch.source === 'points') useAppStore.getState().endFrameEdgePick();
+    const app = useAppStore.getState();
+    if (patch.source !== undefined && patch.source !== 'edges') app.endFrameEdgePick();
+    // 辺から選ぶ形にしたら、読み込まずに空で始める(3D の画面で辺を押すと、その部品の辺が一覧に入る。B-10)。
+    if (patch.source === 'edges' && app.frameEdgePick === null) app.beginFrameEdgePick(null, []);
+    if (patch.source !== undefined && patch.source !== 'stroke') app.endFrameStroke();
+    if (patch.source === 'stroke') app.beginFrameStroke(frameStrokeFromLayout(state), state.up);
+    if (patch.up !== undefined) app.updateFrameStroke({ up: patch.up });
     setState({ ...state, ...patch, ...(resetSwap ? { swapThrough: [] } : {}) });
     setMessage(null);
   };
   const place = (): void => {
     if (view.kind !== 'ready') return;
     const placed = useAppStore.getState().placeFrameMembers(view.request);
+    // 一筆書きは、置いたら点の列を空にして、続けて次の線を打てるようにする(置いた物は元に戻す 1 回で消える)。
+    if (placed.ok && state.source === 'stroke') useAppStore.getState().updateFrameStroke({ points: [], closed: false });
     setMessage(placed.ok ? { role: 'status', text: t('catalog.frameLayout.placed').replace('{count}', String(placed.componentIds.length)) }
       : { role: 'alert', text: frameRejectionText(placed) });
   };
@@ -153,13 +221,15 @@ export function FrameLayoutDetails({ member }: { readonly member: FrameMemberCho
       <label className="pcad-field">
         <span className="pcad-field__label">{t('catalog.frameLayout.source')}</span>
         <select title={t('catalog.frameLayout.sourceGuide')} className="pcad-field__input" value={state.source}
-          onChange={(event) => { update({ source: event.currentTarget.value === 'edges' ? 'edges' : 'points' }, true); }}>
+          onChange={(event) => { update({ source: lineSourceOf(event.currentTarget.value) }, true); }}>
           <option value="points">{t('catalog.frameLayout.source.points')}</option>
           <option value="edges">{t('catalog.frameLayout.source.edges')}</option>
+          <option value="stroke">{t('catalog.frameLayout.source.stroke')}</option>
         </select>
       </label>
       {state.source === 'points' ? <FramePointFields state={state} update={update} />
-        : <FrameEdgeFields state={state} onState={(next) => { setState(next); setMessage(null); }} onMessage={setMessage} />}
+        : state.source === 'stroke' ? <FrameStrokeFields state={state} stroke={stroke} update={update} />
+          : <FrameEdgeFields state={state} onState={(next) => { setState(next); setMessage(null); }} onMessage={setMessage} />}
       <label className="pcad-field">
         <span className="pcad-field__label">{t('catalog.frameLayout.up')}</span>
         <select title={t('catalog.frameLayout.upGuide')} className="pcad-field__input" value={state.up}

@@ -15,7 +15,11 @@ import { createCanvasLayer } from './canvasLayer.js';
 import type { AssemblyGeometryBundle, AssemblyLayer } from './createAssemblyLayer.js';
 import { createConstraintLayer } from './createConstraintLayer.js';
 import type { EnvironmentStore } from './createEnvironment.js';
+import { createFrameStrokeLayer } from './createFrameStrokeLayer.js';
 import { createInterferenceLayer } from './createInterferenceLayer.js';
+import { createJointCheckLayer } from './createJointCheckLayer.js';
+import { createStretchPreviewLayer } from './createStretchPreviewLayer.js';
+import { createHoleHintLayer } from './createHoleHintLayer.js';
 import { createMeasureLayer } from './createMeasureLayer.js';
 import { createReferenceLayer } from './createReferenceLayer.js';
 import { createSketchLayer } from './createSketchLayer.js';
@@ -131,6 +135,18 @@ export function createSceneLayers(scene: THREE.Scene, acquired: SceneAcquire, cr
   // 干渉の赤は共有材質を変えず、共通形状だけを独立した層へ重ねる。
   const interferenceLayer = acquired('interferenceLayer', createInterferenceLayer());
   scene.add(interferenceLayer.group);
+  // 接合チェック(E-09)の印も、共有材質を変えず独立した層へ重ねる。
+  const jointCheckLayer = acquired('jointCheckLayer', createJointCheckLayer());
+  scene.add(jointCheckLayer.group);
+  // 伸縮(E-13)の予告の面と印も、共有材質を変えず独立した層へ重ねる。
+  const stretchPreviewLayer = acquired('stretchPreviewLayer', createStretchPreviewLayer());
+  scene.add(stretchPreviewLayer.group);
+  // ボルト締結の窓の当たり(J-02c)の輪も、共有材質を変えず独立した層へ重ねる。
+  const holeHintLayer = acquired('holeHintLayer', createHoleHintLayer());
+  scene.add(holeHintLayer.group);
+  // 3D の画面で打った点と一時の線(E-08 第 2 段)も、形を変えず独立した層へ重ねる。断面では切らない(案内であって形ではない)。
+  const frameStrokeLayer = acquired('frameStrokeLayer', createFrameStrokeLayer());
+  scene.add(frameStrokeLayer.group);
   const analysisFieldLayer = acquired('analysisFieldLayer', createSolidFieldLayer());
   scene.add(analysisFieldLayer.group);
   const analysisModeLayer = acquired('analysisModeLayer', createSolidModeLayer());
@@ -184,9 +200,9 @@ export function createSceneLayers(scene: THREE.Scene, acquired: SceneAcquire, cr
   });
   for (const layer of planarBasisLayers) scene.add(layer.group);
 
-  return { skyLight, keyLight, lineMaterial, gridGroup, grid, axisLines, solidLayer, assemblyLayer, interferenceLayer,
+  return { skyLight, keyLight, lineMaterial, gridGroup, grid, axisLines, solidLayer, assemblyLayer, interferenceLayer, jointCheckLayer, stretchPreviewLayer, holeHintLayer,
     analysisFieldLayer, analysisModeLayer, canvasLayer, sketchLayer, referenceLayer, trackingLayer, constraintLayer,
-    inferenceLayer, measureLayer, cylinderBasisLayer, planarBasisLayers };
+    inferenceLayer, measureLayer, cylinderBasisLayer, planarBasisLayers, frameStrokeLayer };
 }
 
 /** 完成した Scene の層と描画資源の破棄を登録する(登録順がそのまま破棄の順)。 */
@@ -208,6 +224,10 @@ export function registerSceneLayerCleanup(
     if (assemblyLayer.meshReservation().cleanupStatus === 'pending') throw new Error('Assembly resources remain pending');
   });
   ownedCleanup.register('interference layer', () => { layers.interferenceLayer.dispose(); });
+  ownedCleanup.register('joint check layer', () => { layers.jointCheckLayer.dispose(); });
+  ownedCleanup.register('stretch preview layer', () => { layers.stretchPreviewLayer.dispose(); });
+  ownedCleanup.register('hole hint layer', () => { layers.holeHintLayer.dispose(); });
+  ownedCleanup.register('frame stroke layer', () => { layers.frameStrokeLayer.dispose(); });
   ownedCleanup.register('analysis field layer', () => { layers.analysisFieldLayer.dispose(); });
   ownedCleanup.register('analysis mode layer', () => { layers.analysisModeLayer.dispose(); });
   ownedCleanup.register('canvas images and textures', () => { layers.canvasLayer.dispose(); });
@@ -236,6 +256,10 @@ export function applySceneThemeColors(layers: ViewportSceneLayers, colors: Theme
   layers.solidLayer.setThemeColors(colors);
   layers.assemblyLayer.setThemeColors(colors);
   layers.interferenceLayer.setThemeColors(colors);
+  layers.jointCheckLayer.setThemeColors(colors);
+  layers.stretchPreviewLayer.setThemeColors(colors);
+  layers.holeHintLayer.setThemeColors(colors);
+  layers.frameStrokeLayer.setThemeColors(colors);
   layers.sketchLayer.setThemeColors(colors);
   layers.referenceLayer.setThemeColors(colors);
   layers.trackingLayer.setThemeColors(colors);
@@ -286,8 +310,9 @@ export function updateLabelScreenScale(layers: ViewportSceneLayers, orbit: Orbit
  * ビューの断面表示(FR-111)のクリッピング平面。**1 枚を使い回す**
  * (引いている最中は中身だけ書き換える)。切っているあいだは材質へ配らない。
  */
-export function createSectionClipping(layers: Pick<ViewportSceneLayers, 'solidLayer' | 'assemblyLayer' | 'interferenceLayer'>) {
-  const { solidLayer, assemblyLayer, interferenceLayer } = layers;
+export function createSectionClipping(layers: Pick<ViewportSceneLayers, 'solidLayer' | 'assemblyLayer' | 'interferenceLayer' | 'jointCheckLayer'
+  | 'stretchPreviewLayer' | 'holeHintLayer'>) {
+  const { solidLayer, assemblyLayer, interferenceLayer, jointCheckLayer, stretchPreviewLayer, holeHintLayer } = layers;
   const sectionPlane = new THREE.Plane();
   /** いま平面を配ってあるか。枚数(0 ↔ 1)が変わったときだけ材質へ配り直す。 */
   let sectionActive = false;
@@ -298,6 +323,9 @@ export function createSectionClipping(layers: Pick<ViewportSceneLayers, 'solidLa
         solidLayer.setSectionPlanes([]);
         assemblyLayer.setSectionPlanes([]);
         interferenceLayer.setSectionPlanes([]);
+        jointCheckLayer.setSectionPlanes([]);
+        stretchPreviewLayer.setSectionPlanes([]);
+        holeHintLayer.setSectionPlanes([]);
         sectionActive = false;
       }
       solidLayer.updateSectionHandle(null);
@@ -314,6 +342,9 @@ export function createSectionClipping(layers: Pick<ViewportSceneLayers, 'solidLa
       solidLayer.setSectionPlanes([sectionPlane]);
       assemblyLayer.setSectionPlanes([sectionPlane]);
       interferenceLayer.setSectionPlanes([sectionPlane]);
+      jointCheckLayer.setSectionPlanes([sectionPlane]);
+      stretchPreviewLayer.setSectionPlanes([sectionPlane]);
+      holeHintLayer.setSectionPlanes([sectionPlane]);
       sectionActive = true;
     }
     solidLayer.updateSectionHandle(view.handle);

@@ -12,7 +12,7 @@
 
 種類を **{{ui:assembly.standardPart.structuralSection}}** にすると、**{{ui:assembly.steel.material}}** の欄が出ます。鋼種、**{{ui:assembly.steel.shape}}**、**{{ui:assembly.standardPart.size}}**、**{{ui:assembly.standardPart.length}}** の順に選び、Enterか **{{ui:assembly.standardPart.place}}** で置きます。種類を切り替えた直後の長さは1000 mmです。鋼種を選ぶと、その鋼種で扱う断面形状と呼び寸法だけが一覧に出るので、規格に無い鋼種と断面の組み合わせは選べません。置いた鋼材の名前は「SS400 FB 50×6 長さ1000」のように、鋼種・呼び寸法・長さになります。
 
-選んでいる鋼材の注記が欄の下に出ます。上から、材料規格と寸法・製品規格(例「JIS G 3101 / JIS G 3194」)、**{{ui:assembly.steel.materialStandardEdition}}** と **{{ui:assembly.steel.dimensionStandardEdition}}**(下の「出典と版」)、供給の条件、形の作り方、作図できる長さ、資料に記載された標準長さ、寸法の資料の名前の順です。資料の名前は掲載元へのリンクで、鋼種や断面の丸みの資料が別にあるときは「{{ui:assembly.steel.gradeSource}}」「{{ui:assembly.steel.profileSource}}」のリンクも出ます。最後に「{{ui:assembly.steel.referenceOnly}}」と出ます。
+選んでいる鋼材の注記が欄の下に出ます。上から、材料規格と寸法・製品規格(例「JIS G 3101 / JIS G 3194」)、**{{ui:assembly.steel.materialStandardEdition}}** と **{{ui:assembly.steel.dimensionStandardEdition}}**(下の「出典と版」)、供給の条件、形の作り方、作図できる長さ、資料に記載された標準長さ、規格番号または寸法の一般名の順です。鋼種や断面の丸みの資料が別にあるときは「{{ui:assembly.steel.gradeSource}}」「{{ui:assembly.steel.profileSource}}」としてそれぞれの名称も出ます。最後に「{{ui:assembly.steel.referenceOnly}}」と出ます。
 
 鋼材は、選んだ鋼材の指定(鋼種、材料規格、寸法・製品規格、供給の条件、寸法の資料)と長さが組み立てに保存され、開き直すと同じ鋼材に戻ります。置いた鋼材は1回の「元に戻す」で取り消せ、「やり直す」で同じ鋼材に戻ります。長さが正しくないときやEscで閉じたときは、組み立ても元に戻す履歴も変わりません。
 
@@ -133,12 +133,12 @@
 | 15 | {{ui:assembly.steel.csv.catalogRevision}} | 置いたときの寸法表の版 |
 | 16 | {{ui:assembly.steel.csv.generatorRevision}} | 置いたときの形状生成の版 |
 | 17 | {{ui:assembly.steel.csv.geometry}} | 「{{ui:assembly.steel.csv.geometryProfile}}」「{{ui:assembly.steel.csv.geometrySimplified}}」「{{ui:assembly.steel.csv.geometryNominal}}」のどれか |
-| 18 | {{ui:assembly.steel.csv.sourceTitle}} | 寸法の資料の名前 |
-| 19 | {{ui:assembly.steel.csv.sourceEdition}} | 資料の版。記載が無いときは「{{ui:assembly.steel.csv.editionNotPrinted}}」 |
-| 20 | {{ui:assembly.steel.csv.sourceLocator}} | 資料の中の掲載箇所 |
-| 21 | {{ui:assembly.steel.csv.sourceUrl}} | 資料のURL |
-| 22 | {{ui:assembly.steel.csv.sourceSha256}} | 取得したファイルのSHA-256 |
-| 23 | {{ui:assembly.steel.csv.sourceFetchedDate}} | 資料を取得した日 |
+| 18 | {{ui:assembly.steel.csv.sourceTitle}} | 規格番号または寸法の一般名 |
+| 19 | {{ui:assembly.steel.csv.sourceEdition}} | 旧版との列互換のため空欄 |
+| 20 | {{ui:assembly.steel.csv.sourceLocator}} | 旧版との列互換のため空欄 |
+| 21 | {{ui:assembly.steel.csv.dimensionStandardNumber}} | 寸法規格の番号。規格のない行は空欄 |
+| 22 | {{ui:assembly.steel.csv.sourceSha256}} | 旧版との列互換のため空欄 |
+| 23 | {{ui:assembly.steel.csv.sourceFetchedDate}} | 旧版との列互換のため空欄 |
 | 24 | {{ui:assembly.steel.csv.profileSource}} | 断面形状の資料。使わない形状は「{{ui:assembly.steel.csv.profileSourceNone}}」 |
 | 25 | {{ui:assembly.steel.csv.materialSource}} | 鋼種分類の資料。寸法の資料と同じときは「{{ui:assembly.steel.csv.sameAsDimensionSource}}」 |
 | 26 | {{ui:assembly.steel.csv.productStandardSource}} | 寸法・製品規格の資料。寸法の資料と同じときは「{{ui:assembly.steel.csv.sameAsDimensionSource}}」 |
@@ -168,7 +168,7 @@
 
 **{{ui:assembly.steel.materialStandardEdition}}** と **{{ui:assembly.steel.dimensionStandardEdition}}** には「JIS G 3101:2024 / 原案で確認」のように、規格の番号:版と確認の程度が出て、その下に確かめた範囲の説明が出ます。確認の程度は次の3つです。
 
-- **{{ui:assembly.steel.standardDraft}}** … 日本鉄鋼連盟が公開しているJISの改正原案で確かめました。2026-10-24の調査の時点で、日本規格協会(JSA)の規格票は確かめていません。公布された規格の本文との差は未確認です。
+- **{{ui:assembly.steel.standardDraft}}** … JISの改正原案で確かめました。公布された規格の本文との差は未確認です。
 - **{{ui:assembly.steel.standardFinal}}** … 規格票で確かめた印です。今の版には、この印の付いた規格はありません。
 - **{{ui:assembly.steel.standardUnverified}}** … 原案も規格票も確かめていません。
 
@@ -182,7 +182,7 @@
 | S45Cの熱間圧延材の平鋼 | JIS G 4051:2026 | JIS G 3194:2024 |
 | SGPの鋼管 | JIS G 3452:2026 | JIS G 3452:2026 |
 
-JIS G 3123(みがき棒鋼)だけは原案・規格票・寸法表を確かめていないので、**{{ui:assembly.steel.standardUnverified}}** と出ます。S45Cのみがき棒鋼の寸法は、製造元の資料で確かめたものです。注記の1行目は「材料規格 / 寸法・製品規格」で、SS400の平鋼のうちFB 50×6などの5寸法は「{{ui:assembly.steel.producerFlatDimensions}}」、丸鋼のうちφ13〜φ25の5径は「大阪製鐵 公表丸鋼寸法」と、製造元の資料の名前が出ます。
+JIS G 3123(みがき棒鋼)だけは原案・規格票・寸法表を確かめていないので、**{{ui:assembly.steel.standardUnverified}}** と出ます。S45Cのみがき棒鋼の寸法は、製造元の資料で確かめたものです。注記の1行目は「材料規格 / 寸法・製品規格」で、SS400の平鋼のうちFB 50×6などの5寸法は「{{ui:assembly.steel.producerFlatDimensions}}」、丸鋼のうちφ13〜φ25の5径は「公表丸鋼寸法」と出ます。
 
 寸法の資料は、上の改正原案と製造元の資料(カタログ・寸法表)です。版と確認の程度は組み立てには保存せず、アプリが持つ記録から出します。CSVにも同じ版と確認の程度が出ます。
 

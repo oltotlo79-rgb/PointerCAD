@@ -50,39 +50,29 @@ interface SketchSelectionContext {
   readonly commitSphereGridClick: (pointer: Pointer) => boolean;
   /** 押し出しで面を選んでいない時の、閉じた領域の押下(`sketchInteractionRegions.ts`)。扱ったら true。 */
   readonly commitRegionClick: (pointer: Pointer) => boolean;
+  /**
+   * 何も当たらない所の左の押下を視点の側へ預ける(B-09 3-3。`attachCameraControls` の beginEmptyLeftDrag)。預けたら true で、
+   * 動かさずに離した時は onClick が呼ばれる。設定が切なら false。
+   */
+  readonly beginEmptyLeftDrag: (event: PointerEvent, onClick: () => void) => boolean;
 }
 
 /** 1 つの canvas の選択の押下。返す関数はどれも呼ばれた時点のストアを読む。 */
 export function createSketchSelectionInput(context: SketchSelectionContext) {
   const { project, addsToSketchSelection, skipsSketchElements, picksBodies, picksSubShapes, pickSubShapeAt,
     pickBodyAt, pickedPointAt, fillClickedPoint, pickConstraintMark, commitEditClick, commitProjectionClick,
-    openCornerInput, commitSphereGridClick, commitRegionClick } = context;
+    openCornerInput, commitSphereGridClick, commitRegionClick, beginEmptyLeftDrag } = context;
 
   /**
    * 選択の道具・面の道具・立体の道具・部分形状(面・辺・頂点)を選ぶ加工の道具。押した順が
    * 面の境界の順になり、立体を 2 つ選ぶ順が和・差・積の「もと」と「組み合わせる方」になる
    * (FR-106、FR-309)。何も無いところを押したら選択を解く(足すときは解かない)。
    */
-  function pickInto(pointer: Pointer, accumulate: boolean): void {
+  /** 押した所の要素を選ぶ。found は同じ押下で先に求めた当たり(あれば使い、判定を繰り返さない)。 */
+  function pickInto(pointer: Pointer, accumulate: boolean, found?: ReturnType<typeof elementAt>): void {
     const state = useAppStore.getState();
-    let elementId: string | null;
-    if (skipsSketchElements(state.selectionKind)) {
-      /*
-        部分形状(面・辺・頂点)を拾う種類のときは、スケッチ要素の当たり判定を飛ばして
-        部分形状だけを拾う(スケッチの面が立体の面より先に当たるのを防ぐ)。
-      */
-      if (state.selectionKind === 'vertex' && state.activeTool === 'select') {
-        const picked = pickConnectionPoint(state, project, pointer);
-        if (picked?.kind === 'ambiguous') { state.setEditError('sketch.connect.ambiguous'); return; }
-        elementId = picked?.elementId ?? null;
-      } else elementId = pickSubShapeAt(pointer);
-    } else {
-      // 選択の種類が body のときは要素 → 吸着 → 立体の順。
-      const picked = pickSketchElement(
-        sketchForSelection(state.resolvedSketch, state.displaySettings.selectionFilter), project, pointer,
-      );
-      elementId = picked !== null ? picked.elementId : pickBodyAt(pointer);
-    }
+    const { elementId, ambiguous } = found ?? elementAt(pointer, state);
+    if (ambiguous) { state.setEditError('sketch.connect.ambiguous'); return; }
     if (elementId === null) {
       // 押し出しの仮の形を描いている間は、何も拾わない押下(仮の形の上・何も無い所)で
       // 確定に要る選択(輪郭の面・相手)を消さない。選び直しは要素を押す、やめるは Esc。
@@ -99,6 +89,26 @@ export function createSketchSelectionInput(context: SketchSelectionContext) {
     } else {
       state.setSelection([elementId], { kind: 'pick' });
     }
+  }
+
+  /** 押した所の要素(当たらなければ null)と、頂点を選ぶ時に重なりで決められなかったか。ストアは変えない。 */
+  function elementAt(pointer: Pointer, state: StoreState): { readonly elementId: string | null; readonly ambiguous: boolean } {
+    if (skipsSketchElements(state.selectionKind)) {
+      /*
+        部分形状(面・辺・頂点)を拾う種類のときは、スケッチ要素の当たり判定を飛ばして
+        部分形状だけを拾う(スケッチの面が立体の面より先に当たるのを防ぐ)。
+      */
+      if (state.selectionKind === 'vertex' && state.activeTool === 'select') {
+        const picked = pickConnectionPoint(state, project, pointer);
+        return picked?.kind === 'ambiguous' ? { elementId: null, ambiguous: true } : { elementId: picked?.elementId ?? null, ambiguous: false };
+      }
+      return { elementId: pickSubShapeAt(pointer), ambiguous: false };
+    }
+    // 選択の種類が body のときは要素 → 吸着 → 立体の順。
+    const picked = pickSketchElement(
+      sketchForSelection(state.resolvedSketch, state.displaySettings.selectionFilter), project, pointer,
+    );
+    return { elementId: picked !== null ? picked.elementId : pickBodyAt(pointer), ambiguous: false };
   }
 
   /**
@@ -133,7 +143,14 @@ export function createSketchSelectionInput(context: SketchSelectionContext) {
       // 選択の種類(selectionKind)がどうであっても、この2つの道具の振る舞いは変えない
       // (手動で部分形状の種類へ切り替えていても面の境界の順が壊れないように、
       // この判定を選択の種類より先に置く)。
-      pickInto(pointer, tool === 'face' || addsToSketchSelection(event));
+      const accumulate = tool === 'face' || addsToSketchSelection(event);
+      // 選択の道具で何も当たらない所の左の押下は、設定で入れた時だけ視点の側へ預ける(B-09 3-3)。6px を超えて動かすと回り、
+      // 動かさずに離した時は下と同じく選択を解く(預けない時は今までどおり、押した時に解く)。
+      // 押した所の当たりの判定は 1 回だけにし、その結果を選択にも使う(設定が切でも入でも、判定の回数は今までと同じ)。
+      const under = tool === 'select' && !accumulate ? elementAt(pointer, state) : undefined;
+      if (under !== undefined && !under.ambiguous && under.elementId === null
+        && beginEmptyLeftDrag(event, () => { pickInto(pointer, false, under); })) return true;
+      pickInto(pointer, accumulate, under);
       return true;
     }
 

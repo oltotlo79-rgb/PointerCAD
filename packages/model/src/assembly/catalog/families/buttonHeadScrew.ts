@@ -1,7 +1,7 @@
 /**
  * 族: 六角穴付きボタンボルト JIS B 1174-2017(M3〜M16)。M-35(設計 §2.3。設計では「JIS なし・ISO 7380」としていたが、資料に JIS B 1174 の表がある)。
  *
- * 寸法は資料 K5-4(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の規格寸法の表の
+ * 寸法は資料 K5-4(規格の抜粋)の規格寸法の表の
  * ピッチ P・b(参考)・dk(最大)・k(最大)・s(呼び)・t(最小)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の buttonHeadScrew で、検査が照らす。
  * 資料の表の団体規格(JIS ではない)の値は使わない。
@@ -12,14 +12,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildSocketHeadScrewPart, socketHeadScrewVolume, type SocketHeadDimensions } from '../profiles/screw.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const BUTTON_HEAD_SCREW_EVIDENCE = {
   title: '資料 K5-4 六角穴付きボタンボルトの規格の抜粋(JIS B 1174-2017)',
   edition: '2017',
-  url: '',
+
   locator: 'PDF 20 頁(冊子 79 頁)規格寸法の表: d・P・b(参考)・dk(最大)・k(最大)・s(呼び)・t(最小)',
-  sha256: '908dc5efd20f7d017641ad4d2e0e6c53082687067dcd152d42f3986168312d71',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-4',
 } as const;
 
 /** [ねじの呼び, d, P, b, dk, k, s, t](mm)。 */

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { expect, test, type Locator } from '@playwright/test';
 import { waitForRecompute } from './recompute.js';
 import { captureManualDetail } from './captureManualDetail.js';
@@ -8,9 +9,7 @@ interface Edges { readonly name: string; readonly left: number; readonly right: 
 interface Measured extends Edges { readonly scrollWidth: number; readonly clientWidth: number }
 
 /**
- * Live DOM edges (RUN043958 strength-material-source-screen.png showed the fieldset, select, SHA-256 and URL crossing
- * the window's right edge): the material controls, the source region and its SHA-256/URL lines, every clipping ancestor
- * up to the right panel, the right panel itself and the window. Nothing is assumed about their sizes.
+ * Compare each material control and source line against its clipping ancestors, the right panel and the window.
  */
 function readMaterialLayout(fields: Locator): Promise<{ readonly limits: readonly Edges[]; readonly clips: readonly Measured[]; readonly parts: readonly Measured[] }> {
   return fields.evaluate((fieldset: HTMLElement) => {
@@ -30,12 +29,12 @@ function readMaterialLayout(fields: Locator): Promise<{ readonly limits: readonl
         right: left + element.clientWidth, bottom: top + element.clientHeight, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth });
     }
     const source = fieldset.querySelector('section');
-    const digest = source === null ? null : Array.from(source.querySelectorAll('p')).find(line => /SHA-256: [0-9a-f]{64}$/u.test(line.textContent ?? ''));
+    const standard = source === null ? null : Array.from(source.querySelectorAll('p')).find(line => /^JIS G 3101$/u.test(line.textContent ?? ''));
     return {
       limits: [{ name: 'window', left: 0, top: 0, right: innerWidth, bottom: innerHeight }, measure('right panel', panel)],
       clips,
       parts: [measure('fieldset', fieldset), measure('select', fieldset.querySelector('select')), measure('input', fieldset.querySelector('input')),
-        measure('source region', source), measure('source SHA-256', digest), measure('source link', source?.querySelector('a'))],
+        measure('source region', source), measure('standard number', standard), measure('material condition', source?.querySelector('p'))],
     };
   });
 }
@@ -54,7 +53,7 @@ async function expectMaterialInsidePanel(fields: Locator): Promise<void> {
     expect(part.top, where).toBeGreaterThanOrEqual(limit.top - rounding);
     expect(part.bottom, where).toBeLessThanOrEqual(limit.bottom + rounding);
   }
-  for (const box of [...clips, ...parts.filter(part => ['fieldset', 'source region', 'source SHA-256'].includes(part.name))]) {
+  for (const box of [...clips, ...parts.filter(part => ['fieldset', 'source region', 'standard number', 'material condition'].includes(part.name))]) {
     expect(box.scrollWidth, `${box.name} must not overflow sideways ${JSON.stringify(box)}`).toBeLessThanOrEqual(box.clientWidth + rounding);
   }
 }
@@ -89,12 +88,9 @@ test('立体解析で材料と板厚の適用範囲を選び直す', async ({ pa
   await expect(run).toBeEnabled(); await expect(save).toBeEnabled();
   await expect(source.getByText('0 < t ≤ 16 mm', { exact: true })).toBeVisible();
   await expect(source.getByText(/245 MPa/u)).toBeVisible();
-  await expect(source.getByText('日本鉄鋼連盟', { exact: true })).toBeVisible();
+  await expect(source.getByText('SS400 鋼板 表3', { exact: true })).toBeVisible();
   await expect(source.getByText('JIS G 3101', { exact: true })).toBeVisible();
-  const link = source.getByRole('link');
-  const href = await link.getAttribute('href');
-  expect(href).toMatch(/^https:\/\//u);
-  await expect(link).toHaveText(href ?? '');
+  await expect(source.getByRole('link')).toHaveCount(0);
   await expectMaterialInsidePanel(fields);
   await captureManualDetail(page, info, {
     name: 'strength-material-source', dialog: fields,
@@ -113,7 +109,7 @@ test('立体解析で材料と板厚の適用範囲を選び直す', async ({ pa
   await expect(thickness).toHaveAttribute('aria-invalid', 'false');
   await expect(source.getByText('16 < t ≤ 40 mm', { exact: true })).toBeVisible();
   await expect(source.getByText(/235 MPa/u)).toBeVisible();
-  await expect(source.getByText('日本鉄鋼連盟', { exact: true })).toBeVisible();
+  await expect(source.getByText('SS400 鋼板 表3', { exact: true })).toBeVisible();
   await expect(run).toBeEnabled(); await expect(save).toBeEnabled();
 
   await material.selectOption('ss400-plate-0-16');

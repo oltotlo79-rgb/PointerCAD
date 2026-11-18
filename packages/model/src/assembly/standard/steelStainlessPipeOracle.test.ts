@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * S-16 配管用ステンレス鋼鋼管（JIS G 3459 表7・表8、SUS304TP）の独立の転記との突合せと、質量の検算。
  *
@@ -68,7 +69,7 @@ describe('S-16 配管用ステンレス鋼鋼管 JIS G 3459 表7・表8 の独�
     const text = readFileSync(new URL('./steelStainlessPipeOracle.fixture.ts', import.meta.url), 'utf8');
     const file = ts.createSourceFile('fixture.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     expect(file.statements.filter((node) => ts.isImportDeclaration(node) || ts.isExportDeclaration(node))).toEqual([]);
-    expect(STEEL_EVIDENCE.susPipeDraft.sha256).toBe(STAINLESS_PIPE_ORACLE.pdfSha256);
+    expect(STEEL_EVIDENCE.susPipeDraft.reference).toBe(STAINLESS_PIPE_ORACLE.reference);
   });
 
   it('表8 の括弧の無い厚さは表7 の同じ呼び径・Sch と同じ厚さ・単位質量で、括弧の厚さは表7 と違う', () => {

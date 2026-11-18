@@ -105,4 +105,13 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
   /** 問合せに答える。close が true なら本体が窓を閉じる。 */
   answerCloseRequest: (requestId: string, close: boolean): Promise<unknown> =>
     ipcRenderer.invoke('pcad:closeAnswer', requestId, close),
+  /**
+   * 3D マウス(多軸の入力機器)を読めるようにする(B-09 3-5)。本体が OS の確かめの窓を出し、利用者が許可した時だけ
+   * true。画面から入の値を渡す口は無い。チャンネル名は `apps/desktop/src/main/sixDofIpc.ts` の定数と同じ。
+   */
+  enableSixDof: (): Promise<unknown> => ipcRenderer.invoke('pcad:sixDof:enable'),
+  /** 3D マウスを読まないようにする(確かめずに切にする)。 */
+  disableSixDof: (): Promise<unknown> => ipcRenderer.invoke('pcad:sixDof:disable'),
+  /** 3D マウスを読めるようになっているか。 */
+  sixDofEnabled: (): Promise<unknown> => ipcRenderer.invoke('pcad:sixDof:state'),
 });

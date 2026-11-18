@@ -253,6 +253,7 @@ function ChoiceGroup({ choice, registerRef, onSelect, keepFocus }: ChoiceGroupPr
           aria-haspopup="true"
           aria-expanded={open}
           onMouseDown={keepFocus}
+          data-menu-trigger=""
           onClick={() => {
             setOpen(!open);
           }}

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * 製造元の寸法に合わせたフレームの系列(仮の id t-slot-frame-series)の検査: 行の値が読み取りの表(この検査の中の独立の写し)と同じ事、
  * 行の名乗り(規格の欄・note・出どころの欄)、簡略形状の面積(式と輪)、簡略形状の質量と単位質量の差(差がある事の記録。合わせ込まない)、
@@ -59,8 +60,8 @@ describe('製造元の寸法に合わせたフレームの系列', () => {
       expect([row.standardLabel, row.note, row.materialLabel, row.densityMaterialId, row.verification])
         .toEqual(['製造元の寸法に合わせた物', '内側の形は簡略。質量は単位質量の値', 'アルミ', 'aluminum',
           'manufacturer-catalog']);
-      expect(row.evidence).toEqual({ title: '販売店の公開の頁の数値(製造元の寸法に合わせた物)', edition: null, url: '', locator: '',
-        sha256: '', fetchedDate: '' });
+      expect(row.evidence).toEqual({ title: '販売店の公開の頁の数値(製造元の寸法に合わせた物)', edition: null, locator: '',
+        reference: '' });
       expect(row.key).toMatch(/^s(6|8|10)-[0-9]+x[0-9]+$/u);
     }
     expect([T_SLOT_FRAME_SERIES_FAMILY.id, T_SLOT_FRAME_SERIES_FAMILY.group, T_SLOT_FRAME_SERIES_FAMILY.stock,

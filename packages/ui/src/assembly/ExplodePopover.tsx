@@ -1,6 +1,7 @@
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 /** 分解距離を式で受け取る、ビューポート内の非モーダル入力。 */
@@ -10,6 +11,9 @@ export function ExplodePopover(): React.JSX.Element | null {
   const [source, setSource] = useState('50');
   const [axis, setAxis] = useState<'x' | 'y' | 'z'>('z');
   const input = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // 閉じた時に、開いた元(メニューから開いた時はメニューの釦)へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, draft !== null, { initial: () => input.current });
   useEffect(() => {
     if (draft !== null) {
       setSource('50');
@@ -26,7 +30,7 @@ export function ExplodePopover(): React.JSX.Element | null {
       { kind: 'world', axis });
   };
   return (
-    <div className="pcad-popover pcad-popover--explode" role="dialog"
+    <div ref={root} className="pcad-popover pcad-popover--explode" role="dialog"
       aria-label={t('assembly.explode.title')}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;

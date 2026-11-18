@@ -1,7 +1,7 @@
 /**
  * 族: O リング JIS B 2401 の P 系列(運動用・固定用、P3〜P400)と G 系列(固定用、G25〜G300)。M-31(設計 §2.3)。系列ごとに 1 つの族にする。
  *
- * 寸法は資料 K5-9(製造元の公開カタログの「JIS B 2401」の表、PDF の SHA-256 と頁を下の出どころの欄に記録)の
+ * 寸法は資料 K5-9(製造元の公開カタログの「JIS B 2401」の表、規格寸法の表)の
  * 「O リングの寸法」の欄の 呼び番号・内径 d1・太さ d2 を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(語の位置と太さの欄の区切りの線から)は catalogOracles.fixture.ts の oRing で、検査が照らす。
  * 許容差・溝の寸法・材料の区分は扱わない。形は内径 d1・太さ d2 のトーラス(`profiles/oRing.ts`)。質量はゴムの密度による概算。
@@ -9,14 +9,13 @@
 import { buildORingPart, oRingVolume, type ORingDimensions } from '../profiles/oRing.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const O_RING_EVIDENCE = {
   title: '資料 K5-9 O リングの寸法表(JIS B 2401 の P 系列・G 系列、製造元の公開カタログ)',
   edition: null,
-  url: '',
+
   locator: 'PDF 83〜87 頁(冊子 108〜117 頁)「O リングの寸法」の欄: 呼び番号・内径 d1・太さ d2(許容差・溝部の寸法は使わない)',
-  sha256: 'b4053026976f6e8f77252b784957e414d2d83f406897402b886069929ae3f6dd',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-9',
 } as const;
 
 type Series = 'P' | 'G';

@@ -1,5 +1,5 @@
 /**
- * 族: 資料 SF-1(アルミ構造材の総合カタログ)で寸法が確認できる溝つきアルミフレームの断面を、溝幅ごとに 3 つの族にした物
+ * 族: 資料 1(アルミ構造材の総合カタログ)で寸法が確認できる溝つきアルミフレームの断面を、溝幅ごとに 3 つの族にした物
  * (`t-slot-frame-s6`・`t-slot-frame-s8`・`t-slot-frame-s10`。統括の決定 2026-11-16)。製造元の名前・型番は書かない(呼びは「溝幅 8 30×30（軽量形）」の形)。
  *
  * 行は、資料の 2 回の独立の読みが一致した断面だけ(行の表 `frameCatalogRows.ts` は道具が生成し、検査が 2 回目の読みの fixture と 1 行ずつ照らす)。
@@ -58,8 +58,8 @@ function evidenceOf(record: TSlotCatalogRecord): CatalogItemRow['evidence'] {
   const properties = record.tablePage === null
     ? `PDF ${record.figurePage} 頁 図の箱(Ix・Iy・Zx・Zy・単位質量。断面性能の表に行が無い)`
     : `PDF ${record.tablePage} 頁 断面性能の表(断面積・Ix・Iy・Zx・Zy・単位質量)`;
-  return { title: '資料 SF-1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null, url: '',
-    locator: `PDF ${record.figurePage} 頁 断面の図(外形・溝・穴・角の丸み)／${properties}`, sha256: '', fetchedDate: '' };
+  return { title: '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null,
+    locator: `PDF ${record.figurePage} 頁 断面の図(外形・溝・穴・角の丸み)／${properties}`, reference: '' };
 }
 
 /** 行の dims に入れる値(null の値は入れない)。 */

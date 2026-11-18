@@ -1,17 +1,17 @@
 /**
- * 資料 SF-1 のフレームの族(溝幅ごとの 3 族・形材の 5 族)と部品の 4 族の、選ぶ画面の行の文字と説明の 1 行。
+ * 資料 1 のフレームの族(溝幅ごとの 3 族・形材の 5 族)と部品の 4 族の、選ぶ画面の行の文字と説明の 1 行。
  * 寸法の線図はまだ描かない(後の包み)ので、足した線図の種類 flatBar・roundBar は図なしの扱い(行の文字は呼び、説明は長さの欄の 1 行)になる事を確かめる。
  */
 import { PRODUCT_CATALOG_REGISTRY } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
-import { catalogFamilyEntries, catalogRowLabel, familyHintKey, familyKindKey } from './catalogFamilyChoices.js';
+import { catalogFamilyEntries, catalogRowLabel, familyHintKey, familyKindKey, messageKeyOr } from './catalogFamilyChoices.js';
 
 const T_SLOT = ['t-slot-frame-s6', 't-slot-frame-s8', 't-slot-frame-s10'];
 const SECTIONS = ['aluminum-channel', 'aluminum-square-pipe', 'aluminum-round-bar', 'aluminum-flat-bar', 'aluminum-angle'];
 
-describe('資料 SF-1 のフレームの族の選ぶ画面の文字', () => {
+describe('資料 1 のフレームの族の選ぶ画面の文字', () => {
   it('8 族はアルミフレームの分類に並び、種類の名前は i18n にあり、内部の鍵を出さない', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure([...T_SLOT, ...SECTIONS]);
     const entries = catalogFamilyEntries('aluminumFrame').filter((entry) => [...T_SLOT, ...SECTIONS].includes(entry.id));
@@ -49,13 +49,13 @@ describe('資料 SF-1 のフレームの族の選ぶ画面の文字', () => {
   });
 });
 
-describe('資料 SF-1 の部品の族(ナットの素材・ナット・丸ナット・端のキャップ)の選ぶ画面の文字', () => {
+describe('資料 1 の部品の族(ナットの素材・ナット・丸ナット・端のキャップ)の選ぶ画面の文字', () => {
   const PARTS = [['t-slot-nut-bar', 'catalog.frame.nutBar.hint'], ['t-slot-nut', 'catalog.frame.catalogNut.hint'],
     ['t-slot-round-nut', 'catalog.frame.roundNut.hint'], ['t-slot-frame-cap', 'catalog.frame.cap.hint']] as const;
 
   it('平板のブラケットは部品の 4 族の後に並び、説明は板と穴の 1 行、行の文字は呼びだけ(資料の寸法どおりで簡略の印が無い)', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-flat-plate']);
-    expect(catalogFamilyEntries('aluminumFrame').slice(-16, -15).map((entry) => entry.id)).toEqual(['t-slot-flat-plate']);
+    expect(catalogFamilyEntries('aluminumFrame').slice(-25, -24).map((entry) => entry.id)).toEqual(['t-slot-flat-plate']);
     const family = PRODUCT_CATALOG_REGISTRY.loaded('t-slot-flat-plate');
     if (family === undefined) throw new Error('t-slot-flat-plate is not loaded');
     expect(familyHintKey(family)).toBe('catalog.frame.flatPlate.hint');
@@ -68,7 +68,7 @@ describe('資料 SF-1 の部品の族(ナットの素材・ナット・丸ナッ
 
   it('4 族はアルミフレームの分類で平板のブラケットの前に並び、説明は族ごとの簡略の形の 1 行、行の文字は呼びに簡略の印を添える', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(PARTS.map(([id]) => id));
-    expect(catalogFamilyEntries('aluminumFrame').slice(-20, -16).map((entry) => entry.id)).toEqual(PARTS.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-29, -25).map((entry) => entry.id)).toEqual(PARTS.map(([id]) => id));
     for (const [id, hint] of PARTS) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -91,13 +91,13 @@ describe('資料 SF-1 の部品の族(ナットの素材・ナット・丸ナッ
   });
 });
 
-describe('資料 SF-1 の読み直しで足した 4 族の選ぶ画面の文字', () => {
+describe('資料 1 の読み直しで足した 4 族の選ぶ画面の文字', () => {
   const ADDED = [['t-slot-shaped-plate', 'catalog.frame.shapedPlate.hint'], ['t-slot-angle-bracket', 'catalog.frame.angleBracketCatalog.hint'],
     ['t-slot-foot-base', 'catalog.frame.footBase.hint'], ['t-slot-adjuster', 'catalog.frame.adjuster.hint']] as const;
 
   it('4 族はアルミフレームの分類の最後に並び、説明は族ごとの 1 行、簡略の印のある行は呼びに印を添え、無い行は呼びだけ', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(ADDED.map(([id]) => id));
-    expect(catalogFamilyEntries('aluminumFrame').slice(-15, -11).map((entry) => entry.id)).toEqual(ADDED.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-24, -20).map((entry) => entry.id)).toEqual(ADDED.map(([id]) => id));
     for (const [id, hint] of ADDED) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -112,13 +112,13 @@ describe('資料 SF-1 の読み直しで足した 4 族の選ぶ画面の文字'
   });
 });
 
-describe('資料 SF-1 の溝に入れる小物の 3 族(ジョイントバー・スタッド・ローレットナット)の選ぶ画面の文字', () => {
+describe('資料 1 の溝に入れる小物の 3 族(ジョイントバー・スタッド・ローレットナット)の選ぶ画面の文字', () => {
   const FITTINGS = [['t-slot-joint-bar', 'catalog.frame.jointBar.hint'], ['t-slot-stud', 'catalog.frame.tSlotStud.hint'],
     ['t-slot-knurled-nut', 'catalog.frame.knurledNut.hint']] as const;
 
   it('3 族はアルミフレームの分類でアジャスターの後に並び、説明は族ごとの 1 行、どの行も呼びに簡略の印を添える', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(FITTINGS.map(([id]) => id));
-    expect(catalogFamilyEntries('aluminumFrame').slice(-11, -8).map((entry) => entry.id)).toEqual(FITTINGS.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-20, -17).map((entry) => entry.id)).toEqual(FITTINGS.map(([id]) => id));
     for (const [id, hint] of FITTINGS) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -135,13 +135,13 @@ describe('資料 SF-1 の溝に入れる小物の 3 族(ジョイントバー・
   });
 });
 
-describe('資料 GF-2 のパイプ形のフレームの 3 族の選ぶ画面の文字', () => {
+describe('資料 2 のパイプ形のフレームの 3 族の選ぶ画面の文字', () => {
   const PIPES = [['pipe-frame', 'catalog.frame.pipeFrame.hint'], ['pipe-frame-slotted', 'catalog.frame.pipeFrameSlotted.hint'],
     ['pipe-frame-twin', 'catalog.frame.pipeFrameTwin.hint']] as const;
 
-  it('3 族はアルミフレームの分類で資料 SF-1 の小さい溝つきフレームの 3 族の前に並び、説明は族ごとの 1 行、どの行も呼びに簡略の印を添える', async () => {
+  it('3 族はアルミフレームの分類で資料 1 の小さい溝つきフレームの 3 族の前に並び、説明は族ごとの 1 行、どの行も呼びに簡略の印を添える', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(PIPES.map(([id]) => id));
-    expect(catalogFamilyEntries('aluminumFrame').slice(-8, -5).map((entry) => entry.id)).toEqual(PIPES.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-17, -14).map((entry) => entry.id)).toEqual(PIPES.map(([id]) => id));
     for (const [id, hint] of PIPES) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -156,13 +156,13 @@ describe('資料 GF-2 のパイプ形のフレームの 3 族の選ぶ画面の�
   });
 });
 
-describe('資料 SF-1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の選ぶ画面の文字', () => {
+describe('資料 1 の小さい溝つきフレーム・端のキャップ・ブラケット素材の選ぶ画面の文字', () => {
   const SMALL = [['t-slot-frame-small', 'catalog.frame.smallFrame.hint'], ['t-slot-frame-cap-small', 'catalog.frame.smallFrameCap.hint'],
     ['bracket-stock', 'catalog.frame.bracketStock.hint']] as const;
 
   it('3 族はアルミフレームの分類の 2 冊目のキャップとフットの前に並び、説明は族ごとの 1 行、行の名前は呼びに簡略の印(作っていない溝を含む)を添える', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(SMALL.map(([id]) => id));
-    expect(catalogFamilyEntries('aluminumFrame').slice(-5, -2).map((entry) => entry.id)).toEqual(SMALL.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-14, -11).map((entry) => entry.id)).toEqual(SMALL.map(([id]) => id));
     for (const [id, hint] of SMALL) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -180,12 +180,12 @@ describe('資料 SF-1 の小さい溝つきフレーム・端のキャップ・�
   });
 });
 
-describe('資料 GF-2 のパイプ形のフレームのキャップとフットの選ぶ画面の文字', () => {
+describe('資料 2 のパイプ形のフレームのキャップとフットの選ぶ画面の文字', () => {
   const STACKED = [['pipe-frame-cap', 'catalog.frame.pipeFrameCap.hint'], ['pipe-frame-foot', 'catalog.frame.pipeFrameFoot.hint']] as const;
 
-  it('2 族はアルミフレームの分類の最後に並び、説明は族ごとの 1 行、行の名前は呼びに簡略の印(作っていない差し込みなど)を添える', async () => {
+  it('2 族はアルミフレームの分類で板の 2 族の前に並び、説明は族ごとの 1 行、行の名前は呼びに簡略の印(作っていない差し込みなど)を添える', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(STACKED.map(([id]) => id));
-    expect(catalogFamilyEntries('aluminumFrame').slice(-2).map((entry) => entry.id)).toEqual(STACKED.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-11, -9).map((entry) => entry.id)).toEqual(STACKED.map(([id]) => id));
     for (const [id, hint] of STACKED) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -196,6 +196,74 @@ describe('資料 GF-2 のパイプ形のフレームのキャップとフット�
         const marks = row.simplified ?? [];
         expect(catalogRowLabel(family, row), row.key).toBe(marks.length > 0 ? `${row.size}（簡略: ${marks.join('・')}）` : row.size);
       }
+    }
+  });
+});
+
+describe('資料 1 の板の 2 族(定尺の寸法・幅と高さを入れる)の選ぶ画面の文字', () => {
+  const BOARDS = [['panel-board-fixed', 'catalog.board.fixed.hint'], ['panel-board-order', 'catalog.board.order.hint']] as const;
+
+  it('2 族はアルミフレームの分類でパネル扉の部品の 2 族の前に並び、説明は族ごとの 1 行、幅と高さの欄の名前を持ち、行の名前は呼びに簡略の印を添える', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(BOARDS.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-9, -7).map((entry) => entry.id)).toEqual(BOARDS.map(([id]) => id));
+    for (const [id, hint] of BOARDS) {
+      const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
+      if (family === undefined) throw new Error(`${id} is not loaded`);
+      expect(familyHintKey(family)).toBe(hint);
+      expect(t(hint)).not.toBe(hint);
+      expect(t(familyKindKey(family.kindKey))).not.toBe(family.kindKey);
+      for (const row of family.rows) {
+        const marks = row.simplified ?? [];
+        expect(catalogRowLabel(family, row), row.key).toBe(marks.length > 0 ? `${row.size}（簡略: ${marks.join('・')}）` : row.size);
+      }
+    }
+    // 注文の寸法の族の欄は幅と高さで、選ぶ画面は欄の名前を自分の鍵で出す(長さの名前に落ちない)。定尺の族は欄を持たない。
+    const order = PRODUCT_CATALOG_REGISTRY.loaded('panel-board-order');
+    expect(order?.options.map((spec) => [spec.key, t(messageKeyOr(spec.labelKey, 'catalog.mechanical.length'))]))
+      .toEqual([['width', t('catalog.board.option.width')], ['height', t('catalog.board.option.height')]]);
+    expect([t('catalog.board.option.width'), t('catalog.board.option.height')]).not.toContain(t('catalog.mechanical.length'));
+    expect(PRODUCT_CATALOG_REGISTRY.loaded('panel-board-fixed')?.options).toEqual([]);
+  });
+});
+
+describe('資料 2 のパネル扉の部品・パネル用のフレーム・コネクタ・キャップと足の部品・可動の部品・アクセサリの 6 族(外形を包む形)の選ぶ画面の文字', () => {
+  const ENVELOPE = '外形を包む形で、細部は作っていない';
+  // 族ごとに、行の名前に添える簡略の印の並び(可動の部品だけ「動く仕組みは作っていない」を続ける)。
+  const ENVELOPES = [['panel-part-box', 'catalog.board.partBox.hint', [ENVELOPE]],
+    ['panel-cover-frame', 'catalog.board.coverFrame.hint', [ENVELOPE]], ['connector-box', 'catalog.frame.connectorBox.hint', [ENVELOPE]],
+    ['cap-foot-box', 'catalog.frame.capFootBox.hint', [ENVELOPE]],
+    ['movable-part-box', 'catalog.frame.movableBox.hint', [ENVELOPE, '動く仕組みは作っていない']],
+    ['accessory-box', 'catalog.frame.accessoryBox.hint', [ENVELOPE]]] as const;
+
+  it('6 族はアルミフレームの分類でキャスターの族の前に並び、説明は族ごとの 1 行、行の名前は呼びに「外形を包む形で、細部は作っていない」の印を添える', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(ENVELOPES.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-7, -1).map((entry) => entry.id)).toEqual(ENVELOPES.map(([id]) => id));
+    for (const [id, hint, marks] of ENVELOPES) {
+      const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
+      if (family === undefined) throw new Error(`${id} is not loaded`);
+      expect(familyHintKey(family)).toBe(hint);
+      expect(t(hint)).not.toBe(hint);
+      expect(t(familyKindKey(family.kindKey))).not.toBe(family.kindKey);
+      for (const row of family.rows) {
+        expect(catalogRowLabel(family, row), row.key).toBe(`${row.size}（簡略: ${marks.join('・')}）`);
+      }
+    }
+  });
+});
+
+describe('キャスターの族の選ぶ画面の文字', () => {
+  it('アルミフレームの分類の最後に並び、説明は 1 行、行の名前は呼びに簡略の印(フォーク・旋回と止め・車輪の溝)を添える', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-caster']);
+    expect(catalogFamilyEntries('aluminumFrame').slice(-1).map((entry) => entry.id)).toEqual(['t-slot-caster']);
+    const family = PRODUCT_CATALOG_REGISTRY.loaded('t-slot-caster');
+    if (family === undefined) throw new Error('t-slot-caster is not loaded');
+    expect(familyHintKey(family)).toBe('catalog.frame.caster.hint');
+    expect(t('catalog.frame.caster.hint')).not.toBe('catalog.frame.caster.hint');
+    expect(t(familyKindKey(family.kindKey))).not.toBe(family.kindKey);
+    for (const row of family.rows) {
+      const marks = row.simplified ?? [];
+      expect(marks.length, row.key).toBeGreaterThan(0);
+      expect(catalogRowLabel(family, row), row.key).toBe(`${row.size}（簡略: ${marks.join('・')}）`);
     }
   });
 });

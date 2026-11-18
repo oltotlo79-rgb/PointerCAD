@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 import { replaceAttachment } from './analysisAttachment.testSupport.js';
 import { buildStandardPartFromSource, createStandardPartSource, steelProducts, steelProductOptions, type CutFeature } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
@@ -360,11 +361,11 @@ function parseAssembly(text: string): ReturnType<typeof beamCadFixture>['documen
 
 describe('FE material yield evidence through the actual part and assembly codecs', () => {
   const rows = [
-    ['ss400-plate-0-16', 245, 'jisf-g3101-draft', 16],
-    ['ss400-plate-16-40', 235, 'jisf-g3101-draft', 40],
-    ['ss400-plate-40-100', 215, 'jisf-g3101-draft', 100],
-    ['s45c-normalized-reference', 345, 'tsubaki-s45c', null],
-    ['s45c-quenched-tempered-reference', 490, 'tsubaki-s45c', null],
+    ['ss400-plate-0-16', 245, 'g3101-draft', 16],
+    ['ss400-plate-16-40', 235, 'g3101-draft', 40],
+    ['ss400-plate-40-100', 215, 'g3101-draft', 100],
+    ['s45c-normalized-reference', 345, 's45c-heat-treatment', null],
+    ['s45c-quenched-tempered-reference', 490, 's45c-heat-treatment', null],
   ] as const;
   function solidInput(ownerId: string): Extract<SolidCadSavedInput, { schema: 'pointercad-solid-cad-input/1' }> {
     return { schema: 'pointercad-solid-cad-input/1', id: 'solid-cad', source: { documentId: ownerId }, bodyFeatureId: 'body',
@@ -409,7 +410,7 @@ describe('FE material yield evidence through the actual part and assembly codecs
       if (solid?.kind !== 'solid-cad') throw new Error('Missing reopened solid');
       expect(solid.definition.capacity).toEqual(capacity);
       expect(solid.definition.capacity).not.toBe(capacity);
-      if (sourceId === 'tsubaki-s45c') expect(solid.definition.capacity)
+      if (sourceId === 's45c-heat-treatment') expect(solid.definition.capacity)
         .toMatchObject({ evidence: 'manufacturer-reference', basis: 'reference' });
       expect(reopened.beamAnalysisInputs).toEqual(solidInputs);
       expect(serializeDocument(reopened, WRITE_OPTIONS)).toBe(solidText);
@@ -437,7 +438,7 @@ describe('FE material yield evidence through the actual part and assembly codecs
   ])('refuses %s in actual writes and reads while preserving the prior document', (reason, patch) => {
     const part = createEmptyPartDocument();
     const capacity: AnalysisMaterialCapacity = { materialConditionId: 'ss400-plate-0-16', yieldMPa: 245,
-      sourceId: 'jisf-g3101-draft', condition: '圧延鋼板（熱処理の指定なし）', thicknessMm: 16,
+      sourceId: 'g3101-draft', condition: '圧延鋼板（熱処理の指定なし）', thicknessMm: 16,
       evidence: 'standard-draft', basis: 'minimum' };
     const inputs = { schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'solid-cad',
       definition: { ...solidInput(part.id), capacity } }] };

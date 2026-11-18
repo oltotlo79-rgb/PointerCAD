@@ -16,7 +16,7 @@ export const MIDDLE_DOUBLE_GAP_MS = 400;
 export const MIDDLE_DOUBLE_SLOP_PX = 4;
 
 /** 見分けに使う出来事の欄(PointerEvent・MouseEvent の一部)。 */
-export interface PointerCommandEvent {
+interface PointerCommandEvent {
   readonly button: number;
   readonly clientX: number;
   readonly clientY: number;

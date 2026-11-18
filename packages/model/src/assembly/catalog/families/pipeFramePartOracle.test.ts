@@ -1,5 +1,5 @@
 /**
- * 資料 GF-2 のキャップとフットの製品の行(pipeFramePartRows.ts)が、照らす側の読み(pipeFramePartOracle.fixture.json。2 本目の読み B か、
+ * 資料 2 のキャップとフットの製品の行(pipeFramePartRows.ts)が、照らす側の読み(pipeFramePartOracle.fixture.json。2 本目の読み B か、
  * Codex の試しの一致した段の文字のまま)と 1 行ずつ一致する事の検査。fixture の文字は、この検査が自分で読み解く(行の表を作る道具の読み解きと別にする)。
  * T1(記入の無い最後の段の高さ = 全体の高さ − ほかの段の高さ)は、記録の条件のある行だけ、この検査が照らす側の文字から計算し直して確かめる。
  */
@@ -84,7 +84,7 @@ function check(record: PipeFramePartRecord, row: FixtureRow): void {
   expect(record.thread, record.key).toEqual(male === null ? null : { size: `M${male[1] ?? ''}`, length: Number(male[2]) });
 }
 
-describe('資料 GF-2 のキャップとフットの照らす側の読みとの照らし', () => {
+describe('資料 2 のキャップとフットの照らす側の読みとの照らし', () => {
   it('fixture の行の鍵は製品の行の鍵と同じ並び', () => {
     expect(FIXTURE.cap.map((row) => row.key)).toEqual(PIPE_FRAME_CAP_RECORDS.map((record) => record.key));
     expect(FIXTURE.foot.map((row) => row.key)).toEqual(PIPE_FRAME_FOOT_RECORDS.map((record) => record.key));

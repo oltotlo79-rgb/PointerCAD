@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * S-02 一般構造用炭素鋼鋼管（JIS G 3444 表6、STK400）の独立の転記との突合せと質量の検算。
  *
@@ -43,7 +44,7 @@ describe('S-02 一般構造用炭素鋼鋼管 JIS G 3444 表6 の独立の転記
     const text = readFileSync(new URL('./steelStructuralPipeOracle.fixture.ts', import.meta.url), 'utf8');
     const file = ts.createSourceFile('fixture.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     expect(file.statements.filter((node) => ts.isImportDeclaration(node) || ts.isExportDeclaration(node))).toEqual([]);
-    expect(STEEL_EVIDENCE.stkDraft.sha256).toBe(STRUCTURAL_PIPE_ORACLE.pdfSha256);
+    expect(STEEL_EVIDENCE.stkDraft.reference).toBe(STRUCTURAL_PIPE_ORACLE.reference);
   });
 
   it.each(STRUCTURAL_PIPE_ORACLE.rows)('φ%s×%s: 単位質量は式(1)、断面積は注a の式に一致し、行の値と頁を持つ', (d, t, w, a, page) => {

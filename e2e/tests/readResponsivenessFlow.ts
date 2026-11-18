@@ -299,6 +299,29 @@ function residentMemorySummary(before: readonly ResidentSample[], during: readon
   peakAfterStartMs: peak === undefined || startedAt === null ? null : peak.at - startedAt, peakByRole };
 }
 
+/** The clocks are already captured. Format accepted keys only after the timed collection finishes. */
+function logReadLatencyBreakdown(spec: string, kind: string, mib: number, active: ReturnType<typeof readInputMetrics>['active'],
+  spans: readonly { id: string; start: number; end: number | null }[], clockOffset: { lower: number; upper: number }) {
+  const columns = ['index', 'pressStartEpochMs', 'roundTripMs', 'keyEpochMs', 'keyToListenerMs',
+    'listenerToInputMs', 'inputToRafMs', 'keyToRafMs', 'crossesWorkerEnd'];
+  for (const span of spans) {
+    const rows = active.filter(row => row.readId === span.id).map(({ index, input, trip, crossesWorkerEnd }) => {
+      const listener: unknown = Reflect.get(input, 'keydownObservedAt');
+      const changed: unknown = Reflect.get(input, 'inputObservedAt');
+      return [index, trip?.start ?? null, trip?.ms ?? null, input.at,
+        typeof listener === 'number' ? listener - input.at : null,
+        typeof listener === 'number' && typeof changed === 'number' ? changed - listener : null,
+        typeof changed === 'number' && input.paintedAt !== null ? input.paintedAt - changed : null,
+        input.paintedAt === null ? null : input.paintedAt - input.at, crossesWorkerEnd];
+    });
+    // Short lines survive the CI reporter even when a read admits all 100 keys.
+    const keysPerLine = 16;
+    for (let i = 0; i < rows.length; i += keysPerLine) {
+      console.log('[読込応答内訳]', JSON.stringify({ spec, kind, mib, span, clockOffset, columns, rows: rows.slice(i, i + keysPerLine) }));
+    }
+  }
+}
+
 /** Fixed collection over ordinary reads; never delay real Worker execution. */
 export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32 | 128,
   kind: 'orphan' | 'referenced', app?: ElectronApplication): Promise<void> {
@@ -443,6 +466,9 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
     // A read with no valid inputs has already failed; keep that cause before further saves consume the deadline.
     expect(metrics.incomplete, 'all input values and paint observations are required').toEqual([]);
     expect(metrics.active.length, '100 trusted input starts during actual reads; include slow completion across Worker end').toBeGreaterThanOrEqual(100);
+    if (metrics.p95 !== null && metrics.p95 >= 100) {
+      logReadLatencyBreakdown(basename(info.file), kind, mib, metrics.active, audit.spans, offset);
+    }
     expect(metrics.p95).not.toBeNull(); expect(metrics.p95).toBeLessThan(100);
     if ('check' in fixture) {
       await expect(canvasRow(page, 'read-reference.png')).toBeVisible(); await expectImage(page, 'A');

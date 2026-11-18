@@ -1,5 +1,5 @@
 /**
- * 資料 SF-1 のフレームの部品の形(簡略): T 溝用ナットの素材(棒材)の断面・丸ナット・端のキャップ。
+ * 資料 1 のフレームの部品の形(簡略): T 溝用ナットの素材(棒材)の断面・丸ナット・端のキャップ。
  * 1 個の T 溝用ナットは、今ある汎用の形(`frameParts.ts` の buildSlotNutPart。つば+首+中央のめねじ)を行の値で使う。
  * - 棒材の断面: 頭(溝の中に入る広い部分。幅 hw・高さ H − nh)と首(溝の口に入る部分。幅 nw・高さ nh)の 2 つの長方形の T 形。
  *   頭の斜面は記入が無いので入れない(簡略)。原点は外形の中心、縦(Y)が高さ、首が上。
@@ -337,6 +337,11 @@ export interface FootBaseDimensions {
    * 頂点の外接の長方形は幅 × 奥行と同じ。省略は幅 × 奥行の長方形。
    */
   readonly outline?: readonly (readonly [number, number])[];
+  /**
+   * ボス付きの板だけ: 板を通る円柱のボス(外形の左下からの中心 x・y、径、板の下の面を 0 とした下の端と上の端。統括の決定 2026-11-18 13:3x の (2))。
+   * ボスの中のめねじ・面取りは作らない(行の簡略の印)。省略はボスなし。
+   */
+  readonly bosses?: readonly { readonly x: number; readonly y: number; readonly diameter: number; readonly bottom: number; readonly top: number }[];
 }
 
 /** 点から線分までの距離。 */
@@ -383,7 +388,37 @@ export function footBaseProfile(dims: FootBaseDimensions): (ProfileLoops & { rea
 /** フットベース・アジャスターベースの板の形(厚さ t を Z へ押し出し、穴を引く)。 */
 export function buildFootBasePart(dims: FootBaseDimensions): PartDocument | null {
   const profile = footBaseProfile(dims);
-  return profile === null ? null : buildProfileSection(profile, expressionValueFromNumber(dims.thickness));
+  if (profile === null || !bossesValid(dims)) return null;
+  let document = buildProfileSection(profile, expressionValueFromNumber(dims.thickness));
+  let target = document.solids[document.solids.length - 1]?.id ?? '';
+  for (const boss of dims.bosses ?? []) {
+    // ボスは板を通る円柱(板の下の面から下へ、上の面から上へ出る)。原点は板の外接の長方形の中心(輪と同じ)。
+    const created = createPrimitiveFeature(document, 'cylinder', origin(boss.x - dims.width / 2, boss.y - dims.depth / 2, boss.bottom));
+    const cylinder: PrimitiveFeature = { ...created, shape: { kind: 'cylinder', radius: expressionValueFromNumber(boss.diameter / 2),
+      height: expressionValueFromNumber(boss.top - boss.bottom) } };
+    const joined = appendBoolean(appendSolid(document, cylinder), 'union', target, cylinder.id);
+    document = joined.document;
+    target = joined.feature.id;
+  }
+  return document;
+}
+
+/** ボスの体積の足し分(板の外へ出る所だけ: π·r²·(高さ − 板厚))。ボスが無ければ 0。 */
+export function footBaseBossVolume(dims: FootBaseDimensions): number {
+  return (dims.bosses ?? []).reduce((sum, boss) => sum + Math.PI * (boss.diameter / 2) ** 2 * (boss.top - boss.bottom - dims.thickness), 0);
+}
+
+/**
+ * ボスが成り立つか: 径が正、下の端が板の下の面(0)以下・上の端が板の上の面(板厚)以上、円が外形の内で辺から離れ、ほかのボス・通し穴と重ならない。
+ */
+function bossesValid(dims: FootBaseDimensions): boolean {
+  const bosses = dims.bosses ?? [];
+  const outline = dims.outline ?? [[0, 0], [dims.width, 0], [dims.width, dims.depth], [0, dims.depth]];
+  return bosses.every((boss, index) => positive([boss.diameter]) && boss.bottom <= 0 && boss.top >= dims.thickness
+    && (boss.bottom < 0 || boss.top > dims.thickness) && insidePolygon(boss.x, boss.y, outline)
+    && outline.every((point, at) => distanceToSegment(boss.x, boss.y, point, outline[(at + 1) % outline.length] ?? point) > boss.diameter / 2)
+    && bosses.every((other, at) => at === index || Math.hypot(other.x - boss.x, other.y - boss.y) > (other.diameter + boss.diameter) / 2)
+    && dims.holes.every(([x, y, size]) => Math.hypot(x - boss.x, y - boss.y) > (size + boss.diameter) / 2));
 }
 
 export interface AdjusterDimensions {

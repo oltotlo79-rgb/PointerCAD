@@ -1,5 +1,6 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
- * 資料 SF-1 の溝つきフレームの 3 族(溝幅 6・8・10)の検査: 行の名乗り(規格の欄・note・出どころの頁)と dims の写し、簡略の形(面ごとの溝・升の格子・
+ * 資料 1 の溝つきフレームの 3 族(溝幅 6・8・10)の検査: 行の名乗り(規格の欄・note・出どころの頁)と dims の写し、簡略の形(面ごとの溝・升の格子・
  * 四隅の穴)の面積と押し出しの形、質量が単位質量 × 長さで出る事(族の関数・切断の一覧)、断面の外形、保存の形の作り直し。
  * 製品が使う口(登録口が読む `T_SLOT_CATALOG_FAMILIES` と、族が読む行の表 `T_SLOT_CATALOG_RECORDS`)だけを通して確かめる。
  * 形の種類ごとの代表の行: 4 面溝(20×20)・上をふさいだ 3 面溝(20×20)・四隅の穴つき(30×30 の 3 面溝の基本形)・升の格子(80×80 の 2 面溝の軽量形)・
@@ -46,7 +47,7 @@ function rowOfRecord(item: TSlotCatalogRecord): CatalogItemRow {
   return row;
 }
 
-describe('資料 SF-1 の溝つきフレームの 3 族', () => {
+describe('資料 1 の溝つきフレームの 3 族', () => {
   it('族は溝幅ごとに 3 つで、版・欄・線図を凍結し、行は溝幅で分かれる', () => {
     // 長さの後の 2 つは一括配置の留めの任意の欄(J-01 包み 5。miterOption.test.ts)。
     const MITER_KEYS = [['startMiter', 'none'], ['endMiter', 'none']];
@@ -71,8 +72,8 @@ describe('資料 SF-1 の溝つきフレームの 3 族', () => {
     for (const row of [first, closed, box]) {
       expect([row.standardLabel, row.materialLabel, row.densityMaterialId, row.verification, row.verified, row.note]).toEqual([
         '製造元の寸法に合わせた物', 'アルミ', 'aluminum', 'manufacturer-catalog', true, '内側の形は簡略。質量は単位質量の値']);
-      expect([row.evidence.title, row.evidence.edition, row.evidence.url, row.evidence.sha256, row.evidence.fetchedDate]).toEqual([
-        '資料 SF-1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', null, '', '', '']);
+      expect([row.evidence.title, row.evidence.edition, row.evidence.reference]).toEqual([
+        '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', null, '']);
     }
     expect(first.evidence.locator).toBe('PDF 42 頁 断面の図(外形・溝・穴・角の丸み)／PDF 384 頁 断面性能の表(断面積・Ix・Iy・Zx・Zy・単位質量)');
     expect(box.evidence.locator).toBe('PDF 174 頁 断面の図(外形・溝・穴・角の丸み)／PDF 174 頁 図の箱(Ix・Iy・Zx・Zy・単位質量。断面性能の表に行が無い)');

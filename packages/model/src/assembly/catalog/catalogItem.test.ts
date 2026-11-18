@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * 族の部品の保存の形と登録口(K0 の検査 (b) の model 側。設計 §5.2・§5.3)。
  *
@@ -24,8 +25,8 @@ import {
 import type { CatalogFamily, CatalogFamilyEntry, CatalogItemRow } from './types.js';
 
 const EVIDENCE = {
-  title: '検査用の資料', edition: null, url: 'https://example.invalid/test-pin.pdf', locator: '表1',
-  sha256: '0000000000000000000000000000000000000000000000000000000000000000', fetchedDate: '2026-11-14',
+  title: '検査用の資料', edition: null, locator: '表1',
+  reference: '検査用の出典',
 } as const;
 const ROWS: readonly CatalogItemRow[] = [
   { key: 'test-pin:d2', size: '2', standardLabel: 'JIS B 1354', densityMaterialId: 'steel', dims: { d: 2 },
@@ -65,7 +66,7 @@ describe('K0 (b) 族の部品の保存の形', () => {
     expect(JSON.stringify(SAVED)).toBe('{"kind":"standardPart","catalog":"catalogItem","size":"2","options":'
       + '{"family":"test-parallel-pin","item":"test-pin:d2","length":"12","finish":"plain"},'
       + '"catalogRevision":"test-pin-r1","generatorRevision":"test-pin-1"}');
-    for (const derived of ['JIS B 1354', 'steel', EVIDENCE.url, EVIDENCE.sha256, '"d"']) {
+    for (const derived of ['JIS B 1354', 'steel', EVIDENCE.title, EVIDENCE.reference, '"d"']) {
       expect(JSON.stringify(SAVED)).not.toContain(derived);
     }
     expect(STANDARD_CATALOG_IDS).toContain('catalogItem');
@@ -183,7 +184,8 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
       't-slot-round-nut', 't-slot-frame-cap', 't-slot-flat-plate', 't-slot-shaped-plate', 't-slot-angle-bracket', 't-slot-foot-base',
       't-slot-adjuster', 't-slot-joint-bar', 't-slot-stud', 't-slot-knurled-nut', 'pipe-frame', 'pipe-frame-slotted', 'pipe-frame-twin',
       't-slot-frame-small', 't-slot-frame-cap-small',
-      'bracket-stock', 'pipe-frame-cap', 'pipe-frame-foot']);
+      'bracket-stock', 'pipe-frame-cap', 'pipe-frame-foot', 'panel-board-fixed', 'panel-board-order',
+      'panel-part-box', 'panel-cover-frame', 'connector-box', 'cap-foot-box', 'movable-part-box', 'accessory-box', 't-slot-caster']);
   });
 
   it('知らない族は standardPartRejection・組み立て・理由つきの組み立てで同じ型付きの拒否になる', () => {

@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-07 平座金 大形(JIS B 1256-2008 部品等級 A)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の largePlainWasher)の
  * 突合せ、並形との大小の照合と形の体積の検査。fixture は PDF の文字の流れから、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -33,10 +34,10 @@ describe('M-07 平座金 大形 資料の表との突合せ', () => {
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結し、形は輪で体積は π/4 (d2² − d1²) h', () => {
     const evidence = ROWS[0]?.evidence;
     expect(ROWS.every((row) => row.evidence === evidence)).toBe(true);
-    expect(evidence?.sha256).toBe(ORACLE.pdfSha256);
+    expect(evidence?.reference).toBe(ORACLE.reference);
     expect(evidence?.locator).toContain(`PDF ${ORACLE.page} 頁`);
     expect(evidence?.title.startsWith('資料 K5-6 ')).toBe(true);
-    expect(evidence?.url).toBe('');
+    expect(evidence).not.toHaveProperty('url');
     expect([PLAIN_WASHER_LARGE_FAMILY.id, PLAIN_WASHER_LARGE_FAMILY.catalogRevision, PLAIN_WASHER_LARGE_FAMILY.generatorRevision])
       .toEqual(['plain-washer-large', 'plain-washer-large-2026-11-r1', 'washer-1']);
     for (const row of ROWS) {

@@ -1,7 +1,7 @@
 /**
  * 族: 割りピン JIS B 1351-1987(呼び径 0.6〜20)。M-12(設計 §2.3)。
  *
- * 寸法は資料 K5-7(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の表の
+ * 寸法は資料 K5-7(規格の抜粋)の表の
  * d・c(基準寸法)・b(約)・a(最大)を、頁の画像から読んだ 1 回目の転記。2 回目の独立の読み(文字の流れから)は
  * catalogOracles.fixture.ts の splitPin で、検査が照らす。資料の注で JIS に規定が無い呼び径(※)は入れない(16 行)。
  * 呼び径は資料の注のとおり挿入するピン穴の径。
@@ -15,14 +15,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildSplitPinPart, splitPinVolume, type SplitPinDimensions } from '../profiles/splitPin.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const SPLIT_PIN_EVIDENCE = {
   title: '資料 K5-7 割りピンの規格の抜粋(JIS B 1351-1987)',
   edition: '1987',
-  url: '',
+
   locator: 'PDF 4 頁(冊子 239 頁)割りピン規格表: 呼び径・d・c(基準寸法)・b(約)・a(最大)、表の注',
-  sha256: '21d6ba014768c639a5eca26039584e519189ba55bc1a2b3d517c39e46a8febfe',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-7',
 } as const;
 
 /** [呼び径, d, c, b, a(最大)](mm)。 */

@@ -18,8 +18,9 @@ describe('camera settings accessible form', () => {
     expect(markup.match(/<fieldset>/g)).toHaveLength(3);
     // Two binding rows per action, and the rotation and zoom centers (B-08d).
     expect(markup.match(/<select\b/g)).toHaveLength(6 + 2);
-    // 6 rows x Alt/Shift/Ctrl/Meta, plus the rotation left-right/up-down and the wheel/drag zoom inversions.
-    expect(markup.match(/type="checkbox"/g)).toHaveLength(28);
+    // 6 rows x Alt/Shift/Ctrl/Meta, the rotation left-right/up-down and the wheel/drag zoom inversions,
+    // plus the left drag from empty space (B-09 3-3).
+    expect(markup.match(/type="checkbox"/g)).toHaveLength(29);
     // Rotation, pan, wheel zoom and drag zoom speeds, and the key rotation step (B-08).
     expect(markup.match(/type="number"/g)).toHaveLength(5);
     expect(markup).toContain(t('settings.camera.title'));
@@ -59,6 +60,21 @@ describe('camera settings accessible form', () => {
     const markup = renderForm();
     expect(markup).toContain(`<p role="status">${t('settings.camera.recovered').replace('{count}', '4')}</p>`);
     expect(markup).not.toContain('role="alert"');
+  });
+});
+
+describe('何も無い所からの左ドラッグで回す(B-09 3-3)', () => {
+  it('既定は切で注意も出さず、保存した値が入なら印を付けて、将来の範囲の選択と同じ入力である事を出す', () => {
+    const off = renderForm();
+    expect(off).toContain(t('settings.camera.leftEmptyOrbit'));
+    expect(off).not.toContain(t('settings.camera.leftEmptyOrbitNote'));
+    const state = useAppStore.getState();
+    state.setDisplaySettings({ ...state.displaySettings, viewControls: { ...DEFAULT_VIEW_CONTROLS,
+      options: { ...DEFAULT_VIEW_CONTROLS.options, leftEmptyOrbit: true } } });
+    const on = renderForm();
+    expect(on).toContain(t('settings.camera.leftEmptyOrbitNote'));
+    // 印の付いた箱は、既定の Alt・Shift・Ctrl の 3 つとこの 1 つ。
+    expect(on.match(/\schecked=""/g)).toHaveLength(3 + 1);
   });
 });
 

@@ -1,5 +1,5 @@
 import { serializeCsvReport } from '../file/csvReport.js';
-import { buildSteelStockList, PRODUCT_CATALOG_REGISTRY, STEEL_EVIDENCE, type AssemblyDocument, type PartLibrary, type SteelEvidence,
+import { buildSteelStockList, PRODUCT_CATALOG_REGISTRY, STEEL_EVIDENCE, type AssemblyDocument, type PartLibrary,
   type SteelStockList } from '@pointercad/model';
 
 import { saveFileAsThrough } from '../file/fileGateway.js';
@@ -35,7 +35,7 @@ const ISSUE_LABELS = {
 const PROVENANCE_HEADINGS = [
   'assembly.steel.csv.catalogRevision', 'assembly.steel.csv.generatorRevision', 'assembly.steel.csv.geometry',
   'assembly.steel.csv.sourceTitle', 'assembly.steel.csv.sourceEdition', 'assembly.steel.csv.sourceLocator',
-  'assembly.steel.csv.sourceUrl', 'assembly.steel.csv.sourceSha256', 'assembly.steel.csv.sourceFetchedDate',
+  'assembly.steel.csv.dimensionStandardNumber', 'assembly.steel.csv.sourceSha256', 'assembly.steel.csv.sourceFetchedDate',
   'assembly.steel.csv.profileSource', 'assembly.steel.csv.materialSource', 'assembly.steel.csv.productStandardSource',
 ] as const;
 const NO_PROVENANCE = PROVENANCE_HEADINGS.map(() => '');
@@ -61,27 +61,18 @@ export function steelStockIssueText(issue: SteelStockList['issues'][number]): st
   return t(ISSUE_LABELS[issue.reason]);
 }
 
-/** An unprinted edition stays explicit; it is never inferred from a date or file name. */
-function edition(evidence: SteelEvidence): string {
-  return evidence.edition ?? t('assembly.steel.csv.editionNotPrinted');
-}
-/** One compact cell for a secondary source: title, edition, page, URL and the hash of the fetched bytes. */
-function evidenceCell(evidence: SteelEvidence): string {
-  return [evidence.title, edition(evidence), evidence.locator, evidence.url, `SHA-256 ${evidence.sha256}`,
-    `${t('assembly.steel.csv.sourceFetchedDate')} ${evidence.fetchedDate}`].join(' ｜ ');
-}
 /** Saved revisions and existing catalog constants only; a legacy simplified row never shows profile evidence. */
 function provenance(row: SteelStockList['rows'][number]): string[] {
   const { product } = row;
   const source = STEEL_EVIDENCE[product.evidence];
   return [row.catalogRevision, row.generatorRevision, t(GEOMETRIES[product.geometry]),
-    source.title, edition(source), source.locator, source.url, source.sha256, source.fetchedDate,
+    source.title, '', '', product.standardEdition.dimensions.number, '', '',
     product.geometry === 'profileSection' && product.profileEvidence !== undefined
-      ? evidenceCell(product.profileEvidence) : t('assembly.steel.csv.profileSourceNone'),
+      ? product.profileEvidence.title : t('assembly.steel.csv.profileSourceNone'),
     product.materialEvidence === undefined ? t('assembly.steel.csv.sameAsDimensionSource')
-      : evidenceCell(STEEL_EVIDENCE[product.materialEvidence]),
+      : STEEL_EVIDENCE[product.materialEvidence].title,
     product.productStandardEvidence === undefined ? t('assembly.steel.csv.sameAsDimensionSource')
-      : evidenceCell(product.productStandardEvidence)];
+      : product.productStandardEvidence.title];
 }
 
 /** 実物どおりの断面の形材の族(チャンネル・角パイプ・丸棒・フラットバー・アングル)の線図。この族の行の注記に「内側の形は簡略」を添えない。 */
@@ -111,15 +102,15 @@ function catalogGeometry(row: SteelStockList['catalogRows'][number]): string {
 
 /**
  * 長さを持つ族(フレームなど)の部品の行と、その合計の行(E-03)。鋼材の 30 列と同じ列に、族の種類・呼び・規格の欄・材質の表示・長さ・本数・
- * 出どころ(資料の題・頁・SHA。規格の行でない族は空)を入れる。族の部品が無い文書では行を作らない(鋼材だけの CSV は前と同じバイト)。
+ * 規格番号または一般の呼び方を入れる。族の部品が無い文書では行を作らない(鋼材だけの CSV は前と同じバイト)。
  */
 function catalogStockRows(stock: SteelStockList): (string | number)[][] {
   if (stock.catalogRows.length === 0) return [];
   const rows: (string | number)[][] = stock.catalogRows.map((row) => [t('assembly.steel.csv.cut'), row.materialLabel ?? '', '',
     row.standardLabel, t(familyKindKey(row.kindKey)), row.size, '', row.lengthMm, row.quantity, row.totalLengthMm,
     JSON.stringify(row.occurrencePaths), unitMassNote(row) + catalogMiterNote(row), '', t('assembly.steel.finishedUnknown'),
-    row.catalogRevision, row.generatorRevision, catalogGeometry(row), row.evidence.title, edition(row.evidence),
-    row.evidence.locator, row.evidence.url, row.evidence.sha256, row.evidence.fetchedDate, t('assembly.steel.csv.profileSourceNone'),
+    row.catalogRevision, row.generatorRevision, catalogGeometry(row), row.standardLabel, '', '',
+    row.standardLabel.match(/(?:JIS|ISO)\s+[A-Z]?\s*\d+(?:-\d+)?/u)?.[0] ?? '', '', '', t('assembly.steel.csv.profileSourceNone'),
     t('assembly.steel.csv.sameAsDimensionSource'), t('assembly.steel.csv.sameAsDimensionSource'), ...NO_STANDARD_EDITION]);
   rows.push([t('catalog.stock.total'), '', '', '', '', '', '', '', stock.catalogRows.reduce((total, row) => total + row.quantity, 0),
     stock.catalogRows.reduce((total, row) => total + row.totalLengthMm, 0), '', '', '', '', ...NO_PROVENANCE, ...NO_STANDARD_EDITION]);

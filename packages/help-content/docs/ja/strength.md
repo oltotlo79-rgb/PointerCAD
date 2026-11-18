@@ -81,14 +81,9 @@ PointerCADの中で立体や部材の形を使って解析する場合は、下�
 
 ## 材料・断面積の出典
 
-- [JFEスチール・建築便覧 第4章](https://www.jfe-steel.co.jp/products/building/assets/pdf/binran/binran_chapter04.pdf)：鋼のE・Gの参考値。
-- [日本製鉄・CORSPACE資料](https://www.nipponsteel.com/product/plate/list/machinery/pdf/kyouken.pdf)：表4-1のSS400と同じと記載された板厚別機械的性質。
-- [日本製鉄・ステンレス冷延鋼板S008](https://www.nipponsteel.com/product/catalog_download/pdf/S008.pdf)：SUS304の機械的・物理的性質。
-- [日本アルミニウム協会・建材ガイド](https://www.aluminum.or.jp/fields/kenchiku/kenzai/guide/b/)：A5052P-H34の掲載板厚範囲。
-- [椿本チエイン・降伏点強度一覧](https://tt-net.tsubakimoto.co.jp/tecs/calc/kpl/calc_kpl_strength.asp?lang=jp&yp=b)：S45C熱処理別の参考値。
-- [SOLIDWORKS・ボルトの引張応力面積](https://help.solidworks.com/2018/english/solidworks/cworks/r_tensile_stress_area_bolt.htm)：近似式の定義。
-- [ミルコン・有効断面積](https://www.milcon.co.jp/data/pdf/product_2669.pdf)：公称断面積の表（PDF2頁）。
-- [ハードロック・ねじの構造](https://navi.hardlock.co.jp/column/%E3%81%AD%E3%81%98%E3%81%AE%E6%A7%8B%E9%80%A0%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/)：小径並目と大径細目の公称断面積。
+- 鋼の弾性定数は参考値です。SS400 の板厚別強度は JIS G 3101 の改正原案で確認しています。
+- SUS304 は冷延鋼板、A5052P-H34 は掲載板厚の範囲、S45C は熱処理条件別の参考値を使います。
+- ボルトの有効断面積は、公称断面積の表と近似式を区別します。
 
 確認日：2026年9月11日。
 
@@ -122,11 +117,9 @@ PointerCADの中で立体や部材の形を使って解析する場合は、下�
 
 結果は最大変位量、最大相当応力、荷重面積、荷重合力、支持反力の合計、ひずみエネルギー、相対つり合い残差です。最大値が入隅や点・線の拘束に接する要素にある場合や、収束が不十分な場合は「{{ui:solidAnalysis.warningsTitle}}」が出ます。均質な等方弾性材料・小変形の静解析で、部品間の接触や結合、塑性、疲労は含みません。
 
-「{{ui:strength.material}}」では、降伏点の出典にする材料と製品条件を選びます。選ぶと結果に「{{ui:solidAnalysis.yieldTitle}}」が出ます。これは降伏点または耐力を各要素の相当応力で割った参考値で、許容値や安全の合格を示すものではありません。ヤング率とポアソン比は材料を選んでも変わらず、入力した値で計算します。「{{ui:solidAnalysis.material.unselected}}」のままなら弾性解析だけで、降伏比は出ません。板厚の区分がある材料では「{{ui:strength.productThickness}}」をmmで入力します。範囲外の板厚では解析も保存もできません。選んだ材料の下に、掲載元、掲載箇所、規格と版、出典確認日、出典資料のSHA-256、リンクが出ます。
+「{{ui:strength.material}}」では、降伏点の出典にする材料と製品条件を選びます。選ぶと結果に「{{ui:solidAnalysis.yieldTitle}}」が出ます。これは降伏点または耐力を各要素の相当応力で割った参考値で、許容値や安全の合格を示すものではありません。ヤング率とポアソン比は材料を選んでも変わらず、入力した値で計算します。「{{ui:solidAnalysis.material.unselected}}」のままなら弾性解析だけで、降伏比は出ません。板厚の区分がある材料では「{{ui:strength.productThickness}}」をmmで入力します。範囲外の板厚では解析も保存もできません。選んだ材料の下に、材料条件の一般名と、確認できた規格番号・版が出ます。
 
-![材料条件と素材の板厚を選び、材料値の出典と適用範囲を表示した入力欄](images/strength-material-source-detail.png)
-
-「{{ui:solidAnalysis.save}}」は、選んだ材料の出典の情報も入力と一緒に保存します。アプリの出典資料や条件が更新された後に、その前に保存した文書を開くと、保存した材料値を新しい出典へ置き換えず、保存した出典をそのまま表示して「{{ui:solidAnalysis.material.stale}}」と知らせます。このままでは解析も保存もできません。材料と板厚を選び直すか、「{{ui:solidAnalysis.material.unselected}}」に戻してください。
+「{{ui:solidAnalysis.save}}」は、選んだ材料の出典の情報も入力と一緒に保存します。アプリの出典資料や条件が更新された後に、その前に保存した文書を開くと、保存した材料値を新しい出典へ置き換えず、保存に規格と一般名が残っていればそれらを表示し、「{{ui:solidAnalysis.material.stale}}」と知らせます。このままでは解析も保存もできません。材料と板厚を選び直すか、「{{ui:solidAnalysis.material.unselected}}」に戻してください。
 
 ### 固有振動と線形座屈
 

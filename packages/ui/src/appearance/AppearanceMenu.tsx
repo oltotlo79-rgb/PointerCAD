@@ -51,6 +51,7 @@ export function AppearanceMenu({
           className="pcad-button pcad-menu__trigger"
           aria-haspopup="true"
           aria-expanded={open}
+          data-menu-trigger=""
           onClick={() => {
             setOpen(!open);
           }}

@@ -1,5 +1,6 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
- * 資料 GF-2 のパイプ形のフレームの 3 族(1 本・溝つき・2 本つなぎ)の検査: 族の版と欄、行の名乗りと出どころ、形(包む形)の押し出しと名前、
+ * 資料 2 のパイプ形のフレームの 3 族(1 本・溝つき・2 本つなぎ)の検査: 族の版と欄、行の名乗りと出どころ、形(包む形)の押し出しと名前、
  * 体積は面積 × 長さ・質量は単位質量 × 長さ、外形、包む形の面積 × 密度が単位質量(実物の断面)を下回らない事、簡略の印と内側の扱い。
  * 製品が使う口(登録口が読む `PIPE_FRAME_FAMILIES` と、族が読む行の表 `PIPE_FRAME_RECORDS`)だけを通して確かめる。
  */
@@ -19,7 +20,7 @@ function rowOf(kind: (typeof KINDS)[number], key: string): CatalogItemRow {
   return row;
 }
 
-describe('資料 GF-2 のパイプ形のフレームの 3 族', () => {
+describe('資料 2 のパイプ形のフレームの 3 族', () => {
   it('族は種類ごとに 3 つで、版・欄・線図を凍結し、行は規格の行を名乗らず出どころは資料の番号と図の頁だけ', () => {
     // 欄は任意の留めの欄(miterOption.test.ts)を除いて凍結する。
     expect(KINDS.map((kind) => PIPE_FRAME_FAMILIES[kind]).map((family) => [family.id, family.group, family.kindKey, family.catalogRevision,
@@ -37,10 +38,10 @@ describe('資料 GF-2 のパイプ形のフレームの 3 族', () => {
     }
     const row = rowOf('single', 'pipe-28-standard');
     expect([row.size, row.standardLabel, row.materialLabel, row.densityMaterialId, row.verification, row.verified, row.simplified, row.note,
-      row.evidence.title, row.evidence.locator, row.evidence.sha256, row.evidence.url]).toEqual(['外径の呼び 28・標準', '製造元の寸法に合わせた物',
+      row.evidence.title, row.evidence.locator, row.evidence.reference]).toEqual(['外径の呼び 28・標準', '製造元の寸法に合わせた物',
       'アルミ', 'aluminum', 'manufacturer-catalog', true, ['外周の溝'],
       '形は簡略(外周の溝)。質量は単位質量の値。Ix・Iy・Zx・Zy は資料の値で、簡略の形から出す値とは違う',
-      '資料 GF-2 パイプ形のフレームの総合カタログ(製造元の寸法に合わせた物)', 'PDF 56 頁 断面の図と技術データ(寸法・単位質量・Ix・Iy・Zx・Zy)', '', '']);
+      '資料 2 パイプ形のフレームの総合カタログ(製造元の寸法に合わせた物)', 'PDF 56 頁 断面の図と技術データ(寸法・単位質量・Ix・Iy・Zx・Zy)', '']);
     expect(row.dims).toEqual({ series: 28, width: 28, height: 28, outerDiameter: 29.4, innerDiameter: 23, unitMassKgPerM: 0.37, ixCm4: 1.16,
       iyCm4: 1.16, zxCm3: 0.83, zyCm3: 0.83 });
   });

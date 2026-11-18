@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { t } from '../i18n/t.js';
-import { captureViewInput, captureViewKey, captureViewTouch, viewTriggerLabel, type ViewCaptureEvent } from './inputCapture.js';
+import { captureViewInput, captureViewKey, captureViewTouch, viewTriggerLabel } from './inputCapture.js';
 import { DEFAULT_VIEW_CONTROLS } from './viewControlSettings.js';
 
 /*
  * 設計 1-4・§7.1: 押下・ホイールの出来事 → 視点の入力(左で Alt 無しは断る)。キーの押下(B-08)は captureViewKey が
  * キーの組(矢印・テンキー・＋−)の入力にする(captureViewInput はキーを受けない)。
  */
+type ViewCaptureEvent = Parameters<typeof captureViewInput>[0];
 const event = (type: string, extra: Partial<ViewCaptureEvent> = {}): ViewCaptureEvent =>
   ({ type, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false, ...extra });
 const OFF = { alt: false, shift: false, ctrl: false, meta: false };
@@ -86,5 +87,21 @@ describe('取り込みの枠のタッチの指の操作(B-08h)', () => {
     expect(captureViewTouch(full, 'orbit', 'oneFinger')).toEqual({ status: 'captured', trigger: touch('oneFinger') });
     const one = { ...DEFAULT_VIEW_CONTROLS, bindings: { ...base, pan: [...base.pan, touch('twoFinger')] } };
     expect(captureViewTouch(one, 'pan', 'oneFinger')).toEqual({ status: 'captured', trigger: touch('oneFinger') });
+  });
+});
+
+describe('ペンの取り込み(B-09 3-4)', () => {
+  it('ペンの側面のボタン・消しゴムの端は、マウスの右ボタンと別の入力として取り込み、札も別に出す', () => {
+    const barrel = captureViewInput(event('pointerdown', { button: 2, pointerType: 'pen' }));
+    expect(barrel).toEqual({ status: 'captured', trigger: { kind: 'drag', button: 'penBarrel', ...OFF } });
+    expect(captureViewInput(event('pointerdown', { button: 5, pointerType: 'pen', shiftKey: true })))
+      .toEqual({ status: 'captured', trigger: { kind: 'drag', button: 'penEraser', ...OFF, shift: true } });
+    expect(captureViewInput(event('pointerdown', { button: 2, pointerType: 'mouse' })))
+      .toEqual({ status: 'captured', trigger: { kind: 'drag', button: 'right', ...OFF } });
+    expect(captureViewInput(event('pointerdown', { button: 5, pointerType: 'mouse' }))).toEqual({ status: 'ignored' });
+    // ペン先(button 0)は左ボタンと同じで、Alt が無ければ断る。
+    expect(captureViewInput(event('pointerdown', { button: 0, pointerType: 'pen' }))).toEqual({ status: 'refused', reason: 'left-needs-alt' });
+    if (barrel.status !== 'captured') throw new Error('取り込めませんでした');
+    expect(viewTriggerLabel(barrel.trigger)).toBe(t('settings.camera.chip.penBarrel'));
   });
 });

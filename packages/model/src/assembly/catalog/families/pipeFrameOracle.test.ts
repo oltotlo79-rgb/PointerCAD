@@ -1,5 +1,5 @@
 /**
- * 資料 GF-2 のパイプ形のフレームの製品の行(pipeFrameRows.ts。一致した読みの 1 つ目の値)が、全部、一致した読みの 2 つ目の文字
+ * 資料 2 のパイプ形のフレームの製品の行(pipeFrameRows.ts。一致した読みの 1 つ目の値)が、全部、一致した読みの 2 つ目の文字
  * (pipeFrameOracle.fixture.json。読みの文字のまま)と 1 行ずつ一致する事の検査。fixture の文字は、この検査が自分で読み解く
  * (行の表を作る道具の読み解きと別にする)。2 本つなぎの 1 本の高さ(外形の高さ − 中心の間)と、溝つきの鎖寸法の足し上げも、文字から確かめる。
  * fixture は JSON のファイルで、この検査がファイルとして読む(アプリのモジュールを持たない)。
@@ -51,7 +51,7 @@ function cellsOf(key: string): Cells {
 const SOLID_INSIDE = '内側の形（中実で作った）';
 const SLOT_NOT_MADE = '下の面の溝（溝底の位置が四角の簡略の形で決まらないため作っていない）';
 
-describe('資料 GF-2 のパイプ形のフレームの製品の行と 2 つ目の読み', () => {
+describe('資料 2 のパイプ形のフレームの製品の行と 2 つ目の読み', () => {
   it('製品の行と fixture の行は同じ鍵の並びで、型番の形の文字を持たない', () => {
     expect(FIXTURE.map((row) => row.key)).toEqual(PIPE_FRAME_RECORDS.map((record) => record.key));
     for (const row of FIXTURE) expect(JSON.stringify(row), row.key).not.toMatch(/[A-Z]{2,}-[0-9]/u);

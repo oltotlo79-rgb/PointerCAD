@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-20 巻きブシュ(内径 3〜28)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の wrappedBush)の突合せ、
  * 寸法の整合と形の体積の検査。fixture は PDF の文字の流れから、製品の表(頁の画像から読んだ 1 回目)を見ずに作った。
@@ -36,12 +37,12 @@ describe('M-20 巻きブシュ 資料の表との突合せ', () => {
     }
   });
 
-  it('出どころは資料の PDF の SHA-256 と頁を持ち、全ての行が同じ出どころを指す', () => {
-    expect(WRAPPED_BUSH_EVIDENCE.sha256).toBe(WRAPPED_BUSH_ORACLE.pdfSha256);
+  it('出どころは資料の 資料の番号 と頁を持ち、全ての行が同じ出どころを指す', () => {
+    expect(WRAPPED_BUSH_EVIDENCE.reference).toBe(WRAPPED_BUSH_ORACLE.reference);
     expect(WRAPPED_BUSH_EVIDENCE.locator).toContain(`PDF ${WRAPPED_BUSH_ORACLE.page} 頁`);
     // 出どころの欄は資料の番号・SHA・頁だけ(URL と発行元は製品に書かない)。
     expect(WRAPPED_BUSH_EVIDENCE.title.startsWith('資料 K4-3 ')).toBe(true);
-    expect(WRAPPED_BUSH_EVIDENCE.url).toBe('');
+    expect(WRAPPED_BUSH_EVIDENCE).not.toHaveProperty('url');
     expect(WRAPPED_BUSH_ROWS.every((row) => row.evidence === WRAPPED_BUSH_EVIDENCE
       && row.verification === 'manufacturer-catalog' && row.verified && row.note === '')).toBe(true);
   });

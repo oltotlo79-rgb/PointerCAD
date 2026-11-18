@@ -1,7 +1,7 @@
 /**
  * 族: 平行ピン JIS B 1354:2012(呼び径 0.6〜50)。M-09(設計 §2.3)。
  *
- * 呼び径 d と面取り c(約)は、規格の抜粋の頁(下の `PARALLEL_PIN_EVIDENCE`、PDF の SHA-256 と頁を記録)の 2012 年の表を、
+ * 呼び径 d と面取り c(約)は、規格の抜粋の頁(下の `PARALLEL_PIN_EVIDENCE`、資料の番号 と頁を記録)の 2012 年の表を、
  * 頁の画像から読んだ 1 回目の転記。2 回目の独立の読み(文字の流れから)は catalogOracles.fixture.ts の parallelPin で、検査が照らす。
  * 材料は同じ頁の改正年度対照表の 2012 年の行(鋼、ステンレス〔JIS B 1054-1 の A1〕)から、質量に使う密度の材質を分ける
  * (行は材料 × 呼び径。硬化処理の有無・公差域クラス m6/h8 は形と質量に関わらないので分けない)。
@@ -18,14 +18,13 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildPinPart, pinVolume } from '../profiles/pin.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const PARALLEL_PIN_EVIDENCE = {
   title: '資料 K4-4 平行ピンの規格の抜粋(JIS B 1354 の新旧の表)',
   edition: '2012',
-  url: '',
+
   locator: 'PDF 1 頁(冊子 242 頁): JIS B 1354-2012 の表の呼び径 d・c(約)、改正年度対照表の 2012 年の材料',
-  sha256: 'a504c54f1c2a59acae3e3c309de11f2fa5e7b7661112469d816b67c9afba912c',
-  fetchedDate: '2026-11-14',
+  reference: 'K4-4',
 } as const;
 
 /** [呼び径 d, 面取り c(約)](mm)。JIS B 1354-2012 の表の順。 */

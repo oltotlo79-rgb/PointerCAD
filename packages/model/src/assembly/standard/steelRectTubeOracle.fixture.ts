@@ -1,10 +1,10 @@
-/** Independent literal transcription of JISF G 3466 draft 2024-12-20 table 5 (square) and table 6 (rectangle).
- * PDF SHA-256: ce00863b95e73a2dd116459bf75595ac6a21779961406cef8d149791af012752.
+/** Independent literal transcription of JIS G 3466 draft 2024-12-20 table 5 (square) and table 6 (rectangle).
+ * PDF SHA-256: JIS G 3466 原案 2024-12-20.
  * Second reading from the PDF text-stream order, made without reading the product table. No application imports.
  * Printed precision is retained as strings: [A, B, t, unit mass W kg/m, area s cm2, PDF page, table].
  */
 export const RECT_TUBE_ORACLE = {
-  pdfSha256: 'ce00863b95e73a2dd116459bf75595ac6a21779961406cef8d149791af012752',
+  reference: 'JIS G 3466 原案 2024-12-20',
   rows: [
   ['40', '40', '1.6', '1.88', '2.392', 9, '表5'],
   ['40', '40', '2.3', '2.62', '3.332', 9, '表5'],

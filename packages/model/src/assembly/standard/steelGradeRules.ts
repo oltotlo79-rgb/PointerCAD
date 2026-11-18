@@ -71,7 +71,7 @@ const s45cBrightCondition = {
 
 /**
  * Complete 3 grades x 6 families: 8 allowed, 10 denied. No grade substitution.
- * JISF draft evidence is provisional; read each referenced ledger verification before display.
+ * JIS draft evidence is provisional; read each referenced ledger verification before display.
  * Existing S45C bright bars remain allowed, with the missing G 3123 text explicitly recorded.
  */
 export const STEEL_GRADE_RULES = {

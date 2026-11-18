@@ -1,10 +1,10 @@
-/** Independent literal transcription of JISF G 3350 draft 2020-12-02 tables 5-10 (light gauge steel sections, SSC400).
- * PDF SHA-256: 386086a3b2af48d82e049f1bbdb1a6a187721eb156acdd4c2c9e8927bca26fe5.
+/** Independent literal transcription of JIS G 3350 draft 2020-12-02 tables 5-10 (light gauge steel sections, SSC400).
+ * PDF SHA-256: JIS G 3350 原案 2020-12-02.
  * Second reading from the PDF text-stream order, made without reading the product table. No application imports.
  * Printed precision is retained as strings: [table, designation code, dimensions as printed, t, area cm2, unit mass kg/m, PDF page].
  */
 export const LIGHT_GAUGE_ORACLE = {
-  pdfSha256: '386086a3b2af48d82e049f1bbdb1a6a187721eb156acdd4c2c9e8927bca26fe5',
+  reference: 'JIS G 3350 原案 2020-12-02',
   rows: [
   ['表5', '1618', '450×75×75', '6.0', '34.82', '27.3', 6],
   ['表5', '1617', '450×75×75', '4.5', '26.33', '20.7', 6],

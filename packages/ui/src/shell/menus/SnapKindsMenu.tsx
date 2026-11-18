@@ -83,6 +83,7 @@ export function SnapKindsMenu({
         aria-haspopup="true"
         aria-expanded={open}
         aria-disabled={!snapEnabled}
+        data-menu-trigger=""
         onClick={() => {
           // 吸着が切のときは種別を選ぶ意味がないので開かない(NFR-UX-5)。
           if (snapEnabled) {

@@ -1,5 +1,5 @@
 /**
- * 族: 資料 SF-1 の、溝に入れる小物のうち 8 回目の記入のままの読み 2 本で形の値が決まった物(3 族。統括の決定 2026-11-18 07:5x・08:3x の 2)。
+ * 族: 資料 1 の、溝に入れる小物のうち 8 回目の記入のままの読み 2 本で形の値が決まった物(3 族。統括の決定 2026-11-18 07:5x・08:3x の 2)。
  * 製造元の名前・型番は書かない(呼びは合う溝幅・外形の寸法・ねじの呼び)。
  *
  * - ジョイントバー: 首の高さ(頭の厚さ)の寸法線が資料に無く、断面が別の品と共通の記載も無いので、頭の幅 × 全厚 × 長さの箱で包み
@@ -71,8 +71,8 @@ function rowOf(record: FittingBase, dims: Readonly<Record<string, number>>): Cat
     materialLabel: MATERIALS[record.material],
     densityMaterialId: record.material,
     dims: { slot: record.slot, massG: record.massG, ...dims },
-    evidence: { title: '資料 SF-1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null, url: '',
-      locator: `PDF ${record.page} 頁 部品の図(寸法)と質量の記入`, sha256: '', fetchedDate: '' },
+    evidence: { title: '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null,
+      locator: `PDF ${record.page} 頁 部品の図(寸法)と質量の記入`, reference: '' },
     verification: 'manufacturer-catalog',
     verified: true,
     note: `形は簡略(${record.simplified.join('・')})。質量は資料の 1 個の値`,

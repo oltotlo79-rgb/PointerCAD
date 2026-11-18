@@ -3,11 +3,12 @@ import { executeCommand } from '../commands/commandRegistry.js';
 import { toolbarCommandId } from '../commands/toolbarCommandCatalog.js';
 import { currentCommandLabel } from '../commands/commandLabels.js';
 import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
 import { HelpButton } from '../help/HelpButton.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { CubeIcon, OpenFileIcon, SaveIcon, UndoIcon, RedoIcon } from '../shell/icons.js';
 import { ToolMenu } from '../shell/menus/ToolMenu.js';
 import { SavePointsDialogHost } from '../shell/SavePointsButton.js';
@@ -24,6 +25,9 @@ export function DrawingToolbar(): React.JSX.Element {
   };
   const assignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
   const [copies, setCopies] = useState('1');
+  const printRef = useRef<HTMLElement>(null);
+  // 印刷の窓: 開いた時は中の最初の欄へ、閉じた時は開いた釦へ焦点を戻す(C-03)。
+  useDialogFocus(() => printRef.current, panel === 'print');
   const busy = useAppStore((state) => state.drawingBusy);
   const canUndo = useAppStore((state) => state.canUndo), canRedo = useAppStore((state) => state.canRedo);
   const sourceKind = useAppStore((state) => state.drawing?.source.sourceKind);
@@ -73,7 +77,7 @@ export function DrawingToolbar(): React.JSX.Element {
     </header>
     <SavePointsDialogHost />
     {panel === 'export' ? <DrawingExportPopover onClose={() => setPanel(null)} /> : null}
-    {panel === 'print' ? <section className="pcad-popover pcad-drawing-print" role="dialog" aria-label={t('drawing.print.title')}
+    {panel === 'print' ? <section ref={printRef} className="pcad-popover pcad-drawing-print" role="dialog" aria-label={t('drawing.print.title')}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setPanel(null); } }}>
       <DraggableWindowTitle as="h3">{t('drawing.print.title')}</DraggableWindowTitle>
       <label title={t('drawing.print.copies.controlHint')}>{t('drawing.print.copies')}<input className="pcad-field__input" aria-label={t('drawing.print.copies')} value={copies} inputMode="numeric"

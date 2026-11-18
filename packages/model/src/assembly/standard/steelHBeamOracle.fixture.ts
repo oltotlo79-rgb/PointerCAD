@@ -1,6 +1,5 @@
-/** Independent literal transcription of JISF G 3192 draft 2024-07-24 table 15.
- * PDF SHA-256: ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa.
- * Transcript SHA-256: 0dd545f1de1aa71d19f13b7e78ea75ef12a4f98107ea3d38636ce103024cbe55.
+/** Independent literal transcription of JIS G 3192 draft 2024-07-24 table 15.
+ * PDF SHA-256: JIS G 3192 原案 2024-07-24.
  * No application imports. Printed precision is retained as strings.
  * Flange classification is secondary reference for test selection, not a printed JIS category.
  */
@@ -63,8 +62,8 @@ export const H_BEAM_PRINTED = [
 
 function hBeam(row: typeof H_BEAM_PRINTED[number]) {
   const [h, b, tw, tf, r, area, mass, series, flange, id, starMark, added, pdfPage] = row;
-  const citation = { url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
-    locator: `JISF G 3192 原案 表15, 2024-07-24 PDF p${pdfPage} ${id}; ${H_BEAM_TRANSCRIPT}` };
+  const citation = { reference: 'JIS G 3192',
+    locator: `JIS G 3192 原案 表15, 2024-07-24 PDF p${pdfPage} ${id}; ${H_BEAM_TRANSCRIPT}` };
   const source = <T>(value: T) => ({ kind: 'source' as const, value, citation });
   const computed = (value: number, formula: string) => ({ kind: 'computed' as const, value, formula, citation });
   const polygon = tw * (h - 2 * tf) + 2 * b * tf;

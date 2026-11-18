@@ -1,9 +1,10 @@
-import { attachUnsavedChangesGuard, PointerCadApp, setFileGateway, t, type CloseRequestTarget } from '@pointercad/ui';
+import { attachUnsavedChangesGuard, PointerCadApp, setFileGateway, setSixDofAccess, t, type CloseRequestTarget } from '@pointercad/ui';
 import '@pointercad/ui/style.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { createDesktopFileGateway } from './desktopFileGateway.js';
+import { createDesktopSixDofAccess } from './desktopSixDofAccess.js';
 
 const container = document.getElementById('root');
 if (container === null) {
@@ -40,6 +41,13 @@ if (isCloseRequestTarget(desktopApi)) {
   const stopUnsavedChangesGuard = attachUnsavedChangesGuard(desktopApi);
   import.meta.hot?.dispose(stopUnsavedChangesGuard);
 }
+
+/*
+ * 3D マウス(多軸の入力機器)の印の口(B-09 3-5)。preload の 3 つの口がそろっている時だけ入れる。入にできるのは、
+ * 本体が出す OS の確かめの窓で利用者が許可した時だけ(画面から入の値は渡せない)。
+ */
+const sixDofAccess = createDesktopSixDofAccess();
+if (sixDofAccess !== null) setSixDofAccess(sixDofAccess);
 
 createRoot(container).render(
   <StrictMode>

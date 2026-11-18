@@ -1,3 +1,4 @@
+// 規格資料の出典は規格番号と一般名で照合する。
 /**
  * M-02 六角穴付きボルト(JIS B 1176-2014)の表と、資料の 2 回目の独立の読み(catalogOracles.fixture.ts の socketHeadCapScrew)の突合せ、
  * 今の規格部品の表(M3〜M20)との照合、ねじの表との照合、形の体積の検査。
@@ -51,10 +52,10 @@ describe('M-02 六角穴付きボルト 資料の表との突合せ', () => {
   });
 
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結し、体積は 頭 + 軸 − 六角穴', () => {
-    expect(SOCKET_HEAD_CAP_SCREW_EVIDENCE.sha256).toBe(SOCKET_HEAD_CAP_SCREW_ORACLE.pdfSha256);
+    expect(SOCKET_HEAD_CAP_SCREW_EVIDENCE.reference).toBe(SOCKET_HEAD_CAP_SCREW_ORACLE.reference);
     expect(SOCKET_HEAD_CAP_SCREW_EVIDENCE.locator).toContain('PDF 1〜2 頁');
     expect(SOCKET_HEAD_CAP_SCREW_EVIDENCE.title.startsWith('資料 K5-4 ')).toBe(true);
-    expect(SOCKET_HEAD_CAP_SCREW_EVIDENCE.url).toBe('');
+    expect(SOCKET_HEAD_CAP_SCREW_EVIDENCE).not.toHaveProperty('url');
     expect([SOCKET_HEAD_CAP_SCREW_FAMILY.id, SOCKET_HEAD_CAP_SCREW_FAMILY.catalogRevision, SOCKET_HEAD_CAP_SCREW_FAMILY.generatorRevision])
       .toEqual(['socket-head-cap-screw', 'socket-head-cap-screw-2026-11-r1', 'socket-head-screw-1']);
     for (const row of SOCKET_HEAD_CAP_SCREW_ROWS) {

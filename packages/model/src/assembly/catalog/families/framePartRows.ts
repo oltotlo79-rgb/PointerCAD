@@ -1,5 +1,5 @@
 /**
- * 生成物(手で直さない): 資料 SF-1 の部品(T 溝用ナットの素材・T 溝用ナット・丸ナット・端のキャップ・平板のブラケット)のうち、2 回の独立の読みで
+ * 生成物(手で直さない): 資料 1 の部品(T 溝用ナットの素材・T 溝用ナット・丸ナット・端のキャップ・平板のブラケット)のうち、2 回の独立の読みで
  * 形を作るのに要る欄が全部一致した行だけの表(3 つ目の確かめを足した後は、互いに独立な読みのうち 2 つ以上が △ 無しで一致した欄)。
  * 担当の道具 compare_parts.py が、欄ごとに一致した読みの 1 つ目の値から書いた(一致した読みの 2 つ目の文字は同じ道具が
  * fixture `framePartOracle.fixture.json` に文字のまま書き、検査が 1 行ずつ照らす)。製造元の名前・型番は書かない。
@@ -779,6 +779,12 @@ export const FOOT_BASE_RECORDS: readonly FootBaseRecord[] = [
   { key: 'foot-38x38x12-h4-d5.5-steel', size: 'フットベース 38×38×12（取付け穴 4・φ5.5・鋼）', slot: 0, material: 'steel', page: 74, kind: 'フットベース',
     width: 38, depth: 38, thickness: 12, holes: [[9, 9, 5.5], [9, 29, 5.5], [29, 9, 5.5], [29, 29, 5.5]], massG: null,
     simplified: ['アジャスターのめねじ', '取付け穴の座ぐり'] },
+  { key: 'foot-38x38x12-l19x19-h2-d5.5-stainless', size: 'フットベース 38×38×12（L 形・取付け穴 2・φ5.5・ステンレス）', slot: 0, material: 'stainless',
+    page: 74, kind: 'フットベース', width: 38, depth: 38, thickness: 12, outline: [[0, 0], [38, 0], [38, 19], [19, 19], [19, 38], [0, 38]],
+    holes: [[9, 29, 5.5], [29, 9, 5.5]], massG: 81, simplified: ['アジャスターのめねじ', '取付け穴の座ぐり'] },
+  { key: 'foot-38x38x12-l19x19-h2-d5.5-steel', size: 'フットベース 38×38×12（L 形・取付け穴 2・φ5.5・鋼）', slot: 0, material: 'steel', page: 74,
+    kind: 'フットベース', width: 38, depth: 38, thickness: 12, outline: [[0, 0], [38, 0], [38, 19], [19, 19], [19, 38], [0, 38]],
+    holes: [[9, 29, 5.5], [29, 9, 5.5]], massG: 81, simplified: ['アジャスターのめねじ', '取付け穴の座ぐり'] },
   { key: 'foot-39x19x9-h2-d5.5-stainless', size: 'フットベース 39×19×9（取付け穴 2・φ5.5・ステンレス）', slot: 0, material: 'stainless', page: 74,
     kind: 'フットベース', width: 39, depth: 19, thickness: 9, holes: [[9.5, 9.5, 5.5], [29.5, 9.5, 5.5]], massG: null,
     simplified: ['アジャスターのめねじ', '取付け穴の座ぐり'] },

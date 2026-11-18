@@ -2583,7 +2583,8 @@ describe('作り直しの基準: 場面の 100 回の生成と破棄、選択・
  * 作り直しの前の版(createViewportScene が 1 つの関数だった時)で数えた、1 回の寿命で描いた場面から辿れる
  * 形・材質・画像の数(owned)、前の寿命から残った物(shared)、作って返さなかった形(constructedUnreturned)。
  */
-const BASELINE_SCENE_LIFETIME_COUNTS = { owned: 112, shared: 0, constructedUnreturned: 0 };
+// 内訳: 前の版の 112 + 一筆書きの層(createFrameStrokeLayer)の lines・dots の形 2 と材質 2 = 116。接合チェック・伸縮の予告・穴の当たりの層は中身が無い時に場面へ何も置かないので 0。
+const BASELINE_SCENE_LIFETIME_COUNTS = { owned: 116, shared: 0, constructedUnreturned: 0 };
 
 const NO_SCENE_HIT = { body: null, face: null, component: null };
 const FACE_HIT = { body: 'face', face: { faceIndex: 0, featureId: 'face' }, component: null };

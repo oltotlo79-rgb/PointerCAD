@@ -1,7 +1,7 @@
 /**
  * 族: 六角穴付き止めねじ JIS B 1177-2007(M2〜M24)。M-04(設計 §2.3)。先の形(くぼみ先・平先・棒先・とがり先)ごとに 1 つの族にする。
  *
- * 寸法は資料 K5-4(規格の抜粋の資料、PDF の SHA-256 と頁を下の出どころの欄に記録)の規格寸法の表の
+ * 寸法は資料 K5-4(規格の抜粋)の規格寸法の表の
  * ピッチ P・s(呼び)・t(最小)の 1 欄と 2 欄・dz(最大)・dp(最大)・z(最大)・dt(最大)と、在庫表の
  * 太線枠(JIS で推奨する長さの範囲)・網かけ(t の 1 欄、棒先の短い z、とがり先の 120° を当てる長さ)を、頁の画像から読んだ 1 回目の転記。
  * 2 回目の独立の読み(規格寸法の表は語の位置、網かけは頁の画素、太線枠は線から)は catalogOracles.fixture.ts の setScrew で、検査が照らす。
@@ -15,15 +15,14 @@ import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildSetScrewPart, setScrewVolume, type SetScrewDimensions, type SetScrewPoint } from '../profiles/setScrew.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 
-/** 出どころの欄は資料の番号・SHA-256・頁だけを持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
+/** 出どころの欄は資料の番号・頁を持つ(資料の URL と発行元は製品に書かない。担当の資料の記録に置く)。 */
 const SET_SCREW_EVIDENCE = {
   title: '資料 K5-4 六角穴付き止めねじの規格の抜粋(JIS B 1177-2007)',
   edition: '2007',
-  url: '',
+
   locator: 'PDF 28 頁(冊子 87 頁)規格寸法の表: d・P・s(呼び)・t(最小)1 欄と 2 欄・dz(最大)・dp(最大)・z(最大)・dt(最大)、'
     + 'PDF 29〜30 頁(冊子 88〜89 頁)在庫表: 太線枠(JIS で推奨する長さの範囲)と網かけ(t の 1 欄・短い棒先・とがり先 120° を当てる長さ)',
-  sha256: '908dc5efd20f7d017641ad4d2e0e6c53082687067dcd152d42f3986168312d71',
-  fetchedDate: '2026-11-16',
+  reference: 'K5-4',
 } as const;
 
 type SetScrewPointKind = 'cup' | 'flat' | 'dog' | 'cone';

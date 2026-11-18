@@ -83,3 +83,81 @@ describe('視点を動かす間の作図入力の所有権', () => {
     },
   );
 });
+
+describe('何も当たらない所からの左ドラッグで回す(B-09 3-3)', () => {
+  /** 選択の道具・何も無い文書で、選択 ['x'] から始める。leftEmptyOrbit が undefined なら欄の無い既定の設定。 */
+  function setup(leftEmptyOrbit: boolean | undefined) {
+    resetTestStore();
+    useAppStore.setState({ activeTool: 'select', selectionKind: 'body', selection: ['x'] });
+    const captured = new Set<number>();
+    const canvas = Object.assign(new EventTarget(), {
+      clientHeight: 600,
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+      setPointerCapture: (id: number) => { captured.add(id); },
+      hasPointerCapture: (id: number) => captured.has(id),
+      releasePointerCapture: (id: number) => { captured.delete(id); },
+      focus: vi.fn(),
+    }) as unknown as HTMLCanvasElement;
+    const scene = { worldToScreen: (point: readonly [number, number, number]) => [point[0], point[1]] as const,
+      screenToPlanePoint: (x: number, y: number) => [x, y, 0] as const } as unknown as ViewportScene;
+    const settings: ViewControlSettings = leftEmptyOrbit === undefined ? DEFAULT_VIEW_CONTROLS
+      : { ...DEFAULT_VIEW_CONTROLS, options: { ...DEFAULT_VIEW_CONTROLS.options, leftEmptyOrbit } };
+    const controls = attachCameraControls(canvas, () => {}, undefined, undefined, () => settings);
+    const sketch = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging(), undefined,
+      (event, onClick) => controls.beginEmptyLeftDrag(event, onClick));
+    const send = (type: string, props: object = {}): void => {
+      canvas.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), {
+        pointerId: 1, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1,
+        clientX: 0, clientY: 0, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false, ...props,
+      }));
+    };
+    return { controls, send, detach: () => { sketch.detach(); controls.detach(); } };
+  }
+
+  it('既定(欄が無い・切)では今の動きのまま: 押した時に選択を解き、動かしても回さない', () => {
+    for (const option of [undefined, false]) {
+      const { controls, send, detach } = setup(option);
+      const orbit = controls.getOrbit();
+      send('pointerdown');
+      expect(useAppStore.getState().selection).toEqual([]);
+      send('pointermove', { clientX: 40, clientY: 30 });
+      send('pointerup', { clientX: 40, clientY: 30 });
+      expect(controls.getOrbit()).toEqual(orbit);
+      detach();
+    }
+  });
+
+  it('入れた時は、押した時に選択を解かず、6px を超えて動かすと回し、離しても選択はそのまま', () => {
+    const { controls, send, detach } = setup(true);
+    const orbit = controls.getOrbit();
+    send('pointerdown');
+    expect(useAppStore.getState().selection).toEqual(['x']);
+    expect(controls.isDragging()).toBe(true);
+    send('pointermove', { clientX: 4, clientY: 3 });
+    expect(controls.getOrbit()).toEqual(orbit);
+    send('pointermove', { clientX: 40, clientY: 30 });
+    expect(controls.getOrbit()).not.toEqual(orbit);
+    send('pointerup', { clientX: 40, clientY: 30 });
+    expect(controls.isDragging()).toBe(false);
+    expect(useAppStore.getState().selection).toEqual(['x']);
+    detach();
+  });
+
+  it('入れた時でも、動かさずに(6px 以内で)離すと今までどおり選択を解く。Shift で押した時は預けず、回さない', () => {
+    const click = setup(true);
+    const orbit = click.controls.getOrbit();
+    click.send('pointerdown');
+    click.send('pointerup', { clientX: 3, clientY: 2 });
+    expect(useAppStore.getState().selection).toEqual([]);
+    expect(click.controls.getOrbit()).toEqual(orbit);
+    click.detach();
+    const shift = setup(true);
+    shift.send('pointerdown', { shiftKey: true });
+    expect(shift.controls.isDragging()).toBe(false);
+    shift.send('pointermove', { clientX: 40, clientY: 30, shiftKey: true });
+    shift.send('pointerup', { clientX: 40, clientY: 30, shiftKey: true });
+    expect(shift.controls.getOrbit()).toEqual(orbit);
+    expect(useAppStore.getState().selection).toEqual(['x']);
+    shift.detach();
+  });
+});

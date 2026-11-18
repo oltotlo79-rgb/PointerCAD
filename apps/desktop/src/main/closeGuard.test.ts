@@ -83,6 +83,8 @@ vi.mock('electron', () => ({
     isPackaged: true,
     commandLine: { getSwitchValue: vi.fn(() => ''), appendSwitch: vi.fn() },
     whenReady: () => Promise.resolve(),
+    // main.ts が 3D マウスの印の置き場所を渡す時に読む(組み込みそのものは下の sixDofAccess の偽物)。
+    getPath: vi.fn((name: string) => `C:/fake-${name}`),
     on: (name: string, listener: (...args: unknown[]) => void) => { native.appListeners.on(name, listener); },
     once: (name: string, listener: (...args: unknown[]) => void) => { native.appListeners.once(name, listener); },
     quit: vi.fn(),
@@ -101,6 +103,8 @@ vi.mock('./appProtocol.js', () => ({
 }));
 vi.mock('./pcadDialogs.js', () => ({ PCAD_PRINT_CHANNEL: 'pcad:print', registerPcadIpc: vi.fn() }));
 vi.mock('./sessionPermissions.js', () => ({ denyBrowserPermissions: vi.fn() }));
+// 3D マウスの例外の組み込み(B-09 3-5)は mainSecurity.test.ts と sixDof*.test.ts が確かめる。ここでは閉じる確認だけを見る。
+vi.mock('./sixDofAccess.js', () => ({ installSixDofAccess: vi.fn() }));
 vi.mock('./occtHttpTransport.js', () => ({ createOcctHttpTransport: () => ({
   prepare: native.prepareOcctTransport, close: native.closeOcctTransport,
 }) }));

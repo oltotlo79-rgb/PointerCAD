@@ -1,7 +1,8 @@
 import { parseFailure as fail } from './codedFailure.js';
-import { readComponentSource } from './codecs/componentSource.js';
+import { canonicalSteelOptions, readComponentSource } from './codecs/componentSource.js';
 import { readJointOccurrenceConnections, serializeJointOccurrenceConnections } from './codecs/jointOccurrenceConnections.js';
 import { readBoltedJointRecords, serializeBoltedJointRecords } from './codecs/boltedJointRecords.js';
+import { assertFrameJointsVersion, hasFrameJointsField, readFrameJointRecords, serializeFrameJointRecords } from './codecs/frameJointRecords.js';
 /**
  * アセンブリ文書と `.pcada` の `document.json` の相互変換
  * (要件§8、FR-801)。
@@ -164,7 +165,7 @@ function serializeComponentSource(source: ComponentSource): ComponentSource {
         kind: 'standardPart',
         catalog: source.catalog,
         size: source.size,
-        options: serializeStandardOptions(source.options),
+        options: serializeStandardOptions(canonicalSteelOptions(source)),
         catalogRevision: source.catalogRevision,
         generatorRevision: source.generatorRevision,
       };
@@ -340,6 +341,7 @@ function serializeBomSettings(bom: BomSettings): BomSettings {
 
 /** アセンブリ文書を決まった順で組み立てる。 */
 function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocument {
+  assertFrameJointsVersion(document);
   if (document.jointOccurrenceConnections !== undefined && document.schemaVersion < 21) {
     throw new RangeError('Persisted joint occurrence provenance requires document schema 21');
   }
@@ -359,6 +361,10 @@ function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocu
     // Bolted-joint edit records. Omitted when empty so files without them keep their exact bytes.
     ...(document.boltedJoints === undefined || document.boltedJoints.length === 0 ? {} : {
       boltedJoints: serializeBoltedJointRecords(document.boltedJoints, document.components),
+    }),
+    // フレームどうしの接続の記録(E-07)。空の時は書かない(記録を使わないファイルの形を変えない)。
+    ...(document.frameJoints === undefined || document.frameJoints.length === 0 ? {} : {
+      frameJoints: serializeFrameJointRecords(document.frameJoints),
     }),
     components: document.components.map(serializeComponent),
     mates: document.mates.map(serializeMate),
@@ -1129,6 +1135,9 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
       ? readBoltedJointRecords(record.value['boltedJoints'], components.value, joinPath(path, 'boltedJoints'))
       : { ok: true, value: undefined };
   if (!boltedJoints.ok) return boltedJoints;
+  const frameJoints = Object.hasOwn(record.value, 'frameJoints')
+    ? readFrameJointRecords(record.value['frameJoints'], joinPath(path, 'frameJoints')) : undefined;
+  if (frameJoints !== undefined && !frameJoints.ok) return frameJoints;
   const mechanismCouplings: Checked<readonly MechanismGearCoupling[] | undefined> =
     record.value['mechanismCouplings'] === undefined ? { ok: true, value: undefined }
       : readList(record.value, 'mechanismCouplings', path, readMechanismCoupling);
@@ -1176,6 +1185,7 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
       schemaVersion: schemaVersion.value,
       ...(occurrenceConnections.value === undefined ? {} : { jointOccurrenceConnections: occurrenceConnections.value }),
       ...(boltedJoints.value === undefined ? {} : { boltedJoints: boltedJoints.value }),
+      ...(frameJoints === undefined ? {} : { frameJoints: frameJoints.value }),
       ...(beamAnalysisInputs.value === undefined ? {} : { beamAnalysisInputs: beamAnalysisInputs.value }),
       components: components.value,
       mates: mates.value,
@@ -1497,6 +1507,9 @@ function decodeFile(raw: unknown): ReadAssemblyDocumentResult {
       'unsupportedNewVersion',
       `このファイルは新しい版の PointerCAD で保存されています(版 ${String(schema.value)})。アプリを更新してください。`,
     );
+  }
+  if (schema.value < 23 && hasFrameJointsField(raw['document'])) {
+    return fail('notPcad', 'フレームの接続の記録を読むには保存形式の版23が必要です。');
   }
   if (schema.value < PCAD_SCHEMA_VERSION) {
     // 移行先(`SCHEMA_MIGRATIONS[schema.value]`)が無い版(例: 版 1)は、この時点では

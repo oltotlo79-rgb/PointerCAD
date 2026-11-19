@@ -1454,7 +1454,8 @@ describe('作り直しの基準: 装着と破棄の資源の差、選択・ド�
   });
 });
 
-const SERIES_RENDER = 'render[{},"perspective","shadedWithEdges",true,100]';
+// 配置の補助 P-C(方眼の幅と数)で、描画に方眼の設定(既定は自動)を 6 番目に渡すようにした(scene への受け渡しが 1 つ増えた)。
+const SERIES_RENDER = 'render[{},"perspective","shadedWithEdges",true,100,{"mode":"auto","stepMm":10,"count":20}]';
 /**
  * 作り直しの前の版(ViewportCanvas が 1 つの関数だった時)で記録した、選択・ドラッグ・取消の系列の
  * ストアの更新と scene への受け渡しの並び。作り直しの後もこの期待を変えずに通ることを、境界を動かしても

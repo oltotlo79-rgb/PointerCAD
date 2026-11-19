@@ -122,6 +122,21 @@ describe('資料 1 の小さい溝つきフレーム・端のキャップ・ブ�
       expect(SMALL_FRAME_RECORDS.some((frame) => record.key === `cap-${frame.key}`), record.key).toBe(true);
     }
   });
+
+  it('端のキャップの行は合うフレームの行の鍵を 1 つ持ち、そのフレームと外形の幅・高さが同じ(外形が同じで溝の違うフレームを鍵で分ける)', () => {
+    for (const record of SMALL_FRAME_CAP_RECORDS) {
+      const frame = SMALL_FRAME_RECORDS.find((candidate) => candidate.key === record.frameKey);
+      expect(frame, record.key).toBeDefined();
+      expect([frame?.width, frame?.height], record.key).toEqual([record.width, record.height]);
+      expect(rowOf(SMALL_FRAME_CAP_FAMILY, record.key).fitsFrameKeys, record.key).toEqual([record.frameKey]);
+    }
+    // 20×10 の 2 つのフレーム(上 口 6 と左右 口 4.5)は、それぞれ別のキャップの鍵から引ける。
+    const twenty = SMALL_FRAME_CAP_RECORDS.filter((record) => record.width === 20 && record.height === 10).map((record) => record.frameKey);
+    expect(new Set(twenty)).toEqual(new Set(['small-20x10-l4.5-r4.5', 'small-20x10-t6']));
+    // フレームとブラケット素材の行は合うフレームの鍵を持たない。
+    expect(SMALL_T_SLOT_FRAME_FAMILY.rows.every((row) => row.fitsFrameKeys === undefined)).toBe(true);
+    expect(BRACKET_STOCK_FAMILY.rows.every((row) => row.fitsFrameKeys === undefined)).toBe(true);
+  });
 });
 
 // 下書き(統括の決定 2026-11-18 07:2x。型 FrameSectionSlot.nominalWidth・CatalogItemRow.simplifiedKinds が入った後に、--slot-info で作った行の表で流す)。

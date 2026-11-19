@@ -12,6 +12,7 @@ import {
 } from '@pointercad/model';
 
 import { commitCatalogItemChoice } from './catalogFamilyChoices.js';
+import { withFrameAccessories, type FrameAccessoryRequest } from './frameMembersAccessory.js';
 import { commitStandardPartChoice } from './standardPartPicker.js';
 
 /** 並べる部材: 族の行(欄の値。長さは線ごとに入れ替える)か、鋼材の行(選ぶ画面の呼びの鍵 `steel:<行の鍵>`)。 */
@@ -30,6 +31,8 @@ export interface FrameMembersRequest {
   readonly corners: FrameCornerRule;
   /** 突き当てで、通す部材を後の線の部材へ入れ替える角の番号(予告の角の並びの番号)。 */
   readonly swapThrough: readonly number[];
+  /** 並べた部材に付ける付属の組(A2。端は部材ごとに決める)。無ければ付けない。 */
+  readonly accessory?: FrameAccessoryRequest;
 }
 
 type PlanRejection = Extract<FrameMembersResult, { readonly ok: false }>['reason'];
@@ -41,7 +44,7 @@ type FrameMembersPlan = Extract<FrameMembersResult, { readonly ok: true }>;
  */
 export type FrameMembersPlacement =
   | { readonly ok: true; readonly componentIds: readonly string[] }
-  | { readonly ok: false; readonly reason: 'unavailable' | 'unknownChoice' | 'notLinear' | 'invalidOption' | 'miterUnsupported'
+  | { readonly ok: false; readonly reason: 'unavailable' | 'unknownChoice' | 'notLinear' | 'invalidOption' | 'miterUnsupported' | 'accessoryRefused'
     | PlanRejection; readonly lineIndex: number | null };
 
 type Rejected = Extract<FrameMembersPlacement, { readonly ok: false }>;
@@ -148,5 +151,7 @@ export function frameMembersDocument(assembly: AssemblyDocument, request: FrameM
     document = addComponent(document, part.materialId === undefined ? component : { ...component, materialId: part.materialId });
     componentIds.push(component.id);
   }
-  return { ok: true, document, componentIds };
+  const accessorized = request.accessory === undefined ? null : withFrameAccessories(document, request.lines, plan, componentIds, request.accessory);
+  if (accessorized !== null && !accessorized.ok) return { ok: false, reason: accessorized.reason, lineIndex: accessorized.lineIndex };
+  return { ok: true, document: accessorized?.document ?? document, componentIds: [...componentIds, ...(accessorized?.accessoryIds ?? [])] };
 }

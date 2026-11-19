@@ -15,6 +15,10 @@ export const SETTINGS_HELP_BINDINGS = {
   stockCutting: ['standard-parts'],
   // 吸着を一時止める修飾キー(B-09 3-2)は、吸着の章と、操作の割り当ての窓の章。
   snapPauseModifier: ['snap', 'shortcuts'],
+  // 吸着の幅(配置の補助 P-D)も、吸着の章と操作の割り当ての窓の章。
+  snapRadius: ['snap', 'shortcuts'],
+  // 方眼の幅と数(配置の補助 P-C)は、表示の設定の章と吸着の章。
+  grid: ['display-settings', 'snap'],
   trackAngleStep: ['tracking'], lengthUnit: ['units'], selectionFilter: ['select-subshape'],
   inferConstraints: ['constraints'], timelineHintSeen: ['timeline'], tutorialCompleted: ['tutorial'],
 } satisfies Readonly<Record<keyof PersistedDisplaySettings, readonly string[]>>;

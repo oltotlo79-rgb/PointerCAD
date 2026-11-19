@@ -25,6 +25,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import { DEFAULT_COMPONENT_PLACEMENT, nextComponentId } from './createAssemblyDocument.js';
 import { composePlacement, normalizeQuaternion, type RigidPlacement } from './placementMath.js';
 import { relativePlacement, rigidGroupMemberIds } from './rigidGroups.js';
+import { accessoryDeletionClosure, prunedAccessorySets } from './accessories/accessoryPrune.js';
 import type {
   AssemblyComponent,
   AssemblyDocument,
@@ -214,6 +215,8 @@ export function removeComponent(
       expanded = true;
     }
   }
+  // 本体を消すと、付けた付属の部品も消す(A3。統括の決定 2026-11-19 02:08 の Q5)。
+  for (const id of accessoryDeletionClosure(document.accessorySets, removedComponentIds)) removedComponentIds.add(id);
   // 消えるジョイントの id を控えながら絞る。分解のステップがそれを駆動していたら
   // そのステップも消すので、2 回数え直さずにここで集めておく。
   const removedJointIds = new Set<string>();
@@ -233,6 +236,7 @@ export function removeComponent(
   }
   return {
     ...document,
+    ...(document.accessorySets === undefined ? {} : { accessorySets: prunedAccessorySets(document.accessorySets, removedComponentIds) }),
     components: document.components.filter((component) => !removedComponentIds.has(component.id)),
     mates: document.mates.filter(
       (mate) => !targetsComponent(mate.a, removedComponentIds) && !targetsComponent(mate.b, removedComponentIds),

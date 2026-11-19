@@ -7,6 +7,7 @@ import { useEffect, useMemo } from 'react';
 
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { AccessoryIssueRows } from './AccessoryIssueRows.js';
 import {
   FRAME_JOINT_CHECK_TIME_LIMIT_MS, frameJointBrokenRows, frameJointCheckRows, frameJointCheckStopped, frameJointCheckSummary,
   type FrameJointBrokenRow, type FrameJointCheckView,
@@ -100,6 +101,7 @@ export function FrameJointCheckPanel(): React.JSX.Element | null {
           </div>
         ))}
       </div>
+      <AccessoryIssueRows document={document} nameOf={(id) => names.get(id) ?? id} />
       {broken.length === 0 ? null : (
         <div className="pcad-interference__rows" aria-label={t('assembly.jointCheck.brokenTitle')}>
           <strong>{t('assembly.jointCheck.brokenTitle')}</strong>

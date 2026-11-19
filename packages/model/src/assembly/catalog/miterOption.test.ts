@@ -14,11 +14,13 @@ import { withName } from '../standard/partPrimitives.js';
 import { buildSteelStockList } from '../standard/steelStockList.js';
 import type { AssemblyComponent } from '../types.js';
 import { ALUMINUM_SECTION_FAMILIES } from './families/aluminumSections.js';
+import { T_SLOT_OUTLINE_RECORDS } from './families/frameOutlineRows.js';
 import { T_SLOT_FRAME_FAMILY } from './families/tSlotFrame.js';
 import { T_SLOT_CATALOG_FAMILIES } from './families/tSlotFrameCatalog.js';
 import { T_SLOT_FRAME_SERIES_FAMILY } from './families/tSlotFrameSeries.js';
 import { MITER_OPTION_SPECS } from './miterOption.js';
 import { aluminumSectionProfile, type AluminumSection } from './profiles/aluminumSection.js';
+import { slottedOutlineProfile, type SlottedOutline } from './profiles/slottedOutline.js';
 import { tSlotProfile, tSlotSectionBounds, type TSlotDimensions } from './profiles/tSlot.js';
 import { createCatalogRegistry } from './registry.js';
 import { buildCatalogItemPart, catalogItemNominalMass, catalogItemRejection, createCatalogItemSource } from './source.js';
@@ -50,6 +52,15 @@ function rowDimensions(row: CatalogItemRow): TSlotDimensions {
     cornerHoleDiameter: dims.cornerHoleDiameter ?? 0, cornerHoleInset: dims.cornerHoleInset ?? 0 };
 }
 
+/**
+ * 資料の族のうち外周の指定を持つ行(1 つの角の大きな丸みなど。frameOutlineRows.ts)の断面の入力。この行の断面は長方形の格子の台本ではなく
+ * 溝つきの外周の台本で作るので、「欄を足す前の作り方」は、その外周の断面の押し出しになる。
+ */
+const OUTLINES = new Map(T_SLOT_OUTLINE_RECORDS.map((record): readonly [string, SlottedOutline] => [record.key, {
+  vertices: record.outline?.vertices ?? [], radii: record.outline?.radii ?? [], slots: record.outline?.slots ?? [],
+  holes: record.outline?.holes ?? [], slotOpening: record.slotOpening, shoulder: record.shoulder, slotInnerWidth: record.slotInnerWidth,
+  slotDepth: record.slotDepth }]));
+
 const registryOf = (family: CatalogFamily) => createCatalogRegistry([{ id: family.id, group: family.group, kindKey: family.kindKey,
   load: () => Promise.resolve(family) }]);
 
@@ -64,9 +75,13 @@ describe('留めの欄を使わない部品は欄を足す前と同じ', () => {
 
   it('今の行の全部で、形の台本の結果は押し出しのまま、台本の体積は面積 × 長さ、質量は単位質量 × 長さ、保存の欄は留めの鍵を持たない', () => {
     let rows = 0;
+    let outlineRows = 0;
     for (const family of ROW_FAMILIES) {
       for (const row of family.rows) {
-        const profile = tSlotProfile(rowDimensions(row));
+        // 外周の指定を持つ行(資料の族だけ)は外周の台本、ほかは長方形の格子の台本の断面。
+        const outline = family === T_SLOT_FRAME_SERIES_FAMILY ? undefined : OUTLINES.get(row.key);
+        if (outline !== undefined) outlineRows += 1;
+        const profile = outline === undefined ? tSlotProfile(rowDimensions(row)) : slottedOutlineProfile(outline);
         if (profile === null) throw new Error(`profile ${row.key}`);
         const source = createCatalogItemSource(family, row, { length: '750' });
         expect(Object.keys(source.options)).toEqual(['family', 'item', 'length']);
@@ -79,6 +94,8 @@ describe('留めの欄を使わない部品は欄を足す前と同じ', () => {
     }
     expect(rows).toBe(T_SLOT_FRAME_SERIES_FAMILY.rows.length + Object.values(T_SLOT_CATALOG_FAMILIES)
       .reduce((sum, family) => sum + family.rows.length, 0));
+    // 外周の指定を持つ行は、全部が資料の族に入っていて、外周の台本の断面で確かめた。
+    expect([outlineRows, OUTLINES.size > 0]).toEqual([T_SLOT_OUTLINE_RECORDS.length, true]);
     // アルミの形材の 5 族(J-01 包み 6 で欄を足した)も、今の行の全部で前と同じ。
     let sectionRows = 0;
     for (const family of SECTION_FAMILIES) {

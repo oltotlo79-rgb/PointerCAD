@@ -1,3 +1,4 @@
+import { currentGridSetting } from '../settings/gridSetting.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { OrbitState } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
@@ -48,8 +49,9 @@ export function createViewportFrame(deps: ViewportFrameDependencies) {
     const { projection, displayStyle, showGrid, displaySettings, quadCamera } = useAppStore.getState();
     const renderStartedAt = globalThis.performance.now();
     const renderCurrent = (): void => {
-      if (quadCamera === null) scene.render(deps.orbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
-      else scene.renderQuad(quadCamera, projection, displayStyle, showGrid, displaySettings.uiScale);
+      const grid = currentGridSetting(displaySettings);
+      if (quadCamera === null) scene.render(deps.orbit(), projection, displayStyle, showGrid, displaySettings.uiScale, grid);
+      else scene.renderQuad(quadCamera, projection, displayStyle, showGrid, displaySettings.uiScale, grid);
     };
     if (sketchTiming === undefined) renderCurrent();
     else sketchTiming.render(renderCurrent, deps.sketchTimingContext);

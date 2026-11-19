@@ -98,6 +98,12 @@ export interface CatalogItemRow {
    * 鍵を持たない行・族は持たない(保存しない導出の欄なので、足しても保存の形と catalogRevision は変わらない)。
    */
   readonly simplifiedKinds?: readonly CatalogSimplifiedKind[];
+  /**
+   * 端のキャップなどの行が合うフレームの行の鍵(同じ資料のフレームの族の行。例: 小さい溝つきフレームの端のキャップ)。
+   * 外形だけでは決まらない(外形が同じで溝の違うフレームがある)ので、行の表の道具が資料の記入から書く。持たない行・族は持たない
+   * (保存しない導出の欄なので、足しても保存の形と catalogRevision は変わらない)。
+   */
+  readonly fitsFrameKeys?: readonly string[];
 }
 
 /**

@@ -36,6 +36,7 @@
     "cut-plane-materials.spec.ts",
     "dialog-focus-assembly.spec.ts",
     "dialog-focus.spec.ts",
+    "dimension-move.spec.ts",
     "direct-edit-operations.spec.ts",
     "document-diff.spec.ts",
     "draggable-input-solid.spec.ts",
@@ -59,9 +60,11 @@
     "file-open-rejection.spec.ts",
     "fillet-weld.spec.ts",
     "firefox-graphics.spec.ts",
+    "frame-dimension-basis.spec.ts",
     "frame-door-parts.spec.ts",
     "frame-door.spec.ts",
     "frame-edge-direct.spec.ts",
+    "frame-end-caps.spec.ts",
     "frame-joint-bracket.spec.ts",
     "frame-joint-check.spec.ts",
     "frame-joint-swap-stretch.spec.ts",
@@ -76,6 +79,7 @@
     "gdt-position.spec.ts",
     "gdt.spec.ts",
     "geometry-math-input.spec.ts",
+    "grid-fixed-placement.spec.ts",
     "history-notes.spec.ts",
     "impact-browser.spec.ts",
     "input-bindings.spec.ts",
@@ -127,6 +131,7 @@
     "sketch-intersections.spec.ts",
     "sketch.spec.ts",
     "smoke.spec.ts",
+    "snap-radius.spec.ts",
     "solid-boundary-authoring.spec.ts",
     "solid-finite-authoring.spec.ts",
     "solid-finite-field.spec.ts",
@@ -251,7 +256,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "213ee0be939990f494ada3b66b4b7d7936b4f717411676ef47c553287a6b8001",
+  "configSha256": "fbe4e5bc365a0d2287b60db0191fcfdea0b64adbc60c5138b195b39cbd4e2f6b",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
@@ -547,6 +552,12 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "43366a9da7e49fd4df7038daa564c942521ecfd069620afc97c8c3683c40161e"
+    },
+    {
+      "file": "dimension-move.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "19d9f4c9a37c2a9e74f8562abf501e582d33a48536c638fbb19c1b63cc27341c"
     },
     {
       "file": "direct-edit-operations.spec.ts",
@@ -1335,6 +1346,12 @@
       "sha256": "973c870f6a422f2957da0da7f9c4ac9ff9d53137a979c79d23d647e250ec8676"
     },
     {
+      "file": "frame-dimension-basis.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "979db9482ae00cf89732d0e1f193f94eacbd999f83adf414d046e7dc7c69df74"
+    },
+    {
       "file": "frame-door-parts.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
@@ -1351,6 +1368,12 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "5ba1c49e0292b827b1ef85485991f4b7993af8511ab66f547d2ff7392ee6f195"
+    },
+    {
+      "file": "frame-end-caps.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "407438393a0b66902f635429b57a6131c6548134c5974d3900ddcf65dcccfbd7"
     },
     {
       "file": "frame-joint-bracket.spec.ts",
@@ -1435,6 +1458,12 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "a7126dbaed9588b4edff7d7e3f53a5ada316dfa154e3f04341309d51053a7888"
+    },
+    {
+      "file": "grid-fixed-placement.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "9e37a339a63d09541c58223c34542c37f5072388d510f47593d8e855c35a1e15"
     },
     {
       "file": "history-notes.spec.ts",
@@ -1963,6 +1992,12 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "2169e852e404f2078571824508ff7e4c9df2616be7746a3d6bc9fcc1e1092f7a"
+    },
+    {
+      "file": "snap-radius.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "a2bcf6cc2fec6c5b422d854c9b4fbb0ddab1603e88d0793d03392c53cd6dc0b0"
     },
     {
       "file": "snap.spec.ts",

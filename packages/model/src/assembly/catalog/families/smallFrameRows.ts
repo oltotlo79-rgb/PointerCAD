@@ -64,17 +64,17 @@ export const SMALL_FRAME_RECORDS: readonly SmallFrameRecord[] = [
 
 export const SMALL_FRAME_CAP_RECORDS: readonly SmallFrameCapRecord[] = [
   { key: 'cap-small-20x10-t6', size: '端のキャップ 20×10（溝: 上 口 6 の 20×10 用）', page: 339, width: 20, height: 10, thickness: 3, massG: 0.7,
-    simplified: ['取付けの脚と穴'] },
+    simplified: ['取付けの脚と穴'], frameKey: 'small-20x10-t6' },
   { key: 'cap-small-30x15-t8', size: '端のキャップ 30×15（溝: 上 口 8 の 30×15 用）', page: 339, width: 30, height: 15, thickness: 3, massG: 1.6,
-    simplified: ['取付けの脚と穴'] },
+    simplified: ['取付けの脚と穴'], frameKey: 'small-30x15-t8' },
   { key: 'cap-small-20x10-l4.5-r4.5', size: '端のキャップ 20×10（溝: 左右 口 4.5 の 20×10 用）', page: 339, width: 20, height: 10, thickness: 3,
-    massG: 0.9, simplified: ['取付けの脚と穴'] },
+    massG: 0.9, simplified: ['取付けの脚と穴'], frameKey: 'small-20x10-l4.5-r4.5' },
   { key: 'cap-small-30x10-l4.5-r4.5-t6', size: '端のキャップ 30×10（溝: 上 口 6・左右 口 4.5 の 30×10 用）', page: 339, width: 30, height: 10, thickness: 3,
-    massG: 1.2, simplified: ['取付けの脚と穴'] },
+    massG: 1.2, simplified: ['取付けの脚と穴'], frameKey: 'small-30x10-l4.5-r4.5-t6' },
   { key: 'cap-small-20x15-l6-r6', size: '端のキャップ 20×15（溝: 左右 口 6 の 20×15 用）', page: 339, width: 20, height: 15, thickness: 3, massG: 1.1,
-    simplified: ['取付けの脚と穴'] },
+    simplified: ['取付けの脚と穴'], frameKey: 'small-20x15-l6-r6' },
   { key: 'cap-small-40x15-l6-r6-t8', size: '端のキャップ 40×15（溝: 上 口 8・左右 口 6 の 40×15 用）', page: 339, width: 40, height: 15, thickness: 3,
-    massG: 2.2, simplified: ['取付けの脚と穴'] },
+    massG: 2.2, simplified: ['取付けの脚と穴'], frameKey: 'small-40x15-l6-r6-t8' },
 ];
 
 export const BRACKET_STOCK_RECORDS: readonly BracketStockRecord[] = [

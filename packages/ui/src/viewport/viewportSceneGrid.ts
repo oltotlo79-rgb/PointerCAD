@@ -84,8 +84,8 @@ function toLineGeometry(buffer: LineBuffer, acquire?: (geometry: THREE.BufferGeo
  * 原点を通る 2 本は軸として別に描くのでここでは引かない。同じ位置に 2 本重ねると
  * 深度が競って縞模様になるため、重ねない作りにして縞模様そのものを起こさせない。
  */
-function buildGridGeometry(spacing: number, colors: ThemeColors, acquire?: (geometry: THREE.BufferGeometry) => void): THREE.BufferGeometry {
-  const extent = gridExtent(spacing);
+function buildGridGeometry(spacing: number, extent: number, colors: ThemeColors,
+  acquire?: (geometry: THREE.BufferGeometry) => void): THREE.BufferGeometry {
   const halfCount = Math.round(extent / spacing);
   const minorColor = new THREE.Color(colors.gridMinor);
   const majorColor = new THREE.Color(colors.gridMajor);
@@ -146,35 +146,38 @@ export function createSceneGrid(layers: GridLayers, construction: SceneConstruct
   /** いま効いているテーマの色。`setColors` が来るまでは既定(ダーク)。 */
   let colors: ThemeColors = DEFAULT_THEME_COLORS;
   let currentSpacing = 0;
+  let currentExtent = 0;
 
   /**
-   * 方眼と XYZ 軸を作り直す(FR-104)。間隔が変わったときと、テーマが変わったときだけ呼ぶ
+   * 方眼と XYZ 軸を作り直す(FR-104)。間隔か広がり(固定の方眼の数、P-C)が変わったときと、テーマが変わったときだけ呼ぶ
    * (色は頂点ごとの並びへ焼き込むので、テーマの切替では作り直すしかない。
    * 描画のたびには呼ばれないので NFR-PF-1 に触らない)。
    */
-  function rebuild(spacing: number): void {
+  function rebuild(spacing: number, extent: number = gridExtent(spacing)): void {
     returnAcquired(grid.geometry);
-    grid.geometry = buildGridGeometry(spacing, colors, acquireLineGeometry);
+    grid.geometry = buildGridGeometry(spacing, extent, colors, acquireLineGeometry);
     returnAcquired(axisLines.geometry);
-    axisLines.geometry = buildAxisGeometry(axisLength(spacing), colors, acquireLineGeometry);
+    axisLines.geometry = buildAxisGeometry(axisLength(spacing, extent), colors, acquireLineGeometry);
     // 作図面の矩形は方眼と同じ広がりにする。
-    sketchLayer.setWorkPlaneExtent(gridExtent(spacing));
+    sketchLayer.setWorkPlaneExtent(extent);
     // 基準軸は方眼より**短く**する。
     // 方眼と同じ長さだと方眼の線と見分けが付かず、どこまでが軸なのか分からなかった。
-    referenceLayer.setAxisHalfLength(gridExtent(spacing) * REFERENCE_AXIS_EXTENT_RATIO);
+    referenceLayer.setAxisHalfLength(extent * REFERENCE_AXIS_EXTENT_RATIO);
     // 案内線は方眼と同じ広がりまで伸ばす(視野のおよそ 2 倍なので「画面いっぱい」になる)。
-    trackingLayer.setHalfLength(gridExtent(spacing));
+    trackingLayer.setHalfLength(extent);
     currentSpacing = spacing;
+    currentExtent = extent;
   }
   rebuild(initialSpacing);
 
   return {
     rebuild,
     spacing: (): number => currentSpacing,
+    extent: (): number => currentExtent,
     /** 方眼と軸は頂点ごとの色を持つので、いまの間隔のまま組み立て直す。 */
     setColors(next: ThemeColors): void {
       colors = next;
-      rebuild(currentSpacing);
+      rebuild(currentSpacing, currentExtent);
     },
   };
 }

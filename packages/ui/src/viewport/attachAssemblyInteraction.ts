@@ -22,6 +22,9 @@ import { flattenAssemblyGeometry } from './createAssemblyLayer.js';
 import type { AssemblyComponentPickObservation, AssemblyFacePickObservation, ViewportScene } from './createViewportScene.js';
 import { componentDragPlane } from './dragComponent.js';
 import { frameStrokeHitAt } from './frameStrokePick.js';
+import { pointSnapRadiusPixels, vertexSnapRadiusPixels } from '../settings/snapRadiusSetting.js';
+import { currentGridSetting } from '../settings/gridSetting.js';
+import { placementGridSnapFor, snapDragPointToGrid, type PlacementGridSnap } from '../assembly/placementGridSnap.js';
 import { jointOccurrenceInputsOf, pickJointOccurrenceTarget, resolveJointOccurrencePick } from './pickJointOccurrence.js';
 
 /** 選択の種類を切り替える命令(既定のキーは 1〜4)。 */
@@ -200,6 +203,18 @@ function reportMateInput(observation: AssemblyMateInputObservation | undefined, 
 
 type MateInputState = ReturnType<typeof useAppStore.getState>;
 
+/** 配置の方眼への吸着(固定の方眼・吸着が入・「方眼」の種類が入の時だけ。配置の補助 P-C)。 */
+function placementGridSnap(state: MateInputState): PlacementGridSnap | null {
+  return placementGridSnapFor({ grid: currentGridSetting(state.displaySettings), snapEnabled: state.snapEnabled,
+    snapKinds: state.snapKinds, radiusPixels: pointSnapRadiusPixels(state.displaySettings) });
+}
+
+/** 部品のドラッグの点: 固定の方眼の時は、押した点からの動きを幅の倍数にする(配置の補助 P-C)。 */
+function snappedDragPoint(drag: NonNullable<MateInputState['assemblyDrag']>, point: Vec3 | null): Vec3 | null {
+  const grid = placementGridSnap(useAppStore.getState());
+  return point === null || grid === null ? point : snapDragPointToGrid(drag.plane, drag.grab, point, grid);
+}
+
 /**
  * 一筆書きの配置(E-08)で点を打っている間の押下: 押した所(頂点か、前の点の高さの面の上)を点の列へ足す。Shift は軸に縛る。
  * 部品の選択・合致・ドラッグへは渡さない(点の列は文書に書かないので、表示の失効を待たない)。打っていなければ false。
@@ -210,7 +225,7 @@ function frameStrokePointerDown(state: MateInputState, scene: AssemblyPickScene,
   const hit = state.assembly === null || state.assemblyView === null ? null : frameStrokeHitAt({
     components: state.assembly.components, placements: state.assemblyView.resolved.placements,
     partKeys: state.assemblyView.resolved.partKeys, bodies: state.assemblyView.bodies,
-  }, scene, at, state.frameStroke);
+  }, scene, at, state.frameStroke, vertexSnapRadiusPixels(state.displaySettings), placementGridSnap(state));
   const added = hit !== null && state.addFrameStrokeHit(hit, lockAxis) !== 'unchanged';
   if (observation !== undefined) observation.addAccepted = added;
   reportMateInput(observation, dragInput);
@@ -402,7 +417,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const drag = useAppStore.getState().assemblyDrag;
     if (drag === null || scene.screenToPlanePoint === undefined) return null;
     const at = pointer(event);
-    try { return scene.screenToPlanePoint(at[0], at[1], drag.plane); } catch { return null; }
+    try { return snappedDragPoint(drag, scene.screenToPlanePoint(at[0], at[1], drag.plane)); } catch { return null; }
   };
   // 押したままの移動を次の描画の1回にまとめる(保留から採用したドラッグの最初の移動も同じ道を通る)。
   const queueDragMove = (event: PointerEvent): void => {

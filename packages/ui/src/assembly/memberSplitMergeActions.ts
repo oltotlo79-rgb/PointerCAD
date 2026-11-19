@@ -3,7 +3,9 @@
  * 次の文書を 1 回で入れる(Undo 1 回で戻る)。結果の部材を選び、選ぶ窓は開いたままにする(一括の書き換えと同じ)。
  */
 import { evaluateExpression } from '@pointercad/expression';
-import { findComponent, planMemberMerge, planMemberSplit, type MemberSplitMergeResult } from '@pointercad/model';
+import {
+  findComponent, mergeAccessorySets, planMemberMerge, planMemberSplit, splitAccessorySets, type AssemblyDocument, type MemberSplitMergeResult,
+} from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -20,8 +22,27 @@ const REASON_KEYS: Readonly<Record<string, MessageKey>> = {
   invalidOption: 'catalog.memberSplit.reason.invalidOption', referenced: 'catalog.memberSplit.reason.referenced',
   notAligned: 'catalog.memberSplit.reason.notAligned', notTouching: 'catalog.memberSplit.reason.notTouching',
   miteredJoin: 'catalog.memberSplit.reason.miteredJoin', jointAtJoin: 'catalog.memberSplit.reason.jointAtJoin',
-  unavailable: 'catalog.memberSplit.reason.unavailable',
+  unavailable: 'catalog.memberSplit.reason.unavailable', jointHasAccessory: 'catalog.memberSplit.reason.jointHasAccessory',
 };
+
+/**
+ * 付属の組の記録の付け替え(A3): 分けた時は終点の付属を後ろの部材の記録へ移し、まとめた時は消える部材の記録を残す部材へまとめる。
+ * まとめる端に付属があれば null(断る)。付属の置き直しは店が文書を入れる時に行う。
+ */
+function accessoriesAfter(before: AssemblyDocument | null, after: AssemblyDocument, componentIds: readonly string[], kind: 'split' | 'merged'):
+AssemblyDocument | null {
+  if (before === null || (after.accessorySets?.length ?? 0) === 0) return after;
+  const [keptId, newId] = componentIds;
+  if (keptId === undefined) return after;
+  if (kind === 'split') return newId === undefined ? after : splitAccessorySets(after, keptId, newId);
+  let document = after;
+  for (const removed of before.components.filter((component) => findComponent(after, component.id) === undefined)) {
+    const merged = mergeAccessorySets(document, keptId, removed.id);
+    if (!merged.ok) return null;
+    document = merged.document;
+  }
+  return document;
+}
 
 /** 結果の 1 行の文字と役割(選ぶ窓の欄が出す)。 */
 export function memberSplitMergeMessage(outcome: MemberSplitMergeOutcome): { readonly role: 'status' | 'alert'; readonly text: string } {
@@ -45,8 +66,10 @@ function selectedComponents(): readonly string[] {
 /** 計画を入れ、結果の部材を選び、選ぶ窓を残す(文書を入れると窓が閉じるため)。 */
 function applyPlan(plan: MemberSplitMergeResult, kind: 'split' | 'merged'): MemberSplitMergeOutcome {
   if (!plan.ok) return { kind: 'refused', reason: plan.reason, count: plan.count };
+  const document = accessoriesAfter(useAppStore.getState().assembly, plan.document, plan.componentIds, kind);
+  if (document === null) return { kind: 'refused', reason: 'jointHasAccessory', count: null };
   const pickerOpen = useAppStore.getState().standardPartPickerOpen;
-  useAppStore.getState().applyAssembly(plan.document);
+  useAppStore.getState().applyAssembly(document);
   useAppStore.getState().setSelection(plan.componentIds);
   if (pickerOpen) useAppStore.setState({ standardPartPickerOpen: true });
   return { kind, lengths: plan.lengths };

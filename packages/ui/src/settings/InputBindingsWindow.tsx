@@ -10,6 +10,7 @@ import { RadialMenuForm } from './RadialMenuForm.js';
 import { settingsCloseRequest, submitSettingsDrafts } from './settingsDrafts.js';
 import { SixDofForm } from './SixDofForm.js';
 import { SnapPauseForm } from './SnapPauseForm.js';
+import { SnapRadiusForm } from './SnapRadiusForm.js';
 import { SettingsDraftPrompt, type DraftPromptTexts } from './SettingsDraftPrompt.js';
 import { ShortcutSettingsForm } from './ShortcutSettingsForm.js';
 import './inputBindingsWindow.css';
@@ -109,6 +110,7 @@ export function InputBindingsWindow({ onClose, returnFocus }: {
       <div role="tabpanel" id={`${id}-panel-mouse`} aria-labelledby={`${id}-tab-mouse`} hidden={tab !== 'mouse'}>
         <MouseButtonsForm />
         <SnapPauseForm />
+        <SnapRadiusForm />
       </div>
       <div role="tabpanel" id={`${id}-panel-radial`} aria-labelledby={`${id}-tab-radial`} hidden={tab !== 'radial'}>
         <RadialMenuForm />

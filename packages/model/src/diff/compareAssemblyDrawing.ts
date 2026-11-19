@@ -29,6 +29,7 @@ const ASSEMBLY_FIELDS = {
   contextReferences: 'document',
   jointOccurrenceConnections: 'document',
   frameJoints: 'document',
+  accessorySets: 'document',
 } satisfies Record<keyof AssemblyDocument, DefinitionGroup>;
 const DRAWING_FIELDS = {
   id: 'document', name: 'document', schemaVersion: 'document', source: 'document', sheet: 'document',
@@ -45,7 +46,7 @@ function recordEntries(document: object, fields: Readonly<Record<string, Definit
   const data = document as Readonly<Record<string, unknown>>;
   for (const [field, group] of Object.entries(fields)) {
     const optionalRelations = field === 'mechanismCouplings' || field === 'camCouplings' || field === 'contextReferences'
-      || field === 'jointOccurrenceConnections' || field === 'boltedJoints' || field === 'frameJoints'
+      || field === 'jointOccurrenceConnections' || field === 'boltedJoints' || field === 'frameJoints' || field === 'accessorySets'
       || field === 'crossLevelGearCouplings' || field === 'crossLevelCamCouplings';
     const value = optionalRelations ? data[field] ?? [] : data[field];
     if (group === 'document' || !Array.isArray(value)) { own[field] = value; continue; }

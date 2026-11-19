@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { AutoSaveIntervalForm } from './AutoSaveIntervalForm.js';
+import { GridSettingsForm } from './GridSettingsForm.js';
 import { useDialogFocus } from '../shell/dialogFocus.js';
 import { GearIcon } from '../shell/icons.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -299,7 +300,7 @@ export function SettingsPanel(): React.JSX.Element {
               setApplyRequest((count) => count + 1);
             }}
             onDiscard={finishClose} onContinue={() => { afterCloseRef.current = null; setClosing(null); }} />}
-          <SettingsSection titleKey="toolbar.settings.section.display"><DisplaySettingsGroups /></SettingsSection>
+          <SettingsSection titleKey="toolbar.settings.section.display"><DisplaySettingsGroups /><GridSettingsForm /></SettingsSection>
           <SettingsSection titleKey="toolbar.settings.section.controls">
             <button type="button" className="pcad-button" data-help-topic="shortcuts" aria-expanded={bindingsOpen}
               title={t('settings.inputBindings.openGuide')} onClick={() => { requestClose(() => { setBindingsOpen(true); }); }}>

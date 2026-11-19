@@ -4,6 +4,7 @@ import { AssemblyInterferencePanel } from '../assembly/AssemblyInterferencePanel
 import { FrameJointCheckPanel } from '../assembly/FrameJointCheckPanel.js';
 import { FrameJointBracketPopover } from '../assembly/FrameJointBracketPopover.js';
 import { MemberStretchPopover } from '../assembly/MemberStretchPopover.js';
+import { DimensionMovePopover } from '../assembly/DimensionMovePopover.js';
 import { StandardPartPicker } from '../assembly/StandardPartPickerPanel.js';
 import { ExplodePopover } from '../assembly/ExplodePopover.js';
 import { ReplacementPopover } from '../assembly/ReplacementPopover.js';
@@ -38,5 +39,6 @@ export function AssemblyOverlays(): React.JSX.Element {
     <FrameJointCheckPanel />
     <FrameJointBracketPopover />
     <MemberStretchPopover />
+    <DimensionMovePopover />
   </>;
 }

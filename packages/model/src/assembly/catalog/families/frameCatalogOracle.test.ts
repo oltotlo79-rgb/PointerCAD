@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ALUMINUM_SECTION_FAMILIES, type AluminumSectionRecord } from './aluminumSections.js';
 import { ALUMINUM_SECTION_RECORDS, T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
+import { T_SLOT_OUTLINE_RECORDS } from './frameOutlineRows.js';
 import { T_SLOT_CATALOG_FAMILIES, type TSlotCatalogRecord } from './tSlotFrameCatalog.js';
 
 interface SecondReading {
@@ -33,6 +34,19 @@ function readSecondReading(): SecondReading {
 }
 
 const READING = readSecondReading();
+
+/**
+ * 断面性能の表に行があっても、単位質量だけは頁の箱の値を使う断面の鍵(統括の決定 2026-11-19)。表の単位質量が表の断面積 × 2.70 と 1% を超えて
+ * 合わず、頁の箱(2 回目の読み)・断面積 × 2.70・参考の組立 CAD の表示の 3 つが同じ値の物。断面の値と断面積は表の値。
+ */
+const BOX_MASS_OVER_TABLE: ReadonlySet<string> = new Set(['s10-40x80-tbl']);
+
+/**
+ * 四隅の小さい穴の位置が参考寸法だけの断面の鍵(統括の決定 2026-11-19 の (3))。穴を作らず、簡略の印を 1 つ持つ。下の検査で、2 本目の読みに
+ * 四隅の穴の記入と参考寸法の位置がある事を確かめる(穴の無い断面に印を付けない)。
+ */
+const NO_CORNER_HOLES: ReadonlySet<string> = new Set(['s8-30x30']);
+const NO_CORNER_HOLES_MARK = '四隅の小さい穴(位置は参考寸法だけ)';
 
 /** 括弧の外の「;」で分ける(「φ8.5×2(縦に50間隔;…)」の括弧の中は分けない)。 */
 function splitOutsideParens(text: string): readonly string[] {
@@ -88,20 +102,24 @@ function readTSlot(cells: readonly string[]): Omit<TSlotCatalogRecord, 'size' | 
   if (faces === null || center === undefined || radius === null || box === null) throw new Error(`2 回目の読みの行 ${key} を読み解けない`);
   const counts = faces.slice(1, 5).map(Number);
   const onTable = tablePage !== '';
+  // 表に行があっても単位質量だけは頁の箱の値を使う断面(統括の決定。下の検査で、表の質量が外れ、箱の質量が断面積 × 2.70 に合う事を確かめる)。
+  const boxMass = BOX_MASS_OVER_TABLE.has(key);
+  const noCorner = NO_CORNER_HOLES.has(key);
   // 頁の箱と表の値が向きだけ違う断面は、断面の値を持たない(統括の決定)。
   const withheld = onTable && swappedOnly(box.slice(2, 6), [ix, iy, zx, zy]);
   const property = (fromTable: string, fromBox: string | undefined): number | null => (withheld ? null : Number(onTable ? fromTable : fromBox));
   return {
-    key, figurePage: Number(figurePage), tablePage: onTable ? Number(tablePage) : null, massSource: onTable ? 'table' : 'box',
+    key, figurePage: Number(figurePage), tablePage: onTable ? Number(tablePage) : null, massSource: onTable && !boxMass ? 'table' : 'box',
     width: Number(width), height: Number(height), slotPitch: pitch === '' ? Number(width) : Number(pitch),
     slotsAcross: Math.max(counts[0] ?? 0, counts[1] ?? 0) || Number(center[2]) / Math.max(counts[2] ?? 0, counts[3] ?? 0),
     faces: ['t', 'b', 'l', 'r'].filter((_, index) => (counts[index] ?? 0) > 0).join(''), slotOpening: Number(opening), shoulder: Number(shoulder),
     slotInnerWidth: Number(inner), slotDepth: depthMeaning === '外の面から' ? Number(depth) - Number(shoulder) : Number(depth),
     centerHole: Number(center[1]),
-    cornerRadius: Number(radius[1]), cornerHoleDiameter: corner === undefined ? 0 : Number(corner[1]),
-    cornerHoleInset: corner === undefined ? 0 : Number(inset?.[1] ?? NaN),
-    areaMm2: onTable ? Number(area) : null, unitMassKgPerM: Number(onTable ? mass : box[1]), ixCm4: property(ix, box[2]),
+    cornerRadius: Number(radius[1]), cornerHoleDiameter: corner === undefined || noCorner ? 0 : Number(corner[1]),
+    cornerHoleInset: corner === undefined || noCorner ? 0 : Number(inset?.[1] ?? NaN),
+    areaMm2: onTable ? Number(area) : null, unitMassKgPerM: Number(onTable && !boxMass ? mass : box[1]), ixCm4: property(ix, box[2]),
     iyCm4: property(iy, box[3]), zxCm3: property(zx, box[4]), zyCm3: property(zy, box[5]),
+    ...(noCorner ? { simplified: [NO_CORNER_HOLES_MARK] } : {}),
   };
 }
 
@@ -154,6 +172,36 @@ describe('資料 1 のフレームの製品の行と 2 回目の独立の読み�
     }
   });
 
+  it('頁の箱の単位質量を使う断面は、表の単位質量が断面積 × 2.70 と 1% を超えて違い、箱の単位質量は 1% の内で合い、断面の値は表と箱で同じ', () => {
+    const rows = new Map(READING.tSlot.map((cells) => [cells[0] ?? '', cells]));
+    for (const key of BOX_MASS_OVER_TABLE) {
+      const cells = rows.get(key) ?? [];
+      const [, , , , , , , , , , , , , , boxText = '', tablePage = '', ix = '', iy = '', zx = '', zy = '', area = '', mass = ''] = cells;
+      const box = /^([0-9.]+)kg\/m Ix=([0-9.]+)e4 Iy=([0-9.]+)e4 Zx=([0-9.]+)e3 Zy=([0-9.]+)e3$/u.exec(boxText);
+      expect([tablePage !== '', box !== null], key).toEqual([true, true]);
+      const byArea = Number(area) * 2.7e-3;
+      expect(Math.abs(byArea - Number(mass)) / Number(mass), key).toBeGreaterThan(0.01);
+      expect(Math.abs(byArea - Number(box?.[1])) / Number(box?.[1]), key).toBeLessThanOrEqual(0.01);
+      expect([box?.[2], box?.[3], box?.[4], box?.[5]].map((text, index) => samePrinted(text ?? '', [ix, iy, zx, zy][index] ?? '')), key)
+        .toEqual([true, true, true, true]);
+      expect(T_SLOT_CATALOG_RECORDS.find((record) => record.key === key)?.massSource, key).toBe('box');
+    }
+  });
+
+  it('四隅の穴を作らない断面は、2 本目の読みに四隅の穴の記入と参考寸法の位置があり、製品の行は穴なしで簡略の印を 1 つ持つ', () => {
+    const rows = new Map(READING.tSlot.map((cells) => [cells[0] ?? '', cells]));
+    for (const key of NO_CORNER_HOLES) {
+      const cells = rows.get(key) ?? [];
+      const holesText = cells[11] ?? '';
+      const insetText = cells[13] ?? '';
+      expect([/角φ[0-9.]+×4/u.test(holesText), /^\([0-9.]+\)=参考/u.test(insetText)], key).toEqual([true, true]);
+      const record = T_SLOT_CATALOG_RECORDS.find((item) => item.key === key);
+      expect([record?.cornerHoleDiameter, record?.cornerHoleInset, record?.simplified], key).toEqual([0, 0, [NO_CORNER_HOLES_MARK]]);
+    }
+    // 印を持つ溝つきの行は、この一覧の行だけ。
+    expect(T_SLOT_CATALOG_RECORDS.filter((record) => record.simplified !== undefined).map((record) => record.key)).toEqual([...NO_CORNER_HOLES]);
+  });
+
   it('共通フレームの製品の行は、全部 2 回目の読みに同じ鍵の行があり、寸法と表の値が全部一致する', () => {
     const second = new Map(READING.sections.map((cells) => [cells[0] ?? '', readSection(cells)]));
     expect(ALUMINUM_SECTION_RECORDS.map((record) => record.key).sort()).toEqual([...second.keys()].sort());
@@ -163,9 +211,9 @@ describe('資料 1 のフレームの製品の行と 2 回目の独立の読み�
     }
   });
 
-  it('族の行は、行の表の行と同じ数・同じ鍵(溝幅ごと・種類ごとに分けただけ)', () => {
+  it('族の行は、行の表の行と同じ数・同じ鍵(溝幅ごと・種類ごとに分けただけ。外周の指定を持つ行の表を含む)', () => {
     const tSlotKeys = [T_SLOT_CATALOG_FAMILIES.s6, T_SLOT_CATALOG_FAMILIES.s8, T_SLOT_CATALOG_FAMILIES.s10].flatMap((family) => family.rows.map((row) => row.key));
-    expect(tSlotKeys.sort()).toEqual(T_SLOT_CATALOG_RECORDS.map((record) => record.key).sort());
+    expect(tSlotKeys.sort()).toEqual([...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS].map((record) => record.key).sort());
     const sectionKeys = Object.values(ALUMINUM_SECTION_FAMILIES).flatMap((family) => family.rows.map((row) => row.key));
     expect(sectionKeys.sort()).toEqual(ALUMINUM_SECTION_RECORDS.map((record) => record.key).sort());
   });

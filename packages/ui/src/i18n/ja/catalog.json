@@ -406,6 +406,20 @@
   "catalog.frameLayout.error.invalidOption": "部品の欄の値では形が作れません。",
   "catalog.frameLayout.error.miterUnsupported": "この部材は留めに切れません。突き当てかそのままを選んでください。",
   "catalog.frameLayout.error.other": "この指定では並べられません。",
+  "catalog.frameLayout.basis": "寸法の基準",
+  "catalog.frameLayout.basisGuide": "打った点が、部材の芯(中心線)・内側の面・外側の面のどれの角かを選びます。内側・外側を選ぶと、部材の断面の向きに合わせて芯の点へ換えてから並べます。",
+  "catalog.frameLayout.basis.center": "芯",
+  "catalog.frameLayout.basis.inner": "内側",
+  "catalog.frameLayout.basis.outer": "外側",
+  "catalog.frameLayout.basisUnavailable": "内側・外側は、点の形を閉じた時に選べます。",
+  "catalog.frameLayout.centers": "芯の点(並べる位置)",
+  "catalog.frameLayout.centerPoint": "{n}: {x} {y} {z}",
+  "catalog.frameLayout.error.basis.notClosed": "内側・外側の寸法は、閉じた形で使います。閉じるに印を付ける(一筆書きでは最初の点を押す)と、芯の点を出します。",
+  "catalog.frameLayout.error.basis.notLevel": "内側・外側の寸法は、断面の上を向ける方向に垂直な 1 つの面の上(同じ高さ)の点で使います。",
+  "catalog.frameLayout.error.basis.degenerate": "同じ点が続いているか、形に広さがないので、芯の点を出せません。",
+  "catalog.frameLayout.error.basis.reversal": "折り返す点があるので、内側・外側から芯の点を出せません。",
+  "catalog.frameLayout.error.basis.collapsed": "形が部材の断面より小さいので、芯の点を出すと形が潰れます。",
+  "catalog.frameLayout.error.basis.badSection": "この部材の断面の大きさが分からないので、芯の点を出せません。",
   "catalog.frameLayout.source": "線の決め方",
   "catalog.frameLayout.sourceGuide": "点を入れて線を作るか、置いた部品のまっすぐな辺を線にするか、3D の画面で点を順に押して線を作るかを選びます。",
   "catalog.frameLayout.source.points": "点を入れる",
@@ -564,5 +578,6 @@
   "catalog.dimension.ix": "断面二次モーメント Ix",
   "catalog.dimension.iy": "断面二次モーメント Iy",
   "catalog.dimension.zx": "断面係数 Zx",
-  "catalog.dimension.zy": "断面係数 Zy"
+  "catalog.dimension.zy": "断面係数 Zy",
+  "catalog.memberSplit.reason.jointHasAccessory": "まとめる端に付属の部品（端のキャップなど）があるので、まとめません。先に付属の部品を外してください。"
 }

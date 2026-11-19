@@ -109,6 +109,13 @@ export function assemblyBuildReadiness(state: AppState, id: AssemblyMenuActionId
     return selectedJointRecordId(state.assembly, state.selection) !== null
       ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.jointSwap.selectBracket' };
   }
+  if (id === 'dimensionMove') {
+    if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
+    // アルミフレーム・鋼材・機械要素・部品のファイルのどれでも、部品を 1 つ選んでいれば使える(配置の補助 P-A)。
+    return state.assemblyView?.sourceDocument === state.assembly && state.selection.length === 1
+      && state.assembly.components.some((component) => component.id === state.selection[0])
+      ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.dimensionMove.selectComponent' };
+  }
   if (id === 'memberStretch') {
     if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
     return state.assemblyView?.sourceDocument === state.assembly && state.assembly.components.length > 0
@@ -167,6 +174,7 @@ export function chooseAssemblyBuild(id: AssemblyMenuActionId): void {
     if (recordId !== null && !state.beginJointBracketSwap(recordId)) state.openAssemblyJointCheck();
   }
   else if (id === 'memberStretch') state.beginMemberStretch();
+  else if (id === 'dimensionMove') state.beginDimensionMove();
   else toggleSelectedFixed();
 }
 

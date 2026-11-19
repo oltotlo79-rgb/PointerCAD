@@ -54,6 +54,8 @@ export interface SmallFrameCapRecord {
   readonly thickness: number;
   readonly massG: number;
   readonly simplified: readonly string[];
+  /** 合うフレーム(小さい溝つきフレームの族 `t-slot-frame-small`)の行の鍵。2 本の独立の読みが一致した「合うフレーム」の記入から(行の表の道具が書く)。 */
+  readonly frameKey: string;
 }
 
 /** ブラケット素材の行。cornerX・cornerY は角の内の面の端の、外の角(左下)からの距離(辺の長さ − 記入)。Ix・Iy は cm⁴、Zx・Zy は cm³。 */
@@ -227,8 +229,11 @@ function capDimensions(row: CatalogItemRow): FrameCapDimensions {
 }
 
 function capRow(record: SmallFrameCapRecord): CatalogItemRow {
-  return baseRow(record, 'nylon', { width: record.width, height: record.height, thickness: record.thickness, massG: record.massG },
-    evidence(record.page, 'キャップの図(板の幅・高さ・厚さ・質量)'), `質量は資料の 1 個の値(${record.massG} g)`);
+  return {
+    ...baseRow(record, 'nylon', { width: record.width, height: record.height, thickness: record.thickness, massG: record.massG },
+      evidence(record.page, 'キャップの図(板の幅・高さ・厚さ・質量)'), `質量は資料の 1 個の値(${record.massG} g)`),
+    fitsFrameKeys: [record.frameKey],
+  };
 }
 
 export const SMALL_FRAME_CAP_FAMILY: CatalogFamily = {

@@ -1217,6 +1217,8 @@ export type { CatalogRegistry } from './assembly/catalog/registry.js';
 export { createCatalogItemSource } from './assembly/catalog/source.js';
 /** フレームの一括配置(J-01): 線の列から、長さを持つ部材 1 本ごとの長さと配置を出す(ui の店の動作が使う)。 */
 export { planFrameMembers } from './assembly/frame/frameMembers.js';
+/** 芯・内側・外側の寸法(配置の補助 P-B): 閉じた形の角の点を、部材の断面に合わせて芯の点へ換える(ui の一括配置の窓が使う)。 */
+export { frameCenterPoints } from './assembly/frame/frameDimensionBasis.js';
 /** 置いた部品のまっすぐな辺(部品の指紋)を世界の座標の線にする(J-01 包み 4a。ui の辺の一覧が使う)。 */
 export { frameLineFromEdge } from './assembly/frame/frameEdges.js';
 /** 置いた部材の一括の書き換え(J-01 包み 8): 同じ族か同じ鋼材の製品の部品の行・長さを替えた次の保存の形(ui の選ぶ窓が使う)。 */
@@ -1234,6 +1236,10 @@ export {
 } from './assembly/frame/frameJoints.js';
 export { detachFrameJointRecord, swapFrameJointBracket } from './assembly/frame/frameJointSwap.js';
 export { planMemberStretch, type MemberStretchDirection, type MemberStretchPlan } from './assembly/frame/memberStretch.js';
+/** 寸法で動かす(配置の補助 P-A): 選んだ部品を基準からの寸法が打った数になるように 1 回動かす(ui の窓が使う。拘束は残さない)。 */
+export {
+  measureComponentDimension, planDimensionMove, type DimensionMoveAxis, type DimensionMoveBasis, type DimensionMovePlan,
+} from './assembly/dimensionMove.js';
 export { frameScribeMarks, type FrameScribeMember } from './assembly/frame/frameScribeMarks.js';
 export { planSafetyFence, type SafetyFenceResult } from './assembly/frame/safetyFence.js';
 export { framePanelOpening, type FramePanelOpeningResult } from './assembly/frame/framePanelOpening.js';
@@ -1246,7 +1252,14 @@ export {
   type JointBracketInputs, type JointBracketRecords,
 } from './assembly/frame/frameJointBrackets.js';
 export type { FrameJointRecord } from './assembly/frame/frameJointRecord.js';
+export {
+  ACCESSORY_SET_IDS, accessoryCandidates, accessoryCandidatesForPart, applyAccessorySet,
+  type AccessoryCandidate, type AccessoryChoices, type AccessoryRefusal,
+} from './assembly/accessories/accessorySets.js';
+export { accessoryIdsOf, accessoryIssues, mergeAccessorySets, splitAccessorySets, syncAccessorySets } from './assembly/accessories/accessorySync.js';
+export type { AccessoryEndReference, AccessoryEnds, AccessoryRole, AccessorySetId, AccessorySetRecord } from './assembly/accessories/accessoryRecord.js';
 export type { FrameCornerRule, FrameLine, FrameMembersResult } from './assembly/frame/frameMembers.js';
+export type { FrameDimensionBasis } from './assembly/frame/frameDimensionBasis.js';
 export type {
   SteelEvidence,
   SteelMaterialGrade,

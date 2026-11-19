@@ -6,7 +6,9 @@ import { PRODUCT_CATALOG_REGISTRY } from '@pointercad/model';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
-import { frameLayoutView, INITIAL_FRAME_LAYOUT, toggleFrameCornerSwap, type FrameLayoutState } from './frameLayoutInput.js';
+import {
+  frameDimensionBasisAvailable, frameLayoutView, INITIAL_FRAME_LAYOUT, toggleFrameCornerSwap, type FrameLayoutState,
+} from './frameLayoutInput.js';
 
 const SERIES = { kind: 'catalogItem', familyId: 't-slot-frame-series', itemKey: 's6-20x20', values: {} } as const;
 /** 表計算の表から貼り付けた 500×300 の長方形の 4 点(タブ区切り、行の終わりは CR LF)。 */
@@ -94,5 +96,33 @@ describe('フレームの一括配置の窓の欄', () => {
     expect(frameLayoutView({ ...INITIAL_FRAME_LAYOUT, pointsText: PASTED, closed: true, corners: 'miter' },
       { kind: 'catalogItem', familyId: 't-slot-nut-bar', itemKey: 's6-post-stainless', values: {} }))
       .toEqual({ kind: 'error', message: t('catalog.frameLayout.error.miterUnsupported') });
+  });
+
+  /** 予告の芯の点の 1 行の文字。 */
+  const center = (n: number, x: number, y: number): string => t('catalog.frameLayout.centerPoint').replace('{n}', String(n))
+    .replace('{x}', String(x)).replace('{y}', String(y)).replace('{z}', '0');
+
+  it('寸法の基準(P-B): 外側の 500×300 は断面 20×20 の芯 480×280 で並べて芯の点を出し、内側は 520×320、芯は今までどおり', () => {
+    const layout = { ...INITIAL_FRAME_LAYOUT, pointsText: PASTED, closed: true, corners: 'none' } as const;
+    const outer = frameLayoutView({ ...layout, dimensionBasis: 'outer' }, SERIES);
+    if (outer.kind !== 'ready') throw new Error(`not ready: ${outer.kind === 'error' ? outer.message : outer.kind}`);
+    expect(outer.rows.map((row) => row.cells[1])).toEqual(['480', '280', '480', '280']);
+    expect(outer.centers).toEqual([center(1, 10, 10), center(2, 490, 10), center(3, 490, 290), center(4, 10, 290)]);
+    const inner = frameLayoutView({ ...layout, dimensionBasis: 'inner' }, SERIES);
+    expect(inner.kind === 'ready' ? inner.rows.map((row) => row.cells[1]) : null).toEqual(['520', '320', '520', '320']);
+    const centerBasis = frameLayoutView(layout, SERIES);
+    expect(centerBasis.kind === 'ready' ? [centerBasis.rows.map((row) => row.cells[1]), centerBasis.centers] : null)
+      .toEqual([['500', '300', '500', '300'], []]);
+  });
+
+  it('寸法の基準: 内側・外側は閉じた点の形だけで選べ、閉じていない形・同じ高さに無い点は理由を出す', () => {
+    expect(frameDimensionBasisAvailable({ ...INITIAL_FRAME_LAYOUT, closed: true })).toBe(true);
+    expect(frameDimensionBasisAvailable({ ...INITIAL_FRAME_LAYOUT, source: 'stroke', closed: true })).toBe(true);
+    expect(frameDimensionBasisAvailable({ ...INITIAL_FRAME_LAYOUT, closed: false })).toBe(false);
+    expect(frameDimensionBasisAvailable({ ...INITIAL_FRAME_LAYOUT, source: 'edges', closed: true })).toBe(false);
+    expect(frameLayoutView({ ...INITIAL_FRAME_LAYOUT, pointsText: PASTED, closed: false, dimensionBasis: 'outer' }, SERIES))
+      .toEqual({ kind: 'error', message: t('catalog.frameLayout.error.basis.notClosed') });
+    expect(frameLayoutView({ ...INITIAL_FRAME_LAYOUT, pointsText: '0 0 0\n500 0 5\n500 300 0\n0 300 0', closed: true,
+      dimensionBasis: 'inner' }, SERIES)).toEqual({ kind: 'error', message: t('catalog.frameLayout.error.basis.notLevel') });
   });
 });

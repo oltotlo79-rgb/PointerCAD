@@ -1,6 +1,6 @@
 import { findComponent, type AssemblyDocument, type JointKind, type MateKind } from '@pointercad/model';
 import type { ToolMenuItem } from './menuItem.js';
-import { AngleConstraintIcon, ChamferIcon, CoincidentConstraintIcon, ConcentricConstraintIcon, CubeIcon, CylinderIcon, DistanceConstraintIcon, FixConstraintIcon, LayersIcon, ParallelConstraintIcon, PerpendicularConstraintIcon, RevolveIcon, ScaleIcon, SphereIcon, TangentConstraintIcon, ThreadShaftIcon, TransformIcon } from '../icons.js';
+import { AngleConstraintIcon, ChamferIcon, CoincidentConstraintIcon, ConcentricConstraintIcon, CubeIcon, CylinderIcon, DistanceConstraintIcon, FixConstraintIcon, LayersIcon, MeasureIcon, ParallelConstraintIcon, PerpendicularConstraintIcon, RevolveIcon, ScaleIcon, SphereIcon, TangentConstraintIcon, ThreadShaftIcon, TransformIcon } from '../icons.js';
 
 export type AssemblyMenuActionId =
   | 'placePart'
@@ -15,11 +15,12 @@ export type AssemblyMenuActionId =
   | 'circularFilletWeld'
   | 'jointCheck'
   | 'jointSwap'
-  | 'memberStretch';
+  | 'memberStretch'
+  | 'dimensionMove';
 
 /**
  * 「組む」の正本。基本の5項目をこの順に保ち、ボルト締結(追加要件6)の2項目、すみ肉溶接の1項目、
- * 接合チェック(E-09)の1項目、結合の入れ替えと伸縮(E-13)の2項目を後ろへ足す。
+ * 接合チェック(E-09)の1項目、結合の入れ替えと伸縮(E-13)の2項目、寸法で動かす(配置の補助 P-A)の1項目を後ろへ足す。
  */
 export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] = [
   { id: 'placePart', labelKey: 'assembly.tool.placePart', tooltipKey: 'assembly.tool.placePartTooltip', Icon: CubeIcon },
@@ -35,6 +36,7 @@ export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] 
   { id: 'jointCheck', labelKey: 'assembly.tool.jointCheck', tooltipKey: 'assembly.jointCheck.tooltip', Icon: PerpendicularConstraintIcon },
   { id: 'jointSwap', labelKey: 'assembly.tool.jointSwap', tooltipKey: 'assembly.jointSwap.tooltip', Icon: TransformIcon },
   { id: 'memberStretch', labelKey: 'assembly.tool.memberStretch', tooltipKey: 'assembly.memberStretch.tooltip', Icon: ScaleIcon },
+  { id: 'dimensionMove', labelKey: 'assembly.tool.dimensionMove', tooltipKey: 'assembly.dimensionMove.tooltip', Icon: MeasureIcon },
 ];
 
 /** 操作対象と同じ部品の固定状態から、次に行う操作の名前を決める。 */

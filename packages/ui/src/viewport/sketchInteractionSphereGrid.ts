@@ -11,6 +11,7 @@ import { FREE_WORK_PLANE_ID } from '@pointercad/model';
 import { reduceNumericInput } from '../sketch/numericInput.js';
 import { commitSphereGridPoint, selectedSphereFeature, sphereGridSphereOf } from '../sketch/sketchCommands.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
+import { pointSnapRadiusPixels } from '../settings/snapRadiusSetting.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { snapToSphereGrid, type SphereGridPoint, type SphereGridSpec } from './buildSphereGrid.js';
 import type { ViewportScene } from './createViewportScene.js';
@@ -76,7 +77,7 @@ export function createSketchSphereGridInput(context: SketchSphereGridContext) {
     if (ray === null) {
       return null;
     }
-    const point = snapToSphereGrid(target.spec, ray, project, pointer);
+    const point = snapToSphereGrid(target.spec, ray, project, pointer, pointSnapRadiusPixels(useAppStore.getState().displaySettings));
     return point === null ? null : { point, sphereFeatureId: target.sphereFeatureId };
   }
 

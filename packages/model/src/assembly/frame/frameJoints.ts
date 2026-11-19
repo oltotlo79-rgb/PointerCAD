@@ -75,7 +75,7 @@ export interface FrameJoint {
 }
 
 /** 溝の呼びの幅: 行の dims の slotWidth、無ければ行の鍵の頭。どちらも無ければ null(寸法を指定する汎用の形)。 */
-function frameSlotWidthOf(row: CatalogItemRow): number | null {
+export function frameSlotWidthOf(row: CatalogItemRow): number | null {
   const own = Object.hasOwn(row.dims, 'slotWidth') ? row.dims.slotWidth : undefined;
   if (own !== undefined && Number.isFinite(own) && own > 0) return own;
   const match = SLOT_WIDTH_KEY_PATTERN.exec(row.key);

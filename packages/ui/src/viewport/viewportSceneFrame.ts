@@ -3,7 +3,8 @@ import type { DisplayStyle, ProjectionMode } from '../store/viewSlice.js';
 import type { SketchGeometryBundle } from './buildSketchGeometry.js';
 import type { OrbitState } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
-import { gridSpacing } from './gridMath.js';
+import { DEFAULT_GRID_SETTING, type GridSetting } from '../settings/gridSetting.js';
+import { gridLayoutFor, type GridLayout } from './gridMath.js';
 import type { QuadCameraState } from './quadCamera.js';
 import type { QuadRectangle, QuadViewId } from './quadLayout.js';
 import type { ScenePointer } from './viewportScenePointer.js';
@@ -32,6 +33,8 @@ interface RenderSettings {
    * 画面上の大きさをそろえるのに使う(`createReferenceLayer.ts`)。
    */
   readonly uiScale: number;
+  /** 方眼の幅と数(配置の補助 P-C)。渡さなければ自動(今までと同じ)。 */
+  readonly grid: GridSetting;
 }
 
 type FrameMethods = Pick<ViewportScene, 'render' | 'renderQuad' | 'setActivePane'>;
@@ -42,7 +45,7 @@ interface SceneFrameDependencies {
   readonly scene: THREE.Scene;
   readonly output: Pick<SceneRenderer, 'renderer' | 'width' | 'height'>;
   readonly layers: ViewportSceneLayers;
-  readonly grid: { spacing(): number; rebuild(spacing: number): void };
+  readonly grid: { spacing(): number; extent(): number; rebuild(spacing: number, extent?: number): void };
   readonly solid: { ensureCurrentOwner(): boolean; syncLayer(displayStyle: DisplayStyle, currentSolid: boolean): void };
   readonly assembly: { ensureCurrentOwner(): boolean; syncLayer(displayStyle: DisplayStyle): void };
   readonly overlays: { syncSolidOverlays(currentSolid: boolean): void };
@@ -61,12 +64,12 @@ export function createSceneFrame(deps: SceneFrameDependencies) {
   let quadProjection: ProjectionMode = 'perspective';
 
   /** 各層の表示内容を同期する。renderer と camera の所有者はこの scene のまま。 */
-  function updateVisibleLayers(settings: RenderSettings, rectangle: QuadRectangle, spacing: number): void {
+  function updateVisibleLayers(settings: RenderSettings, rectangle: QuadRectangle, layout: GridLayout): void {
     const currentSolid = solid.ensureCurrentOwner();
     assembly.ensureCurrentOwner();
     const { orbit, displayStyle, showGrid, uiScale } = settings;
-    if (spacing !== grid.spacing()) {
-      grid.rebuild(spacing);
+    if (layout.spacing !== grid.spacing() || layout.extent !== grid.extent()) {
+      grid.rebuild(layout.spacing, layout.extent);
     }
     layers.gridGroup.visible = showGrid;
 
@@ -80,8 +83,8 @@ export function createSceneFrame(deps: SceneFrameDependencies) {
   }
 
   /** 1 枚描く。層の同期後、同じカメラで光源と renderer を更新する。 */
-  function drawScene(settings: RenderSettings, rectangle: QuadRectangle, spacing: number): void {
-    updateVisibleLayers(settings, rectangle, spacing);
+  function drawScene(settings: RenderSettings, rectangle: QuadRectangle, layout: GridLayout): void {
+    updateVisibleLayers(settings, rectangle, layout);
     // Layer disposal callbacks may change the live owner before the renderer consumes it.
     solid.ensureCurrentOwner();
     assembly.ensureCurrentOwner();
@@ -115,18 +118,18 @@ export function createSceneFrame(deps: SceneFrameDependencies) {
       const width = output.width(), height = output.height();
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, width, height);
-      drawScene(lastRender, { x: 0, y: 0, width, height }, gridSpacing(lastRender.orbit.distance));
+      drawScene(lastRender, { x: 0, y: 0, width, height }, gridLayoutFor(lastRender.grid, lastRender.orbit.distance));
       return;
     }
     // 共通格子を区画ごとに作り直さない。最大距離で1回だけ間隔を決める。
-    const spacing = gridSpacing(Math.max(...Object.values(lastQuad.orbits).map((entry) => entry.distance)));
+    const layout = gridLayoutFor(lastRender.grid, Math.max(...Object.values(lastQuad.orbits).map((entry) => entry.distance)));
     renderer.setScissorTest(true);
     try {
       for (const pane of quadPanes()) {
         const box = pane.scissor;
         renderer.setViewport(box.x, box.y, box.width, box.height);
         renderer.setScissor(box.x, box.y, box.width, box.height);
-        drawScene({ ...lastRender, orbit: lastQuad.orbits[pane.id], projection: pane.projection }, pane.rectangle, spacing);
+        drawScene({ ...lastRender, orbit: lastQuad.orbits[pane.id], projection: pane.projection }, pane.rectangle, layout);
       }
     } finally {
       renderer.setScissorTest(false);
@@ -136,16 +139,16 @@ export function createSceneFrame(deps: SceneFrameDependencies) {
   }
 
   const methods: FrameMethods = {
-    render(orbit, projection, displayStyle, showGrid, uiScale): void {
+    render(orbit, projection, displayStyle, showGrid, uiScale, grid = DEFAULT_GRID_SETTING): void {
       lastQuad = null;
-      lastRender = { orbit, projection, displayStyle, showGrid, uiScale };
+      lastRender = { orbit, projection, displayStyle, showGrid, uiScale, grid };
       redraw();
     },
 
-    renderQuad(state, projection, displayStyle, showGrid, uiScale): void {
+    renderQuad(state, projection, displayStyle, showGrid, uiScale, grid = DEFAULT_GRID_SETTING): void {
       lastQuad = state;
       quadProjection = projection;
-      lastRender = { orbit: state.orbits[state.active], projection, displayStyle, showGrid, uiScale };
+      lastRender = { orbit: state.orbits[state.active], projection, displayStyle, showGrid, uiScale, grid };
       redraw();
     },
 

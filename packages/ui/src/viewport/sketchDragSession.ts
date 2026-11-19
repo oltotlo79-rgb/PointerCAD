@@ -16,8 +16,10 @@
 import { worldToPlane, type ConstrainedSketchJob, type Vec3, type WorkPlane } from '@pointercad/model';
 import { constraintContextOfStore, constraintResolveOptions } from '../sketch/constraintActions.js';
 import { constraintMarkAt, constraintMarksOf } from '../sketch/constraintPicking.js';
-import { chooseSnap, collectSnapCandidates, SNAP_RADIUS_PIXELS, type ProjectToScreen,
+import { chooseSnap, collectSnapCandidates, type ProjectToScreen,
   type SnapCandidate } from '../sketch/snapMath.js';
+import { pointSnapRadiusPixels } from '../settings/snapRadiusSetting.js';
+import { currentGridSetting } from '../settings/gridSetting.js';
 import type { SnapIndicator } from '../store/sketchSlice.js';
 import type { AppState } from '../store/appState.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -25,7 +27,7 @@ import type { OrbitState } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { commitDrag, createDragSolveJob, dragRefusalMessageKey, dragTargetUv, draggableAt, isDraggable,
   type SketchDrag } from './dragSketch.js';
-import { gridSpacing } from './gridMath.js';
+import { gridLayoutFor } from './gridMath.js';
 import { pickSketchDragTarget } from './pickSketchDragTarget.js';
 import type { SketchDragEndRecord, SketchDragObservation } from './sketchDragObservation.js';
 import type { SketchDragTiming } from './sketchDragTiming.js';
@@ -144,10 +146,10 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
     const candidates = collectSnapCandidates(
       state.resolvedSketch,
       dragPlane,
-      gridSpacing(getOrbit().distance),
+      gridLayoutFor(currentGridSetting(state.displaySettings), getOrbit().distance).spacing,
       onPlane,
     ).filter((candidate) => candidate.featureId !== featureId);
-    return chooseSnap(candidates, project, pointer, SNAP_RADIUS_PIXELS, new Set(state.snapKinds));
+    return chooseSnap(candidates, project, pointer, pointSnapRadiusPixels(state.displaySettings), new Set(state.snapKinds));
   }
 
   function stop(keepShape: boolean, eventAtMs?: number, kind?: 'escape' | 'pointercancel'): void {

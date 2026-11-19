@@ -3,6 +3,7 @@ import { canonicalSteelOptions, readComponentSource } from './codecs/componentSo
 import { readJointOccurrenceConnections, serializeJointOccurrenceConnections } from './codecs/jointOccurrenceConnections.js';
 import { readBoltedJointRecords, serializeBoltedJointRecords } from './codecs/boltedJointRecords.js';
 import { assertFrameJointsVersion, hasFrameJointsField, readFrameJointRecords, serializeFrameJointRecords } from './codecs/frameJointRecords.js';
+import { assertAccessorySetsVersion, hasAccessorySetsField, readAccessorySetRecords, serializeAccessorySetRecords } from './codecs/accessorySetRecords.js';
 /**
  * アセンブリ文書と `.pcada` の `document.json` の相互変換
  * (要件§8、FR-801)。
@@ -342,6 +343,7 @@ function serializeBomSettings(bom: BomSettings): BomSettings {
 /** アセンブリ文書を決まった順で組み立てる。 */
 function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocument {
   assertFrameJointsVersion(document);
+  assertAccessorySetsVersion(document);
   if (document.jointOccurrenceConnections !== undefined && document.schemaVersion < 21) {
     throw new RangeError('Persisted joint occurrence provenance requires document schema 21');
   }
@@ -365,6 +367,10 @@ function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocu
     // フレームどうしの接続の記録(E-07)。空の時は書かない(記録を使わないファイルの形を変えない)。
     ...(document.frameJoints === undefined || document.frameJoints.length === 0 ? {} : {
       frameJoints: serializeFrameJointRecords(document.frameJoints),
+    }),
+    // 付属の組の記録。空の時は書かない(記録を使わないファイルの形を変えない)。
+    ...(document.accessorySets === undefined || document.accessorySets.length === 0 ? {} : {
+      accessorySets: serializeAccessorySetRecords(document.accessorySets),
     }),
     components: document.components.map(serializeComponent),
     mates: document.mates.map(serializeMate),
@@ -1138,6 +1144,9 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
   const frameJoints = Object.hasOwn(record.value, 'frameJoints')
     ? readFrameJointRecords(record.value['frameJoints'], joinPath(path, 'frameJoints')) : undefined;
   if (frameJoints !== undefined && !frameJoints.ok) return frameJoints;
+  const accessorySets = Object.hasOwn(record.value, 'accessorySets')
+    ? readAccessorySetRecords(record.value['accessorySets'], joinPath(path, 'accessorySets')) : undefined;
+  if (accessorySets !== undefined && !accessorySets.ok) return accessorySets;
   const mechanismCouplings: Checked<readonly MechanismGearCoupling[] | undefined> =
     record.value['mechanismCouplings'] === undefined ? { ok: true, value: undefined }
       : readList(record.value, 'mechanismCouplings', path, readMechanismCoupling);
@@ -1186,6 +1195,7 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
       ...(occurrenceConnections.value === undefined ? {} : { jointOccurrenceConnections: occurrenceConnections.value }),
       ...(boltedJoints.value === undefined ? {} : { boltedJoints: boltedJoints.value }),
       ...(frameJoints === undefined ? {} : { frameJoints: frameJoints.value }),
+      ...(accessorySets === undefined ? {} : { accessorySets: accessorySets.value }),
       ...(beamAnalysisInputs.value === undefined ? {} : { beamAnalysisInputs: beamAnalysisInputs.value }),
       components: components.value,
       mates: mates.value,
@@ -1510,6 +1520,9 @@ function decodeFile(raw: unknown): ReadAssemblyDocumentResult {
   }
   if (schema.value < 23 && hasFrameJointsField(raw['document'])) {
     return fail('notPcad', 'フレームの接続の記録を読むには保存形式の版23が必要です。');
+  }
+  if (schema.value < 23 && hasAccessorySetsField(raw['document'])) {
+    return fail('notPcad', '付属の組の記録を読むには保存形式の版23が必要です。');
   }
   if (schema.value < PCAD_SCHEMA_VERSION) {
     // 移行先(`SCHEMA_MIGRATIONS[schema.value]`)が無い版(例: 版 1)は、この時点では

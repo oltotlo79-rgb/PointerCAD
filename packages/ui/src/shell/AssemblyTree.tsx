@@ -19,6 +19,7 @@ import {
 } from '../assembly/placeComponentActions.js';
 import { deleteAssemblyMate, editAssemblyMate, flipAssemblyMate } from '../assembly/mateActions.js';
 import { activeAssemblyDocument } from '../store/documentKind.js';
+import { AccessoryDetachItem } from '../assembly/AccessoryDetachItem.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { AssemblyView } from '../store/assemblySlice.js';
 import {
@@ -522,8 +523,7 @@ export function AssemblyTree(): React.JSX.Element {
             {t('assembly.tool.duplicate')}
           </button>
           <button title={t('controlGuide.button.assemblyDelete')}
-            type="button"
-            role="menuitem"
+            type="button" role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
               deleteAssemblyComponents([menu.rowId]);
@@ -564,7 +564,8 @@ export function AssemblyTree(): React.JSX.Element {
             }}
           >
             {t(menuComponent.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
-          </button></>}
+          </button>
+          <AccessoryDetachItem componentId={menu.rowId} onDone={() => { setMenu(null); }} /></>}
           {menuMate === undefined ? null : <>
             <button title={t('controlGuide.button.mateEdit')} type="button" role="menuitem" className="pcad-button pcad-menu__item"
               onClick={() => { editAssemblyMate(menu.rowId); setMenu(null); }}>

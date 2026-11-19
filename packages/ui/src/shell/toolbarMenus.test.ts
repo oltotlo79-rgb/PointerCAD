@@ -307,11 +307,11 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
 });
 
 describe('アセンブリのツールバー(P7 タスク45)', () => {
-  it('「組む」には配置・置換・固定の5項目と、ボルト締結・フレームの溝の締結・締結の解除の3項目、直線・円弧のすみ肉溶接の2項目、接合チェックの1項目、結合の入れ替えと伸縮の2項目を出す', () => {
+  it('「組む」には配置・置換・固定の5項目と、ボルト締結・フレームの溝の締結・締結の解除の3項目、直線・円弧のすみ肉溶接の2項目、接合チェックの1項目、結合の入れ替えと伸縮の2項目、寸法で動かすの1項目を出す', () => {
     expect(ASSEMBLY_MENU_ITEMS.map((item) => item.id)).toEqual([
       'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
       'boltedJoint', 'frameSlotFastening', 'releaseFastening', 'filletWeld', 'circularFilletWeld', 'jointCheck', 'jointSwap',
-      'memberStretch',
+      'memberStretch', 'dimensionMove',
     ]);
     expect(ASSEMBLY_MENU_ITEMS[10].labelKey).toBe('assembly.tool.jointCheck');
     expect(ASSEMBLY_MENU_ITEMS[6].labelKey).toBe('assembly.frameSlot.tool');
@@ -1135,7 +1135,7 @@ describe('explicit source refresh row item keeps the canonical toolbar', () => {
       expect(ASSEMBLY_MENU_ITEMS.map(item => item.id)).toEqual([
         'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
         'boltedJoint', 'frameSlotFastening', 'releaseFastening', 'filletWeld', 'circularFilletWeld', 'jointCheck', 'jointSwap',
-        'memberStretch',
+        'memberStretch', 'dimensionMove',
       ]);
     } finally { snapshot.mockRestore(); }
     // SSR markup proves focusable semantics and actual visible text; keyboard/hover

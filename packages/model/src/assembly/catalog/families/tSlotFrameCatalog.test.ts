@@ -15,6 +15,7 @@ import { createCatalogRegistry } from '../registry.js';
 import { catalogItemNominalMass, catalogItemRejection, createCatalogItemSource } from '../source.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
+import { T_SLOT_OUTLINE_RECORDS } from './frameOutlineRows.js';
 import { T_SLOT_CATALOG_FAMILIES, type TSlotCatalogRecord } from './tSlotFrameCatalog.js';
 
 const FAMILIES = T_SLOT_CATALOG_FAMILIES;
@@ -60,8 +61,10 @@ describe('資料 1 の溝つきフレームの 3 族', () => {
       ['t-slot-frame-s10', 'aluminumFrame', 'catalog.frame.kind.tSlotS10', 't-slot-frame-s10-2026-11-r1', 't-slot-2', 'linear', 'tSlotSeries',
         [['length', '1000'], ...MITER_KEYS]],
     ]);
+    // 長方形の格子の行の後に、外周の指定を持つ行(frameOutlineRows.ts)が溝幅ごとに続く。
     for (const [slot, family] of [[6, FAMILIES.s6], [8, FAMILIES.s8], [10, FAMILIES.s10]] as const) {
-      expect(family.rows.map((row) => row.key)).toEqual(T_SLOT_CATALOG_RECORDS.filter((item) => item.slot === slot).map((item) => item.key));
+      expect(family.rows.map((row) => row.key)).toEqual([...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS]
+        .filter((item) => item.slot === slot).map((item) => item.key));
     }
   });
 
@@ -80,6 +83,20 @@ describe('資料 1 の溝つきフレームの 3 族', () => {
     expect([closed.dims.slotTop, closed.dims.slotBottom, closed.dims.slotLeft, closed.dims.slotRight, closed.dims.areaMm2, closed.dims.unitMassKgPerM])
       .toEqual([0, 1, 1, 1, 194, 0.52]);
     expect([box.dims.areaMm2, box.dims.unitMassKgPerM, box.dims.ixCm4]).toEqual([undefined, 1.33, 7.5]);
+  });
+
+  it('表に行があり単位質量だけ頁の箱の値の行は、出どころに表と箱の頁を分けて出し、note にその旨を書く', () => {
+    const row = rowOfRecord(record('s10-40x80-tbl'));
+    expect(row.evidence.locator)
+      .toBe('PDF 176 頁 断面の図(外形・溝・穴・角の丸み)／PDF 385 頁 断面性能の表(断面積・Ix・Iy・Zx・Zy)／PDF 176 頁 図の箱(単位質量)');
+    expect(row.note).toBe('内側の形は簡略。質量は単位質量の値(頁の箱の値。断面性能の表の単位質量は断面積と合わないので使わない)');
+    expect([row.dims.areaMm2, row.dims.unitMassKgPerM, row.dims.ixCm4, row.dims.zyCm3]).toEqual([1105, 2.98, 70.5, 10.14]);
+  });
+
+  it('四隅の穴の位置が参考寸法だけの行は穴を作らず、簡略の印を持つ(印を持たない行は今までどおり印の欄が無い)', () => {
+    const row = rowOfRecord(record('s8-30x30'));
+    expect([row.dims.cornerHoleDiameter, row.dims.cornerHoleInset, row.simplified]).toEqual([0, 0, ['四隅の小さい穴(位置は参考寸法だけ)']]);
+    expect(rowOfRecord(record('s6-20x20')).simplified).toBeUndefined();
   });
 
   it('形は簡略の形の押し出しから穴の押し出しを引いた物で、体積は式の面積 × 長さ(ふさいだ面・升の格子・四隅の穴)', () => {

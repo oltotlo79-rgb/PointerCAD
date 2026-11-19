@@ -1,13 +1,15 @@
 import { applyPlacementToPoint, type RigidPlacement, type Vec3, type WorkPlane } from '@pointercad/model';
 
 import { frameStrokeLevelPlane, type FrameStrokeHit } from '../assembly/frameStroke.js';
+import { snapStrokePointToGrid, type PlacementGridSnap } from '../assembly/placementGridSnap.js';
 import type { FrameUp } from '../assembly/frameLayoutInput.js';
 import { SUB_SHAPE_PICK_RADIUS_PIXELS } from '../solid/pickSubShape.js';
 import { subShapeFrameOrigin, type SubShapeBody } from '../solid/subShapeSelection.js';
 
 /**
- * 一筆書きの配置(E-08)の 3D の画面の押下を、点の列へ足す当たりにする。見えている部品の頂点が画面で近ければ(部分形状の当たりと
- * 同じ 6px)その頂点のワールドの点、無ければ前の点の高さの面(`frameStrokeLevelPlane`)と視線の交点。どちらも無ければ null。
+ * 一筆書きの配置(E-08)の 3D の画面の押下を、点の列へ足す当たりにする。見えている部品の頂点が画面で近ければ(吸着の幅の設定〔P-D〕の
+ * 頂点の半径。既定は部分形状の当たりと同じ 6px)その頂点のワールドの点、無ければ前の点の高さの面(`frameStrokeLevelPlane`)と視線の交点。
+ * どちらも無ければ null。
  * 頂点は画面の近さだけで拾う(部分形状の当たりと同じく深度は見ない)。
  */
 
@@ -26,7 +28,8 @@ interface FrameStrokePickScene {
 }
 
 /** 画面で一番近い頂点のワールドの点(当たりの半径の外なら null)。 */
-function nearestVertex(source: FrameStrokePickSource, scene: FrameStrokePickScene, pointer: readonly [number, number]): Vec3 | null {
+function nearestVertex(source: FrameStrokePickSource, scene: FrameStrokePickScene, pointer: readonly [number, number],
+  radiusPixels: number): Vec3 | null {
   let best: { readonly point: Vec3; readonly distance: number } | null = null;
   for (const component of source.components) {
     if (component.suppressed || !component.visible) continue;
@@ -41,7 +44,7 @@ function nearestVertex(source: FrameStrokePickSource, scene: FrameStrokePickScen
         const screen = scene.worldToScreen(point);
         if (screen === null) continue;
         const distance = Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]);
-        if (distance <= SUB_SHAPE_PICK_RADIUS_PIXELS && (best === null || distance < best.distance)) best = { point, distance };
+        if (distance <= radiusPixels && (best === null || distance < best.distance)) best = { point, distance };
       }
     }
   }
@@ -50,9 +53,14 @@ function nearestVertex(source: FrameStrokePickSource, scene: FrameStrokePickScen
 
 /** 押した所の当たり(頂点か、前の点の高さの面の上の点)。 */
 export function frameStrokeHitAt(source: FrameStrokePickSource, scene: FrameStrokePickScene, pointer: readonly [number, number],
-  stroke: { readonly points: readonly Vec3[]; readonly closed: boolean; readonly up: FrameUp }): FrameStrokeHit | null {
-  const vertex = nearestVertex(source, scene, pointer);
+  stroke: { readonly points: readonly Vec3[]; readonly closed: boolean; readonly up: FrameUp },
+  radiusPixels: number = SUB_SHAPE_PICK_RADIUS_PIXELS, grid: PlacementGridSnap | null = null): FrameStrokeHit | null {
+  const vertex = nearestVertex(source, scene, pointer, radiusPixels);
   if (vertex !== null) return { kind: 'vertex', point: vertex };
-  const point = scene.screenToPlanePoint?.(pointer[0], pointer[1], frameStrokeLevelPlane(stroke, stroke.up)) ?? null;
-  return point === null ? null : { kind: 'level', point };
+  const plane = frameStrokeLevelPlane(stroke, stroke.up);
+  const point = scene.screenToPlanePoint?.(pointer[0], pointer[1], plane) ?? null;
+  if (point === null) return null;
+  // 固定の方眼の時は、格子点へ吸い付ける(頂点が先。方眼は面の上の点だけ)。
+  const snapped = grid === null ? point : snapStrokePointToGrid(plane, point, grid, (world) => scene.worldToScreen(world), pointer);
+  return { kind: 'level', point: snapped };
 }

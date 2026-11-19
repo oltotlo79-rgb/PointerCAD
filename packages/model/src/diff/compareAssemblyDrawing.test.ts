@@ -212,7 +212,7 @@ describe('cam and context reference document definitions', () => {
 
 describe('new optional assembly record arrays retain serialization equivalence', () => {
   const options = { relationship: 'versions' as const, beforeLibrary: library(), afterLibrary: library() };
-  it.each(['boltedJoints', 'crossLevelGearCouplings', 'crossLevelCamCouplings'] as const)(
+  it.each(['boltedJoints', 'crossLevelGearCouplings', 'crossLevelCamCouplings', 'accessorySets'] as const)(
     'treats absent and empty %s as equal in both directions without mutating inputs', (field) => {
       const before = createAssemblyDocument('records');
       expect(Object.hasOwn(before, field)).toBe(false);

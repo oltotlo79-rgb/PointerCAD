@@ -40,6 +40,7 @@ import type {
   SectionHandle,
 } from './createSolidLayer.js';
 import type { SectionPlaneNumbers } from './sectionView.js';
+import type { GridSetting } from '../settings/gridSetting.js';
 import { gridSpacing } from './gridMath.js';
 import type { ThemeColors } from './themeColors.js';
 import type { RegionFillInput } from './buildRegionFill.js';
@@ -158,8 +159,11 @@ export interface ViewportScene {
     displayStyle: DisplayStyle,
     showGrid: boolean,
     uiScale: number,
+    /** 方眼の幅と数(配置の補助 P-C)。省くと自動(今までと同じ)。 */
+    grid?: GridSetting,
   ): void;
-  renderQuad(state: QuadCameraState, projection: ProjectionMode, displayStyle: DisplayStyle, showGrid: boolean, uiScale: number): void;
+  renderQuad(state: QuadCameraState, projection: ProjectionMode, displayStyle: DisplayStyle, showGrid: boolean, uiScale: number,
+    grid?: GridSetting): void;
   /** 入力の最初に切り替える。描画待ちの間も選択は対象の区画のカメラを使う。 */
   setActivePane(pane: QuadViewId): void;
   /** スケッチの表示を差し替える(FR-105、FR-310)。 */

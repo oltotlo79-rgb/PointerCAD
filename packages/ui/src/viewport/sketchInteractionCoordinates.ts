@@ -41,15 +41,16 @@ import {
   chooseSnap,
   collectSnapCandidates,
   enabledTrackKinds,
-  SNAP_RADIUS_PIXELS,
   type ProjectToScreen,
   type SnapCandidate,
 } from '../sketch/snapMath.js';
 import { chooseTrack, collectTrackCandidates, type TrackResult } from '../sketch/trackMath.js';
+import { pointSnapRadiusPixels } from '../settings/snapRadiusSetting.js';
+import { currentGridSetting } from '../settings/gridSetting.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { viewDirection, type OrbitState } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
-import { gridSpacing } from './gridMath.js';
+import { gridLayoutFor } from './gridMath.js';
 
 type Pointer = readonly [number, number];
 
@@ -177,10 +178,10 @@ export function createSketchCoordinates(context: SketchCoordinateContext) {
     const candidates = collectSnapCandidates(
       sketch ?? state.resolvedSketch,
       plane,
-      gridSpacing(getOrbit().distance),
+      gridLayoutFor(currentGridSetting(state.displaySettings), getOrbit().distance).spacing,
       onPlane,
     );
-    return chooseSnap(candidates, project, pointer, SNAP_RADIUS_PIXELS, new Set(state.snapKinds));
+    return chooseSnap(candidates, project, pointer, pointSnapRadiusPixels(state.displaySettings), new Set(state.snapKinds));
   }
 
   /** 押した先のワールド座標。吸い付いていればその点、無ければ作図面の上の点。 */
@@ -237,7 +238,7 @@ export function createSketchCoordinates(context: SketchCoordinateContext) {
       (`trackMath.ts` の `closestParameterToRay` の注釈)。
     */
     const ray = scene.pointerRay(pointer[0], pointer[1]);
-    return chooseTrack(candidates, project, pointer, SNAP_RADIUS_PIXELS, onPlane, ray);
+    return chooseTrack(candidates, project, pointer, pointSnapRadiusPixels(state.displaySettings), onPlane, ray);
   }
 
   /**

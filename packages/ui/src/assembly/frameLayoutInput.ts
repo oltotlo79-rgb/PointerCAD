@@ -3,11 +3,13 @@
  * 並べる部材の予告(1 本ごとの長さ・端の伸び縮み・角の扱い)と、店の動作に渡す中身を作る。画面を持たない純関数(検査はここで行う)。
  */
 import { evaluateExpression } from '@pointercad/expression';
-import type { FrameCornerRule, FrameLine, Vec3 } from '@pointercad/model';
+import { frameCenterPoints, type FrameCornerRule, type FrameDimensionBasis, type FrameLine, type Vec3 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import type { FrameEdgeChoice, FrameEdgeFilter, FrameEdgeOrder } from './frameEdgeChoices.js';
-import { frameMembersPreview, type FrameMemberChoice, type FrameMembersPlacement, type FrameMembersRequest } from './frameMembersPlacement.js';
+import {
+  frameMemberSection, frameMembersPreview, type FrameMemberChoice, type FrameMembersPlacement, type FrameMembersRequest,
+} from './frameMembersPlacement.js';
 
 export type FrameUp = 'z' | 'y' | 'x';
 
@@ -32,11 +34,13 @@ export interface FrameLayoutState {
   readonly startExtension: string;
   readonly endExtension: string;
   readonly swapThrough: readonly number[];
+  /** 打った点の寸法の基準(配置の補助 P-B): 芯・内側・外側。内側・外側は閉じた点の形だけ(辺から選ぶ形では使わない)。 */
+  readonly dimensionBasis: FrameDimensionBasis;
 }
 
 export const INITIAL_FRAME_LAYOUT: FrameLayoutState = {
   source: 'points', pointsText: '', closed: false, edges: [], checkedEdges: [], edgeOrder: 'number', edgeFilter: 'all',
-  up: 'z', quarterTurns: 0, corners: 'butt', startExtension: '0', endExtension: '0', swapThrough: [],
+  up: 'z', quarterTurns: 0, corners: 'butt', startExtension: '0', endExtension: '0', swapThrough: [], dimensionBasis: 'center',
 };
 
 const UP_VECTORS: Readonly<Record<FrameUp, readonly [number, number, number]>> = { z: [0, 0, 1], y: [0, 1, 0], x: [1, 0, 0] };
@@ -58,9 +62,14 @@ export type FrameLayoutView =
   | { readonly kind: 'empty' }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'ready'; readonly request: FrameMembersRequest; readonly rows: readonly FrameLayoutRow[];
-    readonly corners: readonly FrameLayoutCorner[] };
+    readonly corners: readonly FrameLayoutCorner[];
+    /** 内側・外側の寸法から換えた芯の点の文字(1 行に 1 点)。芯の基準と辺から選ぶ形は空。 */
+    readonly centers: readonly string[] };
 
-type ParsedLines = { readonly ok: true; readonly lines: readonly FrameLine[] } | { readonly ok: false; readonly message: string };
+type ParsedLines = { readonly ok: true; readonly lines: readonly FrameLine[]; readonly centers: readonly Vec3[] }
+  | { readonly ok: false; readonly message: string };
+type CenterPoints = { readonly ok: true; readonly points: readonly Vec3[]; readonly converted: boolean }
+  | { readonly ok: false; readonly message: string };
 
 const fill = (key: MessageKey, values: Readonly<Record<string, string | number>>): string =>
   Object.entries(values).reduce((text, [name, value]) => text.split(`{${name}}`).join(String(value)), t(key));
@@ -82,17 +91,49 @@ export function parseFramePoints(text: string):
   return { ok: true, points };
 }
 
-/** 点の文字を線の列にする。点は 2 つ以上。閉じる時は 3 点以上で最後から最初へも 1 本。 */
-function parseFrameLines(text: string, closed: boolean): ParsedLines {
+/**
+ * 点の文字を線の列にする。点は 2 つ以上。閉じる時は 3 点以上で最後から最初へも 1 本。点は `toCenters` で寸法の基準から芯の点へ換えてから
+ * 線にする(P-B。芯の基準はそのまま)。
+ */
+function parseFrameLines(text: string, closed: boolean, toCenters: (points: readonly Vec3[]) => CenterPoints): ParsedLines {
   const parsed = parseFramePoints(text);
   if (!parsed.ok) return parsed;
-  const points = parsed.points;
-  if (points.length < 2) return { ok: false, message: t('catalog.frameLayout.error.tooFew') };
+  if (parsed.points.length < 2) return { ok: false, message: t('catalog.frameLayout.error.tooFew') };
+  const centered = toCenters(parsed.points);
+  if (!centered.ok) return centered;
+  const points = centered.points;
   const lines = points.slice(1).map((end, index): FrameLine => ({ start: points[index] ?? end, end }));
   const first = points[0], last = points.at(-1);
   if (closed && points.length >= 3 && first !== undefined && last !== undefined) lines.push({ start: last, end: first });
-  return { ok: true, lines };
+  return { ok: true, lines, centers: centered.converted ? points : [] };
 }
+
+type CenterRefusal = Extract<ReturnType<typeof frameCenterPoints>, { readonly ok: false }>['reason'];
+const BASIS_REFUSAL_KEYS: Readonly<Record<CenterRefusal, MessageKey>> = {
+  notClosed: 'catalog.frameLayout.error.basis.notClosed', notLevel: 'catalog.frameLayout.error.basis.notLevel',
+  degenerate: 'catalog.frameLayout.error.basis.degenerate', reversal: 'catalog.frameLayout.error.basis.reversal',
+  collapsed: 'catalog.frameLayout.error.basis.collapsed', badSection: 'catalog.frameLayout.error.basis.badSection',
+};
+
+/** 寸法の基準の内側・外側を選べるか(点の形〔点を入れる・一筆書き〕を閉じている時。統括の決定 2026-11-19: 閉じた形だけ)。 */
+export function frameDimensionBasisAvailable(state: FrameLayoutState): boolean {
+  return state.source !== 'edges' && state.closed;
+}
+
+/** 打った点を、寸法の基準から芯の点へ換える口(芯ならそのまま)。断面の向きは並べる時と同じ(上の向き・回し)。鋼材も族も同じ計算。 */
+function centerPointsFor(state: FrameLayoutState, member: FrameMemberChoice): (points: readonly Vec3[]) => CenterPoints {
+  return (points) => {
+    if (state.dimensionBasis === 'center') return { ok: true, points, converted: false };
+    const section = frameMemberSection(member);
+    const result = section === null ? { ok: false as const, reason: 'badSection' as const }
+      : frameCenterPoints(points, state.closed, { basis: state.dimensionBasis, up: UP_VECTORS[state.up], quarterTurns: state.quarterTurns,
+        section });
+    return result.ok ? { ok: true, points: result.points, converted: true } : { ok: false, message: t(BASIS_REFUSAL_KEYS[result.reason]) };
+  };
+}
+
+/** 芯の点の表示の桁(mm の小数 3 桁。-0 は 0)。 */
+const shownMm = (value: number): string => String(Number(value.toFixed(3)) + 0);
 
 const signed = (value: number): string => value > 0 ? `+${String(value)}` : String(value);
 
@@ -133,7 +174,8 @@ const endCell = (adjustment: number, miter: string | null): string => signed(adj
 export function frameLayoutView(state: FrameLayoutState, member: FrameMemberChoice): FrameLayoutView {
   const fromPoints = state.source !== 'edges';
   if (fromPoints ? state.pointsText.trim() === '' : state.checkedEdges.length === 0) return { kind: 'empty' };
-  const parsed: ParsedLines = fromPoints ? parseFrameLines(state.pointsText, state.closed) : { ok: true, lines: checkedEdgeLines(state) };
+  const parsed: ParsedLines = fromPoints ? parseFrameLines(state.pointsText, state.closed, centerPointsFor(state, member))
+    : { ok: true, lines: checkedEdgeLines(state), centers: [] };
   if (!parsed.ok) return { kind: 'error', message: parsed.message };
   const start = evaluateExpression(state.startExtension), end = evaluateExpression(state.endExtension);
   if (!start.ok || !end.ok) return { kind: 'error', message: t('catalog.frameLayout.error.badExtension') };
@@ -147,6 +189,8 @@ export function frameLayoutView(state: FrameLayoutState, member: FrameMemberChoi
       String(planned.lengthMm), endCell(planned.startAdjustment, planned.startMiter), endCell(planned.endAdjustment, planned.endMiter)] })),
     corners: preview.corners.map((corner, index) => ({ index, text: cornerText(corner, index),
       swappable: corner.treatment === 'butt' })),
+    centers: parsed.centers.map((point, index) => fill('catalog.frameLayout.centerPoint',
+      { n: index + 1, x: shownMm(point[0]), y: shownMm(point[1]), z: shownMm(point[2]) })),
   };
 }
 

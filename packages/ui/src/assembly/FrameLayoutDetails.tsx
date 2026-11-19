@@ -10,15 +10,19 @@ import type { FrameStrokeDraft } from '../store/frameStrokeActions.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { filterFrameEdges, frameEdgeChoices, type FrameEdgeChoice, type FrameEdgeFilter } from './frameEdgeChoices.js';
 import {
-  frameEdgeText, frameLayoutView, frameRejectionText, INITIAL_FRAME_LAYOUT, toggleFrameCornerSwap, withPickedEdges, type FrameLayoutState,
+  frameDimensionBasisAvailable, frameEdgeText, frameLayoutView, frameRejectionText, INITIAL_FRAME_LAYOUT, toggleFrameCornerSwap,
+  withPickedEdges, type FrameLayoutState,
   type FrameLayoutView, type FrameUp,
 } from './frameLayoutInput.js';
 import { frameMemberMiterSupported, type FrameMemberChoice } from './frameMembersPlacement.js';
 import { framePointsOrNull, frameStrokeFromLayout, withStrokePoints } from './frameStroke.js';
+import { AccessoryFields } from './AccessoryFields.js';
+import { layoutAccessory, layoutAccessoryOptions } from './accessoryChoice.js';
 
 const UP_CHOICES: readonly FrameUp[] = ['z', 'y', 'x'];
 const CORNER_RULES: readonly FrameLayoutState['corners'][] = ['butt', 'miter', 'none'];
 const TURNS: readonly number[] = [0, 1, 2, 3];
+const BASES: readonly FrameLayoutState['dimensionBasis'][] = ['center', 'inner', 'outer'];
 const EDGE_FILTERS: readonly FrameEdgeFilter[] = ['all', 'x', 'y', 'z', 'other'];
 /** 辺がこの本数を超える時だけ、並びと向きの絞り込みを出す(統括の決定 2026-11-16)。 */
 const EDGE_FILTER_THRESHOLD = 100;
@@ -36,6 +40,8 @@ function FramePreview({ view, onSwap }: { readonly view: Extract<FrameLayoutView
         {t(`catalog.frameLayout.column.${column}`)}</th>)}</tr></thead>
       <tbody>{view.rows.map((row) => <tr key={row.line}>{row.cells.map((cell, index) => <td key={index}>{cell}</td>)}</tr>)}</tbody>
     </table>
+    {view.centers.length === 0 ? null : <><p>{t('catalog.frameLayout.centers')}</p>
+      <ul>{view.centers.map((text) => <li key={text}>{text}</li>)}</ul></>}
     <ul>{view.corners.map((corner) => <li key={corner.index}>{corner.text}
       {corner.swappable ? <button type="button" className="pcad-button" title={t('catalog.frameLayout.swapGuide')}
         onClick={() => { onSwap(corner.index); }}>{t('catalog.frameLayout.swap')}</button> : null}</li>)}</ul>
@@ -97,6 +103,26 @@ function FrameStrokeFields({ state, stroke, update }: { readonly state: FrameLay
           onClick={() => { useAppStore.getState().pauseFrameStroke(); }}>{t('catalog.frameLayout.stroke.end')}</button>
       </>}
     <FramePointFields state={state} update={edit} />
+  </>;
+}
+
+/**
+ * 寸法の基準(配置の補助 P-B): 打った点が芯・内側の面・外側の面のどれの角か。内側・外側は閉じた点の形の時だけ選べる(閉じていない時は
+ * 選べない理由を出す)。辺から選ぶ形では出さない(辺は部品の実際の辺なので芯だけ)。
+ */
+function FrameBasisField({ state, update }: { readonly state: FrameLayoutState;
+  readonly update: (patch: Partial<FrameLayoutState>, resetSwap?: boolean) => void }): React.JSX.Element {
+  const available = frameDimensionBasisAvailable(state);
+  return <>
+    <label className="pcad-field">
+      <span className="pcad-field__label">{t('catalog.frameLayout.basis')}</span>
+      <select title={t('catalog.frameLayout.basisGuide')} className="pcad-field__input" value={state.dimensionBasis}
+        onChange={(event) => { update({ dimensionBasis: BASES.find((item) => item === event.currentTarget.value) ?? 'center' }, true); }}>
+        {BASES.map((item) => <option key={item} value={item} disabled={item !== 'center' && !available}>
+          {t(`catalog.frameLayout.basis.${item}`)}</option>)}
+      </select>
+    </label>
+    {available ? null : <p>{t('catalog.frameLayout.basisUnavailable')}</p>}
   </>;
 }
 
@@ -208,7 +234,7 @@ export function FrameLayoutDetails({ member }: { readonly member: FrameMemberCho
   };
   const place = (): void => {
     if (view.kind !== 'ready') return;
-    const placed = useAppStore.getState().placeFrameMembers(view.request);
+    const placed = useAppStore.getState().placeFrameMembers({ ...view.request, accessory: layoutAccessory(member) });
     // 一筆書きは、置いたら点の列を空にして、続けて次の線を打てるようにする(置いた物は元に戻す 1 回で消える)。
     if (placed.ok && state.source === 'stroke') useAppStore.getState().updateFrameStroke({ points: [], closed: false });
     setMessage(placed.ok ? { role: 'status', text: t('catalog.frameLayout.placed').replace('{count}', String(placed.componentIds.length)) }
@@ -230,6 +256,7 @@ export function FrameLayoutDetails({ member }: { readonly member: FrameMemberCho
       {state.source === 'points' ? <FramePointFields state={state} update={update} />
         : state.source === 'stroke' ? <FrameStrokeFields state={state} stroke={stroke} update={update} />
           : <FrameEdgeFields state={state} onState={(next) => { setState(next); setMessage(null); }} onMessage={setMessage} />}
+      {state.source === 'edges' ? null : <FrameBasisField state={state} update={update} />}
       <label className="pcad-field">
         <span className="pcad-field__label">{t('catalog.frameLayout.up')}</span>
         <select title={t('catalog.frameLayout.upGuide')} className="pcad-field__input" value={state.up}
@@ -263,6 +290,7 @@ export function FrameLayoutDetails({ member }: { readonly member: FrameMemberCho
           }} />
         <span className="pcad-field__unit">mm</span>
       </label>)}
+      <AccessoryFields options={layoutAccessoryOptions(member)} lengthMm={null} showEnds={false} />
       {view.kind === 'error' ? <p className="pcad-field__message" role="alert">{view.message}</p> : null}
       {view.kind !== 'ready' ? null : <FramePreview view={view}
         onSwap={(index) => { setState(toggleFrameCornerSwap(state, index)); setMessage(null); }} />}

@@ -5,10 +5,12 @@ import {
   GRID_FADE_START_RATIO,
   gridExtent,
   gridFadeOpacity,
+  gridLayoutFor,
   gridSpacing,
   isMajorGridLine,
   MAJOR_GRID_INTERVAL,
 } from './gridMath.js';
+import { DEFAULT_GRID_SETTING } from '../settings/gridSetting.js';
 
 describe('方眼の間隔の自動調整(FR-104)', () => {
   it.each([
@@ -104,5 +106,14 @@ describe('遠くの方眼が薄くなる度合い(FR-104)', () => {
 
   it('間隔が変わっても広がりに対する比が同じなら同じ薄さ', () => {
     expect(gridFadeOpacity(100, 200)).toBeCloseTo(gridFadeOpacity(1000, 2000), 12);
+  });
+});
+
+describe('方眼の作り方(配置の補助 P-C)', () => {
+  it('自動は今までの幅と 20 倍の広がり、固定は利用者の幅と 幅 × 片側の数で、視点の距離に依らない', () => {
+    expect(gridLayoutFor(DEFAULT_GRID_SETTING, 100)).toEqual({ spacing: gridSpacing(100), extent: gridExtent(gridSpacing(100)) });
+    const fixed = { mode: 'fixed', stepMm: 200, count: 5 } as const;
+    expect(gridLayoutFor(fixed, 100)).toEqual({ spacing: 200, extent: 1000 });
+    expect(gridLayoutFor(fixed, 100_000)).toEqual({ spacing: 200, extent: 1000 });
   });
 });

@@ -112,6 +112,7 @@ describe('資料 1 の小さい溝つきフレーム・端のキャップ・ブ�
       expect([record.width, record.height, record.thickness, record.massG, record.page], record.key).toEqual([numberOf(cells['板の幅']),
         numberOf(cells['板の高さ']), numberOf(cells['板の厚さ']), numberOf(cells['質量_g']), numberOf(cells['PDF頁'])]);
       expect(record.key).toBe(`cap-${cells['合うフレームの鍵'] ?? ''}`);
+      expect(record.frameKey, record.key).toBe(cells['合うフレームの鍵']);
     }
   });
 

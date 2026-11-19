@@ -22,6 +22,8 @@ import { readMouseButtonCommands, type MouseButtonCommands } from '../commands/p
 import { readRadialCommands, type RadialCommands } from '../commands/radialCommandSettings.js';
 import { readStoredShortcutAssignments, storedShortcutFields } from './shortcutSettings.js';
 import { DEFAULT_SNAP_PAUSE_MODIFIER, snapPauseModifierOf, type SnapPauseModifier } from './snapPauseSetting.js';
+import { DEFAULT_SNAP_RADIUS, snapRadiusChoiceOf, type SnapRadiusChoice } from './snapRadiusSetting.js';
+import { DEFAULT_GRID_SETTING, gridSettingOf, type GridSetting } from './gridSetting.js';
 import type { NumericDefaultSources } from '../sketch/numericDefaultSources.js';
 import { DEFAULT_TRACK_ANGLE_STEP, TRACK_ANGLE_STEPS } from '../sketch/trackMath.js';
 import {
@@ -80,6 +82,10 @@ export interface DisplaySettings {
   readonly stockCutting?: StockCuttingSettings;
   /** 作図で、押している間だけ吸着と推定を止める修飾キー(B-09 3-2)。既定は 'none'(止めない)。 */
   readonly snapPauseModifier?: SnapPauseModifier;
+  /** 吸着の幅(配置の補助 P-D)。点の吸着と部品の頂点への吸着の半径を決める。既定は 'medium'(今までと同じ半径)。 */
+  readonly snapRadius?: SnapRadiusChoice;
+  /** 方眼の幅と数(配置の補助 P-C)。既定は自動(今までと同じ。カメラの距離で幅が決まる)。 */
+  readonly grid?: GridSetting;
   readonly theme: ThemeId;
   /** 表示の拡大率(%)。90〜150(FR-909)。 */
   readonly uiScale: number;
@@ -147,6 +153,8 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   autoSaveIntervalMs: readAutoSaveIntervalMs({}),
   stockCutting: DEFAULT_STOCK_CUTTING,
   snapPauseModifier: DEFAULT_SNAP_PAUSE_MODIFIER,
+  snapRadius: DEFAULT_SNAP_RADIUS,
+  grid: DEFAULT_GRID_SETTING,
   theme: 'dark',
   uiScale: 100,
   trackAngleStep: DEFAULT_TRACK_ANGLE_STEP,
@@ -466,6 +474,10 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       stockCutting: readStockCuttingSettings('stockCutting' in parsed ? parsed.stockCutting : undefined),
       // 知らない値は既定へ戻す(止めない側へ倒す。今までと同じ動き)。
       snapPauseModifier: snapPauseModifierOf('snapPauseModifier' in parsed ? parsed.snapPauseModifier : undefined) ?? DEFAULT_SNAP_PAUSE_MODIFIER,
+      // 吸着の幅の知らない値も既定(今までと同じ半径)へ戻す。
+      snapRadius: snapRadiusChoiceOf('snapRadius' in parsed ? parsed.snapRadius : undefined) ?? DEFAULT_SNAP_RADIUS,
+      // 方眼の幅と数の形・範囲の違う値も既定(自動)へ戻す。
+      grid: gridSettingOf('grid' in parsed ? parsed.grid : undefined) ?? DEFAULT_GRID_SETTING,
     };
   } catch {
     return DEFAULT_DISPLAY_SETTINGS;

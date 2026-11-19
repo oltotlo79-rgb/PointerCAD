@@ -10,9 +10,13 @@
 import { withName } from '../../standard/partPrimitives.js';
 import { lengthOf, lengthOptionSpec, lengthText } from '../lengthOption.js';
 import { buildMiteredSection, MITER_OPTION_SPECS, miteredMassLength, miteredSectionVolume } from '../miterOption.js';
+import {
+  slottedOutlineBounds, slottedOutlineProfile, slottedOutlineSlots, type OutlineHole, type OutlineSlot, type SlottedOutline,
+} from '../profiles/slottedOutline.js';
 import { tSlotProfile, tSlotSectionBounds, tSlotSlots, type TSlotDimensions } from '../profiles/tSlot.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
+import { T_SLOT_OUTLINE_RECORDS } from './frameOutlineRows.js';
 
 /** 行の表の 1 行(道具が生成する。数は資料の印字のまま。Ix・Iy は cm⁴、Zx・Zy は cm³)。 */
 export interface TSlotCatalogRecord {
@@ -48,6 +52,18 @@ export interface TSlotCatalogRecord {
   readonly iyCm4: number | null;
   readonly zxCm3: number | null;
   readonly zyCm3: number | null;
+  /** 資料の寸法で作らず簡略にした所(例: 位置が参考寸法だけの四隅の穴)。持つ行だけ(選ぶ画面と切断の一覧に印として出す)。 */
+  readonly simplified?: readonly string[];
+  /**
+   * 長方形の格子で表せない断面だけ: 外周の指定(行の表 frameOutlineRows.ts。頂点は反時計回り、原点は外形の中心。溝の形は行の口・肩・部屋の値。
+   * profiles/slottedOutline.ts)。持つ行は、断面をこの外周で作る。
+   */
+  readonly outline?: {
+    readonly vertices: readonly (readonly [number, number])[];
+    readonly radii: readonly number[];
+    readonly slots: readonly OutlineSlot[];
+    readonly holes: readonly OutlineHole[];
+  };
 }
 
 const SLOTS = [6, 8, 10] as const;
@@ -57,7 +73,9 @@ const FACE_KEYS = [['t', 'slotTop'], ['b', 'slotBottom'], ['l', 'slotLeft'], ['r
 function evidenceOf(record: TSlotCatalogRecord): CatalogItemRow['evidence'] {
   const properties = record.tablePage === null
     ? `PDF ${record.figurePage} 頁 図の箱(Ix・Iy・Zx・Zy・単位質量。断面性能の表に行が無い)`
-    : `PDF ${record.tablePage} 頁 断面性能の表(断面積・Ix・Iy・Zx・Zy・単位質量)`;
+    : record.massSource === 'box'
+      ? `PDF ${record.tablePage} 頁 断面性能の表(断面積・Ix・Iy・Zx・Zy)／PDF ${record.figurePage} 頁 図の箱(単位質量)`
+      : `PDF ${record.tablePage} 頁 断面性能の表(断面積・Ix・Iy・Zx・Zy・単位質量)`;
   return { title: '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)', edition: null,
     locator: `PDF ${record.figurePage} 頁 断面の図(外形・溝・穴・角の丸み)／${properties}`, reference: '' };
 }
@@ -84,7 +102,10 @@ function rowOf(record: TSlotCatalogRecord): CatalogItemRow {
     evidence: evidenceOf(record),
     verification: 'manufacturer-catalog',
     verified: true,
-    note: withheld ? '内側の形は簡略。質量は単位質量の値。断面の値は資料の表と頁の箱で向きが食い違うので持たない' : '内側の形は簡略。質量は単位質量の値',
+    ...(record.simplified === undefined ? {} : { simplified: record.simplified }),
+    note: withheld ? '内側の形は簡略。質量は単位質量の値。断面の値は資料の表と頁の箱で向きが食い違うので持たない'
+      : record.massSource === 'box' && record.tablePage !== null
+        ? '内側の形は簡略。質量は単位質量の値(頁の箱の値。断面性能の表の単位質量は断面積と合わないので使わない)' : '内側の形は簡略。質量は単位質量の値',
   };
 }
 
@@ -102,7 +123,37 @@ function frameName(row: CatalogItemRow, values: Readonly<Record<string, string>>
   return `アルミフレーム ${row.size}×${lengthText(values)}`;
 }
 
-function familyOf(slot: (typeof SLOTS)[number], rows: readonly CatalogItemRow[]): CatalogFamily {
+/** 行の断面の輪・外形・溝(外周の指定を持つ行は溝つきの外周の台本、ほかは長方形の格子の台本)。 */
+interface SectionOf {
+  readonly profile: (row: CatalogItemRow) => ReturnType<typeof tSlotProfile>;
+  readonly bounds: (row: CatalogItemRow) => ReturnType<typeof tSlotSectionBounds>;
+  readonly slots: (row: CatalogItemRow) => ReturnType<typeof tSlotSlots>;
+}
+
+function sectionOf(outlines: ReadonlyMap<string, SlottedOutline>): SectionOf {
+  return {
+    profile: (row) => {
+      const outline = outlines.get(row.key);
+      return outline === undefined ? tSlotProfile(dimensionsOf(row)) : slottedOutlineProfile(outline);
+    },
+    bounds: (row) => {
+      const outline = outlines.get(row.key);
+      return outline === undefined ? tSlotSectionBounds(dimensionsOf(row)) : slottedOutlineBounds(outline);
+    },
+    slots: (row) => {
+      const outline = outlines.get(row.key);
+      return outline === undefined ? tSlotSlots(dimensionsOf(row)) : slottedOutlineSlots(outline);
+    },
+  };
+}
+
+/** 行の外周の指定を、溝つきの外周の台本の入力にする(溝の形は行の口・肩・部屋の値)。 */
+function slottedOf(record: TSlotCatalogRecord, outline: NonNullable<TSlotCatalogRecord['outline']>): SlottedOutline {
+  return { vertices: outline.vertices, radii: outline.radii, slotOpening: record.slotOpening, shoulder: record.shoulder,
+    slotInnerWidth: record.slotInnerWidth, slotDepth: record.slotDepth, slots: outline.slots, holes: outline.holes };
+}
+
+function familyOf(slot: (typeof SLOTS)[number], rows: readonly CatalogItemRow[], section: SectionOf): CatalogFamily {
   return {
     id: `t-slot-frame-s${slot}`,
     group: 'aluminumFrame',
@@ -115,36 +166,37 @@ function familyOf(slot: (typeof SLOTS)[number], rows: readonly CatalogItemRow[])
     diagram: 'tSlotSeries',
     rows,
     build: (row, values) => {
-      const profile = tSlotProfile(dimensionsOf(row));
+      const profile = section.profile(row);
       const length = lengthOf(values);
       if (profile === null || length === null || !(length.value > 0)) return null;
-      const document = buildMiteredSection(profile, length, tSlotSectionBounds(dimensionsOf(row)), values);
+      const document = buildMiteredSection(profile, length, section.bounds(row), values);
       return document === null ? null : withName(document, frameName(row, values));
     },
     nominalVolume: (row, values) => {
-      const profile = tSlotProfile(dimensionsOf(row));
+      const profile = section.profile(row);
       const length = lengthOf(values)?.value ?? NaN;
-      return profile === null || !(length > 0) ? null : miteredSectionVolume(profile, tSlotSectionBounds(dimensionsOf(row)), values, length);
+      return profile === null || !(length > 0) ? null : miteredSectionVolume(profile, section.bounds(row), values, length);
     },
     // 単位質量(kg/m)× 長さ(mm)= 質量(g)。留めの部材の長さは、留めを引いた後の体積 ÷ 断面積(miterOption.ts)。
     nominalMassG: (row, values) => {
       const length = lengthOf(values)?.value ?? NaN;
       const unitMass = row.dims.unitMassKgPerM ?? NaN;
-      const massLength = length > 0 ? miteredMassLength(tSlotProfile(dimensionsOf(row)), tSlotSectionBounds(dimensionsOf(row)), values, length)
-        : null;
+      const massLength = length > 0 ? miteredMassLength(section.profile(row), section.bounds(row), values, length) : null;
       return massLength !== null && unitMass > 0 ? unitMass * massLength : null;
     },
-    sectionBounds: (row) => tSlotSectionBounds(dimensionsOf(row)),
-    sectionSlots: (row) => tSlotSlots(dimensionsOf(row)),
+    sectionBounds: (row) => section.bounds(row),
+    sectionSlots: (row) => section.slots(row),
     partName: (row, values) => frameName(row, values),
   };
 }
 
-/** 行の表から溝幅ごとの 3 族を作る。 */
+/** 行の表から溝幅ごとの 3 族を作る(長方形の格子の行の後に、外周の指定を持つ行)。 */
 function tSlotCatalogFamilies(records: readonly TSlotCatalogRecord[]): Readonly<Record<'s6' | 's8' | 's10', CatalogFamily>> {
-  const [s6, s8, s10] = SLOTS.map((slot) => familyOf(slot, records.filter((record) => record.slot === slot).map(rowOf)));
+  const section = sectionOf(new Map(records.flatMap((record): (readonly [string, SlottedOutline])[] =>
+    (record.outline === undefined ? [] : [[record.key, slottedOf(record, record.outline)]]))));
+  const [s6, s8, s10] = SLOTS.map((slot) => familyOf(slot, records.filter((record) => record.slot === slot).map(rowOf), section));
   if (s6 === undefined || s8 === undefined || s10 === undefined) throw new Error('溝幅の族が 3 つそろわない');
   return { s6, s8, s10 };
 }
 
-export const T_SLOT_CATALOG_FAMILIES = tSlotCatalogFamilies(T_SLOT_CATALOG_RECORDS);
+export const T_SLOT_CATALOG_FAMILIES = tSlotCatalogFamilies([...T_SLOT_CATALOG_RECORDS, ...T_SLOT_OUTLINE_RECORDS]);

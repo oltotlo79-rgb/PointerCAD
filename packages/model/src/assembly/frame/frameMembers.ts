@@ -146,6 +146,18 @@ function sectionReach(section: FrameSectionBounds, basis: Basis, direction: Vec3
   return Math.abs(dot(basis.x, direction)) * halfX + Math.abs(dot(basis.y, direction)) * halfY;
 }
 
+/**
+ * 線の向き・上の向き・回しで決まる断面の、中心から世界の向き `direction`(単位の長さ)の面までの距離。芯・内側・外側の寸法の換算
+ * (frameDimensionBasis.ts)が、部材を置く時と同じ断面の向きで測るために使う。線の長さが 0・断面の向きが決まらない時は null。
+ */
+export function frameSectionReachAlong(section: FrameSectionBounds, lineDirection: Vec3, up: Vec3, quarterTurns: number,
+  direction: Vec3): number | null {
+  const length = norm(lineDirection);
+  if (!validSection(section) || withinMagnitude(length, POINT_TOLERANCE)) return null;
+  const basis = basisFor(scale(lineDirection, 1 / length), up, quarterTurns);
+  return basis === null ? null : sectionReach(section, basis, direction);
+}
+
 function groupEnds(lines: readonly FrameLine[]): readonly (readonly EndRef[])[] {
   const groups: EndRef[][] = [];
   lines.forEach((line, lineIndex) => {

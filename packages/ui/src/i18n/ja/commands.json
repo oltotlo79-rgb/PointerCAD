@@ -237,5 +237,6 @@
   "controlGuide.button.handoff.prusa": "PrusaSlicerの案内を開きます。保存した形を自動送信せず、必要なファイルは自分で読み込みます。",
   "controlGuide.button.handoff.help": "加工先へ形を渡すための説明を開きます。",
   "controlGuide.button.importDwg": "DWGを直接取り込まず、DXFへの変換手順を表示します。",
-  "controlGuide.button.importFormat": "この形式のファイルを選択して取り込みます。"
+  "controlGuide.button.importFormat": "この形式のファイルを選択して取り込みます。",
+  "controlGuide.button.assemblyDetachAccessories": "この部品に付けた付属の部品（端のキャップなど）を消します。部品そのものは残ります。"
 }

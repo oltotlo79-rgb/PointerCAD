@@ -444,7 +444,7 @@ export function kernelMemoryWarningText(memory: KernelMemoryView | null | undefi
 /** ばねのその場入力の段。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
 export type SpringNumericInputStep = 'springShape' | 'springLength';
 
-/** アセンブリの上部にある全23道具と、次に行う操作の文言。 */
+/** アセンブリの上部にある全24道具と、次に行う操作の文言。 */
 export const ASSEMBLY_TOOL_GUIDE_KEYS = {
   placePart: 'assembly.status.placePart',
   placeStandardPart: 'assembly.status.placeStandardPart',
@@ -458,6 +458,7 @@ export const ASSEMBLY_TOOL_GUIDE_KEYS = {
   jointCheck: 'assembly.status.jointCheck',
   jointSwap: 'assembly.status.jointSwap',
   memberStretch: 'assembly.status.memberStretch',
+  dimensionMove: 'assembly.status.dimensionMove',
   releaseFastening: 'assembly.status.releaseFastening',
   coincident: 'assembly.status.pickMateTarget',
   concentric: 'assembly.status.pickMateTarget',
@@ -490,6 +491,7 @@ export const ASSEMBLY_TOOL_GUIDE_IDS = [
   'jointCheck',
   'jointSwap',
   'memberStretch',
+  'dimensionMove',
   'coincident',
   'concentric',
   'distance',

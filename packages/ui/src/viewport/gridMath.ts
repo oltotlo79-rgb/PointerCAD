@@ -1,3 +1,4 @@
+import type { GridSetting } from '../settings/gridSetting.js';
 import { MIN_DISTANCE } from './cameraMath.js';
 
 /** 画面に入れたい方眼のおよその本数。 */
@@ -27,9 +28,25 @@ export function gridExtent(spacing: number): number {
   return spacing * 20;
 }
 
-/** XYZ 軸を描く長さ(mm)。方眼と同じ広がりに揃える。 */
-export function axisLength(spacing: number): number {
-  return gridExtent(spacing);
+/** 方眼の作り方: 線の幅(mm)と、原点から片側の広がり(mm)。 */
+export interface GridLayout {
+  readonly spacing: number;
+  readonly extent: number;
+}
+
+/**
+ * 方眼の設定(配置の補助 P-C)とカメラの距離から、方眼の作り方を決める。自動は今までどおり(距離で幅、広がりは幅の 20 倍)、
+ * 固定は利用者の幅と 幅 × 片側の数の広がり(視点を動かしても変わらない)。
+ */
+export function gridLayoutFor(setting: GridSetting, cameraDistance: number): GridLayout {
+  if (setting.mode === 'fixed') return { spacing: setting.stepMm, extent: setting.stepMm * setting.count };
+  const spacing = gridSpacing(cameraDistance);
+  return { spacing, extent: gridExtent(spacing) };
+}
+
+/** XYZ 軸を描く長さ(mm)。方眼と同じ広がりに揃える(固定の方眼〔P-C〕は 幅 × 数 の広がりを渡す)。 */
+export function axisLength(spacing: number, extent: number = gridExtent(spacing)): number {
+  return extent;
 }
 
 /** 主線(濃い線)を入れる間隔。原点から数えて 5 本ごとに 1 本を主線にする(FR-104)。 */

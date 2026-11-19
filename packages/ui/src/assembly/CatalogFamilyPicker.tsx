@@ -19,6 +19,8 @@ import type { CatalogLoadState } from './catalogFamilyLoading.js';
 import type { CatalogFamilyStart, PickerJumpTarget } from './catalogSearch.js';
 import { CatalogLoadStatus } from './CatalogLoadStatus.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
+import { AccessoryFields } from './AccessoryFields.js';
+import { familyAccessoryProps, pickedAccessory } from './accessoryChoice.js';
 import { DimensionFigure } from './DimensionFigure.js';
 import { familyFigurePart } from './dimensionTable.js';
 import { FrameMemberTools } from './FrameMemberTools.js';
@@ -80,9 +82,10 @@ React.JSX.Element {
   const rows = family?.rows.filter((candidate) => materials.length < 2 || candidate.materialLabel === activeMaterial) ?? [];
   const row = rows.find((candidate) => candidate.key === itemKey) ?? rows[0];
   const hintKey = family === undefined ? null : familyHintKey(family);
+  const accessory = familyAccessoryProps(family, row, values);
   const submit = (): void => {
     if (family === undefined || row === undefined) { setError('unknownChoice'); return; }
-    const placed = useAppStore.getState().placeCatalogItem(family.id, row.key, values);
+    const placed = useAppStore.getState().placeCatalogItem(family.id, row.key, values, pickedAccessory(accessory.options));
     // 置けた物を最近使った物に覚える(材質の欄を出さない族は材質を持たない。K-07b)。
     if (placed) rememberPlacedPart({ kind: 'family', group, start: { familyId: family.id,
       material: materials.length >= 2 ? activeMaterial ?? '' : '', itemKey: row.key, values } });
@@ -136,6 +139,7 @@ React.JSX.Element {
           setValues({ ...values, [key]: value }); setError(null);
         })}
       </div>
+      <AccessoryFields options={accessory.options} lengthMm={accessory.lengthMm} showEnds />
       <DimensionFigure part={family === undefined || row === undefined ? null : familyFigurePart(family, row, values)} />
       {hintKey === null ? null : <p className="pcad-popover__hint">{t(hintKey)}</p>}
       <p className="pcad-popover__hint">{t('catalog.mechanical.simplified')}</p>

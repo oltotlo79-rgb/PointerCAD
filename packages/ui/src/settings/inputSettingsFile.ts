@@ -6,6 +6,7 @@ import { viewKeyCollisions } from './inputBindingsDraft.js';
 import type { DisplaySettings } from './settings.js';
 import { currentShortcutAssignments, storedShortcutFields } from './shortcutSettings.js';
 import { currentSnapPauseModifier, snapPauseModifierOf, type SnapPauseModifier } from './snapPauseSetting.js';
+import { currentSnapRadius, snapRadiusChoiceOf, type SnapRadiusChoice } from './snapRadiusSetting.js';
 import {
   currentViewControls, isViewControlSettings, readStoredViewControls, viewTriggerKey, type ViewControlSettings, type ViewTrigger,
 } from './viewControlSettings.js';
@@ -13,7 +14,8 @@ import {
 /**
  * 操作の割り当ての設定ファイル(`.pcadinput`。設計 B-09 3-1)の書き出しと読み込み。
  *
- * 形: `{ format, version: 1, viewControls, inputAssignments, mouseButtonCommands, radialCommands, snapPauseModifier }` の JSON。
+ * 形: `{ format, version: 1, viewControls, inputAssignments, mouseButtonCommands, radialCommands, snapPauseModifier, snapRadius }` の JSON。
+ * 吸着の幅(snapRadius、配置の補助 P-D)は、吸着を止めるキーと同じ「吸着」の欄で読む(版は 1 のまま。無いファイルは今の値のまま)。
  * 5 つの欄は端末の保存と同じ形なので、読む時も端末の設定を読む時と同じ救い出しの関数を通す(中身を信じない)。
  * - 断る(全部を読まず、今の割り当てを変えない): 大きすぎる・JSON でない・印が違う・版が 1 でない(未来の版を含む)・読める欄が無い。
  * - 欄ごと: 知らない操作・命令の鍵や形の違う項目は 1 件ずつ捨てて数える。欄が無ければ今のまま。欄の形が違えば、その欄だけ読まない。
@@ -24,7 +26,7 @@ const FILE_FORMAT = 'pointercad-input-settings';
 /** 版を上げる時は、古い版を読む道を残して足す。読み手より新しい版は読まない(知らない意味の欄を取り違えないため)。 */
 const FILE_VERSION = 1;
 const KNOWN_FIELDS: ReadonlySet<string> = new Set(['format', 'version', 'viewControls', 'inputAssignments', 'mouseButtonCommands',
-  'radialCommands', 'snapPauseModifier']);
+  'radialCommands', 'snapPauseModifier', 'snapRadius']);
 
 /** 窓に結果を出す欄の順。 */
 export const INPUT_SETTINGS_SECTIONS = ['view', 'keys', 'mouse', 'radial', 'snap'] as const;
@@ -43,6 +45,7 @@ export interface InputSettingsValues {
   readonly mouseButtonCommands?: MouseButtonCommands | undefined;
   readonly radialCommands?: RadialCommands | undefined;
   readonly snapPauseModifier?: SnapPauseModifier | undefined;
+  readonly snapRadius?: SnapRadiusChoice | undefined;
 }
 
 export interface InputSettingsReading {
@@ -81,6 +84,7 @@ export function encodeInputSettingsFile(settings: DisplaySettings): Uint8Array {
     mouseButtonCommands: settings.mouseButtonCommands ?? {},
     radialCommands: settings.radialCommands ?? {},
     snapPauseModifier: currentSnapPauseModifier(settings),
+    snapRadius: currentSnapRadius(settings),
   };
   return new TextEncoder().encode(`${JSON.stringify(file, null, 2)}\n`);
 }
@@ -119,11 +123,24 @@ function readRecordSection<T>(file: Readonly<Record<string, unknown>>, field: 'm
   return readSection(salvaged.value, salvaged.dropped);
 }
 
-/** 吸着を一時止める修飾キー(B-09 3-2)。知らない値は欄ごと読まない(今の値のまま)。 */
-function readSnapSection(file: Readonly<Record<string, unknown>>): Section<SnapPauseModifier> {
-  if (!Object.hasOwn(file, 'snapPauseModifier')) return ABSENT;
-  const value = snapPauseModifierOf(file.snapPauseModifier);
-  return value === null ? UNREADABLE : readSection(value, 0);
+interface SnapValues {
+  readonly snapPauseModifier?: SnapPauseModifier;
+  readonly snapRadius?: SnapRadiusChoice;
+}
+
+/**
+ * 吸着の欄: 一時止める修飾キー(B-09 3-2)と吸着の幅(P-D)。どちらも無ければ欄が無い。知らない値の項目は捨てて数え、
+ * 読めた項目が 1 つも無ければ欄ごと読まない(今の値のまま)。
+ */
+function readSnapSection(file: Readonly<Record<string, unknown>>): Section<SnapValues> {
+  const present = (['snapPauseModifier', 'snapRadius'] as const).filter(field => Object.hasOwn(file, field)).length;
+  if (present === 0) return ABSENT;
+  const modifier = Object.hasOwn(file, 'snapPauseModifier') ? snapPauseModifierOf(file.snapPauseModifier) : null;
+  const radius = Object.hasOwn(file, 'snapRadius') ? snapRadiusChoiceOf(file.snapRadius) : null;
+  const read = (modifier === null ? 0 : 1) + (radius === null ? 0 : 1);
+  if (read === 0) return UNREADABLE;
+  return readSection({ ...(modifier === null ? {} : { snapPauseModifier: modifier }), ...(radius === null ? {} : { snapRadius: radius }) },
+    present - read);
 }
 
 /** 版の欄が読み手より新しい整数か(未来の版は、壊れた版と分けて知らせる)。 */
@@ -152,7 +169,7 @@ export function decodeInputSettingsFile(bytes: Uint8Array): InputSettingsReading
   return {
     ok: true,
     values: { viewControls: view.value, shortcutAssignments: keys.value, mouseButtonCommands: mouse.value, radialCommands: radial.value,
-      snapPauseModifier: snap.value },
+      snapPauseModifier: snap.value?.snapPauseModifier, snapRadius: snap.value?.snapRadius },
     sections: { view: view.reading, keys: keys.reading, mouse: mouse.reading, radial: radial.reading, snap: snap.reading },
     unknownFields: Object.keys(parsed).filter(key => !KNOWN_FIELDS.has(key)).length,
   };
@@ -192,6 +209,7 @@ export function planInputSettingsImport(current: DisplaySettings, reading: Input
     ...(values.mouseButtonCommands === undefined ? {} : { mouseButtonCommands: values.mouseButtonCommands, mouseButtonCommandsRecovered: undefined }),
     ...(values.radialCommands === undefined ? {} : { radialCommands: values.radialCommands, radialCommandsRecovered: undefined }),
     ...(values.snapPauseModifier === undefined ? {} : { snapPauseModifier: values.snapPauseModifier }),
+    ...(values.snapRadius === undefined ? {} : { snapRadius: values.snapRadius }),
   };
   return {
     next,
@@ -204,12 +222,12 @@ export function planInputSettingsImport(current: DisplaySettings, reading: Input
 export function inputSettingsValuesOf(settings: DisplaySettings): InputSettingsValues {
   return { viewControls: settings.viewControls, shortcutAssignments: settings.shortcutAssignments,
     mouseButtonCommands: settings.mouseButtonCommands, radialCommands: settings.radialCommands,
-    snapPauseModifier: settings.snapPauseModifier };
+    snapPauseModifier: settings.snapPauseModifier, snapRadius: settings.snapRadius };
 }
 
 /** 置き換えた後に 5 つの欄がどれも変わっていない時だけ、元に戻せる(後の変更を黙って消さない)。 */
 export function canUndoInputSettings(current: DisplaySettings, written: InputSettingsValues): boolean {
   return current.viewControls === written.viewControls && current.shortcutAssignments === written.shortcutAssignments
     && current.mouseButtonCommands === written.mouseButtonCommands && current.radialCommands === written.radialCommands
-    && current.snapPauseModifier === written.snapPauseModifier;
+    && current.snapPauseModifier === written.snapPauseModifier && current.snapRadius === written.snapRadius;
 }

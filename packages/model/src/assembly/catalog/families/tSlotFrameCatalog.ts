@@ -14,7 +14,7 @@ import {
   slottedOutlineBounds, slottedOutlineProfile, slottedOutlineSlots, type OutlineHole, type OutlineSlot, type SlottedOutline,
 } from '../profiles/slottedOutline.js';
 import { tSlotProfile, tSlotSectionBounds, tSlotSlots, type TSlotDimensions } from '../profiles/tSlot.js';
-import type { CatalogFamily, CatalogItemRow } from '../types.js';
+import type { CatalogFamily, CatalogItemRow, CatalogSimplifiedKind } from '../types.js';
 import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
 import { T_SLOT_OUTLINE_RECORDS } from './frameOutlineRows.js';
 
@@ -54,6 +54,10 @@ export interface TSlotCatalogRecord {
   readonly zyCm3: number | null;
   /** 資料の寸法で作らず簡略にした所(例: 位置が参考寸法だけの四隅の穴)。持つ行だけ(選ぶ画面と切断の一覧に印として出す)。 */
   readonly simplified?: readonly string[];
+  /** 簡略の印の種類(溝の位置を幅の中央に置いた行は slotPositionSymmetric。フレームの溝への締結の予告が簡略の知らせを出す)。 */
+  readonly simplifiedKinds?: readonly CatalogSimplifiedKind[];
+  /** L 形の断面だけ: 腕の幅(端のキャップの候補を、腕の幅の同じ L 形のキャップに絞るのに使う)。 */
+  readonly armWidth?: number;
   /**
    * 長方形の格子で表せない断面だけ: 外周の指定(行の表 frameOutlineRows.ts。頂点は反時計回り、原点は外形の中心。溝の形は行の口・肩・部屋の値。
    * profiles/slottedOutline.ts)。持つ行は、断面をこの外周で作る。
@@ -98,11 +102,14 @@ function rowOf(record: TSlotCatalogRecord): CatalogItemRow {
       slotOpening: record.slotOpening, shoulder: record.shoulder, slotInnerWidth: record.slotInnerWidth, slotDepth: record.slotDepth,
       centerHole: record.centerHole, cornerRadius: record.cornerRadius, cornerHoleDiameter: record.cornerHoleDiameter,
       cornerHoleInset: record.cornerHoleInset, unitMassKgPerM: record.unitMassKgPerM,
-      ...presentValues({ areaMm2: record.areaMm2, ixCm4: record.ixCm4, iyCm4: record.iyCm4, zxCm3: record.zxCm3, zyCm3: record.zyCm3 }) },
+      // outlineSection: 外周の指定を持つ(外周が長方形でない)行の印。端のキャップの候補に、同じ外形の四角のキャップを出さないのに使う。
+      ...presentValues({ areaMm2: record.areaMm2, ixCm4: record.ixCm4, iyCm4: record.iyCm4, zxCm3: record.zxCm3, zyCm3: record.zyCm3,
+        armWidth: record.armWidth ?? null, outlineSection: record.outline === undefined ? null : 1 }) },
     evidence: evidenceOf(record),
     verification: 'manufacturer-catalog',
     verified: true,
     ...(record.simplified === undefined ? {} : { simplified: record.simplified }),
+    ...(record.simplifiedKinds === undefined ? {} : { simplifiedKinds: record.simplifiedKinds }),
     note: withheld ? '内側の形は簡略。質量は単位質量の値。断面の値は資料の表と頁の箱で向きが食い違うので持たない'
       : record.massSource === 'box' && record.tablePage !== null
         ? '内側の形は簡略。質量は単位質量の値(頁の箱の値。断面性能の表の単位質量は断面積と合わないので使わない)' : '内側の形は簡略。質量は単位質量の値',

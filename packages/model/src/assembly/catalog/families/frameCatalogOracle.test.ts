@@ -207,8 +207,28 @@ describe('資料 1 のフレームの製品の行と 2 回目の独立の読み�
     expect(ALUMINUM_SECTION_RECORDS.map((record) => record.key).sort()).toEqual([...second.keys()].sort());
     for (const record of ALUMINUM_SECTION_RECORDS) {
       const parsed = second.get(record.key);
+      if (record.propertiesFromDimensions === true && parsed !== undefined) {
+        // 断面の値を寸法から計算した行(利用者の回答 2026-11-19「寸法からの計算の値で入れる」): 表の値が計算と 1% を超えて違う事を確かめ、
+        // 行の値は 2 回目の読みの寸法(長方形 H × t)から計算した値。ほかの欄は表のまま。
+        const h = parsed.height ?? NaN;
+        const t = parsed.thickness ?? NaN;
+        const computed = [t * h ** 3 / 12 / 1e4, h * t ** 3 / 12 / 1e4, t * h ** 2 / 6 / 1e3, h * t ** 2 / 6 / 1e3];
+        const printed = [parsed.ixCm4, parsed.iyCm4, parsed.zxCm3, parsed.zyCm3].map((value) => value ?? NaN);
+        expect([parsed.kind, printed.some((value, index) => Math.abs(value - (computed[index] ?? NaN)) > 0.01 * value)], record.key)
+          .toEqual(['flatBar', true]);
+        // 断面の 4 つの値は計算の値と小数 9 桁まで合い、ほかの欄は 2 回目の読みのまま(4 つの値は比べから外して別に照らす)。
+        const unset = { ixCm4: null, iyCm4: null, zxCm3: null, zyCm3: null };
+        expect({ ...record, ...unset }, record.key).toEqual({ ...parsed, size: record.size, propertiesFromDimensions: true, ...unset });
+        [record.ixCm4, record.iyCm4, record.zxCm3, record.zyCm3].forEach((value, index) => {
+          expect(value ?? NaN, `${record.key} ${index}`).toBeCloseTo(computed[index] ?? NaN, 9);
+        });
+        continue;
+      }
       expect(parsed === undefined ? undefined : { ...parsed, size: record.size }, record.key).toEqual(record);
     }
+    // 寸法から計算した行は、フラットバーの 3 行だけ(利用者の回答で決めた行。10×3 は入れない)。
+    expect(ALUMINUM_SECTION_RECORDS.filter((record) => record.propertiesFromDimensions === true).map((record) => record.key))
+      .toEqual(['fb-60x6', 'fb-60x8', 'fb-70x5']);
   });
 
   it('族の行は、行の表の行と同じ数・同じ鍵(溝幅ごと・種類ごとに分けただけ。外周の指定を持つ行の表を含む)', () => {

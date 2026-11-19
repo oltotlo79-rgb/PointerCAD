@@ -62,6 +62,24 @@ describe('溝つきの外周の断面', () => {
     expect(shoelace(polyline(profile?.segments ?? []))).toBeCloseTo(profile?.areaMm2 ?? NaN, 1);
   });
 
+  it('L 形の入隅に接する 2 辺(腕の内の面)にも溝を置け、8 本の溝の面の名前は内向きの法線から、口の中心は辺の上', () => {
+    const outline: SlottedOutline = {
+      ...SLOT6, vertices: [[-20, -20], [20, -20], [20, 0], [0, 0], [0, 20], [-20, 20]], radii: [1, 1, 1, 0, 1, 1],
+      slots: [{ edge: 0, at: 10 }, { edge: 0, at: 30 }, { edge: 1, at: 10 }, { edge: 2, at: 10 }, { edge: 3, at: 10 }, { edge: 4, at: 10 },
+        { edge: 5, at: 10 }, { edge: 5, at: 30 }],
+      holes: [],
+    };
+    const profile = slottedOutlineProfile(outline);
+    expect(profile).not.toBeNull();
+    expect(profile?.areaMm2).toBeCloseTo(1200 - 5 * (1 - Math.PI / 4) - 8 * SLOT_AREA, 9);
+    expect(shoelace(polyline(profile?.segments ?? []))).toBeCloseTo(profile?.areaMm2 ?? NaN, 1);
+    const slots = slottedOutlineSlots(outline) ?? [];
+    expect(slots.map((slot) => slot.face)).toEqual(['bottom', 'bottom', 'right', 'top', 'right', 'top', 'left', 'left']);
+    // 口の中心の 0 は -0 になり得るので、+ 0 で 0 にそろえてから比べる。
+    expect(slots.map((slot) => [slot.center[0] + 0, slot.center[1] + 0])).toEqual(
+      [[-10, -20], [10, -20], [20, -10], [10, 0], [0, 10], [-10, 20], [-20, 10], [-20, -10]]);
+  });
+
   it('入隅に丸み(へこんだ角)を付けると、その分の面積が足され、円弧は逆回りになる', () => {
     const base: SlottedOutline = { ...SLOT6, vertices: [[-20, -20], [20, -20], [20, 0], [0, 0], [0, 20], [-20, 20]], radii: [0, 0, 0, 0, 0, 0],
       slots: [], holes: [] };

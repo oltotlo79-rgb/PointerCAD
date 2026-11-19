@@ -10,6 +10,8 @@ import { commitMateDraft, editAssemblyMate, mateKindReadiness, startMate } from 
 import { parseAssemblyTargetId } from '../assembly/mateCommands.js';
 import { frameEdgeChoices } from '../assembly/frameEdgeChoices.js';
 import { planeBody } from '../assembly/filletWeldBodies.testSupport.js';
+import { standardPlacedTarget } from '../assembly/catalogSearch.js';
+import { DEFAULT_STANDARD_PART_PICKER } from '../assembly/standardPartPicker.js';
 
 function body(): SolidBody {
   return {
@@ -188,7 +190,7 @@ function interactionFixture() {
   const canvas = Object.assign(new EventTarget(), { focus: vi.fn(), getBoundingClientRect: () => ({ left: 0, top: 0 }) });
   const scene = {
     pickAssemblyFace: vi.fn((x: number) => ({ componentId: x < 50 ? 'component-1' : 'component-2', partKey: 'part', bodyFeatureId: 'box', faceIndex: 3 })),
-    pickComponent: vi.fn(() => 'component-1'), worldToScreen: (point: readonly [number, number, number]): readonly [number, number] => [point[0], point[1]],
+    pickComponent: vi.fn((): string | null => 'component-1'), worldToScreen: (point: readonly [number, number, number]): readonly [number, number] => [point[0], point[1]],
   };
   const interaction = attachAssemblyInteraction(canvas, scene);
   const downstream = vi.fn();
@@ -1214,6 +1216,81 @@ describe('フレームの辺を選ぶ途中(J-01 包み 4b)の 3D の画面の�
       f.send('pointerdown', { clientX: 100, clientY: 1 });
       expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
       expect(useAppStore.getState().selection).toEqual(['component-1']);
+    } finally { f.interaction.detach(); }
+  });
+});
+
+describe('部品を押して欄へ入れる頼み(寸法で動かすの基準。P-A の残り)の 3D の画面のクリック', () => {
+  it('面を選ぶ種類のままでも部品を拾って頼みへ渡し、選択もドラッグも変えない。候補でない部品は断って頼みを残す', () => {
+    const f = interactionFixture();
+    try {
+      useAppStore.setState({ selection: ['component-2'] });
+      expect(useAppStore.getState().beginDimensionMove()).toBe(true);
+      useAppStore.getState().toggleComponentPick('dimensionMoveReference', ['component-1']);
+      f.scene.pickComponent.mockReturnValueOnce('component-2');
+      f.send('pointerdown', { clientX: 10, clientY: 10 });
+      expect(useAppStore.getState().assemblyComponentPick?.notice).toBe('notCandidate');
+      expect(useAppStore.getState().assemblyDimensionMoveDraft?.reference).toBe('origin');
+      f.send('pointerdown', { clientX: 10, clientY: 10 });
+      expect(useAppStore.getState().assemblyComponentPick).toBeNull();
+      expect(useAppStore.getState().assemblyDimensionMoveDraft?.reference).toBe('component-1');
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(useAppStore.getState().assemblyMateDraft).toBeNull();
+      expect(f.scene.pickAssemblyFace).not.toHaveBeenCalled();
+    } finally { f.interaction.detach(); }
+  });
+
+  it('頼みの間は何も無い所を押しても選択を空にせず、窓を閉じた後は前と同じく選ぶ', () => {
+    const f = interactionFixture();
+    try {
+      useAppStore.setState({ selection: ['component-2'], selectionKind: 'body' });
+      expect(useAppStore.getState().beginDimensionMove()).toBe(true);
+      useAppStore.getState().toggleComponentPick('dimensionMoveReference', ['component-1']);
+      f.scene.pickComponent.mockReturnValueOnce(null);
+      f.send('pointerdown', { clientX: 600, clientY: 600 });
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyComponentPick).not.toBeNull();
+      useAppStore.getState().cancelDimensionMove();
+      expect(useAppStore.getState().assemblyComponentPick).toBeNull();
+      f.send('pointerdown', { clientX: 10, clientY: 10 });
+      expect(useAppStore.getState().selection).toEqual(['component-1']);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('向き(面・辺を受ける頼み。P-A の残り (2b))の間は面を拾い、平らな面の法線を成分へ入れる。合致は始めず、選択も変えない', () => {
+    const f = interactionFixture();
+    try {
+      useAppStore.setState({ selection: ['component-2'] });
+      expect(useAppStore.getState().beginDimensionMove()).toBe(true);
+      useAppStore.getState().updateDimensionMoveDraft({ direction: 'vector', vector: ['1', '1', '0'] });
+      useAppStore.getState().toggleComponentPick('dimensionMoveDirection', []);
+      f.send('pointerdown', { clientX: 10, clientY: 10 });
+      expect(useAppStore.getState().assemblyComponentPick).toBeNull();
+      expect(useAppStore.getState().assemblyDimensionMoveDraft?.vector).toEqual(['0', '0', '1']);
+      expect(useAppStore.getState().assemblyMateDraft).toBeNull();
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+    } finally { f.interaction.detach(); }
+  });
+
+  it('置く点(G1)の頼みの間は、押した所(頂点が無ければ高さ 0 の面の上)に部品の原点を置き、選択・合致・部品の拾いへは渡さない', () => {
+    const f = interactionFixture();
+    try {
+      Object.assign(f.scene, { screenToPlanePoint: vi.fn((): readonly [number, number, number] => [20, -40, 0]) });
+      useAppStore.setState({ selection: ['component-2'], standardPartPickerOpen: true });
+      const { choiceKey, lengthSource, dimensionSeries, threadSeries } = DEFAULT_STANDARD_PART_PICKER;
+      useAppStore.getState().toggleComponentPick('placementPoint', [], { kind: 'standardPart', category: 'hexBolt', choiceKey, lengthSource,
+        dimensionSeries, threadSeries, accessory: undefined,
+        recent: standardPlacedTarget('hexBolt', choiceKey, dimensionSeries, { material: 'SS400', shape: null }, lengthSource) });
+      f.send('pointerdown', { clientX: 300, clientY: 300 });
+      const components = useAppStore.getState().assembly?.components ?? [];
+      expect(components).toHaveLength(3);
+      expect(components[2]?.placement.position.map((value) => value.value)).toEqual([20, -40, 0]);
+      expect(useAppStore.getState().assemblyComponentPick).toBeNull();
+      expect(useAppStore.getState().selection).toEqual(['component-2']);
+      expect(useAppStore.getState().assemblyMateDraft).toBeNull();
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
     } finally { f.interaction.detach(); }
   });
 });

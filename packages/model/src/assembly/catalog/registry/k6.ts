@@ -52,6 +52,9 @@ export const K6_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
     load: async () => (await import('../families/framePartCatalog.js')).FOOT_BASE_FAMILY },
   { id: 't-slot-adjuster', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.adjuster',
     load: async () => (await import('../families/framePartCatalog.js')).ADJUSTER_FAMILY },
+  // 資料 1 のブロック形のブラケット(直方体に面から座ぐり穴。台本 profiles/blockBracket.ts)。2 本の独立の読みで揃った行だけ。
+  { id: 't-slot-block-bracket', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.blockBracket',
+    load: async () => (await import('../families/blockBracketCatalog.js')).BLOCK_BRACKET_FAMILY },
   // 資料 1 の溝に入れる小物(ジョイントバー・スタッド・ローレットナット)。8 回目の記入のままの読み 2 本で形の値が同じになった行だけ。
   { id: 't-slot-joint-bar', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.jointBar',
     load: async () => (await import('../families/tSlotFittingCatalog.js')).JOINT_BAR_FAMILY },

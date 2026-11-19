@@ -122,7 +122,8 @@ describe('資料 1 のリブつきの L 形のブラケットの、寝た脚の�
   });
 
   it('族の行は両脚の穴の決まった行の後に並び、立つ脚の穴だけの形ができ、体積は L の断面 − 立つ脚の穴、質量は形 × 密度より軽い資料の値', () => {
-    const tail = ANGLE_BRACKET_CATALOG_FAMILY.rows.slice(ANGLE_BRACKET_RECORDS.length);
+    // この行の表の後に、ダイカストの本体の行(dBracketRows.ts)が続くので、この表の行の数だけを切り出す。
+    const tail = ANGLE_BRACKET_CATALOG_FAMILY.rows.slice(ANGLE_BRACKET_RECORDS.length, ANGLE_BRACKET_RECORDS.length + HARD_BRACKET_RECORDS.length);
     expect(tail.map((row) => row.key)).toEqual(HARD_BRACKET_RECORDS.map((record) => record.key));
     for (const record of HARD_BRACKET_RECORDS) {
       const row = tail.find((candidate) => candidate.key === record.key);

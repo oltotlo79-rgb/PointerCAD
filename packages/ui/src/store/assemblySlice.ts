@@ -11,8 +11,10 @@
  * 共通の文書操作は documentSlice が所有し、ここへは get() 経由で委譲する。
  */
 
+import { expressionValueFromNumber } from '@pointercad/expression';
 import {
-  addComponent, createComponentFor, createUndoStack, EMPTY_PART_LIBRARY, pushUndo, redo, undo,
+  addComponent, createComponentFor, createUndoStack, DEFAULT_COMPONENT_PLACEMENT, EMPTY_PART_LIBRARY, pushUndo, redo, undo,
+  type Placement, type Vec3,
   type AssemblyDocument, type AxisSpec, type EmbeddedPartAttachments, type JointOccurrenceInputs, type PartDocument, type PartLibrary,
   type AssemblyInterferenceProgress, type AssemblyInterferenceResult,
   solveDrivenJoint, evaluateMechanismCouplings, crossLevelGearDocumentFailure, crossLevelCamDocumentFailure, prepareMechanismCouplings, type MechanismGearCoupling,
@@ -30,6 +32,7 @@ import { createFrameJointCheckActions, type FrameJointCheckSlice } from './frame
 import { createFrameJointBracketActions, emptyJointBracketState, type FrameJointBracketSlice } from './frameJointBracketActions.js';
 import { createMemberStretchActions, emptyMemberStretchState, type MemberStretchSlice } from './memberStretchActions.js';
 import { createDimensionMoveActions, emptyDimensionMoveState, type DimensionMoveSlice } from './dimensionMoveActions.js';
+import { createComponentPickActions, emptyComponentPickState, type ComponentPickSlice } from './componentPickActions.js';
 import { boltedJointPreviewFor, createBoltedJointActions } from './boltedJointActions.js';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
@@ -136,7 +139,7 @@ export type AssemblyMotionNotice =
   | { readonly kind: 'failed' };
 
 /** アセンブリのスライスが持つ欄と操作。 */
-export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, FrameStrokeSlice, FrameSlotFasteningSlice, FrameJointCheckSlice, FrameJointBracketSlice, MemberStretchSlice, DimensionMoveSlice {
+export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, FrameStrokeSlice, FrameSlotFasteningSlice, FrameJointCheckSlice, FrameJointBracketSlice, MemberStretchSlice, DimensionMoveSlice, ComponentPickSlice {
   /**
    * 開いているアセンブリ文書(FR-601)。**開いていなければ null**(= 部品を開いている)。
    *
@@ -191,10 +194,12 @@ export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, Fr
     lengthSource: string,
     dimensionSeries?: 'annexJA' | 'main',
     threadSeries?: 'coarse' | 'fine',
+    /** 付属の組と、置く点(部品の原点が来る所。G1 の 3D の画面で押した点。無ければ今までどおり原点)。引数は 6 つまで(max-params)。 */
+    options?: { readonly accessory?: { readonly setId: AccessorySetId; readonly choices: AccessoryChoices }; readonly at?: Vec3 },
   ) => boolean;
   /** 選ぶ画面の機械要素(登録口の族)の行を、長さなどの指定の値で置く。族が未読込・行が無い・値が範囲の外の時は置かずに false。 */
   readonly placeCatalogItem: (familyId: string, itemKey: string, values?: Readonly<Record<string, string>>,
-    accessory?: { readonly setId: AccessorySetId; readonly choices: AccessoryChoices }) => boolean;
+    accessory?: { readonly setId: AccessorySetId; readonly choices: AccessoryChoices }, at?: Vec3) => boolean;
   /** 長さを持つ族の行を、線の列に沿って 1 本ずつ並べる(J-01)。全部を 1 回で入れる(Undo 1 回)。作れない時は何も置かずに理由。 */
   readonly placeFrameMembers: (request: FrameMembersRequest) => FrameMembersPlacement;
   /** サブアセンブリ配置・部品置換の非同期処理と、確認が必要な置換予告。 */
@@ -332,7 +337,7 @@ export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   | 'assemblyJointCheckOpen' | 'assemblyJointCheck' | 'assemblyJointCheckSelectedKey'
   | 'assemblyJointBracketDraft' | 'assemblyJointBracketPreview' | 'assemblyJointBracketData'
   | 'assemblyMemberStretchDraft' | 'assemblyMemberStretchPreview'
-  | 'assemblyDimensionMoveDraft' | 'assemblyDimensionMovePreview'>;
+  | 'assemblyDimensionMoveDraft' | 'assemblyDimensionMovePreview' | 'assemblyComponentPick'>;
 
 /** 協調の関節の駆動の持ち主。この記録そのものがストアに残っている間だけ結果を反映できる。 */
 export interface AssemblyJointDrive {
@@ -397,6 +402,15 @@ function childWeldPreviewFor(
   }, draft);
 }
 
+/** 置いた部品に付属の組を足す口(A4。今の 8 分類の窓のボルトの組)。付けられない時は null(置かない)。 */
+function accessoryExtender(accessory: { readonly setId: AccessorySetId; readonly choices: AccessoryChoices } | undefined):
+  ((document: AssemblyDocument, componentId: string) => AssemblyDocument | null) | undefined {
+  return accessory === undefined ? undefined : (document, componentId) => {
+    const applied = applyAccessorySet(document, componentId, accessory.setId, accessory.choices);
+    return applied.ok ? applied.value.document : null;
+  };
+}
+
 /** 付属の組の記録のある文書の付属を、本体の今の端へ付け直した文書(A3。付け直せない時は元のまま。理由は接合チェックが出す)。 */
 function withSyncedAccessories(document: AssemblyDocument): AssemblyDocument {
   const synced = syncAccessorySets(document);
@@ -409,12 +423,19 @@ function withSyncedAccessories(document: AssemblyDocument): AssemblyDocument {
  * 確定後も窓と選択を残す。次の Enter を同じ 1 操作としてもう 1 個置ける(NFR-UX-4)。
  * 族の部品は行の密度の材質を部品の材質に付ける(部品表の材質と質量。K-06)。材質を持たない選び方(今の規格部品)は前と同じ形。
  */
+/** 押した点に部品の原点が来る置き方(G1。向きは今の「置く」と同じく回さない)。 */
+function placementAt(point: Vec3): Placement {
+  return { ...DEFAULT_COMPONENT_PLACEMENT,
+    position: [expressionValueFromNumber(point[0]), expressionValueFromNumber(point[1]), expressionValueFromNumber(point[2])] };
+}
+
 function placePickedPart(get: () => AppState, set: (partial: Pick<AppState, 'standardPartPickerOpen'>) => void,
   picked: { readonly source: ComponentSource; readonly name: string; readonly materialId?: string },
-  extend: (document: AssemblyDocument, componentId: string) => AssemblyDocument | null = (document) => document): boolean {
+  extend: (document: AssemblyDocument, componentId: string) => AssemblyDocument | null = (document) => document, at?: Vec3): boolean {
   const state = get();
   if (!state.standardPartPickerOpen || state.assembly === null) return false;
-  const component = createComponentFor(state.assembly, picked.source, { partName: picked.name });
+  const component = createComponentFor(state.assembly, picked.source,
+    at === undefined ? { partName: picked.name } : { partName: picked.name, placement: placementAt(at) });
   // 付属の組(A2)は、置いた部品と同じ 1 つの文書で足す(元に戻す 1 回で両方戻る)。付けられない時は置かない。
   const next = extend(addComponent(state.assembly,
     picked.materialId === undefined ? component : { ...component, materialId: picked.materialId }), component.id);
@@ -427,12 +448,13 @@ function placePickedPart(get: () => AppState, set: (partial: Pick<AppState, 'sta
 /** 選ぶ画面の族の行を、長さなどの指定の値で置く(`placeCatalogItem`)。 */
 function placeCatalogItemFor(get: () => AppState, set: (partial: Pick<AppState, 'standardPartPickerOpen'>) => void,
   familyId: string, itemKey: string, values: Readonly<Record<string, string>> | undefined,
-  accessory: { readonly setId: AccessorySetId; readonly choices: AccessoryChoices } | undefined): boolean {
+  extra: { readonly accessory: { readonly setId: AccessorySetId; readonly choices: AccessoryChoices } | undefined; readonly at?: Vec3 }): boolean {
   const selected = commitCatalogItemChoice(familyId, itemKey, values);
+  const accessory = extra.accessory;
   return selected.ok && placePickedPart(get, set, selected.value, accessory === undefined ? undefined : (document, componentId) => {
     const applied = applyAccessorySet(document, componentId, accessory.setId, accessory.choices);
     return applied.ok ? applied.value.document : null;
-  });
+  }, extra.at);
 }
 
 /** 長さを持つ族の行を線の列に沿って並べる(`placeFrameMembers`、J-01)。全部を 1 回で入れるので Undo 1 回で戻る。 */
@@ -515,6 +537,7 @@ export function createAssemblyInitialState(session?: PreparedDocumentSession): A
     assemblyMemberStretchPreview: null,
     assemblyDimensionMoveDraft: null,
     assemblyDimensionMovePreview: null,
+    assemblyComponentPick: null,
     assemblyJointDrive: null,
     ...emptyInterferenceState(),
     activeDocumentId,
@@ -591,12 +614,12 @@ export const createAssemblySlice: StateCreator<
       assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
       assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
       assemblyJointDrive: null,
-      ...emptyInterferenceState(), assemblyJointCheckSelectedKey: null, ...emptyJointBracketState(), ...emptyMemberStretchState(), ...emptyDimensionMoveState(), ...endedDragDrives(state),
+      ...emptyInterferenceState(), assemblyJointCheckSelectedKey: null, ...emptyJointBracketState(), ...emptyMemberStretchState(), ...emptyDimensionMoveState(), ...emptyComponentPickState(), ...endedDragDrives(state),
     }));
   }
   return {
     ...empty(),
-    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get), ...createFrameStrokeActions(set, get), ...createFrameSlotFasteningActions(set, get), ...createFrameJointCheckActions(set, get), ...createFrameJointBracketActions(set, get), ...createMemberStretchActions(set, get), ...createDimensionMoveActions(set, get), ...createBoltedJointActions(set, get),
+    ...createCircularWeldActions(set, get), ...createFrameEdgePickActions(set, get), ...createFrameStrokeActions(set, get), ...createFrameSlotFasteningActions(set, get), ...createFrameJointCheckActions(set, get), ...createFrameJointBracketActions(set, get), ...createMemberStretchActions(set, get), ...createDimensionMoveActions(set, get), ...createComponentPickActions(set, get), ...createBoltedJointActions(set, get),
     recoveryRecord: null,
     resetAssembly: (update, session) => {
       const initial = empty(session);
@@ -651,7 +674,7 @@ export const createAssemblySlice: StateCreator<
           assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
           assemblyJointDrive: null,
           assemblyCrossLevelGearRepairs: repaired.repairs,
-          ...emptyInterferenceState(), assemblyJointCheckSelectedKey: null, ...emptyJointBracketState(), ...emptyMemberStretchState(), ...emptyDimensionMoveState(), ...endedDragDrives(current) };
+          ...emptyInterferenceState(), assemblyJointCheckSelectedKey: null, ...emptyJointBracketState(), ...emptyMemberStretchState(), ...emptyDimensionMoveState(), ...emptyComponentPickState(), ...endedDragDrives(current) };
       });
     },
     setAssemblyMechanismCouplings: (couplings) => {
@@ -787,11 +810,11 @@ export const createAssemblySlice: StateCreator<
     closeStandardPartPicker: () => {
       set({ standardPartPickerOpen: false });
     },
-    placeStandardPart: (category, choiceKey, lengthSource, dimensionSeries, threadSeries) => {
+    placeStandardPart: (category, choiceKey, lengthSource, dimensionSeries, threadSeries, options) => {
       const selected = commitStandardPartChoice(category, choiceKey, lengthSource, dimensionSeries, threadSeries);
-      return selected.ok && placePickedPart(get, set, selected.value);
+      return selected.ok && placePickedPart(get, set, selected.value, accessoryExtender(options?.accessory), options?.at);
     },
-    placeCatalogItem: (familyId, itemKey, values, accessory) => placeCatalogItemFor(get, set, familyId, itemKey, values, accessory),
+    placeCatalogItem: (familyId, itemKey, values, accessory, at) => placeCatalogItemFor(get, set, familyId, itemKey, values, { accessory, at }),
     placeFrameMembers: (request) => placeFrameMembersFor(get, set, request),
     beginBoltedJoint: (selection) => {
       const state = get();

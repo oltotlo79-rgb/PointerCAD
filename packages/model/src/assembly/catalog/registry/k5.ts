@@ -72,4 +72,8 @@ export const K5_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
     load: async () => (await import('../families/oRing.js')).O_RING_FAMILIES.P },
   { id: 'o-ring-g', group: 'mechanical', kindKey: 'catalog.mechanical.kind.oRingG',
     load: async () => (await import('../families/oRing.js')).O_RING_FAMILIES.G },
+  { id: 'c-ring-shaft', group: 'mechanical', kindKey: 'catalog.mechanical.kind.cRingShaft',
+    load: async () => (await import('../families/cRing.js')).C_RING_SHAFT_FAMILY },
+  { id: 'c-ring-bore', group: 'mechanical', kindKey: 'catalog.mechanical.kind.cRingBore',
+    load: async () => (await import('../families/cRing.js')).C_RING_BORE_FAMILY },
 ];

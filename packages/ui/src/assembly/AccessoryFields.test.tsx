@@ -8,7 +8,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
 import { AccessoryFields } from './AccessoryFields.js';
-import { familyAccessoryProps, rememberAccessory } from './accessoryChoice.js';
+import { standardAccessoryOptionsFor, familyAccessoryProps, rememberAccessory } from './accessoryChoice.js';
 
 beforeAll(async () => { await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-frame-s6', 't-slot-frame-cap']); });
 afterEach(() => { rememberAccessory({ setId: null, ends: 'both', endReference: 'overall', itemKey: '' }); });
@@ -40,10 +40,31 @@ describe('付属の組の欄', () => {
       .replace('{count}', '2').replace('{thickness}', '3'));
   });
 
+  it('ボルトの組を選ぶと、締め付ける厚さ(既定を薄く出す)とばね座金の欄と予告が出て、全部に説明がある(A4)', () => {
+    const bolt = standardAccessoryOptionsFor('hexBolt', 'hexBolt:JIS-B-1180:2014:M8:P1.25:annexJA', '40', 'annexJA', 'coarse');
+    rememberAccessory({ setId: 'bolt-washer-nut', ends: 'both', endReference: 'overall', itemKey: '', springWasher: true });
+    const html = renderToStaticMarkup(<AccessoryFields options={bolt} lengthMm={null} showEnds />);
+    for (const key of ['assembly.accessory.gripGuide', 'assembly.accessory.springGuide'] as const) expect(html).toContain(`title="${t(key)}"`);
+    expect(html).toContain(t('assembly.accessory.previewBoltSpring').replace('{grip}', String(bolt[0]?.defaultGripMm?.spring)));
+    expect(html).not.toContain(`title="${t('assembly.accessory.endsGuide')}"`);
+  });
+
   it('一括配置では端の欄を出さず、端の決め方を予告に書く', () => {
     rememberAccessory({ setId: 'frame-end-caps', ends: 'start', endReference: 'overall', itemKey: '' });
     const html = renderToStaticMarkup(<AccessoryFields options={options()} lengthMm={null} showEnds={false} />);
     expect(html).not.toContain(`title="${t('assembly.accessory.endsGuide')}"`);
     expect(html).toContain(t('assembly.accessory.previewLayout').replace('{name}', '端のキャップ 溝幅 6 20×20').replace('{thickness}', '3'));
+  });
+
+  it('軸受の止め輪の組を選ぶと、端の欄と予告(2 個・厚さ 1.2)が出て、長さの意味の欄は出さない(A6)', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['c-ring-shaft', 'c-ring-bore']);
+    const rings = standardAccessoryOptionsFor('deepGrooveBallBearing', 'deepGrooveBallBearing:JIS-B-1521:2012:6204', '', 'annexJA', 'coarse');
+    rememberAccessory({ setId: 'bearing-shaft-rings', ends: 'both', endReference: 'overall', itemKey: '' });
+    const html = renderToStaticMarkup(<AccessoryFields options={rings} lengthMm={null} showEnds />);
+    expect(html).toContain(t('assembly.accessory.setBearingShaftRings'));
+    expect(html).toContain(`title="${t('assembly.accessory.endsGuide')}"`);
+    expect(html).not.toContain(`title="${t('assembly.accessory.referenceGuide')}"`);
+    expect(html).toContain(t('assembly.accessory.previewNoLength').replace('{name}', '軸用 C 形止め輪 20').replace('{count}', '2')
+      .replace('{thickness}', '1.2'));
   });
 });

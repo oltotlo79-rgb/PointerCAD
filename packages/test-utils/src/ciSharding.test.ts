@@ -11,8 +11,15 @@ interface ListedSuite {
   specs?: { file: string; line: number; column: number; title: string; tests: { projectName: string }[] }[];
 }
 
+/** --list --reporter=json の最上位。config.workers は、その実行で設定が決めた worker の本数。 */
+interface ListedReport extends ListedSuite { config?: { workers?: unknown } }
+
+/** 1 回の列挙: 検査ごとの project と、その実行の worker の本数。 */
+interface Listing { readonly cases: Map<string, string>; readonly workers: number }
+
 const root = new URL('../../../', import.meta.url);
 const prerequisiteProjects = new Set(['viewport-performance', 'startup-firefox', 'startup-electron']);
+const RESPONSE_PROJECT = 'response-performance';
 const execFileAsync = promisify(execFile);
 const LIST_TIMEOUT_MS = 45_000;
 // 画面検査の組の数(この検査の中の唯一の値。2026-11-12 に3から6へ)。ci.yml の matrix.shard と check.ps1 へ渡す '/N'、
@@ -44,14 +51,16 @@ function listFailure(error: unknown): string {
     stdoutLength: typeof stdout === 'string' || stdout instanceof Uint8Array ? stdout.length : null });
 }
 
-async function listCases(shard?: number): Promise<Map<string, string>> {
+async function listCases(shard?: number): Promise<Listing> {
   const cli = createRequire(new URL('package.json', root)).resolve('@playwright/test/cli');
   const { stdout, stderr } = await execFileAsync(process.execPath, [cli, 'test', '--config=e2e/playwright.config.ts',
     '--list', '--reporter=json', ...(shard === undefined ? [] : [`--shard=${shard}/${SHARD_TOTAL}`])], {
     cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, timeout: LIST_TIMEOUT_MS, maxBuffer: 8_000_000,
   });
   if (stderr.trim() !== '') throw new Error(`Playwright列挙 stderr (${shard ?? 'whole'}): ${stderr}`);
-  const report = JSON.parse(stdout) as ListedSuite;
+  const report = JSON.parse(stdout) as ListedReport;
+  const workers = report.config?.workers;
+  if (typeof workers !== 'number') throw new Error(`Playwright列挙に workers がありません (${shard ?? 'whole'})`);
   const cases = new Map<string, string>();
   function collect(suite: ListedSuite): void {
     for (const spec of suite.specs ?? []) for (const test of spec.tests) {
@@ -62,12 +71,14 @@ async function listCases(shard?: number): Promise<Map<string, string>> {
     for (const child of suite.suites ?? []) collect(child);
   }
   collect(report);
-  return cases;
+  return { cases, workers };
 }
 
-describe(`CIの${SHARD_TOTAL}分割は全操作を保って別の実行機へ配る`, () => {
-  it(`実際のPlaywrightが選ぶ${SHARD_TOTAL}組の和集合は全検査と一致し、通常操作を重複させない`, async () => {
-    const labels = ['whole', ...shardNumbers.map(number => `shard${number}`)];
+let listingsOnce: Promise<PromiseSettledResult<Listing>[]> | undefined;
+
+/** 全体と各組の列挙。下の 2 つの検査で共有し、Playwright の列挙は 1 回の実行で 1 度だけ流す。 */
+function listWholeAndShards(): Promise<PromiseSettledResult<Listing>[]> {
+  listingsOnce ??= (async () => {
     // Playwrightは変換した検査ファイルと行の対応表(.map)を共有の変換キャッシュへ書き、書く前に同じファイルの
     // 控えを消す。キャッシュが空のまま2つの列挙を同時に流すと、片方が消して書き直す間の .map を他方が読めず、
     // そのファイルの全検査が変換後の行で列挙される(CI run 37260692577 の Linux)。全体の列挙を単独で流して
@@ -78,30 +89,58 @@ describe(`CIの${SHARD_TOTAL}分割は全操作を保って別の実行機へ配
     const secondWaveStartedAt = Date.now();
     const secondWave = await Promise.allSettled(shardNumbers.map(number => listCases(number)));
     console.log('[CI分割] 列挙wave2', { elapsedMs: Date.now() - secondWaveStartedAt });
-    const listed = [...firstWave, ...secondWave];
-    const failures = listed.flatMap((result, index) => result.status === 'rejected'
-      ? [`${labels[index] ?? index}: ${listFailure(result.reason)}`] : []);
-    expect(failures).toEqual([]);
-    const [whole, ...shards] = listed.map(result => {
-      if (result.status !== 'fulfilled') throw new Error(`Playwright列挙に失敗: ${listFailure(result.reason)}`);
-      return result.value;
-    });
-    if (whole === undefined || shards.length !== SHARD_TOTAL) throw new Error(`全体と${SHARD_TOTAL}分割の列挙が揃いません`);
-    expect(whole.size).toBeGreaterThan(300);
+    return [...firstWave, ...secondWave];
+  })();
+  return listingsOnce;
+}
+
+/** 列挙の全部が成功した事を確かめ(失敗はどの列挙かと理由を並べて落とす)、全体と各組に分ける。 */
+function wholeAndShards(listed: readonly PromiseSettledResult<Listing>[]): { whole: Listing; shards: Listing[] } {
+  const labels = ['whole', ...shardNumbers.map(number => `shard${number}`)];
+  const failures = listed.flatMap((result, index) => result.status === 'rejected'
+    ? [`${labels[index] ?? index}: ${listFailure(result.reason)}`] : []);
+  expect(failures).toEqual([]);
+  const [whole, ...shards] = listed.map(result => {
+    if (result.status !== 'fulfilled') throw new Error(`Playwright列挙に失敗: ${listFailure(result.reason)}`);
+    return result.value;
+  });
+  if (whole === undefined || shards.length !== SHARD_TOTAL) throw new Error(`全体と${SHARD_TOTAL}分割の列挙が揃いません`);
+  return { whole, shards };
+}
+
+describe(`CIの${SHARD_TOTAL}分割は全操作を保って別の実行機へ配る`, () => {
+  it(`実際のPlaywrightが選ぶ${SHARD_TOTAL}組の和集合は全検査と一致し、通常操作を重複させない`, async () => {
+    const { whole, shards } = wholeAndShards(await listWholeAndShards());
+    expect(whole.cases.size).toBeGreaterThan(300);
     const counts = new Map<string, number>();
     for (const [index, selected] of shards.entries()) {
       if (selected === undefined) throw new Error(`shard${index + 1}の列挙がありません`);
-      expect(selected.size).toBeGreaterThan(0);
-      for (const [key, project] of selected) {
-        expect(whole.get(key), key).toBe(project);
+      expect(selected.cases.size).toBeGreaterThan(0);
+      for (const [key, project] of selected.cases) {
+        expect(whole.cases.get(key), key).toBe(project);
         counts.set(key, (counts.get(key) ?? 0) + 1);
       }
     }
-    expect([...counts.keys()].sort()).toEqual([...whole.keys()].sort());
-    for (const [key, project] of whole) {
+    expect([...counts.keys()].sort()).toEqual([...whole.cases.keys()].sort());
+    for (const [key, project] of whole.cases) {
       if (!prerequisiteProjects.has(project)) expect(counts.get(key), key).toBe(1);
     }
-    console.log('[CI分割] 全操作の選択と前提検査を照合', { total: whole.size, partitions: SHARD_TOTAL });
+    console.log('[CI分割] 全操作の選択と前提検査を照合', { total: whole.cases.size, partitions: SHARD_TOTAL });
+  }, LIST_TIMEOUT_MS * 2 + 10_000);
+
+  it('応答の検査(response-performance)は全部1組目に入り、1組目だけ1本のworkerで流れて、ほかの検査と同時に走らない', async () => {
+    // 利用者の決定(2026-11-19「設定だけで直す」): project の workers: 1 だけでは、もう1本の worker で functional が同時に走り、
+    // 応答の検査のキーの往復が遅れた。e2e/playwright.config.ts は --shard=1/N の時だけ全体を1本にし(FIRST_SHARD_ALONE)、応答の
+    // 検査は依存でない project の先頭なので、Playwright の組分け(件数で前から切る)で1組目に入る。件数が増えて2組目へはみ出す・
+    // project の並びが変わる・--shard の読み方が変わると、ここで落ちる。応答の検査の件数は responsePerformanceProject.test.ts が決める。
+    const { whole, shards } = wholeAndShards(await listWholeAndShards());
+    const responseKeys = (listing: Listing): string[] =>
+      [...listing.cases].filter(([, project]) => project === RESPONSE_PROJECT).map(([key]) => key).sort();
+    const expected = responseKeys(whole);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(shards.map(listing => responseKeys(listing))).toEqual(shardNumbers.map(number => number === 1 ? expected : []));
+    expect({ whole: whole.workers, shards: shards.map(listing => listing.workers) })
+      .toEqual({ whole: 2, shards: shardNumbers.map(number => number === 1 ? 1 : 2) });
   }, LIST_TIMEOUT_MS * 2 + 10_000);
 
   it(`両OSの前段・単体の先行分・画面検査${SHARD_TOTAL}組を同時に流し、欠落・中止・失敗を既存の合格名へ変えない`, () => {

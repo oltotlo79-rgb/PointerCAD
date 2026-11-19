@@ -50,6 +50,19 @@ const FIREFOX_USE = {
 // 見分けは scripts/check.ps1 の $isRunningOnCI と同じ CI=true。手元(diag.py は CI を消し、全体検査も CI を持たない)は 0 のまま。
 // やり直しで通った検査は Playwright の list の最後のまとめに「N flaky」と名前が出る(外部検査のログに残る)。2 回とも落ちれば失敗。
 const CI_RETRIES = process.env.CI === 'true' ? 1 : 0;
+// 外部検査の 1 組目(--shard=1/N)だけ、全体を 1 本の worker で流す(利用者の決定 2026-11-19「設定だけで直す」)。応答の検査
+// (response-performance)は project の workers: 1 でも、もう 1 本の worker で functional が同時に走り、キーを送る往復が遅れた
+// (2026-11-19 の Windows の第1組の E04 32MiB 読込。製品の遅れの証拠は無い)。応答の検査は依存でない project の先頭なので、
+// Playwright の組分け(件数で前から切る)で全部 1 組目に入る。全部が 1 組目に入り、1 組目だけ 1 本になる事は
+// packages/test-utils/src/ciSharding.test.ts が実際の --list で確かめる。手元(diag.py・全体検査)は --shard を渡さず 2 本のまま。
+function shardOption(argv: readonly string[]): string | null {
+  for (const [index, value] of argv.entries()) {
+    if (value.startsWith('--shard=')) return value.slice('--shard='.length);
+    if (value === '--shard') return argv[index + 1] ?? null;
+  }
+  return null;
+}
+const FIRST_SHARD_ALONE = (shardOption(process.argv) ?? '').startsWith('1/');
 const WEB_STARTUP_TEST = /(?:^|[\\/])(?:smoke|firefox-graphics)\.spec\.ts$/u;
 const FIREFOX_GRAPHICS_TEST = /(?:^|[\\/])firefox-graphics\.spec\.ts$/u;
 const ELECTRON_STARTUP_TEST = /electron-startup\.spec\.ts$/u;
@@ -72,7 +85,8 @@ export default defineConfig({
    * (push #14 の赤 3 本。docs/報告記録.md 2026-09-06 12:04)。初回読み込みを含む待機は利用者承認の90秒とする。
    * FPS・図面応答の測定は先行projectで専有し、残りの操作検査は2並列で実行する。
    */
-  workers: 2,
+  // 外部検査の 1 組目だけ 1(上の FIRST_SHARD_ALONE。応答の検査を、ほかの検査と同時に走らせない)。
+  workers: FIRST_SHARD_ALONE ? 1 : 2,
   // 上限つきの測定(描画・応答)と起動の確かめの project は、下で 0 に戻す(やり直しで通すと測定の意味が変わる)。
   retries: CI_RETRIES,
   use: {
@@ -102,6 +116,8 @@ export default defineConfig({
     {
       // 応答の検査どうしを重ねない(上の RESPONSE_PERFORMANCE_TEST)。ほかの project の依存にはしない(依存にすると CI の6組の
       // 全部で重ねて流れる)。firefox・electron の版は spec の中の browserName と起動で動く(functional・electron の中と同じ形)。
+      // ほかの project の検査とも重ねない: この project を依存でない project の先頭に置いたままにし(CI の組分けで全部 1 組目に
+      // 入る)、1 組目は全体を 1 本で流す(上の FIRST_SHARD_ALONE)。
       name: 'response-performance', testMatch: RESPONSE_PERFORMANCE_TEST, workers: 1, retries: 0,
       dependencies: ['viewport-performance'],
     },
@@ -126,7 +142,7 @@ export default defineConfig({
       // 実カーネル・保存再読込・復元・製作図・F1・CSPを既存の同じ操作で検査する。
       // 板金の操作検査は分割した新ファイルも自動的に対象へ入れる。
       // 名前はパスの区切りの直後からファイル名の全体で一致させ、末尾だけの一致で別の spec が増えないようにする。板金は sheet- で始まる名前だけ。
-      testMatch: /(?:^|[\\/])(?:smoke|solid|solid-finite-worker|solid-finite-authoring|solid-finite-field|analysis-entry|analysis-result-binding|analysis-static-connections|analysis-connections-persistence|analysis-bolt-persistence|analysis-advanced|analysis-plastic-persistence|plastic-bar-plateau|analysis-fatigue-native|analysis-resources|shell-analysis-connections|solid-boundary-authoring|extrude-operation|direct-edit-operations|bolted-joint|bolted-joint-same-holes|fillet-weld|circular-weld|steel-editable-stock|assembly-coupled-drag|assembly-flexible-motion|steel-bend|steel-bend-stock|aluminum-frame-catalog|frame-slot-fastening|frame-joint-check|frame-joint-bracket|frame-joint-swap-stretch|frame-panel|frame-door|frame-door-parts|safety-fence-feet|frame-edge-direct|frame-stroke-line|frame-end-caps|dialog-focus|dialog-focus-assembly|snap-radius|frame-dimension-basis|grid-fixed-placement|dimension-move|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|named-save-points|name-search|parameter-search-csv|auto-save-settings|command-registry|tutorial|shortcut-settings|input-bindings|camera-controls-settings|camera-controls-presets|radial-menu|connect-points|canvas|drawing-delete-elements|drawing-navigation|reference-ambiguity|usability-keyboard|offline-routing|offline-editions|function-plot|function-spline-surface|memory-highwater|impact-browser|machining-surface|sheet-[\w-]+|a-math-input|draggable-input-solid|drawing-sheet-expressions|ex18-routes-solid|ex18-surface-sew-solid|expression-math-input|face-offset-solid|fatigue-local-cycle-strength|fatigue-paired-strength|geometry-math-input|named-view-unavailable-smoke|pg5a-solid|planar-machining-surface|properties-input-layout-smoke|startup-failed-overlay-smoke|startup-navigation-smoke|tool-defaults-auto-save-settings|tree-name-search|z-math-input|appearance|assembly|bolt-preload|bolted-joint-tapped|bolted-joint-through-thread|combined-weld-stress|context-reference-cycle-open|context-reference-repair|context-reference-route5|cut-plane-materials|drawing-source-refresh|ex18-math-bracket|ex18-sew-bracket|exchange|fatigue-detail-browser|file-open-rejection|friction-browser|friction-cancel-browser|gdt-all|gdt-position|local-data|math-keyboard|measurement-printcheck-fix02|p4b-command-line|p4b-constraints|p4b-parameters|p4b-timeline|p4b-tracking|p5-cut-mirror|p5-primitive-pick|p6-view|p7-standard-parts|standard-part-search|p8-drawing|parameter-math-name-blur|primitives|semantic-origin-reopen|sketch-connected-1000|sketch-corner-boundary|sketch-extended|sketch|solid-material-authoring|status-guidance|thread|unsaved-reload|viewcube|weld-layer-browser|weld-span-author|welding|workplane-3d)\.spec\.ts$/u,
+      testMatch: /(?:^|[\\/])(?:smoke|solid|solid-finite-worker|solid-finite-authoring|solid-finite-field|analysis-entry|analysis-result-binding|analysis-static-connections|analysis-connections-persistence|analysis-bolt-persistence|analysis-advanced|analysis-plastic-persistence|plastic-bar-plateau|analysis-fatigue-native|analysis-resources|shell-analysis-connections|solid-boundary-authoring|extrude-operation|direct-edit-operations|bolted-joint|bolted-joint-same-holes|fillet-weld|circular-weld|steel-editable-stock|assembly-coupled-drag|assembly-flexible-motion|steel-bend|steel-bend-stock|aluminum-frame-catalog|frame-slot-fastening|frame-joint-check|frame-joint-bracket|frame-joint-swap-stretch|frame-panel|frame-door|frame-door-parts|safety-fence-feet|frame-edge-direct|frame-stroke-line|frame-end-caps|dialog-focus|dialog-focus-assembly|snap-radius|frame-dimension-basis|grid-fixed-placement|dimension-move|dimension-move-pick|place-point|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|named-save-points|name-search|parameter-search-csv|auto-save-settings|command-registry|tutorial|shortcut-settings|input-bindings|camera-controls-settings|camera-controls-presets|radial-menu|connect-points|canvas|drawing-delete-elements|drawing-navigation|reference-ambiguity|usability-keyboard|offline-routing|offline-editions|function-plot|function-spline-surface|memory-highwater|impact-browser|machining-surface|sheet-[\w-]+|a-math-input|draggable-input-solid|drawing-sheet-expressions|ex18-routes-solid|ex18-surface-sew-solid|expression-math-input|face-offset-solid|fatigue-local-cycle-strength|fatigue-paired-strength|geometry-math-input|named-view-unavailable-smoke|pg5a-solid|planar-machining-surface|properties-input-layout-smoke|startup-failed-overlay-smoke|startup-navigation-smoke|tool-defaults-auto-save-settings|tree-name-search|z-math-input|appearance|assembly|bolt-preload|bolted-joint-tapped|bolted-joint-through-thread|combined-weld-stress|context-reference-cycle-open|context-reference-repair|context-reference-route5|cut-plane-materials|drawing-source-refresh|ex18-math-bracket|ex18-sew-bracket|exchange|fatigue-detail-browser|file-open-rejection|friction-browser|friction-cancel-browser|gdt-all|gdt-position|local-data|math-keyboard|measurement-printcheck-fix02|p4b-command-line|p4b-constraints|p4b-parameters|p4b-timeline|p4b-tracking|p5-cut-mirror|p5-primitive-pick|p6-view|p7-standard-parts|standard-part-search|p8-drawing|parameter-math-name-blur|primitives|semantic-origin-reopen|sketch-connected-1000|sketch-corner-boundary|sketch-extended|sketch|solid-material-authoring|status-guidance|thread|unsaved-reload|viewcube|weld-layer-browser|weld-span-author|welding|workplane-3d)\.spec\.ts$/u,
       ...(selectedMeasurement === null ? {} : { testMatch: dedicatedMatch(false) }),
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       use: FIREFOX_USE,

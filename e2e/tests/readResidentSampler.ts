@@ -19,6 +19,9 @@ export function readResidentFrames(frames: readonly RawFrame[], rootPid: number,
   const identities = new Map<number, string>();
   let previous = new Map<number, string>();
   const terminalIdentities = new Set<string>();
+  const windowsExits = new Map<string, string>();
+  // Windows creation and exit identities are .NET UTC ticks, in 100 ns since 0001-01-01.
+  const unixEpochTicks = 621355968000000000n;
   for (const [index, frame] of frames.entries()) {
     const issues: string[] = [];
     if (!Number.isFinite(frame.atEpochMs) || !Number.isFinite(frame.readStartedAtEpochMs)
@@ -37,6 +40,18 @@ export function readResidentFrames(frames: readonly RawFrame[], rootPid: number,
         || !Number.isSafeInteger(row.parentPid) || row.parentPid < 0 || !row.created || !row.name) issues.push(`invalid process identity: ${row.pid}`);
       ids.add(row.pid);
       const identity = `${String(row.pid)}:${row.created}`;
+      if (row.windowsExitTicks !== undefined) {
+        const priorExit = windowsExits.get(identity);
+        if (!/^\d+$/u.test(row.created) || !/^\d+$/u.test(row.windowsExitTicks)
+          || row.pid === rootPid || frame.windowsTiming === undefined || row.linuxTerminal !== undefined
+          || previous.get(row.pid) !== row.created || row.error !== null || row.priority !== null
+          || row.cpuMilliseconds === null || !Number.isFinite(row.cpuMilliseconds) || row.cpuMilliseconds < 0
+          || BigInt(row.windowsExitTicks) < BigInt(row.created)
+          || Number((BigInt(row.windowsExitTicks) - unixEpochTicks) / 10000n) > frame.atEpochMs
+          || (priorExit !== undefined && priorExit !== row.windowsExitTicks)) {
+          issues.push(`PID ${row.pid}: invalid Windows exit evidence`);
+        } else windowsExits.set(identity, row.windowsExitTicks);
+      } else if (windowsExits.has(identity)) issues.push(`PID ${row.pid}: exited Windows identity became live`);
       if (row.linuxTerminal !== undefined) {
         const measured = linuxTerminalMeasurement(row, row.linuxTerminal, frame);
         if (measured === null || row.error !== null || row.workingSetBytes !== 0 || row.privateBytes !== 0
@@ -98,7 +113,8 @@ export function readResidentAdapter(info: Pick<TestInfo, 'outputPath' | 'attach'
     secondaryMetric: platform === 'win32' ? 'Windows PrivateMemorySize64 (PrivateBytes)' : 'Linux RssAnon (anonymous resident; not Windows PrivateBytes)',
     rawPrivateBytesField: platform === 'win32' ? 'Windows PrivateBytes' : 'Linux RssAnon; terminal zero derived as a subset of measured RSS0',
     requestedSampleIntervalMs: INTERVAL_MS,
-    discovery: platform === 'win32' ? { maximumAgeMs: DISCOVERY_INTERVAL_MS } : { method: '/proc discovery every frame' },
+    discovery: platform === 'win32' ? { maximumAgeMs: DISCOVERY_INTERVAL_MS,
+      exitedChildren: 'WS and PrivateBytes read on the original signalled handle in every remaining frame' } : { method: '/proc discovery every frame' },
     unmeasured: ['short peaks between actual samples', 'processes outside the recorded ancestry',
       'processes born and gone between discoveries', 'GPU dedicated/shared allocation outside process resident'],
   };
@@ -121,6 +137,19 @@ export function readResidentAdapter(info: Pick<TestInfo, 'outputPath' | 'attach'
         let stopError: string | null = null;
         try { await sampler.stop(); } catch (error: unknown) { stopError = String(error); }
         const current = snapshot(), failures = [...sampler.failures, ...current.errors, ...(stopError === null ? [] : [stopError])];
+        if (failures.length) {
+          // Only after stop: align the first failing frame with the input and CI timestamps.
+          const failedFrame = current.errors.find(message => /^frame \d+:/u.test(message));
+          const index = failedFrame === undefined ? -1 : Number(failedFrame.split(':')[0].slice(6));
+          for (const position of [index - 1, index]) {
+            const frame = sampler.frames[position];
+            if (frame !== undefined) console.log('[読込PID内訳]', JSON.stringify({ frame: position, root,
+              discoveredAt: frame.discoveredAtEpochMs, readStart: frame.readStartedAtEpochMs, readEnd: frame.atEpochMs,
+              discoveryError: frame.discoveryError, processes: frame.processes.map(row => ({ pid: row.pid,
+                parentPid: row.parentPid, created: row.created, name: row.name, role: row.role,
+                ws: row.workingSetBytes, privateBytes: row.privateBytes, exitTicks: row.windowsExitTicks, error: row.error })) }));
+          }
+        }
         const path = info.outputPath('read-resident-raw.json');
         await writeFile(path, JSON.stringify({ rootPid: root, ...coverage,
           measurementStatus: failures.length ? 'unavailable-or-incomplete' : 'measured-partial-set',
@@ -170,7 +199,7 @@ export async function startReadResidentSampler(info: TestInfo, root: number) {
   }
   // The awaited identity probe is our own short-lived child (and conhost on Windows).
   // Finish it before discovery, so its exit cannot be mistaken for missing product memory.
-  const sampler = platform === 'win32' ? windowsSampler(root, true) : linuxSampler(root, true, async () => undefined);
+  const sampler = platform === 'win32' ? windowsSampler(root, true, undefined, true) : linuxSampler(root, true, async () => undefined);
   if (rootContext.error !== null) sampler.failures.push(`root ancestry/command evidence unavailable: ${rootContext.error}`);
   return readResidentAdapter(info, root, platform, sampler, rootContext);
 }

@@ -178,14 +178,15 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
       'spring-washer-number2', 'spring-washer-number3', 'socket-head-cap-screw', 'countersunk-socket-screw',
       'hex-bolt-main', 'button-head-socket-screw', 'e-ring', 'plain-washer-large', 'parallel-key-square',
       'taper-pin', 'split-pin', 'flange-nut', 'cross-recessed-cheese-head-screw', 'set-screw-cup-point', 'set-screw-flat-point',
-      'set-screw-dog-point', 'set-screw-cone-point', 'oil-seal-specified', 'o-ring-p', 'o-ring-g', 't-slot-frame-specified', 't-slot-frame-series',
+      'set-screw-dog-point', 'set-screw-cone-point', 'oil-seal-specified', 'o-ring-p', 'o-ring-g', 'c-ring-shaft', 'c-ring-bore', 't-slot-frame-specified', 't-slot-frame-series',
       'angle-bracket-specified', 'join-plate-specified', 'slot-nut-specified', 't-slot-frame-s6', 't-slot-frame-s8', 't-slot-frame-s10',
       'aluminum-channel', 'aluminum-square-pipe', 'aluminum-round-bar', 'aluminum-flat-bar', 'aluminum-angle', 't-slot-nut-bar', 't-slot-nut',
       't-slot-round-nut', 't-slot-frame-cap', 't-slot-flat-plate', 't-slot-shaped-plate', 't-slot-angle-bracket', 't-slot-foot-base',
-      't-slot-adjuster', 't-slot-joint-bar', 't-slot-stud', 't-slot-knurled-nut', 'pipe-frame', 'pipe-frame-slotted', 'pipe-frame-twin',
+      't-slot-adjuster', 't-slot-block-bracket', 't-slot-joint-bar', 't-slot-stud', 't-slot-knurled-nut', 'pipe-frame', 'pipe-frame-slotted', 'pipe-frame-twin',
       't-slot-frame-small', 't-slot-frame-cap-small',
       'bracket-stock', 'pipe-frame-cap', 'pipe-frame-foot', 'panel-board-fixed', 'panel-board-order',
-      'panel-part-box', 'panel-cover-frame', 'connector-box', 'cap-foot-box', 'movable-part-box', 'accessory-box', 't-slot-caster']);
+      'panel-part-box', 'panel-cover-frame', 'connector-box', 'cap-foot-box', 'movable-part-box', 'accessory-box', 't-slot-caster',
+      'pipe-fitting-elbow', 'pipe-fitting-tee', 'pipe-fitting-socket']);
   });
 
   it('知らない族は standardPartRejection・組み立て・理由つきの組み立てで同じ型付きの拒否になる', () => {

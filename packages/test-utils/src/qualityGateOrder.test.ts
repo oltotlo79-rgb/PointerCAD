@@ -114,7 +114,8 @@ describe('品質ゲートのテスト実行順', () => {
     expect(performance).toContain('workers: 1');
     expect(functional).toContain('grepInvert: VIEWPORT_PERFORMANCE_TEST');
     expect(functional).toContain("dependencies: ['viewport-performance']");
-    expect(config).toContain('workers: 2');
+    // 全体は 2 本。外部検査の 1 組目だけ 1 本(組ごとの実際の本数は ciSharding.test.ts が --list で確かめる)。
+    expect(config).toContain('workers: FIRST_SHARD_ALONE ? 1 : 2,');
   });
 
   it('目標記録と実用性の判定を全4描画検査と図面検査へ接続し、性能専用projectから漏らさない', () => {

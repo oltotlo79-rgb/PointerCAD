@@ -55,7 +55,7 @@ describe('資料 1 の部品の族(ナットの素材・ナット・丸ナット
 
   it('平板のブラケットは部品の 4 族の後に並び、説明は板と穴の 1 行、行の文字は呼びだけ(資料の寸法どおりで簡略の印が無い)', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-flat-plate']);
-    expect(catalogFamilyEntries('aluminumFrame').slice(-25, -24).map((entry) => entry.id)).toEqual(['t-slot-flat-plate']);
+    expect(catalogFamilyEntries('aluminumFrame').slice(-26, -25).map((entry) => entry.id)).toEqual(['t-slot-flat-plate']);
     const family = PRODUCT_CATALOG_REGISTRY.loaded('t-slot-flat-plate');
     if (family === undefined) throw new Error('t-slot-flat-plate is not loaded');
     expect(familyHintKey(family)).toBe('catalog.frame.flatPlate.hint');
@@ -68,7 +68,7 @@ describe('資料 1 の部品の族(ナットの素材・ナット・丸ナット
 
   it('4 族はアルミフレームの分類で平板のブラケットの前に並び、説明は族ごとの簡略の形の 1 行、行の文字は呼びに簡略の印を添える', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(PARTS.map(([id]) => id));
-    expect(catalogFamilyEntries('aluminumFrame').slice(-29, -25).map((entry) => entry.id)).toEqual(PARTS.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-30, -26).map((entry) => entry.id)).toEqual(PARTS.map(([id]) => id));
     for (const [id, hint] of PARTS) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -97,7 +97,7 @@ describe('資料 1 の読み直しで足した 4 族の選ぶ画面の文字', (
 
   it('4 族はアルミフレームの分類の最後に並び、説明は族ごとの 1 行、簡略の印のある行は呼びに印を添え、無い行は呼びだけ', async () => {
     await PRODUCT_CATALOG_REGISTRY.ensure(ADDED.map(([id]) => id));
-    expect(catalogFamilyEntries('aluminumFrame').slice(-24, -20).map((entry) => entry.id)).toEqual(ADDED.map(([id]) => id));
+    expect(catalogFamilyEntries('aluminumFrame').slice(-25, -21).map((entry) => entry.id)).toEqual(ADDED.map(([id]) => id));
     for (const [id, hint] of ADDED) {
       const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
       if (family === undefined) throw new Error(`${id} is not loaded`);
@@ -264,6 +264,23 @@ describe('キャスターの族の選ぶ画面の文字', () => {
       const marks = row.simplified ?? [];
       expect(marks.length, row.key).toBeGreaterThan(0);
       expect(catalogRowLabel(family, row), row.key).toBe(`${row.size}（簡略: ${marks.join('・')}）`);
+    }
+  });
+});
+
+describe('資料 1 のブロック形のブラケットの族の選ぶ画面の文字', () => {
+  it('アルミフレームの分類でアジャスターのすぐ後に並び、説明は形の 1 行、行の文字は呼び(簡略の印のある行は印を添える)', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['t-slot-block-bracket']);
+    expect(catalogFamilyEntries('aluminumFrame').slice(-21, -20).map((entry) => entry.id)).toEqual(['t-slot-block-bracket']);
+    const family = PRODUCT_CATALOG_REGISTRY.loaded('t-slot-block-bracket');
+    if (family === undefined) throw new Error('t-slot-block-bracket is not loaded');
+    expect(familyHintKey(family)).toBe('catalog.frame.blockBracket.hint');
+    expect(t('catalog.frame.blockBracket.hint')).not.toBe('catalog.frame.blockBracket.hint');
+    expect(t(familyKindKey(family.kindKey))).not.toBe(family.kindKey);
+    expect(family.rows.length).toBeGreaterThan(0);
+    for (const row of family.rows) {
+      const marks = row.simplified ?? [];
+      expect(catalogRowLabel(family, row), row.key).toBe(marks.length > 0 ? `${row.size}（簡略: ${marks.join('・')}）` : row.size);
     }
   });
 });

@@ -9,12 +9,14 @@
  */
 import { evaluateExpression } from '@pointercad/expression';
 import {
-  ACCESSORY_SET_IDS, accessoryCandidatesForPart, createCatalogItemSource, PRODUCT_CATALOG_REGISTRY, type AccessoryCandidate,
-  type AccessoryChoices, type AccessoryEndReference, type AccessoryEnds, type AccessorySetId, type CatalogRegistry,
+  ACCESSORY_SET_IDS, accessoryCandidatesForPart, BEARING_RING_FAMILY_IDS, bearingRingCandidates, createCatalogItemSource, defaultBoltGrip,
+  PRODUCT_CATALOG_REGISTRY, type AccessoryCandidate,
+  type AccessoryChoices, type AccessoryEndReference, type AccessoryEnds, type AccessorySetId, type CatalogRegistry, type ComponentSource,
   type FrameLine, type FrameMembersResult,
 } from '@pointercad/model';
 
 import type { FrameAccessoryRequest } from './frameMembersAccessory.js';
+import { commitStandardPartChoice, type StandardPartCategory } from './standardPartPicker.js';
 import type { FrameMemberChoice } from './frameMembersPlacement.js';
 
 /** 族と行の型(model の公開の名前に族の型が無いので、登録口の読み込みの戻りから取る)。 */
@@ -25,6 +27,8 @@ type CatalogItemRow = CatalogFamily['rows'][number];
 export interface AccessoryOption {
   readonly setId: AccessorySetId;
   readonly candidates: readonly AccessoryCandidate[];
+  /** ボルトの座金とナットの組(A4)の既定の締め付ける厚さ(mm。ばね座金の有・無の順)。ほかの組は持たない。 */
+  readonly defaultGripMm?: { readonly plain: number; readonly spring: number | null };
 }
 
 /** 画面で選んだ付属。setId が null は「付けない」。 */
@@ -34,9 +38,55 @@ export interface AccessorySelection {
   readonly endReference: AccessoryEndReference;
   /** 候補の行の鍵。空なら候補の先頭。 */
   readonly itemKey: string;
+  /** ボルトの組の締め付ける厚さの欄の文字(空・数でない時は既定の値)。 */
+  readonly gripText?: string;
+  /** ボルトの組のばね座金の有無。 */
+  readonly springWasher?: boolean;
 }
 
 const NO_ACCESSORY: AccessorySelection = { setId: null, ends: 'both', endReference: 'overall', itemKey: '' };
+
+/** 今の 8 分類のボルトに当てはまるボルトの組(A4)。ボルトでない・座金かナットの行が無い・既定の厚さが 0 以下なら空。 */
+function boltAccessoryOptions(source: ComponentSource | null): readonly AccessoryOption[] {
+  if (source === null) return [];
+  const plain = defaultBoltGrip(source, false);
+  if (!plain.ok) return [];
+  const spring = defaultBoltGrip(source, true);
+  return [{ setId: 'bolt-washer-nut', candidates: [], defaultGripMm: { plain: plain.value, spring: spring.ok ? spring.value : null } }];
+}
+
+/** 8 分類の深溝玉軸受に当てはまる止め輪の組(A6。軸用・穴用のうち、呼びが一致する行がある組)。止め輪の族を読む前は空。 */
+function bearingRingOptions(source: ComponentSource): readonly AccessoryOption[] {
+  return (['bearing-shaft-rings', 'bearing-bore-rings'] as const).flatMap((setId): AccessoryOption[] => {
+    const result = bearingRingCandidates(source, setId, PRODUCT_CATALOG_REGISTRY);
+    return result.ok ? [{ setId, candidates: result.value }] : [];
+  });
+}
+
+/** 今の 8 分類の窓の組が使う族(深溝玉軸受は止め輪の族。窓が先に読み込む)。 */
+export function standardAccessoryFamilies(category: StandardPartCategory): readonly string[] {
+  return category === 'deepGrooveBallBearing' ? BEARING_RING_FAMILY_IDS : [];
+}
+
+/** 今の 8 分類の窓の選んだ呼びに当てはまる組(六角ボルトは座金とナット、深溝玉軸受は止め輪。置く時と同じ道で保存の形を作る)。 */
+export function standardAccessoryOptionsFor(category: StandardPartCategory, choiceKey: string, lengthSource: string,
+  dimensionSeries: 'annexJA' | 'main', threadSeries: 'coarse' | 'fine'): readonly AccessoryOption[] {
+  if (category !== 'hexBolt' && category !== 'deepGrooveBallBearing') return [];
+  const committed = commitStandardPartChoice(category, choiceKey, lengthSource, dimensionSeries, threadSeries);
+  if (!committed.ok) return [];
+  return category === 'hexBolt' ? boltAccessoryOptions(committed.value.source) : bearingRingOptions(committed.value.source);
+}
+
+/** ボルトの組の今の指定(締め付ける厚さは欄の数、無ければ既定)。組を選んでいない・当てはまらない時は null。 */
+export function effectiveBoltAccessory(options: readonly AccessoryOption[], selection: AccessorySelection):
+{ readonly gripMm: number; readonly springWasher: boolean } | null {
+  const defaults = options.find((item) => item.setId === 'bolt-washer-nut')?.defaultGripMm;
+  if (selection.setId !== 'bolt-washer-nut' || defaults === undefined) return null;
+  const springWasher = selection.springWasher === true && defaults.spring !== null;
+  const typed = evaluateExpression(selection.gripText ?? '');
+  const gripMm = typed.ok && typed.value.value > 0 ? typed.value.value : springWasher ? defaults.spring ?? defaults.plain : defaults.plain;
+  return { gripMm, springWasher };
+}
 
 let remembered: AccessorySelection = NO_ACCESSORY;
 
@@ -81,6 +131,8 @@ export function familyAccessoryProps(family: CatalogFamily | undefined, row: Cat
 /** 1 本を置く時に店へ渡す付属(付けない・当てはまらない時は undefined)。 */
 export function pickedAccessory(options: readonly AccessoryOption[]):
 { readonly setId: AccessorySetId; readonly choices: AccessoryChoices } | undefined {
+  const bolt = effectiveBoltAccessory(options, remembered);
+  if (bolt !== null) return { setId: 'bolt-washer-nut', choices: { ends: 'both', endReference: 'member', itemKey: '', ...bolt } };
   const active = effectiveAccessory(options, remembered);
   return active === null ? undefined
     : { setId: active.setId, choices: { ends: active.ends, endReference: active.endReference, itemKey: active.candidate.itemKey } };

@@ -13,7 +13,9 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CatalogFamilyPicker, type CatalogFamilyPickerProps } from './CatalogFamilyPicker.js';
-import { ALUMINUM_FRAME_PICKER_CATEGORY, commitCatalogItemChoice, MECHANICAL_PICKER_CATEGORY } from './catalogFamilyChoices.js';
+import {
+  ALUMINUM_FRAME_PICKER_CATEGORY, commitCatalogItemChoice, MECHANICAL_PICKER_CATEGORY, PIPING_PICKER_CATEGORY,
+} from './catalogFamilyChoices.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
 import { StandardPartPicker } from './StandardPartPickerPanel.js';
 
@@ -142,7 +144,7 @@ describe('選ぶ窓の機械要素', () => {
       t('catalog.mechanical.kind.splitPin'), t('catalog.mechanical.kind.flangeNut'), t('catalog.mechanical.kind.cheeseHeadScrew'),
       t('catalog.mechanical.kind.setScrewCup'), t('catalog.mechanical.kind.setScrewFlat'), t('catalog.mechanical.kind.setScrewDog'),
       t('catalog.mechanical.kind.setScrewCone'), t('catalog.mechanical.kind.oilSeal'), t('catalog.mechanical.kind.oRingP'),
-      t('catalog.mechanical.kind.oRingG')]);
+      t('catalog.mechanical.kind.oRingG'), t('catalog.mechanical.kind.cRingShaft'), t('catalog.mechanical.kind.cRingBore')]);
     // 材質の違う行が無い族では、材質の欄も長さの欄も出さない。
     expect(nodes.some((item) => item.type === 'select' && item.props.title === t('catalog.mechanical.materialGuide'))).toBe(false);
     expect(nodes.some((item) => item.type === 'input')).toBe(false);
@@ -358,7 +360,7 @@ describe('選ぶ窓の機械要素', () => {
         t('catalog.frame.kind.flatBar'), t('catalog.frame.kind.angle'), t('catalog.frame.kind.nutBar'), t('catalog.frame.kind.catalogNut'),
         t('catalog.frame.kind.roundNut'), t('catalog.frame.kind.cap'), t('catalog.frame.kind.flatPlate'), t('catalog.frame.kind.shapedPlate'),
         t('catalog.frame.kind.angleBracketCatalog'), t('catalog.frame.kind.footBase'), t('catalog.frame.kind.adjuster'),
-        t('catalog.frame.kind.jointBar'), t('catalog.frame.kind.tSlotStud'), t('catalog.frame.kind.knurledNut'),
+        t('catalog.frame.kind.blockBracket'), t('catalog.frame.kind.jointBar'), t('catalog.frame.kind.tSlotStud'), t('catalog.frame.kind.knurledNut'),
         t('catalog.frame.kind.pipeFrame'), t('catalog.frame.kind.pipeFrameSlotted'), t('catalog.frame.kind.pipeFrameTwin'),
         t('catalog.frame.kind.smallFrame'), t('catalog.frame.kind.smallFrameCap'), t('catalog.frame.kind.bracketStock'),
         t('catalog.frame.kind.pipeFrameCap'), t('catalog.frame.kind.pipeFrameFoot'), t('catalog.board.kind.fixed'), t('catalog.board.kind.order'),
@@ -463,5 +465,19 @@ describe('選ぶ窓の機械要素', () => {
     useAppStore.getState().closeStandardPartPicker();
     expect(useAppStore.getState().placeCatalogItem('wrapped-bush', 'd15-L8')).toBe(false);
     expect(useAppStore.getState().assembly?.components).toHaveLength(0);
+  });
+});
+
+describe('選ぶ窓の配管(K-28)', () => {
+  it('分類「配管」はアルミフレームの前にあり、選ぶとエルボ・チーズ・ソケットの 3 種類と、エルボの 14 の呼びを出す', async () => {
+    await loadAll();
+    const categories = options(select(render(), 'assembly.guide.standardCategory')).map((item) => item.props.value);
+    expect(categories.slice(-3)).toEqual([PIPING_PICKER_CATEGORY, ALUMINUM_FRAME_PICKER_CATEGORY, MECHANICAL_PICKER_CATEGORY]);
+    const nodes = change(select(render(), 'assembly.guide.standardCategory'), PIPING_PICKER_CATEGORY);
+    expect(nodes[0]?.type).toBe(CatalogFamilyPicker);
+    expect(select(nodes, 'assembly.guide.standardCategory').props.value).toBe(PIPING_PICKER_CATEGORY);
+    expect(options(select(nodes, 'catalog.piping.kindGuide')).map((item) => item.props.children))
+      .toEqual([t('catalog.piping.kind.elbow'), t('catalog.piping.kind.tee'), t('catalog.piping.kind.socket')]);
+    expect(options(select(nodes, 'catalog.mechanical.sizeGuide'))).toHaveLength(14);
   });
 });

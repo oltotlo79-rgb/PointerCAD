@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
 import { useDialogFocus } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { partFilePlacement, PlacePointButton } from './PlacePointButton.js';
 import { cancelPlaceComponent, commitPlaceComponent, updatePlaceComponentSource } from './placeComponentActions.js';
 import { placementFromSources } from './placeComponent.js';
 
@@ -91,6 +92,7 @@ export function PlaceComponentPopover(): React.JSX.Element | null {
         })}
       </div>
       <p className="pcad-popover__hint">{t('assembly.place.hint')}</p>
+      <PlacePointButton file placement={committing ? null : partFilePlacement} />
       <div className="pcad-popover__actions">
         <button
           type="button"

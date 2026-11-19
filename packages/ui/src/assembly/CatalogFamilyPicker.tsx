@@ -27,6 +27,7 @@ import { FrameMemberTools } from './FrameMemberTools.js';
 import { pickerFormProps } from './pickerFormHandlers.js';
 import { PickerSearch } from './PickerSearch.js';
 import { rememberPlacedPart } from './recentStandardParts.js';
+import { catalogItemPlacement, PlacePointButton } from './PlacePointButton.js';
 
 type LoadedFamily = NonNullable<ReturnType<CatalogRegistry['loaded']>>;
 
@@ -149,6 +150,9 @@ React.JSX.Element {
       {error === null ? null : <p className="pcad-field__message" role="alert">
         {t(error === 'invalidOption' ? 'catalog.mechanical.invalidOption' : 'assembly.standardPart.unknownChoice')}</p>}
       <p className="pcad-popover__hint">{t('assembly.standardPart.hint')}</p>
+      <PlacePointButton placement={family === undefined || row === undefined ? null : () => catalogItemPlacement(family.id, row.key, values,
+        pickedAccessory(accessory.options), { kind: 'family', group, start: { familyId: family.id,
+          material: materials.length >= 2 ? activeMaterial ?? '' : '', itemKey: row.key, values } })} />
       <div className="pcad-popover__actions">
         <button type="submit" className="pcad-button pcad-button--action" disabled={row === undefined}
           title={t('catalog.mechanical.placeGuide')}>{t('assembly.standardPart.place')}</button>

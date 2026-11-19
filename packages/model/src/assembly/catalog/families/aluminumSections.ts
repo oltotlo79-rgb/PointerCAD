@@ -33,6 +33,8 @@ export interface AluminumSectionRecord {
   readonly iyCm4: number | null;
   readonly zxCm3: number | null;
   readonly zyCm3: number | null;
+  /** 断面の値を、資料の表の値ではなく寸法から計算した値にした行だけ true(表の値が計算と合わない行。利用者の回答 2026-11-19)。 */
+  readonly propertiesFromDimensions?: true;
 }
 
 /** 種類ごとの族の id・種類の名前の鍵・線図。 */
@@ -61,7 +63,9 @@ function rowOf(record: AluminumSectionRecord): CatalogItemRow {
       locator: `PDF ${record.page} 頁 共通フレームの表(寸法・単位質量・Ix・Iy・Zx・Zy)`, reference: '' },
     verification: 'manufacturer-catalog',
     verified: true,
-    note: record.ixCm4 === null ? '質量は単位質量の値。断面の値は資料の表で向きが入れ替わって見えるので持たない' : '質量は単位質量の値',
+    note: record.ixCm4 === null ? '質量は単位質量の値。断面の値は資料の表で向きが入れ替わって見えるので持たない'
+      : record.propertiesFromDimensions === true ? '質量は単位質量の値。断面の値は資料の表と合わないので、寸法から計算した値(表の値と違う)'
+        : '質量は単位質量の値',
   };
 }
 

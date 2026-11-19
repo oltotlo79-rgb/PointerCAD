@@ -60,8 +60,12 @@ function threadOf(text: string | undefined): string {
 }
 
 /** 材質の文字の種類(ステンレス・SUS → stainless、アルミ → aluminum、PA・樹脂 → nylon、鋼・一般構造用圧延鋼材の記号 SS400 など → steel)。 */
+/** スベリ止めキャップ付きの ST ナットの行の印(キャップは寸法の記入が無いので形を作らない。統括の決定 2026-11-19)。 */
+const SLIP_CAP = 'スベリ止めキャップ(樹脂。寸法の記入が無いので形は作っていない)';
+
 function materialOf(text: string | undefined): string {
-  const value = text ?? '';
+  // 「本体=鋼;保持部=ステンレス」のように部位ごとに書いた読みは、本体の部位だけで決める(保持部などの付属の部位の材料で分けない)。
+  const value = /本体\s*=\s*([^;]*)/u.exec(text ?? '')?.[1] ?? text ?? '';
   if (/ステンレス|SUS/u.test(value)) return 'stainless';
   if (/アルミ/u.test(value)) return 'aluminum';
   if (/PA|樹脂|ナイロン/u.test(value)) return 'nylon';
@@ -142,9 +146,23 @@ describe('資料 1 のフレームの部品の 2 回目の読みとの照らし'
       const entry = entryOf(cells['種類']);
       const marks = envelope.filter(([word]) => entry.includes(word)).map(([, mark]) => mark);
       const noScrew = entry.includes('ロック付き') && cells['止めねじの呼び'] === undefined ? ['止めねじの穴(呼びが決まらないので開けていない)'] : [];
+      const slipCap = record.key.endsWith('-slipcap') ? [SLIP_CAP] : [];
       // 首の長さは読みに記入が無いので、首は頭と同じ長さの簡略の形(印「首の長さ」)。
-      expect(record.simplified, record.key).toEqual(['頭の斜面', '首の長さ', ...marks, ...noScrew]);
+      expect(record.simplified, record.key).toEqual(['頭の斜面', '首の長さ', ...marks, ...noScrew, ...slipCap]);
       expect(record.slotPartHeightUnknown === true, record.key).toBe(marks.length > 0);
+    }
+  });
+
+  it('スベリ止めキャップ付きの行は、もとの ST ナットの行(鍵の末の -slipcap を外した行)と形・寸法・質量が同じで、呼びと印だけが違う', () => {
+    const slipCaps = T_SLOT_NUT_RECORDS.filter((record) => record.key.endsWith('-slipcap'));
+    expect(slipCaps.length).toBe(11);
+    for (const record of slipCaps) {
+      const base = T_SLOT_NUT_RECORDS.find((candidate) => candidate.key === record.key.replace(/-slipcap$/u, ''));
+      if (base === undefined) throw new Error(`もとの行が無い: ${record.key}`);
+      expect([base.entry, base.material], record.key).toEqual(['先入れ', 'stainless']);
+      expect({ ...record, key: base.key, size: base.size, simplified: base.simplified }, record.key).toEqual(base);
+      expect(record.size, record.key).toBe(base.size.replace('（先入れ・', '（先入れ・スベリ止めキャップ付き・'));
+      expect(record.simplified, record.key).toEqual([...(base.simplified ?? []), SLIP_CAP]);
     }
   });
 

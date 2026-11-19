@@ -11,8 +11,9 @@ import { checkRecord, fieldProblem, indexPath, isRecord, isUnknownArray, joinPat
 /** 記録を保存・読み込みできる最小の保存形式の版(model の ACCESSORY_SETS_SCHEMA_VERSION と同じ値)。 */
 const ACCESSORY_SETS_SCHEMA_VERSION = 23;
 
-const SET_IDS: readonly AccessorySetRecord['setId'][] = ['frame-end-caps', 'bolt-washer-nut'];
-const ROLES: readonly AccessorySetRecord['accessories'][number]['role'][] = ['startCap', 'endCap', 'headWasher', 'nutWasher', 'springWasher', 'nut'];
+const SET_IDS: readonly AccessorySetRecord['setId'][] = ['frame-end-caps', 'bolt-washer-nut', 'bearing-shaft-rings', 'bearing-bore-rings'];
+const ROLES: readonly AccessorySetRecord['accessories'][number]['role'][] = ['startCap', 'endCap', 'headWasher', 'nutWasher', 'springWasher', 'nut',
+  'startRing', 'endRing'];
 const ENDS: readonly AccessorySetRecord['choices']['ends'][] = ['both', 'start', 'end'];
 const END_REFERENCES: readonly AccessorySetRecord['choices']['endReference'][] = ['overall', 'member'];
 

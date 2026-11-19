@@ -1,5 +1,6 @@
 /**
- * 資料 1 の溝つきフレームのうち、外周の指定を持つ行(frameOutlineRows.ts。1 つの角の大きな丸み)の検査。
+ * 資料 1 の溝つきフレームのうち、外周の指定を持つ行(frameOutlineRows.ts。1 つの角の大きな丸みと L 形)の検査。L 形は、溝の口の中心の
+ * 外の面からの記入が無いので各腕の幅の中央に置いた印つきの簡略の形(利用者の回答 2026-11-18 11:2x の (6))で、別の検査で照らす。
  * 照らす側の読み(frameOutlineOracle.fixture.json。2 本目の読みの寸法線の文字と、断面性能の表の 2 回目の読み)を、この検査が自分で読み解く:
  * 寸法線は「数字(端 A〜端 B)」で、括弧で囲まれた数字(参考寸法)は使わない。左の外の面・下の外の面を 0 にして、面から内の点へは
  * 左・下の面から足し、右・上の面から引く。角の丸みは角の名前で当て、名前の無い数つきの記入は名前の付いていない角の数と同じ時だけ残りの角へ。
@@ -54,16 +55,21 @@ function dimensionsOf(text: string | undefined): readonly Dimension[] {
 /** 1 つの軸の点の位置(min の面 = 0。面から内の点へは min の面から足し、max の面から引く)。 */
 function positions(items: readonly Dimension[], faces: Readonly<Record<string, 'min' | 'max'>>): ReadonlyMap<string, number> {
   const known = new Map<string, number>(Object.entries(faces).filter(([, side]) => side === 'min').map(([name]): [string, number] => [name, 0]));
+  // 内の点の進む向き(min の面から来た点は +1、max の面から来た点は -1)。内の点から内の点へは、書かれた順(端 A → 端 B)に同じ向きへ進む。
+  const direction = new Map<string, number>();
   for (let changed = true; changed;) {
     changed = false;
     for (const item of items) {
       for (const [here, there] of [[item.a, item.b], [item.b, item.a]] as const) {
         const at = known.get(here);
         if (at === undefined || known.has(there)) continue;
+        const inner = faces[here] === undefined && faces[there] === undefined;
         const sign = faces[here] === 'min' || (faces[here] === undefined && faces[there] === 'max') ? 1
-          : faces[here] === 'max' || (faces[here] === undefined && faces[there] === 'min') ? -1 : 0;
+          : faces[here] === 'max' || (faces[here] === undefined && faces[there] === 'min') ? -1
+            : inner && here === item.a ? direction.get(here) ?? 0 : 0;
         if (sign === 0) continue;
         known.set(there, at + sign * item.value);
+        direction.set(there, sign);
         changed = true;
       }
     }
@@ -102,6 +108,33 @@ function slotShapeOf(text: string | undefined): readonly number[] {
     find((ends) => ends.includes('外の面') && ends.includes('肩の内の面')), find((ends) => ends.includes('肩の内の面') && ends.includes('溝の底'))];
 }
 
+/** L 形の欄の寸法線(端の名前の中の括弧〔腕の内の面(縦)〕と、前の書き添え〔「横:」「左上溝の口:」など〕を許す。参考寸法は使わない)。 */
+function lDimensionsOf(text: string | undefined): readonly Dimension[] {
+  return (text ?? '').split(/;| \/ |。/u).flatMap((part): Dimension[] => {
+    const match = /^(?:[^:()]*:\s*)?(\()?([0-9]+(?:\.[0-9]+)?)(\))?\((.*)\)$/u.exec(part.trim());
+    const ends = match?.[4]?.split('〜') ?? [];
+    if (match === null || match[1] !== undefined || match[3] !== undefined || ends.length !== 2) return [];
+    return [{ value: Number(match[2]), a: (ends[0] ?? '').replace(/\s+/gu, ''), b: (ends[1] ?? '').replace(/\s+/gu, '') }];
+  });
+}
+
+/** 端の名前の組で決まる寸法線の値(1 つに決まらない時は NaN)。 */
+function lValueOf(items: readonly Dimension[], test: (a: string, b: string) => boolean): number {
+  const values = new Set(items.filter((item) => test(item.a, item.b) || test(item.b, item.a)).map((item) => item.value));
+  return values.size === 1 ? [...values][0] ?? NaN : NaN;
+}
+
+const SYMMETRIC = '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた';
+const NO_HOLES = '穴（外の面からの位置の記入が無いので作っていない）';
+/** L 形の外周の辺(下・右・腕の内の横の面・腕の内の縦の面・上・左)の、締結に出す面の名前(内向きの法線から)。 */
+const L_FACES = ['bottom', 'right', 'top', 'right', 'top', 'left'] as const;
+const L_COUNT_NAMES = ['下', '右', '腕の内(横)', '腕の内(縦)', '上', '左'] as const;
+const centered = (record: (typeof T_SLOT_OUTLINE_RECORDS)[number]): boolean => record.simplifiedKinds?.includes('slotPositionSymmetric') === true;
+/** 寸法線の鎖だけで決まる行・溝を中央に置いた 1 つの角の大きな丸みの行・L 形の行。 */
+const RECT_RECORDS = T_SLOT_OUTLINE_RECORDS.filter((record) => record.armWidth === undefined && !centered(record));
+const R_CENTERED_RECORDS = T_SLOT_OUTLINE_RECORDS.filter((record) => record.armWidth === undefined && centered(record));
+const L_RECORDS = T_SLOT_OUTLINE_RECORDS.filter((record) => record.armWidth !== undefined);
+
 function familyOf(slot: number): CatalogFamily {
   return slot === 6 ? T_SLOT_CATALOG_FAMILIES.s6 : slot === 8 ? T_SLOT_CATALOG_FAMILIES.s8 : T_SLOT_CATALOG_FAMILIES.s10;
 }
@@ -120,19 +153,26 @@ describe('資料 1 の溝つきフレームの外周の指定を持つ行と照�
   });
 
   it('外形・角の丸み・溝の形と位置・穴が、寸法線の鎖から決まる値と合う(原点は外形の中心)', () => {
-    for (const record of T_SLOT_OUTLINE_RECORDS) {
+    expect(RECT_RECORDS.length).toBeGreaterThan(0);
+    for (const record of RECT_RECORDS) {
       const { cells } = rowOf(record.key);
       const items = ['外形の寸法線', '溝の位置の寸法線', '穴の記入'].flatMap((field) => dimensionsOf(cells[field]));
-      const x = positions(items.filter((item) => item.a in X_FACES || item.b in X_FACES), X_FACES);
-      const y = positions(items.filter((item) => item.a in Y_FACES || item.b in Y_FACES), Y_FACES);
+      const isFace = (name: string): boolean => name in X_FACES || name in Y_FACES;
+      // 内の点どうしの寸法線(鎖の続き)は両方の軸に渡す(始まりの点が分かっている軸でだけ使われる)。
+      const inner = items.filter((item) => !isFace(item.a) && !isFace(item.b));
+      const x = positions([...items.filter((item) => item.a in X_FACES || item.b in X_FACES), ...inner], X_FACES);
+      const y = positions([...items.filter((item) => item.a in Y_FACES || item.b in Y_FACES), ...inner], Y_FACES);
       const width = x.get('右の外の面') ?? NaN;
       const height = y.get('上の外の面') ?? NaN;
       const counts = new Map([...(cells['面ごとの溝の数'] ?? '').matchAll(/(上|下|左|右)(\d+)/gu)].map((match): [string, number] => [match[1] ?? '', Number(match[2])]));
       const slots = [['下', 0, x, false], ['右', 1, y, false], ['上', 2, x, true], ['左', 3, y, true]] as const;
-      const expectedSlots = slots.filter(([face]) => (counts.get(face) ?? 0) === 1).map(([face, edge, axis, flip]) => {
-        const at = axis.get(`${face}の溝の口の中心`) ?? NaN;
-        return { edge, at: flip ? (edge === 2 ? width : height) - at : at };
-      });
+      // 面の溝の口の中心の点: 名前が面の字で始まり「溝」「口」「中心」を持つ点(面ごとの溝の数と同じ数だけ決まる事)。
+      const expectedSlots = slots.flatMap(([face, edge, axis, flip]) => {
+        const values = [...new Set([...axis.entries()].filter(([name]) => name.startsWith(face) && name.includes('溝') && name.includes('口')
+          && name.includes('中心') && !isFace(name)).map(([, value]) => value))].sort((a, b) => a - b);
+        expect(values.length, `${record.key} ${face}`).toBe(counts.get(face) ?? 0);
+        return values.map((at) => ({ edge, at: flip ? (edge === 2 ? width : height) - at : at }));
+      }).sort((p, q) => p.edge - q.edge || p.at - q.at);
       const diameter = Number(/φ([0-9]+(?:\.[0-9]+)?)/u.exec(cells['穴の記入'] ?? '')?.[1] ?? NaN);
       const hole = { x: (x.get('穴の中心') ?? NaN) - width / 2, y: (y.get('穴の中心') ?? NaN) - height / 2, diameter };
       const outline = record.outline;
@@ -142,6 +182,76 @@ describe('資料 1 の溝つきフレームの外周の指定を持つ行と照�
       expect([record.slotOpening, record.slotInnerWidth, record.shoulder, record.slotDepth], record.key).toEqual(slotShapeOf(cells['溝の形の寸法線']));
       expect([outline?.slots, outline?.holes], record.key).toEqual([expectedSlots, [hole]]);
       expect([record.slot, record.centerHole], record.key).toEqual([record.slotOpening, diameter]);
+    }
+  });
+
+  it('溝の位置の記入が無い 1 つの角の大きな丸みの行: 溝は面の幅の中央(印つき)、穴は溝の口の中心を通る縦と横の軸の交点(外形の中心)', () => {
+    expect(R_CENTERED_RECORDS.map((record) => record.key)).toEqual(['s10-40x40-r32', 's10-45x45-r35']);
+    for (const record of R_CENTERED_RECORDS) {
+      const { cells } = rowOf(record.key);
+      const outer = dimensionsOf(cells['外形の寸法線']);
+      const x = positions(outer.filter((item) => item.a in X_FACES || item.b in X_FACES), X_FACES);
+      const y = positions(outer.filter((item) => item.a in Y_FACES || item.b in Y_FACES), Y_FACES);
+      const [width, height] = [x.get('右の外の面') ?? NaN, y.get('上の外の面') ?? NaN];
+      const counts = [...(cells['面ごとの溝の数'] ?? '').matchAll(/(上|下|左|右)(\d+)/gu)].map((match) => `${match[1] ?? ''}${match[2] ?? ''}`);
+      const note = cells['溝と穴の位置の備考'] ?? '';
+      // 中央に置く根拠: 溝と穴に面からの寸法線が無く、2 本目の読みの備考が、下の溝の口の中心は縦の軸・右の溝の口の中心は横の軸の上、穴は軸の交点と書く。
+      expect([dimensionsOf(cells['溝の位置の寸法線']).length, dimensionsOf(cells['穴の記入']).length], record.key).toEqual([0, 0]);
+      expect([note.includes('下溝口中心はY軸'), note.includes('右溝口中心はX軸'), note.includes('交点')], record.key).toEqual([true, true, true]);
+      expect(counts, record.key).toEqual(['上0', '下1', '左0', '右1']);
+      const diameter = Number(/φ([0-9]+(?:\.[0-9]+)?)/u.exec(cells['穴の記入'] ?? '')?.[1] ?? NaN);
+      expect([record.width, record.height, record.faces, record.centerHole], record.key).toEqual([width, height, 'br', diameter]);
+      expect(record.outline?.vertices, record.key).toEqual([[-width / 2, -height / 2], [width / 2, -height / 2], [width / 2, height / 2],
+        [-width / 2, height / 2]]);
+      expect(record.outline?.radii, record.key).toEqual(radiiOf(cells['角の丸みの記入']));
+      expect([record.slotOpening, record.slotInnerWidth, record.shoulder, record.slotDepth], record.key).toEqual(slotShapeOf(cells['溝の形の寸法線']));
+      expect([record.outline?.slots, record.outline?.holes], record.key).toEqual([[{ edge: 0, at: width / 2 }, { edge: 1, at: height / 2 }],
+        [{ x: 0, y: 0, diameter }]]);
+      expect([record.slot, record.simplified, record.simplifiedKinds], record.key).toEqual([record.slotOpening, [SYMMETRIC], ['slotPositionSymmetric']]);
+    }
+  });
+
+  it('L 形の行: 外形・腕・角・溝の形は読みの値で、溝の口の中心は面からの記入が無いので各腕の幅の中央(印つき)、穴は作らない(印つき)', () => {
+    expect(L_RECORDS.map((record) => record.key)).toEqual(['s6-l40x40-a20', 's8-l60x60-a30', 's10-l80x80-a40', 's10-l90x90-a45']);
+    for (const record of L_RECORDS) {
+      const { cells } = rowOf(record.key);
+      const outer = lDimensionsOf(cells['外形の寸法線']);
+      const both = (left: string, right: string): ((a: string, b: string) => boolean) => (a, b) => a === left && b === right;
+      const [width, height] = [lValueOf(outer, both('左の外の面', '右の外の面')), lValueOf(outer, both('下の外の面', '上の外の面'))];
+      const [arm, armY] = [lValueOf(outer, both('左の外の面', '腕の内の面(縦)')), lValueOf(outer, both('下の外の面', '腕の内の面(横)'))];
+      const radius = /(\d+)-R([0-9]+(?:\.[0-9]+)?)/u.exec(cells['角の丸みの記入'] ?? '');
+      const shape = lDimensionsOf(cells['溝の形の寸法線']);
+      const opening = lValueOf(shape, (a) => a.includes('口の') && !a.includes('部屋'));
+      const inner = lValueOf(shape, (a) => a.includes('部屋の'));
+      const shoulder = lValueOf(shape, (a, b) => a.includes('外の面') && b.includes('肩の内の面'));
+      const depth = lValueOf(shape, (a, b) => a.includes('肩の内の面') && b.includes('溝の底'));
+      const middle = lValueOf(shape, (a, b) => a.includes('溝の底') && b.includes('溝の底') && !a.includes('肩') && !b.includes('肩'));
+      const positions = lDimensionsOf(cells['溝の位置の寸法線']);
+      const pitches = [...new Set(positions.map((item) => item.value))];
+      const counts = new Map([...(cells['面ごとの溝の数'] ?? '').matchAll(/(腕の内\((?:縦|横)\)|上|下|左|右)(\d+)/gu)]
+        .map((match): [string, number] => [match[1] ?? '', Number(match[2])]));
+      // 中央に置く根拠: 溝の口の中心にも穴の中心にも、外の面からの(参考でない)寸法線が無い。
+      const fromFace = (items: readonly Dimension[]): boolean => items.some((item) => `${item.a}|${item.b}`.includes('外の面')
+        && (`${item.a}|${item.b}`.includes('中心')));
+      expect([fromFace(positions), fromFace(lDimensionsOf(cells['穴の記入']))], record.key).toEqual([false, false]);
+      expect([radius?.[1], arm, pitches.length, 2 * (shoulder + depth) + middle], record.key).toEqual(['5', armY, 1, arm]);
+      const r = Number(radius?.[2]);
+      const pitch = pitches[0] ?? NaN;
+      const [w2, h2] = [width / 2, height / 2];
+      expect([record.width, record.height, record.armWidth, record.cornerRadius, record.slotPitch, record.faces], record.key)
+        .toEqual([width, height, arm, r, pitch, 'tblr']);
+      expect([record.slot, record.slotOpening, record.slotInnerWidth, record.shoulder, record.slotDepth], record.key)
+        .toEqual([opening, opening, inner, shoulder, depth]);
+      expect(record.outline?.vertices, record.key).toEqual([[-w2, -h2], [w2, -h2], [w2, -h2 + arm], [-w2 + arm, -h2 + arm], [-w2 + arm, h2], [-w2, h2]]);
+      expect(record.outline?.radii, record.key).toEqual([r, r, r, 0, r, r]);
+      const x0 = arm / 2;
+      const expected = [{ edge: 0, at: x0 }, { edge: 0, at: x0 + pitch }, { edge: 1, at: x0 }, { edge: 2, at: width - (x0 + pitch) },
+        { edge: 3, at: x0 + pitch - arm }, { edge: 4, at: arm - x0 }, { edge: 5, at: height - (x0 + pitch) }, { edge: 5, at: height - x0 }];
+      expect(record.outline?.slots, record.key).toEqual(expected);
+      expect(L_COUNT_NAMES.map((name) => counts.get(name)), record.key)
+        .toEqual(L_COUNT_NAMES.map((_, edge) => expected.filter((slot) => slot.edge === edge).length));
+      expect([record.outline?.holes, record.centerHole, record.simplified, record.simplifiedKinds], record.key)
+        .toEqual([[], 0, [SYMMETRIC, NO_HOLES], ['slotPositionSymmetric']]);
     }
   });
 
@@ -162,8 +272,9 @@ describe('資料 1 の溝つきフレームの外周の指定を持つ行と照�
       expect(profile?.areaMm2 ?? NaN, record.key).toBeGreaterThanOrEqual(record.areaMm2 ?? Infinity);
       expect(family.sectionBounds?.(row, values), record.key).toEqual({ minX: -record.width / 2, minY: -record.height / 2, maxX: record.width / 2,
         maxY: record.height / 2 });
-      expect(family.sectionSlots?.(row, values)?.map((slot) => slot.face), record.key).toEqual(record.outline.slots.map((slot) => (slot.edge === 0 ? 'bottom'
-        : slot.edge === 1 ? 'right' : slot.edge === 2 ? 'top' : 'left')));
+      // 面の名前は内向きの法線から: 長方形は辺 0〜3 が下・右・上・左、L 形は L_FACES(腕の内の横の面は上へ、縦の面は右へ開く面)。
+      expect(family.sectionSlots?.(row, values)?.map((slot) => slot.face), record.key).toEqual(record.outline.slots.map((slot) => (
+        record.armWidth !== undefined ? L_FACES[slot.edge] : slot.edge === 0 ? 'bottom' : slot.edge === 1 ? 'right' : slot.edge === 2 ? 'top' : 'left')));
     }
   });
 });

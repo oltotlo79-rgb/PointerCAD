@@ -16,7 +16,7 @@ import type { FrameSectionSlot } from '../frame/frameSlots.js';
 import type { SteelEvidence } from '../standard/steelCatalog.js';
 
 /** 選ぶ画面の分類(鋼材・アルミフレーム・機械要素)。 */
-type CatalogGroup = 'steel' | 'aluminumFrame' | 'mechanical';
+type CatalogGroup = 'steel' | 'aluminumFrame' | 'mechanical' | 'piping';
 
 /** 版の確かさ。鋼材の台帳(`steelStandards.ts`)の確認の程度と同じ考え方。 */
 type CatalogVerification = 'draft' | 'final-standard' | 'manufacturer-catalog' | 'unverified';
@@ -28,7 +28,7 @@ type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChann
   | 'flatPlate' | 'shapedPlate' | 'angleBracketCatalog' | 'footBase' | 'adjuster' | 'pipeFrame' | 'pipeFrameSlotted' | 'pipeFrameTwin'
   | 'smallFrame' | 'smallFrameCap' | 'bracketStock' | 'pipeFrameCap' | 'pipeFrameFoot'
   | 'jointBar' | 'tSlotStud' | 'knurledNut' | 'panelBoardFixed' | 'panelBoardOrder' | 'panelPartBox' | 'panelCoverFrame' | 'connectorBox' | 'capFootBox' | 'caster'
-  | 'movableBox' | 'accessoryBox';
+  | 'movableBox' | 'accessoryBox' | 'pipeElbow' | 'pipeTee' | 'pipeSocket' | 'blockBracket';
 
 /**
  * 族の options の 1 つの鍵の指定。**鍵の名前は保存されるので、版の中で変えない。**

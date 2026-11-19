@@ -6,6 +6,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   accessoryPreview, effectiveAccessory, exposedEnds, familyAccessoryProps, layoutAccessory, pickedAccessory, rememberAccessory,
+  standardAccessoryFamilies, standardAccessoryOptionsFor,
 } from './accessoryChoice.js';
 
 const registry = PRODUCT_CATALOG_REGISTRY;
@@ -50,6 +51,25 @@ describe('付属の組の欄の元', () => {
   });
 });
 
+describe('ボルトの座金とナットの組(A4)', () => {
+  const m8 = 'hexBolt:JIS-B-1180:2014:M8:P1.25:annexJA';
+
+  it('今の 8 分類の六角ボルトだけに組を出し、既定の締め付ける厚さ(ばね座金の無し・有り)を持つ', () => {
+    const options = standardAccessoryOptionsFor('hexBolt', m8, '40', 'annexJA', 'coarse');
+    expect(options.map((option) => option.setId)).toEqual(['bolt-washer-nut']);
+    expect(options[0]?.defaultGripMm?.plain).toBeGreaterThan(options[0]?.defaultGripMm?.spring ?? Infinity);
+    expect(standardAccessoryOptionsFor('hexNut', m8, '40', 'annexJA', 'coarse')).toEqual([]);
+  });
+
+  it('置く時の付属は、欄の式の厚さか既定の厚さと、ばね座金の有無', () => {
+    const options = standardAccessoryOptionsFor('hexBolt', m8, '40', 'annexJA', 'coarse');
+    rememberAccessory({ setId: 'bolt-washer-nut', ends: 'both', endReference: 'overall', itemKey: '', springWasher: true });
+    expect(pickedAccessory(options)?.choices).toMatchObject({ gripMm: options[0]?.defaultGripMm?.spring, springWasher: true });
+    rememberAccessory({ setId: 'bolt-washer-nut', ends: 'both', endReference: 'overall', itemKey: '', gripText: '12+3', springWasher: false });
+    expect(pickedAccessory(options)?.choices).toMatchObject({ gripMm: 15, springWasher: false });
+  });
+});
+
 describe('一括配置で付ける端', () => {
   const section = { minX: -10, minY: -10, maxX: 10, maxY: 10 };
   const path = (points: readonly (readonly [number, number, number])[], closed: boolean): FrameLine[] =>
@@ -71,5 +91,25 @@ describe('一括配置で付ける端', () => {
   it('閉じた長方形の突き当ては通した端だけ、留めには付けない', () => {
     expect(ends(path(corner, true), 'butt')).toEqual(['both', 'end', 'end', null]);
     expect(ends(path(corner, true), 'miter')).toEqual([null, null, null, null]);
+  });
+});
+
+describe('軸受の C 形止め輪の組(A6)', () => {
+  beforeAll(async () => { await registry.ensure(['c-ring-shaft', 'c-ring-bore', 'angular-contact-ball-bearing']); });
+
+  it('8 分類の深溝玉軸受 6204 には軸用 20 と穴用 47 の組、族のアンギュラ玉軸受(内径 20・外径 47)にも同じ組を出す', () => {
+    const options = standardAccessoryOptionsFor('deepGrooveBallBearing', 'deepGrooveBallBearing:JIS-B-1521:2012:6204', '', 'annexJA', 'coarse');
+    expect(options.map((option) => [option.setId, option.candidates.map((item) => item.itemKey)]))
+      .toEqual([['bearing-shaft-rings', ['20']], ['bearing-bore-rings', ['47']]]);
+    expect([standardAccessoryFamilies('deepGrooveBallBearing'), standardAccessoryFamilies('hexNut')]).toEqual([['c-ring-shaft', 'c-ring-bore'], []]);
+    const angular = registry.loaded('angular-contact-ball-bearing');
+    const row = angular?.rows.find((item) => item.dims.boreDiameter === 20 && item.dims.outsideDiameter === 47);
+    expect(accessoryOptionsFor(angular, row, {}).map((option) => option.setId)).toEqual(['bearing-shaft-rings', 'bearing-bore-rings']);
+  });
+
+  it('置く時の付属は、選んだ組・付ける端・行の鍵', () => {
+    const options = standardAccessoryOptionsFor('deepGrooveBallBearing', 'deepGrooveBallBearing:JIS-B-1521:2012:6204', '', 'annexJA', 'coarse');
+    rememberAccessory({ setId: 'bearing-bore-rings', ends: 'start', endReference: 'overall', itemKey: '' });
+    expect(pickedAccessory(options)).toEqual({ setId: 'bearing-bore-rings', choices: { ends: 'start', endReference: 'overall', itemKey: '47' } });
   });
 });

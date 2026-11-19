@@ -26,7 +26,7 @@ export interface LinuxTerminalEvidence {
   readonly privateSource: 'subset-of-zero-rss';
 }
 export interface ResourceProcessSample extends ProcessMemorySample {
-  readonly cpuMilliseconds: number | null; readonly linuxReading?: LinuxReading; readonly linuxTerminal?: LinuxTerminalEvidence;
+  readonly cpuMilliseconds: number | null; readonly windowsExitTicks?: string; readonly linuxReading?: LinuxReading; readonly linuxTerminal?: LinuxTerminalEvidence;
 }
 interface WindowsTiming {
   readonly nativeInitializationMs: number;
@@ -147,6 +147,7 @@ function processSample(value: unknown): value is ResourceProcessSample {
     typeof value.parentPid === 'number' && typeof value.name === 'string' &&
     (value.priority === undefined || value.priority === null || typeof value.priority === 'string') &&
     (value.role === undefined || typeof value.role === 'string') &&
+    (value.windowsExitTicks === undefined || (typeof value.windowsExitTicks === 'string' && /^\d+$/u.test(value.windowsExitTicks))) &&
     nullableNumber(value.workingSetBytes) && nullableNumber(value.privateBytes) && nullableNumber(value.cpuMilliseconds) &&
     (value.error === null || typeof value.error === 'string');
 }
@@ -301,8 +302,17 @@ public static class SamplerNative {
     public ulong WorkingSet, PrivateBytes;
     public double CpuMilliseconds, IdentityMs, MetricsMs, OpenMs, CreationMs, CloseMs;
     public string Priority, Error;
+    public SafeProcessHandle Watch;
   }
-  public static Sample Read(int pid, long expected) {
+  static void ReadMemory(SafeProcessHandle handle, Sample sample) {
+    MemoryCounters memory = new MemoryCounters();
+    memory.cb = (uint)Marshal.SizeOf(typeof(MemoryCounters));
+    if (!GetProcessMemoryInfo(handle, ref memory, memory.cb)) throw Failure("GetProcessMemoryInfo");
+    sample.WorkingSet = memory.WorkingSetSize.ToUInt64();
+    sample.PrivateBytes = memory.PrivateUsage.ToUInt64();
+  }
+  public static Sample Read(int pid, long expected) { return Read(pid, expected, false); }
+  public static Sample Read(int pid, long expected, bool retainHandle) {
     Sample sample = new Sample();
     SafeProcessHandle handle = null;
     Stopwatch identity = Stopwatch.StartNew();
@@ -325,14 +335,11 @@ public static class SamplerNative {
         if (priority == 0) throw Failure("GetPriorityClass");
         if (!Enum.IsDefined(typeof(ProcessPriorityClass), (int)priority)) throw new InvalidOperationException("Unknown priority class");
         sample.Priority = ((ProcessPriorityClass)priority).ToString();
-        MemoryCounters memory = new MemoryCounters();
-        memory.cb = (uint)Marshal.SizeOf(typeof(MemoryCounters));
-        if (!GetProcessMemoryInfo(handle, ref memory, memory.cb)) throw Failure("GetProcessMemoryInfo");
-        sample.WorkingSet = memory.WorkingSetSize.ToUInt64();
-        sample.PrivateBytes = memory.PrivateUsage.ToUInt64();
+        ReadMemory(handle, sample);
         if (Times(handle, out cpu) != expected) throw new InvalidOperationException("Native handle identity changed");
         sample.CpuMilliseconds = cpu;
         Alive(handle);
+        if (retainHandle) { sample.Watch = handle; handle = null; }
       } finally { sample.MetricsMs = stage.Elapsed.TotalMilliseconds; }
     } catch (Exception error) {
       sample.Error = error.GetType().FullName + ": " + error.Message;
@@ -342,6 +349,22 @@ public static class SamplerNative {
       if (handle != null) handle.Dispose();
       sample.CloseMs = stage.Elapsed.TotalMilliseconds;
     }
+    return sample;
+  }
+
+  // An exited child can retain WS and private bytes. Query the original handle for this frame.
+  public static Sample ReadExited(SafeProcessHandle handle, long expected, out string exitTicks) {
+    uint status = WaitForSingleObject(handle, 0);
+    if (status == 0xffffffff) throw Failure("WaitForSingleObject");
+    if (status != 0) throw new InvalidOperationException("Missing child is not confirmed exited");
+    long created, exited, kernel, user;
+    if (!GetProcessTimes(handle, out created, out exited, out kernel, out user)) throw Failure("GetProcessTimes");
+    if (DateTime.FromFileTimeUtc(created).Ticks != expected || exited <= 0 || exited < created)
+      throw new InvalidOperationException("Missing child has inconsistent creation or exit time");
+    exitTicks = DateTime.FromFileTimeUtc(exited).Ticks.ToString(CultureInfo.InvariantCulture);
+    Sample sample = new Sample();
+    ReadMemory(handle, sample);
+    sample.CpuMilliseconds = ((double)kernel + user) / 10000.0;
     return sample;
   }
 
@@ -593,8 +616,8 @@ public static class SamplerNative {
  * (手元で数 ms)。frame はその frame の探索の組だけを読み、探索の時刻は実際の完了時刻のまま記録する。
  * 外部検査で採取のプロセスが 0.3〜0.8 秒止まっても、古さは探索と読取りの所要だけになる。
  */
-export function windowsSampler(rootPid: number, includeRoot: boolean, stall?: SamplerStall): Sampler {
-  const script = windowsSamplerScript(rootPid, includeRoot, stall);
+export function windowsSampler(rootPid: number, includeRoot: boolean, stall?: SamplerStall, trackReadChildren = false): Sampler {
+  const script = windowsSamplerScript(rootPid, includeRoot, stall, trackReadChildren);
   const spawnedAt = Date.now();
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
     { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -644,7 +667,7 @@ function samplerStallLine(stall: SamplerStall | undefined): string {
 }
 
 /** The PowerShell program of the Windows sampler (one JSON line per start-up stage and per frame on stdout). */
-export function windowsSamplerScript(rootPid: number, includeRoot: boolean, stall?: SamplerStall): string {
+export function windowsSamplerScript(rootPid: number, includeRoot: boolean, stall?: SamplerStall, trackReadChildren = false): string {
   return `
 $ErrorActionPreference='Stop'
 # Node decodes both redirected streams as UTF-8; do not emit the host OEM code page.
@@ -673,6 +696,9 @@ $serializerReadyAt=[SamplerNative]::EpochMilliseconds()
 $rootProcessId=${rootPid}
 $includeRoot=$${includeRoot ? 'true' : 'false'}
 $samplerProcessId=$PID
+$trackReadChildren=$${trackReadChildren ? 'true' : 'false'}
+# Handles are owned by this sampler process until stop() closes it, including the release samples.
+$watches=@{}
 $known=@()
 $discoveredAt=0L
 $discoveryError=$null
@@ -765,11 +791,15 @@ while($true){
   $nativeCreationQueryMs=0.0
   $nativeHandleCloseMs=0.0
   $nativeCallMs=0.0
+  $seen=@{}
+  $pendingWatches=@{}
   $rows=@(foreach($entry in $selected){
     $identity=$entry.created
     try{
       $nativeCallClock=[System.Diagnostics.Stopwatch]::StartNew()
-      try{$native=[SamplerNative]::Read([int]$entry.pid,[long]$identity)}
+      $keep=$trackReadChildren -and $entry.pid -ne $rootProcessId -and !$watches.ContainsKey($entry.pid)
+      if($trackReadChildren){$seen[$entry.pid]=$true}
+      try{$native=[SamplerNative]::Read([int]$entry.pid,[long]$identity,$keep)}
       finally{$nativeCallMs+=$nativeCallClock.Elapsed.TotalMilliseconds}
       $nativeIdentityReadMs+=$native.IdentityMs
       $nativeMetricsReadMs+=$native.MetricsMs
@@ -777,6 +807,7 @@ while($true){
       $nativeCreationQueryMs+=$native.CreationMs
       $nativeHandleCloseMs+=$native.CloseMs
       if($null -ne $native.Error){throw $native.Error}
+      if($keep){$pendingWatches[$entry.pid]=@{handle=$native.Watch;entry=$entry}}
       @{pid=[int]$entry.pid;created=$identity;parentPid=[int]$entry.parentPid;name=$entry.name;
         priority=$native.Priority;role=$entry.role;workingSetBytes=$native.WorkingSet;privateBytes=$native.PrivateBytes;
         cpuMilliseconds=$native.CpuMilliseconds;error=$null}
@@ -785,6 +816,21 @@ while($true){
         priority=$null;role='unknown';workingSetBytes=$null;privateBytes=$null;cpuMilliseconds=$null;error=$_.Exception.Message}
     }
   })
+  if($trackReadChildren){
+    $rows+=@(foreach($watch in $watches.Values){
+      $entry=$watch.entry
+      if($seen.ContainsKey($entry.pid)){continue}
+      $row=@{pid=$entry.pid;parentPid=$entry.parentPid;created=$entry.created;name=$entry.name;role=$entry.role;
+        priority=$null;workingSetBytes=$null;privateBytes=$null;cpuMilliseconds=$null;error=$null}
+      try{
+        $exitTicks=''
+        $sample=[SamplerNative]::ReadExited($watch.handle,[long]$entry.created,[ref]$exitTicks)
+        $row.workingSetBytes=$sample.WorkingSet;$row.privateBytes=$sample.PrivateBytes
+        $row.cpuMilliseconds=$sample.CpuMilliseconds;$row.windowsExitTicks=$exitTicks
+      }catch{$row.error=$_.Exception.Message}
+      $row
+    })
+  }
   $propertyReadMs=$propertyClock.Elapsed.TotalMilliseconds
   $disposalClock=[System.Diagnostics.Stopwatch]::StartNew()
   # No System.Diagnostics.Process wrappers are owned by this direct-handle path.
@@ -820,8 +866,11 @@ while($true){
       rejectedReadElapsedMs=$readClock.Elapsed.TotalMilliseconds;rejectedNativeCallMs=$nativeCallMs;
       rejectedDiscoveryExecutionMs=$(if($null -ne $discoveryTiming){$discoveryTiming.discoveryExecutionMs}else{0.0});
       retryStartedAtEpochMs=[SamplerNative]::EpochMilliseconds()}
+    foreach($watch in $pendingWatches.Values){$watch.handle.Dispose()}
     continue
   }
+  # Publish only watches from the frame that will be emitted.
+  foreach($pidKey in $pendingWatches.Keys){$watches[$pidKey]=$pendingWatches[$pidKey]}
   break
   }
   if($null -ne $staleRetry){$frame.staleRetry=$staleRetry}

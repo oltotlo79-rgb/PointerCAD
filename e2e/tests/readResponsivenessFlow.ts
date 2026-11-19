@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { PerformanceObserver } from 'node:perf_hooks';
 import { getHeapStatistics } from 'node:v8';
-import { getPriority } from 'node:os';
+import { cpus, freemem, getPriority } from 'node:os';
 import type { Profiler } from 'node:inspector';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { readPcadFile } from '../../packages/io/src/index.js';
@@ -322,6 +322,15 @@ function logReadLatencyBreakdown(spec: string, kind: string, mib: number, active
   }
 }
 
+/** Host-wide cumulative CPU counters let a failed read be aligned with the other CI worker. */
+function readHostSnapshot() {
+  const cores = cpus();
+  const idleMs = cores.reduce((sum, core) => sum + core.times.idle, 0);
+  const totalMs = cores.reduce((sum, core) => sum + Object.values(core.times).reduce((a, b) => a + b, 0), 0);
+  return { epochMs: performance.timeOrigin + performance.now(), cores: cores.length, idleMs, totalMs,
+    freeBytes: freemem(), workerCpu: process.cpuUsage() };
+}
+
 /** Fixed collection over ordinary reads; never delay real Worker execution. */
 export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32 | 128,
   kind: 'orphan' | 'referenced', app?: ElectronApplication): Promise<void> {
@@ -341,6 +350,8 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
   let completed = false, startedAt: number | null = null, releasedAt: number | null = null;
   let failure: string | null = null, acceptedSoFar = 0;
   const memoryFailures: string[] = [];
+  const clockProbes: { start: number; browser: number; end: number }[] = [];
+  const hostByRead: { attempt: number; before: ReturnType<typeof readHostSnapshot>; after: ReturnType<typeof readHostSnapshot> }[] = [];
   const costs = readFlowCosts(), flowStart = performance.now();
   // Native Playwright's unchanged total test deadline remains authoritative.
   const deadline = performance.now() + policy.maximumFlowMs;
@@ -363,12 +374,26 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
     const clockStart = performance.timeOrigin + performance.now();
     const browserClock = await page.evaluate(() => performance.timeOrigin + performance.now());
     const clockEnd = performance.timeOrigin + performance.now();
+    clockProbes.push({ start: clockStart, browser: browserClock, end: clockEnd });
     offset = { lower: browserClock - clockEnd, upper: browserClock - clockStart };
     startedAt = performance.now();
     for (let attempt = 0; attempt < policy.maximumReads; attempt += 1) {
       if (performance.now() >= deadline - policy.reserveForEvidenceAndSaveMs) break;
       await command.press('Escape'); await command.focus();
-      const inputStart = await page.evaluate(() => window.pcadReadObservation?.inputs.length ?? 0);
+      const probeStart = performance.timeOrigin + performance.now();
+      const state = await page.evaluate(() => ({ inputs: window.pcadReadObservation?.inputs.length ?? 0,
+        clock: performance.timeOrigin + performance.now() }));
+      if (attempt === 0) {
+        // The input-count query already runs before opening. Both round trips bound the same clock offset.
+        const probeEnd = performance.timeOrigin + performance.now();
+        clockProbes.push({ start: probeStart, browser: state.clock, end: probeEnd });
+        const lower: number = Math.max(offset.lower, state.clock - probeEnd);
+        const upper: number = Math.min(offset.upper, state.clock - probeStart);
+        if (!Number.isFinite(lower) || !Number.isFinite(upper) || lower > upper) throw new Error('Inconsistent read clock probes');
+        offset = { lower, upper };
+      }
+      const inputStart = state.inputs;
+      const hostBefore = readHostSnapshot();
       const row = { attempt: attempt + 1, start: performance.now(), end: null as number | null,
         readId: null as string | null, inputStart, inputEnd: null as number | null };
       attempts.push(row);
@@ -414,6 +439,7 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
         expect(metrics.incomplete, 'trusted value changes and paint evidence cannot be dropped from the sample set').toEqual([]);
         if (metrics.samples.length >= policy.minimumInputs) break;
       } finally {
+        hostByRead.push({ attempt: row.attempt, before: hostBefore, after: readHostSnapshot() });
         row.end = performance.now(); row.inputEnd = await page.evaluate(() => window.pcadReadObservation?.inputs.length ?? null).catch(() => null);
         const evidence = attemptEvidence(await readObservationSnapshot(page), roundTrips, row.inputStart,
           new Set(attempts.flatMap(earlier => earlier !== row && earlier.readId !== null ? [earlier.readId] : [])));
@@ -491,7 +517,13 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
     expect(extraReleased.workingSet).toBeLessThan(memoryBudget); expect(extraReleased.secondaryBytes).toBeLessThan(memoryBudget);
     completed = true;
   } catch (error: unknown) {
-    failure = String(error); throw error;
+    failure = String(error);
+    console.log('[読込失敗時の環境]', JSON.stringify({ spec: basename(info.file), kind, mib, pid: process.pid,
+      workerIndex: info.workerIndex, retry: info.retry, clockProbes, offset,
+      startEpochMs: startedAt === null ? null : performance.timeOrigin + startedAt,
+      releaseEpochMs: releasedAt === null ? null : performance.timeOrigin + releasedAt }));
+    for (const row of hostByRead) console.log('[読込中の機械負荷]', JSON.stringify(row));
+    throw error;
   } finally {
     try {
       if (memory === undefined) await writeReadEvidence(info, 'read-resident-raw', { rootPid: app?.process().pid ?? process.pid,

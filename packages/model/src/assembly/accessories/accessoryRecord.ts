@@ -5,11 +5,14 @@
  * 型だけのファイル(文書の型 `types.ts` が、実行の読み込みの輪を作らずに読む。frameJointRecord.ts と同じ形)。
  */
 
-/** 組の id(保存される。版の中で変えない)。'frame-end-caps' フレームの端のキャップ、'bolt-washer-nut' ボルトの座金とナット(A4)。 */
-export type AccessorySetId = 'frame-end-caps' | 'bolt-washer-nut';
+/**
+ * 組の id(保存される。版の中で変えない)。'frame-end-caps' フレームの端のキャップ、'bolt-washer-nut' ボルトの座金とナット(A4)、
+ * 'bearing-shaft-rings'・'bearing-bore-rings' 軸受の軸用・穴用の C 形止め輪(A6)。
+ */
+export type AccessorySetId = 'frame-end-caps' | 'bolt-washer-nut' | 'bearing-shaft-rings' | 'bearing-bore-rings';
 
-/** 付属の部品の役目。端のキャップは startCap・endCap、ボルトの組は headWasher・nutWasher・springWasher・nut。 */
-export type AccessoryRole = 'startCap' | 'endCap' | 'headWasher' | 'nutWasher' | 'springWasher' | 'nut';
+/** 付属の部品の役目。端のキャップは startCap・endCap、ボルトの組は headWasher・nutWasher・springWasher・nut、軸受の止め輪は startRing・endRing。 */
+export type AccessoryRole = 'startCap' | 'endCap' | 'headWasher' | 'nutWasher' | 'springWasher' | 'nut' | 'startRing' | 'endRing';
 
 /** キャップを付ける端(ボルトの組は 'both')。 */
 export type AccessoryEnds = 'both' | 'start' | 'end';

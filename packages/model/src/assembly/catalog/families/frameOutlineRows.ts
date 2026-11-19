@@ -1,8 +1,12 @@
 /**
- * 生成物(手で直さない): 資料 1 の溝つきフレームのうち、長方形の格子で表せない断面(1 つの角の大きな丸み)の行。
+ * 生成物(手で直さない): 資料 1 の溝つきフレームのうち、長方形の格子で表せない断面(1 つの角の大きな丸み・L 形)の行。
  * 担当の道具 outline_from_chains.py が、34 回目の読みの 2 本の寸法線の鎖から外周の頂点・角の丸み・溝の位置・穴を読みごとに作り、
  * 2 つで同じ物だけを書いた。断面の値と単位質量は断面性能の表(2 回の読みが一致)。2 本目の読みの文字は fixture
  * `frameOutlineOracle.fixture.json` に文字のまま書き、検査が照らす。製造元の名前・型番は書かない。
+ * 1 つの角の大きな丸みの行のうち印 slotPositionSymmetric を持つ行は、溝の口の中心の位置の記入が無いので面の幅の中央に置き
+ * (図が左右同じに描かれている事を確かめた)、穴は 2 本の読みが書く「溝の口の中心を通る縦と横の軸の交点」に置いた。
+ * L 形(armWidth を持つ行)は、溝の口の中心の外の面からの位置の記入が無いので、各腕の幅の中央に置いた印つきの簡略の形
+ * (図が腕の幅に対して左右同じに描かれている事を確かめた。溝と溝の間は読みの値)。穴は外の面からの位置の記入が無いので作らない。
  */
 import type { TSlotCatalogRecord } from './tSlotFrameCatalog.js';
 
@@ -19,4 +23,50 @@ export const T_SLOT_OUTLINE_RECORDS: readonly TSlotCatalogRecord[] = [
     iyCm4: 2.42, zxCm3: 1.53, zyCm3: 1.53,
     outline: { vertices: [[-15, -15], [15, -15], [15, 15], [-15, 15]], radii: [1, 2, 1, 22],
       slots: [{ edge: 0, at: 15 }, { edge: 1, at: 15 }], holes: [{ x: 0, y: 0, diameter: 6.8 }] } },
+  { key: 's8-60x60-r48', size: '溝幅 8 60×60 1 つの角が R48（2 面溝・隣り合う）', slot: 8, figurePage: 105, tablePage: 384, massSource: 'table',
+    width: 60, height: 60, slotPitch: 30, slotsAcross: 2, faces: 'br', slotOpening: 8, shoulder: 2, slotInnerWidth: 16.5, slotDepth: 7,
+    centerHole: 10.5, cornerRadius: 2, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 900, unitMassKgPerM: 2.43, ixCm4: 29.84,
+    iyCm4: 29.84, zxCm3: 8.83, zyCm3: 8.83,
+    outline: { vertices: [[-30, -30], [30, -30], [30, 30], [-30, 30]], radii: [2, 2, 2, 48],
+      slots: [{ edge: 0, at: 15 }, { edge: 0, at: 45 }, { edge: 1, at: 15 }, { edge: 1, at: 45 }], holes: [{ x: 0, y: 0, diameter: 10.5 }] } },
+  { key: 's6-l40x40-a20', size: '溝幅 6 40×40 L 形（腕の幅 20・溝 8 本）', slot: 6, figurePage: 46, tablePage: 384, massSource: 'table', width: 40,
+    height: 40, slotPitch: 20, slotsAcross: 2, faces: 'tblr', slotOpening: 6, shoulder: 2, slotInnerWidth: 12, slotDepth: 4, centerHole: 0,
+    cornerRadius: 1, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 434, unitMassKgPerM: 1.17, ixCm4: 6.59, iyCm4: 6.59, zxCm3: 2.92,
+    zyCm3: 2.92, armWidth: 20, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた', '穴（外の面からの位置の記入が無いので作っていない）'],
+    simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-20, -20], [20, -20], [20, 0], [0, 0], [0, 20], [-20, 20]], radii: [1, 1, 1, 0, 1, 1],
+      slots: [{ edge: 0, at: 10 }, { edge: 0, at: 30 }, { edge: 1, at: 10 }, { edge: 2, at: 10 }, { edge: 3, at: 10 }, { edge: 4, at: 10 }, { edge: 5, at: 10 }, { edge: 5, at: 30 }], holes: [] } },
+  { key: 's8-l60x60-a30', size: '溝幅 8 60×60 L 形（腕の幅 30・溝 8 本）', slot: 8, figurePage: 93, tablePage: 384, massSource: 'table', width: 60,
+    height: 60, slotPitch: 30, slotsAcross: 2, faces: 'tblr', slotOpening: 8, shoulder: 2, slotInnerWidth: 16.5, slotDepth: 7,
+    centerHole: 0, cornerRadius: 2, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 863, unitMassKgPerM: 2.33, ixCm4: 27.28,
+    iyCm4: 27.28, zxCm3: 7.88, zyCm3: 7.88, armWidth: 30, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた', '穴（外の面からの位置の記入が無いので作っていない）'],
+    simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-30, -30], [30, -30], [30, 0], [0, 0], [0, 30], [-30, 30]], radii: [2, 2, 2, 0, 2, 2],
+      slots: [{ edge: 0, at: 15 }, { edge: 0, at: 45 }, { edge: 1, at: 15 }, { edge: 2, at: 15 }, { edge: 3, at: 15 }, { edge: 4, at: 15 }, { edge: 5, at: 15 }, { edge: 5, at: 45 }], holes: [] } },
+  { key: 's10-l80x80-a40', size: '溝幅 10 80×80 L 形（腕の幅 40・溝 8 本）', slot: 10, figurePage: 179, tablePage: 385, massSource: 'table',
+    width: 80, height: 80, slotPitch: 40, slotsAcross: 2, faces: 'tblr', slotOpening: 10, shoulder: 5.5, slotInnerWidth: 20, slotDepth: 7,
+    centerHole: 0, cornerRadius: 3, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 1548, unitMassKgPerM: 4.18, ixCm4: 94.12,
+    iyCm4: 94.12, zxCm3: 20.53, zyCm3: 20.53, armWidth: 40, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた', '穴（外の面からの位置の記入が無いので作っていない）'],
+    simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-40, -40], [40, -40], [40, 0], [0, 0], [0, 40], [-40, 40]], radii: [3, 3, 3, 0, 3, 3],
+      slots: [{ edge: 0, at: 20 }, { edge: 0, at: 60 }, { edge: 1, at: 20 }, { edge: 2, at: 20 }, { edge: 3, at: 20 }, { edge: 4, at: 20 }, { edge: 5, at: 20 }, { edge: 5, at: 60 }], holes: [] } },
+  { key: 's10-l90x90-a45', size: '溝幅 10 90×90 L 形（腕の幅 45・溝 8 本）', slot: 10, figurePage: 194, tablePage: 385, massSource: 'table',
+    width: 90, height: 90, slotPitch: 45, slotsAcross: 2, faces: 'tblr', slotOpening: 10, shoulder: 6, slotInnerWidth: 20, slotDepth: 7,
+    centerHole: 0, cornerRadius: 3, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 2052, unitMassKgPerM: 5.54, ixCm4: 149.53,
+    iyCm4: 149.53, zxCm3: 28.83, zyCm3: 28.83, armWidth: 45,
+    simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた', '穴（外の面からの位置の記入が無いので作っていない）'], simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-45, -45], [45, -45], [45, 0], [0, 0], [0, 45], [-45, 45]], radii: [3, 3, 3, 0, 3, 3],
+      slots: [{ edge: 0, at: 22.5 }, { edge: 0, at: 67.5 }, { edge: 1, at: 22.5 }, { edge: 2, at: 22.5 }, { edge: 3, at: 22.5 }, { edge: 4, at: 22.5 }, { edge: 5, at: 22.5 }, { edge: 5, at: 67.5 }], holes: [] } },
+  { key: 's10-40x40-r32', size: '溝幅 10 40×40 1 つの角が R32（2 面溝・隣り合う）', slot: 10, figurePage: 179, tablePage: 385, massSource: 'table',
+    width: 40, height: 40, slotPitch: 40, slotsAcross: 1, faces: 'br', slotOpening: 10, shoulder: 5.5, slotInnerWidth: 20, slotDepth: 7,
+    centerHole: 8.5, cornerRadius: 1, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 566, unitMassKgPerM: 1.53, ixCm4: 7.82,
+    iyCm4: 7.82, zxCm3: 3.53, zyCm3: 3.53, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'], simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-20, -20], [20, -20], [20, 20], [-20, 20]], radii: [1, 3, 1, 32],
+      slots: [{ edge: 0, at: 20 }, { edge: 1, at: 20 }], holes: [{ x: 0, y: 0, diameter: 8.5 }] } },
+  { key: 's10-45x45-r35', size: '溝幅 10 45×45 1 つの角が R35（2 面溝・隣り合う）', slot: 10, figurePage: 194, tablePage: 385, massSource: 'table',
+    width: 45, height: 45, slotPitch: 45, slotsAcross: 1, faces: 'br', slotOpening: 10, shoulder: 6, slotInnerWidth: 20, slotDepth: 7,
+    centerHole: 10.5, cornerRadius: 1, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 664, unitMassKgPerM: 1.79, ixCm4: 11.33,
+    iyCm4: 11.33, zxCm3: 4.53, zyCm3: 4.53, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'], simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-22.5, -22.5], [22.5, -22.5], [22.5, 22.5], [-22.5, 22.5]], radii: [1, 3, 1, 35],
+      slots: [{ edge: 0, at: 22.5 }, { edge: 1, at: 22.5 }], holes: [{ x: 0, y: 0, diameter: 10.5 }] } },
 ];

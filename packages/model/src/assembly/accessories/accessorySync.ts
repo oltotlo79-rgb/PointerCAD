@@ -15,8 +15,10 @@ import { createCatalogItemSource } from '../catalog/source.js';
 import { composePlacement, quaternionFromAxisAngle, type RigidPlacement } from '../placementMath.js';
 import type { AssemblyComponent, AssemblyDocument } from '../types.js';
 import { withinMagnitude } from '../../numericTolerance.js';
-import type { AccessorySetRecord } from './accessoryRecord.js';
+import type { AccessorySetId, AccessorySetRecord } from './accessoryRecord.js';
 import { accessoryCandidates, type AccessoryCandidate, type AccessoryRefusal } from './accessorySets.js';
+import { planBearingRings, type BearingRingRefusal, type BearingRingSetId } from './bearingRingSet.js';
+import { planBoltAccessories, type BoltAccessoryRefusal } from './boltAccessorySet.js';
 
 const FAMILY_KEY = 'family', ITEM_KEY = 'item';
 
@@ -26,18 +28,92 @@ export function accessoryIdsOf(document: AssemblyDocument, hostComponentId: stri
     ? record.accessories.map((item) => item.componentId) : []);
 }
 
+/** 付け直せない理由(端のキャップの組とボルトの座金とナットの組)。 */
+type SyncRefusal = AccessoryRefusal | 'ambiguousCap' | BoltAccessoryRefusal | BearingRingRefusal;
+type RecordSync = { readonly ok: true; readonly components: ReadonlyMap<string, AssemblyComponent>; readonly record: AccessorySetRecord }
+  | { readonly ok: false; readonly reason: SyncRefusal };
+
 type SyncResult = { readonly ok: true; readonly document: AssemblyDocument }
-  | { readonly ok: false; readonly reason: AccessoryRefusal | 'ambiguousCap'; readonly recordId: string };
+  | { readonly ok: false; readonly reason: SyncRefusal; readonly recordId: string };
+
+/** 保存の形が同じか(種類・呼び・欄)。 */
+function sameSource(left: AssemblyComponent['source'], right: AssemblyComponent['source']): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * ボルトの座金とナットの記録の付け直し(A4)。ボルトの今の呼び・長さで、記録の締め付ける厚さとばね座金のまま座金とナットを作り直し、ボルトの軸に沿って置き直す。
+ * 呼びが変われば座金とナットの呼びも替わる。ねじが 1 ピッチ出ない(ボルトを短くした)時は理由を返す(推測で厚さを変えない)。
+ */
+function syncBoltRecord(document: AssemblyDocument, record: AccessorySetRecord): RecordSync {
+  const host = document.components.find((component) => component.id === record.hostComponentId);
+  if (host === undefined) return { ok: false, reason: 'notBolt' };
+  const planned = planBoltAccessories(host.source, record.choices.gripMm ?? NaN, record.choices.springWasher === true);
+  if (!planned.ok) return planned;
+  const components = new Map<string, AssemblyComponent>();
+  for (const item of record.accessories) {
+    const target = planned.value.find((candidate) => candidate.role === item.role);
+    const component = document.components.find((candidate) => candidate.id === item.componentId);
+    if (target === undefined || component === undefined) continue;
+    const world = composePlacement(rigidOf(host), target.local);
+    const keepSource = sameSource(component.source, target.source);
+    if (keepSource && samePlacement(rigidOf(component), world)) continue;
+    components.set(component.id, { ...component, ...(keepSource ? {} : { source: target.source }),
+      placement: { position: [expressionValueFromNumber(world.position[0]), expressionValueFromNumber(world.position[1]),
+        expressionValueFromNumber(world.position[2])], rotation: world.rotation } });
+  }
+  const nominal = host.source.kind === 'standardPart' ? host.source.size : record.choices.itemKey;
+  return { ok: true, components, record: nominal === record.choices.itemKey ? record : { ...record, choices: { ...record.choices, itemKey: nominal } } };
+}
+
+/**
+ * 軸受の止め輪の記録の付け直し(A6)。軸受の今の呼びで止め輪の行を引き直し、端面の外へ置き直す(軸受の幅が変われば終点の側も動く)。
+ * 合う行が無くなった(呼びの変更で軸径・穴径に合う止め輪が無い)時は理由を返す(近い呼びを推測で選ばない)。
+ */
+function syncBearingRecord(document: AssemblyDocument, record: AccessorySetRecord, setId: BearingRingSetId, registry: CatalogRegistry): RecordSync {
+  const host = document.components.find((component) => component.id === record.hostComponentId);
+  if (host === undefined) return { ok: false, reason: 'notBearing' };
+  const planned = planBearingRings(host.source, setId, record.choices.ends, registry);
+  if (!planned.ok) return planned;
+  const components = new Map<string, AssemblyComponent>();
+  for (const item of record.accessories) {
+    const target = planned.value.find((candidate) => candidate.role === item.role);
+    const component = document.components.find((candidate) => candidate.id === item.componentId);
+    if (target === undefined || component === undefined) continue;
+    const world = composePlacement(rigidOf(host), target.local);
+    const source = createCatalogItemSource(target.family, target.row, {});
+    const keepSource = sameSource(component.source, source);
+    if (keepSource && samePlacement(rigidOf(component), world)) continue;
+    components.set(component.id, { ...component, ...(keepSource ? {} : { source }),
+      placement: { position: [expressionValueFromNumber(world.position[0]), expressionValueFromNumber(world.position[1]),
+        expressionValueFromNumber(world.position[2])], rotation: world.rotation } });
+  }
+  const itemKey = planned.value[0]?.row.key ?? record.choices.itemKey;
+  return { ok: true, components, record: itemKey === record.choices.itemKey ? record : { ...record, choices: { ...record.choices, itemKey } } };
+}
+
+/**
+ * 付け直しの表(G2 の段 1。組の定義の表 accessorySetDefinitions.ts と対。組を足す時は両方に 1 行ずつ足す)。
+ * 計算は段 1 の前のまま(端のキャップ・ボルトの組・軸受の止め輪の付け直し)。
+ */
+const SYNC_BY_SET: Readonly<Record<AccessorySetId, (document: AssemblyDocument, record: AccessorySetRecord, registry: CatalogRegistry) => RecordSync>> = {
+  'frame-end-caps': (document, record, registry) => syncRecord(document, record, registry),
+  'bolt-washer-nut': (document, record) => syncBoltRecord(document, record),
+  'bearing-shaft-rings': (document, record, registry) => syncBearingRecord(document, record, 'bearing-shaft-rings', registry),
+  'bearing-bore-rings': (document, record, registry) => syncBearingRecord(document, record, 'bearing-bore-rings', registry),
+};
+
+function syncAnyRecord(document: AssemblyDocument, record: AccessorySetRecord, registry: CatalogRegistry): RecordSync {
+  return SYNC_BY_SET[record.setId](document, record, registry);
+}
 
 function rigidOf(component: AssemblyComponent): RigidPlacement {
   const [x, y, z] = component.placement.position;
   return { position: [x.value, y.value, z.value], rotation: component.placement.rotation };
 }
 
-/** 記録 1 つの付け直し(付属の部品の新しい形と置き方)。 */
-function syncRecord(document: AssemblyDocument, record: AccessorySetRecord, registry: CatalogRegistry):
-{ readonly ok: true; readonly components: ReadonlyMap<string, AssemblyComponent>; readonly record: AccessorySetRecord }
-  | { readonly ok: false; readonly reason: AccessoryRefusal | 'ambiguousCap' } {
+/** 記録 1 つの付け直し(フレームの端のキャップ。付属の部品の新しい形と置き方)。 */
+function syncRecord(document: AssemblyDocument, record: AccessorySetRecord, registry: CatalogRegistry): RecordSync {
   const host = document.components.find((component) => component.id === record.hostComponentId);
   const candidates = accessoryCandidates(document, record.hostComponentId, record.setId, registry);
   if (host === undefined || !candidates.ok) return { ok: false, reason: candidates.ok ? 'noHost' : candidates.reason };
@@ -81,7 +157,7 @@ function samePlacement(left: RigidPlacement, right: RigidPlacement): boolean {
 }
 
 /**
- * 全部の記録の付属を、本体の今の端へ置き直す(フレームの端のキャップの組だけ。ほかの組の記録はそのまま)。何も変わらない時は同じ文書を返す。
+ * 全部の記録の付属を、本体の今の形へ置き直す(フレームの端のキャップは端へ、ボルトの座金とナットは軸に沿って。A4)。何も変わらない時は同じ文書を返す。
  * 1 つでも付け直せなければ何も変えずに理由と記録の id を返す(店はその時、文書を付け直さずに入れる。理由は accessoryIssues が接合チェックに出す)。
  */
 export function syncAccessorySets(document: AssemblyDocument, registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): SyncResult {
@@ -89,8 +165,7 @@ export function syncAccessorySets(document: AssemblyDocument, registry: CatalogR
   const changed = new Map<string, AssemblyComponent>();
   const nextRecords: AccessorySetRecord[] = [];
   for (const record of records) {
-    const synced = record.setId === 'frame-end-caps' ? syncRecord(document, record, registry)
-      : { ok: true as const, components: new Map<string, AssemblyComponent>(), record };
+    const synced = syncAnyRecord(document, record, registry);
     if (!synced.ok) return { ok: false, reason: synced.reason, recordId: record.id };
     for (const [id, component] of synced.components) changed.set(id, component);
     nextRecords.push(synced.record);
@@ -102,10 +177,9 @@ export function syncAccessorySets(document: AssemblyDocument, registry: CatalogR
 
 /** 付け直せない記録の一覧(接合チェックの一覧に出す)。記録ごとに確かめる。 */
 export function accessoryIssues(document: AssemblyDocument, registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY):
-readonly { readonly recordId: string; readonly hostComponentId: string; readonly reason: AccessoryRefusal | 'ambiguousCap' }[] {
+readonly { readonly recordId: string; readonly hostComponentId: string; readonly reason: SyncRefusal }[] {
   return (document.accessorySets ?? []).flatMap((record) => {
-    if (record.setId !== 'frame-end-caps') return [];
-    const synced = syncRecord(document, record, registry);
+    const synced = syncAnyRecord(document, record, registry);
     return synced.ok ? [] : [{ recordId: record.id, hostComponentId: record.hostComponentId, reason: synced.reason }];
   });
 }

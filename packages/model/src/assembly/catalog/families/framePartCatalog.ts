@@ -20,6 +20,8 @@ import {
 } from '../profiles/framePartShapes.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { BOSS_FOOT_RECORDS } from './bossFootRows.js';
+import { D_BRACKET_RECORDS } from './dBracketRows.js';
+import { EXTRA_ANGLE_BRACKET_RECORDS } from './extraAngleBracketRows.js';
 import {
   ADJUSTER_RECORDS, ANGLE_BRACKET_RECORDS, FLAT_PLATE_RECORDS, FOOT_BASE_RECORDS, FRAME_CAP_RECORDS, ROUND_NUT_RECORDS, SHAPED_PLATE_RECORDS,
   T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS,
@@ -492,8 +494,12 @@ export const SHAPED_PLATE_FAMILY: CatalogFamily = {
   partName: (row) => row.size,
 };
 
-/** L 形のブラケットの族の行: 2 本の読みで両脚の穴が決まった行(framePartRows.ts)の後に、寝た脚の穴を作らない行(hardBracketRows.ts)。 */
-const ANGLE_RECORDS: readonly AngleBracketRecord[] = [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS];
+/**
+ * L 形のブラケットの族の行: 2 本の読みで両脚の穴が決まった行(framePartRows.ts)の後に、寝た脚の穴を作らない行(hardBracketRows.ts)、
+ * その後にダイカストの本体の寝た脚の穴を作らない行(dBracketRows.ts)、その後に立つ脚の穴を作らない平らな L 形の行(extraAngleBracketRows.ts)。
+ */
+const ANGLE_RECORDS: readonly AngleBracketRecord[] = [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...D_BRACKET_RECORDS,
+  ...EXTRA_ANGLE_BRACKET_RECORDS];
 const angleRecord = recordLookup(ANGLE_RECORDS);
 
 function angleDimensions(row: CatalogItemRow): AngleBracketCatalogDimensions | null {

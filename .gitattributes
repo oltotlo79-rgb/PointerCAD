@@ -108,3 +108,7 @@ packages/help-content/docs/ja/math-symbols.md text eol=lf
 /packages/fem/src/solidFiniteMaterial.py -text
 /packages/fem/src/solidModal.py -text
 /packages/fem/src/solidPlasticAnalysis.py -text
+# 12 回目の形の付属の組の記録を固定の文字で持つ fixture。packages/io/src/pcad/accessorySetsRound12.test.ts が、今の書き手の出す文字(LF)と
+# バイト単位で toBe 比較する。core.autocrlf=true(Git for Windows・CI の windows-latest の既定)で取り出すと CRLF になり一致しない
+# (2026-11-19、枝の CI run 44501326811 の front (windows-latest) で判明)。math-symbols.md と同じく、常に LF で取り出す。
+/packages/io/src/pcad/accessorySetsRound12.fixture.json text eol=lf

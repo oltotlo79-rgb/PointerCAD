@@ -1,5 +1,5 @@
 {
-  "actualTime": "2026-11-19T12:54:40.781441+09:00",
+  "actualTime": "2026-11-19T20:32:34.213623+09:00",
   "format": "pointercad-fem-application-source/1",
   "files": {
     "LICENSE": {
@@ -6697,6 +6697,16 @@
       "bytes": 5283,
       "source": "packages/io/src/pcad/accessorySetRecords.test.ts"
     },
+    "packages/io/src/pcad/accessorySetsRound12.fixture.json": {
+      "sha256": "44426c64fbb2da9619158b2724491de6275074457fb1740e620750ee454cab5a",
+      "bytes": 5874,
+      "source": "packages/io/src/pcad/accessorySetsRound12.fixture.json"
+    },
+    "packages/io/src/pcad/accessorySetsRound12.test.ts": {
+      "sha256": "ac536693f667aae48dd7cbea42378ff1a27811c439d630854e84c03d28d8f73f",
+      "bytes": 1943,
+      "source": "packages/io/src/pcad/accessorySetsRound12.test.ts"
+    },
     "packages/io/src/pcad/analysisAttachment.testSupport.ts": {
       "sha256": "39a9dfa5e91229deca52f9dac841cab002a4833e58e1f9f75f314de2f8b77fe2",
       "bytes": 500,
@@ -6733,8 +6743,8 @@
       "source": "packages/io/src/pcad/assemblyJson.test.ts"
     },
     "packages/io/src/pcad/assemblyJson.ts": {
-      "sha256": "1d290481da1f95de2fe7e3b1a6e4c6e647cb1d3ab616dbcf7a3ee574728b2c49",
-      "bytes": 64829,
+      "sha256": "0555765e8cea8c5a2c93cc127c86f7117167927879d29b1fb15c11d84fdc6a9d",
+      "bytes": 63274,
       "source": "packages/io/src/pcad/assemblyJson.ts"
     },
     "packages/io/src/pcad/assemblyOccurrenceConnections.test.ts": {
@@ -6773,8 +6783,8 @@
       "source": "packages/io/src/pcad/circularFilletWeldRoundtrip.test.ts"
     },
     "packages/io/src/pcad/codecs/accessorySetRecords.ts": {
-      "sha256": "2d21015e2634c081c679ba7f2174742b6025a94ca698852dcf625ce37489d4cc",
-      "bytes": 7032,
+      "sha256": "35032484867e89eb55dd5e2eff19d6e6c89babd40f8e3e71ec4ad1a05297e988",
+      "bytes": 7103,
       "source": "packages/io/src/pcad/codecs/accessorySetRecords.ts"
     },
     "packages/io/src/pcad/codecs/appearance.ts": {
@@ -7378,12 +7388,12 @@
       "source": "packages/io/src/pcad/k4bCatalogPersistence.test.ts"
     },
     "packages/io/src/pcad/k5CatalogPersistence.test.ts": {
-      "sha256": "c8db6ab911210d7cce70e18e1304c08c849066297d65dc81034653cbb1a702a7",
-      "bytes": 4101,
+      "sha256": "dfdd83856a702d7b358f7727af91150223ee4679aebd875867445c3253dda2c8",
+      "bytes": 4144,
       "source": "packages/io/src/pcad/k5CatalogPersistence.test.ts"
     },
     "packages/io/src/pcad/k6CatalogPersistence.test.ts": {
-      "sha256": "afb510ed578c46608ad323c357f77f7dd06cab1b94aebb13bd2ab312cdc969d9",
+      "sha256": "455a3eaf928b5df5766e6506452ef1bbece3f5b8f4006c34629a4dd2f8ffd53b",
       "bytes": 18925,
       "source": "packages/io/src/pcad/k6CatalogPersistence.test.ts"
     },
@@ -7436,6 +7446,11 @@
       "sha256": "d268516bed6916039f8d3be54c572e6579ef03528898d127aa502e199963e44b",
       "bytes": 64178,
       "source": "packages/io/src/pcad/pcadFile.ts"
+    },
+    "packages/io/src/pcad/pipingCatalogPersistence.test.ts": {
+      "sha256": "38b9be3f4c1f07c5391c1b05bee51d3bbc6ba1629560f8c230626ac2be5fa803",
+      "bytes": 3085,
+      "source": "packages/io/src/pcad/pipingCatalogPersistence.test.ts"
     },
     "packages/io/src/pcad/planarHoleReload.test.ts": {
       "sha256": "540ccd03740f516f4880830823e9ea94147147891c44475a6bad0ef4c0aec654",
@@ -10042,24 +10057,39 @@
       "bytes": 4123,
       "source": "packages/model/src/appearance/types.ts"
     },
+    "packages/model/src/assembly/accessories/accessoryHost.test.ts": {
+      "sha256": "f91260a84b203e26d14aa7942f74c69ee6039dadc9a0469c742ad1910991712b",
+      "bytes": 2536,
+      "source": "packages/model/src/assembly/accessories/accessoryHost.test.ts"
+    },
+    "packages/model/src/assembly/accessories/accessoryHost.ts": {
+      "sha256": "d233a9e6b8a251831d7faf10032fd1af195e5341f415465b11924ed8ce880709",
+      "bytes": 3576,
+      "source": "packages/model/src/assembly/accessories/accessoryHost.ts"
+    },
     "packages/model/src/assembly/accessories/accessoryPrune.ts": {
       "sha256": "e8ca1c5ed32b3083251df1ee1deedb2655e66f4631506f96b0f0e87eff15d936",
       "bytes": 1449,
       "source": "packages/model/src/assembly/accessories/accessoryPrune.ts"
     },
     "packages/model/src/assembly/accessories/accessoryRecord.ts": {
-      "sha256": "af08bd614d92e9e60858071ca91a6ca92956c0aab04ad9a7536ce94de762ea38",
-      "bytes": 2342,
+      "sha256": "293a26e0b05d7281c17d6128eb2717af77d871ddf656226a8255f99f980f48c5",
+      "bytes": 2561,
       "source": "packages/model/src/assembly/accessories/accessoryRecord.ts"
     },
+    "packages/model/src/assembly/accessories/accessorySetDefinitions.ts": {
+      "sha256": "d4ec16f960406ea0522e3846870a3a80425002638b4af7d7d194f66d0ecc982c",
+      "bytes": 4061,
+      "source": "packages/model/src/assembly/accessories/accessorySetDefinitions.ts"
+    },
     "packages/model/src/assembly/accessories/accessorySets.test.ts": {
-      "sha256": "57db63ccc3adf5814ff92f3be7a8d460567dbc0a0d91e9fa761b33af3bd8d67d",
-      "bytes": 8006,
+      "sha256": "998c676129509c675a65e74af9f0c153c075498f5a212749ee1369b459a96d3a",
+      "bytes": 10129,
       "source": "packages/model/src/assembly/accessories/accessorySets.test.ts"
     },
     "packages/model/src/assembly/accessories/accessorySets.ts": {
-      "sha256": "46d35a8c092de658cf7e6bbf75dc4400a193612e709abad766ba1206484b180b",
-      "bytes": 15427,
+      "sha256": "6fc13af643dc50855606ae87e7d1893f341930b759ec35461ebe94229d37a6a3",
+      "bytes": 4839,
       "source": "packages/model/src/assembly/accessories/accessorySets.ts"
     },
     "packages/model/src/assembly/accessories/accessorySync.test.ts": {
@@ -10068,9 +10098,34 @@
       "source": "packages/model/src/assembly/accessories/accessorySync.test.ts"
     },
     "packages/model/src/assembly/accessories/accessorySync.ts": {
-      "sha256": "1e4b3b15d2705741536ecce63470be59a5890fc4cc14f0ec7cd5214157b1793d",
-      "bytes": 11494,
+      "sha256": "981ccb5d0fbe15c58b365125f71f9dc87ba1fc3b76b86837148de7817ca90591",
+      "bytes": 16883,
       "source": "packages/model/src/assembly/accessories/accessorySync.ts"
+    },
+    "packages/model/src/assembly/accessories/bearingRingSet.test.ts": {
+      "sha256": "9938c3595ce1902bb80227e74db22e8a2c778fcfa55450bc6ba3bcc6e6a9b9af",
+      "bytes": 6640,
+      "source": "packages/model/src/assembly/accessories/bearingRingSet.test.ts"
+    },
+    "packages/model/src/assembly/accessories/bearingRingSet.ts": {
+      "sha256": "6b389802c5ffc152746c1dc47fbcbf1e6765bc355877d25d8887a6d767f7dde7",
+      "bytes": 10485,
+      "source": "packages/model/src/assembly/accessories/bearingRingSet.ts"
+    },
+    "packages/model/src/assembly/accessories/boltAccessorySet.test.ts": {
+      "sha256": "c1d738c50aff6b6f8fc90b4950d5a86bb24a78bf653cd78088fa6bdff3e5cb8b",
+      "bytes": 5488,
+      "source": "packages/model/src/assembly/accessories/boltAccessorySet.test.ts"
+    },
+    "packages/model/src/assembly/accessories/boltAccessorySet.ts": {
+      "sha256": "2d38c336f5efab308e1f2ba97358fd1da57502f6342da3a37e1e84df8f12c76e",
+      "bytes": 9473,
+      "source": "packages/model/src/assembly/accessories/boltAccessorySet.ts"
+    },
+    "packages/model/src/assembly/accessories/frameEndCaps.ts": {
+      "sha256": "d8987fef431b13f70276d6482f2c365f953f0d35a3188abbc1b7e0143566e615",
+      "bytes": 12407,
+      "source": "packages/model/src/assembly/accessories/frameEndCaps.ts"
     },
     "packages/model/src/assembly/assemblyEdit.test.ts": {
       "sha256": "5be1c15676dbde3705c4d8c374ff42271b67ebabf9b2c23de053f6ee450e86aa",
@@ -10098,8 +10153,8 @@
       "source": "packages/model/src/assembly/bom.ts"
     },
     "packages/model/src/assembly/catalog/catalogItem.test.ts": {
-      "sha256": "02aeba4be02835b180f2289e34f06354e3c5df53fe32f0b90ba734356bb12093",
-      "bytes": 15728,
+      "sha256": "8166689704d8157e49113db76e6e59ad8e3c4e6c1a4c2443d080fb72bd92be00",
+      "bytes": 15854,
       "source": "packages/model/src/assembly/catalog/catalogItem.test.ts"
     },
     "packages/model/src/assembly/catalog/families/accessoryBoxOracle.fixture.json": {
@@ -10123,8 +10178,8 @@
       "source": "packages/model/src/assembly/catalog/families/aluminumSections.test.ts"
     },
     "packages/model/src/assembly/catalog/families/aluminumSections.ts": {
-      "sha256": "92850757137761425dd42e1736ef5bfa6c019f0775939b107f0371a2f9cb8cc4",
-      "bytes": 7254,
+      "sha256": "5633252142f07d84a7190b167f39ee44a127f5faeba6c053d4b62d287784b3f1",
+      "bytes": 7669,
       "source": "packages/model/src/assembly/catalog/families/aluminumSections.ts"
     },
     "packages/model/src/assembly/catalog/families/angularContactBallBearing.ts": {
@@ -10136,6 +10191,26 @@
       "sha256": "90923aa2df955c0afc6a7b154693cb54fc84e88e1700bb1bd4462ed11a03c9e9",
       "bytes": 6885,
       "source": "packages/model/src/assembly/catalog/families/angularContactBallBearingOracle.test.ts"
+    },
+    "packages/model/src/assembly/catalog/families/blockBracketCatalog.ts": {
+      "sha256": "bc998c870b2aa351241822599c4ca4404ca9da8d6291ebdc715be1976312ae45",
+      "bytes": 3745,
+      "source": "packages/model/src/assembly/catalog/families/blockBracketCatalog.ts"
+    },
+    "packages/model/src/assembly/catalog/families/blockBracketOracle.fixture.json": {
+      "sha256": "9e813403eb44aeb866c5545b1ccf234e19a85957b519ce79da53decfb0b3e54d",
+      "bytes": 2638,
+      "source": "packages/model/src/assembly/catalog/families/blockBracketOracle.fixture.json"
+    },
+    "packages/model/src/assembly/catalog/families/blockBracketOracle.test.ts": {
+      "sha256": "15623a46a880f808b466a0ef86cd3c1a85980bcbb9f0eb691251426b7e37e52e",
+      "bytes": 8426,
+      "source": "packages/model/src/assembly/catalog/families/blockBracketOracle.test.ts"
+    },
+    "packages/model/src/assembly/catalog/families/blockBracketRows.ts": {
+      "sha256": "9ebd074f8b08e5d84e58da85fd2e732b60c870100a4cee9bf854ac7ac3f9cfb4",
+      "bytes": 2054,
+      "source": "packages/model/src/assembly/catalog/families/blockBracketRows.ts"
     },
     "packages/model/src/assembly/catalog/families/bossFootOracle.fixture.json": {
       "sha256": "cee6acaabe4bbe696b46631744dfae0fd1c76085690bdc06b5c8082fe2195c19",
@@ -10161,6 +10236,21 @@
       "sha256": "cbd4c4c3a4d9163c134653f15c36827e597eeb2beba6eb9bd291c7a5b5231080",
       "bytes": 2963,
       "source": "packages/model/src/assembly/catalog/families/buttonHeadScrewOracle.test.ts"
+    },
+    "packages/model/src/assembly/catalog/families/cRing.ts": {
+      "sha256": "80cb3897ff4ca0cfff6c08f18c272833622d1ea2772ac54e480fe3b5c0247cc1",
+      "bytes": 9310,
+      "source": "packages/model/src/assembly/catalog/families/cRing.ts"
+    },
+    "packages/model/src/assembly/catalog/families/cRingOracle.fixture.json": {
+      "sha256": "d7e810524ccce39d61778ac15e114e6838fe1217f53d6bee82ceb98ae95382fa",
+      "bytes": 17693,
+      "source": "packages/model/src/assembly/catalog/families/cRingOracle.fixture.json"
+    },
+    "packages/model/src/assembly/catalog/families/cRingOracle.test.ts": {
+      "sha256": "a0975e78f9471a35879e5c1901f02ae1e4fb0ec8d26ec33e3c4bba01da6852b9",
+      "bytes": 6462,
+      "source": "packages/model/src/assembly/catalog/families/cRingOracle.test.ts"
     },
     "packages/model/src/assembly/catalog/families/camFollower.ts": {
       "sha256": "4af062013f396672381dc0399156ae9b7927d9a6a66480d4d7e9984aefba5b0a",
@@ -10287,6 +10377,21 @@
       "bytes": 6363,
       "source": "packages/model/src/assembly/catalog/families/cylindricalRollerBearingOracle.test.ts"
     },
+    "packages/model/src/assembly/catalog/families/dBracketOracle.fixture.json": {
+      "sha256": "0c71a577a5411bf87575ef7d97173bc6b6fe73baf11f4b01801b5aad718f4b69",
+      "bytes": 5097,
+      "source": "packages/model/src/assembly/catalog/families/dBracketOracle.fixture.json"
+    },
+    "packages/model/src/assembly/catalog/families/dBracketOracle.test.ts": {
+      "sha256": "cdf2a12ff60aeb4b0ab350c0ffb6d5f43072d417e72feabc83c901a716ab5559",
+      "bytes": 10869,
+      "source": "packages/model/src/assembly/catalog/families/dBracketOracle.test.ts"
+    },
+    "packages/model/src/assembly/catalog/families/dBracketRows.ts": {
+      "sha256": "9c0cbe06927825a574bd02001c069867bd52cf8041d9e59d75bfa8b77364aae6",
+      "bytes": 5370,
+      "source": "packages/model/src/assembly/catalog/families/dBracketRows.ts"
+    },
     "packages/model/src/assembly/catalog/families/eRing.ts": {
       "sha256": "0cdf9d1c982313001462221d1d29609446f0fac6b4aa5de666a9ef42fbb5fabc",
       "bytes": 3784,
@@ -10296,6 +10401,21 @@
       "sha256": "ce999eab3f3c0666888809f2e69a0abe92db3baa76290e4cfb5f6d3753d7029c",
       "bytes": 3112,
       "source": "packages/model/src/assembly/catalog/families/eRingOracle.test.ts"
+    },
+    "packages/model/src/assembly/catalog/families/extraAngleBracketOracle.fixture.json": {
+      "sha256": "c6594984018ea29157011f49be95cccc410416dcf8db7e36de5480a1c9b6fabd",
+      "bytes": 5420,
+      "source": "packages/model/src/assembly/catalog/families/extraAngleBracketOracle.fixture.json"
+    },
+    "packages/model/src/assembly/catalog/families/extraAngleBracketOracle.test.ts": {
+      "sha256": "4a60f6c13d234d9ce3770183b26d10441c03c9abedc178c4a16c7695d734e94d",
+      "bytes": 10270,
+      "source": "packages/model/src/assembly/catalog/families/extraAngleBracketOracle.test.ts"
+    },
+    "packages/model/src/assembly/catalog/families/extraAngleBracketRows.ts": {
+      "sha256": "149d4b18c1ade09e062766793e6f4bdd8cda28fa267d69c13fb68db36c587d57",
+      "bytes": 4722,
+      "source": "packages/model/src/assembly/catalog/families/extraAngleBracketRows.ts"
     },
     "packages/model/src/assembly/catalog/families/flangeNut.ts": {
       "sha256": "4e2cefb6c8fb5e017086b1011e767261c04427c7c516962aaa2ba4a089e787d2",
@@ -10308,43 +10428,43 @@
       "source": "packages/model/src/assembly/catalog/families/flangeNutOracle.test.ts"
     },
     "packages/model/src/assembly/catalog/families/frameCatalogOracle.fixture.json": {
-      "sha256": "c7b166b631f91c977280f8e8186c05cef8d924ea4704791062ec022affeabaf4",
-      "bytes": 35405,
+      "sha256": "38919d13d65a60d91183ef0f3970adaaf188b4473dc8bb36f1338ccb2c673c62",
+      "bytes": 35713,
       "source": "packages/model/src/assembly/catalog/families/frameCatalogOracle.fixture.json"
     },
     "packages/model/src/assembly/catalog/families/frameCatalogOracle.test.ts": {
-      "sha256": "1485074775e3e5de5b4b5d974a9d0ebb63861185a45e4e54649f13ff6c68f1c9",
-      "bytes": 15325,
+      "sha256": "1d79ea3f23a795f2fd4cb69953d7dc4e725bfdfcb731220231c45bc79125165d",
+      "bytes": 17133,
       "source": "packages/model/src/assembly/catalog/families/frameCatalogOracle.test.ts"
     },
     "packages/model/src/assembly/catalog/families/frameCatalogRows.ts": {
-      "sha256": "a4540141eba470cc8f783cf1cd2909fdb6457cf6bee2595eb178612a74e878d2",
-      "bytes": 60297,
+      "sha256": "42fa2f4448ba86ed12f7faa7db475bc7730771a724567f32073659f5fd6e3811",
+      "bytes": 61014,
       "source": "packages/model/src/assembly/catalog/families/frameCatalogRows.ts"
     },
     "packages/model/src/assembly/catalog/families/frameOutlineOracle.fixture.json": {
-      "sha256": "34a31cd3f14c0db97f97552eefea248dce3d94be3a010993d0e4756157f593c7",
-      "bytes": 2151,
+      "sha256": "9abe682f40abe4c085a2e61e63205f8cdaa3689a1a81a091965de5b41a5f2ff9",
+      "bytes": 10073,
       "source": "packages/model/src/assembly/catalog/families/frameOutlineOracle.fixture.json"
     },
     "packages/model/src/assembly/catalog/families/frameOutlineOracle.test.ts": {
-      "sha256": "2feb6b88fc6dadd87359cd00f52053526d3d8c531e6dcf2779833c5589c926aa",
-      "bytes": 11763,
+      "sha256": "86042119e7fbdf9dbc45eebf866d25e1df9a1d1c09fcf6f60095f17be81fa85e",
+      "bytes": 22314,
       "source": "packages/model/src/assembly/catalog/families/frameOutlineOracle.test.ts"
     },
     "packages/model/src/assembly/catalog/families/frameOutlineRows.ts": {
-      "sha256": "77f603dfd5adc2f9ec5324972acc74780840e0ef19124786c17fd7ed9dd6c8ce",
-      "bytes": 2096,
+      "sha256": "917386f2489fa27ab8403dd0be0b3d9608865c18161488b7aefae1c56fcecc35",
+      "bytes": 9336,
       "source": "packages/model/src/assembly/catalog/families/frameOutlineRows.ts"
     },
     "packages/model/src/assembly/catalog/families/framePartCatalog.test.ts": {
-      "sha256": "56de5dd5bf1a45255d18516f5e4c4184563affd8916f571b4770db1b946b6b34",
-      "bytes": 25838,
+      "sha256": "039b50ab59cc5e439822327183a31b687dbf5fe3af69e34fd92e3d77d3438d8d",
+      "bytes": 26217,
       "source": "packages/model/src/assembly/catalog/families/framePartCatalog.test.ts"
     },
     "packages/model/src/assembly/catalog/families/framePartCatalog.ts": {
-      "sha256": "70e0337815691ce5ab20e8416d1b66c667c6a1edd0832e29c744428afbd84df9",
-      "bytes": 30322,
+      "sha256": "32091d75bc346064698e8f0459a39b01dfa594c8431665c473d74d9add117182",
+      "bytes": 30699,
       "source": "packages/model/src/assembly/catalog/families/framePartCatalog.ts"
     },
     "packages/model/src/assembly/catalog/families/framePartNutKernel.test.ts": {
@@ -10353,18 +10473,18 @@
       "source": "packages/model/src/assembly/catalog/families/framePartNutKernel.test.ts"
     },
     "packages/model/src/assembly/catalog/families/framePartOracle.fixture.json": {
-      "sha256": "1b12aa87f25e3016b1033689a111ca29315d80f9e549f81c83638e94b71f55d8",
-      "bytes": 142635,
+      "sha256": "3b6c6dfc0fcd047ab03bff320bac91541a819592cb611d980da6221fd69c3c00",
+      "bytes": 146794,
       "source": "packages/model/src/assembly/catalog/families/framePartOracle.fixture.json"
     },
     "packages/model/src/assembly/catalog/families/framePartOracle.test.ts": {
-      "sha256": "7d1b2de79b8f3af0c9841d0219efbb5f64e6ca17b4e83e2dd5ce21f475814e42",
-      "bytes": 24515,
+      "sha256": "911879e38489119a4438b93ecfa9939dc59f08204ba1f22803451e5c579abbea",
+      "bytes": 26135,
       "source": "packages/model/src/assembly/catalog/families/framePartOracle.test.ts"
     },
     "packages/model/src/assembly/catalog/families/framePartRows.ts": {
-      "sha256": "9fe60ab2c393b4d35dacf4eb423141c82410ef001937c428418afd8537b98b5b",
-      "bytes": 131390,
+      "sha256": "1ab958aa9d599378051a01136caf933f8abf275145c44601d07853892df7dabd",
+      "bytes": 136274,
       "source": "packages/model/src/assembly/catalog/families/framePartRows.ts"
     },
     "packages/model/src/assembly/catalog/families/frameParts.test.ts": {
@@ -10383,8 +10503,8 @@
       "source": "packages/model/src/assembly/catalog/families/hardBracketOracle.fixture.json"
     },
     "packages/model/src/assembly/catalog/families/hardBracketOracle.test.ts": {
-      "sha256": "4cf482d92fb228d7c9f52b89270eaa97ccc839063bf3b12d5aefa5cf09cb9114",
-      "bytes": 10399,
+      "sha256": "b70d27d8de9a997904ea39e77e19c81a804b9674275a491a6a740d3cee0abec8",
+      "bytes": 10604,
       "source": "packages/model/src/assembly/catalog/families/hardBracketOracle.test.ts"
     },
     "packages/model/src/assembly/catalog/families/hardBracketRows.ts": {
@@ -10531,6 +10651,21 @@
       "sha256": "66ed664e69a8ad42ad215e19593953a744e9e8e1dfd5328a06ed7ccab3bec1cc",
       "bytes": 6101,
       "source": "packages/model/src/assembly/catalog/families/parallelPinOracle.test.ts"
+    },
+    "packages/model/src/assembly/catalog/families/pipeFittingOracle.fixture.json": {
+      "sha256": "7fa07e8b5cd69565b62292deb0fe43d3b0009e2f15f966c2cd000565fdb9bce4",
+      "bytes": 2668,
+      "source": "packages/model/src/assembly/catalog/families/pipeFittingOracle.fixture.json"
+    },
+    "packages/model/src/assembly/catalog/families/pipeFittingOracle.test.ts": {
+      "sha256": "7ce5f59ccd0b047bc7219f23e4a5a1c82a8ac5217a730c31987a750cde798bde",
+      "bytes": 5395,
+      "source": "packages/model/src/assembly/catalog/families/pipeFittingOracle.test.ts"
+    },
+    "packages/model/src/assembly/catalog/families/pipeFittings.ts": {
+      "sha256": "c8c00464dcd3ca60f71affa73b029558fe3caf1b6fbae7ec858feb9ba8484871",
+      "bytes": 5102,
+      "source": "packages/model/src/assembly/catalog/families/pipeFittings.ts"
     },
     "packages/model/src/assembly/catalog/families/pipeFrameCatalog.test.ts": {
       "sha256": "1154624d9ffa04c34c6ad6afc90f9f8ee58eedc0e406ee158f53652a2683b3d6",
@@ -10718,8 +10853,8 @@
       "source": "packages/model/src/assembly/catalog/families/tSlotFrameCatalog.test.ts"
     },
     "packages/model/src/assembly/catalog/families/tSlotFrameCatalog.ts": {
-      "sha256": "f47fbb8cbc3a5cde3a25270d72be905e1c48cdb7bf3ec590ab8c22d1642d10a7",
-      "bytes": 12298,
+      "sha256": "46dd1fdc73804bfa0c1579b2ca515feb7a073515baec69574e77ca062df84247",
+      "bytes": 13116,
       "source": "packages/model/src/assembly/catalog/families/tSlotFrameCatalog.ts"
     },
     "packages/model/src/assembly/catalog/families/tSlotFrameSeries.test.ts": {
@@ -10787,6 +10922,16 @@
       "bytes": 6112,
       "source": "packages/model/src/assembly/catalog/profiles/aluminumSection.ts"
     },
+    "packages/model/src/assembly/catalog/profiles/blockBracket.test.ts": {
+      "sha256": "5f3ac59f3bbb8fa3610397167c1bd28c031f88df517ac14f95c4ce0a540fd353",
+      "bytes": 3785,
+      "source": "packages/model/src/assembly/catalog/profiles/blockBracket.test.ts"
+    },
+    "packages/model/src/assembly/catalog/profiles/blockBracket.ts": {
+      "sha256": "eabdb82ab6f45f0b8bc14d7dc9078ba74b8664aee2c19f56a6e1dc2433f57d6f",
+      "bytes": 10202,
+      "source": "packages/model/src/assembly/catalog/profiles/blockBracket.ts"
+    },
     "packages/model/src/assembly/catalog/profiles/bush.ts": {
       "sha256": "e7c0b3d7f773b875bf6d0aab910f5fe53b068f559adbc97721270efd7c06222c",
       "bytes": 1375,
@@ -10847,6 +10992,11 @@
       "bytes": 1156,
       "source": "packages/model/src/assembly/catalog/profiles/pin.ts"
     },
+    "packages/model/src/assembly/catalog/profiles/pipeFitting.ts": {
+      "sha256": "7912c83f10b30faade7fce4cab290bd61f296c02bed09478eed26d8a53e306c8",
+      "bytes": 5910,
+      "source": "packages/model/src/assembly/catalog/profiles/pipeFitting.ts"
+    },
     "packages/model/src/assembly/catalog/profiles/pipeFrameSection.test.ts": {
       "sha256": "f1aa2b691184a926ac46a4ffe6d64c55c0d62bbacaacca109b3569cf9c980a40",
       "bytes": 10288,
@@ -10878,8 +11028,8 @@
       "source": "packages/model/src/assembly/catalog/profiles/setScrew.ts"
     },
     "packages/model/src/assembly/catalog/profiles/slottedOutline.test.ts": {
-      "sha256": "0dae14e7e079495ce4aff25d86b3d6153945037fd9d5885929dab88bafbc17fe",
-      "bytes": 7033,
+      "sha256": "2f64ad0afda0c180f63dbc19067276af5bd25ec52d2d00b480507a2798c15c7a",
+      "bytes": 8305,
       "source": "packages/model/src/assembly/catalog/profiles/slottedOutline.test.ts"
     },
     "packages/model/src/assembly/catalog/profiles/slottedOutline.ts": {
@@ -10938,9 +11088,14 @@
       "source": "packages/model/src/assembly/catalog/profiles/thrustBearing.ts"
     },
     "packages/model/src/assembly/catalog/registry.ts": {
-      "sha256": "b0eab89183a0e8abd04f34d04f359b3f6e7398c86ffcb8b8f41f9ce252c399b8",
-      "bytes": 4996,
+      "sha256": "608b8d1abb92a62801ee7dc2d02b6a2aef6fa61369012e5744ac56a71cc6a69b",
+      "bytes": 5081,
       "source": "packages/model/src/assembly/catalog/registry.ts"
+    },
+    "packages/model/src/assembly/catalog/registry/k28.ts": {
+      "sha256": "98a6d773eb539b25d41f3d0836fe3335e01572ae1565bf97d7a49d4f38b52d5b",
+      "bytes": 916,
+      "source": "packages/model/src/assembly/catalog/registry/k28.ts"
     },
     "packages/model/src/assembly/catalog/registry/k4a.ts": {
       "sha256": "b145e9a83aebd3799f08b337d00b97d3e3c5ed0f4c5c0d7f6394ee205137b6cf",
@@ -10953,13 +11108,13 @@
       "source": "packages/model/src/assembly/catalog/registry/k4b.ts"
     },
     "packages/model/src/assembly/catalog/registry/k5.ts": {
-      "sha256": "ee6a6562ed94b243127a1c8c3bf1a15d03eef3b83c6509e7bcb9ab05efdc436d",
-      "bytes": 7344,
+      "sha256": "597cab27ffd350c86d6880d63529d2101b4cc7d95a088f408cbfb8495b90333f",
+      "bytes": 7693,
       "source": "packages/model/src/assembly/catalog/registry/k5.ts"
     },
     "packages/model/src/assembly/catalog/registry/k6.ts": {
-      "sha256": "00af8e866bb24b53b517a88352aa8360d10d6c1cdf6ae740135d2aca0ccd73f8",
-      "bytes": 10671,
+      "sha256": "058d295b9beafb962b9591f9d97555ad25f601c884d0c8e3bc512f54d3ec7bbc",
+      "bytes": 11040,
       "source": "packages/model/src/assembly/catalog/registry/k6.ts"
     },
     "packages/model/src/assembly/catalog/rejection.ts": {
@@ -10983,8 +11138,8 @@
       "source": "packages/model/src/assembly/catalog/stockList.ts"
     },
     "packages/model/src/assembly/catalog/types.ts": {
-      "sha256": "00e50aa885a7919b96792b69c6c34ea399cdbdb04ee7bb48e7b6eb5b6b4aac23",
-      "bytes": 10149,
+      "sha256": "66bdde5bdb3d7c08a76995aee6fb3a58f97b400cf2d6c6d7902870e11be2e1b0",
+      "bytes": 10218,
       "source": "packages/model/src/assembly/catalog/types.ts"
     },
     "packages/model/src/assembly/constraints/assembly1000Fixture.test.ts": {
@@ -11128,13 +11283,13 @@
       "source": "packages/model/src/assembly/createAssemblyDocument.ts"
     },
     "packages/model/src/assembly/dimensionMove.test.ts": {
-      "sha256": "c51b1ce65721992b53ac9c90de4155830b3235112af3ffb7a53b6ce0bd16a5cc",
-      "bytes": 7299,
+      "sha256": "4ce73223f210b917e50f2e99a76deb13e7cc6f84f99548fbada524778f52d4f6",
+      "bytes": 12972,
       "source": "packages/model/src/assembly/dimensionMove.test.ts"
     },
     "packages/model/src/assembly/dimensionMove.ts": {
-      "sha256": "0ab5961f4bb0c1582fde5d9349711cb93ab8bce3d3271b259fb94ad93199d425",
-      "bytes": 7987,
+      "sha256": "68a9efb5b2846f7b7f8fc4f3e1009b2031f5043b1b03512f100a6408613f79d2",
+      "bytes": 12490,
       "source": "packages/model/src/assembly/dimensionMove.ts"
     },
     "packages/model/src/assembly/documentBundle.test.ts": {
@@ -11463,8 +11618,8 @@
       "source": "packages/model/src/assembly/frame/frameJointBrackets.test.ts"
     },
     "packages/model/src/assembly/frame/frameJointBrackets.ts": {
-      "sha256": "78509d33b9580fadf27bb749d487a3c395659542ecca5deaf869c5873d6e3a45",
-      "bytes": 25272,
+      "sha256": "ed84ed4931f098c371e6cbc67a415a75144edc95bc807ca2da110c4bc18a444e",
+      "bytes": 25356,
       "source": "packages/model/src/assembly/frame/frameJointBrackets.ts"
     },
     "packages/model/src/assembly/frame/frameJointCheck.test.ts": {
@@ -12248,8 +12403,8 @@
       "source": "packages/model/src/assembly/subAssembly.ts"
     },
     "packages/model/src/assembly/types.ts": {
-      "sha256": "b45091f74e7841bc2096f507d9e86e40de38e305867a532e5c935669ccb1dec7",
-      "bytes": 21791,
+      "sha256": "92070edbf0561988b35fc2f5af8ca51ec4d718a9137dbb6c23046220585f129f",
+      "bytes": 21356,
       "source": "packages/model/src/assembly/types.ts"
     },
     "packages/model/src/assembly/welding/applyCircularFilletWeld.test.ts": {
@@ -13113,8 +13268,8 @@
       "source": "packages/model/src/history/undoStack.ts"
     },
     "packages/model/src/index.ts": {
-      "sha256": "dd6e103fb97a2fc8cfc7a1d10f9457f6b43e142e947c2a5a34924888e3342881",
-      "bytes": 76811,
+      "sha256": "5fe955ea1ad09a50089a4d9ebadf782765f52110a88fbc347f54d1877b44fd7d",
+      "bytes": 77543,
       "source": "packages/model/src/index.ts"
     },
     "packages/model/src/kernelBridge.drawing.test.ts": {
@@ -13166,6 +13321,11 @@
       "sha256": "a050ed8c9bdfc1395b764295efe130c352c55d6c058439d5cc56c8c0de4f9d1e",
       "bytes": 4495,
       "source": "packages/model/src/kernelBridge/curveConversions.ts"
+    },
+    "packages/model/src/kernelBridge/displayMeshDeviation.ts": {
+      "sha256": "cb535c0f746f23ceb791b2aabc6f3352a8b2e190956cf1d8f58ab46f6b14da53",
+      "bytes": 570,
+      "source": "packages/model/src/kernelBridge/displayMeshDeviation.ts"
     },
     "packages/model/src/kernelBridge/exchangeContracts.ts": {
       "sha256": "433a79f053ad7c3b774b6f5bd26d5c8a7d31792746a952d5b9faee7812d1bab3",
@@ -15037,6 +15197,16 @@
       "bytes": 5343,
       "source": "packages/model/src/thread/metricThread.ts"
     },
+    "packages/model/src/thread/pipeThread.test.ts": {
+      "sha256": "b09038f3378402fb159b3c30ffcdb78253feba53f48aa0db2d1279ede5ec3710",
+      "bytes": 2216,
+      "source": "packages/model/src/thread/pipeThread.test.ts"
+    },
+    "packages/model/src/thread/pipeThread.ts": {
+      "sha256": "5ae9c1aee52abd0045c88fb24e2cbb76a4638c048ec4943fc11b0e1a499a222c",
+      "bytes": 3489,
+      "source": "packages/model/src/thread/pipeThread.ts"
+    },
     "packages/model/src/units/length.test.ts": {
       "sha256": "48f331fe685c325daa71eec7028f47acf060c2e5eb32cb9714965b2cc3810b93",
       "bytes": 12784,
@@ -15088,12 +15258,12 @@
       "source": "packages/test-utils/src/beamAssertionPolicy.test.ts"
     },
     "packages/test-utils/src/browserProjectCoverage.json": {
-      "sha256": "86b0f8d8bc4cb9b29549b53b539673169f5df883ec52dcca065c125240c47fe2",
-      "bytes": 97461,
+      "sha256": "7ce6e0efb900dc0afd8c341b34fbdf082e6281cb042cb3a6afb8821b4eac413f",
+      "bytes": 97997,
       "source": "packages/test-utils/src/browserProjectCoverage.json"
     },
     "packages/test-utils/src/browserProjectCoverage.test.ts": {
-      "sha256": "6ca0410d5c6c621d8ac845beac8dc119c0f46aa3a4e2121fc5c3f3609822806a",
+      "sha256": "d601d942c7e0a8ad83c012e712aa498e150754338bfab53fa6f46a5e6dbb3012",
       "bytes": 12484,
       "source": "packages/test-utils/src/browserProjectCoverage.test.ts"
     },
@@ -15103,8 +15273,8 @@
       "source": "packages/test-utils/src/ciRetryPolicy.test.ts"
     },
     "packages/test-utils/src/ciSharding.test.ts": {
-      "sha256": "2b262f0a9b7fcae6c267a201583c9b0d1328fa10d7bbd4d1dab2855eb5ba2aac",
-      "bytes": 12355,
+      "sha256": "b1b6613a9ea3f16f54b674f0f5d8a526736325bebca49cdb5a89a4720fa928cf",
+      "bytes": 15175,
       "source": "packages/test-utils/src/ciSharding.test.ts"
     },
     "packages/test-utils/src/complexityPolicy.test.ts": {
@@ -15248,8 +15418,8 @@
       "source": "packages/test-utils/src/memoryCaseAcceptance.test.ts"
     },
     "packages/test-utils/src/modelPublicExports.test.ts": {
-      "sha256": "e347aca047bf1d9e0d091fbb942af1e33e0e236d70deac053a0cbfa8905b8937",
-      "bytes": 47987,
+      "sha256": "036c0f3212a9cc5487ca841452c536e89a629a5f3e142830c66c015cd7e06d46",
+      "bytes": 48284,
       "source": "packages/test-utils/src/modelPublicExports.test.ts"
     },
     "packages/test-utils/src/modelReferenceExportPolicy.test.ts": {
@@ -15323,8 +15493,8 @@
       "source": "packages/test-utils/src/progressLedger.test.ts"
     },
     "packages/test-utils/src/qualityGateOrder.test.ts": {
-      "sha256": "aac83e42e2c2915daacc2aa77883c2eeb249f029d0b7164bad9d4afb36803c1a",
-      "bytes": 23048,
+      "sha256": "f40d38da5a84891f0e90c47482a7e3c8feb8dbdf807cb69682e18fca30da2355",
+      "bytes": 23526,
       "source": "packages/test-utils/src/qualityGateOrder.test.ts"
     },
     "packages/test-utils/src/recomputeState.test.ts": {
@@ -15558,18 +15728,18 @@
       "source": "packages/ui/src/assembly/AccessoryDetachItem.tsx"
     },
     "packages/ui/src/assembly/AccessoryFields.test.tsx": {
-      "sha256": "97fc8ad8c9a89d8eac48da97fe77b4731145f1ee7e6188207d8f630cbcf2d468",
-      "bytes": 3013,
+      "sha256": "fd02e00ba5d73da6cc3b4b6588afca35dfc02d1ccd5eabdb487f6a1b005decbd",
+      "bytes": 4915,
       "source": "packages/ui/src/assembly/AccessoryFields.test.tsx"
     },
     "packages/ui/src/assembly/AccessoryFields.tsx": {
-      "sha256": "a3bab0b9ba752273068c5549d95bc661ab4ea61965bf1b77bdc34b984375d5d4",
-      "bytes": 5859,
+      "sha256": "2ce102f35685469c681a03d661fb508a3bd482f7770aa04555e8cab90162e2f7",
+      "bytes": 9073,
       "source": "packages/ui/src/assembly/AccessoryFields.tsx"
     },
     "packages/ui/src/assembly/AccessoryIssueRows.tsx": {
-      "sha256": "0be3a6d72b4cbd6db02d4e64f657d644096b72731107792f1fc973505f5ce339",
-      "bytes": 1389,
+      "sha256": "3d5c0796632d798cbb10e548c98d620ec10237c8dd4e5711254bc819ce3d4c20",
+      "bytes": 1449,
       "source": "packages/ui/src/assembly/AccessoryIssueRows.tsx"
     },
     "packages/ui/src/assembly/AssemblyCamCouplingForm.test.ts": {
@@ -15653,13 +15823,13 @@
       "source": "packages/ui/src/assembly/BomTable.tsx"
     },
     "packages/ui/src/assembly/CatalogFamilyPicker.test.tsx": {
-      "sha256": "df38b885b732063de47172f607f41b2d8b3e321d1837207000f8afe5aada7c0d",
-      "bytes": 34143,
+      "sha256": "215d2f2985cfbd84f7ef8c87499149f92e07063dc5548fb5d257af3873a8bc7c",
+      "bytes": 35347,
       "source": "packages/ui/src/assembly/CatalogFamilyPicker.test.tsx"
     },
     "packages/ui/src/assembly/CatalogFamilyPicker.tsx": {
-      "sha256": "e87e8e62439ec20197a588c24999e71b6bbf7bd07a30d6d3da9e6b620d73e180",
-      "bytes": 10991,
+      "sha256": "057d30b067b2de275059c632b304ca22a5e180e8a58d5b0cb4405927da280748",
+      "bytes": 11416,
       "source": "packages/ui/src/assembly/CatalogFamilyPicker.tsx"
     },
     "packages/ui/src/assembly/CatalogLoadStatus.test.tsx": {
@@ -15698,8 +15868,8 @@
       "source": "packages/ui/src/assembly/DimensionFigure.tsx"
     },
     "packages/ui/src/assembly/DimensionMovePopover.tsx": {
-      "sha256": "18dbf7d01a253d51eb93db67e7adc35d2e5231b2a454f0930f19506e53dd04de",
-      "bytes": 5795,
+      "sha256": "f208f79974a27237fd0db11a5b476b66a960893a3a1f9cf29565b74ba02119d0",
+      "bytes": 11301,
       "source": "packages/ui/src/assembly/DimensionMovePopover.tsx"
     },
     "packages/ui/src/assembly/ExplodePopover.tsx": {
@@ -15798,9 +15968,14 @@
       "source": "packages/ui/src/assembly/PickerSearch.tsx"
     },
     "packages/ui/src/assembly/PlaceComponentPopover.tsx": {
-      "sha256": "886723170ff609a2d0e5f5992e537826a7aa3fab4e491626ffdcb5cdeabf135b",
-      "bytes": 4714,
+      "sha256": "8ebf9d1f3233484c1c0514a4db52e030fcb6a89248792a403e6be751d02f15d1",
+      "bytes": 4873,
       "source": "packages/ui/src/assembly/PlaceComponentPopover.tsx"
+    },
+    "packages/ui/src/assembly/PlacePointButton.tsx": {
+      "sha256": "84ff33e85a1defb66063ab636a235febebf41da6c1894b8b74ed29ad5fbe050f",
+      "bytes": 4991,
+      "source": "packages/ui/src/assembly/PlacePointButton.tsx"
     },
     "packages/ui/src/assembly/ReplacementPopover.tsx": {
       "sha256": "86ac0395a48186750d039de965fe634c1cfcb428bce623c3610fee0d07df9158",
@@ -15823,8 +15998,8 @@
       "source": "packages/ui/src/assembly/StandardPartPickerPanel.test.tsx"
     },
     "packages/ui/src/assembly/StandardPartPickerPanel.tsx": {
-      "sha256": "dcc4037608eeb96e69622cf1b92f125487c2e2d3c140af72e9917f39ea3eb9d0",
-      "bytes": 28479,
+      "sha256": "844973b99f479659efba76b57219396dda183be1e0a3c576c617a5e13ff46b04",
+      "bytes": 29323,
       "source": "packages/ui/src/assembly/StandardPartPickerPanel.tsx"
     },
     "packages/ui/src/assembly/SteelBendFields.tsx": {
@@ -15843,13 +16018,13 @@
       "source": "packages/ui/src/assembly/SubAssemblyJointControls.tsx"
     },
     "packages/ui/src/assembly/accessoryChoice.test.ts": {
-      "sha256": "c2bc68efedf4ca9482e9ad0380e6c2d30180343641564e64120a04893755f658",
-      "bytes": 4880,
+      "sha256": "8333165261f4521c4e3d825696e1627fc98c7ee76595642798f3876f9e5884d6",
+      "bytes": 7916,
       "source": "packages/ui/src/assembly/accessoryChoice.test.ts"
     },
     "packages/ui/src/assembly/accessoryChoice.ts": {
-      "sha256": "4307daa9b4776406077b09c8d8803431763146bda6dadf3ffe7949ed0e491475",
-      "bytes": 8010,
+      "sha256": "af5df4b35f6c2f335326980fc12a8e038fff9af41bc0cf3088ee4fcea0aa2731",
+      "bytes": 11815,
       "source": "packages/ui/src/assembly/accessoryChoice.ts"
     },
     "packages/ui/src/assembly/animation.test.ts": {
@@ -15943,8 +16118,8 @@
       "source": "packages/ui/src/assembly/bomTableRows.ts"
     },
     "packages/ui/src/assembly/catalogFamilyChoices.ts": {
-      "sha256": "22638e47090edd3b091f02173fed056c4b8db226dab19a4b6e4f3967e845f857",
-      "bytes": 13800,
+      "sha256": "b4083072ea4f04add2314a5e0387cfd3ceb6ba1fb98ab2d94fcc863e7dae5e94",
+      "bytes": 14869,
       "source": "packages/ui/src/assembly/catalogFamilyChoices.ts"
     },
     "packages/ui/src/assembly/catalogFamilyLoading.test.ts": {
@@ -16023,13 +16198,13 @@
       "source": "packages/ui/src/assembly/dimensionFigure.css"
     },
     "packages/ui/src/assembly/dimensionMoveDraft.test.ts": {
-      "sha256": "40a3137a5b8d5961f685bad014d50310f113e7e6d7581d7049979fed0af9c6d6",
-      "bytes": 2430,
+      "sha256": "67797066b90f84415e7bb260fc9d0785dc74c3dec3340f4df7110f334d2cc503",
+      "bytes": 3857,
       "source": "packages/ui/src/assembly/dimensionMoveDraft.test.ts"
     },
     "packages/ui/src/assembly/dimensionMoveDraft.ts": {
-      "sha256": "7b81298212e2ecd489457731b2d008140cd42c5ce59f39c4dfb8471297101446",
-      "bytes": 4940,
+      "sha256": "5da213c9bb03a6f592a92e9cb940fdbaff5f67ceea3fa29db3337c78fca75a6d",
+      "bytes": 8994,
       "source": "packages/ui/src/assembly/dimensionMoveDraft.ts"
     },
     "packages/ui/src/assembly/dimensionTable.test.ts": {
@@ -16088,8 +16263,8 @@
       "source": "packages/ui/src/assembly/filletWeldStore.test.ts"
     },
     "packages/ui/src/assembly/frameCatalogChoices.test.ts": {
-      "sha256": "690a253e0a0b1603a6fbafed712e62f75e29047d83024bdc062cb4d1c8ca7127",
-      "bytes": 17463,
+      "sha256": "948d73178f739ae22fc642bde8ab124dd69354aaa4b9f2f463ecf5721706d975",
+      "bytes": 18626,
       "source": "packages/ui/src/assembly/frameCatalogChoices.test.ts"
     },
     "packages/ui/src/assembly/frameDoorActions.test.ts": {
@@ -16351,6 +16526,16 @@
       "sha256": "4ee6265cdaadbbf20f5dc091d808716d9c06ce0cac1c7640c68757697dc34056",
       "bytes": 6531,
       "source": "packages/ui/src/assembly/nestedWeldStore.test.ts"
+    },
+    "packages/ui/src/assembly/partExtentAlong.test.ts": {
+      "sha256": "fb3ffdef66bdac32094dd04f062159219c697a35a53b506bca5ba9e874b804ef",
+      "bytes": 11325,
+      "source": "packages/ui/src/assembly/partExtentAlong.test.ts"
+    },
+    "packages/ui/src/assembly/partExtentAlong.ts": {
+      "sha256": "884e7f15ab04655637e9923b06c14511013a3ff9236f429274cc8cb79b361947",
+      "bytes": 11359,
+      "source": "packages/ui/src/assembly/partExtentAlong.ts"
     },
     "packages/ui/src/assembly/partOutline.test.ts": {
       "sha256": "44b242b3787ba6b5918ab5b209b788fc76727a721ced27adfad3202cf38fb1df",
@@ -17193,8 +17378,8 @@
       "source": "packages/ui/src/commands/toolDocsHelp.test.ts"
     },
     "packages/ui/src/commands/toolbarCommandCatalog.test.ts": {
-      "sha256": "195e3d0b48a0f91fec7b145ecf430e8bd4fda2a77bac3e1577975b0fb5782fc8",
-      "bytes": 11910,
+      "sha256": "6f032e831985c0619d50e5eadf68b4de771a53ec18d6e8d9063e3e37f31ddd0d",
+      "bytes": 11746,
       "source": "packages/ui/src/commands/toolbarCommandCatalog.test.ts"
     },
     "packages/ui/src/commands/toolbarCommandCatalog.ts": {
@@ -18988,8 +19173,8 @@
       "source": "packages/ui/src/i18n/ja.ts"
     },
     "packages/ui/src/i18n/ja/assembly.json": {
-      "sha256": "883b608870d5dd76bf434edebc7a21bbd08234314ce1db2a809ab950b6932413",
-      "bytes": 123644,
+      "sha256": "705e9cbf5f4759d223f938510b77442cc308ffed91855f12938cce64464a207e",
+      "bytes": 128303,
       "source": "packages/ui/src/i18n/ja/assembly.json"
     },
     "packages/ui/src/i18n/ja/beam.json": {
@@ -18998,8 +19183,8 @@
       "source": "packages/ui/src/i18n/ja/beam.json"
     },
     "packages/ui/src/i18n/ja/catalog.json": {
-      "sha256": "9aca98d558accf92a39969b8baf8ba194c8c93f6e04e42aea5dfb7502bc57898",
-      "bytes": 64824,
+      "sha256": "55331331c627fcad1a4ea8864e9c78834a92eef936dd6a9be88546e756ff5ab8",
+      "bytes": 66108,
       "source": "packages/ui/src/i18n/ja/catalog.json"
     },
     "packages/ui/src/i18n/ja/commands.json": {
@@ -20103,8 +20288,8 @@
       "source": "packages/ui/src/settings/SettingsPanel.test.tsx"
     },
     "packages/ui/src/settings/SettingsPanel.tsx": {
-      "sha256": "9b31d78147620b04453f24d373418955ccdd7b058a2ea5459125155936c88d4c",
-      "bytes": 15209,
+      "sha256": "37f01db0336d2b5223423cbfa9e257a8ac4d5781282d5216949cac0611145104",
+      "bytes": 14887,
       "source": "packages/ui/src/settings/SettingsPanel.tsx"
     },
     "packages/ui/src/settings/ShortcutAssignmentsForm.test.tsx": {
@@ -20298,8 +20483,8 @@
       "source": "packages/ui/src/settings/settings.test.ts"
     },
     "packages/ui/src/settings/settings.ts": {
-      "sha256": "c6ffad71e493951a95101c2d6adac4d57732d656ed7f67561b3fe77825657239",
-      "bytes": 27024,
+      "sha256": "e45d0b2aa0aa6a0a4cb1501992e87748eb41b70c3d35a9854f1cdb04d721a8be",
+      "bytes": 26505,
       "source": "packages/ui/src/settings/settings.ts"
     },
     "packages/ui/src/settings/settingsDrafts.test.ts": {
@@ -21038,8 +21223,8 @@
       "source": "packages/ui/src/shell/timelineRail.ts"
     },
     "packages/ui/src/shell/toolbarMenus.test.ts": {
-      "sha256": "80bab36cbac0166598246585def528eedfcc6c05282bf5e74eeb348e256c067a",
-      "bytes": 66083,
+      "sha256": "8840c3b41d5e4fdf0f76bea98cd0125a7a206e22e03bf0f4e55eaa2130d68be6",
+      "bytes": 64808,
       "source": "packages/ui/src/shell/toolbarMenus.test.ts"
     },
     "packages/ui/src/shell/toolbarMenus.ts": {
@@ -22628,8 +22813,8 @@
       "source": "packages/ui/src/store/assemblySlice.test.ts"
     },
     "packages/ui/src/store/assemblySlice.ts": {
-      "sha256": "176df16fcdd0c73503cd83f9581993eda03e8fe291a8c694127494ca79fd2f13",
-      "bytes": 78038,
+      "sha256": "542bd7ace137fb0ed417785afd6eed135bcc8df04d65539f22024cec8c119104",
+      "bytes": 80003,
       "source": "packages/ui/src/store/assemblySlice.ts"
     },
     "packages/ui/src/store/attachKernel.test.ts": {
@@ -22697,6 +22882,16 @@
       "bytes": 7636,
       "source": "packages/ui/src/store/circularWeldActions.ts"
     },
+    "packages/ui/src/store/componentPickActions.test.ts": {
+      "sha256": "e3446742cc70e4952cb7a2b942b36ff14b9937643c55e9bbe44ff88a06048761",
+      "bytes": 9999,
+      "source": "packages/ui/src/store/componentPickActions.test.ts"
+    },
+    "packages/ui/src/store/componentPickActions.ts": {
+      "sha256": "9e96ebf693659200a9900440afef2f1280039e8a331b264d05a263fe4e80eac8",
+      "bytes": 13312,
+      "source": "packages/ui/src/store/componentPickActions.ts"
+    },
     "packages/ui/src/store/constraintSlice.test.ts": {
       "sha256": "3746ba5c0deda1af63386f1deda291b1c3c3c42dbb20d5ce0a1dba808bf066ed",
       "bytes": 7989,
@@ -22708,8 +22903,8 @@
       "source": "packages/ui/src/store/constraintSlice.ts"
     },
     "packages/ui/src/store/dimensionMoveActions.ts": {
-      "sha256": "60d9d379f9e25474f80971ef25e1cb9ecdf5b54cd3b98d8b9a64f21045cefbbb",
-      "bytes": 4741,
+      "sha256": "857c610c1e9b8d3120e2354d7dba13cc0dc8c7e8a7ca85531c38502e9a71f74f",
+      "bytes": 5724,
       "source": "packages/ui/src/store/dimensionMoveActions.ts"
     },
     "packages/ui/src/store/documentDerived.ts": {
@@ -23248,8 +23443,8 @@
       "source": "packages/ui/src/viewport/ViewportCanvas.tsx"
     },
     "packages/ui/src/viewport/ViewportCanvasLifecycle.test.ts": {
-      "sha256": "17dc664eb0d59c2c0ea048c0fdb33a38dfacf9c94b705de500b4ed18261a070e",
-      "bytes": 91220,
+      "sha256": "0051c359ed87fdf02525781281f3fa3f07d9c69316e7b580e38863ea01d06aa1",
+      "bytes": 89734,
       "source": "packages/ui/src/viewport/ViewportCanvasLifecycle.test.ts"
     },
     "packages/ui/src/viewport/ViewportCanvasSphereGrid.test.ts": {
@@ -23283,13 +23478,13 @@
       "source": "packages/ui/src/viewport/assemblyOccurrenceRayHit.test.ts"
     },
     "packages/ui/src/viewport/attachAssemblyInteraction.test.ts": {
-      "sha256": "2803d1c14762c12ff7ccbbd1f7cd913f530a22a290fec13dd6f973cb8fa1a2b3",
-      "bytes": 70939,
+      "sha256": "f89034275e85dda32cd59578aa1ac775729a29604e26decacac29e53123a8d71",
+      "bytes": 77309,
       "source": "packages/ui/src/viewport/attachAssemblyInteraction.test.ts"
     },
     "packages/ui/src/viewport/attachAssemblyInteraction.ts": {
-      "sha256": "81327f833efbe07c8ad02f7ec26b9e976288651d052d4916d4ed4fc275ccac49",
-      "bytes": 55301,
+      "sha256": "062b17bf2eca991e04b43f1063c48bdbc582801746c7b77417b6c4ec69398b65",
+      "bytes": 59723,
       "source": "packages/ui/src/viewport/attachAssemblyInteraction.ts"
     },
     "packages/ui/src/viewport/attachCameraControls.ts": {
@@ -23568,8 +23763,8 @@
       "source": "packages/ui/src/viewport/createViewportScene.test.ts"
     },
     "packages/ui/src/viewport/createViewportScene.ts": {
-      "sha256": "81d4a0e8e1dfc9e1d297ccafa77a073710adcf22e73abee8deb6aca8ef052ab5",
-      "bytes": 30156,
+      "sha256": "085addbad4783b22e945e7592c021442f736a14322fdb865f3f912c00bbb6abb",
+      "bytes": 29644,
       "source": "packages/ui/src/viewport/createViewportScene.ts"
     },
     "packages/ui/src/viewport/cylinderBasisGuide.test.ts": {
@@ -24623,7 +24818,7 @@
       "source": "tsconfig.tools.json"
     }
   },
-  "archiveSha256": "a461138294e95ed66695df5382ff3f3ddeb75aedd737e73198565fc2a82c367d",
+  "archiveSha256": "8c1fa065847f2846e9eb51473045f1528b46ff3be7040e67e1a93f6d679cab1f",
   "scope": "Exact integrated application/bridge/tests/build source; native rebuild and legal clearance remain incomplete",
   "excluded": [
     "fixed upstream runtime closure",
@@ -24633,7 +24828,7 @@
   ],
   "correspondingSourceComplete": false,
   "nativeRebuildExecuted": false,
-  "derivedFrom": "5cb10b5341bc7da2f6ebe739ce19b8c62e6290b7662611dfd4efdccf9f51e048",
+  "derivedFrom": "9c21881b716ed5832b73bea5bad4635071b11a4ede053c3b17c2c92c78da582c",
   "timestampMeaning": "Actual private source archive regeneration from the current working tree (every selected tracked or untracked-not-ignored file) by the r5 successor; native/legal/release acceptance remain separate",
   "proposedUnion": {
     "materializer": {
@@ -24649,12 +24844,12 @@
       "sha256": "09739bab7fc7a94f6a671022dab4e9a918861cd2474a8a87410b10255a82c66d"
     },
     "previousIndex": {
-      "sha256": "d5b0da47d4d720fe73dda40b50ef7264d2574dcab74f64a0e95e55c10e846146",
-      "bytes": 1170801
+      "sha256": "d686e48b695fcc4f138eb00c78f5f75670f1e06f241f59e750b24d7c0581df7e",
+      "bytes": 1180361
     },
     "previousArchive": {
-      "sha256": "37c40862605adc68c9f59a9585e869f323fa67dd520d7dbff1da86e70fcf4450",
-      "bytes": 16102009
+      "sha256": "a461138294e95ed66695df5382ff3f3ddeb75aedd737e73198565fc2a82c367d",
+      "bytes": 16198305
     },
     "r5ProposedUnion": {
       "source": {
@@ -24712,27 +24907,27 @@
         "path": "scratchpad/claude/agents/cl-v103-delivery-env-1101/regen_index.py",
         "sha256": "6bca734ffd2629f714ab0cfc55d43836ec36490e601ada73802ebbf2d9a86972"
       },
-      "actualTime": "2026-11-19T06:22:20.575482+09:00",
-      "derivedFrom": "0fe7059857b2f9d06f61fb3fc673b3d1c86c00b00aad8caa705b58234d2d219f",
+      "actualTime": "2026-11-19T12:54:40.781441+09:00",
+      "derivedFrom": "5cb10b5341bc7da2f6ebe739ce19b8c62e6290b7662611dfd4efdccf9f51e048",
       "delta": {
-        "updated": 292,
-        "new": 137,
+        "updated": 80,
+        "new": 39,
         "removed": 0,
         "sourceFieldChanged": 0
       }
     },
     "domain": {
       "rule": "git ls-files -co --exclude-standard; existing regular files; archivePattern selected()",
-      "gitHead": "035b3143666205f6e43e7d499b22c4bf22b06595",
-      "members": 4924,
-      "membersSha256": "963bae98dd3783b5544281ea480f9afd3c47789817854df817f7e54231a46bce"
+      "gitHead": "c286bc8b0c68340bebbd5993cd1c69cc3e4894fc",
+      "members": 4963,
+      "membersSha256": "86720e5fdef05653a1f9adf427f6da4cf8b8f1334869b916327e2a33e45206be"
     },
     "delta": {
-      "updated": 80,
+      "updated": 64,
       "new": 39,
       "removed": 0,
       "sourceFieldChanged": 0
     },
-    "deltaSha256": "9ba8ae3f649d09c6791738905ee785bc838052cd60831631710bb7cb86e9a212"
+    "deltaSha256": "3f8aaad1c1a3393219662e76afb04a280f595203ef40c53448859b3c73fdfc29"
   }
 }

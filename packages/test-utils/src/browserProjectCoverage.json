@@ -36,6 +36,7 @@
     "cut-plane-materials.spec.ts",
     "dialog-focus-assembly.spec.ts",
     "dialog-focus.spec.ts",
+    "dimension-move-pick.spec.ts",
     "dimension-move.spec.ts",
     "direct-edit-operations.spec.ts",
     "document-diff.spec.ts",
@@ -108,6 +109,7 @@
     "parameter-math-name-blur.spec.ts",
     "parameter-search-csv.spec.ts",
     "pg5a-solid.spec.ts",
+    "place-point.spec.ts",
     "planar-machining-surface.spec.ts",
     "plastic-bar-plateau.spec.ts",
     "primitives.spec.ts",
@@ -256,7 +258,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "fbe4e5bc365a0d2287b60db0191fcfdea0b64adbc60c5138b195b39cbd4e2f6b",
+  "configSha256": "0ae73d3f773b7e6babe55ac497964f70bc63e043a99161a001956fc1b0f6a126",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
@@ -552,6 +554,12 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "43366a9da7e49fd4df7038daa564c942521ecfd069620afc97c8c3683c40161e"
+    },
+    {
+      "file": "dimension-move-pick.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "213c027ee0913f23f5d28b103cae5bc575423cb4f227de736d20d362e4b500f3"
     },
     {
       "file": "dimension-move.spec.ts",
@@ -1740,6 +1748,12 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "e4a88adfdc9589cd107722dcc2fcfa67a91a0d9210ba2d475161e08f30df9d66"
+    },
+    {
+      "file": "place-point.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "d84c7e2846be71bb8c29314503d646d389a7455c56ab3a0dd14c3c11975bbf39"
     },
     {
       "file": "planar-machining-surface.spec.ts",

@@ -1236,10 +1236,16 @@ export {
 } from './assembly/frame/frameJoints.js';
 export { detachFrameJointRecord, swapFrameJointBracket } from './assembly/frame/frameJointSwap.js';
 export { planMemberStretch, type MemberStretchDirection, type MemberStretchPlan } from './assembly/frame/memberStretch.js';
-/** 寸法で動かす(配置の補助 P-A): 選んだ部品を基準からの寸法が打った数になるように 1 回動かす(ui の窓が使う。拘束は残さない)。 */
+/**
+ * 寸法で動かす(配置の補助 P-A): 選んだ部品を、世界の軸か斜めの向きに、基準からの寸法が打った数になるように 1 回動かす
+ * (ui の窓が使う。範囲は ui が表示の形の頂点で向きに沿って測って渡す。拘束は残さない)。
+ */
 export {
-  measureComponentDimension, planDimensionMove, type DimensionMoveAxis, type DimensionMoveBasis, type DimensionMovePlan,
+  dimensionMeasureErrorMm, dimensionMoveUnitVector, measureComponentDimension, planDimensionMove, type DimensionMoveAxis,
+  type DimensionMoveBasis, type DimensionMoveDirection, type DimensionMoveExtent, type DimensionMovePlan,
 } from './assembly/dimensionMove.js';
+/** 画面の網の弦の最大のずれ(mm。カーネルの既定)。寸法で動かすが、網で測った値の誤差の上限として予告に出す。 */
+export { DISPLAY_MESH_DEVIATION_MM } from './kernelBridge/displayMeshDeviation.js';
 export { frameScribeMarks, type FrameScribeMember } from './assembly/frame/frameScribeMarks.js';
 export { planSafetyFence, type SafetyFenceResult } from './assembly/frame/safetyFence.js';
 export { framePanelOpening, type FramePanelOpeningResult } from './assembly/frame/framePanelOpening.js';
@@ -1256,6 +1262,8 @@ export {
   ACCESSORY_SET_IDS, accessoryCandidates, accessoryCandidatesForPart, applyAccessorySet,
   type AccessoryCandidate, type AccessoryChoices, type AccessoryRefusal,
 } from './assembly/accessories/accessorySets.js';
+export { applyBoltAccessorySet, defaultBoltGrip, planBoltAccessories, type BoltAccessoryRefusal } from './assembly/accessories/boltAccessorySet.js';
+export { BEARING_RING_FAMILY_IDS, bearingRingCandidates } from './assembly/accessories/bearingRingSet.js';
 export { accessoryIdsOf, accessoryIssues, mergeAccessorySets, splitAccessorySets, syncAccessorySets } from './assembly/accessories/accessorySync.js';
 export type { AccessoryEndReference, AccessoryEnds, AccessoryRole, AccessorySetId, AccessorySetRecord } from './assembly/accessories/accessoryRecord.js';
 export type { FrameCornerRule, FrameLine, FrameMembersResult } from './assembly/frame/frameMembers.js';

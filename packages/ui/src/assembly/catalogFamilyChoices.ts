@@ -17,11 +17,12 @@ type FamilyRow = LoadedFamily['rows'][number];
 /** 選ぶ画面の分類の値(今の 8 分類とは別の値。保存には使わない)。族の分類(group)と同じ文字。 */
 export const MECHANICAL_PICKER_CATEGORY = 'mechanical';
 export const ALUMINUM_FRAME_PICKER_CATEGORY = 'aluminumFrame';
-export type FamilyPickerCategory = typeof MECHANICAL_PICKER_CATEGORY | typeof ALUMINUM_FRAME_PICKER_CATEGORY;
+export const PIPING_PICKER_CATEGORY = 'piping';
+export type FamilyPickerCategory = typeof MECHANICAL_PICKER_CATEGORY | typeof ALUMINUM_FRAME_PICKER_CATEGORY | typeof PIPING_PICKER_CATEGORY;
 
-/** 分類の欄の値が族の分類(機械要素・アルミフレーム)か。 */
+/** 分類の欄の値が族の分類(機械要素・アルミフレーム・配管)か。 */
 export function isFamilyPickerCategory(value: string): value is FamilyPickerCategory {
-  return value === MECHANICAL_PICKER_CATEGORY || value === ALUMINUM_FRAME_PICKER_CATEGORY;
+  return value === MECHANICAL_PICKER_CATEGORY || value === ALUMINUM_FRAME_PICKER_CATEGORY || value === PIPING_PICKER_CATEGORY;
 }
 
 /** 分類の欄の値が族の分類なら、その値。今の 8 分類なら null。 */
@@ -33,6 +34,7 @@ export function familyPickerCategory(value: string): FamilyPickerCategory | null
 export const FAMILY_KIND_FIELD_KEYS: Readonly<Record<FamilyPickerCategory, { readonly label: MessageKey; readonly guide: MessageKey }>> = {
   [MECHANICAL_PICKER_CATEGORY]: { label: 'catalog.mechanical.kind', guide: 'catalog.mechanical.kindGuide' },
   [ALUMINUM_FRAME_PICKER_CATEGORY]: { label: 'catalog.frame.kind', guide: 'catalog.frame.kindGuide' },
+  [PIPING_PICKER_CATEGORY]: { label: 'catalog.piping.kind', guide: 'catalog.piping.kindGuide' },
 };
 
 /** 族の分類の族の入口(登録の順)。 */
@@ -75,7 +77,7 @@ const FRAME_PART_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], Message
   panelBoardFixed: 'catalog.board.fixed.hint', panelBoardOrder: 'catalog.board.order.hint',
   panelPartBox: 'catalog.board.partBox.hint', panelCoverFrame: 'catalog.board.coverFrame.hint', connectorBox: 'catalog.frame.connectorBox.hint',
   capFootBox: 'catalog.frame.capFootBox.hint', movableBox: 'catalog.frame.movableBox.hint', accessoryBox: 'catalog.frame.accessoryBox.hint',
-  caster: 'catalog.frame.caster.hint',
+  caster: 'catalog.frame.caster.hint', blockBracket: 'catalog.frame.blockBracket.hint',
 };
 
 /**
@@ -144,6 +146,11 @@ function pinRowLabel(row: FamilyRow): string {
 /** 呼びの一覧に出す 1 行の文字(族の線図の種類ごとの形。製造元の型番は出さない)。 */
 export function catalogRowLabel(family: LoadedFamily, row: FamilyRow): string {
   const dims = row.dims;
+  // 配管の継手(K-28): エルボ・チーズは中心から端面まで、ソケットは長さと、腕の外径。
+  if (family.diagram === 'pipeElbow' || family.diagram === 'pipeTee' || family.diagram === 'pipeSocket') {
+    return fill(t(family.diagram === 'pipeSocket' ? 'catalog.piping.row.socket' : 'catalog.piping.row.fitting'),
+      { size: row.size, length: dims.length, outer: dims.outerDiameter });
+  }
   if (family.diagram === 'camFollower') {
     const pitch = dims.threadPitch ?? NaN;
     return fill(t('catalog.mechanical.row.camFollower'), { outside: dims.outsideDiameter,
@@ -178,6 +185,11 @@ export function catalogRowLabel(family: LoadedFamily, row: FamilyRow): string {
       pitch: dims.pitch });
   }
   if (family.diagram === 'key') return fill(t('catalog.mechanical.row.key'), { size: row.size, width: dims.width, height: dims.height });
+  // C 形止め輪(A6。適用する軸径・穴径を持つ行): d3 は軸用なら内径、穴用なら外径。
+  if (family.diagram === 'washer' && dims.appliedDiameter !== undefined) {
+    return fill(t('catalog.mechanical.row.cRing'), { size: row.size, free: dims.innerDiameter ?? dims.outerDiameter, thickness: dims.thickness,
+      groove: dims.grooveDiameter });
+  }
   if (family.diagram === 'washer') {
     return fill(t('catalog.mechanical.row.washer'), { size: row.size, inner: dims.innerDiameter, outer: dims.outerDiameter,
       thickness: dims.thickness });

@@ -173,5 +173,34 @@ export function registerStandardPartSearchTests(test: typeof baseTest,
       expect(seen.dialogs).toEqual([]);
       expect(seen.errors).toEqual([]);
     });
+
+    /*
+     * K-28 束 1: 分類「配管」を選ぶと種類の欄が配管の部品の種類になり、エルボ 25A(ねじの呼び 1)を選ぶと、行の文字が
+     * 「中心から端面まで 38 × 外径 41」(2 つの公開の資料で一致した JIS B 2301 の品の値)になる。置くと部品が 1 つ入り、部品表にその行が出る。
+     */
+    test('分類「配管」でエルボ 25A を選ぶと中心から端面まで 38・外径 41 の行になり、置くと部品表に 1 行出る(K-28)', async ({ page }) => {
+      const seen = watch(page);
+      await startEmptyAssembly(page, appForPage(page));
+      await chooseToolMenuItem(page, '組む', '規格部品');
+      const dialog = picker(page);
+      await expect(dialog).toBeVisible();
+      await combo(dialog, 'assembly', 'assembly.standardPart.category').selectOption('piping');
+      await combo(dialog, 'catalog', 'catalog.piping.kind').selectOption('pipe-fitting-elbow');
+      const size = combo(dialog, 'assembly', 'assembly.standardPart.size');
+      await size.selectOption('elbow-25A');
+      await expect(size.locator('option:checked')).toHaveText(uiMessage('catalog', 'catalog.piping.row.fitting')
+        .replace('{size}', '25A (Rc1)').replace('{length}', '38').replace('{outer}', '41'));
+      const token = await beginRecompute(page);
+      await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.place'), exact: true }).click();
+      await waitForRecompute(page, token);
+      expect((await readAssemblyStats(page)).components.map((component) => component.name)).toEqual(['エルボ 25A (Rc1):1']);
+      await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.close'), exact: true }).click();
+      await page.getByRole('group', { name: uiMessage('assembly', 'assembly.menu.build') })
+        .getByRole('button', { name: uiMessage('assembly', 'assembly.tool.bom'), exact: true }).click();
+      await expect(page.locator('.pcad-bom__table tbody tr.pcad-bom__row').filter({ hasText: 'エルボ 25A (Rc1)' })).toHaveCount(1);
+
+      expect(seen.dialogs).toEqual([]);
+      expect(seen.errors).toEqual([]);
+    });
   });
 }

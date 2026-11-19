@@ -7,6 +7,9 @@ import { useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n/t.js';
 import { CatalogFamilyPicker } from './CatalogFamilyPicker.js';
+import { StandardAccessoryFields } from './AccessoryFields.js';
+import { PlacePointButton, standardPartPlacement } from './PlacePointButton.js';
+import { pickedAccessory, standardAccessoryOptionsFor } from './accessoryChoice.js';
 import { DimensionFigure } from './DimensionFigure.js';
 import { standardFigurePart } from './dimensionTable.js';
 import {
@@ -16,7 +19,7 @@ import {
 import { PickerSearch } from './PickerSearch.js';
 import { rememberPlacedPart } from './recentStandardParts.js';
 import {
-  ALUMINUM_FRAME_PICKER_CATEGORY, familyPickerCategory, isFamilyPickerCategory, MECHANICAL_PICKER_CATEGORY,
+  ALUMINUM_FRAME_PICKER_CATEGORY, familyPickerCategory, isFamilyPickerCategory, MECHANICAL_PICKER_CATEGORY, PIPING_PICKER_CATEGORY,
 } from './catalogFamilyChoices.js';
 import { useCatalogFamilies } from './CatalogLoadStatus.js';
 import { FrameMemberTools } from './FrameMemberTools.js';
@@ -58,9 +61,10 @@ function categoryFrom(value: string): StandardPartCategory | null {
   return STANDARD_PART_CATEGORIES.find((category) => category === value) ?? null;
 }
 
-/** 分類の欄の選択肢: 今の 8 分類と、登録口の族の「アルミフレーム」「機械要素」(保存には使わない値)。 */
+/** 分類の欄の選択肢: 今の 8 分類と、登録口の族の「配管」「アルミフレーム」「機械要素」(保存には使わない値)。 */
 function categoryOptions(): React.JSX.Element[] {
   return [...STANDARD_PART_CATEGORIES.map((item) => <option key={item} value={item}>{t(STANDARD_PART_CATEGORY_LABELS[item])}</option>),
+    <option key={PIPING_PICKER_CATEGORY} value={PIPING_PICKER_CATEGORY}>{t('catalog.piping.category')}</option>,
     <option key={ALUMINUM_FRAME_PICKER_CATEGORY} value={ALUMINUM_FRAME_PICKER_CATEGORY}>{t('catalog.frame.category')}</option>,
     <option key={MECHANICAL_PICKER_CATEGORY} value={MECHANICAL_PICKER_CATEGORY}>{t('catalog.mechanical.category')}</option>];
 }
@@ -237,15 +241,14 @@ export function StandardPartPicker(): React.JSX.Element | null {
       });
       return;
     }
-    const result = commitStandardPartChoice(
-      category, choice.key, lengthSource, dimensionSeries, threadSeries,
-    );
+    const result = commitStandardPartChoice(category, choice.key, lengthSource, dimensionSeries, threadSeries);
     if (!result.ok) {
       setError(result.reason);
       return;
     }
     if (useAppStore.getState().placeStandardPart(
       category, choice.key, lengthSource, dimensionSeries, threadSeries,
+      { accessory: pickedAccessory(standardAccessoryOptionsFor(category, choice.key, lengthSource, dimensionSeries, threadSeries)) },
     )) { setError(null); rememberPlacedPart(standardPlacedTarget(category, choice.key, dimensionSeries, { material: steelMaterial, shape: activeShape ?? null }, lengthSource)); }
   };
 
@@ -386,6 +389,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         ) : null}
       </div>
       <DimensionFigure part={standardFigurePart(category, choice, dimensionSeries, threadSeries)} />
+      <StandardAccessoryFields choice={{ category, key: choice.key, lengthSource, dimensionSeries, threadSeries }} />
       {isSteel && steelMaterial === 'unspecified' ? <p className="pcad-popover__hint" role="status">{t('assembly.steel.unspecifiedHint')}</p> : null}
       {steel === undefined ? null : steelChoiceNotes(steel)}
       {steel === undefined || bending || editing ? null : <FrameMemberTools member={{ kind: 'steel', choiceKey: choice.key }} />}
@@ -453,6 +457,8 @@ export function StandardPartPicker(): React.JSX.Element | null {
       {(editing || (bending && editable)) && editableMessage !== null ? <p role={editableMessage === 'cancelled' ? 'status' : 'alert'}>
         {t(EDITABLE_MESSAGES[editableMessage])}</p> : null}
       <p className="pcad-popover__hint">{t('assembly.standardPart.hint')}</p>
+      <PlacePointButton onError={setError} placement={bending || editing ? null : () => standardPartPlacement(category, choice.key, lengthSource,
+        dimensionSeries, threadSeries, { material: steelMaterial, shape: activeShape ?? null })} />
       <div className="pcad-popover__actions">
         <button type="submit" className="pcad-button pcad-button--action"
           disabled={bending && bend?.ok !== true}
@@ -462,9 +468,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
             : editing ? 'assembly.steel.editable.place' : 'assembly.standardPart.place')}
         </button>
         <button type="button" className="pcad-button" title={t('assembly.guide.standardCancel')}
-          onClick={() => { useAppStore.getState().closeStandardPartPicker(); }}>
-          {t('assembly.standardPart.close')}
-        </button>
+          onClick={() => { useAppStore.getState().closeStandardPartPicker(); }}>{t('assembly.standardPart.close')}</button>
       </div>
     </form>
   );

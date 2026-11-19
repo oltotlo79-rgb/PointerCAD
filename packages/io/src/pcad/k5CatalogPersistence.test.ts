@@ -24,7 +24,7 @@ const K5_FAMILIES: [string, number][] = [
   ['e-ring', 17], ['plain-washer-large', 18], ['parallel-key-square', 32], ['taper-pin', 20],
   ['split-pin', 16], ['flange-nut', 8], ['cross-recessed-cheese-head-screw', 7],
   ['set-screw-cup-point', 12], ['set-screw-flat-point', 12], ['set-screw-dog-point', 12], ['set-screw-cone-point', 12],
-  ['oil-seal-specified', 1], ['o-ring-p', 122], ['o-ring-g', 46],
+  ['oil-seal-specified', 1], ['o-ring-p', 122], ['o-ring-g', 46], ['c-ring-shaft', 39], ['c-ring-bore', 50],
 ];
 
 async function sourcesOf(id: string): Promise<readonly StandardPartSource[]> {
@@ -41,9 +41,9 @@ function assemblyOf(sources: readonly StandardPartSource[]): AssemblyDocument {
 }
 
 describe('K-05 の族の部品の保存と開き直し', () => {
-  it('登録口の K-05 の族は 33(行は合わせて 1183)', () => {
+  it('登録口の K-05 の族は 35(行は合わせて 1272)', () => {
     expect(K5_FAMILIES.every(([id]) => PRODUCT_CATALOG_REGISTRY.entry(id) !== undefined)).toBe(true);
-    expect(K5_FAMILIES.reduce((sum, [, count]) => sum + count, 0)).toBe(1183);
+    expect(K5_FAMILIES.reduce((sum, [, count]) => sum + count, 0)).toBe(1272);
   });
 
   it.each(K5_FAMILIES)('%s の全ての行を置いた文書は、JSON と ZIP で開き直しても同じで、組める(%i 行)', async (id, count) => {

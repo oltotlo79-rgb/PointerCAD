@@ -13,6 +13,7 @@ import { K4A_CATALOG_FAMILIES } from './registry/k4a.js';
 import { K4B_CATALOG_FAMILIES } from './registry/k4b.js';
 import { K5_CATALOG_FAMILIES } from './registry/k5.js';
 import { K6_CATALOG_FAMILIES } from './registry/k6.js';
+import { K28_CATALOG_FAMILIES } from './registry/k28.js';
 import type { CatalogFamily, CatalogFamilyEntry } from './types.js';
 
 /** 保存の形(`options.family`・`options.item`)が使う鍵。族の options の指定には使えない。 */
@@ -90,4 +91,5 @@ export const PRODUCT_CATALOG_REGISTRY: CatalogRegistry = createCatalogRegistry([
   ...K4B_CATALOG_FAMILIES,
   ...K5_CATALOG_FAMILIES,
   ...K6_CATALOG_FAMILIES,
+  ...K28_CATALOG_FAMILIES,
 ]);

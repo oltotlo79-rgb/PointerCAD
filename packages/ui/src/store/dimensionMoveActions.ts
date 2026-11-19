@@ -4,7 +4,8 @@
  *
  * - 始める: 選んだ部品が 1 つの時だけ。アルミフレーム・鋼材・機械要素・部品のファイルのどれでも同じ。ほかの打ちかけ(溝の締結・ボルト締結・
  *   板の自動判別・伸縮)と選ぶ窓を閉じる。
- * - 欄を替える: 予告を作り直す(計画は同期で、表示の形の外接箱から作る)。
+ * - 欄を替える: 予告を作り直す(計画は同期で、表示の形の頂点を向きに沿って測った範囲から作る。dimensionMoveDraft.ts)。基準は一覧のほか、3D の画面で部品を押しても入る
+ *   (componentPickActions の頼み。窓を閉じる・確定すると頼みも閉じる)。
  * - 確定: 予告と同じ入力で計画を作り直し、通った時だけ applyAssembly を 1 回(Undo 1 回)。拘束は残さない。動いた部品を選んだ状態にする。
  */
 import {
@@ -12,6 +13,10 @@ import {
   type DimensionMovePreview,
 } from '../assembly/dimensionMoveDraft.js';
 import type { AppState } from './appState.js';
+import { endComponentPickFor } from './componentPickActions.js';
+
+/** 寸法で動かすが頼む 3D の画面の選び(基準・向き)。窓を閉じる・確定する時に、どちらも閉じる。 */
+const DIMENSION_MOVE_PICKS = ['dimensionMoveReference', 'dimensionMoveDirection'] as const;
 
 type SetState = (patch: Partial<AppState>) => void;
 
@@ -33,7 +38,7 @@ export function emptyDimensionMoveState(): Pick<DimensionMoveSlice, DimensionMov
 
 function previewFor(state: AppState, draft: DimensionMoveDraft): DimensionMovePreview {
   const view = state.assemblyView;
-  if (state.assembly === null || view === null) return { current: null, issue: 'stale', plan: null };
+  if (state.assembly === null || view === null) return { current: null, issue: 'stale', plan: null, unit: null, meshErrorMm: 0 };
   return previewDimensionMove(state.assembly, view, draft);
 }
 
@@ -51,7 +56,7 @@ export function createDimensionMoveActions(set: SetState, get: () => AppState): 
         || state.assemblyMateDraft !== null || state.assemblyDrag !== null || state.isComputing) return false;
       set({ assemblyFrameSlotDraft: null, assemblyFrameSlotPreview: null, assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null,
         assemblyJointBracketDraft: null, assemblyJointBracketPreview: null, assemblyMemberStretchDraft: null,
-        assemblyMemberStretchPreview: null, standardPartPickerOpen: false, assemblyDragNotice: null });
+        assemblyMemberStretchPreview: null, standardPartPickerOpen: false, assemblyDragNotice: null, assemblyComponentPick: null });
       refresh(createDimensionMoveDraft(state.activeDocumentId, componentId));
       return true;
     },
@@ -60,6 +65,8 @@ export function createDimensionMoveActions(set: SetState, get: () => AppState): 
       const draft = state.assemblyDimensionMoveDraft;
       if (draft === null || draft.documentId !== state.activeDocumentId) return;
       refresh({ ...draft, ...patch });
+      // 世界の軸へ戻したら、3D の画面で向きを選ぶ頼みは閉じる(斜めへ戻した時に、古い頼みが生き返らない)。
+      if (patch.direction !== undefined && patch.direction !== 'vector') set(endComponentPickFor(get(), ['dimensionMoveDirection']));
     },
     commitDimensionMove: () => {
       const state = get();
@@ -74,12 +81,12 @@ export function createDimensionMoveActions(set: SetState, get: () => AppState): 
       }
       get().applyAssembly(preview.plan.document);
       get().setSelection(preview.plan.movedIds);
-      set(emptyDimensionMoveState());
+      set({ ...emptyDimensionMoveState(), ...endComponentPickFor(get(), DIMENSION_MOVE_PICKS) });
       return true;
     },
     cancelDimensionMove: () => {
       // 取消は文書も履歴も変えない。
-      set(emptyDimensionMoveState());
+      set({ ...emptyDimensionMoveState(), ...endComponentPickFor(get(), DIMENSION_MOVE_PICKS) });
     },
   };
 }

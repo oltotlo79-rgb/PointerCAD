@@ -52,8 +52,9 @@ export interface JointBracketRecords {
 
 /** L 形のブラケットと平板の行の表を、必要な時だけ読む(静的に読むと族の遅れた読み込みが効かなくなる)。 */
 export async function loadJointBracketRecords(): Promise<JointBracketRecords> {
-  const [rows, hard] = await Promise.all([import('../catalog/families/framePartRows.js'), import('../catalog/families/hardBracketRows.js')]);
-  return { angles: [...rows.ANGLE_BRACKET_RECORDS, ...hard.HARD_BRACKET_RECORDS], plates: rows.FLAT_PLATE_RECORDS };
+  const [rows, hard, cast] = await Promise.all([import('../catalog/families/framePartRows.js'), import('../catalog/families/hardBracketRows.js'),
+    import('../catalog/families/dBracketRows.js')]);
+  return { angles: [...rows.ANGLE_BRACKET_RECORDS, ...hard.HARD_BRACKET_RECORDS, ...cast.D_BRACKET_RECORDS], plates: rows.FLAT_PLATE_RECORDS };
 }
 
 // ---- 部材の面の幾何(局所 +Y が上、+X が右。外形の範囲は軸からの局所の座標) ----

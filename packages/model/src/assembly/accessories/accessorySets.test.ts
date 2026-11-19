@@ -43,6 +43,32 @@ describe('付属の組: フレームの端のキャップ', () => {
       .toEqual([['s6-20x20', 3, 0], ['s6-20x20-lock', 3, 0]]);
   });
 
+  it('L 形のフレームには腕の幅の同じ L 形のキャップだけを向きを変えずに候補にし、長方形のフレームには L 形のキャップを出さない', () => {
+    // フレームの行の鍵は、L 形の端のキャップの行と同じ書き方(族が違うので重ならない)。
+    const cases = [['t-slot-frame-s6', 's6-l40x40-a20', 's6-l40x40-a20'], ['t-slot-frame-s8', 's8-l60x60-a30', 's8-l60x60-a30'],
+      ['t-slot-frame-s10', 's10-l80x80-a40', 's10-l80x80-a40'], ['t-slot-frame-s10', 's10-l90x90-a45', 's10-l90x90-a45']] as const;
+    for (const [familyId, frameKey, capKey] of cases) {
+      const { document, id } = placed(familyId, frameKey, '1000');
+      const candidates = accessoryCandidates(document, id, 'frame-end-caps', registry);
+      expect(candidates.ok && candidates.value.map((item) => [item.itemKey, item.quarterTurn]), frameKey).toEqual([[capKey, 0]]);
+    }
+    const { document, id } = placed(FRAME, 's6-40x40', '1000');
+    const square = accessoryCandidates(document, id, 'frame-end-caps', registry);
+    expect(square.ok && square.value.map((item) => item.itemKey)).toContain('s6-40x40');
+    expect(square.ok && square.value.map((item) => item.itemKey)).not.toContain('s6-l40x40-a20');
+  });
+
+  it('1 つの角の大きな丸みの行(外周が長方形でない 5 行)には、同じ外形の四角のキャップを出さず、候補なし(合う形のキャップの行が無い)', () => {
+    const cases = [['t-slot-frame-s6', 's6-20x20-r15'], ['t-slot-frame-s8', 's8-30x30-r22'], ['t-slot-frame-s8', 's8-60x60-r48'],
+      ['t-slot-frame-s10', 's10-40x40-r32'], ['t-slot-frame-s10', 's10-45x45-r35']] as const;
+    for (const [familyId, frameKey] of cases) {
+      expect(registry.loaded(familyId)?.rows.some((row) => row.key === frameKey), frameKey).toBe(true);
+      const { document, id } = placed(familyId, frameKey, '1000');
+      const result = accessoryCandidates(document, id, 'frame-end-caps', registry);
+      expect(result.ok ? result.value.map((item) => item.itemKey) : result.reason, frameKey).toBe('noMatchingCap');
+    }
+  });
+
   it('全長・両端: 1000 の線で本体 994 を +Z へ 3 ずらし、キャップ 2 個を線の両端に置き、組・記録・版 23 を足す', () => {
     const { document, id } = placed(FRAME, FRAME_ROW, '1000');
     const result = applyAccessorySet(document, id, 'frame-end-caps', { ends: 'both', endReference: 'overall', itemKey: 's6-20x20' }, registry);

@@ -3,20 +3,23 @@
  * 登録すれば同じ欄が出る)。欄は「付属の部品」と、組を選んだ時の「付ける端」(1 本を置く時だけ)・「線の端の意味」・「行」(候補が 2 つ以上の時)。
  * 選んだ値はアプリを閉じるまで覚える(accessoryChoice.ts)。全部の欄に説明(title)を付ける(controlInventory)。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import type { AccessoryEnds, AccessoryEndReference, AccessorySetId } from '@pointercad/model';
+import { PRODUCT_CATALOG_REGISTRY, type AccessoryEnds, type AccessoryEndReference, type AccessorySetId } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { displayNumber } from '../sketch/numericInputPresentation.js';
 import {
-  accessoryPreview, effectiveAccessory, rememberAccessory, rememberedAccessory, type AccessoryOption, type AccessorySelection,
+  accessoryPreview, effectiveAccessory, effectiveBoltAccessory, rememberAccessory, rememberedAccessory, standardAccessoryFamilies,
+  standardAccessoryOptionsFor, type AccessoryOption, type AccessorySelection,
 } from './accessoryChoice.js';
+import type { StandardPartCategory } from './standardPartPicker.js';
 
 const ENDS: readonly AccessoryEnds[] = ['both', 'start', 'end'];
 const END_REFERENCES: readonly AccessoryEndReference[] = ['overall', 'member'];
 const SET_LABEL_KEYS: Readonly<Record<AccessorySetId, MessageKey>> = {
   'frame-end-caps': 'assembly.accessory.setFrameEndCaps', 'bolt-washer-nut': 'assembly.accessory.setBoltWasherNut',
+  'bearing-shaft-rings': 'assembly.accessory.setBearingShaftRings', 'bearing-bore-rings': 'assembly.accessory.setBearingBoreRings',
 };
 const ENDS_KEYS = { both: 'assembly.accessory.endsBoth', start: 'assembly.accessory.endsStart', end: 'assembly.accessory.endsEnd' } as const;
 const REFERENCE_KEYS = { overall: 'assembly.accessory.referenceOverall', member: 'assembly.accessory.referenceMember' } as const;
@@ -40,6 +43,28 @@ function previewText(options: readonly AccessoryOption[], selection: AccessorySe
     .replace('{thickness}', displayNumber(active.candidate.thicknessMm).text);
 }
 
+/** ボルトの座金とナットの組(A4)の欄: 締め付ける厚さ(空なら既定)・ばね座金の有無と予告。 */
+function BoltAccessoryFields({ options, selection, change }: { readonly options: readonly AccessoryOption[];
+  readonly selection: AccessorySelection; readonly change: (patch: Partial<AccessorySelection>) => void }): React.JSX.Element | null {
+  const bolt = effectiveBoltAccessory(options, selection);
+  const springAvailable = (options.find((item) => item.setId === 'bolt-washer-nut')?.defaultGripMm?.spring ?? null) !== null;
+  if (bolt === null) return null;
+  return (<>
+    <label className="pcad-field">
+      <span className="pcad-field__label">{t('assembly.accessory.grip')}</span>
+      <input title={t('assembly.accessory.gripGuide')} className="pcad-field__input" value={selection.gripText ?? ''}
+        placeholder={displayNumber(bolt.gripMm).text} onChange={(event) => { change({ gripText: event.currentTarget.value }); }} />
+      <span className="pcad-field__unit">mm</span>
+    </label>
+    {springAvailable ? <label className="pcad-field" title={t('assembly.accessory.springGuide')}>
+      <input type="checkbox" checked={bolt.springWasher} onChange={(event) => { change({ springWasher: event.currentTarget.checked }); }} />
+      <span className="pcad-field__label">{t('assembly.accessory.spring')}</span>
+    </label> : null}
+    <p className="pcad-popover__hint" role="status">{t(bolt.springWasher ? 'assembly.accessory.previewBoltSpring' : 'assembly.accessory.previewBolt')
+      .replace('{grip}', displayNumber(bolt.gripMm).text)}</p>
+  </>);
+}
+
 export function AccessoryFields({ options, lengthMm, showEnds }: AccessoryFieldsProps): React.JSX.Element | null {
   const [selection, setSelection] = useState<AccessorySelection>(rememberedAccessory);
   if (options.length === 0) return null;
@@ -54,7 +79,8 @@ export function AccessoryFields({ options, lengthMm, showEnds }: AccessoryFields
   return (<fieldset className="pcad-popover__fields pcad-accessory">
     <label className="pcad-field">
       <span className="pcad-field__label">{t('assembly.accessory.set')}</span>
-      <select title={t('assembly.accessory.setGuide')} className="pcad-field__input" value={active?.setId ?? ''}
+      <select title={t('assembly.accessory.setGuide')} className="pcad-field__input"
+        value={effectiveBoltAccessory(options, selection) === null ? active?.setId ?? '' : 'bolt-washer-nut'}
         onChange={(event) => { const value = options.find((item) => item.setId === event.currentTarget.value)?.setId ?? null; change({ setId: value }); }}>
         <option value="">{t('assembly.accessory.none')}</option>
         {options.map((item) => <option key={item.setId} value={item.setId}>{t(SET_LABEL_KEYS[item.setId])}</option>)}
@@ -68,7 +94,7 @@ export function AccessoryFields({ options, lengthMm, showEnds }: AccessoryFields
           {ENDS.map((item) => <option key={item} value={item}>{t(ENDS_KEYS[item])}</option>)}
         </select>
       </label> : null}
-      <label className="pcad-field">
+      {active.setId !== 'frame-end-caps' ? null : <label className="pcad-field">
         <span className="pcad-field__label">{t('assembly.accessory.reference')}</span>
         <select title={t('assembly.accessory.referenceGuide')} className="pcad-field__input" value={active.endReference}
           onChange={(event) => {
@@ -77,7 +103,7 @@ export function AccessoryFields({ options, lengthMm, showEnds }: AccessoryFields
           }}>
           {END_REFERENCES.map((item) => <option key={item} value={item}>{t(REFERENCE_KEYS[item])}</option>)}
         </select>
-      </label>
+      </label>}
       {candidates.length < 2 ? null : <label className="pcad-field">
         <span className="pcad-field__label">{t('assembly.accessory.item')}</span>
         <select title={t('assembly.accessory.itemGuide')} className="pcad-field__input" value={active.candidate.itemKey}
@@ -87,5 +113,23 @@ export function AccessoryFields({ options, lengthMm, showEnds }: AccessoryFields
       </label>}
     </>}
     {preview === null ? null : <p className="pcad-popover__hint" role="status">{preview}</p>}
+    <BoltAccessoryFields options={options} selection={selection} change={change} />
   </fieldset>);
+}
+
+/** 8 分類の窓の付属の組の欄(A4・A6)。深溝玉軸受は止め輪の族を読み込んでから組を出す(読み込みが済むと描き直す)。 */
+export function StandardAccessoryFields({ choice }: { readonly choice: {
+  readonly category: StandardPartCategory; readonly key: string; readonly lengthSource: string;
+  readonly dimensionSeries: 'annexJA' | 'main'; readonly threadSeries: 'coarse' | 'fine' } }): React.JSX.Element | null {
+  const [, setLoaded] = useState(0);
+  const { category } = choice;
+  useEffect(() => {
+    const ids = standardAccessoryFamilies(category);
+    if (ids.every((id) => PRODUCT_CATALOG_REGISTRY.loaded(id) !== undefined)) return undefined;
+    let live = true;
+    void PRODUCT_CATALOG_REGISTRY.ensure(ids).then(() => { if (live) setLoaded((count) => count + 1); }, () => {});
+    return () => { live = false; };
+  }, [category]);
+  return <AccessoryFields options={standardAccessoryOptionsFor(category, choice.key, choice.lengthSource, choice.dimensionSeries, choice.threadSeries)}
+    lengthMm={null} showEnds />;
 }

@@ -45,7 +45,11 @@ const FRAME_KINDS: readonly (readonly [string, string])[] = [
   ['panel-board-order', 'catalog.board.kind.order'], ['panel-part-box', 'catalog.board.kind.partBox'],
   ['panel-cover-frame', 'catalog.board.kind.coverFrame'], ['connector-box', 'catalog.frame.kind.connectorBox'],
   ['cap-foot-box', 'catalog.frame.kind.capFootBox'], ['movable-part-box', 'catalog.frame.kind.movableBox'],
-  ['accessory-box', 'catalog.frame.kind.accessoryBox'], ['t-slot-caster', 'catalog.frame.kind.caster'],
+  ['accessory-box', 'catalog.frame.kind.accessoryBox'],
+  ['slider-box', 'catalog.frame.kind.sliderBox'], ['cap-accessory-box', 'catalog.frame.kind.capAccessoryBox'],
+  ['foot-part-box', 'catalog.frame.kind.footPartBox'], ['slot-long-part', 'catalog.frame.kind.slotLongPart'],
+  ['door-part-box', 'catalog.frame.kind.doorPartBox'],
+  ['t-slot-caster', 'catalog.frame.kind.caster'],
 ];
 
 function picker(page: Page): Locator {

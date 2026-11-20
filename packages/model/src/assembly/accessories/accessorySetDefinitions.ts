@@ -2,6 +2,7 @@
  * 付属の組の定義の表(G2 の段 1。設計 wip/k28-bundle3-g2-design.md §1-2)。組ごとに「候補の引き方」と「付け方」を 1 行に持つ。
  * 組を足す時は、この表と、付け直しの表(accessorySync.ts の SYNC_BY_SET)に 1 行ずつ足す。表は組の id の全部を持つ(型が確かめる)。
  * 段 1 では、今の 4 つの組(端のキャップ・ボルトの座金とナット・軸受の軸用と穴用の止め輪)の計算をそのまま移しただけで、動きは変えていない。
+ * 段 2(K-28 束 3)で、鋼管の端の継手の組(pipeEndFittings.ts。本体は鋼材の部材)を足した。
  */
 import type { CatalogRegistry } from '../catalog/registry.js';
 import type { AssemblyDocument, ComponentSource } from '../types.js';
@@ -11,6 +12,7 @@ import type { AccessoryCandidate, AccessoryChoices, AccessoryRefusal } from './a
 import { applyBearingRingSet, bearingRingCandidates } from './bearingRingSet.js';
 import { applyBoltAccessorySet } from './boltAccessorySet.js';
 import { applyFrameEndCaps, frameCapCandidates } from './frameEndCaps.js';
+import { applyPipeEndFittings, pipeEndFittingCandidates } from './pipeEndFittings.js';
 
 type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: AccessoryRefusal };
 const refuse = <T>(reason: AccessoryRefusal): Result<T> => ({ ok: false, reason });
@@ -57,4 +59,9 @@ export const ACCESSORY_SET_DEFINITIONS: Readonly<Record<AccessorySetId, Accessor
   },
   'bearing-shaft-rings': bearingRings('bearing-shaft-rings'),
   'bearing-bore-rings': bearingRings('bearing-bore-rings'),
+  // 鋼管の端の継手(K-28 束 3): 本体は鋼材の配管用炭素鋼鋼管(SGP)。族の部品・8 分類の部品の本体には notPipe。
+  'pipe-end-fittings': {
+    candidates: (host, _source, registry) => pipeEndFittingCandidates(host, registry),
+    apply: (document, hostComponentId, choices, registry) => applyPipeEndFittings(document, hostComponentId, choices, registry),
+  },
 };

@@ -62,6 +62,16 @@
    "mass": "156g",
    "baseKey": "s10-80x80x30-t14-h2-rib-aluminum",
    "mark": "回り止めの突起(寸法の意味が決まらないので形は作っていない)"
+  },
+  {
+   "key": "s8-51x51x20-t9-h2-rib-aluminum-sheet",
+   "page": "119",
+   "slotHeading": "-",
+   "dimensions": "横: 51(寝た脚の先端の面〜立つ脚の背面) / 縦: 51(寝た脚の下面〜立つ脚の上端面)",
+   "material": "アルミ押出材（アルマイト表面処理、直角面機械加工仕上げ）",
+   "mass": "44g",
+   "baseKey": "s8-51x51x20-t9-h2-rib-aluminum",
+   "mark": "摩擦シート(付属品。形は作っていない)"
   }
  ]
 }

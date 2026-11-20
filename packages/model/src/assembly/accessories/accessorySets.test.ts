@@ -58,14 +58,15 @@ describe('付属の組: フレームの端のキャップ', () => {
     expect(square.ok && square.value.map((item) => item.itemKey)).not.toContain('s6-l40x40-a20');
   });
 
-  it('1 つの角の大きな丸みの行(外周が長方形でない 5 行)には、同じ外形の四角のキャップを出さず、候補なし(合う形のキャップの行が無い)', () => {
+  it('1 つの角の大きな丸みの行(外周が長方形でない 5 行)には、同じ外形の四角のキャップを出さず、合うフレームの鍵を持つ R 形のキャップ 1 つだけを向きを変えずに出す', () => {
     const cases = [['t-slot-frame-s6', 's6-20x20-r15'], ['t-slot-frame-s8', 's8-30x30-r22'], ['t-slot-frame-s8', 's8-60x60-r48'],
       ['t-slot-frame-s10', 's10-40x40-r32'], ['t-slot-frame-s10', 's10-45x45-r35']] as const;
     for (const [familyId, frameKey] of cases) {
       expect(registry.loaded(familyId)?.rows.some((row) => row.key === frameKey), frameKey).toBe(true);
       const { document, id } = placed(familyId, frameKey, '1000');
       const result = accessoryCandidates(document, id, 'frame-end-caps', registry);
-      expect(result.ok ? result.value.map((item) => item.itemKey) : result.reason, frameKey).toBe('noMatchingCap');
+      // R 形のキャップの行の鍵は合うフレームの行の鍵と同じ(行の fitsFrameKeys で照らす)。
+      expect(result.ok ? result.value.map((item) => [item.itemKey, item.quarterTurn]) : result.reason, frameKey).toEqual([[frameKey, 0]]);
     }
   });
 

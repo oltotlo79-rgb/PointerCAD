@@ -26,9 +26,9 @@ const EXPECTED_DEFAULT: ViewControlSettings = { version: 2,
 const V1_DEFAULT: CameraControlSettings = { version: 1, orbit: [v1('middle'), v1('left', { alt: true })],
   pan: [v1('right'), v1('middle', { shift: true })], zoom: [v1('wheel'), v1('wheel', { ctrl: true })],
   wheelSensitivity: 1, dragSensitivity: 1, invertWheel: false, invertDrag: false };
-const V1_FUSION: CameraControlSettings = { version: 1, orbit: [v1('middle', { shift: true })], pan: [v1('middle')], zoom: [v1('wheel')],
+const V1_MIDDLE_PAN: CameraControlSettings = { version: 1, orbit: [v1('middle', { shift: true })], pan: [v1('middle')], zoom: [v1('wheel')],
   wheelSensitivity: 2, dragSensitivity: 0.5, invertWheel: true, invertDrag: false };
-const V2_FUSION: ViewControlSettings = { version: 2,
+const V2_MIDDLE_PAN: ViewControlSettings = { version: 2,
   bindings: { orbit: [drag('middle', { shift: true })], pan: [drag('middle')], zoom: [wheel()] },
   options: { ...OPTIONS, wheelSensitivity: 2, zoomDragSensitivity: 0.5, invertWheel: true } };
 const KEY = 'pointercad.settings';
@@ -48,9 +48,9 @@ describe('移行の例(設計 §4.4)', () => {
     expect(loaded.cameraControls).toEqual(V1_DEFAULT);
   });
 
-  it('例2: v1 の Fusion 風と利用者の感度・反転を v2 へ写す(利用者の今の設定を失わない)', () => {
-    const loaded = loadSettings(memory({ ...core, cameraControls: V1_FUSION }).storage);
-    expect(loaded.viewControls).toEqual(V2_FUSION);
+  it('例2: v1 の中ボタンで移動の雛形と利用者の感度・反転を v2 へ写す(利用者の今の設定を失わない)', () => {
+    const loaded = loadSettings(memory({ ...core, cameraControls: V1_MIDDLE_PAN }).storage);
+    expect(loaded.viewControls).toEqual(V2_MIDDLE_PAN);
     expect(loaded.viewControlsRecovered).toBeUndefined();
   });
 
@@ -78,11 +78,11 @@ describe('移行の例(設計 §4.4)', () => {
     const custom: ViewControlSettings = { version: 2,
       bindings: { orbit: [drag('right')], pan: [wheel(), drag('middle')], zoom: [wheel({ ctrl: true })] },
       options: { ...OPTIONS, orbitSensitivity: 2.5, panSensitivity: 0.4, invertOrbitY: true } };
-    const store = memory({ ...core, cameraControls: V1_FUSION, viewControls: custom });
-    const v1Bytes = JSON.stringify(V1_FUSION);
+    const store = memory({ ...core, cameraControls: V1_MIDDLE_PAN, viewControls: custom });
+    const v1Bytes = JSON.stringify(V1_MIDDLE_PAN);
     const loaded = loadSettings(store.storage);
     expect(loaded.viewControls).toEqual(custom);
-    expect(loaded.cameraControls).toEqual(V1_FUSION);
+    expect(loaded.cameraControls).toEqual(V1_MIDDLE_PAN);
     saveSettings({ ...loaded, viewControls: { ...custom, options: { ...custom.options, invertOrbitX: true } } }, store.storage);
     expect(store.raw()).toContain(`"cameraControls":${v1Bytes}`);
     expect(loadSettings(store.storage).viewControls?.options.invertOrbitX).toBe(true);
@@ -97,9 +97,9 @@ describe('移行の例(設計 §4.4)', () => {
     if (typeof saved !== 'object' || saved === null) throw new Error('Settings record missing');
     expect(saved).toHaveProperty('viewControls');
     const older = Object.fromEntries(Object.entries(saved).filter(([key]) => key !== 'viewControls'));
-    store.write({ ...older, cameraControls: V1_FUSION });
+    store.write({ ...older, cameraControls: V1_MIDDLE_PAN });
     const back = loadSettings(store.storage);
-    expect(back.viewControls).toEqual(V2_FUSION);
+    expect(back.viewControls).toEqual(V2_MIDDLE_PAN);
     expect(back.viewControlsRecovered).toBeUndefined();
   });
 });
@@ -128,14 +128,14 @@ describe('読む時の救い出し(R4・R5・R8)', () => {
 
   it('R1: v2 が無く v1 が丸ごと壊れている時は既定にして知らせる(v1 の欄ごとに数える)', () => {
     expect(readStoredViewControls({ cameraControls: { version: 1, orbit: [] } })).toEqual({ settings: EXPECTED_DEFAULT, dropped: 7 });
-    for (const cameraControls of [null, [], 'v1', { ...V1_FUSION, version: 99 }]) {
+    for (const cameraControls of [null, [], 'v1', { ...V1_MIDDLE_PAN, version: 99 }]) {
       expect(readStoredViewControls({ cameraControls })).toEqual({ settings: EXPECTED_DEFAULT, dropped: 1 });
     }
   });
 
   it('R5: v2 の欄が物でない・未来の版の時は v1 から移し、無ければ既定にして、どちらも知らせる', () => {
-    expect(readStoredViewControls({ viewControls: { ...EXPECTED_DEFAULT, version: 3 }, cameraControls: V1_FUSION }))
-      .toEqual({ settings: V2_FUSION, dropped: 1 });
+    expect(readStoredViewControls({ viewControls: { ...EXPECTED_DEFAULT, version: 3 }, cameraControls: V1_MIDDLE_PAN }))
+      .toEqual({ settings: V2_MIDDLE_PAN, dropped: 1 });
     expect(readStoredViewControls({ viewControls: null })).toEqual({ settings: EXPECTED_DEFAULT, dropped: 1 });
     expect(readStoredViewControls({})).toEqual({ settings: EXPECTED_DEFAULT, dropped: 0 });
   });
@@ -282,11 +282,11 @@ describe('既定と雛形', () => {
       options: { ...OPTIONS, orbitSensitivity: 2, panSensitivity: 0.5, wheelSensitivity: 3, invertOrbitX: true } };
     const table = {
       pointercad: EXPECTED_DEFAULT.bindings,
-      solidworks: { orbit: [drag('middle')], pan: [drag('middle', { ctrl: true })], zoom: [wheel(), drag('middle', { shift: true })] },
-      fusion: { orbit: [drag('middle', { shift: true })], pan: [drag('middle')], zoom: [wheel()] },
-      onshape: { orbit: [drag('right')], pan: [drag('middle'), drag('right', { ctrl: true })], zoom: [wheel()] },
+      middleOrbit: { orbit: [drag('middle')], pan: [drag('middle', { ctrl: true })], zoom: [wheel(), drag('middle', { shift: true })] },
+      middlePan: { orbit: [drag('middle', { shift: true })], pan: [drag('middle')], zoom: [wheel()] },
+      rightOrbit: { orbit: [drag('right')], pan: [drag('middle'), drag('right', { ctrl: true })], zoom: [wheel()] },
     } as const;
-    for (const preset of ['pointercad', 'solidworks', 'fusion', 'onshape'] as const) {
+    for (const preset of ['pointercad', 'middleOrbit', 'middlePan', 'rightOrbit'] as const) {
       const value = withViewControlPreset(tuned, preset);
       expect(viewControlProblems(value), preset).toEqual([]);
       expect(value).toEqual({ ...tuned, bindings: table[preset] });
@@ -309,7 +309,7 @@ describe('既定と雛形', () => {
     expect(currentViewControls({})).toBe(DEFAULT_VIEW_CONTROLS);
     expect(currentViewControls({ viewControls: { ...EXPECTED_DEFAULT, bindings: { ...EXPECTED_DEFAULT.bindings, orbit: [] } } }))
       .toBe(DEFAULT_VIEW_CONTROLS);
-    expect(currentViewControls({ viewControls: V2_FUSION })).toBe(V2_FUSION);
+    expect(currentViewControls({ viewControls: V2_MIDDLE_PAN })).toBe(V2_MIDDLE_PAN);
   });
 });
 

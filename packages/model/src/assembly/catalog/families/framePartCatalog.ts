@@ -20,13 +20,17 @@ import {
 } from '../profiles/framePartShapes.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { BOSS_FOOT_RECORDS } from './bossFootRows.js';
+import { CHAMFERED_FOOT_BASE_RECORDS } from './chamferedFootBaseRows.js';
 import { D_BRACKET_RECORDS } from './dBracketRows.js';
+import { EXTRA_ADJUSTER_RECORDS } from './extraAdjusterRows.js';
+import { EXTRA_FOOT_BASE_RECORDS } from './extraFootBaseRows.js';
 import { EXTRA_ANGLE_BRACKET_RECORDS } from './extraAngleBracketRows.js';
 import {
   ADJUSTER_RECORDS, ANGLE_BRACKET_RECORDS, FLAT_PLATE_RECORDS, FOOT_BASE_RECORDS, FRAME_CAP_RECORDS, ROUND_NUT_RECORDS, SHAPED_PLATE_RECORDS,
   T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS,
 } from './framePartRows.js';
 import { HARD_BRACKET_RECORDS } from './hardBracketRows.js';
+import { ROUND_CORNER_CAP_RECORDS } from './roundCornerCapRows.js';
 
 type DensityMaterial = 'steel' | 'stainless' | 'aluminum' | 'nylon';
 /**
@@ -112,8 +116,8 @@ export interface FrameCapRecord {
   readonly key: string;
   readonly size: string;
   readonly slot: number;
-  /** 長方形か L 形。 */
-  readonly shape: 'rect' | 'l';
+  /** 長方形・L 形・1 つの角が大きな R の形(14f。左上の角だけが円弧)。 */
+  readonly shape: 'rect' | 'l' | 'r';
   readonly material: 'nylon';
   readonly page: number;
   readonly width: number;
@@ -123,6 +127,10 @@ export interface FrameCapRecord {
   readonly armWidth: number | null;
   /** 4 隅の丸みの半径(2 回の読みで同じ半径が記入されていた時だけ。無ければ 0 で、simplified に「角の形」)。 */
   readonly cornerRadius: number;
+  /** 1 つの角が R の形だけ: 左上の角の円弧の半径(合うフレームの外周の 4 つ目の頂点の半径と同じ)。 */
+  readonly largeRadius?: number;
+  /** 1 つの角が R の形だけ: 合うフレームの行の鍵(付属の組で、そのフレームにだけ候補に出す)。 */
+  readonly fitsFrameKeys?: readonly string[];
   readonly massG: number;
   readonly simplified: readonly string[];
 }
@@ -200,7 +208,7 @@ export interface AngleBracketRecord {
   readonly simplified: readonly string[];
 }
 
-/** フットベース・アジャスターベースの板(長方形の板と、穴ごとに径と位置が 2 つ以上の読みで一致した通し穴)。 */
+/** フットベース・アジャスターベース・キャスターの板(長方形・L 形・上の角を 45° に斜めに切った板と、穴ごとに径と位置が 2 つ以上の読みで一致した通し穴)。 */
 export interface FootBaseRecord {
   readonly key: string;
   readonly size: string;
@@ -216,8 +224,8 @@ export interface FootBaseRecord {
   /** 穴(外形の左下からの x・y と径)。 */
   readonly holes: readonly (readonly [number, number, number])[];
   /**
-   * L の外形の板だけ: 外形の頂点(左下を原点に反時計回り。直角の多角形で、外接の長方形が幅 × 奥行)。2 組の読みが共通の線((h))まで一致した行
-   * (統括の決定 2026-11-18 09:3x の 3)。省略は幅 × 奥行の長方形。
+   * L の外形の板と、上の角を 45° に斜めに切った板だけ: 外形の頂点(左下を原点に反時計回り。辺が縦・横か 45° の多角形で、外接の長方形が
+   * 幅 × 奥行)。L の外形は 2 組の読みが共通の線((h))まで一致した行(統括の決定 2026-11-18 09:3x の 3)。省略は幅 × 奥行の長方形。
    */
   readonly outline?: readonly (readonly [number, number])[];
   /** ボス付きの板だけ: 板を通る円柱のボス(中心 x・y・径・下の端・上の端。統括の決定 2026-11-18 13:3x の (2))。省略はボスなし。 */
@@ -401,21 +409,24 @@ export const ROUND_NUT_FAMILY: CatalogFamily = {
   partName: (row) => row.size,
 };
 
-const capRecord = recordLookup(FRAME_CAP_RECORDS);
+/** 端のキャップの族の行: 長方形と L 形の行の後に、1 つの角が R のフレームに合うキャップの行(14f)を続ける。 */
+const CAP_RECORDS: readonly FrameCapRecord[] = [...FRAME_CAP_RECORDS, ...ROUND_CORNER_CAP_RECORDS];
+const capRecord = recordLookup(CAP_RECORDS);
 
 function capDimensions(row: CatalogItemRow): FrameCapDimensions | null {
   const record = capRecord(row);
   return record === undefined ? null : { shape: record.shape, width: record.width, height: record.height, thickness: record.thickness,
-    armWidth: record.armWidth ?? NaN, cornerRadius: record.cornerRadius };
+    armWidth: record.armWidth ?? NaN, cornerRadius: record.cornerRadius, ...(record.largeRadius === undefined ? {} : { largeRadius: record.largeRadius }) };
 }
 
 export const FRAME_CAP_FAMILY: CatalogFamily = {
   ...familyBase('t-slot-frame-cap', 'catalog.frame.kind.cap', 'frameCap'),
   options: [],
   stock: 'count',
-  rows: FRAME_CAP_RECORDS.map((record) => baseRow(record, { slot: record.slot, width: record.width, height: record.height,
+  rows: CAP_RECORDS.map((record) => ({ ...baseRow(record, { slot: record.slot, width: record.width, height: record.height,
     thickness: record.thickness, ...(record.armWidth === null ? {} : { armWidth: record.armWidth }), cornerRadius: record.cornerRadius,
-    massG: record.massG }, '資料の 1 個の値')),
+    ...(record.largeRadius === undefined ? {} : { largeRadius: record.largeRadius }), massG: record.massG }, '資料の 1 個の値'),
+    ...(record.fitsFrameKeys === undefined ? {} : { fitsFrameKeys: record.fitsFrameKeys }) })),
   build: (row) => {
     const dims = capDimensions(row);
     const part = dims === null ? null : buildFrameCapPart(dims);
@@ -530,8 +541,11 @@ export const ANGLE_BRACKET_CATALOG_FAMILY: CatalogFamily = {
   partName: (row) => row.size,
 };
 
-/** ベースの板の族の行: 穴の決まった板の後に、ボス付きの板(取付け穴は作らず印。統括の決定 2026-11-18 13:4x の (1))。 */
-const FOOT_BASE_ROWS: readonly FootBaseRecord[] = [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS];
+/**
+ * ベースの板の族の行: 穴の決まった板の後に、ボス付きの板(取付け穴は作らず印。統括の決定 2026-11-18 13:4x の (1))、その後に 39 回目の
+ * 2 本の読みで外形・穴の並び・材質・質量が揃った長方形の板(extraFootBaseRows.ts。穴の位置の鎖を道具が読み解いて照らした)。
+ */
+const FOOT_BASE_ROWS: readonly FootBaseRecord[] = [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS, ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS];
 const baseRecord = recordLookup(FOOT_BASE_ROWS);
 
 function baseDimensions(row: CatalogItemRow): FootBaseDimensions | null {
@@ -561,7 +575,12 @@ export const FOOT_BASE_FAMILY: CatalogFamily = {
   partName: (row) => row.size,
 };
 
-const adjusterRecord = recordLookup(ADJUSTER_RECORDS);
+/**
+ * アジャスターの族の行: 読みで決まった行(framePartRows.ts)の後に、39 回目の 2 本の読みで揃った型番の行(extraAdjusterRows.ts。
+ * 底部から六角部の上までを 1 つの寸法で書いた型番は、六角部を持たず皿の円柱 1 つで表す。統括の指示 2026-11-19 21:3x)。
+ */
+const ADJUSTERS: readonly AdjusterRecord[] = [...ADJUSTER_RECORDS, ...EXTRA_ADJUSTER_RECORDS];
+const adjusterRecord = recordLookup(ADJUSTERS);
 
 function adjusterDimensions(row: CatalogItemRow): AdjusterDimensions | null {
   const record = adjusterRecord(row);
@@ -573,7 +592,7 @@ export const ADJUSTER_FAMILY: CatalogFamily = {
   ...familyBase('t-slot-adjuster', 'catalog.frame.kind.adjuster', 'adjuster'),
   options: [],
   stock: 'count',
-  rows: ADJUSTER_RECORDS.map((record) => baseRow(record, { padDiameter: record.padDiameter, padThickness: record.padThickness,
+  rows: ADJUSTERS.map((record) => baseRow(record, { padDiameter: record.padDiameter, padThickness: record.padThickness,
     threadLength: record.threadLength, ...(record.hexHeight === undefined ? {} : { hexHeight: record.hexHeight }), massG: record.massG },
   '資料の 1 個の値')),
   build: (row) => {

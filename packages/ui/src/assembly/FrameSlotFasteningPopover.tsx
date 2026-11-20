@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
@@ -62,6 +63,7 @@ function PreviewTable({ preview }: { readonly preview: FrameSlotDraftPreview | n
 export function FrameSlotFasteningPopover(): React.JSX.Element | null {
   const draft = useAppStore((state) => state.assemblyFrameSlotDraft);
   const preview = useAppStore((state) => state.assemblyFrameSlotPreview);
+  const root = useRef<HTMLFormElement>(null);
   const first = useRef<HTMLSelectElement>(null);
   const composing = useRef(false);
   const compositionKey = useRef(false);
@@ -69,14 +71,15 @@ export function FrameSlotFasteningPopover(): React.JSX.Element | null {
   useEffect(() => {
     composing.current = false;
     compositionKey.current = false;
-    if (open) first.current?.focus();
   }, [open]);
+  // 開いた時は最初の欄へ、閉じた時は開いた元(「組む」のメニューの釦など)へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, open, { initial: () => first.current });
   if (draft === null) return null;
   const store = useAppStore.getState;
   const ready = frameSlotPreviewReady(preview);
   const title = t('assembly.frameSlot.title');
   return (
-    <form className="pcad-popover pcad-popover--frame-slot" role="dialog" aria-label={title}
+    <form ref={root} className="pcad-popover pcad-popover--frame-slot" role="dialog" aria-label={title}
       onCompositionStart={() => { composing.current = true; }}
       onCompositionEnd={() => { composing.current = false; }}
       onPointerDownCapture={() => { compositionKey.current = false; }}

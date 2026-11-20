@@ -20,7 +20,10 @@ import { createCatalogRegistry } from '../registry.js';
 import { catalogItemNominalMass, catalogItemRejection, createCatalogItemSource } from '../source.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { BOSS_FOOT_RECORDS } from './bossFootRows.js';
+import { CHAMFERED_FOOT_BASE_RECORDS } from './chamferedFootBaseRows.js';
 import { D_BRACKET_RECORDS } from './dBracketRows.js';
+import { EXTRA_ADJUSTER_RECORDS } from './extraAdjusterRows.js';
+import { EXTRA_FOOT_BASE_RECORDS } from './extraFootBaseRows.js';
 import { EXTRA_ANGLE_BRACKET_RECORDS } from './extraAngleBracketRows.js';
 import {
   ADJUSTER_FAMILY, ANGLE_BRACKET_CATALOG_FAMILY, FLAT_PLATE_FAMILY, FOOT_BASE_FAMILY, FRAME_CAP_FAMILY, ROUND_NUT_FAMILY, SHAPED_PLATE_FAMILY,
@@ -31,6 +34,7 @@ import {
   T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS,
 } from './framePartRows.js';
 import { HARD_BRACKET_RECORDS } from './hardBracketRows.js';
+import { ROUND_CORNER_CAP_RECORDS } from './roundCornerCapRows.js';
 
 const FAMILIES = [T_SLOT_NUT_BAR_FAMILY, T_SLOT_NUT_FAMILY, ROUND_NUT_FAMILY, FRAME_CAP_FAMILY, FLAT_PLATE_FAMILY, SHAPED_PLATE_FAMILY,
   ANGLE_BRACKET_CATALOG_FAMILY, FOOT_BASE_FAMILY, ADJUSTER_FAMILY];
@@ -62,14 +66,21 @@ describe('資料 1 のフレームの部品の 9 族', () => {
     ]);
     // L 形のブラケットの族は、両脚の穴が決まった行の後に、寝た脚の穴を作らない行(統括の決定 2026-11-18 08:4x の (B))と、
     // ダイカストの本体の同じ形の行を持つ。
-    // ベースの板の族は、穴の決まった板の後に、ボス付きの板(取付け穴は作らず印。統括の決定 2026-11-18 13:4x の (1))を持つ。
-    const records = [T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS, ROUND_NUT_RECORDS, FRAME_CAP_RECORDS, FLAT_PLATE_RECORDS, SHAPED_PLATE_RECORDS,
-      [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...D_BRACKET_RECORDS, ...EXTRA_ANGLE_BRACKET_RECORDS], [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS],
-      ADJUSTER_RECORDS];
+    // ベースの板の族は、穴の決まった板の後に、ボス付きの板(取付け穴は作らず印。統括の決定 2026-11-18 13:4x の (1))、39 回目の 2 本の読みで
+    // 揃った長方形の板、上の角を 45° に斜めに切った板を持つ。
+    // 端のキャップの族は、長方形と L 形の行の後に、1 つの角が R のフレームに合うキャップの行(14f)を持つ。
+    // アジャスターの族は、今の行の後に、39 回目の 2 本の読みで揃った型番の行を持つ。
+    const records = [T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS, ROUND_NUT_RECORDS, [...FRAME_CAP_RECORDS, ...ROUND_CORNER_CAP_RECORDS],
+      FLAT_PLATE_RECORDS, SHAPED_PLATE_RECORDS,
+      [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...D_BRACKET_RECORDS, ...EXTRA_ANGLE_BRACKET_RECORDS], [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS,
+        ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS],
+      [...ADJUSTER_RECORDS, ...EXTRA_ADJUSTER_RECORDS]];
     expect(FAMILIES.map((family) => family.rows.map((row) => [row.key, row.size])))
       .toEqual(records.map((list) => list.map((record) => [record.key, record.size])));
-    expect(records.map((list) => list.length)).toEqual([12, 131, 4, 51, 11, 15, 64, 69, 6]);
-    expect([HARD_BRACKET_RECORDS.length, D_BRACKET_RECORDS.length, EXTRA_ANGLE_BRACKET_RECORDS.length, BOSS_FOOT_RECORDS.length]).toEqual([3, 6, 7, 1]);
+    expect(records.map((list) => list.length)).toEqual([12, 132, 4, 56, 11, 15, 65, 78, 55]);
+    expect([HARD_BRACKET_RECORDS.length, D_BRACKET_RECORDS.length, EXTRA_ANGLE_BRACKET_RECORDS.length, BOSS_FOOT_RECORDS.length,
+      ROUND_CORNER_CAP_RECORDS.length, EXTRA_ADJUSTER_RECORDS.length, EXTRA_FOOT_BASE_RECORDS.length, CHAMFERED_FOOT_BASE_RECORDS.length])
+      .toEqual([3, 6, 8, 1, 5, 49, 3, 6]);
   });
 
   it('行は規格の行を名乗らず、出どころは資料の番号と頁だけで、note と簡略の印は行の表の印から作る', () => {
@@ -280,11 +291,17 @@ describe('1 個のナットの形の拡張(穴の位置・ボールとストッ�
 describe('部位ごとに材料の違う行(密度なし。統括の決定 2026-11-18 08:1x)', () => {
   it('材料が mixed の行は密度を持たず、部品表の材質は資料の材質の文字、質量は資料の 1 個の値。ほかの行は今までどおり材料の密度を持つ', () => {
     const records = [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...D_BRACKET_RECORDS, ...EXTRA_ANGLE_BRACKET_RECORDS, ...FOOT_BASE_RECORDS,
-      ...BOSS_FOOT_RECORDS,
-      ...ADJUSTER_RECORDS];
+      ...BOSS_FOOT_RECORDS, ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS,
+      ...ADJUSTER_RECORDS, ...EXTRA_ADJUSTER_RECORDS];
     const mixed = records.filter((record) => record.material === 'mixed');
     // 今の製品の 2 行(座が樹脂でねじが鋼)も部位ごとに材料の違う行に直した(統括の決定 2026-11-18 08:1x。鍵は変えない)。
-    expect(mixed.map((record) => record.key)).toEqual(['m8-d20-l15-nylon', 'm8-d30-l34-mixed', 'm8-d40-l24-nylon']);
+    // 39 回目で足したアジャスターのうち、底部がゴムの型番(A・D)と底部が樹脂のフットも部位ごとに材料の違う行。
+    expect(mixed.map((record) => record.key)).toEqual(['m8-d20-l15-nylon', 'm8-d30-l34-mixed', 'm8-d40-l24-nylon',
+      'm16-d60-l140-b27-steel-rubber', 'm20-d60-l130-b30-steel-rubber', 'm12-d50-l70-b23-steel-rubber', 'm16-d60-l143-b27-steel-rubber',
+      'm16-d60-l70-b27-steel-rubber', 'm20-d60-l130-b30-steel-rubber-540g', 'm12-d63-l100-h8-steel-rubber', 'm12-d63-l100-h8-stainless-rubber',
+      'm12-d63-l150-h8-steel-rubber', 'm12-d63-l150-h8-stainless-rubber', 'm16-d63-l150-h10-steel-rubber', 'm16-d63-l150-h10-stainless-rubber',
+      'm16-d63-l200-h10-steel-rubber', 'm16-d63-l200-h10-stainless-rubber', 'm20-d63-l150-h13-steel-rubber', 'm20-d63-l150-h13-stainless-rubber',
+      'm20-d63-l200-h13-steel-rubber', 'm20-d63-l200-h13-stainless-rubber', 'm12-d50-l25-b26-steel-pa']);
     for (const family of [ANGLE_BRACKET_CATALOG_FAMILY, FOOT_BASE_FAMILY, ADJUSTER_FAMILY]) {
       for (const row of family.rows) {
         const record = records.find((candidate) => candidate.key === row.key);

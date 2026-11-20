@@ -77,7 +77,7 @@ PointerCADの中で立体や部材の形を使って解析する場合は、下�
 4. 対象形状を選びGmshなどでメッシュを生成します。CalculiXの解析種類を静解析にし、実行します。新しい画面ではApply、旧画面ではWrite .inp File→Run CalculiXの順です。
 5. 終了後に変位とミーゼス応力を確認します。表示上の変形倍率と実変位を区別し、必要に応じてメッシュを細かくして結果の変化を調べます。
 
-操作名はFreeCADの版・表示言語で異なります。画面例は[FreeCAD公式のFEM入門](https://blog.freecad.org/2025/09/16/getting-started-with-fem/)を参照してください。CalculiXが見つからない場合は[公式のFEM導入手順](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/FEM_Install.md)に従い、設定のFEM→CalculiXで実行ファイルを指定します。この案内は外部ソフトの公開手順の確認に基づきます。
+操作名はFreeCADの版・表示言語で異なります。画面例はFreeCAD公式のFEM入門を参照してください。CalculiXが見つからない場合は公式のFEM導入手順に従い、設定のFEM→CalculiXで実行ファイルを指定します。この案内は外部ソフトの公開手順の確認に基づきます。
 
 ## 材料・断面積の出典
 

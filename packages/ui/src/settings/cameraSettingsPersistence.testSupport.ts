@@ -36,12 +36,12 @@ export const EXPECTED_PRESETS: Readonly<Record<CameraControlPreset, CameraContro
   pointercad: { version: 1, orbit: [binding('middle'), binding('left', true)],
     pan: [binding('right'), binding('middle', false, true)], zoom: [binding('wheel'), binding('wheel', false, false, true)],
     wheelSensitivity: 1, dragSensitivity: 1, invertWheel: false, invertDrag: false },
-  solidworks: { version: 1, orbit: [binding('middle')], pan: [binding('middle', false, false, true)],
+  middleOrbit: { version: 1, orbit: [binding('middle')], pan: [binding('middle', false, false, true)],
     zoom: [binding('wheel'), binding('middle', false, true)],
     wheelSensitivity: 1, dragSensitivity: 1, invertWheel: false, invertDrag: false },
-  fusion: { version: 1, orbit: [binding('middle', false, true)], pan: [binding('middle')], zoom: [binding('wheel')],
+  middlePan: { version: 1, orbit: [binding('middle', false, true)], pan: [binding('middle')], zoom: [binding('wheel')],
     wheelSensitivity: 1, dragSensitivity: 1, invertWheel: false, invertDrag: false },
-  onshape: { version: 1, orbit: [binding('right')], pan: [binding('middle'), binding('right', false, false, true)],
+  rightOrbit: { version: 1, orbit: [binding('right')], pan: [binding('middle'), binding('right', false, false, true)],
     zoom: [binding('wheel')], wheelSensitivity: 1, dragSensitivity: 1, invertWheel: false, invertDrag: false },
 };
 export const CUSTOM_CAMERA: CameraControlSettings = {
@@ -59,10 +59,10 @@ const VIEW_OPTIONS: ViewControlOptions = { orbitSensitivity: 1, panSensitivity: 
 export const EXPECTED_VIEW_PRESETS: Readonly<Record<CameraControlPreset, ViewControlSettings>> = {
   pointercad: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('middle'), trigger('left', true)],
     pan: [trigger('right'), trigger('middle', false, true)], zoom: [trigger('wheel'), trigger('wheel', false, false, true)] } },
-  solidworks: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('middle')], pan: [trigger('middle', false, false, true)],
+  middleOrbit: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('middle')], pan: [trigger('middle', false, false, true)],
     zoom: [trigger('wheel'), trigger('middle', false, true)] } },
-  fusion: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('middle', false, true)], pan: [trigger('middle')], zoom: [trigger('wheel')] } },
-  onshape: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('right')],
+  middlePan: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('middle', false, true)], pan: [trigger('middle')], zoom: [trigger('wheel')] } },
+  rightOrbit: { version: 2, options: VIEW_OPTIONS, bindings: { orbit: [trigger('right')],
     pan: [trigger('middle'), trigger('right', false, false, true)], zoom: [trigger('wheel')] } },
 };
 /** CUSTOM_CAMERA after the v1 to v2 migration: same bindings and zoom tuning, new rotation and pan fields at their defaults. */

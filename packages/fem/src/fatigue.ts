@@ -201,7 +201,7 @@ function goodmanTerm(curve: FatigueSnCurve, correction: FatigueMeanStressCorrect
 
 /** Opt-in uniaxial elastic Goodman estimate on a fully reversed curve. The legacy analyzeFatigue is unchanged.
  * Sa,eq = Sa / (1 - max(Sm, 0)/Su): compressive mean stress receives no beneficial correction.
- * Primary formula/convention: https://help.altair.com/ss/en_us/topics/simsolid/analysis/fatigue_mean_stress_test_r.htm
+ * Primary formula/convention: the Goodman mean-stress correction, tension-only (no benefit from a compressive mean).
  * Symmetric yield and the supplied S-N life lower bound delimit this implementation, not a material certification.
  * Real stresses and equivalent amplitudes must remain strictly below yield; no plastic/low-cycle extrapolation.
  * Original signed means, ranges, counts and indices are retained; the curve-axis equivalent stress is separate.

@@ -1,0 +1,397 @@
+{
+ "description": "資料 1 のアジャスターの行の、2 本目の読み(39 回目)の寸法・種類・材質・質量の文字。検査が寸法の欄を読み解いて製品の行と照らす。鍵は製品の行の鍵。型番は書かない。",
+ "rows": [
+  {
+   "key": "m16-d60-l140-b27-steel-rubber",
+   "page": "324",
+   "kind": "アジャスタA M16-140T",
+   "dimensions": "ℓ:140 mm;ねじ:M16×2;皿径:φ60;底〜下ナット上:27",
+   "material": "SS400（Zn黒）・SPCC;底部:エラストマー/クロロプレンゴム",
+   "mass": "384 g"
+  },
+  {
+   "key": "m20-d60-l130-b30-steel-rubber",
+   "page": "324",
+   "kind": "アジャスタA M20-130T",
+   "dimensions": "ℓ:130 mm;ねじ:M20×2.5;皿径:φ60;底〜下ナット上:30;全高:160",
+   "material": "SS400（Zn黒）・SPCC;底部:エラストマー/クロロプレンゴム",
+   "mass": "520 g"
+  },
+  {
+   "key": "m12-d50-l70-b23-steel-rubber",
+   "page": "324",
+   "kind": "アジャスタA M12-70",
+   "dimensions": "ℓ:70 mm;ねじ:M12×1.75;皿径:φ50;底〜下ナット上:23;全高:93",
+   "material": "SS400（Zn黒）・SPCC;底部:エラストマー/クロロプレンゴム",
+   "mass": "170 g"
+  },
+  {
+   "key": "m16-d60-l143-b27-steel-rubber",
+   "page": "324",
+   "kind": "アジャスタA M16",
+   "dimensions": "ℓ:143 mm;ねじ:M16×2;皿径:φ60;底〜下ナット上:27",
+   "material": "SS400（Zn黒）・SPCC;底部:エラストマー/クロロプレンゴム",
+   "mass": "386 g"
+  },
+  {
+   "key": "m16-d60-l70-b27-steel-rubber",
+   "page": "324",
+   "kind": "アジャスタA M16ショート",
+   "dimensions": "ℓ:70 mm;ねじ:M16×2;皿径:φ60;底〜下ナット上:27",
+   "material": "SS400（Zn黒）・SPCC;底部:エラストマー/クロロプレンゴム",
+   "mass": "290 g"
+  },
+  {
+   "key": "m20-d60-l130-b30-steel-rubber-540g",
+   "page": "324",
+   "kind": "アジャスタA M20",
+   "dimensions": "ℓ:130 mm;ねじ:M20×2.5;皿径:φ60;底〜下ナット上:30;全高:160",
+   "material": "SS400（Zn黒）・SPCC;底部:エラストマー/クロロプレンゴム",
+   "mass": "540 g"
+  },
+  {
+   "key": "m12-d55-l68-h8-steel",
+   "page": "324",
+   "kind": "アジャスタB M12-68T",
+   "dimensions": "ℓ:68 mm;ねじ:M12×1.75;皿径:φ55;下ナット高さ:8;皿高さ:14",
+   "material": "SS400;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "129 g"
+  },
+  {
+   "key": "m12-d55-l100-h8-steel-p14",
+   "page": "324",
+   "kind": "アジャスタB M12-100T",
+   "dimensions": "ℓ:100 mm;ねじ:M12×1.75;皿径:φ55;下ナット高さ:8;皿高さ:14",
+   "material": "SS400;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "153 g"
+  },
+  {
+   "key": "m12-d55-l100-h8-stainless-155g",
+   "page": "324",
+   "kind": "アジャスタB M12-100T(ステン)",
+   "dimensions": "ℓ:100 mm;ねじ:M12×1.75;皿径:φ55;下ナット高さ:8;皿高さ:14",
+   "material": "SUS304（ステン）;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "155 g"
+  },
+  {
+   "key": "m16-d75-l92-h10-steel",
+   "page": "324",
+   "kind": "アジャスタB M16-92T",
+   "dimensions": "ℓ:92 mm;ねじ:M16×2;皿径:φ75;下ナット高さ:10;皿高さ:18;全高:120",
+   "material": "SS400;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "276 g"
+  },
+  {
+   "key": "m16-d75-l150-h10-steel",
+   "page": "324",
+   "kind": "アジャスタB M16-150T",
+   "dimensions": "ℓ:150 mm;ねじ:M16×2;皿径:φ75;下ナット高さ:10;皿高さ:18;全高:178",
+   "material": "SS400;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "346 g"
+  },
+  {
+   "key": "m16-d75-l150-h10-stainless",
+   "page": "324",
+   "kind": "アジャスタB M16-150T(ステン)",
+   "dimensions": "ℓ:150 mm;ねじ:M16×2;皿径:φ75;下ナット高さ:10;皿高さ:18;全高:178",
+   "material": "SUS304（ステン）;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "349 g"
+  },
+  {
+   "key": "m20-d75-l130-h13-stainless-499g",
+   "page": "324",
+   "kind": "アジャスタB M20-130T(ステン)",
+   "dimensions": "ℓ:130 mm;ねじ:M20×2.5;皿径:φ75;下ナット高さ:13;皿高さ:18;全高:161",
+   "material": "SUS304（ステン）;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "499 g"
+  },
+  {
+   "key": "m8-d37-l50-b16-steel",
+   "page": "324",
+   "kind": "アジャスタB M8-50",
+   "dimensions": "ℓ:50 mm;ねじ:M8×1.25;皿径:φ37;底〜下ナット上:16;全高:66",
+   "material": "SS400;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "55 g"
+  },
+  {
+   "key": "m8-d37-l50-b16-stainless",
+   "page": "324",
+   "kind": "アジャスタB M8-50(ステン)",
+   "dimensions": "ℓ:50 mm;ねじ:M8×1.25;皿径:φ37;底〜下ナット上:16;全高:66",
+   "material": "SUS304（ステン）;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "50 g"
+  },
+  {
+   "key": "m12-d55-l50-h8-steel",
+   "page": "324",
+   "kind": "アジャスタB M12-50",
+   "dimensions": "ℓ:50 mm;ねじ:M12×1.75;皿径:φ55;下ナット高さ:8;皿高さ:15",
+   "material": "SS400;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "135 g"
+  },
+  {
+   "key": "m12-d55-l50-h8-stainless",
+   "page": "324",
+   "kind": "アジャスタB M12-50(ステン)",
+   "dimensions": "ℓ:50 mm;ねじ:M12×1.75;皿径:φ55;下ナット高さ:8;皿高さ:15",
+   "material": "SUS304（ステン）;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "135 g"
+  },
+  {
+   "key": "m12-d55-l150-h8-steel",
+   "page": "324",
+   "kind": "アジャスタB M12-150",
+   "dimensions": "ℓ:150 mm;ねじ:M12×1.75;皿径:φ55;下ナット高さ:8;皿高さ:18",
+   "material": "SS400;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "205 g"
+  },
+  {
+   "key": "m12-d55-l150-h8-stainless",
+   "page": "324",
+   "kind": "アジャスタB M12-150(ステン)",
+   "dimensions": "ℓ:150 mm;ねじ:M12×1.75;皿径:φ55;下ナット高さ:8;皿高さ:15",
+   "material": "SUS304（ステン）;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "200 g"
+  },
+  {
+   "key": "m16-d75-l150-h10-steel-375g",
+   "page": "324",
+   "kind": "アジャスタB M16",
+   "dimensions": "ℓ:150 mm;ねじ:M16×2;皿径:φ75;下ナット高さ:10;皿高さ:18",
+   "material": "SS400;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "375 g"
+  },
+  {
+   "key": "m16-d75-l150-h10-stainless-382g",
+   "page": "324",
+   "kind": "アジャスタB M16(ステン)",
+   "dimensions": "ℓ:150 mm;ねじ:M16×2;皿径:φ75;下ナット高さ:10;皿高さ:18",
+   "material": "SUS304（ステン）;共通材質欄の併記:SPCC/SWCH・SPHC/SS400/SWRM",
+   "mass": "382 g"
+  },
+  {
+   "key": "m12-d60-l100-h8-steel",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M12-100",
+   "dimensions": "ℓ1:100 mm;ℓ2:125 mm;ねじ:M12×1.75;皿径:φ60;皿高さ:17;下ナット高さ:8",
+   "material": "SS400",
+   "mass": "340 g"
+  },
+  {
+   "key": "m12-d60-l100-h8-stainless",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M12-100(ステン)",
+   "dimensions": "ℓ1:100 mm;ℓ2:125 mm;ねじ:M12×1.75;皿径:φ60;皿高さ:17;下ナット高さ:8",
+   "material": "SUS304（ステン）",
+   "mass": "340 g"
+  },
+  {
+   "key": "m12-d60-l150-h8-steel",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M12-150",
+   "dimensions": "ℓ1:150 mm;ℓ2:175 mm;ねじ:M12×1.75;皿径:φ60;皿高さ:17;下ナット高さ:8",
+   "material": "SS400",
+   "mass": "375 g"
+  },
+  {
+   "key": "m12-d60-l150-h8-stainless",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M12-150(ステン)",
+   "dimensions": "ℓ1:150 mm;ℓ2:175 mm;ねじ:M12×1.75;皿径:φ60;皿高さ:17;下ナット高さ:8",
+   "material": "SUS304（ステン）",
+   "mass": "375 g"
+  },
+  {
+   "key": "m16-d60-l150-h10-steel",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M16-150",
+   "dimensions": "ℓ1:150 mm;ℓ2:177 mm;ねじ:M16×2.0;皿径:φ60;皿高さ:17;下ナット高さ:10",
+   "material": "SS400",
+   "mass": "505 g"
+  },
+  {
+   "key": "m16-d60-l150-h10-stainless",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M16-150(ステン)",
+   "dimensions": "ℓ1:150 mm;ℓ2:177 mm;ねじ:M16×2.0;皿径:φ60;皿高さ:17;下ナット高さ:10",
+   "material": "SUS304（ステン）",
+   "mass": "505 g"
+  },
+  {
+   "key": "m16-d60-l200-h10-steel",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M16-200",
+   "dimensions": "ℓ1:200 mm;ℓ2:227 mm;ねじ:M16×2.0;皿径:φ60;皿高さ:17;下ナット高さ:10",
+   "material": "SS400",
+   "mass": "570 g"
+  },
+  {
+   "key": "m16-d60-l200-h10-stainless",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M16-200(ステン)",
+   "dimensions": "ℓ1:200 mm;ℓ2:227 mm;ねじ:M16×2.0;皿径:φ60;皿高さ:17;下ナット高さ:10",
+   "material": "SUS304（ステン）",
+   "mass": "570 g"
+  },
+  {
+   "key": "m20-d60-l150-h13-steel",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M20-150",
+   "dimensions": "ℓ1:150 mm;ℓ2:180 mm;ねじ:M20×2.5;皿径:φ60;皿高さ:17;下ナット高さ:13",
+   "material": "SS400",
+   "mass": "680 g"
+  },
+  {
+   "key": "m20-d60-l150-h13-stainless",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M20-150(ステン)",
+   "dimensions": "ℓ1:150 mm;ℓ2:180 mm;ねじ:M20×2.5;皿径:φ60;皿高さ:17;下ナット高さ:13",
+   "material": "SUS304（ステン）",
+   "mass": "680 g"
+  },
+  {
+   "key": "m20-d60-l200-h13-steel",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M20-200",
+   "dimensions": "ℓ1:200 mm;ℓ2:230 mm;ねじ:M20×2.5;皿径:φ60;皿高さ:17;下ナット高さ:13",
+   "material": "SS400",
+   "mass": "785 g"
+  },
+  {
+   "key": "m20-d60-l200-h13-stainless",
+   "page": "325",
+   "kind": "アジャスタC（高荷重） M20-200(ステン)",
+   "dimensions": "ℓ1:200 mm;ℓ2:230 mm;ねじ:M20×2.5;皿径:φ60;皿高さ:17;下ナット高さ:13",
+   "material": "SUS304（ステン）",
+   "mass": "785 g"
+  },
+  {
+   "key": "m12-d63-l100-h8-steel-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M12-100",
+   "dimensions": "ℓ1:100 mm;ℓ2:130 mm;ねじ:M12×1.75;皿径:φ63;皿高さ:22;下ナット高さ:8",
+   "material": "SS400;底部:クロロプレンゴム",
+   "mass": "370 g"
+  },
+  {
+   "key": "m12-d63-l100-h8-stainless-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M12-100(ステン)",
+   "dimensions": "ℓ1:100 mm;ℓ2:130 mm;ねじ:M12×1.75;皿径:φ63;皿高さ:22;下ナット高さ:8",
+   "material": "SUS304（ステン）;底部:クロロプレンゴム",
+   "mass": "370 g"
+  },
+  {
+   "key": "m12-d63-l150-h8-steel-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M12-150",
+   "dimensions": "ℓ1:150 mm;ℓ2:180 mm;ねじ:M12×1.75;皿径:φ63;皿高さ:22;下ナット高さ:8",
+   "material": "SS400;底部:クロロプレンゴム",
+   "mass": "400 g"
+  },
+  {
+   "key": "m12-d63-l150-h8-stainless-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M12-150(ステン)",
+   "dimensions": "ℓ1:150 mm;ℓ2:180 mm;ねじ:M12×1.75;皿径:φ63;皿高さ:22;下ナット高さ:8",
+   "material": "SUS304（ステン）;底部:クロロプレンゴム",
+   "mass": "400 g"
+  },
+  {
+   "key": "m16-d63-l150-h10-steel-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M16-150",
+   "dimensions": "ℓ1:150 mm;ℓ2:182 mm;ねじ:M16×2.0;皿径:φ63;皿高さ:22;下ナット高さ:10",
+   "material": "SS400;底部:クロロプレンゴム",
+   "mass": "520 g"
+  },
+  {
+   "key": "m16-d63-l150-h10-stainless-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M16-150(ステン)",
+   "dimensions": "ℓ1:150 mm;ℓ2:182 mm;ねじ:M16×2.0;皿径:φ63;皿高さ:22;下ナット高さ:10",
+   "material": "SUS304（ステン）;底部:クロロプレンゴム",
+   "mass": "520 g"
+  },
+  {
+   "key": "m16-d63-l200-h10-steel-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M16-200",
+   "dimensions": "ℓ1:200 mm;ℓ2:232 mm;ねじ:M16×2.0;皿径:φ63;皿高さ:22;下ナット高さ:10",
+   "material": "SS400;底部:クロロプレンゴム",
+   "mass": "590 g"
+  },
+  {
+   "key": "m16-d63-l200-h10-stainless-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M16-200(ステン)",
+   "dimensions": "ℓ1:200 mm;ℓ2:232 mm;ねじ:M16×2.0;皿径:φ63;皿高さ:22;下ナット高さ:10",
+   "material": "SUS304（ステン）;底部:クロロプレンゴム",
+   "mass": "590 g"
+  },
+  {
+   "key": "m20-d63-l150-h13-steel-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M20-150",
+   "dimensions": "ℓ1:150 mm;ℓ2:185 mm;ねじ:M20×2.5;皿径:φ63;皿高さ:22;下ナット高さ:13",
+   "material": "SS400;底部:クロロプレンゴム",
+   "mass": "720 g"
+  },
+  {
+   "key": "m20-d63-l150-h13-stainless-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M20-150(ステン)",
+   "dimensions": "ℓ1:150 mm;ℓ2:185 mm;ねじ:M20×2.5;皿径:φ63;皿高さ:22;下ナット高さ:13",
+   "material": "SUS304（ステン）;底部:クロロプレンゴム",
+   "mass": "720 g"
+  },
+  {
+   "key": "m20-d63-l200-h13-steel-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M20-200",
+   "dimensions": "ℓ1:200 mm;ℓ2:235 mm;ねじ:M20×2.5;皿径:φ63;皿高さ:22;下ナット高さ:13",
+   "material": "SS400;底部:クロロプレンゴム",
+   "mass": "810 g"
+  },
+  {
+   "key": "m20-d63-l200-h13-stainless-rubber",
+   "page": "325",
+   "kind": "アジャスタD（ゴム付高荷重） M20-200(ステン)",
+   "dimensions": "ℓ1:200 mm;ℓ2:235 mm;ねじ:M20×2.5;皿径:φ63;皿高さ:22;下ナット高さ:13",
+   "material": "SUS304（ステン）;底部:クロロプレンゴム",
+   "mass": "810 g"
+  },
+  {
+   "key": "m12-d38-l60-b20-steel",
+   "page": "326",
+   "kind": "小径アジャスタ M12-60T",
+   "dimensions": "ℓ:60 mm;ねじ:M12×1.75;底〜下ナット上:20;皿径:φ38;皿単体高さ:記入なし",
+   "material": "SS400",
+   "mass": "101 g"
+  },
+  {
+   "key": "m12-d38-l100-b20-steel",
+   "page": "326",
+   "kind": "小径アジャスタ M12-100T",
+   "dimensions": "ℓ:100 mm;ねじ:M12×1.75;底〜下ナット上:20;皿径:φ38;皿単体高さ:記入なし",
+   "material": "SS400",
+   "mass": "132 g"
+  },
+  {
+   "key": "m12-d38-l100-b20-stainless",
+   "page": "326",
+   "kind": "小径アジャスタ M12-100T（ステン）",
+   "dimensions": "ℓ:100 mm;ねじ:M12×1.75;底〜下ナット上:20;皿径:φ38;皿単体高さ:記入なし",
+   "material": "SUS304",
+   "mass": "134 g"
+  },
+  {
+   "key": "m12-d50-l25-b26-steel-pa",
+   "page": "327",
+   "kind": "フットM12",
+   "dimensions": "ねじ:M12;全高:51;ナット上〜軸先:25;座径:φ50",
+   "material": "軟鋼線材;底部:PA",
+   "mass": "71 g"
+  }
+ ]
+}

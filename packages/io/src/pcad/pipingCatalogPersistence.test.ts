@@ -1,5 +1,6 @@
 /**
- * 包み K-28 の配管の族(ねじ込み式管継手のエルボ・チーズ・ソケット)の部品を置いたアセンブリの保存と開き直し(JSON と ZIP)。
+ * 包み K-28 の配管の族(ねじ込み式管継手のエルボ・チーズ・ソケット・キャップ・プラグ・六角ニップル・ブッシングと、鋼製管フランジ 5K・10K)の
+ * 部品を置いたアセンブリの保存と開き直し(JSON と ZIP)。
  * 族ごとに全ての行を置き、開き直しても出どころが同じバイトで残り、開き直した文書から同じ形が組める事を確かめる。
  */
 import {
@@ -13,7 +14,10 @@ import { readPcadaFile, writePcadaFile } from './pcadFile.js';
 
 const SAVE_OPTIONS = { savedAt: '2026-11-19T00:00:00.000Z' };
 /** [族の id, 行の数]。 */
-const PIPING_FAMILIES: [string, number][] = [['pipe-fitting-elbow', 14], ['pipe-fitting-tee', 14], ['pipe-fitting-socket', 14]];
+const PIPING_FAMILIES: [string, number][] = [
+  ['pipe-fitting-elbow', 14], ['pipe-fitting-tee', 14], ['pipe-fitting-socket', 14], ['pipe-fitting-cap', 13], ['pipe-fitting-plug', 11],
+  ['pipe-fitting-nipple', 14], ['pipe-fitting-bushing', 58], ['pipe-flange-5k', 11], ['pipe-flange-10k', 11],
+];
 
 async function sourcesOf(id: string): Promise<readonly StandardPartSource[]> {
   await PRODUCT_CATALOG_REGISTRY.ensure([id]);
@@ -29,10 +33,10 @@ function assemblyOf(sources: readonly StandardPartSource[]): AssemblyDocument {
 }
 
 describe('K-28 の配管の族の部品の保存と開き直し', () => {
-  it('登録口の配管の族は 3(分類 piping。行は合わせて 42)', () => {
+  it('登録口の配管の族は 9(分類 piping。行は合わせて 160)', () => {
     expect(PRODUCT_CATALOG_REGISTRY.entries.filter((entry) => entry.group === 'piping').map((entry) => entry.id))
       .toEqual(PIPING_FAMILIES.map(([id]) => id));
-    expect(PIPING_FAMILIES.reduce((sum, [, count]) => sum + count, 0)).toBe(42);
+    expect(PIPING_FAMILIES.reduce((sum, [, count]) => sum + count, 0)).toBe(160);
   });
 
   it.each(PIPING_FAMILIES)('%s の全ての行を置いた文書は、JSON と ZIP で開き直しても同じで、組める(%i 行)', async (id, count) => {

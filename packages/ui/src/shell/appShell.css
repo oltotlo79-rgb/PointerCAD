@@ -774,7 +774,7 @@
 }
 
 .pcad-toolbar__wordmark {
-  font-size: 14px;
+  font-size: calc(var(--pcad-font-size) * 14 / 13);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--pcad-text);

@@ -76,6 +76,9 @@ export function registerDialogFocusTests(test: typeof base): void {
         dialog,
         initial: choice(dialog, 'assembly', 'assembly.standardPart.category'),
         opener: toolMenuTrigger(page, build),
+        // 確定(置く)と閉じるまで Tab で届く(C-03 の Tab の順)。
+        tabStops: [dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.place'), exact: true }),
+          dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.close'), exact: true })],
       });
       expect(errors).toEqual([]);
     });

@@ -5,9 +5,11 @@
  * 同じ形の接続の組(安全柵などが渡す)は、組の全部の接続に 1 つずつ通る候補の形があれば組で 1 つ選ぶ。無い組の接続は、接続ごとに選ぶ。
  */
 import { frameSlotBoltNominals, type JointBracketChoice } from '@pointercad/model';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
+import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
   frameJointBracketReady, jointBracketChoiceKey, type FrameJointBracketData, type FrameJointBracketGroupRow, type FrameJointBracketRow,
@@ -83,19 +85,28 @@ export function FrameJointBracketPopover(): React.JSX.Element | null {
   const document = useAppStore((state) => state.assembly);
   const names = useMemo(() => new Map(document?.components.map((component): readonly [string, string] => [component.id, component.name]) ?? []),
     [document]);
+  const root = useRef<HTMLFormElement>(null);
+  const first = useRef<HTMLSelectElement>(null);
+  // 開いた時は最初の欄へ、閉じた時は開いた元(接合チェックの「留める」・「組む」のメニューの釦)へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, draft !== null, { initial: () => first.current });
   if (draft === null) return null;
   const swapping = draft.swapRecordId !== null;
   const title = t(swapping ? 'assembly.jointBracket.swapTitle' : 'assembly.jointBracket.title');
   const ready = frameJointBracketReady(preview);
   return (
-    <form className="pcad-popover pcad-popover--frame-slot" role="dialog" aria-label={title} data-testid="frame-joint-bracket"
-      onSubmit={(event) => { event.preventDefault(); useAppStore.getState().commitJointBracket(); }}>
+    <form ref={root} className="pcad-popover pcad-popover--frame-slot" role="dialog" aria-label={title} data-testid="frame-joint-bracket"
+      onSubmit={(event) => { event.preventDefault(); useAppStore.getState().commitJointBracket(); }}
+      onKeyDown={(event) => {
+        // Esc で閉じる(ほかの組立の窓と同じ。字の変換を確定する Esc では閉じない)。
+        if (event.key !== 'Escape' || isCompositionKey(event.nativeEvent)) return;
+        event.preventDefault(); event.stopPropagation(); useAppStore.getState().cancelJointBracket();
+      }}>
       <strong className="pcad-popover__title">{title}</strong>
       <p role="status">{t(swapping ? 'assembly.jointBracket.swapPrompt' : 'assembly.jointBracket.prompt')}</p>
       <div className="pcad-popover__fields">
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.jointBracket.nominal')}</span>
-          <select className="pcad-field__input" value={draft.choices.nominal ?? ''} title={t('assembly.jointBracket.nominalGuide')}
+          <select ref={first} className="pcad-field__input" value={draft.choices.nominal ?? ''} title={t('assembly.jointBracket.nominalGuide')}
             onChange={(event) => { useAppStore.getState().updateJointBracketDraft({ choices: { ...draft.choices,
               nominal: event.currentTarget.value === '' ? null : event.currentTarget.value } }); }}>
             <option value="">{t('assembly.jointBracket.nominalDefault')}</option>

@@ -155,6 +155,7 @@
     "tutorial.spec.ts",
     "unsaved-reload.spec.ts",
     "usability-keyboard.spec.ts",
+    "view-controls-stage3.spec.ts",
     "viewcube.spec.ts",
     "weld-layer-browser.spec.ts",
     "weld-span-author.spec.ts",
@@ -258,7 +259,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "0ae73d3f773b7e6babe55ac497964f70bc63e043a99161a001956fc1b0f6a126",
+  "configSha256": "af5df04452971407d4132a33af6754355783ab01a8d3bdb0323508422f9506d3",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
@@ -445,7 +446,7 @@
       "file": "camera-controls-presets.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "8d49231ae1979fe3083b3b52daadd8043a0de71431cbace02c83984160945e28"
+      "sha256": "294c39ab25b14d11b5bd162538f053c29d67f1e65f3bfc4ed37a11397263f19f"
     },
     {
       "file": "camera-controls-settings.spec.ts",
@@ -757,7 +758,7 @@
       "file": "electron-camera-controls-presets.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
-      "sha256": "cf3182cb12b4ec5c6d9d96a8c39a152f425508d8ea79d75e422521e3b842827f"
+      "sha256": "e34add24f481c3a68b62a89cd4cc32611fb41b3fa4924c91bdfa43e2c908377c"
     },
     {
       "file": "electron-camera-controls-settings.spec.ts",
@@ -2228,6 +2229,18 @@
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
       "sha256": "9e8f55c22f058ee7bb4f8465a4f6eeaac01ab70e65400354d5c198e153436095"
+    },
+    {
+      "file": "view-controls-pen.spec.ts",
+      "category": "chromium-cdp-input",
+      "reason": "pen input is dispatched only through Chromium CDP Input.dispatchMouseEvent (pointerType pen); Firefox has no CDP pen input. The keyboard, file and drag checks of B-09 3-6 run in Firefox through view-controls-stage3.spec.ts",
+      "sha256": "53bd51e7427599560a1bf2c2b543db6cf6560e22b25d062fe9f62604371f0c1b"
+    },
+    {
+      "file": "view-controls-stage3.spec.ts",
+      "category": "firefox-project",
+      "reason": "Playwright --list selects a Firefox project",
+      "sha256": "38d5634cb62651ccd902e2d73056db23482c703f03bf77e7e61baa09b53fc3a5"
     },
     {
       "file": "viewcube.spec.ts",

@@ -1,16 +1,19 @@
 /**
- * 管用テーパねじ(JIS B 0203:1999。テーパおねじ R、テーパめねじ Rc、平行めねじ Rp)の基準寸法(mm)。ガス管の継手(K-28)のねじの呼びと、
- * ねじ穴の簡略形状(基準径の位置の谷の径の円柱)、管の端の差し込みの長さ(基準の長さ a)に使う。山は作らない。
+ * 管用ねじの基準寸法(mm): 管用テーパねじ(JIS B 0203:1999。テーパおねじ R、テーパめねじ Rc、平行めねじ Rp)と管用平行ねじ(JIS B 0202。G)。
+ * ガス管の継手(K-28)のねじの呼びと、ねじ穴・おねじの簡略形状(基準径の位置の谷の径・外径の円柱)、管の端の差し込みの長さ(テーパねじの
+ * 基準の長さ a)に使う。山は作らない。
  *
  * 出どころ(資料の番号・URL・発行元は担当の資料の記録だけに置く。製品には JIS の番号と版の年だけ):
- * - 呼び 1/16〜1 1/2: 2 つの公開の資料の JIS B 0203 の表で、全部の欄が一致した値。
- * - 呼び 2〜6: 基準径(外径)・ねじ山数・基準の長さ a は 2 つの公開の資料で一致した値。有効径・谷の径は規格の式(h = 0.640327P、
+ * - テーパねじの呼び 1/16〜1 1/2: 2 つの公開の資料の JIS B 0203 の表で、全部の欄が一致した値。
+ * - テーパねじの呼び 2〜6: 基準径(外径)・ねじ山数・基準の長さ a は 2 つの公開の資料で一致した値。有効径・谷の径は規格の式(h = 0.640327P、
  *   d2 = d − h、d1 = d − 2h)で外径とピッチから 1 つに決まる値で、表の値とも一致する。
+ * - 平行ねじの呼び 1/8〜6(23 の呼び): JIS B 0202 の表の抜粋の 2 つの公開の資料(1999 年の版と 1982 年の版。23 の呼びの値は同じ)で、
+ *   全部の欄が一致した値。G1/16 は 1 つの資料にしか無いので入れない。平行ねじには基準の長さが無い(null)。
  * - ピッチは 25.4 ÷ ねじ山数(表の参考の値と同じ 4 桁)。照らす側の値は catalog/families/pipeFittingOracle.fixture.json。
  */
 
-interface PipeTaperThread {
-  /** 呼び(ねじの記号 R・Rc・Rp を除いた部分。例: '1/2'、'1 1/4')。 */
+interface PipeThread {
+  /** 呼び(ねじの記号 R・Rc・Rp・G を除いた部分。例: '1/2'、'1 1/4')。 */
   readonly size: string;
   /** ねじ山数(25.4 mm につき)。 */
   readonly threadsPerInch: number;
@@ -18,18 +21,19 @@ interface PipeTaperThread {
   /** 山の高さ h と丸み r。 */
   readonly height: number;
   readonly roundness: number;
-  /** 基準径の位置の外径 d(めねじの谷の径 D)・有効径 d2・谷の径 d1(めねじの内径 D1)。 */
+  /** 外径 d(めねじの谷の径 D)・有効径 d2・谷の径 d1(めねじの内径 D1)。テーパねじは基準径の位置の値。 */
   readonly majorDiameter: number;
   readonly pitchDiameter: number;
   readonly minorDiameter: number;
-  /** 管端からの基準径の位置までの基準の長さ a。 */
-  readonly gaugeLength: number;
+  /** テーパねじの管端からの基準径の位置までの基準の長さ a。平行ねじは null。 */
+  readonly gaugeLength: number | null;
 }
 
-type Row = readonly [string, number, number, number, number, number, number, number, number];
+/** [呼び, 山数, ピッチ, 山の高さ, 丸み, 外径, 有効径, 谷の径, 基準の長さ(平行ねじは null)]。 */
+type Row = readonly [string, number, number, number, number, number, number, number, number | null];
 
-/** [呼び, 山数, ピッチ, 山の高さ, 丸み, 外径, 有効径, 谷の径, 基準の長さ]。 */
-const ROWS: readonly Row[] = [
+/** テーパねじ。 */
+const TAPER_ROWS: readonly Row[] = [
   ['1/16', 28, 0.9071, 0.581, 0.12, 7.723, 7.142, 6.561, 3.97],
   ['1/8', 28, 0.9071, 0.581, 0.12, 9.728, 9.147, 8.566, 3.97],
   ['1/4', 19, 1.3368, 0.856, 0.18, 13.157, 12.301, 11.445, 6.01],
@@ -47,11 +51,39 @@ const ROWS: readonly Row[] = [
   ['6', 11, 2.3091, 1.479, 0.32, 163.83, 162.351, 160.872, 28.58],
 ];
 
-const PIPE_TAPER_THREADS: readonly PipeTaperThread[] = ROWS.map(
-  ([size, threadsPerInch, pitch, height, roundness, majorDiameter, pitchDiameter, minorDiameter, gaugeLength]) =>
-    ({ size, threadsPerInch, pitch, height, roundness, majorDiameter, pitchDiameter, minorDiameter, gaugeLength }));
+/** 平行ねじ(基準の長さは無い)。 */
+const PARALLEL_ROWS: readonly Row[] = [
+  ['1/8', 28, 0.9071, 0.581, 0.12, 9.728, 9.147, 8.566, null],
+  ['1/4', 19, 1.3368, 0.856, 0.18, 13.157, 12.301, 11.445, null],
+  ['3/8', 19, 1.3368, 0.856, 0.18, 16.662, 15.806, 14.95, null],
+  ['1/2', 14, 1.8143, 1.162, 0.25, 20.955, 19.793, 18.631, null],
+  ['5/8', 14, 1.8143, 1.162, 0.25, 22.911, 21.749, 20.587, null],
+  ['3/4', 14, 1.8143, 1.162, 0.25, 26.441, 25.279, 24.117, null],
+  ['7/8', 14, 1.8143, 1.162, 0.25, 30.201, 29.039, 27.877, null],
+  ['1', 11, 2.3091, 1.479, 0.32, 33.249, 31.77, 30.291, null],
+  ['1 1/8', 11, 2.3091, 1.479, 0.32, 37.897, 36.418, 34.939, null],
+  ['1 1/4', 11, 2.3091, 1.479, 0.32, 41.91, 40.431, 38.952, null],
+  ['1 1/2', 11, 2.3091, 1.479, 0.32, 47.803, 46.324, 44.845, null],
+  ['1 3/4', 11, 2.3091, 1.479, 0.32, 53.746, 52.267, 50.788, null],
+  ['2', 11, 2.3091, 1.479, 0.32, 59.614, 58.135, 56.656, null],
+  ['2 1/4', 11, 2.3091, 1.479, 0.32, 65.71, 64.231, 62.752, null],
+  ['2 1/2', 11, 2.3091, 1.479, 0.32, 75.184, 73.705, 72.226, null],
+  ['2 3/4', 11, 2.3091, 1.479, 0.32, 81.534, 80.055, 78.576, null],
+  ['3', 11, 2.3091, 1.479, 0.32, 87.884, 86.405, 84.926, null],
+  ['3 1/2', 11, 2.3091, 1.479, 0.32, 100.33, 98.851, 97.372, null],
+  ['4', 11, 2.3091, 1.479, 0.32, 113.03, 111.551, 110.072, null],
+  ['4 1/2', 11, 2.3091, 1.479, 0.32, 125.73, 124.251, 122.772, null],
+  ['5', 11, 2.3091, 1.479, 0.32, 138.43, 136.951, 135.472, null],
+  ['5 1/2', 11, 2.3091, 1.479, 0.32, 151.13, 149.651, 148.172, null],
+  ['6', 11, 2.3091, 1.479, 0.32, 163.83, 162.351, 160.872, null],
+];
 
-/** 呼び(記号を除いた部分)の管用テーパねじ。表に無い呼びは undefined。 */
-export function findPipeTaperThread(size: string): PipeTaperThread | undefined {
-  return PIPE_TAPER_THREADS.find((thread) => thread.size === size);
+const toThread = ([size, threadsPerInch, pitch, height, roundness, majorDiameter, pitchDiameter, minorDiameter, gaugeLength]: Row): PipeThread =>
+  ({ size, threadsPerInch, pitch, height, roundness, majorDiameter, pitchDiameter, minorDiameter, gaugeLength });
+
+const PIPE_THREADS = { taper: TAPER_ROWS.map(toThread), parallel: PARALLEL_ROWS.map(toThread) } as const;
+
+/** 種類(テーパねじ・平行ねじ)と呼び(記号を除いた部分)の管用ねじ。表に無い呼びは undefined。 */
+export function findPipeThread(standard: 'taper' | 'parallel', size: string): PipeThread | undefined {
+  return PIPE_THREADS[standard].find((thread) => thread.size === size);
 }

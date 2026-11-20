@@ -35,8 +35,8 @@ describe('other-CAD camera presets through the actual binding resolver', () => {
     expect(value.bindings).toEqual(DEFAULT_VIEW_CONTROLS.bindings);
   });
 
-  it('SolidWorks-like: middle rotates, Ctrl+middle pans, Shift+middle and the wheel zoom', () => {
-    const value = withViewControlPreset(custom, 'solidworks');
+  it('middleOrbit: middle rotates, Ctrl+middle pans, Shift+middle and the wheel zoom', () => {
+    const value = withViewControlPreset(custom, 'middleOrbit');
     expect(drag(value, 'middle')).toBe('orbit');
     expect(drag(value, 'middle', { ctrl: true })).toBe('pan');
     expect(drag(value, 'middle', { shift: true })).toBe('zoom');
@@ -44,16 +44,16 @@ describe('other-CAD camera presets through the actual binding resolver', () => {
     expect(drag(value, 'right')).toBeNull();
   });
 
-  it('Fusion-like: Shift+middle rotates, middle pans, the wheel zooms', () => {
-    const value = withViewControlPreset(custom, 'fusion');
+  it('middlePan: Shift+middle rotates, middle pans, the wheel zooms', () => {
+    const value = withViewControlPreset(custom, 'middlePan');
     expect(drag(value, 'middle', { shift: true })).toBe('orbit');
     expect(drag(value, 'middle')).toBe('pan');
     expect(wheel(value)).toBe(true);
     expect(wheel(value, true)).toBe(false);
   });
 
-  it('Onshape-like: right rotates, middle and Ctrl+right pan, the wheel zooms', () => {
-    const value = withViewControlPreset(custom, 'onshape');
+  it('rightOrbit: right rotates, middle and Ctrl+right pan, the wheel zooms', () => {
+    const value = withViewControlPreset(custom, 'rightOrbit');
     expect(drag(value, 'right')).toBe('orbit');
     expect(drag(value, 'right', { ctrl: true })).toBe('pan');
     expect(drag(value, 'middle')).toBe('pan');
@@ -69,7 +69,7 @@ describe('other-CAD camera presets through the actual binding resolver', () => {
 
   it('does not change the settings it was given', () => {
     const before = JSON.stringify(custom);
-    withViewControlPreset(custom, 'onshape');
+    withViewControlPreset(custom, 'rightOrbit');
     expect(JSON.stringify(custom)).toBe(before);
   });
 });

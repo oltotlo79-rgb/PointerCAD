@@ -16,15 +16,15 @@ const presets = [
     orbit: [['middle', false, false, false, false], ['left', true, false, false, false]],
     pan: [['right', false, false, false, false], ['middle', false, true, false, false]],
     zoom: [['wheel', false, false, false, false], ['wheel', false, false, true, false]] },
-  { name: 'solidworks',
+  { name: 'middleOrbit',
     orbit: [['middle', false, false, false, false]],
     pan: [['middle', false, false, true, false]],
     zoom: [['wheel', false, false, false, false], ['middle', false, true, false, false]] },
-  { name: 'fusion',
+  { name: 'middlePan',
     orbit: [['middle', false, true, false, false]],
     pan: [['middle', false, false, false, false]],
     zoom: [['wheel', false, false, false, false]] },
-  { name: 'onshape',
+  { name: 'rightOrbit',
     orbit: [['right', false, false, false, false]],
     pan: [['middle', false, false, false, false], ['right', false, false, true, false]],
     zoom: [['wheel', false, false, false, false]] },
@@ -212,7 +212,7 @@ async function actualGesture(page: Page, info: TestInfo, item: typeof presets[nu
 
 /** One independent preset per case; preserve each adjacent transition through real UI. */
 export async function cameraControlsPresetsFlow(page: Page, info: TestInfo, app?: ElectronApplication,
-  presetName: CameraControlsPresetName = 'onshape') {
+  presetName: CameraControlsPresetName = 'rightOrbit') {
   const item = presets.find(candidate => candidate.name === presetName);
   if (item === undefined) throw new Error('Preset absent from independent table');
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -278,9 +278,9 @@ export async function cameraControlsPresetsFlow(page: Page, info: TestInfo, app?
     expect(await savePart(page, info, 'presets-model-redone.pcad', app)).toEqual(original);
   }
   for (const name of ['orbit', 'pan', 'zoom'] as const) await actualGesture(page, info, item, name, 0, app);
-  // Keep the old Onshape Ctrl+right/middle pan coverage; include SolidWorks drag zoom.
-  if (item.name === 'onshape') await actualGesture(page, info, item, 'pan', 1, app);
-  if (item.name === 'solidworks') await actualGesture(page, info, item, 'zoom', 1, app);
+  // Keep the old right-orbit Ctrl+right/middle pan coverage; include the middle-orbit drag zoom.
+  if (item.name === 'rightOrbit') await actualGesture(page, info, item, 'pan', 1, app);
+  if (item.name === 'middleOrbit') await actualGesture(page, info, item, 'zoom', 1, app);
   saved = await savePart(page, info, `preset-${item.name}-complete.pcad`, app); expectDocument(saved, original);
   await info.attach(`preset-${item.name}-settings`, { body: JSON.stringify({ expected: expectedSettings(item), stored: configured, documentId: saved.id }), contentType: 'application/json' });
   await page.reload(); await waitForStartupHealth(page, info);
@@ -304,8 +304,8 @@ export async function cameraControlsPresetRestoredFlow(page: Page, info: TestInf
   await expect(button(page, 'apply')).toBeDisabled(); await close(page);
   await reopen(page, info, configured.fileName, app);
   expect(await savePart(page, info, 'preset-restart-document.pcad', app)).toEqual(configured.document);
-  await actualGesture(page, info, item, item.name === 'onshape' ? 'pan' : 'orbit', item.name === 'onshape' ? 1 : 0, app, 'restart');
-  if (item.name !== 'onshape') return;
+  await actualGesture(page, info, item, item.name === 'rightOrbit' ? 'pan' : 'orbit', item.name === 'rightOrbit' ? 1 : 0, app, 'restart');
+  if (item.name !== 'rightOrbit') return;
   await open(page); await preset(page, 'pointercad').click(); await expectPreset(page, presets[0]);
   await button(page, 'apply').click(); await close(page);
   await home(page); const before = await rememberCamera(page, info, 'pointercad-restored-home', app);

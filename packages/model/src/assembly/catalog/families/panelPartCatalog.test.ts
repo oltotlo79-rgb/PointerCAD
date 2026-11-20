@@ -19,6 +19,7 @@ import { catalogItemNominalMass, createCatalogItemSource } from '../source.js';
 import type { CatalogItemRow } from '../types.js';
 import { ACCESSORY_BOX_RECORDS } from './accessoryBoxRows.js';
 import { CAP_FOOT_BOX_RECORDS } from './capFootBoxRows.js';
+import { CAP_FOOT_LOCK_RECORDS } from './capFootLockRows.js';
 import { CONNECTOR_BOX_RECORDS } from './connectorBoxRows.js';
 import { CONNECTOR_BOX_SERIES_RECORDS } from './connectorBoxSeriesRows.js';
 import { MOVABLE_PART_BOX_RECORDS } from './movablePartBoxRows.js';
@@ -31,6 +32,8 @@ const MARK = '外形を包む形で、細部は作っていない';
 const MOVABLE_MARK = '動く仕組みは作っていない';
 /** コネクタの族の行(はじめの章の表に系列の章の表を続ける)。 */
 const CONNECTOR_RECORDS = [...CONNECTOR_BOX_RECORDS, ...CONNECTOR_BOX_SERIES_RECORDS];
+/** キャップと足の部品の族の行(21 回目の表に足回りのロックの表を続ける)。 */
+const CAP_FOOT_RECORDS = [...CAP_FOOT_BOX_RECORDS, ...CAP_FOOT_LOCK_RECORDS];
 const DENSITY: Readonly<Record<string, number>> = { aluminum: 2.68, stainless: 7.93, steel: 7.85 };
 const length = (value: number): Readonly<Record<string, string>> => ({ length: String(value) });
 
@@ -57,12 +60,14 @@ describe('資料 2 のパネル扉の部品・パネル用のフレーム・コ�
     expect(PANEL_COVER_FRAME_FAMILY.rows.map((row) => [row.key, row.size]))
       .toEqual(PANEL_COVER_FRAME_RECORDS.map((record) => [record.key, record.size]));
     expect(CONNECTOR_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(CONNECTOR_RECORDS.map((record) => [record.key, record.size]));
-    expect(CAP_FOOT_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(CAP_FOOT_BOX_RECORDS.map((record) => [record.key, record.size]));
+    // キャップと足の部品の族は、21 回目の行の後に足回りのロックの行(39h)を続ける。
+    expect(CAP_FOOT_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(CAP_FOOT_RECORDS.map((record) => [record.key, record.size]));
     expect(MOVABLE_PART_BOX_FAMILY.rows.map((row) => [row.key, row.size]))
       .toEqual(MOVABLE_PART_BOX_RECORDS.map((record) => [record.key, record.size]));
     expect(ACCESSORY_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(ACCESSORY_BOX_RECORDS.map((record) => [record.key, record.size]));
     expect([PANEL_PART_RECORDS.length, PANEL_COVER_FRAME_RECORDS.length, CONNECTOR_BOX_RECORDS.length, CONNECTOR_BOX_SERIES_RECORDS.length,
-      CAP_FOOT_BOX_RECORDS.length, MOVABLE_PART_BOX_RECORDS.length, ACCESSORY_BOX_RECORDS.length]).toEqual([7, 9, 47, 27, 7, 12, 5]);
+      CAP_FOOT_BOX_RECORDS.length, CAP_FOOT_LOCK_RECORDS.length, MOVABLE_PART_BOX_RECORDS.length, ACCESSORY_BOX_RECORDS.length])
+      .toEqual([7, 9, 47, 27, 7, 1, 12, 5]);
     // コネクタの族は 2 つの章の表を合わせて 74 行で、鍵は重ならない(同じ鍵の行は道具が除いた)。
     expect(CONNECTOR_BOX_FAMILY.rows).toHaveLength(74);
     expect(new Set(CONNECTOR_BOX_FAMILY.rows.map((row) => row.key)).size).toBe(74);
@@ -84,7 +89,7 @@ describe('資料 2 のパネル扉の部品・パネル用のフレーム・コ�
 
   it('部品とコネクタは幅 × 奥行 × 高さの箱で、体積は 3 つの積、質量は資料の 1 個の値。材料が 1 つの行は箱 × 密度より軽く、部位ごとに材料の違う行は密度を持たない', () => {
     for (const [family, records] of [[PANEL_PART_BOX_FAMILY, PANEL_PART_RECORDS], [CONNECTOR_BOX_FAMILY, CONNECTOR_RECORDS],
-      [CAP_FOOT_BOX_FAMILY, CAP_FOOT_BOX_RECORDS], [MOVABLE_PART_BOX_FAMILY, MOVABLE_PART_BOX_RECORDS],
+      [CAP_FOOT_BOX_FAMILY, CAP_FOOT_RECORDS], [MOVABLE_PART_BOX_FAMILY, MOVABLE_PART_BOX_RECORDS],
       [ACCESSORY_BOX_FAMILY, ACCESSORY_BOX_RECORDS]] as const) {
       for (const record of records) {
         const row = family.rows.find((candidate) => candidate.key === record.key);

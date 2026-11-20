@@ -22,8 +22,8 @@ import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
  * The curve, its provenance, its mean-stress assumption and the sequence/repeats semantics are those of the existing
  * scalar path: the converted input goes through validateFatigueInput/analyzeFatigue unchanged, so their refusal codes
  * and paths are kept. Not a non-proportional, critical-plane, weld or bolt method, not a code check or certification.
- * Method references (paraphrased in the task handoff): Ansys Mechanical 2024 R2 fatigue options (signed von Mises,
- * proportional history loading) and Altair HyperLife 2023.1 stress-life approach (explicit S-N convention).
+ * Method: the signed von Mises equivalent stress for proportional history loading, then the stress-life (S-N)
+ * approach with an explicit S-N convention.
  */
 import { analyzeFatigue } from './fatigue.js';
 import { FATIGUE_INPUT_SCHEMA, MAX_FATIGUE_HISTORIES, MAX_FATIGUE_HISTORY_POINTS, MAX_FATIGUE_STRESS_MPA, validateFatigueInput,

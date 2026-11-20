@@ -28,7 +28,9 @@ type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChann
   | 'flatPlate' | 'shapedPlate' | 'angleBracketCatalog' | 'footBase' | 'adjuster' | 'pipeFrame' | 'pipeFrameSlotted' | 'pipeFrameTwin'
   | 'smallFrame' | 'smallFrameCap' | 'bracketStock' | 'pipeFrameCap' | 'pipeFrameFoot'
   | 'jointBar' | 'tSlotStud' | 'knurledNut' | 'panelBoardFixed' | 'panelBoardOrder' | 'panelPartBox' | 'panelCoverFrame' | 'connectorBox' | 'capFootBox' | 'caster'
-  | 'movableBox' | 'accessoryBox' | 'pipeElbow' | 'pipeTee' | 'pipeSocket' | 'blockBracket';
+  | 'movableBox' | 'accessoryBox' | 'pipeElbow' | 'pipeTee' | 'pipeSocket' | 'pipeCap' | 'pipePlug' | 'pipeNipple' | 'pipeBushing' | 'pipeFlange' | 'blockBracket'
+  | 'sliderBox' | 'capAccessoryBox' | 'footPartBox' | 'slotLongPart'
+  | 'doorPartBox';
 
 /**
  * 族の options の 1 つの鍵の指定。**鍵の名前は保存されるので、版の中で変えない。**

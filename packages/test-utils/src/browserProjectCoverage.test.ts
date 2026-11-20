@@ -159,7 +159,7 @@ describe('確認済みブラウザー検査の名簿', () => {
     const config = read('e2e/playwright.config.ts');
     const pattern = firefoxPattern(config);
     const startup = startupFirefoxPattern(config);
-    expect(baseline['firefox-project']).toHaveLength(161);
+    expect(baseline['firefox-project']).toHaveLength(162);
     expect(baseline['firefox-added']).toHaveLength(49);
     expect(textSha256(config)).toBe(baseline.configSha256);
     for (const name of baseline['firefox-added']) {

@@ -12,8 +12,8 @@
 .pcad-help::backdrop { background: rgb(0 0 0 / 45%); }
 .pcad-help[open] { display: flex; flex-direction: column; }
 .pcad-help__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--pcad-border); }
-.pcad-help__header h2 { margin: 0; font-size: 16px; }
-.pcad-help__volume h3 { margin: 18px 0 6px; font-size: 13px; }
+.pcad-help__header h2 { margin: 0; font-size: calc(var(--pcad-font-size) * 16 / 13); }
+.pcad-help__volume h3 { margin: 18px 0 6px; font-size: var(--pcad-font-size); }
 .pcad-help__history { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .pcad-help__adjacent { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--pcad-border); }
 .pcad-help__adjacent button { max-width: 48%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
@@ -27,12 +27,12 @@
 .pcad-help__article { min-width: 0; padding: 16px 24px; overflow: auto; line-height: 1.8; overflow-wrap: anywhere; }
 .pcad-help__article > :first-child { margin-top: 0; }
 .pcad-help__image { display: block; width: 100%; height: auto; margin-block: 12px; border: 1px solid var(--pcad-border); border-radius: 4px; }
-.pcad-help__article h1 { font-size: 24px; }
-.pcad-help__article h2 { font-size: 20px; }
-.pcad-help__article h3 { font-size: 17px; }
+.pcad-help__article h1 { font-size: calc(var(--pcad-font-size) * 24 / 13); }
+.pcad-help__article h2 { font-size: calc(var(--pcad-font-size) * 20 / 13); }
+.pcad-help__article h3 { font-size: calc(var(--pcad-font-size) * 17 / 13); }
 .pcad-help__article li p { margin: 4px 0; }
 .pcad-help__article code, .pcad-help__article pre { font-family: var(--pcad-font); }
-.pcad-help__article code { padding: 1px 4px; background: var(--pcad-bg); font-size: 0.95em; }
+.pcad-help__article code { padding: 1px 4px; background: var(--pcad-bg); font-size: max(var(--pcad-font-size-small), 0.95em); }
 .pcad-help__article pre { padding: 12px; overflow-x: auto; background: var(--pcad-bg); }
 .pcad-help__article pre code { padding: 0; }
 .pcad-help__article blockquote { margin-inline: 0; padding-left: 12px; border-left: 3px solid var(--pcad-border); }

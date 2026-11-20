@@ -1178,5 +1178,17 @@
   "assembly.accessory.previewBoltSpring": "頭側とナット側の平座金・ばね座金・六角ナット（締め付ける厚さ {grip} mm）",
   "assembly.accessory.setBearingShaftRings": "軸用 C 形止め輪",
   "assembly.accessory.setBearingBoreRings": "穴用 C 形止め輪",
-  "assembly.accessory.issueNoMatchingRing": "この軸受に合う C 形止め輪がありません。付属の部品を外してください。"
+  "assembly.accessory.issueNoMatchingRing": "この軸受に合う C 形止め輪がありません。付属の部品を外してください。",
+  "assembly.accessory.setPipeEndFittings": "管の端の継手",
+  "assembly.accessory.pipeReferenceGuide": "全長は、線の端をエルボ・チーズの中心、ソケットの真ん中、キャップとフランジの外の面にした長さで、管を継手の分だけ短くします。管の長さは、管の長さのままで、継手が外へ出ます。",
+  "assembly.accessory.pipeReferenceOverall": "全長（継手を含む）",
+  "assembly.accessory.pipeReferenceMember": "管の長さ",
+  "assembly.accessory.pipeItem": "継手の種類",
+  "assembly.accessory.pipeItemGuide": "管の呼び径に合うねじ込み式管継手（JIS B 2301）と鋼製管フランジ（JIS B 2220）から選びます。",
+  "assembly.accessory.pipePreview": "管 {length} mm・{name} {count} 個",
+  "assembly.accessory.pipePreviewNoLength": "{name} {count} 個",
+  "assembly.accessory.pipePreviewLayout": "{name} を、何にも会わない端と、突き当てで通した部材の端に付けます。",
+  "assembly.accessory.turn": "枝の向き",
+  "assembly.accessory.turnGuide": "エルボ・チーズの、管の軸のまわりの枝の向きです（90° ずつ）。",
+  "assembly.accessory.issueNoMatchingFitting": "この管に合う継手がありません。付属の部品を外してください。"
 }

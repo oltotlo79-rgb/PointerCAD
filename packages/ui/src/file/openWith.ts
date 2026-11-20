@@ -13,12 +13,6 @@ export const CAM_TOOL_URLS: Readonly<Record<CamTool, string>> = {
 const CAM_HELP_URLS: readonly string[] = [
   'https://docs.grid.space/kiri-moto/interface/',
   'https://help.prusa3d.com/article/first-print-with-prusaslicer-2-9_1753',
-  'https://www.freecad.org/features.php',
-  'https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/CAM_Profile.md',
-  'https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/CAM_Post.md',
-  'https://www.autodesk.com/solutions/free-cam-software',
-  'https://help.autodesk.com/view/fusion360/ENU/?guid=MFG-CREATE-SETUP',
-  'https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-BEC5DEA9-AC3E-4FA8-998E-4AE8CD0D0B1E',
 ];
 export function isAllowedCamUrl(url: string): boolean {
   return Object.values(CAM_TOOL_URLS).includes(url) || CAM_HELP_URLS.includes(url);

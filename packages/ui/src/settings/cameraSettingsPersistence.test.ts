@@ -23,7 +23,7 @@ const fixtures = [
 ] as const;
 const TUNING = { orbitSensitivity: 1.7, panSensitivity: 0.3, wheelSensitivity: 3.2, zoomDragSensitivity: 0.6,
   invertWheel: true, invertZoomDrag: true, invertOrbitX: false, invertOrbitY: true } as const;
-const presets: readonly CameraControlPreset[] = ['pointercad', 'solidworks', 'fusion', 'onshape'];
+const presets: readonly CameraControlPreset[] = ['pointercad', 'middleOrbit', 'middlePan', 'rightOrbit'];
 
 describe('EX-10.PERSIST terminal settings', () => {
   for (const fixture of fixtures) {

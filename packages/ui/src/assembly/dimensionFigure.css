@@ -6,7 +6,7 @@
 .pcad-dimension-figure__svg { display: block; max-width: 100%; height: auto; color: var(--pcad-text); }
 .pcad-dimension-figure__outline { fill: none; stroke: currentColor; stroke-width: 1.25; stroke-linejoin: round; }
 .pcad-dimension-figure__dimension { fill: none; stroke: var(--pcad-text-muted); stroke-width: 1; }
-.pcad-dimension-figure__value { fill: var(--pcad-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.pcad-dimension-figure__value { fill: var(--pcad-text-muted); font-size: var(--pcad-font-size-small); font-variant-numeric: tabular-nums; }
 
 .pcad-dimension-figure__table { border-collapse: collapse; font-size: var(--pcad-font-size-small); }
 .pcad-dimension-figure__table caption { text-align: left; color: var(--pcad-text-muted); }

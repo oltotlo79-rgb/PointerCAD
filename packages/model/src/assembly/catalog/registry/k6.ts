@@ -103,6 +103,21 @@ export const K6_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
   // 資料 2 のアクセサリ(外形を包む形。統括の指示 2026-11-18 21:45)。
   { id: 'accessory-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.accessoryBox',
     load: async () => (await import('../families/panelPartCatalog.js')).ACCESSORY_BOX_FAMILY },
+  // 資料 1 の溝に付ける部品(外形を包む形。統括の決定 2026-11-19 15:5x の 1)。
+  { id: 'slider-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.sliderBox',
+    load: async () => (await import('../families/smallPartBoxCatalog.js')).SLIDER_BOX_FAMILY },
+  // 資料 1 のキャップの付属(外形を包む形。統括の決定 2026-11-19 15:5x の 1)。
+  { id: 'cap-accessory-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.capAccessoryBox',
+    load: async () => (await import('../families/smallPartBoxCatalog.js')).CAP_ACCESSORY_BOX_FAMILY },
+  // 資料 1 の足回りの部品(外形を包む形。統括の決定 2026-11-19 15:5x の 1)。
+  { id: 'foot-part-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.footPartBox',
+    load: async () => (await import('../families/smallPartBoxCatalog.js')).FOOT_PART_BOX_FAMILY },
+  // 資料 1 の溝とパネルの長物(断面の外形を包む長方形 × 長さ。統括の決定 2026-11-19 15:5x の 3)。
+  { id: 'slot-long-part', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.slotLongPart',
+    load: async () => (await import('../families/smallPartBoxCatalog.js')).SLOT_LONG_PART_FAMILY },
+  // 資料 1 の扉の部品(外形を包む形。統括の決定 2026-11-19 15:5x の 1・2026-11-20 02:2x の判断 3)。
+  { id: 'door-part-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.doorPartBox',
+    load: async () => (await import('../families/smallPartBoxCatalog.js')).DOOR_PART_BOX_FAMILY },
   // 資料 1・2 のキャスター(取付けの板かねじ・簡略の箱のフォーク・車輪の円柱。利用者の回答 2026-11-18 15:5x の (1))。
   { id: 't-slot-caster', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.caster',
     load: async () => (await import('../families/casterCatalog.js')).CASTER_FAMILY },

@@ -32,24 +32,24 @@
 
 「{{ui:settings.camera.title}}」では、「{{ui:settings.camera.orbit}}」「{{ui:settings.camera.pan}}」「{{ui:settings.camera.zoom}}」のそれぞれに、割当を1つか2つ指定できます。欄は「割当 1」と「割当 2」の2つで、3つ目はありません。各欄で「{{ui:settings.camera.left}}」「{{ui:settings.camera.middle}}」「{{ui:settings.camera.right}}」「{{ui:settings.camera.wheel}}」のどれかを選び、Alt・Shift・Ctrl・「{{ui:settings.camera.meta}}」のチェックで修飾キーの組合せを指定します。使わない欄は「{{ui:settings.camera.none}}」にできますが、各操作に少なくとも1つの割当が必要です。
 
-最初の割当と、他のCADに近づけた割当は次の表のとおりです。「{{ui:settings.camera.presets}}」の4つのボタンを押すと、押したボタンと同じ名前の3行の割当が入力欄に入ります。入れ替わるのは割当だけで、感度と反転は変わりません。「{{ui:settings.camera.preset.pointercad}}」が最初の割当です。
+最初の割当と、ほかの3つの雛形の割当は次の表のとおりです。「{{ui:settings.camera.presets}}」の4つのボタンを押すと、押したボタンと同じ名前の3行の割当が入力欄に入ります。入れ替わるのは割当だけで、感度と反転は変わりません。「{{ui:settings.camera.preset.pointercad}}」が最初の割当です。
 
 | 画面のボタン | 操作 | 割当 1 | 割当 2 |
 |---|---|---|---|
 | {{ui:settings.camera.preset.pointercad}} | {{ui:settings.camera.orbit}} | {{ui:settings.camera.middle}} | Alt＋{{ui:settings.camera.left}} |
 | {{ui:settings.camera.preset.pointercad}} | {{ui:settings.camera.pan}} | {{ui:settings.camera.right}} | Shift＋{{ui:settings.camera.middle}} |
 | {{ui:settings.camera.preset.pointercad}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | Ctrl＋{{ui:settings.camera.wheel}} |
-| {{ui:settings.camera.preset.solidworks}} | {{ui:settings.camera.orbit}} | {{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
-| {{ui:settings.camera.preset.solidworks}} | {{ui:settings.camera.pan}} | Ctrl＋{{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
-| {{ui:settings.camera.preset.solidworks}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | Shift＋{{ui:settings.camera.middle}} |
-| {{ui:settings.camera.preset.fusion}} | {{ui:settings.camera.orbit}} | Shift＋{{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
-| {{ui:settings.camera.preset.fusion}} | {{ui:settings.camera.pan}} | {{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
-| {{ui:settings.camera.preset.fusion}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | {{ui:settings.camera.none}} |
-| {{ui:settings.camera.preset.onshape}} | {{ui:settings.camera.orbit}} | {{ui:settings.camera.right}} | {{ui:settings.camera.none}} |
-| {{ui:settings.camera.preset.onshape}} | {{ui:settings.camera.pan}} | {{ui:settings.camera.middle}} | Ctrl＋{{ui:settings.camera.right}} |
-| {{ui:settings.camera.preset.onshape}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.middleOrbit}} | {{ui:settings.camera.orbit}} | {{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.middleOrbit}} | {{ui:settings.camera.pan}} | Ctrl＋{{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.middleOrbit}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | Shift＋{{ui:settings.camera.middle}} |
+| {{ui:settings.camera.preset.middlePan}} | {{ui:settings.camera.orbit}} | Shift＋{{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.middlePan}} | {{ui:settings.camera.pan}} | {{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.middlePan}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.rightOrbit}} | {{ui:settings.camera.orbit}} | {{ui:settings.camera.right}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.rightOrbit}} | {{ui:settings.camera.pan}} | {{ui:settings.camera.middle}} | Ctrl＋{{ui:settings.camera.right}} |
+| {{ui:settings.camera.preset.rightOrbit}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | {{ui:settings.camera.none}} |
 
-他のCADの名前がついた3つの割当は、そのCADの主なマウス操作に近づけたもので、キーボード操作や回転の中心など、そのCADの動きをすべて再現するものではありません。3Dの拡大・縮小は画面の中心を基準に行い、マウスの位置へ寄っていく動きはしません。ボタンで入れた割当は「{{ui:settings.camera.apply}}」を押すまで保存されません。保存されるのは割当で、どのボタンから入れたかは残りません。
+3Dの拡大・縮小は画面の中心を基準に行い、マウスの位置へ寄っていく動きはしません。ボタンで入れた割当は「{{ui:settings.camera.apply}}」を押すまで保存されません。保存されるのは割当で、どのボタンから入れたかは残りません。
 
 修飾キーは、指定したものだけを押したときに一致します。たとえばAlt＋{{ui:settings.camera.left}}の割当にShiftも押すと一致しません。以前のAlt＋Shift＋{{ui:settings.camera.left}}による平行移動は、最初の割当に含まれません。使う場合は「{{ui:settings.camera.pan}}」のどちらかの欄をその組合せへ変更してください。割当にない修飾キー付きホイールは、視点を拡大・縮小しません。
 

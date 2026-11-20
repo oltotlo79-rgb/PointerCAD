@@ -113,14 +113,15 @@ describe('資料 1 の平らな L 形のアングルブラケットの立つ脚�
   });
 
   it('付属品・突起だけが違う本体の行は、もとの行と同じ形(脚・高さは 2 本目の読みの全体の記入と合う)で、質量は資料の値、印を 1 つ足す', () => {
-    expect(VARIANT_RECORDS.length).toBe(3);
+    expect(VARIANT_RECORDS.length).toBe(4);
     for (const record of VARIANT_RECORDS) {
       const row = FIXTURE.find((item) => item.key === record.key);
       const base = ANGLE_BRACKET_RECORDS.find((item) => item.key === row?.baseKey);
       if (row === undefined || base === undefined) throw new Error(`もとの行が無い: ${record.key}`);
       const overall = callouts(row.dimensions);
-      expect([one(overall, (a, b) => a.includes('寝た脚') && b.includes('立つ脚') && b.includes('外面')),
-        one(overall, (a, b) => a.includes('寝た脚') && b.includes('立つ脚上端'))], record.key).toEqual([base.legA, base.legB]);
+      // 脚は「寝た脚 …〜立つ脚の外面(背面)」、高さは「寝た脚 …〜立つ脚の上端」(9 回目と 38 回目の 2 本目の書き方の両方)。
+      expect([one(overall, (a, b) => a.includes('寝た脚') && b.includes('立つ脚') && (b.includes('外面') || b.includes('背面'))),
+        one(overall, (a, b) => a.includes('寝た脚') && b.includes('立つ脚') && b.includes('上端'))], record.key).toEqual([base.legA, base.legB]);
       expect({ ...record, key: base.key, size: base.size, page: base.page, massG: base.massG, simplified: base.simplified }, record.key).toEqual(base);
       expect(record.key.startsWith(`${base.key}-`) && record.size.startsWith(base.size.slice(0, base.size.indexOf('）'))), record.key).toBe(true);
       expect([record.massG, record.page, record.simplified], record.key).toEqual([Number(row.mass.replace(/[^0-9.]/gu, '')), Number(row.page),

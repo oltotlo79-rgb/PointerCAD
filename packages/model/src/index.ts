@@ -1259,11 +1259,12 @@ export {
 } from './assembly/frame/frameJointBrackets.js';
 export type { FrameJointRecord } from './assembly/frame/frameJointRecord.js';
 export {
-  ACCESSORY_SET_IDS, accessoryCandidates, accessoryCandidatesForPart, applyAccessorySet,
+  ACCESSORY_SET_IDS, accessoryCandidates, accessoryCandidatesForPart, accessoryCandidatesForSource, applyAccessorySet,
   type AccessoryCandidate, type AccessoryChoices, type AccessoryRefusal,
 } from './assembly/accessories/accessorySets.js';
 export { applyBoltAccessorySet, defaultBoltGrip, planBoltAccessories, type BoltAccessoryRefusal } from './assembly/accessories/boltAccessorySet.js';
 export { BEARING_RING_FAMILY_IDS, bearingRingCandidates } from './assembly/accessories/bearingRingSet.js';
+export { PIPE_END_FITTING_FAMILY_IDS } from './assembly/accessories/pipeEndFittings.js';
 export { accessoryIdsOf, accessoryIssues, mergeAccessorySets, splitAccessorySets, syncAccessorySets } from './assembly/accessories/accessorySync.js';
 export type { AccessoryEndReference, AccessoryEnds, AccessoryRole, AccessorySetId, AccessorySetRecord } from './assembly/accessories/accessoryRecord.js';
 export type { FrameCornerRule, FrameLine, FrameMembersResult } from './assembly/frame/frameMembers.js';

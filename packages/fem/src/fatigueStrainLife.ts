@@ -7,8 +7,8 @@ import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
  * Relation (Basquin elastic term + Coffin-Manson plastic term, optional Morrow mean-stress correction of the elastic term):
  *   epsilon_a = (sigma_f' - sigma_m) / E * (2 N_f) ** b + epsilon_f' * (2 N_f) ** c        ('none': sigma_m omitted)
  * N_f is cycles and 2 N_f reversals; strains are dimensionless; E and stresses are MPa (= N/mm2); b, c < 0.
- * Primary formula/convention: Altair OptiStruct uniaxial fatigue, Strain-Life section,
- * https://help.altair.com/hwsolvers/os/topics/solvers/os/analysis_fatigue_uniaxial_r.htm
+ * Primary formula/convention: the uniaxial strain-life relation (Basquin and Coffin-Manson terms) with the optional
+ * Morrow mean-stress correction of the elastic term, as written above.
  * Every coefficient, its condition and its calibrated life interval are explicit user inputs: no material property
  * (SS400, S45C or any other) is built in or inferred, and no life outside the calibrated interval is reported.
  * The input must be a local total (elastic + plastic) strain amplitude; an elastic equivalent stress divided by E is

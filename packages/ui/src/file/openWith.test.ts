@@ -5,7 +5,7 @@ describe('保存済みファイルの形式に合う加工先だけを案内す�
   it('加工手順の全Webリンクは固定許可表にあり、余分な情報を足したURLは拒否する', async () => {
     const markdown = await HELP_LOADERS['cam']();
     const urls = [...markdown.matchAll(/\]\((https:[^)]+)\)/gu)].map((match) => match[1]);
-    expect(urls.length).toBeGreaterThanOrEqual(8);
+    expect(urls.length).toBeGreaterThanOrEqual(3);
     for (const url of urls) {
       expect(isAllowedCamUrl(url), url).toBe(true);
       expect(isAllowedCamUrl(`${url}#part-data`)).toBe(false);

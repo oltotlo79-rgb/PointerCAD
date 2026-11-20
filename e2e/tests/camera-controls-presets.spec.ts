@@ -22,12 +22,12 @@ async function runPreset(page: Page, info: TestInfo,
   expect(errors).toEqual([]);
 }
 
-// Keep the original identity and its Onshape -> PointerCAD restoration path.
+// Keep the original identity and its right-orbit -> PointerCAD restoration path.
 test('EX10 視点操作のプリセット・入力の誤りの伝え方・実操作とreload復元', async ({ page }, info) => {
-  await runPreset(page, info, 'onshape');
+  await runPreset(page, info, 'rightOrbit');
 });
 
-for (const presetName of ['pointercad', 'solidworks', 'fusion'] as const) {
+for (const presetName of ['pointercad', 'middleOrbit', 'middlePan'] as const) {
   test(`EX10 視点操作のプリセット ${presetName}・実操作とreload復元`, async ({ page }, info) => {
     await runPreset(page, info, presetName);
   });

@@ -1,0 +1,83 @@
+/**
+ * 生成物(手で直さない): 資料 1 の小さい部品の行(外形を包む形)(統括の決定 2026-11-19 15:5x の 1)。担当の道具 make_book1_box_rows.py が、
+ * 39 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `smallPartBoxOracle.fixture.json`。製造元の名前・型番・品名は書かない。
+ */
+import type { PanelPartRecord } from './panelPartCatalog.js';
+
+export const DOOR_PART_BOX_RECORDS: readonly PanelPartRecord[] = [
+  { key: 'handle-110x12x32-resin-brass', size: '取手 110×12×32（外形を包む形・樹脂・黄銅）', page: 278, kind: '取手', material: 'mixed', materialText: '樹脂・黄銅',
+    width: 110, depth: 12, height: 32, massG: 19, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'handle-112.5x21x36-resin', size: '取手 112.5×21×36（外形を包む形・樹脂）', page: 278, kind: '取手', material: 'mixed', materialText: '樹脂', width: 112.5,
+    depth: 21, height: 36, massG: 30, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'handle-115x15x30-zdc-resin', size: '取手 115×15×30（外形を包む形・亜鉛ダイカスト・樹脂）', page: 279, kind: '取手', material: 'mixed',
+    materialText: '亜鉛ダイカスト・樹脂', width: 115, depth: 15, height: 30, massG: 95, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'inner-handle-119x15x60-sus', size: '内に付ける取手 119×15×60（外形を包む形・ステンレス）', page: 279, kind: '内に付ける取手', material: 'stainless', width: 119,
+    depth: 15, height: 60, massG: 52, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-bracket-51x15x25-al', size: '磁石のキャッチのブラケット 51×15×25（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 51, depth: 15, height: 25, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-bracket-51x20x15-al', size: '磁石のキャッチのブラケット 51×20×15（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 51, depth: 20, height: 15, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-bracket-51x25x25-al', size: '磁石のキャッチのブラケット 51×25×25（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 51, depth: 25, height: 25, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-bracket-51x30x20-al', size: '磁石のキャッチのブラケット 51×30×20（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 51, depth: 30, height: 20, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-bracket-51x35x13-al', size: '磁石のキャッチのブラケット 51×35×13（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 51, depth: 35, height: 13, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-bracket-51x37x20-al', size: '磁石のキャッチのブラケット 51×37×20（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 51, depth: 37, height: 20, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-bracket-51x40x25-al', size: '磁石のキャッチのブラケット 51×40×25（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 51, depth: 40, height: 25, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-bracket-78x50x3-al', size: '磁石のキャッチのブラケット 78×50×3（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 78, depth: 50, height: 3, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'resin-catch-bracket-50x15x20-al', size: '樹脂のキャッチのブラケット 50×15×20（外形を包む形・アルミ）', page: 294, kind: '樹脂のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 50, depth: 15, height: 20, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'resin-catch-bracket-75x23x25-al', size: '樹脂のキャッチのブラケット 75×23×25（外形を包む形・アルミ）', page: 294, kind: '樹脂のキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 75, depth: 23, height: 25, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'ball-catch-bracket-50x20x15-fe', size: 'ボールのキャッチのブラケット 50×20×15（外形を包む形・鉄）', page: 297, kind: 'ボールのキャッチのブラケット', material: 'steel',
+    materialText: '鉄', width: 50, depth: 20, height: 15, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'ball-catch-bracket-50x40x20-al', size: 'ボールのキャッチのブラケット 50×40×20（外形を包む形・アルミ）', page: 297, kind: 'ボールのキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 50, depth: 40, height: 20, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'ball-catch-bracket-50x40x25-al', size: 'ボールのキャッチのブラケット 50×40×25（外形を包む形・アルミ）', page: 297, kind: 'ボールのキャッチのブラケット', material: 'aluminum',
+    materialText: 'アルミ', width: 50, depth: 40, height: 25, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+];
+
+export const SLIDER_BOX_RECORDS: readonly PanelPartRecord[] = [
+  { key: 'slot-slider-24x40x11.8-resin', size: '溝を滑るスライダ 24×40×11.8（外形を包む形・樹脂）', page: 157, kind: '溝を滑るスライダ', material: 'mixed', materialText: '樹脂',
+    width: 24, depth: 40, height: 11.8, massG: 6, simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'slot-assist-100x23x30-al', size: '溝の補助具 100×23×30（外形を包む形・アルミ）', page: 253, kind: '溝の補助具', material: 'aluminum', width: 100, depth: 23,
+    height: 30, massG: 48, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'slot-assist-55x23x30-al', size: '溝の補助具 55×23×30（外形を包む形・アルミ）', page: 253, kind: '溝の補助具', material: 'aluminum', width: 55, depth: 23,
+    height: 30, massG: 26, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'slot-slider-34x46x14.8-resin', size: '溝を滑るスライダ 34×46×14.8（外形を包む形・樹脂）', page: 253, kind: '溝を滑るスライダ', material: 'mixed', materialText: '樹脂',
+    width: 34, depth: 46, height: 14.8, massG: 12.7, simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+];
+
+export const CAP_ACCESSORY_BOX_RECORDS: readonly PanelPartRecord[] = [
+  { key: 'l-bracket-spacer-12x28x1.5-sus', size: 'L 形のブラケットのスペーサ 12×28×1.5（外形を包む形・ステンレス）', page: 50, kind: 'L 形のブラケットのスペーサ', material: 'stainless',
+    width: 12, depth: 28, height: 1.5, massG: 3, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'l-bracket-spacer-20x28x2-sus', size: 'L 形のブラケットのスペーサ 20×28×2（外形を包む形・ステンレス）', page: 114, kind: 'L 形のブラケットのスペーサ', material: 'stainless',
+    width: 20, depth: 28, height: 2, massG: 7, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'l-bracket-cap-19x31x29-resin', size: 'L 形のブラケットのキャップ 19×31×29（外形を包む形・樹脂）', page: 156, kind: 'L 形のブラケットのキャップ', material: 'mixed',
+    materialText: '樹脂', width: 19, depth: 31, height: 29, massG: 2.1, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'l-bracket-spacer-30x43x2.5-sus', size: 'L 形のブラケットのスペーサ 30×43×2.5（外形を包む形・ステンレス）', page: 204, kind: 'L 形のブラケットのスペーサ', material: 'stainless',
+    width: 30, depth: 43, height: 2.5, massG: 21, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'l-bracket-cap-29x46.5x44-resin', size: 'L 形のブラケットのキャップ 29×46.5×44（外形を包む形・樹脂）', page: 251, kind: 'L 形のブラケットのキャップ', material: 'mixed',
+    materialText: '樹脂', width: 29, depth: 46.5, height: 44, massG: 6.1, simplified: ['外形を包む形で、細部は作っていない'] },
+];
+
+export const FOOT_PART_BOX_RECORDS: readonly PanelPartRecord[] = [
+  { key: 'adjuster-bracket-30x51x51-al', size: 'アジャスターを付けるブラケット 30×51×51（外形を包む形・アルミ）', page: 151, kind: 'アジャスターを付けるブラケット', material: 'aluminum',
+    width: 30, depth: 51, height: 51, massG: 80, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'adjuster-bracket-71x37x59-al', size: 'アジャスターを付けるブラケット 71×37×59（外形を包む形・アルミ）', page: 151, kind: 'アジャスターを付けるブラケット', material: 'aluminum',
+    width: 71, depth: 37, height: 59, massG: 187, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'anchor-bracket-59x60x59-al', size: '床留めのブラケット 59×60×59（外形を包む形・アルミ）', page: 155, kind: '床留めのブラケット', material: 'aluminum', width: 59,
+    depth: 60, height: 59, massG: 180, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'adjuster-bracket-71x37x79-al', size: 'アジャスターを付けるブラケット 71×37×79（外形を包む形・アルミ）', page: 246, kind: 'アジャスターを付けるブラケット', material: 'aluminum',
+    width: 71, depth: 37, height: 79, massG: 248, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'adjuster-bracket-71x37x89-al', size: 'アジャスターを付けるブラケット 71×37×89（外形を包む形・アルミ）', page: 246, kind: 'アジャスターを付けるブラケット', material: 'aluminum',
+    width: 71, depth: 37, height: 89, massG: 280, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'anchor-bracket-79x65x79-al', size: '床留めのブラケット 79×65×79（外形を包む形・アルミ）', page: 250, kind: '床留めのブラケット', material: 'aluminum', width: 79,
+    depth: 65, height: 79, massG: 342, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'anchor-bracket-89x65x89-al', size: '床留めのブラケット 89×65×89（外形を包む形・アルミ）', page: 250, kind: '床留めのブラケット', material: 'aluminum', width: 89,
+    depth: 65, height: 89, massG: 420, simplified: ['外形を包む形で、細部は作っていない'] },
+];

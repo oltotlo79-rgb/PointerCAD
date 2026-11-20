@@ -53,8 +53,8 @@ function isTouchGesture(input: SlotInput): input is ViewTouchGesture {
 }
 const MODIFIERS = ['alt', 'shift', 'ctrl', 'meta'] as const;
 const PRESET_KEYS: Record<ViewControlPreset, MessageKey> = {
-  pointercad: 'settings.camera.preset.pointercad', solidworks: 'settings.camera.preset.solidworks',
-  fusion: 'settings.camera.preset.fusion', onshape: 'settings.camera.preset.onshape', touchpad: 'settings.camera.preset.touchpad',
+  pointercad: 'settings.camera.preset.pointercad', middleOrbit: 'settings.camera.preset.middleOrbit',
+  middlePan: 'settings.camera.preset.middlePan', rightOrbit: 'settings.camera.preset.rightOrbit', touchpad: 'settings.camera.preset.touchpad',
   keyboard: 'settings.camera.preset.keyboard', touchscreen: 'settings.camera.preset.touchscreen',
 };
 /** 4 つまで(viewControlSettings.ts の too-many と同じ数)。 */

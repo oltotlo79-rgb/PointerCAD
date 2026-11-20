@@ -59,7 +59,7 @@
   display: block;
   min-height: calc(52px * var(--pcad-scale));
   max-width: 100%;
-  font-size: calc(19px * var(--pcad-scale));
+  font-size: calc(var(--pcad-font-size) * 19 / 13);
   border: 1px solid var(--pcad-control-border);
   border-radius: var(--pcad-radius-small);
   padding: calc(6px * var(--pcad-scale));
@@ -71,7 +71,7 @@
    modal dialog and be unreachable. */
 .pcad-math-editor math-field::part(virtual-keyboard-toggle) { display: none; }
 .pcad-math-editor__hint,
-.pcad-math-editor__meaning { color: var(--pcad-text-muted); font-size: .9em; overflow-wrap: anywhere; }
+.pcad-math-editor__meaning { color: var(--pcad-text-muted); font-size: max(var(--pcad-font-size-small), 0.9em); overflow-wrap: anywhere; }
 .pcad-math-editor__hint { margin: 0; }
 .pcad-math-editor__symbols { display: grid; gap: calc(6px * var(--pcad-scale)); }
 .pcad-math-editor__symbols fieldset { min-width: 0; border: 1px solid var(--pcad-border); padding: calc(6px * var(--pcad-scale)); }

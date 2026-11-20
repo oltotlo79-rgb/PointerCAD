@@ -22,7 +22,7 @@ describe('camera settings presets and named binding rows', () => {
     // 29: B-09 3-3 の「何も無い所からの左ドラッグで回す」のチェックが 1 つ増えた(CameraControlSettingsForm.test.tsx と同じ数)。
     expect(markup.match(/type="checkbox"/g)).toHaveLength(29);
     expect(markup).toContain(`role="group" aria-label="${t('settings.camera.presets')}"`);
-    for (const key of ['pointercad', 'solidworks', 'fusion', 'onshape'] as const) {
+    for (const key of ['pointercad', 'middleOrbit', 'middlePan', 'rightOrbit'] as const) {
       expect(markup).toContain(`>${t(`settings.camera.preset.${key}`)}</button>`);
     }
     expect(markup).toContain(t('settings.camera.presetHint'));
@@ -45,7 +45,7 @@ describe('camera settings presets and named binding rows', () => {
 
   it('renders a saved preset as the current bindings', () => {
     const state = useAppStore.getState();
-    state.setDisplaySettings({ ...state.displaySettings, viewControls: withViewControlPreset(DEFAULT_VIEW_CONTROLS, 'onshape') });
+    state.setDisplaySettings({ ...state.displaySettings, viewControls: withViewControlPreset(DEFAULT_VIEW_CONTROLS, 'rightOrbit') });
     const markup = renderForm();
     const values = [...markup.matchAll(/<option value="([a-z]+)" selected="">/g)].map(match => match[1]);
     // orbit: right, none; pan: middle, right(+Ctrl); zoom: wheel, none. Then the rotation and zoom centers (B-08d), which a

@@ -5,6 +5,8 @@
  * カタログに車輪の幅の記入が無い行は、fixture の「1 つの資料の車輪の幅」(製造元が公開している一覧の数)を使い、その一覧の車輪の径が
  * カタログの径と同じ事も確かめる。双輪は一覧の全体の幅と両輪の内側の間から 1 輪の幅とすき間を戻す。同じ寸法で材質の違う行は
  * 鍵の後ろに材質の語が付く(中身の照らしは同じ)。差込みの行は、取付けの文と、全体の高さの基準が座の上の面である事を確かめる。
+ * 頁の注「(青文字)は、…の寸法です」に名のある型番の行(fixture の印「頁の注で括弧の数はこの行の値」。統括の決定 2026-11-19 23:2x の 2)だけ、
+ * 括弧の数をその行の値として読む。
  */
 import { readFileSync } from 'node:fs';
 
@@ -28,6 +30,8 @@ function readFixture(): readonly FixtureRow[] {
 }
 
 const FIXTURE = readFixture();
+/** 頁の注「(青文字)は、…の寸法です」に名のある型番の行の印(資料 1 の PDF 332・資料 2 の PDF 107 の静音の自在・止め付き φ75 だけ)。 */
+const LEGEND_MARK = '頁の注で括弧の数はこの行の値';
 
 /** 記号の意味の文から寸法の種類(担当の道具と同じ決まりを、この検査が自分で持つ)。 */
 function symbolKind(text: string): string | null {
@@ -80,7 +84,10 @@ function readValues(cells: Cells): ReadonlyMap<string, number | string> {
   }
   const values = new Map<string, number | string>();
   const bySymbol = new Set<string>();
-  for (const item of (cells['型番ごとの寸法'] ?? '').split(';')) {
+  // 頁の注の決まりの行だけ、括弧(青字)の数を数として読む。
+  const sizes = cells[LEGEND_MARK] === 'はい' ? (cells['型番ごとの寸法'] ?? '').replace(/\(([0-9]+(?:\.[0-9]+)?)\)/gu, '$1')
+    : cells['型番ごとの寸法'] ?? '';
+  for (const item of sizes.split(';')) {
     const [key, raw] = item.split(':');
     if (key === undefined || raw === undefined) continue;
     const kind = symbols.has(key) ? symbols.get(key) ?? null : wordKind(key);
@@ -105,6 +112,10 @@ describe('キャスターの製品の行と照らす側の読み', () => {
     expect(FIXTURE.map((row) => row.key)).toEqual(CASTER_RECORDS.map((record) => record.key));
     // 型番の形(英字 2〜4 の後に数字が続く型番も含む)を持たない。
     for (const row of FIXTURE) expect(JSON.stringify(row.cells), row.key).not.toMatch(/[A-Z]{2,4}[0-9]{0,3}-[0-9A-Z]{2,}/u);
+    // 頁の注の決まりの行は 1 行だけで、頁は資料 1 の 332(資料 2 の 107 は同じ値の行にまとめた)。括弧の数を読まないと板の厚さが無い。
+    const legend = FIXTURE.filter((row) => row.cells[LEGEND_MARK] === 'はい');
+    expect(legend.map((row) => [row.key, row.cells['資料'], row.cells['PDF頁'], /\([0-9.]+\)/u.test(row.cells['型番ごとの寸法'] ?? '')]))
+      .toEqual([['plate-swivel-brake-d75-w27-h95-e32-p70x58', '1', '332', true]]);
   });
 
   it('車輪の径・幅・偏り・全体の高さ・取付けの形・自在と止め・材質と質量・頁が照らす側の読みと合う', () => {

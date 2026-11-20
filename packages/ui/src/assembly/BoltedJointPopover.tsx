@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { addAllBoltedJointSameHoles, type BoltedJointSameHolesResult } from '../store/boltedJointSameHoles.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -184,6 +185,7 @@ export function BoltedJointPopover(): React.JSX.Element | null {
   // 入れ子の葉を選んだ締結は選んだものが入れ子の下書きにある(平らな picks は空)ので、その数で案内する。
   const nested = useAppStore((state) => state.assemblyNestedBoltDraft);
   const nestedRefusal = nestedBoltedJointRefusalKey(useAppStore((state) => state.assemblyNestedBoltPreview));
+  const root = useRef<HTMLFormElement>(null);
   const first = useRef<HTMLSelectElement>(null);
   const composing = useRef(false);
   const compositionKey = useRef(false);
@@ -191,8 +193,9 @@ export function BoltedJointPopover(): React.JSX.Element | null {
   useEffect(() => {
     composing.current = false;
     compositionKey.current = false;
-    if (open) first.current?.focus();
   }, [open]);
+  // 開いた時は最初の欄へ、閉じた時は開いた元(「組む」のメニューの釦など)へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, open, { initial: () => first.current });
   if (draft === null) return null;
   const store = useAppStore.getState;
   const ready = boltedJointPreviewReady(preview);
@@ -202,7 +205,7 @@ export function BoltedJointPopover(): React.JSX.Element | null {
   const editing = draft.editRecordId !== undefined;
   const title = t(editing ? 'assembly.boltedJoint.editTitle' : 'assembly.boltedJoint.title');
   return (
-    <form className="pcad-popover pcad-popover--bolted-joint" role="dialog" aria-label={title}
+    <form ref={root} className="pcad-popover pcad-popover--bolted-joint" role="dialog" aria-label={title}
       onCompositionStart={() => { composing.current = true; }}
       onCompositionEnd={() => { composing.current = false; }}
       onPointerDownCapture={() => { compositionKey.current = false; }}

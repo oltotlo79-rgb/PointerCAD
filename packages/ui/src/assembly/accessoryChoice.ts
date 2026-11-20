@@ -6,11 +6,13 @@
  * - 選んだ組と指定は、アプリを閉じるまで 1 つだけ覚える(設定にも文書にも持たない。最近使った物 K-07b と同じ)。
  * - 一括配置と一筆書きでは、端を利用者に選ばせず、端ごとに決める: 何にも会わない端と、突き当てで通した部材の端(相手の外の面まで出る)に付ける。
  *   当てる部材の端・留めの端・3 本以上が会う端・直角でない端には付けない。
+ * - 鋼材の配管用炭素鋼鋼管(SGP)には、鋼管の端の継手の組を出す(8 分類の窓の鋼材と、一括配置・一筆書きの鋼材の部材。K-28 束 3)。
+ *   継手の族の id と、エルボ・チーズの枝の向きを指定に持つ。
  */
 import { evaluateExpression } from '@pointercad/expression';
 import {
-  ACCESSORY_SET_IDS, accessoryCandidatesForPart, BEARING_RING_FAMILY_IDS, bearingRingCandidates, createCatalogItemSource, defaultBoltGrip,
-  PRODUCT_CATALOG_REGISTRY, type AccessoryCandidate,
+  ACCESSORY_SET_IDS, accessoryCandidatesForPart, accessoryCandidatesForSource, BEARING_RING_FAMILY_IDS, bearingRingCandidates,
+  createCatalogItemSource, defaultBoltGrip, PIPE_END_FITTING_FAMILY_IDS, PRODUCT_CATALOG_REGISTRY, type AccessoryCandidate,
   type AccessoryChoices, type AccessoryEndReference, type AccessoryEnds, type AccessorySetId, type CatalogRegistry, type ComponentSource,
   type FrameLine, type FrameMembersResult,
 } from '@pointercad/model';
@@ -42,7 +44,12 @@ export interface AccessorySelection {
   readonly gripText?: string;
   /** ボルトの組のばね座金の有無。 */
   readonly springWasher?: boolean;
+  /** 鋼管の端の継手のエルボ・チーズの枝の向き(管の軸のまわりの 90° の回しの数。無ければ 0)。 */
+  readonly turn?: AccessoryTurn;
 }
+
+/** エルボ・チーズの枝の向き(model の指定の型)。 */
+export type AccessoryTurn = NonNullable<AccessoryChoices['turn']>;
 
 const NO_ACCESSORY: AccessorySelection = { setId: null, ends: 'both', endReference: 'overall', itemKey: '' };
 
@@ -63,17 +70,27 @@ function bearingRingOptions(source: ComponentSource): readonly AccessoryOption[]
   });
 }
 
-/** 今の 8 分類の窓の組が使う族(深溝玉軸受は止め輪の族。窓が先に読み込む)。 */
-export function standardAccessoryFamilies(category: StandardPartCategory): readonly string[] {
-  return category === 'deepGrooveBallBearing' ? BEARING_RING_FAMILY_IDS : [];
+/** 鋼材の配管用炭素鋼鋼管(SGP)に当てはまる鋼管の端の継手の組(K-28 束 3)。鋼管でない・継手の族を読む前・合う行が無い時は空。 */
+function pipeFittingOptions(source: ComponentSource): readonly AccessoryOption[] {
+  const result = accessoryCandidatesForSource(source, 'pipe-end-fittings', PRODUCT_CATALOG_REGISTRY);
+  return result.ok ? [{ setId: 'pipe-end-fittings', candidates: result.value }] : [];
 }
 
-/** 今の 8 分類の窓の選んだ呼びに当てはまる組(六角ボルトは座金とナット、深溝玉軸受は止め輪。置く時と同じ道で保存の形を作る)。 */
+/** 今の 8 分類の窓の組が使う族(深溝玉軸受は止め輪の族、鋼材は鋼管の端の継手の族。窓が先に読み込む)。 */
+export function standardAccessoryFamilies(category: StandardPartCategory): readonly string[] {
+  return category === 'deepGrooveBallBearing' ? BEARING_RING_FAMILY_IDS : category === 'structuralSection' ? PIPE_END_FITTING_FAMILY_IDS : [];
+}
+
+/**
+ * 今の 8 分類の窓の選んだ呼びに当てはまる組(六角ボルトは座金とナット、深溝玉軸受は止め輪、鋼材の SGP の鋼管は端の継手。
+ * 置く時と同じ道で保存の形を作る)。
+ */
 export function standardAccessoryOptionsFor(category: StandardPartCategory, choiceKey: string, lengthSource: string,
   dimensionSeries: 'annexJA' | 'main', threadSeries: 'coarse' | 'fine'): readonly AccessoryOption[] {
-  if (category !== 'hexBolt' && category !== 'deepGrooveBallBearing') return [];
+  if (category !== 'hexBolt' && category !== 'deepGrooveBallBearing' && category !== 'structuralSection') return [];
   const committed = commitStandardPartChoice(category, choiceKey, lengthSource, dimensionSeries, threadSeries);
   if (!committed.ok) return [];
+  if (category === 'structuralSection') return pipeFittingOptions(committed.value.source);
   return category === 'hexBolt' ? boltAccessoryOptions(committed.value.source) : bearingRingOptions(committed.value.source);
 }
 
@@ -110,13 +127,28 @@ function accessoryOptionsFor(family: CatalogFamily | undefined, row: CatalogItem
   });
 }
 
+/** 今の本体で使える選択(覚えている組と行)。 */
+interface ActiveAccessory {
+  readonly setId: AccessorySetId;
+  readonly candidate: AccessoryCandidate;
+  readonly ends: AccessoryEnds;
+  readonly endReference: AccessoryEndReference;
+  readonly turn: AccessoryTurn;
+}
+
 /** 今の本体で使える選択(覚えている組が当てはまらない・行が候補に無い時は直す)。付けない時は null。 */
-export function effectiveAccessory(options: readonly AccessoryOption[], selection: AccessorySelection):
-{ readonly setId: AccessorySetId; readonly candidate: AccessoryCandidate; readonly ends: AccessoryEnds; readonly endReference: AccessoryEndReference } | null {
+export function effectiveAccessory(options: readonly AccessoryOption[], selection: AccessorySelection): ActiveAccessory | null {
   const option = options.find((item) => item.setId === selection.setId);
   const candidate = option?.candidates.find((item) => item.itemKey === selection.itemKey) ?? option?.candidates[0];
   return option === undefined || candidate === undefined ? null
-    : { setId: option.setId, candidate, ends: selection.ends, endReference: selection.endReference };
+    : { setId: option.setId, candidate, ends: selection.ends, endReference: selection.endReference, turn: selection.turn ?? 0 };
+}
+
+/** 店へ渡す指定(鋼管の端の継手は族の id と、エルボ・チーズの時だけ枝の向きも)。端は呼ぶ側が決める。 */
+function accessoryChoicesOf(active: ActiveAccessory, ends: AccessoryEnds): AccessoryChoices {
+  const base = { ends, endReference: active.endReference, itemKey: active.candidate.itemKey };
+  return active.setId !== 'pipe-end-fittings' ? base
+    : { ...base, familyId: active.candidate.familyId, ...(active.candidate.turnable === true ? { turn: active.turn } : {}) };
 }
 
 /** 選ぶ窓の族の行に出す欄の元: 当てはまる組と、本体の長さ(欄の値。無い欄は族の初めの値。読めなければ null)。 */
@@ -134,13 +166,15 @@ export function pickedAccessory(options: readonly AccessoryOption[]):
   const bolt = effectiveBoltAccessory(options, remembered);
   if (bolt !== null) return { setId: 'bolt-washer-nut', choices: { ends: 'both', endReference: 'member', itemKey: '', ...bolt } };
   const active = effectiveAccessory(options, remembered);
-  return active === null ? undefined
-    : { setId: active.setId, choices: { ends: active.ends, endReference: active.endReference, itemKey: active.candidate.itemKey } };
+  return active === null ? undefined : { setId: active.setId, choices: accessoryChoicesOf(active, active.ends) };
 }
 
-/** 一括配置・一筆書きの部材に当てはまる組(族の部材だけ。鋼材は今は組が無いので空)。 */
+/** 一括配置・一筆書きの部材に当てはまる組(族の部材は族の行で、鋼材の部材は長さ 1000 の保存の形で引く。SGP の鋼管には端の継手の組)。 */
 export function layoutAccessoryOptions(member: FrameMemberChoice): readonly AccessoryOption[] {
-  if (member.kind !== 'catalogItem') return [];
+  if (member.kind === 'steel') {
+    const probe = commitStandardPartChoice('structuralSection', member.choiceKey, '1000');
+    return probe.ok ? pipeFittingOptions(probe.value.source) : [];
+  }
   const family = PRODUCT_CATALOG_REGISTRY.loaded(member.familyId);
   return accessoryOptionsFor(family, family?.rows.find((row) => row.key === member.itemKey), member.values);
 }
@@ -148,7 +182,10 @@ export function layoutAccessoryOptions(member: FrameMemberChoice): readonly Acce
 /** 並べる時に店へ渡す付属(端は部材ごとに決めるので持たない)。 */
 export function layoutAccessory(member: FrameMemberChoice): FrameAccessoryRequest | undefined {
   const active = effectiveAccessory(layoutAccessoryOptions(member), remembered);
-  return active === null ? undefined : { setId: active.setId, endReference: active.endReference, itemKey: active.candidate.itemKey };
+  if (active === null) return undefined;
+  const choices = accessoryChoicesOf(active, 'both');
+  return { setId: active.setId, endReference: choices.endReference, itemKey: choices.itemKey,
+    ...(choices.familyId === undefined ? {} : { familyId: choices.familyId }), ...(choices.turn === undefined ? {} : { turn: choices.turn }) };
 }
 
 /** 予告の数: 付けた後の本体の長さ(全長の時は厚さ × 端の数だけ縮む)と付属の数。長さが読めない本体は長さ null。 */

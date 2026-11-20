@@ -1,12 +1,12 @@
 /**
  * 付属の組の画面の側(A2): 当てはまる組だけを出す事、覚えた選択を今の本体に合わせる事、予告の数、一括配置で付ける端の決め方。
  */
-import { planFrameMembers, PRODUCT_CATALOG_REGISTRY, type FrameCornerRule, type FrameLine } from '@pointercad/model';
+import { PIPE_END_FITTING_FAMILY_IDS, planFrameMembers, PRODUCT_CATALOG_REGISTRY, type FrameCornerRule, type FrameLine } from '@pointercad/model';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  accessoryPreview, effectiveAccessory, exposedEnds, familyAccessoryProps, layoutAccessory, pickedAccessory, rememberAccessory,
-  standardAccessoryFamilies, standardAccessoryOptionsFor,
+  accessoryPreview, effectiveAccessory, exposedEnds, familyAccessoryProps, layoutAccessory, layoutAccessoryOptions, pickedAccessory,
+  rememberAccessory, standardAccessoryFamilies, standardAccessoryOptionsFor,
 } from './accessoryChoice.js';
 
 const registry = PRODUCT_CATALOG_REGISTRY;
@@ -111,5 +111,39 @@ describe('軸受の C 形止め輪の組(A6)', () => {
     const options = standardAccessoryOptionsFor('deepGrooveBallBearing', 'deepGrooveBallBearing:JIS-B-1521:2012:6204', '', 'annexJA', 'coarse');
     rememberAccessory({ setId: 'bearing-bore-rings', ends: 'start', endReference: 'overall', itemKey: '' });
     expect(pickedAccessory(options)).toEqual({ setId: 'bearing-bore-rings', choices: { ends: 'start', endReference: 'overall', itemKey: '47' } });
+  });
+});
+
+describe('鋼管の端の継手の組(K-28 束 3)', () => {
+  beforeAll(async () => { await registry.ensure(PIPE_END_FITTING_FAMILY_IDS); });
+  const PIPE = 'steel:SGP:steelPipe:25A';
+
+  it('8 分類の窓の鋼材の SGP 25A には継手 6 つの組を出し、STK400 の鋼管と平鋼には出さない。鋼材の窓は継手の族を読み込む', () => {
+    expect(standardAccessoryOptionsFor('structuralSection', PIPE, '1000', 'annexJA', 'coarse')
+      .map((option) => [option.setId, option.candidates.map((item) => item.itemKey)]))
+      .toEqual([['pipe-end-fittings', ['socket-25A', 'elbow-25A', 'tee-25A', 'cap-25A', 'flange-5k-25A', 'flange-10k-25A']]]);
+    for (const key of ['steel:STK400:steelPipe:φ21.7×2.0', 'steel:SS400:flatBar:FB 50×6']) {
+      expect(standardAccessoryOptionsFor('structuralSection', key, '1000', 'annexJA', 'coarse')).toEqual([]);
+    }
+    expect(standardAccessoryFamilies('structuralSection')).toEqual(PIPE_END_FITTING_FAMILY_IDS);
+  });
+
+  it('置く時の付属は族の id を持ち、枝の向きはエルボ・チーズの時だけ持つ', () => {
+    const options = standardAccessoryOptionsFor('structuralSection', PIPE, '1000', 'annexJA', 'coarse');
+    rememberAccessory({ setId: 'pipe-end-fittings', ends: 'both', endReference: 'overall', itemKey: 'elbow-25A', turn: 3 });
+    expect(pickedAccessory(options)).toEqual({ setId: 'pipe-end-fittings', choices: { ends: 'both', endReference: 'overall', itemKey: 'elbow-25A',
+      familyId: 'pipe-fitting-elbow', turn: 3 } });
+    rememberAccessory({ setId: 'pipe-end-fittings', ends: 'end', endReference: 'member', itemKey: 'flange-10k-25A', turn: 3 });
+    expect(pickedAccessory(options)).toEqual({ setId: 'pipe-end-fittings', choices: { ends: 'end', endReference: 'member', itemKey: 'flange-10k-25A',
+      familyId: 'pipe-flange-10k' } });
+  });
+
+  it('一括配置・一筆書きの鋼材の SGP の部材にも組を出し、並べる時の付属は族の id と枝の向きを持つ', () => {
+    const member = { kind: 'steel', choiceKey: PIPE } as const;
+    expect(layoutAccessoryOptions(member).map((option) => option.setId)).toEqual(['pipe-end-fittings']);
+    expect(layoutAccessoryOptions({ kind: 'steel', choiceKey: 'steel:SS400:flatBar:FB 50×6' })).toEqual([]);
+    rememberAccessory({ setId: 'pipe-end-fittings', ends: 'both', endReference: 'overall', itemKey: 'tee-25A', turn: 1 });
+    expect(layoutAccessory(member)).toEqual({ setId: 'pipe-end-fittings', endReference: 'overall', itemKey: 'tee-25A', familyId: 'pipe-fitting-tee',
+      turn: 1 });
   });
 });

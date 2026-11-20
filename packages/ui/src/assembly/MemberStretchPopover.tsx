@@ -2,9 +2,11 @@
  * 伸縮(E-13)の窓(モーダルにしない。確定だけが文書を変える)。向き・面の位置・量を入れると、伸び縮みする部材の数と動く部品の数を予告し、
  * 断る時は理由と部品の数(部品の名前の初めの 3 つ)を出す。予告が通るまで確定を押せない。
  */
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
+import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { MEMBER_STRETCH_DIRECTIONS, memberStretchReady, type MemberStretchPreview } from './memberStretchDraft.js';
 
@@ -29,19 +31,28 @@ export function MemberStretchPopover(): React.JSX.Element | null {
   const document = useAppStore((state) => state.assembly);
   const names = useMemo(() => new Map(document?.components.map((component): readonly [string, string] => [component.id, component.name]) ?? []),
     [document]);
+  const root = useRef<HTMLFormElement>(null);
+  const first = useRef<HTMLSelectElement>(null);
+  // 開いた時は最初の欄(向き)へ、閉じた時は開いた元(「組む」のメニューの釦)へ焦点を戻す(C-03)。
+  useDialogFocus(() => root.current, draft !== null, { initial: () => first.current });
   if (draft === null) return null;
   const title = t('assembly.memberStretch.title');
   const ready = memberStretchReady(preview);
   const update = useAppStore.getState().updateMemberStretchDraft;
   return (
-    <form className="pcad-popover pcad-popover--frame-slot" role="dialog" aria-label={title} data-testid="member-stretch"
-      onSubmit={(event) => { event.preventDefault(); useAppStore.getState().commitMemberStretch(); }}>
+    <form ref={root} className="pcad-popover pcad-popover--frame-slot" role="dialog" aria-label={title} data-testid="member-stretch"
+      onSubmit={(event) => { event.preventDefault(); useAppStore.getState().commitMemberStretch(); }}
+      onKeyDown={(event) => {
+        // Esc で閉じる(ほかの組立の窓と同じ。字の変換を確定する Esc では閉じない)。
+        if (event.key !== 'Escape' || isCompositionKey(event.nativeEvent)) return;
+        event.preventDefault(); event.stopPropagation(); useAppStore.getState().cancelMemberStretch();
+      }}>
       <strong className="pcad-popover__title">{title}</strong>
       <p role="status">{t('assembly.memberStretch.prompt')}</p>
       <div className="pcad-popover__fields">
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.memberStretch.direction')}</span>
-          <select className="pcad-field__input" value={draft.direction} data-testid="member-stretch-direction"
+          <select ref={first} className="pcad-field__input" value={draft.direction} data-testid="member-stretch-direction"
             title={t('assembly.memberStretch.directionTooltip')}
             onChange={(event) => {
               const picked = MEMBER_STRETCH_DIRECTIONS.find((entry) => entry.direction === event.currentTarget.value);

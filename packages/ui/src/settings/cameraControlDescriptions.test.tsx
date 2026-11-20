@@ -74,8 +74,8 @@ describe('camera control settings descriptions', () => {
   it('describes each preset by its name and the apply, cancel and default buttons differently', () => {
     const buttons = controls(html()).filter(control => control.tag === 'button').map(control => control.title);
     expect(new Set(buttons).size).toBe(buttons.length);
-    for (const key of ['settings.camera.preset.pointercad', 'settings.camera.preset.solidworks', 'settings.camera.preset.fusion',
-      'settings.camera.preset.onshape', 'settings.camera.preset.touchpad'] as const) {
+    for (const key of ['settings.camera.preset.pointercad', 'settings.camera.preset.middleOrbit', 'settings.camera.preset.middlePan',
+      'settings.camera.preset.rightOrbit', 'settings.camera.preset.touchpad'] as const) {
       expect(buttons.filter(title => title.includes(t(key)))).toHaveLength(1);
     }
   });

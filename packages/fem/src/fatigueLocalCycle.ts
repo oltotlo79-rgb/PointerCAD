@@ -6,8 +6,8 @@ import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
  * stress extrema of the same stabilized cycle (measured or from an elastic-plastic analysis), with provenance:
  *   epsilon_a = (strainMax - strainMin) / 2,  sigma_m = (stressMax + stressMin) / 2,  sigma_max = stressMax.
  * A stress is never derived from a strain (no Hooke substitution) and never taken from an unrelated cycle.
- * Relations (Altair OptiStruct uniaxial fatigue, Mean Stress Correction,
- * https://help.altair.com/hwsolvers/os/topics/solvers/os/analysis_fatigue_uniaxial_r.htm):
+ * Relations (uniaxial strain-life with a mean-stress correction: Morrow on the elastic term, or the Smith-Watson-Topper
+ * parameter):
  *   Morrow: epsilon_a = (sigma_f' - sigma_m) / E * (2N)^b + epsilon_f' * (2N)^c          (requires sigma_m < sigma_f')
  *   SWT:    sigma_max * epsilon_a = sigma_f'^2 / E * (2N)^(2b) + sigma_f' * epsilon_f' * (2N)^(b + c)
  *                                                                                         (requires sigma_max > 0)

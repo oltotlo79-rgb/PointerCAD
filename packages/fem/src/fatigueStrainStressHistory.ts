@@ -4,8 +4,8 @@ import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
  * Paired strain/stress history slice of the low-cycle fatigue work (F1 remaining clause): a uniaxial local TOTAL strain
  * history whose every sample carries the local stress measured or computed AT THE SAME INSTANT, so that each rainflow
  * cycle has a mean stress taken from the actual stresses at its two strain reversals. Only then the existing Morrow
- * correction of the strain-life curve (fatigueStrainLife.ts, elastic term sigma_f' - sigma_m, primary source cited there:
- * Altair OptiStruct uniaxial fatigue, Strain-Life section) is applied per cycle; Miner's linear rule sums count / N_f.
+ * correction of the strain-life curve (fatigueStrainLife.ts, elastic term sigma_f' - sigma_m, relation stated there)
+ * is applied per cycle; Miner's linear rule sums count / N_f.
  * The strain-only history (fatigueStrainHistory.ts) is unchanged: it still assumes zero mean stress and refuses Morrow.
  *
  * What is NOT done: no stress is derived from strain (no cyclic stress-strain curve, Masing or Neuber/Glinka mapping),

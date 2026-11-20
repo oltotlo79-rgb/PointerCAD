@@ -33,16 +33,16 @@ export const DEFAULT_CAMERA_CONTROLS: CameraControlSettings = {
   zoom: [binding('wheel'), binding('wheel', false, false, true)],
   wheelSensitivity: 1, dragSensitivity: 1, invertWheel: false, invertDrag: false,
 };
-/** Mouse bindings modelled on other CAD tools (their main view-drag/wheel bindings only; keyboard shortcuts,
- * view-cube and spin-center behavior of those programs are not reproduced). Sensitivity and inversion are user
- * preferences and are kept when a preset is chosen. Every preset satisfies cameraSettingsError (tested). */
-export const CAMERA_CONTROL_PRESETS = ['pointercad', 'solidworks', 'fusion', 'onshape'] as const;
+/** Binding presets, named by what they assign (only the view-drag/wheel bindings are replaced). Sensitivity and
+ * inversion are user preferences and are kept when a preset is chosen. Every preset satisfies cameraSettingsError
+ * (tested). A preset only fills the draft: its id is never stored (settings keep the bindings themselves). */
+export const CAMERA_CONTROL_PRESETS = ['pointercad', 'middleOrbit', 'middlePan', 'rightOrbit'] as const;
 export type CameraControlPreset = typeof CAMERA_CONTROL_PRESETS[number];
 const PRESET_BINDINGS: Readonly<Record<CameraControlPreset, Pick<CameraControlSettings, CameraAction>>> = {
   pointercad: { orbit: DEFAULT_CAMERA_CONTROLS.orbit, pan: DEFAULT_CAMERA_CONTROLS.pan, zoom: DEFAULT_CAMERA_CONTROLS.zoom },
-  solidworks: { orbit: [binding('middle')], pan: [binding('middle', false, false, true)], zoom: [binding('wheel'), binding('middle', false, true)] },
-  fusion: { orbit: [binding('middle', false, true)], pan: [binding('middle')], zoom: [binding('wheel')] },
-  onshape: { orbit: [binding('right')], pan: [binding('middle'), binding('right', false, false, true)], zoom: [binding('wheel')] },
+  middleOrbit: { orbit: [binding('middle')], pan: [binding('middle', false, false, true)], zoom: [binding('wheel'), binding('middle', false, true)] },
+  middlePan: { orbit: [binding('middle', false, true)], pan: [binding('middle')], zoom: [binding('wheel')] },
+  rightOrbit: { orbit: [binding('right')], pan: [binding('middle'), binding('right', false, false, true)], zoom: [binding('wheel')] },
 };
 export function withCameraControlPreset(settings: CameraControlSettings, preset: CameraControlPreset): CameraControlSettings {
   const bindings = PRESET_BINDINGS[preset];

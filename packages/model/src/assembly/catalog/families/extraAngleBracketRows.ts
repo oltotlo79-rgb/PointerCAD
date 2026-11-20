@@ -30,4 +30,7 @@ export const EXTRA_ANGLE_BRACKET_RECORDS: readonly AngleBracketRecord[] = [
     material: 'aluminum', page: 210, ribbed: true, legA: 80, legB: 80, width: 30, thickness: 14, holeDiameter: 9, alongA: [70],
     acrossA: [15], alongB: [70], acrossB: [15], massG: 156,
     simplified: ['立つ脚の厚さは記入が無いので、寝た脚の厚さで作った', 'リブ', '回り止めの突起(寸法の意味が決まらないので形は作っていない)'] },
+  { key: 's8-51x51x20-t9-h2-rib-aluminum-sheet', size: 'L 形のブラケット（リブつきの形・摩擦シート付き） 溝幅 8 51×51×幅 20（厚さ 9・穴 2・φ7・アルミ）', slot: 8,
+    material: 'aluminum', page: 119, ribbed: true, legA: 51, legB: 51, width: 20, thickness: 9, holeDiameter: 7, alongA: [41],
+    acrossA: [10], alongB: [41], acrossB: [10], massG: 44, simplified: ['立つ脚の厚さは記入が無いので、寝た脚の厚さで作った', 'リブ', '摩擦シート(付属品。形は作っていない)'] },
 ];

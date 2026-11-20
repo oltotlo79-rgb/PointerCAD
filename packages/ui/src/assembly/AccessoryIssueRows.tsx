@@ -8,7 +8,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 
 const REASON_KEYS: Readonly<Record<string, MessageKey>> = {
   noMatchingCap: 'assembly.accessory.issueNoMatchingCap', ambiguousCap: 'assembly.accessory.issueAmbiguousCap',
-  noMatchingRing: 'assembly.accessory.issueNoMatchingRing',
+  noMatchingRing: 'assembly.accessory.issueNoMatchingRing', noMatchingFitting: 'assembly.accessory.issueNoMatchingFitting',
 };
 
 export function AccessoryIssueRows({ document, nameOf }: { readonly document: AssemblyDocument; readonly nameOf: (componentId: string) => string }):

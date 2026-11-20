@@ -185,8 +185,12 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
       't-slot-adjuster', 't-slot-block-bracket', 't-slot-joint-bar', 't-slot-stud', 't-slot-knurled-nut', 'pipe-frame', 'pipe-frame-slotted', 'pipe-frame-twin',
       't-slot-frame-small', 't-slot-frame-cap-small',
       'bracket-stock', 'pipe-frame-cap', 'pipe-frame-foot', 'panel-board-fixed', 'panel-board-order',
-      'panel-part-box', 'panel-cover-frame', 'connector-box', 'cap-foot-box', 'movable-part-box', 'accessory-box', 't-slot-caster',
-      'pipe-fitting-elbow', 'pipe-fitting-tee', 'pipe-fitting-socket']);
+      'panel-part-box', 'panel-cover-frame', 'connector-box', 'cap-foot-box', 'movable-part-box', 'accessory-box',
+      'slider-box', 'cap-accessory-box', 'foot-part-box', 'slot-long-part',
+      'door-part-box',
+      't-slot-caster',
+      'pipe-fitting-elbow', 'pipe-fitting-tee', 'pipe-fitting-socket', 'pipe-fitting-cap', 'pipe-fitting-plug', 'pipe-fitting-nipple',
+      'pipe-fitting-bushing', 'pipe-flange-5k', 'pipe-flange-10k']);
   });
 
   it('知らない族は standardPartRejection・組み立て・理由つきの組み立てで同じ型付きの拒否になる', () => {

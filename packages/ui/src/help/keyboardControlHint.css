@@ -9,7 +9,7 @@
   border-radius: var(--pcad-radius);
   background: var(--pcad-surface);
   color: var(--pcad-text);
-  font-size: calc(12px * var(--pcad-scale, 1));
+  font-size: var(--pcad-font-size-heading);
   line-height: 1.5;
   overflow-wrap: anywhere;
   white-space: pre-line;

@@ -1,4 +1,4 @@
-.pcad-name-search { padding: 8px 12px; border-bottom: 1px solid var(--pcad-border); font-size: 12px; }
+.pcad-name-search { padding: 8px 12px; border-bottom: 1px solid var(--pcad-border); font-size: var(--pcad-font-size-heading); }
 .pcad-name-search > label { display: block; margin-bottom: 4px; }
 .pcad-name-search__input { display: flex; gap: 4px; }
 .pcad-name-search__input input { min-width: 0; width: 100%; font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-control-border); border-radius: 4px; padding: 5px 7px; }

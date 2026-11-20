@@ -14,7 +14,7 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CatalogFamilyPicker, type CatalogFamilyPickerProps } from './CatalogFamilyPicker.js';
 import {
-  ALUMINUM_FRAME_PICKER_CATEGORY, commitCatalogItemChoice, MECHANICAL_PICKER_CATEGORY, PIPING_PICKER_CATEGORY,
+  ALUMINUM_FRAME_PICKER_CATEGORY, catalogRowLabel, commitCatalogItemChoice, MECHANICAL_PICKER_CATEGORY, PIPING_PICKER_CATEGORY,
 } from './catalogFamilyChoices.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
 import { StandardPartPicker } from './StandardPartPickerPanel.js';
@@ -366,6 +366,9 @@ describe('選ぶ窓の機械要素', () => {
         t('catalog.frame.kind.pipeFrameCap'), t('catalog.frame.kind.pipeFrameFoot'), t('catalog.board.kind.fixed'), t('catalog.board.kind.order'),
         t('catalog.board.kind.partBox'), t('catalog.board.kind.coverFrame'), t('catalog.frame.kind.connectorBox'),
         t('catalog.frame.kind.capFootBox'), t('catalog.frame.kind.movableBox'), t('catalog.frame.kind.accessoryBox'),
+        t('catalog.frame.kind.sliderBox'), t('catalog.frame.kind.capAccessoryBox'), t('catalog.frame.kind.footPartBox'),
+        t('catalog.frame.kind.slotLongPart'),
+        t('catalog.frame.kind.doorPartBox'),
         t('catalog.frame.kind.caster')]);
     expect(nodes.some((item) => item.type === 'p' && item.props.children === t('catalog.frame.tSlot.hint'))).toBe(true);
     expect(nodes.some((item) => item.type === CatalogStockTable)).toBe(true);
@@ -469,7 +472,7 @@ describe('選ぶ窓の機械要素', () => {
 });
 
 describe('選ぶ窓の配管(K-28)', () => {
-  it('分類「配管」はアルミフレームの前にあり、選ぶとエルボ・チーズ・ソケットの 3 種類と、エルボの 14 の呼びを出す', async () => {
+  it('分類「配管」はアルミフレームの前にあり、選ぶと継手 7 種類とフランジ 2 種類の 9 種類と、エルボの 14 の呼びを出す', async () => {
     await loadAll();
     const categories = options(select(render(), 'assembly.guide.standardCategory')).map((item) => item.props.value);
     expect(categories.slice(-3)).toEqual([PIPING_PICKER_CATEGORY, ALUMINUM_FRAME_PICKER_CATEGORY, MECHANICAL_PICKER_CATEGORY]);
@@ -477,7 +480,24 @@ describe('選ぶ窓の配管(K-28)', () => {
     expect(nodes[0]?.type).toBe(CatalogFamilyPicker);
     expect(select(nodes, 'assembly.guide.standardCategory').props.value).toBe(PIPING_PICKER_CATEGORY);
     expect(options(select(nodes, 'catalog.piping.kindGuide')).map((item) => item.props.children))
-      .toEqual([t('catalog.piping.kind.elbow'), t('catalog.piping.kind.tee'), t('catalog.piping.kind.socket')]);
+      .toEqual([t('catalog.piping.kind.elbow'), t('catalog.piping.kind.tee'), t('catalog.piping.kind.socket'), t('catalog.piping.kind.cap'),
+        t('catalog.piping.kind.plug'), t('catalog.piping.kind.nipple'), t('catalog.piping.kind.bushing'), t('catalog.piping.kind.flange5K'),
+        t('catalog.piping.kind.flange10K')]);
     expect(options(select(nodes, 'catalog.mechanical.sizeGuide'))).toHaveLength(14);
+  });
+
+  it('配管の行の文字: キャップは高さと外径、プラグは頭の二面幅と高さ、ニップル・ブッシングは長さと二面幅、フランジは外径・厚さ・ボルト穴', async () => {
+    const ids = ['pipe-fitting-cap', 'pipe-fitting-plug', 'pipe-fitting-nipple', 'pipe-fitting-bushing', 'pipe-flange-10k'];
+    await PRODUCT_CATALOG_REGISTRY.ensure(ids);
+    const label = (id: string, key: string): string => {
+      const family = PRODUCT_CATALOG_REGISTRY.loaded(id);
+      const row = family?.rows.find((item) => item.key === key);
+      return family === undefined || row === undefined ? '' : catalogRowLabel(family, row);
+    };
+    expect(label('pipe-fitting-cap', 'cap-25A')).toBe('25A (Rc1)（高さ 28 × 外径 41）');
+    expect(label('pipe-fitting-plug', 'plug-25A')).toBe('25A (R1)（頭の二面幅 19 × 高さ 12）');
+    expect(label('pipe-fitting-nipple', 'nipple-50A')).toBe('50A (R2)（長さ 66 × 二面幅 63）');
+    expect(label('pipe-fitting-bushing', 'bushing-25x15A')).toBe('25A×15A (R1×Rc1/2)（長さ 27 × 二面幅 38）');
+    expect(label('pipe-flange-10k', 'flange-10k-25A')).toBe('25A（外径 125 × 厚さ 14、ボルト穴 4-φ19、M16）');
   });
 });

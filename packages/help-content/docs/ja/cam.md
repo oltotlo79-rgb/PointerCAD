@@ -45,7 +45,7 @@ PointerCADで形を作り、加工機や3Dプリンターに合うソフトで�
 3. 工具と切込み量などを指定して、輪郭加工やポケット加工を作成します。
 4. 加工経路を確認し、機械に合う出力方式を選んで機械用のファイルを書き出します。
 
-[FreeCAD公式の機能紹介](https://www.freecad.org/features.php)、[輪郭加工の手順](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/CAM_Profile.md)、[加工命令の書き出し](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/CAM_Post.md)を参照してください。後者2つは公式の旧文書の保管版です。手元の版と項目名が異なる場合は、その版に付属するヘルプも確認してください。
+FreeCAD公式の機能紹介、輪郭加工の手順、加工命令の書き出しを参照してください。手元の版と項目名が異なる場合は、その版に付属するヘルプも確認してください。
 
 ## Autodesk Fusionの個人利用版で切削加工する
 
@@ -54,6 +54,6 @@ PointerCADで形を作り、加工機や3Dプリンターに合うソフトで�
 3. 利用できる加工方法から輪郭加工やポケット加工を選び、工具と加工条件を設定します。
 4. 加工経路を確認し、機械に合う出力方式で加工命令を書き出します。
 
-個人利用版には利用対象と機能の制限があります。[公式の利用条件](https://www.autodesk.com/solutions/free-cam-software)、[セットアップの作成](https://help.autodesk.com/view/fusion360/ENU/?guid=MFG-CREATE-SETUP)、[製造の流れ](https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-BEC5DEA9-AC3E-4FA8-998E-4AE8CD0D0B1E)を確認してください。
+個人利用版には利用対象と機能の制限があります。公式の利用条件、セットアップの作成、製造の流れを確認してください。
 
 どの加工先でも、形を読み込んだ後に寸法・単位・向き・原点を確認します。工具や機械に合う条件は受け渡し先で指定してください。

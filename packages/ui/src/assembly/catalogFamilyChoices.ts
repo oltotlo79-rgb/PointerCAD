@@ -78,6 +78,9 @@ const FRAME_PART_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], Message
   panelPartBox: 'catalog.board.partBox.hint', panelCoverFrame: 'catalog.board.coverFrame.hint', connectorBox: 'catalog.frame.connectorBox.hint',
   capFootBox: 'catalog.frame.capFootBox.hint', movableBox: 'catalog.frame.movableBox.hint', accessoryBox: 'catalog.frame.accessoryBox.hint',
   caster: 'catalog.frame.caster.hint', blockBracket: 'catalog.frame.blockBracket.hint',
+  sliderBox: 'catalog.frame.sliderBox.hint', capAccessoryBox: 'catalog.frame.capAccessoryBox.hint',
+  footPartBox: 'catalog.frame.footPartBox.hint', slotLongPart: 'catalog.frame.slotLongPart.hint',
+  doorPartBox: 'catalog.frame.doorPartBox.hint',
 };
 
 /**
@@ -143,14 +146,38 @@ function pinRowLabel(row: FamilyRow): string {
   return fill(t('catalog.mechanical.row.pin'), { diameter: dims.diameter, chamfer: dims.chamfer });
 }
 
+/**
+ * 配管(K-28)の行の文字: エルボ・チーズは中心から端面まで、ソケットは長さと、腕の外径。キャップは高さと外径、プラグは頭の二面幅と高さ、
+ * 六角ニップル・ブッシングは長さと二面幅、フランジは外径・厚さ・ボルト穴・ボルトの呼び。配管の族でなければ null。
+ */
+function pipingRowLabel(diagram: LoadedFamily['diagram'], row: FamilyRow): string | null {
+  const dims = row.dims;
+  switch (diagram) {
+    case 'pipeElbow':
+    case 'pipeTee':
+      return fill(t('catalog.piping.row.fitting'), { size: row.size, length: dims.length, outer: dims.outerDiameter });
+    case 'pipeSocket':
+      return fill(t('catalog.piping.row.socket'), { size: row.size, length: dims.length, outer: dims.outerDiameter });
+    case 'pipeCap':
+      return fill(t('catalog.piping.row.cap'), { size: row.size, height: dims.height, outer: dims.outerDiameter });
+    case 'pipePlug':
+      return fill(t('catalog.piping.row.plug'), { size: row.size, across: dims.acrossFlats, height: dims.headHeight });
+    case 'pipeNipple':
+    case 'pipeBushing':
+      return fill(t('catalog.piping.row.hex'), { size: row.size, length: dims.overallLength, across: dims.acrossFlats });
+    case 'pipeFlange':
+      return fill(t('catalog.piping.row.flange'), { size: row.size, outer: dims.outerDiameter, thickness: dims.thickness,
+        count: dims.holeCount, hole: dims.holeDiameter, bolt: dims.boltDiameter });
+    default:
+      return null;
+  }
+}
+
 /** 呼びの一覧に出す 1 行の文字(族の線図の種類ごとの形。製造元の型番は出さない)。 */
 export function catalogRowLabel(family: LoadedFamily, row: FamilyRow): string {
   const dims = row.dims;
-  // 配管の継手(K-28): エルボ・チーズは中心から端面まで、ソケットは長さと、腕の外径。
-  if (family.diagram === 'pipeElbow' || family.diagram === 'pipeTee' || family.diagram === 'pipeSocket') {
-    return fill(t(family.diagram === 'pipeSocket' ? 'catalog.piping.row.socket' : 'catalog.piping.row.fitting'),
-      { size: row.size, length: dims.length, outer: dims.outerDiameter });
-  }
+  const piping = pipingRowLabel(family.diagram, row);
+  if (piping !== null) return piping;
   if (family.diagram === 'camFollower') {
     const pitch = dims.threadPitch ?? NaN;
     return fill(t('catalog.mechanical.row.camFollower'), { outside: dims.outsideDiameter,

@@ -1,8 +1,8 @@
 export type { DrawingDxfEntity as DxfWriteEntity, DrawingDxfLayer as DxfWriteLayer,
   DrawingDxfLineType as DxfWriteLineType, DrawingDxfOptions as DxfWriteOptions } from '@pointercad/model';
 
-/** AutodeskのCIF表記。R12へUTF-8を混ぜずASCIIで日本語を保持する。
- * https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-DXF/files/GUID-2553CF98-44F6-4828-82DD-FE3BC7448113.htm */
+/** DXF の文字列の `\U+XXXX` の書き方(字を Unicode の番号で書く)。R12へUTF-8を混ぜずASCIIで日本語を保持する。
+ * 制御文字は断り、126 より上の字と `\`・`%` を `\U+` と 4 桁の 16 進で書く。 */
 export function dxfString(value: string): string {
   if ([...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) {
     throw new Error('DXFの文字列に制御文字は使えません。');

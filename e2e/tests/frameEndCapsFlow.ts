@@ -166,4 +166,59 @@ export function registerFrameEndCapsTests(test: typeof base): void {
       expect(errors).toEqual([]);
     });
   });
+
+  /*
+   * K-28 束 3 付属の組: 鋼管の端の継手。鋼材の窓で SGP 25A(長さ 1000)に「管の端の継手」のエルボを選ぶと、枝の向きの欄(既定 0°)と、
+   * 予告「管 944.78 mm・エルボ 25A (Rc1) 2 個」が出る。置くと管 1 本とエルボ 2 個が入り、部品表は 2 行(エルボの数 2)。元に戻す 1 回で全部消える。
+   * 独立の期待: 1000 − 2 × (38 − 10.39) = 944.78(JIS B 2301 のエルボ 25A の中心から端面まで 38 と、JIS B 0203 の R1 の基準の長さ 10.39 から手で計算)。
+   */
+  test.describe('K-28 束 3 付属の組: 鋼管の端の継手', () => {
+    test.use({ viewport: { width: 1440, height: 900 } });
+
+    test('鋼材の SGP 25A にエルボを選ぶと枝の向きの欄と管 944.78 mm の予告が出て、置くと 3 個が入り、部品表は 2 行、元に戻す 1 回で全部消える', async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await startAssembly(page, undefined);
+      await chooseToolMenuItem(page, uiMessage('assembly', 'assembly.menu.build'), uiMessage('assembly', 'assembly.tool.placeStandardPart'));
+      const dialog = page.getByRole('dialog', { name: uiMessage('assembly', 'assembly.standardPart.title'), exact: true });
+      await expect(dialog).toBeVisible();
+      await choice(dialog, 'assembly', 'assembly.standardPart.category').selectOption('structuralSection');
+      await choice(dialog, 'assembly', 'assembly.steel.material').selectOption('SGP');
+      await choice(dialog, 'assembly', 'assembly.steel.shape').selectOption('steelPipe');
+      // 鋼管では呼び寸法の欄に外径と肉厚の注記が入り、選択の欄の名前が「呼び寸法」と一致しないので、欄の見出しで探す(steelStockCsvFlow.ts と同じ)。
+      await dialog.locator('label.pcad-field').filter({ has: page.locator('.pcad-field__label', { hasText: /^呼び寸法$/u }) })
+        .locator('select').selectOption('steel:SGP:steelPipe:25A');
+      await dialog.locator('label.pcad-field').filter({ has: page.locator('.pcad-field__label', { hasText: /^長さ$/u }) }).locator('input').fill('1000');
+      await expect(accessorySelect(dialog)).toHaveValue('');
+      await accessorySelect(dialog).selectOption('pipe-end-fittings');
+      await dialog.getByRole('combobox', { name: uiMessage('assembly', 'assembly.accessory.pipeItem'), exact: true }).selectOption('elbow-25A');
+      await expect(dialog.getByRole('combobox', { name: uiMessage('assembly', 'assembly.accessory.turn'), exact: true })).toHaveValue('0');
+      await expect(dialog.getByRole('status').filter({ hasText: '944.78' })).toHaveText(uiMessage('assembly', 'assembly.accessory.pipePreview')
+        .replace('{length}', '944.78').replace('{name}', 'エルボ 25A (Rc1)').replace('{count}', '2'));
+
+      const token = await beginRecompute(page);
+      await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.place'), exact: true }).click();
+      await waitForRecompute(page, token);
+      await expect(dialog.getByRole('alert')).toHaveCount(0);
+      await expect(componentRows(page)).toHaveCount(3);
+      const names = (await readAssemblyStats(page)).components.map(component => component.name);
+      expect(names.filter(name => name.startsWith('エルボ 25A (Rc1)')).length).toBe(2);
+      await dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.close'), exact: true }).click();
+
+      await page.getByRole('group', { name: uiMessage('assembly', 'assembly.menu.build') })
+        .getByRole('button', { name: uiMessage('assembly', 'assembly.tool.bom'), exact: true }).click();
+      const rows = page.locator('.pcad-bom__table tbody tr.pcad-bom__row');
+      await expect(rows).toHaveCount(2);
+      const headers = await page.locator('.pcad-bom__table thead th').allTextContents();
+      const quantity = headers.indexOf(uiMessage('assembly', 'assembly.bom.column.quantity'));
+      expect(quantity).toBeGreaterThanOrEqual(0);
+      await expect(rows.filter({ hasText: 'エルボ 25A (Rc1)' }).locator('td').nth(quantity)).toHaveText('2');
+
+      const undo = await beginRecompute(page);
+      await page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.history.undo'), exact: true }).click();
+      await waitForRecompute(page, undo);
+      await expect(componentRows(page)).toHaveCount(0);
+      expect(errors).toEqual([]);
+    });
+  });
 }

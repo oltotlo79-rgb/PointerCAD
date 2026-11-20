@@ -11,9 +11,13 @@ import { checkRecord, fieldProblem, indexPath, isRecord, isUnknownArray, joinPat
 /** 記録を保存・読み込みできる最小の保存形式の版(model の ACCESSORY_SETS_SCHEMA_VERSION と同じ値)。 */
 const ACCESSORY_SETS_SCHEMA_VERSION = 23;
 
-const SET_IDS: readonly AccessorySetRecord['setId'][] = ['frame-end-caps', 'bolt-washer-nut', 'bearing-shaft-rings', 'bearing-bore-rings'];
+const SET_IDS: readonly AccessorySetRecord['setId'][] = ['frame-end-caps', 'bolt-washer-nut', 'bearing-shaft-rings', 'bearing-bore-rings',
+  'pipe-end-fittings'];
 const ROLES: readonly AccessorySetRecord['accessories'][number]['role'][] = ['startCap', 'endCap', 'headWasher', 'nutWasher', 'springWasher', 'nut',
-  'startRing', 'endRing'];
+  'startRing', 'endRing', 'startFitting', 'endFitting'];
+const TURNS: readonly NonNullable<AccessorySetRecord['choices']['turn']>[] = [0, 1, 2, 3];
+/** 指定の族の id と枝の向きを持つ組(鋼管の端の継手。K-28 束 3)。ほかの組の記録にこの 2 つの欄があれば読まずに断る。 */
+const PIPE_END_FITTINGS: AccessorySetRecord['setId'] = 'pipe-end-fittings';
 const ENDS: readonly AccessorySetRecord['choices']['ends'][] = ['both', 'start', 'end'];
 const END_REFERENCES: readonly AccessorySetRecord['choices']['endReference'][] = ['overall', 'member'];
 
@@ -61,8 +65,21 @@ function readChoices(value: unknown, path: string): Checked<AccessorySetRecord['
   const spring = record.value['springWasher'];
   if (grip !== undefined && !(typeof grip === 'number' && Number.isFinite(grip) && grip > 0)) return fieldProblem(joinPath(path, 'gripMm'), 'type');
   if (spring !== undefined && typeof spring !== 'boolean') return fieldProblem(joinPath(path, 'springWasher'), 'type');
+  // 鋼管の端の継手の組だけが持つ任意の欄(族の id は空でない文字、枝の向きは 0〜3 の整数)。組との対は readAccessorySetRecords が確かめる。
+  const rawFamilyId = record.value['familyId'], rawTurn = record.value['turn'];
+  const familyId = typeof rawFamilyId === 'string' && rawFamilyId !== '' ? rawFamilyId : undefined;
+  const turn = TURNS.find((item) => item === rawTurn);
+  if (rawFamilyId !== undefined && familyId === undefined) return fieldProblem(joinPath(path, 'familyId'), 'type');
+  if (rawTurn !== undefined && turn === undefined) return fieldProblem(joinPath(path, 'turn'), 'type');
   return { ok: true, value: { ends: ends.value, endReference: endReference.value, itemKey: itemKey.value,
-    ...(grip === undefined ? {} : { gripMm: grip }), ...(spring === undefined ? {} : { springWasher: spring }) } };
+    ...(grip === undefined ? {} : { gripMm: grip }), ...(spring === undefined ? {} : { springWasher: spring }),
+    ...(familyId === undefined ? {} : { familyId }), ...(turn === undefined ? {} : { turn }) } };
+}
+
+/** 組と指定の欄の対: 鋼管の端の継手は族の id を必ず持ち、ほかの組は族の id と枝の向きを持たない。合わなければ欄の名前。 */
+function choicesMismatch(setId: AccessorySetRecord['setId'], choices: AccessorySetRecord['choices']): 'familyId' | 'turn' | null {
+  if (setId === PIPE_END_FITTINGS) return choices.familyId === undefined ? 'familyId' : null;
+  return choices.familyId !== undefined ? 'familyId' : choices.turn !== undefined ? 'turn' : null;
 }
 
 /** 付属の組の記録の並び(型だけを確かめる。id は一意)。 */
@@ -86,6 +103,8 @@ export function readAccessorySetRecords(value: unknown, path: string): Checked<r
     if (!accessories.ok) return accessories;
     const choices = readChoices(record.value['choices'], joinPath(itemPath, 'choices'));
     if (!choices.ok) return choices;
+    const mismatch = choicesMismatch(setId.value, choices.value);
+    if (mismatch !== null) return fieldProblem(joinPath(joinPath(itemPath, 'choices'), mismatch), 'type');
     seen.add(id.value);
     records.push({ id: id.value, setId: setId.value, hostComponentId: hostComponentId.value, accessories: accessories.value, choices: choices.value });
   }
@@ -100,5 +119,7 @@ export function serializeAccessorySetRecords(records: readonly AccessorySetRecor
     accessories: record.accessories.map((item) => ({ componentId: item.componentId, role: item.role })),
     choices: { ends: record.choices.ends, endReference: record.choices.endReference, itemKey: record.choices.itemKey,
       ...(record.choices.gripMm === undefined ? {} : { gripMm: record.choices.gripMm }),
-      ...(record.choices.springWasher === undefined ? {} : { springWasher: record.choices.springWasher }) } }));
+      ...(record.choices.springWasher === undefined ? {} : { springWasher: record.choices.springWasher }),
+      ...(record.choices.familyId === undefined ? {} : { familyId: record.choices.familyId }),
+      ...(record.choices.turn === undefined ? {} : { turn: record.choices.turn }) } }));
 }

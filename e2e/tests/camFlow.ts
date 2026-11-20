@@ -103,8 +103,8 @@ export async function camFlow(page: Page, info: TestInfo, app?: ElectronApplicat
     await expect(help.getByRole('heading', { name: title, exact: true })).toHaveCount(1);
   }
   if (app !== undefined) {
-    const link = help.getByRole('link', { name: 'FreeCAD公式の機能紹介', exact: true });
-    await link.click(); await expect.poll(async () => (await nativeCalls(app)).at(-1)).toBe('https://www.freecad.org/features.php');
+    const link = help.getByRole('link', { name: 'Kiri:Moto公式の画面説明', exact: true });
+    await link.click(); await expect.poll(async () => (await nativeCalls(app)).at(-1)).toBe('https://docs.grid.space/kiri-moto/interface/');
   }
   await page.screenshot({ path: info.outputPath('cam-help.png') });
   await page.keyboard.press('Escape'); await expect(help).toHaveCount(0);

@@ -40,14 +40,17 @@ export interface RoundNutDimensions {
 }
 
 export interface FrameCapDimensions {
-  readonly shape: 'rect' | 'l';
+  /** 長方形・L 形・1 つの角が大きな R の形(四角の左上の角を半径 largeRadius の円弧にした板。1 つの角が R のフレームの外周と同じ向き)。 */
+  readonly shape: 'rect' | 'l' | 'r';
   readonly width: number;
   readonly height: number;
   readonly thickness: number;
   /** L 形の腕の幅(長方形は使わない)。 */
   readonly armWidth: number;
-  /** 長方形の 4 隅の丸みの半径(0 で直角。L 形は使わない)。 */
+  /** 長方形の 4 隅の丸みの半径(0 で直角。L 形・1 つの角が R の形は使わない)。 */
   readonly cornerRadius: number;
+  /** 1 つの角が R の形の、左上の角の円弧の半径(ほかの形は使わない)。 */
+  readonly largeRadius?: number;
 }
 
 const positive = (values: readonly number[]): boolean => values.every((value) => Number.isFinite(value) && value > 0);
@@ -135,7 +138,22 @@ export function roundNutVolume(dims: RoundNutDimensions): number | null {
 function capValid(dims: FrameCapDimensions): boolean {
   if (!positive([dims.width, dims.height, dims.thickness])) return false;
   if (dims.shape === 'l') return positive([dims.armWidth]) && dims.armWidth < dims.width && dims.armWidth < dims.height;
+  if (dims.shape === 'r') {
+    const radius = dims.largeRadius ?? NaN;
+    return positive([radius]) && radius < Math.min(dims.width, dims.height);
+  }
   return Number.isFinite(dims.cornerRadius) && dims.cornerRadius >= 0 && 2 * dims.cornerRadius < Math.min(dims.width, dims.height);
+}
+
+/** 四角の左上の角を半径 r の円弧にした輪(反時計回り。原点は外形の中心)。 */
+function oneRoundCorner(width: number, height: number, r: number): readonly SteelProfileSegment[] {
+  const x = width / 2;
+  const y = height / 2;
+  return [
+    { kind: 'line', from: [-x, -y], to: [x, -y] }, { kind: 'line', from: [x, -y], to: [x, y] }, { kind: 'line', from: [x, y], to: [-x + r, y] },
+    { kind: 'arc', from: [-x + r, y], to: [-x, y - r], center: [-x + r, y - r], radius: r, startAngle: Math.PI / 2, endAngle: Math.PI },
+    { kind: 'line', from: [-x, y - r], to: [-x, -y] },
+  ];
 }
 
 /** 4 隅に半径 rc の丸みのある長方形の輪(反時計回り。rc = 0 は直角)。 */
@@ -163,6 +181,10 @@ export function frameCapProfile(dims: FrameCapDimensions): (ProfileLoops & { rea
     const segments = polygonLoop([[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, -h / 2 + a], [-w / 2 + a, -h / 2 + a], [-w / 2 + a, h / 2],
       [-w / 2, h / 2]]);
     return { segments, holes: [], areaMm2: w * a + (h - a) * a };
+  }
+  if (dims.shape === 'r') {
+    const r = dims.largeRadius ?? NaN;
+    return { segments: oneRoundCorner(w, h, r), holes: [], areaMm2: w * h - (1 - Math.PI / 4) * r ** 2 };
   }
   const rc = dims.cornerRadius;
   return { segments: roundedRectangle(w, h, rc), holes: [], areaMm2: w * h - (4 - Math.PI) * rc ** 2 };
@@ -333,8 +355,8 @@ export interface FootBaseDimensions {
   /** 穴(外形の左下からの x・y と径)。 */
   readonly holes: readonly (readonly [number, number, number])[];
   /**
-   * 長方形でない外形の頂点(外形の左下を原点に、反時計回り。統括の決定 2026-11-18 09:0x の 2 の (1))。直角の多角形(L の形)だけで、
-   * 頂点の外接の長方形は幅 × 奥行と同じ。省略は幅 × 奥行の長方形。
+   * 長方形でない外形の頂点(外形の左下を原点に、反時計回り。統括の決定 2026-11-18 09:0x の 2 の (1))。辺が縦・横の多角形(L の形)か、
+   * 45° の斜めの辺(角の斜め切り)を持つ多角形だけで、頂点の外接の長方形は幅 × 奥行と同じ。省略は幅 × 奥行の長方形。
    */
   readonly outline?: readonly (readonly [number, number])[];
   /**
@@ -359,15 +381,19 @@ function insidePolygon(px: number, py: number, points: readonly (readonly [numbe
   }, false);
 }
 
-/** 外形の頂点が直角の多角形で、外接の長方形が幅 × 奥行と同じで、反時計回りか。 */
+/** 外形の辺が縦・横か 45°(角の斜め切り)の多角形で、外接の長方形が幅 × 奥行と同じで、反時計回りか。 */
 function outlineValid(points: readonly (readonly [number, number])[], w: number, d: number): boolean {
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
-  const rightAngles = points.every(([x1, y1], index) => {
+  const edgesValid = points.every(([x1, y1], index) => {
     const [x2, y2] = points[(index + 1) % points.length] ?? [x1, y1];
-    return (x1 === x2) !== (y1 === y2);
+    const across = Math.abs(x2 - x1);
+    const up = Math.abs(y2 - y1);
+    // 縦か横の辺(L の外形)か、両端の座標の差の絶対値が横と縦で等しい斜めの辺(45° の角の斜め切り)。長さ 0 の辺と、ほかの向きの斜めの辺は
+    // 断る。頂点は資料の記入の数なので、縦・横の辺の判定と同じく許容なしで比べる(手書きの許容を足さない)。
+    return (across === 0) !== (up === 0) || (across > 0 && across === up);
   });
-  return points.length >= 4 && rightAngles && Math.min(...xs) === 0 && Math.min(...ys) === 0 && Math.max(...xs) === w && Math.max(...ys) === d
+  return points.length >= 4 && edgesValid && Math.min(...xs) === 0 && Math.min(...ys) === 0 && Math.max(...xs) === w && Math.max(...ys) === d
     && polygonArea(points) > 0;
 }
 

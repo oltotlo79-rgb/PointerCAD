@@ -219,7 +219,7 @@ export type FatigueAnalysis = { readonly ok: true; readonly result: FatigueResul
 export const FATIGUE_GOODMAN_SCHEMA = 'pointercad-fatigue-goodman/1';
 export const FATIGUE_CORRECTED_RESULT_SCHEMA = 'pointercad-fatigue-corrected-result/1';
 /** This first elastic S-N slice excludes lives of 1000 cycles or fewer; users must state a stricter curve limit.
- * Basis: https://help.altair.com/hwdesktop/hlife/topics/solvers/os/analysis_fatigue_stress_life_approach_r.htm */
+ * Basis: the stress-life (S-N) approach is a high-cycle method; low-cycle lives belong to the strain-life approach. */
 export const GOODMAN_MINIMUM_CYCLES_EXCLUSIVE = 1000;
 export interface FatigueMeanStressCorrection {
   readonly schema: typeof FATIGUE_GOODMAN_SCHEMA;

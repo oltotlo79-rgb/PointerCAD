@@ -23,10 +23,10 @@ async function runPreset(playwright: PlaywrightWorkerArgs['playwright'], info: T
 }
 
 test('EX10 Electron presets: real controls and same-profile restart', async ({ playwright }, info) => {
-  await runPreset(playwright, info, 'onshape');
+  await runPreset(playwright, info, 'rightOrbit');
 });
 
-for (const presetName of ['pointercad', 'solidworks', 'fusion'] as const) {
+for (const presetName of ['pointercad', 'middleOrbit', 'middlePan'] as const) {
   test(`EX10 Electron preset ${presetName}: real controls and same-profile restart`, async ({ playwright }, info) => {
     await runPreset(playwright, info, presetName);
   });

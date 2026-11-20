@@ -126,6 +126,28 @@ describe('端のキャップ', () => {
       expect(buildFrameCapPart(bad)).toBeNull();
     }
   });
+
+  it('1 つの角が R の形は、四角の左上の角だけを半径 R の円弧にした板で、面積は W·H − (1 − π/4)·R²(R が外形以上・無い・0 は断る)', () => {
+    const round: FrameCapDimensions = { shape: 'r', width: 20, height: 20, thickness: 3, armWidth: NaN, cornerRadius: 0, largeRadius: 15 };
+    const profile = frameCapProfile(round);
+    expect(profile?.areaMm2).toBeCloseTo(400 - (1 - Math.PI / 4) * 225, 9);
+    expect(loopArea(profile?.segments ?? [])).toBeCloseTo(400 - (1 - Math.PI / 4) * 225, 9);
+    // 円弧は左上(フレームの外周の 4 つ目の頂点〔−W/2, +H/2〕と同じ角)にあり、ほかの 3 隅は直角。面積は円弧の向きが違っても同じなので、
+    // 円弧の中心(左上の頂点から内へ R ずつ: (−W/2 + R, H/2 − R) = (5, −5))・両端(上の辺の上 (5, 10) と左の辺の上 (−10, −5))・半径と、
+    // 隅の頂点を座標で確かめる。
+    const arcs = (profile?.segments ?? []).flatMap((segment) => (segment.kind === 'arc' ? [segment] : []));
+    expect(arcs.map((arc) => [arc.center, arc.from, arc.to, arc.radius])).toEqual([[[5, -5], [5, 10], [-10, -5], 15]]);
+    const ends = (profile?.segments ?? []).flatMap((segment) => (segment.kind === 'line' ? [segment.from, segment.to] : []));
+    // 直線の端の点に、右下・左下・右上の隅はあり、左上の隅は無い(左上だけが円弧)。
+    expect([[-10, -10], [10, -10], [10, 10], [-10, 10]].map(([x, y]) => ends.some((end) => end[0] === x && end[1] === y)))
+      .toEqual([true, true, true, false]);
+    expect(buildFrameCapPart(round)?.solids.map((feature) => feature.kind)).toEqual(['extrude']);
+    const withoutRadius: FrameCapDimensions = { shape: 'r', width: 20, height: 20, thickness: 3, armWidth: NaN, cornerRadius: 0 };
+    for (const bad of [{ ...round, largeRadius: 20 }, { ...round, largeRadius: 0 }, withoutRadius]) {
+      expect(frameCapProfile(bad)).toBeNull();
+      expect(buildFrameCapPart(bad)).toBeNull();
+    }
+  });
 });
 
 describe('平板のブラケット L・T・十字', () => {
@@ -191,10 +213,24 @@ describe('フットベース・アジャスターベースの板', () => {
     expect(footBaseProfile({ ...lShape, holes: [[40, 25, 9]] })).toBeNull();
     expect(footBaseProfile({ ...lShape, holes: [[33, 14, 9]] })).not.toBeNull();
     expect(footBaseProfile({ ...lShape, holes: [[27, 44, 9]] })).toBeNull();
-    // 直角でない辺・外接の長方形が幅 × 奥行と違う・時計回りの外形は断る。
+    // 縦・横でも 45° でもない辺・外接の長方形が幅 × 奥行と違う・時計回りの外形は断る。
     expect(footBaseProfile({ ...lShape, outline: [[0, 0], [60, 0], [30, 58], [0, 58]] })).toBeNull();
     expect(footBaseProfile({ ...lShape, width: 70 })).toBeNull();
     expect(footBaseProfile({ ...lShape, outline: [...outline].reverse() })).toBeNull();
+  });
+
+  it('上の 2 つの角を 45° に斜めに切った外形は、面積が頂点の多角形の面積 − 穴、穴は斜めの辺からも半径より離れる時だけ', () => {
+    // 汎用の寸法: 幅 100・奥行 40、左右上の角を横 20・縦 20 で切る(左右の短辺 20)。
+    const outline = [[0, 0], [100, 0], [100, 20], [80, 40], [20, 40], [0, 20]] as const;
+    const chamfered = { width: 100, depth: 40, thickness: 5, holes: [[10, 10, 6], [90, 10, 6]] as const, outline };
+    expect(footBaseProfile(chamfered)?.areaMm2).toBeCloseTo(100 * 40 - 2 * (20 * 20) / 2 - 2 * Math.PI * 36 / 4, 9);
+    expect(buildFootBasePart(chamfered)?.solids.filter((feature) => feature.kind === 'boolean')).toHaveLength(2);
+    // 斜めの辺 x − y + 20 = 0 から (20, 30) は 10/√2 ≈ 7.07 で半径 4 より離れ、(12, 30) は 2/√2 ≈ 1.41 でかかる。切り落とした角の中の穴も断る。
+    expect(footBaseProfile({ ...chamfered, holes: [[20, 30, 8]] })).not.toBeNull();
+    expect(footBaseProfile({ ...chamfered, holes: [[12, 30, 8]] })).toBeNull();
+    expect(footBaseProfile({ ...chamfered, holes: [[5, 35, 2]] })).toBeNull();
+    // 45° でない斜めの辺(横 30・縦 20)は断る。
+    expect(footBaseProfile({ ...chamfered, outline: [[0, 0], [100, 0], [100, 20], [80, 40], [30, 40], [0, 20]] })).toBeNull();
   });
 
   it('外形を省いた時は今までの長方形と同じ輪と面積', () => {

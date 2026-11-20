@@ -5,29 +5,35 @@
  * - 組は製品のコードに書いた決まりで、付属の寸法は今ある族の行から引く。合う行が無い組は出さない(近い行を推測で選ばない)。
  * - 本体は部品の保存の形から引く(G2。accessoryHost.ts。族の部品・鋼材の部材・8 分類の部品)。組ごとの候補の引き方と付け方は、
  *   組の定義の表(accessorySetDefinitions.ts)の 1 行ずつ。端のキャップの計算は frameEndCaps.ts、ボルトの組は boltAccessorySet.ts、
- *   軸受の止め輪は bearingRingSet.ts。付け直しは accessorySync.ts。
+ *   軸受の止め輪は bearingRingSet.ts、鋼管の端の継手は pipeEndFittings.ts。付け直しは accessorySync.ts。
  * - 付属は本体と同じ一緒に動く組(`joinRigidGroup`)に入れる。記録を足した文書は保存形式の版 23 以上にする(使ったファイルだけ。frameJoints と同じ)。
  */
 import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry } from '../catalog/registry.js';
 import { createCatalogItemSource } from '../catalog/source.js';
 import type { CatalogFamily, CatalogItemRow } from '../catalog/types.js';
-import type { AssemblyDocument } from '../types.js';
+import type { AssemblyDocument, ComponentSource } from '../types.js';
 import { accessoryHostOf, catalogItemHost } from './accessoryHost.js';
-import type { AccessoryEnds, AccessoryEndReference, AccessorySetId } from './accessoryRecord.js';
+import type { AccessoryEnds, AccessoryEndReference, AccessorySetId, AccessoryTurn } from './accessoryRecord.js';
 import { ACCESSORY_SET_DEFINITIONS } from './accessorySetDefinitions.js';
 import type { BearingRingRefusal } from './bearingRingSet.js';
 
 /** 付属を付けられない理由。画面は理由ごとの文を出す。 */
 export type AccessoryRefusal = 'noHost' | 'notFrame' | 'slotWidthUnknown' | 'capLinkUnknown' | 'capsNotLoaded' | 'noMatchingCap'
-  | 'unknownItem' | 'invalidLength' | 'lengthOutOfRange' | 'setNotAvailable' | BearingRingRefusal;
+  | 'unknownItem' | 'invalidLength' | 'lengthOutOfRange' | 'setNotAvailable' | 'notPipe' | 'fittingsNotLoaded' | 'noMatchingFitting'
+  | BearingRingRefusal;
 
-/** キャップの候補の行。quarterTurn は本体の長さの軸のまわりの 90° の回しの数(0 か 1)。 */
+/**
+ * 付属の候補の行。quarterTurn は本体の長さの軸のまわりの 90° の回しの数(0 か 1)。thicknessMm は全長の時に端ごとに本体を短くする長さ
+ * (キャップ・止め輪は厚さ、鋼管の端の継手は継手の中心・真ん中・外の面までの長さから差し込みの長さを引いた値)。
+ * turnable は枝の向きを選べる候補(鋼管の端の継手のエルボ・チーズ)だけが true で持つ。
+ */
 export interface AccessoryCandidate {
   readonly familyId: string;
   readonly itemKey: string;
   readonly size: string;
   readonly thicknessMm: number;
   readonly quarterTurn: 0 | 1;
+  readonly turnable?: boolean;
 }
 
 export interface AccessoryChoices {
@@ -38,18 +44,27 @@ export interface AccessoryChoices {
   /** ボルトの座金とナットの組(A4)の締め付ける厚さ(mm。無ければ既定)とばね座金の有無。ほかの組は持たない。 */
   readonly gripMm?: number;
   readonly springWasher?: boolean;
+  /** 鋼管の端の継手の組の候補の族(行の鍵と対)と、エルボ・チーズの枝の向き(無ければ 0)。ほかの組は持たない。 */
+  readonly familyId?: string;
+  readonly turn?: AccessoryTurn;
 }
 
 type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: AccessoryRefusal };
 
 /** 登録した組の全部(鋼材・機械要素の組を足す時はここと記録の型と組の定義の表に足す)。 */
-export const ACCESSORY_SET_IDS: readonly AccessorySetId[] = ['frame-end-caps', 'bearing-shaft-rings', 'bearing-bore-rings'];
+export const ACCESSORY_SET_IDS: readonly AccessorySetId[] = ['frame-end-caps', 'bearing-shaft-rings', 'bearing-bore-rings', 'pipe-end-fittings'];
 
 /** 置く前の本体(族・行・欄の値)に付けられる組の候補。組ごとに、候補の行か、付けられない理由。 */
 export function accessoryCandidatesForPart(family: CatalogFamily, row: CatalogItemRow, values: Readonly<Record<string, string>>,
   setId: AccessorySetId, registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): Result<readonly AccessoryCandidate[]> {
   const source = createCatalogItemSource(family, row, values);
   return ACCESSORY_SET_DEFINITIONS[setId].candidates(catalogItemHost(source, family, row, values), source, registry);
+}
+
+/** 置く前の本体(部品の保存の形。8 分類の窓・一括配置の鋼材の部材)に付けられる組の候補。 */
+export function accessoryCandidatesForSource(source: ComponentSource, setId: AccessorySetId,
+  registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): Result<readonly AccessoryCandidate[]> {
+  return ACCESSORY_SET_DEFINITIONS[setId].candidates(accessoryHostOf(source, registry), source, registry);
 }
 
 /** 置いた本体に付けられる組の候補。 */

@@ -8,13 +8,15 @@ import {
   type FrameMembersResult,
 } from '@pointercad/model';
 
-import { exposedEnds } from './accessoryChoice.js';
+import { exposedEnds, type AccessoryTurn } from './accessoryChoice.js';
 
-/** 並べる時の付属の指定(組・線の端の意味・行)。端は部材ごとに決める。 */
+/** 並べる時の付属の指定(組・線の端の意味・行。鋼管の端の継手は族の id と枝の向きも)。端は部材ごとに決める。 */
 export interface FrameAccessoryRequest {
   readonly setId: AccessorySetId;
   readonly endReference: AccessoryEndReference;
   readonly itemKey: string;
+  readonly familyId?: string;
+  readonly turn?: AccessoryTurn;
 }
 
 type FramePlan = Extract<FrameMembersResult, { readonly ok: true }>;
@@ -30,8 +32,8 @@ export function withFrameAccessories(document: AssemblyDocument, lines: readonly
     const memberEnds = ends[index] ?? null;
     const componentId = componentIds[index];
     if (memberEnds === null || componentId === undefined) continue;
-    const applied = applyAccessorySet(next, componentId, request.setId,
-      { ends: memberEnds, endReference: request.endReference, itemKey: request.itemKey });
+    const applied = applyAccessorySet(next, componentId, request.setId, { ends: memberEnds, endReference: request.endReference, itemKey: request.itemKey,
+      ...(request.familyId === undefined ? {} : { familyId: request.familyId }), ...(request.turn === undefined ? {} : { turn: request.turn }) });
     if (!applied.ok) return { ok: false, reason: 'accessoryRefused', detail: applied.reason, lineIndex: member.lineIndex };
     next = applied.value.document;
     accessoryIds.push(...applied.value.componentIds);

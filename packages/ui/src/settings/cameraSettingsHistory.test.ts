@@ -68,12 +68,12 @@ it('captures the expected setting on the first real form edit and keeps it throu
   const first = firstUpdate(null);
   expect(first.expected).toEqual(EXPECTED_VIEW_PRESETS.pointercad);
   expect(applyCameraSettings(CUSTOM_VIEW, DEFAULT_VIEW_CONTROLS)).toBe(true);
-  click(render(first), t('settings.camera.presetGuide').replace('{preset}', t('settings.camera.preset.fusion')));
+  click(render(first), t('settings.camera.presetGuide').replace('{preset}', t('settings.camera.preset.middlePan')));
   expect(capture).toHaveBeenCalledTimes(2);
   const secondUpdate = capture.mock.calls[1]?.[0] as (previous: Draft) => Draft;
   const second = secondUpdate(first);
   expect(second.expected).toBe(first.expected);
-  expect(second.value).toEqual(EXPECTED_VIEW_PRESETS.fusion);
+  expect(second.value).toEqual(EXPECTED_VIEW_PRESETS.middlePan);
   const before = useAppStore.getState();
   const form = render(second) as React.ReactElement<{ onSubmit: (event: { preventDefault: () => void }) => void }>;
   form.props.onSubmit({ preventDefault: vi.fn() });
@@ -182,14 +182,14 @@ describe('EX-10.UNDO settings are outside each document transaction', () => {
       expect(applyCameraSettings(CUSTOM_VIEW, DEFAULT_VIEW_CONTROLS)).toBe(true);
       before = useAppStore.getState();
       const committedBytes = memory.bytes(), committedWrites = memory.writes();
-      expect(applyCameraSettings(EXPECTED_VIEW_PRESETS.fusion, DEFAULT_VIEW_CONTROLS)).toBe(false);
+      expect(applyCameraSettings(EXPECTED_VIEW_PRESETS.middlePan, DEFAULT_VIEW_CONTROLS)).toBe(false);
       expect(useAppStore.getState()).toBe(before);
       expect(memory.bytes()).toBe(committedBytes);
       expect(memory.writes()).toBe(committedWrites);
       // Cancel the actual form's draft after another valid route has committed CUSTOM_VIEW.
       vi.spyOn(React, 'useId').mockReturnValue('camera-cancel');
       const discard = vi.fn();
-      vi.spyOn(React, 'useState').mockReturnValueOnce([{ value: EXPECTED_VIEW_PRESETS.fusion, expected: DEFAULT_VIEW_CONTROLS }, discard])
+      vi.spyOn(React, 'useState').mockReturnValueOnce([{ value: EXPECTED_VIEW_PRESETS.middlePan, expected: DEFAULT_VIEW_CONTROLS }, discard])
         .mockReturnValueOnce([false, vi.fn()]);
       vi.spyOn(ReactHooks, 'useCallback').mockImplementation(callback => callback);
       vi.spyOn(ReactHooks, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
@@ -208,9 +208,9 @@ describe('EX-10.UNDO settings are outside each document transaction', () => {
       expect(useAppStore.getState()).toBe(before);
       expect(memory.bytes()).toBe(committedBytes); expect(memory.writes()).toBe(committedWrites);
       memory.failWrites();
-      expect(applyCameraSettings(EXPECTED_VIEW_PRESETS.fusion, CUSTOM_VIEW)).toBe(true);
+      expect(applyCameraSettings(EXPECTED_VIEW_PRESETS.middlePan, CUSTOM_VIEW)).toBe(true);
       expectOnlySettingsChanged(before);
-      expect(useAppStore.getState().displaySettings.viewControls).toEqual(EXPECTED_VIEW_PRESETS.fusion);
+      expect(useAppStore.getState().displaySettings.viewControls).toEqual(EXPECTED_VIEW_PRESETS.middlePan);
       expect(memory.bytes()).toBe(committedBytes);
       expect(loadSettings(memory.storage).viewControls).toEqual(CUSTOM_VIEW);
       expect(memory.writes()).toBe(committedWrites + 1);

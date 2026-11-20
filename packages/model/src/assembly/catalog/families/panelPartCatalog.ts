@@ -13,6 +13,8 @@
  * - 可動の部品: 同じ外形を包む箱(行の表 `movablePartBoxRows.ts`。30・31 回目の読み 2 本で一致した値)。
  * - アクセサリ: 同じ外形を包む箱(行の表 `accessoryBoxRows.ts`。32 回目の読み 2 本で一致した値)。
  * - 簡略の印は「外形を包む形で、細部は作っていない」(可動の部品は「動く仕組みは作っていない」を続ける)。
+ * - 資料 1 の小さい部品(扉の部品・引出の部品・スライダ・配線の部品・キャップの付属・足回りの部品)も、同じ箱の族の作り `boxFamily` を
+ *   資料 1 の名前で使う(族の定義は `smallPartBoxCatalog.ts`。統括の決定 2026-11-19 15:5x の 1)。
  */
 import { withName } from '../../standard/partPrimitives.js';
 import type { FrameSectionBounds } from '../../frame/frameMembers.js';
@@ -22,6 +24,7 @@ import { buildPanelBoardPart, panelBoardProfile } from '../profiles/panelBoard.j
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { ACCESSORY_BOX_RECORDS } from './accessoryBoxRows.js';
 import { CAP_FOOT_BOX_RECORDS } from './capFootBoxRows.js';
+import { CAP_FOOT_LOCK_RECORDS } from './capFootLockRows.js';
 import { CONNECTOR_BOX_RECORDS } from './connectorBoxRows.js';
 import { CONNECTOR_BOX_SERIES_RECORDS } from './connectorBoxSeriesRows.js';
 import { MOVABLE_PART_BOX_RECORDS } from './movablePartBoxRows.js';
@@ -61,11 +64,11 @@ export interface PanelCoverFrameRecord {
 const EVIDENCE_TITLE = '資料 2 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)';
 const MATERIAL_LABELS: Readonly<Record<Exclude<PartMaterial, 'mixed'>, string>> = { aluminum: 'アルミ', stainless: 'ステンレス', steel: '鋼' };
 
-function evidence(page: number, locator: string): CatalogItemRow['evidence'] {
-  return { title: EVIDENCE_TITLE, edition: null, locator: `PDF ${page} 頁 ${locator}`, reference: '' };
+function evidence(page: number, locator: string, title = EVIDENCE_TITLE): CatalogItemRow['evidence'] {
+  return { title, edition: null, locator: `PDF ${page} 頁 ${locator}`, reference: '' };
 }
 
-function partRow(record: PanelPartRecord): CatalogItemRow {
+function partRow(record: PanelPartRecord, title: string): CatalogItemRow {
   // 資料の質量が無い行と部位ごとに材料の違う行は、密度を持たない(部品表は材質の文字だけで、箱の体積 × 密度の質量を出さない)。
   const density = record.material === 'mixed' || record.massG === null ? {} : { densityMaterialId: record.material };
   const label = record.materialText ?? (record.material === 'mixed' ? '' : MATERIAL_LABELS[record.material]);
@@ -73,7 +76,7 @@ function partRow(record: PanelPartRecord): CatalogItemRow {
   return {
     key: record.key, size: record.size, standardLabel: '製造元の寸法に合わせた物', materialLabel: label, ...density,
     dims: { width: record.width, depth: record.depth, height: record.height, ...(record.massG === null ? {} : { massG: record.massG }) },
-    evidence: evidence(record.page, '部品の図(全体の寸法)と質量の記入'), verification: 'manufacturer-catalog', verified: true,
+    evidence: evidence(record.page, '部品の図(全体の寸法)と質量の記入', title), verification: 'manufacturer-catalog', verified: true,
     note: `形は簡略(${record.simplified.join('・')})。${mass}`, simplified: record.simplified,
   };
 }
@@ -92,11 +95,15 @@ function boxOf(row: CatalogItemRow): { readonly width: number; readonly height: 
   return { width: row.dims.width ?? NaN, height: row.dims.depth ?? NaN, thickness: row.dims.height ?? NaN };
 }
 
-/** 外形を包む箱の族(パネル扉の部品・コネクタで同じ作り。行の表と id・種類の鍵・線図だけが違う)。 */
-function boxFamily(id: string, kindKey: string, diagram: CatalogFamily['diagram'], records: readonly PanelPartRecord[]): CatalogFamily {
+/**
+ * 外形を包む箱の族(パネル扉の部品・コネクタで同じ作り。行の表と id・種類の鍵・線図だけが違う)。資料 1 の小さい部品の族
+ * (統括の決定 2026-11-19 15:5x の 1)は、出どころの資料の名前 `evidenceTitle` に資料 1 の名前を渡す(既定は資料 2)。
+ */
+export function boxFamily(id: string, kindKey: string, diagram: CatalogFamily['diagram'], records: readonly PanelPartRecord[],
+  evidenceTitle = EVIDENCE_TITLE): CatalogFamily {
   return {
     id, group: 'aluminumFrame', kindKey, catalogRevision: `${id}-2026-11-r1`, generatorRevision: 'panel-part-1', options: [], stock: 'count', diagram,
-    rows: records.map(partRow),
+    rows: records.map((record) => partRow(record, evidenceTitle)),
     build: (row) => {
       const part = buildPanelBoardPart(boxOf(row));
       return part === null ? null : withName(part, row.size);
@@ -123,9 +130,10 @@ export const CONNECTOR_BOX_FAMILY: CatalogFamily = boxFamily('connector-box', 'c
 
 /**
  * 資料 2 のキャップと足の部品(パイプのスタンド・床留めのブラケット・台のスタンドなど。外形を包む箱。統括の決定 2026-11-18 14:4x の (3)・16:2x)。
- * 樹脂を含む行は密度を持たず、資料の質量だけ。
+ * 樹脂を含む行は密度を持たず、資料の質量だけ。足回りのロック(行の表 `capFootLockRows.ts`。39h の読み 2 本で一致した値。統括 2026-11-19 19:3x)を続ける。
  */
-export const CAP_FOOT_BOX_FAMILY: CatalogFamily = boxFamily('cap-foot-box', 'catalog.frame.kind.capFootBox', 'capFootBox', CAP_FOOT_BOX_RECORDS);
+export const CAP_FOOT_BOX_FAMILY: CatalogFamily = boxFamily('cap-foot-box', 'catalog.frame.kind.capFootBox', 'capFootBox',
+  [...CAP_FOOT_BOX_RECORDS, ...CAP_FOOT_LOCK_RECORDS]);
 
 /**
  * 資料 2 の可動の部品(蝶番のつなぎ・滑るつなぎ・直動の軸受など。外形を包む箱。統括の指示 2026-11-18 21:31・21:47)。

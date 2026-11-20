@@ -798,7 +798,10 @@ function importedMeshBodies(resolved: ResolvedPart, captured: CapturedImportedMe
  */
 function kernelReselectedReferences(plan: SolidStepPlan): readonly SubShapeRef[] {
   switch (plan.kind) {
-    case 'hole': case 'thread': case 'emboss': case 'threadShaft': case 'holeTranslate': case 'faceOffset':
+    // 辺からの距離の穴(M-02)は、面と同じく 2 本の辺も kernel が今の形で選び直す。
+    case 'hole': case 'thread':
+      return plan.planar?.kind === 'edge-distance' ? [plan.face, plan.planar.edge1, plan.planar.edge2] : [plan.face];
+    case 'emboss': case 'threadShaft': case 'holeTranslate': case 'faceOffset':
       return [plan.face];
     case 'faceRotate': return [plan.face, plan.hinge];
     case 'fillet': case 'chamfer': return plan.targets;

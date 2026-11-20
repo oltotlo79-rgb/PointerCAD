@@ -8,7 +8,7 @@ import { createEmptyPartDocument } from './createPartDocument.js';
 import { independentProfileOrigin } from './profileOrigins.js';
 import { sketchProfileFeatureIds } from './solidSketchReferences.js';
 import { resolvePart } from './resolvePart.js';
-import type { ExtrudeFeature, SolidFeature } from './types.js';
+import type { ExtrudeFeature, SolidFeature, SweepFeature } from './types.js';
 
 const profile = { sketchId: 'sketch-1', faceFeatureId: 'face' };
 const extrude: ExtrudeFeature = { id: 'extrude', name: 'extrude', kind: 'extrude', suppressed: false,
@@ -68,9 +68,23 @@ describe('穴つきの面の押し出し計画', () => {
     { id: 'sew', name: 'sew', kind: 'sew', suppressed: false, faces: [profile, profile], tolerance: num(0.01) },
     { id: 'loft', name: 'loft', kind: 'loft', suppressed: false, smooth: true, twist: num(0),
       sections: [{ kind: 'sketchFace', ref: profile }, { kind: 'sketchFace', ref: profile }] },
-    { id: 'sweep', name: 'sweep', kind: 'sweep', suppressed: false, profile, frenet: false,
-      path: { sketchId: 'sketch-1', curveIds: ['outer'] } },
   ];
+  it('スイープは穴つきの面の穴の線を plan と段へ載せ、肉厚と一緒なら理由つきで断る(M-07)', () => {
+    const sweep: SweepFeature = { id: 'sweep', name: 'sweep', kind: 'sweep', suppressed: false, profile, frenet: false,
+      path: { sketchId: 'sketch-1', curveIds: ['outer'] } };
+    const result = resolvePart(documentWith(5, sweep)), step = result.steps[0];
+    expect(result.errors).toEqual([]);
+    if (step?.plan.kind !== 'sweep') throw new Error('スイープの計画がありません');
+    expect(step.plan).toMatchObject({ holes: [[{ kind: 'arc', radius: 5, center: [30, 20, 0] }]] });
+    expect(toSolidStepRequest(step).step).toMatchObject({ kind: 'sweep', holes: [[{ kind: 'arc', radius: 5 }]] });
+    const plain = resolvePart(documentWith(null, sweep)).steps[0];
+    if (plain === undefined) throw new Error('スイープの段がありません');
+    expect(toSolidStepRequest(plain).step).not.toHaveProperty('holes');
+    const walled = resolvePart(documentWith(5, { ...sweep, wallThickness: num(1) }));
+    expect(walled.steps).toEqual([]);
+    expect(walled.errors.find(error => error.featureId === 'sweep')?.message).toBe('穴つきの面を断面にする時は、肉厚を使えません。');
+  });
+
   it.each(unsupported)('$kindは穴つきの面を理由つきで断る', feature => {
     const result = resolvePart(documentWith(5, feature));
     expect(result.steps).toEqual([]);

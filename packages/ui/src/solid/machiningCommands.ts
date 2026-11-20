@@ -245,6 +245,7 @@ function holeInputError(parameters: {
   readonly cylindrical?: { readonly height: ExpressionValue; readonly angle: ExpressionValue };
   /** 明示した選択平面の面内座標。元の長さの式を保持する。 */
   readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
+  readonly edgeDistance?: EdgeDistanceInput;
 }, size: ExpressionValue): MessageKey | null {
   if (parameters.cylindrical !== undefined && (parameters.tiltAngle.value !== 0 || parameters.tiltAzimuth.value !== 0)) {
     return 'numericInput.error.cylinderHoleTilt';
@@ -253,14 +254,49 @@ function holeInputError(parameters: {
     || [parameters.planar.x, parameters.planar.y].some(value => value.source.trim() === ''))) {
     return 'numericInput.error.planarHoleInput';
   }
+  if (parameters.edgeDistance !== undefined
+    && [parameters.edgeDistance.distance1, parameters.edgeDistance.distance2].some(value => value.source.trim() === '')) {
+    return 'numericInput.error.edgeDistanceInput';
+  }
   const values = [size, parameters.tiltAngle, parameters.tiltAzimuth,
     ...(parameters.planar === undefined ? [] : [parameters.planar.x, parameters.planar.y]),
+    ...(parameters.edgeDistance === undefined ? [] : [parameters.edgeDistance.distance1, parameters.edgeDistance.distance2]),
     ...(parameters.depth.kind === 'blind' ? [parameters.depth.depth] : []),
     ...(parameters.cylindrical === undefined ? [] : [parameters.cylindrical.height, parameters.cylindrical.angle]),
     ...(parameters.entry?.kind === 'counterbore' ? [parameters.entry.diameter, parameters.entry.depth] : []),
     ...(parameters.entry?.kind === 'countersink' ? [parameters.entry.diameter, parameters.entry.angle] : []),
   ];
   return values.every(value => Number.isFinite(value.value)) ? null : 'numericInput.error.holeNonfiniteValue';
+}
+
+/** 辺からの距離(M-02)の入力。選んだ辺 1・辺 2 から面の材料のある側への長さ(mm)の元式。 */
+interface EdgeDistanceInput {
+  readonly distance1: ExpressionValue;
+  readonly distance2: ExpressionValue;
+}
+
+type EdgeDistancePlacementOutcome =
+  | { readonly ok: true; readonly planar: NonNullable<HoleFeature['planar']> }
+  | { readonly ok: false; readonly reasonKey: MessageKey };
+
+/**
+ * 辺からの距離の穴(M-02)の置き方を選択から作る。面は 1 つ、直線の辺はちょうど 2 本で、選んだ順が辺 1・辺 2
+ * (`edgeDistanceHoleInput.ts` の `withHoleEdge` が順を保つ)。中心点・面内 X・Y・円筒とは同時に使えない。
+ * 辺が今の形の面の縁か・平行か・中心が面の中かは、計算部が今の形で確かめて理由つきで断る。
+ */
+function edgeDistancePlacement(context: MachiningContext, face: SubShapeRef, input: EdgeDistanceInput,
+  exclusive: boolean): EdgeDistancePlacementOutcome {
+  if (exclusive || selectedSubShapeRefs(context.bodies, context.selection, 'face').length !== 1) {
+    return { ok: false, reasonKey: 'numericInput.error.edgeDistanceConflict' };
+  }
+  if (!isPlaneFace(face)) return { ok: false, reasonKey: 'numericInput.error.holeUnsupportedSurface' };
+  const edges = selectedSubShapeRefs(context.bodies, context.selection, 'edge');
+  if (edges.length !== 2 || edges.some(edge => edge.fingerprint.kind !== 'edge' || edge.fingerprint.curveKind !== 'line')
+    || (edges[0].bodyFeatureId === edges[1].bodyFeatureId && edges[0].index === edges[1].index)) {
+    return { ok: false, reasonKey: 'numericInput.error.edgeDistanceEdges' };
+  }
+  return { ok: true, planar: { kind: 'edge-distance', edge1: edges[0], edge2: edges[1],
+    locations: [{ distance1: input.distance1, distance2: input.distance2 }] } };
 }
 
 /**
@@ -403,6 +439,8 @@ export function commitHole(
     readonly cylindrical?: { readonly height: ExpressionValue; readonly angle: ExpressionValue };
     /** 点選択/円筒とは排他の、選択平面内の符号付き長さ。 */
     readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
+    /** 点選択・面内 X・Y・円筒とは排他の、選んだ 2 本の辺からの距離(M-02)。 */
+    readonly edgeDistance?: EdgeDistanceInput;
   },
 ): SolidCommandOutcome {
   const face = resolveMachiningFace(context);
@@ -410,7 +448,11 @@ export function commitHole(
     return { ok: false, reasonKey: face.reasonKey };
   }
   const centers = selectedCenterPoints(context.document, context.selection);
-  if (parameters.planar !== undefined) {
+  const byEdges = parameters.edgeDistance === undefined ? undefined : edgeDistancePlacement(context, face.ref, parameters.edgeDistance,
+    centers.length !== 0 || parameters.planar !== undefined || parameters.cylindrical !== undefined);
+  if (byEdges !== undefined) {
+    if (!byEdges.ok) return { ok: false, reasonKey: byEdges.reasonKey };
+  } else if (parameters.planar !== undefined) {
     if (parameters.cylindrical !== undefined || centers.length !== 0
       || selectedSubShapeRefs(context.bodies, context.selection, 'face').length !== 1) {
       return { ok: false, reasonKey: 'numericInput.error.planarHoleConflict' };
@@ -460,7 +502,8 @@ export function commitHole(
     tiltAngle: parameters.tiltAngle,
     tiltAzimuth: parameters.tiltAzimuth,
     ...(cylindrical === undefined ? {} : { cylindrical }),
-    ...(parameters.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [parameters.planar] } }),
+    ...(byEdges?.ok === true ? { planar: byEdges.planar }
+      : parameters.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [parameters.planar] } }),
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -520,6 +563,8 @@ export function commitThreadHole(
     readonly cylindrical?: { readonly height: ExpressionValue; readonly angle: ExpressionValue };
     /** 点選択/円筒とは排他の、選択平面内の符号付き長さ。 */
     readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
+    /** 点選択・面内 X・Y・円筒とは排他の、選んだ 2 本の辺からの距離(M-02。穴と同じ)。 */
+    readonly edgeDistance?: EdgeDistanceInput;
     readonly entry?: HoleEntry;
   },
 ): SolidCommandOutcome {
@@ -528,7 +573,11 @@ export function commitThreadHole(
     return { ok: false, reasonKey: face.reasonKey };
   }
   const centers = selectedCenterPoints(context.document, context.selection);
-  if (parameters.planar !== undefined) {
+  const byEdges = parameters.edgeDistance === undefined ? undefined : edgeDistancePlacement(context, face.ref, parameters.edgeDistance,
+    centers.length !== 0 || parameters.planar !== undefined || parameters.cylindrical !== undefined);
+  if (byEdges !== undefined) {
+    if (!byEdges.ok) return { ok: false, reasonKey: byEdges.reasonKey };
+  } else if (parameters.planar !== undefined) {
     if (parameters.cylindrical !== undefined || centers.length !== 0
       || selectedSubShapeRefs(context.bodies, context.selection, 'face').length !== 1) {
       return { ok: false, reasonKey: 'numericInput.error.planarHoleConflict' };
@@ -593,7 +642,8 @@ export function commitThreadHole(
     tiltAngle: parameters.tiltAngle,
     tiltAzimuth: parameters.tiltAzimuth,
     ...(cylindrical === undefined ? {} : { cylindrical }),
-    ...(parameters.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [parameters.planar] } }),
+    ...(byEdges?.ok === true ? { planar: byEdges.planar }
+      : parameters.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [parameters.planar] } }),
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -727,15 +777,23 @@ export function commitPattern(
 
 /** 明示した配置方法だけを運ぶ。欄不足や円筒との競合は既定値で埋めない。 */
 function planarInputFromCommit(commit: SolidInputCommit):
-  { readonly ok: true; readonly value?: { readonly x: ExpressionValue; readonly y: ExpressionValue } }
+  { readonly ok: true; readonly value: { readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
+    readonly edgeDistance?: EdgeDistanceInput } }
   | { readonly ok: false; readonly reasonKey: MessageKey } {
   const mode = commit.shapeChoices?.holePlacement;
-  if (mode === undefined || mode === 'points') return { ok: true };
-  if (mode !== 'plane-face') return { ok: false, reasonKey: 'shapeError.unknownChoice' };
-  if (commit.flags.cylinderFace === true) return { ok: false, reasonKey: 'numericInput.error.planarHoleConflict' };
+  if (mode === undefined || mode === 'points') return { ok: true, value: {} };
+  if (mode !== 'plane-face' && mode !== 'edge-distance') return { ok: false, reasonKey: 'shapeError.unknownChoice' };
+  if (commit.flags.cylinderFace === true) {
+    return { ok: false, reasonKey: mode === 'edge-distance' ? 'numericInput.error.edgeDistanceConflict' : 'numericInput.error.planarHoleConflict' };
+  }
+  if (mode === 'edge-distance') {
+    const distance1 = commit.values.holeEdgeDistance1, distance2 = commit.values.holeEdgeDistance2;
+    return distance1 === undefined || distance2 === undefined ? { ok: false, reasonKey: 'numericInput.error.edgeDistanceInput' }
+      : { ok: true, value: { edgeDistance: { distance1, distance2 } } };
+  }
   const x = commit.values.holePlanarX, y = commit.values.holePlanarY;
   return x === undefined || y === undefined ? { ok: false, reasonKey: 'numericInput.error.planarHoleInput' }
-    : { ok: true, value: { x, y } };
+    : { ok: true, value: { planar: { x, y } } };
 }
 
 /**
@@ -765,7 +823,7 @@ export function commitMachiningInput(
         diameter: commit.values.diameter ?? DEFAULT_HOLE_DIAMETER,
         depth,
         ...(entry.entry === undefined ? {} : { entry: entry.entry }),
-        ...(planar.value === undefined ? {} : { planar: planar.value }),
+        ...planar.value,
         tiltAngle: DEFAULT_TILT_ANGLE,
         tiltAzimuth: DEFAULT_TILT_AZIMUTH,
         // 「円筒の側面に」を入れたときだけ、高さと角度で位置を決める。
@@ -795,7 +853,7 @@ export function commitMachiningInput(
         series: commit.threadSeries ?? 'coarse',
         depth,
         ...(entry.entry === undefined ? {} : { entry: entry.entry }),
-        ...(planar.value === undefined ? {} : { planar: planar.value }),
+        ...planar.value,
         threadLength: commit.values.threadLength ?? DEFAULT_THREAD_LENGTH,
         representation: commit.flags.modeledThread === true ? 'modeled' : 'simplified',
         tiltAngle: DEFAULT_TILT_ANGLE,

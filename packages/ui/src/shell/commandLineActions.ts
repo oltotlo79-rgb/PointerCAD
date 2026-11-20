@@ -9,7 +9,7 @@ import { createConfiguredNumericInput as createNumericInput } from '../settings/
  * 完全な純関数(履歴・候補・案内)を 1 つのファイルへまとめてある。
  *
  * **打った値の行き先は 3 つ**。
- *   ①道具の語 → `setActiveTool` と、その道具の 1 段目を開く。
+ *   ①スケッチの語 → 道具と 1 段目を選ぶ。立体の語 → ツールバーの命令を実行する。
  *   ②座標・名前付きの欄 → **いま開いているその場入力の欄へ流し込んでから**確定する。
  *   ③空の Enter → いまの欄の値(空欄は既定値)のまま確定する(NFR-UX-4)。
  *
@@ -17,17 +17,21 @@ import { createConfiguredNumericInput as createNumericInput } from '../settings/
  * Enter とまったく同じ道筋なので、どちらから打っても結果が変わらない(NFR-UX-1)。
  */
 
-import { isFreeWorkPlaneId, type CoordinateInput } from '@pointercad/model';
+import { isFreeWorkPlaneId, replaceSketch, type CoordinateInput } from '@pointercad/model';
 
+import type { ToolbarCommandId } from '../commands/toolbarCommandCatalog.js';
+import { executeToolbarCommand } from '../commands/toolbarCommandExecution.js';
 import { t } from '../i18n/t.js';
-import { applyNumericTransition } from '../sketch/commitToStore.js';
+import { applyNumericTransition, commitSketchStep, drawingPlane } from '../sketch/commitToStore.js';
 import {
   parseCommandLine,
+  SOLID_COMMAND_WORDS,
   suggestCommands,
   type CommandLineContext,
   type CommandToolId,
   type CommandWord,
 } from '../sketch/commandLine.js';
+import { parseCommandTable } from '../sketch/commandLineTable.js';
 import {
   applyNumericInputKey,
   asksCoordinate,
@@ -39,6 +43,7 @@ import {
   type NumericInputStep,
   type NumericInputToolId,
 } from '../sketch/numericInput.js';
+import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 /** さかのぼれる履歴の件数。**保存しない**ので、閉じると消える。 */
@@ -110,7 +115,7 @@ export type CommandLineSubmission =
   | { readonly kind: 'committed' }
   | ({ readonly kind: 'error' } & CommandLineFailure);
 
-function failed(message: string, suggestions: readonly string[] = []): CommandLineSubmission {
+function failed(message: string, suggestions: readonly string[] = []): Extract<CommandLineSubmission, { kind: 'error' }> {
   return { kind: 'error', message, suggestions };
 }
 
@@ -169,7 +174,7 @@ export function stepCommandHistory(
  * 打ちかけの語に前方一致する道具(最大 5 件)。
  * 座標や名前付きの欄(`10,20` / `r=5`)を打ち始めたら候補は出さない(道具ではないため)。
  */
-export function commandSuggestions(input: string): readonly CommandWord[] {
+export function commandSuggestions(input: string): ReturnType<typeof suggestCommands> {
   const trimmed = input.trim();
   if (trimmed === '' || trimmed.includes('=') || trimmed.includes(',')) {
     return [];
@@ -184,7 +189,7 @@ export function commandSuggestions(input: string): readonly CommandWord[] {
  * 打っていたものが消えて別の字に入れ替わったように見えるため(NFR-UX-1)。前方一致する
  * 語が無いとき(候補の一覧から直に選んだとき)は、いちばん短い語(短縮)を採る。
  */
-export function acceptedWordOf(word: CommandWord, input = ''): string {
+export function acceptedWordOf(word: Pick<CommandWord, 'words'>, input = ''): string {
   const typed = input.trim().toLowerCase();
   const matched =
     typed === '' ? undefined : word.words.find((entry) => entry.toLowerCase().startsWith(typed));
@@ -307,7 +312,7 @@ function fillField(
   fieldKey: string,
   source: string,
 ): NumericInputState | string {
-  const index = state.fields.findIndex((field) => field.key === fieldKey);
+  const index = state.fields.findIndex((field) => field.key.toLowerCase() === fieldKey);
   if (index === -1) {
     return t('commandLine.error.noSuchField');
   }
@@ -329,6 +334,25 @@ function activateCommandTool(tool: NumericInputToolId): CommandLineSubmission {
   }
   store.openNumericInput(createNumericInput(tool, step), commandLineAnchor());
   return { kind: 'tool', tool, openedStep: true };
+}
+
+/** 立体の道具は、対象の選び方・段・帯の理由までツールバーの実行結果を使う。 */
+function submitSolidCommand(commandId: ToolbarCommandId, input: string): CommandLineSubmission {
+  // ツールバーと同じく、帯の先頭に残ったファイルの知らせを片づけて今回の理由を見せる。
+  const store = useAppStore.getState();
+  if (store.fileMessage !== null) store.setFileMessage(null);
+  const result = executeToolbarCommand(commandId);
+  if (!result.ready) {
+    const reason = t(result.reasonKey ?? 'command.unavailable.action');
+    if (result.feedback === 'handled') {
+      return failed(reason);
+    }
+    const entry = SOLID_COMMAND_WORDS.find(word => word.commandId === commandId);
+    const name = entry === undefined ? input.trim() : t(entry.labelKey);
+    return failed(t('commandLine.error.commandUnavailable').replace('{tool}', name).replace('{reason}', reason));
+  }
+  const { activeTool, numericInput } = useAppStore.getState();
+  return { kind: 'tool', tool: activeTool, openedStep: numericInput !== null };
 }
 
 /**
@@ -375,6 +399,8 @@ export function submitCommandLine(text: string): CommandLineSubmission {
       return failed(outcome.message, outcome.suggestions);
     case 'tool':
       return activateCommandTool(outcome.tool);
+    case 'command':
+      return submitSolidCommand(outcome.commandId, text);
     case 'commit': {
       const state = useAppStore.getState().numericInput;
       if (state === null) {
@@ -399,4 +425,70 @@ export function submitCommandLine(text: string): CommandLineSubmission {
       return typeof filled === 'string' ? failed(filled) : commitStep(filled);
     }
   }
+}
+
+type TableSubmission =
+  | { readonly kind: 'created'; readonly count: number }
+  | Extract<CommandLineSubmission, { kind: 'error' }>;
+
+function tableRowFailure(row: number, reason: string): Extract<TableSubmission, { kind: 'error' }> {
+  return failed(t('commandLine.error.tableRow').replace('{row}', String(row)).replace('{reason}', () => reason));
+}
+
+function tableCommit(
+  input: NumericInputState,
+  coordinate: CoordinateInput,
+  store: ReturnType<typeof useAppStore.getState>,
+) {
+  const filled = fillCoordinate(input, coordinate);
+  if (typeof filled === 'string') return filled;
+  const transition = applyNumericInputKey(filled, 'Enter', {
+    ...store.parameterAnalysis,
+    nonLengthVariables: store.nonLengthVariables,
+    lengthUnit: store.displaySettings.lengthUnit,
+  });
+  if (transition.kind === 'committed') return transition.commit;
+  if (transition.kind === 'blocked') {
+    const { firstErrorIndex, results } = transition.evaluation;
+    return results[firstErrorIndex]?.error?.message ?? t('commandLine.error.tooFewValues');
+  }
+  return t('commandLine.error.notCoordinateStep');
+}
+
+export function submitCommandTable(text: string): TableSubmission {
+  const store = useAppStore.getState();
+  const part = activePartDocument(store);
+  const tool = store.activeTool === 'select' ? 'point' : store.activeTool;
+  if (part === null || (tool !== 'point' && tool !== 'line')) return failed(t('commandLine.error.tableNeedsTool'));
+
+  const start = createNumericInput(tool, tool === 'point' ? 'point' : 'lineStart', 'absolute');
+  const end = store.numericInput?.step === 'lineEnd'
+    ? store.numericInput : createNumericInput('line', 'lineEnd', 'absolute');
+  const plane = drawingPlane();
+  let document = store.sketch;
+  let pendingStart: CoordinateInput | null = null;
+  let count = 0;
+  let lastRow = 1;
+  for (const row of parseCommandTable(text, commandLineContext())) {
+    if ('reason' in row) return tableRowFailure(row.row, row.reason);
+    const input = tool === 'line' && pendingStart !== null ? end : start;
+    const commit = tableCommit(input, row.coordinate, store);
+    if (typeof commit === 'string') return tableRowFailure(row.row, commit);
+    const step = commitSketchStep(commit, {
+      document, plane, planeId: store.workPlaneId, chaining: true, pendingStart,
+    }, store.workPlane);
+    if (step.kind === 'splitError') return tableRowFailure(row.row, t(step.key));
+    if (step.kind === 'mathError') return tableRowFailure(row.row, step.message);
+    if (step.outcome.rejection !== null) return tableRowFailure(row.row, step.outcome.rejection);
+    if (step.outcome.document !== document) count += 1;
+    document = step.outcome.document;
+    pendingStart = step.outcome.pendingStart;
+    lastRow = row.row;
+  }
+  if (count === 0) return tableRowFailure(lastRow, t('commandLine.error.tooFewValues'));
+  store.applyDocument(replaceSketch(part, document));
+  store.setPendingStart(null);
+  store.setInferredConstraints(null);
+  store.closeNumericInput();
+  return { kind: 'created', count };
 }

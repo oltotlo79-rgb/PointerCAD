@@ -22,7 +22,7 @@ import { machiningOracleMath } from './machiningSurfaceOracle.js';
 
 export type PlanarOperation = 'plain' | 'thread';
 export type PlanarPhase = 'blank' | 'single-created' | 'single-edited'
-  | 'two-original' | 'two-edited' | 'missing-reference';
+  | 'two-original' | 'two-edited' | 'missing-reference' | 'edge-created' | 'edge-edited';
 export const PLANAR_OPERATIONS: readonly PlanarOperation[] = ['plain', 'thread'];
 export const STOCK_ID = 'planar-xy-stock';
 export const STOCK_NAME = '面内XY素材';
@@ -91,6 +91,9 @@ function expectedLocations(phase: PlanarPhase): readonly Vec3Tuple[] {
     case 'single-edited': return [[6, -5, 10]];
     case 'two-original': return [[6, -4, 10], [-3, 5, 10]];
     case 'two-edited': return [[6, -4, 10], [-8, 5, 10]];
+    // 辺からの距離(M-02): 右の辺 x=20 から 8(編集後 10)、手前の辺 y=-15 から 5、材料のある側(内側)へ。
+    case 'edge-created': return [[12, -10, 10]];
+    case 'edge-edited': return [[10, -10, 10]];
   }
 }
 function close(actual: Vec3Tuple, expected: Vec3Tuple, tolerance: number): void {
@@ -154,14 +157,15 @@ export async function expectPlanarNative(bytes: Uint8Array, operation: PlanarOpe
       const target = readBrepBytes(await loadOcctForNode(), native.inspectShape(request.step.targetKey).readBrepBytes());
       try {
         const oc = await loadOcctForNode(), mesh = tessellate(oc, target), edges = extractEdges(oc, target);
-        const faces = collectSubShapes(oc, target, mesh.faceRanges, edges.edgeRanges).faces;
+        const tables = collectSubShapes(oc, target, mesh.faceRanges, edges.edgeRanges), faces = tables.faces;
         const featureIndex = read.document.solids.findIndex(item => item.id === feature.id);
         const prefix = await recomputePart({ ...read.document, solids: read.document.solids.slice(0, featureIndex) }, native.bridge,
           { importedShapes: read.attachments.shapes, math: machiningOracleMath(read.document) });
         expect(prefix.errors).toEqual([]);
         const stock = prefix.bodies.find(item => item.featureId === STOCK_ID);
         if (stock === undefined) throw new Error('素材の参照履歴がありません');
-        const frame = resolveHoleFrame(oc, target, faces, request.step, stock.origins);
+        // 辺からの距離の穴は、再計算の段と同じく今の形の辺の一覧で中心を求める(面内 X・Y の穴は辺の一覧を使わない)。
+        const frame = resolveHoleFrame(oc, target, faces, request.step, stock.origins, tables.edges);
         expect(frame.origins).toHaveLength(entries.length); close(frame.direction, [0, 0, -1], 1e-9);
         frame.origins.forEach((point, index) => {
           const entry = entries[index]; if (entry === undefined) throw new Error('独立期待位置がありません');

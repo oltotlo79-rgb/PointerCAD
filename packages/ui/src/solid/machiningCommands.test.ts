@@ -1401,6 +1401,7 @@ describe('EX05 explicit planar creation adapter', () => {
     const feature = requireFeature(outcome.document, outcome.featureId);
     if (feature.kind !== 'hole') throw new Error('Expected hole');
     expect(feature.planar).toEqual({ kind: 'plane-face', locations: [{ x, y }] });
+    if (feature.planar?.kind !== 'plane-face') throw new Error('Expected plane-face placement');
     expect(feature.planar?.locations[0]?.x).toBe(x);
     expect(feature.centers).toEqual([]);
     expect(feature.cylindrical).toBeUndefined();
@@ -1500,4 +1501,68 @@ describe('自動生成するねじ下穴径の厳密な保存値', () => {
       });
     }
   }
+});
+
+describe('辺からの距離の穴の確定(M-02)', () => {
+  // 60×40×10 の板の上面(面 0)と、上面の縁の直線の辺 2 本・縦の辺・円の辺。期待は製品の式を使わずに手で書く。
+  const edges = [
+    makeEdge(0, [0, 0, 10], [60, 0, 10], { axis: [1, 0, 0] }),
+    makeEdge(1, [60, 0, 10], [60, 40, 10], { axis: [0, 1, 0] }),
+    makeEdge(2, [0, 0, 0], [0, 0, 10], { axis: [0, 0, 1] }),
+    makeEdge(3, [33, 20, 10], [33, 20, 10], { curveKind: 'circle', radius: 3, axis: [0, 0, 1] }),
+  ];
+  const face = subShapeElementId('extrude-1', 'face', 0);
+  const edge = (index: number): string => subShapeElementId('extrude-1', 'edge', index);
+  const context = (selection: readonly string[]): MachiningContext => ({ document: documentWithBodies(['extrude-1']),
+    bodies: [makeBody('extrude-1', { faces: [makeFace(0)], edges })], selection });
+  const distance1 = { ...expressionValueFromNumber(8), source: '4 * 2' };
+  const distance2 = { ...expressionValueFromNumber(12), source: '12' };
+  const commit = (tool: 'hole' | 'threadHole'): SolidInputCommit => ({ kind: 'solid', tool,
+    step: tool === 'hole' ? 'holeSize' : 'threadSize',
+    values: { diameter: DIAMETER_6, depth: DEPTH_10, threadLength: DEPTH_10, holeEdgeDistance1: distance1, holeEdgeDistance2: distance2 },
+    flags: {}, shapeChoices: { holePlacement: 'edge-distance' } });
+
+  it.each(['hole', 'threadHole'] as const)('%s: 選んだ順の 2 本が辺 1・辺 2 になり、距離の元式を保ち、文書は版 24 になる', tool => {
+    const before = context([face, edge(1), edge(0)]);
+    const outcome = commitMachiningInput(before, commit(tool));
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    const feature = requireFeature(outcome.document, outcome.featureId);
+    if (feature.kind !== 'hole' && feature.kind !== 'threadHole') throw new Error('Expected machining feature');
+    expect(feature.kind).toBe(tool);
+    expect(feature.centers).toEqual([]);
+    expect(feature.cylindrical).toBeUndefined();
+    expect(feature.planar).toMatchObject({ kind: 'edge-distance', edge1: { bodyFeatureId: 'extrude-1', index: 1 },
+      edge2: { bodyFeatureId: 'extrude-1', index: 0 }, locations: [{ distance1, distance2 }] });
+    if (feature.planar?.kind !== 'edge-distance') throw new Error('Expected edge-distance placement');
+    expect(feature.planar.edge1.fingerprint).toMatchObject({ kind: 'edge', curveKind: 'line', length: 40 });
+    expect(before.document.schemaVersion).toBe(22);
+    expect(outcome.document.schemaVersion).toBe(24);
+    expect(outcome.document.solids).toHaveLength(before.document.solids.length + 1);
+  });
+
+  it('辺の数・種類・面なし・距離の欠け・空の式・円筒・中心点との併用は、理由をつけて断り、文書を変えない', () => {
+    const refuse = (selection: readonly string[], change: Partial<SolidInputCommit> = {}) =>
+      commitMachiningInput(context(selection), { ...commit('hole'), ...change });
+    const edgesKey = { ok: false, reasonKey: 'numericInput.error.edgeDistanceEdges' };
+    expect(refuse([face])).toEqual(edgesKey);
+    expect(refuse([face, edge(0)])).toEqual(edgesKey);
+    expect(refuse([face, edge(0), edge(3)])).toEqual(edgesKey);
+    expect(refuse([edge(0), edge(1)])).toEqual({ ok: false, reasonKey: 'machiningError.noFace' });
+    expect(refuse([face, edge(0), edge(1)], { values: { diameter: DIAMETER_6, depth: DEPTH_10, holeEdgeDistance1: distance1 } }))
+      .toEqual({ ok: false, reasonKey: 'numericInput.error.edgeDistanceInput' });
+    expect(refuse([face, edge(0), edge(1)], { values: { diameter: DIAMETER_6, depth: DEPTH_10,
+      holeEdgeDistance1: { ...distance1, source: ' ' }, holeEdgeDistance2: distance2 } }))
+      .toEqual({ ok: false, reasonKey: 'numericInput.error.edgeDistanceInput' });
+    expect(refuse([face, edge(0), edge(1)], { flags: { cylinderFace: true } }))
+      .toEqual({ ok: false, reasonKey: 'numericInput.error.edgeDistanceConflict' });
+    const { document, pointId } = withPoint(documentWithBodies(['extrude-1']));
+    expect(commitMachiningInput({ ...context([face, edge(0), edge(1), pointId]), document }, commit('hole')))
+      .toEqual({ ok: false, reasonKey: 'numericInput.error.edgeDistanceConflict' });
+    expect(commitHole(context([face, edge(0), edge(1)]), { ...HOLE_PARAMS, edgeDistance: { distance1, distance2 },
+      planar: { x: distance1, y: distance2 } })).toEqual({ ok: false, reasonKey: 'numericInput.error.edgeDistanceConflict' });
+    expect(commitThreadHole(context([face, edge(0), edge(1)]), { designation: 'M6', series: 'coarse', depth: { kind: 'through' },
+      threadLength: DEPTH_10, representation: 'simplified', tiltAngle: ZERO, tiltAzimuth: ZERO,
+      edgeDistance: { distance1: { ...distance1, value: Number.NaN }, distance2 } }))
+      .toEqual({ ok: false, reasonKey: 'numericInput.error.holeNonfiniteValue' });
+  });
 });

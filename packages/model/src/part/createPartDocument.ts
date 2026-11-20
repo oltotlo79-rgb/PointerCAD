@@ -817,6 +817,21 @@ export function setActiveSketch(document: PartDocument, sketchId: string): PartD
   return { ...document, activeSketchId: sketchId };
 }
 
+/** 次の版で足した欄・種類を使った文書だけが名乗る保存形式の版。使っていない文書は今の版のまま(利用者の回答 2026-11-16 17:5x と同じ考え方)。 */
+const NEW_FEATURE_SCHEMA_VERSION = 24;
+
+/**
+ * 辺からの距離の穴(M-02)・ねじれ・終わりの大きさ・肉厚を持つスイープ(M-07)を足した・差し替えた時だけ、文書の版を 24 へ上げる。開くだけでは上げず、消しても下げない
+ * (古い読み手が欄を捨てて穴の位置を失わないよう、保存の側は版 24 未満でこの欄を書かない)。
+ */
+function schemaVersionFor(document: PartDocument, feature: SolidFeature): { readonly schemaVersion?: number } {
+  const usesEdgeDistance = (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar?.kind === 'edge-distance';
+  const usesSweepShape = feature.kind === 'sweep'
+    && (feature.twistDegrees !== undefined || feature.endScale !== undefined || feature.wallThickness !== undefined);
+  return (usesEdgeDistance || usesSweepShape) && document.schemaVersion < NEW_FEATURE_SCHEMA_VERSION
+    ? { schemaVersion: NEW_FEATURE_SCHEMA_VERSION } : {};
+}
+
 export function findSolid(document: PartDocument, featureId: string): SolidFeature | undefined {
   return document.solids.find((feature) => feature.id === featureId);
 }
@@ -833,7 +848,7 @@ export function appendSolid(document: PartDocument, feature: SolidFeature): Part
   const normalized = feature.kind === 'pattern' && feature.placement.kind === 'points'
     ? { ...feature, placement: allocatePatternPointSlots(feature.placement.points, undefined, feature.placement.nextSlotSerial, patternSlotHighWater(document, feature.id)) }
     : feature;
-  return retainPatternSlotHighWater({ ...document, solids: [...document.solids, normalized] }, document);
+  return retainPatternSlotHighWater({ ...document, ...schemaVersionFor(document, normalized), solids: [...document.solids, normalized] }, document);
 }
 
 /**
@@ -856,6 +871,7 @@ export function replaceSolid(
     : next;
   return retainPatternSlotHighWater({
     ...document,
+    ...schemaVersionFor(document, normalized),
     solids: document.solids.map((feature) => (feature.id === featureId ? normalized : feature)),
   }, document);
 }

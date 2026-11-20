@@ -75,7 +75,9 @@ describe('planar property basis on a consumed upstream face', () => {
         exactVariables: new Map(), nonLengthVariables: new Set(), pendingVariables: new Set() });
       const value = { ...expressionValueFromNumber(-5), source: '-(1+4)' };
       const next = edit.replaceValue(before, value), changed = next.solids.find(row => row.id === f.feature.id);
-      if (changed?.kind !== 'hole') throw new Error('Missing updated hole');
+      if (changed?.kind !== 'hole' || changed.planar?.kind !== 'plane-face' || f.feature.planar?.kind !== 'plane-face') {
+        throw new Error('Missing updated hole');
+      }
       expect(changed.face).toBe(reference); expect(changed.id).toBe(f.feature.id);
       expect(changed.planar?.locations[0].x).toBe(f.feature.planar?.locations[0].x);
       expect(changed.planar?.locations[0].y).toBe(value);

@@ -3054,3 +3054,39 @@ describe('EX05 indexed property display and supported edits', () => {
       depth: expressionValueFromNumber(DEFAULT_COUNTERBORE_DEPTH_MM) } });
   });
 });
+
+describe('辺からの距離の穴のプロパティ(M-02)', () => {
+  const edge = (index: number) => ({ bodyFeatureId: 'extrude-1', index,
+    fingerprint: { kind: 'edge' as const, curveKind: 'line' as const, length: 40, position: [60, 20, 10] as [number, number, number],
+      axis: [0, 1, 0] as [number, number, number], radius: null } });
+  const ONE: HoleFeature = { ...HOLE_BLIND, centers: [], planar: { kind: 'edge-distance', edge1: edge(1), edge2: edge(0),
+    locations: [{ distance1: expressionValueFromNumber(8), distance2: expressionValueFromNumber(12) }] } };
+
+  it('位置が 1 つなら辺 1・辺 2 からの距離(mm)の行を出し、面内 X・Y の行は出さない', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, ONE), ONE);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'diameter', 'depth', 'tiltAngle', 'tiltAzimuth', 'holeEdgeDistance1', 'holeEdgeDistance2',
+    ]);
+    const first = summary.fields.find((field) => field.key === 'holeEdgeDistance1');
+    expect(first?.unit).toBe('mm');
+    expect(first?.value.value).toBe(8);
+    expect(first?.labelKey).toBe('numericInput.field.holeEdgeDistance1');
+    expect(summary.fields.find((field) => field.key === 'holeEdgeDistance2')?.tooltipKey)
+      .toBe('numericInput.tooltip.holeEdgeDistance2');
+  });
+
+  it('出した行の鍵で書き戻すと距離だけが式のまま変わり、位置が 2 つなら位置を選んだ時だけ行を出す', () => {
+    const edited = setSolidField(ONE, 'holeEdgeDistance2', expressionValueFromNumber(15));
+    if (edited.kind !== 'hole') throw new Error('穴のはず');
+    expect(edited.planar).toEqual({ ...ONE.planar, locations: [{ distance1: expressionValueFromNumber(8),
+      distance2: expressionValueFromNumber(15) }] });
+    const two: HoleFeature = { ...ONE, planar: { kind: 'edge-distance', edge1: edge(1), edge2: edge(0), locations: [
+      { distance1: expressionValueFromNumber(8), distance2: expressionValueFromNumber(12) },
+      { distance1: expressionValueFromNumber(30), distance2: expressionValueFromNumber(12) },
+    ] } };
+    expect(summarizeSolid(documentWith(EXTRUDE, two), two).fields.some((field) => field.key === 'holeEdgeDistance1')).toBe(false);
+    expect(summarizeSolid(documentWith(EXTRUDE, two), two, [], 1).fields.find((field) => field.key === 'holeEdgeDistance1')
+      ?.value.value).toBe(30);
+    expect(setSolidField(two, 'holeEdgeDistance1', expressionValueFromNumber(5))).toEqual(two);
+  });
+});

@@ -84,6 +84,7 @@ describe('EX05 planar indexed expression updates', () => {
       : setThreadHoleField(feature, 'holePlanarX', next, undefined, index);
     const changed = update(1);
     if (changed.kind !== 'hole' && changed.kind !== 'threadHole') throw new Error('Expected hole');
+    if (changed.planar?.kind !== 'plane-face' || feature.planar?.kind !== 'plane-face') throw new Error('Expected plane-face placement');
     expect(changed.planar?.locations[0]).toBe(feature.planar?.locations[0]);
     expect(changed.planar?.locations[1]?.x).toBe(value);
     expect(changed.planar?.locations[1]?.y).toBe(feature.planar?.locations[1]?.y);
@@ -97,7 +98,9 @@ describe('EX05 planar indexed expression updates', () => {
     const feature: HoleFeature = { ...planar, planar: { kind: 'plane-face', locations: [{ x: formula('6', 6), y: formula('-4', -4) }] } };
     const value = formula('10 - 17', -7);
     const changed = setHoleField(feature, 'holePlanarY', value);
-    if (changed.kind !== 'hole') throw new Error('Expected hole');
+    if (changed.kind !== 'hole' || changed.planar?.kind !== 'plane-face' || feature.planar?.kind !== 'plane-face') {
+      throw new Error('Expected hole');
+    }
     expect(changed.planar?.locations[0]?.y).toBe(value);
     expect(changed.planar?.locations[0]?.x).toBe(feature.planar?.locations[0]?.x);
   });
@@ -141,5 +144,41 @@ describe('自動計算する下穴径の厳密な式を保つ', () => {
     expect(result.drillDiameter).toBe(manual);
     expect(result).toEqual({ ...before, drillDiameter: manual });
     expect(thread).toEqual(before);
+  });
+});
+
+describe('M-02 edge-distance indexed updates', () => {
+  const edge = (index: number) => ({ bodyFeatureId: 'body-1', index,
+    fingerprint: { kind: 'edge' as const, curveKind: 'line' as const, length: 40, position: [60, 20, 10] as [number, number, number],
+      axis: [0, 1, 0] as [number, number, number], radius: null } });
+  const byEdges: HoleFeature = { ...hole, cylindrical: undefined,
+    face: { bodyFeatureId: 'body-1', index: 5, fingerprint: { kind: 'face', surfaceKind: 'plane',
+      area: 2400, position: [30, 20, 10], axis: [0, 0, 1], radius: null } },
+    planar: { kind: 'edge-distance', edge1: edge(3), edge2: edge(4), locations: [
+      { distance1: formula('4 * 2', 8), distance2: formula('8', 8) },
+      { distance1: formula('20', 20), distance2: formula('6 * 2', 12) },
+    ] } };
+  const threadByEdges: ThreadHoleFeature = { ...thread, cylindrical: undefined, face: byEdges.face, planar: byEdges.planar };
+  it.each([byEdges, threadByEdges])('$kind: 選んだ位置の距離だけを直し、辺の参照・ほかの位置・元の文書を変えない', feature => {
+    const before = structuredClone(feature);
+    const value = formula('5 + 5', 10);
+    const update = (key: 'holeEdgeDistance1' | 'holeEdgeDistance2', index?: number, next = value) => feature.kind === 'hole'
+      ? setHoleField(feature, key, next, undefined, index)
+      : setThreadHoleField(feature, key, next, undefined, index);
+    const changed = update('holeEdgeDistance2', 1);
+    if (changed.kind !== 'hole' && changed.kind !== 'threadHole') throw new Error('Expected hole');
+    if (changed.planar?.kind !== 'edge-distance' || feature.planar?.kind !== 'edge-distance') throw new Error('Expected edge-distance');
+    expect(changed.planar.edge1).toBe(feature.planar.edge1);
+    expect(changed.planar.edge2).toBe(feature.planar.edge2);
+    expect(changed.planar.locations[0]).toBe(feature.planar.locations[0]);
+    expect(changed.planar.locations[1]).toEqual({ distance1: feature.planar.locations[1].distance1, distance2: value });
+    expect(changed.face).toBe(feature.face);
+    // 位置が 2 つの時は位置の指定が要る。範囲外・整数でない位置、空や有限でない式は同じものを返す。
+    for (const index of [undefined, -1, 2, 0.5, NaN]) expect(update('holeEdgeDistance1', index)).toBe(feature);
+    for (const invalid of [formula('', 0), formula('bad', NaN)]) expect(update('holeEdgeDistance1', 0, invalid)).toBe(feature);
+    // 面内 X・Y の欄の書き戻しは、辺からの距離の穴を変えない(置き方を取り違えない)。
+    expect(feature.kind === 'hole' ? setHoleField(feature, 'holePlanarX', value, undefined, 0)
+      : setThreadHoleField(feature, 'holePlanarX', value, undefined, 0)).toBe(feature);
+    expect(feature).toEqual(before);
   });
 });

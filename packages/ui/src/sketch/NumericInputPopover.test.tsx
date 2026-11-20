@@ -6,7 +6,7 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { currentStagedSolid } from '../store/recomputeSlice.js';
 import { clampAnchor, NumericInputPopover, popoverMaxHeight } from './NumericInputPopover.js';
-import { chooseNumericInput, createNumericInput, reduceNumericInput } from './numericInput.js';
+import { chooseNumericInput, createNumericInput, reduceNumericInput, SOLID_TOOL_STEPS } from './numericInput.js';
 import { exactExpressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { appendSolid, type PartDocument } from '@pointercad/model';
 import { attachPartRecompute } from '../store/attachKernel.js';
@@ -122,13 +122,18 @@ describe('Extrusion input commits through geometry calculation (EX-14)', () => {
       numericInputAnchor: [100, 100], partStager: null, stagedSolid: null });
   });
 
-  it('shows the localized preview action only for the extrusion step', () => {
-    expect(renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />))
-      .toContain(t('numericInput.extrudePreview'));
-    useAppStore.setState({ numericInput: createNumericInput('point', 'point', 'absolute') });
-    expect(renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />))
-      .not.toContain(t('numericInput.extrudePreview'));
-  });
+  it.each(['extrude', 'revolve', 'sphere', 'box', 'cylinder', 'cone', 'torus'] as const)(
+    '%s shows the localized preview action', tool => {
+      useAppStore.setState({ numericInput: createNumericInput(tool, SOLID_TOOL_STEPS[tool]) });
+      expect(renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />))
+        .toContain(t('numericInput.extrudePreview'));
+    });
+  it.each([['point', 'point'], ['sweep', 'sweepOptions'], ['loft', 'loftTwist'], ['ruled', 'ruledTwist']] as const)(
+    '%s keeps its existing actions', (tool, step) => {
+      useAppStore.setState({ numericInput: createNumericInput(tool, step) });
+      expect(renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />))
+        .not.toContain(t('numericInput.extrudePreview'));
+    });
 
   it('shows the suggestion badge and its reason beside suggested choices, and drops them after a manual choice (M-01)', () => {
     const suggested = withExtrudeSuggestions(
@@ -190,7 +195,7 @@ describe('Extrusion input commits through geometry calculation (EX-14)', () => {
 describe('staged direct-edit notices follow the current input owner', () => {
   it.each([
     ['holeTranslate', 'holeTranslateVector'], ['faceRotate', 'faceRotateAngle'], ['faceOffset', 'faceOffsetDistance'],
-    ['cut', 'cutPlane'],
+    ['cut', 'cutPlane'], ['revolve', 'revolveAngle'], ['box', 'boxSize'],
     ['extrude', 'extrudeDistance'],
   ] as const)('%s displays pending then asynchronous refusal without committing', async (tool, step) => {
     useAppStore.getState().setActiveTool(tool);

@@ -22,7 +22,8 @@ import {
 } from '../sketch/numericInput.js';
 import { pickSketchElement, sketchForSelection } from '../sketch/pickMath.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
-import type { SelectionKind } from '../solid/subShapeSelection.js';
+import { picksHoleEdges, withHoleEdge } from '../solid/edgeDistanceHoleInput.js';
+import { parseSubShapeId, type SelectionKind } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { stagedPreviewOf } from './solidMeshAdmission.js';
 
@@ -213,7 +214,13 @@ export function createSketchSelectionInput(context: SketchSelectionContext) {
         選択・投影・断面は上の枝で先に返るので、ここへは来ない。
       */
       event.preventDefault();
-      pickInto(pointer, addsToSketchSelection(event));
+      const found = picksHoleEdges(state.numericInput) ? elementAt(pointer, state) : undefined;
+      if (found !== undefined && found.elementId !== null && parseSubShapeId(found.elementId)?.kind === 'edge') {
+        // 辺からの距離の穴(M-02): 面を残したまま、押した辺を押した順に 2 本まで選ぶ(欄の位置は動かさない)。
+        state.setSelection(withHoleEdge(state.selection, found.elementId), { kind: 'pick' });
+        return true;
+      }
+      pickInto(pointer, addsToSketchSelection(event), found);
       return true;
     }
 

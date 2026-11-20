@@ -1,13 +1,17 @@
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { PlanarHoleBasisInfo } from './PlanarHoleBasisInfo.js';
+import { EdgeDistanceHoleInfo } from './EdgeDistanceHoleInfo.js';
+import { picksHoleEdges } from '../solid/edgeDistanceHoleInput.js';
 import { DraggableWindowTitle } from './DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { isPendingFieldError, pendingFieldVariables } from '../shell/propertyFieldUnits.js';
 import { t } from '../i18n/t.js';
 import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
+import { supportsSolidOperation } from '../solid/solidOperation.js';
 import { stagedExtrusionMessageKey } from '../solid/extrudePreview.js';
-import { currentStagedSolid } from '../store/recomputeSlice.js';
+import { SolidResultSuggestion } from '../solid/SolidResultSuggestion.js';
+import { currentStagedSolid, type StagedSolidState } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { applyNumericTransition, previewExtrudeTransition } from './commitToStore.js';
 import { ExpressionField } from './ExpressionField.js';
@@ -145,6 +149,42 @@ function numericInputKeyFor(
     }
   }
   return null;
+}
+
+function solidStageMessage(stage: StagedSolidState | null): string | null {
+  if (stage === null) return null;
+  switch (stage.status) {
+    case 'pending':
+      return t(stage.confirmRequested ? 'numericInput.directEditConfirming' : 'numericInput.extrudePreviewComputing');
+    case 'ready':
+      return stage.confirmRequested ? null : t('numericInput.extrudePreviewReady');
+    case 'failed':
+      return stage.errors[0]?.message ?? stage.errorMessage ?? t('directEditError.failed');
+  }
+}
+
+function SolidStageMessages({ input }: { readonly input: NumericInputState }): React.JSX.Element {
+  const extrude = input.toolId === 'extrude';
+  const stagedMessageKey = useAppStore(store => extrude ? stagedExtrusionMessageKey(store) : null);
+  const otherStage = !extrude && (supportsSolidOperation(input.toolId) || input.step === 'holeTranslateVector'
+    || input.step === 'faceRotateAngle' || input.step === 'faceOffsetDistance' || input.step === 'cutPlane');
+  const directStage = useAppStore(store => otherStage ? currentStagedSolid(store) : null);
+  const directMessage = solidStageMessage(directStage);
+  return (
+    <>
+      {stagedMessageKey === null ? null : (
+        <p className={stagedMessageKey.startsWith('solidError.') ? 'pcad-field__error' : 'pcad-field__message'}
+          role={stagedMessageKey.startsWith('solidError.') ? 'alert' : 'status'}>{t(stagedMessageKey)}</p>
+      )}
+      {directStage?.status === 'ready' && !directStage.confirmRequested
+        && input.choices.some(choice => choice.key === 'extrudeOperation' && choice.value === 'new')
+        ? <SolidResultSuggestion input={input} bodies={directStage.result?.bodies ?? []} toolId={directStage.finalFeatureId} /> : null}
+      {directMessage === null ? null : (
+        <p className={directStage?.status === 'failed' ? 'pcad-field__error' : 'pcad-field__message'}
+          role={directStage?.status === 'failed' ? 'alert' : 'status'}>{directMessage}</p>
+      )}
+    </>
+  );
 }
 
 interface ChoiceGroupProps {
@@ -328,18 +368,6 @@ export function NumericInputPopover({
    */
   const lengthUnit = useAppStore((store) => store.displaySettings.lengthUnit);
   const nonLengthVariables = useAppStore((store) => store.nonLengthVariables);
-  // 押し出しの段階計算の知らせ(計算中・表示中・失敗の理由・入力が変わった)。
-  const stagedMessageKey = useAppStore((store) =>
-    store.numericInput?.step === 'extrudeDistance' ? stagedExtrusionMessageKey(store) : null);
-  const directStage = useAppStore((store) => store.numericInput?.step === 'holeTranslateVector'
-    || store.numericInput?.step === 'faceRotateAngle' || store.numericInput?.step === 'faceOffsetDistance'
-    || store.numericInput?.step === 'cutPlane'
-    ? currentStagedSolid(store) : null);
-  const directMessage = directStage?.status === 'pending' ? t('numericInput.directEditConfirming')
-    : directStage?.status === 'failed' ? directStage.errors[0]?.message ?? directStage.errorMessage
-      ?? t('directEditError.failed') : null;
-
-
   // つまみと選択肢は入力欄ではないので、焦点は状態機械の指示でこちらから移す。
   const toggleRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const choiceRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -408,7 +436,7 @@ export function NumericInputPopover({
       aria-label={t(STEP_TITLE_KEYS[state.step])}
       onKeyDown={(event) => {
         // 押し出しの「形を確かめる」は Alt+P でも押せる(欄の Tab の巡回はボタンへ移らないため)。
-        if (state.step === 'extrudeDistance' && event.altKey && event.code === 'KeyP'
+        if (supportsSolidOperation(state.toolId) && event.altKey && event.code === 'KeyP'
           && !isCompositionKey(event.nativeEvent)) {
           event.preventDefault();
           event.stopPropagation();
@@ -429,7 +457,7 @@ export function NumericInputPopover({
       <DraggableWindowTitle className="pcad-popover__title">{t(STEP_TITLE_KEYS[state.step])}</DraggableWindowTitle>
       {(state.step === 'holeSize' || state.step === 'threadSize')
         && state.choices.some(choice => choice.key === 'holePlacement' && choice.value === 'plane-face')
-        ? <PlanarHoleBasisInfo /> : null}
+        ? <PlanarHoleBasisInfo /> : picksHoleEdges(state) ? <EdgeDistanceHoleInfo /> : null}
       {evaluation.carriedError === undefined ? null : (
         <p className={isPendingFieldError(evaluation.carriedError) ? 'pcad-field__message' : 'pcad-field__error'}
           role={isPendingFieldError(evaluation.carriedError) ? 'status' : 'alert'}>{evaluation.carriedError.message}</p>
@@ -546,14 +574,7 @@ export function NumericInputPopover({
       )}
 
       {state.step === 'sweepOptions' ? <p className="pcad-popover__hint">{t('numericInput.sweepGuide.hint')}</p> : null}
-      {stagedMessageKey === null ? null : (
-        <p className={stagedMessageKey.startsWith('solidError.') ? 'pcad-field__error' : 'pcad-field__message'}
-          role={stagedMessageKey.startsWith('solidError.') ? 'alert' : 'status'}>{t(stagedMessageKey)}</p>
-      )}
-      {directMessage === null ? null : (
-        <p className={directStage?.status === 'failed' ? 'pcad-field__error' : 'pcad-field__message'}
-          role={directStage?.status === 'failed' ? 'alert' : 'status'}>{directMessage}</p>
-      )}
+      <SolidStageMessages input={state} />
       <p className="pcad-popover__hint">{t('numericInput.keyHint')}</p>
 
       <div className="pcad-popover__actions">
@@ -576,10 +597,10 @@ export function NumericInputPopover({
           </button>
         ) : null}
         {/*
-          押し出しだけは、確定する前に同じ候補の形を計算して表示できる。
+          結果を選べる道具では、確定する前に同じ候補の形を計算して表示できる。
           確定(Enter・決定)と同じ入力の評価を通り、文書と取り消しには触れない。
         */}
-        {state.step === 'extrudeDistance' ? (
+        {supportsSolidOperation(state.toolId) ? (
           <button
             type="button"
             className="pcad-button"

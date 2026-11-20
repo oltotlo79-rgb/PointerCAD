@@ -29,7 +29,7 @@ import { drawingEditPointerMatches, drawingPaperPoint, INITIAL_DRAWING_NAVIGATIO
   type DrawingNavigationTransform } from './drawingNavigation.js';
 import { attachDrawingSurfaceInputs } from './drawingSurfaceInputs.js';
 
-export function DrawingCanvas(): React.JSX.Element {
+function useDrawingCanvas() {
   const drawing = useAppStore((state) => state.drawing);
   const resolution = useAppStore((state) => state.drawingResolution);
   const selectedIds = useAppStore((state) => state.drawingSelectedIds);
@@ -198,6 +198,17 @@ export function DrawingCanvas(): React.JSX.Element {
     if (current !== null && current.document === drawing) previewDimension(current.start);
     return () => { dimensionSvgPreview.current?.restore(); dimensionSvgPreview.current = null; };
   }, [dimensionDragStart, drawing, previewDimension]);
+  return { viewport, container, drawing, busy, navigation, navigationControls, tool, source, targets, selectedIds,
+    repairDocumentId, repairProjection, shown, paperPoint, previewDimension, drag, dimensionSvgPreview,
+    noteDrag, tableDrag, gdtDrag, viewDrag, viewSvgPreview, setDragPoint, setDimensionDragStart,
+    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt };
+}
+
+export function DrawingCanvas(): React.JSX.Element {
+  const { viewport, container, drawing, busy, navigation, navigationControls, tool, source, targets, selectedIds,
+    repairDocumentId, repairProjection, shown, paperPoint, previewDimension, drag, dimensionSvgPreview,
+    noteDrag, tableDrag, gdtDrag, viewDrag, viewSvgPreview, setDragPoint, setDimensionDragStart,
+    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt } = useDrawingCanvas();
   return <div className="pcad-drawing-viewport" data-testid="drawing-viewport" ref={viewport}
     data-document-owner={repairDocumentId} data-reference-repair-hover-status={repairProjection.status}
     data-reference-repair-hover-reason={repairProjection.status === 'unavailable' ? repairProjection.reason : undefined}>

@@ -273,6 +273,8 @@ export {
   type MatchScoreParts,
   type SubShapeMatch,
 } from './occt/matchSubShape.js';
+// 辺からの距離の穴の中心(M-02)。OCCT を使わない純関数。図面の穴表も計算部と同じ式で中心を出す。
+export { edgeDistanceCenters } from './occt/edgeDistancePlacement.js';
 // 穴・ねじ穴(FR-405、FR-406)。
 export { makeHole, makeHoleTools, resolveHoleFrame, type HoleFrame } from './occt/makeHole.js';
 export { makeThreadCut, makeThreadHole, threadSweepRadius } from './occt/makeThread.js';

@@ -504,8 +504,21 @@ export interface CylindricalHoleLocationValue {
   readonly angle: ExpressionValue;
 }
 
+/**
+ * 辺からの距離の穴(M-02)。穴をあける面の縁の直線の辺 2 本(順序つき)と、位置ごとの辺 1・辺 2 からの距離(mm の式)。
+ * 中心は計算部が毎回、面の材料のある側へずらした 2 本の線の交点として求め、座標は保存しない(板の大きさを変えても辺からの距離を保つ)。
+ * この置き方を初めて使った部品だけ保存形式の版 24 になる(`appendSolid`・`replaceSolid`)。centers・cylindrical とは同時に指定しない。
+ */
+interface EdgeDistanceHolePlacement {
+  readonly kind: 'edge-distance';
+  readonly edge1: SubShapeRef;
+  readonly edge2: SubShapeRef;
+  readonly locations: readonly { readonly distance1: ExpressionValue; readonly distance2: ExpressionValue }[];
+}
+/** 平らな面の穴の置き方。面内 X・Y か、辺からの距離。 */
+type PlanarHolePlacement = PlaneFaceHolePlacement | EdgeDistanceHolePlacement;
 /** 面内X・Yの元式。現在の面の基準で毎回評価し、世界点は保存しない。 */
- interface PlanarHolePlacement {
+ interface PlaneFaceHolePlacement {
   readonly kind: 'plane-face';
   readonly locations: readonly { readonly x: ExpressionValue; readonly y: ExpressionValue }[];
 }
@@ -1011,6 +1024,15 @@ export interface SweepFeature extends SolidFeatureBase {
    * false(既定)で「ねじれを抑える」(段の表のつまみ)。
    */
   readonly frenet: boolean;
+  /**
+   * M-07。経路の全体で断面を回す角度(度の式。符号で向き)。省略は 0。案内線とは同時に使えない。
+   * ねじれ・終わりの大きさ・肉厚のどれかを使った部品だけ保存形式の版 24 になる(`appendSolid`・`replaceSolid`)。
+   */
+  readonly twistDegrees?: ExpressionValue;
+  /** M-07。終わりの断面の大きさ(始めに対する倍率の式、0 より大きく 10 以下)。省略は 1。途中は経路の長さに比例して変わる。 */
+  readonly endScale?: ExpressionValue;
+  /** M-07。中空の壁の厚み(mm の式、0 より大きい)。省略は中実。穴つきの面を断面にした時とは同時に使えない。 */
+  readonly wallThickness?: ExpressionValue;
 }
 
 /** リブの厚みを輪郭のどちら側へ付けるか(FR-420)。 */

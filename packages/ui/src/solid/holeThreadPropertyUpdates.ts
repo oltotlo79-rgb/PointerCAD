@@ -67,6 +67,9 @@ export function setHoleField(
     case 'holePlanarX':
     case 'holePlanarY':
       return setPlanarHoleField(feature, key, value, planarLocationIndex);
+    case 'holeEdgeDistance1':
+    case 'holeEdgeDistance2':
+      return setEdgeDistanceHoleField(feature, key, value, planarLocationIndex);
     case 'holeCylinderHeight':
     case 'holeCylinderAngle':
       return setCylindricalHoleField(feature, key, value, locationIndex);
@@ -103,12 +106,28 @@ function setPlanarHoleField(
   feature: HoleFeature | ThreadHoleFeature,
   key: 'holePlanarX' | 'holePlanarY', value: ExpressionValue, index?: number,
 ): SolidFeature {
-  const placement = feature.planar;
+  // 面内 X・Y の欄だけを書き換える。辺からの距離の穴(M-02)の欄は、画面の包み(3-2)で足す。
+  const placement = feature.planar?.kind === 'plane-face' ? feature.planar : undefined;
   const slot = index ?? (placement?.locations.length === 1 ? 0 : -1);
   const location = Number.isInteger(slot) ? placement?.locations[slot] : undefined;
   if (placement === undefined || feature.cylindrical !== undefined || location === undefined
     || !Number.isFinite(value.value) || value.source.trim() === '') return feature;
   const next = key === 'holePlanarX' ? { ...location, x: value } : { ...location, y: value };
+  return { ...feature, planar: { ...placement,
+    locations: placement.locations.map((item, i) => i === slot ? next : item) } };
+}
+
+/** 辺からの距離の穴(M-02)の選んだ位置の距離だけを書き戻す。辺の参照は変えない。位置の指定を省略できるのは 1 件のときだけ。 */
+function setEdgeDistanceHoleField(
+  feature: HoleFeature | ThreadHoleFeature,
+  key: 'holeEdgeDistance1' | 'holeEdgeDistance2', value: ExpressionValue, index?: number,
+): SolidFeature {
+  const placement = feature.planar?.kind === 'edge-distance' ? feature.planar : undefined;
+  const slot = index ?? (placement?.locations.length === 1 ? 0 : -1);
+  const location = Number.isInteger(slot) ? placement?.locations[slot] : undefined;
+  if (placement === undefined || feature.cylindrical !== undefined || location === undefined
+    || !Number.isFinite(value.value) || value.source.trim() === '') return feature;
+  const next = key === 'holeEdgeDistance1' ? { ...location, distance1: value } : { ...location, distance2: value };
   return { ...feature, planar: { ...placement,
     locations: placement.locations.map((item, i) => i === slot ? next : item) } };
 }
@@ -138,6 +157,9 @@ export function setThreadHoleField(
     case 'holePlanarX':
     case 'holePlanarY':
       return setPlanarHoleField(feature, key, value, planarLocationIndex);
+    case 'holeEdgeDistance1':
+    case 'holeEdgeDistance2':
+      return setEdgeDistanceHoleField(feature, key, value, planarLocationIndex);
     case 'holeCylinderHeight':
     case 'holeCylinderAngle':
       return setCylindricalHoleField(feature, key, value, locationIndex);

@@ -13,22 +13,29 @@ function fixture(): PartDocument {
 }
 
 beforeEach(resetTestStore);
-describe('extrude menu explicit targets', () => {
-  it('passes live IDs to the actual input without selecting the first or selected body', () => {
+const creationTools = ['extrude', 'revolve', 'sphere', 'box', 'cylinder', 'cone', 'torus'] as const;
+
+describe('solid creation menu explicit targets', () => {
+  it.each(creationTools)('%s opens the result and target controls without selecting a body by order', tool => {
     const document = fixture();
     useAppStore.setState({ document, selection: ['body-b', 'body-a'], pickAnchor: [100, 100] });
-    runSolidTool('extrude', { ready: true, reasonKey: null });
+    runSolidTool(tool, { ready: true, reasonKey: null });
     const input = useAppStore.getState().numericInput;
     const target = input?.choices.find((choice) => choice.key === 'extrudeTarget');
+    expect(input?.toolId).toBe(tool);
+    expect(target?.labelKey).toBe(tool === 'extrude' ? 'numericInput.choice.extrudeTarget' : 'numericInput.choice.solidTarget');
+    const result = input?.choices.find(choice => choice.key === 'extrudeOperation');
+    expect(result?.labelKey).toBe(tool === 'extrude' ? 'numericInput.choice.extrudeOperation' : 'numericInput.choice.solidOperation');
+    expect(result?.value).toBe('new');
     expect(target?.value).toBe('');
     expect(target?.presentation).toBe('menu');
     expect(target?.options.map((option) => option.value)).toEqual(['', 'body-a', 'body-b']);
-    expect(input?.choices.find((choice) => choice.key === 'extrudeOperation')?.options.map((option) => option.value)).toEqual(['new', 'join', 'cut']);
+    expect(result?.options.map(option => option.value)).toEqual(['new', 'join', 'cut']);
     expect(useAppStore.getState().document).toBe(document);
   });
-  it('does not offer join or cut when no live target exists', () => {
+  it.each(creationTools)('%s offers only new without a live target', tool => {
     useAppStore.setState({ document: createEmptyPartDocument(), pickAnchor: [100, 100] });
-    runSolidTool('extrude', { ready: true, reasonKey: null });
+    runSolidTool(tool, { ready: true, reasonKey: null });
     expect(useAppStore.getState().numericInput?.choices.find((choice) => choice.key === 'extrudeOperation')?.options.map((option) => option.value)).toEqual(['new']);
   });
 });

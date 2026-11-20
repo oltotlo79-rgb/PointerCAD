@@ -183,7 +183,9 @@ function refuseSavedWeldSpan(state: AppState): boolean {
   return true;
 }
 
-export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, get, store) => {
+const createBoltPreloadSlice: StateCreator<AppState, [], [], Omit<BeamSlice,
+  'beamSession' | 'beamRunner' | 'setBeamRunner' | 'openBeam' | 'closeBeam'
+  | 'editBeam' | 'reviewBeam' | 'runBeam' | 'cancelBeam' | 'applyBeamInputs'>> = (set, get, store) => {
   // 保存文書idと、開く単位のidは別。開いた時の所有を保持して失効させる。
   let preloadOpeningId: string | null = null;
   store.subscribe(state => {
@@ -197,133 +199,138 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
       runner?.cancel();
     }
   });
-  return ({
-  boltPreloadOwner: null,
-  boltPreloadAuthor: null,
-  beginBoltPreloadAuthor: (key, reassociate) => {
-    const state = get(), source = captureBeamSource(state), strength = state.strengthSession;
-    const template = boltAuthorTemplates(state).find(row => row.key === key)?.definition;
-    state.boltPreloadRunner?.cancel(); state.beamRunner?.cancel();
-    const previous = reassociate && state.boltPreloadDraft !== null ? invalidateBoltPreloadDraft(state.boltPreloadDraft) : null;
-    if (source === null || strength === null || template === undefined || template.source.documentId !== source.document.id
-      || (reassociate && previous === null) || (previous !== null && previous.saved.source.documentId !== source.document.id)) {
-      set({ boltPreloadAuthor: null, boltPreloadError: 'Current association owner unavailable' }); return;
-    }
-    preloadOpeningId = state.activeDocumentId;
-    set({ boltPreloadOwner: strength, boltPreloadDraft: previous, boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null,
-      boltPreloadAuthor: { previous, strength, source, template, analysisId: previous?.saved.id ?? '', members: ['', ''],
-        boltComponentId: '', contactId: '', values: emptyBoltAuthorNumbers(), evidence: emptyBoltAuthorEvidence(),
-        loads: '', geometryConfirmed: false, proposal: null } });
-  },
-  editBoltPreloadAuthor: edit => {
-    const state = get(), form = state.boltPreloadAuthor; if (form === null) return;
-    const base = { ...form, proposal: null };
-    switch (edit.kind) {
-      case 'number': set({ boltPreloadAuthor: { ...base, values: { ...form.values, [edit.field]: edit.text } } }); break;
-      case 'evidence': set({ boltPreloadAuthor: { ...base, evidence: { ...form.evidence, [edit.field]: edit.value } } }); break;
-      case 'member': set({ boltPreloadAuthor: { ...base, members: edit.index === 0 ? [edit.path, form.members[1]] : [form.members[0], edit.path] } }); break;
-      case 'bolt': set({ boltPreloadAuthor: { ...base, boltComponentId: edit.id } }); break;
-      case 'contact': set({ boltPreloadAuthor: { ...base, contactId: edit.id } }); break;
-      case 'identity': if (form.previous === null) set({ boltPreloadAuthor: { ...base, analysisId: edit.id } }); break;
-      case 'loads': set({ boltPreloadAuthor: { ...base, loads: edit.text } }); break;
-      case 'geometry': set({ boltPreloadAuthor: { ...base, geometryConfirmed: edit.confirmed } }); break;
-      default: { const exhaustive: never = edit; return exhaustive; }
-    }
-    set({ boltPreloadError: null });
-  },
-  previewBoltPreloadAuthor: async () => {
-    const form = get().boltPreloadAuthor; if (form === null) return;
-    try {
-      if (!authorIsCurrent(form, get())) throw new Error('Current association is stale');
-      const saved = authoredBoltInput(form), source = form.source;
-      await prepareCadNativeBoltPreload(source.document, saved.cadDefinition, saved.input,
-        { currentSource: source.source, bodies: source.ownership.bodies,
-          assemblyOptions: { library: source.library, subAssemblies: source.library.assemblies },
-          ...(source.jointOccurrence === undefined ? {} : { jointOccurrence: source.jointOccurrence }) });
-      if (!authorIsCurrent(form, get())) return;
-      set({ boltPreloadAuthor: { ...form, proposal: saved }, boltPreloadError: null });
-    } catch (error) {
-      if (get().boltPreloadAuthor === form) set({ boltPreloadAuthor: { ...form, proposal: null },
-        boltPreloadError: error instanceof Error ? error.message : 'Association validation failed' });
-    }
-  },
-  acceptBoltPreloadAuthor: () => {
-    const form = get().boltPreloadAuthor;
-    if (form === null || form.proposal === null || !authorIsCurrent(form, get())) {
-      set({ boltPreloadError: 'A current reviewed proposal and separate consent are required' }); return;
-    }
-    // Adoption is a distinct explicit operation; no document write or inherited review/result.
-    set({ boltPreloadDraft: restoreBoltPreloadDraft(form.proposal), boltPreloadAuthor: null,
-      boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
-  },
-  cancelBoltPreloadAuthor: () => { set({ boltPreloadAuthor: null, boltPreloadError: null }); },
+  return {
+    boltPreloadOwner: null,
+    boltPreloadAuthor: null,
+    beginBoltPreloadAuthor: (key, reassociate) => {
+      const state = get(), source = captureBeamSource(state), strength = state.strengthSession;
+      const template = boltAuthorTemplates(state).find(row => row.key === key)?.definition;
+      state.boltPreloadRunner?.cancel(); state.beamRunner?.cancel();
+      const previous = reassociate && state.boltPreloadDraft !== null ? invalidateBoltPreloadDraft(state.boltPreloadDraft) : null;
+      if (source === null || strength === null || template === undefined || template.source.documentId !== source.document.id
+        || (reassociate && previous === null) || (previous !== null && previous.saved.source.documentId !== source.document.id)) {
+        set({ boltPreloadAuthor: null, boltPreloadError: 'Current association owner unavailable' }); return;
+      }
+      preloadOpeningId = state.activeDocumentId;
+      set({ boltPreloadOwner: strength, boltPreloadDraft: previous, boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null,
+        boltPreloadAuthor: { previous, strength, source, template, analysisId: previous?.saved.id ?? '', members: ['', ''],
+          boltComponentId: '', contactId: '', values: emptyBoltAuthorNumbers(), evidence: emptyBoltAuthorEvidence(),
+          loads: '', geometryConfirmed: false, proposal: null } });
+    },
+    editBoltPreloadAuthor: edit => {
+      const state = get(), form = state.boltPreloadAuthor; if (form === null) return;
+      const base = { ...form, proposal: null };
+      switch (edit.kind) {
+        case 'number': set({ boltPreloadAuthor: { ...base, values: { ...form.values, [edit.field]: edit.text } } }); break;
+        case 'evidence': set({ boltPreloadAuthor: { ...base, evidence: { ...form.evidence, [edit.field]: edit.value } } }); break;
+        case 'member': set({ boltPreloadAuthor: { ...base, members: edit.index === 0 ? [edit.path, form.members[1]] : [form.members[0], edit.path] } }); break;
+        case 'bolt': set({ boltPreloadAuthor: { ...base, boltComponentId: edit.id } }); break;
+        case 'contact': set({ boltPreloadAuthor: { ...base, contactId: edit.id } }); break;
+        case 'identity': if (form.previous === null) set({ boltPreloadAuthor: { ...base, analysisId: edit.id } }); break;
+        case 'loads': set({ boltPreloadAuthor: { ...base, loads: edit.text } }); break;
+        case 'geometry': set({ boltPreloadAuthor: { ...base, geometryConfirmed: edit.confirmed } }); break;
+        default: { const exhaustive: never = edit; return exhaustive; }
+      }
+      set({ boltPreloadError: null });
+    },
+    previewBoltPreloadAuthor: async () => {
+      const form = get().boltPreloadAuthor; if (form === null) return;
+      try {
+        if (!authorIsCurrent(form, get())) throw new Error('Current association is stale');
+        const saved = authoredBoltInput(form), source = form.source;
+        await prepareCadNativeBoltPreload(source.document, saved.cadDefinition, saved.input,
+          { currentSource: source.source, bodies: source.ownership.bodies,
+            assemblyOptions: { library: source.library, subAssemblies: source.library.assemblies },
+            ...(source.jointOccurrence === undefined ? {} : { jointOccurrence: source.jointOccurrence }) });
+        if (!authorIsCurrent(form, get())) return;
+        set({ boltPreloadAuthor: { ...form, proposal: saved }, boltPreloadError: null });
+      } catch (error) {
+        if (get().boltPreloadAuthor === form) set({ boltPreloadAuthor: { ...form, proposal: null },
+          boltPreloadError: error instanceof Error ? error.message : 'Association validation failed' });
+      }
+    },
+    acceptBoltPreloadAuthor: () => {
+      const form = get().boltPreloadAuthor;
+      if (form === null || form.proposal === null || !authorIsCurrent(form, get())) {
+        set({ boltPreloadError: 'A current reviewed proposal and separate consent are required' }); return;
+      }
+      // Adoption is a distinct explicit operation; no document write or inherited review/result.
+      set({ boltPreloadDraft: restoreBoltPreloadDraft(form.proposal), boltPreloadAuthor: null,
+        boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
+    },
+    cancelBoltPreloadAuthor: () => { set({ boltPreloadAuthor: null, boltPreloadError: null }); },
 
-  boltPreloadDraft: null, boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null,
-  boltPreloadRunner: null,
-  setBoltPreloadRunner: boltPreloadRunner => { set({ boltPreloadRunner }); },
-  openBoltPreload: id => {
-    set({ boltPreloadAuthor: null });
-    const state = get(), saved = state.assembly?.beamAnalysisInputs?.analyses.find(input => input.kind === 'native-bolt-preload' && input.definition.id === id);
-    state.beamRunner?.cancel();
-    if (state.strengthSession === null || state.assembly === null || saved?.kind !== 'native-bolt-preload' || saved.definition.source.documentId !== state.assembly.id) {
-      set({ boltPreloadDraft: null, boltPreloadStatus: 'failed', boltPreloadError: 'Saved preload owner not available', boltPreloadPhase: null }); return;
-    }
-    preloadOpeningId = state.activeDocumentId;
-    try { set({ boltPreloadOwner: state.strengthSession, boltPreloadDraft: restoreBoltPreloadDraft(saved.definition), boltPreloadStatus: 'editing', boltPreloadError: null, boltPreloadPhase: null }); }
-    catch (error) { set({ boltPreloadDraft: null, boltPreloadStatus: 'failed', boltPreloadError: error instanceof Error ? error.message : 'Invalid preload input', boltPreloadPhase: null }); }
-  },
-  editBoltPreload: edit => {
-    const state = get(), draft = state.boltPreloadDraft; if (draft === null) return;
-    state.boltPreloadRunner?.cancel();
-    set({ boltPreloadDraft: editBoltPreloadDraft(draft, edit), boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
-  },
-  confirmBoltPreload: confirmed => {
-    const state = get(), draft = state.boltPreloadDraft; if (draft === null) return;
-    state.boltPreloadRunner?.cancel();
-    try { set({ boltPreloadDraft: confirmBoltPreloadDraft(draft, confirmed), boltPreloadStatus: 'editing', boltPreloadError: null, boltPreloadPhase: null }); }
-    catch (error) { set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'failed', boltPreloadError: error instanceof Error ? error.message : 'Invalid explicit values', boltPreloadPhase: null }); }
-  },
-  reviewBoltPreload: async () => {
-    const state = get(), draft = state.boltPreloadDraft, source = captureBeamSource(state);
-    if (draft === null) return;
-    state.boltPreloadRunner?.cancel();
-    if (source === null) { set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'failed', boltPreloadError: 'Current source unavailable', boltPreloadPhase: null }); return; }
-    set({ boltPreloadStatus: 'reviewing', boltPreloadPhase: null, boltPreloadError: null });
-    try {
-      const reviewed = await reviewBoltPreloadDraft(draft, source, () => ({ state: get(), session: get().boltPreloadDraft }));
-      if (get().boltPreloadDraft === draft) set({ boltPreloadDraft: reviewed, boltPreloadStatus: 'editing', boltPreloadError: null });
-    } catch (error) {
-      if (get().boltPreloadDraft === draft) set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'failed', boltPreloadError: error instanceof Error ? error.message : 'Preload review failed' });
-    }
-  },
-  runBoltPreload: () => {
-    const state = get(), draft = state.boltPreloadDraft; if (draft === null || state.boltPreloadRunner === null) return;
-    state.boltPreloadRunner.run(draft);
-  },
-  cancelBoltPreload: () => {
-    const state = get(); state.boltPreloadRunner?.cancel();
-    set({ boltPreloadDraft: state.boltPreloadDraft === null ? null : invalidateBoltPreloadDraft(state.boltPreloadDraft), boltPreloadStatus: 'cancelled', boltPreloadPhase: null });
-  },
-  closeBoltPreload: () => {
-    preloadOpeningId = null;
-    set({ boltPreloadOwner: null, boltPreloadAuthor: null });
-    get().boltPreloadRunner?.cancel();
-    set({ boltPreloadDraft: null, boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
-  },
-  applyBoltPreloadInputs: () => {
-    const state = get(), draft = state.boltPreloadDraft; if (draft === null) return;
-    try {
-      reviewedBoltPreloadWire(draft, state);
-      const source = draft.reviewed?.source; if (source === undefined) return;
-      const saved = boltPreloadDraftSavedInput(draft);
-      const analyses = source.document.beamAnalysisInputs?.analyses.filter(input =>
-        !(input.kind === 'native-bolt-preload' && input.definition.id === saved.id)) ?? [];
-      const document = withBeamAnalysisInputs(source.document, { schema: 'pointercad-beam-inputs/1', analyses: [...analyses, { kind: 'native-bolt-preload', definition: saved }] });
+    boltPreloadDraft: null, boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null,
+    boltPreloadRunner: null,
+    setBoltPreloadRunner: boltPreloadRunner => { set({ boltPreloadRunner }); },
+    openBoltPreload: id => {
+      set({ boltPreloadAuthor: null });
+      const state = get(), saved = state.assembly?.beamAnalysisInputs?.analyses.find(input => input.kind === 'native-bolt-preload' && input.definition.id === id);
+      state.beamRunner?.cancel();
+      if (state.strengthSession === null || state.assembly === null || saved?.kind !== 'native-bolt-preload' || saved.definition.source.documentId !== state.assembly.id) {
+        set({ boltPreloadDraft: null, boltPreloadStatus: 'failed', boltPreloadError: 'Saved preload owner not available', boltPreloadPhase: null }); return;
+      }
+      preloadOpeningId = state.activeDocumentId;
+      try { set({ boltPreloadOwner: state.strengthSession, boltPreloadDraft: restoreBoltPreloadDraft(saved.definition), boltPreloadStatus: 'editing', boltPreloadError: null, boltPreloadPhase: null }); }
+      catch (error) { set({ boltPreloadDraft: null, boltPreloadStatus: 'failed', boltPreloadError: error instanceof Error ? error.message : 'Invalid preload input', boltPreloadPhase: null }); }
+    },
+    editBoltPreload: edit => {
+      const state = get(), draft = state.boltPreloadDraft; if (draft === null) return;
       state.boltPreloadRunner?.cancel();
-      set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
-      state.applyAssembly(document, source.library);
-    } catch (error) { set({ boltPreloadError: error instanceof Error ? error.message : 'Preload inputs not reviewed' }); }
-  },
+      set({ boltPreloadDraft: editBoltPreloadDraft(draft, edit), boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
+    },
+    confirmBoltPreload: confirmed => {
+      const state = get(), draft = state.boltPreloadDraft; if (draft === null) return;
+      state.boltPreloadRunner?.cancel();
+      try { set({ boltPreloadDraft: confirmBoltPreloadDraft(draft, confirmed), boltPreloadStatus: 'editing', boltPreloadError: null, boltPreloadPhase: null }); }
+      catch (error) { set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'failed', boltPreloadError: error instanceof Error ? error.message : 'Invalid explicit values', boltPreloadPhase: null }); }
+    },
+    reviewBoltPreload: async () => {
+      const state = get(), draft = state.boltPreloadDraft, source = captureBeamSource(state);
+      if (draft === null) return;
+      state.boltPreloadRunner?.cancel();
+      if (source === null) { set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'failed', boltPreloadError: 'Current source unavailable', boltPreloadPhase: null }); return; }
+      set({ boltPreloadStatus: 'reviewing', boltPreloadPhase: null, boltPreloadError: null });
+      try {
+        const reviewed = await reviewBoltPreloadDraft(draft, source, () => ({ state: get(), session: get().boltPreloadDraft }));
+        if (get().boltPreloadDraft === draft) set({ boltPreloadDraft: reviewed, boltPreloadStatus: 'editing', boltPreloadError: null });
+      } catch (error) {
+        if (get().boltPreloadDraft === draft) set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'failed', boltPreloadError: error instanceof Error ? error.message : 'Preload review failed' });
+      }
+    },
+    runBoltPreload: () => {
+      const state = get(), draft = state.boltPreloadDraft; if (draft === null || state.boltPreloadRunner === null) return;
+      state.boltPreloadRunner.run(draft);
+    },
+    cancelBoltPreload: () => {
+      const state = get(); state.boltPreloadRunner?.cancel();
+      set({ boltPreloadDraft: state.boltPreloadDraft === null ? null : invalidateBoltPreloadDraft(state.boltPreloadDraft), boltPreloadStatus: 'cancelled', boltPreloadPhase: null });
+    },
+    closeBoltPreload: () => {
+      preloadOpeningId = null;
+      set({ boltPreloadOwner: null, boltPreloadAuthor: null });
+      get().boltPreloadRunner?.cancel();
+      set({ boltPreloadDraft: null, boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
+    },
+    applyBoltPreloadInputs: () => {
+      const state = get(), draft = state.boltPreloadDraft; if (draft === null) return;
+      try {
+        reviewedBoltPreloadWire(draft, state);
+        const source = draft.reviewed?.source; if (source === undefined) return;
+        const saved = boltPreloadDraftSavedInput(draft);
+        const analyses = source.document.beamAnalysisInputs?.analyses.filter(input =>
+          !(input.kind === 'native-bolt-preload' && input.definition.id === saved.id)) ?? [];
+        const document = withBeamAnalysisInputs(source.document, { schema: 'pointercad-beam-inputs/1', analyses: [...analyses, { kind: 'native-bolt-preload', definition: saved }] });
+        state.boltPreloadRunner?.cancel();
+        set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
+        state.applyAssembly(document, source.library);
+      } catch (error) { set({ boltPreloadError: error instanceof Error ? error.message : 'Preload inputs not reviewed' }); }
+    },
+  };
+};
+
+export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, get, store) => ({
+  ...createBoltPreloadSlice(set, get, store),
   beamSession: null,
   beamRunner: null,
   setBeamRunner: beamRunner => { set({ beamRunner }); },
@@ -415,4 +422,3 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
     }), source.library);
   },
 });
-};

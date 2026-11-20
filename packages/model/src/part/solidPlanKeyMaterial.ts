@@ -11,12 +11,24 @@ import {
   toKeyTransform, toKeyVec3,
 } from './solidPlanKeyGeometry.js';
 
-/** 穴・ねじ穴で共通の配置材料。省略された配置は鍵にも載せない。 */
+/** 穴・ねじ穴で共通の配置材料。省略された配置は鍵にも載せない。辺からの距離の辺は指紋の文字列にする(M-02)。 */
 function holePlacementKeyMaterial(plan: Extract<SolidStepPlan, { readonly kind: 'hole' | 'thread' }>) {
+  const planar = plan.planar;
   return {
     centers: plan.centers.map(toKeyVec3),
     ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
-    ...(plan.planar === undefined ? {} : { planar: plan.planar }),
+    ...(planar === undefined ? {} : { planar: planar.kind === 'plane-face' ? planar
+      : { kind: planar.kind, edge1: fingerprintKeyText(planar.edge1), edge2: fingerprintKeyText(planar.edge2), locations: planar.locations } }),
+  };
+}
+
+/** スイープのねじれ・先細り・中空(M-07)の鍵の材料。plan に載った欄だけ(使わないスイープの鍵は変えない)。 */
+function sweepShapeKeyMaterial(plan: Extract<SolidStepPlan, { readonly kind: 'sweep' }>) {
+  return {
+    ...(plan.twist === undefined ? {} : { twist: plan.twist }),
+    ...(plan.endScale === undefined ? {} : { endScale: plan.endScale }),
+    ...(plan.wallThickness === undefined ? {} : { wallThickness: plan.wallThickness }),
+    ...(plan.holes === undefined ? {} : { holes: plan.holes.map((loop) => loop.map(toKeyCurve)) }),
   };
 }
 
@@ -224,7 +236,7 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         profile: plan.profile.map(toKeyCurve),
         path: plan.path.map(toKeyCurve),
         ...(plan.guide === undefined ? {} : { guide: plan.guide.map(toKeyCurve) }),
-        frenet: plan.frenet,
+        frenet: plan.frenet, ...sweepShapeKeyMaterial(plan),
       };
     case 'rib':
       return {

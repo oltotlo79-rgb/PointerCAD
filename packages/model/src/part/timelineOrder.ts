@@ -454,6 +454,10 @@ function solidDependencies(
     case 'hole':
     case 'threadHole':
       found.push(...subShapeDependencies(context, feature.face));
+      // 辺からの距離の穴(M-02)は 2 本の辺も上流を指す。
+      if (feature.planar?.kind === 'edge-distance') {
+        found.push(...subShapeDependencies(context, feature.planar.edge1), ...subShapeDependencies(context, feature.planar.edge2));
+      }
       break;
     case 'fillet':
     case 'chamfer':

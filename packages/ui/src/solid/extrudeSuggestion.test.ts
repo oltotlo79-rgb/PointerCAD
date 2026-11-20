@@ -1,6 +1,10 @@
 import type { Vec3 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 import { choiceValueOf, createNumericInput, reduceNumericInput, type NumericInputState } from '../sketch/numericInput.js';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { t } from '../i18n/t.js';
+import { SolidResultSuggestion } from './SolidResultSuggestion.js';
 import { suggestExtrudeOperations, withExtrudeSuggestions, type ExtrudeSuggestions, type SuggestionBody } from './extrudeSuggestion.js';
 
 // M-01 の「提案して見せる」(案 1): 位置と押す向きから、結果(新しい立体・結合・切り抜き)と相手を提案する。
@@ -23,6 +27,37 @@ function boxBody(featureId: string, min: Vec3, max: Vec3, origin?: Vec3): Sugges
 }
 
 const BOX = boxBody('extrude-1', [0, 0, 0], [20, 20, 20]);
+
+describe('作成形状の予告にもとづく結果の提案', () => {
+  function proposal(tool: SuggestionBody, targets: readonly SuggestionBody[] = [BOX], chosen = ''): string {
+    const input = createNumericInput('box', 'boxSize', undefined, {
+      extrudeTargets: targets.map(body => ({ value: body.featureId, label: body.featureId })),
+    });
+    const selected = reduceNumericInput(input, { type: 'choose', key: 'extrudeTarget', value: chosen });
+    const preview = renderToStaticMarkup(createElement(SolidResultSuggestion, {
+      input: selected, bodies: [tool, ...targets], toolId: tool.featureId,
+    }));
+    expect(choiceValueOf(selected, 'extrudeOperation')).toBe('new');
+    expect(choiceValueOf(selected, 'extrudeTarget')).toBe(chosen);
+    return preview;
+  }
+  it('内部は切り抜き、またぐ形と面で接する形は結合。局所原点を戻して照らし、選択値は手で決められる', () => {
+    const cut = t('numericInput.solidSuggestion.cut').replace('{name}', BOX.featureId);
+    const join = t('numericInput.solidSuggestion.join').replace('{name}', BOX.featureId);
+    expect(proposal(boxBody('inside', [3, 3, 3], [8, 8, 8], [5, 5, 5]))).toContain(cut);
+    expect(proposal(boxBody('crossing', [5, 5, 15], [15, 15, 25]))).toContain(join);
+    expect(proposal(boxBody('touching', [5, 5, 20], [15, 15, 30]))).toContain(join);
+  });
+  it('相手が複数なら明示した相手と照らす。離れた形・同じ形・体積のない相手には提案しない', () => {
+    const tool = boxBody('inside', [3, 3, 3], [8, 8, 8]);
+    const apart = boxBody('apart', [25, 5, 5], [35, 15, 15]);
+    expect(proposal(tool, [BOX, apart])).toBe('');
+    expect(proposal(tool, [BOX, apart], BOX.featureId)).toContain(t('numericInput.solidSuggestion.cut').replace('{name}', BOX.featureId));
+    expect(proposal(tool, [BOX, apart], apart.featureId)).toBe('');
+    expect(proposal({ ...BOX, featureId: 'same' })).toBe('');
+    expect(proposal(tool, [{ ...BOX, volume: 0 }])).toBe('');
+  });
+});
 
 describe('点が立体の中か(三角形の網で判定する。提案にだけ使う)', () => {
   it('局所の座標で持つ箱も、原点を足して世界座標で見分ける。体積の無い開いた面は中を持たない', () => {

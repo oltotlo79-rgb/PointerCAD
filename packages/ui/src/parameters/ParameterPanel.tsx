@@ -134,7 +134,7 @@ export function persistParameterPanelGuideDraft(next: ParameterDraft | null, doc
   });
 }
 
-export function ParameterPanel(): React.JSX.Element {
+function useParameterPanelState() {
   const document = useAppStore((state) => state.document);
   const analysis = useAppStore((state) => state.parameterAnalysis);
   const geometry = useAppStore(currentMathGeometry);
@@ -218,6 +218,18 @@ export function ParameterPanel(): React.JSX.Element {
     ? null : rows.find(row => row.name === draft.name) ?? null;
   const renderedRows = editingRow === null ? visibleRows : [editingRow, ...visibleRows];
 
+  return { document, analysis, documentVersion, pendingRename, renameBusy, setRenameBusy, mathTarget, setMathTarget,
+    query, setQuery, filter, setFilter, usageOpenName, setUsageOpenName, searchRef, focusSearchAfterRename,
+    focusNameAfterRename, rowIdentity, pendingCsv, csvOperation, setCsvOperation, csvBusy, setCsvPreview, csvIssues,
+    setCsvIssues, csvStatus, setCsvStatus, lengthUnit, nonLengthVariables, setDraftState, draft, rows, usage, usageSites,
+    visibleRows, activeCsvPreview, editingRow, renderedRows };
+}
+
+function parameterPanelActions({
+  pendingCsv, document, documentVersion, setCsvOperation, setCsvPreview, setCsvIssues, setCsvStatus, setDraftState,
+  searchRef, pendingRename, rowIdentity, setRenameBusy, usageOpenName, setUsageOpenName, query, filter,
+  focusSearchAfterRename, focusNameAfterRename, draft, nonLengthVariables, lengthUnit,
+}: ReturnType<typeof useParameterPanelState>) {
   const importCsv = async (): Promise<void> => {
     pendingCsv.current?.abort();
     const controller = new AbortController();
@@ -390,6 +402,15 @@ export function ParameterPanel(): React.JSX.Element {
     }
   };
 
+  return { importCsv, exportCsv, setDraft, run, draftOf, isLengthRow, parameterExpression, commitNameDraft, commitDraft };
+}
+
+function parameterFieldRenderers(
+  { analysis, lengthUnit, nonLengthVariables }: Pick<ReturnType<typeof useParameterPanelState>,
+    'analysis' | 'lengthUnit' | 'nonLengthVariables'>,
+  { draftOf, setDraft, commitDraft, isLengthRow, parameterExpression }: Pick<ReturnType<typeof parameterPanelActions>,
+    'draftOf' | 'setDraft' | 'commitDraft' | 'isLengthRow' | 'parameterExpression'>,
+) {
   /**
    * 式の欄の下に出す 1 行。断りが最優先、次に評価できなかった理由、最後に計算した値。
    * 打っている途中の式も 1 本だけなら軽いので、その場で評価して見せる(FR-202、FR-204)。
@@ -473,6 +494,14 @@ export function ParameterPanel(): React.JSX.Element {
     );
   };
 
+  return { sourceMessage, renderTextField };
+}
+
+function parameterRowRenderer(
+  { rowIdentity, document, usage, usageSites, usageOpenName, setUsageOpenName, rows, setMathTarget }: ReturnType<typeof useParameterPanelState>,
+  { draftOf, run, commitNameDraft, parameterExpression }: ReturnType<typeof parameterPanelActions>,
+  { renderTextField, sourceMessage }: ReturnType<typeof parameterFieldRenderers>,
+) {
   /** 行そのものを差し替える操作(消す・動かす・単位を変える)の断り先。 */
   const rowRejection = (row: ParameterRow): Omit<ParameterDraft, 'message'> => ({
     name: row.name,
@@ -657,6 +686,18 @@ export function ParameterPanel(): React.JSX.Element {
       </li>
     );
   };
+  return renderRow;
+}
+
+export function ParameterPanel(): React.JSX.Element {
+  const state = useParameterPanelState();
+  const actions = parameterPanelActions(state);
+  const fields = parameterFieldRenderers(state, actions);
+  const renderRow = parameterRowRenderer(state, actions, fields);
+  const { document, documentVersion, analysis, renameBusy, pendingRename, searchRef, query, setQuery, filter, setFilter,
+    rows, visibleRows, renderedRows, editingRow, csvBusy, csvOperation, pendingCsv, csvIssues, csvStatus, activeCsvPreview,
+    setCsvPreview, setCsvStatus, setCsvIssues, mathTarget, setMathTarget } = state;
+  const { importCsv, exportCsv, setDraft, run } = actions;
 
   return (
     <div className="pcad-section pcad-parameters">

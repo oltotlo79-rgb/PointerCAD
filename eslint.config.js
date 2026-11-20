@@ -131,6 +131,14 @@ const uiRuntimeImportGuards = [{
 }, {
   selector: ":matches(ExportNamedDeclaration, ExportAllDeclaration)[exportKind!='type'][source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
   message: '画面用の入口から数学の計算部を再公開せず、通信に必要な型だけを公開してください（レビューF09）。',
+}, {
+  // C-03 の Tab の順(統括の決定 2026-11-19 19:3x): 正の tabIndex を使わない。窓の中の順は DOM の順にし、最初の焦点は
+  // useDialogFocus(shell/dialogFocus.ts)が決める。画面の実行時のファイルの全部の塊がこの配列を展開するので、ここに置く。
+  // 直の数と条件の枝の数だけを見る(tabIndex={-1} の -1 は単項の式の中の 1 なので当たらない)。
+  selector: ":matches(JSXAttribute[name.name='tabIndex'] > JSXExpressionContainer > Literal[value>0], "
+    + "JSXAttribute[name.name='tabIndex'] > JSXExpressionContainer > ConditionalExpression > Literal[value>0], "
+    + "JSXAttribute[name.name='tabIndex'] > Literal[value=/^[1-9]/], AssignmentExpression[left.property.name='tabIndex'] > Literal.right[value>0])",
+  message: '正の tabIndex を使わないでください。Tab の順は DOM の順にし、最初の焦点は useDialogFocus(shell/dialogFocus.ts)で決めます（C-03）。',
 }];
 
 const propertyPanelImportGuard = {

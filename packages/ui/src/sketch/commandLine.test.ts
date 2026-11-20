@@ -1,8 +1,10 @@
 import { addVec3, polarOffset, WORK_PLANES } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
+import { toolbarCommand } from '../commands/toolbarCommandCatalog.js';
 import {
   COMMAND_WORDS,
+  SOLID_COMMAND_WORDS,
   parseCommandLine,
   suggestCommands,
   type CommandLineContext,
@@ -69,6 +71,69 @@ describe('COMMAND_WORDS(道具の語の表)', () => {
     expect(byTool.get('threePointArc')).toEqual(['3点の円弧', 'threepointarc', 'tpa']);
     expect(byTool.get('linearArray')).toEqual(['直線配列', 'lineararray', 'ar']);
     expect(byTool.get('circularArray')).toEqual(['円形配列', 'circulararray', 'par']);
+  });
+});
+
+const expectedSolidWords = [
+  ['toolbar.solidCreate.extrude', ['押し出し', 'extrude', 'ext']],
+  ['toolbar.solidCreate.revolve', ['回転', 'revolve', 'rev']],
+  ['toolbar.solidCreate.sew', ['縫合', 'sew']],
+  ['toolbar.solidCombine.union', ['和', 'union', 'uni']],
+  ['toolbar.solidCombine.subtract', ['差', 'subtract', 'sub']],
+  ['toolbar.solidCombine.intersect', ['積', 'intersect', 'int']],
+  ['toolbar.solidCreate.sphere', ['球', 'sphere', 'sph']],
+  ['toolbar.solidCreate.box', ['箱', 'box']],
+  ['toolbar.solidCreate.cylinder', ['円柱', 'cylinder', 'cyl']],
+  ['toolbar.solidCreate.cone', ['円錐', 'cone']],
+  ['toolbar.solidCreate.torus', ['トーラス', 'torus', 'tor']],
+  ['toolbar.solidCreate.ruled', ['面をつなぐ', 'ruled', 'rul']],
+  ['toolbar.solidCreate.loft', ['ロフト', 'loft']],
+  ['toolbar.solidCreate.mirrorSolid', ['立体のミラー', 'mirrorsolid', 'ms']],
+  ['toolbar.solidCreate.sweep', ['スイープ', 'sweep', 'swe']],
+  ['toolbar.solidCreate.spring', ['ばね', 'spring', 'spr']],
+  ['toolbar.solidMachining.hole', ['穴', 'hole']],
+  ['toolbar.solidMachining.threadHole', ['ねじ穴', 'threadhole', 'th']],
+  ['toolbar.solidMachining.fillet', ['R面取り', 'solidfillet', 'sf']],
+  ['toolbar.solidMachining.chamfer', ['C面取り', 'solidchamfer', 'sc']],
+  ['toolbar.solidMachining.linearPattern', ['直線パターン', 'linearpattern', 'lp']],
+  ['toolbar.solidMachining.circularPattern', ['円形パターン', 'circularpattern', 'cp']],
+  ['toolbar.solidMachining.shell', ['くり抜き', 'shell', 'she']],
+  ['toolbar.solidMachining.draft', ['抜き勾配', 'draft', 'dra']],
+  ['toolbar.solidMachining.rib', ['リブ', 'rib']],
+  ['toolbar.solidMachining.cut', ['切断', 'cut']],
+] as const;
+
+describe('立体の道具の語', () => {
+  it('26 道具の命令・語・並びが決めた表と一致し、表示名はツールバーに従う', () => {
+    expect(SOLID_COMMAND_WORDS.map(entry => [entry.commandId, entry.words])).toEqual(expectedSolidWords);
+    for (const entry of SOLID_COMMAND_WORDS) {
+      expect(toolbarCommand(entry.commandId)?.labelKey, entry.commandId).toBe(entry.labelKey);
+    }
+  });
+
+  it('2 つの表のすべての語が、大文字小文字を区別せず一意になる', () => {
+    const words = [...COMMAND_WORDS, ...SOLID_COMMAND_WORDS].flatMap(entry =>
+      entry.words.map(word => word.toLowerCase()),
+    );
+    expect(new Set(words).size).toBe(words.length);
+  });
+
+  it.each(expectedSolidWords)('%s の語は欄の前後の空白と英字の大小によらず同じ命令になる', (commandId, words) => {
+    for (const word of words) {
+      expect(parseCommandLine(word, context())).toEqual({ kind: 'command', commandId });
+      expect(parseCommandLine(` ${word.toUpperCase()} `, context())).toEqual({ kind: 'command', commandId });
+    }
+  });
+
+  it('途中までの語は実行せず、候補として出す。名前付きの欄は先に解く', () => {
+    expect(parseCommandLine('extr', context())).toMatchObject({ kind: 'error', suggestions: ['ext'] });
+    expect(parseCommandLine('box=20', context())).toEqual({ kind: 'field', fieldKey: 'box', source: '20' });
+    expect(parseCommandLine('distance=20', context())).toEqual({ kind: 'field', fieldKey: 'distance', source: '20' });
+  });
+
+  it('スケッチと立体を合わせて最大 5 件を返す', () => {
+    expect(suggestCommands('EX').map(entry => entry.tool)).toEqual(['extend', 'toolbar.solidCreate.extrude']);
+    expect(suggestCommands('s', 12)).toHaveLength(5);
   });
 });
 

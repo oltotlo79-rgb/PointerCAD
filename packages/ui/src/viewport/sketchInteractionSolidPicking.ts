@@ -11,6 +11,7 @@ import type { SubShapeRef } from '@pointercad/model';
 import { picksSolidVertices } from '../sketch/freeSketch.js';
 import type { NumericInputToolId } from '../sketch/numericInput.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
+import { picksHoleEdges } from '../solid/edgeDistanceHoleInput.js';
 import { pickSolidSubShape } from '../solid/pickSubShape.js';
 import { filterPickCandidates, type SelectionFilter } from '../solid/selectionFilter.js';
 import { subShapeElementId, subShapeRefOf, type SelectionKind, type SubShapeBody } from '../solid/subShapeSelection.js';
@@ -93,6 +94,12 @@ export function createSketchSolidPicking(context: SketchSolidPickingContext) {
       return null;
     }
     const filter = state.displaySettings.selectionFilter;
+    if (selectionKind === 'face' && picksHoleEdges(state.numericInput)) {
+      // 辺からの距離の穴(M-02)の辺を選んでいる間は、辺を面より先に拾う(頂点は拾わない。当たらなければ面)。
+      const picked = pickSolidSubShape(toSubShapeBodies(bodies), project, pointer, 'edge');
+      const edge = picked?.kind === 'edge' ? throughSelectionFilter(picked, filter) : null;
+      if (edge !== null) return edge;
+    }
     if (selectionKind === 'face') {
       // 面を切ってあるときは光線そのものを飛ばさない(FR-112)。
       if (!filter.face) {

@@ -1040,7 +1040,7 @@
       "file": "electron-planar-machining-surface.spec.ts",
       "category": "electron",
       "reason": "electron project filename rule",
-      "sha256": "074cef42e5a9e6bfc92e3b9ff3dc3c4819d492c7716a04720a84bf776c66050e"
+      "sha256": "c9249a8dede4e946be089bbd6fa575f6f21d7a99cd9869a10759c46ed458e1be"
     },
     {
       "file": "electron-plastic-bar-plateau.spec.ts",
@@ -1760,7 +1760,7 @@
       "file": "planar-machining-surface.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
-      "sha256": "337ee9f24bbd2026255da5422f0a5d3c19d6f11232fa41b560ce0dd81af1762a"
+      "sha256": "799331d323b566c5e0afdf3ec46d6965f672093fe84dca7b6481761e8b0619bc"
     },
     {
       "file": "plastic-bar-plateau.spec.ts",
@@ -1796,7 +1796,7 @@
       "file": "process-resource-sampler.spec.ts",
       "category": "node-process-contract",
       "reason": "Node OS process sampler and resident-frame checks; no page/browser/context fixture",
-      "sha256": "f6e90f96560ce35d2f9f0fd4b5535f673e428560db3290db219b122907ef9f17"
+      "sha256": "0cf21862841e52956d55cbfde17dddb344f6e86c727215a48b691c079b0b7644"
     },
     {
       "file": "project-intersect.spec.ts",

@@ -81,6 +81,7 @@ const FRAME_PART_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], Message
   sliderBox: 'catalog.frame.sliderBox.hint', capAccessoryBox: 'catalog.frame.capAccessoryBox.hint',
   footPartBox: 'catalog.frame.footPartBox.hint', slotLongPart: 'catalog.frame.slotLongPart.hint',
   doorPartBox: 'catalog.frame.doorPartBox.hint',
+  drawerPartBox: 'catalog.frame.drawerPartBox.hint',
 };
 
 /**

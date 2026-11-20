@@ -1,5 +1,5 @@
 /** Map resolved construction plans into geometry requests; this module owns no Worker or shape. */
-import type { SolidStepRequest, SolidStepSpec, SurfaceInput, ThruSectionSpec } from '@pointercad/kernel';
+import type { HoleStepSpec, SolidStepRequest, SolidStepSpec, SurfaceInput, SweepStepSpec, ThruSectionSpec } from '@pointercad/kernel';
 import type { ResolvedSolidStep, SolidStepPlan, SurfaceShapePlan, ThruSectionPlan } from '../part/resolvePart.js';
 import { toCurveSpec } from './curveConversions.js';
 import { toSubShapeQuery } from './subShapeQuery.js';
@@ -15,6 +15,23 @@ function extrudeProfileRequest(plan: Extract<SolidStepPlan, { readonly kind: 'ex
  * 罫線面・ロフトの断面 1 つをカーネルの言葉へ直す(FR-430、FR-410)。
  * 曲線の並びは `toCurveSpec` を使い回し、球は中心と半径をそのまま渡す。
  */
+/** スイープのねじれ・先細り・中空(M-07)。plan に載った欄だけを段へ渡す(使わないスイープの段は 1 字も変えない)。 */
+function sweepShapeSpec(plan: Extract<SolidStepPlan, { readonly kind: 'sweep' }>):
+  Pick<SweepStepSpec, 'twist' | 'endScale' | 'wallThickness' | 'holes'> {
+  return {
+    ...(plan.twist === undefined ? {} : { twist: plan.twist }),
+    ...(plan.endScale === undefined ? {} : { endScale: plan.endScale }),
+    ...(plan.wallThickness === undefined ? {} : { wallThickness: plan.wallThickness }),
+    ...(plan.holes === undefined ? {} : { holes: plan.holes.map((loop) => loop.map((curve) => toCurveSpec(curve))) }),
+  };
+}
+
+/** 平らな面の穴の置き方(穴・ねじ穴で共通)。辺からの距離の辺は、面と同じく指紋のまま kernel へ渡す(M-02)。 */
+function toPlanarHoleSpec(planar: NonNullable<Extract<SolidStepPlan, { readonly kind: 'hole' }>['planar']>): NonNullable<HoleStepSpec['planar']> {
+  return planar.kind === 'plane-face' ? planar : { kind: 'edge-distance', edge1: toSubShapeQuery(planar.edge1),
+    edge2: toSubShapeQuery(planar.edge2), locations: planar.locations };
+}
+
 function toThruSectionSpec(section: ThruSectionPlan): ThruSectionSpec {
   switch (section.kind) {
     case 'curves':
@@ -125,7 +142,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         ...(plan.entry === undefined ? {} : { entry: plan.entry }),
         // 円筒の側面の穴。**平面の穴では段にも載せない**(`HoleStepSpec.cylindrical` の注釈)。
         ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
-        ...(plan.planar === undefined ? {} : { planar: plan.planar }),
+        ...(plan.planar === undefined ? {} : { planar: toPlanarHoleSpec(plan.planar) }),
       };
     case 'thread':
       return {
@@ -147,7 +164,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         ...(plan.entry === undefined ? {} : { entry: plan.entry }),
         // 円筒の側面のねじ穴。**平面のねじ穴では段にも載せない**。位置ごとの向きは kernel が面から決める。
         ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
-        ...(plan.planar === undefined ? {} : { planar: plan.planar }),
+        ...(plan.planar === undefined ? {} : { planar: toPlanarHoleSpec(plan.planar) }),
       };
     case 'fillet':
       return {
@@ -258,7 +275,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         profile: plan.profile.map((curve) => toCurveSpec(curve)),
         path: plan.path.map((curve) => toCurveSpec(curve)),
         ...(plan.guide === undefined ? {} : { guide: plan.guide.map((curve) => toCurveSpec(curve)) }),
-        frenet: plan.frenet,
+        frenet: plan.frenet, ...sweepShapeSpec(plan),
       };
     case 'rib':
       return {

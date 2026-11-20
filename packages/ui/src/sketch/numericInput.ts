@@ -739,6 +739,27 @@ const PLANAR_LOCATION_FIELDS: readonly NumericFieldDefinition[] = [
     visibleWhen: visibility => whenChoiceIs('holePlacement', 'plane-face')(visibility)
       && !whenToggleOn('cylinderFace')(visibility),
   },
+  // 辺からの距離(M-02)。選んだ 2 本の辺から面の材料のある側への距離。面内 X・Y と同じく空欄を既定にする。
+  {
+    key: 'holeEdgeDistance1',
+    labelKey: 'numericInput.field.holeEdgeDistance1',
+    tooltipKey: 'numericInput.tooltip.holeEdgeDistance1',
+    unit: 'mm',
+    defaultSource: '',
+    range: POSITIVE,
+    visibleWhen: visibility => whenChoiceIs('holePlacement', 'edge-distance')(visibility)
+      && !whenToggleOn('cylinderFace')(visibility),
+  },
+  {
+    key: 'holeEdgeDistance2',
+    labelKey: 'numericInput.field.holeEdgeDistance2',
+    tooltipKey: 'numericInput.tooltip.holeEdgeDistance2',
+    unit: 'mm',
+    defaultSource: '',
+    range: POSITIVE,
+    visibleWhen: visibility => whenChoiceIs('holePlacement', 'edge-distance')(visibility)
+      && !whenToggleOn('cylinderFace')(visibility),
+  },
 ];
 
 /**
@@ -2411,7 +2432,7 @@ export interface NumericInputOptions {
   readonly repeatAfterCommit?: boolean;
   readonly defaultSources?: NumericDefaultSources;
   readonly sweepGuides?: readonly NumericChoiceOption[];
-  /** 押し出しの結合・切り抜きの相手に選べる立体(履歴の順。既定は未選択で、順番から決めない)。 */
+  /** 押し出し・回転・基本形状の結合・切り抜きの相手に選べる立体(履歴の順。既定は未選択で、順番から決めない)。 */
   readonly extrudeTargets?: readonly NumericChoiceOption[];
   /**
    * 回転軸・パターンの向き・ばねの軸に選べるスケッチの線分。
@@ -2587,7 +2608,8 @@ export type NumericFocusTarget =
 /** Tab で巡る輪。基本の段は欄しか無いので、輪の添字は欄の添字と一致する。 */
 export function numericToggleEnabled(state: NumericInputState, key: NumericToggleKey): boolean {
   if (key === 'cylinderFace' && (state.step === 'holeSize' || state.step === 'threadSize')) {
-    return choiceValueFrom(state.choices, 'holePlacement') !== 'plane-face'
+    const placement = choiceValueFrom(state.choices, 'holePlacement');
+    return placement !== 'plane-face' && placement !== 'edge-distance'
       && choiceValueFrom(state.choices, 'holeEntry') !== 'countersink';
   }
   if (key !== 'sweepFrenet') return true;
@@ -3163,6 +3185,9 @@ export interface SolidCommitValues {
   /** 明示した平面内のX・Y。元式を保持する符号付き長さ(mm)。 */
   readonly holePlanarX?: ExpressionValue;
   readonly holePlanarY?: ExpressionValue;
+  /** 辺からの距離(M-02)。選んだ辺 1・辺 2 からの長さ(mm)の元式。 */
+  readonly holeEdgeDistance1?: ExpressionValue;
+  readonly holeEdgeDistance2?: ExpressionValue;
 }
 
 /** ソリッドのつまみ。持たない道具では欄ごと現れない。 */
@@ -3253,7 +3278,7 @@ export interface SolidInputCommit {
 
 /** Should / Could 群の選択肢の値。持たない段では欄ごと入らない。 */
 export interface SolidShapeChoices {
-  /** 押し出しの結果('new' / 'join' / 'cut')。 */
+  /** 立体を作る道具の結果('new' / 'join' / 'cut')。 */
   readonly extrudeOperation?: string;
   /** 結合・切り抜きの相手の立体の id(明示して選んだものだけ)。 */
   readonly extrudeTarget?: string;
@@ -3266,7 +3291,7 @@ export interface SolidShapeChoices {
   readonly mirrorPlane?: string;
   /** リブの厚みを付ける側('both' / 'positive' / 'negative')。 */
   readonly ribSide?: string;
-  /** 平面の穴位置('points' / 'plane-face')。未知の値は確定側で拒否する。 */
+  /** 平面の穴位置('points' / 'plane-face' / 'edge-distance')。未知の値は確定側で拒否する。 */
   readonly holePlacement?: string;
   /** 穴の入口('plain' / 'counterbore' / 'countersink')。 */
   readonly holeEntry?: string;
@@ -3523,6 +3548,8 @@ function solidValuesFor(
         // 円筒の側面の穴。つまみが切なら欄が無いので 2 つとも入らない。
         holePlanarX: get('holePlanarX'),
         holePlanarY: get('holePlanarY'),
+        holeEdgeDistance1: get('holeEdgeDistance1'),
+        holeEdgeDistance2: get('holeEdgeDistance2'),
         holeCylinderHeight: get('holeCylinderHeight'),
         holeCylinderAngle: get('holeCylinderAngle'),
       };
@@ -3533,6 +3560,8 @@ function solidValuesFor(
         // 円筒の側面のねじ穴。つまみが切なら欄が無いので 2 つとも入らない(穴と同じ)。
         holePlanarX: get('holePlanarX'),
         holePlanarY: get('holePlanarY'),
+        holeEdgeDistance1: get('holeEdgeDistance1'),
+        holeEdgeDistance2: get('holeEdgeDistance2'),
         holeCylinderHeight: get('holeCylinderHeight'),
         holeCylinderAngle: get('holeCylinderAngle'),
       };

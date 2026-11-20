@@ -1,4 +1,4 @@
-import type { StateCreator } from 'zustand';
+import type { StateCreator, StoreApi } from 'zustand';
 import { withBeamAnalysisInputs, type AnalysisMaterialCapacity, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { createSolidAnalysisSession, solidSavedInput, type SolidAnalysisSession, type SolidField,
   type SolidLoadMode } from '../solidAnalysis/solidAnalysisSession.js';
@@ -101,6 +101,83 @@ function zeroEmptySurfaceDraft(session: SolidAnalysisSession): SolidAnalysisSess
   for (const field of fields) if (values[field].trim() === '') values[field] = '0';
   return values;
 }
+function solidModeActions(set: StoreApi<AppState>['setState'], get: StoreApi<AppState>['getState']): Pick<SolidAnalysisSlice,
+  'startSolidModal' | 'receiveSolidModal' | 'cancelSolidModal'
+  | 'editSolidModalInput' | 'setSolidModalView' | 'saveSolidModal' | 'adoptPanelForSolidModal'
+  | 'startSolidBuckling' | 'receiveSolidBuckling' | 'cancelSolidBuckling'
+  | 'editSolidBucklingCount' | 'saveSolidBuckling' | 'adoptPanelForSolidBuckling' | 'setSolidBucklingView'> {
+  return {
+    startSolidModal: () => {
+      const next = startSolidModal(get().solidModal);
+      set({ solidModal: next });
+      return next.requestId;
+    },
+    receiveSolidModal: (requestId, reply) => { set({ solidModal: receiveSolidModal(get().solidModal, requestId, reply) }); },
+    cancelSolidModal: () => {
+      get().solidAnalysisRunner?.cancelModal?.();
+      set({ solidModal: cancelSolidModal(get().solidModal) });
+    },
+    editSolidModalInput: (field, text) => {
+      get().solidAnalysisRunner?.cancelModal?.();
+      set({ solidModal: editSolidModalInput(get().solidModal, field, text) });
+    },
+    setSolidModalView: (view, amplitudeText) => { set({ solidModal: setSolidModalView(get().solidModal, view, amplitudeText) }); },
+    saveSolidModal: () => {
+      const state = get(), session = state.solidAnalysisSession;
+      if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
+      try {
+        const definition = solidModalSavedInput(session, state.solidModal, state.solidModalShared, state.document.id, state.document.parameters, state.bodies);
+        const others = state.document.beamAnalysisInputs?.analyses.filter(value => value.kind !== 'solid-modal-cad') ?? [];
+        state.applyDocument(withBeamAnalysisInputs(state.document, {
+          schema: 'pointercad-beam-inputs/1', analyses: [...others, { kind: 'solid-modal-cad', definition }],
+        }));
+      } catch (error) {
+        set({ solidModal: { ...get().solidModal, error: error instanceof Error ? error.message : t('solidAnalysis.modalFailed') } });
+      }
+    },
+    adoptPanelForSolidModal: () => {
+      get().solidAnalysisRunner?.cancelModal?.();
+      set({ solidModalShared: null, solidModal: invalidateSolidModal(get().solidModal) });
+    },
+    startSolidBuckling: () => {
+      const next = startSolidBuckling(get().solidBuckling);
+      set({ solidBuckling: next });
+      return next.requestId;
+    },
+    receiveSolidBuckling: (requestId, reply) => { set({ solidBuckling: receiveSolidBuckling(get().solidBuckling, requestId, reply) }); },
+    cancelSolidBuckling: () => {
+      get().solidAnalysisRunner?.cancelBuckling?.();
+      set({ solidBuckling: cancelSolidBuckling(get().solidBuckling) });
+    },
+    editSolidBucklingCount: text => {
+      get().solidAnalysisRunner?.cancelBuckling?.();
+      set({ solidBuckling: editSolidBucklingCount(get().solidBuckling, text) });
+    },
+    saveSolidBuckling: () => {
+      const state = get(), session = state.solidAnalysisSession;
+      if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
+      try {
+        const definition = solidBucklingSavedInput(session, state.solidBuckling, state.solidBucklingReference, state.document.id,
+          state.document.parameters);
+        const others = state.document.beamAnalysisInputs?.analyses.filter(value => value.kind !== 'solid-buckling-cad') ?? [];
+        state.applyDocument(withBeamAnalysisInputs(state.document, {
+          schema: 'pointercad-beam-inputs/1', analyses: [...others, { kind: 'solid-buckling-cad', definition }],
+        }));
+      } catch (error) {
+        set({ solidBuckling: { ...get().solidBuckling, code: null,
+          error: error instanceof Error ? error.message : t('solidAnalysis.bucklingFailed') } });
+      }
+    },
+    adoptPanelForSolidBuckling: () => {
+      get().solidAnalysisRunner?.cancelBuckling?.();
+      set({ solidBucklingReference: null, solidBuckling: invalidateSolidBuckling(get().solidBuckling) });
+    },
+    setSolidBucklingView: (view, amplitudeText, showShape) => {
+      set({ solidBuckling: setSolidBucklingView(get().solidBuckling, view, amplitudeText, showShape) });
+    },
+  };
+}
+
 export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnalysisSlice> = (set, get) => ({
   solidAnalysisSession: null, solidAnalysisRunner: null,
   solidModal: initialSolidModalState(),
@@ -255,72 +332,5 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
       if (current) set({ solidAnalysisSession: { ...current, error: error instanceof Error ? error.message : t('solidAnalysis.failed') } });
     }
   },
-  startSolidModal: () => {
-    const next = startSolidModal(get().solidModal);
-    set({ solidModal: next });
-    return next.requestId;
-  },
-  receiveSolidModal: (requestId, reply) => { set({ solidModal: receiveSolidModal(get().solidModal, requestId, reply) }); },
-  cancelSolidModal: () => {
-    get().solidAnalysisRunner?.cancelModal?.();
-    set({ solidModal: cancelSolidModal(get().solidModal) });
-  },
-  editSolidModalInput: (field, text) => {
-    get().solidAnalysisRunner?.cancelModal?.();
-    set({ solidModal: editSolidModalInput(get().solidModal, field, text) });
-  },
-  setSolidModalView: (view, amplitudeText) => { set({ solidModal: setSolidModalView(get().solidModal, view, amplitudeText) }); },
-  saveSolidModal: () => {
-    const state = get(), session = state.solidAnalysisSession;
-    if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
-    try {
-      const definition = solidModalSavedInput(session, state.solidModal, state.solidModalShared, state.document.id, state.document.parameters, state.bodies);
-      const others = state.document.beamAnalysisInputs?.analyses.filter(value => value.kind !== 'solid-modal-cad') ?? [];
-      state.applyDocument(withBeamAnalysisInputs(state.document, {
-        schema: 'pointercad-beam-inputs/1', analyses: [...others, { kind: 'solid-modal-cad', definition }],
-      }));
-    } catch (error) {
-      set({ solidModal: { ...get().solidModal, error: error instanceof Error ? error.message : t('solidAnalysis.modalFailed') } });
-    }
-  },
-  adoptPanelForSolidModal: () => {
-    get().solidAnalysisRunner?.cancelModal?.();
-    set({ solidModalShared: null, solidModal: invalidateSolidModal(get().solidModal) });
-  },
-  startSolidBuckling: () => {
-    const next = startSolidBuckling(get().solidBuckling);
-    set({ solidBuckling: next });
-    return next.requestId;
-  },
-  receiveSolidBuckling: (requestId, reply) => { set({ solidBuckling: receiveSolidBuckling(get().solidBuckling, requestId, reply) }); },
-  cancelSolidBuckling: () => {
-    get().solidAnalysisRunner?.cancelBuckling?.();
-    set({ solidBuckling: cancelSolidBuckling(get().solidBuckling) });
-  },
-  editSolidBucklingCount: text => {
-    get().solidAnalysisRunner?.cancelBuckling?.();
-    set({ solidBuckling: editSolidBucklingCount(get().solidBuckling, text) });
-  },
-  saveSolidBuckling: () => {
-    const state = get(), session = state.solidAnalysisSession;
-    if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
-    try {
-      const definition = solidBucklingSavedInput(session, state.solidBuckling, state.solidBucklingReference, state.document.id,
-        state.document.parameters);
-      const others = state.document.beamAnalysisInputs?.analyses.filter(value => value.kind !== 'solid-buckling-cad') ?? [];
-      state.applyDocument(withBeamAnalysisInputs(state.document, {
-        schema: 'pointercad-beam-inputs/1', analyses: [...others, { kind: 'solid-buckling-cad', definition }],
-      }));
-    } catch (error) {
-      set({ solidBuckling: { ...get().solidBuckling, code: null,
-        error: error instanceof Error ? error.message : t('solidAnalysis.bucklingFailed') } });
-    }
-  },
-  adoptPanelForSolidBuckling: () => {
-    get().solidAnalysisRunner?.cancelBuckling?.();
-    set({ solidBucklingReference: null, solidBuckling: invalidateSolidBuckling(get().solidBuckling) });
-  },
-  setSolidBucklingView: (view, amplitudeText, showShape) => {
-    set({ solidBuckling: setSolidBucklingView(get().solidBuckling, view, amplitudeText, showShape) });
-  },
+  ...solidModeActions(set, get),
 });

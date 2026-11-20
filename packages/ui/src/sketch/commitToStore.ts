@@ -24,6 +24,7 @@ import {
   type SketchDocument,
   type SketchResolveOptions,
   type WorkPlane,
+  type WorkPlaneId,
 } from '@pointercad/model';
 
 import {
@@ -33,9 +34,10 @@ import {
   stagedExtrusionMessageKey,
   type ExtrudeStageCandidate,
 } from '../solid/extrudePreview.js';
+import { supportsSolidOperation } from '../solid/solidOperation.js';
 import { commitSolidInput } from '../solid/solidCommands.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
-import type { StagedConfirmation } from '../store/recomputeSlice.js';
+import { currentStagedSolid, type StagedConfirmation } from '../store/recomputeSlice.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { splitLineFailureMessage } from './splitLineMessages.js';
@@ -65,7 +67,7 @@ import {
   projectionSourcesRejection,
 } from './projectionCommands.js';
 import { commitReferenceInput } from './referenceCommands.js';
-import { commitFace, commitSketchInput } from './sketchCommands.js';
+import { commitFace, commitSketchInput, type CommitOutcome } from './sketchCommands.js';
 import { prepareNumericMathCommit } from './numericMathValues.js';
 import { tryMathComposition } from '../math/tryMathComposition.js';
 
@@ -103,6 +105,31 @@ export function drawingPlane(): WorkPlane {
   return state.freeSketchPlane ?? { ...WORK_PLANES.xy, id: FREE_WORK_PLANE_ID };
 }
 
+type SketchStepResult =
+  | { readonly kind: 'calculated'; readonly outcome: CommitOutcome; readonly connected: boolean }
+  | { readonly kind: 'mathError'; readonly message: string }
+  | { readonly kind: 'splitError'; readonly key: ReturnType<typeof splitLineFailureMessage> };
+
+/** 1 段の確定と交点の分割。作業中の文書と作図面だけを使い、予告と Undo は呼び出し元で扱う。 */
+export function commitSketchStep(
+  commit: NumericInputCommit,
+  context: Parameters<typeof commitSketchInput>[1],
+  workPlane: WorkPlane,
+): SketchStepResult {
+  const calculated = tryMathComposition(() => commitSketchInput(commit, context));
+  if (!calculated.ok) return { kind: 'mathError', message: calculated.message };
+  const outcome = calculated.value;
+  if (outcome.rejection !== null || commit.step !== 'lineEnd'
+      || outcome.document === context.document || commit.flags.splitIntersections === false) {
+    return { kind: 'calculated', outcome, connected: false };
+  }
+  const split = splitLineIntersections(
+    outcome.document, nextFeatureId(context.document, 'line'), cornerResolveOptions(context.planeId, workPlane),
+  );
+  if (!split.ok) return { kind: 'splitError', key: splitLineFailureMessage(split.reason) };
+  return { kind: 'calculated', outcome: { ...outcome, document: split.document }, connected: split.pointIds.length > 0 };
+}
+
 /**
  * 決まった 1 段を履歴・取りかけ・断りへ反映する。**受け取れたら true、断ったら false。**
  *
@@ -117,7 +144,7 @@ export function applySketchCommit(
   const store = useAppStore.getState();
   const base = mathCommitBase([commit, store.shapeDraft]);
   if (base === null) return false;
-  const calculated = tryMathComposition(() => commitSketchInput(commit, {
+  const result = commitSketchStep(commit, {
     document: store.sketch,
     planeId: store.workPlaneId,
     plane: drawingPlane(),
@@ -127,23 +154,16 @@ export function applySketchCommit(
     // 欄の値を名前で引くのに、確定した段の状態も渡す。
     shapeDraft: store.shapeDraft,
     input: input ?? undefined,
-  }));
-  if (!calculated.ok) { store.setShapeError(calculated.message); return false; }
-  const outcome = calculated.value;
-  store.setShapeError(outcome.rejection);
-  // 予告していた拘束(FR-333)を同じ文書へ足してから 1 回だけ差し替える。
-  let document = outcome.document;
-  let connected = false;
-  if (outcome.rejection === null && commit.step === 'lineEnd' && document !== store.sketch
-      && commit.flags.splitIntersections !== false) {
-    const split = splitLineIntersections(document, nextFeatureId(store.sketch, 'line'), cornerResolveOptions());
-    if (!split.ok) {
-      store.setShapeError(splitLineFailureMessage(split.reason));
-      return false;
-    }
-    document = split.document;
-    connected = split.pointIds.length > 0;
+  }, store.workPlane);
+  if (result.kind === 'mathError') { store.setShapeError(result.message); return false; }
+  if (result.kind === 'splitError') {
+    store.setShapeError(null);
+    store.setShapeError(result.key);
+    return false;
   }
+  const { outcome, connected } = result;
+  store.setShapeError(outcome.rejection);
+  let document = outcome.document;
   // The preview concerned the whole straight line. Do not attach it to only its final piece.
   if (connected) store.setInferredConstraints(null);
   else document = withInferredConstraints(store, commit, document);
@@ -212,14 +232,21 @@ function currentCutSketches(store: ReturnType<typeof useAppStore.getState>) {
   return snapshot;
 }
 
+function stagesCreation(commit: SolidInputCommit): boolean {
+  if (!supportsSolidOperation(commit.tool)) return false;
+  const mode = commit.shapeChoices?.extrudeOperation;
+  const store = useAppStore.getState();
+  return mode === 'join' || mode === 'cut' || (store.numericInput?.toolId === commit.tool && currentStagedSolid(store) !== null);
+}
+
 export function applySolidCommit(commit: SolidInputCommit): boolean {
   // 押し出しは形を計算してから確定する(文書だけ先に積まない)。同期で積む道は残さない。
   if (commit.tool === 'extrude') return confirmExtrudeCommit(commit) === 'adopted';
-  if (commit.tool === 'cut') return confirmMachiningCommit(commit) === 'adopted';
-  if (commit.tool === 'faceOffset' || commit.tool === 'holeTranslate' || commit.tool === 'faceRotate') return confirmMachiningCommit(commit) === 'adopted';
+  if (commit.tool === 'cut' || stagesCreation(commit)) return confirmStagedSolidCommit(commit) === 'adopted';
+  if (commit.tool === 'faceOffset' || commit.tool === 'holeTranslate' || commit.tool === 'faceRotate') return confirmStagedSolidCommit(commit) === 'adopted';
   // 計算担当が未接続なら従来の同期確定と後始末を使う。接続済みは成功した候補だけを採用する。
   if ((commit.tool === 'hole' || commit.tool === 'threadHole')
-    && useAppStore.getState().partStager !== null) return confirmMachiningCommit(commit) === 'adopted';
+    && useAppStore.getState().partStager !== null) return confirmStagedSolidCommit(commit) === 'adopted';
   const store = useAppStore.getState();
   const base = mathCommitBase(commit);
   if (base === null) return false;
@@ -301,16 +328,17 @@ export function confirmExtrudeCommit(commit: SolidInputCommit): StagedConfirmati
 }
 
 /** 穴・ねじも成功した形だけを採用する。失敗・取消・別入力は既存の所有照合で捨てる。 */
-function confirmMachiningCommit(commit: SolidInputCommit): StagedConfirmation {
+function confirmStagedSolidCommit(commit: SolidInputCommit): StagedConfirmation {
   const store = useAppStore.getState();
-  // Keep the cut's existing input refusals specific, including a retired formula snapshot.
-  const cutCandidate = commit.tool === 'cut' ? solidStageCandidateOf(commit) : null;
-  if (commit.tool === 'cut' && cutCandidate === null) return 'refused';
+  // 切断・結合・切り抜きでは、計算部が未接続でも対象や入力の誤りを先に伝える。
+  const validateFirst = commit.tool === 'cut' || stagesCreation(commit);
+  const checked = validateFirst ? solidStageCandidateOf(commit) : null;
+  if (validateFirst && checked === null) return 'refused';
   if (store.partStager === null) {
-    store.setSolidError('solidError.notYetAvailable');
+    store.setSolidError(stagesCreation(commit) ? 'solidError.extrudeUnavailable' : 'solidError.notYetAvailable');
     return 'refused';
   }
-  const candidate = cutCandidate ?? solidStageCandidateOf(commit);
+  const candidate = checked ?? solidStageCandidateOf(commit);
   if (candidate === null) return 'refused';
   const confirmation = confirmExtrusion(candidate, () => { useAppStore.getState().closeNumericInput(); });
   const failed = useAppStore.getState().stagedSolid;
@@ -330,7 +358,7 @@ export function previewExtrudeTransition(transition: NumericInputTransition): vo
     store.updateNumericInput(transition.state);
     return;
   }
-  if (transition.kind !== 'solidCommitted' || transition.commit.tool !== 'extrude') return;
+  if (transition.kind !== 'solidCommitted' || !supportsSolidOperation(transition.commit.tool)) return;
   if (store.partStager === null) {
     store.setSolidError('solidError.extrudeUnavailable');
     return;
@@ -414,10 +442,10 @@ export function applyNumericTransition(transition: NumericInputTransition): void
         confirmExtrudeCommit(transition.commit);
         return;
       }
-      if (transition.commit.tool === 'cut' || transition.commit.tool === 'faceOffset' || transition.commit.tool === 'holeTranslate' || transition.commit.tool === 'faceRotate'
+      if (stagesCreation(transition.commit) || transition.commit.tool === 'cut' || transition.commit.tool === 'faceOffset' || transition.commit.tool === 'holeTranslate' || transition.commit.tool === 'faceRotate'
         || ((transition.commit.tool === 'hole' || transition.commit.tool === 'threadHole') && store.partStager !== null)) {
         if (store.numericInput !== transition.state) store.updateNumericInput(transition.state);
-        confirmMachiningCommit(transition.commit);
+        confirmStagedSolidCommit(transition.commit);
         return;
       }
       // ソリッドは(ばねの1段目を除き)1段で終わるので、決めたら必ず閉じる
@@ -544,10 +572,11 @@ export function applyProjectionCommit(
  */
 function applyCornerCommit(commit: EditInputCommit, base: PartDocument): boolean {
   const store = useAppStore.getState();
+  const options = cornerResolveOptions(store.workPlaneId, store.workPlane);
   const outcome =
     commit.tool === 'sketchFillet'
-      ? commitSketchFillet(store.sketch, store.selection, commit, cornerResolveOptions())
-      : commitSketchChamfer(store.sketch, store.selection, commit, cornerResolveOptions());
+      ? commitSketchFillet(store.sketch, store.selection, commit, options)
+      : commitSketchChamfer(store.sketch, store.selection, commit, options);
   if (!outcome.ok) {
     // 断られたらポップアップを閉じない(理由は帯に出ている)。半径を入れ直せばそのまま試せる。
     store.setEditError(outcome.reasonKey);
@@ -568,12 +597,8 @@ function applyCornerCommit(commit: EditInputCommit, base: PartDocument): boolean
  * 任意の作業平面(FR-328)も引けるよう、いま解いてある面を渡す
  * (`attachSketchInteraction.ts` の `editResolveOptions` と同じ渡し方)。
  */
-function cornerResolveOptions(): SketchResolveOptions {
-  const store = useAppStore.getState();
-  return {
-    workPlane: (planeId) =>
-      planeId === store.workPlaneId ? store.workPlane : baseWorkPlane(planeId),
-  };
+function cornerResolveOptions(activeId: WorkPlaneId, activePlane: WorkPlane): SketchResolveOptions {
+  return { workPlane: (planeId) => planeId === activeId ? activePlane : baseWorkPlane(planeId) };
 }
 
 /** 道具ごとの確定の振り分け。段を持たない道具(トリム・延長)はここへ来ないので null。 */

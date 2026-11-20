@@ -18,7 +18,7 @@ import { makeSurfaceCut, SurfaceCutError } from '../occt/makeSurfaceCut.js';
 import { makeDraft } from '../occt/makeDraft.js';
 import { makeEmboss } from '../occt/makeEmboss.js';
 import { makeFillet } from '../occt/makeFillet.js';
-import { makeHole } from '../occt/makeHole.js';
+import { makeHole, resolveHoleFrame } from '../occt/makeHole.js';
 import { makePrimitive, resolvePrimitiveOrigin } from '../occt/makePrimitive.js';
 import { createMeshCoordinateFrame } from '../occt/meshCoordinateFrame.js';
 import { makeRib } from '../occt/makeRib.js';
@@ -52,6 +52,7 @@ import type {
   BooleanStepSpec,
   ExtrudeStepSpec,
   FilletStepSpec,
+  HoleStepSpec,
   ImportedSolidStepSpec,
   MeshJsAccounting,
   PrimitiveStepSpec,
@@ -66,6 +67,7 @@ import type {
   SurfaceStepSpec,
   TessellationOptions,
   ThreadMarkInfo,
+  ThreadStepSpec,
   ThruSectionsStepSpec,
 } from '../types.js';
 import { meshBackingBytes, meshBackingFailureReason, type MeshBufferSnapshot, type ShapeCache,
@@ -571,6 +573,18 @@ function createFilletSolid(
 }
 
 /**
+ * 辺からの距離の穴・ねじ穴(M-02)。`makeHole`・`makeThreadHole` は辺の一覧を受け取らないので、今の形の辺の一覧
+ * (`target.mesh.edges`)を渡した `resolveHoleFrame` で中心を求め、同じ面・傾きの中心点の穴に直して渡す
+ * (中心は面の上にあり、中心点の穴の面への写しで変わらない)。ほかの置き方の依頼はそのまま返す。
+ * 断りの文(辺が見つからない・直線でない・面の縁でない・平行・面の外)は `resolveHoleFrame` のまま段の失敗になる。
+ */
+function withEdgeDistanceCenters<T extends HoleStepSpec | ThreadStepSpec>(oc: OpenCascadeInstance, spec: T, target: CachedSolid): T {
+  if (spec.planar?.kind !== 'edge-distance') return spec;
+  const frame = resolveHoleFrame(oc, target.shape, target.mesh.faces, spec, target.mesh.origins, target.mesh.edges);
+  return { ...spec, planar: undefined, centers: frame.origins };
+}
+
+/**
  * 曲面の段(FR-428)。**閉じた立体ではなく面のボディ**を作る。
  *
  * 作り方が「すでにある立体の面を取り出す」(`shape.kind === 'face'`)か「その面を距離だけ
@@ -741,14 +755,14 @@ function createStepSolid(
     case 'hole': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       // 入口の形(ざぐり・皿もみ、FR-422)。省かれていれば makeHole が真っ直ぐな穴にする。
-      const drilled = makeHole(oc, spec, target.shape, target.mesh.faces, spec.entry, target.mesh.origins, featureId);
+      const drilled = makeHole(oc, withEdgeDistanceCenters(oc, spec, target), target.shape, target.mesh.faces, spec.entry, target.mesh.origins, featureId);
       return noMarks(drilled, drilled.volume);
     }
     case 'thread': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       // 入口の形(ざぐり・皿もみ、FR-422)は段の欄のまま `makeThreadHole` が読む
       // (段の型が作り手の依頼の上位互換なので詰め替えない)。省かれていれば真っ直ぐな下穴。
-      const { handle, marks } = makeThreadHole(oc, spec, target.shape, target.mesh.faces, target.mesh.origins, featureId);
+      const { handle, marks } = makeThreadHole(oc, withEdgeDistanceCenters(oc, spec, target), target.shape, target.mesh.faces, target.mesh.origins, featureId);
       return { handle, threadMarks: marks };
     }
     case 'fillet': {

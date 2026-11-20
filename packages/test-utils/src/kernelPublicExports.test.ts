@@ -261,6 +261,7 @@ const expected = [
   "distanceBetween",
   "draftStatusName",
   "edgeAt",
+  "edgeDistanceCenters",
   "edgeLength",
   "edgesTouchingVertex",
   "editSolidFace",

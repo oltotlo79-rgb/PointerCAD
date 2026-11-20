@@ -791,7 +791,7 @@ interface SolidFieldDraft {
  interface CylindricalPropertySelection {
   readonly featureId: string;
   readonly locationCount: number;
-  readonly placementKind?: 'plane-face';
+  readonly placementKind?: 'plane-face' | 'edge-distance';
   readonly index: number;
 }
 
@@ -800,9 +800,9 @@ function cylindricalPropertyLocationCount(feature: SolidFeature): number {
     ? feature.planar?.locations.length ?? feature.cylindrical?.locations.length ?? 0 : 0;
 }
 
-function planarPropertyPlacement(feature: SolidFeature): 'plane-face' | undefined {
-  return (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar !== undefined
-    ? 'plane-face' : undefined;
+/** 面内 X・Y と辺からの距離(M-02)の穴は、位置別の欄を持つ(欄の鍵と書き戻しの位置の指定に置き方を載せる)。 */
+function planarPropertyPlacement(feature: SolidFeature): 'plane-face' | 'edge-distance' | undefined {
+  return feature.kind === 'hole' || feature.kind === 'threadHole' ? feature.planar?.kind : undefined;
 }
 
 /** The active property position is local UI state, never a document/history edit. */
@@ -828,15 +828,15 @@ export function createSolidPropertyFieldEdit(
   const valid = reconcileCylindricalPropertySelection(feature, selection) === selection;
   const placementKind = planarPropertyPlacement(feature);
   const face = feature.kind === 'hole' || feature.kind === 'threadHole' ? feature.face : undefined;
-  const fieldKey = `field:${feature.id}:${key}${placementKind === undefined ? '' : ':plane-face'}${count > 1 ? `:location:${count}:${selection.index}` : ''}`;
+  const fieldKey = `field:${feature.id}:${key}${placementKind === undefined ? '' : `:${placementKind}`}${count > 1 ? `:location:${count}:${selection.index}` : ''}`;
   return { key: fieldKey, replaceValue: (document: PartDocument, value: ExpressionValue): PartDocument => {
     const current = findSolid(document, feature.id);
     if (!valid || current === undefined || current.kind !== feature.kind || cylindricalPropertyLocationCount(current) !== count
       || planarPropertyPlacement(current) !== placementKind
-      || (placementKind === 'plane-face' && (
+      || (placementKind !== undefined && (
         (current.kind !== 'hole' && current.kind !== 'threadHole') || current.face !== face
       ))) return document;
-    const options = count === 0 ? units : placementKind === 'plane-face'
+    const options = count === 0 ? units : placementKind !== undefined
       ? { ...units, planarLocationIndex: selection.index } : { ...units, cylindricalLocationIndex: selection.index };
     const next = setSolidField(current, key, value, units.variables, options);
     return next === current ? document : replaceSolid(document, feature.id, next);

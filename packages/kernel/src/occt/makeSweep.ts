@@ -124,11 +124,13 @@ import type { CurveSpec, RigidTransformSpec, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { addGuidedSections, prepareSweepGuide } from './sweepGuide.js';
+import { cutInnerSolids, innerProfileWires } from './sweepHollow.js';
+import { prepareSweepLaw } from './sweepLaw.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
-import { transformShape } from './transformShape.js';
+import { applyTransformToDirection, transformShape } from './transformShape.js';
 
 /** これ未満の体積(mm³)は「立体にならなかった」とみなす(他の make*.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
@@ -197,6 +199,14 @@ export interface SweepInput {
   readonly frenet: boolean;
   /** 断面の向きと相似倍率を指定する案内線。対応は両線の同じ弧長比。 */
   readonly guide?: readonly CurveSpec[];
+  /** M-07。全体で回す角度(ラジアン)。省略は 0。0 でない時は `sweepLaw.ts` の枠で向きを決め、frenet は見ない。 */
+  readonly twist?: number;
+  /** M-07。終わりの断面の倍率。省略は 1。 */
+  readonly endScale?: number;
+  /** M-07。中空の壁の厚み(mm)。`sweepHollow.ts`。 */
+  readonly wallThickness?: number;
+  /** M-07。穴つきの面を断面にした時の穴の線。`sweepHollow.ts`。 */
+  readonly holes?: readonly (readonly CurveSpec[])[];
 }
 
 
@@ -467,12 +477,13 @@ function isGuideNoContact(value: unknown, oc: OpenCascadeInstance): value is BRe
   return value !== undefined && value === oc.BRepFill_TypeOfContact.BRepFill_NoContact;
 }
 
-function applyGuideMode(oc: OpenCascadeInstance, pipe: BRepOffsetAPI_MakePipeShell, guide: TopoDS_Wire): void {
+function applyGuideMode(oc: OpenCascadeInstance, pipe: BRepOffsetAPI_MakePipeShell, guide: TopoDS_Wire, byLength = true): void {
   const mode: unknown = oc.BRepFill_TypeOfContact.BRepFill_NoContact;
   if (!isGuideNoContact(mode, oc)) throw new Error(KERNEL_NOT_READY_MESSAGE);
   // ContactOnBorderは円断面で成功する一方、矩形/楕円では失敗する実証結果がある。
   // NoContactの向き＋明示的な相似断面で幅も合わせる。補助spineと非互換のSetLawは使わない。
-  pipe.SetMode_5(guide, true, mode);
+  // byLength = false はねじれ・先細りの補助の線(M-07)。経路に直交する面と補助の線の交点で向きを決め、長さの比の対応は使わない。
+  pipe.SetMode_5(guide, byLength, mode);
 }
 
 /** 掃引の向きの指定を `MakePipeShell` へ渡す。 */
@@ -494,6 +505,118 @@ function applySweepMode(
   pipe.SetMode_3(keep(new oc.gp_Dir_4(BINORMAL[0], BINORMAL[1], BINORMAL[2])));
 }
 
+/** 案内線とねじれ・先細り(M-07)を一緒に指定した。案内線が向きと大きさを決めるため。 */
+const LAW_WITH_GUIDE_MESSAGE = '案内線とねじれ・先細りは同時に使えません。';
+
+/** 掃引の向きと断面の足し方。外の断面と中空の内側の線に同じ物を当てる。 */
+interface SweepOrientation {
+  /** `MakePipeShell` に向きの決め方を渡す。 */
+  readonly apply: (pipe: BRepOffsetAPI_MakePipeShell) => void;
+  /** 始点に置いた断面(またはその写しの列)を足す。 */
+  readonly addSections: (pipe: BRepOffsetAPI_MakePipeShell, placed: TopoDS_Wire) => void;
+  /** 体積 = 断面の面積 × これ。掃引できた長さの確かめに使う(冒頭の注釈 (a))。 */
+  readonly volumePerArea: () => number;
+  /** 断面の倍率の最大。曲がりの半径の確かめに使う(冒頭の注釈 (b))。 */
+  readonly maxScale: number;
+}
+
+/** 向きを決めるのに要る、経路と置いた断面。 */
+interface SweepOrientationContext {
+  readonly spine: TopoDS_Wire;
+  readonly frame: ProfileFrame;
+  readonly start: PathStart;
+  readonly placement: RigidTransformSpec;
+  readonly placed: TopoDS_Wire;
+}
+
+/**
+ * 向きの決め方を選ぶ。案内線 → 案内線の向きと相似の断面(sweepGuide.ts)。ねじれ・先細り → 自分の枠と補助の線(sweepLaw.ts)。
+ * どちらでもなければ、今までどおり Frenet か副法線の固定で、断面 1 枚。
+ */
+function sweepOrientation(oc: OpenCascadeInstance, input: SweepInput, context: SweepOrientationContext,
+  keep: Allocations['keep']): SweepOrientation {
+  const twist = input.twist ?? 0, endScale = input.endScale ?? 1;
+  const usesLaw = twist !== 0 || endScale !== 1;
+  if (input.guide !== undefined) {
+    if (usesLaw) throw new Error(LAW_WITH_GUIDE_MESSAGE);
+    const guideWire = makeWire(oc, input.guide, '案内線は1本につながった線を選んでください。', keep);
+    const plan = prepareSweepGuide(oc, context.spine, guideWire, context.placed, keep);
+    return { apply: (pipe) => { applyGuideMode(oc, pipe, guideWire); },
+      addSections: (pipe, placed) => { addGuidedSections(oc, pipe, placed, plan, keep); },
+      volumePerArea: () => plan.volumePerArea, maxScale: plan.maxScale };
+  }
+  if (usesLaw) {
+    // 始めの枠の基準の向き: 置いた断面の面内で、断面の元の X 軸(断面の法線に近ければ Y 軸)を置き方で移した向き。
+    const normal = context.frame.normal;
+    const axis: Vec3Tuple = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const inPlane = toUnit(subtract(axis, [normal[0] * dot(axis, normal), normal[1] * dot(axis, normal), normal[2] * dot(axis, normal)]));
+    if (inPlane === null) throw new Error(NO_TANGENT_MESSAGE);
+    const plan = prepareSweepLaw(oc, context.spine, applyTransformToDirection(context.placement, inPlane),
+      { twist, endScale, profileRadius: context.frame.radius }, keep);
+    return { apply: (pipe) => { applyGuideMode(oc, pipe, plan.auxiliary, false); }, addSections: plan.addSections,
+      volumePerArea: () => plan.volumePerArea, maxScale: plan.maxScale };
+  }
+  return { apply: (pipe) => { applySweepMode(oc, pipe, input.frenet, context.start.tangent, keep); },
+    addSections: (pipe, placed) => { pipe.Add_1(placed, false, false); },
+    volumePerArea: () => wireLength(oc, context.spine, keep), maxScale: 1 };
+}
+
+/** 段の時間の記録(`makeSweep` の observe)。 */
+type SweepStage = 'wires' | 'frames' | 'placement' | 'build' | 'solid' | 'volume' | 'validity' | 'length';
+
+/**
+ * 置いた断面 1 本を掃いて、正しい向きの立体にする。正しい立体でなければ断る。中空の内側の線にも同じ作りを当てる。
+ * `mark` は外の断面にだけ渡す(段の記録を内側の線で重ねない)。
+ */
+function sweepSolid(oc: OpenCascadeInstance, spine: TopoDS_Wire, orientation: SweepOrientation, placed: TopoDS_Wire,
+  keep: Allocations['keep'], mark?: (stage: SweepStage) => void): { readonly shape: TopoDS_Shape; readonly volume: number } {
+  const pipe = keep(new oc.BRepOffsetAPI_MakePipeShell(spine));
+  orientation.apply(pipe);
+  // 角は留め継ぎでつなぐ(冒頭の注釈 (a))。既定の `Transformed` は角で掃引が止まる。
+  pipe.SetTransitionMode(rightCornerMode(oc));
+  // 断面はすでに正しい位置と向きにあるので、OCCT 側の寄せ(WithContact)と
+  // 向き直し(WithCorrection)は使わない。WithContact は断面を経路へ「接する」
+  // まで平行移動する指定で、重心を経路に乗せる置き方(冒頭の注釈)と食い違う。
+  orientation.addSections(pipe, placed);
+  if (!pipe.IsReady()) {
+    throw new Error(BUILD_FAILED_MESSAGE);
+  }
+  pipe.Build(keep(new oc.Message_ProgressRange_1()));
+  mark?.('build');
+  // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
+  // (makeSpring.ts と同じ扱い)。
+  if (!pipe.IsDone()) {
+    throw new Error(BUILD_FAILED_MESSAGE);
+  }
+  let shape: TopoDS_Shape;
+  if (pipe.MakeSolid()) {
+    shape = keep(pipe.Shape());
+  } else {
+    // 掃引した殻が閉じていなかったとき。殻をソリッドで包む。
+    const shell = keep(oc.TopoDS.Shell_1(keep(pipe.Shape())));
+    const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shell));
+    if (!solidMaker.IsDone()) {
+      throw new Error(BUILD_FAILED_MESSAGE);
+    }
+    shape = keep(solidMaker.Shape());
+  }
+  mark?.('solid');
+  // 閉経路の複数断面では内向きの殻が返ることがある。絶対値だけで通すと
+  // 表裏や後続ブーリアンが逆になるため、縫合と同じく生成した形の向きを直す。
+  const signedVolume = measureVolume(oc, shape);
+  mark?.('volume');
+  if (signedVolume < 0) shape = keep(shape.Reversed());
+  const volume = Math.abs(signedVolume);
+  if (!hasSolid(oc, shape) || volume < MIN_SOLID_VOLUME_MM3) {
+    throw new Error(NOT_SOLID_MESSAGE);
+  }
+  if (!isValidShape(oc, shape)) {
+    throw new Error(NOT_SOLID_MESSAGE);
+  }
+  mark?.('validity');
+  return { shape, volume };
+}
+
 /**
  * スイープ(FR-409)。断面を経路に沿って掃引した立体を 1 つ作る。
  *
@@ -504,9 +627,11 @@ function applySweepMode(
  * 当初の見出しは `options?: TessellationOptions` を持つが、掃引そのものは
  * テッセレーションの粗さを使わない(粗さは段の種類ごとに `recomputeSolids.ts` が
  * 掛ける)ので受け取らない。`makeSpring.ts` / `makeHole.ts` と同じ判断。
+ *
+ * ねじれ・先細り・中空(M-07)を使わない時は、今までと同じ順で同じ命令だけを通る(向きの決め方・断面 1 枚・断りの文)。
  */
 export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
-  observe?: (stage: 'wires' | 'frames' | 'placement' | 'build' | 'solid' | 'volume' | 'validity' | 'length', elapsedMs: number) => void): OcctShapeHandle {
+  observe?: (stage: SweepStage, elapsedMs: number) => void): OcctShapeHandle {
   if (input.path.length === 0) {
     throw new Error(NO_PATH_MESSAGE);
   }
@@ -516,7 +641,7 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
 
   const { keep, release } = createAllocations();
   let previousTime = observe === undefined ? 0 : performance.now();
-  const mark = (stage: Parameters<NonNullable<typeof observe>>[0]) => {
+  const mark = (stage: SweepStage) => {
     if (observe === undefined) return;
     const now = performance.now(); observe(stage, now - previousTime); previousTime = now;
   };
@@ -540,69 +665,26 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
     if (frame.radius >= minimumRadius) {
       throw new Error(TOO_TIGHT_MESSAGE);
     }
-    // Copy = true で複製を作るので、もとの断面のワイヤは触られない。
-    const moved = keep(transformShape(oc, profileWire, placementOf(frame, start)));
-    const placed = keep(oc.TopoDS.Wire_1(moved.shape));
+    // Copy = true で複製を作るので、もとの断面のワイヤは触られない。中空の内側の線にも同じ置き方を当てる。
+    const placement = placementOf(frame, start);
+    const place = (wire: TopoDS_Wire): TopoDS_Wire => keep(oc.TopoDS.Wire_1(keep(transformShape(oc, wire, placement)).shape));
+    const placed = place(profileWire);
 
-    const guideWire = input.guide === undefined ? null : makeWire(oc, input.guide,
-      '案内線は1本につながった線を選んでください。', keep);
-    const guidePlan = guideWire === null ? null : prepareSweepGuide(oc, spine, guideWire, placed, keep);
-    if (guidePlan !== null && frame.radius * guidePlan.maxScale >= minimumRadius) throw new Error(TOO_TIGHT_MESSAGE);
+    const orientation = sweepOrientation(oc, input, { spine, frame, start, placement, placed }, keep);
+    if (frame.radius * orientation.maxScale >= minimumRadius) throw new Error(TOO_TIGHT_MESSAGE);
+    const inner = innerProfileWires(oc, input, frame.area, (curves, message) => makeWire(oc, curves, message, keep), keep);
+    const innerPlaced = inner.wires.map(place);
     mark('placement');
 
-    const pipe = keep(new oc.BRepOffsetAPI_MakePipeShell(spine));
-    if (guideWire === null) applySweepMode(oc, pipe, input.frenet, start.tangent, keep);
-    else applyGuideMode(oc, pipe, guideWire);
-    // 角は留め継ぎでつなぐ(冒頭の注釈 (a))。既定の `Transformed` は角で掃引が止まる。
-    pipe.SetTransitionMode(rightCornerMode(oc));
-    // 断面はすでに正しい位置と向きにあるので、OCCT 側の寄せ(WithContact)と
-    // 向き直し(WithCorrection)は使わない。WithContact は断面を経路へ「接する」
-    // まで平行移動する指定で、重心を経路に乗せる置き方(冒頭の注釈)と食い違う。
-    if (guidePlan === null) pipe.Add_1(placed, false, false);
-    else addGuidedSections(oc, pipe, placed, guidePlan, keep);
-    if (!pipe.IsReady()) {
-      throw new Error(BUILD_FAILED_MESSAGE);
-    }
-    pipe.Build(keep(new oc.Message_ProgressRange_1()));
-    mark('build');
-    // IsDone() を見る前に Shape() を呼ぶと C++ 例外が飛ぶ
-    // (makeSpring.ts と同じ扱い)。
-    if (!pipe.IsDone()) {
-      throw new Error(BUILD_FAILED_MESSAGE);
-    }
-
-    let shape: TopoDS_Shape;
-    if (pipe.MakeSolid()) {
-      shape = keep(pipe.Shape());
-    } else {
-      // 掃引した殻が閉じていなかったとき。殻をソリッドで包む。
-      const shell = keep(oc.TopoDS.Shell_1(keep(pipe.Shape())));
-      const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shell));
-      if (!solidMaker.IsDone()) {
-        throw new Error(BUILD_FAILED_MESSAGE);
-      }
-      shape = keep(solidMaker.Shape());
-    }
-
-    mark('solid');
-    // 閉経路の複数断面では内向きの殻が返ることがある。絶対値だけで通すと
-    // 表裏や後続ブーリアンが逆になるため、縫合と同じく生成した形の向きを直す。
-    const signedVolume = measureVolume(oc, shape);
-    mark('volume');
-    if (signedVolume < 0) shape = keep(shape.Reversed());
-    const volume = Math.abs(signedVolume);
-    if (!hasSolid(oc, shape) || volume < MIN_SOLID_VOLUME_MM3) {
-      throw new Error(NOT_SOLID_MESSAGE);
-    }
-    if (!isValidShape(oc, shape)) {
-      throw new Error(NOT_SOLID_MESSAGE);
-    }
-    mark('validity');
+    const outer = sweepSolid(oc, spine, orientation, placed, keep, mark);
+    const shape = innerPlaced.length === 0 ? outer.shape
+      : cutInnerSolids(oc, outer.shape, innerPlaced.map((wire) => sweepSolid(oc, spine, orientation, wire, keep).shape), keep);
+    const volume = innerPlaced.length === 0 ? outer.volume : Math.abs(measureVolume(oc, shape));
     // 掃引できた長さの検査(冒頭の注釈 (a))。角で途中まで止まっていても OCCT は
     // 「正しい立体」と答えるので、体積 = 断面の面積 × 経路の長さ からずれていないかで見る。
-    // 案内線では断面積が変わるため A0×∫scale(s)²ds と照合する。
+    // 案内線では断面積が変わるため A0×∫scale(s)²ds、先細りでは A0×L×(1+k+k²)/3、中空では内側の面積を引いて照合する。
     // 全経路を作れたかの1%基準は同じまま保つ。
-    const expectedVolume = frame.area * (guidePlan?.volumePerArea ?? wireLength(oc, spine, keep));
+    const expectedVolume = (frame.area - inner.area) * orientation.volumePerArea();
     mark('length');
     if (Math.abs(volume - expectedVolume) > expectedVolume * SWEPT_LENGTH_TOLERANCE) {
       throw new Error(INCOMPLETE_MESSAGE);

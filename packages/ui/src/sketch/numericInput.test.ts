@@ -530,7 +530,7 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
     expect(state.fields.map((field) => field.source)).toEqual(['360']);
     expect(state.fields[0].unit).toBe('degree');
     expect(state.toggles.map((toggle) => toggle.key)).toEqual(['reversed']);
-    expect(state.choices.length).toBe(1);
+    expect(state.choices.map(choice => choice.key)).toEqual(['axis', 'extrudeOperation', 'extrudeTarget']);
     expect(state.choices[0].key).toBe('axis');
     expect(state.choices[0].value).toBe('z');
     expect(state.choices[0].options.map((option) => option.value)).toEqual(['x', 'y', 'z']);
@@ -649,6 +649,8 @@ describe('つまみと選択肢の操作(NFR-UX-2)', () => {
     expect(numericFocusTargets(revolve)).toEqual([
       { kind: 'field', index: 0 },
       { kind: 'choice', index: 0 },
+      { kind: 'choice', index: 1 },
+      { kind: 'choice', index: 2 },
       { kind: 'toggle', index: 0 },
     ]);
     expect(numericFocusTargets(createNumericInput('sew', 'sewTolerance'))).toEqual([
@@ -725,9 +727,9 @@ describe('つまみと選択肢の操作(NFR-UX-2)', () => {
 
   it('焦点はつまみ・選択肢まで含めて数え、範囲外は無視する', () => {
     const revolve = createNumericInput('revolve', 'revolveAngle');
-    expect(reduceNumericInput(revolve, { type: 'focus', index: 2 }).focusedIndex).toBe(2);
-    expect(reduceNumericInput(revolve, { type: 'focus', index: 3 })).toBe(revolve);
-    expect(focusedTarget(reduceNumericInput(revolve, { type: 'focus', index: 2 }))).toEqual({
+    expect(reduceNumericInput(revolve, { type: 'focus', index: 4 }).focusedIndex).toBe(4);
+    expect(reduceNumericInput(revolve, { type: 'focus', index: 5 })).toBe(revolve);
+    expect(focusedTarget(reduceNumericInput(revolve, { type: 'focus', index: 4 }))).toEqual({
       kind: 'toggle',
       index: 0,
     });
@@ -2830,10 +2832,10 @@ describe('基本形状 5 種の段(FR-429、§2.15 の段の表)', () => {
     expect(state.fields.map((field) => field.source)).toEqual(['20', '5']);
   });
 
-  it('5 種とも「軸」の選択肢を 1 つだけ持ち、既定は Z(§0.a-0.16)。つまみは持たない', () => {
+  it('5 種とも軸・結果・相手の順で、軸の既定は Z(§0.a-0.16)。つまみは持たない', () => {
     for (const { tool, step } of PRIMITIVE_STEPS) {
       const state = createNumericInput(tool, step);
-      expect(state.choices.map((choice) => choice.key), tool).toEqual(['axis']);
+      expect(state.choices.map((choice) => choice.key), tool).toEqual(['axis', 'extrudeOperation', 'extrudeTarget']);
       expect(state.choices[0].value, tool).toBe('z');
       expect(state.choices[0].options.map((option) => option.value), tool).toEqual(['x', 'y', 'z']);
       expect(state.toggles, tool).toEqual([]);
@@ -2842,10 +2844,10 @@ describe('基本形状 5 種の段(FR-429、§2.15 の段の表)', () => {
 
   it('欄 3 つの段でも Tab は欄 → 選択肢 の輪を回り、外へ出ない(NFR-UX-2)', () => {
     const state = createNumericInput('box', 'boxSize');
-    // 欄 3 つ + 選択肢 1 つ = 4 か所。
-    expect(numericFocusTargets(state)).toHaveLength(4);
+    // 欄 3 つ + 軸・結果・相手 = 6 か所。
+    expect(numericFocusTargets(state)).toHaveLength(6);
     let moved = state;
-    for (let index = 0; index < 4; index += 1) {
+    for (let index = 0; index < 6; index += 1) {
       moved = reduceNumericInput(moved, { type: 'tab', backwards: false });
     }
     expect(moved.focusedIndex).toBe(0);
@@ -4466,6 +4468,41 @@ describe('EX05 explicit planar XY input', () => {
       const points = chooseNumericInput(filled, 'holePlacement', 'points');
       expect(points.fields.some(field => field.key === 'holePlanarX')).toBe(false);
       expect(chooseNumericInput(points, 'holePlacement', 'plane-face').fields.find(field => field.key === 'holePlanarX')?.source).toBe('');
+    });
+  }
+});
+
+describe('EX05/M-02 edge-distance input', () => {
+  for (const tool of ['hole', 'threadHole']) {
+    if (tool !== 'hole' && tool !== 'threadHole') throw new Error('Unexpected tool');
+    it(`${tool}: 辺1・辺2からの距離は空欄が既定の正の長さで、元式のまま確定へ渡り、面内X・Yの欄と入れ替わる`, () => {
+      const initial = createNumericInput(tool, tool === 'hole' ? 'holeSize' : 'threadSize');
+      expect(initial.fields.some(field => field.key === 'holeEdgeDistance1')).toBe(false);
+      const byEdges = chooseNumericInput(initial, 'holePlacement', 'edge-distance');
+      for (const key of ['holeEdgeDistance1', 'holeEdgeDistance2']) {
+        expect(byEdges.fields.find(field => field.key === key)?.source).toBe('');
+        expect(byEdges.fields.find(field => field.key === key)?.unit).toBe('mm');
+      }
+      expect(byEdges.fields.some(field => field.key === 'holePlanarX')).toBe(false);
+      expectBlocked(commitNumericInput(byEdges));
+      const first = byEdges.fields.findIndex(field => field.key === 'holeEdgeDistance1');
+      const second = byEdges.fields.findIndex(field => field.key === 'holeEdgeDistance2');
+      const filled = edited(edited(byEdges, '4 * 2', first), '12', second);
+      const result = expectSolidCommitted(commitNumericInput(filled)).commit;
+      expect(result.shapeChoices?.holePlacement).toBe('edge-distance');
+      expect(result.values.holeEdgeDistance1?.source).toBe('4 * 2');
+      expect(result.values.holeEdgeDistance1?.value).toBe(8);
+      expect(result.values.holeEdgeDistance2?.source).toBe('12');
+      expect(result.values.holeEdgeDistance2?.value).toBe(12);
+      expect(result.values.holePlanarX).toBeUndefined();
+      expectBlocked(commitNumericInput(edited(filled, '-3', first)));
+      expectBlocked(commitNumericInput(edited(filled, '4 *', first)));
+      expect(toggleNumericInput(filled, 'cylinderFace')).toBe(filled);
+      const planar = chooseNumericInput(filled, 'holePlacement', 'plane-face');
+      expect(planar.fields.some(field => field.key === 'holeEdgeDistance1')).toBe(false);
+      expect(planar.fields.some(field => field.key === 'holePlanarX')).toBe(true);
+      expect(chooseNumericInput(planar, 'holePlacement', 'edge-distance').fields
+        .find(field => field.key === 'holeEdgeDistance1')?.source).toBe('');
     });
   }
 });

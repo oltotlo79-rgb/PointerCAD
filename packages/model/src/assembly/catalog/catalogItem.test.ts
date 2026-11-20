@@ -188,6 +188,7 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
       'panel-part-box', 'panel-cover-frame', 'connector-box', 'cap-foot-box', 'movable-part-box', 'accessory-box',
       'slider-box', 'cap-accessory-box', 'foot-part-box', 'slot-long-part',
       'door-part-box',
+      'drawer-part-box',
       't-slot-caster',
       'pipe-fitting-elbow', 'pipe-fitting-tee', 'pipe-fitting-socket', 'pipe-fitting-cap', 'pipe-fitting-plug', 'pipe-fitting-nipple',
       'pipe-fitting-bushing', 'pipe-flange-5k', 'pipe-flange-10k']);

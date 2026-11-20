@@ -1141,10 +1141,21 @@ export interface CylindricalHoleLocation {
 }
 
 /** 面内原点はPlane.Location、XはPlane.XAxis、Yは外向き法線×X。符号付きmm。中心点・円筒配置とは排他的。 */
- interface PlanarHoleSpec {
+interface PlaneFaceHoleSpec {
   readonly kind: 'plane-face';
   readonly locations: readonly { readonly x: number; readonly y: number }[];
 }
+/**
+ * 辺からの距離の穴(M-02)。穴をあける面の縁の直線の辺 2 本を指紋で選び直し、それぞれを面の材料のある側へ
+ * 距離(mm)だけずらした線の交点を中心にする(`occt/edgeDistancePlacement.ts`)。位置ごとに 2 つの距離。中心点・円筒配置とは排他的。
+ */
+interface EdgeDistanceHoleSpec {
+  readonly kind: 'edge-distance';
+  readonly edge1: SubShapeQuery;
+  readonly edge2: SubShapeQuery;
+  readonly locations: readonly { readonly distance1: number; readonly distance2: number }[];
+}
+type PlanarHoleSpec = PlaneFaceHoleSpec | EdgeDistanceHoleSpec;
 /** 現在の平面から導く基準。保存指紋や面の再照合の代用にはしない。 */
 export interface PlanarFaceBasis {
   readonly origin: Vec3Tuple;
@@ -1572,6 +1583,17 @@ export interface SweepStepSpec {
   readonly guide?: readonly CurveSpec[];
   /** true で Frenet(既定)、false で「ねじれを抑える」向きの決め方。 */
   readonly frenet: boolean;
+  /**
+   * M-07。経路の全体で断面を回す角度(ラジアン。符号で向き)。省略は 0。0 でない時は自分で作る回転を抑えた枠と補助の線で
+   * 向きを決め、frenet は見ない。案内線・閉じた経路とは同時に使えない(`occt/sweepLaw.ts`)。
+   */
+  readonly twist?: number;
+  /** M-07。終わりの断面の大きさ(始めに対する倍率、0 より大きく 10 以下)。途中は経路の長さに比例して変わる。省略は 1。 */
+  readonly endScale?: number;
+  /** M-07。中空の壁の厚み(mm、0 より大きい)。断面の線を内側へずらした線も同じ向きで掃いて引く。穴つきの断面とは同時に使えない。 */
+  readonly wallThickness?: number;
+  /** M-07。穴つきの面を断面にした時の穴の線(閉ループの並び)。外と同じ向きで掃いて引く。 */
+  readonly holes?: readonly (readonly CurveSpec[])[];
 }
 
 /**

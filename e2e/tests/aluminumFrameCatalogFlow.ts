@@ -49,6 +49,7 @@ const FRAME_KINDS: readonly (readonly [string, string])[] = [
   ['slider-box', 'catalog.frame.kind.sliderBox'], ['cap-accessory-box', 'catalog.frame.kind.capAccessoryBox'],
   ['foot-part-box', 'catalog.frame.kind.footPartBox'], ['slot-long-part', 'catalog.frame.kind.slotLongPart'],
   ['door-part-box', 'catalog.frame.kind.doorPartBox'],
+  ['drawer-part-box', 'catalog.frame.kind.drawerPartBox'],
   ['t-slot-caster', 'catalog.frame.kind.caster'],
 ];
 

@@ -269,6 +269,13 @@ export function readSweepFeature(
   if (!frenet.ok) {
     return frenet;
   }
+  // M-07。ねじれ・終わりの大きさ・肉厚は、使った時だけ書かれる式の欄(版 24。版の守りは documentJson.ts)。
+  const twistDegrees = 'twistDegrees' in record ? readExpression(record, 'twistDegrees', path) : undefined;
+  if (twistDegrees !== undefined && !twistDegrees.ok) return twistDegrees;
+  const endScale = 'endScale' in record ? readExpression(record, 'endScale', path) : undefined;
+  if (endScale !== undefined && !endScale.ok) return endScale;
+  const wallThickness = 'wallThickness' in record ? readExpression(record, 'wallThickness', path) : undefined;
+  if (wallThickness !== undefined && !wallThickness.ok) return wallThickness;
   const steelBend = Object.hasOwn(record, 'steelBend') ? readSteelBendInput(record.steelBend, joinPath(path, 'steelBend')) : undefined;
   if (steelBend !== undefined && !steelBend.ok) return steelBend;
   return {
@@ -281,6 +288,9 @@ export function readSweepFeature(
       path: sweepPath.value,
       ...(guide === undefined ? {} : { guide: guide.value }),
       frenet: frenet.value,
+      ...(twistDegrees === undefined ? {} : { twistDegrees: twistDegrees.value }),
+      ...(endScale === undefined ? {} : { endScale: endScale.value }),
+      ...(wallThickness === undefined ? {} : { wallThickness: wallThickness.value }),
     },
   };
 }
@@ -405,6 +415,10 @@ export function serializeSweepFeature(feature: Extract<SolidFeature, { readonly 
     path: serializeCurveRef(feature.path),
     ...(feature.guide === undefined ? {} : { guide: serializeCurveRef(feature.guide) }),
     frenet: feature.frenet,
+    // M-07。欄の並び: twistDegrees・endScale・wallThickness(使った時だけ)。
+    ...(feature.twistDegrees === undefined ? {} : { twistDegrees: serializeExpression(feature.twistDegrees) }),
+    ...(feature.endScale === undefined ? {} : { endScale: serializeExpression(feature.endScale) }),
+    ...(feature.wallThickness === undefined ? {} : { wallThickness: serializeExpression(feature.wallThickness) }),
   };
 }
 

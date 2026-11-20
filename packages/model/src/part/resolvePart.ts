@@ -97,6 +97,7 @@ import {
   type Vec3,
 } from '../sketch/vec3.js';
 import { findMetricThread } from '../thread/metricThread.js';
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { cacheKeyFor } from './cacheKey.js';
 import { originAwareCacheKey } from './cacheKey.js';
 import { keyMaterialFor } from './solidPlanKeyMaterial.js';
@@ -121,7 +122,7 @@ import {
   type ReferenceErrorCode,
   type ResolvedReferences,
 } from './resolveReferences.js';
-import { dedupeSubShapeRefs, subShapeKindOf } from './subShapeRef.js';
+import { dedupeSubShapeRefs, isSameSubShape, subShapeKindOf } from './subShapeRef.js';
 import { historyDependencies } from './timelineOrder.js';
 import { directEditPlan, type HoleTranslatePlan, type FaceRotatePlan } from './directEditOperations.js';
 import {
@@ -281,10 +282,18 @@ export type HoleEntryPlan =
   | { readonly kind: 'countersink'; readonly diameter: number; readonly angle: number };
 
 /** 面内X・Yをmmへ解決した配置。面の再照合と世界座標への変換はkernelが行う。 */
- interface PlanarHolePlan {
+interface PlaneFaceHolePlan {
   readonly kind: 'plane-face';
   readonly locations: readonly { readonly x: number; readonly y: number }[];
 }
+/** 辺からの距離をmmへ解決した配置(M-02)。2本の辺の再照合・材料のある側・交点はkernelが今の形で行う。 */
+interface EdgeDistanceHolePlan {
+  readonly kind: 'edge-distance';
+  readonly edge1: SubShapeQueryPlan;
+  readonly edge2: SubShapeQueryPlan;
+  readonly locations: readonly { readonly distance1: number; readonly distance2: number }[];
+}
+type PlanarHolePlan = PlaneFaceHolePlan | EdgeDistanceHolePlan;
 
 /**
  * 円筒の側面の穴の位置を解決した結果。kernel の `CylindricalHoleSpec` と同じ形なので
@@ -682,6 +691,14 @@ export type SolidStepPlan =
       readonly guide?: readonly ResolvedCurve[];
       /** true で Frenet、false(既定)で「ねじれを抑える」。 */
       readonly frenet: boolean;
+      /** M-07。全体で回す角度(ラジアン)。0 の時は欄を持たない。 */
+      readonly twist?: number;
+      /** M-07。終わりの断面の倍率。1 の時は欄を持たない。 */
+      readonly endScale?: number;
+      /** M-07。中空の壁の厚み(mm)。中実の時は欄を持たない。 */
+      readonly wallThickness?: number;
+      /** M-07。穴つきの面を断面にした時の穴の線。穴の無い面では欄を持たない。 */
+      readonly holes?: readonly (readonly ResolvedCurve[])[];
     }
   | {
       /**
@@ -1874,10 +1891,41 @@ const CYLINDER_UNSUPPORTED_MESSAGE =
 type PlanarOutcome =
   | { readonly ok: true; readonly planar: PlanarHolePlan | null }
   | { readonly ok: false; readonly error: PartError };
+/** 辺からの距離の穴(M-02)の断り。文言は計算部(`occt/makeHole.ts` の EDGE_DISTANCE_MESSAGES)と同じ。 */
+const EDGE_DISTANCE_COMBINATION_MESSAGE = '辺からの距離と中心点・円筒配置は同時に指定できません。';
+const EDGE_DISTANCE_FACE_MESSAGE = '辺からの距離には平らな面を選んでください。';
+const EDGE_DISTANCE_EDGE_MESSAGE = '辺からの距離には選んだ面の縁の辺を選んでください。';
+const EDGE_DISTANCE_LINE_MESSAGE = '辺からの距離には直線の辺を選んでください。';
+const EDGE_DISTANCE_PARALLEL_MESSAGE = '辺からの距離には平行でない2本の辺を選んでください。';
+const EDGE_DISTANCE_LOCATION_MESSAGE = '辺からの距離には1つ以上の有限な距離を指定してください。';
+
+/**
+ * 辺からの距離の穴(M-02)。文書だけで分かる断り(組み合わせ・面と辺の種類・加工するもとの立体の辺か・同じ辺・距離)を先に出し、
+ * 辺が今の形の面の縁か・平行か・中心が面の中かは計算部が今の形で確かめる。
+ */
+function resolveEdgeDistanceHole(feature: HoleLikeFeature,
+  placement: Extract<NonNullable<HoleLikeFeature['planar']>, { readonly kind: 'edge-distance' }>): PlanarOutcome {
+  const reject = (message: string): PlanarOutcome => ({ ok: false, error: partError(feature.id, 'invalidValue', message) });
+  if (feature.centers.length !== 0 || feature.cylindrical !== undefined) return reject(EDGE_DISTANCE_COMBINATION_MESSAGE);
+  if (feature.face.fingerprint.kind !== 'face' || feature.face.fingerprint.surfaceKind !== 'plane') return reject(EDGE_DISTANCE_FACE_MESSAGE);
+  for (const edge of [placement.edge1, placement.edge2]) {
+    if (edge.bodyFeatureId !== feature.targetFeatureId || edge.fingerprint.kind !== 'edge') return reject(EDGE_DISTANCE_EDGE_MESSAGE);
+    if (edge.fingerprint.curveKind !== 'line') return reject(EDGE_DISTANCE_LINE_MESSAGE);
+  }
+  if (isSameSubShape(placement.edge1, placement.edge2)) return reject(EDGE_DISTANCE_PARALLEL_MESSAGE);
+  if (placement.locations.length === 0
+    || placement.locations.some(p => !Number.isFinite(p.distance1.value) || !Number.isFinite(p.distance2.value))) {
+    return reject(EDGE_DISTANCE_LOCATION_MESSAGE);
+  }
+  return { ok: true, planar: { kind: 'edge-distance', edge1: placement.edge1, edge2: placement.edge2,
+    locations: placement.locations.map(p => ({ distance1: p.distance1.value, distance2: p.distance2.value })) } };
+}
+
 function resolvePlanarHole(feature: HoleLikeFeature): PlanarOutcome {
   const placement = feature.planar;
   if (placement === undefined) return { ok: true, planar: null };
-  if (placement.kind !== 'plane-face' || feature.centers.length !== 0 || feature.cylindrical !== undefined) {
+  if (placement.kind === 'edge-distance') return resolveEdgeDistanceHole(feature, placement);
+  if (feature.centers.length !== 0 || feature.cylindrical !== undefined) {
     return { ok: false, error: partError(feature.id, 'invalidValue', '面内X・Yと中心点・円筒配置は同時に指定できません。') };
   }
   if (feature.face.fingerprint.kind !== 'face' || feature.face.fingerprint.surfaceKind !== 'plane') {
@@ -3730,6 +3778,38 @@ function curveProfileNormal(
   return plane === null ? null : plane.normal;
 }
 
+/** スイープのねじれ・先細り・中空(M-07)の断り。範囲の文は計算部(`occt/sweepLaw.ts`・`occt/sweepHollow.ts`)と同じ。 */
+const SWEEP_TWIST_LIMIT_DEGREES = 3600;
+const SWEEP_END_SCALE_LIMIT = 10;
+const SWEEP_TWIST_MESSAGE = 'ねじれは±3600度(10回転)までにしてください。';
+const SWEEP_END_SCALE_MESSAGE = '終わりの大きさは、0より大きく10以下の倍率にしてください。';
+const SWEEP_WALL_MESSAGE = '肉厚は0より大きい長さにしてください。';
+const SWEEP_LAW_WITH_GUIDE_MESSAGE = '案内線とねじれ・先細りは同時に使えません。';
+const SWEEP_WALL_WITH_HOLES_MESSAGE = '穴つきの面を断面にする時は、肉厚を使えません。';
+
+type SweepShapeOutcome =
+  | { readonly ok: true; readonly fields: Pick<Extract<SolidStepPlan, { readonly kind: 'sweep' }>, 'twist' | 'endScale' | 'wallThickness' | 'holes'> }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * スイープのねじれ・先細り・中空(M-07)の値を読み、範囲と組み合わせを確かめる。使わない欄(ねじれ 0・倍率 1・肉厚 0 か省略・穴なし)は
+ * plan に載せないので、使わないスイープの段と鍵は今と 1 字も変わらない。閉じた経路・継ぎ目の折れは計算部が今の形で断る。
+ */
+function sweepShapeFields(feature: SweepFeature, holes: readonly (readonly ResolvedCurve[])[], hasGuide: boolean): SweepShapeOutcome {
+  const twistDegrees = feature.twistDegrees?.value ?? 0, endScale = feature.endScale?.value ?? 1, wall = feature.wallThickness?.value ?? 0;
+  if (!Number.isFinite(twistDegrees) || exceedsMagnitude(twistDegrees, SWEEP_TWIST_LIMIT_DEGREES)) return { ok: false, message: SWEEP_TWIST_MESSAGE };
+  if (!Number.isFinite(endScale) || !(endScale > 0) || endScale > SWEEP_END_SCALE_LIMIT) return { ok: false, message: SWEEP_END_SCALE_MESSAGE };
+  if (!Number.isFinite(wall) || wall < 0) return { ok: false, message: SWEEP_WALL_MESSAGE };
+  if (hasGuide && (twistDegrees !== 0 || endScale !== 1)) return { ok: false, message: SWEEP_LAW_WITH_GUIDE_MESSAGE };
+  if (wall > 0 && holes.length > 0) return { ok: false, message: SWEEP_WALL_WITH_HOLES_MESSAGE };
+  return { ok: true, fields: {
+    ...(twistDegrees === 0 ? {} : { twist: twistDegrees * Math.PI / 180 }),
+    ...(endScale === 1 ? {} : { endScale }),
+    ...(wall === 0 ? {} : { wallThickness: wall }),
+    ...(holes.length === 0 ? {} : { holes }),
+  } };
+}
+
 /** スイープの断りの文言(FR-409、FR-504)。 */
 const SWEEP_MISSING_PROFILE_MESSAGE =
   '掃くもとの面が見つかりません。スケッチで面を張ってからやり直してください。';
@@ -3749,7 +3829,6 @@ function planSweep(feature: SweepFeature, sketches: readonly ResolvedPartSketch[
   if (face === undefined) {
     return fail(feature.id, 'missingProfile', SWEEP_MISSING_PROFILE_MESSAGE);
   }
-  if ((face.holes?.length ?? 0) > 0) return fail(feature.id, 'invalidValue', '穴つきの面はスイープに対応していません。穴のない断面を選んでください。');
   const path = findResolvedCurves(sketches, feature.path);
   if (path === null) {
     return fail(feature.id, 'missingProfile', SWEEP_MISSING_PATH_MESSAGE);
@@ -3758,10 +3837,13 @@ function planSweep(feature: SweepFeature, sketches: readonly ResolvedPartSketch[
   if (guide === null) {
     return fail(feature.id, 'missingProfile', '案内線が見つかりません。案内線を選び直すか「なし」にしてください。');
   }
+  // 穴つきの面は、穴の線も同じ向きで掃いて引く(M-07)。ねじれ・先細り・肉厚は使った時だけ plan に載せる。
+  const shape = sweepShapeFields(feature, face.holes ?? [], guide !== undefined);
+  if (!shape.ok) return fail(feature.id, 'invalidValue', shape.message);
   return {
     ok: true,
     plan: { kind: 'sweep', profile: face.curves, path, frenet: feature.frenet,
-      ...(guide === undefined ? {} : { guide }) },
+      ...(guide === undefined ? {} : { guide }), ...shape.fields },
   };
 }
 

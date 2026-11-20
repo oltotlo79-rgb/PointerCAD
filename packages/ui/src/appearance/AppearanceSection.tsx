@@ -14,67 +14,21 @@ import { FACE_COLORS, PRESET_LABEL_KEYS, WOOD_LABEL_KEYS, PATTERN_LABEL_KEYS, PA
   PERCENT_SIGN, type AppearanceFieldDraft } from './appearancePropertyValues.js';
 import { AppearanceMenu } from './AppearanceMenu.js';
 
-/**
- * 外観の節(FR-1106〜1110、要件§4.12)。立体または面を選んでいるときだけ
- * 描く(呼び出し側の `PropertyPanel` が `appearanceReadiness` で判定済み。
- * 「専用パネル/ダイアログは作らず、プロパティの節+ツールバーのボタン1つ」)。
- *
- * 確定は `useAppStore.getState().assignAppearance` を呼ぶだけにし、選択から割り当て先を
- * 決める判断・範囲外(NFR-UX-5)・上限の判定は
- * `appearance/appearanceCommands.ts`に任せて、ここで二重に作らない。
- * ただし透過率・光沢・粗さは打っている途中に赤くしたい(NFR-UX-5「実行してから
- * 失敗させない」)ので、確定する前に `numericInput.ts` の `rangeErrorFor` で
- * 範囲外を確かめる(コマンド側の断りは、欄を経ない入口からの保険として残る)。
- *
- * 選ぶ対象が変わるたびに `key`(呼び出し側が選択から作る文字列)で作り直され、
- * 打っている途中の下書きも消える(`FeatureProperties`/`SolidProperties` と同じ流儀)。
- */
-export function AppearanceSection({
-  context,
-}: {
+interface AppearanceFieldContext {
+  readonly inputId: string;
   readonly context: AppearanceContext;
-}): React.JSX.Element | null {
-  const inputId = useId();
-  const documentVersion = useAppStore((state) => state.documentVersion);
-  const units = useFieldUnits();
-  const [draftState, setDraftState] = useState(() =>
-    initialDraftVersionState<AppearanceFieldDraft>(documentVersion),
-  );
-  const reconciled = reconcileDraftVersion(draftState, documentVersion);
-  if (reconciled !== draftState) {
-    setDraftState(reconciled);
-  }
-  const draft = reconciled.draft;
+  readonly spec: AppearanceSpec;
+  readonly draft: AppearanceFieldDraft | null;
+  readonly documentVersion: number;
+  readonly units: ReturnType<typeof useFieldUnits>;
+  readonly setDraftState: (state: ReturnType<typeof initialDraftVersionState<AppearanceFieldDraft>>) => void;
+  readonly apply: (next: AppearanceSpec) => void;
+  readonly evaluateAppearanceSource: (source: string, unit: 'ratio' | 'mm', drafted: boolean, saved?: ExpressionValue) => ExpressionResult;
+}
 
-  const targets = appearanceTargetsOf(context);
-  if (targets.length === 0) {
-    return null;
-  }
-  const spec = appearanceOfSelection(context);
-  const table = appearanceOf(context.document);
-  const directEntry = table.entries.find((entry) =>
-    isSameAppearanceTarget(entry.target, targets[0]),
-  );
-  const missingIds = missingAppearanceIds(context.document, context.matches);
-  const missingEntries = table.entries.filter((entry) => missingIds.includes(entry.id));
-
-  /** 外観を確定する。中身が変わらないときは何もしない(無駄な Undo の段を積まない)。 */
-  const apply = (next: AppearanceSpec): void => {
-    if (isSameAppearanceSpec(next, spec)) {
-      return;
-    }
-    useAppStore.getState().assignAppearance(next);
-  };
-
-  const evaluateAppearanceSource = (
-    source: string, unit: 'ratio' | 'mm', drafted: boolean, saved?: ExpressionValue,
-  ): ExpressionResult => {
-    const refusal = appearanceExpressionRefusalFor(context.document, { source,
-      ...(!drafted && saved?.mathDefinition !== undefined ? { mathDefinition: saved.mathDefinition } : {}) });
-    return refusal === null ? evaluateFieldSource(source, unit, unit === 'mm' && drafted, units)
-      : { ok: false, error: { code: 'unknownVariable', position: -1, message: t(refusal) } };
-  };
-
+function appearanceFieldRenderers({
+  inputId, context, spec, draft, documentVersion, units, setDraftState, apply, evaluateAppearanceSource,
+}: AppearanceFieldContext) {
   const renderHexField = (): React.JSX.Element => {
     const source = draft !== null && draft.key === 'color' ? draft.source : spec.color;
     const refusal = appearanceExpressionRefusalFor(context.document, { source });
@@ -201,6 +155,74 @@ export function AppearanceSection({
       </div>
     );
   };
+
+  return { renderHexField, renderPercentField, renderSpacingField };
+}
+
+/**
+ * 外観の節(FR-1106〜1110、要件§4.12)。立体または面を選んでいるときだけ
+ * 描く(呼び出し側の `PropertyPanel` が `appearanceReadiness` で判定済み。
+ * 「専用パネル/ダイアログは作らず、プロパティの節+ツールバーのボタン1つ」)。
+ *
+ * 確定は `useAppStore.getState().assignAppearance` を呼ぶだけにし、選択から割り当て先を
+ * 決める判断・範囲外(NFR-UX-5)・上限の判定は
+ * `appearance/appearanceCommands.ts`に任せて、ここで二重に作らない。
+ * ただし透過率・光沢・粗さは打っている途中に赤くしたい(NFR-UX-5「実行してから
+ * 失敗させない」)ので、確定する前に `numericInput.ts` の `rangeErrorFor` で
+ * 範囲外を確かめる(コマンド側の断りは、欄を経ない入口からの保険として残る)。
+ *
+ * 選ぶ対象が変わるたびに `key`(呼び出し側が選択から作る文字列)で作り直され、
+ * 打っている途中の下書きも消える(`FeatureProperties`/`SolidProperties` と同じ流儀)。
+ */
+export function AppearanceSection({
+  context,
+}: {
+  readonly context: AppearanceContext;
+}): React.JSX.Element | null {
+  const inputId = useId();
+  const documentVersion = useAppStore((state) => state.documentVersion);
+  const units = useFieldUnits();
+  const [draftState, setDraftState] = useState(() =>
+    initialDraftVersionState<AppearanceFieldDraft>(documentVersion),
+  );
+  const reconciled = reconcileDraftVersion(draftState, documentVersion);
+  if (reconciled !== draftState) {
+    setDraftState(reconciled);
+  }
+  const draft = reconciled.draft;
+
+  const targets = appearanceTargetsOf(context);
+  if (targets.length === 0) {
+    return null;
+  }
+  const spec = appearanceOfSelection(context);
+  const table = appearanceOf(context.document);
+  const directEntry = table.entries.find((entry) =>
+    isSameAppearanceTarget(entry.target, targets[0]),
+  );
+  const missingIds = missingAppearanceIds(context.document, context.matches);
+  const missingEntries = table.entries.filter((entry) => missingIds.includes(entry.id));
+
+  /** 外観を確定する。中身が変わらないときは何もしない(無駄な Undo の段を積まない)。 */
+  const apply = (next: AppearanceSpec): void => {
+    if (isSameAppearanceSpec(next, spec)) {
+      return;
+    }
+    useAppStore.getState().assignAppearance(next);
+  };
+
+  const evaluateAppearanceSource = (
+    source: string, unit: 'ratio' | 'mm', drafted: boolean, saved?: ExpressionValue,
+  ): ExpressionResult => {
+    const refusal = appearanceExpressionRefusalFor(context.document, { source,
+      ...(!drafted && saved?.mathDefinition !== undefined ? { mathDefinition: saved.mathDefinition } : {}) });
+    return refusal === null ? evaluateFieldSource(source, unit, unit === 'mm' && drafted, units)
+      : { ok: false, error: { code: 'unknownVariable', position: -1, message: t(refusal) } };
+  };
+
+  const { renderHexField, renderPercentField, renderSpacingField } = appearanceFieldRenderers({
+    inputId, context, spec, draft, documentVersion, units, setDraftState, apply, evaluateAppearanceSource,
+  });
 
   return (
     <>

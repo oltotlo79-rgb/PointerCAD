@@ -181,8 +181,32 @@ describe('アルミフレームの族の部品の保存と開き直し', () => {
     // 足した族はどれも長さの欄を持たない(保存の形に長さを書かない)。
     const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
       'catalogItem', row.size, { family, item: row.key })) ?? []);
-    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([17]);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([26]);
     let document: AssemblyDocument = createAssemblyDocument('資料 1 の扉の部品の保存');
+    for (const source of sources) document = addComponent(document, createComponentFor(document, source));
+    const text = writeAssemblyDocument(document, SAVE_OPTIONS);
+    const bytes = await writePcadaFile(document, SAVE_OPTIONS);
+    const json = readAssemblyDocument(text);
+    const zip = await readPcadaFile(bytes);
+    if (!json.ok || !zip.ok) throw new Error('reopen failed');
+    for (const reopened of [json.document, zip.document]) {
+      expect(reopened).toEqual(document);
+      expect(writeAssemblyDocument(reopened, SAVE_OPTIONS)).toBe(text);
+      const resolved = resolveAssembly(reopened, { standardPart: buildStandardPartFromSource });
+      expect(resolved.errors).toEqual([]);
+      expect(resolved.parts.size).toBe(sources.length);
+    }
+  });
+
+  it('資料 1 の引出の部品の族の全部の行を置いた文書は、JSON と ZIP で開き直しても同じで、全部組める', async () => {
+    const families = [
+      'drawer-part-box'];
+    await PRODUCT_CATALOG_REGISTRY.ensure(families);
+    // 足した族はどれも長さの欄を持たない(保存の形に長さを書かない)。
+    const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
+      'catalogItem', row.size, { family, item: row.key })) ?? []);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([3]);
+    let document: AssemblyDocument = createAssemblyDocument('資料 1 の引出の部品の保存');
     for (const source of sources) document = addComponent(document, createComponentFor(document, source));
     const text = writeAssemblyDocument(document, SAVE_OPTIONS);
     const bytes = await writePcadaFile(document, SAVE_OPTIONS);

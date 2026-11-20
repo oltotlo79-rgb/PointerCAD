@@ -72,7 +72,9 @@ function readCylindricalHoleLocation(
 }
 
 type PlanarHolePlacement = NonNullable<Extract<SolidFeature, { readonly kind: 'hole' }>['planar']>;
-function readPlanarHoleLocation(value: unknown, path: string): Checked<PlanarHolePlacement['locations'][number]> {
+type PlaneFacePlacement = Extract<PlanarHolePlacement, { readonly kind: 'plane-face' }>;
+type EdgeDistancePlacement = Extract<PlanarHolePlacement, { readonly kind: 'edge-distance' }>;
+function readPlanarHoleLocation(value: unknown, path: string): Checked<PlaneFacePlacement['locations'][number]> {
   const record = checkRecord(value, path);
   if (!record.ok) return record;
   if (Object.keys(record.value).some(key => key !== 'x' && key !== 'y')) return fieldProblem(path, 'type');
@@ -83,15 +85,44 @@ function readPlanarHoleLocation(value: unknown, path: string): Checked<PlanarHol
   if (!Number.isFinite(x.value.value) || !Number.isFinite(y.value.value)) return fieldProblem(path, 'type');
   return { ok: true, value: { x: x.value, y: y.value } };
 }
+/** 辺からの距離の位置 1 つ(M-02)。辺 1・辺 2 からの距離の式。 */
+function readEdgeDistanceLocation(value: unknown, path: string): Checked<EdgeDistancePlacement['locations'][number]> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  if (Object.keys(record.value).some(key => key !== 'distance1' && key !== 'distance2')) return fieldProblem(path, 'type');
+  const distance1 = readExpression(record.value, 'distance1', path);
+  if (!distance1.ok) return distance1;
+  const distance2 = readExpression(record.value, 'distance2', path);
+  if (!distance2.ok) return distance2;
+  if (!Number.isFinite(distance1.value.value) || !Number.isFinite(distance2.value.value)) return fieldProblem(path, 'type');
+  return { ok: true, value: { distance1: distance1.value, distance2: distance2.value } };
+}
+/** 辺からの距離の置き方(M-02)。欄は kind・edge1・edge2・locations だけ。2 本とも辺の参照で、位置は 1 つ以上。 */
+function readEdgeDistanceHole(placement: Record<string, unknown>, placementPath: string): Checked<EdgeDistancePlacement> {
+  if (Object.keys(placement).some(key => key !== 'kind' && key !== 'edge1' && key !== 'edge2' && key !== 'locations')) {
+    return fieldProblem(placementPath, 'type');
+  }
+  const edge1 = readSubShapeRefField(placement, 'edge1', placementPath);
+  if (!edge1.ok) return edge1;
+  if (edge1.value.fingerprint.kind !== 'edge') return fieldProblem(joinPath(placementPath, 'edge1'), 'type');
+  const edge2 = readSubShapeRefField(placement, 'edge2', placementPath);
+  if (!edge2.ok) return edge2;
+  if (edge2.value.fingerprint.kind !== 'edge') return fieldProblem(joinPath(placementPath, 'edge2'), 'type');
+  const locations = readList(placement, 'locations', placementPath, readEdgeDistanceLocation);
+  if (!locations.ok) return locations;
+  if (locations.value.length === 0) return fieldProblem(joinPath(placementPath, 'locations'), 'type');
+  return { ok: true, value: { kind: 'edge-distance', edge1: edge1.value, edge2: edge2.value, locations: locations.value } };
+}
 function readPlanarHole(record: Record<string, unknown>, path: string): Checked<PlanarHolePlacement | undefined> {
   if (!('planar' in record)) return { ok: true, value: undefined };
   if ('cylindrical' in record || !Array.isArray(record.centers) || record.centers.length !== 0) return fieldProblem(joinPath(path, 'planar'), 'type');
   const found = readRecord(record, 'planar', path);
   if (!found.ok) return found;
   const placementPath = joinPath(path, 'planar');
-  if (Object.keys(found.value).some(key => key !== 'kind' && key !== 'locations')) return fieldProblem(placementPath, 'type');
-  const kind = readLiteral(found.value, 'kind', placementPath, ['plane-face'] as const);
+  const kind = readLiteral(found.value, 'kind', placementPath, ['plane-face', 'edge-distance'] as const);
   if (!kind.ok) return kind;
+  if (kind.value === 'edge-distance') return readEdgeDistanceHole(found.value, placementPath);
+  if (Object.keys(found.value).some(key => key !== 'kind' && key !== 'locations')) return fieldProblem(placementPath, 'type');
   const locations = readList(found.value, 'locations', placementPath, readPlanarHoleLocation);
   if (!locations.ok) return locations;
   if (locations.value.length === 0) return fieldProblem(joinPath(placementPath, 'locations'), 'type');
@@ -100,8 +131,17 @@ function readPlanarHole(record: Record<string, unknown>, path: string): Checked<
 function serializePlanarHole(feature: Extract<SolidFeature, { readonly kind: 'hole' | 'threadHole' }>): { readonly planar?: PlanarHolePlacement } {
   const placement = feature.planar;
   if (placement === undefined) return {};
-  if (feature.cylindrical !== undefined || feature.centers.length !== 0 || placement.kind !== 'plane-face' || placement.locations.length === 0
-    || placement.locations.some(p => !Number.isFinite(p.x.value) || !Number.isFinite(p.y.value))) throw new Error('Invalid planar hole placement');
+  if (feature.cylindrical !== undefined || feature.centers.length !== 0 || placement.locations.length === 0) throw new Error('Invalid planar hole placement');
+  if (placement.kind === 'edge-distance') {
+    // 欄の並び: kind・edge1・edge2・locations(位置は distance1・distance2)。保存の形の版は 24(documentJson.ts が確かめる)。
+    if (placement.edge1.fingerprint.kind !== 'edge' || placement.edge2.fingerprint.kind !== 'edge'
+      || placement.locations.some(p => !Number.isFinite(p.distance1.value) || !Number.isFinite(p.distance2.value))) {
+      throw new Error('Invalid edge-distance hole placement');
+    }
+    return { planar: { kind: placement.kind, edge1: serializeSubShapeRef(placement.edge1), edge2: serializeSubShapeRef(placement.edge2),
+      locations: placement.locations.map(p => ({ distance1: serializeExpression(p.distance1), distance2: serializeExpression(p.distance2) })) } };
+  }
+  if (placement.locations.some(p => !Number.isFinite(p.x.value) || !Number.isFinite(p.y.value))) throw new Error('Invalid planar hole placement');
   return { planar: { kind: placement.kind,
     locations: placement.locations.map(p => ({ x: serializeExpression(p.x), y: serializeExpression(p.y) })) } };
 }

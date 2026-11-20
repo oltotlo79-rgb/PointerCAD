@@ -557,7 +557,7 @@ function cutPlaneKindChoice(): NumericChoice {
   };
 }
 
-/** 従来の点選択を既定にし、平面内指定への切替を明示する。 */
+/** 従来の点選択を既定にし、平面内指定・辺からの距離(M-02)への切替を明示する。 */
 function holePlacementChoice(): NumericChoice {
   return {
     key: 'holePlacement',
@@ -566,8 +566,29 @@ function holePlacementChoice(): NumericChoice {
     options: [
       { value: 'points', labelKey: 'numericInput.holePlacement.points' },
       { value: 'plane-face', labelKey: 'numericInput.holePlacement.planeFace' },
+      { value: 'edge-distance', labelKey: 'numericInput.holePlacement.edgeDistance' },
     ],
   };
+}
+
+function solidResultChoices(options: NumericInputOptions, extrude = false): readonly NumericChoice[] {
+  const targets = options.extrudeTargets ?? [];
+  const operations: NumericChoiceOption[] = [
+    { value: 'new', labelKey: extrude ? 'numericInput.extrudeOperation.new' : 'numericInput.solidOperation.new' },
+  ];
+  if (targets.length > 0) {
+    operations.push(
+      { value: 'join', labelKey: 'numericInput.extrudeOperation.join' },
+      { value: 'cut', labelKey: 'numericInput.extrudeOperation.cut' },
+    );
+  }
+  return [
+    { key: 'extrudeOperation', value: 'new', options: operations,
+      labelKey: extrude ? 'numericInput.choice.extrudeOperation' : 'numericInput.choice.solidOperation' },
+    { key: 'extrudeTarget', value: '', presentation: 'menu',
+      labelKey: extrude ? 'numericInput.choice.extrudeTarget' : 'numericInput.choice.solidTarget',
+      options: [{ value: '', labelKey: 'numericInput.extrudeTarget.none' }, ...targets] },
+  ];
 }
 
 /** 段階ごとの選択肢の並び。持たない段は空配列。 */
@@ -630,8 +651,6 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
       return [splineModeChoice()];
     case 'twoPointArcRadius':
       return [arcBulgeChoice()];
-    case 'revolveAngle':
-      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
     case 'threadSize':
       return [threadDesignationChoice(), threadSeriesChoice(), holePlacementChoice()];
     case 'chamferSize':
@@ -651,12 +670,13 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
       球とトーラスは向きを変えても見た目が変わらないが、種類ごとに出し分けない
       (5 種で同じ欄立てにしたほうが操作の勘が働く。model 側の型も5種で共通)。
     */
+    case 'revolveAngle':
     case 'sphereSize':
     case 'boxSize':
     case 'cylinderSize':
     case 'coneSize':
     case 'torusSize':
-      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
+      return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS), ...solidResultChoices(options)];
     /*
       面をつなぐ(FR-430)の「なめらかさ」。
       **球を含まない断面では形に効かない**ので、そのときは選択肢ごと伏せる。
@@ -675,21 +695,7 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
     case 'extrudeDistance':
       return [
         extrudeEndChoice(), thicknessSideChoice(),
-        // 結果(新しい立体・結合・切り抜き)。相手の立体が無ければ新しい立体だけ。
-        { key: 'extrudeOperation', labelKey: 'numericInput.choice.extrudeOperation', value: 'new',
-          options: [
-            { value: 'new', labelKey: 'numericInput.extrudeOperation.new' },
-            ...((options.extrudeTargets?.length ?? 0) > 0 ? [
-              { value: 'join', labelKey: 'numericInput.extrudeOperation.join' as const },
-              { value: 'cut', labelKey: 'numericInput.extrudeOperation.cut' as const },
-            ] : []),
-          ] },
-        // 相手の立体は利用者が名前で明示して選ぶ(選択の順番や先頭から勝手に決めない)。
-        { key: 'extrudeTarget', labelKey: 'numericInput.choice.extrudeTarget', value: '',
-          presentation: 'menu', options: [
-            { value: '', labelKey: 'numericInput.extrudeTarget.none' },
-            ...(options.extrudeTargets ?? []),
-          ] },
+        ...solidResultChoices(options, true),
       ];
     case 'mirrorPlane':
       return [mirrorPlaneChoice()];

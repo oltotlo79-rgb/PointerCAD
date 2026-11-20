@@ -27,7 +27,7 @@ import { addVec3 as add, subtractVec3 as subtract, scaleVec3 as scale, lengthVec
  * it does not evaluate the original formula, so jointly altered mesh, bound and poles are outside what it can detect.
  * Matching a few node points proves nothing about the interior and is not used.
  *
- * Work: every triangle/cell clip and every pairwise overlap test counts against one ceiling
+ * Work: each triangle/cell clip, each positive-area member retrieved for the proof and each pairwise overlap test counts against one ceiling
  * (FUNCTION_SURFACE_SPLINE_PAIR_LIMIT), with cancellation checked every 1024 units, every 256 triangles and every cell
  * row; exceeding it rejects with 'budget'. The decoder runs this synchronously on the receiving thread without a stop,
  * so that ceiling is also its worst-case work.
@@ -54,7 +54,7 @@ export interface SurfaceMeshEvidence {
   readonly bound: number;
 }
 export type SplineMeshRejection = 'structure' | 'nonfinite' | 'coverage' | 'overlap' | 'budget';
-/** `visitedCells`: product cells the certificate examined (each once); `work`: clip and overlap tests performed. */
+/** `visitedCells`: product cells examined (each once); `work`: triangle/cell tests, member clips and overlap tests charged. */
 export type SplineMeshCertificate = (
   | { readonly status: 'certified'; readonly splineToMesh: number; readonly coveredCells: number; readonly outsideCells: number;
       /** False when every cell net is flat bilinear up to rounding (the data are planar). */
@@ -89,6 +89,8 @@ interface SmoothSurfaceOptions {
 export const FUNCTION_SURFACE_SPLINE_POLE_LIMIT = 200_000;
 /** Triangle/cell overlaps examined by one certificate. */
 const FUNCTION_SURFACE_SPLINE_PAIR_LIMIT = 4_000_000;
+// Only the first positive-area clips are retained. Larger proofs keep their original work budget and recompute the rest.
+const RETAINED_CLIP_POINT_LIMIT = 100_000;
 const ROUNDING = 1e-12;
 /** Relative tolerance of the per-cell coverage area sum (exact clips, computed in cell-local coordinates). */
 const AREA_TOLERANCE = 1e-9;
@@ -223,6 +225,14 @@ class PolygonWorkspace {
     return this.area();
   }
 
+  /** Append a count and its cell-local coordinate pairs. Stop retaining when the next whole clip will not fit. */
+  retain(target: number[], remainingPoints: number): number {
+    if (this.count > remainingPoints) return 0;
+    target.push(this.count);
+    for (let index = 0; index < this.count; index++) target.push(this.points[index][0], this.points[index][1]);
+    return remainingPoints - this.count;
+  }
+
   /** Retained clips own their points, including across subsequent calls and generator resumptions. */
   copy(): Planar[] {
     const polygon: Planar[] = [];
@@ -241,6 +251,15 @@ class PolygonWorkspace {
     }
     return this.count >= 3 ? this.area() : 0;
   }
+}
+/** Restore one retained polygon in the same vertex order as PolygonWorkspace.copy(). */
+function retainedClip(data: readonly number[], offset: number): Planar[] {
+  const count = data[offset], clip: Planar[] = [];
+  for (let index = 0; index < count; index++) {
+    const point = offset + 1 + 2 * index;
+    clip.push([data[point], data[point + 1]]);
+  }
+  return clip;
 }
 function signedArea(polygon: readonly Planar[]): number {
   let twice = 0;
@@ -307,7 +326,7 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
   let pairs = 0, visitedCells = 0;
   const rejected = (reason: SplineMeshRejection): SplineMeshCertificate => ({ status: 'rejected', reason, visitedCells });
   const stopped = (): SplineMeshCertificate => ({ status: 'stopped', visitedCells });
-  /** One unit of proof work (a triangle/cell clip or an overlap test): one shared ceiling, periodic cancellation. */
+  /** Triangle/cell tests, member clips (including retained clips) and overlap tests share the ceiling and cancellation cadence. */
   const work = (): SplineMeshCertificate | null => {
     if (++pairs > FUNCTION_SURFACE_SPLINE_PAIR_LIMIT) return rejected('budget');
     return pairs % 1024 === 0 && stop() ? stopped() : null;
@@ -324,6 +343,8 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
     if (cell % STEP_UNITS === 0) yield;
     members.push([]);
   }
+  const retained: (number[] | undefined)[] = [];
+  let remainingClipPoints = RETAINED_CLIP_POINT_LIMIT;
   const corners = (t: number): readonly Planar[] => mesh.triangles[t].map(index => mesh.vertices[index].parameters);
   for (let t = 0; t < mesh.triangles.length; t++) {
     if (t % 256 === 0) { if (stop()) return stopped(); yield; }
@@ -337,7 +358,11 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
         const halt = work(); if (halt !== null) return halt;
         if (pairs % STEP_UNITS === 0) yield;
         const piece = polygon.rectangleArea(planar, uKnots[i], vKnots[j], uKnots[i + 1], vKnots[j + 1]);
-        if (piece > 0) { area[i * (nv - 1) + j] += piece; members[i * (nv - 1) + j].push(t); pieces += piece; }
+        if (piece > 0) {
+          const cell = i * (nv - 1) + j;
+          area[cell] += piece; members[cell].push(t); pieces += piece;
+          if (remainingClipPoints > 0) remainingClipPoints = polygon.retain(retained[cell] ??= [], remainingClipPoints);
+        }
       }
     }
     // A drawn triangle outside the spline's parameter rectangle would be geometry the spline does not replace.
@@ -370,12 +395,21 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
       // Coverage of the cell: no two clips overlap in positive area (every pair is tested, within the shared work
       // ceiling), so their areas add up to the area of their union; that union must be the whole cell. An area sum
       // alone is not enough: a duplicated half and a missing half also sum to the cell.
-      const clips: Planar[][] = [];
+      const clips: Planar[][] = [], saved = retained[cell];
+      retained[cell] = undefined;
+      let offset = 0;
       for (const t of members[cell]) {
         const halt = work(); if (halt !== null) return halt;
         if (pairs % STEP_UNITS === 0) yield;
-        polygon.rectangleArea(corners(t), low[0], low[1], high[0], high[1]);
-        clips.push(polygon.copy());
+        // A retained prefix follows member order. Charge and yield for every member, including a cache hit.
+        if (saved !== undefined && offset < saved.length) {
+          const clip = retainedClip(saved, offset);
+          clips.push(clip);
+          offset += 1 + 2 * clip.length;
+        } else {
+          polygon.rectangleArea(corners(t), low[0], low[1], high[0], high[1]);
+          clips.push(polygon.copy());
+        }
       }
       let overlap = 0;
       for (let x = 0; x < clips.length; x++) {

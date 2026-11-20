@@ -1297,6 +1297,7 @@ const expected = [
   "dxfDroppedEntitiesMessage",
   "dxfOffPlaneMessage",
   "dxfToSketch",
+  "edgeDistanceHoleCenters",
   "ellipseParameterToAzimuth",
   "ellipsePointAt",
   "embedDrawingSource",

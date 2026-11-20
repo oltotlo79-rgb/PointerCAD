@@ -68,6 +68,7 @@ import {
   fieldProblem,
   fieldFailure as failField,
   isRecord,
+  isUnknownArray,
   readLiteral,
   readNumber,
   readRecord,
@@ -118,6 +119,34 @@ function readSteelStockSource(value: unknown, path: string): Checked<NonNullable
   return { ok: true, value: source.value };
 }
 
+/**
+ * 保存形式の版 24 の欄(次の版 v1.0.4 で足す新しい欄・種類は、全部「使った文書だけ版 24」に揃える。統括の決定 2026-11-19 21:1x)。
+ * 古い読み手が欄を捨てて形を失わないよう、版 24 未満を名乗る文書にこれらの欄があれば、読むのも書くのも断る。
+ * 欄を足す時は、下の 2 つの関数に同じ判定を 1 つずつ足す(辺からの距離の穴 M-02、スイープのねじれ・終わりの大きさ・肉厚 M-07)。読む時は欄ごとの断りの文を返す。
+ */
+function version24FieldMessage(document: unknown): string | null {
+  if (!isRecord(document) || !isUnknownArray(document['solids'])) return null;
+  const solids = document['solids'].filter(isRecord);
+  if (solids.some(feature => (feature['kind'] === 'hole' || feature['kind'] === 'threadHole')
+    && isRecord(feature['planar']) && feature['planar']['kind'] === 'edge-distance')) return '辺からの距離の穴を読むには保存形式の版24が必要です。';
+  if (solids.some(feature => feature['kind'] === 'sweep'
+    && ('twistDegrees' in feature || 'endScale' in feature || 'wallThickness' in feature))) {
+    return 'スイープのねじれ・終わりの大きさ・肉厚を読むには保存形式の版24が必要です。';
+  }
+  return null;
+}
+
+function assertVersion24Fields(document: PartDocument): void {
+  if (document.schemaVersion >= 24) return;
+  if (document.solids.some(feature => (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar?.kind === 'edge-distance')) {
+    throw new RangeError('辺からの距離の穴を保存するには保存形式の版24が必要です。');
+  }
+  if (document.solids.some(feature => feature.kind === 'sweep'
+    && (feature.twistDegrees !== undefined || feature.endScale !== undefined || feature.wallThickness !== undefined))) {
+    throw new RangeError('スイープのねじれ・終わりの大きさ・肉厚を保存するには保存形式の版24が必要です。');
+  }
+}
+
 function serializePartDocument(document: PartDocument): PartDocument {
   // Optional source metadata uses the current additive contract; never label new inputs as a legacy file.
   if (document.schemaVersion < 22 && document.solids.some(feature => feature.kind === 'sweep' && feature.steelBend !== undefined)) {
@@ -161,6 +190,7 @@ function serializePartDocument(document: PartDocument): PartDocument {
     (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar !== undefined)) {
     throw new RangeError('面内X・Yの穴を保存するには保存形式の版22が必要です。');
   }
+  assertVersion24Fields(document);
   const normalizedIssuance = retainPatternSlotHighWater(document).patternSlotHighWater;
   const serialized: PartDocument = {
     ...(document.beamAnalysisInputs === undefined ? {} : {
@@ -748,6 +778,10 @@ function decodeFile(raw: unknown): ParseDocumentResult {
   }
   if (schema.value < 23 && hasSketchFaceHolesField(raw['document'])) {
     return fail('notPcad', '穴つきの面を読むには保存形式の版23が必要です。');
+  }
+  const version24Message = schema.value < 24 ? version24FieldMessage(raw['document']) : null;
+  if (version24Message !== null) {
+    return fail('notPcad', version24Message);
   }
   if (schema.value < PCAD_SCHEMA_VERSION) {
     // 移行先(`SCHEMA_MIGRATIONS[schema.value]`)が無い版(例: 版1)は、この時点では

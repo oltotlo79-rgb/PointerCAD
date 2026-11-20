@@ -17,7 +17,7 @@
  */
 
 import { expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
-import { extrudeOperationSelection } from './extrudeOperation.js';
+import { solidOperationSelection } from './solidOperation.js';
 import { activeSketchHasRegions, appendRegionFace } from './regionFace.js';
 import { deriveSpringValue } from './springExpressions.js';
 import {
@@ -809,6 +809,25 @@ export function solidToolReadiness(
 }
 
 /**
+ * 相手は作成前の履歴で確かめる。作る行と和・差の行を同じ文書で返し、採用は呼び出し元で一度だけ行う。
+ */
+function commitSolidResult(
+  document: PartDocument,
+  choices: SolidInputCommit['shapeChoices'],
+  create: () => SolidCommandOutcome,
+): SolidCommandOutcome {
+  const selected = solidOperationSelection(document, choices?.extrudeOperation, choices?.extrudeTarget);
+  if (!selected.ok) return selected;
+  const created = create();
+  if (!created.ok || selected.operation === 'new') return created;
+  return commitBoolean(created.document, {
+    operation: selected.operation,
+    targetFeatureId: selected.targetFeatureId,
+    toolFeatureId: created.featureId,
+  });
+}
+
+/**
  * 選択とその場入力の確定結果から、ソリッドフィーチャーを 1 つ作る(SolidInputCommit)。
  *
  * 面はポップアップを開いた時点ではなく**決めた時点の選択**から拾い直す。開いたまま
@@ -863,12 +882,7 @@ export function commitSolidInput(
       }
       const tapered = commit.flags.tapered === true;
       const thinWalled = commit.flags.thinWalled === true;
-      // 結合・切り抜きは明示した相手を先に確かめる(断るときは文書に何も足さない)。
-      const operation = extrudeOperationSelection(
-        document, commit.shapeChoices?.extrudeOperation, commit.shapeChoices?.extrudeTarget,
-      );
-      if (!operation.ok) return operation;
-      const extruded = commitExtrude(document, {
+      return commitSolidResult(document, commit.shapeChoices, () => commitExtrude(document, {
         profile: face.ref,
         distance: commit.values.distance ?? DEFAULT_EXTRUDE_DISTANCE,
         reversed: commit.flags.reversed ?? false,
@@ -886,27 +900,19 @@ export function commitSolidInput(
               thicknessSide: thin.side,
             }
           : {}),
-      });
-      // 新しい立体は従来の押し出しの文書そのまま。結合・切り抜きは同じ文書へブーリアンを足す
-      // (履歴は押し出しとブーリアンの 2 段。確定は 1 回の採用・取り消し 1 段)。
-      if (!extruded.ok || operation.operation === 'new') return extruded;
-      return commitBoolean(extruded.document, {
-        operation: operation.operation,
-        targetFeatureId: operation.targetFeatureId,
-        toolFeatureId: extruded.featureId,
-      });
+      }));
     }
     case 'revolve': {
       const face = selectedFaceRef(document, selection);
       if (!face.ok) {
         return { ok: false, reasonKey: face.reasonKey };
       }
-      return commitRevolve(document, {
+      return commitSolidResult(document, commit.shapeChoices, () => commitRevolve(document, {
         profile: face.ref,
         axis: commit.axis ?? DEFAULT_REVOLVE_AXIS,
         angle: commit.values.angle ?? DEFAULT_REVOLVE_ANGLE,
         reversed: commit.flags.reversed ?? false,
-      });
+      }));
     }
     case 'sew': {
       const faces = selectedSewFaces(document, selection, bodies);
@@ -957,7 +963,7 @@ export function commitSolidInput(
     case 'cone':
     case 'torus': {
       const context: PrimitiveContext = { document, bodies, selection };
-      return commitPrimitive(context, commit);
+      return commitSolidResult(document, commit.shapeChoices, () => commitPrimitive(context, commit));
     }
     /*
       球面上の点(FR-431)。**作る先だけが違う**(立体ではなく 3D スケッチの点)

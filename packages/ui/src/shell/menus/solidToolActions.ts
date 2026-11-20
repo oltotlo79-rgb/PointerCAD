@@ -12,7 +12,7 @@ import {
 } from '../../sketch/numericInput.js';
 import { ruledSelectionHasSphere } from '../../solid/ruledCommands.js';
 import { selectedCurvePath } from '../../solid/shapeEditCommands.js';
-import { extrudeTargetCandidates } from '../../solid/extrudeOperation.js';
+import { solidTargetCandidates, supportsSolidOperation } from '../../solid/solidOperation.js';
 import { cancelExtrusion } from '../../solid/extrudePreview.js';
 import { sweepGuideCandidates } from '../../solid/sweepGuideChoices.js';
 import {
@@ -68,7 +68,7 @@ function openSolidInput(tool: SolidToolId): void {
   store.openNumericInput(
     createNumericInput(tool, SOLID_TOOL_STEPS[tool], undefined, {
       ...(axisLine === undefined ? {} : { axisLine }),
-      ...(tool === 'extrude' ? { extrudeTargets: extrudeTargetCandidates(store.document) } : {}),
+      ...(supportsSolidOperation(tool) ? { extrudeTargets: solidTargetCandidates(store.document) } : {}),
       ...(ruledHasSphere === undefined ? {} : { ruledHasSphere }),
       ...(tool === 'sweep' ? { sweepGuides: sweepGuideCandidates(store.document, selectedCurvePath(store.document, store.selection) ?? undefined) } : {}),
     }),

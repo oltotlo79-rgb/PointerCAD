@@ -31,6 +31,7 @@ import type {
 import type {
   HoleStepSpec,
   RigidTransformSpec,
+  SolidEdgeInfo,
   SolidFaceInfo,
   SubShapeQuery,
   Vec3Tuple,
@@ -42,7 +43,8 @@ import { HoleOriginMapError, rebindHoleToolFaces, rebindTransformedHoleFaces, re
 import { OriginHistoryLimitError } from './subShapeHistory.js';
 import { booleanOp, type BooleanResult, type BooleanSemanticContext } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { resolveFaceReference } from './matchSubShape.js';
+import { resolveEdgeReference, resolveFaceReference } from './matchSubShape.js';
+import { edgeDistanceCenters } from './edgeDistancePlacement.js';
 import { hasSolid, measureVolume } from './solidMesh.js';
 import { buildBooleanShape } from './buildBooleanShape.js';
 import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
@@ -536,24 +538,102 @@ function resolveCylindricalHoleFrame(
   }
 }
 
+/** 辺からの距離の穴(M-02)の断り。辺が選び直せない時は、model が選び直しを促す語尾で終える。 */
+const EDGE_DISTANCE_MISSING_EDGE_MESSAGE = '辺からの距離の辺が見つかりません。形が大きく変わったため、選び直してください。';
+type EdgeDistanceFailure = Extract<ReturnType<typeof edgeDistanceCenters>, { readonly ok: false }>['reason'];
+const EDGE_DISTANCE_MESSAGES: Readonly<Record<EdgeDistanceFailure | 'combination' | 'notLine' | 'notOnFace' | 'outside', string>> = {
+  combination: '辺からの距離と中心点・円筒配置は同時に指定できません。',
+  distance: '辺からの距離には1つ以上の有限な距離を指定してください。',
+  notLine: '辺からの距離には直線の辺を選んでください。',
+  notOnFace: '辺からの距離には選んだ面の縁の辺を選んでください。',
+  degenerate: '辺からの距離には選んだ面の縁の辺を選んでください。',
+  side: '辺からの距離には選んだ面の縁の辺を選んでください。',
+  parallel: '辺からの距離には平行でない2本の辺を選んでください。',
+  outside: '辺からの距離の位置が選択面の内側にありません。',
+};
+/** 側を聞く点を辺から離す量(mm)。面の分類の許容 1e-7 mm より十分大きく、細い面の幅より十分小さい。 */
+const EDGE_DISTANCE_PROBE_MM = 1e-4;
+
+type EdgeDistanceSpec = Extract<NonNullable<HoleStepSpec['planar']>, { readonly kind: 'edge-distance' }>;
+
+/** 辺からの距離の穴をあける面。`resolveHoleFrame` が選び直した面の実体・面の表の行・平面の座標系・境界箱の対角長。 */
+interface EdgeDistanceFace {
+  readonly face: TopoDS_Face;
+  readonly info: SolidFaceInfo | undefined;
+  readonly frame: PlaneFrame;
+  readonly diagonal: number;
+}
+
+/**
+ * 辺からの距離の穴の中心(M-02)。2 本の辺は、穴をあける面と同じ形の辺の一覧から指紋で選び直し、
+ * 直線であること・面の縁であること(面の縁の表があれば表で、無ければ側の判定で)を確かめる。
+ * 材料のある側は OCCT の面の分類で決め(`edgeDistancePlacement.ts`)、中心も面の中(TopAbs_IN)でなければ断る。
+ */
+function edgeDistanceOrigins(
+  oc: OpenCascadeInstance,
+  target: EdgeDistanceFace,
+  placement: EdgeDistanceSpec,
+  edges: readonly SolidEdgeInfo[],
+  origins: CurrentOriginIndex | undefined,
+  keep: Allocations['keep'],
+): Vec3Tuple[] {
+  const { face, info: faceInfo, frame: planeFrame, diagonal } = target;
+  const [first, second] = [placement.edge1, placement.edge2].map((query) => {
+    if (query.kind !== 'edge') throw new Error(EDGE_DISTANCE_MISSING_EDGE_MESSAGE);
+    const match = resolveEdgeReference(edges, query, diagonal * 0.5, origins);
+    const info = match.status === 'matched' ? edges.find((candidate) => candidate.index === match.match.index) : undefined;
+    if (info === undefined) throw new Error(EDGE_DISTANCE_MISSING_EDGE_MESSAGE);
+    if (info.curveKind !== 'line') throw new Error(EDGE_DISTANCE_MESSAGES.notLine);
+    if (faceInfo?.boundaryEdgeIndices !== undefined && !faceInfo.boundaryEdgeIndices.includes(info.index)) {
+      throw new Error(EDGE_DISTANCE_MESSAGES.notOnFace);
+    }
+    return info;
+  });
+  if (first.index === second.index) throw new Error(EDGE_DISTANCE_MESSAGES.parallel);
+  const inside = (point: Vec3Tuple): boolean => {
+    if (!isFiniteTuple(point)) return false;
+    const native = keep(new oc.gp_Pnt_3(point[0], point[1], point[2]));
+    return keep(new oc.BRepClass_FaceClassifier_4(face, native, 1e-7, false, 1e-7)).State() === oc.TopAbs_State.TopAbs_IN;
+  };
+  const result = edgeDistanceCenters({ origin: planeFrame.pointOnPlane, normal: planeFrame.normal },
+    [{ start: first.start, end: first.end }, { start: second.start, end: second.end }], placement.locations, inside,
+    { tolerance: 1e-6 * Math.max(1, diagonal), probe: EDGE_DISTANCE_PROBE_MM });
+  if (!result.ok) throw new Error(EDGE_DISTANCE_MESSAGES[result.reason]);
+  for (const center of result.centers) {
+    if (!inside(center)) throw new Error(EDGE_DISTANCE_MESSAGES.outside);
+  }
+  return [...result.centers];
+}
+
 export function resolveHoleFrame(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
   spec: Pick<HoleStepSpec, 'face' | 'centers' | 'tiltAngle' | 'tiltAzimuth' | 'cylindrical' | 'planar'>,
   origins?: CurrentOriginIndex,
+  /**
+   * 辺からの距離の穴(M-02)だけが使う、`shape` から作った辺の一覧(`collectSubShapes` の `edges`)。
+   * `makeHole`・`makeThreadHole` は辺の一覧を受け取らないので、辺からの距離の穴は、呼ぶ側(再計算の段)がこの関数で
+   * 中心を求めて中心点の穴に直してから渡す(`recomputeSolids.ts` の `withEdgeDistanceCenters`)。省くと辺が見つからずに断る。
+   */
+  edges: readonly SolidEdgeInfo[] = [],
 ): HoleFrame {
-  if (spec.planar !== undefined && (spec.planar.kind !== 'plane-face' || spec.cylindrical !== undefined || spec.centers.length !== 0)) {
-    throw new Error('面内X・Yと中心点・円筒配置は同時に指定できません。');
+  const planar = spec.planar;
+  if (planar !== undefined && (spec.cylindrical !== undefined || spec.centers.length !== 0)) {
+    throw new Error(planar.kind === 'edge-distance' ? EDGE_DISTANCE_MESSAGES.combination : '面内X・Yと中心点・円筒配置は同時に指定できません。');
   }
-  if (spec.planar !== undefined && (spec.planar.locations.length === 0
-    || spec.planar.locations.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y)))) {
+  if (planar?.kind === 'plane-face' && (planar.locations.length === 0
+    || planar.locations.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y)))) {
     throw new Error('面内X・Yには1つ以上の有限な位置を指定してください。');
+  }
+  if (planar?.kind === 'edge-distance' && (planar.locations.length === 0
+    || planar.locations.some(p => !Number.isFinite(p.distance1) || !Number.isFinite(p.distance2)))) {
+    throw new Error(EDGE_DISTANCE_MESSAGES.distance);
   }
   if (spec.cylindrical !== undefined) {
     return resolveCylindricalHoleFrame(oc, shape, faces, { ...spec, cylindrical: spec.cylindrical }, origins);
   }
-  if (spec.planar === undefined && spec.centers.length === 0) {
+  if (planar === undefined && spec.centers.length === 0) {
     throw new Error(NO_CENTER_MESSAGE);
   }
   for (const center of spec.centers) {
@@ -582,10 +662,17 @@ export function resolveHoleFrame(
     if (direction === null) {
       throw new Error(HOLE_FAILED_MESSAGE);
     }
+    if (planar?.kind === 'edge-distance') {
+      // 面の縁の表は、同じ指紋の照合で面の通し番号を引き直して読む(resolvePlanarFace は面の実体だけを返す)。
+      const faceMatch = spec.face.kind === 'face' ? resolveFaceReference(faces, spec.face, diagonal * 0.5, origins) : undefined;
+      const faceInfo = faceMatch?.status === 'matched' ? faces.find((candidate) => candidate.index === faceMatch.match.index) : undefined;
+      return { direction, diagonal,
+        origins: edgeDistanceOrigins(oc, { face, info: faceInfo, frame: planeFrame, diagonal }, planar, edges, origins, keep) };
+    }
     return {
       direction,
-      origins: spec.planar === undefined ? spec.centers.map((center) => projectOntoPlane(center, planeFrame))
-        : spec.planar.locations.map(({ x, y }): Vec3Tuple => {
+      origins: planar === undefined ? spec.centers.map((center) => projectOntoPlane(center, planeFrame))
+        : planar.locations.map(({ x, y }): Vec3Tuple => {
           const o = planeFrame.pointOnPlane, u = planeFrame.xAxis, v = planeFrame.yAxis;
           const point: Vec3Tuple = [o[0] + x * u[0] + y * v[0], o[1] + x * u[1] + y * v[1], o[2] + x * u[2] + y * v[2]];
           if (!isFiniteTuple(point)) throw new Error(CENTER_NOT_FINITE_MESSAGE);

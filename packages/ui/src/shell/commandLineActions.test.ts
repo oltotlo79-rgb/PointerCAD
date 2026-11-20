@@ -7,9 +7,10 @@
  * `docs/報告記録.md` 2026-09-02 23:09「操作の判断は純関数へ切り出して Node で検査する」)。
  */
 
-import { resolveSketch, type Vec3 } from '@pointercad/model';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { createAssemblyDocument, createDrawingDocument, resolveSketch, type Vec3 } from '@pointercad/model';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as toolbarCommands from '../commands/toolbarCommandExecution.js';
 import { createNumericInput } from '../sketch/numericInput.js';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -20,6 +21,7 @@ import {
   pushCommandHistory,
   stepCommandHistory,
   submitCommandLine,
+  submitCommandTable,
 } from './commandLineActions.js';
 
 /** Pinned expected values: the same literals as the product constants, kept independent of them. */
@@ -81,6 +83,92 @@ describe('コマンドラインから道具を選ぶ(FR-208)', () => {
     }
     // 断っても道具は変えない。
     expect(useAppStore.getState().activeTool).toBe('select');
+  });
+});
+
+describe('立体の語をツールバーと同じ入口で実行する', () => {
+  beforeEach(() => {
+    vi.spyOn(toolbarCommands, 'executeToolbarCommand');
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('箱の入力段を開き、空の Enter で部品に箱ができる', () => {
+    expect(submitCommandLine('BOX')).toEqual({ kind: 'tool', tool: 'box', openedStep: true });
+    expect(toolbarCommands.executeToolbarCommand).toHaveBeenCalledExactlyOnceWith('toolbar.solidCreate.box');
+    expect(useAppStore.getState().numericInput?.step).toBe('boxSize');
+    expect(submitCommandLine('')).toEqual({ kind: 'committed' });
+    expect(useAppStore.getState().document.solids).toHaveLength(1);
+    expect(useAppStore.getState().document.solids[0]).toMatchObject({ kind: 'primitive', shape: { kind: 'box' } });
+  });
+
+  it('箱の寸法を既存の欄名で決め、選んだ箱と円柱の和を作る', () => {
+    submitCommandLine('箱');
+    expect(submitCommandLine('boxSizeX=37')).toEqual({ kind: 'committed' });
+    expect(useAppStore.getState().document.solids[0]).toMatchObject({ shape: { kind: 'box', sizeX: { value: 37 } } });
+    submitCommandLine('cyl');
+    expect(submitCommandLine('')).toEqual({ kind: 'committed' });
+    const ids = useAppStore.getState().document.solids.map(solid => solid.id);
+    expect(ids).toHaveLength(2);
+    useAppStore.getState().setSelection(ids);
+    expect(submitCommandLine('uni')).toEqual({ kind: 'tool', tool: 'select', openedStep: false });
+    expect(toolbarCommands.executeToolbarCommand).toHaveBeenLastCalledWith('toolbar.solidCombine.union');
+    const combined = useAppStore.getState().document.solids.at(-1);
+    expect(combined).toMatchObject({ kind: 'boolean', operation: 'union', targetFeatureId: ids[0], toolFeatureId: ids[1] });
+    expect(useAppStore.getState().selection).toEqual([combined?.id]);
+  });
+
+  it.each([
+    ['ext', 'toolbar.solidCreate.extrude', 'extrude', 'solidError.noFace'],
+    ['穴', 'toolbar.solidMachining.hole', 'hole', 'machiningError.noFace'],
+  ] as const)('%s は対象の選択待ちになり、帯に今回の理由が出る', (word, commandId, tool, reason) => {
+    const original = useAppStore.getState().document;
+    useAppStore.getState().setFileMessage({ key: 'command.unavailable.action', failed: true });
+    expect(submitCommandLine(word)).toEqual({ kind: 'tool', tool, openedStep: false });
+    expect(toolbarCommands.executeToolbarCommand).toHaveBeenCalledExactlyOnceWith(commandId);
+    const state = useAppStore.getState();
+    expect(state.activeTool).toBe(tool);
+    expect(state.fileMessage).toBeNull();
+    expect(state.solidErrorKey).toBe(reason);
+    expect(state.numericInput).toBeNull();
+    expect(state.document).toBe(original);
+  });
+
+  it('対象の足りない和は元の帯の理由を保ち、開いていた段も文書も変えない', () => {
+    submitCommandLine('L');
+    const before = useAppStore.getState();
+    expect(submitCommandLine('和')).toEqual({ kind: 'error', message: 'ソリッドを 2 つ選んでください。', suggestions: [] });
+    expect(toolbarCommands.executeToolbarCommand).toHaveBeenCalledExactlyOnceWith('toolbar.solidCombine.union');
+    const state = useAppStore.getState();
+    expect(state.solidErrorKey).toBe('solidError.needTwoBodies');
+    expect(state.numericInput).toBe(before.numericInput);
+    expect(state.document).toBe(before.document);
+    expect(state.canUndo).toBe(false);
+  });
+
+  it.each(['assembly', 'drawing'] as const)('%s では箱を開かずに文書の種類を理由として返す', kind => {
+    const store = useAppStore.getState();
+    if (kind === 'assembly') {
+      store.openAssembly(createAssemblyDocument('組立'));
+    } else {
+      store.openDrawing(createDrawingDocument('図面', {
+        sourceRef: 'part', sourceKind: 'part', fileName: 'part.pcad', path: '', contentHash: '', importedAt: '',
+      }));
+    }
+    const before = useAppStore.getState();
+    expect(submitCommandLine('box')).toEqual({
+      kind: 'error', message: '「箱」を開始できません。この画面では使えません。対象の画面へ切り替えてください。', suggestions: [],
+    });
+    expect(toolbarCommands.executeToolbarCommand).toHaveBeenCalledExactlyOnceWith('toolbar.solidCreate.box');
+    expect(useAppStore.getState()).toBe(before);
+  });
+
+  it('立体の候補を採ると、Tab で入る語をそのまま実行できる', () => {
+    const [first] = commandSuggestions('CyL');
+    expect(first.labelKey).toBe('toolbar.solid.cylinder');
+    expect(acceptedWordOf(first, 'CyL')).toBe('cylinder');
+    expect(submitCommandLine(acceptedWordOf(first, 'CyL'))).toEqual({ kind: 'tool', tool: 'cylinder', openedStep: true });
   });
 });
 
@@ -233,5 +321,89 @@ describe('履歴(20 件、保存しない。§0.a-0.11)', () => {
     expect(stepCommandHistory(history, 2, true)).toEqual({ index: 2, text: 'L' });
     // いちばん新しいところで ↓ を押すと、いま打っている行(空)へ戻る。
     expect(stepCommandHistory(history, 0, false)).toEqual({ index: -1, text: '' });
+  });
+});
+
+describe('座標の表をまとめて確定する', () => {
+  it.each(['select', 'point'] as const)('%s で 3 点を作り、1 回の Undo で全部戻す', (tool) => {
+    submitCommandLine(tool);
+    const before = useAppStore.getState();
+    expect(submitCommandTable('X,Y\n0,0\n3,4\n7,8')).toEqual({ kind: 'created', count: 3 });
+    const after = useAppStore.getState();
+    expect(resolveSketch(after.sketch).points.map((entry) => entry.position)).toEqual([
+      [0, 0, 0], [3, 4, 0], [7, 8, 0],
+    ]);
+    expect(after.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+    after.undo();
+    expect(useAppStore.getState().document).toBe(before.document);
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().document).toBe(after.document);
+  });
+
+  it('表の先頭から順に 2 本をつなぎ、1 回の Undo で元の文書に戻す', () => {
+    submitCommandLine('L');
+    submitCommandLine('80,90');
+    useAppStore.setState({ chaining: false });
+    useAppStore.getState().setInferredConstraints({ featureId: 'line-1', marks: [], constraints: [{
+      kind: 'horizontal', relatedId: null, markerAt: [0, 0],
+      target: { kind: 'curve', element: { featureId: 'line-1' } },
+    }] });
+    const before = useAppStore.getState();
+    expect(submitCommandTable('1,2\n11,2\n11,7')).toEqual({ kind: 'created', count: 2 });
+    expect(segments()).toEqual([
+      { from: [1, 2, 0], to: [11, 2, 0] }, { from: [11, 2, 0], to: [11, 7, 0] },
+    ]);
+    const after = useAppStore.getState();
+    expect(after.pendingStart).toBeNull();
+    expect(after.numericInput).toBeNull();
+    expect(after.inferredConstraints).toBeNull();
+    expect(after.sketch.constraints ?? []).toEqual([]);
+    expect(after.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+    after.undo();
+    expect(useAppStore.getState().document).toBe(before.document);
+  });
+
+  it('途中の式が壊れていれば元の行を知らせ、1 点も作らない', () => {
+    submitCommandLine('po');
+    const before = useAppStore.getState();
+    const result = submitCommandTable('X,Y\n1,2\n\n未定義,5\n7,8');
+    if (result.kind !== 'error') throw new Error('読めない座標を確定しました');
+    expect(result.message).toContain('4 行目');
+    const after = useAppStore.getState();
+    expect(after.document).toBe(before.document);
+    expect(after.undoStack).toBe(before.undoStack);
+    expect(after.numericInput).toBe(before.numericInput);
+  });
+
+  it('前半の線を作れても後半の交点が拘束済みなら表全体を断る', () => {
+    submitCommandLine('L');
+    submitCommandLine('-5,0');
+    submitCommandLine('5,0');
+    const state = useAppStore.getState();
+    const first = state.sketch.features[0];
+    state.setSketch({ ...state.sketch, constraints: [{ id: 'c1', name: '水平', kind: 'horizontal',
+      target: { kind: 'curve', element: { featureId: first.id } } }] });
+    const before = useAppStore.getState();
+    const result = submitCommandTable('-2,-2\n0,-2\n0,2');
+    if (result.kind !== 'error') throw new Error('拘束の付いた線を分割しました');
+    expect(result.message).toContain('3 行目');
+    expect(result.message).toContain('交わる線に拘束があります');
+    const after = useAppStore.getState();
+    expect(after.document).toBe(before.document);
+    expect(after.undoStack).toBe(before.undoStack);
+    expect(after.pendingStart).toBe(before.pendingStart);
+    expect(after.numericInput).toBe(before.numericInput);
+  });
+
+  it('線分で座標が 1 個だけの表と、別の道具での貼り付けを断る', () => {
+    submitCommandLine('L');
+    const before = useAppStore.getState();
+    expect(submitCommandTable('0,0\n')).toMatchObject({ kind: 'error' });
+    submitCommandLine('C');
+    expect(submitCommandTable('1,2\n3,4')).toEqual({
+      kind: 'error', message: '部品で点・線分・選択の道具を選んでください。', suggestions: [],
+    });
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
   });
 });

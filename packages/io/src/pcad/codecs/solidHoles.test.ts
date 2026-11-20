@@ -266,3 +266,50 @@ it('planar thread original XY expressions persist through both document containe
   expect(readThreadHoleFeature(record, 'solids.0', base)).toEqual({ ok: true, value: feature });
   reopenBoth(appendSolid(createEmptyPartDocument(), feature));
 });
+
+describe('辺からの距離の穴の保存(M-02)', () => {
+  const topFace = { bodyFeatureId: 'box-1', index: 5,
+    fingerprint: { kind: 'face', surfaceKind: 'plane', area: 2400, position: [30, 20, 10], axis: [0, 0, 1], radius: null } } satisfies HoleFeature['face'];
+  const edge = (index: number, axis: [number, number, number]) => ({ bodyFeatureId: 'box-1', index,
+    fingerprint: { kind: 'edge', curveKind: 'line', length: 40, position: [60, 20, 10], axis, radius: null } }) satisfies HoleFeature['face'];
+  const feature: HoleFeature = { ...planar, targetFeatureId: 'box-1', face: topFace, centers: [],
+    planar: { kind: 'edge-distance', edge1: edge(3, [0, 1, 0]), edge2: edge(4, [1, 0, 0]), locations: [
+      { distance1: expression('t + 2', 8), distance2: expression('8', 8) },
+      { distance1: expression('20', 20), distance2: expression('12', 12) },
+    ] } };
+  it('2 本の辺の参照・距離の式・位置の並びを、欄の順(kind・edge1・edge2・locations)のまま保存して開き直せる', () => {
+    expect(reopen(feature)).toEqual({ ok: true, value: feature });
+    const saved = savedRecord(feature);
+    expect(saved.centers).toEqual([]);
+    const placement = saved.planar;
+    if (typeof placement !== 'object' || placement === null) throw new Error('置き方が保存されていない');
+    expect(Object.keys(placement)).toEqual(['kind', 'edge1', 'edge2', 'locations']);
+  });
+  it('欄の欠け・余分な欄・辺でない参照・空の位置・有限でない距離・中心点との併記を断る', () => {
+    const saved = savedRecord(feature);
+    const placement = { kind: 'edge-distance', edge1: edge(3, [0, 1, 0]), edge2: edge(4, [1, 0, 0]),
+      locations: [{ distance1: expression('8', 8), distance2: expression('8', 8) }] };
+    const invalid: Record<string, unknown>[] = [
+      { ...saved, planar: { ...placement, edge2: undefined } },
+      { ...saved, planar: { ...placement, origin: [0, 0, 0] } },
+      { ...saved, planar: { ...placement, edge1: topFace } },
+      { ...saved, planar: { ...placement, locations: [] } },
+      { ...saved, planar: { ...placement, locations: [{ distance1: expression('8', 8) }] } },
+      { ...saved, planar: { ...placement, locations: [{ distance1: expression('8', Number.POSITIVE_INFINITY), distance2: expression('8', 8) }] } },
+      { ...saved, planar: { ...placement, locations: [{ x: expression('8', 8), y: expression('8', 8) }] } },
+      { ...saved, centers: planar.centers },
+      { ...saved, face: sideFace },
+    ];
+    for (const record of invalid) expect(readHoleFeature(record, 'solids.0', base).ok).toBe(false);
+    expect(() => serializeHoleFeature({ ...feature, centers: planar.centers })).toThrow();
+  });
+  it('ねじ穴も同じ形で保存して開き直せる', () => {
+    const thread: ThreadHoleFeature = { ...base, kind: 'threadHole', targetFeatureId: 'box-1', face: topFace, centers: [],
+      designation: 'M6', series: 'coarse', pitch: expression('1', 1), drillDiameter: expression('5', 5), depth: { kind: 'through' },
+      threadLength: expression('10', 10), representation: 'simplified', tiltAngle: expression('0', 0), tiltAzimuth: expression('0', 0),
+      planar: feature.planar };
+    const record: unknown = JSON.parse(JSON.stringify(serializeThreadHoleFeature(thread)));
+    if (typeof record !== 'object' || record === null || Array.isArray(record)) throw new Error('保存の形が欄の集まりではありません');
+    expect(readThreadHoleFeature(Object.fromEntries(Object.entries(record)), 'solids.0', base)).toEqual({ ok: true, value: thread });
+  });
+});

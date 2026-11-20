@@ -54,35 +54,38 @@ describe('穴つきの面の保存形式23', () => {
     expect(result.error.message).toContain('23');
   });
 
-  it('版24は更新を促して断る', () => {
-    const result = parseDocument(serializeDocument({ ...faceDocument(), schemaVersion: 24 }, { savedAt }));
+  it('版24は読み(次の版の欄を使った文書の版)、版25は更新を促して断る(M-02 で読める上限を 24 にした)', () => {
+    const version24 = parseDocument(serializeDocument({ ...faceDocument(holes), schemaVersion: 24 }, { savedAt }));
+    expect(version24).toMatchObject({ ok: true, document: { schemaVersion: 24 } });
+    const result = parseDocument(serializeDocument({ ...faceDocument(), schemaVersion: 25 }, { savedAt }));
     expect(result).toMatchObject({ ok: false, error: { code: 'unsupportedNewVersion' } });
     if (result.ok) throw new Error('新しい版が読めました');
     expect(result.error.message).toContain('アプリを更新');
   });
 
-  it('移行表は2から22まで揃い、22から23は番号以外を変えない', () => {
+  it('移行表は2から23まで揃い、22から23・23から24は番号以外を変えない', () => {
     expect(Object.keys(SCHEMA_MIGRATIONS).map(Number).sort((a, b) => a - b))
-      .toEqual(Array.from({ length: 21 }, (_, index) => index + 2));
-    const migrate = SCHEMA_MIGRATIONS[22];
-    expect(migrate).toBeDefined();
-    if (migrate === undefined) throw new Error('移行22がありません');
-    const raw = { schema: 22, document: { schemaVersion: 22, custom: ['unchanged'] } };
-    expect(migrate(raw)).toEqual({ schema: 23, document: { ...raw.document, schemaVersion: 23 } });
-    expect(raw.schema).toBe(22);
+      .toEqual(Array.from({ length: 22 }, (_, index) => index + 2));
+    for (const from of [22, 23]) {
+      const migrate = SCHEMA_MIGRATIONS[from];
+      if (migrate === undefined) throw new Error(`移行${String(from)}がありません`);
+      const raw = { schema: from, document: { schemaVersion: from, custom: ['unchanged'] } };
+      expect(migrate(raw)).toEqual({ schema: from + 1, document: { ...raw.document, schemaVersion: from + 1 } });
+      expect(raw.schema).toBe(from);
+    }
   });
 
-  it('アセンブリと図面も版23を読み、版24を断る', () => {
+  it('アセンブリと図面も版23・24を読み、版25を断る', () => {
     const assembly = createAssemblyDocument('assembly');
     const drawing = createDrawingDocument('drawing', { sourceRef: 'source', sourceKind: 'part',
       fileName: 'part.pcad', path: '', contentHash: '', importedAt: '' });
-    for (const schemaVersion of [23, 24]) {
+    for (const schemaVersion of [23, 24, 25]) {
       const results = [
         readAssemblyDocument(writeAssemblyDocument({ ...assembly, schemaVersion }, { savedAt })),
         parseDrawing(serializeDrawing({ ...drawing, schemaVersion }, { savedAt })),
       ];
       for (const result of results) {
-        if (schemaVersion === 23) expect(result).toMatchObject({ ok: true, document: { schemaVersion: 23 } });
+        if (schemaVersion <= 24) expect(result).toMatchObject({ ok: true, document: { schemaVersion } });
         else expect(result).toMatchObject({ ok: false, error: { code: 'unsupportedNewVersion' } });
       }
     }

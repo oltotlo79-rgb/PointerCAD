@@ -1,4 +1,4 @@
-import type { StateCreator } from 'zustand';
+import type { StateCreator, StoreApi } from 'zustand';
 import { analyzeFatigue, analyzeFatigueWithMeanStressCorrection, analyzeProportionalTensorFatigue, solidFatigueInput } from '@pointercad/fem';
 import { fatigueSolidSelection } from '@pointercad/model/beam-analysis';
 import { fatigueSolidSavedEntry, selectFatigueSolidElement, solidFatigueSourceIsCurrent } from '../fatigue/fatigueSolidSession.js';
@@ -28,6 +28,61 @@ export interface FatigueSlice {
   readonly editFatigue: (edit: FatigueAnyEdit) => void;
   readonly runFatigue: () => void | Promise<void>;
   readonly saveFatigue: () => void;
+}
+
+function runSolidFatigue(
+  set: StoreApi<AppState>['setState'], get: StoreApi<AppState>['getState'],
+  state: AppState, session: FatigueSession, isGenerationCurrent: () => boolean,
+): void | Promise<void> {
+  const solid = state.solidAnalysisSession, source = solid?.result;
+  const checked = fatigueSolidSavedEntry(session, state.document.parameters, state.document.id);
+  if (!checked.ok) {
+    set({ fatigueSession: { ...session, analyzed: null, solidAnalyzed: null, errorKey: checked.key,
+      diagnostic: checked.diagnostic, focusedField: checked.field ?? session.focusedField } });
+    return;
+  }
+  if (source === null || source === undefined || solid?.status !== 'complete' || state.assembly !== null
+    || state.drawing !== null || !solidFatigueSourceIsCurrent(source, state) || checked.entry.kind !== 'fatigue-solid-proportional') {
+    set({ fatigueSession: { ...session, solidAnalyzed: null, errorKey: 'fatigue.error.solidUnavailable', diagnostic: null } });
+    return;
+  }
+  const request = beginDocumentRequest('fatigue.solid', get, state);
+  const definition = checked.entry.definition;
+  set({ fatigueSession: { ...session, analyzed: null, solidAnalyzed: null, errorKey: null, diagnostic: null } });
+  const current = (): boolean => {
+    const next = get(), nextSession = next.fatigueSession;
+    return request.isCurrent() && isGenerationCurrent() && nextSession !== null && nextSession.ownerId === session.ownerId
+      && nextSession.revision === session.revision && next.activeDocumentId === state.activeDocumentId
+      && next.document === state.document && next.documentVersion === state.documentVersion
+      && next.completedGeneration === state.completedGeneration && next.fileGateway === state.fileGateway
+      && next.cancelRequestCount === state.cancelRequestCount && next.strengthSession !== null
+      && next.assembly === null && next.drawing === null && next.solidAnalysisSession?.status === 'complete'
+      && next.solidAnalysisSession.result === source && solidFatigueSourceIsCurrent(source, next);
+  };
+  return solidFatigueInput(source.prepared.input, source.result, fatigueSolidSelection(definition), definition.curve).then(adapted => {
+    if (!current()) return;
+    const after = get().fatigueSession;
+    if (after === null) return;
+    if (!adapted.ok) {
+      set({ fatigueSession: { ...after, solidAnalyzed: null, errorKey: 'fatigue.error.solidRefused', diagnostic: null } });
+      return;
+    }
+    const analyzed = analyzeFatigue(adapted.input);
+    if (!analyzed.ok) {
+      const refusal = fatigueRefusal(analyzed.code, analyzed.path);
+      set({ fatigueSession: { ...after, solidAnalyzed: null, errorKey: refusal.key, diagnostic: refusal.diagnostic,
+        focusedField: refusal.field ?? after.focusedField } });
+      return;
+    }
+    set({ fatigueSession: { ...after, solidAnalyzed: { definition, source, result: analyzed.result,
+      provenance: adapted.provenance, conversions: adapted.conversions, snapshot: { document: state.document,
+        documentVersion: state.documentVersion, completedGeneration: state.completedGeneration, fileGateway: state.fileGateway,
+        cancelRequestCount: state.cancelRequestCount, activeDocumentId: state.activeDocumentId } }, errorKey: null, diagnostic: null } });
+  }).catch(() => {
+    if (!current()) return;
+    const after = get().fatigueSession;
+    if (after !== null) set({ fatigueSession: { ...after, solidAnalyzed: null, errorKey: 'fatigue.error.solidRefused', diagnostic: null } });
+  });
 }
 
 /** Existing fatigue modes calculate synchronously; the solid mode asynchronously validates the retained native result.
@@ -105,55 +160,7 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
     const state = get(), session = state.fatigueSession;
     if (session === null || session.ownerId !== state.activeDocumentId) return;
     if (session.draft.inputMode === 'solid-proportional') {
-      const solid = state.solidAnalysisSession, source = solid?.result;
-      const checked = fatigueSolidSavedEntry(session, state.document.parameters, state.document.id);
-      if (!checked.ok) {
-        set({ fatigueSession: { ...session, analyzed: null, solidAnalyzed: null, errorKey: checked.key,
-          diagnostic: checked.diagnostic, focusedField: checked.field ?? session.focusedField } });
-        return;
-      }
-      if (source === null || source === undefined || solid?.status !== 'complete' || state.assembly !== null
-        || state.drawing !== null || !solidFatigueSourceIsCurrent(source, state) || checked.entry.kind !== 'fatigue-solid-proportional') {
-        set({ fatigueSession: { ...session, solidAnalyzed: null, errorKey: 'fatigue.error.solidUnavailable', diagnostic: null } });
-        return;
-      }
-      const request = beginDocumentRequest('fatigue.solid', get, state);
-      const definition = checked.entry.definition;
-      set({ fatigueSession: { ...session, analyzed: null, solidAnalyzed: null, errorKey: null, diagnostic: null } });
-      const current = (): boolean => {
-        const next = get(), nextSession = next.fatigueSession;
-        return request.isCurrent() && capturedGeneration === solidRunGeneration && nextSession !== null && nextSession.ownerId === session.ownerId
-          && nextSession.revision === session.revision && next.activeDocumentId === state.activeDocumentId
-          && next.document === state.document && next.documentVersion === state.documentVersion
-          && next.completedGeneration === state.completedGeneration && next.fileGateway === state.fileGateway
-          && next.cancelRequestCount === state.cancelRequestCount && next.strengthSession !== null
-          && next.assembly === null && next.drawing === null && next.solidAnalysisSession?.status === 'complete'
-          && next.solidAnalysisSession.result === source && solidFatigueSourceIsCurrent(source, next);
-      };
-      return solidFatigueInput(source.prepared.input, source.result, fatigueSolidSelection(definition), definition.curve).then(adapted => {
-        if (!current()) return;
-        const after = get().fatigueSession;
-        if (after === null) return;
-        if (!adapted.ok) {
-          set({ fatigueSession: { ...after, solidAnalyzed: null, errorKey: 'fatigue.error.solidRefused', diagnostic: null } });
-          return;
-        }
-        const analyzed = analyzeFatigue(adapted.input);
-        if (!analyzed.ok) {
-          const refusal = fatigueRefusal(analyzed.code, analyzed.path);
-          set({ fatigueSession: { ...after, solidAnalyzed: null, errorKey: refusal.key, diagnostic: refusal.diagnostic,
-            focusedField: refusal.field ?? after.focusedField } });
-          return;
-        }
-        set({ fatigueSession: { ...after, solidAnalyzed: { definition, source, result: analyzed.result,
-          provenance: adapted.provenance, conversions: adapted.conversions, snapshot: { document: state.document,
-            documentVersion: state.documentVersion, completedGeneration: state.completedGeneration, fileGateway: state.fileGateway,
-            cancelRequestCount: state.cancelRequestCount, activeDocumentId: state.activeDocumentId } }, errorKey: null, diagnostic: null } });
-      }).catch(() => {
-        if (!current()) return;
-        const after = get().fatigueSession;
-        if (after !== null) set({ fatigueSession: { ...after, solidAnalyzed: null, errorKey: 'fatigue.error.solidRefused', diagnostic: null } });
-      });
+      return runSolidFatigue(set, get, state, session, () => capturedGeneration === solidRunGeneration);
     }
     if (session.draft.inputMode === 'piecewise') {
       // The user's sourced multi-slope calibration on the panel's stress histories (the core's existing rainflow and

@@ -25,10 +25,18 @@ export interface HoleScheduleRow {
   readonly center: Vec3;
   readonly featureIds: readonly string[];
 }
+/** 辺からの距離の穴(M-02)の置き方。 */
+type EdgeDistanceSchedulePlacement = Extract<NonNullable<Extract<PartDocument['solids'][number], { readonly kind: 'hole' }>['planar']>,
+  { readonly kind: 'edge-distance' }>;
 export interface HoleScheduleContext {
   readonly sketches: readonly ResolvedPartSketch[];
   /** 対象を加工する直前の実形状で面を解決する。保存済みの古い指紋で代用しない。 */
   readonly resolvePlane: (targetFeatureId: string, face: SubShapeRef) => HoleSchedulePlane | null;
+  /**
+   * 辺からの距離の穴(M-02)の中心を、対象を加工する直前の実形状で、計算部と同じ式(`edgeDistanceCenters`)で求める。
+   * 位置の順に返す。辺・面が選び直せない・側が決まらない・中心が面の外なら null。省略は辺からの距離の穴を表に載せられない。
+   */
+  readonly resolveEdgeDistance?: (targetFeatureId: string, face: SubShapeRef, placement: EdgeDistanceSchedulePlacement) => readonly Vec3[] | null;
   readonly frame: HoleScheduleFrame;
 }
 export type HoleScheduleResult =
@@ -77,13 +85,20 @@ export function buildHoleSchedule(document: PartDocument, context: HoleScheduleC
     const normal = scaleVec3(plane.normal, 1 / lengthVec3(plane.normal));
     if (feature.planar === undefined && feature.centers.length === 0) return { ok: false, reason: 'missingCenter', featureId: feature.id };
     const centers: Vec3[] = [];
-    if (feature.planar !== undefined) {
+    if (feature.planar?.kind === 'edge-distance') {
+      if (feature.planar.locations.length === 0) return { ok: false, reason: 'invalidValue', featureId: feature.id };
+      const placed = context.resolveEdgeDistance?.(feature.targetFeatureId, feature.face, feature.planar) ?? null;
+      if (placed === null || placed.length !== feature.planar.locations.length || !placed.every(finite)) {
+        return { ok: false, reason: 'missingFace', featureId: feature.id };
+      }
+      centers.push(...placed);
+    } else if (feature.planar !== undefined) {
       const basis = plane.planarBasis;
       if (basis === undefined || !isValidHoleScheduleFrame({ datum: basis.origin, x: basis.xAxis, y: basis.yAxis })
         || !finite(basis.normal) || Math.abs(dotVec3(crossVec3(basis.xAxis, basis.yAxis), basis.normal) - 1) > 1e-9) {
         return { ok: false, reason: 'missingFace', featureId: feature.id };
       }
-      if (feature.planar.kind !== 'plane-face' || feature.planar.locations.length === 0) return { ok: false, reason: 'invalidValue', featureId: feature.id };
+      if (feature.planar.locations.length === 0) return { ok: false, reason: 'invalidValue', featureId: feature.id };
       for (const p of feature.planar.locations) {
         const x = p.x.value, y = p.y.value, o = basis.origin, u = basis.xAxis, v = basis.yAxis;
         if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, reason: 'invalidValue', featureId: feature.id };

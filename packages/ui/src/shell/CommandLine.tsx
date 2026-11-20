@@ -9,6 +9,7 @@ import {
   pushCommandHistory,
   stepCommandHistory,
   submitCommandLine,
+  submitCommandTable,
   type CommandLineFailure,
 } from './commandLineActions.js';
 
@@ -49,6 +50,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState('');
+  const [tableCount, setTableCount] = useState<number | null>(null);
   const [history, setHistory] = useState<readonly string[]>([]);
   /** 履歴をたどっている位置。-1 は「いま打っている行」(履歴の外)。 */
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -57,6 +59,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
     // 文書が差し替わったら書きかけを捨てる(9b)。履歴は打った本人の記録なので残す。
     setText('');
     setHistoryIndex(-1);
+    setTableCount(null);
     onFailureChange(null);
   }, [documentVersion, onFailureChange]);
 
@@ -73,6 +76,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   const fieldLabels = nextFieldLabels(numericInput);
 
   const changeText = (next: string): void => {
+    setTableCount(null);
     setText(next);
     setHistoryIndex(-1);
     // 打ち直し始めたら古い断りは消す(NFR-UX-5)。
@@ -80,6 +84,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   };
 
   const runSubmit = (): void => {
+    setTableCount(null);
     const outcome = submitCommandLine(text);
     if (outcome.kind === 'error') {
       // 断ったときは打った文字を残す。直してもう一度 Enter を押せる(NFR-UX-3)。
@@ -92,6 +97,21 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
     setText('');
   };
 
+  const onPaste = (event: React.ClipboardEvent<HTMLInputElement>): void => {
+    const source = event.clipboardData.getData('text/plain');
+    if (!source.includes('\n')) return;
+    event.preventDefault();
+    const outcome = submitCommandTable(source);
+    if (outcome.kind === 'error') {
+      setTableCount(null);
+      onFailureChange(outcome);
+      return;
+    }
+    changeText('');
+    setTableCount(outcome.count);
+    useAppStore.getState().requestViewportFocus();
+  };
+
   const acceptSuggestion = (index: number): void => {
     const word = suggestions[index];
     if (word === undefined) {
@@ -102,6 +122,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   };
 
   const walkHistory = (backwards: boolean): void => {
+    setTableCount(null);
     const step = stepCommandHistory(history, historyIndex, backwards);
     setHistoryIndex(step.index);
     setText(step.text);
@@ -109,6 +130,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   };
 
   const leave = (): void => {
+    setTableCount(null);
     setText('');
     setHistoryIndex(-1);
     onFailureChange(null);
@@ -206,8 +228,13 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
           useAppStore.getState().setCommandLineFocused(false);
         }}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
       />
-      {fieldLabels.length === 0 ? null : (
+      {tableCount !== null ? (
+        <span role="status">
+          {t('commandLine.tableCreated').replace('{count}', String(tableCount))}
+        </span>
+      ) : fieldLabels.length === 0 ? null : (
         /* 次に打つものは、いま開いている段の欄名をそのまま出す。 */
         <span className="pcad-commandline__next" aria-live="polite">
           {`${t('commandLine.nextLabel')} ${fieldLabels.join(LABEL_SEPARATOR)}`}

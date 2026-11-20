@@ -12,8 +12,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { CatalogFamily } from '../types.js';
 import type { PanelPartRecord } from './panelPartCatalog.js';
-import { CAP_ACCESSORY_BOX_FAMILY, DOOR_PART_BOX_FAMILY, FOOT_PART_BOX_FAMILY, SLIDER_BOX_FAMILY } from './smallPartBoxCatalog.js';
-import { CAP_ACCESSORY_BOX_RECORDS, DOOR_PART_BOX_RECORDS, FOOT_PART_BOX_RECORDS, SLIDER_BOX_RECORDS } from './smallPartBoxRows.js';
+import {
+  CAP_ACCESSORY_BOX_FAMILY, DOOR_PART_BOX_FAMILY, DRAWER_PART_BOX_FAMILY, FOOT_PART_BOX_FAMILY, SLIDER_BOX_FAMILY,
+} from './smallPartBoxCatalog.js';
+import {
+  CAP_ACCESSORY_BOX_RECORDS, DOOR_PART_BOX_RECORDS, DRAWER_PART_BOX_RECORDS, FOOT_PART_BOX_RECORDS, SLIDER_BOX_RECORDS,
+} from './smallPartBoxRows.js';
 
 type Cells = Readonly<Record<string, string>>;
 interface FixtureRow { readonly key: string; readonly cells: Cells }
@@ -33,10 +37,15 @@ function readFixture(): readonly FixtureRow[] {
 const FIXTURE = readFixture();
 /** 行のある族と、その行の表(族の行の並びは行の表の並び)。 */
 const FAMILIES: readonly (readonly [CatalogFamily, readonly PanelPartRecord[]])[] = [[SLIDER_BOX_FAMILY, SLIDER_BOX_RECORDS],
-  [CAP_ACCESSORY_BOX_FAMILY, CAP_ACCESSORY_BOX_RECORDS], [FOOT_PART_BOX_FAMILY, FOOT_PART_BOX_RECORDS], [DOOR_PART_BOX_FAMILY, DOOR_PART_BOX_RECORDS]];
+  [CAP_ACCESSORY_BOX_FAMILY, CAP_ACCESSORY_BOX_RECORDS], [FOOT_PART_BOX_FAMILY, FOOT_PART_BOX_RECORDS], [DOOR_PART_BOX_FAMILY, DOOR_PART_BOX_RECORDS],
+  [DRAWER_PART_BOX_FAMILY, DRAWER_PART_BOX_RECORDS]];
 const RECORDS: readonly PanelPartRecord[] = FAMILIES.flatMap(([, records]) => records);
 
-/** 「横:43.5(…)/縦:33/奥行:33(…)」→ 向きごとの数(括弧の参考寸法・φ・「なし」は外す。端の名前の無い数も読む)。 */
+/**
+ * 「横:43.5(…)/縦:33/奥行:33(…)」→ 向きごとの数(括弧の参考寸法・φ・「なし」は外す。端の名前の無い数も読む)。
+ * 決まった長さの品「断面の横:9.6/断面の縦:35.3/長さ:アウターL1=355.6、インナーL2=352.6」は、横は断面の横、縦は断面の縦、
+ * 奥行は番号つきの長さ(L1= など)の長い方(縮めた時の長さ)として読む。
+ */
 function directions(text: string | undefined): ReadonlyMap<string, readonly number[]> {
   const found = new Map<string, readonly number[]>();
   for (const segment of (text ?? '').split('/')) {
@@ -47,7 +56,10 @@ function directions(text: string | undefined): ReadonlyMap<string, readonly numb
       return match?.[1] === undefined ? [] : [Number(match[1])];
     }));
   }
-  return found;
+  const lengths = [...((text ?? '').split('/').find((segment) => segment.startsWith('長さ:')) ?? '').matchAll(/L[0-9]=([0-9]+(?:\.[0-9]+)?)/gu)]
+    .map((match) => Number(match[1]));
+  if (!found.has('断面の横') || lengths.length === 0) return found;
+  return new Map([['横', found.get('断面の横') ?? []], ['縦', found.get('断面の縦') ?? []], ['奥行', [Math.max(...lengths)]]]);
 }
 
 const sorted = (values: readonly number[]): readonly number[] => [...values].sort((a, b) => a - b);

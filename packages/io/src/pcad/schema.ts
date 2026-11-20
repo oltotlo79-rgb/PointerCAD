@@ -86,8 +86,11 @@ import { isRecord } from './guards.js';
  */
 /** 版14: 数学定義と係数ID。旧アプリが式を落としてキャッシュだけで作図することを防ぐ。 */
 export const PCAD_SCHEMA_VERSION = 22;
-/** 穴を持つスケッチ面だけが必要とする版。通常の文書の保存版22は維持する。 */
-export const PCAD_MAX_SCHEMA_VERSION = 23;
+/**
+ * 読める版の上限(部品・組立・図面で共通)。版 23 は穴を持つスケッチ面など、版 24 は次の版(v1.0.4)で足した欄・種類
+ * (辺からの距離の穴 M-02 など)を使った文書だけが名乗る。使っていない文書は保存版 22 のまま書く。25 以上は断る。
+ */
+export const PCAD_MAX_SCHEMA_VERSION = 24;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -443,6 +446,11 @@ function migrateAssemblyDocumentToV8(
 }
 
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
+  // 版 23 → 24 は番号だけ(欄の形は変えない)。通常の読み込みの移行の行き先は保存版 22 のままなので、版 23 を開くだけでは 24 にしない。
+  23: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 24, document: { ...raw['document'], schemaVersion: 24 } };
+  },
   22: (raw) => {
     if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
     return { ...raw, schema: 23, document: { ...raw['document'], schemaVersion: 23 } };

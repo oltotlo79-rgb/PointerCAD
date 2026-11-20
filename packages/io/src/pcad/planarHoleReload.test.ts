@@ -72,7 +72,7 @@ describe('planar XY fresh save/reopen candidate', () => {
     expect(() => serializeDocument({ ...original, schemaVersion: 21 }, { savedAt })).toThrow();
     await verifyVolume(loaded, 6);
     const hole = loaded.solids.find(s => s.id === 'hole'), pose = loaded.solids.find(s => s.id === 'pose');
-    if (hole?.kind !== 'hole' || pose?.kind !== 'transform' || hole.planar === undefined) throw new Error('Missing saved features');
+    if (hole?.kind !== 'hole' || pose?.kind !== 'transform' || hole.planar?.kind !== 'plane-face') throw new Error('Missing saved features');
     expect(hole.planar.locations[0].x.source).toBe('2 * 5');
     expect(hole.planar.locations[0].y.source).toBe('12 - 2');
     const editedHole: HoleFeature = { ...hole, diameter: number(8), planar: { ...hole.planar,

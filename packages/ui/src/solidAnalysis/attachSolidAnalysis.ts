@@ -36,6 +36,124 @@ function selectedFaceKeys(body: SolidBody, ids: readonly (SubShapeId | null)[]):
   });
 }
 
+function references(body: SolidBody, keys: readonly string[]): SubShapeRef[] {
+  const faces = body.faces.flatMap(face => {
+    const reference = createSubShapeReference(body, 'face', face.index);
+    return reference?.origin ? [reference] : [];
+  });
+  return keys.map(key => {
+    const matches = faces.filter(reference => solidCadFaceKey(reference) === key);
+    if (matches.length !== 1) throw new Error(t('solidAnalysis.changed'));
+    return matches[0];
+  });
+}
+
+interface SolidModeRunContext {
+  readonly kernel: AnalysisBoundarySource;
+  readonly store: StoreApi<AppState>;
+  readonly client: FemClient;
+  readonly context: (bodyFeatureId: string) => CadTetraContext;
+  readonly settings: (saved: SolidCadSavedInput) => CadSolidSettings | CadSolidPressureSettings;
+  readonly cancel: () => void;
+  readonly isDisposed: () => boolean;
+}
+
+function createSolidModeRuns({ kernel, store, client, context, settings, cancel, isDisposed }: SolidModeRunContext) {
+  let modalActive: AbortController | null = null;
+  const cancelModal = (): void => { const old = modalActive; modalActive = null; old?.abort(); };
+  let bucklingActive: AbortController | null = null;
+  const cancelBuckling = (): void => { const old = bucklingActive; bucklingActive = null; old?.abort(); };
+  /** Modal run of the same session: same body, restrained faces, material and meshing tolerances; no load. */
+  const runModal = (): void => {
+    cancel(); cancelModal();
+    const state = store.getState(), session = state.solidAnalysisSession;
+    if (!session) return;
+    const id = state.startSolidModal();
+    const fail = (error: unknown): void => {
+      store.getState().receiveSolidModal(id, { kind: 'failed', message: error instanceof Error ? error.message : null });
+    };
+    try {
+      if (session.ownerId !== state.activeDocumentId) throw new Error(t('solidAnalysis.changed'));
+      const values = solidModalRequestValues(state.solidModal);
+      if (values === null) throw new Error(t('solidAnalysis.modalInputInvalid'));
+      // An independently saved modal input keeps its own shared values; otherwise the panel's current ones.
+      const shared = solidModalEffectiveShared(session, state.solidModalShared, state.document.parameters, state.bodies);
+      const bodyFeatureId = shared.bodyFeatureId;
+      const body = context(bodyFeatureId).body;
+      const anchorFace = body.faces.map(face => createSubShapeReference(body, 'face', face.index)).find(reference => reference?.origin);
+      if (!anchorFace) throw new Error(t('solidAnalysis.changed'));
+      const boundary = { boundary: 'closed' as const, linearDeflection: shared.linearDeflectionMm, angularDeflection: shared.angularDeflectionRad };
+      const settings: CadSolidModalSettings = {
+        material: { id: 'material', youngMPa: shared.youngMPa, poisson: shared.poisson, densityKgM3: values.densityKgM3 },
+        fixedFaces: references(body, shared.fixedFaces), anchorFace, modeCount: values.modeCount, numericBudgetBytes: 256 * 1024 * 1024,
+        geometry: body.faces.every(face => face.surfaceKind === 'plane') ? { kind: 'planar', boundary }
+          : { kind: 'curved', options: { boundary, nodeToleranceMm: 1e-7,
+            maximumChordDeviationMm: shared.maximumChordDeviationMm, maximumVolumeDeviationMm3: shared.maximumVolumeDeviationMm3 } } };
+      const controller = new AbortController(), document = state.document, generation = state.completedGeneration;
+      modalActive = controller;
+      const live = (): boolean => {
+        const next = store.getState();
+        return !isDisposed() && modalActive === controller && !controller.signal.aborted && next.solidModal.requestId === id
+          && next.strengthSession !== null && next.solidAnalysisSession?.ownerId === session.ownerId
+          && sameGeometryDocument(document, next.document) && next.fileGateway === state.fileGateway
+          && next.activeDocumentId === state.activeDocumentId && next.completedGeneration === generation && hasCurrentConnectionGeometry(next);
+      };
+      void analyzeCadSolidModal(client, kernel, () => {
+        if (!live()) throw new Error(t('solidAnalysis.changed'));
+        return context(bodyFeatureId);
+      }, settings, { signal: controller.signal }).then(outcome => {
+        if (!live()) return;
+        modalActive = null;
+        if (outcome.kind === 'result') store.getState().receiveSolidModal(id, { kind: 'result', input: outcome.input, result: outcome.result });
+        else if (outcome.kind === 'failed') store.getState().receiveSolidModal(id, { kind: 'failed', message: solidModalFailureMessage(outcome.code, outcome.message) });
+        else store.getState().cancelSolidModal();
+      }).catch((error: unknown) => { if (live()) { modalActive = null; fail(error); } });
+    } catch (error) { fail(error); }
+  };
+  /** Linear prestress buckling of the same session. The reference load state is a static input (the panel's current one,
+   * or an independently saved reference) mapped by the SAME settings() as the static run: body, restrained and loaded
+   * faces, the one surface load, material and meshing. Only the number of requested load factors is added. */
+  const runBuckling = (): void => {
+    cancel(); cancelModal(); cancelBuckling();
+    const state = store.getState(), session = state.solidAnalysisSession;
+    if (!session) return;
+    const id = state.startSolidBuckling();
+    const fail = (error: unknown): void => {
+      const message = error instanceof Error ? error.message : null;
+      store.getState().receiveSolidBuckling(id, { kind: 'failed', code: message === null ? null : cadSolidBucklingFailureCode(message), message });
+    };
+    try {
+      if (session.ownerId !== state.activeDocumentId) throw new Error(t('solidAnalysis.changed'));
+      const modeCount = solidBucklingModeCount(state.solidBuckling);
+      if (modeCount === null) throw new Error(t('solidAnalysis.bucklingInputInvalid'));
+      const reference = solidBucklingEffectiveReference(session, state.solidBucklingReference, state.document.id, state.document.parameters);
+      const requested = { ...settings(reference), modeCount };
+      const controller = new AbortController(), document = state.document, generation = state.completedGeneration;
+      bucklingActive = controller;
+      const live = (): boolean => {
+        const next = store.getState();
+        return !isDisposed() && bucklingActive === controller && !controller.signal.aborted && next.solidBuckling.requestId === id
+          && next.strengthSession !== null && next.solidAnalysisSession?.ownerId === session.ownerId
+          && sameGeometryDocument(document, next.document) && next.fileGateway === state.fileGateway
+          && next.activeDocumentId === state.activeDocumentId && next.completedGeneration === generation && hasCurrentConnectionGeometry(next);
+      };
+      void analyzeCadSolidBuckling(client, kernel, () => {
+        if (!live()) throw new Error(t('solidAnalysis.changed'));
+        return context(reference.bodyFeatureId);
+      }, requested, { signal: controller.signal }).then(outcome => {
+        if (!live()) return;
+        bucklingActive = null;
+        if (outcome.kind === 'result') store.getState().receiveSolidBuckling(id, { kind: 'result', input: outcome.input,
+          result: outcome.result, loadedAreaMm2: outcome.loadedAreaMm2, totalForceN: outcome.totalForceN });
+        else if (outcome.kind === 'failed') store.getState().receiveSolidBuckling(id, { kind: 'failed',
+          code: cadSolidBucklingFailureCode(outcome.message), message: outcome.message });
+        else store.getState().cancelSolidBuckling();
+      }).catch((error: unknown) => { if (live()) { bucklingActive = null; fail(error); } });
+    } catch (error) { fail(error); }
+  };
+  return { runModal, cancelModal, runBuckling, cancelBuckling };
+}
+
 /** A resolved step is captured from the real recompute callback, never recomputed with different caches. */
 export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: StoreApi<AppState> = useAppStore,
   createWorker: () => FemWorkerPort = createProductFemWorker): {
@@ -60,10 +178,6 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
   let selection: { ids: readonly string[]; document: PartDocument; generation: number; version: number;
     owner: string; gateway: AppState['fileGateway']; bodies: readonly SolidBody[] } | null = null;
   const cancel = (): void => { const old = active; active = null; old?.abort(); };
-  let modalActive: AbortController | null = null;
-  const cancelModal = (): void => { const old = modalActive; modalActive = null; old?.abort(); };
-  let bucklingActive: AbortController | null = null;
-  const cancelBuckling = (): void => { const old = bucklingActive; bucklingActive = null; old?.abort(); };
   const context = (bodyFeatureId: string): CadTetraContext => {
     const state = store.getState();
     if (disposed || !hasCurrentConnectionGeometry(state) || state.assembly !== null || state.drawing !== null
@@ -74,17 +188,6 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
     const matches = state.bodies.filter(body => body.featureId === bodyFeatureId && body.isValid && body.bodyKind === 'solid');
     if (matches.length !== 1) throw new Error(t('solidAnalysis.selectBody'));
     return { documentId: state.document.id, revision: state.completedGeneration, body: matches[0], steps: resolved.steps };
-  };
-  const references = (body: SolidBody, keys: readonly string[]): SubShapeRef[] => {
-    const faces = body.faces.flatMap(face => {
-      const reference = createSubShapeReference(body, 'face', face.index);
-      return reference?.origin ? [reference] : [];
-    });
-    return keys.map(key => {
-      const matches = faces.filter(reference => solidCadFaceKey(reference) === key);
-      if (matches.length !== 1) throw new Error(t('solidAnalysis.changed'));
-      return matches[0];
-    });
   };
   const settings = (saved: SolidCadSavedInput): CadSolidSettings | CadSolidPressureSettings => {
     const current = context(saved.bodyFeatureId);
@@ -175,94 +278,9 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
       }).catch((error: unknown) => { if (current()) { active = null; failure(error); } });
     } catch (error) { failure(error); }
   };
-  /** Modal run of the same session: same body, restrained faces, material and meshing tolerances; no load. */
-  const runModal = (): void => {
-    cancel(); cancelModal();
-    const state = store.getState(), session = state.solidAnalysisSession;
-    if (!session) return;
-    const id = state.startSolidModal();
-    const fail = (error: unknown): void => {
-      store.getState().receiveSolidModal(id, { kind: 'failed', message: error instanceof Error ? error.message : null });
-    };
-    try {
-      if (session.ownerId !== state.activeDocumentId) throw new Error(t('solidAnalysis.changed'));
-      const values = solidModalRequestValues(state.solidModal);
-      if (values === null) throw new Error(t('solidAnalysis.modalInputInvalid'));
-      // An independently saved modal input keeps its own shared values; otherwise the panel's current ones.
-      const shared = solidModalEffectiveShared(session, state.solidModalShared, state.document.parameters, state.bodies);
-      const bodyFeatureId = shared.bodyFeatureId;
-      const body = context(bodyFeatureId).body;
-      const anchorFace = body.faces.map(face => createSubShapeReference(body, 'face', face.index)).find(reference => reference?.origin);
-      if (!anchorFace) throw new Error(t('solidAnalysis.changed'));
-      const boundary = { boundary: 'closed' as const, linearDeflection: shared.linearDeflectionMm, angularDeflection: shared.angularDeflectionRad };
-      const settings: CadSolidModalSettings = {
-        material: { id: 'material', youngMPa: shared.youngMPa, poisson: shared.poisson, densityKgM3: values.densityKgM3 },
-        fixedFaces: references(body, shared.fixedFaces), anchorFace, modeCount: values.modeCount, numericBudgetBytes: 256 * 1024 * 1024,
-        geometry: body.faces.every(face => face.surfaceKind === 'plane') ? { kind: 'planar', boundary }
-          : { kind: 'curved', options: { boundary, nodeToleranceMm: 1e-7,
-            maximumChordDeviationMm: shared.maximumChordDeviationMm, maximumVolumeDeviationMm3: shared.maximumVolumeDeviationMm3 } } };
-      const controller = new AbortController(), document = state.document, generation = state.completedGeneration;
-      modalActive = controller;
-      const live = (): boolean => {
-        const next = store.getState();
-        return !disposed && modalActive === controller && !controller.signal.aborted && next.solidModal.requestId === id
-          && next.strengthSession !== null && next.solidAnalysisSession?.ownerId === session.ownerId
-          && sameGeometryDocument(document, next.document) && next.fileGateway === state.fileGateway
-          && next.activeDocumentId === state.activeDocumentId && next.completedGeneration === generation && hasCurrentConnectionGeometry(next);
-      };
-      void analyzeCadSolidModal(client, kernel, () => {
-        if (!live()) throw new Error(t('solidAnalysis.changed'));
-        return context(bodyFeatureId);
-      }, settings, { signal: controller.signal }).then(outcome => {
-        if (!live()) return;
-        modalActive = null;
-        if (outcome.kind === 'result') store.getState().receiveSolidModal(id, { kind: 'result', input: outcome.input, result: outcome.result });
-        else if (outcome.kind === 'failed') store.getState().receiveSolidModal(id, { kind: 'failed', message: solidModalFailureMessage(outcome.code, outcome.message) });
-        else store.getState().cancelSolidModal();
-      }).catch((error: unknown) => { if (live()) { modalActive = null; fail(error); } });
-    } catch (error) { fail(error); }
-  };
-  /** Linear prestress buckling of the same session. The reference load state is a static input (the panel's current one,
-   * or an independently saved reference) mapped by the SAME settings() as the static run: body, restrained and loaded
-   * faces, the one surface load, material and meshing. Only the number of requested load factors is added. */
-  const runBuckling = (): void => {
-    cancel(); cancelModal(); cancelBuckling();
-    const state = store.getState(), session = state.solidAnalysisSession;
-    if (!session) return;
-    const id = state.startSolidBuckling();
-    const fail = (error: unknown): void => {
-      const message = error instanceof Error ? error.message : null;
-      store.getState().receiveSolidBuckling(id, { kind: 'failed', code: message === null ? null : cadSolidBucklingFailureCode(message), message });
-    };
-    try {
-      if (session.ownerId !== state.activeDocumentId) throw new Error(t('solidAnalysis.changed'));
-      const modeCount = solidBucklingModeCount(state.solidBuckling);
-      if (modeCount === null) throw new Error(t('solidAnalysis.bucklingInputInvalid'));
-      const reference = solidBucklingEffectiveReference(session, state.solidBucklingReference, state.document.id, state.document.parameters);
-      const requested = { ...settings(reference), modeCount };
-      const controller = new AbortController(), document = state.document, generation = state.completedGeneration;
-      bucklingActive = controller;
-      const live = (): boolean => {
-        const next = store.getState();
-        return !disposed && bucklingActive === controller && !controller.signal.aborted && next.solidBuckling.requestId === id
-          && next.strengthSession !== null && next.solidAnalysisSession?.ownerId === session.ownerId
-          && sameGeometryDocument(document, next.document) && next.fileGateway === state.fileGateway
-          && next.activeDocumentId === state.activeDocumentId && next.completedGeneration === generation && hasCurrentConnectionGeometry(next);
-      };
-      void analyzeCadSolidBuckling(client, kernel, () => {
-        if (!live()) throw new Error(t('solidAnalysis.changed'));
-        return context(reference.bodyFeatureId);
-      }, requested, { signal: controller.signal }).then(outcome => {
-        if (!live()) return;
-        bucklingActive = null;
-        if (outcome.kind === 'result') store.getState().receiveSolidBuckling(id, { kind: 'result', input: outcome.input,
-          result: outcome.result, loadedAreaMm2: outcome.loadedAreaMm2, totalForceN: outcome.totalForceN });
-        else if (outcome.kind === 'failed') store.getState().receiveSolidBuckling(id, { kind: 'failed',
-          code: cadSolidBucklingFailureCode(outcome.message), message: outcome.message });
-        else store.getState().cancelSolidBuckling();
-      }).catch((error: unknown) => { if (live()) { bucklingActive = null; fail(error); } });
-    } catch (error) { fail(error); }
-  };
+  const { runModal, cancelModal, runBuckling, cancelBuckling } = createSolidModeRuns({
+    kernel, store, client, context, settings, cancel, isDisposed: () => disposed,
+  });
   const runner: SolidAnalysisRunner = { run, cancel, captureFaces, validate, runModal, cancelModal, runBuckling, cancelBuckling };
   store.setState({ solidAnalysisRunner: runner });
   const unsubscribe = store.subscribe((state, previous) => {

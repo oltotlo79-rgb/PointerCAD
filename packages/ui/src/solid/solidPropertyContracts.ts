@@ -55,6 +55,9 @@ export type SolidFieldKey =
   /** 平面の選択位置の面内X・Y(mm)。複数位置ではindexを明示する。 */
   | 'holePlanarX'
   | 'holePlanarY'
+  /** 辺からの距離の穴(M-02)の、選んだ位置の辺 1・辺 2 からの距離(mm)。複数位置では index を明示する。 */
+  | 'holeEdgeDistance1'
+  | 'holeEdgeDistance2'
   /*
     円筒の側面の穴の位置。高さ(mm)は円筒の面の下側の端から軸に沿って、角度(度)は軸の
     まわり。位置が 1 つの穴にだけ出す(欄の種類は 1 つずつしか持てないため)。

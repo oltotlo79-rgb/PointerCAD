@@ -8468,3 +8468,94 @@ it('planar XY hole schedule uses the native basis rather than the centroid plane
   expect(buildHoleSchedule(document, { sketches: [], frame, resolvePlane: () => plane }))
     .toEqual({ ok: false, reason: 'missingFace', featureId: feature.id });
 });
+
+describe('edge-distance hole placement (M-02)', () => {
+  function edgeRef(index: number, axis: Vec3, curveKind: 'line' | 'circle' = 'line', bodyFeatureId = 'extrude-1'): SubShapeRef {
+    return { bodyFeatureId, index, fingerprint: { kind: 'edge', curveKind, length: 10, position: [index, 0, 10], axis,
+      radius: curveKind === 'circle' ? 5 : null } };
+  }
+  function edgeHole(distance1 = '8', distance2 = '8', edge1 = edgeRef(3, [0, 1, 0]), edge2 = edgeRef(4, [1, 0, 0])): HoleFeature {
+    return { ...holeFeature('hole-1', 'extrude-1', []),
+      planar: { kind: 'edge-distance', edge1, edge2, locations: [{ distance1: expr(distance1), distance2: expr(distance2) }] } };
+  }
+  function documentWith(hole: HoleFeature | ThreadHoleFeature): PartDocument {
+    const fixture = createFixture();
+    return withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), hole);
+  }
+  it('resolves the distances in mm, keeps both ordered edge references and sends them to the kernel as edge queries', () => {
+    const edge1 = edgeRef(3, [0, 1, 0]), edge2 = edgeRef(4, [1, 0, 0]);
+    const result = resolvePart(documentWith(edgeHole('2 * 4', '8', edge1, edge2)));
+    expect(result.errors).toEqual([]);
+    const step = result.steps[1]; if (step === undefined) throw new Error('Missing hole');
+    expect(holePlan(step).planar).toEqual({ kind: 'edge-distance', edge1, edge2, locations: [{ distance1: 8, distance2: 8 }] });
+    expect(holePlan(step).centers).toEqual([]);
+    const request = toSolidStepRequest(step).step;
+    if (request.kind !== 'hole' || request.planar?.kind !== 'edge-distance') throw new Error('Not an edge-distance hole request');
+    expect(request.planar.edge1).toMatchObject({ kind: 'edge', index: 3, curveKind: 'line', axis: [0, 1, 0] });
+    expect(request.planar.edge2).toMatchObject({ kind: 'edge', index: 4, curveKind: 'line', axis: [1, 0, 0] });
+    expect(request.planar.locations).toEqual([{ distance1: 8, distance2: 8 }]);
+  });
+  it('the cache key changes with a distance and with the edge order, and the face X・Y key is unchanged', () => {
+    const key = (hole: HoleFeature) => resolvePart(documentWith(hole)).steps[1]?.key;
+    const base = key(edgeHole());
+    expect(base).toBeDefined();
+    expect(key(edgeHole('8', '12'))).not.toBe(base);
+    expect(key(edgeHole('8', '8', edgeRef(4, [1, 0, 0]), edgeRef(3, [0, 1, 0])))).not.toBe(base);
+    expect(key(edgeHole())).toBe(base);
+    const planar: HoleFeature = { ...holeFeature('hole-1', 'extrude-1', []),
+      planar: { kind: 'plane-face', locations: [{ x: expr('6'), y: expr('-4') }] } };
+    expect(key(planar)).not.toBe(base);
+  });
+  it('rejects competing centers/cylinder, a nonplane face, an edge of another body or a curve, the same edge twice and nonfinite or empty distances', () => {
+    const good = edgeHole(); const fixture = createFixture();
+    const invalid: [HoleFeature, string][] = [
+      [{ ...good, centers: [fixture.pointA] }, '辺からの距離と中心点・円筒配置は同時に指定できません。'],
+      [{ ...good, cylindrical: { kind: 'cylinder-face', locations: [{ height: expr('1'), angle: expr('0') }] } },
+        '辺からの距離と中心点・円筒配置は同時に指定できません。'],
+      [{ ...good, face: { ...good.face, fingerprint: { kind: 'face', surfaceKind: 'cylinder', area: 100, position: [0, 0, 0], axis: [0, 0, 1], radius: 10 } } },
+        '辺からの距離には平らな面を選んでください。'],
+      [edgeHole('8', '8', edgeRef(3, [0, 1, 0], 'line', 'other-body')), '辺からの距離には選んだ面の縁の辺を選んでください。'],
+      [edgeHole('8', '8', edgeRef(3, [0, 0, 1], 'circle')), '辺からの距離には直線の辺を選んでください。'],
+      [edgeHole('8', '8', edgeRef(3, [0, 1, 0]), edgeRef(3, [0, 1, 0])), '辺からの距離には平行でない2本の辺を選んでください。'],
+      [{ ...good, planar: { kind: 'edge-distance', edge1: edgeRef(3, [0, 1, 0]), edge2: edgeRef(4, [1, 0, 0]), locations: [] } },
+        '辺からの距離には1つ以上の有限な距離を指定してください。'],
+      [{ ...good, planar: { kind: 'edge-distance', edge1: edgeRef(3, [0, 1, 0]), edge2: edgeRef(4, [1, 0, 0]),
+        locations: [{ distance1: notANumber('D'), distance2: expr('8') }] } }, '辺からの距離には1つ以上の有限な距離を指定してください。'],
+    ];
+    for (const [feature, message] of invalid) {
+      const errors = resolvePart(documentWith(feature)).errors;
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.message).toBe(message);
+    }
+  });
+  it('a thread hole uses the same placement path', () => {
+    const thread: ThreadHoleFeature = { ...threadHoleFeature('thread-1', 'extrude-1', []),
+      planar: { kind: 'edge-distance', edge1: edgeRef(3, [0, 1, 0]), edge2: edgeRef(4, [1, 0, 0]),
+        locations: [{ distance1: expr('8'), distance2: expr('8') }] } };
+    const result = resolvePart(documentWith(thread));
+    expect(result.errors).toEqual([]);
+    const step = result.steps[1]; if (step === undefined || step.plan.kind !== 'thread') throw new Error('Missing thread');
+    expect(step.plan.planar?.kind).toBe('edge-distance');
+    const request = toSolidStepRequest(step).step; if (request.kind !== 'thread') throw new Error('Missing thread request');
+    expect(request.planar?.kind).toBe('edge-distance');
+  });
+  it('the hole schedule takes the centers from the edge-distance resolver and refuses the hole without it', () => {
+    const feature = edgeHole();
+    const document = withSolids(createEmptyPartDocument(), feature);
+    const frame = { datum: [0, 0, 0] as Vec3, x: [1, 0, 0] as Vec3, y: [0, 1, 0] as Vec3 };
+    const plane = { origin: [30, 20, 10] as Vec3, normal: [0, 0, 1] as Vec3 };
+    const seen: string[] = [];
+    const result = buildHoleSchedule(document, { sketches: [], frame, resolvePlane: () => plane,
+      resolveEdgeDistance: (targetId, face, placement) => {
+        seen.push(`${targetId}:${face.bodyFeatureId}:${String(placement.locations.length)}`);
+        return [[52, 32, 10]];
+      } });
+    if (!result.ok) throw new Error(result.reason);
+    expect(seen).toEqual(['extrude-1:extrude-1:1']);
+    expect(result.rows.map(row => [row.x, row.y])).toEqual([[52, 32]]);
+    expect(buildHoleSchedule(document, { sketches: [], frame, resolvePlane: () => plane }))
+      .toEqual({ ok: false, reason: 'missingFace', featureId: feature.id });
+    expect(buildHoleSchedule(document, { sketches: [], frame, resolvePlane: () => plane, resolveEdgeDistance: () => null }))
+      .toEqual({ ok: false, reason: 'missingFace', featureId: feature.id });
+  });
+});

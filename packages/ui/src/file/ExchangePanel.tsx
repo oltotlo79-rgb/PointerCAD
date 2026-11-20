@@ -217,13 +217,7 @@ export function ExportPrintPreflight({ targetBodies, unit, deviationMm, checkedR
   </div>;
 }
 
-export function ExchangePanel({
-  onClose,
-  deps,
-  onFinished,
-  onFailed,
-  abortAttemptRef,
-}: ExchangePanelProps): React.JSX.Element {
+function useExportPanelState(onClose: ExchangePanelProps['onClose']) {
   const bodies = useAppStore((state) => state.bodies);
   const selection = useAppStore((state) => state.selection);
   const fileName = useAppStore((state) => state.fileName);
@@ -298,10 +292,12 @@ export function ExchangePanel({
     abortRunning();
     abortPreview();
   };
+  // 閉じる時に、その時点で動いている書き出しを止める(読むのは閉じる時の current)。
+  const cancelActiveAttempt = useCallback((): void => { activeAttempt.current?.cancel(); }, []);
   useEffect(() => {
     previewClosed.current = false;
-    return () => { previewClosed.current = true; abortPreview(false); activeAttempt.current?.cancel(); };
-  }, [abortPreview]);
+    return () => { previewClosed.current = true; abortPreview(false); cancelActiveAttempt(); };
+  }, [abortPreview, cancelActiveAttempt]);
   useEffect(() => useAppStore.subscribe(() => {
     if (activeAttempt.current !== null && activeCurrentCheck.current !== null && !activeCurrentCheck.current()) {
       activeAttempt.current.cancel();
@@ -317,6 +313,19 @@ export function ExchangePanel({
   }), [abortPreview, previewIsCurrent]);
   const closePanel = (): void => { previewClosed.current = true; abortPreview(); abortRunning(); onClose(); };
 
+  return { bodies, selection, fileName, renderedComputing, renderedRequestedGeneration, renderedCompletedGeneration,
+    printability, printabilityOwner, displayLengthUnit, document, sketch, resolvedSketch, workPlane, renderedIdentity,
+    format, setFormat, scope, setScope, quality, setQuality, customQuality, setCustomQuality,
+    customDeviationSource, setCustomDeviationSource, withColors, setWithColors, ascii, setAscii,
+    renderedSettings, renderedSettingsRevision, settingsAreCurrent, running, setRunning, previewCount, setPreviewCount,
+    activeAttempt, activeCurrentCheck, activePreview, blockedPreviewBody, previewClosed, previewIsCurrent, abortPreview,
+    invalidateSettings, closePanel };
+}
+
+function exportPanelRequest({
+  format, scope, quality, customQuality, customDeviationSource, withColors, ascii, selection,
+  document, sketch, resolvedSketch, workPlane, bodies, printability, printabilityOwner,
+}: ReturnType<typeof useExportPanelState>) {
   const shape = exportPanelShape(format);
   const customDeviationMm = customQuality ? parseExportDeviationMm(customDeviationSource) : null;
   const precisionError = shape.showsQuality && customQuality && customDeviationMm === null
@@ -386,6 +395,21 @@ export function ExchangePanel({
   const checkedReport = checkedTargets ? printability : null;
   const showsPrintCheckHint = isPrintFormat && checkedReport === null;
   const deviation = request?.customDeviationMm ?? EXPORT_DEVIATION_MM[quality];
+
+  return { shape, precisionError, request, dxfInput, refusal, isPrintFormat, selectionOutcome, targetBodies,
+    checkedReport, showsPrintCheckHint, deviation };
+}
+
+function useExportCommands(
+  { deps, onFinished, onFailed, abortAttemptRef }: Omit<ExchangePanelProps, 'onClose'>,
+  state: ReturnType<typeof useExportPanelState>,
+  exportRequest: ReturnType<typeof exportPanelRequest>,
+) {
+  const { bodies, selection, fileName, renderedIdentity, renderedComputing, renderedRequestedGeneration,
+    renderedCompletedGeneration, sketch, resolvedSketch, workPlane, renderedSettings, renderedSettingsRevision,
+    settingsAreCurrent, running, setRunning, setPreviewCount, activeAttempt, activeCurrentCheck, activePreview,
+    blockedPreviewBody, previewClosed, previewIsCurrent, abortPreview, closePanel } = state;
+  const { request, dxfInput, refusal, isPrintFormat, selectionOutcome, targetBodies } = exportRequest;
 
   const startPreview = (): ExportPreview | null => {
     if (!isPrintFormat || request === null || refusal !== null || previewClosed.current || running
@@ -524,6 +548,25 @@ export function ExchangePanel({
       },
     );
   };
+
+  return submit;
+}
+
+export function ExchangePanel({
+  onClose,
+  deps,
+  onFinished,
+  onFailed,
+  abortAttemptRef,
+}: ExchangePanelProps): React.JSX.Element {
+  const state = useExportPanelState(onClose);
+  const exportRequest = exportPanelRequest(state);
+  const submit = useExportCommands({ deps, onFinished, onFailed, abortAttemptRef }, state, exportRequest);
+  const { format, setFormat, scope, setScope, quality, setQuality, customQuality, setCustomQuality,
+    customDeviationSource, setCustomDeviationSource, withColors, setWithColors, ascii, setAscii,
+    invalidateSettings, closePanel, displayLengthUnit, previewCount, running } = state;
+  const { shape, precisionError, refusal, isPrintFormat, targetBodies, checkedReport, showsPrintCheckHint,
+    deviation } = exportRequest;
 
   return (
     <form

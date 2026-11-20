@@ -236,16 +236,14 @@ const FIELD_DEFINITIONS: Readonly<
     range: COUNTERSINK_ANGLE_RANGE,
   },
   // 平面の面内座標は符号付き長さ。面の境界はnative計算が判定する。
-  holePlanarX: {
-    labelKey: 'numericInput.field.holePlanarX',
-    tooltipKey: 'numericInput.tooltip.holePlanarX',
-    unit: 'mm',
-  },
-  holePlanarY: {
-    labelKey: 'numericInput.field.holePlanarY',
-    tooltipKey: 'numericInput.tooltip.holePlanarY',
-    unit: 'mm',
-  },
+  // ファイルの行の上限(350)のため、平らな面の穴の位置の欄は 1 行ずつに書く(中身は同じ)。
+  holePlanarX: { labelKey: 'numericInput.field.holePlanarX', tooltipKey: 'numericInput.tooltip.holePlanarX', unit: 'mm' },
+  holePlanarY: { labelKey: 'numericInput.field.holePlanarY', tooltipKey: 'numericInput.tooltip.holePlanarY', unit: 'mm' },
+  // 辺からの距離(M-02)。その場入力の欄と同じく正の長さ。面の中かは native 計算が判定する。
+  holeEdgeDistance1: { labelKey: 'numericInput.field.holeEdgeDistance1', tooltipKey: 'numericInput.tooltip.holeEdgeDistance1',
+    unit: 'mm', range: POSITIVE_RANGE },
+  holeEdgeDistance2: { labelKey: 'numericInput.field.holeEdgeDistance2', tooltipKey: 'numericInput.tooltip.holeEdgeDistance2',
+    unit: 'mm', range: POSITIVE_RANGE },
   // 円筒の側面の穴。範囲は付けない(面の上にあるかは kernel が実際の面の境界で決め、
   // 外なら理由を出して断る。角度は何周しても同じ向き)。
   holeCylinderHeight: {

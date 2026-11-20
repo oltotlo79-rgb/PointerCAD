@@ -369,6 +369,7 @@ describe('選ぶ窓の機械要素', () => {
         t('catalog.frame.kind.sliderBox'), t('catalog.frame.kind.capAccessoryBox'), t('catalog.frame.kind.footPartBox'),
         t('catalog.frame.kind.slotLongPart'),
         t('catalog.frame.kind.doorPartBox'),
+        t('catalog.frame.kind.drawerPartBox'),
         t('catalog.frame.kind.caster')]);
     expect(nodes.some((item) => item.type === 'p' && item.props.children === t('catalog.frame.tSlot.hint'))).toBe(true);
     expect(nodes.some((item) => item.type === CatalogStockTable)).toBe(true);

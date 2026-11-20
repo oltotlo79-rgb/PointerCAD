@@ -19,7 +19,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { MESSAGE_KEYS, t } from '../i18n/t.js';
-import type { SolidInputCommit } from '../sketch/numericInput.js';
+import { SOLID_TOOL_STEPS, type SolidInputCommit } from '../sketch/numericInput.js';
 
 import {
   commitBoolean,
@@ -1620,6 +1620,24 @@ describe('integrated extrude operation', () => {
     expect(commitSolidInput(fixture.document, ['face-1'], commit('invalid', fixture.target))).toEqual({
       ok: false, reasonKey: 'shapeError.unknownChoice' });
   });
+  it.each(['revolve', 'sphere', 'box', 'cylinder', 'cone', 'torus'] as const)(
+    '%s は作成前の履歴の相手だけを使い、古い相手や今回作る立体自身を断る', tool => {
+      const { document, target } = withTarget();
+      const selected = [target, 'face-1'];
+      const single: SolidInputCommit = { kind: 'solid', tool, step: SOLID_TOOL_STEPS[tool], values: {}, flags: {} };
+      const fresh = commitSolidInput(document, selected, single);
+      if (!fresh.ok) throw new Error(fresh.reasonKey);
+      expect(fresh.document.solids).toHaveLength(document.solids.length + 1);
+      expect(commitSolidInput(document, selected, { ...single,
+        shapeChoices: { extrudeOperation: 'new', extrudeTarget: target } })).toEqual(fresh);
+      const suppressed = { ...document, solids: document.solids.map(solid => ({ ...solid, suppressed: true })) };
+      const cut = (id: string): SolidInputCommit => ({ ...single,
+        shapeChoices: { extrudeOperation: 'cut', extrudeTarget: id } });
+      expect(commitSolidInput(suppressed, selected, cut(target))).toEqual({
+        ok: false, reasonKey: 'solidError.extrudeTargetUnavailable' });
+      expect(commitSolidInput(document, selected, cut(fresh.featureId))).toEqual({
+        ok: false, reasonKey: 'solidError.extrudeTargetUnavailable' });
+    });
   it('preserves the full existing extrusion option set on the composed tool', () => {
     const { document, target } = withTarget();
     const input: SolidInputCommit = { ...commit('cut', target),

@@ -18,6 +18,7 @@ import { sameRegionFillInput } from './buildRegionFill.js';
 import type { CutPreview } from './createSolidLayer.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { cylinderBasisGuide } from './cylinderBasisGuide.js';
+import { edgeDistanceGuide } from './edgeDistanceGuide.js';
 import { planarBasisGuide } from './planarBasisGuide.js';
 import { sketchDragTimingOwnerChanged, type sketchDragTimingForE2E } from './sketchDragTiming.js';
 import { solidBodiesForAdmission, solidMeshOwnershipChanged } from './solidMeshAdmission.js';
@@ -54,6 +55,12 @@ export interface ViewportStoreSync {
 /** 平面の基準の案内の札(FR-329 の表示の言葉)。 */
 function planarGuideLabels() {
   return { origin: t('viewport.planarOrigin'), x: t('viewport.planarPositiveX'), y: t('viewport.planarPositiveY') };
+}
+
+/** 辺からの距離の穴(M-02)の辺を選んでいる間は寸法線の予告を、それ以外は面内の原点と向きの案内を出す(描き方は同じ)。 */
+function planarGuideOf(state: AppState) {
+  return edgeDistanceGuide(state, { center: t('numericInput.edgeDistance.center'), edge1: t('numericInput.edgeDistance.edge1'),
+    edge2: t('numericInput.edgeDistance.edge2') }) ?? planarBasisGuide(state, planarGuideLabels());
 }
 
 /** 起動時に、ストアの今の状態を全ての表示へ 1 回渡す。 */
@@ -112,7 +119,7 @@ export function syncInitialScene(sync: ViewportStoreSync): void {
   // 球面の案内線(FR-431)。球を選んでいる間(または「いつも出す」)だけ出る。
   scene.setSphereGrid(sphereGridSpecOf(initial));
   scene.setCylinderBasisGuide(cylinderBasisGuide(initial, t('viewport.cylinderZeroDirection')));
-  scene.setPlanarBasisGuide(planarBasisGuide(initial, planarGuideLabels()));
+  scene.setPlanarBasisGuide(planarGuideOf(initial));
   // ビューの断面表示(FR-111)。入れているあいだだけ平面を配る。
   scene.setSectionView(sectionViewRenderOf(initial.sectionView));
   // 3D プリントの点検の色(FR-815)。点検を出しているあいだだけ塗る。
@@ -249,10 +256,11 @@ function syncOverlays(sync: ViewportStoreSync, next: AppState, previous: AppStat
     世代・履歴位置・計算状態だけの変更でも古い線を消し、現在値へ戻ったら描き直す。
     中身が同じなら `setSphereGrid` が線分の組み立てそのものを省く(NFR-PF-1)。
   */
+  // 辺からの距離の穴(M-02)の寸法線は、欄の距離を打ち直した時にも引き直す。
   if (sphereGridNeedsUpdate(next, previous) || solidMeshOwnershipChanged(next, previous)
-    || next.assembly !== previous.assembly || next.drawing !== previous.drawing) {
+    || next.assembly !== previous.assembly || next.drawing !== previous.drawing || next.numericInput !== previous.numericInput) {
     scene.setCylinderBasisGuide(cylinderBasisGuide(next, t('viewport.cylinderZeroDirection')));
-    scene.setPlanarBasisGuide(planarBasisGuide(next, planarGuideLabels()));
+    scene.setPlanarBasisGuide(planarGuideOf(next));
   }
   if (sphereGridNeedsUpdate(next, previous)) {
     scene.setSphereGrid(sphereGridSpecOf(next));

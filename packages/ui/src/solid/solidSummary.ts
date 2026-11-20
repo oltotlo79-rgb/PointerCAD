@@ -198,12 +198,17 @@ function threadHoleFields(feature: ThreadHoleFeature, locationIndex?: number): S
 }
 
 function planarHoleFields(feature: HoleFeature | ThreadHoleFeature, index?: number): SolidFieldSummary[] {
+  // 面内 X・Y は X・Y、辺からの距離(M-02)は辺 1・辺 2 からの距離の欄を、選んだ位置の 1 組だけ出す。
   const placement = feature.planar;
   const slot = index ?? (placement?.locations.length === 1 ? 0 : -1);
-  const location = Number.isInteger(slot) ? placement?.locations[slot] : undefined;
-  return location === undefined || feature.cylindrical !== undefined ? [] : [
-    fieldSummary('holePlanarX', location.x), fieldSummary('holePlanarY', location.y),
-  ];
+  if (placement === undefined || feature.cylindrical !== undefined || !Number.isInteger(slot)) return [];
+  if (placement.kind === 'edge-distance') {
+    const location = placement.locations[slot];
+    return location === undefined ? []
+      : [fieldSummary('holeEdgeDistance1', location.distance1), fieldSummary('holeEdgeDistance2', location.distance2)];
+  }
+  const location = placement.locations[slot];
+  return location === undefined ? [] : [fieldSummary('holePlanarX', location.x), fieldSummary('holePlanarY', location.y)];
 }
 
 function holeTiltField(

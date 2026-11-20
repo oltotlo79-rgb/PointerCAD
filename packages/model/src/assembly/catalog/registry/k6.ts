@@ -118,6 +118,9 @@ export const K6_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
   // 資料 1 の扉の部品(外形を包む形。統括の決定 2026-11-19 15:5x の 1・2026-11-20 02:2x の判断 3)。
   { id: 'door-part-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.doorPartBox',
     load: async () => (await import('../families/smallPartBoxCatalog.js')).DOOR_PART_BOX_FAMILY },
+  // 資料 1 の引出の部品(外形を包む形。統括の決定 2026-11-20 07:1x)。
+  { id: 'drawer-part-box', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.drawerPartBox',
+    load: async () => (await import('../families/smallPartBoxCatalog.js')).DRAWER_PART_BOX_FAMILY },
   // 資料 1・2 のキャスター(取付けの板かねじ・簡略の箱のフォーク・車輪の円柱。利用者の回答 2026-11-18 15:5x の (1))。
   { id: 't-slot-caster', group: 'aluminumFrame', kindKey: 'catalog.frame.kind.caster',
     load: async () => (await import('../families/casterCatalog.js')).CASTER_FAMILY },

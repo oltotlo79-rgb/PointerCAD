@@ -473,6 +473,7 @@ describe('EX05 planar property position and history', () => {
     const changed = edit.replaceValue(before.document, value);
     const updated = findSolid(changed, feature.id);
     if (updated?.kind !== 'hole' && updated?.kind !== 'threadHole') throw new Error('Expected hole');
+    if (updated.planar?.kind !== 'plane-face' || feature.planar?.kind !== 'plane-face') throw new Error('Expected plane-face placement');
     expect(updated.planar?.locations[0]).toBe(feature.planar?.locations[0]);
     expect(updated.planar?.locations[1]?.x).toBe(value);
     expect(updated.planar?.locations[1]?.y).toBe(feature.planar?.locations[1]?.y);
@@ -535,5 +536,48 @@ describe('道具の節は畳める見出しにし、既定は閉じる(点検の
     useAppStore.getState().toggleSectionView();
     const tags = toolTags(renderToStaticMarkup(createElement(PropertyPanel)));
     expect(tags.filter(tag => / open=""/u.test(tag))).toEqual(['<details class="pcad-tool-section" data-tool="sectionView" open="">']);
+  });
+});
+
+describe('M-02 edge-distance property position and history', () => {
+  beforeEach(resetTestStore);
+  const edge = (index: number) => ({ bodyFeatureId: 'stock', index,
+    fingerprint: { kind: 'edge' as const, curveKind: 'line' as const, length: 40, position: [60, 20, 10] as [number, number, number],
+      axis: [0, 1, 0] as [number, number, number], radius: null } });
+  const byEdges: HoleFeature = { ...indexedHole, cylindrical: undefined,
+    face: { bodyFeatureId: 'stock', index: 0, fingerprint: { kind: 'face', surfaceKind: 'plane', area: 2400, position: [30, 20, 10], axis: [0, 0, 1], radius: null } },
+    planar: { kind: 'edge-distance', edge1: edge(3), edge2: edge(4), locations: [
+      { distance1: historyFormula('4 * 2', 8), distance2: historyFormula('8', 8) },
+      { distance1: historyFormula('20', 20), distance2: historyFormula('6 * 2', 12) },
+    ] } };
+  const threadByEdges: ThreadHoleFeature = { ...indexedThread, cylindrical: undefined, face: byEdges.face, planar: byEdges.planar };
+  it.each([byEdges, threadByEdges])('$kind: 位置を選んで距離を直すと、その位置だけが 1 回の元に戻すで変わる', feature => {
+    const document = appendSolid(createEmptyPartDocument(), feature);
+    useAppStore.getState().applyDocument(document, { opensDocument: true });
+    const before = useAppStore.getState();
+    const first = reconcileCylindricalPropertySelection(feature, null), second = { ...first, index: 1 };
+    expect(first.placementKind).toBe('edge-distance');
+    expect(reconcileCylindricalPropertySelection(feature, second)).toBe(second);
+    const summary = summarizeSolid(document, feature, [], 1);
+    expect(summary.fields.find(field => field.key === 'holeEdgeDistance1')?.value.source).toBe('20');
+    expect(summary.fields.find(field => field.key === 'holeEdgeDistance2')?.value.source).toBe('6 * 2');
+    const edit = createSolidPropertyFieldEdit(feature, 'holeEdgeDistance1', second, locationUnits);
+    expect(edit.key).toBe(`field:${feature.id}:holeEdgeDistance1:edge-distance:location:2:1`);
+    const value = historyFormula('25', 25);
+    const changed = edit.replaceValue(before.document, value);
+    const updated = findSolid(changed, feature.id);
+    if (updated?.kind !== 'hole' && updated?.kind !== 'threadHole') throw new Error('Expected hole');
+    if (updated.planar?.kind !== 'edge-distance' || feature.planar?.kind !== 'edge-distance') throw new Error('Expected edge-distance');
+    expect(updated.planar.locations[0]).toBe(feature.planar.locations[0]);
+    expect(updated.planar.locations[1]).toEqual({ distance1: value, distance2: feature.planar.locations[1].distance2 });
+    expect(updated.planar.edge1).toBe(feature.planar.edge1);
+    useAppStore.getState().applyDocument(changed, { coalesceKey: edit.key });
+    expect(useAppStore.getState().undoStack.past.length).toBe(before.undoStack.past.length + 1);
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().document).toBe(before.document);
+    // 置き方が変わった(面内 X・Y に替えた)文書へは、古い欄の書き戻しを当てない。
+    const planar = replaceSolid(document, feature.id, { ...feature, planar: { kind: 'plane-face',
+      locations: [{ x: historyFormula('1', 1), y: historyFormula('2', 2) }, { x: historyFormula('3', 3), y: historyFormula('4', 4) }] } });
+    expect(edit.replaceValue(planar, value)).toBe(planar);
   });
 });

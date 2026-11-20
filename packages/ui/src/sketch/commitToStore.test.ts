@@ -16,7 +16,7 @@ import { bodyFor, resetTestStore, resultFor } from '../store/testing/createTestS
 import { useAppStore } from '../store/useAppStore.js';
 import { currentStagedSolid } from '../store/recomputeSlice.js';
 import { applyEditCommit, applyNumericTransition, applySolidCommit, previewExtrudeTransition } from './commitToStore.js';
-import { chooseNumericInput, createNumericInput, reduceNumericInput, toggleNumericInput,
+import { chooseNumericInput, commitNumericInput, createNumericInput, reduceNumericInput, SOLID_TOOL_STEPS, toggleNumericInput,
   type EditInputCommit, type SolidInputCommit } from './numericInput.js';
 
 beforeEach(resetTestStore);
@@ -136,14 +136,14 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
     return { kind: 'solid', tool: 'extrude', step: 'extrudeDistance', values: { distance: expressionValueFromNumber(5) },
       flags: {}, shapeChoices: { extrudeOperation: operation, extrudeTarget: target } };
   }
-  async function ready() {
+  async function ready(tool: 'extrude' | 'revolve' | 'sphere' | 'box' | 'cylinder' | 'cone' | 'torus' = 'extrude') {
     const document = part();
     useAppStore.getState().applyDocument(document);
     const control = attachControlled();
     control.calls[0].settle(success(control.calls[0], ['extrude']));
     await vi.waitFor(() => { expect(useAppStore.getState().lastOutcome).toBe('success'); });
     useAppStore.getState().setSelection(['face']);
-    const input = createNumericInput('extrude', 'extrudeDistance', 'absolute', {
+    const input = createNumericInput(tool, SOLID_TOOL_STEPS[tool], 'absolute', {
       extrudeTargets: [{ value: 'extrude', label: '押し出し1' }] });
     useAppStore.getState().updateNumericInput(input);
     return { ...control, document, input };
@@ -182,6 +182,68 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
       if (!reopened.ok) throw new Error('Could not reopen composed extrusion');
       expect(reopened.document.solids).toEqual(after.document.solids);
       expect(reopened.document.sketches).toEqual(after.document.sketches);
+    } finally { detach(); }
+  });
+
+  describe.each(['revolve', 'sphere', 'box', 'cylinder', 'cone', 'torus'] as const)('%s の結果と相手', tool => {
+    it.each([['cut', 'subtract'], ['join', 'union']] as const)('%s は作成行と和・差を一度に採用する', async (mode, operation) => {
+      const { calls, detach, document, input } = await ready(tool);
+      try {
+        const axis = chooseNumericInput(input, 'axis', 'x');
+        const result = chooseNumericInput(axis, 'extrudeOperation', mode);
+        const history = useAppStore.getState().undoStack;
+        applyNumericTransition(commitNumericInput(result));
+        expect(useAppStore.getState().solidErrorKey).toBe('solidError.extrudeTargetRequired');
+        expect(useAppStore.getState().document).toBe(document);
+        expect(useAppStore.getState().undoStack).toBe(history);
+        expect(calls).toHaveLength(1);
+
+        const chosen = chooseNumericInput(result, 'extrudeTarget', 'extrude');
+        applyNumericTransition(commitNumericInput(chosen));
+        expect(useAppStore.getState().document).toBe(document);
+        expect(useAppStore.getState().undoStack).toBe(history);
+        expect(calls).toHaveLength(2);
+        const staged = calls[1];
+        const added = staged.document.solids.slice(document.solids.length);
+        expect(added).toHaveLength(2);
+        const [created, combined] = added;
+        expect(created).toMatchObject(tool === 'revolve'
+          ? { kind: 'revolve', profile: { faceFeatureId: 'face' }, axis: { kind: 'world', axis: 'x' } }
+          : { kind: 'primitive', shape: { kind: tool }, axis: { kind: 'world', axis: 'x' } });
+        expect(combined).toMatchObject({ kind: 'boolean', operation, targetFeatureId: 'extrude', toolFeatureId: created.id });
+        staged.settle(success(staged, [combined.id]));
+        await vi.waitFor(() => { expect(useAppStore.getState().numericInput).toBeNull(); });
+        const after = useAppStore.getState();
+        expect(after.document).toBe(staged.document);
+        expect(after.selection).toEqual([combined.id]);
+        expect(after.undoStack.past).toHaveLength(history.past.length + 1);
+        after.undo();
+        expect(useAppStore.getState().document).toBe(document);
+        useAppStore.getState().redo();
+        expect(useAppStore.getState().document).toBe(staged.document);
+      } finally { detach(); }
+    });
+  });
+
+  it('基本形状の予告は文書を変えず、新しい立体を選んだままなら確認済みの単独の行を採用する', async () => {
+    const { calls, detach, document, input } = await ready('box');
+    try {
+      const history = useAppStore.getState().undoStack;
+      const transition = commitNumericInput(input);
+      previewExtrudeTransition(transition);
+      expect(calls).toHaveLength(2);
+      const preview = calls[1];
+      const created = preview.document.solids.at(-1);
+      if (created?.kind !== 'primitive') throw new Error('Expected a primitive');
+      expect(preview.document.solids).toHaveLength(document.solids.length + 1);
+      preview.settle(success(preview, ['extrude', created.id]));
+      await vi.waitFor(() => { expect(currentStagedSolid(useAppStore.getState())?.status).toBe('ready'); });
+      expect(useAppStore.getState().document).toBe(document);
+      expect(useAppStore.getState().undoStack).toBe(history);
+      applyNumericTransition(transition);
+      expect(useAppStore.getState().document).toBe(preview.document);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(history.past.length + 1);
+      expect(calls).toHaveLength(2);
     } finally { detach(); }
   });
 

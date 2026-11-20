@@ -101,6 +101,210 @@ const TENSOR_COMPONENT_LABELS: Readonly<Record<FatigueTensorComponent, MessageKe
   yz: 'fatigue.tensor.yz', xz: 'fatigue.tensor.xz', xy: 'fatigue.tensor.xy',
 };
 
+interface FatigueHistoryFields {
+  readonly draft: FatigueSession['draft'];
+  readonly solidMode: boolean;
+  readonly tensorMode: boolean;
+  readonly piecewiseMode: boolean;
+  readonly detailMode: boolean;
+  readonly forceMode: boolean;
+  readonly detailDraft: ReturnType<typeof sessionDetailDraft>;
+  readonly solidSource: Parameters<typeof maximumSolidFatigueElement>[0] | null;
+  readonly selectSolid: (elementIndex: number) => void;
+  readonly editSolidElement: (source: string) => void;
+  readonly addButton: React.RefObject<HTMLButtonElement | null>;
+  readonly focus: (field: string | null) => void;
+  readonly number: (name: FatigueFieldName, key: string, source: string, change: (source: string) => void) => React.JSX.Element;
+  readonly choice: <T extends string>(key: string, label: MessageKey, guide: MessageKey, current: T | '',
+    options: readonly (readonly [T, MessageKey])[], change: (value: T | '') => void) => React.JSX.Element;
+  readonly edit: ReturnType<typeof useAppStore.getState>['editFatigue'];
+}
+
+function renderFatigueHistories({
+  draft, solidMode, tensorMode, piecewiseMode, detailMode, forceMode, detailDraft, solidSource, selectSolid,
+  editSolidElement, addButton, focus, number, choice, edit,
+}: FatigueHistoryFields): React.JSX.Element {
+  const tensorFields = (index: number, key: string): React.JSX.Element => {
+    const tensor = fatigueTensorRow(draft, key);
+    return <fieldset data-fatigue-tensor={index}>
+      <legend>{t('fatigue.tensorReference')}</legend>
+      <p>{t('fatigue.tensorComponentOrder')}</p>
+      <div className="pcad-beam__numbers">{FATIGUE_TENSOR_COMPONENT_KEYS.map(component =>
+        <label key={component}>{t(TENSOR_COMPONENT_LABELS[component])}
+          <input type="text" maxLength={64} value={tensor.components[component]} data-fatigue-field={`tensor:${index}:${component}`}
+            data-testid={`fatigue-tensor-${index}-${component}`} onFocus={() => focus(`tensor:${index}:${component}`)}
+            onChange={event => edit({ kind: 'tensor-component', index, component, source: event.target.value })} title={t('fatigue.guide.tensorComponent')} /></label>)}
+      </div>
+      <label>{t('fatigue.tensorLoadFactors')}
+        <textarea rows={3} value={tensor.loadFactors} data-fatigue-field={`tensor:${index}:factors`}
+          data-testid={`fatigue-tensor-${index}-factors`} onFocus={() => focus(`tensor:${index}:factors`)}
+          onChange={event => edit({ kind: 'tensor-factors', index, source: event.target.value })} title={t('fatigue.guide.tensorLoadFactors')} /></label>
+      <p>{t('fatigue.tensorFactorsHelp')}</p>
+    </fieldset>;
+  };
+  return <fieldset data-testid="fatigue-histories">
+    <legend>{t('fatigue.histories')}</legend>
+    {piecewiseMode || detailMode ? null : <label data-fatigue-field="inputMode">{t('fatigue.inputMode')}
+      <select data-testid="fatigue-input-mode" value={draft.inputMode} onFocus={() => focus('inputMode')}
+        onChange={event => edit({ kind: 'input-mode',
+          value: event.target.value === 'proportional-tensor' ? 'proportional-tensor'
+            : event.target.value === 'solid-proportional' ? 'solid-proportional' : 'stress' })} title={t('fatigue.guide.inputMode')}>
+        <option value="stress">{t('fatigue.inputModeStress')}</option>
+        <option value="proportional-tensor">{t('fatigue.inputModeTensor')}</option>
+        <option value="solid-proportional">{t('fatigue.inputModeSolid')}</option>
+      </select></label>}
+    {solidMode ? <fieldset data-testid="fatigue-solid-selection">
+      <legend>{t('fatigue.solidTitle')}</legend>
+      <p>{t('fatigue.solidScope')}</p>
+      {solidSource === null ? <p role="alert">{t('fatigue.error.solidUnavailable')}</p> : <>
+        <label>{t('fatigue.solidElement')}
+          <input type="text" inputMode="numeric" data-testid="fatigue-solid-element" value={draft.solidElement ?? ''}
+            onChange={event => editSolidElement(event.target.value)} title={t('fatigue.guide.solidElement')} /></label>
+        <button type="button" className="pcad-button" data-testid="fatigue-solid-maximum" onClick={() => {
+          const selected = maximumSolidFatigueElement(solidSource);
+          if (selected !== null) selectSolid(selected);
+        }} title={t('fatigue.guide.solidMaximum')}>{t('fatigue.solidMaximum')}</button>
+        <p data-testid="fatigue-solid-source">{t('fatigue.solidCurrentSource').replace('{count}', String(solidSource.result.elements.length))}</p>
+        <details><summary>{t('fatigue.solidIdentityDetails')}</summary><code>
+          {`${solidSource.result.source.documentId}; ${solidSource.result.source.revision}; `
+            + `${solidSource.result.source.meshKey}; ${solidSource.result.inputSha256}`}</code></details>
+      </>}
+      {draft.solid === undefined ? null : <p data-testid="fatigue-solid-saved-selection">
+        {t('fatigue.solidSelected').replace('{element}', draft.solidElement ?? '')}</p>}
+    </fieldset> : null}
+    {tensorMode ? <>
+      <p data-testid="fatigue-tensor-scope">{t('fatigue.tensorScope')}</p>
+      <p>{t('fatigue.tensorSaved')}</p>
+    </> : <p>{t(solidMode ? 'fatigue.tensorFactorsHelp' : detailMode ? 'fatigue.detail.historiesHelp' : 'fatigue.historiesHelp')}</p>}
+    {draft.histories.map((row, index) => <fieldset key={row.key} data-fatigue-history={index}>
+      <legend>{`${t('fatigue.history')} ${index + 1}`}</legend>
+      {row.imported === null ? null : <p data-fatigue-imported={index}>
+        {`${t('fatigue.importedNote')} ${t('fatigue.axialMember')}: ${row.imported.provenance.memberId}`}</p>}
+      {forceMode ? <label>{t('fatigue.detail.forceList')}
+        <textarea rows={4} value={detailForce(detailDraft, row.key)} data-fatigue-field={`history:${index}:force`}
+          data-testid={`fatigue-detail-force-${index}`} onFocus={() => focus(`history:${index}:force`)}
+          onChange={event => edit({ kind: 'detail', edit: { kind: 'force', key: row.key, source: event.target.value } })}
+          title={t('fatigue.guide.detailForceList')} /></label>
+      : tensorMode ? tensorFields(index, row.key) : <label>{t(solidMode ? 'fatigue.tensorLoadFactors' : detailMode ? 'fatigue.detail.stressList' : 'fatigue.stressList')}
+        <textarea rows={4} value={row.stress} data-fatigue-field={`history:${index}:stress`}
+          readOnly={row.imported !== null}
+          onFocus={() => focus(`history:${index}:stress`)}
+          onChange={event => edit({ kind: 'history-stress', index, source: event.target.value })} title={t(solidMode ? 'fatigue.guide.tensorLoadFactors' : 'fatigue.guide.stressList')} /></label>}
+      {choice(`history:${index}:sequence`, 'fatigue.sequence', 'fatigue.guide.historySequence', row.sequence,
+        [['once', 'fatigue.once'], ['repeated-periodic', 'fatigue.repeated']],
+        next => edit({ kind: 'history-sequence', index, value: next }))}
+      {row.sequence === 'repeated-periodic' ? <div className="pcad-beam__numbers">
+        {number('repeats', `history:${index}:repeats`, row.repeats, source => edit({ kind: 'history-repeats', index, source }))}
+      </div> : null}
+      <SourceFields prefix={`history:${index}:`} value={solidMode ? { ...row.source, condition: t('fatigue.solidScope') } : row.source}
+        onFocus={focus} conditionReadOnly={solidMode || row.imported !== null}
+        onChange={(field, source) => edit({ kind: 'history-source', index, field, source })} />
+      {row.imported === null ? null : <button type="button" className="pcad-button" data-fatigue-detach={index}
+        title={t('fatigue.detachHelp')} onClick={() => edit({ kind: 'history-detach', index })}>{t('fatigue.detach')}</button>}
+      <button type="button" className="pcad-button" data-fatigue-remove={index} disabled={draft.histories.length <= 1}
+        onClick={() => { edit({ kind: 'history-remove', index }); addButton.current?.focus(); }} title={t('fatigue.guide.removeHistory')}>
+        {t('fatigue.removeHistory')}</button>
+    </fieldset>)}
+    <button ref={addButton} type="button" className="pcad-button" data-testid="fatigue-add-history"
+      disabled={solidMode || draft.histories.length >= MAX_FATIGUE_HISTORIES} onClick={() => edit({ kind: 'history-add' })} title={t('fatigue.guide.addHistory')}>
+      {t('fatigue.addHistory')}</button>
+  </fieldset>;
+}
+
+interface FatigueResultsView {
+  readonly session: FatigueSession;
+  readonly result: ReturnType<typeof currentFatigueResultWithPiecewise>;
+  readonly detailResult: NonNullable<FatigueSession['detailAnalyzed']>['result'] | null;
+  readonly detailApplicability: NonNullable<FatigueSession['detailAnalyzed']>['input']['curve']['calibration']['applicability'] | null;
+  readonly solidResult: ReturnType<typeof currentSolidFatigueResult>;
+  readonly tensorResult: NonNullable<NonNullable<FatigueSession['analyzed']>['tensor']> | null;
+}
+
+function renderFatigueResults({ session, result, detailResult, detailApplicability, solidResult, tensorResult }: FatigueResultsView): React.JSX.Element | null {
+  return result === null ? null : <section data-testid="fatigue-results">
+    <h4>{t('fatigue.results')}</h4>
+    <p>{t('fatigue.resultScope')}</p>
+    {result.method === 'rainflow-three-point-stack/1+miner-linear-piecewise/1' && session.piecewiseAnalyzed !== null
+      && session.piecewiseAnalyzed !== undefined ? <div data-testid="fatigue-piecewise-result">
+      <p>{t('fatigue.piecewise.resultScope')}</p>
+      <p>{`${t('fatigue.piecewise.resultApplicability')}: `
+        + `${t('fatigue.piecewise.material')} ${session.piecewiseAnalyzed.problem.curve.applicability.material}; `
+        + `${t('fatigue.piecewise.detail')} ${session.piecewiseAnalyzed.problem.curve.applicability.detail}; `
+        + `${t('fatigue.piecewise.scope')} ${session.piecewiseAnalyzed.problem.curve.applicability.scope}`}</p>
+    </div> : null}
+    {detailResult === null ? null : <div data-testid="fatigue-detail-result" data-detail-kind={detailResult.detailKind}>
+      <p>{t('fatigue.detail.resultScope')}</p>
+      <dl>
+        <div><dt>{t('fatigue.detail.kind')}</dt>
+          <dd>{t(detailResult.detailKind === 'weld' ? 'fatigue.detail.kindWeld' : 'fatigue.detail.kindBolt')}</dd></div>
+        <div><dt>{t('fatigue.detail.resultArea')}</dt>
+          <dd data-testid="fatigue-detail-area">{`${beamDisplayNumber(detailResult.areaMm2)} mm²`}</dd></div>
+        <div><dt>{t('fatigue.detail.resultStress')}</dt>
+          <dd data-testid="fatigue-detail-stress">{t(DETAIL_STRESS_LABELS[detailResult.detailStress])}</dd></div>
+        <div><dt>{t('fatigue.detail.quantity')}</dt><dd>{t(DETAIL_QUANTITY_LABELS[detailResult.quantity])}</dd></div>
+        <div><dt>{t('fatigue.detail.location')}</dt><dd data-testid="fatigue-detail-location-result">{detailResult.location}</dd></div>
+        {detailApplicability === null ? null : <div><dt>{t('fatigue.piecewise.resultApplicability')}</dt>
+          <dd>{`${t('fatigue.piecewise.material')} ${detailApplicability.material}; `
+            + `${t('fatigue.piecewise.detail')} ${detailApplicability.detail}; `
+            + `${t('fatigue.piecewise.scope')} ${detailApplicability.scope}`}</dd></div>}
+      </dl>
+      <table data-testid="fatigue-detail-stresses">
+        <caption>{t('fatigue.detail.resultStresses')}</caption>
+        <thead><tr><th>{t('fatigue.history')}</th><th>{t('fatigue.detail.minimumStress')}</th>
+          <th>{t('fatigue.detail.maximumStress')}</th></tr></thead>
+        <tbody>{detailStressSpans(detailResult).map((span, index) => <tr key={span.historyId} data-fatigue-detail-stress={index}
+          data-min-mpa={String(span.minimumMpa)} data-max-mpa={String(span.maximumMpa)}>
+          <td>{index + 1}</td>
+          <td>{`${beamDisplayNumber(span.minimumMpa)} MPa`}</td>
+          <td>{`${beamDisplayNumber(span.maximumMpa)} MPa`}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>}
+    {'correction' in result ? <div data-testid="fatigue-correction-result" data-method={result.correction.method}>
+      <p>{t('fatigue.correctionResult')}</p>
+      <p>{`${t('fatigue.ultimateTensileStrength')}: ${beamDisplayNumber(result.correction.ultimateTensileStrengthMpa)} MPa; `
+        + `${t('fatigue.yieldStrength')}: ${beamDisplayNumber(result.correction.yieldStrengthMpa)} MPa; `
+        + `${t('fatigue.minimumCycles')}: ${beamDisplayNumber(result.correction.minimumCycles)}`}</p>
+      <p>{`${t('fatigue.sourceReference')}: ${result.correction.source.reference}; `
+        + `${t('fatigue.sourceCondition')}: ${result.correction.source.condition}`}</p>
+    </div> : null}
+    {solidResult === null ? null : <div data-testid="fatigue-solid-provenance">
+      <p>{t('fatigue.solidMeasure')}</p>
+      <p>{t('fatigue.solidSelected').replace('{element}', String(solidResult.provenance.elementIndex + 1))}</p>
+      <dl>{FATIGUE_TENSOR_COMPONENT_KEYS.map(component => <div key={component}>
+        <dt>{t(TENSOR_COMPONENT_LABELS[component])}</dt>
+        <dd>{`${beamDisplayNumber(solidResult.provenance.reference[component])} MPa`}</dd>
+      </div>)}</dl>
+    </div>}
+    <p data-testid="fatigue-damage">{`${t('fatigue.damage')}: ${fatigueDamageText(result)}`}</p>
+    <p data-testid="fatigue-life" data-life={result.life.kind}>{fatigueLifeText(result.life)}</p>
+    {tensorResult === null ? null : <div data-testid="fatigue-tensor-result" data-method={FATIGUE_PROPORTIONAL_TENSOR_METHOD}>
+      <p>{t('fatigue.tensorMethod')}</p>
+      <table data-testid="fatigue-tensor-conversions">
+        <thead><tr><th>{t('fatigue.history')}</th><th>{t('fatigue.tensorVonMises')}</th>
+          <th>{t('fatigue.tensorEquivalent')}</th><th>{t('fatigue.tensorSign')}</th></tr></thead>
+        <tbody>{tensorResult.conversions.map((conversion, index) => <tr key={conversion.historyId}
+          data-fatigue-tensor-result={index} data-sign-tie={String(conversion.signTie)}>
+          <td>{index + 1}</td>
+          <td>{`${beamDisplayNumber(conversion.vonMisesReferenceMpa)} MPa`}</td>
+          <td>{`${beamDisplayNumber(conversion.signedEquivalentReferenceMpa)} MPa`}</td>
+          <td>{t(conversion.signTie ? 'fatigue.tensorTie' : 'fatigue.tensorNoTie')}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>}
+    <table data-testid="fatigue-history-results">
+      <thead><tr><th>{t('fatigue.history')}</th><th>{t('fatigue.fullCycles')}</th><th>{t('fatigue.halfCycles')}</th>
+        <th>{t('fatigue.historyDamage')}</th></tr></thead>
+      <tbody>{result.histories.map((history, index) => <tr key={history.id} data-fatigue-history-result={index}>
+        <td>{index + 1}</td>
+        <td>{history.cycles.filter(cycle => cycle.count === 1).length}</td>
+        <td>{history.cycles.filter(cycle => cycle.count === 0.5).length}</td>
+        <td>{fatigueHistoryDamageText(result, history.damage)}</td>
+      </tr>)}</tbody>
+    </table>
+  </section>;
+}
+
 /** Fatigue estimate panel: explicit ordered stress histories and the user's own S-N curve. Every edit discards the
  * previous result; inputs are saved in the document only with the save button (Undo removes the save). */
 export function FatiguePanel({ session }: { readonly session: FatigueSession }): React.JSX.Element {
@@ -178,24 +382,6 @@ export function FatiguePanel({ session }: { readonly session: FatigueSession }):
   const detailApplicability = detailAnalyzed?.input.curve.calibration.applicability ?? null;
   // The core's conversion of each reference, shown only with the current tensor-mode result.
   const tensorResult = result === null ? null : session.analyzed?.tensor ?? null;
-  const tensorFields = (index: number, key: string): React.JSX.Element => {
-    const tensor = fatigueTensorRow(draft, key);
-    return <fieldset data-fatigue-tensor={index}>
-      <legend>{t('fatigue.tensorReference')}</legend>
-      <p>{t('fatigue.tensorComponentOrder')}</p>
-      <div className="pcad-beam__numbers">{FATIGUE_TENSOR_COMPONENT_KEYS.map(component =>
-        <label key={component}>{t(TENSOR_COMPONENT_LABELS[component])}
-          <input type="text" maxLength={64} value={tensor.components[component]} data-fatigue-field={`tensor:${index}:${component}`}
-            data-testid={`fatigue-tensor-${index}-${component}`} onFocus={() => focus(`tensor:${index}:${component}`)}
-            onChange={event => edit({ kind: 'tensor-component', index, component, source: event.target.value })} title={t('fatigue.guide.tensorComponent')} /></label>)}
-      </div>
-      <label>{t('fatigue.tensorLoadFactors')}
-        <textarea rows={3} value={tensor.loadFactors} data-fatigue-field={`tensor:${index}:factors`}
-          data-testid={`fatigue-tensor-${index}-factors`} onFocus={() => focus(`tensor:${index}:factors`)}
-          onChange={event => edit({ kind: 'tensor-factors', index, source: event.target.value })} title={t('fatigue.guide.tensorLoadFactors')} /></label>
-      <p>{t('fatigue.tensorFactorsHelp')}</p>
-    </fieldset>;
-  };
   return <form className="pcad-panel__body pcad-beam" aria-label={t('fatigue.title')} data-testid="fatigue-panel"
     onSubmit={event => { event.preventDefault(); }}
     ref={form}
@@ -264,73 +450,10 @@ export function FatiguePanel({ session }: { readonly session: FatigueSession }):
           onChange={(field, source) => edit({ kind: 'correction-source', field, source })} />
       </> : null}
     </fieldset>}
-    <fieldset data-testid="fatigue-histories">
-      <legend>{t('fatigue.histories')}</legend>
-      {piecewiseMode || detailMode ? null : <label data-fatigue-field="inputMode">{t('fatigue.inputMode')}
-        <select data-testid="fatigue-input-mode" value={draft.inputMode} onFocus={() => focus('inputMode')}
-          onChange={event => edit({ kind: 'input-mode',
-            value: event.target.value === 'proportional-tensor' ? 'proportional-tensor'
-              : event.target.value === 'solid-proportional' ? 'solid-proportional' : 'stress' })} title={t('fatigue.guide.inputMode')}>
-          <option value="stress">{t('fatigue.inputModeStress')}</option>
-          <option value="proportional-tensor">{t('fatigue.inputModeTensor')}</option>
-          <option value="solid-proportional">{t('fatigue.inputModeSolid')}</option>
-        </select></label>}
-      {solidMode ? <fieldset data-testid="fatigue-solid-selection">
-        <legend>{t('fatigue.solidTitle')}</legend>
-        <p>{t('fatigue.solidScope')}</p>
-        {solidSource === null ? <p role="alert">{t('fatigue.error.solidUnavailable')}</p> : <>
-          <label>{t('fatigue.solidElement')}
-            <input type="text" inputMode="numeric" data-testid="fatigue-solid-element" value={draft.solidElement ?? ''}
-              onChange={event => editSolidElement(event.target.value)} title={t('fatigue.guide.solidElement')} /></label>
-          <button type="button" className="pcad-button" data-testid="fatigue-solid-maximum" onClick={() => {
-            const selected = maximumSolidFatigueElement(solidSource);
-            if (selected !== null) selectSolid(selected);
-          }} title={t('fatigue.guide.solidMaximum')}>{t('fatigue.solidMaximum')}</button>
-          <p data-testid="fatigue-solid-source">{t('fatigue.solidCurrentSource').replace('{count}', String(solidSource.result.elements.length))}</p>
-          <details><summary>{t('fatigue.solidIdentityDetails')}</summary><code>
-            {`${solidSource.result.source.documentId}; ${solidSource.result.source.revision}; `
-              + `${solidSource.result.source.meshKey}; ${solidSource.result.inputSha256}`}</code></details>
-        </>}
-        {draft.solid === undefined ? null : <p data-testid="fatigue-solid-saved-selection">
-          {t('fatigue.solidSelected').replace('{element}', draft.solidElement ?? '')}</p>}
-      </fieldset> : null}
-      {tensorMode ? <>
-        <p data-testid="fatigue-tensor-scope">{t('fatigue.tensorScope')}</p>
-        <p>{t('fatigue.tensorSaved')}</p>
-      </> : <p>{t(solidMode ? 'fatigue.tensorFactorsHelp' : detailMode ? 'fatigue.detail.historiesHelp' : 'fatigue.historiesHelp')}</p>}
-      {draft.histories.map((row, index) => <fieldset key={row.key} data-fatigue-history={index}>
-        <legend>{`${t('fatigue.history')} ${index + 1}`}</legend>
-        {row.imported === null ? null : <p data-fatigue-imported={index}>
-          {`${t('fatigue.importedNote')} ${t('fatigue.axialMember')}: ${row.imported.provenance.memberId}`}</p>}
-        {forceMode ? <label>{t('fatigue.detail.forceList')}
-          <textarea rows={4} value={detailForce(detailDraft, row.key)} data-fatigue-field={`history:${index}:force`}
-            data-testid={`fatigue-detail-force-${index}`} onFocus={() => focus(`history:${index}:force`)}
-            onChange={event => edit({ kind: 'detail', edit: { kind: 'force', key: row.key, source: event.target.value } })}
-            title={t('fatigue.guide.detailForceList')} /></label>
-        : tensorMode ? tensorFields(index, row.key) : <label>{t(solidMode ? 'fatigue.tensorLoadFactors' : detailMode ? 'fatigue.detail.stressList' : 'fatigue.stressList')}
-          <textarea rows={4} value={row.stress} data-fatigue-field={`history:${index}:stress`}
-            readOnly={row.imported !== null}
-            onFocus={() => focus(`history:${index}:stress`)}
-            onChange={event => edit({ kind: 'history-stress', index, source: event.target.value })} title={t(solidMode ? 'fatigue.guide.tensorLoadFactors' : 'fatigue.guide.stressList')} /></label>}
-        {choice(`history:${index}:sequence`, 'fatigue.sequence', 'fatigue.guide.historySequence', row.sequence,
-          [['once', 'fatigue.once'], ['repeated-periodic', 'fatigue.repeated']],
-          next => edit({ kind: 'history-sequence', index, value: next }))}
-        {row.sequence === 'repeated-periodic' ? <div className="pcad-beam__numbers">
-          {number('repeats', `history:${index}:repeats`, row.repeats, source => edit({ kind: 'history-repeats', index, source }))}
-        </div> : null}
-        <SourceFields prefix={`history:${index}:`} value={solidMode ? { ...row.source, condition: t('fatigue.solidScope') } : row.source}
-          onFocus={focus} conditionReadOnly={solidMode || row.imported !== null}
-          onChange={(field, source) => edit({ kind: 'history-source', index, field, source })} />
-        {row.imported === null ? null : <button type="button" className="pcad-button" data-fatigue-detach={index}
-          title={t('fatigue.detachHelp')} onClick={() => edit({ kind: 'history-detach', index })}>{t('fatigue.detach')}</button>}
-        <button type="button" className="pcad-button" data-fatigue-remove={index} disabled={draft.histories.length <= 1}
-          onClick={() => { edit({ kind: 'history-remove', index }); addButton.current?.focus(); }} title={t('fatigue.guide.removeHistory')}>
-          {t('fatigue.removeHistory')}</button>
-      </fieldset>)}
-      <button ref={addButton} type="button" className="pcad-button" data-testid="fatigue-add-history"
-        disabled={solidMode || draft.histories.length >= MAX_FATIGUE_HISTORIES} onClick={() => edit({ kind: 'history-add' })} title={t('fatigue.guide.addHistory')}>
-        {t('fatigue.addHistory')}</button>
-    </fieldset>
+    {renderFatigueHistories({
+      draft, solidMode, tensorMode, piecewiseMode, detailMode, forceMode, detailDraft, solidSource, selectSolid,
+      editSolidElement, addButton, focus, number, choice, edit,
+    })}
     {tensorMode || solidMode || detailMode ? null : <AxialImport session={session} source={axialSource} />}
     <div className="pcad-beam__actions">
       <button type="button" className="pcad-button pcad-button--primary" data-testid="fatigue-run" onClick={calculate} title={t('fatigue.guide.run')}>
@@ -344,87 +467,6 @@ export function FatiguePanel({ session }: { readonly session: FatigueSession }):
     <p role="status" data-testid="fatigue-status">{t(result === null ? 'fatigue.status.editing' : 'fatigue.status.complete')}</p>
     {session.errorKey === null ? null : <p role="alert" data-testid="fatigue-error">{t(session.errorKey)}</p>}
     {session.diagnostic === null ? null : <p data-testid="fatigue-diagnostic">{session.diagnostic}</p>}
-    {result === null ? null : <section data-testid="fatigue-results">
-      <h4>{t('fatigue.results')}</h4>
-      <p>{t('fatigue.resultScope')}</p>
-      {result.method === 'rainflow-three-point-stack/1+miner-linear-piecewise/1' && session.piecewiseAnalyzed !== null
-        && session.piecewiseAnalyzed !== undefined ? <div data-testid="fatigue-piecewise-result">
-        <p>{t('fatigue.piecewise.resultScope')}</p>
-        <p>{`${t('fatigue.piecewise.resultApplicability')}: `
-          + `${t('fatigue.piecewise.material')} ${session.piecewiseAnalyzed.problem.curve.applicability.material}; `
-          + `${t('fatigue.piecewise.detail')} ${session.piecewiseAnalyzed.problem.curve.applicability.detail}; `
-          + `${t('fatigue.piecewise.scope')} ${session.piecewiseAnalyzed.problem.curve.applicability.scope}`}</p>
-      </div> : null}
-      {detailResult === null ? null : <div data-testid="fatigue-detail-result" data-detail-kind={detailResult.detailKind}>
-        <p>{t('fatigue.detail.resultScope')}</p>
-        <dl>
-          <div><dt>{t('fatigue.detail.kind')}</dt>
-            <dd>{t(detailResult.detailKind === 'weld' ? 'fatigue.detail.kindWeld' : 'fatigue.detail.kindBolt')}</dd></div>
-          <div><dt>{t('fatigue.detail.resultArea')}</dt>
-            <dd data-testid="fatigue-detail-area">{`${beamDisplayNumber(detailResult.areaMm2)} mm²`}</dd></div>
-          <div><dt>{t('fatigue.detail.resultStress')}</dt>
-            <dd data-testid="fatigue-detail-stress">{t(DETAIL_STRESS_LABELS[detailResult.detailStress])}</dd></div>
-          <div><dt>{t('fatigue.detail.quantity')}</dt><dd>{t(DETAIL_QUANTITY_LABELS[detailResult.quantity])}</dd></div>
-          <div><dt>{t('fatigue.detail.location')}</dt><dd data-testid="fatigue-detail-location-result">{detailResult.location}</dd></div>
-          {detailApplicability === null ? null : <div><dt>{t('fatigue.piecewise.resultApplicability')}</dt>
-            <dd>{`${t('fatigue.piecewise.material')} ${detailApplicability.material}; `
-              + `${t('fatigue.piecewise.detail')} ${detailApplicability.detail}; `
-              + `${t('fatigue.piecewise.scope')} ${detailApplicability.scope}`}</dd></div>}
-        </dl>
-        <table data-testid="fatigue-detail-stresses">
-          <caption>{t('fatigue.detail.resultStresses')}</caption>
-          <thead><tr><th>{t('fatigue.history')}</th><th>{t('fatigue.detail.minimumStress')}</th>
-            <th>{t('fatigue.detail.maximumStress')}</th></tr></thead>
-          <tbody>{detailStressSpans(detailResult).map((span, index) => <tr key={span.historyId} data-fatigue-detail-stress={index}
-            data-min-mpa={String(span.minimumMpa)} data-max-mpa={String(span.maximumMpa)}>
-            <td>{index + 1}</td>
-            <td>{`${beamDisplayNumber(span.minimumMpa)} MPa`}</td>
-            <td>{`${beamDisplayNumber(span.maximumMpa)} MPa`}</td>
-          </tr>)}</tbody>
-        </table>
-      </div>}
-      {'correction' in result ? <div data-testid="fatigue-correction-result" data-method={result.correction.method}>
-        <p>{t('fatigue.correctionResult')}</p>
-        <p>{`${t('fatigue.ultimateTensileStrength')}: ${beamDisplayNumber(result.correction.ultimateTensileStrengthMpa)} MPa; `
-          + `${t('fatigue.yieldStrength')}: ${beamDisplayNumber(result.correction.yieldStrengthMpa)} MPa; `
-          + `${t('fatigue.minimumCycles')}: ${beamDisplayNumber(result.correction.minimumCycles)}`}</p>
-        <p>{`${t('fatigue.sourceReference')}: ${result.correction.source.reference}; `
-          + `${t('fatigue.sourceCondition')}: ${result.correction.source.condition}`}</p>
-      </div> : null}
-      {solidResult === null ? null : <div data-testid="fatigue-solid-provenance">
-        <p>{t('fatigue.solidMeasure')}</p>
-        <p>{t('fatigue.solidSelected').replace('{element}', String(solidResult.provenance.elementIndex + 1))}</p>
-        <dl>{FATIGUE_TENSOR_COMPONENT_KEYS.map(component => <div key={component}>
-          <dt>{t(TENSOR_COMPONENT_LABELS[component])}</dt>
-          <dd>{`${beamDisplayNumber(solidResult.provenance.reference[component])} MPa`}</dd>
-        </div>)}</dl>
-      </div>}
-      <p data-testid="fatigue-damage">{`${t('fatigue.damage')}: ${fatigueDamageText(result)}`}</p>
-      <p data-testid="fatigue-life" data-life={result.life.kind}>{fatigueLifeText(result.life)}</p>
-      {tensorResult === null ? null : <div data-testid="fatigue-tensor-result" data-method={FATIGUE_PROPORTIONAL_TENSOR_METHOD}>
-        <p>{t('fatigue.tensorMethod')}</p>
-        <table data-testid="fatigue-tensor-conversions">
-          <thead><tr><th>{t('fatigue.history')}</th><th>{t('fatigue.tensorVonMises')}</th>
-            <th>{t('fatigue.tensorEquivalent')}</th><th>{t('fatigue.tensorSign')}</th></tr></thead>
-          <tbody>{tensorResult.conversions.map((conversion, index) => <tr key={conversion.historyId}
-            data-fatigue-tensor-result={index} data-sign-tie={String(conversion.signTie)}>
-            <td>{index + 1}</td>
-            <td>{`${beamDisplayNumber(conversion.vonMisesReferenceMpa)} MPa`}</td>
-            <td>{`${beamDisplayNumber(conversion.signedEquivalentReferenceMpa)} MPa`}</td>
-            <td>{t(conversion.signTie ? 'fatigue.tensorTie' : 'fatigue.tensorNoTie')}</td>
-          </tr>)}</tbody>
-        </table>
-      </div>}
-      <table data-testid="fatigue-history-results">
-        <thead><tr><th>{t('fatigue.history')}</th><th>{t('fatigue.fullCycles')}</th><th>{t('fatigue.halfCycles')}</th>
-          <th>{t('fatigue.historyDamage')}</th></tr></thead>
-        <tbody>{result.histories.map((history, index) => <tr key={history.id} data-fatigue-history-result={index}>
-          <td>{index + 1}</td>
-          <td>{history.cycles.filter(cycle => cycle.count === 1).length}</td>
-          <td>{history.cycles.filter(cycle => cycle.count === 0.5).length}</td>
-          <td>{fatigueHistoryDamageText(result, history.damage)}</td>
-        </tr>)}</tbody>
-      </table>
-    </section>}
+    {renderFatigueResults({ session, result, detailResult, detailApplicability, solidResult, tensorResult })}
   </form>;
 }

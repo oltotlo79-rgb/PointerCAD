@@ -1,34 +1,18 @@
 /**
- * コマンドラインの構文解析と道具の語の表
- * (FR-208)。
+ * コマンドラインの構文解析と道具の語の表 (FR-208)。
  *
- * ここは純関数だけで、DOM にも React にも Zustand ストアにも触れない。
- * 打った文字列を「道具の切替」「いま開いている段の座標の欄」「名前付きの欄」「段の確定」
- * のどれかへ翻訳するだけで、`numericInput.ts` の段の定義には一切触れない。
- * 欄への流し込み・候補の表示・段への配線は`CommandLine.tsx` の役目。
+ * 空行は段の確定を表す。それ以外は名前付きの欄、スケッチの道具、立体の道具、座標の順に調べる。
+ * スケッチの 23 道具には道具 ID を、立体の 26 道具にはツールバーの命令 ID を返す。
+ * ストアへの反映と命令の実行は commandLineActions.ts が受け持つ。
  *
- * **対象にする道具(道具の表は網羅ではないので、ここで範囲を決めた)**:
- * `SketchToolId + ShapeToolId + EditToolId + ClickEditToolId` の 23 種だけを対象にした
- * (スケッチの道具だけ)。ソリッドの道具(`SolidToolId` 10 種)・基準ジオメトリ
- * (`ReferenceToolId` 7 種)・立体から取り込む 2 種(`PickEditToolId`)は対象外(FR-208 の目的が
- * キーボードだけでの作図であるため)。
+ * 入力する語は自分の道具の日本語名・英語名と、その短縮から作る。スケッチでは例えば
+ * 選択は select の s、点列は point array の pa、2点円弧と3点の円弧は ta と tpa、
+ * 直線配列と円形配列は array と polar array から ar と par を使う。
+ * 立体では、短い英語名はそのまま、長い単語は先頭の 3 字、複数の単語は各語の頭文字を使う。
+ * スケッチと名前が重なる道具は「立体のミラー」や solidfillet のように区別する。
+ * 大文字・小文字をそろえ、語全体が一致したときだけ道具を決める。
  *
- * **語の割り当て**: どの道具にも、日本語の名前・英語の名前・短い語の 3 種を置き、どれも自分の道具の名前を元にする。
- * - 日本語の名前はツールバーの表示の名前(矩形・長方形のように、同じ意味の一般の呼び方を足した道具がある)。
- * - 英語の名前は、道具の英語の呼び名を空白なしの小文字にした 1 語。
- * - 短い語は、英語の呼び名の頭の字から、ほかの短い語と重ならない長さで作る。
- *   - 1 語の呼び名は頭の 1〜3 字(選択 `s`・点 `po`・線分 `l`・矩形 `rec`・面取り `cha` など)。
- *   - 2 語以上の呼び名は各語の頭の字(点列 `pa` = point array・3点の円弧 `tpa` = three-point arc)。
- *   - 2点円弧は、3点の円弧と分けるため `ta`(two-point arc の two と arc の頭の字)。
- *   - 直線配列は `ar`(array の頭の 2 字。利用者の指示の「AR=配列」を直線の配列に当てた)。
- *   - 円形配列は `par`(円形配列の一般の呼び方 polar array の頭の字)。
- *
- * 語を足す時も同じ作り方にする。ほかの CAD の語の表や設定のファイルを元にしない
- * (ほかの製品の名前・画面・資産を写さない決まりのため)。
- * 語が重ならない事(大文字小文字を区別しない)と道具の数(23)は、commandLine.test.ts で固定している。
- *
- * **道具の語を ja.json に置かない理由**: 語(`words`)は「打つ文字列」であって表示ではない。
- * 表示名は `labelKey` で `ja.json` から引く(既存の `toolbar.tool.*`)。両者を混同しない。
+ * words は入力として受け付ける綴りを保持する。表示にはツールバーと同じ labelKey を使う。
  */
 
 import {
@@ -45,6 +29,7 @@ import {
   type WorkPlane,
 } from '@pointercad/model';
 
+import type { ToolbarCommandId } from '../commands/toolbarCommandCatalog.js';
 import { t, type MessageKey } from '../i18n/t.js';
 
 import type {
@@ -59,8 +44,8 @@ import type {
 export type CommandToolId = SketchToolId | ShapeToolId | EditToolId | ClickEditToolId;
 
 /** 道具 1 つの語(日本語・英語・短縮)。一覧はこのファイルの 1 か所だけ。 */
-export interface CommandWord {
-  readonly tool: CommandToolId;
+export interface CommandWord<Tool extends string = CommandToolId> {
+  readonly tool: Tool;
   /** 表示に使う名前。ツールバーの labelKey と同じものを指す(`toolbar.tool.*`)。 */
   readonly labelKey: MessageKey;
   /** 打てる語。判定は小文字へ直してから行うので、大文字小文字はどちらで書いてもよい。 */
@@ -123,6 +108,48 @@ export const COMMAND_WORDS: readonly CommandWord[] = [
   { tool: 'extend', labelKey: 'toolbar.tool.extend', words: ['延長', 'extend', 'ex'] },
 ];
 
+interface SolidCommandWord extends Pick<CommandWord, 'labelKey' | 'words'> {
+  readonly commandId: ToolbarCommandId;
+}
+
+/** 部品の「作る」「合わせる」「加工」へ届く語。 */
+export const SOLID_COMMAND_WORDS: readonly SolidCommandWord[] = [
+  { commandId: 'toolbar.solidCreate.extrude', labelKey: 'toolbar.solid.extrude', words: ['押し出し', 'extrude', 'ext'] },
+  { commandId: 'toolbar.solidCreate.revolve', labelKey: 'toolbar.solid.revolve', words: ['回転', 'revolve', 'rev'] },
+  { commandId: 'toolbar.solidCreate.sew', labelKey: 'toolbar.solid.sew', words: ['縫合', 'sew'] },
+  { commandId: 'toolbar.solidCombine.union', labelKey: 'toolbar.solid.union', words: ['和', 'union', 'uni'] },
+  { commandId: 'toolbar.solidCombine.subtract', labelKey: 'toolbar.solid.subtract', words: ['差', 'subtract', 'sub'] },
+  { commandId: 'toolbar.solidCombine.intersect', labelKey: 'toolbar.solid.intersect', words: ['積', 'intersect', 'int'] },
+  { commandId: 'toolbar.solidCreate.sphere', labelKey: 'toolbar.solid.sphere', words: ['球', 'sphere', 'sph'] },
+  { commandId: 'toolbar.solidCreate.box', labelKey: 'toolbar.solid.box', words: ['箱', 'box'] },
+  { commandId: 'toolbar.solidCreate.cylinder', labelKey: 'toolbar.solid.cylinder', words: ['円柱', 'cylinder', 'cyl'] },
+  { commandId: 'toolbar.solidCreate.cone', labelKey: 'toolbar.solid.cone', words: ['円錐', 'cone'] },
+  { commandId: 'toolbar.solidCreate.torus', labelKey: 'toolbar.solid.torus', words: ['トーラス', 'torus', 'tor'] },
+  { commandId: 'toolbar.solidCreate.ruled', labelKey: 'toolbar.solid.ruled', words: ['面をつなぐ', 'ruled', 'rul'] },
+  { commandId: 'toolbar.solidCreate.loft', labelKey: 'toolbar.solid.loft', words: ['ロフト', 'loft'] },
+  { commandId: 'toolbar.solidCreate.mirrorSolid', labelKey: 'toolbar.solid.mirror', words: ['立体のミラー', 'mirrorsolid', 'ms'] },
+  { commandId: 'toolbar.solidCreate.sweep', labelKey: 'toolbar.solid.sweep', words: ['スイープ', 'sweep', 'swe'] },
+  { commandId: 'toolbar.solidCreate.spring', labelKey: 'toolbar.solid.spring', words: ['ばね', 'spring', 'spr'] },
+  { commandId: 'toolbar.solidMachining.hole', labelKey: 'toolbar.machining.hole', words: ['穴', 'hole'] },
+  { commandId: 'toolbar.solidMachining.threadHole', labelKey: 'toolbar.machining.threadHole', words: ['ねじ穴', 'threadhole', 'th'] },
+  { commandId: 'toolbar.solidMachining.fillet', labelKey: 'toolbar.machining.fillet', words: ['R面取り', 'solidfillet', 'sf'] },
+  { commandId: 'toolbar.solidMachining.chamfer', labelKey: 'toolbar.machining.chamfer', words: ['C面取り', 'solidchamfer', 'sc'] },
+  { commandId: 'toolbar.solidMachining.linearPattern', labelKey: 'toolbar.machining.linearPattern', words: ['直線パターン', 'linearpattern', 'lp'] },
+  { commandId: 'toolbar.solidMachining.circularPattern', labelKey: 'toolbar.machining.circularPattern', words: ['円形パターン', 'circularpattern', 'cp'] },
+  { commandId: 'toolbar.solidMachining.shell', labelKey: 'toolbar.machining.shell', words: ['くり抜き', 'shell', 'she'] },
+  { commandId: 'toolbar.solidMachining.draft', labelKey: 'toolbar.machining.draft', words: ['抜き勾配', 'draft', 'dra'] },
+  { commandId: 'toolbar.solidMachining.rib', labelKey: 'toolbar.machining.rib', words: ['リブ', 'rib'] },
+  { commandId: 'toolbar.solidMachining.cut', labelKey: 'toolbar.machining.cut', words: ['切断', 'cut'] },
+];
+
+/** 候補の tool は、一覧の各ボタンを識別するために画面でも使う。 */
+type SuggestedWord = CommandWord<CommandToolId | ToolbarCommandId>;
+
+const SUGGESTION_WORDS: readonly SuggestedWord[] = [
+  ...COMMAND_WORDS,
+  ...SOLID_COMMAND_WORDS.map(({ commandId, labelKey, words }) => ({ tool: commandId, labelKey, words })),
+];
+
 /** 名前付きの欄の単文字の別名(「r=5 / d=20 / a=30 / l=100」)。1 か所だけに置く。 */
 const FIELD_KEY_ALIASES: Readonly<Record<string, string>> = {
   r: 'radius',
@@ -149,6 +176,7 @@ export interface CommandLineContext {
 
 export type CommandLineOutcome =
   | { readonly kind: 'tool'; readonly tool: NumericInputToolId }
+  | { readonly kind: 'command'; readonly commandId: ToolbarCommandId }
   /** いま開いている段の座標の欄を埋める。 */
   | { readonly kind: 'coordinate'; readonly value: CoordinateInput }
   /** いま開いている段の名前付きの欄を埋める(r=5 / d=20 / a=30 / l=100)。 */
@@ -246,25 +274,18 @@ function findToolByWord(word: string): CommandToolId | null {
 }
 
 /** 打ちかけの語に前方一致する道具(最大 5 件)。 */
-export function suggestCommands(input: string, limit = 5): readonly CommandWord[] {
+export function suggestCommands(input: string, limit = 5): readonly SuggestedWord[] {
   const normalized = normalizeCommandLineSource(input.trim()).toLowerCase();
   if (normalized === '') {
     return [];
   }
-  const matches: CommandWord[] = [];
-  for (const entry of COMMAND_WORDS) {
-    if (entry.words.some((word) => word.toLowerCase().startsWith(normalized))) {
-      matches.push(entry);
-      if (matches.length >= limit) {
-        break;
-      }
-    }
-  }
-  return matches;
+  return SUGGESTION_WORDS.filter((entry) =>
+    entry.words.some(word => word.toLowerCase().startsWith(normalized)),
+  ).slice(0, Math.max(0, Math.min(limit, 5)));
 }
 
 /** 表示・提案用に、道具のいちばん短い語を選ぶ(短縮を優先して見せる)。 */
-function shortestWord(entry: CommandWord): string {
+function shortestWord(entry: SuggestedWord): string {
   return entry.words.reduce((shortest, word) => (word.length < shortest.length ? word : shortest));
 }
 
@@ -480,6 +501,11 @@ export function parseCommandLine(input: string, context: CommandLineContext): Co
   const tool = findToolByWord(lower);
   if (tool !== null) {
     return { kind: 'tool', tool };
+  }
+
+  const solid = SOLID_COMMAND_WORDS.find(entry => entry.words.some(word => word.toLowerCase() === lower));
+  if (solid !== undefined) {
+    return { kind: 'command', commandId: solid.commandId };
   }
 
   if (looksLikeCoordinate(normalized)) {

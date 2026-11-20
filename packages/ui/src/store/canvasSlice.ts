@@ -12,7 +12,7 @@ import {
   type CanvasSourceQuad,
   type SketchCanvas,
 } from '@pointercad/model';
-import type { StateCreator } from 'zustand';
+import type { StateCreator, StoreApi } from 'zustand';
 import { t } from '../i18n/t.js';
 import { canvasActionState, type CanvasImageLoad, type CanvasImageOwner } from '../sketch/canvasActionState.js';
 import {
@@ -159,6 +159,91 @@ export type CanvasInitialState = Pick<
   | 'canvasImageRetries'
 >;
 
+function canvasRectificationActions(set: StoreApi<AppState>['setState'], get: StoreApi<AppState>['getState']):
+Pick<CanvasSlice, 'startCanvasRectification' | 'addCanvasRectificationPoint' | 'cancelCanvasRectification'
+  | 'applyCanvasRectification' | 'clearCanvasRectification'> {
+  return {
+    startCanvasRectification: (canvasId, documentId, imageId) => {
+      const state = get();
+      const action = canvasActionState(state, canvasId, documentId, imageId);
+      const canvas = state.document.canvases.find(item => item.id === canvasId);
+      const bytes = canvas === undefined ? undefined : state.canvases.get(canvas.imageId);
+      const load = canvas === undefined ? undefined : state.canvasImageLoads.get(canvas.imageId);
+      if (action.status !== 'ready' || canvas === undefined || bytes === undefined || load?.status !== 'ready') {
+        set({ canvasRectification: null, canvasScale: null,
+          canvasMessage: action.status === 'ready' ? t('canvas.rectifyChanged') : t(action.reason) });
+        return;
+      }
+      set({ canvasRectification: { canvasId, documentId: state.activeDocumentId,
+        imageId: canvas.imageId, bytes, request: load.request, size: action.size, points: [] },
+      canvasScale: null, canvasMessage: null });
+    },
+    addCanvasRectificationPoint: (point) => {
+      set(state => {
+        const picking = state.canvasRectification;
+        if (picking === null) return state;
+        const action = canvasActionState(state, picking.canvasId, picking.documentId, picking.imageId);
+        const load = state.canvasImageLoads.get(picking.imageId);
+        if (action.status !== 'ready' || load?.status !== 'ready' || load.request !== picking.request
+          || load.bytes !== picking.bytes || state.canvases.get(picking.imageId) !== picking.bytes
+          || action.size.width !== picking.size.width || action.size.height !== picking.size.height) {
+          return { canvasRectification: null, canvasMessage: t('canvas.rectifyChanged') };
+        }
+        if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])
+          || point[0] < 0 || point[0] > 1 || point[1] < 0 || point[1] > 1) {
+          return { canvasMessage: t('canvas.rectifyInvalid') };
+        }
+        const points = picking.points.length >= 4 ? [point] : [...picking.points, point];
+        return { canvasRectification: { ...picking, points }, canvasMessage: null };
+      });
+    },
+    cancelCanvasRectification: () => {
+      set({ canvasRectification: null, canvasMessage: null });
+    },
+    applyCanvasRectification: () => {
+      const state = get();
+      const picking = state.canvasRectification;
+      if (picking === null) return false;
+      const [topLeft, topRight, bottomRight, bottomLeft] = picking.points;
+      if (topLeft === undefined || topRight === undefined || bottomRight === undefined || bottomLeft === undefined) {
+        return false;
+      }
+      const canvas = state.document.canvases.find(item => item.id === picking.canvasId);
+      const action = canvasActionState(state, picking.canvasId, picking.documentId, picking.imageId);
+      const load = state.canvasImageLoads.get(picking.imageId);
+      if (canvas === undefined || canvas.imageId !== picking.imageId || action.status !== 'ready'
+        || load?.status !== 'ready' || load.request !== picking.request || load.bytes !== picking.bytes
+        || state.canvases.get(picking.imageId) !== picking.bytes
+        || action.size.width !== picking.size.width || action.size.height !== picking.size.height) {
+        set({ canvasRectification: null, canvasMessage: t('canvas.rectifyChanged') });
+        return false;
+      }
+      const sourceQuad: CanvasSourceQuad = [topLeft, topRight, bottomRight, bottomLeft];
+      const solved = solveCanvasHomography(sourceQuad);
+      if (!solved.ok) {
+        set({ canvasMessage: t('canvas.rectifyInvalid') });
+        return false;
+      }
+      const canvases = state.document.canvases.map(item => item.id === picking.canvasId
+        ? { ...item, rectification: { sourceQuad } } : item);
+      set({ canvasRectification: null, canvasMessage: null });
+      state.applyDocument({ ...state.document, canvases });
+      return true;
+    },
+    clearCanvasRectification: (canvasId, documentId, imageId) => {
+      const state = get();
+      const action = canvasActionState(state, canvasId, documentId, imageId);
+      const canvas = state.document.canvases.find(item => item.id === canvasId);
+      if (action.status !== 'ready' || canvas === undefined || canvas.rectification === undefined) return false;
+      const canvases = state.document.canvases.map(item => item.id === canvasId
+        ? { ...item, rectification: undefined } : item);
+      set({ canvasRectification: null, canvasMessage: null });
+      state.applyDocument({ ...state.document, canvases });
+      return true;
+    },
+  };
+}
+
 export const createCanvasSlice: StateCreator<
   AppState,
   [],
@@ -252,84 +337,7 @@ export const createCanvasSlice: StateCreator<
   cancelCanvasScale: () => {
     set({ canvasScale: null, canvasMessage: null });
   },
-  startCanvasRectification: (canvasId, documentId, imageId) => {
-    const state = get();
-    const action = canvasActionState(state, canvasId, documentId, imageId);
-    const canvas = state.document.canvases.find(item => item.id === canvasId);
-    const bytes = canvas === undefined ? undefined : state.canvases.get(canvas.imageId);
-    const load = canvas === undefined ? undefined : state.canvasImageLoads.get(canvas.imageId);
-    if (action.status !== 'ready' || canvas === undefined || bytes === undefined || load?.status !== 'ready') {
-      set({ canvasRectification: null, canvasScale: null,
-        canvasMessage: action.status === 'ready' ? t('canvas.rectifyChanged') : t(action.reason) });
-      return;
-    }
-    set({ canvasRectification: { canvasId, documentId: state.activeDocumentId,
-      imageId: canvas.imageId, bytes, request: load.request, size: action.size, points: [] },
-    canvasScale: null, canvasMessage: null });
-  },
-  addCanvasRectificationPoint: (point) => {
-    set(state => {
-      const picking = state.canvasRectification;
-      if (picking === null) return state;
-      const action = canvasActionState(state, picking.canvasId, picking.documentId, picking.imageId);
-      const load = state.canvasImageLoads.get(picking.imageId);
-      if (action.status !== 'ready' || load?.status !== 'ready' || load.request !== picking.request
-        || load.bytes !== picking.bytes || state.canvases.get(picking.imageId) !== picking.bytes
-        || action.size.width !== picking.size.width || action.size.height !== picking.size.height) {
-        return { canvasRectification: null, canvasMessage: t('canvas.rectifyChanged') };
-      }
-      if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])
-        || point[0] < 0 || point[0] > 1 || point[1] < 0 || point[1] > 1) {
-        return { canvasMessage: t('canvas.rectifyInvalid') };
-      }
-      const points = picking.points.length >= 4 ? [point] : [...picking.points, point];
-      return { canvasRectification: { ...picking, points }, canvasMessage: null };
-    });
-  },
-  cancelCanvasRectification: () => {
-    set({ canvasRectification: null, canvasMessage: null });
-  },
-  applyCanvasRectification: () => {
-    const state = get();
-    const picking = state.canvasRectification;
-    if (picking === null) return false;
-    const [topLeft, topRight, bottomRight, bottomLeft] = picking.points;
-    if (topLeft === undefined || topRight === undefined || bottomRight === undefined || bottomLeft === undefined) {
-      return false;
-    }
-    const canvas = state.document.canvases.find(item => item.id === picking.canvasId);
-    const action = canvasActionState(state, picking.canvasId, picking.documentId, picking.imageId);
-    const load = state.canvasImageLoads.get(picking.imageId);
-    if (canvas === undefined || canvas.imageId !== picking.imageId || action.status !== 'ready'
-      || load?.status !== 'ready' || load.request !== picking.request || load.bytes !== picking.bytes
-      || state.canvases.get(picking.imageId) !== picking.bytes
-      || action.size.width !== picking.size.width || action.size.height !== picking.size.height) {
-      set({ canvasRectification: null, canvasMessage: t('canvas.rectifyChanged') });
-      return false;
-    }
-    const sourceQuad: CanvasSourceQuad = [topLeft, topRight, bottomRight, bottomLeft];
-    const solved = solveCanvasHomography(sourceQuad);
-    if (!solved.ok) {
-      set({ canvasMessage: t('canvas.rectifyInvalid') });
-      return false;
-    }
-    const canvases = state.document.canvases.map(item => item.id === picking.canvasId
-      ? { ...item, rectification: { sourceQuad } } : item);
-    set({ canvasRectification: null, canvasMessage: null });
-    state.applyDocument({ ...state.document, canvases });
-    return true;
-  },
-  clearCanvasRectification: (canvasId, documentId, imageId) => {
-    const state = get();
-    const action = canvasActionState(state, canvasId, documentId, imageId);
-    const canvas = state.document.canvases.find(item => item.id === canvasId);
-    if (action.status !== 'ready' || canvas === undefined || canvas.rectification === undefined) return false;
-    const canvases = state.document.canvases.map(item => item.id === canvasId
-      ? { ...item, rectification: undefined } : item);
-    set({ canvasRectification: null, canvasMessage: null });
-    state.applyDocument({ ...state.document, canvases });
-    return true;
-  },
+  ...canvasRectificationActions(set, get),
   setCanvasMessage: (canvasMessage) => {
     set({ canvasMessage });
   },

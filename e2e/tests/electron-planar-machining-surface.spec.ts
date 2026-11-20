@@ -1,7 +1,7 @@
 import { test } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { PLANAR_OPERATIONS } from './planarMachiningOracle.js';
-import { buildPlanarCreate, buildPlanarTwoFixture, buildPlanarMissingReference,
+import { buildPlanarCreate, buildPlanarEdgeDistance, buildPlanarTwoFixture, buildPlanarMissingReference,
   planarTitle, reopenPlanarUi } from './planarMachiningFlow.js';
 
 for (const operation of PLANAR_OPERATIONS) {
@@ -22,6 +22,18 @@ for (const operation of PLANAR_OPERATIONS) {
     const saved = await (async () => {
       try {
         return await buildPlanarTwoFixture(await initial.app.firstWindow(), info,
+          'app://pointercad/index.html', operation, initial.app);
+      } finally { await initial.app.close(); }
+    })();
+    const next = await launchDesktop(playwright, info);
+    try { await reopenPlanarUi(await next.app.firstWindow(), info, 'app://pointercad/index.html', saved, next.app); }
+    finally { await next.app.close(); }
+  });
+  test(planarTitle('Electron', operation, 'edge-distance'), async ({ playwright }, info) => {
+    const initial = await launchDesktop(playwright, info);
+    const saved = await (async () => {
+      try {
+        return await buildPlanarEdgeDistance(await initial.app.firstWindow(), info,
           'app://pointercad/index.html', operation, initial.app);
       } finally { await initial.app.close(); }
     })();

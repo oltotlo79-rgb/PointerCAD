@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
 import { summarizeProcessMemory, summarizeSampledProcessMemory } from '../../packages/test-utils/src/processMemorySamples.js';
-import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxFrameWithRetry, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, staleRetrySummary, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
+import { windowsSampler, windowsSamplerScript, windowsNativeSource, linuxSampler, linuxFrame, linuxFrameWithRetry, linuxTerminalMeasurement, linuxAncestry, readLinuxProcess, rawFrame, readSamplerLine, frameClockStages, staleRetrySummary, INTERVAL_MS, DISCOVERY_INTERVAL_MS, WINDOWS_SAMPLER_STAGES, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
 import { readResidentFrames, windowsRootContextScript } from './readResidentSampler.js';
 import { windowsSaveSamplerScript } from './saveResponsivenessFlow.js';
 import { windowsSavePointOwnerScript } from './namedSavePointsFlow.js';
@@ -52,11 +52,16 @@ test(`process sampler records actual cadence quality through repeated discoverie
   let sampler: Sampler | undefined;
   let primary: { readonly error: unknown } | undefined;
   const cleanupErrors: unknown[] = [];
+  let waitStart: FrameCountCheckpoint | null = null;
+  let waitEnd: FrameCountCheckpoint | null = null;
+  let countMessage: string | undefined;
   try {
     sampler = platform() === 'win32' ? windowsSampler(process.pid, includeRoot) : linuxSampler(process.pid, includeRoot, async () => undefined);
     const started = sampler;
     await expect.poll(() => started.frames.length, { timeout: 30_000 }).toBeGreaterThan(0);
+    waitStart = { atEpochMs: Date.now(), count: started.frames.length };
     await delay(DISCOVERY_INTERVAL_MS * 3);
+    waitEnd = { atEpochMs: Date.now(), count: started.frames.length };
   } catch (error: unknown) {
     primary = { error };
   } finally {
@@ -66,7 +71,9 @@ test(`process sampler records actual cadence quality through repeated discoverie
     // Preserve the first failing run too, including discovery stages and actual read costs.
     if (sampler !== undefined) {
       const path = test.info().outputPath('process-sampler-raw.json');
-      await writeFile(path, JSON.stringify({ includeRoot, frames: sampler.frames, failures: sampler.failures,
+      const counts = samplerFrameCounts(sampler, waitStart, waitEnd);
+      countMessage = JSON.stringify(counts);
+      await writeFile(path, JSON.stringify({ includeRoot, counts, frames: sampler.frames, failures: sampler.failures,
         stages: sampler.stages ?? [], startup: sampler.describe?.() ?? null }, null, 2), { flag: 'wx' });
       await test.info().attach('process-sampler-raw', { path, contentType: 'application/json' });
     }
@@ -78,7 +85,7 @@ test(`process sampler records actual cadence quality through repeated discoverie
   if (sampler === undefined) throw new Error('Sampler was not started');
   const frames = sampler.frames.map(frame => ({ ...frame, phase: 'baseline' as const }));
   expect(sampler.failures).toEqual([]);
-  expect(frames.length).toBeGreaterThanOrEqual((DISCOVERY_INTERVAL_MS * 3) / (INTERVAL_MS * 2));
+  expect(frames.length, countMessage).toBeGreaterThanOrEqual((DISCOVERY_INTERVAL_MS * 3) / (INTERVAL_MS * 2));
   if (platform() === 'win32') {
     // The start-up stages arrive as their own lines, in order, before the first frame read; none is a frame.
     // script-start uses the framework clock (before Add-Type); every later stage uses the precise clock.
@@ -151,6 +158,36 @@ test(`process sampler records actual cadence quality through repeated discoverie
   expect(observation.observationValid).toBe(true);
   expect(observation.cadence.status).toBe(observation.cadence.excursions.length === 0 ? 'within-target' : 'degraded');
 });
+}
+
+interface FrameCountCheckpoint {
+  readonly atEpochMs: number;
+  readonly count: number;
+}
+
+// The runner counts delivered frames at each boundary. The sampler timestamps describe acquisition.
+function samplerFrameCounts(sampler: Sampler, waitStart: FrameCountCheckpoint | null, waitEnd: FrameCountCheckpoint | null) {
+  const frames = sampler.frames;
+  let gapsOverTwoIntervals = 0;
+  let longestGap: { frameIndex: number; ms: number } | null = null;
+  for (const [index, frame] of frames.entries()) {
+    const previous = frames[index - 1];
+    if (previous === undefined) continue;
+    const ms = frame.atEpochMs - previous.atEpochMs;
+    if (ms > INTERVAL_MS * 2) gapsOverTwoIntervals++;
+    if (longestGap === null || ms > longestGap.ms) longestGap = { frameIndex: index, ms };
+  }
+  const gapEnd = longestGap === null ? undefined : frames[longestGap.frameIndex];
+  return {
+    waitStart, waitEnd, totalFrames: frames.length,
+    receivedDuringWait: waitStart === null || waitEnd === null ? null : waitEnd.count - waitStart.count,
+    receivedDuringStop: waitEnd === null ? null : frames.length - waitEnd.count,
+    lastFrameAtEpochMs: frames.at(-1)?.atEpochMs ?? null,
+    distinctDiscoveries: new Set(frames.map(frame => frame.discoveredAtEpochMs)).size,
+    staleRetries: staleRetrySummary(frames), gapsOverTwoIntervals, longestGap,
+    longestGapStages: gapEnd === undefined || longestGap === null ? null : frameClockStages(gapEnd, frames[longestGap.frameIndex + 1]),
+    previousOutputAtLongestGap: gapEnd?.windowsTiming?.outputOfPreviousFrame ?? null,
+  };
 }
 
 test('read resident frames reject reused ancestry, duplicates, disappearance and unrelated PIDs', () => {

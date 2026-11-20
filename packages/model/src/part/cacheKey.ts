@@ -294,10 +294,18 @@ export interface HoleKeyMaterial {
 }
 
 /** 面内X・Yの配置を区別する鍵の材料。 */
- interface PlanarHoleKeyMaterial {
+interface PlaneFaceHoleKeyMaterial {
   readonly kind: 'plane-face';
   readonly locations: readonly { readonly x: number; readonly y: number }[];
 }
+/** 辺からの距離の配置(M-02)を区別する鍵の材料。辺は順序つきの指紋の文字列(`fingerprintKeyText`)。 */
+interface EdgeDistanceHoleKeyMaterial {
+  readonly kind: 'edge-distance';
+  readonly edge1: string;
+  readonly edge2: string;
+  readonly locations: readonly { readonly distance1: number; readonly distance2: number }[];
+}
+type PlanarHoleKeyMaterial = PlaneFaceHoleKeyMaterial | EdgeDistanceHoleKeyMaterial;
 
 /** 円筒の側面の穴の位置の鍵の材料。段の `CylindricalHolePlan` と同じ形。 */
 export interface CylindricalHoleKeyMaterial {
@@ -587,6 +595,19 @@ export interface SweepKeyMaterial {
   readonly guide?: readonly KeyCurve[];
   /** true で Frenet、false で「ねじれを抑える」。形が変わるので混ぜる。 */
   readonly frenet: boolean;
+  /** M-07。全体で回す角度(ラジアン)・終わりの倍率・壁の厚み(mm)・穴の線。使った時だけ持ち、鍵にも載せる。 */
+  readonly twist?: number;
+  readonly endScale?: number;
+  readonly wallThickness?: number;
+  readonly holes?: readonly (readonly KeyCurve[])[];
+}
+
+/** スイープのねじれ・先細り・中空(M-07)の鍵の付け足し。使わないスイープは空文字(今の鍵の字面を変えない)。 */
+function keySweepShapeExtra(material: SweepKeyMaterial): string {
+  return (material.twist === undefined ? '' : `;twist=${keyNumber(material.twist)}`)
+    + (material.endScale === undefined ? '' : `;endScale=${keyNumber(material.endScale)}`)
+    + (material.wallThickness === undefined ? '' : `;wall=${keyNumber(material.wallThickness)}`)
+    + (material.holes === undefined ? '' : `;holes=${keyCurveListGroup(material.holes)}`);
 }
 
 /**
@@ -1091,6 +1112,11 @@ function keyHoleEntry(entry: HoleEntryKeyMaterial): string {
 /** 面内配置は指定時だけ鍵へ含め、省略時の旧形式の鍵を保つ。 */
 function keyPlanarHoleExtra(placement: PlanarHoleKeyMaterial | undefined): string {
   if (placement === undefined) return '';
+  if (placement.kind === 'edge-distance') {
+    // 辺の順(辺 1・辺 2)も形を変えるので、並びのまま混ぜる。面内 X・Y の鍵の文字列は変えない。
+    const distances = placement.locations.map(p => `(${keyNumber(p.distance1)},${keyNumber(p.distance2)})`);
+    return `;planar=${placement.kind}:${distances.length}:[${distances.join(',')}];edge1=${placement.edge1};edge2=${placement.edge2}`;
+  }
   const locations = placement.locations.map(p => `(${keyNumber(p.x)},${keyNumber(p.y)})`);
   return `;planar=${placement.kind}:${locations.length}:[${locations.join(',')}]`;
 }
@@ -1327,7 +1353,7 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `sweep{profile=${keyCurveList(material.profile)}` +
         `;path=${keyCurveList(material.path)}` +
         (material.guide === undefined ? '' : `;guide=${keyCurveList(material.guide)}`) +
-        `;frenet=${keyBoolean(material.frenet)}}`
+        `;frenet=${keyBoolean(material.frenet)}${keySweepShapeExtra(material)}}`
       );
     case 'rib':
       return (

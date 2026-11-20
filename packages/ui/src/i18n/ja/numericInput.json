@@ -1,4 +1,9 @@
 {
+  "numericInput.choice.solidOperation": "結果",
+  "numericInput.choice.solidTarget": "相手の立体",
+  "numericInput.solidSuggestion.join": "予告した形の表面には、{name}に触れるか中に入る部分と、外に出る部分があります。結合を提案します。",
+  "numericInput.solidSuggestion.cut": "予告した形の表面を調べた位置が{name}の内側か境界にあるため、切り抜きを提案します。",
+  "numericInput.solidOperation.new": "新しい立体",
   "numericInput.choice.extrudeOperation": "押し出しの結果",
   "numericInput.choice.extrudeTarget": "対象のソリッド",
   "numericInput.extrudeOperation.new": "新しいソリッド",
@@ -463,5 +468,18 @@
   "numericInput.planarBasis.origin": "選択面の原点（部品座標 mm）",
   "numericInput.planarBasis.xAxis": "面内X方向（部品座標）",
   "numericInput.planarBasis.yAxis": "面内Y方向（部品座標）",
-  "numericInput.planarBasis.note": "原点は面のトリム範囲外にある場合もあります。Y方向は外向き法線とX方向から決まり、裏面では向きが変わります。位置は原点 + X×X方向 + Y×Y方向です。"
+  "numericInput.planarBasis.note": "原点は面のトリム範囲外にある場合もあります。Y方向は外向き法線とX方向から決まり、裏面では向きが変わります。位置は原点 + X×X方向 + Y×Y方向です。",
+  "numericInput.holePlacement.edgeDistance": "辺からの距離で指定",
+  "numericInput.field.holeEdgeDistance1": "辺1からの距離",
+  "numericInput.field.holeEdgeDistance2": "辺2からの距離",
+  "numericInput.tooltip.holeEdgeDistance1": "最初に選んだ辺から、面の材料のある側への長さ。長さの式を入力します。",
+  "numericInput.tooltip.holeEdgeDistance2": "2番目に選んだ辺から、面の材料のある側への長さ。長さの式を入力します。",
+  "numericInput.error.edgeDistanceInput": "辺1と辺2からの距離に、空でない有限の長さの式を入力してください。",
+  "numericInput.error.edgeDistanceConflict": "辺からの距離は、中心点の選択・面内X・Y・円筒側面指定と同時に使えません。",
+  "numericInput.error.edgeDistanceEdges": "穴をあける面の縁の直線の辺を、3Dで2本順に押して選んでください。",
+  "numericInput.edgeDistance.edge1": "辺1",
+  "numericInput.edgeDistance.edge2": "辺2",
+  "numericInput.edgeDistance.unpicked": "未選択",
+  "numericInput.edgeDistance.center": "穴の中心",
+  "numericInput.edgeDistance.note": "3Dで面の直線の辺を押して、辺1・辺2の順に選びます。もう一度押すと外れます。穴の中心は、2本の辺を面の材料のある側へ距離だけずらした線の交点です。板の大きさを変えても、辺からの距離を保ちます。"
 }

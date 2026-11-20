@@ -18,7 +18,7 @@ export function PlanarHoleBasisInfo({ feature }: {
 }): React.JSX.Element | null {
   const state = useAppStore();
   if (feature !== undefined && (
-    (feature.kind !== 'hole' && feature.kind !== 'threadHole') || feature.planar === undefined
+    (feature.kind !== 'hole' && feature.kind !== 'threadHole') || feature.planar?.kind !== 'plane-face'
   )) return null;
   const basis = currentPlanarHoleBasis(state, feature);
   if (basis === null) return <p role="status">{t('numericInput.error.planarHoleBasis')}</p>;
@@ -42,7 +42,7 @@ export function currentPlanarHoleBasis(state: AppState, feature?: SolidFeature):
     const refs = selectedSubShapeRefs(state.bodies, state.selection, 'face');
     return refs.length === 1 ? planarBasisForReference(state.bodies, refs[0]) : null;
   }
-  if ((feature.kind !== 'hole' && feature.kind !== 'threadHole') || feature.planar === undefined) return null;
+  if ((feature.kind !== 'hole' && feature.kind !== 'threadHole') || feature.planar?.kind !== 'plane-face') return null;
   if (state.document.solids.find(row => row.id === feature.id) !== feature) return null;
   const bodies = currentPartReferenceBodies(state).filter(row => row.featureId === feature.face.bodyFeatureId
     && !state.partErrors.some(error => error.featureId === row.featureId));

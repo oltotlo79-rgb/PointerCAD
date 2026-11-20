@@ -50,6 +50,7 @@ import type {
   SolidFeature,
   SolidOrigin,
   SurfaceOperation,
+  SweepFeature,
 } from './types.js';
 
 /** 評価し直せなかった式1つ(FR-504)。画面はこれを見て欄を赤く出す。 */
@@ -214,6 +215,24 @@ function rebuildSolidOrigin(origin: SolidOrigin, map: ValueMapper): SolidOrigin 
 }
 
 /** 立体フィーチャー11種の式の欄を写す。 */
+/** 平らな面の穴の置き方の式を評価し直す(穴・ねじ穴で共通)。辺からの距離の辺の参照はそのまま保つ(M-02)。 */
+function rebuildPlanarHole(placement: NonNullable<Extract<SolidFeature, { readonly kind: 'hole' }>['planar']>,
+  map: ValueMapper): NonNullable<Extract<SolidFeature, { readonly kind: 'hole' }>['planar']> {
+  return placement.kind === 'edge-distance'
+    ? { kind: placement.kind, edge1: placement.edge1, edge2: placement.edge2,
+        locations: placement.locations.map(p => ({ distance1: map(p.distance1), distance2: map(p.distance2) })) }
+    : { kind: placement.kind, locations: placement.locations.map(p => ({ x: map(p.x), y: map(p.y) })) };
+}
+
+/** スイープのねじれ・終わりの大きさ・肉厚(M-07)の式を評価し直す。欄の無いスイープは同じものを返す。 */
+function rebuildSweepShape(feature: SweepFeature, map: ValueMapper): SweepFeature {
+  if (feature.twistDegrees === undefined && feature.endScale === undefined && feature.wallThickness === undefined) return feature;
+  return { ...feature,
+    ...(feature.twistDegrees === undefined ? {} : { twistDegrees: map(feature.twistDegrees) }),
+    ...(feature.endScale === undefined ? {} : { endScale: map(feature.endScale) }),
+    ...(feature.wallThickness === undefined ? {} : { wallThickness: map(feature.wallThickness) }) };
+}
+
 function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeature {
   switch (feature.kind) {
     case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return mapSheetMetalExpressions(feature, map);
@@ -249,8 +268,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         ...(feature.cylindrical === undefined
           ? {}
           : { cylindrical: rebuildCylindricalHole(feature.cylindrical, map) }),
-        ...(feature.planar === undefined ? {} : { planar: { kind: feature.planar.kind,
-          locations: feature.planar.locations.map(p => ({ x: map(p.x), y: map(p.y) })) } }),
+        ...(feature.planar === undefined ? {} : { planar: rebuildPlanarHole(feature.planar, map) }),
       };
     case 'threadHole':
       return {
@@ -266,8 +284,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         ...(feature.cylindrical === undefined
           ? {}
           : { cylindrical: rebuildCylindricalHole(feature.cylindrical, map) }),
-        ...(feature.planar === undefined ? {} : { planar: { kind: feature.planar.kind,
-          locations: feature.planar.locations.map(p => ({ x: map(p.x), y: map(p.y) })) } }),
+        ...(feature.planar === undefined ? {} : { planar: rebuildPlanarHole(feature.planar, map) }),
       };
     case 'fillet':
       // 可変半径(FR-426)の終点側は**省略できる欄**なので、押し出しの
@@ -340,8 +357,8 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         factor: rebuildScaleFactor(feature.factor, map),
       };
     case 'sweep':
-      // 断面と経路は参照だけで、式の欄を 1 つも持たない。
-      return feature;
+      // 断面と経路は参照だけ。式の欄はねじれ・終わりの大きさ・肉厚(M-07)だけで、使った時だけ持つ。
+      return rebuildSweepShape(feature, map);
     case 'rib':
       return { ...feature, thickness: map(feature.thickness) };
     case 'emboss':

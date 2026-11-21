@@ -16,6 +16,7 @@
  */
 
 import { planarBasisForReference } from './planarHoleInput.js';
+import { faceOfEdgePair } from './edgeDistanceHoleInput.js';
 import { exactExpressionValueFromNumber, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   appendSolid,
@@ -211,9 +212,12 @@ type MachiningFaceOutcome =
  * 面が 1 つも選ばれていなければ `noFace`。面はあるが `machiningTargetOf` が単一の立体を
  * 決められない(複数の立体の面が混ざっている)ときは `faceNotOnTarget`
  * (「面が加工する立体のものでない」の具体的な言い方として、この場合に使う)。
+ * 面を選ばずに辺 2 本だけを選んでいる時は、2 本が縁に入る平らな面を対象の面にする(M-10 ③、`faceOfEdgePair`)。
  */
 function resolveMachiningFace(context: MachiningContext): MachiningFaceOutcome {
-  const faces = selectedSubShapeRefs(context.bodies, context.selection, 'face');
+  const selected = selectedSubShapeRefs(context.bodies, context.selection, 'face');
+  const fromEdges = selected.length === 0 ? faceOfEdgePair(context.bodies, context.selection) : null;
+  const faces = fromEdges === null ? selected : selectedSubShapeRefs(context.bodies, [fromEdges], 'face');
   if (faces.length === 0) {
     return { ok: false, reasonKey: 'machiningError.noFace' };
   }
@@ -280,13 +284,14 @@ type EdgeDistancePlacementOutcome =
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
 /**
- * 辺からの距離の穴(M-02)の置き方を選択から作る。面は 1 つ、直線の辺はちょうど 2 本で、選んだ順が辺 1・辺 2
+ * 辺からの距離の穴(M-02)の置き方を選択から作る。面は選んだ 1 つか、辺 2 本から決めた面(M-10 ③。選んだ面は 0)で、
+ * 直線の辺はちょうど 2 本、選んだ順が辺 1・辺 2
  * (`edgeDistanceHoleInput.ts` の `withHoleEdge` が順を保つ)。中心点・面内 X・Y・円筒とは同時に使えない。
  * 辺が今の形の面の縁か・平行か・中心が面の中かは、計算部が今の形で確かめて理由つきで断る。
  */
 function edgeDistancePlacement(context: MachiningContext, face: SubShapeRef, input: EdgeDistanceInput,
   exclusive: boolean): EdgeDistancePlacementOutcome {
-  if (exclusive || selectedSubShapeRefs(context.bodies, context.selection, 'face').length !== 1) {
+  if (exclusive || selectedSubShapeRefs(context.bodies, context.selection, 'face').length > 1) {
     return { ok: false, reasonKey: 'numericInput.error.edgeDistanceConflict' };
   }
   if (!isPlaneFace(face)) return { ok: false, reasonKey: 'numericInput.error.holeUnsupportedSurface' };
@@ -953,6 +958,9 @@ export function commitMachiningInput(
     case 'threadShaft':
     case 'pointPattern':
     case 'surface':
+    case 'thicken':
+    case 'offsetBody':
+    case 'blend':
     case 'shell':
     case 'cut':
       /*

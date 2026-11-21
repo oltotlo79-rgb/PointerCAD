@@ -23,6 +23,8 @@ import {
   SELECTION_KIND_LABEL_KEYS,
   toggleSelectionFilter,
 } from '../solid/selectionFilter.js';
+import { stagedExtrusionMessageKey } from '../solid/extrudePreview.js';
+import { currentStagedSolid } from '../store/recomputeSlice.js';
 import { solidToolReadiness } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CommandLine } from './CommandLine.js';
@@ -66,6 +68,12 @@ function planeLabel(workPlaneId: string, customPlanes: readonly WorkPlaneEntry[]
     return t('toolbar.plane.free');
   }
   return customPlanes.find((plane) => plane.id === workPlaneId)?.name ?? workPlaneId;
+}
+
+function currentShapeError(state: ReturnType<typeof useAppStore.getState>): string | null {
+  const stage = currentStagedSolid(state);
+  if (stage?.batchExtrude === undefined || !stage.confirmRequested || stage.status !== 'failed') return state.shapeErrorMessage;
+  return stage.errors[0]?.message ?? stage.errorMessage ?? t(stagedExtrusionMessageKey(state) ?? 'solidError.extrudeFailed');
 }
 
 /** 帯の 1 文に添える印。何を伝えているかで替える。 */
@@ -193,7 +201,7 @@ export function StatusBar(): React.JSX.Element {
     missingAppearanceCount(state.document, state.appearanceMatches),
   );
   // 新しい図形を作れなかった理由。文言キーではなく組み立て済みの文。
-  const shapeErrorMessage = useAppStore((state) => state.shapeErrorMessage);
+  const shapeErrorMessage = useAppStore(currentShapeError);
   // 基準ジオメトリを作れなかった理由。こちらも組み立て済みの文。
   const referenceErrorMessage = useAppStore((state) => state.referenceErrorMessage);
   // 原点を移したときの一言(FR-331)。断りではないので赤くしない。

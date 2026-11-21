@@ -2,6 +2,7 @@
 
 import {
   type Checked,
+  fieldProblem,
   joinPath,
   readBoolean,
   readExpression,
@@ -30,7 +31,7 @@ import {
   type SurfaceOperation,
 } from '@pointercad/model';
 
-/** 曲面の作り方5種(FR-428)。カーネルの `SurfaceInput` と同じ実名。 */
+/** 曲面の作り方(FR-428)の保存名。 */
 const SURFACE_OPERATION_KINDS: readonly SurfaceOperation['kind'][] = [
   'extrude',
   'revolve',
@@ -39,9 +40,11 @@ const SURFACE_OPERATION_KINDS: readonly SurfaceOperation['kind'][] = [
   'face',
   // 面のオフセット(kernel の 6 種目。FR-428)。
   'offset',
+  'blend',
+  'offsetBody',
 ];
 
-/** 曲面の作り方5種(FR-428)。実名はカーネルの `SurfaceInput` と同じ。 */
+/** 曲面の作り方ごとの保存欄。 */
 function serializeSurfaceOperation(operation: SurfaceOperation): SurfaceOperation {
   switch (operation.kind) {
     case 'extrude':
@@ -81,10 +84,19 @@ function serializeSurfaceOperation(operation: SurfaceOperation): SurfaceOperatio
         face: serializeSubShapeRef(operation.face),
         distance: serializeExpression(operation.distance),
       };
+    case 'blend':
+      return { kind: 'blend', a: serializeSubShapeRef(operation.a), b: serializeSubShapeRef(operation.b),
+        weightA: serializeExpression(operation.weightA), weightB: serializeExpression(operation.weightB), flipB: operation.flipB };
+    case 'offsetBody':
+      return {
+        kind: 'offsetBody',
+        targetFeatureId: operation.targetFeatureId,
+        distance: serializeExpression(operation.distance),
+      };
   }
 }
 
-/** 曲面(FR-428)を読む。作り方 5 種で欄が違う。 */
+/** 曲面(FR-428)を読む。 */
 export function readSurfaceFeature(
   record: Record<string, unknown>,
   path: string,
@@ -95,6 +107,22 @@ export function readSurfaceFeature(
     return operation;
   }
   return { ok: true, value: { ...base, kind: 'surface', operation: operation.value } };
+}
+
+function readBlendOperation(record: Record<string, unknown>, path: string): Checked<SurfaceOperation> {
+  const a = readSubShapeRefField(record, 'a', path);
+  if (!a.ok) return a;
+  if (a.value.fingerprint.kind !== 'edge') return fieldProblem(joinPath(path, 'a'), 'type');
+  const b = readSubShapeRefField(record, 'b', path);
+  if (!b.ok) return b;
+  if (b.value.fingerprint.kind !== 'edge') return fieldProblem(joinPath(path, 'b'), 'type');
+  const weightA = readExpression(record, 'weightA', path);
+  if (!weightA.ok) return weightA;
+  const weightB = readExpression(record, 'weightB', path);
+  if (!weightB.ok) return weightB;
+  const flipB = readBoolean(record, 'flipB', path);
+  if (!flipB.ok) return flipB;
+  return { ok: true, value: { kind: 'blend', a: a.value, b: b.value, weightA: weightA.value, weightB: weightB.value, flipB: flipB.value } };
 }
 
 function readSurfaceOperation(
@@ -217,6 +245,14 @@ function readSurfaceOperation(
           distance: distance.value,
         },
       };
+    }
+    case 'blend': return readBlendOperation(record.value, path);
+    case 'offsetBody': {
+      const targetFeatureId = readString(record.value, 'targetFeatureId', path);
+      if (!targetFeatureId.ok) return targetFeatureId;
+      const distance = readExpression(record.value, 'distance', path);
+      if (!distance.ok) return distance;
+      return { ok: true, value: { kind: 'offsetBody', targetFeatureId: targetFeatureId.value, distance: distance.value } };
     }
   }
 }

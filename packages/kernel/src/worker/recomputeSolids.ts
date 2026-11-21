@@ -6,6 +6,7 @@ import type {
 
 import { createAllocations } from '../occt/allocations.js';
 import { booleanOp, type BooleanResult } from '../occt/booleanOp.js';
+import { booleanPattern } from '../occt/booleanPattern.js';
 import { readBrepBytes } from '../occt/brepBytes.js';
 import { moveSolidHole } from '../occt/moveSolidHole.js';
 import { rotateSolidFace } from '../occt/rotateSolidFace.js';
@@ -30,7 +31,12 @@ import { joinSheetMetalShapes } from '../occt/sheetMetalJoin.js';
 import { makeExtrudeSolid, makeRevolveSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import type { SurfaceResult } from '../occt/makeSurface.js';
+import { makeBlendSurface } from '../occt/makeBlendSurface.js';
+import { BlendSurfaceError } from '../occt/blendBoundary.js';
 import { makeSurface } from '../occt/makeSurface.js';
+import type { FunctionSurfaceInput } from '../occt/functionSurfaceGeometrySpec.js';
+import { SurfaceThickenError } from '../occt/makeSurfaceThicken.js';
+import { makeSurfaceBodyStep, sourceSurfaceGeometry } from './surfaceBodyStep.js';
 import { makeFunctionSurfaceBody } from '../occt/makeFunctionSurfaceBody.js';
 import { boundingBoxOf, boundingBoxRange } from '../occt/placeBodies.js';
 import { makeSweep } from '../occt/makeSweep.js';
@@ -49,6 +55,7 @@ import { boundingDiagonal, faceAt } from '../occt/subShapes.js';
 import type {
   AppearanceMatch,
   AppearanceQuery,
+  BlendSurfaceStepSpec,
   BooleanStepSpec,
   ExtrudeStepSpec,
   FilletStepSpec,
@@ -235,6 +242,7 @@ function withMeasuredArea(
  * (makeBox.ts の OcctShapeHandle と同じ約束)。
  */
 export interface CachedSolid {
+  readonly surfaceGeometry?: FunctionSurfaceInput;
   readonly shape: TopoDS_Shape;
   readonly triangulation?: KnownTriangulation;
   readonly tessellation?: TessellationOptions;
@@ -365,6 +373,9 @@ function createBooleanSolid(
 ): BooleanResult {
   const target = findStepInput(cache, failedLabels, spec.targetKey);
   const tool = findStepInput(cache, failedLabels, spec.toolKey);
+  if (spec.transforms !== undefined) {
+    return booleanPattern(oc, spec, spec.transforms, { shape: target.shape, origins: target.mesh.origins }, tool.shape, featureId);
+  }
   const semantic = featureId !== undefined && target.mesh.origins?.state === 'tracked'
     && tool.mesh.origins?.state === 'tracked'
     ? { featureId, target: target.mesh.origins, tool: tool.mesh.origins } : undefined;
@@ -663,6 +674,27 @@ interface StepSolidResult {
   readonly area?: number;
 }
 
+class CancelProbeError extends Error {}
+
+async function createBlendStep(oc: OpenCascadeInstance, spec: BlendSurfaceStepSpec, cache: ShapeCache<CachedSolid>,
+  failedLabels: ReadonlyMap<string, string>, shouldCancel?: SolidCancelToken) {
+  const boundary = (edge: BlendSurfaceStepSpec['a']) => {
+    const source = findStepInput(cache, failedLabels, edge.sourceKey);
+    return { shape: source.shape, tables: source.mesh, query: edge.query };
+  };
+  const input = { a: boundary(spec.a), b: boundary(spec.b), weightA: spec.weightA, weightB: spec.weightB, flipB: spec.flipB };
+  const result = shouldCancel === undefined ? makeBlendSurface(oc, input) : await makeBlendSurface(oc, input, undefined, async () => {
+    await yieldToMessages();
+    try { return await shouldCancel(); }
+    catch (cause) { throw new CancelProbeError('取り消しの確認に失敗しました。', { cause }); }
+  });
+  return result.status === 'shape' ? noMarks(result, 0) : result;
+}
+
+function makeShellStep(oc: OpenCascadeInstance, spec: Extract<SolidStepSpec, { kind: 'shell' }>, target: CachedSolid): StepSolidResult {
+  return noMarks(makeShell(oc, target.shape, target.mesh, spec));
+}
+
 /** ねじの印を持たない段の結果を組み立てる(押し出し・穴・面取り・ばね等)。 */
 function noMarks(handle: OcctShapeHandle, volume?: number, area?: number): StepSolidResult {
   return { handle, threadMarks: [], volume, area };
@@ -696,7 +728,7 @@ function noMarks(handle: OcctShapeHandle, volume?: number, area?: number): StepS
  */
 function createStepSolid(
   oc: OpenCascadeInstance,
-  spec: SolidStepSpec,
+  spec: Exclude<SolidStepSpec, { kind: 'blend' }>,
   options: TessellationOptions,
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
@@ -889,7 +921,7 @@ function createStepSolid(
       return { handle, threadMarks: [mark] };
     }
     case 'surface': {
-      // 曲面(FR-428)。ここだけが `bodyKind: 'shell'` のボディを作る。
+      // 曲面(FR-428)。実際の位相から面ボディと判定される。
       // 判定そのものは buildSolidBodyMesh の hasSolid が行うので、ここに分岐は要らない。
       // 面積は makeSurface が測り済みなので添えて返し、測り直させない。
       const surface = createSurfaceSolid(oc, spec, options, cache, failedLabels, featureId);
@@ -925,10 +957,10 @@ function createStepSolid(
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       return noMarks(makeCut(oc, target.shape, spec));
     }
-    case 'shell': {
-      const target = findStepInput(cache, failedLabels, spec.targetKey);
-      return noMarks(makeShell(oc, target.shape, target.mesh, spec));
-    }
+    case 'shell': return makeShellStep(oc, spec, findStepInput(cache, failedLabels, spec.targetKey));
+    case 'offsetBody':
+    case 'thicken':
+      return noMarks(makeSurfaceBodyStep(oc, findStepInput(cache, failedLabels, spec.targetKey), spec), spec.kind === 'offsetBody' ? 0 : undefined);
     case 'importedSolid':
       // 読み込んだ形のベースボディ(FR-802)。対象を取らない「作る」段で、
       // 抱き込んだバイト列から形を戻すだけ(`createImportedSolid` の注釈)。
@@ -1384,10 +1416,10 @@ function consumesBody(candidate: SolidStepSpec, source: SolidStepRequest): boole
     case 'sheetJoin': return candidate.targetKey === source.key || candidate.toolKey === source.key;
     case 'hole': case 'thread': case 'fillet': case 'chamfer': case 'draft':
     case 'holeTranslate': case 'faceRotate': case 'faceOffset': case 'transform': case 'scale':
-    case 'rib': case 'emboss': case 'threadShaft': case 'shell': case 'cut': case 'surfaceCut':
+    case 'rib': case 'emboss': case 'threadShaft': case 'shell': case 'thicken': case 'cut': case 'surfaceCut':
     case 'sheetFlange': return candidate.targetKey === source.key;
     case 'sew': return 'faces' in candidate
-      && (source.step.kind === 'surface' || source.step.kind === 'functionSurface')
+      && (source.step.kind === 'surface' || source.step.kind === 'functionSurface' || source.step.kind === 'offsetBody' || source.step.kind === 'blend')
       && candidate.faces.some(face => face.targetKey === source.key);
     // Mirrors and surface/primitive/section references borrow their input without consuming it.
     default: return false;
@@ -1518,7 +1550,7 @@ export async function recomputeSolids(
         } catch (error) {
           if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
           failures.push({ id: step.id, message: toFailureMessage(error),
-            ...(error instanceof SurfaceCutError ? { code: error.code } : {}) });
+            ...(error instanceof SurfaceCutError || error instanceof SurfaceThickenError || error instanceof BlendSurfaceError ? { code: error.code } : {}) });
           failedLabels.set(step.key, step.label);
         }
       }
@@ -1530,10 +1562,21 @@ export async function recomputeSolids(
       if (localBudget !== undefined) {
         reservePeak(checkedLocalBytes(cacheBytes, retainedReplyBytes, 4096, 1));
       }
+      const surfaceGeometry = sourceSurfaceGeometry(step.step, cache);
       const sheetCopy = sheetBodies.copy(step.step);
       const primitiveCopy = sheetCopy === null ? primitives.copy(step.step, step.id) : null;
       const reused = sheetCopy ?? primitiveCopy;
-      const stepResult = reused === null ? createStepSolid(oc, step.step, options, cache, failedLabels, step.id) : noMarks(reused, reused.volume);
+      const stepResult = step.step.kind === 'blend' ? await createBlendStep(oc, step.step, cache, failedLabels, shouldCancel)
+        : reused === null ? createStepSolid(oc, step.step, options, cache, failedLabels, step.id) : noMarks(reused, reused.volume);
+      if ('status' in stepResult) {
+        if (stepResult.status === 'cancelled') {
+          cancelled = true;
+          break;
+        }
+        failures.push({ id: step.id, code: stepResult.status, message: stepResult.status });
+        failedLabels.set(step.key, step.label);
+        continue;
+      }
       const meshOptions = resolveTessellationOptions(options, step);
       const meshStarted = performance.now();
       const entry = buildCachedSolid(
@@ -1565,7 +1608,7 @@ export async function recomputeSolids(
       }
       // set consumes ownership even if replacement disposal or trim throws.
       // The outer failure handler must not infer ownership from get()/has().
-      cache.set(step.key, entry);
+      cache.set(step.key, surfaceGeometry === undefined ? entry : { ...entry, surfaceGeometry });
       sheetBodies.remember(step.step, step.key);
       primitives.remember(step.step, step.key);
       if (step.visible) {
@@ -1577,9 +1620,10 @@ export async function recomputeSolids(
         rememberBodyForAppearance(step.key, step.id, entry.shape);
       }
     } catch (error) {
+      if (error instanceof CancelProbeError) throw error.cause;
       if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
       failures.push({ id: step.id, message: toFailureMessage(error),
-            ...(error instanceof SurfaceCutError ? { code: error.code } : {}) });
+            ...(error instanceof SurfaceCutError || error instanceof SurfaceThickenError || error instanceof BlendSurfaceError ? { code: error.code } : {}) });
       failedLabels.set(step.key, step.label);
     }
   }
@@ -1588,7 +1632,7 @@ export async function recomputeSolids(
   const succeeded = new Set([...attempted].filter(id => !failedIds.has(id)));
   for (const step of request.steps) {
     if (cancelled) break;
-    if ((step.step.kind !== 'holeTranslate' && step.step.kind !== 'faceRotate' && step.step.kind !== 'faceOffset')
+    if ((step.step.kind !== 'holeTranslate' && step.step.kind !== 'faceRotate' && step.step.kind !== 'faceOffset' && step.step.kind !== 'thicken')
       || !failedIds.has(step.id)) continue;
     const targetKey = step.step.targetKey;
     const source = request.steps.find(candidate => candidate.key === targetKey);

@@ -1,6 +1,7 @@
 import { adjacentHelpTopics, MANUAL_CHAPTERS, initialHelpHistory, stepHelpHistory, visitHelp, type HelpTopic } from '@pointercad/help-content';
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
+import { rememberDialogOpener } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { HELP_IMAGES, helpLibrary } from './helpContent.js';
 import { HelpMarkdown } from './HelpMarkdown.js';
@@ -27,9 +28,9 @@ export function HelpDialog({ topicId }: { readonly topicId: string }): React.JSX
     if (element !== undefined) element.scrollIntoView({ block: 'start' }); else article.current?.scrollTo({ top: 0 });
   };
   useEffect(() => {
-    const element = dialog.current; const previous = document.activeElement;
+    const element = dialog.current; const restoreFocus = rememberDialogOpener(element);
     element?.showModal();
-    return () => { element?.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+    return () => { element?.close(); restoreFocus(); };
   }, []);
   useEffect(() => {
     let active = true;

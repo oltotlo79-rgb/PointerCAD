@@ -8,7 +8,7 @@ import {
 
 
 
-import { makeFunctionSurface, createAllocations, isValidShape, hasSolid, measureArea,
+import { makeFunctionSurface, createAllocations, createShapeCache, isValidShape, hasSolid, measureArea, recomputeSolids, type CachedSolid,
   type Vec3Tuple, type FunctionClipBox, type FunctionSurfaceGeometrySpec } from '@pointercad/kernel';
 import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { functionSurfaceRequest } from './functionSurfaceRequest.js';
@@ -43,7 +43,7 @@ function expectBounded(points: readonly Vec3Tuple[], bounds: FunctionClipBox): v
     expect(point[axis]).toBeLessThanOrEqual(bounds.maximum[axis]+1e-6);
   }
 }
-function sampled(outputs: readonly [string,string,string], bounds: FunctionClipBox, tolerance: number): FunctionSurfaceGeometrySpec {
+function sampled(outputs: readonly [string,string,string], bounds: FunctionClipBox, tolerance: number, includeSpline = false): FunctionSurfaceGeometrySpec {
   const definitions = outputs.map(source => createFunctionMathSource(source,'text','radian',
     {axes:[],parameters:['U','V'],coefficients:[]},backend));
   const checked=FunctionPlotBounds.read({X:{min:bounds.minimum[0],max:bounds.maximum[0]},
@@ -55,10 +55,33 @@ function sampled(outputs: readonly [string,string,string], bounds: FunctionClipB
     {identity:{documentId:'surface-kernel',documentVersion:1,editorId:'surface',inputRevision:1},coefficients:[]});
   const {result}=executeFunctionSurfaceWorkRequest({kind:'sample-function-surface',serial:1,request},backend);
   if (result.status !== 'ready') throw new Error(JSON.stringify(result));
-  return {vertices:result.vertices.map(vertex=>vertex.point),triangles:result.triangles,bounds};
+  return {vertices:result.vertices.map(vertex=>vertex.point),triangles:result.triangles,bounds,
+    ...(includeSpline && result.spline !== undefined ? { spline: result.spline } : {})};
 }
 
 describe('関数の区間分割から実CADの面とXYZ切取へ接続する', () => {
+  it('数式から得た滑らかな曲面に厚みを付け、三角形経路の平面には理由を返す', async () => {
+    const bounds: FunctionClipBox = { minimum: [-3, -3, -2], maximum: [3, 3, 2] };
+    const curved = sampled(['U', 'V', '0.1*U*V'], bounds, 0.05, true);
+    const plane = sampled(['U', 'V', '0'], bounds, 0.05, true);
+    expect(curved.spline).toBeDefined();
+    expect(plane.spline).toBeUndefined();
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const run = (id: string, geometry: FunctionSurfaceGeometrySpec) => recomputeSolids({ oc, cache }, { generation: 1, steps: [
+        { id, key: id, label: id, visible: false, step: { kind: 'functionSurface', geometry } },
+        { id: 'wall', key: id + '-wall', label: '厚み付け', visible: true,
+          step: { kind: 'thicken', targetKey: id, thickness: 0.1, side: 'normal' } },
+      ] });
+      const smooth = await run('smooth', curved);
+      expect(smooth.failures).toEqual([]);
+      expect(smooth.bodies[0].bodyKind).toBe('solid');
+      expect(smooth.bodies[0].volume).toBeGreaterThan(0);
+      const faceted = await run('faceted', plane);
+      expect(faceted.failures).toMatchObject([{ id: 'wall', code: 'faceted-function-surface' }]);
+    } finally { cache.clear(); }
+  });
+
   it('同一平面の2三角形を、4つの外周頂点と面積を保った1面へまとめる', () => {
     const result = makeFunctionSurface(oc,square);
     if (result.status !== 'shape') throw new Error('Expected CAD faces');

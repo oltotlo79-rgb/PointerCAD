@@ -91,7 +91,7 @@ describe('図面ツリーの各束と表示対象(P8-67)', () => {
     expect(drawingTreeGroups({ ...document, annotations }, null, labels)[2].rows[0].label).toBe('note 1');
   });
 
-  it.each(['bom', 'hole', 'revision'] as const)('%sの表が独立した表の束から選べる', (kind) => {
+  it.each(['bom', 'hole', 'revision', 'parameter'] as const)('%sの表が独立した表の束から選べる', (kind) => {
     const document = fixture();
     const tables = [{ ...document.tables[0], kind }];
     expect(drawingTreeGroups({ ...document, tables }, null, labels)[3].rows[0]).toMatchObject({ id: 'table', kind: 'table', label: `${kind} 1` });

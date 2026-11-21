@@ -185,10 +185,10 @@ export interface Annotation {
   readonly style?: DrawingElementStyle | null;
 }
 
-/** 部品表・穴表・改訂欄の保存形(FR-728、FR-729)。 */
+/** 部品表・穴表・改訂欄・係数の表の保存形(FR-728、FR-729、J-05c)。係数の表の行は保存せず、表示の時に元の部品の係数から作る。 */
 export interface DrawingTable {
   readonly id: string;
-  readonly kind: 'bom' | 'hole' | 'revision';
+  readonly kind: 'bom' | 'hole' | 'revision' | 'parameter';
   readonly position: Point2;
   readonly columns: readonly string[];
   readonly rows?: readonly (readonly string[])[];

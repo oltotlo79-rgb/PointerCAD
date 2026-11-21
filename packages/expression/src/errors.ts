@@ -36,12 +36,19 @@ export type ExpressionErrorCode =
    */
   | 'outOfRange';
 
+type ExpressionHint =
+  | { readonly key: 'explicitMultiplication'; readonly numberText: string; readonly name: string }
+  | { readonly key: 'supportedFunctions'; readonly names: readonly string[] };
+
 export interface ExpressionError {
   readonly code: ExpressionErrorCode;
   /** 利用者へそのまま見せる理由。 */
   readonly message: string;
   /** 式の何文字目か(0 始まり)。定まらないときは -1。 */
   readonly position: number;
+  readonly suggestions?: readonly string[];
+  /** UI の文言を選ぶ鍵と、差し込む値。 */
+  readonly hint?: ExpressionHint;
 }
 
 /** 式の長さの上限。貼り付け事故で解析が止まらないようにする(§2.4)。 */

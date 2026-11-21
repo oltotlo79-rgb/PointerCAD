@@ -29,4 +29,6 @@ export const MOVABLE_PART_BOX_RECORDS: readonly PanelPartRecord[] = [
     height: 28, massG: 12, simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
   { key: 'slide-connector-28x27x28-al', size: '滑るつなぎ 28×27×28（外形を包む形・アルミ）', page: 304, kind: '滑るつなぎ', material: 'aluminum', width: 28, depth: 27,
     height: 28, massG: 13, simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
+  { key: 'hinge-stopper-34.5x10x28-al-fe', size: '蝶番のつなぎの止め 34.5×10×28（外形を包む形・アルミ・鉄）', page: 305, kind: '蝶番のつなぎの止め', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 34.5, depth: 10, height: 28, massG: 13, simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
 ];

@@ -1,5 +1,5 @@
 import type { AffineTransform2, RenderDocument, RenderPrimitive, RenderSubpath, RenderText } from './types.js';
-import { createPdf, PDF_POINTS_PER_MM, type PdfOptions, type PdfResult } from './pdfWriter.js';
+import { createPdf, createPdfPages, PDF_POINTS_PER_MM, type PdfOptions, type PdfPage, type PdfResult } from './pdfWriter.js';
 
 const identity: AffineTransform2 = [1, 0, 0, 1, 0, 0];
 const fixed = (value: number): string => (Object.is(value, -0) ? 0 : value).toFixed(4);
@@ -94,12 +94,29 @@ function primitiveCommands(primitive: RenderPrimitive): string | null {
 }
 
 /** 共通IRは左下原点mm。PDFも上向きなのでSVGのY反転は持ち込まない。 */
-export function toPdf(document: RenderDocument, metadata: Pick<PdfOptions, 'creationDate' | 'title'> = {}): PdfResult {
+function renderPdfPage(document: RenderDocument): PdfPage | null {
   const content: string[] = [];
   for (const primitive of document.primitives) {
     const commands = primitiveCommands(primitive);
-    if (commands === null) return { ok: false, reason: 'invalidContent' };
+    if (commands === null) return null;
     content.push(commands);
   }
-  return createPdf({ ...metadata, widthMm: document.widthMm, heightMm: document.heightMm, content: content.join('\n') });
+  return { widthMm: document.widthMm, heightMm: document.heightMm, content: content.join('\n') };
+}
+
+type PdfMetadata = Pick<PdfOptions, 'creationDate' | 'title'>;
+
+export function toPdf(document: RenderDocument, metadata: PdfMetadata = {}): PdfResult {
+  const page = renderPdfPage(document);
+  return page === null ? { ok: false, reason: 'invalidContent' } : createPdf({ ...metadata, ...page });
+}
+
+export function toPdfPages(documents: readonly RenderDocument[], metadata: PdfMetadata = {}): PdfResult {
+  const pages: PdfPage[] = [];
+  for (const document of documents) {
+    const page = renderPdfPage(document);
+    if (page === null) return { ok: false, reason: 'invalidContent' };
+    pages.push(page);
+  }
+  return createPdfPages(pages, metadata);
 }

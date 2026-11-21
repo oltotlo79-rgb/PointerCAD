@@ -36,7 +36,7 @@ describe('道具の数値初期値', () => {
     const entries = numericToolDefaultEntries();
     expect(new Set(entries.map(entry => entry.id)).size).toBe(entries.length);
     const choiceOnly = new Set<NumericInputStep>([
-      'splineShape', 'mirrorBasis', 'mirrorPlane', 'sweepOptions', 'pointPattern',
+      'splineShape', 'mirrorBasis', 'mirrorPlane', 'pointPattern',
       'referenceAxisKind', 'referencePointKind', 'referenceCsAxes',
     ]);
     for (const step of NUMERIC_INPUT_STEPS) {
@@ -50,6 +50,9 @@ describe('道具の数値初期値', () => {
     }
     expect(entries.filter(entry => entry.id === 'holeSize/absolute/counterboreDiameter')).toHaveLength(1);
     expect(entries.filter(entry => entry.id === 'surfaceShape/absolute/surfaceDistance')).toHaveLength(1);
+    // スイープの段はねじれ・終わりの大きさ・肉厚(M-07)を持つので、初期値を設定できる。
+    expect(entries.filter(entry => entry.step === 'sweepOptions').flatMap(entry => entry.fields.map(item => item.key)))
+      .toEqual(['sweepTwist', 'sweepEndScale', 'sweepWall']);
   });
 
   it('保存境界をまとめて検査し、ひな形由来のパラメータ式は失わない', () => {

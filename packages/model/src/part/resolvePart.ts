@@ -105,6 +105,9 @@ import { independentProfileOrigin, type IndependentProfileOrigin, type Independe
 import {
   consumedTargetsOf,
   DEFAULT_RULED_SPHERE_SEGMENTS,
+  DEFAULT_SWEEP_END_SCALE,
+  DEFAULT_SWEEP_TWIST_DEGREES,
+  DEFAULT_SWEEP_WALL_THICKNESS_MM,
   extrudeShapingOf,
   filletRadiusOf,
   holeEntryOf,
@@ -113,6 +116,8 @@ import {
   MAX_PATTERN_COUNT,
   MAX_SCALE,
   MAX_SPRING_TURNS,
+  MAX_SWEEP_END_SCALE,
+  MAX_SWEEP_TWIST_DEGREES,
   MAX_TAPER_ANGLE_DEGREES,
   MIN_SCALE,
 } from './createPartDocument.js';
@@ -123,7 +128,7 @@ import {
   type ResolvedReferences,
 } from './resolveReferences.js';
 import { dedupeSubShapeRefs, isSameSubShape, subShapeKindOf } from './subShapeRef.js';
-import { historyDependencies } from './timelineOrder.js';
+import { historyDependencies, recomputeHistoryDependencies } from './timelineOrder.js';
 import { directEditPlan, type HoleTranslatePlan, type FaceRotatePlan } from './directEditOperations.js';
 import {
   checkFaceOffset,
@@ -138,7 +143,6 @@ import type {
   ChamferSize,
   CutFeature,
   SurfaceCutFeature,
-  SurfaceCutFailureReason,
   DraftFeature,
   EmbossFeature,
   ExtrudeEnd,
@@ -165,6 +169,7 @@ import type {
   ScaleFeature,
   SewFeature,
   ShellFeature,
+  ThickenFeature,
   SketchCurveRef,
   SketchFaceRef,
   SketchPointRef,
@@ -181,6 +186,7 @@ import type {
   ThreadShaftFeature,
   TransformFeature,
 } from './types.js';
+import type { BlendPlan, OffsetBodyPlan, SolidFailureReason, ThickenPlan } from './surfaceBodyPlan.js';
 import type { FunctionSurfacePlan as TypeFunctionSurfacePlan } from '../functionGeometry/functionSurfaceFeature.js';
 import type { FunctionPointResolver as TypeFunctionPointResolver } from '../functionGeometry/functionPointReference.js';
 
@@ -372,6 +378,9 @@ export type SurfaceCutBladePlan =
  * 向き・反転・両側の平行移動はここまでで済ませてあり、kernel へは断面・向き・長さだけが渡る。
  */
 export type SolidStepPlan =
+  | ThickenPlan
+  | BlendPlan
+  | OffsetBodyPlan
   | TypeFunctionSurfacePlan
   | SheetSolidPlan
   // 平らな面の移動(限られた一段)。形は directFaceEdit.ts が持つ。**対象を消費する。**
@@ -444,6 +453,8 @@ export type SolidStepPlan =
       readonly targetKey: string;
       /** 相手(消える側)のボディの鍵。 */
       readonly toolKey: string;
+      /** パターンでは、元の加工結果に追加する工具の配置。空配列は元の結果を引き継ぐ。 */
+      readonly transforms?: readonly RigidTransform[];
       /** 何も削れない差を断るか(`BooleanFeature.requireRemoval`)。立てたときだけ欄がある。 */
       readonly requireRemoval?: true;
     }
@@ -874,7 +885,7 @@ export type PartErrorCode =
 /** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */
 export interface PartError {
   readonly featureId: string;
-  readonly reason?: SurfaceCutFailureReason;
+  readonly reason?: SolidFailureReason;
   readonly code: PartErrorCode;
   readonly message: string;
 }
@@ -2754,11 +2765,21 @@ export function resolvePatternTransforms(
   return { ok: true, transforms, placementRoles };
 }
 
-/**
- * パターン(FR-411、FR-412)。繰り返すもとの加工フィーチャー(穴・ねじ穴に限る)
- * のボディを消費し、もとの工具の指定に `transforms` を足しただけの計画を作る。
- * パターン専用の SolidStepPlan の種類は持たない(「畳み方」手順5・6)。
- */
+/** 並べる行から依存をたどり、この行へ戻るときだけ循環とする。深い履歴でも呼出しを積まない。 */
+function patternRefersToSelf(id: string, graph: ReadonlyMap<string, readonly string[]>): boolean {
+  const pending = [...(graph.get(id) ?? [])];
+  const visited = new Set<string>();
+  for (let i = 0; i < pending.length; i += 1) {
+    const current = pending[i];
+    if (current === id) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const next of graph.get(current) ?? []) pending.push(next);
+  }
+  return false;
+}
+
+/** 元の結果は最初の配置を含む。残りの写しだけを同じ結果に一括で適用する。 */
 function planPattern(
   feature: PatternFeature,
   solids: readonly SolidFeature[],
@@ -2767,17 +2788,12 @@ function planPattern(
   consumed: ReadonlySet<string>,
   context: SolidPlanContext,
 ): PlanOutcome {
-  const notPatternSourceMessage = '繰り返せるのは穴とねじ穴だけです。穴かねじ穴を選び直してください。';
-  // 過去の失敗(ブーリアンの対象=相手)と同じ扱いで、自己参照を先に弾く。
-  // パターン自身は kind が 'pattern' で
-  // isPatternSource が false になるので、この早期リターンが無くても下の判定で同じ結果になるが、
-  // 「自己参照」であることを意図として明示するため独立させる。
-  if (feature.sourceFeatureId === feature.id) {
-    return fail(feature.id, 'invalidValue', notPatternSourceMessage);
-  }
-  const source = solids.find((candidate) => candidate.id === feature.sourceFeatureId);
-  if (source === undefined || !isPatternSource(source)) {
-    return fail(feature.id, 'invalidValue', notPatternSourceMessage);
+  const notPatternSourceMessage = '並べる立体、穴・ねじ穴、または作成行と対になった結合・切り抜きの行を選び直してください。';
+  const source = solids.find(candidate => candidate.id === feature.sourceFeatureId);
+  if (source === undefined) return fail(feature.id, 'missingBody', '並べるもとのソリッドが見つかりません。');
+  if (!isPatternSource(source, solids)) return fail(feature.id, 'invalidValue', notPatternSourceMessage);
+  if (source.kind === 'boolean' && !bodyKeys.has(source.targetFeatureId)) {
+    return fail(feature.id, 'missingBody', '結合・切り抜きの相手のソリッドが見つかりません。');
   }
   const sourceTarget = resolveMachiningTarget(feature.id, feature.sourceFeatureId, bodyKeys, consumed);
   if (!sourceTarget.ok) {
@@ -2793,6 +2809,15 @@ function planPattern(
   if (!transformsOutcome.ok) {
     return fail(feature.id, transformsOutcome.code, transformsOutcome.message);
   }
+  if (source.kind !== 'hole' && source.kind !== 'threadHole') {
+    const toolKey = source.kind === 'boolean' ? bodyKeys.get(source.toolFeatureId) : sourceTarget.targetKey;
+    if (toolKey === undefined) return fail(feature.id, 'missingBody', '並べる工具のソリッドが見つかりません。');
+    const transforms = feature.placement.kind === 'points' ? transformsOutcome.transforms.slice(1) : transformsOutcome.transforms;
+    return { ok: true, plan: {
+      kind: 'boolean', operation: source.kind === 'boolean' ? source.operation : 'union',
+      targetKey: sourceTarget.targetKey, toolKey, transforms,
+    } };
+  }
   // もとの穴・ねじ穴の解決をもう一度呼んで再利用する。ただし consumed には
   // 「空集合」を渡す: もとのフィーチャー自身がその対象(例: 穴なら掘り込む先のボディ)を
   // main loop の消費記録ですでに consumed へ加えている(このパターンの直前で処理済みのため)。
@@ -2801,15 +2826,9 @@ function planPattern(
   // など)を再利用したいだけで、対象の消費可否は「もとのフィーチャーの鍵が bodyKeys にある」
   // ことで既に保証されている(無ければ sourceTarget の解決で先に missingBody として断っている)。
   const reuseConsumed = new Set<string>();
-  let baseOutcome: PlanOutcome;
-  if (source.kind === 'hole') {
-    baseOutcome = planHole(source, sketches, bodyKeys, reuseConsumed);
-  } else if (source.kind === 'threadHole') {
-    baseOutcome = planThreadHole(source, sketches, bodyKeys, reuseConsumed);
-  } else {
-    // isPatternSource が hole/threadHole だけを通すので、ここへは来ない(型の保険)。
-    return fail(feature.id, 'invalidValue', notPatternSourceMessage);
-  }
+  const baseOutcome = source.kind === 'hole'
+    ? planHole(source, sketches, bodyKeys, reuseConsumed)
+    : planThreadHole(source, sketches, bodyKeys, reuseConsumed);
   if (!baseOutcome.ok) {
     // もとの解決の失敗理由をそのままパターンの失敗として出す(featureId だけ差し替える)。
     return { ok: false, error: { ...baseOutcome.error, featureId: feature.id } };
@@ -3779,8 +3798,6 @@ function curveProfileNormal(
 }
 
 /** スイープのねじれ・先細り・中空(M-07)の断り。範囲の文は計算部(`occt/sweepLaw.ts`・`occt/sweepHollow.ts`)と同じ。 */
-const SWEEP_TWIST_LIMIT_DEGREES = 3600;
-const SWEEP_END_SCALE_LIMIT = 10;
 const SWEEP_TWIST_MESSAGE = 'ねじれは±3600度(10回転)までにしてください。';
 const SWEEP_END_SCALE_MESSAGE = '終わりの大きさは、0より大きく10以下の倍率にしてください。';
 const SWEEP_WALL_MESSAGE = '肉厚は0より大きい長さにしてください。';
@@ -3796,16 +3813,17 @@ type SweepShapeOutcome =
  * plan に載せないので、使わないスイープの段と鍵は今と 1 字も変わらない。閉じた経路・継ぎ目の折れは計算部が今の形で断る。
  */
 function sweepShapeFields(feature: SweepFeature, holes: readonly (readonly ResolvedCurve[])[], hasGuide: boolean): SweepShapeOutcome {
-  const twistDegrees = feature.twistDegrees?.value ?? 0, endScale = feature.endScale?.value ?? 1, wall = feature.wallThickness?.value ?? 0;
-  if (!Number.isFinite(twistDegrees) || exceedsMagnitude(twistDegrees, SWEEP_TWIST_LIMIT_DEGREES)) return { ok: false, message: SWEEP_TWIST_MESSAGE };
-  if (!Number.isFinite(endScale) || !(endScale > 0) || endScale > SWEEP_END_SCALE_LIMIT) return { ok: false, message: SWEEP_END_SCALE_MESSAGE };
+  const twistDegrees = feature.twistDegrees?.value ?? DEFAULT_SWEEP_TWIST_DEGREES, endScale = feature.endScale?.value ?? DEFAULT_SWEEP_END_SCALE;
+  const wall = feature.wallThickness?.value ?? DEFAULT_SWEEP_WALL_THICKNESS_MM;
+  if (!Number.isFinite(twistDegrees) || exceedsMagnitude(twistDegrees, MAX_SWEEP_TWIST_DEGREES)) return { ok: false, message: SWEEP_TWIST_MESSAGE };
+  if (!Number.isFinite(endScale) || !(endScale > 0) || endScale > MAX_SWEEP_END_SCALE) return { ok: false, message: SWEEP_END_SCALE_MESSAGE };
   if (!Number.isFinite(wall) || wall < 0) return { ok: false, message: SWEEP_WALL_MESSAGE };
-  if (hasGuide && (twistDegrees !== 0 || endScale !== 1)) return { ok: false, message: SWEEP_LAW_WITH_GUIDE_MESSAGE };
+  if (hasGuide && (twistDegrees !== DEFAULT_SWEEP_TWIST_DEGREES || endScale !== DEFAULT_SWEEP_END_SCALE)) return { ok: false, message: SWEEP_LAW_WITH_GUIDE_MESSAGE };
   if (wall > 0 && holes.length > 0) return { ok: false, message: SWEEP_WALL_WITH_HOLES_MESSAGE };
   return { ok: true, fields: {
-    ...(twistDegrees === 0 ? {} : { twist: twistDegrees * Math.PI / 180 }),
-    ...(endScale === 1 ? {} : { endScale }),
-    ...(wall === 0 ? {} : { wallThickness: wall }),
+    ...(twistDegrees === DEFAULT_SWEEP_TWIST_DEGREES ? {} : { twist: twistDegrees * Math.PI / 180 }),
+    ...(endScale === DEFAULT_SWEEP_END_SCALE ? {} : { endScale }),
+    ...(wall === DEFAULT_SWEEP_WALL_THICKNESS_MM ? {} : { wallThickness: wall }),
     ...(holes.length === 0 ? {} : { holes }),
   } };
 }
@@ -4157,7 +4175,7 @@ function surfaceLineOrigins(sketch: SketchDocument | undefined, ids: readonly st
 
 function resolveSurfaceShape(
   featureId: string,
-  operation: SurfaceOperation,
+  operation: Exclude<SurfaceOperation, { kind: 'offsetBody' | 'blend' }>,
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   context: SolidPlanContext,
@@ -4325,6 +4343,22 @@ function resolveSurfaceShape(
   }
 }
 
+function planBlend(featureId: string, operation: Extract<SurfaceOperation, { kind: 'blend' }>,
+  bodyKeys: ReadonlyMap<string, string>): PlanOutcome {
+  const { a, b, flipB } = operation;
+  if (subShapeKindOf(a) !== 'edge' || subShapeKindOf(b) !== 'edge' || isSameSubShape(a, b)) {
+    return fail(featureId, 'invalidValue', 'つなぎには異なる 2 本の境界辺を選んでください。');
+  }
+  const sourceA = bodyKeys.get(a.bodyFeatureId), sourceB = bodyKeys.get(b.bodyFeatureId);
+  if (sourceA === undefined || sourceB === undefined) return fail(featureId, 'missingBody', SURFACE_MISSING_BODY_MESSAGE);
+  const weightA = operation.weightA.value, weightB = operation.weightB.value;
+  if (![weightA, weightB].every(weight => Number.isFinite(weight) && weight > 0)) {
+    return fail(featureId, 'invalidValue', 'つなぎの重みは正の有限な長さで指定してください。');
+  }
+  return { ok: true, plan: { kind: 'blend', a: { sourceKey: sourceA, query: a }, b: { sourceKey: sourceB, query: b },
+    weightA, weightB, flipB } };
+}
+
 /**
  * 曲面(FR-428)。**閉じた立体ではなく面だけのボディ**を作る。
  * **どの作り方でも対象を消費しない**(面を貸した立体はそのまま画面に残る)。
@@ -4335,6 +4369,14 @@ function planSurface(
   bodyKeys: ReadonlyMap<string, string>,
   context: SolidPlanContext,
 ): PlanOutcome {
+  if (feature.operation.kind === 'blend') return planBlend(feature.id, feature.operation, bodyKeys);
+  if (feature.operation.kind === 'offsetBody') {
+    const targetKey = bodyKeys.get(feature.operation.targetFeatureId);
+    if (targetKey === undefined) return fail(feature.id, 'missingBody', SURFACE_MISSING_BODY_MESSAGE);
+    const distance = feature.operation.distance.value;
+    if (!Number.isFinite(distance) || distance === 0) return fail(feature.id, 'invalidValue', SURFACE_OFFSET_ZERO_MESSAGE);
+    return { ok: true, plan: { kind: 'offsetBody', targetKey, distance } };
+  }
   const outcome = resolveSurfaceShape(feature.id, feature.operation, sketches, bodyKeys, context);
   if (!outcome.ok) {
     return outcome;
@@ -4343,6 +4385,18 @@ function planSurface(
     ok: true,
     plan: { kind: 'surface', shape: outcome.value.shape, targetKey: outcome.value.targetKey },
   };
+}
+
+function planThicken(feature: ThickenFeature, bodyKeys: ReadonlyMap<string, string>, consumed: ReadonlySet<string>): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) return target;
+  const thickness = feature.thickness.value;
+  if (!isPositiveFinite(thickness)) return fail(feature.id, 'invalidValue', SHELL_THICKNESS_MESSAGE);
+  const side = feature.side;
+  if (side !== 'normal' && side !== 'reverse' && side !== 'both') {
+    return fail(feature.id, 'invalidValue', '厚みを付ける側を選び直してください。');
+  }
+  return { ok: true, plan: { kind: 'thicken', targetKey: target.targetKey, thickness, side } };
 }
 
 /** くり抜きの断りの文言(FR-418、FR-504)。 */
@@ -4750,6 +4804,8 @@ function planSolid(
       const plan = context.functionSurfaces(feature.id);
       return plan === null ? fail(feature.id, 'invalidValue', '関数曲面の原式を再計算してください。') : { ok: true, plan };
     }
+    case 'thicken':
+      return planThicken(feature, bodyKeys, consumed);
     case 'shell':
       return planShell(feature, bodyKeys, consumed);
     // 平面による切断(FR-432)。
@@ -5092,6 +5148,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   const surfaceCutGraph = document.solids.some(feature => feature.kind === 'surfaceCut')
     ? historyDependencies(document, { includeSelf: true }) : new Map<string, readonly string[]>();
   const solidIds = new Set(document.solids.map(feature => feature.id));
+  let patternGraph: ReadonlyMap<string, readonly string[]> | undefined;
 
   for (const feature of document.solids) {
     // 抑制は失敗ではない(FR-503)。ボディを作らず、errors にも入れない。
@@ -5100,6 +5157,13 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     }
     const invalid = options.invalidInputs?.get(feature.id);
     if (invalid !== undefined) { errors.push(partError(feature.id, 'invalidValue', invalid)); continue; }
+    if (feature.kind === 'pattern') {
+      patternGraph ??= recomputeHistoryDependencies(document);
+      if (patternRefersToSelf(feature.id, patternGraph)) {
+        errors.push(partError(feature.id, 'circularReference', '並べる対象の参照が自分自身へ戻っています。'));
+        continue;
+      }
+    }
     if (feature.kind === 'surfaceCut') {
       const dependencyError = surfaceCutDependencyError(feature.id, surfaceCutGraph, solidIds, bodyKeys);
       if (dependencyError !== null) { errors.push(dependencyError); continue; }

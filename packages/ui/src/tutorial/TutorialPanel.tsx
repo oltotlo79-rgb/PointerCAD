@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { openPartExamples } from '../examples/openPartExample.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -48,6 +49,9 @@ export function TutorialWelcome(): React.JSX.Element | null {
     <button type="button" className="pcad-button pcad-tutorial-welcome"
        title={t('tutorial.parameter.startHint')} onClick={() => openTutorial('parameterToExport')}>{t(resumeParameter
          ? 'tutorial.parameter.resume' : 'tutorial.parameter.start')}</button>
+    {/* 作例の一覧(J-06b)。ファイルの一覧の「作例を開く」と同じ窓を開く。 */}
+    <button type="button" className="pcad-button pcad-tutorial-welcome"
+      title={t('examples.menuTooltip')} onClick={openPartExamples}>{t('examples.menu')}</button>
   </div>;
 }
 

@@ -1540,6 +1540,25 @@ describe('辺からの距離の穴の確定(M-02)', () => {
     expect(outcome.document.solids).toHaveLength(before.document.solids.length + 1);
   });
 
+  it.each(['hole', 'threadHole'] as const)('%s: 面を選ばず辺 2 本だけでも、2 本が縁に入る平らな面に、同じ穴をあける(M-10 ③)', tool => {
+    // 上面(面 0)の縁は辺 0・1(と、ここに無い 2 本)。側面(面 1)の縁は辺 1・2。
+    const bodies = [makeBody('extrude-1', { edges, faces: [makeFace(0, { boundaryEdgeIndices: [0, 1, 4, 5] }),
+      makeFace(1, { centroid: [60, 20, 5], axis: [1, 0, 0], boundaryEdgeIndices: [1, 2, 6, 7] })] })];
+    const byEdges = { ...context([edge(1), edge(0)]), bodies };
+    expect(machiningToolReadiness(byEdges, tool)).toEqual({ ready: true, reasonKey: null });
+    const outcome = commitMachiningInput(byEdges, commit(tool));
+    const withFace = commitMachiningInput({ ...context([face, edge(1), edge(0)]), bodies }, commit(tool));
+    if (!outcome.ok || !withFace.ok) throw new Error('Expected both placements to be accepted');
+    const feature = requireFeature(outcome.document, outcome.featureId);
+    expect(feature).toEqual(requireFeature(withFace.document, withFace.featureId));
+    if (feature.kind !== 'hole' && feature.kind !== 'threadHole') throw new Error('Expected machining feature');
+    expect(feature.face).toMatchObject({ bodyFeatureId: 'extrude-1', index: 0 });
+    expect(feature.planar).toMatchObject({ kind: 'edge-distance', edge1: { index: 1 }, edge2: { index: 0 } });
+    // 縁が 1 枚に決まらない 2 本(辺 0 と縦の辺 2)は、面が無い時と同じ理由で断る。
+    expect(machiningToolReadiness({ ...context([edge(0), edge(2)]), bodies }, tool))
+      .toEqual({ ready: false, reasonKey: 'machiningError.noFace' });
+  });
+
   it('辺の数・種類・面なし・距離の欠け・空の式・円筒・中心点との併用は、理由をつけて断り、文書を変えない', () => {
     const refuse = (selection: readonly string[], change: Partial<SolidInputCommit> = {}) =>
       commitMachiningInput(context(selection), { ...commit('hole'), ...change });

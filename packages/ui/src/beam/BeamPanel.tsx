@@ -5,6 +5,8 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { BeamMemberFields } from './BeamMemberFields.js';
 import { BeamResults } from './BeamResults.js';
+import { SavedBeamResult } from './SavedBeamResult.js';
+import { BeamReportButton } from './BeamReportButton.js';
 import { BeamWeldSpanResults } from './BeamWeldSpanResults.js';
 import { BeamModalResults } from './BeamModalResults.js';
 import { BeamBucklingResults } from './BeamBucklingResults.js';
@@ -167,8 +169,10 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
         {t('beam.run')}</button>
       <button type="button" className="pcad-button" data-testid="beam-cancel" disabled={!running} onClick={state.cancelBeam} title={t('beam.guide.cancel')}>{t('beam.cancel')}</button>
       <button type="button" className="pcad-button" data-testid="beam-apply" disabled={!reviewed || running} onClick={state.applyBeamInputs} title={t('beam.guide.apply')}>{t('beam.apply')}</button>
+      <BeamReportButton session={session} reviewed={reviewed} />
       <button type="button" className="pcad-button" data-testid="beam-close" onClick={state.closeBeam} title={t('beam.guide.close')}>{t('beam.close')}</button>
     </div>
+    {reviewed && !running && session.result?.kind === 'oofem-linear-beam-3d' ? <p data-testid="beam-apply-result-notice">{t('beam.applyResultNotice')}</p> : null}
     <p role="status" data-testid="beam-status" data-status={session.status} data-phase={session.phase ?? ''}>
       {running ? t(session.analysisType === 'impact' && session.phase === 'solving' ? 'beam.phase.impact'
         : session.analysisType === 'friction' && session.phase === 'solving' ? 'beam.phase.friction'
@@ -210,6 +214,6 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
       ? <BeamBucklingResults result={session.result} edges={session.bucklingEdges} />
       : session.result.kind === 'oofem-beam-modal-3d'
       ? <BeamModalResults result={session.result} />
-      : <BeamResults result={session.result} members={session.members} /> : null}
+      : <BeamResults result={session.result} members={session.members} /> : reviewed ? null : <SavedBeamResult session={session} />}
   </form>;
 }

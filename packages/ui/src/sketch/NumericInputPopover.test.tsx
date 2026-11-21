@@ -180,6 +180,21 @@ describe('Extrusion input commits through geometry calculation (EX-14)', () => {
       }
     });
 
+  /* 窓が選んだ面の画面の外形(箱)を避ける(M-10 ①)。窓は 260×372、縁 8、箱から 14 離す。画面は 800×600。 */
+  it.each([
+    ['anchor', [400, 100], null, 414, 114],
+    ['right', [400, 100], { left: 300, top: 50, right: 450, bottom: 200 }, 464, 114],
+    ['left', [400, 100], { left: 300, top: 50, right: 600, bottom: 200 }, 26, 114],
+    ['below', [400, 100], { left: 20, top: 10, right: 700, bottom: 150 }, 414, 164],
+    ['above', [400, 500], { left: 20, top: 450, right: 700, bottom: 590 }, 414, 64],
+    ['unplaced', [400, 300], { left: 10, top: 10, right: 790, bottom: 590 }, 414, 220],
+  ] as const)('opens %s of the picked face outline without covering it', (placement, anchor, avoid, left, top) => {
+    useAppStore.setState({ numericInputAnchor: anchor, numericInputAvoid: avoid });
+    const markup = renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />);
+    expect(markup).toContain(`data-placement="${placement}"`);
+    expect(markup).toContain(`left:${String(left)}px;top:${String(top)}px`);
+  });
+
   it('Enter without the geometry scheduler keeps the input, document and Undo, and explains what to do', () => {
     const before = useAppStore.getState(), event = keyInput('Enter');
     panelHandler()(event);

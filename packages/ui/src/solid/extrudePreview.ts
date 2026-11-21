@@ -18,12 +18,13 @@ import {
   type StagedConfirmation,
   type StagedSolidFailure,
   type StagedSolidState,
+  type StagedSolidRequest,
 } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { extrudeRegionHintKey } from './regionPick.js';
 
 /** 押し出しの候補。`document` は `base` から純関数で作り、末尾へ積んだ形のもの。 */
-export interface ExtrudeStageCandidate {
+export interface ExtrudeStageCandidate extends Pick<StagedSolidRequest, 'batchExtrude'> {
   /** 候補を作った元の文書(いまの文書と同じ実体でなければ断る)。 */
   readonly base: PartDocument;
   readonly document: PartDocument;
@@ -40,7 +41,7 @@ export interface ExtrudeStageCandidate {
 export function stageExtrusion(candidate: ExtrudeStageCandidate): StagedSolidState | null {
   const stager = useAppStore.getState().partStager;
   if (stager === null) return null;
-  return stager.stage({ base: candidate.base, candidate: candidate.document,
+  return stager.stage({ batchExtrude: candidate.batchExtrude, base: candidate.base, candidate: candidate.document,
     finalFeatureId: candidate.featureId, fingerprint: candidate.inputKey });
 }
 

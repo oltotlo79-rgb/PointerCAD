@@ -100,6 +100,18 @@ describe('ボタンと割当キーは同じ文書と入力へ接続する', () =
     expect(state().document).toBe(original); expect(state().canUndo).toBe(false);
   });
 
+  it('作例を開くは一覧の窓を開くだけで、部品の文書と履歴を変えない(J-06b)。組立では押せない', () => {
+    const original = state().document;
+    expect(run('toolbar.fileMenu.openExample').status).toBe('executed');
+    expect(state().utilityPanel).toBe('examples');
+    expect(state().document).toBe(original); expect(state().canUndo).toBe(false);
+    state().setUtilityPanelOpen('examples', false);
+    state().openAssembly(createAssemblyDocument('組立'));
+    expect(run('toolbar.fileMenu.openExample')).toEqual({ status: 'disabled', commandId: 'toolbar.fileMenu.openExample',
+      ready: false, reasonKey: 'command.unavailable.document' });
+    expect(state().utilityPanel).toBeNull();
+  });
+
   it.each(DRAWING_DIMENSION_KINDS)('$keyは図面の同じ測り方へ接続し、確定前の形と履歴を保つ', item => {
     openDrawing(); const original = state().drawing;
     expect(run(toolbarCommandId('drawing', item.key)).status).toBe('executed');

@@ -243,2058 +243,1714 @@
     {
       "file": "e2e/release/offlineCandidate.spec.ts",
       "category": "release-config",
-      "sha256": "8329509ab3e5b1cf8739a8cf525d25990a7ef55b30db7cc47ad860c1e7f46a76",
       "reason": "offline-candidate.config.ts"
     },
     {
       "file": "e2e/release/packagedDesktop.spec.ts",
       "category": "release-config",
-      "sha256": "7101242f72f32d8e149044671e0d272bd93cd4a989a6a7d3a1cc9ddc826237ae",
       "reason": "packaged-desktop.config.ts variant"
     },
     {
       "file": "e2e/release/portableDesktop.spec.ts",
       "category": "release-config",
-      "sha256": "f7b1e0fcc9984dd67d34bd18f746aa51e4b312547db450011d7870997bfa5e57",
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "af5df04452971407d4132a33af6754355783ab01a8d3bdb0323508422f9506d3",
-  "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
       "file": "a-math-input.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "46b883b228e4304712a9112f11c497cd047d53a123101c7fac5c52519fed803f"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "aluminum-frame-catalog.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "90858457f6a3974bb2b81eceb3031f1dfa8c5c544e137e9297cd709b87c86f55"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-advanced.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "677d810511ccf731e5d8b5a1555e57aa4cbb958412c72a2f6145785bde7b3829"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-bolt-persistence.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "15a814d9b820acc7a9fb457c1ea6a8efd783028168d4d039b35829fc04007cdf"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-connections-persistence.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "7d786490a07de9455e956e3bc47d3679570aef7a98959da22942085ed2822401"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-entry.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "11b29f0f5e104e8d4c928bafa770dab85a78cf6dc72d8426dd8e57714f2904cb"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-fatigue-native.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "c4bc5e7d1e32d080c073168ec62c40006afe418d3086d78edc70b734648e8361"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-plastic-persistence.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "f191331c507b0c4dbdfa85616375a104173e36b007d912b7143d4c599fcda0c7"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-resources.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "58643a91a578220007ddb2ab44467b582ba5720a038f93a3120156d71cb96e3a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-result-binding.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "6a7919885e18aa262e40b18536d9a4b8725e6b2ab4d036755d1c401342cb487a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "analysis-static-connections.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "8c2d9a9116c6da7be8d2bde8b28272349c04d0e6862232280c6d745ced085d59"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "appearance-color.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "dbce2fd48f6041bc77b1fde5f5682641a9173526c63342def24a77c7c4c68de6"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "appearance-glass.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "693ea02a862a31807443178ea39d81a2588c138956505b14cdb7e4b6b279f7b7"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "appearance-pattern.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "3b77d3ab531ec8c02bd72e80aaaf5b902f089427de24bf0a62119e17a68f50af"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "appearance.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "e548d21e6474045388f187b1ec4cbe9851675f8022ce5224ae929e4e6e7b6d01"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "assembly-1000-host.spec.ts",
       "category": "dedicated",
-      "reason": "MEASUREMENT_FILES in playwright.config.ts",
-      "sha256": "e4e29beb024b432fe75d7c319e80498d5f80d274064722d0862d23cfe5fed62d"
+      "reason": "MEASUREMENT_FILES in playwright.config.ts"
     },
     {
       "file": "assembly-coupled-drag.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "f89d2776f63243f583becb4a3665757de703bf9405f56ba27076ab3c7a03b9ac"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "assembly-flexible-motion.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "d278bdf014ed004c6730c1f1e6e949fde4469e23434da4d8d426529488c21d80"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "assembly-place.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "526129a0fa3c50efc0c5820f17ea028ff87c28f82e59242e586ebc3e55cb3243"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "assembly.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "2d38833e3f4a445bdb2c76c6675456132384b39a20487eec00d8c78a5fff15c9"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "auto-save-settings.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "9b0c96236d389ba94704a02227b245497d3635d723eb1a3436b7a8177a4c0223"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "beam-buckling-native.spec.ts",
       "category": "numerical-worker-representative",
-      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success",
-      "sha256": "6d370dffcc95736f91bd4150e81411309fa349d268e4d62ab2132792bf712c91"
+      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success"
     },
     {
       "file": "bolt-preload.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "34e50ffb75eb94e6280baca4afc1db98259d6d62d1d96f373e55150091e213ab"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "bolted-joint-same-holes.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "5c107ddee4c36353371a3ac4f95c612b05fdd8ec49c4d9ca6971e197e59399d5"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "bolted-joint-tapped.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "16439492967bd8d3e5402b767d6f7f5eb88c535e8db89a61244d76f7d005057f"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "bolted-joint-through-thread.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "947a3b7f54614591386f44786578a53a5460b0e738cc0a05604bd28faa185947"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "bolted-joint.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "dbba83b71138e79df5c2c52ce7f817ac9652980a48801a6e8918b98a745a9d88"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "bom.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "30a64a8d51a44aefe376e1c86859f51d5cb89653b9886904ee9fc079fe530562"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "browser-security.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "774854df2b9c744a66d0aefcc422f2e7c7b5c78ae486930d85f48c14e29dbb83"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "cam.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "8e8bf380931238bd17ca109ee4e6386f60e1aedb063b49f995cce1d79b2b29f3"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "camera-controls-presets.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "294c39ab25b14d11b5bd162538f053c29d67f1e65f3bfc4ed37a11397263f19f"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "camera-controls-settings.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "db2e5561d59166a4cef601089ffc880d8654e7cdb0185658ee5ad3387931741a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "canvas.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "3bb54a22d8e283fc088d1ae34a2c5c4ae8daba1de3c1b7306e2f02af149d976e"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "circular-weld.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "eea8f097c435cb04955226c8ade442ef104252d5179a781ad5b643cba4b9e962"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "combined-weld-stress.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "a8d27108fe954284a0c9ba651438148b1e82b19eb70f617ccd37a7050b8844e8"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "command-line.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "47bfbe326ecea08c3b9e73a471ff046abe75e6798cc25c48ae0fd4ab7d79f4b5"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "command-registry.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "7e1d3aa10aba3c6c06aa30b05c29f207dc10ae744f1d9648ee5e00a72e318034"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "connect-points.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "49f68b4dc9c45cc85e24364a1a82eb034a75bafe84c03e957072e06cf0cf36f2"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "constraints.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "38477bf1cb2081dc48dd7ef2fde392f9f1fb43137d813e6c9171124876969f19"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "context-reference-cycle-open.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "bf39c1a6570c1c9c11901c89204efb655fdb454dccdbe53ca311876ed8d8a85b"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "context-reference-repair.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "9758fe5249974b0fce1862a56b1c5d98cdea37a8e1968bd48331d5391afd7114"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "context-reference-route5.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "58117dcc5b5213b638d8f4d67aeeb283053316c5ad862b45a29f720fec4ec414"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "control-descriptions.spec.ts",
       "category": "synthetic-helper-representative",
-      "reason": "controlDescriptions.spec.ts exercises synthetic DOM helper cases; Firefox-selected gdt.spec.ts uses the same helper; individual synthetic cases are not Firefox results",
-      "sha256": "fe7951c4156771b0f50f52920efd63013824bc66a48249f89baa198b2677820f"
+      "reason": "controlDescriptions.spec.ts exercises synthetic DOM helper cases; Firefox-selected gdt.spec.ts uses the same helper; individual synthetic cases are not Firefox results"
     },
     {
       "file": "copy-array.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "da445be4c599b8b27e1356cd063bf5af05bec25836fe0c1f78a107190e48d975"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "cut-plane-materials.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "c8d8e64df6603bc86987d51c68bdcfe34a2307a088acb472efc9cc79030fdd97"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "cut.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "ad4a54c42ff42e5b046b81f03656a58fe60b54827fd6bb1025a690ffdeb07197"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "desktop-renderer.spec.ts",
       "category": "desktop-renderer-contract",
-      "reason": "serves the desktop distribution renderer and checks its packaged raw-WASM paths; desktop-specific contract",
-      "sha256": "2423d52fefd912e4df177bc67296a3ea4cf75f207370f74704873e7e15c1fabf"
+      "reason": "serves the desktop distribution renderer and checks its packaged raw-WASM paths; desktop-specific contract"
     },
     {
       "file": "dialog-focus-assembly.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "b91d2be53333fa2d89d01ba46c253e99346f4b413ba561697573ccdbbfac80ea"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "dialog-focus.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "43366a9da7e49fd4df7038daa564c942521ecfd069620afc97c8c3683c40161e"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "dimension-move-pick.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "213c027ee0913f23f5d28b103cae5bc575423cb4f227de736d20d362e4b500f3"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "dimension-move.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "19d9f4c9a37c2a9e74f8562abf501e582d33a48536c638fbb19c1b63cc27341c"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "direct-edit-operations.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "6fc4b0371c90cacbd44f226eaf1f0e19f84cc62ab22b21213fa24fdbf234e4bf"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "document-diff.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "32cf57dab8c93ec2d1b6a31a33ac7d9eea6f0b09febf03d326c640d47853095a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "draggable-input-solid.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "817ac957e16dc6f61f6a855650d57278e5836e9a0b8ef122c74715738def17e4"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "drawing-delete-elements.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "1ef9d8a2e168e228a6e4847c131b3a3d1fb07fe3569b28df035b33dae5b071cd"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "drawing-navigation.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "27c2b647fd42013eea4f4f84792ca8ed00ed6a034f8db86af0ea991b8fb172d7"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "drawing-performance.spec.ts",
       "category": "performance-project",
-      "reason": "exclusive one-worker Chromium viewport performance project in playwright.config.ts",
-      "sha256": "50dfc14730926a6fabfcda9be7e314561d2c5532aa168c090b57024efe9aca09"
+      "reason": "exclusive one-worker Chromium viewport performance project in playwright.config.ts"
     },
     {
       "file": "drawing-recovery.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "d5638f49f6a4dd23d5e22511663f3559b8fc3f3a8693c68bad6e039182e4a185"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "drawing-sheet-expressions.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "8569204efff4f4725d738e1466016ac45ea8d3ccb1426cadfe59d6c2f0eed93c"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "drawing-source-refresh.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "39e05022726ed71fc54d46484511d951dd578c8ca4ccd510ec6e3c79d19b0ae0"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "dwg.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "61ce3b693bc68b2e4138f77d1d7a979a09949ba2e8949a1c5762578d83249ad6"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "edit-curves.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "4dfaf4962631cb02fe12a5c10bae68064de4fe55ec0c50fc1035d0b801cc9e60"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "edit-sketch.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "84e5043c60432504eff6daa7f893c59979a058939d3cd0d0064a1368577f24d3"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "electron-aluminum-frame-catalog.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "8cf9837b92bc48dd5c3e625bb8089eb10db66bfb2084c7bfe4312b17c0c8cb72"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-advanced.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "ad9e9565cabdff950e8486c6dd9954bf2a1ad5a68de060506d9b210ab08a3e2e"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-bolt-persistence.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "12cf7dcf0b8cf58a8affeedcddb2ff96f4b481de8dee64fb0a173975b155abf7"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-connections-persistence.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "34db23617556d969cb317d45537cf9da59d72c711f2fabd1a542c96212d87def"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-entry.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "27bb0f777b623e249284dcf5ce1aed425a9b09728cf249e17694b036408d3dfd"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-fatigue-native.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "f71691a54483cfb8a094bff5534c3144295b1c6ba0e7c9b7ef74306afd92a89c"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-plastic-persistence.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "3ad78cf63bac54a329afbae935ac71c969a3a582831b84d159028028466dd183"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-resources.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "92254be3596cdfbae5804e02798a64bb660b09835c59b639fde15578da8d396e"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-result-binding.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "a1e71c983cf7cdcbc15c27741e61ca31565c9091fa579124865f0f9c7ab99a18"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-analysis-static-connections.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "8f06c5f06f7100206bc1b26de99841cdb982093ebf8322f9a7b0b9bfb767aec9"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-assembly-1000-host.spec.ts",
       "category": "dedicated",
-      "reason": "MEASUREMENT_FILES in playwright.config.ts",
-      "sha256": "a3002e4dbb6534e469760fec43355a1efa39c4f449ea1b8b5dbb13c331377d8a"
+      "reason": "MEASUREMENT_FILES in playwright.config.ts"
     },
     {
       "file": "electron-assembly-coupled-drag.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "33e71c9fc8eb26fdded0ab60e9647c538f83892e1ee62135d17ee3892906624f"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-assembly-flexible-motion.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "3bfcd26cb138787372f4d5cb4f8d3a16b69f847cc26a7954142b7b38f227eda8"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-auto-save-settings.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "7f6ae1c62fef46c432614d1dc014ba4a2c30e02ed545a25827bdb908cdebc852"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-bolt-preload.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "e0347d04b9bc74ba18732b4410036b6d7b0858ff7009d70ce400e65819e07fd7"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-bolted-joint-tapped.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "e98692eca0b6805755ffe6bc0e6580aad5df4b12d960a952b3cbb5ca745bdfd3"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-bolted-joint-through-thread.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "034f5dfab4fccb7604ba843ccecedc7156f368b755fba001748cbe940c9ac790"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-bolted-joint.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "31c19c5fc9909bb35e7619f90dbe32048d5bb9ed633f2090a1280d3bea00aae0"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-cam.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "46d1b98c8f399970f8e9c03eb51bb7ccdd5493ad2538a536dc7037daf6dda69f"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-camera-controls-presets.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "e34add24f481c3a68b62a89cd4cc32611fb41b3fa4924c91bdfa43e2c908377c"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-camera-controls-settings.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "4275ff700c9dc64fb2142f9253bf35e60f319c946726db78b68985bb8764ab8a"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-canvas-perspective.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "aa0818dd7cd632a2881316807f3e78eb5ebda8f6386e78ae04ba40fd05e8f4d1"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-canvas.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "9c9580493db8682dfcef10ffede20cc4b177636842a176021a9f6ef533027cff"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-circular-weld.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "5fa1fda5ac442e94649e07b6eb0f8801a7f45ce73070c5c3d276be9ed76532f7"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-close-guard.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "958029b51253ca82056b26433dd2c00217ca367a1bc5c411f6816ee69043584f"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-combined-weld-stress.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "99ef12fe597484ee68f6968828f58e6c66ff16f5847144a44283cd1825c74fb0"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-connect-points.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "364dcd8497ea09b1e257aec2b480840516a5c19458c3f4e84d1f27ad8fee1a4b"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-context-reference-cycle.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "b85a61cf9b0fcc5ed4d2a1431547f29845aeb09440a30acdb1a41a4beff6f0b3"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-control-hints.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "233934b84f45a10ec6f614ad446421991dd15494c67f4c81ab2932b739c13743"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-cut-plane-materials.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "56879d489f4c5c551630d2bef52f3ec2e5cc55f674982d2daae8fb2a2f9a9400"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-direct-edit-operations.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "448c258c2fcc29a1c308fe417716ed2c1ec83b44f621bc4e9619b7cd482ca29d"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-document-diff.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "c67a7c3870648e699e65a68c0491ed020cf5580bbb320b9876042fb8633f06b2"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-draggable-input.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "233042ec818593f5fdbc1c1eba8e21e783fe81a846f901f2e2716f417361b4c5"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-drawing-navigation.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "9129fba9036c53ea7d63a0bd6f68a7881ed4a7e214738acb15616b250ad1f257"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-dwg.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "1ba4a658e685a598527a47f3d5db57e5e22440ce12f2e3cd785f9b15d2ae0c29"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-ex18-routes.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "f5e577e93f391b864e4c8c5dd65ffb758b552b7752fd04ec18bb488f40cafb86"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-ex18-surface-sew-solid.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "4784460751f0dfd2023e3c9e9a4a785a6ea64c312e23edea0d88e9e3a5a6ac13"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-expression-inspection.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "36a504ab666722cecfaa0fcef838072c116b9e452e4c961541f0cfcb34df612d"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-extrude-operation.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "58d7fe3838e32af6d1c7cccc7cead2fb97420792eeed11e2f0ff70603db301d1"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-face-offset.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "0e9675e3b5eb9fe5bd5f5d57e70daeb1edfdf6bf51fcf47130a1fb76fff1f6ef"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-fatigue-detail.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "82f71b59c37767c8fff2e83d41527104afdbd2bb0d43fe32ce95e7950cedc58b"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-fatigue-local-cycle-strength.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "914221b535d0dd7e453977f80d37b6924b12b1f99879452f49fe8ff367c0b9da"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-fatigue-paired-strength.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "551271a56fcbe9785dd1fcedb80baa50ec311fb6b761177d751a0f2413c9456a"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-fillet-weld.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "fa57b3da6985f40689d9e08713bc6c6beb75b64ef14f2dfc02367850133c0322"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-flows.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "33afe04198806bf9eb04b795562257f4fcd42b29196043f3ec9c902c35c56105"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-frame-slot-fastening.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "3c24d61b012608652368cd9db6de194bd8e2de3b8c597fad611918f76b35a214"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-friction-cancel.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "d5384082d9ef411c2682dfd7720714fcb737f450578fe4aa9811e348fa2dde24"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-friction.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "deb5543bcc0c77d3df03b4444e834f7722171d1d6fd5dd4daa6d6281e62005d8"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-function-plot.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "dbba8c95a4de3141987a08ab738bf6a0d58a76481132695d418f446f15f31e77"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-function-spline-surface.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "9e7674cb40d123bb5d5b1fae381baf365ff7875a04df9da3556d378ad7fa1869"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-history-notes.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "441d428dbc6456dc6d1454176004da96efe6899a379824d6f023800f27c5aee6"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-impact.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "c80b9f75f74581d679c4e0cca97e2fec98f684adb8e3dba9196fd7a2a66c5ab3"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-input-bindings.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "a0d948c85002fd739b1d5bbb595d3e9122b86b91f78df74f2c050787db366f59"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-intersections.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "e2c51182164e337352b3f8ef7ee995288f9eec9e7d92dfcee2a9696f1f29735a"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-machining-surface.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "d79d712097c6a48aedc634fd7106b25de53902fd88c1ca1128a01b55d47b08c0"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-math-input.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "aa4460b15052bdf1f1af2c664a3f9b2c07e53dc797bad2dd825dfc0e1c8b0585"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-math-pace-slow.spec.ts",
       "category": "dedicated",
-      "reason": "MEASUREMENT_FILES in playwright.config.ts",
-      "sha256": "b90cbf7799aeede45888da24f8cd9d8e1598752d6cb1316fdd2079096a88b871"
+      "reason": "MEASUREMENT_FILES in playwright.config.ts"
     },
     {
       "file": "electron-memory-highwater.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "2330e032aca77af34a93a156c8cd2982cfad37533e578883a98feeb86c1f0494"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-name-search.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "88f6f46b1809ad7a1d8f615bafdd7df2bb6c3da9c684e4c7faf090eb3fcd38ef"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-named-save-points.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "24753e0eaeccdca84adb169bc54f3fc7f1cee9daa6b7c2ddb138b494c070edbc"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-named-view-unavailable.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "eaf3b0d91f05b1a2b363deba5e1e5cbb5722976f588123fa98e42270c2d72ca7"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-occt-compile-reuse.spec.ts",
       "category": "dedicated",
-      "reason": "MEASUREMENT_FILES in playwright.config.ts",
-      "sha256": "5eaae9eabdc0329ad9577976d01d440c05a3e90e363892f0a8f90ef46f949470"
+      "reason": "MEASUREMENT_FILES in playwright.config.ts"
     },
     {
       "file": "electron-occt-transport-negative.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "4e1e77d5b76cd76e3c2c5c92e9811250e8a58244f193abfd991b8e8120aed61a"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-parameters-csv.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "415faf7577d42f78bcf8a5e2adf345e7647d8cd886840e899f499534b9863f06"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-part-assets.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "dd61867df7cd7d2506a5197924d023cecb90e45c86935cc4208656df981bacbf"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-pg5a-solid.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "478f38c48d4c59f90ed4eb1ee70b82c3392db72f51b3b7e6b45b118b7941b20f"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-planar-machining-surface.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "c9249a8dede4e946be089bbd6fa575f6f21d7a99cd9869a10759c46ed458e1be"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-plastic-bar-plateau.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "b90fc048f05858ac5a0ccd5592cee8cf93c6cc678a18c65be94ca63a5e79799b"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-profile.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "4667d833746185d5ddc6b4db86e3eb6f09d03e7878380b1690aa46a12589991f"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-radial-menu.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "b4eab40c36bbc2919f18a94d33f451bde12da94d639a3840173ab1b352c41d8a"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-read-response.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "73da6358a2f232ec631b544afd0ca625b3411e83eb7ebaf1be5c9f6a6d66b217"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-reference-ambiguity.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "0ed658e5f5ebc253a66b9d906469434465f5a00647cc49ece525a2935e3bfd23"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-save-performance.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "41641b319b4d79a477446f33eff8c8fd2569cd7b8b37eb9d91dce35a60e66da4"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-save-worker.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "ac2834b7d37b93502bf0fa67fe2d8bfe032d0f990197916b17eca4479bef0640"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-scripts.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "e6c6360639716ae2eb3fbe2fae2c9244dbce767836a489342515ee706d6f84fd"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-sheet-tool-defaults.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "92bc8e0ff1233657a04a29a1acb9fbcddf8f46c0ed09960c65c2c4f2891741f1"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-sheet.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "ba265861e018fbc1737aaae11578b2d05a5c8946e2cd9fd90c5b2658f576ed1a"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-shell-analysis-connections.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "261e7393bf6691f26615333fdaced9a5d04ab127fb833460193f298d76b9b1e2"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-shortcut-settings.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "35b9d449001ff42afe1d00b2137fd14c907dfeafcf4d94cd6dcc1c1b5b8c9616"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-sketch-connected-1000.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "6be3240ad6ad779213dd0b74f37d36851cfeaf8bea125c20e49fa9b91e32d0e7"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-solid-boundary-authoring.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "4cfd118deefe1a40b2c0ebb275f7eb21d236ef435e0a34fc3eb606c62ac4f6d6"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-solid-finite-authoring.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "bdc3e8365afc3243520772949125c3e8a66ff01e9f99cec4dc38f8fe8461c829"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-solid-finite-field.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "95389964274e12efa1edb14bd2b284285def152d7c7cd156e6a9df7865b5189e"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-solid-finite-worker.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "c1c346673f9971aed6175f2d49ee7fe47e8f7bd2ee4da166dfbb8458a790d7e5"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-solid.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "bc07552a6a64a409fe2fdf4201921e42fa29b95c3e33c8068ff0dda2fbd5e59c"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-startup.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "e7063b302ab2d1699c9b924708a79e38690fb476bc1076923c2444414ba53abe"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-steel-bend-stock.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "ad67c122e1cc3965ae73f325167f66901c0aee55b981e07b620411071308f50a"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-steel-bend.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "2cbb3ede191268765597977397e95b8307fc30f692447bddc98553ad1969a870"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-steel-editable-stock.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "edf071c77149c5a37c375f1209a0c7c2249e96359f4e0086b8773be7200a11e8"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-strength.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "ca349410b1203218c99c87d23188c329d37e9159cb3d5b988f67580ae04cf178"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-surfaces.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "78409175acc98f83d05680ebb4b1a583ab3ad0993b393c7cd3437b5d6fc3363f"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-tool-defaults-settings.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "6a9b6aed19587d8aeea2d518e527fc3ab49f1f877836e3aafac4a5e8c11d2410"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-touch-view.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "d960b183e1f7f620858f44c416e7e87df4e0ac5c0a663b7b54ff9b95f798b610"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-tutorial.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "a4a42325da377271b19e6eae46faf9f88319dfe0485c914132535385c67f6664"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-usability-keyboard.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "bd9e61620c0351254515a6017bcc615c51a27b1e7f940d2685a63f765d07560a"
+      "reason": "electron project filename rule"
     },
     {
       "file": "electron-weld-span-author.spec.ts",
       "category": "electron",
-      "reason": "electron project filename rule",
-      "sha256": "4f57b529f5b6729171326d4769da3e0010223ba62e9ac6bb3feb0e701cdee99c"
+      "reason": "electron project filename rule"
     },
     {
       "file": "ellipse.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "7716d35034937d25a032fe90c536c0e5c10a7207639379984832023f91eb9623"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "ex18-math-bracket.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "c04322cb2402844f91a68f6a676dc4a1d00292b997a6a7ca383432c563752f38"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "ex18-routes-solid.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "e78d7bd1a32baea4b14ae076d2c7fadfd70bb2cc02f5f8b68d31fea06522ee48"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "ex18-sew-bracket.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "8b7d55cb90edca16d99c54cc9493c5251573653d3b673a180299225d86885bfc"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "ex18-surface-sew-solid.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "68726ac19b3c6f902b0bc3122ea5a9adf646eafb58b8c13ea0ede5922caab3df"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "exchange.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "a08c31af4ebf3fcf8c9d1f5ca108b0d4c97745ca5dd5768b8472aab854bb9f5f"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "explode.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "b711aba218afec91569e833a2935a7bde503c2b5fe7ea1dfb3697b057558f0a7"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "export.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "b295767cc30a39b640823d8a9305685e83184af9e0cc216d68b65efa1e05da0b"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "expression-math-input.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "9eddcfc6f4f00969f6fff4f6a93a674c7950cdf1750d0921a7f04d8bafdf1de7"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "extrude-operation.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "5e18d6690cc71efeec53e46630911cbfe995a9f98cb1c397a209414d60c0360a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "face-and-color.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "01d34765651af02a632ad8bcd2fced39e689546eee6732ec0f4859d4e27f6356"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "face-offset-solid.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "658c044d5bf0dc1b67d3897976b5c9006874e41abf8732e4d0f31c4f4df5512e"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "fatigue-detail-browser.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "b33e0a8593dabdccb5926ccc4d84d49fc917fb87971dc22629d43ceccae00b0e"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "fatigue-local-cycle-strength.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "3664d8294918e5dbd0d55c6919a2633f8f7ec9231732e1e70a9b34bb30acf487"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "fatigue-paired-strength.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "d9456ba322c907ae77a40da084ec39b5f13280266dfb4258fafe0c400f91ecce"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "file-open-rejection.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "8931192beef6dce5499d18fee1ce44a70be5313b8cf0a42d5a7dfdcc00cdd98d"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "fillet-chamfer.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "de6532593565b5e809c049a91ec8772377caf6c6bf14a68ad5ba06232933fd46"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "fillet-weld.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "2874c304fe65e51cb1f15a4f99e0b917d216bf42898d3d710f43e9a30dff64d8"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "firefox-graphics.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "7d8ba14ad6d6c28f646e6215edf03928fbc4847706150762d53c963c652855c9"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "firefox-part-assets.spec.ts",
       "category": "firefox-explicit",
-      "reason": "top-level test.use browserName firefox",
-      "sha256": "c577738d70c3c3bd79ed0c598f5156267e9d8c459ca6cbbd64199c6fd943273b"
+      "reason": "top-level test.use browserName firefox"
     },
     {
       "file": "firefox-read-response.spec.ts",
       "category": "firefox-explicit",
-      "reason": "top-level test.use browserName firefox",
-      "sha256": "98f416763e24a287993842dc7de80e9944566b6b5d07fcd851da55d07b9e72e3"
+      "reason": "top-level test.use browserName firefox"
     },
     {
       "file": "firefox-save-performance.spec.ts",
       "category": "firefox-explicit",
-      "reason": "top-level test.use browserName firefox",
-      "sha256": "c2d769606cc1dec1f91ddf305c19965eebcf9598995f84d32cd20348278af91d"
+      "reason": "top-level test.use browserName firefox"
     },
     {
       "file": "firefox-save-worker.spec.ts",
       "category": "firefox-explicit",
-      "reason": "top-level test.use browserName firefox",
-      "sha256": "973c870f6a422f2957da0da7f9c4ac9ff9d53137a979c79d23d647e250ec8676"
+      "reason": "top-level test.use browserName firefox"
     },
     {
       "file": "frame-dimension-basis.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "979db9482ae00cf89732d0e1f193f94eacbd999f83adf414d046e7dc7c69df74"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-door-parts.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "228555a8975598ed981f7c322fe146c845a680008916256af0ce3602870b2852"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-door.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "d583d4eaf3b724c4283943849a5d1519fbeac822fa51eeb5fae358314f31ef8e"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-edge-direct.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "5ba1c49e0292b827b1ef85485991f4b7993af8511ab66f547d2ff7392ee6f195"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-end-caps.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "407438393a0b66902f635429b57a6131c6548134c5974d3900ddcf65dcccfbd7"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-joint-bracket.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "1f42032f3c4f4521da38e29856134cf4ecf188f13949df3086c9a57911fd880b"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-joint-check.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "786e49a39c65926caab0b8dbb23474850da6902ec393ba707f0ecda066275bc9"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-joint-swap-stretch.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "b6fd30918b109d313c098459926c8a65e33f9a141772ff407faf370d2af779cc"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-panel.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "ab21df50e46d057f55ded8a9d3d2b39776d98d75388f0d0777657ce0dfa2bccc"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-slot-fastening.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "ede690ddcd652e2569c888987aa21a95c6fe564bd60c25db6b3ac5675db0b6d4"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "frame-stroke-line.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "f55eae4cd1333b22bd13200e89ba6244cd20f87b9e5f0131f5d23a6d2d0751ae"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "friction-browser.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "6383b078eaf77ac8eadf356f06543b81bc93c0dc9949125b3fe48aa01a025fac"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "friction-cancel-browser.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "2512bf65f3eb14d98fa957f351899803f2952a95d9a5fd0fc1286eb29e610b63"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "function-plot.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "3a6987a0456bb204c9428040387695aaa5e44a690bb9f533480211cb8821b935"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "function-spline-surface.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a0986bd6a6190d9fb85f0a0d23458feccfd410b97b6b3b0cab4ac44333f038ce"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "gdt-all.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "915d65f8c25bb88c96aa76d00f13c40f524179300a603ad29a9ade8b3f6af5ee"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "gdt-position.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "5fdc9522c47ebeafebf15ab70fb19e40e111ccdfee48d122b8e9398992061c74"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "gdt.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "5ff599f64ff5e159c023a9387c3504d6ed04b579b36d52dc2556f5a72de94ac1"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "geometry-math-input.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a7126dbaed9588b4edff7d7e3f53a5ada316dfa154e3f04341309d51053a7888"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "grid-fixed-placement.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "9e37a339a63d09541c58223c34542c37f5072388d510f47593d8e855c35a1e15"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "history-notes.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "29e030fd3e24c549f25396dc3428981fbd879cd565e7aa90ae40f5311de0b564"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "hole.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "5f08a418f289df8c39387e31c4a90007e6e808815d116a86f67fd5f179e31fb3"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "home-view-page-point.spec.ts",
       "category": "synthetic-helper-representative",
-      "reason": "synthetic canvas cases verify homeViewPagePoint delegates to the shared worldToCanvas and adds only the canvas page offset, and keep the missing-canvas error; Firefox-selected bolted-joint.spec.ts and weld-layer-browser.spec.ts use the same helper; individual synthetic cases are not Firefox results",
-      "sha256": "2a4730e62db0af3b3a2bfef6743232b111b13be0e0b60c500b762d226ecfc614"
+      "reason": "synthetic canvas cases verify homeViewPagePoint delegates to the shared worldToCanvas and adds only the canvas page offset, and keep the missing-canvas error; Firefox-selected bolted-joint.spec.ts and weld-layer-browser.spec.ts use the same helper; individual synthetic cases are not Firefox results"
     },
     {
       "file": "impact-browser.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "44485140840a5765d65e64e879833649aa4616604ab7d8dbc80b71b5e5a32a82"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "import.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "f2fdf019ac9fbe55a788d11c46ecf2d243f2241cef2b481c0b13565371c77edd"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "input-bindings.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "1764d800404733a90292d02df7c1768670755225c151e476ebcf7f336f16a01f"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "interference.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "b185199961b5adc7363b640688e8d2b791b660deec696544f0c00258a97e6a44"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "joint.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "e05f10f4d0d6bf11a31f20d8ce64383632b86f5f610083fe89321c84708cfc60"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "local-data.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "2e67f971602ec37b941f85f4496ac38c4077b27b706ed3a2925eff636d82388c"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "machining-surface.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "29ef586288a56bf1b9a66074d95c6c23bdb6b2a12dd1930dd5d128803af6d689"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "mass-properties.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "a26d753148e6d8f75f4a480d36c00fbe7f0729d70c83d567d57d42e91d13b100"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "mate.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "9555cff0cfd662f97207a2daebec4a02dc872e09bcefc1dfd656c363b1ae79a2"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "math-high-dpi.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "ef9290e520a5f56c9f0b007d9a4f4c90989d75da8e011d66691973285b865391"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "math-input.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "07557a727352a498d4249752523cc6a38309d1ddfc67657c989436b60a1e1df3"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "math-keyboard.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "0ec443c50d753711ccee9bced7348a432ec8e246f641e1aada51b988cc5c2d2c"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "math-pace-slow-function-plot.spec.ts",
       "category": "dedicated",
-      "reason": "MEASUREMENT_FILES in playwright.config.ts",
-      "sha256": "480e33f5693aa94deb87a52aadb0c6b538580438c04750f121429882d31ae411"
+      "reason": "MEASUREMENT_FILES in playwright.config.ts"
     },
     {
       "file": "measure.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "c053ee2bae07e699a36be152394b925943d36bf68c86531b7605e4cbc19a5dbf"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "measurement-printcheck-fix02.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "3a38c7899b128c6d0c25c2eff21e20ed2fe8f99f938bb1c0a84dee8241934955"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "memory-highwater-ui-contract.spec.ts",
       "category": "synthetic-helper-representative",
-      "reason": "synthetic DOM tests and browser-free serial GPU reader tests verify helper rejection paths; Firefox-selected memory-highwater.spec.ts uses the same helper; individual synthetic cases are not Firefox results",
-      "sha256": "ad4ce936e87b3ecdd8189d6cb8235e2c6e77b9309e875684a52d3e2700e7f7bc"
+      "reason": "synthetic DOM tests and browser-free serial GPU reader tests verify helper rejection paths; Firefox-selected memory-highwater.spec.ts uses the same helper; individual synthetic cases are not Firefox results"
     },
     {
       "file": "memory-highwater.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "7227af6952fecf7530ce591a91a3ec8c5a17e83b70649d5b69a622cb6486af5c"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "name-search.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "851943c736d9d5c6d25bfbcb59ecd76523ff5b7a3d392b5e6b49057237143e06"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "named-save-points.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "79844dd968ee2e7310f10f56171a1befa5e6e8d8c47a4c78c5424a2b7ff14d08"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "named-view-unavailable-smoke.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "200cdeedf0943c60c3e046188df19679e42d3874a94db94022a2dec60f3f9c5a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "native-bolt-preload-worker.spec.ts",
       "category": "numerical-worker-representative",
-      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success",
-      "sha256": "2316ee3fd922389d81b6cd933acaea7eb0ba9e578fdf247ec311e2cbe8e6e817"
+      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success"
     },
     {
       "file": "native-weld-stress-worker.spec.ts",
       "category": "numerical-worker-representative",
-      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success",
-      "sha256": "350c26625cd1d86a0f1697fc9da2297ce96f8f405cfe05cd1952b4b8e276040e"
+      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success"
     },
     {
       "file": "network-failure-evidence-contract.spec.ts",
       "category": "synthetic-helper-representative",
-      "reason": "synthetic aborted requests and copied OS outputs verify the request-failure evidence helper and its unavailable path; Firefox-selected steel-bend.spec.ts uses the same helper; individual synthetic cases are not Firefox results",
-      "sha256": "532b4fe021415342eededcb89ab9e9e5a1ecb75d66cb109f58a866ff46e927e8"
+      "reason": "synthetic aborted requests and copied OS outputs verify the request-failure evidence helper and its unavailable path; Firefox-selected steel-bend.spec.ts uses the same helper; individual synthetic cases are not Firefox results"
     },
     {
       "file": "numeric-input.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "e15b35d10ceb63f4cedde32815cee23f8a27bd811d1b61db42d757aeb51591a4"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "occt-compile-reuse-solid.spec.ts",
       "category": "dedicated",
-      "reason": "MEASUREMENT_FILES in playwright.config.ts",
-      "sha256": "c69029ebc7be4e051a6ade1962bf44b503a5c441f0a25694191772d87de74762"
+      "reason": "MEASUREMENT_FILES in playwright.config.ts"
     },
     {
       "file": "offline-editions.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "03805277cf92f1fa26d9bd44427584ff7ef81e31bda81f927681ed9271e5eb8a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "offline-routing.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "2b7e223679577d29d2ddd3c9fa9952ad0656c53c3dccf0c9873ea936995ceebb"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "origin.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "0ad9aa948340baa823d78429ff1461fccdbcafd7b176af45e400c644648a7da1"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "p4b-command-line.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "398125ca8c2dca52bf906e24af064d8f12c94af7760880832f1575aaa901f0da"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p4b-constraints.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "afadaf28a82163f9dbc371a689472032d4b39342a8a9b76a8407427898361080"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p4b-parameters.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "78da9d5c89428ef5cd5e7c025028915cfd662feb89316e3a29977d85d86c2dc1"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p4b-timeline.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "fc60875eef90e0d5dec6a4cb87606a50a3723d210ea8afc55678ba8f65126b75"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p4b-tracking.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "3adda775f8ee9fab5bdc9ef33cc836c579eb781785895e68c238aa478e8cfb98"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p5-cut-mirror.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "7cbdd7f896a18526078925d2776f21a02032856dcddd812df3aea42b20b3c195"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p5-primitive-pick.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "1bd413aea85e4e948c9c1c6933a838f0f12883b08c78738589d3d76c32e39d4d"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p6-view.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "33ad6c0440b4e9ccb129630e1e8cefdae04034dadbada41e40455b6d52ba20be"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p7-standard-parts.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "d73a32d4a5f1f8e6453c206ed335a5f65fca28570bd46af112ba408e59ceb679"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "p8-drawing.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "183cd4cce2ef1eb8296becdeea0c72f2cd74fdeaaa279d605939d66ca411a89c"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "parameter-math-name-blur.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "db27a32692e23c32506814148e7b6bbf569e8243233f84d06304c2151219964b"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "parameter-search-csv.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "dbdb840ee01f5d983675d6ccb314667018ef969943ab7ddd4a836376b3c2de00"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "part-assets.spec.ts",
       "category": "chromium-with-firefox-counterpart",
-      "reason": "separate explicit Firefox spec, same listed titles and shared flow imports",
-      "sha256": "44eafe2ba97f973afc9d0cd9a57b703da685612c3757a553c8923a2727437498"
+      "reason": "separate explicit Firefox spec, same listed titles and shared flow imports"
     },
     {
       "file": "pattern.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "b76003de88079245dcceeac95c974ea128193535e96b546a2f4107d8c96eb3ce"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "pg5a-solid.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "e4a88adfdc9589cd107722dcc2fcfa67a91a0d9210ba2d475161e08f30df9d66"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "place-point.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "d84c7e2846be71bb8c29314503d646d389a7455c56ab3a0dd14c3c11975bbf39"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "planar-machining-surface.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "799331d323b566c5e0afdf3ec46d6965f672093fe84dca7b6481761e8b0619bc"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "plastic-bar-plateau.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "9190eea3c344c48012013e4e032fa047b78691feae438bc9f80637ebc18dcb7b"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "primitive.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "af162749936b4acac2bf97e94ed3216161384bc0fdeb3c0ae8c909dc7837b406"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "primitives.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "daabebb396b6392208ad2a6bb78f76ed27e4a12d80462051ae60e126baa5392b"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "print-check.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "ae1f7abe52d320f896dabaa9cda1ab1666b4208e73f26154b62e800d09a12be4"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "print-save-as.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "c8b1b58a530637ace1799e96ab424316d23f29b0230a61f1a7394b2aa486e38b"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "process-resource-sampler.spec.ts",
       "category": "node-process-contract",
-      "reason": "Node OS process sampler and resident-frame checks; no page/browser/context fixture",
-      "sha256": "0cf21862841e52956d55cbfde17dddb344f6e86c727215a48b691c079b0b7644"
+      "reason": "Node OS process sampler and resident-frame checks; no page/browser/context fixture"
     },
     {
       "file": "project-intersect.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "e25c57dcbbcfd7f3c107c36fb821d877cd9e637bac619a0ece191d7eb79cf5b3"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "properties-input-layout-smoke.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a7bb1c07d78241f3019efad66dae1960ef8a2f5138918b94632fbfc439b9c32d"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "radial-menu.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "415845c62269883dfb378312e00387d25b9ce3759f80309a19cafa8bd2b8acd5"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "read-response.spec.ts",
       "category": "chromium-with-firefox-counterpart",
-      "reason": "separate explicit Firefox spec, same listed titles and shared flow imports",
-      "sha256": "58b2a6f9cbcc860ad6c7d4a9931f29c6a9c92f61b0b4e973b5d92cdd5613d261"
+      "reason": "separate explicit Firefox spec, same listed titles and shared flow imports"
     },
     {
       "file": "reference-ambiguity.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a03b18cc69e9a5f967c5eaf277f2c666f36a36c6648753a9214ef0a46fe61de3"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "reference-geometry.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "fe22b141ee9013de68c9023e9356f67f3263cf40b35905868e852df475b8df34"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "replace-subassembly.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "8a8046d6bf5807cbadeed9d4c47809ab336dec80a5c2c1f2c47257ba7dee0bf0"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "safety-fence-feet.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "7f2215d974300072ad5df6e15308415ae1fd99d60c4b949e4b98c0346fc91ee7"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "save-and-open.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "3f40a6a9f647da2c0d1483018a44766b8a61e4dccc14b1ade8425ccabe2e0ed8"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "save-performance.spec.ts",
       "category": "chromium-with-firefox-counterpart",
-      "reason": "separate explicit Firefox spec, same listed titles and shared flow imports",
-      "sha256": "5f94142af5a357d9917a6e95fea5be7c95d6e7d17f0bb523b4996eec0416a963"
+      "reason": "separate explicit Firefox spec, same listed titles and shared flow imports"
     },
     {
       "file": "save-worker.spec.ts",
       "category": "chromium-picker-with-firefox-counterpart",
-      "reason": "three shared save flows have explicit Firefox spec; remaining case tests showSaveFilePicker path",
-      "sha256": "31303a11e7d23305b071f10eb78799b4cd58538afcc2427f98cc136f6fa9382c"
+      "reason": "three shared save flows have explicit Firefox spec; remaining case tests showSaveFilePicker path"
     },
     {
       "file": "script-performance.spec.ts",
       "category": "performance-project",
-      "reason": "exclusive one-worker Chromium viewport performance project in playwright.config.ts",
-      "sha256": "cdc30e554ba5dac90f9c6f4fc1348be95fb968cc538c7f2a84aa78206b741650"
+      "reason": "exclusive one-worker Chromium viewport performance project in playwright.config.ts"
     },
     {
       "file": "scripts.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "6b3433687a15d3e061f9477837e85ced525aba784a6ed30e55a86ebb66301c1f"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "section-view.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "63ae05735e2569c2db6c8bc80133a074011cf1145c87a50b9b49a0c33f114939"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "select-subshape.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "f4ddff48cd634bab21304401b1aa0fd2691be8b799c14671af4bb4db4c0b7502"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "selection.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "d51c98570c95715a97c671693a58a2caecae27cf3fe7bf705c7398bf613758e3"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "semantic-origin-reopen.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "8b9d86306b7bcdcf7704ebd2fe0b03ffbfe9c6deb447125849ece5755a2bd767"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "shapes.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "ba0a2bf7a6594ce0e7838e277bd498c3bee8bf878f7881935899cbd99f10e9d3"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "sheet-configuration.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "e6dc60c26fddba95f268bf07e6195afd4a63ff0d523cc2b4893fe6f5bae4cbf7"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "sheet-hole-table.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "b4cc1bede69487b6809d361185e6e45fb1cd2039ab9ff2da5d870cb4f46466c2"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "sheet-layout.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "41b338bd732cdd12d84569ebdbf3fffccfa59dee3e63172af6ad61822fcd7596"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "sheet-metal.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "e5e07bb8274f5461472dbb371e483559a074696dd6652c27163ee48eb495ded9"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "sheet-performance.spec.ts",
       "category": "performance-project",
-      "reason": "exclusive one-worker Chromium viewport performance project in playwright.config.ts",
-      "sha256": "46102e2aaa1786d2a5ffd67068277826b6ebe9cb21023cc85aaa9c81fa73e30d"
+      "reason": "exclusive one-worker Chromium viewport performance project in playwright.config.ts"
     },
     {
       "file": "sheet-profile.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "ba3e3d3a870149c865af1ac646232594b4e22de516d4750b54e34aff93402571"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "sheet-tool-defaults.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "c1b18d13b150412ac4611ac22817d024f8973aae5e46b592995cc452e58308b0"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "shell-analysis-connections.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "66a18b917a74b481a079ba058d96ccd62a99f38699f2a7919ca92be6fe3c8bd9"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "shortcut-settings.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "8744b32583b334ed0a1224f78b7e771dff27685e356bd8d7b0c97dff35fa5f9a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "sketch-connected-1000.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "d4592003048c7b0326297ad28fb192796752dc0dc75412d7a1999b84098abbb0"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "sketch-corner-boundary.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "c6667f67ccadc8924c1fcb472d0f1ff17f4edab639beebb559e7fbd1a5845b48"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "sketch-extended.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "8a5883224ac9a6228725eb4b8aee4d6aa26d2a177c4bcb6246cd40e6024cd33b"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "sketch-fillet.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "0607dd3ba193c8367a205f71221b2a682f2e18a3711351938295671b57d60c08"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "sketch-intersections.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "018e3121b2b04f2c9a7865288e347a0a198f32fc7127f64e784e13672e154d7d"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "sketch-tools.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "e1258d183d89560908c55e0288739d02268dd96398e55f38f5d0d45cc0cf8a5c"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "sketch.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "bea9f171877e65ad4b5abf5fccb002a9889c350b1bbd1069f26900c952eb070e"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "smoke.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "2169e852e404f2078571824508ff7e4c9df2616be7746a3d6bc9fcc1e1092f7a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "snap-radius.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a2bcf6cc2fec6c5b422d854c9b4fbb0ddab1603e88d0793d03392c53cd6dc0b0"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "snap.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "2295736f096f6646ea86fc1f95d8ee4e8412aa885b65320ad7a217e220390390"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "solid-basics.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "0dbf36c2deb8f403b4fa77dd614f3c357c7a8c1127c2756836517488105edcc9"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "solid-boundary-authoring.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "d4842119f21b01cdec30aa10cdc80ca98f96bb10d9b6d8fc31ddf7a6475876dc"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "solid-buckling-worker.spec.ts",
       "category": "numerical-worker-representative",
-      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success",
-      "sha256": "d8d271def6cb3f047dcb67f7e375c656fba0bd96c39454cd0fa1d9d4576aa327"
+      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success"
     },
     {
       "file": "solid-combine.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "563610d59eaa83e4186cf27dc4a327a1030952803b1bad9fee491f6fb42da87e"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "solid-finite-authoring.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a0dc528acf00df457d0a7f2aea62bf2cf0ff11473930a18e61443d51501cf634"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "solid-finite-field.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "cfa1e75e82a8dcea2096caf9f7c10c842ebe55609942977c062ff547c3b80106"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "solid-finite-worker.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "b1049690afc97457418640c28b98399537ad87e73162ee0debc13cd9798e99b6"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "solid-material-authoring.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "bc72b314804931cb30e5a9c107045ded1016bab7e77414698a597f513966177e"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "solid-modal-worker.spec.ts",
       "category": "numerical-worker-representative",
-      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success",
-      "sha256": "c51179c39eaa6d3056915413839d811230b72acc9b70af784814c524b440b73c"
+      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success"
     },
     {
       "file": "solid-yield-worker.spec.ts",
       "category": "numerical-worker-representative",
-      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success",
-      "sha256": "3ded9adfb5c41119cf525ad1cbbe70d3f15a9b7ef422661563b0edc549e23ce6"
+      "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success"
     },
     {
       "file": "solid.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "f89fb9c406a421c0eb8856b34c5b22003d6e28c9191c1bd918ed1da30dde7e81"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "sphere-grid.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "0c320462507399eaea141f68ecd686db76626f29798411a752a65dece46bb12a"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "spline.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "d09c95fd097d5f0dab3e00209d7395c5bf4c3ac89170a999689b80bf3957cb7c"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "spring.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "4fb1b8f9210c8875c45986fd3f8b640588cfd3ecb92ec3d9619b8886971e0ad3"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "standard-part-search.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "86398a2267c144f1030455537ef94192be3b110ba1312be01b00fe9502a1423d"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "standard-parts.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "c9f537d3dd525c9f87a663e1619b2b9f67bebb1835c7602c39a770fe3080511a"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "startup-failed-overlay-smoke.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "37a1f83d296a2fd4b4ab6305f4a59b9bf23be15c564921f797e62fe50966cde2"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "startup-navigation-smoke.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "792212c95396a9f90352a176778d844d5713df57285b59546dc394712c18f7f3"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "status-guidance.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "b804cf958ebdb057f4bb0d6649ad235f763d12272c266cc7f03ccc6889ac3042"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "steel-bend-stock.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "abffb2c843c1bdba51cd58595008a7eb8ad6913c18b564de0cb77403ffe9a41c"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "steel-bend.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "a8b0ecb6985c1d77d7207b8af0a3dfb121350181255fac453f48b0f88c8e0b3a"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "steel-editable-stock.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "5a741559963bd3d5ee57ee49db42d50ffe2a959408d46c00af4bb7a8d6429e9f"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "strength.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "129a56c625c21dd6b234d577393f10727fd2e7f2e424e21d738ac28ccc2a5f92"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "surfaces.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "0234d00cd9bf4759bd6401e2400a3c9593f4155c0cc2e7ac522d1715654155d1"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "template.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "f1619c69930926d8d20c83614741ff2d6a2a1b78896503103b989fa9dd2e3aee"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "thread.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "ab24c6da5ad91637b065722cb3fdbe09e791a77c00e346f797c36b6844cd82d3"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "timeline.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "c27e1e1c507f80f9e2729a2797567c7300b3c420aa48ef69073ae148fcf238a4"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "tool-defaults-auto-save-settings.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "0cd2cabb14f621e65ea175ff63bb452f758ecee50a3b68a568129db259da0fbf"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "touch-view.spec.ts",
       "category": "chromium-cdp-input",
-      "reason": "touch input is dispatched only through Chromium CDP Input.dispatchTouchEvent; Firefox has no CDP touch input. The same touchViewFlow runs in electron-touch-view.spec.ts",
-      "sha256": "e98ee953092c6db43be6a1c968d9c1078917b2d3dc70f88ba7eec02aa3579e7a"
+      "reason": "touch input is dispatched only through Chromium CDP Input.dispatchTouchEvent; Firefox has no CDP touch input. The same touchViewFlow runs in electron-touch-view.spec.ts"
     },
     {
       "file": "tracking.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "29325b53c3ccd1bc7eddad6cdc99800380ce8895cc0a21de23e00dc0dc9b34f6"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "tree-name-search.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "4d041e1f5a5c3fe149f9292cfb02b80bad5dfca9856a98e3c183302d8c5db76b"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "tutorial.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "aecd513c352a36f69f0b379efd932ed6a1deb9d2db550ab23bc6869b18482a25"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "units.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "3463c15c37d7c9bfcaebb0bb7370a91f8ecce2ddf9f3b5b4c40d38a73f4776c5"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "unsaved-reload.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "8f130b2e9acf59f9f287780edc404a064b787263ceffb9502439a92896a7e2b8"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "usability-keyboard.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "9e8f55c22f058ee7bb4f8465a4f6eeaac01ab70e65400354d5c198e153436095"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "view-controls-pen.spec.ts",
       "category": "chromium-cdp-input",
-      "reason": "pen input is dispatched only through Chromium CDP Input.dispatchMouseEvent (pointerType pen); Firefox has no CDP pen input. The keyboard, file and drag checks of B-09 3-6 run in Firefox through view-controls-stage3.spec.ts",
-      "sha256": "53bd51e7427599560a1bf2c2b543db6cf6560e22b25d062fe9f62604371f0c1b"
+      "reason": "pen input is dispatched only through Chromium CDP Input.dispatchMouseEvent (pointerType pen); Firefox has no CDP pen input. The keyboard, file and drag checks of B-09 3-6 run in Firefox through view-controls-stage3.spec.ts"
     },
     {
       "file": "view-controls-stage3.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "38d5634cb62651ccd902e2d73056db23482c703f03bf77e7e61baa09b53fc3a5"
+      "reason": "Playwright --list selects a Firefox project"
     },
     {
       "file": "viewcube.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "e566fac7374d5bf311e89ca2d2fb0593de9eeeaae914d106a5fd7b69011d6230"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "viewport.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "c4b70e5abe36d7576939f89e725604ddd61f7aae48d905ad20ce83f3e5623e4b"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "weld-layer-browser.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "d7f961c92b6be076566a1ce1743ebfc89dd4ead4f265e258cac9c09cbd87eb96"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "weld-span-author.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "c47cd1b4a5768c97a693b92a22f65db0b5cce421fe3cba1fd0552b451789428a"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "welding.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "cd3ec43921f6ae9fb590800fbba7dee9d1ba48021ab768193d71d8935c470e80"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "work-plane-custom.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "6c39696768971b256c23889dd3f0a1ffccc915b3a920c7d81d9c112352136d90"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "work-plane.spec.ts",
       "category": "manual-capture",
-      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium",
-      "sha256": "c5b4c027bacbb608c927ee8b611d0431d02f6c8d339bce9cd7f6f3da029ab658"
+      "reason": "manual screenshot capture only; FR-910 uses one recorded screenshot and captureRegistry defaults to functional Chromium"
     },
     {
       "file": "workplane-3d.spec.ts",
       "category": "firefox-project",
-      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "5a9a77866e514f29b1eb0e4bdbd0fc77bfed12218a9c6378be6523d790877f8c"
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "z-math-input.spec.ts",
       "category": "firefox-project",
-      "reason": "Playwright --list selects a Firefox project",
-      "sha256": "cfef9d08d89975e73ce478a417ed0f96abdea1db0c4be6b36aa5703552128b34"
+      "reason": "Playwright --list selects a Firefox project"
     }
   ]
 }

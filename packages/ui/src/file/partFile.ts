@@ -242,12 +242,19 @@ async function mayDiscard(deps: PartFileDeps): Promise<boolean> {
  */
 export async function newPart(deps: PartFileDeps): Promise<void> {
   if (activeDocument(useAppStore.getState()).kind === 'assembly') return newAssembly(deps);
+  return newPartFrom(deps, createEmptyPartDocument());
+}
+
+/**
+ * 渡した文書を新しい部品として始める(新規と同じ確認・新しい id・上書き先なし)。作例を開く(J-06b)もここを通る。
+ * 保存すると、ほかの新しい部品と同じく保存先を聞く。
+ */
+export async function newPartFrom(deps: PartFileDeps, source: PartDocument): Promise<void> {
   if (!(await mayDiscard(deps))) {
     return;
   }
   const store = useAppStore.getState();
-  // 文書と上書き先の寿命をそろえる。前の文書の先を新しい空の部品へ持ち越さない。
-  const emptyDocument = createEmptyPartDocument();
+  // 文書と上書き先の寿命をそろえる。前の文書の先を新しい部品へ持ち越さない。
   let id: string;
   let preparedSession: PreparedDocumentSession;
   try { id = createPartLineageId(); preparedSession = prepareDocumentSession(); }
@@ -256,7 +263,7 @@ export async function newPart(deps: PartFileDeps): Promise<void> {
     store.setFileMessage({ key: 'command.unavailable.action', failed: true });
     return;
   }
-  const document = { ...emptyDocument, id };
+  const document = { ...source, id };
   store.fileGateway.clearSaveTarget?.();
   store.resetDocument(document, preparedSession);
   store.setFileState(null, null);

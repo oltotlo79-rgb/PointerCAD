@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  enterDialogFocus, forgetMenuOpener, leaveDialogFocus, menuTriggerOf, noteMenuOpener, takeMenuOpener, type FocusTarget,
+  dialogOpenerOf, enterDialogFocus, forgetMenuOpener, leaveDialogFocus, menuTriggerOf, noteMenuOpener, type FocusTarget,
 } from './dialogFocusRules.js';
 
 /* C-03 その場の窓のフォーカス: 開いた時に中へ入れ、閉じた時に開いた元(消えていれば代わり)へ戻し、窓の外へ移した焦点は奪わない。
@@ -22,23 +22,26 @@ function fakeDom() {
 }
 
 describe('その場の窓のフォーカス', () => {
-  it('開いた時: 焦点が窓の外なら最初の欄(initial があればそれ)へ入れ、開いた元を返す', () => {
+  it('開いた時: 焦点が窓の外なら最初の欄(initial があればそれ)へ入れる。開いた元は開く前の焦点', () => {
     const dom = fakeDom();
     dom.setActive(dom.opener);
-    expect(enterDialogFocus(dom.scope, dom.active(), dom.body, null)).toBe(dom.opener);
+    expect(dialogOpenerOf(dom.scope, dom.active(), dom.body)).toBe(dom.opener);
+    enterDialogFocus(dom.scope, dom.active(), null);
     expect(dom.active()).toBe(dom.first);
     dom.setActive(dom.opener);
-    enterDialogFocus(dom.scope, dom.active(), dom.body, dom.second);
+    enterDialogFocus(dom.scope, dom.active(), dom.second);
     expect(dom.active()).toBe(dom.second);
   });
 
   it('開いた時: すでに窓の中に焦点があれば動かさない。body から開いた時は開いた元を持たない', () => {
     const dom = fakeDom();
     dom.setActive(dom.second);
-    expect(enterDialogFocus(dom.scope, dom.active(), dom.body, null)).toBeNull();
+    expect(dialogOpenerOf(dom.scope, dom.active(), dom.body)).toBeNull();
+    enterDialogFocus(dom.scope, dom.active(), null);
     expect(dom.active()).toBe(dom.second);
     dom.setActive(dom.body);
-    expect(enterDialogFocus(dom.scope, dom.active(), dom.body, null)).toBeNull();
+    expect(dialogOpenerOf(dom.scope, dom.active(), dom.body)).toBeNull();
+    enterDialogFocus(dom.scope, dom.active(), null);
     expect(dom.active()).toBe(dom.first);
   });
 
@@ -71,6 +74,8 @@ describe('メニューの項目から開いた窓', () => {
     return { closest: (selectors: string) => selectors === '.pcad-menu' ? container
       : selectors === '.pcad-menu__panel' && inPanel ? container : null };
   }
+  /** 焦点が body へ落ちた時に開いた窓が受け取る釦(覚えた釦を 1 回だけ受け取る)。 */
+  const taken = (dom: ReturnType<typeof fakeDom>): FocusTarget | null => dialogOpenerOf(dom.scope, dom.body, dom.body);
 
   it('項目を押すと、そのメニューの印のある釦を返す。メニューの外の物・印の無いメニューは null', () => {
     const dom = fakeDom();
@@ -84,15 +89,15 @@ describe('メニューの項目から開いた窓', () => {
     const dom = fakeDom();
     const trigger = dom.target('組む');
     noteMenuOpener(trigger);
-    expect(takeMenuOpener()).toBe(trigger);
-    expect(takeMenuOpener()).toBeNull();
+    expect(taken(dom)).toBe(trigger);
+    expect(taken(dom)).toBeNull();
     // ファイルを選んでから開く窓のように、押下の後しばらくして開いても使える(間にほかの押下が無ければ)。
     noteMenuOpener(trigger);
     noteMenuOpener(null);
-    expect(takeMenuOpener()).toBe(trigger);
+    expect(taken(dom)).toBe(trigger);
     noteMenuOpener(trigger);
     forgetMenuOpener();
-    expect(takeMenuOpener()).toBeNull();
+    expect(taken(dom)).toBeNull();
   });
 
   it('関係の無い押下の後に開いた窓は、覚えた釦を使わない(項目の後に別の所を押してから、近道などで窓を開いた時)', () => {
@@ -101,8 +106,20 @@ describe('メニューの項目から開いた窓', () => {
     // メニューの外の押下(画面の側で forgetMenuOpener を呼ぶ)。
     forgetMenuOpener();
     dom.setActive(dom.body);
-    const opener = enterDialogFocus(dom.scope, dom.active(), dom.body, null) ?? takeMenuOpener();
-    expect(opener).toBeNull();
+    expect(dialogOpenerOf(dom.scope, dom.active(), dom.body)).toBeNull();
+  });
+
+  it('項目が消えて焦点が body へ落ちてから開いた窓(作例の一覧など)は、body を戻り先にせず覚えた釦を使う。戻り先にできる物がある時・焦点が窓の中の時は釦を使わない', () => {
+    const dom = fakeDom();
+    const trigger = dom.target('ファイル');
+    noteMenuOpener(trigger);
+    dom.setActive(dom.second);
+    expect(dialogOpenerOf(dom.scope, dom.active(), dom.body)).toBeNull();
+    dom.setActive(dom.opener);
+    expect(dialogOpenerOf(dom.scope, dom.active(), dom.body)).toBe(dom.opener);
+    dom.setActive(dom.body);
+    expect(dialogOpenerOf(dom.scope, dom.active(), dom.body)).toBe(trigger);
+    expect(taken(dom)).toBeNull();
   });
 
   it('Firefox のように、外した項目が activeElement に残っていても、それを開いた元にせず覚えた釦を使い、閉じた時はその釦へ戻す', () => {
@@ -111,7 +128,8 @@ describe('メニューの項目から開いた窓', () => {
     noteMenuOpener(trigger);
     item.isConnected = false;
     dom.setActive(item);
-    const opener = enterDialogFocus(dom.scope, dom.active(), dom.body, null) ?? takeMenuOpener();
+    const opener = dialogOpenerOf(dom.scope, dom.active(), dom.body);
+    enterDialogFocus(dom.scope, dom.active(), null);
     expect(opener).toBe(trigger);
     expect(dom.active()).toBe(dom.first);
     // 閉じた時も、焦点が外れた欄に残っていれば落ちた物として扱い、開いた元へ戻す。
@@ -128,6 +146,6 @@ describe('メニューの項目から開いた窓', () => {
     // ファイルを選ぶ窓をやめても文書に押下は来ないので、まだ覚えている。やめた後に利用者が押す・打つと忘れる。
     forgetMenuOpener();
     noteMenuOpener(null);
-    expect(takeMenuOpener()).toBeNull();
+    expect(taken(dom)).toBeNull();
   });
 });

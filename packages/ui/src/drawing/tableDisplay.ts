@@ -1,8 +1,8 @@
 import { drawingDimensionContext } from '@pointercad/model';
-import { balloon, bomTable, tableLayout, createPaperFrame, holeTable, paperSizeOf, resolveStyle, revisionTable,
+import { balloon, bomTable, tableLayout, createPaperFrame, holeTable, paperSizeOf, parameterTable, resolveStyle, revisionTable,
   type BalloonCircle, type BomColumnId, type DrawingDocument, type DrawingRenderElement,
   type DrawingTable, type InkBounds, type OutlinedText, type TableGeometry } from '@pointercad/drawing';
-import { BOM_COLUMN_IDS, resolveDrawingAnnotationTarget, type DrawingSourceResolution } from '@pointercad/model';
+import { BOM_COLUMN_IDS, resolveDrawingAnnotationTarget, type DrawingSourceLibrary, type DrawingSourceResolution } from '@pointercad/model';
 import { steelStockIssueText } from '../assembly/steelStockCsvExport.js';
 import { materialLabel } from '../assembly/BomTable.js';
 import { formatBomMass } from '../assembly/bomTableRows.js';
@@ -10,6 +10,8 @@ import { t } from '../i18n/t.js';
 import { steelShapeLabelKey } from '../assembly/standardPartPicker.js';
 import { drawingNoteGeometryElement } from './noteDisplay.js';
 import { drawingTableRowOwner } from './drawingSelection.js';
+import { drawingParameterRows } from './drawingNoteFields.js';
+import { isParameterTableScope } from './drawingTableKinds.js';
 
 
 export interface DrawingTableDisplay {
@@ -43,9 +45,9 @@ function tableElements(table: DrawingTable, geometry: TableGeometry): readonly D
   return elements;
 }
 
-/** 用紙・PDF・SVG・画像・印刷へ同じ表と風船を渡す。集計行は保存文書へ戻さない。 */
+/** 用紙・PDF・SVG・画像・印刷へ同じ表と風船を渡す。集計行は保存文書へ戻さない(係数の表の行も、library の元の部品から作る)。 */
 export function displayDrawingTables(document: DrawingDocument, source: DrawingSourceResolution | null,
-  outline: (text: string, size: number) => OutlinedText): DrawingTablesDisplay {
+  library: DrawingSourceLibrary, outline: (text: string, size: number) => OutlinedText): DrawingTablesDisplay {
   const elements: DrawingRenderElement[] = [], items: DrawingTableDisplay[] = [], unresolved: string[] = [];
   const paper = paperSizeOf(document.sheet.paperSizeId);
   if (paper === undefined) return { elements, items, unresolved: document.tables.map((table) => table.id) };
@@ -89,6 +91,10 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
       geometry = revisionTable({ ...common, rows: (table.rows ?? []).map((row) => ({ revision: row[0], date: row[1], description: row[2], approvedBy: row[3] })),
         headings: { revision: t('drawing.table.revision'), date: t('drawing.table.date'),
           description: t('drawing.table.description'), approvedBy: t('drawing.table.approvedBy') } });
+    } else if (table.kind === 'parameter' && isParameterTableScope(table.options.scope)) {
+      const rows = drawingParameterRows(document, library, table.options.scope);
+      if (rows !== null) geometry = parameterTable({ ...common, rows, headings: { name: t('parameterPanel.nameLabel'),
+        value: t('drawing.table.parameterValue'), unit: t('parameterPanel.unitLabel'), description: t('parameterPanel.descriptionLabel') } });
     } else if (table.kind === 'hole') {
       const holes = source?.holeTables?.get(table.id);
       const viewId = table.options.viewId;

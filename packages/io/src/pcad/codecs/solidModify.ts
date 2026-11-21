@@ -344,6 +344,24 @@ export function readFaceOffsetFeature(
   };
 }
 
+/** 面ボディへの厚み付けを読む。 */
+export function readThickenFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) return targetFeatureId;
+  const thickness = readExpression(record, 'thickness', path);
+  if (!thickness.ok) return thickness;
+  const side = readLiteral(record, 'side', path, ['normal', 'reverse', 'both']);
+  if (!side.ok) return side;
+  return {
+    ok: true,
+    value: { ...base, kind: 'thicken', targetFeatureId: targetFeatureId.value, thickness: thickness.value, side: side.value },
+  };
+}
+
 /** くり抜き(FR-418)を読む。開ける面は 0 枚でもよい。 */
 export function readShellFeature(
   record: Record<string, unknown>,
@@ -480,6 +498,19 @@ export function serializeFaceOffsetFeature(
     targetFeatureId: feature.targetFeatureId,
     face: serializeSubShapeRef(feature.face),
     offset: serializeExpression(feature.offset),
+  };
+}
+
+/** 厚み付けの保存欄。対象のボディと厚みの式、向きを書く。 */
+export function serializeThickenFeature(feature: Extract<SolidFeature, { readonly kind: 'thicken' }>): SolidFeature {
+  return {
+    id: feature.id,
+    kind: 'thicken',
+    name: feature.name,
+    suppressed: feature.suppressed,
+    targetFeatureId: feature.targetFeatureId,
+    thickness: serializeExpression(feature.thickness),
+    side: feature.side,
   };
 }
 

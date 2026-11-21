@@ -24,6 +24,7 @@
  * `commitFillet` が受け持つ。
  */
 
+import { isThickenSide } from './surfaceBodyControls.js';
 import { commitDirectEdit, directEditRejection } from './directEditCommands.js';
 import { allocatePatternPointSlots, patternSlotHighWater } from '@pointercad/model';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
@@ -87,7 +88,7 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
-import type { SolidInputCommit } from '../sketch/numericInput.js';
+import { isDefaultSweepShapeSource, type SolidInputCommit, type SweepShapeFieldKey } from '../sketch/numericInput.js';
 
 import type { MachiningContext } from './machiningCommands.js';
 import { findSketchFeatureAt } from './sketchRefs.js';
@@ -122,6 +123,8 @@ type ShapeEditToolId =
   | 'threadShaft'
   | 'surface'
   | 'pointPattern'
+  | 'thicken'
+  | 'offsetBody'
   | 'shell';
 
 /** 押せる。 */
@@ -552,6 +555,9 @@ function shapeEditRejection(
     case 'scale':
     case 'shell':
       return singleBodyRejection(context);
+    case 'thicken':
+    case 'offsetBody':
+      return selectedSurfaceBody(context) === null ? 'surfaceBody.select' : null;
     case 'sweep':
       return sweepRejection(context);
     case 'rib':
@@ -587,6 +593,8 @@ export function shapeEditToolOf(tool: string): ShapeEditToolId | null {
     case 'threadShaft':
     case 'surface':
     case 'pointPattern':
+    case 'thicken':
+    case 'offsetBody':
     case 'shell':
       return tool;
     default:
@@ -751,6 +759,23 @@ function commitScale(context: MachiningContext, commit: SolidInputCommit): Solid
   return appended(context.document, feature, id);
 }
 
+/**
+ * スイープのねじれ・終わりの大きさ・肉厚(M-07)。式が既定のまま(か空欄)なら欄を書かない
+ * (使わない文書は保存の版を上げない。model の `createPartDocument.ts` の schemaVersionFor)。
+ * 右の欄の書き戻し(`sweepShapePropertyUpdates.ts`)と同じ判定(`isDefaultSweepShapeSource`)を使う。
+ */
+function sweepShapeFields(commit: SolidInputCommit): Pick<SweepFeature, 'twistDegrees' | 'endScale' | 'wallThickness'> {
+  const kept = (key: SweepShapeFieldKey, value: ExpressionValue | undefined) =>
+    value === undefined || isDefaultSweepShapeSource(key, value.source) ? undefined : value;
+  const twist = kept('sweepTwist', commit.values.sweepTwist), scale = kept('sweepEndScale', commit.values.sweepEndScale);
+  const wall = kept('sweepWall', commit.values.sweepWall);
+  return {
+    ...(twist === undefined ? {} : { twistDegrees: twist }),
+    ...(scale === undefined ? {} : { endScale: scale }),
+    ...(wall === undefined ? {} : { wallThickness: wall }),
+  };
+}
+
 /** スイープ(FR-409)。対象を取らない「作る」フィーチャー。 */
 function commitSweep(context: MachiningContext, commit: SolidInputCommit): SolidCommandOutcome {
   const profile = selectedSketchFace(context.document, context.selection);
@@ -773,6 +798,7 @@ function commitSweep(context: MachiningContext, commit: SolidInputCommit): Solid
     path,
     frenet: commit.flags.sweepFrenet ?? DEFAULT_SWEEP_FRENET,
     ...(guide === undefined ? {} : { guide }),
+    ...sweepShapeFields(commit),
   };
   return appended(context.document, feature, id);
 }
@@ -1052,7 +1078,42 @@ export function commitShapeEdit(
       return commitSurface(context, commit);
     case 'pointPattern':
       return commitPointPattern(context);
+    case 'thicken':
+    case 'offsetBody':
+      return commitSurfaceBody(context, commit, tool);
     case 'shell':
       return commitShell(context, commit);
   }
+}
+
+function selectedSurfaceBody({ document, bodies, selection }: MachiningContext): string | null {
+  const owners = new Set(selection.map(id => parseSubShapeId(id)?.bodyFeatureId ?? id));
+  if (owners.size !== 1) return null;
+  const body = bodies.find(candidate => owners.has(candidate.featureId));
+  if (body?.bodyKind !== 'shell' || body.isValid === false || !liveBodyIds(document).includes(body.featureId)) return null;
+  const current = selection.every(id => {
+    if (id === body.featureId) return true;
+    const ref = parseSubShapeId(id);
+    return ref?.kind === 'face' && body.faces.some(face => face.index === ref.index);
+  });
+  return current ? body.featureId : null;
+}
+
+function commitSurfaceBody(context: MachiningContext, commit: SolidInputCommit, tool: 'thicken' | 'offsetBody'): SolidCommandOutcome {
+  const targetFeatureId = selectedSurfaceBody(context);
+  if (targetFeatureId === null) return { ok: false, reasonKey: 'surfaceBody.select' };
+  const { document } = context;
+  const kind = tool === 'thicken' ? 'thicken' : 'surface';
+  const id = nextSolidId(document, kind);
+  const base = { id, name: nextSolidName(document, kind), suppressed: false };
+  if (tool === 'offsetBody') {
+    const distance = commit.values.surfaceOffset ?? DEFAULT_SURFACE_OFFSET;
+    if (!Number.isFinite(distance.value) || distance.value === 0) return { ok: false, reasonKey: 'surfaceBody.nonzero' };
+    return appended(document, { ...base, kind: 'surface', operation: { kind: 'offsetBody', targetFeatureId, distance } }, id);
+  }
+  const thickness = commit.values.thickenAmount ?? DEFAULT_SHELL_THICKNESS;
+  if (!Number.isFinite(thickness.value) || thickness.value <= 0) return { ok: false, reasonKey: 'surfaceBody.positive' };
+  const side = commit.shapeChoices?.thickenSide ?? 'normal';
+  if (!isThickenSide(side)) return { ok: false, reasonKey: 'shapeError.unknownChoice' };
+  return appended(document, { ...base, kind: 'thicken', targetFeatureId, thickness, side }, id);
 }

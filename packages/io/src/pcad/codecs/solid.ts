@@ -43,6 +43,7 @@ import {
   readFaceOffsetFeature,
   readFilletFeature,
   readShellFeature,
+  readThickenFeature,
   serializeChamferFeature,
   serializeCutFeature,
   serializeSurfaceCutFeature,
@@ -50,6 +51,7 @@ import {
   serializeFaceOffsetFeature,
   serializeFilletFeature,
   serializeShellFeature,
+  serializeThickenFeature,
 } from './solidModify.js';
 import {
   readPrimitiveFeature,
@@ -117,6 +119,7 @@ export function serializeSolidFeature(feature: SolidFeature): SolidFeature {
     case 'surface': return serializeSurfaceFeature(feature);
     case 'functionSurface': return serializeFunctionSurfaceFeature(feature);
     case 'shell': return serializeShellFeature(feature);
+    case 'thicken': return serializeThickenFeature(feature);
     case 'surfaceCut': return serializeSurfaceCutFeature(feature);
     case 'cut': return serializeCutFeature(feature);
     case 'importedSolid': return serializeImportedSolidFeature(feature);
@@ -197,6 +200,8 @@ export function readSolidFeature(value: unknown, path: string): Checked<SolidFea
     // Could 群のうち前倒しした 1 種(FR-418)。
     case 'shell':
       return readShellFeature(record.value, path, base.value);
+    case 'thicken':
+      return readThickenFeature(record.value, path, base.value);
     // 平面による切断(FR-432)。
     case 'surfaceCut':
       return readSurfaceCutFeature(record.value, path, base.value);

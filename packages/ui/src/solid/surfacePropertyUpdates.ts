@@ -12,13 +12,16 @@ export function setSurfaceField(
   value: ExpressionValue,
 ): SolidFeature {
   const { operation } = feature;
+  if (operation.kind === 'blend' && (key === 'weightA' || key === 'weightB')) {
+    return { ...feature, operation: { ...operation, [key]: value } };
+  }
   if (operation.kind === 'extrude' && key === 'surfaceDistance') {
     return { ...feature, operation: { ...operation, distance: value } };
   }
   if (operation.kind === 'revolve' && key === 'surfaceAngle') {
     return { ...feature, operation: { ...operation, angle: value } };
   }
-  if (operation.kind === 'offset' && key === 'surfaceOffset') {
+  if ((operation.kind === 'offset' || operation.kind === 'offsetBody') && key === 'surfaceOffset') {
     return { ...feature, operation: { ...operation, distance: value } };
   }
   return feature;

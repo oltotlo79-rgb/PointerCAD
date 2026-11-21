@@ -55,10 +55,13 @@ describe('P11b 案内線の選択・作成・再編集', () => {
     const flipped = reduceNumericInput(initial, { type: 'toggle', key: 'sweepFrenet' });
     const chosen = reduceNumericInput(flipped, { type: 'choose', key: 'sweepGuide', value: guide.value });
     expect(numericToggleEnabled(chosen, 'sweepFrenet')).toBe(false);
-    expect(numericFocusTargets(chosen)).toEqual([{ kind: 'choice', index: 0 }]);
+    // 案内線を使う間はねじれ・終わりの大きさ(M-07)の欄も隠れ、肉厚の欄だけが残る。
+    expect(chosen.fields.map((field) => field.key)).toEqual(['sweepWall']);
+    expect(numericFocusTargets(chosen)).toEqual([{ kind: 'field', index: 0 }, { kind: 'choice', index: 0 }]);
     expect(reduceNumericInput(chosen, { type: 'toggle', key: 'sweepFrenet' })).toBe(chosen);
     const restored = reduceNumericInput(chosen, { type: 'choose', key: 'sweepGuide', value: 'none' });
     expect(restored.toggles).toEqual(flipped.toggles);
+    expect(restored.fields.map((field) => field.key)).toEqual(['sweepTwist', 'sweepEndScale', 'sweepWall']);
     expect(numericFocusTargets(restored)).toContainEqual({ kind: 'toggle', index: 0 });
   });
   it('案内線を経路へ連結せず独立参照で保存し、既存の選択は保持する', () => {
@@ -70,6 +73,7 @@ describe('P11b 案内線の選択・作成・再編集', () => {
     const { document, feature, guide } = create(true);
     expect(summarizeSolid(document, feature).choices[0].value).toBe(sweepGuideValue(guide.reference));
     expect(summarizeSolid(document, feature).toggles).toEqual([]);
+    expect(summarizeSolid(document, feature).fields.map((field) => field.key)).toEqual(['sweepWall']);
     const plain = setSolidChoice(feature, 'sweepGuide', 'none', undefined, {}, document);
     expect(plain).not.toHaveProperty('guide');
     expect(setSolidChoice(plain, 'sweepGuide', guide.value, undefined, {}, document)).toEqual(feature);

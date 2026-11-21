@@ -35,7 +35,7 @@ export interface SolidMeshAdmission {
 export function stagedPreviewOf(state: SolidMeshAdmissionState): StagedSolidState | null {
   if (activePartDocument(state) === null || displayedSheetBodies(state) !== state.bodies) return null;
   const staged = currentStagedSolid(state);
-  return staged !== null && staged.status === 'ready' && staged.result !== null && staged.accounting !== null
+  return staged !== null && staged.batchExtrude === undefined && staged.status === 'ready' && staged.result !== null && staged.accounting !== null
     ? staged : null;
 }
 

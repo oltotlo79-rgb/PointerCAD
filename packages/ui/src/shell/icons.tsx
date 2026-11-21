@@ -1779,3 +1779,41 @@ export function TextToolIcon(props: IconProps): React.JSX.Element {
 export function DocumentCompareIcon(props: IconProps): React.JSX.Element {
   return <SvgIcon {...props}><path d="M1.5 2h5v12h-5zM9.5 2h5v12h-5zM3 5h2M11 5h2M3 8h2M11 8h2M3 11h2M11 11h2" /><path d="M7.5 4v8" strokeDasharray="1 2" /></SvgIcon>;
 }
+
+/**
+ * 作例を開く(J-06b)。開いた本の右の頁に、作例の立体(箱)を描いた形。
+ * 「ひな形から新規」(`TemplateNewIcon`)の白紙と見分けられるよう、紙ではなく本にした。
+ */
+export function ExampleIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 3.6C6.2 2.4 4 2.2 1.8 2.9v10c2.2-.7 4.4-.5 6.2.7 1.8-1.2 4-1.4 6.2-.7v-10C12 2.2 9.8 2.4 8 3.6v10" />
+      <path d="M9.9 7.2l1.7-.9 1.7.9v2l-1.7.9-1.7-.9zM9.9 7.2l1.7.9 1.7-.9M11.6 8.1v2" />
+    </SvgIcon>
+  );
+}
+
+export function ThickenIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 6q3 2 6 0l6-3v5l-6 3q-3 2-6 0zM2 6v3q3 2 6 0l6-3" />
+    </SvgIcon>
+  );
+}
+
+export function BlendSurfaceIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 11c6 0 3-7 10-7m-8 10c6 0 3-7 10-7M2 11l2 3m8-10 2 3" />
+    </SvgIcon>
+  );
+}
+
+export function OffsetBodyIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 5q3 2 6 0l5-3M2 12q3 2 6 0l5-3" />
+      <path d="M11 8V4m-2 2 2-2 2 .5" />
+    </SvgIcon>
+  );
+}

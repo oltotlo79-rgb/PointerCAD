@@ -30,6 +30,7 @@ import {
   RectangleToolIcon, ReferenceAxisIcon, ReferencePointIcon, RevolveIcon, RibIcon, RuledIcon, ScaleIcon, SewIcon,
   SheetBaseIcon, SheetFlangeIcon, SheetLineBendIcon, SheetReliefIcon, ShellIcon, SlotToolIcon, SphereIcon,
   SplineToolIcon, SpringIcon, SubtractIcon, SurfaceIcon, SweepIcon, ThreadHoleIcon, ThreadShaftIcon, TorusIcon,
+  ThickenIcon,
   TransformIcon, UnionIcon, type IconProps,
 } from './icons.js';
 import { TimelineStopHandle } from './Timeline.js';
@@ -118,6 +119,7 @@ const KIND_ICONS: Readonly<
   pointPattern: PointPatternIcon,
   // くり抜き(FR-418)。
   shell: ShellIcon,
+  thicken: ThickenIcon,
   // 平面による切断(FR-432)。
   cut: CutIcon,
   surfaceCut: CutIcon,

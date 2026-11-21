@@ -115,7 +115,7 @@ function familyEntries(registry: CatalogRegistry): PickerSearchEntry[] {
     const withMaterial = familyMaterials(family).length >= 2;
     return family.rows.map((row) => {
       const material = withMaterial ? row.materialLabel ?? '' : '';
-      return entry(`${family.id}|${row.key}`, `${kind} ${catalogRowLabel(family, row)}`,
+      return entry(`${family.id}|${row.key}`, `${kind} ${catalogRowLabel(family, row, registry)}`,
         [row.standardLabel, material].filter((part) => part !== '').join(' · '), row.size, [row.size, row.materialLabel ?? ''],
         { kind: 'family', group, start: { familyId: family.id, material, itemKey: row.key, values: {} } });
     });

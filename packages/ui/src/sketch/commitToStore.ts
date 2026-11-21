@@ -34,6 +34,7 @@ import {
   stagedExtrusionMessageKey,
   type ExtrudeStageCandidate,
 } from '../solid/extrudePreview.js';
+import { selectedExtrudeProfiles } from '../solid/sketchRefs.js';
 import { supportsSolidOperation } from '../solid/solidOperation.js';
 import { commitSolidInput } from '../solid/solidCommands.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
@@ -303,7 +304,13 @@ function solidStageCandidateOf(commit: SolidInputCommit): ExtrudeStageCandidate 
   store.setSolidError(null);
   const inputKey = JSON.stringify([commit, store.selection],
     (_key: string, value: unknown): unknown => typeof value === 'bigint' ? value.toString() : value);
-  return { base: current, document: outcome.document, featureId: outcome.featureId, inputKey };
+  const candidate = { base: current, document: outcome.document, featureId: outcome.featureId, inputKey };
+  if (commit.tool !== 'extrude') return candidate;
+  const added = outcome.document.solids.slice(base.solids.length);
+  const extrusions = added.filter(feature => feature.kind === 'extrude');
+  if (extrusions.length < 2) return candidate;
+  const resultBodyIds = added.length === extrusions.length ? extrusions.map(feature => feature.id) : [outcome.featureId];
+  return { ...candidate, batchExtrude: { faceCount: extrusions.length, resultBodyIds } };
 }
 
 /**
@@ -319,7 +326,13 @@ export function confirmExtrudeCommit(commit: SolidInputCommit): StagedConfirmati
   }
   const candidate = solidStageCandidateOf(commit);
   if (candidate === null) return 'refused';
-  const confirmation = confirmExtrusion(candidate, () => { useAppStore.getState().closeNumericInput(); });
+  const confirmation = confirmExtrusion(candidate, adopted => {
+    const current = useAppStore.getState();
+    current.closeNumericInput();
+    if (adopted.batchExtrude !== undefined) {
+      current.setFileMessage({ key: 'solid.extrudedFaceCount', failed: false, detail: String(adopted.batchExtrude.faceCount) });
+    }
+  });
   if (confirmation === 'refused') {
     useAppStore.getState().setSolidError(stagedExtrusionMessageKey(useAppStore.getState(), true)
       ?? 'solidError.extrudeStale');
@@ -359,6 +372,7 @@ export function previewExtrudeTransition(transition: NumericInputTransition): vo
     return;
   }
   if (transition.kind !== 'solidCommitted' || !supportsSolidOperation(transition.commit.tool)) return;
+  if (transition.commit.tool === 'extrude' && selectedExtrudeProfiles(store.document, store.selection).length > 1) return;
   if (store.partStager === null) {
     store.setSolidError('solidError.extrudeUnavailable');
     return;

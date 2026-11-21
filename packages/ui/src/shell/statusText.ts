@@ -234,6 +234,9 @@ const GUIDE_KEYS = {
   pointPattern: 'statusBar.guide.pointPattern',
   surface: 'statusBar.guide.surface',
   shell: 'statusBar.guide.shell',
+  thicken: 'toolbar.machining.thickenTooltip',
+  offsetBody: 'toolbar.machining.offsetBodyTooltip',
+  blend: 'toolbar.machining.blendTooltip',
   cut: 'statusBar.guide.cut',
 } as const satisfies Record<NumericInputToolId, MessageKey>;
 
@@ -994,6 +997,9 @@ export const NUMERIC_WINDOW_GUIDE_STEPS: Readonly<Partial<Record<NumericInputSte
   pointPattern: true,
   surfaceShape: true,
   shellThickness: true,
+  thickenAmount: true,
+  offsetBodyDistance: true,
+  blendWeights: true,
   cutPlane: true,
   offsetDistance: true,
   mirrorBasis: true,

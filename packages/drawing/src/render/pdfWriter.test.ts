@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createPdf, type PdfOptions } from './pdfWriter.js';
+import { createPdf, createPdfPages, type PdfOptions } from './pdfWriter.js';
 
 const options: PdfOptions = { widthMm: 210, heightMm: 297, content: '' };
 function pdf(patch: Partial<PdfOptions> = {}): Uint8Array {
@@ -63,5 +63,52 @@ describe('PDF 1.4のバイト単位の骨組み(P8-45)', () => {
   it('単独サロゲートを欠損文字へ置き換えない', () => expect(createPdf({ ...options, title: '\ud800' })).toEqual({ ok: false, reason: 'invalidMetadata' }));
   it('呼び出し側のstreamは変更しない', () => {
     const content = new TextEncoder().encode('0 0 m'); const before = content.slice(); pdf({ content }); expect(content).toEqual(before);
+  });
+});
+
+describe('複数頁のPDFコンテナ', () => {
+  it('1頁の両方の入口が旧版の固定バイト列を返す', () => {
+    const page = { widthMm: 25.4, heightMm: 50.8, content: 'q\nQ' };
+    const metadata = { creationDate: '2026-09-09T12:34:56Z', title: '板' };
+    // 旧版の出力を転記。先頭のバイナリコメントとxref各行末の空白も1バイトずつ比較する。
+    const legacy = [
+      '%PDF-1.4', String.fromCharCode(37, 0xe2, 0xe3, 0xcf, 0xd3),
+      '1 0 obj', '<</Type/Catalog/Pages 2 0 R>>', 'endobj',
+      '2 0 obj', '<</Type/Pages/Kids[3 0 R]/Count 1>>', 'endobj',
+      '3 0 obj', '<</Type/Page/Parent 2 0 R/MediaBox[0 0 72.0000 144.0000]/Resources<<>>/Contents 4 0 R>>', 'endobj',
+      '4 0 obj', '<</Length 3>>', 'stream', 'q', 'Q', 'endstream', 'endobj',
+      '5 0 obj', '<</CreationDate(D:20260909123456Z)/Title<FEFF677f>>>', 'endobj',
+      'xref', '0 6', '0000000000 65535 f ', '0000000015 00000 n ', '0000000060 00000 n ',
+      '0000000111 00000 n ', '0000000214 00000 n ', '0000000264 00000 n ',
+      'trailer', '<</Size 6/Root 1 0 R/Info 5 0 R>>', 'startxref', '332', '%%EOF', '',
+    ].join('\n');
+    const expected = Uint8Array.from(legacy, (character) => character.charCodeAt(0));
+    const single = pdf({ ...page, ...metadata });
+    const result = createPdfPages([page], metadata);
+    if (!result.ok) throw new Error(result.reason);
+    expect(single).toEqual(expected);
+    expect(result.bytes).toEqual(single);
+  });
+
+  it('異なる用紙と命令を入力順で参照し、xrefと各stream長が実バイトに合う', () => {
+    const first = { ...options, content: new TextEncoder().encode('q\r\nQ') };
+    const second = { widthMm: 297, heightMm: 210, content: '0 0 m\n1 1 l\nS' };
+    const result = createPdfPages([first, second], { title: '板' });
+    if (!result.ok) throw new Error(result.reason);
+    expect(readXref(result.bytes)).toEqual([
+      '<</Type/Catalog/Pages 2 0 R>>', '<</Type/Pages/Kids[3 0 R 5 0 R]/Count 2>>',
+      '<</Type/Page/Parent 2 0 R/MediaBox[0 0 595.2756 841.8898]/Resources<<>>/Contents 4 0 R>>',
+      '<</Length 4>>\nstream\nq\r\nQ\nendstream',
+      '<</Type/Page/Parent 2 0 R/MediaBox[0 0 841.8898 595.2756]/Resources<<>>/Contents 6 0 R>>',
+      '<</Length 13>>\nstream\n0 0 m\n1 1 l\nS\nendstream',
+      '<</Title<FEFF677f>>>',
+    ]);
+    expect(ascii(result.bytes)).toContain('trailer\n<</Size 8/Root 1 0 R/Info 7 0 R>>');
+  });
+
+  it('空の頁配列と後続頁の不正な用紙・命令を断る', () => {
+    expect(createPdfPages([])).toEqual({ ok: false, reason: 'invalidContent' });
+    expect(createPdfPages([options, { ...options, heightMm: 0 }])).toEqual({ ok: false, reason: 'invalidPageSize' });
+    expect(createPdfPages([options, { ...options, content: '板' }])).toEqual({ ok: false, reason: 'invalidContent' });
   });
 });

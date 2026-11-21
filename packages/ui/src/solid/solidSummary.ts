@@ -1,3 +1,4 @@
+import { isThickenSide, thickenSideChoice } from './surfaceBodyControls.js';
 import { setSurfaceField, setSurfaceOperationKind } from './surfacePropertyUpdates.js';
 /**
  * 立体1つを「モデルブラウザとプロパティが表に出せる形」へ
@@ -33,6 +34,7 @@ import { setChamferField, setChamferMode } from './chamferPropertyUpdates.js';
 import { expressionValueFromNumber, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 import { setSpringField, setSpringAxis, setSpringHandedness, setSpringDerived } from './springPropertyUpdates.js';
 import { setSweepGuide, sweepGuideDisplayCandidates, sweepGuideValue } from './sweepGuideChoices.js';
+import { setSweepShapeField, sweepShapeFieldSummaries, sweepUsesLaw } from './sweepShapePropertyUpdates.js';
 import {
   DEFAULT_EXTRUDE_THICKNESS_MM,
   DEFAULT_FILLET_RADIUS_END_MM,
@@ -626,6 +628,8 @@ const SURFACE_OPERATION_LABEL_KEYS: Readonly<Record<SurfaceOperation['kind'], Me
   planar: 'numericInput.surfaceOperation.planar',
   loft: 'numericInput.surfaceOperation.loft',
   face: 'numericInput.surfaceOperation.face',
+  offsetBody: 'toolbar.machining.offsetBody',
+  blend: 'toolbar.machining.blend',
   offset: 'numericInput.surfaceOperation.offset',
 };
 
@@ -702,6 +706,22 @@ function surfaceSummaryParts(
           bodyReference(document, 'propertyPanel.targetBody', operation.targetFeatureId),
         ],
         subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
+      };
+    case 'blend':
+      return {
+        fields: [fieldSummary('weightA', operation.weightA), fieldSummary('weightB', operation.weightB)],
+        toggles: [toggleSummary('flipB', operation.flipB)],
+        references: [
+          bodyReference(document, 'surfaceBlend.edgeA', operation.a.bodyFeatureId),
+          bodyReference(document, 'surfaceBlend.edgeB', operation.b.bodyFeatureId),
+        ],
+        subShapeCounts: [],
+      };
+    case 'offsetBody':
+      return {
+        fields: [fieldSummary('surfaceOffset', operation.distance)], toggles: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', operation.targetFeatureId)],
+        subShapeCounts: [],
       };
     case 'offset':
       return {
@@ -1097,11 +1117,12 @@ export function summarizeSolid(
         subShapeCounts: [],
       };
     case 'sweep':
-      // スイープ(FR-409)。対象を取らないので断面と経路だけを出す。
+      // スイープ(FR-409)。対象を取らないので断面と経路を出す。ねじれ・終わりの大きさ・肉厚(M-07)の欄と
+      // 「曲がりに合わせて回す」の出し方は、作る時(その場入力)と同じ。
       return {
         ...base,
-        fields: [],
-        toggles: feature.guide === undefined ? [toggleSummary('sweepFrenet', feature.frenet)] : [],
+        fields: sweepShapeFieldSummaries(feature),
+        toggles: feature.guide === undefined && !sweepUsesLaw(feature) ? [toggleSummary('sweepFrenet', feature.frenet)] : [],
         choices: [{ key: 'sweepGuide', labelKey: 'numericInput.choice.sweepGuide', presentation: 'menu',
           value: feature.guide === undefined ? 'none' : sweepGuideValue(feature.guide),
           options: [{ value: 'none', labelKey: 'numericInput.sweepGuide.none' }, ...sweepGuideDisplayCandidates(document, feature)] }],
@@ -1189,18 +1210,17 @@ export function summarizeSolid(
         ],
         subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
       };
-    case 'surface': {
-      // 曲面(FR-428)。作り方 6 種で欄が違うので、1 か所(`surfaceSummaryParts`)で出し分ける。
-      const parts = surfaceSummaryParts(document, feature);
+    case 'thicken':
       return {
         ...base,
-        fields: parts.fields,
-        toggles: parts.toggles,
-        choices: [surfaceOperationChoice(feature.operation)],
-        references: parts.references,
-        subShapeCounts: parts.subShapeCounts,
+        fields: [fieldSummary('thickenAmount', feature.thickness)],
+        toggles: [],
+        choices: [thickenSideChoice(feature.side)],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [],
       };
-    }
+    case 'surface':
+      return { ...base, ...surfaceSummaryParts(document, feature), choices: [surfaceOperationChoice(feature.operation)] };
     case 'functionSurface':
       return { ...base, fields: [], toggles: [], choices: [], references: [], subShapeCounts: [] };
     case 'importedSolid':
@@ -1339,14 +1359,16 @@ export function setSolidField(
     case 'functionSurface':
     case 'surfaceCut':
       return feature;
+    case 'thicken':
+      return key === 'thickenAmount' ? { ...feature, thickness: value } : feature;
     case 'shell':
       return key === 'shellThickness' ? { ...feature, thickness: value } : feature;
     case 'cut':
       return setCutField(feature, key, value);
-    case 'mirror':
     case 'sweep':
-      // ミラー(FR-419)とスイープ(FR-409)は式の欄を 1 つも持たない
-      // (鏡にする面は選択肢、経路と断面は画面で指すもの)。
+      return setSweepShapeField(feature, key, value);
+    case 'mirror':
+      // ミラー(FR-419)は式の欄を 1 つも持たない(鏡にする面は選択肢)。
       return feature;
     case 'importedSolid':
     case 'importedMesh':
@@ -1564,6 +1586,8 @@ export function setSolidChoice(
       return setMirrorPlane(feature, value);
     case 'transformAxis':
       return setTransformAxis(feature, value);
+    case 'thickenSide':
+      return feature.kind === 'thicken' && isThickenSide(value) ? { ...feature, side: value } : feature;
     case 'ribSide':
       return value === 'both' || value === 'positive' || value === 'negative'
         ? setRibSide(feature, value)
@@ -1756,6 +1780,7 @@ export function setSolidToggle(
   }
   if (feature.kind === 'surface') {
     const { operation } = feature;
+    if (key === 'flipB' && operation.kind === 'blend') return { ...feature, operation: { ...operation, flipB: value } };
     return key === 'surfaceRuled' && operation.kind === 'loft'
       ? { ...feature, operation: { ...operation, ruled: value } }
       : feature;

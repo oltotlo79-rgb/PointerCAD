@@ -1,4 +1,5 @@
 /** 保存・復元・Undoで文書と原本の添付を一緒に持ち回る入れ物。ZIPの構造はioが持つ。 */
+import type { SavedAnalysisResult } from '../analysis/savedAnalysisResult.js';
 import type { PartDocument } from '../part/types.js';
 import {
   EMPTY_PART_LIBRARY,
@@ -13,6 +14,8 @@ export interface PartDocumentBundle {
   readonly kind: 'part';
   readonly document: PartDocument;
   readonly attachments: EmbeddedPartAttachments;
+  /** この文書自身の保存済み結果。キーは analysisId。 */
+  readonly analysisResults?: ReadonlyMap<string, SavedAnalysisResult>;
 }
 
 /** ルートのライブラリへ平らに抱き込むサブアセンブリ文書。 */
@@ -26,6 +29,8 @@ export interface AssemblyDocumentBundle {
   readonly document: AssemblyDocument;
   /** アセンブリ自身は原本を持たない。原本はembeddedDocuments内の部品に属する。 */
   readonly attachments: EmbeddedPartAttachments;
+  /** この文書自身の保存済み結果。キーは analysisId。 */
+  readonly analysisResults?: ReadonlyMap<string, SavedAnalysisResult>;
   readonly embeddedDocuments: ReadonlyMap<string, PartDocumentBundle>;
   readonly embeddedAssemblies: ReadonlyMap<string, EmbeddedAssemblyDocumentBundle>;
   readonly partFiles: readonly EmbeddedPartFile[];
@@ -37,13 +42,18 @@ export type DocumentBundle = PartDocumentBundle | AssemblyDocumentBundle;
 export function createPartDocumentBundle(
   document: PartDocument,
   attachments: EmbeddedPartAttachments = emptyEmbeddedPartAttachments(),
+  analysisResults?: ReadonlyMap<string, SavedAnalysisResult>,
 ): PartDocumentBundle {
-  return { kind: 'part', document, attachments };
+  const bundle: PartDocumentBundle = { kind: 'part', document, attachments };
+  return analysisResults === undefined || analysisResults.size === 0
+    ? bundle
+    : { ...bundle, analysisResults: new Map(analysisResults) };
 }
 
 export function createAssemblyDocumentBundle(
   document: AssemblyDocument,
   library: PartLibrary = EMPTY_PART_LIBRARY,
+  analysisResults?: ReadonlyMap<string, SavedAnalysisResult>,
 ): AssemblyDocumentBundle {
   const embeddedDocuments = new Map<string, PartDocumentBundle>();
   for (const [ref, part] of library.parts) {
@@ -54,7 +64,7 @@ export function createAssemblyDocumentBundle(
       ref, { kind: 'assembly', document: assembly },
     ]),
   );
-  return {
+  const bundle: AssemblyDocumentBundle = {
     kind: 'assembly',
     document,
     attachments: emptyEmbeddedPartAttachments(),
@@ -62,6 +72,9 @@ export function createAssemblyDocumentBundle(
     embeddedDocuments,
     embeddedAssemblies,
   };
+  return analysisResults === undefined || analysisResults.size === 0
+    ? bundle
+    : { ...bundle, analysisResults: new Map(analysisResults) };
 }
 
 /** 既存の部品の抱き込み・置換APIへそのまま渡せる。 */

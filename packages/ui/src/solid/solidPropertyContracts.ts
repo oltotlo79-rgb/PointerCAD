@@ -90,6 +90,13 @@ export type SolidFieldKey =
   | 'surfaceOffset'
   /** くり抜きの壁の厚さ(mm、FR-418)。 */
   | 'shellThickness'
+  | 'thickenAmount'
+  | 'weightA'
+  | 'weightB'
+  /** スイープのねじれ(度)・終わりの大きさ(倍率)・肉厚(mm、M-07)。省いている欄は既定の値(0・1・0)で出す。 */
+  | 'sweepTwist'
+  | 'sweepEndScale'
+  | 'sweepWall'
   /* 切断の切る面(FR-432)。面・作図面からずらす距離と、作図面を傾ける角度。 */
   | 'planeOffset'
   | 'planeAngle';
@@ -186,6 +193,7 @@ export interface SolidChoiceSummary {
     | 'transformAxis'
     /** リブの厚みを付ける側(FR-420)。 */
     | 'ribSide'
+    | 'thickenSide'
     /* 外ねじ(FR-423)。呼び・系列・切り始める端。 */
     | 'threadShaftNominal'
     | 'threadShaftSeries'

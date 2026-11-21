@@ -6,6 +6,8 @@ import { openToolMenu } from './toolMenus.js';
 import { fillFields, popover, popoverInputs } from './popoverFields.js';
 import { clickWorldPoint } from './homeViewProjection.js';
 import { waitForSettledRecompute } from './recompute.js';
+import { disableFilePickers } from './filePickers.js';
+import { readPart, save } from './canvasAssetLifetimeFlow.js';
 
 /**
  * P4「スケッチ拡張」の完了条件のうち、**任意の作業平面・基準ジオメトリ・3D スケッチ**を
@@ -700,6 +702,74 @@ test.describe('P4 任意の作業平面・基準ジオメトリ・3D スケッ�
     await expect(propertyInputs(page).nth(0)).toHaveValue('3');
     await treeRow(page, '点1').click();
     await expect(propertyInputs(page).nth(0)).toHaveValue('10 + π/2');
+
+    expect(errors).toEqual([]);
+  });
+
+  test('平らな面を選んでから線分を押すと、その面が作図面になり、線分をその面の上にかける(M-18)', async ({
+    page,
+  }, info) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    // 1) 40 × 30 の板を 10 押し出す(上面は z = 10)。
+    await drawRectangle(page, ['0', '0', '0'], ['40', '30', '0']);
+    await makeFace(page, ['矩形1']);
+    await expect(treeRow(page, '面1')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+    await extrudeFace(page, '面1', '10');
+    await treeRow(page, '押し出し1').click();
+    await expectVolume(page, 12000);
+
+    /*
+     * 2) 選ぶ種類を「面」にして上面を 1 枚選ぶ(appearance.spec.ts の selectTopFace と同じ手順。
+     *    上面の中央 (20,15,10) は、上の投影の検査が押すのと同じ点)。
+     */
+    await sketchTool(page, '選択').click();
+    await page.locator('canvas.pcad-viewport__canvas').press('3');
+    await expect(page.locator('.pcad-statusbar__state').first()).toHaveText('選ぶもの 面');
+    await waitForSettledRecompute(page);
+    await clickWorldPoint(page, [20, 15, 10]);
+    await expect(propertyValue(page, '選んでいるもの')).toHaveText('面');
+
+    /*
+     * 3) 線分の道具を押すと、上面そのもの(離す量 0)の作業平面ができて作図面になり、帯で知らせる
+     *    (`sketchToolActions.ts` の drawOnSelectedFace)。点は世界座標で入れ、上面へ落ちる。
+     */
+    await sketchTool(page, '線分').click();
+    await expect(treeRow(page, '作業平面1')).toBeVisible();
+    await expect(planeBadge(page)).toContainText('作業平面1');
+    await expect(statusText(page)).toContainText('選んだ面を作図面にしました', { timeout: KERNEL_TIMEOUT_MS });
+    await expect(popoverTitle(page)).toHaveText('線分の始点');
+    await fillFields(page, ['0', '0', '0']);
+    await commitPopover(page);
+    await expect(popoverTitle(page)).toHaveText('線分の終点');
+    await useAbsolute(page);
+    await fillFields(page, ['10', '0', '0']);
+    await commitPopover(page);
+    await cancelPopover(page);
+    await expect(treeRow(page, '線分1')).toBeVisible();
+
+    // 4) 板はそのまま作れている(線分の作図面が板の面を指しても、板の計算は止まらない)。
+    await treeRow(page, '押し出し1').click();
+    await expectVolume(page, 12000);
+
+    // 5) 保存の中身: 線分の作図面は、上面(重心の高さ 10・法線 ±Z の平らな面)そのものの作業平面。
+    const saved = readPart(await save(page, info, 'face-work-plane.pcad'));
+    expect(saved.document.references).toHaveLength(1);
+    const plane = saved.document.references[0];
+    const line = saved.document.sketches.flatMap((sketch) => sketch.features).find((feature) => feature.kind === 'line');
+    expect(line?.planeId).toBe(plane.id);
+    if (plane.kind !== 'referencePlane' || plane.plane.kind !== 'face') throw new Error('面の作業平面のはず');
+    expect(plane.plane.offset.source).toBe('0');
+    expect(plane.plane.face.bodyFeatureId).toBe(saved.document.solids[0].id);
+    const fingerprint = plane.plane.face.fingerprint;
+    if (fingerprint.kind !== 'face') throw new Error('面の指紋のはず');
+    expect(fingerprint.surfaceKind).toBe('plane');
+    expect(fingerprint.position[2]).toBeCloseTo(10, 6);
+    expect(Math.abs(fingerprint.axis?.[2] ?? 0)).toBeCloseTo(1, 6);
 
     expect(errors).toEqual([]);
   });

@@ -23,6 +23,7 @@ import {
 import { pickSketchElement, sketchForSelection } from '../sketch/pickMath.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
 import { picksHoleEdges, withHoleEdge } from '../solid/edgeDistanceHoleInput.js';
+import { faceScreenRect } from '../solid/faceScreenRect.js';
 import { parseSubShapeId, type SelectionKind } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { stagedPreviewOf } from './solidMeshAdmission.js';
@@ -84,7 +85,8 @@ export function createSketchSelectionInput(context: SketchSelectionContext) {
       return;
     }
     // 選んだ場所を覚えておき、立体の道具のその場入力をその近くへ出す(NFR-UX-2)。
-    state.setPickAnchor(pointer);
+    // 面を選んだ時は面の画面の外形も覚え、入力の窓が面を覆わないようにする(M-10 ①)。
+    state.setPickAnchor(pointer, faceScreenRect(state.bodies, elementId, project));
     if (accumulate) {
       state.toggleSelection(elementId, { kind: 'pick' });
     } else {

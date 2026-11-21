@@ -37,10 +37,23 @@ describe('toolbar command catalog', () => {
       labelKey: 'assembly.tool.jointCheck', tooltipKey: 'assembly.jointCheck.tooltip',
       documentKinds: ['assembly'], helpTopic: 'assembly-place',
     }]);
-    const originalGroups = expandedGroups.filter(entry => entry.id !== 'toolbar.assembly.circularFilletWeld'
+    // 作例を開く(J-06b)は「ファイル」の一覧の 1 項目。同じく数の区切りから外して、ここで確かめる。
+    expect(expandedGroups.filter(entry => entry.sourceId === 'openExample')).toEqual([{
+      id: 'toolbar.fileMenu.openExample', group: 'fileMenu', sourceId: 'openExample',
+      labelKey: 'examples.menu', tooltipKey: 'examples.menuTooltip',
+      documentKinds: ['part'], helpTopic: 'tutorial',
+    }]);
+    const surfaceTools = ['thicken', 'offsetBody', 'blend'];
+    expect(expandedGroups.filter(entry => surfaceTools.includes(entry.sourceId))).toEqual(surfaceTools.map(sourceId => ({
+      id: toolbarCommandId('solidMachining', sourceId), sourceId, group: 'solidMachining',
+      labelKey: `toolbar.machining.${sourceId}`, tooltipKey: `toolbar.machining.${sourceId}Tooltip`,
+      documentKinds: ['part'], helpTopic: 'function-surface',
+    })));
+    const originalGroups = expandedGroups.filter(entry => !surfaceTools.includes(entry.sourceId)
+      && entry.id !== 'toolbar.assembly.circularFilletWeld'
       && entry.id !== 'toolbar.assembly.frameSlotFastening' && entry.id !== 'toolbar.assembly.jointCheck'
       && entry.id !== 'toolbar.assembly.jointSwap' && entry.id !== 'toolbar.assembly.memberStretch'
-      && entry.id !== 'toolbar.assembly.dimensionMove');
+      && entry.id !== 'toolbar.assembly.dimensionMove' && entry.id !== 'toolbar.fileMenu.openExample');
     // GR-30 が「見た目」へ「図形の測定値」を1行足したので 109 → 110(Q1=A4)。
     // R16 adds exactly one shared save-point command; drawing aliases it.
     // 追加要件6 が「組む」へ「ボルトで締結」「締結を外す」の2項目を足したので 111 → 113。

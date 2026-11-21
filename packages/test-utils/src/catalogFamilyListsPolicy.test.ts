@@ -216,11 +216,12 @@ describe('規格部品の族の一覧と登録の表', () => {
   it('検査が持つ族のほぼ全部の一覧と末尾から数える切り出しは、登録の表の並びと同じ', () => {
     const findings = audit((path) => readFileSync(resolve(root, path), 'utf8'), sourceTestFiles());
     expect(findings.failures).toEqual([]);
-    // 実際に照らせている事の下支え(読めずに 0 件のまま素通りしない)。族を足す時に直す一覧の 3 本は必ず照らす。
+    // 族を足す時に直していた 4 本は、族の一覧を登録の表から導く形へ直した。手で写した一覧と位置の切り出しを戻していない事。
+    // (登録の表を読めない時は registryEntries が投げるので、0 件のまま素通りしない。)
     const files = new Set(findings.checked.map((place) => place.slice(0, place.indexOf(':'))));
-    expect([...files]).toEqual(expect.arrayContaining(['e2e/tests/aluminumFrameCatalogFlow.ts',
-      'packages/model/src/assembly/catalog/catalogItem.test.ts', 'packages/ui/src/assembly/CatalogFamilyPicker.test.tsx',
-      'packages/ui/src/assembly/frameCatalogChoices.test.ts']));
+    expect(['e2e/tests/aluminumFrameCatalogFlow.ts', 'packages/model/src/assembly/catalog/catalogItem.test.ts',
+      'packages/ui/src/assembly/CatalogFamilyPicker.test.tsx', 'packages/ui/src/assembly/frameCatalogChoices.test.ts']
+      .filter((path) => files.has(path))).toEqual([]);
   });
 
   const registry = [

@@ -1,10 +1,12 @@
 /**
  * 生成物(手で直さない): 資料 2 のコネクタ(系列の章)の行(外形を包む形。統括の指示 2026-11-18 21:47)。担当の道具 make_connector_rows.py が、
- * 31 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `connectorBoxSeriesOracle.fixture.json`。製造元の名前・型番・品名は書かない。
+ * 31・40 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `connectorBoxSeriesOracle.fixture.json`。製造元の名前・型番・品名は書かない。
  */
 import type { PanelPartRecord } from './panelPartCatalog.js';
 
 export const CONNECTOR_BOX_SERIES_RECORDS: readonly PanelPartRecord[] = [
+  { key: 'slot-connector-piece-40x18x25.9-al-fe', size: '溝に入れるつなぎの駒 40×18×25.9（外形を包む形・アルミ・鉄）', page: 245, kind: '溝に入れるつなぎの駒', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 40, depth: 18, height: 25.9, massG: 40, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'bent-frame-257.3x19x42.9-al', size: '曲げたフレーム 257.3×19×42.9（外形を包む形・アルミ）', page: 287, kind: '曲げたフレーム', material: 'aluminum', width: 257.3,
     depth: 19, height: 42.9, massG: 52, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'bent-frame-269x19x269-al', size: '曲げたフレーム 269×19×269（外形を包む形・アルミ）', page: 287, kind: '曲げたフレーム', material: 'aluminum', width: 269,
@@ -33,6 +35,10 @@ export const CONNECTOR_BOX_SERIES_RECORDS: readonly PanelPartRecord[] = [
     materialText: 'アルミ・鉄', width: 25, depth: 20, height: 25, massG: 17, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'point-connector-55x19x55-al-fe', size: '点で留めるつなぎ 55×19×55（外形を包む形・アルミ・鉄）', page: 294, kind: '点で留めるつなぎ', material: 'mixed',
     materialText: 'アルミ・鉄', width: 55, depth: 19, height: 55, massG: 40, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'cross-connector-23x17.5x23-al-fe', size: '十字のつなぎ 23×17.5×23（外形を包む形・アルミ・鉄）', page: 296, kind: '十字のつなぎ', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 23, depth: 17.5, height: 23, massG: 18, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'cross-connector-28x22.7x28-al-fe', size: '十字のつなぎ 28×22.7×28（外形を包む形・アルミ・鉄）', page: 296, kind: '十字のつなぎ', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 28, depth: 22.7, height: 28, massG: 39, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'double-connector-18x17x40-al-fe', size: '2 本をつなぐつなぎ 18×17×40（外形を包む形・アルミ・鉄）', page: 297, kind: '2 本をつなぐつなぎ', material: 'mixed',
     materialText: 'アルミ・鉄', width: 18, depth: 17, height: 40, massG: 25, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'stand-connector-52.6x22.8x36-al-fe', size: 'スタンドのつなぎ 52.6×22.8×36（外形を包む形・アルミ・鉄）', page: 301, kind: 'スタンドのつなぎ', material: 'mixed',

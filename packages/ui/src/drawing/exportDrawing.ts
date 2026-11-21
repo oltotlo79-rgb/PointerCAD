@@ -42,7 +42,7 @@ export async function prepareDrawingOutput(): Promise<PreparedDrawingOutput | nu
     throw new Error(t('drawing.error.dimensionUnsupported'));
   }
   const annotations = displayDrawingAnnotations(drawing, source, state.drawingSources, drawingFont.outline);
-  const tables = displayDrawingTables(drawing, source, drawingFont.outline);
+  const tables = displayDrawingTables(drawing, source, state.drawingSources, drawingFont.outline);
   if (tables.unresolved.length > 0) throw new Error(t('drawing.table.unresolved'));
   const manufacturing = [...displayDrawingGdt(drawing, resolveDrawingGdt(drawing, drawingDimensionContext(source)), displays, drawingFont.outline),
     ...displayDrawingWelds(drawing, resolveDrawingWelds(drawing, drawingDimensionContext(source)), drawingFont.outline, state.drawingSources)];

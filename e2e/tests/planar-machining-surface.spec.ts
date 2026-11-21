@@ -1,6 +1,6 @@
 import { test } from './browserLifecycle.testSupport.js';
 import { PLANAR_OPERATIONS } from './planarMachiningOracle.js';
-import { buildPlanarCreate, buildPlanarEdgeDistance, buildPlanarTwoFixture, buildPlanarMissingReference,
+import { buildPlanarCreate, buildPlanarEdgeDistance, buildPlanarEdgePairFirst, buildPlanarTwoFixture, buildPlanarMissingReference,
   planarTitle, reopenPlanarUi } from './planarMachiningFlow.js';
 
 for (const operation of PLANAR_OPERATIONS) {
@@ -25,4 +25,7 @@ for (const operation of PLANAR_OPERATIONS) {
 }
 test(planarTitle('Web', 'plain', 'missing-reference'), async ({ page }, info) => {
   await buildPlanarMissingReference(page, info, '/');
+});
+test(planarTitle('Web', 'plain', 'edge-pair-first'), async ({ page }, info) => {
+  await buildPlanarEdgePairFirst(page, info, '/', 'plain');
 });

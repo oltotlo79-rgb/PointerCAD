@@ -14,6 +14,8 @@ import { ruledSelectionHasSphere } from '../../solid/ruledCommands.js';
 import { selectedCurvePath } from '../../solid/shapeEditCommands.js';
 import { solidTargetCandidates, supportsSolidOperation } from '../../solid/solidOperation.js';
 import { cancelExtrusion } from '../../solid/extrudePreview.js';
+import { selectedExtrudeProfiles } from '../../solid/sketchRefs.js';
+import { faceOfEdgePair } from '../../solid/edgeDistanceHoleInput.js';
 import { sweepGuideCandidates } from '../../solid/sweepGuideChoices.js';
 import {
   commitBooleanFromSelection,
@@ -30,6 +32,8 @@ import { viewportCenterAnchor } from './toolbarShared.js';
  * 立体の道具は「先に面を選んでから押す」ので、最後にビューポートで選んだところの
  * すぐそばへ出すと、何に対する入力なのかが目で追える(NFR-UX-1、NFR-UX-2)。
  * ツリーから選んだときなど、ビューポートを押していなければ中央へ出す。
+ * ビューポートで面を選んでいれば、窓はその面の画面の外形を避けて開く(M-10 ①。外形は
+ * `pickAnchor` と一緒に覚えた `pickAvoidRect`。面でない物を選んだ時と押していない時は null)。
  */
 function solidAnchor(): readonly [number, number] {
   return useAppStore.getState().pickAnchor ?? viewportCenterAnchor();
@@ -50,7 +54,13 @@ function openSolidInput(tool: SolidToolId): void {
   const store = useAppStore.getState();
   // 前の押し出しの確かめた形・古い確定の知らせを、新しい入力の窓へ持ち越さない。
   if (tool === 'extrude' || tool === 'holeTranslate' || tool === 'faceRotate') cancelExtrusion();
+  // 面を選ばずに辺 2 本だけを選んで穴・ねじ穴を押した時は、辺からの距離で開く(M-10 ③)。
+  const fromEdges = (tool === 'hole' || tool === 'threadHole')
+    && faceOfEdgePair(subShapeBodiesOf(store.bodies), store.selection) !== null;
+  const keepProfiles = tool === 'extrude' && selectedExtrudeProfiles(store.document, store.selection).length > 1;
   store.setActiveTool(tool);
+  // 道具を変えると選ぶ種類が面に変わり選択が空になるので、選んだ 2 本を選んだ順(辺 1・辺 2)のまま戻す。
+  if (fromEdges || (keepProfiles && useAppStore.getState().selection.length === 0)) store.setSelection(store.selection);
   const axisLine = tool === 'revolve' ? selectedLineRef(store.document, store.selection) : undefined;
   /*
     面をつなぐ(FR-430)の「なめらかさ」は、**球を含む断面のときだけ**出す。
@@ -67,12 +77,14 @@ function openSolidInput(tool: SolidToolId): void {
       : undefined;
   store.openNumericInput(
     createNumericInput(tool, SOLID_TOOL_STEPS[tool], undefined, {
+      ...(fromEdges ? { initialHolePlacement: 'edge-distance' as const } : {}),
       ...(axisLine === undefined ? {} : { axisLine }),
       ...(supportsSolidOperation(tool) ? { extrudeTargets: solidTargetCandidates(store.document) } : {}),
       ...(ruledHasSphere === undefined ? {} : { ruledHasSphere }),
       ...(tool === 'sweep' ? { sweepGuides: sweepGuideCandidates(store.document, selectedCurvePath(store.document, store.selection) ?? undefined) } : {}),
     }),
     solidAnchor(),
+    useAppStore.getState().pickAvoidRect,
   );
 }
 
@@ -110,6 +122,7 @@ export function runSolidTool(id: SolidToolId, readiness: SolidToolReadiness): vo
   // Start by picking a face, while retaining an already chosen face/hinge pair.
   if (id === 'holeTranslate' || (id === 'faceRotate'
     && store.selectionKind !== 'face' && store.selectionKind !== 'edge')) store.setSelectionKind('face');
+  if (id === 'thicken' || id === 'offsetBody') store.setSelectionKind('body');
   store.setSolidError(readiness.reasonKey);
 }
 

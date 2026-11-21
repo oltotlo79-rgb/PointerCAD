@@ -9,6 +9,7 @@ import {useAppStore} from '../store/useAppStore.js';
 import {createBrowserMathClient} from '../math/createBrowserMathClient.js';
 import {createBrowserFunctionPointClient} from '../math/createBrowserFunctionClient.js';
 import {MathExpressionDialog} from '../math/MathExpressionDialog.js';
+import {rememberDialogOpener} from '../shell/dialogFocus.js';
 import {t} from '../i18n/t.js';
 import {FUNCTION_AXES,editFunctionField} from './functionPlotDraft.js';
 import {searchFunctionPoints,applyFunctionPointChoice,type FunctionPointFields,type FunctionPointSearch} from './functionPointDraft.js';
@@ -44,9 +45,9 @@ export function FunctionPointDialog({parent,pointId,onClose}:{readonly parent:Fu
   const dialog=useRef<HTMLDialogElement>(null),running=useRef<AbortController|null>(null),mounted=useRef(true);
   const isCurrent=()=>mounted.current && useAppStore.getState().document===owner.document && useAppStore.getState().documentVersion===owner.documentVersion;
   useEffect(()=>{
-    mounted.current=true;const element=dialog.current,previous=document.activeElement;element?.showModal();
+    mounted.current=true;const element=dialog.current,restoreFocus=rememberDialogOpener(element);element?.showModal();
     const unsubscribe=useAppStore.subscribe(state=>{if(state.document!==owner.document||state.documentVersion!==owner.documentVersion){running.current?.abort();close();}});
-    return ()=>{mounted.current=false;running.current?.abort();unsubscribe();element?.close();if(previous instanceof HTMLElement&&previous.isConnected) previous.focus();};
+    return ()=>{mounted.current=false;running.current?.abort();unsubscribe();element?.close();restoreFocus();};
   },[owner,close]);
   const change=(next:FunctionPointFields)=>{running.current?.abort();setFields(next);setBusy(false);setSearch(null);setSelected(null);setMessage('');};
   const calculate=async()=>{

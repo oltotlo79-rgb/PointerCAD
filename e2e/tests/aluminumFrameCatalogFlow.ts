@@ -1,7 +1,9 @@
 /// <reference lib="dom" />
 import { writeFile } from 'node:fs/promises';
 import { expect, test as base, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { chooseToolMenuItem, readAssemblyStats, resetAssemblyFileGateway, twoBoxAssemblyFile } from './assemblyTestSupport.js';
+import {
+  catalogFamilyKinds, chooseToolMenuItem, readAssemblyStats, resetAssemblyFileGateway, twoBoxAssemblyFile,
+} from './assemblyTestSupport.js';
 import { clickWorldPointChecked, componentRows, goHome } from './boltedJointTestSupport.js';
 import { disableFilePickers } from './filePickers.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
@@ -21,37 +23,11 @@ import { uiMessage, uiMessagePattern } from './uiMessages.js';
  */
 const SERIES_MASS_TEXT = '367.50 g';
 const MASS_FORM = /^[0-9]+\.[0-9]{2} (g|kg)$/u;
-/** Family ids of the アルミフレーム category in registry order (registry/k6.ts) and their kind-name keys (ja/catalog.json). */
-const FRAME_KINDS: readonly (readonly [string, string])[] = [
-  ['t-slot-frame-specified', 'catalog.frame.kind.tSlotSpecified'], ['t-slot-frame-series', 'catalog.frame.kind.tSlotSeries'],
-  ['angle-bracket-specified', 'catalog.frame.kind.angleBracket'], ['join-plate-specified', 'catalog.frame.kind.joinPlate'],
-  ['slot-nut-specified', 'catalog.frame.kind.slotNut'],
-  ['t-slot-frame-s6', 'catalog.frame.kind.tSlotS6'], ['t-slot-frame-s8', 'catalog.frame.kind.tSlotS8'],
-  ['t-slot-frame-s10', 'catalog.frame.kind.tSlotS10'], ['aluminum-channel', 'catalog.frame.kind.channel'],
-  ['aluminum-square-pipe', 'catalog.frame.kind.squarePipe'], ['aluminum-round-bar', 'catalog.frame.kind.roundBar'],
-  ['aluminum-flat-bar', 'catalog.frame.kind.flatBar'], ['aluminum-angle', 'catalog.frame.kind.angle'],
-  ['t-slot-nut-bar', 'catalog.frame.kind.nutBar'], ['t-slot-nut', 'catalog.frame.kind.catalogNut'],
-  ['t-slot-round-nut', 'catalog.frame.kind.roundNut'], ['t-slot-frame-cap', 'catalog.frame.kind.cap'],
-  ['t-slot-flat-plate', 'catalog.frame.kind.flatPlate'], ['t-slot-shaped-plate', 'catalog.frame.kind.shapedPlate'],
-  ['t-slot-angle-bracket', 'catalog.frame.kind.angleBracketCatalog'], ['t-slot-foot-base', 'catalog.frame.kind.footBase'],
-  ['t-slot-adjuster', 'catalog.frame.kind.adjuster'], ['t-slot-block-bracket', 'catalog.frame.kind.blockBracket'],
-  ['t-slot-joint-bar', 'catalog.frame.kind.jointBar'],
-  ['t-slot-stud', 'catalog.frame.kind.tSlotStud'], ['t-slot-knurled-nut', 'catalog.frame.kind.knurledNut'],
-  ['pipe-frame', 'catalog.frame.kind.pipeFrame'],
-  ['pipe-frame-slotted', 'catalog.frame.kind.pipeFrameSlotted'], ['pipe-frame-twin', 'catalog.frame.kind.pipeFrameTwin'],
-  ['t-slot-frame-small', 'catalog.frame.kind.smallFrame'], ['t-slot-frame-cap-small', 'catalog.frame.kind.smallFrameCap'],
-  ['bracket-stock', 'catalog.frame.kind.bracketStock'], ['pipe-frame-cap', 'catalog.frame.kind.pipeFrameCap'],
-  ['pipe-frame-foot', 'catalog.frame.kind.pipeFrameFoot'], ['panel-board-fixed', 'catalog.board.kind.fixed'],
-  ['panel-board-order', 'catalog.board.kind.order'], ['panel-part-box', 'catalog.board.kind.partBox'],
-  ['panel-cover-frame', 'catalog.board.kind.coverFrame'], ['connector-box', 'catalog.frame.kind.connectorBox'],
-  ['cap-foot-box', 'catalog.frame.kind.capFootBox'], ['movable-part-box', 'catalog.frame.kind.movableBox'],
-  ['accessory-box', 'catalog.frame.kind.accessoryBox'],
-  ['slider-box', 'catalog.frame.kind.sliderBox'], ['cap-accessory-box', 'catalog.frame.kind.capAccessoryBox'],
-  ['foot-part-box', 'catalog.frame.kind.footPartBox'], ['slot-long-part', 'catalog.frame.kind.slotLongPart'],
-  ['door-part-box', 'catalog.frame.kind.doorPartBox'],
-  ['drawer-part-box', 'catalog.frame.kind.drawerPartBox'],
-  ['t-slot-caster', 'catalog.frame.kind.caster'],
-];
+/**
+ * Family ids of the アルミフレーム category in registry order and their kind-name keys (ja/catalog.json), read from the
+ * product registry (registry.ts) instead of a hand-copied list, so adding a family does not need this spec to change.
+ */
+const FRAME_KINDS = catalogFamilyKinds('aluminumFrame');
 
 function picker(page: Page): Locator {
   return page.getByRole('dialog', { name: uiMessage('assembly', 'assembly.standardPart.title'), exact: true });

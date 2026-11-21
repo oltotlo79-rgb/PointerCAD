@@ -6,10 +6,11 @@ import { useAppStore } from '../store/useAppStore.js';
 import { commitDrawingTable, deleteDrawingTables, startDrawingBalloon } from './tableCommands.js';
 import { useDrawingToolDefaults } from './useDrawingToolDefaults.js';
 import { drawingDefaultDefinition } from './drawingToolDefaults.js';
+import { DRAWING_TABLE_KIND_LABELS, DRAWING_TABLE_KINDS, isDrawingTableKind, isParameterTableScope, PARAMETER_TABLE_COLUMNS,
+  PARAMETER_TABLE_SCOPE_LABELS, PARAMETER_TABLE_SCOPES } from './drawingTableKinds.js';
 
 const columnsLabels: Readonly<Record<BomColumnId, MessageKey>> = { number: 'assembly.bom.column.number', name: 'assembly.bom.column.name',
   quantity: 'assembly.bom.column.quantity', material: 'assembly.bom.column.material', mass: 'assembly.bom.column.mass', configuration: 'assembly.bom.column.configuration' };
-const kindLabels: Readonly<Record<DrawingTable['kind'], MessageKey>> = { bom: 'drawing.table.bom', hole: 'drawing.table.hole', revision: 'drawing.table.revisionTable' };
 const revisionLabels: readonly MessageKey[] = ['drawing.table.revision', 'drawing.table.date', 'drawing.table.description', 'drawing.table.approvedBy'];
 function isColumn(value: string): value is BomColumnId { return BOM_COLUMN_IDS.some((id) => value === id); }
 
@@ -34,6 +35,8 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
   const [viewId, setViewId] = useState(String(table?.options.viewId ?? drawing?.views[0]?.id ?? ''));
   const [datum, setDatum] = useState([String(table?.options.datumX ?? 0), String(table?.options.datumY ?? 0), String(table?.options.datumZ ?? 0)]);
   const [rows, setRows] = useState<readonly (readonly string[])[]>(table?.rows ?? [['', '', '', '']]);
+  const savedScope = table?.options.scope;
+  const [scope, setScope] = useState(isParameterTableScope(savedScope) ? savedScope : 'function');
   if (drawing === null) return <></>;
   const datumLabel = t(drawing.source.flatSheet === undefined ? 'drawing.table.datum' : 'drawing.table.flatDatum');
   const submit = (): void => {
@@ -49,15 +52,17 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
       }
     }
     if (kind === 'hole') { options.viewId = viewId; options.datumX = Number(datum[0]); options.datumY = Number(datum[1]); options.datumZ = Number(datum[2]); }
+    if (kind === 'parameter') options.scope = scope;
     commitDrawingTable({ kind, position: [Number(x), Number(y)], options,
-      columns: kind === 'bom' ? columns : kind === 'hole' ? ['symbol', 'x', 'y', 'diameter', 'depth'] : ['revision', 'date', 'description', 'approvedBy'],
+      columns: kind === 'bom' ? columns : kind === 'hole' ? ['symbol', 'x', 'y', 'diameter', 'depth']
+        : kind === 'parameter' ? PARAMETER_TABLE_COLUMNS : ['revision', 'date', 'description', 'approvedBy'],
       ...(kind === 'revision' ? { rows: rows.filter((row) => row.some((value) => value.trim() !== '')) } : {}) }, table?.id);
   };
   return <div className="pcad-drawing-table-editor pcad-drawing-settings" data-help-topic={kind === 'bom' ? 'drawing-bom' : kind === 'hole' && drawing.source.flatSheet !== undefined ? 'sheet-metal-flat' : 'drawing-table'}>
     <label title={t('drawing.table.title.controlHint')}>{t('drawing.table.title')}<select className="pcad-field__input" aria-label={t('drawing.table.title')} value={kind} disabled={table !== undefined} onChange={(event) => {
-      const value = event.target.value; if (value === 'bom' || value === 'hole' || value === 'revision') setKind(value);
-    }}>{(['bom', 'hole', 'revision'] as const).map((value) => <option key={value} value={value}
-      disabled={value === 'bom' ? drawing.source.sourceKind !== 'assembly' : value === 'hole' && drawing.source.sourceKind !== 'part'}>{t(kindLabels[value])}</option>)}</select></label>
+      const value = event.target.value; if (isDrawingTableKind(value)) setKind(value);
+    }}>{DRAWING_TABLE_KINDS.map((value) => <option key={value} value={value}
+      disabled={value === 'bom' ? drawing.source.sourceKind !== 'assembly' : value === 'hole' && drawing.source.sourceKind !== 'part'}>{t(DRAWING_TABLE_KIND_LABELS[value])}</option>)}</select></label>
     <label title={t('drawing.table.positionX.controlHint')}>{t('drawing.table.positionX')}<input className="pcad-field__input" aria-label={t('drawing.table.positionX')} inputMode="decimal" value={x} onChange={(event) => setX(event.target.value)} /></label>
     <label title={t('drawing.table.positionY.controlHint')}>{t('drawing.table.positionY')}<input className="pcad-field__input" aria-label={t('drawing.table.positionY')} inputMode="decimal" value={y} onChange={(event) => setY(event.target.value)} /></label>
     <label title={t('drawing.table.rowHeight.controlHint')}>{t('drawing.table.rowHeight')}<input className="pcad-field__input" aria-label={t('drawing.table.rowHeight')} inputMode="decimal" value={rowHeight} onChange={(event) => setRowHeight(event.target.value)} /></label>
@@ -95,6 +100,10 @@ function TableEditor({ table, initialKind }: { readonly table: DrawingTable | un
         <input title={t('drawing.controlHint.holeDatum')} className="pcad-field__input" aria-label={`${datumLabel} ${axis}`} inputMode="decimal" value={datum[index]}
           onChange={(event) => setDatum(datum.map((value, at) => at === index ? event.target.value : value))} /></label>)}</fieldset>
     </> : null}
+    {kind === 'parameter' ? <label title={t('drawing.table.parameterScope.controlHint')}>{t('drawing.table.parameterScope')}<select className="pcad-field__input"
+      aria-label={t('drawing.table.parameterScope')} value={scope} onChange={(event) => {
+        const value = event.target.value; if (isParameterTableScope(value)) setScope(value);
+      }}>{PARAMETER_TABLE_SCOPES.map((value) => <option key={value} value={value}>{t(PARAMETER_TABLE_SCOPE_LABELS[value])}</option>)}</select></label> : null}
     {kind === 'revision' ? <fieldset><legend>{t('drawing.table.rows')}</legend>
       {rows.map((row, rowIndex) => <fieldset key={`revision-row:${rowIndex}`} className="pcad-drawing-revision-row">
         <legend>{t('drawing.table.rowNumber').replace('{number}', String(rowIndex + 1))}</legend>

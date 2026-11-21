@@ -107,6 +107,8 @@
   "commandLine.error.toolNotHere": "この道具はコマンドラインからは始められません。ツールバーから選んでください。",
   "commandLine.error.tableRow": "{row} 行目を読み込めません。{reason}",
   "commandLine.error.tableNeedsTool": "部品で点・線分・選択の道具を選んでください。",
+  "commandLine.error.noSolid": "選べる立体がありません。先に立体を作ってください。",
+  "commandLine.error.selectTarget": "「選ぶ」の後に、空白で区切って「直前」「全部」「解除」のどれかを打ってください(例: sel last)。",
   "commandLine.tableCreated": "表から {count} 個の要素を作りました。",
   "commandLine.label": "コマンド",
   "commandLine.placeholder": "道具の名前か座標",

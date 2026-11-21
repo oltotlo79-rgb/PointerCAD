@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { sha256Hex } from './sha256.js';
+import { sha256Hex, sha256HexSync } from './sha256.js';
+import { importedShapeOf } from './part/types.js';
 import { attachmentsDigestOf, canonicalPartDocumentText, contentHashOf, CONTENT_HASH_ALGORITHM } from './assembly/partLibrary.js';
 import { canonicalDrawingSourceText, drawingSourceContentHash, drawingSourceInputHash } from './drawing/sourceLibrary.js';
 import { createEmptyPartDocument } from './part/createPartDocument.js';
@@ -60,5 +61,29 @@ describe('internal model SHA-256 byte digest', () => {
       await expect(drawingSourceContentHash(createEmptyPartDocument())).rejects.toBe(failure);
       await expect(sha256ScriptSource('abc')).rejects.toBe(failure);
     } finally { spy.mockRestore(); }
+  });
+});
+
+describe('internal model synchronous SHA-256 (sha256HexSync)', () => {
+  it.each(vectors)('matches the published vector %j without changing bytes', (source, expected) => {
+    const bytes = new TextEncoder().encode(source), before = bytes.slice();
+    expect(sha256HexSync(bytes)).toBe(expected);
+    expect(bytes).toEqual(before);
+  });
+
+  it('agrees with an independent implementation at every padding boundary and a multi-block input', () => {
+    // Lengths 0..130 cover the 55/56/63/64-byte padding edges of the first two blocks.
+    const lengths = [...Array.from({ length: 131 }, (_, length) => length), 65_537];
+    for (const length of lengths) {
+      const bytes = Uint8Array.from({ length }, (_, index) => (index * 31 + 7) % 256);
+      expect(sha256HexSync(bytes), String(length)).toBe(createHash('sha256').update(bytes).digest('hex'));
+    }
+  });
+
+  it('hashes only the viewed range and is the digest of an imported original', () => {
+    const buffer = new Uint8Array([255, 97, 98, 99, 254]);
+    expect(sha256HexSync(buffer.subarray(1, 4))).toBe(vectors[1][1]);
+    const original = new TextEncoder().encode('abc');
+    expect(importedShapeOf(original).shapeDigest).toBe(sha256HexSync(original));
   });
 });

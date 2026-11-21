@@ -8,6 +8,7 @@ import {
   redo,
   undo,
   DEFAULT_FACE_COLOR,
+  FEATURE_FOLDER_MAX_COUNT,
   DEFAULT_SEW_TOLERANCE_MM,
   liveBodyIds,
   replaceSketch,
@@ -719,6 +720,51 @@ describe('commitSolidInput(その場入力の確定から作る)', () => {
       ...overrides,
     };
   }
+
+  describe.each([2, 3])('%i 枚の面の一括押し出し', count => {
+    it.each(['new', 'join', 'cut'] as const)('%s は選択順に同じ欄を使い、新しい行をすべてまとめる', mode => {
+      const ids = ['face-3', 'face-1', 'face-2'].slice(0, count);
+      const sketch = documentWithFaces(ids);
+      const target = commitSolidInput(sketch, [ids[0]], extrudeCommit());
+      if (!target.ok) throw new Error(target.reasonKey);
+      const document = target.document;
+      const snapshot = JSON.stringify(document);
+      const commit = extrudeCommit({ flags: { symmetric: true, tapered: true, thinWalled: true, taperOutward: true },
+        values: { distance: expressionValueFromNumber(12), thickness: expressionValueFromNumber(2), taperAngle: expressionValueFromNumber(3) },
+        shapeChoices: { extrudeOperation: mode, extrudeTarget: target.featureId, extrudeEnd: 'toNext', thicknessSide: 'both' } });
+      const outcome = commitSolidInput(document, [...ids, ids[0], target.featureId], commit);
+      if (!outcome.ok) throw new Error(outcome.reasonKey);
+      const added = outcome.document.solids.slice(document.solids.length);
+      expect(added).toHaveLength(count * (mode === 'new' ? 1 : 2));
+      let previous = target.featureId;
+      for (const [i, id] of ids.entries()) {
+        const offset = mode === 'new' ? i : 2 * i;
+        const tool = added[offset];
+        expect(tool).toMatchObject({ kind: 'extrude', profile: faceRef(id), distance: commit.values.distance,
+          symmetric: true, end: { kind: 'toNext' }, taperOutward: true, taperAngle: commit.values.taperAngle,
+          thicknessSide: 'both', thickness: commit.values.thickness });
+        if (mode !== 'new') {
+          const result = added[offset + 1];
+          expect(result).toMatchObject({ kind: 'boolean', operation: mode === 'join' ? 'union' : 'subtract',
+            targetFeatureId: previous, toolFeatureId: tool.id });
+          previous = result.id;
+        }
+      }
+      expect(outcome.featureId).toBe(added.at(-1)?.id);
+      expect(outcome.document.featureFolders).toEqual([{ id: 'folder-1', name: t('toolbar.solid.extrude'),
+        children: added.map(feature => ({ kind: 'solid', id: feature.id })) }]);
+      expect(JSON.stringify(document)).toBe(snapshot);
+    });
+  });
+
+  it('複数面の履歴行を組み立てても、フォルダーを追加できなければ元の文書を保つ', () => {
+    const ids = ['face-1', 'face-2'];
+    const document = { ...documentWithFaces(ids), featureFolders: Array.from({ length: FEATURE_FOLDER_MAX_COUNT },
+      (_, index) => ({ id: `folder-${index + 1}`, name: String(index + 1), children: [] })) };
+    const before = JSON.stringify(document);
+    expect(commitSolidInput(document, ids, extrudeCommit())).toEqual({ ok: false, reasonKey: 'historyFolder.problem.too-many' });
+    expect(JSON.stringify(document)).toBe(before);
+  });
 
   it('押し出しは選択の面と入れた距離・つまみで作る', () => {
     const document = documentWithFaces(['face-1']);

@@ -9,6 +9,7 @@ import { femAssetFailureKey } from '../femFailureMessage.js';
 import { beamDefinition, invalidateBeamSession, type BeamSession } from './beamSession.js';
 import { beamSourceIsCurrent, type BeamSourceSnapshot } from './beamSource.js';
 import { prepareBeamAnalysis } from './prepareBeamAnalysis.js';
+import { beamDefinitionFingerprint } from './savedBeamResults.js';
 
 export interface BeamWorkerStatistics {
   readonly created: number;
@@ -64,6 +65,7 @@ export function attachBeamAnalysis(
     if (disposed || !beamSourceIsCurrent(source, store.getState())) return;
     const draft = beamDefinition(session, source, source.document.parameters);
     const checked = draft.ok ? prepareBeamAnalysis(source, draft.definition) : null;
+    const definitionSha256 = draft.ok ? beamDefinitionFingerprint(draft.definition) : null;
     if (checked === null || !checked.ok) {
       store.setState({ beamSession: { ...session, result: null, status: 'failed', errorKey: 'beam.error.model' } });
       return;
@@ -111,7 +113,8 @@ export function attachBeamAnalysis(
       if (completion.kind === 'result') {
         store.setState({ beamSession: { ...next, result: completion.result,
           bucklingEdges: completion.result.kind === 'oofem-beam-buckling-3d' ? edges : [], transientAxial, impactMembers,
-          status: 'complete', phase: null } });
+          status: 'complete', phase: null },
+        beamResultDefinition: definitionSha256 === null ? null : { result: completion.result, definitionSha256 } });
       } else {
         store.setState({ beamSession: { ...next, result: null, transientAxial: null, impactMembers: null, phase: null,
           status: completion.kind === 'cancelled' ? 'cancelled' : 'failed',

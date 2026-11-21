@@ -274,6 +274,23 @@ function buildInsideResult(build: () => BooleanResult): BooleanResult {
   }
 }
 
+/**
+ * 工具の並びで和か差を 1 回で行う(M-04 の並べる。呼ぶのは booleanPattern.ts だけ)。
+ * 判定(立体が残るか・正しい形か)と解放の約束は booleanOp と同じで、入力の形には触れない。
+ * 名前の継ぎはここでは作らない(工具が 1 個でないため。buildBooleanResult の注釈)。継ぐ側は `onBuilt` で
+ * 作り手の履歴を受け取り、自分で組み立てる(booleanPattern.ts が対象から来た面の名前だけを継ぐ)。
+ */
+export function booleanOpWithTools(oc: OpenCascadeInstance, operation: 'union' | 'subtract', target: TopoDS_Shape,
+  tools: readonly TopoDS_Shape[], onBuilt?: NativeBooleanObserver): BooleanResult {
+  const allocations = createAllocations();
+  try {
+    const range = allocations.keep(new oc.Message_ProgressRange_1());
+    if (target.IsNull() || tools.some(tool => tool.IsNull())) throw new Error(COMBINE_FAILED_MESSAGE);
+    if ([target, ...tools].some(shape => shapeBodyKind(oc, shape) !== 'solid')) throw new Error(OPEN_FACES_NOT_SUPPORTED);
+    return buildBooleanResult(oc, operation, target, tools, range, allocations, undefined, onBuilt);
+  } catch (error) { allocations.release(); throw error; }
+}
+
 /** 全入力を一度に交差計算する。中間の結合体を繰り返し分割・検査しない。 */
 export function unionShapes(oc: OpenCascadeInstance, shapes: readonly TopoDS_Shape[]): BooleanResult {
   if (shapes.length < 2) throw new Error('結合するソリッドを2つ以上指定してください。');

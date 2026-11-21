@@ -12,6 +12,8 @@ import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
 // オフセットと同じ理由で、作り手のファイルの定義を取り込んで輸出し直すだけにする
 // (段の依頼が持つ値の意味は、その値を読む作り手の側が正本)。
 import type { ExtrudeEndSpec } from './occt/makeSolidSweep.js';
+import type { SurfaceThickenError, thickenSurfaceBody } from './occt/makeSurfaceThicken.js';
+import type { BlendSurfaceError } from './occt/blendBoundary.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
 import type { SurfaceCutInput, SurfaceCutReason } from './occt/makeSurfaceCut.js';
 import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
@@ -499,6 +501,13 @@ export interface BooleanStepSpec {
   readonly toolKey: string;
   /** true なら、差で何も削れないとき理由つきで断る。既定は欄なしで従来どおり。 */
   readonly requireRemoval?: true;
+  /**
+   * 並べる(M-04)。欄があるときは、工具を各変換で写した複製の全部を 1 回の和か差の工具にする(工具そのものは使わない。
+   * もとの位置の分は、対象がすでに持っている)。空の並びは「足す写しが無い」で、対象をそのまま引き継ぐ。
+   * 和と差だけ、requireRemoval とは組み合わせない、写しは 99 個まで(どれも model が守る約束で、破れば RangeError)。
+   * **欄が無ければ今までどおり工具 1 個**(段の計算は 1 命令も変わらない)。
+   */
+  readonly transforms?: readonly RigidTransformSpec[];
 }
 
 /**
@@ -546,7 +555,10 @@ export type SolidStepSpec =
   /** 外ねじ(FR-423)。 */
   | ThreadShaftStepSpec
   /** 曲面(FR-428)。`bodyKind: 'shell'` のボディを作る。 */
+  | BlendSurfaceStepSpec
   | SurfaceStepSpec
+  | ThickenStepSpec
+  | OffsetSurfaceBodyStepSpec
   /** 平面による切断(FR-432)。分割(FR-424)もこれで満たす。 */
   | CutStepSpec
   | SurfaceCutStepSpec
@@ -740,7 +752,7 @@ export interface SolidBodyMesh {
 /** 立体を作れなかった段と、その理由。 */
 export interface SolidStepFailure {
   readonly id: string;
-  readonly code?: SurfaceCutReason;
+  readonly code?: SurfaceCutReason | SurfaceThickenError['code'] | BlendSurfaceError['code'] | 'outside-tolerance';
   /** 利用者へそのまま見せる日本語(FR-504、NFR-RE-1)。 */
   readonly message: string;
 }
@@ -1672,6 +1684,20 @@ export interface ThreadShaftStepSpec {
   readonly modeled: boolean;
 }
 
+interface BlendStepEdge {
+  readonly sourceKey: string;
+  readonly query: Extract<SubShapeQuery, { readonly kind: 'edge' }>;
+}
+
+export interface BlendSurfaceStepSpec {
+  readonly kind: 'blend';
+  readonly a: BlendStepEdge;
+  readonly b: BlendStepEdge;
+  readonly weightA: number;
+  readonly weightB: number;
+  readonly flipB: boolean;
+}
+
 /**
  * 曲面(FR-428)。**閉じた立体ではなく面のボディ**(`bodyKind: 'shell'`)を作る。
  *
@@ -1693,6 +1719,19 @@ export interface SurfaceStepSpec {
    * (それ以外は null)。**消費しない。**
    */
   readonly targetKey: string | null;
+}
+
+export interface ThickenStepSpec {
+  readonly kind: 'thicken';
+  readonly targetKey: string;
+  readonly thickness: number;
+  readonly side: Parameters<typeof thickenSurfaceBody>[2]['side'];
+}
+
+export interface OffsetSurfaceBodyStepSpec {
+  readonly kind: 'offsetBody';
+  readonly targetKey: string;
+  readonly distance: number;
 }
 
 export interface SurfaceCutStepSpec {

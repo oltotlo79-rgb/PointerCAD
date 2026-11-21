@@ -5,6 +5,7 @@ import type { PartDocument, SketchFunctionCurveFeature, FunctionSurfaceFeature, 
 import { MathExpressionDialog } from '../math/MathExpressionDialog.js';
 import { createBrowserMathClient } from '../math/createBrowserMathClient.js';
 import { waitForMathEditorGeometry } from '../math/prepareDocumentMathEditor.js';
+import { rememberDialogOpener } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import { editFunctionField, evaluateFunctionPlotDraft, functionPlotDraft, functionDraftScope, FUNCTION_AXES,
@@ -67,13 +68,12 @@ export function FunctionPlotDialog({ featureId, onClose }: {
     && useAppStore.getState().documentVersion === owner.documentVersion;
   useEffect(() => {
     mounted.current = true;
-    const element = dialog.current, previous = document.activeElement;
+    const element = dialog.current, restoreFocus = rememberDialogOpener(element);
     element?.showModal();
     const unsubscribe = useAppStore.subscribe(state => {
       if (state.document !== owner.document || state.documentVersion !== owner.documentVersion) { running.current?.abort(); close(); }
     });
-    return () => { mounted.current = false; running.current?.abort(); unsubscribe(); element?.close();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+    return () => { mounted.current = false; running.current?.abort(); unsubscribe(); element?.close(); restoreFocus(); };
   }, [owner, close]);
   const change = (next: FunctionPlotDraft) => { running.current?.abort(); setBusy(false); setPreview(null); setDisplayed(false); setIssues(new Map()); setDraft(next); };
   const calculate = async () => {

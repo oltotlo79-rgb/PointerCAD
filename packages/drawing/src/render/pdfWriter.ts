@@ -1,16 +1,19 @@
 /** PDF 1.4 の最小コンテナ。位置とstream長は符号化後のバイト数だけで数える。 */
 export const PDF_POINTS_PER_MM = 72 / 25.4;
-export interface PdfOptions {
+export interface PdfPage {
   readonly widthMm: number;
   readonly heightMm: number;
   /** 描画命令はASCII、メタデータの日本語はPDF文字列へ符号化する。 */
   readonly content: string | Uint8Array;
+}
+export interface PdfOptions extends PdfPage {
   readonly creationDate?: string;
   readonly title?: string;
 }
 export type PdfResult = { readonly ok: true; readonly bytes: Uint8Array }
   | { readonly ok: false; readonly reason: 'invalidPageSize' | 'invalidContent' | 'invalidMetadata' | 'tooLarge' };
 const encoder = new TextEncoder();
+const byteLimit = 10_000_000_000;
 
 /** PDF文字列はUTF-16BEのBOM付きhex。絵の日本語をUTF-8のliteral stringへ混ぜない。 */
 function pdfString(value: string): string | null {
@@ -35,18 +38,21 @@ function pdfDate(value: string): string | null {
   return `D:${match.slice(1).join('')}Z`;
 }
 
-export function createPdf(options: PdfOptions): PdfResult {
-  if (![options.widthMm, options.heightMm].every((value) => Number.isFinite(value) && value > 0
-    && Number((value * PDF_POINTS_PER_MM).toFixed(4)) > 0
-    && value * PDF_POINTS_PER_MM <= 14400)) return { ok: false, reason: 'invalidPageSize' };
-  const content = typeof options.content === 'string' ? encoder.encode(options.content) : options.content;
-  if (content.some((byte) => byte > 127 || (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13))) {
-    return { ok: false, reason: 'invalidContent' };
+function pageExtent(mm: number): string | null {
+  const points = mm * PDF_POINTS_PER_MM;
+  if (!Number.isFinite(mm) || mm <= 0 || points > 14400) return null;
+  const rounded = points.toFixed(4);
+  return Number(rounded) > 0 ? rounded : null;
+}
+
+const pageObjectId = (index: number): number => 3 + 2 * index;
+
+export function createPdfPages(pages: readonly PdfPage[], metadata: Pick<PdfOptions, 'creationDate' | 'title'> = {}): PdfResult {
+  if (pages.length === 0) return { ok: false, reason: 'invalidContent' };
+  // 有効な命令はASCIIなので、本文だけで上限に達する場合は符号化や連結の前に断れる。
+  if (pages.length > 1 && pages.reduce((sum, page) => sum + page.content.length, 0) >= byteLimit) {
+    return { ok: false, reason: 'tooLarge' };
   }
-  const date = options.creationDate === undefined ? undefined : pdfDate(options.creationDate);
-  const title = options.title === undefined ? undefined : pdfString(options.title);
-  if (date === null || title === null) return { ok: false, reason: 'invalidMetadata' };
-  const info = date !== undefined || title !== undefined;
   const chunks: Uint8Array[] = [];
   let length = 0;
   const append = (value: string | Uint8Array): void => {
@@ -61,21 +67,39 @@ export function createPdf(options: PdfOptions): PdfResult {
   append('%PDF-1.4\n');
   append(new Uint8Array([37, 0xe2, 0xe3, 0xcf, 0xd3, 10]));
   object(1, '<</Type/Catalog/Pages 2 0 R>>');
-  object(2, '<</Type/Pages/Kids[3 0 R]/Count 1>>');
-  const width = (options.widthMm * PDF_POINTS_PER_MM).toFixed(4);
-  const height = (options.heightMm * PDF_POINTS_PER_MM).toFixed(4);
-  object(3, `<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${width} ${height}]/Resources<<>>/Contents 4 0 R>>`);
-  offsets[4] = length;
-  append(`4 0 obj\n<</Length ${content.byteLength}>>\nstream\n`);
-  append(content); append('\nendstream\nendobj\n');
-  if (info) object(5, `<<${date === undefined ? '' : `/CreationDate(${date})`}${title === undefined ? '' : `/Title${title}`}>>`);
-  if (length >= 10_000_000_000) return { ok: false, reason: 'tooLarge' };
+  const kids = pages.map((_, index) => `${pageObjectId(index)} 0 R`).join(' ');
+  object(2, `<</Type/Pages/Kids[${kids}]/Count ${pages.length}>>`);
+  for (const [index, page] of pages.entries()) {
+    const width = pageExtent(page.widthMm), height = pageExtent(page.heightMm);
+    if (width === null || height === null) return { ok: false, reason: 'invalidPageSize' };
+    const content = typeof page.content === 'string' ? encoder.encode(page.content) : page.content;
+    if (content.some((byte) => byte > 127 || (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13))) {
+      return { ok: false, reason: 'invalidContent' };
+    }
+    const id = pageObjectId(index), streamId = id + 1;
+    object(id, `<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${width} ${height}]/Resources<<>>/Contents ${streamId} 0 R>>`);
+    offsets[streamId] = length;
+    append(`${streamId} 0 obj\n<</Length ${content.byteLength}>>\nstream\n`);
+    append(content); append('\nendstream\nendobj\n');
+  }
+  const date = metadata.creationDate === undefined ? undefined : pdfDate(metadata.creationDate);
+  const title = metadata.title === undefined ? undefined : pdfString(metadata.title);
+  if (date === null || title === null) return { ok: false, reason: 'invalidMetadata' };
+  const info = date !== undefined || title !== undefined;
+  const infoId = offsets.length;
+  if (info) object(infoId, `<<${date === undefined ? '' : `/CreationDate(${date})`}${title === undefined ? '' : `/Title${title}`}>>`);
+  if (length >= byteLimit) return { ok: false, reason: 'tooLarge' };
   const xref = length;
   append(`xref\n0 ${offsets.length}\n0000000000 65535 f \n`);
   for (const offset of offsets.slice(1)) append(`${String(offset).padStart(10, '0')} 00000 n \n`);
-  append(`trailer\n<</Size ${offsets.length}/Root 1 0 R${info ? '/Info 5 0 R' : ''}>>\nstartxref\n${xref}\n%%EOF\n`);
+  append(`trailer\n<</Size ${offsets.length}/Root 1 0 R${info ? `/Info ${infoId} 0 R` : ''}>>\nstartxref\n${xref}\n%%EOF\n`);
+  if (length >= byteLimit) return { ok: false, reason: 'tooLarge' };
   const bytes = new Uint8Array(length);
   let position = 0;
   for (const chunk of chunks) { bytes.set(chunk, position); position += chunk.byteLength; }
   return { ok: true, bytes };
+}
+
+export function createPdf(options: PdfOptions): PdfResult {
+  return createPdfPages([options], options);
 }

@@ -477,6 +477,13 @@ function ribSideChoice(): NumericChoice {
   };
 }
 
+/** 面だけのボディへ厚みを付ける側(J-05a)。既定は法線側。性質の欄の同じ選択肢は solid/surfaceBodyControls.ts。 */
+function thickenSideChoice(): NumericChoice {
+  return { key: 'thickenSide', labelKey: 'surfaceBody.side', value: 'normal', options: [
+    { value: 'normal', labelKey: 'surfaceBody.normal' }, { value: 'reverse', labelKey: 'surfaceBody.reverse' },
+    { value: 'both', labelKey: 'surfaceBody.both' }] };
+}
+
 /** 穴の入口の広げ方(FR-422)。既定は広げない(欄が 0 個の段になる)。 */
 function holeEntryChoice(): NumericChoice {
   return {
@@ -557,12 +564,12 @@ function cutPlaneKindChoice(): NumericChoice {
   };
 }
 
-/** 従来の点選択を既定にし、平面内指定・辺からの距離(M-02)への切替を明示する。 */
-function holePlacementChoice(): NumericChoice {
+/** 従来の点選択を既定にし、平面内指定・辺からの距離(M-02)への切替を明示する。辺 2 本から開いた時は辺からの距離(M-10 ③)。 */
+function holePlacementChoice(options: NumericInputOptions): NumericChoice {
   return {
     key: 'holePlacement',
     labelKey: 'numericInput.choice.holePlacement',
-    value: 'points',
+    value: options.initialHolePlacement ?? 'points',
     options: [
       { value: 'points', labelKey: 'numericInput.holePlacement.points' },
       { value: 'plane-face', labelKey: 'numericInput.holePlacement.planeFace' },
@@ -652,7 +659,7 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
     case 'twoPointArcRadius':
       return [arcBulgeChoice()];
     case 'threadSize':
-      return [threadDesignationChoice(), threadSeriesChoice(), holePlacementChoice()];
+      return [threadDesignationChoice(), threadSeriesChoice(), holePlacementChoice(options)];
     case 'chamferSize':
       return [chamferModeChoice()];
     case 'linearPattern':
@@ -702,11 +709,13 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
     // 回す軸は回転・円形パターン・ばねと同じ選択肢を使い回す。既定も同じ Z。
     case 'transformRotation':
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
+    case 'thickenAmount':
+      return [thickenSideChoice()];
     case 'ribThickness':
       return [ribSideChoice()];
     // 穴(FR-405、FR-422)。入口の広げ方もここで聞く。
     case 'holeSize':
-      return [holeEntryChoice(), holePlacementChoice()];
+      return [holeEntryChoice(), holePlacementChoice(options)];
     // 呼びと系列はねじ穴とまったく同じ表を使う(規格表を 2 か所に持たない、FR-406)。
     case 'threadShaftSize':
       return [threadDesignationChoice(), threadSeriesChoice(), threadShaftEndChoice()];

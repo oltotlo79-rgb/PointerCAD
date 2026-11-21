@@ -8,6 +8,7 @@ import {
   DocumentCompareIcon,
   DrawingSheetIcon,
   DrawingTemplateIcon,
+  ExampleIcon,
   ExportIcon,
   ImportIcon,
   LayersIcon,
@@ -52,6 +53,7 @@ export type FileMenuActionId =
   | 'importShape'
   | 'saveAsTemplate'
   | 'newFromTemplate'
+  | 'openExample'
   | 'print';
 
 /**
@@ -115,6 +117,16 @@ export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
     labelKey: 'toolbar.file.newFromTemplate',
     tooltipKey: 'toolbar.file.newFromTemplateTooltip',
     Icon: TemplateNewIcon,
+  },
+  /*
+   * 作例を開く(J-06b)。ひな形から新規と同じく「中身のある新しい部品を始める」操作なので、その下に置く。
+   * 部品の時だけ出す(組立の一覧は下の `fileMenuItems` が決まった 5 行に絞る)。
+   */
+  {
+    id: 'openExample',
+    labelKey: 'examples.menu',
+    tooltipKey: 'examples.menuTooltip',
+    Icon: ExampleIcon,
   },
   /*
    * 印刷(FR-810)。いまの部品を紙へ出す操作なので、ファイルを作る操作の後ろ、

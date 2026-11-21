@@ -26,7 +26,7 @@ type DimensionDiagramId = 'rectTube' | 'angle' | 'iBeam' | 'channel' | 'lipChann
   | 'pin' | 'nut' | 'bolt' | 'washer' | 'bearing' | 'camFollower' | 'bush' | 'compressionSpring' | 'tSlotFrame' | 'key' | 'sealRing' | 'oRing'
   | 'angleBracket' | 'joinPlate' | 'slotNut' | 'tSlotSeries' | 'flatBar' | 'roundBar' | 'tSlotNutBar' | 'tSlotNut' | 'roundNut' | 'frameCap'
   | 'flatPlate' | 'shapedPlate' | 'angleBracketCatalog' | 'footBase' | 'adjuster' | 'pipeFrame' | 'pipeFrameSlotted' | 'pipeFrameTwin'
-  | 'smallFrame' | 'smallFrameCap' | 'bracketStock' | 'pipeFrameCap' | 'pipeFrameFoot'
+  | 'smallFrame' | 'smallFrameCap' | 'bracketStock' | 'pipeFrameCap' | 'pipeFrameFoot' | 'pipeLongPart'
   | 'jointBar' | 'tSlotStud' | 'knurledNut' | 'panelBoardFixed' | 'panelBoardOrder' | 'panelPartBox' | 'panelCoverFrame' | 'connectorBox' | 'capFootBox' | 'caster'
   | 'movableBox' | 'accessoryBox' | 'pipeElbow' | 'pipeTee' | 'pipeSocket' | 'pipeCap' | 'pipePlug' | 'pipeNipple' | 'pipeBushing' | 'pipeFlange' | 'blockBracket'
   | 'sliderBox' | 'capAccessoryBox' | 'footPartBox' | 'slotLongPart'
@@ -156,5 +156,11 @@ export interface CatalogFamilyEntry {
   readonly id: string;
   readonly group: CatalogGroup;
   readonly kindKey: string;
+  /**
+   * 選ぶ画面の指定の欄の説明の 1 行の i18n の鍵と、呼びの一覧の行の文字の形(説明を族ごとに持つ族だけ)。
+   * `specified` は寸法を指定して作る族(行の文字は「寸法を指定して作る」)、`simplified` は資料の寸法に合わせて形を簡略にした族
+   * (簡略の印を持つ行は、呼びに印を添える)。族を足す時は、この行だけを書けばよい(ui に族ごとの表を持たない)。
+   */
+  readonly hint?: { readonly key: string; readonly rowLabel: 'specified' | 'simplified' };
   readonly load: () => Promise<CatalogFamily>;
 }

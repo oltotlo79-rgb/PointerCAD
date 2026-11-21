@@ -154,6 +154,7 @@ export function createInitialDocumentState(): InitialDocumentState {
     chaining: true,
     numericInput: null,
     numericInputAnchor: null,
+    numericInputAvoid: null,
     pendingStart: null,
     shapeDraft: EMPTY_SHAPE_DRAFT,
     shapeErrorMessage: null,
@@ -189,6 +190,7 @@ export function createInitialDocumentState(): InitialDocumentState {
     // 起動直後は何も読み込んでいないので、単位を訊く小窓も出ていない。
     importUnitAsked: false,
     pickAnchor: null,
+    pickAvoidRect: null,
     // 起動直後はまだ保存も読込もしていない。口はブラウザ用から始める。
     fileGateway: createBrowserFileGateway(),
     fileName: null,

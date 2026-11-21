@@ -6,6 +6,7 @@ import { analyzeParameters, machiningSymbols, reevaluatePartDocument, resolveDra
   type DrawingSourceLibrary, type DrawingSourceResolution, type MachiningNote } from '@pointercad/model';
 
 import { displayDrawingNote } from './noteDisplay.js';
+import { drawingNoteFields } from './drawingNoteFields.js';
 
 export function resolveMachiningAnnotation(document: DrawingDocument, library: DrawingSourceLibrary,
   target: DimensionTarget, featureId?: string): MachiningNote | null {
@@ -32,9 +33,10 @@ export function displayDrawingAnnotations(document: DrawingDocument, source: Dra
   outline: (text: string, sizeMm: number) => OutlinedText): readonly DrawingRenderElement[] {
   const context = drawingDimensionContext(source);
   const analysis = analyzeParameters(document.parameters, []);
+  const fields = drawingNoteFields(document, library);
   return document.annotations.flatMap((annotation): DrawingRenderElement[] => {
     if (annotation.sourceTarget === undefined) {
-      const display = displayDrawingNote(annotation, outline);
+      const display = displayDrawingNote(annotation, outline, fields);
       return display === null ? [] : [display];
     }
     const target = resolveDrawingAnnotationTarget(annotation.sourceTarget, document, context);

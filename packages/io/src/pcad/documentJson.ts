@@ -122,7 +122,7 @@ function readSteelStockSource(value: unknown, path: string): Checked<NonNullable
 /**
  * 保存形式の版 24 の欄(次の版 v1.0.4 で足す新しい欄・種類は、全部「使った文書だけ版 24」に揃える。統括の決定 2026-11-19 21:1x)。
  * 古い読み手が欄を捨てて形を失わないよう、版 24 未満を名乗る文書にこれらの欄があれば、読むのも書くのも断る。
- * 欄を足す時は、下の 2 つの関数に同じ判定を 1 つずつ足す(辺からの距離の穴 M-02、スイープのねじれ・終わりの大きさ・肉厚 M-07)。読む時は欄ごとの断りの文を返す。
+ * 欄を足す時は、下の 2 つの関数に同じ判定を 1 つずつ足す(辺からの距離の穴 M-02、スイープのねじれ・終わりの大きさ・肉厚 M-07、厚み付け・面全体のオフセット J-05a)。読む時は欄ごとの断りの文を返す。
  */
 function version24FieldMessage(document: unknown): string | null {
   if (!isRecord(document) || !isUnknownArray(document['solids'])) return null;
@@ -132,6 +132,13 @@ function version24FieldMessage(document: unknown): string | null {
   if (solids.some(feature => feature['kind'] === 'sweep'
     && ('twistDegrees' in feature || 'endScale' in feature || 'wallThickness' in feature))) {
     return 'スイープのねじれ・終わりの大きさ・肉厚を読むには保存形式の版24が必要です。';
+  }
+  if (solids.some(feature => feature['kind'] === 'surface' && isRecord(feature['operation']) && feature['operation']['kind'] === 'blend')) {
+    return '滑らかなつなぎを読むには保存形式の版24が必要です。';
+  }
+  if (solids.some(feature => feature['kind'] === 'thicken')) return '厚み付けを読むには保存形式の版24が必要です。';
+  if (solids.some(feature => feature['kind'] === 'surface' && isRecord(feature['operation']) && feature['operation']['kind'] === 'offsetBody')) {
+    return '面全体のオフセットを読むには保存形式の版24が必要です。';
   }
   return null;
 }
@@ -144,6 +151,15 @@ function assertVersion24Fields(document: PartDocument): void {
   if (document.solids.some(feature => feature.kind === 'sweep'
     && (feature.twistDegrees !== undefined || feature.endScale !== undefined || feature.wallThickness !== undefined))) {
     throw new RangeError('スイープのねじれ・終わりの大きさ・肉厚を保存するには保存形式の版24が必要です。');
+  }
+  if (document.solids.some(feature => feature.kind === 'surface' && feature.operation.kind === 'blend')) {
+    throw new RangeError('滑らかなつなぎを保存するには保存形式の版24が必要です。');
+  }
+  if (document.solids.some(feature => feature.kind === 'thicken')) {
+    throw new RangeError('厚み付けを保存するには保存形式の版24が必要です。');
+  }
+  if (document.solids.some(feature => feature.kind === 'surface' && feature.operation.kind === 'offsetBody')) {
+    throw new RangeError('面全体のオフセットを保存するには保存形式の版24が必要です。');
   }
 }
 

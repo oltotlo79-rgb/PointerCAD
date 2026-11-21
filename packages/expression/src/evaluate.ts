@@ -144,6 +144,61 @@ function requireFinite(value: Decimal, position: number): Decimal {
   return value;
 }
 
+const MAX_SUGGESTIONS = 3;
+const MAX_SUGGESTION_DISTANCE = 2;
+
+/** 編集距離のうち、候補の上限以内の値だけを正確に求める。 */
+function editDistanceWithinLimit(input: string, candidate: string): number {
+  const limit = MAX_SUGGESTION_DISTANCE;
+  const beyondLimit = limit + 1;
+  if (input.length > candidate.length + limit || candidate.length > input.length + limit) {
+    return beyondLimit;
+  }
+
+  let previous = Array.from({ length: candidate.length + 1 }, (_, index) => index);
+  let current: number[] = [];
+  for (let row = 1; row <= input.length; row += 1) {
+    // 文字数の差だけで上限を超える列は計算しない。
+    const first = Math.max(1, row - limit);
+    const last = Math.min(candidate.length, row + limit);
+    current[first - 1] = first === 1 ? row : beyondLimit;
+    for (let column = first; column <= last; column += 1) {
+      const substitution = input.charAt(row - 1) === candidate.charAt(column - 1) ? 0 : 1;
+      current[column] = Math.min(
+        previous[column] + 1,
+        current[column - 1] + 1,
+        previous[column - 1] + substitution,
+      );
+    }
+    current[last + 1] = beyondLimit;
+    [previous, current] = [current, previous];
+  }
+  return previous[candidate.length];
+}
+
+function suggestNames(input: string, names: Iterable<string>): readonly string[] {
+  const ranked: { readonly name: string; readonly rank: number }[] = [];
+  for (const name of names) {
+    if (name === input) {
+      continue;
+    }
+    const rank = name.startsWith(input) ? 0 : editDistanceWithinLimit(input, name);
+    if (rank <= MAX_SUGGESTION_DISTANCE) {
+      ranked.push({ name, rank });
+    }
+  }
+  ranked.sort((left, right) => {
+    if (left.rank !== right.rank) {
+      return left.rank - right.rank;
+    }
+    if (left.name < right.name) {
+      return -1;
+    }
+    return left.name === right.name ? 0 : 1;
+  });
+  return ranked.slice(0, MAX_SUGGESTIONS).map(({ name }) => name);
+}
+
 function evaluateVariable(name: string, position: number, context: EvaluateContext): Decimal {
   const exact = context.exactVariables.get(name);
   const found = context.variables.get(name);
@@ -155,7 +210,10 @@ function evaluateVariable(name: string, position: number, context: EvaluateConte
   } else if (found !== undefined) {
     value = new ExpressionDecimal(found);
   } else {
-    throw new ExpressionFailure(expressionError('unknownVariable', name, position));
+    const error = expressionError('unknownVariable', name, position);
+    const names = new Set([...context.variables.keys(), ...context.exactVariables.keys()]);
+    const suggestions = suggestNames(name, names);
+    throw new ExpressionFailure(suggestions.length === 0 ? error : { ...error, suggestions });
   }
   if (context.scale === null || context.nonLengthVariables.has(name)) {
     return value;
@@ -228,10 +286,20 @@ function evaluateUnit(node: UnitNode, context: EvaluateContext): UnitAwareValue 
   return { value: inner.value.times(factor), hasUnit: true };
 }
 
+function unknownFunctionFailure(node: CallNode): ExpressionFailure {
+  const names = [...FUNCTION_ARITY.keys()];
+  const suggestions = suggestNames(node.name, names);
+  return new ExpressionFailure({
+    ...expressionError('unknownFunction', node.name, node.position),
+    ...(suggestions.length === 0 ? {} : { suggestions }),
+    hint: { key: 'supportedFunctions', names },
+  });
+}
+
 function evaluateCall(node: CallNode, context: EvaluateContext): Decimal {
   const arity = FUNCTION_ARITY.get(node.name);
   if (arity === undefined) {
-    throw new ExpressionFailure(expressionError('unknownFunction', node.name, node.position));
+    throw unknownFunctionFailure(node);
   }
   if (node.args.length !== arity) {
     throw new ExpressionFailure(
@@ -265,7 +333,7 @@ function evaluateCall(node: CallNode, context: EvaluateContext): Decimal {
       return evaluateRoot(first, values[1], node.position);
     default:
       // FUNCTION_ARITY とこの分岐が食い違ったときだけ来る。
-      throw new ExpressionFailure(expressionError('unknownFunction', node.name, node.position));
+      throw unknownFunctionFailure(node);
   }
 }
 

@@ -17,6 +17,11 @@ import {
   standardPartNominalVolume, standardPartRejection,
 } from '../standard/buildStandardPart.js';
 import { createCatalogRegistry, PRODUCT_CATALOG_REGISTRY } from './registry.js';
+import { K4A_CATALOG_FAMILIES } from './registry/k4a.js';
+import { K4B_CATALOG_FAMILIES } from './registry/k4b.js';
+import { K5_CATALOG_FAMILIES } from './registry/k5.js';
+import { K6_CATALOG_FAMILIES } from './registry/k6.js';
+import { K28_CATALOG_FAMILIES } from './registry/k28.js';
 import { CATALOG_ITEM_REJECTION_TEMPLATES, type CatalogItemRejectionCode } from './rejection.js';
 import {
   buildCatalogItemPart, catalogItemNominalVolume, catalogItemRejection, catalogItemSourceFromOptions,
@@ -170,28 +175,9 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
   const unknown: StandardPartSource = { ...SAVED, options: { ...SAVED.options, family: 'future-family' } };
 
   it('製品の登録口の族は、包みの一覧に足した物だけ(K0 は 0 族、K4a でカムフォロア・巻きブシュ、K4b で平行ピン・ナット 3 種・ばね、K-05 でローラフォロア)', () => {
-    expect(PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id)).toEqual(['cam-follower-stud-metric', 'wrapped-bush',
-      'parallel-pin', 'hex-nut-style1-extended', 'hex-nut-style2', 'hex-nut-thin', 'compression-spring', 'roller-follower-yoke-metric', 'angular-contact-ball-bearing',
-      'thrust-ball-bearing-flat-seat', 'cylindrical-roller-bearing-nu', 'cylindrical-roller-bearing-nj',
-      'cylindrical-roller-bearing-nup', 'cylindrical-roller-bearing-n', 'cylindrical-roller-bearing-nf', 'needle-roller-bearing-rna',
-      'cross-recessed-pan-head-screw', 'cross-recessed-countersunk-screw', 'plain-washer-normal', 'plain-washer-small',
-      'spring-washer-number2', 'spring-washer-number3', 'socket-head-cap-screw', 'countersunk-socket-screw',
-      'hex-bolt-main', 'button-head-socket-screw', 'e-ring', 'plain-washer-large', 'parallel-key-square',
-      'taper-pin', 'split-pin', 'flange-nut', 'cross-recessed-cheese-head-screw', 'set-screw-cup-point', 'set-screw-flat-point',
-      'set-screw-dog-point', 'set-screw-cone-point', 'oil-seal-specified', 'o-ring-p', 'o-ring-g', 'c-ring-shaft', 'c-ring-bore', 't-slot-frame-specified', 't-slot-frame-series',
-      'angle-bracket-specified', 'join-plate-specified', 'slot-nut-specified', 't-slot-frame-s6', 't-slot-frame-s8', 't-slot-frame-s10',
-      'aluminum-channel', 'aluminum-square-pipe', 'aluminum-round-bar', 'aluminum-flat-bar', 'aluminum-angle', 't-slot-nut-bar', 't-slot-nut',
-      't-slot-round-nut', 't-slot-frame-cap', 't-slot-flat-plate', 't-slot-shaped-plate', 't-slot-angle-bracket', 't-slot-foot-base',
-      't-slot-adjuster', 't-slot-block-bracket', 't-slot-joint-bar', 't-slot-stud', 't-slot-knurled-nut', 'pipe-frame', 'pipe-frame-slotted', 'pipe-frame-twin',
-      't-slot-frame-small', 't-slot-frame-cap-small',
-      'bracket-stock', 'pipe-frame-cap', 'pipe-frame-foot', 'panel-board-fixed', 'panel-board-order',
-      'panel-part-box', 'panel-cover-frame', 'connector-box', 'cap-foot-box', 'movable-part-box', 'accessory-box',
-      'slider-box', 'cap-accessory-box', 'foot-part-box', 'slot-long-part',
-      'door-part-box',
-      'drawer-part-box',
-      't-slot-caster',
-      'pipe-fitting-elbow', 'pipe-fitting-tee', 'pipe-fitting-socket', 'pipe-fitting-cap', 'pipe-fitting-plug', 'pipe-fitting-nipple',
-      'pipe-fitting-bushing', 'pipe-flange-5k', 'pipe-flange-10k']);
+    // 族の id を手で写さない: 登録口は包みの一覧(registry/<包み>.ts)をこの順に合わせた物だけで、ほかの族を持たない。
+    expect(PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id)).toEqual([...K4A_CATALOG_FAMILIES, ...K4B_CATALOG_FAMILIES,
+      ...K5_CATALOG_FAMILIES, ...K6_CATALOG_FAMILIES, ...K28_CATALOG_FAMILIES].map((entry) => entry.id));
   });
 
   it('知らない族は standardPartRejection・組み立て・理由つきの組み立てで同じ型付きの拒否になる', () => {

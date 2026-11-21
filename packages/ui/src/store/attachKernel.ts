@@ -338,7 +338,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
         const whole = await computeStaged(job, placement.document);
         releaseScope(whole.result);
         if (!ownedBy(job)) return;
-        const failure = stagedFailure(placement.document, whole.generation, whole.result, null);
+        const failure = stagedFailure(placement.document, whole.generation, whole.result, []);
         if (failure !== null) {
           publishFailure(job, failure, whole.result.errors, null);
           return;
@@ -350,7 +350,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
         releaseScope(shown.result);
         return;
       }
-      const failure = stagedFailure(displayed, shown.generation, shown.result, finalFeatureId);
+      const failure = stagedFailure(displayed, shown.generation, shown.result, job.state.batchExtrude?.resultBodyIds ?? [finalFeatureId]);
       if (failure !== null) {
         releaseScope(shown.result);
         publishFailure(job, failure, shown.result.errors, null);
@@ -437,7 +437,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
       const document = documentWithIssuanceLedger(state, placed.document, false);
       const placement = document === placed.document ? placed : { ...placed, document };
       const job: StagedJob = { epoch: stagedGeneration, ownership, waiting: true, held: null, onAdopted: null,
-        state: Object.freeze({ ownership, fingerprint: request.fingerprint, finalFeatureId: request.finalFeatureId,
+        state: Object.freeze({ ownership, batchExtrude: request.batchExtrude, fingerprint: request.fingerprint, finalFeatureId: request.finalFeatureId,
           placement, displayed: documentUpTo(placement.document, placement.timelineIndex), status: 'pending',
           result: null, accounting: null, wholeGeneration: null, errors: [], errorMessage: null, failure: null,
           confirmRequested: false }) };
@@ -548,7 +548,7 @@ function stagedFailure(
   document: PartDocument,
   generation: number,
   result: PartRecomputeResult,
-  finalFeatureId: string | null,
+  requiredBodyIds: readonly string[],
 ): StagedSolidFailure | null {
   if (result.cancelled || result.generation !== generation) return 'incomplete';
   if (result.errors.some((error) => error.message === KERNEL_BROKEN_MESSAGE)) return 'workerBroken';
@@ -561,6 +561,6 @@ function stagedFailure(
     if (!body.isValid || seen.has(body.featureId) || !solidIds.has(body.featureId)) return 'invalidBody';
     seen.add(body.featureId);
   }
-  if (finalFeatureId !== null && !seen.has(finalFeatureId)) return 'missingBody';
+  if (requiredBodyIds.some(id => !seen.has(id))) return 'missingBody';
   return null;
 }

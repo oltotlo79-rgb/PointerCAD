@@ -16,12 +16,14 @@
  * 積むので、Undo は 1 回で元へ戻る(NFR-UX-3)。
  */
 
+import { type ExpressionValue, expressionValueFromNumber } from '@pointercad/expression';
 import {
   appendReference,
   baseWorkPlane,
   createReferenceResolver,
   DEFAULT_WORK_PLANE_ID,
   isBaseWorkPlaneId,
+  isSameSubShape,
   nextReferenceId,
   nextReferenceName,
   resolveSketch,
@@ -176,6 +178,35 @@ export function commitWorkPlane(
     (id, name) => ({ id, name, visible, kind: 'referencePlane', plane }),
     'referencePlane',
   );
+}
+
+/** 面そのもの(離さない)の作業平面の、離す量。 */
+const ON_FACE_OFFSET: ExpressionValue = expressionValueFromNumber(0);
+
+/**
+ * 平らな面をちょうど 1 枚選んでいるとき、その面そのものの作業平面を返す(M-18 面に直接かく)。
+ *
+ * 同じ面(`isSameSubShape`)を、離す量 0 の文字で指す作業平面があれば使い直し、無ければ 1 枚作る
+ * (作ったときだけ文書が変わる)。式で 0 になる物(パラメータで動く)と離した平面は別物として、
+ * 使い直さない。曲面・2 つ以上の選択・面でない選択では null(作図面を変えない)。
+ */
+export function workPlaneOnSelectedFace(
+  document: PartDocument,
+  bodies: readonly SubShapeBody[],
+  selection: readonly string[],
+): { readonly document: PartDocument; readonly planeId: WorkPlaneId } | null {
+  const face = selection.length === 1 ? selectedSubShapeRefs(bodies, selection, 'face').find(isFlatFaceRef) : undefined;
+  if (face === undefined) {
+    return null;
+  }
+  const found = document.references.find((feature) => feature.kind === 'referencePlane'
+    && feature.plane.kind === 'face' && isSameSubShape(feature.plane.face, face)
+    && feature.plane.offset.mathDefinition === undefined && feature.plane.offset.source === ON_FACE_OFFSET.source);
+  if (found !== undefined) {
+    return { document, planeId: found.id };
+  }
+  const created = commitWorkPlane(document, { kind: 'face', face, offset: ON_FACE_OFFSET });
+  return { document: created.document, planeId: created.featureId };
 }
 
 /** 基準軸を 1 本作る(FR-329)。 */
@@ -656,13 +687,16 @@ function firstRef(
 }
 
 /**
- * 選んでいる平らな面(FR-328 の「既存の面」)。指紋に曲面の種類が入っているので、
+ * 平らな面の参照か(FR-328 の「既存の面」、M-18)。指紋に曲面の種類が入っているので、
  * カーネルへ聞き直さずにここで見分けられる。
  */
+function isFlatFaceRef(ref: SubShapeRef): boolean {
+  return ref.fingerprint.kind === 'face' && ref.fingerprint.surfaceKind === 'plane';
+}
+
+/** 選んでいる平らな面(選んだ順)。 */
 function flatFaces(context: ReferenceCommitContext): readonly SubShapeRef[] {
-  return refsOf(context, 'face').filter(
-    (ref) => ref.fingerprint.kind === 'face' && ref.fingerprint.surfaceKind === 'plane',
-  );
+  return refsOf(context, 'face').filter(isFlatFaceRef);
 }
 
 function flatFace(context: ReferenceCommitContext): SubShapeRef | null {

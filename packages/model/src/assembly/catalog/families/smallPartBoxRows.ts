@@ -31,6 +31,8 @@ export const DOOR_PART_BOX_RECORDS: readonly PanelPartRecord[] = [
     materialText: 'アルミ', width: 78, depth: 50, height: 3, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'magnet-catch-plate-78x30x3-al', size: '磁石のキャッチの板 78×30×3（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチの板', material: 'aluminum',
     materialText: 'アルミ', width: 78, depth: 30, height: 3, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'magnet-catch-40x11x18-resin-fe', size: '磁石のキャッチ 40×11×18（外形を包む形・樹脂・鉄）', page: 285, kind: '磁石のキャッチ', material: 'mixed',
+    materialText: '樹脂・鉄', width: 40, depth: 11, height: 18, massG: 15, simplified: ['外形を包む形で、細部は作っていない', '動く仕組みは作っていない'] },
   { key: 'magnet-catch-plate-66x35x3-al', size: '磁石のキャッチの板 66×35×3（外形を包む形・アルミ）', page: 286, kind: '磁石のキャッチの板', material: 'aluminum',
     materialText: 'アルミ', width: 66, depth: 35, height: 3, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'proximity-sensor-bracket-75x25x20-al', size: '磁気の近接センサのブラケット 75×25×20（外形を包む形・アルミ）', page: 292, kind: '磁気の近接センサのブラケット',

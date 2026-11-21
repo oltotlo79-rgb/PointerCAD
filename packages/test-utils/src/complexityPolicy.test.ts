@@ -15,6 +15,14 @@ type MeasuredComplexity = ReturnType<typeof measureParams>;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const NO_DRIFT = { grown: [], stale: [], unlisted: [], obsolete: [], ambiguous: [], duplicateRows: [], withinCap: [],
   malformed: [] };
+// 短くした関数は落とさない(利用者の回答 2026-11-20 18:2x「短くした時は落とさない」)。表より小さくなった関数(stale)と、上限以下に
+// なった・消えた関数(obsolete)は報告だけで、失敗に数えない(表を実測へ下げるのは送る前の道具)。上限と天井、大きくなった・一覧外の
+// 超過・識別できない重複・表の誤りで落とす事は変えない。
+const NO_FAILURE = { grown: [], unlisted: [], ambiguous: [], duplicateRows: [], withinCap: [], malformed: [] };
+function failing(drift: ReturnType<typeof compareComplexity>) {
+  return { grown: drift.grown, unlisted: drift.unlisted, ambiguous: drift.ambiguous, duplicateRows: drift.duplicateRows,
+    withinCap: drift.withinCap, malformed: drift.malformed };
+}
 const PRODUCT_SOURCE = /^(?:packages|apps)\/[^/]+\/src\/.+\.tsx?$/u;
 const TEST_SOURCE = /\.(?:test|testSupport|spec)\.tsx?$/u;
 // Frozen with the measured baseline (2026-11-03, 2,013 product files); a row or function added later must also
@@ -141,7 +149,7 @@ describe('既存の超過関数はそれぞれ自身の実測値を超えられ�
   } else it.each(cases)('%s %s', async (_rule, file, kind, row) => {
     const source = readFileSync(new URL(file, new URL('../../../', import.meta.url)), 'utf8');
     const measured = kind.measure(new Linter(), parser, file, source, kind.cap);
-    expect(compareComplexity(row, measured, kind.cap, kind.width)).toEqual(NO_DRIFT);
+    expect(failing(compareComplexity(row, measured, kind.cap, kind.width))).toEqual(NO_FAILURE);
     const max = largest(row);
     expect(await effectiveMax(kind.rule, file)).toBe(max);
     expect(reports(kind.rule, file, max, kind.synthetic('atLimit', max))).toEqual([]);
@@ -178,7 +186,7 @@ describe('製品の関数は引数6・入れ子5まで、検査と検査用の�
   });
 });
 
-describe('同じファイルの最大でない超過関数の増加と、不要になった例外の残存を拒否する', () => {
+describe('同じファイルの最大でない超過関数の増加を拒否し、不要になった例外の残存は報告だけにする', () => {
   const file = 'packages/model/src/p06Synthetic.ts';
   const drift = (kind: Kind, row: ComplexityRow, text: string) =>
     compareComplexity(row, kind.measure(new Linter(), parser, file, text, kind.cap), kind.cap, kind.width);
@@ -194,6 +202,9 @@ describe('同じファイルの最大でない超過関数の増加と、不要�
     expect(drift(params, row, source(9))).toEqual({ ...NO_DRIFT, grown: ['smaller'] });
     expect(drift(params, row, source(7))).toEqual({ ...NO_DRIFT, stale: ['smaller'] });
     expect(drift(params, row, source(6))).toEqual({ ...NO_DRIFT, obsolete: ['smaller'] });
+    // 報告は送る前の道具が表を下げるのに使う。失敗には数えない。
+    expect(failing(drift(params, row, source(7)))).toEqual(NO_FAILURE);
+    expect(failing(drift(params, row, source(6)))).toEqual(NO_FAILURE);
     expect(drift(params, row, source(8, paramsFunction('extra', 7)))).toEqual({ ...NO_DRIFT, unlisted: ['extra'] });
     expect(drift(params, { file, functions: [['large', 10], ['smaller', 8], ['smaller', 8]] }, source(8)).duplicateRows)
       .toEqual(['smaller']);
@@ -220,6 +231,7 @@ describe('同じファイルの最大でない超過関数の増加と、不要�
     expect(drift(depth, { file, functions: [['large', 8, 3], ['smaller', 6, 2]] }, source(6)))
       .toEqual({ ...NO_DRIFT, stale: ['smaller'] });
     expect(drift(depth, row, source(5))).toEqual({ ...NO_DRIFT, obsolete: ['smaller'] });
+    expect(failing(drift(depth, row, source(5)))).toEqual(NO_FAILURE);
     expect(drift(depth, row, source(6, depthFunction('extra', 6)))).toEqual({ ...NO_DRIFT, unlisted: ['extra'] });
     expect(drift(depth, { file, functions: [['large', 8, 3], ['smaller', 6]] }, source(6)).malformed).toEqual(['smaller']);
     const moduleLevel = `let flag = true;\n${'if (flag) {\n'.repeat(6)}flag = false;\n${'}\n'.repeat(6)}`;

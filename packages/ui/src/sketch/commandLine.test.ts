@@ -470,6 +470,26 @@ describe('parseCommandLine: 確定と誤り', () => {
   });
 });
 
+describe('parseCommandLine: 選びの語(M06-2)', () => {
+  it.each([
+    ['sel last', 'last'], ['選ぶ 直前', 'last'], ['SEL ALL', 'all'], ['選ぶ　全部', 'all'], ['sel  none', 'none'], ['選ぶ 解除', 'none'],
+  ] as const)('%s は %s を選ぶ', (input, target) => {
+    expect(parseCommandLine(input, context())).toEqual({ kind: 'select', target });
+  });
+
+  it.each(['sel', '選ぶ', 'sel first', 'sel last all'])('%s は打ち方の例を添えて断る', (input) => {
+    expect(parseCommandLine(input, context())).toEqual({
+      kind: 'error',
+      message: '「選ぶ」の後に、空白で区切って「直前」「全部」「解除」のどれかを打ってください(例: sel last)。',
+      suggestions: ['sel last', 'sel all', 'sel none'],
+    });
+  });
+
+  it('選択の道具の語(s・select・選択)は今のまま道具を切り替える', () => {
+    for (const word of ['s', 'select', '選択']) expect(parseCommandLine(word, context())).toEqual({ kind: 'tool', tool: 'select' });
+  });
+});
+
 describe('suggestCommands', () => {
   it("'c' は円が1件目、最大5件", () => {
     const result = suggestCommands('c');

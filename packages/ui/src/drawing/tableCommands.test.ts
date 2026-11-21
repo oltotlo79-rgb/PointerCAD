@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { encodeSaveDocument, readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
 import { buildSteelStockList, buildStandardPartFromSource, createStandardPartSource, steelProducts, steelProductOptions,
   DEFAULT_COMPONENT_PLACEMENT, createAssemblyDocument, createAssemblyDocumentBundle, createDrawingDocument,
-  contentHashOf, embedPart, EMPTY_PART_LIBRARY, replacePartDocument, type BomRow, type DrawingSourceResolution } from '@pointercad/model';
+  contentHashOf, createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY, emptyDrawingSourceLibrary, replacePartDocument, type BomRow,
+  type DrawingSourceResolution, type Parameter } from '@pointercad/model';
 import type { DrawingDocument, DrawingTable, OutlinedText } from '@pointercad/drawing';
 import { captureSaveSnapshot } from '../file/pcadSaveSnapshot.js';
 import { t } from '../i18n/t.js';
@@ -18,6 +19,8 @@ import type { CutFeature } from '@pointercad/model';
 import type { PartDocument } from '@pointercad/model';
 
 beforeEach(resetTestStore);
+/** 係数の表を持たない図面の表示は、元の部品の係数を読まない。 */
+const NO_SOURCES = emptyDrawingSourceLibrary();
 function outline(text: string, sizeMm: number): OutlinedText {
   return { status: 'ready', missingCharacters: [], fillRule: 'nonzero', subpaths: [],
     metrics: { fontId: 'table-test', sizeMm, advanceMm: text.length * sizeMm * 0.5,
@@ -97,7 +100,7 @@ describe('図面の表の確定・保存定義・Undo(P8-54〜57)', () => {
     const { source } = setup(); commitDrawingTable(bom(), undefined, outline);
     const document = useAppStore.getState().drawing;
     if (document === null) throw new Error('図面なし');
-    const shown = displayDrawingTables(document, source, outline);
+    const shown = displayDrawingTables(document, source, NO_SOURCES, outline);
     expect(shown.unresolved).toEqual([]);
     expect(shown.items[0].rowComponentIds).toEqual([['c'], ['a', 'b']]);
     expect(document.tables[0].rows).toBeUndefined();
@@ -139,11 +142,11 @@ describe('図面の表の確定・保存定義・Undo(P8-54〜57)', () => {
     const { document, source } = setup();
     const drawing: DrawingDocument = { ...document, balloons: [{ id: 'balloon', itemNumber: 99, componentIds: ['a'],
       position: [180, 150], leader: [[100, 100]], layerId: document.layers[0].id }] };
-    const result = displayDrawingTables(drawing, source, outline);
+    const result = displayDrawingTables(drawing, source, NO_SOURCES, outline);
     expect(result.unresolved).toEqual([]);
     expect(result.elements.flatMap((element) => element.texts ?? []).map((text) => text.text)).toEqual(['1']);
     expect(drawing.balloons[0].itemNumber).toBe(99);
-    expect(displayDrawingTables(drawing, { ...source, bomRows: [] }, outline).unresolved).toEqual(['balloon']);
+    expect(displayDrawingTables(drawing, { ...source, bomRows: [] }, NO_SOURCES, outline).unresolved).toEqual(['balloon']);
   });
   it.each([
     { direction: [0, 0, -1] as const, rowY: 20, paperY: 107.5 },
@@ -157,13 +160,33 @@ describe('図面の表の確定・保存定義・Undo(P8-54〜57)', () => {
     const holeSource: DrawingSourceResolution = { ...source, center: [5, 5, 0], holeTables: new Map([['holes', { ok: true, rows: [
       { id: 'hole:0', symbol: 'A1', x: 10, y: rowY, diameter: 6, depth: null, center: [10, 20, 3], featureIds: ['hole'] },
     ] }]]) };
-    const result = displayDrawingTables(drawing, holeSource, outline);
+    const result = displayDrawingTables(drawing, holeSource, NO_SOURCES, outline);
     expect(result.unresolved).toEqual([]);
     expect(result.elements.flatMap((element) => element.texts ?? []).filter((text) => text.text === 'A1')).toHaveLength(2);
     expect(result.elements.flatMap((element) => element.curves ?? []).some((item) =>
       item.kind === 'segment' && item.from[0] === 102.5 && item.from[1] === paperY)).toBe(true);
     expect(result.elements.flatMap((element) => element.texts ?? []).map((text) => text.text)).toContain('貫通');
-    expect(displayDrawingTables({ ...drawing, views: [] }, holeSource, outline).unresolved).toEqual(['holes']);
+    expect(displayDrawingTables({ ...drawing, views: [] }, holeSource, NO_SOURCES, outline).unresolved).toEqual(['holes']);
+  });
+  it('係数の表(J-05c)は元の部品の係数から行を作って保存せず、置いた時に図面の版を 24 にし、知らない scope は断る', () => {
+    const { document } = setup('part');
+    const parameters: Parameter[] = [{ name: '板厚', value: expressionValueFromNumber(6), unit: 'mm', description: '板の厚さ' }];
+    useAppStore.setState({ drawingSources: { sources: [{ metadata: document.source, document: { ...createEmptyPartDocument(), parameters } }] } });
+    const parameter = (): Omit<DrawingTable, 'id' | 'layerId'> => ({ kind: 'parameter', position: [30, 200],
+      columns: ['name', 'value', 'unit', 'description'], options: { scope: 'all' } });
+    expect(commitDrawingTable({ ...parameter(), options: { scope: 'some' } }, undefined, outline)).toBe(false);
+    expect(useAppStore.getState().drawing).toBe(document);
+    expect(commitDrawingTable(parameter(), undefined, outline)).toBe(true);
+    const placed = useAppStore.getState().drawing;
+    if (placed === null) throw new Error('図面が無い');
+    expect(document.schemaVersion).toBeLessThan(24);
+    expect(placed.schemaVersion).toBe(24);
+    expect(placed.tables[0]).not.toHaveProperty('rows');
+    const shown = displayDrawingTables(placed, null, useAppStore.getState().drawingSources, outline);
+    expect(shown.unresolved).toEqual([]);
+    expect(shown.elements.flatMap((element) => element.texts ?? []).map((text) => text.text))
+      .toEqual(['名前', '値', '単位', '説明', '板厚', '6', 'mm', '板の厚さ']);
+    expect(displayDrawingTables(placed, null, NO_SOURCES, outline).unresolved).toEqual([placed.tables[0].id]);
   });
 });
 
@@ -178,7 +201,7 @@ describe('steel stock drawing data binding', () => {
     const tables = [{ id: 'stock-1', kind: 'bom' as const, position: [20, 250] as const,
       columns: ['number', 'name'], options: { stockList: true, textHeight: 2 }, layerId: document.layers[0].id }];
     const stock = buildSteelStockList(createAssemblyDocument('empty'));
-    const empty = displayDrawingTables({ ...document, tables }, { ...source, steelStockList: stock }, outline);
+    const empty = displayDrawingTables({ ...document, tables }, { ...source, steelStockList: stock }, NO_SOURCES, outline);
     expect(empty.unresolved).toEqual([]);
     expect(empty.elements.flatMap((element) => element.texts ?? []).map((text) => text.text)).toContain(`${t('assembly.steel.finishedLength')} (mm)`);
   });
@@ -217,7 +240,7 @@ describe('machined steel source to drawing table equality', () => {
     expect([stock.totalQuantity, stock.totalLengthMm]).toEqual([3, 3000]);
     const definition = { ...document, tables: [{ id: 'stock', kind: 'bom' as const, position: [20, 250] as const,
       columns: ['number', 'name'], options: { stockList: true, textHeight: 2 }, layerId: document.layers[0].id }] };
-    const drawing = displayDrawingTables(definition, { ...source, steelStockList: stock }, outline);
+    const drawing = displayDrawingTables(definition, { ...source, steelStockList: stock }, NO_SOURCES, outline);
     expect(drawing.unresolved).toEqual([]);
     const text = drawing.elements.flatMap(element => element.texts ?? []).map(item => item.text).join('');
     expect(text).toContain('jp-steel-2026-10-10-r1');
@@ -281,7 +304,7 @@ describe('machined steel source to drawing table equality', () => {
       columns: ['number', 'name'], options: { stockList: true, textHeight: 2 }, layerId: document.layers[0].id }] };
     const render = (current: PartDocument) => {
       const stock = buildSteelStockList(assembly, new Map(), new Map([['stock', current]]));
-      const display = displayDrawingTables(definition, { ...source, steelStockList: stock }, outline);
+      const display = displayDrawingTables(definition, { ...source, steelStockList: stock }, NO_SOURCES, outline);
       expect(display.unresolved).toEqual([]);
       return { stock, text: display.elements.flatMap((element) => element.texts ?? []).map((text) => text.text) };
     };

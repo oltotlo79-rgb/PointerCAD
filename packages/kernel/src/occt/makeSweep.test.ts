@@ -333,10 +333,17 @@ describe('スイープ(経路に沿った押し出し、FR-409、計画書 P5 �
     }
   });
 
-  it('「ねじれを抑える」で経路が上下方向と平行だと、実行する前に断る', () => {
-    expect(() => makeSweep(oc, sweepInput({ frenet: false }))).toThrow(
-      'ねじれを抑える指定は、道筋が上下方向と平行なときには使えません。',
-    );
+  // 2026-11-21 の利用者の回答「自動で選ぶ形に変える」で、期待を「実行する前に断る」から「副法線を X 軸に替えて作れる」に変えた。
+  it('「ねじれを抑える」で経路の出だしが上下方向と平行でも、副法線を世界の X 軸に替えて円柱を作れる', () => {
+    const vertical = makeSweep(oc, sweepInput({ frenet: false }));
+    try {
+      expect(isValidShape(oc, vertical.shape)).toBe(true);
+      expect(hasSolid(oc, vertical.shape)).toBe(true);
+      // 半径 2 の円を高さ 50 だけ真上へ掃くので、体積は π·2²·50。
+      expectVolumeNear(measureVolume(oc, vertical.shape), Math.PI * 4 * 50);
+    } finally {
+      vertical.delete();
+    }
   });
 
   it('同じ依頼を 2 回作ると、体積が完全に一致する(決定性)', () => {

@@ -24,6 +24,7 @@ import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import type { TrackCandidate } from '../sketch/trackMath.js';
 import type { EditPreview } from '../sketch/trimPreview.js';
+import type { ScreenRect } from '../solid/faceScreenRect.js';
 import { keepsSelectionKind, selectionKindForTool } from '../solid/subShapeSelection.js';
 import type { AppState } from './appState.js';
 import { emptySheetMetalTool } from './sheetMetalSlice.js';
@@ -71,6 +72,11 @@ export interface SketchSlice {
   readonly numericInput: NumericInputState | null;
   /** ポップアップを出す画面座標。 */
   readonly numericInputAnchor: readonly [number, number] | null;
+  /**
+   * ポップアップが覆わないように避ける画面の箱(M-10 ①)。選んだ面のそばで立体の道具を開いた時の、
+   * その面の画面の外形(`pickAvoidRect` を開いた時に写す)。避ける物が無ければ null。
+   */
+  readonly numericInputAvoid: ScreenRect | null;
   /** 線分の始点・円弧の中心・点列の基準として先に決めた座標。まだ無ければ null。 */
   readonly pendingStart: CoordinateInput | null;
   /**
@@ -166,6 +172,11 @@ export interface SketchSlice {
    * まだ何も選んでいなければ null で、そのときはビューポートの中央に出す。
    */
   readonly pickAnchor: readonly [number, number] | null;
+  /**
+   * `pickAnchor` で面を選んだ時の、その面の画面の外形(M-10 ①)。面でない物を選んだ時と、
+   * `pickAnchor` を消した時は null(`setPickAnchor` が 2 つを一緒に置く)。
+   */
+  readonly pickAvoidRect: ScreenRect | null;
   readonly setActiveTool: (tool: NumericInputToolId) => void;
   /**
    * 履歴の 1 つを差し替える(FR-311)。式を直したときに 1 文字ごとに呼ばれる。
@@ -183,6 +194,8 @@ export interface SketchSlice {
   readonly openNumericInput: (
     state: NumericInputState,
     anchor: readonly [number, number],
+    /** 窓が避ける画面の箱(M-10 ①)。省くと避けない。 */
+    avoid?: ScreenRect | null,
   ) => void;
   readonly updateNumericInput: (state: NumericInputState) => void;
   readonly closeNumericInput: () => void;
@@ -220,7 +233,7 @@ export interface SketchSlice {
   /** 原点を移したときの一言を出す・消す(FR-331)。 */
   readonly setOriginNotice: (message: string | null) => void;
   /** ビューポートで選んだ場所を覚える・忘れる。 */
-  readonly setPickAnchor: (anchor: readonly [number, number] | null) => void;
+  readonly setPickAnchor: (anchor: readonly [number, number] | null, avoid?: ScreenRect | null) => void;
 }
 
 /**
@@ -239,6 +252,7 @@ export type SketchInitialState = Pick<
   | 'chaining'
   | 'numericInput'
   | 'numericInputAnchor'
+  | 'numericInputAvoid'
   | 'pendingStart'
   | 'shapeDraft'
   | 'shapeErrorMessage'
@@ -254,6 +268,7 @@ export type SketchInitialState = Pick<
   | 'editNoticeKey'
   | 'originNoticeMessage'
   | 'pickAnchor'
+  | 'pickAvoidRect'
 >;
 
 export const createSketchSlice: StateCreator<
@@ -284,6 +299,7 @@ export const createSketchSlice: StateCreator<
         selectionKind,
         numericInput: null,
         numericInputAnchor: null,
+        numericInputAvoid: null,
         pendingStart: null,
         // 新しい図形の取りかけ(置いた点・前の段の値)も持ち越さない。
         shapeDraft: EMPTY_SHAPE_DRAFT,
@@ -359,9 +375,10 @@ export const createSketchSlice: StateCreator<
     set({ chaining });
   },
   numericInputRevision: 0,
-  openNumericInput: (numericInput, numericInputAnchor) => {
+  openNumericInput: (numericInput, numericInputAnchor, avoid) => {
     // 開くのは新しい入力欄。同じ道具・同じ値でも前の入力欄とは別の持ち主にする。
-    set((state) => ({ numericInput, numericInputAnchor, numericInputRevision: state.numericInputRevision + 1 }));
+    set((state) => ({ numericInput, numericInputAnchor, numericInputAvoid: avoid ?? null,
+      numericInputRevision: state.numericInputRevision + 1 }));
   },
   updateNumericInput: (numericInput) => {
     /*
@@ -388,6 +405,7 @@ export const createSketchSlice: StateCreator<
     set((state) => ({
       numericInput: null,
       numericInputAnchor: null,
+      numericInputAvoid: null,
       numericInputRevision: state.numericInputRevision + 1,
       shapeDraft: EMPTY_SHAPE_DRAFT,
       referenceDraft: EMPTY_REFERENCE_DRAFT,
@@ -435,7 +453,7 @@ export const createSketchSlice: StateCreator<
   setOriginNotice: (originNoticeMessage) => {
     set({ originNoticeMessage });
   },
-  setPickAnchor: (pickAnchor) => {
-    set({ pickAnchor });
+  setPickAnchor: (pickAnchor, avoid) => {
+    set({ pickAnchor, pickAvoidRect: avoid ?? null });
   },
 });

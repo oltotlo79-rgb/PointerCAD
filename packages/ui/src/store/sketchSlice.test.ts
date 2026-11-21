@@ -292,3 +292,37 @@ describe('入力欄の通し番号(numericInputRevision、EX-14)', () => {
     expect(store().numericInput).toBeNull();
   });
 });
+
+describe('入力の窓が避ける、選んだ面の画面の外形(M-10 ①)', () => {
+  const RECT = { left: 300, top: 200, right: 500, bottom: 360 } as const;
+
+  it('押した所と一緒に覚え、押した所を消す・面でない物を選ぶと一緒に消える', () => {
+    const store = () => useAppStore.getState();
+    expect(store().pickAvoidRect).toBeNull();
+    store().setPickAnchor([400, 280], RECT);
+    expect(store().pickAnchor).toEqual([400, 280]);
+    expect(store().pickAvoidRect).toEqual(RECT);
+    store().setPickAnchor([10, 10]);
+    expect(store().pickAvoidRect).toBeNull();
+    store().setPickAnchor([400, 280], RECT);
+    store().setPickAnchor(null);
+    expect(store().pickAvoidRect).toBeNull();
+  });
+
+  it('開いた時に渡した箱を窓が持ち、渡さずに開く・閉じる・道具を変えると消える', () => {
+    const store = () => useAppStore.getState();
+    const input = createNumericInput('extrude', 'extrudeDistance');
+    store().openNumericInput(input, [400, 280], RECT);
+    expect(store().numericInputAvoid).toEqual(RECT);
+    store().updateNumericInput(reduceNumericInput(input, { type: 'edit', index: 0, source: '12' }));
+    expect(store().numericInputAvoid).toEqual(RECT);
+    store().openNumericInput(input, [400, 280]);
+    expect(store().numericInputAvoid).toBeNull();
+    store().openNumericInput(input, [400, 280], RECT);
+    store().closeNumericInput();
+    expect(store().numericInputAvoid).toBeNull();
+    store().openNumericInput(input, [400, 280], RECT);
+    store().setActiveTool('select');
+    expect(store().numericInputAvoid).toBeNull();
+  });
+});

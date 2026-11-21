@@ -13,6 +13,9 @@ import {
   DEFAULT_SCALE_FACTOR,
   DEFAULT_SHELL_THICKNESS_MM,
   DEFAULT_SURFACE_DISTANCE_MM,
+  DEFAULT_SWEEP_END_SCALE,
+  DEFAULT_SWEEP_TWIST_DEGREES,
+  DEFAULT_SWEEP_WALL_THICKNESS_MM,
   DEFAULT_TAPER_ANGLE_DEGREES,
   DEFAULT_THICKNESS_SIDE,
   DEFAULT_THREAD_SHAFT_FROM_END,
@@ -25,6 +28,8 @@ import {
   MAX_SCALE,
   MAX_SPLINE_POINTS,
   MAX_SPRING_TURNS,
+  MAX_SWEEP_END_SCALE,
+  MAX_SWEEP_TWIST_DEGREES,
   MAX_TAPER_ANGLE_DEGREES,
   METRIC_THREAD_DESIGNATIONS,
   metricThreadPitch,
@@ -62,6 +67,7 @@ import {
   focusedTarget,
   isCoordinateStep,
   isCornerEditTool,
+  isDefaultSweepShapeSource,
   isEditStep,
   isEditTool,
   isReferenceCoordinateStep,
@@ -76,6 +82,7 @@ import {
   NUMERIC_INPUT_STEPS,
   numericChoiceOptionLabel,
   numericFocusTargets,
+  numericToggleEnabled,
   previewSolidCommit,
   rangeErrorFor,
   reduceNumericInput,
@@ -488,6 +495,9 @@ describe('ソリッドの段の欄と既定値(§0.a-0.8 / 0.9 / 0.7、NFR-UX-4)
       pointPattern: 'pointPattern',
       surface: 'surfaceShape',
       shell: 'shellThickness',
+      thicken: 'thickenAmount',
+      offsetBody: 'offsetBodyDistance',
+      blend: 'blendWeights',
       cut: 'cutPlane',
     });
     for (const step of Object.values(SOLID_TOOL_STEPS)) {
@@ -3104,8 +3114,9 @@ const SHAPE_STEPS: readonly ShapeStepExpectation[] = [
   {
     tool: 'sweep',
     step: 'sweepOptions',
-    fieldKeys: [],
-    defaults: [],
+    // ねじれ・終わりの大きさ・肉厚(M-07)。
+    fieldKeys: ['sweepTwist', 'sweepEndScale', 'sweepWall'],
+    defaults: ['0', '1', '0'],
     toggleKeys: ['sweepFrenet'],
     choiceKeys: ['sweepGuide'],
   },
@@ -3267,6 +3278,9 @@ describe('P5 Should / Could 群の段(タスク49、§2.15 の段の表)', () =>
     expect(sourceOf('shell', 'shellThickness', 'shellThickness')).toBe(
       String(DEFAULT_SHELL_THICKNESS_MM),
     );
+    expect(sourceOf('sweep', 'sweepOptions', 'sweepTwist')).toBe(String(DEFAULT_SWEEP_TWIST_DEGREES));
+    expect(sourceOf('sweep', 'sweepOptions', 'sweepEndScale')).toBe(String(DEFAULT_SWEEP_END_SCALE));
+    expect(sourceOf('sweep', 'sweepOptions', 'sweepWall')).toBe(String(DEFAULT_SWEEP_WALL_THICKNESS_MM));
     expect(sourceOf('surface', 'surfaceShape', 'surfaceDistance')).toBe(
       String(DEFAULT_SURFACE_DISTANCE_MM),
     );
@@ -3777,11 +3791,61 @@ describe('P5 タスク49: 新しい道具の id と段の一意性、確定結�
     expect(commit.flags.reversed).toBe(true);
   });
 
-  it('スイープは「曲がりに合わせて回す」だけを確定結果へ渡す(FR-409)', () => {
+  it('スイープは「曲がりに合わせて回す」のつまみを確定結果へ渡す(FR-409)', () => {
     const off = createNumericInput('sweep', 'sweepOptions');
     expect(expectSolidCommitted(commitNumericInput(off)).commit.flags.sweepFrenet).toBe(false);
     const on = toggleNumericInput(off, 'sweepFrenet');
     expect(expectSolidCommitted(commitNumericInput(on)).commit.flags.sweepFrenet).toBe(true);
+  });
+
+  it('スイープのねじれ・終わりの大きさ・肉厚は式のまま確定結果へ渡す(M-07)', () => {
+    const state = edited(edited(edited(createNumericInput('sweep', 'sweepOptions'), '90', 0), '1/2', 1), '2', 2);
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.values.sweepTwist?.source).toBe('90');
+    expect(commit.values.sweepEndScale?.source).toBe('1/2');
+    expect(commit.values.sweepEndScale?.value).toBe(0.5);
+    expect(commit.values.sweepWall?.value).toBe(2);
+  });
+
+  it('ねじれか終わりの大きさを既定から変えると「曲がりに合わせて回す」を止め、既定へ戻すと戻す(M-07)', () => {
+    const opened = createNumericInput('sweep', 'sweepOptions');
+    expect(numericToggleEnabled(opened, 'sweepFrenet')).toBe(true);
+    const twisted = edited(opened, '30', 0);
+    expect(numericToggleEnabled(twisted, 'sweepFrenet')).toBe(false);
+    expect(numericFocusTargets(twisted)).not.toContainEqual({ kind: 'toggle', index: 0 });
+    expect(reduceNumericInput(twisted, { type: 'toggle', key: 'sweepFrenet' })).toBe(twisted);
+    expect(numericToggleEnabled(edited(twisted, '0', 0), 'sweepFrenet')).toBe(true);
+    expect(numericToggleEnabled(edited(opened, '2', 1), 'sweepFrenet')).toBe(false);
+    // 肉厚は断面の向きに関わらないので止めない。
+    expect(numericToggleEnabled(edited(opened, '2', 2), 'sweepFrenet')).toBe(true);
+  });
+
+  it('スイープの欄の範囲は model の定数から組み、外れた値は確定できない(M-07、NFR-UX-5)', () => {
+    const [twist, scale, wall] = createNumericInput('sweep', 'sweepOptions').fields;
+    expect(twist?.range).toEqual({ min: -MAX_SWEEP_TWIST_DEGREES, minInclusive: true, max: MAX_SWEEP_TWIST_DEGREES, maxInclusive: true });
+    expect(scale?.range).toEqual({ min: 0, minInclusive: false, max: MAX_SWEEP_END_SCALE, maxInclusive: true });
+    expect(wall?.range).toEqual({ min: 0, minInclusive: true, max: null, maxInclusive: false });
+    const outside: readonly (readonly [number, string])[] = [
+      [0, String(MAX_SWEEP_TWIST_DEGREES + 1)], [1, '0'], [1, String(MAX_SWEEP_END_SCALE + 1)], [2, '-1'],
+    ];
+    for (const [index, source] of outside) {
+      const blocked = expectBlocked(applyNumericInputKey(edited(createNumericInput('sweep', 'sweepOptions'), source, index), 'Enter'));
+      expect(blocked.evaluation.results[index]?.error?.code, `${String(index)}: ${source}`).toBe('outOfRange');
+    }
+    const atLimits = edited(edited(createNumericInput('sweep', 'sweepOptions'), String(-MAX_SWEEP_TWIST_DEGREES), 0),
+      String(MAX_SWEEP_END_SCALE), 1);
+    const { commit } = expectSolidCommitted(applyNumericInputKey(atLimits, 'Enter'));
+    expect(commit.values.sweepTwist?.value).toBe(-MAX_SWEEP_TWIST_DEGREES);
+    expect(commit.values.sweepEndScale?.value).toBe(MAX_SWEEP_END_SCALE);
+  });
+
+  it('スイープの欄が既定のままかは式の文字で見る。空欄は既定、変数の式は値が既定でも既定と見ない(M-07)', () => {
+    expect(isDefaultSweepShapeSource('sweepTwist', ' 0 ')).toBe(true);
+    expect(isDefaultSweepShapeSource('sweepEndScale', '1')).toBe(true);
+    expect(isDefaultSweepShapeSource('sweepWall', '')).toBe(true);
+    expect(isDefaultSweepShapeSource('sweepTwist', '1')).toBe(false);
+    expect(isDefaultSweepShapeSource('sweepEndScale', '0')).toBe(false);
+    expect(isDefaultSweepShapeSource('sweepWall', 't')).toBe(false);
   });
 
   it('リブは厚みと厚みを付ける側を確定結果へ渡す(FR-420)', () => {

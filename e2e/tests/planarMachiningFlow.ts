@@ -14,12 +14,14 @@ import { solidRow, field, fillUnique, save, prepare, pressHistory,
 import { createPlanarFixture, expectPlanarNative, planarFeature, STOCK_NAME,
   type PlanarOperation, type PlanarPhase } from './planarMachiningOracle.js';
 
-export type PlanarUiCase = 'create' | 'two-fixture' | 'missing-reference' | 'edge-distance';
+export type PlanarUiCase = 'create' | 'two-fixture' | 'missing-reference' | 'edge-distance' | 'edge-pair-first';
 export function planarTitle(edition: 'Web' | 'Electron', operation: PlanarOperation, scenario: PlanarUiCase): string {
   const detail = scenario === 'missing-reference'
     ? 'suppressed fixture, unavailable basis, edit refusal zero history/native'
     : scenario === 'edge-distance'
       ? 'two picked edges in order, one-edge refusal zero history/native, one distance edit Undo/Redo, cold PCAD native'
+      : scenario === 'edge-pair-first'
+        ? 'two edges picked before the tool open edge distance as edge 1 and 2 on their flat face, cold PCAD native'
       : 'explicit native basis, signed source, zero cancel/selection, one edit Undo/Redo, cold PCAD native';
   return `EX-05.UI ${edition} plane-XY/${scenario}-${operation}: ${detail}`;
 }
@@ -102,7 +104,11 @@ async function beginEdgeDistance(page: Page, operation: PlanarOperation): Promis
     await expect(popover(page).locator('.pcad-menu__count')).toHaveText('M6');
     await toggle(page, 'modeledThread', false); await value(page, 'threadLength', '1');
   }
-  await movePopoverClearOf(page, RIGHT_EDGE);
+  /*
+   * 入力の窓は、押した上面の画面の外形の右に開く(NumericInputPopover.tsx の placePopover、M-10 ①)。
+   * 1440×900 の窓では、ホーム視点の上面の外形の右に窓の幅が収まる。辺の点を覆わない事は clickEdge が押す前に確かめる。
+   */
+  await expect(popover(page)).toHaveAttribute('data-placement', 'right');
 }
 /** 右の辺(x=20)の中点と手前の辺(y=-15)の中点を、この順に 3D で押す。 */
 const RIGHT_EDGE: readonly [number, number, number] = [20, 0, 10];
@@ -116,28 +122,6 @@ async function pagePointOf(page: Page, world: WorldPoint): Promise<readonly [num
   return [box.x + x, box.y + y];
 }
 
-/**
- * 入力の窓は押した面の点の右に開き、右の辺を覆う(ホーム視点で右の辺の中点は窓の左端より右に写る)。
- * 辺を押す前に、窓の見出しを持って、窓の左端が辺の点より右へ出るまでずらす(利用者が窓をずらすのと同じ操作)。
- */
-async function movePopoverClearOf(page: Page, world: WorldPoint): Promise<void> {
-  const [edgeX] = await pagePointOf(page, world);
-  const title = popover(page).locator('.pcad-window-title').first();
-  const rect = await title.boundingBox();
-  if (rect === null) throw new Error('入力の窓の見出しの位置が取れません。');
-  const margin = 40, dx = Math.max(0, edgeX + margin - rect.x);
-  // 窓を動かす画面検査(draggableInputWindowsFlow.ts の dragHeading。Firefox でも流れている)と同じ書き方。
-  await expect(title).toHaveCSS('cursor', 'grab');
-  const x = rect.x + 16, y = rect.y + rect.height / 2;
-  await page.mouse.move(x, y); await page.mouse.down();
-  await expect(title).toHaveCSS('cursor', 'grabbing');
-  const view = await page.evaluate(() => ({ width: innerWidth }));
-  await page.mouse.move(Math.max(1, Math.min(view.width - 1, x + dx)), y, { steps: 8 });
-  await page.mouse.up();
-  await expect(title).toHaveCSS('cursor', 'grab');
-  const moved = await popover(page).boundingBox();
-  expect(moved?.x ?? 0, '入力の窓が辺の点の右までずれていない').toBeGreaterThan(edgeX);
-}
 
 /** 押す所が 3D の canvas である(窓に覆われていない)事を確かめてから押す。覆われていると、押しても 3D に届かない。 */
 async function clickEdge(page: Page, world: WorldPoint): Promise<void> {
@@ -404,6 +388,50 @@ export async function buildPlanarEdgeDistance(page: Page, info: TestInfo, entry:
   await history(page, info, operation, original, final, 'edge-created', 'edge-edited', app);
   const saved = await save(page, info, 'edge-final', app); expect(errors).toEqual([]);
   return { path: saved.path, document: final.document, operation, phase: 'edge-edited', shapeSha: final.shapeSha, brepSha: final.brepSha };
+}
+/**
+ * 辺 2 本を先に選んでから穴/ねじ穴を押す(M-10 ③)。選ぶ種類を辺にして、右の辺 → 手前の辺の順に選び、面は選ばない。
+ * 窓は置き方「辺からの距離」で開き、選んだ 2 本が辺 1・辺 2 に入る(solidToolActions.ts の openSolidInput)。
+ * 面は 2 本が縁に入る上面に決まる(edgeDistanceHoleInput.ts の faceOfEdgePair)。窓を開いた後は 3D を押さない。
+ * 値と確かめは buildPlanarEdgeDistance の作る所と同じ(同じ穴になる)。
+ */
+export async function buildPlanarEdgePairFirst(page: Page, info: TestInfo, entry: string,
+  operation: PlanarOperation, app?: ElectronApplication): Promise<void> {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await fixture(page, info, entry, operation, 'stock', app);
+  const row = solidRow(page, STOCK_NAME); await expect(row).toHaveCount(1); await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+  await sketchTool(page, uiMessage('toolbar', 'toolbar.tool.select')).click();
+  const canvas = page.locator('canvas.pcad-viewport__canvas'); await canvas.press('Home'); await canvas.press('2');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 辺');
+  await clickWorldPoint(page, RIGHT_EDGE);
+  await page.keyboard.down('Shift');
+  try { await clickWorldPoint(page, FRONT_EDGE); } finally { await page.keyboard.up('Shift'); }
+  await chooseToolMenuItem(page, '加工', uiMessage('toolbar', operation === 'plain' ? 'toolbar.machining.hole' : 'toolbar.machining.threadHole'));
+  await expect(popoverTitle(page)).toHaveText(numeric(operation === 'plain' ? 'title.hole' : 'title.threadHole'));
+  const byEdges = popover(page).getByRole('group', { name: numeric('choice.holePlacement'), exact: true })
+    .getByRole('button', { name: numeric('holePlacement.edgeDistance'), exact: true });
+  await expect(byEdges).toHaveAttribute('aria-pressed', 'true');
+  await expectPickedEdges(page, 2);
+  await toggle(page, 'through', true);
+  if (operation === 'plain') await value(page, 'diameter', '6');
+  else {
+    await expect(popover(page).locator('.pcad-menu__count')).toHaveText('M6');
+    await toggle(page, 'modeledThread', false); await value(page, 'threadLength', '1');
+  }
+  await fillDistances(page, '2*4', '5');
+  const token = await beginRecompute(page); await commitPopover(page);
+  await expect(popover(page)).toHaveCount(0); await waitForRecompute(page, token);
+  const created = await save(page, info, 'edge-pair-created', app);
+  const result = await expectPlanarNative(created.bytes, operation, 'edge-created', info, 'edge-pair-created');
+  const feature = planarFeature(result.document);
+  if (feature.planar?.kind !== 'edge-distance') throw new Error('辺からの距離の配置がありません');
+  expect(feature.face.fingerprint).toMatchObject({ kind: 'face', surfaceKind: 'plane' });
+  expect(feature.planar.edge1.fingerprint).toMatchObject({ kind: 'edge', curveKind: 'line', length: 30 });
+  expect(feature.planar.edge2.fingerprint).toMatchObject({ kind: 'edge', curveKind: 'line', length: 40 });
+  expect(feature.planar.locations[0]?.distance1).toMatchObject({ source: '2*4', value: 8 });
+  expect(feature.planar.locations[0]?.distance2).toMatchObject({ source: '5', value: 5 });
+  expect(errors).toEqual([]);
 }
 export async function reopenPlanarUi(page: Page, info: TestInfo, entry: string,
   saved: SavedPlanarUi, app?: ElectronApplication): Promise<void> {

@@ -1,12 +1,18 @@
 /**
  * 生成物(手で直さない): 資料 2 のアクセサリの行(外形を包む形。統括の指示 2026-11-18 21:45)。担当の道具 make_connector_rows.py が、
- * 32 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `accessoryBoxOracle.fixture.json`。製造元の名前・型番・品名は書かない。
+ * 32・40 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `accessoryBoxOracle.fixture.json`。製造元の名前・型番・品名は書かない。
  */
 import type { PanelPartRecord } from './panelPartCatalog.js';
 
 export const ACCESSORY_BOX_RECORDS: readonly PanelPartRecord[] = [
   { key: 'slot-assist-13.6x21x50-al-sus', size: '溝の補助具 13.6×21×50（外形を包む形・アルミ・ステンレス）', page: 246, kind: '溝の補助具', material: 'mixed',
     materialText: 'アルミ・ステンレス', width: 13.6, depth: 21, height: 50, massG: 18, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'paper-holder-100x14x47-resin', size: '紙挟み 100×14×47（外形を包む形・樹脂）', page: 249, kind: '紙挟み', material: 'mixed', materialText: '樹脂',
+    width: 100, depth: 14, height: 47, massG: 11, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'paper-holder-153x18.6x62.5-resin', size: '紙挟み 153×18.6×62.5（外形を包む形・樹脂）', page: 249, kind: '紙挟み', material: 'mixed', materialText: '樹脂',
+    width: 153, depth: 18.6, height: 62.5, massG: 26, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'paper-holder-153x18.6x66.5-resin', size: '紙挟み 153×18.6×66.5（外形を包む形・樹脂）', page: 249, kind: '紙挟み', material: 'mixed', materialText: '樹脂',
+    width: 153, depth: 18.6, height: 66.5, massG: 26, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'parts-container-89x92.3x55-resin', size: '部品入れ 89×92.3×55（外形を包む形・樹脂）', page: 251, kind: '部品入れ', material: 'mixed', materialText: '樹脂',
     width: 89, depth: 92.3, height: 55, massG: 51, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'offset-connector-64x25x58-al', size: 'ずらしたつなぎ 64×25×58（外形を包む形・アルミ）', page: 252, kind: 'ずらしたつなぎ', material: 'aluminum', width: 64,
@@ -15,4 +21,6 @@ export const ACCESSORY_BOX_RECORDS: readonly PanelPartRecord[] = [
     width: 17, depth: 15, height: 13.2, massG: 2, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'lamp-bracket-48.7x34x45.7-al', size: 'ランプのブラケット 48.7×34×45.7（外形を包む形・アルミ）', page: 259, kind: 'ランプのブラケット', material: 'aluminum',
     width: 48.7, depth: 34, height: 45.7, massG: 67, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'cable-lock-11.5x15x14.7-resin', size: 'ケーブルの留め具 11.5×15×14.7（外形を包む形・樹脂）', page: 313, kind: 'ケーブルの留め具', material: 'mixed',
+    materialText: '樹脂', width: 11.5, depth: 15, height: 14.7, massG: 2, simplified: ['外形を包む形で、細部は作っていない'] },
 ];

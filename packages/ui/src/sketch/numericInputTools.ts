@@ -87,6 +87,9 @@ export type SolidToolId =
   | 'surface'
   /** くり抜き(シェル、FR-418)。 */
   | 'shell'
+  | 'thicken'
+  | 'offsetBody'
+  | 'blend'
   /** 平面による切断(FR-432)。 */
   | 'cut';
 
@@ -413,6 +416,9 @@ export type SolidNumericInputStep =
   | 'surfaceShape'
   /** くり抜きの壁の厚さ。 */
   | 'shellThickness'
+  | 'thickenAmount'
+  | 'offsetBodyDistance'
+  | 'blendWeights'
   /** 切断面の決め方。「点と軸」のときだけ傾きの欄が出る。 */
   | 'cutPlane';
 

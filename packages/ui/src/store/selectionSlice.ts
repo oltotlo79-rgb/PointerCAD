@@ -27,7 +27,15 @@ import {
 import { type SelectionKind, subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { captureConnectionSelection, hasCurrentConnectionGeometry, selectedVertexReferences, type ConnectionSelection,
   type SelectionSource } from '../sketch/connectionSelection.js';
+import { selectedExtrudeProfiles } from '../solid/sketchRefs.js';
+import { clearExtrudeRegion } from '../solid/extrudeSuggestion.js';
 import type { AppState } from './appState.js';
+
+function inputForSelection(state: AppState, selection: readonly string[]) {
+  const input = state.numericInput;
+  if (input?.extrudeRegion === undefined || selection.length < 2) return input;
+  return selectedExtrudeProfiles(state.document, selection).length > 1 ? clearExtrudeRegion(input) : input;
+}
 
 /** 選択・選択セット・外観のスライスが持つ欄と操作。 */
 export interface SelectionSlice {
@@ -186,6 +194,7 @@ export const createSelectionSlice: StateCreator<
     // 選び直したら、直前に断られた面・立体・オフセットの理由は用済みなので消す(NFR-UX-5)。
     set({
       selection,
+      numericInput: inputForSelection(get(), selection),
       connectionSelection: captureConnectionSelection(get(), selection, source),
       faceErrorKey: null,
       solidErrorKey: null,
@@ -201,6 +210,7 @@ export const createSelectionSlice: StateCreator<
         : [...state.selection, id];
       return {
         selection,
+        numericInput: inputForSelection(state, selection),
         connectionSelection: captureConnectionSelection(state, selection, source, true),
         faceErrorKey: null,
         solidErrorKey: null,

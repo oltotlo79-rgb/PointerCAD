@@ -133,7 +133,7 @@ describe('アルミフレームの族の部品の保存と開き直し', () => {
     // 長さの欄はフレームだけが持つ。部品とコネクタは保存の形に長さを書かない。
     const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
       'catalogItem', row.size, family === 'panel-cover-frame' ? { family, item: row.key, length: '500' } : { family, item: row.key })) ?? []);
-    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([7, 9, 74, 8, 12, 5]);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([7, 9, 80, 10, 13, 9]);
     let document: AssemblyDocument = createAssemblyDocument('資料 2 のパネル扉の部品の保存');
     for (const source of sources) document = addComponent(document, createComponentFor(document, source));
     const text = writeAssemblyDocument(document, SAVE_OPTIONS);
@@ -157,7 +157,7 @@ describe('アルミフレームの族の部品の保存と開き直し', () => {
     // 長さの欄は slot-long-part だけが持つ(行の長さの上限より短い 300)。ほかの族は保存の形に長さを書かない。
     const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
       'catalogItem', row.size, family === 'slot-long-part' ? { family, item: row.key, length: '300' } : { family, item: row.key })) ?? []);
-    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([4, 5, 7, 21]);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([4, 5, 7, 25]);
     let document: AssemblyDocument = createAssemblyDocument('資料 1 の小さい部品と長物の保存');
     for (const source of sources) document = addComponent(document, createComponentFor(document, source));
     const text = writeAssemblyDocument(document, SAVE_OPTIONS);
@@ -181,7 +181,7 @@ describe('アルミフレームの族の部品の保存と開き直し', () => {
     // 足した族はどれも長さの欄を持たない(保存の形に長さを書かない)。
     const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
       'catalogItem', row.size, { family, item: row.key })) ?? []);
-    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([26]);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([27]);
     let document: AssemblyDocument = createAssemblyDocument('資料 1 の扉の部品の保存');
     for (const source of sources) document = addComponent(document, createComponentFor(document, source));
     const text = writeAssemblyDocument(document, SAVE_OPTIONS);
@@ -295,7 +295,7 @@ describe('アルミフレームの族の部品の保存と開き直し', () => {
     // どちらも 1 個ずつ数える族で、保存の形に長さを書かない。密度の材質を持たない行(LDPE など)も同じ形で保存する。
     const sources = families.flatMap((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.map((row) => createStandardPartSource(
       'catalogItem', row.size, { family, item: row.key })) ?? []);
-    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([18, 15]);
+    expect(families.map((family) => PRODUCT_CATALOG_REGISTRY.loaded(family)?.rows.length)).toEqual([21, 18]);
     let document: AssemblyDocument = createAssemblyDocument('資料 2 のキャップとフットの保存');
     for (const source of sources) document = addComponent(document, createComponentFor(document, source));
     const text = writeAssemblyDocument(document, SAVE_OPTIONS);

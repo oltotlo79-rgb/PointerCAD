@@ -249,4 +249,53 @@ test.describe('P4b コマンドライン入力(FR-208)', () => {
 
     expect(errors).toEqual([]);
   });
+
+  test('立体の語と選びの語だけで、箱と円柱の和を作る(box → cyl → sel all → uni。マウスに触れない)', async ({ page }) => {
+    const errors = collectErrors(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    await typeCommand(page, 'box');
+    await expect(page.locator('.pcad-popover__title')).toHaveText('箱を置く');
+    await typeCommand(page, '');
+    await expect(treeRow(page, '箱1')).toBeVisible();
+    await typeCommand(page, 'cyl');
+    await typeCommand(page, '');
+    await expect(treeRow(page, '円柱1')).toBeVisible();
+
+    await typeCommand(page, 'sel all');
+    await expect(commandLineInput(page)).toHaveValue('');
+    await typeCommand(page, 'uni');
+    await expect(treeRow(page, '和1')).toBeVisible();
+
+    expect(errors).toEqual([]);
+  });
+
+  test('座標の表を貼ると点を 1 回で作り、Ctrl+Z 1 回で全部戻る', async ({ page }) => {
+    const errors = collectErrors(page);
+
+    await page.goto('/');
+    await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+    // クリップボードの許可に頼らず、貼り付けの出来事を欄へ直接送る(改行を含む貼り付けだけが表として扱われる)。
+    // Firefox は作った出来事の clipboardData に、渡した DataTransfer を使わない。出来事そのものに持たせて、
+    // 製品が読む event.clipboardData.getData('text/plain')(CommandLine.tsx の onPaste)を両方のブラウザで同じにする。
+    await commandLineInput(page).evaluate((input, source) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', source);
+      const paste = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, 'clipboardData', { value: data });
+      input.dispatchEvent(paste);
+    }, ['x,y', '0,0', '10,0', '10,10'].join(String.fromCharCode(10)));
+    await expect(page.getByRole('status').filter({ hasText: '表から 3 個の要素を作りました。' })).toBeVisible();
+    for (const name of ['点1', '点2', '点3']) await expect(treeRow(page, name)).toBeVisible();
+
+    // 貼った後、欄は 3D の表示へ焦点を移す(CommandLine.tsx の requestViewportFocus)。待たずに、3D の表示へ焦点を当ててから元に戻す。
+    await page.locator('canvas.pcad-viewport__canvas').focus();
+    await page.keyboard.press('Control+z');
+    for (const name of ['点1', '点2', '点3']) await expect(treeRow(page, name)).toHaveCount(0);
+
+    expect(errors).toEqual([]);
+  });
 });

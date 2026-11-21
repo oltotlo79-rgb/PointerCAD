@@ -15,6 +15,7 @@ import { DrawingAnnotationPopover } from './DrawingAnnotationPopover.js';
 import { displayDrawingAnnotations } from './annotationDisplay.js';
 import { DrawingNotePopover } from './DrawingNotePopover.js';
 import { drawingNoteBounds } from './noteDisplay.js';
+import { drawingNoteFields } from './drawingNoteFields.js';
 import { displayDrawingTables } from './tableDisplay.js';
 import { drawingProjectionRenderViews, selectedDrawingProjectionOwners } from './projectionDisplay.js';
 import { selectedDrawingComponents, selectedDrawingTableRows } from './drawingSelection.js';
@@ -138,7 +139,7 @@ function useDrawingCanvas() {
         drawingFont.outline, { viewFrames: source?.viewFrames });
     });
     const views = resolution?.ok === true ? resolution.projection.views : [];
-    const tables = displayDrawingTables(document, source, drawingFont.outline);
+    const tables = displayDrawingTables(document, source, library, drawingFont.outline);
     const manufacturing = [...displayDrawingGdt(document, gdt, displays, drawingFont.outline), ...displayDrawingWelds(document, welds, drawingFont.outline, library)];
     const selectionLayer = document.layers.find((layer) => layer.visible);
     const targetMarkers: DrawingRenderElement[] = source === null || selectionLayer === undefined ? [] : targets.flatMap((target, index) => {
@@ -201,14 +202,14 @@ function useDrawingCanvas() {
   return { viewport, container, drawing, busy, navigation, navigationControls, tool, source, targets, selectedIds,
     repairDocumentId, repairProjection, shown, paperPoint, previewDimension, drag, dimensionSvgPreview,
     noteDrag, tableDrag, gdtDrag, viewDrag, viewSvgPreview, setDragPoint, setDimensionDragStart,
-    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt };
+    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt, library };
 }
 
 export function DrawingCanvas(): React.JSX.Element {
   const { viewport, container, drawing, busy, navigation, navigationControls, tool, source, targets, selectedIds,
     repairDocumentId, repairProjection, shown, paperPoint, previewDimension, drag, dimensionSvgPreview,
     noteDrag, tableDrag, gdtDrag, viewDrag, viewSvgPreview, setDragPoint, setDimensionDragStart,
-    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt } = useDrawingCanvas();
+    notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt, library } = useDrawingCanvas();
   return <div className="pcad-drawing-viewport" data-testid="drawing-viewport" ref={viewport}
     data-document-owner={repairDocumentId} data-reference-repair-hover-status={repairProjection.status}
     data-reference-repair-hover-reason={repairProjection.status === 'unavailable' ? repairProjection.reason : undefined}>
@@ -276,7 +277,7 @@ export function DrawingCanvas(): React.JSX.Element {
           useAppStore.getState().selectDrawingIds([]); event.preventDefault(); return;
         }
         const pickedNote = drawing.annotations.find((annotation) => {
-          const bounds = drawingNoteBounds(annotation, drawingFont.outline);
+          const bounds = drawingNoteBounds(annotation, drawingFont.outline, drawingNoteFields(drawing, library));
           return bounds !== null && resolveStyle(annotation, drawing.layers)?.visible === true
             && hit.point[0] >= bounds.left - hit.tolerance && hit.point[0] <= bounds.right + hit.tolerance
             && hit.point[1] >= bounds.bottom - hit.tolerance && hit.point[1] <= bounds.top + hit.tolerance;

@@ -2,7 +2,7 @@ import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { FEATURE_NOTE_MAX_LENGTH, featureNoteOf, featureNoteTargetExists, setFeatureNote, type FeatureNoteTarget } from '@pointercad/model';
 import { t } from '../i18n/t.js';
-import { takeMenuOpener } from '../shell/dialogFocusRules.js';
+import { rememberDialogOpener } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import './featureNotes.css';
 
@@ -22,13 +22,9 @@ export function FeatureNoteDialog({ draft, onClose }: { readonly draft: FeatureN
   const tooLong = text.length > FEATURE_NOTE_MAX_LENGTH;
   useEffect(() => {
     // 右クリックの一覧の項目から開いた時は、項目が消えるので、一覧を開いた釦を戻り先の代わりにする(C-03)。
-    const dialog = element.current, previous = document.activeElement, menuOpener = takeMenuOpener();
+    const dialog = element.current, restoreFocus = rememberDialogOpener(dialog);
     dialog?.showModal(); input.current?.focus();
-    return () => {
-      dialog?.close();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-      else if (menuOpener?.isConnected === true) menuOpener.focus();
-    };
+    return () => { dialog?.close(); restoreFocus(); };
   }, []);
   const commit = (value: string): void => {
     const state = useAppStore.getState();

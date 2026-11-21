@@ -15,5 +15,6 @@ export const K4B_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
   { id: 'hex-nut-thin', group: 'mechanical', kindKey: 'catalog.mechanical.kind.hexNutThin',
     load: async () => (await import('../families/hexNutExtended.js')).HEX_NUT_THIN_FAMILY },
   { id: 'compression-spring', group: 'mechanical', kindKey: 'catalog.mechanical.kind.compressionSpring',
+    hint: { key: 'catalog.mechanical.spring.hint', rowLabel: 'specified' },
     load: async () => (await import('../families/compressionSpring.js')).COMPRESSION_SPRING_FAMILY },
 ];

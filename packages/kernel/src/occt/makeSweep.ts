@@ -20,7 +20,8 @@ import { subVec as subtract, dotVec as dot, crossVec as cross } from './sketchCo
  * 断面が接線から大きく傾いて自己交差したほぼ潰れた形になることが分かっている。
  *
  * `SetMode_3` は副法線が接線と平行になると成り立たないので、**経路の出だしが上下方向と
- * 平行なときは実行する前に断る**(NFR-UX-5)。
+ * 平行なときだけ、副法線を世界の X 軸に替える**(2026-11-21 の利用者の回答「自動で選ぶ形に変える」。
+ * それまでは実行する前に断っていた)。出だしが上下方向と平行でない経路は、今までどおり上下方向に固定する。
  *
  * ---
  *
@@ -141,6 +142,9 @@ const TOLERANCE = 1e-9;
 /** 「ねじれを抑える」ときに副法線を固定する向き(上下方向)。 */
 const BINORMAL: Vec3Tuple = [0, 0, 1];
 
+/** 経路の出だしが上下方向と平行な時に、代わりに副法線へ固定する向き(世界の X 軸。上下方向と直交する)。 */
+const VERTICAL_PATH_BINORMAL: Vec3Tuple = [1, 0, 0];
+
 const NO_PATH_MESSAGE = '掃引する道筋が選ばれていません。';
 const NO_PROFILE_MESSAGE = '掃引する断面が選ばれていません。';
 const OPEN_PROFILE_MESSAGE = '掃引する断面は閉じている必要があります。';
@@ -148,10 +152,6 @@ const PATH_NOT_CONNECTED_MESSAGE = '選んだ線・円弧がつながってい�
 const NON_PLANAR_PROFILE_MESSAGE = '掃引する断面が同じ平面に乗っていません。';
 const SELF_INTERSECTING_PROFILE_MESSAGE = '掃引する断面が自分自身と交わっています。';
 const NO_TANGENT_MESSAGE = '道筋の向きが決まりません。道筋を選び直してください。';
-
-/** 「ねじれを抑える」ときに、経路の出だしが副法線(上下方向)と平行だった。 */
-const BINORMAL_PARALLEL_MESSAGE =
-  'ねじれを抑える指定は、道筋が上下方向と平行なときには使えません。';
 
 /** 掃引そのものが成立しなかったとき(検証の表の文言)。 */
 const BUILD_FAILED_MESSAGE = '掃引できませんでした。断面と道筋の位置を見直してください。';
@@ -498,11 +498,9 @@ function applySweepMode(
     pipe.SetMode_1(true);
     return;
   }
-  // 副法線が接線と平行だと三面体が決まらない。実行する前に断る(NFR-UX-5)。
-  if (Math.hypot(...cross(BINORMAL, tangent)) < TOLERANCE) {
-    throw new Error(BINORMAL_PARALLEL_MESSAGE);
-  }
-  pipe.SetMode_3(keep(new oc.gp_Dir_4(BINORMAL[0], BINORMAL[1], BINORMAL[2])));
+  // 副法線が接線と平行だと三面体が決まらない。出だしが上下方向と平行な時だけ、上下方向と直交する X 軸を使う。
+  const binormal = Math.hypot(...cross(BINORMAL, tangent)) < TOLERANCE ? VERTICAL_PATH_BINORMAL : BINORMAL;
+  pipe.SetMode_3(keep(new oc.gp_Dir_4(binormal[0], binormal[1], binormal[2])));
 }
 
 /** 案内線とねじれ・先細り(M-07)を一緒に指定した。案内線が向きと大きさを決めるため。 */

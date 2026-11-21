@@ -43,8 +43,23 @@ export interface PanelBoardRecord {
 
 const EVIDENCE_TITLE = '資料 1 アルミ構造材の総合カタログ(製造元の寸法に合わせた物)';
 const GENERATOR_REVISION = 'panel-board-1';
-const WIDTH_SPEC: CatalogOptionSpec = { key: 'width', kind: 'lengthExpression', labelKey: 'catalog.board.option.width', defaultValue: '600' };
-const HEIGHT_SPEC: CatalogOptionSpec = { key: 'height', kind: 'lengthExpression', labelKey: 'catalog.board.option.height', defaultValue: '400' };
+const DEFAULT_WIDTH = 600;
+const DEFAULT_HEIGHT = 400;
+
+/**
+ * 注文の寸法の行の既定の値。行の上限(資料のサイズ MAX)に既定の 600 × 400 が収まらない行は、幅を上限の長い辺まで、高さを上限の短い辺まで
+ * 縮めた値にする(収まる行と上限の無い行は 600 × 400 のまま)。選んだまま置いて断られないため。
+ */
+function defaultWithin(row: CatalogItemRow, base: number, side: 'long' | 'short'): string {
+  const { maxWidth, maxHeight } = row.dims;
+  if (maxWidth === undefined || maxHeight === undefined) return String(base);
+  return String(Math.min(base, side === 'long' ? Math.max(maxWidth, maxHeight) : Math.min(maxWidth, maxHeight)));
+}
+
+const WIDTH_SPEC: CatalogOptionSpec = { key: 'width', kind: 'lengthExpression', labelKey: 'catalog.board.option.width', defaultValue: String(DEFAULT_WIDTH),
+  rowDefault: (row) => defaultWithin(row, DEFAULT_WIDTH, 'long') };
+const HEIGHT_SPEC: CatalogOptionSpec = { key: 'height', kind: 'lengthExpression', labelKey: 'catalog.board.option.height',
+  defaultValue: String(DEFAULT_HEIGHT), rowDefault: (row) => defaultWithin(row, DEFAULT_HEIGHT, 'short') };
 
 /** 欄の値の長さ(mm。式として読めない・正でない時は NaN)。 */
 function lengthOfKey(values: Readonly<Record<string, string>>, key: string): number {

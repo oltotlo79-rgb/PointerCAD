@@ -15,6 +15,7 @@ import { femRuntimeAssets } from '../../scripts/vite/femRuntimeAssets.mjs';
 import { FEM_WORKER_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
 import { offlineServiceWorker } from '../../scripts/vite/offlineServiceWorker.mjs';
 import { startupGuard } from '../../scripts/vite/startupGuard.mjs';
+import { appVersionDefine } from '../../scripts/vite/appVersion.mjs';
 import { assertDeferredSmallHelp, smallHelpChunk } from './src/helpChunkPolicy.js';
 
 const OCCT_WASM_IMPORT = 'opencascade.js/dist/opencascade.full.wasm?url';
@@ -158,6 +159,8 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
+  // アプリの版は根の package.json の version だけ(desktop と ui の単体の設定と同じ名前・同じ値)。
+  define: appVersionDefine(),
   plugins: [react(), occtAssets(), startupPage(), startupGuard(),
     { name: 'pointercad-deferred-help-chunks', generateBundle(_options, bundle) { assertDeferredSmallHelp(bundle, true); } }, webSecurityPolicy(), occtPreviewHeaders(), mathNotices(), runtimeNotices(), exactMathAssets(), femRuntimeAssets(FEM_WORKER_CONTENT_SECURITY_POLICY), offlineServiceWorker()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。

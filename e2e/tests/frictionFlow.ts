@@ -5,7 +5,7 @@ import { readDocumentBundle, writeDocumentBundle } from '../../packages/io/src/i
 import {
   addComponent, createAssemblyDocument, createAssemblyDocumentBundle, createComponentFor, EMPTY_PART_LIBRARY,
 } from '../../packages/model/src/index.js';
-import type { StandardBeamFrictionDefinition } from '../../packages/model/src/analysis/beamInputs.js';
+import type { StandardBeamDefinition, StandardBeamFrictionDefinition } from '../../packages/model/src/analysis/beamInputs.js';
 import { testComponent, testMember, testPlacement, TEST_EVIDENCE } from '../../packages/model/src/analysis/beamInputs.testSupport.js';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { componentRows } from './boltedJointTestSupport.js';
@@ -50,6 +50,46 @@ export async function cantileverWithFrictionInputs(): Promise<{
   return { definition, bytes: await writeDocumentBundle(createAssemblyDocumentBundle({ ...document,
     beamAnalysisInputs: { schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'standard-members', definition }] },
   }, EMPTY_PART_LIBRARY)) };
+}
+
+/**
+ * 報告書の画面検査の材料・断面の出どころ。報告書の単体(packages/ui/src/beam/beamReport.test.ts:12・:68-71。部材 2 本で 1 頁)と同じ
+ * 短い文にする。出どころは表の狭い欄(packages/ui/src/beam/beamReport.ts:40・:49-54)で折り返すので、TEST_EVIDENCE の長い英文では
+ * 行が伸びて 2 頁目へ送られる(packages/ui/src/beam/beamReportLayout.ts の wrap と改頁)。
+ */
+export const REPORT_EVIDENCE: typeof TEST_EVIDENCE = { kind: 'measured', reference: '記録 A', condition: '室温' };
+
+/**
+ * J-03c 梁の静解析の報告書: 同じ標準の棒を根元で固定し、先端に 1 つの荷重を掛けた静解析の入力を保存した組立。
+ * e2e から製品への相対の読み込みを増やさないよう、同じ読み込みを持つこのファイルに置く(beamReportFlow.ts が使う)。
+ * evidence は材料・断面の出どころ(報告書の頁数を見る検査は REPORT_EVIDENCE を渡す)。
+ */
+export async function cantileverStaticInputs(evidence: typeof TEST_EVIDENCE = TEST_EVIDENCE): Promise<Uint8Array> {
+  let document = createAssemblyDocument('報告書');
+  const bar = createComponentFor(document, testComponent('a', '2000').source, { name: 'a', placement: testPlacement([0, 0, 0]) });
+  document = addComponent(document, bar);
+  const saved = document.components.find(component => component.id === bar.id);
+  if (saved === undefined) throw new Error('report bar missing');
+  const definition: StandardBeamDefinition = {
+    schema: 'pointercad-standard-beam/1', id: 'report', revision: 1,
+    source: { documentId: document.id, documentRevision: 1, geometryRevision: 'browser-report' }, units: 'N-mm',
+    members: [testMember(saved, [saved.id], 'a-')],
+    materials: [{ id: 'elastic', youngModulus: 208000, shearModulus: 80000, densityKgM3: 7850, source: evidence }],
+    sections: [{ id: 'rectangle', area: 300, iy: 900, iz: 62500, torsionConstant: 3300, shearFactor: 5 / 6, source: evidence }],
+    constraints: [{ id: 'clamp', kind: 'fixed', nodeId: 'a-base' }],
+    loads: [{ id: LOAD_ID, kind: 'nodal', nodeId: 'a-tip', force: [0, -10, 0], moment: [0, 0, 0] }],
+  };
+  return writeDocumentBundle(createAssemblyDocumentBundle({ ...document,
+    beamAnalysisInputs: { schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'standard-members', definition }] },
+  }, EMPTY_PART_LIBRARY));
+}
+
+/** J-03b 段 1: 保存した組立の束に入った静解析の結果の、保存したアプリの版(結果が無ければ null)。本物の io の読み手で読む。 */
+export async function savedStaticResultVersion(path: string, analysisId: string): Promise<string | null> {
+  const read = await readDocumentBundle(await readFile(path), 'assembly');
+  if (!read.ok || read.bundle.kind !== 'assembly') throw new Error('saved static assembly did not decode');
+  expect(read).not.toHaveProperty('analysisResultIssue');
+  return read.bundle.analysisResults?.get(analysisId)?.appVersion ?? null;
 }
 
 function panel(page: Page): Locator { return page.getByTestId('beam-panel'); }

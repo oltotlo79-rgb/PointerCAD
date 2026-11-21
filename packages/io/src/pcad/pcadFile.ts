@@ -18,6 +18,9 @@ import { sheetFlatReferenceIssue, canonicalDrawingSourceText, crossLevelGearTree
  * `document.json` には id と素性だけを書き、バイト列は 1 バイトも入れない
  * (10 万三角形を JSON にすると 10MB を超える)。
  *
+ * 例外④: 梁の静解析結果を任意の analysis-results/<analysisId>.json に圧縮して保存する。
+ * 再解析に時間がかかるため、保存した入力の SHA-256 を照合できた結果だけを復元する。
+ *
  * **決定的にする。** 同じ部品文書と同じ保存時刻からは、いつ・どの計算機で書き出しても
  * 同じバイト列ができる。ZIP のヘッダには「ファイルの最終更新日時」を書く欄があり、
  * 何も指定しないと fflate が実行時の時刻を入れてしまうので、固定の日時を渡す。
@@ -85,12 +88,17 @@ import {
   type ArchiveReadError,
   type ArchiveReadLimits,
 } from './readArchive.js';
+import type { SavedAnalysisResult } from '@pointercad/model/beam-analysis';
+import { analysisResultBinding } from './analysisResultBinding.js';
+import { readAnalysisResult, serializeAnalysisResult, type AnalysisResultIssue } from './codecs/analysisResult.js';
 import { isSafeZipEntryName } from './zipDirectory.js';
 
 /** 部品文書を入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
 /** サムネイルを入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_THUMBNAIL_ENTRY = 'thumbnail.png';
+const PCAD_ANALYSIS_RESULT_ENTRY_PREFIX = 'analysis-results/';
+const PCAD_ANALYSIS_RESULT_ENTRY_SUFFIX = '.json';
 /** 図面が抱き込む参照元文書のエントリ名。 */
 export const PCAD_SOURCE_ENTRY_PREFIX = 'source/';
 export const PCAD_SOURCE_ENTRY_SUFFIX = '.json';
@@ -215,6 +223,11 @@ export function emptyPcadAttachments(): PcadAttachments {
   return { shapes: new Map(), meshes: new Map(), canvases: new Map() };
 }
 
+interface SavedResultFields {
+  readonly analysisResults?: ReadonlyMap<string, SavedAnalysisResult>;
+  readonly analysisResultIssue?: AnalysisResultIssue;
+}
+
 export interface WriteDocumentBundleOptions {
   readonly savedAt?: string;
   readonly thumbnailPng?: Uint8Array;
@@ -227,7 +240,7 @@ export async function writeDocumentBundle(
 ): Promise<Uint8Array> {
   // 部品は以前と同じく待たずに書く(完了までの待ちの段数を変えない。自動保存の検査が段数に依る)。
   if (bundle.kind === 'part') {
-    return zipPcadEntries(pcadEntries(bundle.document, { ...options, attachments: bundle.attachments }));
+    return zipPcadEntries(pcadEntries(bundle.document, { ...options, attachments: bundle.attachments, analysisResults: bundle.analysisResults }));
   }
   return zipPcadEntries(await documentBundleEntries(bundle, options));
 }
@@ -238,7 +251,7 @@ export async function documentBundleEntries(
   options: WriteDocumentBundleOptions = {},
 ): Promise<PcadZipEntries> {
   if (bundle.kind === 'part') {
-    return pcadEntries(bundle.document, { ...options, attachments: bundle.attachments });
+    return pcadEntries(bundle.document, { ...options, attachments: bundle.attachments, analysisResults: bundle.analysisResults });
   }
   // 現行pcadaで原本を持つのは抱き込んだ部品。保存できない原本を黙って捨てない。
   if (bundle.attachments.shapes.size + bundle.attachments.meshes.size + bundle.attachments.canvases.size > 0) {
@@ -251,6 +264,7 @@ export async function documentBundleEntries(
     parts: library.parts,
     assemblies: library.assemblies,
     partAttachments: library.attachments,
+    analysisResults: bundle.analysisResults,
   });
 }
 
@@ -258,6 +272,7 @@ export type ReadDocumentBundleResult =
   | {
       readonly ok: true;
       readonly bundle: DocumentBundle;
+      readonly analysisResultIssue?: AnalysisResultIssue;
       readonly savedAt: string;
       readonly thumbnailPng?: Uint8Array;
     }
@@ -269,7 +284,7 @@ export async function readDocumentBundle(
   kind: DocumentBundle['kind'],
   options: ReadPcadaFileOptions = {},
 ): Promise<ReadDocumentBundleResult> {
-  if (kind === 'part') return partBundleResult(readPcadFile(bytes));
+  if (kind === 'part') return partBundleResult(readPcadFile(bytes, options));
   // 待ちの段数を以前と同じに保つため、ダイジェストを待つ所だけをこの関数の中に置く。
   const result = await readPcadaFile(bytes, options);
   if (!result.ok) return result;
@@ -312,7 +327,8 @@ function partBundleResult(result: ReadPcadFileResult): ReadDocumentBundleResult 
   if (!result.ok) return result;
   return {
     ok: true,
-    bundle: createPartDocumentBundle(result.document, result.attachments),
+    bundle: createPartDocumentBundle(result.document, result.attachments, result.analysisResults),
+    ...(result.analysisResultIssue === undefined ? {} : { analysisResultIssue: result.analysisResultIssue }),
     savedAt: result.savedAt,
     thumbnailPng: result.thumbnailPng,
   };
@@ -341,7 +357,8 @@ function assemblyBundleOf(
       parts: result.parts,
       attachments: result.partAttachments,
       assemblies: result.assemblies,
-    }),
+    }, result.analysisResults),
+    ...(result.analysisResultIssue === undefined ? {} : { analysisResultIssue: result.analysisResultIssue }),
     savedAt: result.savedAt,
     thumbnailPng: result.thumbnailPng,
   };
@@ -512,6 +529,7 @@ function inspectImportedMeshBytes(bytes: Uint8Array): ImportedMeshHeader | null 
 }
 
 export interface WritePcadFileOptions {
+  readonly analysisResults?: ReadonlyMap<string, SavedAnalysisResult>;
   /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
   readonly savedAt?: string;
   /** サムネイルの PNG。作れなかったときは渡さない(そのときは ZIP へ入れない)。 */
@@ -615,6 +633,7 @@ export function pcadEntries(document: PartDocument, options: WritePcadFileOption
   if (options.attachments !== undefined) {
     appendAttachments(entries, options.attachments);
   }
+  if (options.kind !== PCAD_TEMPLATE_KIND) appendAnalysisResults(entries, options.analysisResults);
   return entries;
 }
 
@@ -631,7 +650,7 @@ export interface ReadPcadFileError {
 }
 
 export type ReadPcadFileResult =
-  | {
+  | (SavedResultFields & {
       readonly ok: true;
       readonly document: PartDocument;
       readonly savedAt: string;
@@ -652,7 +671,7 @@ export type ReadPcadFileResult =
       readonly attachments: PcadAttachments;
       /** サムネイルが入っていたときだけ付く。 */
       readonly thumbnailPng?: Uint8Array;
-    }
+    })
   | { readonly ok: false; readonly error: ReadPcadFileError };
 
 const NOT_ZIP_MESSAGE = 'ファイルを開けませんでした。壊れているかもしれません。';
@@ -682,10 +701,71 @@ function attachmentRef(name: string, prefix: string, suffix: string): string | n
   return ref;
 }
 
+function analysisIdOf(name: string): string | null {
+  return attachmentRef(name, PCAD_ANALYSIS_RESULT_ENTRY_PREFIX, PCAD_ANALYSIS_RESULT_ENTRY_SUFFIX);
+}
+
+function isResultEntry(name: string): boolean {
+  return analysisIdOf(name) !== null;
+}
+
+function* bindingInputs(entries: ReadonlyMap<string, Uint8Array | PcadZipEntry>):
+  Generator<readonly [string, Uint8Array, boolean]> {
+  for (const [name, entry] of entries) {
+    const document = name === PCAD_DOCUMENT_ENTRY || attachmentRef(name, PCAD_PART_ENTRY_PREFIX, PCAD_PART_ENTRY_SUFFIX) !== null;
+    if (name === PCAD_THUMBNAIL_ENTRY || isResultEntry(name)) continue;
+    if (isPcadArchiveEntry(name) || name.startsWith(PCAD_PART_ENTRY_PREFIX)) {
+      yield [name, ArrayBuffer.isView(entry) ? entry : entry[0], document];
+    }
+  }
+}
+
+function appendAnalysisResults(entries: PcadZipEntries, results?: ReadonlyMap<string, SavedAnalysisResult>): void {
+  if (results === undefined || results.size === 0) return;
+  let binding: string;
+  try {
+    binding = analysisResultBinding(bindingInputs(entries));
+  } catch {
+    return;
+  }
+  let remaining = IO_LIMITS.archiveTotalExpandedBytes;
+  for (const [bytes] of entries.values()) remaining -= bytes.byteLength;
+  for (const [id, saved] of sortedEntries(results)) {
+    if (entries.size >= IO_LIMITS.archiveEntryCount || remaining <= 0) break;
+    const name = PCAD_ANALYSIS_RESULT_ENTRY_PREFIX + id + PCAD_ANALYSIS_RESULT_ENTRY_SUFFIX;
+    if (analysisIdOf(name) !== id || !isSafeZipEntryName(name) || decodeUtf8(strToU8(name)) !== name) continue;
+    const bytes = serializeAnalysisResult(saved, id, binding);
+    if (bytes === undefined || bytes.byteLength > remaining) continue;
+    entries.set(name, zipEntry(bytes, DOCUMENT_LEVEL));
+    remaining -= bytes.byteLength;
+  }
+}
+
+function savedResultsOf(entries: ReadonlyMap<string, Uint8Array>, omitted: boolean): SavedResultFields {
+  const results = new Map<string, SavedAnalysisResult>();
+  let issue: AnalysisResultIssue | undefined = omitted ? 'invalidResult' : undefined;
+  let binding: string | undefined;
+  for (const [name, bytes] of entries) {
+    const id = analysisIdOf(name);
+    if (id === null) continue;
+    try {
+      binding ??= analysisResultBinding(bindingInputs(entries));
+    } catch {
+      // A valid document can contain deeply nested extension data beyond the canonicalizer's stack.
+      return { analysisResultIssue: 'invalidResult' };
+    }
+    const decoded = readAnalysisResult(bytes, id, binding);
+    if (decoded.ok) results.set(id, decoded.value);
+    else issue ??= decoded.issue;
+  }
+  return { ...(results.size ? { analysisResults: results } : {}),
+    ...(issue === undefined ? {} : { analysisResultIssue: issue }) };
+}
+
 function isPcadArchiveEntry(name: string): boolean {
   return (
     name === PCAD_DOCUMENT_ENTRY ||
-    name === PCAD_THUMBNAIL_ENTRY ||
+    name === PCAD_THUMBNAIL_ENTRY || isResultEntry(name) ||
     attachmentRef(name, PCAD_SHAPE_ENTRY_PREFIX, PCAD_SHAPE_ENTRY_SUFFIX) !== null ||
     attachmentRef(name, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX) !== null ||
     attachmentRef(name, PCAD_CANVAS_ENTRY_PREFIX, PCAD_CANVAS_ENTRY_SUFFIX) !== null
@@ -695,7 +775,7 @@ function isPcadArchiveEntry(name: string): boolean {
 function isPcadaArchiveEntry(name: string): boolean {
   return (
     name === PCAD_DOCUMENT_ENTRY ||
-    name === PCAD_THUMBNAIL_ENTRY ||
+    name === PCAD_THUMBNAIL_ENTRY || isResultEntry(name) ||
     name.startsWith(PCAD_PART_ENTRY_PREFIX)
   );
 }
@@ -807,11 +887,11 @@ function findMissingAttachment(
 export interface ReadPcadFileOptions { readonly limits?: ArchiveReadLimits }
 
 export function readPcadFile(bytes: Uint8Array, options: ReadPcadFileOptions = {}): ReadPcadFileResult {
-  const archive = readArchive(bytes, { shouldExtract: isPcadArchiveEntry, limits: options.limits });
+  const archive = readArchive(bytes, { shouldExtract: isPcadArchiveEntry, optionalEntry: isResultEntry, limits: options.limits });
   if (!archive.ok) {
     return fail('notZip', archiveFailureMessage(archive.error));
   }
-  return readPcadEntriesInternal(archive.entries, true);
+  return readPcadEntriesInternal(archive.entries, true, archive.omittedOptional === true);
 }
 
 /**
@@ -836,7 +916,7 @@ export function readPcadEntries(entries: ReadonlyMap<string, Uint8Array>): ReadP
   return readPcadEntriesInternal(entries, false);
 }
 
-function readPcadEntriesInternal(entries: ReadonlyMap<string, Uint8Array>, ownedArchive: boolean): ReadPcadFileResult {
+function readPcadEntriesInternal(entries: ReadonlyMap<string, Uint8Array>, ownedArchive: boolean, omitted = false): ReadPcadFileResult {
   const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentEntry === null) {
     return fail('missingDocument', MISSING_DOCUMENT_MESSAGE);
@@ -865,17 +945,6 @@ function readPcadEntriesInternal(entries: ReadonlyMap<string, Uint8Array>, owned
     return fail('missingField', `ファイルの中身が壊れています(${missing} が見つかりません)。`);
   }
   const thumbnail = findEntry(entries, PCAD_THUMBNAIL_ENTRY);
-  if (thumbnail === null) {
-    return {
-      ok: true,
-      document: parsed.document,
-      savedAt: parsed.savedAt,
-      kind: parsed.kind,
-      lengthUnit: parsed.lengthUnit,
-      toolDefaults: parsed.toolDefaults,
-      attachments: collected.attachments,
-    };
-  }
   return {
     ok: true,
     document: parsed.document,
@@ -884,7 +953,8 @@ function readPcadEntriesInternal(entries: ReadonlyMap<string, Uint8Array>, owned
     lengthUnit: parsed.lengthUnit,
     toolDefaults: parsed.toolDefaults,
     attachments: collected.attachments,
-    thumbnailPng: thumbnail,
+    ...(parsed.kind === PCAD_TEMPLATE_KIND ? {} : savedResultsOf(entries, omitted)),
+    ...(thumbnail === null ? {} : { thumbnailPng: thumbnail }),
   };
 }
 
@@ -909,6 +979,7 @@ export function isTemplateKind(kind: PcadDocumentKind): boolean {
 // ---------------------------------------------------------------------------
 
 export interface WritePcadaFileOptions {
+  readonly analysisResults?: ReadonlyMap<string, SavedAnalysisResult>;
   /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
   readonly savedAt?: string;
   /** サムネイルの PNG。作れなかったときは渡さない(そのときは ZIP へ入れない)。 */
@@ -1007,6 +1078,7 @@ export async function writePcadaFile(
   if (options.partAttachments !== undefined) {
     await appendPartAttachments(entries, options.partAttachments);
   }
+  appendAnalysisResults(entries, options.analysisResults);
   return zipPcadEntries(entries);
 }
 
@@ -1019,6 +1091,7 @@ async function pcadaEntries(
   if (options.partAttachments !== undefined) {
     await appendPartAttachments(entries, options.partAttachments);
   }
+  appendAnalysisResults(entries, options.analysisResults);
   return entries;
 }
 
@@ -1046,7 +1119,7 @@ function pcadaDocumentEntries(
 }
 
 export type ReadPcadaFileResult =
-  | {
+  | (SavedResultFields & {
       readonly ok: true;
       readonly document: AssemblyDocument;
       readonly savedAt: string;
@@ -1066,7 +1139,7 @@ export type ReadPcadaFileResult =
       readonly partAttachmentDigests: ReadonlyMap<string, string>;
       /** サムネイルが入っていたときだけ付く。 */
       readonly thumbnailPng?: Uint8Array;
-    }
+    })
   | { readonly ok: false; readonly error: ReadPcadFileError };
 
 /**
@@ -1267,18 +1340,19 @@ export function readPcadaFile(
 ): Promise<ReadPcadaFileResult> {
   const archive = readArchive(bytes, {
     shouldExtract: isPcadaArchiveEntry,
+    optionalEntry: isResultEntry,
     limits: options.limits,
   });
   if (!archive.ok) {
     return Promise.resolve(fail('notZip', archiveFailureMessage(archive.error)));
   }
   // 続きの段の約束をそのまま返し、以前(1 つの async 関数)と同じ待ちの段数で終える。
-  return readPcadaEntries(archive.entries);
+  return readPcadaEntries(archive.entries, archive.omittedOptional === true);
 }
 
 /** 取り出し済みの項目からアセンブリ文書と抱き込んだ部品を読む(`readPcadaFile` の ZIP を開いた後の段)。 */
 async function readPcadaEntries(
-  entries: ReadonlyMap<string, Uint8Array>,
+  entries: ReadonlyMap<string, Uint8Array>, omitted = false,
 ): Promise<ReadPcadaFileResult> {
   const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentEntry === null) {
@@ -1320,18 +1394,6 @@ async function readPcadaEntries(
     return { ok: false, error: collectedAttachments };
   }
   const thumbnail = findEntry(entries, PCAD_THUMBNAIL_ENTRY);
-  if (thumbnail === null) {
-    return {
-      ok: true,
-      document: parsed.document,
-      savedAt: parsed.savedAt,
-      partFiles: parsed.partFiles,
-      parts: collected.parts,
-      assemblies: collected.assemblies,
-      partAttachments: collectedAttachments.attachments,
-      partAttachmentDigests: collectedAttachments.digests,
-    };
-  }
   return {
     ok: true,
     document: parsed.document,
@@ -1341,7 +1403,8 @@ async function readPcadaEntries(
     assemblies: collected.assemblies,
     partAttachments: collectedAttachments.attachments,
     partAttachmentDigests: collectedAttachments.digests,
-    thumbnailPng: thumbnail,
+    ...(savedResultsOf(entries, omitted)),
+    ...(thumbnail === null ? {} : { thumbnailPng: thumbnail }),
   };
 }
 

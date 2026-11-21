@@ -23,7 +23,7 @@
  * そちらへ置くと循環になる)。
  */
 
-import { findFeature, type PartDocument, type SketchFeature } from '@pointercad/model';
+import { findFeature, type PartDocument, type SketchFaceRef, type SketchFeature } from '@pointercad/model';
 
 import { featureIdOf } from '../sketch/featureSummary.js';
 
@@ -70,4 +70,31 @@ export function findSketchFeatureAt(
     }
   }
   return undefined;
+}
+
+const FACE_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['face']);
+
+/**
+ * 要素 id が面フィーチャーを指しているかを、id の接頭辞ではなく文書を引いて判定する。
+ * 見つからなければ undefined(面でない、または実在しない)。
+ *
+ * 探す順は `findSketchFeatureAt` に任せ、**編集中のスケッチを先に**見る。
+ * 文書の並び順に前から探すと、スケッチ 2 の `face-1` を押し出したつもりでスケッチ 1 の
+ * `face-1` が使われる(直した不具合)。
+ */
+export function faceRefById(document: PartDocument, elementId: string): SketchFaceRef | undefined {
+  const found = findSketchFeatureAt(document, elementId, FACE_KINDS);
+  return found === undefined
+    ? undefined
+    : { sketchId: found.sketchId, faceFeatureId: found.featureId };
+}
+
+/** 同じ面を指す選択は最初の一度だけ使う。スケッチの探索順は単面の時と共通。 */
+export function selectedExtrudeProfiles(document: PartDocument, selection: readonly string[]): readonly SketchFaceRef[] {
+  const profiles = new Map<string, SketchFaceRef>();
+  for (const id of selection) {
+    const ref = faceRefById(document, id);
+    if (ref !== undefined) profiles.set(ref.faceFeatureId, ref);
+  }
+  return [...profiles.values()];
 }

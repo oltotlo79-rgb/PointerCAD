@@ -167,6 +167,24 @@ describe('構文解析(FR-201)', () => {
     expect(failureOf('1+2)').message).toBe('式の後ろに余分なものがあります: 「)」(4 文字目)');
   });
 
+  it('数の直後が名前なら、掛け算の説明用の鍵と元の入力を返す', () => {
+    const error = failureOf('2a');
+    expect(error).toEqual({
+      code: 'unexpectedTrailing',
+      message: '式の後ろに余分なものがあります: 「a」(2 文字目)',
+      position: 1,
+      hint: { key: 'explicitMultiplication', numberText: '2', name: 'a' },
+    });
+    expect(failureOf('１．５ 幅').hint).toEqual({
+      key: 'explicitMultiplication', numberText: '１．５', name: '幅',
+    });
+  });
+
+  it('数と名前の並び以外の余りには一言の欄が無い', () => {
+    expect(failureOf('1+2)')).not.toHaveProperty('hint');
+    expect(failureOf('(2)a')).not.toHaveProperty('hint');
+  });
+
   it('式が途中で終わったら unexpectedEnd(位置は定まらないので -1)', () => {
     expect(codeAt('1+')).toBe('unexpectedEnd@-1');
     expect(codeAt('2^')).toBe('unexpectedEnd@-1');

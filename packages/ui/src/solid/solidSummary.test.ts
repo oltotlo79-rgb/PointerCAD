@@ -29,11 +29,16 @@ import {
   DEFAULT_COUNTERSINK_DIAMETER_MM,
   DEFAULT_EXTRUDE_THICKNESS_MM,
   DEFAULT_FILLET_RADIUS_END_MM,
+  DEFAULT_SWEEP_END_SCALE,
+  DEFAULT_SWEEP_TWIST_DEGREES,
+  DEFAULT_SWEEP_WALL_THICKNESS_MM,
   extrudeShapingOf,
   filletRadiusOf,
   holeEntryOf,
   MAX_DRAFT_ANGLE_DEGREES,
   MAX_SCALE,
+  MAX_SWEEP_END_SCALE,
+  MAX_SWEEP_TWIST_DEGREES,
   MAX_TAPER_ANGLE_DEGREES,
   MIN_SCALE,
   pushUndo,
@@ -2359,6 +2364,46 @@ describe('スイープ・リブ・エンボス・外ねじのプロパティ(FR-
     ]);
     const frenet = setSolidToggle(SWEEP, 'sweepFrenet', true);
     expect(frenet.kind === 'sweep' ? frenet.frenet : null).toBe(true);
+  });
+
+  it('スイープはねじれ・終わりの大きさ・肉厚の欄を、作る時と同じ条件で出す(M-07)', () => {
+    const plain = summarizeSolid(appendSolid(documentWith(), SWEEP), SWEEP);
+    expect(plain.fields.map((field) => [field.key, field.value.source])).toEqual([
+      ['sweepTwist', String(DEFAULT_SWEEP_TWIST_DEGREES)],
+      ['sweepEndScale', String(DEFAULT_SWEEP_END_SCALE)],
+      ['sweepWall', String(DEFAULT_SWEEP_WALL_THICKNESS_MM)],
+    ]);
+    expect(plain.fields.map((field) => field.range)).toEqual([
+      { min: -MAX_SWEEP_TWIST_DEGREES, minInclusive: true, max: MAX_SWEEP_TWIST_DEGREES, maxInclusive: true },
+      { min: 0, minInclusive: false, max: MAX_SWEEP_END_SCALE, maxInclusive: true },
+      { min: 0, minInclusive: true, max: null, maxInclusive: false },
+    ]);
+    const twisted: SweepFeature = { ...SWEEP, twistDegrees: { source: '90', value: 90, display: '90' } };
+    const twistedSummary = summarizeSolid(appendSolid(documentWith(), twisted), twisted);
+    expect(twistedSummary.fields[0]?.value.source).toBe('90');
+    // ねじれを使う間は向きを自分の枠で決めるので、「曲がりに合わせて回す」を出さない。
+    expect(twistedSummary.toggles).toEqual([]);
+    const guided: SweepFeature = { ...SWEEP, guide: { sketchId: 'sketch-1', curveIds: ['line-2'] } };
+    expect(summarizeSolid(appendSolid(documentWith(), guided), guided).fields.map((field) => field.key)).toEqual(['sweepWall']);
+    // 案内線と一緒に持ってしまったねじれ(model が断る組み合わせ)は、直せるように出す。
+    const conflicting: SweepFeature = { ...guided, twistDegrees: expressionValueFromNumber(30) };
+    expect(summarizeSolid(appendSolid(documentWith(), conflicting), conflicting).fields.map((field) => field.key))
+      .toEqual(['sweepTwist', 'sweepEndScale', 'sweepWall']);
+  });
+
+  it('スイープの欄を書き戻す。既定の式へ戻すと欄を消し、変数の式は残す(M-07)', () => {
+    const twisted = setSolidField(SWEEP, 'sweepTwist', { source: '45', value: 45, display: '45' });
+    expect(twisted.kind === 'sweep' ? twisted.twistDegrees?.source : null).toBe('45');
+    const back = setSolidField(twisted, 'sweepTwist', { source: ' 0 ', value: 0, display: '0' });
+    expect(back).toEqual(SWEEP);
+    expect(back).not.toHaveProperty('twistDegrees');
+    const variable = setSolidField(SWEEP, 'sweepEndScale', { source: 't', value: 1, display: '1' });
+    expect(variable.kind === 'sweep' ? variable.endScale?.source : null).toBe('t');
+    const walled = setSolidField(SWEEP, 'sweepWall', expressionValueFromNumber(2));
+    expect(walled.kind === 'sweep' ? walled.wallThickness?.value : null).toBe(2);
+    expect(setSolidField(walled, 'sweepWall', expressionValueFromNumber(0))).toEqual(SWEEP);
+    // スイープが持たない欄は受け付けない。
+    expect(setSolidField(SWEEP, 'ribThickness', expressionValueFromNumber(3))).toBe(SWEEP);
   });
 
   it('リブは厚みの欄・付ける側の 3 択・伸ばすつまみを出す', () => {

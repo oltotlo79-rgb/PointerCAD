@@ -160,7 +160,7 @@ export { autoDimension, type AutoDimensionPoint, type AutoDimensionCircle } from
 export { renderDrawing, renderDrawingElements, type DrawingRenderCurve, type DrawingRenderElement, type DrawingRenderView } from './render/renderDrawing.js';
 
 export { createPdf } from './render/pdfWriter.js';
-export { toPdf } from './render/toPdf.js';
+export { toPdf, toPdfPages } from './render/toPdf.js';
 export { flattenRenderPath } from './render/flattenRenderPath.js';
 export { note, type NoteGeometry } from './annotation/note.js';
 export { tableLayout, type TableGeometry } from './table/tableLayout.js';
@@ -170,6 +170,7 @@ export { drawingPrintOptions, readDrawingPrintOptions, type DrawingPrintOptions 
 export { balloon, type BalloonCircle } from './table/balloon.js';
 export { holeTable } from './table/holeTable.js';
 export { revisionTable } from './table/revisionTable.js';
+export { parameterTable } from './table/parameterTable.js';
 export type { SubShapeOrigin, CurrentOriginIndex } from './subShapeOrigin.js';
 
 

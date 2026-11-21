@@ -47,6 +47,7 @@ import { hasSaveRecoveryCopy } from './saveFailure.js';
 import { readAutoSaveIntervalMs } from '../settings/autoSaveSettings.js';
 import { cancelDocumentSaves } from './documentSaveQueue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
+import { analysisResultsToSave } from '../beam/savedBeamResults.js';
 
 // ---------------------------------------------------------------------------
 // 保管庫を選ぶ
@@ -169,7 +170,7 @@ function recoveryDocument(state: AppState, bundleParts: boolean): AutoSaveDocume
     if (source === null) { reportAutoSaveFailure(); return null; }
     return { kind: 'drawing', document: active.document, source };
   }
-  return active.kind === 'assembly' ? createAssemblyDocumentBundle(active.document, active.library)
+  return active.kind === 'assembly' ? createAssemblyDocumentBundle(active.document, active.library, analysisResultsToSave(state, active.document))
     : bundleParts ? createPartDocumentBundle(active.document, currentPcadAttachments(active.document)) : active.document;
 }
 
@@ -388,7 +389,8 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
       reportAutoSaveFailure(error);
       return;
     }
-    state.openAssembly(outcome.bundle.document, partLibraryOfBundle(outcome.bundle), { preparedSession });
+    state.openAssembly(outcome.bundle.document, partLibraryOfBundle(outcome.bundle), { preparedSession,
+      analysisResults: outcome.bundle.analysisResults, analysisResultsDropped: outcome.analysisResultIssue !== undefined });
     // 復元後は新しい窓の session で同じ文書を引き継ぐ。元の控えは消さない。
     if (record.documentId !== undefined) useAppStore.setState({ activeDocumentId: record.documentId });
     state.setRestorePrompt(null);

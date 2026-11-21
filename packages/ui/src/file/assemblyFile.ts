@@ -20,6 +20,7 @@ import { recordRecentFile } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
+import { analysisResultsToSave } from '../beam/savedBeamResults.js';
 
 const contentCache = new WeakMap<AssemblyDocument, WeakMap<PartLibrary, string>>();
 
@@ -96,7 +97,8 @@ export async function applyPickedAssembly(
   if (!(await mayOpenAfterRead(request, deps))) return;
   const before = useAppStore.getState();
   const library = partLibraryOfBundle(result.bundle);
-  before.openAssembly(result.bundle.document, library, { preserveSaveTarget: true });
+  before.openAssembly(result.bundle.document, library, { preserveSaveTarget: true, analysisResults: result.bundle.analysisResults,
+    analysisResultsDropped: result.analysisResultIssue !== undefined });
   const openedId = useAppStore.getState().activeDocumentId;
   before.setAssemblyFileState(picked.name, { document: result.bundle.document, library });
   try {
@@ -131,7 +133,8 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
   const snapshot = { document: active.document, library: active.library };
   const thumbnailIdentity = captureDocumentIdentity(before);
   const thumbnail = Promise.resolve(deps.captureThumbnail()).catch(() => null);
-  const encoding = captureSaveSnapshot({ kind: 'assembly', bundle: createAssemblyDocumentBundle(active.document, active.library),
+  const encoding = captureSaveSnapshot({ kind: 'assembly',
+    bundle: createAssemblyDocumentBundle(active.document, active.library, analysisResultsToSave(before, active.document)),
     options: { savedAt: new Date().toISOString() } });
   return queueDocumentSave(before, async (isCurrent, control) => {
   try {

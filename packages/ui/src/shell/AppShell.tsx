@@ -16,6 +16,7 @@ import { ExportHandoffPanel } from '../file/ExportHandoffPanel.js';
 import { windowTitle } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
 import { deferredShell } from './deferredShell.js';
+import { rememberDialogOpener } from './dialogFocus.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { SketchTextInputHost } from '../sketch/SketchTextInputHost.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
@@ -378,12 +379,12 @@ function DiscardConfirmDialog(): React.JSX.Element | null {
   useEffect(() => {
     const element = dialog.current;
     if (request === null || element === null) return;
-    const previous = globalThis.document.activeElement;
+    const restoreFocus = rememberDialogOpener(element);
     if (!element.open) element.showModal();
     cancel.current?.focus();
     return () => {
       if (element.open) element.close();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+      restoreFocus();
     };
   }, [request]);
   if (request === null) return null;
@@ -438,10 +439,9 @@ export function PartSourceConfirmDialog(): React.JSX.Element | null {
     if (!current) { answer(false); return; }
     const element = dialog.current;
     if (element === null) { answer(false); return; }
-    const previous = globalThis.document.activeElement;
     return mountPartSourceConfirmDialog(request.requestId, element,
       () => { cancel.current?.focus(); },
-      () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); },
+      rememberDialogOpener(element),
       () => lifecycle.current !== generation);
   }, [request, current]);
   if (request === null) return null;

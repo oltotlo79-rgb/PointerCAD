@@ -261,6 +261,21 @@ export const MAX_SCALE = 1000;
  */
 export const DEFAULT_SWEEP_FRENET = false;
 
+/** スイープのねじれ(度、M-07)の既定。0 はねじらない(フィーチャーに欄を書かない)。 */
+export const DEFAULT_SWEEP_TWIST_DEGREES = 0;
+
+/** スイープの終わりの大きさ(倍率、M-07)の既定。1 は大きさを変えない(フィーチャーに欄を書かない)。 */
+export const DEFAULT_SWEEP_END_SCALE = 1;
+
+/** スイープの肉厚(mm、M-07)の既定。0 は中実(フィーチャーに欄を書かない)。 */
+export const DEFAULT_SWEEP_WALL_THICKNESS_MM = 0;
+
+/** スイープのねじれ(M-07)の上限(度)。-この値〜この値(10 回転)まで。 */
+export const MAX_SWEEP_TWIST_DEGREES = 3600;
+
+/** スイープの終わりの大きさ(M-07)の上限(倍率)。下限は 0 より大きい値(0 は含まない)。 */
+export const MAX_SWEEP_END_SCALE = 10;
+
 /** リブの厚みの既定(mm)。 */
 export const DEFAULT_RIB_THICKNESS_MM = 3;
 
@@ -475,6 +490,7 @@ export type SolidLabelKey =
   | 'pointPattern'
   /** くり抜き(FR-418)。Could 群のうち前倒しした 1 種。 */
   | 'shell'
+  | 'thicken'
   /** 平面による切断(FR-432)。分割(FR-424)もこれで満たす。 */
   | 'cut'
   | 'surfaceCut'
@@ -535,6 +551,7 @@ const SOLID_FEATURE_KIND_TABLE = {
   surface: true,
   functionSurface: true,
   shell: true,
+  thicken: true,
   cut: true,
   surfaceCut: true,
   importedSolid: true,
@@ -606,6 +623,7 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   pointPattern: '点パターン',
   // くり抜き(FR-418。Could 群を前倒し)。
   shell: 'くり抜き',
+  thicken: '厚み付け',
   // 平面による切断(FR-432)。「反対側も残す」で 2 つ積んだときは
   // 「切断1」「切断2」と連番が並ぶ(同じ種類なので分けない)。
   cut: '切断',
@@ -821,14 +839,16 @@ export function setActiveSketch(document: PartDocument, sketchId: string): PartD
 const NEW_FEATURE_SCHEMA_VERSION = 24;
 
 /**
- * 辺からの距離の穴(M-02)・ねじれ・終わりの大きさ・肉厚を持つスイープ(M-07)を足した・差し替えた時だけ、文書の版を 24 へ上げる。開くだけでは上げず、消しても下げない
+ * 辺からの距離の穴(M-02)・ねじれ・終わりの大きさ・肉厚を持つスイープ(M-07)・厚み付け・面全体のオフセット(J-05a)を足した・差し替えた時だけ、文書の版を 24 へ上げる。開くだけでは上げず、消しても下げない
  * (古い読み手が欄を捨てて穴の位置を失わないよう、保存の側は版 24 未満でこの欄を書かない)。
  */
 function schemaVersionFor(document: PartDocument, feature: SolidFeature): { readonly schemaVersion?: number } {
   const usesEdgeDistance = (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar?.kind === 'edge-distance';
+  const usesSurfaceBody = feature.kind === 'thicken' || (feature.kind === 'surface'
+    && (feature.operation.kind === 'offsetBody' || feature.operation.kind === 'blend'));
   const usesSweepShape = feature.kind === 'sweep'
     && (feature.twistDegrees !== undefined || feature.endScale !== undefined || feature.wallThickness !== undefined);
-  return (usesEdgeDistance || usesSweepShape) && document.schemaVersion < NEW_FEATURE_SCHEMA_VERSION
+  return (usesEdgeDistance || usesSweepShape || usesSurfaceBody) && document.schemaVersion < NEW_FEATURE_SCHEMA_VERSION
     ? { schemaVersion: NEW_FEATURE_SCHEMA_VERSION } : {};
 }
 
@@ -1053,6 +1073,7 @@ export function consumedTargetsOf(feature: SolidFeature, solids?: readonly Solid
     case 'rib':
     case 'emboss':
     case 'threadShaft':
+    case 'thicken':
     case 'shell':
     case 'cut':
     case 'surfaceCut':
@@ -1067,9 +1088,7 @@ export function consumedTargetsOf(feature: SolidFeature, solids?: readonly Solid
       return [feature.sourceFeatureId];
     case 'surface':
     case 'functionSurface':
-      // 曲面(FR-428)。`face` のときだけ相手の立体を指すが、面を読むだけなので
-      // **どの作り方でも消費しない**。分岐を残してあるのは、面のオフセット・
-      // 厚み付け(消費しうる種類)が後で足されたときにここを直すと分かるようにするため。
+      // 面を取り出す場合も、面全体を離す場合も元のボディを残す。
       return [];
   }
 }
@@ -1118,6 +1137,7 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'rib':
     case 'emboss':
     case 'threadShaft':
+    case 'thicken':
     case 'shell':
     case 'cut':
     case 'surfaceCut':
@@ -1148,22 +1168,29 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
   }
 }
 
-/**
- * パターン(FR-411、FR-412)の対象にできるか。穴・ねじ穴だけ。
- *
- * フィレット・面取りを外すのは「工具の形」が無く、変換した位置の辺を指紋で選び直す必要が
- * あって危ういため。ばねも対象にしない。基本形状も同じく対象にしない
- * (工具ではなく「作る」フィーチャーだから)。
- *
- * **面をつなぐ・ロフトも対象にしない**。押し出し・回転・縫合・ばね・
- * 基本形状と同じ「作る」フィーチャーで、差し引く工具の形を持たないためである。
- *
- * **Should 群 9 種もすべて対象にしない**。パターンの拡張は
- * 「点の集まりへ複製」だけで、複製できるもとを穴・ねじ穴から広げる話ではない
- * (面取り・R 面取りを対象にする案は Could として後へ回した)。
- */
-export function isPatternSource(feature: SolidFeature): boolean {
-  return feature.kind === 'hole' || feature.kind === 'threadHole';
+/** 結合・切り抜きの結果を選べる立体の作成行。 */
+function isResultTool(feature: SolidFeature): boolean {
+  switch (feature.kind) {
+    case 'extrude': case 'revolve': case 'primitive': case 'sweep': case 'loft': case 'ruled':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** 履歴を渡すと、作成行と直後の和・差を工具 id で照合できる。単独の引数は従来の穴工具の選択用。 */
+export function isPatternSource(feature: SolidFeature, solids?: readonly SolidFeature[]): boolean {
+  if (feature.kind === 'hole' || feature.kind === 'threadHole') return true;
+  if (solids === undefined) return false;
+  if (feature.kind !== 'boolean') {
+    if (feature.kind === 'importedSolid') return feature.bodyKind === 'solid';
+    return isResultTool(feature) || feature.kind === 'spring' || feature.kind === 'sew';
+  }
+  if (feature.operation === 'intersect' || feature.targetFeatureId === feature.toolFeatureId
+    || feature.requireRemoval === true || feature.pairedWith !== undefined) return false;
+  const index = solids.findIndex(row => row.id === feature.id);
+  const tool = solids[index - 1];
+  return tool !== undefined && tool.id === feature.toolFeatureId && isResultTool(tool);
 }
 
 /**

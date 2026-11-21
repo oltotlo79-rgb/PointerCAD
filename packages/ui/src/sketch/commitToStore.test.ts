@@ -136,8 +136,7 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
     return { kind: 'solid', tool: 'extrude', step: 'extrudeDistance', values: { distance: expressionValueFromNumber(5) },
       flags: {}, shapeChoices: { extrudeOperation: operation, extrudeTarget: target } };
   }
-  async function ready(tool: 'extrude' | 'revolve' | 'sphere' | 'box' | 'cylinder' | 'cone' | 'torus' = 'extrude') {
-    const document = part();
+  async function ready(tool: 'extrude' | 'revolve' | 'sphere' | 'box' | 'cylinder' | 'cone' | 'torus' = 'extrude', document = part()) {
     useAppStore.getState().applyDocument(document);
     const control = attachControlled();
     control.calls[0].settle(success(control.calls[0], ['extrude']));
@@ -148,6 +147,55 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
     useAppStore.getState().updateNumericInput(input);
     return { ...control, document, input };
   }
+
+  it.each(['success', 'middle-error', 'missing-first'] as const)('複数面の一括確定 %s', async result => {
+    const base = part();
+    let sketch = base.sketches[0];
+    for (const id of ['second', 'third']) {
+      sketch = appendFeature(sketch, { id, name: id, kind: 'face', planeId: 'xy', color: DEFAULT_FACE_COLOR,
+        boundary: [{ featureId: 'rect' }] });
+    }
+    const { calls, detach, document, input } = await ready('extrude', replaceSketch(base, sketch));
+    try {
+      const before = useAppStore.getState();
+      before.setSelection(['face', 'second', 'third']);
+      const commit = extrudeCommit('new', '');
+      const transition = { kind: 'solidCommitted' as const, state: input, commit };
+      previewExtrudeTransition(transition);
+      expect(calls).toHaveLength(1);
+      applyNumericTransition(transition);
+      expect(calls).toHaveLength(2);
+      const staged = calls[1], ids = staged.document.solids.slice(document.solids.length).map(feature => feature.id);
+      expect(ids).toHaveLength(3);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      expect(useAppStore.getState().document).toBe(document);
+      const reply = success(staged, ['extrude', ...(result === 'missing-first' ? ids.slice(1) : ids)]);
+      staged.settle(result === 'middle-error'
+        ? { ...reply, errors: [{ featureId: ids[1], code: 'kernelFailed', message: 'invalid middle profile' }] } : reply);
+      if (result !== 'success') {
+        await vi.waitFor(() => expect(useAppStore.getState().stagedSolid?.status).toBe('failed'));
+        const failed = useAppStore.getState();
+        expect(failed.stagedSolid?.failure).toBe(result === 'middle-error' ? 'failed' : 'missingBody');
+        expect(failed.document).toBe(document);
+        expect(failed.undoStack).toBe(before.undoStack);
+        expect(failed.numericInput).toBe(input);
+        return;
+      }
+      await vi.waitFor(() => expect(useAppStore.getState().numericInput).toBeNull());
+      const after = useAppStore.getState();
+      expect(after.fileMessage).toEqual({ key: 'solid.extrudedFaceCount', failed: false, detail: '3' });
+      expect(after.document).toBe(staged.document);
+      expect(after.document.featureFolders?.at(-1)?.children).toEqual(ids.map(id => ({ kind: 'solid', id })));
+      expect(after.selection).toEqual([ids[2]]);
+      expect(after.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      after.undo();
+      expect(useAppStore.getState().document).toBe(document);
+      useAppStore.getState().redo();
+      expect(useAppStore.getState().document).toBe(after.document);
+      const saved = parseDocument(serializeDocument(after.document));
+      expect(saved.ok && saved.document.featureFolders).toEqual(after.document.featureFolders);
+    } finally { detach(); }
+  });
 
   it.each(['join', 'cut'] as const)('%s waits with the input open, then adopts that exact document once with one Undo/Redo', async (operation) => {
     const { calls, detach, document, input } = await ready();

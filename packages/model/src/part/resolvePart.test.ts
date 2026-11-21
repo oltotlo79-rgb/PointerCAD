@@ -54,6 +54,7 @@ import { createUndoStack, pushUndo, redo, undo } from '../history/undoStack.js';
 import { cacheKeyFor, type BooleanKeyMaterial, type KeyCurve } from './cacheKey.js';
 import { compareDocuments } from '../diff/compareDocuments.js';
 import { toSolidStepRequest } from '../kernelBridge/solidRequests.js';
+import { toSolidRecomputeRequest } from '../kernelBridge/solidConversions.js';
 import {
   addSketch,
   appendReference,
@@ -3181,6 +3182,177 @@ describe('resolvePatternTransforms', () => {
   });
 });
 
+describe('作成行と対になった和・差のパターン', () => {
+  function patternedPart(operation: 'union' | 'subtract', height = '3'): PartDocument {
+    const initial = createEmptyPartDocument();
+    const plate = addPoints(initial.sketches[0], [[-25, -25, 0], [25, -25, 0], [25, 25, 0], [-25, 25, 0]]);
+    const plateFace = addFace(plate.sketch, plate.pointIds);
+    const x = operation === 'union' ? 12 : -17;
+    const z = operation === 'union' ? 10 : 7;
+    const points = addPoints(plateFace.sketch, [[x, -1, z], [x + 2, -1, z], [x + 2, 1, z], [x, 1, z]]);
+    const toolFace = addFace(points.sketch, points.pointIds);
+    const sketchId = toolFace.sketch.id;
+    return withSolids(replaceSketch(initial, toolFace.sketch),
+      extrudeFeature('plate', { sketchId, faceFeatureId: plateFace.faceId }),
+      extrudeFeature('tool', { sketchId, faceFeatureId: toolFace.faceId }, { distance: height }),
+      booleanFeature('result', operation, 'plate', 'tool'), patternFeature('array', 'result',
+        operation === 'union' ? circularPlacement({ count: '20' }) : linearPlacement({ count: '5', spacing: '8' })));
+  }
+
+  it('20 個の円形の結合は工具の鍵と19回転を1段で渡す', () => {
+    const result = resolvePart(patternedPart('union'));
+    expect(result.errors).toEqual([]);
+    expect(result.steps.map(row => [row.featureId, row.visible])).toEqual([
+      ['plate', false], ['tool', false], ['result', false], ['array', true]]);
+    const [, tool, first, array] = result.steps;
+    const plan = booleanPlan(array);
+    expect(plan.operation).toBe('union');
+    expect([plan.targetKey, plan.toolKey]).toEqual([first.key, tool.key]);
+    expect(plan.transforms).toHaveLength(19);
+    for (const [index, pose] of (plan.transforms ?? []).entries()) {
+      expect(pose.rotationOrigin).toEqual([0, 0, 0]);
+      expect(pose.rotationAxis).toEqual([0, 0, 1]);
+      expect(pose.rotationAngle).toBeCloseTo((index + 1) * Math.PI / 10, 12);
+      expect(pose.translation).toEqual([0, 0, 0]);
+    }
+    expect(toSolidStepRequest(array).step).toEqual(plan);
+  });
+
+  it('5 個の直線切り抜きは元の差に4個の工具を追加する', () => {
+    const result = resolvePart(patternedPart('subtract'));
+    expect(result.errors).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['array']);
+    const [, tool, first, array] = result.steps;
+    const plan = booleanPlan(array);
+    expect([plan.operation, plan.targetKey, plan.toolKey]).toEqual(['subtract', first.key, tool.key]);
+    expect(plan.transforms?.map(pose => pose.translation)).toEqual([[8, 0, 0], [16, 0, 0], [24, 0, 0], [32, 0, 0]]);
+    expect(toSolidStepRequest(array).step).toEqual(plan);
+  });
+
+  it('押し出しの高さを変えると工具・元の結合・パターンの鍵が追従する', () => {
+    const original = resolvePart(patternedPart('union'));
+    const updated = resolvePart(patternedPart('union', '4'));
+    expect(updated.errors).toEqual([]);
+    expect(updated.steps[0].key).toBe(original.steps[0].key);
+    for (const index of [1, 2, 3]) expect(updated.steps[index].key).not.toBe(original.steps[index].key);
+    expect(booleanPlan(updated.steps[3]).toolKey).toBe(updated.steps[1].key);
+    expect(booleanPlan(updated.steps[3]).transforms).toEqual(booleanPlan(original.steps[3]).transforms);
+    const document = patternedPart('subtract');
+    const moved = resolvePart({ ...document, solids: document.solids.map(row => row.kind === 'pattern'
+      ? { ...row, placement: linearPlacement({ count: '5', spacing: '7' }) } : row) });
+    const first = resolvePart(document);
+    expect(moved.errors).toEqual([]);
+    expect(moved.steps[2].key).toBe(first.steps[2].key);
+    expect(moved.steps[3].key).not.toBe(first.steps[3].key);
+  });
+
+  it('単独の積・離れた工具・輪郭の切断を拒み、欠けた相手と消費済みの元を区別する', () => {
+    const fixture = createFixture();
+    const plate = extrudeFeature('plate', fixture.faceA);
+    const tool = extrudeFeature('tool', fixture.faceB);
+    const seed = booleanFeature('result', 'union', plate.id, tool.id);
+    const pattern = patternFeature('array', seed.id, linearPlacement());
+    const errors = (...rows: SolidFeature[]) =>
+      resolvePart(withSolids(fixture.document, ...rows, pattern)).errors.filter(error => error.featureId === pattern.id);
+    const wrong = [{ ...seed, operation: 'intersect' }, { ...seed, operation: 'subtract', requireRemoval: true }] as const;
+    for (const row of wrong) {
+      const rejected = errors(plate, tool, row);
+      expect(rejected.map(error => error.code)).toEqual(['invalidValue']);
+      expect(rejected[0].message).toContain('対になった');
+    }
+    expect(errors(plate, tool, extrudeFeature('other', fixture.faceA), seed)).toMatchObject([{ code: 'invalidValue' }]);
+    const missing = errors(tool, seed);
+    expect(missing.map(error => error.code)).toEqual(['missingBody']);
+    expect(missing[0].message).toContain('相手');
+    expect(errors(plate, tool, seed, { ...pattern, id: 'first' })).toMatchObject([{ code: 'consumedTwice' }]);
+  });
+
+  it('和の相手から後続のパターンに戻る場合は欠落より先に循環を返す', () => {
+    const fixture = createFixture();
+    const result = resolvePart(withSolids(fixture.document, extrudeFeature('tool', fixture.faceA),
+      booleanFeature('result', 'union', 'array', 'tool'), patternFeature('array', 'result', linearPlacement())));
+    expect(result.errors.find(error => error.featureId === 'array')?.code).toBe('circularReference');
+    expect(result.liveBodyIds).toEqual(['tool']);
+  });
+
+  it('配置点から自分へ戻る参照を拒み、単独の点では元を二度足さない', () => {
+    const fixture = createFixture();
+    const base = extrudeFeature('base', fixture.faceA);
+    const solve = (reference: PointReference) => resolvePart(withSolids(fixture.document, base,
+      patternFeature('array', base.id, allocatePatternPointSlots([reference]))));
+    const cycle = solve({ kind: 'subShape', ref: vertexRef('array') });
+    expect(codesOf(cycle)).toEqual(['circularReference']);
+    expect(cycle.liveBodyIds).toEqual(['base']);
+    const single = solve({ kind: 'origin' });
+    expect(single.errors).toEqual([]);
+    expect(booleanPlan(single.steps[1]).transforms).toEqual([]);
+    const positions = allocatePatternPointSlots([fixture.pointA, fixture.pointB].map(point =>
+      ({ kind: 'point' as const, pointId: point.pointFeatureId })));
+    const pair = resolvePart(withSolids(fixture.document, base, patternFeature('array', base.id, positions)));
+    expect(pair.errors).toEqual([]);
+    expect(booleanPlan(pair.steps[1]).transforms?.map(pose => pose.translation)).toEqual([[20, 10, 0]]);
+  });
+
+  it('並べる段は配置の並びを計算部への依頼にそのまま渡し、元の結果を消費する', () => {
+    const result = resolvePart(patternedPart('union'));
+    expect(result.errors).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['array']);
+    const request = toSolidRecomputeRequest(result.steps, {});
+    expect(request.steps.map(row => row.id)).toEqual(['plate', 'tool', 'result', 'array']);
+    const last = request.steps[3]?.step;
+    expect(last?.kind === 'boolean' ? last.transforms : undefined).toEqual(booleanPlan(result.steps[3]).transforms);
+    expect(last?.kind === 'boolean' ? last.transforms?.length : -1).toBe(19);
+  });
+
+  describe('実 OCCT で再計算した、画面に出る立体と体積(計算部の並べる和・差と合わせた確かめ)', () => {
+    /** 文書を順に同じ接続で再計算し(2 つ目以降はキャッシュの当たりを含む作り直し)、画面に出る立体の id と体積を返す。 */
+    async function visibleBodies(documents: readonly PartDocument[]): Promise<readonly (readonly (readonly [string, number])[])[]> {
+      const cache = createShapeCache<CachedSolid>(64);
+      const bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode, cache));
+      try {
+        const rows: (readonly (readonly [string, number])[])[] = [];
+        for (const document of documents) {
+          const result = await recomputePart(document, bridge);
+          expect(result.errors).toEqual([]);
+          rows.push(result.bodies.map(body => [body.featureId, body.volume] as const));
+        }
+        return rows;
+      } finally {
+        bridge.dispose();
+        cache.clear();
+      }
+    }
+
+    function expectVisible(rows: readonly (readonly [string, number])[] | undefined, featureId: string, volume: number): void {
+      expect(rows?.map(([id]) => id)).toEqual([featureId]);
+      const actual = rows?.[0]?.[1] ?? Number.NaN;
+      expect(Math.abs(actual - volume) / volume, `${featureId}: ${String(actual)} / ${String(volume)}`).toBeLessThanOrEqual(1e-9);
+    }
+
+    it('円形 20 個の和は 25,240 mm³、続けてボスの高さを 4 にすると 25,320 mm³', async () => {
+      const [cold, changed] = await visibleBodies([patternedPart('union'), patternedPart('union', '4')]);
+      expectVisible(cold, 'array', 25_240);
+      expectVisible(changed, 'array', 25_320);
+    }, 180_000);
+
+    it('直線 5 個の差(深さ 3 の 2×2 を間隔 8)は 24,940 mm³', async () => {
+      const [cold] = await visibleBodies([patternedPart('subtract')]);
+      expectVisible(cold, 'array', 24_940);
+    }, 180_000);
+
+    it('単独の立体(40×30×10)を間隔 10 で 3 個並べると自分の写しと和になり 60×30×10 = 18,000 mm³', async () => {
+      const initial = createEmptyPartDocument();
+      const corners = addPoints(initial.sketches[0], [[0, 0, 0], [40, 0, 0], [40, 30, 0], [0, 30, 0]]);
+      const face = addFace(corners.sketch, corners.pointIds);
+      const document = withSolids(replaceSketch(initial, face.sketch),
+        extrudeFeature('block', { sketchId: face.sketch.id, faceFeatureId: face.faceId }),
+        patternFeature('array', 'block', linearPlacement({ spacing: '10', count: '3' })));
+      const [cold] = await visibleBodies([document]);
+      expectVisible(cold, 'array', 18_000);
+    }, 180_000);
+  });
+});
+
 describe('resolvePart パターン', () => {
   it('直線パターン(X軸・間隔20・個数3・両側なし)は穴の transforms を差し替える', () => {
     const fixture = createFixture();
@@ -3285,25 +3457,29 @@ describe('resolvePart パターン', () => {
     expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
   });
 
-  it('対象が押し出しなら invalidValue(穴とねじ穴だけ)', () => {
+  it('立体全体は元の立体を相手に、重なり合う写しを一括で結合する', () => {
     const fixture = createFixture();
-    const document = withSolids(
-      fixture.document,
-      extrudeFeature('extrude-1', fixture.faceA),
-      patternFeature('pattern-1', 'extrude-1', linearPlacement()),
-    );
+    const document = withSolids(fixture.document, extrudeFeature('base', fixture.faceA),
+      patternFeature('array', 'base', linearPlacement({ spacing: '10', count: '3' })));
     const result = resolvePart(document);
-    expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('穴とねじ穴だけ');
+    expect(result.errors).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['array']);
+    const [source, array] = result.steps;
+    const plan = booleanPlan(array);
+    expect(plan.operation).toBe('union');
+    expect([plan.targetKey, plan.toolKey]).toEqual([source.key, source.key]);
+    expect(plan.transforms?.map(transform => transform.translation)).toEqual([[10, 0, 0], [20, 0, 0]]);
+    expect(toSolidStepRequest(array).step).toEqual(plan);
   });
 
-  it('対象が自分自身なら invalidValue', () => {
+  it('自分を指す行と、自分を含む参照の列には循環の理由を返す', () => {
     const fixture = createFixture();
-    const document = withSolids(
-      fixture.document,
-      patternFeature('pattern-1', 'pattern-1', linearPlacement()),
-    );
-    expect(codesOf(resolvePart(document))).toEqual(['invalidValue']);
+    const result = resolvePart(withSolids(fixture.document,
+      patternFeature('self', 'self', linearPlacement()),
+      patternFeature('a', 'b', linearPlacement()), patternFeature('b', 'a', linearPlacement())));
+    expect(result.errors.map(({ featureId, code, message }) => [featureId, code, message])).toEqual(
+      ['self', 'a', 'b'].map(id => [id, 'circularReference', '並べる対象の参照が自分自身へ戻っています。']));
+    expect(result.steps).toEqual([]);
   });
 
   it('対象の穴が失敗していれば、パターンも失敗する(例外にならない)', () => {

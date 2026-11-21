@@ -2641,12 +2641,9 @@ describe('加工フィーチャーの読み方の規則(タスク19)', () => {
     expect(Number.isNaN(hole.diameter.value)).toBe(true);
   });
 
-  it('知らない種類のフィーチャー(未実装の厚み付け等)は断る(§0.a-0.1)', () => {
-    // 見本は P5 タスク46 まで「シェル」だったが、くり抜き(FR-418)が実装された
-    // (`SOLID_FEATURE_KINDS` に入った)ので、まだ無い「厚み付け」に取り替えた。
-    // **確かめている規則(知らない `kind` は `invalidField` で断る)は変えていない。**
+  it('知らない種類のフィーチャーは断る(§0.a-0.1)', () => {
     const document = rawDocument({
-      solids: [{ id: 'thicken-1', kind: 'thicken', name: '厚み付け1', suppressed: false }],
+      solids: [{ id: 'unknown-1', kind: 'unknown-feature', name: '未登録1', suppressed: false }],
     });
     const error = expectError(parseDocument(rawFile({ document })));
     expect(error.code).toBe('invalidField');
@@ -4517,8 +4514,7 @@ describe('押し出しの終端・傾き・薄板と穴の入口の読み書き(
     expect(expectError(parseDocument(withUnknownEntry)).code).toBe('invalidField');
     const withUnknownKind = rawFile({
       document: rawDocument({
-        // 上と同じ理由で、まだ無い「厚み付け」を知らない種類の見本にする(タスク46)。
-        solids: [{ id: 'x-1', kind: 'thicken', name: '厚み付け1', suppressed: false }],
+        solids: [{ id: 'x-1', kind: 'unknown-feature', name: '未登録1', suppressed: false }],
       }),
     });
     expect(expectError(parseDocument(withUnknownKind)).code).toBe('invalidField');
@@ -5217,6 +5213,10 @@ function allSolidFeatures(): SolidFeatureByKind {
     },
     // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
     // 形そのもの(B-rep / 三角形)は ZIP の別エントリなので、ここには名前と素性だけが入る。
+    thicken: {
+      id: 'thicken-1', kind: 'thicken', name: '厚み付け1', suppressed: false,
+      targetFeatureId: 'surface-1', thickness: ev('5', 5), side: 'both',
+    },
     functionSurface: {
       id: 'function-surface-1', name: '関数曲面1', kind: 'functionSurface', suppressed: false,
       definition: { format: 'pointercad-function/1',
@@ -5265,13 +5265,13 @@ function documentWithSolids(features: readonly SolidFeature[]): PartDocument {
 
 /** 26 種を並べた部品文書(順序は `allSolidFeatures` の欄の順)。 */
 function documentWithAllSolids(): PartDocument {
-  return documentWithSolids(Object.values(allSolidFeatures()));
+  return { ...documentWithSolids(Object.values(allSolidFeatures())), schemaVersion: 24 };
 }
 
 describe('26 種すべての読み書き(P5 タスク47・P6 タスク20、FR-801、FR-202)', () => {
-  it('板金と関数曲面・直接編集を含む35種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
+  it('板金と関数曲面・直接編集を含む36種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
     const document = documentWithAllSolids();
-    expect(document.solids).toHaveLength(35);
+    expect(document.solids).toHaveLength(36);
     expect(roundTrip(document)).toEqual({ ...document, patternSlotHighWater: { 'pattern-1': 7 } });
   });
 
@@ -5860,8 +5860,8 @@ describe('断りの網羅(P5 タスク47、FR-504、NFR-UX-5)', () => {
     expect(error.message).toContain('document.solids[0].placement.points[1].kind');
   });
 
-  it('知らない種類のフィーチャーはコードを増やさずに断る(24 種の外は読まない)', () => {
-    const error = rejectSolid({ id: 'x-1', kind: 'thicken', name: '厚み付け1', suppressed: false });
+  it('知らない種類のフィーチャーはinvalidField で断る', () => {
+    const error = rejectSolid({ id: 'x-1', kind: 'unknown-feature', name: '未登録1', suppressed: false });
     expect(error.code).toBe('invalidField');
     expect(error.message).toContain('document.solids[0].kind');
   });

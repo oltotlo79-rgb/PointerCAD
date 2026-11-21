@@ -73,6 +73,16 @@ describe('履歴のフォルダは図形の計算順序から独立して所属�
     expect(() => renameFeatureFolder(original, 'folder-1', 'あ'.repeat(129))).toThrow('invalid-folder');
     expect(original.featureFolders).toEqual([{ id: 'folder-1', name: '加工', children: [] }]);
   });
+  it('作る時に渡した子を同じ編集で所属させ、既に別のフォルダにある物・無い物は断る', () => {
+    const original = fixture();
+    const created = createFeatureFolder(original, '押し出し', null, [box]);
+    expect(created.featureFolders).toEqual([{ id: 'folder-1', name: '押し出し', children: [box] }]);
+    expect(created.solids).toBe(original.solids);
+    expect(original.featureFolders).toBeUndefined();
+    expect(() => createFeatureFolder(created, '二重', null, [box])).toThrow('duplicate-member');
+    expect(() => createFeatureFolder(created, '無い', null, [{ ...box, id: 'missing' }])).toThrow('missing-feature');
+    expect(created.featureFolders).toEqual([{ id: 'folder-1', name: '押し出し', children: [box] }]);
+  });
   it('重複所属・失われた親子・根のない循環を保存時にも検出する', () => {
     expect(checkFeatureFolders([{ id: 'a', name: 'A', children: [box, box] }])).toEqual({ ok: false, problem: 'duplicate-member' });
     expect(checkFeatureFolders([{ id: 'a', name: 'A', children: [folder('missing')] }])).toEqual({ ok: false, problem: 'missing-folder' });

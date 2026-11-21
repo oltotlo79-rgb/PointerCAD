@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import {
-  enterDialogFocus, forgetMenuOpener, leaveDialogFocus, menuTriggerOf, noteMenuOpener, takeMenuOpener, type FocusScope, type FocusTarget,
+  dialogOpenerOf, enterDialogFocus, forgetMenuOpener, leaveDialogFocus, menuTriggerOf, noteMenuOpener, type FocusScope, type FocusTarget,
 } from './dialogFocusRules.js';
 
 /** 窓の中で最初に焦点を入れる候補(使えない欄・隠した欄・tabIndex -1 は除く)。 */
@@ -40,12 +40,23 @@ export function useDialogFocus(windowOf: () => HTMLElement | null, open: boolean
     };
     const active = document.activeElement;
     // 開いた元が無い(メニューの項目が消えて焦点が body へ落ちた)時は、押したメニューの釦を開いた元にする。
-    const opener = enterDialogFocus(scope, active, document.body, optionsRef.current.initial?.() ?? null)
-      ?? (scope.owns(active) ? null : takeMenuOpener());
+    const opener = dialogOpenerOf(scope, active, document.body);
+    enterDialogFocus(scope, active, optionsRef.current.initial?.() ?? null);
     return () => {
       leaveDialogFocus(scope, document.activeElement, document.body, opener, optionsRef.current.fallback?.() ?? null);
     };
   }, [open]);
+}
+
+/**
+ * showModal を自分で呼ぶ窓(開いた時の焦点は showModal と窓の側に任せる)の、閉じた時の焦点の戻し。showModal の前に呼んで開いた元を
+ * 覚え、返す関数を窓を閉じた後に呼ぶ。決まりは useDialogFocus と同じ(dialogOpenerOf・leaveDialogFocus): body を戻り先にせず、
+ * メニューの項目から開いた時はメニューを開く釦へ戻し、窓の外へ移した焦点は奪わない。
+ */
+export function rememberDialogOpener(dialog: HTMLElement | null): () => void {
+  const scope: FocusScope = { owns: (node) => dialog !== null && node instanceof Node && dialog.contains(node), first: () => null };
+  const opener = dialogOpenerOf(scope, document.activeElement, document.body);
+  return () => { leaveDialogFocus(scope, document.activeElement, document.body, opener, null); };
 }
 
 let trackingUsers = 0;

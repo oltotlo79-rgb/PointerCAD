@@ -5,7 +5,7 @@ import { createConfiguredNumericInput as createNumericInput } from '../../settin
  * 一覧ごとに 1 ファイルへ分けた。
  */
 
-import { t } from '../../i18n/t.js';
+import { type MessageKey, t } from '../../i18n/t.js';
 import { isFreeWorkPlaneId } from '@pointercad/model';
 import { applyProjectionCommit } from '../../sketch/commitToStore.js';
 import { mirrorAxisAvailability } from '../../sketch/copyCommands.js';
@@ -26,11 +26,38 @@ import {
   type SketchToolId,
 } from '../../sketch/numericInput.js';
 import { projectionSourcesFromSelection } from '../../sketch/projectionCommands.js';
-import { referenceAxisOptionsOf } from '../../sketch/referenceCommands.js';
+import { referenceAxisOptionsOf, workPlaneOnSelectedFace } from '../../sketch/referenceCommands.js';
 import { subShapeBodiesOf } from '../../solid/subShapeSelection.js';
 import { useAppStore } from '../../store/useAppStore.js';
 import { blockedInFreeSketch, INITIAL_STEPS } from './sketchToolTables.js';
 import { viewportCenterAnchor } from './toolbarShared.js';
+
+/** 選んだ面を作図面にしたときの帯の一言(M-18)。 */
+const FACE_WORK_PLANE_NOTICE: MessageKey = 'sketch.faceWorkPlane.chosen';
+
+/**
+ * 平らな面を 1 枚選んでから描く道具を押したら、その面を作図面にする(M-18 面に直接かく)。
+ *
+ * 面の作業平面を作るのは文書の 1 段で、元に戻す 1 回で消える(消えた作図面は `documentPatch` が
+ * XY へ戻す)。3D スケッチの間と、今の作図面がもうその面のときは変えない。
+ * `setActiveTool` は選ぶ種類が変わると選択を空にするので、道具を切り替える**前**に呼ぶ。
+ * 作図面を変えたかを返す(帯の一言は、`setActiveTool` が消すので、切り替えた**後**に立てる)。
+ */
+function drawOnSelectedFace(): boolean {
+  const store = useAppStore.getState();
+  if (isFreeWorkPlaneId(store.workPlaneId)) {
+    return false;
+  }
+  const outcome = workPlaneOnSelectedFace(store.document, subShapeBodiesOf(store.bodies), store.selection);
+  if (outcome === null || outcome.planeId === store.workPlaneId) {
+    return false;
+  }
+  if (outcome.document !== store.document) {
+    store.applyDocument(outcome.document);
+  }
+  store.setWorkPlane(outcome.planeId);
+  return true;
+}
 
 export function activateTool(id: SketchToolId, pressed: boolean): void {
   if (blockedInFreeSketch(id)) {
@@ -38,9 +65,14 @@ export function activateTool(id: SketchToolId, pressed: boolean): void {
   }
   const store = useAppStore.getState();
   const next: SketchToolId = pressed && id !== 'select' ? 'select' : id;
+  const step = INITIAL_STEPS[next];
+  // 描く道具(最初の段を持つ点・線分・円弧・点の配列)だけ、選んだ面を作図面にする。
+  const onFace = step !== null && drawOnSelectedFace();
   // 道具を変えると入力中のポップアップは閉じるので、開き直すのはこの後。
   store.setActiveTool(next);
-  const step = INITIAL_STEPS[next];
+  if (onFace) {
+    store.setEditNotice(FACE_WORK_PLANE_NOTICE);
+  }
   if (step !== null) {
     store.openNumericInput(createNumericInput(next, step), viewportCenterAnchor());
     return;
@@ -66,7 +98,11 @@ export function activateShapeTool(id: ShapeToolId | 'text', pressed: boolean): v
     store.requestViewportFocus();
     return;
   }
+  const onFace = drawOnSelectedFace();
   store.setActiveTool(id);
+  if (onFace) {
+    store.setEditNotice(FACE_WORK_PLANE_NOTICE);
+  }
   if (id === 'text') { store.setShapeError(t('text.status.pickOrigin')); store.requestViewportFocus(); return; }
   store.openNumericInput(createNumericInput(id, SHAPE_TOOL_STEPS[id]), viewportCenterAnchor());
 }

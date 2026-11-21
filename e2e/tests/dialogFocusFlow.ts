@@ -13,6 +13,8 @@ import { uiMessage } from './uiMessages.js';
  *    Esc → 窓が閉じ、焦点が歯車へ戻る(開く元のボタンは一覧と一緒に消えるので、戻り先は歯車)。
  * 3. 道具の欄の「組む」のメニューの「規格部品」を Enter で選ぶ → 規格部品の窓の最初の欄(分類)に焦点 → Esc → 窓が閉じ、焦点が「組む」の
  *    釦へ戻る(項目はメニューと一緒に消えるので、メニューを開く釦〔印 data-menu-trigger〕へ戻す。どのメニューも同じ形)。
+ * 4. 「ファイル」の一覧の「作例を開く」を Enter で選ぶ → 作例の一覧の最初の「開く」に焦点 → Tab で「閉じる」まで届く → Esc → 窓が閉じ、
+ *    焦点が一覧の釦へ戻る(J-06b)。
  */
 const gear = (page: Page): Locator => page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.settings.open'), exact: true });
 const settingsPanel = (page: Page): Locator => page.getByRole('group', { name: uiMessage('view', 'settings.title'), exact: true });
@@ -79,6 +81,23 @@ export function registerDialogFocusTests(test: typeof base): void {
         // 確定(置く)と閉じるまで Tab で届く(C-03 の Tab の順)。
         tabStops: [dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.place'), exact: true }),
           dialog.getByRole('button', { name: uiMessage('assembly', 'assembly.standardPart.close'), exact: true })],
+      });
+      expect(errors).toEqual([]);
+    });
+
+    test('作例の一覧: ファイルの一覧の項目から開くと最初の作例の「開く」に焦点、Tab で「閉じる」まで届き、Esc で閉じるとファイルの一覧の釦へ戻る', async ({ page }, info) => {
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await page.goto('/'); await waitForStartupHealth(page, info);
+      const fileMenu = uiMessage('toolbar', 'toolbar.fileMenu.groupLabel');
+      const dialog = page.getByRole('dialog', { name: uiMessage('file', 'examples.title'), exact: true });
+      const firstOpen = `${uiMessage('file', 'examples.open')} ${uiMessage('file', 'examples.plateWithHole.name')}`;
+      await expectDialogFocusCycle(page, {
+        open: () => chooseToolMenuItemByKeyboard(page, fileMenu, uiMessage('file', 'examples.menu')),
+        dialog,
+        initial: dialog.getByRole('button', { name: firstOpen, exact: true }),
+        opener: toolMenuTrigger(page, fileMenu),
+        tabStops: [dialog.getByRole('button', { name: uiMessage('file', 'examples.close'), exact: true })],
       });
       expect(errors).toEqual([]);
     });

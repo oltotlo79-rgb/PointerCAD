@@ -48,7 +48,9 @@ export interface SectionViewState {
 }
 
 /** 表示のスライスが持つ欄と操作。 */
-export type UtilityPanel = 'export' | 'import' | 'comparison' | 'functionPlot' | 'drawingPrint' | 'drawingExport' | 'savePoints';
+export type UtilityPanel = 'export' | 'import' | 'comparison' | 'functionPlot' | 'drawingPrint' | 'drawingExport' | 'savePoints'
+  // 作例の一覧(J-06b)。ファイルの一覧と空の部品の案内の両方から開く。
+  | 'examples';
 
 export interface ViewSlice {
   readonly tutorialOpen: boolean;

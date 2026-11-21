@@ -1,5 +1,6 @@
 /** Pure input/result contracts; this entry has no CAD resolver, kernel or Worker imports. */
 export type * from './analysisModel.js';
+export type { SavedAnalysisResult } from './savedAnalysisResult.js';
 export { InputIssue, readOptionalMaterialCapacity, beamFrame, cross, dot, scale, subtract, readBeamAnalysis, serializeBeamAnalysis } from './analysisValidation.js';
 export type * from './beamInputs.js';
 export type * from './axialBoltInput.js';

@@ -34,14 +34,12 @@ function isDetached(active: unknown): boolean {
 
 /**
  * 開いた時: 焦点が窓の中に無ければ、initial(無ければ窓の中の最初の焦点の当たる物)へ入れる。
- * 開く前に焦点を持っていた物(開いた元)を返す。窓の中の物・body・文書から外れた物・焦点の置けない物は返さない。
+ * 閉じた時の戻り先(開いた元)は、この関数を呼ぶ前に、開く前の焦点から dialogOpenerOf で決める。
  */
-export function enterDialogFocus(scope: FocusScope, active: unknown, body: unknown, initial: FocusTarget | null): FocusTarget | null {
-  if (scope.owns(active)) return null;
-  const opener = active !== body && isFocusTarget(active) && active.isConnected ? active : null;
+export function enterDialogFocus(scope: FocusScope, active: unknown, initial: FocusTarget | null): void {
+  if (scope.owns(active)) return;
   const first = initial ?? scope.first();
   if (isFocusTarget(first)) first.focus();
-  return opener;
 }
 
 /**
@@ -78,9 +76,19 @@ export function forgetMenuOpener(): void {
   menuOpener = null;
 }
 
-/** 覚えた釦を 1 回だけ渡して忘れる。 */
-export function takeMenuOpener(): FocusTarget | null {
+/** 覚えた釦を 1 回だけ渡して忘れる(開いた窓が dialogOpenerOf を通して使う)。 */
+function takeMenuOpener(): FocusTarget | null {
   const trigger = menuOpener;
   menuOpener = null;
   return trigger;
+}
+
+/**
+ * 閉じた時の戻り先(開いた元)を、開く前に焦点を持っていた物から決める(開いた元を返す口はこの 1 つ)。焦点が窓の中にあれば null。
+ * body・文書から外れた物・焦点の置けない物は戻り先にせず(メニューの項目が消えて焦点が落ちた時)、押したメニューの釦(覚えていれば。
+ * 1 回で忘れる)を返す。useDialogFocus と、showModal を自分で呼ぶ窓(dialogFocus.ts の rememberDialogOpener)が、この同じ決まりを使う。
+ */
+export function dialogOpenerOf(scope: FocusScope, active: unknown, body: unknown): FocusTarget | null {
+  if (scope.owns(active)) return null;
+  return active !== body && isFocusTarget(active) && active.isConnected ? active : takeMenuOpener();
 }

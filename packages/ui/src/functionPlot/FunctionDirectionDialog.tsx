@@ -9,6 +9,7 @@ import {useAppStore} from '../store/useAppStore.js';
 import {createBrowserMathClient} from '../math/createBrowserMathClient.js';
 import {createBrowserFunctionPointClient,createBrowserFunctionPointContinuationClient} from '../math/createBrowserFunctionClient.js';
 import {MathExpressionDialog} from '../math/MathExpressionDialog.js';
+import {rememberDialogOpener} from '../shell/dialogFocus.js';
 import {evaluateFunctionDirection,functionDirectionKinds,type FunctionDirectionPreview} from './functionDirectionDraft.js';
 import {editFunctionField,type FunctionScalarDraft} from './functionPlotDraft.js';
 import {t} from '../i18n/t.js';
@@ -32,9 +33,9 @@ export function FunctionDirectionDialog({pointId,reference,onClose,lineId}:{read
   const parentBody=prepared===owner.document&&parent.kind==='surface'?owner.bodies.find(body=>body.featureId===parent.featureId):undefined;
   const isCurrent=()=>mounted.current&&useAppStore.getState().document===owner.document&&useAppStore.getState().documentVersion===owner.documentVersion;
   useEffect(()=>{
-    mounted.current=true;const element=dialog.current,previous=document.activeElement;element?.showModal();
+    mounted.current=true;const element=dialog.current,restoreFocus=rememberDialogOpener(element);element?.showModal();
     const unsubscribe=useAppStore.subscribe(state=>{if(state.document!==owner.document||state.documentVersion!==owner.documentVersion){running.current?.abort();close();}});
-    return()=>{mounted.current=false;running.current?.abort();unsubscribe();element?.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};
+    return()=>{mounted.current=false;running.current?.abort();unsubscribe();element?.close();restoreFocus();};
   },[owner,close]);
   const invalidate=()=>{running.current?.abort();setBusy(false);setPreview(null);setMessage('');};
   const calculate=async()=>{

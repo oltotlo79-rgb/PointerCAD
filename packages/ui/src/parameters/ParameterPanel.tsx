@@ -24,7 +24,7 @@ import { updateTutorialCheckpointDraft } from '../tutorial/tutorialCheckpoint.js
 import { parameterCheckpointWriteGuard } from '../tutorial/tutorialProgress.js';
 
 import { evaluateExpression } from '@pointercad/expression';
-import { PARAMETER_UNITS, parseParameterCsv, type ParameterUnit, type PartDocument } from '@pointercad/model';
+import { PARAMETER_UNITS, parseParameterCsv, type PartDocument } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { currentMathGeometry } from '../math/mathGeometryResults.js';
@@ -49,6 +49,7 @@ import { filterParameterRows, parameterUsageSites, ParameterRowIdentity,
   type ParameterFilter, type ParameterUsageSite } from './parameterSearch.js';
 import { openParameterCsvThrough } from '../file/fileGateway.js';
 import { exportParameterCsv } from './parameterCsvExport.js';
+import { PARAMETER_UNIT_KEYS } from './parameterUnitKeys.js';
 import { focusByAriaLabelIn } from './focusRestore.js';
 import { applyParameterCsvPreview,prepareParameterCsvForStore, type ParameterCsvPreview } from './parameterCsvActions.js';
 
@@ -69,16 +70,6 @@ interface ParameterDraft {
   /** 断りの理由。断られていなければ null。 */
   readonly message: string | null;
 }
-
-/**
- * 単位の見出し。長さと角度は既存の欄と同じ文言を使い回す(同じ語を 2 か所に書かない)。
- * 「なし」だけはこの表にしか出てこないので新しく足す。
- */
-const PARAMETER_UNIT_KEYS: Readonly<Record<ParameterUnit, MessageKey>> = {
-  mm: 'numericInput.unit.mm',
-  degree: 'numericInput.unit.degree',
-  none: 'parameterPanel.unit.none',
-};
 
 const PARAMETER_FILTER_HINT_KEYS: Readonly<Record<ParameterFilter, MessageKey>> = {
   all: 'controlGuide.parameter.filterAll',

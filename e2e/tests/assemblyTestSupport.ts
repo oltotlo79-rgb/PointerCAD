@@ -11,6 +11,7 @@ import {
   createPrimitiveFeature,
   embedPart,
   EMPTY_PART_LIBRARY,
+  PRODUCT_CATALOG_REGISTRY,
   type AssemblyDocument,
   type Mate,
   type PartDocument,
@@ -21,6 +22,14 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import type { FileGateway } from '../../packages/ui/src/file/fileGateway.js';
 
 const SAVED_AT = '2026-09-09T00:00:00.000Z';
+
+/**
+ * 規格部品の分類の族の id と種類の名前の鍵(製品の登録の表 packages/model/src/assembly/catalog/registry.ts の並び)。
+ * 画面検査が族の一覧を手で写さず、登録の表から作るための口(族を足しても画面検査を直さなくてよい)。
+ */
+export function catalogFamilyKinds(group: string): readonly (readonly [string, string])[] {
+  return PRODUCT_CATALOG_REGISTRY.entries.filter((entry) => entry.group === group).map((entry) => [entry.id, entry.kindKey] as const);
+}
 
 export interface AssemblyBrowserStats {
   readonly components: readonly {

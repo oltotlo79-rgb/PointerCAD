@@ -17,6 +17,7 @@ import { MathEditorController } from './MathEditorController.js';
 import { MathEditorPanel } from './MathEditorPanel.js';
 import type { MathInsertGroup } from './MathEditorSurface.js';
 import { focusAdjacentControl, type StructuredMathField } from './mathFieldHost.js';
+import { rememberDialogOpener } from '../shell/dialogFocus.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import './mathEditor.css';
@@ -94,9 +95,9 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
   const [busy, setBusy] = useState(false), [attempt, setAttempt] = useState(0);
   const [geometryPending, setGeometryPending] = useState(() => mathGeometryInputsFor(useAppStore.getState(), owner.document) === null);
   useEffect(() => {
-    const element = dialog.current, previous = document.activeElement;
+    const element = dialog.current, restoreFocus = rememberDialogOpener(element);
     element?.showModal();
-    return () => { element?.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+    return () => { element?.close(); restoreFocus(); };
   }, []);
   // Applying recomputes the document next; keep that recomputation's prepared Worker while editing.
   useEffect(() => recomputePartWithMath.holdIdleWorker(), []);

@@ -549,6 +549,29 @@ describe('Should 群の確定(タスク50)', () => {
     expect(feature.frenet).toBe(true);
   });
 
+  it('スイープ: ねじれ・終わりの大きさ・肉厚は既定から変えた時だけ書き、その時だけ保存の版を 24 へ上げる(M-07)', () => {
+    const context = contextOf(['face-1', 'line-1']);
+    const plain = commitShapeEdit(context, commitOf({ tool: 'sweep', step: 'sweepOptions', values: {
+      sweepTwist: expressionValueFromNumber(0), sweepEndScale: expressionValueFromNumber(1), sweepWall: expressionValueFromNumber(0),
+    } }), 'sweep');
+    if (!plain.ok) throw new Error(plain.reasonKey);
+    const plainFeature = findSolid(plain.document, plain.featureId);
+    expect(plainFeature?.kind).toBe('sweep');
+    for (const property of ['twistDegrees', 'endScale', 'wallThickness']) expect(plainFeature).not.toHaveProperty(property);
+    expect(plain.document.schemaVersion).toBe(context.document.schemaVersion);
+    const shaped = commitShapeEdit(context, commitOf({ tool: 'sweep', step: 'sweepOptions', values: {
+      sweepTwist: { source: '90', value: 90, display: '90' },
+      // 変数の式は、今の値が既定と同じでも書く(後で値が変わるため)。
+      sweepEndScale: { source: 't', value: 1, display: '1' },
+      sweepWall: expressionValueFromNumber(2),
+    } }), 'sweep');
+    if (!shaped.ok) throw new Error(shaped.reasonKey);
+    const feature = findSolid(shaped.document, shaped.featureId);
+    expect(feature?.kind === 'sweep' ? [feature.twistDegrees?.source, feature.endScale?.source, feature.wallThickness?.value] : null)
+      .toEqual(['90', 't', 2]);
+    expect(shaped.document.schemaVersion).toBe(24);
+  });
+
   it('リブ: 厚みと側を持ち、材料へ届くまで伸ばす既定になる(FR-420)', () => {
     const outcome = commitShapeEdit(
       contextOf(['extrude-1', 'line-1']),
@@ -945,4 +968,21 @@ describe('平らな面の移動の道具(EX-18)', () => {
     expect(check.ok).toBe(false);
     expect(check.ok ? null : check.code).toBe('invalidValue');
   });
+});
+
+it.each(['thicken', 'offsetBody'] as const)('%s selects the owner of current faces and rejects mixed owners', tool => {
+  const { document } = fixture();
+  const surface = appendSolid(document, { id: 'surface-1', name: 'Surface', suppressed: false, kind: 'surface',
+    operation: { kind: 'planar', profile: { sketchId: 'sketch-1', curveIds: ['line-1'] } } });
+  const body: SubShapeBody = { ...makeBody('surface-1'), bodyKind: 'shell' };
+  const faces = body.faces.map(face => subShapeElementId(body.featureId, 'face', face.index));
+  const bodies = [body, makeBody('extrude-1')];
+  expect(solidToolReadiness(surface, faces, tool, bodies).ready).toBe(true);
+  expect(solidToolReadiness(surface, [body.featureId, ...faces], tool, bodies).ready).toBe(true);
+  expect(solidToolReadiness(surface, [...faces, 'extrude-1'], tool, bodies).ready).toBe(false);
+  const outcome = commitShapeEdit({ document: surface, selection: faces, bodies }, commitOf({ tool }), tool);
+  if (!outcome.ok) throw new Error(outcome.reasonKey);
+  const feature = findSolid(outcome.document, outcome.featureId);
+  expect(feature).toMatchObject(tool === 'thicken' ? { kind: 'thicken', targetFeatureId: body.featureId, side: 'normal' }
+    : { kind: 'surface', operation: { kind: 'offsetBody', targetFeatureId: body.featureId } });
 });

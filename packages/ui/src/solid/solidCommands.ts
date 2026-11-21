@@ -22,6 +22,8 @@ import { activeSketchHasRegions, appendRegionFace } from './regionFace.js';
 import { deriveSpringValue } from './springExpressions.js';
 import {
   appendSolid,
+  createFeatureFolder,
+  FeatureFolderError,
   DEFAULT_EXTRUDE_DISTANCE_MM,
   DEFAULT_EXTRUDE_THICKNESS_MM,
   DEFAULT_SEW_TOLERANCE_MM,
@@ -57,9 +59,10 @@ import {
   type BooleanFeature,
 } from '@pointercad/model';
 
-import type { MessageKey } from '../i18n/t.js';
+import { t, type MessageKey } from '../i18n/t.js';
 import type { MeasureToolId, SolidInputCommit, SolidToolId } from '../sketch/numericInput.js';
 
+import { blendReadiness, commitBlend } from './blendCommands.js';
 import { measureToolReadiness } from './measureCommands.js';
 import {
   commitMachiningInput,
@@ -93,7 +96,7 @@ import {
   commitSphereGridPoint,
   selectedSphereFeature,
 } from '../sketch/sketchCommands.js';
-import { findSketchFeatureAt } from './sketchRefs.js';
+import { faceRefById, findSketchFeatureAt, selectedExtrudeProfiles } from './sketchRefs.js';
 import { parseSubShapeId, selectedSubShapeRefs, subShapeRefOf, type SubShapeBody } from './subShapeSelection.js';
 
 /** 縫合に要る面の最小枚数。 */
@@ -211,24 +214,8 @@ export type BodyPairOutcome =
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
 /** 面・線分・点だけを当たりとする種類の集合(`findSketchFeatureAt` へ渡す)。 */
-const FACE_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['face']);
 const LINE_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['line']);
 const POINT_KINDS: ReadonlySet<SketchFeature['kind']> = new Set(['point']);
-
-/**
- * 要素 id が面フィーチャーを指しているかを、id の接頭辞ではなく文書を引いて判定する。
- * 見つからなければ undefined(面でない、または実在しない)。
- *
- * 探す順は `findSketchFeatureAt`(`sketchRefs.ts`)に任せ、**編集中のスケッチを先に**見る。
- * 文書の並び順に前から探すと、スケッチ 2 の `face-1` を押し出したつもりでスケッチ 1 の
- * `face-1` が使われる(直した不具合)。
- */
-function faceRefById(document: PartDocument, elementId: string): SketchFaceRef | undefined {
-  const found = findSketchFeatureAt(document, elementId, FACE_KINDS);
-  return found === undefined
-    ? undefined
-    : { sketchId: found.sketchId, faceFeatureId: found.featureId };
-}
 
 /**
  * 選択中の要素から面フィーチャーの参照を 1 つ拾う(押し出し・回転用)。
@@ -692,6 +679,8 @@ export function solidToolReadiness(
   bodies: readonly SubShapeBody[] = [],
 ): SolidToolReadiness {
   switch (tool) {
+    case 'blend':
+      return blendReadiness({ document, selection, bodies });
     case 'extrude':
     case 'revolve': {
       const face = selectedFaceRef(document, selection);
@@ -793,6 +782,8 @@ export function solidToolReadiness(
     case 'threadShaft':
     case 'pointPattern':
     case 'surface':
+    case 'thicken':
+    case 'offsetBody':
     case 'shell': {
       const context: MachiningContext = { document, selection, bodies };
       return shapeEditReadiness(context, tool);
@@ -827,6 +818,76 @@ function commitSolidResult(
   });
 }
 
+/** 面ごとの履歴行を仮の文書へ積む。失敗した時点の文書は呼び出し元へ返さない。 */
+function commitExtrudeProfiles(
+  document: PartDocument,
+  profiles: readonly SketchFaceRef[],
+  choices: SolidInputCommit['shapeChoices'],
+  parameters: Omit<Parameters<typeof commitExtrude>[1], 'profile'>,
+): SolidCommandOutcome {
+  let current = document;
+  let nextChoices = choices;
+  let last: SolidCommandOutcome = { ok: false, reasonKey: 'solidError.noFace' };
+  for (const profile of profiles) {
+    last = commitSolidResult(current, nextChoices, () => commitExtrude(current, { ...parameters, profile }));
+    if (!last.ok) return last;
+    current = last.document;
+    if (choices?.extrudeOperation === 'join' || choices?.extrudeOperation === 'cut') {
+      nextChoices = { ...choices, extrudeTarget: last.featureId };
+    }
+  }
+  if (!last.ok || profiles.length === 1) return last;
+  const children = current.solids.slice(document.solids.length).map(feature => ({ kind: 'solid' as const, id: feature.id }));
+  try {
+    return { ...last, document: createFeatureFolder(current, t('toolbar.solid.extrude'), null, children) };
+  } catch (error) {
+    if (!(error instanceof FeatureFolderError)) throw error;
+    return { ok: false, reasonKey: `historyFolder.problem.${error.problem}` };
+  }
+}
+
+function commitExtrudeInput(
+  document: PartDocument, selection: readonly string[], commit: SolidInputCommit, bodies: readonly SubShapeBody[],
+): SolidCommandOutcome {
+  const profiles = selectedExtrudeProfiles(document, selection);
+  if (profiles.length === 0) {
+    if (commit.extrudeRegion === undefined) {
+      return { ok: false, reasonKey: activeSketchHasRegions(document) ? 'solidError.regionNotChosen' : 'solidError.noFace' };
+    }
+    const region = appendRegionFace(document, commit.extrudeRegion);
+    return region.ok ? commitExtrudeInput(region.document, [region.faceElementId, ...selection], commit, bodies) : region;
+  }
+  const solidFaces = selectedSubShapeRefs(bodies, selection, 'face');
+  const end = extrudeEndOf(commit.shapeChoices?.extrudeEnd, solidFaces);
+  if (!end.ok) {
+    return { ok: false, reasonKey: end.reasonKey };
+  }
+  const thin = thicknessSideOf(commit.shapeChoices?.thicknessSide);
+  if (!thin.ok) {
+    return { ok: false, reasonKey: thin.reasonKey };
+  }
+  const tapered = commit.flags.tapered === true;
+  const thinWalled = commit.flags.thinWalled === true;
+  return commitExtrudeProfiles(document, profiles, commit.shapeChoices, {
+    distance: commit.values.distance ?? DEFAULT_EXTRUDE_DISTANCE,
+    reversed: commit.flags.reversed ?? false,
+    symmetric: commit.flags.symmetric ?? false,
+    ...(end.end === undefined ? {} : { end: end.end }),
+    ...(tapered
+      ? {
+          taperAngle: commit.values.taperAngle ?? DEFAULT_TAPER_ANGLE,
+          taperOutward: commit.flags.taperOutward ?? false,
+        }
+      : {}),
+    ...(thinWalled
+      ? {
+          thickness: commit.values.thickness ?? DEFAULT_EXTRUDE_THICKNESS,
+          thicknessSide: thin.side,
+        }
+      : {}),
+  });
+}
+
 /**
  * 選択とその場入力の確定結果から、ソリッドフィーチャーを 1 つ作る(SolidInputCommit)。
  *
@@ -854,54 +915,15 @@ export function commitSolidInput(
   resolvedSketches?: CutContext['resolvedSketches'],
 ): SolidCommandOutcome {
   switch (commit.tool) {
+    case 'blend':
+      return commitBlend({ document, selection, bodies }, commit);
     /*
       押し出し(FR-401、FR-415、FR-416)。終わり方・側面の傾き・薄板も
       この段で聞くので、確定もここで組み立てる。**つまみを 1 つも入れずに決めたときは
       基本の押し出しとまったく同じ文書**になる(足した欄を作らない)。
     */
-    case 'extrude': {
-      // 面を選ばずに領域を選んだ時は、確定の文書に今の形の面を先に足し、その面で押し出す(M-01。取り消しは 1 回)。
-      if (!selectedFaceRef(document, selection).ok && commit.extrudeRegion !== undefined) {
-        const region = appendRegionFace(document, commit.extrudeRegion);
-        return region.ok ? commitSolidInput(region.document, [region.faceElementId, ...selection], commit, bodies, variables, options,
-          resolvedSketches) : region;
-      }
-      const face = selectedFaceRef(document, selection);
-      if (!face.ok) {
-        // 閉じた領域があれば、面を張らなくても領域を押して選べることを伝える(M-01)。
-        return { ok: false, reasonKey: activeSketchHasRegions(document) ? 'solidError.regionNotChosen' : face.reasonKey };
-      }
-      const solidFaces = selectedSubShapeRefs(bodies, selection, 'face');
-      const end = extrudeEndOf(commit.shapeChoices?.extrudeEnd, solidFaces);
-      if (!end.ok) {
-        return { ok: false, reasonKey: end.reasonKey };
-      }
-      const thin = thicknessSideOf(commit.shapeChoices?.thicknessSide);
-      if (!thin.ok) {
-        return { ok: false, reasonKey: thin.reasonKey };
-      }
-      const tapered = commit.flags.tapered === true;
-      const thinWalled = commit.flags.thinWalled === true;
-      return commitSolidResult(document, commit.shapeChoices, () => commitExtrude(document, {
-        profile: face.ref,
-        distance: commit.values.distance ?? DEFAULT_EXTRUDE_DISTANCE,
-        reversed: commit.flags.reversed ?? false,
-        symmetric: commit.flags.symmetric ?? false,
-        ...(end.end === undefined ? {} : { end: end.end }),
-        ...(tapered
-          ? {
-              taperAngle: commit.values.taperAngle ?? DEFAULT_TAPER_ANGLE,
-              taperOutward: commit.flags.taperOutward ?? false,
-            }
-          : {}),
-        ...(thinWalled
-          ? {
-              thickness: commit.values.thickness ?? DEFAULT_EXTRUDE_THICKNESS,
-              thicknessSide: thin.side,
-            }
-          : {}),
-      }));
-    }
+    case 'extrude':
+      return commitExtrudeInput(document, selection, commit, bodies);
     case 'revolve': {
       const face = selectedFaceRef(document, selection);
       if (!face.ok) {
@@ -1024,6 +1046,8 @@ export function commitSolidInput(
     case 'threadShaft':
     case 'pointPattern':
     case 'surface':
+    case 'thicken':
+    case 'offsetBody':
     case 'shell': {
       const context: MachiningContext = { document, selection, bodies };
       const shapeTool = shapeEditToolOf(commit.tool);

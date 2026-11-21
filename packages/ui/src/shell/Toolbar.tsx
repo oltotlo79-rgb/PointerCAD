@@ -1,4 +1,3 @@
-import { DocumentDiffDialog } from '../diff/DocumentDiffDialog.js';
 import { SavePointsDialogHost } from './SavePointsButton.js';
 import { executeCommand } from '../commands/commandRegistry.js';
 import { toolbarCommandId } from '../commands/toolbarCommandCatalog.js';
@@ -62,6 +61,7 @@ import { LookGroup } from './menus/LookGroup.js';
 import { AnalysisGroup } from './menus/AnalysisGroup.js';
 import { ImportFormatPanel } from '../file/ImportFormatPanel.js';
 import { AssemblyGroup } from './menus/AssemblyGroup.js';
+import { PartFileDialogs } from './menus/PartFileDialogs.js';
 import { PlaneMenu } from './menus/PlaneMenu.js';
 import { TOOLS } from './menus/sketchToolTables.js';
 import { SnapKindsMenu } from './menus/SnapKindsMenu.js';
@@ -147,7 +147,7 @@ export function Toolbar(): React.JSX.Element {
    * 部品文書と端末の好みが対象)。
    */
   const utilityPanel = useAppStore(state => state.utilityPanel);
-  const comparisonOpen = utilityPanel === 'comparison', exportOpen = utilityPanel === 'export', importOpen = utilityPanel === 'import';
+  const exportOpen = utilityPanel === 'export', importOpen = utilityPanel === 'import';
   const setComparisonOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('comparison', open);
   const setExportOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('export', open);
   const setImportOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('import', open);
@@ -264,7 +264,7 @@ export function Toolbar(): React.JSX.Element {
             書き出しのパネル(FR-803)。一覧の「書き出す」を選んだときだけ出す。
             **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
           */}
-          {documentKind === 'part' && comparisonOpen ? <DocumentDiffDialog onClose={() => setComparisonOpen(false)} /> : null}
+          {documentKind === 'part' ? <PartFileDialogs /> : null}
           {documentKind === 'part' ? <ScriptToolsMenu /> : null}
           {documentKind === 'part' && importOpen ? <ImportFormatPanel onClose={() => { setImportOpen(false); }} /> : null}
           {documentKind === 'part' && exportOpen ? (

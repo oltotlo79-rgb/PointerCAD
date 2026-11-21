@@ -1,13 +1,16 @@
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { PlanarHoleBasisInfo } from './PlanarHoleBasisInfo.js';
 import { EdgeDistanceHoleInfo } from './EdgeDistanceHoleInfo.js';
+import { SweepOptionsHints } from './SweepOptionsHints.js';
 import { picksHoleEdges } from '../solid/edgeDistanceHoleInput.js';
+import type { ScreenRect } from '../solid/faceScreenRect.js';
 import { DraggableWindowTitle } from './DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { isPendingFieldError, pendingFieldVariables } from '../shell/propertyFieldUnits.js';
 import { t } from '../i18n/t.js';
 import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
+import { selectedExtrudeProfiles } from '../solid/sketchRefs.js';
 import { supportsSolidOperation } from '../solid/solidOperation.js';
 import { stagedExtrusionMessageKey } from '../solid/extrudePreview.js';
 import { SolidResultSuggestion } from '../solid/SolidResultSuggestion.js';
@@ -96,6 +99,51 @@ export function clampAnchor(
     left: Math.min(Math.max(anchor[0] + OFFSET_PIXELS, EDGE_MARGIN_PIXELS), maxLeft),
     top: Math.min(Math.max(anchor[1] + OFFSET_PIXELS, EDGE_MARGIN_PIXELS), maxTop),
   };
+}
+
+/** 窓をどこに出したか(M-10 ①)。`unplaced` は、避ける箱があるのにどの側にも収まらなかった時。 */
+type PopoverPlacement = 'anchor' | 'right' | 'left' | 'below' | 'above' | 'unplaced';
+
+/**
+ * 窓の左上を決める(M-10 ①)。
+ *
+ * 避ける箱(選んだ面の画面の外形)が無ければ `clampAnchor` と同じ。有れば、箱の右・左・下・上の順に、
+ * 窓(見込みの大きさ、縁 `EDGE_MARGIN_PIXELS`)が画面の内に収まる所を選ぶ。どの側も箱から
+ * `OFFSET_PIXELS` 離すので、箱と重ならない。どこにも収まらない(画面いっぱいの面など)時は
+ * `clampAnchor` と同じ位置にして `unplaced` と印を付ける(窓の `data-placement`。帯には出さない。
+ * 辺を選ぶ間に窓を小さくする案 ② を作るかは、この印が出る場面が見つかってから決める)。
+ */
+function placePopover(
+  anchor: readonly [number, number],
+  avoid: ScreenRect | null,
+  viewportWidth: number,
+  viewportHeight: number,
+): { readonly left: number; readonly top: number; readonly placement: PopoverPlacement } {
+  const fallback = clampAnchor(anchor, viewportWidth, viewportHeight);
+  if (avoid === null) {
+    return { ...fallback, placement: 'anchor' };
+  }
+  const fits = ({ left, top }: { readonly left: number; readonly top: number }): boolean =>
+    left >= EDGE_MARGIN_PIXELS && top >= EDGE_MARGIN_PIXELS
+    && left + POPOVER_WIDTH_PIXELS <= viewportWidth - EDGE_MARGIN_PIXELS
+    && top + POPOVER_HEIGHT_PIXELS <= viewportHeight - EDGE_MARGIN_PIXELS;
+  const sides = [
+    { placement: 'right', left: avoid.right + OFFSET_PIXELS, top: fallback.top },
+    { placement: 'left', left: avoid.left - OFFSET_PIXELS - POPOVER_WIDTH_PIXELS, top: fallback.top },
+    { placement: 'below', left: fallback.left, top: avoid.bottom + OFFSET_PIXELS },
+    { placement: 'above', left: fallback.left, top: avoid.top - OFFSET_PIXELS - POPOVER_HEIGHT_PIXELS },
+  ] as const;
+  return sides.find(fits) ?? { ...fallback, placement: 'unplaced' };
+}
+
+/** 窓の左上(M-10 ①)。開いた時に店が受けた避ける箱(`numericInputAvoid`)を使う。開いていない時の値は使われない。 */
+function usePopoverPosition(
+  anchor: readonly [number, number] | null,
+  viewportWidth: number,
+  viewportHeight: number,
+): ReturnType<typeof placePopover> {
+  const avoid = useAppStore((store) => store.numericInputAvoid);
+  return placePopover(anchor ?? [0, 0], avoid, viewportWidth, viewportHeight);
 }
 
 /**
@@ -332,6 +380,12 @@ export interface NumericInputPopoverProps {
   readonly viewportHeight: number;
 }
 
+function canPreviewSolidInput(store: ReturnType<typeof useAppStore.getState>): boolean {
+  const tool = store.numericInput?.toolId;
+  return tool !== undefined && supportsSolidOperation(tool)
+    && (tool !== 'extrude' || selectedExtrudeProfiles(store.document, store.selection).length < 2);
+}
+
 /**
  * ビューポート内に浮かぶその場数値入力(NFR-UX-2)。モーダルではないので、
  * 開いている間も背後の視点操作とホバーはそのまま効く。
@@ -349,6 +403,7 @@ export function NumericInputPopover({
   const [mathTarget, setMathTarget] = useState<NumericMathTarget | null>(null);
   const state = useAppStore((store) => store.numericInput?.toolId === 'text' ? null : store.numericInput);
   const anchor = useAppStore((store) => store.numericInputAnchor);
+  const position = usePopoverPosition(anchor, viewportWidth, viewportHeight);
   // 3D スケッチ(FR-330)では極座標の指定方法を隠す。
   const workPlaneId = useAppStore((store) => store.workPlaneId);
   const modes = coordinateModesFor(workPlaneId);
@@ -359,7 +414,7 @@ export function NumericInputPopover({
    * 評価と確定の両方へ渡す。片方だけだと、欄では緑なのに決定で断られる。
    */
   const analysis = useAppStore((store) => store.parameterAnalysis);
-  const variables = analysis.variables;
+  const canPreview = useAppStore(canPreviewSolidInput);
   const pendingVariables = useAppStore(pendingFieldVariables);
   /*
    * 表示の単位(FR-811)。単位を書かない入力を inch とみなすかどうかが
@@ -393,8 +448,7 @@ export function NumericInputPopover({
     return null;
   }
 
-  const evaluation = evaluateNumericInput(state, variables, { lengthUnit, nonLengthVariables, exactVariables: analysis.exactVariables, pendingVariables });
-  const position = clampAnchor(anchor, viewportWidth, viewportHeight);
+  const evaluation = evaluateNumericInput(state, analysis.variables, { lengthUnit, nonLengthVariables, exactVariables: analysis.exactVariables, pendingVariables });
   const coordinateStep = asksCoordinate(state.step);
   // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
   // (css の .pcad-popover__fields--wide の意図どおり)。2欄以上の段は座標の段と同じ
@@ -429,14 +483,14 @@ export function NumericInputPopover({
   return (
     <><div
       className="pcad-popover"
-      data-help-topic={toolCommandHelpTopic(state.toolId)}
+      data-help-topic={toolCommandHelpTopic(state.toolId)} data-placement={position.placement}
       style={{ left: `${String(position.left)}px`, top: `${String(position.top)}px`,
         maxHeight: `${String(popoverMaxHeight(position.top, viewportHeight))}px`, overflowY: 'auto' }}
       role="dialog"
       aria-label={t(STEP_TITLE_KEYS[state.step])}
       onKeyDown={(event) => {
         // 押し出しの「形を確かめる」は Alt+P でも押せる(欄の Tab の巡回はボタンへ移らないため)。
-        if (supportsSolidOperation(state.toolId) && event.altKey && event.code === 'KeyP'
+        if (canPreview && event.altKey && event.code === 'KeyP'
           && !isCompositionKey(event.nativeEvent)) {
           event.preventDefault();
           event.stopPropagation();
@@ -573,7 +627,7 @@ export function NumericInputPopover({
         </div>
       )}
 
-      {state.step === 'sweepOptions' ? <p className="pcad-popover__hint">{t('numericInput.sweepGuide.hint')}</p> : null}
+      {state.step === 'sweepOptions' ? <SweepOptionsHints state={state} /> : null}
       <SolidStageMessages input={state} />
       <p className="pcad-popover__hint">{t('numericInput.keyHint')}</p>
 
@@ -600,7 +654,7 @@ export function NumericInputPopover({
           結果を選べる道具では、確定する前に同じ候補の形を計算して表示できる。
           確定(Enter・決定)と同じ入力の評価を通り、文書と取り消しには触れない。
         */}
-        {supportsSolidOperation(state.toolId) ? (
+        {canPreview ? (
           <button
             type="button"
             className="pcad-button"

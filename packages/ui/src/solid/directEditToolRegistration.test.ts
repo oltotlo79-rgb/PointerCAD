@@ -37,3 +37,27 @@ describe('direct edit tool registration', () => {
     expect(useAppStore.getState().numericInput).toBeNull();
   });
 });
+
+describe('surface body tool registration', () => {
+  it.each(['thicken', 'offsetBody'] as const)('%s opens its input and keeps the selected body', tool => {
+    const store = useAppStore.getState();
+    store.setSelection(['surface-1']);
+    runSolidTool(tool, { ready: true, reasonKey: null });
+    const state = useAppStore.getState();
+    expect(state.selection).toEqual(['surface-1']);
+    expect(state.numericInput).toMatchObject({
+      toolId: tool, step: SOLID_TOOL_STEPS[tool],
+      fields: [{ key: tool === 'thicken' ? 'thickenAmount' : 'surfaceOffset', unit: 'mm' }],
+    });
+    expect(state.numericInput?.choices.map(choice => choice.value)).toEqual(tool === 'thicken' ? ['normal'] : []);
+  });
+
+  it.each(['thicken', 'offsetBody'] as const)('%s requests a body when there is no target', tool => {
+    useAppStore.getState().setSelectionKind('edge');
+    runSolidTool(tool, { ready: false, reasonKey: 'surfaceBody.select' });
+    const state = useAppStore.getState();
+    expect(state.selectionKind).toBe('body');
+    expect(state.solidErrorKey).toBe('surfaceBody.select');
+    expect(state.numericInput).toBeNull();
+  });
+});

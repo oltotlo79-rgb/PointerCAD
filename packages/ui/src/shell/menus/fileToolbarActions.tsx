@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { createDrawingFromCurrentPart } from '../../drawing/createDrawingCommands.js';
 import { createDrawingFromTemplateFile } from '../../drawing/drawingTemplateActions.js';
 import { activeHasUnsavedChanges, newAssembly } from '../../file/assemblyFile.js';
+import { openPartExamples } from '../../examples/openPartExample.js';
 import { queueDocumentSave } from '../../file/documentSaveQueue.js';
 import { captureDocumentIdentity, compareDocumentIdentity } from '../../store/documentRequest.js';
 import { createExchangeDeps } from '../../file/exchangeActions.js';
@@ -347,6 +348,10 @@ function runFileMenuActionId(
       return;
     case 'newFromTemplate':
       void runNewFromTemplate({ from: 'file' });
+      return;
+    case 'openExample':
+      // 一覧を開くだけ。選んだ作例は窓が新規と同じ確認を通して開く(J-06b)。
+      openPartExamples();
       return;
     case 'print':
       void runPrint();

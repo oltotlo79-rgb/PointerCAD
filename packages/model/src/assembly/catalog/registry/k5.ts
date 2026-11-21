@@ -67,6 +67,7 @@ export const K5_CATALOG_FAMILIES: readonly CatalogFamilyEntry[] = [
   { id: 'set-screw-cone-point', group: 'mechanical', kindKey: 'catalog.mechanical.kind.setScrewCone',
     load: async () => (await import('../families/setScrew.js')).SET_SCREW_FAMILIES.cone },
   { id: 'oil-seal-specified', group: 'mechanical', kindKey: 'catalog.mechanical.kind.oilSeal',
+    hint: { key: 'catalog.mechanical.sealRing.hint', rowLabel: 'specified' },
     load: async () => (await import('../families/oilSeal.js')).OIL_SEAL_FAMILY },
   { id: 'o-ring-p', group: 'mechanical', kindKey: 'catalog.mechanical.kind.oRingP',
     load: async () => (await import('../families/oRing.js')).O_RING_FAMILIES.P },

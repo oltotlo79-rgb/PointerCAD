@@ -96,13 +96,17 @@ export function moveFeatureFolderMember(document: PartDocument, member: FeatureF
   return apply(document, moved);
 }
 
-export function createFeatureFolder(document: PartDocument, name: string, parentId: string | null = null): PartDocument {
+/** 新しい子を同時に所属させられる。既存の所属との二重登録は apply で断る。 */
+export function createFeatureFolder(
+  document: PartDocument, name: string, parentId: string | null = null, children: readonly FeatureFolderMember[] = [],
+): PartDocument {
   const folders = document.featureFolders ?? []; valid(folders);
   let serial = 1;
   const ids = new Set(folders.map(folder => folder.id));
   while (ids.has(`folder-${serial}`)) serial += 1;
   const id = `folder-${serial}`;
-  const created = apply(document, [...folders, { id, name: name.trim(), children: [] }]);
+  for (const child of children) targetExists(document, folders, child);
+  const created = apply(document, [...folders, { id, name: name.trim(), children: children.map(child => ({ ...child })) }]);
   return parentId === null ? created : moveFeatureFolderMember(created, { kind: 'folder', id }, parentId);
 }
 

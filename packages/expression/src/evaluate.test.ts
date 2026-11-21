@@ -58,6 +58,67 @@ function codeAt(source: string): string {
   return `${detail.code}@${String(detail.position)}`;
 }
 
+describe('式の誤りの候補と一言', () => {
+  it('近い名前より前方一致を優先し、同点は名前順にする', () => {
+    const variables = new Map([['abd', 1], ['a', 2], ['abc', 3]]);
+    expect(evaluateExpression('ab', { variables })).toMatchObject({
+      ok: false,
+      error: { code: 'unknownVariable', suggestions: ['abc', 'abd', 'a'] },
+    });
+  });
+
+  it('編集距離 1 と 2 の名前を距離順で返し、距離 3 の名前を外す', () => {
+    const variables = new Map([['wxxx', 1], ['wdxx', 2], ['width', 3], ['weth', 4]]);
+    expect(evaluateExpression('wdth', { variables })).toMatchObject({
+      ok: false,
+      error: { code: 'unknownVariable', suggestions: ['weth', 'width', 'wdxx'] },
+    });
+  });
+
+  it('両方の変数表を使い、同じ名前をまとめて大文字小文字を区別する', () => {
+    const variables = new Map([['a', 1], ['ax', 2]]);
+    const exactVariables = new Map([['a', '1'], ['Ax', '3']]);
+    expect(evaluateExpressionExact('A', { variables, exactVariables })).toMatchObject({
+      ok: false,
+      error: { code: 'unknownVariable', suggestions: ['Ax', 'a', 'ax'] },
+    });
+  });
+
+  it('前方一致は編集距離を問わず候補にし、最大 3 件にする', () => {
+    const variables = new Map([['abother', 1], ['abd', 2], ['ablong', 3], ['abc', 4]]);
+    expect(evaluateExpression('ab', { variables })).toMatchObject({
+      ok: false,
+      error: { code: 'unknownVariable', suggestions: ['abc', 'abd', 'ablong'] },
+    });
+  });
+
+  it('変数に候補が無いときは候補と一言の欄が無い', () => {
+    const result = evaluateExpression('wdth', { variables: new Map([['wxxx', 1]]) });
+    if (result.ok) {
+      throw new Error('未定義の変数が評価されました。');
+    }
+    expect(result.error).not.toHaveProperty('suggestions');
+    expect(result.error).not.toHaveProperty('hint');
+  });
+
+  it('知らない関数には近い関数名と説明用の鍵を返す', () => {
+    expect(failureOf('sqr(4)')).toMatchObject({
+      code: 'unknownFunction',
+      suggestions: ['sqrt'],
+      hint: { key: 'supportedFunctions' },
+    });
+  });
+
+  it('知らない関数に候補が無くても、使える関数の一覧を返す', () => {
+    const error = failureOf('sin(30)');
+    expect(error).not.toHaveProperty('suggestions');
+    expect(error.hint).toEqual({
+      key: 'supportedFunctions',
+      names: ['sqrt', 'cbrt', 'abs', 'rad', 'root'],
+    });
+  });
+});
+
 describe('任意精度の評価(FR-203、NFR-RE-4)', () => {
   it('内部は40桁・偶数丸めで、途中で double へ落とさない(§0.a-0.7)', () => {
     expect(EXPRESSION_PRECISION).toBe(40);

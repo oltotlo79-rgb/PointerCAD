@@ -112,6 +112,7 @@ export function referencedSketchIds(
     case 'faceOffset':
     case 'mirror':
     case 'threadShaft':
+    case 'thicken':
     case 'shell':
       // 面の指紋とフィーチャーの id しか持たない(スケッチを見ない)。
       // くり抜き(FR-418)も同じで、開ける面は指紋で持つ。
@@ -204,6 +205,8 @@ function surfaceSketchIds(operation: SurfaceOperation): readonly string[] {
     case 'loft':
       return operation.sections.map((section) => section.sketchId);
     case 'face':
+    case 'blend':
+    case 'offsetBody':
     case 'offset':
       // 立体の面を取り出す(離す)だけなのでスケッチを見ない。
       return [];

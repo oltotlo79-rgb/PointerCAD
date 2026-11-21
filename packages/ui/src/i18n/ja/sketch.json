@@ -16,6 +16,7 @@
   "sketch.referencePoint.unsupported": "座標の値で決めた基準点だけに点を置けます(頂点・辺・面や他の点から決めた基準点は循環を避けるため使えません)。",
   "sketch.referencePoint.ambiguous": "この基準点と同じ内部の id のスケッチの要素があるため区別できません。表示の名前を変えても直らないので、その要素を消してから置き直してください。",
   "sketch.referencePoint.created": "基準点に点を置きました。基準点が動くと点も追従します。",
+  "sketch.faceWorkPlane.chosen": "選んだ面を作図面にしました。",
   "sketch.connect.count": "選んだ点 {count}/2。",
   "sketch.facePoints.count": "選んだ点 {count}（3つ以上で面）。",
   "sketch.facePoints.selectThree": "Shift または Ctrl を押しながら、点を3つ以上選んでください。",

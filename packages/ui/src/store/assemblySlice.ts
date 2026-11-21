@@ -84,6 +84,8 @@ import { partKeyOf, removeFilletWeld, weldSegmentsOf, type AssemblyComponent, ty
 import { syncAccessorySets } from '@pointercad/model';
 import { applyAccessorySet, type AccessoryChoices, type AccessorySetId } from '@pointercad/model';
 import { boltedJointRecordForComponent } from '@pointercad/model';
+import type { SavedAnalysisResult } from '@pointercad/model/beam-analysis';
+import { openedAnalysisResults, type OpenedAnalysisResults } from '../beam/savedBeamResults.js';
 import {
   childWeldDefinitionTarget, commitChildWeldDefinitionEdit, type ChildWeldDefinitionScope, type ChildWeldDefinitionTarget,
 } from '../assembly/childWeldDefinitionEdit.js';
@@ -153,7 +155,11 @@ export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, Fr
    * (「1 つの窓で 1 つの文書」)。
    */
   readonly openAssembly: (document: AssemblyDocument, library?: PartLibrary,
-    options?: { readonly preserveSaveTarget?: boolean; readonly preparedSession?: PreparedDocumentSession }) => void;
+    options?: { readonly preserveSaveTarget?: boolean; readonly preparedSession?: PreparedDocumentSession;
+      /** 開いたファイルの、指紋が合った解析の結果(J-03b)。開いた文書のまま(同じ物)の間だけ使う。 */
+      readonly analysisResults?: ReadonlyMap<string, SavedAnalysisResult>;
+      /** 保存してあった結果を io が出さなかった(指紋の不一致・壊れた中身)。梁の窓に理由を 1 行出す。 */
+      readonly analysisResultsDropped?: boolean }) => void;
   /** 配置・固定・表示・抑制・部品更新の確定操作。1 回が Undo の 1 段。 */
   readonly applyAssembly: (document: AssemblyDocument, library?: PartLibrary) => void;
   readonly setAssemblyMechanismCouplings: (couplings: readonly MechanismGearCoupling[]) => boolean;
@@ -168,6 +174,8 @@ export interface AssemblySlice extends CircularWeldSlice, FrameEdgePickSlice, Fr
   readonly assemblyUndoStack: UndoStack<AssemblySnapshot> | null;
   readonly savedAssembly: AssemblySnapshot | null;
   readonly assemblyFileName: string | null;
+  /** 開いたファイルの解析の結果と、その時の文書(J-03b)。形を変える確定で文書が別の物になると、梁の窓にも保存にも使わない。 */
+  readonly assemblyOpenedAnalysisResults: OpenedAnalysisResults | null;
   readonly assemblyInitialName: string | null;
   readonly assemblyView: AssemblyView | null;
   /** カーネルを持つアプリ入口から差し出す、表示専用の干渉解析と隙間測定の口。 */
@@ -337,7 +345,7 @@ export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   | 'assemblyJointCheckOpen' | 'assemblyJointCheck' | 'assemblyJointCheckSelectedKey'
   | 'assemblyJointBracketDraft' | 'assemblyJointBracketPreview' | 'assemblyJointBracketData'
   | 'assemblyMemberStretchDraft' | 'assemblyMemberStretchPreview'
-  | 'assemblyDimensionMoveDraft' | 'assemblyDimensionMovePreview' | 'assemblyComponentPick'>;
+  | 'assemblyDimensionMoveDraft' | 'assemblyDimensionMovePreview' | 'assemblyComponentPick' | 'assemblyOpenedAnalysisResults'>;
 
 /** 協調の関節の駆動の持ち主。この記録そのものがストアに残っている間だけ結果を反映できる。 */
 export interface AssemblyJointDrive {
@@ -539,6 +547,7 @@ export function createAssemblyInitialState(session?: PreparedDocumentSession): A
     assemblyDimensionMovePreview: null,
     assemblyComponentPick: null,
     assemblyJointDrive: null,
+    assemblyOpenedAnalysisResults: null,
     ...emptyInterferenceState(),
     activeDocumentId,
   };
@@ -635,7 +644,7 @@ export const createAssemblySlice: StateCreator<
         assemblyUndoStack: createUndoStack({ document: assembly, library }),
         documentVersion: state.documentVersion + 1,
         canUndo: false, canRedo: false, selection: [], connectionSelection: null, hoveredElementId: null,
-        activeTool: 'select', fileMessage: null,
+        activeTool: 'select', fileMessage: null, assemblyOpenedAnalysisResults: openedAnalysisResults(assembly, options?.analysisResults, options?.analysisResultsDropped),
       }));
     },
     applyAssembly: (assembly, library = get().assemblyLibrary) => {

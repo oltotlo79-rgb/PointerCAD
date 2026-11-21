@@ -809,10 +809,12 @@ function kernelReselectedReferences(plan: SolidStepPlan): readonly SubShapeRef[]
     case 'shell': return plan.openFaces;
     case 'primitive': return plan.originQuery === null ? [] : [plan.originQuery];
     case 'thruSections': return plan.sections.flatMap(section => section.kind === 'faceQuery' ? [section.query] : []);
+    case 'blend': return [plan.a.query, plan.b.query];
     case 'surface': return plan.shape.kind === 'face' || plan.shape.kind === 'offset' ? [plan.shape.face] : [];
     // 縫合の既存の面は、縫合が取り込む(消費する)曲面の入力で、加工の参照元として照合するものではないので読まない。
     case 'sew':
     case 'extrude': case 'revolve': case 'boolean': case 'spring': case 'mirror': case 'transform': case 'scale':
+    case 'thicken': case 'offsetBody':
     case 'sweep': case 'rib': case 'cut': case 'surfaceCut': case 'importedSolid': case 'functionSurface':
     case 'sheetBase': case 'sheetFlange': case 'sheetJoin': case 'sheetBody':
       return [];

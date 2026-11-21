@@ -175,6 +175,53 @@ function rulesOf(path: string): CssRule[] {
 
 const allRules = cssFiles(sourceDirectory).flatMap(rulesOf);
 
+/** 向きを示す箱の色(viewcube/viewCube.css。テーマごとに `.pcad-viewcube-control` の塊で変数を決める)。 */
+const cubeCss = readFileSync(join(sourceDirectory, 'viewcube', 'viewCube.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+const CUBE_FACES = ['top', 'front', 'right', 'left', 'back', 'bottom'] as const;
+
+/** 箱の変数の塊。dark は最初の `.pcad-viewcube-control` の塊(テーマの塊はその後に並ぶ)。 */
+function cubeBlockOf(theme: (typeof THEMES)[number]): string {
+  const selector = theme === 'dark' ? '.pcad-viewcube-control {' : `[data-theme='${theme}'] .pcad-viewcube-control {`;
+  const start = cubeCss.indexOf(selector);
+  expect(start, selector).toBeGreaterThanOrEqual(0);
+  const open = cubeCss.indexOf('{', start);
+  return cubeCss.slice(open + 1, cubeCss.indexOf('}', open));
+}
+
+/** 紙の色(白い紙と黒い文字)はテーマによらないので、色を決め打ちしてよい選び方。 */
+const PAPER_SELECTORS = ['.pcad-drawing-sheet', '.pcad-print-sheet'];
+/** 地を変えるだけで、文字や線ではない宣言。 */
+const SHADOW_PROPERTIES = ['box-shadow', 'text-shadow', 'filter'];
+/** 決め打ちの色: `#…`、`rgb()` などの関数、色の名前(変数の名前の一部の `-red` などは除く)。 */
+const LITERAL_COLOR = new RegExp('#[0-9a-f]{3,8}\\b|\\b(?:rgba?|hsla?)\\(|(?<![\\w-])(?:aqua|black|blue|fuchsia|gray|green|grey|lime'
+  + '|maroon|navy|olive|orange|purple|red|silver|teal|white|yellow)(?![\\w-])', 'iu');
+
+/** 色の変数を決めてよい塊: appShell.css のテーマの塊と、viewCube.css の箱の変数の塊(どちらも上の対比の検査が読む)。 */
+function isThemeVariableBlock(rule: CssRule): boolean {
+  if (rule.file === 'shell/appShell.css') {
+    return rule.selectors.every((selector) => selector === ':root' || selector.startsWith('[data-theme='));
+  }
+  return rule.file === 'viewcube/viewCube.css' && rule.selectors.every((selector) => selector.endsWith('.pcad-viewcube-control'));
+}
+
+/**
+ * テーマの変数の塊の外に決め打ちした色の宣言。除く物: 影、`::backdrop` の暗い幕、
+ * `var(--…, 色)` の代わりの値、地(background)の半透明の重ね(不透明度 1 未満の `rgb(… / a)`)、紙の選び方。
+ * 部品の CSS で `--x: #abc` を決めて var(--x) で使うと対比の検査を素通りするので、`--` の宣言もテーマの塊の外では数える。
+ */
+function literalColorDeclarations(rule: CssRule): string[] {
+  if (rule.selectors.some((selector) => selector.includes('::backdrop'))
+    || rule.selectors.every((selector) => PAPER_SELECTORS.includes(selector))) return [];
+  return rule.body.split(';').map((declaration) => declaration.trim()).filter((declaration) => {
+    const colon = declaration.indexOf(':');
+    const property = declaration.slice(0, colon).trim();
+    if (colon < 0 || SHADOW_PROPERTIES.includes(property) || (property.startsWith('--') && isThemeVariableBlock(rule))) return false;
+    const value = declaration.slice(colon + 1).replace(/var\([^,()]+,[^()]*\)/gu, '').trim();
+    const overlay = parseColor(value);
+    return LITERAL_COLOR.test(value) && !(property === 'background' && overlay !== null && overlay.alpha < 1);
+  }).map((declaration) => `${rule.file}: ${rule.selectors.join(', ')} → ${declaration}`);
+}
+
 describe('テーマの文字と線の対比(指摘 12・15)', () => {
   it('テーマは 5 種で、どのテーマも組の変数を 1 つも欠かさない', () => {
     const declared = [...css.matchAll(/\[data-theme="([A-Za-z]+)"\]\s*\{([^{}]*)\}/gu)]
@@ -231,6 +278,22 @@ describe('テーマの文字と線の対比(指摘 12・15)', () => {
       expect(contrastRatio(colorOf(block, theme, '--pcad-danger'), dangerSurface), `${theme}: 失敗の帯の印`)
         .toBeGreaterThanOrEqual(LINE_MINIMUM);
     }
+  });
+
+  it('向きを示す箱の文字は、5 テーマとも 6 面に対して 4.5:1 以上(C-03 の色)', () => {
+    for (const theme of THEMES) {
+      const block = cubeBlockOf(theme);
+      const text = colorOf(block, theme, '--pcad-viewcube-text');
+      for (const face of CUBE_FACES) {
+        expect(contrastRatio(text, colorOf(block, theme, `--pcad-viewcube-face-${face}`)), `${theme}: 箱の文字 / ${face}`)
+          .toBeGreaterThanOrEqual(TEXT_MINIMUM);
+      }
+    }
+  });
+
+  it('画面の色は変数の定義の中だけに書き、テーマの検査の外へ出さない(C-03 の色)', () => {
+    // 決め打ちの色は、テーマを変えても変わらず、上の対比の検査も届かない(文書の比べの窓の線が light・modern で見えなかった)。
+    expect(allRules.flatMap(literalColorDeclarations)).toEqual([]);
   });
 
   it('--pcad-text-faint を文字の色に使うのは、図柄だけの選び方に限る', () => {

@@ -71,7 +71,10 @@ import {
   DEFAULT_SURFACE_ANGLE_DEGREES,
   DEFAULT_SURFACE_DISTANCE_MM,
   DEFAULT_SURFACE_OFFSET_MM,
+  DEFAULT_SWEEP_END_SCALE,
   DEFAULT_SWEEP_FRENET,
+  DEFAULT_SWEEP_TWIST_DEGREES,
+  DEFAULT_SWEEP_WALL_THICKNESS_MM,
   DEFAULT_TAPER_ANGLE_DEGREES,
   DEFAULT_THREAD_DESIGNATION,
   DEFAULT_THREAD_SHAFT_LENGTH_MM,
@@ -86,6 +89,8 @@ import {
   MAX_POINT_ARRAY_COUNT,
   MAX_SCALE,
   MAX_SPRING_TURNS,
+  MAX_SWEEP_END_SCALE,
+  MAX_SWEEP_TWIST_DEGREES,
   MAX_TAPER_ANGLE_DEGREES,
   metricThreadPitch,
   MIN_COPY_COUNT,
@@ -129,6 +134,7 @@ export * from './numericInputTools.js';
 import { choicesFor, type MirrorAxisOptions, type ReferenceAxisOption } from './numericInputChoices.js';
 export { DEFAULT_REVOLVE_AXIS, REFERENCE_AXIS_VALUE_PREFIX, type MirrorAxisOptions, type ReferenceAxisOption } from './numericInputChoices.js';
 
+import { BLEND_WEIGHT_FIELDS } from './blendWeightFields.js';
 import type { FieldUnit } from './numericFieldUnits.js';
 export { applyDisplayUnit, isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
 
@@ -256,6 +262,7 @@ export type NumericToggleKey =
   | 'scalePerAxis'
   /** くり抜きの肉を外向きに付けるか(FR-418)。既定は切=内向き(外形が変わらない)。 */
   | 'shellOutward'
+  | 'flipB'
   /** R 面取りの終わり側を別の半径にするか(FR-426)。入にすると終わりの半径の欄が出る。 */
   | 'variableRadius'
   /** 切断で法線の反対側を残すか(FR-432)。既定は切=法線の側を残す。 */
@@ -344,6 +351,7 @@ type NumericChoiceKey =
   | 'mirrorPlane'
   /** リブの厚みを付ける側(両側 / 表 / 裏。FR-420)。 */
   | 'ribSide'
+  | 'thickenSide'
   /** 平面の穴位置を点選択か面内X・Yで明示的に指定する。 */
   | 'holePlacement'
   /** 穴の入口の広げ方(広げない / ざぐり / 皿もみ。FR-422)。 */
@@ -627,6 +635,25 @@ const SCALE_RANGE: NumericFieldRange = {
   maxInclusive: true,
 };
 
+/** スイープのねじれ(度、M-07)。model の `MAX_SWEEP_TWIST_DEGREES` の ±。 */
+export const SWEEP_TWIST_RANGE: NumericFieldRange = {
+  min: -MAX_SWEEP_TWIST_DEGREES,
+  minInclusive: true,
+  max: MAX_SWEEP_TWIST_DEGREES,
+  maxInclusive: true,
+};
+
+/** スイープの終わりの大きさ(倍率、M-07)。0 より大きく model の `MAX_SWEEP_END_SCALE` 以下。 */
+export const SWEEP_END_SCALE_RANGE: NumericFieldRange = {
+  min: 0,
+  minInclusive: false,
+  max: MAX_SWEEP_END_SCALE,
+  maxInclusive: true,
+};
+
+/** スイープの肉厚(mm、M-07)。0 は中実(フィーチャーに欄を書かない)、0 より大きい値で中空。 */
+export const SWEEP_WALL_RANGE: NumericFieldRange = NON_NEGATIVE;
+
 /**
  * 皿もみの開き角(度、FR-422)。0 より大きく 180 より小さい。
  * 180 度は平らになって「広げない」と同じ形、0 度は円錐が閉じないので、どちらも許さない。
@@ -713,6 +740,33 @@ const EXTRUDE_DISTANCE_FIELDS: readonly NumericFieldDefinition[] = [
 const REVOLVE_ANGLE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'angle', labelKey: 'numericInput.field.angle', tooltipKey: 'numericInput.tooltip.angle', unit: 'degree', defaultSource: '360', range: ANGLE_UP_TO_360 },
 ];
+
+/**
+ * スイープのねじれ・終わりの大きさ・肉厚(M-07)。範囲は model の定数から組む(ねじれ ±3600°、倍率 0 より大きく 10 以下、肉厚 0 以上)。
+ * ねじれと終わりの大きさは案内線が「なし」の時だけ出す(案内線が向きと大きさを決めるため)。肉厚 0 は中実。
+ * 既定は model の定数(0・1・0)。式の文字が既定のまま(か空欄)なら、確定でもフィーチャーに欄を書かない(`isDefaultSweepShapeSource`)。
+ */
+const SWEEP_SHAPE_FIELDS: readonly NumericFieldDefinition[] = [
+  { key: 'sweepTwist', labelKey: 'numericInput.field.sweepTwist', tooltipKey: 'numericInput.tooltip.sweepTwist', unit: 'degree',
+    defaultSource: String(DEFAULT_SWEEP_TWIST_DEGREES), range: SWEEP_TWIST_RANGE, visibleWhen: whenChoiceIs('sweepGuide', 'none') },
+  { key: 'sweepEndScale', labelKey: 'numericInput.field.sweepEndScale', tooltipKey: 'numericInput.tooltip.sweepEndScale', unit: 'count',
+    defaultSource: String(DEFAULT_SWEEP_END_SCALE), range: SWEEP_END_SCALE_RANGE, visibleWhen: whenChoiceIs('sweepGuide', 'none') },
+  { key: 'sweepWall', labelKey: 'numericInput.field.wallThickness', tooltipKey: 'numericInput.tooltip.sweepWall', unit: 'mm',
+    defaultSource: String(DEFAULT_SWEEP_WALL_THICKNESS_MM), range: SWEEP_WALL_RANGE },
+];
+
+/** スイープの形の欄(M-07)の鍵。 */
+export type SweepShapeFieldKey = 'sweepTwist' | 'sweepEndScale' | 'sweepWall';
+
+/**
+ * スイープの形の欄(M-07)の式が既定のまま(model の既定の数そのもの、か空欄)か。既定のままなら形を変えないので、
+ * 確定(`shapeEditCommands.ts` の commitSweep)でも右の欄の書き戻し(`sweepShapePropertyUpdates.ts`)でもフィーチャーに欄を書かない。
+ * 変数を使う式は、今の値が既定と同じでも書く(後で値が変わるため)。
+ */
+export function isDefaultSweepShapeSource(key: SweepShapeFieldKey, source: string): boolean {
+  const trimmed = source.trim();
+  return trimmed === '' || SWEEP_SHAPE_FIELDS.some((field) => field.key === key && field.defaultSource === trimmed);
+}
 
 const SEW_TOLERANCE_FIELDS: readonly NumericFieldDefinition[] = [
   // 既定は model の DEFAULT_SEW_TOLERANCE_MM と同じ 0.01。
@@ -1134,6 +1188,18 @@ const SURFACE_SHAPE_FIELDS: readonly NumericFieldDefinition[] = [
   // 離す距離は負でもよい(反対側へ離れる)ので範囲を持たない。0 は解決が断る。
   { key: 'surfaceOffset', labelKey: 'numericInput.field.surfaceOffset', tooltipKey: 'numericInput.tooltip.surfaceOffset', unit: 'mm', defaultSource: String(DEFAULT_SURFACE_OFFSET_MM), visibleWhen: whenChoiceIs('surfaceOperation', 'offset') },
 ];
+
+/** 面だけのボディへの厚み付けの厚さ(J-05a)。厚みを付ける側は選択の欄で決める。 */
+const THICKEN_FIELDS: readonly NumericFieldDefinition[] = [{
+  key: 'thickenAmount', labelKey: 'surfaceBody.thickness', tooltipKey: 'surfaceBody.thicknessTooltip',
+  unit: 'mm', defaultSource: String(DEFAULT_SHELL_THICKNESS_MM), range: POSITIVE,
+}];
+
+/** 面だけのボディ全体を離す符号付きの距離(J-05a)。0 は確定と解決が断る。 */
+const OFFSET_BODY_FIELDS: readonly NumericFieldDefinition[] = [{
+  key: 'surfaceOffset', labelKey: 'numericInput.field.surfaceOffset', tooltipKey: 'numericInput.tooltip.surfaceOffset',
+  unit: 'mm', defaultSource: String(DEFAULT_SURFACE_OFFSET_MM),
+}];
 
 /** くり抜きの壁の厚さ(FR-418)。開ける面は選択で決まるので欄に出さない。 */
 const SHELL_THICKNESS_FIELDS: readonly NumericFieldDefinition[] = [
@@ -1642,6 +1708,12 @@ function solidFieldDefinitionsFor(
       return SURFACE_SHAPE_FIELDS;
     case 'shellThickness':
       return SHELL_THICKNESS_FIELDS;
+    case 'thickenAmount':
+      return THICKEN_FIELDS;
+    case 'offsetBodyDistance':
+      return OFFSET_BODY_FIELDS;
+    case 'blendWeights':
+      return Object.values(BLEND_WEIGHT_FIELDS);
     case 'holeTranslateVector':
       return HOLE_TRANSLATE_FIELDS;
     case 'faceRotateAngle':
@@ -1650,12 +1722,13 @@ function solidFieldDefinitionsFor(
       return FACE_OFFSET_DISTANCE_FIELDS;
     case 'cutPlane':
       return CUT_PLANE_FIELDS;
+    case 'sweepOptions':
+      return SWEEP_SHAPE_FIELDS;
     /*
-      欄を 1 つも持たない段。ミラーは鏡にする面(選択肢)だけ、スイープは向きの決め方
-      (つまみ)だけ、点集合パターンは選んだ点の数で決まるので聞くことが無い。
+      欄を 1 つも持たない段。ミラーは鏡にする面(選択肢)だけ、
+      点集合パターンは選んだ点の数で決まるので聞くことが無い。
     */
     case 'mirrorPlane':
-    case 'sweepOptions':
     case 'pointPattern':
       return NO_FIELDS;
   }
@@ -1724,6 +1797,9 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   pointPattern: 'numericInput.title.pointPattern',
   surfaceShape: 'numericInput.title.surfaceShape',
   shellThickness: 'numericInput.title.shellThickness',
+  thickenAmount: 'toolbar.machining.thicken',
+  offsetBodyDistance: 'toolbar.machining.offsetBody',
+  blendWeights: 'toolbar.machining.blend',
   faceOffsetDistance: 'numericInput.title.faceOffsetDistance',
   holeTranslateVector: 'numericInput.title.holeTranslateVector',
   faceRotateAngle: 'numericInput.title.faceRotateAngle',
@@ -1817,6 +1893,9 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'pointPattern',
   'surfaceShape',
   'shellThickness',
+  'thickenAmount',
+  'offsetBodyDistance',
+  'blendWeights',
   'faceOffsetDistance',
   'holeTranslateVector',
   'faceRotateAngle',
@@ -1884,6 +1963,9 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
   pointPattern: 'pointPattern',
   surface: 'surfaceShape',
   shell: 'shellThickness',
+  thicken: 'thickenAmount',
+  offsetBody: 'offsetBodyDistance',
+  blend: 'blendWeights',
   faceOffset: 'faceOffsetDistance',
   holeTranslate: 'holeTranslateVector',
   faceRotate: 'faceRotateAngle',
@@ -2075,6 +2157,9 @@ const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
   pointPattern: 'pointPattern',
   surfaceShape: 'surface',
   shellThickness: 'shell',
+  thickenAmount: 'thicken',
+  offsetBodyDistance: 'offsetBody',
+  blendWeights: 'blend',
   faceOffsetDistance: 'faceOffset',
   holeTranslateVector: 'holeTranslate',
   faceRotateAngle: 'faceRotate',
@@ -2126,6 +2211,9 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   pointPattern: [],
   surfaceShape: ['reversed'],
   shellThickness: ['shellOutward'],
+  thickenAmount: [],
+  offsetBodyDistance: [],
+  blendWeights: ['flipB'],
   // 平らな面の移動はつまみを持たない(向きは距離の符号で決まる)。
   faceOffsetDistance: [],
   holeTranslateVector: [],
@@ -2227,6 +2315,7 @@ export const TOGGLE_LABEL_KEYS: Readonly<Record<NumericToggleKey, MessageKey>> =
   raised: 'numericInput.toggle.raised',
   scalePerAxis: 'numericInput.toggle.scalePerAxis',
   shellOutward: 'numericInput.toggle.shellOutward',
+  flipB: 'surfaceBlend.flipB',
   variableRadius: 'numericInput.toggle.variableRadius',
   cutKeepOpposite: 'numericInput.toggle.cutKeepOpposite',
   cutKeepBoth: 'numericInput.toggle.cutKeepBoth',
@@ -2264,6 +2353,7 @@ const TOGGLE_DEFAULT_VALUES: Readonly<Record<NumericToggleKey, boolean>> = {
   raised: DEFAULT_EMBOSS_RAISED,
   scalePerAxis: false,
   shellOutward: DEFAULT_SHELL_OUTWARD,
+  flipB: false,
   variableRadius: false,
   // 既定は法線の側を残すので、「反対側を残す」は切から始まる。
   cutKeepOpposite: DEFAULT_CUT_KEEP === 'negative',
@@ -2467,6 +2557,11 @@ export interface NumericInputOptions {
    * (球を含まない断面では点の数が形に効かないため)。
    */
   readonly ruledHasSphere?: boolean;
+  /**
+   * 穴・ねじ穴の置き方の、開いた時の値(M-10 ③)。面を選ばずに辺 2 本だけを選んで押した時に、ツールバーが
+   * 'edge-distance' を渡す。渡されなければ点を選ぶ置き方。
+   */
+  readonly initialHolePlacement?: 'points' | 'plane-face' | 'edge-distance';
 }
 
 export function createNumericInput(
@@ -2614,7 +2709,10 @@ export function numericToggleEnabled(state: NumericInputState, key: NumericToggl
   }
   if (key !== 'sweepFrenet') return true;
   const guide = state.choices.find((choice) => choice.key === 'sweepGuide')?.value;
-  return guide === undefined || guide === 'none';
+  // ねじれ・終わりの大きさ(M-07)を既定から変えた時も、向きは自分の枠で決めるので「曲がりに合わせて回す」を止める。
+  const usesLaw = state.fields.some((field) => (field.key === 'sweepTwist' || field.key === 'sweepEndScale')
+    && !isDefaultSweepShapeSource(field.key, field.source));
+  return (guide === undefined || guide === 'none') && !usesLaw;
 }
 
 export function numericFocusTargets(state: NumericInputState): readonly NumericFocusTarget[] {
@@ -2707,6 +2805,8 @@ const CHOICE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> 
   threadSize: true,
   surfaceShape: true,
   cutPlane: true,
+  // 案内線を選ぶと、ねじれ・終わりの大きさ(M-07)の欄が隠れる。
+  sweepOptions: true,
 };
 
 /**
@@ -3164,6 +3264,9 @@ export interface SolidCommitValues {
   readonly surfaceOffset?: ExpressionValue;
   /** くり抜きの壁の厚さ(mm、FR-418)。 */
   readonly shellThickness?: ExpressionValue;
+  readonly thickenAmount?: ExpressionValue;
+  readonly weightA?: ExpressionValue;
+  readonly weightB?: ExpressionValue;
   /** 平らな面の移動の符号付きの距離(mm)。 */
   readonly faceOffsetDistance?: ExpressionValue;
   /** 可変半径の R 面取りの終わり側の半径(mm、FR-426)。つまみが入のときだけ。 */
@@ -3188,6 +3291,10 @@ export interface SolidCommitValues {
   /** 辺からの距離(M-02)。選んだ辺 1・辺 2 からの長さ(mm)の元式。 */
   readonly holeEdgeDistance1?: ExpressionValue;
   readonly holeEdgeDistance2?: ExpressionValue;
+  /** スイープのねじれ(度)・終わりの大きさ(倍率)・肉厚(mm)の元式(M-07)。 */
+  readonly sweepTwist?: ExpressionValue;
+  readonly sweepEndScale?: ExpressionValue;
+  readonly sweepWall?: ExpressionValue;
 }
 
 /** ソリッドのつまみ。持たない道具では欄ごと現れない。 */
@@ -3220,6 +3327,7 @@ export interface SolidCommitFlags {
   readonly scalePerAxis?: boolean;
   /** くり抜きの肉を外向きに付けるか(FR-418)。 */
   readonly shellOutward?: boolean;
+  readonly flipB?: boolean;
   /** R 面取りの終わり側を別の半径にするか(FR-426)。 */
   readonly variableRadius?: boolean;
   /** 切断で法線の反対側を残すか(FR-432)。 */
@@ -3291,6 +3399,7 @@ export interface SolidShapeChoices {
   readonly mirrorPlane?: string;
   /** リブの厚みを付ける側('both' / 'positive' / 'negative')。 */
   readonly ribSide?: string;
+  readonly thickenSide?: string;
   /** 平面の穴位置('points' / 'plane-face' / 'edge-distance')。未知の値は確定側で拒否する。 */
   readonly holePlacement?: string;
   /** 穴の入口('plain' / 'counterbore' / 'countersink')。 */
@@ -3658,6 +3767,12 @@ function solidValuesFor(
       };
     case 'shellThickness':
       return { shellThickness: get('shellThickness') };
+    case 'thickenAmount':
+      return { thickenAmount: get('thickenAmount') };
+    case 'offsetBodyDistance':
+      return { surfaceOffset: get('surfaceOffset') };
+    case 'blendWeights':
+      return { weightA: get('weightA'), weightB: get('weightB') };
     case 'faceRotateAngle':
       return { rotationAngle: get('rotationAngle') };
     case 'faceOffsetDistance':
@@ -3670,9 +3785,10 @@ function solidValuesFor(
         cutPointY: get('cutPointY'),
         cutPointZ: get('cutPointZ'),
       };
-    // 欄を 1 つも持たない段(ミラー・スイープ・点集合パターン)。
-    case 'mirrorPlane':
     case 'sweepOptions':
+      return { sweepTwist: get('sweepTwist'), sweepEndScale: get('sweepEndScale'), sweepWall: get('sweepWall') };
+    // 欄を 1 つも持たない段(ミラー・点集合パターン)。
+    case 'mirrorPlane':
     case 'pointPattern':
       return {};
   }
@@ -3699,6 +3815,7 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
     raised?: boolean;
     scalePerAxis?: boolean;
     shellOutward?: boolean;
+    flipB?: boolean;
     variableRadius?: boolean;
     cutKeepOpposite?: boolean;
     cutKeepBoth?: boolean;
@@ -3746,6 +3863,9 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
         break;
       case 'scalePerAxis':
         flags.scalePerAxis = toggle.value;
+        break;
+      case 'flipB':
+        flags.flipB = toggle.value;
         break;
       case 'shellOutward':
         flags.shellOutward = toggle.value;
@@ -3983,6 +4103,7 @@ function shapeChoicesFrom(choices: readonly NumericChoice[]): SolidShapeChoices 
     thicknessSide: choiceValueFrom(choices, 'thicknessSide'),
     mirrorPlane: choiceValueFrom(choices, 'mirrorPlane'),
     ribSide: choiceValueFrom(choices, 'ribSide'),
+    thickenSide: choiceValueFrom(choices, 'thickenSide'),
     holePlacement: choiceValueFrom(choices, 'holePlacement'),
     holeEntry: choiceValueFrom(choices, 'holeEntry'),
     threadShaftEnd: choiceValueFrom(choices, 'threadShaftEnd'),
@@ -4408,6 +4529,9 @@ export function nextNumericInput(
     case 'surfaceShape':
     case 'shellThickness':
     case 'faceOffsetDistance':
+    case 'thickenAmount':
+    case 'offsetBodyDistance':
+    case 'blendWeights':
     case 'holeTranslateVector':
     case 'faceRotateAngle':
     case 'cutPlane':

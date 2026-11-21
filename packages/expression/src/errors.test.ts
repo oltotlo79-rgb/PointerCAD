@@ -36,6 +36,12 @@ describe('式のエラー(FR-204)', () => {
     );
   });
 
+  it('理由だけを作ると候補と一言の欄は付かない', () => {
+    const error = expressionError('unknownVariable', 'a', 0);
+    expect(error).not.toHaveProperty('suggestions');
+    expect(error).not.toHaveProperty('hint');
+  });
+
   it('ExpressionFailure は理由を持ち回る', () => {
     const failure = new ExpressionFailure(expressionError('divisionByZero', '', 3));
     expect(failure.detail.code).toBe('divisionByZero');

@@ -1,8 +1,23 @@
 /** Map resolved construction plans into geometry requests; this module owns no Worker or shape. */
-import type { HoleStepSpec, SolidStepRequest, SolidStepSpec, SurfaceInput, SweepStepSpec, ThruSectionSpec } from '@pointercad/kernel';
+import type { BlendSurfaceStepSpec, HoleStepSpec, SolidStepRequest, SolidStepSpec, SurfaceInput, SurfaceStepSpec, SweepStepSpec, ThruSectionSpec } from '@pointercad/kernel';
 import type { ResolvedSolidStep, SolidStepPlan, SurfaceShapePlan, ThruSectionPlan } from '../part/resolvePart.js';
 import { toCurveSpec } from './curveConversions.js';
 import { toSubShapeQuery } from './subShapeQuery.js';
+
+/** 和・差の工具。並べる(M-04)ときは配置の並びも渡す(計算部の BooleanStepSpec.transforms)。 */
+function booleanToolRequest(plan: Extract<SolidStepPlan, { readonly kind: 'boolean' }>) {
+  return { toolKey: plan.toolKey, ...(plan.transforms === undefined ? {} : { transforms: plan.transforms }) };
+}
+
+function surfaceStepSpec(plan: Extract<SolidStepPlan, { kind: 'surface' | 'blend' }>): SurfaceStepSpec | BlendSurfaceStepSpec {
+  if (plan.kind === 'blend') {
+    const a = toSubShapeQuery(plan.a.query), b = toSubShapeQuery(plan.b.query);
+    if (a.kind !== 'edge' || b.kind !== 'edge') throw new Error('つなぎには境界辺が必要です。');
+    return { kind: 'blend', a: { sourceKey: plan.a.sourceKey, query: a }, b: { sourceKey: plan.b.sourceKey, query: b },
+      weightA: plan.weightA, weightB: plan.weightB, flipB: plan.flipB };
+  }
+  return { kind: 'surface', shape: toSurfaceInput(plan.shape), targetKey: plan.targetKey };
+}
 
 /** 押し出しの外周と穴を一緒にカーネルへ渡す。 */
 function extrudeProfileRequest(plan: Extract<SolidStepPlan, { readonly kind: 'extrude' }>) {
@@ -121,7 +136,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         kind: 'boolean',
         operation: plan.operation,
         targetKey: plan.targetKey,
-        toolKey: plan.toolKey,
+        ...booleanToolRequest(plan),
         ...(plan.requireRemoval === true ? { requireRemoval: true } : {}),
       };
     case 'hole':
@@ -311,14 +326,14 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
       };
     case 'functionSurface':
       return { kind: 'functionSurface', geometry: plan.geometry };
-    case 'surface':
+    case 'blend': case 'surface':
       // 曲面(FR-428)。作り方 6 種の詰め替えは `toSurfaceInput`。`face` / `offset` の
       // ときだけ面を借りる立体の鍵を添えるが、**消費はしない**。
-      return {
-        kind: 'surface',
-        shape: toSurfaceInput(plan.shape),
-        targetKey: plan.targetKey,
-      };
+      return surfaceStepSpec(plan);
+    case 'thicken':
+      return { kind: plan.kind, targetKey: plan.targetKey, thickness: plan.thickness, side: plan.side };
+    case 'offsetBody':
+      return { kind: plan.kind, targetKey: plan.targetKey, distance: plan.distance };
     case 'holeTranslate':
       return { kind: plan.kind, targetKey: plan.targetKey, face: toSubShapeQuery(plan.face), translation: plan.translation };
     case 'faceRotate':

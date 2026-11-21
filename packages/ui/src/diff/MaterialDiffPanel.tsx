@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { MaterialComparisonGeometry } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { runMaterialDiff, type MaterialDiffPhase } from './runMaterialDiff.js';
-import { MATERIAL_REGIONS, type MaterialRegionSelection } from './materialDiffView.js';
+import { MATERIAL_REGION_COLORS, MATERIAL_REGIONS, type MaterialRegionSelection } from './materialDiffView.js';
 import { MaterialDiffPreview } from './MaterialDiffPreview.js';
+import { cssColor } from '../viewport/themeColors.js';
 
 export function MaterialDiffPanel({ beforeBytes, afterBytes }: { readonly beforeBytes: Uint8Array; readonly afterBytes: Uint8Array }): React.JSX.Element {
   const operation = useRef<AbortController | null>(null);
@@ -36,7 +37,9 @@ export function MaterialDiffPanel({ beforeBytes, afterBytes }: { readonly before
         {' / '}{t('documentDiff.after')}: <span data-material-volume="after" data-value={result.afterVolume}>{format(result.afterVolume)} mm³</span></p>
       <div role="group" aria-label={t('materialDiff.regions')}>
         <button type="button" title={t('materialDiff.all')} aria-pressed={selection === 'all'} onClick={() => setSelection('all')}>{t('materialDiff.all')}</button>
-        <ul>{MATERIAL_REGIONS.map(name => <li key={name} className={`pcad-material-diff__region pcad-material-diff__region--${name}`}>
+        <ul>{MATERIAL_REGIONS.map(name => <li key={name} className="pcad-material-diff__region">
+          {/* 見本の色は、3D で領域を塗る色(materialDiffView.ts の MATERIAL_REGION_COLORS)と同じ 1 か所から作る。 */}
+          <span className="pcad-material-diff__swatch" aria-hidden="true" style={{ background: cssColor(MATERIAL_REGION_COLORS[name]) }} />
           <button type="button" title={t(`materialDiff.region.${name}`)} aria-pressed={selection === name} onClick={() => setSelection(name)}>{t(`materialDiff.region.${name}`)}</button>
           {' '}<span data-material-volume={name} data-value={result[name].volume}>{format(result[name].volume)} mm³</span>
           {result[name].kind === 'empty' ? ` (${t('materialDiff.noMaterial')})` : null}

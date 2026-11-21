@@ -11,6 +11,7 @@ import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
 import { exactMathAssets } from '../../scripts/vite/exactMathAssets.mjs';
 import { femRuntimeAssets } from '../../scripts/vite/femRuntimeAssets.mjs';
 import { startupGuard } from '../../scripts/vite/startupGuard.mjs';
+import { appVersionDefine } from '../../scripts/vite/appVersion.mjs';
 
 /** WASM の並列実行に必要な隔離状態を作る(FR-1003)。配信時は app:// の応答ヘッダーで付ける。 */
 const crossOriginIsolationHeaders = {
@@ -103,6 +104,8 @@ export function desktopOcctAssets(bytes: Uint8Array) {
 
 export default defineConfig({
   define: {
+    // アプリの版は根の package.json の version だけ(Web と ui の単体の設定と同じ名前・同じ値)。
+    ...appVersionDefine(),
     __PCAD_DESKTOP_OCCT_IDENTITY__: JSON.stringify({
       sha256: occtSha256, byteLength: occtBytes.byteLength,
     }),

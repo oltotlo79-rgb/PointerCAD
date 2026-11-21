@@ -75,6 +75,7 @@ export interface SubShapeId {
  * (呼び出し側の詰め替えは要らない)。
  */
 export interface SolidFaceEntry {
+  readonly boundaryEdgeIndices?: readonly number[];
   readonly index: number;
   readonly surfaceKind: 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus' | 'other';
   /** 面積(mm²)。 */
@@ -134,6 +135,7 @@ export interface SubShapeBody {
   readonly coordinateFrame?: SolidBody['coordinateFrame'];
   /** 現在bodyにある場合だけ保持する。旧partial入力には要求しない。 */
   readonly origins?: CurrentOriginIndex;
+  readonly bodyKind?: SolidBody['bodyKind'];
   readonly isValid?: boolean;
 }
 
@@ -410,6 +412,7 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
       return 'face';
     case 'fillet':
     case 'chamfer':
+    case 'blend':
       return 'edge';
     /*
       基準ジオメトリ(FR-328、FR-329)。決め方の選択肢で「辺」「面」「頂点」の
@@ -576,6 +579,8 @@ export function keepsSelectionKind(tool: NumericInputToolId): boolean {
     tool === 'measure' ||
     tool === 'mathGeometry' ||
     tool === 'cut' ||
+    tool === 'thicken' ||
+    tool === 'offsetBody' ||
     tool === 'shell' ||
     tool === 'sphereGridPoint' ||
     tool in PRIMITIVE_TOOLS

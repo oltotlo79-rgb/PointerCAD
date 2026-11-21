@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { extrudeMultipleFacesFlow } from './flows/extrudeMultipleFacesFlow.js';
 import { extrudeOperationFlow, extrudeRegionFlow, extrudeStaleTargetFlow } from './flows/extrudeOperationFlow.js';
 
 for (const operation of ['new', 'join', 'cut'] as const) {
@@ -42,5 +43,14 @@ test('Extrude closed and holed regions, atomic Undo, saved holes and Join/Cut su
   });
   await page.goto('/');
   await extrudeRegionFlow(page, info);
+  expect(errors).toEqual([]);
+});
+
+test('Extrude two selected faces with one distance and one Undo', async ({ page }, info) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.goto('/');
+  await extrudeMultipleFacesFlow(page, info);
   expect(errors).toEqual([]);
 });

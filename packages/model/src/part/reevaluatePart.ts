@@ -369,6 +369,7 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       return { ...feature, operation: rebuildSurfaceOperation(feature.operation, map) };
     case 'functionSurface':
       return { ...feature, definition: mapFunctionDefinition(feature.definition, map, expression => expression) };
+    case 'thicken':
     case 'shell':
       // くり抜き(FR-418)。式の欄は壁の厚さ 1 つだけで、
       // 開ける面の指紋・向きのつまみは式ではない。
@@ -410,6 +411,9 @@ function rebuildSurfaceOperation(
       return { ...operation, distance: map(operation.distance) };
     case 'revolve':
       return { ...operation, angle: map(operation.angle) };
+    case 'blend':
+      return { ...operation, weightA: map(operation.weightA), weightB: map(operation.weightB) };
+    case 'offsetBody':
     case 'offset':
       // 面のオフセット(6 種目)。式の欄は距離 1 つ。
       return { ...operation, distance: map(operation.distance) };

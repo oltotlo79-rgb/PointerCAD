@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,12 +6,13 @@ import { describe, expect, it } from 'vitest';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const read = (path: string): string => readFileSync(resolve(root, path), 'utf8');
-const textSha256 = (text: string): string => createHash('sha256').update(text.replace(/\r\n/gu, '\n')).digest('hex');
+// 名簿は spec ごとの分類と理由だけを持つ。spec ごとの SHA・設定の SHA・手で持つ数は持たない(利用者の回答
+// 2026-11-20 18:2x「手で持つ写しを消す」。spec や設定を変えても名簿を直さなくてよい。新しい spec の分類が無ければ落ちる)。
 const baseline = JSON.parse(read('packages/test-utils/src/browserProjectCoverage.json')) as {
   'firefox-project': string[]; 'firefox-explicit': string[]; 'chromium-explicit': string[];
-  dedicated: string[]; release: string[]; 'firefox-added': string[]; configSha256: string; sourceListSha256: string;
-  releaseClassifications: { file: string; category: string; reason: string; sha256: string }[];
-  allClassifications: { file: string; category: string; reason: string | null; sha256: string }[];
+  dedicated: string[]; release: string[]; 'firefox-added': string[];
+  releaseClassifications: { file: string; category: string; reason: string }[];
+  allClassifications: { file: string; category: string; reason: string | null }[];
 };
 
 function missingClassifications(current: readonly string[], classified: readonly { file: string; category: string; reason: string | null }[]): string[] {
@@ -135,12 +135,6 @@ describe('確認済みブラウザー検査の名簿', () => {
     expect(rows.filter(row => row.category === 'chromium-with-firefox-counterpart'
       || row.category === 'chromium-picker-with-firefox-counterpart').map(row => row.file).sort())
       .toEqual([...baseline['chromium-explicit']].sort());
-    for (const row of rows) {
-      const text = readFileSync(resolve(root, 'e2e/tests', row.file), 'utf8');
-      expect(textSha256(text), row.file).toBe(row.sha256);
-    }
-    expect(textSha256('first\nsecond\n')).toBe(textSha256('first\r\nsecond\r\n'));
-    expect(textSha256('first\nsecond\n')).not.toBe(textSha256('first\nchanged\n'));
     const known = [{ file: 'known.spec.ts', category: 'manual-capture', reason: 'manual screenshot' }];
     expect(missingClassifications(['known.spec.ts', 'new.spec.ts'], known)).toEqual(['new.spec.ts']);
     expect(missingClassifications(['known.spec.ts'], [{ ...known[0], reason: null }])).toEqual(['known.spec.ts']);
@@ -148,9 +142,7 @@ describe('確認済みブラウザー検査の名簿', () => {
     expect(missingClassifications(['known.spec.ts'], [...known, ...known])).toEqual(['known.spec.ts']);
   });
   it('functional内でもFirefoxを明示する4 specと、対応するChromium specを区別する', () => {
-    expect(baseline['firefox-explicit']).toHaveLength(4);
     for (const name of baseline['firefox-explicit']) expect(browserOverride(read(`e2e/tests/${name}`)), name).toBe('firefox');
-    expect(baseline['chromium-explicit']).toHaveLength(4);
     for (const name of baseline['chromium-explicit']) expect(browserOverride(read(`e2e/tests/${name}`)), name).toBe('chromium');
     expect(browserOverride("// test.use({ browserName: 'firefox' })\nconst x = 'firefox';")).toBeNull();
     expect(browserOverride("test.use({ browserName: 'firefox' });")).toBe('firefox');
@@ -159,9 +151,6 @@ describe('確認済みブラウザー検査の名簿', () => {
     const config = read('e2e/playwright.config.ts');
     const pattern = firefoxPattern(config);
     const startup = startupFirefoxPattern(config);
-    expect(baseline['firefox-project']).toHaveLength(162);
-    expect(baseline['firefox-added']).toHaveLength(49);
-    expect(textSha256(config)).toBe(baseline.configSha256);
     for (const name of baseline['firefox-added']) {
       expect(baseline['firefox-project']).toContain(name);
       expect(browserOverride(read(`e2e/tests/${name}`)), name).toBeNull();
@@ -173,22 +162,18 @@ describe('確認済みブラウザー検査の名簿', () => {
   });
   it('専用測定と配布設定の対象をそれぞれの正本に残す', () => {
     const current = dedicatedFiles(read('e2e/playwright.config.ts'));
-    expect(baseline.dedicated).toHaveLength(6);
     expect([...current].sort()).toEqual([...baseline.dedicated].sort());
     for (const name of baseline.dedicated) {
       expect(existsSync(resolve(root, 'e2e/tests', name)), name).toBe(true);
     }
-    expect(baseline.release).toHaveLength(3);
     const currentRelease = readdirSync(resolve(root, 'e2e/release')).filter(name => name.endsWith('.spec.ts')).sort();
     expect([...baseline.release].sort()).toEqual(currentRelease);
-    expect(baseline.releaseClassifications).toHaveLength(3);
-    expect(new Set(baseline.releaseClassifications.map(row => row.file)).size).toBe(3);
+    expect(new Set(baseline.releaseClassifications.map(row => row.file)).size).toBe(baseline.releaseClassifications.length);
     expect(baseline.releaseClassifications.map(row => row.file.replace(/^e2e\/release\//u, '')).sort())
       .toEqual([...baseline.release].sort());
     for (const row of baseline.releaseClassifications) {
       expect(row.category).toBe('release-config');
       expect(row.reason.trim().length).toBeGreaterThan(0);
-      expect(textSha256(readFileSync(resolve(root, row.file), 'utf8'))).toBe(row.sha256);
     }
     const releaseConfig = read('e2e/packaged-desktop.config.ts') + read('e2e/offline-candidate.config.ts');
     for (const name of baseline.release) {

@@ -12,6 +12,8 @@ import { beamOccurrences, beamSourceIsCurrent, captureBeamSource, type BeamSourc
 import type { AppState } from './appState.js';
 import { prepareBeamAnalysis } from '../beam/prepareBeamAnalysis.js';
 import { reassociateBeamWeldSpan } from '../beam/beamWeldSpanReassociation.js';
+import { appliedAnalysisResults, keptResultOnApply, withOpenedBeamResult, type BeamResultDefinition } from '../beam/savedBeamResults.js';
+import { currentAppVersion } from '../app/appVersion.js';
 
 export interface BeamRunner {
   run(session: BeamSession, source: BeamSourceSnapshot): void;
@@ -44,6 +46,8 @@ export interface BeamSlice {
   readonly applyBoltPreloadInputs: () => void;
 
   readonly beamSession: BeamSession | null;
+  /** 今の会話の結果と、それを計算した時の定義の指紋(J-03d。attachBeamAnalysis が結果と一緒に置く)。結果が替わると組が外れる。 */
+  readonly beamResultDefinition: BeamResultDefinition | null;
   readonly beamRunner: BeamRunner | null;
   readonly setBeamRunner: (runner: BeamRunner | null) => void;
   readonly openBeam: () => void;
@@ -184,7 +188,7 @@ function refuseSavedWeldSpan(state: AppState): boolean {
 }
 
 const createBoltPreloadSlice: StateCreator<AppState, [], [], Omit<BeamSlice,
-  'beamSession' | 'beamRunner' | 'setBeamRunner' | 'openBeam' | 'closeBeam'
+  'beamSession' | 'beamResultDefinition' | 'beamRunner' | 'setBeamRunner' | 'openBeam' | 'closeBeam'
   | 'editBeam' | 'reviewBeam' | 'runBeam' | 'cancelBeam' | 'applyBeamInputs'>> = (set, get, store) => {
   // 保存文書idと、開く単位のidは別。開いた時の所有を保持して失効させる。
   let preloadOpeningId: string | null = null;
@@ -332,6 +336,7 @@ const createBoltPreloadSlice: StateCreator<AppState, [], [], Omit<BeamSlice,
 export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, get, store) => ({
   ...createBoltPreloadSlice(set, get, store),
   beamSession: null,
+  beamResultDefinition: null,
   beamRunner: null,
   setBeamRunner: beamRunner => { set({ beamRunner }); },
   openBeam: () => {
@@ -342,8 +347,8 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
     const saved = state.assembly.beamAnalysisInputs?.analyses.find(input => input.kind === 'standard-members');
     const occurrences = state.assemblyView?.sourceDocument === state.assembly
       ? beamOccurrences(state.assembly, state.assemblyView.resolved) : [];
-    set({ beamSession: saved?.kind === 'standard-members'
-      ? restoreBeamSession(state.activeDocumentId, saved.definition, occurrences, captureBeamSource(state)?.source)
+    set({ beamSession: saved?.kind === 'standard-members' ? withOpenedBeamResult(
+      restoreBeamSession(state.activeDocumentId, saved.definition, occurrences, captureBeamSource(state)?.source), state.assembly, state.assemblyOpenedAnalysisResults)
       : createBeamSession(state.activeDocumentId, createDocumentElementId()) });
   },
   closeBeam: () => {
@@ -412,6 +417,8 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
     const draft = beamDefinition(session, source, source.document.parameters);
     if (!draft.ok) return;
     state.beamRunner?.cancel();
+    // J-03d: a static result is kept only when the applied definition is the one it was computed from (content fingerprint).
+    const kept = keptResultOnApply(session, draft.definition, state.beamResultDefinition, currentAppVersion());
     // Existing assembly history owns the edit. Results and derived world endpoints never enter the document.
     // Saving is an intentional input edit, not stale geometry. Release review before subscribers see the document edit.
     set({ beamSession: invalidateBeamSession(session) });
@@ -420,5 +427,10 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
     state.applyAssembly(withBeamAnalysisInputs(source.document, {
       schema: 'pointercad-beam-inputs/1', analyses: [...analyses, { kind: 'standard-members', definition: draft.definition }],
     }), source.library);
+    const applied = get(), appliedSession = applied.beamSession;
+    // Bound to the applied document like an opened file's result: any later shape edit makes it unusable.
+    if (kept !== null && applied.assembly !== null && appliedSession !== null) {
+      set({ assemblyOpenedAnalysisResults: appliedAnalysisResults(applied.assembly, kept), beamSession: { ...appliedSession, result: kept.result } });
+    } else if (session.result?.kind === 'oofem-linear-beam-3d') state.setFileMessage({ key: 'beam.applyDroppedResult', failed: false });
   },
 });

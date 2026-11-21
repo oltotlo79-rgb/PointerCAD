@@ -6,7 +6,7 @@
 import { inflateSync } from 'fflate';
 import { IO_LIMITS, type IoLimits } from '../limits.js';
 import { DeflateSizeError, deflateExpandedSize } from './deflateExpandedSize.js';
-import { ZipDirectoryError, zipDirectory } from './zipDirectory.js';
+import { ZipDirectoryError, zipDirectory, type ZipEntryRegion } from './zipDirectory.js';
 import { zipCrc32 } from './zipCrc32.js';
 
 export type ArchiveReadLimits = Pick<
@@ -35,7 +35,7 @@ export interface ArchiveReadError {
 }
 
 export type ReadArchiveResult =
-  | { readonly ok: true; readonly entries: ReadonlyMap<string, Uint8Array> }
+  | { readonly ok: true; readonly entries: ReadonlyMap<string, Uint8Array>; readonly omittedOptional?: true }
   | { readonly ok: false; readonly error: ArchiveReadError };
 
 export interface ReadArchiveOptions {
@@ -43,6 +43,8 @@ export interface ReadArchiveOptions {
   readonly shouldExtract: (name: string) => boolean;
   /** 小さな値を注入して大きな実ファイルを作らず検査するための口。 */
   readonly limits?: ArchiveReadLimits;
+  /** Extract optional members after required data. A local payload failure omits just that member. */
+  readonly optionalEntry?: (name: string) => boolean;
 }
 
 export const ARCHIVE_TOO_LARGE_MESSAGE = 'ファイルが大きすぎるため開けません。';
@@ -55,43 +57,65 @@ function failure(kind: ArchiveReadErrorKind, entryName?: string): ReadArchiveRes
   return { ok: false, error };
 }
 
+interface ExpansionBudget {
+  readonly limit: number;
+  remaining: number;
+}
+
+function expandEntry(
+  entry: ZipEntryRegion, budget: ExpansionBudget,
+): Uint8Array | 'entryExpanded' | 'totalExpanded' | 'invalidZip' {
+  const { limit, remaining } = budget;
+  if (entry.expandedSize > limit) return 'entryExpanded';
+  if (entry.expandedSize > remaining) return 'totalExpanded';
+  try {
+    const actual = entry.method === 0 ? entry.compressed.length : deflateExpandedSize(entry.compressed, Math.min(limit, remaining));
+    if (actual > limit) return 'entryExpanded';
+    if (actual > remaining) return 'totalExpanded';
+    if (actual !== entry.expandedSize) return 'invalidZip';
+    const output = new Uint8Array(actual);
+    // Count every allocated output, including one that later fails its CRC.
+    budget.remaining -= actual;
+    if (entry.method === 0) output.set(entry.compressed);
+    else if (inflateSync(entry.compressed, { out: output }).length !== actual) return 'invalidZip';
+    return zipCrc32(output) === entry.crc32 ? output : 'invalidZip';
+  } catch (error) {
+    if (error instanceof DeflateSizeError && error.kind === 'expandedLimit') {
+      return limit <= remaining ? 'entryExpanded' : 'totalExpanded';
+    }
+    return 'invalidZip';
+  }
+}
+
 export function readArchive(bytes: Uint8Array, options: ReadArchiveOptions): ReadArchiveResult {
   const limits = options.limits ?? IO_LIMITS;
   if (!Object.values(limits).every((value) => Number.isSafeInteger(value) && value >= 0)) return failure('invalidZip');
   if (bytes.length > limits.archiveCompressedBytes) return failure('compressedInput');
   const entries = new Map<string, Uint8Array>();
-  let name: string | undefined, total = 0;
+  const budget = { limit: limits.archiveEntryExpandedBytes, remaining: limits.archiveTotalExpandedBytes };
+  let name: string | undefined;
   try {
-    for (const entry of zipDirectory(bytes, limits.archiveEntryCount)) {
+    const directory = zipDirectory(bytes, limits.archiveEntryCount);
+    const optional: ZipEntryRegion[] = [];
+    for (const entry of directory) {
       name = entry.name;
-      if (!options.shouldExtract(name)) continue;
-      const remaining = limits.archiveTotalExpandedBytes - total;
-      if (entry.expandedSize > limits.archiveEntryExpandedBytes) return failure('entryExpanded', name);
-      if (entry.expandedSize > remaining) return failure('totalExpanded', name);
-      const budget = Math.min(limits.archiveEntryExpandedBytes, remaining);
-      let actualSize: number;
-      try {
-        actualSize = entry.method === 0 ? entry.compressed.length : deflateExpandedSize(entry.compressed, budget);
-      } catch (error) {
-        if (error instanceof DeflateSizeError && error.kind === 'expandedLimit') {
-          return failure(limits.archiveEntryExpandedBytes <= remaining ? 'entryExpanded' : 'totalExpanded', name);
-        }
-        throw error;
+      if (!options.shouldExtract(entry.name)) continue;
+      if (options.optionalEntry?.(entry.name)) {
+        optional.push(entry);
+        continue;
       }
-      if (actualSize > limits.archiveEntryExpandedBytes) return failure('entryExpanded', name);
-      if (actualSize > remaining) return failure('totalExpanded', name);
-      if (actualSize !== entry.expandedSize) return failure('invalidZip', name);
-      // この地点までは展開出力を確保しない。実長と予算が一致してから固定領域へ出す。
-      const output = new Uint8Array(actualSize);
-      if (entry.method === 0) output.set(entry.compressed);
-      else {
-        const decoded = inflateSync(entry.compressed, { out: output });
-        if (decoded.length !== actualSize) return failure('invalidZip', name);
-      }
-      if (zipCrc32(output) !== entry.crc32) return failure('invalidZip', name);
-      total += actualSize; entries.set(name, output);
+      const data = expandEntry(entry, budget);
+      if (typeof data === 'string') return failure(data, entry.name);
+      entries.set(entry.name, data);
     }
-    return { ok: true, entries };
+    let omittedOptional = false;
+    for (const entry of optional) {
+      name = entry.name;
+      const data = expandEntry(entry, budget);
+      if (typeof data === 'string') omittedOptional = true;
+      else entries.set(entry.name, data);
+    }
+    return omittedOptional ? { ok: true, entries, omittedOptional } : { ok: true, entries };
   } catch (error) {
     return error instanceof ZipDirectoryError ? failure(error.kind, error.entryName) : failure('invalidZip', name);
   }

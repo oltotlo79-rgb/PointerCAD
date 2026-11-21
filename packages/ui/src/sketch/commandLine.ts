@@ -1,7 +1,7 @@
 /**
  * コマンドラインの構文解析と道具の語の表 (FR-208)。
  *
- * 空行は段の確定を表す。それ以外は名前付きの欄、スケッチの道具、立体の道具、座標の順に調べる。
+ * 空行は段の確定を表す。それ以外は名前付きの欄、スケッチの道具、立体の道具、選びの語、座標の順に調べる。
  * スケッチの 23 道具には道具 ID を、立体の 26 道具にはツールバーの命令 ID を返す。
  * ストアへの反映と命令の実行は commandLineActions.ts が受け持つ。
  *
@@ -142,6 +142,20 @@ export const SOLID_COMMAND_WORDS: readonly SolidCommandWord[] = [
   { commandId: 'toolbar.solidMachining.cut', labelKey: 'toolbar.machining.cut', words: ['切断', 'cut'] },
 ];
 
+/** 選びの語(M06-2)が選ぶもの。直前に作った立体・全部の立体・選択の解除。 */
+export type CommandSelectTarget = 'last' | 'all' | 'none';
+
+/** 選びの語の頭の語。「選ぶ 直前」「sel last」のように、対象の語と空白で区切って打つ。 */
+const SELECT_HEAD_WORDS: readonly string[] = ['選ぶ', 'sel'];
+
+/** 選びの語の対象の語(日本語・英語)。 */
+const SELECT_TARGET_WORDS: ReadonlyMap<string, CommandSelectTarget> = new Map([
+  ['直前', 'last'], ['last', 'last'], ['全部', 'all'], ['all', 'all'], ['解除', 'none'], ['none', 'none'],
+]);
+
+/** 選びの語の打ち方の例(断る時の候補)。 */
+const SELECT_EXAMPLES: readonly string[] = ['sel last', 'sel all', 'sel none'];
+
 /** 候補の tool は、一覧の各ボタンを識別するために画面でも使う。 */
 type SuggestedWord = CommandWord<CommandToolId | ToolbarCommandId>;
 
@@ -177,6 +191,8 @@ export interface CommandLineContext {
 export type CommandLineOutcome =
   | { readonly kind: 'tool'; readonly tool: NumericInputToolId }
   | { readonly kind: 'command'; readonly commandId: ToolbarCommandId }
+  /** 立体を選ぶ(M06-2)。直前に作った立体・全部の立体・解除。 */
+  | { readonly kind: 'select'; readonly target: CommandSelectTarget }
   /** いま開いている段の座標の欄を埋める。 */
   | { readonly kind: 'coordinate'; readonly value: CoordinateInput }
   /** いま開いている段の名前付きの欄を埋める(r=5 / d=20 / a=30 / l=100)。 */
@@ -473,6 +489,17 @@ function parseCoordinateLike(source: string, context: CommandLineContext): Comma
 const FIELD_PATTERN = /^([A-Za-z][A-Za-z0-9]*)\s*=\s*(.*)$/;
 
 /**
+ * 選びの語(M06-2)。頭の語(選ぶ・sel)で始まらなければ null。頭の語の後の対象が 1 つの決まった語でなければ、
+ * 打ち方の例を添えて断る(道具の語の候補を出すと、選びの語を打った人には関係の無い候補になるため)。
+ */
+function parseSelectWords(lower: string): CommandLineOutcome | null {
+  const [head, target, ...rest] = lower.split(/\s+/u);
+  if (head === undefined || !SELECT_HEAD_WORDS.includes(head)) return null;
+  const chosen = target === undefined || rest.length > 0 ? undefined : SELECT_TARGET_WORDS.get(target);
+  return chosen === undefined ? errorOutcome(t('commandLine.error.selectTarget'), SELECT_EXAMPLES) : { kind: 'select', target: chosen };
+}
+
+/**
  * コマンドラインの1行を解く(FR-208)。欄への流し込み・段への確定は `CommandLine.tsx` が行う。
  */
 export function parseCommandLine(input: string, context: CommandLineContext): CommandLineOutcome {
@@ -506,6 +533,11 @@ export function parseCommandLine(input: string, context: CommandLineContext): Co
   const solid = SOLID_COMMAND_WORDS.find(entry => entry.words.some(word => word.toLowerCase() === lower));
   if (solid !== undefined) {
     return { kind: 'command', commandId: solid.commandId };
+  }
+
+  const select = parseSelectWords(lower);
+  if (select !== null) {
+    return select;
   }
 
   if (looksLikeCoordinate(normalized)) {

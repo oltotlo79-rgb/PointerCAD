@@ -14,7 +14,8 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CatalogFamilyPicker, type CatalogFamilyPickerProps } from './CatalogFamilyPicker.js';
 import {
-  ALUMINUM_FRAME_PICKER_CATEGORY, catalogRowLabel, commitCatalogItemChoice, MECHANICAL_PICKER_CATEGORY, PIPING_PICKER_CATEGORY,
+  ALUMINUM_FRAME_PICKER_CATEGORY, catalogFamilyEntries, catalogRowLabel, commitCatalogItemChoice, familyKindKey,
+  MECHANICAL_PICKER_CATEGORY, PIPING_PICKER_CATEGORY, type FamilyPickerCategory,
 } from './catalogFamilyChoices.js';
 import { CatalogStockTable } from './CatalogStockTable.js';
 import { StandardPartPicker } from './StandardPartPickerPanel.js';
@@ -90,6 +91,16 @@ function submit(nodes: Element[]): StandardPartSource | null {
 }
 const mechanical = (): Element[] => change(select(render(), 'assembly.guide.standardCategory'), MECHANICAL_PICKER_CATEGORY);
 const loadAll = (): Promise<void> => PRODUCT_CATALOG_REGISTRY.ensure(PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id));
+/**
+ * 分類の族の種類の名前(登録の表の並び)。一覧を手で写さず登録の表から作る(族を足しても、この検査を直さなくてよい)。
+ * どの種類の鍵も i18n にある事も確かめる(無い鍵は分類の欄の名前に置き換わってしまう)。
+ */
+function registeredKindNames(group: FamilyPickerCategory): string[] {
+  return catalogFamilyEntries(group).map((entry) => {
+    expect(familyKindKey(entry.kindKey), entry.id).toBe(entry.kindKey);
+    return t(familyKindKey(entry.kindKey));
+  });
+}
 
 beforeEach(() => {
   hooks.values = []; hooks.state = 0;
@@ -127,24 +138,7 @@ describe('選ぶ窓の機械要素', () => {
     await loadAll();
     let nodes = mechanical();
     const kinds = options(select(nodes, 'catalog.mechanical.kindGuide'));
-    expect(kinds.map((item) => item.props.children)).toEqual([t('catalog.mechanical.kind.camFollower'),
-      t('catalog.mechanical.kind.wrappedBush'), t('catalog.mechanical.kind.parallelPin'), t('catalog.mechanical.kind.hexNutStyle1'),
-      t('catalog.mechanical.kind.hexNutStyle2'), t('catalog.mechanical.kind.hexNutThin'), t('catalog.mechanical.kind.compressionSpring'),
-      t('catalog.mechanical.kind.rollerFollower'), t('catalog.mechanical.kind.angularContactBallBearing'),
-      t('catalog.mechanical.kind.thrustBallBearing'), t('catalog.mechanical.kind.cylindricalRollerBearingNU'),
-      t('catalog.mechanical.kind.cylindricalRollerBearingNJ'), t('catalog.mechanical.kind.cylindricalRollerBearingNUP'),
-      t('catalog.mechanical.kind.cylindricalRollerBearingN'), t('catalog.mechanical.kind.cylindricalRollerBearingNF'),
-      t('catalog.mechanical.kind.needleRollerBearing'), t('catalog.mechanical.kind.panHeadScrew'),
-      t('catalog.mechanical.kind.countersunkScrew'), t('catalog.mechanical.kind.plainWasherNormal'),
-      t('catalog.mechanical.kind.plainWasherSmall'), t('catalog.mechanical.kind.springWasherNumber2'),
-      t('catalog.mechanical.kind.springWasherNumber3'), t('catalog.mechanical.kind.socketHeadCapScrew'),
-      t('catalog.mechanical.kind.countersunkSocketScrew'), t('catalog.mechanical.kind.hexBoltMain'),
-      t('catalog.mechanical.kind.buttonHeadScrew'), t('catalog.mechanical.kind.eRing'),
-      t('catalog.mechanical.kind.plainWasherLarge'), t('catalog.mechanical.kind.parallelKey'), t('catalog.mechanical.kind.taperPin'),
-      t('catalog.mechanical.kind.splitPin'), t('catalog.mechanical.kind.flangeNut'), t('catalog.mechanical.kind.cheeseHeadScrew'),
-      t('catalog.mechanical.kind.setScrewCup'), t('catalog.mechanical.kind.setScrewFlat'), t('catalog.mechanical.kind.setScrewDog'),
-      t('catalog.mechanical.kind.setScrewCone'), t('catalog.mechanical.kind.oilSeal'), t('catalog.mechanical.kind.oRingP'),
-      t('catalog.mechanical.kind.oRingG'), t('catalog.mechanical.kind.cRingShaft'), t('catalog.mechanical.kind.cRingBore')]);
+    expect(kinds.map((item) => item.props.children)).toEqual(registeredKindNames(MECHANICAL_PICKER_CATEGORY));
     // 材質の違う行が無い族では、材質の欄も長さの欄も出さない。
     expect(nodes.some((item) => item.type === 'select' && item.props.title === t('catalog.mechanical.materialGuide'))).toBe(false);
     expect(nodes.some((item) => item.type === 'input')).toBe(false);
@@ -354,23 +348,7 @@ describe('選ぶ窓の機械要素', () => {
       .map((item) => item.props.children)).toContain(t('catalog.frame.kind'));
     expect(nodes.some((item) => item.type === 'span' && item.props.children === t('catalog.mechanical.kind'))).toBe(false);
     expect(options(select(nodes, 'catalog.frame.kindGuide')).map((item) => item.props.children))
-      .toEqual([t('catalog.frame.kind.tSlotSpecified'), t('catalog.frame.kind.tSlotSeries'), t('catalog.frame.kind.angleBracket'),
-        t('catalog.frame.kind.joinPlate'), t('catalog.frame.kind.slotNut'), t('catalog.frame.kind.tSlotS6'), t('catalog.frame.kind.tSlotS8'),
-        t('catalog.frame.kind.tSlotS10'), t('catalog.frame.kind.channel'), t('catalog.frame.kind.squarePipe'), t('catalog.frame.kind.roundBar'),
-        t('catalog.frame.kind.flatBar'), t('catalog.frame.kind.angle'), t('catalog.frame.kind.nutBar'), t('catalog.frame.kind.catalogNut'),
-        t('catalog.frame.kind.roundNut'), t('catalog.frame.kind.cap'), t('catalog.frame.kind.flatPlate'), t('catalog.frame.kind.shapedPlate'),
-        t('catalog.frame.kind.angleBracketCatalog'), t('catalog.frame.kind.footBase'), t('catalog.frame.kind.adjuster'),
-        t('catalog.frame.kind.blockBracket'), t('catalog.frame.kind.jointBar'), t('catalog.frame.kind.tSlotStud'), t('catalog.frame.kind.knurledNut'),
-        t('catalog.frame.kind.pipeFrame'), t('catalog.frame.kind.pipeFrameSlotted'), t('catalog.frame.kind.pipeFrameTwin'),
-        t('catalog.frame.kind.smallFrame'), t('catalog.frame.kind.smallFrameCap'), t('catalog.frame.kind.bracketStock'),
-        t('catalog.frame.kind.pipeFrameCap'), t('catalog.frame.kind.pipeFrameFoot'), t('catalog.board.kind.fixed'), t('catalog.board.kind.order'),
-        t('catalog.board.kind.partBox'), t('catalog.board.kind.coverFrame'), t('catalog.frame.kind.connectorBox'),
-        t('catalog.frame.kind.capFootBox'), t('catalog.frame.kind.movableBox'), t('catalog.frame.kind.accessoryBox'),
-        t('catalog.frame.kind.sliderBox'), t('catalog.frame.kind.capAccessoryBox'), t('catalog.frame.kind.footPartBox'),
-        t('catalog.frame.kind.slotLongPart'),
-        t('catalog.frame.kind.doorPartBox'),
-        t('catalog.frame.kind.drawerPartBox'),
-        t('catalog.frame.kind.caster')]);
+      .toEqual(registeredKindNames(ALUMINUM_FRAME_PICKER_CATEGORY));
     expect(nodes.some((item) => item.type === 'p' && item.props.children === t('catalog.frame.tSlot.hint'))).toBe(true);
     expect(nodes.some((item) => item.type === CatalogStockTable)).toBe(true);
     const inputs = nodes.filter((item) => item.type === 'input');
@@ -481,9 +459,7 @@ describe('選ぶ窓の配管(K-28)', () => {
     expect(nodes[0]?.type).toBe(CatalogFamilyPicker);
     expect(select(nodes, 'assembly.guide.standardCategory').props.value).toBe(PIPING_PICKER_CATEGORY);
     expect(options(select(nodes, 'catalog.piping.kindGuide')).map((item) => item.props.children))
-      .toEqual([t('catalog.piping.kind.elbow'), t('catalog.piping.kind.tee'), t('catalog.piping.kind.socket'), t('catalog.piping.kind.cap'),
-        t('catalog.piping.kind.plug'), t('catalog.piping.kind.nipple'), t('catalog.piping.kind.bushing'), t('catalog.piping.kind.flange5K'),
-        t('catalog.piping.kind.flange10K')]);
+      .toEqual(registeredKindNames(PIPING_PICKER_CATEGORY));
     expect(options(select(nodes, 'catalog.mechanical.sizeGuide'))).toHaveLength(14);
   });
 

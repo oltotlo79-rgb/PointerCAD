@@ -1,3 +1,4 @@
+import { sha256HexSync } from '../sha256.js';
 import type { PatternPointSlots } from './patternPointSlots.js';
 import type { UnresolvedMathProblem } from './unresolvedMathProblems.js';
 import type { FeatureFolder } from '../history/featureFolders.js';
@@ -65,70 +66,6 @@ export interface ImportedShape {
 // WeakMap にすることで文書を閉じれば原本とダイジェストを一緒に回収できる。
 const importedShapesByBytes = new WeakMap<Uint8Array, ImportedShape>();
 
-const SHA256_ROUND_CONSTANTS = new Uint32Array([
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-]);
-
-function rotateRight(value: number, bits: number): number {
-  return (value >>> bits) | (value << (32 - bits));
-}
-
-/** 同期の pcad 読み込みを保つための SHA-256。作業領域は入力サイズによらず一定。 */
-function importedShapeSha256(bytes: Uint8Array): string {
-  const length = bytes.byteLength;
-  const paddedLength = Math.ceil((length + 9) / 64) * 64;
-  const bitLength = length * 8;
-  const state = new Uint32Array([
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
-  ]);
-  const words = new Uint32Array(64);
-  for (let offset = 0; offset < paddedLength; offset += 64) {
-    words.fill(0, 0, 16);
-    for (let index = 0; index < 64; index += 1) {
-      const position = offset + index;
-      let value = position < length ? bytes[position] : position === length ? 0x80 : 0;
-      if (position >= paddedLength - 8) {
-        const shift = (paddedLength - 1 - position) * 8;
-        value = shift >= 32
-          ? (Math.floor(bitLength / 0x100000000) >>> (shift - 32)) & 0xff
-          : (bitLength >>> shift) & 0xff;
-      }
-      words[index >>> 2] |= value << (24 - (index % 4) * 8);
-    }
-    for (let index = 16; index < 64; index += 1) {
-      const x = words[index - 15];
-      const y = words[index - 2];
-      const s0 = rotateRight(x, 7) ^ rotateRight(x, 18) ^ (x >>> 3);
-      const s1 = rotateRight(y, 17) ^ rotateRight(y, 19) ^ (y >>> 10);
-      words[index] = words[index - 16] + s0 + words[index - 7] + s1;
-    }
-    let [a, b, c, d, e, f, g, h] = state;
-    for (let index = 0; index < 64; index += 1) {
-      const s1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
-      const choice = (e & f) ^ (~e & g);
-      const t1 = (h + s1 + choice + SHA256_ROUND_CONSTANTS[index] + words[index]) | 0;
-      const s0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
-      const majority = (a & b) ^ (a & c) ^ (b & c);
-      const t2 = (s0 + majority) | 0;
-      h = g; g = f; f = e; e = (d + t1) | 0;
-      d = c; c = b; b = a; a = (t1 + t2) | 0;
-    }
-    const chunk = [a, b, c, d, e, f, g, h];
-    for (let index = 0; index < 8; index += 1) {
-      state[index] += chunk[index];
-    }
-  }
-  return [...state].map((word) => word.toString(16).padStart(8, '0')).join('');
-}
-
 /**
  * 原本の読み込み時に1回だけ内容を識別する。以後は同じ入れ物を返し、再ハッシュしない。
  * 直接 model へバイト列を渡す呼び手も初回にここを通すため、名前だけの鍵は作れない。
@@ -138,7 +75,7 @@ export function importedShapeOf(bytes: Uint8Array): ImportedShape {
   if (previous !== undefined) {
     return previous;
   }
-  const shape: ImportedShape = { bytes, shapeDigest: importedShapeSha256(bytes) };
+  const shape: ImportedShape = { bytes, shapeDigest: sha256HexSync(bytes) };
   importedShapesByBytes.set(bytes, shape);
   return shape;
 }
@@ -249,6 +186,8 @@ export type SolidFeatureKind =
    * (カーネルの段と鍵の材料が先にそろっていたため)。
    */
   | 'shell'
+  /** 面だけのボディへの厚み付け(J-05a)。対象の面ボディを消費する。 */
+  | 'thicken'
   /**
    * 平面による切断(FR-432)。分割(FR-424)もこれで満たす。
    * 対象を消費して**残す側 1 つ**のボディを作る。「反対側も残す」は
@@ -667,14 +606,13 @@ export type PatternPlacement =
   | PatternPointSlots;
 
 /**
- * パターン(FR-411、FR-412)。もとの加工フィーチャー(穴・ねじ穴に限る)の
- * ボディを消費し、同じ工具を並べて差し引いた新しいボディを1つ作る。
- * フィレット・面取りを対象にしないのは「工具の形」が無く、変換した位置の辺を
- * 指紋で選び直す必要があって危ういため。
+ * 元の加工結果を消費し、工具の写しを一括で足すか引く。単独の立体では元と写しの和を取る。
+ * 穴・ねじ穴では元の加工の工具を使う。結合・切り抜きでは作成行と対になった和・差の工具を使う。
+ * R面取り・面取り・リブの加工には独立した工具の形がなく、変換先の辺や面の指紋を選び直す必要がある。
  */
 export interface PatternFeature extends SolidFeatureBase {
   readonly kind: 'pattern';
-  /** 繰り返す加工フィーチャーの id(穴・ねじ穴に限る)。消費する。 */
+  /** 穴・ねじ穴、作成行と対の和・差、または単独の立体の作成行の id。この行の結果を消費する。 */
   readonly sourceFeatureId: string;
   readonly placement: PatternPlacement;
 }
@@ -1119,15 +1057,19 @@ export interface ThreadShaftFeature extends SolidFeatureBase {
 /**
  * 曲面の作り方(FR-428)。
  *
- * **5 種の実名と欄はカーネルの `SurfaceInput`(`occt/makeSurface.ts`)に揃えてある。**
- * 同じ操作を model と kernel で別の名前で呼ぶと、解決が詰め替えのたびに
- * 対応表を持つことになるためである(基本形状の `PrimitiveShape` と同じ流儀)。
- *
- * 輪郭は**開いていてよい**(線分 1 本からでも面になる)ので `SketchCurveRef` で持つ。
- * `face` だけが既にある立体の面を材料にするが、**面を読むだけなので対象は消費しない**
- * (罫線面の `solidFace`・基本形状の頂点とまったく同じ扱い)。
+ * 輪郭は開いていてよいので SketchCurveRef で持つ。面を借りる face と offset は
+ * 1 枚の面を指し、offsetBody はフィーチャーのボディ全体を指す。どの場合も元は残る。
  */
 export type SurfaceOperation =
+  | {
+      readonly kind: 'blend';
+      readonly a: SubShapeRef;
+      readonly b: SubShapeRef;
+      readonly weightA: ExpressionValue;
+      readonly weightB: ExpressionValue;
+      readonly flipB: boolean;
+    }
+  | { readonly kind: 'offsetBody'; readonly targetFeatureId: string; readonly distance: ExpressionValue }
   /** 輪郭を面の法線の向きへ掃いた面。 */
   | {
       readonly kind: 'extrude';
@@ -1184,13 +1126,19 @@ export type SurfaceOperation =
  * (ふたの無い開いた殻の体積は 0 とは限らない、実測)。
  * フィレット・面取り・穴のような加工は面だけの形には掛けられず、カーネルが断る。
  *
- * **5 種のどれも対象を消費しない。** 当初の案は「オフセット・厚み付けは消費する」と
- * 書いていたが、`SurfaceInput` にその 2 種は無い(面のオフセットは
- * 後からの追加、厚み付けはシェル FR-418 として別に作った)。
+ * 厚み付けは対象の面ボディを消費するため、独立した ThickenFeature で表す。
  */
 export interface SurfaceFeature extends SolidFeatureBase {
   readonly kind: 'surface';
   readonly operation: SurfaceOperation;
+}
+
+/** 面だけのボディを消費し、指定した側へ厚みを付ける。 */
+export interface ThickenFeature extends SolidFeatureBase {
+  readonly kind: 'thicken';
+  readonly targetFeatureId: string;
+  readonly thickness: ExpressionValue;
+  readonly side: 'normal' | 'reverse' | 'both';
 }
 
 /**
@@ -1417,6 +1365,7 @@ export type SolidFeature =
   | FunctionSurfaceFeature
   // Could 群のうち、型・解決・読み書きを前倒しした 1 種(FR-418)。
   | ShellFeature
+  | ThickenFeature
   // 平面による切断(FR-432)。分割(FR-424)もこれで満たす。
   | CutFeature
   | SurfaceCutFeature

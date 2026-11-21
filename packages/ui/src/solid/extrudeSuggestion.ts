@@ -178,3 +178,9 @@ export function followExtrudeSuggestion(previous: NumericInputState, event: Nume
   if ((event.type !== 'choose' && event.type !== 'moveChoice') || !changed) return next;
   return { ...next, extrudeChoiceManual: true, choices: next.choices.map(withoutMark) };
 }
+
+/** 複数の面へ選び直したとき、領域で自動入力した値だけを外す。 */
+export function clearExtrudeRegion(state: NumericInputState): NumericInputState {
+  const cleared = { ...state, extrudeRegion: undefined, extrudeSuggestions: undefined };
+  return state.extrudeChoiceManual === true ? cleared : applySuggestion(cleared, { operation: 'new', target: '' });
+}

@@ -1,6 +1,6 @@
 /**
  * 生成物(手で直さない): 資料 2 のコネクタの行(外形を包む形。統括の決定 2026-11-18 15:0x の (2))。担当の道具 make_connector_rows.py が、
- * 20 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `connectorBoxOracle.fixture.json`。製造元の名前・型番・品名は書かない。
+ * 20・40 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `connectorBoxOracle.fixture.json`。製造元の名前・型番・品名は書かない。
  */
 import type { PanelPartRecord } from './panelPartCatalog.js';
 
@@ -83,10 +83,14 @@ export const CONNECTOR_BOX_RECORDS: readonly PanelPartRecord[] = [
     materialText: 'アルミ・ステンレス', width: 28, depth: 24, height: 28, massG: 35, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'cross-connector-50x24x50-al', size: '十字のつなぎ 50×24×50（外形を包む形・アルミ）', page: 84, kind: '十字のつなぎ', material: 'aluminum', width: 50, depth: 24,
     height: 50, massG: 87, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'point-cross-connector-60.4x28x47.4-al', size: '十字の点のつなぎ 60.4×28×47.4（外形を包む形・アルミ）', page: 84, kind: '十字の点のつなぎ', material: 'aluminum',
+    width: 60.4, depth: 28, height: 47.4, massG: 97, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'outer-connector-43.5x33x70-al', size: '外に付けるつなぎ 43.5×33×70（外形を包む形・アルミ）', page: 85, kind: '外に付けるつなぎ', material: 'aluminum', width: 43.5,
     depth: 33, height: 70, massG: 120, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'outer-connector-43.5x33x70-al-fe', size: '外に付けるつなぎ 43.5×33×70（外形を包む形・アルミ・鉄）', page: 85, kind: '外に付けるつなぎ', material: 'mixed',
     materialText: 'アルミ・鉄', width: 43.5, depth: 33, height: 70, massG: 127, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'double-connector-24x19.8x56-al-fe', size: '2 本をつなぐつなぎ 24×19.8×56（外形を包む形・アルミ・鉄）', page: 86, kind: '2 本をつなぐつなぎ', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 24, depth: 19.8, height: 56, massG: 58, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'pipe-holder-55x37.4x30-al-fe-68g', size: 'パイプの押さえ 55×37.4×30（外形を包む形・アルミ・鉄）（質量 68 g）', page: 87, kind: 'パイプの押さえ', material: 'mixed',
     materialText: 'アルミ・鉄', width: 55, depth: 37.4, height: 30, massG: 68, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'pipe-holder-55x37.4x30-al-fe-69g', size: 'パイプの押さえ 55×37.4×30（外形を包む形・アルミ・鉄）（質量 69 g）', page: 87, kind: 'パイプの押さえ', material: 'mixed',
@@ -99,4 +103,6 @@ export const CONNECTOR_BOX_RECORDS: readonly PanelPartRecord[] = [
     material: 'aluminum', width: 55, depth: 28, height: 28, massG: 64, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'straight-outer-connector-61x33x33-al', size: '外に付けるまっすぐのつなぎ 61×33×33（外形を包む形・アルミ）', page: 89, kind: '外に付けるまっすぐのつなぎ', material: 'aluminum',
     width: 61, depth: 33, height: 33, massG: 38, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'outer-connector-59.3x51x51-al-fe', size: '外に付けるつなぎ 59.3×51×51（外形を包む形・アルミ・鉄）', page: 325, kind: '外に付けるつなぎ', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 59.3, depth: 51, height: 51, massG: 177, simplified: ['外形を包む形で、細部は作っていない'] },
 ];

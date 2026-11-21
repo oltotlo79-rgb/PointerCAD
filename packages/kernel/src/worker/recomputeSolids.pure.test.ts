@@ -378,6 +378,9 @@ describe('段の種類(SolidStepSpec の union)', () => {
     cut: true,
     surfaceCut: true,
     shell: true,
+    thicken: true,
+    blend: true,
+    offsetBody: true,
     // P6 タスク10 で足した 1 種(読み込んだ形のベースボディ、FR-802)。
     importedSolid: true,
     // P10: 板金の基板と、基板を消費するフランジ。
@@ -388,8 +391,9 @@ describe('段の種類(SolidStepSpec の union)', () => {
     functionSurface: true,
   };
 
-  it('段の種類は32種で、既存の形状・板金・関数曲面・面の移動を含む', () => {
-    expect(Object.keys(STEP_KINDS)).toHaveLength(32);
+  it('段の種類は35種で、既存の形状・板金・関数曲面・面の移動とつなぎを含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(35);
+    expect(Object.keys(STEP_KINDS)).toContain('blend');
     expect(Object.keys(STEP_KINDS)).toContain('holeTranslate');
     expect(Object.keys(STEP_KINDS)).toContain('faceRotate');
     expect(Object.keys(STEP_KINDS)).toContain('functionSurface');

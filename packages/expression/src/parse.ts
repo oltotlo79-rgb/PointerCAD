@@ -11,6 +11,26 @@ import { tokenize, type Token } from './tokenize.js';
  */
 export const CONSTANT_TOKEN_NAMES: ReadonlySet<string> = new Set(['pi', 'π', 'e']);
 
+function unexpectedTrailingFailure(
+  trailing: Token,
+  previous: Token | undefined,
+  source: string,
+): ExpressionFailure {
+  const error = expressionError('unexpectedTrailing', trailing.text, trailing.position);
+  if (previous?.type === 'number' && trailing.type === 'identifier') {
+    // 字句の正規化では文字数が変わらないので、元の入力から切り出せる。
+    return new ExpressionFailure({
+      ...error,
+      hint: {
+        key: 'explicitMultiplication',
+        numberText: source.slice(previous.position, previous.position + previous.text.length),
+        name: source.slice(trailing.position, trailing.position + trailing.text.length),
+      },
+    });
+  }
+  return new ExpressionFailure(error);
+}
+
 /**
  * 式を構文木へ直す(計画書 docs/plans/P1-式とスケッチ.md §2.1 の BNF)。優先順位は
  * 「+ -(2項) < * / < + -(単項) < ^ < √ < 括弧・関数」。^ は右結合。
@@ -201,7 +221,7 @@ export function parse(source: string): Node {
   const node = parseAddExpression();
   const rest = peek();
   if (rest !== null) {
-    throw new ExpressionFailure(expressionError('unexpectedTrailing', rest.text, rest.position));
+    throw unexpectedTrailingFailure(rest, tokens[index - 1], source);
   }
   return node;
 }

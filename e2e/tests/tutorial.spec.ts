@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { examplesFlow } from './examplesFlow.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
 import { tutorialFlow, tutorialPauseFlow } from './tutorialFlow.js';
 
@@ -15,4 +16,11 @@ for (const [name, flow] of [
   });
   await page.goto('/'); await waitForStartupHealth(page, info);
   await flow(page, info); expect(errors).toEqual([]);
+});
+
+test('J-06b 空の部品の案内から作例の一覧を開き、フランジを新しい部品として開くと履歴と体積が作例の形と合う', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await installStartupDiagnostics(page);
+  await page.goto('/'); await waitForStartupHealth(page, info);
+  await examplesFlow(page); expect(errors).toEqual([]);
 });

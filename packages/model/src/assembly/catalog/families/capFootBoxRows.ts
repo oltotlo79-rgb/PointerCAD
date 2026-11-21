@@ -1,10 +1,12 @@
 /**
  * 生成物(手で直さない): 資料 2 のキャップと足の部品の行(外形を包む形。統括の決定 2026-11-18 14:4x の (3)・16:2x)。担当の道具 make_connector_rows.py が、
- * 21 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `capFootBoxOracle.fixture.json`。製造元の名前・型番・品名は書かない。
+ * 21・40 回目の読み 2 本で一致した値から書いた。2 本目の文字は fixture `capFootBoxOracle.fixture.json`。製造元の名前・型番・品名は書かない。
  */
 import type { PanelPartRecord } from './panelPartCatalog.js';
 
 export const CAP_FOOT_BOX_RECORDS: readonly PanelPartRecord[] = [
+  { key: 'pallet-connector-63x55x63-al-fe', size: 'パレットのつなぎ 63×55×63（外形を包む形・アルミ・鉄）', page: 92, kind: 'パレットのつなぎ', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 63, depth: 55, height: 63, massG: 190, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'pipe-stand-103.5x103.5x104-resin', size: 'パイプのスタンド 103.5×103.5×104（外形を包む形・樹脂）', page: 96, kind: 'パイプのスタンド', material: 'mixed',
     materialText: '樹脂', width: 103.5, depth: 103.5, height: 104, massG: 297, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'pipe-stand-103.5x37x104-resin', size: 'パイプのスタンド 103.5×37×104（外形を包む形・樹脂）', page: 96, kind: 'パイプのスタンド', material: 'mixed',
@@ -19,4 +21,6 @@ export const CAP_FOOT_BOX_RECORDS: readonly PanelPartRecord[] = [
     width: 185, depth: 38, height: 70, massG: 411, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'stand-connector-71.8x33x49-al', size: 'スタンドのつなぎ 71.8×33×49（外形を包む形・アルミ）', page: 97, kind: 'スタンドのつなぎ', material: 'aluminum', width: 71.8,
     depth: 33, height: 49, massG: 83, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'pipe-stand-112x112x106-resin', size: 'パイプのスタンド 112×112×106（外形を包む形・樹脂）', page: 329, kind: 'パイプのスタンド', material: 'mixed',
+    materialText: '樹脂', width: 112, depth: 112, height: 106, massG: 782, simplified: ['外形を包む形で、細部は作っていない'] },
 ];

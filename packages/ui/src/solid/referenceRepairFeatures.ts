@@ -28,12 +28,19 @@ export function repairSolid(feature: SolidFeature, map: RepairMapper): SolidFeat
     case 'surfaceCut': return feature.blade.kind === 'plane'
       ? { ...feature, blade: { kind: 'plane', plane: repairPlane(feature.blade.plane, map) } } : feature;
     case 'cut': return { ...feature, plane: repairPlane(feature.plane, map) };
-    case 'surface': return feature.operation.kind === 'face' || feature.operation.kind === 'offset'
-      ? { ...feature, operation: { ...feature.operation, face: map(feature.operation.face, 'face') } } : feature;
+    case 'surface': {
+      const { operation } = feature;
+      if (operation.kind === 'blend') {
+        return { ...feature, operation: { ...operation, a: map(operation.a, 'a'), b: map(operation.b, 'b') } };
+      }
+      return operation.kind === 'face' || operation.kind === 'offset'
+        ? { ...feature, operation: { ...operation, face: map(operation.face, 'face') } } : feature;
+    }
     case 'pattern': return feature.placement.kind === 'points' ? { ...feature, placement: { ...feature.placement,
       points: feature.placement.points.map((value, index) => ({ ...value, reference: repairPoint(value.reference, map, `points:${index}`) })) } } : feature;
     case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': case 'revolve': case 'sew':
     case 'boolean': case 'spring': case 'transform': case 'sweep': case 'rib': case 'functionSurface':
+    case 'thicken':
     case 'importedSolid': case 'importedMesh': return feature;
   }
 }

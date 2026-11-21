@@ -462,6 +462,7 @@ function freshDocumentSession(): Partial<AppState> {
     hoveredElementId: null,
     numericInput: null,
     numericInputAnchor: null,
+    numericInputAvoid: null,
     pendingStart: null,
     shapeDraft: EMPTY_SHAPE_DRAFT,
     shapeErrorMessage: null,

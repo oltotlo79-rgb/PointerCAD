@@ -118,6 +118,7 @@ export type {
   ScaleStepSpec,
   ShellStepSpec,
   SurfaceInput,
+  BlendSurfaceStepSpec,
   SurfaceStepSpec,
   SweepStepSpec,
   ThinExtrudeSide,
@@ -134,7 +135,11 @@ export { moveSolidHole } from './occt/moveSolidHole.js';
 export { makeEmboss, type EmbossInput } from './occt/makeEmboss.js';
 export { makeRib, type RibInput } from './occt/makeRib.js';
 export { makeShell } from './occt/makeShell.js';
+export { makeBlendSurface } from './occt/makeBlendSurface.js';
+export { BlendSurfaceError } from './occt/blendBoundary.js';
 export { makeSurface, isShellShape } from './occt/makeSurface.js';
+export { thickenSurfaceBody, offsetSurfaceBody, SurfaceThickenError } from './occt/makeSurfaceThicken.js';
+export type { ThickenStepSpec, OffsetSurfaceBodyStepSpec } from './types.js';
 export { makeSweep, type SweepInput } from './occt/makeSweep.js';
 export { makeThinExtrude } from './occt/makeThinExtrude.js';
 export { makeThreadShaft, type ThreadShaftInput } from './occt/makeThread.js';

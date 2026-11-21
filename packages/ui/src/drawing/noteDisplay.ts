@@ -1,7 +1,11 @@
 import { note, type Annotation, type DrawingRenderElement, type OutlinedText, type RenderSubpath, type InkBounds, type NoteGeometry } from '@pointercad/drawing';
 
-export function drawingNoteBounds(annotation: Annotation, outline: (text: string, size: number) => OutlinedText): InkBounds | null {
-  const display = displayDrawingNote(annotation, outline);
+/** 注記の文字の置き換え(係数の差し込み {=名前}。drawingNoteFields)。省くと原文のまま。 */
+type NoteTextFields = (text: string) => string;
+
+export function drawingNoteBounds(annotation: Annotation, outline: (text: string, size: number) => OutlinedText,
+  fields?: NoteTextFields): InkBounds | null {
+  const display = displayDrawingNote(annotation, outline, fields);
   if (display === null) return null;
   const bounds: InkBounds[] = [];
   for (const text of display.texts ?? []) {
@@ -14,12 +18,14 @@ export function drawingNoteBounds(annotation: Annotation, outline: (text: string
     bottom: Math.min(...bounds.map((item) => item.bottom)), top: Math.max(...bounds.map((item) => item.top)) };
 }
 
-/** 普通の注記は元部品の読込状態に依存せず、紙上の位置と字体だけで表示できる。 */
-export function displayDrawingNote(annotation: Annotation, outline: (text: string, size: number) => OutlinedText): DrawingRenderElement | null {
+/** 普通の注記は紙上の位置と字体で表示できる。係数の差し込み {=名前} だけは元部品を読む(fields。元が無ければ原文のまま)。 */
+export function displayDrawingNote(annotation: Annotation, outline: (text: string, size: number) => OutlinedText,
+  fields?: NoteTextFields): DrawingRenderElement | null {
   if (!['note', 'leaderNote', 'generalTolerance'].includes(annotation.kind)
     || annotation.sourceTarget !== undefined || annotation.machiningFeatureId !== undefined) return null;
   const target = annotation.kind === 'leaderNote' ? annotation.leader?.[0] : undefined;
-  const geometry = note({ text: annotation.text, position: annotation.position, heightMm: annotation.height,
+  const geometry = note({ text: fields === undefined ? annotation.text : fields(annotation.text), position: annotation.position,
+    heightMm: annotation.height,
     ...(target === undefined ? {} : { leader: { target, end: annotation.leaderEnd ?? 'arrow' } }),
     measureText: (text, size) => outline(text, size).metrics });
   if (geometry === null) return null;

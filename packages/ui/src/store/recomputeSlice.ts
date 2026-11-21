@@ -28,6 +28,7 @@ import {
   rememberTimelineHintShown,
 } from './documentDerived.js';
 import { activePartDocument } from './documentKind.js';
+import { localizedPartErrors } from '../solid/surfaceBodyFailureText.js';
 
 /** 検査口からも読める、最後に完了した再計算の結末。 */
 export type RecomputeOutcome =
@@ -411,7 +412,7 @@ function recomputeResultPatch(
     appearanceMatches: result.cancelled
       ? state.appearanceMatches
       : (result.appearanceMatches ?? []),
-    partErrors: result.errors,
+    partErrors: localizedPartErrors(result.errors),
     cacheHits: result.cacheHits,
     // 図形の測定値。控えるかどうかの条件は mathGeometryResultOf の 1 か所。
     mathGeometryResult: mathGeometryResultOf(state, document, result),
@@ -491,6 +492,8 @@ export interface StagedSolidOwnership {
 
 /** 段階計算の依頼。`candidate` は `base` から純関数で作った、末尾へ積んだ形の文書。 */
 export interface StagedSolidRequest {
+  /** 複数面の押し出しは仮表示せず、新規なら全ボディ、和差なら最終ボディを確かめる。 */
+  readonly batchExtrude?: { readonly faceCount: number; readonly resultBodyIds: readonly string[] };
   readonly base: PartDocument;
   readonly candidate: PartDocument;
   /** 最後に作られる立体の id(結合・切り取りなら、ブーリアンの段)。 */
@@ -499,7 +502,7 @@ export interface StagedSolidRequest {
   readonly fingerprint: string;
 }
 
-export interface StagedSolidState {
+export interface StagedSolidState extends Pick<StagedSolidRequest, 'batchExtrude'> {
   readonly ownership: StagedSolidOwnership;
   readonly fingerprint: string;
   readonly finalFeatureId: string;

@@ -779,11 +779,12 @@ export {
   DEFAULT_EXTRUDE_END, DEFAULT_EXTRUDE_THICKNESS_MM, DEFAULT_HOLE_ENTRY,
   DEFAULT_MIRROR_PLANE_ID, DEFAULT_RIB_EXTEND_TO_BODY, DEFAULT_RIB_SIDE,
   DEFAULT_RIB_THICKNESS_MM, DEFAULT_SCALE_FACTOR, DEFAULT_SURFACE_ANGLE_DEGREES,
-  DEFAULT_SURFACE_DISTANCE_MM, DEFAULT_SWEEP_FRENET, DEFAULT_TAPER_ANGLE_DEGREES,
+  DEFAULT_SURFACE_DISTANCE_MM, DEFAULT_SWEEP_END_SCALE, DEFAULT_SWEEP_FRENET, DEFAULT_SWEEP_TWIST_DEGREES,
+  DEFAULT_SWEEP_WALL_THICKNESS_MM, DEFAULT_TAPER_ANGLE_DEGREES,
   DEFAULT_THICKNESS_SIDE, DEFAULT_THREAD_SHAFT_FROM_END, DEFAULT_THREAD_SHAFT_LENGTH_MM,
   DEFAULT_THREAD_SHAFT_MODELED, DEFAULT_TRANSFORM_ROTATION_DEGREES, DEFAULT_TRANSLATION_MM,
   extrudeShapingOf, holeEntryOf,
-  MAX_DRAFT_ANGLE_DEGREES, MAX_SCALE, MAX_TAPER_ANGLE_DEGREES, MIN_SCALE,
+  MAX_DRAFT_ANGLE_DEGREES, MAX_SCALE, MAX_SWEEP_END_SCALE, MAX_SWEEP_TWIST_DEGREES, MAX_TAPER_ANGLE_DEGREES, MIN_SCALE,
 } from './part/createPartDocument.js';
 /**
  * Should 群の鍵の材料と段(FR-401、FR-415〜FR-419、FR-424、FR-428、FR-432)。
@@ -825,7 +826,7 @@ export {
  * ただし**段の欄の型**(入口の形・丸める半径・曲面の作り方)は、ui とその場入力が
  * 「同じ形なら同じ段」を確かめられるように出す(`ExtrudeEndPlan` と同じ扱い)。
  */
-export type { ShellFeature } from './part/types.js';
+export type { ShellFeature, ThickenFeature } from './part/types.js';
 export type { FilletRadius } from './part/createPartDocument.js';
 export {
   DEFAULT_FILLET_RADIUS_END_MM, DEFAULT_SHELL_OUTWARD, DEFAULT_SHELL_THICKNESS_MM,
@@ -1346,6 +1347,8 @@ export {
   mateValueOf, MAX_ASSEMBLY_VARIABLES, MAX_MOVABLE_COMPONENTS, TOO_MANY_COMPONENTS_MESSAGE,
 } from './assembly/constraints/mateVariables.js';
 export { importedShapeOf, type ImportedShape } from './part/types.js';
+export { sha256HexSync } from './sha256.js';
+export type { SurfaceBodyFailureReason } from './part/surfaceBodyPlan.js';
 export type {
   MonitoredKernelBridge,
   AssemblyKernelBridge,
@@ -1614,3 +1617,6 @@ export { planCircularFilletWeld } from './assembly/welding/planCircularFilletWel
 export type { CircularFilletWeldRequest, CircularFilletWeldFailure, CircularFilletWeldPlan } from './assembly/welding/planCircularFilletWeld.js';
 export { applyCircularFilletWeld } from './assembly/welding/applyCircularFilletWeld.js';
 export type { ApplyCircularFilletWeldResult } from './assembly/welding/applyCircularFilletWeld.js';
+
+export { PART_EXAMPLES } from './examples/partExamples.js';
+export type { PartExample, PartExampleId } from './examples/partExample.js';

@@ -58,39 +58,21 @@ export function familyMaterials(family: LoadedFamily): readonly string[] {
   return [...new Set(family.rows.flatMap((row) => row.materialLabel === undefined ? [] : [row.materialLabel]))];
 }
 
-/** 寸法を指定して作る族(表を持たない族)の線図の種類と、その説明の 1 行の鍵(形が作れる条件と、規格の寸法ではない事)。 */
-const SPECIFIED_FAMILY_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], MessageKey>>> = {
-  compressionSpring: 'catalog.mechanical.spring.hint', sealRing: 'catalog.mechanical.sealRing.hint',
-  tSlotFrame: 'catalog.frame.tSlot.hint', angleBracket: 'catalog.frame.bracket.hint', joinPlate: 'catalog.frame.plate.hint',
-  slotNut: 'catalog.frame.nut.hint',
-};
+type FamilyHint = NonNullable<NonNullable<ReturnType<CatalogRegistry['entry']>>['hint']>;
 
-/** 資料の寸法に合わせたフレームの部品の族(行を選ぶ族。形は簡略)の説明の 1 行。行の文字に簡略の印を添える。 */
-const FRAME_PART_HINTS: Readonly<Partial<Record<LoadedFamily['diagram'], MessageKey>>> = {
-  tSlotNutBar: 'catalog.frame.nutBar.hint', tSlotNut: 'catalog.frame.catalogNut.hint', roundNut: 'catalog.frame.roundNut.hint',
-  frameCap: 'catalog.frame.cap.hint', flatPlate: 'catalog.frame.flatPlate.hint', shapedPlate: 'catalog.frame.shapedPlate.hint',
-  angleBracketCatalog: 'catalog.frame.angleBracketCatalog.hint', footBase: 'catalog.frame.footBase.hint', adjuster: 'catalog.frame.adjuster.hint',
-  jointBar: 'catalog.frame.jointBar.hint', tSlotStud: 'catalog.frame.tSlotStud.hint', knurledNut: 'catalog.frame.knurledNut.hint',
-  pipeFrame: 'catalog.frame.pipeFrame.hint', pipeFrameSlotted: 'catalog.frame.pipeFrameSlotted.hint', pipeFrameTwin: 'catalog.frame.pipeFrameTwin.hint',
-  smallFrame: 'catalog.frame.smallFrame.hint', smallFrameCap: 'catalog.frame.smallFrameCap.hint', bracketStock: 'catalog.frame.bracketStock.hint',
-  pipeFrameCap: 'catalog.frame.pipeFrameCap.hint', pipeFrameFoot: 'catalog.frame.pipeFrameFoot.hint',
-  panelBoardFixed: 'catalog.board.fixed.hint', panelBoardOrder: 'catalog.board.order.hint',
-  panelPartBox: 'catalog.board.partBox.hint', panelCoverFrame: 'catalog.board.coverFrame.hint', connectorBox: 'catalog.frame.connectorBox.hint',
-  capFootBox: 'catalog.frame.capFootBox.hint', movableBox: 'catalog.frame.movableBox.hint', accessoryBox: 'catalog.frame.accessoryBox.hint',
-  caster: 'catalog.frame.caster.hint', blockBracket: 'catalog.frame.blockBracket.hint',
-  sliderBox: 'catalog.frame.sliderBox.hint', capAccessoryBox: 'catalog.frame.capAccessoryBox.hint',
-  footPartBox: 'catalog.frame.footPartBox.hint', slotLongPart: 'catalog.frame.slotLongPart.hint',
-  doorPartBox: 'catalog.frame.doorPartBox.hint',
-  drawerPartBox: 'catalog.frame.drawerPartBox.hint',
-};
+/** 族の説明の 1 行と行の文字の形。登録口の行が持つ(族ごとの表を ui に持たない。族を足す時に ui を直さなくてよい)。 */
+function registeredHint(family: LoadedFamily, registry: CatalogRegistry): FamilyHint | undefined {
+  return registry.entry(family.id)?.hint;
+}
 
 /**
  * 族の指定の欄の説明の 1 行の鍵。長さを式で入れる族は「長さは自由に入力(規格の呼び長さとは名乗らない)」
  * (小ねじは頭の高さとの関係、ピンは面取りとの関係を添える)、寸法を指定して作るばねは形が作れる条件。どれでもない族は null。
  */
-export function familyHintKey(family: LoadedFamily): MessageKey | null {
-  const specified = SPECIFIED_FAMILY_HINTS[family.diagram] ?? FRAME_PART_HINTS[family.diagram];
-  if (specified !== undefined) return specified;
+export function familyHintKey(family: LoadedFamily, registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): MessageKey | null {
+  const registered = registeredHint(family, registry)?.key;
+  const hintKey = MESSAGE_KEYS.find((candidate) => candidate === registered);
+  if (hintKey !== undefined) return hintKey;
   if (family.diagram === 'tSlotSeries') return 'catalog.frame.series.hint';
   if (family.diagram === 'bolt') {
     if (family.rows.some((row) => row.dims.shortLengthMax !== undefined)) return 'catalog.mechanical.setScrew.hint';
@@ -175,8 +157,10 @@ function pipingRowLabel(diagram: LoadedFamily['diagram'], row: FamilyRow): strin
 }
 
 /** 呼びの一覧に出す 1 行の文字(族の線図の種類ごとの形。製造元の型番は出さない)。 */
-export function catalogRowLabel(family: LoadedFamily, row: FamilyRow): string {
+export function catalogRowLabel(family: LoadedFamily, row: FamilyRow,
+  registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): string {
   const dims = row.dims;
+  const rowForm = registeredHint(family, registry)?.rowLabel;
   const piping = pipingRowLabel(family.diagram, row);
   if (piping !== null) return piping;
   if (family.diagram === 'camFollower') {
@@ -188,8 +172,8 @@ export function catalogRowLabel(family: LoadedFamily, row: FamilyRow): string {
     return fill(t('catalog.mechanical.row.bush'), { inner: dims.innerDiameter, outer: dims.outerDiameter, length: dims.length });
   }
   if (family.diagram === 'pin') return pinRowLabel(row);
-  if (SPECIFIED_FAMILY_HINTS[family.diagram] !== undefined) return t('catalog.mechanical.row.spring');
-  if (FRAME_PART_HINTS[family.diagram] !== undefined && row.simplified !== undefined && row.simplified.length > 0) {
+  if (rowForm === 'specified') return t('catalog.mechanical.row.spring');
+  if (rowForm === 'simplified' && row.simplified !== undefined && row.simplified.length > 0) {
     return fill(t('catalog.frame.row.simplified'), { size: row.size, parts: row.simplified.join('・') });
   }
   if (family.diagram === 'tSlotSeries') {

@@ -318,6 +318,9 @@ export function serializeDrawing(
   if (document.schemaVersion < 19 && document.tables.some((table) => table.options.stockList === true)) {
     throw new RangeError('Steel stock drawing tables require schema19');
   }
+  if (document.schemaVersion < 24 && document.tables.some((table) => table.kind === 'parameter')) {
+    throw new RangeError('係数の表を保存するには保存形式の版24が必要です。');
+  }
   if (!hasOnlyFiniteJsonNumbers(document)) throw new Error('図面に有限でない数値が含まれるため保存できません。');
   const envelope: PcadDrawingEnvelope = {
     schema: document.schemaVersion,
@@ -568,7 +571,7 @@ function isStringArray(value: unknown): value is readonly string[] {
 function isTable(value: unknown): value is DrawingTable {
   if (!isRecord(value)
     || !hasString(value, 'id')
-    || !isLiteral(value['kind'], ['bom', 'hole', 'revision'])
+    || !isLiteral(value['kind'], ['bom', 'hole', 'revision', 'parameter'])
     || !isPoint2(value['position'])
     || !isStringArray(value['columns'])
     || (value['rows'] !== undefined
@@ -694,6 +697,10 @@ export function parseDrawing(text: string): ParseDrawingResult {
   if (schema < 19 && isRecord(parsed['document']) && isUnknownArray(parsed['document']['tables'])
     && parsed['document']['tables'].some((table) => isRecord(table) && isRecord(table['options']) && table['options']['stockList'] === true)) {
     return failure('invalidField', 'Steel stock drawing tables require schema19');
+  }
+  if (schema < 24 && isRecord(parsed['document']) && isUnknownArray(parsed['document']['tables'])
+    && parsed['document']['tables'].some((table) => isRecord(table) && table['kind'] === 'parameter')) {
+    return failure('notPcad', '係数の表を読むには保存形式の版24が必要です。');
   }
   if (schema < PCAD_SCHEMA_VERSION) {
     const migrated = migrateToCurrentSchema(parsed, schema);

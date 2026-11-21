@@ -107,7 +107,7 @@ function toolbarHelpTopic(group: ToolbarCommandGroup, id: string): string {
   }
   const specific: Readonly<Record<string, string>> = {
     'fileMenu.compareDocuments': 'document-diff', 'fileMenu.exportShape': 'export', 'fileMenu.importShape': 'import',
-    'fileMenu.saveAsTemplate': 'template', 'fileMenu.newFromTemplate': 'template', 'fileMenu.print': 'print-save-as',
+    'fileMenu.saveAsTemplate': 'template', 'fileMenu.newFromTemplate': 'template', 'fileMenu.print': 'print-save-as', 'fileMenu.openExample': 'tutorial',
     'fileMenu.newDrawingFromPart': 'drawing', 'fileMenu.newDrawingFromTemplate': 'drawing', 'fileMenu.newAssembly': 'assembly',
     'shape.functionPlot': 'function-curve', 'shape.text': 'text-sketch', 'shape.ellipse': 'ellipse', 'shape.spline': 'spline',
     'sketch.face': 'face-and-color', 'sketch.select': 'selection',
@@ -135,6 +135,7 @@ function toolbarHelpTopic(group: ToolbarCommandGroup, id: string): string {
     if (['linearPattern', 'circularPattern'].includes(id)) return 'pattern';
     if (['box', 'cylinder', 'sphere', 'cone', 'torus'].includes(id)) return 'primitive';
     if (['loft', 'ruled'].includes(id)) return 'ruled-loft';
+    if (id === 'thicken' || id === 'offsetBody' || id === 'blend') return 'function-surface';
     if (id === 'sew') return 'solid-combine';
     if (['extrude', 'revolve'].includes(id)) return 'solid-basics';
     if (id.toLowerCase().includes('cut')) return 'cut';

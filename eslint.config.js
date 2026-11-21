@@ -33,6 +33,7 @@ const reviewModuleFiles = [
   'packages/ui/src/solid/treeSummary.ts',
   'packages/ui/src/solid/solidPropertyContracts.ts',
   'packages/ui/src/solid/solidPropertyFields.ts',
+  'packages/ui/src/solid/solidPropertyBasicFields.ts',
 ];
 
 /** UI → model と UI → FEM → model の依存方向を機械施行する(rules/04)。 */
@@ -98,7 +99,7 @@ const layerRules = [
     forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content', '**/kernelBridge.js', '**/kernelBridge'],
   },
   {
-    files: ['packages/model/src/kernelBridge/subShapeMatching.ts'],
+    files: ['packages/model/src/kernelBridge/subShapeMatching.ts', 'packages/model/src/kernelBridge/subShapeMatchCandidates.ts'],
     forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content', 'comlink',
       '**/kernelBridge.js', '**/kernelBridge', 'opencascade.js', 'opencascade.js/*'],
   },
@@ -307,6 +308,26 @@ const canonicalRecordPredicateRule = {
     return {
       ':matches(FunctionDeclaration, FunctionExpression, VariableDeclarator)[id.name="isRecord"]'(node) {
         context.report({ node, messageId: 'useCanonical' });
+      },
+    };
+  },
+};
+
+/**
+ * kernel の入口は名前を書いた export だけ(export * で中身を丸ごと出さない)。公開名の名簿の検査(kernelPublicExports.test.ts)を
+ * 消した後も、この決まりだけは残す(利用者の回答 2026-11-20 18:2x「手で持つ写しを消す」、統括の決定 18:4x)。
+ */
+/** @type {import('eslint').Rule.RuleModule} */
+const namedEntryExportsRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { exportAll: 'kernel の入口は名前を書いて export し、export * で中身を丸ごと出さないでください。' },
+  },
+  create(context) {
+    return {
+      ExportAllDeclaration(node) {
+        context.report({ node, messageId: 'exportAll' });
       },
     };
   },
@@ -549,7 +570,7 @@ export default tseslint.config(
     },
   },
     {
-      files: ['packages/model/src/kernelBridge/subShapeMatching.ts'],
+      files: ['packages/model/src/kernelBridge/subShapeMatching.ts', 'packages/model/src/kernelBridge/subShapeMatchCandidates.ts'],
       rules: {
       'max-lines': ['error', { max: 250, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
@@ -910,6 +931,12 @@ export default tseslint.config(
     ignores: ['packages/model/src/valueGuards.ts', '**/*.test.{ts,tsx}', '**/*.testSupport.{ts,tsx}'],
     plugins: { 'record-guard': { rules: { canonical: canonicalRecordPredicateRule } } },
     rules: { 'record-guard/canonical': 'error' },
+  },
+  {
+    // Use a separate rule so narrower syntax overrides cannot remove this guard (kernel entry: named exports only).
+    files: ['packages/kernel/src/index.ts'],
+    plugins: { 'entry-exports': { rules: { named: namedEntryExportsRule } } },
+    rules: { 'entry-exports/named': 'error' },
   },
   {
     files: ['packages/ui/src/beam/**/*.test.ts'],

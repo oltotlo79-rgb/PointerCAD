@@ -466,9 +466,12 @@ function solidDependencies(
       }
       break;
     case 'pattern':
-      // 点集合(FR-425)は軸を持たないので、軸の依存は数えない
-      // (点そのものの依存は `PointReference` が id しか持たず追えない)。
-      if (feature.placement.kind !== 'points') {
+      // 再計算では、配置点が指す頂点や基準点を経由して自分へ戻る参照も調べる。
+      if (feature.placement.kind === 'points') {
+        if (context.preciseProfiles) {
+          for (const slot of feature.placement.points) found.push(...pointReferenceDependencies(context, slot.reference));
+        }
+      } else {
         found.push(
           ...axisSpecDependencies(
             context,
@@ -553,6 +556,10 @@ function solidDependencies(
         // 面のオフセット(6 種目)も面を借りるだけなので同じ扱い。
         found.push(...solidDependency(context, feature.operation.targetFeatureId));
         found.push(...subShapeDependencies(context, feature.operation.face));
+      } else if (feature.operation.kind === 'blend') {
+        found.push(...subShapeDependencies(context, feature.operation.a), ...subShapeDependencies(context, feature.operation.b));
+      } else if (feature.operation.kind === 'offsetBody') {
+        found.push(...solidDependency(context, feature.operation.targetFeatureId));
       } else if (feature.operation.kind === 'revolve') {
         found.push(...axisSpecDependencies(context, feature.operation.axis));
       }
@@ -591,6 +598,8 @@ function solidDependencies(
         `pairedWith` は依存ではない(対の相手は同じ対象を切るだけで、互いを材料にしない)。
       */
       found.push(...planeSpecDependencies(context, feature.plane));
+      break;
+    case 'thicken': // 消費する対象は consumedTargetsOf で記録済み。
       break;
     case 'functionSurface':
       // 関数は係数だけを参照し、他の履歴の形状には依存しない。

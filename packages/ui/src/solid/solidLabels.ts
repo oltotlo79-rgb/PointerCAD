@@ -61,6 +61,7 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   // くり抜き(FR-418)。「加工」の仲間なので
   // `toolbar.machining.*`。
   shell: 'toolbar.machining.shell',
+  thicken: 'toolbar.machining.thicken',
   // 平面による切断(FR-432)。「加工」の畳んだ一覧に入る
   // ので `toolbar.machining.*`。
   cut: 'toolbar.machining.cut',

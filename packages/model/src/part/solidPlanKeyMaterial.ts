@@ -11,6 +11,12 @@ import {
   toKeyTransform, toKeyVec3,
 } from './solidPlanKeyGeometry.js';
 
+/** 通常の和・差では配置を省き、工具の向きや位置が変わったパターンだけ新しい鍵にする。 */
+function booleanToolMaterial(plan: Extract<SolidStepPlan, { readonly kind: 'boolean' }>) {
+  return { toolKey: plan.toolKey,
+    ...(plan.transforms === undefined ? {} : { transforms: plan.transforms.map(toKeyTransform) }) };
+}
+
 /** 穴・ねじ穴で共通の配置材料。省略された配置は鍵にも載せない。辺からの距離の辺は指紋の文字列にする(M-02)。 */
 function holePlacementKeyMaterial(plan: Extract<SolidStepPlan, { readonly kind: 'hole' | 'thread' }>) {
   const planar = plan.planar;
@@ -36,6 +42,12 @@ function sweepShapeKeyMaterial(plan: Extract<SolidStepPlan, { readonly kind: 'sw
 function extrudeProfileKey(plan: Extract<SolidStepPlan, { readonly kind: 'extrude' }>) {
   return { profile: plan.profile.map(toKeyCurve),
     ...(plan.holes === undefined || plan.holes.length === 0 ? {} : { holes: plan.holes.map(loop => loop.map(toKeyCurve)) }) };
+}
+
+function surfaceKeyMaterial(plan: Extract<SolidStepPlan, { kind: 'surface' | 'blend' }>): SolidStepKeyMaterial {
+  if (plan.kind === 'blend') return { ...plan, a: { sourceKey: plan.a.sourceKey, query: fingerprintKeyText(plan.a.query) },
+    b: { sourceKey: plan.b.sourceKey, query: fingerprintKeyText(plan.b.query) } };
+  return { kind: 'surface', shape: toKeySurfaceShape(plan.shape), targetKey: plan.targetKey };
 }
 
 /** 1段ぶんの鍵の材料。名前・抑制・色は混ぜない(形が変わらないため)。 */
@@ -86,7 +98,7 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         kind: 'boolean',
         operation: plan.operation,
         targetKey: plan.targetKey,
-        toolKey: plan.toolKey,
+        ...booleanToolMaterial(plan),
         // 立てた差だけ材料に入る。欄が無ければ鍵の文字列は以前と同じ(既存のキャッシュはそのまま当たる)。
         ...(plan.requireRemoval === true ? { requireRemoval: true } : {}),
       };
@@ -282,14 +294,14 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         face: fingerprintKeyText(plan.face),
         offset: plan.offset,
       };
-    case 'surface':
+    case 'blend': case 'surface':
       // 面を借りる作り方(face / offset)でも消費しないが targetKey は必ず混ぜる
       // (混ぜないと上流を編集しても鍵が変わらず古い面の形が返る。NFR-PF-3)。
-      return {
-        kind: 'surface',
-        shape: toKeySurfaceShape(plan.shape),
-        targetKey: plan.targetKey,
-      };
+      return surfaceKeyMaterial(plan);
+    case 'thicken':
+      return { kind: plan.kind, targetKey: plan.targetKey, thickness: plan.thickness, side: plan.side };
+    case 'offsetBody':
+      return { kind: plan.kind, targetKey: plan.targetKey, distance: plan.distance };
     case 'shell':
       return {
         kind: 'shell',

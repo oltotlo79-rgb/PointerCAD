@@ -1,0 +1,30 @@
+.pcad-examples {
+  box-sizing: border-box;
+  width: min(calc(600px * var(--pcad-scale)), calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  padding: calc(16px * var(--pcad-scale));
+  color: var(--pcad-text);
+  background: var(--pcad-surface);
+  font: inherit;
+}
+.pcad-examples::backdrop { background: rgb(0 0 0 / 45%); }
+.pcad-examples h2 { margin: 0 0 calc(8px * var(--pcad-scale)); font-size: 1.1em; }
+.pcad-examples p { margin: 0; overflow-wrap: anywhere; }
+.pcad-examples__list { display: grid; gap: calc(8px * var(--pcad-scale)); margin: calc(12px * var(--pcad-scale)) 0; padding: 0; list-style: none; }
+.pcad-examples__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(8px * var(--pcad-scale));
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  padding: calc(8px * var(--pcad-scale));
+}
+.pcad-examples__text { display: grid; gap: calc(2px * var(--pcad-scale)); min-width: 0; flex: 1 1 calc(320px * var(--pcad-scale)); }
+.pcad-examples__features { color: var(--pcad-text-muted); }
+.pcad-examples__actions, .pcad-examples footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: calc(8px * var(--pcad-scale)); }
+.pcad-examples button { font: inherit; color: inherit; background: var(--pcad-surface); border: 1px solid var(--pcad-control-border); padding: calc(6px * var(--pcad-scale)); }

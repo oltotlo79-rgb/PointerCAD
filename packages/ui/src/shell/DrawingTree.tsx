@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { paperSizeOf, type DrawingDocument } from '@pointercad/drawing';
 import { drawingDimensionContext, resolveDrawingGdt, resolveDrawingWelds, type DrawingGdtResolution, type DrawingRefreshResult, type ResolvedWeldSymbol } from '@pointercad/model';
+import { DRAWING_TABLE_KIND_LABELS } from '../drawing/drawingTableKinds.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { LayersIcon, PlaneSectionIcon } from './icons.js';
@@ -21,7 +22,7 @@ const rowLabels: DrawingTreeLabels = {
       : dimension.measurement === 'horizontal' ? 'drawing.dimension.horizontal'
         : dimension.measurement === 'vertical' ? 'drawing.dimension.vertical' : 'drawing.dimension.length')}`,
   annotation: (_kind, index) => `${t('drawing.tree.annotations')} ${index}`,
-  table: (kind, index) => `${t(kind === 'bom' ? 'drawing.table.bom' : kind === 'hole' ? 'drawing.table.hole' : 'drawing.table.revisionTable')} ${index}`,
+  table: (kind, index) => `${t(DRAWING_TABLE_KIND_LABELS[kind])} ${index}`,
   balloon: (number) => `${t('drawing.table.balloon')} ${number}`,
   manufacturing: (kind, index) => `${t(kind === 'datum' ? 'drawing.gdt.datum' : kind === 'gdt' ? 'drawing.gdt.title' : 'drawing.weld.title')} ${index}`,
 };

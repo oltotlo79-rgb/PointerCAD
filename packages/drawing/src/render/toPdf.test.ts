@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bezierArc } from './bezierArc.js';
-import { toPdf } from './toPdf.js';
+import { createPdf } from './pdfWriter.js';
+import { toPdf, toPdfPages } from './toPdf.js';
 import type { RenderDocument, RenderPath, RenderText } from './types.js';
 
 const stroke = { color: '#000000', widthMm: 0.5, dashMm: [] };
@@ -79,5 +80,36 @@ describe('共通IRのPDF化(P8-46)', () => {
     ] }] }));
     const length = bytes(...lines).byteLength; console.log(`[P8 PDF] 5000線: ${length} bytes`);
     expect(length).toBeGreaterThanOrEqual(175_000); expect(length).toBeLessThanOrEqual(525_000);
+  });
+});
+
+describe('複数の描画文書のPDF化', () => {
+  it('1頁の直線を旧版と同じ命令・メタデータで書く', () => {
+    const document = documentOf(line);
+    const metadata = { creationDate: '2026-09-09T12:34:56Z', title: '板' };
+    const expected = createPdf({ widthMm: 420, heightMm: 297, ...metadata,
+      content: 'q\n1.4173 w\n0.0000 0.0000 m\n283.4646 0.0000 l\nS\nQ' });
+    if (!expected.ok) throw new Error(expected.reason);
+    for (const result of [toPdf(document, metadata), toPdfPages([document], metadata)]) {
+      if (!result.ok) throw new Error(result.reason);
+      expect(result.bytes).toEqual(expected.bytes);
+    }
+  });
+
+  it('寸法の違う2枚に線と文字の輪郭を分けて書く', () => {
+    const result = toPdfPages([documentOf(line), { ...documentOf(text), widthMm: 210 }]);
+    if (!result.ok) throw new Error(result.reason);
+    const output = new TextDecoder('latin1').decode(result.bytes);
+    expect(output.match(/\/MediaBox\[[^\]]*\]/gu)).toEqual([
+      '/MediaBox[0 0 1190.5512 841.8898]', '/MediaBox[0 0 595.2756 841.8898]',
+    ]);
+    const streams = Array.from(output.matchAll(/\nstream\n([\s\S]*?)\nendstream/gu), (match) => match[1]);
+    expect(streams).toEqual([commands(line), commands(text)]);
+    expect(output).toContain('trailer\n<</Size 7/Root 1 0 R>>');
+  });
+
+  it('空の文書配列と、2枚目に輪郭のない文字を含む文書を断る', () => {
+    expect(toPdfPages([])).toEqual({ ok: false, reason: 'invalidContent' });
+    expect(toPdfPages([documentOf(line), documentOf({ ...text, outline: null })])).toEqual({ ok: false, reason: 'invalidContent' });
   });
 });

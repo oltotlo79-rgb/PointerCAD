@@ -20,6 +20,10 @@ import { currentPcadAttachments } from '../store/attachKernel.js';
 import { newSketchCanvas } from './canvasFile.js';
 import { startAutoSave } from './attachAutoSave.js';
 import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
+import { FIXED_ENTRY_MTIME, zipPcadEntries, type PcadZipEntries } from '@pointercad/io';
+import { readArchive } from '@pointercad/io/testing/read-archive';
+import type { BeamAnalysisResult, SavedAnalysisResult } from '@pointercad/model/beam-analysis';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 
 beforeEach(() => { resetTestStore(); useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null }); });
 
@@ -272,6 +276,64 @@ describe('アセンブリの文書ファイル', () => {
     expect(g.openPcad).toHaveBeenCalledExactlyOnceWith('all');
     expect(activeDocument(useAppStore.getState()).kind).toBe('assembly');
     expect(activeFileName(useAppStore.getState())).toBe('opened.pcada');
+  });
+});
+
+/** 保存した定義(id・revision)と同じ梁の静解析の結果を持つ組立の束。結果の形は io の検査と同じ最小の物。 */
+function beamResultBundle(name: string) {
+  const fixture = beamCadFixture();
+  const document = { ...fixture.document, name, beamAnalysisInputs: { schema: 'pointercad-beam-inputs/1' as const,
+    analyses: [{ kind: 'standard-members' as const, definition: fixture.definition }] } };
+  const zero = [0, 0, 0] as const;
+  const result: BeamAnalysisResult = { kind: 'oofem-linear-beam-3d', model: 'linear-timoshenko-isotropic',
+    analysisId: fixture.definition.id, analysisRevision: fixture.definition.revision, source: fixture.definition.source,
+    inputSha256: '5'.repeat(64), structuralCertification: false,
+    nodes: ['base', 'tip'].map((nodeId, i) => ({ nodeId, solverNode: i + 1, displacementM: zero, rotationRad: zero,
+      reactionN: zero, reactionNm: zero, constrained: i === 0 })),
+    elements: [{ memberId: 'beam', componentId: 'member', occurrencePath: ['member'], solverElement: 1, nodeIds: ['base', 'tip'],
+      frame: { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], lengthM: 2 }, start: [0, 0, 0, 0, 0, 0], end: [0, 0, 0, 0, 0, 0] }],
+    balance: { referenceM: zero, forceN: zero, momentNm: zero, maximumFreeResidual: 0 } };
+  const saved: SavedAnalysisResult = { analysisId: result.analysisId, kind: result.kind, analysisRevision: result.analysisRevision,
+    bindingSha256: '', appVersion: '1.0.4', result };
+  return { document, result, bundle: createAssemblyDocumentBundle(document, EMPTY_PART_LIBRARY, new Map([[result.analysisId, saved]])) };
+}
+
+describe('組立のファイルに保存した梁の静解析の結果(J-03b 段 1)', () => {
+  it('開くと結果を店へ渡し、流し直さずに保存し直しても結果を落とさない', async () => {
+    const g = gateway();
+    const { result, bundle } = beamResultBundle('梁の結果を保存した組立');
+    g.openPcad.mockResolvedValue({ name: 'beam.pcada', saveTargetToken: 'candidate', bytes: await writeDocumentBundle(bundle) });
+    await openAssembly(deps);
+    const opened = useAppStore.getState().assemblyOpenedAnalysisResults;
+    expect(opened?.document).toBe(useAppStore.getState().assembly);
+    expect(opened?.dropped).toBe(false);
+    expect(opened?.results.get(result.analysisId)?.result).toEqual(result);
+    await saveAssembly(deps, false);
+    const saved = g.saved();
+    if (saved === null) throw new Error('保存した組立が無い');
+    const read = await readDocumentBundle(saved.bytes, 'assembly');
+    if (!read.ok) throw new Error(read.error.message);
+    expect(read).not.toHaveProperty('analysisResultIssue');
+    expect(read.bundle.analysisResults?.get(result.analysisId)?.result).toEqual(result);
+  });
+
+  it('今の中身と合わない結果は店へ渡さず、出さなかった印だけを渡す(ファイル自体は開く)', async () => {
+    const g = gateway();
+    const { bundle } = beamResultBundle('梁の結果を保存した組立');
+    const archive = readArchive(await writeDocumentBundle(bundle), { shouldExtract: () => true });
+    if (!archive.ok) throw new Error('書いた組立を読み戻せない');
+    const entries: PcadZipEntries = new Map();
+    for (const [name, bytes] of archive.entries) {
+      const edited = name === 'document.json'
+        ? new TextEncoder().encode(new TextDecoder().decode(bytes).replace('梁の結果を保存した組立', '名前を変えた組立')) : bytes;
+      entries.set(name, [edited, { level: 6, mtime: FIXED_ENTRY_MTIME }]);
+    }
+    g.openPcad.mockResolvedValue({ name: 'beam.pcada', saveTargetToken: 'candidate', bytes: zipPcadEntries(entries) });
+    await openAssembly(deps);
+    const state = useAppStore.getState();
+    expect(state.assembly?.name).toBe('名前を変えた組立');
+    expect(state.assemblyOpenedAnalysisResults?.dropped).toBe(true);
+    expect(state.assemblyOpenedAnalysisResults?.results.size).toBe(0);
   });
 });
 

@@ -7,6 +7,7 @@ import {
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
+import { subShapeElementId, type SubShapeBody } from '../solid/subShapeSelection.js';
 import type { ReferenceInputCommit, ReferenceNumericInputStep } from './numericInput.js';
 import {
   appendCoordinatePoints,
@@ -22,6 +23,7 @@ import {
   resolveReferencesOf,
   resolveWorkPlaneOf,
   workPlaneEntries,
+  workPlaneOnSelectedFace,
 } from './referenceCommands.js';
 
 type ReferenceCommitContext = Parameters<typeof commitReferenceInput>[1];
@@ -486,5 +488,77 @@ describe('確定の受け口(commitReferenceInput)', () => {
       contextOf({ draft: { points: [at(0, 0, 0)], choices: {} } }),
     );
     expect(outcome.draft).toEqual(EMPTY_REFERENCE_DRAFT);
+  });
+});
+
+/** 上面(平ら、高さ 10)・穴の壁(円柱)・下面(平ら、高さ 0)を持つ板のボディ(M-18)。 */
+function plateBody(): SubShapeBody {
+  return {
+    featureId: 'extrude-1',
+    mesh: { edgePositions: new Float32Array(6) },
+    faces: [
+      { index: 0, surfaceKind: 'plane', area: 1200, centroid: [20, 15, 10], axis: [0, 0, 1], radius: null,
+        triangleOffset: 0, triangleCount: 1 },
+      { index: 1, surfaceKind: 'cylinder', area: 180, centroid: [20, 15, 5], axis: [0, 0, 1], radius: 3,
+        triangleOffset: 1, triangleCount: 1 },
+      { index: 2, surfaceKind: 'plane', area: 1200, centroid: [20, 15, 0], axis: [0, 0, -1], radius: null,
+        triangleOffset: 2, triangleCount: 1 },
+    ],
+    edges: [],
+    vertices: [],
+  };
+}
+
+const TOP_FACE = subShapeElementId('extrude-1', 'face', 0);
+const WALL_FACE = subShapeElementId('extrude-1', 'face', 1);
+const BOTTOM_FACE = subShapeElementId('extrude-1', 'face', 2);
+
+function planeOnFace(
+  document: PartDocument,
+  selection: readonly string[],
+): NonNullable<ReturnType<typeof workPlaneOnSelectedFace>> {
+  const outcome = workPlaneOnSelectedFace(document, [plateBody()], selection);
+  if (outcome === null) throw new Error('平らな面 1 枚なのに作業平面が返らない');
+  return outcome;
+}
+
+describe('選んだ平らな面そのものの作業平面(M-18 面に直接かく)', () => {
+  it('無ければ離す量 0 の作業平面を 1 枚作り、同じ面をもう一度選ぶとそれを使い直す', () => {
+    const created = planeOnFace(createEmptyPartDocument(), [TOP_FACE]);
+    expect(created.document.references).toHaveLength(1);
+    const feature = created.document.references[0];
+    expect(feature.id).toBe(created.planeId);
+    expect(feature.kind === 'referencePlane' ? feature.plane : null).toMatchObject({
+      kind: 'face', face: { bodyFeatureId: 'extrude-1', index: 0 }, offset: { source: '0' },
+    });
+    expect(resolveWorkPlaneOf(created.document, created.planeId).origin[2]).toBeCloseTo(10, 9);
+
+    const again = planeOnFace(created.document, [TOP_FACE]);
+    expect(again.document).toBe(created.document);
+    expect(again.planeId).toBe(created.planeId);
+  });
+
+  it('別の面・離した平面・式で 0 になる平面は使い直さず、新しく作る', () => {
+    const bottom = planeOnFace(createEmptyPartDocument(), [BOTTOM_FACE]);
+    const top = planeOnFace(bottom.document, [TOP_FACE]);
+    expect(top.planeId).not.toBe(bottom.planeId);
+    expect(top.document.references).toHaveLength(2);
+
+    const plane = top.document.references[1];
+    if (plane.kind !== 'referencePlane' || plane.plane.kind !== 'face') throw new Error('面の作業平面のはず');
+    const face = plane.plane.face;
+    for (const offset of [value(5), { source: '5 - 5', value: 0, display: '0' }]) {
+      const other = commitWorkPlane(createEmptyPartDocument(), { kind: 'face', face, offset });
+      const fresh = planeOnFace(other.document, [TOP_FACE]);
+      expect(fresh.planeId).not.toBe(other.featureId);
+      expect(fresh.document.references).toHaveLength(2);
+    }
+  });
+
+  it('曲面・2 枚の選択・立体そのもの・選択なしでは作業平面を返さない', () => {
+    const document = createEmptyPartDocument();
+    for (const selection of [[WALL_FACE], [TOP_FACE, BOTTOM_FACE], ['extrude-1'], []]) {
+      expect(workPlaneOnSelectedFace(document, [plateBody()], selection)).toBeNull();
+    }
   });
 });

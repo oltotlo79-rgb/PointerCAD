@@ -4,6 +4,7 @@ import { expressionValueFromNumber as number } from '@pointercad/expression';
 import type { FunctionPlotAxis } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { createBrowserMathClient } from '../math/createBrowserMathClient.js';
+import { rememberDialogOpener } from '../shell/dialogFocus.js';
 import { MathExpressionDialog } from '../math/MathExpressionDialog.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { editFunctionField, FUNCTION_AXES, type FunctionScalarDraft } from './functionPlotDraft.js';
@@ -28,15 +29,12 @@ export function FunctionSectionDialog({ parentId, edit, onClose }: {
     && useAppStore.getState().documentVersion === owner.documentVersion;
   useEffect(() => {
     mounted.current = true;
-    const element = dialog.current, previous = document.activeElement;
+    const element = dialog.current, restoreFocus = rememberDialogOpener(element);
     element?.showModal();
     const unsubscribe = useAppStore.subscribe(state => {
       if (state.document !== owner.document || state.documentVersion !== owner.documentVersion) { running.current?.abort(); close(); }
     });
-    return () => {
-      mounted.current = false; running.current?.abort(); unsubscribe(); element?.close();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-    };
+    return () => { mounted.current = false; running.current?.abort(); unsubscribe(); element?.close(); restoreFocus(); };
   }, [owner, close]);
   const apply = async () => {
     if (!current() || busy) return;

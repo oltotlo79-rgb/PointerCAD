@@ -584,6 +584,9 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       'faceRotate',
       'faceOffset',
       'shell',
+      'thicken',
+      'offsetBody',
+      'blend',
       'rib',
       'emboss',
       'threadShaft',
@@ -671,12 +674,18 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
     expect(
       segmentedWidthPixels(
         CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length
-          + MACHINING_MENU_ITEMS.filter(item => item.id !== 'holeTranslate' && item.id !== 'faceRotate').length,
+          + MACHINING_MENU_ITEMS.filter(item => !['holeTranslate', 'faceRotate', 'thicken', 'offsetBody', 'blend'].includes(item.id)).length,
         0,
       ),
     ).toBe(956);
-    expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length, 0))
+    const priorMachining = MACHINING_MENU_ITEMS.filter(item => !['thicken', 'offsetBody', 'blend'].includes(item.id));
+    expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + priorMachining.length, 0))
       .toBe(1012);
+    const throughOffsetBody = MACHINING_MENU_ITEMS.filter(item => item.id !== 'blend');
+    expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + throughOffsetBody.length, 0))
+      .toBe(1068);
+    expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length, 0))
+      .toBe(1096);
   });
 
   it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
@@ -807,6 +816,9 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
   const MACHINING_IDS = [
     'draft',
     'shell',
+    'thicken',
+    'offsetBody',
+    'blend',
     'rib',
     'emboss',
     'threadShaft',
@@ -825,7 +837,7 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
     ]);
   });
 
-  it('12 個とも図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
+  it('14 個とも図柄・名前・説明を持ち、説明が名前で始まらない(FR-904)', () => {
     const items = [
       ...CREATE_MENU_ITEMS.filter((item) => CREATE_IDS.some((id) => id === item.id)),
       ...MACHINING_MENU_ITEMS.filter((item) => MACHINING_IDS.some((id) => id === item.id)),
@@ -839,7 +851,7 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
     }
   });
 
-  it('12 個の図柄はすべて別のもの(借り物の使い回しをしない)', () => {
+  it('14 個の図柄はすべて別のもの(借り物の使い回しをしない)', () => {
     const icons = [
       ...CREATE_MENU_ITEMS.filter((item) => CREATE_IDS.some((id) => id === item.id)),
       ...MACHINING_MENU_ITEMS.filter((item) => MACHINING_IDS.some((id) => id === item.id)),
@@ -896,6 +908,7 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
       'importShape',
       'saveAsTemplate',
       'newFromTemplate',
+      'openExample',
       'print',
     ]);
   });
@@ -904,7 +917,7 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
     expect(FILE_MENU_ITEMS.map((item) => t(item.labelKey))).toEqual([
       '名前付き保存点', '2つの保存ファイルを比較', 'この部品から図面を作成',
       '図面ひな形から作成', '新しいアセンブリ', '名前を付けて保存',
-      '書き出す', '読み込む', 'ひな形として保存', 'ひな形から新規', '印刷',
+      '書き出す', '読み込む', 'ひな形として保存', 'ひな形から新規', '作例を開く', '印刷',
     ]);
   });
 

@@ -12,6 +12,14 @@ type BaselineRow = Parameters<typeof compareBaseline>[0];
 // measured count (eslint.functionSizeBaseline.js), so a smaller one cannot grow behind the largest in its file.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const NO_DRIFT = { grown: [], stale: [], unlisted: [], obsolete: [], ambiguous: [], duplicateRows: [], withinCap: [] };
+// 短くした関数は落とさない(利用者の回答 2026-11-20 18:2x「短くした時は落とさない」)。表より短くなった関数(stale)と、上限以下に
+// なった・消えた関数(obsolete)は報告だけで、失敗に数えない(表を実測へ下げるのは送る前の道具)。上限と、長くなった・一覧外の
+// 超過・識別できない重複・表の誤りで落とす事は変えない。
+const NO_FAILURE = { grown: [], unlisted: [], ambiguous: [], duplicateRows: [], withinCap: [] };
+function failing(drift: ReturnType<typeof compareBaseline>) {
+  return { grown: drift.grown, unlisted: drift.unlisted, ambiguous: drift.ambiguous, duplicateRows: drift.duplicateRows,
+    withinCap: drift.withinCap };
+}
 const PRODUCT_SOURCE = /^(?:packages|apps)\/[^/]+\/src\/.+\.tsx?$/u;
 const TEST_SOURCE = /\.(?:test|testSupport|spec)\.tsx?$/u;
 
@@ -84,7 +92,8 @@ function largest(row: BaselineRow): number {
 
 // The existing narrower caps in eslint.config.js, copied from its literals (not computed from the config).
 const strictCaps: [path: string, max: number][] = [
-  ['packages/model/src/kernelBridge/subShapeMatching.ts', 100], ['packages/ui/src/sketch/numericInputTools.ts', 30],
+  ['packages/model/src/kernelBridge/subShapeMatching.ts', 100], ['packages/model/src/kernelBridge/subShapeMatchCandidates.ts', 100],
+  ['packages/ui/src/sketch/numericInputTools.ts', 30],
   ['packages/ui/src/appearance/appearancePropertyValues.ts', 50], ['packages/ui/src/sketch/numericFieldUnits.ts', 50],
   ['packages/ui/src/solid/measureFormatting.ts', 50], ['packages/ui/src/sketch/numericInputPresentation.ts', 50],
   ['packages/ui/src/sketch/numericInputChoices.ts', 120], ['packages/ui/src/sketch/numericInputEvaluation.ts', 50],
@@ -123,8 +132,9 @@ describe('既存の長い関数はそれぞれ自身の実測値を超えられ�
   it.each(rows.map((row): [string, BaselineRow] => [row.file, row]))('%s', async (file, row) => {
     const source = readFileSync(new URL(file, new URL('../../../', import.meta.url)), 'utf8');
     const measured = measureFunctions(new Linter(), parser, file, source, cap);
-    // Grown, shrunk-but-not-lowered, new over-cap, vanished, ambiguous, duplicated and within-cap rows all fail.
-    expect(compareBaseline(row, measured, cap)).toEqual(NO_DRIFT);
+    // Grown, new over-cap, ambiguous, duplicated and within-cap rows fail. A shrunk or vanished function does not fail;
+    // the delivery tool lowers its row to the measured value.
+    expect(failing(compareBaseline(row, measured, cap))).toEqual(NO_FAILURE);
     const max = largest(row);
     expect(await effectiveMax(file)).toBe(max);
     expect(sizeReports(file, max, syntheticFunction('atLimit', max))).toEqual([]);
@@ -146,9 +156,12 @@ describe('同じファイルの最大でない長い関数が1行増えても拒
     expect(drift(source(231))).toEqual({ ...NO_DRIFT, grown: ['smaller'] });
   });
 
-  it('縮めた関数の古い値・消えた関数・一覧外の超過・識別できない重複・過剰な行を拒否する', () => {
+  it('縮めた関数の古い値と消えた関数は報告だけ(失敗にしない)、一覧外の超過・識別できない重複・過剰な行は拒否する', () => {
     expect(drift(source(229))).toEqual({ ...NO_DRIFT, stale: ['smaller'] });
     expect(drift(source(200))).toEqual({ ...NO_DRIFT, obsolete: ['smaller'] });
+    // 報告は送る前の道具が表を下げるのに使う。失敗には数えない。
+    expect(failing(drift(source(229)))).toEqual(NO_FAILURE);
+    expect(failing(drift(source(200)))).toEqual(NO_FAILURE);
     expect(drift(source(230, syntheticFunction('extra', 201)))).toEqual({ ...NO_DRIFT, unlisted: ['extra'] });
     const twice = (name: string) => `export const ${name} = [{ run() {\n${'  void 0;\n'.repeat(210)}} }, { run() {\n${
       '  void 0;\n'.repeat(210)}} }];`;

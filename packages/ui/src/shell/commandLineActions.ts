@@ -17,7 +17,7 @@ import { createConfiguredNumericInput as createNumericInput } from '../settings/
  * Enter とまったく同じ道筋なので、どちらから打っても結果が変わらない(NFR-UX-1)。
  */
 
-import { isFreeWorkPlaneId, replaceSketch, type CoordinateInput } from '@pointercad/model';
+import { isFreeWorkPlaneId, liveBodyIds, replaceSketch, type CoordinateInput } from '@pointercad/model';
 
 import type { ToolbarCommandId } from '../commands/toolbarCommandCatalog.js';
 import { executeToolbarCommand } from '../commands/toolbarCommandExecution.js';
@@ -28,6 +28,7 @@ import {
   SOLID_COMMAND_WORDS,
   suggestCommands,
   type CommandLineContext,
+  type CommandSelectTarget,
   type CommandToolId,
   type CommandWord,
 } from '../sketch/commandLine.js';
@@ -113,6 +114,8 @@ export type CommandLineSubmission =
   | { readonly kind: 'tool'; readonly tool: NumericInputToolId; readonly openedStep: boolean }
   /** いま開いている段を確定した(欄への流し込みを含む)。 */
   | { readonly kind: 'committed' }
+  /** 選びの語(M06-2)で立体を選んだ。`count` は選んだ立体の数(解除は 0)。 */
+  | { readonly kind: 'selected'; readonly count: number }
   | ({ readonly kind: 'error' } & CommandLineFailure);
 
 function failed(message: string, suggestions: readonly string[] = []): Extract<CommandLineSubmission, { kind: 'error' }> {
@@ -356,6 +359,26 @@ function submitSolidCommand(commandId: ToolbarCommandId, input: string): Command
 }
 
 /**
+ * 選びの語(M06-2)。直前は文書の立体の並びで最も後の生きている立体(消費・抑制されていない物。和・差の対象と同じ数え方)、
+ * 全部は生きている立体の全部を選ぶ。選ぶ種類を立体にしてから選ぶ(種類を変えると選択が空になるため、この順)。
+ * 解除は立体が無くても通る。部品でない時と、選べる立体が無い時は断り、選択を変えない。
+ */
+function submitSelect(target: CommandSelectTarget): CommandLineSubmission {
+  const store = useAppStore.getState();
+  if (target === 'none') {
+    store.setSelection([]);
+    return { kind: 'selected', count: 0 };
+  }
+  const part = activePartDocument(store);
+  const live = part === null ? [] : liveBodyIds(part);
+  const ids = target === 'all' ? live : live.slice(-1);
+  if (ids.length === 0) return failed(t('commandLine.error.noSolid'));
+  store.setSelectionKind('body');
+  store.setSelection(ids);
+  return { kind: 'selected', count: ids.length };
+}
+
+/**
  * ②③いま開いている段を確定する。`filled` は欄へ流し込んだあとの姿(空の Enter なら
  * いまの姿そのまま)。断られた理由は帯に出るので、ここでは断りかどうかだけを返す。
  */
@@ -401,6 +424,8 @@ export function submitCommandLine(text: string): CommandLineSubmission {
       return activateCommandTool(outcome.tool);
     case 'command':
       return submitSolidCommand(outcome.commandId, text);
+    case 'select':
+      return submitSelect(outcome.target);
     case 'commit': {
       const state = useAppStore.getState().numericInput;
       if (state === null) {

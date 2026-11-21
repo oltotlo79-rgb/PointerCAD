@@ -829,6 +829,9 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
     pointPattern: 'window',
     surfaceShape: 'window',
     shellThickness: 'window',
+    thickenAmount: 'window',
+    offsetBodyDistance: 'window',
+    blendWeights: 'window',
     cutPlane: 'window',
     // 基準の道具の 1 段目は、基本案内が 1 段目そのものを言う。
     referencePlanePoint1: 'base',

@@ -4,7 +4,14 @@ import { nextDrawingBalloonId, nextDrawingTableId, resolveDrawingAnnotationTarge
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { drawingFont } from './drawingFont.js';
+import { isParameterTableScope } from './drawingTableKinds.js';
 import { displayDrawingTables } from './tableDisplay.js';
+
+/**
+ * 係数の表(J-05c)を置いた図面の保存形式の版。古い版のアプリは知らない表の種類を断るので、係数の表を初めて置いた時だけ図面の版を
+ * 24 へ上げる(開くだけでは上げず、表を消しても下げない。部品の新しい種類と同じ版 24。io の drawingJson.ts は 24 未満の係数の表を断る)。
+ */
+const PARAMETER_TABLE_SCHEMA_VERSION = 24;
 
 export type DrawingTableDraft = Pick<DrawingTable, 'kind' | 'position' | 'columns' | 'rows' | 'options'>;
 export function commitDrawingTable(draft: DrawingTableDraft, id?: string,
@@ -25,6 +32,7 @@ export function commitDrawingTable(draft: DrawingTableDraft, id?: string,
     || Object.entries(draft.options).some(([key, value]) =>
       (key.startsWith('width.') || key === 'rowHeight' || key === 'textHeight')
       && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0))
+    || draft.kind === 'parameter' && !isParameterTableScope(draft.options.scope)
     || draft.kind === 'hole' && (!document.views.some((view) => view.id === draft.options.viewId)
       || ['datumX', 'datumY', 'datumZ'].some((key) => draft.options[key] !== undefined
         && (typeof draft.options[key] !== 'number' || !Number.isFinite(draft.options[key]))))) {
@@ -32,9 +40,11 @@ export function commitDrawingTable(draft: DrawingTableDraft, id?: string,
   }
   const table: DrawingTable = { ...existing, ...draft, id: existing?.id ?? nextDrawingTableId(document), layerId: existing?.layerId ?? layer.id };
   const next = { ...document, tables: existing === undefined ? [...document.tables, table]
-    : document.tables.map((item) => item.id === id ? table : item) };
+    : document.tables.map((item) => item.id === id ? table : item),
+    schemaVersion: table.kind === 'parameter' ? Math.max(document.schemaVersion, PARAMETER_TABLE_SCHEMA_VERSION) : document.schemaVersion };
   // 穴表の行は確定後に現在の加工面から非同期で導く。その他は字体込みで紙内に収まるか調べる。
-  if (table.kind !== 'hole' && displayDrawingTables(next, state.drawingSourceResolution, outline).unresolved.includes(table.id)) {
+  if (table.kind !== 'hole'
+    && displayDrawingTables(next, state.drawingSourceResolution, state.drawingSources, outline).unresolved.includes(table.id)) {
     state.setDrawingMessage(t('drawing.table.unresolved')); return false;
   }
   if (existing !== undefined && JSON.stringify(table) === JSON.stringify(existing)) return true;
@@ -67,7 +77,7 @@ export function commitDrawingBalloon(position: Point2,
   const next: DrawingDocument = { ...document, balloons: [...document.balloons, { id, itemNumber: row.number,
     componentIds: [target.componentId], position, leader: [point], sourceTarget: target,
     targetKind: target.ref.fingerprint.kind === 'face' ? 'face' : 'edge', layerId: layer.id }] };
-  if (displayDrawingTables(next, source, outline).unresolved.includes(id)) {
+  if (displayDrawingTables(next, source, state.drawingSources, outline).unresolved.includes(id)) {
     state.setDrawingMessage(t('drawing.table.unresolved')); return false;
   }
   state.applyDrawing(next); state.setDrawingTool('select'); state.selectDrawingIds([id]); return true;
@@ -98,7 +108,7 @@ export function finishDrawingTableDrag(drag: DrawingTableDrag, point: Point2,
   const state = useAppStore.getState();
   if (state.drawing !== drag.document || !point.every(Number.isFinite) || point.every((value, index) => value === drag.start[index])) return false;
   const next = previewDrawingTableDrag(drag, point);
-  if (displayDrawingTables(next, state.drawingSourceResolution, outline).unresolved.includes(drag.id)) {
+  if (displayDrawingTables(next, state.drawingSourceResolution, state.drawingSources, outline).unresolved.includes(drag.id)) {
     state.setDrawingMessage(t('drawing.table.unresolved')); return false;
   }
   state.applyDrawing(next); return true;

@@ -1,6 +1,7 @@
 import type { PointReference } from '../sketch/types.js';
 import type { HoleCenterAnchor, HolePlacementRole } from '../geometry/subShapeOrigin.js';
 import type { HoleTranslateKeyMaterial, FaceRotateKeyMaterial } from './directEditOperations.js';
+import type { BlendPlan, ThickenPlan, OffsetBodyPlan } from './surfaceBodyPlan.js';
 import type { FaceOffsetKeyMaterial } from './directFaceEdit.js';
 /**
  * ソリッドの計算結果を覚えておく
@@ -27,8 +28,7 @@ import type { FaceOffsetKeyMaterial } from './directFaceEdit.js';
  * 加工フィーチャー(穴・ねじ穴・R 面取り・
  * C 面取り)とばねの材料を足した。**既存の4種類(押し出し・回転・縫合・ブーリアン)の
  * 文字列は1文字も変えていない**(変えると以前に作った鍵がすべて変わり、形状キャッシュが
- * 全滅するため)。パターン(FR-411 / FR-412)は独立の材料を持たない: パターンは穴・ねじ穴の
- * 工具を並べるだけなので、材料は穴・ねじの `transforms` に乗る。
+ * 全滅するため)。パターンは独立の材料を持たず、穴・ねじ穴・和差の段の `transforms` に配置を含める。
  *
  * 部分形状(面・辺)の指紋は、この場で組み立てずに `part/subShapeRef.ts` の
  * `fingerprintKeyText` が作った文字列をそのまま受け取る(`KeySubShape`)。丸めの規則
@@ -199,6 +199,7 @@ export interface BooleanKeyMaterial {
   readonly operation: 'union' | 'subtract' | 'intersect';
   readonly targetKey: string;
   readonly toolKey: string;
+  readonly transforms?: readonly KeyTransform[];
   /** 何も削れない差を断るか。立てたときだけ鍵の文字列へ `;requireRemoval=true` を足す。 */
   readonly requireRemoval?: true;
 }
@@ -790,7 +791,7 @@ export interface ImportedSolidKeyMaterial {
 
 /**
  * 1段ぶんの鍵の材料。段の種類ごとに要る値だけを持つ。
- * パターン(FR-411 / FR-412 / FR-425)の材料はここに無い。パターンはもとの穴・ねじ穴の材料の
+ * パターン(FR-411 / FR-412 / FR-425)の材料はここに無い。パターンはもとの加工の材料の
  * `targetKey` と `transforms` を差し替えたものとして表すため。
  */
 export type SolidStepKeyMaterial =
@@ -823,6 +824,9 @@ export type SolidStepKeyMaterial =
   | CutKeyMaterial
   | SurfaceCutKeyMaterial
   | ShellKeyMaterial
+  | ThickenPlan
+  | BlendPlan<string>
+  | OffsetBodyPlan
   // 読み込んだ形(FR-802)。
   | ImportedSolidKeyMaterial;
 
@@ -963,6 +967,11 @@ function keyTransform(transform: KeyTransform): string {
     `|${keyVec3(transform.rotationAxis)}` +
     `|${keyNumber(transform.rotationAngle)})`
   );
+}
+
+/** 省略した通常の和・差は従来の鍵。空配列は配置済みの元だけを残すパターン。 */
+function optionalBooleanTransforms(transforms: readonly KeyTransform[] | undefined): string {
+  return transforms === undefined ? '' : `;transforms=${keyTransformList(transforms)}`;
 }
 
 /** 剛体変換の並び。長さを混ぜるので、空と恒等1つは必ず別の文字列になる。 */
@@ -1181,11 +1190,25 @@ function keySurfaceShape(shape: SurfaceShapeKeyMaterial): string {
   }
 }
 
+function shellKeyText(material: ShellKeyMaterial): string {
+  return `shell{targetKey=${material.targetKey};openFaces=${keySubShapeList(material.openFaces)}`
+    + `;thickness=${keyNumber(material.thickness)};outward=${keyBoolean(material.outward)}}`;
+}
+
 /** 穴が無いときの断面の文字列は従来のまま保つ。 */
 function keyExtrudeProfile(material: ExtrudeKeyMaterial): string {
   const profile = keyCurveList(material.profile);
   return material.holes === undefined || material.holes.length === 0 ? profile
     : `${profile};holes=${keyCurveListGroup(material.holes)}`;
+}
+
+function surfaceKeyText(material: SurfaceKeyMaterial): string {
+  return `surface{shape=${keySurfaceShape(material.shape)};targetKey=${keyOptionalText(material.targetKey)}}`;
+}
+
+function blendKeyText(material: BlendPlan<string>): string {
+  const { a, b, weightA, weightB, flipB } = material;
+  return 'blend' + JSON.stringify([a.sourceKey, a.query, b.sourceKey, b.query, keyNumber(weightA), keyNumber(weightB), flipB]);
 }
 
 /**
@@ -1225,7 +1248,7 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;targetKey=${material.targetKey}` +
         `;toolKey=${material.toolKey}` +
         (material.requireRemoval === true ? ';requireRemoval=true' : '') +
-        '}'
+        optionalBooleanTransforms(material.transforms) + '}'
       );
     case 'hole':
       return (
@@ -1387,12 +1410,12 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
       // Native face topology changes when exact planar triangle pairs become quads.
       // Keep persisted shape/selection caches distinct from the earlier triangulated bodies.
       return `functionSurface{cad=planar-pairs/1;input=${JSON.stringify(material.inputSignature)}}`;
+    case 'blend':
     case 'surface':
       // 面を借りる作り方でも消費しないが targetKey を混ぜる(SurfaceKeyMaterial の注釈)。
-      return (
-        `surface{shape=${keySurfaceShape(material.shape)}` +
-        `;targetKey=${keyOptionalText(material.targetKey)}}`
-      );
+      return material.kind === 'blend'
+        ? blendKeyText(material)
+        : surfaceKeyText(material);
     case 'surfaceCut': {
       const blade = material.blade;
       const bladeKey = blade.kind === 'plane'
@@ -1410,12 +1433,12 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;keepPositive=${keyBoolean(material.keepPositive)}}`
       );
     case 'shell':
-      return (
-        `shell{targetKey=${material.targetKey}` +
-        `;openFaces=${keySubShapeList(material.openFaces)}` +
-        `;thickness=${keyNumber(material.thickness)}` +
-        `;outward=${keyBoolean(material.outward)}}`
-      );
+      return shellKeyText(material);
+    case 'thicken':
+      return `thicken{targetKey=${material.targetKey}`
+        + `;thickness=${keyNumber(material.thickness)};side=${material.side}}`;
+    case 'offsetBody':
+      return `offsetBody{targetKey=${material.targetKey};distance=${keyNumber(material.distance)}}`;
     case 'importedSolid':
       if (!/^[0-9a-f]{64}$/.test(material.shapeDigest)) {
         throw new Error('Imported shape requires a SHA-256 content digest');

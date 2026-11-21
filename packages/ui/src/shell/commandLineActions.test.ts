@@ -172,6 +172,57 @@ describe('立体の語をツールバーと同じ入口で実行する', () => {
   });
 });
 
+describe('選びの語でマウスを使わずに立体を選ぶ(M06-2)', () => {
+  function makeBoxAndCylinder(): readonly string[] {
+    submitCommandLine('box');
+    submitCommandLine('');
+    submitCommandLine('cyl');
+    submitCommandLine('');
+    return useAppStore.getState().document.solids.map(solid => solid.id);
+  }
+
+  it('箱 → 円柱 → `sel all` → `uni` で、マウスを使わずに和を作れる', () => {
+    const ids = makeBoxAndCylinder();
+    expect(ids).toHaveLength(2);
+    expect(submitCommandLine('sel all')).toEqual({ kind: 'selected', count: 2 });
+    expect(useAppStore.getState().selection).toEqual(ids);
+    expect(useAppStore.getState().selectionKind).toBe('body');
+    expect(submitCommandLine('uni')).toEqual({ kind: 'tool', tool: 'select', openedStep: false });
+    expect(useAppStore.getState().document.solids.at(-1))
+      .toMatchObject({ kind: 'boolean', operation: 'union', targetFeatureId: ids[0], toolFeatureId: ids[1] });
+  });
+
+  it('「選ぶ 直前」は最後に作った立体を選び、和で使われた立体は直前にも全部にも数えない', () => {
+    const ids = makeBoxAndCylinder();
+    expect(submitCommandLine('選ぶ　直前')).toEqual({ kind: 'selected', count: 1 });
+    expect(useAppStore.getState().selection).toEqual([ids[1]]);
+    useAppStore.getState().setSelection(ids);
+    submitCommandLine('uni');
+    const combined = useAppStore.getState().document.solids.at(-1);
+    useAppStore.getState().setSelection([]);
+    expect(submitCommandLine('SEL LAST')).toEqual({ kind: 'selected', count: 1 });
+    expect(useAppStore.getState().selection).toEqual([combined?.id]);
+    expect(submitCommandLine('sel all')).toEqual({ kind: 'selected', count: 1 });
+    expect(useAppStore.getState().selection).toEqual([combined?.id]);
+  });
+
+  it('「sel none」は選択を空にする(立体が無くても通る)', () => {
+    useAppStore.getState().setSelection(['face-1']);
+    expect(submitCommandLine('sel none')).toEqual({ kind: 'selected', count: 0 });
+    expect(useAppStore.getState().selection).toEqual([]);
+  });
+
+  it('選べる立体が無い時と組立の画面では断り、選択を変えない', () => {
+    const before = useAppStore.getState().selection;
+    expect(submitCommandLine('選ぶ 全部')).toEqual({ kind: 'error', message: '選べる立体がありません。先に立体を作ってください。', suggestions: [] });
+    expect(useAppStore.getState().selection).toBe(before);
+    useAppStore.getState().openAssembly(createAssemblyDocument('組立'));
+    const assembly = useAppStore.getState().selection;
+    expect(submitCommandLine('sel last')).toEqual({ kind: 'error', message: '選べる立体がありません。先に立体を作ってください。', suggestions: [] });
+    expect(useAppStore.getState().selection).toBe(assembly);
+  });
+});
+
 describe('受け入れ条件: マウスに触れずに L 字の 2 本の線を引く(FR-208、FR-307)', () => {
   it('`L` → `0,0` → `@40,0` → `@30<90` で 2 本の線分ができる', () => {
     expect(submitCommandLine('L')).toMatchObject({ kind: 'tool' });

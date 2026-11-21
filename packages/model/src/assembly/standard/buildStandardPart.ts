@@ -2,6 +2,7 @@ import {
   evaluateExpression, expressionValueFromNumber, type ExpressionValue,
 } from '@pointercad/expression';
 
+import type { FailureText } from '../../failureText.js';
 import {
   appendSolid, createEmptyPartDocument, createPrimitiveFeature, nextSolidId, nextSolidName,
   replaceSketch,
@@ -65,7 +66,6 @@ import {
 
 export const DEFAULT_STANDARD_FASTENER_LENGTH = '30';
 export const DEFAULT_STANDARD_SECTION_LENGTH = '1000';
-export const STANDARD_PART_UNAVAILABLE_MESSAGE = 'この呼び寸法は用意されていません。';
 
 type Point2 = readonly [number, number];
 
@@ -549,16 +549,17 @@ type SteelPartRejectionCode = SteelGradeRejectionCode | 'size-not-in-catalog'
   | 'saved-fields-mismatch' | 'steel-options-with-legacy-revision' | 'unsupported-steel-catalog'
   | 'unsupported-catalog-revision' | 'unsupported-generator-revision' | 'invalid-steel-length'
   | 'generation-unavailable';
-/** 鋼材の理由と族の部品の理由(`catalog/rejection.ts`)。どちらの理由かは `messageKey` の頭で分かる。 */
+/** 鋼材の理由と族の部品の理由(`catalog/rejection.ts`)。どちらの理由かは `text.key` の頭で分かる。 */
 export type StandardPartRejectionCode = SteelPartRejectionCode | CatalogItemRejectionCode;
 
 /** Diagnostic data is derived, never added to the six saved steel options or the part key. */
 interface StandardPartRejection {
   readonly code: StandardPartRejectionCode;
-  readonly messageKey: `assembly.steel.rejection.${SteelPartRejectionCode}` | `catalog.rejection.${CatalogItemRejectionCode}`;
-  readonly parameters: Readonly<Record<string, string>>;
-  /** Japanese fallback for model consumers; the matching UI template lives in assembly.json. */
-  readonly message: string;
+  /**
+   * 画面に出す文の鍵(`assembly.steel.rejection.<理由>` か `catalog.rejection.<理由>`)と差し込む値。文は ui の文言の表が持つ(D4)。
+   * 鋼材の {basis} は規格の表の値を model が並べた物、{reason} は理由の文の鍵と値(steelGradeRules.ts)。
+   */
+  readonly text: FailureText;
   readonly fields: readonly string[];
   readonly basis: readonly SteelStandardReference[];
 }
@@ -576,10 +577,9 @@ function steelMaterialGrade(grade: string | undefined): grade is SteelMaterialGr
     || STEEL_R2_MATERIAL_GRADES.some((candidate) => candidate === grade);
 }
 
-function steelRejection(code: SteelPartRejectionCode, message: string,
-  parameters: Readonly<Record<string, string>> = {}, fields: readonly string[] = [],
-  basis: readonly SteelStandardReference[] = []): StandardPartRejection {
-  return { code, messageKey: `assembly.steel.rejection.${code}`, parameters, message, fields, basis };
+function steelRejection(code: SteelPartRejectionCode, parameters: FailureText['parameters'] = {},
+  fields: readonly string[] = [], basis: readonly SteelStandardReference[] = []): StandardPartRejection {
+  return { code, text: { key: `assembly.steel.rejection.${code}`, parameters }, fields, basis };
 }
 
 function steelBasisText(basis: readonly SteelStandardReference[]): string {
@@ -610,35 +610,33 @@ export function standardPartRejection(source: StandardPartSource): StandardPartR
     || source.catalog === 'flatBar' || source.catalog === 'roundBar' || source.catalog === 'steelPipe';
   if (!steel) return null;
   if (source.catalogRevision === STANDARD_CATALOG_REVISION) {
-    return steelRejection('steel-options-with-legacy-revision',
-      '従来カタログの部品には鋼材の指定を組み合わせられません。材質別カタログから選び直してください。');
+    return steelRejection('steel-options-with-legacy-revision');
   }
   if (!isSteelCatalogRevision(source.catalogRevision)) {
-    return steelRejection('unsupported-catalog-revision', 'この鋼材カタログの版には対応していません。');
+    return steelRejection('unsupported-catalog-revision');
   }
   if (!steelSectionCatalog(source.catalog)) {
-    return steelRejection('unsupported-steel-catalog', 'この部品の種類には鋼材の指定を組み合わせられません。');
+    return steelRejection('unsupported-steel-catalog');
   }
   if (source.generatorRevision !== STEEL_GENERATOR_REVISION
     && source.generatorRevision !== LEGACY_STEEL_GENERATOR_REVISION) {
-    return steelRejection('unsupported-generator-revision', 'この鋼材の形状を作る版には対応していません。');
+    return steelRejection('unsupported-generator-revision');
   }
   const { catalog, size, options } = source;
   const keyed = ALL_STEEL_PRODUCTS.find((row) => row.key === options.steelProduct
     && row.catalog === catalog && row.size === size);
   // A row of one table revision never answers a save of the other (r1 saves stay r1, r2 saves stay r2).
   if (keyed !== undefined && steelProductCatalogRevision(keyed) !== source.catalogRevision) {
-    return steelRejection('unsupported-catalog-revision', 'この鋼材カタログの版には対応していません。');
+    return steelRejection('unsupported-catalog-revision');
   }
   if (keyed?.catalogRevision !== undefined && source.generatorRevision !== STEEL_GENERATOR_REVISION) {
-    return steelRejection('unsupported-generator-revision', 'この鋼材の形状を作る版には対応していません。');
+    return steelRejection('unsupported-generator-revision');
   }
   const grade = options.materialGrade;
   const rule = steelMaterialGrade(grade) ? steelGradeRule(grade, catalog) : null;
   if (keyed === undefined && rule?.allowed === false) {
     const basis = steelBasisText(rule.basis);
-    return steelRejection(rule.reasonCode, `${rule.reason}（${basis}）`,
-      { reason: rule.reason, basis }, [], rule.basis);
+    return steelRejection(rule.reasonCode, { reason: rule.reason, basis }, [], rule.basis);
   }
   // Consider all matching rows: a single changed key must still identify steelProduct as the bad field.
   const candidates = ALL_STEEL_PRODUCTS.filter((row) => row.catalog === catalog && row.size === size
@@ -648,16 +646,14 @@ export function standardPartRejection(source: StandardPartSource): StandardPartR
     .sort((left, right) => left.fields.length - right.fields.length)[0];
   if (nearest === undefined) {
     const basis = rule === null ? '' : steelBasisText(rule.basis);
-    return steelRejection('size-not-in-catalog', `この鋼種・断面の呼び寸法はカタログにありません。${basis}`,
-      { basis }, [], rule?.basis ?? []);
+    return steelRejection('size-not-in-catalog', { basis }, [], rule?.basis ?? []);
   }
   if (nearest.fields.length > 0) {
     const fields = nearest.fields.join('、');
-    return steelRejection('saved-fields-mismatch', `保存した鋼材の指定が寸法表と一致しません（${fields}）。`,
-      { fields }, nearest.fields);
+    return steelRejection('saved-fields-mismatch', { fields }, nearest.fields);
   }
   if (steelLength(options.length ?? DEFAULT_STANDARD_SECTION_LENGTH) === null) {
-    return steelRejection('invalid-steel-length', '鋼材の長さは1〜12,000 mmの数または式で指定してください。');
+    return steelRejection('invalid-steel-length');
   }
   return null;
 }
@@ -668,7 +664,7 @@ export function buildStandardPartFromSourceWithReason(source: StandardPartSource
   if (rejection !== null) return { document: null, rejection };
   const document = buildStandardPartFromSource(source);
   return document === null ? { document: null,
-    rejection: steelRejection('generation-unavailable', STANDARD_PART_UNAVAILABLE_MESSAGE) }
+    rejection: steelRejection('generation-unavailable') }
     : { document, rejection: null };
 }
 

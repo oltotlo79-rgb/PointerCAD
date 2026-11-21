@@ -45,7 +45,8 @@ describe('保存の束へ入れる梁の結果', () => {
   it('流し終えた静解析の結果は、文書の定義と id・revision が同じ時だけ、版を添えて入れる', () => {
     const document = documentWith(3);
     const done = savedBeamResults(document, session(3, { status: 'complete', result: result(3) }), null, '1.0.4');
-    expect([...(done?.values() ?? [])].map(item => [item.analysisId, item.analysisRevision, item.appVersion, item.result.analysisRevision]))
+    expect([...(done?.values() ?? [])].map(item => [item.analysisId, item.analysisRevision, item.appVersion,
+      item.kind === 'oofem-linear-beam-3d' ? item.result.analysisRevision : item.kind]))
       .toEqual([[ANALYSIS_ID, 3, '1.0.4', 3]]);
     expect(savedBeamResults(document, session(3, { status: 'editing', result: result(3) }), null, '1.0.4')).toBeUndefined();
     expect(savedBeamResults(documentWith(4), session(3, { status: 'complete', result: result(3) }), null, '1.0.4')).toBeUndefined();

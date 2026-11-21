@@ -1,3 +1,4 @@
+import { ScreenTour } from '../guide/ScreenTour.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { t, type MessageKey } from '../i18n/t.js';
@@ -311,6 +312,7 @@ export function SettingsPanel(): React.JSX.Element {
           <SettingsSection titleKey="toolbar.settings.section.other">
             <button type="button" className="pcad-button" data-help-topic="tutorial" title={t('tutorial.startHint')}
               onClick={() => { requestClose(openTutorial); }}>{t('tutorial.start')}</button>
+            <ScreenTour replay onTutorial={() => requestClose(openTutorial)} />
             <OfflineSettings />
           </SettingsSection>
           <p className="pcad-settings__hint">{t('settings.hint')}</p>

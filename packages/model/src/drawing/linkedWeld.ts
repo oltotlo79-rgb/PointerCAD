@@ -8,6 +8,7 @@
  * 記号では表せないと明示し、記号を解決済みにしない。それらの値は記号とは別の補足の一覧(各ビードの始点・終点・
  * 長さ、ビードの間の間隔、2 脚、範囲)として画面に出す。結び付けていない記号は照合しない(一致するとは言わない)。
  */
+import { withinMagnitude } from '../numericTolerance.js';
 import type { DrawingDocument } from '@pointercad/drawing';
 
 import { validPlacement } from '../assembly/fastening/frames.js';
@@ -49,7 +50,7 @@ type LinkedWeldResolution =
   | { readonly kind: 'linked'; readonly data: LinkedWeldData }
   | { readonly kind: 'missing'; readonly reason: LinkedWeldMissingReason };
 
-const close = (a: number, b: number): boolean => Math.abs(a - b) <= WELD_LENGTH_TOLERANCE_MM;
+const close = (a: number, b: number): boolean => withinMagnitude(a - b, WELD_LENGTH_TOLERANCE_MM);
 
 /**
  * 抱き込んだ組立の 1 つの溶接の値。ビードの記録は、溶接を直す計画(`planFilletWeldEdit`)と同じ検証を通ったもの

@@ -212,6 +212,78 @@ function audit(read: (path: string) => string, paths: readonly string[]): Findin
   return findings;
 }
 
+const FAMILIES_DIR = 'packages/model/src/assembly/catalog/families';
+const LOAD = /^\s*\{ id: '([^']+)'[\s\S]*?import\('\.\.\/families\/([A-Za-z0-9]+)\.js'\)\)\.([A-Z][A-Z0-9_]*)/gmu;
+const EXPORTED_FAMILY = /^export const ([A-Z][A-Z0-9_]*_FAMIL(?:Y|IES))\b/gmu;
+const LOCAL_IMPORT = /from '\.\/([A-Za-z0-9]+)\.js'/gu;
+/**
+ * 独立の読みの表(*Oracle*.test.ts が読む fixture)を持たない族と、その理由(P2)。読みの表を足した時は、ここから消す。
+ * 登録の表に無い id を書くと落ちる(書き損じを残さない)。
+ */
+const NO_READING_TABLE: ReadonlyMap<string, string> = new Map([
+  ['compression-spring', '線径・中心径・自由長・巻数を入れる族'],
+  ['oil-seal-specified', '内径・外径・幅を入れる族'],
+  ['t-slot-frame-specified', '断面の寸法を入れる族'],
+  ['angle-bracket-specified', '寸法を入れる族'],
+  ['join-plate-specified', '寸法を入れる族'],
+  ['slot-nut-specified', '寸法を入れる族'],
+  ['t-slot-frame-series', '製造元の寸法に合わせた系列。独立の読みの表が無い(今の状態のまま)'],
+]);
+
+interface FamilySource { readonly id: string; readonly module: string; readonly exportName: string }
+
+/** 登録の表の包みのファイルの `load` から、族ごとの本体のファイルと書き出しの名前を読む。 */
+function familySources(read: (path: string) => string, packs: readonly string[]): FamilySource[] {
+  return packs.flatMap((pack) => [...read(`packages/model/src/assembly/catalog/registry/${pack}.ts`).matchAll(LOAD)]
+    .map((match) => ({ id: match[1], module: match[2], exportName: match[3] })));
+}
+
+function mentions(text: string, word: string): boolean {
+  return new RegExp(`\\b${word}\\b`, 'u').test(text);
+}
+
+/**
+ * 族の検査の網羅(P2)。(A) 本体のファイル(families の下)が書き出す族は、全部登録の表にある(登録の表から消し忘れ・足し忘れを止める)。
+ * (B) 登録の表の族は、(i) 書き出しの名前か、それを作る関数の名前を、行を読む families の検査のどれかが持ち、
+ * (ii) 本体か、本体が読む同じフォルダーのファイル(行の表)を、独立の読みの検査(*Oracle*.test.ts)のどれかが読む。
+ * 製品のモジュールは読み込まない(ファイルの文字として読む)。
+ */
+function coverage(read: (path: string) => string, list: (directory: string) => readonly string[],
+  exempt: ReadonlyMap<string, string>): string[] {
+  const entries = registryEntries(read);
+  const packs = [...new Set(entries.map((entry) => entry.pack))];
+  const sources = familySources(read, packs);
+  const failures: string[] = [];
+  const ids = new Set(entries.map((entry) => entry.id));
+  for (const id of exempt.keys()) if (!ids.has(id)) failures.push(`読みの表の無い族の例外 ${id} が登録の表に無い`);
+  if (sources.map((source) => source.id).join(',') !== entries.map((entry) => entry.id).join(',')) {
+    failures.push(`登録の表の族 ${entries.length} のうち、本体の読み込みを読めた族 ${sources.length}`);
+  }
+  const names = list(FAMILIES_DIR).filter((name) => name.endsWith('.ts'));
+  const tests = names.filter((name) => name.endsWith('.test.ts')).map((name) => ({ name, text: read(`${FAMILIES_DIR}/${name}`) }));
+  const oracles = tests.filter((test) => test.name.includes('Oracle'));
+  const registryText = packs.map((pack) => read(`packages/model/src/assembly/catalog/registry/${pack}.ts`)).join('\n');
+  for (const name of names.filter((candidate) => !/\.(test|testSupport|fixture)\./u.test(candidate))) {
+    for (const match of read(`${FAMILIES_DIR}/${name}`).matchAll(EXPORTED_FAMILY)) {
+      if (!mentions(registryText, match[1])) failures.push(`${FAMILIES_DIR}/${name} の ${match[1]} が登録の表に無い`);
+    }
+  }
+  for (const source of sources) {
+    if (exempt.has(source.id)) continue;
+    const body = read(`${FAMILIES_DIR}/${source.module}.ts`);
+    const factory = new RegExp(`^export const ${source.exportName}\\b[^=]*=\\s*([A-Za-z][A-Za-z0-9_]*)\\(`, 'mu').exec(body)?.[1];
+    const words = factory === undefined ? [source.exportName] : [source.exportName, factory];
+    if (!tests.some((test) => test.text.includes('.rows') && words.some((word) => mentions(test.text, word)))) {
+      failures.push(`${source.id}: ${words.join(' か ')} の行を読む検査が無い`);
+    }
+    const local = [source.module, ...[...body.matchAll(LOCAL_IMPORT)].map((match) => match[1])];
+    if (!oracles.some((test) => local.some((module) => test.text.includes(`from './${module}.js'`)))) {
+      failures.push(`${source.id}: ${source.module} かそれが読む行の表を読む独立の読みの検査が無い`);
+    }
+  }
+  return failures;
+}
+
 describe('規格部品の族の一覧と登録の表', () => {
   it('検査が持つ族のほぼ全部の一覧と末尾から数える切り出しは、登録の表の並びと同じ', () => {
     const findings = audit((path) => readFileSync(resolve(root, path), 'utf8'), sourceTestFiles());
@@ -273,5 +345,43 @@ describe('規格部品の族の一覧と登録の表', () => {
       `expect(ids).toEqual(${list(FRAME)});`,
     ].join('\n');
     expect(audit(fixture(text), ['x.test.ts'])).toEqual({ checked: ['x.test.ts:3 族の id(分類 frame)'], failures: [] });
+  });
+
+  it('規格部品の族は、本体の書き出しが全部登録の表にあり、登録の表の族は全部、行を読む検査と独立の読みの検査に照らされる', () => {
+    const read = (path: string): string => readFileSync(resolve(root, path), 'utf8');
+    expect(coverage(read, (directory) => readdirSync(resolve(root, directory)), NO_READING_TABLE)).toEqual([]);
+  });
+
+  // 仮の本体のファイル: alpha は行の表 alphaRows を読み、beta は作る関数 createBeta で作る。
+  const coverageFiles: Readonly<Record<string, string>> = {
+    [REGISTRY]: "import { KA_CATALOG_FAMILIES } from './registry/ka.js';\n"
+      + 'export const PRODUCT_CATALOG_REGISTRY = createCatalogRegistry([...KA_CATALOG_FAMILIES]);',
+    'packages/model/src/assembly/catalog/registry/ka.ts': [
+      "  { id: 'alpha', group: 'frame', kindKey: 'kind.alpha',",
+      "    load: async () => (await import('../families/alpha.js')).ALPHA_FAMILY },",
+      "  { id: 'beta', group: 'frame', kindKey: 'kind.beta',",
+      "    load: async () => (await import('../families/beta.js')).BETA_FAMILY },",
+    ].join('\n'),
+    [`${FAMILIES_DIR}/alpha.ts`]: "import { ALPHA_RECORDS } from './alphaRows.js';\nexport const ALPHA_FAMILY = createAlpha(ALPHA_RECORDS);",
+    [`${FAMILIES_DIR}/alphaOracle.test.ts`]: "import { ALPHA_RECORDS } from './alphaRows.js';",
+    [`${FAMILIES_DIR}/alpha.test.ts`]: 'expect(ALPHA_FAMILY.rows).not.toEqual([]);',
+    [`${FAMILIES_DIR}/beta.ts`]: 'export const BETA_FAMILY: Family = createBeta(ROWS);',
+    [`${FAMILIES_DIR}/betaOracle.test.ts`]: "import { ROWS } from './beta.js';",
+    [`${FAMILIES_DIR}/beta.test.ts`]: 'expect(createBeta(RECORDS).rows).not.toEqual([]);',
+  };
+  const coverageOf = (files: Readonly<Record<string, string>>, exempt: ReadonlyMap<string, string> = new Map()): string[] =>
+    coverage((path) => files[path] ?? '', (directory) => Object.keys(files)
+      .filter((path) => path.startsWith(`${directory}/`)).map((path) => path.slice(directory.length + 1)), exempt);
+  const without = (name: string): Readonly<Record<string, string>> =>
+    Object.fromEntries(Object.entries(coverageFiles).filter(([path]) => path !== `${FAMILIES_DIR}/${name}`));
+
+  it('自己試験: 族の網羅は、行を読む検査・独立の読みの検査・登録の表の足し忘れ・例外の書き損じを外れにする', () => {
+    expect(coverageOf(coverageFiles)).toEqual([]);
+    expect(coverageOf(without('alpha.test.ts'))).toEqual(['alpha: ALPHA_FAMILY か createAlpha の行を読む検査が無い']);
+    expect(coverageOf(without('betaOracle.test.ts'))).toEqual(['beta: beta かそれが読む行の表を読む独立の読みの検査が無い']);
+    expect(coverageOf(without('betaOracle.test.ts'), new Map([['beta', '理由'], ['gamma', '理由']])))
+      .toEqual(['読みの表の無い族の例外 gamma が登録の表に無い']);
+    expect(coverageOf({ ...coverageFiles, [`${FAMILIES_DIR}/gamma.ts`]: 'export const GAMMA_FAMILY = createGamma(ROWS);' }))
+      .toEqual([`${FAMILIES_DIR}/gamma.ts の GAMMA_FAMILY が登録の表に無い`]);
   });
 });

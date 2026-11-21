@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '@pointercad/model';
 import { crossVec3, dotVec3 } from '@pointercad/model/vec3';
 import type { SolidFaceEntry, SubShapeRef } from '@pointercad/model';
 
@@ -13,10 +14,10 @@ export function validPlanarHoleBasis(basis: PlanarHoleBasis | undefined): basis 
   if (basis === undefined) return false;
   const { origin, xAxis: u, yAxis: v, normal: n } = basis;
   if (![...origin, ...u, ...v, ...n].every(Number.isFinite)
-    || [u, v, n].some(axis => Math.abs(Math.hypot(...axis) - 1) > 1e-9)) return false;
+    || [u, v, n].some(axis => exceedsMagnitude(Math.hypot(...axis) - 1, 1e-9))) return false;
   const cross = crossVec3(n, u);
-  return Math.abs(dotVec3(n, u)) <= 1e-9
-    && cross.every((component, index) => Math.abs(component - v[index]) <= 1e-9);
+  return withinMagnitude(dotVec3(n, u), 1e-9)
+    && cross.every((component, index) => withinMagnitude(component - v[index], 1e-9));
 }
 
 /** 加工callerが同じ現body一覧から解決した面参照の基準だけを読む。 */

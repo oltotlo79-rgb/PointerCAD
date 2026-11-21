@@ -1,3 +1,4 @@
+import { firstFittingPopover, POPOVER_GAP, POPOVER_INSET } from '../shell/popoverPlacement.js';
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { PlanarHoleBasisInfo } from './PlanarHoleBasisInfo.js';
 import { EdgeDistanceHoleInfo } from './EdgeDistanceHoleInfo.js';
@@ -42,10 +43,6 @@ import {
   type NumericInputState,
 } from './numericInput.js';
 
-/** ポップアップを基準点から右下へずらす量(画素)。指やカーソルで隠れないようにする。 */
-const OFFSET_PIXELS = 14;
-/** ビューポートの端からこれ以上は出さない(画素)。 */
-const EDGE_MARGIN_PIXELS = 8;
 /** 折り返し判定に使う見込みの大きさ(画素)。css の .pcad-popover の width と揃える。 */
 const POPOVER_WIDTH_PIXELS = 260;
 /**
@@ -68,7 +65,7 @@ const MIN_POPOVER_HEIGHT_PIXELS = 120;
  * 画面の外へ出ない。位置の決め方(`clampAnchor`)は他の入力欄と共有するので変えない。
  */
 export function popoverMaxHeight(top: number, viewportHeight: number): number {
-  return Math.max(MIN_POPOVER_HEIGHT_PIXELS, viewportHeight - top - EDGE_MARGIN_PIXELS);
+  return Math.max(MIN_POPOVER_HEIGHT_PIXELS, viewportHeight - top - POPOVER_INSET);
 }
 
 /**
@@ -88,16 +85,16 @@ export function clampAnchor(
   viewportHeight: number,
 ): { readonly left: number; readonly top: number } {
   const maxLeft = Math.max(
-    EDGE_MARGIN_PIXELS,
-    viewportWidth - POPOVER_WIDTH_PIXELS - EDGE_MARGIN_PIXELS,
+    POPOVER_INSET,
+    viewportWidth - POPOVER_WIDTH_PIXELS - POPOVER_INSET,
   );
   const maxTop = Math.max(
-    EDGE_MARGIN_PIXELS,
-    viewportHeight - POPOVER_HEIGHT_PIXELS - EDGE_MARGIN_PIXELS,
+    POPOVER_INSET,
+    viewportHeight - POPOVER_HEIGHT_PIXELS - POPOVER_INSET,
   );
   return {
-    left: Math.min(Math.max(anchor[0] + OFFSET_PIXELS, EDGE_MARGIN_PIXELS), maxLeft),
-    top: Math.min(Math.max(anchor[1] + OFFSET_PIXELS, EDGE_MARGIN_PIXELS), maxTop),
+    left: Math.min(Math.max(anchor[0] + POPOVER_GAP, POPOVER_INSET), maxLeft),
+    top: Math.min(Math.max(anchor[1] + POPOVER_GAP, POPOVER_INSET), maxTop),
   };
 }
 
@@ -108,8 +105,8 @@ type PopoverPlacement = 'anchor' | 'right' | 'left' | 'below' | 'above' | 'unpla
  * 窓の左上を決める(M-10 ①)。
  *
  * 避ける箱(選んだ面の画面の外形)が無ければ `clampAnchor` と同じ。有れば、箱の右・左・下・上の順に、
- * 窓(見込みの大きさ、縁 `EDGE_MARGIN_PIXELS`)が画面の内に収まる所を選ぶ。どの側も箱から
- * `OFFSET_PIXELS` 離すので、箱と重ならない。どこにも収まらない(画面いっぱいの面など)時は
+ * 窓(見込みの大きさ、縁 `POPOVER_INSET`)が画面の内に収まる所を選ぶ。どの側も箱から
+ * `POPOVER_GAP` 離すので、箱と重ならない。どこにも収まらない(画面いっぱいの面など)時は
  * `clampAnchor` と同じ位置にして `unplaced` と印を付ける(窓の `data-placement`。帯には出さない。
  * 辺を選ぶ間に窓を小さくする案 ② を作るかは、この印が出る場面が見つかってから決める)。
  */
@@ -123,17 +120,9 @@ function placePopover(
   if (avoid === null) {
     return { ...fallback, placement: 'anchor' };
   }
-  const fits = ({ left, top }: { readonly left: number; readonly top: number }): boolean =>
-    left >= EDGE_MARGIN_PIXELS && top >= EDGE_MARGIN_PIXELS
-    && left + POPOVER_WIDTH_PIXELS <= viewportWidth - EDGE_MARGIN_PIXELS
-    && top + POPOVER_HEIGHT_PIXELS <= viewportHeight - EDGE_MARGIN_PIXELS;
-  const sides = [
-    { placement: 'right', left: avoid.right + OFFSET_PIXELS, top: fallback.top },
-    { placement: 'left', left: avoid.left - OFFSET_PIXELS - POPOVER_WIDTH_PIXELS, top: fallback.top },
-    { placement: 'below', left: fallback.left, top: avoid.bottom + OFFSET_PIXELS },
-    { placement: 'above', left: fallback.left, top: avoid.top - OFFSET_PIXELS - POPOVER_HEIGHT_PIXELS },
-  ] as const;
-  return sides.find(fits) ?? { ...fallback, placement: 'unplaced' };
+  const position = firstFittingPopover(['right', 'left', 'below', 'above'], avoid, fallback,
+    { width: POPOVER_WIDTH_PIXELS, height: POPOVER_HEIGHT_PIXELS }, { width: viewportWidth, height: viewportHeight });
+  return position ?? { ...fallback, placement: 'unplaced' };
 }
 
 /** 窓の左上(M-10 ①)。開いた時に店が受けた避ける箱(`numericInputAvoid`)を使う。開いていない時の値は使われない。 */

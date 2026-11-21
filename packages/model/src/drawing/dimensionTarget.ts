@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import {
   dimensionSeries, drawingViewBasis, fitTolerance, formatDimension, movePointAcrossBreak, normalizedDrawingDirection, resolveDimensionTolerance,
   type Dimension, type DimensionSeriesResult, type DimensionTarget, type DimensionTolerance, type DrawingDocument, type DrawingView, type DrawingViewBasis, type Point2, type Vector3,
@@ -162,7 +163,7 @@ export function resolveDimensionTarget(
     if (edge.curveKind === 'line') return { kind: 'line', from, to, length: edge.length, paperFrom: paper(from), paperTo: paper(to) };
     if (edge.curveKind !== 'circle' || edge.axisOrigin == null || edge.axis === null || edge.radius === null || edge.radius <= 0) return null;
     const center = point(edge.axisOrigin);
-    const full = Math.abs(edge.length - 2 * Math.PI * edge.radius) <= GEOMETRY_TOLERANCE * Math.max(1, edge.length)
+    const full = withinMagnitude(edge.length - 2 * Math.PI * edge.radius, GEOMETRY_TOLERANCE * Math.max(1, edge.length))
       && Math.hypot(...subVec3(from, to)) <= GEOMETRY_TOLERANCE;
     return { kind: full ? 'circle' : 'arc', center, centroid: point(edge.midpoint), axis: direction(edge.axis), radius: edge.radius, length: edge.length,
       from, to, paperCenter: paper(center), paperFrom: paper(from), paperTo: paper(to) };

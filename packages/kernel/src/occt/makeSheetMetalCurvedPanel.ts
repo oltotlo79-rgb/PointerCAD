@@ -1,4 +1,5 @@
 /** 曲げ帯を横断する穴や傾いた外周も、円筒面上の輪郭として厚み付けする。 */
+import { exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from './tolerances.js';
 import type { Handle_Geom_Surface, OpenCascadeInstance, TopoDS_Wire } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
@@ -41,7 +42,7 @@ function curvedWire(oc: OpenCascadeInstance, curves: readonly CurveSpec[], surfa
 export function makeSheetMetalCurvedPanel(oc: OpenCascadeInstance, input: SheetMetalCurvedPanelInput): OcctShapeHandle {
   const { radius: r, thickness: t, neutralRadius: neutral, angle, frame } = input;
   if (![r, t, neutral, angle, r + t].every(Number.isFinite) || Math.min(r, t) <= 1e-7
-    || neutral < r || neutral > r + t / 2 || Math.abs(angle) <= 1e-10 || Math.abs(angle) >= 180)
+    || neutral < r || neutral > r + t / 2 || withinMagnitude(angle, 1e-10) || magnitudeAtLeast(angle, 180))
     throw new Error('曲げ部分の板厚・内半径・中立面と角度を確認してください。');
   validateSheetMetalBendFrame(frame);
   const { keep, release } = createAllocations();
@@ -50,7 +51,7 @@ export function makeSheetMetalCurvedPanel(oc: OpenCascadeInstance, input: SheetM
     const flat = keep(makeSheetMetalBase(oc, { outer: input.outer, holes: input.holes, thickness: 1, reversed: false, normal: [0, 0, 1] }));
     const bounds = keep(boundingBoxOf(oc, flat.shape)), range = boundingBoxRange(bounds.box);
     const length = neutral * Math.abs(angle) * Math.PI / 180;
-    if (range.min[1] < -1e-6 || range.max[1] > length + 1e-6 || Math.abs(range.min[2]) > 1e-6)
+    if (range.min[1] < -1e-6 || range.max[1] > length + 1e-6 || exceedsMagnitude(range.min[2], 1e-6))
       throw new Error('曲げ部分の輪郭が接線の間からはみ出しています。');
     const rectilinear = tryRectilinearBend(oc, input, measureVolume(oc, flat.shape));
     if (rectilinear !== null) {
@@ -77,7 +78,7 @@ export function makeSheetMetalCurvedPanel(oc: OpenCascadeInstance, input: SheetM
     if (!hasSolid(oc, shape) || !isValidShape(oc, shape)) throw new Error('穴や外周を含む曲げが有効なソリッドになりませんでした。');
     // Simpleの生成殻は内向きになる。新しく所有した結果だけを外向きへ揃える。
     const volume = measureVolume(oc, shape);
-    if (!Number.isFinite(volume) || Math.abs(volume) <= 1e-9) throw new Error('曲げ部分の厚みが失われました。');
+    if (!Number.isFinite(volume) || withinMagnitude(volume, 1e-9)) throw new Error('曲げ部分の厚みが失われました。');
     if (volume < 0) shape.Reverse();
     return { shape, delete: release };
   } catch (error) { release(); throw error; }

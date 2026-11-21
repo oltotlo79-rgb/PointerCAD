@@ -1,4 +1,5 @@
 /** 展開板の同一平面を一面へまとめ、製作図へ内部の接線を切断線として出さない。 */
+import { exceedsMagnitude } from './tolerances.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
@@ -19,7 +20,7 @@ export function unifySheetFlat(oc: OpenCascadeInstance, source: TopoDS_Shape, ex
       throw new Error('展開の輪郭をまとめられませんでした。パネルと切欠きの接続を確認してください。');
     const volume = measureVolume(oc, shape);
     if (!Number.isFinite(volume) || !Number.isFinite(expectedVolume) || expectedVolume <= 0
-      || Math.abs(volume - expectedVolume) > Math.max(1e-7, expectedVolume * 1e-10))
+      || exceedsMagnitude(volume - expectedVolume, Math.max(1e-7, expectedVolume * 1e-10)))
       throw new Error('展開の輪郭をまとめると体積が変わります。元のパネルを保持しました。');
     return { shape, delete: release };
   } catch (error) { release(); throw error; }

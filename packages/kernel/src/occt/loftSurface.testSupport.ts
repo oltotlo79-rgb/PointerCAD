@@ -1,3 +1,4 @@
+import { belowMagnitude } from './tolerances.js';
 import type { BRepAdaptor_Surface, OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, SubShapeQuery, ThruSectionsStepSpec, Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
@@ -53,7 +54,7 @@ export function sectionNormalAngles(oc: OpenCascadeInstance, shape: TopoDS_Shape
     const u = (surface.FirstUParameter() + surface.LastUParameter()) / 2;
     const first = surface.FirstVParameter(), last = surface.LastVParameter();
     const start = keep(surface.Value(u, first)), end = keep(surface.Value(u, last));
-    if (Math.abs(end.Z() - start.Z()) < 99) continue;
+    if (belowMagnitude(end.Z() - start.Z(), 99)) continue;
     for (const z of [20, 60]) {
       let lo = first, hi = last;
       for (let iteration = 0; iteration < 45; iteration += 1) {

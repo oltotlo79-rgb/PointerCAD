@@ -3,7 +3,7 @@
  * 辺の指紋は普通の部分形状の選択と同じ道(`subShapeRefOf`)で作り、世界の線は model の `frameLineFromEdge`。
  * 一覧の行の鍵は、ビューの強調(選択・ホバー)に使う部分形状の対象の id(`assemblyTargetId`)。
  */
-import { frameLineFromEdge, type AssemblyDocument, type FrameLine, type Vec3 } from '@pointercad/model';
+import { magnitudeAtLeast, frameLineFromEdge, type AssemblyDocument, type FrameLine, type Vec3 } from '@pointercad/model';
 
 import { subShapeElementId, subShapeRefOf } from '../solid/subShapeSelection.js';
 import type { AssemblyView } from '../store/assemblySlice.js';
@@ -26,7 +26,7 @@ const AXIS_TOLERANCE = 1e-9;
 const round = (value: number): number => Math.round(value * 1e6) / 1e6;
 
 function directionOf(line: FrameLine, length: number): FrameEdgeDirection {
-  const along = (axis: 0 | 1 | 2): boolean => Math.abs((line.end[axis] - line.start[axis]) / length) >= 1 - AXIS_TOLERANCE;
+  const along = (axis: 0 | 1 | 2): boolean => magnitudeAtLeast((line.end[axis] - line.start[axis]) / length, 1 - AXIS_TOLERANCE);
   return along(0) ? 'x' : along(1) ? 'y' : along(2) ? 'z' : 'other';
 }
 

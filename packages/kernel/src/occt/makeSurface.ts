@@ -66,7 +66,7 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
-import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
+import { withinMagnitude, APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './pickSubShape.js';
 import { measureArea } from './solidMesh.js';
 import { shapeBodyKind } from './shapeBodyKind.js';
@@ -529,7 +529,7 @@ export function makeSurface(
     // ② 面積が出ていることを確かめる。潰れた輪郭・長さ 0 の掃引では、OCCT が
     //    成功を返しても面積 0 の形になる(立体の段が体積で捕まえているのと同じ性質)。
     const area = measureArea(oc, shape);
-    if (!Number.isFinite(area) || Math.abs(area) <= MIN_SURFACE_AREA_MM2) {
+    if (!Number.isFinite(area) || withinMagnitude(area, MIN_SURFACE_AREA_MM2)) {
       throw new Error(SURFACE_FAILED_MESSAGE);
     }
 

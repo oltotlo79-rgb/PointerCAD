@@ -463,6 +463,7 @@ function freshDocumentSession(): Partial<AppState> {
     numericInput: null,
     numericInputAnchor: null,
     numericInputAvoid: null,
+    focusRequest: null,
     pendingStart: null,
     shapeDraft: EMPTY_SHAPE_DRAFT,
     shapeErrorMessage: null,

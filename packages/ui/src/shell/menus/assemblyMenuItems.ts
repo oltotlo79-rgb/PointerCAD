@@ -16,11 +16,11 @@ export type AssemblyMenuActionId =
   | 'jointCheck'
   | 'jointSwap'
   | 'memberStretch'
-  | 'dimensionMove';
+  | 'dimensionMove'
+  | 'createPart';
 
 /**
- * 「組む」の正本。基本の5項目をこの順に保ち、ボルト締結(追加要件6)の2項目、すみ肉溶接の1項目、
- * 接合チェック(E-09)の1項目、結合の入れ替えと伸縮(E-13)の2項目、寸法で動かす(配置の補助 P-A)の1項目を後ろへ足す。
+ * 「組む」の正本。配置・置換・固定の後に締結、溶接、接合の確認と変更、伸縮、寸法移動、部品の作成を並べる。
  */
 export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] = [
   { id: 'placePart', labelKey: 'assembly.tool.placePart', tooltipKey: 'assembly.tool.placePartTooltip', Icon: CubeIcon },
@@ -37,6 +37,7 @@ export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] 
   { id: 'jointSwap', labelKey: 'assembly.tool.jointSwap', tooltipKey: 'assembly.jointSwap.tooltip', Icon: TransformIcon },
   { id: 'memberStretch', labelKey: 'assembly.tool.memberStretch', tooltipKey: 'assembly.memberStretch.tooltip', Icon: ScaleIcon },
   { id: 'dimensionMove', labelKey: 'assembly.tool.dimensionMove', tooltipKey: 'assembly.dimensionMove.tooltip', Icon: MeasureIcon },
+  { id: 'createPart', labelKey: 'assembly.tool.createPart', tooltipKey: 'assembly.tool.createPartTooltip', Icon: CubeIcon },
 ];
 
 /** 操作対象と同じ部品の固定状態から、次に行う操作の名前を決める。 */

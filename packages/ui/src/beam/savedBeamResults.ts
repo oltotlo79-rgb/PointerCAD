@@ -43,10 +43,20 @@ function isStaticResult(result: BeamSession['result']): result is BeamAnalysisRe
   return result !== null && result.kind === 'oofem-linear-beam-3d';
 }
 
+/** 保存した結果のうち、梁の静解析の物。 */
+type SavedStaticBeamResult = Extract<SavedAnalysisResult, { readonly kind: BeamAnalysisResult['kind'] }>;
+
 /** 今の文書でまだ使える、開いた時の結果(同じ文書の物で、保存した定義と id・revision が合う物だけ)。 */
 function currentOpened(document: AssemblyDocument, opened: OpenedAnalysisResults | null): ReadonlyMap<string, SavedAnalysisResult> {
   if (opened === null || opened.document !== document) return new Map();
   return new Map([...opened.results].filter(([id, saved]) => savedDefinitionRevision(document, id) === saved.analysisRevision));
+}
+
+/** 梁の会話へ戻せる、開いた時の結果。ほかの種類(立体の結果など)は梁の会話へ戻さない。 */
+function openedStaticResult(document: AssemblyDocument, opened: OpenedAnalysisResults | null,
+  analysisId: string): SavedStaticBeamResult | undefined {
+  const saved = currentOpened(document, opened).get(analysisId);
+  return saved?.kind === 'oofem-linear-beam-3d' ? saved : undefined;
 }
 
 /**
@@ -75,15 +85,15 @@ export function analysisResultsToSave(state: { readonly beamSession: BeamSession
 export function withOpenedBeamResult(session: BeamSession, document: AssemblyDocument | null,
   opened: OpenedAnalysisResults | null): BeamSession {
   if (document === null) return session;
-  const saved = currentOpened(document, opened).get(session.analysisId);
+  const saved = openedStaticResult(document, opened, session.analysisId);
   return saved === undefined || saved.analysisRevision !== session.revision ? session : { ...session, result: saved.result };
 }
 
 /** 窓に「保存した結果」と出す物。会話の結果が、今の文書のまま使える開いた時の結果そのもので、id・revision が会話と合う時だけ。 */
 export function shownSavedBeamResult(session: BeamSession, document: AssemblyDocument | null,
-  opened: OpenedAnalysisResults | null): SavedAnalysisResult | null {
+  opened: OpenedAnalysisResults | null): SavedStaticBeamResult | null {
   if (document === null || session.result === null) return null;
-  const saved = currentOpened(document, opened).get(session.analysisId);
+  const saved = openedStaticResult(document, opened, session.analysisId);
   return saved !== undefined && saved.result === session.result && saved.analysisRevision === session.revision ? saved : null;
 }
 
@@ -103,7 +113,7 @@ export function beamDefinitionFingerprint(definition: BeamDefinition): string {
  * 反映する定義の中身の指紋・id・revision が計算した時と同じ時だけ返す。版が分からない時は残さない(保存の決まりと同じ)。
  */
 export function keptResultOnApply(session: BeamSession, definition: BeamDefinition, recorded: BeamResultDefinition | null,
-  appVersion: string | null): SavedAnalysisResult | null {
+  appVersion: string | null): SavedStaticBeamResult | null {
   const result = session.result;
   if (appVersion === null || session.status !== 'complete' || !isStaticResult(result) || recorded?.result !== result) return null;
   if (result.analysisId !== definition.id || result.analysisRevision !== definition.revision

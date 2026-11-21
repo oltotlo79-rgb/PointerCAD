@@ -1,6 +1,5 @@
 import {
   EMPTY_PART_LIBRARY,
-  SUB_ASSEMBLY_CYCLE_MESSAGE,
   addComponent,
   createAssemblyDocument,
   createAssemblyDocumentBundle,
@@ -178,7 +177,7 @@ describe('placeSubAssemblyBundle', () => {
       createAssemblyDocumentBundle(copied),
       parent,
     );
-    expect(result).toEqual({ ok: false, message: SUB_ASSEMBLY_CYCLE_MESSAGE });
+    expect(result).toEqual({ ok: false, message: 'このアセンブリは自分自身を含んでいます。' });
   });
 
   it('別に作った同名・同じローカルIDの組は置ける', () => {

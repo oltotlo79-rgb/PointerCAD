@@ -30,7 +30,8 @@ interface FreezeInput {
 
 const THREADS = ['coarse', 'fine'] as const;
 const SAVE_OPTIONS = { savedAt: '2026-11-14T00:00:00.000Z' };
-const UNKNOWN_FAMILY_MESSAGE = 'この部品の種類は、このアプリの版の部品の表にありません。アプリを新しい版にしてから開いてください。';
+/** 知らない族の断り(文は ui の catalog.json の catalog.rejection.unknown-family。D4)。 */
+const UNKNOWN_FAMILY_TEXT = { key: 'catalog.rejection.unknown-family', parameters: {} };
 
 /** 凍結の表を作った時と同じ並べ方(model の legacySourceFreeze.test.ts と同じ)。 */
 function legacyInputs(): readonly FreezeInput[] {
@@ -911,12 +912,12 @@ describe('K0 (b) 族の部品(catalogItem)は読めて、同じバイトで保�
       const source = reopened.components[1]?.source;
       if (source?.kind !== 'standardPart') throw new Error('Expected the saved catalog item');
       expect(standardPartRejection(source)?.code).toBe('unknown-family');
-      expect(standardPartRejection(source)?.message).toBe(UNKNOWN_FAMILY_MESSAGE);
+      expect(standardPartRejection(source)?.text).toEqual(UNKNOWN_FAMILY_TEXT);
       const before = structuredClone(reopened);
       const resolved = resolveAssembly(reopened, { standardPart: buildStandardPartFromSource });
       expect(resolved.parts.size).toBe(1);
-      expect(resolved.errors.map((error) => [error.componentId, error.message]))
-        .toEqual([[reopened.components[1]?.id, UNKNOWN_FAMILY_MESSAGE]]);
+      expect(resolved.errors.map((error) => [error.componentId, error.text]))
+        .toEqual([[reopened.components[1]?.id, UNKNOWN_FAMILY_TEXT]]);
       expect(reopened).toEqual(before);
       expect(writeAssemblyDocument(reopened, SAVE_OPTIONS)).toBe(writeAssemblyDocument(document, SAVE_OPTIONS));
     }

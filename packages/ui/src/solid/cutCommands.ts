@@ -16,7 +16,7 @@
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
-  addVec3,
+  belowMagnitude, addVec3,
   affectsShape,
   appendSolid,
   baseWorkPlane,
@@ -572,7 +572,7 @@ export function profileCutGeometry(context: CutContext, targetFeatureId: string,
     return { ok: false, reasonKey: 'cutError.profileNotPlanar' };
   }
   // 平面上の 2 軸(どちらも法線に直交する単位ベクトル)。
-  const helper: Vec3 = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const helper: Vec3 = belowMagnitude(normal[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
   const u = unit3(crossVec3(normal, helper));
   if (u === null) return { ok: false, reasonKey: 'cutError.profileNotPlanar' };
   const v = crossVec3(normal, u);

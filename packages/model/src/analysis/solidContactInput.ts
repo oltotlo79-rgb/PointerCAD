@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import type { Vector3 } from './analysisModel.js';
 import { fields, InputIssue, number, text } from './analysisValidation.js';
 
@@ -74,7 +75,7 @@ function validateNormal(value: unknown, path: string): void {
   const components = denseList(normal.vector, `${path}.vector`, 3);
   if (components.length !== 3) throw new InputIssue('contact-normal', `${path}.vector`, 'Expected three unit-vector components');
   const vector = components.map((component, axis) => number(component, `${path}.vector[${axis}]`));
-  if (Math.abs(Math.hypot(...vector) - 1) > SOLID_CONTACT_LIMITS.unitNormalTolerance) {
+  if (exceedsMagnitude(Math.hypot(...vector) - 1, SOLID_CONTACT_LIMITS.unitNormalTolerance)) {
     throw new InputIssue('contact-normal', `${path}.vector`, 'Expected a unit vector within 1e-9; no implicit normalization');
   }
 }

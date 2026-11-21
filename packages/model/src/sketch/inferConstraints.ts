@@ -26,6 +26,7 @@
  * 予告の印そのものを描くのと、確定して拘束を足す配線は ui の役目。
  */
 
+import { exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 import type { ConstraintTarget, SketchConstraint } from './constraints/types.js';
 import { constraintTargets } from './constraints/types.js';
 import { arcPointAt } from './intersectionMath.js';
@@ -215,7 +216,7 @@ function withinAngle(au: number, av: number, bu: number, bv: number): boolean {
 /** 同じ判定だが、**向きの正負も合っている**ことを求める(接線の側を決めるのに使う)。 */
 function withinOrientedAngle(au: number, av: number, bu: number, bv: number): boolean {
   const dot = au * bu + av * bv;
-  return dot > 0 && Math.abs(au * bv - av * bu) <= dot * ANGLE_TOLERANCE_TANGENT;
+  return dot > 0 && withinMagnitude(au * bv - av * bu, dot * ANGLE_TOLERANCE_TANGENT);
 }
 
 /** その点が作図面の上にあるか。別の面の要素を渡されても推定しないため。 */
@@ -513,7 +514,7 @@ export function inferConstraints(
         const nu = at[0] - circle.center[0];
         const nv = at[1] - circle.center[1];
         const distance = Math.hypot(nu, nv);
-        if (Math.abs(distance - circle.radius) > toleranceMm || distance <= SKETCH_TOLERANCE_MM) {
+        if (exceedsMagnitude(distance - circle.radius, toleranceMm) || distance <= SKETCH_TOLERANCE_MM) {
           continue;
         }
         if (withinOrientedAngle(du, dv, nv / distance, -nu / distance)) {

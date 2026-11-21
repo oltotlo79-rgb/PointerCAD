@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { beamWeldSpanContactInputSha256, translateBeamWeldSpanContact,
   type BeamWeldSpanContactInput } from './beamWeldSpanContact.js';
 import { beamWeldSpanContactResultMatches, isBeamWeldSpanContactResult } from './beamWeldSpanContactBinding.js';
@@ -12,7 +13,7 @@ function snapshotResult(value: unknown): unknown {
     if (--budget < 0 || depth > 24) throw new Error('weld-span-stress-data');
     if (v === null || typeof v === 'boolean' || typeof v === 'string') return;
     if (typeof v === 'number') {
-      if (!Number.isFinite(v) || Math.abs(v) > 1e30) throw new Error('weld-span-stress-data');
+      if (!Number.isFinite(v) || exceedsMagnitude(v, 1e30)) throw new Error('weld-span-stress-data');
       return;
     }
     if (typeof v !== 'object') throw new Error('weld-span-stress-data');

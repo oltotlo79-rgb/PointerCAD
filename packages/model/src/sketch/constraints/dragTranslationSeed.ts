@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude, magnitudeAtLeast } from '../../numericTolerance.js';
 import { isNumericLiteral } from '@pointercad/expression';
 import type { SketchDocument } from '../types.js';
 import type { LinearizedRow } from './solve.js';
@@ -13,7 +14,7 @@ interface Edge {
 // A conservative rank screen, not a relaxation of any residual tolerance. Near-parallel
 // directions go through the unchanged solver instead of claiming rigidity from roundoff.
 function independent(a: readonly [number, number], b: readonly [number, number]): boolean {
-  return Math.abs(a[0] * b[1] - a[1] * b[0]) > Math.sqrt(Number.EPSILON);
+  return exceedsMagnitude(a[0] * b[1] - a[1] * b[0], Math.sqrt(Number.EPSILON));
 }
 
 /**
@@ -103,7 +104,7 @@ export function dragTranslationSeed(
   const initialRows = evaluate(variables.initial);
   // Each supported constraint must contribute exactly one row; a skipped equation is not evidence.
   if (initialRows.length !== constraints.length + 2
-    || initialRows.slice(0, constraints.length).some(row => !Number.isFinite(row.value) || Math.abs(row.value) >= tolerance)) return null;
+    || initialRows.slice(0, constraints.length).some(row => !Number.isFinite(row.value) || magnitudeAtLeast(row.value, tolerance))) return null;
   const candidate = [...variables.initial];
   for (const point of component) {
     for (const [axis, shift] of [['u', delta[0]], ['v', delta[1]]] as const) {
@@ -112,14 +113,14 @@ export function dragTranslationSeed(
       const old = candidate[column], next = old + shift;
       // Reject magnitudes whose arithmetic spacing could consume the residual budget.
       if (!Number.isFinite(next) || Math.max(Math.abs(old), Math.abs(next), Math.abs(shift)) * Number.EPSILON >= tolerance / 8
-        || Math.abs((next - old) - shift) >= tolerance) return null;
+        || magnitudeAtLeast((next - old) - shift, tolerance)) return null;
       candidate[column] = next;
     }
   }
   const placed = pointValueAt(variables, candidate, key);
-  if (placed === null || Math.abs(placed[0] - pin[1][0]) >= tolerance || Math.abs(placed[1] - pin[1][1]) >= tolerance) return null;
+  if (placed === null || magnitudeAtLeast(placed[0] - pin[1][0], tolerance) || magnitudeAtLeast(placed[1] - pin[1][1], tolerance)) return null;
   const rows = evaluate(candidate);
   return rows.length === initialRows.length
-    && rows.every(row => Number.isFinite(row.value) && Math.abs(row.value) < tolerance
+    && rows.every(row => Number.isFinite(row.value) && belowMagnitude(row.value, tolerance)
       && [...row.gradient.values()].every(Number.isFinite)) ? candidate : null;
 }

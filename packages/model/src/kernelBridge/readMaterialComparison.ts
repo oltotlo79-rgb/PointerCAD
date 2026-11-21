@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import { isRecord as record } from '../valueGuards.js';
 import type { MaterialComparisonResult, MaterialDifferenceRegion } from './materialComparisonContracts.js';
 
@@ -32,7 +33,7 @@ export function readMaterialComparison(value: unknown): MaterialComparisonResult
   const added = region(result.added), removed = region(result.removed), common = region(result.common);
   if (added === null || removed === null || common === null) return invalid();
   const conserved = (whole: number, first: number, second: number): boolean =>
-    Math.abs(whole - first - second) <= Math.max(1e-9, whole * 1e-6);
+    withinMagnitude(whole - first - second, Math.max(1e-9, whole * 1e-6));
   if (!conserved(result.beforeVolume, removed.volume, common.volume) || !conserved(result.afterVolume, added.volume, common.volume)) return invalid();
   return { kind: 'compared', result: { added, removed, common, beforeVolume: result.beforeVolume, afterVolume: result.afterVolume } };
 }

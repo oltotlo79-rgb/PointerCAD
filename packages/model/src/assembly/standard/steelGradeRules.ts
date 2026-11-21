@@ -1,3 +1,4 @@
+import type { FailureText } from '../../failureText.js';
 import type { SteelCondition, SteelMaterialGrade, SteelSectionCatalog } from './steelCatalog.js';
 import type { SteelStandardReference } from './steelStandards.js';
 
@@ -38,20 +39,21 @@ export type SteelGradeRule = {
   readonly allowed: false;
   readonly basis: SteelGradeRuleBasis;
   readonly reasonCode: SteelGradeRejectionCode;
-  readonly reason: string;
+  /** 断る理由の文の鍵と差し込む値(文は ui の assembly.steel.reason.*。D4)。 */
+  readonly reason: FailureText;
 };
 
 const s45cRolledSection = {
   allowed: false,
   reasonCode: 'section-not-standardized-in-grade',
-  reason: 'S45Cの圧延形鋼はJIS G 4051（機械構造用炭素鋼鋼材）の7.5により標準断面が規定されていない（協定品）。',
+  reason: { key: 'assembly.steel.reason.s45cRolledSection', parameters: {} },
   basis: [{ standardId: 'jis-g-4051-2026', locator: '7.5 その他の形状・寸法（受渡当事者間の協定）' }],
 } as const satisfies SteelGradeRule;
 
 const sgpNonPipe = {
   allowed: false,
   reasonCode: 'section-outside-scope',
-  reason: 'SGPはJIS G 3452（配管用炭素鋼鋼管）の適用範囲にある鋼管の記号で、鋼管以外の断面は対象外。',
+  reason: { key: 'assembly.steel.reason.sgpNonPipe', parameters: {} },
   basis: [{ standardId: 'jis-g-3452-2026', locator: '適用範囲（配管用炭素鋼鋼管）' }],
 } as const satisfies SteelGradeRule;
 
@@ -119,7 +121,7 @@ export const STEEL_GRADE_RULES = {
     steelPipe: {
       allowed: false,
       reasonCode: 'pipe-outside-scope',
-      reason: 'SS400の鋼管はJIS G 3101（一般構造用圧延鋼材）の適用範囲・表1に含まれない。',
+      reason: { key: 'assembly.steel.reason.ss400Pipe', parameters: {} },
       basis: [{ standardId: 'jis-g-3101-2024', locator: '適用範囲・表1（鋼板・鋼帯・形鋼・棒鋼・平鋼）' }],
     },
   },
@@ -166,7 +168,7 @@ export const STEEL_GRADE_RULES = {
     steelPipe: {
       allowed: false,
       reasonCode: 'pipe-outside-scope',
-      reason: 'S45Cの鋼管はJIS G 4051（機械構造用炭素鋼鋼材）の箇条1（適用範囲）外。鋼管にはこの規格を適用しない。',
+      reason: { key: 'assembly.steel.reason.s45cPipe', parameters: {} },
       basis: [{ standardId: 'jis-g-4051-2026', locator: '適用範囲（鋼管を除外）' }],
     },
   },
@@ -187,33 +189,33 @@ export const STEEL_GRADE_RULES = {
 const notRolledShapeGrade = (grade: 'SS400' | 'S45C', standardId: 'jis-g-3101-2024' | 'jis-g-4051-2026',
   standard: string): Extract<SteelGradeRule, { readonly allowed: false }> => ({
   allowed: false, reasonCode: 'pipe-outside-scope',
-  reason: `${grade}の角形鋼管は${standard}の適用範囲に含まれない。角形鋼管はJIS G 3466（一般構造用角形鋼管）のSTKR400で選ぶ。`,
+  reason: { key: 'assembly.steel.reason.rectTubeOutsideGrade', parameters: { grade, standard } },
   basis: [{ standardId, locator: '適用範囲（角形鋼管を含まない）' }],
 });
 const stkrOnlyRectTube = {
   allowed: false, reasonCode: 'section-outside-scope',
-  reason: 'STKR400はJIS G 3466（一般構造用角形鋼管）の角形鋼管の記号で、角形鋼管以外の断面は対象外。',
+  reason: { key: 'assembly.steel.reason.stkrOnlyRectTube', parameters: {} },
   basis: [{ standardId: 'jis-g-3466-2025', locator: '適用範囲・表1 種類の記号' }],
 } as const satisfies SteelGradeRule;
 const stkOnlyRoundPipe = {
   allowed: false, reasonCode: 'section-outside-scope',
-  reason: 'STK400はJIS G 3444（一般構造用炭素鋼鋼管）の鋼管の記号で、鋼管以外の断面は対象外。',
+  reason: { key: 'assembly.steel.reason.stkOnlyRoundPipe', parameters: {} },
   basis: [{ standardId: 'jis-g-3444-2025', locator: '適用範囲・表1 種類の記号' }],
 } as const satisfies SteelGradeRule;
 /** JIS G 3350 の軽量形鋼の種類は SSC400 の 1 種類だけ（表1）。ほかの鋼種で軽量形鋼を選ばせない。 */
 const notLightGaugeGrade = (grade: 'SS400' | 'S45C'): Extract<SteelGradeRule, { readonly allowed: false }> => ({
   allowed: false, reasonCode: 'section-outside-scope',
-  reason: `${grade}の軽量形鋼は扱わない。JIS G 3350（一般構造用軽量形鋼）の種類の記号はSSC400の1種類だけなので、軽量形鋼はSSC400で選ぶ。`,
+  reason: { key: 'assembly.steel.reason.lightGaugeOutsideGrade', parameters: { grade } },
   basis: [{ standardId: 'jis-g-3350-2021', locator: '表1 種類の記号（SSC400 の 1 種類）' }],
 });
 const sscOnlyLightGauge = {
   allowed: false, reasonCode: 'section-outside-scope',
-  reason: 'SSC400はJIS G 3350（一般構造用軽量形鋼）の軽量形鋼の記号で、軽量形鋼以外の断面は対象外。',
+  reason: { key: 'assembly.steel.reason.sscOnlyLightGauge', parameters: {} },
   basis: [{ standardId: 'jis-g-3350-2021', locator: '適用範囲・表1 種類の記号' }],
 } as const satisfies SteelGradeRule;
 const susOnlyPipe = {
   allowed: false, reasonCode: 'section-outside-scope',
-  reason: 'SUS304TPはJIS G 3459（配管用ステンレス鋼鋼管）の鋼管の記号で、鋼管以外の断面は対象外。',
+  reason: { key: 'assembly.steel.reason.susOnlyPipe', parameters: {} },
   basis: [{ standardId: 'jis-g-3459-2021', locator: '適用範囲・表1 種類の記号' }],
 } as const satisfies SteelGradeRule;
 const sscAllowed = (table: string, name: string, rows: number) => ({
@@ -326,7 +328,7 @@ export function steelGradeRule(material: SteelMaterialGrade, catalog: SteelSecti
 export type S45cProductRule = ({ readonly allowed: true } & SteelGradeConditionRule) | {
   readonly allowed: false;
   readonly reasonCode: SteelGradeRejectionCode | 'condition-not-supported' | 'product-standard-mismatch';
-  readonly reason: string;
+  readonly reason: FailureText;
   readonly basis: SteelGradeRuleBasis;
 };
 
@@ -341,13 +343,13 @@ export function s45cProductRule(catalog: SteelSectionCatalog, condition: string,
   if (rule === undefined) {
     return {
       allowed: false, reasonCode: 'condition-not-supported', basis: [s45cUnspecifiedTreatment],
-      reason: 'S45CはJIS G 4051 5 c)により熱処理を注文者が指定する。カタログは熱処理未指定だけを扱い、焼ならし・焼なまし・焼入焼戻し等の条件や強度を推定しない。',
+      reason: { key: 'assembly.steel.reason.s45cConditionNotSupported', parameters: {} },
     };
   }
   if (rule.productStandard !== productStandard) {
     return {
       allowed: false, reasonCode: 'product-standard-mismatch', basis: rule.basis,
-      reason: `S45Cのこの製品条件で参照する寸法・製品規格は${rule.productStandard}。JIS G 4051 7.1・7.3の熱間圧延材とJIS G 3123のみがき材を読み替えない。`,
+      reason: { key: 'assembly.steel.reason.s45cProductStandardMismatch', parameters: { productStandard: rule.productStandard } },
     };
   }
   return { allowed: true, ...rule };

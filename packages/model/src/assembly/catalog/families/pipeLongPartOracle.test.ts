@@ -2,7 +2,8 @@
  * 資料 2 のパイプ形のフレームの系列の長物の製品の行(pipeLongPartRows.ts。40 回目の読み 2 本で一致した値。断面の外形を包む長方形 × 長さ)が、
  * 照らす側の読み(pipeLongPartOracle.fixture.json。2 本目の文字。部品の種類だけは一般の呼び)と 1 行ずつ合う事の検査(統括の決定 2026-11-20 21:2x)。
  * fixture の文字は、この検査が自分で読み解く: 断面の外形の幅と高さ(「外形の幅:30.5(…)」の頭の数)・長さの上限(切り売りの範囲の大きい方)・
- * 材質(アルミの押出材)・単位質量(kg/m)。あわせて、族の行(形・体積・質量・長さの上限・断面の性質を持たない事)を確かめる。
+ * 材質(アルミの押出材)・単位質量(kg/m)・頁(資料に載らない品は空で null)・道具の画面の値の寸法(資料に記入が無く、参考にした組立用の道具の
+ * 画面の値で入れた寸法。行の valueSource)。あわせて、族の行(形・体積・質量・長さの上限・断面の性質を持たない事)を確かめる。
  */
 import { readFileSync } from 'node:fs';
 
@@ -42,6 +43,17 @@ function maxLengthOf(text: string | undefined): number | null {
   return range?.[2] === undefined ? null : Math.max(Number(range[1]), Number(range[2]));
 }
 
+/** 「PDF頁」の文字 → 頁(資料に載らない品の空の文字は null)。 */
+function pageOf(text: string | undefined): number | null {
+  return text === undefined || text === '' ? null : Number(text);
+}
+
+/** 「道具の画面の値」の文字(「外形の幅・単位質量」)→ 行の寸法の鍵の並び(無ければ空)。名前の分からない語は「?」のまま残して合わなくする。 */
+const SCREEN_NAMES: Readonly<Record<string, string>> = { 外形の幅: 'width', 外形の高さ: 'height', 単位質量: 'unitMassKgPerM' };
+function screenFieldsOf(text: string | undefined): readonly string[] {
+  return text === undefined || text === '' ? [] : text.split('・').map((name) => SCREEN_NAMES[name] ?? `?${name}`);
+}
+
 /** 「アルミ押出材;0.53kg/m」→ 材料と単位質量。 */
 function materialAndMassOf(text: string | undefined): readonly [string, number | null] {
   const [material = '', mass = ''] = (text ?? '').split(';');
@@ -60,13 +72,19 @@ describe('資料 2 のパイプ形のフレームの系列の長物の製品の�
     }
   });
 
-  it('断面の外形の幅と高さ・長さの上限・材質・単位質量・頁が照らす側の読みと合う', () => {
+  it('断面の外形の幅と高さ・長さの上限・材質・単位質量・頁・道具の画面の値の寸法が照らす側の読みと合う', () => {
     for (const record of PIPE_LONG_PART_RECORDS) {
       const cells = FIXTURE.find((row) => row.key === record.key)?.cells ?? {};
       expect([sectionValue(cells['断面'], '外形の幅'), sectionValue(cells['断面'], '外形の高さ'), maxLengthOf(cells['長さ'])], record.key)
         .toEqual([record.width, record.height, record.maxLength]);
-      expect([...materialAndMassOf(cells['材質と質量']), Number(cells['PDF頁'])], record.key)
+      expect([...materialAndMassOf(cells['材質と質量']), pageOf(cells['PDF頁'])], record.key)
         .toEqual([record.material, record.unitMassKgPerM, record.page]);
+      const fields = screenFieldsOf(cells['道具の画面の値']);
+      expect(record.valueSource, record.key).toEqual(fields.length === 0 ? undefined : { kind: 'toolScreen', fields });
+    }
+    // 資料に載らない品(頁が null)は、全部の値が道具の画面の値。
+    for (const record of PIPE_LONG_PART_RECORDS.filter((item) => item.page === null)) {
+      expect(record.valueSource, record.key).toEqual({ kind: 'toolScreen', fields: ['width', 'height', 'unitMassKgPerM'] });
     }
   });
 
@@ -81,6 +99,7 @@ describe('資料 2 のパイプ形のフレームの系列の長物の製品の�
       expect(PIPE_LONG_PART_FAMILY.nominalMassG?.(row, values) ?? null, record.key)
         .toBe(record.unitMassKgPerM === null ? null : record.unitMassKgPerM * 300);
       expect([row.dims.ixCm4, row.dims.iyCm4, row.note.endsWith('断面の性質は持たない')], record.key).toEqual([undefined, undefined, true]);
+      expect(row.valueSource, record.key).toEqual(record.valueSource);
       if (record.maxLength !== null) {
         const over = { length: String(record.maxLength + 1) };
         expect([PIPE_LONG_PART_FAMILY.build(row, over), PIPE_LONG_PART_FAMILY.nominalVolume(row, over)], record.key).toEqual([null, null]);

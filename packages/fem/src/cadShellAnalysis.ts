@@ -1,5 +1,5 @@
 import { lengthVec3 as norm, scaleVec3 as scaled, subVec3 as sub, addVec3 as add, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
-import { createSubShapeReference, isSameSubShape, requestAnalysisBoundary, resolveCurrentOrigin, type AnalysisBoundary,
+import { exceedsMagnitude, withinMagnitude, createSubShapeReference, isSameSubShape, requestAnalysisBoundary, resolveCurrentOrigin, type AnalysisBoundary,
   type AnalysisBoundarySource, type FaceSurfaceKind, type SolidBody, type SubShapeRef } from '@pointercad/model';
 import { readShellCadInput, solidCadFaceKey, type ShellCadSavedInput } from '@pointercad/model/beam-analysis';
 import { prepareCadShellSurfaceMesh, type CadShellSurfaceMesh, type CadShellSurfaceOptions } from './cadShellSurfaceMesh.js';
@@ -183,10 +183,10 @@ export function distributeShellEdgeLoad(points: readonly ShellVector3[], normals
   for (let k = 0; k + 1 < points.length; k += 1) {
     const step = sub(points[k + 1], points[k]), h = norm(step), n = normals[k];
     if (!(h > 0) || !Number.isFinite(h)) refuse('invalid-settings', `edge load segment ${k} has no length`);
-    if (!(Math.abs(norm(n) - 1) <= 1e-9)) refuse('invalid-settings', `edge load segment ${k} needs a unit element normal`);
+    if (!(withinMagnitude(norm(n) - 1, 1e-9))) refuse('invalid-settings', `edge load segment ${k} needs a unit element normal`);
     const s = scaled(step, 1 / h), nu = cross(s, n), quarter = h * h / 12;
     const fn = dot(force, n), fnu = dot(force, nu), ms = dot(moment, s), mnu = dot(moment, nu), mn = dot(moment, n);
-    if (Math.abs(mn) > 1e-9 * momentSize) {
+    if (exceedsMagnitude(mn, 1e-9 * momentSize)) {
       refuse('edge-load-drilling', `edge load segment ${k} has a moment of ${mn} N mm/mm about the shell normal (drilling); `
         + 'it has no work-equivalent edge load in the native shell element and is not distributed silently');
     }
@@ -308,7 +308,7 @@ export function prepareCadShellAnalysis(boundary: AnalysisBoundary, context: Cad
     const normal = normalOf(triangles[0]), origin = point(triangleNodes(triangles[0])[0]);
     // Mesh evidence of a face declared planar: one oriented plane. Triangles that fold or curve are refused, not flattened.
     if (triangles.some(t => norm(sub(normalOf(t), normal)) > 1e-9)
-      || nodes.some(node => Math.abs(dot(sub(point(node), origin), normal)) > lengthTolerance)) {
+      || nodes.some(node => exceedsMagnitude(dot(sub(point(node), origin), normal), lengthTolerance))) {
       return refuse('midsurface-nonplanar', `the analysis surface of saved midsurface face ${position} is not one plane `
         + '(triangle normals or node offsets disagree); it is not flattened');
     }

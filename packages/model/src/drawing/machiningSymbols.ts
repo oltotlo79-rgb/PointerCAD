@@ -1,3 +1,4 @@
+import { belowMagnitude } from '../numericTolerance.js';
 import { formatDimension, type DrawingSymbolKind } from '@pointercad/drawing';
 import { findMetricThread } from '../thread/metricThread.js';
 import type { ChamferFeature, HoleEntry, HoleFeature, ThreadHoleFeature, ThreadShaftFeature } from '../part/types.js';
@@ -38,7 +39,7 @@ export function machiningSymbols(feature: MachiningFeature, options: {
     const distance = size.kind === 'twoDistances' ? size.distance1.value : size.distance.value;
     if (!positive(distance) || (angle !== undefined && (!positive(angle) || angle >= 90))) return null;
     if (size.kind === 'twoDistances' && !positive(size.distance2.value)) return null;
-    if (angle !== undefined && Math.abs(angle - 45) < 1e-9
+    if (angle !== undefined && belowMagnitude(angle - 45, 1e-9)
       && (size.kind !== 'twoDistances' || size.distance1.value === size.distance2.value)) tokens.push(text(`C${number(distance)}`));
     else if (size.kind === 'distanceAngle') tokens.push(text(`${number(distance)}×${number(size.angle.value)}°`));
     else tokens.push(text(`${number(distance)}×${number(size.kind === 'equal' ? distance : size.distance2.value)}`));

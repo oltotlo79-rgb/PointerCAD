@@ -20,6 +20,7 @@
  * `cleanZeroVec3` と同じ理由: 比較・表示・保存の文字列を揺らさないため)。
  */
 
+import { exceedsMagnitude } from '../numericTolerance.js';
 import type { RigidTransform } from '../part/resolvePart.js';
 import { addVec3, cleanZeroVec3, crossVec3, dotVec3 as dot, isFiniteQuaternion, ORIGIN, type Vec3 } from '../sketch/vec3.js';
 
@@ -152,8 +153,8 @@ export function quaternionFromBasis(x: Vec3, y: Vec3, z: Vec3, tolerance: number
   const all = [...x, ...y, ...z];
   if (!all.every((value) => Number.isFinite(value))) return null;
   const cross: Vec3 = crossVec3(x, y);
-  if (Math.abs(dot(x, x) - 1) > tolerance || Math.abs(dot(y, y) - 1) > tolerance || Math.abs(dot(z, z) - 1) > tolerance
-    || Math.abs(dot(x, y)) > tolerance || Math.abs(dot(y, z)) > tolerance || Math.abs(dot(z, x)) > tolerance
+  if (exceedsMagnitude(dot(x, x) - 1, tolerance) || exceedsMagnitude(dot(y, y) - 1, tolerance) || exceedsMagnitude(dot(z, z) - 1, tolerance)
+    || exceedsMagnitude(dot(x, y), tolerance) || exceedsMagnitude(dot(y, z), tolerance) || exceedsMagnitude(dot(z, x), tolerance)
     || dot(cross, z) < 1 - tolerance) return null;
   const [m00, m10, m20] = x;
   const [m01, m11, m21] = y;

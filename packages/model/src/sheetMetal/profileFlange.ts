@@ -1,4 +1,5 @@
 /** スケッチの基準縁を接線面へ剛体配置する。半径・径数角・スプラインの方式を保持する。 */
+import { exceedsMagnitude } from '../numericTolerance.js';
 import type { SketchFaceRef } from '../part/featureReferences.js';
 import { curveSamplePoints } from '../sketch/curvePlaneSamples.js';
 import { fitPlaneNormal } from '../sketch/resolveSketch.js';
@@ -37,7 +38,7 @@ export function profileFlangePanel(featureId: string, boundaryId: string, profil
   const edges = sheetBoundaryEdges(sourcePanel); if (!edges.ok) return edges;
   const baseline = edges.value.find((edge) => edge.id === profile.baselineId);
   if (baseline === undefined) return { ok: false, message: '任意輪郭の基準となる直線縁を選び直してください。' };
-  if (!Number.isFinite(width) || width <= 1e-7 || Math.abs(distanceVec3(baseline.from, baseline.to) - width) > 1e-7)
+  if (!Number.isFinite(width) || width <= 1e-7 || exceedsMagnitude(distanceVec3(baseline.from, baseline.to) - width, 1e-7))
     return { ok: false, message: '輪郭の基準縁の長さを、端の距離を引いたフランジの幅と一致させてください。輪郭は拡縮されません。' };
   const xAxis = normalizeVec3(subVec3(baseline.to, baseline.from));
   const source: SheetTangentFrame = { origin: baseline.from, xAxis, yAxis: crossVec3(normal, xAxis), normal };

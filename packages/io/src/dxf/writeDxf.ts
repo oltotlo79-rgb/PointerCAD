@@ -54,7 +54,7 @@
  * 書かない)、レイヤーの並びは**実体に出てきた順**に固定しているため。
  */
 
-import { azimuthToEllipseParameter, sampleSpline, splineCurveData, type ResolvedSpline, type Vec3 } from '@pointercad/model';
+import { magnitudeAtLeast, azimuthToEllipseParameter, sampleSpline, splineCurveData, type ResolvedSpline, type Vec3 } from '@pointercad/model';
 
 import { dxfString, type DxfWriteEntity, type DxfWriteOptions } from './dxfDrawingTypes.js';
 
@@ -251,7 +251,7 @@ function writeArcEntity(entity: DxfArcEntity): DxfTag[] {
   }
   const head = [...baseTags(entity), ...pointTags(10, entity.center), numberTag(40, entity.radius)];
   const sweep = entity.endAngle - entity.startAngle;
-  if (Math.abs(sweep) >= FULL_TURN_DEGREES - FULL_TURN_EPSILON || sweep === 0) {
+  if (magnitudeAtLeast(sweep, FULL_TURN_DEGREES - FULL_TURN_EPSILON) || sweep === 0) {
     return [tag(0, 'CIRCLE'), ...head];
   }
   const counterClockwise = sweep > 0;
@@ -307,7 +307,7 @@ function writeEllipseEntity(entity: DxfEllipseEntity): DxfTag[] {
     throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
   }
   const sweep = entity.endAngle - entity.startAngle;
-  const closed = Math.abs(sweep) >= FULL_TURN_DEGREES - FULL_TURN_EPSILON || sweep === 0;
+  const closed = magnitudeAtLeast(sweep, FULL_TURN_DEGREES - FULL_TURN_EPSILON) || sweep === 0;
   const turn = closed ? (sweep < 0 ? -FULL_TURN_DEGREES : FULL_TURN_DEGREES) : sweep;
   // 全周は分割数ぶんの頂点(最後の点は先頭と重なるので置かない)。弧は両端を含める。
   const segments = Math.max(

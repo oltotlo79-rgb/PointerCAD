@@ -6,6 +6,7 @@
  * so OCCT holds the exact C1 piecewise cubic (no fitting or resampling here). After exact clipping, the surviving
  * parameter range is read back from the native curve by de Casteljau subdivision of the end spans only.
  */
+import { withinMagnitude } from './tolerances.js';
 import type { BRepAdaptor_Curve, OpenCascadeInstance, TopoDS_Edge } from 'opencascade.js/dist/opencascade.full.js';
 import type { Vec3Tuple } from '../types.js';
 import { borrowHandle } from './borrowHandle.js';
@@ -77,7 +78,7 @@ export function checkedFunctionCurveSpline(value: unknown, component: readonly u
     for (let axis = 0; axis < 3; axis++) {
       const junction = a[axis] + (b[axis] - a[axis]) * share;
       const allowed = 16 * Number.EPSILON * (Math.abs(a[axis]) + Math.abs(b[axis]) + Math.abs(sample[axis]));
-      if (!(Math.abs(junction - sample[axis]) <= allowed)) throw new Error('関数曲線の滑らかな制御点が標本の位置を通りません。');
+      if (!(withinMagnitude(junction - sample[axis], allowed))) throw new Error('関数曲線の滑らかな制御点が標本の位置を通りません。');
     }
   }
   return { knots: checkedKnots, poles: checkedPoles };

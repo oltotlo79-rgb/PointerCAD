@@ -1,3 +1,4 @@
+import { belowMagnitude } from '../numericTolerance.js';
 import type { ExpressionValue } from '@pointercad/expression';
 
 import type { ResolvedSubShape } from '../geometry/planeSpec.js';
@@ -91,7 +92,7 @@ export function checkFaceOffset(
     return { ok: false, code: 'degenerate', message: FACE_OFFSET_NOT_PLANAR_MESSAGE };
   }
   const offset = feature.offset.value;
-  if (!Number.isFinite(offset) || Math.abs(offset) < MIN_FACE_OFFSET_MM) {
+  if (!Number.isFinite(offset) || belowMagnitude(offset, MIN_FACE_OFFSET_MM)) {
     return { ok: false, code: 'invalidValue', message: FACE_OFFSET_DISTANCE_MESSAGE };
   }
   return { ok: true, offset };

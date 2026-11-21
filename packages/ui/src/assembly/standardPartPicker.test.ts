@@ -1,11 +1,12 @@
 import { t } from '../i18n/t.js';
 import { describe, expect, it } from 'vitest';
 import {
-  ALL_STEEL_PRODUCTS, buildStandardPartFromSource, CATALOG_ITEM_REJECTION_TEMPLATES, STEEL_MATERIAL_GRADES, STEEL_PRODUCTS,
+  ALL_STEEL_PRODUCTS, buildStandardPartFromSource, CATALOG_ITEM_REJECTION_CODES, STEEL_MATERIAL_GRADES, STEEL_PRODUCTS,
   STEEL_R2_MATERIAL_GRADES, steelProductOptions, type StandardPartSource,
 } from '@pointercad/model';
 import { buildStandardPartFromSourceWithReason } from '@pointercad/model/testing/ui-fixtures';
 import catalogMessages from '../i18n/ja/catalog.json';
+import { failureMessage } from '../i18n/failureMessage.js';
 
 import {
   commitStandardPartChoice, DEFAULT_STANDARD_PART_PICKER, defaultStandardPartChoice,
@@ -348,18 +349,28 @@ describe('K0 族の部品の土台(新しい規格の行はまだ無い)', () =>
       'unequalAngle']);
   });
 
-  it('族の部品の断りの文言は model の文と一字一句同じで、製品の道の理由の文とも一致する', () => {
+  it('族の部品の断りの文は catalog.json に理由ごとに 1 つあり、利用者の言葉で、製品の道の理由の鍵と値から作れる', () => {
     const messages: Record<string, unknown> = catalogMessages;
-    const templates = Object.entries(CATALOG_ITEM_REJECTION_TEMPLATES);
     expect(Object.keys(messages).filter((key) => key.startsWith('catalog.rejection.')).sort())
-      .toEqual(templates.map(([code]) => `catalog.rejection.${code}`).sort());
-    for (const [code, template] of templates) expect(messages[`catalog.rejection.${code}`]).toBe(template);
+      .toEqual(CATALOG_ITEM_REJECTION_CODES.map((code) => `catalog.rejection.${code}`).sort());
+    // model の catalogItem.test.ts から移した照らし(文は ui が持つ。D4): 空でなく、保存の形の識別子を含まない。
+    const identifiers = /catalogItem|family|item|length|finish|extra|size|test-pin|test-parallel-pin/u;
+    for (const code of CATALOG_ITEM_REJECTION_CODES) {
+      const message = failureMessage({ key: `catalog.rejection.${code}`,
+        parameters: code === 'saved-fields-mismatch' ? { count: '2' } : {} });
+      expect(message.trim().length, code).toBeGreaterThan(0);
+      expect(message, code).not.toMatch(identifiers);
+      expect(message, code).not.toMatch(/[{][^}]+[}]/u);
+    }
+    expect(failureMessage({ key: 'catalog.rejection.saved-fields-mismatch', parameters: { count: '2' } }))
+      .toBe(t('catalog.rejection.saved-fields-mismatch').split('{count}').join('2'));
     const unknownFamily: StandardPartSource = { kind: 'standardPart', catalog: 'catalogItem', size: '2',
       options: { family: 'future-family', item: 'future-family:d2', length: '12' },
       catalogRevision: 'future-r1', generatorRevision: 'future-1' };
     const rejection = buildStandardPartFromSourceWithReason(unknownFamily).rejection;
-    expect(rejection?.messageKey).toBe('catalog.rejection.unknown-family');
-    expect(t('catalog.rejection.unknown-family')).toBe(rejection?.message);
+    expect(rejection?.text).toEqual({ key: 'catalog.rejection.unknown-family', parameters: {} });
+    if (rejection === null) throw new Error('Expected a typed rejection');
+    expect(failureMessage(rejection.text)).toBe(t('catalog.rejection.unknown-family'));
   });
 });
 

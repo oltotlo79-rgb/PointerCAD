@@ -48,6 +48,7 @@
   "functionSurface.rangeZ": "Zの描画範囲",
   "functionSurface.tolerance": "近似の精度",
   "solidError.noFace": "面が選ばれていません。先に面を張ってください。",
+  "solidError.pushPullUnsupported": "押し引きでは、作図の面か閉じた領域、立体の面、立体の辺のどれか 1 種類を選んでから押してください。",
   "solidError.regionNone": "その位置には閉じた領域がありません。線の端と端をつないで輪郭を閉じてから、内側を押してください。",
   "solidError.regionCrossing": "線が交わっているため、領域を選べません。「トリム」で交わる所から先を消すか、交わらないようにかき直してから、もう一度押してください。",
   "solidError.regionInvalid": "穴の輪郭を確かめてください。穴は閉じた輪で、外周と同じ平面の内側にあり、外周やほかの穴に接したり重なったりしない必要があります。",

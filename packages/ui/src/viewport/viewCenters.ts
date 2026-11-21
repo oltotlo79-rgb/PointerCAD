@@ -1,4 +1,4 @@
-import { rotateVector, type RigidPlacement, type SolidBody } from '@pointercad/model';
+import { belowMagnitude, rotateVector, type RigidPlacement, type SolidBody } from '@pointercad/model';
 import type { PointerRay } from '../sketch/trackMath.js';
 import type { SolidGeometryBundle } from './buildSolidGeometry.js';
 import type { AssemblyGeometryBundle } from './createAssemblyLayer.js';
@@ -18,7 +18,7 @@ const cross = (a: Point, b: Point): Point => [a[1] * b[2] - a[2] * b[1], a[2] * 
 /** 光線と三角形の交点までの距離(メラー・トランボアの方法)。当たらない・後ろ・平行なら null。 */
 export function rayTriangleDistance(origin: Point, direction: Point, a: Point, b: Point, c: Point): number | null {
   const edge1 = sub(b, a), edge2 = sub(c, a), p = cross(direction, edge2), determinant = dot(edge1, p);
-  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-12) return null;
+  if (!Number.isFinite(determinant) || belowMagnitude(determinant, 1e-12)) return null;
   const s = sub(origin, a), u = dot(s, p) / determinant;
   if (u < 0 || u > 1) return null;
   const q = cross(s, edge1), v = dot(direction, q) / determinant;
@@ -79,7 +79,7 @@ export function assemblySurfacePoint(assembly: AssemblyGeometryBundle,
 /** 形に当たらない所の拡大の中心: 光線と、注視点を通り視線に垂直な面の交点。平行なら null。 */
 export function rayPointAtTargetDepth(ray: PointerRay, target: Point, viewDirection: Point): Point | null {
   const denominator = dot(ray.direction, viewDirection);
-  if (!Number.isFinite(denominator) || Math.abs(denominator) < 1e-12) return null;
+  if (!Number.isFinite(denominator) || belowMagnitude(denominator, 1e-12)) return null;
   const distance = dot(sub(target, ray.origin), viewDirection) / denominator;
   return Number.isFinite(distance) ? [ray.origin[0] + ray.direction[0] * distance, ray.origin[1] + ray.direction[1] * distance,
     ray.origin[2] + ray.direction[2] * distance] : null;

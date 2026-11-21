@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../../numericTolerance.js';
 import { evaluateExpression } from '@pointercad/expression';
 import type { PartDocument } from '../../part/types.js';
 import type { CoordinateInput, SketchFeature } from '../../sketch/types.js';
@@ -66,7 +67,7 @@ function bentFinishedLength(document: PartDocument, source: StandardPartSource):
   if (firstLength === null || secondLength === null || !(turn > 0 && turn < 180) || !(arc.radius.value > 0)) return null;
   const centreline = firstLength + arc.radius.value * turn * Math.PI / 180 + secondLength;
   // Numerical equality only (12-digit saved expressions), exactly createSteelBend's stock-length rule, not a tolerance.
-  const equal = (a: number, b: number, scale: number) => Math.abs(a - b) <= 1e-9 * Math.max(1, scale);
+  const equal = (a: number, b: number, scale: number) => withinMagnitude(a - b, 1e-9 * Math.max(1, scale));
   if (!Number.isFinite(centreline) || !equal(centreline, stock.value, Math.max(stock.value, centreline))) return null;
   // The lengths and the arc alone do not fix where the pieces are: a reversed or moved leg, a moved arc centre or a
   // kinked second leg keep them. So the whole path must be the one planSteelBend produces for these tangent legs, this

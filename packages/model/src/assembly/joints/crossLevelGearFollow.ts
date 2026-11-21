@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import type { ResolveMateTargetOptions } from '../constraints/mateTargets.js';
 import { drainRigidSteps, UNLIMITED_RIGID_WORK, type RigidWorkBudget, type RigidWorkPoint } from '../constraints/solveRigid.js';
 import type { JointOccurrenceInputs, JointOccurrenceView } from '../jointOccurrence.js';
@@ -30,8 +31,8 @@ function samePose(a: RigidPlacement, b: RigidPlacement): boolean {
   // q and -q are the same rotation.
   const dot = qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3];
   const sign = dot < 0 ? -1 : 1;
-  return a.position.every((value, axis) => Math.abs(value - (b.position[axis] ?? Number.NaN)) <= CROSS_LEVEL_RELATIVE_POSE_TOLERANCE)
-    && qa.every((value, index) => Math.abs(value - sign * (qb[index] ?? Number.NaN)) <= CROSS_LEVEL_RELATIVE_POSE_TOLERANCE);
+  return a.position.every((value, axis) => withinMagnitude(value - (b.position[axis] ?? Number.NaN), CROSS_LEVEL_RELATIVE_POSE_TOLERANCE))
+    && qa.every((value, index) => withinMagnitude(value - sign * (qb[index] ?? Number.NaN), CROSS_LEVEL_RELATIVE_POSE_TOLERANCE));
 }
 
 /**
@@ -102,7 +103,7 @@ export function* solveCrossLevelGearFollowSteps(input: CrossLevelGearFollowInput
       request: { jointId: member.child.jointId, coordinate: 'angle', value: target,
         referenceAngle: state?.referenceAngle === undefined ? 0 : state.referenceAngle } }, budget));
     if (!child.ok) return { ok: false, couplingId: member.id, code: 'child-solve-failed' };
-    if (child.driven.atLimit || Math.abs(child.driven.actual - target) > CROSS_LEVEL_GEAR_TOLERANCE_DEG) {
+    if (child.driven.atLimit || exceedsMagnitude(child.driven.actual - target, CROSS_LEVEL_GEAR_TOLERANCE_DEG)) {
       return { ok: false, couplingId: member.id, code: 'child-at-limit' };
     }
     results.push({ couplingId: member.id, path: child.path, jointId: member.child.jointId, outcome: child, angle: child.driven.actual });

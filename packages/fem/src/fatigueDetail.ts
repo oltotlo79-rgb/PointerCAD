@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 import { FATIGUE_PIECEWISE_INPUT_SCHEMA, analyzeFatiguePiecewise, validateFatiguePiecewiseInput, type FatiguePiecewiseCurve,
@@ -275,7 +276,7 @@ function readForceRow(value: unknown, path: string, detail: FatigueDetailJoint, 
   const forceN: number[] = [], stressMpa: number[] = [];
   for (const [index, point] of points.entries()) {
     if (!finite(point)) return fail('fatigue-number', `${path}.forceN[${index}]`);
-    if (Math.abs(point) > MAX_FATIGUE_DETAIL_FORCE_N) return fail('fatigue-bound', `${path}.forceN[${index}]`);
+    if (exceedsMagnitude(point, MAX_FATIGUE_DETAIL_FORCE_N)) return fail('fatigue-bound', `${path}.forceN[${index}]`);
     if (detail.kind === 'bolt' && point < 0) return fail('fatigue-detail-bolt-compression', `${path}.forceN[${index}]`);
     forceN.push(point);
     // N / mm2 = MPa.

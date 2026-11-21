@@ -6838,7 +6838,7 @@ describe('EX03 W10 future steel provenance remains readable and rejects during r
     expect(built.document).toBeNull();
     expect(built.rejection?.code).toBe(test.field === 'catalogRevision'
       ? 'unsupported-catalog-revision' : 'unsupported-generator-revision');
-    expect(built.rejection?.message).toContain('版');
+    expect(built.rejection?.text.key).toBe(`assembly.steel.rejection.${test.field === 'catalogRevision' ? 'unsupported-catalog-revision' : 'unsupported-generator-revision'}`);
     const empty = createAssemblyDocument('Future steel provenance');
     const assembly = addComponent(empty, createComponentFor(empty, savedSource));
     const assemblyBefore = structuredClone(assembly);
@@ -6848,7 +6848,7 @@ describe('EX03 W10 future steel provenance remains readable and rejects during r
     expect(resolved.parts.size).toBe(0);
     expect(resolved.partKeys.size).toBe(0);
     expect(resolved.errors).toHaveLength(1);
-    expect(resolved.errors[0].message).toBe(built.rejection?.message);
+    expect(resolved.errors[0].text).toEqual(built.rejection?.text);
     expect(assembly).toEqual(assemblyBefore);
     expect(opened).toEqual(openedBefore);
     expect(expectOk(parseDocument(serializeDocument(opened, { savedAt: SAVED_AT })))).toEqual(openedBefore);

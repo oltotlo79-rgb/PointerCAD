@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import { dotVec3 as dot, subVec3 as subtract } from '../sketch/vec3.js';
 import type { DrawingDocument, GdtFeature, GdtShapeTarget, Point2, Vector3 } from '@pointercad/drawing';
 import { applyPlacementToDirection, applyPlacementToPoint } from '../assembly/placementMath.js';
@@ -69,7 +70,7 @@ export function resolveGdtFeature(feature: GdtFeature, document: DrawingDocument
     const normal = placedDirection(first.face.axis), otherNormal = placedDirection(second.face.axis);
     if (normal === null || otherNormal === null || 1 - Math.abs(dot(normal, otherNormal)) > 1e-7) return null;
     const a = placedPoint(first.face.centroid), b = placedPoint(second.face.centroid), distance = dot(subtract(b, a), normal);
-    if (Math.abs(distance) <= 1e-7) return null;
+    if (withinMagnitude(distance, 1e-7)) return null;
     return finish('medianPlane', 'plane', [a[0] + normal[0] * distance / 2, a[1] + normal[1] * distance / 2,
       a[2] + normal[2] * distance / 2], normal, Math.abs(distance), [first.key, second.key]);
   }
@@ -117,7 +118,7 @@ export function resolveGdtFeature(feature: GdtFeature, document: DrawingDocument
     || edge.radius === null || !Number.isFinite(edge.length) || edge.radius <= 0) return null;
   const direction = placedDirection(edge.axis);
   if (direction === null) return null;
-  const closed = Math.abs(edge.length - 2 * Math.PI * edge.radius) <= 1e-7 * Math.max(1, edge.length)
+  const closed = withinMagnitude(edge.length - 2 * Math.PI * edge.radius, 1e-7 * Math.max(1, edge.length))
     && Math.hypot(...subtract(edge.start, edge.end)) <= 1e-7;
   return finish('axis', 'circle', placedPoint(edge.axisOrigin), direction, closed ? edge.radius * 2 : null);
 }

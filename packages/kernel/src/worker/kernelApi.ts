@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../occt/tolerances.js';
 import { createHiddenLeaseResources } from './kernelApiResources.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { createRuntimePhaseJournal, type RuntimePhaseJournalSnapshot } from './runtimePhaseJournal.js';
@@ -527,7 +528,7 @@ export function createKernelPhaseObserver(clock: () => { epochMs: number; monoMs
       const validClock = time !== null && Number.isFinite(time.epochMs) && Number.isFinite(time.monoMs)
         && time.epochMs >= 0 && time.monoMs >= 0;
       if (!validClock || (previous !== null && time !== null && (time.monoMs < previous.monoMs
-        || Math.abs((time.epochMs - previous.epochMs) - (time.monoMs - previous.monoMs)) > 1000))) clockDiscontinuities += 1;
+        || exceedsMagnitude((time.epochMs - previous.epochMs) - (time.monoMs - previous.monoMs), 1000)))) clockDiscontinuities += 1;
       if (validClock && time !== null) previous = { epochMs: time.epochMs, monoMs: time.monoMs };
       if (!Number.isSafeInteger(lastSeq + 1)) { dropped += 1; return; }
       records.push(Object.freeze({ seq: ++lastSeq, phase, dispatchId, partId, generation, kind,

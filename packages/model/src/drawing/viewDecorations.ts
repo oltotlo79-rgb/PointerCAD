@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude } from '../numericTolerance.js';
 import { dotVec3 as dot } from '../sketch/vec3.js';
 import { breakDrawingCurve, createArrowTriangle, drawingViewBasis, formatDrawingScale, LINE_WIDTHS_MM,
   type DrawingDocument, type DrawingRenderCurve, type DrawingRenderElement, type Point2, type Vector3 } from '@pointercad/drawing';
@@ -21,7 +22,7 @@ function viewBounds(view: ResolvedDrawingView): Bounds {
 function planeTrace(parent: ConstructedDrawingView, projected: ResolvedDrawingView,
   section: NonNullable<ConstructedDrawingView['section']>): readonly Point2[] | null {
   const basis = drawingViewBasis({ normal: parent.view.direction, xDir: parent.view.xDir });
-  if (basis === null || Math.abs(dot(section.plane.normal, basis.normal)) > 1e-7 || parent.breakSpec !== undefined) return null;
+  if (basis === null || exceedsMagnitude(dot(section.plane.normal, basis.normal), 1e-7) || parent.breakSpec !== undefined) return null;
   const a = dot(section.plane.normal, basis.x), b = dot(section.plane.normal, basis.y), length = Math.hypot(a, b);
   if (length < 1e-9) return null;
   const delta: Vector3 = [parent.modelCenter[0] - section.plane.origin[0], parent.modelCenter[1] - section.plane.origin[1], parent.modelCenter[2] - section.plane.origin[2]];
@@ -30,7 +31,7 @@ function planeTrace(parent: ConstructedDrawingView, projected: ResolvedDrawingVi
   const axis: Point2 = [-b / length, a / length], bounds = viewBounds(projected), margin = 8;
   let first = -Infinity, last = Infinity;
   for (const [index, minimum, maximum] of [[0, bounds.left - margin, bounds.right + margin], [1, bounds.bottom - margin, bounds.top + margin]] as const) {
-    if (Math.abs(axis[index]) < 1e-9) { if (origin[index] < minimum || origin[index] > maximum) return null; }
+    if (belowMagnitude(axis[index], 1e-9)) { if (origin[index] < minimum || origin[index] > maximum) return null; }
     else {
       const lo = (minimum - origin[index]) / axis[index], hi = (maximum - origin[index]) / axis[index];
       first = Math.max(first, Math.min(lo, hi)); last = Math.min(last, Math.max(lo, hi));

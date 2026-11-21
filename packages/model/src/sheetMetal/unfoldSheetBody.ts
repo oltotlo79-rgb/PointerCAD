@@ -1,4 +1,5 @@
 /** 保存入力から導出した面と接線境界を、中立長の帯でつないで平面へ配置する。 */
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { curveSamplePoints } from '../sketch/curvePlaneSamples.js';
 import { curveStart } from '../sketch/intersectionMath.js';
 import type { ResolvedCurve } from '../sketch/types.js';
@@ -35,14 +36,14 @@ const FLAT_FRAME: SheetTangentFrame = { origin: [0, 0, 0], xAxis: [1, 0, 0], yAx
 function panelFrame(panel: SheetPanelGeometry): SheetTangentFrame | null {
   const first = panel.outer[0]; if (first === undefined) return null;
   const normal = panel.normal, origin = curveStart(first);
-  if (!normal.every(Number.isFinite) || Math.abs(lengthVec3(normal) - 1) > 1e-10) return null;
+  if (!normal.every(Number.isFinite) || exceedsMagnitude(lengthVec3(normal) - 1, 1e-10)) return null;
   const points = panel.outer.flatMap(curveSamplePoints);
   const offset = points.map((point) => subVec3(point, origin)).find((vector) => lengthVec3(vector) > 1e-7);
   if (offset === undefined) return null;
   const xAxis = normalizeVec3(offset), yAxis = crossVec3(normal, xAxis);
-  if (Math.abs(dotVec3(xAxis, normal)) > 1e-10 || Math.abs(lengthVec3(yAxis) - 1) > 1e-10) return null;
+  if (exceedsMagnitude(dotVec3(xAxis, normal), 1e-10) || exceedsMagnitude(lengthVec3(yAxis) - 1, 1e-10)) return null;
   for (const point of [...points, ...panel.holes.flatMap((loop) => loop.flatMap(curveSamplePoints))]) {
-    if (!point.every(Number.isFinite) || Math.abs(dotVec3(subVec3(point, origin), normal)) > 1e-7) return null;
+    if (!point.every(Number.isFinite) || exceedsMagnitude(dotVec3(subVec3(point, origin), normal), 1e-7)) return null;
   }
   return { origin, xAxis, yAxis, normal };
 }

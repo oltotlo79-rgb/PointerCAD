@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model/beam-analysis';
 import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 import {
   SOLID_FINITE_DOFS, SOLID_FINITE_FREE_RESIDUAL_BOUND, SOLID_FINITE_METHOD, SOLID_FINITE_RESULT_SCHEMA,
@@ -195,13 +196,13 @@ function readRecords(value: unknown, plan: SolidFinitePlan): readonly SolidFinit
     const externalN = rows(row.externalN, plan.nodes.length, `${path}.externalN`);
     for (const [key, values] of prescribed) {
       const planned = values[index], actual = displacementMm[Math.floor(key / 3)][key % 3];
-      if (!(Math.abs(actual - planned) <= 1e-12 * Math.max(1, Math.abs(planned)))) {
+      if (!(withinMagnitude(actual - planned, 1e-12 * Math.max(1, Math.abs(planned))))) {
         fail(`${path}.displacementMm does not reproduce the prescribed node ${String(Math.floor(key / 3))} direction ${SOLID_FINITE_DOFS[key % 3]}`);
       }
     }
     externalN.forEach((force, node) => force.forEach((actual, axis) => {
       const planned = loads.get(node * 3 + axis)?.[index] ?? 0;
-      const matches = loads.has(node * 3 + axis) ? Math.abs(actual - planned) <= 1e-12 * Math.max(1, Math.abs(planned)) : actual === 0;
+      const matches = loads.has(node * 3 + axis) ? withinMagnitude(actual - planned, 1e-12 * Math.max(1, Math.abs(planned))) : actual === 0;
       if (!matches) fail(`${path}.externalN of node ${String(node)} direction ${SOLID_FINITE_DOFS[axis]} is not the planned dead load`);
     }));
     checkDisplacementOrientation(plan, displacementMm, path);

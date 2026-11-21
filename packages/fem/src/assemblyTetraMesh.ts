@@ -1,4 +1,4 @@
-import { isSameSubShape, QUATERNION_TOLERANCE, type ResolvedAssembly, type ResolvedPart, type RigidPlacement,
+import { withinMagnitude, isSameSubShape, QUATERNION_TOLERANCE, type ResolvedAssembly, type ResolvedPart, type RigidPlacement,
   type SubShapeRef } from '@pointercad/model';
 import { FemClient, type FemOptions, type FemAssemblyTetraMeshPreparation } from './client.js';
 import type { CadTetraRegion } from './cadTetraMesh.js';
@@ -120,7 +120,7 @@ function placementCopy(value: RigidPlacement): RigidPlacement {
   requireInput(Object.keys(value).length === 2 && Array.isArray(value.position) && value.position.length === 3
     && Array.isArray(value.rotation) && value.rotation.length === 4
     && [...value.position, ...value.rotation].every(Number.isFinite)
-    && Math.abs(Math.hypot(...value.rotation) - 1) <= QUATERNION_TOLERANCE, 'A finite rigid placement is required');
+    && withinMagnitude(Math.hypot(...value.rotation) - 1, QUATERNION_TOLERANCE), 'A finite rigid placement is required');
   return { position: [value.position[0], value.position[1], value.position[2]],
     rotation: [value.rotation[0], value.rotation[1], value.rotation[2], value.rotation[3]] };
 }

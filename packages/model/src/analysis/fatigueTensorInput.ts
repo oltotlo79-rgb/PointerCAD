@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 import { fatigueInputFailure as fail, InputIssue, text } from './analysisValidation.js';
 import { FATIGUE_SAVED_ID, FATIGUE_SAVED_LIMITS, denseFatigueList, exactFatigueFields, fatigueLabel, finiteFatigueNumber,
   readFatigueSavedCurve, readFatigueSavedSource, type FatigueSavedCurve, type FatigueSavedSource } from './fatigueInput.js';
@@ -51,7 +52,7 @@ export interface FatigueTensorSavedInput {
 
 function readComponent(row: Record<string, unknown>, key: 'xx' | 'yy' | 'zz' | 'yz' | 'xz' | 'xy', path: string): number {
   const value = finiteFatigueNumber(row[key], `${path}.${key}`);
-  if (Math.abs(value) > FATIGUE_SAVED_LIMITS.maximumStressMpa) fail(`${path}.${key}`, 'Expected |component| of at most 1e4 MPa');
+  if (exceedsMagnitude(value, FATIGUE_SAVED_LIMITS.maximumStressMpa)) fail(`${path}.${key}`, 'Expected |component| of at most 1e4 MPa');
   return value === 0 ? 0 : value;
 }
 
@@ -93,7 +94,7 @@ function readHistory(value: unknown, path: string): FatigueSavedTensorHistory {
     // |factor x (+-equivalent)| = |factor x equivalent| exactly, so the core's sign does not change either refusal.
     const stress = factor * equivalent;
     if (factor !== 0 && stress === 0) fail(`${path}.loadFactors[${index}]`, 'A nonzero factor gives a stress that rounds to zero');
-    if (!(Math.abs(stress) <= FATIGUE_SAVED_LIMITS.maximumStressMpa)) {
+    if (!(withinMagnitude(stress, FATIGUE_SAVED_LIMITS.maximumStressMpa))) {
       fail(`${path}.loadFactors[${index}]`, 'Expected |factor x equivalent stress| of at most 1e4 MPa');
     }
   }

@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude } from './tolerances.js';
 import { unitDirection as toUnit } from './normalizeDirection.js';
 import { subVec as subtract, dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /**
@@ -546,7 +547,7 @@ function sweepOrientation(oc: OpenCascadeInstance, input: SweepInput, context: S
   if (usesLaw) {
     // 始めの枠の基準の向き: 置いた断面の面内で、断面の元の X 軸(断面の法線に近ければ Y 軸)を置き方で移した向き。
     const normal = context.frame.normal;
-    const axis: Vec3Tuple = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const axis: Vec3Tuple = belowMagnitude(normal[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
     const inPlane = toUnit(subtract(axis, [normal[0] * dot(axis, normal), normal[1] * dot(axis, normal), normal[2] * dot(axis, normal)]));
     if (inPlane === null) throw new Error(NO_TANGENT_MESSAGE);
     const plan = prepareSweepLaw(oc, context.spine, applyTransformToDirection(context.placement, inPlane),
@@ -684,7 +685,7 @@ export function makeSweep(oc: OpenCascadeInstance, input: SweepInput,
     // 全経路を作れたかの1%基準は同じまま保つ。
     const expectedVolume = (frame.area - inner.area) * orientation.volumePerArea();
     mark('length');
-    if (Math.abs(volume - expectedVolume) > expectedVolume * SWEPT_LENGTH_TOLERANCE) {
+    if (exceedsMagnitude(volume - expectedVolume, expectedVolume * SWEPT_LENGTH_TOLERANCE)) {
       throw new Error(INCOMPLETE_MESSAGE);
     }
 

@@ -1,4 +1,5 @@
 /** Called only with this recomputation's final geometry; saved fingerprints never supply values. */
+import { withinMagnitude } from '../numericTolerance.js';
 import { resolveSubShapeReference, type KernelBridge, type MeasureTarget, type SolidBody } from '../kernelBridge.js';
 import type { ResolvedPart } from '../part/resolvePart.js';
 import { readReferenceBodies } from '../part/readReferenceBodies.js';
@@ -269,7 +270,7 @@ async function evaluate(context: MathGeometryContext, request: MathGeometryReque
     case 'angle': case 'plane-angle': case 'parallel': case 'perpendicular': {
       const angle = unorientedAngle(context, quantity.first, quantity.second, request.tolerance.linearMm);
       if (quantity.kind === 'parallel') return angle <= request.tolerance.angularRadians;
-      if (quantity.kind === 'perpendicular') return Math.abs(Math.PI / 2 - angle) <= request.tolerance.angularRadians;
+      if (quantity.kind === 'perpendicular') return withinMagnitude(Math.PI / 2 - angle, request.tolerance.angularRadians);
       return angleScalar(angle, quantity.unit);
     }
     case 'line-plane-angle':

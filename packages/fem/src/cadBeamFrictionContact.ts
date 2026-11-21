@@ -1,5 +1,5 @@
 import { standardMembersToBeamAnalysis, type AssemblyDocument, type StandardBeamAdapterContext } from '@pointercad/model';
-import { readBeamAnalysisInputs, type StandardBeamDefinition } from '@pointercad/model/beam-analysis';
+import { InputIssue, readBeamAnalysisInputs, type StandardBeamDefinition } from '@pointercad/model/beam-analysis';
 import { translateBeamFrictionContact, type BeamFrictionContactInput } from './frictionContactTranslation.js';
 
 /** Saved schema 7 and current CAD ownership -> the dedicated friction input. No solver or joint coercion. */
@@ -21,7 +21,7 @@ export function prepareCadBeamFrictionContact(document: AssemblyDocument, defini
     modal: { modeCount: 1, segmentsPerMember: definition.contact.segmentsPerMember },
   };
   const derived = standardMembersToBeamAnalysis(document, geometryDefinition, context);
-  if (!derived.ok) throw new Error(`friction-cad: ${derived.issue.code} at ${derived.issue.path}: ${derived.issue.message}`);
+  if (!derived.ok) throw new InputIssue(derived.issue.code, derived.issue.path, `friction-cad: ${derived.issue.code} at ${derived.issue.path}: ${derived.issue.message}`, derived.issue.failures);
   return translateBeamFrictionContact({ schema: 'pointercad-beam-friction-contact/1', geometry: derived.document,
     supports: definition.supports, friction: definition.friction, stepLoads: definition.stepLoads,
     contacts: definition.contact.contacts.map(contact => contact.kind === 'node-plane'

@@ -1,5 +1,5 @@
 import { dotVec3 as dot } from '@pointercad/model/vec3';
-import { createSubShapeReference, crossVec2, drawingDimensionContext } from '@pointercad/model';
+import { belowMagnitude, magnitudeAtLeast, createSubShapeReference, crossVec2, drawingDimensionContext } from '@pointercad/model';
 import { drawingRegionContainsPoint, drawingViewBasis, type DimensionTarget, type DrawingDocument, type Point2, type Vector3 } from '@pointercad/drawing';
 import { applyPlacementToPoint, drawingTargetFromProjection, resolveDimensionTarget, resolvedDimensionView, unfoldDrawingPick, drawingSectionRetainsPoint,
   type DrawingSourceResolution, type ResolvedDrawingCurve, type ResolvedDrawingView } from '@pointercad/model';
@@ -21,7 +21,7 @@ export function distanceToDrawingCurve(point: Point2, curve: ResolvedDrawingCurv
   const turn = Math.PI * 2;
   const angle = Math.atan2(point[1] - curve.center[1], point[0] - curve.center[0]);
   const along = ((sweep < 0 ? curve.startAngle - angle : angle - curve.startAngle) % turn + turn) % turn;
-  if (Math.abs(sweep) >= turn - 1e-9 || along <= Math.abs(sweep)) return Math.abs(Math.hypot(point[0] - curve.center[0], point[1] - curve.center[1]) - curve.radius);
+  if (magnitudeAtLeast(sweep, turn - 1e-9) || magnitudeAtLeast(sweep, along)) return Math.abs(Math.hypot(point[0] - curve.center[0], point[1] - curve.center[1]) - curve.radius);
   return Math.min(...[curve.startAngle, curve.endAngle].map((end) => Math.hypot(point[0] - curve.center[0] - curve.radius * Math.cos(end), point[1] - curve.center[1] - curve.radius * Math.sin(end))));
 }
 
@@ -80,7 +80,7 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
     for (const area of projected.cuttingAreas ?? []) {
       if (!area.loops.reduce((inside, loop) => inside !== drawingRegionContainsPoint(hit, { kind: 'polygon', points: loop }), false)) continue;
       const denominator = dot(view.direction, area.normal);
-      if (Math.abs(denominator) < 1e-9) continue;
+      if (belowMagnitude(denominator, 1e-9)) continue;
       const relative: Vector3 = [area.point[0] - origin[0], area.point[1] - origin[1], area.point[2] - origin[2]];
       depth = Math.min(depth, dot(relative, area.normal) / denominator);
     }
@@ -102,7 +102,7 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
           if (a === undefined || b === undefined || c === undefined) continue;
           const cross = (x: Point2, y: Point2, z: Point2): number => crossVec2([y[0] - x[0], y[1] - x[1]], [z[0] - x[0], z[1] - x[1]]);
           const area = cross(a.point, b.point, c.point);
-          if (Math.abs(area) < 1e-10) continue;
+          if (belowMagnitude(area, 1e-10)) continue;
           const u = cross(hit, b.point, c.point) / area, v = cross(hit, c.point, a.point) / area, w = 1 - u - v;
           if (Math.min(u, v, w) < -1e-9) continue;
           const currentDepth = u * a.depth + v * b.depth + w * c.depth;

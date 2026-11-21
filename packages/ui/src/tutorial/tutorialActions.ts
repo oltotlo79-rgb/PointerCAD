@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { executeCommand } from '../commands/commandRegistry.js';
 import { t } from '../i18n/t.js';
 import { applySelectedFace } from '../sketch/commitToStore.js';
@@ -166,7 +167,7 @@ export function discardSavedTutorialCheckpoint(): boolean {
 function selectHoleTarget(state: AppState, session: TutorialSession): boolean {
   const body = state.bodies.find(item => item.featureId === session.extrudeId);
   const faces = body?.faces.filter(face => face.surfaceKind === 'plane' && face.axis !== null
-    && Number.isFinite(face.centroid[2]) && Math.abs(face.axis[2]) > 1 - 1e-8) ?? [];
+    && Number.isFinite(face.centroid[2]) && exceedsMagnitude(face.axis[2], 1 - 1e-8)) ?? [];
   const upper = faces.reduce<typeof faces[number] | undefined>((best, face) =>
     best === undefined || face.centroid[2] > best.centroid[2] ? face : best, undefined);
   if (upper === undefined) { state.setShapeError(t('tutorial.error.holeFace')); return false; }

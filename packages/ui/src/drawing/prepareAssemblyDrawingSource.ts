@@ -4,6 +4,7 @@ import { buildSteelStockList, buildBom, buildStandardPartFromSource, drawingSour
   type PartDocument, type SolidBody } from '@pointercad/model';
 import { collectLoadedAssemblyPartSources } from '../assembly/attachAssembly.js';
 import { flattenAssemblyGeometry } from '../viewport/createAssemblyLayer.js';
+import { mixedFailureMessages } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import type { DrawingPartRecomputer } from './attachDrawing.js';
 
@@ -53,7 +54,7 @@ export async function prepareAssemblyDrawingSource(source: Extract<DrawingSource
   }
   const resolved = resolveConstrainedAssembly(source.document, bodies, { library, resolvedParts,
     standardPart: buildStandardPartFromSource, subAssemblies: library.assemblies });
-  if (!resolved.ok) throw new Error(resolved.messages.length > 0 ? resolved.messages.join('\n') : t('drawing.error.assemblyConstraints'));
+  if (!resolved.ok) throw new Error(resolved.messages.length > 0 ? mixedFailureMessages(resolved.messages).join('\n') : t('drawing.error.assemblyConstraints'));
   const flat = flattenAssemblyGeometry(source.document, resolved.resolved);
   const dimensionInstances: DrawingDimensionInstance[] = [];
   for (const component of flat.components) {

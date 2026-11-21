@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '@pointercad/model/beam-analysis';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 import type { Vector3 } from './analysisModel.js';
 import {
@@ -35,7 +36,7 @@ function exactKeys(value: Record<string, unknown>, names: readonly string[]): bo
 function close(a: number, b: number, tolerance: number, reference: number): boolean {
   const scale = Math.max(Math.abs(a), Math.abs(b), Math.abs(reference));
   if (scale === 0) return true;
-  return Math.abs(a / scale - b / scale) <= tolerance * (Math.abs(reference) / scale);
+  return withinMagnitude(a / scale - b / scale, tolerance * (Math.abs(reference) / scale));
 }
 /** value <= limit * (1 + tolerance) for nonnegative finite values without forming an overflowing product. */
 function notAbove(value: number, limit: number, tolerance: number): boolean {
@@ -92,8 +93,8 @@ export function decodeBeamImpact(raw: unknown, input: BeamImpactInput, inputSha2
     const energyScale = record(sample) && nonnegative(sample.energyJ) ? Math.max(sample.energyJ, initialEnergy) : 0;
     if (!record(sample) || !exactKeys(sample, sampleFields)
       || sample.step !== step || sample.timeS !== time || !nonnegative(sample.energyJ)
-      || Math.abs(sample.energyJ / energyScale - initialEnergy / energyScale)
-        > 1e-8 * (sample.energyJ / energyScale + initialEnergy / energyScale)
+      || exceedsMagnitude(sample.energyJ / energyScale - initialEnergy / energyScale,
+        1e-8 * (sample.energyJ / energyScale + initialEnergy / energyScale))
       || !denseArray(sample.nodes) || sample.nodes.length !== original.length
       || !denseArray(sample.contacts) || sample.contacts.length !== plan.impact.contacts.length) {
       throw new Error('impact-result: invalid sample step, time, energy or counts');
@@ -137,7 +138,7 @@ export function decodeBeamImpact(raw: unknown, input: BeamImpactInput, inputSha2
       if (scale > 0) {
         const expected = planned.gapM / scale - (planned.directionUnit[0] * (u[0] / scale)
           + planned.directionUnit[1] * (u[1] / scale) + planned.directionUnit[2] * (u[2] / scale));
-        if (!Number.isFinite(expected) || Math.abs(contact.gapM / scale - expected) > 1e-9) {
+        if (!Number.isFinite(expected) || exceedsMagnitude(contact.gapM / scale - expected, 1e-9)) {
           throw new Error('impact-result: contact gap differs from the node displacement');
         }
       }

@@ -214,7 +214,7 @@ describe('exact nested joint occurrence resolution', () => {
     expect(resolveJointOccurrence(f.inputs, Array.from({ length: 10 }, () => 'A'), f.solved))
       .toEqual({ ok: false, code: 'depth-exceeded', index: 8 });
     const failed: JointOccurrenceView = { ...f.solved, resolved: { ...f.solved.resolved,
-      errors: [{ componentId: 'A', code: 'invalidValue', message: 'invalid source' }] } };
+      errors: [{ componentId: 'A', code: 'invalidValue', text: { key: 'assembly.error.invalidPlacement', parameters: {} } }] } };
     expect(resolveJointOccurrence(f.inputs, ['A', 'plate'], failed))
       .toEqual({ ok: false, code: 'unresolved-view', index: 0 });
     const inputs = { ...f.inputs, library: { ...f.inputs.library,

@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from './tolerances.js';
 import type { BRepAlgoAPI_BooleanOperation, BRepBuilderAPI_Transform, OpenCascadeInstance,
   TopoDS_Shape, TopTools_ListOfShape } from 'opencascade.js/dist/opencascade.full.js';
 import { createAllocations, type Allocations } from './allocations.js';
@@ -57,7 +58,7 @@ export function conditionEllipseBoolean(oc: OpenCascadeInstance, inputs: readonl
     if (!bounds.every(Number.isFinite) || bounds.some((value, index) => Math.abs(value - centre[index % 3]) * scale > 1e8)) return null;
     // Do not condition sub-confusion-size inputs or erase a large-coordinate placement.
     if (Math.max(high.X() - low.X(), high.Y() - low.Y(), high.Z() - low.Z()) < 1e-4
-      || centre.some(value => Math.abs(value) > 1e9)) return null;
+      || centre.some(value => exceedsMagnitude(value, 1e9))) return null;
   } finally { temporary.release(); }
   const transform = owned.keep(new oc.gp_Trsf_1());
   transform.SetValues(scale, 0, 0, -scale * centre[0], 0, scale, 0, -scale * centre[1], 0, 0, scale, -scale * centre[2]);

@@ -25,7 +25,7 @@ import { BeamImpactDefinitions } from './BeamImpactDefinitions.js';
 import { BeamImpactResults } from './BeamImpactResults.js';
 import { fibreOutlinesFromDraft } from './beamImpactDraft.js';
 import type { BeamSession } from './beamSession.js';
-import { beamOccurrences, beamSourceIsCurrent, captureBeamSource } from './beamSource.js';
+import { beamCatalogOccurrences, beamSourceIsCurrent, captureBeamSource } from './beamSource.js';
 import './beam.css';
 
 const phaseLabel: Readonly<Record<FemPhase, MessageKey>> = {
@@ -69,7 +69,8 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
     return checked.ok ? checked.outlines : null;
   }, [session.result, session.impact, session.members, parameters]);
   const source = captureBeamSource(state);
-  const occurrences = source === null || state.assemblyView === null ? [] : beamOccurrences(source.document, state.assemblyView.resolved);
+  const catalog = source && beamCatalogOccurrences(source.document, source.resolved);
+  const occurrences = catalog ? [...catalog.values()] : [];
   const selected = new Set(session.members.map(member => JSON.stringify(member.occurrence.path)));
   const reviewed = session.reviewed !== null && beamSourceIsCurrent(session.reviewed, state);
   const running = session.status === 'running';
@@ -144,7 +145,7 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
       <legend>{t('beam.members')}</legend>
       {source === null ? <p role="status">{t('beam.error.geometry')}</p> : null}
       {source !== null && occurrences.length === 0 ? <p>{t('beam.noMembers')}</p> : null}
-      {occurrences.map(occurrence => <label key={JSON.stringify(occurrence.path)} className="pcad-beam__occurrence">
+      {occurrences.map(({ occurrence }) => <label key={JSON.stringify(occurrence.path)} className="pcad-beam__occurrence">
         <input type="checkbox" data-beam-occurrence={JSON.stringify(occurrence.path)}
           checked={selected.has(JSON.stringify(occurrence.path))}
           onChange={event => state.editBeam({ kind: 'select', occurrence, selected: event.target.checked })} title={t('beam.guide.member')} />{occurrence.label}
@@ -154,7 +155,11 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
       : session.analysisType === 'transient' ? 'beam.transientSupportHelp'
       : session.analysisType === 'contact' || session.analysisType === 'friction' ? 'beam.contactSupportHelp'
       : session.analysisType === 'impact' ? 'beam.impactSupportHelp' : 'beam.supportHelp')}</p>
-    {session.members.map(member => <BeamMemberFields key={member.id} member={member} session={session} />)}
+    {session.members.map(member => {
+      const current = catalog?.get(JSON.stringify(member.occurrence.path));
+      return <BeamMemberFields key={member.id} member={member} session={session}
+        source={current?.occurrence.partKey === member.occurrence.partKey ? current.source : undefined} />;
+    })}
     {session.analysisType === 'contact' || session.analysisType === 'friction' ? <BeamContactDefinitions session={session} /> : null}
     {session.analysisType === 'friction' ? <BeamFrictionDefinitions session={session} /> : null}
     {session.analysisType === 'contact' ? <BeamAxialBoltDefinitions session={session} /> : null}

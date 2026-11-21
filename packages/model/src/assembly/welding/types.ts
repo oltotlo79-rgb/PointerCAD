@@ -10,6 +10,7 @@
  * 数え、溶加材の密度は仮定しない。
  */
 
+import { withinMagnitude } from '../../numericTolerance.js';
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import type { Vec3 } from '../../sketch/vec3.js';
 
@@ -48,7 +49,7 @@ export function weldInteriorAngle(degrees: number): WeldInteriorAngle | null {
   if (!Number.isFinite(degrees) || degrees <= 0 || degrees >= 180) return null;
   const radians = degrees * Math.PI / 180;
   const cos = Math.cos(radians), sin = Math.sin(radians);
-  return Math.abs(cos) <= WELD_DIRECTION_TOLERANCE || !(sin > 0) ? null : { degrees, cos, sin };
+  return withinMagnitude(cos, WELD_DIRECTION_TOLERANCE) || !(sin > 0) ? null : { degrees, cos, sin };
 }
 
 /**

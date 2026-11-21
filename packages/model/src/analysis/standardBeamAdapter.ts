@@ -204,7 +204,8 @@ export function standardMembersToBeamAnalysis(
       standardPart: buildStandardPartFromSource,
     });
     if (!solved.ok) {
-      throw new InputIssue('unresolved-assembly', '$', `CAD ${solved.reason} could not be solved: ${solved.messages.join('; ')}`);
+      // 組立の誤りは鍵と値のまま failures で渡す。画面・診断の文は ui の issueMessage が目印 {failures} の所へ入れる(D4)。
+      throw new InputIssue('unresolved-assembly', '$', `CAD ${solved.reason} could not be solved: {failures}`, solved.messages);
     }
     const positions = new Map<string, Vector3>();
     const members: BeamMember[] = [];
@@ -267,7 +268,7 @@ export function standardMembersToBeamAnalysis(
         new Set(checked.document.members.map(member => JSON.stringify(member.occurrencePath))), context) };
   } catch (error) {
     if (error instanceof InputIssue) {
-      return { ok: false, issue: { code: error.code, path: error.path, message: error.message } };
+      return { ok: false, issue: { code: error.code, path: error.path, message: error.message, ...(error.failures === undefined ? {} : { failures: error.failures }) } };
     }
     return { ok: false, issue: { code: 'invalid-cad-input', path: '$', message: 'CAD member input could not be resolved' } };
   }

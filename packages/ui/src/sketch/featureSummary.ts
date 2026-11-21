@@ -18,7 +18,7 @@ import {
   type ExpressionValue,
 } from '@pointercad/expression';
 import {
-  distanceVec3,
+  withinMagnitude, distanceVec3,
   type CopyPlacement,
   type CoordinateInput,
   type OffsetCornerKind,
@@ -1741,9 +1741,9 @@ const SOLVED_COORDINATE_EPSILON_MM = 1e-7;
 /** 2 点が同じ位置か(上の許容量で)。 */
 function samePosition(a: Vec3, b: Vec3): boolean {
   return (
-    Math.abs(a[0] - b[0]) <= SOLVED_COORDINATE_EPSILON_MM &&
-    Math.abs(a[1] - b[1]) <= SOLVED_COORDINATE_EPSILON_MM &&
-    Math.abs(a[2] - b[2]) <= SOLVED_COORDINATE_EPSILON_MM
+    withinMagnitude(a[0] - b[0], SOLVED_COORDINATE_EPSILON_MM) &&
+    withinMagnitude(a[1] - b[1], SOLVED_COORDINATE_EPSILON_MM) &&
+    withinMagnitude(a[2] - b[2], SOLVED_COORDINATE_EPSILON_MM)
   );
 }
 

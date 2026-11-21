@@ -3223,6 +3223,19 @@ button.pcad-tree__row:focus-visible {
 .pcad-field--resting-unit:not(:focus-within) > .pcad-field__unit {
   visibility: hidden;
 }
+.pcad-field__suggestions {
+  position: fixed;
+  z-index: 10000;
+  overflow: auto;
+  box-sizing: border-box;
+  background: var(--pcad-surface);
+  color: var(--pcad-text, CanvasText);
+  border: 1px solid var(--pcad-border, GrayText);
+  border-radius: 4px;
+}
+.pcad-field__suggestions > [role="option"] { padding: 3px 8px; cursor: pointer; }
+.pcad-field__suggestions > [aria-selected="true"] { background: Highlight; color: HighlightText; }
+
 .pcad-field__math { flex: none; padding: 2px 5px; }
 
 .pcad-field__unit {

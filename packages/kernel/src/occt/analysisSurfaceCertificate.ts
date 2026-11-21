@@ -5,6 +5,7 @@
  * those triangles cover the trimmed CAD face. A caller must separately prove the complete trim chain,
  * native-tolerance tube and orientation before emitting any CAD approximation certificate.
  */
+import { magnitudeAtLeast } from './tolerances.js';
 import type {
   BRepBuilderAPI_Copy,
   gp_Ax2,
@@ -1287,7 +1288,7 @@ function connectorSurfaceKey(geometry: AnalyticSurfaceGeometry): string {
     case 'sphere': shape = ['sphere', positive(surface.radius, 'connector sphere radius')]; break;
     case 'cone': {
       const angle = geometry.coneSemiAngle;
-      if (angle === null || !Number.isFinite(angle) || angle === 0 || Math.abs(angle) >= Math.PI / 2) {
+      if (angle === null || !Number.isFinite(angle) || angle === 0 || magnitudeAtLeast(angle, Math.PI / 2)) {
         throw new Error('analytic-certificate: invalid connector cone angle');
       }
       shape = ['cone', nonnegative(surface.referenceRadius, 'connector cone radius'), angle]; break;
@@ -1439,7 +1440,7 @@ export function readAnalyticSurfaceGeometry(oc: OpenCascadeInstance, face: TopoD
   if (type === oc.GeomAbs_SurfaceType.GeomAbs_Cone) {
     const primitive = owned.keep(local.Cone());
     const angle = primitive.SemiAngle();
-    if (!Number.isFinite(angle) || angle === 0 || Math.abs(angle) >= Math.PI / 2) {
+    if (!Number.isFinite(angle) || angle === 0 || magnitudeAtLeast(angle, Math.PI / 2)) {
       throw new Error('analytic-certificate: invalid cone angle');
     }
     return { surface: { kind: 'cone', referenceRadius: nonnegative(primitive.RefRadius(), 'cone radius'), scale: 1 },

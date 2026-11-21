@@ -1,7 +1,7 @@
 /** Direct editing uses model constructors and the existing staged document commit. */
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
-  appendSolid, createFaceRotateFeature, createHoleTranslateFeature, liveBodyIds,
+  exceedsMagnitude, appendSolid, createFaceRotateFeature, createHoleTranslateFeature, liveBodyIds,
   nextSolidId, nextSolidName, type SubShapeRef,
 } from '@pointercad/model';
 import type { MessageKey } from '../i18n/t.js';
@@ -50,10 +50,11 @@ function materials(context: MachiningContext, tool: DirectEditToolId): Materials
     return { ok: false, reasonKey: 'directEditError.hingeOnFace' };
   }
   const normal = plane.axis;
-  if ([edge.start, edge.end].some(point => Math.abs(
+  if ([edge.start, edge.end].some(point => exceedsMagnitude(
     (point[0] - plane.centroid[0]) * normal[0] + (point[1] - plane.centroid[1]) * normal[1]
     + (point[2] - plane.centroid[2]) * normal[2],
-  ) > 1e-6)) return { ok: false, reasonKey: 'directEditError.hingeOnFace' };
+    1e-6,
+  ))) return { ok: false, reasonKey: 'directEditError.hingeOnFace' };
   return { ok: true, face, hinge };
 }
 

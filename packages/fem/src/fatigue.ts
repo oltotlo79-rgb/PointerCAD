@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude, magnitudeAtLeast } from '@pointercad/model';
 import { FATIGUE_RESULT_SCHEMA, FATIGUE_REVERSED_MEAN_TOLERANCE, validateFatigueInput, type FatigueAnalysis, type FatigueCycle,
   type FatigueHistoryResult, type FatigueLife, type FatigueSequence, type FatigueSnCurve, type FatigueStressHistory } from './fatigueModel.js';
 import { FATIGUE_CORRECTED_RESULT_SCHEMA, validateFatigueMeanStressCorrection, type FatigueCorrectedAnalysis,
@@ -63,7 +64,7 @@ export function countRainflow(reversals: readonly FatigueReversal[]): FatigueCyc
     for (;;) {
       const c = stack[stack.length - 3], b = stack[stack.length - 2], a = stack[stack.length - 1];
       if (a === undefined || b === undefined || c === undefined) break;
-      if (Math.abs(a.value - b.value) < Math.abs(b.value - c.value)) break;
+      if (belowMagnitude(a.value - b.value, Math.abs(b.value - c.value))) break;
       if (stack.length === 3) {
         cycles.push(cycleOf(0.5, c, b));
         stack.shift();
@@ -117,7 +118,7 @@ export function firstNonzeroMean(history: FatigueStressHistory, cycles: readonly
   // A loop, not Math.max(...values): up to 100000 arguments may exceed the engine's argument limit.
   let largest = 0;
   for (const point of history.stressMpa) largest = Math.max(largest, Math.abs(point));
-  return cycles.findIndex(cycle => Math.abs(cycle.meanMpa) > FATIGUE_REVERSED_MEAN_TOLERANCE * largest);
+  return cycles.findIndex(cycle => exceedsMagnitude(cycle.meanMpa, FATIGUE_REVERSED_MEAN_TOLERANCE * largest));
 }
 /** The spectrum life from the damage of one repeated application. `singlePassUnderflow` keeps a damaging single-pass
  * sum that underflowed to 0 a typed underflow, as before; without a 'once' history `repeated` equals the single sum. */
@@ -221,7 +222,7 @@ export function analyzeFatigueWithMeanStressCorrection(value: unknown, correctio
   let total = 0, repeated = 0, anyDamaging = false, anyRecurrenceDamaging = false;
   for (const [at, history] of histories.entries()) {
     for (const [index, stress] of history.stressMpa.entries()) {
-      if (Math.abs(stress) >= correction.yieldStrengthMpa) {
+      if (magnitudeAtLeast(stress, correction.yieldStrengthMpa)) {
         return { ok: false, code: 'fatigue-correction-domain', path: `histories[${at}].stressMpa[${index}]` };
       }
     }

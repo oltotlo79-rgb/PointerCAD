@@ -525,6 +525,7 @@
   "catalog.dimensionFigure.unit": "単位",
   "catalog.dimensionFigure.unverified": "要確認: {parts}",
   "catalog.dimensionFigure.simplified": "簡略にした所: {parts}",
+  "catalog.dimensionFigure.toolScreen": "資料に記入が無く、参考にした組立用の道具の画面の値で入れた寸法: {parts}",
   "catalog.dimension.nominalDiameter": "呼び径",
   "catalog.dimension.diameter": "径",
   "catalog.dimension.innerDiameter": "内径",

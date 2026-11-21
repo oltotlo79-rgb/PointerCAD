@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import { isFiniteNumber as finite } from '../../valueGuards.js';
 import type { MateResidualTargetPair } from '../constraints/mateResiduals.js';
 import { solveDrivenJointSteps, type SolveDrivenJointOutcome, type SolveMatesOptions } from '../constraints/solveMates.js';
@@ -209,7 +210,7 @@ export function* solveCrossLevelGearDriveSteps(input: CrossLevelGearDriveInput,
       request: { jointId: member.child.jointId, coordinate: 'angle', value: target,
         referenceAngle: state?.referenceAngle === undefined ? 0 : state.referenceAngle } }, budget));
     if (!child.ok) return failure(member.id, 'child-solve-failed');
-    if (child.driven.atLimit || Math.abs(child.driven.actual - target) > CROSS_LEVEL_GEAR_TOLERANCE_DEG) {
+    if (child.driven.atLimit || exceedsMagnitude(child.driven.actual - target, CROSS_LEVEL_GEAR_TOLERANCE_DEG)) {
       return failure(member.id, 'child-at-limit');
     }
     results.push({ couplingId: member.id, path: child.path, jointId: member.child.jointId, outcome: child, angle: child.driven.actual });

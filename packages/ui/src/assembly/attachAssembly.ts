@@ -10,6 +10,7 @@ import {
   type ResolveAssemblyOptions, type ResolvedAssembly, type ResolvedPart, type RigidPlacement, type SolidBody,
 } from '@pointercad/model';
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
+import { failureMessage, mixedFailureMessages } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import { ensureDocumentCatalogFamilies } from './catalogFamilyLoading.js';
 import type { AssemblySnapshot } from '../store/assemblySlice.js';
@@ -239,7 +240,7 @@ async function solveChildOccurrences(document: AssemblyDocument, resolved: Resol
     }
     subAssemblies.set(id, { ...nested, placement: parent, resolved: resolveAssembly(nested.assembly, childOptions) });
     const name = document.components.find((component) => component.id === id)?.name ?? id;
-    const reasons = solved.messages.length > 0 ? solved.messages : [t('assembly.mate.incomplete')];
+    const reasons = solved.messages.length > 0 ? mixedFailureMessages(solved.messages) : [t('assembly.mate.incomplete')];
     messages.push(...reasons.map((reason) => `${name}: ${reason}`));
   }
   return { resolved: { ...resolved, subAssemblies }, messages };
@@ -756,7 +757,7 @@ export function attachAssembly(
       library: request.library, resolvedParts, standardPart: buildStandardPartFromSource,
       subAssemblies: request.library.assemblies,
     });
-    messages.push(...resolved.errors.map((error) => error.message));
+    messages.push(...resolved.errors.map((error) => failureMessage(error.text)));
     let diagnosis: MateDiagnosis | null = null;
     const mateTargetErrors = new Map<string, readonly string[]>();
     const jointTargetErrors = new Map<string, readonly string[]>();

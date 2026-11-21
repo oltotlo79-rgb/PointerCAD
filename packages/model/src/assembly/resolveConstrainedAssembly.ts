@@ -7,9 +7,14 @@ import type { MateResidualTargetPair } from './constraints/mateResiduals.js';
 import { diagnoseMatesSteps, solveMatesSteps } from './constraints/solveMates.js';
 import { resolveAssembly, type ResolveAssemblyOptions, type ResolvedAssembly, type ResolvedSubAssembly } from './resolveAssembly.js';
 import type { AssemblyDocument, MateTarget } from './types.js';
+import type { FailureText } from '../failureText.js';
 
+/**
+ * 解いた結果。断る時の messages は、組立の誤りの文の鍵と値(FailureText)と、合致の断りの日本語の文(文字)が混ざる。
+ * 合致の道を鍵へ移す束(D4 の 0c)で、全部を鍵と値にする(統括の決定 2026-11-20 19:0x)。
+ */
 export type ConstrainedAssemblyResult = { readonly ok: true; readonly resolved: ResolvedAssembly }
-  | { readonly ok: false; readonly reason: 'source' | 'constraints'; readonly messages: readonly string[] };
+  | { readonly ok: false; readonly reason: 'source' | 'constraints'; readonly messages: readonly (string | FailureText)[] };
 
 /** 元文書を変更せず、各階層の合致を解いてから子の配置を親へ合成する。 */
 export function resolveConstrainedAssembly(document: AssemblyDocument,
@@ -59,7 +64,7 @@ function* resolveConstrainedAssemblySteps(document: AssemblyDocument,
   const work = new RigidWorkSequence(budget);
   yield* work.boundary();
   let resolved = resolveAssembly(document, options);
-  if (resolved.errors.length > 0) return { ok: false, reason: 'source', messages: resolved.errors.map((error) => error.message) };
+  if (resolved.errors.length > 0) return { ok: false, reason: 'source', messages: resolved.errors.map((error) => error.text) };
   const targets = new Map<string, MateResidualTargetPair>();
   const jointFrames = new Map<string, JointFramePair>();
   const resolveTarget = createBodyMateTargetResolver(resolved, bodies);

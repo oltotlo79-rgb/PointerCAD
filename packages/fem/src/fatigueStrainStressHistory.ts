@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
@@ -159,8 +160,8 @@ function readSample(value: unknown, path: string): StrainStressSample | StrainSt
   if (!finite(timeSeconds)) return fail('strain-stress-history-number', `${path}.timeSeconds`);
   if (!finite(strain)) return fail('strain-stress-history-number', `${path}.strain`);
   if (!finite(stressMpa)) return fail('strain-stress-history-number', `${path}.stressMpa`);
-  if (Math.abs(strain) > MAX_STRAIN_HISTORY_ABS_STRAIN) return fail('strain-stress-history-bound', `${path}.strain`);
-  if (Math.abs(stressMpa) > MAX_FATIGUE_STRESS_MPA) return fail('strain-stress-history-bound', `${path}.stressMpa`);
+  if (exceedsMagnitude(strain, MAX_STRAIN_HISTORY_ABS_STRAIN)) return fail('strain-stress-history-bound', `${path}.strain`);
+  if (exceedsMagnitude(stressMpa, MAX_FATIGUE_STRESS_MPA)) return fail('strain-stress-history-bound', `${path}.stressMpa`);
   return { timeSeconds, strain, stressMpa };
 }
 

@@ -1,4 +1,5 @@
 /** 剛体用LMの受理/棄却。基準の更新はこのdriverだけで行う。 */
+import { belowMagnitude } from '../../numericTolerance.js';
 import {
   CONSTRAINT_INITIAL_DAMPING, CONSTRAINT_MAX_DAMPING, CONSTRAINT_MAX_ITERATIONS,
   CONSTRAINT_MIN_DAMPING, CONSTRAINT_STEP_TOLERANCE, DAMPING_ATTEMPT_LIMIT, LINEAR_PIVOT_TOLERANCE,
@@ -183,7 +184,7 @@ function measure(evaluation: RigidEvaluation, options: RigidSolveOptions) {
   for (const row of evaluation.rows) {
     const tolerance = rigidRowTolerance(row, options);
     const finite = Number.isFinite(row.value) && Number.isFinite(tolerance) && tolerance > 0;
-    const good = finite && Math.abs(row.value) < tolerance;
+    const good = finite && belowMagnitude(row.value, tolerance);
     satisfied = satisfied && good;
     constantConflict ||= row.constant === true && finite && !good;
     sum += row.value * row.value;

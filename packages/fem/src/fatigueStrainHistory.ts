@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
@@ -154,7 +155,7 @@ function readHistory(value: unknown, path: string): StrainHistory | StrainHistor
   const strain: number[] = [];
   for (const [index, point] of points.entries()) {
     if (!finite(point)) return fail('strain-history-number', `${path}.strain[${index}]`);
-    if (Math.abs(point) > MAX_STRAIN_HISTORY_ABS_STRAIN) return fail('strain-history-bound', `${path}.strain[${index}]`);
+    if (exceedsMagnitude(point, MAX_STRAIN_HISTORY_ABS_STRAIN)) return fail('strain-history-bound', `${path}.strain[${index}]`);
     strain.push(point);
   }
   const sequence = value.sequence;

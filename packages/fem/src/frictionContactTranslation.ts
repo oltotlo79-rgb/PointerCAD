@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { isRecord } from './valueGuards.js';
 import type { BeamNodalLoad, Vector3 } from './analysisModel.js';
 import type { BeamContactInput } from './contactModel.js';
@@ -80,7 +81,7 @@ function zeroStage(value: unknown, nodeIds: readonly string[], lengthScale: numb
   const vector = (value: unknown): Vector3 => {
     if (!Array.isArray(value) || value.length !== 3) throw new Error('friction-zero-stage: invalid vector');
     const components = value.map((item: unknown) => {
-      if (typeof item !== 'number' || !Number.isFinite(item) || Math.abs(item) > 1e30) {
+      if (typeof item !== 'number' || !Number.isFinite(item) || exceedsMagnitude(item, 1e30)) {
         throw new Error('friction-zero-stage: invalid component');
       }
       return item === 0 ? 0 : item;

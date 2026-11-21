@@ -11,6 +11,7 @@
  * (`weldContact.ts`。穴・面の端・小さい面を見つける)。ボディが無い・判定できない時も断る。
  */
 
+import { belowMagnitude, exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import { findDensityMaterial } from '../../appearance/densityMaterials.js';
 import type { SolidBody } from '../../kernelBridge.js';
 import { isFiniteVec3 as finite, addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
@@ -58,7 +59,7 @@ function reject(code: FilletWeldRejection['code'], detail: FilletWeldRejection['
 function unitRejection(name: string, vector: Vec3): FilletWeldRejection | null {
   if (!finite(vector) || lengthVec3(vector) <= WELD_LENGTH_TOLERANCE_MM) return reject('invalidVector', { name });
   const size = lengthVec3(vector);
-  return Math.abs(size - 1) > WELD_DIRECTION_TOLERANCE ? reject('vectorNotNormalized', { name, value: size }) : null;
+  return exceedsMagnitude(size - 1, WELD_DIRECTION_TOLERANCE) ? reject('vectorNotNormalized', { name, value: size }) : null;
 }
 
 /** 文書の溶接のビードの部品(全区間)を溶接の id ごとに。 */
@@ -120,7 +121,7 @@ function resolveFace(
   const placement = rigidPlacementOf(component.placement);
   const centroid = applyPlacementToPoint(placement, selection.centroid);
   const normal = applyPlacementToDirection(placement, selection.normal);
-  if (!finite(centroid) || !finite(normal) || Math.abs(lengthVec3(normal) - 1) > WELD_DIRECTION_TOLERANCE) {
+  if (!finite(centroid) || !finite(normal) || exceedsMagnitude(lengthVec3(normal) - 1, WELD_DIRECTION_TOLERANCE)) {
     return { rejection: reject('invalidWorldFrame', { componentId }) };
   }
   return { face: { component, centroid, normal } };
@@ -215,7 +216,7 @@ function existingWeldOverlaps(document: AssemblyDocument, base: PlanBase): Fille
       const placement = rigidPlacementOf(bead.placement);
       const zAxis = rotateVector(placement.rotation, [0, 0, 1]);
       const along = dotVec3(zAxis, base.frame.zAxis);
-      if (Math.abs(along) < 1 - WELD_DIRECTION_TOLERANCE) continue;
+      if (belowMagnitude(along, 1 - WELD_DIRECTION_TOLERANCE)) continue;
       const offset = subVec3(placement.position, base.frame.origin);
       const startAt = dotVec3(offset, base.frame.zAxis);
       if (lengthVec3(subVec3(offset, scaleVec3(base.frame.zAxis, startAt))) > WELD_LENGTH_TOLERANCE_MM) continue;
@@ -321,7 +322,7 @@ export function planFilletWeld(
   const ids = { first: a.component.id, second: b.component.id };
   const cosine = dotVec3(a.normal, b.normal);
   // 2 面の間の内角 θ(ビードの 2 脚の間)は cos θ = −(外向きの法線どうしの内積)。直角は従来の扱い(null)。
-  const right = Math.abs(cosine) <= WELD_DIRECTION_TOLERANCE;
+  const right = withinMagnitude(cosine, WELD_DIRECTION_TOLERANCE);
   if (b.cylindricalRadius !== undefined && !right) {
     return { ok: false, rejections: [reject('unsupportedJointAngle', { ...ids, reason: 'radialPlaneRequired' })] };
   }
@@ -335,19 +336,19 @@ export function planFilletWeld(
   if (section?.code === 'unsupportedJointAngle') return { ok: false, rejections: [section] };
   const rejections: FilletWeldRejection[] = section === null ? [] : [section];
   const offFirst = dotVec3(subVec3(midpoint, a.centroid), a.normal);
-  if (Math.abs(offFirst) > WELD_LENGTH_TOLERANCE_MM || Math.abs(dotVec3(along, a.normal)) > WELD_DIRECTION_TOLERANCE) {
+  if (exceedsMagnitude(offFirst, WELD_LENGTH_TOLERANCE_MM) || exceedsMagnitude(dotVec3(along, a.normal), WELD_DIRECTION_TOLERANCE)) {
     rejections.push(reject('edgeNotOnFirstFace', { ...ids, distance: offFirst }));
   }
   // A cylindrical centroid lies on/near its axis, not on the contact tangent plane.
   // selectedWeldCylinder has already checked this actual root against the native radial surface.
   const offSecond = b.cylindricalRadius === undefined ? dotVec3(subVec3(midpoint, b.centroid), b.normal) : 0;
-  if (Math.abs(offSecond) > WELD_LENGTH_TOLERANCE_MM || Math.abs(dotVec3(along, b.normal)) > WELD_DIRECTION_TOLERANCE) {
+  if (exceedsMagnitude(offSecond, WELD_LENGTH_TOLERANCE_MM) || exceedsMagnitude(dotVec3(along, b.normal), WELD_DIRECTION_TOLERANCE)) {
     rejections.push(reject('edgeNotOnSecondFace', { ...ids, distance: offSecond }));
   }
   // 直角でない時は法線の外積の長さが sin θ なので、単位にしてから辺の向きと比べる(直角は従来の値のまま)。
   const corner = crossVec3(a.normal, b.normal);
   const zAxis = interiorAngle === null ? corner : scaleVec3(corner, 1 / lengthVec3(corner));
-  if (Math.abs(Math.abs(dotVec3(along, zAxis)) - 1) > WELD_DIRECTION_TOLERANCE) rejections.push(reject('edgeNotAlongCorner', ids));
+  if (exceedsMagnitude(Math.abs(dotVec3(along, zAxis)) - 1, WELD_DIRECTION_TOLERANCE)) rejections.push(reject('edgeNotAlongCorner', ids));
   // 1つ目の面は2つ目の面から立ち上がる(重心が2つ目の面の外向きの側にある)。
   const rise = dotVec3(subVec3(a.centroid, midpoint), b.normal);
   if (!(rise > WELD_LENGTH_TOLERANCE_MM)) rejections.push(reject('notConcaveCorner', { ...ids, rise }));
@@ -429,9 +430,9 @@ export function planFilletWeldEdit(
       && dotVec3(frame.xAxis, candidate.xAxis) >= 1 - WELD_DIRECTION_TOLERANCE
       && dotVec3(frame.zAxis, candidate.zAxis) >= 1 - WELD_DIRECTION_TOLERANCE;
     const sameAngle = interiorAngle === null ? candidateAngle === null
-      : candidateAngle !== null && Math.abs(candidateAngle.degrees - interiorAngle.degrees) <= WELD_DIRECTION_TOLERANCE;
+      : candidateAngle !== null && withinMagnitude(candidateAngle.degrees - interiorAngle.degrees, WELD_DIRECTION_TOLERANCE);
     if (!sameFrame || !sameAngle || options.cylindricalRadius !== cylindricalRadius || options.cylindricalSide !== cylindricalSide
-      || Math.abs(options.contactLength - contactLength) > WELD_LENGTH_TOLERANCE_MM
+      || exceedsMagnitude(options.contactLength - contactLength, WELD_LENGTH_TOLERANCE_MM)
       || parts[0] !== firstComponentId || parts[1] !== secondComponentId) {
       return { ok: false, rejections: [reject('weldDamaged', { weldId: request.weldId, componentId: component.id })] };
     }

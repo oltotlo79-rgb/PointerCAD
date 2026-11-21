@@ -114,7 +114,7 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
-import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
+import { belowMagnitude, APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { pickSubShape } from './pickSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { tangentConeThroughCircle, tangentPointOnSphere } from './sphereTangent.js';
@@ -508,7 +508,7 @@ function sewToSolid(
 
 /** 出来上がった形が閉じた立体になっているかを確かめる(空の結果を通さないための最後の網)。 */
 function checkSolid(oc: OpenCascadeInstance, shape: TopoDS_Shape): void {
-  if (!hasSolid(oc, shape) || Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3) {
+  if (!hasSolid(oc, shape) || belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME_MM3)) {
     throw new Error(NOT_SOLID_MESSAGE);
   }
   if (!isValidShape(oc, shape)) {
@@ -529,7 +529,7 @@ function circleOfSection(curves: readonly CurveSpec[]): {
   if (curve.kind !== 'arc') {
     return null;
   }
-  if (Math.abs(curve.endAngle - curve.startAngle) < FULL_TURN - FULL_TURN_EPSILON) {
+  if (belowMagnitude(curve.endAngle - curve.startAngle, FULL_TURN - FULL_TURN_EPSILON)) {
     return null;
   }
   return { center: curve.center, normal: curve.normal, radius: curve.radius };

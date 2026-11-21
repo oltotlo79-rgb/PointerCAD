@@ -12,9 +12,10 @@ import {
   setFixed,
 } from '@pointercad/model';
 import { encodeSaveDocument, readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { saveAssembly } from '../file/assemblyFile.js';
 import type { FileGateway } from '../file/fileGateway.js';
+import { assemblyBuildReadiness, chooseAssemblyBuild } from '../shell/menus/assemblyToolActions.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
@@ -293,6 +294,150 @@ describe('部品配置の非同期入口', () => {
   it('本番openFileThroughの失敗後も同じアセンブリ保存先へ保存する', async () => {
     await verifySaveTargetAfterOpenFile(() => Promise.reject(new Error('picker failed')), false);
     expect(useAppStore.getState().assemblyPlacement).toBeNull();
+  });
+});
+
+describe('組立の中で空の部品を作る', () => {
+  function start(): void {
+    chooseAssemblyBuild('createPart');
+  }
+
+  it('同名の部品を別々に抱き込み、固定・連番・位置式と文書IDを保存する', async () => {
+    openEmptyAssembly();
+    const parent = useAppStore.getState();
+    const firstName = createEmptyPartDocument().name;
+    start();
+    expect(useAppStore.getState().assemblyPlacement).toMatchObject({
+      kind: 'ready', documentId: parent.activeDocumentId, fileName: firstName + '.pcad',
+      sources: ['0', '0', '0'], attachments,
+    });
+    await commitPlaceComponent();
+    const first = useAppStore.getState();
+    expect(first.assemblyUndoStack?.past).toHaveLength(1);
+    start();
+    enterSources(['10*2', '3', '-4']);
+    const commit = commitPlaceComponent();
+    expect(await commitPlaceComponent()).toBeNull();
+    await commit;
+    const second = useAppStore.getState();
+    const assembly = second.assembly;
+    if (assembly === null) throw new Error('Missing assembly');
+    const files = second.assemblyLibrary.partFiles;
+    expect(files).toHaveLength(2);
+    expect(new Set(files.map(file => file.ref)).size).toBe(2);
+    expect(assembly.components.map(({ name, fixed, source }) => [name, fixed, source])).toEqual([
+      [firstName + ':1', true, { kind: 'part', partRef: files[0].ref }],
+      [firstName + ':2', false, { kind: 'part', partRef: files[1].ref }],
+    ]);
+    const parts = [...second.assemblyLibrary.parts.values()];
+    expect(parts).toHaveLength(2);
+    expect(new Set(parts.map(part => part.id)).size).toBe(2);
+    for (const part of parts) expect(part).toMatchObject({ name: firstName, sketches: [{ features: [] }], solids: [] });
+    const placed = assembly.components[1];
+    expect(placed.placement.position.map(value => value.source)).toEqual(['10*2', '3', '-4']);
+    expect(second.selection).toEqual([placed.id]);
+    expect(second.assemblyUndoStack?.past).toHaveLength(2);
+    second.undo();
+    const undone = useAppStore.getState();
+    expect(undone.assembly).toEqual(first.assembly);
+    expect(undone.assemblyLibrary).toEqual(first.assemblyLibrary);
+    expect(undone.assemblyUndoStack?.past).toHaveLength(1);
+    undone.redo();
+    const redone = useAppStore.getState();
+    expect(redone.assembly).toEqual(assembly);
+    expect(redone.assemblyLibrary).toEqual(second.assemblyLibrary);
+    expect(redone.activeDocumentId).toBe(parent.activeDocumentId);
+    expect(redone.assemblyFileName).toBe(parent.assemblyFileName);
+    const bytes = await writeDocumentBundle(createAssemblyDocumentBundle(assembly, redone.assemblyLibrary));
+    const result = await readDocumentBundle(bytes, 'assembly');
+    if (!result.ok || result.bundle.kind !== 'assembly') throw new Error('Missing saved assembly');
+    expect(result.bundle.document.components).toEqual(assembly.components);
+    for (const file of files) {
+      expect(result.bundle.embeddedDocuments.get(file.ref)?.document.id).toBe(second.assemblyLibrary.parts.get(file.ref)?.id);
+    }
+  });
+
+  it('位置の入力中・入力の誤り・取消で、組立と履歴を変えない', async () => {
+    openEmptyAssembly();
+    const before = useAppStore.getState();
+    start();
+    const pending = useAppStore.getState().assemblyPlacement;
+    expect(pending?.kind).toBe('ready');
+    expect(assemblyBuildReadiness(useAppStore.getState(), 'createPart').ready).toBe(false);
+    start();
+    expect(useAppStore.getState().assemblyPlacement).toBe(pending);
+    enterSources(['1/', '0', '0']);
+    expect((await commitPlaceComponent())?.ok).toBe(false);
+    expect(useAppStore.getState().assemblyPlacement?.kind).toBe('ready');
+    cancelPlaceComponent();
+    const after = useAppStore.getState();
+    expect(after.assemblyPlacement).toBeNull();
+    expect(after.assembly).toBe(before.assembly);
+    expect(after.assemblyLibrary).toBe(before.assemblyLibrary);
+    expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+  });
+
+  it('抱き込みの失敗で配置を確定しない', async () => {
+    openEmptyAssembly();
+    const before = useAppStore.getState();
+    start();
+    await commitPlaceComponent({ ...dependencies(), embed: () => Promise.reject(new Error('hash failed')) });
+    const after = useAppStore.getState();
+    expect(after.fileMessage?.failed).toBe(true);
+    expect(after.assemblyPlacement).toBeNull();
+    expect(after.assembly).toBe(before.assembly);
+    expect(after.assemblyLibrary).toBe(before.assemblyLibrary);
+    expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+  });
+
+  it.each(['cancel', 'switchDocument'] as const)('抱き込み待ちの %s 後に古い結果を確定しない', async action => {
+    openEmptyAssembly();
+    start();
+    const wait = deferred<void>();
+    const deps = dependencies();
+    const commit = commitPlaceComponent({ ...deps, embed: async (...args) => {
+      await wait.promise;
+      return deps.embed(...args);
+    } });
+    if (action === 'cancel') cancelPlaceComponent();
+    else openEmptyAssembly();
+    start();
+    const next = useAppStore.getState();
+    expect(next.assemblyPlacement?.kind).toBe('ready');
+    wait.settle();
+    await commit;
+    const after = useAppStore.getState();
+    expect(after.assemblyPlacement).toBe(next.assemblyPlacement);
+    expect(after.assembly).toBe(next.assembly);
+    expect(after.assemblyLibrary).toBe(next.assemblyLibrary);
+    expect(after.assemblyUndoStack).toBe(next.assemblyUndoStack);
+  });
+
+  it('規格部品の窓を開いている間は位置欄を開かない', () => {
+    openEmptyAssembly();
+    useAppStore.getState().openStandardPartPicker();
+    const before = useAppStore.getState();
+    expect(before.standardPartPickerOpen).toBe(true);
+    expect(assemblyBuildReadiness(before, 'createPart')).toEqual({ ready: false, reasonKey: 'assembly.tool.createPartBusy' });
+    start();
+    expect(useAppStore.getState()).toBe(before);
+  });
+
+  it('系譜IDを発行できないときは理由を示し、部品・配置・履歴を残さない', () => {
+    openEmptyAssembly();
+    const before = useAppStore.getState();
+    vi.stubGlobal('crypto', {});
+    try {
+      start();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const after = useAppStore.getState();
+    expect(after.fileMessage).toMatchObject({ key: 'assembly.createPart.identityUnavailable', failed: true });
+    expect(after.assemblyPlacement).toBeNull();
+    expect(after.assembly).toBe(before.assembly);
+    expect(after.assemblyLibrary).toBe(before.assemblyLibrary);
+    expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
   });
 });
 

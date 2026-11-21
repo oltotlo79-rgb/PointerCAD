@@ -1,3 +1,4 @@
+import { belowMagnitude } from './tolerances.js';
 import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import type {
   OpenCascadeInstance,
@@ -331,7 +332,7 @@ export function makeDraft(
 
     const shape = keep(maker.Shape());
 
-    if (!hasSolid(oc, shape) || Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3) {
+    if (!hasSolid(oc, shape) || belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME_MM3)) {
       throw new Error(BUILD_FAILED_MESSAGE);
     }
     // 角度が 90 度に近いと、IsDone() が真のまま妥当でない形が返ることがある(実測 89.99 度)。

@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude } from '@pointercad/model';
 import { crossVec3 as cross, dotVec3 as dot, subVec3 as sub, addVec3 as add } from '@pointercad/model/vec3';
 /**
  * Versioned curved PLC route evidence (AUTHOR-ONLY, UNEXECUTED; GO-21 successor of curvedPlcBound.ts 9d417253, which is
@@ -116,7 +117,7 @@ function unit(axis: V3): V3 {
 
 /** Orthonormal frame (u, v) of the plane normal to the unit axis. */
 function frame(axis: V3): readonly [V3, V3] {
-  const helper: V3 = Math.abs(axis[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const helper: V3 = belowMagnitude(axis[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
   const u = unit(cross(axis, helper));
   return [u, cross(axis, u)];
 }
@@ -127,8 +128,8 @@ function validateSurface(surface: Exclude<CurvedSurface, { kind: 'plane' }>): vo
   if (surface.kind !== 'sphere') unit(surface.axis);
   if (surface.kind === 'cone') {
     if (!Number.isFinite(surface.referenceRadius) || surface.referenceRadius < 0
-      || !Number.isFinite(surface.semiAngle) || !(Math.abs(surface.semiAngle) > 0)
-      || !(Math.abs(surface.semiAngle) < Math.PI / 2)) {
+      || !Number.isFinite(surface.semiAngle) || !(exceedsMagnitude(surface.semiAngle, 0))
+      || !(belowMagnitude(surface.semiAngle, Math.PI / 2))) {
       throw new CurvedPlcRefusal('invalid-surface', 'curved-plc: invalid cone radius or semi-angle');
     }
   } else if (surface.kind === 'torus') {

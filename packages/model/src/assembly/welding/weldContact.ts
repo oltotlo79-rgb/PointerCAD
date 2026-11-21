@@ -24,6 +24,7 @@
  * みなさず理由付きで断る。
  */
 
+import { withinMagnitude } from '../../numericTolerance.js';
 import type { SolidBody, SolidEdgeEntry, SolidFaceEntry } from '../../kernelBridge.js';
 import { isFiniteVec3 as finite, crossVec3, dotVec3, lengthVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import { applyPlacementToDirection, applyPlacementToPoint, type RigidPlacement } from '../placementMath.js';
@@ -102,12 +103,12 @@ function toRectangle(point: Vec3, rectangle: LocalRectangle): Point2 {
 
 /** 解析の点が長方形の平面上か(溶接の幾何の許容差)。 */
 function onPlane(point: Vec3, rectangle: LocalRectangle): boolean {
-  return Math.abs(dotVec3(subVec3(point, rectangle.corner), rectangle.normal)) <= WELD_LENGTH_TOLERANCE_MM;
+  return withinMagnitude(dotVec3(subVec3(point, rectangle.corner), rectangle.normal), WELD_LENGTH_TOLERANCE_MM);
 }
 
 function parallelToNormal(axis: Vec3, rectangle: LocalRectangle): boolean {
   const size = lengthVec3(axis);
-  return size > 0 && Math.abs(Math.abs(dotVec3(axis, rectangle.normal)) / size - 1) <= WELD_DIRECTION_TOLERANCE;
+  return size > 0 && withinMagnitude(Math.abs(dotVec3(axis, rectangle.normal)) / size - 1, WELD_DIRECTION_TOLERANCE);
 }
 
 function faceOnPlane(face: SolidFaceEntry, rectangle: LocalRectangle): boolean {

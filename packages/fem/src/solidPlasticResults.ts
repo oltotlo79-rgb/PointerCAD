@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 /**
  * STATUS: PROVISIONAL (unexecuted; native support unproven until Root runs proof-r2). Strict reader of the
@@ -77,7 +78,7 @@ export function readSolidPlasticNative(value: unknown, plan: SolidPlasticPlan): 
       const expected = p.valueMm * plan.loadFactor[index + 1];
       // Infinity > Infinity is false, so an overflowed expectation would accept any displacement.
       if (!Number.isFinite(expected)) fail(`${path}: prescribed displacement of node ${p.node} is not finite`);
-      if (Math.abs(displacementMm[p.node][axis] - expected) > 1e-12 * Math.max(1, Math.abs(expected))) {
+      if (exceedsMagnitude(displacementMm[p.node][axis] - expected, 1e-12 * Math.max(1, Math.abs(expected)))) {
         fail(`${path}.displacementMm[${p.node}][${axis}] differs from the prescribed value`);
       }
     }
@@ -85,7 +86,7 @@ export function readSolidPlasticNative(value: unknown, plan: SolidPlasticPlan): 
       const state = exact(e, ['stressMPa', 'strain', 'plasticStrain'], `${path}.elements[${element}]`);
       const strain = vector6(state.strain, `${path}.elements[${element}].strain`);
       // Independent of the runner: the declared small-strain scope is enforced again on the decoded result.
-      if (strain.some(v => Math.abs(v) > SOLID_PLASTIC_LIMITS.maximumStrain)) {
+      if (strain.some(v => exceedsMagnitude(v, SOLID_PLASTIC_LIMITS.maximumStrain))) {
         fail(`${path}.elements[${element}].strain exceeds ${SOLID_PLASTIC_LIMITS.maximumStrain} (small-strain scope)`);
       }
       return { stressMPa: vector6(state.stressMPa, `${path}.elements[${element}].stressMPa`), strain,

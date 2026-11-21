@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { useEffect, useRef } from 'react';
 
 import { currentCommandLabel } from '../commands/commandLabels.js';
@@ -120,7 +121,7 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       const ratio = globalThis.devicePixelRatio || 1;
       let grid = 1;
       // Common fractional densities (125%, 150%, 175%) share a grid with CSS.
-      while (grid < 8 && Math.abs(grid * ratio - Math.round(grid * ratio)) > 1e-6) grid += 1;
+      while (grid < 8 && exceedsMagnitude(grid * ratio - Math.round(grid * ratio), 1e-6)) grid += 1;
       if (grid === 8) grid = 1;
       const x = bounds.left - offsetX, y = bounds.top - offsetY;
       offsetX = Math.round(x / grid) * grid - x;

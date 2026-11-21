@@ -117,6 +117,7 @@
     "radial-menu.spec.ts",
     "reference-ambiguity.spec.ts",
     "safety-fence-feet.spec.ts",
+    "screen-tour.spec.ts",
     "scripts.spec.ts",
     "semantic-origin-reopen.spec.ts",
     "sheet-configuration.spec.ts",
@@ -1591,6 +1592,11 @@
       "file": "save-worker.spec.ts",
       "category": "chromium-picker-with-firefox-counterpart",
       "reason": "three shared save flows have explicit Firefox spec; remaining case tests showSaveFilePicker path"
+    },
+    {
+      "file": "screen-tour.spec.ts",
+      "category": "firefox-project",
+      "reason": "画面の案内のキー操作と焦点の戻りを確かめる。"
     },
     {
       "file": "script-performance.spec.ts",

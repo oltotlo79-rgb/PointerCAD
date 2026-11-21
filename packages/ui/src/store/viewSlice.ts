@@ -19,6 +19,7 @@ import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
 import { createQuadCameraState, resetQuadCamera, updateQuadCamera, type QuadCameraState } from '../viewport/quadCamera.js';
 import type { QuadViewId } from '../viewport/quadLayout.js';
 import { formatMeasure } from '../solid/measure.js';
+import type { SolidFieldKey } from '../solid/solidPropertyContracts.js';
 
 /** 透視投影 / 平行投影(FR-102)。 */
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -28,6 +29,17 @@ export type DisplayStyle = 'shaded' | 'shadedWithEdges' | 'wireframe';
 
 /** 視点の命令で移れる標準の向き。名前はビューキューブの面(viewcube/viewCubeMath.ts の FACE_REGIONS)と同じ。 */
 type ViewOrientation = 'front' | 'back' | 'right' | 'left' | 'top' | 'bottom';
+
+/** 焦点を移す先の欄(`focusRequest`)。 */
+type FocusRequestTarget =
+  | { readonly kind: 'commandLine' }
+  | { readonly kind: 'solidField'; readonly featureId: string; readonly fieldKey: SolidFieldKey };
+
+/** 焦点を移す頼み。`serial` は頼むたびに増え、戻らない(古い頼みを果たした受け手が、新しい頼みを消さないため)。 */
+interface FocusRequest {
+  readonly target: FocusRequestTarget;
+  readonly serial: number;
+}
 
 /**
  * ビューの断面表示(FR-111)。
@@ -117,11 +129,18 @@ export interface ViewSlice {
    */
   readonly focusViewportRequestCount: number;
   /**
-   * コマンドラインの欄(FR-208)へ焦点を移す要求を数える。欄を持っているのは
-   * `shell/CommandLine.tsx` だけなので、増加に気づいた向こう側が焦点を移す
-   * (`focusViewportRequestCount` と対になる仕組み)。`AppShell.tsx` の `Space` が増やす。
+   * 画面の欄へ焦点を移す頼み(1 つだけ持つ)。欄を持っている部品が、自分の欄を指す頼みに気づいて焦点を移し、
+   * `consumeFocusRequest` で消す。指す先はコマンドラインの欄(FR-208。`Space` の受け口 `shell/CommandLine.tsx`)と、
+   * 右の欄の立体の 1 欄(押し引きで穴の面を押した時の径の欄。M-05 4-1b。`shell/solidFieldFocus.ts`)。
+   * ビューポートへ戻す `focusViewportRequestCount` は React の外の受け手なので別に持つ。
    */
-  readonly commandLineFocusRequestCount: number;
+  readonly focusRequest: FocusRequest | null;
+  /**
+   * 最後に出した焦点の頼みの通し番号(`focusRequest.serial` の元)。頼みを消しても、部品を作り直しても(新規・開く・復元)
+   * 戻さないので、文書まわりの初期値(`ViewInitialState`)には含めない。番号が戻ると、古い頼みを果たした受け手が
+   * 同じ番号の新しい頼みを消してしまうため。
+   */
+  readonly focusRequestSerial: number;
   /**
    * コマンドラインの欄に焦点があるか(FR-208)。
    *
@@ -173,8 +192,10 @@ export interface ViewSlice {
   readonly requestViewOrientation: (face: ViewOrientation) => void;
   /** ビューポート(canvas)へ焦点を戻してほしい、と頼む。 */
   readonly requestViewportFocus: () => void;
-  /** コマンドラインの欄へ焦点を移してほしい、と頼む(FR-208。`Space` の受け口)。 */
-  readonly requestCommandLineFocus: () => void;
+  /** 欄へ焦点を移してほしい、と頼む(前の頼みは置き換える)。 */
+  readonly requestFocus: (target: FocusRequestTarget) => void;
+  /** 頼みを果たした受け手が消す。後から来た別の頼みは消さない。 */
+  readonly consumeFocusRequest: (serial: number) => void;
   /** コマンドラインの欄が焦点を得た・失ったことを知らせる(FR-208)。 */
   readonly setCommandLineFocused: (focused: boolean) => void;
   readonly setViewportSize: (size: readonly [number, number]) => void;
@@ -193,6 +214,7 @@ export type ViewInitialState = Pick<
   | 'sectionView'
   | 'sphereGridStep'
   | 'sphereGridAlwaysVisible'
+  | 'focusRequest'
 >;
 
 export const createViewSlice: StateCreator<
@@ -261,9 +283,8 @@ export const createViewSlice: StateCreator<
   viewOrientationRequest: null,
   matchWorkPlaneRequestCount: 0,
   focusViewportRequestCount: 0,
-  // コマンドライン(FR-208)。文書を作り直しても要求の数は戻さないので、
-  // ここ(createInitialDocumentState の外)に置く。欄の打ちかけは部品側が捨てる。
-  commandLineFocusRequestCount: 0,
+  // 焦点の頼みの通し番号。部品を作り直しても戻さないので、ここ(createInitialDocumentState の外)に置く。
+  focusRequestSerial: 0,
   commandLineFocused: false,
   viewportSize: [0, 0],
   setProjection: (projection) => {
@@ -335,10 +356,14 @@ export const createViewSlice: StateCreator<
   requestViewportFocus: () => {
     set((state) => ({ focusViewportRequestCount: state.focusViewportRequestCount + 1 }));
   },
-  requestCommandLineFocus: () => {
-    set((state) => ({
-      commandLineFocusRequestCount: state.commandLineFocusRequestCount + 1,
-    }));
+  requestFocus: (target) => {
+    set((state) => {
+      const serial = state.focusRequestSerial + 1;
+      return { focusRequestSerial: serial, focusRequest: { target, serial } };
+    });
+  },
+  consumeFocusRequest: (serial) => {
+    set((state) => (state.focusRequest?.serial === serial ? { focusRequest: null } : {}));
   },
   setCommandLineFocused: (commandLineFocused) => {
     set({ commandLineFocused });

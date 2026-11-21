@@ -1,3 +1,4 @@
+import { belowMagnitude } from '../numericTolerance.js';
 import { edgeDistanceCenters } from '@pointercad/kernel';
 import { createSubShapeReferenceResolver, type KernelBridge, type SolidRecomputeOptions } from '../kernelBridge.js';
 import type { SolidBody, SolidFaceEntry } from '../kernelBridge/solidContracts.js';
@@ -22,7 +23,7 @@ const MESH_PROBE_MM = 1e-3;
  */
 function insideFaceMesh(body: SolidBody, face: SolidFaceEntry, normal: Vec3, margin: number): (point: Vec3) => boolean {
   const origin: Vec3 = body.coordinateFrame?.origin ?? [0, 0, 0];
-  const helper: Vec3 = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const helper: Vec3 = belowMagnitude(normal[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
   const uSize = lengthVec3(crossVec3(normal, helper));
   const u = scaleVec3(crossVec3(normal, helper), 1 / uSize);
   const v = crossVec3(normal, u);

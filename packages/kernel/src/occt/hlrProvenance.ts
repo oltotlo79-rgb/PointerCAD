@@ -1,3 +1,4 @@
+import { belowMagnitude } from './tolerances.js';
 import type { HLRBRep_HLRToShape, HLRTopoBRep_OutLiner, OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { HiddenLineCurve, HiddenLineMode, HiddenLineProvenance } from '../types.js';
@@ -42,7 +43,7 @@ function interval(
   if (original?.kind === 'arc' && projected.kind === 'arc') {
     const turn = Math.sign(original.endAngle - original.startAngle);
     const sweep = Math.abs(projected.endAngle - projected.startAngle);
-    if (Math.abs(sweep - (last - first)) < 1e-8) return [first, last];
+    if (belowMagnitude(sweep - (last - first), 1e-8)) return [first, last];
     const angle = turn === Math.sign(projected.endAngle - projected.startAngle)
       ? projected.startAngle : projected.endAngle;
     const delta = ((turn * (angle - original.startAngle)) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);

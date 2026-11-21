@@ -1,4 +1,5 @@
 /** Classify real, already XYZ-clipped faces without adding boundary caps or welding gaps. */
+import { belowMagnitude, exceedsMagnitude } from './tolerances.js';
 import type { OpenCascadeInstance, TopoDS_Shape, TopoDS_Shell } from 'opencascade.js/dist/opencascade.full.js';
 import { createAllocations, type Allocations } from './allocations.js';
 import { isValidShape, measureArea, measureVolume } from './solidMesh.js';
@@ -119,7 +120,7 @@ export function classifyFunctionSurface(oc: OpenCascadeInstance, source: TopoDS_
       const maker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shell));
       if (!maker.IsDone()) throw new Error(INVALID);
       const raw = keep(maker.Solid()), volume = measureVolume(oc, raw);
-      if (!Number.isFinite(volume) || Math.abs(volume) < 1e-9 || !isValidShape(oc, raw)) throw new Error(INVALID);
+      if (!Number.isFinite(volume) || belowMagnitude(volume, 1e-9) || !isValidShape(oc, raw)) throw new Error(INVALID);
       const positive = volume < 0 ? keep(raw.Reversed()) : raw;
       const outward = volume < 0 ? keep(oc.TopoDS.Shell_1(keep(shell.Reversed()))) : shell;
       closed.push({ shell: outward, solid: positive, volume: Math.abs(volume), witness: group.witness });
@@ -158,7 +159,7 @@ export function classifyFunctionSurface(oc: OpenCascadeInstance, source: TopoDS_
         builder.Add(solid, keep(closed[hole].shell.Reversed())); expected -= closed[hole].volume;
       }
       const volume = measureVolume(oc, solid);
-      if (!isValidShape(oc, solid) || !(volume > 1e-9) || Math.abs(volume - expected) > Math.max(1e-8, expected * 1e-9)) throw new Error(INVALID);
+      if (!isValidShape(oc, solid) || !(volume > 1e-9) || exceedsMagnitude(volume - expected, Math.max(1e-8, expected * 1e-9))) throw new Error(INVALID);
       bodies.push({ shape: solid, bodyKind: 'solid', area: measureArea(oc, solid), volume });
     }
     if (isCancelled()) return cancelled();

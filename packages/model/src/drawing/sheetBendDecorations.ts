@@ -1,3 +1,4 @@
+import { belowMagnitude } from '../numericTolerance.js';
 import { dotVec3 as dot } from '../sketch/vec3.js';
 /** 展開図の曲げ線と製造指示を共通IRへ追加する。位置と縮尺を変えても実角度/Rは変えない。 */
 import { breakDrawingCurve, clipCurves, drawingViewBasis, LINE_WIDTHS_MM,
@@ -17,7 +18,7 @@ export function addSheetBendDecorations(document: DrawingDocument, views: readon
     if (view === undefined || frame?.section !== undefined) return projected;
     const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
     // 斜視や側面へ、展開の製造指示を同じ意味として投影しない。
-    if (basis === null || Math.abs(basis.normal[2]) < 1 - 1e-10) return projected;
+    if (basis === null || belowMagnitude(basis.normal[2], 1 - 1e-10)) return projected;
     const center = frame?.modelCenter ?? sourceCenter, scale = projected.scale;
     const center2: Point2 = [dot(center, basis.x), dot(center, basis.y)];
     const rawPoint = (point: Vector3): Point2 => [dot(point, basis.x), dot(point, basis.y)];

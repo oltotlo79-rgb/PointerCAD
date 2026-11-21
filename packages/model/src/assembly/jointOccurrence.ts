@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import type { ResolvedPart } from '../part/resolvePart.js';
 import { componentSourceKey, PLACEMENT_QUATERNION_TOLERANCE, validPlacement } from './fastening/frames.js';
 import type { PartLibrary } from './partLibrary.js';
@@ -64,7 +65,7 @@ function failure(code: JointOccurrenceFailureCode, index: number): JointOccurren
 
 function validWorldPlacement(placement: RigidPlacement): boolean {
   return placement.position.every(Number.isFinite) && placement.rotation.every(Number.isFinite)
-    && Math.abs(Math.hypot(...placement.rotation) - 1) <= PLACEMENT_QUATERNION_TOLERANCE;
+    && withinMagnitude(Math.hypot(...placement.rotation) - 1, PLACEMENT_QUATERNION_TOLERANCE);
 }
 
 function samePlacement(a: RigidPlacement, b: RigidPlacement): boolean {

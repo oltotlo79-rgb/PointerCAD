@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
@@ -194,7 +195,7 @@ function readLoading(value: unknown): StrainLifeLoading | StrainLifeError {
   if (strainAmplitude === 0) return fail('strain-life-zero-amplitude', `${path}.strainAmplitude`);
   const meanStressMpa = value.meanStressMpa;
   if (!finite(meanStressMpa)) return fail('strain-life-number', `${path}.meanStressMpa`);
-  if (Math.abs(meanStressMpa) > MAX_FATIGUE_STRESS_MPA) return fail('strain-life-bound', `${path}.meanStressMpa`);
+  if (exceedsMagnitude(meanStressMpa, MAX_FATIGUE_STRESS_MPA)) return fail('strain-life-bound', `${path}.meanStressMpa`);
   const source = readSource(value.source, `${path}.source`);
   if ('ok' in source) return source;
   return { strainMeasure: 'local-total-strain-amplitude', strainUnit: 'dimensionless', derivation, strainAmplitude,

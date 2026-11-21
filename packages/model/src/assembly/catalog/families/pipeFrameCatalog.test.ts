@@ -32,7 +32,6 @@ describe('資料 2 のパイプ形のフレームの 3 族', () => {
         ['pipe-frame-twin', 'aluminumFrame', 'catalog.frame.kind.pipeFrameTwin', 'pipe-frame-twin-2026-11-r1', 'pipe-frame-1', 'linear',
           'pipeFrameTwin', ['length']],
       ]);
-    expect(KINDS.map((kind) => PIPE_FRAME_FAMILIES[kind].rows.length)).toEqual([18, 3, 10]);
     for (const kind of KINDS) {
       expect(PIPE_FRAME_FAMILIES[kind].rows.map((row) => row.key)).toEqual(PIPE_FRAME_RECORDS.filter((item) => item.kind === kind).map((item) => item.key));
     }

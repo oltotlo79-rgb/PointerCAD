@@ -9,6 +9,7 @@ import { InferConstraintsSection } from '../sketch/InferConstraintsSection.js';
 import { AppearanceSection } from '../appearance/AppearanceSection.js';
 import { FACE_COLORS } from '../appearance/appearancePropertyValues.js';
 import { useFieldUnits, evaluateFieldSource, committedFieldSource, isPendingFieldError, type FieldUnits } from './propertyFieldUnits.js';
+import { useSolidFieldFocus } from './solidFieldFocus.js';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { FunctionCurveProperties } from '../functionPlot/FunctionCurveProperties.js';
 import { FunctionSurfaceProperties } from '../functionPlot/FunctionSurfaceProperties.js';
@@ -863,7 +864,8 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   const partErrors = useAppStore((state) => state.partErrors);
   const documentVersion = useAppStore((state) => state.documentVersion);
   // パラメータ表の変数表(FR-207)。押し出しの距離に `板厚 * 2` と書けるようにする。
-  const units = useFieldUnits();
+  // 焦点の頼み(押し引きで穴の面を押した時の径の欄。M-05 4-1b)が指す欄の鍵も、同じ行で受ける(solidFieldFocus.ts)。
+  const units = useFieldUnits(), focusedField = useSolidFieldFocus(feature.id);
   // タイムラインのつまみ(FR-507)。つまみより後ろの段はまだ作られていないだけで、
   // 失敗ではない。
   const timelineIndex = useAppStore((state) => state.timelineIndex);
@@ -940,8 +942,8 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
               ? { key: item.key, value: null, error: rangeError }
               : { key: item.key, value: evaluated.value, error: null }
         }
-        /* 焦点の正本は利用者のクリックとタブ移動。こちらからは動かさない。 */
-        focused={false}
+        /* 焦点の正本は利用者のクリックとタブ移動。こちらから動かすのは焦点の頼みが指す欄だけ。 */
+        focused={focusedField === item.key}
         onFocus={() => undefined}
         onChange={(next) => {
           setDraftState({ draft: { key: edit.key, source: next }, seenVersion: documentVersion });
@@ -2034,12 +2036,17 @@ type PanelTab = 'properties' | 'parameters';
  * **区画は増やさない**(rules/04-設計の規律.md)。どちらを開いているかは履歴に残らない
  * 画面だけの状態なので `useState` に置く(同上「表示専用の一時状態だけ」)。
  */
+const propertyPanelFrame = { className: 'pcad-panel pcad-panel--right', 'data-guide-id': 'properties' } as const;
+
 export function PropertyPanel(): React.JSX.Element {
   const scriptOpen = useAppStore(state => state.scriptPanelOpen);
   const sheetMetalTool = useAppStore((state) => state.sheetMetalTool);
   const [tab, setTab] = useState<PanelTab>('properties');
   const showMathGeometry = useAppStore(mathGeometryPanelVisible);
   useEffect(() => { if (showMathGeometry) setTab('properties'); }, [showMathGeometry]);
+  // 立体の欄へ焦点を移す頼み(押し引きで穴の面。M-05 4-1b)は、欄のある属性の頁を開いてから果たす。
+  const focusTargetKind = useAppStore((state) => state.focusRequest?.target.kind);
+  useEffect(() => { if (focusTargetKind === 'solidField') setTab('properties'); }, [focusTargetKind]);
   const part = useAppStore((state) => state.document);
   const sketch = useAppStore((state) => state.sketch);
   const selection = useAppStore((state) => state.selection);
@@ -2089,15 +2096,15 @@ export function PropertyPanel(): React.JSX.Element {
   const printCheckActive = useAppStore((state) => state.isInspectingPrint || state.printCheckErrorMessage !== null
     || currentPrintabilityReport(state) !== null);
 
-  if (scriptOpen) return <section className="pcad-panel pcad-panel--right"><ScriptPanel /></section>;
-  if (sheetMetalTool !== null && sheetMetalTool.document === part) return <section className="pcad-panel pcad-panel--right">
+  if (scriptOpen) return <section {...propertyPanelFrame}><ScriptPanel /></section>;
+  if (sheetMetalTool !== null && sheetMetalTool.document === part) return <section {...propertyPanelFrame}>
     <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
     {sheetMetalTool.kind === 'sheetUnfold' ? <SheetUnfoldPanel key={sheetMetalTool.id} session={sheetMetalTool} />
       : <SheetMetalPanel key={sheetMetalTool.id} session={sheetMetalTool} />}
   </section>;
 
   return (
-    <section className="pcad-panel pcad-panel--right">
+    <section {...propertyPanelFrame}>
       <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
       <div className="pcad-panel__tabs" role="tablist" aria-label={t('propertyPanel.tabsLabel')}>
         <button title={t('controlGuide.button.propertiesTab')}

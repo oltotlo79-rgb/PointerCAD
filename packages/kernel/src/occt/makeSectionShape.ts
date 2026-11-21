@@ -1,3 +1,4 @@
+import { withinMagnitude } from './tolerances.js';
 import { dotVec as dot } from './sketchCorner.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
@@ -55,7 +56,7 @@ function onCuttingPlane(
   const offset: Vec3Tuple = [
     point[0] - plane.origin[0], point[1] - plane.origin[1], point[2] - plane.origin[2],
   ];
-  return 1 - parallel <= PLANE_TOLERANCE && Math.abs(dot(offset, plane.normal)) <= PLANE_TOLERANCE;
+  return 1 - parallel <= PLANE_TOLERANCE && withinMagnitude(dot(offset, plane.normal), PLANE_TOLERANCE);
 }
 
 /** `makeCut` の結果から、法線と1点が切断面に一致する平面だけを拾う。 */

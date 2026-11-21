@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { isRecord as record, isFiniteNumber as numeric } from './valueGuards.js';
 import type { BeamAnalysisDocument, BeamModalResult, BeamModeShape, Vector3 } from './analysisModel.js';
 import { translateBeamModal, type OofemModalPlan } from './modalTranslation.js';
@@ -33,7 +34,7 @@ export function decodeBeamModal(raw: unknown, document: BeamAnalysisDocument, in
     || !Array.isArray(raw.modes) || raw.modes.length !== plan.modeCount
     || raw.rigidBodyModes !== rigidCount(plan) || raw.normalizationLengthM !== plan.normalizationLengthM
     || raw.meshNodes !== plan.nodes.length || raw.meshElements !== plan.members.length || raw.freeDofs !== freeDofs
-    || !positive(raw.totalMassKg) || Math.abs(raw.totalMassKg - expectedMass) > expectedMass * 1e-10
+    || !positive(raw.totalMassKg) || exceedsMagnitude(raw.totalMassKg - expectedMass, expectedMass * 1e-10)
     || !boundedError(raw.maximumMassOrthogonalityError, 1e-8)
     || !boundedError(raw.maximumRigidMotionResidual, 1e-10)) {
     throw new Error('Invalid modal metadata, mass, rigid count or numerical diagnostics');
@@ -42,7 +43,7 @@ export function decodeBeamModal(raw: unknown, document: BeamAnalysisDocument, in
   const modes: BeamModeShape[] = raw.modes.map((mode: unknown, index: number) => {
     if (!record(mode) || mode.number !== index + 1 || !positive(mode.frequencyHz)
       || mode.frequencyHz < previousFrequency || !positive(mode.eigenvaluePerSecondSquared)
-      || Math.abs(mode.frequencyHz - Math.sqrt(mode.eigenvaluePerSecondSquared) / (2 * Math.PI)) > mode.frequencyHz * 1e-12
+      || exceedsMagnitude(mode.frequencyHz - Math.sqrt(mode.eigenvaluePerSecondSquared) / (2 * Math.PI), mode.frequencyHz * 1e-12)
       || !boundedError(mode.normalizedResidual, 1e-8) || !positive(mode.generalizedMassKgM2)
       || !Array.isArray(mode.nodes) || mode.nodes.length !== plan.nodes.length) {
       throw new Error('Invalid modal frequency, residual or shape size');
@@ -62,7 +63,7 @@ export function decodeBeamModal(raw: unknown, document: BeamAnalysisDocument, in
         nodeId: expected.number <= plan.originalNodeCount ? expected.id : null,
         positionM: expected.positionM, translation: value.translation, rotation: value.rotation };
     });
-    if (Math.abs(maximum - 1) > 1e-10) throw new Error('Modal shape normalization differs');
+    if (exceedsMagnitude(maximum - 1, 1e-10)) throw new Error('Modal shape normalization differs');
     return { number: index + 1, frequencyHz: mode.frequencyHz,
       eigenvaluePerSecondSquared: mode.eigenvaluePerSecondSquared,
       normalizedResidual: mode.normalizedResidual, generalizedMassKgM2: mode.generalizedMassKgM2, nodes };

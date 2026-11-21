@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import type { DatumDefinition, DatumReference, DrawingDocument, GdtFrameSegment, GdtDisplayRow, GdtToken, GeometricToleranceFrame,
   MaterialRequirement, ToleranceCharacteristic, ToleranceZone } from '@pointercad/drawing';
 import { collectVariableNames, evaluateExpression } from '@pointercad/expression';
@@ -101,7 +102,7 @@ function sameNominalDatum(a: ResolvedGdtFeature | null, b: ResolvedGdtFeature | 
   const dot = (x: readonly number[], y: readonly number[]): number => x.reduce((sum, value, index) => sum + value * y[index], 0);
   if (1 - Math.abs(dot(a.direction, b.direction)) > 1e-7) return false;
   const delta = a.point.map((value, index) => value - b.point[index]), along = dot(delta, a.direction);
-  if (a.kind === 'plane' || a.kind === 'medianPlane') return Math.abs(along) <= 1e-7;
+  if (a.kind === 'plane' || a.kind === 'medianPlane') return withinMagnitude(along, 1e-7);
   return Math.hypot(...delta.map((value, index) => value - along * direction[index])) <= 1e-7;
 }
 function hasAngleParameter(source: string, document: DrawingDocument): boolean {

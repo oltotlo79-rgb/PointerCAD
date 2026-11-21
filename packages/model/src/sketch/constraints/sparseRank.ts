@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../../numericTolerance.js';
 import type { ResidualRow } from './residuals.js';
 
 export interface SparseDependentRow {
@@ -209,7 +210,7 @@ export function analyzeSparseRows(
     let scale = Math.abs(row.value);
     for (let index = 0; index < rank; index += 1) {
       const weight = weights[index];
-      if (Math.abs(weight) <= largest * relativeTolerance) continue;
+      if (withinMagnitude(weight, largest * relativeTolerance)) continue;
       const source = factor[index].rowIndex;
       const term = weight * rows[source].value;
       expected += term;

@@ -1,4 +1,5 @@
 /** Temporary position objective, followed by the existing hard-only LM. */
+import { belowMagnitude } from '../../numericTolerance.js';
 import {
   CONSTRAINT_INITIAL_DAMPING, CONSTRAINT_MAX_DAMPING, CONSTRAINT_STEP_TOLERANCE,
   qrDecomposition, RANK_RELATIVE_TOLERANCE,
@@ -94,7 +95,7 @@ export function hardDragSatisfied(evaluation: RigidEvaluation, options: RigidSol
     && evaluation.rows.every((row) => {
       const tolerance = rigidRowTolerance(row, options);
       return Number.isFinite(row.value) && Number.isFinite(tolerance) && tolerance > 0
-        && Math.abs(row.value) < tolerance;
+        && belowMagnitude(row.value, tolerance);
     });
 }
 

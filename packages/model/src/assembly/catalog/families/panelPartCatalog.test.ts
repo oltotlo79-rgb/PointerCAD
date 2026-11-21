@@ -65,12 +65,8 @@ describe('資料 2 のパネル扉の部品・パネル用のフレーム・コ�
     expect(MOVABLE_PART_BOX_FAMILY.rows.map((row) => [row.key, row.size]))
       .toEqual(MOVABLE_PART_BOX_RECORDS.map((record) => [record.key, record.size]));
     expect(ACCESSORY_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(ACCESSORY_BOX_RECORDS.map((record) => [record.key, record.size]));
-    expect([PANEL_PART_RECORDS.length, PANEL_COVER_FRAME_RECORDS.length, CONNECTOR_BOX_RECORDS.length, CONNECTOR_BOX_SERIES_RECORDS.length,
-      CAP_FOOT_BOX_RECORDS.length, CAP_FOOT_LOCK_RECORDS.length, MOVABLE_PART_BOX_RECORDS.length, ACCESSORY_BOX_RECORDS.length])
-      .toEqual([7, 9, 50, 30, 9, 1, 13, 9]);
-    // コネクタの族は 2 つの章の表を合わせて 80 行で、鍵は重ならない(同じ鍵の行は道具が除いた)。
-    expect(CONNECTOR_BOX_FAMILY.rows).toHaveLength(80);
-    expect(new Set(CONNECTOR_BOX_FAMILY.rows.map((row) => row.key)).size).toBe(80);
+    // コネクタの族は 2 つの章の表を合わせた行で、鍵は重ならない(同じ鍵の行は道具が除いた)。行の数は独立の読みとの鍵の照らしが守る。
+    expect(new Set(CONNECTOR_BOX_FAMILY.rows.map((row) => row.key)).size).toBe(CONNECTOR_BOX_FAMILY.rows.length);
   });
 
   it('行は製造元の寸法に合わせた物を名乗り、出どころは資料の番号と頁だけ、印は「外形を包む形で、細部は作っていない」(可動の部品は「動く仕組みは作っていない」を続ける)、呼びにも「外形を包む形」', () => {

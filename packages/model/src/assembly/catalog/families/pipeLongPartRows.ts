@@ -1,17 +1,33 @@
 /**
  * 生成物(手で直さない): 資料 2 の長物(断面の外形の幅と高さ・単位質量・切り売りの範囲がそろうフレーム)のうち、40 回目の独立の読み 2 本で
  * 一致した欄の行の表。担当の道具 make_b2_long_rows.py が書いた(照らす側の読みの文字は fixture `pipeLongPartOracle.fixture.json`)。
+ * 資料に記入の無い寸法と、資料に載らない品(頁が null)の値は、参考にした組立用の道具の画面の値で、行の valueSource にその寸法の鍵を持つ。
  * 製造元の名前・型番・品名は書かない(呼びは種類の一般の語と断面の外形)。色だけ違う型番は 1 行にまとめた。
  */
 import type { LongPartRecord } from '../longPartFamily.js';
 
 export const PIPE_LONG_PART_RECORDS: readonly LongPartRecord[] = [
+  { key: 'b2-long-attachment-12x200', size: '取付けの形材 12×200（外形を包む形・アルミ）', page: null, kind: '取付けの形材', material: 'aluminum',
+    width: 12, height: 200, unitMassKgPerM: 1.637, maxLength: 4000, massNote: '質量は参考にした組立用の道具の画面の単位質量 × 長さ', simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'],
+    valueSource: { kind: 'toolScreen', fields: ['width', 'height', 'unitMassKgPerM'] } },
+  { key: 'b2-long-attachment-14x201', size: '取付けの形材 14×201（外形を包む形・アルミ）', page: null, kind: '取付けの形材', material: 'aluminum',
+    width: 14, height: 201, unitMassKgPerM: 2.531, maxLength: 4000, massNote: '質量は参考にした組立用の道具の画面の単位質量 × 長さ', simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'],
+    valueSource: { kind: 'toolScreen', fields: ['width', 'height', 'unitMassKgPerM'] } },
   { key: 'b2-long-attachment-9x62', size: '取付けの形材 9×62（外形を包む形・アルミ）', page: 60, kind: '取付けの形材', material: 'aluminum',
     width: 9, height: 62, unitMassKgPerM: 0.84, maxLength: 4000, simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'] },
+  { key: 'b2-long-beam-28x250', size: '梁の形材 28×250（外形を包む形・アルミ）', page: 58, kind: '梁の形材', material: 'aluminum',
+    width: 28, height: 250, unitMassKgPerM: 2.9, maxLength: 4000, simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'],
+    valueSource: { kind: 'toolScreen', fields: ['width'] } },
+  { key: 'b2-long-fin-24x31', size: '羽つきのフレーム 24×31（外形を包む形・アルミ）', page: 286, kind: '羽つきのフレーム', material: 'aluminum',
+    width: 24, height: 31, unitMassKgPerM: 0.37, maxLength: 4000, simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'],
+    valueSource: { kind: 'toolScreen', fields: ['height'] } },
   { key: 'b2-long-fin-24x35', size: '羽つきのフレーム 24×35（外形を包む形・アルミ）', page: 286, kind: '羽つきのフレーム', material: 'aluminum',
     width: 24, height: 35, unitMassKgPerM: 0.4, maxLength: 4000, simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'] },
   { key: 'b2-long-fin-30.5x50', size: '羽つきのフレーム 30.5×50（外形を包む形・アルミ）', page: 59, kind: '羽つきのフレーム', material: 'aluminum',
     width: 30.5, height: 50, unitMassKgPerM: 0.65, maxLength: 4000, simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'] },
+  { key: 'b2-long-fin-33x49', size: '羽つきのフレーム 33×49（外形を包む形・アルミ）', page: 59, kind: '羽つきのフレーム', material: 'aluminum',
+    width: 33, height: 49, unitMassKgPerM: 0.67, maxLength: 4000, simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'],
+    valueSource: { kind: 'toolScreen', fields: ['height'] } },
   { key: 'b2-long-fin-33x50', size: '羽つきのフレーム 33×50（外形を包む形・アルミ）', page: 59, kind: '羽つきのフレーム', material: 'aluminum',
     width: 33, height: 50, unitMassKgPerM: 0.63, maxLength: 4000, simplified: ['断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない'] },
   { key: 'b2-long-leg-28x43', size: '脚つきのフレーム 28×43（外形を包む形・アルミ）', page: 61, kind: '脚つきのフレーム', material: 'aluminum',

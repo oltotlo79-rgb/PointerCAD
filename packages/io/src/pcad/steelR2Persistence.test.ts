@@ -116,7 +116,7 @@ describe('r2 の 607 行の保存と開き直し', () => {
       expect(result.rejection?.code).toBe('unsupported-catalog-revision');
       const resolved = resolveAssembly(opened, { standardPart: (source) => buildStandardPartFromSourceWithReason(source).document });
       expect(resolved.parts.size).toBe(0);
-      expect(resolved.errors.map((error) => error.message)).toEqual([result.rejection?.message]);
+      expect(resolved.errors.map((error) => error.text)).toEqual([result.rejection?.text]);
       expect(opened).toEqual(document);
     }
   });

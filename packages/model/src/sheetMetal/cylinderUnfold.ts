@@ -1,3 +1,4 @@
+import { exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from '../numericTolerance.js';
 import { dotVec3 as dot, crossVec3 as cross } from '../sketch/vec3.js';
 /** 平面の剛体展開と共有する接線座標へ写す。 */
 export type SheetPoint3 = readonly [number, number, number];
@@ -23,9 +24,9 @@ export function unfoldCylindricalPoint(point: SheetPoint3, frame: CylindricalBen
   const neutralRadius = r + k * t;
   if (![...point, ...center, ...axis, ...startRadius, r, t, k, angle, toleranceMm].every(Number.isFinite)
     || toleranceMm <= 0 || r <= toleranceMm || t <= toleranceMm || k < 0 || k > 0.5
-    || Math.abs(angle) <= Number.EPSILON || Math.abs(angle) >= Math.PI
-    || Math.abs(dot(axis, axis) - 1) > 1e-10 || Math.abs(dot(startRadius, startRadius) - 1) > 1e-10
-    || Math.abs(dot(axis, startRadius)) > 1e-10
+    || withinMagnitude(angle, Number.EPSILON) || magnitudeAtLeast(angle, Math.PI)
+    || exceedsMagnitude(dot(axis, axis) - 1, 1e-10) || exceedsMagnitude(dot(startRadius, startRadius) - 1, 1e-10)
+    || exceedsMagnitude(dot(axis, startRadius), 1e-10)
     || ![r + t, neutralRadius, neutralRadius * Math.abs(angle)].every(Number.isFinite)) return { ok: false, error: 'frame' };
   const offset: SheetPoint3 = [point[0] - center[0], point[1] - center[1], point[2] - center[2]];
   const axial = dot(offset, axis);

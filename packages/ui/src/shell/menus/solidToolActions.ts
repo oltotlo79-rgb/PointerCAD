@@ -17,9 +17,11 @@ import { cancelExtrusion } from '../../solid/extrudePreview.js';
 import { selectedExtrudeProfiles } from '../../solid/sketchRefs.js';
 import { faceOfEdgePair } from '../../solid/edgeDistanceHoleInput.js';
 import { sweepGuideCandidates } from '../../solid/sweepGuideChoices.js';
+import { pushPullTarget } from '../../solid/pushPull.js';
 import {
   commitBooleanFromSelection,
   selectedLineRef,
+  solidToolReadiness,
   type SolidToolReadiness,
 } from '../../solid/solidCommands.js';
 import { subShapeBodiesOf } from '../../solid/subShapeSelection.js';
@@ -124,6 +126,32 @@ export function runSolidTool(id: SolidToolId, readiness: SolidToolReadiness): vo
     && store.selectionKind !== 'face' && store.selectionKind !== 'edge')) store.setSelectionKind('face');
   if (id === 'thicken' || id === 'offsetBody') store.setSelectionKind('body');
   store.setSolidError(readiness.reasonKey);
+}
+
+/**
+ * 「加工」の一覧の押し引き(M-05 4-1a・4-1b)。選んだ物から振り分け先の道具を決め(`solid/pushPull.ts`)、
+ * 押せるならその道具の入力欄を開く。確定・元に戻すは振り分け先の道具のまま。
+ * 振り分けが決まらない時と、振り分け先がまだ押せない時は、道具も選ぶ種類も変えずに理由だけを帯へ出す
+ * (道具を切り替えると、選んであった物が消えることがある)。
+ * 穴の壁の面の時は、履歴の木で穴の行を押した時と同じ選び方(`featureTreeCommands.ts` の `selectTreeRow`)で穴を選び、
+ * 右の欄のその穴の径の欄へ焦点を移す頼みを出す(径を打ち直すと、穴を作り直す今までの欄の働きのまま)。
+ */
+export function runPushPull(): void {
+  const store = useAppStore.getState();
+  const bodies = subShapeBodiesOf(store.bodies);
+  const target = pushPullTarget(store.document, store.selection, bodies);
+  if (target.kind === 'refused') {
+    store.setSolidError(target.reasonKey);
+    return;
+  }
+  if (target.kind === 'holeField') {
+    store.setSelection([target.featureId]);
+    store.requestFocus({ kind: 'solidField', featureId: target.featureId, fieldKey: target.fieldKey });
+    return;
+  }
+  const readiness = solidToolReadiness(store.document, store.selection, target.tool, bodies);
+  if (readiness.ready) openSolidInput(target.tool);
+  else store.setSolidError(readiness.reasonKey);
 }
 
 /**

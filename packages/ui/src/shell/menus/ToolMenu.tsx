@@ -198,6 +198,8 @@ export function ToolMenu<Id extends string>({
         aria-expanded={open}
         aria-pressed={showPressed ? activeHere : undefined}
         data-menu-trigger=""
+        data-guide-group={groupLabel}
+        data-guide-commands={commandGroup && items.map(item => toolbarCommandId(commandGroup, item.id)).join(' ')}
         onClick={() => {
           if (open) {
             setOpen(false);

@@ -97,7 +97,7 @@ import {
   type Vec3,
 } from '../sketch/vec3.js';
 import { findMetricThread } from '../thread/metricThread.js';
-import { exceedsMagnitude } from '../numericTolerance.js';
+import { withinMagnitude, exceedsMagnitude } from '../numericTolerance.js';
 import { cacheKeyFor } from './cacheKey.js';
 import { originAwareCacheKey } from './cacheKey.js';
 import { keyMaterialFor } from './solidPlanKeyMaterial.js';
@@ -1234,7 +1234,7 @@ function resolveExtrudeToFace(
   }
   const normal = normalizeVec3(resolved.axis);
   const denominator = dotVec3(direction, normal);
-  if (Math.abs(denominator) <= EXTRUDE_TO_FACE_EPSILON) {
+  if (withinMagnitude(denominator, EXTRUDE_TO_FACE_EPSILON)) {
     return {
       ok: false,
       error: partError(featureId, 'degenerate', EXTRUDE_TO_FACE_PARALLEL_MESSAGE),
@@ -4085,7 +4085,7 @@ function planThreadShaft(
   const radius = fingerprint.radius;
   if (
     radius !== null &&
-    Math.abs(2 * radius - size.diameter) > THREAD_SHAFT_DIAMETER_TOLERANCE_MM
+    exceedsMagnitude(2 * radius - size.diameter, THREAD_SHAFT_DIAMETER_TOLERANCE_MM)
   ) {
     return fail(feature.id, 'invalidValue', THREAD_SHAFT_DIAMETER_MESSAGE);
   }

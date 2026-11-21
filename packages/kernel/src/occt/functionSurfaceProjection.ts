@@ -5,6 +5,7 @@
  * interiors cannot overlap. The manifold and boundary checks also exclude non-topological contacts.
  * Failure to establish this sufficient condition ALWAYS leaves the native intersection check on.
  */
+import { exceedsMagnitude } from './tolerances.js';
 import type { TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import type { FunctionSurfaceGeometrySpec } from './functionSurfaceGeometrySpec.js';
 
@@ -113,7 +114,7 @@ export function hasSimpleFunctionSurfaceProjection(spec: FunctionSurfaceGeometry
     const positions=new Set<string>();let possible=true;
     for(const index of used) {
       const point=points[index],key=point.join(',');
-      if(point.some(value=>Math.abs(value)>1e7)||positions.has(key)){possible=false;break;}positions.add(key);
+      if(point.some(value=>exceedsMagnitude(value, 1e7))||positions.has(key)){possible=false;break;}positions.add(key);
     }
     if(!possible)continue;
     const exact=exactPoints(points);let direction=0;

@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
@@ -112,7 +113,7 @@ function principalStresses([xx, yy, zz, yz, xz, xy]: Tensor): readonly [number, 
 function readComponent(value: Record<string, unknown>, key: FatigueTensorComponent, path: string): number | FatigueTensorError {
   const component = value[key];
   if (!finite(component)) return fail('fatigue-tensor-number', `${path}.${key}`);
-  if (Math.abs(component) > MAX_FATIGUE_STRESS_MPA) return fail('fatigue-tensor-bound', `${path}.${key}`);
+  if (exceedsMagnitude(component, MAX_FATIGUE_STRESS_MPA)) return fail('fatigue-tensor-bound', `${path}.${key}`);
   return component === 0 ? 0 : component;
 }
 
@@ -157,9 +158,9 @@ function convert(reference: Tensor, historyId: string, path: string): FatigueTen
   const principal = principalStresses(unit);
   if (principal === null) return fail('fatigue-tensor-hydrostatic', path);
   const [largest, middle, smallest] = principal;
-  const tie = Math.abs(Math.abs(largest) - Math.abs(smallest)) <= PRINCIPAL_TIE_TOLERANCE * Math.max(Math.abs(largest), Math.abs(smallest));
+  const tie = withinMagnitude(Math.abs(largest) - Math.abs(smallest), PRINCIPAL_TIE_TOLERANCE * Math.max(Math.abs(largest), Math.abs(smallest)));
   // Not hydrostatic, so the extreme principal stresses differ and the one with the larger |value| is nonzero.
-  const signed = tie ? 1 : Math.sign(Math.abs(largest) > Math.abs(smallest) ? largest : smallest);
+  const signed = tie ? 1 : Math.sign(exceedsMagnitude(largest, Math.abs(smallest)) ? largest : smallest);
   const vonMisesReferenceMpa = scale * vonMises(unit);
   // A defined (nonzero, non-hydrostatic) reference must never become a zero equivalent stress.
   if (!(vonMisesReferenceMpa > 0)) return fail('fatigue-tensor-underflow', path);
@@ -173,7 +174,7 @@ function scaledStresses(factors: readonly number[], equivalentMpa: number, path:
   for (const [index, factor] of factors.entries()) {
     const stress = factor * equivalentMpa;
     if (factor !== 0 && stress === 0) return fail('fatigue-tensor-underflow', `${path}[${index}]`);
-    if (!(Math.abs(stress) <= MAX_FATIGUE_STRESS_MPA)) return fail('fatigue-tensor-bound', `${path}[${index}]`);
+    if (!(withinMagnitude(stress, MAX_FATIGUE_STRESS_MPA))) return fail('fatigue-tensor-bound', `${path}[${index}]`);
     stresses.push(stress === 0 ? 0 : stress);
   }
   return stresses;

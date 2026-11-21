@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { isRecord as record } from './valueGuards.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamBucklingInput, BeamBucklingResult } from './bucklingModel.js';
@@ -48,7 +49,7 @@ export function decodeBeamBuckling(raw: unknown, input: BeamBucklingInput, input
       return { solverNode: expected.number, nodeId: expected.number <= plan.originalNodeCount ? expected.id : null,
         positionM: expected.positionM, translation: node.translation, rotation: node.rotation };
     });
-    if (Math.abs(amplitude - 1) > 1e-10) throw new Error('Invalid buckling shape normalization');
+    if (exceedsMagnitude(amplitude - 1, 1e-10)) throw new Error('Invalid buckling shape normalization');
     return { number: index + 1, loadFactor: mode.loadFactor, normalizedResidual: mode.normalizedResidual, nodes };
   });
   return {

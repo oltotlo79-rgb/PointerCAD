@@ -1,4 +1,5 @@
 /** G1 comparison of current geometry. These transient dimensions are never persisted. */
+import { exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 import type { ResolvedCurve, ResolvedSegment } from '../sketch/types.js';
 import { isFiniteVec3 as finite, addVec3, crossVec3, distanceVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import { validateMathGeometryTolerance } from './mathGeometryDefinitions.js';
@@ -88,7 +89,7 @@ function polygon(curves: readonly ResolvedCurve[], tolerance: MathGeometryTolera
   if (!Number.isFinite(areaLength)) return invalidGeometry();
   if (areaLength <= width * width) return degenerate();
   const normal = scaleVec3(area, 1 / areaLength);
-  if ([...starts, ...ends].some(point => Math.abs(dotVec3(point, normal)) > width)) {
+  if ([...starts, ...ends].some(point => exceedsMagnitude(dotVec3(point, normal), width))) {
     return unsupported('同じ平面にない輪郭では多角形の合同・相似を判定できません。');
   }
   for (let i = 0; i < starts.length; i += 1) {
@@ -125,8 +126,8 @@ function comparePolygons(first: Polygon, second: Polygon, similar: boolean, tole
       for (let i = 0; i < count; i += 1) {
         const vertex = (start + direction * i + count) % count;
         const edge = direction === 1 ? vertex : (vertex + count - 1) % count;
-        if (Math.abs(first.turns[i] - second.turns[vertex]) > tolerance.angularRadians
-          || Math.abs(scaled(first.lengths[i], first) - scaled(second.lengths[edge], second)) > tolerance.linearMm) {
+        if (exceedsMagnitude(first.turns[i] - second.turns[vertex], tolerance.angularRadians)
+          || exceedsMagnitude(scaled(first.lengths[i], first) - scaled(second.lengths[edge], second), tolerance.linearMm)) {
           matches = false;
           break;
         }
@@ -146,14 +147,14 @@ export function compareMathGeometryCongruence(kind: 'congruent' | 'similar', fir
   if (first.kind === 'segment' && second.kind === 'segment') {
     if (![first.length, second.length].every(Number.isFinite) || first.length < 0 || second.length < 0) return invalidGeometry();
     if (Math.min(first.length, second.length) <= tolerance.linearMm) return degenerate();
-    return { ok: true, value: kind === 'similar' || Math.abs(first.length - second.length) <= tolerance.linearMm };
+    return { ok: true, value: kind === 'similar' || withinMagnitude(first.length - second.length, tolerance.linearMm) };
   }
   if (first.kind === 'circular' && second.kind === 'circular') {
     if (![first.radius, second.radius, first.sweep, second.sweep].every(Number.isFinite)
       || Math.min(first.radius, second.radius, first.sweep, second.sweep) < 0) return invalidGeometry();
     if (Math.min(first.radius, second.radius) <= tolerance.linearMm || Math.min(first.sweep, second.sweep) === 0) return degenerate();
-    return { ok: true, value: Math.abs(first.sweep - second.sweep) <= tolerance.angularRadians
-      && (kind === 'similar' || Math.abs(first.radius - second.radius) <= tolerance.linearMm) };
+    return { ok: true, value: withinMagnitude(first.sweep - second.sweep, tolerance.angularRadians)
+      && (kind === 'similar' || withinMagnitude(first.radius - second.radius, tolerance.linearMm)) };
   }
   if (first.kind === 'polygon' && second.kind === 'polygon') {
     const a = polygon(first.curves, tolerance), b = polygon(second.curves, tolerance);

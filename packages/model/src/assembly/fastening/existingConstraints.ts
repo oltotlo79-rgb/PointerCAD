@@ -1,4 +1,5 @@
 /** Check the proposed placement against existing constraint geometry without moving the document. */
+import { magnitudeAtLeast } from '../../numericTolerance.js';
 import { buildMateResidualReport, prepareMateResiduals, type MateResidualTargetPair } from '../constraints/mateResiduals.js';
 import { resolveMateTarget, type MateTargetOutcome } from '../constraints/mateTargets.js';
 import { collectMateVariables } from '../constraints/mateVariables.js';
@@ -76,12 +77,12 @@ export function existingConstraintRejections(context: FasteningConstraintContext
     const tolerance = mate?.kind === 'angle'
       ? 2 * Math.sin(angle / 2) * Math.min(Math.abs(Math.sin(mate.value - angle / 2)), Math.abs(Math.sin(mate.value + angle / 2)))
       : row.scale * (row.scale === 1 ? Math.sin(angle) : DEFAULT_RIGID_LENGTH_TOLERANCE);
-    if (!Number.isFinite(row.value) || Math.abs(row.value) >= tolerance) conflicts.add(row.mateId);
+    if (!Number.isFinite(row.value) || magnitudeAtLeast(row.value, tolerance)) conflicts.add(row.mateId);
   }
   for (const row of jointReport.rows) {
     const tolerance = row.scale * (row.measure === 'length' ? DEFAULT_RIGID_LENGTH_TOLERANCE
       : row.measure === 'rotation' ? DEFAULT_RIGID_ANGLE_TOLERANCE : Math.sin(DEFAULT_RIGID_ANGLE_TOLERANCE));
-    if (!Number.isFinite(row.value) || Math.abs(row.value) >= tolerance) conflicts.add(row.jointId);
+    if (!Number.isFinite(row.value) || magnitudeAtLeast(row.value, tolerance)) conflicts.add(row.jointId);
   }
   for (const constraintId of conflicts) rejected.push({ code: 'existingConstraintConflict', detail: { constraintId } });
   return rejected;

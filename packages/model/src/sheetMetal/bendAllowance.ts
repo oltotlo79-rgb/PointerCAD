@@ -1,3 +1,4 @@
+import { magnitudeAtLeast } from '../numericTolerance.js';
 /** 曲げの中立面長と内外寸の換算。 */
 export interface SheetBendInput {
   /** mm */ readonly thickness: number;
@@ -23,7 +24,7 @@ export function sheetBendMetrics(input: SheetBendInput): SheetBendResult {
   if (t <= 0) return { ok: false, error: 'thickness' };
   if (r <= 0) return { ok: false, error: 'radius' };
   if (k < 0 || k > 0.5) return { ok: false, error: 'kFactor' };
-  if (Math.abs(angle) >= 180) return { ok: false, error: 'angle' };
+  if (magnitudeAtLeast(angle, 180)) return { ok: false, error: 'angle' };
   const radians = Math.abs(angle) * Math.PI / 180, neutralRadius = r + k * t;
   const bendAllowance = radians * neutralRadius, tangent = Math.tan(radians / 2);
   const outerSetback = (r + t) * tangent, innerSetback = r * tangent;

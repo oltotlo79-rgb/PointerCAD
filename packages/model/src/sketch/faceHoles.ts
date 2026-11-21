@@ -1,4 +1,5 @@
 /** 面の穴の内外は板金と同じ曲線の巻数で判定し、近似の折れ線を保存しない。 */
+import { belowMagnitude, exceedsMagnitude } from '../numericTolerance.js';
 import { sheetLoopContains } from '../sheetMetal/groupClippedPanels.js';
 import { curveSamplePoints } from './curvePlaneSamples.js';
 import { curveEnd, curveIntersections, curveParameterNear, curvePointAt, curveStart } from './intersectionMath.js';
@@ -23,7 +24,7 @@ function curvesTouch(first: ResolvedCurve, second: ResolvedCurve): boolean {
 }
 
 function contains(loop: readonly ResolvedCurve[], point: Vec3, normal: Vec3): boolean | null {
-  const helper: Vec3 = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const helper: Vec3 = belowMagnitude(normal[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
   const ray = normalizeVec3(crossVec3(normal, helper)), up = crossVec3(normal, ray);
   const result = sheetLoopContains(loop, point, ray, up);
   return result.ok ? result.value : null;
@@ -42,7 +43,7 @@ export function faceHolesError(outer: readonly ResolvedCurve[], holes: readonly 
   const origin = curveStart(outer[0]);
   for (const [index, hole] of holes.entries()) {
     const label = `穴${String(index + 1)}`;
-    if (hole.flatMap(curveSamplePoints).some(point => Math.abs(dotVec3(subVec3(point, origin), normal)) > TOLERANCE_MM)) {
+    if (hole.flatMap(curveSamplePoints).some(point => exceedsMagnitude(dotVec3(subVec3(point, origin), normal), TOLERANCE_MM))) {
       return { code: 'notPlanar', message: `${label}が外周と同じ平面にありません。` };
     }
     if (loopsTouch(outer, hole)) return { code: 'invalidValue', message: `${label}が外周に接するか交差しています。輪郭を離してください。` };

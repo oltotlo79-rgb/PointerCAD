@@ -11,7 +11,7 @@
  */
 
 import {
-  addVec3, crossVec3, directionInPlane, distanceVec3, dotVec3, lengthVec3, lerpVec3,
+  withinMagnitude, addVec3, crossVec3, directionInPlane, distanceVec3, dotVec3, lengthVec3, lerpVec3,
   normalizeVec3, radiansToDegrees, scaleVec3, SKETCH_TOLERANCE_MM, subVec3,
   worldToPlane, type ResolvedSegment, type ResolvedSketch, type Vec3, type WorkPlane,
 } from '@pointercad/model';
@@ -236,7 +236,7 @@ export function closestParameterToRay(
   const b = dotVec3(line.direction, ray.direction);
   const c = dotVec3(ray.direction, ray.direction);
   const denominator = a * c - b * b;
-  if (Math.abs(denominator) <= PARALLEL_DOT_EPSILON) {
+  if (withinMagnitude(denominator, PARALLEL_DOT_EPSILON)) {
     // 案内線が視線とほぼ平行(退化)。呼び出し側が従来の方法へ後退する。
     return null;
   }
@@ -334,7 +334,7 @@ function bestTrackCandidate(
 function intersectTrackLines(a: TrackCandidate, b: TrackCandidate): Vec3 | null {
   const crossDirections = dotVec3(a.direction, b.direction);
   const denominator = 1 - crossDirections * crossDirections;
-  if (Math.abs(denominator) <= PARALLEL_DOT_EPSILON) {
+  if (withinMagnitude(denominator, PARALLEL_DOT_EPSILON)) {
     return null;
   }
   const originDelta = subVec3(a.origin, b.origin);

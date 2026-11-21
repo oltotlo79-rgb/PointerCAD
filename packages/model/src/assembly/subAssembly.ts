@@ -1,8 +1,9 @@
 /** サブアセンブリの循環・深さを解決前に確かめる道具(FR-613)。 */
+import type { FailureText } from '../failureText.js';
 import {
   MAX_SUB_ASSEMBLY_DEPTH,
-  SUB_ASSEMBLY_CYCLE_MESSAGE,
-  SUB_ASSEMBLY_DEPTH_MESSAGE,
+  SUB_ASSEMBLY_CYCLE_TEXT,
+  SUB_ASSEMBLY_DEPTH_TEXT,
   resolveAssembly,
   type ResolveAssemblyOptions,
   type ResolvedAssembly,
@@ -10,8 +11,8 @@ import {
 import type { AssemblyDocument } from './types.js';
 
 export type SubAssemblyProblem =
-  | { readonly kind: 'cycle'; readonly message: string; readonly path: readonly string[] }
-  | { readonly kind: 'depth'; readonly message: string; readonly path: readonly string[] };
+  | { readonly kind: 'cycle'; readonly text: FailureText; readonly path: readonly string[] }
+  | { readonly kind: 'depth'; readonly text: FailureText; readonly path: readonly string[] };
 
 /**
  * 参照の枝を文書順にたどり、最初の循環または深さ超過を返す。
@@ -30,10 +31,10 @@ export function detectSubAssemblyProblem(
       const ref = component.source.assemblyRef;
       const nextPath = [...path, ref];
       if (path.includes(ref)) {
-        return { kind: 'cycle', message: SUB_ASSEMBLY_CYCLE_MESSAGE, path: nextPath };
+        return { kind: 'cycle', text: SUB_ASSEMBLY_CYCLE_TEXT, path: nextPath };
       }
       if (nextPath.length > MAX_SUB_ASSEMBLY_DEPTH) {
-        return { kind: 'depth', message: SUB_ASSEMBLY_DEPTH_MESSAGE, path: nextPath };
+        return { kind: 'depth', text: SUB_ASSEMBLY_DEPTH_TEXT, path: nextPath };
       }
       const nested = documents.get(ref);
       if (nested !== undefined) {

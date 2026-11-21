@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { createFiniteReader } from '../valueGuards.js';
 import { createInputIssueFail, fields, InputIssue, text } from './analysisValidation.js';
 import type { FatigueSavedSource } from './fatigueInput.js';
@@ -173,7 +174,7 @@ function readHistory(value: unknown, path: string): FatigueStrainSavedHistory {
   const strain: number[] = [];
   for (const [index, point] of points.entries()) {
     const value = finite(point, `${path}.strain[${index}]`);
-    if (Math.abs(value) > LIMITS.maximumAbsStrain) fail(`${path}.strain[${index}]`, 'Expected |strain| of at most 1');
+    if (exceedsMagnitude(value, LIMITS.maximumAbsStrain)) fail(`${path}.strain[${index}]`, 'Expected |strain| of at most 1');
     strain.push(value);
   }
   const sequence = row.sequence;
@@ -208,8 +209,8 @@ function readStrainStressSample(value: unknown, path: string, previousTime: numb
   const timeSeconds = finite(row.timeSeconds, `${path}.timeSeconds`);
   const strain = finite(row.strain, `${path}.strain`);
   const stressMpa = finite(row.stressMpa, `${path}.stressMpa`);
-  if (Math.abs(strain) > LIMITS.maximumAbsStrain) fail(`${path}.strain`, 'Expected |strain| of at most 1');
-  if (Math.abs(stressMpa) > LIMITS.maximumAbsStressMpa) fail(`${path}.stressMpa`, 'Expected |stress| of at most 10000 MPa');
+  if (exceedsMagnitude(strain, LIMITS.maximumAbsStrain)) fail(`${path}.strain`, 'Expected |strain| of at most 1');
+  if (exceedsMagnitude(stressMpa, LIMITS.maximumAbsStressMpa)) fail(`${path}.stressMpa`, 'Expected |stress| of at most 10000 MPa');
   // Strictly increasing time: a repeated or earlier time is a duplicated or reordered sample, never merged or sorted.
   if (previousTime !== null && !(timeSeconds > previousTime)) fail(`${path}.timeSeconds`, 'Expected a time later than the previous sample');
   return { timeSeconds, strain, stressMpa };

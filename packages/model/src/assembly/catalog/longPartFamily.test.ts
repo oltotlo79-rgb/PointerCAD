@@ -58,6 +58,18 @@ describe('長物の族(断面の外形を包む長方形 × 長さ)', () => {
     expect(row('test-no-mass-6x6-l500').note).toBe(`形は簡略(${MARK})。質量は資料に記入が無いので出さない。長さは 500 mm まで。断面の性質は持たない`);
   });
 
+  it('資料に載らない品(頁なし)は出どころに頁を書かず、値の出どころの種類を行に渡す。持たない行は欄を持たない', () => {
+    const screen = rectangleLongPartFamily({ id: 'test-screen-long-part', kindKey: 'catalog.frame.kind.testLongPart', diagram: 'panelCoverFrame',
+      evidenceTitle: '資料 1 試しの資料', defaultLength: 1000 }, [{ key: 'test-screen-20x14', size: '試しの長物 20×14（アルミ）', page: null,
+      kind: '試しの長物', material: 'aluminum', width: 20, height: 14, unitMassKgPerM: 0.3, maxLength: null, simplified: [MARK],
+      valueSource: { kind: 'toolScreen', fields: ['width', 'height', 'unitMassKgPerM'] } }]);
+    expect(screen.rows.length).toBe(1);
+    const only = screen.rows[0];
+    expect([only.evidence.locator, only.valueSource]).toEqual(['資料に載らない品(値は参考にした組立用の道具の画面の値)',
+      { kind: 'toolScreen', fields: ['width', 'height', 'unitMassKgPerM'] }]);
+    expect(RECORDS.map((record) => 'valueSource' in row(record.key))).toEqual([false, false, false]);
+  });
+
   it('形は断面を長さだけ押し出した物で、体積は横 × 縦 × 長さ、質量は単位質量 × 長さ(単位質量の無い行は出さない)、名前に長さの式', () => {
     expect(FAMILY.nominalVolume(row('test-aluminum-12x8'), length(750))).toBeCloseTo(12 * 8 * 750, 9);
     expect(FAMILY.nominalMassG?.(row('test-aluminum-12x8'), length(750))).toBeCloseTo(0.2 * 750, 9);

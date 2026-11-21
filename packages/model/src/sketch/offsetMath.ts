@@ -24,6 +24,7 @@
  * (`recomputeSketch.ts`)。1 回目で当たれば往復は 1 回で済む。
  */
 
+import { withinMagnitude } from '../numericTolerance.js';
 import { hash64, keyCurveList, keyNumber, type KeyCurve } from '../part/cacheKey.js';
 import type { OffsetCornerKind, OffsetSide, ResolvedCurve } from './types.js';
 import {
@@ -149,7 +150,7 @@ export function offsetSideOf(
     return null;
   }
   const projection = dotVec3(displacement, normalizeVec3(left));
-  if (Math.abs(projection) <= SKETCH_TOLERANCE_MM) {
+  if (withinMagnitude(projection, SKETCH_TOLERANCE_MM)) {
     return null;
   }
   return projection > 0 ? 'outside' : 'inside';

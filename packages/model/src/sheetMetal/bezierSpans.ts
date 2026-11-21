@@ -1,4 +1,5 @@
 /** 3次以下のBスプラインを各節点区間の厳密なBezier極へ変換する。折線化・再近似をしない。 */
+import { belowMagnitude, magnitudeAtLeast, withinMagnitude } from '../numericTolerance.js';
 import { splineCurveData, splinePointAt } from '../sketch/splineMath.js';
 import type { ResolvedSpline } from '../sketch/types.js';
 import { addVec3, lerpVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
@@ -43,7 +44,7 @@ export function sheetBezierPlaneRoots(values: readonly [number, number, number, 
   const c0 = p0, c1 = 3 * (p1 - p0), c2 = 3 * (p0 - 2 * p1 + p2), c3 = -p0 + 3 * p1 - 3 * p2 + p3;
   const evaluate = (t: number) => ((c3 * t + c2) * t + c1) * t + c0;
   const cuts = [0, 1], a = 3 * c3, b = 2 * c2, c = c1;
-  if (Math.abs(a) < 1e-15) { if (Math.abs(b) >= 1e-15) cuts.push(-c / b); }
+  if (belowMagnitude(a, 1e-15)) { if (magnitudeAtLeast(b, 1e-15)) cuts.push(-c / b); }
   else {
     const discriminant = b * b - 4 * a * c;
     if (discriminant >= 0) {
@@ -52,7 +53,7 @@ export function sheetBezierPlaneRoots(values: readonly [number, number, number, 
     }
   }
   const ordered = [...new Set(cuts.filter((t) => t >= 0 && t <= 1))].sort((x, y) => x - y), roots: number[] = [];
-  for (const cut of ordered) if (Math.abs(evaluate(cut)) <= 2e-14) roots.push(cut);
+  for (const cut of ordered) if (withinMagnitude(evaluate(cut), 2e-14)) roots.push(cut);
   for (let i = 1; i < ordered.length; i++) {
     let left = ordered[i - 1], right = ordered[i], leftValue = evaluate(left);
     if (leftValue * evaluate(right) >= 0) continue;

@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from './tolerances.js';
 import { subVec as sub, dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /** FR-435: 案内線との長さ比の対応と、案内線上の点に追従する断面を作る。 */
 import type { BRepAdaptor_CompCurve, BRepOffsetAPI_MakePipeShell, OpenCascadeInstance, TopoDS_Wire } from 'opencascade.js/dist/opencascade.full.js';
@@ -43,7 +44,7 @@ function readStation(oc: OpenCascadeInstance, spine: BRepAdaptor_CompCurve, guid
   if (!Number.isFinite(radius) || radius < CONTACT_TOLERANCE) throw new Error(DEGENERATE);
   // CurvilinearEquivalence=trueに合わせる。単に同方向に延びるだけでは通さず、
   // 各対応点が経路の接線に直交する同じ断面上にあることも確認する。
-  if (Math.abs(dot(offset, tangent)) > CONTACT_TOLERANCE || dot(tangent, unit([dq.X(), dq.Y(), dq.Z()])) <= 0) throw new Error(BAD_INTERVAL);
+  if (exceedsMagnitude(dot(offset, tangent), CONTACT_TOLERANCE) || dot(tangent, unit([dq.X(), dq.Y(), dq.Z()])) <= 0) throw new Error(BAD_INTERVAL);
   const binormal = unit(cross(tangent, offset)), normal = unit(cross(binormal, tangent));
   return { p: point, q: target, tangent, normal, binormal, radius };
 }
@@ -79,7 +80,7 @@ export function prepareSweepGuide(oc: OpenCascadeInstance, spineWire: TopoDS_Wir
     throw new Error('案内線の始点を、経路の始点に置いた断面の縁に合わせてください。');
   }
   const fine = integral(stations, 1), coarse = integral(stations, 2);
-  if (!Number.isFinite(fine) || fine <= 0 || Math.abs(fine - coarse) > fine * 1e-6) {
+  if (!Number.isFinite(fine) || fine <= 0 || exceedsMagnitude(fine - coarse, fine * 1e-6)) {
     throw new Error('案内線による断面の変化が急すぎます。案内線の曲がり方を緩やかにしてください。');
   }
   return { stations, volumePerArea: spineLength * fine,

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { belowMagnitude, exceedsMagnitude, withinMagnitude } from './numericTolerance.js';
+import { belowMagnitude, exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from './numericTolerance.js';
 
 /** value の隣の浮動小数(direction が正なら大きい方、負なら小さい方)。有限の値だけに使う。 */
 function adjacentFloat(value: number, direction: 1 | -1): number {
@@ -17,7 +17,7 @@ function adjacentFloat(value: number, direction: 1 | -1): number {
   return view.getFloat64(0);
 }
 
-const BOUNDS = [1e-9, 1e-6, 0.5, 1, 0, Number.MIN_VALUE, Infinity, NaN];
+const BOUNDS = [1e-9, 1e-6, 0.5, 1, 0, -1, Number.MIN_VALUE, Infinity, -Infinity, NaN];
 
 function valuesAround(bound: number): number[] {
   const edges = Number.isFinite(bound) ? [bound, -bound] : [];
@@ -33,6 +33,7 @@ describe('数の大きさを許容差と比べる共通の口', () => {
         expect(withinMagnitude(value, bound), `within ${value} ${bound}`).toBe(Math.abs(value) <= bound);
         expect(belowMagnitude(value, bound), `below ${value} ${bound}`).toBe(Math.abs(value) < bound);
         expect(exceedsMagnitude(value, bound), `exceeds ${value} ${bound}`).toBe(Math.abs(value) > bound);
+        expect(magnitudeAtLeast(value, bound), `at least ${value} ${bound}`).toBe(Math.abs(value) >= bound);
         compared += 1;
       }
     }

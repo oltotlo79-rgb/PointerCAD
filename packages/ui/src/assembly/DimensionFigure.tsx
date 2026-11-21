@@ -3,7 +3,7 @@
  * 資料の図は使わない)と寸法の表を出す。開いた・閉じたはアプリを閉じるまで覚える(設定にも文書にも持たない。K-07b の D1 と同じ)。
  * 欄・釦は足さない(見出しの summary は Tab で止まり、Enter・Space で開閉する)。図は role=img と幅・高さの入った名前を持ち、中の線と数は読み上げない。
  */
-import { t } from '../i18n/t.js';
+import { type MessageKey, t } from '../i18n/t.js';
 import { displayNumber } from '../sketch/numericInputPresentation.js';
 import type { DimensionFigurePart } from './dimensionTable.js';
 import { cachedPartOutline } from './partOutline.js';
@@ -52,10 +52,16 @@ function dimensionTable(rows: DimensionFigurePart['rows']): React.JSX.Element {
   </table>;
 }
 
+/** 印の種類ごとの文の鍵(種類を足した時に書き漏れると型検査で分かる)。 */
+const MARK_MESSAGES: Readonly<Record<DimensionFigurePart['marks'][number]['kind'], MessageKey>> = {
+  unverified: 'catalog.dimensionFigure.unverified', simplified: 'catalog.dimensionFigure.simplified', toolScreen: 'catalog.dimensionFigure.toolScreen',
+};
+
 function markLines(marks: DimensionFigurePart['marks']): React.JSX.Element[] {
-  return marks.map((mark) => <p key={mark.kind} role="status">{t(mark.kind === 'unverified'
-    ? 'catalog.dimensionFigure.unverified' : 'catalog.dimensionFigure.simplified')
-    .replace('{parts}', mark.parts.join(t('display.listSeparator')))}</p>);
+  return marks.map((mark) => {
+    const parts = mark.kind === 'toolScreen' ? mark.parts.map((key) => t(key)) : mark.parts;
+    return <p key={mark.kind} role="status">{t(MARK_MESSAGES[mark.kind]).replace('{parts}', parts.join(t('display.listSeparator')))}</p>;
+  });
 }
 
 export function DimensionFigure({ part }: { readonly part: DimensionFigurePart | null }): React.JSX.Element | null {

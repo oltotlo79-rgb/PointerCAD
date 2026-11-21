@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { crossVec3, dotVec3, lengthVec3, subVec3 } from '../../sketch/vec3.js';
 import type { Joint } from '../types.js';
@@ -122,7 +123,7 @@ function inLineGeometry(cam: PreparedJointResidual, follower: PreparedJointResid
   const sliderB = transformJointFrame(follower.frames.b, placementB);
   if (camFrame === null || guide === null || sliderB === null) return null;
   const axis = sliderB.z;
-  if (Math.abs(dotVec3(camFrame.z, axis)) > IN_LINE_TOLERANCE) return null;
+  if (exceedsMagnitude(dotVec3(camFrame.z, axis), IN_LINE_TOLERANCE)) return null;
   const normal = crossVec3(camFrame.z, axis), size = lengthVec3(normal);
   if (!finite(size) || size <= 0) return null;
   const tolerance = Math.max(LENGTH_TOLERANCE_MM, IN_LINE_TOLERANCE * reachMm);
@@ -130,7 +131,7 @@ function inLineGeometry(cam: PreparedJointResidual, follower: PreparedJointResid
   if (gap > tolerance) return null;
   const crossing = dotVec3(subVec3(camFrame.origin, guide.origin), axis);
   const signed = (followerIsA ? 1 : -1) * translationMm - crossing;
-  if (!finite(crossing) || !finite(signed) || Math.abs(signed) <= tolerance) return null;
+  if (!finite(crossing) || !finite(signed) || withinMagnitude(signed, tolerance)) return null;
   const side = signed > 0 ? 1 : -1;
   return { direction: side * (followerIsA ? 1 : -1) > 0 ? 1 : -1, offsetMm: side * crossing };
 }

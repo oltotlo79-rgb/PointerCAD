@@ -25,7 +25,7 @@ import { activateEditTool, activateShapeTool, activateTool } from '../shell/menu
 import { TOOLS } from '../shell/menus/sketchToolDescriptors.js';
 import { CONSTRAINT_MENU_ITEMS, EDIT_MENU_ITEMS, SHAPE_MENU_ITEMS } from '../shell/menus/sketchMenuItems.js';
 import { COMBINE_MENU_ITEMS, CREATE_MENU_ITEMS, MACHINING_MENU_ITEMS } from '../shell/menus/solidMenuItems.js';
-import { runCombineTool, runSolidTool } from '../shell/menus/solidToolActions.js';
+import { runCombineTool, runPushPull, runSolidTool } from '../shell/menus/solidToolActions.js';
 import { toolbarCommand } from './toolbarCommandCatalog.js';
 
 export interface ToolbarCommandExecutionResult extends EditToolReadiness {
@@ -88,6 +88,8 @@ export function executeToolbarCommand(id: string): ToolbarCommandExecutionResult
       const items = command.group === 'solidCreate' ? CREATE_MENU_ITEMS : MACHINING_MENU_ITEMS;
       const item = items.find(entry => entry.id === source);
       if (item === undefined) return unavailable;
+      // 押し引きは道具ではなく、選んだ物で道具を振り分ける項目(M-05 4-1a。solid/pushPull.ts)。
+      if (item.id === 'pushPull') { runPushPull(); return ready; }
       const readiness = solidToolReadiness(state.document, state.selection, item.id, subShapeBodiesOf(state.bodies));
       // A missing selection starts the tool's selection step and displays its reason.
       runSolidTool(item.id, readiness); return ready;

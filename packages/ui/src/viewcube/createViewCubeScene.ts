@@ -1,3 +1,4 @@
+import { magnitudeAtLeast } from '@pointercad/model';
 import * as THREE from 'three';
 
 import { cameraPosition, type OrbitState } from '../viewport/cameraMath.js';
@@ -131,7 +132,7 @@ export function createViewCubeScene(canvas: HTMLCanvasElement, sizePixels: numbe
       const preferred = overlapsHome(direction) ? (direction < 2.445 ? 2.08 : 2.81) : direction;
       const candidates = [preferred];
       for (let step = 1; step <= 9; step += 1) candidates.push(preferred - step * 0.36, preferred + step * 0.36);
-      angles.push(candidates.find(angle => !overlapsHome(angle) && angles.every(other => Math.abs(signedAngle(angle - other)) >= 0.36 - 1e-6)) ?? preferred);
+      angles.push(candidates.find(angle => !overlapsHome(angle) && angles.every(other => magnitudeAtLeast(signedAngle(angle - other), 0.36 - 1e-6))) ?? preferred);
     }
     const extent = VIEW_CUBE_CAMERA_DISTANCE * Math.tan(VIEW_CUBE_FIELD_OF_VIEW * Math.PI / 360);
     const positions = guide.geometry.getAttribute('position');

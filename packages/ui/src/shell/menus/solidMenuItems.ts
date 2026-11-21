@@ -6,6 +6,7 @@
 
 import type { BooleanOperation } from '@pointercad/model';
 import type { SolidToolId } from '../../sketch/numericInput.js';
+import type { PushPullActionId } from '../../solid/pushPull.js';
 import {
   BoxIcon,
   ChamferIcon,
@@ -213,7 +214,7 @@ export const COMBINE_MENU_ITEMS: readonly ToolMenuItem<BooleanOperation>[] = [
  * リブ・エンボス・外ねじ・移動/回転・拡大縮小・点パターン)は、この表へ 1 行足すだけ**で
  * 一覧に並び、ツールバーの幅は変わらない。
  */
-export const MACHINING_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
+export const MACHINING_MENU_ITEMS: readonly ToolMenuItem<SolidToolId | PushPullActionId>[] = [
   {
     id: 'hole',
     labelKey: 'toolbar.machining.hole',
@@ -280,6 +281,13 @@ export const MACHINING_MENU_ITEMS: readonly ToolMenuItem<SolidToolId>[] = [
     id: 'faceOffset',
     labelKey: 'toolbar.machining.faceOffset',
     tooltipKey: 'toolbar.machining.faceOffsetTooltip',
+    Icon: ExtrudeIcon,
+  },
+  // 押し引き(M-05 4-1a)。道具ではなく、選んだ物で押し出し・面の移動・R面取りへ振り分ける項目(solid/pushPull.ts)。
+  {
+    id: 'pushPull',
+    labelKey: 'toolbar.machining.pushPull',
+    tooltipKey: 'toolbar.machining.pushPullTooltip',
     Icon: ExtrudeIcon,
   },
   {

@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 /** パネル接線境界の向きは各面の反時計回り外周に揃える。 */
 export type PanelPoint = readonly [number, number];
 export interface SheetPanelEdge { readonly panelId: string; readonly from: PanelPoint; readonly to: PanelPoint }
@@ -43,7 +44,7 @@ export function flattenSheetPanelGraph(graph: SheetPanelGraph): SheetPanelGraphR
     const firstLength = Math.hypot(first.to[0] - first.from[0], first.to[1] - first.from[1]);
     const secondLength = Math.hypot(second.to[0] - second.from[0], second.to[1] - second.from[1]);
     if (![...first.from, ...first.to, ...second.from, ...second.to, connection.allowance, firstLength, secondLength].every(Number.isFinite)
-      || Math.min(firstLength, secondLength) <= 1e-7 || Math.abs(firstLength - secondLength) > 1e-7 || connection.allowance < 0)
+      || Math.min(firstLength, secondLength) <= 1e-7 || exceedsMagnitude(firstLength - secondLength, 1e-7) || connection.allowance < 0)
       return { ok: false, error: 'invalidEdge', ids: [connection.id] };
     adjacency.get(first.panelId)?.push(connection); adjacency.get(second.panelId)?.push(connection);
   }

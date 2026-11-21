@@ -24,6 +24,7 @@
  * DOM にもカーネルにも触れない純関数だけを置く。
  */
 
+import { belowMagnitude, exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from '../numericTolerance.js';
 import { SPLINE_SEGMENTS_PER_SPAN, splineCurveData, splinePointAt } from './splineMath.js';
 import type {
   ResolvedArc,
@@ -150,12 +151,12 @@ export function curveEnd(curve: ResolvedCurve): Vec3 {
 
 /** 開始角と終了角の差が ±360 度以上なら全周の円(FR-305)。 */
 export function isFullCircle(arc: ResolvedArc): boolean {
-  return Math.abs(arc.endAngle - arc.startAngle) >= FULL_TURN - FULL_TURN_EPSILON;
+  return magnitudeAtLeast(arc.endAngle - arc.startAngle, FULL_TURN - FULL_TURN_EPSILON);
 }
 
 /** 全周の楕円か(円弧の `isFullCircle` と同じ約束、FR-318)。 */
 export function isFullEllipse(ellipse: ResolvedEllipse): boolean {
-  return Math.abs(ellipse.endAngle - ellipse.startAngle) >= FULL_TURN - FULL_TURN_EPSILON;
+  return magnitudeAtLeast(ellipse.endAngle - ellipse.startAngle, FULL_TURN - FULL_TURN_EPSILON);
 }
 
 /** 1 本だけで輪になる曲線(全周の円・全周の楕円・閉じたスプライン)か。 */
@@ -271,7 +272,7 @@ export function curvePointAt(curve: ResolvedCurve, ratio: number): Vec3 {
  */
 function sweepRatio(angle: number, startAngle: number, endAngle: number): number | null {
   const span = endAngle - startAngle;
-  if (Math.abs(span) <= FULL_TURN_EPSILON) {
+  if (withinMagnitude(span, FULL_TURN_EPSILON)) {
     return null;
   }
   const raw = angle - startAngle;
@@ -388,7 +389,7 @@ function segmentCrossing(
   const uw = dotVec3(u, w);
   const vw = dotVec3(v, w);
   const denominator = uu * vv - uv * uv;
-  if (Math.abs(denominator) <= DENOMINATOR_EPSILON) {
+  if (withinMagnitude(denominator, DENOMINATOR_EPSILON)) {
     return null;
   }
   const s = (uv * vw - vv * uw) / denominator;
@@ -457,16 +458,16 @@ function crossingAt(
 function segmentArcIntersections(segment: ResolvedSegment, arc: ResolvedArc): CurveIntersection[] {
   const [x0, y0, z0] = arcLocalOf(arc, segment.from);
   const [x1, y1, z1] = arcLocalOf(arc, segment.to);
-  if (Math.abs(z0) > PLANE_TOLERANCE_MM || Math.abs(z1) > PLANE_TOLERANCE_MM) {
+  if (exceedsMagnitude(z0, PLANE_TOLERANCE_MM) || exceedsMagnitude(z1, PLANE_TOLERANCE_MM)) {
     // 平面に乗っていない線分。平面を突き抜けるならその 1 点だけが交点になりうる。
     const gap = z0 - z1;
-    if (Math.abs(gap) <= DENOMINATOR_EPSILON) {
+    if (withinMagnitude(gap, DENOMINATOR_EPSILON)) {
       return [];
     }
     const ratio = z0 / gap;
     const point = lerpVec3(segment.from, segment.to, Math.min(1, Math.max(0, ratio)));
     const [px, py] = arcLocalOf(arc, point);
-    if (Math.abs(Math.hypot(px, py) - arc.radius) > INTERSECTION_TOLERANCE_MM) {
+    if (exceedsMagnitude(Math.hypot(px, py) - arc.radius, INTERSECTION_TOLERANCE_MM)) {
       return [];
     }
     const crossing = crossingAt(segment, arc, ratio);
@@ -504,11 +505,11 @@ function segmentArcIntersections(segment: ResolvedSegment, arc: ResolvedArc): Cu
  * 同心(d ≈ 0)は交わらないか完全に重なるかのどちらかなので、これも報せない。
  */
 function arcArcIntersections(first: ResolvedArc, second: ResolvedArc): CurveIntersection[] {
-  if (Math.abs(dotVec3(first.normal, second.normal)) < 1 - NORMAL_TOLERANCE) {
+  if (belowMagnitude(dotVec3(first.normal, second.normal), 1 - NORMAL_TOLERANCE)) {
     return [];
   }
   const [cx, cy, cz] = arcLocalOf(first, second.center);
-  if (Math.abs(cz) > PLANE_TOLERANCE_MM) {
+  if (exceedsMagnitude(cz, PLANE_TOLERANCE_MM)) {
     return [];
   }
   const distance = Math.hypot(cx, cy);
@@ -517,7 +518,7 @@ function arcArcIntersections(first: ResolvedArc, second: ResolvedArc): CurveInte
   }
   if (
     distance > first.radius + second.radius ||
-    distance < Math.abs(first.radius - second.radius)
+    exceedsMagnitude(first.radius - second.radius, distance)
   ) {
     return [];
   }

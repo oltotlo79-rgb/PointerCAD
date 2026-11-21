@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model/beam-analysis';
 import { sha256Hex } from './sha256.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamContactNumericResult } from './contactModel.js';
@@ -69,7 +70,7 @@ export async function beamJointInitialStrainInputSha256(value: unknown): Promise
 }
 function close(actual: unknown, expected: number): boolean {
   return typeof actual === 'number' && Number.isFinite(actual) && Number.isFinite(expected)
-    && Math.abs(actual-expected) <= 1e-9*Math.max(Math.abs(expected), 1e-300);
+    && withinMagnitude(actual-expected, 1e-9*Math.max(Math.abs(expected), 1e-300));
 }
 function forceVector(actual: unknown, expected: Vector3): Vector3 {
   if (!dense(actual) || actual.length !== 3 || !expected.every((v, i) => close(actual[i], v))) throw new Error('initial-strain-force');

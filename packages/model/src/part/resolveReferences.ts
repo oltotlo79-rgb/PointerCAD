@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import type { PointPlacementSourceAnchor } from '../geometry/subShapeOrigin.js';
 /**
  * 基準ジオメトリの解決
@@ -403,7 +404,7 @@ function axisFromFaceIntersection(
   const normal2 = normalizeVec3(face2.axis);
   const inFace1 = crossVec3(unit, normalizeVec3(face1.axis));
   const slope = dotVec3(inFace1, normal2);
-  if (Math.abs(slope) <= DIRECTION_EPSILON) {
+  if (withinMagnitude(slope, DIRECTION_EPSILON)) {
     return failed(featureId, 'degenerate', '2 つの面の交線が決まりません。');
   }
   const gap = subVec3(face1.position, face2.position);

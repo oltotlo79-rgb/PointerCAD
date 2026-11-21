@@ -1,4 +1,5 @@
 /** 穴を含む板金面を接線で分割し、交差した穴を外周の切欠きへつなぐ。 */
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { curveEnd, curveStart } from '../sketch/intersectionMath.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import { crossVec3, dotVec3, type Vec3 } from '../sketch/vec3.js';
@@ -10,7 +11,7 @@ export type { SheetClippedLoop } from './sheetCurveLoops.js';
 interface OpenEnd { readonly index: number; readonly start: boolean; readonly point: Vec3 }
 
 export function clipSheetPanel(panel: SheetPanelGeometry, plane: SheetSplitPlane, keepSide: -1 | 1, cutId: string): SheetGeometryResult<readonly SheetClippedLoop[]> {
-  if (!Number.isFinite(dotVec3(panel.normal, plane.normal)) || Math.abs(dotVec3(panel.normal, plane.normal)) > 1e-10)
+  if (!Number.isFinite(dotVec3(panel.normal, plane.normal)) || exceedsMagnitude(dotVec3(panel.normal, plane.normal), 1e-10))
     return { ok: false, message: '分割線を板金パネルと同じ平面に指定してください。' };
   const outer = orientSheetLoop(panel.outer, panel.normal), holes = panel.holes.map((loop) => orientSheetLoop(loop, panel.normal, true));
   if (outer === null || holes.some((loop) => loop === null)) return { ok: false, message: '分割する板金の外周か穴が閉じていません。' };

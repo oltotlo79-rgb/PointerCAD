@@ -269,12 +269,12 @@ describe('assemblyTreeRows(束の並び)', () => {
     const diagnosis = diagnosisFor([], [{
       componentId: 'component-1',
       code: 'missingPart',
-      message: '子組が見つかりません。',
+      text: { key: 'assembly.error.missingPart', parameters: {} },
     }]);
     const row = assemblyTreeRows(parent, diagnosis)[0].rows[0];
 
     expect(row.badges).toContain('unresolved');
-    expect(row.errorMessage).toBe('子組が見つかりません。');
+    expect(row.errorMessage).toBe('部品が見つかりません。');
     expect(row.children).toBeUndefined();
   });
 });
@@ -338,7 +338,7 @@ describe('行の印', () => {
   it('中身が引けなかった部品には unresolved の印と理由が出る(FR-504)', () => {
     const two = assemblyWith(2);
     const errors: readonly AssemblyError[] = [
-      { componentId: 'component-2', code: 'missingPart', message: '部品が見つかりません。' },
+      { componentId: 'component-2', code: 'missingPart', text: { key: 'assembly.error.missingPart', parameters: {} } },
     ];
     const rows = assemblyTreeRows(two, diagnosisFor(['component-1'], errors))[0].rows;
 

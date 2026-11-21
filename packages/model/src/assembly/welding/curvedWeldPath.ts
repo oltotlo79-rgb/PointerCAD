@@ -3,6 +3,7 @@
  * The caller must obtain current evidence and the COMPLETE bead group independently.
  * Current SolidEdgeEntry.circleBasis supplies native parameters; circularWeldSelection resolves world evidence.
  */
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import { hasExactOwnKeys as record, isFiniteNumber as finite } from '../../valueGuards.js';
 import { addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import { WELD_DIRECTION_TOLERANCE, WELD_LENGTH_TOLERANCE_MM } from './types.js';
@@ -92,8 +93,8 @@ function evidence(value: unknown): CircularWeldPathEvidence | null {
   if (identity === null || centerMm === null || xAxis === null || yAxis === null || normal === null
     || !(span > 0 && span <= 2 * Math.PI) || !Number.isFinite(span * value.radiusMm)
     || span * value.radiusMm <= WELD_LENGTH_TOLERANCE_MM
-    || [xAxis, yAxis, normal].some(axis => Math.abs(lengthVec3(axis) - 1) > WELD_DIRECTION_TOLERANCE)
-    || Math.abs(dotVec3(xAxis, yAxis)) > WELD_DIRECTION_TOLERANCE
+    || [xAxis, yAxis, normal].some(axis => exceedsMagnitude(lengthVec3(axis) - 1, WELD_DIRECTION_TOLERANCE))
+    || exceedsMagnitude(dotVec3(xAxis, yAxis), WELD_DIRECTION_TOLERANCE)
     || lengthVec3(subVec3(crossVec3(xAxis, yAxis), normal)) > WELD_DIRECTION_TOLERANCE) return null;
   // Do not normalize an invalid basis or infer a missing orientation/range.
   const parameterRange: readonly [number, number] = Object.freeze([lo, hi]);

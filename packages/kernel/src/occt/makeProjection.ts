@@ -1,3 +1,4 @@
+import { magnitudeAtLeast } from './tolerances.js';
 import { dotVec as dot3, crossVec as cross3 } from './sketchCorner.js';
 /**
  * 立体の面・辺を作図面へ投影する(FR-325)。
@@ -312,7 +313,7 @@ export function projectEdgeToPlane(
     const axisDirection = keep(axis.Direction());
     const direction: Vec3Tuple = [axisDirection.X(), axisDirection.Y(), axisDirection.Z()];
     const alignment = dot3(direction, basis.normal);
-    if (Math.abs(alignment) >= 1 - PARALLEL_EPSILON) {
+    if (magnitudeAtLeast(alignment, 1 - PARALLEL_EPSILON)) {
       // 円の面と作図面が平行なので、投影しても半径の変わらない円弧のまま残る。
       const position = keep(circle.Position());
       const xDirection = keep(position.XDirection());
@@ -349,7 +350,7 @@ function curveEnds(curve: PlaneCurve): { start: Vec2Tuple; end: Vec2Tuple; close
     return {
       start: pointAt(curve.startAngle),
       end: pointAt(curve.endAngle),
-      closed: Math.abs(curve.endAngle - curve.startAngle) >= TAU - FULL_TURN_EPSILON,
+      closed: magnitudeAtLeast(curve.endAngle - curve.startAngle, TAU - FULL_TURN_EPSILON),
     };
   }
   return {

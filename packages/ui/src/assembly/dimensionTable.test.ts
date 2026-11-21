@@ -73,6 +73,36 @@ describe('族の行の表', () => {
     expect(familyFigurePart(nut, row, { length: '20' }).key).not.toBe(familyFigurePart(nut, row, {}).key);
   });
 
+  it('道具の画面の値で入れた行は、その寸法の名前を印に出す(名前の無い鍵は出さない)。値の出どころを持たない行(資料と頁の行)は出さない', () => {
+    const frame = loaded('t-slot-frame-s6');
+    expect('valueSource' in frame.rows[0]).toBe(false);
+    const base = familyFigurePart(frame, frame.rows[0], {});
+    expect(base.marks.map((mark) => mark.kind)).not.toContain('toolScreen');
+    const widthLabel = base.rows.find((item) => item.key === 'width')?.label;
+    expect(widthLabel).toBeDefined();
+    const screen = familyFigurePart(frame, { ...frame.rows[0], valueSource: { kind: 'toolScreen', fields: ['width', 'noSuchDimension'] } }, {});
+    expect(screen.marks).toContainEqual({ kind: 'toolScreen', parts: [widthLabel] });
+  });
+
+  it('全部の族の道具の画面の値の行: 挙げた鍵は全部、行の寸法にあり名前の文を持つ(印から黙って落ちない)', () => {
+    let count = 0;
+    for (const entry of PRODUCT_CATALOG_REGISTRY.entries) {
+      const family = loaded(entry.id);
+      for (const row of family.rows) {
+        if (row.valueSource === undefined) continue;
+        count += 1;
+        const fields = row.valueSource.fields;
+        expect(fields.length, `${family.id}/${row.key}`).toBeGreaterThan(0);
+        for (const key of fields) expect(key in row.dims, `${family.id}/${row.key}/${key}`).toBe(true);
+        const mark = familyFigurePart(family, row, {}).marks.find((item) => item.kind === 'toolScreen');
+        const labels = mark?.kind === 'toolScreen' ? mark.parts : [];
+        expect(labels.length, `${family.id}/${row.key}`).toBe(fields.length);
+        for (const label of labels) expect(t(label).length).toBeGreaterThan(0);
+      }
+    }
+    expect(count).toBeGreaterThan(0);
+  });
+
   it('線図の部品文書: 指定の値が通らない時(打ちかけの長さ)は既定の値で作る', () => {
     const frame = loaded('t-slot-frame-s6');
     expect(familyFigurePart(frame, frame.rows[0], { length: '-' }).build()).not.toBeNull();

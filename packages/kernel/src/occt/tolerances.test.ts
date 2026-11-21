@@ -4,7 +4,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { R22_THIN_SOLIDS } from './geometryAcceptanceFixtures.js';
 import {
+  belowMagnitude,
   exceedsMagnitude,
+  magnitudeAtLeast,
+  withinMagnitude,
   GEOMETRIC_CONFUSION_MM,
   APPROXIMATION_TOLERANCE_MM,
   validateToleranceMm,
@@ -94,5 +97,20 @@ describe('値の大きさが許容差を超えるか(exceedsMagnitude)', () => {
     expect(exceedsMagnitude(-2e-7, GEOMETRIC_CONFUSION_MM)).toBe(true);
     expect(exceedsMagnitude(Number.NaN, 1)).toBe(false);
     expect(exceedsMagnitude(1, Number.NaN)).toBe(false);
+  });
+});
+
+describe('値の大きさを許容差と比べる残りの口(withinMagnitude・belowMagnitude・magnitudeAtLeast)', () => {
+  /** 元の手書きの式。境界・符号・0・負の許容差・NaN・無限で、共通の口が同じ真偽を返す事を確かめる。 */
+  const bounds = [0, GEOMETRIC_CONFUSION_MM, 1e-10, 1, -1, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN];
+  const values = [0, -0, 1e-10, -1e-10, GEOMETRIC_CONFUSION_MM, -GEOMETRIC_CONFUSION_MM, 2e-7, -2e-7, 1, -1, 1.5, -1.5,
+    Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN];
+
+  it.each(bounds)('許容差 %s の時、どの値でも Math.abs(value) の <=・<・>= と同じ真偽', (bound) => {
+    for (const value of values) {
+      expect(withinMagnitude(value, bound), `within value=${String(value)}`).toBe(Math.abs(value) <= bound);
+      expect(belowMagnitude(value, bound), `below value=${String(value)}`).toBe(Math.abs(value) < bound);
+      expect(magnitudeAtLeast(value, bound), `at least value=${String(value)}`).toBe(Math.abs(value) >= bound);
+    }
   });
 });

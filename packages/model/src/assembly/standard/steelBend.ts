@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import { evaluateExpression, exactExpressionValueFromNumber, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 
 import { appendReference, appendSolid, createEmptyPartDocument } from '../../part/createPartDocument.js';
@@ -86,8 +87,8 @@ export function createSteelBend(source: StandardPartSource, input: SteelBendDime
   const stockLength = steelLength(source.options.length ?? '1000');
   if (stockLength === null) return { ok: false, reason: 'invalidStockLength' };
   // Numerical equality only, not an extra cutting/stock allowance or a loosened modeling bound.
-  if (Math.abs(stockLength.value - plan.geometry.centrelineLengthMm)
-    > 1e-9 * Math.max(1, stockLength.value, plan.geometry.centrelineLengthMm)) {
+  if (exceedsMagnitude(stockLength.value - plan.geometry.centrelineLengthMm,
+    1e-9 * Math.max(1, stockLength.value, plan.geometry.centrelineLengthMm))) {
     return { ok: false, reason: 'stockLengthMismatch' };
   }
   const steelBend = bendInput(source, product.key, input);

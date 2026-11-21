@@ -11,7 +11,7 @@
  * - 三角形の並びは折れ線ごとに覚えて使い回す。ホバーが変わっただけなら同じ並びを返すので、描く側は作り直さずに
  *   色だけを塗り替える(`createSketchLayer.ts` の `hasSameFaceGeometry`)。
  */
-import { withinMagnitude, type Vec3 } from '@pointercad/model';
+import { belowMagnitude, withinMagnitude, type Vec3 } from '@pointercad/model';
 import { ShapeUtils, Vector2 } from 'three';
 import type { SketchEmphasis, SketchFaceDraw, SketchGeometryBundle } from './buildSketchGeometry.js';
 
@@ -124,7 +124,7 @@ function fillGeometry(polygon: readonly Vec3[], holes: readonly (readonly Vec3[]
   const cached = geometryCache.get(polygon);
   if (cached !== undefined && sameHoles(cached.holes, holes)) return cached.geometry;
   const normal = polygonNormal(polygon) ?? [0, 0, 1];
-  const helper: Vec3 = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const helper: Vec3 = belowMagnitude(normal[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
   const u: Vec3 = [helper[1] * normal[2] - helper[2] * normal[1], helper[2] * normal[0] - helper[0] * normal[2],
     helper[0] * normal[1] - helper[1] * normal[0]];
   const uLength = Math.hypot(u[0], u[1], u[2]);

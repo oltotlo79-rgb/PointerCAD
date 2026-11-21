@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { lengthVec3 as norm, scaleVec3 as scaled, subVec3 as sub, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
 import { readShellAnalysisInput, type ShellAnalysisInput, type ShellFixed6, type ShellVector3 } from './shellAnalysisModel.js';
 
@@ -168,7 +169,7 @@ function project(t: ShellTensor6, a: ShellVector3, b: ShellVector3): number {
 }
 function solve3(m: readonly ShellVector3[], r: ShellVector3): ShellVector3 {
   const det = dot(m[0], cross(m[1], m[2]));
-  if (!(Math.abs(det) > 0)) refuse('shell-geometry', 'integration points do not span the element plane');
+  if (!(exceedsMagnitude(det, 0))) refuse('shell-geometry', 'integration points do not span the element plane');
   const replace = (column: number): number => {
     const rows = m.map((row, i) => row.map((v, j) => (j === column ? r[i] : v)));
     return dot([rows[0][0], rows[0][1], rows[0][2]], cross([rows[1][0], rows[1][1], rows[1][2]], [rows[2][0], rows[2][1], rows[2][2]]));
@@ -377,7 +378,7 @@ export function recoverPlanarShell(input: ShellAnalysisInput, elements: readonly
   const first = input.elements[0], normal = elements[0].frame.e3, origin = input.nodes[first.nodes[0]];
   const extent = input.nodes.reduce((size, point) => Math.max(size, norm(sub(point, origin))), 0);
   if (elements.some(element => norm(sub(element.frame.e3, normal)) > 1e-9)
-    || input.nodes.some(point => Math.abs(dot(sub(point, origin), normal)) > 1e-9 * extent)) {
+    || input.nodes.some(point => exceedsMagnitude(dot(sub(point, origin), normal), 1e-9 * extent))) {
     return { status: 'unavailable', code: 'nonplanar', reason: 'Nodal averaging requires one oriented plane; curved or folded '
       + 'shells need tangent-plane transport and a separate recovery. Raw native integration-point results are retained.' };
   }
@@ -464,7 +465,7 @@ export function decodeShellAnalysis(raw: unknown, plan: ShellAnalysisPlan): Shel
       const offset = sub(point.xyzMm, corners[0]);
       const twice = 2 * frame.areaMm2;
       const l2 = dot(cross(sub(corners[2], corners[0]), offset), frame.e3) / -twice, l3 = dot(cross(sub(corners[1], corners[0]), offset), frame.e3) / twice;
-      if (Math.abs(dot(offset, frame.e3)) > 1e-9 * longest || Math.min(l2, l3, 1 - l2 - l3) < -1e-9) {
+      if (exceedsMagnitude(dot(offset, frame.e3), 1e-9 * longest) || Math.min(l2, l3, 1 - l2 - l3) < -1e-9) {
         refuse('shell-result', `element ${index} integration point is outside its triangle`);
       }
       if (nativeTransverse(point.force, frame) > 1e-9 * stressScale || 6 * nativeTransverse(point.moment, frame) / (t * t) > 1e-9 * stressScale) {

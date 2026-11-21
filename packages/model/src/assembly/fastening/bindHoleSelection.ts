@@ -7,6 +7,7 @@
  * 同じ関数で結び直す)。
  */
 
+import { belowMagnitude, exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import type { CurrentOriginIndex, HoleFaceOrigin, HoleThreadGrooveOrigin, OriginBinding } from '../../geometry/subShapeOrigin.js';
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import type { MateSubShapeGeometry, SolidBody, SubShapeReferenceResolution } from '../../kernelBridge.js';
@@ -165,7 +166,7 @@ type BodyFace = SolidBody['faces'][number];
 
 function parallel(a: Vec3 | null, b: Vec3): boolean {
   const unitA = unit(a);
-  return unitA !== null && Math.abs(Math.abs(dotVec3(unitA, b)) - 1) <= FASTENING_DIRECTION_TOLERANCE;
+  return unitA !== null && withinMagnitude(Math.abs(dotVec3(unitA, b)) - 1, FASTENING_DIRECTION_TOLERANCE);
 }
 
 /**
@@ -192,7 +193,7 @@ export function modeledThreadEvidence(body: Pick<SolidBody, 'origins' | 'faces'>
     const extent = wall?.cylinderAxialExtent, wallOrigin = wall?.axisOrigin;
     if (wall === undefined || wall.surfaceKind !== 'cylinder' || wall.radius === null || wall.adjacentFaces === undefined
       || extent == null || wallOrigin == null || !parallel(wall.axis, axis)
-      || Math.abs(wall.radius - radius) > FASTENING_LENGTH_TOLERANCE_MM) return null;
+      || exceedsMagnitude(wall.radius - radius, FASTENING_LENGTH_TOLERANCE_MM)) return null;
     const offset = subVec3(wallOrigin, origin), along = dotVec3(offset, axis);
     // 同じ軸の上にあること(軸に垂直なずれが許容内)。
     if (lengthVec3(subVec3(offset, scaleVec3(axis, along))) > FASTENING_LENGTH_TOLERANCE_MM) return null;
@@ -216,8 +217,8 @@ export function modeledThreadEvidence(body: Pick<SolidBody, 'origins' | 'faces'>
     const face = faces[index];
     if (face === undefined || face.surfaceKind !== 'plane' || !parallel(face.axis, axis)) return null;
     const at = dotVec3(subVec3(face.centroid, origin), axis);
-    return Math.abs(at - span[0]) <= FASTENING_LENGTH_TOLERANCE_MM ? 0
-      : Math.abs(at - span[1]) <= FASTENING_LENGTH_TOLERANCE_MM ? 1 : null;
+    return withinMagnitude(at - span[0], FASTENING_LENGTH_TOLERANCE_MM) ? 0
+      : withinMagnitude(at - span[1], FASTENING_LENGTH_TOLERANCE_MM) ? 1 : null;
   };
   const touched = [false, false];
   const chainFaces = [...walls, ...candidate.grooves.map((index) => faces[index])];
@@ -353,7 +354,7 @@ function entryOf(cylinder: BoundCylinder, plane: { readonly point: Vec3; readonl
   { readonly origin: Vec3; readonly into: Vec3 } | null {
   for (const side of [1, -1] as const) {
     const end = addVec3(cylinder.center, scaleVec3(cylinder.axis, side * cylinder.length / 2));
-    if (Math.abs(dotVec3(subVec3(end, plane.point), plane.normal)) <= FASTENING_LENGTH_TOLERANCE_MM) {
+    if (withinMagnitude(dotVec3(subVec3(end, plane.point), plane.normal), FASTENING_LENGTH_TOLERANCE_MM)) {
       return { origin: end, into: scaleVec3(cylinder.axis, -side) };
     }
   }
@@ -361,7 +362,7 @@ function entryOf(cylinder: BoundCylinder, plane: { readonly point: Vec3; readonl
 }
 
 function sameDiameter(radius: number, diameter: number): boolean {
-  return Number.isFinite(diameter) && Math.abs(2 * radius - diameter) <= FASTENING_LENGTH_TOLERANCE_MM;
+  return Number.isFinite(diameter) && withinMagnitude(2 * radius - diameter, FASTENING_LENGTH_TOLERANCE_MM);
 }
 
 /** ねじの入口が合わせ面か反対の面か。フィーチャーの面を選び直して決める。 */
@@ -380,8 +381,8 @@ function threadStartOf(
   const plane = resolved.status === 'matched' ? planeOf(resolved.geometry) : null;
   if (plane === null) return null;
   const offset = dotVec3(subVec3(plane.point, entry.origin), entry.into);
-  if (Math.abs(offset) <= FASTENING_LENGTH_TOLERANCE_MM) return 0;
-  return Math.abs(offset - length) <= FASTENING_LENGTH_TOLERANCE_MM ? length - threadLength : null;
+  if (withinMagnitude(offset, FASTENING_LENGTH_TOLERANCE_MM)) return 0;
+  return withinMagnitude(offset - length, FASTENING_LENGTH_TOLERANCE_MM) ? length - threadLength : null;
 }
 
 /**
@@ -470,7 +471,7 @@ function boundSelection(
   const bound = bindHoleEntry(context, component, feature, bodyId, bore, plane);
   if ('code' in bound) return bound;
   const cylinder = bound.cylinder;
-  if (Math.abs(dotVec3(cylinder.axis, plane.normal)) < 1 - FASTENING_DIRECTION_TOLERANCE) {
+  if (belowMagnitude(dotVec3(cylinder.axis, plane.normal), 1 - FASTENING_DIRECTION_TOLERANCE)) {
     return reject('faceAxisMismatch', { componentId: component.id, holeFeatureId: feature.id });
   }
   const entry = entryOf(cylinder, plane);

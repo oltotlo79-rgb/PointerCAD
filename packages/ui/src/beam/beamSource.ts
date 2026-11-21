@@ -1,4 +1,4 @@
-import { partKeyOf, type AssemblyDocument, type PartLibrary, type ResolvedAssembly } from '@pointercad/model';
+import { partKeyOf, type AssemblyDocument, type PartLibrary, type ResolvedAssembly, type StandardPartSource } from '@pointercad/model';
 import type { AnalysisSource } from '@pointercad/model/beam-analysis';
 import type { AppState } from '../store/appState.js';
 import { currentAssemblyMeshPublication, type AssemblyMeshOwnership } from '../viewport/assemblyMeshAdmission.js';
@@ -67,8 +67,8 @@ export function beamSourceIsCurrent(snapshot: BeamSourceSnapshot, state: AppStat
 }
 
 /** Full occurrence paths preserve duplicate IDs in separate subassemblies. No placement is invented. */
-export function beamOccurrences(document: AssemblyDocument, resolved: ResolvedAssembly): readonly BeamOccurrence[] {
-  const output: BeamOccurrence[] = [];
+export function beamCatalogOccurrences(document: AssemblyDocument, resolved: ResolvedAssembly) {
+  const output = new Map<string, { readonly occurrence: BeamOccurrence; readonly source: StandardPartSource }>();
   const visit = (assembly: AssemblyDocument, view: ResolvedAssembly, parents: readonly string[], labels: readonly string[]): void => {
     for (const component of assembly.components) {
       if (component.suppressed) continue;
@@ -80,10 +80,14 @@ export function beamOccurrences(document: AssemblyDocument, resolved: ResolvedAs
       } else if (component.source.kind === 'standardPart'
         && ['equalAngle', 'channel', 'hBeam', 'flatBar', 'roundBar', 'steelPipe'].includes(component.source.catalog)
         && view.placements.has(component.id) && view.partKeys.get(component.id) === partKeyOf(component.source)) {
-        output.push({ path, partKey: partKeyOf(component.source), label });
+        output.set(JSON.stringify(path), { occurrence: { path, partKey: partKeyOf(component.source), label }, source: component.source });
       }
     }
   };
   visit(document, resolved, [], []);
   return output;
+}
+
+export function beamOccurrences(document: AssemblyDocument, resolved: ResolvedAssembly): readonly BeamOccurrence[] {
+  return [...beamCatalogOccurrences(document, resolved).values()].map(item => item.occurrence);
 }

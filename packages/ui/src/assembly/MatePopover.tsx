@@ -3,6 +3,7 @@ import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { useDialogFocus } from '../shell/dialogFocus.js';
 import { ASSEMBLY_JOINT_TOOLS, ASSEMBLY_MATE_TOOLS } from '../shell/menus/AssemblyGroup.js';
 import { addSelectedOriginTarget, cancelMate, commitJointDraft, commitMateDraft, handleMateKey, jointDraftReady,
   jointDraftCheck, jointFailureText, mateDraftCheck, mateFailureText, mateKindReadiness, removeDraftTarget,
@@ -19,6 +20,7 @@ export function MatePopover(): React.JSX.Element | null {
   const kind = draft?.kind;
   const jointKind = draft?.jointKind;
   const editingId = draft?.editingMateId;
+  useDialogFocus(() => panel.current, open, { initial: 'managed' });
   useEffect(() => {
     if (open) focusFirstTextField(panel.current);
   }, [open, pair, kind, editingId]);

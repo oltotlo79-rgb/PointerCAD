@@ -225,6 +225,7 @@ export function resetTestStore(): void {
     assemblyCrossLevelMotionNotice: null,
     matchWorkPlaneRequestCount: 0,
     focusViewportRequestCount: 0,
+    focusRequestSerial: 0,
     viewportSize: [0, 0],
     // createInitialDocumentState の外にある(文書を作り直しても戻らない)ので、
     // ここで明示的に初期化しないと前の検査の値が漏れる。

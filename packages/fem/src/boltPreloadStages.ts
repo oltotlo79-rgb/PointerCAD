@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import type { PropertySource } from './analysisModel.js';
 import { translateBeamJointInitialStrain } from './beamJointInitialStrain.js';
 
@@ -79,7 +80,7 @@ export function calculateBoltPreloadStages(value: unknown, assumptions: unknown)
   const requiredShorteningM = numeric(declared.preloadN.value * totalCompliance, declared.preloadN.value > 0);
   // Input-consistency tolerance, not an accuracy acceptance relaxation or a fitted preload.
   if (requiredShorteningM >= lengthM
-    || Math.abs(shorteningM - requiredShorteningM) > 1e-9 * Math.max(shorteningM, requiredShorteningM)) {
+    || exceedsMagnitude(shorteningM - requiredShorteningM, 1e-9 * Math.max(shorteningM, requiredShorteningM))) {
     throw new Error('preload-shortening-force-mismatch');
   }
   const equilibratedPreloadN = numeric(shorteningM / totalCompliance, shorteningM > 0);

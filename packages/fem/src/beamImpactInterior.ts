@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { createPrefixedError, isRecord as record } from './valueGuards.js';
 import { crossVec3 as cross } from '@pointercad/model/vec3';
 import type { Vector3 } from './analysisModel.js';
@@ -88,13 +89,13 @@ export function decodeImpactInterior(rawElements: unknown, rawMesh: readonly unk
     }
     const block = matrix as number[][];
     const scale = Math.max(...block.map(row => Math.max(...row.map(Math.abs))));
-    if (!(scale > 0) || block.some((row, i) => row.some((value, j) => Math.abs(value - block[j][i]) > 1e-9 * scale))) {
+    if (!(scale > 0) || block.some((row, i) => row.some((value, j) => exceedsMagnitude(value - block[j][i], 1e-9 * scale)))) {
       return fail(`element ${member.number} block is zero or not symmetric`);
     }
     const a = plan.nodes[member.nodes[0] - 1].positionM, b = plan.nodes[member.nodes[1] - 1].positionM;
     for (const mode of rigidModes(a, b)) {
       const magnitude = Math.max(...mode.map(Math.abs));
-      if (multiply(block, mode).some(force => Math.abs(force) > 1e-8 * scale * magnitude)) {
+      if (multiply(block, mode).some(force => exceedsMagnitude(force, 1e-8 * scale * magnitude))) {
         fail(`element ${member.number} block does not belong to this element geometry`);
       }
     }

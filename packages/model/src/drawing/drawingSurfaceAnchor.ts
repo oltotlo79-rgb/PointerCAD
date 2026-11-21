@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import { dotVec3 as dot } from '../sketch/vec3.js';
 import { drawingViewBasis, type ClipRegion, type DrawingView, type Point2, type Vector3 } from '@pointercad/drawing';
 import { drawingModelPointToPaper, type DimensionResolveContext } from './dimensionTarget.js';
@@ -31,7 +32,7 @@ function triangles(input: readonly Point2[]): readonly (readonly Point2[])[] | n
   const points = [...input];
   let signed = 0;
   for (let i = 0; i < points.length; i++) signed += cross([0, 0], points[i], points[(i + 1) % points.length]);
-  if (Math.abs(signed) <= EPS) return null;
+  if (withinMagnitude(signed, EPS)) return null;
   if (signed < 0) points.reverse();
   const output: Point2[][] = [];
   while (points.length > 3) {
@@ -39,7 +40,7 @@ function triangles(input: readonly Point2[]): readonly (readonly Point2[])[] | n
     for (let i = 0; i < points.length; i++) {
       const before = (i + points.length - 1) % points.length, after = (i + 1) % points.length;
       const a = points[before], b = points[i], c = points[after], area = cross(a, b, c);
-      if (Math.abs(area) <= EPS) { points.splice(i, 1); removed = true; break; }
+      if (withinMagnitude(area, EPS)) { points.splice(i, 1); removed = true; break; }
       if (area < 0 || points.some((point, index) => index !== before && index !== i && index !== after
         && cross(a, b, point) >= -EPS && cross(b, c, point) >= -EPS && cross(c, a, point) >= -EPS)) continue;
       output.push([a, b, c]); points.splice(i, 1); removed = true; break;
@@ -154,7 +155,7 @@ export function createDrawingSurfaceAnchor(view: DrawingView, sheetScale: number
   const disks = (frame?.clips ?? []).filter((region): region is Disk => region.kind === 'circle');
   return (triangle: readonly [Vector3, Vector3, Vector3]): { readonly paperPoint: Point2; readonly area: number } | null => {
     if (!triangle.every((point) => point.every(Number.isFinite))) return null;
-    const [a, b, c] = triangle.map(raw), fullArea = cross(a, b, c); if (Math.abs(fullArea) <= EPS) return null;
+    const [a, b, c] = triangle.map(raw), fullArea = cross(a, b, c); if (withinMagnitude(fullArea, EPS)) return null;
     const world = (point: Point2): Vector3 => {
       const u = cross(point, b, c) / fullArea, v = cross(point, c, a) / fullArea, w = 1 - u - v;
       const coordinate = (axis: number): number => u * triangle[0][axis] + v * triangle[1][axis] + w * triangle[2][axis];

@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model';
 import type { SolidBody, Vec3 } from '@pointercad/model';
 import * as THREE from 'three';
 import { subShapeFrameOrigin } from '../solid/subShapeSelection.js';
@@ -141,7 +142,7 @@ export function fullyFramedIds(
       scratch.set(
         origin[0] + positions[i], origin[1] + positions[i + 1], origin[2] + positions[i + 2],
       ).project(camera);
-      if (![scratch.x, scratch.y, scratch.z].every((value) => Number.isFinite(value) && Math.abs(value) <= 1)) return false;
+      if (![scratch.x, scratch.y, scratch.z].every((value) => Number.isFinite(value) && withinMagnitude(value, 1))) return false;
     }
     return true;
   }).map((body) => body.featureId);

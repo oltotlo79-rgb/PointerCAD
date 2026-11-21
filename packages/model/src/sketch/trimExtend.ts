@@ -24,6 +24,7 @@
  * すべて純関数で、文書を書き換えず新しい文書を返す。DOM にもカーネルにも触れない。
  */
 
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { hasConnectedSegmentEnd } from './connectedSegment.js';
 import { constraintTargets } from './constraints/types.js';
@@ -521,7 +522,7 @@ export function cutRatios(
       } else if (ratio <= RATIO_EPSILON || ratio >= 1 - RATIO_EPSILON) {
         continue;
       }
-      if (ratios.every((known) => Math.abs(known - ratio) > RATIO_EPSILON)) {
+      if (ratios.every((known) => exceedsMagnitude(known - ratio, RATIO_EPSILON))) {
         ratios.push(ratio);
       }
     }

@@ -49,6 +49,7 @@ import {
   createPartDocumentBundle,
   createAssemblyDocumentBundle,
   detectSubAssemblyProblem,
+  MAX_SUB_ASSEMBLY_DEPTH,
   partLibraryOfBundle,
   type DocumentBundle,
   type AssemblyDocument,
@@ -59,6 +60,7 @@ import {
   type LengthUnit,
   type PartDocument,
   type PartLibrary,
+  type SubAssemblyProblem,
 } from '@pointercad/model';
 import { strToU8, zipSync, type ZipOptions, type Zippable } from 'fflate';
 import { decodeUtf8 } from '../decodeUtf8.js';
@@ -91,6 +93,7 @@ import {
 import type { SavedAnalysisResult } from '@pointercad/model/beam-analysis';
 import { analysisResultBinding } from './analysisResultBinding.js';
 import { readAnalysisResult, serializeAnalysisResult, type AnalysisResultIssue } from './codecs/analysisResult.js';
+import { SOLID_RESULT_MAX_BYTES } from './codecs/solidResultBinary.js';
 import { isSafeZipEntryName } from './zipDirectory.js';
 
 /** 部品文書を入れる ZIP のエントリ名(要件§8)。 */
@@ -99,6 +102,7 @@ export const PCAD_DOCUMENT_ENTRY = 'document.json';
 export const PCAD_THUMBNAIL_ENTRY = 'thumbnail.png';
 const PCAD_ANALYSIS_RESULT_ENTRY_PREFIX = 'analysis-results/';
 const PCAD_ANALYSIS_RESULT_ENTRY_SUFFIX = '.json';
+const RESULT_BINARY_SUFFIX = '.bin';
 /** 図面が抱き込む参照元文書のエントリ名。 */
 export const PCAD_SOURCE_ENTRY_PREFIX = 'source/';
 export const PCAD_SOURCE_ENTRY_SUFFIX = '.json';
@@ -228,7 +232,11 @@ interface SavedResultFields {
   readonly analysisResultIssue?: AnalysisResultIssue;
 }
 
-export interface WriteDocumentBundleOptions {
+interface ResultWriteOptions {
+  readonly onAnalysisResultIssue?: (analysisId: string, issue: AnalysisResultIssue) => void;
+}
+
+export interface WriteDocumentBundleOptions extends ResultWriteOptions {
   readonly savedAt?: string;
   readonly thumbnailPng?: Uint8Array;
 }
@@ -528,7 +536,7 @@ function inspectImportedMeshBytes(bytes: Uint8Array): ImportedMeshHeader | null 
   return { view, vertexCount, triangleCount };
 }
 
-export interface WritePcadFileOptions {
+export interface WritePcadFileOptions extends ResultWriteOptions {
   readonly analysisResults?: ReadonlyMap<string, SavedAnalysisResult>;
   /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
   readonly savedAt?: string;
@@ -633,7 +641,7 @@ export function pcadEntries(document: PartDocument, options: WritePcadFileOption
   if (options.attachments !== undefined) {
     appendAttachments(entries, options.attachments);
   }
-  if (options.kind !== PCAD_TEMPLATE_KIND) appendAnalysisResults(entries, options.analysisResults);
+  if (options.kind !== PCAD_TEMPLATE_KIND) appendAnalysisResults(entries, options);
   return entries;
 }
 
@@ -675,6 +683,15 @@ export type ReadPcadFileResult =
   | { readonly ok: false; readonly error: ReadPcadFileError };
 
 const NOT_ZIP_MESSAGE = 'ファイルを開けませんでした。壊れているかもしれません。';
+/**
+ * 抱き込んだ組の入れ子が成り立たない時の読み取りの断り(利用者へそのまま見せる)。理由は model の detectSubAssemblyProblem の kind。
+ * model は文を持たない(D4)ので、段をまたぐ連動の断りと同じく、読み取りの断りの日本語は io が持つ。
+ * 組を解く時の同じ断りは ui の assembly.json(assembly.error.subAssemblyCycle・subAssemblyDepth)が持つ(io は ui の表を読めない)。
+ */
+const SUB_ASSEMBLY_READ_MESSAGES: Readonly<Record<SubAssemblyProblem['kind'], string>> = {
+  cycle: 'このアセンブリは自分自身を含んでいます。',
+  depth: `組の入れ子が深すぎます(${String(MAX_SUB_ASSEMBLY_DEPTH)} 段まで)。`,
+};
 const MISSING_DOCUMENT_MESSAGE =
   'PointerCAD のファイルではないようです(document.json が入っていません)。';
 
@@ -706,7 +723,15 @@ function analysisIdOf(name: string): string | null {
 }
 
 function isResultEntry(name: string): boolean {
-  return analysisIdOf(name) !== null;
+  return analysisIdOf(name) !== null || binaryIdOf(name) !== null;
+}
+
+function binaryIdOf(name: string): string | null {
+  return attachmentRef(name, PCAD_ANALYSIS_RESULT_ENTRY_PREFIX, RESULT_BINARY_SUFFIX);
+}
+
+function resultEntryLimit(name: string): number {
+  return binaryIdOf(name) === null ? IO_LIMITS.archiveEntryExpandedBytes : SOLID_RESULT_MAX_BYTES;
 }
 
 function* bindingInputs(entries: ReadonlyMap<string, Uint8Array | PcadZipEntry>):
@@ -720,24 +745,43 @@ function* bindingInputs(entries: ReadonlyMap<string, Uint8Array | PcadZipEntry>)
   }
 }
 
-function appendAnalysisResults(entries: PcadZipEntries, results?: ReadonlyMap<string, SavedAnalysisResult>): void {
+function appendAnalysisResults(entries: PcadZipEntries, options: ResultWriteOptions & SavedResultFields): void {
+  const { analysisResults: results, onAnalysisResultIssue } = options;
   if (results === undefined || results.size === 0) return;
   let binding: string;
   try {
     binding = analysisResultBinding(bindingInputs(entries));
   } catch {
+    if (onAnalysisResultIssue) for (const id of results.keys()) onAnalysisResultIssue(id, 'invalidResult');
     return;
   }
   let remaining = IO_LIMITS.archiveTotalExpandedBytes;
   for (const [bytes] of entries.values()) remaining -= bytes.byteLength;
   for (const [id, saved] of sortedEntries(results)) {
-    if (entries.size >= IO_LIMITS.archiveEntryCount || remaining <= 0) break;
-    const name = PCAD_ANALYSIS_RESULT_ENTRY_PREFIX + id + PCAD_ANALYSIS_RESULT_ENTRY_SUFFIX;
-    if (analysisIdOf(name) !== id || !isSafeZipEntryName(name) || decodeUtf8(strToU8(name)) !== name) continue;
-    const bytes = serializeAnalysisResult(saved, id, binding);
-    if (bytes === undefined || bytes.byteLength > remaining) continue;
-    entries.set(name, zipEntry(bytes, DOCUMENT_LEVEL));
-    remaining -= bytes.byteLength;
+    const stem = PCAD_ANALYSIS_RESULT_ENTRY_PREFIX + id;
+    const name = stem + PCAD_ANALYSIS_RESULT_ENTRY_SUFFIX;
+    if (analysisIdOf(name) !== id || !isSafeZipEntryName(name) || decodeUtf8(strToU8(name)) !== name) {
+      onAnalysisResultIssue?.(id, 'invalidResult');
+      continue;
+    }
+    const count = saved.kind === 'oofem-linear-solid-tet4' ? 2 : 1;
+    if (entries.size + count > IO_LIMITS.archiveEntryCount || remaining <= 0) {
+      onAnalysisResultIssue?.(id, 'resultTooLarge');
+      continue;
+    }
+    const encoded = serializeAnalysisResult(saved, id, binding);
+    if (!encoded.ok) {
+      onAnalysisResultIssue?.(id, encoded.issue);
+      continue;
+    }
+    const size = encoded.json.length + (encoded.binary?.length ?? 0);
+    if (size > remaining) {
+      onAnalysisResultIssue?.(id, 'resultTooLarge');
+      continue;
+    }
+    entries.set(name, zipEntry(encoded.json, DOCUMENT_LEVEL));
+    if (encoded.binary !== undefined) entries.set(stem + RESULT_BINARY_SUFFIX, zipEntry(encoded.binary, DOCUMENT_LEVEL));
+    remaining -= size;
   }
 }
 
@@ -747,14 +791,18 @@ function savedResultsOf(entries: ReadonlyMap<string, Uint8Array>, omitted: boole
   let binding: string | undefined;
   for (const [name, bytes] of entries) {
     const id = analysisIdOf(name);
-    if (id === null) continue;
+    if (id === null) {
+      const orphan = binaryIdOf(name);
+      if (orphan !== null && !entries.has(PCAD_ANALYSIS_RESULT_ENTRY_PREFIX + orphan + PCAD_ANALYSIS_RESULT_ENTRY_SUFFIX)) issue ??= 'invalidResult';
+      continue;
+    }
     try {
       binding ??= analysisResultBinding(bindingInputs(entries));
     } catch {
       // A valid document can contain deeply nested extension data beyond the canonicalizer's stack.
       return { analysisResultIssue: 'invalidResult' };
     }
-    const decoded = readAnalysisResult(bytes, id, binding);
+    const decoded = readAnalysisResult(bytes, id, binding, entries.get(PCAD_ANALYSIS_RESULT_ENTRY_PREFIX + id + RESULT_BINARY_SUFFIX));
     if (decoded.ok) results.set(id, decoded.value);
     else issue ??= decoded.issue;
   }
@@ -887,7 +935,7 @@ function findMissingAttachment(
 export interface ReadPcadFileOptions { readonly limits?: ArchiveReadLimits }
 
 export function readPcadFile(bytes: Uint8Array, options: ReadPcadFileOptions = {}): ReadPcadFileResult {
-  const archive = readArchive(bytes, { shouldExtract: isPcadArchiveEntry, optionalEntry: isResultEntry, limits: options.limits });
+  const archive = readArchive(bytes, { shouldExtract: isPcadArchiveEntry, optionalEntry: isResultEntry, optionalEntryLimit: resultEntryLimit, limits: options.limits });
   if (!archive.ok) {
     return fail('notZip', archiveFailureMessage(archive.error));
   }
@@ -978,7 +1026,7 @@ export function isTemplateKind(kind: PcadDocumentKind): boolean {
 // アセンブリ(`.pcada`)の ZIP コンテナ
 // ---------------------------------------------------------------------------
 
-export interface WritePcadaFileOptions {
+export interface WritePcadaFileOptions extends ResultWriteOptions {
   readonly analysisResults?: ReadonlyMap<string, SavedAnalysisResult>;
   /** 保存時刻(ISO 8601)。検査で時刻を固定するための口。既定は今の時刻。 */
   readonly savedAt?: string;
@@ -1078,7 +1126,7 @@ export async function writePcadaFile(
   if (options.partAttachments !== undefined) {
     await appendPartAttachments(entries, options.partAttachments);
   }
-  appendAnalysisResults(entries, options.analysisResults);
+  appendAnalysisResults(entries, options);
   return zipPcadEntries(entries);
 }
 
@@ -1091,7 +1139,7 @@ async function pcadaEntries(
   if (options.partAttachments !== undefined) {
     await appendPartAttachments(entries, options.partAttachments);
   }
-  appendAnalysisResults(entries, options.analysisResults);
+  appendAnalysisResults(entries, options);
   return entries;
 }
 
@@ -1340,7 +1388,7 @@ export function readPcadaFile(
 ): Promise<ReadPcadaFileResult> {
   const archive = readArchive(bytes, {
     shouldExtract: isPcadaArchiveEntry,
-    optionalEntry: isResultEntry,
+    optionalEntry: isResultEntry, optionalEntryLimit: resultEntryLimit,
     limits: options.limits,
   });
   if (!archive.ok) {
@@ -1373,7 +1421,7 @@ async function readPcadaEntries(
   }
   const subAssemblyProblem = detectSubAssemblyProblem(parsed.document, collected.assemblies);
   if (subAssemblyProblem !== null) {
-    return fail('invalidField', subAssemblyProblem.message);
+    return fail('invalidField', SUB_ASSEMBLY_READ_MESSAGES[subAssemblyProblem.kind]);
   }
   // Cross-level gears and cams point into the embedded subassemblies, so they are checked once all of them are read.
   for (const document of [parsed.document, ...collected.assemblies.values()]) {

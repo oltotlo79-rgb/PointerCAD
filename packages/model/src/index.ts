@@ -1,5 +1,5 @@
 /** 数の大きさを許容差と比べる共通の口(許容差の比較を手書きで足さずここへ集める。ui の面と押し出しの判定が使う)。 */
-export { belowMagnitude, withinMagnitude } from './numericTolerance.js';
+export { belowMagnitude, exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from './numericTolerance.js';
 export {
   FUNCTION_PLOT_AXES,
   FunctionPlotBounds,
@@ -1152,10 +1152,12 @@ export type {
   ResolvedAssembly,
   StandardPartSource,
 } from './assembly/resolveAssembly.js';
+/** 画面に出す失敗の文の鍵と差し込む値(文は ui の文言の表が持つ。D4)。 */
+export type { FailureText } from './failureText.js';
 export {
-  assemblyVariables, assemblyExpressionContext, INVALID_PLACEMENT_MESSAGE, MISSING_PART_MESSAGE,
-  MAX_SUB_ASSEMBLY_DEPTH, MISSING_STANDARD_SIZE_MESSAGE, partKeyOf, resolveAssembly,
-  SUB_ASSEMBLY_CYCLE_MESSAGE, SUB_ASSEMBLY_DEPTH_MESSAGE,
+  assemblyVariables, assemblyExpressionContext, MISSING_PART_MESSAGE,
+  MAX_SUB_ASSEMBLY_DEPTH, partKeyOf, resolveAssembly,
+  SUB_ASSEMBLY_CYCLE_TEXT, SUB_ASSEMBLY_DEPTH_TEXT,
 } from './assembly/resolveAssembly.js';
 
 export type { SubAssemblyProblem } from './assembly/subAssembly.js';
@@ -1207,10 +1209,10 @@ export {
 export {
   buildStandardPart, buildStandardPartFromSource, changeStandardSize, createStandardPartSource,
   DEFAULT_STANDARD_FASTENER_LENGTH, DEFAULT_STANDARD_SECTION_LENGTH,
-  STANDARD_PART_UNAVAILABLE_MESSAGE, standardPartNominalVolume,
+  standardPartNominalVolume,
 } from './assembly/standard/buildStandardPart.js';
-/** 族の部品(保存の catalog が `catalogItem`)を組めない理由の日本語の文。ui の `catalog.rejection.*` と同じ文。 */
-export { CATALOG_ITEM_REJECTION_TEMPLATES } from './assembly/catalog/rejection.js';
+/** 族の部品(保存の catalog が `catalogItem`)を組めない理由の符号の一覧。画面の文は ui の `catalog.rejection.*`(D4)。 */
+export { CATALOG_ITEM_REJECTION_CODES } from './assembly/catalog/rejection.js';
 /** 規格部品の族の登録口(族の表は必要な時だけ読む)。ui の文書を開く道・図面・選ぶ画面が ensure を待つ。 */
 export { PRODUCT_CATALOG_REGISTRY } from './assembly/catalog/registry.js';
 export type { CatalogRegistry } from './assembly/catalog/registry.js';
@@ -1561,6 +1563,7 @@ export {
 } from './assembly/standard/hexBoltEvidence.js';
 export { standardMembersToBeamAnalysis, BEAM_CONNECTION_TOLERANCE_MM } from './analysis/standardBeamAdapter.js';
 export type { StandardBeamAdapterContext } from './analysis/standardBeamAdapter.js';
+export { catalogStrengthMaterials } from './analysis/catalogStrengthMaterials.js';
 export { prepareCadAxialBolts } from './analysis/cadAxialBolt.js';
 
 export { prepareCadWeldLayers } from './analysis/cadWeldLayer.js';

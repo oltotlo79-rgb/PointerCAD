@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '@pointercad/model/beam-analysis';
 import { isFiniteNumber } from './valueGuards.js';
 
 import { sha256Hex } from './sha256.js';
@@ -66,7 +67,7 @@ function dense(value: unknown): value is unknown[] {
     && Array.from({ length: value.length }, (_, i) => Object.hasOwn(value, i)).every(Boolean);
 }
 function finite(value: unknown): number {
-  if (!isFiniteNumber(value) || Math.abs(value) > 1e30) throw new Error('weld-number');
+  if (!isFiniteNumber(value) || exceedsMagnitude(value, 1e30)) throw new Error('weld-number');
   return value;
 }
 function positive(value: unknown): number {
@@ -82,8 +83,8 @@ function sub(a: Vector3, b: Vector3): Vector3 { return add(a, scale(b, -1)); }
 function geometry(row: Record<string, unknown>): WeldLayerGeometry {
   if (typeof row.id !== 'string' || row.id.length < 1 || row.id.length > 64) throw new Error('weld-id');
   const centerM = vector(row.centerM), normal = vector(row.normal), along = vector(row.along);
-  if (Math.abs(Math.hypot(...normal) - 1) > 1e-10 || Math.abs(Math.hypot(...along) - 1) > 1e-10
-    || Math.abs(dot(normal, along)) > 1e-10) throw new Error('weld-frame');
+  if (exceedsMagnitude(Math.hypot(...normal) - 1, 1e-10) || exceedsMagnitude(Math.hypot(...along) - 1, 1e-10)
+    || exceedsMagnitude(dot(normal, along), 1e-10)) throw new Error('weld-frame');
   const widthM = positive(row.widthM), lengthM = positive(row.lengthM), thicknessM = positive(row.thicknessM);
   const youngPa = positive(row.youngPa), poisson = finite(row.poisson);
   if (poisson < 0 || poisson >= .5) throw new Error('weld-material');
@@ -109,7 +110,7 @@ export function translateBeamWeldContact(value: unknown): { input: BeamWeldConta
     if (ids.has(patch.id)) throw new Error('weld-duplicate');
     const previous = pairs.get(pair) ?? [];
     for (const other of previous) {
-      if ((['normal', 'along'] as const).some(key => patch[key].some((v, i) => Math.abs(v-other[key][i]) > 1e-10))) {
+      if ((['normal', 'along'] as const).some(key => patch[key].some((v, i) => exceedsMagnitude(v-other[key][i], 1e-10)))) {
         throw new Error('weld-scope: same-pair patches require aligned frames');
       }
       const delta = sub(patch.centerM, other.centerM), station = dot(delta, patch.along);
@@ -122,7 +123,7 @@ export function translateBeamWeldContact(value: unknown): { input: BeamWeldConta
         + other.lengthM*Math.abs(dot(cross(other.normal, other.along), patch.along)))/2;
       const roundoffScale = radius + patch.along.reduce((sum, v, i) =>
         sum+(Math.abs(patch.centerM[i])+Math.abs(other.centerM[i]))*Math.abs(v), 0);
-      if (Math.abs(station) <= radius+32*Number.EPSILON*roundoffScale) {
+      if (withinMagnitude(station, radius+32*Number.EPSILON*roundoffScale)) {
         throw new Error('weld-duplicate: overlap or unresolved patch separation');
       }
     }
@@ -177,7 +178,7 @@ export function decodeBeamWeldContact(raw: unknown, input: BeamWeldContactInput,
       }
       const energy = finite(actual.elasticEnergyJ);
       if (energy < 0 || !Number.isFinite(expected.elasticEnergyJ)
-        || Math.abs(energy-expected.elasticEnergyJ) > 1e-9*Math.max(expected.elasticEnergyJ, 1e-300)) throw new Error('weld-constitutive-energy');
+        || exceedsMagnitude(energy-expected.elasticEnergyJ, 1e-9*Math.max(expected.elasticEnergyJ, 1e-300))) throw new Error('weld-constitutive-energy');
       return expected;
     });
     return { loadFactor: solved.loadFactor, welds };

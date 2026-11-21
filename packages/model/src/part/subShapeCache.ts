@@ -25,6 +25,7 @@
  * それだけを選び直す**。聞かれていない参照は、選び直しても誰も使わない。
  */
 
+import { withinMagnitude } from '../numericTolerance.js';
 import { subShapeFromFingerprint, type ResolvedSubShape } from '../geometry/planeSpec.js';
 import { fingerprintKeyText, type SubShapeRef } from '../geometry/subShapeRef.js';
 import { resolveSubShapeReference, type SolidBody } from '../kernelBridge.js';
@@ -72,9 +73,9 @@ function sameVec3(a: Vec3 | null, b: Vec3 | null): boolean {
     return a === b;
   }
   return (
-    Math.abs(a[0] - b[0]) <= SAME_VALUE_EPSILON &&
-    Math.abs(a[1] - b[1]) <= SAME_VALUE_EPSILON &&
-    Math.abs(a[2] - b[2]) <= SAME_VALUE_EPSILON
+    withinMagnitude(a[0] - b[0], SAME_VALUE_EPSILON) &&
+    withinMagnitude(a[1] - b[1], SAME_VALUE_EPSILON) &&
+    withinMagnitude(a[2] - b[2], SAME_VALUE_EPSILON)
   );
 }
 

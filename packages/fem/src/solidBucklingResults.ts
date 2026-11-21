@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { isRecord as record } from './valueGuards.js';
 import type { SolidVector3 } from './solidAnalysisModel.js';
 import type { SolidBucklingInput, SolidBucklingMode, SolidBucklingResult } from './solidBucklingModel.js';
@@ -53,7 +54,7 @@ export function decodeSolidBuckling(raw: unknown, input: SolidBucklingInput, inp
       amplitude = Math.max(amplitude, Math.hypot(...value));
       return value;
     });
-    if (Math.abs(amplitude - 1) > 1e-10) throw new Error('solid-buckling-result: invalid shape normalization');
+    if (exceedsMagnitude(amplitude - 1, 1e-10)) throw new Error('solid-buckling-result: invalid shape normalization');
     return { number: index + 1, loadFactor: mode.loadFactor, normalizedResidual: mode.normalizedResidual, shape };
   });
   return {

@@ -1,3 +1,4 @@
+import type { FailureText } from '../failureText.js';
 import type { StrengthSource } from '../measure/strengthMaterialTypes.js';
 
 /** Linear, small-displacement, isotropic 3D Timoshenko frames. No capacity claim. */
@@ -96,7 +97,14 @@ export interface BeamAnalysisDocument {
   readonly constraints: readonly BeamClamp[];
   readonly loads: readonly BeamNodalLoad[];
 }
-export interface AnalysisIssue { readonly code: string; readonly path: string; readonly message: string }
+/**
+ * 梁の解析の断り。message は開発者向けの英語の診断の文。failures は組立が解けない時の組立の誤り(鍵と値)と合致の断りの文で、
+ * message の目印 `{failures}` の所に入る。画面・診断の文は ui の issueMessage だけが作る(D4、統括の決定 2026-11-20 19:4x)。
+ */
+export interface AnalysisIssue {
+  readonly code: string; readonly path: string; readonly message: string;
+  readonly failures?: readonly (string | FailureText)[];
+}
 export type AnalysisCheck = { readonly ok: true; readonly document: BeamAnalysisDocument }
   | { readonly ok: false; readonly issue: AnalysisIssue };
 export interface BeamFrame { readonly x: Vector3; readonly y: Vector3; readonly z: Vector3; readonly lengthM: number }

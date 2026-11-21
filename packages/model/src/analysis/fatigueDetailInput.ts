@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { fatigueInputFailure as fail, InputIssue, text } from './analysisValidation.js';
 import { FATIGUE_SAVED_ID, FATIGUE_SAVED_LIMITS, denseFatigueList, exactFatigueFields, fatigueLabel,
   finiteFatigueNumber, type FatigueSavedHistory, type FatigueSavedSource } from './fatigueInput.js';
@@ -153,7 +154,7 @@ function problem(value: unknown, path: string): FatigueSavedDetailProblem {
     if (h.unit !== 'N') fail(`${at}.unit`, 'Expected N');
     const forceN = denseFatigueList(h.forceN, `${at}.forceN`).map((item, j) => {
       const force = finiteFatigueNumber(item, `${at}.forceN[${j}]`);
-      if (Math.abs(force) > 1e9) fail(`${at}.forceN[${j}]`, 'Expected |force| <= 1e9 N');
+      if (exceedsMagnitude(force, 1e9)) fail(`${at}.forceN[${j}]`, 'Expected |force| <= 1e9 N');
       if (detail.kind === 'bolt' && force < 0) fail(`${at}.forceN[${j}]`, 'Bolt compression is unsupported');
       return force;
     });

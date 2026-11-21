@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '@pointercad/model';
 import type { AnalysisMaterialCapacity, BeamAnalysisDocument, BeamAnalysisResult, BeamElementResult, Vector6 } from './analysisModel.js';
 import { checkFibreSection, elementFibreStresses, type AnalysedSection, type BeamFibreSection, type FibreExtreme } from './beamFibreStress.js';
 import type { SolidAnalysisInput, SolidAnalysisResult, SolidVector3, SolidVector6 } from './solidAnalysisModel.js';
@@ -158,7 +159,7 @@ function beamElementCapacity(element: BeamElementResult, document: BeamAnalysisD
     let torsion: number | null = 0;
     if (forces[3] !== 0) {
       if (check.section.kind === 'rectangle') reason = 'unsupported-rectangular-torsion';
-      else if (Math.abs(torsionM4 - analysed.iyM4 - analysed.izM4) > 1e-6 * torsionM4) reason = 'inconsistent-polar-torsion-constant';
+      else if (exceedsMagnitude(torsionM4 - analysed.iyM4 - analysed.izM4, 1e-6 * torsionM4)) reason = 'inconsistent-polar-torsion-constant';
       else {
         const radius = (check.section.kind === 'circle' ? check.section.diameterM : check.section.outsideDiameterM) / 2;
         torsion = Math.abs(forces[3]) * radius / torsionM4 / 1e6;
@@ -218,8 +219,8 @@ function principalStresses(stress: SolidVector6): SolidVector3 {
   // Jacobi rotations on a scaled symmetric 3x3 matrix also handle repeated eigenvalues.
   for (let sweep = 0; sweep < 32; sweep += 1) {
     let p = 0, q = 1;
-    for (const [a, b] of [[0, 2], [1, 2]]) if (Math.abs(matrix[a][b]) > Math.abs(matrix[p][q])) { p = a; q = b; }
-    if (Math.abs(matrix[p][q]) <= Number.EPSILON) break;
+    for (const [a, b] of [[0, 2], [1, 2]]) if (exceedsMagnitude(matrix[a][b], Math.abs(matrix[p][q]))) { p = a; q = b; }
+    if (withinMagnitude(matrix[p][q], Number.EPSILON)) break;
     const angle = Math.atan2(2 * matrix[p][q], matrix[q][q] - matrix[p][p]) / 2;
     const c = Math.cos(angle), s = Math.sin(angle);
     const pp = matrix[p][p], qq = matrix[q][q], pq = matrix[p][q];

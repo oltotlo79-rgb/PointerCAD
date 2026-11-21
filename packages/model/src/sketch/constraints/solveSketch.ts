@@ -20,6 +20,7 @@
  * 既存の文書の解決の結果も所要も変えない(落とし穴「解決が約 2 倍になる」)。
  */
 
+import { withinMagnitude } from '../../numericTolerance.js';
 import {
   baseWorkPlane,
   isFreeWorkPlaneId,
@@ -264,8 +265,8 @@ function buildOverrides(
     if (
       variableSet.followsBase.has(variable.pointKey) &&
       initial !== null &&
-      Math.abs(uv[0] - initial[0]) <= CONSTRAINT_TOLERANCE &&
-      Math.abs(uv[1] - initial[1]) <= CONSTRAINT_TOLERANCE
+      withinMagnitude(uv[0] - initial[0], CONSTRAINT_TOLERANCE) &&
+      withinMagnitude(uv[1] - initial[1], CONSTRAINT_TOLERANCE)
     ) {
       return;
     }

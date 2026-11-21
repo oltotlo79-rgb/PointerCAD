@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '@pointercad/model/beam-analysis';
 import { crossVec3 as fbCross } from '@pointercad/model/vec3';
 import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
@@ -101,7 +102,7 @@ export async function beamBoltContactInputSha256(value: unknown): Promise<string
 }
 function close(actual: unknown, expected: number): boolean {
   return typeof actual === 'number' && Number.isFinite(actual) && Number.isFinite(expected)
-    && Math.abs(actual - expected) <= 1e-9 * Math.max(Math.abs(expected), 1e-300);
+    && withinMagnitude(actual - expected, 1e-9 * Math.max(Math.abs(expected), 1e-300));
 }
 function forceVector(raw: unknown, expected: Vector3): Vector3 {
   if (!dense(raw) || raw.length !== 3 || !expected.every((v, i) => close(raw[i], v))) throw new Error('bolt-force: endpoint force mismatch');
@@ -248,7 +249,7 @@ export async function frameBoltContactInputSha256(value: unknown): Promise<strin
   return await sha256Hex(bytes);
 }
 function fbVector(v: unknown): Vector3 {
-  if (!dense(v) || v.length !== 3 || !v.every(x => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= 1e30)) throw new Error('frame-vector');
+  if (!dense(v) || v.length !== 3 || !v.every(x => typeof x === 'number' && Number.isFinite(x) && withinMagnitude(x, 1e30))) throw new Error('frame-vector');
   return [Number(v[0]), Number(v[1]), Number(v[2])];
 }
 /** Constitutive verification, not a solver: no unknown displacements are solved here. */
@@ -299,14 +300,14 @@ export function decodeFrameBoltContact(raw: unknown, value: unknown, hash: strin
     if (row.loadFactor !== solved.loadFactor || row.boltId !== prepared.input.bolt.id || row.member !== m.number || a === undefined || b === undefined) throw new Error('frame-stage-identity');
     const action = frameBoltEndActions(prepared.plan, a.displacementM, a.rotationRad, b.displacementM, b.rotationRad);
     for (const key of ['forceOnAN', 'forceOnBN', 'momentOnANm', 'momentOnBNm'] as const) {
-      const actual = fbVector(row[key]); if (actual.some((x, i) => Math.abs(x - action[key][i]) > 1e-8)) throw new Error('frame-end-action');
+      const actual = fbVector(row[key]); if (actual.some((x, i) => exceedsMagnitude(x - action[key][i], 1e-8))) throw new Error('frame-end-action');
     }
     for (const key of ['axialForceN', 'shearYN', 'shearZN', 'bendingYNm', 'bendingZNm', 'elasticEnergyJ', 'transverseEnergyJ'] as const) {
-      if (typeof row[key] !== 'number' || !Number.isFinite(row[key]) || Math.abs(Number(row[key]) - action[key]) > 1e-9 * Math.max(1, Math.abs(action[key]))) throw new Error('frame-constitutive');
+      if (typeof row[key] !== 'number' || !Number.isFinite(row[key]) || exceedsMagnitude(Number(row[key]) - action[key], 1e-9 * Math.max(1, Math.abs(action[key])))) throw new Error('frame-constitutive');
     }
     const arm: Vector3 = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
     const mb = fbCross(arm, action.forceOnBN);
-    for (let i = 0; i < 3; i++) if (Math.abs(action.forceOnAN[i] + action.forceOnBN[i]) > 1e-8 || Math.abs(action.momentOnANm[i] + action.momentOnBNm[i] + mb[i]) > 1e-8) throw new Error('frame-equilibrium');
+    for (let i = 0; i < 3; i++) if (exceedsMagnitude(action.forceOnAN[i] + action.forceOnBN[i], 1e-8) || exceedsMagnitude(action.momentOnANm[i] + action.momentOnBNm[i] + mb[i], 1e-8)) throw new Error('frame-equilibrium');
     return { loadFactor: solved.loadFactor, boltId: prepared.input.bolt.id, member: m.number, ...action, assessment: assessFrameBoltSection(prepared.input.bolt.section, action) };
   });
   return { kind: 'frame-bolt-contact' as const, schema: 'pointercad-frame-bolt-contact-result/1' as const, inputSha256: hash, source: prepared.input.contact.geometry.source, analysisId: prepared.input.contact.geometry.id, analysisRevision: prepared.input.contact.geometry.revision, structuralCertification: false as const, nativeContactSolver: false as const, contact, states };

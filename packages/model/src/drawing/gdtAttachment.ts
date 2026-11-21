@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { dotVec3 } from '../sketch/vec3.js';
 import type { DrawingDocument, GdtFeature, GdtShapeTarget } from '@pointercad/drawing';
 import { resolveDrawingDimensions, type DimensionResolveContext, type ResolvedDrawingDimension } from './dimensionTarget.js';
@@ -8,7 +9,7 @@ const reference = (feature: GdtFeature): GdtShapeTarget => feature.kind === 'med
 function sameFeature(a: ResolvedGdtFeature, b: ResolvedGdtFeature): boolean {
   const ra = reference(a.feature), rb = reference(b.feature);
   if (ra.sourceRef !== rb.sourceRef || ra.viewId !== rb.viewId || ra.componentId !== rb.componentId || ra.ref.bodyFeatureId !== rb.ref.bodyFeatureId
-    || a.kind !== b.kind || a.nominalSizeMm === null || b.nominalSizeMm === null || Math.abs(a.nominalSizeMm - b.nominalSizeMm) > 1e-7) return false;
+    || a.kind !== b.kind || a.nominalSizeMm === null || b.nominalSizeMm === null || exceedsMagnitude(a.nominalSizeMm - b.nominalSizeMm, 1e-7)) return false;
   if (a.kind === 'medianPlane') return a.shapeKeys.length === b.shapeKeys.length && a.shapeKeys.every((key) => b.shapeKeys.includes(key));
   const u = a.direction, v = b.direction;
   if (u === null || v === null || 1 - Math.abs(dotVec3(u, v)) > 1e-7) return false;
@@ -22,7 +23,7 @@ export function compatibleGdtSizeDimensions(feature: GdtFeature, document: Drawi
   const original = resolveGdtFeature(feature, document, context);
   if (original === null || (original.kind !== 'axis' && original.kind !== 'medianPlane')) return [];
   return dimensions.filter((item) => {
-    if (item.status !== 'resolved' || item.value === null || original.nominalSizeMm === null || Math.abs(item.value - original.nominalSizeMm) > 1e-7) return false;
+    if (item.status !== 'resolved' || item.value === null || original.nominalSizeMm === null || exceedsMagnitude(item.value - original.nominalSizeMm, 1e-7)) return false;
     const { dimension } = item;
     if (dimension.basic === true || dimension.reference || dimension.series !== undefined) return false;
     if (original.kind === 'axis') {

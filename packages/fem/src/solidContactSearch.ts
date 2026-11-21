@@ -1,5 +1,5 @@
 import { subVec3 as subtract, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
-import { InputIssue, SOLID_CONTACT_LIMITS, solidCadFaceKey, type SolidContactNormal, type Vector3 } from '@pointercad/model/beam-analysis';
+import { exceedsMagnitude, InputIssue, SOLID_CONTACT_LIMITS, solidCadFaceKey, type SolidContactNormal, type Vector3 } from '@pointercad/model/beam-analysis';
 import type { CadAnalysisBoundaryIdentity } from './cadTetraMesh.js';
 import type { SolidContactPlan, SolidContactPlanFace, SolidContactPlanPair } from './solidContactModel.js';
 
@@ -289,7 +289,7 @@ function bindFace(face: SolidContactPlanFace, meshes: ReadonlyMap<string, BoundM
 }
 function masterNormal(pair: SolidContactPlanPair, offset: number, triangle: PreparedTriangle, path: string): Vector3 {
   const normal = vector(pair.masterNormals[offset], `${path}.masterNormals[${offset}]`);
-  if (Math.abs(Math.hypot(...normal) - 1) > SOLID_CONTACT_LIMITS.unitNormalTolerance) {
+  if (exceedsMagnitude(Math.hypot(...normal) - 1, SOLID_CONTACT_LIMITS.unitNormalTolerance)) {
     refuse('contact-normal', path, 'The W16 direction must remain a unit normal without normalization');
   }
   const expected = pair.normal.kind === 'explicit' ? vector(pair.normal.vector, `${path}.normal`) : triangle.normal;

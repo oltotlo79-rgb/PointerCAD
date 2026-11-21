@@ -5,6 +5,7 @@
  * 合わせ面の接触を確かめる。配置の計算は `placementMath.ts` の既存の関数だけを使う。
  */
 
+import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import { findComponent } from '../assemblyEdit.js';
 import { applyPlacementToDirection, applyPlacementToPoint, type RigidPlacement } from '../placementMath.js';
 import type { AssemblyComponent, AssemblyDocument, Placement } from '../types.js';
@@ -102,7 +103,7 @@ function unitRejection(selection: FasteningHoleSelection, name: string, vector: 
     return reject('invalidAxis', { componentId: selection.componentId, name });
   }
   const size = lengthVec3(vector);
-  return Math.abs(size - 1) > FASTENING_DIRECTION_TOLERANCE
+  return exceedsMagnitude(size - 1, FASTENING_DIRECTION_TOLERANCE)
     ? reject('axisNotNormalized', { componentId: selection.componentId, name, value: size }) : null;
 }
 
@@ -143,7 +144,7 @@ export function resolveWorldHole(
   const matingPoint = applyPlacementToPoint(placement, selection.axisOrigin);
   const into = applyPlacementToDirection(placement, selection.axisDirection);
   if (!finiteVector(matingPoint) || !finiteVector(into)
-    || Math.abs(lengthVec3(into) - 1) > FASTENING_DIRECTION_TOLERANCE) {
+    || exceedsMagnitude(lengthVec3(into) - 1, FASTENING_DIRECTION_TOLERANCE)) {
     return { rejection: reject('invalidWorldFrame', { componentId: component.id }) };
   }
   return { hole: { selection, component, matingPoint, into } };
@@ -157,7 +158,7 @@ export function validPlacement(placement: Placement): boolean {
   const position = placement.position.map((value) => value.value);
   const size = Math.hypot(...placement.rotation);
   return position.every((value) => Number.isFinite(value)) && placement.rotation.every((value) => Number.isFinite(value))
-    && Math.abs(size - 1) <= PLACEMENT_QUATERNION_TOLERANCE;
+    && withinMagnitude(size - 1, PLACEMENT_QUATERNION_TOLERANCE);
 }
 
 /** 保存形の四元数は `normalizeQuaternion` を通してあるので、長さ 1 からのずれはこの範囲に入る。 */

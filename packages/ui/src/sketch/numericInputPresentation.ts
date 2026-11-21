@@ -1,5 +1,5 @@
 /** 表示用の札と値の整形。入力の遷移・確定や文書の更新を持たない。 */
-import { DEFAULT_INCH_DENOMINATOR, isSamePoint, toDisplayLength, toFractionalInch, type LengthUnit } from '@pointercad/model';
+import { exceedsMagnitude, DEFAULT_INCH_DENOMINATOR, isSamePoint, toDisplayLength, toFractionalInch, type LengthUnit } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import { isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
 import type { CoordinateMode } from './numericInputTools.js';
@@ -115,7 +115,7 @@ export function exactFractionalInchText(millimeters: number): string | null {
   const steps = toDisplayLength(millimeters, 'inch') * DEFAULT_INCH_DENOMINATOR;
   if (!Number.isFinite(steps)) return null;
   const rounded = Math.round(steps);
-  if (Math.abs(steps - rounded) > FRACTIONAL_INCH_STEP_TOLERANCE || rounded % DEFAULT_INCH_DENOMINATOR === 0) return null;
+  if (exceedsMagnitude(steps - rounded, FRACTIONAL_INCH_STEP_TOLERANCE) || rounded % DEFAULT_INCH_DENOMINATOR === 0) return null;
   return toFractionalInch(millimeters);
 }
 

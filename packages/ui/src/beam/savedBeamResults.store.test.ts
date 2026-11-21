@@ -25,7 +25,7 @@ function documentWithBeam(): AssemblyDocument {
   return { ...document, beamAnalysisInputs: { schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'standard-members', definition }] } };
 }
 
-function savedResult(document: AssemblyDocument): SavedAnalysisResult {
+function savedResult(document: AssemblyDocument): Extract<SavedAnalysisResult, { readonly kind: BeamAnalysisResult['kind'] }> {
   const result: BeamAnalysisResult = { kind: 'oofem-linear-beam-3d', model: 'linear-timoshenko-isotropic',
     analysisId: ANALYSIS_ID, analysisRevision: 2, source: { documentId: document.id, documentRevision: 1, geometryRevision: 'saved' },
     inputSha256: 'a'.repeat(64), nodes: [], elements: [], structuralCertification: false,

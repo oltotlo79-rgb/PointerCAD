@@ -1,4 +1,5 @@
 /** 選択境界の始端・幅・総深さから、外側へ抜ける矩形/半円先端の工具輪郭を作る。 */
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { addVec3, crossVec3, distanceVec3, dotVec3, lengthVec3, normalizeVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import type { SheetGeometryResult } from './panelGeometry.js';
 import type { ReliefBoundary } from './reliefIntersections.js';
@@ -7,7 +8,7 @@ export function sheetReliefProfile(edge: { readonly from: Vec3; readonly to: Vec
   position: number, width: number, depth: number, shape: 'rectangle' | 'slot', featureId: string): SheetGeometryResult<readonly ReliefBoundary[]> {
   const length = distanceVec3(edge.from, edge.to);
   if (![length, position, width, depth, ...normal].every(Number.isFinite) || Math.min(length, width, depth) <= 1e-7 || position < 0 || position > length
-    || Math.abs(lengthVec3(normal) - 1) > 1e-10 || Math.abs(dotVec3(subVec3(edge.to, edge.from), normal)) > 1e-7)
+    || exceedsMagnitude(lengthVec3(normal) - 1, 1e-10) || exceedsMagnitude(dotVec3(subVec3(edge.to, edge.from), normal), 1e-7))
     return { ok: false, message: '切欠きの中心は縁の上に置き、幅と深さは正の長さで指定してください。' };
   if (shape === 'slot' && depth < width / 2)
     return { ok: false, message: '長穴の深さは、先端の半径（幅の半分）以上にしてください。' };

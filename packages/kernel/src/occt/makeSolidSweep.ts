@@ -1,3 +1,4 @@
+import { belowMagnitude } from './tolerances.js';
 import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
 import type {
   OpenCascadeInstance,
@@ -419,7 +420,7 @@ function keepNearestChunk(
       continue;
     }
     // 接するだけの配置で出る丸めの残りかす(体積のほとんど無い塊)は数えない。
-    if (Math.abs(measureVolume(oc, subShape)) < MIN_SOLID_VOLUME) {
+    if (belowMagnitude(measureVolume(oc, subShape), MIN_SOLID_VOLUME)) {
       continue;
     }
     const advance = advanceOfCentre(oc, subShape, basePoint, direction);
@@ -492,7 +493,7 @@ export function makeExtrudeSolid(
     // 断面と同じ平面へ押し出すと OCCT は成功を返すが、体積 0 の潰れた形になる。
     // 傾きや切り取りの前に見ておくと、潰れた形を相手にした無駄な計算をしないで済む。
     // 面の向きが裏返っている断面では符号が負になり得るので絶対値で見る。
-    if (Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME) {
+    if (belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME)) {
       throw new Error('押し出しても厚みが出ませんでした。長さを大きくしてください。');
     }
 
@@ -528,7 +529,7 @@ export function makeExtrudeSolid(
     // 作り変えた形だけ measureVolume をもう一度呼ぶ。体積を測るのは安くない
     // (面 26 枚の板で 1 回 7.5〜11ms。booleanOp.ts の BooleanResult の注釈)ので、
     // 角柱のまま何も変えていないときは上で測った結果をそのまま信じる。
-    if (reshaped && Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME) {
+    if (reshaped && belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME)) {
       throw new Error('押し出しても厚みが出ませんでした。長さを大きくしてください。');
     }
 
@@ -593,7 +594,7 @@ export function makeRevolveSolid(
     }
 
     // 軸が断面の平面に直交していると、OCCT は成功を返すが体積 0 の形になる(2026-09-03 実測)。
-    if (Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME) {
+    if (belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME)) {
       throw new Error('回しても厚みが出ませんでした。軸と断面の向きを見直してください。');
     }
 

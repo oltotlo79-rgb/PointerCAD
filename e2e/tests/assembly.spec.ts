@@ -15,6 +15,7 @@ import {
   twoBoxAssemblyFile,
 } from './assemblyTestSupport.js';
 import { beginRecompute, waitForRecompute, waitForRecomputeOutcome } from './recompute.js';
+import { commitPlacePartDialog, startNewAssemblyCapture } from './assemblyCaptureSupport.js';
 import { disableFilePickers } from './filePickers.js';
 
 
@@ -153,6 +154,37 @@ async function redoAndWait(page: Page): Promise<void> {
 test.describe('P7 アセンブリの配置と基本操作', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
   test.afterEach(async ({ page }) => { await resetAssemblyFileGateway(page); });
+
+  test('組立で作る空の部品を取り消し、確定した配置を元に戻してやり直す', async ({ page }) => {
+    await page.goto('/');
+    await startNewAssemblyCapture(page);
+    await installAssemblyFileGateway(page, { parts: [{ fileName: '箱.pcad', bytes: boxPartFile() }] });
+    await placeQueuedPart(page, ['', '', '']);
+    const rows = componentRows(page);
+    await expect(rows).toHaveCount(1);
+
+    await chooseComponentAction(page, '部品を作る');
+    const dialog = page.getByRole('dialog', { name: '部品を置く位置' });
+    await expect(dialog).toBeVisible();
+    const x = dialog.getByRole('textbox', { name: /^X/u });
+    await expect(x).toHaveValue('0');
+    await x.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(rows).toHaveCount(1);
+
+    await chooseComponentAction(page, '部品を作る');
+    await expect(dialog).toBeVisible();
+    await commitPlacePartDialog(page, dialog);
+    await expect(rows).toHaveCount(2);
+    const created = rows.filter({ hasText: '部品1:1' });
+    await expect(created).toHaveAttribute('aria-pressed', 'true');
+    await undoAndWait(page);
+    await expect(rows).toHaveCount(1);
+    await expect(created).toHaveCount(0);
+    await redoAndWait(page);
+    await expect(rows).toHaveCount(2);
+    await expect(created).toHaveCount(1);
+  });
 
   test('空状態、原点・式配置、各Undo、保存往復、見分けられる同じ箱50個', async ({ page }, testInfo) => {
     const errors: string[] = [];

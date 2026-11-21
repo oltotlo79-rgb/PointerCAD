@@ -36,6 +36,7 @@
  * 変えると外れやすい**——外れたときは対象を消さずに理由を返す(この関数の約束)。
  */
 
+import { withinMagnitude } from '../../numericTolerance.js';
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import type { MateSubShapeGeometry } from '../../kernelBridge.js';
 import { WORK_PLANES, WORLD_AXIS_DIRECTIONS } from '../../sketch/planeMath.js';
@@ -174,7 +175,7 @@ function isFinitePoint(point: Vec3): boolean {
 /** 円の辺が全周か(重心が中心と一致するのは全周のときだけ)。 */
 function isFullCircle(length: number, radius: number): boolean {
   const full = 2 * Math.PI * radius;
-  return Math.abs(length - full) <= CIRCLE_LENGTH_TOLERANCE_RATIO * full;
+  return withinMagnitude(length - full, CIRCLE_LENGTH_TOLERANCE_RATIO * full);
 }
 
 /**

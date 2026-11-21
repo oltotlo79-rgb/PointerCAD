@@ -1,4 +1,5 @@
 /** 軸に平行な展開輪郭を、厳密な円弧断面の押し出しで構築する。 */
+import { exceedsMagnitude } from './tolerances.js';
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
@@ -15,7 +16,7 @@ function stripsOf(loops: readonly (readonly CurveSpec[])[]): readonly Strip[] | 
   const segments: Extract<CurveSpec, { kind: 'segment' }>[] = [];
   for (const loop of loops) for (const curve of loop) {
     if (curve.kind !== 'segment') return null;
-    if (Math.abs(curve.from[0] - curve.to[0]) > AXIS_TOLERANCE_MM && Math.abs(curve.from[1] - curve.to[1]) > AXIS_TOLERANCE_MM) return null;
+    if (exceedsMagnitude(curve.from[0] - curve.to[0], AXIS_TOLERANCE_MM) && exceedsMagnitude(curve.from[1] - curve.to[1], AXIS_TOLERANCE_MM)) return null;
     segments.push(curve);
   }
   const coordinates = [...new Set(segments.flatMap((edge) => [edge.from[0], edge.to[0]]))].sort((a,b) => a-b);
@@ -62,7 +63,7 @@ export function tryRectilinearBend(oc: OpenCascadeInstance, input: SheetMetalCur
     const joined = parts.length > 1 ? keep(unionShapes(oc, parts.map((part) => part.shape))) : null;
     const shape = joined?.shape ?? parts[0].shape, volume = joined?.volume ?? measureVolume(oc, shape);
     const expected = flatArea * input.thickness * (input.radius + input.thickness / 2) / input.neutralRadius;
-    if (!isValidShape(oc, shape) || !Number.isFinite(volume) || Math.abs(volume-expected) > Math.max(1e-7, expected * 1e-10))
+    if (!isValidShape(oc, shape) || !Number.isFinite(volume) || exceedsMagnitude(volume-expected, Math.max(1e-7, expected * 1e-10)))
       throw new Error('曲げ部分の輪郭と厚みが一致しません。');
     return { shape, delete: release };
   } catch (error) { release(); throw error; }

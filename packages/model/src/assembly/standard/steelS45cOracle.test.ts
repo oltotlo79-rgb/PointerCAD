@@ -92,21 +92,20 @@ describe('independent S45C product and treatment oracle', () => {
   });
 
   it.each(S45C_REJECTED_SECTIONS)('rejects S45C / %s with the independent clause and W1 reason code',
-    (catalog, code, clause) => {
+    (catalog, code) => {
       for (const condition of ['brightBar-heatTreatmentUnspecified', 'hotRolled-heatTreatmentUnspecified', 'QT']) {
         const rule = s45cProductRule(catalog, condition, 'JIS G 4051');
         if (rule.allowed) throw new Error(`Unexpected S45C permission: ${catalog}`);
         expect(rule.reasonCode).toBe(code);
-        expect(rule.reason).toContain('JIS G 4051');
-        expect(rule.reason).toContain('機械構造用炭素鋼鋼材');
-        expect(rule.reason).toContain(clause);
+        // 理由の文(JIS G 4051・機械構造用炭素鋼鋼材・箇条・協定品を含む事)は、作った文として ui の steelRejectionMessages.test.ts が見る。
+        expect(rule.reason).toEqual({ key: catalog === 'steelPipe' ? 'assembly.steel.reason.s45cPipe'
+          : 'assembly.steel.reason.s45cRolledSection', parameters: {} });
         if (catalog !== 'iBeam') {
           expect(rule).toBe(steelGradeRule('S45C', catalog));
           expect(steelProducts('S45C', catalog)).toEqual([]);
         } else {
           expect(rule).toBe(steelGradeRule('S45C', 'hBeam'));
         }
-        if (catalog !== 'steelPipe') expect(rule.reason).toContain('協定品');
       }
     });
 

@@ -18,3 +18,8 @@ export function belowMagnitude(value: number, bound: number): boolean {
 export function exceedsMagnitude(value: number, bound: number): boolean {
   return value > bound || value < -bound;
 }
+
+/** |value| ≥ bound。NaN を含む場合は偽。 */
+export function magnitudeAtLeast(value: number, bound: number): boolean {
+  return value >= bound || value <= -bound;
+}

@@ -1,3 +1,4 @@
+import { belowMagnitude, withinMagnitude } from './tolerances.js';
 import { crossVec, dotVec as dot, distanceVec as distance } from './sketchCorner.js';
 import { LINEAR_TOLERANCE_MM, nearlyEqual } from './nearlyEqual.js';
 import type {
@@ -189,7 +190,7 @@ function assertOrthogonalNeighbours(signatures: readonly FaceSignature[], adjace
     const neighbour = signatures[index];
     if (neighbour === undefined || neighbour.direction === null) throw new Error(FACE_OFFSET_ADJACENT_MESSAGE);
     const ok = neighbour.kind === 'plane'
-      ? Math.abs(dot(neighbour.direction, normal)) <= ANGULAR_TOLERANCE
+      ? withinMagnitude(dot(neighbour.direction, normal), ANGULAR_TOLERANCE)
       : neighbour.kind === 'cylinder' && crossLength(neighbour.direction, normal) <= ANGULAR_TOLERANCE;
     if (!ok) throw new Error(FACE_OFFSET_ADJACENT_MESSAGE);
   }
@@ -237,7 +238,7 @@ export function editSolidFace(
   tables: SubShapeTables,
   input: FaceOffsetInput,
 ): FaceOffsetResult {
-  if (!Number.isFinite(input.offset) || Math.abs(input.offset) < MIN_FACE_OFFSET_MM) {
+  if (!Number.isFinite(input.offset) || belowMagnitude(input.offset, MIN_FACE_OFFSET_MM)) {
     throw new Error(FACE_OFFSET_DISTANCE_MESSAGE);
   }
   if (target.IsNull() || shapeBodyKind(oc, target) !== 'solid') throw new Error(OPEN_FACES_NOT_SUPPORTED);

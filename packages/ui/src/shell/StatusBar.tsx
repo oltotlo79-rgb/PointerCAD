@@ -463,7 +463,7 @@ export function StatusBar(): React.JSX.Element {
     : `${t(`file.recovery.${recoveryState.stage}`)}${recoveryState.detail === undefined ? '' : ` ${recoveryState.detail}`}`;
 
   return (
-    <footer className={className}>
+    <footer data-guide-id="statusBar" className={className}>
       {/* 開いているファイルの名前。区画は増やさず、状況の1文の左へ小さく置く。未保存は * とツールチップで伝える(点検の指摘 1)。 */}
       <span className="pcad-statusbar__file" title={unsaved ? t('file.unsavedChanges') : fileLabel}
         style={statusBarSlotStyle('file')}>

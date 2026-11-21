@@ -29,6 +29,7 @@ import type {
 } from '@pointercad/model';
 import { rigidGroupsOf } from '@pointercad/model';
 
+import { failureMessage } from '../i18n/failureMessage.js';
 import type { MessageKey } from '../i18n/t.js';
 
 /** 束(節)の種類。行の `key` の接頭辞にもなる。 */
@@ -329,7 +330,7 @@ function componentRowsOf(
 ): readonly AssemblyTreeRow[] {
   const messages = new Map<string, string>();
   for (const error of diagnosis?.errors ?? []) {
-    if (!messages.has(error.componentId)) messages.set(error.componentId, error.message);
+    if (!messages.has(error.componentId)) messages.set(error.componentId, failureMessage(error.text));
   }
   // 2 部品以上がそろった組だけを締結の印にする(1 つだけ残った組は何も固定していない)。
   const groups = rigidGroupsOf(assembly);

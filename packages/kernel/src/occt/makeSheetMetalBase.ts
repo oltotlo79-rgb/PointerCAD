@@ -1,4 +1,5 @@
 /** 外周と独立した内周から、一定厚の板金基板を作る。 */
+import { exceedsMagnitude, withinMagnitude } from './tolerances.js';
 import type { OpenCascadeInstance, TopoDS_Face, TopoDS_Shape, TopoDS_Wire } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
@@ -39,7 +40,7 @@ function samePlane(first: PlaneFrame, second: PlaneFrame): boolean {
   const alignment = first.normal[0] * second.normal[0] + first.normal[1] * second.normal[1] + first.normal[2] * second.normal[2];
   const offset = first.normal.reduce((sum, value, index) => sum + value * (second.point[index] - first.point[index]), 0);
   return Number.isFinite(alignment) && Number.isFinite(offset)
-    && Math.abs(Math.abs(alignment) - 1) <= 1e-10 && Math.abs(offset) <= GEOMETRY_TOLERANCE_MM;
+    && withinMagnitude(Math.abs(alignment) - 1, 1e-10) && withinMagnitude(offset, GEOMETRY_TOLERANCE_MM);
 }
 
 /** 各穴は外周の内部へ完全に入り、外周・他の穴に触れないことを実形状で確認する。 */
@@ -51,8 +52,8 @@ export function makeSheetMetalBase(oc: OpenCascadeInstance, input: SheetMetalBas
   try {
     const outer = keep(makePlanarFace(oc, input.outer)), frame = planeFrame(oc, outer.face, keep);
     const normal = input.normal ?? frame.normal;
-    if (!normal.every(Number.isFinite) || Math.abs(Math.hypot(...normal) - 1) > 1e-10
-      || Math.abs(Math.abs(normal.reduce((sum, value, index) => sum + value * frame.normal[index], 0)) - 1) > 1e-10) {
+    if (!normal.every(Number.isFinite) || exceedsMagnitude(Math.hypot(...normal) - 1, 1e-10)
+      || exceedsMagnitude(Math.abs(normal.reduce((sum, value, index) => sum + value * frame.normal[index], 0)) - 1, 1e-10)) {
       throw new Error('板金基板の法線が輪郭の平面と一致しません。');
     }
     const thickness = input.reversed ? -input.thickness : input.thickness;
@@ -78,7 +79,7 @@ export function makeSheetMetalBase(oc: OpenCascadeInstance, input: SheetMetalBas
       } catch (error) {
         throw new Error(`${label}は基板の内側で、別の穴と重ならない位置に置いてください。`, { cause: error });
       }
-      if (Math.abs(intersectionVolume - toolVolume) > Math.max(1e-9, toolVolume * 1e-8)) {
+      if (exceedsMagnitude(intersectionVolume - toolVolume, Math.max(1e-9, toolVolume * 1e-8))) {
         throw new Error(`${label}が外周から出ているか、別の穴と重なっています。`);
       }
       shape = keep(booleanOp(oc, 'subtract', shape, tool)).shape;

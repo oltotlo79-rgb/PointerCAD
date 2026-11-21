@@ -1,4 +1,5 @@
 /** 板金の平面輪郭から矩形/長穴を引く。外周・穴を向き付きの解析曲線としてつなぎ直す。 */
+import { belowMagnitude } from '../numericTolerance.js';
 import { curveEnd, curvePointAt, curveStart } from '../sketch/intersectionMath.js';
 import { reverseSpline } from '../sketch/splineMath.js';
 import type { ResolvedCurve } from '../sketch/types.js';
@@ -34,7 +35,7 @@ export function subtractSheetRelief(panel: SheetPanelGeometry, tool: readonly Re
     const intersections = reliefIntersections(curve, edge, panel.normal); if (!intersections.ok) return intersections;
     for (const hit of intersections.value) { sourceCuts[i].push(hit.source); toolCuts[j].push(hit.tool); }
   }
-  const seed: Vec3 = Math.abs(panel.normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const seed: Vec3 = belowMagnitude(panel.normal[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
   const ray = normalizeVec3(crossVec3(seed, panel.normal)), up = crossVec3(panel.normal, ray);
   const insideSource = (point: Vec3): SheetGeometryResult<boolean> => {
     const exterior = sheetLoopContains(outer, point, ray, up); if (!exterior.ok || !exterior.value) return exterior;

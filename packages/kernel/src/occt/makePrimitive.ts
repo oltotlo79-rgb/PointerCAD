@@ -1,3 +1,4 @@
+import { belowMagnitude } from './tolerances.js';
 import { unitDirection as toUnit } from './normalizeDirection.js';
 /**
  * 基本形状(球・箱・円柱・円錐・トーラス、FR-429)。
@@ -415,7 +416,7 @@ export function makePrimitive(oc: OpenCascadeInstance, spec: PrimitiveStepSpec, 
     let origins: CurrentOriginIndex | undefined;
     const shape = buildPrimitiveShape(oc, spec, keep, featureId, (value) => { origins = value; });
 
-    if (!hasSolid(oc, shape) || Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3) {
+    if (!hasSolid(oc, shape) || belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME_MM3)) {
       throw new Error(NOT_SOLID_MESSAGE);
     }
     if (!isValidShape(oc, shape)) {

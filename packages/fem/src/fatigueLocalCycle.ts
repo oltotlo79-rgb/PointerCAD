@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
@@ -119,7 +120,7 @@ function readMaterial(value: unknown): StrainLifeMaterial | LocalCycleError {
 function readNumber(value: Record<string, unknown>, key: string, limit: number): number | LocalCycleError {
   const number = value[key];
   if (!finite(number)) return fail('local-cycle-number', `cycle.${key}`);
-  if (Math.abs(number) > limit) return fail('local-cycle-bound', `cycle.${key}`);
+  if (exceedsMagnitude(number, limit)) return fail('local-cycle-bound', `cycle.${key}`);
   return number;
 }
 const failed = (value: number | LocalCycleError): value is LocalCycleError => typeof value !== 'number';

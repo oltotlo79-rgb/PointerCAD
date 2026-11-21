@@ -96,6 +96,7 @@ import {
   commitSphereGridPoint,
   selectedSphereFeature,
 } from '../sketch/sketchCommands.js';
+import { pushPullTarget, type PushPullActionId } from './pushPull.js';
 import { faceRefById, findSketchFeatureAt, selectedExtrudeProfiles } from './sketchRefs.js';
 import { parseSubShapeId, selectedSubShapeRefs, subShapeRefOf, type SubShapeBody } from './subShapeSelection.js';
 
@@ -188,8 +189,9 @@ export type SolidCommandOutcome =
  * **「測る」(`MeasureToolId`)も入る。** 立体を作る操作ではないが、
  * 「選んでから押す/押せない理由を持つ」点はまったく同じで、ツールバーのボタンが
  * 押せる条件を引く口(`solidToolReadiness`)を 1 つにしておきたいため。
+ * 「押し引き」(`PushPullActionId`。M-05 4-1a)も同じ理由で入る。道具ではなく、振り分け先の道具の条件を引く。
  */
-export type SolidActionId = SolidToolId | BooleanOperation | MeasureToolId;
+export type SolidActionId = SolidToolId | BooleanOperation | MeasureToolId | PushPullActionId;
 
 /** その操作がいま押せるか。押せないときは理由を添える(NFR-UX-5)。 */
 export interface SolidToolReadiness {
@@ -681,6 +683,12 @@ export function solidToolReadiness(
   switch (tool) {
     case 'blend':
       return blendReadiness({ document, selection, bodies });
+    // 押し引き(M-05 4-1a・4-1b)。振り分け先の道具の押せる条件をそのまま返す(判定を 2 か所に書かない)。穴の径の欄へ移すだけの時は押せる。
+    case 'pushPull': {
+      const target = pushPullTarget(document, selection, bodies);
+      if (target.kind === 'refused') return { ready: false, reasonKey: target.reasonKey };
+      return target.kind === 'tool' ? solidToolReadiness(document, selection, target.tool, bodies) : READY;
+    }
     case 'extrude':
     case 'revolve': {
       const face = selectedFaceRef(document, selection);

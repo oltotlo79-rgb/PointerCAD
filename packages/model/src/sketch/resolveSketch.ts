@@ -16,6 +16,7 @@
  * 張れ、乗らなければ `notPlanar` で断る。
  */
 
+import { withinMagnitude } from '../numericTolerance.js';
 import type { ResolvedSubShape } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { faceHolesError } from './faceHoles.js';
@@ -197,7 +198,7 @@ export function isPlanar(points: readonly Vec3[]): boolean {
   }
   const origin = points[0];
   return points.every(
-    (point) => Math.abs(dotVec3(subVec3(point, origin), normal)) <= SKETCH_TOLERANCE_MM,
+    (point) => withinMagnitude(dotVec3(subVec3(point, origin), normal), SKETCH_TOLERANCE_MM),
   );
 }
 
@@ -262,7 +263,7 @@ function resolveRectangleCurves(
 ): CurvesOutcome {
   const [u1, v1] = worldToPlane(plane, corner1);
   const [u2, v2] = worldToPlane(plane, corner2);
-  if (Math.abs(u2 - u1) <= SKETCH_TOLERANCE_MM || Math.abs(v2 - v1) <= SKETCH_TOLERANCE_MM) {
+  if (withinMagnitude(u2 - u1, SKETCH_TOLERANCE_MM) || withinMagnitude(v2 - v1, SKETCH_TOLERANCE_MM)) {
     return { ok: false, error: error(featureId, 'degenerate', '矩形の幅・高さが 0 です。') };
   }
   // 対角 2 点から、作図面の軸に平行な 4 頂点を反時計回りに並べる。
@@ -693,7 +694,7 @@ function withOverriddenEndpoints(
   // 掃く量を [0, 2π) へ畳んでから、保存された向きが負なら 1 周ぶん引いて (−2π, 0] にする。
   const folded = (((rawEnd - startAngle) % FULL_TURN) + FULL_TURN) % FULL_TURN;
   const sweep = arc.endAngle >= arc.startAngle ? folded : folded - FULL_TURN;
-  if (Math.abs(sweep) <= FULL_TURN_EPSILON) {
+  if (withinMagnitude(sweep, FULL_TURN_EPSILON)) {
     return arc;
   }
   return { ...arc, startAngle, endAngle: startAngle + sweep };
@@ -1002,7 +1003,7 @@ function resolveArcStep(feature: SketchArcFeature, step: SketchFeatureStep): voi
   }
   const startAngle = degreesToRadians(feature.startAngle.value);
   const endAngle = degreesToRadians(feature.endAngle.value);
-  if (Math.abs(endAngle - startAngle) <= FULL_TURN_EPSILON) {
+  if (withinMagnitude(endAngle - startAngle, FULL_TURN_EPSILON)) {
     state.errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
     return;
   }
@@ -1208,7 +1209,7 @@ function resolveEllipseStep(feature: SketchEllipseFeature, step: SketchFeatureSt
   }
   const startAzimuth = degreesToRadians(feature.startAngle.value);
   const endAzimuth = degreesToRadians(feature.endAngle.value);
-  if (Math.abs(endAzimuth - startAzimuth) <= FULL_TURN_EPSILON) {
+  if (withinMagnitude(endAzimuth - startAzimuth, FULL_TURN_EPSILON)) {
     state.errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
     return;
   }

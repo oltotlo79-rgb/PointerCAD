@@ -6,6 +6,7 @@ import { prepareCadBeamJointContact, type BeamJointContactInput, prepareCadBeamW
 import { prepareCadBeamWeldSpanContact, type BeamWeldSpanContactInput } from '@pointercad/fem';
 import type { BeamDefinition } from './beamSession.js';
 import type { BeamSourceSnapshot } from './beamSource.js';
+import { issueMessage } from '../i18n/failureMessage.js';
 import { prepareCadBeamJointInitialStrain, type BeamJointInitialStrainInput } from '@pointercad/fem';
 import { prepareCadBeamFrictionContact, type BeamFrictionContactInput, type FrictionSolveOptions } from '@pointercad/fem';
 
@@ -37,7 +38,7 @@ function prepareContact(source: BeamSourceSnapshot, definition: StandardBeamCont
         definition, definition.weldLayers, context) };
     } catch (error) {
       return { ok: false, issue: { code: 'weld-span-input', path: 'weldLayers',
-        message: error instanceof Error ? error.message : 'Weld span input could not be prepared' } };
+        message: error instanceof Error ? issueMessage(error) : 'Weld span input could not be prepared' } };
     }
   }
   if (definition.initialStrain !== undefined) {
@@ -45,7 +46,7 @@ function prepareContact(source: BeamSourceSnapshot, definition: StandardBeamCont
       return { ok: true, kind: 'joint-initial-strain', input: prepareCadBeamJointInitialStrain(source.document, definition, context) };
     } catch (error) {
       return { ok: false, issue: { code: 'initial-strain-input', path: 'initialStrain',
-        message: error instanceof Error ? error.message : 'Joint initial strain could not be prepared' } };
+        message: error instanceof Error ? issueMessage(error) : 'Joint initial strain could not be prepared' } };
     }
   }
   if (definition.axialBolts !== undefined && definition.weldLayers !== undefined) {
@@ -54,7 +55,7 @@ function prepareContact(source: BeamSourceSnapshot, definition: StandardBeamCont
         definition, definition.axialBolts, definition.weldLayers, context) };
     } catch (error) {
       return { ok: false, issue: { code: 'joint-input', path: '$',
-        message: error instanceof Error ? error.message : 'Combined joint input could not be prepared' } };
+        message: error instanceof Error ? issueMessage(error) : 'Combined joint input could not be prepared' } };
     }
   }
   if (definition.weldLayers !== undefined) {
@@ -62,7 +63,7 @@ function prepareContact(source: BeamSourceSnapshot, definition: StandardBeamCont
       return { ok: true, kind: 'weld-contact', input: prepareCadBeamWeldContact(source.document, definition, definition.weldLayers, context) };
     } catch (error) {
       return { ok: false, issue: { code: 'weld-input', path: 'weldLayers',
-        message: error instanceof Error ? error.message : 'Effective weld layer input could not be prepared' } };
+        message: error instanceof Error ? issueMessage(error) : 'Effective weld layer input could not be prepared' } };
     }
   }
   if (definition.axialBolts !== undefined) {
@@ -70,7 +71,7 @@ function prepareContact(source: BeamSourceSnapshot, definition: StandardBeamCont
       return { ok: true, kind: 'bolt-contact', input: prepareCadBeamBoltContact(source.document, definition, definition.axialBolts, context) };
     } catch (error) {
       return { ok: false, issue: { code: 'bolt-input', path: 'axialBolts',
-        message: error instanceof Error ? error.message : 'Axial bolt input could not be prepared' } };
+        message: error instanceof Error ? issueMessage(error) : 'Axial bolt input could not be prepared' } };
     }
   }
   const geometryDefinition: StandardBeamDefinition = {
@@ -141,7 +142,7 @@ export function prepareBeamAnalysis(source: BeamSourceSnapshot, definition: Beam
     ...(source.jointOccurrence === undefined ? {} : { jointOccurrence: source.jointOccurrence }) };
   if (definition.schema === 'pointercad-standard-beam/7') {
     try { return { ok: true, kind: 'friction', input: prepareCadBeamFrictionContact(source.document, definition, context), solverOptions: { ...definition.solverOptions } }; }
-    catch (error) { return { ok: false, issue: { code: 'invalid-input', path: 'definition', message: error instanceof Error ? error.message : String(error) } }; }
+    catch (error) { return { ok: false, issue: { code: 'invalid-input', path: 'definition', message: error instanceof Error ? issueMessage(error) : String(error) } }; }
   }
   // Impact (schema 6) has its own route and is never prepared as another analysis.
   if (definition.schema === 'pointercad-standard-beam/6') return prepareImpact(source, definition, context);

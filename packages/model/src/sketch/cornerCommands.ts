@@ -33,6 +33,7 @@
  * すべて純関数で、渡された文書を書き換えず新しい文書を返す。DOM には触れない。
  */
 
+import { withinMagnitude } from '../numericTolerance.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 
 import {
@@ -409,7 +410,7 @@ function sharedEndpoint(
 /** 角の 3 点が作図面の上に乗っているか(浮いていると円弧が線に接しない)。 */
 function isOnPlane(plane: WorkPlane, points: readonly Vec3[]): boolean {
   return points.every(
-    (point) => Math.abs(dotVec3(subVec3(point, plane.origin), plane.normal)) <= SKETCH_TOLERANCE_MM,
+    (point) => withinMagnitude(dotVec3(subVec3(point, plane.origin), plane.normal), SKETCH_TOLERANCE_MM),
   );
 }
 

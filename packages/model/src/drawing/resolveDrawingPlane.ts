@@ -1,3 +1,4 @@
+import { belowMagnitude } from '../numericTolerance.js';
 import { drawingViewBasis, type DrawingDocument, type DrawingPlaneDefinition, type Vector3 } from '@pointercad/drawing';
 import { evaluateExpression } from '@pointercad/expression';
 import { resolvePlaneSpec, type PlaneOutcome, type PlaneResolveContext, type ResolvedPlane } from '../geometry/planeSpec.js';
@@ -48,7 +49,7 @@ export function resolveDrawingPlane(definition: DrawingPlaneDefinition, document
   const resolved = resolveDimensionTarget(definition.target, document, context);
   if (resolved?.kind !== 'plane') return { ok: false, reason: 'notFlatFace', message: '参照している平らな面が見つかりません。面を選び直してください。' };
   // 解決済みの面を作図面として共有解決器へ渡す。部分形状参照の評価は上で一回だけ行う。
-  const basis = drawingViewBasis({ normal: resolved.normal, xDir: Math.abs(resolved.normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0] });
+  const basis = drawingViewBasis({ normal: resolved.normal, xDir: belowMagnitude(resolved.normal[0], 0.9) ? [1, 0, 0] : [0, 1, 0] });
   if (basis === null) return { ok: false, reason: 'notFlatFace', message: 'この面の向きを決められません。' };
   const plane: ResolvedPlane = { origin: resolved.point, normal: basis.normal, axisU: basis.x,
     axisV: [basis.normal[1] * basis.x[2] - basis.normal[2] * basis.x[1],

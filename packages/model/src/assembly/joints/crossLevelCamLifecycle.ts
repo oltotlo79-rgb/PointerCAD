@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import type { ResolveMateTargetOptions } from '../constraints/mateTargets.js';
@@ -231,7 +232,7 @@ export function* solveCrossLevelCamFollowSteps(input: CrossLevelCamFollowInput,
     ...(input.targetOptions === undefined ? {} : { targetOptions: input.targetOptions }),
     request: { jointId: cam.child.jointId, coordinate: 'translation', value: target } }, budget));
   if (!child.ok) return { ok: false, couplingId: cam.id, code: 'child-solve-failed' };
-  if (child.driven.atLimit || Math.abs(child.driven.actual - target) > CROSS_LEVEL_CAM_TOLERANCE_MM) {
+  if (child.driven.atLimit || exceedsMagnitude(child.driven.actual - target, CROSS_LEVEL_CAM_TOLERANCE_MM)) {
     return { ok: false, couplingId: cam.id, code: 'child-at-limit' };
   }
   yield* work.boundary();

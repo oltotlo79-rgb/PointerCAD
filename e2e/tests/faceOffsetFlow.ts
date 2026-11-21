@@ -259,28 +259,7 @@ export async function faceOffsetFlow(page: Page, info: TestInfo, entry: string):
   });
 
   // 2) 関係のない貫通穴 φ6 を (10, 15) にあける(solid.spec.ts の穴の手順と同じ)。
-  await sketchTool(page, '点').click();
-  await fillFields(page, [...HOLE_CENTER]);
-  const beforeHoleCenter = await beginRecompute(page);
-  await commitPopover(page);
-  await cancelPopover(page);
-  // 点の作成も再計算を起こす。古い体積や入力欄の消失だけでは立体の面を拾えない。
-  await waitForRecompute(page, beforeHoleCenter);
-  await openToolMenu(page, '加工');
-  const holeButton = machiningTool(page, '穴');
-  await holeButton.click({ force: true });
-  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
-  await clickWorldPoint(page, [20, 15, 10]);
-  await expect(solidRowBox(page, '押し出し1')).toHaveClass(/pcad-tree__row--selected/);
-  await treeRow(page, '点1').click({ modifiers: ['Shift'] });
-  await openToolMenu(page, '加工');
-  await holeButton.click();
-  await expect(popoverTitle(page)).toHaveText('穴をあける');
-  await popover(page).getByRole('switch', { name: '貫通', exact: true }).click();
-  await commitPopover(page);
-  await expect(popover(page)).toHaveCount(0);
-  await expect(solidRow(page, '穴1')).toBeVisible();
-  await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+  await makeThroughHole(page);
 
   // 3) 「面の移動」を押すと選ぶものが「面」へ切り替わる。右の端面(x = 40)の中央を押してから、もう一度押す。
   await openToolMenu(page, '加工');
@@ -438,4 +417,123 @@ export async function faceOffsetFlow(page: Page, info: TestInfo, entry: string):
 
   expect(confirms).toEqual([]);
   expect(errors).toEqual([]);
+}
+
+/** solid.json の solidError.pushPullUnsupported(押し引きで振り分けられない選択の断り)。 */
+const PUSH_PULL_REASON = '押し引きでは、作図の面か閉じた領域、立体の面、立体の辺のどれか 1 種類を選んでから押してください。';
+
+/**
+ * 押し引き(M-05 4-1a・4-1b)。板(40×30×10)の右の端面を選んで「押し引き」を押すと、面の移動の入力欄が開き、
+ * 確定すると面の移動と同じ形・同じ行になる。立体そのものを選んでいる時は、何も開かずに理由を帯へ出す。
+ * 穴の内側の面(計算部が下穴の壁と名付けた面)を選んで押すと、入力欄は開かずに穴を選び、右の欄の「直径」へ焦点が移る。
+ * 裏づけ: 振り分けは solid/pushPull.ts の pushPullTarget、押した時の処理は shell/menus/solidToolActions.ts の runPushPull
+ * (振り分け先が押せれば openSolidInput、押せなければ理由だけ、穴の壁なら setSelection と requestFocus)。
+ * 焦点は shell/solidFieldFocus.ts の useSolidFieldFocus が PropertyPanel.tsx の SolidProperties の欄の focused を真にし、
+ * sketch/ExpressionField.tsx の効果が焦点を移して全選択する(そのまま打つと置き換わる)。穴の欄の並びは solidSummary.ts の holeFields。
+ * 名前は toolbar.json の toolbar.machining.pushPull。面を選ぶのは 3 キー(commandDefinitions.ts の selection.face)。
+ * 入力欄の題・既定の距離は上の faceOffsetFlow と同じ。
+ */
+export async function pushPullFlow(page: Page, entry: string): Promise<void> {
+  const errors = collectErrors(page);
+  await disableFilePickers(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(entry);
+  await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+  await drawRectangle(page, ['0', '0'], ['40', '30']);
+  await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+  await extrudeFace(page, '面1', null);
+  await solidRow(page, '押し出し1').click();
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+    timeout: KERNEL_TIMEOUT_MS,
+  });
+
+  // 立体そのもの(押し出し1)を選んでいる時は、何も開かずに理由だけを帯へ出す。
+  await openToolMenu(page, '加工');
+  await machiningTool(page, '押し引き').click({ force: true });
+  await expect(statusText(page)).toContainText(PUSH_PULL_REASON);
+  await expect(popover(page)).toHaveCount(0);
+
+  // 選ぶものを面にして、右の端面(x = 40)を押してから「押し引き」を押すと、面の移動の入力欄が開く。
+  await sketchTool(page, '選択').click();
+  await page.keyboard.press('3');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+  await clickWorldPoint(page, [40, 15, 5]);
+  await openToolMenu(page, '加工');
+  await machiningTool(page, '押し引き').click();
+  await expect(popoverTitle(page)).toHaveText('面を動かす');
+  await expect(popoverInputs(page).first()).toHaveValue('1');
+  await fillFields(page, ['5']);
+  await commitPopover(page);
+  await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
+  await expect(solidRow(page, '面の移動1')).toBeVisible();
+  await expectVolume(page, BOARD_VOLUME + 5 * END_FACE_AREA);
+
+  // 元に戻すは、面の移動の 1 段だけで戻る(押し引きは段を作らない)。
+  await sketchTool(page, '選択').click();
+  await page.keyboard.press('Control+z');
+  await expect(solidRow(page, '面の移動1')).toHaveCount(0);
+  await solidRow(page, '押し出し1').click();
+  await expectVolume(page, BOARD_VOLUME);
+
+  // 4-1b: 穴の内側の面を選んで押すと、入力欄は開かずに穴1を選び、右の欄の「直径」へ焦点が移る。そのまま打つと径が変わる。
+  await makeThroughHole(page);
+  // 「選択」の道具は選ぶものを立体へ戻す(sketchSlice.ts の setActiveTool → subShapeSelection.ts の selectionKindForTool の既定)。
+  // なので上の 4-1a の段と同じく、押した後に 3 キーで面へ切り替える。
+  await sketchTool(page, '選択').click();
+  await page.keyboard.press('3');
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+  await clickWorldPoint(page, HOLE_WALL_POINT);
+  await openToolMenu(page, '加工');
+  await machiningTool(page, '押し引き').click();
+  await expect(propertyField(page, '直径')).toBeFocused();
+  await expect(popover(page)).toHaveCount(0);
+  await expect(solidRowBox(page, '穴1')).toHaveClass(/pcad-tree__row--selected/);
+  await page.keyboard.type('8');
+  await expectVolume(page, BOARD_VOLUME - HOLE_8_THROUGH);
+
+  // 同じ焦点の頼み(store/viewSlice.ts の focusRequest)のもう 1 つの受け手: 3D の表示で Space を押すと、コマンドの欄へ焦点が移る
+  // (commandDefinitions.ts の commandLine.focus → commandRegistry.ts の focusCommandLine → shell/CommandLine.tsx の効果)。
+  await page.locator('canvas.pcad-viewport__canvas').focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('#pcad-command-line-input')).toBeFocused();
+  expect(errors).toEqual([]);
+}
+
+/**
+ * 穴の内側の面の 1 点。穴は中心 (10, 15)・半径 3・深さ 10(上面 z = 10)。既定の視点(homeViewProjection.ts の HOME_AZIMUTH -45°・
+ * HOME_ELEVATION、カメラは +X・-Y・+Z の側)から穴の口ごしに見えるのは、カメラと反対の側(-X・+Y の向き)の壁の、上面から約 3.7 までの帯。
+ * その帯の中ほど(上面から 2)を押す。
+ */
+const HOLE_WALL_POINT: readonly [number, number, number] = [10 - 3 / Math.SQRT2, 15 + 3 / Math.SQRT2, 8];
+/** 径を 8 に打ち直した貫通穴が板から取り除く量(π·4²·10)。 */
+const HOLE_8_THROUGH = Math.PI * 4 * 4 * 10;
+
+/**
+ * 板(押し出し1、40×30×10)に、貫通穴 φ6 を (10, 15) にあける(faceOffsetFlow の 2) と pushPullFlow が使う。
+ * 穴の径は入力欄の既定のまま(φ6)。点1 は、この手順で初めて作る点。
+ */
+async function makeThroughHole(page: Page): Promise<void> {
+  await sketchTool(page, '点').click();
+  await fillFields(page, [...HOLE_CENTER]);
+  const beforeHoleCenter = await beginRecompute(page);
+  await commitPopover(page);
+  await cancelPopover(page);
+  // 点の作成も再計算を起こす。古い体積や入力欄の消失だけでは立体の面を拾えない。
+  await waitForRecompute(page, beforeHoleCenter);
+  await openToolMenu(page, '加工');
+  const holeButton = machiningTool(page, '穴');
+  await holeButton.click({ force: true });
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+  await clickWorldPoint(page, [20, 15, 10]);
+  await expect(solidRowBox(page, '押し出し1')).toHaveClass(/pcad-tree__row--selected/);
+  await treeRow(page, '点1').click({ modifiers: ['Shift'] });
+  await openToolMenu(page, '加工');
+  await holeButton.click();
+  await expect(popoverTitle(page)).toHaveText('穴をあける');
+  await popover(page).getByRole('switch', { name: '貫通', exact: true }).click();
+  await commitPopover(page);
+  await expect(popover(page)).toHaveCount(0);
+  await expect(solidRow(page, '穴1')).toBeVisible();
+  await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
 }

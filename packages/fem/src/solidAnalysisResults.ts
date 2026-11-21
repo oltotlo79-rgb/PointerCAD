@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model/beam-analysis';
 import { createPrefixedError } from './valueGuards.js';
 import type { SolidAnalysisInput, SolidAnalysisResult, SolidVector3, SolidVector6 } from './solidAnalysisModel.js';
 import { SOLID_LIMITS, solidArray, solidNumber, solidRecord, solidStrainStress, solidTetGeometry,
@@ -8,7 +9,7 @@ const tolerance = 1e-8;
 const fail: (message: string) => never = createPrefixedError('solid-result');
 function near(actual: number, expected: number, scale: number, label: string): void {
   if (!Number.isFinite(actual) || !Number.isFinite(expected) || !Number.isFinite(scale)
-    || !(Math.abs(actual - expected) <= tolerance * Math.max(1e-300, scale))) fail(label);
+    || !(withinMagnitude(actual - expected, tolerance * Math.max(1e-300, scale)))) fail(label);
 }
 function vector6(value: unknown): SolidVector6 {
   const values = solidArray(value, 6, 6).map(solidNumber);

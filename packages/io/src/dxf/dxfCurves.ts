@@ -30,7 +30,7 @@
  * (`readDxf.ts`・`dxfToSketch.ts`)の仕事。
  */
 
-import { ellipseParameterToAzimuth } from '@pointercad/model';
+import { magnitudeAtLeast, ellipseParameterToAzimuth } from '@pointercad/model';
 
 import { DXF_UNSUPPORTED_FORMAT_MESSAGE } from './dxfTags.js';
 
@@ -293,7 +293,7 @@ export function arcToBulge(arc: DxfArcGeometry): number | null {
     throw new Error(DXF_UNSUPPORTED_FORMAT_MESSAGE);
   }
   const sweepDegrees = arc.endAngle - arc.startAngle;
-  if (Math.abs(sweepDegrees) >= FULL_TURN_DEGREES) {
+  if (magnitudeAtLeast(sweepDegrees, FULL_TURN_DEGREES)) {
     return null;
   }
   return normalizeZero(Math.tan(toRadians(sweepDegrees) / 4));

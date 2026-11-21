@@ -1,4 +1,4 @@
-import { analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryOptions,
+import { exceedsMagnitude, withinMagnitude, analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryOptions,
   type AnalysisBoundarySource, type SolidBody, type SubShapeRef } from '@pointercad/model';
 import { FemClient, type FemOptions } from './client.js';
 import { readSolidCadSavedInput, solidCadFaceKey, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
@@ -62,7 +62,7 @@ export function bindCadBoundaryIdentity(input: TetraMeshInput, context: CadTetra
     const length = Math.hypot(...cross);
     if (!Number.isFinite(length) || !(length > 0)) refuse('unsupported-boundary', 'invalid-boundary-normal');
     const normal: BoundaryVector = [cross[0] / length, cross[1] / length, cross[2] / length];
-    if (Math.abs(Math.hypot(...normal) - 1) > 1e-9) refuse('unsupported-boundary', 'invalid-boundary-normal: unit length required');
+    if (exceedsMagnitude(Math.hypot(...normal) - 1, 1e-9)) refuse('unsupported-boundary', 'invalid-boundary-normal: unit length required');
     return { triangleIndex, point: [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3],
       normal };
   };
@@ -99,7 +99,7 @@ export function bindCadBoundaryIdentity(input: TetraMeshInput, context: CadTetra
       for (const before of old.samples) {
         if (before.point.length !== 3 || before.normal.length !== 3
           || ![0, 1, 2].every(axis => Number.isFinite(before.point[axis]) && Number.isFinite(before.normal[axis]))
-          || !(Math.abs(Math.hypot(...before.normal) - 1) <= 1e-9)) {
+          || !(withinMagnitude(Math.hypot(...before.normal) - 1, 1e-9))) {
           refuse('unsupported-boundary', 'invalid-previous-normal: finite unit normal and position required');
         }
         let closest = face.samples[0], distance = Infinity;
@@ -232,7 +232,7 @@ export async function meshCadBoundary(client: Pick<FemClient, 'meshTetrahedra'>,
       || JSON.stringify(rebound.regions) !== JSON.stringify(prepared.regions)) {
       return { kind: 'failed', code: 'stale', message: 'CAD face provenance changed during native meshing' };
     }
-    if (Math.abs(completion.result.volumeMm3 - latest.body.volume) > latest.body.volume * 1e-10) {
+    if (exceedsMagnitude(completion.result.volumeMm3 - latest.body.volume, latest.body.volume * 1e-10)) {
       return { kind: 'failed', code: 'cad-volume', message: 'Native mesh volume differs from the current exact CAD solid' };
     }
     const quality = qualityLimits === undefined ? undefined : diagnoseTetraMeshQuality(completion.result, qualityLimits);

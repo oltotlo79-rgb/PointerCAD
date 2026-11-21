@@ -27,7 +27,7 @@
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
-  appendFeature,
+  belowMagnitude, appendFeature,
   isBaseWorkPlaneId,
   MAX_COPY_COUNT,
   MIN_COPY_COUNT,
@@ -261,12 +261,12 @@ function axisComponent(
   coefficientV: number,
   alongV: ExpressionValue,
 ): ExpressionValue {
-  const zeroU = Math.abs(coefficientU) < AXIS_COMPONENT_TOLERANCE;
-  const zeroV = Math.abs(coefficientV) < AXIS_COMPONENT_TOLERANCE;
-  if (Math.abs(coefficientU - 1) < AXIS_COMPONENT_TOLERANCE && zeroV) {
+  const zeroU = belowMagnitude(coefficientU, AXIS_COMPONENT_TOLERANCE);
+  const zeroV = belowMagnitude(coefficientV, AXIS_COMPONENT_TOLERANCE);
+  if (belowMagnitude(coefficientU - 1, AXIS_COMPONENT_TOLERANCE) && zeroV) {
     return alongU;
   }
-  if (Math.abs(coefficientV - 1) < AXIS_COMPONENT_TOLERANCE && zeroU) {
+  if (belowMagnitude(coefficientV - 1, AXIS_COMPONENT_TOLERANCE) && zeroU) {
     return alongV;
   }
   return expressionValueFromNumber(coefficientU * alongU.value + coefficientV * alongV.value);

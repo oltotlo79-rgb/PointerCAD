@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude } from '../numericTolerance.js';
 import { clipCurves, flattenRenderPath, LINE_DASH_PATTERNS, type AffineTransform2, type DrawingLayer,
   type DrawingLineType, type Point2, type RenderDocument, type RenderPath, type RenderPrimitive, type RenderText } from '@pointercad/drawing';
 import type { DrawingDxfEntity, DrawingDxfLineType, DrawingDxfOptions } from './drawingDxfTypes.js';
@@ -48,7 +49,7 @@ function aci(color: string): { readonly index: number; readonly approximate: boo
 function lineType(primitive: RenderPath): string | null {
   const dash = primitive.stroke?.dashMm ?? [];
   const type = typeIds.find((id) => LINE_DASH_PATTERNS[id].length === dash.length
-    && LINE_DASH_PATTERNS[id].every((value, index) => Math.abs(value - dash[index]) < 1e-9));
+    && LINE_DASH_PATTERNS[id].every((value, index) => belowMagnitude(value - dash[index], 1e-9)));
   return type === undefined ? null : typeNames[type];
 }
 function convex(points: readonly Point2[]): boolean {
@@ -56,7 +57,7 @@ function convex(points: readonly Point2[]): boolean {
   for (let index = 0; index < points.length; index += 1) {
     const a = points[index], b = points[(index + 1) % points.length], c = points[(index + 2) % points.length];
     const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
-    if (Math.abs(cross) < 1e-10) continue;
+    if (belowMagnitude(cross, 1e-10)) continue;
     if (sign !== 0 && Math.sign(cross) !== sign) return false;
     sign = Math.sign(cross);
   }
@@ -65,8 +66,8 @@ function convex(points: readonly Point2[]): boolean {
 function textEntity(text: RenderText, layer: string, color: number): DrawingDxfEntity | null {
   const m = text.transform, sx = Math.hypot(m[0], m[1]), sy = Math.hypot(m[2], m[3]);
   // R12 TEXTの通常字形で表せない鏡像・せん断を普通の文字に変えない。
-  if (!m.every(Number.isFinite) || sx <= 0 || Math.abs(sx - sy) > 1e-9
-    || Math.abs(m[0] * m[2] + m[1] * m[3]) > 1e-9 || m[0] * m[3] - m[1] * m[2] <= 0
+  if (!m.every(Number.isFinite) || sx <= 0 || exceedsMagnitude(sx - sy, 1e-9)
+    || exceedsMagnitude(m[0] * m[2] + m[1] * m[3], 1e-9) || m[0] * m[3] - m[1] * m[2] <= 0
     || text.clip !== null || !Number.isFinite(text.angle) || !Number.isFinite(text.metrics.sizeMm) || text.metrics.sizeMm <= 0) return null;
   const horizontal = text.anchor === 'middle' ? 1 : text.anchor === 'end' ? 2 : 0;
   const vertical = text.baseline === 'top' ? 3 : text.baseline === 'middle' ? 2 : text.baseline === 'bottom' ? 1 : 0;
@@ -82,7 +83,7 @@ function textOutlineTransform(text: RenderText): AffineTransform2 | null {
   const c = Math.cos(text.angle), s = Math.sin(text.angle);
   const transform = compose(text.transform, [c, s, -s, c,
     text.position[0] + c * dx - s * dy, text.position[1] + s * dx + c * dy]);
-  return transform.every(Number.isFinite) && Math.abs(transform[0] * transform[3] - transform[1] * transform[2]) > 1e-12 ? transform : null;
+  return transform.every(Number.isFinite) && exceedsMagnitude(transform[0] * transform[3] - transform[1] * transform[2], 1e-12) ? transform : null;
 }
 
 /** 用紙上の共通IRを既存のR12書き手へ渡す。新しいDXF実体を混ぜず、省略は件数で返す。 */

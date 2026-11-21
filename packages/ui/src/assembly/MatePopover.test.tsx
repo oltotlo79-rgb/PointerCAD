@@ -1,4 +1,4 @@
-import React, { isValidElement } from 'react';
+import React, { isValidElement, useEffect, useLayoutEffect } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPartDocument, EMPTY_PART_LIBRARY, resolveAssembly, resolvePart } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,12 @@ import { MatePopover } from './MatePopover.js';
 import { focusFirstTextField } from './popoverFocus.js';
 import { t } from '../i18n/t.js';
 import { addMateTarget, startJoint, startMate, updateMateSource } from './mateActions.js';
+import type * as ImportedReactTypes from 'react';
+
+vi.mock('react', async importOriginal => {
+  const react = await importOriginal<typeof ImportedReactTypes>();
+  return { ...react, useLayoutEffect: vi.fn(react.useLayoutEffect), useEffect: vi.fn(react.useEffect) };
+});
 
 interface KeyInput {
   readonly key: string;
@@ -93,6 +99,53 @@ describe('MatePopover real React handler and store (node, not DOM)', () => {
 });
 
 describe('合致の窓の選ぶ欄と最初の焦点(UI の点検の指摘 9)', () => {
+  it.each(['distance', 'ball'] as const)('%s を開くと欄または箱へ入り、Esc で開いた元へ戻る', kind => {
+    if (kind === 'ball') startJoint('ball');
+    // 焦点を受けた物を順に積む(activeElement は最後の 1 つ)。this を変数へ入れない(no-this-alias)。
+    const focused: FocusNode[] = [];
+    class FocusNode {
+      readonly isConnected = true;
+      focus(): void { focused.push(this); }
+    }
+    const opener = new FocusNode();
+    const field = Object.assign(new FocusNode(), { select: vi.fn() });
+    const panel = Object.assign(new FocusNode(), {
+      contains: (node: unknown): boolean => node === panel || node === field,
+      querySelector: (selector: string) => selector === 'input.pcad-field__input' && kind === 'distance' ? field : null,
+    });
+    const layout = vi.mocked(useLayoutEffect).mockClear();
+    const passive = vi.mocked(useEffect).mockClear();
+    let onKeyDown: ((event: KeyInput) => void) | undefined;
+    function Probe(): null {
+      const tree = MatePopover();
+      if (!isValidElement<{ ref: React.RefObject<FocusNode | null>; onKeyDown: (event: KeyInput) => void }>(tree)) {
+        throw new Error('MatePopover missing');
+      }
+      tree.props.ref.current = panel;
+      onKeyDown = tree.props.onKeyDown;
+      return null;
+    }
+    opener.focus();
+    vi.stubGlobal('Node', FocusNode);
+    vi.stubGlobal('document', { body: new FocusNode(), get activeElement() { return focused.at(-1); } });
+    try {
+      renderToStaticMarkup(<Probe />);
+      const cleanups = layout.mock.calls.map(([effect]) => effect());
+      expect(document.activeElement).toBe(opener);
+      for (const [effect] of passive.mock.calls) effect();
+      expect(document.activeElement).toBe(kind === 'distance' ? field : panel);
+      expect(field.select).toHaveBeenCalledTimes(kind === 'distance' ? 1 : 0);
+      if (onKeyDown === undefined) throw new Error('MatePopover handler missing');
+      onKeyDown({ key: 'Escape', nativeEvent: { key: 'Escape', keyCode: 27, isComposing: false },
+        preventDefault: vi.fn(), stopPropagation: vi.fn() });
+      expect(useAppStore.getState().assemblyMateDraft).toBeNull();
+      for (const cleanup of cleanups) if (typeof cleanup === 'function') cleanup();
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('合致とジョイントの種類の選ぶ欄は、ほかの欄と同じ見た目の class を持つ', () => {
     expect(renderToStaticMarkup(<MatePopover />)).toMatch(/<select class="pcad-field__input" title="[^"]*">/u);
     startJoint('revolute');

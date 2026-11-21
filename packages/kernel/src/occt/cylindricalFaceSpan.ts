@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from './tolerances.js';
 import type { OpenCascadeInstance, TopoDS_Face } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { Vec3Tuple } from '../types.js';
@@ -18,17 +19,17 @@ function covers(intervals: readonly Interval[], low: number, high: number, toler
   const ordered = [...intervals].sort((first, second) => first[0] - second[0]);
   let end = low;
   for (const interval of ordered) {
-    if (Math.abs(interval[0] - end) > tolerance || interval[1] <= interval[0]) return false;
+    if (exceedsMagnitude(interval[0] - end, tolerance) || interval[1] <= interval[0]) return false;
     end = interval[1];
   }
-  return ordered.length > 0 && Math.abs(end - high) <= tolerance;
+  return ordered.length > 0 && withinMagnitude(end - high, tolerance);
 }
 
 /** Lift an end-ring arc onto one period; a legitimate arc may cross the surface seam. */
 function addArc(intervals: Interval[], first: number, last: number, origin: number, tolerance: number): boolean {
   const length = Math.abs(last - first);
   if (length <= tolerance || length > PERIOD + tolerance) return false;
-  if (Math.abs(length - PERIOD) <= tolerance) {
+  if (withinMagnitude(length - PERIOD, tolerance)) {
     intervals.push([0, PERIOD]);
     return true;
   }
@@ -146,9 +147,9 @@ export function cylindricalFaceSpan(
     const a = [start.X(), start.Y()], b = [end.X(), end.Y()];
     if (![...a, ...b].every(Number.isFinite)) return null;
     // Side cuts and internal windows remain physical boundaries, even with an on-axis centroid.
-    if (Math.abs(a[1] - b[1]) > vTolerance) return null;
-    const lower = Math.abs(a[1] - vLow) <= vTolerance && Math.abs(b[1] - vLow) <= vTolerance;
-    const upper = Math.abs(a[1] - vHigh) <= vTolerance && Math.abs(b[1] - vHigh) <= vTolerance;
+    if (exceedsMagnitude(a[1] - b[1], vTolerance)) return null;
+    const lower = withinMagnitude(a[1] - vLow, vTolerance) && withinMagnitude(b[1] - vLow, vTolerance);
+    const upper = withinMagnitude(a[1] - vHigh, vTolerance) && withinMagnitude(b[1] - vHigh, vTolerance);
     if ((!lower && !upper) || !addArc(lower ? lowerArcs : upperArcs, a[0], b[0], uLow, angleTolerance)) return null;
   }
   if (!covers(lowerArcs, 0, PERIOD, angleTolerance) || !covers(upperArcs, 0, PERIOD, angleTolerance)) return null;

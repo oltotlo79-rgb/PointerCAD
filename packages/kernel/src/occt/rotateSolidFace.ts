@@ -1,3 +1,4 @@
+import { exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from './tolerances.js';
 import { dotVec as dot, crossVec as cross, subVec as subtract } from './sketchCorner.js';
 import type {
   OpenCascadeInstance,
@@ -248,8 +249,8 @@ function hingeFrame(
 ): HingeFrame {
   const n = selected.normal, m = neutral.normal, h = hinge.direction;
   const handedness = dot(cross(h, n), m);
-  if (Math.abs(dot(n, m)) > ANGULAR_TOLERANCE || Math.abs(dot(h, n)) > ANGULAR_TOLERANCE
-    || Math.abs(dot(h, m)) > ANGULAR_TOLERANCE || Math.abs(Math.abs(handedness) - 1) > ANGULAR_TOLERANCE) {
+  if (exceedsMagnitude(dot(n, m), ANGULAR_TOLERANCE) || exceedsMagnitude(dot(h, n), ANGULAR_TOLERANCE)
+    || exceedsMagnitude(dot(h, m), ANGULAR_TOLERANCE) || exceedsMagnitude(Math.abs(handedness) - 1, ANGULAR_TOLERANCE)) {
     throw refusal(FACE_ROTATION_BOX_MESSAGE, { stage: 'frame-axes', handedness });
   }
   const start = hinge.start;
@@ -263,7 +264,7 @@ function hingeFrame(
   }
   // 平面だけの形なので、三角形近似ではなく厳密な面で積分する(knownPlanar)。
   const volume = measureVolume(oc, copied, true), expected = hinge.length * width * height;
-  if (!(Math.abs(volume - expected) <= expected * VOLUME_RELATIVE_TOLERANCE)) {
+  if (!(withinMagnitude(volume - expected, expected * VOLUME_RELATIVE_TOLERANCE))) {
     throw refusal(FACE_ROTATION_BOX_MESSAGE, { stage: 'frame-volume', volume, expected });
   }
   return frame;
@@ -294,7 +295,7 @@ function checkResult(
   }
   const volume = measureVolume(oc, shape, true);
   const expected = frame.length * frame.width * (frame.height + lift / 2);
-  if (!(Math.abs(volume - expected) <= expected * VOLUME_RELATIVE_TOLERANCE)) {
+  if (!(withinMagnitude(volume - expected, expected * VOLUME_RELATIVE_TOLERANCE))) {
     throw refusal(FACE_ROTATION_FAILED_MESSAGE, { stage: 'result-volume', volume, expected });
   }
   return volume;
@@ -312,7 +313,7 @@ export function rotateSolidFace(
   hingeEdge: TopoDS_Edge,
   angleRad: number,
 ): FaceRotationResult {
-  if (!Number.isFinite(angleRad) || angleRad === 0 || Math.abs(angleRad) >= Math.PI / 2) {
+  if (!Number.isFinite(angleRad) || angleRad === 0 || magnitudeAtLeast(angleRad, Math.PI / 2)) {
     throw new Error(FACE_ROTATION_ANGLE_MESSAGE);
   }
   const owned = createAllocations(), { keep } = owned;
@@ -358,7 +359,7 @@ export function rotateSolidFace(
     }
     const frame = hingeFrame(oc, copied, box, selected, neutral, hinge);
     const lift = frame.width * frame.sign * Math.tan(angleRad);
-    if (!(Math.abs(lift) >= MIN_EDGE_TRAVEL_MM)) throw new Error(FACE_ROTATION_ANGLE_MESSAGE);
+    if (!(magnitudeAtLeast(lift, MIN_EDGE_TRAVEL_MM))) throw new Error(FACE_ROTATION_ANGLE_MESSAGE);
     if (!(frame.height + lift > MIN_REMAINING_HEIGHT_MM)) throw new Error(FACE_ROTATION_COLLISION_MESSAGE);
 
     // 正の DraftAngle は、中立面から見て抜き方向の逆側(材料の側)で面を外へ広げる(makeDraft.ts の実測)。

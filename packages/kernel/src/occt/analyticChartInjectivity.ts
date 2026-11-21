@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude } from './tolerances.js';
 /**
  * Premise P4 of DECISION.md (AUTHOR-ONLY, UNEXECUTED candidate, not yet wired into analysisSurfaceCertificate.ts):
  * an analytic face chart must lie inside one injectivity domain of its local primitive parameterization, so that the
@@ -126,7 +127,7 @@ export function assertAnalyticChartInjective(surface: AnalyticInjectivitySurface
     }
     case 'cone': {
       finite(surface.referenceRadius, 'cone radius'); finite(surface.semiAngle, 'cone angle');
-      if (!(Math.abs(surface.semiAngle) > 0 && Math.abs(surface.semiAngle) < HALF_PI_BELOW)) {
+      if (!(exceedsMagnitude(surface.semiAngle, 0) && belowMagnitude(surface.semiAngle, HALF_PI_BELOW))) {
         throw new Error('analytic-chart: unsupported cone angle');
       }
       // Radius is linear in v: positive on the open chart iff each end is positive or is the bound apex.

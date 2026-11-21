@@ -1,4 +1,5 @@
 /** 曲げの接線やリリーフの境界で曲線を分ける。座標標本を輪郭として保存しない。 */
+import { exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 import { curvePointAt } from '../sketch/intersectionMath.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import { crossVec3, dotVec3, lengthVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
@@ -12,16 +13,16 @@ export interface SheetCurvePiece {
   readonly from: number; readonly to: number;
 }
 const TOLERANCE_MM = 1e-7;
-function sideOf(value: number): -1 | 0 | 1 { return Math.abs(value) <= TOLERANCE_MM ? 0 : value < 0 ? -1 : 1; }
+function sideOf(value: number): -1 | 0 | 1 { return withinMagnitude(value, TOLERANCE_MM) ? 0 : value < 0 ? -1 : 1; }
 function conicCuts(curve: Extract<ResolvedCurve, { kind: 'arc' | 'ellipse' }>, plane: SheetSplitPlane): readonly number[] {
   const major = curve.kind === 'arc' ? curve.xAxis : curve.majorAxis, minor = crossVec3(curve.normal, major);
   const a = dotVec3(major, plane.normal) * (curve.kind === 'arc' ? curve.radius : curve.majorRadius);
   const b = dotVec3(minor, plane.normal) * (curve.kind === 'arc' ? curve.radius : curve.minorRadius);
   const offset = dotVec3(subVec3(curve.center, plane.origin), plane.normal), amplitude = Math.hypot(a, b);
-  if (amplitude === 0 || Math.abs(offset) > amplitude) return [];
+  if (amplitude === 0 || exceedsMagnitude(offset, amplitude)) return [];
   const phase = Math.atan2(b, a), angle = Math.acos(Math.max(-1, Math.min(1, -offset / amplitude)));
   const start = curve.startAngle, sweep = curve.endAngle - start, low = Math.min(start, curve.endAngle), high = Math.max(start, curve.endAngle);
-  if (Math.abs(sweep) <= Number.EPSILON || Math.abs(sweep) > 2 * Math.PI + 1e-9) return [];
+  if (withinMagnitude(sweep, Number.EPSILON) || exceedsMagnitude(sweep, 2 * Math.PI + 1e-9)) return [];
   const roots: number[] = [];
   for (const base of [phase - angle, phase + angle]) {
     const first = Math.ceil((low - base) / (2 * Math.PI)), last = Math.floor((high - base) / (2 * Math.PI));
@@ -35,7 +36,7 @@ function conicCuts(curve: Extract<ResolvedCurve, { kind: 'arc' | 'ellipse' }>, p
 }
 
 export function splitSheetCurveAtPlane(curve: ResolvedCurve, plane: SheetSplitPlane): SheetGeometryResult<readonly SheetCurvePiece[]> {
-  if (![...plane.origin, ...plane.normal].every(Number.isFinite) || Math.abs(lengthVec3(plane.normal) - 1) > 1e-10)
+  if (![...plane.origin, ...plane.normal].every(Number.isFinite) || exceedsMagnitude(lengthVec3(plane.normal) - 1, 1e-10))
     return { ok: false, message: '輪郭を分ける面の位置と向きを確認してください。' };
   if (curve.kind === 'segment' && ![...curve.from, ...curve.to].every(Number.isFinite))
     return { ok: false, message: '曲げる線分に非有限の座標があります。' };
@@ -44,8 +45,8 @@ export function splitSheetCurveAtPlane(curve: ResolvedCurve, plane: SheetSplitPl
     const radii = curve.kind === 'arc' ? [curve.radius] : [curve.majorRadius, curve.minorRadius];
     const sweep = curve.endAngle - curve.startAngle;
     if (![...curve.center, ...curve.normal, ...axis, ...radii, curve.startAngle, curve.endAngle, sweep].every(Number.isFinite)
-      || radii.some((radius) => radius <= TOLERANCE_MM) || Math.abs(sweep) <= Number.EPSILON || Math.abs(sweep) > 2 * Math.PI + 1e-9
-      || Math.abs(lengthVec3(curve.normal) - 1) > 1e-10 || Math.abs(lengthVec3(axis) - 1) > 1e-10 || Math.abs(dotVec3(axis, curve.normal)) > 1e-10)
+      || radii.some((radius) => radius <= TOLERANCE_MM) || withinMagnitude(sweep, Number.EPSILON) || exceedsMagnitude(sweep, 2 * Math.PI + 1e-9)
+      || exceedsMagnitude(lengthVec3(curve.normal) - 1, 1e-10) || exceedsMagnitude(lengthVec3(axis) - 1, 1e-10) || exceedsMagnitude(dotVec3(axis, curve.normal), 1e-10))
       return { ok: false, message: '曲げる円弧・楕円の半径と座標を確認してください。' };
   }
   const signed = (point: Vec3) => dotVec3(subVec3(point, plane.origin), plane.normal);

@@ -32,13 +32,16 @@ const DENIED = [
   ['SGP', 'hBeam', 'section-outside-scope'],
 ] as const;
 
+/** 文は ui の文言の表(D4)。ここは差し込む値 basis に規格の番号・名前・箇条がある事を見る(作った文は ui の steelRejectionMessages.test.ts)。 */
 function expectJapaneseBasis(rejection: StandardPartRejection): void {
-  expect(rejection.message).toMatch(/[ぁ-んァ-ン一-龠]/);
+  const basisText = rejection.text.parameters.basis;
+  if (typeof basisText !== 'string') throw new Error('basis is not a text value');
+  expect(basisText).toMatch(/[ぁ-んァ-ン一-龠]/);
   expect(rejection.basis.length).toBeGreaterThan(0);
   for (const basis of rejection.basis) {
-    expect(rejection.message).toContain(STEEL_STANDARDS[basis.standardId].number);
-    expect(rejection.message).toContain(STEEL_STANDARDS[basis.standardId].name);
-    expect(rejection.message).toContain(basis.locator);
+    expect(basisText).toContain(STEEL_STANDARDS[basis.standardId].number);
+    expect(basisText).toContain(STEEL_STANDARDS[basis.standardId].name);
+    expect(basisText).toContain(basis.locator);
   }
 }
 
@@ -118,7 +121,7 @@ describe('saved steel options: six fields for every original row', () => {
     expect(result.document).toBeNull();
     expect(result.rejection?.code).toBe('saved-fields-mismatch');
     expect(result.rejection?.fields).toEqual([field]);
-    expect(result.rejection?.message).toContain(field);
+    expect(result.rejection?.text.parameters.fields).toContain(field);
   });
 
   it.each(TAMPERED)('$row.key / missing $field', ({ row, field }) => {
@@ -200,7 +203,7 @@ describe('reasoned generation preserves legacy entry points', () => {
     const bolt = createStandardPartSource('hexBolt', 'size-not-existing');
     expect(standardPartRejection(bolt)).toBeNull();
     expect(buildStandardPartFromSourceWithReason(bolt)).toMatchObject({ document: null,
-      rejection: { code: 'generation-unavailable', message: 'この呼び寸法は用意されていません。' } });
+      rejection: { code: 'generation-unavailable', text: { key: 'assembly.steel.rejection.generation-unavailable', parameters: {} } } });
     expect(steel.catalogRevision).toBe(STEEL_CATALOG_REVISION);
   });
 

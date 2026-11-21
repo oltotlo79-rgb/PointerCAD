@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { subVec3 as sub } from '@pointercad/model/vec3';
 import { isRecord } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
@@ -57,7 +58,7 @@ function text(v: unknown, limit: number): string {
 function vec(v: unknown, limit = 1e30): Vector3 { const a = list(v, 3); return [num(a[0], -limit, limit), num(a[1], -limit, limit), num(a[2], -limit, limit)]; }
 function dot(a: readonly number[], b: readonly number[]): number { return a.reduce((s, x, i) => s + x * b[i], 0); }
 function near(actual: unknown, expected: number, scale = Math.abs(expected)): number {
-  const value = num(actual); if (Math.abs(value - expected) > 1e-9 * Math.abs(expected) + 64 * Number.EPSILON * Math.abs(scale)) fail(); return value;
+  const value = num(actual); if (exceedsMagnitude(value - expected, 1e-9 * Math.abs(expected) + 64 * Number.EPSILON * Math.abs(scale))) fail(); return value;
 }
 function jsonTree(value: unknown, depth = 0): void {
   if (depth > 64) fail();
@@ -103,10 +104,10 @@ function readPlan(value: unknown): NativeBoltPreloadPlan {
     const ends = list(m.nodes, 2).map(x => integer(x, 1, 4)); if (ends[0] === ends[1]) fail();
     const f = fields(m.frame, ['x', 'y', 'z', 'lengthM']); const x = vec(f.x), y = vec(f.y), z = vec(f.z), lengthM = positive(f.lengthM);
     const delta = sub(nodes[ends[1] - 1].positionM, nodes[ends[0] - 1].positionM), length = Math.hypot(...delta);
-    if (length <= 1e-9 || Math.abs(lengthM - length) > 1e-12 * length || [x, y, z].some(a => Math.abs(dot(a, a) - 1) > 1e-10)
-      || Math.max(Math.abs(dot(x, y)), Math.abs(dot(y, z)), Math.abs(dot(z, x))) > 1e-10 || x.some((a, j) => Math.abs(a - delta[j] / length) > 1e-10)) fail();
+    if (length <= 1e-9 || exceedsMagnitude(lengthM - length, 1e-12 * length) || [x, y, z].some(a => exceedsMagnitude(dot(a, a) - 1, 1e-10))
+      || Math.max(Math.abs(dot(x, y)), Math.abs(dot(y, z)), Math.abs(dot(z, x))) > 1e-10 || x.some((a, j) => exceedsMagnitude(a - delta[j] / length, 1e-10))) fail();
     const cross: Vector3 = [x[1]*y[2]-x[2]*y[1], x[2]*y[0]-x[0]*y[2], x[0]*y[1]-x[1]*y[0]];
-    if (cross.some((v, j) => Math.abs(v - z[j]) > 1e-10)) fail();
+    if (cross.some((v, j) => exceedsMagnitude(v - z[j], 1e-10))) fail();
     return { number: i + 1, nodes: [ends[0], ends[1]], material: integer(m.material, 1, materials.length), section: integer(m.section, 1, sections.length), frame: { x, y, z, lengthM } };
   });
   const p = fields(list(c.contacts, 1)[0], ['id', 'kind', 'nodeA', 'nodeB', 'normal', 'gapM']);
@@ -121,15 +122,15 @@ export async function prepareNativeBoltPreload(value: unknown, exactJson?: strin
   if (pair.kind !== 'node-pair' || new Set([bolt.nodeA, bolt.nodeB, pair.nodeA, pair.nodeB]).size !== 4 || bolt.id !== plan.declaration.boltId) fail();
   const a = c.nodes[bolt.nodeA - 1].positionM, b = c.nodes[bolt.nodeB - 1].positionM, delta = sub(b, a), length = Math.hypot(...delta);
   if (length <= 1e-9) fail(); const normal: Vector3 = [delta[0]/length, delta[1]/length, delta[2]/length];
-  const axis = normal.findIndex(v => Math.abs(v) > 1 - 1e-12);
-  if (axis < 0 || normal.some((v, i) => i !== axis && Math.abs(v) > 1e-12) || pair.normal.some((v, i) => Math.abs(v - normal[i]) > 1e-10)) fail();
+  const axis = normal.findIndex(v => exceedsMagnitude(v, 1 - 1e-12));
+  if (axis < 0 || normal.some((v, i) => i !== axis && exceedsMagnitude(v, 1e-12)) || pair.normal.some((v, i) => exceedsMagnitude(v - normal[i], 1e-10))) fail();
   for (const node of c.nodes) {
     if (node.restrained.some((fixed, i) => fixed !== (node.number === bolt.nodeA || i !== axis))) fail();
     const load = node.number === bolt.nodeB ? [...normal, 0, 0, 0] : [0, 0, 0, 0, 0, 0]; if (node.load.some((v, i) => v !== load[i])) fail();
     const d = sub(node.positionM, a), station = dot(d, normal); if (Math.hypot(...d.map((v, i) => v - station*normal[i])) > 1e-10*length) fail();
   }
   const left = dot(sub(c.nodes[pair.nodeA - 1].positionM, a), normal), right = dot(sub(c.nodes[pair.nodeB - 1].positionM, a), normal);
-  if (!(left > 0 && left < length) || Math.abs(left - right) > 1e-10*length) fail();
+  if (!(left > 0 && left < length) || exceedsMagnitude(left - right, 1e-10*length)) fail();
   const key = (a: number, b: number): string => [a, b].sort((a, b) => a - b).join(':');
   const expected = new Set([key(bolt.nodeA, pair.nodeA), key(pair.nodeB, bolt.nodeB)]);
   if (new Set(c.members.map(m => key(...m.nodes))).size !== 2 || c.members.some(m => !expected.has(key(...m.nodes)))) fail();

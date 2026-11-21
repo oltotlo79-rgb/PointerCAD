@@ -251,3 +251,50 @@ export async function expressionInspectionFlow(page: Page): Promise<void> {
   // 6) C-02j: 名前を上に置く窓でも、焦点を入れて点検の行が出ても、欄の幅と単位の札の位置は変わらない。
   await inspectionKeepsFieldLayout(page);
 }
+
+/** 普段の点の入力で、補完が取るキーと窓に渡すキーを同じ欄で確かめる。 */
+export async function expressionCompletionFlow(page: Page): Promise<void> {
+  await page.getByRole('tab', { name: 'パラメータ', exact: true }).click();
+  await addParameter(page, 0, 'arm', '7', 'mm');
+  await addParameter(page, 1, 'a', '3', 'mm');
+  await page.getByRole('tab', { name: 'プロパティ', exact: true }).click();
+  await chooseSketchTool(page, '点');
+  const xLabel = uiMessage('numericInput', 'numericInput.field.x');
+  const x = popover(page).getByRole('textbox', { name: xLabel, exact: true });
+  const list = page.getByRole('listbox', { name: xLabel, exact: true });
+  await x.fill('a');
+  await expect(list).toBeVisible();
+  await expect(x).toHaveAttribute('aria-controls', await list.getAttribute('id') ?? '');
+  const arm = list.getByRole('option', { name: 'arm · 7 mm', exact: true });
+  await expect(arm).toBeVisible();
+  await x.press('ArrowDown');
+  await expect(arm).toHaveAttribute('aria-selected', 'true');
+  await expect(x).toHaveAttribute('aria-activedescendant', await arm.getAttribute('id') ?? '');
+  await x.press('Enter');
+  await expect(x).toBeFocused();
+  await expect(x).toHaveValue('arm');
+  await expect(list).toHaveCount(0);
+  await expect(treeRow(page, '点1')).toHaveCount(0);
+
+  await x.fill('a');
+  await x.press('Escape');
+  await expect(list).toHaveCount(0);
+  await expect(x).toBeFocused();
+  await expect(x).toHaveValue('a');
+  await x.press('Escape');
+  await expect(popover(page)).toHaveCount(0);
+
+  await chooseSketchTool(page, '点');
+  await x.fill('2a');
+  await expect(fieldMessage(page, 0)).toContainText('掛け算は * で書きます(2*a)');
+  await x.fill('a');
+  await x.press('ArrowDown');
+  await x.press('Tab');
+  await expect(popover(page).getByRole('textbox', { name: uiMessage('numericInput', 'numericInput.field.y'), exact: true })).toBeFocused();
+  await expect(x).toHaveValue('a');
+  await x.fill('ab');
+  await x.fill('a');
+  await expect(list).toBeVisible();
+  await x.press('Enter');
+  await expect(treeRow(page, '点1')).toBeVisible();
+}

@@ -14,7 +14,7 @@
 import { DEFAULT_CAMERA_CONTROLS, cameraSettingsError, readCameraControlSettings, type CameraControlSettings } from './cameraControlSettings.js';
 import { DEFAULT_VIEW_CONTROLS, isViewControlSettings, readStoredViewControls, type ViewControlSettings } from './viewControlSettings.js';
 
-import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
+import { belowMagnitude, LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
@@ -61,6 +61,7 @@ export interface DisplaySettings {
    */
   readonly viewControlsRecovered?: number;
   readonly tutorialCompleted?: boolean;
+  readonly screenTourSeen?: boolean;
   readonly shortcutAssignments?: ShortcutAssignments;
   /**
    * 起動時に読めなかったため外したキーの割当の件数(無い・0 は知らせない)。**表示だけの値で保存しない**。
@@ -145,6 +146,7 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   cameraControls: DEFAULT_CAMERA_CONTROLS,
   viewControls: DEFAULT_VIEW_CONTROLS,
   tutorialCompleted: false,
+  screenTourSeen: false,
   shortcutAssignments: EMPTY_SHORTCUT_ASSIGNMENTS,
   // 読み込みの時の循環でも初期化の前の値を読まないよう、空の値はここで作る(readMouseButtonCommands の空と同じ形)。
   mouseButtonCommands: Object.freeze({}),
@@ -342,7 +344,7 @@ export function nearestUiScaleStep(value: number): number {
   const target = clampUiScale(value);
   let nearest = UI_SCALE_STEPS[0];
   for (const step of UI_SCALE_STEPS) {
-    if (Math.abs(step - target) < Math.abs(nearest - target)) {
+    if (belowMagnitude(step - target, Math.abs(nearest - target))) {
       nearest = step;
     }
   }
@@ -456,6 +458,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       viewControls: view.settings,
       ...(view.dropped > 0 ? { viewControlsRecovered: view.dropped } : {}),
       tutorialCompleted: 'tutorialCompleted' in parsed && parsed.tutorialCompleted === true,
+      screenTourSeen: 'screenTourSeen' in parsed && parsed.screenTourSeen === true,
       shortcutAssignments: shortcuts.assignments,
       ...(shortcuts.dropped > 0 ? { shortcutAssignmentsRecovered: shortcuts.dropped } : {}),
       mouseButtonCommands: mouse.commands,

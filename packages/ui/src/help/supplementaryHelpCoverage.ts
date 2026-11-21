@@ -20,7 +20,7 @@ export const SETTINGS_HELP_BINDINGS = {
   // 方眼の幅と数(配置の補助 P-C)は、表示の設定の章と吸着の章。
   grid: ['display-settings', 'snap'],
   trackAngleStep: ['tracking'], lengthUnit: ['units'], selectionFilter: ['select-subshape'],
-  inferConstraints: ['constraints'], timelineHintSeen: ['timeline'], tutorialCompleted: ['tutorial'],
+  inferConstraints: ['constraints'], timelineHintSeen: ['timeline'], tutorialCompleted: ['tutorial'], screenTourSeen: ['tutorial'],
 } satisfies Readonly<Record<keyof PersistedDisplaySettings, readonly string[]>>;
 
 /** DWG is deliberately absent: its conversion instructions are not an implemented export. */

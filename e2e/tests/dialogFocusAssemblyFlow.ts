@@ -22,6 +22,30 @@ export function registerDialogFocusAssemblyTests(test: typeof base): void {
   test.describe('C-03 組立の窓のフォーカス', () => {
     test.use({ viewport: { width: 1440, height: 900 } });
 
+    test('距離の合致を開くと値の欄に焦点が入り、Esc で「合わせる」へ戻る', async ({ page }, info) => {
+      await blockAssembly(page, info);
+      const menu = uiMessage('assembly', 'assembly.menu.mate');
+      const dialog = page.getByRole('dialog', { name: uiMessage('assembly', 'assembly.mate.title'), exact: true });
+      await expectDialogFocusCycle(page, {
+        open: () => chooseToolMenuItemByKeyboard(page, menu, uiMessage('assembly', 'assembly.tool.mateDistance')),
+        dialog,
+        initial: dialog.getByRole('textbox'),
+        opener: toolMenuTrigger(page, menu),
+      });
+    });
+
+    test('球ジョイントを開くと文字欄のない窓に焦点が入り、Esc で「合わせる」へ戻る', async ({ page }, info) => {
+      await blockAssembly(page, info);
+      const menu = uiMessage('assembly', 'assembly.menu.mate');
+      const dialog = page.getByRole('dialog', { name: uiMessage('assembly', 'assembly.joint.title'), exact: true });
+      await expectDialogFocusCycle(page, {
+        open: () => chooseToolMenuItemByKeyboard(page, menu, uiMessage('assembly', 'assembly.tool.jointBall')),
+        dialog,
+        initial: dialog,
+        opener: toolMenuTrigger(page, menu),
+      });
+    });
+
     test('部品を置く: 部品のファイルを選んだ後に開く窓も、Esc で閉じると「組む」の釦へ戻る', async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', error => errors.push(error.message));

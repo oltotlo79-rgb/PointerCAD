@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from './tolerances.js';
 import type { Vec3Tuple } from '../types.js';
 
 /** Double-precision world bounds in millimetres, before any Float32 conversion. */
@@ -39,14 +40,14 @@ function float32RoundoffBound(magnitude: number): number {
 }
 
 function admitLocal(value: number, maximumError: number): number {
-  if (!Number.isFinite(value) || Math.abs(value) > FLOAT32_MAX) {
+  if (!Number.isFinite(value) || exceedsMagnitude(value, FLOAT32_MAX)) {
     throw new RangeError('Local mesh coordinate is outside finite Float32 range');
   }
   if (float32RoundoffBound(Math.abs(value)) > maximumError) {
     throw new RangeError('Local mesh extent exceeds the Float32 error budget');
   }
   const rounded = Math.fround(value);
-  if (!Number.isFinite(rounded) || Math.abs(rounded - value) > maximumError) {
+  if (!Number.isFinite(rounded) || exceedsMagnitude(rounded - value, maximumError)) {
     throw new RangeError('Local mesh coordinate exceeds the Float32 error budget');
   }
   return rounded;

@@ -1,4 +1,4 @@
-import { nextFeatureId, nextSolidId, type PartDocument, type SolidBody } from '@pointercad/model';
+import { belowMagnitude, exceedsMagnitude, magnitudeAtLeast, nextFeatureId, nextSolidId, type PartDocument, type SolidBody } from '@pointercad/model';
 import type { DrawingDocument } from '@pointercad/drawing';
 import { TUTORIAL_CHECKPOINT_KEY, type TutorialCheckpoint, type TutorialCheckpointFailure,
   type TutorialCheckpointInput, type TutorialCheckpointStorage, type TutorialDraft,
@@ -169,8 +169,8 @@ export function parameterTutorialStep(session: TutorialSession, document: PartDo
   if (sketch === undefined) return 'differentDocument';
   const point = sketch.features.find(item => item.id === session.pointId);
   if (point?.kind !== 'point' || point.at.mode !== 'absolute'
-      || Math.abs(point.at.x.value) > 1e-9 || Math.abs(point.at.y.value) > 1e-9
-      || Math.abs(point.at.z.value) > 1e-9) return 'pointCoordinates';
+      || exceedsMagnitude(point.at.x.value, 1e-9) || exceedsMagnitude(point.at.y.value, 1e-9)
+      || exceedsMagnitude(point.at.z.value, 1e-9)) return 'pointCoordinates';
   const parameter = document.parameters.find(item => item.name === session.parameterName);
   const rectangle = sketch.features.find(item => item.id === session.outlineId);
   const face = sketch.features.find(item => item.id === session.faceId);
@@ -183,8 +183,8 @@ export function parameterTutorialStep(session: TutorialSession, document: PartDo
   const body = evidence.bodies.find(item => item.featureId === session.extrudeId && item.isValid);
   const height = body === undefined ? null : bodyHeight(body);
   if (!linked || parameter?.unit !== 'mm' || !evidence.ready || height === null) return 'thicknessParameter';
-  if (Math.abs(parameter.value.value - 3) < 1e-9 && Math.abs(height - 3) < 1e-3) return 'dimensionChange';
-  if (Math.abs(parameter.value.value - 6) >= 1e-9 || Math.abs(height - 6) >= 1e-3
+  if (belowMagnitude(parameter.value.value - 3, 1e-9) && belowMagnitude(height - 3, 1e-3)) return 'dimensionChange';
+  if (magnitudeAtLeast(parameter.value.value - 6, 1e-9) || magnitudeAtLeast(height - 6, 1e-3)
       || evidence.savedPart !== document) return 'dimensionChange';
   const proof = evidence.drawingProof;
   if (proof === undefined || proof.sourcePart !== document || proof.document.source.sourceKind !== 'part'

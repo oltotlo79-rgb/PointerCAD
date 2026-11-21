@@ -11,6 +11,7 @@ import { beamDefinition, createBeamSession, editBeamSession, invalidateBeamSessi
 import { beamOccurrences, beamSourceIsCurrent, captureBeamSource, type BeamSourceSnapshot } from '../beam/beamSource.js';
 import type { AppState } from './appState.js';
 import { prepareBeamAnalysis } from '../beam/prepareBeamAnalysis.js';
+import { issueMessage } from '../i18n/failureMessage.js';
 import { reassociateBeamWeldSpan } from '../beam/beamWeldSpanReassociation.js';
 import { appliedAnalysisResults, keptResultOnApply, withOpenedBeamResult, type BeamResultDefinition } from '../beam/savedBeamResults.js';
 import { currentAppVersion } from '../app/appVersion.js';
@@ -250,7 +251,7 @@ const createBoltPreloadSlice: StateCreator<AppState, [], [], Omit<BeamSlice,
         set({ boltPreloadAuthor: { ...form, proposal: saved }, boltPreloadError: null });
       } catch (error) {
         if (get().boltPreloadAuthor === form) set({ boltPreloadAuthor: { ...form, proposal: null },
-          boltPreloadError: error instanceof Error ? error.message : 'Association validation failed' });
+          boltPreloadError: error instanceof Error ? issueMessage(error) : 'Association validation failed' });
       }
     },
     acceptBoltPreloadAuthor: () => {
@@ -299,7 +300,7 @@ const createBoltPreloadSlice: StateCreator<AppState, [], [], Omit<BeamSlice,
         const reviewed = await reviewBoltPreloadDraft(draft, source, () => ({ state: get(), session: get().boltPreloadDraft }));
         if (get().boltPreloadDraft === draft) set({ boltPreloadDraft: reviewed, boltPreloadStatus: 'editing', boltPreloadError: null });
       } catch (error) {
-        if (get().boltPreloadDraft === draft) set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'failed', boltPreloadError: error instanceof Error ? error.message : 'Preload review failed' });
+        if (get().boltPreloadDraft === draft) set({ boltPreloadDraft: invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'failed', boltPreloadError: error instanceof Error ? issueMessage(error) : 'Preload review failed' });
       }
     },
     runBoltPreload: () => {
@@ -391,7 +392,7 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
     const checked = prepareBeamAnalysis(source, draft.definition);
     set({ beamSession: { ...session, reviewed: checked.ok ? source : null, result: null, bucklingEdges: [], transientAxial: null, impactMembers: null, status: 'editing',
       errorKey: checked.ok ? null : 'beam.error.model',
-      diagnostic: checked.ok ? null : `${checked.issue.code}: ${checked.issue.path}: ${checked.issue.message}` } });
+      diagnostic: checked.ok ? null : `${checked.issue.code}: ${checked.issue.path}: ${issueMessage(checked.issue)}` } });
   },
   runBeam: () => {
     const state = get(), session = state.beamSession;

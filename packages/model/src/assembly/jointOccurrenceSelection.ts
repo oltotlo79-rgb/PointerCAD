@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import type { MateSubShapeGeometry, SolidBody } from '../kernelBridge.js';
@@ -81,7 +82,7 @@ export function prepareJointOccurrencePair(context: JointOccurrenceCommandContex
     const stored = rigidPlacementOf(component.placement);
     const rotationDifference = Math.min(...[1, -1].map(sign => Math.max(...stored.rotation
       .map((value, index) => Math.abs(value - sign * (solved.rotation[index] ?? NaN))))));
-    if (!stored.position.every((value, index) => Math.abs(value - (solved.position[index] ?? NaN)) <= FASTENING_LENGTH_TOLERANCE_MM)
+    if (!stored.position.every((value, index) => withinMagnitude(value - (solved.position[index] ?? NaN), FASTENING_LENGTH_TOLERANCE_MM))
         || !Number.isFinite(rotationDifference) || rotationDifference > PLACEMENT_QUATERNION_TOLERANCE) {
       return { ok: false, reason: 'owner-pose-not-stored' };
     }

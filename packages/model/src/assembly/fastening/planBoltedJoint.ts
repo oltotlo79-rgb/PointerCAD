@@ -10,6 +10,7 @@
  * - ねじ穴＋ねじ穴: 頭の側の板もねじに掛かって板を引き寄せられないため断る(植込みボルト等は未対応)。
  */
 
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import type { AssemblyDocument } from '../types.js';
 import { scaleVec3 } from '../../sketch/vec3.js';
 import { planAlignment, type AlignmentPlan } from './alignment.js';
@@ -57,7 +58,7 @@ export function threadForSelections(request: BoltedJointRequest, head: Fastening
     if (explicit.nominal !== thread.nominal) {
       return { code: 'nominalMismatch', detail: { hole: thread.nominal, bolt: explicit.nominal } };
     }
-    if (Math.abs(explicit.pitch - thread.pitch) > FASTENING_LENGTH_TOLERANCE_MM) {
+    if (exceedsMagnitude(explicit.pitch - thread.pitch, FASTENING_LENGTH_TOLERANCE_MM)) {
       return { code: 'pitchMismatch', detail: { hole: thread.pitch, bolt: explicit.pitch } };
     }
     return thread;

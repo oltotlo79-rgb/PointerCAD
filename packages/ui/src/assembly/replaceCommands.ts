@@ -1,6 +1,6 @@
 import { writeAssemblyDocument } from '@pointercad/io';
 import {
-  SUB_ASSEMBLY_CYCLE_MESSAGE,
+  SUB_ASSEMBLY_CYCLE_TEXT,
   addComponent,
   applyReplacement,
   createComponentFor,
@@ -16,6 +16,8 @@ import {
   type ReplacementPlan,
   type SolidBody,
 } from '@pointercad/model';
+
+import { failureMessage } from '../i18n/failureMessage.js';
 
 export type PlaceSubAssemblyResult =
   | {
@@ -71,7 +73,7 @@ export function placeSubAssemblyBundle(
   const sameCurrentFile = currentFileDocument !== undefined
     && sameStoredAssembly(bundle.document, currentFileDocument);
   if (bundle.document === document || sameCurrentFile) {
-    return { ok: false, message: SUB_ASSEMBLY_CYCLE_MESSAGE };
+    return { ok: false, message: failureMessage(SUB_ASSEMBLY_CYCLE_TEXT) };
   }
 
   const occupiedParts = new Set([
@@ -118,7 +120,7 @@ export function placeSubAssemblyBundle(
   });
   const nextDocument = addComponent(document, component);
   const problem = detectSubAssemblyProblem(nextDocument, assemblies);
-  if (problem !== null) return { ok: false, message: problem.message };
+  if (problem !== null) return { ok: false, message: failureMessage(problem.text) };
   return { ok: true, document: nextDocument, library: nextLibrary, component };
 }
 

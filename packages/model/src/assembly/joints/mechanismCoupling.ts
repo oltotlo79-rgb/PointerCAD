@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { evaluateExpression } from '@pointercad/expression';
 import type { AssemblyDocument, Joint } from '../types.js';
@@ -94,12 +95,12 @@ function inspectLoops(couplings: readonly GearRatioCoupling[]): MechanismCouplin
         if (previous === undefined) { values.set(edge.to, { scale, offset }); pending.push(edge.to); continue; }
         const coefficient = scale - previous.scale, constant = offset - previous.offset;
         const scaleEpsilon = 64 * Number.EPSILON * Math.max(1, Math.abs(scale), Math.abs(previous.scale));
-        if (Math.abs(coefficient) <= scaleEpsilon) {
-          if (Math.abs(constant) > ANGLE_EPSILON_DEG) return refusal(edge.id, 'contradictoryLoop');
+        if (withinMagnitude(coefficient, scaleEpsilon)) {
+          if (exceedsMagnitude(constant, ANGLE_EPSILON_DEG)) return refusal(edge.id, 'contradictoryLoop');
         } else {
           const required = -constant / coefficient;
           if (!finite(required)) return refusal(edge.id, 'unrepresentableCoupling');
-          if (fixedRoot !== undefined && Math.abs(fixedRoot - required) > ANGLE_EPSILON_DEG)
+          if (fixedRoot !== undefined && exceedsMagnitude(fixedRoot - required, ANGLE_EPSILON_DEG))
             return refusal(edge.id, 'contradictoryLoop');
           fixedRoot = required;
         }
@@ -157,7 +158,7 @@ export function prepareMechanismCouplings(input: {
         placements: input.placements, variableSet: noVariables });
       if (!current.ok) return refusal(c.id, current.reason === 'invalidReference' ? 'invalidReference' : 'invalidFrame');
       const previous = references.get(joint.jointId);
-      if (previous !== undefined && Math.abs(previous - current.value) > ANGLE_EPSILON_DEG)
+      if (previous !== undefined && exceedsMagnitude(previous - current.value, ANGLE_EPSILON_DEG))
         return refusal(c.id, 'invalidReference');
       references.set(joint.jointId, current.value);
     }

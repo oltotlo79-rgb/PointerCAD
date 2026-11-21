@@ -1,3 +1,4 @@
+import { exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from './tolerances.js';
 import { crossVec as cross, dotVec, subVec as subtract } from './sketchCorner.js';
 /** Numerical whole-triangle distance enclosure for finite positive-weight spline charts.
  * C0/periodic charts are partitioned into same-parameter native Bezier pieces before applying C1 bounds.
@@ -182,7 +183,7 @@ export function reduceAffineFreeformFans(grid: FreeformPatchGrid, triangles: rea
       * (Math.abs(a[1]) + Math.abs(b[1]) + Math.abs(c[1]));
     const determinant = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
     if (!Number.isFinite(scale) || scale < Number.MIN_VALUE / Number.EPSILON
-      || !Number.isFinite(determinant) || Math.abs(determinant) <= 16 * Number.EPSILON * scale) return 0;
+      || !Number.isFinite(determinant) || withinMagnitude(determinant, 16 * Number.EPSILON * scale)) return 0;
     return Math.sign(determinant);
   };
   for (const [node, incident] of adjacent) {
@@ -237,8 +238,8 @@ export function reduceAffineFreeformFans(grid: FreeformPatchGrid, triangles: rea
     const referenceUnit: V3 = [reference[0] / referenceLength, reference[1] / referenceLength, reference[2] / referenceLength];
     // Preserve embedding even when shared-edge welding gives points small native offsets.
     // A strictly convex projected ring with the old centre inside has no overlapping fan triangles.
-    const drop = Math.abs(reference[0]) >= Math.abs(reference[1]) && Math.abs(reference[0]) >= Math.abs(reference[2])
-      ? 0 : Math.abs(reference[1]) >= Math.abs(reference[2]) ? 1 : 2;
+    const drop = magnitudeAtLeast(reference[0], Math.abs(reference[1])) && magnitudeAtLeast(reference[0], Math.abs(reference[2]))
+      ? 0 : magnitudeAtLeast(reference[1], Math.abs(reference[2])) ? 1 : 2;
     const project = (p: V3): V2 => drop === 0 ? [p[1], p[2]] : drop === 1 ? [p[0], p[2]] : [p[0], p[1]];
     const projected = points.map(project), projectedCentre = project(centrePoint);
     const projectedSign = side(projected[0], projected[1], projectedCentre);
@@ -362,7 +363,7 @@ export function partitionedFreeformTriangleDistance(grid: FreeformPatchGrid, uv:
     }
   }
   // Arithmetic coverage check in the original barycentric triangle, even for a collinear UV image.
-  if (pieces === 0 || Math.abs(coverage - 1) > 64 * Number.EPSILON * pieces) throw new Error('freeform-bound: incomplete partition');
+  if (pieces === 0 || exceedsMagnitude(coverage - 1, 64 * Number.EPSILON * pieces)) throw new Error('freeform-bound: incomplete partition');
   return { maxNodeOffsetMm, maxChordDeviationMm: bound };
 }
 export interface NativeFreeformBound {

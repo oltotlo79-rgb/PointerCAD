@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 import { countRainflow, curveStressMpa, firstNonzeroMean, onceReversals, periodicReversals, recurrenceCycles, spectrumLife } from './fatigue.js';
@@ -129,7 +130,7 @@ function readSegments(value: unknown): FatiguePiecewiseSegment[] | FatiguePiecew
       // Knees are explicit and ordered: more cycles at a lower stress than the previous start.
       if (!(segment.fromCycles > previous.fromCycles && segment.fromStressMpa < previous.fromStressMpa)) return fail('fatigue-piecewise-order', path);
       const expected = segmentLife(previous, segment.fromStressMpa);
-      if (!(Math.abs(expected - segment.fromCycles) <= FATIGUE_PIECEWISE_CONTINUITY_TOLERANCE * segment.fromCycles)) {
+      if (!(withinMagnitude(expected - segment.fromCycles, FATIGUE_PIECEWISE_CONTINUITY_TOLERANCE * segment.fromCycles))) {
         return fail('fatigue-piecewise-continuity', path);
       }
     }

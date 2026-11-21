@@ -27,6 +27,21 @@ export function exceedsMagnitude(value: number, bound: number): boolean {
   return value > bound || value < -bound;
 }
 
+/** |value| ≤ bound。 */
+export function withinMagnitude(value: number, bound: number): boolean {
+  return -bound <= value && value <= bound;
+}
+
+/** |value| < bound。 */
+export function belowMagnitude(value: number, bound: number): boolean {
+  return -bound < value && value < bound;
+}
+
+/** |value| ≥ bound。NaN を含む場合は偽。 */
+export function magnitudeAtLeast(value: number, bound: number): boolean {
+  return value >= bound || value <= -bound;
+}
+
 /** 有限で正、かつ文書尺度に対して過大でない修復幅を返す。 */
 export function validateToleranceMm(value: number): number {
   if (!Number.isFinite(value) || !(value > 0)) {

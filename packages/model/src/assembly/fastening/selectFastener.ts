@@ -11,6 +11,7 @@
  *   それ以外(附属書JA・細目・根拠の無い呼び)は選ばず、欠けた事実として残す。
  */
 
+import { withinMagnitude } from '../../numericTolerance.js';
 import {
   findHexBolt, findHexNut, findPlainWasher, findSpringWasher, HEX_BOLT_NOMINAL_LENGTHS, HEX_BOLT_TABLE,
 } from '../standard/fasteners.js';
@@ -76,7 +77,7 @@ export function threadChoiceFor(nominal: string, pitch: number): ThreadChoice | 
   const row = findMetricThread(nominal);
   if (row === undefined) return { code: 'unknownThread', detail: { nominal } };
   for (const series of ['coarse', 'fine'] as const) {
-    if (Math.abs(metricThreadPitch(row, series) - pitch) <= FASTENING_LENGTH_TOLERANCE_MM) {
+    if (withinMagnitude(metricThreadPitch(row, series) - pitch, FASTENING_LENGTH_TOLERANCE_MM)) {
       return { nominal, pitch: metricThreadPitch(row, series), series, diameter: row.diameter };
     }
   }

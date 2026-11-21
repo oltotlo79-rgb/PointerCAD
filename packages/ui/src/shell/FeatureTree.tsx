@@ -90,7 +90,7 @@ export function FeatureTree(): React.JSX.Element {
   };
 
   return (
-    <section ref={searchReveal.ref} className="pcad-panel pcad-panel--left">
+    <section data-guide-id="history" ref={searchReveal.ref} className="pcad-panel pcad-panel--left">
       <h2 className="pcad-panel__title">{t('featureTree.title')}</h2>
       <DocumentNameSearch key={part.id} helpTopic="feature-tree" getEntries={() => partNameSearchEntries(sections, sketchGroups)}
         onSelect={entry => {

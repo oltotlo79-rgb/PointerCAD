@@ -51,6 +51,7 @@
  *   負 = 表示を消してある、の意味づけは上の段の仕事)。
  */
 
+import { exceedsMagnitude } from '@pointercad/model';
 import {
   bulgeToArc,
   ellipseFromDxf,
@@ -347,10 +348,10 @@ function similarityScale(transform: DxfTransform): number | null {
     return null;
   }
   const dot = transform.a * transform.c + transform.b * transform.d;
-  if (Math.abs(dot) > SIMILARITY_TOLERANCE * firstLength * secondLength) {
+  if (exceedsMagnitude(dot, SIMILARITY_TOLERANCE * firstLength * secondLength)) {
     return null;
   }
-  if (Math.abs(firstLength - secondLength) > SIMILARITY_TOLERANCE * Math.max(firstLength, secondLength)) {
+  if (exceedsMagnitude(firstLength - secondLength, SIMILARITY_TOLERANCE * Math.max(firstLength, secondLength))) {
     return null;
   }
   return firstLength;

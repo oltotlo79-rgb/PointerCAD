@@ -150,9 +150,11 @@ describe('r2 の鋼種と断面の規則', () => {
     '$grade / $catalog は鋼種と規格の名前を含む理由で断る', ({ grade, catalog }) => {
       const rule = steelGradeRule(grade, catalog);
       if (rule.allowed) throw new Error('expected a denial');
-      expect(rule.reason).toContain(grade);
+      // 理由の文が鋼種と引用した規格の番号を含む事は、作った文として ui の steelRejectionMessages.test.ts が見る。
+      expect(rule.reason.key).toMatch(/^assembly[.]steel[.]reason[.][A-Za-z0-9]+$/u);
+      expect(rule.reason.parameters.grade ?? grade).toBe(grade);
       for (const citation of rule.basis) {
-        expect(rule.reason).toContain(STEEL_STANDARDS[citation.standardId].number);
+        expect(STEEL_STANDARDS[citation.standardId].number).toMatch(/^JIS G [0-9]{4}$/u);
         expect(citation.locator.trim().length).toBeGreaterThan(0);
       }
     });

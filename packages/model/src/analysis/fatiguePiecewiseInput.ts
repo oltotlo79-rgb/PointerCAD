@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 import { fatigueInputFailure as fail, InputIssue, text } from './analysisValidation.js';
 import { FATIGUE_SAVED_ID, FATIGUE_SAVED_LIMITS, denseFatigueList, exactFatigueFields, fatigueLabel, finiteFatigueNumber,
   readFatigueSavedHistory, readFatigueSavedSource, type FatigueSavedHistory, type FatigueSavedSource } from './fatigueInput.js';
@@ -75,7 +76,7 @@ function readSegments(value: unknown, path: string): FatigueSavedPiecewiseSegmen
       }
       // The same expression as segmentLife() of the core: N on the previous line at this start stress.
       const expected = previous.fromCycles * (previous.fromStressMpa / segment.fromStressMpa) ** previous.slope;
-      if (!(Math.abs(expected - segment.fromCycles) <= FATIGUE_SAVED_PIECEWISE_LIMITS.continuityTolerance * segment.fromCycles)) {
+      if (!(withinMagnitude(expected - segment.fromCycles, FATIGUE_SAVED_PIECEWISE_LIMITS.continuityTolerance * segment.fromCycles))) {
         fail(at, 'Expected the segment start to lie on the previous segment line (continuous at the knee)');
       }
     }

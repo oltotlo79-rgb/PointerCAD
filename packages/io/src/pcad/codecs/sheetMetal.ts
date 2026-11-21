@@ -1,4 +1,5 @@
 /** 板金の入力だけを保存する。導出座標・メッシュ・一時表示は書き出さない。 */
+import { belowMagnitude } from '@pointercad/model';
 import type { SheetBaseFeature, SheetBendFeature, SheetBendRuleOverride, SheetFlangeFeature, SheetFlangeProfile, SheetMetalFeature,
   SheetMetalRule, SheetPanelBoundaryRef, SheetReliefFeature, SketchFaceRef, SketchLineRef } from '@pointercad/model';
 import { checkRecord, fieldProblem, joinPath, readBoolean, readExpression, readLiteral, readRecord, readString, readValue,
@@ -20,7 +21,7 @@ function readFiniteExpression(record: Record<string, unknown>, key: string, path
 }
 const positiveLength = (value: number): boolean => value > 1e-7;
 const nonNegative = (value: number): boolean => value >= 0;
-const validAngle = (value: number): boolean => Math.abs(value) < 180;
+const validAngle = (value: number): boolean => belowMagnitude(value, 180);
 const validK = (value: number): boolean => value >= 0 && value <= 0.5;
 
 function readSheetRule(record: Record<string, unknown>, path: string): Checked<SheetMetalRule> {

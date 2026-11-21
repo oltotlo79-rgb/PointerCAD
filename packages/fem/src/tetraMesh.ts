@@ -1,3 +1,4 @@
+import { magnitudeAtLeast, withinMagnitude } from '@pointercad/model/beam-analysis';
 import { subVec3 as sub, crossVec3 as cross, dotVec3 as dot } from '@pointercad/model/vec3';
 import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
@@ -134,7 +135,7 @@ function sum(values: readonly number[]): number {
   let total = 0, correction = 0;
   for (const value of values) {
     const next = total + value;
-    correction += Math.abs(total) >= Math.abs(value) ? total - next + value : value - next + total;
+    correction += magnitudeAtLeast(total, Math.abs(value)) ? total - next + value : value - next + total;
     total = next;
   }
   return total + correction;
@@ -179,7 +180,7 @@ function boundaryGeometry(input: TetraMeshInput): { volume: number; planes: read
     const existing = tagPlanes.get(tag);
     if (existing !== undefined) {
       requireMesh(dot(existing.normal, plane.normal) >= 1 - 1e-10
-        && [pa, pb, pc].every(p => Math.abs(dot(existing.normal, sub(p, existing.point))) <= epsilon),
+        && [pa, pb, pc].every(p => withinMagnitude(dot(existing.normal, sub(p, existing.point)), epsilon)),
       'one CAD face label spans nonplanar triangles');
     } else tagPlanes.set(tag, plane);
     volumes.push(dot(sub(pa, anchor), cross(sub(pb, anchor), sub(pc, anchor))) / 6);
@@ -223,7 +224,7 @@ export function readTetraMeshInput(value: unknown): TetraMeshInput {
   const coordinates = numbers(value.coordinates, TETRA_LIMITS.boundaryNodes * 3);
   const triangles = numbers(value.triangles, TETRA_LIMITS.boundaryTriangles * 3, true);
   const tags = numbers(value.tags, TETRA_LIMITS.boundaryTriangles, true);
-  requireMesh(coordinates.length % 3 === 0 && coordinates.length >= 12 && coordinates.every(n => Math.abs(n) <= 1e9)
+  requireMesh(coordinates.length % 3 === 0 && coordinates.length >= 12 && coordinates.every(n => withinMagnitude(n, 1e9))
     && triangles.length % 3 === 0 && triangles.length >= 12 && tags.length === triangles.length / 3
     && typeof value.tagCount === 'number' && Number.isSafeInteger(value.tagCount)
     && value.tagCount >= (planar ? 1 : 4) && value.tagCount <= tags.length, 'dimensions or label count');
@@ -307,7 +308,7 @@ export function decodeTetraMesh(value: unknown, expected: TetraMeshInput, hash: 
   }
   requireMesh(surface.size === 0, 'missing CAD boundary facet');
   const volumeMm3 = sum(volumes);
-  requireMesh(Math.abs(volumeMm3 - geometry.volume) <= geometry.volume * 1e-10, 'enclosed volume mismatch');
+  requireMesh(withinMagnitude(volumeMm3 - geometry.volume, geometry.volume * 1e-10), 'enclosed volume mismatch');
   return { kind: input.schema === TETRA_MESH_SCHEMA ? 'netgen-convex-tetra-mesh' : 'netgen-tetra-mesh',
     input, inputSha256: hash, coordinates, tetrahedra,
     boundaryTriangles, boundaryTags, volumeMm3, minTetVolumeMm3: volumes.reduce((minimum, volume) => Math.min(minimum, volume), Infinity) };

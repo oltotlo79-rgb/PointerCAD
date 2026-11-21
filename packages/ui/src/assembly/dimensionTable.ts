@@ -27,12 +27,13 @@ interface DimensionRow {
   readonly unit: DimensionUnit;
 }
 
-/** 表の下の印(族の行だけ。今の 8 分類と鋼材の窓は要確認の 1 行を窓が出しているので重ねない)。 */
-interface DimensionMark {
-  readonly kind: 'unverified' | 'simplified';
-  /** 要確認は理由の文、簡略は簡略にした所の一覧。 */
-  readonly parts: readonly string[];
-}
+/**
+ * 表の下の印(族の行だけ。今の 8 分類と鋼材の窓は要確認の 1 行を窓が出しているので重ねない)。要確認は理由の文、簡略は簡略にした所の一覧、
+ * 道具の画面の値は、資料に記入が無く参考にした組立用の道具の画面の値で入れた寸法の名前の鍵の一覧。
+ */
+type DimensionMark =
+  | { readonly kind: 'unverified' | 'simplified'; readonly parts: readonly string[] }
+  | { readonly kind: 'toolScreen'; readonly parts: readonly MessageKey[] };
 
 export interface DimensionFigurePart {
   /** 同じ鍵なら同じ部品文書になる鍵(線図を覚える鍵)。 */
@@ -163,6 +164,10 @@ export function familyFigurePart(family: LoadedFamily, row: FamilyRow, values: R
   const marks: DimensionMark[] = [];
   if (!row.verified) marks.push({ kind: 'unverified', parts: [row.note] });
   if (row.simplified !== undefined && row.simplified.length > 0) marks.push({ kind: 'simplified', parts: row.simplified });
+  const source = row.valueSource;
+  if (source !== undefined) {
+    marks.push({ kind: 'toolScreen', parts: source.fields.flatMap((key) => DIMENSION_LABELS.get(key)?.label ?? []) });
+  }
   return {
     key: `family:${family.id}:${family.catalogRevision}:${family.generatorRevision}:${row.key}:${JSON.stringify(values)}`,
     build: () => buildStandardPartFromSource(createCatalogItemSource(family, row, values))

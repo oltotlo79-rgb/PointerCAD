@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import {
   addVec3,
   crossVec3,
@@ -111,7 +112,7 @@ export function planeAxesFor(
       return { axisU, axisV: crossVec3(unit, axisU) };
     }
   }
-  const helper: Vec3 = Math.abs(unit[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1];
+  const helper: Vec3 = exceedsMagnitude(unit[2], 0.9) ? [1, 0, 0] : [0, 0, 1];
   const axisU = normalizeVec3(crossVec3(helper, unit));
   return { axisU, axisV: crossVec3(unit, axisU) };
 }

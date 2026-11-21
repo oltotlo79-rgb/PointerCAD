@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { isFiniteNumber, isRecord as record } from '../valueGuards.js';
 import { InputIssue } from './analysisValidation.js';
 import { analysisPropertyEvidenceKeys, rayleighPropertySeries, readOptionalAnalysisPropertyEvidence,
@@ -109,7 +110,7 @@ export function readBeamTransientHistory(value: unknown, path: string): BeamTran
     const samplePath = `${path}.loadFactor[${index}]`;
     const sample = fields(item, ['timeS', 'factor'], samplePath);
     const factor = finite(sample.factor, `${samplePath}.factor`);
-    if (Math.abs(factor) > 1e6) fail('transient-history', samplePath, 'load factor magnitude exceeds 1e6');
+    if (exceedsMagnitude(factor, 1e6)) fail('transient-history', samplePath, 'load factor magnitude exceeds 1e6');
     return { timeS: finite(sample.timeS, `${samplePath}.timeS`), factor };
   });
   if (loadFactor.some((sample, index) => index > 0 && sample.timeS <= loadFactor[index - 1].timeS)) {

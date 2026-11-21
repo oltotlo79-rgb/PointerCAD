@@ -1,6 +1,8 @@
 import { readDocumentBundle, type ReadDocumentBundleResult } from '@pointercad/io';
 import {
+  createEmptyPartDocument,
   embedPart,
+  emptyEmbeddedPartAttachments,
   findComponent,
   setComponentSuppressed,
   setFixed,
@@ -12,6 +14,7 @@ import {
 } from '@pointercad/model';
 import { openFileThrough, type FileGateway, type PickedTypedFile } from '../file/fileGateway.js';
 import { openErrorMessageKey } from '../file/partFile.js';
+import { createPartLineageId, createSecureUuid, SecurePartIdentityError } from '../store/documentIdentity.js';
 import type { AssemblyPlacementState } from '../store/assemblySlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { duplicateComponent as duplicateComponentDocument, placePart, placementFromSources, removeComponents,
@@ -39,6 +42,30 @@ const DEFAULT_DEPS: PlaceComponentDeps = {
 
 function isCurrentPlacement(state: AssemblyPlacementState | null, requestId: string, documentId: string): boolean {
   return state?.requestId === requestId && state.documentId === documentId;
+}
+
+/** 空の部品は配置を確定するまで位置欄だけが持つ。 */
+export function startCreatePart(): void {
+  const state = useAppStore.getState();
+  if (state.assembly === null || state.assemblyPlacement !== null) return;
+  let id: string;
+  let requestId: string;
+  try {
+    id = createPartLineageId();
+    requestId = createSecureUuid();
+  } catch (error) {
+    if (!(error instanceof SecurePartIdentityError)) throw error;
+    state.setFileMessage({ key: 'assembly.createPart.identityUnavailable', failed: true });
+    return;
+  }
+  const document = { ...createEmptyPartDocument(), id };
+  useAppStore.setState({
+    assemblyComponentPick: null,
+    assemblyPlacement: {
+      kind: 'ready', requestId, documentId: state.activeDocumentId,
+      fileName: `${document.name}.pcad`, document, attachments: emptyEmbeddedPartAttachments(), sources: ['0', '0', '0'],
+    },
+  });
 }
 
 /** 選択と読込を始める。非同期の各境界で文書IDと要求IDを再確認する。 */

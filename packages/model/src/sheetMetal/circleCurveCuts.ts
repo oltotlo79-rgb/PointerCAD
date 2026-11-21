@@ -1,4 +1,5 @@
 /** 板金の長穴先端と輪郭の交差。円弧/楕円/スプラインを折線へ置き換えない。 */
+import { exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 import { arcPointAt, ellipsePointAt } from '../sketch/intersectionMath.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import { addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
@@ -31,15 +32,15 @@ function spans(curve: ResolvedCurve): readonly RationalSpan[] | null {
 }
 
 export function sheetCurveCircleCuts(curve: ResolvedCurve, center: Vec3, radius: number, normal: Vec3): SheetGeometryResult<readonly number[]> {
-  if (![...center, radius, ...normal].every(Number.isFinite) || radius <= 1e-7 || Math.abs(lengthVec3(normal) - 1) > 1e-10)
+  if (![...center, radius, ...normal].every(Number.isFinite) || radius <= 1e-7 || exceedsMagnitude(lengthVec3(normal) - 1, 1e-10))
     return { ok: false, message: '切欠きの円の位置・半径・平面を確認してください。' };
-  if (curve.kind === 'arc' && lengthVec3(subVec3(curve.center, center)) <= 1e-7 && Math.abs(curve.radius - radius) <= 1e-7)
+  if (curve.kind === 'arc' && lengthVec3(subVec3(curve.center, center)) <= 1e-7 && withinMagnitude(curve.radius - radius, 1e-7))
     return { ok: false, message: '切欠きの円と輪郭が重なっています。位置か寸法を変更してください。' };
   const pieces = spans(curve); if (pieces === null) return { ok: false, message: '切欠きと交差する輪郭の形を解決できません。' };
   const result: number[] = [];
   for (const span of pieces) {
     const relative = span.poles.map((point, i) => scaleVec3(subVec3(point, center), span.weights[i] / radius));
-    if (span.poles.some((point) => Math.abs(dotVec3(subVec3(point, center), normal)) > 1e-7))
+    if (span.poles.some((point) => exceedsMagnitude(dotVec3(subVec3(point, center), normal), 1e-7)))
       return { ok: false, message: '切欠きと輪郭を同じ平面に置いてください。' };
     const components = [0, 1, 2].map((axis) => relative.map((point) => point[axis]));
     const squares = components.map((component) => multiplyBernstein(component, component)), weights = multiplyBernstein(span.weights, span.weights);

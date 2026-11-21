@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model';
 import type { ImpactElementEndForces, SectionResultants } from './beamImpactInterior.js';
 
 /**
@@ -49,7 +50,7 @@ export function checkFibreSection(section: BeamFibreSection, analysed: AnalysedS
   const own = geometric(section);
   for (const [property, outline, value] of [['area', own.areaM2, analysed.areaM2], ['iy', own.iyM4, analysed.iyM4],
     ['iz', own.izM4, analysed.izM4]] as const) {
-    if (!(positive(value) && Math.abs(outline - value) <= relative * value)) {
+    if (!(positive(value) && withinMagnitude(outline - value, relative * value))) {
       return { status: 'inconsistent', property, outline, analysed: value };
     }
   }

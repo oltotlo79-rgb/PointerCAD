@@ -433,6 +433,23 @@ const beamResultAssertionRule = {
   },
 };
 
+/** @type {import('eslint').Rule.RuleModule} */
+const magnitudeComparisonRule = {
+  meta: { type: 'problem', schema: [], messages: { handwritten: '絶対値の比較には許容差の共通関数を使ってください。' } },
+  create(context) {
+    return {
+      BinaryExpression(node) {
+        if (!['<', '<=', '>', '>='].includes(node.operator)) return;
+        const usesMagnitude = [node.left, node.right].some(operand => operand.type === 'CallExpression'
+          && operand.arguments.length === 1 && operand.callee.type === 'MemberExpression' && !operand.callee.computed
+          && operand.callee.object.type === 'Identifier' && operand.callee.object.name === 'Math'
+          && operand.callee.property.type === 'Identifier' && operand.callee.property.name === 'abs');
+        if (usesMagnitude) context.report({ node, messageId: 'handwritten' });
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -931,6 +948,14 @@ export default tseslint.config(
     ignores: ['packages/model/src/valueGuards.ts', '**/*.test.{ts,tsx}', '**/*.testSupport.{ts,tsx}'],
     plugins: { 'record-guard': { rules: { canonical: canonicalRecordPredicateRule } } },
     rules: { 'record-guard/canonical': 'error' },
+  },
+  {
+    files: ['packages/{kernel,model,ui,io,fem}/src/**/*.{ts,tsx,mts,cts}'],
+    // splineInterpolation.ts は読み込み 0 の決まり(splineArithmeticBoundary.test.ts:42-44)で正本の関数を読めない。18 回目と同じく、
+    // 手書きの比べ 3 か所は許容差の検査の基準(toleranceBaseline.json・toleranceOriginalExtraBaseline.json の数)で見張る。
+    ignores: ['**/*.{test,testSupport,spec,d}.{ts,tsx,mts,cts}', 'packages/kernel/src/math/splineInterpolation.ts'],
+    plugins: { tolerance: { rules: { comparison: magnitudeComparisonRule } } },
+    rules: { 'tolerance/comparison': 'error' },
   },
   {
     // Use a separate rule so narrower syntax overrides cannot remove this guard (kernel entry: named exports only).

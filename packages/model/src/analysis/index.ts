@@ -56,3 +56,7 @@ export { readCadNativeBoltPreloadSavedInput } from './beamInputs.js';
 export * from './solidContactInput.js';
 
 export { readSolidFiniteCadSavedInput, SOLID_FINITE_CAD_SCHEMA, type SolidFiniteCadSavedInput } from './solidFiniteCadInput.js';
+
+// FEM の Worker は model をこの口からだけ読む(Worker のビルドは別名をこの口だけに張り、外の読み込みと動的な読み込みの無い
+// 1 本の古い形のスクリプトでないと断る。scripts/vite/femRuntimeAssets.mjs:459・468-470)。許容差の正本の関数もここから出す。
+export { belowMagnitude, exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from '../numericTolerance.js';

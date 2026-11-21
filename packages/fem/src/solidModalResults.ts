@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model/beam-analysis';
 import { createPrefixedError } from './valueGuards.js';
 import type { SolidMaterial, SolidVector3 } from './solidAnalysisModel.js';
 import { solidArray, solidNumber, solidRecord, solidStrainStress, solidTetGeometry, solidVector } from './solidAnalysisTranslation.js';
@@ -79,7 +80,7 @@ export function decodeSolidModal(raw: unknown, value: SolidModalInput, inputSha2
   });
   const expectedMass = operators.reduce((sum, element) => sum + element.densityTPerMm3 * element.volumeMm3, 0);
   const totalMassT = solidNumber(row.totalMassT);
-  if (!(Math.abs(totalMassT - expectedMass) <= expectedMass * 1e-10)) fail('total mass differs from rho V in t');
+  if (!(withinMagnitude(totalMassT - expectedMass, expectedMass * 1e-10))) fail('total mass differs from rho V in t');
   let previous = 0;
   const modes = solidArray(row.modes, plan.modeCount, plan.modeCount).map((value, index): SolidModalMode => {
     const mode = solidRecord(value, MODE_FIELDS);
@@ -87,7 +88,7 @@ export function decodeSolidModal(raw: unknown, value: SolidModalInput, inputSha2
     const eigenvaluePerSecondSquared = solidNumber(mode.eigenvaluePerSecondSquared), frequencyHz = solidNumber(mode.frequencyHz);
     if (!(eigenvaluePerSecondSquared > 0) || eigenvaluePerSecondSquared < previous) fail('eigenvalues must be positive and ascending');
     previous = eigenvaluePerSecondSquared;
-    if (!(Math.abs(frequencyHz - Math.sqrt(eigenvaluePerSecondSquared) / (2 * Math.PI)) <= frequencyHz * 1e-12))
+    if (!(withinMagnitude(frequencyHz - Math.sqrt(eigenvaluePerSecondSquared) / (2 * Math.PI), frequencyHz * 1e-12)))
       fail('frequency is not sqrt(eigenvalue) / 2 pi');
     const shape = solidArray(mode.massNormalizedShapePerSqrtT, count, count).map(solidVector);
     shape.forEach((v, node) => { for (let axis = 0; axis < 3; axis += 1) if (plan.fixed[node][axis] && v[axis] !== 0) fail('restrained translation in a mode shape'); });
@@ -122,7 +123,7 @@ export function decodeSolidModal(raw: unknown, value: SolidModalInput, inputSha2
     }))];
     for (const motion of rigid) {
       const norm = Math.sqrt(dot(motion, act(operators, count, motion).mass));
-      for (const action of actions) if (!(Math.abs(dot(motion, action.mass)) <= tolerance * norm)) fail('mode is not mass-orthogonal to rigid motion');
+      for (const action of actions) if (!(withinMagnitude(dot(motion, action.mass), tolerance * norm))) fail('mode is not mass-orthogonal to rigid motion');
     }
   }
   return { kind: 'oofem-solid-tet4-modal', method: SOLID_MODAL_METHOD, source: input.source, inputSha256, units: 'N-mm-MPa-t-s',

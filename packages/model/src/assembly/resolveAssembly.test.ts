@@ -23,13 +23,15 @@ import {
 } from './placementMath.js';
 import {
   assemblyVariables,
-  INVALID_PLACEMENT_MESSAGE,
-  MISSING_PART_MESSAGE,
-  MISSING_STANDARD_SIZE_MESSAGE,
   partKeyOf,
   resolveAssembly,
 } from './resolveAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, ComponentSource, Placement } from './types.js';
+
+/** 組立の誤りの文の鍵(文は ui の文言の表。作った文は ui の failureMessage.test.ts と assemblyTreeRows.test.ts が見る)。 */
+const MISSING_PART = { key: 'assembly.error.missingPart', parameters: {} };
+const MISSING_STANDARD_SIZE = { key: 'assembly.error.missingStandardSize', parameters: {} };
+const INVALID_PLACEMENT = { key: 'assembly.error.invalidPlacement', parameters: {} };
 import { buildStandardPartFromSource, createStandardPartSource } from './standard/buildStandardPart.js';
 import { STEEL_PRODUCTS, steelProductOptions } from './standard/steelCatalog.js';
 
@@ -57,9 +59,9 @@ describe('鋼材の解決は規格の拒否と保存値の食い違いを区別�
     const result = resolveAssembly(assemblyWith([componentOf('steel-1', source)]), { standardPart: buildStandardPartFromSource });
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toMatchObject({ componentId: 'steel-1', code: 'missingPart' });
-    expect(result.errors[0]?.message).toContain(standard);
-    expect(result.errors[0]?.message).toContain(clause);
-    expect(result.errors[0]?.message).not.toBe(MISSING_STANDARD_SIZE_MESSAGE);
+    expect(result.errors[0]?.text.parameters.basis).toContain(standard);
+    expect(result.errors[0]?.text.parameters.basis).toContain(clause);
+    expect(result.errors[0]?.text).not.toEqual(MISSING_STANDARD_SIZE);
     expect(result.parts.size).toBe(0);
   });
 
@@ -72,9 +74,9 @@ describe('鋼材の解決は規格の拒否と保存値の食い違いを区別�
     const result = resolveAssembly(assemblyWith([componentOf('changed', tampered), componentOf('missing', missing)]),
       { standardPart: buildStandardPartFromSource });
     expect(result.errors).toHaveLength(2);
-    expect(result.errors[0]?.message).toBe('保存した鋼材の指定が寸法表と一致しません（evidence）。');
-    expect(result.errors[1]?.message).toContain('この鋼種・断面の呼び寸法はカタログにありません。');
-    expect(result.errors[1]?.message).toContain('JIS G 3194');
+    expect(result.errors[0]?.text).toEqual({ key: 'assembly.steel.rejection.saved-fields-mismatch', parameters: { fields: 'evidence' } });
+    expect(result.errors[1]?.text.key).toBe('assembly.steel.rejection.size-not-in-catalog');
+    expect(result.errors[1]?.text.parameters.basis).toContain('JIS G 3194');
   });
 
   it('旧版と鋼材指定の混在を解決で拒否し、鋼材以外の一般文は維持する', () => {
@@ -84,9 +86,9 @@ describe('鋼材の解決は規格の拒否と保存値の食い違いを区別�
     const result = resolveAssembly(assemblyWith([componentOf('mixed', mixed),
       componentOf('bolt', createStandardPartSource('hexBolt', 'size-not-existing'))]),
     { standardPart: buildStandardPartFromSource });
-    expect(result.errors.map((error) => error.message)).toEqual([
-      '従来カタログの部品には鋼材の指定を組み合わせられません。材質別カタログから選び直してください。',
-      MISSING_STANDARD_SIZE_MESSAGE,
+    expect(result.errors.map((error) => error.text)).toEqual([
+      { key: 'assembly.steel.rejection.steel-options-with-legacy-revision', parameters: {} },
+      MISSING_STANDARD_SIZE,
     ]);
   });
 });
@@ -304,7 +306,7 @@ describe('抑制と、引けない部品(FR-503、FR-504、NFR-RE-1)', () => {
     const resolved = resolveAssembly(assembly, { library: library3 });
 
     expect(resolved.errors).toEqual([
-      { componentId: 'component-1', code: 'missingPart', message: MISSING_PART_MESSAGE },
+      { componentId: 'component-1', code: 'missingPart', text: MISSING_PART },
     ]);
     // 置き場所は分かっているので配置は返る。中身が無いことは partKeys の欠けで分かる。
     expect(resolved.placements.has('component-1')).toBe(true);
@@ -329,7 +331,7 @@ describe('抑制と、引けない部品(FR-503、FR-504、NFR-RE-1)', () => {
     const resolved = resolveAssembly(assembly);
 
     expect(resolved.parts.size).toBe(0);
-    expect(resolved.errors.map((error) => error.message)).toEqual([MISSING_PART_MESSAGE]);
+    expect(resolved.errors.map((error) => error.text)).toEqual([MISSING_PART]);
   });
 
   it('サブアセンブリはいまは引けない(タスク36 で再帰を入れる)', () => {
@@ -356,7 +358,7 @@ describe('規格部品(FR-612、FR-616、§0.a-0.35)', () => {
   it('台本が無ければ「この呼び寸法は用意されていません。」', () => {
     const resolved = resolveAssembly(assemblyWith([componentOf('component-1', bolt)]));
 
-    expect(resolved.errors.map((error) => error.message)).toEqual([MISSING_STANDARD_SIZE_MESSAGE]);
+    expect(resolved.errors.map((error) => error.text)).toEqual([MISSING_STANDARD_SIZE]);
   });
 
   it('同じ呼び寸法は台本を 1 回しか呼ばない', () => {
@@ -449,7 +451,7 @@ describe('配置(§2.4、§0.a-0.54)', () => {
 
     expect(resolved.placements.get('component-1')?.position).toEqual([0, 4, 0]);
     expect(resolved.errors).toEqual([
-      { componentId: 'component-1', code: 'invalidValue', message: INVALID_PLACEMENT_MESSAGE },
+      { componentId: 'component-1', code: 'invalidValue', text: INVALID_PLACEMENT },
     ]);
   });
 

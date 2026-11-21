@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from './tolerances.js';
 /**
  * P3/P4 successor (AUTHOR-ONLY, UNEXECUTED; feedback-r2 obligations 2 and 3). Replaces the whole-face strict span test of
  * analyticChartInjectivity.ts for periodic charts: a LIFTED chart (one UV lift per triangle corner, boundary-08 binding
@@ -168,7 +169,7 @@ export function assertLiftedChartCoverR2(chart: LiftedChart, trimRanges: TrimOcc
       if (cls?.kind !== 'pole' && [nodes[a][1], nodes[b][1]].some(v => Math.abs(v) === HALF_PI_BELOW)
         && nodes[a][1] === nodes[b][1]) throw new Error('chart-cover: unbound edge on the pole line');
     }
-    if (nodes.some(n => Math.abs(n[1]) > HALF_PI_BELOW)) throw new Error('chart-cover: latitude beyond a pole');
+    if (nodes.some(n => exceedsMagnitude(n[1], HALF_PI_BELOW))) throw new Error('chart-cover: latitude beyond a pole');
   }
   // (c) seam pairing by exact period translation and opposite orientation.
   for (const [id, lifts] of seams) {

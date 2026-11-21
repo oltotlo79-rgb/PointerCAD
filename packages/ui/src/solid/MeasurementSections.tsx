@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { DENSITY_MATERIALS, formatMass, type AppearanceSpec } from '@pointercad/model';
+import { magnitudeAtLeast, DENSITY_MATERIALS, formatMass, type AppearanceSpec } from '@pointercad/model';
 import { AppearanceMenu } from '../appearance/AppearanceMenu.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { evaluateFieldSource, isPendingFieldError, useFieldUnits } from '../shell/propertyFieldUnits.js';
@@ -17,7 +17,7 @@ import { formatArea, formatVolume, AREA_UNIT_KEYS, VOLUME_UNIT_KEYS } from './me
  * 全桁は formatMass(説明の title)で出す。計算の中の値は変えない。
  */
 function massText(grams: number): string {
-  return Math.abs(grams) >= 1000 ? `${shortNumber(grams / 1000)} kg` : `${shortNumber(grams)} g`;
+  return magnitudeAtLeast(grams, 1000) ? `${shortNumber(grams / 1000)} kg` : `${shortNumber(grams)} g`;
 }
 
 /**

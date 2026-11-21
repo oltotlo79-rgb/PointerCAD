@@ -2,6 +2,7 @@ import { readCadWeldSpanInputs } from '@pointercad/model/beam-analysis';
 import { beamDefinition, invalidateBeamSession, type BeamSession } from './beamSession.js';
 import type { BeamSourceSnapshot } from './beamSource.js';
 import { prepareBeamAnalysis } from './prepareBeamAnalysis.js';
+import { issueMessage } from '../i18n/failureMessage.js';
 
 /** Explicit review only: construct a proposal without changing the persisted source or input.
  * Existing part/placement/material/group/footprint checks decide whether the proposal can be accepted.
@@ -19,7 +20,7 @@ export function reassociateBeamWeldSpan(session: BeamSession, source: BeamSource
     const draft = beamDefinition(proposal, source, source.document.parameters);
     if (!draft.ok) return { ok: false, reason: draft.diagnostic ?? draft.key };
     const prepared = prepareBeamAnalysis(source, draft.definition);
-    if (!prepared.ok) return { ok: false, reason: `${prepared.issue.code}: ${prepared.issue.path}: ${prepared.issue.message}` };
+    if (!prepared.ok) return { ok: false, reason: `${prepared.issue.code}: ${prepared.issue.path}: ${issueMessage(prepared.issue)}` };
     if (prepared.kind !== 'weld-span-contact') return { ok: false, reason: 'weld-span-route: dedicated preparation required' };
     return { ok: true, session: proposal };
   } catch (error) {

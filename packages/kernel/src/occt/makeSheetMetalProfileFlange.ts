@@ -1,4 +1,5 @@
 /** 任意の輪郭と穴を保ったまま、円筒帯を介して基板へ接続する。 */
+import { magnitudeAtLeast } from './tolerances.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
@@ -16,7 +17,7 @@ export interface SheetMetalProfileFlangeInput extends SheetMetalBendBandInput {
 export function makeSheetMetalProfileFlange(oc: OpenCascadeInstance, target: TopoDS_Shape, input: SheetMetalProfileFlangeInput): OcctShapeHandle {
   validateSheetMetalBendFrame(input.frame);
   if (![input.thickness, input.radius, input.width, input.angle].every(Number.isFinite)
-    || Math.min(input.thickness, input.radius, input.width) <= 1e-7 || Math.abs(input.angle) >= 180)
+    || Math.min(input.thickness, input.radius, input.width) <= 1e-7 || magnitudeAtLeast(input.angle, 180))
     throw new Error('任意輪郭フランジの板厚・内半径・幅・角度を確認してください。');
   const theta = input.angle * Math.PI / 180, c = Math.cos(theta), s = Math.sin(theta);
   const normal: Vec3Tuple = [

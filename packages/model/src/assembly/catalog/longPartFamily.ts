@@ -14,7 +14,7 @@ import { withName } from '../standard/partPrimitives.js';
 import { buildProfileSection } from '../standard/profileExtrusion.js';
 import { lengthOf, lengthOptionSpec, lengthText } from './lengthOption.js';
 import { panelBoardProfile } from './profiles/panelBoard.js';
-import type { CatalogFamily, CatalogItemRow } from './types.js';
+import type { CatalogFamily, CatalogItemRow, CatalogValueSource } from './types.js';
 
 type LongPartMaterial = 'aluminum' | 'stainless' | 'steel' | 'mixed';
 
@@ -22,7 +22,10 @@ type LongPartMaterial = 'aluminum' | 'stainless' | 'steel' | 'mixed';
 export interface LongPartRecord {
   readonly key: string;
   readonly size: string;
-  readonly page: number;
+  /** 資料の頁。資料に載らない品(値が全部、参考にした組立用の道具の画面の値の行)は null。 */
+  readonly page: number | null;
+  /** 値の出どころの種類(持たない行は資料と頁)。資料に記入の無い寸法を参考にした組立用の道具の画面の値で入れた行だけ持つ。 */
+  readonly valueSource?: CatalogValueSource;
   /** 部品の種類の一般の語。 */
   readonly kind: string;
   readonly material: LongPartMaterial;
@@ -63,9 +66,11 @@ function longPartRow(spec: LongPartFamilySpec, record: LongPartRecord): CatalogI
       ...(record.unitMassKgPerM === null ? {} : { unitMassKgPerM: record.unitMassKgPerM }),
       ...(record.maxLength === null ? {} : { maxLength: record.maxLength }),
     },
-    evidence: { title: spec.evidenceTitle, edition: null, locator: `PDF ${record.page} 頁 断面の図(外形の寸法)と質量の記入`, reference: '' },
+    evidence: { title: spec.evidenceTitle, edition: null, reference: '',
+      locator: record.page === null ? '資料に載らない品(値は参考にした組立用の道具の画面の値)' : `PDF ${record.page} 頁 断面の図(外形の寸法)と質量の記入` },
     verification: 'manufacturer-catalog', verified: true,
     note: `形は簡略(${record.simplified.join('・')})。${mass}${limit}。断面の性質は持たない`, simplified: record.simplified,
+    ...(record.valueSource === undefined ? {} : { valueSource: record.valueSource }),
   };
 }
 

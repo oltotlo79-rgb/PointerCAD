@@ -173,7 +173,7 @@ describe('EX03 W10 tampered assembly inputs remain readable and reject only duri
       expect(resolved.parts.size).toBe(0);
       expect(resolved.partKeys.size).toBe(0);
       expect(resolved.errors).toHaveLength(1);
-      expect(resolved.errors[0].message).toBe(result.rejection?.message);
+      expect(resolved.errors[0].text).toEqual(result.rejection?.text);
       expect(source).toEqual(sourceBefore);
       expect(opened).toEqual(before);
     }
@@ -185,22 +185,22 @@ describe('EX03 W10 tampered assembly inputs remain readable and reject only duri
     const rejection = result.rejection;
     expect(result.document).toBeNull();
     expect(rejection.code).toBe(test.code);
-    expect(rejection.message.trim().length).toBeGreaterThan(0);
+    expect(rejection.text.key).toBe(`assembly.steel.rejection.${test.code}`);
     if (test.code === 'saved-fields-mismatch') {
       const field = test.field === 'options' ? 'unexpected' : test.field;
       expect(rejection.fields).toEqual([field]);
-      expect(rejection.message).toContain(field);
+      expect(rejection.text.parameters.fields).toContain(field);
     } else if (test.code === 'unsupported-catalog-revision' || test.code === 'unsupported-generator-revision') {
-      expect(rejection.message).toContain('版');
+      expect(rejection.text.parameters).toEqual({});
     } else if (test.code === 'invalid-steel-length') {
-      expect(rejection.message).toContain('長さ');
+      expect(rejection.text.parameters).toEqual({});
     } else {
-      expect(rejection.message).toMatch(/JIS G [0-9]{4}/u);
-      expect(rejection.message).toMatch(/適用範囲|箇条|表[0-9０-９]|[0-9]+[.][0-9]+/u);
+      expect(rejection.text.parameters.basis).toMatch(/JIS G [0-9]{4}/u);
+      expect(rejection.text.parameters.basis).toMatch(/適用範囲|箇条|表[0-9０-９]|[0-9]+[.][0-9]+/u);
       expect(rejection.basis.length).toBeGreaterThan(0);
       for (const basis of rejection.basis) {
-        expect(rejection.message).toContain(STEEL_STANDARDS[basis.standardId].number);
-        expect(rejection.message).toContain(basis.locator);
+        expect(rejection.text.parameters.basis).toContain(STEEL_STANDARDS[basis.standardId].number);
+        expect(rejection.text.parameters.basis).toContain(basis.locator);
       }
     }
   });

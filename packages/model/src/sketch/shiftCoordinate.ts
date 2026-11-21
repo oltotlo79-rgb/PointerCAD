@@ -16,6 +16,7 @@
  * 式は文字列のまま組み替え、**丸めない**(rules/04-設計の規律.md の数値精度)。
  */
 
+import { belowMagnitude, exceedsMagnitude } from '../numericTolerance.js';
 import {
   addExpression,
   exactExpressionValueFromNumber,
@@ -94,10 +95,10 @@ function axisShiftFrom(
   let found: AxisShift | null = null;
   for (let index = 0; index < coefficients.length; index += 1) {
     const coefficient = coefficients[index];
-    if (Math.abs(coefficient) < AXIS_EPSILON) {
+    if (belowMagnitude(coefficient, AXIS_EPSILON)) {
       continue;
     }
-    if (found !== null || Math.abs(Math.abs(coefficient) - 1) > AXIS_EPSILON) {
+    if (found !== null || exceedsMagnitude(Math.abs(coefficient) - 1, AXIS_EPSILON)) {
       return null;
     }
     const amount = shiftAmount(shift, index);

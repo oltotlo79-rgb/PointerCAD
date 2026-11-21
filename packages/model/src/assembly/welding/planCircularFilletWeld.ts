@@ -1,6 +1,7 @@
 /** Internal root-occurrence circular planning. Consumers: applyCircularFilletWeld and these two tests.
  * Saved reconstruction is never contact admission; no public/Worker/save union is extended.
  */
+import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import { exactExpressionValueFromNumber } from '@pointercad/expression';
 import { findDensityMaterial } from '../../appearance/densityMaterials.js';
 import { resolveSubShapeReference } from '../../kernelBridge/referenceResolution.js';
@@ -152,12 +153,12 @@ function savedPose(key: string): RigidPlacement | null {
   const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   if (!Array.isArray(p) || p.length !== 3 || !Array.isArray(q) || q.length !== 4
     || !p.every(finite) || !q.every(finite)
-    || Math.abs(Math.hypot(...q) - 1) > WELD_DIRECTION_TOLERANCE) return null;
+    || exceedsMagnitude(Math.hypot(...q) - 1, WELD_DIRECTION_TOLERANCE)) return null;
   return { position: [p[0], p[1], p[2]], rotation: [q[0], q[1], q[2], q[3]] };
 }
 function samePose(a: RigidPlacement, b: RigidPlacement): boolean {
-  return a.position.every((v, axis) => Math.abs(v - b.position[axis]) <= WELD_LENGTH_TOLERANCE_MM)
-    && [1, -1].some(sign => a.rotation.every((v, axis) => Math.abs(v - sign * b.rotation[axis]) <= WELD_DIRECTION_TOLERANCE));
+  return a.position.every((v, axis) => withinMagnitude(v - b.position[axis], WELD_LENGTH_TOLERANCE_MM))
+    && [1, -1].some(sign => a.rotation.every((v, axis) => withinMagnitude(v - sign * b.rotation[axis], WELD_DIRECTION_TOLERANCE)));
 }
 /** One common rigid transform of the original parameterized circle. Source,
  * radius, raw range and traversal must still be the exact original geometry.

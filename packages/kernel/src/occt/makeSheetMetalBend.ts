@@ -1,4 +1,5 @@
 /** 円筒曲げと接線直線部から、一定厚の板を生成する。 */
+import { exceedsMagnitude, magnitudeAtLeast } from './tolerances.js';
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
@@ -31,9 +32,9 @@ export function validateSheetMetalBendFrame(frame: SheetMetalBendFrame): void {
   const dot = (a: Vec3Tuple, b: Vec3Tuple): number => a.reduce((sum, value, i) => sum + value * b[i], 0);
   const cross: Vec3Tuple = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]];
   if (![...origin, ...x, ...y, ...n].every(Number.isFinite)
-    || [x, y, n].some((axis) => Math.abs(dot(axis, axis) - 1) > 1e-10)
-    || Math.abs(dot(x, y)) > 1e-10 || Math.abs(dot(x, n)) > 1e-10 || Math.abs(dot(y, n)) > 1e-10
-    || Math.abs(dot(cross, n) - 1) > 1e-10) throw new Error('曲げの基準方向は右手系の直交単位ベクトルにしてください。');
+    || [x, y, n].some((axis) => exceedsMagnitude(dot(axis, axis) - 1, 1e-10))
+    || exceedsMagnitude(dot(x, y), 1e-10) || exceedsMagnitude(dot(x, n), 1e-10) || exceedsMagnitude(dot(y, n), 1e-10)
+    || exceedsMagnitude(dot(cross, n) - 1, 1e-10)) throw new Error('曲げの基準方向は右手系の直交単位ベクトルにしてください。');
 }
 
 /** 円筒曲げの断面を正確な円弧で囲み、幅方向へ押し出す。入力形状を破壊しない。 */
@@ -58,7 +59,7 @@ function buildBend(oc: OpenCascadeInstance, input: SheetMetalLBendInput, frame: 
   const { thickness: t, radius: r, width, firstLength: a, secondLength: b, angle } = input;
   if (![t, r, width, a, b, angle, r + t, r + t + b, width * t * (a + b + Math.PI * (r + t))].every(Number.isFinite)
     || Math.min(t, r, width) <= 1e-7 || a < 0 || b < 0 || (angle === 0 && a + b <= 1e-7)
-    || Math.abs(angle) >= 180) throw new Error('板厚・内半径・幅・直線長と曲げ角を確認してください。');
+    || magnitudeAtLeast(angle, 180)) throw new Error('板厚・内半径・幅・直線長と曲げ角を確認してください。');
   validateSheetMetalBendFrame(frame);
   const theta = Math.abs(angle) * Math.PI / 180, sign = angle < 0 ? -1 : 1, outerRadius = r + t;
   // 負曲げは板厚中央面に対する鏡映。基板のz=0..tは維持する。

@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { createFiniteReader } from '../valueGuards.js';
 import { createInputIssueFail, fields, InputIssue, text } from './analysisValidation.js';
 import type { FatigueSavedSource } from './fatigueInput.js';
@@ -71,7 +72,7 @@ function signed(value: unknown, path: string, sign: 1 | -1, [minimum, maximum]: 
 }
 function bounded(value: unknown, path: string, limit: number): number {
   const number = finite(value, path);
-  if (Math.abs(number) > limit) fail(path, `Expected a magnitude of at most ${limit}`);
+  if (exceedsMagnitude(number, limit)) fail(path, `Expected a magnitude of at most ${limit}`);
   return number;
 }
 function readSource(value: unknown, path: string): FatigueSavedSource {

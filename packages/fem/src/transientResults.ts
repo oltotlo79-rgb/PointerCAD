@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { isRecord as record } from './valueGuards.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamTransientInput, BeamTransientResult, TransientNodeResponse, TransientSample } from './transientModel.js';
@@ -63,7 +64,7 @@ export function decodeBeamTransient(raw: unknown, input: BeamTransientInput, inp
     const time = index === 0 ? 0 : history.timeStepS * steps[index];
     const factor = transientLoadFactor(history.loadFactor, Math.min(time, last));
     if (!record(sample) || sample.timeS !== time || typeof sample.loadFactor !== 'number' || !Number.isFinite(sample.loadFactor)
-      || Math.abs(sample.loadFactor - factor) > 1e-12 * Math.max(1, Math.abs(factor))
+      || exceedsMagnitude(sample.loadFactor - factor, 1e-12 * Math.max(1, Math.abs(factor)))
       || !denseArray(sample.nodes) || sample.nodes.length !== original.length) {
       throw new Error('Invalid transient sample time, load factor or node count');
     }
@@ -120,7 +121,7 @@ export function decodeBeamTransient(raw: unknown, input: BeamTransientInput, inp
     const nodeIndex = original.findIndex(row => row.number === node);
     if (value > 0 && sampleIndex >= 0 && nodeIndex >= 0) {
       const sampled = Math.hypot(...select(samples[sampleIndex].nodes[nodeIndex]));
-      if (Math.abs(sampled - value) > 1e-12 * value) throw new Error('Transient peak differs from its own sample');
+      if (exceedsMagnitude(sampled - value, 1e-12 * value)) throw new Error('Transient peak differs from its own sample');
     }
   };
   checkPeak(raw.peakDisplacementM, raw.peakDisplacementTimeS, raw.peakDisplacementSolverNode, peakDisplacement,

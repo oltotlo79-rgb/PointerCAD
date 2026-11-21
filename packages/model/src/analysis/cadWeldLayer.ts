@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { applyPlacementToDirection, applyPlacementToPoint } from '../assembly/placementMath.js';
 import { placementFingerprint } from '../assembly/fastening/frames.js';
@@ -83,7 +84,7 @@ function prepareCadWeldLayersOwned(document: AssemblyDocument, definitionValue: 
     modal: { modeCount: 1, segmentsPerMember: definition.contact.segmentsPerMember },
     id: definition.id, revision: definition.revision, source: definition.source, units: definition.units,
     members: definition.members, materials: definition.materials, sections: definition.sections, constraints: [], loads: [] }, context);
-  if (!checked.ok) throw new InputIssue(checked.issue.code, checked.issue.path, checked.issue.message);
+  if (!checked.ok) throw new InputIssue(checked.issue.code, checked.issue.path, checked.issue.message, checked.issue.failures);
   const geometry = checked.document;
   if (saved.source.documentId !== document.id || saved.source.documentId !== context.currentSource.documentId
     || saved.source.documentRevision !== context.currentSource.documentRevision || saved.source.geometryRevision !== context.currentSource.geometryRevision
@@ -254,7 +255,7 @@ function prepareCadWeldLayersOwned(document: AssemblyDocument, definitionValue: 
     const rootStart = applyPlacementToPoint(pose, [0, 0, 0]), rootEnd = applyPlacementToPoint(pose, [0, 0, options.length]);
     for (const end of [first, second]) for (const root of [rootStart, rootEnd]) {
       const axial = end.axis.reduce((sum, v, i) => sum + v*(root[i]-end.point[i]), 0);
-      if (end.kind === 'section-node' && Math.abs(axial) > BEAM_CONNECTION_TOLERANCE_MM) throw new InputIssue('weld-section', weld.id, 'Weld root must lie at the selected member endpoint section, not a remote span');
+      if (end.kind === 'section-node' && exceedsMagnitude(axial, BEAM_CONNECTION_TOLERANCE_MM)) throw new InputIssue('weld-section', weld.id, 'Weld root must lie at the selected member endpoint section, not a remote span');
       if (end.kind === 'member-span' && (axial < -BEAM_CONNECTION_TOLERANCE_MM || axial > end.length + BEAM_CONNECTION_TOLERANCE_MM)) throw new InputIssue('weld-span', weld.id, 'Both bead ends must lie inside the owned finite member span');
     }
     if (options.interiorAngleDegrees !== undefined || options.cylindricalRadius !== undefined) {

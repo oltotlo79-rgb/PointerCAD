@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import { crossVec2 as cross } from '../../sketch/vec2.js';
 /** Internal finite plane/full-cylinder admission. No saved schema, solver or bead generation. */
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
@@ -60,7 +61,7 @@ function boundaries(f: NonNullable<ReturnType<typeof face>>, e: CircularWeldPath
   const rows: Boundary[] = [], placement = f.occurrence.worldPlacement;
   const point = (v: Vec3): Vec3 => applyPlacementToPoint(placement, v);
   const direction = (v: Vec3): Vec3 => applyPlacementToDirection(placement, v);
-  const onPlane = (p: Vec3): boolean => finite(p) && Math.abs(dotVec3(subVec3(p, e.centerMm), e.normal)) <= L;
+  const onPlane = (p: Vec3): boolean => finite(p) && withinMagnitude(dotVec3(subVec3(p, e.centerMm), e.normal), L);
   for (const index of f.indices) {
     const edge = f.body.edges.find(v => v.index === index);
     if (edge === undefined) return null;
@@ -74,7 +75,7 @@ function boundaries(f: NonNullable<ReturnType<typeof face>>, e: CircularWeldPath
         || quaternionFromBasis(basis.xAxis, basis.yAxis, basis.normal, D) === null || !finite(basis.parameterRange)
         || !(basis.parameterRange[1] > basis.parameterRange[0] && basis.parameterRange[1] - basis.parameterRange[0] <= TAU)) return null;
       const c = point(basis.origin), n = direction(basis.normal), x = direction(basis.xAxis);
-      if (!onPlane(c) || Math.abs(Math.abs(dotVec3(n, e.normal)) - 1) > D) return null;
+      if (!onPlane(c) || exceedsMagnitude(Math.abs(dotVec3(n, e.normal)) - 1, D)) return null;
       const phase = Math.atan2(dotVec3(x, e.yAxis), dotVec3(x, e.xAxis)), sign = dotVec3(n, e.normal) > 0 ? 1 : -1;
       const a = phase + sign * basis.parameterRange[0], b = phase + sign * basis.parameterRange[1];
       rows.push({ center: projection(e, c), radius: edge.radius, range: [Math.min(a, b), Math.max(a, b)] });
@@ -100,7 +101,7 @@ function crosses(edge: Boundary, lo: number, hi: number, start: number, span: nu
     const c = edge.center, r = edge.radius;
     const solve = (a: number, b: number, value: number) => {
       const size = Math.hypot(a, b);
-      if (size > 0 && Math.abs(value) <= size) {
+      if (size > 0 && withinMagnitude(value, size)) {
         const phase = Math.atan2(b, a), angle = Math.acos(value / size);
         cuts.push(((phase + angle) % TAU + TAU) % TAU, ((phase - angle) % TAU + TAU) % TAU);
       }
@@ -202,10 +203,10 @@ export function resolveCircularWeldContact(context: CircularWeldSelectionContext
   const basis = plane.value.planarBasis, placement = plane.occurrence.worldPlacement;
   if (plane.value.surfaceKind !== 'plane' || basis === undefined || quaternionFromBasis(basis.xAxis, basis.yAxis, basis.normal, D) === null) return refuse('planeUnavailable');
   const normal = applyPlacementToDirection(placement, basis.normal), origin = applyPlacementToPoint(placement, basis.origin);
-  if (dotVec3(normal, scaleVec3(e.normal, s.normalDirection)) < 1 - D || Math.abs(dotVec3(subVec3(e.centerMm, origin), normal)) > L) return refuse('planeMaterialSide');
+  if (dotVec3(normal, scaleVec3(e.normal, s.normalDirection)) < 1 - D || exceedsMagnitude(dotVec3(subVec3(e.centerMm, origin), normal), L)) return refuse('planeMaterialSide');
   const root = path.frameAt(e.parameterRange[0])?.positionMm;
   const band = root === undefined ? null : selectedWeldCylinder([cylinder.body], request.cylinder.reference, cylinder.occurrence.worldPlacement, root);
-  if (band === null || Math.abs(band.radius - e.radiusMm) > L || Math.abs(Math.abs(dotVec3(band.axis, e.normal)) - 1) > D
+  if (band === null || exceedsMagnitude(band.radius - e.radiusMm, L) || exceedsMagnitude(Math.abs(dotVec3(band.axis, e.normal)) - 1, D)
     || (band.side === 'exterior' ? 1 : -1) !== s.radialDirection) return refuse('cylinderUnavailable');
   const offset = subVec3(e.centerMm, band.origin), z = dotVec3(offset, band.axis), end = z + s.normalDirection * s.normalLegMm * dotVec3(e.normal, band.axis);
   if (lengthVec3(subVec3(offset, scaleVec3(band.axis, z))) > L || Math.min(z, end) < band.span[0] - L || Math.max(z, end) > band.span[1] + L) return refuse('cylinderBandTooShort');

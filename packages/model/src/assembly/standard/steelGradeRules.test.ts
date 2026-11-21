@@ -69,13 +69,13 @@ describe('steel grade and section permission ledger', () => {
         expect(rule.note.trim().length).toBeGreaterThan(0);
       } else {
         expect(rule.reasonCode).toBe(reasonCode);
-        expect(rule.reason).toMatch(/[ぁ-んァ-ヶ一-龯]/);
-        expect(rule.reason).toContain(grade);
-        expect(rule.reason).toMatch(/適用範囲|7[.]5/);
+        // 理由の文は ui の文言の表(assembly.steel.reason.*。D4)。日本語であり、鋼種・適用範囲か 7.5・引用した規格の番号と名前を
+        // 含む事は、作った文として ui の steelRejectionMessages.test.ts が見る。ここは理由の鍵と、引用した規格の番号と名前の値を見る。
+        expect(rule.reason.key).toMatch(/^assembly[.]steel[.]reason[.][A-Za-z0-9]+$/u);
         for (const citation of rule.basis) {
           const standard = STEEL_STANDARDS[citation.standardId];
-          expect(rule.reason).toContain(standard.number);
-          expect(rule.reason).toContain(standard.name);
+          expect(standard.number).toMatch(/^JIS G [0-9]{4}$/u);
+          expect(standard.name.trim().length).toBeGreaterThan(0);
         }
       }
     });
@@ -103,8 +103,7 @@ describe('steel grade and section permission ledger', () => {
       const rule = steelGradeRule('S45C', catalog);
       if (rule.allowed) throw new Error('S45C rolled sections must not be catalog permissions');
       expect(rule.reasonCode).toBe('section-not-standardized-in-grade');
-      expect(rule.reason).toContain('7.5');
-      expect(rule.reason).toContain('協定品');
+      expect(rule.reason).toEqual({ key: 'assembly.steel.reason.s45cRolledSection', parameters: {} });
       expect(rule.basis).toEqual([
         { standardId: 'jis-g-4051-2026', locator: '7.5 その他の形状・寸法（受渡当事者間の協定）' },
       ]);
@@ -162,8 +161,8 @@ describe('S45C product conditions', () => {
         const result = s45cProductRule(catalog, condition, standard);
         if (result.allowed) throw new Error(`Accepted wrong standard: ${standard}`);
         expect(result.reasonCode).toBe('product-standard-mismatch');
-        expect(result.reason).toContain(expectedStandard);
-        expect(result.reason).toContain('JIS G 4051 7.1・7.3');
+        expect(result.reason).toEqual({ key: 'assembly.steel.reason.s45cProductStandardMismatch',
+          parameters: { productStandard: expectedStandard } });
       }
     });
 
@@ -174,8 +173,7 @@ describe('S45C product conditions', () => {
         const rule = s45cProductRule(catalog, condition, 'JIS G 4051');
         if (rule.allowed) throw new Error(`Accepted unsupported condition: ${condition}`);
         expect(rule.reasonCode).toBe('condition-not-supported');
-        expect(rule.reason).toContain('JIS G 4051 5 c)');
-        expect(rule.reason).toContain('熱処理未指定');
+        expect(rule.reason).toEqual({ key: 'assembly.steel.reason.s45cConditionNotSupported', parameters: {} });
         expect(rule.basis[0].standardId).toBe('jis-g-4051-2026');
       }
     });

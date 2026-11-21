@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude } from './tolerances.js';
 import { dotVec as dot, subVec as subtract, crossVec as cross } from './sketchCorner.js';
 import type {
   BRepAlgoAPI_BuilderAlgo, Message_ProgressRange, OpenCascadeInstance, TopoDS_Shape,
@@ -149,7 +150,7 @@ function validateProfile(input: Extract<SurfaceCutInput, { kind: 'extrusion' }>,
   if (input.profile.length === 0) fail('invalid-blade');
   const onPlane = (point: Vec3Tuple): void => {
     finite(point);
-    if (Math.abs(dot(subtract(point, input.planeOrigin), normal)) > tolerance) fail('non-planar-profile');
+    if (exceedsMagnitude(dot(subtract(point, input.planeOrigin), normal), tolerance)) fail('non-planar-profile');
   };
   for (const curve of input.profile) {
     if (curve.kind === 'segment') {
@@ -163,8 +164,8 @@ function validateProfile(input: Extract<SurfaceCutInput, { kind: 'extrusion' }>,
       onPlane(curve.center);
       const curveNormal = unit(curve.normal);
       const axis = unit(curve.kind === 'arc' ? curve.xAxis : curve.majorAxis);
-      if (Math.abs(dot(curveNormal, normal)) < 1 - 1e-12 || Math.abs(dot(axis, normal)) > 1e-12
-        || Math.abs(dot(axis, curveNormal)) > 1e-12) fail('non-planar-profile');
+      if (belowMagnitude(dot(curveNormal, normal), 1 - 1e-12) || exceedsMagnitude(dot(axis, normal), 1e-12)
+        || exceedsMagnitude(dot(axis, curveNormal), 1e-12)) fail('non-planar-profile');
       const radii = curve.kind === 'arc' ? [curve.radius] : [curve.majorRadius, curve.minorRadius];
       finite(radii);
       if (radii.some(radius => radius <= tolerance)) fail('invalid-blade');
@@ -186,7 +187,7 @@ function planeBlade(oc: OpenCascadeInstance, input: Extract<SurfaceCutInput, { k
     (box.min[2] + box.max[2]) / 2];
   const projected = offset(center, normal, -dot(subtract(center, input.origin), normal));
   finite(projected);
-  const x = unit(cross(Math.abs(normal[0]) < 0.8 ? [1, 0, 0] : [0, 1, 0], normal));
+  const x = unit(cross(belowMagnitude(normal[0], 0.8) ? [1, 0, 0] : [0, 1, 0], normal));
   const y = cross(normal, x);
   const points = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => offset(offset(projected, x, u * size), y, v * size));
   const profile: CurveSpec[] = points.map((from, i) => ({ kind: 'segment', from, to: points[(i + 1) % 4] }));
@@ -278,7 +279,7 @@ function splitCoordinates(oc: OpenCascadeInstance, target: TopoDS_Shape, blade: 
   const centre: Vec3Tuple = [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2,
     (box.min[2] + box.max[2]) / 2];
   const scale = 4096;
-  if (centre.some(value => !Number.isFinite(value) || Math.abs(value) > 1e9)
+  if (centre.some(value => !Number.isFinite(value) || exceedsMagnitude(value, 1e9))
     || Math.hypot(...subtract(box.max, box.min)) < 1e-4
     || [...boxCorners(box), ...boxCorners(bladeBox)].some(point =>
       point.some((value, axis) => Math.abs(value - centre[axis]) * scale > 1e8))) return unchanged;
@@ -328,7 +329,7 @@ function uncutPlaneSide(oc: OpenCascadeInstance, solid: TopoDS_Shape,
   for (const vertex of members(oc, solid, 'vertex', owned)) {
     const p = owned.keep(oc.BRep_Tool.Pnt(owned.keep(oc.TopoDS.Vertex_1(vertex))));
     const distance = dot(subtract([p.X(), p.Y(), p.Z()], input.origin), normal);
-    if (Math.abs(distance) > tolerance) return distance < 0 ? -1 : 1;
+    if (exceedsMagnitude(distance, tolerance)) return distance < 0 ? -1 : 1;
   }
   return fail('ambiguous-side');
 }

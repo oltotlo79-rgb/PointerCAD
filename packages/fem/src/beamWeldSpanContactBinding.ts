@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model/beam-analysis';
 import { isPlainRecord as record } from './valueGuards.js';
 import { decodeBeamWeldSpanContact, translateBeamWeldSpanContact,
   type BeamWeldSpanContactInput } from './beamWeldSpanContact.js';
@@ -19,7 +20,7 @@ function data(value: unknown): boolean {
   function check(v: unknown, depth: number): boolean {
     if (--budget < 0 || depth > 24) return false;
     if (v === null || typeof v === 'string' || typeof v === 'boolean') return true;
-    if (typeof v === 'number') return Number.isFinite(v) && Math.abs(v) <= 1e30;
+    if (typeof v === 'number') return Number.isFinite(v) && withinMagnitude(v, 1e30);
     if (Array.isArray(v)) {
       if (Object.getPrototypeOf(v) !== Array.prototype || v.length > 4096 || Reflect.ownKeys(v).length !== v.length+1) return false;
       for (let i = 0; i < v.length; i++) {

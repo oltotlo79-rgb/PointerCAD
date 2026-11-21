@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finiteNumber } from './valueGuards.js';
 import { MAX_FATIGUE_HISTORY_POINTS, MAX_FATIGUE_REPEATS, MAX_FATIGUE_STRESS_MPA, type FatigueSequence,
@@ -124,7 +125,7 @@ export function axialFatigueHistory(axial: unknown, result: BeamTransientResult,
   const stressMpa: number[] = [];
   for (const [index, value] of member.stressPa.entries()) {
     const converted = value / PASCALS_PER_MEGAPASCAL;
-    if (!Number.isFinite(converted) || Math.abs(converted) > MAX_FATIGUE_STRESS_MPA) {
+    if (!Number.isFinite(converted) || exceedsMagnitude(converted, MAX_FATIGUE_STRESS_MPA)) {
       return fail('fatigue-axial-bound', `member.stressPa[${index}]`);
     }
     stressMpa.push(converted);

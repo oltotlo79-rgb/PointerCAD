@@ -28,6 +28,7 @@
  * ここは純関数だけを置く。乱数・時刻・`Map` の反復順に頼らず、同じ入力からは必ず同じ診断を返す。
  */
 
+import { exceedsMagnitude, withinMagnitude } from '../../numericTolerance.js';
 import {
   buildResidualReport,
   isImplicitConstraintId,
@@ -322,7 +323,7 @@ function analyzeRows(rows: readonly ResidualRow[], columnCount: number): RowAnal
     let scale = Math.abs(row.value);
     for (let j = 0; j < weights.length; j += 1) {
       const weight = weights[j];
-      if (Math.abs(weight) <= threshold) {
+      if (withinMagnitude(weight, threshold)) {
         continue;
       }
       const source = independent[j];
@@ -479,7 +480,7 @@ export function diagnoseConstraints(
       );
     }
 
-    const inconsistent = Math.abs(dependent.mismatch) > tolerance * (1 + dependent.scale);
+    const inconsistent = exceedsMagnitude(dependent.mismatch, tolerance * (1 + dependent.scale));
     if (!inconsistent || seenConflict.has(row.constraintId)) {
       continue;
     }
@@ -516,7 +517,7 @@ export function diagnoseConstraints(
     // 残差の大きい順に上位 3 つを原因として挙げる。
     const ordered = rows
       .map((row, rowIndex) => ({ row, rowIndex }))
-      .filter((entry) => visible(entry.row.constraintId) && Math.abs(entry.row.value) > tolerance)
+      .filter((entry) => visible(entry.row.constraintId) && exceedsMagnitude(entry.row.value, tolerance))
       .sort((a, b) => {
         const difference = Math.abs(b.row.value) - Math.abs(a.row.value);
         return difference !== 0 ? difference : a.rowIndex - b.rowIndex;

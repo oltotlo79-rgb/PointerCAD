@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model/beam-analysis';
 import { isFiniteNumber } from './valueGuards.js';
 
 import type { Vector3 } from './analysisModel.js';
@@ -88,7 +89,7 @@ function vector(value: unknown): Vector3 {
 }
 /** Floating-point roundoff only, with no dimensionful physical threshold. */
 function equalArithmetic(actual: number, expected: number, scale: number): boolean {
-  return Math.abs(actual - expected) <= 64 * Number.EPSILON * scale;
+  return withinMagnitude(actual - expected, 64 * Number.EPSILON * scale);
 }
 const residualKeys = ['equilibriumResidual', 'penetration', 'tension', 'complementarity',
   'frictionConeExcess', 'slipLawResidual'] as const;

@@ -1,4 +1,5 @@
 /** 板金の向き付き境界を端点格子で閉ループへつなぐ。接線分割と切欠きで共用する。 */
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { curveEnd, curveStart } from '../sketch/intersectionMath.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import { distanceVec3, type Vec3 } from '../sketch/vec3.js';
@@ -41,7 +42,7 @@ export function collectSheetCurveLoops(curves: readonly ResolvedCurve[], normal:
     if (current !== start) return { ok: false, message: '切欠き後の輪郭の接続が周回していません。' };
     const area = sheetLoopSignedArea(loop, normal);
     if (!Number.isFinite(area)) return { ok: false, message: '切欠き後の輪郭の面積が扱える範囲を超えています。' };
-    if (Math.abs(area) > TOLERANCE_MM ** 2) loops.push({ curves: loop, kind: area > 0 ? 'outer' : 'hole' });
+    if (exceedsMagnitude(area, TOLERANCE_MM ** 2)) loops.push({ curves: loop, kind: area > 0 ? 'outer' : 'hole' });
   }
   return { ok: true, value: loops };
 }

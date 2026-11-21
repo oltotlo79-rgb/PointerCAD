@@ -1,4 +1,5 @@
 /** 指定線を中立曲げ帯の中心とし、固定面・円筒帯・動く面を同じ輪郭から導出する。 */
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { curveStart } from '../sketch/intersectionMath.js';
 import type { ResolvedSegment } from '../sketch/types.js';
 import { addVec3, crossVec3, dotVec3, lengthVec3, normalizeVec3, scaleVec3, subVec3 } from '../sketch/vec3.js';
@@ -36,9 +37,9 @@ export function partitionSheetLineBend(panel: SheetPanelGeometry, line: Resolved
   const metrics = sheetBendMetrics(input); if (!metrics.ok) return { ok: false, message: '板金の曲げ角・板厚・半径・K係数を確認してください。' };
   const vector = subVec3(line.to, line.from), length = lengthVec3(vector), normal = panel.normal;
   if (panel.outer.length === 0 || ![...line.from, ...line.to, ...normal, length].every(Number.isFinite) || length <= 1e-7
-    || Math.abs(lengthVec3(normal) - 1) > 1e-10 || Math.min(input.radius, input.thickness) <= 1e-7)
+    || exceedsMagnitude(lengthVec3(normal) - 1, 1e-10) || Math.min(input.radius, input.thickness) <= 1e-7)
     return { ok: false, message: '曲げるパネルと重ならない2点の指定線を選んでください。' };
-  if (Math.abs(dotVec3(vector, normal)) > 1e-7 || Math.abs(dotVec3(subVec3(line.from, curveStart(panel.outer[0])), normal)) > 1e-7)
+  if (exceedsMagnitude(dotVec3(vector, normal), 1e-7) || exceedsMagnitude(dotVec3(subVec3(line.from, curveStart(panel.outer[0])), normal), 1e-7))
     return { ok: false, message: '曲げる線は選択したパネルと同じ平面に置いてください。' };
   // y正方向を動く側へ揃え、軸の反転で左右を処理する。寸法は拡縮しない。
   const xAxis = scaleVec3(normalizeVec3(vector), fixedSide === 'left' ? -1 : 1), yAxis = crossVec3(normal, xAxis);

@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from './tolerances.js';
 import { crossVec, dotVec as dot, subVec as subtract } from './sketchCorner.js';
 import type { OpenCascadeInstance, TopoDS_Face, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
@@ -117,14 +118,14 @@ function readPlate(
     if (face.IsSame(selected)) continue;
     const plane = readPlane(oc, face, owned);
     if (parallel(plane.normal, hole.direction)) caps.push(plane);
-    else if (Math.abs(dot(plane.normal, hole.direction)) <= SIGNATURE_TOLERANCE) sides.push(plane);
+    else if (withinMagnitude(dot(plane.normal, hole.direction), SIGNATURE_TOLERANCE)) sides.push(plane);
     else throw new Error(HOLE_MOVE_PLATE_MESSAGE);
   }
   if (caps.length !== 2 || sides.length !== 4) throw new Error(HOLE_MOVE_PLATE_MESSAGE);
   const end = addScaled(hole.start, hole.direction, hole.depth);
   for (const cap of caps) {
     const isEnd = dot(cap.normal, hole.direction) > 0;
-    if (Math.abs(dot(subtract(cap.centroid, isEnd ? end : hole.start), hole.direction)) > LINEAR_TOLERANCE_MM) {
+    if (exceedsMagnitude(dot(subtract(cap.centroid, isEnd ? end : hole.start), hole.direction), LINEAR_TOLERANCE_MM)) {
       throw new Error(HOLE_MOVE_PLATE_MESSAGE);
     }
   }
@@ -132,12 +133,12 @@ function readPlate(
   const widths = sides.map(side => {
     const opposite = sides.filter(other => parallel(side.normal, other.normal) && dot(side.normal, other.normal) < 0);
     if (opposite.length !== 1 || sides.some(other => !parallel(side.normal, other.normal)
-      && Math.abs(dot(side.normal, other.normal)) > SIGNATURE_TOLERANCE)) throw new Error(HOLE_MOVE_PLATE_MESSAGE);
+      && exceedsMagnitude(dot(side.normal, other.normal), SIGNATURE_TOLERANCE))) throw new Error(HOLE_MOVE_PLATE_MESSAGE);
     return dot(subtract(side.centroid, opposite[0].centroid), side.normal);
   }).sort((a, b) => a - b);
   const capArea = widths[0] * widths[3];
   if (!(widths[0] > 2 * hole.radius) || !(widths[3] > 2 * hole.radius)
-    || caps.some(cap => Math.abs(cap.area - (capArea - Math.PI * hole.radius ** 2)) > SIGNATURE_TOLERANCE)) {
+    || caps.some(cap => exceedsMagnitude(cap.area - (capArea - Math.PI * hole.radius ** 2), SIGNATURE_TOLERANCE))) {
     throw new Error(HOLE_MOVE_PLATE_MESSAGE);
   }
   const filledVolume = capArea * hole.depth;
@@ -183,12 +184,12 @@ function assertResult(
   const centre = (hole: HoleGeometry): Vec3Tuple => addScaled(hole.start, hole.direction, hole.depth / 2);
   if (!parallel(before.hole.direction, after.hole.direction)
     || separation(addScaled(centre(before.hole), delta), centre(after.hole)) > LINEAR_TOLERANCE_MM
-    || Math.abs(before.hole.radius - after.hole.radius) > SIGNATURE_TOLERANCE
-    || Math.abs(before.hole.depth - after.hole.depth) > SIGNATURE_TOLERANCE) throw new Error(HOLE_MOVE_FAILED_MESSAGE);
+    || exceedsMagnitude(before.hole.radius - after.hole.radius, SIGNATURE_TOLERANCE)
+    || exceedsMagnitude(before.hole.depth - after.hole.depth, SIGNATURE_TOLERANCE)) throw new Error(HOLE_MOVE_FAILED_MESSAGE);
   for (const side of before.sides) {
     const matches = after.sides.filter(other => separation(side.normal, other.normal) <= SIGNATURE_TOLERANCE
       && separation(side.centroid, other.centroid) <= SIGNATURE_TOLERANCE
-      && Math.abs(side.area - other.area) <= SIGNATURE_TOLERANCE);
+      && withinMagnitude(side.area - other.area, SIGNATURE_TOLERANCE));
     if (matches.length !== 1) throw new Error(HOLE_MOVE_FAILED_MESSAGE);
   }
   const volume = measureVolume(oc, shape);
@@ -233,7 +234,7 @@ export function moveSolidHole(
     if (position < 1) throw new Error(HOLE_MOVE_MISSING_FACE_MESSAGE);
     const selected = keep(oc.TopoDS.Face_1(keep(copiedFaces.FindKey(position))));
     const before = readPlate(oc, copied, selected, owned), { hole } = before;
-    if (Math.abs(dot(delta, hole.direction)) > SIGNATURE_TOLERANCE) throw new Error(HOLE_MOVE_DELTA_MESSAGE);
+    if (exceedsMagnitude(dot(delta, hole.direction), SIGNATURE_TOLERANCE)) throw new Error(HOLE_MOVE_DELTA_MESSAGE);
     assertInside(before.sides, hole, [0, 0, 0]);
     assertInside(before.sides, hole, delta);
     const start = keep(new oc.gp_Pnt_3(...hole.start)), direction = keep(new oc.gp_Dir_4(...hole.direction));

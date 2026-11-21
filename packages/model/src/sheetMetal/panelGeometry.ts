@@ -1,4 +1,5 @@
 /** 板金パネルの安定境界と接線座標。OCCTの面番号や表示メッシュへ依存しない。 */
+import { exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from '../numericTolerance.js';
 import { curveEnd, curveStart } from '../sketch/intersectionMath.js';
 import { reverseSpline, sampleSpline } from '../sketch/splineMath.js';
 import type { ResolvedCurve, ResolvedSegment } from '../sketch/types.js';
@@ -26,9 +27,9 @@ const TOLERANCE_MM = 1e-7;
 function validFrame(frame: SheetTangentFrame): boolean {
   const { xAxis: x, yAxis: y, normal: n } = frame;
   return [...frame.origin, ...x, ...y, ...n].every(Number.isFinite)
-    && [x, y, n].every((axis) => Math.abs(lengthVec3(axis) - 1) <= 1e-10)
-    && Math.abs(dotVec3(x, y)) <= 1e-10 && Math.abs(dotVec3(x, n)) <= 1e-10 && Math.abs(dotVec3(y, n)) <= 1e-10
-    && Math.abs(dotVec3(crossVec3(x, y), n) - 1) <= 1e-10;
+    && [x, y, n].every((axis) => withinMagnitude(lengthVec3(axis) - 1, 1e-10))
+    && withinMagnitude(dotVec3(x, y), 1e-10) && withinMagnitude(dotVec3(x, n), 1e-10) && withinMagnitude(dotVec3(y, n), 1e-10)
+    && withinMagnitude(dotVec3(crossVec3(x, y), n) - 1, 1e-10);
 }
 
 function reverseCurve(curve: ResolvedCurve): ResolvedCurve {
@@ -88,7 +89,7 @@ export function sheetLoopSignedArea(curves: readonly ResolvedCurve[], normal: Ve
 export function orientSheetLoop(curves: readonly ResolvedCurve[], normal: Vec3, clockwise = false): readonly ResolvedCurve[] | null {
   const loop = orientedLoop(curves); if (loop === null) return null;
   const area = sheetLoopSignedArea(loop, normal);
-  if (!Number.isFinite(area) || Math.abs(area) <= TOLERANCE_MM ** 2) return null;
+  if (!Number.isFinite(area) || withinMagnitude(area, TOLERANCE_MM ** 2)) return null;
   return (area < 0) === clockwise ? loop : [...loop].reverse().map(reverseCurve);
 }
 
@@ -100,7 +101,7 @@ export function sheetBoundaryEdges(panel: SheetPanelGeometry): SheetGeometryResu
   let area: Vec3 = [0, 0, 0];
   for (const curve of loop) area = addVec3(area, areaVector(curve, origin));
   const signed = dotVec3(area, panel.normal);
-  if (!Number.isFinite(signed) || Math.abs(signed) <= TOLERANCE_MM ** 2) return { ok: false, message: '板金の面の向きを決められません。外周を確認してください。' };
+  if (!Number.isFinite(signed) || withinMagnitude(signed, TOLERANCE_MM ** 2)) return { ok: false, message: '板金の面の向きを決められません。外周を確認してください。' };
   const seen = new Map<string, number>(), edges: SheetBoundaryEdge[] = [];
   for (const curve of loop) {
     const occurrence = seen.get(curve.featureId) ?? 0; seen.set(curve.featureId, occurrence + 1);
@@ -118,7 +119,7 @@ export function sheetTangentFrame(panel: SheetPanelGeometry, edgeId: string, sta
   const edge = edges.value.find((candidate) => candidate.id === edgeId);
   if (edge === undefined) return { ok: false, message: 'フランジの元の直線縁が見つかりません。縁を選び直してください。' };
   const width = distanceVec3(edge.from, edge.to) - startOffset - endOffset;
-  if (![width, startOffset, endOffset, ...panel.normal].every(Number.isFinite) || Math.abs(lengthVec3(panel.normal) - 1) > 1e-10
+  if (![width, startOffset, endOffset, ...panel.normal].every(Number.isFinite) || exceedsMagnitude(lengthVec3(panel.normal) - 1, 1e-10)
     || Math.min(startOffset, endOffset) < 0 || width <= TOLERANCE_MM)
     return { ok: false, message: '端の距離を小さくし、フランジの幅を残してください。' };
   const xAxis = normalizeVec3(subVec3(edge.from, edge.to)), yAxis = crossVec3(panel.normal, xAxis);
@@ -136,7 +137,7 @@ export interface RectangularFlangeGeometry {
 
 /** 正負の曲げで異なる板厚の始点を求める。矩形と任意輪郭で同じ接線面を使う。 */
 export function flangeEndFrame(frame: SheetTangentFrame, thickness: number, radius: number, angle: number): SheetGeometryResult<SheetTangentFrame> {
-  if (!validFrame(frame) || ![thickness, radius, angle].every(Number.isFinite) || Math.min(thickness, radius) <= TOLERANCE_MM || Math.abs(angle) >= 180)
+  if (!validFrame(frame) || ![thickness, radius, angle].every(Number.isFinite) || Math.min(thickness, radius) <= TOLERANCE_MM || magnitudeAtLeast(angle, 180))
     return { ok: false, message: 'フランジの板厚・内半径・曲げ角を確認してください。' };
   const theta = Math.abs(angle) * Math.PI / 180, sign = angle < 0 ? -1 : 1;
   const bottomRadius = angle < 0 ? radius : radius + thickness;

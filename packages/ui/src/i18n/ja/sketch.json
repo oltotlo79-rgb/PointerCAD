@@ -301,5 +301,8 @@
   "inspection.affectedParts": "影響するフィーチャー数",
   "inspection.unknown": "未確認",
   "inspection.errorLocation": "入力中の誤りの位置",
+  "expression.hint.explicitMultiplication": "掛け算は * で書きます({数}*{名前})",
+  "expression.hint.supportedFunctions": "この欄で使える関数は {一覧}",
+  "expression.suggestions": "もしかして:",
   "inspection.character": "文字目"
 }

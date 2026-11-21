@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '@pointercad/model/beam-analysis';
 import { subVec3 as subtract, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
 import type { Vector3 } from '@pointercad/model/beam-analysis';
 import type { CadSolidContactBodySource, CadSolidContactPrepared } from './cadSolidContact.js';
@@ -224,7 +225,7 @@ function readPatch(value: unknown, meshes: readonly SolidContactMeshSource[]): S
   equal(masterNodes, master.boundaryTriangles.slice(3 * masterTriangle, 3 * masterTriangle + 3), 'Master facet order differs');
   equal(slaveNodes, slave.boundaryTriangles.slice(3 * slaveTriangle, 3 * slaveTriangle + 3), 'Slave facet order differs');
   const normal = vector(row.normal);
-  if (Math.abs(Math.hypot(...normal) - 1) > 1e-12) fail('Expected a unit contact direction');
+  if (exceedsMagnitude(Math.hypot(...normal) - 1, 1e-12)) fail('Expected a unit contact direction');
   const coordinates = (mesh: TetraMeshResult, ids: readonly number[]): Vector3[] => ids.map(id =>
     [mesh.coordinates[3 * id], mesh.coordinates[3 * id + 1], mesh.coordinates[3 * id + 2]]);
   const masterPoints = coordinates(master, masterNodes), slavePoints = coordinates(slave, slaveNodes);
@@ -233,8 +234,8 @@ function readPatch(value: unknown, meshes: readonly SolidContactMeshSource[]): S
     if (!(Number.isFinite(length) && length > 0)) fail('Degenerate contact facet');
     return [area[0] / length, area[1] / length, area[2] / length];
   };
-  if (Math.abs(Math.abs(dot(faceNormal(masterPoints), normal)) - 1) > 1e-12
-    || Math.abs(Math.abs(dot(faceNormal(slavePoints), normal)) - 1) > 1e-12) fail('Only fixed parallel facets are supported');
+  if (exceedsMagnitude(Math.abs(dot(faceNormal(masterPoints), normal)) - 1, 1e-12)
+    || exceedsMagnitude(Math.abs(dot(faceNormal(slavePoints), normal)) - 1, 1e-12)) fail('Only fixed parallel facets are supported');
   // Same-partition mapping: every projected slave vertex is a distinct master
   // vertex. This deliberately refuses partial intersections and mesh remeshing.
   const projectedVertices = new Set<number>();
@@ -244,8 +245,8 @@ function readPatch(value: unknown, meshes: readonly SolidContactMeshSource[]): S
     const projection = projectContactPoint(projected, masterPoints), weights = projection.barycentric;
     const scale = Math.max(...masterPoints.map(point => Math.hypot(...subtract(point, masterPoints[0]))));
     if (projection.distanceMm > 1e-10 * scale) fail('Projected slave vertex lies outside the master facet');
-    const vertex = weights.findIndex(weight => Math.abs(weight - 1) <= 1e-10);
-    if (vertex < 0 || weights.some((weight, index) => index !== vertex && Math.abs(weight) > 1e-10)
+    const vertex = weights.findIndex(weight => withinMagnitude(weight - 1, 1e-10));
+    if (vertex < 0 || weights.some((weight, index) => index !== vertex && exceedsMagnitude(weight, 1e-10))
       || projectedVertices.has(vertex)) fail('Contact requires an explicit complete same-partition facet pair');
     projectedVertices.add(vertex);
   }
@@ -458,7 +459,7 @@ export async function decodeSolidContactResult(value: unknown, input: SolidConta
   equal(result.source, owned.source, 'Result belongs to another CAD revision or actual volume mesh');
   if (result.steps.length !== owned.steps) fail('Incomplete contact history');
   const previousDissipation = new Map<string, number>();
-  const close = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-10 * Math.max(1, Math.abs(a), Math.abs(b));
+  const close = (a: number, b: number): boolean => withinMagnitude(a - b, 1e-10 * Math.max(1, Math.abs(a), Math.abs(b)));
   const bodyMaps = new Map(owned.bodies.map(body => [body.id, body.nodes]));
   const prescribed = new Map(owned.prescribed.map(history => [`${history.node}:${history.axis}`, history]));
   const loads = new Map(owned.loads.map(history => [`${history.node}:${history.axis}`, history]));

@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 /**
  * Uniaxial elasto-plastic member: plan, strict validation, native step schedule and an independent reference.
@@ -223,7 +224,7 @@ export function plasticBarReference(plan: PlasticBarPlan): PlasticBarReferenceSa
       return { step: index + 1, endDisplacementM, strain, stressPa, plasticStrain, axialForceN: stressPa * plan.areaM2,
         cumulativePlasticStrain: kappa, yieldStressPa: s0 + H * kappa };
     }
-    if (Math.abs(trial) > plasticBarYieldStressPa(plan.material, kappa)) {
+    if (exceedsMagnitude(trial, plasticBarYieldStressPa(plan.material, kappa))) {
       const onPlateau = (Math.abs(trial) - s0) / E;
       const multiplier = kappa < kp && kappa + onPlateau <= kp ? onPlateau
         : (Math.abs(trial) - s0 - H * (kappa - kp)) / (E + H);

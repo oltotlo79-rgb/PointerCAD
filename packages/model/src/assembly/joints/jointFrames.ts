@@ -1,4 +1,5 @@
 /** 明示的な部品局所フレーム。長さmm、右手系の単位基底。 */
+import { withinMagnitude } from '../../numericTolerance.js';
 import {
   addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3,
 } from '../../sketch/vec3.js';
@@ -43,9 +44,9 @@ export function validJointFrame(frame: JointFrame): boolean {
   if (frame === null || typeof frame !== 'object') return false;
   const { origin, x, y, z } = frame;
   return [origin, x, y, z].every(validJointVector)
-    && [x, y, z].every((v) => Math.abs(lengthVec3(v) - 1) <= JOINT_FRAME_TOLERANCE)
-    && [dotVec3(x, y), dotVec3(y, z), dotVec3(z, x)].every((v) => Math.abs(v) <= JOINT_FRAME_TOLERANCE)
-    && Math.abs(dotVec3(crossVec3(x, y), z) - 1) <= JOINT_FRAME_TOLERANCE;
+    && [x, y, z].every((v) => withinMagnitude(lengthVec3(v) - 1, JOINT_FRAME_TOLERANCE))
+    && [dotVec3(x, y), dotVec3(y, z), dotVec3(z, x)].every((v) => withinMagnitude(v, JOINT_FRAME_TOLERANCE))
+    && withinMagnitude(dotVec3(crossVec3(x, y), z) - 1, JOINT_FRAME_TOLERANCE);
 }
 
 /** 補助軸は局所で一度だけ決める。明示接線が軸と平行なら別軸へ黙って替えない。 */

@@ -4,7 +4,7 @@ import { createAngleDimensionGeometry, createDiameterDimensionGeometry, createLi
   type ArrowTriangle, type DrawingDocument, type DrawingRenderCurve, type DrawingRenderElement,
   type InkBounds, type OutlinedText, type Point2, type Vector3,
 } from '@pointercad/drawing';
-import { dimensionAngleDirections, drawingDimensionPaperEnds as endpoints, resolvedDimensionView, type DimensionResolveContext, type ResolvedDimensionTarget, type ResolvedDrawingDimension } from '@pointercad/model';
+import { belowMagnitude, dimensionAngleDirections, drawingDimensionPaperEnds as endpoints, resolvedDimensionView, type DimensionResolveContext, type ResolvedDimensionTarget, type ResolvedDrawingDimension } from '@pointercad/model';
 import { arcLengthDisplayGeometry } from './arcLengthDisplay.js';
 
 export interface DimensionDisplay {
@@ -30,14 +30,14 @@ function circlePaperRadius(target: Extract<ResolvedDimensionTarget, { kind: 'cir
   if (view === undefined) return null;
   const basis = drawingViewBasis({ normal: view.direction, xDir: view.xDir });
   if (basis === null) return null;
-  const raw = cross(target.axis, Math.abs(target.axis[0]) < 0.8 ? [1, 0, 0] : [0, 1, 0]);
+  const raw = cross(target.axis, belowMagnitude(target.axis[0], 0.8) ? [1, 0, 0] : [0, 1, 0]);
   const length = Math.hypot(...raw);
   if (length < 1e-9) return null;
   const a: Vector3 = [raw[0] / length, raw[1] / length, raw[2] / length];
   const b = cross(target.axis, a);
   const ax = dot(a, basis.x), ay = dot(a, basis.y), bx = dot(b, basis.x), by = dot(b, basis.y);
   const det = ax * by - ay * bx;
-  if (Math.abs(det) < 1e-9) return null;
+  if (belowMagnitude(det, 1e-9)) return null;
   const parameterLength = Math.hypot((by * direction[0] - bx * direction[1]) / det, (-ay * direction[0] + ax * direction[1]) / det);
   return target.radius * (view.scale ?? document.sheet.scale) / parameterLength;
 }
@@ -130,7 +130,7 @@ export function displayDrawingDimension(document: DrawingDocument, resolved: Res
     const a: Point2 = [rawA[0] * (rays?.firstSign ?? 1), rawA[1] * (rays?.firstSign ?? 1)];
     const b: Point2 = [rawB[0] * (rays?.secondSign ?? 1), rawB[1] * (rays?.secondSign ?? 1)];
     const det = a[0] * b[1] - a[1] * b[0];
-    if (rays === null || Math.abs(det) < 1e-9) geometryValid = false;
+    if (rays === null || belowMagnitude(det, 1e-9)) geometryValid = false;
     else {
       const offset = subtract(second.paperFrom, first.paperFrom);
       const along = (offset[0] * b[1] - offset[1] * b[0]) / det;

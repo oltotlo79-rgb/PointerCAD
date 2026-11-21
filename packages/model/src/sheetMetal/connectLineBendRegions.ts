@@ -1,4 +1,5 @@
 /** 接線上の実際の接触区間から指定線曲げの接続を作る。面番号や最寄りの面を使わない。 */
+import { exceedsMagnitude } from '../numericTolerance.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import { addVec3, scaleVec3, type Vec3 } from '../sketch/vec3.js';
 import type { SheetGeometryResult, SheetPanelGeometry, SheetTangentFrame } from './panelGeometry.js';
@@ -15,7 +16,7 @@ export function sheetTangentIntervals(curves: readonly ResolvedCurve[], frame: S
   return curves.flatMap((curve) => {
     if (curve.kind !== 'segment') return [];
     const a = framePoint(curve.from, frame, FLAT), b = framePoint(curve.to, frame, FLAT);
-    if ([a, b].some((point) => Math.abs(point[1] - y) > TOLERANCE || Math.abs(point[2]) > TOLERANCE)) return [];
+    if ([a, b].some((point) => exceedsMagnitude(point[1] - y, TOLERANCE) || exceedsMagnitude(point[2], TOLERANCE))) return [];
     const low = Math.min(a[0], b[0]), high = Math.max(a[0], b[0]);
     return high - low > TOLERANCE ? [{ low, high }] : [];
   });

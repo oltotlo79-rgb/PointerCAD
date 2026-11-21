@@ -107,6 +107,18 @@ export interface CatalogItemRow {
    * (保存しない導出の欄なので、足しても保存の形と catalogRevision は変わらない)。
    */
   readonly fitsFrameKeys?: readonly string[];
+  /**
+   * 資料と頁でない値の出どころ(持たない行は資料と頁。`evidence` の題名と頁)。資料に記入が無く、参考にした組立用の道具の画面の値で入れた行だけが
+   * 持ち、画面の値の寸法の鍵(`dims` の鍵)を `fields` に並べる(利用者の回答 2026-11-21 16:0x: 印つきで入れる)。
+   * 画面に出す文は ui の i18n が持つ。保存しない導出の欄なので、足しても保存の形と catalogRevision は変わらない。
+   */
+  readonly valueSource?: CatalogValueSource;
+}
+
+/** 資料と頁でない値の出どころ(今は参考にした組立用の道具の画面の値だけ。資料と頁の行は `valueSource` を持たない)。 */
+export interface CatalogValueSource {
+  readonly kind: 'toolScreen';
+  readonly fields: readonly string[];
 }
 
 /**

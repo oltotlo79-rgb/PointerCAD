@@ -35,7 +35,7 @@ import {
 } from './menus/AssemblyGroup.js';
 import { AssemblyTree, assemblyMateRowDetails, assemblyRowMenuExpanded, assemblyRowMenuTarget } from './AssemblyTree.js';
 import { runNewAssembly } from './menus/fileToolbarActions.js';
-import { ASSEMBLY_TOOL_GUIDE_IDS } from './statusText.js';
+import { ASSEMBLY_TOOL_GUIDE_IDS, assemblyToolGuide } from './statusText.js';
 import {
   COMBINE_MENU_ITEMS,
   CONSTRAINT_MENU_ITEMS,
@@ -307,11 +307,11 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
 });
 
 describe('アセンブリのツールバー(P7 タスク45)', () => {
-  it('「組む」には配置・置換・固定の5項目と、ボルト締結・フレームの溝の締結・締結の解除の3項目、直線・円弧のすみ肉溶接の2項目、接合チェックの1項目、結合の入れ替えと伸縮の2項目、寸法で動かすの1項目を出す', () => {
+  it('「組む」には配置・置換・固定の5項目と、ボルト締結・フレームの溝の締結・締結の解除の3項目、直線・円弧のすみ肉溶接の2項目、接合チェックの1項目、結合の入れ替えと伸縮の2項目、寸法で動かすと部品を作るを順に出す', () => {
     expect(ASSEMBLY_MENU_ITEMS.map((item) => item.id)).toEqual([
       'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
       'boltedJoint', 'frameSlotFastening', 'releaseFastening', 'filletWeld', 'circularFilletWeld', 'jointCheck', 'jointSwap',
-      'memberStretch', 'dimensionMove',
+      'memberStretch', 'dimensionMove', 'createPart',
     ]);
     expect(ASSEMBLY_MENU_ITEMS[10].labelKey).toBe('assembly.tool.jointCheck');
     expect(ASSEMBLY_MENU_ITEMS[6].labelKey).toBe('assembly.frameSlot.tool');
@@ -354,6 +354,7 @@ describe('アセンブリのツールバー(P7 タスク45)', () => {
       'bom',
     ].sort();
     expect([...ASSEMBLY_TOOL_GUIDE_IDS].sort()).toEqual(toolbarIds);
+    expect(assemblyToolGuide('createPart')).toBe('空の部品を置く位置を入力し、Enterで確定してください。');
   });
 
   it('アセンブリ専用区画は畳んだ一覧2つと図柄3つの幅だけを使う', () => {
@@ -583,6 +584,8 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       'holeTranslate',
       'faceRotate',
       'faceOffset',
+      // M-05 4-1a。道具ではなく、選んだ物で押し出し・面の移動・R面取りへ振り分ける項目。
+      'pushPull',
       'shell',
       'thicken',
       'offsetBody',
@@ -674,18 +677,22 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
     expect(
       segmentedWidthPixels(
         CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length
-          + MACHINING_MENU_ITEMS.filter(item => !['holeTranslate', 'faceRotate', 'thicken', 'offsetBody', 'blend'].includes(item.id)).length,
+          + MACHINING_MENU_ITEMS.filter(item => !['holeTranslate', 'faceRotate', 'thicken', 'offsetBody', 'blend', 'pushPull'].includes(item.id)).length,
         0,
       ),
     ).toBe(956);
-    const priorMachining = MACHINING_MENU_ITEMS.filter(item => !['thicken', 'offsetBody', 'blend'].includes(item.id));
+    const priorMachining = MACHINING_MENU_ITEMS.filter(item => !['thicken', 'offsetBody', 'blend', 'pushPull'].includes(item.id));
     expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + priorMachining.length, 0))
       .toBe(1012);
-    const throughOffsetBody = MACHINING_MENU_ITEMS.filter(item => item.id !== 'blend');
+    const throughOffsetBody = MACHINING_MENU_ITEMS.filter(item => item.id !== 'blend' && item.id !== 'pushPull');
     expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + throughOffsetBody.length, 0))
       .toBe(1068);
-    expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length, 0))
+    const throughBlend = MACHINING_MENU_ITEMS.filter(item => item.id !== 'pushPull');
+    expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + throughBlend.length, 0))
       .toBe(1096);
+    // M-05 4-1a の押し引きで 1 個増えて 1124 画素。畳んだ一覧のほうは 103 画素のまま(上の検査)。
+    expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length, 0))
+      .toBe(1124);
   });
 
   it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
@@ -832,8 +839,8 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
     expect(CREATE_MENU_ITEMS.slice(-CREATE_IDS.length).map((item) => item.id)).toEqual([
       ...CREATE_IDS,
     ]);
-    expect(MACHINING_MENU_ITEMS.slice(-MACHINING_IDS.length - 3).map((item) => item.id)).toEqual([
-      MACHINING_IDS[0], 'holeTranslate', 'faceRotate', 'faceOffset', ...MACHINING_IDS.slice(1),
+    expect(MACHINING_MENU_ITEMS.slice(-MACHINING_IDS.length - 4).map((item) => item.id)).toEqual([
+      MACHINING_IDS[0], 'holeTranslate', 'faceRotate', 'faceOffset', 'pushPull', ...MACHINING_IDS.slice(1),
     ]);
   });
 
@@ -1148,7 +1155,7 @@ describe('explicit source refresh row item keeps the canonical toolbar', () => {
       expect(ASSEMBLY_MENU_ITEMS.map(item => item.id)).toEqual([
         'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
         'boltedJoint', 'frameSlotFastening', 'releaseFastening', 'filletWeld', 'circularFilletWeld', 'jointCheck', 'jointSwap',
-        'memberStretch', 'dimensionMove',
+        'memberStretch', 'dimensionMove', 'createPart',
       ]);
     } finally { snapshot.mockRestore(); }
     // SSR markup proves focusable semantics and actual visible text; keyboard/hover

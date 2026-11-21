@@ -1,3 +1,4 @@
+import type { StandardPartSource } from '@pointercad/model';
 import type { PropertySource } from '@pointercad/model/beam-analysis';
 import { t, type MessageKey } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
@@ -5,6 +6,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { beamExpressionField, type BeamFieldName } from './beamFields.js';
 import type { BeamMemberDraft, BeamProvenance, BeamSession } from './beamSession.js';
 import { BeamBucklingSupports } from './BeamBucklingSupports.js';
+import { BeamCatalogMaterial } from './BeamCatalogMaterial.js';
 
 function SourceFields({ member, property }: { readonly member: BeamMemberDraft; readonly property: BeamProvenance }): React.JSX.Element {
   const edit = useAppStore(state => state.editBeam);
@@ -27,8 +29,8 @@ function SourceFields({ member, property }: { readonly member: BeamMemberDraft; 
   </fieldset>;
 }
 
-export function BeamMemberFields({ member, session }: {
-  readonly member: BeamMemberDraft; readonly session: BeamSession;
+export function BeamMemberFields({ member, session, source }: {
+  readonly member: BeamMemberDraft; readonly session: BeamSession; readonly source?: StandardPartSource | undefined;
 }): React.JSX.Element {
   const parameters = useAppStore(state => state.assembly?.parameters ?? state.document.parameters);
   const edit = useAppStore(state => state.editBeam);
@@ -83,6 +85,7 @@ export function BeamMemberFields({ member, session }: {
       {t('beam.remove')}</button>
     {groups.map(group => <details key={group.property} open>
       <summary>{t(group.label)}</summary>
+      {group.property === 'material' && source && <BeamCatalogMaterial key={member.occurrence.partKey} source={source} />}
       {group.property === 'frame' ? <p>{t('beam.frameHelp')}</p> : null}
       {group.property === 'section' ? <p>{t('beam.sectionHelp')}</p> : null}
       <div className="pcad-beam__numbers">{group.names.map(numeric)}</div>

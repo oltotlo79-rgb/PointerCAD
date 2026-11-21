@@ -1,3 +1,4 @@
+import { withinMagnitude } from './tolerances.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { DEFAULT_LINEAR_DEFLECTION } from '../types.js';
 import { createAllocations } from './allocations.js';
@@ -80,7 +81,7 @@ export function compareMaterialRegions(
   checkpoint();
   // 各演算の取りこぼしを同じ立体の総体積と突き合わせる。途中結果は返さない。
   const conserves = (whole: number, parts: number): boolean =>
-    Math.abs(whole - parts) <= Math.max(1e-9, Math.abs(whole) * 1e-6);
+    withinMagnitude(whole - parts, Math.max(1e-9, Math.abs(whole) * 1e-6));
   if (!conserves(beforeVolume, removed.volume + common.volume)
     || !conserves(afterVolume, added.volume + common.volume)) throw new Error(INVALID_RESULT);
   return { added, removed, common, beforeVolume, afterVolume };

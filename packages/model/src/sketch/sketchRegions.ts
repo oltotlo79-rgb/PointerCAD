@@ -13,6 +13,7 @@
  *   平面に乗らない輪だけを領域にしない。
  * - 結果は保存しない(導出できる物は保存しない。rules/04)。許容差の比較は既存の isSamePoint・isPlanar に任せる。
  */
+import { belowMagnitude, withinMagnitude } from '../numericTolerance.js';
 import { curveSamplePoints } from './curvePlaneSamples.js';
 import { curveEnd, curveIntersections, curvePointAt, curveStart, isClosedCurve } from './intersectionMath.js';
 import { fitPlaneNormal, isPlanar } from './resolveSketch.js';
@@ -85,14 +86,14 @@ function planeFrame(samples: readonly Vec3[]): RegionFrame | null {
   const normal = fitPlaneNormal(samples);
   if (normal === null || !isPlanar(samples)) return null;
   const n = normalizeVec3(normal);
-  const helper: Vec3 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const helper: Vec3 = belowMagnitude(n[0], 0.9) ? [1, 0, 0] : [0, 1, 0];
   const u = normalizeVec3(crossVec3(helper, n));
   return { origin: samples[0], u, v: crossVec3(n, u) };
 }
 
 /** 点が枠の作図面に乗るか(`SAME_PLANE_TOLERANCE_MM` の内)。 */
 function onPlane(frame: RegionFrame, point: Vec3): boolean {
-  return Math.abs(dotVec3(subVec3(point, frame.origin), crossVec3(frame.u, frame.v))) <= SAME_PLANE_TOLERANCE_MM;
+  return withinMagnitude(dotVec3(subVec3(point, frame.origin), crossVec3(frame.u, frame.v)), SAME_PLANE_TOLERANCE_MM);
 }
 
 /** 端点だけで触れる組は交わりに数えない。どちらかの途中で触れる組は交わり(T 字・接する・横切る)。 */

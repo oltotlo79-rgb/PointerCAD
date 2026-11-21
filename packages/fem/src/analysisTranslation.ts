@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { sha256Hex } from './sha256.js';
 import type { AnalysisMaterialCapacity, BeamAnalysisDocument, BeamFrame, Vector3, Vector6 } from './analysisModel.js';
 import { beamFrame, readBeamAnalysis, scale, serializeBeamAnalysis } from './analysisValidation.js';
@@ -34,11 +35,11 @@ export function translateBeamAnalysis(value: unknown): { readonly document: Beam
   const clamped=new Set(document.constraints.map(c=>c.nodeId));
   const plan:OofemBeamPlan={schema:'pointercad-oofem-beam-plan/1',nodes:nodeOrder.map((node,i)=>{
     const positionM=scale(node.position,length);
-    if(positionM.some(v=>!Number.isFinite(v)||Math.abs(v)>1e9)) throw new Error('numeric-range: coordinates exceed supported metre range');
+    if(positionM.some(v=>!Number.isFinite(v)||exceedsMagnitude(v, 1e9))) throw new Error('numeric-range: coordinates exceed supported metre range');
     const loads=document.loads.filter(load=>load.nodeId===node.id);
     const sum=(index:number):number=>loads.reduce((total,item)=>total+(index<3?item.force[index]:item.moment[index-3]*length),0);
     const load:Vector6=[sum(0),sum(1),sum(2),sum(3),sum(4),sum(5)];
-    if(load.some(v=>!Number.isFinite(v)||Math.abs(v)>1e30)) throw new Error('numeric-range: combined load exceeds supported range');
+    if(load.some(v=>!Number.isFinite(v)||exceedsMagnitude(v, 1e30))) throw new Error('numeric-range: combined load exceeds supported range');
     return {number:i+1,id:node.id,positionM,fixed:clamped.has(node.id),load};
   }),materials:materialOrder.map((m,i)=>{
     finitePositive(m.shearModulus/area);

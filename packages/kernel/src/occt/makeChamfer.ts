@@ -1,3 +1,4 @@
+import { belowMagnitude } from './tolerances.js';
 import type {
   BRepFilletAPI_MakeChamfer,
   OpenCascadeInstance,
@@ -254,7 +255,7 @@ export function makeChamfer(
 
     const shape = keep(maker.Shape());
 
-    if (!hasSolid(oc, shape) || Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3) {
+    if (!hasSolid(oc, shape) || belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME_MM3)) {
       throw new Error(NOT_SOLID_MESSAGE);
     }
     if (!isValidShape(oc, shape)) {

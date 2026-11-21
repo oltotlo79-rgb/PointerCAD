@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { outlineCurves, type OutlinedText } from '@pointercad/drawing';
 import { addExpression, multiplyExpression, exactExpressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import type { WorkPlane } from './planeMath.js';
@@ -32,13 +33,13 @@ export function textFeature(input: TextFeatureInput): TextFeatureResult {
     || !['start', 'middle', 'end'].includes(input.align) || input.plane.id.length === 0
     || input.origin.some((value) => !Number.isFinite(value.value) || value.source.trim().length === 0)
     || [...u, ...v, ...normal, ...input.plane.origin].some((value) => !Number.isFinite(value))
-    || [u, v, normal].some((axis) => Math.abs(dot(axis, axis) - 1) > 1e-8)
-    || Math.abs(dot(u, v)) > 1e-8 || cross.some((value, index) => Math.abs(value - normal[index]) > 1e-8)) {
+    || [u, v, normal].some((axis) => exceedsMagnitude(dot(axis, axis) - 1, 1e-8))
+    || exceedsMagnitude(dot(u, v), 1e-8) || cross.some((value, index) => exceedsMagnitude(value - normal[index], 1e-8))) {
     return { ok: false, reason: 'invalidInput' };
   }
   const originOffset: Vec3 = [input.origin[0].value - input.plane.origin[0],
     input.origin[1].value - input.plane.origin[1], input.origin[2].value - input.plane.origin[2]];
-  if (Math.abs(dot(originOffset, normal)) > 1e-7) return { ok: false, reason: 'invalidInput' };
+  if (exceedsMagnitude(dot(originOffset, normal), 1e-7)) return { ok: false, reason: 'invalidInput' };
   if (input.text.trim().length === 0) return { ok: true, features: [], contours: [] };
   let outline: OutlinedText;
   try { outline = input.outlineText(input.text, 1); }

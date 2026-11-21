@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from './tolerances.js';
 import type { OpenCascadeInstance, TopoDS_Face } from 'opencascade.js/dist/opencascade.full.js';
 import type { SolidFaceInfo, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
@@ -14,7 +15,7 @@ export function readCylinderDisplayBasis(oc: OpenCascadeInstance, face: TopoDS_F
   const adaptor = keep(new oc.BRepAdaptor_Surface_2(face, true));
   if (adaptor.GetType() !== oc.GeomAbs_SurfaceType.GeomAbs_Cylinder) return undefined;
   const scale = keep(adaptor.Trsf()).ScaleFactor();
-  if (!Number.isFinite(scale) || Math.abs(Math.abs(scale) - 1) > 1e-12) return undefined;
+  if (!Number.isFinite(scale) || exceedsMagnitude(Math.abs(scale) - 1, 1e-12)) return undefined;
   const cylinder = keep(adaptor.Cylinder()), position = keep(cylinder.Position());
   const point = keep(position.Location()), z = keep(position.Direction()), x = keep(position.XDirection());
   const origin: Vec3Tuple = [normalizedZero(point.X()), normalizedZero(point.Y()), normalizedZero(point.Z())];
@@ -24,8 +25,8 @@ export function readCylinderDisplayBasis(oc: OpenCascadeInstance, face: TopoDS_F
   const firstU = adaptor.FirstUParameter(), lastU = adaptor.LastUParameter(), radius = cylinder.Radius();
   if (![...origin, ...axis, ...zeroDirection, firstV, lastV, firstU, lastU, radius].every(Number.isFinite)
     || !(lastU > firstU) || radius <= 0
-    || Math.abs(zLength - 1) > 1e-9 || Math.abs(xLength - 1) > 1e-9 || !(lastV > firstV)
-    || Math.abs(dotVec(axis, zeroDirection)) > 1e-9) return undefined;
+    || exceedsMagnitude(zLength - 1, 1e-9) || exceedsMagnitude(xLength - 1, 1e-9) || !(lastV > firstV)
+    || exceedsMagnitude(dotVec(axis, zeroDirection), 1e-9)) return undefined;
   // Same normalization as makeHole.readCylinderFrame; Orientation deliberately does not flip these axes.
   return { origin, axis: [normalizedZero(axis[0] / zLength), normalizedZero(axis[1] / zLength), normalizedZero(axis[2] / zLength)],
     zeroDirection: [normalizedZero(zeroDirection[0] / xLength), normalizedZero(zeroDirection[1] / xLength), normalizedZero(zeroDirection[2] / xLength)],

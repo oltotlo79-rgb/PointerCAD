@@ -46,7 +46,7 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   const documentVersion = useAppStore((state) => state.documentVersion);
   // いま開いている段の欄名を「次に打つもの」として出す(同じ文言を 2 か所に書かない)。
   const numericInput = useAppStore((state) => state.numericInput);
-  const focusRequestCount = useAppStore((state) => state.commandLineFocusRequestCount);
+  const focusRequest = useAppStore((state) => state.focusRequest);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState('');
@@ -64,13 +64,14 @@ export function CommandLine({ onFailureChange }: CommandLineProps): React.JSX.El
   }, [documentVersion, onFailureChange]);
 
   useEffect(() => {
-    // Space(`AppShell.tsx`)で欄へ入る要求。焦点を持てるのはこの部品だけなので、
-    // 増加に気づいたこちらが移す(`requestViewportFocus` と対になる仕組み)。
-    if (focusRequestCount > 0) {
+    // Space(`AppShell.tsx`)で欄へ入る要求(ストアの focusRequest)。焦点を持てるのはこの部品だけなので、
+    // 自分の欄を指す頼みに気づいたこちらが移して、頼みを消す(`requestViewportFocus` と対になる仕組み)。
+    if (focusRequest?.target.kind === 'commandLine') {
       inputRef.current?.focus();
       inputRef.current?.select();
+      useAppStore.getState().consumeFocusRequest(focusRequest.serial);
     }
-  }, [focusRequestCount]);
+  }, [focusRequest]);
 
   const suggestions = commandSuggestions(text);
   const fieldLabels = nextFieldLabels(numericInput);

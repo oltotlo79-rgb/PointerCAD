@@ -49,8 +49,8 @@ describe('文書の束に含める保存済み解析結果', () => {
     expect(otherFields.attachments).toBe(attachments);
     expect(analysisResults?.get(saved.analysisId)).toBe(saved);
     expect(analysisResults?.get(saved.analysisId)?.result).toBe(saved.result);
-    expectTypeOf<SavedAnalysisResult['result']>().toEqualTypeOf<BeamAnalysisResult>();
-    expectTypeOf<SavedAnalysisResult['kind']>().toEqualTypeOf<BeamAnalysisResult['kind']>();
+    expectTypeOf<Extract<SavedAnalysisResult, { kind: BeamAnalysisResult['kind'] }>['result']>().toEqualTypeOf<BeamAnalysisResult>();
+    expectTypeOf<SavedAnalysisResult['kind']>().toEqualTypeOf<BeamAnalysisResult['kind'] | 'oofem-linear-solid-tet4'>();
   });
 
   it('組立の結果を足しても抱き込んだ部品・添付・サブアセンブリを保つ', async () => {

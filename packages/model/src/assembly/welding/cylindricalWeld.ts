@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import type { SolidBody, SolidFaceEntry } from '../../kernelBridge.js';
 import { resolveSubShapeReference } from '../../kernelBridge/referenceResolution.js';
@@ -76,14 +77,14 @@ function cylinderAt(geometry: CylinderMetadata, placement: RigidPlacement, root:
   if (geometry.surfaceKind !== 'cylinder' || typeof geometry.cylinderExterior !== 'boolean' || axisOrigin == null || axis === null
     || radius === null || !Number.isFinite(radius) || radius <= WELD_LENGTH_TOLERANCE_MM
     || !finite3(axisOrigin) || !finite3(axis) || !finite3(root)
-    || Math.abs(lengthVec3(axis) - 1) > WELD_DIRECTION_TOLERANCE || span == null || span.length !== 2
+    || exceedsMagnitude(lengthVec3(axis) - 1, WELD_DIRECTION_TOLERANCE) || span == null || span.length !== 2
     || !Number.isFinite(span[0]) || !Number.isFinite(span[1]) || !(span[1] > span[0])) return null;
   const origin = applyPlacementToPoint(placement, axisOrigin), transformedAxis = applyPlacementToDirection(placement, axis);
-  if (!finite3(origin) || !finite3(transformedAxis) || Math.abs(lengthVec3(transformedAxis) - 1) > WELD_DIRECTION_TOLERANCE) return null;
+  if (!finite3(origin) || !finite3(transformedAxis) || exceedsMagnitude(lengthVec3(transformedAxis) - 1, WELD_DIRECTION_TOLERANCE)) return null;
   const worldAxis = scaleVec3(transformedAxis, 1 / lengthVec3(transformedAxis));
   const offset = subVec3(root, origin), radial = subVec3(offset, scaleVec3(worldAxis, dotVec3(offset, worldAxis)));
   const distance = lengthVec3(radial);
-  if (!Number.isFinite(distance) || Math.abs(distance - radius) > WELD_LENGTH_TOLERANCE_MM || !(distance > 0)) return null;
+  if (!Number.isFinite(distance) || exceedsMagnitude(distance - radius, WELD_LENGTH_TOLERANCE_MM) || !(distance > 0)) return null;
   const side = geometry.cylinderExterior ? 'exterior' : 'interior';
   return { origin, axis: worldAxis, radius, span, side,
     normal: scaleVec3(radial, (side === 'interior' ? -1 : 1) / distance) };
@@ -109,7 +110,7 @@ export function cylindricalWeldCoversSegment(
     || !Number.isFinite(arcLength) || arcLength <= 0 || !Number.isFinite(radialLeg) || radialLeg <= 0
     || !Number.isFinite(segment.start) || segment.start < 0 || !Number.isFinite(segment.length) || segment.length <= 0
     || !finite3(frame.origin) || !finite3(frame.xAxis) || !finite3(frame.yAxis) || !finite3(frame.zAxis)
-    || [frame.xAxis, frame.yAxis, frame.zAxis].some(axis => Math.abs(lengthVec3(axis) - 1) > WELD_DIRECTION_TOLERANCE)) return false;
+    || [frame.xAxis, frame.yAxis, frame.zAxis].some(axis => exceedsMagnitude(lengthVec3(axis) - 1, WELD_DIRECTION_TOLERANCE))) return false;
   const start = addVec3(frame.origin, scaleVec3(frame.zAxis, segment.start));
   const end = addVec3(start, scaleVec3(frame.zAxis, segment.length));
   const theta = arcLength / radius;
@@ -122,9 +123,9 @@ export function cylindricalWeldCoversSegment(
   if (!(distance > 0) || !Number.isFinite(distance)) return false;
   const idealY = scaleVec3(radial, (cylinder.side === 'interior' ? -1 : 1) / distance);
   const idealZ = scaleVec3(cylinder.axis, dotVec3(cylinder.axis, frame.zAxis) >= 0 ? 1 : -1);
-  if (Math.abs(radius - cylinder.radius) > WELD_LENGTH_TOLERANCE_MM
+  if (exceedsMagnitude(radius - cylinder.radius, WELD_LENGTH_TOLERANCE_MM)
     || dotVec3(idealY, frame.yAxis) < 1 - WELD_DIRECTION_TOLERANCE
-    || Math.abs(Math.abs(dotVec3(cylinder.axis, frame.zAxis)) - 1) > WELD_DIRECTION_TOLERANCE) return false;
+    || exceedsMagnitude(Math.abs(dotVec3(cylinder.axis, frame.zAxis)) - 1, WELD_DIRECTION_TOLERANCE)) return false;
   const tangent = crossVec3(idealY, idealZ), idealX = scaleVec3(tangent, 1 / lengthVec3(tangent));
   const sine = Math.sin(theta), dropFactor = 2 * Math.sin(theta / 2) ** 2;
   const width = radius * sine, drop = radius * dropFactor;

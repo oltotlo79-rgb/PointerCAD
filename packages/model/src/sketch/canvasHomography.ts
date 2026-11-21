@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 /**
  * 下絵の四隅補正。出力矩形の正規化座標(s,t)から、元画像の正規化座標(u,v)へ写す。
  * 画像バイト・画素寸法・作図面mmには依存しない。左上(0,0)、右下(1,1)で、vは下向き。
@@ -61,10 +62,10 @@ function solveEight(rows: number[][]): readonly number[] | null {
   for (let column = 0; column < width; column += 1) {
     let pivot = column;
     for (let row = column + 1; row < width; row += 1) {
-      if (Math.abs(rows[row]?.[column] ?? 0) > Math.abs(rows[pivot]?.[column] ?? 0)) pivot = row;
+      if (exceedsMagnitude(rows[row]?.[column] ?? 0, Math.abs(rows[pivot]?.[column] ?? 0))) pivot = row;
     }
     const pivotValue = rows[pivot]?.[column];
-    if (pivotValue === undefined || !Number.isFinite(pivotValue) || Math.abs(pivotValue) < MIN_PIVOT) return null;
+    if (pivotValue === undefined || !Number.isFinite(pivotValue) || belowMagnitude(pivotValue, MIN_PIVOT)) return null;
     const current = rows[column];
     const chosen = rows[pivot];
     if (current === undefined || chosen === undefined) return null;
@@ -103,7 +104,7 @@ export function projectCanvasHomography(
 ): CanvasNormalizedPoint | null {
   const [s, t] = point;
   const denominator = homography[6] * s + homography[7] * t + homography[8];
-  if (!Number.isFinite(denominator) || Math.abs(denominator) < MIN_DENOMINATOR) return null;
+  if (!Number.isFinite(denominator) || belowMagnitude(denominator, MIN_DENOMINATOR)) return null;
   const u = (homography[0] * s + homography[1] * t + homography[2]) / denominator;
   const v = (homography[3] * s + homography[4] * t + homography[5]) / denominator;
   return Number.isFinite(u) && Number.isFinite(v) ? [u, v] : null;
@@ -135,7 +136,7 @@ export function solveCanvasHomography(sourceQuad: CanvasSourceQuad): CanvasHomog
         const b = sourceQuad[second];
         const c = sourceQuad[third];
         if (a === undefined || b === undefined || c === undefined) return { ok: false, reason: 'singular' };
-        if (Math.abs(cross(a, b, c)) <= MIN_TRIANGLE_CROSS) {
+        if (withinMagnitude(cross(a, b, c), MIN_TRIANGLE_CROSS)) {
           return { ok: false, reason: 'collinear' };
         }
       }

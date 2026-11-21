@@ -23,6 +23,7 @@
  * 同じ考え方)。
  */
 
+import { magnitudeAtLeast } from '../numericTolerance.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 
 /**
@@ -66,7 +67,7 @@ export function inertiaWithDensity(momentMm5: number, densityGPerCm3: number): n
  * 指数表記にしない。桁を丸めるための独自の書式は作らない)。
  */
 export function formatMass(grams: number): string {
-  if (Math.abs(grams) >= GRAMS_PER_KILOGRAM) {
+  if (magnitudeAtLeast(grams, GRAMS_PER_KILOGRAM)) {
     return `${expressionValueFromNumber(grams / GRAMS_PER_KILOGRAM).display} kg`;
   }
   return `${expressionValueFromNumber(grams).display} g`;
@@ -78,7 +79,7 @@ export function formatMass(grams: number): string {
  * `expressionValueFromNumber(...).display` に任せる。
  */
 export function formatLength(millimeters: number): string {
-  if (Math.abs(millimeters) >= MM_PER_METER) {
+  if (magnitudeAtLeast(millimeters, MM_PER_METER)) {
     return `${expressionValueFromNumber(millimeters / MM_PER_METER).display} m`;
   }
   return `${expressionValueFromNumber(millimeters).display} mm`;

@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { addScaled, dotVec3 } from '@pointercad/model/vec3';
 import type { SolidFaceEntry, Vec3 } from '@pointercad/model';
 import { currentMathGeometry } from '../math/mathGeometryResults.js';
@@ -25,9 +26,9 @@ export function cylinderBasisSegment(face: SolidFaceEntry): readonly [Vec3, Vec3
   if (face.surfaceKind !== 'cylinder' || basis === undefined || radius === null || !Number.isFinite(radius) || radius <= 0) return null;
   const { origin, axis, zeroDirection, axialRange } = basis;
   if (![...origin, ...axis, ...zeroDirection, ...axialRange].every(Number.isFinite)
-    || !(axialRange[1] > axialRange[0]) || Math.abs(Math.hypot(...axis) - 1) > 1e-9
-    || Math.abs(Math.hypot(...zeroDirection) - 1) > 1e-9
-    || Math.abs(dotVec3(axis, zeroDirection)) > 1e-9) return null;
+    || !(axialRange[1] > axialRange[0]) || exceedsMagnitude(Math.hypot(...axis) - 1, 1e-9)
+    || exceedsMagnitude(Math.hypot(...zeroDirection) - 1, 1e-9)
+    || exceedsMagnitude(dotVec3(axis, zeroDirection), 1e-9)) return null;
   const v = axialRange[0] / 2 + axialRange[1] / 2;
   const center: Vec3 = addScaled(origin, axis, v);
   const end: Vec3 = addScaled(center, zeroDirection, radius);

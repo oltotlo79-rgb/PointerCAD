@@ -1,3 +1,4 @@
+import { withinMagnitude } from '@pointercad/model';
 import { cadSolidSourceKey, meshCadBoundary, meshCadCurvedBoundary, prepareCadSolidAnalysis, type CadSolidPressureSettings, type CadSolidSettings,
   type CadTetraContext, type FemClient, type FemOptions, type SolidBucklingInput, type SolidBucklingResult } from '@pointercad/fem';
 import type { AnalysisBoundarySource } from '@pointercad/model';
@@ -47,7 +48,7 @@ export function cadSolidBucklingInput(prepared: CadSolidPrepared, modeCount: num
   }
   const scale = Math.max(Math.hypot(...sum), Math.hypot(...prepared.totalForceN));
   need(Number.isFinite(scale) && scale > 0, 'solid-buckling-load: zero reference load');
-  need(Math.abs(area - prepared.loadedAreaMm2) <= 1e-9 * Math.max(area, prepared.loadedAreaMm2)
+  need(withinMagnitude(area - prepared.loadedAreaMm2, 1e-9 * Math.max(area, prepared.loadedAreaMm2))
     && Math.hypot(sum[0] - prepared.totalForceN[0], sum[1] - prepared.totalForceN[1], sum[2] - prepared.totalForceN[2]) <= 1e-9 * scale,
   'solid-buckling-load: prepared total force differs from the loaded boundary');
   return { schema: 'pointercad-solid-tet4-buckling/1', reference: input, modeCount };

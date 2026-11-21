@@ -6,7 +6,7 @@
  * 保つため)。同じ並び・同じ内容(同一参照)を渡し直したときは入れ物を触らない(NFR-PF-1)。
  * 印と案内線は断面表示で一緒に切り、予告とつまみは平面の上にあるので切らない。
  */
-import { addVec3, crossVec3, normalizeVec3, scaleVec3, type ResolvedPlane, type Vec3 } from '@pointercad/model';
+import { belowMagnitude, addVec3, crossVec3, normalizeVec3, scaleVec3, type ResolvedPlane, type Vec3 } from '@pointercad/model';
 import * as THREE from 'three';
 
 import { buildCutPreviewPositions } from './buildCutPreview.js';
@@ -75,7 +75,7 @@ const SECTION_HANDLE_MARGIN = 1.15;
 
 /** 円の基底(u・v)を作るための参照軸。direction とほぼ平行にならないものを選ぶ。 */
 function referenceAxis(direction: Vec3): Vec3 {
-  return Math.abs(direction[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  return belowMagnitude(direction[2], 0.9) ? [0, 0, 1] : [1, 0, 0];
 }
 
 /** ベクトルが実質ゼロ(退化)かどうか。normalizeVec3 は長さ 0 を原点のまま返す約束。 */

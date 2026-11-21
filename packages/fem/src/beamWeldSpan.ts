@@ -1,3 +1,4 @@
+import { exceedsMagnitude, withinMagnitude } from '@pointercad/model/beam-analysis';
 import { subVec3 as sub, addVec3 as add, scaleVec3 as scale, crossVec3 as cross } from '@pointercad/model/vec3';
 import type { Vector3, Vector6 } from './analysisModel.js';
 import type { OofemContactPlan } from './contactTranslation.js';
@@ -17,7 +18,7 @@ type Element = WeldSpanMesh['members'][number];
 const dot = (a: readonly number[], b: readonly number[]): number => a.reduce((v, x, i) => v + x*b[i], 0);
 const zeros = (n: number, m: number): Matrix => Array.from({ length: n }, () => Array<number>(m).fill(0));
 const fail = (): never => { throw new Error('weld-span: invalid, unsupported or unbounded input'); };
-const finite = (v: number): boolean => Number.isFinite(v) && Math.abs(v) <= 1e30;
+const finite = (v: number): boolean => Number.isFinite(v) && withinMagnitude(v, 1e30);
 const positive = (v: number): boolean => finite(v) && v > 1e-30;
 function data(v: unknown, depth = 0): boolean {
   if (depth > 24) return false;
@@ -39,7 +40,7 @@ function keys(v: object, names: readonly string[]): void {
   if (Reflect.ownKeys(v).length !== names.length || names.some(n => !Object.hasOwn(v, n))) fail();
 }
 function vector(v: readonly number[], size: number): void { if (v.length !== size || !v.every(finite)) fail(); }
-function unit(v: Vector3): void { vector(v, 3); if (Math.abs(dot(v, v)-1) > 1e-10) fail(); }
+function unit(v: Vector3): void { vector(v, 3); if (exceedsMagnitude(dot(v, v)-1, 1e-10)) fail(); }
 function sideKey(s: WeldSpanSide): string { return s.kind === 'span' ? `m:${s.memberId}` : `n:${s.node}`; }
 
 /** Fixed OOFEM 214b161ed Beam3d 6x12 N, including independent cross-section rotations. */
@@ -70,7 +71,7 @@ function validateMesh(mesh: WeldSpanMesh): void {
   mesh.nodes.forEach((n, i) => {
     keys(n, ['number', 'positionM', 'restrained', 'load']);
     vector(n.positionM, 3); vector(n.load, 6);
-    if (n.number !== i+1 || n.positionM.some(v => Math.abs(v) > 1e9)
+    if (n.number !== i+1 || n.positionM.some(v => exceedsMagnitude(v, 1e9))
       || n.restrained.length !== 6 || n.restrained.some(v => typeof v !== 'boolean')) fail();
   });
   mesh.materials.forEach((m, i) => {
@@ -93,9 +94,9 @@ function validateMesh(mesh: WeldSpanMesh): void {
     const f = e.frame, delta = sub(mesh.nodes[e.nodes[1]-1].positionM, mesh.nodes[e.nodes[0]-1].positionM);
     const length = Math.hypot(...delta);
     [f.x, f.y, f.z].forEach(unit);
-    if (length <= 1e-9 || !positive(f.lengthM) || Math.abs(f.lengthM-length) > 1e-9*length
+    if (length <= 1e-9 || !positive(f.lengthM) || exceedsMagnitude(f.lengthM-length, 1e-9*length)
       || Math.hypot(...sub(scale(delta, 1/length), f.x)) > 1e-10
-      || Math.abs(dot(f.x, f.y)) > 1e-10 || Math.hypot(...sub(cross(f.x, f.y), f.z)) > 1e-10) fail();
+      || exceedsMagnitude(dot(f.x, f.y), 1e-10) || Math.hypot(...sub(cross(f.x, f.y), f.z)) > 1e-10) fail();
     const previous = groups.get(e.id) ?? [];
     if (previous.some(p => p.componentId !== e.componentId || JSON.stringify(p.occurrencePath) !== JSON.stringify(e.occurrencePath)
       || p.material !== e.material || p.section !== e.section || Math.hypot(...sub(p.frame.x, f.x)) > 1e-10
@@ -172,14 +173,14 @@ export function prepareWeldSpan(value: WeldSpanPlan) {
     keys(patch, ['id', 'centerM', 'normal', 'along', 'widthM', 'lengthM', 'thicknessM', 'youngPa', 'poisson', 'first', 'second']);
     if (typeof patch.id !== 'string' || !patch.id || patch.id.length > 64 || ids.has(patch.id)) fail();
     ids.add(patch.id); vector(patch.centerM, 3); unit(patch.normal); unit(patch.along);
-    if (Math.abs(dot(patch.normal, patch.along)) > 1e-10 || ![patch.widthM, patch.lengthM, patch.thicknessM, patch.youngPa].every(positive)
+    if (exceedsMagnitude(dot(patch.normal, patch.along), 1e-10) || ![patch.widthM, patch.lengthM, patch.thicknessM, patch.youngPa].every(positive)
       || !finite(patch.poisson) || patch.poisson < 0 || patch.poisson >= .5 || sideKey(patch.first) === sideKey(patch.second)) fail();
     const q = cross(patch.normal, patch.along), breaks = [-patch.widthM/2, patch.widthM/2];
     for (const side of [patch.first, patch.second]) {
       const elements = sideElements(mesh, side);
       if (!elements.length) continue;
       const axis = elements[0].frame.x;
-      if (Math.abs(Math.abs(dot(axis, patch.along))-1) > 1e-10 || Math.abs(dot(axis, q)) > 1e-10) fail();
+      if (exceedsMagnitude(Math.abs(dot(axis, patch.along))-1, 1e-10) || exceedsMagnitude(dot(axis, q), 1e-10)) fail();
       const origin = mesh.nodes[elements[0].nodes[0]-1].positionM;
       const extent = elements.flatMap(e => e.nodes.map(node => dot(sub(mesh.nodes[node-1].positionM, origin), axis)));
       const ends = [-1, 1].map(sign => dot(sub(add(patch.centerM, scale(patch.along, sign*patch.widthM/2)), origin), axis));
@@ -195,7 +196,7 @@ export function prepareWeldSpan(value: WeldSpanPlan) {
       if (Math.hypot(...sub(delta, scale(patch.along, station))) > 1e-10*Math.max(patch.widthM, patch.lengthM, other.widthM, other.lengthM)) fail();
       const radius = (patch.widthM+other.widthM)/2;
       const rounding = 32*Number.EPSILON*(radius+patch.along.reduce((v, s, i) => v+(Math.abs(patch.centerM[i])+Math.abs(other.centerM[i]))*Math.abs(s), 0));
-      if (Math.abs(station) <= radius+rounding) fail();
+      if (withinMagnitude(station, radius+rounding)) fail();
     }
     const sorted = [...new Set(breaks)].sort((a, b) => a-b);
     if (sorted.length > 64) fail();

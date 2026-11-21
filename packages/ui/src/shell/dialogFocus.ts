@@ -15,8 +15,8 @@ const FOCUSABLE = [
 ].join(', ');
 
 interface DialogFocusOptions {
-  /** 開いた時に焦点を入れる物(無ければ窓の中の最初の焦点の当たる物)。 */
-  readonly initial?: () => FocusTarget | null;
+  /** 開いた時の焦点。省略時は最初の候補、'managed' は窓自身が欄の選択まで行う時。 */
+  readonly initial?: (() => FocusTarget | null) | 'managed';
   /** 開いた元が消えた時に焦点を戻す物(例: 設定の一覧から開いた窓は、一覧と一緒に消えるボタンの代わりに歯車)。 */
   readonly fallback?: () => FocusTarget | null;
 }
@@ -41,7 +41,8 @@ export function useDialogFocus(windowOf: () => HTMLElement | null, open: boolean
     const active = document.activeElement;
     // 開いた元が無い(メニューの項目が消えて焦点が body へ落ちた)時は、押したメニューの釦を開いた元にする。
     const opener = dialogOpenerOf(scope, active, document.body);
-    enterDialogFocus(scope, active, optionsRef.current.initial?.() ?? null);
+    const initial = optionsRef.current.initial;
+    if (initial !== 'managed') enterDialogFocus(scope, active, initial?.() ?? null);
     return () => {
       leaveDialogFocus(scope, document.activeElement, document.body, opener, optionsRef.current.fallback?.() ?? null);
     };

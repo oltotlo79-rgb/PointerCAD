@@ -45,6 +45,8 @@ export interface ReadArchiveOptions {
   readonly limits?: ArchiveReadLimits;
   /** Extract optional members after required data. A local payload failure omits just that member. */
   readonly optionalEntry?: (name: string) => boolean;
+  /** A smaller expanded-size cap for one optional member; the archive-wide caps still apply. */
+  readonly optionalEntryLimit?: (name: string) => number;
 }
 
 export const ARCHIVE_TOO_LARGE_MESSAGE = 'ファイルが大きすぎるため開けません。';
@@ -63,9 +65,10 @@ interface ExpansionBudget {
 }
 
 function expandEntry(
-  entry: ZipEntryRegion, budget: ExpansionBudget,
+  entry: ZipEntryRegion, budget: ExpansionBudget, entryLimit = budget.limit,
 ): Uint8Array | 'entryExpanded' | 'totalExpanded' | 'invalidZip' {
-  const { limit, remaining } = budget;
+  const { remaining } = budget;
+  const limit = Math.min(budget.limit, entryLimit);
   if (entry.expandedSize > limit) return 'entryExpanded';
   if (entry.expandedSize > remaining) return 'totalExpanded';
   try {
@@ -111,7 +114,7 @@ export function readArchive(bytes: Uint8Array, options: ReadArchiveOptions): Rea
     let omittedOptional = false;
     for (const entry of optional) {
       name = entry.name;
-      const data = expandEntry(entry, budget);
+      const data = expandEntry(entry, budget, options.optionalEntryLimit?.(name));
       if (typeof data === 'string') omittedOptional = true;
       else entries.set(entry.name, data);
     }

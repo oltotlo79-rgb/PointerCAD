@@ -1,3 +1,4 @@
+import { magnitudeAtLeast } from '@pointercad/model';
 import type { BomColumnId, BomRow } from '@pointercad/model';
 
 /** 表が描く 1 行。model の数値を画面用の文字列へ変えたもの。 */
@@ -12,7 +13,7 @@ export interface BomTableRow {
 export function formatBomMass(grams: number | null): string {
   if (grams === null || !Number.isFinite(grams)) return '';
   const normalized = Object.is(grams, -0) ? 0 : grams;
-  return Math.abs(normalized) >= 1000
+  return magnitudeAtLeast(normalized, 1000)
     ? `${(normalized / 1000).toFixed(2)} kg`
     : `${normalized.toFixed(2)} g`;
 }

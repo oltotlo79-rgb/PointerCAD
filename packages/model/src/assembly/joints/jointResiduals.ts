@@ -1,4 +1,5 @@
 /** 4種のジョイント。受理済み姿勢を変えずにtrialの残差と解析Jacobianを作る。 */
+import { withinMagnitude } from '../../numericTolerance.js';
 import type { LinearizedRow } from '../../sketch/constraints/solve.js';
 import {
   addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, type Vec3,
@@ -144,7 +145,7 @@ function rotationLog(a: TrialJointFrame, b: TrialJointFrame, reference: Quaterni
   const alignment = q.reduce((sum, v, i) => sum + v * reference[i], 0);
   // 基準からちょうど半回転のtrialは二つの持ち上げが同距離。偽の微分を返さない。
   // 基準自身がπのときはalignment=1なので、π付近の通常の検算・求解はそのまま通る。
-  if (Math.abs(alignment) <= 1e-12) return null;
+  if (withinMagnitude(alignment, 1e-12)) return null;
   const sign = alignment < 0 ? -1 : 1;
   const v: Vec3 = [sign * q[0], sign * q[1], sign * q[2]];
   const w = sign * q[3];

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { analyzeParameters, type LengthUnit, type Parameter } from '@pointercad/model';
 
@@ -7,6 +7,10 @@ import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import { ExpressionInspectionPreview } from '../math/ExpressionInspectionPreview.js';
 import { countAffectedFeatures, countParameterUsageSites, inspectInputExpression } from '../math/expressionInspectionContext.js';
+import { isCompositionKey } from '../commands/compositionKey.js';
+import { completionKey, completionWord, expressionCandidates, insertCompletion } from './expressionCompletion.js';
+import { expressionErrorText } from './expressionErrorText.js';
+import { ExpressionSuggestions } from './ExpressionSuggestions.js';
 import { usesDisplayInputUnit } from './numericFieldUnits.js';
 import {
   fieldUnitLabelKey,
@@ -42,7 +46,7 @@ export interface ExpressionFieldProps {
 
 /**
  * 欄の下に出す 1 行。妥当なら評価値(FR-202)、間違いなら理由をそのまま出す(FR-204)。
- * 文言は式エンジンが組み立てた日本語で、位置や文字を差し込んだ文になるため ja.json では持てない。
+ * 式が返した理由の後ろに、該当するヒントと候補だけを添える。
  * 評価値は有効 6 桁で出し、全部の桁は `full`(行のツールチップ)へ渡す(UI の点検の指摘 26)。
  */
 function fieldMessage(
@@ -51,7 +55,7 @@ function fieldMessage(
   lengthUnit: LengthUnit,
 ): { readonly text: string; readonly full?: string } {
   if (result.error !== null) {
-    return { text: result.error.message };
+    return { text: expressionErrorText(result.error) };
   }
   if (result.value === null) {
     return { text: '' };
@@ -90,8 +94,33 @@ export function ExpressionField({
   const partAnalysis = useAppStore(state => state.parameterAnalysis);
   const partParameters = useAppStore(state => state.document.parameters);
   const parameters = inspectionParameters ?? partParameters;
+  const [query, setQuery] = useState<{ source: string; caret: number } | null>(null);
+  const [selected, setSelected] = useState(-1);
+  const insertion = useRef<{ source: string; caret: number } | null>(null);
+  const listId = inputId + '-options';
   const analysis = useMemo(() => inspectionParameters === undefined ? partAnalysis : analyzeParameters(inspectionParameters, []),
     [inspectionParameters, partAnalysis]);
+  const word = useMemo(() => query?.source === field.source ? completionWord(field.source, query.caret) : null,
+    [query, field.source]);
+  const candidates = useMemo(() => word === null ? [] : expressionCandidates(word, parameters, analysis.variables),
+    [word, parameters, analysis.variables]);
+  const open = candidates.length > 0;
+  const active = selected < candidates.length ? selected : -1;
+  function closeList(): void { setQuery(null); setSelected(-1); }
+  function accept(index: number): void {
+    const candidate = candidates[index];
+    if (word === null || candidate === undefined) return;
+    const next = insertCompletion(field.source, word, candidate);
+    insertion.current = next;
+    closeList();
+    onChange(next.source);
+  }
+  useLayoutEffect(() => {
+    const next = insertion.current;
+    if (next === null) return;
+    insertion.current = null;
+    if (next.source === field.source) inputRef.current?.setSelectionRange(next.caret, next.caret);
+  });
   const document = useAppStore(state => state.document);
   const pending = inspectionParameters === undefined && (isPendingFieldError(result.error) || referencesPendingVariable(
     field.source.trim() === '' ? field.defaultSource : field.source, pendingVariables, field.mathValue?.mathDefinition ?? result.value?.mathDefinition,
@@ -147,6 +176,10 @@ export function ExpressionField({
         id={inputId}
         className="pcad-field__input"
         type="text"
+        // 役割は textbox のまま。一覧の開閉は読み上げに伝わらない(combobox へ移すのは作業の一覧の別の行)。
+        aria-autocomplete="list"
+        aria-controls={open ? listId : undefined}
+        aria-activedescendant={open && active >= 0 ? listId + '-' + String(active) : undefined}
         inputMode="text"
         autoComplete="off"
         spellCheck={false}
@@ -156,10 +189,35 @@ export function ExpressionField({
         aria-describedby={inspectionVisible ? `${messageId} ${inspectionId}` : messageId}
         title={t(field.tooltipKey)}
         onFocus={onFocus}
-        onChange={(event) => {
-          onChange(event.target.value);
+        onBlur={closeList}
+        onChange={({ currentTarget }) => {
+          const source = currentTarget.value;
+          setSelected(-1);
+          setQuery({ source, caret: currentTarget.selectionStart ?? source.length });
+          onChange(source);
+        }}
+        onSelect={({ currentTarget }) => {
+          const caret = currentTarget.selectionStart;
+          if (query === null || caret === null) return;
+          if (caret !== currentTarget.selectionEnd) { closeList(); return; }
+          if (caret !== query.caret) { setSelected(-1); setQuery({ source: currentTarget.value, caret }); }
+        }}
+        onKeyDown={event => {
+          if (isCompositionKey(event.nativeEvent) || event.ctrlKey || event.metaKey || event.altKey) return;
+          const action = completionKey(event.key, candidates.length, active);
+          if (action.kind === 'pass') {
+            if (event.key === 'Tab' || event.key === 'Enter') closeList();
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          if (action.kind === 'select') setSelected(action.index);
+          else if (action.kind === 'accept') accept(action.index);
+          else closeList();
         }}
       />
+      {open && inputRef.current !== null && <ExpressionSuggestions input={inputRef.current} id={listId}
+        label={label} candidates={candidates} selected={active} accept={accept}/>}
       {resting === null ? null : (
         <span className="pcad-field__resting" aria-hidden="true">
           {resting.inDisplayUnit ? `${resting.text} ${t(fieldUnitLabelKey(field.unit, lengthUnit))}` : resting.text}

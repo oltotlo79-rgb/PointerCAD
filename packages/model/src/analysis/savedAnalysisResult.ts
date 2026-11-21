@@ -1,11 +1,14 @@
 import type { BeamAnalysisResult } from './analysisModel.js';
 
-/** 保存時の入力に紐づく解析結果。段 2 以降は解析の種類に応じた判別可能な和へ広げる。 */
-export interface SavedAnalysisResult {
+import type { SavedSolidPayload } from './savedSolidResult.js';
+
+/** 保存した文書と解析の種類に結び付いた結果。 */
+interface SavedIdentity {
   readonly analysisId: string;
-  readonly kind: BeamAnalysisResult['kind'];
   readonly analysisRevision: number;
   readonly bindingSha256: string;
   readonly appVersion: string;
-  readonly result: BeamAnalysisResult;
 }
+
+export type SavedAnalysisResult = SavedIdentity & (SavedSolidPayload
+  | { readonly kind: BeamAnalysisResult['kind']; readonly result: BeamAnalysisResult });

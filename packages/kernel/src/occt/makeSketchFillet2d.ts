@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from './tolerances.js';
 import type { SegmentSpec, Vec3Tuple } from '../types.js';
 import {
   addVec,
@@ -171,7 +172,7 @@ export function makeSketchFillet(spec: SketchFilletSpec): SketchFilletResult {
   // 乗っていないと、返した中心と角度から model が組み立て直す円弧が
   // 元の線と接しない(model の円弧は必ず作図面の上に置かれるため)。
   for (const point of [corner.corner, corner.far1, corner.far2]) {
-    if (Math.abs(dotVec(subVec(point, spec.plane.origin), frame.normal)) > CORNER_TOLERANCE_MM) {
+    if (exceedsMagnitude(dotVec(subVec(point, spec.plane.origin), frame.normal), CORNER_TOLERANCE_MM)) {
       throw new Error(NOT_ON_PLANE_MESSAGE);
     }
   }

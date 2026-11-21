@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude } from '../numericTolerance.js';
 import type { NativePlanarBasis } from '../kernelBridge/solidContracts.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { resolveHoleCenters, type ResolvedPartSketch } from '../part/resolvePart.js';
@@ -48,9 +49,9 @@ const positive = (value: number): boolean => Number.isFinite(value) && value > 0
 
 export function isValidHoleScheduleFrame(frame: HoleScheduleFrame): boolean {
   return finite(frame.datum) && finite(frame.x) && finite(frame.y)
-    && Math.abs(lengthVec3(frame.x) - 1) < 1e-10
-    && Math.abs(lengthVec3(frame.y) - 1) < 1e-10
-    && Math.abs(dotVec3(frame.x, frame.y)) < 1e-10
+    && belowMagnitude(lengthVec3(frame.x) - 1, 1e-10)
+    && belowMagnitude(lengthVec3(frame.y) - 1, 1e-10)
+    && belowMagnitude(dotVec3(frame.x, frame.y), 1e-10)
     && lengthVec3(crossVec3(frame.x, frame.y)) > 1 - 1e-10;
 }
 
@@ -95,7 +96,7 @@ export function buildHoleSchedule(document: PartDocument, context: HoleScheduleC
     } else if (feature.planar !== undefined) {
       const basis = plane.planarBasis;
       if (basis === undefined || !isValidHoleScheduleFrame({ datum: basis.origin, x: basis.xAxis, y: basis.yAxis })
-        || !finite(basis.normal) || Math.abs(dotVec3(crossVec3(basis.xAxis, basis.yAxis), basis.normal) - 1) > 1e-9) {
+        || !finite(basis.normal) || exceedsMagnitude(dotVec3(crossVec3(basis.xAxis, basis.yAxis), basis.normal) - 1, 1e-9)) {
         return { ok: false, reason: 'missingFace', featureId: feature.id };
       }
       if (feature.planar.locations.length === 0) return { ok: false, reason: 'invalidValue', featureId: feature.id };

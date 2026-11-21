@@ -1,3 +1,4 @@
+import { belowMagnitude } from './tolerances.js';
 import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import { dotVec as dot } from './sketchCorner.js';
 import type {
@@ -275,7 +276,7 @@ function makeEmbossTool(
 
   // 輪郭の平面が面と平行か。平行でなければ「面から測った深さ」が定まらない。
   const profilePlane = readPlaneFrame(oc, drawn.face, keep, false);
-  if (Math.abs(dot(profilePlane.normal, frame.normal)) < PARALLEL_DOT) {
+  if (belowMagnitude(dot(profilePlane.normal, frame.normal), PARALLEL_DOT)) {
     throw new Error(NOT_PARALLEL_MESSAGE);
   }
 

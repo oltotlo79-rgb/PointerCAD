@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { createFiniteReader } from '../valueGuards.js';
 import { fatigueInputFailure as fail, fields, InputIssue, text } from './analysisValidation.js';
 import { analysisPropertyEvidenceKeys, fatiguePropertySeries, readOptionalAnalysisPropertyEvidence,
@@ -167,7 +168,7 @@ function readHistory(value: unknown, path: string): FatigueSavedHistory {
   const stressMpa: number[] = [];
   for (const [index, point] of points.entries()) {
     const stress = finite(point, `${path}.stressMpa[${index}]`);
-    if (Math.abs(stress) > LIMITS.maximumStressMpa) fail(`${path}.stressMpa[${index}]`, 'Expected |stress| of at most 1e4 MPa');
+    if (exceedsMagnitude(stress, LIMITS.maximumStressMpa)) fail(`${path}.stressMpa[${index}]`, 'Expected |stress| of at most 1e4 MPa');
     stressMpa.push(stress);
   }
   const sequence = row.sequence;

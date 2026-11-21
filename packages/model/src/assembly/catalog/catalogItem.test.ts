@@ -22,7 +22,7 @@ import { K4B_CATALOG_FAMILIES } from './registry/k4b.js';
 import { K5_CATALOG_FAMILIES } from './registry/k5.js';
 import { K6_CATALOG_FAMILIES } from './registry/k6.js';
 import { K28_CATALOG_FAMILIES } from './registry/k28.js';
-import { CATALOG_ITEM_REJECTION_TEMPLATES, type CatalogItemRejectionCode } from './rejection.js';
+import { CATALOG_ITEM_REJECTION_CODES, type CatalogItemRejectionCode } from './rejection.js';
 import {
   buildCatalogItemPart, catalogItemNominalVolume, catalogItemRejection, catalogItemSourceFromOptions,
   createCatalogItemSource,
@@ -64,7 +64,6 @@ async function loadedRegistry() {
 }
 
 const SAVED = createCatalogItemSource(FAMILY, ROWS[0], { length: '12' });
-const IDENTIFIERS = /catalogItem|family|item|length|finish|extra|size|test-pin|test-parallel-pin/u;
 
 describe('K0 (b) 族の部品の保存の形', () => {
   it('catalog は catalogItem の 1 値で、options は族・行の鍵と族の指定だけ(形・寸法・出どころ・材質は保存しない)', () => {
@@ -117,11 +116,11 @@ describe('K0 (b) 知らない族・読めない保存は黙って消さず、型
     const before = structuredClone(test.source);
     const rejection = catalogItemRejection(test.source, registry);
     expect(rejection?.code).toBe(test.code);
-    expect(rejection?.messageKey).toBe(`catalog.rejection.${test.code}`);
+    // 文は ui の catalog.json(D4)。利用者の言葉で識別子を含まない事と、{count} を差し込んだ文は ui の standardPartPicker.test.ts が見る。
+    expect(rejection?.text).toEqual({ key: `catalog.rejection.${test.code}`,
+      parameters: test.code === 'saved-fields-mismatch' ? { count: String((test.fields ?? []).length) } : {} });
     expect(rejection?.fields).toEqual(test.fields ?? []);
     expect(rejection?.basis).toEqual([]);
-    expect(rejection?.message).not.toMatch(IDENTIFIERS);
-    expect(rejection?.message).toBe(CATALOG_ITEM_REJECTION_TEMPLATES[test.code].split('{count}').join(String((test.fields ?? []).length)));
     expect(buildCatalogItemPart(test.source, registry)).toBeNull();
     expect(test.source).toEqual(before);
   });
@@ -183,8 +182,7 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
   it('知らない族は standardPartRejection・組み立て・理由つきの組み立てで同じ型付きの拒否になる', () => {
     const rejection = standardPartRejection(unknown);
     expect(rejection?.code).toBe('unknown-family');
-    expect(rejection?.messageKey).toBe('catalog.rejection.unknown-family');
-    expect(rejection?.message).toBe(CATALOG_ITEM_REJECTION_TEMPLATES['unknown-family']);
+    expect(rejection?.text).toEqual({ key: 'catalog.rejection.unknown-family', parameters: {} });
     expect(buildStandardPartFromSource(unknown)).toBeNull();
     expect(buildStandardPartFromSourceWithReason(unknown)).toEqual({ document: null, rejection });
   });
@@ -192,7 +190,7 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
   it('鋼材の指定や鋼材の版を持つ族の部品も、鋼材の確かめに入らず族の理由で断る', () => {
     const steelLike: StandardPartSource = { ...unknown, catalogRevision: 'jp-steel-2026-10-10-r1',
       generatorRevision: '3-steel-profile-1', options: { ...unknown.options, materialGrade: 'SS400' } };
-    expect(standardPartRejection(steelLike)?.messageKey).toBe('catalog.rejection.unknown-family');
+    expect(standardPartRejection(steelLike)?.text.key).toBe('catalog.rejection.unknown-family');
     expect(buildStandardPartFromSource(steelLike)).toBeNull();
   });
 
@@ -202,7 +200,7 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
     const before = structuredClone(assembly);
     const resolved = resolveAssembly(assembly, { standardPart: buildStandardPartFromSource });
     expect(resolved.parts.size).toBe(0);
-    expect(resolved.errors.map((error) => error.message)).toEqual([CATALOG_ITEM_REJECTION_TEMPLATES['unknown-family']]);
+    expect(resolved.errors.map((error) => error.text)).toEqual([{ key: 'catalog.rejection.unknown-family', parameters: {} }]);
     expect(assembly).toEqual(before);
   });
 
@@ -215,12 +213,8 @@ describe('K0 (b) 製品の道: 既存の 3 系統の道を変えず、族の部�
     expect(standardPartNominalVolume('catalogItem', '2', source.options)).toBeNull();
   });
 
-  it('全ての拒否の文は利用者の言葉で、保存の形の識別子を含まない', () => {
-    for (const template of Object.values(CATALOG_ITEM_REJECTION_TEMPLATES)) {
-      expect(template).not.toMatch(IDENTIFIERS);
-      expect(template.trim().length).toBeGreaterThan(0);
-    }
-    expect(Object.keys(CATALOG_ITEM_REJECTION_TEMPLATES).sort()).toEqual([
+  it('拒否の理由の符号は 7 つ(文は ui の catalog.json。利用者の言葉で識別子を含まない事は ui の standardPartPicker.test.ts が見る)', () => {
+    expect([...CATALOG_ITEM_REJECTION_CODES].sort()).toEqual([
       'family-not-loaded', 'invalid-option-value', 'saved-fields-mismatch', 'unknown-family', 'unknown-item',
       'unsupported-catalog-revision', 'unsupported-generator-revision',
     ]);

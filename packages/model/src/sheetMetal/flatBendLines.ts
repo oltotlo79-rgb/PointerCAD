@@ -1,4 +1,5 @@
 /** 曲げ中心線を実際の帯の材料へ切り詰める。穴とリリーフの空間には線を出さない。 */
+import { withinMagnitude } from '../numericTolerance.js';
 import { curveEnd, curveStart } from '../sketch/intersectionMath.js';
 import { addVec3, dotVec3, normalizeVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import { sheetLoopContains } from './groupClippedPanels.js';
@@ -23,7 +24,7 @@ export function sheetFlatBendLines(flat: SheetFlatGeometry): SheetGeometryResult
       const split = splitSheetCurveAtPlane(curve, { origin: bend.from, normal: up }); if (!split.ok) return split;
       for (const piece of split.value) for (const point of [curveStart(piece.curve), curveEnd(piece.curve)]) {
         const relative = subVec3(point, bend.from), offset = dotVec3(relative, ray);
-        if (Math.abs(dotVec3(relative, up)) <= EPSILON && offset > EPSILON && offset < length - EPSILON) cuts.push(offset);
+        if (withinMagnitude(dotVec3(relative, up), EPSILON) && offset > EPSILON && offset < length - EPSILON) cuts.push(offset);
       }
     }
     cuts.sort((a, b) => a - b);

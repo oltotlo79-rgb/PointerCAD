@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { isFiniteNumber, isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import type { Vector3 } from './analysisModel.js';
@@ -182,7 +183,7 @@ export function translateBeamImpact(value: unknown): { readonly input: BeamImpac
     const directionUnit = vector(contact.directionUnit, `contacts[${index}].directionUnit`);
     const gapM = finite(contact.gapM, `contacts[${index}].gapM`);
     if (!originalIds.has(nodeId)) throw new Error('impact-contact: unknown node');
-    if (Math.abs(Math.hypot(...directionUnit) - 1) > 1e-12) throw new Error('impact-contact: direction must be a unit vector');
+    if (exceedsMagnitude(Math.hypot(...directionUnit) - 1, 1e-12)) throw new Error('impact-contact: direction must be a unit vector');
     if (gapM < 0) throw new Error('impact-contact: the initial gap must be nonnegative');
     const restrained = supportMap.get(nodeId) ?? unrestrained;
     if ([0, 1, 2].every(axis => restrained[axis] || directionUnit[axis] === 0)) {

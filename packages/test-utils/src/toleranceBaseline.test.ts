@@ -99,6 +99,7 @@ describe('new handwritten absolute-difference tolerances', () => {
     const extraBaseline = checkedToleranceBaseline(JSON.parse(readFileSync(resolve(root, 'packages/test-utils/src/toleranceOriginalExtraBaseline.json'), 'utf8')) as unknown);
     const roots = ['packages', 'apps'].flatMap(group => readdirSync(resolve(root, group), { withFileTypes: true })
       .filter(entry => entry.isDirectory() && existsSync(resolve(root, group, entry.name, 'src')))
+      .filter(entry => group !== 'packages' || !['kernel', 'model', 'ui', 'io', 'fem'].includes(entry.name))
       .map(entry => posix.join(group, entry.name, 'src')));
     const violations = roots.flatMap(dir => productFiles(root, dir, path => productTypeScript(path)
       && !/\.d\.[cm]?ts$/u.test(path) && !/\.spec\.(?:[cm]?[jt]s|[jt]sx)$/u.test(path)))

@@ -1,0 +1,34 @@
+/* Coach marks share viewport coordinates with getBoundingClientRect(). */
+.pcad-coach-ring, .pcad-coach-note {
+  position: fixed;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 80;
+}
+.pcad-coach-ring {
+  outline: 3px solid var(--pcad-accent);
+  outline-offset: -3px;
+  border-radius: 4px;
+}
+.pcad-coach-note {
+  inset-inline-start: 8px;
+  inset-block-end: 8px;
+  width: max-content;
+  max-width: min(28rem, 100vw);
+  max-height: 100vh;
+  overflow: hidden;
+  padding: 6px 10px;
+  border: 1px solid var(--pcad-border);
+  border-radius: 6px;
+  background: var(--pcad-surface);
+  color: var(--pcad-text);
+  font-size: var(--pcad-font-size);
+  overflow-wrap: anywhere;
+}
+.pcad-screen-tour {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.pcad-screen-tour button { pointer-events: auto; }

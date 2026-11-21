@@ -42,7 +42,9 @@ function directions(text: string | undefined): ReadonlyMap<string, readonly numb
 
 const sorted = (values: readonly number[]): readonly number[] => [...values].sort((a, b) => a - b);
 // 密度の表の金属の語に、密度の無い材料の語(樹脂・ゴム)を足す(この語を含む行は、部位ごとに材料の違う行と同じく密度を持たない)。
+// JIS の鋼の記号(SPHC など。ローラのコンベヤのフックの記入)は鋼として読む。
 const MATERIAL_WORDS: readonly (readonly [string, string])[] = [['アルミ', 'aluminum'], ['ステンレス', 'stainless'], ['鉄', 'steel'], ['鋼', 'steel'],
+  ['SPHC', 'steel'], ['SPCC', 'steel'], ['SS400', 'steel'], ['SECC', 'steel'],
   ['樹脂', 'resin'], ['PA', 'resin'], ['PP', 'resin'], ['ナイロン', 'resin'], ['ABS', 'resin'], ['ゴム', 'rubber']];
 const LABELS: Readonly<Record<string, string>> = { aluminum: 'アルミ', stainless: 'ステンレス', steel: '鉄', resin: '樹脂', rubber: 'ゴム' };
 

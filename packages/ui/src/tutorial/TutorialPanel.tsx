@@ -1,3 +1,6 @@
+import { CoachMark } from '../guide/CoachMark.js';
+import { ScreenTour, useScreenTourActive } from '../guide/ScreenTour.js';
+import { TUTORIAL_STEP_COMMANDS } from '../guide/tutorialStepCommands.js';
 import { useEffect, useRef } from 'react';
 import { openPartExamples } from '../examples/openPartExample.js';
 import { t, type MessageKey } from '../i18n/t.js';
@@ -49,6 +52,7 @@ export function TutorialWelcome(): React.JSX.Element | null {
     <button type="button" className="pcad-button pcad-tutorial-welcome"
        title={t('tutorial.parameter.startHint')} onClick={() => openTutorial('parameterToExport')}>{t(resumeParameter
          ? 'tutorial.parameter.resume' : 'tutorial.parameter.start')}</button>
+    <ScreenTour />
     {/* 作例の一覧(J-06b)。ファイルの一覧の「作例を開く」と同じ窓を開く。 */}
     <button type="button" className="pcad-button pcad-tutorial-welcome"
       title={t('examples.menuTooltip')} onClick={openPartExamples}>{t('examples.menu')}</button>
@@ -74,6 +78,7 @@ export function TutorialPanel(): React.JSX.Element | null {
     && state.document !== state.tutorialDrawingProof.sourcePart);
   const ready = useAppStore(tutorialReady);
   const input = useAppStore(state => state.numericInput);
+  const screenTourOpen = useScreenTourActive();
   const helpOpen = useAppStore(state => state.helpTopicId !== null);
   const checkpointFailure = useAppStore(state => state.tutorialCheckpointFailure);
   const nextRef = useRef<HTMLButtonElement>(null);
@@ -96,9 +101,14 @@ export function TutorialPanel(): React.JSX.Element | null {
   if (!open) return null;
   const active = session !== null && (activeStep !== 'differentDocument' || coldDrawing);
   const parameterCourse = session?.course === 'parameterToExport';
+  const command = parameterCourse
+    ? parameterStep !== 'differentDocument' && TUTORIAL_STEP_COMMANDS.parameterToExport[parameterStep]
+    : step !== 'differentDocument' && TUTORIAL_STEP_COMMANDS.plate[step];
   return <section className="pcad-tutorial" aria-label={t('tutorial.title')} data-help-topic="tutorial"
     data-tutorial-step={activeStep}>
     <h2>{t('tutorial.title')}</h2>
+    {active && command && !screenTourOpen && !helpOpen && input === null && <CoachMark anchor={{ kind: 'command', id: command }}
+      message={parameterCourse ? PARAMETER_STEP_TEXT[parameterStep as ParameterTutorialStep] : STEP_TEXT[step as TutorialStep]} />}
     {session?.course !== 'plate' && checkpointFailure !== null
       ? <p role="alert">{t(CHECKPOINT_FAILURE[checkpointFailure])}</p> : null}
     {coldDrawing ? <>

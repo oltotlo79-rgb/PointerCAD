@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { dotVec3, subVec3 } from '@pointercad/model/vec3';
 import { isRecord, isFiniteNumber as finite } from './valueGuards.js';
 import type { AnalysisSource, BeamAnalysisDocument, BeamNodalLoad, Vector3 } from './analysisModel.js';
@@ -93,7 +94,7 @@ export function validateBeamContacts(contacts: readonly BeamContactDefinition[],
   }
   if (loadFactors.length < 1 || loadFactors.length > MAX_CONTACT_LOAD_FACTORS) return fail('contact-factors', -1);
   for (const [index, factor] of loadFactors.entries()) {
-    if (!finite(factor) || Math.abs(factor) > MAX_LOAD_FACTOR) return fail('contact-factors', index);
+    if (!finite(factor) || exceedsMagnitude(factor, MAX_LOAD_FACTOR)) return fail('contact-factors', index);
   }
   return { ok: true, contacts: normalized, loadFactors: [...loadFactors] };
 }
@@ -245,7 +246,7 @@ export function decodeContactNumericResult(raw: unknown, expected: ContactResult
       // Labels must agree with the numbers: an open contact has exactly zero reaction (no adhesion) and a closed
       // contact has a gap within the tolerance of zero.
       if (status === 'open' && reaction !== 0) return null;
-      if (status === 'closed' && Math.abs(gap) > tolerance * gapScale) return null;
+      if (status === 'closed' && exceedsMagnitude(gap, tolerance * gapScale)) return null;
       penetration = Math.max(penetration, Math.max(0, -gap) / gapScale);
       tension = Math.max(tension, Math.max(0, -reaction) / forceScale);
       complementarity = Math.max(complementarity, Math.abs(reaction * gap) / (forceScale * gapScale));

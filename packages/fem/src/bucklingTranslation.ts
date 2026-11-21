@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import type { BeamNodalLoad, Vector3, Vector6 } from './analysisModel.js';
@@ -31,7 +32,7 @@ function list<T>(value: unknown, path: string, maximum: number, read: (value: un
 }
 function vector(value: unknown, path: string): Vector3 {
   const components = list(value, path, 3, item => {
-    if (typeof item !== 'number' || !Number.isFinite(item) || Math.abs(item) > 1e30) {
+    if (typeof item !== 'number' || !Number.isFinite(item) || exceedsMagnitude(item, 1e30)) {
       throw new Error(`buckling-number: ${path}`);
     }
     return item === 0 ? 0 : item;
@@ -83,7 +84,7 @@ export function translateBeamBuckling(value: unknown): {
     const sum = (axis: number): number => loads.reduce((total, load) => total
       + (axis < 3 ? load.force[axis] : load.moment[axis - 3] * lengthScale), 0);
     const load: Vector6 = [sum(0), sum(1), sum(2), sum(3), sum(4), sum(5)];
-    if (load.some(component => !Number.isFinite(component) || Math.abs(component) > 1e30)) {
+    if (load.some(component => !Number.isFinite(component) || exceedsMagnitude(component, 1e30))) {
       throw new Error('buckling-load: invalid combined reference load');
     }
     return { ...node, restrained: supportMap.get(node.id) ?? free, load };

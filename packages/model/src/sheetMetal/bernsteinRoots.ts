@@ -1,3 +1,4 @@
+import { withinMagnitude } from '../numericTolerance.js';
 /** 6次以下のBernstein多項式の実根。導関数の根で単調区間へ分け、偶数重根も調べる。 */
 export function bernsteinValue(coefficients: readonly number[], at: number): number {
   const row = [...coefficients];
@@ -15,11 +16,11 @@ export function bernsteinRoots(coefficients: readonly number[]): readonly number
   const critical = bernsteinRoots(derivative) ?? [];
   const cuts = [0, ...critical.filter((value) => value > 0 && value < 1), 1].sort((a, b) => a - b), roots: number[] = [];
   const evaluate = (at: number) => bernsteinValue(values, at);
-  for (const cut of cuts) if (Math.abs(evaluate(cut)) <= 2e-14) roots.push(cut);
+  for (const cut of cuts) if (withinMagnitude(evaluate(cut), 2e-14)) roots.push(cut);
   for (let i = 1; i < cuts.length; i++) {
     let left = cuts[i - 1], right = cuts[i], a = evaluate(left);
     const b = evaluate(right);
-    if (Math.abs(a) <= 2e-14 || Math.abs(b) <= 2e-14 || a * b >= 0) continue;
+    if (withinMagnitude(a, 2e-14) || withinMagnitude(b, 2e-14) || a * b >= 0) continue;
     for (let iteration = 0; iteration < 60; iteration++) {
       const middle = (left + right) / 2, value = evaluate(middle);
       if (value === 0 || middle === left || middle === right) { left = middle; right = middle; break; }

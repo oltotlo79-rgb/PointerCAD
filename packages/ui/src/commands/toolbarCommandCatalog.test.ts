@@ -31,6 +31,17 @@ describe('toolbar command catalog', () => {
       labelKey: 'assembly.tool.dimensionMove', tooltipKey: 'assembly.dimensionMove.tooltip',
       documentKinds: ['assembly'], helpTopic: 'assembly-place',
     }]);
+    expect(expandedGroups.filter(entry => entry.sourceId === 'createPart')).toEqual([{
+      id: 'toolbar.assembly.createPart', group: 'assembly', sourceId: 'createPart',
+      labelKey: 'assembly.tool.createPart', tooltipKey: 'assembly.tool.createPartTooltip',
+      documentKinds: ['assembly'], helpTopic: 'assembly-place',
+    }]);
+    // 押し引き(M-05 4-1a)は「加工」の 1 項目。同じく数の区切りから外して、ここで確かめる。
+    expect(expandedGroups.filter(entry => entry.sourceId === 'pushPull')).toEqual([{
+      id: 'toolbar.solidMachining.pushPull', group: 'solidMachining', sourceId: 'pushPull',
+      labelKey: 'toolbar.machining.pushPull', tooltipKey: 'toolbar.machining.pushPullTooltip',
+      documentKinds: ['part'], helpTopic: 'shape-edit',
+    }]);
     // 接合チェック(E-09)も「組む」の 1 項目。同じく数の区切りから外して、ここで確かめる。
     expect(expandedGroups.filter(entry => entry.sourceId === 'jointCheck')).toEqual([{
       id: 'toolbar.assembly.jointCheck', group: 'assembly', sourceId: 'jointCheck',
@@ -53,6 +64,7 @@ describe('toolbar command catalog', () => {
       && entry.id !== 'toolbar.assembly.circularFilletWeld'
       && entry.id !== 'toolbar.assembly.frameSlotFastening' && entry.id !== 'toolbar.assembly.jointCheck'
       && entry.id !== 'toolbar.assembly.jointSwap' && entry.id !== 'toolbar.assembly.memberStretch'
+      && entry.id !== 'toolbar.assembly.createPart' && entry.id !== 'toolbar.solidMachining.pushPull'
       && entry.id !== 'toolbar.assembly.dimensionMove' && entry.id !== 'toolbar.fileMenu.openExample');
     // GR-30 が「見た目」へ「図形の測定値」を1行足したので 109 → 110(Q1=A4)。
     // R16 adds exactly one shared save-point command; drawing aliases it.

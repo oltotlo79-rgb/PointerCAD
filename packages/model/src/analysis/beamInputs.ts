@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { readCadNativeBoltPreloadSavedWithContactReader, type CadNativeBoltPreloadSavedInput } from './cadNativeBoltPreloadInput.js';
 import type {
   AnalysisIssue, AnalysisSource, BeamAnalysisDocument, BeamClamp, BeamMaterial,
@@ -203,7 +204,7 @@ function readSectionFrame(value: unknown, path: string): BeamSectionFrameInput {
   if (row.confirmed !== true || row.shearCenterModel !== 'coincident-with-centroid') {
     throw new InputIssue('section-confirmation', path, 'Explicit section and shear-centre assumptions are required');
   }
-  if (centroidMm[2] !== 0 || principalY[2] !== 0 || Math.abs(magnitude - 1) > 1e-10) {
+  if (centroidMm[2] !== 0 || principalY[2] !== 0 || exceedsMagnitude(magnitude - 1, 1e-10)) {
     throw new InputIssue('section-frame', path, 'Centroid and unit principal y must lie in the generated local XY plane');
   }
   return {
@@ -307,7 +308,7 @@ function readBucklingDefinition(value: unknown, path: string): StandardBeamBuckl
     }
     sums.set(load.nodeId, sum);
   }
-  if ([...sums.values()].some(sum => sum.some(component => !Number.isFinite(component) || Math.abs(component) > 1e30))) {
+  if ([...sums.values()].some(sum => sum.some(component => !Number.isFinite(component) || exceedsMagnitude(component, 1e30)))) {
     throw new InputIssue('buckling-load', path, 'Combined SI reference load is outside the supported finite range');
   }
   if (![...sums.values()].some(sum => sum.some(component => component !== 0))) {
@@ -415,7 +416,7 @@ function readContactDefinition(value: unknown, path: string): StandardBeamContac
   unique(contacts, `${path}.contact.contacts`);
   denseList(settings.loadFactors, `${path}.contact.loadFactors`, STANDARD_BEAM_MAX_CONTACT_FACTORS);
   const loadFactors = list(settings.loadFactors, `${path}.contact.loadFactors`, STANDARD_BEAM_MAX_CONTACT_FACTORS, number);
-  if (loadFactors.length === 0 || loadFactors.some(factor => Math.abs(factor) > MAX_CONTACT_FACTOR)) {
+  if (loadFactors.length === 0 || loadFactors.some(factor => exceedsMagnitude(factor, MAX_CONTACT_FACTOR))) {
     throw new InputIssue('contact-factors', `${path}.contact.loadFactors`, 'Expected 1 to 32 load factors of magnitude at most 1e6');
   }
   const axialBolts = hasBolts ? readCadAxialBoltInputs(row.axialBolts) : undefined;

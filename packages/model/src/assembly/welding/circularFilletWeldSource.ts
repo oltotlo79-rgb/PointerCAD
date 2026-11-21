@@ -1,4 +1,5 @@
 /** Version 5 saved geometry. Reading this source never certifies current contact. */
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import { isFiniteNumber, hasExactOwnKeys as record } from '../../valueGuards.js';
 import { exactExpressionValueFromNumber } from '@pointercad/expression';
 
@@ -72,7 +73,7 @@ function face(value: unknown, role: 'plane' | 'cylinder'): SubShapeRef | null {
   const f = value.fingerprint;
   if (!record(f, ['kind', 'surfaceKind', 'area', 'position', 'axis', 'radius']) || f.kind !== 'face' || f.surfaceKind !== role
     || !finite(f.area) || f.area <= 0 || !vector(f.position) || !vector(f.axis)
-    || Math.abs(Math.hypot(...f.axis) - 1) > 1e-9
+    || exceedsMagnitude(Math.hypot(...f.axis) - 1, 1e-9)
     || (role === 'plane' ? f.radius !== null : !finite(f.radius) || f.radius <= 0)) return null;
   if (Object.hasOwn(value, 'origin') && (!origin(value.origin) || value.origin.shapeKind !== 'face')) return null;
   return owned({ bodyFeatureId: value.bodyFeatureId, index: value.index,

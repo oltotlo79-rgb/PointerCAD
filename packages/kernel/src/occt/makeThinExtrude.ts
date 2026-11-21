@@ -1,3 +1,4 @@
+import { belowMagnitude, magnitudeAtLeast } from './tolerances.js';
 import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
 import { crossVec as cross } from './sketchCorner.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
@@ -298,7 +299,7 @@ function buildClosedWall(
   const firstSolid = extrudeContours(oc, keep, firstBoundary, direction, distance, options);
   const secondSolid = extrudeContours(oc, keep, secondBoundary, direction, distance, options);
   const firstIsOuter =
-    Math.abs(measureVolume(oc, firstSolid)) >= Math.abs(measureVolume(oc, secondSolid));
+    magnitudeAtLeast(measureVolume(oc, firstSolid), Math.abs(measureVolume(oc, secondSolid)));
   const outer = firstIsOuter ? firstSolid : secondSolid;
   const inner = firstIsOuter ? secondSolid : firstSolid;
   return keep(booleanOp(oc, 'subtract', outer, inner)).shape;
@@ -379,7 +380,7 @@ export function makeThinExtrude(
       ? buildClosedWall(oc, keep, firstBoundary, secondBoundary, direction, input.distance, options)
       : buildOpenWall(oc, keep, firstBoundary, secondBoundary, direction, input.distance, options);
 
-    if (Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME) {
+    if (belowMagnitude(measureVolume(oc, shape), MIN_SOLID_VOLUME)) {
       throw new Error(NO_THICKNESS_MESSAGE);
     }
 

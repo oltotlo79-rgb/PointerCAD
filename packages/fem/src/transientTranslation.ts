@@ -1,6 +1,6 @@
 import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
-import { readBeamTransientHistory } from '@pointercad/model/beam-analysis';
+import { readBeamTransientHistory, withinMagnitude } from '@pointercad/model/beam-analysis';
 import { translateBeamBuckling, type OofemBucklingPlan } from './bucklingTranslation.js';
 import type { BeamTransientInput, TransientHistory, TransientLoadFactorSample } from './transientModel.js';
 
@@ -42,7 +42,7 @@ export function transientLoadFactor(samples: readonly TransientLoadFactorSample[
     }
   }
   const last = samples[samples.length - 1];
-  if (Math.abs(time - last.timeS) <= Math.abs(last.timeS) * 1e-12) return last.factor;
+  if (withinMagnitude(time - last.timeS, Math.abs(last.timeS) * 1e-12)) return last.factor;
   throw new Error('transient-history: time outside the load-factor samples');
 }
 

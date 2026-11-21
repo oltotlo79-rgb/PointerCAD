@@ -1,4 +1,5 @@
 /** 矩形・長穴の境界と元輪郭の交点を、双方の曲線パラメータとして返す。 */
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { curveEnd, curvePointAt, curveStart } from '../sketch/intersectionMath.js';
 import type { ResolvedArc, ResolvedCurve, ResolvedSegment } from '../sketch/types.js';
 import { crossVec3, distanceVec3, dotVec3, lengthVec3, normalizeVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
@@ -18,7 +19,7 @@ export function reliefBoundaryParameter(curve: ReliefBoundary, point: Vec3): num
     return at < -TOLERANCE / length || at > 1 + TOLERANCE / length ? null : Math.max(0, Math.min(1, at));
   }
   const offset = subVec3(point, curve.center), sweep = curve.endAngle - curve.startAngle;
-  if (Math.abs(lengthVec3(offset) - curve.radius) > TOLERANCE || Math.abs(dotVec3(offset, curve.normal)) > TOLERANCE) return null;
+  if (exceedsMagnitude(lengthVec3(offset) - curve.radius, TOLERANCE) || exceedsMagnitude(dotVec3(offset, curve.normal), TOLERANCE)) return null;
   if (distanceVec3(point, curveStart(curve)) <= TOLERANCE) return 0;
   if (distanceVec3(point, curveEnd(curve)) <= TOLERANCE) return 1;
   const angle = Math.atan2(dotVec3(offset, crossVec3(curve.normal, curve.xAxis)), dotVec3(offset, curve.xAxis));

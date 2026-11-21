@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from './tolerances.js';
 import { countSolidShapes } from './solidTopology.js';
 /** 板金の部材をつなぐ共通の形状契約。借用元を破壊せず1ソリッドへ結合する。 */
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
@@ -20,7 +21,7 @@ export function joinSheetMetalShapes(oc: OpenCascadeInstance, target: TopoDS_Sha
     const joined = keep(booleanOp(oc, 'union', target, tool));
     if (countSheetMetalSolids(oc, joined.shape) !== 1) throw new Error(context === 'flat'
       ? '展開のパネルが接続していません。固定面・曲げ・継ぎ目を確認してください。' : 'フランジが元の板に接続していません。基板の縁を選び直してください。');
-    if (!Number.isFinite(totalVolume) || Math.abs(joined.volume - totalVolume) > Math.max(1e-7, totalVolume * 1e-10))
+    if (!Number.isFinite(totalVolume) || exceedsMagnitude(joined.volume - totalVolume, Math.max(1e-7, totalVolume * 1e-10)))
       throw new Error(context === 'flat' ? '展開したパネルが重なっています。曲げの位置・長さ・継ぎ目を変更してください。'
         : 'フランジが既存の板に食い込んでいます。角度・長さ・端の位置を変更してください。');
     const result = context === 'flat' ? keep(unifySheetFlat(oc, joined.shape, totalVolume)) : joined;

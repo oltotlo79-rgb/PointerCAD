@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { dotVec3 as dot, crossVec3 as cross, subVec3 as sub } from '@pointercad/model/vec3';
 import { beamJointContactInputSha256, translateBeamJointContact, type BeamJointContactInput, type BeamJointContactResult } from './beamJointContact.js';
 import { beamJointContactResultMatches } from './beamJointContactBinding.js';
@@ -18,7 +19,7 @@ export function recoverWeldPatchStress(w: WeldLayerGeometry, wrench: WeldLayerWr
     wrench.forceOnBN, wrench.momentOnANm, wrench.momentOnBNm].every(finite)
     || ![w.widthM, w.lengthM, w.thicknessM, w.youngPa].every(v => Number.isFinite(v) && v > 1e-30 && v <= 1e30)
     || !Number.isFinite(w.poisson) || w.poisson < 0 || w.poisson >= .5
-    || Math.abs(dot(n, n)-1) > 2e-10 || Math.abs(dot(s, s)-1) > 2e-10 || Math.abs(dot(n, s)) > 1e-10) {
+    || exceedsMagnitude(dot(n, n)-1, 2e-10) || exceedsMagnitude(dot(s, s)-1, 2e-10) || exceedsMagnitude(dot(n, s), 1e-10)) {
     throw new Error('weld-stress-input');
   }
   const moment = sub(wrench.momentOnANm, cross(sub(w.centerM, positionAM), wrench.forceOnAN));
@@ -33,8 +34,8 @@ export function recoverWeldPatchStress(w: WeldLayerGeometry, wrench: WeldLayerWr
     shearAcrossPa: fq/area + mn*alongM/(is+iq) });
   const forceScale = Math.max(Math.hypot(...wrench.forceOnAN), Math.hypot(...wrench.forceOnBN), 1e-300);
   const momentScale = Math.max(Math.hypot(...moment), Math.hypot(...momentB), forceScale*Math.max(w.widthM, w.lengthM), 1e-300);
-  if (wrench.forceOnAN.some((v, i) => Math.abs(v+wrench.forceOnBN[i]) > 1e-9*forceScale)
-    || moment.some((v, i) => Math.abs(v+momentB[i]) > 1e-9*momentScale)) throw new Error('weld-stress-balance');
+  if (wrench.forceOnAN.some((v, i) => exceedsMagnitude(v+wrench.forceOnBN[i], 1e-9*forceScale))
+    || moment.some((v, i) => exceedsMagnitude(v+momentB[i], 1e-9*momentScale))) throw new Error('weld-stress-balance');
   const corners = [-1, 1].flatMap(i => [-1, 1].map(j => traction(i*w.widthM/2, j*w.lengthM/2)));
   const points = [-1, 1].flatMap(i => [-1, 1].map(j => traction(i*w.widthM/Math.sqrt(12), j*w.lengthM/Math.sqrt(12))));
   let force: Vector3 = [0, 0, 0], torque: Vector3 = [0, 0, 0], energy = 0;
@@ -52,7 +53,7 @@ export function recoverWeldPatchStress(w: WeldLayerGeometry, wrench: WeldLayerWr
     ...corners.flatMap(p => [p.normalPa, p.shearAlongPa, p.shearAcrossPa])].every(Number.isFinite)
     || area <= 0 || is <= 0 || iq <= 0 || g <= 0) throw new Error('weld-stress-scale');
   if (!Number.isFinite(wrench.elasticEnergyJ) || wrench.elasticEnergyJ < 0
-    || Math.abs(energy-wrench.elasticEnergyJ) > 1e-9*Math.max(energy, 1e-300)) throw new Error('weld-stress-energy');
+    || exceedsMagnitude(energy-wrench.elasticEnergyJ, 1e-9*Math.max(energy, 1e-300))) throw new Error('weld-stress-energy');
   return { id: w.id, corners, integralForceOnAN: force, integralMomentAtCenterNm: torque,
     elasticEnergyJ: energy, structuralCertification: false as const };
 }

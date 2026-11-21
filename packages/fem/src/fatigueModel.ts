@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { fatigueFailure } from './fatigueFailure.js';
 import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
@@ -141,7 +142,7 @@ export function readHistory(value: unknown, path: string): FatigueStressHistory 
   const stress: number[] = [];
   for (const [index, point] of points.entries()) {
     if (!finite(point)) return fail('fatigue-number', `${path}.stressMpa[${index}]`);
-    if (Math.abs(point) > MAX_FATIGUE_STRESS_MPA) return fail('fatigue-bound', `${path}.stressMpa[${index}]`);
+    if (exceedsMagnitude(point, MAX_FATIGUE_STRESS_MPA)) return fail('fatigue-bound', `${path}.stressMpa[${index}]`);
     stress.push(point);
   }
   const sequence = value.sequence;

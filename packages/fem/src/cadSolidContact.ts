@@ -1,4 +1,4 @@
-import { resolveCurrentOrigin } from '@pointercad/model';
+import { withinMagnitude, resolveCurrentOrigin } from '@pointercad/model';
 import { InputIssue, readSolidContactInput, type SolidContactSavedInput, type Vector3 } from '@pointercad/model/beam-analysis';
 import { bindCadBoundaryIdentity, type CadAnalysisBoundaryIdentity, type CadTetraContext, type CadTetraRegion } from './cadTetraMesh.js';
 import { buildSolidContactPlan, type SolidContactPlan } from './solidContactModel.js';
@@ -133,7 +133,7 @@ function captureBody(item: CadSolidContactBody, documentId: string, revision: nu
   requireInput(mesh.input.source.documentId === documentId && mesh.input.source.revision === revision
     && mesh.input.source.featureId === context.body.featureId && mesh.input.source.bodyKey === bodyKey,
   'The volume mesh belongs to another CAD source');
-  requireInput(Math.abs(mesh.volumeMm3 - context.body.volume) <= context.body.volume * 1e-10,
+  requireInput(withinMagnitude(mesh.volumeMm3 - context.body.volume, context.body.volume * 1e-10),
     'The volume mesh does not match the current solid volume');
   dense(item.regions, 'CAD regions must form a dense partition');
   dense(item.labelFaces, 'Native labels must have a dense CAD face map');

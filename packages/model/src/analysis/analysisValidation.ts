@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../numericTolerance.js';
 import { dotVec3 as dot, crossVec3 as cross, scaleVec3 as scale, subVec3 as subtract } from '../sketch/vec3.js';
 import { isFiniteNumber, isRecord as record } from '../valueGuards.js';
 import type {
@@ -6,6 +7,7 @@ import type {
 } from './analysisModel.js';
 import { hash64 } from '../part/cacheKey.js';
 import type { StrengthSource } from '../measure/strengthMaterialTypes.js';
+import type { FailureText } from '../failureText.js';
 import { findStrengthMaterial, STRENGTH_SOURCES } from '../measure/strengthMaterials.js';
 import { checkStrengthMaterialCondition } from '../measure/strengthMaterialTypes.js';
 
@@ -15,8 +17,9 @@ export function fields(value: unknown, names: readonly string[], path: string): 
   }
   return value;
 }
+/** 梁の解析の入力の断り。failures は AnalysisIssue の failures と同じ(message の目印 `{failures}` に入る組立の誤り。D4)。 */
 export class InputIssue extends Error {
-  constructor(readonly code: string, readonly path: string, message: string) {
+  constructor(readonly code: string, readonly path: string, message: string, readonly failures?: readonly (string | FailureText)[]) {
     super(message);
   }
 }
@@ -32,7 +35,7 @@ export function text(value: unknown, path: string, limit = 256): string {
   return value;
 }
 export function number(value: unknown, path: string, positive = false): number {
-  if (!isFiniteNumber(value) || Math.abs(value) > 1e30
+  if (!isFiniteNumber(value) || exceedsMagnitude(value, 1e30)
     || (positive && value <= 0)) {
     throw new InputIssue('number', path, 'Expected a finite supported numeric value');
   }

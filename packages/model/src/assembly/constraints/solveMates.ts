@@ -1,4 +1,5 @@
 /** 合致を成分ごとに解く。解は文書へ書き戻さない(FR-603/604)。 */
+import { belowMagnitude, magnitudeAtLeast } from '../../numericTolerance.js';
 import { CONFLICT_REPORT_LIMIT, remainingMessage } from '../../sketch/constraints/diagnose.js';
 import { qrDecompositionSteps } from './rigidQrSteps.js';
 import { RigidWorkSequence } from './cooperativeRigid.js';
@@ -749,7 +750,7 @@ function* solveMatesCoreSteps(
         if (joint.componentA !== joint.componentB
           && (variableSet.columnOf(joint.componentA, 'tx') !== null || variableSet.columnOf(joint.componentB, 'tx') !== null)) continue;
         if (jointReport.branchViolations.includes(joint.jointId) || evaluation.rows.some((row) =>
-          'jointId' in row && row.jointId === joint.jointId && Math.abs(row.value) >= rigidRowTolerance(row, options))) {
+          'jointId' in row && row.jointId === joint.jointId && magnitudeAtLeast(row.value, rigidRowTolerance(row, options)))) {
           constantJointConflicts.push(joint.jointId);
         }
       }
@@ -851,7 +852,7 @@ function* diagnoseMateComponentSteps(component: MateComponentDiagnosis, componen
         : independent.has(rowIndex) ? 'independent' : 'dependent';
     const values = { componentIndex, rowIndex, residual, tolerance,
       normalizedResidual: ratio !== null && Number.isFinite(ratio) ? ratio : null,
-      satisfied: residual === null || tolerance === null ? null : Math.abs(residual) < tolerance,
+      satisfied: residual === null || tolerance === null ? null : belowMagnitude(residual, tolerance),
       constant, dependency };
     classified.push('couplingId' in row ? { ...values, couplingId: row.couplingId }
       : 'mateId' in row ? { ...values, mateId: row.mateId } : { ...values, jointId: row.jointId });

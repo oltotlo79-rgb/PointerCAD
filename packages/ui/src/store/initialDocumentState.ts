@@ -151,6 +151,8 @@ export function createInitialDocumentState(): InitialDocumentState {
     snapKinds: DEFAULT_SNAP_KINDS,
     sphereGridStep: DEFAULT_SPHERE_GRID_STEP,
     sphereGridAlwaysVisible: false,
+    // 欄へ焦点を移す頼み(viewSlice の focusRequest)。前の文書の欄を指す頼みを持ち越さない。
+    focusRequest: null,
     chaining: true,
     numericInput: null,
     numericInputAnchor: null,

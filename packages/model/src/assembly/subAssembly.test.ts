@@ -5,7 +5,7 @@ import { resolvePart } from '../part/resolvePart.js';
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
 import { collectMateVariables } from './constraints/mateVariables.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
-import { resolveAssembly, SUB_ASSEMBLY_CYCLE_MESSAGE, SUB_ASSEMBLY_DEPTH_MESSAGE } from './resolveAssembly.js';
+import { resolveAssembly, SUB_ASSEMBLY_CYCLE_TEXT, SUB_ASSEMBLY_DEPTH_TEXT } from './resolveAssembly.js';
 import { detectCycle, detectSubAssemblyProblem, resolveSubAssembly } from './subAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, ComponentSource, Placement } from './types.js';
 
@@ -78,7 +78,7 @@ describe('サブアセンブリの検査', () => {
   it('深さ9は固定文言で断る', () => {
     const fixture = chain(9);
     expect(detectSubAssemblyProblem(fixture.root, fixture.documents)).toMatchObject({
-      kind: 'depth', message: SUB_ASSEMBLY_DEPTH_MESSAGE,
+      kind: 'depth', text: SUB_ASSEMBLY_DEPTH_TEXT,
     });
   });
 
@@ -142,7 +142,7 @@ describe('サブアセンブリの再帰解決', () => {
   it('再帰中の循環を固定文言のエラーとして返す', () => {
     const self = assembly([sub('assembly-a')]);
     const result = resolveAssembly(self, { subAssemblies: new Map([['assembly-a', self]]) });
-    expect(result.errors.some((error) => error.message === SUB_ASSEMBLY_CYCLE_MESSAGE)).toBe(true);
+    expect(result.errors.some((error) => error.text.key === SUB_ASSEMBLY_CYCLE_TEXT.key)).toBe(true);
   });
 
   it('深さ9を固定文言のエラーとして返す', () => {
@@ -150,7 +150,7 @@ describe('サブアセンブリの再帰解決', () => {
     const result = resolveAssembly(fixture.root, {
       subAssemblies: fixture.documents, resolvedParts: new Map([['part-1', emptyPart]]),
     });
-    expect(result.errors.some((error) => error.message === SUB_ASSEMBLY_DEPTH_MESSAGE)).toBe(true);
+    expect(result.errors.some((error) => error.text.key === SUB_ASSEMBLY_DEPTH_TEXT.key)).toBe(true);
   });
 
   it('同じ入力を2回解くと同じ結果になる', () => {

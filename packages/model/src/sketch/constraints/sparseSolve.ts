@@ -1,3 +1,4 @@
+import { magnitudeAtLeast } from '../../numericTolerance.js';
 import type { LinearizedRow } from './solve.js';
 
 /** Linear accuracy only; nonlinear convergence still uses the original residuals in solve.ts. */
@@ -174,7 +175,7 @@ function* multiply(
       const term = other < 0 ? raw : Number.isFinite(difference)
         ? rows.values[entry] * difference : raw + rows.values[other] * vector[rows.columns[other]];
       const next = product + term;
-      productCorrection += Math.abs(product) >= Math.abs(term)
+      productCorrection += magnitudeAtLeast(product, Math.abs(term))
         ? (product - next) + term : (term - next) + product;
       product = next;
       budget.productEntries += 1; if (++budget.used === budget.limit) yield;
@@ -183,7 +184,7 @@ function* multiply(
     for (let entry = begin; entry < end; entry += 1) {
       const column = rows.columns[entry], term = rows.values[entry] * product;
       const previous = output[column], next = previous + term;
-      correction[column] += Math.abs(previous) >= Math.abs(term)
+      correction[column] += magnitudeAtLeast(previous, Math.abs(term))
         ? (previous - next) + term : (term - next) + previous;
       output[column] = next;
       if (absoluteProduct !== undefined) absoluteProduct[column] += Math.abs(rows.values[entry]) * absolute;
@@ -205,7 +206,7 @@ function* normalizedDot(budget: SparseWorkBudget, a: Float64Array, aScale: numbe
     if (++budget.used === budget.limit) yield;
     const term = (a[i] / aScale) * (b[i] / bScale);
     const next = sum + term;
-    correction += Math.abs(sum) >= Math.abs(term) ? (sum - next) + term : (term - next) + sum;
+    correction += magnitudeAtLeast(sum, Math.abs(term)) ? (sum - next) + term : (term - next) + sum;
     sum = next;
   }
   return sum + correction;

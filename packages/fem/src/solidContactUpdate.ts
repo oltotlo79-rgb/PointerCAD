@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { subVec3 as subtract, dotVec3 as dot } from '@pointercad/model/vec3';
 import { InputIssue, SOLID_CONTACT_LIMITS, type Vector3 } from '@pointercad/model/beam-analysis';
 import { determinant3, multiply3, transpose3, type Matrix3 } from './finiteKinematics.js';
@@ -71,7 +72,7 @@ function rotation(value: Matrix3, path: string): Matrix3 {
   const matrix: Matrix3 = [vector(value[0], path), vector(value[1], path), vector(value[2], path)];
   const metric = multiply3(transpose3(matrix), matrix), determinant = finite(determinant3(matrix), path);
   if (metric.some((row, i) => row.some((entry, j) => !Number.isFinite(entry)
-    || Math.abs(entry - (i === j ? 1 : 0)) > FRAME_TOLERANCE)) || Math.abs(determinant - 1) > FRAME_TOLERANCE) {
+    || exceedsMagnitude(entry - (i === j ? 1 : 0), FRAME_TOLERANCE))) || exceedsMagnitude(determinant - 1, FRAME_TOLERANCE)) {
     refuse('contact-history-rotation', path, 'An explicit proper orthogonal rotation is required');
   }
   return matrix;
@@ -81,14 +82,14 @@ function rotate(matrix: Matrix3, value: Vector3, path: string): Vector3 {
 }
 function unitNormal(value: Vector3, path: string): Vector3 {
   const normal = vector(value, path);
-  if (Math.abs(Math.hypot(...normal) - 1) > SOLID_CONTACT_LIMITS.unitNormalTolerance) {
+  if (exceedsMagnitude(Math.hypot(...normal) - 1, SOLID_CONTACT_LIMITS.unitNormalTolerance)) {
     refuse('contact-history-normal', path, 'History requires the unchanged unit normal, not normalization');
   }
   return normal;
 }
 function tangent(value: Vector3, normal: Vector3, path: string): Vector3 {
   const result = vector(value, path), length = finite(Math.hypot(...result), path);
-  if (Math.abs(finite(dot(result, normal), path)) > FRAME_TOLERANCE * length) {
+  if (exceedsMagnitude(finite(dot(result, normal), path), FRAME_TOLERANCE * length)) {
     refuse('contact-history-tangent', path, 'Stored tangential history must lie in its previous tangent plane');
   }
   return result;
@@ -104,7 +105,7 @@ function readLocation(value: ContactFacetLocation, path: string): ContactFacetLo
     refuse('contact-history-topology', path, 'Expected three distinct body-local nodes');
   }
   const barycentric = vector(value.barycentric, `${path}.barycentric`);
-  if (barycentric.some(weight => weight < 0 || weight > 1) || Math.abs(barycentric[0] + barycentric[1] + barycentric[2] - 1) > FRAME_TOLERANCE) {
+  if (barycentric.some(weight => weight < 0 || weight > 1) || exceedsMagnitude(barycentric[0] + barycentric[1] + barycentric[2] - 1, FRAME_TOLERANCE)) {
     refuse('contact-history-barycentric', path, 'Material-point weights must form a convex partition of unity');
   }
   return { bodyFeatureId, faceKey, triangleIndex: value.triangleIndex,

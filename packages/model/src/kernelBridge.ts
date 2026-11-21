@@ -7,6 +7,7 @@
  * 例外はkernelBridge/splineMath.tsからimportを持たない純数値subpathへの委譲だけで、Worker/OCCTの入口は増やさない。
  */
 
+import { exceedsMagnitude } from './numericTolerance.js';
 import {
   createKernelWorker,
   createRuntimePhaseJournal,
@@ -1220,7 +1221,7 @@ export function createMainPhaseObserver(readUi?: () => RuntimeUiContext) {
       if (Number.isFinite(wall) && wall >= 0 && Number.isFinite(mono) && mono >= 0) {
         epochMs = wall; monoMs = mono;
         if (previous !== null && (mono < previous.monoMs
-          || Math.abs((wall - previous.epochMs) - (mono - previous.monoMs)) > 1000)) clockDiscontinuities += 1;
+          || exceedsMagnitude((wall - previous.epochMs) - (mono - previous.monoMs), 1000))) clockDiscontinuities += 1;
         previous = { epochMs: wall, monoMs: mono };
       } else clockDiscontinuities += 1;
     } catch { clockDiscontinuities += 1; }

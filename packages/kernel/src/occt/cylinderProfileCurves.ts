@@ -1,4 +1,5 @@
 /** 展開輪郭を円筒面の(u=角度,v=軸方向mm)へ厳密に写す。 */
+import { exceedsMagnitude, withinMagnitude } from './tolerances.js';
 import type { Handle_Geom2d_Curve, OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
@@ -16,7 +17,7 @@ function conicSpans(curve: Extract<CurveSpec, { kind: 'arc' | 'ellipse' }>): rea
   const a = curve.kind === 'arc' ? curve.radius : curve.majorRadius, b = curve.kind === 'arc' ? curve.radius : curve.minorRadius;
   const start = curve.startAngle ?? 0, sweep = (curve.endAngle ?? 2 * Math.PI) - start;
   if (![...curve.center, ...major, ...minor, a, b, start, sweep].every(Number.isFinite)
-    || Math.min(a, b) <= 1e-7 || Math.abs(sweep) <= 1e-12 || Math.abs(sweep) > 2 * Math.PI + 1e-9)
+    || Math.min(a, b) <= 1e-7 || withinMagnitude(sweep, 1e-12) || exceedsMagnitude(sweep, 2 * Math.PI + 1e-9))
     throw new Error('円筒へ写す円弧・楕円の半径と角度を確認してください。');
   const count = Math.ceil(Math.abs(sweep) / (Math.PI / 2)), result: WeightedCurve[] = [];
   const point = (angle: number, weight = 1): Vec3Tuple => [
@@ -37,7 +38,7 @@ export function cylinderProfileCurves(
   oc: OpenCascadeInstance, curve: CurveSpec, neutralRadius: number, direction: -1 | 1, keep: Allocations['keep'],
 ): readonly CylinderProfileCurve[] {
   if (curve.kind === 'segment') {
-    if (![...curve.from, ...curve.to].every(Number.isFinite) || Math.abs(curve.from[2]) > 1e-7 || Math.abs(curve.to[2]) > 1e-7)
+    if (![...curve.from, ...curve.to].every(Number.isFinite) || exceedsMagnitude(curve.from[2], 1e-7) || exceedsMagnitude(curve.to[2], 1e-7))
       throw new Error('曲げ輪郭は展開面の上へ置いてください。');
     // UVの直線をBSplineに変換すると、円筒の母線・円弧まで近似曲線となる。
     // 有限な直線のまま渡し、軸平行の切欠きは厳密な円と直線を保持する。
@@ -54,7 +55,7 @@ export function cylinderProfileCurves(
   return data.map((span) => {
     const poles = keep(new oc.TColgp_Array1OfPnt2d_2(1, span.poles.length));
     for (const [i, point] of span.poles.entries()) {
-      if (!point.every(Number.isFinite) || Math.abs(point[2]) > 1e-7) throw new Error('曲げ輪郭は展開面の上へ置いてください。');
+      if (!point.every(Number.isFinite) || exceedsMagnitude(point[2], 1e-7)) throw new Error('曲げ輪郭は展開面の上へ置いてください。');
       poles.SetValue(i + 1, keep(new oc.gp_Pnt2d_3(point[1] / neutralRadius, direction * point[0])));
     }
     const knots = keep(new oc.TColStd_Array1OfReal_2(1, span.knots.length));

@@ -10,6 +10,7 @@ import { readBeamAnalysisInputs, type BeamAnalysisResult, type BeamModalResult, 
 import { MAX_BEAM_CONTACTS, MAX_CONTACT_LOAD_FACTORS, type BeamBucklingResult, type BeamContactAnalysisResult, type BeamBoltContactResult, type BeamWeldContactResult, type BeamJointContactResult,
   type BeamTransientResult, type BucklingRestraints, type FemPhase, type TransientAxialResponse,
   type BeamImpactResult, type ImpactMemberResponseSet } from '@pointercad/fem';
+import { issueMessage } from '../i18n/failureMessage.js';
 import type { MessageKey } from '../i18n/t.js';
 import { BEAM_FIELDS, readBeamField, readContactField, readTransientField, type BeamFieldName, type ContactFieldName,
   type TransientFieldName } from './beamFields.js';
@@ -698,7 +699,7 @@ export function beamDefinition(session: BeamSession, source: BeamSourceSnapshot,
     loads: nodalLoads,
   };
   const checked = readBeamAnalysisInputs({ schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'standard-members', definition }] }, source.document.id);
-  if (!checked.ok) return fail('beam.error.model', null, `${checked.issue.code}: ${checked.issue.path}: ${checked.issue.message}`);
+  if (!checked.ok) return fail('beam.error.model', null, `${checked.issue.code}: ${checked.issue.path}: ${issueMessage(checked.issue)}`);
   return { ok: true, definition };
 }
 

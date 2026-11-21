@@ -1,4 +1,5 @@
 /** Pure construction of face, edge and vertex overlays in each body's coordinate frame. */
+import { withinMagnitude } from '@pointercad/model';
 import type { Vec3 } from '@pointercad/model';
 import { parseSubShapeId, subShapeFrameOrigin } from '../solid/subShapeSelection.js';
 import type { SolidEdgeEntry, SolidFaceEntry } from '../solid/subShapeSelection.js';
@@ -77,7 +78,7 @@ function localVertex(plan: BatchPlan, world: Vec3): readonly [number, number, nu
 function planVertex(plan: BatchPlan, world: Vec3, keys: Set<string>): void {
   const key = `${world[0]},${world[1]},${world[2]}`;
   if (keys.has(key)) return;
-  if (!localVertex(plan, world).every((value) => Number.isFinite(value) && Math.abs(value) <= FLOAT32_MAX)) return;
+  if (!localVertex(plan, world).every((value) => Number.isFinite(value) && withinMagnitude(value, FLOAT32_MAX))) return;
   keys.add(key);
   plan.vertices.push(world);
 }

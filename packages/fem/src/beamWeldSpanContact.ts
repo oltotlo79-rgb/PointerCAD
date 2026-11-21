@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model/beam-analysis';
 import { sha256Hex } from './sha256.js';
 import type { Vector3, Vector6 } from './analysisModel.js';
 import type { BeamContactInput } from './contactModel.js';
@@ -30,7 +31,7 @@ function snapshot(value: unknown): unknown {
   function check(v: unknown, depth: number): void {
     if (--budget < 0 || depth > 24) fail();
     if (v === null || typeof v === 'string' || typeof v === 'boolean') return;
-    if (typeof v === 'number') { if (!Number.isFinite(v) || Math.abs(v) > 1e30) fail(); return; }
+    if (typeof v === 'number') { if (!Number.isFinite(v) || exceedsMagnitude(v, 1e30)) fail(); return; }
     if (typeof v !== 'object') fail();
     if (Array.isArray(v)) {
       if (v.length > 4096 || Object.getPrototypeOf(v) !== Array.prototype || Reflect.ownKeys(v).length !== v.length+1) fail();
@@ -112,7 +113,7 @@ export async function beamWeldSpanContactInputSha256(value: unknown): Promise<st
   return digest(translateBeamWeldSpanContact(value).input);
 }
 function close(actual: number, expected: number, scale: number): void {
-  if (Math.abs(actual-expected) > 1e-8*Math.max(Math.abs(actual), Math.abs(expected), scale, 1e-300)) fail();
+  if (exceedsMagnitude(actual-expected, 1e-8*Math.max(Math.abs(actual), Math.abs(expected), scale, 1e-300))) fail();
 }
 type WeldResult = ReturnType<ReturnType<typeof prepareWeldSpan>['evaluate']>[number];
 

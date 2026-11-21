@@ -1,4 +1,5 @@
 /** 指定線曲げやリリーフで分かれた平面・曲げ帯を、材料を失わない1立体に戻す。 */
+import { exceedsMagnitude } from './tolerances.js';
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import { createAllocations } from './allocations.js';
 import { unionShapes, type BooleanResult } from './booleanOp.js';
@@ -29,7 +30,7 @@ export function makeSheetMetalBody(oc: OpenCascadeInstance, input: SheetMetalBod
     if (countSheetMetalSolids(oc, shape) !== 1 || !isValidShape(oc, shape))
       throw new Error('曲げた板金がつながっていません。指定線・接線と輪郭を確認してください。');
     const volume = joined?.volume ?? totalVolume;
-    if (!Number.isFinite(totalVolume) || volume <= 1e-9 || Math.abs(volume - totalVolume) > Math.max(1e-7, totalVolume * 1e-10))
+    if (!Number.isFinite(totalVolume) || volume <= 1e-9 || exceedsMagnitude(volume - totalVolume, Math.max(1e-7, totalVolume * 1e-10)))
       throw new Error('曲げた板金が重なるか、材料が失われています。角度・半径とリリーフを確認してください。');
     return { shape, volume, delete: release };
   } catch (error) { release(); throw error; }

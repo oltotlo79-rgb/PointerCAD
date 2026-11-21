@@ -23,6 +23,7 @@
  * 乱数・時刻・`Map` の反復順に頼らないので、**同じ入力からは必ず同じ解**が出る。
  */
 
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import { prepareSparseNormalSystem } from './sparseSolve.js';
 import type { SparseLinearJob } from './sparseSolve.js';
 
@@ -576,11 +577,11 @@ function isGradientMap(value: ReadonlyMap<number, number>): value is Map<number,
 
 function boundedConvergedRows(rows: readonly LinearizedRow[], columns: number): boolean {
   for (const row of rows) {
-    if (!Number.isFinite(row.value) || Math.abs(row.value) > 1 || !isGradientMap(row.gradient)) return false;
+    if (!Number.isFinite(row.value) || exceedsMagnitude(row.value, 1) || !isGradientMap(row.gradient)) return false;
     const seen = new Set<number>();
     for (const [column, value] of row.gradient) {
       if (!Number.isInteger(column) || column < 0 || column >= columns || seen.has(column)
-        || !Number.isFinite(value) || Math.abs(value) > 1) return false;
+        || !Number.isFinite(value) || exceedsMagnitude(value, 1)) return false;
       seen.add(column);
     }
   }

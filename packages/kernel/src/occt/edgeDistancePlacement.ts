@@ -9,6 +9,7 @@
  * 計算部(穴あけ)は OCCT の面の分類で、図面の穴表は表示用の三角形で `isInsideFace` を作り、同じ式で中心を出す。
  * 中心が面の中にあるかの最後の確かめは、呼び出し側が行う(このファイルは交点を出すだけ)。
  */
+import { exceedsMagnitude } from './tolerances.js';
 import type { Vec3Tuple } from '../types.js';
 
 /** 辺の端の 2 点(mm)。直線の辺だけを渡す。 */
@@ -59,7 +60,7 @@ interface OffsetLine {
 function offsetLine(line: EdgeDistanceLine, origin: Vec3Tuple, normal: Vec3Tuple, tolerance: number, probe: number,
   isInsideFace: (point: Vec3Tuple) => boolean): OffsetLine | EdgeDistanceFailure {
   for (const point of [line.start, line.end]) {
-    if (Math.abs(dot(sub(point, origin), normal)) > tolerance) return 'degenerate';
+    if (exceedsMagnitude(dot(sub(point, origin), normal), tolerance)) return 'degenerate';
   }
   const along = sub(line.end, line.start);
   const size = length(along);

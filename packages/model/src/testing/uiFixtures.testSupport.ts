@@ -53,6 +53,9 @@ export {
 
 export { buildStandardPartFromSourceWithReason } from '../assembly/standard/buildStandardPart.js';
 export { steelMessageRejectionSourcesForUi } from '../assembly/standard/steelRejection.testSupport.js';
+/** 鋼材の理由の文を ui で作って照らす検査(steelRejectionMessages.test.ts)が使う。D4 で理由の文が ui の文言の表へ移ったため。 */
+export { s45cProductRule, STEEL_R2_SECTION_CATALOGS } from '../assembly/standard/steelGradeRules.js';
+export { S45C_REJECTED_SECTIONS } from '../assembly/standard/steelS45cOracle.testSupport.js';
 
 export { zDegrees } from '../assembly/joints/jointAngles.testSupport.js';
 

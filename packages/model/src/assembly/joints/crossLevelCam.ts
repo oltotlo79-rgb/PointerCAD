@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '../../numericTolerance.js';
 import { isFiniteNumber as finite } from '../../valueGuards.js';
 import type { MateResidualTargetPair } from '../constraints/mateResiduals.js';
 import { solveDrivenJointSteps, type SolveDrivenJointOutcome, type SolveMatesOptions } from '../constraints/solveMates.js';
@@ -178,7 +179,7 @@ export function* solveCrossLevelCamDriveSteps(input: CrossLevelCamDriveInput,
     ...(input.child?.targetOptions === undefined ? {} : { targetOptions: input.child.targetOptions }),
     request: { jointId: cam.child.jointId, coordinate: 'translation', value: target } }, budget));
   if (!child.ok) return failure(cam.id, 'child-solve-failed');
-  if (child.driven.atLimit || Math.abs(child.driven.actual - target) > CROSS_LEVEL_CAM_TOLERANCE_MM) return failure(cam.id, 'child-at-limit');
+  if (child.driven.atLimit || exceedsMagnitude(child.driven.actual - target, CROSS_LEVEL_CAM_TOLERANCE_MM)) return failure(cam.id, 'child-at-limit');
   yield* work.boundary();
   return { ok: true, couplingId: cam.id, path: child.path, parent, child, camAngle, followerTranslation: child.driven.actual };
 }

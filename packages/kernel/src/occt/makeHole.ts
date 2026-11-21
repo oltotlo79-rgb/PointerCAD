@@ -1,3 +1,4 @@
+import { belowMagnitude, exceedsMagnitude } from './tolerances.js';
 import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import { dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /**
@@ -403,7 +404,7 @@ function readCylinderFrame(oc: OpenCascadeInstance, face: TopoDS_Face, keep: All
   }
   // 高さは mm で測るので、拡大縮小を含む形は断る(パラメーター v が mm にならない)。
   const scale = keep(adaptor.Trsf()).ScaleFactor();
-  if (!Number.isFinite(scale) || Math.abs(Math.abs(scale) - 1) > 1e-12) {
+  if (!Number.isFinite(scale) || exceedsMagnitude(Math.abs(scale) - 1, 1e-12)) {
     throw new Error(CYLINDER_FRAME_MESSAGE);
   }
   const cylinder = keep(adaptor.Cylinder());
@@ -417,7 +418,7 @@ function readCylinderFrame(oc: OpenCascadeInstance, face: TopoDS_Face, keep: All
   const bounds = [adaptor.FirstUParameter(), adaptor.LastUParameter(), adaptor.FirstVParameter(), adaptor.LastVParameter()];
   const point: Vec3Tuple = [location.X(), location.Y(), location.Z()];
   if (zAxis === null || xAxis === null || !Number.isFinite(radius) || radius <= 0 || !bounds.every(Number.isFinite)
-    || !isFiniteTuple(point) || Math.abs(dot(zAxis, xAxis)) > 1e-9) {
+    || !isFiniteTuple(point) || exceedsMagnitude(dot(zAxis, xAxis), 1e-9)) {
     throw new Error(CYLINDER_FRAME_MESSAGE);
   }
   const uFirst = adaptor.FirstUParameter(), uLast = adaptor.LastUParameter();
@@ -491,7 +492,7 @@ function cylinderLocationFrame(
   // 許容は位置の大きさに比例させる(1e-7 mm を 1 mm あたりの基準にする。OCCT の許容は広げない)。
   const scale = Math.max(1, radius, Math.abs(v), Math.hypot(location[0], location[1], location[2]));
   if (Math.hypot(origin[0] - expected[0], origin[1] - expected[1], origin[2] - expected[2]) > CYLINDER_LINEAR_TOLERANCE * scale
-    || Math.abs(Math.abs(dot(outward, radial)) - 1) > 1e-9) {
+    || exceedsMagnitude(Math.abs(dot(outward, radial)) - 1, 1e-9)) {
     throw new Error(CYLINDER_FRAME_MESSAGE);
   }
   // 材料の外向きが軸の側を向く(放射方向と逆)なら凹んだ面(管の内面)。
@@ -1017,7 +1018,7 @@ export function hasHoleMaterialRemoval(
     const properties = owned.keep(new oc.GProp_GProps_1());
     const error = oc.BRepGProp.VolumeProperties_2(removed, properties, 1e-9, false, false);
     const volume = properties.Mass();
-    return Number.isFinite(error) && Math.abs(error) < 1e-8 && Number.isFinite(volume) && volume > 0;
+    return Number.isFinite(error) && belowMagnitude(error, 1e-8) && Number.isFinite(volume) && volume > 0;
   } finally { owned.release(); }
 }
 

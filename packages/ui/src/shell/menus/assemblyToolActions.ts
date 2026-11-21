@@ -4,7 +4,7 @@ import { useAppStore } from '../../store/useAppStore.js';
 import type { EditToolReadiness } from '../../sketch/editCommands.js';
 import { cancelMate, jointKindReadiness, mateKindReadiness, startJoint, startMate } from '../../assembly/mateActions.js';
 import { startPlaceSubAssembly, startReplaceSelectedComponent } from '../../assembly/replaceActions.js';
-import { startPlaceComponent, toggleSelectedFixed } from '../../assembly/placeComponentActions.js';
+import { startCreatePart, startPlaceComponent, toggleSelectedFixed } from '../../assembly/placeComponentActions.js';
 import { selectedWeldId } from '../../assembly/filletWeldDraft.js';
 import { selectedCircularWeldId } from '../../store/circularWeldActions.js';
 import { selectedJointRecordId } from '../../assembly/frameJointBracketDraft.js';
@@ -60,6 +60,17 @@ export function assemblyToolbarIdle(state: AppState): boolean {
     && state.assemblyMemberStretchDraft === null;
 }
 
+/**
+ * assemblyToolbarIdle に入っていない窓と下書き(規格部品の窓・辺の選択・寸法移動・分解・入れ子の締結と溶接・子の溶接の編集)が、
+ * どれも開いていない。部品を作る時に、置く窓をこれらと重ねないために見る。
+ * 部品を置く(placePart)には使わない: 今はこれらが開いていても置けるので、使うと押せる条件が変わる。
+ */
+function assemblySideOperationsIdle(state: AppState): boolean {
+  return !state.standardPartPickerOpen && state.frameEdgePick === null
+    && state.assemblyDimensionMoveDraft === null && state.assemblyExplodeDraft === null
+    && state.assemblyNestedBoltDraft === null && state.assemblyNestedWeldDraft === null && state.assemblyChildWeldEdit === null;
+}
+
 /** 組立の溝つきのフレームの部品(表示の解が無い時は無い)。フレームの溝に締結する道具の押せる条件とブラケットの見分けに使う。 */
 function frameSlotFrameIds(state: AppState): ReadonlySet<string> {
   return new Set(state.assembly === null || state.assemblyView === null ? []
@@ -69,6 +80,8 @@ function frameSlotFrameIds(state: AppState): ReadonlySet<string> {
 export function assemblyBuildReadiness(state: AppState, id: AssemblyMenuActionId): EditToolReadiness {
   if (state.assembly === null) return { ready: false, reasonKey: 'command.unavailable.assembly' };
   const idle = assemblyToolbarIdle(state), selected = assemblyActionReadiness(state.assembly, state.selection);
+  if (id === 'createPart') return idle && assemblySideOperationsIdle(state)
+    ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.tool.createPartBusy' };
   if (id === 'placePart') return state.assemblyPlacement === null && !state.assemblyReplacementBusy
     ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.tool.placementBusy' };
   if (id === 'placeStandardPart' || id === 'placeSubAssembly') return idle
@@ -139,6 +152,7 @@ export function chooseAssemblyBuild(id: AssemblyMenuActionId): void {
   const state = useAppStore.getState();
   if (!assemblyBuildReadiness(state, id).ready) return;
   if (id === 'placePart') void startAssemblyPartPlacement();
+  else if (id === 'createPart') startCreatePart();
   else if (id === 'placeStandardPart') state.openStandardPartPicker();
   else if (id === 'placeSubAssembly') void startPlaceSubAssembly();
   else if (id === 'replacePart') void startReplaceSelectedComponent();

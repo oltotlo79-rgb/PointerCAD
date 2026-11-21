@@ -32,7 +32,7 @@ export function prepareCadAxialBolts(document: AssemblyDocument, definitionValue
     id: definition.id, revision: definition.revision, source: definition.source, units: definition.units,
     members: definition.members, materials: definition.materials, sections: definition.sections, constraints: [], loads: [],
   }, context);
-  if (!checked.ok) throw new InputIssue(checked.issue.code, checked.issue.path, checked.issue.message);
+  if (!checked.ok) throw new InputIssue(checked.issue.code, checked.issue.path, checked.issue.message, checked.issue.failures);
   const geometry = checked.document;
   const sameSource = (source: typeof saved.source): boolean => source.documentId === document.id
     && source.documentId === context.currentSource.documentId

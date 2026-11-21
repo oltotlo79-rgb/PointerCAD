@@ -1,3 +1,4 @@
+import { belowMagnitude } from './tolerances.js';
 import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
@@ -295,7 +296,7 @@ function selectRibChunks(
       continue;
     }
     // 潰れた塊(輪郭に伸ばす向きと平行な辺があるときに出る)は工具に混ぜない。
-    if (Math.abs(measureVolume(oc, chunk)) < MIN_SOLID_VOLUME) {
+    if (belowMagnitude(measureVolume(oc, chunk), MIN_SOLID_VOLUME)) {
       continue;
     }
     if (range.max >= stripRange.max + wallLength - REACH_TOLERANCE_MM) {
@@ -374,7 +375,7 @@ export function makeRib(
     const wall = extrude(oc, keep, strip, direction, wallLength);
 
     // 法線と伸ばす向きが平行だと、帯を自分の面の中で掃くことになり体積が出ない。
-    if (Math.abs(measureVolume(oc, wall)) < MIN_SOLID_VOLUME) {
+    if (belowMagnitude(measureVolume(oc, wall), MIN_SOLID_VOLUME)) {
       throw new Error(NO_THICKNESS_MESSAGE);
     }
 

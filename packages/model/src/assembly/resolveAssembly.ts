@@ -25,6 +25,7 @@
 
 import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 
+import type { FailureText } from '../failureText.js';
 import { analyzeParameters } from '../parameters/parameterTable.js';
 import { applyParameters } from '../part/reevaluatePart.js';
 import { resolvePart, type ResolvedPart } from '../part/resolvePart.js';
@@ -44,7 +45,7 @@ import { standardPartRejection } from './standard/buildStandardPart.js';
 export type StandardPartSource = Extract<ComponentSource, { readonly kind: 'standardPart' }>;
 
 /**
- * 解決できなかった理由の区別(FR-504)。**利用者へは `message` をそのまま見せる。**
+ * 解決できなかった理由の区別(FR-504)。**利用者へは `text` の鍵の文(ui の文言の表)を見せる。**
  * 名前は部品側の `PartErrorCode` と同じ語彙にそろえてある(同じ意味に 2 つの綴りを作らない)。
  */
 export type AssemblyErrorCode =
@@ -62,7 +63,8 @@ export interface AssemblyError {
   /** 木の行と対応づけるための `AssemblyComponent.id`。 */
   readonly componentId: string;
   readonly code: AssemblyErrorCode;
-  readonly message: string;
+  /** 画面に出す文の鍵と差し込む値(文は ui の文言の表が持つ。D4)。 */
+  readonly text: FailureText;
 }
 
 /**
@@ -131,16 +133,24 @@ export interface ResolveAssemblyOptions {
   readonly ancestors?: readonly string[];
 }
 
-/** 部品文書が引けない(`parts/<ref>.json` が無い)。検証の表の文言。 */
+/** 部品文書が引けない(`parts/<ref>.json` が無い)。画面の文は ui の文言の表の assembly.error.missingPart。 */
+const MISSING_PART_TEXT: FailureText = { key: 'assembly.error.missingPart', parameters: {} };
+
+/**
+ * 合致の対象の断り(constraints/mateTargets.ts の missingComponent)だけが使う日本語の文。ui の assembly.error.missingPart と同じ文で、
+ * 合致の断りと診断の道を鍵へ移す束(D4 の 0c)で消す(統括の決定 2026-11-20 19:0x。それまで同じ文が 2 か所にある)。
+ */
 export const MISSING_PART_MESSAGE = '部品が見つかりません。';
 
-/** 規格部品の呼び寸法が寸法表に無い(断りの文言)。 */
-export const MISSING_STANDARD_SIZE_MESSAGE = 'この呼び寸法は用意されていません。';
+/** 規格部品の呼び寸法が寸法表に無い(断り)。画面の文は assembly.error.missingStandardSize。 */
+const MISSING_STANDARD_SIZE_TEXT: FailureText = { key: 'assembly.error.missingStandardSize', parameters: {} };
 
-/** サブアセンブリの深さ上限と、利用者へ見せる固定文言。 */
+/** サブアセンブリの深さ上限と、利用者へ見せる文の鍵(上限の数は差し込む値。文は assembly.error.subAssemblyDepth)。 */
 export const MAX_SUB_ASSEMBLY_DEPTH = 8;
-export const SUB_ASSEMBLY_DEPTH_MESSAGE = '組の入れ子が深すぎます(8 段まで)。';
-export const SUB_ASSEMBLY_CYCLE_MESSAGE = 'このアセンブリは自分自身を含んでいます。';
+export const SUB_ASSEMBLY_DEPTH_TEXT: FailureText = {
+  key: 'assembly.error.subAssemblyDepth', parameters: { max: String(MAX_SUB_ASSEMBLY_DEPTH) },
+};
+export const SUB_ASSEMBLY_CYCLE_TEXT: FailureText = { key: 'assembly.error.subAssemblyCycle', parameters: {} };
 
 /**
  * 置いた位置が数にならない(壊れた値。FR-504)。
@@ -149,7 +159,7 @@ export const SUB_ASSEMBLY_CYCLE_MESSAGE = 'このアセンブリは自分自身�
  * `reevaluateValue` と同じ約束)ので、ここまで来るのは値そのものが有限の数でない場合だけ。
  * 止めずに 0mm へ落として開く——置き場所が 1 つ狂うより、開けないほうが困るためである。
  */
-export const INVALID_PLACEMENT_MESSAGE = '置いた位置を数にできません。0mm として開いています。';
+const INVALID_PLACEMENT_TEXT: FailureText = { key: 'assembly.error.invalidPlacement', parameters: {} };
 
 /** パラメータ表が空のときの変数表。呼び出しのたびに作らない(`reevaluatePart.ts` と同じ流儀)。 */
 const NO_VARIABLES: ReadonlyMap<string, number> = new Map<string, number>();
@@ -237,7 +247,7 @@ function rigidPlacementOf(
     errors.push({
       componentId: component.id,
       code: 'invalidValue',
-      message: INVALID_PLACEMENT_MESSAGE,
+      text: INVALID_PLACEMENT_TEXT,
     });
   }
   return {
@@ -254,13 +264,13 @@ function rigidPlacementOf(
 function partDocumentOf(
   component: AssemblyComponent,
   options: ResolveAssemblyOptions,
-): { readonly document: PartDocument } | { readonly message: string } {
+): { readonly document: PartDocument } | { readonly text: FailureText } {
   const source = component.source;
   if (source.kind === 'standardPart') {
     const rejection = standardPartRejection(source);
-    if (rejection !== null) return { message: rejection.message };
+    if (rejection !== null) return { text: rejection.text };
     const built = options.standardPart?.(source) ?? null;
-    return built === null ? { message: MISSING_STANDARD_SIZE_MESSAGE } : { document: built };
+    return built === null ? { text: MISSING_STANDARD_SIZE_TEXT } : { document: built };
   }
   if (source.kind === 'subAssembly') {
     /*
@@ -271,10 +281,10 @@ function partDocumentOf(
       中を再帰で解くときは、この枝がその入り口になる(親の配置を
       `options.parent` へ渡して自分自身を呼ぶ形)。
     */
-    return { message: MISSING_PART_MESSAGE };
+    return { text: MISSING_PART_TEXT };
   }
   const document = partOf(options.library ?? EMPTY_PART_LIBRARY, source.partRef);
-  return document === undefined ? { message: MISSING_PART_MESSAGE } : { document };
+  return document === undefined ? { text: MISSING_PART_TEXT } : { document };
 }
 
 /**
@@ -316,7 +326,7 @@ export function resolveAssembly(
         errors.push({
           componentId: component.id,
           code: 'subAssemblyCycle',
-          message: SUB_ASSEMBLY_CYCLE_MESSAGE,
+          text: SUB_ASSEMBLY_CYCLE_TEXT,
         });
         continue;
       }
@@ -324,13 +334,13 @@ export function resolveAssembly(
         errors.push({
           componentId: component.id,
           code: 'subAssemblyDepth',
-          message: SUB_ASSEMBLY_DEPTH_MESSAGE,
+          text: SUB_ASSEMBLY_DEPTH_TEXT,
         });
         continue;
       }
       const nested = options.subAssemblies?.get(ref);
       if (nested === undefined) {
-        errors.push({ componentId: component.id, code: 'missingPart', message: MISSING_PART_MESSAGE });
+        errors.push({ componentId: component.id, code: 'missingPart', text: MISSING_PART_TEXT });
         continue;
       }
       const placement = placements.get(component.id) ?? parent;
@@ -368,9 +378,9 @@ export function resolveAssembly(
       continue;
     }
     const found = partDocumentOf(component, options);
-    if ('message' in found) {
+    if ('text' in found) {
       // 同じ部品を指すインスタンスが複数あれば**その数だけ**積む(木の行ごとに理由を出す)。
-      errors.push({ componentId: component.id, code: 'missingPart', message: found.message });
+      errors.push({ componentId: component.id, code: 'missingPart', text: found.text });
       continue;
     }
     parts.set(key, resolvePart(applyParameters(found.document).document));

@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from './tolerances.js';
 import { crossVec, dotVec as dot } from './sketchCorner.js';
 import { readNativePlanarBasis } from './planarFaceBasis.js';
 import type {
@@ -224,8 +225,8 @@ function readCircleBasis(oc: OpenCascadeInstance, edge: TopoDS_Edge, circle: gp_
   const xAxis: Vec3Tuple = [x.X(), x.Y(), x.Z()], yAxis: Vec3Tuple = [y.X(), y.Y(), y.Z()], normal: Vec3Tuple = [z.X(), z.Y(), z.Z()];
   const cross = crossVec(xAxis, yAxis);
   if (![...xAxis, ...yAxis, ...normal].every(Number.isFinite)
-    || [xAxis, yAxis, normal].some(axis => Math.abs(Math.hypot(...axis) - 1) > 1e-9)
-    || Math.abs(dot(xAxis, yAxis)) > 1e-9 || Math.abs(dot(xAxis, normal)) > 1e-9 || Math.abs(dot(yAxis, normal)) > 1e-9
+    || [xAxis, yAxis, normal].some(axis => exceedsMagnitude(Math.hypot(...axis) - 1, 1e-9))
+    || exceedsMagnitude(dot(xAxis, yAxis), 1e-9) || exceedsMagnitude(dot(xAxis, normal), 1e-9) || exceedsMagnitude(dot(yAxis, normal), 1e-9)
     || Math.hypot(cross[0] - normal[0], cross[1] - normal[1], cross[2] - normal[2]) > 1e-9) return undefined;
   return { origin, xAxis, yAxis, normal, parameterRange: [first, last],
     orientation: orientation === oc.TopAbs_Orientation.TopAbs_FORWARD ? 1 : -1 };

@@ -39,6 +39,7 @@
  * 依存できるので、そちらをこの輸出へ寄せるのは後の仕事)。
  */
 
+import { withinMagnitude } from '../numericTolerance.js';
 import {
   distanceToPlane,
   radiansToDegrees,
@@ -176,10 +177,10 @@ function toPlanePoint(plane: WorkPlane, world: Vec3): SketchDxfPoint2d | null {
  */
 function planeAlignment(plane: WorkPlane, normal: Vec3): number | null {
   const alignment = dotVec3(normal, plane.normal);
-  if (Math.abs(alignment - 1) <= PLANE_ALIGNMENT_TOLERANCE) {
+  if (withinMagnitude(alignment - 1, PLANE_ALIGNMENT_TOLERANCE)) {
     return 1;
   }
-  if (Math.abs(alignment + 1) <= PLANE_ALIGNMENT_TOLERANCE) {
+  if (withinMagnitude(alignment + 1, PLANE_ALIGNMENT_TOLERANCE)) {
     return -1;
   }
   return null;

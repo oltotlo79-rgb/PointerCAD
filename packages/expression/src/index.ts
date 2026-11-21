@@ -47,10 +47,12 @@ export { EXPRESSION_MAX_EXPONENT, EXPRESSION_MAX_LENGTH } from './errors.js';
 export {
   evaluateExpressionExact,
   EXPRESSION_PRECISION,
+  FUNCTION_ARITY,
   type ExactEvaluateOptions,
   type ExactExpressionResult,
   type ExactExpressionValue,
 } from './evaluate.js';
+export { CONSTANT_TOKEN_NAMES } from './parse.js';
 export {
   DISPLAY_SIGNIFICANT_DIGITS,
   evaluateExpression,

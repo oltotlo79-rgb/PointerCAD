@@ -1,3 +1,4 @@
+import { belowMagnitude } from '@pointercad/model';
 import { beginRadialMenuGesture, finishRadialMenuGesture, moveRadialMenuGesture, type RadialMenuGesture } from './radialMenuGesture.js';
 import { placeRadialMenu, type RadialMenuSlot, type ScreenBounds, type ScreenPoint } from './radialMenuGeometry.js';
 import { exceedsRightDragThreshold, isPlainRightPointer } from '../viewport/rightPointerGesture.js';
@@ -204,7 +205,7 @@ export function attachRadialMenuGesture(
         width: bounds.width - extraLeft - extraRight, height: bounds.height - extraTop - extraBottom },
       radius, previous.cancelRadius);
     if (geometry === null) { cancel(); return; }
-    if (Math.abs(geometry.center.x - previous.center.x) < 0.5 && Math.abs(geometry.center.y - previous.center.y) < 0.5) return;
+    if (belowMagnitude(geometry.center.x - previous.center.x, 0.5) && belowMagnitude(geometry.center.y - previous.center.y, 0.5)) return;
     active = { ...active, gesture: { ...active.gesture, geometry, selected: null } };
     options.show(active.gesture, active.holding === null, true);
   };

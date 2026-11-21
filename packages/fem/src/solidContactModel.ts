@@ -1,3 +1,4 @@
+import { exceedsMagnitude } from '@pointercad/model';
 import { InputIssue, readSolidContactInput, SOLID_CONTACT_LIMITS, solidCadFaceKey,
   type SolidContactMethod, type SolidContactNormal, type SolidContactSavedInput, type Vector3 } from '@pointercad/model/beam-analysis';
 import type { CadAnalysisBoundaryIdentity, CadBoundaryFaceIdentity } from './cadTetraMesh.js';
@@ -69,7 +70,7 @@ function resolveFace(bound: BoundFace, path: string): { face: SolidContactPlanFa
       throw new InputIssue('contact-triangles', samplePath, 'Expected a unique existing boundary triangle');
     }
     if (!finiteVector(sample.point) || !finiteVector(sample.normal)
-      || Math.abs(Math.hypot(...sample.normal) - 1) > SOLID_CONTACT_LIMITS.unitNormalTolerance) {
+      || exceedsMagnitude(Math.hypot(...sample.normal) - 1, SOLID_CONTACT_LIMITS.unitNormalTolerance)) {
       throw new InputIssue('contact-boundary-normal', samplePath, 'Expected a finite sample point and outward unit normal');
     }
     seen.add(sample.triangleIndex); indices.push(sample.triangleIndex); normals.push(copyVector(sample.normal));

@@ -8,7 +8,7 @@ import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } fr
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { withPcaddExtension, type PickedFile } from './fileGateway.js';
 import type { PartFileDeps } from './partFile.js';
-import { openErrorMessageKey } from './documentReadError.js';
+import { openErrorMessage } from './documentReadError.js';
 import { recordRecentFile } from './recentFiles.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { saveFailureMessageKey } from './saveFailure.js';
@@ -33,7 +33,7 @@ export async function applyPickedDrawing(
   if (result === null) return;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {
-      useAppStore.getState().setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
+      useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
     }
     return;
   }

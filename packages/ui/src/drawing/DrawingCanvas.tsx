@@ -30,6 +30,9 @@ import { drawingEditPointerMatches, drawingPaperPoint, INITIAL_DRAWING_NAVIGATIO
   type DrawingNavigationTransform } from './drawingNavigation.js';
 import { attachDrawingSurfaceInputs } from './drawingSurfaceInputs.js';
 
+/** 図面で選んだ物と、寸法の対象の印の色(紙は白でテーマによらない。白い紙に 5.17:1)。 */
+const SELECTION_COLOR = '#2563eb';
+
 function useDrawingCanvas() {
   const drawing = useAppStore((state) => state.drawing);
   const resolution = useAppStore((state) => state.drawingResolution);
@@ -145,7 +148,7 @@ function useDrawingCanvas() {
     const targetMarkers: DrawingRenderElement[] = source === null || selectionLayer === undefined ? [] : targets.flatMap((target, index) => {
       const resolved = resolveDimensionTarget(target, document, drawingDimensionContext(source));
       if (resolved?.kind !== 'point') return [];
-      return [{ ownerId: `drawing-target-${index}`, layerId: selectionLayer.id, style: { color: '#2563eb' },
+      return [{ ownerId: `drawing-target-${index}`, layerId: selectionLayer.id, style: { color: SELECTION_COLOR },
         curves: [{ kind: 'arc', center: resolved.paperPoint, radius: 0.8, startAngle: 0, endAngle: Math.PI * 2 }],
         texts: [{ text: String(index + 1), position: [resolved.paperPoint[0] + 2, resolved.paperPoint[1] + 2], sizeMm: 3.5 }] }];
     });
@@ -159,8 +162,8 @@ function useDrawingCanvas() {
     for (const owner of selectedDrawingTableRows(tables.items, displayedSelection, components)) highlightedIds.add(owner);
     const primitives = rendered.document.primitives.map((primitive) => {
       if (!highlightedIds.has(primitive.ownerId)) return primitive;
-      return primitive.kind === 'path' ? { ...primitive, stroke: primitive.stroke === null ? null : { ...primitive.stroke, color: '#2563eb' },
-        fill: primitive.fill === null ? null : '#2563eb' } : { ...primitive, fill: '#2563eb' };
+      return primitive.kind === 'path' ? { ...primitive, stroke: primitive.stroke === null ? null : { ...primitive.stroke, color: SELECTION_COLOR },
+        fill: primitive.fill === null ? null : SELECTION_COLOR } : { ...primitive, fill: SELECTION_COLOR };
     });
     return { svg: toSvg({ ...rendered.document, primitives }), height: rendered.document.heightMm, displays, views, tables, manufacturing };
   }, [drawing, dimensions, annotations, resolution, selectedIds, targets, dragPoint, fontStatus, source, library, gdt, welds, repairProjection]);
@@ -187,7 +190,7 @@ function useDrawingCanvas() {
       frames: gdt.frames.filter((item) => changedIds.has(item.frame.sizeDimensionId ?? '')) };
     const manufacturing = displayDrawingGdt(drawing, attached, previews, drawingFont.outline);
     const elements = [...previews.map((item) => item.element), ...manufacturing.map((item) => item.element)]
-      .map((element) => selectedIds.includes(element.ownerId) ? { ...element, style: { ...element.style, color: '#2563eb' } } : element);
+      .map((element) => selectedIds.includes(element.ownerId) ? { ...element, style: { ...element.style, color: SELECTION_COLOR } } : element);
     const rendered = renderDrawingElements(drawing, elements, { outlineText: drawingFont.outline });
     dimensionSvgPreview.current ??= createDrawingSvgPreview(svg, new Set(elements.map((element) => element.ownerId)));
     return dimensionSvgPreview.current.update(rendered.document);

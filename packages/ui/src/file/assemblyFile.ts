@@ -14,7 +14,7 @@ import { t } from '../i18n/t.js';
 import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, readForOpen } from './documentOpenGuard.js';
 import { withPcadaExtension, type PickedFile } from './fileGateway.js';
 import type { PartFileDeps } from './partFile.js';
-import { openErrorMessageKey } from './documentReadError.js';
+import { openErrorMessage } from './documentReadError.js';
 import { hasUnsavedChanges } from './partDocumentDirty.js';
 import { recordRecentFile } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
@@ -89,7 +89,7 @@ export async function applyPickedAssembly(
   if (result === null) return;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {
-      useAppStore.getState().setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
+      useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
     }
     return;
   }

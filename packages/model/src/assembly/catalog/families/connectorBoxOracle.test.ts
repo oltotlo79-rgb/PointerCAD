@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { CONNECTOR_BOX_RECORDS } from './connectorBoxRows.js';
+import { CONNECTOR_BOX_FAMILY } from './panelPartCatalog.js';
 
 type Cells = Readonly<Record<string, string>>;
 interface FixtureRow { readonly key: string; readonly cells: Cells }
@@ -81,5 +82,17 @@ describe('コネクタの製品の行と照らす側の読み', () => {
         .toBe(record.material === 'mixed' ? materials.map((material) => LABELS[material]).join('・') : materials[0]);
       expect([record.massG, record.page], record.key).toEqual([massOf(cells['質量_g']), Number(cells['PDF頁'])]);
     }
+  });
+
+  it('キットの本体の行(照らす側の読みの質量が「記入なし(資料の質量はキットの質量)」)だけ、質量を出さない理由が組の値で、行の注にその事を書く', () => {
+    let kits = 0;
+    for (const record of CONNECTOR_BOX_RECORDS) {
+      const kitMassOnly = (FIXTURE.find((row) => row.key === record.key)?.cells['質量_g'] ?? '').startsWith('記入なし(資料の質量はキットの質量)');
+      expect([record.massOmission, record.massG], record.key).toEqual(kitMassOnly ? ['kitMassOnly', null] : [undefined, record.massG]);
+      const note = CONNECTOR_BOX_FAMILY.rows.find((row) => row.key === record.key)?.note ?? '';
+      expect(note.includes('資料の質量は付属を含む組の値なので、本体だけの質量は出さない'), record.key).toBe(kitMassOnly);
+      if (kitMassOnly) kits += 1;
+    }
+    expect(kits).toBeGreaterThan(0);
   });
 });

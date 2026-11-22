@@ -6,7 +6,7 @@ import { InputIssue } from '@pointercad/model/beam-analysis';
 import { buildStandardPartFromSourceWithReason, steelMessageRejectionSourcesForUi } from '@pointercad/model/testing/ui-fixtures';
 import { describe, expect, it } from 'vitest';
 
-import { failureMessage, issueMessage, mixedFailureMessages } from './failureMessage.js';
+import { failureMessage, issueMessage, messageText, mixedFailureMessages } from './failureMessage.js';
 import { MESSAGE_KEYS, t } from './t.js';
 
 const modelSource = fileURLToPath(new URL('../../../model/src/', import.meta.url));
@@ -75,5 +75,11 @@ describe('失敗の文の鍵と差し込む値から画面の文を作る(D4)', 
     expect(issueMessage(new Error('Axial bolt input could not be prepared'))).toBe('Axial bolt input could not be prepared');
     const changed = { code: 'changed-source', path: 'm1', message: 'Member size, options or source revisions changed' };
     expect(issueMessage(changed)).toBe('Member size, options or source revisions changed');
+  });
+
+  it('鍵と差し込む値の組の文(読めなかった理由の知らせ)は、値を入れた文。値の無い組は鍵の文のまま', () => {
+    expect(messageText({ key: 'assembly.error.subAssemblyDepth', parameters: { max: '8' } })).toBe(failureMessage(SUB_ASSEMBLY_DEPTH_TEXT));
+    expect(messageText({ key: 'assembly.error.subAssemblyDepth', parameters: { max: '8' } })).not.toContain('{max}');
+    expect(messageText({ key: 'file.error.corrupted' })).toBe(t('file.error.corrupted'));
   });
 });

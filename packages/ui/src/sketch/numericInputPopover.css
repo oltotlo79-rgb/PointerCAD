@@ -1,0 +1,13 @@
+.pcad-edge-distance-hole {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.pcad-edge-distance-hole > p {
+  grid-column: 1 / -1;
+}
+
+.pcad-popover > [data-edge-distance-collapsed="true"] ~ :is(.pcad-popover__fields, .pcad-popover__choice) {
+  display: none;
+}

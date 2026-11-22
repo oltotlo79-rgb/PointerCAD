@@ -500,7 +500,7 @@ export function NumericInputPopover({
       <DraggableWindowTitle className="pcad-popover__title">{t(STEP_TITLE_KEYS[state.step])}</DraggableWindowTitle>
       {(state.step === 'holeSize' || state.step === 'threadSize')
         && state.choices.some(choice => choice.key === 'holePlacement' && choice.value === 'plane-face')
-        ? <PlanarHoleBasisInfo /> : picksHoleEdges(state) ? <EdgeDistanceHoleInfo /> : null}
+        ? <PlanarHoleBasisInfo /> : picksHoleEdges(state) ? <EdgeDistanceHoleInfo key={`${state.toolId}:${state.step}`} /> : null}
       {evaluation.carriedError === undefined ? null : (
         <p className={isPendingFieldError(evaluation.carriedError) ? 'pcad-field__message' : 'pcad-field__error'}
           role={isPendingFieldError(evaluation.carriedError) ? 'status' : 'alert'}>{evaluation.carriedError.message}</p>

@@ -3,6 +3,7 @@ import { captureDocumentIdentity, compareDocumentIdentity } from '../store/docum
 import { useAppStore } from '../store/useAppStore.js';
 import type { FileGateway } from './fileGateway.js';
 import type { SaveEncodingControl } from '@pointercad/io';
+import type { MessageKey } from '../i18n/t.js';
 import { PcadSaveWorkerError } from './pcadSaveWorker.js';
 
 const pending = new WeakMap<FileGateway, Promise<void>>();
@@ -83,6 +84,8 @@ export async function completeDocumentSave(
   isCurrent: () => boolean,
   discardRecovery: () => Promise<void>,
   fileName?: string,
+  /** 保存できた知らせの文。解析の結果を入れずに保存した時は、その理由の文(saveResultIssue.ts)。 */
+  savedKey: MessageKey = 'file.saved',
 ): Promise<void> {
   // 版の番号は通常の編集で増えないので、文書・履歴・添付の参照で「途中の編集」を調べる。
   const identity = captureDocumentIdentity(useAppStore.getState());
@@ -100,7 +103,7 @@ export async function completeDocumentSave(
   }
   const current = useAppStore.getState();
   if (isCurrent() && compareDocumentIdentity(identity, current) === 'current') {
-    current.setFileMessage({ key: 'file.saved', failed: false });
+    current.setFileMessage({ key: savedKey, failed: false });
   }
   // 追加編集はdirtyのまま残るが、実際に保存したファイル名は控え処理後に示せる。
   if (isCurrent() && operation !== null && current.documentSaveOperation?.id === operation.id) {

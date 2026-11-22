@@ -18,11 +18,12 @@ import { uiMessage, uiMessagePattern } from './uiMessages.js';
  * frame series row 溝幅 6 20×20 with length 750; the picker's cut list and the BOM are read, then the assembly is saved and
  * reopened and the same rows are read again.
  * Independent expectation for the series mass: the row's unit mass 0.49 kg/m (the reading table copied into
- * tSlotFrameSeries.test.ts) × 0.75 m = 0.3675 kg = 367.5 g, shown with the BOM/cut-list display rule (two decimals below
- * 1000 g, bomTableRows.ts formatBomMass) as 367.50 g. The generic frame's mass comes from its volume and is checked by form only.
+ * tSlotFrameSeries.test.ts) × 0.75 m = 0.3675 kg, shown as 367.5 g with up to six significant digits.
+ * The generic frame's mass comes from its volume × aluminum density and is checked by form only.
  */
-const SERIES_MASS_TEXT = '367.50 g';
-const MASS_FORM = /^[0-9]+\.[0-9]{2} (g|kg)$/u;
+const SERIES_MASS_TEXT = '367.5 g';
+// For these frame masses, require decimal notation with at most six significant digits and no decimal trailing zeros.
+const MASS_FORM = /^(?:0(?:\.0*\d{0,5}[1-9])?|(?=[\d.]{1,7} )[1-9]\d{0,5}(?:\.\d*[1-9])?) (g|kg)$/u;
 /**
  * Family ids of the アルミフレーム category in registry order and their kind-name keys (ja/catalog.json), read from the
  * product registry (registry.ts) instead of a hand-copied list, so adding a family does not need this spec to change.

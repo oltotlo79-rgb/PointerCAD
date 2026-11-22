@@ -26,9 +26,10 @@ import {
 } from '@pointercad/io';
 import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
 
-import { openErrorMessageKey } from './documentReadError.js';
+import { openErrorMessage, openErrorMessageKey } from './documentReadError.js';
 import { hasUnsavedChanges } from './partDocumentDirty.js';
 export { openErrorMessageKey } from './documentReadError.js';
+export { openErrorMessage, openErrorReason } from './documentReadError.js';
 export { hasUnsavedChanges } from './partDocumentDirty.js';
 
 import { t, type MessageKey } from '../i18n/t.js';
@@ -44,10 +45,12 @@ import { savePcadThrough, withPcadExtension, type PickedFile } from './fileGatew
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
+import { savedMessageKey, type SaveResultIssueReport } from './saveResultIssue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { encodeSaveParts } from './pcadSaveWorker.js';
 import { applyPickedDrawing, saveDrawing } from './drawingFile.js';
 import { loadedPartAttachments } from './loadedPartAttachments.js';
+import { openedSolidResults, solidResultsToSave } from '../solidAnalysis/savedSolidResults.js';
 import { saveTutorialCheckpoint } from '../tutorial/tutorialCheckpoint.js';
 import { continuingParameterSession, parameterCheckpointInput, parameterCheckpointIdentity,
   parameterCheckpointWriteGuard, parameterTutorialEvidence, parameterTutorialStep,
@@ -267,6 +270,7 @@ export async function newPartFrom(deps: PartFileDeps, source: PartDocument): Pro
   store.fileGateway.clearSaveTarget?.();
   store.resetDocument(document, preparedSession);
   store.setFileState(null, null);
+  store.setSolidOpenedResults(null);
 }
 
 /**
@@ -313,7 +317,7 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   const result = await readForOpen(request, 'part', picked.bytes, transferred);
   if (result === null) return;
   if (!result.ok) {
-    if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
+    if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
     return;
   }
   const checkpoint = await readCheckpointAfterRead(picked, transferred, useAppStore.getState().tutorialCheckpointStorage,
@@ -348,6 +352,9 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   // Asset collision normalization can rewrite the document after the saved bytes were verified.
   // Its old checkpoint no longer describes the document now visible in the store.
   const sameSavedContent = loaded.document === result.document;
+  // Saved analysis results are bound to the verified saved content too (J-03b stage 2).
+  opened.setSolidOpenedResults(sameSavedContent
+    ? openedSolidResults(loaded.document, result.analysisResults, result.analysisResultIssue) : null);
   opened.setTutorialDrawingProof(null);
   opened.setTutorialExports({});
   opened.setTutorialDraft(checkpoint.ok && sameSavedContent ? checkpoint.checkpoint.draft ?? null : null);
@@ -395,9 +402,12 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
    * 添付を落とすと、読み込んだ形を含む部品が開き直せなくなる(`PartFileDeps.attachmentsOf`)。
    */
   const attachments = deps.attachmentsOf?.();
+  const analysisResults = solidResultsToSave(store, document);
+  const resultIssues: SaveResultIssueReport[] = [];
   const snapshot = captureSaveSnapshot({ kind: 'part', document, options: {
     savedAt: new Date().toISOString(),
     ...(attachments === undefined ? {} : { attachments }),
+    ...(analysisResults === undefined ? {} : { analysisResults }),
   } });
   return queueDocumentSave(store, async (isCurrent, control) => {
   try {
@@ -410,7 +420,9 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
     const encoding = snapshot.kind === 'part' && thumbnailPng !== null
       ? { ...snapshot, options: { ...snapshot.options, thumbnailPng } } : snapshot;
     // 保存 Worker の符号化器なら、全体の並びを作らずに部分の並びのまま保存の口へ渡す(記憶量の山を写し 1 つ分下げる)。
-    const parts = await encodeSaveParts(deps.encodeSave ?? store.saveDocumentEncoder, encoding, control);
+    // 書き手が入れずに保存した解析の結果は、保存できた知らせの文に理由として出す。
+    const parts = await encodeSaveParts(deps.encodeSave ?? store.saveDocumentEncoder, encoding,
+      { ...control, onAnalysisResultIssue: (analysisId, issue) => { resultIssues.push({ analysisId, issue }); } });
     if (!control.beginWriting()) return;
   const suggestedName = withPcadExtension(displayFileName(store.fileName));
 
@@ -475,7 +487,7 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
       if (canDiscard()) await saver.discard(DEFAULT_AUTO_SAVE_IDENTITY);
       if (canDiscard()) useAppStore.setState({ recoverySaveState: null });
     }
-  }, savedFileName);
+  }, savedFileName, savedMessageKey(resultIssues));
   } catch (error) {
     if (isCurrent()) useAppStore.getState().setFileMessage({ key: saveFailureMessageKey(error), failed: true });
     reportSaveEncodingFailure(error, isCurrent);

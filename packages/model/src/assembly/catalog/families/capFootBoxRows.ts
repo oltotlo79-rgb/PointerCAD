@@ -21,6 +21,8 @@ export const CAP_FOOT_BOX_RECORDS: readonly PanelPartRecord[] = [
     width: 185, depth: 38, height: 70, massG: 411, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'stand-connector-71.8x33x49-al', size: 'スタンドのつなぎ 71.8×33×49（外形を包む形・アルミ）', page: 97, kind: 'スタンドのつなぎ', material: 'aluminum', width: 71.8,
     depth: 33, height: 49, massG: 83, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'floor-lock-65x58x225-fe-rubber', size: '床の止め具 65×58×225（外形を包む形・鉄・ゴム）', page: 99, kind: '床の止め具', material: 'mixed', materialText: '鉄・ゴム',
+    width: 65, depth: 58, height: 225, massG: null, massOmission: 'kitMassOnly', simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'pipe-stand-112x112x106-resin', size: 'パイプのスタンド 112×112×106（外形を包む形・樹脂）', page: 329, kind: 'パイプのスタンド', material: 'mixed',
     materialText: '樹脂', width: 112, depth: 112, height: 106, massG: 782, simplified: ['外形を包む形で、細部は作っていない'] },
 ];

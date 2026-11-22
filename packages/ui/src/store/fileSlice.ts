@@ -24,6 +24,8 @@ export interface FileMessage {
   readonly key: MessageKey;
   readonly failed: boolean;
   readonly detail?: string;
+  /** 文に差し込む値(例: 入れ子の深さの {max})。省くと鍵の文のまま(i18n/failureMessage.ts の messageText)。 */
+  readonly parameters?: Readonly<Record<string, string>>;
 }
 
 export interface DocumentSaveOperation {
@@ -58,6 +60,8 @@ export interface RestorePrompt {
   readonly unrecoverable?: boolean;
   /** 復元できない理由の文言キー。`unrecoverable` のときだけ案内へ出す。 */
   readonly reasonKey?: MessageKey;
+  /** 復元できない理由の文に差し込む値。省くと鍵の文のまま。 */
+  readonly reasonParameters?: Readonly<Record<string, string>>;
 }
 
 /**

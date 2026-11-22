@@ -1,4 +1,5 @@
 import type { ReadPcadFileErrorCode } from '@pointercad/io';
+import { MAX_SUB_ASSEMBLY_DEPTH } from '@pointercad/model';
 import type { MessageKey } from '../i18n/t.js';
 
 /**
@@ -25,6 +26,14 @@ const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
   versionMismatch: 'file.error.corrupted',
   missingField: 'file.error.corrupted',
   invalidField: 'file.error.corrupted',
+  // 抱き込んだ組の入れ子が自分自身を含む・深すぎる(組を解く時と同じ文。assembly.json)。
+  subAssemblyCycle: 'assembly.error.subAssemblyCycle',
+  subAssemblyDepth: 'assembly.error.subAssemblyDepth',
+};
+
+/** 文に差し込む値(差し込みの無い理由は持たない)。 */
+const OPEN_ERROR_PARAMETERS: Partial<Readonly<Record<ReadPcadFileErrorCode, Readonly<Record<string, string>>>>> = {
+  subAssemblyDepth: { max: String(MAX_SUB_ASSEMBLY_DEPTH) },
 };
 
 /**
@@ -36,4 +45,19 @@ const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
  */
 export function openErrorMessageKey(code: ReadPcadFileErrorCode): MessageKey {
   return OPEN_ERROR_KEYS[code];
+}
+
+/**
+ * 読めなかった理由を、文の鍵と差し込む値の組にする(画面の知らせ FileMessage へ広げて渡せる形)。差し込む値のある理由(入れ子の深さ)が
+ * 出うる読み取り(アセンブリ・図面の出どころ・自動保存の控え)は、鍵だけの openErrorMessageKey でなく、この口を使う。
+ */
+export function openErrorMessage(code: ReadPcadFileErrorCode): { readonly key: MessageKey; readonly parameters?: Readonly<Record<string, string>> } {
+  const parameters = OPEN_ERROR_PARAMETERS[code];
+  return parameters === undefined ? { key: OPEN_ERROR_KEYS[code] } : { key: OPEN_ERROR_KEYS[code], parameters };
+}
+
+/** 復元できない理由の案内(RestorePrompt の reasonKey・reasonParameters)へ広げて渡せる形。 */
+export function openErrorReason(code: ReadPcadFileErrorCode): { readonly reasonKey: MessageKey; readonly reasonParameters?: Readonly<Record<string, string>> } {
+  const { key, parameters } = openErrorMessage(code);
+  return parameters === undefined ? { reasonKey: key } : { reasonKey: key, reasonParameters: parameters };
 }

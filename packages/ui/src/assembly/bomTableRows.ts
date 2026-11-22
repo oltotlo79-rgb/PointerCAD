@@ -1,21 +1,32 @@
 import { magnitudeAtLeast } from '@pointercad/model';
 import type { BomColumnId, BomRow } from '@pointercad/model';
 
+import { displayNumber } from '../sketch/numericInputPresentation.js';
+
 /** 表が描く 1 行。model の数値を画面用の文字列へ変えたもの。 */
 export interface BomTableRow {
   readonly key: string;
   readonly active: boolean;
   readonly componentIds: readonly string[];
   readonly cells: Readonly<Record<BomColumnId, string>>;
+  readonly massTitle: string | undefined;
 }
 
-/** 部品表だけの表示規約: 小数2桁、1000g以上はkg。計算値そのものは丸めない。 */
+const GRAMS_PER_KILOGRAM = 1000;
+
+/** 表示した g の値で単位を決め、説明には元の g の値を残す。 */
+function formatBomMassDetails(grams: number | null): { text: string; full?: string } {
+  if (grams === null || !Number.isFinite(grams)) return { text: '' };
+  const inGrams = displayNumber(grams);
+  const roundedGrams = Number(inGrams.text);
+  const text = magnitudeAtLeast(roundedGrams, GRAMS_PER_KILOGRAM)
+    ? `${displayNumber(roundedGrams / GRAMS_PER_KILOGRAM).text} kg`
+    : `${inGrams.text} g`;
+  return { text, full: `${inGrams.full} g` };
+}
+
 export function formatBomMass(grams: number | null): string {
-  if (grams === null || !Number.isFinite(grams)) return '';
-  const normalized = Object.is(grams, -0) ? 0 : grams;
-  return magnitudeAtLeast(normalized, 1000)
-    ? `${(normalized / 1000).toFixed(2)} kg`
-    : `${normalized.toFixed(2)} g`;
+  return formatBomMassDetails(grams).text;
 }
 
 /** 入れ子の部品は画面に存在する最上位インスタンスを選び、同じIDを重ねない。 */
@@ -35,10 +46,12 @@ export function bomTableRows(
   const selected = new Set(selection);
   return rows.map((row) => {
     const componentIds = bomSelectionIds(row);
+    const mass = formatBomMassDetails(row.massTotal);
     return {
       key: row.rowKey,
       active: componentIds.some((id) => selected.has(id)),
       componentIds,
+      massTitle: mass.full,
       cells: {
         number: String(row.number),
         name: row.name,
@@ -46,7 +59,7 @@ export function bomTableRows(
         quantity: String(row.quantity),
         // 材質の無い族の部品で、行が密度の材質を持たない時は行の材質の表示(既定の鋼と出さない。統括 22:5x の (d))。
         material: row.catalogMaterialLabel ?? materialLabel(row.materialId, row.materialName),
-        mass: formatBomMass(row.massTotal),
+        mass: mass.text,
       },
     };
   });

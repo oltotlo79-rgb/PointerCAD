@@ -3,6 +3,7 @@ import { withBeamAnalysisInputs, type AnalysisMaterialCapacity, type SolidCadSav
 import { createSolidAnalysisSession, solidSavedInput, type SolidAnalysisSession, type SolidField,
   type SolidLoadMode } from '../solidAnalysis/solidAnalysisSession.js';
 import type { AppState } from './appState.js';
+import { beginDocumentRequest } from './documentRequestCore.js';
 import type { SolidFieldViewChoice } from '../solidAnalysis/solidFieldState.js';
 import { t } from '../i18n/t.js';
 import { cancelSolidModal, editSolidModalInput, initialSolidModalState, invalidateSolidModal, receiveSolidModal,
@@ -14,6 +15,8 @@ import { cancelSolidBuckling, editSolidBucklingCount, initialSolidBucklingState,
   setSolidBucklingView, startSolidBuckling, type SolidBucklingReply, type SolidBucklingRunState }
   from '../solidAnalysis/solidBucklingState.js';
 import { solidBucklingSavedInput, withSolidBucklingSaved } from '../solidAnalysis/solidBucklingSaved.js';
+import { openedSolidResult, restoreSavedSolid, type OpenedSolidResults, type SavedSolid,
+  type SolidRestore } from '../solidAnalysis/savedSolidResults.js';
 import { createSolidBoundaryDraft, createSolidSupport, SOLID_BOUNDARY_INDEX,
   type SolidBoundaryAxis, type SolidGravityField } from '../solidAnalysis/solidBoundaryDraft.js';
 
@@ -49,6 +52,12 @@ export interface SolidAnalysisSlice {
   readonly editSolidGravity: (field: SolidGravityField, source: string) => void;
   readonly focusSolidBoundary: (field: string) => void;
   readonly saveSolidAnalysis: () => void;
+  /** The static solid result opened with the part file (J-03b stage 2). Used only while the document is that very object. */
+  readonly solidOpenedResults: OpenedSolidResults | null;
+  /** What became of the opened result when the panel opened: restored as the session's result (that very outcome),
+   * refused because its kept solver input did not match its digest, or limited because none was kept. */
+  readonly solidSavedRestore: { readonly saved: SavedSolid; readonly restore: SolidRestore } | null;
+  readonly setSolidOpenedResults: (opened: OpenedSolidResults | null) => void;
   readonly cancelSolidAnalysis: () => void;
   /** Changes only how the current result is shown; never cancels, re-runs or saves. Non-finite or negative scales are refused. */
   readonly setSolidAnalysisFieldView: (change: Partial<SolidFieldViewChoice>) => void;
@@ -85,6 +94,24 @@ export interface SolidAnalysisSlice {
   /** Display only (drawn mode, amplitude, phase, shown or not): never cancels, re-runs, saves or changes the request. */
   readonly setSolidBucklingView: (view: SolidModeDisplay, amplitudeText: string, showShape: boolean) => void;
 }
+/**
+ * Opening the panel brings back the result saved with this very document: the kept solver input must match the result's
+ * digest first (restoreSavedSolid), and the panel must still show the same session on the same finished geometry.
+ */
+async function restoreOpenedSolid(get: () => AppState, set: (change: Partial<AppState>) => void): Promise<void> {
+  const state = get(), session = state.solidAnalysisSession;
+  const saved = openedSolidResult(state.document, state.solidOpenedResults);
+  if (saved === undefined || session === null || state.isComputing || state.lastOutcome !== 'success') return;
+  // The shared request guard (documentRequestCore): a document, history, attachment or document switch during the digest
+  // wait, or a later restore of the same kind, drops this one. The session and the finished geometry are checked beside it.
+  const request = beginDocumentRequest('solidAnalysis.savedRestore', get, state);
+  const generation = state.completedGeneration, restored = await restoreSavedSolid(saved, generation);
+  const now = get();
+  if (!request.isCurrent() || now.solidAnalysisSession !== session || now.completedGeneration !== generation) return;
+  set({ solidSavedRestore: { saved, restore: restored }, ...(restored.kind === 'restored'
+    ? { solidAnalysisSession: { ...session, status: 'complete' as const, result: restored.outcome } } : {}) });
+}
+
 function boundarySession(state: AppState): SolidAnalysisSession | null {
   const session = state.solidAnalysisSession;
   return session?.ownerId === state.activeDocumentId && state.assembly === null && state.drawing === null ? session : null;
@@ -180,6 +207,8 @@ function solidModeActions(set: StoreApi<AppState>['setState'], get: StoreApi<App
 
 export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnalysisSlice> = (set, get) => ({
   solidAnalysisSession: null, solidAnalysisRunner: null,
+  solidOpenedResults: null, solidSavedRestore: null,
+  setSolidOpenedResults: (solidOpenedResults) => set({ solidOpenedResults, solidSavedRestore: null }),
   solidModal: initialSolidModalState(),
   solidModalShared: null,
   solidBuckling: initialSolidBucklingState(),
@@ -205,6 +234,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
       staticSaved ?? (bucklingSaved?.kind === 'solid-buckling-cad' ? bucklingSaved.definition.reference : undefined));
     set({ solidAnalysisSession: opened.session, solidModal: opened.modal, solidModalShared: opened.shared,
       solidBuckling: buckled.buckling, solidBucklingReference: buckled.reference });
+    void restoreOpenedSolid(get, set);
   },
   closeSolidAnalysis: () => {
     const state = get();

@@ -17,7 +17,7 @@ import {
   type PickedFile,
   type PickedTypedFile,
 } from '../file/fileGateway.js';
-import { openErrorMessageKey } from '../file/partFile.js';
+import { openErrorMessage } from '../file/partFile.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { boltedJointRebuildNotice, componentsUsingPart } from './boltedJointRebuild.js';
 import { cancelMate } from './mateActions.js';
@@ -104,7 +104,7 @@ export async function startPlaceSubAssembly(
     if (!currentRequest(requestId, documentId, assembly, library)) return;
     if (!read.ok || read.bundle.kind !== 'assembly') {
       useAppStore.getState().setFileMessage({
-        key: read.ok ? 'file.openFailed' : openErrorMessageKey(read.error.code),
+        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error.code)),
         failed: true,
       });
       return;
@@ -154,7 +154,7 @@ export async function startReplaceSelectedComponent(
     if (!currentRequest(requestId, documentId, assembly, library)) return;
     if (!read.ok || read.bundle.kind !== 'part') {
       useAppStore.getState().setFileMessage({
-        key: read.ok ? 'file.openFailed' : openErrorMessageKey(read.error.code), failed: true,
+        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error.code)), failed: true,
       });
       return;
     }
@@ -315,7 +315,7 @@ export async function startRefreshPartSource(
     if (!ownsRequest()) return;
     if (!read.ok || read.bundle.kind !== 'part') {
       useAppStore.getState().setFileMessage({
-        key: read.ok ? 'file.openFailed' : openErrorMessageKey(read.error.code), failed: true,
+        ...(read.ok ? { key: 'file.openFailed' as const } : openErrorMessage(read.error.code)), failed: true,
       });
       return;
     }

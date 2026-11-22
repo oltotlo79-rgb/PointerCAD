@@ -90,13 +90,17 @@ function unitMassNote(row: SteelStockList['catalogRows'][number]): string {
 
 /**
  * 族の行の形の扱いの列: 実物どおりの断面の形材の行は「資料の寸法どおりの断面」、ほか(溝つきのフレーム・ナットの素材など)は
- * 「資料の寸法で作った簡略の形」で、行が簡略にした所を持つ時はそれを添える(鋼材の旧版の簡略断面の文字は使わない)。
+ * 「資料の寸法で作った簡略の形」で、行が簡略にした所を持つ時はそれを添える(鋼材の旧版の簡略断面の文字は使わない)。値の出どころ(valueSource)を
+ * 持つ行は「資料の寸法と参考にした組立用の道具の画面の値で作った簡略の形」。
  */
 function catalogGeometry(row: SteelStockList['catalogRows'][number]): string {
   const family = PRODUCT_CATALOG_REGISTRY.loaded(row.familyId);
-  const simplified = family?.rows.find((candidate) => candidate.key === row.itemKey)?.simplified ?? [];
-  if (EXACT_SECTION_DIAGRAMS.has(family?.diagram ?? '') && simplified.length === 0) return t('catalog.stock.geometrySource');
-  const base = t('catalog.stock.geometrySimplified');
+  const item = family?.rows.find((candidate) => candidate.key === row.itemKey);
+  const simplified = item?.simplified ?? [];
+  // 資料に記入の無い寸法を参考にした組立用の道具の画面の値で入れた行は、「資料の寸法だけで作った」と読める文を使わない。
+  const screen = item?.valueSource !== undefined;
+  if (EXACT_SECTION_DIAGRAMS.has(family?.diagram ?? '') && simplified.length === 0 && !screen) return t('catalog.stock.geometrySource');
+  const base = t(screen ? 'catalog.stock.geometrySimplifiedToolScreen' : 'catalog.stock.geometrySimplified');
   return simplified.length === 0 ? base : `${base}: ${simplified.join('・')}`;
 }
 

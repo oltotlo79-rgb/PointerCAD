@@ -1,14 +1,16 @@
 import { sha256HexSync } from '@pointercad/model';
-import type { SavedAnalysisResult } from '@pointercad/model/beam-analysis';
+import { readOptionalMaterialCapacity, type SavedAnalysisResult } from '@pointercad/model/beam-analysis';
 import { isRecord } from '../guards.js';
 import { packSolid, SOLID_RESULT_MAX_BYTES, unpackSolid } from './solidResultBinary.js';
 
 type Solid = Extract<SavedAnalysisResult, { kind: 'oofem-linear-solid-tet4' }>;
 type Input = Solid['mesh']['input'];
 type Controls = NonNullable<Input['meshing']>;
+type Prepared = NonNullable<Solid['prepared']>;
+type Material = Prepared['input']['materials'][number];
 interface Issue { readonly ok: false; readonly issue: 'invalidResult' | 'resultTooLarge' }
 type EncodedSolid = Issue | { readonly ok: true; readonly payload: Readonly<Record<string, unknown>>; readonly binary: Uint8Array };
-type DecodedSolid = Issue | ({ readonly ok: true } & Pick<Solid, 'mesh' | 'result'>);
+type DecodedSolid = Issue | ({ readonly ok: true } & Pick<Solid, 'mesh' | 'result' | 'prepared'>);
 const kind = 'oofem-linear-solid-tet4';
 const method = 'oofem-ltrspace-isole-native-ldlt/1';
 
@@ -65,6 +67,65 @@ function meshKind(schema: Input['schema']): Solid['mesh']['kind'] {
   return schema === 'pointercad-convex-plc/1' ? 'netgen-convex-tetra-mesh' : 'netgen-tetra-mesh';
 }
 
+/** A load or total: JSON does not tell -0 from 0, and neither does the solver input digest. */
+function plain(v: unknown): number {
+  return finite(Object.is(v, -0) ? 0 : v);
+}
+function vector(v: unknown): readonly [number, number, number] {
+  requireValue(Array.isArray(v) && v.length === 3);
+  return [plain(v[0]), plain(v[1]), plain(v[2])];
+}
+
+function material(raw: unknown): Material {
+  requireValue(isRecord(raw));
+  return { id: text(raw.id), youngMPa: finite(raw.youngMPa), poisson: finite(raw.poisson),
+    ...readOptionalMaterialCapacity(raw, 'material') };
+}
+
+/** The solver input's scalars beside the mesh: one material (the CAD path), gravity, loaded area and total force.
+ * Its nodes and elements must be the mesh's own, so they are rebuilt from the mesh instead of stored twice. */
+function solverScalars(saved: Solid): Readonly<Record<string, unknown>> {
+  const { prepared, mesh, result } = saved;
+  if (prepared === undefined) return {};
+  const { input } = prepared, only = input.materials[0];
+  requireValue(input.schema === 'pointercad-solid-tet4/1' && input.units === 'N-mm-MPa' && input.materials.length === 1
+    && only !== undefined && input.source.documentId === result.source.documentId
+    && input.source.revision === result.source.revision && input.source.meshKey === result.source.meshKey
+    && input.nodes.length * 3 === mesh.coordinates.length && input.elements.length * 4 === mesh.tetrahedra.length);
+  requireValue(input.nodes.every((node, i) => node.every((value, axis) => value === mesh.coordinates[3 * i + axis]))
+    && input.elements.every((element, i) => element.materialId === only.id
+      && element.nodes.every((node, corner) => node === mesh.tetrahedra[4 * i + corner])));
+  const gravity = input.gravity;
+  requireValue(gravity === undefined || (gravity.densities.length === 1 && gravity.densities[0]?.materialId === only.id));
+  return { solverInput: { numericBudgetBytes: count(input.numericBudgetBytes), material: material(only),
+    ...(gravity === undefined ? {} : { gravity: { accelerationMps2: vector(gravity.accelerationMps2),
+      densityKgM3: finite(gravity.densities[0]?.densityKgM3) } }),
+    loadedAreaMm2: finite(prepared.loadedAreaMm2), totalForceN: vector(prepared.totalForceN) } };
+}
+
+type SolverArrays = NonNullable<ReturnType<typeof unpackSolid>['solver']>;
+
+function readGravity(raw: unknown, materialId: string): Prepared['input']['gravity'] {
+  if (raw === undefined) return undefined;
+  requireValue(isRecord(raw));
+  return { accelerationMps2: vector(raw.accelerationMps2), densities: [{ materialId, densityKgM3: finite(raw.densityKgM3) }] };
+}
+
+function readPrepared(raw: unknown, solver: SolverArrays | undefined, mesh: Solid['mesh'], source: Solid['result']['source']) {
+  requireValue((raw === undefined) === (solver === undefined));
+  if (raw === undefined || solver === undefined) return undefined;
+  requireValue(isRecord(raw));
+  const only = material(raw.material), gravity = readGravity(raw.gravity, only.id);
+  const nodes = Array.from({ length: mesh.coordinates.length / 3 }, (_, i) =>
+    [mesh.coordinates[3 * i], mesh.coordinates[3 * i + 1], mesh.coordinates[3 * i + 2]] as const);
+  const elements = Array.from({ length: mesh.tetrahedra.length / 4 }, (_, i) => ({ materialId: only.id,
+    nodes: [mesh.tetrahedra[4 * i], mesh.tetrahedra[4 * i + 1], mesh.tetrahedra[4 * i + 2], mesh.tetrahedra[4 * i + 3]] as const }));
+  const input: Prepared['input'] = { schema: 'pointercad-solid-tet4/1', source, units: 'N-mm-MPa',
+    numericBudgetBytes: count(raw.numericBudgetBytes), nodes, elements, materials: [only], constraints: solver.constraints,
+    ...(gravity === undefined ? {} : { gravity }), nodalLoads: solver.nodalLoads, surfaceLoads: solver.surfaceLoads };
+  return { input, loadedAreaMm2: finite(raw.loadedAreaMm2), totalForceN: vector(raw.totalForceN) };
+}
+
 export function encodeSolid(saved: Solid): EncodedSolid {
   try {
     const { result, mesh } = saved;
@@ -72,9 +133,10 @@ export function encodeSolid(saved: Solid): EncodedSolid {
       && result.structuralCertification === false && mesh.kind === meshKind(mesh.input.schema) && mesh.input.units === 'mm');
     const meta = metadata({ ...result, inputSchema: mesh.input.schema, meshSource: mesh.input.source, meshSha256: mesh.inputSha256,
       tagCount: mesh.input.tagCount, meshing: mesh.input.meshing, volumeMm3: mesh.volumeMm3, minTetVolumeMm3: mesh.minTetVolumeMm3 });
+    const solver = solverScalars(saved);
     const binary = packSolid(saved);
     const payload = { ...meta, nodes: result.displacementMm.length, elements: result.elements.length, boundaryFaces: mesh.boundaryTags.length,
-      byteLength: binary.byteLength, binarySha256: sha256HexSync(binary) };
+      byteLength: binary.byteLength, binarySha256: sha256HexSync(binary), ...solver };
     return { ok: true as const, payload, binary };
   } catch (error) { return failure(error); }
 }
@@ -102,6 +164,8 @@ export function decodeSolid(raw: unknown, binary: Uint8Array | undefined): Decod
       source: meta.source, inputSha256: meta.inputSha256, strainEnergyNmm: meta.strainEnergyNmm,
       maximumRelativeEquilibriumResidual: meta.maximumRelativeEquilibriumResidual, reservedNumericBytes: meta.reservedNumericBytes,
       minimumScaledPivot: meta.minimumScaledPivot };
-    return { ok: true as const, result, mesh };
+    // A file without the solver input (saved before it was kept) stays readable; the screen shows less for it.
+    const prepared = readPrepared(raw.solverInput, data.solver, mesh, result.source);
+    return { ok: true as const, result, mesh, ...(prepared === undefined ? {} : { prepared }) };
   } catch (error) { return failure(error); }
 }

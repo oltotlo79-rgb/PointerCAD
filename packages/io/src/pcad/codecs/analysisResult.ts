@@ -49,7 +49,8 @@ export function readAnalysisResult(bytes: Uint8Array, id: string, binding: strin
     if (bytes.length + (binary?.length ?? 0) > SOLID_RESULT_MAX_BYTES) return { ok: false, issue: 'resultTooLarge' };
     const solid = codecs[raw.kind].read(raw.result, binary);
     if (!solid.ok) return solid;
-    return { ok: true, value: { ...identity, kind: raw.kind, result: solid.result, mesh: solid.mesh } };
+    return { ok: true, value: { ...identity, kind: raw.kind, result: solid.result, mesh: solid.mesh,
+      ...(solid.prepared === undefined ? {} : { prepared: solid.prepared }) } };
   }
   if (raw.kind !== 'oofem-linear-beam-3d' || binary !== undefined) return { ok: false, issue: 'invalidResult' };
   const payload = codecs[raw.kind].read(raw.result, 'result');

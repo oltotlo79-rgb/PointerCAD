@@ -450,6 +450,17 @@ const magnitudeComparisonRule = {
   },
 };
 
+/**
+ * 許容差の lint の決まり(magnitudeComparisonRule)を効かせるパッケージ。toleranceBaseline.test.ts がこの行を読み、ここに無いパッケージと、
+ * 下の TOLERANCE_BASELINE_FILES を、許容差の検査の基準(toleranceBaseline.json・toleranceOriginalExtraBaseline.json)の数で見張る。
+ */
+const TOLERANCE_RULE_PACKAGES = ['kernel', 'model', 'ui', 'io', 'fem'];
+/**
+ * 決まりの対象のパッケージの中で、決まりを外し、基準の数で見張るファイル(toleranceBaseline.test.ts がこの行を読む)。
+ * splineInterpolation.ts は読み込み 0 の決まり(splineArithmeticBoundary.test.ts:42-44)で正本の関数を読めない(18 回目と同じ見張り方)。
+ */
+const TOLERANCE_BASELINE_FILES = ['packages/kernel/src/math/splineInterpolation.ts'];
+
 export default tseslint.config(
   {
     ignores: [
@@ -950,10 +961,8 @@ export default tseslint.config(
     rules: { 'record-guard/canonical': 'error' },
   },
   {
-    files: ['packages/{kernel,model,ui,io,fem}/src/**/*.{ts,tsx,mts,cts}'],
-    // splineInterpolation.ts は読み込み 0 の決まり(splineArithmeticBoundary.test.ts:42-44)で正本の関数を読めない。18 回目と同じく、
-    // 手書きの比べ 3 か所は許容差の検査の基準(toleranceBaseline.json・toleranceOriginalExtraBaseline.json の数)で見張る。
-    ignores: ['**/*.{test,testSupport,spec,d}.{ts,tsx,mts,cts}', 'packages/kernel/src/math/splineInterpolation.ts'],
+    files: [`packages/{${TOLERANCE_RULE_PACKAGES.join(',')}}/src/**/*.{ts,tsx,mts,cts}`],
+    ignores: ['**/*.{test,testSupport,spec,d}.{ts,tsx,mts,cts}', ...TOLERANCE_BASELINE_FILES],
     plugins: { tolerance: { rules: { comparison: magnitudeComparisonRule } } },
     rules: { 'tolerance/comparison': 'error' },
   },

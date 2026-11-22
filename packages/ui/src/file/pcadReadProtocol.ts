@@ -29,6 +29,7 @@ export function isPcadReadRequest(value: unknown): value is PcadReadRequest {
 const ERROR_CODES = {
   notZip: true, missingDocument: true, invalidJson: true, notPcad: true, unsupportedKind: true,
   unsupportedOldVersion: true, unsupportedNewVersion: true, versionMismatch: true, missingField: true, invalidField: true,
+  subAssemblyCycle: true, subAssemblyDepth: true,
 } satisfies Readonly<Record<ReadPcadFileErrorCode, true>>;
 
 function attachments(value: unknown): boolean {

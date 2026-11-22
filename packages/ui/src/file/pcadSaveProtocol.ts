@@ -2,6 +2,7 @@ import type { SaveDocumentInput, SaveEncodingStage } from '@pointercad/io';
 import { IO_LIMITS, THREE_MF_EXPORT_BYTE_LIMIT, THREE_MF_EXPORT_TIME_LIMIT_MS,
   type ThreeMfMeshInput } from '@pointercad/io';
 import { isNamedSavePoint, type CreatedSavePointListing, type NamedSavePoint, type SavePointErrorCode, type SavePointKind } from '../history/namedSavePoints.js';
+import { isSaveResultIssue, type SaveResultIssueReport } from './saveResultIssue.js';
 
 export interface PcadSaveRequest {
   readonly id: string;
@@ -12,10 +13,12 @@ export interface PcadSaveRequest {
    */
   readonly replyAsParts?: boolean;
 }
+/** 書き手が入れずに保存した解析の結果(1 件以上の時だけ載る)。 */
+interface SaveResultIssues { readonly analysisResultIssues?: readonly SaveResultIssueReport[] }
 export type PcadSaveReply =
   | { readonly id: string; readonly kind: 'progress'; readonly stage: SaveEncodingStage }
-  | { readonly id: string; readonly kind: 'success'; readonly bytes: Uint8Array }
-  | { readonly id: string; readonly kind: 'success'; readonly parts: readonly Uint8Array[] }
+  | ({ readonly id: string; readonly kind: 'success'; readonly bytes: Uint8Array } & SaveResultIssues)
+  | ({ readonly id: string; readonly kind: 'success'; readonly parts: readonly Uint8Array[] } & SaveResultIssues)
   | { readonly id: string; readonly kind: 'failure'; readonly message: string };
 
 /** 成功の中身は 1 つの並びか、空でない部分の並びのどちらか一方だけ。 */
@@ -25,11 +28,20 @@ function isSaveOutput(value: object): boolean {
     && value.parts.every((part: unknown) => part instanceof Uint8Array);
 }
 
+/** 書けなかった結果の欄は、無いか、id の文字と既知の符号の組が 1 件以上並ぶかのどちらか。 */
+function hasSaveResultIssues(value: object): boolean {
+  if (!('analysisResultIssues' in value)) return true;
+  const issues = value.analysisResultIssues;
+  return Array.isArray(issues) && issues.length > 0 && issues.every((item: unknown) => typeof item === 'object'
+    && item !== null && 'analysisId' in item && typeof item.analysisId === 'string' && 'issue' in item
+    && isSaveResultIssue(item.issue));
+}
+
 export function isPcadSaveReply(value: unknown): value is PcadSaveReply {
   if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string'
     || !('kind' in value)) return false;
   if (value.kind === 'progress') return 'stage' in value && (value.stage === 'preparing' || value.stage === 'compressing');
-  if (value.kind === 'success') return isSaveOutput(value);
+  if (value.kind === 'success') return isSaveOutput(value) && hasSaveResultIssues(value);
   return value.kind === 'failure' && 'message' in value && typeof value.message === 'string';
 }
 

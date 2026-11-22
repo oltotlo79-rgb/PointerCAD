@@ -1,4 +1,4 @@
-import React, { Children, isValidElement, type ReactNode } from 'react';
+import React, { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
@@ -14,6 +14,7 @@ import { extrudeFeature, resultFor, tick } from '../store/testing/createTestStor
 import { confirmExtrusion } from '../solid/extrudePreview.js';
 import { withExtrudeSuggestions } from '../solid/extrudeSuggestion.js';
 import { NumericMathDialog } from './NumericMathDialog.js';
+import { EdgeDistanceHoleInfo } from './EdgeDistanceHoleInfo.js';
 
 interface KeyInput {
   readonly key: string;
@@ -32,17 +33,23 @@ function keyInput(key: string, shiftKey = false): KeyInput {
     metaKey: false, altKey: false, preventDefault: vi.fn(), stopPropagation: vi.fn() };
 }
 
+function renderPanelProbe(render: (panel: ReactElement<NodeProps>) => ReactNode): string {
+  function Probe(): ReactNode {
+    const tree: ReactElement<NodeProps> | null = NumericInputPopover({ viewportWidth: 800, viewportHeight: 600 });
+    let content: ReactNode = null;
+    if (tree !== null) {
+      Children.forEach(tree.props.children, child => {
+        if (isValidElement<NodeProps>(child) && child.props.role === 'dialog') content = render(child);
+      });
+    }
+    return content;
+  }
+  return renderToStaticMarkup(<Probe />);
+}
+
 function panelHandler(): (event: KeyInput) => void {
   let handler: NodeProps['onKeyDown'];
-  function find(node: ReactNode): void {
-    Children.forEach(node, (child) => {
-      if (!isValidElement<NodeProps>(child)) return;
-      if (child.props.role === 'dialog') handler = child.props.onKeyDown;
-      find(child.props.children);
-    });
-  }
-  function Probe(): null { find(NumericInputPopover({ viewportWidth: 800, viewportHeight: 600 })); return null; }
-  renderToStaticMarkup(<Probe />);
+  renderPanelProbe(panel => { handler = panel.props.onKeyDown; return null; });
   if (handler === undefined) throw new Error('NumericInputPopover handler missing');
   return handler;
 }
@@ -113,6 +120,100 @@ describe('NumericInputPopover real React handler and store (node, not DOM)', () 
     expect(after.numericInput).toBe(before.numericInput);
     expect(preventDefault).not.toHaveBeenCalled();
     expect(stopPropagation).not.toHaveBeenCalled();
+  });
+});
+
+interface CollapseButtonProps {
+  readonly onClick: (event: { readonly currentTarget: { readonly focus: () => void } }) => void;
+}
+
+function probeEdgeDistance(clicks = 0) {
+  let infoKey: string | null | undefined;
+  let onKeyDown: NodeProps['onKeyDown'];
+  let remaining = clicks;
+  const focus = vi.fn();
+  function InfoProbe(): ReactElement<NodeProps> {
+    const info: ReactElement<NodeProps> = EdgeDistanceHoleInfo();
+    if (remaining > 0) {
+      const button = Children.toArray(info.props.children).find(node => isValidElement(node) && node.type === 'button');
+      if (!isValidElement<CollapseButtonProps>(button)) throw new Error('Edge distance collapse button missing');
+      // Node の描画で釦の実際の onClick を呼び、同じ部品の状態を再描画する。
+      remaining -= 1;
+      button.props.onClick({ currentTarget: { focus } });
+    }
+    return info;
+  }
+  const markup = renderPanelProbe(panel => {
+    onKeyDown = panel.props.onKeyDown;
+    Children.forEach(panel.props.children, child => {
+      if (isValidElement(child) && child.type === EdgeDistanceHoleInfo) infoKey = child.key;
+    });
+    return infoKey === undefined ? null : <InfoProbe />;
+  });
+  return { infoKey, markup, onKeyDown, focus };
+}
+
+describe('Edge-distance hole input collapse (M-10)', () => {
+  beforeEach(() => {
+    const input = createNumericInput('hole', 'holeSize', undefined, { initialHolePlacement: 'edge-distance' });
+    const values: Readonly<Record<string, string>> = { diameter: '6', depth: '10', holeEdgeDistance1: '8', holeEdgeDistance2: '5' };
+    const filled = input.fields.reduce((next, field, index) => {
+      const source = values[field.key];
+      return source === undefined ? next : reduceNumericInput(next, { type: 'edit', index, source });
+    }, input);
+    useAppStore.setState({ activeTool: 'hole', numericInput: filled, selection: [], partStager: null });
+  });
+
+  it('starts expanded and toggles both ways without changing the numeric draft', () => {
+    const before = useAppStore.getState().numericInput;
+    expect(probeEdgeDistance().markup).toContain('data-edge-distance-collapsed="false"');
+    const collapsed = probeEdgeDistance(1);
+    expect(collapsed.markup).toContain('data-edge-distance-collapsed="true"');
+    expect(collapsed.markup).toContain('aria-expanded="false"');
+    expect(collapsed.markup).toContain(t('numericInput.edgeDistance.edge2'));
+    expect(collapsed.markup).toContain(t('numericInput.edgeDistance.expand'));
+    expect(collapsed.markup).toContain(t('controlGuide.button.numericEdgeDistanceExpand'));
+    expect(collapsed.focus).toHaveBeenCalledOnce();
+    const expanded = probeEdgeDistance(2);
+    expect(expanded.markup).toContain('data-edge-distance-collapsed="false"');
+    expect(expanded.markup).toContain('aria-expanded="true"');
+    expect(expanded.markup).toContain(t('numericInput.edgeDistance.collapse'));
+    expect(expanded.markup).toContain(t('controlGuide.button.numericEdgeDistanceCollapse'));
+    expect(useAppStore.getState().numericInput).toBe(before);
+  });
+
+  it('starts expanded for a new stage and unmounts when placement changes', () => {
+    const collapsed = probeEdgeDistance(1);
+    expect(collapsed.infoKey).toBe('hole:holeSize');
+    expect(collapsed.markup).toContain('data-edge-distance-collapsed="true"');
+    const next = createNumericInput('threadHole', 'threadSize', undefined, { initialHolePlacement: 'edge-distance' });
+    useAppStore.setState({ activeTool: 'threadHole', numericInput: next });
+    const reopened = probeEdgeDistance();
+    expect(reopened.infoKey).toBe('threadHole:threadSize');
+    expect(reopened.markup).toContain('aria-expanded="true"');
+    useAppStore.setState({ numericInput: chooseNumericInput(next, 'holePlacement', 'plane-face') });
+    expect(probeEdgeDistance().infoKey).toBeUndefined();
+    useAppStore.setState({ numericInput: next });
+    expect(probeEdgeDistance().markup).toContain('aria-expanded="true"');
+  });
+
+  it('routes Enter to hole confirmation and Escape to cancel while collapsed', () => {
+    const before = useAppStore.getState();
+    const { markup, onKeyDown } = probeEdgeDistance(1);
+    expect(markup).toContain('aria-expanded="false"');
+    if (onKeyDown === undefined) throw new Error('NumericInputPopover handler missing');
+    const enter = keyInput('Enter');
+    onKeyDown(enter);
+    expect(enter.preventDefault).toHaveBeenCalledOnce();
+    // 面を選んでいないので、穴の確定処理まで届いたときだけこの理由が出る。
+    expect(useAppStore.getState().solidErrorKey).toBe('machiningError.noFace');
+    expect(useAppStore.getState().numericInput).not.toBeNull();
+    const escape = keyInput('Escape');
+    onKeyDown(escape);
+    expect(escape.preventDefault).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().numericInput).toBeNull();
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
   });
 });
 

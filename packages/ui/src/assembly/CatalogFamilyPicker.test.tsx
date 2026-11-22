@@ -378,7 +378,7 @@ describe('選ぶ窓の機械要素', () => {
     expect(submit(nodes)?.options).toEqual({ family: 't-slot-frame-series', item: 's6-20x20', length: '1000' });
     expect(useAppStore.getState().assembly?.components.at(-1)?.name).toBe('アルミフレーム 溝幅 6 20×20×1000:1');
     const cells = stockTable().filter((item) => item.type === 'td').map((item) => item.props.children);
-    expect(cells).toEqual([t('catalog.frame.kind.tSlotSeries'), '溝幅 6 20×20', '1000', '1', '1000', '490.00 g']);
+    expect(cells).toEqual([t('catalog.frame.kind.tSlotSeries'), '溝幅 6 20×20', '1000', '1', '1000', '490 g']);
   });
 
   it('アルミフレームの汎用の部品(直角のブラケット・T 溝用のナット)は欄で作って置け、部品に材質が付き、作れない組は置かない', async () => {

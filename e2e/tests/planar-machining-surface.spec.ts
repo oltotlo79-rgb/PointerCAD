@@ -1,7 +1,7 @@
 import { test } from './browserLifecycle.testSupport.js';
 import { PLANAR_OPERATIONS } from './planarMachiningOracle.js';
 import { buildPlanarCreate, buildPlanarEdgeDistance, buildPlanarEdgePairFirst, buildPlanarTwoFixture, buildPlanarMissingReference,
-  planarTitle, reopenPlanarUi } from './planarMachiningFlow.js';
+  buildPlanarEdgeDistanceCollapse, planarTitle, reopenPlanarUi } from './planarMachiningFlow.js';
 
 for (const operation of PLANAR_OPERATIONS) {
   test(planarTitle('Web', operation, 'create'), async ({ page }, info) => {
@@ -28,4 +28,7 @@ test(planarTitle('Web', 'plain', 'missing-reference'), async ({ page }, info) =>
 });
 test(planarTitle('Web', 'plain', 'edge-pair-first'), async ({ page }, info) => {
   await buildPlanarEdgePairFirst(page, info, '/', 'plain');
+});
+test('M-10 Web edge-distance: collapse during selection and confirm a hole with Enter', async ({ page }, info) => {
+  await buildPlanarEdgeDistanceCollapse(page, info, '/');
 });

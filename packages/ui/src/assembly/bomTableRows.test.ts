@@ -23,17 +23,23 @@ function row(extra: Partial<BomRow> = {}): BomRow {
 }
 
 describe('formatBomMass', () => {
-  it('gを小数2桁で表示する', () => {
-    expect(formatBomMass(62.8)).toBe('62.80 g');
+  it('gを有効6桁で表示する', () => {
+    expect(formatBomMass(62.8)).toBe('62.8 g');
   });
 
-  it('1000g以上をkgへ切り替える', () => {
-    expect(formatBomMass(1000)).toBe('1.00 kg');
-    expect(formatBomMass(1256)).toBe('1.26 kg');
+  it('1000 g以上をkgへ切り替える', () => {
+    expect(formatBomMass(1000)).toBe('1 kg');
+    expect(formatBomMass(1256)).toBe('1.256 kg');
   });
 
   it('負の大きな値も絶対値1000gを境にkgへ切り替える', () => {
-    expect(formatBomMass(-1500)).toBe('-1.50 kg');
+    expect(formatBomMass(-1500)).toBe('-1.5 kg');
+  });
+
+  it('有効6桁に丸めたgの値で単位を切り替える', () => {
+    expect(formatBomMass(999.9994)).toBe('999.999 g');
+    expect(formatBomMass(999.9996)).toBe('1 kg');
+    expect(formatBomMass(-999.9996)).toBe('-1 kg');
   });
 
   it('nullと有限でない値は空欄にする', () => {
@@ -41,8 +47,9 @@ describe('formatBomMass', () => {
     expect(formatBomMass(Number.NaN)).toBe('');
   });
 
-  it('負のゼロを0.00gと表示する', () => {
-    expect(formatBomMass(-0)).toBe('0.00 g');
+  it('負のゼロと許容差以内の端数を0 gと表示する', () => {
+    expect(formatBomMass(-0)).toBe('0 g');
+    expect(formatBomMass(1e-7)).toBe('0 g');
   });
 });
 
@@ -65,8 +72,14 @@ describe('bomTableRows', () => {
 
   it('番号・名前・数量・材質・合計質量を各セルへ変換する', () => {
     expect(bomTableRows([row()], [])[0]?.cells).toEqual({
-      number: '1', name: 'ブラケット', quantity: '2', material: 'steel', mass: '125.60 g', configuration: '',
+      number: '1', name: 'ブラケット', quantity: '2', material: 'steel', mass: '125.6 g', configuration: '',
     });
+  });
+
+  it('質量セルの説明に丸める前のgの値を渡す', () => {
+    const tableRow = bomTableRows([row({ massTotal: 999.9996 })], [])[0];
+    expect(tableRow?.cells.mass).toBe('1 kg');
+    expect(tableRow?.massTitle).toBe('999.9996 g');
   });
 
   it('現在の構成名を構成列へ表示する', () => {
@@ -87,6 +100,7 @@ describe('bomTableRows', () => {
   it('質量nullを文字列nullやNaNにせず空欄にする', () => {
     const tableRow = bomTableRows([row({ massEach: null, massTotal: null })], [])[0];
     expect(tableRow?.cells.mass).toBe('');
+    expect(tableRow?.massTitle).toBeUndefined();
   });
 
   it('対応部品のどれかが選択中なら行を選択状態にする', () => {

@@ -40,6 +40,7 @@ import type {
   SectionHandle,
 } from './createSolidLayer.js';
 import type { SectionPlaneNumbers } from './sectionView.js';
+import type { FaceOffsetArrow } from './solidLayerFaceHandle.js';
 import type { GridSetting } from '../settings/gridSetting.js';
 import { gridSpacing } from './gridMath.js';
 import type { ThemeColors } from './themeColors.js';
@@ -243,6 +244,11 @@ export interface ViewportScene {
    * 呼び出し側は予告の値を毎回作り直さず、変わったときだけ新しい値を渡す。
    */
   setCutPreview(preview: CutPreview | null): void;
+  /**
+   * 面の移動の矢印のつまみ(M-05 4-2a)を差し替える。`null` で消える。切断の予告と同じく、描くのは
+   * 立体の受領が今のままの時だけ。**形は変えない**(位置はその場入力の距離から決まる)。
+   */
+  setFaceOffsetHandle(handle: FaceOffsetArrow | null): void;
   /**
    * ビューの断面表示(FR-111)を差し替える。`null` で切る(元に戻る)。
    *

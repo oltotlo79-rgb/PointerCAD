@@ -1,6 +1,7 @@
 import { readDocumentBundle } from '@pointercad/io';
 import { partLibraryOfBundle, replaceSource, type DrawingSourceInput } from '@pointercad/model';
-import { openErrorMessageKey } from '../file/partFile.js';
+import { openErrorMessage } from '../file/partFile.js';
+import { messageText } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 
@@ -18,7 +19,7 @@ export async function refreshDrawingSource(): Promise<boolean> {
     if (picked === null || !current()) return false;
     const read = await readDocumentBundle(picked.bytes, drawing.source.sourceKind);
     if (!current()) return false;
-    if (!read.ok) { before.setDrawingMessage(t(openErrorMessageKey(read.error.code))); return false; }
+    if (!read.ok) { before.setDrawingMessage(messageText(openErrorMessage(read.error.code))); return false; }
     const bundle = read.bundle;
     const input: DrawingSourceInput = bundle.kind === 'part'
       ? { sourceKind: 'part', document: bundle.document, attachments: bundle.attachments,

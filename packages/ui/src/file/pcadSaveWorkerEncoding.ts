@@ -1,6 +1,7 @@
 import { encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput, type SaveEncodingControl,
   type SaveEncodingStage } from '@pointercad/io';
 import type { DrawingSourceInput } from '@pointercad/model';
+import type { SaveResultIssueReport } from './saveResultIssue.js';
 
 /**
  * 保存 Worker の中だけで使う(E24)。Worker が受け取る入力は全て転送か複製で来た Worker 自身の写しで、
@@ -65,6 +66,8 @@ export function releaseOwnedMeshCopies(input: SaveDocumentInput): number {
   readonly bytes: Uint8Array;
   /** 圧縮の前に手放した三角形の写しの容量。 */
   readonly releasedMeshBytes: number;
+  /** 書き手が入れずに保存した解析の結果(主スレッドへ返して理由を出す)。 */
+  readonly analysisResultIssues: readonly SaveResultIssueReport[];
 }
 
 interface OwnedSavePartsEncoding {
@@ -72,28 +75,33 @@ interface OwnedSavePartsEncoding {
   readonly parts: readonly Uint8Array[];
   /** 圧縮の前に手放した三角形の写しの容量。 */
   readonly releasedMeshBytes: number;
+  /** 書き手が入れずに保存した解析の結果(主スレッドへ返して理由を出す)。 */
+  readonly analysisResultIssues: readonly SaveResultIssueReport[];
 }
 
 /** 全体の道と部分の並びの道で同じ手放し方をする。項目ができた直後(圧縮の前)に三角形の写しを手放す。 */
 async function encodeOwned<Encoded>(input: SaveDocumentInput, onProgress: (stage: SaveEncodingStage) => void,
   encode: (input: SaveDocumentInput, control: SaveEncodingControl) => Promise<Encoded>,
-): Promise<{ readonly encoded: Encoded; readonly releasedMeshBytes: number }> {
+): Promise<{ readonly encoded: Encoded; readonly releasedMeshBytes: number;
+  readonly analysisResultIssues: readonly SaveResultIssueReport[] }> {
   let releasedMeshBytes = 0;
+  const analysisResultIssues: SaveResultIssueReport[] = [];
   const encoded = await encode(input, { onProgress,
-    onEntriesBuilt: () => { releasedMeshBytes = releaseOwnedMeshCopies(input); } });
-  return { encoded, releasedMeshBytes };
+    onEntriesBuilt: () => { releasedMeshBytes = releaseOwnedMeshCopies(input); },
+    onAnalysisResultIssue: (analysisId, issue) => { analysisResultIssues.push({ analysisId, issue }); } });
+  return { encoded, releasedMeshBytes, analysisResultIssues };
 }
 
 /** Worker が所有する入力を符号化し、1 つの並びで返す。 */
 export async function encodeOwnedSaveInput(input: SaveDocumentInput,
   onProgress: (stage: SaveEncodingStage) => void): Promise<OwnedSaveEncoding> {
-  const { encoded, releasedMeshBytes } = await encodeOwned(input, onProgress, encodeSaveDocument);
-  return { bytes: encoded, releasedMeshBytes };
+  const { encoded, releasedMeshBytes, analysisResultIssues } = await encodeOwned(input, onProgress, encodeSaveDocument);
+  return { bytes: encoded, releasedMeshBytes, analysisResultIssues };
 }
 
 /** Worker が所有する入力を符号化し、全体の並びを作らずに部分の並びで返す(部品の保存で部分のまま書く道)。 */
 export async function encodeOwnedSaveInputParts(input: SaveDocumentInput,
   onProgress: (stage: SaveEncodingStage) => void): Promise<OwnedSavePartsEncoding> {
-  const { encoded, releasedMeshBytes } = await encodeOwned(input, onProgress, encodeSaveDocumentParts);
-  return { parts: encoded, releasedMeshBytes };
+  const { encoded, releasedMeshBytes, analysisResultIssues } = await encodeOwned(input, onProgress, encodeSaveDocumentParts);
+  return { parts: encoded, releasedMeshBytes, analysisResultIssues };
 }

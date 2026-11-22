@@ -136,3 +136,69 @@ describe('saved static solid analysis', () => {
     }
   });
 });
+
+/** The solver input of the CAD path for the sample mesh: its nodes and elements are the mesh's own. */
+function withPrepared(saved: Solid, traction: readonly [number, number, number] = [0, 0, -1]): Solid {
+  const { coordinates, tetrahedra } = saved.mesh;
+  const nodes = [0, 1, 2, 3].map(i => [coordinates[3 * i], coordinates[3 * i + 1], coordinates[3 * i + 2]] as const);
+  const prepared: NonNullable<Solid['prepared']> = { loadedAreaMm2: 0.5, totalForceN: [0, 0, -0.5], input: {
+    schema: 'pointercad-solid-tet4/1', source: saved.result.source, units: 'N-mm-MPa', numericBudgetBytes: 3000, nodes,
+    elements: [{ materialId: 'steel', nodes: [tetrahedra[0], tetrahedra[1], tetrahedra[2], tetrahedra[3]] }],
+    materials: [{ id: 'steel', youngMPa: 205000, poisson: 0.3 }],
+    constraints: [{ node: 0, fixed: [true, true, true] }, { node: 3, fixed: [true, false, true], prescribedMm: [0.25, 0, 0] }],
+    gravity: { accelerationMps2: [0, 0, -9.80665], densities: [{ materialId: 'steel', densityKgM3: 7850 }] },
+    nodalLoads: [{ node: 2, forceN: [1, 0, 0] }], surfaceLoads: [{ nodes: [0, 1, 2], tractionMPa: traction }] } };
+  return { ...saved, prepared };
+}
+
+describe('the solver input kept with a saved static solid result', () => {
+  it('rebuilds the nodes and elements from the mesh and writes the same bytes again', () => {
+    const saved = withPrepared(sample('p'));
+    const encoded = serializeAnalysisResult(saved, id, binding);
+    if (!encoded.ok || !encoded.binary) throw new Error('Expected a solid pair');
+    const read = readAnalysisResult(encoded.json, id, binding, encoded.binary);
+    if (!read.ok) throw new Error(read.issue);
+    expect(read.value).toStrictEqual({ ...saved, bindingSha256: binding });
+    expect(serializeAnalysisResult(read.value, id, binding)).toEqual(encoded);
+    // The section adds 16 count bytes, 8 per support, 24 per prescribed displacement, 36 per loaded face and 28 per nodal load.
+    const bare = serializeAnalysisResult(sample('p'), id, binding);
+    if (!bare.ok || !bare.binary) throw new Error('Expected a solid pair');
+    expect(encoded.binary.length - bare.binary.length).toBe(16 + 2 * 8 + 24 + 36 + 28);
+  });
+
+  it('stores a negative zero load as zero, which the input digest already treats as the same JSON text', () => {
+    const encoded = serializeAnalysisResult(withPrepared(sample('p'), [-0, 0, -1]), id, binding);
+    if (!encoded.ok || !encoded.binary) throw new Error('Expected a solid pair');
+    const read = readAnalysisResult(encoded.json, id, binding, encoded.binary);
+    if (!read.ok || read.value.kind !== 'oofem-linear-solid-tet4') throw new Error('Expected a solid result');
+    expect(Object.is(read.value.prepared?.input.surfaceLoads[0]?.tractionMPa[0], 0)).toBe(true);
+    expect(JSON.stringify(read.value.prepared?.input.surfaceLoads)).toBe(JSON.stringify([{ nodes: [0, 1, 2], tractionMPa: [-0, 0, -1] }]));
+  });
+
+  it.each(['material', 'node'] as const)('refuses to write a solver input that is not the mesh (%s)', change => {
+    const saved = withPrepared(sample('p')), prepared = saved.prepared;
+    if (prepared === undefined) throw new Error('Expected a solver input');
+    const input = change === 'material'
+      ? { ...prepared.input, elements: [{ ...prepared.input.elements[0], materialId: 'other' }] }
+      : { ...prepared.input, nodes: [[0.5, 0, 0] as const, ...prepared.input.nodes.slice(1)] };
+    expect(serializeAnalysisResult({ ...saved, prepared: { ...prepared, input } }, id, binding)).toEqual({ ok: false, issue: 'invalidResult' });
+  });
+
+  it.each(['missing scalars', 'missing section', 'no fixed axis'] as const)('drops a result whose two halves disagree (%s)', change => {
+    const kept = serializeAnalysisResult(withPrepared(sample('p')), id, binding);
+    const bare = serializeAnalysisResult(sample('p'), id, binding);
+    if (!kept.ok || !kept.binary || !bare.ok || !bare.binary) throw new Error('Expected solid pairs');
+    const { raw, payload } = record(kept.json);
+    let binary = kept.binary;
+    if (change === 'missing scalars') delete payload.solverInput;
+    if (change === 'missing section') binary = bare.binary;
+    if (change === 'no fixed axis') {
+      binary = kept.binary.slice();
+      const section = bare.binary.length;
+      new DataView(binary.buffer).setUint32(section + 16 + 4, 8, true);
+    }
+    payload.byteLength = binary.length;
+    payload.binarySha256 = sha256HexSync(binary);
+    expect(readAnalysisResult(strToU8(JSON.stringify(raw)), id, binding, binary)).toEqual({ ok: false, issue: 'invalidResult' });
+  });
+});

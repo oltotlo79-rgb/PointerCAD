@@ -162,7 +162,7 @@ export function BomTable(): React.JSX.Element {
                   }}
                 >
                   {document.bom.columns.map((column) => (
-                    <td key={column}>{row.cells[column]}</td>
+                    <td key={column} title={column === 'mass' ? row.massTitle : undefined}>{row.cells[column]}</td>
                   ))}
                 </tr>
               ))}

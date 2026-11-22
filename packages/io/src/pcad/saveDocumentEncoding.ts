@@ -7,6 +7,7 @@ import { documentBundleEntries, pcadEntries, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_E
   type WriteDocumentBundleOptions, type WritePcadFileOptions, type WritePcaddFileOptions } from './pcadFile.js';
 import { concatZipParts, hasSteppedZipEntry, zipEntriesWithOwnedBuffersPartsAsync, type ZipStepEntry } from './zipSteps.js';
 import { ARCHIVE_TOO_LARGE_MESSAGE } from './readArchive.js';
+import type { AnalysisResultIssue } from './codecs/analysisResult.js';
 
 export type SaveDocumentInput =
   | { readonly kind: 'part'; readonly document: PartDocument; readonly options: WritePcadFileOptions }
@@ -24,6 +25,11 @@ export interface SaveEncodingControl {
    * 符号化済みなので、この時点の後は入力の三角形の配列を読まない。入力の原本を持つ呼び出し側は使わない。
    */
   readonly onEntriesBuilt?: () => void;
+  /**
+   * 解析の結果を書けなかった時に、結果の id と理由の符号で 1 件ずつ呼ぶ。書き手はその結果を入れずに保存を続ける
+   * (文書は保存できる)。保存 Worker は集めた符号を成功の返信に載せ、主スレッドの呼び出し側へ同じ形で渡す。
+   */
+  readonly onAnalysisResultIssue?: (analysisId: string, issue: AnalysisResultIssue) => void;
 }
 export type SaveDocumentEncoder = (input: SaveDocumentInput, control?: SaveEncodingControl) => Promise<Uint8Array>;
 /**
@@ -49,8 +55,11 @@ function ownedPartMeshBuffers(input: SaveDocumentInput,
 export const encodeSaveDocumentParts: SaveDocumentPartsEncoder = async (input, control = {}) => {
   control.signal?.throwIfAborted();
   control.onProgress?.('preparing');
-  const entries = input.kind === 'part' ? pcadEntries(input.document, input.options)
-    : input.kind === 'assembly' ? await documentBundleEntries(input.bundle, input.options)
+  const report = control.onAnalysisResultIssue;
+  const withReport = <T extends object>(options: T): T => report === undefined ? options
+    : { ...options, onAnalysisResultIssue: report };
+  const entries = input.kind === 'part' ? pcadEntries(input.document, withReport(input.options))
+    : input.kind === 'assembly' ? await documentBundleEntries(input.bundle, withReport(input.options))
       : input.kind === 'drawingTemplate' ? drawingTemplateEntries(input.template, input.savedAt)
         : await drawingBundleEntries(input.document, input.options);
   control.signal?.throwIfAborted();

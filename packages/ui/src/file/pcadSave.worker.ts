@@ -4,6 +4,7 @@ import { createIndexedDbSavePointStorage } from '../history/namedSavePointStorag
 import { isPcadSavePointRequest, isPcadThreeMfRequest, type PcadSavePointReply, type PcadSavePointRequest,
   type PcadSaveReply, type PcadWorkerRequest } from './pcadSaveProtocol.js';
 import { encodeOwnedSaveInput, encodeOwnedSaveInputParts } from './pcadSaveWorkerEncoding.js';
+import type { SaveResultIssueReport } from './saveResultIssue.js';
 
 let activePoint: { readonly id: string; readonly controller: AbortController } | null = null;
 const points = createNamedSavePoints(createIndexedDbSavePointStorage());
@@ -24,6 +25,11 @@ function partsTransfer(parts: readonly Uint8Array[]): ArrayBuffer[] {
     buffers.add(part.buffer);
   }
   return [...buffers];
+}
+
+/** 書けなかった解析の結果は、1 件以上ある時だけ成功の返信に載せる(無い時の返信は今までと同じ)。 */
+function issuesOf(issues: readonly SaveResultIssueReport[]): { readonly analysisResultIssues?: readonly SaveResultIssueReport[] } {
+  return issues.length === 0 ? {} : { analysisResultIssues: issues };
 }
 
 async function savePoint(request: PcadSavePointRequest, signal: AbortSignal): Promise<PcadSavePointReply> {
@@ -99,18 +105,18 @@ self.onmessage = (event: MessageEvent<PcadWorkerRequest>): void => {
   };
   if (event.data.replyAsParts === true) {
     // 部分の並びのまま移す。全体の並びを作らないので、部分と全体の写しが同時に残る山を作らない。
-    void encodeOwnedSaveInputParts(input, stage => send({ id, kind: 'progress', stage })).then(({ parts }) => {
-      send({ id, kind: 'success', parts }, partsTransfer(parts));
+    void encodeOwnedSaveInputParts(input, stage => send({ id, kind: 'progress', stage })).then(({ parts, analysisResultIssues }) => {
+      send({ id, kind: 'success', parts, ...issuesOf(analysisResultIssues) }, partsTransfer(parts));
     }).catch((error: unknown) => {
       send({ id, kind: 'failure', message: error instanceof Error ? error.message : String(error) });
     });
     return;
   }
   // 入力はこのWorkerの写しだけ。項目ができた時点で三角形の写しを手放してから圧縮する(E24)。
-  void encodeOwnedSaveInput(input, stage => send({ id, kind: 'progress', stage })).then(({ bytes }) => {
+  void encodeOwnedSaveInput(input, stage => send({ id, kind: 'progress', stage })).then(({ bytes, analysisResultIssues }) => {
     // エンコーダーが所有する出力だけを渡す。入力の原本はこのWorkerには存在しない。
     if (!(bytes.buffer instanceof ArrayBuffer)) throw new Error('Unexpected shared save output');
-    send({ id, kind: 'success', bytes }, [bytes.buffer]);
+    send({ id, kind: 'success', bytes, ...issuesOf(analysisResultIssues) }, [bytes.buffer]);
   }).catch((error: unknown) => {
     send({ id, kind: 'failure', message: error instanceof Error ? error.message : String(error) });
   });

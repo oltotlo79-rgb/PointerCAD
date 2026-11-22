@@ -1,4 +1,6 @@
 /** Stored value contracts. The solver supplies these values structurally. */
+import type { AnalysisMaterialCapacity } from './analysisModel.js';
+
 type SolidVector3 = readonly [number, number, number];
 
 type SolidVector6 = readonly [number, number, number, number, number, number];
@@ -106,8 +108,44 @@ interface TetraMeshResult {
   readonly minTetVolumeMm3: number;
 }
 
+/** The solver input of the CAD path: the tet4 nodes and elements are the mesh's own coordinates and tetrahedra. */
+interface SolidAnalysisInput {
+  readonly schema: 'pointercad-solid-tet4/1';
+  readonly source: SolidSource;
+  readonly units: 'N-mm-MPa';
+  readonly numericBudgetBytes: number;
+  readonly nodes: readonly SolidVector3[];
+  readonly elements: readonly { readonly nodes: readonly [number, number, number, number]; readonly materialId: string }[];
+  readonly materials: readonly {
+    readonly id: string;
+    readonly youngMPa: number;
+    readonly poisson: number;
+    readonly capacity?: AnalysisMaterialCapacity;
+  }[];
+  readonly constraints: readonly {
+    readonly node: number;
+    readonly fixed: readonly [boolean, boolean, boolean];
+    readonly prescribedMm?: SolidVector3;
+  }[];
+  readonly gravity?: {
+    readonly accelerationMps2: SolidVector3;
+    readonly densities: readonly { readonly materialId: string; readonly densityKgM3: number }[];
+  };
+  readonly nodalLoads: readonly { readonly node: number; readonly forceN: SolidVector3 }[];
+  readonly surfaceLoads: readonly { readonly nodes: readonly [number, number, number]; readonly tractionMPa: SolidVector3 }[];
+}
+
+/** What the solver was given, kept so a reopened result shows the same loads, supports and degrees of freedom.
+ * A reader checks it against result.inputSha256 before using it; files saved without it remain readable. */
+interface SolidPrepared {
+  readonly input: SolidAnalysisInput;
+  readonly loadedAreaMm2: number;
+  readonly totalForceN: SolidVector3;
+}
+
 export interface SavedSolidPayload {
   readonly kind: SolidAnalysisResult['kind'];
   readonly result: SolidAnalysisResult;
   readonly mesh: TetraMeshResult;
+  readonly prepared?: SolidPrepared;
 }

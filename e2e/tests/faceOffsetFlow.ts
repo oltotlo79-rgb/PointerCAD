@@ -1,6 +1,7 @@
 import { volumeNumber } from './workPlaneCaptureSupport.js';
 /* ホーム視点の写し(solid.spec.ts の P3 節と同じ数値・同じ組み立て。この検査も視点を動かさない)。 */
 import { clickWorldPoint } from './homeViewProjection.js';
+import { homeViewPagePoint } from './boltedJointTestSupport.js';
 import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 
@@ -536,4 +537,102 @@ async function makeThroughHole(page: Page): Promise<void> {
   await expect(popover(page)).toHaveCount(0);
   await expect(solidRow(page, '穴1')).toBeVisible();
   await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+}
+
+/**
+ * 面の移動の矢印のつまみ(M-05 4-2a)。板(40×30×10)の右の端面(重心 (40, 15, 5)、外向きの法線 +X)を選んで「面の移動」の
+ * 入力欄を開き、5 を打つと、つまみの根もとは (45, 15, 5) へ動く(打った数が優先)。そこを掴んで引くと距離の欄の数が動き、
+ * 掴んだまま Esc を押すと掴む前の 5 へ戻って窓は開いたまま。もう一度掴んで内へ押して離すと欄は約 -3 になるが、形の計算は
+ * しない(行は増えない)。Enter で確定すると、面の移動の 1 段が欄の数どおりの体積で入る。
+ * 裏づけ:
+ * - 選ぶ手順は上の faceOffsetFlow の 3)〜4)(「面の移動」を押すと選ぶものが「面」へ切り替わる → 端面を押す → もう一度押す)と同じ。
+ * - つまみの位置: solid/faceOffsetHandle.ts の faceOffsetHandleOf(重心 + 外向きの法線 × 欄の距離。距離は確定と同じ
+ *   previewSolidCommit で読む)。画面の位置は既定の視点の写し(homeViewProjection.ts の worldToCanvas。この検査も視点を動かさない)。
+ * - 掴める所: viewport/faceOffsetHandleDrag.ts の begin(根もとの 18px。sectionHandleDrag.ts の HANDLE_PICK_RADIUS_PIXELS)。
+ *   押下の順は sketchInteractionResources.ts の onPointerDown(つまみ → 断面のつまみ → 今までの当たり判定)。
+ * - 窓の位置: 端面を押した時の画面の外形を避けて開く(NumericInputPopover.tsx の placePopover、M-10 ①)。押す点が窓に覆われて
+ *   いない事は、押す前に確かめる(pressHandle)。動かす間はポインタを捕まえてある(setPointerCapture)。
+ * - 欄の数: faceOffsetHandleDrag.ts の writeDistance(表示の単位で小数 3 桁。打鍵と同じ reduceNumericInput の edit)。
+ *   引いた距離は画素の丸めで少しずれるので、±0.5 で確かめ、確定の体積は欄に入った数から求める。
+ * - Esc: sketchInteractionResources.ts の onGrabEscape(window の捕捉の段で入力欄の Esc より先に受け、掴む前の入力欄へ戻す)。
+ * - 欄の名前・題・既定の距離は上の faceOffsetFlow と同じ(題「面を動かす」、既定 1)。
+ */
+export async function faceOffsetHandleFlow(page: Page, entry: string): Promise<void> {
+  const errors = collectErrors(page);
+  await disableFilePickers(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(entry);
+  await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+  await drawRectangle(page, ['0', '0'], ['40', '30']);
+  await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+  await extrudeFace(page, '面1', null);
+  await solidRow(page, '押し出し1').click();
+  await expect(propertyValue(page, '体積')).toHaveAttribute('title', `${String(BOARD_VOLUME)} ${VOLUME_UNIT}`, {
+    timeout: KERNEL_TIMEOUT_MS,
+  });
+
+  // faceOffsetFlow の 3)〜4) と同じ手順で、右の端面(x = 40)を選んで「面の移動」の入力欄を開く。
+  await openToolMenu(page, '加工');
+  const faceOffsetButton = machiningTool(page, '面の移動');
+  await faceOffsetButton.click({ force: true });
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
+  await clickWorldPoint(page, [40, 15, 5]);
+  await openToolMenu(page, '加工');
+  await expect(faceOffsetButton).toBeEnabled();
+  await faceOffsetButton.click();
+  await expect(popoverTitle(page)).toHaveText('面を動かす');
+  const distance = popoverInputs(page).first();
+  await expect(distance).toHaveValue('1');
+
+  // 打った数が優先: 5 を打つと、つまみの根もとは (45, 15, 5) へ動く(動いていなければ下で掴んでも 10 にならない)。
+  await fillFields(page, ['5']);
+
+  // (a) 掴んで外へ x = 50 まで引くと欄は約 10。掴んだまま Esc を押すと 5 へ戻り、窓は閉じない。
+  await pressHandle(page, [45, 15, 5]);
+  await moveHandle(page, [50, 15, 5]);
+  await expectDistanceNear(distance, 10);
+  await page.keyboard.press('Escape');
+  await expect(distance).toHaveValue('5');
+  await page.mouse.up();
+  await expect(popoverTitle(page)).toHaveText('面を動かす');
+  await expect(distance).toHaveValue('5');
+
+  // (b) もう一度掴んで内へ x = 37 まで押して離すと欄は約 -3。離しても形は計算しない(面の移動の行は増えない)。
+  await pressHandle(page, [45, 15, 5]);
+  await moveHandle(page, [37, 15, 5]);
+  await page.mouse.up();
+  const dragged = await expectDistanceNear(distance, -3);
+  await expect(solidRows(page)).toHaveCount(1);
+  await expect(solidRow(page, '面の移動1')).toHaveCount(0);
+
+  // (c) Enter で確定すると、面の移動の 1 段が欄の数どおりの体積で入る(確定は今までの道のまま)。
+  await commitPopover(page);
+  await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
+  await expect(solidRow(page, '面の移動1')).toBeVisible();
+  await expectVolume(page, BOARD_VOLUME + dragged * END_FACE_AREA);
+  expect(errors).toEqual([]);
+}
+
+/** つまみの根もと(ワールドの点)が写る所を押して掴む。押す前に、その画素の一番上が 3D の canvas(窓に覆われていない)事を確かめる。 */
+async function pressHandle(page: Page, world: readonly [number, number, number]): Promise<void> {
+  const [x, y] = await homeViewPagePoint(page, world);
+  expect(await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.matches('canvas.pcad-viewport__canvas') ?? false,
+    [x, y] as const), `つまみの根もと ${world.join(',')} が窓に覆われている`).toBe(true);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+}
+
+/** 掴んだまま、ワールドの点が写る所までポインタを動かす(numericInputDragCaptureFlow.ts の dragHeading と同じ steps の動かし方)。 */
+async function moveHandle(page: Page, world: readonly [number, number, number]): Promise<void> {
+  const [x, y] = await homeViewPagePoint(page, world);
+  await page.mouse.move(x, y, { steps: 8 });
+}
+
+/** 距離の欄が `expected` ± 0.5 になるのを待ち、入った数を返す(画素の丸めのぶんだけずれる)。 */
+async function expectDistanceNear(distance: Locator, expected: number): Promise<number> {
+  await expect.poll(async () => Math.abs(Number.parseFloat(await distance.inputValue()) - expected), {
+    message: `距離の欄が ${String(expected)} ± 0.5 になること`,
+  }).toBeLessThanOrEqual(0.5);
+  return Number.parseFloat(await distance.inputValue());
 }

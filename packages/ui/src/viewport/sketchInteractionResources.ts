@@ -12,6 +12,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import type { ResolvedSketch } from '@pointercad/model';
 import type { OrbitState } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
+import { createFaceOffsetHandleDrag, type FaceOffsetHandleDrag } from './faceOffsetHandleDrag.js';
 import { pickSketchDragTarget } from './pickSketchDragTarget.js';
 import { createSectionHandleDrag } from './sectionHandleDrag.js';
 import type { SketchDragTiming } from './sketchDragTiming.js';
@@ -57,13 +58,15 @@ interface SketchInteractionOptions {
 interface InputContext extends SketchInteractionOptions {
   readonly lifetime: { disposed: boolean; activePointerId: number | null };
   readonly section: ReturnType<typeof createSectionHandleDrag>;
+  /** 面の移動の矢印のつまみ(M-05 4-2a)。 */
+  readonly faceHandle: FaceOffsetHandleDrag;
   readonly drag: ReturnType<typeof createSketchDragSession>;
   readonly pointerPosition: (event: PointerEvent) => Pointer;
   readonly releaseActiveCapture: () => void;
 }
 
 function createPointerMoveHandler(context: InputContext): (event: PointerEvent) => void {
-  const { lifetime, project, indicators, section, drag, isCameraDragging, pointerPosition, releaseActiveCapture,
+  const { lifetime, project, indicators, section, faceHandle, drag, isCameraDragging, pointerPosition, releaseActiveCapture,
     updateCornerPreview, updateEditPreview, skipsSketchElements, pickSubShapeAt, updateSphereGridInput,
     pickBodyAt, tracksDirection, findSnap, findTrack, pickFreeVertexAt, regionHoverAt, updateInferredConstraints, snapPause } = context;
   function onPointerMove(event: PointerEvent): void {
@@ -80,6 +83,14 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
       return;
     }
     const pointer = pointerPosition(event);
+
+    if (faceHandle.active()) {
+      if (event.pointerId !== lifetime.activePointerId) return;
+      // 面の移動のつまみを引いている最中(M-05 4-2a)。掴む相手はもう決まっているので、
+      // ホバーも当たり判定も吸着も通さず、入力欄の距離だけを動かす(形の計算は確定の時だけ)。
+      faceHandle.move(pointer);
+      return;
+    }
 
     if (section.active()) {
       if (event.pointerId !== lifetime.activePointerId) return;
@@ -203,8 +214,17 @@ function createPointerMoveHandler(context: InputContext): (event: PointerEvent) 
 }
 
 function createPointerDownHandler(context: InputContext): (event: PointerEvent) => void {
-  const { lifetime, canvas, project, section, drag, pointerPosition, addsToSketchSelection,
+  const { lifetime, canvas, project, section, faceHandle, drag, pointerPosition, addsToSketchSelection,
     skipsSketchElements, pickConstraintAt, handleSelectionInput, handleDrawingInput, snapPause } = context;
+  function startFaceHandleInput(event: PointerEvent, pointer: readonly [number, number]): boolean {
+    if (!faceHandle.begin(pointer)) return false;
+    // 開いている入力欄から焦点を奪わない(NFR-UX-2)。離した後もそのまま数を打ち直せ、Enter で確定できる。
+    event.preventDefault();
+    canvas.setPointerCapture(event.pointerId);
+    lifetime.activePointerId = event.pointerId;
+    return true;
+  }
+
   function startSectionInput(event: PointerEvent, pointer: readonly [number, number]): boolean {
     if (!section.begin(pointer)) return false;
     canvas.setPointerCapture(event.pointerId);
@@ -255,6 +275,16 @@ function createPointerDownHandler(context: InputContext): (event: PointerEvent) 
       */
       event.preventDefault();
       pickConstraintAt(pointer);
+      return;
+    }
+
+    if (startFaceHandleInput(event, pointer)) {
+      /*
+        面の移動の矢印のつまみ(M-05 4-2a)。面の移動の入力欄が開いている間だけ出て、掴めるのは矢印の
+        根もとの 18px だけ(断面のつまみと同じ)。掴めなければ下の断面のつまみ・今までの当たり判定へ
+        そのまま落ちるので、つまみが無い時の押下は今までと 1 つも変わらない。
+        ポインタを捕まえて、canvas の外へ出ても離すまで追い続ける(断面のつまみと同じ)。
+      */
       return;
     }
 
@@ -366,6 +396,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
   const { canvas, scene, project, getOrbit, indicators, timing, snapPause } = options;
   const lifetime = { disposed: false, activePointerId: null as number | null };
   const section = createSectionHandleDrag(scene, project);
+  const faceHandle = createFaceOffsetHandleDrag(scene, project);
   const drag = createSketchDragSession({ scene, project, getOrbit, indicators,
     releaseCapture: releaseActiveCapture, disposed: () => lifetime.disposed, timing });
   const unexposeDrag = typeof window === 'undefined'
@@ -386,6 +417,13 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
   /** 離したら引っぱりを確定する(FR-313)。掴んでいなければ何もしない。 */
   function onPointerUp(event: PointerEvent): void {
     if (lifetime.disposed || lifetime.activePointerId !== event.pointerId) return;
+    if (faceHandle.active()) {
+      // 面の移動のつまみを離した(M-05 4-2a)。距離はもう入力欄に入っているので、掴んでいた控えを落とすだけ。
+      // 形の計算はしない(確定の時だけ)。
+      faceHandle.end();
+      releaseActiveCapture();
+      return;
+    }
     if (section.active()) {
       // 断面表示のつまみを離した(FR-111)。切る位置はもうストアに入っているので、
       // 掴んでいた控えを落とすだけ。文書は 1 バイトも変わっていない。
@@ -402,14 +440,16 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
     if (lifetime.disposed || lifetime.activePointerId !== event.pointerId) return;
     // 断面オフセットは従来どおり移動時に表示状態へ反映済み。文書/Undoは変更しない。
     section.end();
+    // 面の移動のつまみは、OS の取消では掴む前の数へ戻す(掴んでいる間の Esc と同じ。入力欄は閉じない)。
+    faceHandle.cancel();
     if (drag.active()) drag.stop(false, event.timeStamp, 'pointercancel');
     else releaseActiveCapture();
   }
 
   function onPointerLeave(): void {
     const state = useAppStore.getState();
-    if (section.active()) {
-      // つまみを引いている最中はポインタを捕まえてあるので、画面の外へ出ても続ける。
+    if (section.active() || faceHandle.active()) {
+      // つまみ(断面・面の移動)を引いている最中はポインタを捕まえてあるので、画面の外へ出ても続ける。
       return;
     }
     if (drag.active()) {
@@ -438,7 +478,20 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
   }
   function onWindowBlur(): void { snapPause.release(); }
 
-  const context: InputContext = { ...options, lifetime, section, drag, pointerPosition, releaseActiveCapture };
+  /**
+   * 面の移動のつまみを掴んでいる間の Esc(M-05 4-2a)。掴む前の数へ戻して離し、入力欄は閉じない。
+   * 焦点は入力欄にある(押下で奪わない)ので、入力欄の Esc(窓を閉じる)より先に window の捕捉の段で受けて止める。
+   * 掴んでいない時は何もしない(Esc は今までどおり)。
+   */
+  function onGrabEscape(event: KeyboardEvent): void {
+    if (lifetime.disposed || event.key !== 'Escape' || !faceHandle.active()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    faceHandle.cancel();
+    releaseActiveCapture();
+  }
+
+  const context: InputContext = { ...options, lifetime, section, faceHandle, drag, pointerPosition, releaseActiveCapture };
   const onPointerMove = createPointerMoveHandler(context);
   const onPointerDown = createPointerDownHandler(context);
   const onKeyDown = createKeyHandler(context);
@@ -454,6 +507,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
   keyTarget?.addEventListener('keydown', onModifierKey);
   keyTarget?.addEventListener('keyup', onModifierKey);
   keyTarget?.addEventListener('blur', onWindowBlur);
+  keyTarget?.addEventListener('keydown', onGrabEscape, true);
 
   /*
    * ビューポートへ焦点を戻す要求(ツールバーで面や選択を選んだ直後)。canvas を持っているのは
@@ -467,6 +521,11 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
         section.end();
         releaseActiveCapture();
       }
+    }
+    // 面の移動のつまみは、掴んだ入力欄が打ち直し・閉じる・開き直しで替わった時と、文書が替わった時に、書かずに離す(打った数が優先)。
+    if (faceHandle.active() && (next.document !== previous.document || !faceHandle.ownsInput(next))) {
+      faceHandle.end();
+      releaseActiveCapture();
     }
     if (next.focusViewportRequestCount !== previous.focusViewportRequestCount) {
       canvas.focus();
@@ -482,6 +541,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
       if (drag.active()) drag.stop(false);
       else releaseActiveCapture();
       section.end();
+      faceHandle.end();
       indicators.clearOwnedEdit();
       indicators.clearOwnedIndicators();
       canvas.removeEventListener('pointermove', onPointerMove);
@@ -493,6 +553,7 @@ export function createSketchInteractionResources(options: SketchInteractionOptio
       keyTarget?.removeEventListener('keydown', onModifierKey);
       keyTarget?.removeEventListener('keyup', onModifierKey);
       keyTarget?.removeEventListener('blur', onWindowBlur);
+      keyTarget?.removeEventListener('keydown', onGrabEscape, true);
       unexposeDrag();
     },
   };

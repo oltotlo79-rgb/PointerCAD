@@ -77,7 +77,11 @@ async function encodeInWorker(createWorker: () => PcadSaveWorkerPort, input: Sav
       else if (reply.kind === 'failure') fail(new PcadSaveWorkerError('rejected', reply.message));
       // 頼んだ形と違う成功は採らない(部分の依頼に全体、全体の依頼に部分が返るのは取り違え)。
       else if (('parts' in reply) !== replyAsParts) fail(new PcadSaveWorkerError('rejected', 'Unexpected save reply shape'));
-      else if (cleanup()) resolve(reply);
+      else if (cleanup()) {
+        // 書き手が入れずに保存した解析の結果を、同じスレッドの符号化と同じ口で呼び出し側へ渡す。
+        for (const item of reply.analysisResultIssues ?? []) control.onAnalysisResultIssue?.(item.analysisId, item.issue);
+        resolve(reply);
+      }
     };
     worker.onerror = event => { fail(new PcadSaveWorkerError('crashed', event.message)); };
     worker.onmessageerror = () => { fail(new PcadSaveWorkerError('crashed', 'Save reply could not be read')); };

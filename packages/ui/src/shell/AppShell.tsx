@@ -14,6 +14,7 @@ import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
 import { ImportUnitPanel } from '../file/ImportUnitPanel.js';
 import { ExportHandoffPanel } from '../file/ExportHandoffPanel.js';
 import { windowTitle } from '../file/partFile.js';
+import { messageText } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import { deferredShell } from './deferredShell.js';
 import { rememberDialogOpener } from './dialogFocus.js';
@@ -248,7 +249,7 @@ export function AppShell(): React.JSX.Element {
                   {restorePrompt.unrecoverable && restorePrompt.reasonKey !== undefined ? (
                     <>
                       <dt>{t('restore.reason')}</dt>
-                      <dd>{t(restorePrompt.reasonKey)}</dd>
+                      <dd>{messageText({ key: restorePrompt.reasonKey, parameters: restorePrompt.reasonParameters })}</dd>
                     </>
                   ) : null}
                 </dl>

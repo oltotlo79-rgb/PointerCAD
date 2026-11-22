@@ -149,6 +149,7 @@ function clearSolidDisplay(publication: SolidPublication): void {
   solidLayer.updateCutPreview(null);
   solidLayer.updateSphereGrid(null);
   solidLayer.updateSectionHandle(null);
+  solidLayer.updateFaceOffsetHandle(null);
   publication.refreshEnvironment();
 }
 

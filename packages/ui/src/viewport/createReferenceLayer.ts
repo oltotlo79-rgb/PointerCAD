@@ -24,7 +24,7 @@ import type {
 import * as THREE from 'three';
 
 import { labelWorldHeight } from './cameraMath.js';
-import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
+import { cssColor, DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 
 /** 基準軸を画面に出す長さ(mm、原点から片側)。方眼の広がりに合わせて後から変える。 */
 const DEFAULT_AXIS_HALF_LENGTH_MM = 100;
@@ -266,7 +266,7 @@ function createNameTag(text: string, color: number, resolutionScale: number): Na
   // 大きさを変えたので設定はやり直す(canvas の決まり)。
   context.font = font;
   context.textBaseline = 'middle';
-  context.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+  context.fillStyle = cssColor(color);
   context.fillText(text, paddingPixels, height / 2);
   const texture = new THREE.CanvasTexture(canvas);
   const sprite = new THREE.Sprite(

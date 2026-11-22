@@ -75,6 +75,12 @@ function excess(current: readonly string[], allowed: Readonly<Record<string, num
   for (const item of current) counts[item] = (counts[item] ?? 0) + 1;
   return Object.entries(counts).filter(([item, count]) => count > (allowed[item] ?? 0)).map(([item]) => item);
 }
+/** eslint.config.js の 1 行の文字の配列の定数を読む(許容差の決まりの範囲は、eslint の設定の 1 か所に持つ)。形が変われば落ちる。 */
+function eslintStringArray(text: string, name: string): string[] {
+  const match = new RegExp(`^const ${name} = \\[([^\\]]*)\\];`, 'mu').exec(text);
+  if (match === null) throw new Error(`eslint.config.js has no ${name}`);
+  return [...(match[1] ?? '').matchAll(/'([^']+)'/gu)].map(item => item[1] ?? '');
+}
 describe('new handwritten absolute-difference tolerances', () => {
   it('detects one new comparison while allowing an existing one', () => {
     const original = handwrittenTolerance('const a = Math.abs(x-y) <= t;');
@@ -97,12 +103,20 @@ describe('new handwritten absolute-difference tolerances', () => {
   it('does not add direct handwritten comparisons to product sources', () => {
     const baseline = checkedToleranceBaseline(JSON.parse(readFileSync(resolve(root, 'packages/test-utils/src/toleranceBaseline.json'), 'utf8')) as unknown);
     const extraBaseline = checkedToleranceBaseline(JSON.parse(readFileSync(resolve(root, 'packages/test-utils/src/toleranceOriginalExtraBaseline.json'), 'utf8')) as unknown);
+    const config = readFileSync(resolve(root, 'eslint.config.js'), 'utf8');
+    const rulePackages = eslintStringArray(config, 'TOLERANCE_RULE_PACKAGES');
+    const baselineFiles = eslintStringArray(config, 'TOLERANCE_BASELINE_FILES');
+    // 2 つの定数が、許容差の lint の決まりの塊(files・ignores)に使われている事。外したファイルは、決まりの対象のパッケージの中にある事。
+    expect([rulePackages.length > 0, config.includes('`packages/{${TOLERANCE_RULE_PACKAGES.join(\',\')}}/src/**/*.{ts,tsx,mts,cts}`'),
+      config.includes('...TOLERANCE_BASELINE_FILES]')]).toEqual([true, true, true]);
+    expect(baselineFiles.filter(path => !existsSync(resolve(root, path))
+      || !rulePackages.some(name => path.startsWith(`packages/${name}/src/`)))).toEqual([]);
     const roots = ['packages', 'apps'].flatMap(group => readdirSync(resolve(root, group), { withFileTypes: true })
       .filter(entry => entry.isDirectory() && existsSync(resolve(root, group, entry.name, 'src')))
-      .filter(entry => group !== 'packages' || !['kernel', 'model', 'ui', 'io', 'fem'].includes(entry.name))
+      .filter(entry => group !== 'packages' || !rulePackages.includes(entry.name))
       .map(entry => posix.join(group, entry.name, 'src')));
-    const violations = roots.flatMap(dir => productFiles(root, dir, path => productTypeScript(path)
-      && !/\.d\.[cm]?ts$/u.test(path) && !/\.spec\.(?:[cm]?[jt]s|[jt]sx)$/u.test(path)))
+    const violations = [...roots.flatMap(dir => productFiles(root, dir, path => productTypeScript(path)
+      && !/\.d\.[cm]?ts$/u.test(path) && !/\.spec\.(?:[cm]?[jt]s|[jt]sx)$/u.test(path))), ...baselineFiles]
       .flatMap(path => {
         const source = readFileSync(resolve(root, path), 'utf8');
         return [...excess(handwrittenTolerance(source, path), baseline[path] ?? {}),

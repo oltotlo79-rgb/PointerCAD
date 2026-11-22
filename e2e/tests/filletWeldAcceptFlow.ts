@@ -24,7 +24,7 @@ import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
  * 照合の別経路: 製品の「保存」で書いたファイルを Node で製品の読取り(io の readDocumentBundle)から開き、ビードの台本
  * (脚長・始点・長さ・番号・溶接した 2 部品)と材質を読む。画面の予告の値(脚長・ビードの数・合計の長さ・体積)は、その
  * 保存した入力から model の関数(filletWeldLegs・filletWeldSegmentOptions・filletWeldNominalVolume)で求め直した値と
- * 比べる。部品表の質量(実カーネルの体積 × 密度)は、model の公称体積 × 材質の密度(findDensityMaterial)の小数 2 桁と
+ * 比べる。部品表の質量(実カーネルの体積 × 密度)は、model の公称体積 × 材質の密度(findDensityMaterial)を有効 6 桁にした文字と
  * 比べる(実カーネルと model の独立な一致)。文書が「変わらない」は、読んだ文書を savedAt を固定して書き出した全バイトの
  * 一致で確かめる。
  *
@@ -139,7 +139,7 @@ function expectWeldIsTheModel(shown: WeldPlanShown, document: AssemblyDocument, 
   expect(document.components.map((component) => component.rigidGroupId)).toEqual(document.components.map(() => group));
 }
 
-/** 部品表のビードの行の質量(実カーネルの体積 × 密度)が、model の公称体積 × 材質の密度の小数 2 桁と一致する。 */
+/** 部品表のビードの行の質量(実カーネルの体積 × 密度)が、model の公称体積 × 材質の密度を有効 6 桁にした文字と一致する。 */
 async function expectBeadMassesAreTheModel(page: Page, document: AssemblyDocument): Promise<void> {
   await expect(page.locator('.pcad-bom__table')).toBeVisible();
   for (const bead of savedBeads(document)) {
@@ -149,7 +149,9 @@ async function expectBeadMassesAreTheModel(page: Page, document: AssemblyDocumen
       hasText: `すみ肉溶接 ${String(bead.legs.legOnSecond)}×${String(bead.legs.legOnFirst)} 長さ${bead.lengthSource}`,
     });
     await expect(row).toHaveCount(1);
-    await expect(row).toContainText(`${grams.toFixed(2)} g`);
+    // この検査のビード質量は g の範囲にあり、有効 6 桁に丸めて末尾の 0 を落とす。
+    const expectedMass = `${String(Number(grams.toPrecision(6)))} g`;
+    await expect(row.getByRole('cell', { name: expectedMass, exact: true })).toHaveCount(1);
   }
 }
 

@@ -47,6 +47,11 @@ export interface PanelPartRecord {
   readonly height: number;
   /** 資料の 1 個の質量(g)。記入の無い行は null(質量を出さない)。 */
   readonly massG: number | null;
+  /**
+   * 質量を出さない理由(massG が null の行だけ。持たない行は資料に記入が無い)。'kitMassOnly' はキットの本体の行で、資料の質量が付属の部品を含む
+   * 組の値なので、本体だけの質量が無い(利用者の回答 2026-11-21 16:2x、統括の決定 2026-11-22 01:40)。
+   */
+  readonly massOmission?: 'kitMassOnly';
   readonly simplified: readonly string[];
 }
 
@@ -72,7 +77,8 @@ function partRow(record: PanelPartRecord, title: string): CatalogItemRow {
   // 資料の質量が無い行と部位ごとに材料の違う行は、密度を持たない(部品表は材質の文字だけで、箱の体積 × 密度の質量を出さない)。
   const density = record.material === 'mixed' || record.massG === null ? {} : { densityMaterialId: record.material };
   const label = record.materialText ?? (record.material === 'mixed' ? '' : MATERIAL_LABELS[record.material]);
-  const mass = record.massG === null ? '質量は資料に記入が無いので出さない' : '質量は資料の 1 個の値';
+  const omitted = record.massOmission === 'kitMassOnly' ? '資料の質量は付属を含む組の値なので、本体だけの質量は出さない' : '質量は資料に記入が無いので出さない';
+  const mass = record.massG === null ? omitted : '質量は資料の 1 個の値';
   return {
     key: record.key, size: record.size, standardLabel: '製造元の寸法に合わせた物', materialLabel: label, ...density,
     dims: { width: record.width, depth: record.depth, height: record.height, ...(record.massG === null ? {} : { massG: record.massG }) },

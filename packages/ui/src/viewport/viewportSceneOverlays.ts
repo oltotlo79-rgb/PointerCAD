@@ -3,11 +3,12 @@ import type { CutPreview } from './createSolidLayer.js';
 import type { ViewportScene, ViewportSceneOptions } from './createViewportScene.js';
 import type { CylinderBasisGuide } from './cylinderBasisGuide.js';
 import type { PlanarBasisGuide } from './planarBasisGuide.js';
+import type { FaceOffsetArrow } from './solidLayerFaceHandle.js';
 import { createSectionClipping, updateBasisGuideLayers, type ViewportSceneLayers } from './viewportSceneResources.js';
 
 /*
  * createViewportScene の重ね表示。形を 1 つも変えない表示だけの層(干渉・解析の場・下絵・基準・測定)へ
- * 受け取った値を渡し、立体に重ねるもの(切断の予告・球面の案内線・円筒と平面の基準の案内)は値を
+ * 受け取った値を渡し、立体に重ねるもの(切断の予告・面の移動のつまみ・球面の案内線・円筒と平面の基準の案内)は値を
  * 控えて、描画のたびに立体の受領が今のままの時だけ出す。断面表示のクリッピング平面もここが配る。
  */
 
@@ -37,7 +38,7 @@ function sameSphereGridSpec(a: SphereGridSpec | null, b: SphereGridSpec | null):
 
 type OverlayMethods = Pick<ViewportScene, 'setInterference' | 'setJointCheck' | 'setMemberStretch' | 'setHoleHints' | 'holeHintCount' | 'setCutPreview' | 'setSectionView' | 'setAnalysisField'
   | 'setAnalysisMode' | 'setCanvases' | 'setCylinderBasisGuide' | 'setPlanarBasisGuide' | 'setSphereGrid' | 'setReferences'
-  | 'setMeasurement' | 'setFrameStroke' | 'frameStrokeView'>;
+  | 'setMeasurement' | 'setFrameStroke' | 'frameStrokeView' | 'setFaceOffsetHandle'>;
 
 export function createSceneOverlays(layers: ViewportSceneLayers, options: ViewportSceneOptions, isDisposed: () => boolean) {
   const { solidLayer, interferenceLayer, jointCheckLayer, stretchPreviewLayer, holeHintLayer, analysisFieldLayer, analysisModeLayer, canvasLayer, cylinderBasisLayer,
@@ -46,6 +47,8 @@ export function createSceneOverlays(layers: ViewportSceneLayers, options: Viewpo
   let planarGuide: PlanarBasisGuide | null = null;
   /** 切断面の予告(FR-432)。道具を使っている間だけ入り、確定・取消で null に戻る。 */
   let cutPreview: CutPreview | null = null;
+  /** 面の移動のつまみ(M-05 4-2a)。入力欄が開いている間だけ入る。 */
+  let faceOffsetHandle: FaceOffsetArrow | null = null;
   const sectionClipping = createSectionClipping(layers);
   /** 球面の案内線(FR-431)。出していないときは null。 */
   let sphereGridSpec: SphereGridSpec | null = null;
@@ -82,6 +85,10 @@ export function createSceneOverlays(layers: ViewportSceneLayers, options: Viewpo
 
     setCutPreview(preview): void {
       cutPreview = preview;
+    },
+
+    setFaceOffsetHandle(handle): void {
+      faceOffsetHandle = handle;
     },
 
     setSectionView: sectionClipping.setSectionView,
@@ -140,6 +147,7 @@ export function createSceneOverlays(layers: ViewportSceneLayers, options: Viewpo
     /** 描画の前に、立体に重ねるものを立体の受領が今のままの時だけ出す(古い立体の上に残さない)。 */
     syncSolidOverlays(currentSolid: boolean): void {
       solidLayer.updateCutPreview(currentSolid ? cutPreview : null);
+      solidLayer.updateFaceOffsetHandle(currentSolid ? faceOffsetHandle : null);
       solidLayer.updateSphereGrid(currentSolid ? sphereGridPositions : null, sphereGridSpec?.center);
       const basisState = options.readSolidMeshState?.();
       updateBasisGuideLayers(layers, currentSolid, cylinderGuide, planarGuide, basisState);

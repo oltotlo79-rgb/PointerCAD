@@ -192,6 +192,7 @@ describe('.pcadaのサブアセンブリ', () => {
       savedAt: SAVED_AT, assemblies: new Map([['assembly-a', nested]]),
     }));
     expect(result.ok ? '' : result.error.message).toContain('自分自身');
+    expect(result.ok ? null : result.error.code).toBe('subAssemblyCycle');
   });
 
   it('深さ8は読める', async () => {
@@ -207,6 +208,7 @@ describe('.pcadaのサブアセンブリ', () => {
       savedAt: SAVED_AT, assemblies: fixture.documents,
     }));
     expect(result.ok ? '' : result.error.message).toContain('8 段まで');
+    expect(result.ok ? null : result.error.code).toBe('subAssemblyDepth');
   });
 
   it('同じ入力を2回書くと同じバイト列になる', async () => {

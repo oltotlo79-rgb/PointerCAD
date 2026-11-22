@@ -12,6 +12,8 @@
   "file.untitled": "名称未設定",
   "file.typeDescription": "PointerCAD の部品ファイル",
   "file.saved": "保存しました",
+  "file.savedWithoutResult.invalid": "保存しました。解析の結果は、保存の形に合わないため入れていません。開き直した後は計算し直してください。",
+  "file.savedWithoutResult.tooLarge": "保存しました。解析の結果は、大きすぎるため入れていません。開き直した後は計算し直してください。",
   "file.save.preparing": "保存する内容を準備しています。編集を続けられます。",
   "file.save.compressing": "保存する内容を圧縮しています。編集を続けられます。",
   "file.save.writing": "ファイルを書き込んでいます。",

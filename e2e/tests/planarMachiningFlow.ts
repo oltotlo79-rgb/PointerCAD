@@ -433,6 +433,50 @@ export async function buildPlanarEdgePairFirst(page: Page, info: TestInfo, entry
   expect(feature.planar.locations[0]?.distance2).toMatchObject({ source: '5', value: 5 });
   expect(errors).toEqual([]);
 }
+/** 辺を選びながら入力を畳み、焦点を保って Enter で穴を確定する(M-10 ②)。 */
+export async function buildPlanarEdgeDistanceCollapse(page: Page, info: TestInfo, entry: string): Promise<void> {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await fixture(page, info, entry, 'plain', 'stock');
+  await beginEdgeDistance(page, 'plain');
+
+  const panel = popover(page);
+  const collapse = panel.getByRole('button', { name: numeric('edgeDistance.collapse'), exact: true });
+  const expand = panel.getByRole('button', { name: numeric('edgeDistance.expand'), exact: true });
+  const first = edgeDistance(page, panel, 1), second = edgeDistance(page, panel, 2);
+  const placement = panel.getByRole('group', { name: numeric('choice.holePlacement'), exact: true });
+  await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+  await expect(first).toBeVisible(); await expect(second).toBeVisible(); await expect(placement).toBeVisible();
+  await fillDistances(page, '2*4', '5');
+
+  await collapse.click();
+  await expect(expand).toHaveAttribute('aria-expanded', 'false');
+  await expect(first).toBeHidden(); await expect(second).toBeHidden(); await expect(placement).toBeHidden();
+  await expect(popoverTitle(page)).toHaveText(numeric('title.hole'));
+  await clickEdge(page, RIGHT_EDGE);
+  await expectPickedEdges(page, 1);
+  // 3D を押すと焦点は canvas へ移る(attachCameraControls.ts:171)。Enter の前に、窓の中の焦点の置ける釦へ焦点を置く(commitPopover と同じ考え)。
+  await expand.focus(); await expect(expand).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.pcad-statusbar__text')).toContainText(numeric('error.edgeDistanceEdges'));
+
+  await expand.click();
+  await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+  await expect(first).toBeVisible(); await expect(first).toHaveValue('2*4');
+  await expect(second).toBeVisible(); await expect(second).toHaveValue('5');
+  await expect(placement).toBeVisible();
+  await expectPickedEdges(page, 1);
+
+  await collapse.click();
+  await clickEdge(page, FRONT_EDGE);
+  await expectPickedEdges(page, 2);
+  await expand.focus(); await expect(expand).toBeFocused();
+  const token = await beginRecompute(page);
+  await page.keyboard.press('Enter');
+  await expect(panel).toHaveCount(0);
+  await waitForRecompute(page, token);
+  expect(errors).toEqual([]);
+}
+
 export async function reopenPlanarUi(page: Page, info: TestInfo, entry: string,
   saved: SavedPlanarUi, app?: ElectronApplication): Promise<void> {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));

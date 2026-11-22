@@ -1,3 +1,4 @@
+import { messageText } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
 import type { MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -35,7 +36,7 @@ export function DrawingStatusBar(): React.JSX.Element {
     <footer className="pcad-statusbar">
       <span className="pcad-statusbar__message" aria-live="polite">
         <span className="pcad-statusbar__text">{fileMessage === null ? message ?? (busy ? t('drawing.status.computing')
-          : unresolved > 0 ? t('drawing.dimension.unresolvedCount').replace('{count}', String(unresolved)) : t('drawing.status.ready')) : t(fileMessage.key)}</span>
+          : unresolved > 0 ? t('drawing.dimension.unresolvedCount').replace('{count}', String(unresolved)) : t('drawing.status.ready')) : messageText(fileMessage)}</span>
       </span>
       <span className="pcad-statusbar__spacer" />
       <span className="pcad-statusbar__state" title={geometry.viewName ?? t('drawing.property.sheet')} data-testid="drawing-status-scale">

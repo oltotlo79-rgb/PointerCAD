@@ -575,4 +575,17 @@ describe('資料 1 の溝つきフレームと形材の行の注記', () => {
       ['フラットバー 20×5', '単位質量 0.27 kg/m', t('catalog.stock.geometrySource')],
       ['T 溝用ナットの素材 溝幅 8（先入れ・鋼）', '単位質量 0.653 kg/m（内側の形は簡略）', `${t('catalog.stock.geometrySimplified')}: 頭の斜面`]]);
   });
+
+  it('形の扱いの列は、資料に記入の無い寸法を参考にした組立用の道具の画面の値で入れた行(値の出どころを持つ行)だけ、その事を書く', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['pipe-long-part']);
+    const mark = '断面の外形を包む形で、輪・羽・溝・中空などの断面の形は作っていない';
+    const screen = createStandardPartSource('catalogItem', '取付けの形材 14×201（外形を包む形・アルミ）', { family: 'pipe-long-part',
+      item: 'b2-long-attachment-14x201', length: '300' });
+    const documented = createStandardPartSource('catalogItem', '羽つきのフレーム 24×35（外形を包む形・アルミ）', { family: 'pipe-long-part',
+      item: 'b2-long-fin-24x35', length: '300' });
+    const rows = exported(productSource('SS400', 'flatBar', 'FB 50×6'), screen, documented);
+    const geometry = (size: string) => rows.find((row) => row[5] === size)?.[16];
+    expect([geometry('取付けの形材 14×201（外形を包む形・アルミ）'), geometry('羽つきのフレーム 24×35（外形を包む形・アルミ）')]).toEqual([
+      `${t('catalog.stock.geometrySimplifiedToolScreen')}: ${mark}`, `${t('catalog.stock.geometrySimplified')}: ${mark}`]);
+  });
 });

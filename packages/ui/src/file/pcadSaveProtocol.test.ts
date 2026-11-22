@@ -45,6 +45,18 @@ describe('保存Workerの返信境界', () => {
       expect(isPcadSaveReply(value)).toBe(false);
     }
   });
+
+  it('書けなかった解析の結果の欄は、id の文字と既知の符号の組が 1 件以上並ぶ時だけ受ける', () => {
+    const bytes = Uint8Array.of(1), issue = { analysisId: 'solid-cad', issue: 'resultTooLarge' };
+    for (const value of [{ id: 'one', kind: 'success', bytes, analysisResultIssues: [issue] },
+      { id: 'one', kind: 'success', parts: [bytes], analysisResultIssues: [issue, { analysisId: 'b', issue: 'invalidResult' }] }]) {
+      expect(isPcadSaveReply(value)).toBe(true);
+    }
+    for (const analysisResultIssues of [[], issue, [{ ...issue, issue: 'diskFull' }], [{ ...issue, analysisId: 3 }],
+      [{ issue: 'invalidResult' }], [null], ['resultTooLarge']]) {
+      expect(isPcadSaveReply({ id: 'one', kind: 'success', bytes, analysisResultIssues })).toBe(false);
+    }
+  });
 });
 
 describe('3MF Worker 専用境界', () => {

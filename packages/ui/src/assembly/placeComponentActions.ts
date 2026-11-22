@@ -13,7 +13,7 @@ import {
   type PartLibrary,
 } from '@pointercad/model';
 import { openFileThrough, type FileGateway, type PickedTypedFile } from '../file/fileGateway.js';
-import { openErrorMessageKey } from '../file/partFile.js';
+import { openErrorMessage } from '../file/partFile.js';
 import { createPartLineageId, createSecureUuid, SecurePartIdentityError } from '../store/documentIdentity.js';
 import type { AssemblyPlacementState } from '../store/assemblySlice.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -111,7 +111,7 @@ export async function startPlaceComponent(deps: PlaceComponentDeps = DEFAULT_DEP
       current.activeDocumentId !== documentId) return;
   if (!result.ok) {
     useAppStore.setState({ assemblyPlacement: null });
-    current.setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
+    current.setFileMessage({ ...openErrorMessage(result.error.code), failed: true });
     return;
   }
   if (result.bundle.kind !== 'part') {

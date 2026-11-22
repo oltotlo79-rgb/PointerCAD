@@ -73,9 +73,22 @@ const SECTION_HANDLE_MIN_DIAGONAL = 40;
  */
 const SECTION_HANDLE_MARGIN = 1.15;
 
-/** 円の基底(u・v)を作るための参照軸。direction とほぼ平行にならないものを選ぶ。 */
-function referenceAxis(direction: Vec3): Vec3 {
+/**
+ * 円の基底(u・v)を作るための参照軸。direction とほぼ平行にならないものを選ぶ。
+ * 面の移動のつまみの矢印の羽の向き(`solidLayerFaceHandle.ts`)も同じ決め方を使う。
+ */
+export function referenceAxis(direction: Vec3): Vec3 {
   return belowMagnitude(direction[2], 0.9) ? [0, 0, 1] : [1, 0, 0];
+}
+
+/**
+ * つまみの大きさの基準の対角長。いま描いているボディの、つまみの原点からの届く範囲の 2 倍に余白を足す
+ * (どこを中心に切っても四角が対象を覆う)。ボディが無ければ代わりの大きさ。断面表示のつまみと
+ * 面の移動のつまみ(`solidLayerFaceHandle.ts`。矢印の長さは同じ割合)が同じ決め方で大きさを決める。
+ */
+export function handleDiagonal(draws: readonly BodyDraw[], origin: Vec3): number {
+  const reach = bodyReach(draws, origin);
+  return reach > 0 ? reach * 2 * SECTION_HANDLE_MARGIN : SECTION_HANDLE_MIN_DIAGONAL;
 }
 
 /** ベクトルが実質ゼロ(退化)かどうか。normalizeVec3 は長さ 0 を原点のまま返す約束。 */
@@ -264,8 +277,7 @@ export function createSolidHelperDisplays(options: SolidHelperOptions) {
       sectionHandleArrow.visible = false;
       return;
     }
-    const reach = bodyReach(draws, lastSectionHandle.plane.origin);
-    const diagonal = reach > 0 ? reach * 2 * SECTION_HANDLE_MARGIN : SECTION_HANDLE_MIN_DIAGONAL;
+    const diagonal = handleDiagonal(draws, lastSectionHandle.plane.origin);
     showSquareAndArrow(sectionHandleFace, sectionHandleArrow, lastSectionHandle.plane, diagonal, lastSectionHandle.keep);
   }
 

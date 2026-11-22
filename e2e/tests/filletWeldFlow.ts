@@ -31,8 +31,9 @@ import { uiMessage } from './uiMessages.js';
  *   合計の長さ 35.75、体積 6 × 8 / 2 × 35.75 = 858 mm³。
  *   ビード i の配置の位置 = (60 − 始点, 14, 20) = (56,14,20)・(40,14,20)・(11.75,14,20)。
  *   向きは列 x→(0,−1,0)、y→(0,0,1)、z→(−1,0,0) の回転 = 四元数 (½, −½, −½, ½)(符号は問わない)。
- * 部品表の質量(実カーネルの体積 × 密度、小数 2 桁): 角材 2 個 24000 mm³ × 2 × 7.85e-3 = 376.80 g(鋼)、
- *   ビード 24 × 長さ × 2.68e-3: 10 → 0.6432 → 0.64 g、18.5 → 1.18992 → 1.19 g、7.25 → 0.46632 → 0.47 g(アルミ)。
+ * 部品表の質量(体積 × 密度、有効 6 桁): 角材 2 個 24000 mm³ × 2 × 7.85e-3 → 376.8 g(鋼)。
+ *   ビードは断面積 6 × 8 / 2 = 24 mm²。24 × 長さ × 2.68e-3 → 10 で 0.6432 g、18.5 で 1.18992 g、
+ *   7.25 で 0.46632 g、編集後の 9 で 0.57888 g(アルミ)。
  */
 
 export const BLOCK = { width: 60, depth: 20, height: 20 } as const;
@@ -238,7 +239,7 @@ async function showBom(page: Page): Promise<void> {
 async function expectBom(page: Page, beads: readonly (readonly [string, string])[]): Promise<void> {
   await showBom(page);
   await expect(bomRows(page)).toHaveCount(1 + beads.length);
-  const blocks = bomRows(page).filter({ hasText: '376.80 g' });
+  const blocks = bomRows(page).filter({ hasText: '376.8 g' });
   await expect(blocks).toHaveCount(1);
   await expect(blocks).toContainText('鋼(SS400)');
   await expect(blocks.locator('td').nth(2)).toHaveText('2');
@@ -285,9 +286,9 @@ async function expectSavedBeads(path: string, lengths: readonly string[]): Promi
  *   ビード i の位置 = (30, 0, 20 − 始点) = (30,0,18.5)・(30,0,12.5)・(30,0,3.75)。向き: 局所 x→(1,0,0)、y→(0,−1,0)、
  *   z→(0,0,−1)(四元数の符号に依らないよう、軸を回して比べる)。
  *   組立の座標の断面: 角 (30,0)、角材の上の脚の先 (36,0)、斜めの面の上の脚の先 (26, −4√3)。
- * 部品表(実カーネルの体積 × 密度、小数 2 桁): 角材 24000 × 7.85e-3 = 188.40 g、斜めの材 200√3 × 20 = 4000√3 ≈ 6928.20 mm³
- *   × 7.85e-3 ≈ 54.386 → 54.39 g(鋼)。ビード 12√3 × 長さ × 2.68e-3: 4 → 0.2228 → 0.22 g、6.5 → 0.3621 → 0.36 g、
- *   3 → 0.1671 → 0.17 g、3.5 → 0.1950 → 0.19 g(アルミ)。
+ * 部品表の質量(体積 × 密度、有効 6 桁): 角材 24000 × 7.85e-3 → 188.4 g、斜めの材 4000√3 × 7.85e-3 → 54.3864 g(鋼)。
+ *   ビードは 12√3 × 長さ × 2.68e-3 → 4 で 0.222811 g、6.5 で 0.362068 g、3 で 0.167108 g、
+ *   編集後の 3.5 で 0.194960 g(アルミ)。表示は末尾の 0 を省いた 0.19496 g。
  */
 const SQRT3 = Math.sqrt(3);
 const SLANT_OFFSET = [10, 0, 0] as const;
@@ -384,7 +385,7 @@ function expectSlantedPoses(poses: readonly ComponentPose[]): void {
 async function expectSlantedBom(page: Page, beads: readonly (readonly [string, string])[]): Promise<void> {
   await showBom(page);
   await expect(bomRows(page)).toHaveCount(2 + beads.length);
-  for (const mass of ['188.40 g', '54.39 g']) {
+  for (const mass of ['188.4 g', '54.3864 g']) {
     const row = bomRows(page).filter({ hasText: mass });
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('鋼(SS400)');
@@ -518,7 +519,7 @@ export function registerFilletWeldTests(
     await expect(componentRows(page)).toHaveCount(5);
     const welded = await resolvedPoses(page);
     expectWeldedPoses(welded, LENGTHS);
-    await expectBom(page, [['10', '0.64 g'], ['18.5', '1.19 g'], ['7.25', '0.47 g']]);
+    await expectBom(page, [['10', '0.6432 g'], ['18.5', '1.18992 g'], ['7.25', '0.46632 g']]);
 
     // 2) 2 本目のビードの斜面をビューで押して選ぶ(描いた形に当たる)。溶接の道具を選ぶと、その溶接の保存した
     //    値で「直す」窓が開く(選択を消してから始めると新しい空の溶接になる不具合の回帰)。
@@ -555,12 +556,12 @@ export function registerFilletWeldTests(
     await expect(componentRows(page)).toHaveCount(5);
     const edited = await resolvedPoses(page);
     expectWeldedPoses(edited, [10, 18.5, 9]);
-    await expectBom(page, [['10', '0.64 g'], ['18.5', '1.19 g'], ['9', '0.58 g']]);
+    await expectBom(page, [['10', '0.6432 g'], ['18.5', '1.18992 g'], ['9', '0.57888 g']]);
 
     // 4) 元に戻す 1 回で直す前、もう 1 回で溶接の前。やり直すで同じ順に戻る。
     await clickHistory(page, '元に戻す');
     expect(await resolvedPoses(page)).toEqual(welded);
-    await expectBom(page, [['10', '0.64 g'], ['18.5', '1.19 g'], ['7.25', '0.47 g']]);
+    await expectBom(page, [['10', '0.6432 g'], ['18.5', '1.18992 g'], ['7.25', '0.46632 g']]);
     await clickHistory(page, '元に戻す');
     await expect(componentRows(page)).toHaveCount(2);
     expect(await resolvedPoses(page)).toEqual(before);
@@ -582,7 +583,7 @@ export function registerFilletWeldTests(
       expectVectorClose(pose.position, edited[index]?.position ?? []);
       expectVectorClose(pose.rotation, edited[index]?.rotation ?? []);
     });
-    await expectBom(page, [['10', '0.64 g'], ['18.5', '1.19 g'], ['9', '0.58 g']]);
+    await expectBom(page, [['10', '0.6432 g'], ['18.5', '1.18992 g'], ['9', '0.57888 g']]);
     await goHome(page);
     await clickWorldPointChecked(page, PICK.secondBeadSlope);
     await expect(componentRows(page).nth(3)).toHaveAttribute('aria-pressed', 'true');
@@ -624,7 +625,7 @@ export function registerFilletWeldTests(
     await waitForRecompute(page, token);
     await expect(componentRows(page)).toHaveCount(5);
     expectSlantedPoses(await resolvedPoses(page));
-    await expectSlantedBom(page, [['4', '0.22 g'], ['6.5', '0.36 g'], ['3', '0.17 g']]);
+    await expectSlantedBom(page, [['4', '0.222811 g'], ['6.5', '0.362068 g'], ['3', '0.167108 g']]);
 
     // 3) 描いた 2 本目のビードの斜面をビューで押して選び、溶接の道具で保存した値の「直す」窓を開く。
     await clickWorldPointChecked(page, SLANT_PICK.secondBeadSlope);
@@ -643,7 +644,7 @@ export function registerFilletWeldTests(
     await expect(componentRows(page)).toHaveCount(5);
     const edited = await resolvedPoses(page);
     expectSlantedPoses(edited);
-    await expectSlantedBom(page, [['4', '0.22 g'], ['6.5', '0.36 g'], ['3.5', '0.19 g']]);
+    await expectSlantedBom(page, [['4', '0.222811 g'], ['6.5', '0.362068 g'], ['3.5', '0.19496 g']]);
 
     // 5) 保存して開き直す。台本(内角・版・脚長・区間・材質)・配置・部品表が同じで、描いたビードを押して選び直せ、
     //    「直す」窓が内角と寸法・体積を出す。
@@ -660,7 +661,7 @@ export function registerFilletWeldTests(
       expectVectorClose(pose.position, edited[index]?.position ?? []);
       expectVectorClose(pose.rotation, edited[index]?.rotation ?? []);
     });
-    await expectSlantedBom(page, [['4', '0.22 g'], ['6.5', '0.36 g'], ['3.5', '0.19 g']]);
+    await expectSlantedBom(page, [['4', '0.222811 g'], ['6.5', '0.362068 g'], ['3.5', '0.19496 g']]);
     await goHome(page);
     await clickWorldPointChecked(page, SLANT_PICK.secondBeadSlope);
     await expect(componentRows(page).nth(3)).toHaveAttribute('aria-pressed', 'true');

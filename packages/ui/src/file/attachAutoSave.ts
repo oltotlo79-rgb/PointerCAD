@@ -38,7 +38,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { createSecureUuid, prepareDocumentSession, SecurePartIdentityError,
   type PreparedDocumentSession } from '../store/fileSlice.js';
 import { saveFileAsThrough, withPcadExtension, withPcadaExtension, withPcaddExtension } from './fileGateway.js';
-import { openErrorMessageKey } from './partFile.js';
+import { openErrorReason } from './partFile.js';
 import { readPcadInWorker } from './pcadReadWorker.js';
 import { cancelOpenReads } from './documentOpenGuard.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
@@ -48,6 +48,7 @@ import { readAutoSaveIntervalMs } from '../settings/autoSaveSettings.js';
 import { cancelDocumentSaves } from './documentSaveQueue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { analysisResultsToSave } from '../beam/savedBeamResults.js';
+import { openedSolidResults, solidResultsToSave } from '../solidAnalysis/savedSolidResults.js';
 
 // ---------------------------------------------------------------------------
 // 保管庫を選ぶ
@@ -171,7 +172,8 @@ function recoveryDocument(state: AppState, bundleParts: boolean): AutoSaveDocume
     return { kind: 'drawing', document: active.document, source };
   }
   return active.kind === 'assembly' ? createAssemblyDocumentBundle(active.document, active.library, analysisResultsToSave(state, active.document))
-    : bundleParts ? createPartDocumentBundle(active.document, currentPcadAttachments(active.document)) : active.document;
+    : bundleParts ? createPartDocumentBundle(active.document, currentPcadAttachments(active.document),
+      solidResultsToSave(state, active.document)) : active.document;
 }
 
 export interface AttachAutoSaveOptions {
@@ -318,7 +320,7 @@ export async function loadAutoSavePrompt(
         savedAt: record.savedAt,
         documentName: record.documentName,
         unrecoverable: true,
-        reasonKey: openErrorMessageKey(outcome.error.code),
+        ...openErrorReason(outcome.error.code),
       });
     }
     return;
@@ -405,7 +407,7 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
       savedAt: record.savedAt,
       documentName: record.documentName,
       unrecoverable: true,
-      reasonKey: openErrorMessageKey(outcome.error.code),
+      ...openErrorReason(outcome.error.code),
     });
     return;
   }
@@ -427,6 +429,8 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   store.setImportedAttachments(outcome.attachments.shapes, outcome.attachments.meshes);
   store.setCanvasImages(outcome.attachments.canvases);
   store.setFileState(null, null);
+  // 控えに入っていた立体の結果も、作り直した文書と組にして戻す(J-03b 段 2。開く時と同じ)。
+  store.setSolidOpenedResults(openedSolidResults(outcome.document, outcome.analysisResults, outcome.analysisResultIssue));
   store.fileGateway.clearSaveTarget?.();
   store.setRestorePrompt(null);
   useAppStore.setState({ recoveryRecord: null });
@@ -434,9 +438,9 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   finally { read.finish(); }
 }
 
-function showRecoveryReadFailure(record: AutoSaveRecord, code: Parameters<typeof openErrorMessageKey>[0]): void {
+function showRecoveryReadFailure(record: AutoSaveRecord, code: Parameters<typeof openErrorReason>[0]): void {
   useAppStore.getState().setRestorePrompt({ savedAt: record.savedAt, documentName: record.documentName,
-    unrecoverable: true, reasonKey: openErrorMessageKey(code) });
+    unrecoverable: true, ...openErrorReason(code) });
 }
 
 function recoveryRecordOf(saver: AutoSaver): Promise<AutoSaveRecord | null> {

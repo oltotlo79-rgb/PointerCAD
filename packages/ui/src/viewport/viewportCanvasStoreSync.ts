@@ -8,6 +8,7 @@ import { isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
+import { faceOffsetHandleOf } from '../solid/faceOffsetHandle.js';
 import { regionFillInputOf } from '../solid/regionPick.js';
 import { solidAnalysisLayersChanged, solidAnalysisLayersOf } from '../solidAnalysis/solidModalViewport.js';
 import type { AppState } from '../store/appState.js';
@@ -116,6 +117,9 @@ export function syncInitialScene(sync: ViewportStoreSync): void {
   scene.setMeasurement(initial.measurement);
   // 切断面の予告(FR-432)。切断の段が開いている間だけ出る。
   sync.showCutPreview(cutPreviewOf(initial));
+  // 面の移動のつまみ(M-05 4-2a)。入力欄を開いている時だけ渡す(開いていない時の受け渡しの並びを変えない)。
+  const initialFaceHandle = faceOffsetHandleOf(initial);
+  if (initialFaceHandle !== null) scene.setFaceOffsetHandle(initialFaceHandle);
   // 球面の案内線(FR-431)。球を選んでいる間(または「いつも出す」)だけ出る。
   scene.setSphereGrid(sphereGridSpecOf(initial));
   scene.setCylinderBasisGuide(cylinderBasisGuide(initial, t('viewport.cylinderZeroDirection')));
@@ -231,7 +235,7 @@ function syncAssemblyDisplay(sync: ViewportStoreSync, next: AppState, previous: 
   }
 }
 
-/** 形を変えない重ね表示(切断の予告・基準の案内・球面の案内線・断面・解析の場・点検の色・下絵)。 */
+/** 形を変えない重ね表示(切断の予告・面の移動のつまみ・基準の案内・球面の案内線・断面・解析の場・点検の色・下絵)。 */
 function syncOverlays(sync: ViewportStoreSync, next: AppState, previous: AppState): void {
   const { scene } = sync;
   /*
@@ -249,6 +253,9 @@ function syncOverlays(sync: ViewportStoreSync, next: AppState, previous: AppStat
     next.displaySettings.lengthUnit !== previous.displaySettings.lengthUnit
   ) {
     sync.showCutPreview(cutPreviewOf(next));
+    // 面の移動のつまみ(M-05 4-2a)も同じ材料(入力欄・選択・立体・式の読み方)から決まる。前後とも無い間は渡さない。
+    const faceHandle = faceOffsetHandleOf(next);
+    if (faceHandle !== null || faceOffsetHandleOf(previous) !== null) scene.setFaceOffsetHandle(faceHandle);
   }
   /*
     球面の案内線(FR-431)。**材料が変わったときだけ**組み立て直す。

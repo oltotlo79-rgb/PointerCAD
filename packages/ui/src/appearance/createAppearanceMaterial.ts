@@ -37,6 +37,7 @@ import { DEFAULT_APPEARANCE, WOOD_SPECIES, type AppearancePattern, type Appearan
 import * as THREE from 'three';
 
 import { appearanceKeyText } from './buildFaceGroups.js';
+import { cssColor } from '../viewport/themeColors.js';
 import { createViewportLifetime, type ViewportLifetime } from '../viewport/viewportLifetime.js';
 import {
   createPatternTexture,
@@ -54,7 +55,7 @@ const DEFAULT_APPEARANCE_KEY = appearanceKeyText(DEFAULT_APPEARANCE);
 /** 既定の外観だけを現在のテーマ色へ合わせる。部品層とアセンブリ層の共通規則。 */
 export function themedAppearance(spec: AppearanceSpec, solidColor: number): AppearanceSpec {
   if (appearanceKeyText(spec) !== DEFAULT_APPEARANCE_KEY) return spec;
-  const color = `#${solidColor.toString(16).padStart(6, '0')}`;
+  const color = cssColor(solidColor);
   return color === spec.color ? spec : { ...spec, color };
 }
 

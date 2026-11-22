@@ -13,10 +13,11 @@ import { useAppStore } from '../store/useAppStore.js';
 import type { ViewportScene } from './createViewportScene.js';
 
 /**
- * Screen radius (px) around the arrow root (the centre of the cut plane) that grabs the handle.
+ * Screen radius (px) around the arrow root that grabs a handle: the centre of the cut plane here, and the
+ * root of the face offset handle (`faceOffsetHandleDrag.ts`, M-05 4-2a).
  * Wider than the 6 px sub-shape pick because the handle overlaps solid faces (NFR-UX-7).
  */
-const SECTION_HANDLE_PICK_RADIUS_PIXELS = 18;
+export const HANDLE_PICK_RADIUS_PIXELS = 18;
 
 export interface SectionHandleDrag {
   readonly active: () => boolean;
@@ -60,7 +61,7 @@ export function createSectionHandleDrag(
         return false;
       }
       const distance = Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]);
-      if (distance > SECTION_HANDLE_PICK_RADIUS_PIXELS) {
+      if (distance > HANDLE_PICK_RADIUS_PIXELS) {
         return false;
       }
       const ray = scene.pointerRay(pointer[0], pointer[1]);

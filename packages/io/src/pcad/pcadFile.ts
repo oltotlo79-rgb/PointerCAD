@@ -646,10 +646,10 @@ export function pcadEntries(document: PartDocument, options: WritePcadFileOption
 }
 
 /**
- * 読み込めなかった理由。`notZip` と `missingDocument` はこの層で見つけたもの、
+ * 読み込めなかった理由。`notZip`・`missingDocument`・`subAssemblyCycle`・`subAssemblyDepth` はこの層で見つけたもの、
  * それ以外は `document.json` の読み手(documentJson.ts)の理由をそのまま通したもの。
  */
-export type ReadPcadFileErrorCode = ParseErrorCode | 'notZip' | 'missingDocument';
+export type ReadPcadFileErrorCode = ParseErrorCode | 'notZip' | 'missingDocument' | 'subAssemblyCycle' | 'subAssemblyDepth';
 
 /** 読み込めなかった理由。`message` はそのまま利用者へ見せる日本語(NFR-UX-5)。 */
 export interface ReadPcadFileError {
@@ -684,13 +684,18 @@ export type ReadPcadFileResult =
 
 const NOT_ZIP_MESSAGE = 'ファイルを開けませんでした。壊れているかもしれません。';
 /**
- * 抱き込んだ組の入れ子が成り立たない時の読み取りの断り(利用者へそのまま見せる)。理由は model の detectSubAssemblyProblem の kind。
- * model は文を持たない(D4)ので、段をまたぐ連動の断りと同じく、読み取りの断りの日本語は io が持つ。
- * 組を解く時の同じ断りは ui の assembly.json(assembly.error.subAssemblyCycle・subAssemblyDepth)が持つ(io は ui の表を読めない)。
+ * 抱き込んだ組の入れ子が成り立たない時の読み取りの断り。理由は model の detectSubAssemblyProblem の kind。
+ * 画面の開く流れは、符号(SUB_ASSEMBLY_READ_CODES)から ui の assembly.json の文を出す(ui の file/documentReadError.ts)。
+ * ここの日本語は、ほかの読み取りの理由と同じく io の message(文書の比べなど、message をそのまま出す所が読む)。
  */
 const SUB_ASSEMBLY_READ_MESSAGES: Readonly<Record<SubAssemblyProblem['kind'], string>> = {
   cycle: 'このアセンブリは自分自身を含んでいます。',
   depth: `組の入れ子が深すぎます(${String(MAX_SUB_ASSEMBLY_DEPTH)} 段まで)。`,
+};
+/** 抱き込んだ組の入れ子の断りの理由の符号。 */
+const SUB_ASSEMBLY_READ_CODES: Readonly<Record<SubAssemblyProblem['kind'], ReadPcadFileErrorCode>> = {
+  cycle: 'subAssemblyCycle',
+  depth: 'subAssemblyDepth',
 };
 const MISSING_DOCUMENT_MESSAGE =
   'PointerCAD のファイルではないようです(document.json が入っていません)。';
@@ -1421,7 +1426,7 @@ async function readPcadaEntries(
   }
   const subAssemblyProblem = detectSubAssemblyProblem(parsed.document, collected.assemblies);
   if (subAssemblyProblem !== null) {
-    return fail('invalidField', SUB_ASSEMBLY_READ_MESSAGES[subAssemblyProblem.kind]);
+    return fail(SUB_ASSEMBLY_READ_CODES[subAssemblyProblem.kind], SUB_ASSEMBLY_READ_MESSAGES[subAssemblyProblem.kind]);
   }
   // Cross-level gears and cams point into the embedded subassemblies, so they are checked once all of them are read.
   for (const document of [parsed.document, ...collected.assemblies.values()]) {

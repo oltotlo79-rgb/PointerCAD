@@ -21,6 +21,7 @@
  * | ボディの面と稜線(形・外観・表示スタイル・当たり判定) | `solidLayerBodies.ts` | ボディごとの面と稜線の形、当たり判定の的 | ボディが減れば 1 回ずつ解放、残りは `dispose` |
  * | 部分形状の重ね描き(ボディごと) | `solidLayerResources.ts` | ボディごとの重ね描きの形 | 強調が外れれば解放 |
  * | 補助の表示(ねじの印・球面の案内線・切断の予告・断面のつまみ) | `solidLayerHelpers.ts` | 補助の形と材質、印ごとの線 | 印が減れば解放、残りは `dispose` |
+ * | 面の移動のつまみ(M-05 4-2a) | `solidLayerFaceHandle.ts` | 矢印の形と材質(初めて出す時に作る) | `dispose` |
  * | 3D プリントの点検の色 | `solidLayerPrintability.ts` | 開いた辺の材質と線、割り当ての控え | 点検を閉じれば線を解放 |
  * | 並びの差し替えと解放の決まり | `solidLayerBuffers.ts` | — | — |
  * | 描く順 | `solidLayerRenderOrder.ts` | — | — |
@@ -39,6 +40,7 @@ import type { SolidEmphasis, SolidGeometryBundle } from './buildSolidGeometry.js
 import type { SubShapeEmphasis, SubShapeHighlightBatch, SubShapeHighlightBundle } from './buildSubShapeGeometry.js';
 import { createSolidBodyDraws, type BodyDraw } from './solidLayerBodies.js';
 import { borrowedGeometryRelease, geometryAttributeBytes, setGeometryAttributes, setVectorAttribute } from './solidLayerBuffers.js';
+import { createSolidFaceHandleDisplay, type FaceOffsetArrow } from './solidLayerFaceHandle.js';
 import { createSolidHelperDisplays, type ThreadMarkInfo } from './solidLayerHelpers.js';
 import { createSolidPrintability } from './solidLayerPrintability.js';
 import { SUB_SHAPE_FACE_RENDER_ORDER, SUB_SHAPE_LINE_RENDER_ORDER } from './solidLayerRenderOrder.js';
@@ -168,6 +170,13 @@ export interface SolidLayer {
    */
   updateSectionHandle(handle: SectionHandle | null): void;
   /**
+   * 面の移動の矢印のつまみ(M-05 4-2a)を差し替える。`null` で消える。
+   *
+   * 断面のつまみと同じ形の矢印を 1 本だけ出し、**長さはいま描いているボディから測る**(断面のつまみと同じ決め方)。
+   * 同じつまみ(同一参照)を渡し直したときは並びを触らない。文書は変えない(位置は入力欄の距離から決まる)。
+   */
+  updateFaceOffsetHandle(handle: FaceOffsetArrow | null): void;
+  /**
    * 表示テーマの色を反映する(FR-908)。材質の色を塗り替えるだけで、
    * 部品も並びも作り直さない(NFR-PF-1)。
    */
@@ -183,7 +192,7 @@ export interface SolidLayer {
    * Bytes of every mesh attribute and index the renderer uploads for body faces, body edges and
    * sub-shape overlays. One GPU buffer per attribute, so two attributes viewing the same CPU
    * array count twice. Helper lines (thread marks, sphere grid, cut preview, section handle,
-   * print open edges), textures and materials are outside this count.
+   * face offset handle, print open edges), textures and materials are outside this count.
    */
   meshBufferBytes(): number;
   dispose(): void;
@@ -285,6 +294,7 @@ interface SolidLayerParts {
   readonly draws: readonly BodyDraw[];
   readonly bodies: ReturnType<typeof createSolidBodyDraws>;
   readonly helpers: ReturnType<typeof createSolidHelperDisplays>;
+  readonly faceHandle: ReturnType<typeof createSolidFaceHandleDisplay>;
   readonly printing: ReturnType<typeof createSolidPrintability>;
   readonly materialStore: ReturnType<typeof createAppearanceMaterialStore>;
 }
@@ -295,7 +305,7 @@ interface SolidLayerParts {
  * やり直す(WebGL の資源は GC で戻らない)。
  */
 function registerSolidLayerCleanup(cleanup: ViewportLifetime, parts: SolidLayerParts): void {
-  const { group, edgeMaterials, subShapeOverlays, subShapeResources, draws, bodies, helpers, printing,
+  const { group, edgeMaterials, subShapeOverlays, subShapeResources, draws, bodies, helpers, faceHandle, printing,
     materialStore } = parts;
   cleanup.register('detach solid objects', () => { group.clear(); });
   for (const owner of subShapeResources.pendingCleanup) cleanup.register('failed overlay construction', () => {
@@ -316,6 +326,7 @@ function registerSolidLayerCleanup(cleanup: ViewportLifetime, parts: SolidLayerP
   for (const draw of helpers.markDraws()) geometries.add(draw.geometry);
   for (const geometry of printing.openEdgeGeometries()) geometries.add(geometry);
   for (const draw of helpers.ownedObjects()) { geometries.add(draw.geometry); materials.add(draw.material); }
+  for (const draw of faceHandle.ownedObjects()) { geometries.add(draw.geometry); materials.add(draw.material); }
   materials.add(printing.material);
   for (const geometry of geometries) cleanup.register('solid geometry', bodies.geometryRelease(geometry));
   cleanup.register('appearance materials and textures', () => { materialStore.dispose(); });
@@ -379,6 +390,8 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   const printing = createSolidPrintability({ group, acquired, getColors: () => colors });
   const bodies = createSolidBodyDraws({ group, draws, edgeMaterials, materialStore, planFor: printing.planFor,
     getColors: () => colors });
+  // 面の移動のつまみ(M-05 4-2a)。部品は初めて出す時に作るので、ここでは作る順も並びも変えない。
+  const faceHandle = createSolidFaceHandleDisplay({ group, draws, getColors: () => colors });
   let lastBundle: SolidGeometryBundle | null = null;
 
   /**
@@ -412,6 +425,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     // 新しく作られた面の材質にも断面表示の平面を配る(配り漏らすとその立体だけ切れない)。
     applySectionPlanes();
     helpers.rebuildSectionHandle();
+    faceHandle.rebuild();
     // 形が変われば開いた辺の位置も変わるので、点検を出しているあいだは引き直す。
     printing.rebuildOpenEdges(entries);
   }
@@ -457,6 +471,10 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       if (cleanup !== null) return;
       helpers.updateSectionHandle(handle);
     },
+    updateFaceOffsetHandle(handle): void {
+      if (cleanup !== null) return;
+      faceHandle.update(handle);
+    },
     setPrintabilityHighlight(highlight): void {
       if (cleanup !== null) return;
       if (!printing.set(highlight)) return;
@@ -478,6 +496,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
         overlay.vertices.material.color.setHex(color);
       }
       helpers.applyTheme(next);
+      faceHandle.applyTheme(next);
       printing.applyTheme(next);
     },
     pickFace: (raycaster) => bodies.pickFace(raycaster),
@@ -499,13 +518,14 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
         group.visible = false;
         bodies.clearPickTargets();
         registerSolidLayerCleanup(cleanup, { group, edgeMaterials, subShapeOverlays, subShapeResources, draws, bodies,
-          helpers, printing, materialStore });
+          helpers, faceHandle, printing, materialStore });
       }
       cleanup.dispose();
       if (cleanup.pendingCount !== 0) throw new Error(cleanup.errors.join('; '));
       bodies.reset();
       subShapeResources.clear();
       helpers.reset();
+      faceHandle.reset();
       printing.reset();
       // 平面は材質が捨てられた後には誰も読まない。入れ物だけ空にしておく。
       sectionPlanes.length = 0;

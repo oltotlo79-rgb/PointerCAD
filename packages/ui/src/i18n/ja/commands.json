@@ -244,6 +244,8 @@
   "controlGuide.button.constraintApply": "入力した数値や式で、この寸法の拘束を確定します。",
   "controlGuide.button.constraintCancel": "寸法の入力を取り消します。",
   "controlGuide.button.numericPrevious": "この道具の1つ前の入力段階へ戻ります。",
+  "controlGuide.button.numericEdgeDistanceCollapse": "辺の選択中に入力欄と選択肢を隠します。",
+  "controlGuide.button.numericEdgeDistanceExpand": "入力欄と選択肢を再表示します。",
   "controlGuide.button.handoff.default": "保存したファイルを、この端末で関連付けられたアプリで開きます。",
   "controlGuide.button.handoff.kiri": "Kiri:Motoの案内を開きます。保存した形を自動送信せず、必要なファイルは自分で読み込みます。",
   "controlGuide.button.handoff.prusa": "PrusaSlicerの案内を開きます。保存した形を自動送信せず、必要なファイルは自分で読み込みます。",

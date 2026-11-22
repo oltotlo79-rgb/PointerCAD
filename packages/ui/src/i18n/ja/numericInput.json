@@ -487,5 +487,7 @@
   "numericInput.edgeDistance.edge2": "辺2",
   "numericInput.edgeDistance.unpicked": "未選択",
   "numericInput.edgeDistance.center": "穴の中心",
+  "numericInput.edgeDistance.collapse": "入力を畳む",
+  "numericInput.edgeDistance.expand": "入力を広げる",
   "numericInput.edgeDistance.note": "3Dで面の直線の辺を押して、辺1・辺2の順に選びます。もう一度押すと外れます。穴の中心は、2本の辺を面の材料のある側へ距離だけずらした線の交点です。板の大きさを変えても、辺からの距離を保ちます。"
 }

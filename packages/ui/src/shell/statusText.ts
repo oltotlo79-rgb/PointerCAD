@@ -24,6 +24,7 @@ import {
 } from '../assembly/filletWeldDraft.js';
 import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 
+import { messageText } from '../i18n/failureMessage.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { picksSolidVertices } from '../sketch/freeSketch.js';
 import { STEP_TITLE_KEYS, type NumericInputStep, type NumericInputToolId } from '../sketch/numericInput.js';
@@ -1208,7 +1209,7 @@ export function describeStatus(input: StatusInput): StatusLine {
 
 function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
   if (input.fileMessage !== null && input.fileMessage.failed) {
-    return failureLine(null, t(input.fileMessage.key));
+    return failureLine(null, messageText(input.fileMessage));
   }
   if (input.faceErrorKey !== null) {
     return failureLine('statusBar.faceError', t(input.faceErrorKey));
@@ -1316,7 +1317,7 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     return { kind: 'saved', text: input.exchangeNotice, hint: null, progress: null };
   }
   if (input.fileMessage !== null) {
-    return { kind: 'saved', text: t(input.fileMessage.key), hint: null, progress: null };
+    return { kind: 'saved', text: messageText(input.fileMessage), hint: null, progress: null };
   }
   if (input.inspectingPrint === true) {
     /*

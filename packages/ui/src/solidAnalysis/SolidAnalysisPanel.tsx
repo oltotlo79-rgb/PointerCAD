@@ -16,6 +16,8 @@ import { SolidBucklingSection } from './SolidBucklingSection.js';
 import { SolidAnalysisMaterialFields } from './SolidAnalysisMaterialFields.js';
 import { SolidBoundaryFields } from './SolidBoundaryFields.js';
 import { solidBoundarySaved } from './solidBoundaryDraft.js';
+import { SavedSolidResult } from './SavedSolidResult.js';
+import { solidResultScalars } from './solidResultScalars.js';
 
 const STAGE_LABELS: Readonly<Record<CadSolidStage, MessageKey>> = {
   preparing: 'solidAnalysis.stage.preparing', meshing: 'solidAnalysis.stage.meshing', solving: 'solidAnalysis.stage.solving',
@@ -65,14 +67,8 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
   const fixedDof = dofInput?.constraints.reduce((sum, item) => sum + item.fixed.filter(Boolean).length, 0);
   let boundaryValid = true;
   try { solidBoundarySaved(session, parameters); } catch { boundaryValid = false; }
-  const maximumDisplacement = result?.result.displacementMm.reduce((maximum, vector) => Math.max(maximum, Math.hypot(...vector)), 0);
-  const maximumVonMises = result?.result.elements.reduce((maximum, element) => {
-    const [x, y, z, yz, xz, xy] = element.stressMPa;
-    return Math.max(maximum, Math.hypot((x - y) / Math.SQRT2, (y - z) / Math.SQRT2,
-      (z - x) / Math.SQRT2, Math.sqrt(3) * xy, Math.sqrt(3) * yz, Math.sqrt(3) * xz));
-  }, 0);
+  const scalars = result === null ? undefined : solidResultScalars(result.result);
   const warnings = result === null ? null : solidResultWarningsOf(result);
-  const reaction = result?.result.reactionN.reduce((sum, vector) => [sum[0] + vector[0], sum[1] + vector[1], sum[2] + vector[2]], [0, 0, 0]);
   return <form className="pcad-panel__body pcad-strength" aria-label={t('solidAnalysis.title')} data-testid="solid-analysis-panel"
     onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
     onKeyDown={event => {
@@ -103,6 +99,7 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
       focused={session.focused === name} onFocus={() => focus(name)} onChange={value => edit(name, value)} />)}
     <p>{t('solidAnalysis.accuracyHelp')}</p>
     {session.error === null ? null : <p role="alert">{session.error}</p>}
+    <SavedSolidResult session={session} />
     {session.status === 'running' ? <p role="status" data-testid="solid-analysis-progress" data-stage={session.stage ?? undefined}>
       {t(session.stage == null ? 'solidAnalysis.running' : STAGE_LABELS[session.stage])}</p> : null}
     <button type="button" className="pcad-button pcad-button--primary" data-testid="solid-run" onClick={() => { if (!composing.current && session.materialInputValid !== false && boundaryValid) runner?.run(); }}
@@ -116,11 +113,11 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
       data-solid-dof-fixed={fixedDof} data-solid-dof-free={dofNodes === undefined || fixedDof === undefined ? undefined : dofNodes * 3 - fixedDof}>
       <h4>{t('solidAnalysis.results')}</h4>
       <dl>
-        <dt>{t('solidAnalysis.displacement')}</dt><dd>{maximumDisplacement} mm</dd>
-        <dt>{t('solidAnalysis.stress')}</dt><dd>{maximumVonMises} MPa</dd>
+        <dt>{t('solidAnalysis.displacement')}</dt><dd>{scalars?.maximumDisplacement} mm</dd>
+        <dt>{t('solidAnalysis.stress')}</dt><dd>{scalars?.maximumVonMises} MPa</dd>
         <dt>{t('solidAnalysis.area')}</dt><dd>{result.prepared.loadedAreaMm2} mm²</dd>
         <dt>{t('solidAnalysis.force')}</dt><dd>{result.prepared.totalForceN.join(', ')} N</dd>
-        <dt>{t('solidAnalysis.reaction')}</dt><dd>{reaction?.join(', ')} N</dd>
+        <dt>{t('solidAnalysis.reaction')}</dt><dd>{scalars?.reaction.join(', ')} N</dd>
         <dt>{t('solidAnalysis.energy')}</dt><dd>{result.result.strainEnergyNmm} N·mm</dd>
         <dt>{t('solidAnalysis.residual')}</dt><dd>{result.result.maximumRelativeEquilibriumResidual}</dd>
       </dl>

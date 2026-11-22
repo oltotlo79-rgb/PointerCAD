@@ -404,12 +404,12 @@
       "sha256": "9eee0266fb68942775cebe7e34cf35b24455926539cd4f46e6d1808146aa66fd"
     },
     "sources/pointercad-beam-application-source.zip": {
-      "sha256": "3f764158e3589806c1ac2bb089df9d1e4114eb80f437f863873866ad714c7c04",
-      "bytes": 16732193
+      "sha256": "a8093b496be85156be803e0edf6b8e8b9f3638b3a44ab169037af474fad6922d",
+      "bytes": 16782459
     },
     "evidence/application-source-index.json": {
-      "sha256": "c666bca4cdd7f3cc0876c7a5363ad2757d5178f768a7d737082af40835923257",
-      "bytes": 1232006
+      "sha256": "0c3c2bd686919658a8cb15a00c2fbdf8ddc1c6230537f678af3e03fbf31b6fa5",
+      "bytes": 1235095
     },
     "sources/native-rebuild/oofem-051-timer.patch": {
       "bytes": 8668,

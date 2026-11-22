@@ -21,6 +21,7 @@
  * | 球面上の点 | `sketchInteractionSphereGrid.ts` | 交点を押した1回 | 交点の外の押下は選び直しになる |
  * | 引っぱり | `sketchDragSession.ts` | 動かした後の pointerup の `finish` の1回 | pointercancel・Esc・文書の差替え・破棄で `stop(false)` |
  * | 断面のつまみ | `sectionHandleDrag.ts` | 文書は変えない(表示のオフセットだけ) | pointerup・pointercancel・文書の差替え・破棄 |
+ * | 面の移動のつまみ(M-05 4-2a) | `faceOffsetHandleDrag.ts` | 文書は変えない(入力欄の距離だけ。確定は入力欄の Enter) | 掴んでいる間の Esc・pointercancel は掴む前の数へ戻す。pointerup・欄の打ち直し・文書の差替え・破棄は離すだけ |
  * | 一時表示 | `sketchInteractionIndicators.ts` | 文書は変えない(吸着の印・案内線・推定・予告) | 自分が出した物だけを消す |
  *
  * ポインタの捕捉とイベントの登録・解除・ストアの購読は `sketchInteractionResources.ts` が持つ。

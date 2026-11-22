@@ -410,7 +410,7 @@ export function returnUnpublishedReservations(
 }
 
 const UNCOVERED_MESH_RESOURCES: readonly string[] = Object.freeze(['textures', 'pmrem', 'materials',
-  'threadMarks', 'sphereGrid', 'cutPreview', 'sectionHandle', 'printOpenEdges', 'jsObjectOverhead']);
+  'threadMarks', 'sphereGrid', 'cutPreview', 'sectionHandle', 'faceOffsetHandle', 'printOpenEdges', 'jsObjectOverhead']);
 
 export function composeMeshReservation(sources: SceneReservationSources): ViewportMeshReservation {
   const { assembly, repair, uiBackings, environments, ownedCleanup } = sources;

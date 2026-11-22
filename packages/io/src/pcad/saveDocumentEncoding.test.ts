@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { unzipSync } from 'fflate';
 import { createAssemblyDocument, createAssemblyDocumentBundle, createDrawingDocument, createDrawingTemplate, createEmptyPartDocument,
   embedDrawingSource, embedPart, EMPTY_PART_LIBRARY, emptyDrawingSourceLibrary, emptyEmbeddedPartAttachments } from '@pointercad/model';
+import type { BeamAnalysisResult, SavedAnalysisResult } from '@pointercad/model/beam-analysis';
 import { encodeSaveDocument, encodeSaveDocumentParts, type SaveDocumentInput } from './saveDocumentEncoding.js';
 import { concatZipParts } from './zipSteps.js';
 import { readDocumentBundle, readPcadFile, writeDocumentBundle, writePcadFile } from './pcadFile.js';
@@ -198,6 +199,35 @@ describe('保存専用エンコーダーと従来のIOの一致', () => {
       { signal: controller.signal, onProgress: stage => { stages.push(stage); controller.abort(); } }))
       .rejects.toMatchObject({ name: 'AbortError' });
     expect(stages).toEqual(['preparing']); expect(created.template).toEqual(before);
+  });
+});
+
+describe('書けなかった解析の結果の符号を保存の呼び出し側へ返す', () => {
+  // The writer refuses an entry name outside analysis-results/ before it looks at the result, so the value only needs
+  // the saved-result shape; the zero beam result is the same independent fixture as analysisResultFile.test.ts.
+  const beam = (analysisId: string, documentId: string): SavedAnalysisResult => {
+    const zero = [0, 0, 0] as const;
+    const result: BeamAnalysisResult = { kind: 'oofem-linear-beam-3d', model: 'linear-timoshenko-isotropic', analysisId,
+      analysisRevision: 2, source: { documentId, documentRevision: 1, geometryRevision: 'geometry-1' }, inputSha256: '5'.repeat(64),
+      nodes: ['a', 'b'].map((nodeId, i) => ({ nodeId, solverNode: i + 1, displacementM: zero, rotationRad: zero,
+        reactionN: zero, reactionNm: zero, constrained: i === 0 })),
+      elements: [{ memberId: 'member', componentId: 'c', occurrencePath: ['c'], solverElement: 1, nodeIds: ['a', 'b'],
+        frame: { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], lengthM: 1 }, start: [0, 0, 0, 0, 0, 0], end: [0, 0, 0, 0, 0, 0] }],
+      balance: { referenceM: zero, forceN: zero, momentNm: zero, maximumFreeResidual: 0 }, structuralCertification: false };
+    return { analysisId, analysisRevision: 2, kind: result.kind, bindingSha256: '', appVersion: '1.0.4', result };
+  };
+
+  it.each(['part', 'assembly'] as const)('%s: the refused result is reported by id and code and the file is still written without it', async kind => {
+    const part = createEmptyPartDocument(), assembly = createAssemblyDocument('組立');
+    const analysisResults = new Map([['../escape', beam('../escape', kind === 'part' ? part.id : assembly.id)]]);
+    const input: SaveDocumentInput = kind === 'part' ? { kind, document: part, options: { savedAt, analysisResults } }
+      : { kind, bundle: createAssemblyDocumentBundle(assembly, undefined, analysisResults), options: { savedAt } };
+    const reported: [string, string][] = [];
+    const bytes = await encodeSaveDocument(input, { onAnalysisResultIssue: (id, issue) => { reported.push([id, issue]); } });
+    expect(reported).toEqual([['../escape', 'invalidResult']]);
+    expect(Object.keys(unzipSync(bytes)).filter(name => name.startsWith('analysis-results/'))).toEqual([]);
+    // Without the callback the bytes are the same: reporting changes nothing in the file.
+    expect(await encodeSaveDocument(input)).toEqual(bytes);
   });
 });
 

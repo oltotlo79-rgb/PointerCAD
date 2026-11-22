@@ -13,6 +13,11 @@ export function failureMessage(text: FailureText): string {
     message.split(`{${name}}`).join(typeof value === 'string' ? value : failureMessage(value)), t(key));
 }
 
+/** 鍵と差し込む値の組を、画面の文にする(値が無い時は鍵の文のまま)。読めなかった理由の知らせ(FileMessage・復元の案内)が使う。 */
+export function messageText(message: { readonly key: MessageKey; readonly parameters?: Readonly<Record<string, string>> | undefined }): string {
+  return message.parameters === undefined ? t(message.key) : failureMessage({ key: message.key, parameters: message.parameters });
+}
+
 /**
  * 合致の断りの文(文字。合致の道を鍵へ移す D4 の 0c までは model の文)と、組立の誤りの鍵と値が混ざる一覧を、画面の文にする。
  * 0c で合致の道も鍵になったら消す。

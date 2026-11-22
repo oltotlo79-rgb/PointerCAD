@@ -3,14 +3,8 @@ import type { AssemblyInterferenceInput, InterferenceKernelBridge, LengthUnit } 
 import type { AppState } from '../store/appState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { MeasurementState } from '../viewport/createMeasureLayer.js';
-import { MEASURE_FAILED_MESSAGE_KEY } from '../solid/measure.js';
+import { MEASURE_FAILED_MESSAGE_KEY, MEASURE_TIMEOUT_MS } from '../solid/measure.js';
 import { createAssemblyInterferenceRunner } from './interferenceActions.js';
-
-/**
- * 隙間の測定の返事を待つ上限(ms)。実測(2026-11-17、溝つきの 20 角の部材 2 本・面 44 ずつ、重なる・接する・離れる)の
- * 最も遅い 0.47 秒の約 20 倍。超えたら待つのをやめて文を出す(Worker の計算は止まらないので、終わるまで次は流さない)。
- */
-const GAP_MEASURE_TIMEOUT_MS = 10_000;
 
 type AssemblyView = NonNullable<AppState['assemblyView']>;
 
@@ -82,7 +76,7 @@ export function attachAssemblyInterference(bridge: Pick<InterferenceKernelBridge
     const timer = setTimeout(() => {
       // 待つのをやめる(古い結果は出さない)。選び直すか形が変わると、今の測定が終わってから測り直す。
       if (owns()) useAppStore.setState({ assemblyGapRequestId: null, measureErrorKey: 'measureError.gapTimeout' });
-    }, GAP_MEASURE_TIMEOUT_MS);
+    }, MEASURE_TIMEOUT_MS);
     inFlight = { inputs, timer };
     void runner.measureGap(interferenceInputOf(inputs, requestId), inputs.pair[0], inputs.pair[1], inputs.unit)
       .then((measurement) => {

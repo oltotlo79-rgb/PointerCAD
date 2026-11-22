@@ -13,6 +13,8 @@ export const DOOR_PART_BOX_RECORDS: readonly PanelPartRecord[] = [
     materialText: '亜鉛ダイカスト・樹脂', width: 115, depth: 15, height: 30, massG: 95, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'inner-handle-119x15x60-sus', size: '内に付ける取手 119×15×60（外形を包む形・ステンレス）', page: 279, kind: '内に付ける取手', material: 'stainless', width: 119,
     depth: 15, height: 60, massG: 52, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'inner-handle-62x22x120-al-fe-sus', size: '内に付ける取手 62×22×120（外形を包む形・アルミ・鉄・ステンレス）', page: 279, kind: '内に付ける取手', material: 'mixed',
+    materialText: 'アルミ・鉄・ステンレス', width: 62, depth: 22, height: 120, massG: null, massOmission: 'kitMassOnly', simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'magnet-catch-bracket-51x15x25-al', size: '磁石のキャッチのブラケット 51×15×25（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',
     materialText: 'アルミ', width: 51, depth: 15, height: 25, massG: null, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'magnet-catch-bracket-51x20x15-al', size: '磁石のキャッチのブラケット 51×20×15（外形を包む形・アルミ）', page: 284, kind: '磁石のキャッチのブラケット', material: 'aluminum',

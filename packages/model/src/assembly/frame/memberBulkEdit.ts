@@ -7,11 +7,10 @@
  */
 import { PRODUCT_CATALOG_REGISTRY, type CatalogRegistry } from '../catalog/registry.js';
 import { catalogItemRejection, createCatalogItemSource } from '../catalog/source.js';
+import { FAMILY_KEY, ITEM_KEY, nextComponentNameFor, placedPartName } from '../componentNames.js';
 import type { StandardPartSource } from '../resolveAssembly.js';
 import { buildStandardPartFromSource } from '../standard/buildStandardPart.js';
 import { steelProductFromSource } from '../standard/steelCatalog.js';
-import { nextSerialName } from '../../sketch/createSketchDocument.js';
-import { COMPONENT_NAME_SEPARATOR } from '../assemblyEdit.js';
 import type { AssemblyDocument } from '../types.js';
 
 /** 替える中身: 族の行の鍵と長さ(式の文字)。どちらも省くと替える物が無い。 */
@@ -35,8 +34,6 @@ export type MemberBulkPlan =
 
 /** 部品を選んでいない・部材でない部品がある・族か製品が混ざる・行が無い・欄の値で作れない・替える物が無い・鋼材の行を替えようとした。 */
 type MemberBulkRejection = 'noSelection' | 'notMember' | 'mixed' | 'unknownItem' | 'invalidOption' | 'noChange' | 'steelRow';
-
-const FAMILY_KEY = 'family', ITEM_KEY = 'item';
 
 /** 部品の保存の形(族の部品か鋼材の製品の部品だけ)。 */
 function memberSourceOf(assembly: AssemblyDocument, componentId: string): StandardPartSource | null {
@@ -70,23 +67,6 @@ function memberKindKey(source: StandardPartSource): { readonly kind: 'catalogIte
   return steel === undefined ? null : { kind: 'steel', key: steel.key };
 }
 
-/** 置いた時の部品名(族は族の partName に欄の値〔無い欄は初めの値〕を渡す。鋼材は形の部品名。置く操作と同じ)。 */
-function placedPartName(source: StandardPartSource, registry: CatalogRegistry): string | null {
-  if (source.catalog !== 'catalogItem') return buildStandardPartFromSource(source)?.name ?? null;
-  const family = registry.loaded(source.options[FAMILY_KEY] ?? '');
-  const row = family?.rows.find((candidate) => candidate.key === source.options[ITEM_KEY]);
-  if (family === undefined || row === undefined) return null;
-  return family.partName(row, Object.fromEntries(family.options.map((spec) => [spec.key, source.options[spec.key] ?? spec.defaultValue])));
-}
-
-/** 名前が「元の部品名:番号」の時だけ、ほかの部品と重ならない「新しい部品名:番号」にする(置く操作と同じ連番)。 */
-function nextComponentNameFor(name: string, before: string | null, after: string | null, used: ReadonlySet<string>): string {
-  const prefix = before === null ? null : `${before}${COMPONENT_NAME_SEPARATOR}`;
-  if (prefix === null || after === null || before === after || !name.startsWith(prefix)
-    || !/^[0-9]+$/u.test(name.slice(prefix.length))) return name;
-  return nextSerialName(used, `${after}${COMPONENT_NAME_SEPARATOR}`);
-}
-
 /** 選んだ部品の行・長さを一括で替える計画。作れない時は何も替えずに理由を返す。 */
 export function planMemberBulkEdit(assembly: AssemblyDocument, componentIds: readonly string[], change: MemberBulkChange,
   registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): MemberBulkPlan {
@@ -101,13 +81,16 @@ export function planMemberBulkEdit(assembly: AssemblyDocument, componentIds: rea
   // 今ある全部の名前と、この計画で付けた名前は使用中(連番が重ならない)。
   const used = new Set(assembly.components.map((component) => component.name));
   const entries: MemberBulkEntry[] = [];
+  const nameSources = { registry, buildStandardPartFromSource };
   for (const [index, source] of sources.entries()) {
     const componentId = componentIds[index];
     const name = assembly.components.find((component) => component.id === componentId)?.name;
     if (source === null || componentId === undefined || name === undefined) return { ok: false, reason: 'notMember' };
     const next = first.kind === 'catalogItem' ? nextCatalogSource(source, change, registry) : nextSteelSource(source, change);
     if (typeof next === 'string') return { ok: false, reason: next };
-    const nextName = nextComponentNameFor(name, placedPartName(source, registry), placedPartName(next, registry), used);
+    const nextName = nextComponentNameFor(name, {
+      before: placedPartName(source, nameSources), after: placedPartName(next, nameSources),
+    }, used);
     used.add(nextName);
     entries.push({ componentId, nextSource: next, nextName });
   }

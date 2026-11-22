@@ -12,7 +12,8 @@
  * 形の欄の同一性(`affectsShape` は参照比較)と世代で判定する。外観・名前だけの変更は
  * `affectsShape` が偽なので値を保つ。
  */
-import { affectsShape, type MathGeometryOutcome, type PartDocument } from '@pointercad/model';
+import { affectsShape, type MathGeometryOutcome, type PartDocument, type PartRecomputeError } from '@pointercad/model';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import type { AppState } from '../store/appState.js';
 import { activePartDocument } from '../store/documentKind.js';
 
@@ -152,7 +153,7 @@ export function currentMathGeometry(state: MathGeometryResultState): CurrentMath
         return CANCELLED;
       }
       if (state.lastOutcome === 'failed') {
-        return notEvaluated(state.errorMessage ?? state.partErrors[0]?.message ?? null);
+        return notEvaluated(state.errorMessage ?? firstPartErrorMessage(state.partErrors));
       }
     }
     return COMPUTING;
@@ -162,9 +163,15 @@ export function currentMathGeometry(state: MathGeometryResultState): CurrentMath
     return COMPUTING;
   }
   if (!snapshot.evaluated && hasDefinitions(document)) {
-    return notEvaluated(state.partErrors[0]?.message ?? null);
+    return notEvaluated(firstPartErrorMessage(state.partErrors));
   }
   return currentOf(snapshot);
+}
+
+/** 再計算の最初の誤りの文(画面へは partErrorMessage を通す。0b-3a)。誤りが無ければ null。 */
+function firstPartErrorMessage(errors: readonly PartRecomputeError[]): string | null {
+  const first = errors[0];
+  return first === undefined ? null : partErrorMessage(first);
 }
 
 /** 定義を持たない文書へ渡す空の表(測る値が要らないので、待つ必要も無い)。 */

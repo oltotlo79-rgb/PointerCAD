@@ -16,7 +16,7 @@
  * 次の段の係数へ渡す(段階再計算。`recomputePart` の注釈)。
  */
 
-import { computeVolume } from '@pointercad/kernel';
+import { computeVolume, OCCT_LOAD_ERROR_NAME } from '@pointercad/kernel';
 import type { EmbeddedPartMesh } from '../assembly/partLibrary.js';
 import { appearanceOf } from '../appearance/documentAppearance.js';
 import { evaluateMathGeometry } from '../measure/mathGeometry.js';
@@ -66,6 +66,7 @@ import {
 import { applyParameters } from './reevaluatePart.js';
 import { evaluateDocumentMath, hasDocumentMath, type DocumentMathContext } from './evaluateDocumentMath.js';
 import type { ParameterAnalysis } from '../parameters/types.js';
+import { plainText, type FailureText } from '../failureText.js';
 import { createSubShapeCache, type SubShapeCache } from './subShapeCache.js';
 import { readReferenceBodies, ReferenceMeshScope, type ReferenceBodyReads } from './readReferenceBodies.js';
 import { recomputeHistoryDependencies } from './timelineOrder.js';
@@ -208,7 +209,7 @@ export interface PartRecomputeOptions {
 
 /** 面を作れなかったとき(recomputeSketch と同じ文言に揃える)。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
 function sketchKernelFailed(featureId: string, message: string, code?: SketchFaceFailure['code']): SketchError {
-  return { featureId, code: code ?? 'kernelFailed', message: `面を作れませんでした: ${message}` };
+  return { featureId, code: code ?? 'kernelFailed', text: plainText(`面を作れませんでした: ${message}`) };
 }
 
 /**
@@ -222,7 +223,7 @@ function sketchKernelFailed(featureId: string, message: string, code?: SketchFac
 function solidKernelFailed(featureId: string, message: string, code?: SolidBodyFailure['code']): PartError {
   const partCode: PartErrorCode = code === 'missingSubShape' || code === 'workerBroken' ? code : 'kernelFailed';
   const reason = code === undefined || code === 'missingSubShape' || code === 'nothingLeft' || code === 'workerBroken' ? undefined : code;
-  return { featureId, code: partCode, message, ...(reason === undefined ? {} : { reason }) };
+  return { featureId, code: partCode, text: plainText(message), ...(reason === undefined ? {} : { reason }) };
 }
 
 /**
@@ -239,19 +240,13 @@ const SOLID_CALL_FAILED_PREFIX = 'ソリッドを作れませんでした: ';
 const OCCT_LOAD_RETRIES = 1;
 
 /** 頼み直した後に失敗したとき、失敗の文の末尾へ添える(頼み直した事実を残す)。 */
-const OCCT_LOAD_RETRIED_NOTE = '(カーネルの読み込みを1回やり直しました)';
-
-/**
- * Worker の窓口(kernel の kernelApi.ts)が OCCT の読み込みの失敗に付ける名前。Comlink は Error の name を運ぶ。
- * kernel の公開の名前は増やさず、同じ文字をここに持つ。食い違えば recomputePart.test.ts の実物の窓口
- * (createKernelApi)を通す検査が落ちる。
- */
-const OCCT_LOAD_ERROR_NAME = 'OcctLoadError';
+const OCCT_LOAD_RETRIED_NOTE = '(読み込みを1回やり直しました)';
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Comlink が運ぶ Error の名前を使い、Worker での読み込みの失敗を見分ける。 */
 function isOcctLoadFailure(error: unknown): boolean {
   return error instanceof Error && error.name === OCCT_LOAD_ERROR_NAME;
 }
@@ -305,7 +300,7 @@ async function tessellateSketch(
 function projectionFailed(featureId: string, message: string, code?: SketchProjectionFailure['code']): SketchError {
   // missingSubShape と workerBroken は kernel・橋の符号で決める(0b-1・0b-1b。文では見分けない)。
   return { featureId, code: code === 'missingSubShape' || code === 'workerBroken' ? code : 'kernelFailed',
-    message: `投影・交差を作れませんでした: ${message}` };
+    text: plainText(`投影・交差を作れませんでした: ${message}`) };
 }
 
 /** 段が 1 つも無いときの結果(カーネルを呼ばない、NFR-PF-1)。 */
@@ -848,6 +843,7 @@ export async function recomputePart(
     return cancelledResult(generation);
   }
   const build = await buildShapes(document, bridge, requestOptions, generation, stage);
+  if (isMathFailedBuild(build)) return mathFailedResult(build, generation);
   return isShapeBuild(build) ? finishRecompute(document, bridge, requestOptions, generation, build, capturedMeshes) : build;
     };
     const result = await run();
@@ -870,8 +866,25 @@ interface ShapeBuild {
 }
 
 /** 形を作る前に結果が決まった(取消・数式の前段の失敗)のではなく、形を作り終えたか。 */
-function isShapeBuild(value: PartRecomputeResult | ShapeBuild): value is ShapeBuild {
+function isShapeBuild(value: PartRecomputeResult | ShapeBuild | MathFailedBuild): value is ShapeBuild {
   return 'resolved' in value;
+}
+
+/**
+ * 数式の前段で失敗して形を作らなかった時(0b-3)。理由は数式の計算部の文のまま持ち、結果の誤りへは mathFailedResult が 1 か所で替える。
+ * 途中の段(measureStages)は、誤りの鍵と値から文を読まずに、この文を未解決の理由にする。
+ */
+interface MathFailedBuild {
+  readonly mathFailures: readonly { readonly ownerId: string; readonly message: string }[];
+}
+
+function isMathFailedBuild(value: PartRecomputeResult | ShapeBuild | MathFailedBuild): value is MathFailedBuild {
+  return 'mathFailures' in value;
+}
+
+function mathFailedResult(build: MathFailedBuild, generation: number): PartRecomputeResult {
+  return { sketches: [], bodies: [], cacheHits: 0, cancelled: false, generation,
+    errors: build.mathFailures.map(failure => ({ featureId: failure.ownerId, code: 'invalidValue', text: plainText(failure.message) })) };
 }
 
 /** 段階再計算の 1 段で数式の評価へ渡すもの(`DocumentMathContext` の同じ名前の欄)。 */
@@ -949,8 +962,10 @@ async function measureStages(
     };
     if (shapes === undefined || valueSinceBuild) {
       const build = await buildShapes(document, bridge, options, generation, current());
+      if (isMathFailedBuild(build)) return giveUp(build.mathFailures[0]?.message ?? STAGE_MATH_FAILED_MESSAGE);
       if (!isShapeBuild(build)) {
-        return build.cancelled ? null : giveUp(build.errors[0]?.message ?? STAGE_MATH_FAILED_MESSAGE);
+        // 数学の計算部があるので、ここへ来るのは取消だけ(数学計算部を準備できない早い戻りは、この関数の頭で断っている)。
+        return build.cancelled ? null : giveUp(STAGE_MATH_FAILED_MESSAGE);
       }
       if (!build.solid.ok) {
         return giveUp(build.solid.message);
@@ -986,25 +1001,24 @@ async function buildShapes(
   options: PartRecomputeOptions,
   generation: number,
   stage: StageMath | undefined,
-): Promise<PartRecomputeResult | ShapeBuild> {
+): Promise<PartRecomputeResult | ShapeBuild | MathFailedBuild> {
   let evaluated: PartDocument;
   let parameterAnalysis: ParameterAnalysis | undefined;
-  let invalidInputs: ReadonlyMap<string, string> | undefined;
+  let invalidInputs: ReadonlyMap<string, FailureText> | undefined;
   const parameterErrors: PartRecomputeError[] = [];
   if (hasDocumentMath(document)) {
     const math = options.math;
     if (math === undefined) return { sketches: [], bodies: [], cacheHits: 0, cancelled: false, generation,
-      errors: [{ featureId: document.id, code: 'invalidValue', message: '数学計算部を準備できません。数式の再計算後に作図してください。' }] };
+      errors: [{ featureId: document.id, code: 'invalidValue', text: { key: 'partError.mathUnavailable', parameters: {} } }] };
     // 段階再計算の段では、この再計算で測った値と計算させない係数を渡す(呼出し側の値は使わない)。
     const result = await evaluateDocumentMath(document, { ...math, ...stage, isCurrent: () => !options.shouldCancel?.() && math.isCurrent() });
     if (!result.ok) {
       if (result.cancelled) return cancelledResult(generation);
-      if (result.recompute === undefined) return { sketches: [], bodies: [], cacheHits: 0, cancelled: false, generation,
-        errors: result.failures.map(failure => ({ featureId: failure.ownerId, code: 'invalidValue', message: failure.message })) };
+      if (result.recompute === undefined) return { mathFailures: result.failures };
       evaluated = result.recompute.document;
       parameterAnalysis = result.recompute.analysis;
       invalidInputs = result.recompute.invalidInputs;
-      parameterErrors.push(...parameterAnalysis.failures.map(failure => ({ featureId: failure.name, code: 'invalidValue' as const, message: failure.message })));
+      parameterErrors.push(...parameterAnalysis.failures.map(failure => ({ featureId: failure.name, code: failure.code ?? ('invalidValue' as const), text: plainText(failure.message) })));
     } else {
       evaluated = result.document;
       parameterAnalysis = result.analysis;
@@ -1168,17 +1182,18 @@ async function buildShapes(
       dependencyErrors.set(id, {
         featureId: id,
         code: 'circularReference',
-        message: `参照・投影の依存が循環しています: ${[...schedule.cyclicIds].join('、')}`,
+        text: { key: 'partError.circularDependency', parameters: { ids: [...schedule.cyclicIds].join('、') } },
       });
     }
     for (const id of pendingIds) {
       if (!dependencyErrors.has(id) && !projectionErrors.has(id)) {
-        const reason = resolved.errors.find((error) => error.featureId === id)?.message;
+        const reason = resolved.errors.find((error) => error.featureId === id)?.text;
+        // 理由はその誤りの鍵と値を入れ子で運ぶ(文にしない。0b-3)。
         dependencyErrors.set(id, {
           featureId: id,
           code: 'missingBody',
-          message: `参照・投影の依存を解決できず、再計算を停止しました: ${id}` +
-            (reason === undefined ? '' : `。${reason}`),
+          text: { key: 'partError.dependencyStopped', parameters: { id,
+            reason: reason === undefined ? '' : { key: 'partError.followingReason', parameters: { reason } } } },
         });
       }
     }
@@ -1187,7 +1202,7 @@ async function buildShapes(
         dependencyErrors.set(id, {
           featureId: id,
           code: 'missingSubShape',
-          message: `部分形状の選び直しが収束せず、再計算を停止しました: ${id}`,
+          text: { key: 'partError.reselectionStopped', parameters: { id } },
         });
       }
     }

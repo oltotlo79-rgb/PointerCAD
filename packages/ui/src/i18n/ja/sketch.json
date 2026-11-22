@@ -1,5 +1,6 @@
 {
   "sketch.connect.selectTwo": "Shift または Ctrl を押しながら、点を2つ選んでください。",
+  "sketch.connect.selectTwoWithKeys": "{keys} を押しながら、点を2つ選んでください。",
   "sketch.connect.pointFeaturesOnly": "スケッチの点またはソリッドの頂点を2つ選んでください。線・辺・面は含められません。",
   "sketch.connect.reselect": "選択後に文書や形が変わりました。計算が終わってから2点を選び直してください。",
   "sketch.connect.otherSketch": "異なるスケッチの点はつなげられません。同じスケッチの点を選んでください。",
@@ -20,6 +21,7 @@
   "sketch.connect.count": "選んだ点 {count}/2。",
   "sketch.facePoints.count": "選んだ点 {count}（3つ以上で面）。",
   "sketch.facePoints.selectThree": "Shift または Ctrl を押しながら、点を3つ以上選んでください。",
+  "sketch.facePoints.selectThreeWithKeys": "{keys} を押しながら、点を3つ以上選んでください。",
   "sketch.facePoints.pointFeaturesOnly": "スケッチの点またはソリッドの頂点だけを3つ以上選んでください。線・辺・面は含められません。",
   "sketch.facePoints.reselect": "選択後に文書や形が変わりました。計算が終わってから点を選び直してください。",
   "sketch.facePoints.otherSketch": "異なるスケッチの点では面を張れません。同じスケッチの点を選んでください。",

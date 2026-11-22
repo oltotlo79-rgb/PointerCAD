@@ -7,6 +7,7 @@ import { selectedPointsFace } from '../sketch/faceSelectedPoints.js';
 import { pointAtReferenceShownInMenu } from '../sketch/pointAtReferenceMenu.js';
 import { pointAtReferenceDecision } from '../sketch/pointAtReferencePoint.js';
 import { pointSelectionCount } from '../sketch/selectedPointEnds.js';
+import { currentSelectionModifier } from '../settings/selectionModifierSetting.js';
 import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 import { commandDefinition } from './commandDefinitions.js';
 import { currentCommandLabel } from './commandLabels.js';
@@ -35,6 +36,7 @@ export function RadialCommandMenu({ viewport }: { readonly viewport: RefObject<H
   const connectionReason = useAppStore(state => selectedPointsConnection(state).reasonKey);
   const faceReason = useAppStore(state => selectedPointsFace(state).reasonKey);
   const pointAtReferenceReason = useAppStore(state => pointAtReferenceDecision(state).reasonKey);
+  useAppStore((state) => state.displaySettings.selectionModifier); // 選択のキーの案内の文(B-08 2-5)を、設定を変えた時に描き直す
   const pointCount = useAppStore(state => pointSelectionCount(state));
   const [shown, setShown] = useState<{ readonly gesture: RadialMenuGesture; readonly latched: boolean } | null>(null);
   const [focusedSlot, setFocusedSlot] = useState<RadialMenuSlot | null>(null);
@@ -56,6 +58,7 @@ export function RadialCommandMenu({ viewport }: { readonly viewport: RefObject<H
         owner: documentOwner, blocked,
         clickOnly: drawingSurface || next.matches('.pcad-viewport__canvas'),
         observeDrawingDown: drawingSurface,
+        selectionModifier: () => currentSelectionModifier(useAppStore.getState().displaySettings),
         allowSelectionModifiers: () => selectedPointsConnection().ready || selectedPointsFace().ready,
         scale: () => useAppStore.getState().displaySettings.uiScale / 100,
         nativeClickTarget: target => target instanceof Node && menu.current?.contains(target) === true,

@@ -24,6 +24,7 @@ import type { FunctionCurvePoint, FunctionCurveSample, FunctionCurveSamplingResu
 import { MathInputProblem } from './mathInputContract.js';
 import { certifyFunctionCurveTangents, finiteDerivativeEnclosure, type FunctionCurveDerivative, type FunctionCurveDerivativeEnclosure,
   type FunctionCurveSeam, type FunctionCurveTangents } from './functionCurveTangentBounds.js';
+import { withinMagnitude } from './numericTolerance.js';
 
 /** Distinct knots equal the sample parameters; poles are the 2 * knots.length C1 B-spline poles. */
 export interface FunctionCurveSpline {
@@ -92,7 +93,7 @@ export function junctionDiscrepancy(knots: readonly number[], poles: readonly Ve
     const junction: Vector = [a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share, a[2] + (b[2] - a[2]) * share];
     for (let axis = 0; axis < 3; axis++) {
       const allowed = 16 * Number.EPSILON * (Math.abs(a[axis]) + Math.abs(b[axis]) + Math.abs(sample[axis]));
-      if (!(Math.abs(junction[axis] - sample[axis]) <= allowed)) return null;
+      if (!withinMagnitude(junction[axis] - sample[axis], allowed)) return null;
     }
     largest = Math.max(largest, length(subtract(junction, sample)));
   }

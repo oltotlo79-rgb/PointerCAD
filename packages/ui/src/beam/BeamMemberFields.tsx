@@ -7,6 +7,7 @@ import { beamExpressionField, type BeamFieldName } from './beamFields.js';
 import type { BeamMemberDraft, BeamProvenance, BeamSession } from './beamSession.js';
 import { BeamBucklingSupports } from './BeamBucklingSupports.js';
 import { BeamCatalogMaterial } from './BeamCatalogMaterial.js';
+import { BeamCatalogSection } from './BeamCatalogSection.js';
 
 function SourceFields({ member, property }: { readonly member: BeamMemberDraft; readonly property: BeamProvenance }): React.JSX.Element {
   const edit = useAppStore(state => state.editBeam);
@@ -89,6 +90,7 @@ export function BeamMemberFields({ member, session, source }: {
       {group.property === 'frame' ? <p>{t('beam.frameHelp')}</p> : null}
       {group.property === 'section' ? <p>{t('beam.sectionHelp')}</p> : null}
       <div className="pcad-beam__numbers">{group.names.map(numeric)}</div>
+      {group.property === 'section' && source && <BeamCatalogSection member={member} source={source} edit={edit} />}
       <SourceFields member={member} property={group.property} />
     </details>)}
     <label className="pcad-beam__confirmation"><input type="checkbox" checked={member.confirmed} data-beam-confirm

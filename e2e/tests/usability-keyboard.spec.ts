@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { compositionFlows, drawingBusyReasonProof } from './usabilityKeyboardFlow.js';
+import { compositionFlows, drawingBusyReasonProof, targetSizeFlow } from './usabilityKeyboardFlow.js';
 import { installDrawingRefreshHold } from './holdDrawingRefresh.js';
 import { connectRefusalsFlow } from './connectRefusalsFlow.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
@@ -30,4 +30,15 @@ test('V103 R20 実選択数・同座標・要素種類の拒否理由と文書�
     environment: info.project.name, fixture: 'connectRefusalsFlow', source: 'real PCAD file + tree selection',
     reasonVisibility: 'radial hint and refusal status asserted by existing flow', allDisabledCellsCertified: false,
   }) });
+});
+
+test('C-03 ツールバー・左の木・帯の押せる面は 24px 以上(空の部品と、立体の行がある部品)', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await installStartupDiagnostics(page);
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await waitForStartupHealth(page, info);
+  await targetSizeFlow(page);
+  expect(errors).toEqual([]);
 });

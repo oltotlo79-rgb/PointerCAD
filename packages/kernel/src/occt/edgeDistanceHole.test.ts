@@ -111,19 +111,19 @@ describe('辺からの距離で置く穴の中心(M-02)', () => {
       if (circle === undefined) throw new Error('上の面の円の辺が無い');
       const frame = (edge1: SolidEdgeInfo, edge2: SolidEdgeInfo, locations = [{ distance1: 8, distance2: 8 }]) =>
         () => resolveHoleFrame(oc, shape, faces, holeSpec(top, edge1, edge2, locations), undefined, edges);
-      expect(frame(right, left)).toThrow('辺からの距離には平行でない2本の辺を選んでください。');
-      expect(frame(right, right)).toThrow('辺からの距離には平行でない2本の辺を選んでください。');
-      expect(frame(right, circle)).toThrow('辺からの距離には直線の辺を選んでください。');
-      expect(frame(right, bottomRight)).toThrow('辺からの距離には選んだ面の縁の辺を選んでください。');
-      expect(frame(right, back, [{ distance1: 70, distance2: 8 }])).toThrow('辺からの距離の位置が選択面の内側にありません。');
-      expect(frame(right, back, [{ distance1: Number.NaN, distance2: 8 }])).toThrow('辺からの距離には1つ以上の有限な距離を指定してください。');
-      expect(frame(right, back, [])).toThrow('辺からの距離には1つ以上の有限な距離を指定してください。');
+      expect(frame(right, left)).toThrow('parallel');
+      expect(frame(right, right)).toThrow('parallel');
+      expect(frame(right, circle)).toThrow('notLine');
+      expect(frame(right, bottomRight)).toThrow(/^(?:notOnFace|degenerate|side)$/u);
+      expect(frame(right, back, [{ distance1: 70, distance2: 8 }])).toThrow('outside');
+      expect(frame(right, back, [{ distance1: Number.NaN, distance2: 8 }])).toThrow('distance');
+      expect(frame(right, back, [])).toThrow('distance');
       // 円の穴の中心(30, 20)は面の外(穴の中)。
-      expect(frame(right, back, [{ distance1: 30, distance2: 20 }])).toThrow('辺からの距離の位置が選択面の内側にありません。');
+      expect(frame(right, back, [{ distance1: 30, distance2: 20 }])).toThrow('outside');
       // 中心点・円筒配置と同時には指定できない。
       const spec = holeSpec(top, right, back, [{ distance1: 8, distance2: 8 }]);
       expect(() => resolveHoleFrame(oc, shape, faces, { ...spec, centers: [[52, 32, 10]] }, undefined, edges))
-        .toThrow('辺からの距離と中心点・円筒配置は同時に指定できません。');
+        .toThrow('combination');
       // 辺の一覧を渡さない(別の形の一覧)と、辺は選び直せない。
       expect(() => resolveHoleFrame(oc, shape, faces, spec)).toThrow('辺からの距離の辺が見つかりません。形が大きく変わったため、選び直してください。');
       // makeHole は辺の一覧を受け取らない。中心点の穴に直さずに渡すと、同じ理由で断る(直すのは再計算の段)。

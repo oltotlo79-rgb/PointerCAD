@@ -1,3 +1,5 @@
+import { plainText } from '@pointercad/model';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRequest,
   executeMathWorkRequest } from '@pointercad/expression/math/worker';
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expression/math/contracts';
@@ -171,7 +173,7 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
       expect(useAppStore.getState().document).toBe(document);
       const reply = success(staged, ['extrude', ...(result === 'missing-first' ? ids.slice(1) : ids)]);
       staged.settle(result === 'middle-error'
-        ? { ...reply, errors: [{ featureId: ids[1], code: 'kernelFailed', message: 'invalid middle profile' }] } : reply);
+        ? { ...reply, errors: [{ featureId: ids[1], code: 'kernelFailed', text: plainText('invalid middle profile') }] } : reply);
       if (result !== 'success') {
         await vi.waitFor(() => expect(useAppStore.getState().stagedSolid?.status).toBe('failed'));
         const failed = useAppStore.getState();
@@ -317,7 +319,7 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
       previewExtrudeTransition({ kind: 'solidCommitted', state: input, commit: extrudeCommit('new', '') });
       expect(calls).toHaveLength(2);
       calls[1].settle({ ...success(calls[1], ['extrude']),
-        errors: [{ featureId: 'extrude-2', code: 'kernelFailed', message: 'failed' }] });
+        errors: [{ featureId: 'extrude-2', code: 'kernelFailed', text: plainText('failed') }] });
       await vi.waitFor(() => { expect(useAppStore.getState().stagedSolid?.status).toBe('failed'); });
       applyNumericTransition({ kind: 'solidCommitted', state: input, commit: extrudeCommit('new', '') });
       const state = useAppStore.getState();
@@ -346,7 +348,7 @@ describe('押し出しは形を計算してから1回で確定する(EX-14)', ()
       applyNumericTransition({ ...typed('7', 7), state: filled });
       expect(calls).toHaveLength(2);
       calls[1].settle({ ...success(calls[1], ['extrude']),
-        errors: [{ featureId: 'extrude-2', code: 'kernelFailed', message: 'failed' }] });
+        errors: [{ featureId: 'extrude-2', code: 'kernelFailed', text: plainText('failed') }] });
       await vi.waitFor(() => { expect(useAppStore.getState().stagedSolid?.status).toBe('failed'); });
       // After the failure: same document and history, the input with the typed value stays open.
       expect(useAppStore.getState().document).toBe(document);
@@ -868,7 +870,7 @@ describe('EX-04.02 切断の実stagerは成功した形を1回だけ採用する
       await vi.waitFor(() => { expect(useAppStore.getState().stagedSolid?.status).toBe('failed'); }, { timeout: 60_000 });
       const after = useAppStore.getState(), errors = harness.results.at(-1)?.errors;
       if (reason !== null) expect(errors?.some(error => 'reason' in error && error.reason === reason)).toBe(true);
-      else expect(errors?.some(error => error.message ===
+      else expect(errors?.some(error => partErrorMessage(error) ===
         '切る輪郭がソリッドに届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。')).toBe(true);
       expect(after.document).toBe(before.document);
       expect(documentSha(after.document)).toBe(sha);
@@ -880,7 +882,8 @@ describe('EX-04.02 切断の実stagerは成功した形を1回だけ採用する
       expect(shapeSha()).toBe(shape);
       expect(harness.borrowed.readBrepBytes()).toEqual(borrowedBytes);
       expect(after.numericInput).toBe(before.numericInput);
-      expect(after.stagedSolid?.errors[0]?.message.length).toBeGreaterThan(0);
+      const firstError = after.stagedSolid?.errors[0];
+      expect(firstError === undefined ? 0 : partErrorMessage(firstError).length).toBeGreaterThan(0);
       after.undo();
       expect(useAppStore.getState().document).toBe(harness.document);
       expect(useAppStore.getState().undoStack.past).toHaveLength(0);

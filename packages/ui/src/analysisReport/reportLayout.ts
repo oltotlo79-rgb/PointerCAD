@@ -19,6 +19,8 @@ export interface ReportFigure {
 const WIDTH = 210, HEIGHT = 297, MARGIN = 15;
 const BODY_WIDTH = WIDTH - 2 * MARGIN;
 const FIGURE_HEIGHT = 44;
+/** The box the figure draws in (paper mm): the body width and the figure height, less 1 mm on each side. */
+export const REPORT_FIGURE_SIZE = { width: BODY_WIDTH - 2, height: FIGURE_HEIGHT - 2 } as const;
 const CELL_PADDING = 0.8;
 const identity = [1, 0, 0, 1, 0, 0] as const;
 
@@ -58,7 +60,7 @@ function wrap(text: string, width: number, size: number, owner: string, outline:
           if (inkWidth(shape(middle)) <= width) low = middle;
           else high = middle;
         }
-        if (low === 0) throw new Error(t('beam.report.layoutLimit'));
+        if (low === 0) throw new Error(t('analysisReport.layoutLimit'));
         high = low;
         candidate = shape(high);
       }
@@ -102,8 +104,11 @@ function tableFragments(heights: readonly number[], remaining: number, fresh: nu
   return count;
 }
 
-/** A4 portrait, in paper mm from the bottom left. All mutable cursors and arrays belong to this invocation. */
-export function layoutBeamReport(header: (page: number) => readonly string[], tables: readonly ReportTable[],
+/**
+ * A4 portrait, in paper mm from the bottom left. All mutable cursors and arrays belong to this invocation.
+ * Shared by the beam and the solid static reports (J-03c): headers, tables split over pages, and one figure at the end.
+ */
+export function layoutAnalysisReport(header: (page: number) => readonly string[], tables: readonly ReportTable[],
   figure: ReportFigure, outline: OutlineText): readonly RenderDocument[] {
   const pages: RenderDocument[] = [];
   let primitives: RenderPrimitive[] = [];
@@ -140,7 +145,7 @@ export function layoutBeamReport(header: (page: number) => readonly string[], ta
     if (remaining < minimum ||
       (fullPages > 1 && tableFragments(heights, remaining, fresh) > fullPages)) page();
     const begin = (): void => {
-      if (top - MARGIN < headerHeight + (rows[0]?.[0]?.height ?? 0)) throw new Error(t('beam.report.layoutLimit'));
+      if (top - MARGIN < headerHeight + (rows[0]?.[0]?.height ?? 0)) throw new Error(t('analysisReport.layoutLimit'));
       headings.forEach(put);
     };
     begin();
@@ -149,7 +154,7 @@ export function layoutBeamReport(header: (page: number) => readonly string[], ta
       if (height <= bodyTop - MARGIN - headerHeight && height > top - MARGIN) { page(); begin(); }
       for (const line of lines) {
         if (line.height > top - MARGIN) { page(); begin(); }
-        if (line.height > top - MARGIN) throw new Error(t('beam.report.layoutLimit'));
+        if (line.height > top - MARGIN) throw new Error(t('analysisReport.layoutLimit'));
         put(line);
       }
     }
@@ -158,8 +163,8 @@ export function layoutBeamReport(header: (page: number) => readonly string[], ta
   const caption = rowLines([figure.caption], [BODY_WIDTH], 3.6, 'figure/title', outline);
   const figureHeight = FIGURE_HEIGHT + totalHeight(caption);
   if (top - MARGIN < figureHeight) page();
-  if (top - MARGIN < figureHeight) throw new Error(t('beam.report.layoutLimit'));
+  if (top - MARGIN < figureHeight) throw new Error(t('analysisReport.layoutLimit'));
   caption.forEach(put);
-  primitives.push(...figure.paths(MARGIN + 1, top - FIGURE_HEIGHT + 1, BODY_WIDTH - 2, FIGURE_HEIGHT - 2));
+  primitives.push(...figure.paths(MARGIN + 1, top - FIGURE_HEIGHT + 1, REPORT_FIGURE_SIZE.width, REPORT_FIGURE_SIZE.height));
   return pages;
 }

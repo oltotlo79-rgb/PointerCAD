@@ -302,9 +302,7 @@ const KNOWN_UNUSED_MESSAGE_KEYS: readonly string[] = [
   'settings.lengthUnit',
   'settings.lengthUnitInch',
   'settings.lengthUnitMillimeter',
-  'springError.pitchTooSmall',
   'springError.tooManyTurns',
-  'springError.wireTooThick',
   'statusBar.unit',
 ];
 

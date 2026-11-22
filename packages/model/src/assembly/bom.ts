@@ -2,7 +2,7 @@
  * アセンブリの部品表(FR-611)。
  *
  * 保存文書を書き換えず、置いた部品と解決済みの体積から表示行を作る純関数である。
- * 同じ部品の判定は `partKeyOf` に集め、材質を加えた組を部品表の同一性にする。
+ * 同じ部品の判定は `partKeyOf` に集め、材質を加えた組を部品表の同一性にする(前の呼びで保存した族の部品は、今の呼びの部品と同じ同一性と名前にする)。
  * 規格部品の鍵には寸法表と生成台本の改訂も既に含まれるため、改訂が違う形を
  * 同じ行へ混ぜない。行番号は保存せず、木を最初に歩いた順から毎回導出する。
  */
@@ -12,9 +12,9 @@ import {
 } from '../appearance/densityMaterials.js';
 import { massFromVolume } from '../measure/massProperties.js';
 import type { MaterialBearingPartDocument } from './massProperties.js';
-import { catalogItemFallbackMaterialLabel, catalogItemNominalMass } from './catalog/source.js';
+import { catalogItemFallbackMaterialLabel, catalogItemNominalMass, catalogItemRow } from './catalog/source.js';
 import { materialOf } from './massProperties.js';
-import { partKeyOf } from './resolveAssembly.js';
+import { partKeyOf, type StandardPartSource } from './resolveAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, BomSettings } from './types.js';
 
 /** 部品表の質量計算に必要な、カーネルから得たボディの最小の形。 */
@@ -128,6 +128,24 @@ function catalogMaterialLabelOf(component: AssemblyComponent, partDocument: Mate
   return catalogItemFallbackMaterialLabel(component.source);
 }
 
+/**
+ * 前の呼び(行の formerSizes)で保存した族の部品を、今の呼びに読み替えた保存の形。そうでない部品は null。部品表の同一性と名前だけに使い、
+ * 保存の値・形・質量は読み替えない(部品の鍵 `partKeyOf` は梁の解析などが保存するので変えない)。
+ */
+function currentSizeSource(component: AssemblyComponent): StandardPartSource | null {
+  const { source } = component;
+  if (source.kind !== 'standardPart' || source.catalog !== 'catalogItem') return null;
+  const row = catalogItemRow(source);
+  return row === null || row.size === source.size ? null : { ...source, size: row.size };
+}
+
+/** 部品表の行の名前。前の呼びで保存した族の部品は、名前の頭の前の呼びを今の呼びに読み替える(利用者が付けた名前は保つ)。 */
+function bomRowName(component: AssemblyComponent, current: StandardPartSource | null): string {
+  const name = bomPartName(component);
+  const saved = component.source.kind === 'standardPart' ? component.source.size : '';
+  return current !== null && name.startsWith(saved) ? current.size + name.slice(saved.length) : name;
+}
+
 function compareNullableNumber(left: number | null, right: number | null): number {
   if (left === null) return right === null ? 0 : 1;
   if (right === null) return -1;
@@ -159,6 +177,8 @@ export function buildBom(
   settings: BomSettings = assembly.bom,
 ): readonly BomRow[] {
   const grouped = new Map<string, MutableBomRow>();
+  // 前の呼びの読み替え(行の確かめ)は、この呼び出しの中で部品の鍵ごとに 1 回だけ(部品表の窓は選択のたびに作り直すため)。
+  const currentSizes = new Map<string, StandardPartSource | null>();
   let nextNumber = 1;
 
   const add = (
@@ -171,7 +191,10 @@ export function buildBom(
     const partDocument = currentResolved.documents?.get(partKey);
     const materialId = materialOf(component, partDocument);
     const configurationName = partDocument?.configurations.find((configuration) => configuration.id === partDocument.activeConfigurationId)?.name ?? null;
-    const identity = `${scope}\u0000${partKey}\u0000${materialId}`;
+    const current = currentSizes.get(partKey) ?? (currentSizes.has(partKey) ? null : currentSizeSource(component));
+    currentSizes.set(partKey, current);
+    const identityKey = current === null ? partKey : partKeyOf(current);
+    const identity = `${scope}\u0000${identityKey}\u0000${materialId}`;
     const found = grouped.get(identity);
     if (found !== undefined) {
       found.quantity += 1;
@@ -182,9 +205,9 @@ export function buildBom(
     const massEach = nominalMassOf(component) ?? massOf(partKey, materialId, currentResolved);
     const catalogLabel = catalogMaterialLabelOf(component, partDocument);
     grouped.set(identity, {
-      rowKey: rowKeyOf(scope, partKey, materialId),
+      rowKey: rowKeyOf(scope, identityKey, materialId),
       number: nextNumber,
-      name: bomPartName(component),
+      name: bomRowName(component, current),
       configurationName,
       quantity: 1,
       materialId,

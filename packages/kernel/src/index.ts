@@ -67,6 +67,7 @@ export type {
   SolidStepSpec,
 } from './types.js';
 export { DEFAULT_ANGULAR_DEFLECTION, DEFAULT_LINEAR_DEFLECTION } from './types.js';
+export { OCCT_LOAD_ERROR_NAME } from './occtLoadError.js';
 // 外観の面の照合(FR-1106)。model 側(kernelBridge.ts)が
 // 割り当ての指紋を AppearanceQuery へ詰め替えて渡し、AppearanceMatch を受け取る。
 export type { AppearanceMatch, AppearanceQuery } from './types.js';
@@ -238,7 +239,7 @@ export {
   type ShapeDistance,
 } from './occt/measureShape.js';
 export { makeExtrudeSolid, makeRevolveSolid } from './occt/makeSolidSweep.js';
-export { sewSolid } from './occt/sewSolid.js';
+export { sewSolid, type SewFacesReason } from './occt/sewSolid.js';
 export { booleanOp } from './occt/booleanOp.js';
 // 確保の入れ物。makeHole.ts 等の加工の作り手が使い回す。
 export { createAllocations, type Allocations, type OcctDeletable } from './occt/allocations.js';
@@ -282,7 +283,7 @@ export {
 // 辺からの距離の穴の中心(M-02)。OCCT を使わない純関数。図面の穴表も計算部と同じ式で中心を出す。
 export { edgeDistanceCenters } from './occt/edgeDistancePlacement.js';
 // 穴・ねじ穴(FR-405、FR-406)。
-export { makeHole, makeHoleTools, resolveHoleFrame, type HoleFrame } from './occt/makeHole.js';
+export { makeHole, makeHoleTools, resolveHoleFrame, type EdgeDistanceHoleReason, type HoleFrame } from './occt/makeHole.js';
 export { makeThreadCut, makeThreadHole, threadSweepRadius } from './occt/makeThread.js';
 // R 面取り・C 面取り(FR-407、FR-408)。
 export { makeFillet, resolveFilletEdges } from './occt/makeFillet.js';

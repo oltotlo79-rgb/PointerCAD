@@ -2,6 +2,7 @@ import { drawingDimensionContext, resolveDrawingGdt, resolveDrawingWelds } from 
 import type { AppState } from '../store/appState.js';
 import { activeDocument } from '../store/documentKind.js';
 import { t } from '../i18n/t.js';
+import { partErrorMessage } from './surfaceBodyFailureText.js';
 
 /** Consumer validity is separate from whether its saved shape reference is unique. */
 export function repairConsumerIssues(state: AppState): ReadonlyMap<string, string> {
@@ -10,7 +11,7 @@ export function repairConsumerIssues(state: AppState): ReadonlyMap<string, strin
     if (messages.length > 0) issues.set(id, [issues.get(id), ...messages].filter(message => message !== undefined).join(' / '));
   };
   if (active.kind === 'part') {
-    for (const error of state.partErrors) add(error.featureId, [error.message]);
+    for (const error of state.partErrors) add(error.featureId, [partErrorMessage(error)]);
   } else if (active.kind === 'assembly') {
     for (const [id, messages] of state.assemblyView?.mateTargetErrors ?? []) add(id, messages);
     for (const [id, messages] of state.assemblyView?.jointTargetErrors ?? []) add(id, messages);

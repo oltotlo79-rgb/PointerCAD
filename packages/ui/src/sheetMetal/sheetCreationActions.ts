@@ -4,6 +4,7 @@ import type { SheetMetalToolSession } from '../store/sheetMetalSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import type { buildSheetCreation } from './sheetCommands.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 
 export type SheetCreationCandidate = Extract<ReturnType<typeof buildSheetCreation>, { readonly ok: true }>;
 function matches(state: AppState, session: SheetMetalToolSession): boolean {
@@ -33,7 +34,7 @@ export async function applySheetCreation(session: SheetMetalToolSession, candida
     if (!current() || result.cancelled) return;
     const body = result.bodies.find((item) => item.featureId === candidate.feature.id);
     if (result.errors.length > 0 || (session.editingFeature === undefined ? body === undefined : result.bodies.length === 0)) {
-      useAppStore.setState({ sheetMetalError: result.errors[0]?.message ?? t('sheetMetal.computeFailed') }); return;
+      useAppStore.setState({ sheetMetalError: result.errors.length > 0 ? partErrorMessage(result.errors[0]) : t('sheetMetal.computeFailed') }); return;
     }
     if (commit) {
       useAppStore.getState().applyDocument(candidate.document);

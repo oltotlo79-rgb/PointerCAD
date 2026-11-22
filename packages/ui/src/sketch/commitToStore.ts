@@ -38,6 +38,7 @@ import { selectedExtrudeProfiles } from '../solid/sketchRefs.js';
 import { supportsSolidOperation } from '../solid/solidOperation.js';
 import { commitSolidInput } from '../solid/solidCommands.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { currentStagedSolid, type StagedConfirmation } from '../store/recomputeSlice.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -356,7 +357,7 @@ function confirmStagedSolidCommit(commit: SolidInputCommit): StagedConfirmation 
   const confirmation = confirmExtrusion(candidate, () => { useAppStore.getState().closeNumericInput(); });
   const failed = useAppStore.getState().stagedSolid;
   if (confirmation === 'refused' && failed?.status === 'failed' && failed.errors[0] !== undefined) {
-    useAppStore.getState().setShapeError(failed.errors[0].message);
+    useAppStore.getState().setShapeError(partErrorMessage(failed.errors[0]));
   }
   return confirmation;
 }

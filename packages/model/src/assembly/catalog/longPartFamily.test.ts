@@ -1,6 +1,6 @@
 /**
  * 長物の族の作り(断面の外形を包む長方形 × 長さ。統括の決定 2026-11-19 15:5x の 1)の検査: 族の欄・数え方・既定の長さ、行の名乗りと印と密度の持ち方、
- * 体積と質量(単位質量 × 長さ)、長さの上限を超える長さと寸法の誤りを断る事、切断の一覧に長さと単位質量で出る事、
+ * 体積と質量(単位質量 × 長さ)、長さの上限を超える長さ・下限より短い長さ(下限つきの行)と寸法の誤りを断る事、切断の一覧に長さと単位質量で出る事、
  * 溝つきのフレームの部材にならない(断面の外形・溝を持たない)事。行は検査の中の仮の行(製品の行の表は読みの後に道具が作る)。
  */
 import { describe, expect, it } from 'vitest';
@@ -88,6 +88,23 @@ describe('長物の族(断面の外形を包む長方形 × 長さ)', () => {
     }
     const flat: CatalogItemRow = { ...row('test-aluminum-12x8'), dims: { width: 12, height: 0, unitMassKgPerM: 0.2 } };
     expect([FAMILY.build(flat, length(100)), FAMILY.nominalVolume(flat, length(100))]).toEqual([null, null]);
+  });
+
+  it('長さを範囲で選ぶ品の行(下限つき)は、下限より短い長さを上限を超える長さと同じく作らず、既定の長さは下限より短くせず、印の文に範囲を書く', () => {
+    const ranged = rectangleLongPartFamily({ id: 'test-ranged-long-part', kindKey: 'catalog.frame.kind.testLongPart', diagram: 'panelCoverFrame',
+      evidenceTitle: '資料 1 試しの資料', defaultLength: 40 }, [{ key: 'test-ranged-28x28', size: '試しの長物 28×28（アルミ・樹脂）', page: 13,
+      kind: '試しの長物', material: 'mixed', materialText: 'アルミ・樹脂', width: 28, height: 28, unitMassKgPerM: null, minLength: 55, maxLength: 500,
+      simplified: [MARK] }]);
+    const only = ranged.rows[0];
+    if (only === undefined) throw new Error('行が無い');
+    expect([only.dims, only.note, ranged.options[0]?.rowDefault?.(only)]).toEqual([{ width: 28, height: 28, minLength: 55, maxLength: 500 },
+      `形は簡略(${MARK})。質量は資料に記入が無いので出さない。長さは 55 mm から 500 mm まで。断面の性質は持たない`, '55']);
+    for (const value of [54.5, 501]) {
+      expect([ranged.build(only, length(value)), ranged.nominalVolume(only, length(value))], `${value}`).toEqual([null, null]);
+    }
+    for (const value of [55, 500]) expect(ranged.nominalVolume(only, length(value)), `${value}`).toBeCloseTo(28 * 28 * value, 9);
+    // 下限を持たない行(今の行)は、印の文・寸法・既定の長さが前と同じ(上の検査の期待のまま)。
+    expect(RECORDS.map((record) => 'minLength' in row(record.key).dims)).toEqual([false, false, false]);
   });
 
   it('切断の一覧に長さと単位質量で出て、質量は登録口を通しても同じ', async () => {

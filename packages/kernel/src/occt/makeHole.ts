@@ -311,7 +311,9 @@ function resolvePlanarFace(
   diagonal: number,
   origins?: CurrentOriginIndex,
 ): TopoDS_Face {
-  return resolveFaceOfKind(oc, shape, faces, query, diagonal, 'plane', NOT_PLANAR_MESSAGE, origins);
+  return resolveFaceOfKind(oc, shape, faces, query, diagonal, {
+    surfaceKind: 'plane', wrongKindMessage: NOT_PLANAR_MESSAGE, origins,
+  });
 }
 
 /**
@@ -325,9 +327,11 @@ function resolveFaceOfKind(
   faces: readonly SolidFaceInfo[],
   query: SubShapeQuery,
   diagonal: number,
-  surfaceKind: 'plane' | 'cylinder',
-  wrongKindMessage: string,
-  origins?: CurrentOriginIndex,
+  { surfaceKind, wrongKindMessage, origins }: {
+    readonly surfaceKind: 'plane' | 'cylinder';
+    readonly wrongKindMessage: string;
+    readonly origins?: CurrentOriginIndex;
+  },
 ): TopoDS_Face {
   if (query.kind !== 'face') {
     // 面以外(辺・頂点)の指紋が来るのは model 側の取り違えだが、
@@ -524,7 +528,9 @@ function resolveCylindricalHoleFrame(
     }
   }
   const diagonal = boundingDiagonal(oc, shape);
-  const face = resolveFaceOfKind(oc, shape, faces, spec.face, diagonal, 'cylinder', NOT_CYLINDRICAL_MESSAGE, origins);
+  const face = resolveFaceOfKind(oc, shape, faces, spec.face, diagonal, {
+    surfaceKind: 'cylinder', wrongKindMessage: NOT_CYLINDRICAL_MESSAGE, origins,
+  });
   const { keep, release } = createAllocations();
   try {
     keep(face);
@@ -543,16 +549,15 @@ function resolveCylindricalHoleFrame(
 /** 辺からの距離の穴(M-02)の断り。辺が選び直せない時の文で、投げる時に符号 missingSubShape を付ける(kernelStepError.ts)。 */
 const EDGE_DISTANCE_MISSING_EDGE_MESSAGE = '辺からの距離の辺が見つかりません。形が大きく変わったため、選び直してください。';
 type EdgeDistanceFailure = Extract<ReturnType<typeof edgeDistanceCenters>, { readonly ok: false }>['reason'];
-const EDGE_DISTANCE_MESSAGES: Readonly<Record<EdgeDistanceFailure | 'combination' | 'notLine' | 'notOnFace' | 'outside', string>> = {
-  combination: '辺からの距離と中心点・円筒配置は同時に指定できません。',
-  distance: '辺からの距離には1つ以上の有限な距離を指定してください。',
-  notLine: '辺からの距離には直線の辺を選んでください。',
-  notOnFace: '辺からの距離には選んだ面の縁の辺を選んでください。',
-  degenerate: '辺からの距離には選んだ面の縁の辺を選んでください。',
-  side: '辺からの距離には選んだ面の縁の辺を選んでください。',
-  parallel: '辺からの距離には平行でない2本の辺を選んでください。',
-  outside: '辺からの距離の位置が選択面の内側にありません。',
-};
+/** 辺からの距離の穴(M-02)の断りの符号。利用者へ見せる文は画面の側が符号ごとに持つ(0b-2)。 */
+export type EdgeDistanceHoleReason = EdgeDistanceFailure | 'combination' | 'notLine' | 'notOnFace' | 'outside';
+/** 辺からの距離の穴の断り。message は符号の文字(今の SurfaceThickenError と同じ形)。 */
+export class EdgeDistanceHoleError extends Error {
+  constructor(readonly code: EdgeDistanceHoleReason) {
+    super(code);
+    this.name = 'EdgeDistanceHoleError';
+  }
+}
 /** 側を聞く点を辺から離す量(mm)。面の分類の許容 1e-7 mm より十分大きく、細い面の幅より十分小さい。 */
 const EDGE_DISTANCE_PROBE_MM = 1e-4;
 
@@ -585,13 +590,13 @@ function edgeDistanceOrigins(
     const match = resolveEdgeReference(edges, query, diagonal * 0.5, origins);
     const info = match.status === 'matched' ? edges.find((candidate) => candidate.index === match.match.index) : undefined;
     if (info === undefined) throw new KernelStepError('missingSubShape', EDGE_DISTANCE_MISSING_EDGE_MESSAGE);
-    if (info.curveKind !== 'line') throw new Error(EDGE_DISTANCE_MESSAGES.notLine);
+    if (info.curveKind !== 'line') throw new EdgeDistanceHoleError('notLine');
     if (faceInfo?.boundaryEdgeIndices !== undefined && !faceInfo.boundaryEdgeIndices.includes(info.index)) {
-      throw new Error(EDGE_DISTANCE_MESSAGES.notOnFace);
+      throw new EdgeDistanceHoleError('notOnFace');
     }
     return info;
   });
-  if (first.index === second.index) throw new Error(EDGE_DISTANCE_MESSAGES.parallel);
+  if (first.index === second.index) throw new EdgeDistanceHoleError('parallel');
   const inside = (point: Vec3Tuple): boolean => {
     if (!isFiniteTuple(point)) return false;
     const native = keep(new oc.gp_Pnt_3(point[0], point[1], point[2]));
@@ -600,9 +605,9 @@ function edgeDistanceOrigins(
   const result = edgeDistanceCenters({ origin: planeFrame.pointOnPlane, normal: planeFrame.normal },
     [{ start: first.start, end: first.end }, { start: second.start, end: second.end }], placement.locations, inside,
     { tolerance: 1e-6 * Math.max(1, diagonal), probe: EDGE_DISTANCE_PROBE_MM });
-  if (!result.ok) throw new Error(EDGE_DISTANCE_MESSAGES[result.reason]);
+  if (!result.ok) throw new EdgeDistanceHoleError(result.reason);
   for (const center of result.centers) {
-    if (!inside(center)) throw new Error(EDGE_DISTANCE_MESSAGES.outside);
+    if (!inside(center)) throw new EdgeDistanceHoleError('outside');
   }
   return [...result.centers];
 }
@@ -622,7 +627,8 @@ export function resolveHoleFrame(
 ): HoleFrame {
   const planar = spec.planar;
   if (planar !== undefined && (spec.cylindrical !== undefined || spec.centers.length !== 0)) {
-    throw new Error(planar.kind === 'edge-distance' ? EDGE_DISTANCE_MESSAGES.combination : '面内X・Yと中心点・円筒配置は同時に指定できません。');
+    if (planar.kind === 'edge-distance') throw new EdgeDistanceHoleError('combination');
+    throw new Error('面内X・Yと中心点・円筒配置は同時に指定できません。');
   }
   if (planar?.kind === 'plane-face' && (planar.locations.length === 0
     || planar.locations.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y)))) {
@@ -630,7 +636,7 @@ export function resolveHoleFrame(
   }
   if (planar?.kind === 'edge-distance' && (planar.locations.length === 0
     || planar.locations.some(p => !Number.isFinite(p.distance1) || !Number.isFinite(p.distance2)))) {
-    throw new Error(EDGE_DISTANCE_MESSAGES.distance);
+    throw new EdgeDistanceHoleError('distance');
   }
   if (spec.cylindrical !== undefined) {
     return resolveCylindricalHoleFrame(oc, shape, faces, { ...spec, cylindrical: spec.cylindrical }, origins);
@@ -735,8 +741,10 @@ function makeEntryTool(
   axes: gp_Ax2,
   diameter: number,
   margin: number,
-  keep: Allocations['keep'],
-  capture?: (primitive: BRepPrim_Cylinder | BRepPrim_Cone, stage: HoleFaceOrigin['stage']) => void,
+  { keep, capture }: {
+    readonly keep: Allocations['keep'];
+    readonly capture?: (primitive: BRepPrim_Cylinder | BRepPrim_Cone, stage: HoleFaceOrigin['stage']) => void;
+  },
 ): TopoDS_Shape | null {
   switch (entry.kind) {
     case 'plain':
@@ -830,14 +838,18 @@ interface HoleToolsHandle extends OcctShapeHandle {
   readonly originProofMissingNativeMap: boolean;
 }
 
+interface HoleToolsOptions {
+  readonly entry?: HoleEntrySpec;
+  readonly naming?: HoleToolNaming;
+}
+
 export function makeHoleTools(
   oc: OpenCascadeInstance,
   frame: HoleFrame,
   diameter: number,
   depth: number | null,
   transforms: readonly RigidTransformSpec[],
-  entry: HoleEntrySpec = PLAIN_ENTRY,
-  naming?: HoleToolNaming,
+  { entry = PLAIN_ENTRY, naming }: HoleToolsOptions = {},
 ): HoleToolsHandle {
   if (!Number.isFinite(diameter) || diameter <= 0) {
     throw new Error(DIAMETER_MESSAGE);
@@ -923,7 +935,9 @@ export function makeHoleTools(
         }
       };
       if (!originProofLimitExceeded && !originProofMissingNativeMap) capture(keep(maker.Cylinder()), 'bore');
-      const entryTool = makeEntryTool(oc, entry, axes, diameter, backoff, keep, originProofLimitExceeded || originProofMissingNativeMap ? undefined : capture);
+      const entryTool = makeEntryTool(oc, entry, axes, diameter, backoff, {
+        keep, capture: originProofLimitExceeded || originProofMissingNativeMap ? undefined : capture,
+      });
       let fusedFaces: readonly NativeHoleToolFace[] = stageFaces;
       const tool = fuseEntryTool(oc, cylinder, entryTool, keep, originProofLimitExceeded || originProofMissingNativeMap ? undefined : (fuse, output) => {
         try { fusedFaces = rebindHoleToolFaces(oc, fuse, output, stageFaces, keep); }
@@ -1021,6 +1035,12 @@ export function hasHoleMaterialRemoval(
   } finally { owned.release(); }
 }
 
+interface HoleOptions {
+  readonly entry?: HoleEntrySpec;
+  readonly origins?: CurrentOriginIndex;
+  readonly featureId?: string;
+}
+
 /**
  * 穴をあける(FR-405)。対象は消費せず、新しい形を返す。
  *
@@ -1034,24 +1054,21 @@ export function hasHoleMaterialRemoval(
  * 返す値は `booleanOp` の結果そのもので、**測り済みの体積を持ったまま**返る
  * (`BooleanResult` の注釈。呼び出し側の `buildSolidBodyMesh` が測り直さずに使う)。
  *
- * `entry` は入口の形(FR-422)。**省くと今までどおりの真っ直ぐな穴**になるので、
- * 段の型(`HoleStepSpec`)へ欄が増えるまでは呼び出し側を変えずに済む。
+ * `options.entry` は入口の形(FR-422)。省くと真っ直ぐな穴になる。
  */
 export function makeHole(
   oc: OpenCascadeInstance,
   spec: HoleStepSpec,
   target: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
-  entry: HoleEntrySpec = PLAIN_ENTRY,
-  origins?: CurrentOriginIndex,
-  featureId?: string,
+  { entry = PLAIN_ENTRY, origins, featureId }: HoleOptions = {},
 ): BooleanResult {
   const frame = resolveHoleFrame(oc, target, faces, spec, origins);
   const naming = featureId !== undefined && spec.centerAnchors !== undefined && spec.placementRoles !== undefined
     ? { featureId, centerAnchors: spec.centerAnchors, placementRoles: spec.placementRoles } : undefined;
   const owned = createAllocations();
   try {
-    const tools = owned.keep(makeHoleTools(oc, frame, spec.diameter, spec.depth, spec.transforms, entry, naming));
+    const tools = owned.keep(makeHoleTools(oc, frame, spec.diameter, spec.depth, spec.transforms, { entry, naming }));
     // A no-op native cut may reuse its input solid in an output compound and
     // freeze that TShape even in non-destructive mode. Work on independently
     // copied topology, geometry and mesh; never restore flags on shared input.

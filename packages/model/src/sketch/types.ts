@@ -8,6 +8,7 @@
  */
 
 import type { ExpressionValue } from '@pointercad/expression';
+import type { FailureText } from '../failureText.js';
 import type { FunctionDefinition } from '../functionGeometry/functionDefinitionTypes.js';
 import type { FunctionPointReference } from '../functionGeometry/functionPointReference.js';
 
@@ -650,7 +651,8 @@ export type SketchErrorCode =
 export interface SketchError {
   readonly featureId: string;
   readonly code: SketchErrorCode;
-  readonly message: string;
+  /** 画面に出す文の鍵と値(0b-3)。文は画面の側(ui の partErrorMessage)が文言の表で作る。計算部の文は plainText で運ぶ。 */
+  readonly text: FailureText;
 }
 
 /**

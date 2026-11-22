@@ -1,0 +1,15 @@
+{
+  "analysisReport.export": "報告書（PDF）を書き出す",
+  "analysisReport.guide": "静解析の条件と結果を、A4 の PDF の報告書として保存します。",
+  "analysisReport.page": "第{page}頁",
+  "analysisReport.document": "文書名",
+  "analysisReport.analysis": "解析名",
+  "analysisReport.exported": "書き出し日時",
+  "analysisReport.version": "アプリの版",
+  "analysisReport.versionUnknown": "不明",
+  "analysisReport.summary": "静解析の要約",
+  "analysisReport.layoutLimit": "見出しまたは文字が報告書の印刷範囲を超えています。",
+  "analysisReport.unavailable": "報告書を書き出せません。静解析を流し直してください。",
+  "analysisReport.fontFailed": "字体を読み込めなかったため、報告書を書き出せませんでした。",
+  "analysisReport.failed": "報告書を書き出せませんでした。"
+}

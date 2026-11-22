@@ -11,7 +11,7 @@
  * テーマや色の変数を足したときに組が足りなくならないよう、テーマの名前と数、組の変数の名前も固定する。
  * 色の読み方は themeColors.test.ts と同じ(注釈を除いた appShell.css の塊をそのまま読む)。
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -354,12 +354,112 @@ describe('効かない物の見た目(指摘 2)', () => {
   });
 });
 
+/**
+ * 画面の文字の下限(表示の倍率 1 の時)。点検(C-01)の基準「最小の文字 11px 以上」
+ * (docs/次の版の作業一覧.md の C-01・C-03)。紙に出す印刷の pt は対象外。
+ * 3D の画面と図面の中の文字(canvas に描く札・寸法の文字)は、表示の設定で大きさが決まるので見ない。
+ */
+const MINIMUM_FONT_PX = 11;
+
+function tsxFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return tsxFiles(path);
+    return entry.isFile() && entry.name.endsWith('.tsx') && !/\.(?:test|testSupport)\.tsx$/u.test(entry.name) ? [path] : [];
+  }).sort();
+}
+
 describe('文字の大きさ(決定 4)', () => {
   it('画面の CSS に 11px より小さい文字の大きさを書かない(印刷の pt を除く)', () => {
     const small = allRules.flatMap((rule) => [...rule.body.matchAll(/font-size:\s*([^;]+);/gu)]
       .flatMap((match) => [...match[1].matchAll(/(\d+(?:\.\d+)?)px/gu)]
-        .filter((size) => Number(size[1]) < 11)
+        .filter((size) => Number(size[1]) < MINIMUM_FONT_PX)
         .map(() => `${rule.file}: ${rule.selectors.join(', ')} → ${match[1].trim()}`)));
     expect(small).toEqual([]);
+  });
+
+  it('文字の大きさの変数(--pcad-font-size・-heading・-small)は、倍率 1 で 11px 以上', () => {
+    const sizes = [...css.matchAll(/--pcad-font-size(?:-[a-z]+)?:\s*calc\((\d+(?:\.\d+)?)px \* var\(--pcad-scale, 1\)\)/gu)]
+      .map((match) => Number(match[1]));
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(sizes.filter((size) => size < MINIMUM_FONT_PX)).toEqual([]);
+  });
+
+  it('em・% の倍率で親より小さい文字にしない(11px の変数を下限にした max を除く)。font の短縮形も同じ', () => {
+    const shrunk = allRules.flatMap((rule) => [...rule.body.matchAll(/(?:^|;)\s*font(?:-size)?:\s*([^;]+)/gu)]
+      .filter((match) => !/^max\(\s*var\(--pcad-font-size-small\)/u.test(match[1].trim()))
+      .flatMap((match) => [...match[1].matchAll(/(\d+(?:\.\d+)?)(em|%)/gu)]
+        .filter((size) => Number(size[1]) < (size[2] === 'em' ? 1 : 100))
+        .map(() => `${rule.file}: ${rule.selectors.join(', ')} → ${match[1].trim()}`)));
+    expect(shrunk).toEqual([]);
+  });
+
+  it('画面の部品(tsx)の style の fontSize は、倍率 1 で 11 以上', () => {
+    const small = tsxFiles(sourceDirectory).flatMap((path) => [...readFileSync(path, 'utf8')
+      .matchAll(/fontSize:\s*['"`]?(\d+(?:\.\d+)?)/gu)]
+      .filter((match) => Number(match[1]) < MINIMUM_FONT_PX)
+      .map((match) => `${relative(sourceDirectory, path).replaceAll('\\', '/')} → ${match[0]}`));
+    expect(small).toEqual([]);
+  });
+});
+
+/**
+ * 押せる面の下限。点検(C-01)の基準「押せる面 24px 以上」(docs/次の版の作業一覧.md の C-01・C-03)。
+ * 画面で測る所と、宣言で留める所を分ける:
+ * - 画面で測る: ツールバー・左の木・帯・右のパネルの、空の部品と箱を選んだ部品で見える押せる物(e2e の usabilityKeyboardFlow.ts の targetSizeFlow)。
+ * - 宣言で留める: その 2 つの状態では出ない押せる物(下の表の class)と、右のパネルの部品に素の button・select・checkbox を残さない事(この describe)。
+ */
+const MINIMUM_TARGET_PX = 24;
+
+/** 画面で測る 2 つの状態では出ない押せる物の大きさを決める宣言(選び方・24px 以上である欄・出る所)。 */
+const DECLARED_TARGETS = [
+  ['.pcad-reference', 'min-height'], // 参照の名前(参照を持つフィーチャーを選んだ時)
+  ['.pcad-boundary__row', 'height'], // 作図の面の境界の一覧(面を選んだ時)
+  ['.pcad-constraint-row__pick', 'min-height'], // 選んだ組・拘束の一覧の行
+  ['.pcad-field__math', 'min-width'], // 式の欄の ƒx
+  ['.pcad-sheet-metal__check', 'min-height'], // 板金の展開の checkbox の label
+  ['.pcad-button', 'height'], // 関数の曲線・曲面・点・接線・断面の釦(class を揃えた)
+] as const;
+
+/** 右のパネル(PropertyPanel.tsx)と、そこから相対で読む部品(.tsx。1 段)。 */
+function rightPanelFiles(): string[] {
+  const entry = join(shellDirectory, 'PropertyPanel.tsx');
+  const imported = [...readFileSync(entry, 'utf8').matchAll(/from '(\.{1,2}\/[^']+)\.js'/gu)]
+    .map((match) => resolve(shellDirectory, `${match[1]}.tsx`))
+    .filter((path) => existsSync(path));
+  return [entry, ...imported];
+}
+
+/** その選び方を持つ規則の、ある欄の値(px)。 */
+function declaredPixels(selector: string, property: string): number[] {
+  return allRules.filter((rule) => rule.selectors.includes(selector))
+    .flatMap((rule) => [...rule.body.matchAll(new RegExp(`(?:^|;)\\s*${property}:\\s*(\\d+(?:\\.\\d+)?)px`, 'gu'))])
+    .map((match) => Number(match[1]));
+}
+
+describe('押せる面(C-03): 画面で測らない物は宣言で留める', () => {
+  it.each(DECLARED_TARGETS)('%s の %s は 24px 以上', (selector, property) => {
+    const sizes = declaredPixels(selector, property);
+    expect(sizes.length, `${selector} に ${property} の宣言が無い`).toBeGreaterThan(0);
+    expect(sizes.filter((size) => size < MINIMUM_TARGET_PX)).toEqual([]);
+  });
+
+  it('右のパネルの部品に、class の無い button・select と、24px 以上の label に入っていない checkbox・radio を残さない', () => {
+    const raw = rightPanelFiles().flatMap((path) => {
+      const text = readFileSync(path, 'utf8');
+      const file = relative(sourceDirectory, path).replaceAll('\\', '/');
+      return [...text.matchAll(/<(button|select|input)\b([^>]*)>/gu)].flatMap((match) => {
+        const [tag, attributes] = [match[1], match[2]];
+        const line = text.slice(0, match.index).split('\n').length;
+        if ((tag === 'button' || tag === 'select') && !attributes.includes('className')) return [`${file}:${String(line)} ${tag}`];
+        if (tag !== 'input' || !/type="(?:checkbox|radio)"/u.test(attributes)) return [];
+        const before = text.slice(0, match.index);
+        const label = /<label className="([^"]+)"/u.exec(before.slice(before.lastIndexOf('<label')));
+        const tall = label?.[1].split(/\s+/u).some((name) => [...declaredPixels(`.${name}`, 'min-height'),
+          ...declaredPixels(`.${name}`, 'height')].some((size) => size >= MINIMUM_TARGET_PX)) === true;
+        return tall ? [] : [`${file}:${String(line)} ${tag}(label が 24px 未満か無い)`];
+      });
+    });
+    expect(raw).toEqual([]);
   });
 });

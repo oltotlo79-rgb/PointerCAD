@@ -5,7 +5,8 @@
 .pcad-sheet-metal .pcad-field > span:first-child { grid-column: 1 / -1; }
 .pcad-sheet-metal .pcad-field > select { grid-column: 1 / -1; }
 .pcad-sheet-metal select, .pcad-sheet-metal input[type="text"] { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; }
-.pcad-sheet-metal__check { display: flex; align-items: center; gap: 0.4rem; }
+/* 押せる面の下限 24px(C-03)。checkbox は label ごと押せるので、label の高さで 24px を保つ。 */
+.pcad-sheet-metal__check { display: flex; align-items: center; gap: 0.4rem; min-height: 24px; }
 .pcad-sheet-metal__actions { display: flex; gap: 0.5rem; }
 .pcad-sheet-metal__actions button { flex: 1; }
 .pcad-sheet-metal .pcad-button { justify-content: center; }

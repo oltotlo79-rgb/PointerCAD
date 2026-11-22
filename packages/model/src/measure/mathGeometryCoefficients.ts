@@ -15,6 +15,7 @@ import type { Parameter } from '../parameters/types.js';
 import type { PartDocument } from '../part/types.js';
 import { mathGeometryCoefficientId, mathGeometryReferencesOf } from './mathGeometryIdentity.js';
 import type { MathGeometryDefinition, MathGeometryOutcome } from './mathGeometryTypes.js';
+import type { WorkerBrokenCode } from '../kernelBridge/bridgeContracts.js';
 
 /* ---------------------------------------------------------------------------
  * Operations allowed in a formula computed from a measured value
@@ -196,7 +197,7 @@ export type MathGeometryCoefficientInput =
   | { readonly status: 'value'; readonly coefficient: MathCoefficientValue }
   | { readonly status: 'pending' }
   | { readonly status: 'boolean' }
-  | { readonly status: 'unresolved'; readonly reason: UnresolvedMathGeometryReason; readonly message: string };
+  | { readonly status: 'unresolved'; readonly reason: UnresolvedMathGeometryReason; readonly message: string; readonly code?: WorkerBrokenCode };
 
 /**
  * Convert `outcome` (the caller's current result for `definition`, or `undefined`) into the input the
@@ -213,7 +214,9 @@ export type MathGeometryCoefficientInput =
 export function mathGeometryCoefficientValue(document: PartDocument, definition: MathGeometryDefinition,
   outcome: MathGeometryOutcome | undefined): MathGeometryCoefficientInput {
   if (outcome === undefined || outcome.id !== definition.id || outcome.documentId !== document.id) return { status: 'pending' };
-  if (outcome.status === 'unresolved') return { status: 'unresolved', reason: outcome.reason, message: outcome.message };
+  if (outcome.status === 'unresolved') {
+    return { status: 'unresolved', reason: outcome.reason, message: outcome.message, ...(outcome.code === undefined ? {} : { code: outcome.code }) };
+  }
   if (outcome.kind === 'boolean') return { status: 'boolean' };
   if (!Number.isFinite(outcome.value)) {
     return { status: 'unresolved', reason: 'failed-geometry', message: '図形から有限で妥当な測定値を取得できませんでした。' };

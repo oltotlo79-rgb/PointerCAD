@@ -111,4 +111,54 @@ describe('UI lint分割の完全性', () => {
     expect(wrapper.stdout).toBe(direct.stdout);
     expect(wrapper.stderr).toBe(direct.stderr);
   });
+
+  it('名指しでは輪を拒否し、輪がない場合とオプションだけの場合はESLintの結果を保つ', () => {
+    const tempRoot = path.join(root, 'scratchpad/temp');
+    mkdirSync(tempRoot, { recursive: true });
+    const fixture = mkdtempSync(path.join(tempRoot, 'lint-cycles-'));
+    const a = 'packages/demo/src/a.mjs';
+    const b = 'packages/demo/src/b.mjs';
+    const config = 'lint.config.mjs';
+    const lint = path.join(fixture, 'scripts/lint.mjs');
+    const require = createRequire(import.meta.url);
+    const eslint = path.join(path.dirname(require.resolve('eslint/package.json')), 'bin/eslint.js');
+    try {
+      for (const file of ['scripts/lint.mjs', 'scripts/lib/runtimeCycles.mjs']) {
+        const copy = path.join(fixture, file);
+        mkdirSync(path.dirname(copy), { recursive: true });
+        fs.copyFileSync(path.join(root, file), copy);
+      }
+      mkdirSync(path.join(fixture, 'packages/demo/src'), { recursive: true });
+      writeFileSync(path.join(fixture, 'tsconfig.json'), '{"compilerOptions":{"module":"ESNext","moduleResolution":"Bundler"}}\n');
+      writeFileSync(path.join(fixture, config), "export default [{ rules: { 'no-console': 'warn' } }];\n");
+      writeFileSync(path.join(fixture, a), "import './b.mjs';\nconsole.log(1);\n");
+      writeFileSync(path.join(fixture, b), 'export const value = 1;\n');
+
+      const args = ['--config', config, '--', a];
+      const spawnOptions = { cwd: fixture, encoding: 'utf8' as const };
+      const direct = spawnSync(process.execPath, [eslint, ...args], spawnOptions);
+      const clean = spawnSync(process.execPath, [lint, ...args], spawnOptions);
+      expect(direct.status).toBe(0);
+      expect(direct.stdout).toContain('no-console');
+      expect(clean.status).toBe(direct.status);
+      expect(clean.stdout).toBe(direct.stdout);
+      expect(clean.stderr).toBe(direct.stderr);
+
+      writeFileSync(path.join(fixture, b), "import './a.mjs';\n");
+      const blocked = spawnSync(process.execPath, [lint, ...args], spawnOptions);
+      expect(blocked.status).toBe(1);
+      expect(blocked.stdout).toBe('');
+      expect(blocked.stderr.trimEnd()).toBe(`runtime import cycle group: ${a}, ${b}`);
+
+      const optionArgs = ['-c', config, '--print-config', a];
+      const optionDirect = spawnSync(process.execPath, [eslint, ...optionArgs], spawnOptions);
+      const optionWrapped = spawnSync(process.execPath, [lint, ...optionArgs], spawnOptions);
+      expect(optionDirect.status).toBe(0);
+      expect(optionWrapped.status).toBe(optionDirect.status);
+      expect(optionWrapped.stdout).toBe(optionDirect.stdout);
+      expect(optionWrapped.stderr).toBe(optionDirect.stderr);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
 });

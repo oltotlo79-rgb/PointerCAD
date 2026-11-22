@@ -42,7 +42,10 @@ function sourceWith(overrides: Partial<ReturnType<typeof useAppStore.getState>>)
 
 describe('面の移動のつまみは、外向きの法線の上の欄の距離の所に出る(M-05 4-2a)', () => {
   it('右の端面に 5 を打つと、根もとは重心から +X へ 5 の所', () => {
-    expect(faceOffsetHandleOf(sourceWith({}))).toEqual({ base: [40, 15, 5], normal: [1, 0, 0], distanceMm: 5, origin: [45, 15, 5] });
+    expect(faceOffsetHandleOf(sourceWith({}))).toEqual({
+      base: [40, 15, 5], normal: [1, 0, 0], distanceMm: 5, origin: [45, 15, 5],
+      fieldKey: 'faceOffsetDistance', scale: 1, positiveOnly: false,
+    });
   });
 
   it('負の距離は内側(法線の逆)。式は確定と同じ評価で読む', () => {
@@ -61,6 +64,7 @@ describe('面の移動のつまみは、外向きの法線の上の欄の距離�
   it('確定と同じ読み方で読めない欄は距離 0(つまみは面の上)', () => {
     expect(faceOffsetHandleOf(sourceWith({ numericInput: distanceInput('2*') }))).toEqual({
       base: [40, 15, 5], normal: [1, 0, 0], distanceMm: 0, origin: [40, 15, 5],
+      fieldKey: 'faceOffsetDistance', scale: 1, positiveOnly: false,
     });
   });
 

@@ -41,7 +41,6 @@ export const PARAMS_BASELINE = [
   { file: 'packages/kernel/src/occt/hlrSeamOutlines.ts', functions: [['readSeamOutlines', 8]] },
   { file: 'packages/kernel/src/occt/inspectPrintability.ts', functions: [['countGridEntries', 7], ['intersectTriangle', 8], ['castRay', 11]] },
   { file: 'packages/kernel/src/occt/makeEmboss.ts', functions: [['makeEmbossTool', 8]] },
-  { file: 'packages/kernel/src/occt/makeHole.ts', functions: [['resolveFaceOfKind', 8], ['makeEntryTool', 7], ['makeHoleTools', 7], ['makeHole', 7]] },
   { file: 'packages/kernel/src/occt/makeProjection.ts', functions: [['projectEdgeToPlane', 7]] },
   { file: 'packages/kernel/src/occt/makeRib.ts', functions: [['selectRibChunks', 7]] },
   { file: 'packages/kernel/src/occt/makeThinExtrude.ts', functions: [['buildClosedWall', 7], ['buildOpenWall', 7]] },

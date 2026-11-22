@@ -8,10 +8,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { T_SLOT_CATALOG_RECORDS } from './frameCatalogRows.js';
-import { BRACKET_STOCK_FAMILY, SMALL_FRAME_CAP_FAMILY, SMALL_T_SLOT_FRAME_FAMILY, type SmallFrameRecord } from './smallFrameCatalog.js';
+import * as smallFrameCatalog from './smallFrameCatalog.js';
 import { BRACKET_STOCK_RECORDS, SMALL_FRAME_CAP_RECORDS, SMALL_FRAME_RECORDS } from './smallFrameRows.js';
 
-const FAMILIES = [SMALL_T_SLOT_FRAME_FAMILY, SMALL_FRAME_CAP_FAMILY, BRACKET_STOCK_FAMILY] as const;
+const { BRACKET_STOCK_FAMILY, SMALL_FRAME_CAP_FAMILY, SMALL_T_SLOT_FRAME_FAMILY } = smallFrameCatalog;
+const FAMILIES = Object.values(smallFrameCatalog)
+  .filter((value: unknown): value is CatalogFamily => typeof value === 'object' && value !== null
+    && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows))
+  .sort((left, right) => left.id.localeCompare(right.id));
 const values = (length: number): Readonly<Record<string, string>> => ({ length: String(length) });
 const NOT_MADE = '（寸法の記入が無いため作っていない）';
 const SYMMETRIC = '溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた';
@@ -27,17 +31,21 @@ describe('資料 1 の小さい溝つきフレーム・端のキャップ・ブ�
   it('族は 3 つで、版・欄・線図・数え方を凍結し、行の数は 14・6・2、行は規格の行を名乗らない', () => {
     expect(FAMILIES.map((family) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision, family.stock,
       family.diagram, family.options.filter((spec) => spec.optional !== true).map((spec) => spec.key), family.rows.length])).toEqual([
-      ['t-slot-frame-small', 'aluminumFrame', 'catalog.frame.kind.smallFrame', 't-slot-frame-small-2026-11-r1', 'small-frame-1', 'linear', 'smallFrame',
-        ['length'], 14],
-      ['t-slot-frame-cap-small', 'aluminumFrame', 'catalog.frame.kind.smallFrameCap', 't-slot-frame-cap-small-2026-11-r1', 'small-frame-1', 'count',
-        'smallFrameCap', [], 6],
       ['bracket-stock', 'aluminumFrame', 'catalog.frame.kind.bracketStock', 'bracket-stock-2026-11-r1', 'small-frame-1', 'linear', 'bracketStock',
         ['length'], 2],
+      ['t-slot-frame-cap-small', 'aluminumFrame', 'catalog.frame.kind.smallFrameCap', 't-slot-frame-cap-small-2026-11-r1', 'small-frame-1', 'count',
+        'smallFrameCap', [], 6],
+      ['t-slot-frame-small', 'aluminumFrame', 'catalog.frame.kind.smallFrame', 't-slot-frame-small-2026-11-r1', 'small-frame-1', 'linear', 'smallFrame',
+        ['length'], 14],
     ]);
-    expect(SMALL_T_SLOT_FRAME_FAMILY.rows.map((row) => row.key)).toEqual(SMALL_FRAME_RECORDS.map((record) => record.key));
-    expect(SMALL_FRAME_CAP_FAMILY.rows.map((row) => row.key)).toEqual(SMALL_FRAME_CAP_RECORDS.map((record) => record.key));
-    expect(BRACKET_STOCK_FAMILY.rows.map((row) => row.key)).toEqual(BRACKET_STOCK_RECORDS.map((record) => record.key));
+    const recordsById = {
+      [SMALL_T_SLOT_FRAME_FAMILY.id]: SMALL_FRAME_RECORDS,
+      [SMALL_FRAME_CAP_FAMILY.id]: SMALL_FRAME_CAP_RECORDS,
+      [BRACKET_STOCK_FAMILY.id]: BRACKET_STOCK_RECORDS,
+    };
+    expect(FAMILIES.map((family) => family.id).sort()).toEqual(Object.keys(recordsById).sort());
     for (const family of FAMILIES) {
+      expect(family.rows.map((row) => row.key), family.id).toEqual(recordsById[family.id].map((record) => record.key));
       expect(new Set(family.rows.map((row) => row.size)).size).toBe(family.rows.length);
       for (const row of family.rows) {
         expect([row.standardLabel, row.verification, row.verified, row.evidence.reference], row.key)
@@ -149,7 +157,7 @@ describe('小さい溝つきフレームの締結に出す溝(溝ごとの呼び
     STANDARD.set(key, new Set([...(STANDARD.get(key) ?? []), record.slot]));
   }
   // 標準の組に当たる溝は呼びの数、当たらない溝は null(溝はあるが、溝用のナットの溝幅が決まらない。統括 2026-11-18 10:0x)。
-  const nominalOf = (slot: SmallFrameRecord['slots'][number]): number | null => {
+  const nominalOf = (slot: smallFrameCatalog.SmallFrameRecord['slots'][number]): number | null => {
     const hit = STANDARD.get([slot.mouthWidth, slot.roomWidth, slot.shoulder, slot.roomHeight].join('/'));
     return hit?.size === 1 ? [...hit][0] ?? null : null;
   };

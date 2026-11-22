@@ -3,6 +3,7 @@ import type { ArcGeometry, DimensionLineSegment } from '../dimension/geometry.js
 import { blackDot, createArrowTriangle, type ArrowTriangle } from '../dimension/arrow.js';
 import type { SymbolText } from '../annotation/symbols.js';
 import type { SemanticTextMetrics } from '../render/types.js';
+import { exceedsMagnitude } from '../numericTolerance.js';
 
 export interface BalloonCircle { readonly center: Point2; readonly radius: number }
 interface BalloonInput {
@@ -33,7 +34,7 @@ function moveOutside(position: Point2, direction: Point2, radius: number, occupi
     const along = x * direction[0] + y * direction[1];
     const across = x * direction[1] - y * direction[0];
     const sum = radius + circle.radius + 0.5;
-    if (Math.abs(across) > sum) continue;
+    if (exceedsMagnitude(across, sum)) continue;
     const half = Math.sqrt(Math.max(0, sum * sum - across * across));
     if (!Number.isFinite(half)) return null;
     if (along + half >= 0) intervals.push({ from: along - half, to: along + half });

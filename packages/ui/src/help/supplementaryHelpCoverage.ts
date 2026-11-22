@@ -13,6 +13,7 @@ export const SETTINGS_HELP_BINDINGS = {
   autoSaveIntervalMs: ['save-and-open', 'display-settings'],
   // 切断の一覧の定尺・切断代(J-01)は、規格部品の窓の切断の一覧の章。
   stockCutting: ['standard-parts'],
+  selectionModifier: ['select-subshape', 'shortcuts'],
   // 吸着を一時止める修飾キー(B-09 3-2)は、吸着の章と、操作の割り当ての窓の章。
   snapPauseModifier: ['snap', 'shortcuts'],
   // 吸着の幅(配置の補助 P-D)も、吸着の章と操作の割り当ての窓の章。

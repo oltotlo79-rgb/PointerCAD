@@ -36,10 +36,10 @@ export function SheetUnfoldPanel({ session }: { readonly session: SheetMetalTool
   }}>
     <h3>{t('sheetMetal.unfold')}</h3><p>{t('sheetMetal.unfoldHint')}</p>
     {targets.length === 0 ? <p>{t(computing ? 'sheetMetal.waitingForBody' : 'sheetMetal.needBase')}</p> : <>
-      <label className="pcad-field"><span>{t('sheetMetal.target')}</span><select title={t('sheetMetal.guide.target')} value={target?.id ?? ''} onChange={(event) => {
+      <label className="pcad-field"><span>{t('sheetMetal.target')}</span><select className="pcad-field__input" title={t('sheetMetal.guide.target')} value={target?.id ?? ''} onChange={(event) => {
         clear(); setTargetId(event.target.value); setFixedId(''); setSeams(null);
       }}>{targets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="pcad-field"><span>{t('sheetMetal.fixedPanel')}</span><select title={t('sheetMetal.guide.fixedPanel')} value={fixed} onChange={(event) => { clear(); setFixedId(event.target.value); }}>
+      <label className="pcad-field"><span>{t('sheetMetal.fixedPanel')}</span><select className="pcad-field__input" title={t('sheetMetal.guide.fixedPanel')} value={fixed} onChange={(event) => { clear(); setFixedId(event.target.value); }}>
         {sheet?.panels.map((panel, index) => <option key={panel.id} value={panel.id}>{t('sheetMetal.panel')} {index + 1}</option>)}
       </select></label>
       <fieldset><legend>{t('sheetMetal.seams')}</legend><p>{t('sheetMetal.seamsHint')}</p>

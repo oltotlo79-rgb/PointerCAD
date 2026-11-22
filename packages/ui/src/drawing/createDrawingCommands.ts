@@ -2,6 +2,7 @@ import { autoScale, createPaperFrame, DEFAULT_TITLE_BLOCK_HEIGHT_MM, paperSizeOf
 import { applyPlacementToPoint, createDrawingDocument, drawingFromTemplate, embedDrawingSource, emptyDrawingSourceLibrary,
   IDENTITY_PLACEMENT, type DrawingTemplate, type DrawingSourceInput, type RigidPlacement, type SolidBody } from '@pointercad/model';
 import { t } from '../i18n/t.js';
+import { DrawingCreationError } from './drawingCreationError.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import { flattenAssemblyGeometry } from '../viewport/createAssemblyLayer.js';
@@ -36,16 +37,16 @@ export async function createDrawingFromCurrentPart(template?: DrawingTemplate, f
     else {
       const view = state.assemblyView;
       if (view === null || view.sourceDocument !== state.assembly || view.diagnosis?.converged === false
-        || view.diagnosis?.complete === false) throw new Error(t('drawing.error.assemblyConstraints'));
+        || view.diagnosis?.complete === false) throw new DrawingCreationError('drawing.error.assemblyConstraints');
       const flat = flattenAssemblyGeometry(state.assembly, view.resolved);
       for (const component of flat.components) {
         if (!component.visible) continue;
         const ref = flat.partKeys.get(component.id), placement = flat.placements.get(component.id);
-        if (ref === undefined || placement === undefined) throw new Error(t('drawing.error.selectSource'));
+        if (ref === undefined || placement === undefined) throw new DrawingCreationError('drawing.error.selectSource');
         for (const body of view.bodies.get(ref) ?? []) geometry.push({ body, placement });
       }
     }
-    if (geometry.length === 0) throw new Error(t('drawing.error.noSolid'));
+    if (geometry.length === 0) throw new DrawingCreationError('drawing.error.noSolid');
     const embedded = await embedDrawingSource(emptyDrawingSourceLibrary(), source,
       (state.assembly === null ? state.fileName : state.assemblyFileName) ?? `${source.document.name}.${source.sourceKind === 'part' ? 'pcad' : 'pcada'}`, '');
     const current = useAppStore.getState();
@@ -69,13 +70,13 @@ export async function createDrawingFromCurrentPart(template?: DrawingTemplate, f
       }
     }
     const extents: Vector3 = [maximum[0] - minimum[0], maximum[1] - minimum[1], maximum[2] - minimum[2]];
-    if (!extents.every(Number.isFinite)) throw new Error(t('drawing.error.noSolid'));
+    if (!extents.every(Number.isFinite)) throw new DrawingCreationError('drawing.error.noSolid');
     const drawing = createDrawingDocument(`${source.document.name} - ${t('drawing.mode')}`, embedded.source);
     const paper = paperSizeOf(drawing.sheet.paperSizeId);
     if (paper === undefined) throw new Error(t('drawing.error.viewFailed'));
     const scale = autoScale({ paperSizeId: paper.id, orientation: paper.orientation,
       titleBlockHeight: DEFAULT_TITLE_BLOCK_HEIGHT_MM, extents: flatPreview === undefined ? extents : [extents[0], 0, extents[1]], gap: 30 });
-    if (scale === null) throw new Error(t('drawing.error.partTooLarge'));
+    if (scale === null) throw new DrawingCreationError('drawing.error.partTooLarge');
     const frame = createPaperFrame(paper);
     if (flatPreview !== undefined) {
       const view: DrawingView = { id: 'view-1', name: t('sheetMetal.flatDrawing'), kind: 'top',
@@ -100,9 +101,7 @@ export async function createDrawingFromCurrentPart(template?: DrawingTemplate, f
     return true;
   } catch (error) {
     const current = useAppStore.getState();
-    const reason = (['drawing.error.partTooLarge', 'drawing.error.assemblyConstraints',
-      'drawing.error.selectSource', 'drawing.error.noSolid'] as const)
-      .find((key) => error instanceof Error && error.message === t(key)) ?? 'drawing.error.viewFailed';
+    const reason = error instanceof DrawingCreationError ? error.reason : 'drawing.error.viewFailed';
     if (current.document === state.document && current.assembly === state.assembly
       && current.activeDocumentId === state.activeDocumentId && current.drawing === null) useAppStore.setState({ fileMessage: {
       key: reason, failed: true } });

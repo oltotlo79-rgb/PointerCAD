@@ -38,7 +38,7 @@ describe('VM→命令→一時文書→実OCCT', () => {
     expect(examples).toHaveLength(3);
     for (const [index, source] of examples.entries()) {
       const result = await prepare(source);
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) throw new Error(JSON.stringify(result.error));
       try {
         const bodies = result.prepared.result.bodies;
         expect(bodies).toHaveLength(index === 0 ? 0 : 1);
@@ -51,7 +51,7 @@ describe('VM→命令→一時文書→実OCCT', () => {
     const examples = chapterExamples('script-tools');
     expect(examples).toHaveLength(2);
     const result = await prepare(examples[1], createEmptyPartDocument(), () => false, [{ name: 'helpers.js', source: examples[0] }]);
-    if (!result.ok) throw new Error(result.error.message);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
     try { expect(result.prepared.result.bodies).toHaveLength(1); expect(result.prepared.result.bodies[0].volume).toBeCloseTo(3000, 6); }
     finally { await result.prepared.release(); }
   });
@@ -59,7 +59,7 @@ describe('VM→命令→一時文書→実OCCT', () => {
     const expected = { plate: { count: 1, volume: 12000 - 80 * Math.PI }, sketch: { count: 1, volume: 6000 },
       grid: { count: 25, volume: 12500 }, read: { count: 0, volume: 0 } }[example.id];
     const result = await prepare(example.source);
-    if (!result.ok) throw new Error(result.error.message);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
     try {
       expect(result.prepared.result.bodies).toHaveLength(expected.count);
       expect(result.prepared.result.bodies.reduce((total, body) => total + (body.volume ?? 0), 0)).toBeCloseTo(expected.volume, 5);
@@ -109,7 +109,8 @@ cad.solid.hole(b,{origin:['100','0','-10'],diameter:'4',depth:'20'});`, original
 const p=[['0','0','0'],['10','0','0'],['10','10','0'],['0','10','0']].map(x=>cad.sketch.point(s,x));
 const e=[0,1,2].map(i=>cad.sketch.line(s,p[i],p[i+1]));
 cad.sketch.face(s,e);`);
-    expect(result).toMatchObject({ ok: false, error: { kind: 'cad', location: { file: 'user-script.js', line: 4 } } });
+    // 部品の再計算の誤りから来た失敗は、元の誤りを持つ(画面は部品の誤りと同じ口で文にする。0b-2a)。
+    expect(result).toMatchObject({ ok: false, error: { kind: 'cad', partError: { code: 'notClosed' }, location: { file: 'user-script.js', line: 4 } } });
     const next = await prepare("cad.solid.box({x:'2',y:'3',z:'4'});"); expect(next.ok).toBe(true);
     if (next.ok) { expect(next.prepared.result.bodies[0].volume).toBeCloseTo(24, 6); await next.prepared.release(); }
   });

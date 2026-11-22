@@ -1,3 +1,4 @@
+import { plainText, plainTextValue } from '../failureText.js';
 import {beforeAll,describe,expect,it} from 'vitest';
 import {expressionValueFromNumber as number} from '@pointercad/expression';
 import {
@@ -65,7 +66,7 @@ const context:FunctionRecomputeContext={curves:{evaluate:()=>{throw new Error('P
 async function calculate(input:PartDocument,functions:FunctionRecomputeContext|undefined=context,invalid=new Map<string,string>(),cancel=()=>false) {
   const evaluation=math(input),evaluated=await evaluateDocumentMath(input,evaluation);
   if(!evaluated.ok) throw new Error(JSON.stringify(evaluated));
-  const result=await recomputeFunctionPoints(evaluated.document,evaluated.analysis,evaluation,functions,invalid,cancel);
+  const result=await recomputeFunctionPoints(evaluated.document,evaluated.analysis,evaluation,functions,new Map([...invalid].map(([owner,message])=>[owner,plainText(message)])),cancel);
   const point=evaluated.document.sketches[0].features.find(item=>item.id==='chosen');
   if(point?.kind!=='point' || point.at.mode==='absolute' || point.at.base.kind!=='functionPoint') throw new Error('Missing point');
   return {...result,document:evaluated.document,point:result.resolve(point.at.base,point.id)};
@@ -166,14 +167,14 @@ describe('関数上の点を親の現在値から解決する',()=>{
   });
   it('同じスケッチで後ろの関数を参照できない',async()=>{
     const {input,curve,point}=fixture(),result=await calculate({...input,sketches:[{...input.sketches[0],features:[point,curve]}]});
-    expect(result.point).toBeNull();expect(result.invalidInputs.get('chosen')).toContain('前');
+    expect(result.point).toBeNull();expect(plainTextValue(result.invalidInputs.get('chosen'))).toContain('前');
   });
   it('親の計算失敗時に過去の座標を残さない',async()=>{
     const result=await calculate(fixture().input,context,new Map([['curve','Invalid parent']]));
     expect(result.point).toBeNull();expect(result.invalidInputs.has('chosen')).toBe(true);
   });
   it('点用Workerのない場合も成功にせず、理由を付ける',async()=>{
-    const result=await calculate(fixture().input,{curves:context.curves});expect(result.point).toBeNull();expect(result.invalidInputs.get('chosen')).toContain('計算部');
+    const result=await calculate(fixture().input,{curves:context.curves});expect(result.point).toBeNull();expect(plainTextValue(result.invalidInputs.get('chosen'))).toContain('計算部');
   });
   it('取消時にはこの世代の解決済み点も公開しない',async()=>{
     const result=await calculate(fixture().input,context,new Map(),()=>true);expect(result.cancelled).toBe(true);expect(result.point).toBeNull();
@@ -232,7 +233,7 @@ describe('関数上の点を親の現在値から解決する',()=>{
     const future:FunctionPointReference={...reference,parent:{kind:'surface',featureId:parent.id}};
     const box={...createPrimitiveFeature(input,'box',{kind:'coordinate',value:{mode:'relative',base:future,dx:number(0),dy:number(0),dz:number(0)}}),id:'solid-owner'};
     const result=await calculate({...input,solids:[box,parent]});
-    expect(result.invalidInputs.get(box.id)).toContain('前');
+    expect(plainTextValue(result.invalidInputs.get(box.id))).toContain('前');
     expect(result.resolve(future,box.id)).toBeNull();
   });
 });

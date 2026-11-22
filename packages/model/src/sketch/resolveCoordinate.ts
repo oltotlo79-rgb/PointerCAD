@@ -20,6 +20,7 @@
 import { subShapeFromFingerprint, type ResolvedSubShape } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { degreesToRadians, polarOffset, type WorkPlane } from './planeMath.js';
+import { plainText, type FailureText } from '../failureText.js';
 import type { CoordinateInput, PointReference, ResolvedPoint, SketchError } from './types.js';
 import { addVec3, ORIGIN, type Vec3 } from './vec3.js';
 import type { FunctionPointResolver as TypeFunctionPointResolver } from '../functionGeometry/functionPointReference.js';
@@ -141,7 +142,16 @@ function failure(
   code: SketchError['code'],
   message: string,
 ): ResolveOutcome<never> {
-  return { ok: false, error: { featureId, code, message } };
+  return { ok: false, error: { featureId, code, text: plainText(message) } };
+}
+
+/** 画面の文を鍵と値で持つ失敗(0b-3c から。文は ui の文言の表が鍵ごとに持つ)。 */
+function failureWith(
+  featureId: string,
+  code: SketchError['code'],
+  text: FailureText,
+): ResolveOutcome<never> {
+  return { ok: false, error: { featureId, code, text } };
 }
 
 /** 基準点を求める(FR-302、FR-303)。featureId は失敗を報せるフィーチャー。 */
@@ -153,7 +163,7 @@ export function resolvePointReference(
   switch (reference.kind) {
     case 'functionPoint': {
       const point=context.functionPoint?.(reference,featureId)??null;
-      return point===null?failure(featureId,'missingBase','関数上の点を確定できません。親の関数と既知座標を確認し、候補を選び直してください。')
+      return point===null?failureWith(featureId,'missingBase',{ key: 'partError.coordinate.functionPointUnresolved', parameters: {} })
         :{ok:true,value:point};
     }
     case 'origin':
@@ -161,7 +171,7 @@ export function resolvePointReference(
       return { ok: true, value: ORIGIN };
     case 'previous':
       if (context.previous === null) {
-        return failure(featureId, 'missingBase', '基準になる直前の点がありません。');
+        return failureWith(featureId, 'missingBase', { key: 'partError.coordinate.noPrevious', parameters: {} });
       }
       return { ok: true, value: context.previous };
     case 'point': {
@@ -169,21 +179,21 @@ export function resolvePointReference(
       // 部品の基準点。同じ id のスケッチの点もあれば、どちらかを黙って選ばずに断る。
       const part = context.partPoint?.(reference.pointId) ?? NO_PART_POINT;
       if (found !== undefined && part.kind !== 'none') {
-        return failure(featureId, 'invalidValue',
-          `基準の点 ${reference.pointId} がスケッチの点と部品の基準点の両方の内部の id になっています。表示の名前を変えても id は変わらないので、スケッチの点を消してから「基準点に点を置く」で置き直してください(新しい点には別の id が付きます)。`);
+        return failureWith(featureId, 'invalidValue',
+          { key: 'partError.coordinate.pointIdClash', parameters: { id: reference.pointId } });
       }
       if (found !== undefined) return { ok: true, value: found.position };
       if (part.kind === 'point') return { ok: true, value: part.position };
       if (part.kind === 'refused') return failure(featureId, 'missingBase', part.message);
-      return failure(featureId, 'missingBase', `基準の点が見つかりません: ${reference.pointId}`);
+      return failureWith(featureId, 'missingBase', { key: 'partError.coordinate.missingPoint', parameters: { id: reference.pointId } });
     }
     case 'vertex': {
       const found = context.vertices.get(vertexKey(reference.featureId, reference.vertex));
       if (found === undefined) {
-        return failure(
+        return failureWith(
           featureId,
           'missingBase',
-          `基準の端点が見つかりません: ${reference.featureId}`,
+          { key: 'partError.coordinate.missingVertex', parameters: { id: reference.featureId } },
         );
       }
       return { ok: true, value: found };
@@ -194,10 +204,10 @@ export function resolvePointReference(
       const resolve = context.subShape ?? subShapeFromFingerprint;
       const found = resolve(reference.ref);
       if (found === null) {
-        return failure(
+        return failureWith(
           featureId,
           'missingSubShape',
-          '基準にするソリッドの形が見つかりません。形が大きく変わったため、選び直してください。',
+          { key: 'partError.coordinate.missingSubShape', parameters: {} },
         );
       }
       return { ok: true, value: found.position };
@@ -236,7 +246,7 @@ function checkFinite(
 ): SketchError | null {
   for (const [label, value] of labeled) {
     if (!Number.isFinite(value)) {
-      return { featureId, code: 'invalidValue', message: `${label}の値が数になっていません。` };
+      return { featureId, code: 'invalidValue', text: { key: 'partError.coordinate.notFinite', parameters: { label } } };
     }
   }
   return null;
@@ -284,10 +294,10 @@ export function resolveCoordinate(
   // 3D スケッチには角度の基準になる作図面が無い(FR-330)。
   // 値の不備より先に伝える。基準が無ければ角度の意味自体が決まらないため。
   if (context.plane === null) {
-    return failure(
+    return failureWith(
       featureId,
       'missingBase',
-      '3D スケッチでは角度と距離での指定は使えません。座標かずれで指定してください。',
+      { key: 'partError.coordinate.polarNeedsPlane', parameters: {} },
     );
   }
 

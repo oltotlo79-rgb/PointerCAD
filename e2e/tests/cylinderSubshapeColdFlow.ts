@@ -12,7 +12,7 @@ import { chooseToolMenuItem, installAssemblyFileGateway, resetAssemblyFileGatewa
 import { startNewAssemblyCapture, placeQueuedPartCapture } from './assemblyCaptureSupport.js';
 import { drawRectangle, makeFace, extrudeFace } from './solidCaptureSupport.js';
 import { readFile, writeFile } from 'node:fs/promises';
-import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
+import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { expressionValueFromNumber } from '../../packages/expression/src/index.js';
 import { readPcadFile } from '../../packages/io/src/index.js';
 import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
@@ -26,6 +26,7 @@ import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { waitForStartupHealth } from './startupHealth.js';
+import { uiMessage } from './uiMessages.js';
 import { clickWorldPoint, commitPopover, fillFields, popover, popoverInputs, popoverTitle,
   propertyPanel, selectionKindLabel, sketchTool, treeRow } from './solidCaptureSupport.js';
 
@@ -659,7 +660,8 @@ async function withHoleWallInputObservation(page: Page, info: TestInfo, select: 
   }
 }
 export async function createHoleWallMateScenario(page: Page, info: TestInfo,
-  app?: ElectronApplication, legacyConfirmation = false, independentSavedParts = false): Promise<SavedHoleWallMateScenario> {
+  app?: ElectronApplication, legacyConfirmation = false, independentSavedParts = false,
+  selectCandidate?: (dialog: Locator) => Promise<void>): Promise<SavedHoleWallMateScenario> {
   if (legacyConfirmation && independentSavedParts) throw new Error('Legacy shared-source and independent-source fixtures are distinct');
   await page.setViewportSize({ width: 1440, height: 900 });
   await waitForStartupHealth(page, info);
@@ -758,7 +760,7 @@ export async function createHoleWallMateScenario(page: Page, info: TestInfo,
   expect(before.mateIds).toEqual([]);
   expect(before.components[0]?.resolved?.position).toEqual([0, 0, 0]);
   expect(before.components[1]?.resolved?.position).toEqual([60, 0, 0]);
-  await chooseToolMenuItem(page, '合わせる', '同心');
+  await chooseToolMenuItem(page, '合わせる', selectCandidate === undefined ? '同心' : '一致');
   const dialog = page.getByRole('dialog', { name: '合致を作る', exact: true });
   await expect(dialog).toBeVisible();
   await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
@@ -770,6 +772,7 @@ export async function createHoleWallMateScenario(page: Page, info: TestInfo,
     await expect(dialog.locator('li')).toHaveCount(2);
   });
   for (const item of await dialog.locator('li').all()) await expect(item).toContainText('面');
+  if (selectCandidate !== undefined) await selectCandidate(dialog);
   const commit = dialog.getByRole('button', { name: '合致を作る', exact: true });
   await expect(commit).toHaveAttribute('aria-disabled', 'false');
   const mateToken = await beginRecompute(page);
@@ -832,6 +835,31 @@ export async function createHoleWallMateScenario(page: Page, info: TestInfo,
   return { path, inputPartPath, inputPart, holeId: hole.id, bundle, rawBytes,
     ...(independentSavedParts ? { independentParts } : {}),
     saveWindow: [saveStarted, saveFinished], before, solved };
+}
+
+export async function createHoleWallMateFromCandidate(page: Page, info: TestInfo): Promise<void> {
+  await createHoleWallMateScenario(page, info, undefined, false, false, async (dialog) => {
+    const kind = dialog.getByRole('combobox');
+    const commit = dialog.getByRole('button', { name: '合致を作る', exact: true });
+    const hint = dialog.getByText(uiMessage('assembly', 'assembly.mate.chooseCandidate'), { exact: true });
+    const group = dialog.getByRole('group', { name: uiMessage('assembly', 'assembly.mate.candidates'), exact: true });
+    const first = group.getByRole('button').first();
+    const targets = dialog.getByRole('listitem');
+    const selected = await targets.allTextContents();
+    await expect(kind).toHaveValue('coincident');
+    await expect(commit).toBeDisabled();
+    await expect(hint).toBeVisible();
+    await expect(first).toHaveAccessibleName('同心');
+    const recommended = uiMessage('assembly', 'assembly.mate.recommended');
+    await expect(first.getByText(recommended, { exact: true })).toBeVisible();
+    await expect(first).toHaveAccessibleDescription(recommended);
+    await first.click();
+    await expect(kind).toHaveValue('concentric');
+    await expect(targets).toHaveText(selected);
+    await expect(hint).toHaveCount(0);
+    await expect(commit).toBeEnabled();
+    await expect(commit).toBeFocused();
+  });
 }
 
 /** Real native recompute of saved embedded parts; strict semantic lookup and analytic axes. */

@@ -2,7 +2,7 @@ import type { HoleCenterAnchor, HolePlacementRole } from './subShapeOrigin.js';
 // 輪郭のオフセット(FR-321)の角の種類と結果の形は `occt/makeOffsetWire.ts` が正本。
 // 同じ約束を2か所に書かないため、ここでは取り込んで輸出し直すだけにする
 // (型だけの取り込みなので、実行時の読み込みは起きない)。
-import type { HoleEntrySpec } from './occt/makeHole.js';
+import type { EdgeDistanceHoleReason, HoleEntrySpec } from './occt/makeHole.js';
 import type { CurrentOriginIndex, FaceOrigin, ProfileRegionAnchor, SubShapeOrigin } from './subShapeOrigin.js';
 import type { SheetMetalBaseInput } from './occt/makeSheetMetalBase.js';
 import type { SheetMetalFlangeInput } from './occt/makeSheetMetalFlange.js';
@@ -17,6 +17,7 @@ import type { BlendSurfaceError } from './occt/blendBoundary.js';
 import type { KernelStepFailureCode } from './occt/kernelStepError.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
 import type { SurfaceCutInput, SurfaceCutReason } from './occt/makeSurfaceCut.js';
+import type { SewFacesReason } from './occt/sewSolid.js';
 import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
 // 書き出し・読み込み(FR-802、FR-803)が使う 4 つも同じ理由で取り込む。
 // 三角形の網(`ExportMesh`)は `occt/exportMesh.ts`、色(`RgbTuple`)は
@@ -756,8 +757,8 @@ export interface SolidBodyMesh {
 export interface SolidStepFailure {
   readonly id: string;
   readonly code?: SurfaceCutReason | SurfaceThickenError['code'] | BlendSurfaceError['code'] | 'outside-tolerance'
-    | KernelStepFailureCode;
-  /** 利用者へそのまま見せる日本語(FR-504、NFR-RE-1)。 */
+    | KernelStepFailureCode | SewFacesReason | EdgeDistanceHoleReason;
+  /** 利用者へそのまま見せる日本語(FR-504、NFR-RE-1)。code を持つ物は符号の文字で、文は画面の側が持つ(0b-2)。 */
   readonly message: string;
 }
 

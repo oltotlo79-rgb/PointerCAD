@@ -6,7 +6,9 @@ import { collectLoadedAssemblyPartSources } from '../assembly/attachAssembly.js'
 import { flattenAssemblyGeometry } from '../viewport/createAssemblyLayer.js';
 import { mixedFailureMessages } from '../i18n/failureMessage.js';
 import { t } from '../i18n/t.js';
+import { DrawingCreationError } from './drawingCreationError.js';
 import type { DrawingPartRecomputer } from './attachDrawing.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 
 export interface PreparedAssemblyDrawing {
   readonly result: DrawingSourceResolution;
@@ -39,13 +41,13 @@ export async function prepareAssemblyDrawingSource(source: Extract<DrawingSource
     if (shouldCancel()) throw new Error(t('drawing.error.viewFailed'));
     const standard = standardSources.get(ref);
     const document = standard === undefined ? library.parts.get(ref) : buildStandardPartFromSource(standard);
-    if (document === undefined || document === null) throw new Error(t('drawing.error.selectSource'));
+    if (document === undefined || document === null) throw new DrawingCreationError('drawing.error.selectSource');
     const partId = `drawing:${documentId}:${sourceRef}:${ref}`;
     retain(partId);
     const result = await recompute(document, { partId, importedShapes: library.attachments.get(ref)?.shapes, shouldCancel,
       onResolved: (resolved) => { resolvedParts.set(ref, resolved); } });
     if (shouldCancel() || result.cancelled) throw new Error(t('drawing.error.viewFailed'));
-    if (result.errors.length > 0) throw new Error(result.errors.map((error) => error.message).join('\n'));
+    if (result.errors.length > 0) throw new Error(result.errors.map(partErrorMessage).join('\n'));
     const resolved = resolvedParts.get(ref);
     if (resolved === undefined) throw new Error(t('drawing.error.viewFailed'));
     const keys = resolved.steps.filter((step) => step.visible && result.bodies.some((body) => body.featureId === step.featureId)).map((step) => step.key);
@@ -68,7 +70,7 @@ export async function prepareAssemblyDrawingSource(source: Extract<DrawingSource
     }
   }
   const center = drawingSourceCenter(dimensionInstances);
-  if (center === null) throw new Error(t('drawing.error.noSolid'));
+  if (center === null) throw new DrawingCreationError('drawing.error.noSolid');
   return { owners, result: { dimensionInstances, center,
     bodyIds: [...new Set(dimensionInstances.map((instance) => instance.bodyId))],
     instances: dimensionInstances.map((instance) => ({ bodyId: instance.bodyId, occurrenceId: instance.componentId ?? '', placement: instance.placement })),

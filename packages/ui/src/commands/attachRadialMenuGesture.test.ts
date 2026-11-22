@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { attachCameraControls } from '../viewport/attachCameraControls.js';
 import { attachDrawingNavigation, INITIAL_DRAWING_NAVIGATION } from '../drawing/drawingNavigation.js';
+import type { SelectionModifier } from '../settings/selectionModifierSetting.js';
 import { DEFAULT_VIEW_CONTROLS, type ViewControlSettings } from '../settings/viewControlSettings.js';
 import { attachRadialMenuGesture } from './attachRadialMenuGesture.js';
 import type { RadialMenuGesture } from './radialMenuGesture.js';
@@ -20,7 +21,9 @@ function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeCli
     releasePointerCapture: (id: number) => { captured.delete(id); }, focus: vi.fn(),
   }) as unknown as HTMLCanvasElement;
   const earlyCamera = cameraFirst ? attachCameraControls(surface, () => {}, undefined, undefined, () => cameraSettings) : null;
+  let modifier: SelectionModifier = 'local';
   const menu = attachRadialMenuGesture(surface, { owner: () => owner, blocked: () => blocked, show, choose, clickOnly,
+    selectionModifier: () => modifier,
     allowSelectionModifiers: () => selectionModifiers,
     ...(clickSlot === undefined ? {} : { clickSlot }),
     ...(nativeClickTarget === undefined ? {} : { nativeClickTarget }) });
@@ -35,6 +38,7 @@ function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeCli
     return event;
   };
   return { view, surface, show, choose, menu, camera, send, captured,
+    setModifier: (value: SelectionModifier) => { modifier = value; },
     block: () => { blocked = true; }, changeDocument: () => { owner = {}; },
     close: () => { menu.detach(); camera.detach(); } };
 }
@@ -293,6 +297,26 @@ describe('3Dの右クリックと右ドラッグの振り分け', () => {
       expect(f.camera.getOrbit()).toEqual(before); expect(f.captured.size).toBe(0);
     } finally { f.close(); }
   });
+  it.each([
+    ['local', { shiftKey: true, metaKey: true }, false], ['ctrl', { shiftKey: true }, false],
+    ['ctrl', { metaKey: true }, true], ['ctrl', { ctrlKey: true }, true], ['shift', { ctrlKey: true }, false],
+  ] as const)('%s で選択に使うキーだけをメニューの開閉と確定に渡す (%j)', (setting, held, accepts) => {
+    const f = fixture(undefined, undefined, true, false, true);
+    try {
+      f.setModifier(setting);
+      f.send('pointerdown', held);
+      f.send('pointerup', { ...held, buttons: 0 });
+      expect(f.show).toHaveBeenCalledTimes(accepts ? 1 : 0);
+      expect(f.send('contextmenu', held).defaultPrevented).toBe(accepts);
+      if (!accepts) {
+        f.send('pointerdown'); f.send('pointerup', { buttons: 0 });
+      }
+      f.send('pointerdown', { ...held, button: 0, buttons: 1, clientY: 200 });
+      f.send('pointerup', { ...held, button: 0, buttons: 0, clientY: 200 });
+      expect(f.choose.mock.calls).toEqual(accepts ? [[0]] : []);
+    } finally { f.close(); }
+  });
+
   it.each(['ContextMenu', 'F10'])('%sで開いた後も文書切替とEscで古い操作を捨てる', key => {
     const f = fixture(undefined, undefined, true);
     try {

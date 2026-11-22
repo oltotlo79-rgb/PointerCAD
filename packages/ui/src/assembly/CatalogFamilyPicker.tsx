@@ -12,7 +12,7 @@ import { t } from '../i18n/t.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useAppStore } from '../store/useAppStore.js';
 import {
-  catalogFamilyEntries, catalogRowLabel, FAMILY_KIND_FIELD_KEYS, familyHintKey, familyKindKey, familyMaterials, messageKeyOr,
+  catalogFamilyEntries, catalogRowLabel, FAMILY_KIND_FIELD_KEYS, familyHintKey, familyKindKey, familyMaterials, listedRows, messageKeyOr,
   optionDefault, type FamilyPickerCategory,
 } from './catalogFamilyChoices.js';
 import type { CatalogLoadState } from './catalogFamilyLoading.js';
@@ -80,7 +80,8 @@ React.JSX.Element {
   const family = entry === undefined ? undefined : PRODUCT_CATALOG_REGISTRY.loaded(entry.id);
   const materials = family === undefined ? [] : familyMaterials(family);
   const activeMaterial = materials.includes(material) ? material : materials[0];
-  const rows = family?.rows.filter((candidate) => materials.length < 2 || candidate.materialLabel === activeMaterial) ?? [];
+  const rows = (family === undefined ? [] : listedRows(family))
+    .filter((candidate) => materials.length < 2 || candidate.materialLabel === activeMaterial);
   const row = rows.find((candidate) => candidate.key === itemKey) ?? rows[0];
   const hintKey = family === undefined ? null : familyHintKey(family);
   const accessory = familyAccessoryProps(family, row, values);

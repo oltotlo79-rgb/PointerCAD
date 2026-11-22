@@ -5,6 +5,7 @@ import { ALL_STEEL_PRODUCTS, PRODUCT_CATALOG_REGISTRY } from '@pointercad/model'
 import { describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
+import { familyPickerCategory, listedRows } from './catalogFamilyChoices.js';
 import {
   defaultLengthSource, pickerJumpState, pickerSearchEntries, recentPartOf, searchPickerEntries, STANDARD_PART_CATEGORY_LABELS, standardPlacedTarget,
 } from './catalogSearch.js';
@@ -73,6 +74,28 @@ describe('検索の並びと照合', () => {
     expect(found.entries[0]?.target).toEqual({ kind: 'family', group: 'mechanical',
       start: { familyId: 'cam-follower-stud-metric', material: '', itemKey: family?.rows[0]?.key, values: {} } });
     expect(found.entries[0]?.label.startsWith(t('catalog.mechanical.kind.camFollower'))).toBe(true);
+  });
+
+  it('選ぶ窓に出さない行(listed: false)は検索の行と呼びの欄の行に無く、代わりに出す行は同じ族の出す行で同じ呼び。前の呼びは今の呼びと違う', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(PRODUCT_CATALOG_REGISTRY.entries.map((entry) => entry.id));
+    const keys = new Set(pickerSearchEntries().map((candidate) => candidate.key));
+    let unlisted = 0;
+    for (const familyEntry of PRODUCT_CATALOG_REGISTRY.entries) {
+      const family = PRODUCT_CATALOG_REGISTRY.loaded(familyEntry.id);
+      if (family === undefined) throw new Error(`族 ${familyEntry.id} を読めない`);
+      const searchable = familyPickerCategory(family.group) !== null;
+      for (const row of family.rows) {
+        const listed = row.listed !== false;
+        expect([keys.has(`${family.id}|${row.key}`), listedRows(family).includes(row)], `${family.id}|${row.key}`).toEqual([searchable && listed, listed]);
+        if (row.listedAs !== undefined) {
+          const shown = family.rows.find((candidate) => candidate.key === row.listedAs);
+          expect([row.listed, shown?.listed, shown?.size], row.key).toEqual([false, undefined, row.size]);
+        }
+        expect(row.formerSizes ?? [], row.key).not.toContain(row.size);
+        if (!listed) unlisted += 1;
+      }
+    }
+    expect(unlisted).toBeGreaterThan(0);
   });
 });
 

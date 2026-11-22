@@ -1,4 +1,5 @@
 import type { Point2 } from '../types.js';
+import { withinMagnitude } from '../numericTolerance.js';
 
 /** 入力する切り抜き境界の上限。投影済みの曲線の頂点数とは分ける。 */
 export const MAX_DRAWING_BOUNDARY_POINTS = 256;
@@ -7,7 +8,7 @@ const EPSILON = 1e-12;
 const cross = (a: Point2, b: Point2, c: Point2): number =>
   (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 function onSegment(a: Point2, b: Point2, p: Point2): boolean {
-  return Math.abs(cross(a, b, p)) <= EPSILON
+  return withinMagnitude(cross(a, b, p), EPSILON)
     && p[0] >= Math.min(a[0], b[0]) - EPSILON && p[0] <= Math.max(a[0], b[0]) + EPSILON
     && p[1] >= Math.min(a[1], b[1]) - EPSILON && p[1] <= Math.max(a[1], b[1]) + EPSILON;
 }
@@ -30,7 +31,7 @@ export function validateDrawingPolygon(points: readonly Point2[]): string | null
   for (let index = 0; index < normalized.length; index++) {
     const a = normalized[index], b = normalized[(index + 1) % normalized.length], c = normalized[(index + 2) % normalized.length];
     if (Math.hypot(b[0] - a[0], b[1] - a[1]) <= EPSILON) return '隣り合う点を離してください。始点は末尾に繰り返しません。';
-    if (Math.abs(cross(a, b, c)) <= EPSILON && (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]) <= 0) {
+    if (withinMagnitude(cross(a, b, c), EPSILON) && (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]) <= 0) {
       return '輪郭の辺を折り返して重ねることはできません。';
     }
     twiceArea += a[0] * b[1] - b[0] * a[1];
@@ -39,5 +40,5 @@ export function validateDrawingPolygon(points: readonly Point2[]): string | null
       if (intersects(a, b, normalized[other], normalized[(other + 1) % normalized.length])) return '輪郭の辺を交差させたり、途中で接触させたりすることはできません。';
     }
   }
-  return Math.abs(twiceArea) <= EPSILON ? '輪郭には面積が必要です。' : null;
+  return withinMagnitude(twiceArea, EPSILON) ? '輪郭には面積が必要です。' : null;
 }

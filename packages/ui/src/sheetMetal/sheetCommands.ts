@@ -3,6 +3,7 @@ import type { EvaluateOptions } from '@pointercad/expression';
 import { appendSolid, replaceSolid, resolvePart, type LengthUnit, type PartDocument, type SheetMetalFeature, type SheetBaseFeature, type SheetFlangeFeature, type SheetBendFeature, type SheetReliefFeature } from '@pointercad/model';
 import type { SheetFieldKey } from './sheetFields.js';
 import { evaluateSheetDraft } from './sheetDraft.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 
 export function buildSheetCreation(document: PartDocument, feature: SheetBaseFeature | SheetFlangeFeature | SheetBendFeature | SheetReliefFeature,
   sources: Readonly<Partial<Record<SheetFieldKey, string>>>, lengthUnit: LengthUnit, options: EvaluateOptions,
@@ -16,7 +17,7 @@ export function buildSheetCreation(document: PartDocument, feature: SheetBaseFea
   const candidate = original === undefined ? appendSolid(document, next) : replaceSolid(document, original.id, next);
   const resolved = resolvePart(candidate);
   const problem = resolved.errors.find((error) => error.featureId === next.id);
-  if (problem !== undefined) return { ok: false, message: problem.message };
+  if (problem !== undefined) return { ok: false, message: partErrorMessage(problem) };
   if (!resolved.steps.some((step) => step.featureId === next.id)) return { ok: false, message: '板金の元になる面または縁を選んでください。' };
   return { ok: true, document: candidate, feature: next };
 }

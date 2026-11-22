@@ -23,6 +23,7 @@ import { jointOccurrenceInputsOf } from '../viewport/pickJointOccurrence.js';
 import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 import type { AppearanceInput } from '../viewport/buildSolidGeometry.js';
 import type { AssemblyReplacementRunner } from './replaceCommands.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 
 /** Diagnostic metadata only: not native/GPU/high-water acceptance evidence. */
 export interface AssemblyGateEvent {
@@ -754,7 +755,7 @@ export function attachAssembly(
       resolvedParts.set(ref, found.resolved);
       bodies.set(ref, found.result.bodies);
       appearances.set(ref, found.appearances);
-      messages.push(...found.result.errors.map((error) => error.message));
+      messages.push(...found.result.errors.map(partErrorMessage));
       cacheHits += found.result.cacheHits; timing.cacheHits = cacheHits; workerBroken ||= found.result.errors.some(isWorkerBroken);
     }
     timing.partsMs = performance.now() - partsStartedAt;

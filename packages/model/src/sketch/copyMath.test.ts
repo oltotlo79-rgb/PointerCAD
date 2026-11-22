@@ -217,7 +217,7 @@ describe('複製する個数の検査(P3 のパターンと同じ 2〜100)', () 
     for (const bad of [1, 101, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       const error = checkCopyCount('copy-1', bad);
       expect(error?.code).toBe('invalidValue');
-      expect(error?.message).toContain('2 以上 100 以下');
+      expect(error?.text).toEqual({ key: 'partError.sketchCopy.count', parameters: { min: '2', max: '100' } });
     }
   });
 });
@@ -279,7 +279,7 @@ describe('複製するもとを集める(FR-324)', () => {
       lookup,
     );
     expect(!outOfRange.ok && outOfRange.error.code).toBe('missingBase');
-    expect(!outOfRange.ok && outOfRange.error.message).toContain('rectangle-1#9');
+    expect(!outOfRange.ok && outOfRange.error.text).toEqual({ key: 'partError.sketchCopy.missingElement', parameters: { id: 'rectangle-1#9' } });
   });
 
   it('点と線を混ぜたら断る(番号の並びが決まらないため)', () => {

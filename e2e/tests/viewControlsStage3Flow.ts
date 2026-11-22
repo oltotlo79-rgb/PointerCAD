@@ -91,6 +91,39 @@ async function chooseSnapPause(page: Page, value: 'none' | 'shift' | 'ctrl'): Pr
   await expect(snapChoice(page)).toHaveValue(value);
 }
 
+async function chooseSelectionModifier(page: Page, value: 'local' | 'ctrl'): Promise<void> {
+  await openInputBindings(page, 'mouse');
+  const form = inputBindingsWindow(page).getByRole('form', { name: view('settings.selectionModifier.title'), exact: true });
+  const choice = form.getByRole('combobox', { name: view('settings.selectionModifier.label'), exact: true });
+  await choice.selectOption(value);
+  await form.getByRole('button', { name: view('settings.selectionModifier.apply'), exact: true }).click();
+  await expect(form).toHaveAttribute('data-settings-draft', 'false');
+  await expect(choice).toHaveValue(value);
+  await closeInputBindings(page);
+}
+
+/** 部品の木にある同じ2行で、置換・追加・解除と、場所ごとの既定に戻した後の追加を比べる。 */
+export async function selectionModifierFlow(page: Page): Promise<void> {
+  await prepare(page);
+  await canvas(page).focus(); await page.keyboard.press('1');
+  await expect(page.locator('.pcad-statusbar__state').first()).toContainText('頂点');
+  const first = tree(page, '点1'), second = tree(page, '点2');
+  await chooseSelectionModifier(page, 'ctrl');
+  await first.click(); await second.click({ modifiers: ['Shift'] });
+  await expect(first).toHaveAttribute('aria-pressed', 'false');
+  await expect(second).toHaveAttribute('aria-pressed', 'true');
+  await first.click({ modifiers: ['Control'] });
+  await expect(first).toHaveAttribute('aria-pressed', 'true');
+  await expect(second).toHaveAttribute('aria-pressed', 'true');
+  await second.click({ modifiers: ['Control'] });
+  await expect(first).toHaveAttribute('aria-pressed', 'true');
+  await expect(second).toHaveAttribute('aria-pressed', 'false');
+  await chooseSelectionModifier(page, 'local');
+  await first.click(); await second.click({ modifiers: ['Shift'] });
+  await expect(first).toHaveAttribute('aria-pressed', 'true');
+  await expect(second).toHaveAttribute('aria-pressed', 'true');
+}
+
 /** 書き出したファイル(ダウンロード)を保存し、中身の JSON を返す。名前は窓の既定の名前。 */
 async function exportSettings(page: Page, info: TestInfo): Promise<{ readonly path: string; readonly name: string; readonly file: unknown }> {
   const download = page.waitForEvent('download');
@@ -124,11 +157,11 @@ export async function settingsFileRoundTripFlow(page: Page, info: TestInfo): Pro
   await snapForm(page).getByRole('button', { name: view('settings.snapPause.cancel'), exact: true }).click();
   await expect(snapChoice(page)).toHaveValue('none');
 
-  // 読んだ内容は窓の中に示すだけで、まだ保存しない。5 つの欄は全部読めた。
+  // 読んだ内容は窓の中に示すだけで、まだ保存しない。6 つの欄は全部読めた。
   await pickSettingsFile(page, exported.path);
   await expect(fileBar(page).getByText(fileText('preview').replace('{name}', exported.name), { exact: true })).toBeVisible();
   const sections = [view('settings.inputBindings.tab.view'), view('settings.inputBindings.tab.keys'),
-    view('settings.inputBindings.tab.mouse'), view('settings.inputBindings.tab.radial'), view('settings.snapPause.title')];
+    view('settings.inputBindings.tab.mouse'), view('settings.inputBindings.tab.radial'), view('settings.snapPause.title'), view('settings.selectionModifier.title')];
   await expect(fileBar(page).getByRole('listitem')).toHaveText(sections.map(section => `${section}: ${fileText('state.read')}`));
   await expect(snapChoice(page)).toHaveValue('none');
 

@@ -6,6 +6,8 @@
  * 分ける前と 1 文字も変わらない。
  */
 import { create } from 'zustand';
+import { registerMessageOverride } from '../i18n/t.js';
+import { selectionKeyHint } from '../settings/selectionKeyHints.js';
 import { registerPendingFieldContext } from '../sketch/numericMathValues.js';
 import { pendingFieldVariables } from '../shell/pendingFieldVariables.js';
 import { createBeamSlice } from './beamSlice.js';
@@ -123,4 +125,7 @@ registerPendingFieldContext(() => {
   return { document: state.document, variables: state.parameterAnalysis.variables,
     pendingVariables: pendingFieldVariables(state) };
 });
+
+// 選択に足す・外すキーを案内する文は、設定を変えた時だけキーの名前を差し込む(B-08 2-5)。上と同じく読む関数だけを渡す。
+registerMessageOverride(key => selectionKeyHint(key, useAppStore.getState().displaySettings.selectionModifier));
 

@@ -6,6 +6,7 @@ import type {
   PointContinuationWorkerClient,
   FunctionSurfaceWorkerClient,
 } from '@pointercad/expression/math/client';
+import { plainText, type FailureText } from '../failureText.js';
 
 
 
@@ -30,7 +31,7 @@ export interface FunctionRecomputeContext {
 }
 export interface FunctionCurvesResult {
   readonly curves: ReadonlyMap<string, readonly ResolvedCurve[]>;
-  readonly invalidInputs: ReadonlyMap<string, string>;
+  readonly invalidInputs: ReadonlyMap<string, FailureText>;
   /** invalidInputs のうち、計算部(Worker)が止まって曲線を作れなかった関数の曲線の id(0b-1b。その誤りの code を workerBroken にする)。 */
   readonly workerBrokenInputs: ReadonlySet<string>;
   readonly cancelled: boolean;
@@ -41,7 +42,7 @@ function supportsFunctions(bridge: KernelBridge): bridge is KernelBridge & Funct
 
 export async function recomputeFunctionCurves(document: PartDocument, bridge: KernelBridge,
   analysis: ParameterAnalysis | undefined, math: DocumentMathContext | undefined,
-  context: FunctionRecomputeContext | undefined, previousInvalid: ReadonlyMap<string, string> | undefined,
+  context: FunctionRecomputeContext | undefined, previousInvalid: ReadonlyMap<string, FailureText> | undefined,
   shouldCancel: () => boolean): Promise<FunctionCurvesResult> {
   const curves = new Map<string, readonly ResolvedCurve[]>(), invalidInputs = new Map(previousInvalid), workerBrokenInputs = new Set<string>();
   const current = () => !shouldCancel() && !math?.signal?.aborted && (math?.isCurrent() ?? true);
@@ -52,7 +53,7 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
     if (feature.kind !== 'functionCurve' || invalidInputs.has(feature.id)) continue;
     try {
       if (math === undefined || context === undefined || analysis === undefined || !supportsFunctions(bridge)) {
-        invalidInputs.set(feature.id, '関数の計算部を準備できません。再計算してから作図してください。');
+        invalidInputs.set(feature.id, plainText('関数の計算部を準備できません。再計算してから作図してください。'));
         continue;
       }
       const inputs = await resolveFunctionInputs(document, feature.definition, analysis, current);
@@ -63,7 +64,7 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
       if(sampled.components.length===0 && sampled.bezier===undefined){
         // Empty geometry cannot supply an endpoint. Mark the owner invalid before
         // resolving relative points and their connected constraint components.
-        invalidInputs.set(feature.id,'指定したXYZの範囲に曲線がありません。');
+        invalidInputs.set(feature.id,plainText('指定したXYZの範囲に曲線がありません。'));
         continue;
       }
       const geometry = await bridge.functionSketchCurves(sampled);
@@ -73,7 +74,7 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
       curves.set(feature.id, geometry.curves);
     } catch (error) {
       if (!current()) return result(true);
-      invalidInputs.set(feature.id, error instanceof Error ? error.message : '関数の再計算を完了できませんでした。');
+      invalidInputs.set(feature.id, plainText(error instanceof Error ? error.message : '関数の再計算を完了できませんでした。'));
     }
   }
   return result(false);

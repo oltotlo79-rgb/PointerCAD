@@ -1,3 +1,4 @@
+import { plainText } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { MATH_INPUT_FORMAT, type StoredMathExpression } from '@pointercad/expression/math/contracts';
 import {
@@ -147,7 +148,7 @@ describe('math geometry rows: values and status', () => {
   it('shows the first geometry failure when measurement was not evaluated', () => {
     const state = stateFor();
     const row = mathGeometryRows({ ...state, mathGeometryResult: { document: state.document, generation: 7,
-      evaluated: false, outcomes: new Map([['g', real()]]) }, partErrors: [{ featureId: 'box', code: 'kernelFailed', message: '失敗の詳細' }] })[0];
+      evaluated: false, outcomes: new Map([['g', real()]]) }, partErrors: [{ featureId: 'box', code: 'kernelFailed', text: plainText('失敗の詳細') }] })[0];
     expect(row.valueText).toBeNull();
     expect(row.statusText).toBe('形を計算できなかったため測れません。 失敗の詳細');
   });

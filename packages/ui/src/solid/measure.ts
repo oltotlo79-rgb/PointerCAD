@@ -221,6 +221,13 @@ export function measureRejectionMessageKey(reason: MeasureRejectionReason): Mess
  */
 export const MEASURE_FAILED_MESSAGE_KEY: MessageKey = 'measureError.failed';
 
+/**
+ * 測定の返事を待つ上限(ms)。組立の隙間の実測(2026-11-17、溝つきの 20 角の部材 2 本・
+ * 面 44 ずつ、重なる・接する・離れる)で、最も遅い 0.47 秒の約 20 倍。
+ * 上限を超えたら待つのをやめる。Worker の計算は止めない。
+ */
+export const MEASURE_TIMEOUT_MS = 10_000;
+
 /* ---------------------------------------------------------------------------
  * 測る相手
  * ------------------------------------------------------------------------- */

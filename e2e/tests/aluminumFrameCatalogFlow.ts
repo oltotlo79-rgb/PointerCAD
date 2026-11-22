@@ -11,6 +11,7 @@ import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { chooseSteelFlatBar50x6 } from './steelPickerFlow.js';
 import { waitForStartupReady } from './startupHealth.js';
 import { uiMessage, uiMessagePattern } from './uiMessages.js';
+import { fieldByMessageKey } from './fieldByLabel.js';
 
 /*
  * E-06: the standard-part picker's アルミフレーム category, only through the real UI (no fixture file, no store injection).
@@ -38,9 +39,7 @@ export function choice(dialog: Locator, catalog: string, key: string): Locator {
 }
 /** Text fields are found by their visible label (the label also holds the unit), as in steelStockCsvFlow.ts. */
 function fieldInput(dialog: Locator, key: string): Locator {
-  return dialog.locator('label.pcad-field').filter({
-    has: dialog.page().locator('.pcad-field__label', { hasText: uiMessagePattern('catalog', key) }),
-  }).locator('input');
+  return fieldByMessageKey(dialog.page(), dialog, 'catalog', key, { fieldSelector: 'label.pcad-field', controlSelector: 'input' });
 }
 function stockDetails(dialog: Locator): Locator {
   return dialog.locator('details').filter({

@@ -8,6 +8,7 @@ import { secondKindSequence, type SecondBesselKind } from './besselSecondKindNum
 import { exponentialRange } from './exponentialIntervals.js';
 import { isFiniteInterval, intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, nextFloat,
   type MathInterval, type IntervalValue } from './mathInterval.js';
+import { withinMagnitude } from './numericTolerance.js';
 
 type Range=MathInterval|null;
 const point=(value:number):MathInterval=>({lower:value,upper:value});
@@ -67,7 +68,7 @@ function yRanges(order:number,input:MathInterval,check:()=>void):readonly Range[
   });
 }
 function valid(kind:SecondBesselKind,order:number,input:MathInterval):boolean {
-  return (kind==='Y'||kind==='K')&&Number.isSafeInteger(order)&&Math.abs(order)<=128
+  return (kind==='Y'||kind==='K')&&Number.isSafeInteger(order)&&withinMagnitude(order, 128)
     &&Number.isFinite(input.lower)&&Number.isFinite(input.upper)&&input.lower>0&&input.lower<=input.upper&&input.upper<=128;
 }
 export interface SecondBesselRanges { readonly value:Range; readonly first:Range; readonly second:Range }

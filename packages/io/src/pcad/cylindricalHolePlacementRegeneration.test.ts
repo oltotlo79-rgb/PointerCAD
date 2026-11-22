@@ -257,7 +257,7 @@ describe('EX-05.PERSIST: target identity, missing sources and invalid faces', ()
     for (const reopened of reopenBoth(document)) {
       const result = await regenerateFresh(reopened);
       expect(result.errors).toEqual([{ featureId: feature.id, code: 'invalidValue',
-        message: '円筒の側面の穴をあけられるのは円筒の面だけです。円筒の面を選び直してください。' }]);
+        text: { key: 'partError.cylinderHole.notCylinder', parameters: {} } }]);
       expect(result.bodies.some((body) => body.featureId === feature.id)).toBe(false);
       // EX-18.16.DESIGN owns failed-target visibility. Record the current result without rescuing or deleting it.
       stdout.write(JSON.stringify({ evidence: 'EX-05 invalid cylindrical target visibility', kind, bodyIds: result.bodies.map((body) => body.featureId) }) + String.fromCharCode(10));

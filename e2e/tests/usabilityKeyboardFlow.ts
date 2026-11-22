@@ -11,6 +11,7 @@ import { controlDrawingRefresh, expectDrawingRefreshHeld } from './holdDrawingRe
 import { drawingSourceInputHash } from '../../packages/model/src/index.js';
 import { uiMessage } from './uiMessages.js';
 import { waitForMathEditorText } from './mathEditorReady.js';
+import { placeBox } from './appearanceCaptureSupport.js';
 
 declare global {
   interface Window { pcadCompositionSavedBytes?: readonly number[] | null; pcadR20RefreshOpens?: number }
@@ -549,4 +550,44 @@ export async function drawingBusyReasonProof(page: Page, info: TestInfo): Promis
     stateInjection: false, osImeCertified: false,
   }), { encoding: 'utf8', flag: 'wx' });
   await info.attach('r20-refresh-input-premises', { contentType: 'application/json', path: refreshEvidencePath });
+}
+
+/**
+ * 押せる面の下限(C-03)。点検(C-01)の基準「押せる面 24px 以上」(docs/次の版の作業一覧.md の C-01・C-03)。
+ * 1440×900 の窓で、固定区画の全部(ツールバー Toolbar.tsx の .pcad-toolbar・左の木 FeatureTree.tsx の data-guide-id="history"・
+ * 右のパネル PropertyPanel.tsx の data-guide-id="properties"・帯 StatusBar.tsx の .pcad-statusbar)の、見えていて押せる物の外接の箱の
+ * 幅と高さを読む。checkbox・radio は、包む label ごと押せるので label の箱を読む。窓の中・3D の画面・図面は見ない。
+ * 測るのは空の部品と箱を選んだ部品の 2 つの状態。そこで出ない押せる物(参照の名前・面の境界の一覧・選んだ組と拘束の行・
+ * 関数の窓の釦・板金の展開の欄)は、packages/ui/src/shell/themeContrast.test.ts の 押せる面(C-03) が CSS の宣言で留める。
+ */
+const MINIMUM_TARGET_PX = 24;
+const TARGET_REGIONS = ['.pcad-toolbar', '.pcad-panel--left[data-guide-id="history"]',
+  '.pcad-panel--right[data-guide-id="properties"]', '.pcad-statusbar'];
+const TARGET_CONTROLS = 'button, [role="button"], a[href], select, input[type="checkbox"], input[type="radio"]';
+
+/** 基準より小さい押せる物(区画・class・名前・大きさ)。無ければ空。 */
+async function smallTargets(page: Page): Promise<string[]> {
+  return page.evaluate(({ regions, controls, minimum }) => regions.flatMap(region =>
+    Array.from(document.querySelectorAll(`${region} :is(${controls})`)).flatMap(control => {
+      const element = control.matches('input[type="checkbox"], input[type="radio"]') ? control.closest('label') ?? control : control;
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (box.width === 0 || box.height === 0 || style.visibility === 'hidden' || style.display === 'none') return [];
+      if (box.width >= minimum && box.height >= minimum) return [];
+      const name = element.getAttribute('aria-label') ?? element.textContent?.trim() ?? '';
+      return [`${region} ${element.className} ${name} ${String(box.width)}x${String(box.height)}`];
+    })), { regions: TARGET_REGIONS, controls: TARGET_CONTROLS, minimum: MINIMUM_TARGET_PX });
+}
+
+/**
+ * 空の部品と、立体の行(タイムラインのつまみが出る。featureTreeRows.tsx:421)がある部品の両方で、押せる面を測る。
+ * 2 回目は placeBox が箱1を選んだ状態なので、右のパネルには箱の欄が出る。
+ */
+export async function targetSizeFlow(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator('.pcad-toolbar')).toBeVisible();
+  expect(await smallTargets(page)).toEqual([]);
+  await placeBox(page);
+  await expect(page.locator('.pcad-panel--left .pcad-timeline__stop').first()).toBeVisible();
+  expect(await smallTargets(page)).toEqual([]);
 }

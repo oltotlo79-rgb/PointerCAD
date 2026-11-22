@@ -1,3 +1,4 @@
+import { plainTextValue } from '../failureText.js';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
@@ -60,6 +61,6 @@ describe('P11b 案内線の文書→依存→キャッシュ→実OCCT', () => {
     const errors = resolvePart(missing).errors;
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({ featureId: sweep.id, code: 'missingProfile' });
-    expect(errors[0].message).toContain('案内線');
+    expect(plainTextValue(errors[0].text)).toContain('案内線');
   });
 });

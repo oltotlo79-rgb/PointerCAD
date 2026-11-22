@@ -371,7 +371,7 @@ function buildMarks(
   return marks;
 }
 
-type ThreadToolNaming = NonNullable<Parameters<typeof makeHoleTools>[6]>;
+type ThreadToolNaming = NonNullable<NonNullable<Parameters<typeof makeHoleTools>[5]>['naming']>;
 
 /**
  * 溝(実らせん)を中心の数 × 変換の数だけ作り、控えへ積んで形の一覧を返す。
@@ -500,7 +500,7 @@ export function makeThreadHole(
       const naming = featureId !== undefined && spec.centerAnchors !== undefined && spec.placementRoles !== undefined
         ? { featureId, centerAnchors: spec.centerAnchors, placementRoles: spec.placementRoles } : undefined;
       const drills = keep(
-        makeHoleTools(oc, frame, spec.drillDiameter, spec.depth, spec.transforms, spec.entry, naming),
+        makeHoleTools(oc, frame, spec.drillDiameter, spec.depth, spec.transforms, { entry: spec.entry, naming }),
       );
       // 名前の付いた下穴の面。実らせんでは溝との和で作り直されるので、和の履歴で付け直す。
       // 自分の溝が分けた下穴の面は、和の履歴が示す全ての小片を1つの組で残す(rebindThreadToolFaces)。

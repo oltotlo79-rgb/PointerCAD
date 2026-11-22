@@ -25,6 +25,7 @@ import help from './ja/help.json';
 import sheetMetal from './ja/sheetMetal.json';
 import strength from './ja/strength.json';
 import beam from './ja/beam.json';
+import analysisReport from './ja/analysisReport.json';
 import plasticBar from './ja/plasticBar.json';
 import fatigue from './ja/fatigue.json';
 import fatigueStrain from './ja/fatigueStrain.json';
@@ -76,6 +77,8 @@ export const ja = {
   ...sheetMetal,
   ...strength,
   ...beam,
+  // 解析の報告書(梁と立体で共通の見出し・釦・断り)
+  ...analysisReport,
   ...plasticBar,
   ...fatigue,
   ...fatigueStrain,
@@ -119,6 +122,7 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['sheetMetal', sheetMetal],
   ['strength', strength],
   ['beam', beam],
+  ['analysisReport', analysisReport],
   ['plasticBar', plasticBar],
   ['fatigue', fatigue],
   ['fatigueStrain', fatigueStrain],

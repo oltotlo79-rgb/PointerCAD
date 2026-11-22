@@ -67,7 +67,7 @@ export interface CatalogOptionSpec {
  */
 export type CatalogSimplifiedKind = 'slotPositionSymmetric';
 
-/** 族の 1 行。保存されるのは `key` と `size` だけで、ほかは導出と表示に使う。 */
+/** 族の 1 行。保存されるのは `key` と `size` だけで、ほかは導出と表示に使う(`size` は今の呼びか `formerSizes` のどれかで読む)。 */
 export interface CatalogItemRow {
   /** 版の中で凍結する行の鍵(保存される)。 */
   readonly key: string;
@@ -113,6 +113,18 @@ export interface CatalogItemRow {
    * 画面に出す文は ui の i18n が持つ。保存しない導出の欄なので、足しても保存の形と catalogRevision は変わらない。
    */
   readonly valueSource?: CatalogValueSource;
+  /**
+   * false の行は選ぶ窓(検索の行と呼びの欄)に出さない。前に保存したファイルの部品を読むためだけに残す行で、鍵で行を引く所・組む道・部品表は今どおり読む。
+   * 持たない行は出す。保存しない導出の欄なので、足しても保存の形と catalogRevision は変わらない。
+   */
+  readonly listed?: false;
+  /** 選ぶ窓に出さない行(`listed: false`)の代わりに出す、同じ族の行の鍵(値も呼びも同じ部品が資料の 2 つの頁に載る時)。 */
+  readonly listedAs?: string;
+  /**
+   * 前の版で使っていた呼び(材料の表示などを直した行だけが持つ)。保存した部品の呼びが今の呼びかこのどれかなら読む(保存の形は書き換えない)。
+   * 新しく置く部品は今の呼び。保存しない導出の欄なので、足しても保存の形と catalogRevision は変わらない。
+   */
+  readonly formerSizes?: readonly string[];
 }
 
 /** 資料と頁でない値の出どころ(今は参考にした組立用の道具の画面の値だけ。資料と頁の行は `valueSource` を持たない)。 */

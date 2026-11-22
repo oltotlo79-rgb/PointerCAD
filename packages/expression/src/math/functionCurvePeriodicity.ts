@@ -16,6 +16,7 @@ import type { MathNode, StoredMathExpression } from './mathInputContract.js';
 import { decimalRational, rational, type ExactRational } from './exactRational.js';
 import type { MathCoefficientValue } from './mathCoefficientExpression.js';
 import type { FunctionCurveWorkRequest } from './functionCurveWorkRequest.js';
+import { withinMagnitude } from './numericTolerance.js';
 
 export type FunctionCurvePeriodicityReason = 'nonperiodic-coordinate' | 'unsupported-expression' | 'no-frequency'
   | 'incommensurate' | 'inexact-range' | 'not-whole-period' | 'range-mismatch' | 'budget';
@@ -228,7 +229,7 @@ export function functionCurvePeriodicity(input: FunctionCurvePeriodicityInput): 
     // Consistency with the sampled range only: a stale or different source must not lend its proof.
     for (const [value, sampled] of [[low, input.lowerValue], [high, input.upperValue]] as const) {
       const approximate = Number(value.a.numerator) / Number(value.a.denominator) + Number(value.b.numerator) / Number(value.b.denominator) * Math.PI;
-      if (!(Math.abs(approximate - sampled) <= 1e-9 * Math.max(1, Math.abs(sampled)))) return { status: 'unproved', reason: 'range-mismatch' };
+      if (!withinMagnitude(approximate - sampled, 1e-9 * Math.max(1, Math.abs(sampled)))) return { status: 'unproved', reason: 'range-mismatch' };
     }
     const length = addForm(high, { a: negative(low.a), b: negative(low.b) }) ?? refuse('budget');
     // piPower -1 (radian, rational slopes): P = base * pi, so the length must be b * pi with a = 0. piPower 0: rational.

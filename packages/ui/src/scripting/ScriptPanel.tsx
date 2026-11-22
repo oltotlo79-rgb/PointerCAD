@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { SCRIPT_ICONS, SCRIPT_LIMITS, isScriptModuleName } from '@pointercad/model/scripting';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { openScriptPanel, runScript } from './scriptActions.js';
+import { openScriptPanel, runScript, scriptErrorText } from './scriptActions.js';
 import { openScriptFile, saveScriptFile, registerScript, deleteScriptTool, restoreScriptTool } from './scriptFileActions.js';
 import { SCRIPT_EXAMPLES } from './scriptExamples.js';
 import { SCRIPT_ICON_COMPONENTS } from './ScriptIcons.js';
@@ -58,7 +58,7 @@ export function ScriptPanel(): React.JSX.Element {
     <div className="pcad-script__actions"><button className="pcad-button pcad-button--primary" type="button" title={t('script.runTooltip')} disabled={running} onClick={() => { void runScript(); }}>{t('script.run')}</button>
       <button className="pcad-button" title={t('script.control.stop')} type="button" disabled={!running} onClick={() => useAppStore.getState().cancelScript()}>{t('script.cancel')}</button></div>
     <p role="status">{t(`script.phase.${phase}`)}</p>
-    {error === null ? null : <div className="pcad-script__error" role="alert"><p>{error.message}</p>{error.location === null ? null : <button className="pcad-button" title={t('script.control.errorLine')} type="button" onClick={jumpToError}>
+    {error === null ? null : <div className="pcad-script__error" role="alert"><p>{scriptErrorText(error)}</p>{error.location === null ? null : <button className="pcad-button" title={t('script.control.errorLine')} type="button" onClick={jumpToError}>
       {t('script.errorLine')} {error.location.file}:{error.location.line}{error.location.column === null ? '' : `:${error.location.column}`}</button>}</div>}
     {message === null ? null : <p role="status">{message}</p>}
     <div className="pcad-script__actions"><button className="pcad-button" title={t('script.control.open')} type="button" onClick={() => { void openScriptFile(); }}>{t('script.open')}</button>

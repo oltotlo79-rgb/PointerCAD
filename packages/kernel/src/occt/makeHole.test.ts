@@ -141,7 +141,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
       const spec = holeSpec({ face: savedFace, centers: [[500, 500, 15]] });
       const frame = resolveHoleFrame(oc, current.shape, tables.faces, spec, current.origins);
       expect(frame.origins[0]).toEqual([500, 500, 15]);
-      const output = makeHole(oc, spec, current.shape, tables.faces, { kind: 'plain' }, current.origins);
+      const output = makeHole(oc, spec, current.shape, tables.faces, { entry: { kind: 'plain' }, origins: current.origins });
       try {
         expectVolume(output.volume, 1_200_000 - Math.PI * 9 * 30);
         expect(isValidShape(oc, output.shape)).toBe(true);
@@ -150,7 +150,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
       }
       const high = { ...faceQuery(match.match.candidate), origin: savedFace.origin };
       expect(() => makeHole(oc, { ...spec, face: high }, other.shape,
-        subShapesOf(other.shape).faces, { kind: 'plain' }, other.origins))
+        subShapesOf(other.shape).faces, { entry: { kind: 'plain' }, origins: other.origins }))
         .toThrow(/もとの面が見つかりません/);
       const currentBinding = current.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
         && item.origin.identity.role === 'top');
@@ -220,7 +220,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
         expect(frame.origins).toEqual([[500, 500, z]]);
         expect(frame.direction[2]).toBeCloseTo(role === 'start' ? 1 : -1, 9);
         const output = makeHole(oc, spec, current.shape, currentTables.faces,
-          { kind: 'plain' }, currentOrigins);
+          { entry: { kind: 'plain' }, origins: currentOrigins });
         try {
           expectVolume(output.volume, volume - Math.PI * 30);
           expect(isValidShape(oc, output.shape)).toBe(true);
@@ -306,7 +306,11 @@ describe('穴あけ(FR-405、FR-504)', () => {
       expect(saved.origin).not.toBe(query.origin);
       const savedBytes = JSON.stringify(saved);
       const first = makeHole(oc, holeSpec({ face: saved, centers: [[5, 15, 10]] }),
-        target.shape, facesOf(target.shape), { kind: 'plain' }, originalOrigins, 'saved-first-hole');
+        target.shape, facesOf(target.shape), {
+          entry: { kind: 'plain' },
+          origins: originalOrigins,
+          featureId: 'saved-first-hole',
+        });
       try {
         expectVolumeExact(first.volume, 12000 - THROUGH_HOLE_VOLUME);
         if (first.origins?.state !== 'tracked') throw new Error('実穴後originがありません');
@@ -322,7 +326,11 @@ describe('穴あけ(FR-405、FR-504)', () => {
           { translation: [15, 0, 0], rotationOrigin: [0, 0, 0], rotationAxis: [0, 0, 1], rotationAngle: 0 },
           { translation: [30, 0, 0], rotationOrigin: [0, 0, 0], rotationAxis: [0, 0, 1], rotationAngle: 0 },
         ] });
-        const patterned = makeHole(oc, spec, first.shape, afterFaces, { kind: 'plain' }, first.origins, 'saved-pattern');
+        const patterned = makeHole(oc, spec, first.shape, afterFaces, {
+          entry: { kind: 'plain' },
+          origins: first.origins,
+          featureId: 'saved-pattern',
+        });
         try {
           expectVolumeExact(patterned.volume, 12000 - 270 * Math.PI);
           expectVolumeExact(measureVolume(oc, patterned.shape), 12000 - 270 * Math.PI);
@@ -338,7 +346,11 @@ describe('穴あけ(FR-405、FR-504)', () => {
           { ...first.origins, bindings: first.origins.bindings.map(item => item === current
             ? { origin: item.origin, state: 'split' as const,
               candidates: [current.current, { kind: 'face' as const, index: another.index }] as const } : item) }]) {
-          expect(() => makeHole(oc, spec, first.shape, afterFaces, { kind: 'plain' }, origins, 'saved-pattern'))
+          expect(() => makeHole(oc, spec, first.shape, afterFaces, {
+            entry: { kind: 'plain' },
+            origins,
+            featureId: 'saved-pattern',
+          }))
             .toThrow(/もとの面が見つかりません/);
         }
         expectVolumeExact(measureVolume(oc, first.shape), 12000 - THROUGH_HOLE_VOLUME);
@@ -369,7 +381,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
       if (binding?.state !== 'unique') throw new Error('実上面originがありません');
       const face = { ...faceQuery(top), origin: binding.origin };
       const first = makeHole(oc, holeSpec({ face, centers: [[5, 15, 10]] }),
-        target.shape, facesOf(target.shape), { kind: 'plain' }, target.origins, 'first-hole');
+        target.shape, facesOf(target.shape), { entry: { kind: 'plain' }, origins: target.origins, featureId: 'first-hole' });
       try {
         expect(first.origins?.state).toBe('tracked');
         if (first.origins?.state !== 'tracked') throw new Error('穴後originがありません');
@@ -378,7 +390,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
         expect(match.status).toBe('matched');
         const secondSpec = holeSpec({ face, centers: [[20, 15, 10], [35, 15, 10]] });
         const second = makeHole(oc, secondSpec, first.shape, faces,
-          { kind: 'plain' }, first.origins, 'pattern');
+          { entry: { kind: 'plain' }, origins: first.origins, featureId: 'pattern' });
         try {
           expectVolumeExact(second.volume, 12000 - 3 * THROUGH_HOLE_VOLUME);
           expectVolumeExact(measureVolume(oc, second.shape), 12000 - 3 * THROUGH_HOLE_VOLUME);
@@ -404,7 +416,11 @@ describe('穴あけ(FR-405、FR-504)', () => {
           { ...first.origins, bindings: first.origins.bindings.map(item => item === current
             ? { origin: item.origin, state: 'merged' as const, current: current.current,
               coOrigins: [item.origin, foreignOrigin] as const } : item) }]) {
-          expect(() => makeHole(oc, secondSpec, first.shape, faces, { kind: 'plain' }, origins, 'pattern'))
+          expect(() => makeHole(oc, secondSpec, first.shape, faces, {
+            entry: { kind: 'plain' },
+            origins,
+            featureId: 'pattern',
+          }))
             .toThrow(/もとの面が見つかりません/);
         }
       } finally { first.delete(); }
@@ -420,8 +436,11 @@ describe('穴あけ(FR-405、FR-504)', () => {
       if (target.origins?.state !== 'tracked') throw new Error('Missing target proof');
       const faces = facesOf(target.shape), top = planeFacing(faces, [0, 0, 1]);
       const frame = resolveHoleFrame(oc, target.shape, faces, holeSpec({ face: faceQuery(top) }), target.origins);
-      const tools = makeHoleTools(oc, frame, 6, null, [], { kind: 'plain' }, { featureId: 'claim-hole',
-        centerAnchors: [{ sketchId: 'centers', producer: { kind: 'point', featureId: 'A' } }], placementRoles: [] });
+      const tools = makeHoleTools(oc, frame, 6, null, [], {
+        entry: { kind: 'plain' },
+        naming: { featureId: 'claim-hole',
+          centerAnchors: [{ sketchId: 'centers', producer: { kind: 'point', featureId: 'A' } }], placementRoles: [] },
+      });
       try {
         const wall = tools.newHoleFaces.find((producer) => producer.origin?.identity.role === 'wall');
         if (wall?.origin === undefined) throw new Error('Missing native tool wall');
@@ -467,9 +486,13 @@ describe('穴あけ(FR-405、FR-504)', () => {
         const spec = holeSpec({ face: { ...faceQuery(top), origin: binding.origin }, depth: fixture.depth,
           centerAnchors: [{ sketchId: 'centers', producer: { kind: 'point', featureId: 'center-A' } }],
           placementRoles: [] });
-        const result = makeHole(oc, spec, target.shape, faces, fixture.entry, target.origins, 'named-hole');
+        const result = makeHole(oc, spec, target.shape, faces, {
+          entry: fixture.entry,
+          origins: target.origins,
+          featureId: 'named-hole',
+        });
         const control = makeHole(oc, { ...spec, centerAnchors: undefined, placementRoles: undefined },
-          target.shape, faces, fixture.entry, target.origins, 'control-hole');
+          target.shape, faces, { entry: fixture.entry, origins: target.origins, featureId: 'control-hole' });
         try {
           expectVolumeExact(result.volume, control.volume);
           const tables = subShapesOf(result.shape);
@@ -512,10 +535,14 @@ describe('穴あけ(FR-405、FR-504)', () => {
       const spec = holeSpec({ face: { ...faceQuery(top), origin: topBinding.origin },
         centerAnchors: [{ sketchId: 'r18-centers', producer: { kind: 'point', featureId: 'r18-center' } }],
         placementRoles: [] });
-      const old = makeHole(oc, spec, target.shape, faces, { kind: 'plain' }, target.origins, 'r18-hole');
+      const old = makeHole(oc, spec, target.shape, faces, {
+        entry: { kind: 'plain' },
+        origins: target.origins,
+        featureId: 'r18-hole',
+      });
       try {
         const current = makeHole(oc, { ...spec, diameter: 8 }, target.shape, faces,
-          { kind: 'plain' }, target.origins, 'r18-hole');
+          { entry: { kind: 'plain' }, origins: target.origins, featureId: 'r18-hole' });
         try {
           if (old.origins?.state !== 'tracked' || current.origins?.state !== 'tracked')
             throw new Error('Missing actual hole origins');
@@ -602,10 +629,10 @@ describe('穴あけ(FR-405、FR-504)', () => {
       const b = { sketchId: 'centers', producer: { kind: 'point', featureId: 'B' } } as const;
       const first = makeHole(oc, holeSpec({ face: { ...faceQuery(top), origin: binding.origin },
         centers: [[8, 15, 10], [20, 15, 10], [30, 15, 10]], centerAnchors: [a, c, b], placementRoles: [] }),
-      target.shape, faces, { kind: 'plain' }, target.origins, 'holes');
+      target.shape, faces, { entry: { kind: 'plain' }, origins: target.origins, featureId: 'holes' });
       const cold = makeHole(oc, holeSpec({ face: { ...faceQuery(top), origin: binding.origin },
         centers: [[30, 15, 10], [8, 15, 10], [20, 15, 10]], centerAnchors: [b, a, c], placementRoles: [] }),
-      target.shape, faces, { kind: 'plain' }, target.origins, 'holes');
+      target.shape, faces, { entry: { kind: 'plain' }, origins: target.origins, featureId: 'holes' });
       try {
         expectVolumeExact(first.volume, 12000 - 3 * Math.PI * 3 ** 2 * 10);
         expectVolumeExact(cold.volume, first.volume);
@@ -636,14 +663,17 @@ describe('穴あけ(FR-405、FR-504)', () => {
       placementRoles: [{ kind: 'linear', step: 1 }] });
     const entry: HoleEntrySpec = { kind: 'counterbore', diameter: 10, depth: 3 };
     try {
-      const control = makeHole(oc, spec, handle.shape, faces, entry);
+      const control = makeHole(oc, spec, handle.shape, faces, { entry });
       const hook = vi.spyOn(holeOriginsModule, observer).mockImplementation(() => {
         if (reason === 'limit') throw new OriginHistoryLimitError();
         throw new holeOriginsModule.HoleOriginMapError('Foreign native history member');
       });
       try {
-        const result = makeHole(oc, spec, handle.shape, faces, entry,
-          { version: 1, state: 'untracked', reason: 'legacy' }, 'limited-hole');
+        const result = makeHole(oc, spec, handle.shape, faces, {
+          entry,
+          origins: { version: 1, state: 'untracked', reason: 'legacy' },
+          featureId: 'limited-hole',
+        });
         try {
           expect(hook).toHaveBeenCalled();
           expectVolumeExact(result.volume, 12000 - Math.PI * (9 * 10 + (25 - 9) * 3));
@@ -671,7 +701,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
         transforms: fractions.map(([numerator, denominator]) => ({ translation: [0, 0, 0],
           rotationOrigin: [20, 15, 0], rotationAxis: [0, 0, 1], rotationAngle: 2 * Math.PI * numerator / denominator })),
         placementRoles: fractions.map(([numerator, denominator]) => ({ kind: 'circular', fullCircle: true, numerator, denominator })),
-      }), target.shape, faces, { kind: 'plain' }, target.origins, 'circular-hole');
+      }), target.shape, faces, { entry: { kind: 'plain' }, origins: target.origins, featureId: 'circular-hole' });
       const four = run([[0, 1], [1, 4], [1, 2], [3, 4]]);
       const eight = run([[0, 1], [1, 8], [1, 4], [3, 8], [1, 2], [5, 8], [3, 4], [7, 8]]);
       const three = run([[0, 1], [1, 3], [2, 3]]);
@@ -705,13 +735,13 @@ describe('穴あけ(FR-405、FR-504)', () => {
         rotationOrigin: [0, 0, 0], rotationAxis: [0, 0, 1], rotationAngle: 0 });
       const first = makeHole(oc, { ...common, transforms: [move(-1, 10), move(0, 10), move(1, 10)],
         placementRoles: [{ kind: 'linear', step: -1 }, { kind: 'linear', step: 0 }, { kind: 'linear', step: 1 }] },
-      target.shape, faces, { kind: 'plain' }, target.origins, 'linear-hole');
+      target.shape, faces, { entry: { kind: 'plain' }, origins: target.origins, featureId: 'linear-hole' });
       const cold = makeHole(oc, { ...common, transforms: [move(1, 7), move(-1, 7), move(0, 7)],
         placementRoles: [{ kind: 'linear', step: 1 }, { kind: 'linear', step: -1 }, { kind: 'linear', step: 0 }] },
-      target.shape, faces, { kind: 'plain' }, target.origins, 'linear-hole');
+      target.shape, faces, { entry: { kind: 'plain' }, origins: target.origins, featureId: 'linear-hole' });
       const slot = (source: string) => makeHole(oc, { ...common, transforms: [move(0, 10)], placementRoles: [
         { kind: 'point-slot', slotId: 'slot-7', source: { kind: 'reference-point', featureId: source } },
-      ] }, target.shape, faces, { kind: 'plain' }, target.origins, 'slot-hole');
+      ] }, target.shape, faces, { entry: { kind: 'plain' }, origins: target.origins, featureId: 'slot-hole' });
       const a = slot('source-A'), b = slot('source-B');
       try {
         expectVolumeExact(first.volume, 12000 - 3 * Math.PI * 9 * 10);
@@ -736,10 +766,18 @@ describe('穴あけ(FR-405、FR-504)', () => {
       const spec = holeSpec({ face: faceQuery(top), centerAnchors: [
         { sketchId: 'centers', producer: { kind: 'point', featureId: 'A' } },
       ], placementRoles: [] });
-      const first = makeHole(oc, spec, handle.shape, faces, { kind: 'plain' }, input, 'import-hole');
-      const cold = makeHole(oc, spec, handle.shape, faces, { kind: 'plain' }, input, 'import-hole');
+      const first = makeHole(oc, spec, handle.shape, faces, {
+        entry: { kind: 'plain' },
+        origins: input,
+        featureId: 'import-hole',
+      });
+      const cold = makeHole(oc, spec, handle.shape, faces, {
+        entry: { kind: 'plain' },
+        origins: input,
+        featureId: 'import-hole',
+      });
       const unsupported = makeHole(oc, { ...spec, centerAnchors: undefined, placementRoles: undefined },
-        handle.shape, faces, { kind: 'plain' }, input, 'legacy-hole');
+        handle.shape, faces, { entry: { kind: 'plain' }, origins: input, featureId: 'legacy-hole' });
       try {
         expectVolumeExact(first.volume, 12000 - Math.PI * 3 ** 2 * 10);
         expectVolumeExact(cold.volume, first.volume); expectVolumeExact(unsupported.volume, first.volume);
@@ -1259,7 +1297,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
           holeSpec({ face: faceQuery(top), ...overrides }),
           handle.shape,
           faces,
-          entry,
+          { entry },
         );
         try {
           expect(hasSolid(oc, result.shape)).toBe(true);
@@ -1278,7 +1316,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
       const { handle, faces, top } = plateWithTopFace();
       try {
         expect(() =>
-          makeHole(oc, holeSpec({ face: faceQuery(top) }), handle.shape, faces, entry),
+          makeHole(oc, holeSpec({ face: faceQuery(top) }), handle.shape, faces, { entry }),
         ).toThrow(pattern);
       } finally {
         handle.delete();
@@ -1352,7 +1390,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
       const { handle, faces, top } = plateWithTopFace();
       try {
         const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
-        const tools = makeHoleTools(oc, frame, 6, null, [], COUNTERBORE);
+        const tools = makeHoleTools(oc, frame, 6, null, [], { entry: COUNTERBORE });
         try {
           const diagonal = Math.hypot(PLATE.dx, PLATE.dy, PLATE.dz);
           const margin = diagonal * 0.01 + 1;
@@ -1376,7 +1414,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
       const { handle, faces, top } = plateWithTopFace();
       try {
         const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
-        const single = makeHoleTools(oc, frame, 6, null, [], COUNTERBORE);
+        const single = makeHoleTools(oc, frame, 6, null, [], { entry: COUNTERBORE });
         const doubled = makeHoleTools(
           oc,
           frame,
@@ -1396,7 +1434,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
               rotationAngle: 0,
             },
           ],
-          COUNTERBORE,
+          { entry: COUNTERBORE },
         );
         try {
           expectVolume(measureVolume(oc, doubled.shape), measureVolume(oc, single.shape) * 2);
@@ -1414,7 +1452,7 @@ describe('穴あけ(FR-405、FR-504)', () => {
       try {
         const frame = resolveHoleFrame(oc, handle.shape, faces, holeSpec({ face: faceQuery(top) }));
         const omitted = makeHoleTools(oc, frame, 6, 4, []);
-        const plain = makeHoleTools(oc, frame, 6, 4, [], { kind: 'plain' });
+        const plain = makeHoleTools(oc, frame, 6, 4, [], { entry: { kind: 'plain' } });
         try {
           expectVolume(measureVolume(oc, omitted.shape), measureVolume(oc, plain.shape));
         } finally {
@@ -1885,7 +1923,7 @@ describe('円筒の側面の穴(EX05)', () => {
         expect(() => makeHole(oc, refused, target.shape, faces)).toThrow(message);
       }
       expect(() => makeHole(oc, spec(side, [{ height: 10, angle: 0 }]), target.shape, faces,
-        { kind: 'countersink', diameter: 8, angle: Math.PI / 2 })).toThrow(/まだ使えません/);
+        { entry: { kind: 'countersink', diameter: 8, angle: Math.PI / 2 } })).toThrow(/まだ使えません/);
       // 平面の穴は今までどおり円筒の面を断る(円筒の欄が無ければ今までの意味のまま)。
       expect(() => resolveHoleFrame(oc, target.shape, faces, { face: side, centers: [[10, 0, 10]], tiltAngle: 0, tiltAzimuth: 0 }))
         .toThrow(/平らな面だけです/);
@@ -1910,7 +1948,7 @@ describe('円筒の側面の穴(EX05)', () => {
         [null, Math.PI / 2, 4 * lens(boreRadius, radius)],
       ] satisfies readonly [number | null, number, number][]) {
         const output = makeHole(oc, spec(side, [{ height: 20, angle }], { depth }), target.shape, faces,
-          { kind: 'counterbore', diameter: 2 * entryRadius, depth: entryDepth });
+          { entry: { kind: 'counterbore', diameter: 2 * entryRadius, depth: entryDepth } });
         try {
           expectCylinderVolume(Math.PI * radius ** 2 * height - adaptiveVolume(output.shape),
             boreRemoved + entryRemoved - boreWithinEntry);
@@ -1940,7 +1978,7 @@ describe('円筒の側面の穴(EX05)', () => {
       const direction = frame.directions?.[0];
       if (direction === undefined) throw new Error('内面の工具の向きがありません');
       const output = makeHole(oc, holes, pipe.shape, faces,
-        { kind: 'counterbore', diameter: 2 * entryRadius, depth: entryDepth });
+        { entry: { kind: 'counterbore', diameter: 2 * entryRadius, depth: entryDepth } });
       try {
         const expectedRemoved = (inner + entryDepth) * Math.PI * entryRadius ** 2 - 2 * lens(entryRadius, inner)
           + (depth - entryDepth) * Math.PI * boreRadius ** 2;
@@ -1964,7 +2002,7 @@ describe('円筒の側面の穴(EX05)', () => {
       }
       for (const entryDiameter of [2 * inner, 2 * inner + 1]) {
         expect(() => makeHole(oc, holes, pipe.shape, faces,
-          { kind: 'counterbore', diameter: entryDiameter, depth: entryDepth })).toThrow(/内面の直径以上/);
+          { entry: { kind: 'counterbore', diameter: entryDiameter, depth: entryDepth } })).toThrow(/内面の直径以上/);
       }
       expectCylinderVolume(adaptiveVolume(pipe.shape), Math.PI * (outer ** 2 - inner ** 2) * height);
     } finally {
@@ -2148,7 +2186,7 @@ describe('円筒の側面の穴(EX05)', () => {
 
     function cut(kind: Machining, holes: HoleStepSpec, target: Shape, faces: readonly SolidFaceInfo[],
       entry: HoleEntrySpec): OcctShapeHandle {
-      if (kind === 'plain' || kind === 'counterbore') return makeHole(oc, holes, target, faces, entry);
+      if (kind === 'plain' || kind === 'counterbore') return makeHole(oc, holes, target, faces, { entry });
       const thread: ThreadStepSpec = { ...holes, kind: 'thread', drillDiameter: holes.diameter,
         thread: null, mark: { majorDiameter: 6, length: 1 }, entry };
       const output = makeThreadHole(oc, thread, target, faces);
@@ -2326,7 +2364,7 @@ describe('円筒の側面の穴(EX05)', () => {
       if (origin === undefined) throw new Error('入口がありません');
       expect(Math.abs(Math.hypot(origin[0] - 100, origin[1]) - 8)).toBeLessThan(POSITION_TOLERANCE);
       expect(Math.abs(origin[2] - 15)).toBeLessThan(POSITION_TOLERANCE);
-      const output = makeHole(oc, holes, current.shape, faces, { kind: 'plain' }, currentOrigins);
+      const output = makeHole(oc, holes, current.shape, faces, { entry: { kind: 'plain' }, origins: currentOrigins });
       try {
         expectCylinderVolume(adaptiveVolume(output.shape), Math.PI * 64 * 30 - 4 * lens(2, 8));
         expect(isValidShape(oc, output.shape)).toBe(true);

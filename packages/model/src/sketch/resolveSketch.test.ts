@@ -1,3 +1,4 @@
+import { plainText, plainTextValue } from '../failureText.js';
 import { expressionValueFromNumber as num, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 import { expectVec3CloseTo as expectCloseTo } from '../testing/vec3Assertions.testSupport.js';
@@ -730,7 +731,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('collinear');
     expect(resolved.errors[0].featureId).toBe('f1');
-    expect(resolved.errors[0].message).toBe(
+    expect(plainTextValue(resolved.errors[0].text)).toBe(
       '選んだ点が一直線に並んでいるため、面を張れませんでした。3 点目を線から外してください。',
     );
   });
@@ -840,7 +841,7 @@ describe('スケッチ全体の解決(タスク11)', () => {
     const resolved = resolveSketch(documentOf(broken, face));
     expect(resolved.errors.map((item) => item.code)).toEqual(['missingBase', 'missingBase']);
     expect(resolved.errors[1].featureId).toBe('f1');
-    expect(resolved.errors[1].message).toContain('l1');
+    expect(plainTextValue(resolved.errors[1].text)).toContain('l1');
     expect(resolved.faces).toEqual([]);
   });
 
@@ -1052,7 +1053,7 @@ describe('矩形・正多角形・長穴の解決(タスク4、FR-314〜316)', (
     const resolved = resolveSketch(documentOf(tooFew));
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('invalidValue');
-    expect(resolved.errors[0].message).toContain('3');
+    expect(plainTextValue(resolved.errors[0].text)).toContain('3');
     expect(resolved.segments).toEqual([]);
 
     // 半径が 0 以下、または負なら断る(半径そのものの不備、円弧と同じ扱い)。
@@ -1425,7 +1426,7 @@ describe('楕円の解決(タスク5、FR-318)', () => {
     };
     const swappedResolved = resolveSketch(documentOf(swapped));
     expect(swappedResolved.errors[0].code).toBe('invalidValue');
-    expect(swappedResolved.errors[0].message).toContain('長軸');
+    expect(plainTextValue(swappedResolved.errors[0].text)).toContain('長軸');
 
     const broken: SketchFeature = {
       ...ellipseFeature(), majorRadius: brokenNumber('1/0', Number.POSITIVE_INFINITY),
@@ -1543,7 +1544,7 @@ describe('スプラインの解決(タスク5、FR-317)', () => {
     const oneResolved = resolveSketch(documentOf(onePoint));
     expect(oneResolved.errors).toHaveLength(1);
     expect(oneResolved.errors[0].code).toBe('tooFewPoints');
-    expect(oneResolved.errors[0].message).toBe('スプラインには点が 2 個以上必要です。');
+    expect(plainTextValue(oneResolved.errors[0].text)).toBe('スプラインには点が 2 個以上必要です。');
     expect(oneResolved.splines).toEqual([]);
   });
 
@@ -1556,7 +1557,7 @@ describe('スプラインの解決(タスク5、FR-317)', () => {
     const resolved = resolveSketch(documentOf(twoPointsClosed));
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('tooFewPoints');
-    expect(resolved.errors[0].message).toBe('閉じたスプラインには点が 3 個以上必要です。');
+    expect(plainTextValue(resolved.errors[0].text)).toBe('閉じたスプラインには点が 3 個以上必要です。');
 
     const threePointsClosed: SketchFeature = {
       ...twoPointsClosed,
@@ -1583,7 +1584,7 @@ describe('スプラインの解決(タスク5、FR-317)', () => {
     const resolved = resolveSketch(documentOf(tooMany));
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('invalidValue');
-    expect(resolved.errors[0].message).toBe('スプラインの点は 100 個以下にしてください。');
+    expect(plainTextValue(resolved.errors[0].text)).toBe('スプラインの点は 100 個以下にしてください。');
 
     const justEnough: SketchFeature = { ...splineFeature(), points: many.slice(0, 100) };
     expect(resolveSketch(documentOf(justEnough)).errors).toEqual([]);
@@ -1601,7 +1602,7 @@ describe('スプラインの解決(タスク5、FR-317)', () => {
     const resolved = resolveSketch(documentOf(doubled));
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('degenerate');
-    expect(resolved.errors[0].message).toBe(
+    expect(plainTextValue(resolved.errors[0].text)).toBe(
       '同じ位置の点が続いているため、通過点のスプラインを作れません。点をずらしてください。',
     );
 
@@ -1993,7 +1994,7 @@ describe('構築線(タスク6、FR-320)', () => {
     const resolved = resolveSketch(documentOf(line, face));
     expect(resolved.faces).toEqual([]);
     expect(resolved.errors[0].code).toBe('constructionElement');
-    expect(resolved.errors[0].message).toBe('構築線は面の境界に使えません。');
+    expect(plainTextValue(resolved.errors[0].text)).toBe('構築線は面の境界に使えません。');
     // 線分そのものは変わらず残る(構築線でも描画・当たり判定の対象、§2.5)。
     expect(resolved.segments).toHaveLength(1);
   });
@@ -2123,7 +2124,7 @@ describe('任意の作業平面の上で描く(FR-328、タスク9)', () => {
     expect(resolved.points).toEqual([]);
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toContain('作図面が見つかりません');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchPlane.missing', parameters: { id: 'referencePlane-1' } });
   });
 
   it('引き口を渡すと、任意の作業平面の上の円弧が解決できる', () => {
@@ -2313,7 +2314,7 @@ describe('3D スケッチ(FR-330、タスク10)', () => {
     expect(resolved.arcs).toEqual([]);
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toContain('向きの指定');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchArc3d.needsOrientation', parameters: {} });
   });
 
   it('法線 (0,0,1)・角度 0 の向き (1,0,0) の円弧は XY 面の円弧と同じになる', () => {
@@ -2365,7 +2366,7 @@ describe('3D スケッチ(FR-330、タスク10)', () => {
     );
     expect(resolved.arcs).toEqual([]);
     expect(resolved.errors[0].code).toBe('degenerate');
-    expect(resolved.errors[0].message).toContain('法線と平行');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchArc3d.parallelReference', parameters: {} });
   });
 
   it('向き(法線)の長さが 0 なら degenerate で断る', () => {
@@ -2376,7 +2377,7 @@ describe('3D スケッチ(FR-330、タスク10)', () => {
     );
     expect(resolved.arcs).toEqual([]);
     expect(resolved.errors[0].code).toBe('degenerate');
-    expect(resolved.errors[0].message).toContain('法線');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchArc3d.zeroNormal', parameters: {} });
   });
 
   it('作図面があるときは、円弧の向きの指定より作図面を優先する', () => {
@@ -2459,7 +2460,7 @@ describe('3D スケッチ(FR-330、タスク10)', () => {
     const resolved = resolveSketch(documentOf(point));
     expect(resolved.points).toEqual([]);
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toContain('3D スケッチ');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.coordinate.polarNeedsPlane', parameters: {} });
   });
 
   it('作図面の中の並びで決まる図形は 3D スケッチでは作れない(FR-330 の 5 種だけ)', () => {
@@ -2501,7 +2502,7 @@ describe('3D スケッチ(FR-330、タスク10)', () => {
     expect(resolved.errors.map((item) => item.featureId)).toEqual([
       'r1', 'pg1', 'sl1', 'e1', 'pa1',
     ]);
-    expect(resolved.errors[0].message).toContain('作図面を選んで');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchState.needsWorkPlane', parameters: { label: '矩形' } });
   });
 
   it('3D スケッチでも任意の作業平面でもない作図面は missingBase(タスク9 と同じ扱い)', () => {
@@ -2512,7 +2513,7 @@ describe('3D スケッチ(FR-330、タスク10)', () => {
     const resolved = resolveSketch(documentOf(point));
     expect(resolved.points).toEqual([]);
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toContain('作図面が見つかりません');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchPlane.missing', parameters: { id: 'nope' } });
   });
 });
 
@@ -2663,7 +2664,7 @@ describe('オフセット(FR-321、タスク15)', () => {
       documentOf(RECTANGLE, offsetOf([{ featureId: 'r1' }], { distance: num(-5) })),
     );
     expect(resolved.errors[0].code).toBe('invalidValue');
-    expect(resolved.errors[0].message).toContain('0 以上');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchOffset.distance', parameters: {} });
   });
 
   it('離れた 2 本を選ぶと notClosed(つながっていない)', () => {
@@ -2676,7 +2677,7 @@ describe('オフセット(FR-321、タスク15)', () => {
     );
     expect(resolved.pendingOffsets).toEqual([]);
     expect(resolved.errors[0].code).toBe('notClosed');
-    expect(resolved.errors[0].message).toContain('つながっていません');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchOffset.notClosed', parameters: {} });
   });
 
   it('3D スケッチでは作れない(左右の基準になる作図面が要る)', () => {
@@ -2684,7 +2685,7 @@ describe('オフセット(FR-321、タスク15)', () => {
       documentOf(RECTANGLE, offsetOf([{ featureId: 'r1' }], { planeId: FREE_WORK_PLANE_ID })),
     );
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toContain('作図面を選んで');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchState.needsWorkPlane', parameters: { label: 'オフセット' } });
   });
 
   it('覚え書きに形があれば曲線として解決され、依頼は積まれない', () => {
@@ -2925,7 +2926,7 @@ describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
     };
     const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
     expect(resolved.errors[0].code).toBe('invalidValue');
-    expect(resolved.errors[0].message).toContain('0 より大きい');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchPattern.spacing', parameters: {} });
   });
 
   it('直線配列の向きの長さが 0 なら degenerate', () => {
@@ -2983,7 +2984,7 @@ describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
       };
       const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
       expect(resolved.errors[0].code).toBe('invalidValue');
-      expect(resolved.errors[0].message).toContain('2 以上 100 以下');
+      expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchCopy.count', parameters: { min: '2', max: '100' } });
     }
   });
 
@@ -3027,7 +3028,7 @@ describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
     };
     const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toContain('鏡にする軸');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchMirror.missingAxis', parameters: { id: 'nope' } });
   });
 
   it('鏡にする軸に円弧を選ぶと invalidValue(軸にできるのは線分だけ)', () => {
@@ -3036,14 +3037,14 @@ describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
     };
     const resolved = resolveSketch(documentOf(ARC, LINE, copyOf([{ featureId: 'l1' }], placement)));
     expect(resolved.errors[0].code).toBe('invalidValue');
-    expect(resolved.errors[0].message).toContain('線分だけ');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchMirror.axisNotLine', parameters: {} });
   });
 
   it('鏡にする平面が見つからないと missingBase', () => {
     const placement: CopyPlacement = { kind: 'mirror', basis: { kind: 'plane', planeId: 'nope' } };
     const resolved = resolveSketch(documentOf(LINE, copyOf([{ featureId: 'l1' }], placement)));
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toContain('鏡にする平面');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchMirror.missingPlane', parameters: { id: 'nope' } });
   });
 
   it('3D スケッチでは線を軸にした鏡像は作れないが、平面を鏡にはできる', () => {
@@ -3058,7 +3059,7 @@ describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
       ),
     );
     expect(byAxis.errors[0].code).toBe('missingBase');
-    expect(byAxis.errors[0].message).toContain('鏡にする平面を選んで');
+    expect(byAxis.errors[0].text).toEqual({ key: 'partError.sketchMirror.lineAxisIn3d', parameters: {} });
 
     const byPlane = resolveSketch(
       documentOf(
@@ -3092,7 +3093,7 @@ describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
       ),
     );
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toContain('作図面を選んで');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchPattern.circularIn3d', parameters: {} });
   });
 
   it('複製した曲線は面の境界に使える(押し出しの材料になる)', () => {
@@ -3320,7 +3321,7 @@ describe('投影・交差(FR-325、タスク25)', () => {
 
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('degenerate');
-    expect(resolved.errors[0].message).toContain('交わりません');
+    expect(plainTextValue(resolved.errors[0].text)).toContain('交わりません');
   });
 
   it('投影の結果が 0 本のときは「線になりません」と断る(FR-504)', () => {
@@ -3330,7 +3331,7 @@ describe('投影・交差(FR-325、タスク25)', () => {
 
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('degenerate');
-    expect(resolved.errors[0].message).toContain('線になりません');
+    expect(plainTextValue(resolved.errors[0].text)).toContain('線になりません');
   });
 
   it('3D スケッチ(作図面なし)では投影も交差も作れない(FR-330)', () => {
@@ -3340,8 +3341,8 @@ describe('投影・交差(FR-325、タスク25)', () => {
 
     expect(resolved.pendingProjections).toEqual([]);
     expect(resolved.errors.map((error) => error.code)).toEqual(['missingBase', 'missingBase']);
-    expect(resolved.errors[0].message).toContain('投影');
-    expect(resolved.errors[1].message).toContain('交差');
+    expect(resolved.errors[0].text).toEqual({ key: 'partError.sketchState.needsWorkPlane', parameters: { label: '投影' } });
+    expect(resolved.errors[1].text).toEqual({ key: 'partError.sketchState.needsWorkPlane', parameters: { label: '交差' } });
   });
 
   it('投影の終点が「直前の点」になり、端点は参照できる(FR-302、FR-303)', () => {
@@ -3437,14 +3438,14 @@ describe('1 回の解決の記録と順序(責務を分けても変わらない�
     };
     const resolved = resolveSketch(
       documentOf(POINT_A, face, relativeToPrevious('q1', 1), line, relativeToPrevious('q2', 1)),
-      { invalidInputs: new Map([['f-bad', '面の式が解けません。'], ['l-bad', '線の式が解けません。']]) },
+      { invalidInputs: new Map([['f-bad', plainText('面の式が解けません。')], ['l-bad', plainText('線の式が解けません。')]]) },
     );
     expect(resolved.points.map((point) => point.id)).toEqual(['p1', 'q1']);
     expectCloseTo(resolved.points[1].position, [1, 0, 0]);
     expect(resolved.errors).toEqual([
-      { featureId: 'f-bad', code: 'invalidValue', message: '面の式が解けません。' },
-      { featureId: 'l-bad', code: 'invalidValue', message: '線の式が解けません。' },
-      { featureId: 'q2', code: 'missingBase', message: '基準になる直前の点がありません。' },
+      { featureId: 'f-bad', code: 'invalidValue', text: plainText('面の式が解けません。') },
+      { featureId: 'l-bad', code: 'invalidValue', text: plainText('線の式が解けません。') },
+      { featureId: 'q2', code: 'missingBase', text: { key: 'partError.coordinate.noPrevious', parameters: {} } },
     ]);
     expect(resolved.segments).toEqual([]);
     expect(resolved.faces).toEqual([]);
@@ -3532,9 +3533,9 @@ describe('1 回の解決の記録と順序(責務を分けても変わらない�
       RECTANGLE, badPolygon, OFFSET, slot, section, copy, missingPlane, zeroLine, QUARTER_ARC,
     ));
     expect(resolved.errors).toEqual([
-      { featureId: 'g-bad', code: 'invalidValue', message: '辺の数は 3 以上にしてください。' },
-      { featureId: 'p-missing', code: 'missingBase', message: '作図面が見つかりません: referencePlane-9' },
-      { featureId: 'l-zero', code: 'degenerate', message: '線分の長さが 0 です。' },
+      { featureId: 'g-bad', code: 'invalidValue', text: plainText('辺の数は 3 以上にしてください。') },
+      { featureId: 'p-missing', code: 'missingBase', text: { key: 'partError.sketchPlane.missing', parameters: { id: 'referencePlane-9' } } },
+      { featureId: 'l-zero', code: 'degenerate', text: { key: 'partError.sketchLine.zeroLength', parameters: {} } },
     ]);
     expect(resolved.pendingOffsets.map((pending) => pending.featureId)).toEqual(['o1']);
     expect(resolved.pendingOffsets[0].curves).toEqual(resolved.curvesByFeature.get('r1'));

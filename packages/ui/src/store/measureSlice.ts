@@ -11,7 +11,7 @@ import {
   type PartMeasurer,
   runMeasure,
 } from '../solid/measureCommands.js';
-import { formatMeasure } from '../solid/measure.js';
+import { formatMeasure, MEASURE_TIMEOUT_MS } from '../solid/measure.js';
 import type { AppState } from './appState.js';
 import {
   calculateStrengthSession, createStrengthSession, editStrengthSession,
@@ -158,6 +158,11 @@ export const createMeasureSlice: StateCreator<
     const state = get();
     const request = {};
     set({ measurementRequest: request, measureErrorKey: null });
+    const timer = setTimeout(() => {
+      // Worker の計算は続く。印を外し、後から届いた結果を捨てる。
+      if (get().measurementRequest !== request) return;
+      set({ measurementRequest: null, measureErrorKey: 'measureError.timeout' });
+    }, MEASURE_TIMEOUT_MS);
     void runMeasure({
       document: state.document,
       sketch: state.isComputing ? undefined : state.resolvedSketch,
@@ -183,7 +188,7 @@ export const createMeasureSlice: StateCreator<
         return;
       }
       set({ measurementRequest: null, measureErrorKey: outcome.reasonKey });
-    });
+    }).finally(() => { clearTimeout(timer); });
   },
   setPartMeasurer: (partMeasurer) => {
     set({ partMeasurer });

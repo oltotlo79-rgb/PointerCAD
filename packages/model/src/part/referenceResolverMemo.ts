@@ -8,6 +8,7 @@
  */
 
 import type { AxisFrame, ResolvedPlane } from '../geometry/planeSpec.js';
+import { plainText, type FailureText } from '../failureText.js';
 import type { Vec3 } from '../sketch/vec3.js';
 import type { ReferenceError, ReferenceErrorCode } from './resolveReferences.js';
 import type { PartDocument, ReferenceFeature } from './types.js';
@@ -28,16 +29,14 @@ type ResolvedReferenceValue =
       readonly zAxis: Vec3;
     };
 
-function referenceError(
-  featureId: string,
-  code: ReferenceErrorCode,
-  message: string,
-): ReferenceError {
-  return { featureId, code, message };
+export function failed(featureId: string, code: ReferenceErrorCode, message: string): ReferenceOutcome {
+  return failedWith(featureId, code, plainText(message));
 }
 
-export function failed(featureId: string, code: ReferenceErrorCode, message: string): ReferenceOutcome {
-  return { ok: false, error: referenceError(featureId, code, message) };
+/** 別の誤りの鍵と値をそのまま写して断る(座標の誤り・値の不正な入力。0b-3)。 */
+export function failedWith(featureId: string, code: ReferenceErrorCode, text: FailureText): ReferenceOutcome {
+  const error: ReferenceError = { featureId, code, text };
+  return { ok: false, error };
 }
 
 interface ReferenceMemo {

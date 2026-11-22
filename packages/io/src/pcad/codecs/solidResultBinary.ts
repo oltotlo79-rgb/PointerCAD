@@ -18,6 +18,16 @@ interface SolidArrays {
 }
 
 export const SOLID_RESULT_MAX_BYTES = 16 * 1024 * 1024;
+
+/**
+ * 解析の結果が大きすぎて書けない・読まない時の誤り(0b-5)。種類は文ではなく、この型で見分ける
+ * (決まり failure-kind/no-message-text-match)。文は今までどおり 'resultTooLarge'。
+ */
+export class SolidResultTooLargeError extends RangeError {
+  constructor() {
+    super('resultTooLarge');
+  }
+}
 const magic = 0x31525350; // ASCII PSR1
 const headerBytes = 40;
 
@@ -59,7 +69,7 @@ function byteLength(c: Counts): number {
   // Each element owns 4 indices, 6 strains, 6 stresses and 12 native force components.
   const size = headerBytes + c.nodes * (72 + (c.flags & 1) * 24) + c.elements * 208 + c.faces * 16
     + c.inputNodes * 24 + c.inputFaces * 16 + c.shells * 8 + c.shellFaces * 4 + c.locals * 32;
-  if (size > SOLID_RESULT_MAX_BYTES) throw new RangeError('resultTooLarge');
+  if (size > SOLID_RESULT_MAX_BYTES) throw new SolidResultTooLargeError();
   return size;
 }
 
@@ -78,7 +88,7 @@ function solverCounts(solver: SolverArrays): SolverCounts {
 
 function totalLength(base: number, solver: SolverCounts | undefined): number {
   const size = base + (solver === undefined ? 0 : solverBytes(solver));
-  if (size > SOLID_RESULT_MAX_BYTES) throw new RangeError('resultTooLarge');
+  if (size > SOLID_RESULT_MAX_BYTES) throw new SolidResultTooLargeError();
   return size;
 }
 

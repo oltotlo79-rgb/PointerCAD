@@ -17,7 +17,9 @@ import { checkGeometryDerivedOperations, mathGeometryBooleanMessage, mathGeometr
 import type { MathGeometryOutcome } from '../measure/mathGeometryTypes.js';
 import { mapDocumentExpressions, type ReevaluationFailure } from './reevaluatePart.js';
 import type { PartDocument } from './types.js';
+import { plainText, type FailureText } from '../failureText.js';
 import { mapDocumentNonScalarExpressions } from './documentFunctions.js';
+import type { WorkerBrokenCode } from '../kernelBridge/bridgeContracts.js';
 
 export interface DocumentMathContext {
   readonly client: Pick<MathWorkerClient, 'evaluate'>;
@@ -43,7 +45,7 @@ type DocumentMathResult =
   | { readonly ok: false; readonly cancelled: boolean; readonly failures: readonly ReevaluationFailure[];
       /** Transient recomputation only. Invalid owners MUST be excluded; never publish this as an edit. */
       readonly recompute?: { readonly document: PartDocument; readonly analysis: ParameterAnalysis;
-        readonly invalidInputs: ReadonlyMap<string, string>;
+        readonly invalidInputs: ReadonlyMap<string, FailureText>;
         /** Definition IDs whose measured value was needed but absent from `context.geometry` (計算待ち). */
         readonly pendingGeometry: ReadonlySet<string> } };
 
@@ -56,7 +58,7 @@ export function hasDocumentMath(document: PartDocument): boolean {
 }
 
 type ValueResult = { readonly ok: true; readonly value: ExpressionValue; readonly decimal: string }
-  | { readonly ok: false; readonly message: string };
+  | { readonly ok: false; readonly message: string; readonly code?: WorkerBrokenCode };
 
 const verifiedFields = new WeakMap<PartDocument, ReadonlyMap<ExpressionValue, ExpressionValue>>();
 /** Only a successfully evaluated field of this exact immutable document can supply displayed coordinates. */
@@ -80,7 +82,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
   const nonLength = nonLengthVariables(document.parameters);
   const byName = new Map<string, Parameter>(), byId = new Map<string, Parameter>();
   const evaluatedParameters = new Map<string, Parameter>();
-  const parameterFailures = new Map<string, string>(), invalidInputs = new Map<string, string>();
+  const parameterFailures = new Map<string, string>(), invalidInputs = new Map<string, string>(), workerBrokenParameters = new Set<string>();
   const geometryDefinitions = resolvableMathGeometryDefinitions(document), pendingGeometry = new Set<string>();
   /** Coefficient name → math-geometry definition IDs it uses; filled before any formula is evaluated. */
   let geometryDerived: ReadonlyMap<string, readonly string[]> = new Map();
@@ -110,7 +112,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     && expressionParameterNames(value, document.parameters).some(name => geometryDerived.has(name));
   /** One `coef` reference to a measured value, read by the formula of the coefficient `coefficientName`. */
   const geometryInput = (reference: { readonly label: string }, definitionId: string, coefficientName: string):
-    { readonly input: MathWorkRequest['coefficients'][number] } | { readonly problem: string; readonly pending: boolean } => {
+    { readonly input: MathWorkRequest['coefficients'][number] } | { readonly problem: string; readonly pending: boolean; readonly code?: WorkerBrokenCode } => {
     const definition = geometryDefinitions.get(definitionId);
     if (definition === undefined || definition.name !== reference.label) {
       return { problem: mathGeometryReferenceMismatchMessage(reference.label), pending: false };
@@ -122,7 +124,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
         pendingGeometry.add(definitionId);
         return { problem: mathGeometryPendingMessage(definition.name), pending: true };
       case 'boolean': return { problem: mathGeometryBooleanMessage(definition.name), pending: false };
-      case 'unresolved': return { problem: mathGeometryUnresolvedMessage(definition.name, coefficientName, input.message), pending: false };
+      case 'unresolved': return { problem: mathGeometryUnresolvedMessage(definition.name, coefficientName, input.message), pending: false, ...(input.code === undefined ? {} : { code: input.code }) };
     }
   };
 
@@ -178,14 +180,14 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     }
     const inputs: MathWorkRequest['coefficients'][number][] = [];
     // Every reference is examined so all pending measurements are listed; the first real problem wins.
-    let problem: string | undefined, pending: string | undefined;
+    let problem: string | undefined, pending: string | undefined, problemCode: WorkerBrokenCode | undefined;
     for (const reference of references) {
       const definitionId = mathGeometryDefinitionIdOf(reference.id);
       if (definitionId !== null && coefficientName !== undefined) {
         const resolved = geometryInput(reference, definitionId, coefficientName);
         if ('input' in resolved) inputs.push(resolved.input);
         else if (resolved.pending) pending ??= resolved.problem;
-        else problem ??= resolved.problem;
+        else if (problem === undefined) { problem = resolved.problem; problemCode = resolved.code; }
         continue;
       }
       const parameter = byId.get(reference.id), coefficient = coefficients.get(reference.id);
@@ -193,7 +195,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       else if (coefficient === undefined) problem ??= `参照する係数を計算できません: ${reference.label}`;
       else inputs.push(coefficient);
     }
-    if (problem !== undefined) return { ok: false, message: problem };
+    if (problem !== undefined) return { ok: false, message: problem, ...(problemCode === undefined ? {} : { code: problemCode }) };
     if (pending !== undefined) return { ok: false, message: pending };
     inputRevision += 1;
     const completion = await context.client.evaluate({ identity: { ...context.identity, editorId: 'document-math', inputRevision },
@@ -225,7 +227,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       if (blocked !== undefined) { fail(name, parameter.value, blocked); parameterFailures.set(name, blocked); continue; }
       const result = await evaluate(parameter.value, name);
       if (!current()) return cancelled();
-      if (!result.ok) { fail(name, parameter.value, result.message); parameterFailures.set(name, result.message); continue; }
+      if (!result.ok) { fail(name, parameter.value, result.message); parameterFailures.set(name, result.message); if (result.code !== undefined) workerBrokenParameters.add(name); continue; }
       let coefficient: MathWorkRequest['coefficients'][number];
       try {
         const id = parameter.mathId ?? `legacy-coefficient:${document.parameters.indexOf(parameter)}`;
@@ -275,7 +277,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     const analysis: ParameterAnalysis = { variables, exactVariables, mathCoefficients: coefficientNames, nonLengthVariables: nonLength, circular,
       failures: document.parameters.flatMap(parameter => {
         const message = parameterFailures.get(parameter.name);
-        return message === undefined ? [] : [{ name: parameter.name, message }];
+        return message === undefined ? [] : [{ name: parameter.name, message, ...(workerBrokenParameters.has(parameter.name) ? { code: 'workerBroken' as const } : {}) }];
       }),
       unused: document.parameters.map(parameter => parameter.name).filter(name => !used.has(name)),
       ...(geometryDerived.size === 0 ? {} : { geometryDerived }) };
@@ -291,7 +293,8 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
     verifiedFields.set(document, values);
     verifiedFields.set(evaluated, values);
     if (failures.length > 0) return { ok: false, cancelled: false, failures,
-      recompute: { document: evaluated, analysis, invalidInputs, pendingGeometry } };
+      // 値の不正な入力は、数式の計算部の文(同じ持ち主の文は改行でつないだまま)を、そのまま出す鍵と値で運ぶ(0b-3。関数の長さの基準 210 行を増やさない 1 行)。
+      recompute: { document: evaluated, analysis, invalidInputs: new Map([...invalidInputs].map(([owner, message]) => [owner, plainText(message)])), pendingGeometry } };
     return { ok: true, document: evaluated, analysis };
   } catch (error) {
     if (!current()) return cancelled();

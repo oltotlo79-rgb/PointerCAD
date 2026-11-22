@@ -10,7 +10,7 @@ import { massFromVolume } from '../../measure/massProperties.js';
 import type { StandardPartSource } from '../resolveAssembly.js';
 import { lengthOf } from './lengthOption.js';
 import type { CatalogRegistry } from './registry.js';
-import { catalogItemNominalMass, catalogItemNominalVolume, catalogItemRejection } from './source.js';
+import { catalogItemNominalMass, catalogItemNominalVolume, catalogItemRow } from './source.js';
 import type { CatalogItemRow } from './types.js';
 
 /** 切断の一覧の 1 本(族の部品 1 つ)。 */
@@ -55,10 +55,10 @@ export function catalogStockItem(source: StandardPartSource, registry: CatalogRe
   if (source.catalog !== 'catalogItem') return null;
   const familyId = source.options.family ?? '';
   const family = registry.loaded(familyId);
-  if (family === undefined || family.stock !== 'linear' || catalogItemRejection(source, registry) !== null) return null;
-  const row = family.rows.find((candidate) => candidate.key === source.options.item && candidate.size === source.size);
+  // 確かめに通った保存の行(前の呼びで保存した部品も今の行。部品表と同じ口 catalogItemRow)。並びの呼びは今の呼び(row.size)。
+  const row = family === undefined || family.stock !== 'linear' ? null : catalogItemRow(source, registry);
   const length = lengthOf(source.options);
-  if (row === undefined || length === null || !(length.value > 0)) return null;
+  if (family === undefined || row === null || length === null || !(length.value > 0)) return null;
   const volume = catalogItemNominalVolume(source.size, source.options, registry);
   // 密度の材質を持たない行は、密度を引かない(体積 × 密度で質量を作らない)。
   const density = row.densityMaterialId === undefined ? undefined : findDensityMaterial(row.densityMaterialId)?.density;

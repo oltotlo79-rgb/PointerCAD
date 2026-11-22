@@ -13,7 +13,7 @@
 // 1つ1つが小さくなったので、既定で2組を同時に流して時間を縮める(PCAD_LINT_PARALLEL=1〜4で変える)。
 //
 // 使い方: `node scripts/lint.mjs`(全体。分割して流す)
-//         `node scripts/lint.mjs <eslintの引数...>`(引数があれば分割せず、そのまま eslint へ渡す)
+//         `node scripts/lint.mjs <eslintの引数...>`(対象を指定した時は輪を点検し、引数は分割せず eslint へ渡す)
 import { ESLint } from 'eslint';
 import { inspectRuntimeCycles, formatRuntimeCycleDiagnostics } from './lib/runtimeCycles.mjs';
 import { Buffer } from 'node:buffer';
@@ -27,7 +27,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
-const eslintBin = path.join(path.dirname(require.resolve('eslint/package.json')), 'bin', 'eslint.js');
+const eslintRoot = path.dirname(require.resolve('eslint/package.json'));
+const eslintBin = path.join(eslintRoot, 'bin', 'eslint.js');
 
 /** 大きい組を先に流すと、同時に流す時の全体の時間が短くなる。 */
 const LARGEST_FIRST = ['packages/ui', 'packages/model', 'packages/expression', 'packages/kernel'];
@@ -176,16 +177,37 @@ async function runAll(groups, parallelism) {
   return { results, failures };
 }
 
+function hasLintTargets(argv) {
+  // ESLint と同じ版の CLI 解析(非公開の lib/options.js)で、オプションの値と点検対象を区別する。
+  // 読めない・解析できない・形が違う時は、点検対象があるとみなして輪を点検する(ESLint の版が変わっても黙って省かない)。
+  // 不正な引数の診断と終了コードは、輪の点検の後に ESLint が出す。
+  try {
+    const createCLIOptions = require(path.join(eslintRoot, 'lib', 'options.js'));
+    const options = createCLIOptions().parse([process.execPath, eslintBin, ...argv]);
+    return !Array.isArray(options?._) || options._.length > 0;
+  } catch {
+    return true;
+  }
+}
+
+function checkRuntimeCycles(showSummary) {
+  const runtime = inspectRuntimeCycles(root);
+  if (showSummary) {
+    console.log(`[lint] runtime graph: ${runtime.files.length} files, ${runtime.edges.length} edges, ${runtime.cycles.length} cycles, ${runtime.diagnostics.length} unresolved`);
+  }
+  if (!runtime.ok) console.error(formatRuntimeCycleDiagnostics(runtime));
+  return runtime.ok;
+}
+
 async function main(argv) {
-  if (argv.length > 0) {
+  const full = argv.length === 0;
+  if ((full || hasLintTargets(argv)) && !checkRuntimeCycles(full)) {
+    process.exitCode = 1;
+    return;
+  }
+  if (!full) {
     const direct = spawnSync(process.execPath, [eslintBin, ...argv], { cwd: root, stdio: 'inherit', env: process.env });
     process.exit(direct.status ?? 1);
-  }
-  const runtime = inspectRuntimeCycles(root);
-  console.log(`[lint] runtime graph: ${runtime.files.length} files, ${runtime.edges.length} edges, ${runtime.cycles.length} cycles, ${runtime.diagnostics.length} unresolved`);
-  if (!runtime.ok) {
-    console.error(formatRuntimeCycleDiagnostics(runtime));
-    process.exit(1);
   }
   const startedAll = Date.now();
   const parallelism = lintParallelism();

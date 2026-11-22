@@ -102,11 +102,12 @@ describe('bounded pure vector subpath', () => {
   });
 });
 
+const magnitude = 'packages/kernel/src/math/magnitude.ts';
+const helpers = ['withinMagnitude', 'belowMagnitude', 'exceedsMagnitude', 'magnitudeAtLeast'];
+
 describe('bounded pure magnitude subpath (L-19)', () => {
-  const magnitude = 'packages/kernel/src/math/magnitude.ts';
   const magnitudeSubpath = '@pointercad/kernel/math/magnitude';
   const bridge = 'packages/model/src/kernelBridge/magnitudeMath.ts';
-  const helpers = ['withinMagnitude', 'belowMagnitude', 'exceedsMagnitude', 'magnitudeAtLeast'];
   const declared = (name: string): readonly string[] => read(name).statements.filter(ts.isFunctionDeclaration)
     .flatMap(node => node.name !== undefined && helpers.includes(node.name.text) ? [node.name.text] : []);
   it('has zero imports and an explicit export entry, hence no kernel index/OCCT/Worker route for the FEM Worker', () => {
@@ -132,6 +133,29 @@ describe('bounded pure magnitude subpath (L-19)', () => {
     for (const name of ['packages/kernel/src/occt/tolerances.ts', 'packages/model/src/numericTolerance.ts', bridge]) {
       expect(declared(name), name).toEqual([]);
     }
+  });
+});
+
+describe('package-local magnitude comparisons (L-12)', () => {
+  const printer = ts.createPrinter({ removeComments: true });
+  function definition(node: ts.FunctionDeclaration, source: ts.SourceFile): string {
+    return printer.printNode(ts.EmitHint.Unspecified, node, source).replace(/^export /u, '');
+  }
+  it('keeps the four import-free definitions identical and the memory sampler aligned', () => {
+    const kernel = read(magnitude);
+    const functions = kernel.statements.filter(ts.isFunctionDeclaration);
+    expect(imports(kernel)).toEqual([]);
+    expect(functions.map(node => node.name?.text)).toEqual(helpers);
+    const expected = functions.map(node => definition(node, kernel));
+    for (const path of ['packages/drawing/src/numericTolerance.ts', 'packages/expression/src/math/numericTolerance.ts']) {
+      const source = read(path);
+      expect(imports(source), path).toEqual([]);
+      expect(source.statements.filter(ts.isFunctionDeclaration).map(node => definition(node, source)), path).toEqual(expected);
+    }
+    const sampler = read('packages/test-utils/src/processMemorySamples.ts');
+    const exceeds = (node: ts.FunctionDeclaration): boolean => node.name?.text === 'exceedsMagnitude';
+    expect(sampler.statements.filter(ts.isFunctionDeclaration).filter(exceeds).map(node => definition(node, sampler)))
+      .toEqual(functions.filter(exceeds).map(node => definition(node, kernel)));
   });
 });
 

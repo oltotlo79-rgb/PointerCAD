@@ -4,7 +4,7 @@
  * fixture の文字は、この検査が自分で読み解く: 全体の記入の 3 つの数(横の数に幅、縦の数に高さ、残りが奥行。寸法線の端の名前の無い
  * 数だけの記入も数として読む)・材質の語(JIS のアルミ合金の記号〔A6005C など〕はアルミ、JIS の SUS はステンレス、SPCC・SPHC・SS400・SECC は鋼、
  * POM・PA・PC などは樹脂、EPDM はゴム、黄銅・亜鉛ダイカスト〔ZDC〕は密度の無い材料)・1 個の質量(kg は g に直す。「記入なし」は質量なし)。
- * あわせて、族の行(形・体積・質量・出どころの資料)を製品の口(族の定数)を通して確かめる。行のある族だけを照らす。
+ * あわせて、族の行(形・体積・質量・出どころの資料)を製品の口(族の定数)を通して確かめる。箱の族と長物は、それぞれの資料の読みと照らす。
  */
 import { readFileSync } from 'node:fs';
 
@@ -12,9 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CatalogFamily } from '../types.js';
 import type { PanelPartRecord } from './panelPartCatalog.js';
-import {
-  CAP_ACCESSORY_BOX_FAMILY, DOOR_PART_BOX_FAMILY, DRAWER_PART_BOX_FAMILY, FOOT_PART_BOX_FAMILY, SLIDER_BOX_FAMILY,
-} from './smallPartBoxCatalog.js';
+import * as smallPartBoxCatalog from './smallPartBoxCatalog.js';
 import {
   CAP_ACCESSORY_BOX_RECORDS, DOOR_PART_BOX_RECORDS, DRAWER_PART_BOX_RECORDS, FOOT_PART_BOX_RECORDS, SLIDER_BOX_RECORDS,
 } from './smallPartBoxRows.js';
@@ -35,11 +33,20 @@ function readFixture(): readonly FixtureRow[] {
 }
 
 const FIXTURE = readFixture();
-/** 行のある族と、その行の表(族の行の並びは行の表の並び)。 */
-const FAMILIES: readonly (readonly [CatalogFamily, readonly PanelPartRecord[]])[] = [[SLIDER_BOX_FAMILY, SLIDER_BOX_RECORDS],
-  [CAP_ACCESSORY_BOX_FAMILY, CAP_ACCESSORY_BOX_RECORDS], [FOOT_PART_BOX_FAMILY, FOOT_PART_BOX_RECORDS], [DOOR_PART_BOX_FAMILY, DOOR_PART_BOX_RECORDS],
-  [DRAWER_PART_BOX_FAMILY, DRAWER_PART_BOX_RECORDS]];
-const RECORDS: readonly PanelPartRecord[] = FAMILIES.flatMap(([, records]) => records);
+const FAMILIES = Object.values(smallPartBoxCatalog)
+  .filter((value: unknown): value is CatalogFamily => typeof value === 'object' && value !== null
+    && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows));
+const RECORDS_BY_ID: Readonly<Record<string, readonly PanelPartRecord[]>> = {
+  [smallPartBoxCatalog.SLIDER_BOX_FAMILY.id]: SLIDER_BOX_RECORDS,
+  [smallPartBoxCatalog.CAP_ACCESSORY_BOX_FAMILY.id]: CAP_ACCESSORY_BOX_RECORDS,
+  [smallPartBoxCatalog.FOOT_PART_BOX_FAMILY.id]: FOOT_PART_BOX_RECORDS,
+  [smallPartBoxCatalog.DOOR_PART_BOX_FAMILY.id]: DOOR_PART_BOX_RECORDS,
+  [smallPartBoxCatalog.DRAWER_PART_BOX_FAMILY.id]: DRAWER_PART_BOX_RECORDS,
+};
+const OTHER_ORACLES = {
+  'slot-long-part': { reason: '長物は断面・長さの上限・単位質量を照らす', test: 'slotLongPartOracle.test.ts' },
+};
+const RECORDS = Object.values(RECORDS_BY_ID).flat();
 
 /**
  * 「横:43.5(…)/縦:33/奥行:33(…)」→ 向きごとの数(括弧の参考寸法・φ・「なし」は外す。端の名前の無い数も読む)。
@@ -98,6 +105,7 @@ function massOf(text: string | undefined): number | null {
 
 describe('資料 1 の小さい部品の製品の行と照らす側の読み', () => {
   it('製品の行と fixture は同じ鍵の集まりで、型番の形の文字を持たず、部品の種類は一般の呼び(製品の行の呼びの頭)', () => {
+    expect(FAMILIES.map((family) => family.id).sort()).toEqual([...Object.keys(RECORDS_BY_ID), ...Object.keys(OTHER_ORACLES)].sort());
     expect([...FIXTURE.map((row) => row.key)].sort()).toEqual([...RECORDS.map((record) => record.key)].sort());
     // 型番の形(英字 2〜4 字・数 0〜3 字・「-」・英数 2 字以上)。材料の記号の途中(例 A6005CSS-T5 の CSS-T5)は型番と数えない。
     for (const row of FIXTURE) expect(JSON.stringify(row.cells), row.key).not.toMatch(/(?<![0-9A-Za-z])[A-Z]{2,4}[0-9]{0,3}-[0-9A-Z]{2,}/u);
@@ -123,7 +131,8 @@ describe('資料 1 の小さい部品の製品の行と照らす側の読み', (
 
   it('族の行は行の表の並びで、形ができて名前は呼び、体積は箱、質量は資料の値で箱 × 密度より軽く、出どころは資料 1 の頁', () => {
     const density: Readonly<Record<string, number>> = { aluminum: 2.68, stainless: 7.93, steel: 7.85 };
-    for (const [family, records] of FAMILIES) {
+    for (const family of FAMILIES.filter((candidate) => !Object.hasOwn(OTHER_ORACLES, candidate.id))) {
+      const records = RECORDS_BY_ID[family.id];
       expect(family.rows.map((row) => row.key), family.id).toEqual(records.map((record) => record.key));
       for (const record of records) {
         const row = family.rows.find((candidate) => candidate.key === record.key);

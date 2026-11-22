@@ -357,9 +357,18 @@ export function AppShell(): React.JSX.Element {
         )}
       </div>
       <RadialCommandMenu viewport={viewportRef} />
-      {documentKind === 'drawing' ? <DrawingStatusBar /> : <StatusBar />}
+      {documentKind === 'drawing' ? <DrawingStatusBar /> : <StatusBarFollowingSelectionKeys />}
     </div>
   );
+}
+
+/**
+ * 帯の文(命令の理由・締結の断りの理由)には、選択に足す・外すキーの案内(B-08 2-5)が入る。設定を変えた時に帯を描き直す。
+ * StatusBar と AppShell の関数は長さの基準の表にあって増やせないので、購読はこの外側の部品に置く。
+ */
+function StatusBarFollowingSelectionKeys(): React.JSX.Element {
+  useAppStore((state) => state.displaySettings.selectionModifier);
+  return <StatusBar />;
 }
 
 /**

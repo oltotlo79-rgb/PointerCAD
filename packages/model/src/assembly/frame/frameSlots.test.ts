@@ -5,8 +5,11 @@
  * - 溝の中心線は配置で世界の座標になり、留めで切った端の外へ出ない(切る面の上で止まる)。
  * - 肩の裏の部屋の形が簡略である事を、溝ごとに知らせる。
  */
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
+import { T_SLOT_OUTLINE_RECORDS } from '../catalog/families/frameOutlineRows.js';
 import { T_SLOT_FRAME_FAMILY } from '../catalog/families/tSlotFrame.js';
 import { T_SLOT_CATALOG_FAMILIES } from '../catalog/families/tSlotFrameCatalog.js';
 import { T_SLOT_FRAME_SERIES_FAMILY } from '../catalog/families/tSlotFrameSeries.js';
@@ -34,11 +37,37 @@ function sketchPoints(family: CatalogFamily, row: CatalogItemRow, values: Readon
   return points;
 }
 
-/** 溝の数の期待(上下は面ごとに上下の面の溝の数、左右は (H − W)/p + 上下の面の溝の数)。 */
+/**
+ * 4 つの面に溝を持ち、左右の溝の間隔が個別の外周の行(溝を面の中央に置いた印つきの長方形の行)の、左右の面の 1 面ぶんの溝の数。
+ * 左右の溝の数が (H − W)/p の式で出ないので、読み(frameOutlineOracle.fixture.json の 2 本目の読みの「面ごとの溝の数」)の左と右の数を使う
+ * (左と右が違う時は NaN にして落とす)。
+ */
+function unevenSideSlots(): ReadonlyMap<string, number> {
+  const value: unknown = JSON.parse(readFileSync(new URL('../catalog/families/frameOutlineOracle.fixture.json', import.meta.url), 'utf8'));
+  const rows: unknown = typeof value === 'object' && value !== null && 'rows' in value ? value.rows : undefined;
+  const countsOf = (key: string): string => {
+    const row: unknown = Array.isArray(rows) ? rows.find((item: unknown) => typeof item === 'object' && item !== null && 'key' in item && item.key === key)
+      : undefined;
+    const cells: unknown = typeof row === 'object' && row !== null && 'cells' in row ? row.cells : undefined;
+    const text: unknown = typeof cells === 'object' && cells !== null && '面ごとの溝の数' in cells ? cells['面ごとの溝の数'] : undefined;
+    return typeof text === 'string' ? text : '';
+  };
+  return new Map(T_SLOT_OUTLINE_RECORDS.filter((record) => record.faces === 'tblr' && record.armWidth === undefined
+    && record.simplifiedKinds?.includes('slotPositionSymmetric') === true)
+    .map((record): [string, number] => {
+      const text = countsOf(record.key);
+      const [left, right] = [Number(/左(\d+)/u.exec(text)?.[1] ?? NaN), Number(/右(\d+)/u.exec(text)?.[1] ?? NaN)];
+      return [record.key, left === right ? left : NaN];
+    }));
+}
+
+const UNEVEN_SIDE_SLOTS = unevenSideSlots();
+
+/** 溝の数の期待(上下は面ごとに上下の面の溝の数、左右は (H − W)/p + 上下の面の溝の数。左右の間隔が個別の行は読みの左右の溝の数)。 */
 function expectedSlotCount(row: CatalogItemRow): number {
   const dims = row.dims;
   const across = dims.slotsAcross ?? 1;
-  const rows = Math.round(((dims.height ?? NaN) - (dims.width ?? NaN)) / (dims.slotPitch ?? NaN) + across);
+  const rows = UNEVEN_SIDE_SLOTS.get(row.key) ?? Math.round(((dims.height ?? NaN) - (dims.width ?? NaN)) / (dims.slotPitch ?? NaN) + across);
   const open = (key: string): boolean => (dims[key] ?? 1) === 1;
   return (open('slotTop') ? across : 0) + (open('slotBottom') ? across : 0) + (open('slotLeft') ? rows : 0) + (open('slotRight') ? rows : 0);
 }

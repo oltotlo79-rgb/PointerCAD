@@ -12,6 +12,7 @@ import { waitForStartupReady } from './startupHealth.js';
 import { chooseSteelFlatBar50x6 } from './steelPickerFlow.js';
 import { expectSteelStockCsv, expectSteelStockCsvProvenance, expectSteelStockTableHeader,
   expectSteelStockTableRevisions, SS400_FLAT } from './steelStockExpectation.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /*
  * EX08/EX03 public host flow: an SS400 FB 50×6 bend made in the standard-part picker, then the picker's own cut-list
@@ -137,9 +138,7 @@ function propertyValue(page: Page, key: string): Locator {
     .locator('xpath=following-sibling::dd[1]');
 }
 function propertyField(page: Page, label: string): Locator {
-  return page.locator('.pcad-panel--right .pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`, 'u') }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, page, label, { fieldSelector: '.pcad-panel--right .pcad-field', controlSelector: 'input.pcad-field__input' });
 }
 async function componentMenu(page: Page, index: number): Promise<Locator> {
   const section = page.locator('.pcad-tree__sections > li').filter({

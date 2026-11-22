@@ -1,4 +1,5 @@
 import { SolidResultExport } from './SolidResultExport.js';
+import { SolidReportButton } from './SolidReportButton.js';
 import { SolidElementProbe } from './SolidElementProbe.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SOLID_LIMITS, summarizeSolidYield, type SolidYieldSummary, type CadSolidStage } from '@pointercad/fem';
@@ -126,6 +127,7 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
         : <ul aria-label={t('solidAnalysis.warningsTitle')} data-testid="solid-result-warnings">
           {warnings.warnings.map(kind => <li key={kind} data-warning={kind}>{t(SOLID_RESULT_WARNING_KEYS[kind])}</li>)}</ul>}
       <SolidResultExport session={session} />
+      <SolidReportButton />
       <SolidElementProbe session={session} ownerId={activeOwner} documentId={documentId} />
       {session.status === 'complete' && session.ownerId === activeOwner && result.prepared.input.source.documentId === documentId
         ? <SolidYieldResults input={result.prepared.input} result={result.result}

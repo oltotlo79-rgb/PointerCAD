@@ -34,6 +34,7 @@ import {
   type WorkPlaneId,
 } from './planeMath.js';
 import { resolveCoordinate, type ResolveContext } from './resolveCoordinate.js';
+import type { FailureText } from '../failureText.js';
 import type {
   MirrorBasis,
   ResolvedCurve,
@@ -130,8 +131,13 @@ type SourceOutcome =
     }
   | { readonly ok: false; readonly error: SketchError };
 
-function fail(featureId: string, code: SketchErrorCode, message: string): { readonly ok: false; readonly error: SketchError } {
-  return { ok: false, error: { featureId, code, message } };
+/** 画面の文を鍵と値で持つ失敗(文は ui の文言の表が鍵ごとに持つ)。 */
+function failWith(
+  featureId: string,
+  code: SketchErrorCode,
+  text: FailureText,
+): { readonly ok: false; readonly error: SketchError } {
+  return { ok: false, error: { featureId, code, text } };
 }
 
 /** 断りの文言に出す要素の名前。`featureId#n` の形(`trimExtend.ts` の `parseElementId` と対)。 */
@@ -316,7 +322,7 @@ export function collectCopySource(
   lookup: CopySourceLookup,
 ): SourceOutcome {
   if (source.length === 0) {
-    return fail(featureId, 'tooFewPoints', '複製するもとの要素が選ばれていません。');
+    return failWith(featureId, 'tooFewPoints', { key: 'partError.sketchCopy.noSelection', parameters: {} });
   }
   const points: ResolvedPoint[] = [];
   const curves: ResolvedCurve[] = [];
@@ -334,10 +340,10 @@ export function collectCopySource(
       }
       const selected = group[reference.index];
       if (selected === undefined) {
-        return fail(
+        return failWith(
           featureId,
           'missingBase',
-          `複製するもとの要素が見つかりません: ${elementIdText(reference)}`,
+          { key: 'partError.sketchCopy.missingElement', parameters: { id: elementIdText(reference) } },
         );
       }
       curves.push(selected);
@@ -345,10 +351,10 @@ export function collectCopySource(
     }
     const pointGroup = lookup.pointsByFeature.get(reference.featureId);
     if (pointGroup === undefined) {
-      return fail(
+      return failWith(
         featureId,
         'missingBase',
-        `複製するもとの要素が見つかりません: ${elementIdText(reference)}`,
+        { key: 'partError.sketchCopy.missingElement', parameters: { id: elementIdText(reference) } },
       );
     }
     if (reference.index === undefined) {
@@ -357,17 +363,17 @@ export function collectCopySource(
     }
     const selectedPoint = pointGroup[reference.index];
     if (selectedPoint === undefined) {
-      return fail(
+      return failWith(
         featureId,
         'missingBase',
-        `複製するもとの点が見つかりません: ${elementIdText(reference)}`,
+        { key: 'partError.sketchCopy.missingPoint', parameters: { id: elementIdText(reference) } },
       );
     }
     points.push(selectedPoint);
     continue;
   }
   if (points.length > 0 && curves.length > 0) {
-    return fail(featureId, 'mixedBoundary', '点と線を混ぜて複製することはできません。');
+    return failWith(featureId, 'mixedBoundary', { key: 'partError.sketchCopy.mixed', parameters: {} });
   }
   return { ok: true, points, curves };
 }
@@ -387,7 +393,7 @@ export function checkCopyCount(featureId: string, count: number): SketchError | 
     return {
       featureId,
       code: 'invalidValue',
-      message: `並べる個数は ${String(MIN_COPY_COUNT)} 以上 ${String(MAX_COPY_COUNT)} 以下の整数にしてください。`,
+      text: { key: 'partError.sketchCopy.count', parameters: { min: String(MIN_COPY_COUNT), max: String(MAX_COPY_COUNT) } },
     };
   }
   return null;
@@ -404,34 +410,34 @@ function resolveMirrorTransform(
   if (basis.kind === 'plane') {
     const mirrorPlane = lookupWorkPlane(basis.planeId);
     if (mirrorPlane === null) {
-      return fail(featureId, 'missingBase', `鏡にする平面が見つかりません: ${basis.planeId}`);
+      return failWith(featureId, 'missingBase', { key: 'partError.sketchMirror.missingPlane', parameters: { id: basis.planeId } });
     }
     return namedSingleTransform(mirrorTransform(mirrorPlane.origin, mirrorPlane.normal), { kind: 'mirror' });
   }
   // 線を軸にした鏡像は「その線を含み作図面に垂直な平面」で折り返すので、作図面が要る。
   if (plane === null) {
-    return fail(
+    return failWith(
       featureId,
       'missingBase',
-      '3D スケッチでは線を軸にした鏡像は作れません。鏡にする平面を選んでください。',
+      { key: 'partError.sketchMirror.lineAxisIn3d', parameters: {} },
     );
   }
   const axis = findSingleCurve(basis.axis, lookup);
   if (axis === null) {
-    return fail(
+    return failWith(
       featureId,
       'missingBase',
-      `鏡にする軸の線が見つかりません: ${elementIdText(basis.axis)}`,
+      { key: 'partError.sketchMirror.missingAxis', parameters: { id: elementIdText(basis.axis) } },
     );
   }
   if (axis.kind !== 'segment') {
-    return fail(featureId, 'invalidValue', '鏡にできるのは線分だけです。まっすぐな線を選んでください。');
+    return failWith(featureId, 'invalidValue', { key: 'partError.sketchMirror.axisNotLine', parameters: {} });
   }
   const along = subVec3(axis.to, axis.from);
   // 作図面の法線と軸の向きの両方に垂直な向きが、折り返す平面の法線になる。
   const normal = crossVec3(plane.normal, along);
   if (lengthVec3(normal) <= SKETCH_TOLERANCE_MM) {
-    return fail(featureId, 'degenerate', '鏡にする軸の向きが定まりません。');
+    return failWith(featureId, 'degenerate', { key: 'partError.sketchMirror.axisDirection', parameters: {} });
   }
   return namedSingleTransform(mirrorTransform(axis.from, normalizeVec3(normal)), { kind: 'mirror' });
 }
@@ -459,7 +465,7 @@ export function resolveCopyTransforms(
         return delta;
       }
       if (lengthVec3(delta.value) <= SKETCH_TOLERANCE_MM) {
-        return fail(featureId, 'degenerate', '移動量が 0 です。動かす向きと距離を入れてください。');
+        return failWith(featureId, 'degenerate', { key: 'partError.sketchPattern.zeroMove', parameters: {} });
       }
       return namedSingleTransform(translateTransform(delta.value), { kind: 'translate' });
     }
@@ -469,7 +475,7 @@ export function resolveCopyTransforms(
         return direction;
       }
       if (lengthVec3(direction.value) <= SKETCH_TOLERANCE_MM) {
-        return fail(featureId, 'degenerate', '並べる向きが定まりません。');
+        return failWith(featureId, 'degenerate', { key: 'partError.sketchPattern.direction', parameters: {} });
       }
       const countError = checkCopyCount(featureId, placement.count.value);
       if (countError !== null) {
@@ -477,7 +483,7 @@ export function resolveCopyTransforms(
       }
       const spacing = placement.spacing.value;
       if (!Number.isFinite(spacing) || spacing <= 0) {
-        return fail(featureId, 'invalidValue', '並べる間隔は 0 より大きい数にしてください。');
+        return failWith(featureId, 'invalidValue', { key: 'partError.sketchPattern.spacing', parameters: {} });
       }
       const instances: { transform: SketchTransform; role: CopyPointPlacementRole }[] = [];
       const unitDirection = normalizeVec3(direction.value);
@@ -490,10 +496,10 @@ export function resolveCopyTransforms(
     case 'circularArray': {
       // 回す軸が作図面の法線なので、円形の配列は作図面のあるスケッチだけで作れる。
       if (plane === null) {
-        return fail(
+        return failWith(
           featureId,
           'missingBase',
-          '3D スケッチでは円形に並べられません。作図面を選んでから作ってください。',
+          { key: 'partError.sketchPattern.circularIn3d', parameters: {} },
         );
       }
       const center = resolveCoordinate(placement.center, context, featureId);
@@ -511,7 +517,7 @@ export function resolveCopyTransforms(
       } else {
         const angle = placement.angle.value;
         if (!Number.isFinite(angle) || angle <= 0 || angle > FULL_TURN_DEGREES) {
-          return fail(featureId, 'invalidValue', '並べる角度は 0 より大きく 360 以下にしてください。');
+          return failWith(featureId, 'invalidValue', { key: 'partError.sketchPattern.angle', parameters: {} });
         }
         // 全周でないときは、指定した角度を「もとを含めた個数 − 1」で等分する(立体のパターンと同じ)。
         stepDegrees = angle / (count - 1);
@@ -576,7 +582,7 @@ export function resolveCopyFeature(
   }
   if (points.length === 0 && curves.length === 0) {
     // 変換が 1 つも無いことは無い(個数は 2 以上)ので、ここへ来るのはもとが空のときだけ。
-    return fail(feature.id, 'tooFewPoints', '複製するもとの要素が選ばれていません。');
+    return failWith(feature.id, 'tooFewPoints', { key: 'partError.sketchCopy.noSelection', parameters: {} });
   }
   return { ok: true, points, curves };
 }

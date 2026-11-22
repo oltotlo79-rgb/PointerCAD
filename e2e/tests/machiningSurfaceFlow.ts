@@ -13,6 +13,7 @@ import { ex18ReadPart } from './ex18RoutesOracle.js';
 import { expectMachiningPart, PLANE_BLANK, PLANE_HOLE6, PLANE_HOLE8, editedSurfaceExpected, expectSurfaceMachining, surfaceExpected,
   createTwoLocationFixture, expectTwoLocationMachining, type TwoLocationOperation,
   type SurfaceMachiningCase, type SurfaceMachiningExpected } from './machiningSurfaceOracle.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 export const MACHINING_WEB_TITLE = 'EX-05.UI Web plane/plain-through: UI edit, zero refusal/cancel, one Undo/Redo, fresh-page PCAD native';
 export const MACHINING_ELECTRON_TITLE = 'EX-05.UI Electron plane/plain-through: UI edit, zero refusal/cancel, one Undo/Redo, fresh-process PCAD native';
@@ -23,9 +24,7 @@ export function solidRow(page: Page, name: string): Locator {
     .getByRole('button', { name, exact: true });
 }
 export function field(page: Page, container: Locator, label: string): Locator {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  return container.locator('.pcad-field').filter({ has: page.locator('.pcad-field__label',
-    { hasText: new RegExp(`^${escaped}$`, 'u') }) }).locator('input.pcad-field__input');
+  return fieldByLabel(page, container, label, { controlSelector: 'input.pcad-field__input' });
 }
 export async function fillUnique(input: Locator, current: string, next: string): Promise<void> {
   await expect(input).toHaveCount(1); await expect(input).toHaveValue(current);

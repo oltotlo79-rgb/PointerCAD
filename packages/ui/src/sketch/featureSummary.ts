@@ -47,6 +47,7 @@ import {
 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { DEFAULT_COORDINATE_BASE, type CoordinateMode, type FieldUnit } from './numericInput.js';
 import { displayNumber } from './numericInputPresentation.js';
 import { sampleCurve } from './sampleCurve.js';
@@ -496,7 +497,7 @@ export function featureErrorMessage(
   featureId: string,
 ): string | null {
   const found = errors.find((error) => error.featureId === featureId);
-  return found === undefined ? null : found.message;
+  return found === undefined ? null : partErrorMessage(found);
 }
 
 /** 要約の「種類ごとに変わらない部分」。 */

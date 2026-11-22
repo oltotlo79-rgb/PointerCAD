@@ -20,6 +20,8 @@ import { createCatalogItemSource } from './source.js';
 import type { CatalogFamily, CatalogItemRow } from './types.js';
 
 const EVIDENCE = { title: '検査だけの族', edition: null, locator: '', reference: '' } as const;
+/** 行 a20 の前の呼び(材料の表示などを直した行の、前に保存したファイルの呼び)。 */
+const FORMER_SIZE = '□20 前の呼び';
 
 function row(key: string, side: number, densityMaterialId: string | null, materialLabel?: string): CatalogItemRow {
   return { key, size: `□${side}`, standardLabel: '検査', ...(densityMaterialId === null ? {} : { densityMaterialId }), dims: { side },
@@ -31,7 +33,7 @@ function family(id: string, stock: CatalogFamily['stock']): CatalogFamily {
   return {
     id, group: 'mechanical', kindKey: `catalog.test.${id}`, catalogRevision: `${id}-r1`, generatorRevision: 'test-bar-1',
     options: [lengthOptionSpec('1000')], stock, diagram: 'key',
-    rows: [row('a20', 20, 'aluminum', 'アルミ'), row('s10', 10, 'steel'), row('p15', 15, null, '樹脂(LDPE)')],
+    rows: [{ ...row('a20', 20, 'aluminum', 'アルミ'), formerSizes: [FORMER_SIZE] }, row('s10', 10, 'steel'), row('p15', 15, null, '樹脂(LDPE)')],
     build: () => null,
     nominalVolume: (item, values) => ((item.dims.side ?? NaN) ** 2) * (lengthOf(values)?.value ?? NaN),
     partName: (item, values) => `角棒 ${item.size}×${values.length ?? ''}`,
@@ -111,6 +113,15 @@ describe('K-06 段 2 長さを持つ族の部品の切断の一覧の行', () =>
     expect(expected.catalogRows).toEqual([]);
     expect({ ...list, catalogRows: [] }).toEqual(expected);
     expect(list.rows.map((item) => [item.quantity, item.totalLengthMm])).toEqual([[2, 2000]]);
+  });
+
+  it('前の呼び(formerSizes)で保存した部品は、行の今の呼びの部品と同じ 1 行に束ね、今の呼びでも前の呼びでもない呼びの部品は数えない', async () => {
+    const saved = itemSource(LINEAR, 'a20', '1500');
+    const assembly = assemblyOf([placed('now', saved), placed('former', { ...saved, size: FORMER_SIZE }),
+      placed('other', { ...saved, size: '□20 無い呼び' })]);
+    const list = buildSteelStockList(assembly, new Map(), new Map(), await registry());
+    expect(list.catalogRows.map((item) => [item.itemKey, item.size, item.lengthMm, item.quantity, item.componentIds]))
+      .toEqual([['a20', '□20', 1500, 2, ['now', 'former']]]);
   });
 
   it('密度の材質を持たない行は、密度を引かず、材質の id は null、単位質量も無ければ 1 本の質量は出さない(体積 × 密度で作らない)', async () => {

@@ -18,6 +18,7 @@ import { DRAWING_TABLE_ACTIONS, DRAWING_TOOL_GROUPS, type DrawingToolbarAction }
 
 export function DrawingToolbar(): React.JSX.Element {
   const utilityPanel = useAppStore(state => state.utilityPanel);
+  useAppStore((state) => state.displaySettings.selectionModifier); // 選択のキーの案内の文(B-08 2-5)を、設定を変えた時に描き直す
   const panel = utilityPanel === 'drawingExport' ? 'export' : utilityPanel === 'drawingPrint' ? 'print' : null;
   const setPanel = (next: 'export' | 'print' | null): void => {
     if (next !== null) useAppStore.getState().setUtilityPanelOpen(next === 'export' ? 'drawingExport' : 'drawingPrint', true);

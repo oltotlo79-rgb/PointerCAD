@@ -7,7 +7,7 @@
 import { decodeSolidAnalysis, solidInputSha256, type CadSolidOutcome } from '@pointercad/fem';
 import type { ReadPcadFileResult } from '@pointercad/io';
 import type { PartDocument } from '@pointercad/model';
-import type { SavedAnalysisResult } from '@pointercad/model/beam-analysis';
+import type { SavedAnalysisResult, SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { currentAppVersion } from '../app/appVersion.js';
 import type { MessageKey } from '../i18n/t.js';
 import { solidSavedInput, type SolidAnalysisSession } from './solidAnalysisSession.js';
@@ -45,7 +45,8 @@ export interface OpenedSolidResults {
   readonly origin: 'file' | 'recovery' | 'kept';
 }
 
-function savedDefinition(document: PartDocument) {
+/** 文書に保存した静解析の入力(無い時は undefined)。保存・戻し・報告書の書き出しが同じ 1 か所から読む。 */
+export function savedSolidDefinition(document: PartDocument): SolidCadSavedInput | undefined {
   const saved = document.beamAnalysisInputs?.analyses.find(value => value.kind === 'solid-cad');
   return saved?.kind === 'solid-cad' ? saved.definition : undefined;
 }
@@ -53,7 +54,7 @@ function savedDefinition(document: PartDocument) {
 export function openedSolidResults(document: PartDocument, results: ReadonlyMap<string, SavedAnalysisResult> | undefined,
   issue: ReadIssue | undefined, origin: 'file' | 'recovery' = 'file'): OpenedSolidResults | null {
   const kept = results ?? new Map<string, SavedAnalysisResult>();
-  const from = origin === 'recovery' && savedDefinition(document) === undefined ? 'file' : origin;
+  const from = origin === 'recovery' && savedSolidDefinition(document) === undefined ? 'file' : origin;
   return kept.size === 0 && issue === undefined && from === 'file' ? null
     : { document, results: kept, issue: issue ?? null, origin: from };
 }
@@ -66,7 +67,7 @@ export function openedSolidNotice(document: PartDocument, opened: OpenedSolidRes
 
 /** 今の文書でまだ使える、開いた時の立体の結果(同じ文書の物で、保存した定義の id の物だけ)。 */
 export function openedSolidResult(document: PartDocument, opened: OpenedSolidResults | null): SavedSolid | undefined {
-  const definition = savedDefinition(document);
+  const definition = savedSolidDefinition(document);
   if (opened === null || opened.document !== document || definition === undefined) return undefined;
   const saved = opened.results.get(definition.id);
   return saved?.kind === 'oofem-linear-solid-tet4' ? saved : undefined;
@@ -77,7 +78,7 @@ export function openedSolidResult(document: PartDocument, opened: OpenedSolidRes
  * (窓の値を変えた後に、保存した入力の結果を今の入力の結果と見せない)。入力を読めない時と、定義が無い時は同じとしない。
  */
 export function sessionMatchesSavedInput(document: PartDocument, session: SolidAnalysisSession): boolean {
-  const definition = savedDefinition(document);
+  const definition = savedSolidDefinition(document);
   if (definition === undefined) return false;
   try {
     return JSON.stringify(solidSavedInput(session, document.id, document.parameters)) === JSON.stringify(definition);
@@ -86,8 +87,8 @@ export function sessionMatchesSavedInput(document: PartDocument, session: SolidA
   }
 }
 
-/** 会話の結果が、文書に保存した定義と同じ入力から、今の形で流し終えた物か。 */
-function currentSessionResult(document: PartDocument, session: SolidAnalysisSession | null, generation: number): SolidOutcome | null {
+/** 会話の結果が、文書に保存した定義と同じ入力から、今の形で流し終えた物か(保存の束へ入れる結果と、報告書に書く結果)。 */
+export function currentSessionResult(document: PartDocument, session: SolidAnalysisSession | null, generation: number): SolidOutcome | null {
   const outcome = session?.result ?? null;
   if (session === null || session.status !== 'complete' || outcome === null
     || outcome.result.source.documentId !== document.id || outcome.result.source.revision !== generation) return null;
@@ -102,7 +103,7 @@ interface SolidSaveState {
 
 /** 会話の今の結果を、保存の束の 1 行の形にする(保存した定義と同じ入力の、今の形の結果だけ。版が分からない時は作らない)。 */
 function currentSavedEntry(state: SolidSaveState, document: PartDocument, appVersion: string | null): SavedSolid | null {
-  const definition = savedDefinition(document);
+  const definition = savedSolidDefinition(document);
   const outcome = currentSessionResult(document, state.solidAnalysisSession, state.completedGeneration);
   if (appVersion === null || definition === undefined || outcome === null) return null;
   return { analysisId: definition.id, kind: outcome.result.kind, analysisRevision: 0, bindingSha256: '',
@@ -118,7 +119,7 @@ export function solidResultsToSave(state: SolidSaveState, document: PartDocument
   appVersion = currentAppVersion()): ReadonlyMap<string, SavedAnalysisResult> | undefined {
   const current = currentSavedEntry(state, document, appVersion);
   if (current !== null) return new Map([[current.analysisId, current]]);
-  const definition = savedDefinition(document), reopened = openedSolidResult(document, state.solidOpenedResults);
+  const definition = savedSolidDefinition(document), reopened = openedSolidResult(document, state.solidOpenedResults);
   return appVersion === null || definition === undefined || reopened === undefined ? undefined : new Map([[definition.id, reopened]]);
 }
 

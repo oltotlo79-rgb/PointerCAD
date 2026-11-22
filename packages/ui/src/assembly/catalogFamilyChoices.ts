@@ -53,9 +53,17 @@ export function familyKindKey(kindKey: string): MessageKey {
   return messageKeyOr(kindKey, 'catalog.mechanical.kind');
 }
 
-/** 族の行の材質(行の順、重なりなし)。材質を持たない族は空。 */
+/**
+ * 選ぶ窓(検索の行・材質の欄・呼びの欄)に出す行(族の行の順)。`listed: false` の行(前に保存したファイルを読むためだけに残す行)は出さない。
+ * 鍵で行を引く所(置く・保存した部品を組む・部品表)は族の行を全部読む。
+ */
+export function listedRows(family: LoadedFamily): readonly FamilyRow[] {
+  return family.rows.filter((row) => row.listed !== false);
+}
+
+/** 選ぶ窓に出す行の材質(行の順、重なりなし)。材質を持たない族は空。 */
 export function familyMaterials(family: LoadedFamily): readonly string[] {
-  return [...new Set(family.rows.flatMap((row) => row.materialLabel === undefined ? [] : [row.materialLabel]))];
+  return [...new Set(listedRows(family).flatMap((row) => row.materialLabel === undefined ? [] : [row.materialLabel]))];
 }
 
 type FamilyHint = NonNullable<NonNullable<ReturnType<CatalogRegistry['entry']>>['hint']>;

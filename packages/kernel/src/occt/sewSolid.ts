@@ -29,25 +29,12 @@ export interface SewFacesInput {
   readonly tolerance: number;
 }
 
-const SEW_FACES_MESSAGES = {
-  'insufficient-faces': 'ソリッドにするには面が 2 枚以上必要です。',
-  'invalid-tolerance': 'つなぎ目の許容量は 0 より大きい有限の数にしてください。',
-  'invalid-face': '縫い合わせる面が正しくありません。面を選び直してください。',
-  'duplicate-face': '同じ面が重複しています。面を選び直してください。',
-  'open-shell': '面のつながりに隙間があるため、ソリッドにできませんでした。',
-  'non-manifold': '面のつなぎ目に 3 枚以上の面が重なっています。',
-  'multiple-shells': '面が 2 つ以上の閉じた殻に分かれています。面を選び直してください。',
-  'invalid-solid': '面が閉じた 1 つのソリッドになっていません。面を選び直してください。',
-  'sewing-failed': '面を縫い合わせられませんでした。面と許容量を見直してください。',
-  'missing-face': '縫い合わせる面が見つかりません。面を選び直してください。',
-} as const;
+export type SewFacesReason = 'insufficient-faces' | 'invalid-tolerance' | 'invalid-face' | 'duplicate-face' | 'open-shell' | 'non-manifold' | 'multiple-shells' | 'invalid-solid' | 'sewing-failed' | 'missing-face';
 
-export type SewFacesReason = keyof typeof SEW_FACES_MESSAGES;
-
-/** 理由コードと日本語の説明。拒否時には結果の形を返さない。 */
+/** 理由の符号。message は符号の文字で、利用者へ見せる文は画面の側が符号ごとに持つ(0b-2)。拒否時には結果の形を返さない。 */
 export class SewFacesError extends Error {
   constructor(readonly reason: SewFacesReason) {
-    super(SEW_FACES_MESSAGES[reason]);
+    super(reason);
     this.name = 'SewFacesError';
   }
 }

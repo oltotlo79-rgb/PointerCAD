@@ -1,4 +1,4 @@
-import { partKeyOf, type AssemblyDocument, type PartLibrary, type ResolvedAssembly, type StandardPartSource } from '@pointercad/model';
+import { partKeyOf, supportsStandardBeamMember, type AssemblyDocument, type PartLibrary, type ResolvedAssembly, type StandardPartSource } from '@pointercad/model';
 import type { AnalysisSource } from '@pointercad/model/beam-analysis';
 import type { AppState } from '../store/appState.js';
 import { currentAssemblyMeshPublication, type AssemblyMeshOwnership } from '../viewport/assemblyMeshAdmission.js';
@@ -78,7 +78,7 @@ export function beamCatalogOccurrences(document: AssemblyDocument, resolved: Res
       if (nested !== undefined) {
         visit(nested.assembly, nested.resolved, path, [...labels, component.name]);
       } else if (component.source.kind === 'standardPart'
-        && ['equalAngle', 'channel', 'hBeam', 'flatBar', 'roundBar', 'steelPipe'].includes(component.source.catalog)
+        && supportsStandardBeamMember(component.source)
         && view.placements.has(component.id) && view.partKeys.get(component.id) === partKeyOf(component.source)) {
         output.set(JSON.stringify(path), { occurrence: { path, partKey: partKeyOf(component.source), label }, source: component.source });
       }
@@ -88,6 +88,8 @@ export function beamCatalogOccurrences(document: AssemblyDocument, resolved: Res
   return output;
 }
 
-export function beamOccurrences(document: AssemblyDocument, resolved: ResolvedAssembly): readonly BeamOccurrence[] {
-  return [...beamCatalogOccurrences(document, resolved).values()].map(item => item.occurrence);
+export function beamOccurrences(document: AssemblyDocument, resolved: ResolvedAssembly,
+  scope: 'preload' | 'standard-members' = 'preload'): readonly BeamOccurrence[] {
+  return [...beamCatalogOccurrences(document, resolved).values()]
+    .filter(item => scope === 'standard-members' || item.source.catalog !== 'catalogItem').map(item => item.occurrence);
 }

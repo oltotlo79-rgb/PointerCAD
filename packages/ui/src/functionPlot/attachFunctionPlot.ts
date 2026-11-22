@@ -3,6 +3,7 @@ import { recomputePartWithMath } from '../math/recomputePartWithMath.js';
 import type { FunctionPlotComputer, FunctionSurfacePlotComputer } from '../store/functionPlotSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 
 /** The preview follows the same worker path as saved geometry, with a separately released owner. */
 export function attachFunctionPlot(bridge: AssemblyKernelBridge): () => void {
@@ -18,7 +19,7 @@ export function attachFunctionPlot(bridge: AssemblyKernelBridge): () => void {
       { partId, shouldCancel: () => detached || shouldCancel() });
       if (detached || shouldCancel() || result.cancelled) return { status: 'cancelled' };
       const issue = result.errors.find(error => error.featureId === featureId);
-      if (issue) return { status: 'failed', message: issue.message };
+      if (issue) return { status: 'failed', message: partErrorMessage(issue) };
       const curves = result.sketches[0]?.resolved.splines ?? [];
       return curves.length === 0 ? { status: 'failed', message: t('functionPlot.empty') } : { status: 'ready', curves };
     } finally { await bridge.releasePart(partId); }
@@ -33,7 +34,7 @@ export function attachFunctionPlot(bridge: AssemblyKernelBridge): () => void {
       { partId, measureAreas: true, shouldCancel: () => detached || shouldCancel() });
       if (detached || shouldCancel() || result.cancelled) return { status: 'cancelled' };
       const issue = result.errors.find(error => error.featureId === featureId);
-      if (issue) return { status: 'failed', message: issue.message };
+      if (issue) return { status: 'failed', message: partErrorMessage(issue) };
       const body = result.bodies.find(item => item.featureId === featureId);
       return body?.isValid ? { status: 'ready', body } : { status: 'failed', message: t('functionPlot.emptySurface') };
     } finally { await bridge.releasePart(partId); }

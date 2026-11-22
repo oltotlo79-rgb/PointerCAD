@@ -8,10 +8,11 @@ import { functionSurfaceRequest } from './functionSurfaceRequest.js';
 import { resolveFunctionInputs } from './resolveFunctionInputs.js';
 import { recomputeImplicitFunctionSurface } from './recomputeImplicitFunctionSurface.js';
 import { functionSurfaceInputSignature } from './functionSurfacePlanCache.js';
+import { plainText, type FailureText } from '../failureText.js';
 
 export async function recomputeFunctionSurfaces(document: PartDocument, analysis: ParameterAnalysis | undefined,
   math: DocumentMathContext | undefined, context: FunctionRecomputeContext | undefined,
-  previousInvalid: ReadonlyMap<string, string>, shouldCancel: () => boolean) {
+  previousInvalid: ReadonlyMap<string, FailureText>, shouldCancel: () => boolean) {
   const plans = new Map<string, FunctionSurfacePlan>(), invalidInputs = new Map(previousInvalid);
   const current = () => !shouldCancel() && !math?.signal?.aborted && (math?.isCurrent() ?? true);
   const result = (cancelled: boolean) => ({ plans: cancelled ? new Map<string, FunctionSurfacePlan>() : plans, invalidInputs, cancelled });
@@ -63,7 +64,7 @@ export async function recomputeFunctionSurfaces(document: PartDocument, analysis
       plans.set(feature.id, plan);
     } catch (error) {
       if (!current()) return result(true);
-      invalidInputs.set(feature.id, error instanceof Error ? error.message : '関数曲面の再計算を完了できませんでした。');
+      invalidInputs.set(feature.id, plainText(error instanceof Error ? error.message : '関数曲面の再計算を完了できませんでした。'));
     }
   }
   return result(false);

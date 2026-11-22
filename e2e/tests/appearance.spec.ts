@@ -14,6 +14,7 @@ import {
   readRecomputeStats,
   waitForRecompute,
 } from './recompute.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /**
  * 外観(FR-1106〜1110、要件§4.12)を、実際のブラウザで通しで確かめる
@@ -188,10 +189,7 @@ async function chooseAppearance(page: Page, label: string, option: string): Prom
 
 /** 外観の節の数の欄(色・透過率・光沢・粗さ・模様の大きさ)。 */
 function appearanceField(page: Page, label: string): Locator {
-  return propertyPanel(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 /* ------------------------------------------------------------------ *

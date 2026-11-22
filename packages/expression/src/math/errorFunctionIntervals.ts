@@ -4,6 +4,7 @@
 import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, intervalSquare, intervalSqrt,
   type MathInterval, type IntervalValue } from './mathInterval.js';
 import { exponentialRange } from './exponentialIntervals.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 
 type Range = MathInterval | null;
 const point = (value: number): MathInterval => ({ lower: value, upper: value });
@@ -51,7 +52,7 @@ function positiveErfc(x: number): Range {
 }
 
 function errorPoint(id: 'erf' | 'erfc', x: number): Range {
-  if (!Number.isFinite(x) || Math.abs(x) > 500_000) return null;
+  if (!Number.isFinite(x) || exceedsMagnitude(x, 500_000)) return null;
   if (x === 0) return id === 'erf' ? ZERO : ONE;
   const magnitude = Math.abs(x);
   const positive = id === 'erf' && magnitude <= 2 ? centralErf(magnitude)

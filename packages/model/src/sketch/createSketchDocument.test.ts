@@ -1,3 +1,4 @@
+import { plainText } from '../failureText.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
@@ -326,7 +327,7 @@ describe('スケッチ要素の型(FR-202、FR-301〜310)', () => {
     const mixed: SketchError = {
       featureId: pointFace.id,
       code: 'mixedBoundary',
-      message: '点と線・円弧を混ぜて面を張ることはできません。',
+      text: plainText('点と線・円弧を混ぜて面を張ることはできません。'),
     };
     expect(mixed.code).toBe('mixedBoundary');
   });

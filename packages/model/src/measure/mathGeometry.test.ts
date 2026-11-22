@@ -1,3 +1,4 @@
+import { plainText, plainTextValue } from '../failureText.js';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi, SUB_SHAPE_MATCH_THRESHOLD } from '@pointercad/kernel';
@@ -810,7 +811,7 @@ describe('GR-10b 現在の座標系で測る座標', () => {
     expect(resolved.references.errors[0].code).toBe('degenerate');
     const result = await recomputePart(changed, kernel(), { mathGeometry: requests(changed, ...quantities) });
     for (const outcome of result.mathGeometry ?? []) expect(outcome).toMatchObject({ status: 'unresolved', reason: 'failed-geometry',
-      message: resolved.references.errors[0].message });
+      message: plainTextValue(resolved.references.errors[0].text) });
     expect(result.mathGeometry).toHaveLength(3);
   });
 
@@ -818,12 +819,23 @@ describe('GR-10b 現在の座標系で測る座標', () => {
     const { document, frame, quantities } = coordinateFramePart(), current = resolvePart(document);
     const message = '座標系の上流を解決できません。';
     const resolved = failure === 'reference-error' ? { ...current, references: { ...current.references,
-      errors: [{ featureId: frame.id, code: 'missingAxis' as const, message }] } } : current;
+      errors: [{ featureId: frame.id, code: 'missingAxis' as const, text: plainText(message) }] } } : current;
     const outcomes = await evaluateMathGeometry(requests(document, ...quantities), { documentId: document.id, generation: 9,
       resolved, bodies: [], failedIds: new Set(failure === 'failedIds' ? [frame.id] : []), bridge: kernel(), shouldCancel: () => false });
     expect(outcomes).toHaveLength(3);
     for (const outcome of outcomes ?? []) expect(outcome).toMatchObject({ status: 'unresolved', reason: 'failed-geometry',
       message: failure === 'reference-error' ? message : '参照先の座標系を正しく計算できませんでした。' });
+  });
+
+  it('基準ジオメトリの誤りが文をそのまま出す鍵でない時は、測りの理由は一般の文になる(0b-3a の読み戻しの今の出方。入れ物を鍵と値に広げる束で直す)', async () => {
+    const { document, frame, quantities } = coordinateFramePart(), current = resolvePart(document);
+    const resolved = { ...current, references: { ...current.references,
+      errors: [{ featureId: frame.id, code: 'missingAxis' as const, text: { key: 'partError.reselectionStopped', parameters: { id: frame.id } } }] } };
+    const outcomes = await evaluateMathGeometry(requests(document, ...quantities), { documentId: document.id, generation: 9,
+      resolved, bodies: [], failedIds: new Set(), bridge: kernel(), shouldCancel: () => false });
+    expect(outcomes).toHaveLength(3);
+    for (const outcome of outcomes ?? []) expect(outcome).toMatchObject({ status: 'unresolved', reason: 'failed-geometry',
+      message: '参照先の座標系を正しく計算できませんでした。' });
   });
 
   it.each(['origin', 'xAxis', 'yAxis', 'zAxis'] as const)('座標系の%sが非有限なら選んだ成分に関わらず拒否する', async field => {

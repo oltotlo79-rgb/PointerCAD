@@ -29,6 +29,10 @@ const dynamicBaseline = [
     sha256: '4412da7b032b10e25bb3a3e56e33e3c6258eb0012d3b5b52f21010c97df68849',
     expression: "new URL('../../../eslint.workerReferences.js', import.meta.url).href",
     reason: 'Loads only the fixed root ESLint worker-reference allowlist.' },
+  { consumer: 'packages/test-utils/src/messageKindPolicy.test.ts',
+    sha256: 'd2bf2bf5490bfb45c58dfe20064271ba785e82bfa1ca55f5a8f94180c465437c',
+    expression: "new URL('../../../eslint.messageKind.js', import.meta.url).href",
+    reason: 'Loads only the fixed root failure-kind rule and its baseline (0b).' },
 ] as const;
 // The parsed expressions are passed in when the caller already analysed the same text, so each file is parsed once.
 function dynamicFindings(consumer: string, text: string,

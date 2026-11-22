@@ -17,6 +17,7 @@ import {
   recordCurveGroup,
   recordPoints,
   sketchError,
+  sketchErrorWith,
   type SketchFeatureStep,
   type SketchResolveState,
 } from './resolveSketchState.js';
@@ -53,7 +54,7 @@ function collectOffsetSource(
   if (source.length === 0) {
     return {
       ok: false,
-      error: sketchError(featureId, 'tooFewPoints', 'ずらす線・円弧が選ばれていません。'),
+      error: sketchErrorWith(featureId, 'tooFewPoints', { key: 'partError.sketchOffset.noSelection', parameters: {} }),
     };
   }
   const curves: ResolvedCurve[] = [];
@@ -67,10 +68,10 @@ function collectOffsetSource(
     if (group === undefined) {
       return {
         ok: false,
-        error: sketchError(
+        error: sketchErrorWith(
           featureId,
           'missingBase',
-          `ずらすもとの線が見つかりません: ${reference.featureId}`,
+          { key: 'partError.sketchOffset.missingSource', parameters: { id: reference.featureId } },
         ),
       };
     }
@@ -82,10 +83,10 @@ function collectOffsetSource(
     if (selected === undefined) {
       return {
         ok: false,
-        error: sketchError(
+        error: sketchErrorWith(
           featureId,
           'missingBase',
-          `ずらすもとの線が見つかりません: ${reference.featureId}#${String(reference.index)}`,
+          { key: 'partError.sketchOffset.missingSourceIndex', parameters: { index: String(reference.index), id: reference.featureId } },
         ),
       };
     }
@@ -109,7 +110,7 @@ function openContour(
   if (lengthVec3(along) <= SKETCH_TOLERANCE_MM) {
     return {
       ok: false,
-      error: sketchError(featureId, 'degenerate', 'ずらすもとの線の向きが定まりません。'),
+      error: sketchErrorWith(featureId, 'degenerate', { key: 'partError.sketchOffset.degenerateDirection', parameters: {} }),
     };
   }
   return {
@@ -147,7 +148,7 @@ function analyzeOffsetContour(
   if (!traced.ok) {
     return {
       ok: false,
-      error: sketchError(featureId, 'notClosed', '選んだ線・円弧の端がつながっていません。'),
+      error: sketchErrorWith(featureId, 'notClosed', { key: 'partError.sketchOffset.notClosed', parameters: {} }),
     };
   }
   if (traced.chain.closed) {
@@ -203,7 +204,7 @@ export function resolveOffsetStep(feature: SketchOffsetFeature, step: SketchFeat
   const distance = feature.distance.value;
   if (!Number.isFinite(distance) || distance < 0) {
     state.errors.push(
-      sketchError(feature.id, 'invalidValue', 'ずらす距離は 0 以上の数で指定してください。'),
+      sketchErrorWith(feature.id, 'invalidValue', { key: 'partError.sketchOffset.distance', parameters: {} }),
     );
     return;
   }
@@ -233,7 +234,7 @@ export function resolveOffsetStep(feature: SketchOffsetFeature, step: SketchFeat
     return;
   }
   if (remembered.length === 0) {
-    state.errors.push(sketchError(feature.id, 'degenerate', 'ずらした結果が空になりました。'));
+    state.errors.push(sketchErrorWith(feature.id, 'degenerate', { key: 'partError.sketchOffset.emptyResult', parameters: {} }));
     return;
   }
   recordRememberedCurves(state, feature, remembered);

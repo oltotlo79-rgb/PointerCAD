@@ -43,7 +43,7 @@ describe('梁の静解析の報告書の書き出し(釦の押せる条件と断
     for (const current of [session(), session({ result: null })]) {
       useAppStore.setState({ beamSession: current, fileMessage: null });
       await expect(exportBeamReport('1.0.3')).resolves.toBe(false);
-      expect(useAppStore.getState().fileMessage).toEqual({ key: 'beam.report.unavailable', failed: true });
+      expect(useAppStore.getState().fileMessage).toEqual({ key: 'analysisReport.unavailable', failed: true });
     }
   });
 });

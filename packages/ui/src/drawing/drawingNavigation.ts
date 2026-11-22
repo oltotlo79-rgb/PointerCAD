@@ -1,3 +1,4 @@
+import { selectionUsesMeta, type SelectionModifier } from '../settings/selectionModifierSetting.js';
 import { type ViewControlSettings } from '../settings/viewControlSettings.js';
 import {
   dragZoomDelta, KEY_PAN_PIXELS, keyZoomDelta, scaledPanDelta, viewDragAction, viewKeyMove, viewWheelAction, wheelDragEquivalent,
@@ -13,9 +14,10 @@ export interface DrawingNavigationTransform {
 }
 export const INITIAL_DRAWING_NAVIGATION: DrawingNavigationTransform = { x: 0, y: 0, scale: 1 };
 
-/** Ctrl/Shift retain ordinary selection; unmatched navigation modifiers cannot start an edit. */
-export function drawingEditPointerMatches(event: Pick<PointerEvent, 'button' | 'buttons' | 'altKey' | 'metaKey'>): boolean {
-  return event.button === 0 && event.buttons === 1 && !event.altKey && !event.metaKey;
+/** Cmd can reach drawing picks when it serves as the configured Ctrl key. */
+export function drawingEditPointerMatches(event: Pick<PointerEvent, 'button' | 'buttons' | 'altKey' | 'metaKey'>,
+  modifier?: SelectionModifier): boolean {
+  return event.button === 0 && event.buttons === 1 && !event.altKey && (!event.metaKey || selectionUsesMeta(modifier));
 }
 
 /** Invert the actual SVG screen matrix, including the temporary CSS transform. */

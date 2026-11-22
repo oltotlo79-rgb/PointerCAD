@@ -20,6 +20,7 @@ import {
 import { deleteAssemblyMate, editAssemblyMate, flipAssemblyMate } from '../assembly/mateActions.js';
 import { activeAssemblyDocument } from '../store/documentKind.js';
 import { AccessoryDetachItem } from '../assembly/AccessoryDetachItem.js';
+import { addsToSelection, LOCAL_SELECTION_MODIFIERS } from '../settings/selectionModifierSetting.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { AssemblyView } from '../store/assemblySlice.js';
 import {
@@ -154,7 +155,7 @@ export function assemblyMateRowDetails(rowId: string, view: AssemblyView | null 
  * (どちらを出すかは `AppShell.tsx` が文書の種類で決める)。
  *
  * **行の組み立ては純関数**(`assemblyTreeRows.ts`)に置き、ここは並べるだけにしてある。
- * 行をクリックで選び、Shift+クリックで足す(FR-106)。指を乗せるとビューポート側も光る
+ * 行をクリックで選び、修飾キー付きクリックで足し外しする(FR-106)。指を乗せるとビューポート側も光る
  * (アセンブリの層がストアの `selection` / `hoveredElementId` をそのまま読む)。
  *
  * 部品の行は「⋮」ボタンか右クリックで小さな一覧を開き、固定(FR-602)・表示(FR-605)・
@@ -333,7 +334,7 @@ export function AssemblyTree(): React.JSX.Element {
             title={t(row.kindLabelKey)}
             onClick={(event) => {
               const store = useAppStore.getState();
-              if (event.shiftKey) {
+              if (addsToSelection(store.displaySettings.selectionModifier, event, LOCAL_SELECTION_MODIFIERS.assemblyTree)) {
                 store.toggleSelection(row.id);
                 return;
               }

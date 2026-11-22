@@ -42,7 +42,9 @@ function directions(text: string | undefined): ReadonlyMap<string, readonly numb
 }
 
 const sorted = (values: readonly number[]): readonly number[] => [...values].sort((a, b) => a - b);
-const MATERIAL_WORDS: readonly (readonly [string, string])[] = [['アルミ', 'aluminum'], ['ステンレス', 'stainless'], ['鉄', 'steel'], ['鋼', 'steel']];
+// 「ステン」(ステンレスの略の記入)はステンレスとして読む(統括の決定 2026-11-22 09:32 の 1・09:38 の 1。行の表の道具と同じ)。
+const MATERIAL_WORDS: readonly (readonly [string, string])[] = [['アルミ', 'aluminum'], ['ステンレス', 'stainless'], ['ステン', 'stainless'], ['鉄', 'steel'],
+  ['鋼', 'steel']];
 const LABELS: Readonly<Record<string, string>> = { aluminum: 'アルミ', stainless: 'ステンレス', steel: '鉄' };
 
 function materialsOf(text: string | undefined): readonly string[] {

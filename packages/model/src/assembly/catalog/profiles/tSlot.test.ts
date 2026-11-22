@@ -158,6 +158,28 @@ describe('T スロットの断面の升の格子とふさいだ面', () => {
     }
   });
 
+  it('中心の穴の径 0 は穴なし: 穴の輪が 0 で、面積は外周と溝だけで決まる(径が負・数でない時は今までどおり作らない)', () => {
+    // 芯つきの形(30×30 の 3 面溝、30×60 の上下だけの溝)と、升の格子(40×80、升 20)。
+    const cases: readonly (readonly [TSlotDimensions, number])[] = [
+      [{ ...dims(30, 30, 30, { openFaces: { top: false, bottom: true, left: true, right: true } }), slotOpening: 8, slotInnerWidth: 16.5,
+        slotDepth: 7, cornerRadius: 2, centerHole: 0 }, 3],
+      [{ ...dims(30, 60, 30, { openFaces: { top: true, bottom: true, left: false, right: false } }), slotOpening: 8, slotInnerWidth: 16.5,
+        slotDepth: 7, cornerRadius: 2, centerHole: 0 }, 2],
+      [{ ...dims(40, 80, 20, { slotsAcross: 2 }), centerHole: 0 }, 12],
+    ];
+    for (const [value, slots] of cases) {
+      const profile = tSlotProfile(value);
+      if (profile === null) throw new Error('profile refused');
+      expect(profile.holes).toEqual([]);
+      expect(profile.areaMm2).toBeCloseTo(formulaArea(value, slots, 0), 9);
+      expectSimpleLoops(value);
+    }
+    for (const centerHole of [-1, Number.NaN]) {
+      expect(tSlotProfile({ ...dims(40, 80, 20, { slotsAcross: 2 }), centerHole })).toBeNull();
+      expect(tSlotSectionBounds({ ...dims(40, 80, 20, { slotsAcross: 2 }), centerHole })).toBeNull();
+    }
+  });
+
   it('格子で成り立たない組(升の数が整数でない・0・小数、隣の部屋が重なる、隣の穴が重なる、角の升に部屋が収まらない)は作らない', () => {
     const bads: readonly TSlotDimensions[] = [
       dims(40, 50, 20, { slotsAcross: 2 }), dims(40, 40, 20, { slotsAcross: 0 }), dims(40, 40, 20, { slotsAcross: 1.5 }),

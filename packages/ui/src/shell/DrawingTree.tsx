@@ -3,6 +3,7 @@ import { paperSizeOf, type DrawingDocument } from '@pointercad/drawing';
 import { drawingDimensionContext, resolveDrawingGdt, resolveDrawingWelds, type DrawingGdtResolution, type DrawingRefreshResult, type ResolvedWeldSymbol } from '@pointercad/model';
 import { DRAWING_TABLE_KIND_LABELS } from '../drawing/drawingTableKinds.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { addsToSelection, LOCAL_SELECTION_MODIFIERS } from '../settings/selectionModifierSetting.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { LayersIcon, PlaneSectionIcon } from './icons.js';
 import { drawingTreeGroups, type DrawingTreeGroupId, type DrawingTreeLabels } from './drawingTreeRows.js';
@@ -77,7 +78,8 @@ function TreeBody({ drawing, resolution, selected, gdt, welds }: {
           {group.rows.map((row) => <li key={row.key} className={`pcad-tree__row${selected.includes(row.id) ? ' pcad-tree__row--selected' : ''}`}>
             <button type="button" className={`pcad-button pcad-tree__label${row.kind === 'dimension' ? ' pcad-drawing-tree-dimension' : ''}`}
               title={row.label} aria-pressed={selected.includes(row.id)}
-              onClick={(event) => select(row.id, event.ctrlKey || event.metaKey)}>
+              onClick={(event) => select(row.id, addsToSelection(useAppStore.getState().displaySettings.selectionModifier,
+                event, LOCAL_SELECTION_MODIFIERS.drawingTree))}>
               {row.unresolved ? <span className="pcad-drawing-tree-unresolved" aria-label={t('drawing.dimension.unresolvedCount').replace('{count}', '1')}>!</span> : null}
               {row.label}
             </button>

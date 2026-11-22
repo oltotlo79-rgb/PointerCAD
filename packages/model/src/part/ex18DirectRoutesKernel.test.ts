@@ -1,4 +1,5 @@
 /** EX18 route c: actual model and fixed STEP seeds, planar normal edit, independent W02 oracle. */
+import { plainText } from '../failureText.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { stdout } from 'node:process';
@@ -215,7 +216,7 @@ describe('EX18 direct edit rejects invalid candidates without mutating input doc
     const candidate = appendEx18DirectEdit(seed, reference, spec.offset), candidateBefore = JSON.stringify(candidate);
     const rejected = await compute(seed, context, candidate);
     expect(rejected.result.errors).toHaveLength(1);
-    expect(rejected.result.errors[0]).toMatchObject({ featureId: 'direct-edit', message: spec.reason });
+    expect(rejected.result.errors[0]).toMatchObject({ featureId: 'direct-edit', text: plainText(spec.reason) });
     expect(rejected.result.bodies.some(body => body.featureId === 'direct-edit')).toBe(false);
     const beforeBodyIds = before.result.bodies.map(body => body.featureId);
     const afterBodyIds = rejected.result.bodies.map(body => body.featureId);

@@ -1,8 +1,11 @@
 import { activeAssemblyDocument } from '../store/documentKind.js';
 import { readDocumentBundle, type ReadDocumentBundleResult } from '@pointercad/io';
 import {
+  buildStandardPartFromSource,
   embedPart,
   MAX_SUB_ASSEMBLY_DEPTH,
+  placedPartName,
+  PRODUCT_CATALOG_REGISTRY,
   type AssemblyDocument,
   replacePartDocument,
   findComponent,
@@ -137,9 +140,10 @@ export async function startReplaceSelectedComponent(
   const before = useAppStore.getState();
   const assembly = before.assembly;
   if (assembly === null || before.assemblyReplacementBusy || before.assemblyReplacementRunner === null) return;
-  const selected = before.selection.filter((id) => findComponent(assembly, id) !== undefined);
-  const componentId = selected.length === 1 ? selected[0] : undefined;
-  if (componentId === undefined) return;
+  const selected = before.selection.map((id) => findComponent(assembly, id)).filter((item) => item !== undefined);
+  const component = selected.length === 1 ? selected[0] : undefined;
+  if (component === undefined) return;
+  const componentId = component.id;
   cancelMate();
   const library = before.assemblyLibrary;
   const runner = before.assemblyReplacementRunner;
@@ -167,6 +171,10 @@ export async function startReplaceSelectedComponent(
       componentId,
       { kind: 'part', partRef: embedded.partRef },
       bodies,
+      {
+        before: placedPartName(component.source, { library, registry: PRODUCT_CATALOG_REGISTRY, buildStandardPartFromSource }),
+        after: read.bundle.document.name,
+      },
     );
     if (prepared === null) return;
     if (!prepared.requiresConfirmation) {

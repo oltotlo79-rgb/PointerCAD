@@ -182,6 +182,7 @@ export function BoltedJointRebuildPanel(): React.JSX.Element | null {
 export function BoltedJointPopover(): React.JSX.Element | null {
   const draft = useAppStore((state) => state.assemblyBoltedJointDraft);
   const preview = useAppStore((state) => state.assemblyBoltedJointPreview);
+  useAppStore((state) => state.displaySettings.selectionModifier); // 選択のキーの案内の文(B-08 2-5)を、設定を変えた時に描き直す
   // 入れ子の葉を選んだ締結は選んだものが入れ子の下書きにある(平らな picks は空)ので、その数で案内する。
   const nested = useAppStore((state) => state.assemblyNestedBoltDraft);
   const nestedRefusal = nestedBoltedJointRefusalKey(useAppStore((state) => state.assemblyNestedBoltPreview));

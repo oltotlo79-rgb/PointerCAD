@@ -81,7 +81,7 @@ interface WaitObservation {
 type DiagnosticReaders = 'absent' | 'readable' | 'failing' | 'hanging';
 const assemblyDiagnostic = { status: 'idle', events: [{ gate: 'fake-gate' }], dropped: 0, observerFailures: 0 };
 const meshDiagnostic = { host: { epoch: 3, changes: [{ change: 'fake-change' }], dropped: 0, failures: 0 }, validations: [], dropped: 0, failures: 0 };
-const statusDiagnostic = 'エラー: ソリッドを作れませんでした: カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed';
+const statusDiagnostic = 'エラー: ソリッドを作れませんでした: 形の計算の機能を読み込めませんでした: TypeError: fetch failed';
 // The viewport's assembly input observation (A-26): only the three named fields are copied into the notice.
 const viewportDiagnostic = { mateInputs: [{ deferred: 'applied', deferredReason: null }], assemblyReadyRefusal: 'refresh-pending',
   assemblyRefreshOutcome: 'applied', unrelated: 'not copied' };

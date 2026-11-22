@@ -1,3 +1,4 @@
+import { plainText } from '@pointercad/model';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writePcadFile } from '@pointercad/io';
 import { createEmptyPartDocument, type PartRecomputeResult, type MaterialComparisonResult } from '@pointercad/model';
@@ -75,7 +76,7 @@ describe('比較用の実ファイルを独立して再計算し、最後に一�
   });
   it('再計算が一部失敗した文書を、空の部品として比較へ渡さない', async () => {
     const f = fixture();
-    f.compute.mockResolvedValue({ ...computed(), errors: [{ featureId: 'broken-box', code: 'invalidValue', message: '箱の寸法を計算できません' }] });
+    f.compute.mockResolvedValue({ ...computed(), errors: [{ featureId: 'broken-box', code: 'invalidValue', text: plainText('箱の寸法を計算できません') }] });
     expect(await runMaterialDiff(bytes, bytes, new AbortController().signal, () => undefined, f.create)).toEqual({ kind: 'failed', message: '箱の寸法を計算できません' });
     expect(f.compute).toHaveBeenCalledTimes(1); expect(f.compare).not.toHaveBeenCalled(); expect(f.dispose).toHaveBeenCalledTimes(1);
   });

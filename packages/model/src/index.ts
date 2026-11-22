@@ -282,6 +282,7 @@ export {
   arcPointAt, azimuthToEllipseParameter, curveEnd, curveStart, ellipsePointAt, fitPlaneNormal,
   isFullCircle, isFullEllipse, isPlanar, MAX_POINT_ARRAY_COUNT, resolveSketch,
 } from './sketch/resolveSketch.js';
+export { curveSamplePoints } from './sketch/curvePlaneSamples.js';
 export type {
   CurveChain,
 } from './sketch/intersectionMath.js';
@@ -1154,6 +1155,7 @@ export type {
 } from './assembly/resolveAssembly.js';
 /** 画面に出す失敗の文の鍵と差し込む値(文は ui の文言の表が持つ。D4)。 */
 export type { FailureText } from './failureText.js';
+export { plainText, plainTextValue } from './failureText.js';
 export {
   assemblyVariables, assemblyExpressionContext, MISSING_PART_MESSAGE,
   MAX_SUB_ASSEMBLY_DEPTH, partKeyOf, resolveAssembly,
@@ -1167,6 +1169,7 @@ export type {
   ReplacementPlan,
 } from './assembly/replaceComponent.js';
 export { applyReplacement, planReplacement } from './assembly/replaceComponent.js';
+export { placedPartName, type ReplacementPartNames } from './assembly/componentNames.js';
 
 export type {
   AssemblyMassBody,
@@ -1350,7 +1353,7 @@ export {
 } from './assembly/constraints/mateVariables.js';
 export { importedShapeOf, type ImportedShape } from './part/types.js';
 export { sha256HexSync } from './sha256.js';
-export type { SurfaceBodyFailureReason } from './part/surfaceBodyPlan.js';
+export type { SolidFailureReason, SurfaceBodyFailureReason } from './part/surfaceBodyPlan.js';
 export type {
   MonitoredKernelBridge,
   AssemblyKernelBridge,
@@ -1561,9 +1564,10 @@ export {
   HEX_BOLT_MAIN_EVIDENCE,
   HEX_BOLT_SOURCE,
 } from './assembly/standard/hexBoltEvidence.js';
-export { standardMembersToBeamAnalysis, BEAM_CONNECTION_TOLERANCE_MM } from './analysis/standardBeamAdapter.js';
+export { standardMembersToBeamAnalysis, supportsStandardBeamMember, BEAM_CONNECTION_TOLERANCE_MM } from './analysis/standardBeamAdapter.js';
 export type { StandardBeamAdapterContext } from './analysis/standardBeamAdapter.js';
 export { catalogStrengthMaterials } from './analysis/catalogStrengthMaterials.js';
+export { catalogBeamSection } from './analysis/catalogBeamSection.js';
 export { prepareCadAxialBolts } from './analysis/cadAxialBolt.js';
 
 export { prepareCadWeldLayers } from './analysis/cadWeldLayer.js';
@@ -1623,3 +1627,7 @@ export type { ApplyCircularFilletWeldResult } from './assembly/welding/applyCirc
 
 export { PART_EXAMPLES } from './examples/partExamples.js';
 export type { PartExample, PartExampleId } from './examples/partExample.js';
+export { ASSEMBLY_EXAMPLES } from './examples/assemblyExamples.js';
+export type { AssemblyExample } from './examples/assemblyExample.js';
+export { DRAWING_EXAMPLES } from './examples/drawingExamples.js';
+export type { DrawingExample } from './examples/drawingExample.js';

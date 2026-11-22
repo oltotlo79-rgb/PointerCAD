@@ -6,6 +6,7 @@ import { exactDouble } from './exactDoubleInterval.js';
 import type { ExactRational } from './exactRational.js';
 import { intervalAdd, intervalSubtract, intervalMultiply, nextFloat, type MathInterval, type IntervalValue } from './mathInterval.js';
 import { BESSEL_INTEGER_ARGUMENT_LIMIT, BESSEL_INTEGER_ORDER_LIMIT, integerBesselSeries, type IntegerBesselKind } from './besselIntegerSeries.js';
+import { withinMagnitude } from './numericTolerance.js';
 
 type Range = MathInterval | null;
 const proceed = () => undefined;
@@ -52,7 +53,7 @@ function valueRange(kind: IntegerBesselKind, order: number, input: MathInterval,
 }
 
 function valid(kind: IntegerBesselKind, order: number, input: MathInterval): boolean {
-  return (kind === 'J' || kind === 'I') && Number.isSafeInteger(order) && Math.abs(order) <= BESSEL_INTEGER_ORDER_LIMIT
+  return (kind === 'J' || kind === 'I') && Number.isSafeInteger(order) && withinMagnitude(order, BESSEL_INTEGER_ORDER_LIMIT)
     && Number.isFinite(input.lower) && Number.isFinite(input.upper) && input.lower <= input.upper
     && input.lower >= -BESSEL_INTEGER_ARGUMENT_LIMIT && input.upper <= BESSEL_INTEGER_ARGUMENT_LIMIT;
 }

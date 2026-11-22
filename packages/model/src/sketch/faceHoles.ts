@@ -7,7 +7,7 @@ import type { ResolvedCurve, SketchError } from './types.js';
 import { crossVec3, distanceVec3, dotVec3, normalizeVec3, subVec3, type Vec3 } from './vec3.js';
 
 const TOLERANCE_MM = 1e-7;
-type HoleError = Pick<SketchError, 'code' | 'message'>;
+type HoleError = Pick<SketchError, 'code' | 'text'>;
 
 function loopsTouch(first: readonly ResolvedCurve[], second: readonly ResolvedCurve[]): boolean {
   return first.some(a => second.some(b => curvesTouch(a, b)));
@@ -31,25 +31,25 @@ function contains(loop: readonly ResolvedCurve[], point: Vec3, normal: Vec3): bo
 }
 
 function holePairError(first: readonly ResolvedCurve[], second: readonly ResolvedCurve[], normal: Vec3, label: string): HoleError | null {
-  if (loopsTouch(first, second)) return { code: 'invalidValue', message: `${label}が別の穴に接するか交差しています。輪郭を離してください。` };
+  if (loopsTouch(first, second)) return { code: 'invalidValue', text: { key: 'partError.sketchFaceHole.touchesHole', parameters: { label } } };
   const forward = contains(first, curveStart(second[0]), normal), backward = contains(second, curveStart(first[0]), normal);
-  if (forward === null || backward === null) return { code: 'invalidValue', message: `${label}と別の穴の内外を判定できません。輪郭を確認してください。` };
-  return forward || backward ? { code: 'invalidValue', message: `${label}が別の穴と重なっています。穴を入れ子にしないでください。` } : null;
+  if (forward === null || backward === null) return { code: 'invalidValue', text: { key: 'partError.sketchFaceHole.holeSideUnknown', parameters: { label } } };
+  return forward || backward ? { code: 'invalidValue', text: { key: 'partError.sketchFaceHole.nested', parameters: { label } } } : null;
 }
 
 /** 閉じた各輪を解決した後に、外周との平面・接触・包含と穴どうしの重なりを確かめる。 */
 export function faceHolesError(outer: readonly ResolvedCurve[], holes: readonly (readonly ResolvedCurve[])[], normal: Vec3 | null): HoleError | null {
-  if (normal === null) return { code: 'notPlanar', message: '穴を置く外周の平面が決まりません。' };
+  if (normal === null) return { code: 'notPlanar', text: { key: 'partError.sketchFaceHole.outerPlaneUnknown', parameters: {} } };
   const origin = curveStart(outer[0]);
   for (const [index, hole] of holes.entries()) {
     const label = `穴${String(index + 1)}`;
     if (hole.flatMap(curveSamplePoints).some(point => exceedsMagnitude(dotVec3(subVec3(point, origin), normal), TOLERANCE_MM))) {
-      return { code: 'notPlanar', message: `${label}が外周と同じ平面にありません。` };
+      return { code: 'notPlanar', text: { key: 'partError.sketchFaceHole.notSamePlane', parameters: { label } } };
     }
-    if (loopsTouch(outer, hole)) return { code: 'invalidValue', message: `${label}が外周に接するか交差しています。輪郭を離してください。` };
+    if (loopsTouch(outer, hole)) return { code: 'invalidValue', text: { key: 'partError.sketchFaceHole.touchesOuter', parameters: { label } } };
     const inside = contains(outer, curveStart(hole[0]), normal);
-    if (inside === null) return { code: 'invalidValue', message: `${label}が外周の内側にあるか判定できません。輪郭を確認してください。` };
-    if (!inside) return { code: 'invalidValue', message: `${label}が外周の外にはみ出しています。` };
+    if (inside === null) return { code: 'invalidValue', text: { key: 'partError.sketchFaceHole.outerSideUnknown', parameters: { label } } };
+    if (!inside) return { code: 'invalidValue', text: { key: 'partError.sketchFaceHole.outsideOuter', parameters: { label } } };
     for (const previous of holes.slice(0, index)) {
       const problem = holePairError(previous, hole, normal, label);
       if (problem !== null) return problem;

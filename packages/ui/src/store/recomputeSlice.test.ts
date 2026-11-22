@@ -1,3 +1,4 @@
+import { plainText } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { finalMeshJsAccounting, readMeshJsFinalAccounting } from '@pointercad/model/testing/ui-fixtures';
 /** 再計算・進捗。useAppStore.test.ts から責務単位で移した回帰テスト。 */
@@ -381,7 +382,7 @@ describe('request-local JS accounting adoption', () => {
         reading: { status: 'unknown', limitBytes: 1000, reason: 'missing-counts' } } };
       if (scenario === 'cancelled') result = { ...result, cancelled: true };
       if (scenario === 'failed') result = { ...result,
-        errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: 'failed' }] };
+        errors: [{ featureId: 'extrude-1', code: 'kernelFailed', text: plainText('failed') }] };
       if (scenario === 'oldResult') result = { ...result, generation: 6 };
       if (scenario === 'oldReceipt') result = { ...result, meshJsAccounting: { ...base, generation: 6 } };
       if (scenario === 'otherDocument') target = { ...document, id: 'other' };
@@ -613,7 +614,7 @@ describe('文書の変化に応じた再計算の予約(要件§6.3)', () => {
     useAppStore.getState().applyRecompute(document, {
       ...resultFor(document),
       bodies: [bodyFor('extrude-1')],
-      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
+      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', text: plainText('ソリッドを作れませんでした') }],
       cacheHits: 3,
     });
 
@@ -633,7 +634,7 @@ describe('文書の変化に応じた再計算の予約(要件§6.3)', () => {
     const featureId = document.sketches[0].features[0].id;
     useAppStore.getState().applyRecompute(document, {
       ...resultFor(document),
-      errors: [{ featureId, code: 'kernelFailed', message: '面を作れませんでした: 失敗' }],
+      errors: [{ featureId, code: 'kernelFailed', text: plainText('面を作れませんでした: 失敗') }],
     });
 
     const state = useAppStore.getState();

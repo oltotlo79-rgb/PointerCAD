@@ -23,7 +23,8 @@ import { disableFilePickers } from './filePickers.js';
 import { openToolMenu, toolMenuPanel, toolMenuTrigger } from './toolMenus.js';
 import { fillFields, popover, popoverInputs } from './popoverFields.js';
 import { updateHoleWallMatePhi8Scenario, inspectFreshNativeHoleWallMatePhi8, reopenHoleWallMatePhi8Scenario, createHoleWallMateScenario, inspectFreshNativeHoleWallMate, reopenHoleWallMateScenario, createCylinderColdScenario, createImportedHoleScenario, inspectFreshNativeCylinderOrigins,
-  reopenCylinderColdScenario, reopenImportedHoleScenario, type CylinderColdOperation } from './cylinderSubshapeColdFlow.js';
+  createHoleWallMateFromCandidate, reopenCylinderColdScenario, reopenImportedHoleScenario, type CylinderColdOperation } from './cylinderSubshapeColdFlow.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /**
  * 要件§9 P2 の完了条件「簡単な部品を作って保存・再編集できる」を、実際のブラウザで
@@ -1099,9 +1100,7 @@ function selectionKindLabel(page: Page): Locator {
  * 見出しは完全一致で照合する(「距離」と「距離2」を取り違えないため)。
  */
 function propertyFieldBox(page: Page, label: string): Locator {
-  return propertyPanel(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) });
+  return fieldByLabel(page, propertyPanel(page), label);
 }
 
 function propertyField(page: Page, label: string): Locator {
@@ -1834,6 +1833,14 @@ async function withR18ColdPage<T>(browser: Browser, info: TestInfo, run: (page: 
     return result;
   } finally { await context.close(); }
 }
+
+test('2つの穴壁で一致からおすすめの同心に切り替えて合致を1本作る', async ({ page }, info) => {
+  const errors = collectErrors(page);
+  await disableFilePickers(page);
+  await page.goto('/');
+  await createHoleWallMateFromCandidate(page, info);
+  expect(errors).toEqual([]);
+});
 
 test('R18 actual new hole walls concentric mate survives PCADA full Web process restart', async ({ playwright, browserName }, info) => {
   const use = info.project.use;

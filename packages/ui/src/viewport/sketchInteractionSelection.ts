@@ -34,7 +34,7 @@ type StoreState = ReturnType<typeof useAppStore.getState>;
 interface SketchSelectionContext {
   readonly project: ProjectToScreen;
   /** 以下の 4 つは道具と選択の種類の判定(`attachSketchInteraction.ts`)。 */
-  readonly addsToSketchSelection: (event: Pick<PointerEvent, 'shiftKey' | 'ctrlKey'>) => boolean;
+  readonly addsToSketchSelection: (event: Pick<PointerEvent, 'shiftKey' | 'ctrlKey' | 'metaKey'>) => boolean;
   readonly skipsSketchElements: (kind: SelectionKind) => boolean;
   readonly picksBodies: (tool: NumericInputToolId) => boolean;
   readonly picksSubShapes: (kind: SelectionKind, tool: NumericInputToolId) => boolean;
@@ -142,7 +142,7 @@ export function createSketchSelectionInput(context: SketchSelectionContext) {
     }
 
     if (tool === 'select' || tool === 'face') {
-      // 面の道具では 1 つずつ足す。選択の道具は Shift/Ctrl で追加・解除する。
+      // 面の道具では 1 つずつ足す。選択の道具は設定したキーで追加・解除する。
       // 選択の種類(selectionKind)がどうであっても、この2つの道具の振る舞いは変えない
       // (手動で部分形状の種類へ切り替えていても面の境界の順が壊れないように、
       // この判定を選択の種類より先に置く)。
@@ -212,7 +212,7 @@ export function createSketchSelectionInput(context: SketchSelectionContext) {
       /*
         立体の道具(押し出し・回転・縫合、パターン・ばねの対象選び)、外観・測る、部分形状を選ぶ
         加工の道具(穴・ねじ穴・R 面取り・C 面取り)では、入力欄を開いたまま対象を選び直せる。
-        焦点は欄に残してそのまま Enter で決められるようにする(NFR-UX-2)。Shift で相手を足す。
+        焦点は欄に残してそのまま Enter で決められるようにする(NFR-UX-2)。設定したキーで相手を足す。
         選択・投影・断面は上の枝で先に返るので、ここへは来ない。
       */
       event.preventDefault();

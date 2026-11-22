@@ -1,3 +1,5 @@
+import { belowMagnitude } from '../numericTolerance.js';
+
 /** 表示でだけ丸める。非有限の桁指定は既定値へ戻す。 */
 export function dimensionDecimals(decimals = 2): number {
   return Number.isFinite(decimals) ? Math.max(0, Math.min(12, Math.trunc(decimals))) : 2;
@@ -9,7 +11,7 @@ function trimDecimal(text: string): string {
 
 export function dimensionNumberText(value: number, decimals: number): string {
   const threshold = 10 ** -decimals;
-  if (value !== 0 && Math.abs(value) < threshold) {
+  if (value !== 0 && belowMagnitude(value, threshold)) {
     return `${trimDecimal(threshold.toFixed(decimals))} 未満`;
   }
   return trimDecimal(value.toFixed(decimals));

@@ -1,3 +1,4 @@
+import { plainText } from '@pointercad/model';
 import { allocatePatternPointSlots } from '@pointercad/model';
 import type { SurfaceCutFeature } from '@pointercad/model';
 
@@ -497,7 +498,7 @@ describe('summarizeSolid(FR-501、FR-502)', () => {
   it('失敗したブーリアンは何も取り込まない(画面に出ているのに統合済みと出さない)', () => {
     const document = documentWith(EXTRUDE, REVOLVE, SUBTRACT);
     const errors: readonly PartRecomputeError[] = [
-      { featureId: 'subtract-1', code: 'missingBody', message: 'もとの立体が見つかりません' },
+      { featureId: 'subtract-1', code: 'missingBody', text: plainText('もとの立体が見つかりません') },
     ];
     expect(summarizeSolid(document, EXTRUDE, errors).consumed).toBe(false);
     expect(summarizeSolid(document, REVOLVE, errors).consumed).toBe(false);
@@ -596,7 +597,7 @@ describe('選択とプロパティの橋渡し', () => {
 
   it('partErrorMessage はその id の理由だけを返す(FR-504)', () => {
     const errors: readonly PartRecomputeError[] = [
-      { featureId: 'extrude-1', code: 'invalidValue', message: '厚みが出ませんでした' },
+      { featureId: 'extrude-1', code: 'invalidValue', text: plainText('厚みが出ませんでした') },
     ];
     expect(partErrorMessage(errors, 'extrude-1')).toBe('厚みが出ませんでした');
     expect(partErrorMessage(errors, 'revolve-1')).toBeNull();
@@ -666,8 +667,8 @@ describe('buildTreeSections(FR-501、FR-503、FR-504)', () => {
     const sections = buildTreeSections(
       documentWith(EXTRUDE, REVOLVE),
       'sketch-1',
-      [{ featureId: 'face-1', code: 'invalidValue', message: '式が読めません' }],
-      [{ featureId: 'revolve-1', code: 'invalidValue', message: '回しても厚みが出ませんでした' }],
+      [{ featureId: 'face-1', code: 'invalidValue', text: plainText('式が読めません') }],
+      [{ featureId: 'revolve-1', code: 'invalidValue', text: plainText('回しても厚みが出ませんでした') }],
     );
     expect(sections[0].rows.map((row) => row.hasError)).toEqual([true, false, false]);
     expect(sections[0].rows[0].errorMessage).toBe('式が読めません');
@@ -693,7 +694,7 @@ describe('buildTreeSections(FR-501、FR-503、FR-504)', () => {
       documentWith(EXTRUDE, REVOLVE, SUBTRACT),
       'sketch-1',
       [],
-      [{ featureId: 'subtract-1', code: 'missingBody', message: '組み合わせるソリッドがありません' }],
+      [{ featureId: 'subtract-1', code: 'missingBody', text: plainText('組み合わせるソリッドがありません') }],
     );
     expect(sections[1].rows.map((row) => row.consumed)).toEqual([false, false, false]);
     expect(sections[1].rows.map((row) => row.hasError)).toEqual([false, false, true]);
@@ -727,7 +728,7 @@ describe('buildTreeSections(FR-501、FR-503、FR-504)', () => {
       documentWith(EXTRUDE, FILLET),
       'sketch-1',
       [],
-      [{ featureId: 'fillet-1', code: 'missingSubShape', message: '丸める辺が選ばれていません。' }],
+      [{ featureId: 'fillet-1', code: 'missingSubShape', text: plainText('丸める辺が選ばれていません。') }],
     );
     const filletRow = sections[1].rows.find((row) => row.id === 'fillet-1');
     expect(filletRow?.hasError).toBe(true);
@@ -1426,7 +1427,7 @@ describe('buildReferenceSection(FR-328、FR-329、FR-501)', () => {
 
   it('決まらなかった基準はその行だけが赤い印になる(FR-504)', () => {
     const section = buildReferenceSection(documentWithReferences(OFFSET_PLANE, REFERENCE_AXIS), [
-      { featureId: 'referenceAxis-3', code: 'missingPoint', message: '基準の点がありません。' },
+      { featureId: 'referenceAxis-3', code: 'missingPoint', text: plainText('基準の点がありません。') },
     ]);
     expect(section.rows.map((row) => row.hasError)).toEqual([false, true]);
     expect(section.rows[1].errorMessage).toBe('基準の点がありません。');
@@ -1506,7 +1507,7 @@ describe('buildSketchGroups(P4 仕上げ (g)、FR-501、FR-503)', () => {
 
   it('失敗の理由は編集中のスケッチの行にだけ付く(同じ id の他のスケッチへ移さない)', () => {
     const errors = [
-      { featureId: 'face-1', code: 'invalidValue', message: '式が読めません' },
+      { featureId: 'face-1', code: 'invalidValue', text: plainText('式が読めません') },
     ] as const;
     const groups = buildSketchGroups(
       withSecondSketch(documentWith(EXTRUDE), 'sketch-1'),

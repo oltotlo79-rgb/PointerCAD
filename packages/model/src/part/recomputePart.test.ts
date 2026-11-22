@@ -1,5 +1,6 @@
+import { plainText, plainTextValue } from '../failureText.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
-import { createKernelApi } from '@pointercad/kernel';
+import { createKernelApi, OCCT_LOAD_ERROR_NAME } from '@pointercad/kernel';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 
 import {
@@ -624,7 +625,7 @@ describe('部品の再計算(要件§6.3)', () => {
       {
         featureId: 'extrude-1',
         code: 'kernelFailed',
-        message: '押し出しても厚みが出ませんでした。',
+        text: plainText('押し出しても厚みが出ませんでした。'),
       },
     ]);
   });
@@ -645,7 +646,7 @@ describe('部品の再計算(要件§6.3)', () => {
     expect(result.errors).toHaveLength(2);
     expect(result.errors.map((error) => error.featureId)).toEqual(['extrude-1', 'extrude-2']);
     expect(result.errors[0].code).toBe('kernelFailed');
-    expect(result.errors[0].message).toBe('ソリッドを作れませんでした: Worker が落ちました');
+    expect(plainTextValue(result.errors[0].text)).toBe('ソリッドを作れませんでした: Worker が落ちました');
   });
 
   it('Worker の例外の種類が素の Error でなければ、種類と文の両方を失敗の文に残し、頼み直さない(FR-504)', async () => {
@@ -656,7 +657,7 @@ describe('部品の再計算(要件§6.3)', () => {
 
     expect(recomputeSolids).toHaveBeenCalledTimes(1);
     expect(result.cancelled).toBe(false);
-    expect(result.errors.map((error) => error.message)).toEqual(['ソリッドを作れませんでした: RangeError: unreachable']);
+    expect(result.errors.map((error) => plainTextValue(error.text))).toEqual(['ソリッドを作れませんでした: RangeError: unreachable']);
   });
 
   it('実物の窓口が OCCT を読み込めなければ同じ世代で 1 回だけ頼み直し、理由と頼み直した事実を失敗の文に残す(NFR-RE-1)', async () => {
@@ -674,8 +675,8 @@ describe('部品の再計算(要件§6.3)', () => {
     expect(generations).toEqual([7, 7]);
     expect(result.cancelled).toBe(false);
     expect(result.bodies).toEqual([]);
-    expect(result.errors.filter((error) => error.featureId === 'extrude-1').map((error) => [error.code, error.message])).toEqual([['kernelFailed',
-      'ソリッドを作れませんでした: カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed(カーネルの読み込みを1回やり直しました)']]);
+    expect(result.errors.filter((error) => error.featureId === 'extrude-1').map((error) => [error.code, plainTextValue(error.text)])).toEqual([['kernelFailed',
+      'ソリッドを作れませんでした: 形の計算の機能を読み込めませんでした: TypeError: fetch failed(読み込みを1回やり直しました)']]);
   });
 
   it('OCCT の読み込みの失敗でも取消の後なら頼み直さない', async () => {
@@ -684,7 +685,7 @@ describe('部品の再計算(要件§6.3)', () => {
     let cancelled = false;
     const recomputeSolids = vi.fn(() => {
       cancelled = true;
-      return Promise.reject(Object.assign(new Error('カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed'), { name: 'OcctLoadError' }));
+      return Promise.reject(Object.assign(new Error('形の計算の機能を読み込めませんでした: TypeError: fetch failed'), { name: OCCT_LOAD_ERROR_NAME }));
     });
     const result = await recomputePart(document, fakeBridge({ recomputeSolids }), { shouldCancel: () => cancelled });
 
@@ -715,7 +716,7 @@ describe('部品の再計算(要件§6.3)', () => {
     expect(result.errors[1]).toEqual({
       featureId: fixture.faceA.faceFeatureId,
       code: 'kernelFailed',
-      message: '面を作れませんでした: 面が閉じていません',
+      text: plainText('面を作れませんでした: 面が閉じていません'),
     });
   });
 
@@ -731,7 +732,7 @@ describe('部品の再計算(要件§6.3)', () => {
       faceA.faceFeatureId,
       faceB.faceFeatureId,
     ]);
-    expect(result.errors[0].message).toBe('面を作れませんでした: Worker が落ちました');
+    expect(plainTextValue(result.errors[0].text)).toBe('面を作れませんでした: Worker が落ちました');
   });
 
   it('進捗をそのまま呼び出し側へ伝える(NFR-PF-4)', async () => {
@@ -1478,7 +1479,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
         bodies: [], failures: [{ featureId: 'extrude-1', message: KERNEL_BROKEN_MESSAGE }], cacheHits: 0, cancelled: false,
       }),
     }));
-    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE }]);
+    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', text: plainText(KERNEL_BROKEN_MESSAGE) }]);
   });
 
   it('語尾が「選び直してください」の文でも、符号が無ければ kernelFailed のまま(0b-1。文では見分けない)', async () => {
@@ -1487,7 +1488,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
     const result = await recomputePart(document, fakeBridge({
       recomputeSolids: () => Promise.resolve({ bodies: [], failures: [{ featureId: 'extrude-1', message }], cacheHits: 0, cancelled: false }),
     }));
-    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', message }]);
+    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', text: plainText(message) }]);
   });
 
   it('立体が残らない符号 nothingLeft は kernelFailed のままで、理由(reason)にしない', async () => {
@@ -1498,7 +1499,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
         bodies: [], failures: [{ featureId: 'extrude-1', message, code: 'nothingLeft' }], cacheHits: 0, cancelled: false,
       }),
     }));
-    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', message }]);
+    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', text: plainText(message) }]);
   });
 
   it('穴が「もとの面が見つかりません」で失敗したら missingSubShape に詰め替える', async () => {
@@ -1527,7 +1528,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
       {
         featureId: 'extrude-1',
         code: 'missingSubShape',
-        message: '穴をあけるもとの面が見つかりません。形が大きく変わったため、選び直してください。',
+        text: plainText('穴をあけるもとの面が見つかりません。形が大きく変わったため、選び直してください。'),
       },
     ]);
   });
@@ -1603,7 +1604,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
       {
         featureId: 'extrude-1',
         code: 'kernelFailed',
-        message: 'もとになるソリッドが見つかりませんでした。',
+        text: plainText('もとになるソリッドが見つかりませんでした。'),
       },
     ]);
   });
@@ -1624,7 +1625,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
     );
 
     expect(result.errors).toEqual([
-      { featureId: 'extrude-1', code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE },
+      { featureId: 'extrude-1', code: 'workerBroken', text: plainText(KERNEL_BROKEN_MESSAGE) },
     ]);
   });
 });
@@ -2246,7 +2247,7 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
     expect(projectSketchCurves).toHaveBeenCalledTimes(1);
     expect(result.errors).toContainEqual({
       featureId: 'pj1', code: 'missingBody',
-      message: '参照・投影の依存を解決できず、再計算を停止しました: pj1',
+      text: { key: 'partError.dependencyStopped', parameters: { id: 'pj1', reason: '' } },
     });
   });
 
@@ -2266,7 +2267,8 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
     expect(result.bodies.map((body) => body.featureId)).toEqual(['extrude-1']);
     const cycles = result.errors.filter((error) => error.code === 'circularReference');
     expect(cycles.map((error) => error.featureId)).toEqual(expect.arrayContaining(['pj1', 'pj2']));
-    expect(cycles.every((error) => error.message.includes('pj1') && error.message.includes('pj2')))
+    expect(cycles.every((error) => error.text.key === 'partError.circularDependency' && typeof error.text.parameters.ids === 'string'
+      && error.text.parameters.ids.includes('pj1') && error.text.parameters.ids.includes('pj2')))
       .toBe(true);
   });
 
@@ -2397,7 +2399,7 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
 
     const failure = result.errors.find((error) => error.featureId === 'pj1');
     expect(failure?.code).toBe('kernelFailed');
-    expect(failure?.message).toContain('投影・交差を作れませんでした');
+    expect(plainTextValue(failure?.text)).toContain('投影・交差を作れませんでした');
     // もとの立体は返っている(止めずに警告する)。
     expect(result.bodies.map((body) => body.featureId)).toEqual(['extrude-1']);
   });
@@ -2432,7 +2434,7 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
     );
 
     const failure = result.errors.find((error) => error.featureId === 'pj1');
-    expect(failure?.message).toContain('worker が応答しません');
+    expect(plainTextValue(failure?.text)).toContain('worker が応答しません');
   });
 
   it('計算済みの投影を覚え書きで渡すと、2 回目はカーネルへ頼まない(NFR-PF-2)', async () => {
@@ -2933,7 +2935,7 @@ describe('request-local JS accounting follows only the completed solid pass', ()
     const result = await recomputePart(document, fakeBridge({ recomputeSolids }), { generation: 7, localMesh: budget });
     expect(result.cancelled).toBe(false);
     expect(result.errors).toEqual([{ featureId: document.id, code: 'invalidValue',
-      message: '数学計算部を準備できません。数式の再計算後に作図してください。' }]);
+      text: { key: 'partError.mathUnavailable', parameters: {} } }]);
     expect(result.meshJsAccounting).toBeUndefined();
     expect(recomputeSolids).not.toHaveBeenCalled();
   });

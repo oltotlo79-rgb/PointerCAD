@@ -2,6 +2,7 @@
 import { resolveReplacementSubShapeReference, type SolidBody, type SubShapeReferenceResolution } from '../kernelBridge.js';
 import { fingerprintKeyText, type SubShapeRef } from '../geometry/subShapeRef.js';
 import { replaceComponent as replaceComponentRecord } from './assemblyEdit.js';
+import { nextComponentNameFor, type ReplacementPartNames } from './componentNames.js';
 import type {
   AssemblyDocument, ComponentSource, Joint, Mate, MateTarget,
 } from './types.js';
@@ -86,6 +87,7 @@ export function planReplacement(
   componentId: string,
   nextPart: ComponentSource,
   resolved: ReplacementResolvedData,
+  names?: ReplacementPartNames,
 ): ReplacementPlan | null {
   const component = assembly.components.find((candidate) => candidate.id === componentId);
   if (component === undefined) return null;
@@ -120,7 +122,9 @@ export function planReplacement(
     count(joint.id, result.affected, result.matched);
     return result.item;
   });
-  const replaced = replaceComponentRecord(assembly, componentId, { ...component, source: nextPart });
+  const name = names === undefined ? component.name
+    : nextComponentNameFor(component.name, names, assembly.components.map((item) => item.name));
+  const replaced = replaceComponentRecord(assembly, componentId, { ...component, source: nextPart, name });
   const after = { ...replaced, mates, joints };
   return {
     before: assembly,

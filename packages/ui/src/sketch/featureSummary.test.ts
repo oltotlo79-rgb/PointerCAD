@@ -199,7 +199,7 @@ describe('summarizeFeature(要素の要約)', () => {
 
   it('その要素の失敗の理由を持つ(FR-504)', () => {
     const errors: readonly SketchError[] = [
-      { featureId: 'line-2', code: 'missingBase', message: '基準になる直前の点がありません。' },
+      { featureId: 'line-2', code: 'missingBase', text: { key: 'partError.coordinate.noPrevious', parameters: {} } },
     ];
     expect(summarizeFeature(LINE, errors).errorMessage).toBe('基準になる直前の点がありません。');
     expect(summarizeFeature(POINT, errors).errorMessage).toBeNull();

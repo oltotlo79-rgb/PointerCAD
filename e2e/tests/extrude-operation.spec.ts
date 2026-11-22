@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { extrudeHandleFlow } from './faceOffsetFlow.js';
 import { extrudeMultipleFacesFlow } from './flows/extrudeMultipleFacesFlow.js';
 import { extrudeOperationFlow, extrudeRegionFlow, extrudeStaleTargetFlow } from './flows/extrudeOperationFlow.js';
 
@@ -53,4 +54,8 @@ test('Extrude two selected faces with one distance and one Undo', async ({ page 
   await page.goto('/');
   await extrudeMultipleFacesFlow(page, info);
   expect(errors).toEqual([]);
+});
+
+test('押し出しの矢印のつまみで距離を変え、Esc で戻して Enter で確定する', async ({ page }) => {
+  await extrudeHandleFlow(page);
 });

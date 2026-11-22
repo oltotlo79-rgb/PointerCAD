@@ -7,7 +7,7 @@ import { canExportBeamReport, exportBeamReport } from './exportBeamReport.js';
 export function BeamReportButton({ session, reviewed }: { readonly session: BeamSession; readonly reviewed: boolean }): React.JSX.Element {
   const enabled = canExportBeamReport(session, reviewed);
   return <button type="button" className="pcad-button" data-testid="beam-report" disabled={!enabled}
-    title={t(enabled ? 'beam.guide.report' : 'beam.guide.reportUnavailable')}
-    onClick={() => { void exportBeamReport(currentAppVersion() ?? t('beam.report.versionUnknown')); }}>
-    {t('beam.report.export')}</button>;
+    title={t(enabled ? 'analysisReport.guide' : 'beam.guide.reportUnavailable')}
+    onClick={() => { void exportBeamReport(currentAppVersion() ?? t('analysisReport.versionUnknown')); }}>
+    {t('analysisReport.export')}</button>;
 }

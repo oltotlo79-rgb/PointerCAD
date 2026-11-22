@@ -14,6 +14,7 @@ import type {
 import type {
   PartCancelToken,
 } from './solidContracts.js';
+import type { WorkerBrokenCode } from './bridgeContracts.js';
 
 
 /* ------------------------------------------------------------------ *
@@ -76,8 +77,8 @@ export type MeasureOutcome =
       /** 主軸の向き(長さ 1)。第 1・第 2・第 3 の順。 */
       readonly principalAxes: readonly [Vec3, Vec3, Vec3];
     }
-  /** 測れなかった。message はそのまま画面に出す日本語(FR-504。kernel の文言を持ち回る)。 */
-  | { readonly kind: 'failed'; readonly message: string };
+  /** 測れなかった。message はそのまま画面に出す日本語(FR-504。kernel の文言を持ち回る)。code は Worker が止まった時だけ橋が付ける(0b-1c)。 */
+  | { readonly kind: 'failed'; readonly message: string; readonly code?: WorkerBrokenCode };
 
 /** 点検のどの段を計算しているか(NFR-PF-4 の進み具合)。重いのは肉厚の段だけ。 */
 export type PrintabilityPhase = 'watertight' | 'overhang' | 'thickness';

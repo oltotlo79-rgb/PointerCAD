@@ -1,5 +1,6 @@
 /** Bounded exact arithmetic used for domain decisions; decimal approximation cannot decide parity. */
 import { validateMathDecimal, type MathNode } from './mathInputContract.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 export interface ExactRational { readonly numerator: bigint; readonly denominator: bigint }
 const MAX_BITS = 8192;
 function withinBudget(value: bigint): boolean { return (value < 0 ? -value : value).toString(2).length <= MAX_BITS; }
@@ -33,7 +34,7 @@ export function decimalRational(decimal: string): ExactRational | null {
   const [mantissa = '', exponentText = '0'] = decimal.toLowerCase().split('e');
   const fractionDigits = mantissa.includes('.') ? mantissa.length - mantissa.indexOf('.') - 1 : 0;
   const exponent = Number(exponentText) - fractionDigits;
-  if (Math.abs(exponent) > 2400) return null;
+  if (exceedsMagnitude(exponent, 2400)) return null;
   const integer = BigInt(mantissa.replace('.', ''));
   return exponent >= 0 ? rational(integer * 10n ** BigInt(exponent)) : rational(integer, 10n ** BigInt(-exponent));
 }

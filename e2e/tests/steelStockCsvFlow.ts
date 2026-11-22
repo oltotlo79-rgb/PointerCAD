@@ -8,6 +8,7 @@ import { diskFile, saveTarget } from './electronAppFlow.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { chooseSteelFlatBar50x6 } from './steelPickerFlow.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /*
  * EX02: the steel stock (cut) list of the standard-part picker, placed and exported only through the real UI.
@@ -106,9 +107,7 @@ function choice(dialog: Locator, label: string): Locator {
   return dialog.getByRole('combobox', { name: label, exact: true });
 }
 function field(dialog: Locator, label: string): Locator {
-  return dialog.locator('label.pcad-field').filter({
-    has: dialog.page().locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`, 'u') }),
-  });
+  return fieldByLabel(dialog.page(), dialog, label, { fieldSelector: 'label.pcad-field' });
 }
 function stockDetails(dialog: Locator): Locator {
   return dialog.locator('details').filter({ has: dialog.page().locator('summary', { hasText: '鋼材切断リスト' }) });

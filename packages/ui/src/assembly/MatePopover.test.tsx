@@ -1,13 +1,17 @@
 import React, { isValidElement, useEffect, useLayoutEffect } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPartDocument, EMPTY_PART_LIBRARY, resolveAssembly, resolvePart } from '@pointercad/model';
+import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPartDocument, createSubShapeReference,
+  EMPTY_PART_LIBRARY, resolveAssembly, resolvePart, type MateTarget, type MateTargetKind, type SolidBody } from '@pointercad/model';
+import { buildEx18ContextSource } from '@pointercad/model/testing/ex18-fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { MatePopover } from './MatePopover.js';
 import { focusFirstTextField } from './popoverFocus.js';
 import { t } from '../i18n/t.js';
-import { addMateTarget, startJoint, startMate, updateMateSource } from './mateActions.js';
+import { ASSEMBLY_MATE_TOOLS } from '../shell/menus/assemblyMenuItems.js';
+import { addMateTarget, cancelMate, removeDraftTarget, startJoint, startMate, updateMateSource } from './mateActions.js';
+import { availableMateKinds } from './mateCommands.js';
 import type * as ImportedReactTypes from 'react';
 
 vi.mock('react', async importOriginal => {
@@ -176,3 +180,159 @@ function matches(field: FakeField, selector: string): boolean {
   const [tag, className] = selector.split('.');
   return (tag === '' || field.tagName === tag.toUpperCase()) && field.className.split(' ').includes(className);
 }
+
+function pickPair(a: MateTargetKind, b: MateTargetKind): void {
+  const { assembly, assemblyView: view } = useAppStore.getState();
+  if (assembly === null || view === null) throw new Error('Missing assembly');
+  const part = buildEx18ContextSource('cylinder');
+  const featureId = part.solids[0].id;
+  const body: SolidBody = { featureId, volume: 100 * Math.PI, isValid: true,
+    mesh: { positions: new Float32Array(), normals: new Float32Array(), indices: new Uint32Array(), edgePositions: new Float32Array(), triangleCount: 0 },
+    faces: [{ index: 0, surfaceKind: 'cylinder', centroid: [12, -8, 2], axis: [0, 0, 1], radius: 5,
+      area: 40 * Math.PI, triangleOffset: 0, triangleCount: 0 }], edges: [], vertices: [], threadMarks: [],
+    origins: { version: 1, state: 'tracked', bindings: [{ state: 'unique', current: { kind: 'face', index: 0 },
+      origin: { version: 1, shapeKind: 'face', identity: { kind: 'cylinder-face', featureId, role: 'side' } } }] } };
+  const ref = createSubShapeReference(body, 'face', 0);
+  if (ref === null) throw new Error('Missing cylinder face');
+  const library = { ...EMPTY_PART_LIBRARY, parts: new Map([['a', part], ['b', part]]) };
+  const resolvedParts = new Map([...library.parts].map(([key, value]) => [key, resolvePart(value)]));
+  useAppStore.setState({ assemblyLibrary: library, assemblyView: { ...view, resolved: resolveAssembly(assembly, { library, resolvedParts }),
+    bodies: new Map([['a', [body]], ['b', [body]]]) } });
+  cancelMate();
+  startMate('coincident');
+  for (const [index, kind] of [a, b].entries()) {
+    const componentId = assembly.components[index].id;
+    const target: MateTarget = kind === 'cylinder' ? { kind: 'subShape', componentId, ref }
+      : { kind: 'origin', componentId, element: kind === 'point' ? 'origin' : kind === 'plane' ? 'xy' : 'z' };
+    expect(addMateTarget(target)).toBe(true);
+  }
+  expect(useAppStore.getState().assemblyMateDraft?.targetKinds).toEqual([a, b]);
+}
+
+interface ControlProps {
+  readonly children?: React.ReactNode;
+  readonly role?: string;
+  readonly className?: string;
+  readonly ref?: React.RefObject<{ focus: () => void } | null>;
+  readonly onClick?: () => void;
+  readonly 'aria-label'?: string;
+  readonly 'aria-description'?: string;
+}
+
+function controls(node: React.ReactNode): React.ReactElement<ControlProps>[] {
+  const found: React.ReactElement<ControlProps>[] = [];
+  React.Children.forEach(node, child => {
+    if (isValidElement<ControlProps>(child)) found.push(child, ...controls(child.props.children));
+  });
+  return found;
+}
+
+function candidateControls(nodes: readonly React.ReactElement<ControlProps>[]) {
+  const group = nodes.find(node => node.props.role === 'group' && node.props['aria-label'] === t('assembly.mate.candidates'));
+  const buttons = controls(group?.props.children).filter(node => node.type === 'button');
+  const hint = nodes.find(node => node.type === 'p' && node.props.children === t('assembly.mate.chooseCandidate'));
+  return { group, buttons, hint };
+}
+
+function candidatePanel() {
+  let nodes: React.ReactElement<ControlProps>[] = [];
+  function Probe(): null { nodes = controls(MatePopover()); return null; }
+  renderToStaticMarkup(<Probe />);
+  return candidateControls(nodes);
+}
+
+const targetKinds = ['point', 'plane', 'axis', 'cylinder'] as const;
+describe('対象から選べる合致の候補', () => {
+  it.each(targetKinds.flatMap(a => targetKinds.map(b => [a, b] as const)))('%s と %s の順序・おすすめ・案内', (a, b) => {
+    pickPair(a, b);
+    const expected = availableMateKinds(a, b);
+    const { group, buttons, hint } = candidatePanel();
+    expect(Boolean(group)).toBe(expected.length > 0);
+    expect(Boolean(hint)).toBe(expected.length > 0 && !expected.includes('coincident'));
+    expect(buttons).toHaveLength(expected.length);
+    expected.forEach((kind, index) => {
+      const tool = ASSEMBLY_MATE_TOOLS.find(item => item.kind === kind);
+      if (tool === undefined) throw new Error(kind);
+      const button = buttons[index];
+      const label = React.Children.toArray(button.props.children).filter(child => typeof child === 'string').join('');
+      expect(label).toBe(t(tool.labelKey));
+      expect(typeof button.props.onClick).toBe('function');
+      expect(button.props['aria-description']).toBe(index === 0 ? t('assembly.mate.recommended') : undefined);
+      const marks = controls(button.props.children).filter(node => node.props.children === t('assembly.mate.recommended'));
+      expect(marks).toHaveLength(index === 0 ? 1 : 0);
+    });
+  });
+
+  it.each([
+    ['distance', 'coincident', 'point', false], ['coincident', 'distance', 'point', true],
+    ['coincident', 'coincident', 'point', false], ['distance', 'distance', 'point', true],
+    ['parallel', 'coincident', 'plane', true],
+  ] as const)('%s → %s (%s) は対象を保ち、値の欄または確定へ焦点を置く', (from, to, target, hasValue) => {
+    pickPair(target, target);
+    startMate(from);
+    const before = useAppStore.getState();
+    const effects = vi.mocked(useEffect).mockClear();
+    const tool = ASSEMBLY_MATE_TOOLS.find(item => item.kind === to);
+    if (tool === undefined) throw new Error(to);
+    const name = t(tool.labelKey);
+    const field = { focus: vi.fn(), select: vi.fn() };
+    const commit = { focus: vi.fn() };
+    const panelFocus = vi.fn();
+    let previous: typeof effects.mock.calls = [];
+    let pending: React.EffectCallback[] = [];
+    // Node の描画でも同じ ref を保つよう React 自身に再描画させ、更新で依存が変わった effect だけを呼ぶ。
+    function Probe(): null {
+      const [picked, setPicked] = React.useState(false);
+      const first = effects.mock.calls.length;
+      const nodes = controls(MatePopover());
+      const calls = effects.mock.calls.slice(first);
+      if (!picked) {
+        previous = calls;
+        const button = candidateControls(nodes).buttons.find(node => React.Children.toArray(node.props.children).includes(name));
+        if (button?.props.onClick === undefined) throw new Error(name);
+        button.props.onClick();
+        setPicked(true);
+        return null;
+      }
+      const panelRef = nodes.find(node => node.props.role === 'dialog')?.props.ref;
+      const commitRef = nodes.find(node => node.type === 'button' && node.props.children === t('assembly.mate.commit'))?.props.ref;
+      if (panelRef === undefined || commitRef === undefined) throw new Error('Missing focus target');
+      const hasField = nodes.some(node => node.type === 'input' && node.props.className === 'pcad-field__input');
+      expect(hasField).toBe(hasValue);
+      const panel = { focus: panelFocus, querySelector: (selector: string) => hasField && selector === 'input.pcad-field__input' ? field : null };
+      panelRef.current = panel;
+      commitRef.current = commit;
+      pending = calls.filter(([, deps], i) => deps === undefined || deps.some((dep, j) => !Object.is(dep, previous[i]?.[1]?.[j])))
+        .map(([effect]) => effect);
+      return null;
+    }
+    renderToStaticMarkup(<Probe />);
+    const after = useAppStore.getState();
+    expect(after.assemblyMateDraft?.kind).toBe(to);
+    expect(after.assemblyMateDraft?.targets).toEqual(before.assemblyMateDraft?.targets);
+    expect(after.selection).toEqual(before.selection);
+    expect(after.assembly).toBe(before.assembly);
+    expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+
+    for (const effect of pending) effect();
+    expect(field.focus).toHaveBeenCalledTimes(hasValue ? 1 : 0);
+    expect(field.select).toHaveBeenCalledTimes(hasValue ? 1 : 0);
+    expect(commit.focus).toHaveBeenCalledTimes(hasValue ? 0 : 1);
+    expect(panelFocus).not.toHaveBeenCalled();
+  });
+
+  it('対象なし・1個・3個と、2個選んだ関節には候補も案内も出さない', () => {
+    const draft = useAppStore.getState().assemblyMateDraft;
+    if (draft === null) throw new Error('Missing draft');
+    startJoint('ball');
+    expect(candidatePanel()).toMatchObject({ group: undefined, hint: undefined });
+    useAppStore.setState({ assemblyMateDraft: { ...draft, targets: [...draft.targets, { kind: 'origin', componentId: 'third', element: 'x' }],
+      targetKinds: [...draft.targetKinds, 'axis'] } });
+    expect(candidatePanel()).toMatchObject({ group: undefined, hint: undefined });
+    useAppStore.setState({ assemblyMateDraft: draft });
+    removeDraftTarget(1);
+    expect(candidatePanel()).toMatchObject({ group: undefined, hint: undefined });
+    removeDraftTarget(0);
+    expect(candidatePanel()).toMatchObject({ group: undefined, hint: undefined });
+  });
+});

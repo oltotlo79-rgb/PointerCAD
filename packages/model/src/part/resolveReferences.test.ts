@@ -1,3 +1,4 @@
+import { plainText, plainTextValue } from '../failureText.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
@@ -251,7 +252,7 @@ describe('基準ジオメトリの解決(FR-328、FR-329)', () => {
     expect(resolved.axes).toEqual([]);
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('degenerate');
-    expect(resolved.errors[0].message).toContain('平行');
+    expect(plainTextValue(resolved.errors[0].text)).toContain('平行');
   });
 
   it('基準座標系は原点+2 軸で、第 3 軸は X × Y から導く(右手系)', () => {
@@ -366,7 +367,7 @@ describe('基準ジオメトリの解決(FR-328、FR-329)', () => {
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].featureId).toBe('referencePlane-1');
     expect(resolved.errors[0].code).toBe('missingPlane');
-    expect(resolved.errors[0].message).toContain('後から作られた');
+    expect(plainTextValue(resolved.errors[0].text)).toContain('後から作られた');
   });
 
   it('無い作業平面を指すと missingPlane で断り、他は解決される(FR-504)', () => {
@@ -415,7 +416,7 @@ describe('基準ジオメトリの解決(FR-328、FR-329)', () => {
     expect(resolved.planes).toEqual([]);
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('circularReference');
-    expect(resolved.errors[0].message).toContain('循環');
+    expect(plainTextValue(resolved.errors[0].text)).toContain('循環');
   });
 
   it('作図面の引き口は基準の 3 面と任意平面の両方を返す', () => {
@@ -549,7 +550,7 @@ describe('球面上の点(FR-431)', () => {
     expect(resolved.points).toEqual([]);
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('missingPoint');
-    expect(resolved.errors[0].message).toContain('見つかりません');
+    expect(plainTextValue(resolved.errors[0].text)).toContain('見つかりません');
   });
 
   it('球でない基本形状(箱)を指しても断る', () => {
@@ -778,11 +779,11 @@ describe('基準ジオメトリの解決器の境界(責務を分けても変わ
       },
     ]);
     const resolved = createReferenceResolver(document, {
-      sketch: () => null, invalidInputs: new Map([['referencePoint-1', '式が解けません。']]),
+      sketch: () => null, invalidInputs: new Map([['referencePoint-1', plainText('式が解けません。')]]),
     }).resolveAll();
     expect(resolved.errors).toEqual([
-      { featureId: 'referencePoint-1', code: 'invalidValue', message: '式が解けません。' },
-      { featureId: 'referenceAxis-1', code: 'missingPoint', message: '基準軸の 2 点が見つかりません。点を選び直してください。' },
+      { featureId: 'referencePoint-1', code: 'invalidValue', text: plainText('式が解けません。') },
+      { featureId: 'referenceAxis-1', code: 'missingPoint', text: plainText('基準軸の 2 点が見つかりません。点を選び直してください。') },
     ]);
     expect(resolved.points).toEqual([]);
     expect(resolved.axes).toEqual([]);
@@ -803,7 +804,7 @@ describe('基準ジオメトリの解決器の境界(責務を分けても変わ
     const resolved = resolver.resolveAll();
     expect(resolved.errors).toEqual([{
       featureId: 'referenceAxis-1', code: 'missingPoint',
-      message: '基準点2は基準軸1より後から作られたので、参照できません。先に作ってください。',
+      text: plainText('基準点2は基準軸1より後から作られたので、参照できません。先に作ってください。'),
     }]);
     expect(resolved.points.map((point) => point.featureId)).toEqual(['referencePoint-2']);
     // 外からの問い合わせには履歴の上限が無いので、同じ参照が解ける。

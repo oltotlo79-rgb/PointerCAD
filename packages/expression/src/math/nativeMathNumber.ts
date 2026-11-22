@@ -5,6 +5,7 @@ import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { CANDIDATE_MATH_OPERATIONS } from './mathOperations.js';
 import { rationalOfExpression, decimalRational, type ExactRational } from './exactRational.js';
 import type { EngineMathJson } from './encodeMathJson.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 
 export const numberJson = (value: string | number | bigint): EngineMathJson => ({ num: String(value) });
 export function rationalJson(value: ExactRational): EngineMathJson {
@@ -57,7 +58,7 @@ export function decimalOperation(head: string, args: readonly EngineMathJson[]):
     case 'Ceil': result = a.ceil(); break;
     case 'Round': {
       const digits = b?.toNumber() ?? 0;
-      if (!Number.isSafeInteger(digits) || Math.abs(digits) > 2048) throw new MathInputProblem('budget', '丸める桁数が大きすぎます。');
+      if (!Number.isSafeInteger(digits) || exceedsMagnitude(digits, 2048)) throw new MathInputProblem('budget', '丸める桁数が大きすぎます。');
       const scale = new ExpressionDecimal(10).pow(digits);
       result = a.mul(scale).toDecimalPlaces(0, ExpressionDecimal.ROUND_HALF_EVEN).div(scale); break;
     }

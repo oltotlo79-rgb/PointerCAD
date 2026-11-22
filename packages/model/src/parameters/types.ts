@@ -12,6 +12,7 @@
  */
 
 import type { ExpressionValue, MathCoefficientValue } from '@pointercad/expression';
+import type { WorkerBrokenCode } from '../kernelBridge/bridgeContracts.js';
 
 /**
  * パラメータの量の種類。長さはmm、角度は度、無次元は倍率として扱う。
@@ -45,6 +46,8 @@ export interface ParameterFailure {
   readonly name: string;
   /** `evaluateExpression` が返した理由(「知らない名前です: 「未知」」など)。 */
   readonly message: string;
+  /** 図形の測定値が、計算部(Worker)が止まって測れなかった時だけ付く(0b-1c。画面は文ではなくこれで「止まった」と見分ける)。 */
+  readonly code?: WorkerBrokenCode;
 }
 
 /**

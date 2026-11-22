@@ -23,6 +23,7 @@ type FileBarState =
 const SECTION_LABELS: Readonly<Record<InputSettingsSection, MessageKey>> = {
   view: 'settings.inputBindings.tab.view', keys: 'settings.inputBindings.tab.keys',
   mouse: 'settings.inputBindings.tab.mouse', radial: 'settings.inputBindings.tab.radial', snap: 'settings.snapPause.title',
+  selection: 'settings.selectionModifier.title',
 };
 
 const REFUSAL_TEXTS: Readonly<Record<InputSettingsRefusal, MessageKey>> = {
@@ -68,7 +69,7 @@ function ImportPreview({ fileName, reading, onReplace, onCancel }: {
   );
 }
 
-/** 置き換えた直後の知らせ。5 つの欄が置き換えた時のままの間だけ、［元に戻す］を出す。 */
+/** 置き換えた直後の知らせ。各欄が置き換えた時のままの間だけ、［元に戻す］を出す。 */
 function ReplacedNotice({ written, onUndo }: { readonly written: InputSettingsValues; readonly onUndo: () => void }): React.JSX.Element {
   const current = useAppStore(state => state.displaySettings);
   if (!canUndoInputSettings(current, written)) {

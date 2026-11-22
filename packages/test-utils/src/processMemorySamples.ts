@@ -551,6 +551,10 @@ export interface GpuResidentExpectation {
   readonly evidenceSha256: string;
 }
 
+function exceedsMagnitude(value: number, bound: number): boolean {
+  return value > bound || value < -bound;
+}
+
 function gpuRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -613,11 +617,11 @@ export function qualifyGpuResidentSample(value: unknown, expected: GpuResidentEx
     else {
       started = window['startedAtEpochMs']; ended = window['endedAtEpochMs'];
       if (expected.frame.atEpochMs < started || expected.frame.atEpochMs > ended) reject('GPU window does not contain its workload frame');
-      if (Math.abs((window['qpcEnd'] - window['qpcStart']) * 1000 / window['qpcFrequency'] - (ended - started)) > 1) {
+      if (exceedsMagnitude((window['qpcEnd'] - window['qpcStart']) * 1000 / window['qpcFrequency'] - (ended - started), 1)) {
         reject('GPU QPC/epoch duration differs');
       }
-      if (Math.abs(window['epochAnchorMs'] + (window['qpcStart'] - window['qpcAnchor']) * 1000 / window['qpcFrequency'] - started) > 1 ||
-        Math.abs(window['epochAnchorMs'] + (window['qpcEnd'] - window['qpcAnchor']) * 1000 / window['qpcFrequency'] - ended) > 1) reject('GPU QPC/epoch anchor differs');
+      if (exceedsMagnitude(window['epochAnchorMs'] + (window['qpcStart'] - window['qpcAnchor']) * 1000 / window['qpcFrequency'] - started, 1) ||
+        exceedsMagnitude(window['epochAnchorMs'] + (window['qpcEnd'] - window['qpcAnchor']) * 1000 / window['qpcFrequency'] - ended, 1)) reject('GPU QPC/epoch anchor differs');
     }
     const capture = value['capture'];
     if (!gpuRecord(capture) || !gpuNumber(capture['startedAtEpochMs']) || !gpuNumber(capture['endedAtEpochMs']) ||

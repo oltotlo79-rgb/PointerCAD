@@ -7,6 +7,9 @@
  * (図が左右同じに描かれている事を確かめた)、穴は 2 本の読みが書く「溝の口の中心を通る縦と横の軸の交点」に置いた。
  * L 形(armWidth を持つ行)は、溝の口の中心の外の面からの位置の記入が無いので、各腕の幅の中央に置いた印つきの簡略の形
  * (図が腕の幅に対して左右同じに描かれている事を確かめた。溝と溝の間は読みの値)。穴は外の面からの位置の記入が無いので作らない。
+ * 4 つの面に溝を持つ長方形の行のうち印 slotPositionSymmetric を持つ行(57 回目の読み)は、溝と穴の外の面からの位置の記入が無いので、
+ * 読みの溝と溝の間・穴の列と列の間の並びを面の中央に置いた(図が中心線 X・Y に対して左右上下とも同じに描かれている事を確かめた)。
+ * 断面性能の表に行が無い行(massSource 'box')は、図と同じ頁の枠の単位質量と断面の値で、断面積は持たない(資料に記入が無い)。
  */
 import type { TSlotCatalogRecord } from './tSlotFrameCatalog.js';
 
@@ -69,4 +72,31 @@ export const T_SLOT_OUTLINE_RECORDS: readonly TSlotCatalogRecord[] = [
     iyCm4: 11.33, zxCm3: 4.53, zyCm3: 4.53, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'], simplifiedKinds: ['slotPositionSymmetric'],
     outline: { vertices: [[-22.5, -22.5], [22.5, -22.5], [22.5, 22.5], [-22.5, 22.5]], radii: [1, 3, 1, 35],
       slots: [{ edge: 0, at: 22.5 }, { edge: 1, at: 22.5 }], holes: [{ x: 0, y: 0, diameter: 10.5 }] } },
+  { key: 's6-40x60-t2s3', size: '溝幅 6 40×60（溝 上下 2 本・左右 3 本・穴 4-Ø4.2）', slot: 6, figurePage: 49, tablePage: 384, massSource: 'table',
+    width: 40, height: 60, slotPitch: 20, slotsAcross: 2, faces: 'tblr', slotOpening: 6, shoulder: 2, slotInnerWidth: 12, slotDepth: 4,
+    centerHole: 0, cornerRadius: 1, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 665, unitMassKgPerM: 1.8, ixCm4: 27.01,
+    iyCm4: 12.62, zxCm3: 9, zyCm3: 6.31, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'], simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-20, -30], [20, -30], [20, 30], [-20, 30]], radii: [1, 1, 1, 1],
+      slots: [{ edge: 0, at: 10 }, { edge: 0, at: 30 }, { edge: 1, at: 10 }, { edge: 1, at: 30 }, { edge: 1, at: 50 }, { edge: 2, at: 10 },
+        { edge: 2, at: 30 }, { edge: 3, at: 10 }, { edge: 3, at: 30 }, { edge: 3, at: 50 }],
+      holes: [{ x: -10, y: -20, diameter: 4.2 }, { x: -10, y: 20, diameter: 4.2 }, { x: 10, y: -20, diameter: 4.2 },
+        { x: 10, y: 20, diameter: 4.2 }] } },
+  { key: 's8-50x100-t2s4', size: '溝幅 8 50×100（溝 上下 2 本・左右 4 本・穴 8-Ø6.8）', slot: 8, figurePage: 109, tablePage: 385, massSource: 'table',
+    width: 50, height: 100, slotPitch: 20, slotsAcross: 2, faces: 'tblr', slotOpening: 8, shoulder: 2, slotInnerWidth: 16.5, slotDepth: 7,
+    centerHole: 0, cornerRadius: 2, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: 1614, unitMassKgPerM: 4.36, ixCm4: 153.4,
+    iyCm4: 42.48, zxCm3: 30.68, zyCm3: 16.99, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'],
+    simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-25, -50], [25, -50], [25, 50], [-25, 50]], radii: [2, 2, 2, 2],
+      slots: [{ edge: 0, at: 15 }, { edge: 0, at: 35 }, { edge: 1, at: 15 }, { edge: 1, at: 35 }, { edge: 1, at: 65 }, { edge: 1, at: 85 },
+        { edge: 2, at: 15 }, { edge: 2, at: 35 }, { edge: 3, at: 15 }, { edge: 3, at: 35 }, { edge: 3, at: 65 }, { edge: 3, at: 85 }],
+      holes: [{ x: -10, y: -35, diameter: 6.8 }, { x: -10, y: -15, diameter: 6.8 }, { x: -10, y: 15, diameter: 6.8 },
+        { x: -10, y: 35, diameter: 6.8 }, { x: 10, y: -35, diameter: 6.8 }, { x: 10, y: -15, diameter: 6.8 },
+        { x: 10, y: 15, diameter: 6.8 }, { x: 10, y: 35, diameter: 6.8 }] } },
+  { key: 's10-45x60-t1s1', size: '溝幅 10 45×60（溝 上下 1 本・左右 1 本・中心の穴 Ø12.5）', slot: 10, figurePage: 192, tablePage: null, massSource: 'box',
+    width: 45, height: 60, slotPitch: 45, slotsAcross: 1, faces: 'tblr', slotOpening: 10, shoulder: 6, slotInnerWidth: 20, slotDepth: 7,
+    centerHole: 12.5, cornerRadius: 3, cornerHoleDiameter: 0, cornerHoleInset: 0, areaMm2: null, unitMassKgPerM: 2.91, ixCm4: 38.25,
+    iyCm4: 22.97, zxCm3: 12.75, zyCm3: 10.21, simplified: ['溝と穴の横の位置は図に記入が無いので、幅の中央に対して対称に置いた'],
+    simplifiedKinds: ['slotPositionSymmetric'],
+    outline: { vertices: [[-22.5, -30], [22.5, -30], [22.5, 30], [-22.5, 30]], radii: [3, 3, 3, 3],
+      slots: [{ edge: 0, at: 22.5 }, { edge: 1, at: 30 }, { edge: 2, at: 22.5 }, { edge: 3, at: 30 }], holes: [{ x: 0, y: 0, diameter: 12.5 }] } },
 ];

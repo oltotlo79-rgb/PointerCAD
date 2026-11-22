@@ -1,10 +1,11 @@
+import { plainText } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScriptRunResult, ScriptRequest } from '@pointercad/model/scripting';
 import { createPrimitiveFeature, appendSolid, createEmptyPartDocument } from '@pointercad/model';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachPartRecompute } from '../store/attachKernel.js';
 import { createFakeRecompute, resetTestStore, resultFor, tick } from '../store/testing/createTestStore.js';
-import { openScriptPanel, runScript } from './scriptActions.js';
+import { openScriptPanel, runScript, scriptErrorText } from './scriptActions.js';
 
 beforeEach(() => {
   resetTestStore(); useAppStore.getState().cancelScript();
@@ -94,5 +95,14 @@ describe('自動作図の原子的適用と寿命', () => {
     fake.finish({ ok: false, error: { kind: 'cad', message: '未閉鎖', location: { file: 'helpers.js', line: 2, column: 1 } }, console: [] }); await pending;
     expect(useAppStore.getState().document).toBe(original); expect(useAppStore.getState().undoStack.past).toHaveLength(0);
     expect(useAppStore.getState().scriptError?.location).toEqual({ file: 'helpers.js', line: 2, column: 1 });
+  });
+});
+
+describe('自動作図の失敗の文(0b-2a)', () => {
+  it('部品の再計算の誤りから来た失敗は、部品の誤りと同じ口で文にし、ほかの失敗は文のまま', () => {
+    const partError = { featureId: 'thicken-1', code: 'kernelFailed' as const, text: plainText('thicken-failed'), reason: 'thicken-failed' as const };
+    expect(scriptErrorText({ kind: 'cad', partError, location: null }))
+      .toBe('閉じた立体を作れませんでした。厚さや厚みを付ける側を見直してください。');
+    expect(scriptErrorText({ kind: 'cad', message: '未閉鎖', location: null })).toBe('未閉鎖');
   });
 });

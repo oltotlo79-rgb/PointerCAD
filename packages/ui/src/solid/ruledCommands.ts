@@ -110,7 +110,7 @@ function ruledSectionOf(context: RuledContext, elementId: string): RuledSection 
   const parsed = parseSubShapeId(elementId);
   if (parsed !== null) {
     if (parsed.kind !== 'face') {
-      // 辺・頂点には外周が無い(model の `THRU_SECTIONS_NOT_FACE_MESSAGE` と同じ守り)。
+      // 辺・頂点には外周が無い(model の `THRU_SECTIONS_NOT_FACE_TEXT` と同じ守り)。
       return null;
     }
     if (isSphereFeature(findSolid(context.document, parsed.bodyFeatureId))) {
@@ -166,7 +166,7 @@ export function ruledSelectionHasSphere(context: RuledContext): boolean {
  *
  * **中心を立体の頂点で決めた球は断る。** model は頂点の座標を持たず(選び直せるのは
  * カーネルだけ)、段へ渡せるのは中心の座標そのものなので、解決のときに必ず失敗する
- * (`resolvePart.ts` の `THRU_SECTIONS_SPHERE_ORIGIN_MESSAGE`)。押した後に失敗させず、
+ * (`resolvePart.ts` の `THRU_SECTIONS_SPHERE_ORIGIN_TEXT`)。押した後に失敗させず、
  * 押す前に理由を出す(NFR-UX-5)。座標・スケッチの点で置いた球は通る。
  */
 function sphereSectionRejection(
@@ -214,7 +214,7 @@ export function loftSectionsRejection(sections: readonly RuledSection[]): Messag
   if (sections.length < MIN_LOFT_SECTIONS) {
     return 'loftError.needTwoSections';
   }
-  // 球は縁を持たないので、なめらかにつなぐ相手にできない(model の `LOFT_SPHERE_MESSAGE`)。
+  // 球は縁を持たないので、なめらかにつなぐ相手にできない(model の `LOFT_SPHERE_TEXT`)。
   return sections.some((section) => section.kind === 'sphere') ? 'loftError.sphere' : null;
 }
 

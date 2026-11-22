@@ -74,7 +74,7 @@ describe('梁の静解析報告書', () => {
       expect([p.widthMm, p.heightMm]).toEqual([210, 297]);
       const header = texts([p]).filter(x => x.ownerId.startsWith('header/')).map(x => x.text).join('');
       for (const text of [input.analysisName, input.documentName, input.exportedAt, input.appVersion,
-        t('beam.report.title'), t('beam.report.page').replace('{page}', String(index + 1))]) expect(header).toContain(text);
+        t('beam.report.title'), t('analysisReport.page').replace('{page}', String(index + 1))]) expect(header).toContain(text);
     });
     expect(cells(items, 'scope/0').join('')).toBe(t('beam.scope'));
     expect(cells(items, 'scope/1').join('')).toBe(t('beam.resultScope'));
@@ -120,7 +120,7 @@ describe('梁の静解析報告書', () => {
     pages.forEach((p, i) => {
       const header = texts([p]).filter(item => item.ownerId.startsWith('header/')).map(item => item.text).join('');
       for (const value of [input.documentName, input.analysisName, input.appVersion, input.exportedAt,
-        t('beam.report.page').replace('{page}', String(i + 1))]) expect(header).toContain(value);
+        t('analysisReport.page').replace('{page}', String(i + 1))]) expect(header).toContain(value);
     });
     const endPages = pages.map(page => texts([page])).filter(items => cells(items, 'ends/title').length > 0);
     expect(endPages).toHaveLength(2);

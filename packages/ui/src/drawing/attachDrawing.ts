@@ -5,10 +5,12 @@ import { createDrawingResolveKernel, drawingSourceInputOf, IDENTITY_PLACEMENT, r
 } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
+import { DrawingCreationError } from './drawingCreationError.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 import { prepareAssemblyDrawingSource, type PreparedAssemblyDrawing } from './prepareAssemblyDrawingSource.js';
 import { prepareFlatDrawingSource } from './prepareFlatDrawingSource.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 
 export type DrawingPartRecomputer = (document: PartDocument, options: PartRecomputeOptions) => Promise<PartRecomputeResult>;
 interface Request {
@@ -41,7 +43,7 @@ function sourceCenter(result: PartRecomputeResult): Vector3 {
       xmax = Math.max(xmax, x); ymax = Math.max(ymax, y); zmax = Math.max(zmax, z);
     }
   }
-  if (!Number.isFinite(xmin)) throw new Error(t('drawing.error.noSolid'));
+  if (!Number.isFinite(xmin)) throw new DrawingCreationError('drawing.error.noSolid');
   return [(xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2];
 }
 
@@ -71,7 +73,7 @@ export function attachDrawing(
     if (request === null || obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
     const entry = request.sources.sources.find((item) => item.metadata.sourceRef === source.sourceRef
       && item.metadata.contentHash === source.contentHash && item.metadata.sourceKind === source.sourceKind);
-    if (entry === undefined) throw new Error(t('drawing.error.selectSource'));
+    if (entry === undefined) throw new DrawingCreationError('drawing.error.selectSource');
     const input = drawingSourceInputOf(entry);
     if (input?.sourceKind === 'assembly') {
       if (preparedAssembly?.entry === entry && preparedAssembly.documentId === request.documentId) {
@@ -90,7 +92,7 @@ export function attachDrawing(
       return output.result;
     }
     if (input?.sourceKind !== 'part' || !('sketches' in entry.document)) {
-      throw new Error(t('drawing.error.selectSource'));
+      throw new DrawingCreationError('drawing.error.selectSource');
     }
     const partId = `drawing:${request.documentId}:${source.sourceRef}`;
     const shapePartId = input.flatSheet === undefined ? partId : `${partId}:flat`;
@@ -109,9 +111,9 @@ export function attachDrawing(
     const result = await recompute(entry.document, { partId, importedShapes,
       shouldCancel: () => obsolete(request), onResolved: (part) => { resolved.set(partId, part); } });
     if (result.cancelled || obsolete(request)) throw new Error(t('drawing.error.viewFailed'));
-    if (result.errors.length > 0) throw new Error(result.errors.map((error) => error.message).join('\n'));
+    if (result.errors.length > 0) throw new Error(result.errors.map(partErrorMessage).join('\n'));
     const part = resolved.get(partId);
-    if (part === undefined || result.bodies.length === 0) throw new Error(t('drawing.error.noSolid'));
+    if (part === undefined || result.bodies.length === 0) throw new DrawingCreationError('drawing.error.noSolid');
     if (input.flatSheet !== undefined) {
       retained.add(shapePartId);
       const flat = await prepareFlatDrawingSource(entry.document, input.flatSheet, source.sourceRef, result, bridge, shapePartId, () => obsolete(request));

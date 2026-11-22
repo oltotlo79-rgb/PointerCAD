@@ -3,6 +3,7 @@ import type { MaterialComparisonResult, PartRecomputeResult } from '@pointercad/
 import { DEFINITION_DIFF_MAX_FILE_BYTES } from './definitionDiffProtocol.js';
 import { createMaterialDiffSession, type MaterialDiffSession } from './materialDiffSession.js';
 import { t } from '../i18n/t.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 
 export type MaterialDiffPhase = 'before' | 'after' | 'compare';
 const MATERIAL_DIFF_TIMEOUT_MS = 180_000;
@@ -15,7 +16,7 @@ function read(bytes: Uint8Array) {
   return result;
 }
 function keysOf(result: PartRecomputeResult, resolvedKeys: ReadonlyMap<string, string>): readonly string[] {
-  if (result.errors.length > 0) throw new Error(result.errors[0].message);
+  if (result.errors.length > 0) throw new Error(partErrorMessage(result.errors[0]));
   const keys: string[] = [];
   for (const body of result.bodies) {
     if (!body.isValid || body.bodyKind !== 'solid') throw new Error(t('materialDiff.requiresSolid'));

@@ -1,5 +1,8 @@
 /** 再計算の予約が古い計算を早く止めることの回帰テスト(R-7b、NFR-PF-4)。 */
 
+import { plainText } from '@pointercad/model';
+import { failureMessage } from '../i18n/failureMessage.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import {
   appendSolid,
   createAssemblyDocument,
@@ -9,6 +12,7 @@ import {
   KERNEL_BROKEN_MESSAGE,
   recomputePart,
 } from '@pointercad/model';
+import type { SolidFailureReason } from '@pointercad/model';
 import { createAutoSaver, createMemoryAutoSaveStorage, readPcadFile } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { newSketchCanvas } from '../file/canvasFile.js';
@@ -25,6 +29,15 @@ import {
   tick,
 } from './testing/createTestStore.js';
 import { useAppStore } from './useAppStore.js';
+
+/** 段階の計算の失敗の符号と、店へ入る文(文言の表の文を写さずに書く。直す前は符号の文字のまま入っていた)。 */
+const STAGED_FAILURE_TEXTS: readonly (readonly [SolidFailureReason, string])[] = [
+  ['thicken-failed', '閉じた立体を作れませんでした。厚さや厚みを付ける側を見直してください。'],
+  // 面による切断と辺からの距離の穴は、0b-2b で計算部の表から文言の表へ移した(ヘルプ cut.md・hole.md に載る文)。
+  ['no-intersection', '切断面が対象に届いていません。位置と範囲を見直してください。'],
+  ['outside', '辺からの距離の位置が選択面の内側にありません。'],
+  ['parallel', '辺からの距離には平行でない2本の辺を選んでください。'],
+];
 
 beforeEach(() => {
   resetTestStore();
@@ -218,7 +231,7 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     const detach = attachPartRecompute(fake.recompute);
     fake.calls[0].settle({
       ...resultFor(fake.calls[0].document),
-      errors: [{ featureId: 'solid-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
+      errors: [{ featureId: 'solid-1', code: 'kernelFailed', text: plainText('ソリッドを作れませんでした') }],
     });
     await tick();
 
@@ -233,7 +246,7 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     const detach = attachPartRecompute(fake.recompute);
     fake.calls[0].settle({
       ...resultFor(fake.calls[0].document),
-      errors: [{ featureId: 'solid-1', code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE }],
+      errors: [{ featureId: 'solid-1', code: 'workerBroken', text: plainText(KERNEL_BROKEN_MESSAGE) }],
     });
     await tick();
 
@@ -248,7 +261,7 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     const detach = attachPartRecompute(fake.recompute);
     fake.calls[0].settle({
       ...resultFor(fake.calls[0].document),
-      errors: [{ featureId: 'face-1', code: 'workerBroken', message: `面を作れませんでした: ${KERNEL_BROKEN_MESSAGE}` }],
+      errors: [{ featureId: 'face-1', code: 'workerBroken', text: plainText(`面を作れませんでした: ${KERNEL_BROKEN_MESSAGE}`) }],
     });
     await tick();
 
@@ -261,7 +274,7 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     const detach = attachPartRecompute(fake.recompute);
     fake.calls[0].settle({
       ...resultFor(fake.calls[0].document),
-      errors: [{ featureId: 'solid-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE }],
+      errors: [{ featureId: 'solid-1', code: 'kernelFailed', text: plainText(KERNEL_BROKEN_MESSAGE) }],
     });
     await tick();
 
@@ -281,9 +294,9 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
 });
 
 describe('カーネル(OCCT)の読み込みの失敗の頼み直し(FR-504、NFR-RE-1)', () => {
-  /** Worker の createKernelApi が読み込みの失敗に付ける名前。Comlink は Error の name・message を運ぶ。 */
+  /** kernel/src/occtLoadError.ts の OCCT_LOAD_ERROR_NAME と同じ値。ずれるとこの検査で頼み直しが起きない。 */
   const LOAD_FAILURE_NAME = 'OcctLoadError';
-  const LOAD_FAILURE_TEXT = 'カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed';
+  const LOAD_FAILURE_TEXT = '形の計算の機能を読み込めませんでした: TypeError: fetch failed';
   type Answer = 'load-failure' | 'runtime-error' | 'success';
 
   function unused(): never { throw new Error('Unused operation in load retry fixture'); }
@@ -344,7 +357,7 @@ describe('カーネル(OCCT)の読み込みの失敗の頼み直し(FR-504、NFR
     try {
       await vi.waitFor(() => expect(useAppStore.getState().lastOutcome).toBe('failed'));
       expect(attached.generations).toEqual([1]);
-      expect(useAppStore.getState().partErrors.map(error => error.message))
+      expect(useAppStore.getState().partErrors.map(partErrorMessage))
         .toEqual(['ソリッドを作れませんでした: RangeError: unreachable']);
     } finally { attached.finish(); }
   });
@@ -354,8 +367,8 @@ describe('カーネル(OCCT)の読み込みの失敗の頼み直し(FR-504、NFR
     try {
       await vi.waitFor(() => expect(useAppStore.getState().lastOutcome).toBe('failed'));
       expect(attached.generations).toEqual([1, 1]);
-      expect(useAppStore.getState().partErrors.map(error => error.message))
-        .toEqual([`ソリッドを作れませんでした: ${LOAD_FAILURE_TEXT}(カーネルの読み込みを1回やり直しました)`]);
+      expect(useAppStore.getState().partErrors.map(partErrorMessage))
+        .toEqual([`ソリッドを作れませんでした: ${LOAD_FAILURE_TEXT}(読み込みを1回やり直しました)`]);
     } finally { attached.finish(); }
   });
 
@@ -409,4 +422,30 @@ it('passes the owned mesh table to staged work and cancels it after replacement'
     await tick();
     expect(useAppStore.getState().stagedSolid?.status).not.toBe('ready');
   } finally { detach(); }
+});
+
+describe('段階の計算の失敗の文(0b-2a)', () => {
+  // 計算部は面だけのボディ・面による切断・辺からの距離の穴の断りを符号で返す。画面(数を入れる窓・状態の欄・複数面の押し出し)は
+  // 店の stagedSolid.errors の文をそのまま出すので、店へ入る時に文言の表の文(ヘルプの cut.md・hole.md・surface-body.md に載る文)になっている事を見る。
+  it.each(STAGED_FAILURE_TEXTS)('符号 %s は「%s」で店へ入る', async (reason, text) => {
+    useAppStore.getState().applyDocument(partWithThreeSolids());
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    try {
+      fake.calls[0].settle(resultFor(fake.calls[0].document));
+      await tick();
+      useAppStore.setState({ numericInput: createNumericInput('extrude', 'extrudeDistance') });
+      const state = useAppStore.getState();
+      const featureId = state.document.solids[0].id;
+      expect(state.partStager?.stage({ base: state.document, candidate: state.document, finalFeatureId: featureId,
+        fingerprint: `failed-${reason}` })).not.toBeNull();
+      const call = fake.calls[1];
+      call.settle({ ...resultFor(call.document), generation: call.options.generation ?? 0,
+        errors: [{ featureId, code: 'kernelFailed', text: plainText(reason), reason }] });
+      await tick();
+      const staged = useAppStore.getState().stagedSolid;
+      expect(staged?.status).toBe('failed');
+      expect(staged?.errors.map(error => failureMessage(error.text))).toEqual([text]);
+    } finally { detach(); }
+  });
 });

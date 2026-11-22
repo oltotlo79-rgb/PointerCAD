@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
 import { buildBom, bomPartName, type BomResolvedData } from './bom.js';
@@ -219,5 +219,40 @@ describe('部品表の材質の欄に出す族の行の材質の表示(統括の
     expect(rows.map((row) => [row.name, row.materialId, Object.hasOwn(row, 'catalogMaterialLabel')])).toEqual([
       ['キャップ A', 'abs', false], ['キャップ B', 'steel', false], ['板', 'steel', false],
     ]);
+  });
+});
+
+describe('前の呼び(行の formerSizes)で保存した族の部品の部品表', () => {
+  it('前の呼びの部品 1 つと今の呼びの部品 1 つは、今の呼びの名前で数量 2 の 1 行になり、保存の呼びは書き換えない', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['movable-part-box']);
+    const row = PRODUCT_CATALOG_REGISTRY.loaded('movable-part-box')?.rows.find((candidate) => candidate.formerSizes !== undefined);
+    const former = row?.formerSizes?.[0];
+    if (row === undefined || former === undefined) throw new Error('前の呼びを持つ行が無い');
+    const saved = createStandardPartSource('catalogItem', row.size, { family: 'movable-part-box', item: row.key });
+    const document = assembly(component('old', `${former}:1`, { ...saved, size: former }), component('new', `${row.size}:1`, saved));
+    const rows = buildBom(document, resolved({}));
+    expect(rows.map((item) => [item.name, item.quantity, item.componentIds, item.massEach])).toEqual([[row.size, 2, ['old', 'new'], row.dims.massG]]);
+    expect(document.components.map((item) => item.source.kind === 'standardPart' ? item.source.size : '')).toEqual([former, row.size]);
+  });
+
+  it('同じ族の部品が 1 個でも 6 個でも、行の確かめ(登録口の族の引き)の回数は同じで、結果の行は数量のほかは同じ', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(['movable-part-box']);
+    const row = PRODUCT_CATALOG_REGISTRY.loaded('movable-part-box')?.rows[0];
+    if (row === undefined) throw new Error('可動の部品の行が無い');
+    const saved = createStandardPartSource('catalogItem', row.size, { family: 'movable-part-box', item: row.key });
+    const counted = (count: number) => {
+      const spy = vi.spyOn(PRODUCT_CATALOG_REGISTRY, 'entry');
+      try {
+        const rows = buildBom(assembly(...Array.from({ length: count }, (_, index) => component(`c${index}`, `${row.size}:${index + 1}`, saved))), resolved({}));
+        return { calls: spy.mock.calls.length, rows };
+      } finally {
+        spy.mockRestore();
+      }
+    };
+    const one = counted(1), six = counted(6);
+    expect(six.calls).toBe(one.calls);
+    expect(six.rows.map((item) => ({ ...item, quantity: 0, massTotal: 0, componentIds: [], occurrencePaths: [] })))
+      .toEqual(one.rows.map((item) => ({ ...item, quantity: 0, massTotal: 0, componentIds: [], occurrencePaths: [] })));
+    expect(six.rows.map((item) => [item.quantity, item.componentIds.length])).toEqual([[6, 6]]);
   });
 });

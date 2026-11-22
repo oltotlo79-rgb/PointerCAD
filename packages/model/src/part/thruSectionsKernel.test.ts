@@ -19,6 +19,7 @@
  * と同じ(`OCCT_TIMEOUT_MS`)。期待値の出どころは各検査の注釈に書く。
  */
 
+import { plainTextValue } from '../failureText.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -156,7 +157,7 @@ function bodyOf(result: PartRecomputeResult, featureId: string): SolidBody {
   const body = result.bodies.find((entry) => entry.featureId === featureId);
   if (body === undefined) {
     throw new Error(
-      `立体 ${featureId} が返っていません(${result.errors.map((e) => e.message).join(' / ')})`,
+      `立体 ${featureId} が返っていません(${result.errors.map((e) => plainTextValue(e.text)).join(' / ')})`,
     );
   }
   return body;
@@ -495,8 +496,8 @@ describe('罫線面・ロフトの実カーネル往復(タスク25b)', () => {
       expect(result.bodies).toEqual([]);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].code).toBe('missingProfile');
-      // resolvePart.ts の THRU_SECTIONS_TOO_FEW_MESSAGE と同じ文言(片方だけ直すと理由が食い違う)。
-      expect(result.errors[0].message).toBe('つなぐ面を 2 つ選んでください。');
+      // resolvePart.ts の THRU_SECTIONS_TOO_FEW_TEXT と同じ鍵(片方だけ直すと理由が食い違う)。文は ui の文言の表が持つ。
+      expect(result.errors[0].text).toEqual({ key: 'partError.thruSections.tooFew', parameters: {} });
     },
     OCCT_TIMEOUT_MS,
   );

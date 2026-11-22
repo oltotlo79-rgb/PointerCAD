@@ -9,6 +9,7 @@ import { openToolMenu } from './toolMenus.js';
 import { fillFields, popover, popoverInputs } from './popoverFields.js';
 import { clickWorldPoint } from './homeViewProjection.js';
 import { answerDiscardConfirm } from './discardDialogSupport.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /**
  * P4「スケッチ拡張」の完了条件のうち、**作図面の上でかく新しい図形と、その編集**を
@@ -133,10 +134,7 @@ function propertyValue(page: Page, key: string): Locator {
 
 /** プロパティの式の欄を見出しで引く。見出しは完全一致で照合する。 */
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 /** プロパティの座標などの式の欄(並び順で引く)。線分なら 0〜2 が始点、3〜5 が終点。 */

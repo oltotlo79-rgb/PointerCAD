@@ -5,6 +5,7 @@
  * 待ち行列・反映の順序は製品と同じ経路を通す。古い値(形の変更直後・取消・新規・開く・復元・
  * Undo/Redo・世代交代・履歴の途中・同じ `part-1` の別文書)を出さないことを状況ごとに確かめる。
  */
+import { plainText } from '@pointercad/model';
 import {
   appendSolid,
   assignBodyAppearance,
@@ -400,8 +401,8 @@ describe('いまの値の判定(currentMathGeometry)', () => {
       ...resultFor(fake.calls[0].document),
       generation: 1,
       errors: [
-        { featureId: 'extrude-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' },
-        { featureId: 'extrude-1', code: 'kernelFailed', message: '二つ目の理由' },
+        { featureId: 'extrude-1', code: 'kernelFailed', text: plainText('ソリッドを作れませんでした') },
+        { featureId: 'extrude-1', code: 'kernelFailed', text: plainText('二つ目の理由') },
       ],
     });
     await tick();
@@ -431,7 +432,7 @@ describe('いまの値の判定(currentMathGeometry)', () => {
     fake.calls[0].settle({
       ...resultFor(fake.calls[0].document),
       generation: 1,
-      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
+      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', text: plainText('ソリッドを作れませんでした') }],
     });
     await tick();
     expect(useAppStore.getState().mathGeometryResult?.evaluated).toBe(false);
@@ -567,7 +568,7 @@ describe('いまの値になるまで待つ(waitForCurrentMathGeometry)', () => 
     fake.calls[2].settle({
       ...resultFor(fake.calls[2].document),
       generation: 3,
-      errors: [{ featureId: 'extrude-3', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
+      errors: [{ featureId: 'extrude-3', code: 'kernelFailed', text: plainText('ソリッドを作れませんでした') }],
     });
     await tick();
     await expect(waitForCurrentMathGeometry()).resolves.toEqual({ status: 'notEvaluated', message: 'ソリッドを作れませんでした' });

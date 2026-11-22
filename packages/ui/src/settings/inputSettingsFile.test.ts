@@ -26,6 +26,7 @@ const CUSTOM: DisplaySettings = {
   mouseButtonCommands: { back: 'history.undo' },
   radialCommands: { part: PART_CUSTOM },
   snapPauseModifier: 'ctrl',
+  selectionModifier: 'shift',
 };
 
 function decoded(bytes: Uint8Array): InputSettingsReading {
@@ -39,14 +40,14 @@ const refusalOf = (bytes: Uint8Array): string | null => {
 };
 
 describe('書き出しと読み込みの往復', () => {
-  it('適用済みの 5 つの欄を印と版つきの JSON に書き、読み戻すと同じ割り当てになる', () => {
+  it('適用済みの 6 つの欄を印と版つきの JSON に書き、読み戻すと同じ割り当てになる', () => {
     const bytes = encodeInputSettingsFile(CUSTOM);
     const text = new TextDecoder().decode(bytes);
     expect(text.startsWith('{')).toBe(true);
     expect(text.endsWith('}\n')).toBe(true);
     expect(JSON.parse(text)).toMatchObject({ ...FILE, inputAssignments: { version: 2, keys: { 'toolbar.sketch.line': [lineOnL] } } });
     const reading = decoded(bytes);
-    for (const section of ['view', 'keys', 'mouse', 'radial', 'snap'] as const) {
+    for (const section of ['view', 'keys', 'mouse', 'radial', 'snap', 'selection'] as const) {
       expect(reading.sections[section], section).toEqual({ state: 'read', dropped: 0 });
     }
     expect(reading.unknownFields).toBe(0);
@@ -57,6 +58,8 @@ describe('書き出しと読み込みの往復', () => {
     expect(reading.values.mouseButtonCommands).toEqual({ back: 'history.undo' });
     expect(reading.values.radialCommands).toEqual({ part: PART_CUSTOM });
     expect(reading.values.snapPauseModifier).toBe('ctrl');
+    expect(JSON.parse(text)).toMatchObject({ version: 1, selectionModifier: 'shift' });
+    expect(planInputSettingsImport(DEFAULT_DISPLAY_SETTINGS, reading).next.selectionModifier).toBe('shift');
   });
 });
 
@@ -102,6 +105,7 @@ describe('欄の中は 1 件ずつ確かめる', () => {
     expect(reading.sections).toEqual({
       view: { state: 'unreadable', dropped: 0 }, keys: { state: 'read', dropped: 1 },
       mouse: { state: 'read', dropped: 2 }, radial: { state: 'read', dropped: 1 }, snap: { state: 'unreadable', dropped: 0 },
+      selection: { state: 'absent', dropped: 0 },
     });
     expect(reading.values.viewControls).toBeUndefined();
     expect(reading.values.snapPauseModifier).toBeUndefined();
@@ -123,6 +127,24 @@ describe('欄の中は 1 件ずつ確かめる', () => {
 });
 
 describe('置き換えの計画と元に戻す', () => {
+  it.each([[{}, 'absent'], [{ selectionModifier: 'future' }, 'unreadable']] as const)(
+    '選択キーの欄が無い旧ファイルと知らない値は、吸着の幅と同じく今の値のまま (%j)', (field, state) => {
+      const reading = decoded(bytesOf({ ...FILE, snapRadius: 'large', ...field }));
+      expect(reading.values.selectionModifier).toBeUndefined();
+      expect(reading.sections.selection).toEqual({ state, dropped: 0 });
+      expect(reading.unknownFields).toBe(0);
+      const plan = planInputSettingsImport(CUSTOM, reading);
+      expect(plan.blocked).toBe(false);
+      expect(plan.next).toMatchObject({ selectionModifier: 'shift', snapPauseModifier: 'ctrl', snapRadius: 'large' });
+    },
+  );
+
+  it('選択キーだけの版1ファイルも読み込める', () => {
+    const reading = decoded(bytesOf({ ...FILE, selectionModifier: 'ctrl' }));
+    expect(reading.sections.selection).toEqual({ state: 'read', dropped: 0 });
+    expect(planInputSettingsImport(CUSTOM, reading).next.selectionModifier).toBe('ctrl');
+  });
+
   it('ファイルに無い欄は今の値のまま(同じ物)で、置き換えた欄だけ起動の時のお知らせを消す', () => {
     const current: DisplaySettings = { ...CUSTOM, viewControlsRecovered: 1, mouseButtonCommandsRecovered: 2 };
     const reading = decoded(bytesOf({ ...FILE, mouseButtonCommands: { forward: 'history.redo' } }));
@@ -134,6 +156,7 @@ describe('置き換えの計画と元に戻す', () => {
     expect(plan.next.shortcutAssignments).toBe(current.shortcutAssignments);
     expect(plan.next.radialCommands).toBe(current.radialCommands);
     expect(plan.next.snapPauseModifier).toBe('ctrl');
+    expect(plan.next.selectionModifier).toBe('shift');
     expect(plan.next.mouseButtonCommands).toEqual({ forward: 'history.redo' });
     expect(plan.next.mouseButtonCommandsRecovered).toBeUndefined();
     expect(plan.next.viewControlsRecovered).toBe(1);
@@ -151,15 +174,17 @@ describe('置き換えの計画と元に戻す', () => {
     expect(planInputSettingsImport({ ...DEFAULT_DISPLAY_SETTINGS, viewControls: WITH_NUMPAD_ORBIT }, mouseOnly).blocked).toBe(true);
   });
 
-  it('置き換えた 5 つの欄が変わっていない間だけ元に戻せ、戻すと置き換える前の同じ物になる', () => {
+  it('置き換えた 6 つの欄が変わっていない間だけ元に戻せ、戻すと置き換える前の同じ物になる', () => {
     const plan = planInputSettingsImport(CUSTOM, decoded(bytesOf({ ...FILE, mouseButtonCommands: { back: 'history.redo' } })));
     const written = inputSettingsValuesOf(plan.next);
     expect(canUndoInputSettings(plan.next, written)).toBe(true);
     expect(canUndoInputSettings({ ...plan.next, theme: 'light' }, written)).toBe(true);
     expect(canUndoInputSettings({ ...plan.next, radialCommands: {} }, written)).toBe(false);
     expect(canUndoInputSettings({ ...plan.next, snapPauseModifier: 'shift' }, written)).toBe(false);
+    expect(canUndoInputSettings({ ...plan.next, selectionModifier: 'ctrl' }, written)).toBe(false);
     const undone: DisplaySettings = { ...plan.next, ...inputSettingsValuesOf(CUSTOM) };
     expect(undone.mouseButtonCommands).toBe(CUSTOM.mouseButtonCommands);
+    expect(undone.selectionModifier).toBe('shift');
     expect(undone.viewControls).toBe(CUSTOM.viewControls);
   });
 });

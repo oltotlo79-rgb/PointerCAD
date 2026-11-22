@@ -1,11 +1,12 @@
 import { resolveSketch, type SketchResolveOptions } from '../resolveSketch.js';
+import type { FailureText } from '../../failureText.js';
 import type { ResolvedSketch, SketchDocument, SketchError } from '../types.js';
 import { constraintTargets, sketchConstraints } from './types.js';
 import { featureIdOfPointKey } from './variables.js';
 
 /** A failed constraint invalidates its connected component, never an unrelated sketch component. */
-export function expandInvalidConstraintInputs(document: SketchDocument, input: ReadonlyMap<string, string> | undefined):
-  ReadonlyMap<string, string> | undefined {
+export function expandInvalidConstraintInputs(document: SketchDocument, input: ReadonlyMap<string, FailureText> | undefined):
+  ReadonlyMap<string, FailureText> | undefined {
   if (input === undefined || input.size === 0) return input;
   const connected = new Map<string, Set<string>>();
   const link = (a: string, b: string) => {
@@ -53,7 +54,7 @@ export function resolveInvalidConstraintInputs(document: SketchDocument, options
     const discovered = new Map(expanded);
     for (const error of base.errors) {
       if (!originalErrors.has(error.featureId)) originalErrors.set(error.featureId, error);
-      if (!discovered.has(error.featureId)) discovered.set(error.featureId, error.message);
+      if (!discovered.has(error.featureId)) discovered.set(error.featureId, error.text);
     }
     if (discovered.size === expanded?.size) {
       return { options: checked, base: { ...base,

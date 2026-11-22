@@ -27,6 +27,8 @@
  * ポインタの捕捉とイベントの登録・解除・ストアの購読は `sketchInteractionResources.ts` が持つ。
  */
 
+import { addsToSelection, LOCAL_SELECTION_MODIFIERS } from '../settings/selectionModifierSetting.js';
+import { useAppStore } from '../store/useAppStore.js';
 import { isPickEditTool, isReferenceTool, SOLID_TOOL_STEPS, type AppearanceToolId, type MathGeometryToolId,
   type MeasureToolId, type NumericInputToolId, type SolidToolId } from '../sketch/numericInput.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
@@ -61,8 +63,8 @@ export function isSolidTool(tool: NumericInputToolId): tool is SolidToolId {
 }
 
 /** Add/remove selection must not start a point drag. */
-export function addsToSketchSelection(event: Pick<PointerEvent, 'shiftKey' | 'ctrlKey'>): boolean {
-  return event.shiftKey || event.ctrlKey;
+export function addsToSketchSelection(event: Pick<PointerEvent, 'shiftKey' | 'ctrlKey' | 'metaKey'>): boolean {
+  return addsToSelection(useAppStore.getState().displaySettings.selectionModifier, event, LOCAL_SELECTION_MODIFIERS.partViewport);
 }
 
 /**

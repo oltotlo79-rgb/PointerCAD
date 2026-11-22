@@ -381,6 +381,21 @@ describe('選ぶ窓の機械要素', () => {
     expect(cells).toEqual([t('catalog.frame.kind.tSlotSeries'), '溝幅 6 20×20', '1000', '1', '1000', '490 g']);
   });
 
+  it('コネクタの族は、選ぶ窓に出さない行(listed: false)を呼びの欄に出さず、材質の欄の材質も出す行だけから作る', async () => {
+    await loadAll();
+    let nodes = change(select(render(), 'assembly.guide.standardCategory'), ALUMINUM_FRAME_PICKER_CATEGORY);
+    nodes = change(select(nodes, 'catalog.frame.kindGuide'), 'connector-box');
+    const shown = PRODUCT_CATALOG_REGISTRY.loaded('connector-box')?.rows.filter((row) => row.listed !== false) ?? [];
+    expect(PRODUCT_CATALOG_REGISTRY.loaded('connector-box')?.rows.length).toBeGreaterThan(shown.length);
+    const materials = options(select(nodes, 'catalog.mechanical.materialGuide')).map((item) => item.props.value);
+    expect(materials).toEqual([...new Set(shown.map((row) => row.materialLabel))]);
+    for (const material of materials) {
+      nodes = change(select(nodes, 'catalog.mechanical.materialGuide'), String(material));
+      expect(options(select(nodes, 'catalog.mechanical.sizeGuide')).map((item) => item.props.value), String(material))
+        .toEqual(shown.filter((row) => row.materialLabel === material).map((row) => row.key));
+    }
+  });
+
   it('アルミフレームの汎用の部品(直角のブラケット・T 溝用のナット)は欄で作って置け、部品に材質が付き、作れない組は置かない', async () => {
     await loadAll();
     let nodes = change(select(mechanical(), 'assembly.guide.standardCategory'), ALUMINUM_FRAME_PICKER_CATEGORY);

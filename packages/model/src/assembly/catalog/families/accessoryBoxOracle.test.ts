@@ -42,17 +42,20 @@ function directions(text: string | undefined): ReadonlyMap<string, readonly numb
 
 const sorted = (values: readonly number[]): readonly number[] => [...values].sort((a, b) => a - b);
 // 密度の表の金属の語に、密度の無い材料の語(樹脂・ゴム)を足す(この語を含む行は、部位ごとに材料の違う行と同じく密度を持たない)。
-// JIS の鋼の記号(SPHC など。ローラのコンベヤのフックの記入)は鋼として読む。
+// JIS の鋼の記号(SPHC など。ローラのコンベヤのフックの記入と、折りたたみの板の本体の SAPH)は鋼として読む。
 const MATERIAL_WORDS: readonly (readonly [string, string])[] = [['アルミ', 'aluminum'], ['ステンレス', 'stainless'], ['鉄', 'steel'], ['鋼', 'steel'],
-  ['SPHC', 'steel'], ['SPCC', 'steel'], ['SS400', 'steel'], ['SECC', 'steel'],
+  ['SPHC', 'steel'], ['SPCC', 'steel'], ['SS400', 'steel'], ['SECC', 'steel'], ['SAPH', 'steel'],
   ['樹脂', 'resin'], ['PA', 'resin'], ['PP', 'resin'], ['ナイロン', 'resin'], ['ABS', 'resin'], ['ゴム', 'rubber']];
+// 英字だけの樹脂の語(PC。ポリカーボネート)は、ほかの英字の語の中(SPCC など)に出るので、前後が英字でない時だけ読む(行の表の道具と同じ)。
+const TOKEN_WORDS: readonly (readonly [RegExp, string])[] = [[/(?<![A-Za-z])PC(?![A-Za-z])/u, 'resin']];
 const LABELS: Readonly<Record<string, string>> = { aluminum: 'アルミ', stainless: 'ステンレス', steel: '鉄', resin: '樹脂', rubber: 'ゴム' };
 
 function materialsOf(text: string | undefined): readonly string[] {
   const value = text ?? '';
   const first = new Map<string, number>();
-  for (const [word, material] of MATERIAL_WORDS) {
-    const position = value.indexOf(word);
+  const found = [...MATERIAL_WORDS.map(([word, material]) => [value.indexOf(word), material] as const),
+    ...TOKEN_WORDS.map(([pattern, material]) => [pattern.exec(value)?.index ?? -1, material] as const)];
+  for (const [position, material] of found) {
     if (position >= 0) first.set(material, Math.min(position, first.get(material) ?? position));
   }
   return [...first.entries()].sort((a, b) => a[1] - b[1]).map(([material]) => material);

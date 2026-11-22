@@ -1,4 +1,5 @@
 import { exceedsMagnitude } from '../occt/tolerances.js';
+import { OCCT_LOAD_ERROR_NAME } from '../occtLoadError.js';
 import { createHiddenLeaseResources } from './kernelApiResources.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { createRuntimePhaseJournal, type RuntimePhaseJournalSnapshot } from './runtimePhaseJournal.js';
@@ -125,18 +126,10 @@ export interface ShapeAvailability {
   readonly missingKeys: readonly string[];
 }
 
-/**
- * OCCT の読み込み(取得・検証・compile)の失敗に付ける名前(FR-504、NFR-RE-1)。
- * Comlink は Error の name・message を運ぶので、主スレッドの recomputePart(model の recomputePart.ts に
- * 同じ文字の定数がある)はこの名前で読み込みの失敗だけを見分けて同じ世代を 1 回だけ頼み直す。
- * 計算そのものの例外にはこの名前を付けない。kernel の公開の名前は増やさない。
- */
-const OCCT_LOAD_ERROR_NAME = 'OcctLoadError';
-
 /** 読み込みの失敗を、元の例外の種類と文を残したまま OCCT_LOAD_ERROR_NAME の例外にして投げ直す。 */
 function markOcctLoadFailure(cause: unknown): never {
   const detail = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
-  const error = new Error(`カーネル(OCCT)を読み込めませんでした: ${detail}`, { cause });
+  const error = new Error(`形の計算の機能を読み込めませんでした: ${detail}`, { cause });
   error.name = OCCT_LOAD_ERROR_NAME;
   throw error;
 }

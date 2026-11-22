@@ -16,6 +16,8 @@ import {
   type SolidLabelKey,
 } from '@pointercad/model';
 
+import { addsToSelection, LOCAL_SELECTION_MODIFIERS } from '../settings/selectionModifierSetting.js';
+import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import type { SketchTreeKind } from '../sketch/featureSummary.js';
 import type { SketchTreeGroup, TreeRow, TreeSection, TreeSectionKey } from '../solid/solidSummary.js';
@@ -345,8 +347,12 @@ function treeRowClassName(context: FeatureTreeRowContext, row: TreeRow, selected
     (row.suppressed || row.hidden ? ' pcad-tree__row--suppressed' : '');
 }
 
+function addsToRowSelection(event: Pick<MouseEvent, 'shiftKey' | 'ctrlKey' | 'metaKey'>): boolean {
+  return addsToSelection(useAppStore.getState().displaySettings.selectionModifier, event, LOCAL_SELECTION_MODIFIERS.featureTree);
+}
+
 /**
- * 履歴の行 1 つ(FR-501)。行をクリックで選び、Shift/Ctrl+クリックで足す(FR-106)。指を乗せると
+ * 履歴の行 1 つ(FR-501)。行をクリックで選び、修飾キー付きクリックで足し外しする(FR-106)。指を乗せると
  * ビューポート側も光る。計算できていない行には赤い印を出し、理由をホバーで見せる(FR-504)。
  * 帯に出る行(基準ジオメトリと立体)だけがタイムラインのつまみを持ち、掴んで並べ替えられる(FR-507)。
  */
@@ -379,7 +385,7 @@ export function renderFeatureTreeRow(
            * 初めて並べ替えになる(押しただけなら行の選択)。
            */
           input.resetDragClick();
-          if (stop === undefined || event.button !== 0 || event.shiftKey || event.ctrlKey || input.renamingId === row.id) {
+          if (stop === undefined || event.button !== 0 || addsToRowSelection(event) || input.renamingId === row.id) {
             return;
           }
           if (
@@ -431,7 +437,7 @@ export function renderFeatureTreeRow(
               if (input.consumeDragClick()) {
                 return;
               }
-              selectTreeRow(row.id, sketchId, event.shiftKey || event.ctrlKey);
+              selectTreeRow(row.id, sketchId, addsToRowSelection(event));
             }}
             onKeyDown={(event) => {
               if (event.key !== 'Delete') {

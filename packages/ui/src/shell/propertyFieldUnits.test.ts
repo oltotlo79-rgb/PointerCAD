@@ -10,6 +10,7 @@
  * `geometryDerived` の印を付けた形)を製品と同じ `applyRecompute` の経路で反映する。
  * `useFieldUnits` はサーバー描画で呼び、ブラウザーの購読と同じ選択関数を通す。
  */
+import { plainText } from '@pointercad/model';
 import React, { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expressionValueFromNumber, type ExpressionResult, type ExpressionValue } from '@pointercad/expression';
@@ -286,7 +287,7 @@ describe('旧式の欄の値の古さ対策(GR-20)', () => {
     failed.settle({
       ...resultFor(failed.document),
       generation: failed.options.generation ?? 0,
-      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }],
+      errors: [{ featureId: 'extrude-1', code: 'kernelFailed', text: plainText('ソリッドを作れませんでした') }],
     });
     await tick();
     expect(statusNow()).toBe('notEvaluated');

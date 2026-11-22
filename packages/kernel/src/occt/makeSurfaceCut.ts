@@ -28,23 +28,10 @@ export type SurfaceCutReason = 'non-finite-input' | 'invalid-blade' | 'non-plana
   | 'self-intersection' | 'no-intersection' | 'touch-only' | 'incomplete-cut' | 'ambiguous-side'
   | 'invalid-target' | 'boolean-failed' | 'volume-mismatch';
 
-const MESSAGES: Readonly<Record<SurfaceCutReason, string>> = {
-  'non-finite-input': '切断の座標・方向・範囲には有限な数を指定してください。',
-  'invalid-blade': '切断には向きのそろった開いた曲線または面が必要です。',
-  'non-planar-profile': '切断の曲線が指定したスケッチ平面に載っていません。',
-  'self-intersection': '切断の曲線または面が自分自身と交わっています。',
-  'no-intersection': '切断面が対象に届いていません。位置と範囲を見直してください。',
-  'touch-only': '切断面が対象に接するだけで、ソリッドを分けられません。',
-  'incomplete-cut': '切断面の端が対象の中で止まるため、ソリッドを完全に分けられません。',
-  'ambiguous-side': '切断面に対する断片の側を一意に決められません。',
-  'invalid-target': '切断する対象には有効な正の体積のソリッドが必要です。',
-  'boolean-failed': '面による切断を計算できませんでした。形と範囲を見直してください。',
-  'volume-mismatch': '切断前後の体積が必要な精度で一致しませんでした。',
-};
-
+/** 面による切断の断り。message は符号の文字で、利用者へ見せる文は画面の側(ui の solid/surfaceBodyFailureText.ts)が符号ごとに持つ(0b-2)。 */
 export class SurfaceCutError extends Error {
   constructor(readonly code: SurfaceCutReason, options?: ErrorOptions) {
-    super(MESSAGES[code], options);
+    super(code, options);
     this.name = 'SurfaceCutError';
   }
 }

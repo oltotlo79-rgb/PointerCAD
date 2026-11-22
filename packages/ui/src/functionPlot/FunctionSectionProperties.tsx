@@ -16,7 +16,7 @@ export function FunctionSectionProperties({ featureId }: { readonly featureId: s
   return <section className="pcad-section" data-help-topic="function-surface">
     <h3 className="pcad-section__title">{t('functionSection.coordinate')}</h3>
     <p>{section.parent.name}: {section.axis} = {waiting ? t('mathGeometry.status.pending') : `${section.coordinate.value} mm`}</p>
-    <button title={t('controlGuide.button.sectionEdit')} type="button" onClick={() => setOpen(true)}>{t('functionSection.edit')}</button>
+    <button className="pcad-button" title={t('controlGuide.button.sectionEdit')} type="button" onClick={() => setOpen(true)}>{t('functionSection.edit')}</button>
     {open ? <FunctionSectionDialog parentId={section.parent.id} edit={address} onClose={() => setOpen(false)} /> : null}
   </section>;
 }

@@ -5,6 +5,7 @@ import { disableFilePickers } from './filePickers.js';
 import { openToolMenu, toolMenuPanel } from './toolMenus.js';
 import { fillFields, popover, popoverInputs } from './popoverFields.js';
 import { worldToCanvas, type WorldPoint } from './homeViewProjection.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /**
  * 基本形状 5 種(FR-429)・面をつなぐ立体(FR-430)・測る(FR-1101、FR-1102)を、
@@ -259,10 +260,7 @@ function computedValue(page: Page, key: string): Locator {
 
 /** プロパティの式の欄(見出しの文言で選ぶ)。 */
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 /**

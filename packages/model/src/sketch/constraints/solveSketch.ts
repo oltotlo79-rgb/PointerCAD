@@ -21,6 +21,7 @@
  */
 
 import { withinMagnitude } from '../../numericTolerance.js';
+import { plainText } from '../../failureText.js';
 import {
   baseWorkPlane,
   isFreeWorkPlaneId,
@@ -281,7 +282,7 @@ function sketchError(
   code: SketchError['code'],
   message: string,
 ): SketchError {
-  return { featureId: documentId, code, message };
+  return { featureId: documentId, code, text: plainText(message) };
 }
 
 /**
@@ -319,7 +320,7 @@ function constraintErrors(
     errors.push({
       featureId: diagnosis.conflictDetails[0].constraintId,
       code: 'constraintConflict',
-      message: sentences.join(''),
+      text: plainText(sentences.join('')),
     });
   } else if (converged === false) {
     errors.push(sketchError(documentId, 'constraintUnsolved', CONSTRAINT_UNSOLVED_MESSAGE));
@@ -328,7 +329,7 @@ function constraintErrors(
     errors.push({
       featureId: skipped.constraintId,
       code: 'constraintUnsolved',
-      message: skipped.message,
+      text: plainText(skipped.message),
     });
   }
   return errors;
@@ -369,8 +370,8 @@ function prepareConstrainedSketch(
   const initial = resolveInvalidConstraintInputs(document, options);
   const checkedOptions = initial.options, invalidInputs = checkedOptions.invalidInputs;
   const constraintInputErrors: readonly SketchError[] = sketchConstraints(document).flatMap(constraint => {
-    const message = invalidInputs?.get(constraint.id);
-    return message === undefined ? [] : [{ featureId: constraint.id, code: 'invalidValue' as const, message }];
+    const text = invalidInputs?.get(constraint.id);
+    return text === undefined ? [] : [{ featureId: constraint.id, code: 'invalidValue' as const, text }];
   });
   const resolveChecked = (inputOptions: SketchResolveOptions): ResolvedSketch => {
     const resolved = resolveSketch(document, inputOptions);

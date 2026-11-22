@@ -285,5 +285,17 @@
   "solidAnalysis.material.youngDifferent": "現在のヤング率欄は掲載値と異なります。手入力の値・式の根拠は、この出典とは別に確認してください。",
   "solidAnalysis.material.youngSource": "ヤング率の出典",
   "solidAnalysis.material.standardUnspecified": "規格番号の記載なし",
-  "solidAnalysis.material.tableSummary": "入力する値・入れない値と出典"
+  "solidAnalysis.material.tableSummary": "入力する値・入れない値と出典",
+  "solidAnalysis.report.title": "ソリッドの静解析報告書",
+  "solidAnalysis.report.units": "単位は長さ mm、力 N、応力・弾性率 MPa、エネルギー N·mm。ベクトルの成分順は X、Y、Z。",
+  "solidAnalysis.report.conditions": "解析の条件",
+  "solidAnalysis.report.fixedFaces": "完全固定の面（三方向を変位ゼロで固定）",
+  "solidAnalysis.report.supportFace": "方向と変位を指定して固定した面 {face}（X・Y・Z の固定と指定変位 mm）",
+  "solidAnalysis.report.loadedFaces": "荷重面",
+  "solidAnalysis.report.mesh": "メッシュの節点数・要素数",
+  "solidAnalysis.report.peakDisplacement": "最大変位量と節点の座標（mm）",
+  "solidAnalysis.report.peakStress": "最大相当応力 (von Mises) と要素の重心の座標（mm）",
+  "solidAnalysis.report.figure": "等角投影　変形前の境界の三角形を相当応力で 10 段に塗り分け（最小 {min} MPa、最大 {max} MPa）。右の帯は下が最小、上が最大",
+  "solidAnalysis.report.figureDropped": "印刷で見えない小さな三角形 {count} 個は描いていません",
+  "solidAnalysis.guide.reportUnavailable": "保存した入力のまま計算し終えた静解析の結果がある時に書き出せます。"
 }

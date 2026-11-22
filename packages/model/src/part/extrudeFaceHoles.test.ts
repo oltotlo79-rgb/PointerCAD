@@ -1,3 +1,4 @@
+import { plainTextValue } from '../failureText.js';
 import { describe, expect, it } from 'vitest';
 import { expressionValueFromNumber as num } from '@pointercad/expression';
 import { absoluteCoordinate } from '../sketch/createSketchDocument.js';
@@ -58,9 +59,14 @@ describe('穴つきの面の押し出し計画', () => {
         area: 2400, position: [30, 20, 8], axis: [0, 0, 1], radius: null } } };
     const result = resolvePart({ ...document, solids: [extrude, emboss] });
     expect(result.steps).toHaveLength(1);
-    expect(result.errors.find(error => error.featureId === 'emboss')?.message).toContain('穴つき');
+    expect(plainTextValue(result.errors.find(error => error.featureId === 'emboss')?.text)).toContain('穴つき');
   });
 
+  /** 穴つきの面を断る族の断りの鍵(0b-3b・縫い合わせ・ロフト)。 */
+  const MOVED_HOLE_KEYS: Readonly<Partial<Record<SolidFeature['kind'], string>>> = {
+    extrude: 'partError.extrude.thinWithHoles', revolve: 'partError.revolve.withHoles', sew: 'partError.sew.withHoles',
+    loft: 'partError.thruSections.withHoles',
+  };
   const unsupported: readonly SolidFeature[] = [
     { ...extrude, thickness: num(1) },
     { id: 'revolve', name: 'revolve', kind: 'revolve', suppressed: false, profile,
@@ -82,12 +88,13 @@ describe('穴つきの面の押し出し計画', () => {
     expect(toSolidStepRequest(plain).step).not.toHaveProperty('holes');
     const walled = resolvePart(documentWith(5, { ...sweep, wallThickness: num(1) }));
     expect(walled.steps).toEqual([]);
-    expect(walled.errors.find(error => error.featureId === 'sweep')?.message).toBe('穴つきの面を断面にする時は、肉厚を使えません。');
+    expect(plainTextValue(walled.errors.find(error => error.featureId === 'sweep')?.text)).toBe('穴つきの面を断面にする時は、肉厚を使えません。');
   });
 
   it.each(unsupported)('$kindは穴つきの面を理由つきで断る', feature => {
     const result = resolvePart(documentWith(5, feature));
     expect(result.steps).toEqual([]);
-    expect(result.errors.find(error => error.featureId === feature.id)?.message).toContain('穴つき');
+    expect(result.errors.find(error => error.featureId === feature.id)?.text)
+      .toEqual({ key: MOVED_HOLE_KEYS[feature.kind], parameters: {} });
   });
 });

@@ -23,6 +23,7 @@ import { waitForStartupReady } from './startupHealth.js';
 import type { CutPreview } from '../../packages/ui/src/viewport/createSolidLayer.js';
 
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute, waitForSettledRecompute, type RecomputeToken } from './recompute.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /**
  * 切る面の材料(EX-04 W1)を、実際のブラウザで通しで確かめる。**ヘッドレスで実行する。**
@@ -109,10 +110,7 @@ function popoverInputs(page: Page): Locator {
 
 /** ポップアップの欄を見出しで引く(並びに頼らない)。 */
 function popoverField(page: Page, label: string): Locator {
-  return popover(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, popover(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 function popoverToggle(page: Page, label: string): Locator {

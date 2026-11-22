@@ -1,6 +1,7 @@
 /** Persistent direction choices and bounded Worker endpoints; no symbolic evaluation in the editor. */
 import {MathInputProblem} from './mathInputContract.js';
 import {functionWorkNumber,functionWorkPoint,functionWorkRecord} from './functionWorkData.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 
 export type FunctionPointDirectionKind='tangent'|'normal'|'tangent-u'|'tangent-v';
 export interface FunctionDirectionOptions {
@@ -29,6 +30,6 @@ export function decodeFunctionDirectionEndpoint(value:unknown,origin:FunctionDir
   if(point.some((number,axis)=>minimum[axis]>number||maximum[axis]<number
     ||maximum[axis]-minimum[axis]>tolerance))return invalid();
   const distance=Math.hypot(...point.map((number,axis)=>number-origin.point[axis]));
-  if(!Number.isFinite(distance)||Math.abs(distance-options.length)>4*tolerance+Number.EPSILON*8*Math.max(distance,options.length))return invalid();
+  if(!Number.isFinite(distance)||exceedsMagnitude(distance - options.length, 4 * tolerance + Number.EPSILON * 8 * Math.max(distance, options.length)))return invalid();
   return Object.freeze({point,minimum,maximum});
 }

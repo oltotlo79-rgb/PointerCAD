@@ -6,6 +6,7 @@
  * 作業平面1 → 押し出し1 → 穴1 → R面取り1 → 押し出し2(帯は 5 件、通し 0〜4)。
  */
 
+import { plainText } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   createEmptyPartDocument,
@@ -268,7 +269,7 @@ describe('タイムラインのつまみ(FR-507、FR-506)', () => {
         : { ...common, kind, face, hinge: subShapeRef(HOLE.id, 'edge'), angle: ev(90) };
       const part: PartDocument = { ...fixture(), solids: [extrude('extrude-1', 'Base', 'face-a'),
         HOLE, extrude('tool-1', 'Tool', 'face-b'), edit] };
-      const errors = [{ featureId: edit.id, code: 'missingBody' as const, message: 'Edit failed' }];
+      const errors = [{ featureId: edit.id, code: 'missingBody' as const, text: plainText('Edit failed') }];
       for (const index of [null, 4, 3, 2, 1, 0] as const) {
         const expected = index === 0 || index === 1 ? [] : ['extrude-1'];
         expect(consumedIdsUpToTimeline(part, index, errors)).toEqual(new Set(expected));

@@ -12,6 +12,7 @@ import { assemblyTargetId } from '../assembly/mateCommands.js';
 import type { CommandId } from '../commands/commandDefinitions.js';
 import { isCompositionKey } from '../commands/compositionKey.js';
 import { resolveAssignedShortcut, type ShortcutAssignments } from '../commands/shortcutAssignments.js';
+import { addsToSelection, LOCAL_SELECTION_MODIFIERS } from '../settings/selectionModifierSetting.js';
 import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 import type { AppState } from '../store/appState.js';
 import { activeComponentPick, componentPickAccepts } from '../store/componentPickActions.js';
@@ -220,12 +221,12 @@ function bodyPickActive(state: MateInputState): boolean {
 }
 
 /**
- * 拾った部品を、部品を押して欄へ入れる頼みへ渡すか、Shift なら選択へ足し引きする。どちらかを行ったら true(false の時は、呼び手が
+ * 拾った部品を、部品を押して欄へ入れる頼みへ渡すか、修飾キーに従って選択へ足し引きする。どちらかを行ったら true(false の時は、呼び手が
  * その部品を選び、押したままならドラッグを始める)。頼みの間は選択もドラッグもしない(候補でない部品は頼みが断りの印を立てる)。
  */
-function answerPickOrToggleSelection(state: MateInputState, componentId: string, shift: boolean): boolean {
+function answerPickOrToggleSelection(state: MateInputState, componentId: string, additive: boolean): boolean {
   if (componentPickAccepts(state) === 'component') state.answerComponentPick(componentId);
-  else if (shift) state.toggleSelection(componentId);
+  else if (additive) state.toggleSelection(componentId);
   else return false;
   return true;
 }
@@ -576,7 +577,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     return 'refusal' in target ? null : target.path;
   };
   // adopted: 採用する保留の押下。ドラッグを始める時、その一時の capture をこのドラッグへ引き継ぐ。
-  const applyPointerDown = (event: PointerEvent, observation?: AssemblyMateInputObservation, allowDrag = true, adopted?: PendingMateInput): void => {
+  const applyPointerDown = (event: PointerEvent, additive: boolean, observation?: AssemblyMateInputObservation, allowDrag = true, adopted?: PendingMateInput): void => {
     const childBead = idleWeldChildBeadPath(event);
     if (childBead !== null) {
       // 確定はしない。定義の範囲と影響する配置の数を窓で確かめてから commitChildFilletWeldEdit が確定する。
@@ -589,8 +590,8 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const state = useAppStore.getState();
     if (typeof target === 'string') {
       reportMateInput(observation, dragInput);
-      // 部品を押して欄へ入れる頼みの間はその頼みへ渡し、Shift は選択の足し引き。どちらでもなければ選んで、ドラッグを始められる。
-      if (!answerPickOrToggleSelection(state, target, event.shiftKey)) {
+      // 部品を押して欄へ入れる頼みの間はその頼みへ渡し、設定した修飾キーは選択の足し引き。どちらでもなければ選んで、ドラッグを始められる。
+      if (!answerPickOrToggleSelection(state, target, additive)) {
         state.setSelection([target]);
         if (!allowDrag || captured !== null || dragInput === undefined || scene.screenToPlanePoint === undefined
           || !Number.isInteger(event.pointerId)) return;
@@ -634,9 +635,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     } else if (target !== null) {
       // 実らせんの組は締結の穴の枠だけのもの。合致・溶接へは渡さない。フレームの辺を選ぶ途中は、辺の一覧のチェックを入れ替える。
       // 3D の画面で面・辺を受ける頼み(寸法で動かすの向き)の間は、その頼みへ渡す(合致・締結・溶接・フレームの辺へは渡さない)。
-      // 締結の 4 面の後に Shift で押した穴は、2 組目からの穴として足し外しする(J-02 P4)。
+      // 締結の 4 面の後に選択の修飾キーで押した穴は、2 組目からの穴として足し外しする(J-02 P4)。
       const accepted = answerTargetPick(state, target) ?? (state.frameEdgePick !== null ? target.kind !== 'modeledThreadGroup' && state.toggleFrameEdgePick(assemblyTargetId(target), target.componentId)
-        : state.assemblyFrameSlotDraft !== null ? target.kind !== 'modeledThreadGroup' && state.pickFrameSlotFace(target, event.shiftKey) : state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target, event.shiftKey)
+        : state.assemblyFrameSlotDraft !== null ? target.kind !== 'modeledThreadGroup' && state.pickFrameSlotFace(target, additive) : state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target, additive)
         : target.kind === 'modeledThreadGroup' ? false
           : state.assemblyFilletWeldDraft !== null ? state.pickFilletWeldTarget(target) : addMateTarget(target));
       if (observation !== undefined) observation.addAccepted = accepted;
@@ -671,6 +672,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     if (frameStrokePointerDown(state, scene, pointer(event), event.shiftKey, observation, dragInput)
       || placementPointPointerDown(state, scene, pointer(event), observation, dragInput)) return;
     const bodySelection = bodyPickActive(state);
+    const additive = addsToSelection(state.displaySettings.selectionModifier, event, LOCAL_SELECTION_MODIFIERS.assemblyViewport);
     // 部品の選択も同じ公開形状の所有証明が戻るまで保留し、失効した表示で空選択にしない。
     if (dragInput?.prepareMateInput !== undefined && state.assemblyView !== null
       && state.assemblyPlacement === null && !state.isComputing
@@ -679,9 +681,8 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       // 保留した入力を採用してよいか。外れた時は最初に外れた比較の名前を返す(順と内容は従来の valid と同じ)。
       const stale = (): string | null => {
         const current = useAppStore.getState();
-        const now = canvas.getBoundingClientRect();
         if (detached) return 'detached';
-        return staleMateDocumentField(state, current) ?? staleMateInputField(state, current, rect, now);
+        return staleMateDocumentField(state, current) ?? staleMateInputField(state, current, rect, canvas.getBoundingClientRect());
       };
       let waiting: Promise<boolean> | null;
       try { waiting = dragInput.prepareMateInput(); } catch {
@@ -691,7 +692,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       if (waiting !== null) {
         let finished = false;
         // 部品をドラッグできる押下だけ、待つ間の一時の capture を取る(キャンバスの外で離した・取り消した pointer も受ける)。
-        const holdable = bodySelection && !event.shiftKey && captured === null && scene.screenToPlanePoint !== undefined && dragCapableAssembly(state);
+        const holdable = bodySelection && !additive && captured === null && scene.screenToPlanePoint !== undefined && dragCapableAssembly(state);
         const input: PendingMateInput = { stale, pointerId: event.pointerId, bodyPoint: bodySelection ? pointer(event) : null,
           released: false, capture: holdable ? holdPendingCapture(canvas, event.pointerId) : 'none', latest: null,
           finish: (ready: boolean, cause?: string): void => {
@@ -713,7 +714,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
           // 解放済み(同じ pointer の pointerup 後)・一時の capture が無い部品入力は選択だけを行い、後からドラッグを始めない。
           // 押したままなら元の押下点から部品のドラッグを始め、待つ間に動いた最新の位置を最初の移動として渡す。
           try {
-            applyPointerDown(event, observation, !bodySelection || (!input.released && input.capture === 'held'), input);
+            applyPointerDown(event, additive, observation, !bodySelection || (!input.released && input.capture === 'held'), input);
           } finally {
             // ドラッグへ引き継がなかった時は、採用の途中で例外が出た時も一時の capture を返す(返す時の例外は握るので元の例外は隠さない)。
             // 引き継いだ capture は applyPointerDown が 'none' に移した物なので、ここでは返さない(ドラッグの releaseInput だけが返す)。
@@ -730,7 +731,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
         return;
       }
     }
-    applyPointerDown(event, observation);
+    applyPointerDown(event, additive, observation);
   };
   // 失効で片付けた表示の hover は、取り直しの後に同じ点で 1 回だけ拾い直す(拾い直しは頼み直さない)。
   const hoverRepick = createHoverRepick(canvas, dragInput?.prepareHoverInput, (event) => {

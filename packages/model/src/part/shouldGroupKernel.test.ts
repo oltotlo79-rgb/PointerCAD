@@ -17,6 +17,7 @@
  * 期待値の出どころは各検査の注釈に書く。
  */
 
+import { plainTextValue } from '../failureText.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -115,7 +116,7 @@ function bodyOf(result: PartRecomputeResult, featureId: string): SolidBody {
   const body = result.bodies.find((entry) => entry.featureId === featureId);
   if (body === undefined) {
     throw new Error(
-      `立体 ${featureId} が返っていません(${result.errors.map((e) => e.message).join(' / ')})`,
+      `立体 ${featureId} が返っていません(${result.errors.map((e) => plainTextValue(e.text)).join(' / ')})`,
     );
   }
   return body;
@@ -341,7 +342,7 @@ describe('リブ(FR-420)の実カーネル往復。42c でカーネルの段に 
       expect(result.errors[0].featureId).toBe('rib-1');
       expect(result.errors[0].code).toBe('kernelFailed');
       // makeRib.ts の NOT_TOUCHING_MESSAGE と1字も違えずに揃える(片方だけ直すと理由が食い違う)。
-      expect(result.errors[0].message).toBe('リブが材料に届きません。');
+      expect(plainTextValue(result.errors[0].text)).toBe('リブが材料に届きません。');
     },
     OCCT_TIMEOUT_MS,
   );

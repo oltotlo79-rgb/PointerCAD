@@ -14,6 +14,7 @@ import type { ExchangeKernel } from '../file/exchangeFile.js';
 import { referencedPartAttachments } from '../file/referencedPartAttachments.js';
 import type { PartMeasurer } from '../solid/measureCommands.js';
 import type { PartInspector } from '../solid/printCheckCommands.js';
+import { localizedPartErrors } from '../solid/surfaceBodyFailureText.js';
 import type { AppState } from './appState.js';
 import {
   accountingSnapshot,
@@ -306,7 +307,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
 
   function publishFailure(job: StagedJob, failure: StagedSolidFailure,
     errors: StagedSolidState['errors'], errorMessage: string | null): void {
-    publish(job, Object.freeze({ ...job.state, status: 'failed', result: null, accounting: null, errors, errorMessage, failure }));
+    publish(job, Object.freeze({ ...job.state, status: 'failed', result: null, accounting: null, errors: localizedPartErrors(errors), errorMessage, failure }));
   }
 
   /** 段階計算の 1 回分。世代は順番の持ち主が振り、所有が変われば段の間で打ち切る。 */

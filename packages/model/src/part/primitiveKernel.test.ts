@@ -19,6 +19,7 @@
  * 期待値の導出は下の各検査の注釈に書く(すべて閉じた式で手計算できる)。
  */
 
+import { plainTextValue } from '../failureText.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -104,7 +105,7 @@ function partWith(...solids: readonly SolidFeature[]): PartDocument {
 function bodyOf(result: PartRecomputeResult, featureId: string): SolidBody {
   const body = result.bodies.find((entry) => entry.featureId === featureId);
   if (body === undefined) {
-    throw new Error(`立体 ${featureId} が返っていません(${result.errors.map((e) => e.message).join(' / ')})`);
+    throw new Error(`立体 ${featureId} が返っていません(${result.errors.map((e) => plainTextValue(e.text)).join(' / ')})`);
   }
   return body;
 }
@@ -404,7 +405,7 @@ describe('基本形状を部品文書の経路で作る(FR-429、タスク16)', 
       // カーネルが断りに付けた符号(`KernelStepError` の `missingSubShape`)から、`recomputePart` が理由の種類を決める
       // (`solidKernelFailed`)。基本形状の頂点の断りにも符号が付いて届く事を、この検査で固定する。
       expect(result.errors[0].code).toBe('missingSubShape');
-      expect(result.errors[0].message).toContain('中心にする頂点が見つかりません');
+      expect(plainTextValue(result.errors[0].text)).toContain('中心にする頂点が見つかりません');
     },
     OCCT_TIMEOUT_MS,
   );
@@ -418,7 +419,7 @@ describe('基本形状を部品文書の経路で作る(FR-429、タスク16)', 
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].code).toBe('invalidValue');
       // カーネルの断り(kernelFailed)ではなく、model の断り(invalidValue)が 1 つだけ出る。
-      expect(result.errors[0].message).toBe('半径は 0 より大きい数にしてください。');
+      expect(plainTextValue(result.errors[0].text)).toBe('半径は 0 より大きい数にしてください。');
     },
     OCCT_TIMEOUT_MS,
   );

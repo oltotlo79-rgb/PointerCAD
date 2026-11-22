@@ -31,7 +31,7 @@ function decoded(bytes: Uint8Array): InputSettingsReading {
 /** 窓に結果を出す欄の札(視点の操作・キー・マウスのボタン・放射メニューはタブの名前、吸着を止めるキーは form の題)。 */
 const SECTION_LABELS = {
   view: 'settings.inputBindings.tab.view', keys: 'settings.inputBindings.tab.keys', mouse: 'settings.inputBindings.tab.mouse',
-  radial: 'settings.inputBindings.tab.radial', snap: 'settings.snapPause.title',
+  radial: 'settings.inputBindings.tab.radial', snap: 'settings.snapPause.title', selection: 'settings.selectionModifier.title',
 } as const;
 
 const button = (label: string, guide: string, disabled = false): string =>
@@ -73,6 +73,7 @@ describe('設定のファイルの帯', () => {
     const reading = decoded(new TextEncoder().encode(
       JSON.stringify({ format: 'pointercad-input-settings', version: 1, mouseButtonCommands: { back: 'history.undo' } })));
     const markup = renderBar({ kind: 'preview', fileName: 'mouse.pcadinput', reading });
+    expect(markup).toContain(`<li>${t('settings.selectionModifier.title')}: ${t('settings.inputBindings.file.state.absent')}</li>`);
     expect(markup).toContain(`<li>${t('settings.inputBindings.tab.view')}: ${t('settings.inputBindings.file.state.absent')}</li>`);
     expect(markup).toContain(`<p role="alert" class="pcad-input-bindings__file-note">${t('settings.inputBindings.file.blocked')}</p>`);
     expect(markup).toContain(button(t('settings.inputBindings.file.replace'), t('settings.inputBindings.file.replaceGuide'), true));

@@ -4,7 +4,7 @@ import { createRuntimeErrorReader, readRuntimeError, scriptFailure, type ScriptR
 import { resolveScriptModule, validateScriptProgram } from './scriptModules.js';
 import { readScriptExecutionInput } from './scriptInput.js';
 import { nativeResourceLimit } from './runtimeResourceLimit.js';
-import type { ScriptFailure } from './scriptTypes.js';
+import type { ScriptTextFailure } from './scriptTypes.js';
 import { SCRIPT_LIMITS, type ScriptExecutionInput, type ScriptExecutionOutcome } from './scriptTypes.js';
 
 /** Dedicated Worker only in the app; tests supply the same shipped WASM bytes. */
@@ -15,7 +15,7 @@ export async function executeScriptVm(input: ScriptExecutionInput, wasm: BufferS
   const modules = new Map(input.program.modules.map((module) => [module.name, module.source]));
   const sources = new Map(modules); sources.set('user-script.js', input.program.source);
   const control: ScriptRuntimeControl = { deadline: Infinity, failure: null, diagnostic: false };
-  let readNativeLimit: () => ScriptFailure | null = () => null;
+  let readNativeLimit: () => ScriptTextFailure | null = () => null;
   const unhandled = new Map<number, NativeScriptValue>();
   const terminal: { result?: { value: NativeScriptValue } | { error: NativeScriptValue } } = {};
   let vm: NativeScriptVm | undefined, result: NativeScriptValue | undefined, reader: NativeScriptValue | undefined;

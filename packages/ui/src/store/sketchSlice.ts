@@ -234,6 +234,8 @@ export interface SketchSlice {
   readonly setOriginNotice: (message: string | null) => void;
   /** ビューポートで選んだ場所を覚える・忘れる。 */
   readonly setPickAnchor: (anchor: readonly [number, number] | null, avoid?: ScreenRect | null) => void;
+  /** 開いている入力の窓に、避ける箱を後から渡す(距離のつまみの外形。M-05 4-2b)。窓が閉じている時は何もしない。 */
+  readonly setNumericInputAvoid: (avoid: ScreenRect) => void;
 }
 
 /**
@@ -455,5 +457,8 @@ export const createSketchSlice: StateCreator<
   },
   setPickAnchor: (pickAnchor, avoid) => {
     set({ pickAnchor, pickAvoidRect: avoid ?? null });
+  },
+  setNumericInputAvoid: (numericInputAvoid) => {
+    set((state) => (state.numericInput === null ? {} : { numericInputAvoid }));
   },
 });

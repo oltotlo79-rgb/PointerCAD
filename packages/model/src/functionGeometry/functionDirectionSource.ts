@@ -2,9 +2,10 @@
 import type {PartDocument} from '../part/types.js';
 import {evaluatedDocumentMathValue} from '../part/evaluateDocumentMath.js';
 import type {FunctionPointReference} from './functionPointReference.js';
+import type { FailureText } from '../failureText.js';
 
 export function functionDirectionSource(document:PartDocument,reference:FunctionPointReference,ownerId:string,
-  ownerSketch:{readonly id:string;readonly index:number}|undefined,invalid:ReadonlyMap<string,string>):FunctionPointReference {
+  ownerSketch:{readonly id:string;readonly index:number}|undefined,invalid:ReadonlyMap<string,FailureText>):FunctionPointReference {
   const pointId=reference.direction?.sourcePointId;if(pointId===undefined)return reference;
   const sourceSketch=document.sketches.find(sketch=>sketch.features.some(feature=>feature.id===pointId));
   const index=sourceSketch?.features.findIndex(feature=>feature.id===pointId)??-1,point=sourceSketch?.features[index];

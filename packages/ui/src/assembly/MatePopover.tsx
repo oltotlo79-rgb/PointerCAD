@@ -6,7 +6,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { useDialogFocus } from '../shell/dialogFocus.js';
 import { ASSEMBLY_JOINT_TOOLS, ASSEMBLY_MATE_TOOLS } from '../shell/menus/AssemblyGroup.js';
 import { addSelectedOriginTarget, cancelMate, commitJointDraft, commitMateDraft, handleMateKey, jointDraftReady,
-  jointDraftCheck, jointFailureText, mateDraftCheck, mateFailureText, mateKindReadiness, removeDraftTarget,
+  jointDraftCheck, jointFailureText, mateDraftCheck, mateFailureText, mateKindChoices, mateKindReadiness, removeDraftTarget,
   startJoint, startMate, toggleDraftFlipped, updateJointRangeSource, updateMateSource } from './mateActions.js';
 import { mateKindNeedsValue } from './mateCommands.js';
 import { focusFirstTextField } from './popoverFocus.js';
@@ -15,6 +15,8 @@ export function MatePopover(): React.JSX.Element | null {
   const state = useAppStore();
   const draft = state.assemblyMateDraft;
   const panel = useRef<HTMLDivElement>(null);
+  const commitButton = useRef<HTMLButtonElement>(null);
+  const pickedCandidate = useRef(false);
   const open = draft !== null;
   const pair = draft?.targets.length === 2;
   const kind = draft?.kind;
@@ -22,8 +24,14 @@ export function MatePopover(): React.JSX.Element | null {
   const editingId = draft?.editingMateId;
   useDialogFocus(() => panel.current, open, { initial: 'managed' });
   useEffect(() => {
-    if (open) focusFirstTextField(panel.current);
+    if (open && !pickedCandidate.current) focusFirstTextField(panel.current);
   }, [open, pair, kind, editingId]);
+  useEffect(() => {
+    // 同じ候補を押しても startMate は下書きを更新する。新しい欄が描かれてから焦点を渡す。
+    if (!pickedCandidate.current) return;
+    pickedCandidate.current = false;
+    focusFirstTextField(panel.current, commitButton.current);
+  }, [draft]);
   if (draft === null || state.assemblyPlacement !== null) return null;
   const check = jointKind === undefined ? mateDraftCheck(state) : null;
   const jointCheck = jointKind === undefined ? null : jointDraftCheck(state, jointKind);
@@ -32,6 +40,8 @@ export function MatePopover(): React.JSX.Element | null {
     ? jointKind === undefined ? mateFailureText(check) : jointFailureText(jointCheck)
     : null);
   const needsValue = jointKind === undefined && mateKindNeedsValue(draft.kind, draft.targetKinds);
+  const choices = jointKind === undefined ? mateKindChoices(state) : undefined;
+  const candidates = choices?.kinds ?? [];
   const titleKey = jointKind === undefined
     ? draft.editingMateId === null ? 'assembly.mate.title' : 'assembly.mate.edit'
     : 'assembly.joint.title';
@@ -58,7 +68,7 @@ export function MatePopover(): React.JSX.Element | null {
           if (item !== undefined) startMate(item.kind);
         }}>
           {ASSEMBLY_MATE_TOOLS.map((item) => {
-            const readiness = mateKindReadiness(state, item.kind);
+            const readiness = mateKindReadiness(state, item.kind, choices);
             return <option key={item.kind} value={item.kind} disabled={!readiness.ready}>
               {!readiness.ready && readiness.reasonKey !== null ? `${t(item.labelKey)} — ${t(readiness.reasonKey)}` : t(item.labelKey)}
             </option>;
@@ -75,6 +85,27 @@ export function MatePopover(): React.JSX.Element | null {
           ))}
         </select>
       </label>}
+      {candidates.length > 0 && <>
+        {!candidates.includes(draft.kind) && <p className="pcad-popover__hint">{t('assembly.mate.chooseCandidate')}</p>}
+        <div role="group" aria-label={t('assembly.mate.candidates')} className="pcad-popover__actions pcad-popover__actions--mate-targets"
+          onKeyDown={(event) => {
+            // 候補での Enter は釦自身に渡し、窓の確定には使わない。
+            if (event.key === 'Enter') event.stopPropagation();
+          }}>
+          {candidates.map((candidate, index) => {
+            const tool = ASSEMBLY_MATE_TOOLS.find((item) => item.kind === candidate);
+            if (tool === undefined) return null;
+            const recommended = index === 0 ? t('assembly.mate.recommended') : undefined;
+            return <button type="button" key={candidate} className="pcad-button" aria-pressed={candidate === draft.kind}
+              title={t(tool.tooltipKey)} aria-description={recommended} onClick={() => {
+                pickedCandidate.current = true;
+                startMate(candidate);
+              }}>
+              {t(tool.labelKey)}{recommended && <small aria-hidden="true">{recommended}</small>}
+            </button>;
+          })}
+        </div>
+      </>}
       <ul>
         {draft.targets.map((target, index) => {
           const component = state.assembly?.components.find((item) => item.id === target.componentId);
@@ -119,7 +150,7 @@ export function MatePopover(): React.JSX.Element | null {
         {t('assembly.mate.flipped')}
       </label> : null}
       <div className="pcad-popover__actions">
-        <button type="button" className="pcad-button pcad-button--action" aria-disabled={!ready}
+        <button ref={commitButton} type="button" className="pcad-button pcad-button--action" aria-disabled={!ready}
           title={jointKind === undefined ? mateFailureText(check) ?? t('assembly.guide.commitMate') : t('assembly.guide.commitJoint')}
           onClick={() => {
             if (!ready) return;

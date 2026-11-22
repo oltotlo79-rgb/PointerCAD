@@ -25,10 +25,7 @@ import { D_BRACKET_RECORDS } from './dBracketRows.js';
 import { EXTRA_ADJUSTER_RECORDS } from './extraAdjusterRows.js';
 import { EXTRA_FOOT_BASE_RECORDS } from './extraFootBaseRows.js';
 import { EXTRA_ANGLE_BRACKET_RECORDS } from './extraAngleBracketRows.js';
-import {
-  ADJUSTER_FAMILY, ANGLE_BRACKET_CATALOG_FAMILY, FLAT_PLATE_FAMILY, FOOT_BASE_FAMILY, FRAME_CAP_FAMILY, ROUND_NUT_FAMILY, SHAPED_PLATE_FAMILY,
-  T_SLOT_NUT_BAR_FAMILY, T_SLOT_NUT_FAMILY,
-} from './framePartCatalog.js';
+import * as framePartCatalog from './framePartCatalog.js';
 import {
   ADJUSTER_RECORDS, ANGLE_BRACKET_RECORDS, FLAT_PLATE_RECORDS, FOOT_BASE_RECORDS, FRAME_CAP_RECORDS, ROUND_NUT_RECORDS, SHAPED_PLATE_RECORDS,
   T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS,
@@ -36,8 +33,14 @@ import {
 import { HARD_BRACKET_RECORDS } from './hardBracketRows.js';
 import { ROUND_CORNER_CAP_RECORDS } from './roundCornerCapRows.js';
 
-const FAMILIES = [T_SLOT_NUT_BAR_FAMILY, T_SLOT_NUT_FAMILY, ROUND_NUT_FAMILY, FRAME_CAP_FAMILY, FLAT_PLATE_FAMILY, SHAPED_PLATE_FAMILY,
-  ANGLE_BRACKET_CATALOG_FAMILY, FOOT_BASE_FAMILY, ADJUSTER_FAMILY];
+const {
+  ADJUSTER_FAMILY, ANGLE_BRACKET_CATALOG_FAMILY, FLAT_PLATE_FAMILY, FOOT_BASE_FAMILY, FRAME_CAP_FAMILY, ROUND_NUT_FAMILY, SHAPED_PLATE_FAMILY,
+  T_SLOT_NUT_BAR_FAMILY, T_SLOT_NUT_FAMILY,
+} = framePartCatalog;
+const FAMILIES = Object.values(framePartCatalog)
+  .filter((value: unknown): value is CatalogFamily => typeof value === 'object' && value !== null
+    && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows))
+  .sort((left, right) => left.id.localeCompare(right.id));
 const values = (length: number): Readonly<Record<string, string>> => ({ length: String(length) });
 
 function rowOf(family: CatalogFamily, key: string): CatalogItemRow {
@@ -50,19 +53,19 @@ describe('資料 1 のフレームの部品の 9 族', () => {
   it('族の id・群・種類の鍵・版・線図・数え方・欄を凍結し、行は行の表の行を同じ順で持つ', () => {
     expect(FAMILIES.map((family) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision, family.diagram,
       family.stock, family.options.map((spec) => [spec.key, spec.defaultValue])])).toEqual([
-      ['t-slot-nut-bar', 'aluminumFrame', 'catalog.frame.kind.nutBar', 't-slot-nut-bar-2026-11-r1', 'frame-part-1', 'tSlotNutBar', 'linear',
-        [['length', '1000']]],
-      ['t-slot-nut', 'aluminumFrame', 'catalog.frame.kind.catalogNut', 't-slot-nut-2026-11-r1', 'frame-part-1', 'tSlotNut', 'count', []],
-      ['t-slot-round-nut', 'aluminumFrame', 'catalog.frame.kind.roundNut', 't-slot-round-nut-2026-11-r1', 'frame-part-1', 'roundNut', 'count', []],
-      ['t-slot-frame-cap', 'aluminumFrame', 'catalog.frame.kind.cap', 't-slot-frame-cap-2026-11-r1', 'frame-part-1', 'frameCap', 'count', []],
-      ['t-slot-flat-plate', 'aluminumFrame', 'catalog.frame.kind.flatPlate', 't-slot-flat-plate-2026-11-r1', 'frame-part-1', 'flatPlate', 'count',
-        []],
-      ['t-slot-shaped-plate', 'aluminumFrame', 'catalog.frame.kind.shapedPlate', 't-slot-shaped-plate-2026-11-r1', 'frame-part-1', 'shapedPlate',
-        'count', []],
+      ['t-slot-adjuster', 'aluminumFrame', 'catalog.frame.kind.adjuster', 't-slot-adjuster-2026-11-r1', 'frame-part-1', 'adjuster', 'count', []],
       ['t-slot-angle-bracket', 'aluminumFrame', 'catalog.frame.kind.angleBracketCatalog', 't-slot-angle-bracket-2026-11-r1', 'frame-part-1',
         'angleBracketCatalog', 'count', []],
+      ['t-slot-flat-plate', 'aluminumFrame', 'catalog.frame.kind.flatPlate', 't-slot-flat-plate-2026-11-r1', 'frame-part-1', 'flatPlate', 'count',
+        []],
       ['t-slot-foot-base', 'aluminumFrame', 'catalog.frame.kind.footBase', 't-slot-foot-base-2026-11-r1', 'frame-part-1', 'footBase', 'count', []],
-      ['t-slot-adjuster', 'aluminumFrame', 'catalog.frame.kind.adjuster', 't-slot-adjuster-2026-11-r1', 'frame-part-1', 'adjuster', 'count', []],
+      ['t-slot-frame-cap', 'aluminumFrame', 'catalog.frame.kind.cap', 't-slot-frame-cap-2026-11-r1', 'frame-part-1', 'frameCap', 'count', []],
+      ['t-slot-nut', 'aluminumFrame', 'catalog.frame.kind.catalogNut', 't-slot-nut-2026-11-r1', 'frame-part-1', 'tSlotNut', 'count', []],
+      ['t-slot-nut-bar', 'aluminumFrame', 'catalog.frame.kind.nutBar', 't-slot-nut-bar-2026-11-r1', 'frame-part-1', 'tSlotNutBar', 'linear',
+        [['length', '1000']]],
+      ['t-slot-round-nut', 'aluminumFrame', 'catalog.frame.kind.roundNut', 't-slot-round-nut-2026-11-r1', 'frame-part-1', 'roundNut', 'count', []],
+      ['t-slot-shaped-plate', 'aluminumFrame', 'catalog.frame.kind.shapedPlate', 't-slot-shaped-plate-2026-11-r1', 'frame-part-1', 'shapedPlate',
+        'count', []],
     ]);
     // L 形のブラケットの族は、両脚の穴が決まった行の後に、寝た脚の穴を作らない行(統括の決定 2026-11-18 08:4x の (B))と、
     // ダイカストの本体の同じ形の行を持つ。
@@ -70,13 +73,21 @@ describe('資料 1 のフレームの部品の 9 族', () => {
     // 揃った長方形の板、上の角を 45° に斜めに切った板を持つ。
     // 端のキャップの族は、長方形と L 形の行の後に、1 つの角が R のフレームに合うキャップの行(14f)を持つ。
     // アジャスターの族は、今の行の後に、39 回目の 2 本の読みで揃った型番の行を持つ。
-    const records = [T_SLOT_NUT_BAR_RECORDS, T_SLOT_NUT_RECORDS, ROUND_NUT_RECORDS, [...FRAME_CAP_RECORDS, ...ROUND_CORNER_CAP_RECORDS],
-      FLAT_PLATE_RECORDS, SHAPED_PLATE_RECORDS,
-      [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...D_BRACKET_RECORDS, ...EXTRA_ANGLE_BRACKET_RECORDS], [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS,
-        ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS],
-      [...ADJUSTER_RECORDS, ...EXTRA_ADJUSTER_RECORDS]];
-    expect(FAMILIES.map((family) => family.rows.map((row) => [row.key, row.size])))
-      .toEqual(records.map((list) => list.map((record) => [record.key, record.size])));
+    const recordsById = {
+      [T_SLOT_NUT_BAR_FAMILY.id]: T_SLOT_NUT_BAR_RECORDS,
+      [T_SLOT_NUT_FAMILY.id]: T_SLOT_NUT_RECORDS,
+      [ROUND_NUT_FAMILY.id]: ROUND_NUT_RECORDS,
+      [FRAME_CAP_FAMILY.id]: [...FRAME_CAP_RECORDS, ...ROUND_CORNER_CAP_RECORDS],
+      [FLAT_PLATE_FAMILY.id]: FLAT_PLATE_RECORDS,
+      [SHAPED_PLATE_FAMILY.id]: SHAPED_PLATE_RECORDS,
+      [ANGLE_BRACKET_CATALOG_FAMILY.id]: [...ANGLE_BRACKET_RECORDS, ...HARD_BRACKET_RECORDS, ...D_BRACKET_RECORDS, ...EXTRA_ANGLE_BRACKET_RECORDS],
+      [FOOT_BASE_FAMILY.id]: [...FOOT_BASE_RECORDS, ...BOSS_FOOT_RECORDS, ...EXTRA_FOOT_BASE_RECORDS, ...CHAMFERED_FOOT_BASE_RECORDS],
+      [ADJUSTER_FAMILY.id]: [...ADJUSTER_RECORDS, ...EXTRA_ADJUSTER_RECORDS],
+    };
+    expect(FAMILIES.map((family) => family.id).sort()).toEqual(Object.keys(recordsById).sort());
+    for (const family of FAMILIES) {
+      expect(family.rows.map((row) => [row.key, row.size]), family.id).toEqual(recordsById[family.id].map((record) => [record.key, record.size]));
+    }
   });
 
   it('行は規格の行を名乗らず、出どころは資料の番号と頁だけで、note と簡略の印は行の表の印から作る', () => {

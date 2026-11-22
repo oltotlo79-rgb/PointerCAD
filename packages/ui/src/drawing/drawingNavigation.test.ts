@@ -52,6 +52,12 @@ describe('drawing navigation geometry and exact binding ownership', () => {
     for (const modifiers of [{}, { shiftKey: true }, { ctrlKey: true }, { ctrlKey: true, shiftKey: true }]) {
       expect(drawingEditPointerMatches({ ...left, ...modifiers })).toBe(true);
     }
+    const cmd = { ...left, metaKey: true };
+    for (const setting of ['ctrl', 'shiftOrCtrl'] as const) {
+      expect(drawingEditPointerMatches(cmd, setting)).toBe(true);
+      expect(drawingEditPointerMatches({ ...cmd, altKey: true }, setting)).toBe(false);
+    }
+    for (const setting of ['local', 'shift'] as const) expect(drawingEditPointerMatches(cmd, setting)).toBe(false);
     for (const props of [{ altKey: true }, { altKey: true, shiftKey: true, ctrlKey: true }, { metaKey: true },
       { buttons: 3 }, { buttons: 5 }, { button: 1, buttons: 4 }, { button: 2, buttons: 2 }]) {
       expect(drawingEditPointerMatches({ ...left, ...props })).toBe(false);

@@ -325,4 +325,17 @@ describe('入力の窓が避ける、選んだ面の画面の外形(M-10 ①)', 
     store().setActiveTool('select');
     expect(store().numericInputAvoid).toBeNull();
   });
+
+  it('後から渡す箱(距離のつまみの外形。M-05 4-2b)は、窓が開いている時だけ持ち、閉じると消える', () => {
+    const store = () => useAppStore.getState();
+    store().closeNumericInput();
+    store().setNumericInputAvoid(RECT);
+    expect(store().numericInputAvoid).toBeNull();
+    store().openNumericInput(createNumericInput('extrude', 'extrudeDistance'), [400, 280]);
+    expect(store().numericInputAvoid).toBeNull();
+    store().setNumericInputAvoid(RECT);
+    expect(store().numericInputAvoid).toEqual(RECT);
+    store().closeNumericInput();
+    expect(store().numericInputAvoid).toBeNull();
+  });
 });

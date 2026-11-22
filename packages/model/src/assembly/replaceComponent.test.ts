@@ -3,8 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { SolidBody } from '../kernelBridge.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
+import { createEmptyPartDocument } from '../part/createPartDocument.js';
+import { PRODUCT_CATALOG_REGISTRY } from './catalog/registry.js';
+import { placedPartName } from './componentNames.js';
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from './createAssemblyDocument.js';
+import { EMPTY_PART_LIBRARY } from './partLibrary.js';
 import { applyReplacement, planReplacement } from './replaceComponent.js';
+import { buildStandardPartFromSource } from './standard/buildStandardPart.js';
 import type { AssemblyComponent, AssemblyDocument, MateTarget } from './types.js';
 
 function component(id: string): AssemblyComponent {
@@ -59,6 +64,47 @@ function document(target: MateTarget = faceTarget('component-1')): AssemblyDocum
 }
 
 const NEXT_SOURCE = { kind: 'part', partRef: 'part-2' } as const;
+
+describe('差し替える部品の名前', () => {
+  it('部品・子組は抱き込んだ文書の名前を使い、参照先が無ければ null を返す', () => {
+    const library = {
+      ...EMPTY_PART_LIBRARY,
+      parts: new Map([['p', { ...createEmptyPartDocument(), name: '箱' }]]),
+      assemblies: new Map([['a', createAssemblyDocument('台座')]]),
+    };
+    const sources = { library, registry: PRODUCT_CATALOG_REGISTRY, buildStandardPartFromSource };
+    expect(placedPartName({ kind: 'part', partRef: 'p' }, sources)).toBe('箱');
+    expect(placedPartName({ kind: 'subAssembly', assemblyRef: 'a' }, sources)).toBe('台座');
+    expect(placedPartName({ kind: 'part', partRef: 'a' }, sources)).toBeNull();
+    expect(placedPartName({ kind: 'subAssembly', assemblyRef: 'p' }, sources)).toBeNull();
+  });
+
+  it.each([
+    { name: '箱:7', other: '台', before: '箱', after: '球', expected: '球:1' },
+    { name: '箱:7', other: '球:1', before: '箱', after: '球', expected: '球:2' },
+    { name: '箱:7', other: '球:4', before: '箱', after: '球', expected: '球:5' },
+    { name: '左の柱', other: '台', before: '箱', after: '球', expected: '左の柱' },
+    { name: '台:7', other: '台', before: '箱', after: '球', expected: '台:7' },
+    { name: '箱:7 予備', other: '台', before: '箱', after: '球', expected: '箱:7 予備' },
+    { name: '箱:7', other: '台', before: '箱', after: '箱', expected: '箱:7' },
+    { name: '箱:7', other: '台', before: null, after: '球', expected: '箱:7' },
+    { name: '箱:7', other: '台', before: '箱', after: null, expected: '箱:7' },
+  ])('$name と $other がある組で $before から $after へ替えると $expected になる', ({ name, other, before, after, expected }) => {
+    const assembly = { ...document(), components: [
+      { ...component('component-1'), name }, { ...component('component-2'), name: other },
+    ] };
+    const plan = planReplacement(assembly, 'component-1', NEXT_SOURCE, { bodies: [] }, { before, after });
+    expect(plan?.after.components.map((item) => item.name)).toEqual([expected, other]);
+    expect(plan?.after.components[0].source).toEqual(NEXT_SOURCE);
+    expect(assembly.components[0].name).toBe(name);
+  });
+
+  it('部品名を渡さない差し替えでは自動の名前も維持する', () => {
+    const assembly = { ...createAssemblyDocument('組'), components: [{ ...component('component-1'), name: '箱:7' }] };
+    const plan = planReplacement(assembly, 'component-1', NEXT_SOURCE, { bodies: [] });
+    expect(plan?.after.components[0]).toMatchObject({ name: '箱:7', source: NEXT_SOURCE });
+  });
+});
 
 describe('planReplacement', () => {
   it.each([false, true])('複数ボディの同点候補は並び=%sでも古い参照を保持して未解決にする', (reverse) => {

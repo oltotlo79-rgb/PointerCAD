@@ -14,6 +14,7 @@ import {
   type PartDocument,
   type PartLibrary,
   type ReplacementPlan,
+  type ReplacementPartNames,
   type SolidBody,
 } from '@pointercad/model';
 
@@ -150,8 +151,9 @@ export function prepareComponentReplacement(
   componentId: string,
   source: ComponentSource,
   bodies: readonly SolidBody[],
+  names?: ReplacementPartNames,
 ): PreparedReplacement | null {
-  const plan = planReplacement(document, componentId, source, { bodies });
+  const plan = planReplacement(document, componentId, source, { bodies }, names);
   return plan === null ? null : { plan, requiresConfirmation: plan.unmatchedCount > 0 };
 }
 

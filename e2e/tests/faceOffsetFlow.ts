@@ -11,7 +11,8 @@ import { disableFilePickers } from './filePickers.js';
 import { openToolMenu } from './toolMenus.js';
 import { fillFields, popover, popoverInputs } from './popoverFields.js';
 
-import { beginRecompute, waitForRecompute } from './recompute.js';
+import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /**
  * EX-18 の限られた一段「平らな面の移動」を、実際のブラウザで通しで確かめる。**ヘッドレスで実行する。**
@@ -127,10 +128,7 @@ function propertyValue(page: Page, key: string): Locator {
 }
 
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 async function commitPopover(page: Page): Promise<void> {
@@ -611,6 +609,49 @@ export async function faceOffsetHandleFlow(page: Page, entry: string): Promise<v
   await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
   await expect(solidRow(page, '面の移動1')).toBeVisible();
   await expectVolume(page, BOARD_VOLUME + dragged * END_FACE_AREA);
+  expect(errors).toEqual([]);
+}
+
+/** 面の移動と同じ掴み方と距離の待ち方を使うため、共通の補助があるこのファイルに置く。 */
+export async function extrudeHandleFlow(page: Page): Promise<void> {
+  const errors = collectErrors(page);
+  await disableFilePickers(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
+
+  await drawRectangle(page, ['0', '0'], ['40', '30']);
+  await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+  await waitForSettledRecompute(page);
+  // extrudeFace と同じく、ツリーで面を選んで「作る」から開く。ここでは距離を確定せずに引く。
+  await treeRow(page, '面1').click();
+  await openToolMenu(page, '作る');
+  await solidTool(page, '押し出し').click();
+  await expect(popoverTitle(page)).toHaveText('押し出す');
+  const distance = popoverInputs(page).first();
+  await expect(distance).toHaveValue('10');
+  await expect(solidRows(page)).toHaveCount(0);
+
+  await pressHandle(page, [20, 15, 10]);
+  await moveHandle(page, [20, 15, 20]);
+  await expectDistanceNear(distance, 20);
+  await page.keyboard.press('Escape');
+  await expect(distance).toHaveValue('10');
+  await expect(popoverTitle(page)).toHaveText('押し出す');
+  await page.mouse.up();
+
+  await pressHandle(page, [20, 15, 10]);
+  await moveHandle(page, [20, 15, 5]);
+  await page.mouse.up();
+  const dragged = await expectDistanceNear(distance, 5);
+  await expect(solidRows(page)).toHaveCount(0);
+
+  await commitPopover(page);
+  await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
+  const extruded = solidRow(page, '押し出し1');
+  await expect(extruded).toBeVisible();
+  await extruded.click();
+  await expectVolume(page, 40 * 30 * dragged);
   expect(errors).toEqual([]);
 }
 

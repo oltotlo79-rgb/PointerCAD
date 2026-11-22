@@ -10,13 +10,14 @@ import {functionPointRequest} from './functionPointRequest.js';
 import {resolveFunctionInputs} from './resolveFunctionInputs.js';
 import type {FunctionRecomputeContext} from './recomputeFunctionCurves.js';
 import {functionDirectionSource} from './functionDirectionSource.js';
+import { plainText, type FailureText } from '../failureText.js';
 
 /** Shown on the point's owner when its calculation did not finish in time (not a wrong choice, range or accuracy). */
 const POINT_DEADLINE_MESSAGE='関数上の点の計算が時間内に終わりませんでした。もう一度計算してください。';
 
 export async function recomputeFunctionPoints(document:PartDocument,analysis:ParameterAnalysis|undefined,
   math:DocumentMathContext|undefined,context:FunctionRecomputeContext|undefined,
-  previousInvalid:ReadonlyMap<string,string>,shouldCancel:()=>boolean) {
+  previousInvalid:ReadonlyMap<string,FailureText>,shouldCancel:()=>boolean) {
   const points=new Map<string,Vec3>(),invalidInputs=new Map(previousInvalid);
   const current=()=>!shouldCancel() && !math?.signal?.aborted && (math?.isCurrent()??true);
   const key=(reference:FunctionPointReference,owner:string)=>JSON.stringify([owner,functionPointReferenceKey(reference)]);
@@ -65,7 +66,7 @@ export async function recomputeFunctionPoints(document:PartDocument,analysis:Par
       points.set(key(reference,ownerId),completion.result.endpoint?.point??completion.result.candidate.point);
     } catch(error) {
       if(!current()) return result(true);
-      invalidInputs.set(ownerId,error instanceof Error?error.message:'関数上の点を再計算できませんでした。');
+      invalidInputs.set(ownerId,plainText(error instanceof Error?error.message:'関数上の点を再計算できませんでした。'));
     }
   }
   return result(false);

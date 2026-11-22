@@ -26,6 +26,7 @@ import { exponentialRange } from './exponentialIntervals.js';
 import { logarithmicPositiveRange } from './logarithmicIntervals.js';
 import { validateLineIntegral } from './lineIntegrals.js';
 import { validateRegionIntegral } from './regionIntegrals.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 
 type Operation = Extract<MathNode, { readonly kind: 'operation' }>;
 type AngleUnit = 'degree' | 'radian';
@@ -119,7 +120,7 @@ function range(value: IntervalValue): MathInterval | null { return value.status 
 /** accumulator · base^power with outward rounding; null when an enclosure is unavailable. */
 function raise(accumulator: MathInterval, base: MathInterval, power: number): MathInterval | null {
   let result: MathInterval | null = accumulator;
-  for (let index = 0; index < Math.abs(power) && result !== null; index += 1) {
+  for (let index = 0; exceedsMagnitude(power, index) && result !== null; index += 1) {
     result = range(power > 0 ? intervalMultiply(result, base) : intervalDivide(result, base));
   }
   return result;
@@ -191,7 +192,7 @@ class Algebra {
     const powers: [string, number][] = [];
     for (const [key, power] of exponents) {
       if (power === 0) continue;
-      if (Math.abs(power) > EXPONENT_LIMIT) throw new Unproved();
+      if (exceedsMagnitude(power, EXPONENT_LIMIT)) throw new Unproved();
       const atom = this.atoms.get(key);
       if (atom?.kind !== 'sqrt') { powers.push([key, power]); continue; }
       const pairs = Math.floor(power / 2), square = atom.radicand ** BigInt(Math.abs(pairs));

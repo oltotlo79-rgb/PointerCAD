@@ -34,7 +34,7 @@ async function run(source: string, requestId: string) {
   const prepared = await prepareScriptTransaction({ requestId, document, commandNamespace, commands: vm.commands,
     references: snapshot.references, lengthUnit: 'mm', sources: new Map([['user-script.js', source]]), importedShapes: new Map() }, bridge, () => false);
   const cadMs = performance.now() - start;
-  expect(prepared.ok).toBe(true); if (!prepared.ok) throw new Error(prepared.error.message);
+  expect(prepared.ok).toBe(true); if (!prepared.ok) throw new Error(JSON.stringify(prepared.error));
   try {
     expect(prepared.prepared.result.errors).toEqual([]);
     return { cadMs, initializationMs: vm.initializationMs, javascriptMs: vm.javascriptMs, cacheHits: prepared.prepared.result.cacheHits,

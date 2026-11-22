@@ -1,3 +1,4 @@
+import { plainTextValue } from '../failureText.js';
 import { createHash } from 'node:crypto';
 import { stdout } from 'node:process';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -109,7 +110,7 @@ describe('failed direct-edit input visibility with native shapes', () => {
         expect(rejected.generation).toBe(17);
         expect(rejected.errors).toHaveLength(1);
         expect(rejected.errors[0]).toMatchObject({ featureId: 'direct-edit' });
-        expect(rejected.errors[0].message.length).toBeGreaterThan(0);
+        expect(plainTextValue(rejected.errors[0].text)?.length).toBeGreaterThan(0);
         expect.soft(rejected.bodies.map(body => body.featureId)).toEqual([seed.targetId, 'direct-unselected']);
         expect.soft(rejected.bodies.find(body => body.featureId === seed.targetId)).toEqual(source);
         expect(rejected.bodies.some(body => body.featureId === 'direct-edit')).toBe(false);

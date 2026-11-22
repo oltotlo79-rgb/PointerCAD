@@ -17,6 +17,7 @@ import { uiMessage } from './uiMessages.js';
 import { choosePlaneMenuItem, commitPopover as commitReference } from './workPlaneCaptureSupport.js';
 import { EX18_A6, EX18_A8, EX18_B6, EX18_B8, EX18_B_BLANK, EX18_B_BLANK20, EX18_C3, EX18_C10, EX18_C5, EX18_BLANK8, EX18_BLANK10, ex18BytesSha, ex18ReadAssembly, ex18ReadPart,
   expectEx18AssemblyPart, expectEx18Part } from './ex18RoutesOracle.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 export const EX18_A_ROUTES = ['a', 'b', 'c', 'd', 'e'] as const;
 export type Ex18ARoute = typeof EX18_A_ROUTES[number];
@@ -32,9 +33,7 @@ function solidRow(page: Page, name: string): Locator {
     .getByRole('button', { name, exact: true });
 }
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page).locator('.pcad-field').filter({
-    has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`, 'u') }),
-  }).locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 async function setExpression(page: Page, name: string, label: string, expression: string): Promise<void> {
   const token = await beginRecompute(page);

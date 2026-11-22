@@ -1,3 +1,4 @@
+import { plainTextValue } from '../failureText.js';
 import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createKernelApi } from '@pointercad/kernel';
@@ -159,7 +160,7 @@ describe('model → plan → worker → native direct edits', () => {
           fingerprint: { kind: 'face', surfaceKind: 'sphere', area: 99, position: [1e6, 1e6, 1e6], axis: null, radius: 1 } } };
         const document = appendSolid(seed.part, feature), snapshot = JSON.stringify(document);
         const result = await recomputePart(document, bridge);
-        expect(result.errors.some(error => error.featureId === 'edit' && error.message.length > 0)).toBe(true);
+        expect(result.errors.some(error => error.featureId === 'edit' && (plainTextValue(error.text) ?? '').length > 0)).toBe(true);
         expect(result.bodies).toEqual(before.bodies);
         expect(cache.size).toBe(size);
         expect(cache.get(sourceStep.key)).toBe(borrowed);

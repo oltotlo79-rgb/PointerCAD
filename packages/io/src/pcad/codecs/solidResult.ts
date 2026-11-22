@@ -1,7 +1,7 @@
 import { sha256HexSync } from '@pointercad/model';
 import { readOptionalMaterialCapacity, type SavedAnalysisResult } from '@pointercad/model/beam-analysis';
 import { isRecord } from '../guards.js';
-import { packSolid, SOLID_RESULT_MAX_BYTES, unpackSolid } from './solidResultBinary.js';
+import { packSolid, SOLID_RESULT_MAX_BYTES, SolidResultTooLargeError, unpackSolid } from './solidResultBinary.js';
 
 type Solid = Extract<SavedAnalysisResult, { kind: 'oofem-linear-solid-tet4' }>;
 type Input = Solid['mesh']['input'];
@@ -18,7 +18,7 @@ function requireValue(condition: boolean): asserts condition {
   if (!condition) throw new RangeError('invalidResult');
 }
 function failure(error: unknown): Issue {
-  return { ok: false, issue: error instanceof RangeError && error.message === 'resultTooLarge' ? 'resultTooLarge' : 'invalidResult' };
+  return { ok: false, issue: error instanceof SolidResultTooLargeError ? 'resultTooLarge' : 'invalidResult' };
 }
 function text(v: unknown): string {
   requireValue(typeof v === 'string' && v.trim().length > 0);
@@ -144,7 +144,7 @@ export function encodeSolid(saved: Solid): EncodedSolid {
 export function decodeSolid(raw: unknown, binary: Uint8Array | undefined): DecodedSolid {
   try {
     requireValue(isRecord(raw) && binary !== undefined);
-    if (binary.byteLength > SOLID_RESULT_MAX_BYTES) throw new RangeError('resultTooLarge');
+    if (binary.byteLength > SOLID_RESULT_MAX_BYTES) throw new SolidResultTooLargeError();
     requireValue(count(raw.byteLength) === binary.byteLength && digest(raw.binarySha256) === sha256HexSync(binary.subarray()));
     const meta = metadata(raw);
     const data = unpackSolid(binary, meta.tagCount);

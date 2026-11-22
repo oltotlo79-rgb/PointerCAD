@@ -20,6 +20,7 @@ import { withinMagnitude } from '../numericTolerance.js';
 import type { ResolvedSubShape } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { faceHolesError } from './faceHoles.js';
+import type { FailureText } from '../failureText.js';
 import {
   arcPointAt,
   ellipsePointAt,
@@ -60,6 +61,7 @@ import {
   recordCurveGroup,
   recordPoints,
   sketchError as error,
+  sketchErrorWith as errorWith,
   sketchResultOf,
   type SketchFeatureStep,
   type SketchResolveLookups,
@@ -264,7 +266,7 @@ function resolveRectangleCurves(
   const [u1, v1] = worldToPlane(plane, corner1);
   const [u2, v2] = worldToPlane(plane, corner2);
   if (withinMagnitude(u2 - u1, SKETCH_TOLERANCE_MM) || withinMagnitude(v2 - v1, SKETCH_TOLERANCE_MM)) {
-    return { ok: false, error: error(featureId, 'degenerate', '矩形の幅・高さが 0 です。') };
+    return { ok: false, error: errorWith(featureId, 'degenerate', { key: 'partError.sketchRect.zeroSize', parameters: {} }) };
   }
   // 対角 2 点から、作図面の軸に平行な 4 頂点を反時計回りに並べる。
   const corners: readonly Vec3[] = [
@@ -347,11 +349,11 @@ function resolveSlotCurves(
   const dv = v2 - v1;
   const length = Math.hypot(du, dv);
   if (length <= SKETCH_TOLERANCE_MM) {
-    return { ok: false, error: error(featureId, 'degenerate', '長穴の 2 つの中心が同じ位置です。') };
+    return { ok: false, error: errorWith(featureId, 'degenerate', { key: 'partError.sketchSlot.sameCenters', parameters: {} }) };
   }
   const half = width / 2;
   if (half <= SKETCH_TOLERANCE_MM) {
-    return { ok: false, error: error(featureId, 'degenerate', '長穴の幅が小さすぎます。') };
+    return { ok: false, error: errorWith(featureId, 'degenerate', { key: 'partError.sketchSlot.tooNarrow', parameters: {} }) };
   }
   const dirU = du / length;
   const dirV = dv / length;
@@ -401,10 +403,10 @@ function checkPointArrayCount(featureId: string, count: number): SketchError | n
     count < MIN_POINT_ARRAY_COUNT ||
     count > MAX_POINT_ARRAY_COUNT
   ) {
-    return error(
+    return errorWith(
       featureId,
       'invalidValue',
-      `個数は ${String(MIN_POINT_ARRAY_COUNT)} 以上 ${String(MAX_POINT_ARRAY_COUNT)} 以下の整数にしてください。`,
+      { key: 'partError.sketchPointArray.count', parameters: { min: String(MIN_POINT_ARRAY_COUNT), max: String(MAX_POINT_ARRAY_COUNT) } },
     );
   }
   return null;
@@ -428,11 +430,11 @@ function resolveLinearPointArray(
   }
   const spacing = layout.spacing.value;
   if (!Number.isFinite(spacing) || spacing === 0) {
-    return { ok: false, error: error(featureId, 'invalidValue', '間隔に 0 は指定できません。') };
+    return { ok: false, error: errorWith(featureId, 'invalidValue', { key: 'partError.sketchPointArray.zeroSpacing', parameters: {} }) };
   }
   const azimuth = layout.azimuth.value;
   if (!Number.isFinite(azimuth)) {
-    return { ok: false, error: error(featureId, 'invalidValue', '方向の角度が数になっていません。') };
+    return { ok: false, error: errorWith(featureId, 'invalidValue', { key: 'partError.sketchPointArray.angleNotNumber', parameters: {} }) };
   }
   const direction = directionInPlane(plane, azimuth);
   const points: ResolvedPoint[] = [];
@@ -474,10 +476,10 @@ function resolveCircularPointArray(
   }
   const radius = layout.radius.value;
   if (!Number.isFinite(radius) || radius < 0) {
-    return { ok: false, error: error(featureId, 'invalidValue', '半径は 0 より大きい必要があります。') };
+    return { ok: false, error: errorWith(featureId, 'invalidValue', { key: 'partError.sketchShape.radiusPositive', parameters: {} }) };
   }
   if (radius <= SKETCH_TOLERANCE_MM) {
-    return { ok: false, error: error(featureId, 'degenerate', '半径が小さすぎて点列になりません。') };
+    return { ok: false, error: errorWith(featureId, 'degenerate', { key: 'partError.sketchPointArray.radiusTooSmall', parameters: {} }) };
   }
   const points: ResolvedPoint[] = [];
   for (let index = 0; index < count; index += 1) {
@@ -499,7 +501,7 @@ function resolveCircularPointArray(
 /** 行・列いずれかの個数の妥当性(グリッド、FR-327)。1 以上の整数であることだけを見る。 */
 function checkGridAxisCount(featureId: string, label: string, count: number): SketchError | null {
   if (!Number.isInteger(count) || count < MIN_POINT_ARRAY_COUNT) {
-    return error(featureId, 'invalidValue', `${label}の個数は 1 以上の整数にしてください。`);
+    return errorWith(featureId, 'invalidValue', { key: 'partError.sketchGrid.axisCount', parameters: { label } });
   }
   return null;
 }
@@ -531,25 +533,25 @@ function resolveGridPointArray(
   if (rowCount * colCount > MAX_POINT_ARRAY_COUNT) {
     return {
       ok: false,
-      error: error(
+      error: errorWith(
         featureId,
         'invalidValue',
-        `点の合計数は ${String(MAX_POINT_ARRAY_COUNT)} 個以下にしてください。`,
+        { key: 'partError.sketchGrid.totalCount', parameters: { max: String(MAX_POINT_ARRAY_COUNT) } },
       ),
     };
   }
   const rowSpacing = layout.rowSpacing.value;
   if (!Number.isFinite(rowSpacing) || rowSpacing === 0) {
-    return { ok: false, error: error(featureId, 'invalidValue', '行の間隔に 0 は指定できません。') };
+    return { ok: false, error: errorWith(featureId, 'invalidValue', { key: 'partError.sketchGrid.rowSpacing', parameters: {} }) };
   }
   const colSpacing = layout.colSpacing.value;
   if (!Number.isFinite(colSpacing) || colSpacing === 0) {
-    return { ok: false, error: error(featureId, 'invalidValue', '列の間隔に 0 は指定できません。') };
+    return { ok: false, error: errorWith(featureId, 'invalidValue', { key: 'partError.sketchGrid.colSpacing', parameters: {} }) };
   }
   const rowAzimuth = layout.rowAzimuth.value;
   const colAzimuth = layout.colAzimuth.value;
   if (!Number.isFinite(rowAzimuth) || !Number.isFinite(colAzimuth)) {
-    return { ok: false, error: error(featureId, 'invalidValue', '方向の角度が数になっていません。') };
+    return { ok: false, error: errorWith(featureId, 'invalidValue', { key: 'partError.sketchPointArray.angleNotNumber', parameters: {} }) };
   }
   const rowDirection = directionInPlane(plane, rowAzimuth);
   const colDirection = directionInPlane(plane, colAzimuth);
@@ -595,7 +597,7 @@ function resolvePointArrayFeature(
  */
 export interface SketchResolveOptions {
   /** Current-generation mathematical failures. Cached fields of these owners are never resolved. */
-  readonly invalidInputs?: ReadonlyMap<string, string>;
+  readonly invalidInputs?: ReadonlyMap<string, FailureText>;
   /** invalidInputs のうち、計算部(Worker)が止まって作れなかった物の id。その誤りの code を workerBroken にする(0b-1b。文では見分けない)。 */
   readonly workerBrokenInputs?: ReadonlySet<string>;
   readonly workPlane?: (planeId: WorkPlaneId) => WorkPlane | null;
@@ -723,10 +725,10 @@ function resolveArcOrientation(
   if (orientation === undefined) {
     return {
       ok: false,
-      error: error(
+      error: errorWith(
         featureId,
         'missingBase',
-        '3D スケッチの円弧には向きの指定が必要です。法線と角度 0 の向きを決めてください。',
+        { key: 'partError.sketchArc3d.needsOrientation', parameters: {} },
       ),
     };
   }
@@ -737,7 +739,7 @@ function resolveArcOrientation(
   if (lengthVec3(normal.value) <= SKETCH_TOLERANCE_MM) {
     return {
       ok: false,
-      error: error(featureId, 'degenerate', '円弧の向き(法線)の長さが 0 です。'),
+      error: errorWith(featureId, 'degenerate', { key: 'partError.sketchArc3d.zeroNormal', parameters: {} }),
     };
   }
   const unitNormal = normalizeVec3(normal.value);
@@ -749,10 +751,10 @@ function resolveArcOrientation(
   if (lengthVec3(projected) <= SKETCH_TOLERANCE_MM) {
     return {
       ok: false,
-      error: error(
+      error: errorWith(
         featureId,
         'degenerate',
-        '角度 0 の向きが法線と平行です。法線と違う向きを指定してください。',
+        { key: 'partError.sketchArc3d.parallelReference', parameters: {} },
       ),
     };
   }
@@ -809,7 +811,7 @@ function resolveHistoryStep(
   const invalid = options.invalidInputs?.get(feature.id);
   if (invalid !== undefined) {
     const code = options.workerBrokenInputs?.has(feature.id) === true ? 'workerBroken' : 'invalidValue';
-    state.errors.push({ featureId: feature.id, code, message: invalid });
+    state.errors.push({ featureId: feature.id, code, text: invalid });
     // A failed point-producing step must not make "previous" silently refer to an older point.
     if (feature.kind !== 'face') {
       state.previous = null;
@@ -829,7 +831,7 @@ function resolveHistoryStep(
   const plane = free ? null : lookups.workPlane(feature.planeId);
   if (!free && plane === null) {
     state.errors.push(
-      error(feature.id, 'missingBase', `作図面が見つかりません: ${feature.planeId}`),
+      errorWith(feature.id, 'missingBase', { key: 'partError.sketchPlane.missing', parameters: { id: feature.planeId } }),
     );
     return;
   }
@@ -866,7 +868,8 @@ function resolveFaceStep(feature: SketchFaceFeature, state: SketchResolveState):
     const hole = resolveFace({ ...feature, boundary }, state.pointsByFeature, state.curveByFeature,
       state.curvesByFeature, state.constructionFeatureIds);
     if (!hole.ok) {
-      state.errors.push({ ...hole.error, message: `穴${String(holes.length + 1)}: ${hole.error.message}` });
+      // 何番目の穴かを添え、穴の誤りの鍵と値は入れ子で運ぶ(文にしない。0b-3)。
+      state.errors.push({ ...hole.error, text: { key: 'partError.numberedHole', parameters: { index: String(holes.length + 1), text: hole.error.text } } });
       return;
     }
     holes.push(hole.value.curves);
@@ -966,7 +969,7 @@ function resolveLineStep(feature: SketchLineFeature, step: SketchFeatureStep): v
   }
   const toPoint = lookups.overridePoint(vertexKey(feature.id, 'end'), to.value);
   if (isSamePoint(fromPoint, toPoint)) {
-    state.errors.push(error(feature.id, 'degenerate', '線分の長さが 0 です。'));
+    state.errors.push(errorWith(feature.id, 'degenerate', { key: 'partError.sketchLine.zeroLength', parameters: {} }));
     return;
   }
   const segment: ResolvedSegment = {
@@ -992,22 +995,22 @@ function resolveArcStep(feature: SketchArcFeature, step: SketchFeatureStep): voi
     feature.radius.value,
   );
   if (!Number.isFinite(radius) || radius < 0) {
-    state.errors.push(error(feature.id, 'invalidValue', '半径は 0 より大きい必要があります。'));
+    state.errors.push(errorWith(feature.id, 'invalidValue', { key: 'partError.sketchShape.radiusPositive', parameters: {} }));
     return;
   }
   // 半径 0(と許容誤差に埋もれる大きさ)は円弧として成り立たない。
   if (radius <= SKETCH_TOLERANCE_MM) {
-    state.errors.push(error(feature.id, 'degenerate', '半径が小さすぎて円弧になりません。'));
+    state.errors.push(errorWith(feature.id, 'degenerate', { key: 'partError.sketchArc.radiusTooSmall', parameters: {} }));
     return;
   }
   if (!Number.isFinite(feature.startAngle.value) || !Number.isFinite(feature.endAngle.value)) {
-    state.errors.push(error(feature.id, 'invalidValue', '角度の値が数になっていません。'));
+    state.errors.push(errorWith(feature.id, 'invalidValue', { key: 'partError.sketchShape.angleNotNumber', parameters: {} }));
     return;
   }
   const startAngle = degreesToRadians(feature.startAngle.value);
   const endAngle = degreesToRadians(feature.endAngle.value);
   if (withinMagnitude(endAngle - startAngle, FULL_TURN_EPSILON)) {
-    state.errors.push(error(feature.id, 'degenerate', '開始角と終了角が同じです。'));
+    state.errors.push(errorWith(feature.id, 'degenerate', { key: 'partError.sketchShape.sameAngles', parameters: {} }));
     return;
   }
   // 向きは作図面から借りるか、3D スケッチなら円弧自身の指定から作る(FR-330)。

@@ -1,4 +1,5 @@
 import { withinMagnitude } from '../numericTolerance.js';
+import type { FailureText } from '../failureText.js';
 import type { PointPlacementSourceAnchor } from '../geometry/subShapeOrigin.js';
 /**
  * 基準ジオメトリの解決
@@ -53,7 +54,7 @@ import {
   subVec3,
   type Vec3,
 } from '../sketch/vec3.js';
-import { createReferenceMemo, failed, type ReferenceOutcome } from './referenceResolverMemo.js';
+import { createReferenceMemo, failed, failedWith, type ReferenceOutcome } from './referenceResolverMemo.js';
 import {
   createSphereLookup,
   pointResolutionAt,
@@ -77,7 +78,8 @@ export type ReferenceErrorCode = PlaneErrorKey | 'circularReference';
 export interface ReferenceError {
   readonly featureId: string;
   readonly code: ReferenceErrorCode;
-  readonly message: string;
+  /** 画面に出す文の鍵と値(0b-3。PartError へそのまま写す)。 */
+  readonly text: FailureText;
 }
 
 export interface ResolvedReferencePlane {
@@ -126,7 +128,7 @@ export interface ResolvedReferences {
 /** 基準ジオメトリを解くのに要る、外から渡す手掛かり。 */
 export interface ReferenceResolveDeps {
   readonly functionPoint?: TypeFunctionPointResolver;
-  readonly invalidInputs?: ReadonlyMap<string, string>;
+  readonly invalidInputs?: ReadonlyMap<string, FailureText>;
   /**
    * スケッチ 1 本の解決結果。まだ解けない(循環している)ときは null を返す。
    * 呼び出し側(`resolvePart`)が遅延解決と記憶を担う。
@@ -434,7 +436,7 @@ function pointFromDefinition(
       if (at.mode === 'absolute') {
         const resolved = resolveCoordinate(at, context, featureId);
         if (!resolved.ok) {
-          return failed(featureId, 'invalidValue', resolved.error.message);
+          return failedWith(featureId, 'invalidValue', resolved.error.text);
         }
         return { ok: true, value: { kind: 'referencePoint', position: resolved.value } };
       }
@@ -455,7 +457,7 @@ function pointFromDefinition(
       const resolved = resolveCoordinate(rebased, { ...context, previous: base }, featureId);
       if (!resolved.ok) {
         // 基準は上で解決済みなので、ここへ来るのは値が数でない場合だけ。
-        return failed(featureId, 'invalidValue', resolved.error.message);
+        return failedWith(featureId, 'invalidValue', resolved.error.text);
       }
       return { ok: true, value: { kind: 'referencePoint', position: resolved.value } };
     }
@@ -527,7 +529,7 @@ function resolveFeature(
 ): ReferenceOutcome {
   const invalid = lookups.deps.invalidInputs?.get(feature.id);
   if (invalid !== undefined) {
-    return failed(feature.id, 'invalidValue', invalid);
+    return failedWith(feature.id, 'invalidValue', invalid);
   }
   switch (feature.kind) {
     case 'referencePlane':

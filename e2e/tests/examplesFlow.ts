@@ -1,5 +1,8 @@
 import { expect, type Locator, type Page } from '@playwright/test';
-import { beginRecompute, waitForRecompute } from './recompute.js';
+import { chooseToolMenuItem } from './assemblyTestSupport.js';
+import { answerDiscardConfirm } from './discardDialogSupport.js';
+import { chooseDrawingMenu, waitForDrawingReady } from './drawingManufacturingFixture.js';
+import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 import { uiMessage } from './uiMessages.js';
 
 const file = (key: string): string => uiMessage('file', key);
@@ -8,6 +11,14 @@ const file = (key: string): string => uiMessage('file', key);
 function solidRow(page: Page, name: string): Locator {
   return page.locator('.pcad-tree__sections > li').filter({ hasText: 'ソリッド' })
     .getByRole('button', { name, exact: true });
+}
+
+async function chooseExampleFromFileMenu(page: Page, nameKey: string): Promise<void> {
+  await chooseToolMenuItem(page, uiMessage('toolbar', 'toolbar.fileMenu.groupLabel'), file('examples.menu'));
+  const dialog = page.getByRole('dialog', { name: file('examples.title'), exact: true });
+  await dialog.getByRole('button', { name: `${file('examples.open')} ${file(nameKey)}`, exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await answerDiscardConfirm(page);
 }
 
 /**
@@ -33,4 +44,25 @@ export async function examplesFlow(page: Page): Promise<void> {
   const expected = Math.PI * (19 * 40 ** 2 + (39 ** 2 + 39 * 40 + 40 ** 2) / 3 - 20 * (12 ** 2 + 4 * 4 ** 2));
   await expect.poll(async () => Math.abs(Number.parseFloat(((await volume.getAttribute('title')) ?? (await volume.innerText()))
     .replaceAll(',', '')) - expected)).toBeLessThan(0.01);
+
+  await chooseExampleFromFileMenu(page, 'examples.flangeDrawing.name');
+  await expect(page.locator('.pcad-drawing-tree-sheet')).toHaveAttribute('title', file('examples.flangeDrawing.name'));
+  for (const view of ['view-1', 'view-2', 'view-3']) {
+    await expect(page.locator(`.pcad-drawing-svg [data-owner-id="${view}"] path`).first())
+      .toBeAttached({ timeout: KERNEL_TIMEOUT_MS });
+  }
+  await waitForDrawingReady(page);
+  await expect(page.locator('.pcad-drawing-tree-dimension')).toHaveCount(2);
+  await expect(page.locator('.pcad-drawing-tree-unresolved')).toHaveCount(0);
+
+  await chooseDrawingMenu(page, uiMessage('toolbar', 'toolbar.file.title'), uiMessage('drawing', 'drawing.file.returnToPart'));
+  await answerDiscardConfirm(page);
+  await expect(solidRow(page, '円形パターン1')).toBeVisible();
+  await chooseExampleFromFileMenu(page, 'examples.boltedPlates.name');
+  const tree = page.locator('.pcad-panel--left');
+  await expect(tree.getByRole('button', { name: file('examples.boltedPlates.name'), exact: true })).toBeVisible();
+  const components = tree.locator('.pcad-tree__section').filter({
+    has: page.getByText(uiMessage('assembly', 'assembly.tree.components'), { exact: true }),
+  });
+  await expect(components.locator('.pcad-tree__count')).toHaveText('6');
 }

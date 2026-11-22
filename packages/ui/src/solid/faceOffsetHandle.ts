@@ -18,15 +18,19 @@ import type { AppState } from '../store/appState.js';
 import { parseSubShapeId } from './subShapeSelection.js';
 
 /** つまみ 1 つ。座標はどれも部品の座標(mm)。 */
-export interface FaceOffsetHandle {
-  /** 選んだ面の重心。つまみはこの点を通る法線の上だけを動く。 */
+export interface DistanceHandle {
+  /** つまみが動く軸の基準点。 */
   readonly base: Vec3;
-  /** 面の外向きの単位法線。正の距離はこの向き(面の移動の確定と同じ)。 */
+  /** 正の距離の向きを表す単位法線。 */
   readonly normal: Vec3;
   /** 欄の距離(mm)。確定と同じ読み方で読めない時は 0(つまみは面の上に出る)。 */
   readonly distanceMm: number;
-  /** つまみの根もと = base + normal × distanceMm。矢印はここから normal の向きへ出る。 */
+  /** つまみの根もと = base + normal × distanceMm × scale。矢印はここから normal の向きへ出る。 */
   readonly origin: Vec3;
+  readonly fieldKey: 'faceOffsetDistance' | 'distance';
+  /** 欄の距離のうち、つまみが片側へ進む割合。 */
+  readonly scale: number;
+  readonly positiveOnly: boolean;
 }
 
 /** つまみを求める材料(ストアから読むものだけ)。 */
@@ -36,7 +40,7 @@ type FaceOffsetHandleSource = Pick<AppState, 'numericInput' | 'selection' | 'bod
  * 面の移動の入力欄が開いていて、選択がちょうど平らな面 1 枚の時のつまみ。それ以外は null。
  * 面の一覧はいま描いている立体(`bodies`)から引く。立体が作れていない(`isValid` が偽)時も出さない。
  */
-export function faceOffsetHandleOf(source: FaceOffsetHandleSource): FaceOffsetHandle | null {
+export function faceOffsetHandleOf(source: FaceOffsetHandleSource): DistanceHandle | null {
   const input = source.numericInput;
   if (input === null || input.step !== 'faceOffsetDistance' || source.selection.length !== 1) return null;
   const selected = parseSubShapeId(source.selection[0]);
@@ -50,5 +54,8 @@ export function faceOffsetHandleOf(source: FaceOffsetHandleSource): FaceOffsetHa
   const commit = previewSolidCommit(input, { ...source.parameterAnalysis, lengthUnit: source.displaySettings.lengthUnit });
   const value = commit?.values.faceOffsetDistance?.value;
   const distanceMm = value !== undefined && Number.isFinite(value) ? value : 0;
-  return { base: face.centroid, normal, distanceMm, origin: addVec3(face.centroid, scaleVec3(normal, distanceMm)) };
+  return {
+    base: face.centroid, normal, distanceMm, origin: addVec3(face.centroid, scaleVec3(normal, distanceMm)),
+    fieldKey: 'faceOffsetDistance', scale: 1, positiveOnly: false,
+  };
 }

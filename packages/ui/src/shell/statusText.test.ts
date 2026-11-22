@@ -6,6 +6,7 @@
  * 描画の配線は `StatusBar.test.ts`、実画面の操作は E2E で検査する。
  */
 
+import { plainText } from '@pointercad/model';
 import { addComponent, createAssemblyDocument, createComponentFor, diagnoseMates, resolveAssembly, solveMates,
   type AssemblyDocument, type Mate, type MateResidualTargetPair, type SolveMatesOptions,
   type PartProgress, type PartRecomputeError, type SketchError, type BoltedJointPlan, type BoltedJointRejectionCode,
@@ -167,11 +168,11 @@ function progressAt(index: number, total: number, label = '押し出し1'): Part
 }
 
 function partError(message: string): PartRecomputeError {
-  return { featureId: 'extrude-1', code: 'kernelFailed', message };
+  return { featureId: 'extrude-1', code: 'kernelFailed', text: plainText(message) };
 }
 
 function sketchError(message: string): SketchError {
-  return { featureId: 'face-1', code: 'kernelFailed', message };
+  return { featureId: 'face-1', code: 'kernelFailed', text: plainText(message) };
 }
 
 describe('計算中も道具の案内を残す(FR-905)', () => {

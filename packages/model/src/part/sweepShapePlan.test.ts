@@ -1,3 +1,4 @@
+import { plainTextValue } from '../failureText.js';
 import { describe, expect, it } from 'vitest';
 import { expressionValueFromNumber as num, type ExpressionValue } from '@pointercad/expression';
 import { absoluteCoordinate } from '../sketch/createSketchDocument.js';
@@ -32,7 +33,7 @@ function stepOf(sweep: SweepFeature) {
 function refusal(sweep: SweepFeature): string | undefined {
   const result = resolvePart(documentWith(sweep));
   expect(result.steps).toEqual([]);
-  return result.errors.find(error => error.featureId === sweep.id)?.message;
+  return plainTextValue(result.errors.find(error => error.featureId === sweep.id)?.text) ?? undefined;
 }
 
 /** スイープのねじれ・終わりの大きさ・肉厚(M-07)の解決。使わない欄は plan・段・鍵に載せず、今のスイープは 1 字も変わらない。 */

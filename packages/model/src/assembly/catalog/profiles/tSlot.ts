@@ -148,7 +148,8 @@ function circleLoop(x: number, y: number, diameter: number): readonly SteelProfi
 
 function holeLoops(dims: TSlotDimensions): readonly (readonly SteelProfileSegment[])[] {
   const xs = columnCenters(dims);
-  const centers = rowCenters(dims).flatMap((y) => xs.map((x) => circleLoop(x, y, dims.centerHole)));
+  // 中心の穴の径が 0 の断面(芯つきの形など、中心の穴の無い断面)は、升の中心の穴を作らない。
+  const centers = dims.centerHole > 0 ? rowCenters(dims).flatMap((y) => xs.map((x) => circleLoop(x, y, dims.centerHole))) : [];
   if (dims.cornerHoleDiameter <= 0) return centers;
   const x = dims.width / 2 - dims.cornerHoleInset;
   const y = dims.height / 2 - dims.cornerHoleInset;
@@ -179,13 +180,14 @@ function circleClear(center: Point, radius: number, outer: readonly SteelProfile
     : arcDistance(center, segment)) > radius);
 }
 
-/** 形が成り立つか(寸法が正、升の数が整数、口 < 部屋、部屋の底 > 0、斜めの肉 > 0、部屋が肩の内に収まる、角の丸みが部屋に届かない、
+/** 形が成り立つか(寸法が正〔中心の穴の径だけは 0 = 穴なしも可〕、升の数が整数、口 < 部屋、部屋の底 > 0、斜めの肉 > 0、部屋が肩の内に収まる、角の丸みが部屋に届かない、
  * 隣の部屋・隣の穴が重ならない、中心の穴 < 芯、四隅の穴が外の輪に掛からない)。角の升の幅 e2 = W − (nx − 1)·p で、nx = 1 なら外形 W。 */
 function dimensionsValid(dims: TSlotDimensions): boolean {
   const { width: a, height, slotPitch: p, slotOpening: w, shoulder: s, slotInnerWidth: wi, slotDepth: d, centerHole: h,
     cornerRadius: r, cornerHoleDiameter: dc, cornerHoleInset: inset } = dims;
   const columns = slotColumns(dims);
-  if (![a, height, p, w, s, wi, d, h, r].every((value) => Number.isFinite(value) && value > 0)) return false;
+  // 中心の穴の径は 0(穴なし)を許し、負と数でない値は断る。ほかの寸法は正の数だけ。
+  if (![a, height, p, w, s, wi, d, r].every((value) => Number.isFinite(value) && value > 0) || !(Number.isFinite(h) && h >= 0)) return false;
   if (!Number.isInteger(columns) || columns < 1) return false;
   if (!Number.isFinite(dc) || dc < 0 || !Number.isFinite(inset) || inset < 0 || height < a || Number.isNaN(slotRows(dims))) return false;
   const cell = a - (columns - 1) * p;

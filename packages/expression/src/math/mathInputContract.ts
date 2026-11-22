@@ -5,6 +5,7 @@ import type { EquationSystemSolutions as TypeEquationSystemSolutions } from './e
 import type { FourierSeries as TypeFourierSeries } from './fourierSeries.js';
 import type { IntegralTransform as TypeIntegralTransform } from './integralTransforms.js';
 import type { TaylorExpansion as TypeTaylorExpansion } from './taylorExpansion.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 /** Shared numerical-input contract. Isolated implementation pending integration and canonical tests. */
 export const MATH_INPUT_FORMAT = 'pointercad-math/1' as const;
 export const MATH_INPUT_LIMITS = Object.freeze({
@@ -255,7 +256,7 @@ export function validateMathDecimal(value: string): void {
     throw new MathInputProblem('budget', '数値の桁数が多すぎます。');
   }
   const exponent = Number(match[2] ?? 0);
-  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > MATH_INPUT_LIMITS.decimalExponent) {
+  if (!Number.isSafeInteger(exponent) || exceedsMagnitude(exponent, MATH_INPUT_LIMITS.decimalExponent)) {
     throw new MathInputProblem('budget', '指数が大きすぎます。');
   }
 }

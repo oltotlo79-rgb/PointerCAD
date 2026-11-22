@@ -6,6 +6,7 @@ import {
 } from '../style/jisStyle.js';
 import { createArrowTriangle, shouldUseOutwardArrows, type ArrowTriangle } from './arrow.js';
 import { createProjectedArcLengthDimensionGeometry } from './arcLengthGeometry.js';
+import { belowMagnitude } from '../numericTolerance.js';
 
 export interface DimensionLineSegment {
   readonly from: Point2;
@@ -163,7 +164,7 @@ export function createAngleDimensionGeometry(
   const second = normalized(secondDirection);
   if (
     first === null || second === null ||
-    Math.abs(first[0] * second[1] - first[1] * second[0]) < 1e-12
+    belowMagnitude(first[0] * second[1] - first[1] * second[0], 1e-12)
   ) {
     return null;
   }

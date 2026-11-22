@@ -24,6 +24,7 @@ import {
   toggleSelectionFilter,
 } from '../solid/selectionFilter.js';
 import { stagedExtrusionMessageKey } from '../solid/extrudePreview.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { currentStagedSolid } from '../store/recomputeSlice.js';
 import { solidToolReadiness } from '../solid/solidCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -73,7 +74,8 @@ function planeLabel(workPlaneId: string, customPlanes: readonly WorkPlaneEntry[]
 function currentShapeError(state: ReturnType<typeof useAppStore.getState>): string | null {
   const stage = currentStagedSolid(state);
   if (stage?.batchExtrude === undefined || !stage.confirmRequested || stage.status !== 'failed') return state.shapeErrorMessage;
-  return stage.errors[0]?.message ?? stage.errorMessage ?? t(stagedExtrusionMessageKey(state) ?? 'solidError.extrudeFailed');
+  const first = stage.errors[0];
+  return first !== undefined ? partErrorMessage(first) : stage.errorMessage ?? t(stagedExtrusionMessageKey(state) ?? 'solidError.extrudeFailed');
 }
 
 /** 帯の 1 文に添える印。何を伝えているかで替える。 */

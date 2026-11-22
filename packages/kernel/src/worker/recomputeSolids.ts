@@ -19,7 +19,7 @@ import { makeSurfaceCut, SurfaceCutError } from '../occt/makeSurfaceCut.js';
 import { makeDraft } from '../occt/makeDraft.js';
 import { makeEmboss } from '../occt/makeEmboss.js';
 import { makeFillet } from '../occt/makeFillet.js';
-import { makeHole, resolveHoleFrame } from '../occt/makeHole.js';
+import { EdgeDistanceHoleError, makeHole, resolveHoleFrame } from '../occt/makeHole.js';
 import { makePrimitive, resolvePrimitiveOrigin } from '../occt/makePrimitive.js';
 import { createMeshCoordinateFrame } from '../occt/meshCoordinateFrame.js';
 import { makeRib } from '../occt/makeRib.js';
@@ -323,8 +323,9 @@ function toFailureMessage(error: unknown): string {
 
 /** 符号を持つ計算部の誤り(面による切断・面の厚み付け・つなぎ面・加工のもとが無い/立体が残らない)の符号。無ければ空。 */
 function failureCode(error: unknown): Pick<SolidStepFailure, 'code'> {
+  if (error instanceof SewFacesError) return { code: error.reason };
   return error instanceof SurfaceCutError || error instanceof SurfaceThickenError || error instanceof BlendSurfaceError
-    || error instanceof KernelStepError ? { code: error.code } : {};
+    || error instanceof KernelStepError || error instanceof EdgeDistanceHoleError ? { code: error.code } : {};
 }
 
 /**
@@ -707,6 +708,34 @@ function noMarks(handle: OcctShapeHandle, volume?: number, area?: number): StepS
   return { handle, threadMarks: [], volume, area };
 }
 
+function createSewStep(
+  oc: OpenCascadeInstance,
+  spec: Extract<SolidStepSpec, { kind: 'sew' }>,
+  options: TessellationOptions,
+  cache: ShapeCache<CachedSolid>,
+  failedLabels: ReadonlyMap<string, string>,
+): StepSolidResult {
+  if ('profiles' in spec) return noMarks(sewSolid(oc, spec, options));
+  const { keep, release } = createAllocations();
+  try {
+    const faces = spec.faces.map(({ targetKey, query }) => {
+      const target = findStepInput(cache, failedLabels, targetKey);
+      if (query.kind !== 'face') throw new SewFacesError('missing-face');
+      const match = resolveFaceReference(target.mesh.faces, query,
+        boundingDiagonal(oc, target.shape) * 0.5, target.mesh.origins);
+      if (match.status !== 'matched') throw new SewFacesError('missing-face');
+      const face = faceAt(oc, target.shape, match.match.index);
+      if (face === null) throw new SewFacesError('missing-face');
+      // faceAt の wrapper はここが所有し、下地を共有するキャッシュの形は借用のまま。
+      return { ownership: 'borrowed' as const, face: keep(face) };
+    });
+    const result = sewSolidFaces(oc, { faces, tolerance: spec.tolerance });
+    return noMarks(result, result.volume);
+  } finally {
+    release();
+  }
+}
+
 /**
  * 段の種類ごとに作り手を選ぶ。各節は return で閉じる(no-fallthrough)。
  * 作れないときは、どの作り手も利用者へ見せられる日本語の Error を投げる。
@@ -766,27 +795,8 @@ function createStepSolid(
       return noMarks(createExtrudeSolid(oc, spec, options, cache, failedLabels, featureId));
     case 'revolve':
       return noMarks(makeRevolveSolid(oc, spec, options));
-    case 'sew': {
-      if ('profiles' in spec) return noMarks(sewSolid(oc, spec, options));
-      const { keep, release } = createAllocations();
-      try {
-        const faces = spec.faces.map(({ targetKey, query }) => {
-          const target = findStepInput(cache, failedLabels, targetKey);
-          if (query.kind !== 'face') throw new SewFacesError('missing-face');
-          const match = resolveFaceReference(target.mesh.faces, query,
-            boundingDiagonal(oc, target.shape) * 0.5, target.mesh.origins);
-          if (match.status !== 'matched') throw new SewFacesError('missing-face');
-          const face = faceAt(oc, target.shape, match.match.index);
-          if (face === null) throw new SewFacesError('missing-face');
-          // faceAt の wrapper はここが所有し、下地を共有するキャッシュの形は借用のまま。
-          return { ownership: 'borrowed' as const, face: keep(face) };
-        });
-        const result = sewSolidFaces(oc, { faces, tolerance: spec.tolerance });
-        return noMarks(result, result.volume);
-      } finally {
-        release();
-      }
-    }
+    case 'sew':
+      return createSewStep(oc, spec, options, cache, failedLabels);
     case 'boolean': {
       const combined = createBooleanSolid(oc, spec, cache, failedLabels, featureId);
       return noMarks(combined, combined.volume);
@@ -794,7 +804,9 @@ function createStepSolid(
     case 'hole': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       // 入口の形(ざぐり・皿もみ、FR-422)。省かれていれば makeHole が真っ直ぐな穴にする。
-      const drilled = makeHole(oc, withEdgeDistanceCenters(oc, spec, target), target.shape, target.mesh.faces, spec.entry, target.mesh.origins, featureId);
+      const drilled = makeHole(oc, withEdgeDistanceCenters(oc, spec, target), target.shape, target.mesh.faces, {
+        entry: spec.entry, origins: target.mesh.origins, featureId,
+      });
       return noMarks(drilled, drilled.volume);
     }
     case 'thread': {

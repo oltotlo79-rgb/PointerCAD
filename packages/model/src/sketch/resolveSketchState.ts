@@ -8,6 +8,7 @@
  */
 
 import { curveEnd, curveStart } from './intersectionMath.js';
+import { plainText, type FailureText } from '../failureText.js';
 import type { WorkPlane, WorkPlaneId } from './planeMath.js';
 import { vertexKey, type ResolveContext } from './resolveCoordinate.js';
 import type {
@@ -102,7 +103,12 @@ export function createSketchResolveState(): SketchResolveState {
 }
 
 export function sketchError(featureId: string, code: SketchErrorCode, message: string): SketchError {
-  return { featureId, code, message };
+  return { featureId, code, text: plainText(message) };
+}
+
+/** 画面の文を鍵と値で持つ誤り(0b-3c から。文は ui の文言の表が鍵ごとに持つ)。 */
+export function sketchErrorWith(featureId: string, code: SketchErrorCode, text: FailureText): SketchError {
+  return { featureId, code, text };
 }
 
 /**
@@ -113,10 +119,10 @@ export function sketchError(featureId: string, code: SketchErrorCode, message: s
  * 平面が無いと形自体が定まらない。作図面を選び直せば作れるので、そう伝える。
  */
 export function needsWorkPlane(featureId: string, label: string): SketchError {
-  return sketchError(
+  return sketchErrorWith(
     featureId,
     'missingBase',
-    `3D スケッチでは${label}を作れません。作図面を選んでから作ってください。`,
+    { key: 'partError.sketchState.needsWorkPlane', parameters: { label } },
   );
 }
 

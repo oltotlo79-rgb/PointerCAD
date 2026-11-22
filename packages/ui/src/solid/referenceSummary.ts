@@ -4,6 +4,7 @@ import type {
   CoordinateInput, PlaneSpec, ReferenceAxisDefinition, ReferenceError,
   ReferenceFeature, ReferenceFeatureKind, ReferencePointDefinition,
 } from '@pointercad/model';
+import { failureMessage } from '../i18n/failureMessage.js';
 import type { MessageKey } from '../i18n/t.js';
 import { coordinateSummaryFor, type FeatureCoordinateSummary } from '../sketch/featureSummary.js';
 import type { FieldUnit } from '../sketch/numericInput.js';
@@ -127,7 +128,7 @@ export function summarizeReference(
     kind: feature.kind,
     kindLabelKey: REFERENCE_KIND_LABEL_KEYS[feature.kind],
     visible: feature.visible,
-    errorMessage: found === undefined ? null : found.message,
+    errorMessage: found === undefined ? null : failureMessage(found.text),
   };
   switch (feature.kind) {
     case 'referencePlane':

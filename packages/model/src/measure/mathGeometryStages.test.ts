@@ -7,6 +7,7 @@
  * 呼出し回数、参照先を切った文書、途中段の失敗、関数作図の係数を検査する。
  * 段取りの `planMathGeometryStages` はOCCTを使わない純関数として検査する。
  */
+import { plainTextValue } from '../failureText.js';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber, mathScalarExpression, type ExpressionValue } from '@pointercad/expression';
 import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRequest, executeFunctionImplicitCurveWorkRequest,
@@ -17,7 +18,7 @@ import { createKernelApi } from '@pointercad/kernel';
 import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { FUNCTION_DEFINITION_FORMAT } from '../functionGeometry/functionDefinitionTypes.js';
 import type { FunctionRecomputeContext } from '../functionGeometry/recomputeFunctionCurves.js';
-import { createDirectKernelBridge } from '../kernelBridge.js';
+import { createDirectKernelBridge, KERNEL_BROKEN_MESSAGE } from '../kernelBridge.js';
 import type { Parameter } from '../parameters/types.js';
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '../part/createPartDocument.js';
 import type { DocumentMathContext } from '../part/evaluateDocumentMath.js';
@@ -135,7 +136,7 @@ function volumes(result: PartRecomputeResult): ReadonlyMap<string, number> {
   return new Map(result.bodies.map(body => [body.featureId, body.volume]));
 }
 function messageOf(result: PartRecomputeResult, featureId: string): string | undefined {
-  return result.errors.find(error => error.featureId === featureId)?.message;
+  return plainTextValue(result.errors.find(error => error.featureId === featureId)?.text) ?? undefined;
 }
 /** これから形の計算部へ頼む段(立体の id の並び)を、呼んだ順に記録する(前の記録は消す)。 */
 function recordSolidCalls() {
@@ -317,6 +318,36 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     }
   });
 
+  it('段の測る所で計算部(Worker)が止まった時は、その係数の誤りに符号 workerBroken が付く(0b-1c。文は今のまま)', async () => {
+    // 面積は計算部の測る(massProperties)で取る(体積・辺の長さは網から取るので測るを呼ばない)。
+    const boxes = appendBox(appendBox(EMPTY, ev(20)), named('幅B'), ev(10), ev(10), 100);
+    const document: PartDocument = { ...boxes,
+      parameters: [coefficient('幅B', 1, math('coef("箱1面積")/520', [measuredInput('g-area', '箱1面積', '5200')]))],
+      mathGeometry: [definition('g-area', '箱1面積', { kind: 'area', shape: { kind: 'body', featureId: 'box-1' } })] };
+    const measure = vi.spyOn(bridge, 'measure').mockResolvedValue({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' });
+    try {
+      const result = await recomputePart(document, bridge, { math: mathContext(document).context });
+      expect(measure).toHaveBeenCalled();
+      const broken = result.errors.filter(error => error.code === 'workerBroken');
+      expect(broken.map(error => error.featureId)).toContain('幅B');
+      for (const error of broken) expect(plainTextValue(error.text)).toContain(KERNEL_BROKEN_MESSAGE);
+    } finally { measure.mockRestore(); }
+  });
+
+  it('段の測る所の断りに符号が無い時は、係数の誤りは invalidValue のまま(止まりの案内に分けすぎない。0b-1c)', async () => {
+    const boxes = appendBox(appendBox(EMPTY, ev(20)), named('幅B'), ev(10), ev(10), 100);
+    const document: PartDocument = { ...boxes,
+      parameters: [coefficient('幅B', 1, math('coef("箱1面積")/520', [measuredInput('g-area', '箱1面積', '5200')]))],
+      mathGeometry: [definition('g-area', '箱1面積', { kind: 'area', shape: { kind: 'body', featureId: 'box-1' } })] };
+    const measure = vi.spyOn(bridge, 'measure').mockResolvedValue({ kind: 'failed', message: '面積を測れませんでした。' });
+    try {
+      const result = await recomputePart(document, bridge, { math: mathContext(document).context });
+      expect(measure).toHaveBeenCalled();
+      expect(result.errors.filter(error => error.code === 'workerBroken')).toEqual([]);
+      expect(result.errors.find(error => error.featureId === '幅B')?.code).toBe('invalidValue');
+    } finally { measure.mockRestore(); }
+  });
+
   it('循環: 形を作る前に付録Cの文で係数を止め、数学の計算部へ送らず、測る形も作らないので値を出さない', async () => {
     const document = cyclic(), calls = recordSolidCalls(), { context, requests } = mathContext(document);
     const result = await recomputePart(document, bridge, { math: context });
@@ -387,7 +418,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
     const cut = documentUpTo(full, 0);
     expect(cut.solids.map(feature => feature.id)).toEqual(['box-1']);
     const result = await recomputePart(cut, bridge, { math: mathContext(cut).context });
-    expect(result.errors.map(error => [error.featureId, error.message])).toEqual([
+    expect(result.errors.map(error => [error.featureId, plainTextValue(error.text)])).toEqual([
       ['表示用', mathGeometryUnresolvedMessage('箱2体積', '表示用', MISSING_MESSAGE)]]);
     expect(result.parameterAnalysis?.variables.has('表示用')).toBe(false);
     expect(result.parameterAnalysis?.variables.get('幅B')).toBeCloseTo(24, 9);
@@ -505,7 +536,7 @@ describe('段階再計算(実際の OCCT と数学の計算部)', () => {
       const circles = (result.sketches[0]?.resolved.splines ?? []).filter(spline => spline.featureId === 'circle');
       if (!sameSketch) {
         // 段1で線を測り(2)、最後の段で R=2 の円を描く。断るのは floor を使う曲線だけ。
-        expect(result.errors.map(error => [error.featureId, error.message])).toEqual([['refused', mathGeometryOperationMessage('floor')]]);
+        expect(result.errors.map(error => [error.featureId, plainTextValue(error.text)])).toEqual([['refused', mathGeometryOperationMessage('floor')]]);
         expect(circles.length).toBeGreaterThan(0);
         for (const [x, y] of circles.flatMap(spline => sampleSpline(spline, 16))) expect(Math.abs(Math.hypot(x, y) - 2)).toBeLessThan(0.05);
         return;

@@ -6,9 +6,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { HEX_NUT_TABLE } from '../../standard/fasteners.js';
-import type { CatalogItemRow } from '../types.js';
+import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { CATALOG_ORACLES } from './catalogOracles.fixture.js';
-import { HEX_NUT_STYLE1_FAMILY, HEX_NUT_STYLE2_FAMILY, HEX_NUT_THIN_FAMILY } from './hexNutExtended.js';
+import * as hexNutExtended from './hexNutExtended.js';
 
 const firstEvidence = (rows: readonly CatalogItemRow[]): CatalogItemRow['evidence'] => {
   const evidence = rows[0]?.evidence;
@@ -16,10 +16,16 @@ const firstEvidence = (rows: readonly CatalogItemRow[]): CatalogItemRow['evidenc
   return evidence;
 };
 const HEX_NUT_ORACLE = CATALOG_ORACLES.hexNut;
+const { HEX_NUT_STYLE1_FAMILY, HEX_NUT_STYLE2_FAMILY, HEX_NUT_THIN_FAMILY } = hexNutExtended;
+const FAMILIES = Object.values(hexNutExtended)
+  .filter((value: unknown): value is CatalogFamily => typeof value === 'object' && value !== null
+    && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows))
+  .sort((left, right) => left.id.localeCompare(right.id));
 const HEX_NUT_STYLE1_ROWS = HEX_NUT_STYLE1_FAMILY.rows;
 const HEX_NUT_STYLE2_ROWS = HEX_NUT_STYLE2_FAMILY.rows;
 const HEX_NUT_THIN_ROWS = HEX_NUT_THIN_FAMILY.rows;
-const HEX_NUT_EXTENDED_EVIDENCE = firstEvidence([...HEX_NUT_STYLE1_ROWS, ...HEX_NUT_STYLE2_ROWS, ...HEX_NUT_THIN_ROWS]);
+const ROWS = FAMILIES.flatMap((family) => family.rows);
+const HEX_NUT_EXTENDED_EVIDENCE = firstEvidence(ROWS);
 
 const ORACLE = new Map<string, readonly string[]>(HEX_NUT_ORACLE.rows.map((row) => [row[0], row]));
 /** fixture の列の位置(make_nut_oracle.py の COLUMNS の順 + 呼びの 1 列)。 */
@@ -60,17 +66,16 @@ describe('M-05 六角ナットの拡張 資料の表との突合せ', () => {
     expect(HEX_NUT_EXTENDED_EVIDENCE.reference).toBe(HEX_NUT_ORACLE.reference);
     expect(HEX_NUT_EXTENDED_EVIDENCE.title.startsWith('資料 K4-5 ')).toBe(true);
     expect(HEX_NUT_EXTENDED_EVIDENCE).not.toHaveProperty('url');
-    const keys = [...HEX_NUT_STYLE1_ROWS, ...HEX_NUT_STYLE2_ROWS, ...HEX_NUT_THIN_ROWS].map((row) => row.key);
+    const keys = ROWS.map((row) => row.key);
     expect(new Set(keys).size).toBe(60);
     for (const key of keys) expect(key).toMatch(/^(S1|S2|T)-M[0-9.]+$/u);
   });
 
   it('族の版を凍結し、形は今の六角ナットと同じ作りで、体積は (√3/2 S² − π(下穴/2)²) m', () => {
-    const families = [HEX_NUT_STYLE1_FAMILY, HEX_NUT_STYLE2_FAMILY, HEX_NUT_THIN_FAMILY];
-    expect(families.map((family) => [family.id, family.catalogRevision, family.generatorRevision, family.options.length]))
+    expect(FAMILIES.map((family) => [family.id, family.catalogRevision, family.generatorRevision, family.options.length]))
       .toEqual([['hex-nut-style1-extended', 'hex-nut-2026-11-r1', 'hex-nut-1', 0], ['hex-nut-style2', 'hex-nut-2026-11-r1', 'hex-nut-1', 0],
         ['hex-nut-thin', 'hex-nut-2026-11-r1', 'hex-nut-1', 0]]);
-    for (const family of families) {
+    for (const family of FAMILIES) {
       for (const row of family.rows) {
         const part = family.build(row, {});
         expect(part?.name).toBe(family.partName(row, {}));

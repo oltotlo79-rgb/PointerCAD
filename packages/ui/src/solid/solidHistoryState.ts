@@ -1,5 +1,6 @@
 /** 再計算の失敗と、他の立体へ取り込まれた履歴を同じ規則で扱う。 */
 import { consumedBodyIds, type PartDocument, type PartRecomputeError } from '@pointercad/model';
+import { partErrorMessage as errorMessage } from './surfaceBodyFailureText.js';
 
 /**
  * ほかの立体に取り込まれた立体の id。
@@ -30,5 +31,5 @@ export function partErrorMessage(
   featureId: string,
 ): string | null {
   const found = errors.find((error) => error.featureId === featureId);
-  return found === undefined ? null : found.message;
+  return found === undefined ? null : errorMessage(found);
 }

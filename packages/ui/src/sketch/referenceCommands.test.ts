@@ -1,3 +1,4 @@
+import { failureMessage } from '../i18n/failureMessage.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   absoluteCoordinate,
@@ -275,7 +276,7 @@ describe('3 点で作業平面を作る(FR-328)', () => {
     ]);
     const errors = resolveReferencesOf(outcome.document).errors;
     expect(errors.map((error) => error.code)).toContain('collinear');
-    expect(errors[0].message).toContain('一直線');
+    expect(failureMessage(errors[0].text)).toContain('一直線');
   });
 });
 
@@ -470,7 +471,7 @@ describe('作図面を解く', () => {
     });
     const errors = resolveReferencesOf(withAxis.document).errors;
     expect(errors.length).toBeGreaterThan(0);
-    expect(errors[0].message).toContain('後から作られた');
+    expect(failureMessage(errors[0].text)).toContain('後から作られた');
   });
 });
 

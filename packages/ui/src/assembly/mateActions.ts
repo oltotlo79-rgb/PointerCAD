@@ -205,16 +205,28 @@ export function handleMateKey(key: string, isComposing = false): boolean {
   return false;
 }
 
-export function mateKindReadiness(state: MateState, kind: MateKind): { readonly ready: boolean; readonly reasonKey: 'assembly.mate.notReady' | 'assembly.mate.needTwo' | 'assembly.mate.invalidTargets' | null } {
+interface MateKindChoices {
+  readonly kinds: readonly MateKind[];
+  /** 対象がまだ揃わず、どの種類からでも始められる時だけ null。 */
+  readonly unavailableKey: 'assembly.mate.notReady' | 'assembly.mate.needTwo' | 'assembly.mate.invalidTargets' | null;
+}
+
+export function mateKindChoices(state: MateState): MateKindChoices {
   if (state.assembly === null || state.assemblyPlacement !== null || state.assembly.components.filter((c) => !c.suppressed).length < 2)
-    return { ready: false, reasonKey: 'assembly.mate.notReady' };
+    return { kinds: [], unavailableKey: 'assembly.mate.notReady' };
   const draft = state.assemblyMateDraft;
-  if (draft === null || draft.targets.length < 2) return { ready: true, reasonKey: null };
-  if (draft.targets.length !== 2) return { ready: false, reasonKey: 'assembly.mate.needTwo' };
+  if (draft === null || draft.targets.length < 2) return { kinds: [], unavailableKey: null };
+  if (draft.targets.length !== 2) return { kinds: [], unavailableKey: 'assembly.mate.needTwo' };
   const current = state.assemblyView === null ? draft : refreshMateDraft(state.assembly, state.assemblyView, draft);
   const [a, b] = current.targetKinds;
-  return a !== undefined && b !== undefined && availableMateKinds(a, b).includes(kind)
-    ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.mate.invalidTargets' };
+  return { kinds: a !== undefined && b !== undefined ? availableMateKinds(a, b) : [], unavailableKey: 'assembly.mate.invalidTargets' };
+}
+
+export function mateKindReadiness(state: MateState, kind: MateKind, choices = mateKindChoices(state)): {
+  readonly ready: boolean; readonly reasonKey: MateKindChoices['unavailableKey'];
+} {
+  const ready = choices.unavailableKey === null || choices.kinds.includes(kind);
+  return { ready, reasonKey: ready ? null : choices.unavailableKey };
 }
 
 export function editAssemblyMate(mateId: string): void {

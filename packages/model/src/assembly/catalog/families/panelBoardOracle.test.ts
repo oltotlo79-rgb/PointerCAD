@@ -8,7 +8,8 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { PANEL_BOARD_FIXED_FAMILY, PANEL_BOARD_ORDER_FAMILY } from './panelBoardCatalog.js';
+import type { CatalogFamily } from '../types.js';
+import * as panelBoardCatalog from './panelBoardCatalog.js';
 import { PANEL_BOARD_RECORDS } from './panelBoardRows.js';
 
 type Cells = Readonly<Record<string, string>>;
@@ -27,6 +28,11 @@ function readFixture(): readonly FixtureRow[] {
 }
 
 const FIXTURE = readFixture();
+const { PANEL_BOARD_FIXED_FAMILY, PANEL_BOARD_ORDER_FAMILY } = panelBoardCatalog;
+const FAMILIES = Object.values(panelBoardCatalog)
+  .filter((value: unknown): value is CatalogFamily => typeof value === 'object' && value !== null
+    && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows));
+const BOARD_ROWS = FAMILIES.flatMap((family) => family.rows);
 const NUMBER = /^([0-9]+(?:\.[0-9]+)?)/u;
 
 function cellsOf(key: string): Cells {
@@ -81,9 +87,13 @@ describe('板の族の製品の行と照らす側の読み', () => {
   it('製品の行と fixture は同じ鍵の並びで、型番の形の文字を持たず、行は定尺と注文の寸法の族に分かれる', () => {
     expect(FIXTURE.map((row) => row.key)).toEqual(PANEL_BOARD_RECORDS.map((record) => record.key));
     for (const row of FIXTURE) expect(JSON.stringify(row.cells), row.key).not.toMatch(/[A-Z]{2,3}-[0-9A-Z]{2,}/u);
-    expect(PANEL_BOARD_FIXED_FAMILY.rows.length + PANEL_BOARD_ORDER_FAMILY.rows.length).toBe(PANEL_BOARD_RECORDS.length);
-    expect(PANEL_BOARD_FIXED_FAMILY.rows.map((row) => row.key)).toEqual(PANEL_BOARD_RECORDS.filter((record) => record.fixedSize !== null)
-      .map((record) => record.key));
+    const recordsById = {
+      [PANEL_BOARD_FIXED_FAMILY.id]: PANEL_BOARD_RECORDS.filter((record) => record.fixedSize !== null),
+      [PANEL_BOARD_ORDER_FAMILY.id]: PANEL_BOARD_RECORDS.filter((record) => record.fixedSize === null),
+    };
+    expect(FAMILIES.map((family) => family.id).sort()).toEqual(Object.keys(recordsById).sort());
+    for (const family of FAMILIES) expect(family.rows, family.id).toHaveLength(recordsById[family.id].length);
+    expect(PANEL_BOARD_FIXED_FAMILY.rows.map((row) => row.key)).toEqual(recordsById[PANEL_BOARD_FIXED_FAMILY.id].map((record) => record.key));
   });
 
   it('パネルボードの板厚・サイズ・質量の出し方が照らす側の読みと合う', () => {
@@ -97,7 +107,7 @@ describe('板の族の製品の行と照らす側の読み', () => {
       // 資料のサイズの列(定尺か上限かの語が無い)の値を定尺として入れた行だけ、備考に印を持つ(統括の決定 2026-11-18 14:4x)。
       const fromSizeColumn = (cells['サイズ'] ?? '').startsWith('サイズ');
       expect(record.sizeNote, record.key).toBe(fromSizeColumn ? 'サイズは資料のサイズ列の値。定尺か上限かの語は資料に無い' : undefined);
-      const row = [...PANEL_BOARD_FIXED_FAMILY.rows, ...PANEL_BOARD_ORDER_FAMILY.rows].find((candidate) => candidate.key === record.key);
+      const row = BOARD_ROWS.find((candidate) => candidate.key === record.key);
       expect(row?.note.endsWith('定尺か上限かの語は資料に無い') ?? false, record.key).toBe(fromSizeColumn);
     }
   });

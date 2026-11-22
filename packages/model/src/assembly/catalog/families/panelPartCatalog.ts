@@ -32,8 +32,11 @@ import { PANEL_COVER_FRAME_RECORDS, PANEL_PART_RECORDS } from './panelPartRows.j
 
 type PartMaterial = 'aluminum' | 'stainless' | 'steel' | 'mixed';
 
-/** パネル扉の部品の行(外形を包む箱。数は資料の記入のまま)。 */
-export interface PanelPartRecord {
+/**
+ * パネル扉の部品の行(外形を包む箱。数は資料の記入のまま)。選ぶ窓に出さない印・代わりに出す行・前の呼びは、行の型の同じ名前の欄を、持つ行だけが
+ * 持つ(行の表の道具が書く)。
+ */
+export interface PanelPartRecord extends Pick<CatalogItemRow, 'listed' | 'listedAs' | 'formerSizes'> {
   readonly key: string;
   readonly size: string;
   readonly page: number;
@@ -74,6 +77,7 @@ function evidence(page: number, locator: string, title = EVIDENCE_TITLE): Catalo
 }
 
 function partRow(record: PanelPartRecord, title: string): CatalogItemRow {
+  const { listed, listedAs, formerSizes } = record;
   // 資料の質量が無い行と部位ごとに材料の違う行は、密度を持たない(部品表は材質の文字だけで、箱の体積 × 密度の質量を出さない)。
   const density = record.material === 'mixed' || record.massG === null ? {} : { densityMaterialId: record.material };
   const label = record.materialText ?? (record.material === 'mixed' ? '' : MATERIAL_LABELS[record.material]);
@@ -84,6 +88,7 @@ function partRow(record: PanelPartRecord, title: string): CatalogItemRow {
     dims: { width: record.width, depth: record.depth, height: record.height, ...(record.massG === null ? {} : { massG: record.massG }) },
     evidence: evidence(record.page, '部品の図(全体の寸法)と質量の記入', title), verification: 'manufacturer-catalog', verified: true,
     note: `形は簡略(${record.simplified.join('・')})。${mass}`, simplified: record.simplified,
+    ...(listed === false ? { listed } : {}), ...(listedAs === undefined ? {} : { listedAs }), ...(formerSizes === undefined ? {} : { formerSizes }),
   };
 }
 

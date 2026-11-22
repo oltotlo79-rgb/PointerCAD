@@ -4,7 +4,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { beamDisplayNumber } from './BeamResults.js';
 import type { BeamMemberDraft } from './beamSession.js';
 import { beamReportFigure } from './beamReportFigure.js';
-import { layoutBeamReport, type OutlineText, type ReportTable } from './beamReportLayout.js';
+import { layoutAnalysisReport, type OutlineText, type ReportTable } from '../analysisReport/reportLayout.js';
 
 type Conditions = Pick<BeamAnalysisDocument, 'id' | 'revision' | 'source' | 'units' | 'nodes' | 'members' |
   'materials' | 'sections' | 'constraints' | 'loads'>;
@@ -74,7 +74,7 @@ function resultTables(result: BeamAnalysisResult): ReportTable[] {
   }, { magnitude: -1, id: '' });
   if (peak.magnitude < 0) throw new Error(t('beam.error.model'));
   return [
-    { id: 'summary', title: t('beam.report.summary'), widths: [78, 102], rows: [
+    { id: 'summary', title: t('analysisReport.summary'), widths: [78, 102], rows: [
       [t('beam.report.peak'), number(peak.magnitude * 1000) + ' mm  (' + peak.id + ')'],
       [t('beam.report.balanceForce'), vector(balance.forceN)],
       [t('beam.report.balanceMoment'), vector(balance.momentNm, 1000)],
@@ -98,8 +98,8 @@ export function buildBeamReport(input: BeamReportInput, outlineText: OutlineText
   if (conditions.id !== result.analysisId || conditions.revision !== result.analysisRevision ||
     conditions.source.documentId !== result.source.documentId || conditions.source.documentRevision !== result.source.documentRevision ||
     conditions.source.geometryRevision !== result.source.geometryRevision) throw new Error(t('beam.error.model'));
-  const header = (page: number): readonly string[] => [t('beam.report.title') + '    ' + t('beam.report.page').replace('{page}', String(page)),
-    t('beam.report.document') + '  ' + input.documentName + '    ' + t('beam.report.analysis') + '  ' + input.analysisName,
-    t('beam.report.exported') + '  ' + input.exportedAt + '    ' + t('beam.report.version') + '  ' + input.appVersion];
-  return layoutBeamReport(header, [...conditionTables(input), ...resultTables(result)], beamReportFigure(conditions, result), outlineText);
+  const header = (page: number): readonly string[] => [t('beam.report.title') + '    ' + t('analysisReport.page').replace('{page}', String(page)),
+    t('analysisReport.document') + '  ' + input.documentName + '    ' + t('analysisReport.analysis') + '  ' + input.analysisName,
+    t('analysisReport.exported') + '  ' + input.exportedAt + '    ' + t('analysisReport.version') + '  ' + input.appVersion];
+  return layoutAnalysisReport(header, [...conditionTables(input), ...resultTables(result)], beamReportFigure(conditions, result), outlineText);
 }

@@ -3,6 +3,7 @@
  * 書き直した文字とバイトが一致し、組めて誤りが 0 で、部品の数が行の数と同じ事を確かめる(P2。族ごとの保存の検査を 1 つにした)。
  * 族と行の数は登録の表から導く。族を足しても、この検査は直さなくてよい。欄の値は製品の既定(行ごとの既定を含む)で、
  * 今までの族ごとの検査が既定でない値を渡していた族だけ、その値を渡す(EXPLICIT_VALUES)。
+ * 選ぶ窓に出さない行(listed: false)と、前の呼び(formerSizes)で保存した部品(前の版で保存したファイルの形)も、同じ書き手と読み手で開き直せる事を見る。
  */
 import {
   addComponent, buildStandardPartFromSource, createAssemblyDocument, createComponentFor, createStandardPartSource,
@@ -62,6 +63,39 @@ describe('登録の表の全部の族の部品の保存と開き直し', () => {
     expect(sources.every((source) => source.catalogRevision !== '' && source.generatorRevision !== '')).toBe(true);
     for (const [key, value] of Object.entries(values)) expect(sources.every((source) => source.options[key] === value), key).toBe(true);
     const document = assemblyOf(`${id} の保存`, sources);
+    const text = writeAssemblyDocument(document, SAVE_OPTIONS);
+    const bytes = await writePcadaFile(document, SAVE_OPTIONS);
+    const json = readAssemblyDocument(text);
+    const zip = await readPcadaFile(bytes);
+    if (!json.ok || !zip.ok) throw new Error('reopen failed');
+    for (const reopened of [json.document, zip.document]) {
+      expect(reopened).toEqual(document);
+      expect(writeAssemblyDocument(reopened, SAVE_OPTIONS)).toBe(text);
+      expect(await writePcadaFile(reopened, SAVE_OPTIONS)).toEqual(bytes);
+      const resolved = resolveAssembly(reopened, { standardPart: buildStandardPartFromSource });
+      expect(resolved.errors).toEqual([]);
+      expect(resolved.parts.size).toBe(sources.length);
+    }
+  });
+
+  it('選ぶ窓に出さない行と、前の呼びで保存した部品は、JSON と ZIP で開き直しても同じで、保存の欄の食い違いにならずに組め、今の呼びの部品も今どおり', async () => {
+    await PRODUCT_CATALOG_REGISTRY.ensure(FAMILY_IDS);
+    const sources: StandardPartSource[] = [];
+    const counts = { unlisted: 0, former: 0 };
+    for (const id of FAMILY_IDS) {
+      for (const row of PRODUCT_CATALOG_REGISTRY.loaded(id)?.rows.filter((item) => item.listed === false || item.formerSizes !== undefined) ?? []) {
+        const options = { family: id, item: row.key, ...(EXPLICIT_VALUES[id] ?? {}) };
+        const current = createStandardPartSource('catalogItem', row.size, options);
+        // 前の版で保存した形: 鍵・欄・版は今と同じで、呼びだけが前の呼び。前の呼びから作り直すと今の呼びの形になる。
+        const former = (row.formerSizes ?? []).map((size) => ({ ...current, size }));
+        for (const saved of former) expect(createStandardPartSource('catalogItem', saved.size, options), row.key).toEqual(current);
+        sources.push(current, ...former);
+        counts.former += former.length;
+        if (row.listed === false) counts.unlisted += 1;
+      }
+    }
+    expect(counts.unlisted > 0 && counts.former > 0, JSON.stringify(counts)).toBe(true);
+    const document = assemblyOf('選ぶ窓に出さない行と前の呼びの保存', sources);
     const text = writeAssemblyDocument(document, SAVE_OPTIONS);
     const bytes = await writePcadaFile(document, SAVE_OPTIONS);
     const json = readAssemblyDocument(text);

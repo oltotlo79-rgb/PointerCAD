@@ -10,6 +10,7 @@ import {
   waitForRecompute,
   type RecomputeToken,
 } from './recompute.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /**
  * 平面による切断(FR-432)とミラー(FR-419)を、ヘッドレスで通しで確かめる
@@ -133,9 +134,7 @@ function propertyValue(page: Page, key: string): Locator {
 }
 
 function propertyFieldBox(page: Page, label: string): Locator {
-  return propertyPanel(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) });
+  return fieldByLabel(page, propertyPanel(page), label);
 }
 
 function propertyField(page: Page, label: string): Locator {

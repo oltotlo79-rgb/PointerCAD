@@ -17,4 +17,12 @@ export const EXTRA_FOOT_BASE_RECORDS: readonly FootBaseRecord[] = [
   { key: 'adjuster-166x125x9-h5-d14-9-stainless', size: 'アジャスターベース（キャスターも付けられる板） 166×125×9（取付け穴 5・φ14・φ9・ステンレス）', slot: 0, material: 'stainless',
     page: 248, kind: 'アジャスターベース', width: 166, depth: 125, thickness: 9,
     holes: [[20, 15, 9], [20, 60, 9], [20, 105, 14], [65, 105, 9], [151, 105, 9]], massG: null, simplified: ['アジャスターのめねじ'] },
+  { key: 'adjuster-150x150x12-h10-d9-steel', size: 'アジャスターベース（キャスターも付けられる板） 150×150×12（取付け穴 10・φ9・鋼）', slot: 0, material: 'steel', page: 248,
+    kind: 'アジャスターベース', width: 150, depth: 150, thickness: 12,
+    holes: [[15, 15, 9], [15, 55, 9], [15, 95, 9], [55, 15, 9], [55, 55, 9], [55, 135, 9], [95, 95, 9], [95, 135, 9], [135, 95, 9], [135, 135, 9]],
+    massG: 2000, simplified: ['アジャスターのめねじ'] },
+  { key: 'adjuster-150x150x12-h10-d9-stainless', size: 'アジャスターベース（キャスターも付けられる板） 150×150×12（取付け穴 10・φ9・ステンレス）', slot: 0, material: 'stainless',
+    page: 248, kind: 'アジャスターベース', width: 150, depth: 150, thickness: 12,
+    holes: [[15, 15, 9], [15, 55, 9], [15, 95, 9], [55, 15, 9], [55, 55, 9], [55, 135, 9], [95, 95, 9], [95, 135, 9], [135, 95, 9], [135, 135, 9]],
+    massG: 2020, simplified: ['アジャスターのめねじ'] },
 ];

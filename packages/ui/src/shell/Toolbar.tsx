@@ -5,8 +5,8 @@ import { currentCommandLabel } from '../commands/commandLabels.js';
 import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 /**
  * ツールバー(FR-901〜904、NFR-UX-7)。**ここは区画を並べるだけ**で、
- * 一覧の中身は `toolbarMenus.ts`、押したときの配線と区画の部品は `menus/` にある
- * (道具を足すときはこのファイルではなく、その一覧のファイルへ書く)。
+ * 作図と表示の区画は ModelingToolbarGroups と ViewToolbarGroups、一覧と操作は
+ * `toolbarMenus.ts` と `menus/` にある。
  */
 /*
  * ボディ一覧の詰め替え(`subShapeBodiesOf`)は `solid/subShapeSelection.ts` が正本
@@ -16,40 +16,15 @@ import { currentShortcutAssignments } from '../settings/shortcutSettings.js';
 export { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 
 import { useEffect, useState } from 'react';
-import { FunctionPlotDialog } from '../functionPlot/FunctionPlotDialog.js';
 import { loadRecentFiles } from '../file/recentFiles.js';
 import { t } from '../i18n/t.js';
 import { HelpButton } from '../help/HelpButton.js';
 import { ScriptToolsMenu } from '../scripting/ScriptToolsMenu.js';
 import { SettingsPanel } from '../settings/SettingsPanel.js';
-import {
-  constraintToolReadinessOf,
-} from '../sketch/constraintActions.js';
-import { editToolReadiness } from '../sketch/editCommands.js';
-import { workPlaneEntries } from '../sketch/referenceCommands.js';
-import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { NamedViewsMenu } from '../viewport/NamedViewsMenu.js';
-import {
-  ChainIcon,
-  ConstraintGroupIcon,
-  CubeIcon,
-  EditGroupIcon,
-  FileMenuIcon,
-  GridIcon,
-  HomeIcon,
-  MatchViewIcon,
-  PerspectiveIcon,
-  PlaneSectionIcon,
-  RedoIcon,
-  ShadedIcon,
-  ShadedWithEdgesIcon,
-  ShapeGroupIcon,
-  SnapIcon,
-  UndoIcon,
-  WireframeIcon,
-} from './icons.js';
+import { CubeIcon, FileMenuIcon, RedoIcon, UndoIcon } from './icons.js';
 import {
   ExportPanelHost,
   FILE_ACTIONS,
@@ -57,24 +32,14 @@ import {
   loadTemplateEntries,
   runFileMenuAction,
 } from './menus/fileToolbarActions.js';
-import { LookGroup } from './menus/LookGroup.js';
 import { AnalysisGroup } from './menus/AnalysisGroup.js';
 import { ImportFormatPanel } from '../file/ImportFormatPanel.js';
 import { AssemblyGroup } from './menus/AssemblyGroup.js';
 import { PartFileDialogs } from './menus/PartFileDialogs.js';
-import { PlaneMenu } from './menus/PlaneMenu.js';
-import { TOOLS } from './menus/sketchToolTables.js';
-import { SnapKindsMenu } from './menus/SnapKindsMenu.js';
-import { SolidGroup } from './menus/SolidGroup.js';
 import { ToolMenu } from './menus/ToolMenu.js';
-import {
-  CONSTRAINT_MENU_ITEMS,
-  EDIT_MENU_ITEMS,
-  fileMenuItems,
-  type NamedMenuEntry,
-  PROJECTION_MENU_ITEMS,
-  SHAPE_MENU_ITEMS,
-} from './toolbarMenus.js';
+import { fileMenuItems, type NamedMenuEntry } from './toolbarMenus.js';
+import { AppearanceTools, PartModelingTools } from './ModelingToolbarGroups.js';
+import { DisplayStyleGroup, DrawingAidsGroup, ProjectionGroup, SnapGroup, ViewpointGroup } from './ViewToolbarGroups.js';
 
 /**
  * 画面上端のツールバー(要件§7.1)。
@@ -103,44 +68,77 @@ import {
  */
 export function Toolbar(): React.JSX.Element {
   const documentKind = useAppStore(state => activeDocumentKind(state));
+  return (
+    <header className="pcad-toolbar">
+      <div className="pcad-toolbar__brand">
+        <CubeIcon size={18} className="pcad-toolbar__mark" />
+        <span className="pcad-toolbar__wordmark">{t('app.title')}</span>
+      </div>
+
+      {/*
+        ファイルと履歴。どちらも世の中の道具と同じ図柄なので区画名を置かず、
+        製品名のとなりに 5 つ並べる。
+      */}
+      <div className="pcad-toolbar__actions">
+        <FileActionsGroup />
+        <HistoryGroup />
+      </div>
+
+      {/* 現在の文書の種類を示す札。操作やキーボードの移動先にはしない。 */}
+      <div className="pcad-toolbar__modes" role="group" aria-label={t('toolbar.mode.groupLabel')}>
+        <span className="pcad-toolbar__mode" role="img"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 24, whiteSpace: 'nowrap' }}
+          aria-label={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}
+          title={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}>
+          <CubeIcon className="pcad-toolbar__mode-icon" />
+          <span className="pcad-toolbar__mode-label" style={{ padding: '0 var(--pcad-space-2)' }}>{t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}</span>
+        </span>
+      </div>
+
+      {documentKind === 'part' ? <PartModelingTools /> : (
+        <>
+          <AssemblyGroup />
+          <AppearanceTools />
+        </>
+      )}
+
+      <AnalysisGroup />
+
+      <span className="pcad-toolbar__spacer" />
+
+      {/*
+        投影(FR-102)。2 つの図柄ボタンを畳んだ一覧 1 つへまとめてある。
+        畳んだボタンには**いま効いているほうの図柄**が出るので、開かなくても
+        今の見え方が読み取れる(`triggerItemOf` が `activeTool` = いまの投影と一致する項目を
+        返す。作図面の一覧が「XY」を札に出すのと同じ考え方)。
+        入れ物側に `role="group"` を付けないのは、開いた一覧がすでに同じ「投影」という名前の
+        group だから(`LookGroup` の注釈と同じ理由)。
+      */}
+      <ProjectionGroup />
+
+      <NamedViewsMenu />
+      <DisplayStyleGroup />
+      <DrawingAidsGroup />
+      {documentKind === 'part' ? <SnapGroup /> : null}
+      <ViewpointGroup />
+
+      {/*
+        表示設定(FR-908、FR-909)。歯車ひとつを視点区画の右へ置き、押すとその場に
+        テーマの見本と拡大率が開く(固定の区画は増やさない、要件§7.1)。
+        区画名を持たない図柄だけのボタンなので、名前は読み上げ名とツールチップが担う。
+        溝(.pcad-segmented)で囲まないのは、1 つしか無いことと、1440 画素の窓で
+        1 段を保つ幅の予算のため(囲むと 6 画素増える)。
+      */}
+      <SettingsPanel />
+      <HelpButton />
+      <SavePointsDialogHost />
+    </header>
+  );
+}
+
+function FileActionsGroup(): React.JSX.Element {
+  const documentKind = useAppStore(state => activeDocumentKind(state));
   const shortcutAssignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
-  const projection = useAppStore((state) => state.projection);
-  const displayStyle = useAppStore((state) => state.displayStyle);
-  const showGrid = useAppStore((state) => state.showGrid);
-  // 断面表示(FR-111)。**入切だけ**を取り出して、切る位置が動いただけでは
-  // ツールバーを描き直さない(NFR-PF-1。他の札と同じ取り出し方)。
-  const sectionViewOn = useAppStore((state) => state.sectionView !== null);
-  const activeTool = useAppStore((state) => state.activeTool);
-  const workPlaneId = useAppStore((state) => state.workPlaneId);
-  const snapEnabled = useAppStore((state) => state.snapEnabled);
-  const snapKinds = useAppStore((state) => state.snapKinds);
-  // 向きの吸着の角度の刻み(FR-110)。数だけを取り出して、他の表示設定の変化では描き直さない。
-  const trackAngleStep = useAppStore((state) => state.displaySettings.trackAngleStep);
-  const chaining = useAppStore((state) => state.chaining);
-  const partDocument = useAppStore((state) => state.document);
-  // 文書にある任意の作業平面(FR-328)。作図面の一覧に名前で並べる。
-  const customPlanes = workPlaneEntries(partDocument);
-  const bodies = useAppStore((state) => state.bodies);
-  // ソリッド・加工の押せる条件の判定(solidToolReadiness)が要る形へ詰め替える
-  // (subShapeBodiesOf の注釈)。
-  const subShapeBodies = subShapeBodiesOf(bodies);
-  const selection = useAppStore((state) => state.selection);
-  // 外観(FR-1106〜1110)の押せる条件の判定に要る。
-  const selectionKind = useAppStore((state) => state.selectionKind);
-  const appearanceMatches = useAppStore((state) => state.appearanceMatches);
-  // 整形系(オフセット、FR-321)の押せる条件の判定に要る。
-  const resolvedSketch = useAppStore((state) => state.resolvedSketch);
-  const canUndo = useAppStore((state) => state.canUndo);
-  const canRedo = useAppStore((state) => state.canRedo);
-  // 拘束(FR-313)。いま選んでいる拘束の道具と、履歴そのもの(下見に要る)。
-  const activeConstraintKind = useAppStore((state) => state.activeConstraintKind);
-  useAppStore((state) => state.sketch);
-  /*
-   * 「拘束」の一覧の入り切り。材料(解決結果)を作るのは**一覧を開いたときだけ**なので、
-   * ここで作った関数を渡す(`constraintToolReadinessOf` の注釈、NFR-PF-1)。
-   * 上で `sketch` と `selection` を購読しているので、どちらかが変われば描き直される。
-   */
-  const constraintReadinessOf = constraintToolReadinessOf();
   /*
    * 書き出しのパネルが開いているか。**見た目だけの一時状態**なので
    * ここで持つ(`SettingsPanel` の開閉と同じ扱い。rules/04 の「状態はストア 1 本」は
@@ -151,8 +149,6 @@ export function Toolbar(): React.JSX.Element {
   const setComparisonOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('comparison', open);
   const setExportOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('export', open);
   const setImportOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('import', open);
-  const functionOpen = utilityPanel === 'functionPlot';
-  const setFunctionOpen = (open: boolean): void => useAppStore.getState().setUtilityPanelOpen('functionPlot', open);
   /*
    * 「ファイル」の一覧に並べる、数の決まらない行の材料。
    *  - 保存したひな形(FR-814): ブラウザの中の置き場から**非同期**で読む。
@@ -184,468 +180,126 @@ export function Toolbar(): React.JSX.Element {
       alive = false;
     };
   }, [documentKind, fileName, templateSaveCount]);
-
   return (
-    <header className="pcad-toolbar">
-      <div className="pcad-toolbar__brand">
-        <CubeIcon size={18} className="pcad-toolbar__mark" />
-        <span className="pcad-toolbar__wordmark">{t('app.title')}</span>
-      </div>
-
+    <div className="pcad-segmented" role="group" aria-label={t('toolbar.file.title')}>
+      {FILE_ACTIONS.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          className="pcad-button pcad-button--icon"
+          title={fileTooltip(action.id, shortcutAssignments, documentKind)}
+          aria-label={t(action.labelKey)}
+          data-command-id={toolbarCommandId('file', action.id)}
+          onClick={(event) => {
+            executeCommand(action.id === 'save' && event.shiftKey
+              ? toolbarCommandId('fileMenu', 'saveAs')
+              : toolbarCommandId('file', action.id));
+          }}
+        >
+          <action.Icon />
+        </button>
+      ))}
       {/*
-        ファイルと履歴。どちらも世の中の道具と同じ図柄なので区画名を置かず、
-        製品名のとなりに 5 つ並べる。
+        たまにしか使わないファイル操作。**新規・開く・保存と
+        同じ溝の中**へ畳んだボタンを 1 つだけ足す。区画は増やさない(要件§7.1、rules/04)。
+        溝は 88 → 121 画素の 33 画素だけ広がり、一覧の中へ項目をいくつ足しても
+        そこから先は増えない(`toolbarMenus.ts` の `segmentedWidthPixels`)。
+
+        押下表示を出さないのは、ファイル操作は**押した瞬間に終わる**もので、
+        「いまこの道具を使っている」状態にならないため(「投影」と同じ理由)。
       */}
-      <div className="pcad-toolbar__actions">
-        <div className="pcad-segmented" role="group" aria-label={t('toolbar.file.title')}>
-          {FILE_ACTIONS.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              className="pcad-button pcad-button--icon"
-              title={fileTooltip(action.id, shortcutAssignments, documentKind)}
-              aria-label={t(action.labelKey)}
-              data-command-id={toolbarCommandId('file', action.id)}
-              onClick={(event) => {
-                executeCommand(action.id === 'save' && event.shiftKey
-                  ? toolbarCommandId('fileMenu', 'saveAs')
-                  : toolbarCommandId('file', action.id));
-              }}
-            >
-              <action.Icon />
-            </button>
-          ))}
-          {/*
-            たまにしか使わないファイル操作。**新規・開く・保存と
-            同じ溝の中**へ畳んだボタンを 1 つだけ足す。区画は増やさない(要件§7.1、rules/04)。
-            溝は 88 → 121 画素の 33 画素だけ広がり、一覧の中へ項目をいくつ足しても
-            そこから先は増えない(`toolbarMenus.ts` の `segmentedWidthPixels`)。
-
-            押下表示を出さないのは、ファイル操作は**押した瞬間に終わる**もので、
-            「いまこの道具を使っている」状態にならないため(「投影」と同じ理由)。
-          */}
-          <ToolMenu
-            /*
-              決まった 6 行のうしろへ、保存したひな形と最近使ったファイルが名前のまま並ぶ。
-              **0 件のものは 1 行も出ない**ので、押しても何も起きない行が
-              画面に出ることはない。行がいくつ増えても溝の幅は変わらない。
-            */
-            items={fileMenuItems(
-              templateEntries,
-              recentEntries,
-              documentKind === 'assembly' ? 'assembly' : 'part',
-            )}
-            commandGroup="fileMenu"
-            groupLabelKey="toolbar.fileMenu.groupLabel"
-            groupTooltipKey="toolbar.fileMenu.tooltip"
-            GroupIcon={FileMenuIcon}
-            /*
-              ファイル操作は道具として選ばれた状態にならないので、畳んだボタンの図柄は
-              `ToolMenu` が覚える「最後に使った操作」だけで決まる(「合わせる」と同じ)。
-            */
-            activeTool=""
-            showPressed={false}
-            onChoose={(id) => {
-              runFileMenuAction(
-                id,
-                () => {
-                  setExportOpen(true);
-                },
-                () => {
-                  // 保存し終えたひな形が一覧へすぐ並ぶよう、読み直しの切っ掛けを立てる。
-                  useAppStore.getState().refreshTemplateEntries();
-                },
-                () => { setExportOpen(false); setImportOpen(true); },
-                () => { setExportOpen(false); setImportOpen(false); setComparisonOpen(true); },
-              );
-            }}
-          />
-          {/*
-            書き出しのパネル(FR-803)。一覧の「書き出す」を選んだときだけ出す。
-            **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
-          */}
-          {documentKind === 'part' ? <PartFileDialogs /> : null}
-          {documentKind === 'part' ? <ScriptToolsMenu /> : null}
-          {documentKind === 'part' && importOpen ? <ImportFormatPanel onClose={() => { setImportOpen(false); }} /> : null}
-          {documentKind === 'part' && exportOpen ? (
-            <ExportPanelHost
-              onClose={() => {
-                setExportOpen(false);
-              }}
-            />
-          ) : null}
-        </div>
-        <div className="pcad-segmented" role="group" aria-label={t('toolbar.history.groupLabel')}>
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            title={
-              canUndo ? currentCommandLabel('history.undo', shortcutAssignments, documentKind) : t('toolbar.history.undoUnavailable')
-            }
-            aria-label={t('toolbar.history.undo')}
-            aria-disabled={!canUndo}
-            data-command-id="history.undo"
-            onClick={() => {
-              executeCommand('history.undo');
-            }}
-          >
-            <UndoIcon />
-          </button>
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            title={
-              canRedo ? currentCommandLabel('history.redo', shortcutAssignments, documentKind) : t('toolbar.history.redoUnavailable')
-            }
-            aria-label={t('toolbar.history.redo')}
-            aria-disabled={!canRedo}
-            data-command-id="history.redo"
-            onClick={() => {
-              executeCommand('history.redo');
-            }}
-          >
-            <RedoIcon />
-          </button>
-
-        </div>
-      </div>
-
-      {/* 現在の文書の種類を示す札。操作やキーボードの移動先にはしない。 */}
-      <div className="pcad-toolbar__modes" role="group" aria-label={t('toolbar.mode.groupLabel')}>
-        <span className="pcad-toolbar__mode" role="img"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 24, whiteSpace: 'nowrap' }}
-          aria-label={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}
-          title={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}>
-          <CubeIcon className="pcad-toolbar__mode-icon" />
-          <span className="pcad-toolbar__mode-label" style={{ padding: '0 var(--pcad-space-2)' }}>{t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}</span>
-        </span>
-      </div>
-
-      {documentKind === 'part' ? <><div
-        className="pcad-toolbar__group"
-        role="group"
-        aria-label={t('toolbar.sketch.groupLabel')}
-      >
-        <span className="pcad-toolbar__group-label" title={t('toolbar.sketch.tooltip')}>
-          {t('toolbar.sketch.groupLabel')}
-        </span>
-        <div className="pcad-segmented">
-          {TOOLS.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              className="pcad-button pcad-button--collapsible"
-              title={`${currentCommandLabel(toolbarCommandId('sketch', tool.id), shortcutAssignments, documentKind)}: ${t(tool.tooltipKey)}`}
-              data-command-id={toolbarCommandId('sketch', tool.id)}
-              aria-label={t(tool.labelKey)}
-              aria-pressed={activeTool === tool.id}
-              onClick={() => {
-                executeCommand(toolbarCommandId('sketch', tool.id));
-              }}
-            >
-              <tool.Icon />
-              <span className="pcad-button__label">{t(tool.labelKey)}</span>
-            </button>
-          ))}
-          {/*
-            「作図」「編集」は基本の 6 道具と**同じ溝の中**へ図柄+▾ のボタンとして置く
-            (利用者の決定)。区画(.pcad-toolbar__group)は縦積みなので、
-            溝の外へ出すと道具の下の段に落ちてツールバーが 2〜3 段相当になってしまう
-            (実測 97.5〜126.5px)。ここへ入れておけば、一覧に道具を
-            いくつ足しても横幅は 31 画素のまま増えない(toolbarMenus.ts の幅の見積もり)。
-          */}
-          <ToolMenu
-            items={SHAPE_MENU_ITEMS}
-            groupLabelKey="toolbar.shape.groupLabel"
-            groupTooltipKey="toolbar.shape.tooltip"
-            GroupIcon={ShapeGroupIcon}
-            activeTool={activeTool}
-            commandGroup="shape"
-          />
-          {functionOpen ? <FunctionPlotDialog onClose={() => setFunctionOpen(false)} /> : null}
-          <ToolMenu
-            items={EDIT_MENU_ITEMS}
-            groupLabelKey="toolbar.edit.groupLabel"
-            groupTooltipKey="toolbar.edit.tooltip"
-            GroupIcon={EditGroupIcon}
-            activeTool={activeTool}
-            /*
-              整形系のうち「対象を選んでから操作」の道具は、押せない理由を一覧の
-              項目にも出す(NFR-UX-5)。道具ごとの振り分けは `editToolReadiness`
-              (editCommands.ts)の 1 か所に置いてある。トリム・延長は選択を使わないので
-              いつでも押せる。
-            */
-            readinessOf={(id) => editToolReadiness(id, resolvedSketch, selection)}
-            commandGroup="edit"
-          />
-          {/*
-            「拘束」(FR-313)。区画も段も増やさず、畳んだ一覧を 1 つ足すだけ。
-            溝の幅は 31 画素しか増えないので、1440 画素の窓では
-            1 段(68.5 画素)のまま(`toolbarMenus.ts` の `segmentedWidthPixels`)。
-
-            押した後の流れは `constraintActions.ts` の 1 か所に置く。選んでいるものだけで
-            条件が足りていればその場で付き、足りなければ「道具を選んだ状態」になって
-            ビューポートで押した要素を順に受け取る(トリムと同じ流儀)。
-          */}
-          <ToolMenu
-            items={CONSTRAINT_MENU_ITEMS}
-            groupLabelKey="toolbar.constraint.groupLabel"
-            groupTooltipKey="toolbar.constraint.tooltip"
-            GroupIcon={ConstraintGroupIcon}
-            activeTool={activeConstraintKind ?? ''}
-            readinessOf={constraintReadinessOf}
-            commandGroup="constraint"
-          />
-        </div>
-      </div>
-
-      <SolidGroup
-        document={partDocument}
-        bodies={subShapeBodies}
-        selection={selection}
-        activeTool={activeTool}
+      <ToolMenu
+        /*
+          決まった 6 行のうしろへ、保存したひな形と最近使ったファイルが名前のまま並ぶ。
+          **0 件のものは 1 行も出ない**ので、押しても何も起きない行が
+          画面に出ることはない。行がいくつ増えても溝の幅は変わらない。
+        */
+        items={fileMenuItems(
+          templateEntries,
+          recentEntries,
+          documentKind === 'assembly' ? 'assembly' : 'part',
+        )}
+        commandGroup="fileMenu"
+        groupLabelKey="toolbar.fileMenu.groupLabel"
+        groupTooltipKey="toolbar.fileMenu.tooltip"
+        GroupIcon={FileMenuIcon}
+        /*
+          ファイル操作は道具として選ばれた状態にならないので、畳んだボタンの図柄は
+          `ToolMenu` が覚える「最後に使った操作」だけで決まる(「合わせる」と同じ)。
+        */
+        activeTool=""
+        showPressed={false}
+        onChoose={(id) => {
+          runFileMenuAction(
+            id,
+            () => {
+              setExportOpen(true);
+            },
+            () => {
+              // 保存し終えたひな形が一覧へすぐ並ぶよう、読み直しの切っ掛けを立てる。
+              useAppStore.getState().refreshTemplateEntries();
+            },
+            () => { setExportOpen(false); setImportOpen(true); },
+            () => { setExportOpen(false); setImportOpen(false); setComparisonOpen(true); },
+          );
+        }}
       />
-      <LookGroup
-        document={partDocument}
-        bodies={subShapeBodies}
-        selection={selection}
-        selectionKind={selectionKind}
-        matches={appearanceMatches}
-        activeTool={activeTool}
-      />
-
-      <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.plane.groupLabel')}>
-        <span className="pcad-toolbar__group-label" title={t('toolbar.plane.tooltip')}>
-          {t('toolbar.plane.groupLabel')}
-        </span>
-        <div className="pcad-segmented">
-          <PlaneMenu
-            workPlaneId={workPlaneId}
-            activeTool={activeTool}
-            customPlanes={customPlanes}
-          />
-          {/*
-            いま見ている向きに最も近い作図面へ移る。視点の正本はビューポートの
-            中にあるので、ここでは要求を数えるだけにしてビューポートに応えてもらう。
-          */}
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            data-command-id={toolbarCommandId('view', 'matchWorkPlane')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'matchWorkPlane'), shortcutAssignments, documentKind)}: ${t('toolbar.plane.matchViewTooltip')}`}
-            aria-label={t('toolbar.plane.matchView')}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'matchWorkPlane'));
-            }}
-          >
-            <MatchViewIcon />
-          </button>
-        </div>
-      </div>
-      </> : <><AssemblyGroup /><LookGroup document={partDocument} bodies={subShapeBodies}
-        selection={selection} selectionKind={selectionKind} matches={appearanceMatches} activeTool={activeTool} /></>}
-
-      <AnalysisGroup />
-
-      <span className="pcad-toolbar__spacer" />
-
       {/*
-        投影(FR-102)。2 つの図柄ボタンを畳んだ一覧 1 つへまとめてある。
-        畳んだボタンには**いま効いているほうの図柄**が出るので、開かなくても
-        今の見え方が読み取れる(`triggerItemOf` が `activeTool` = いまの投影と一致する項目を
-        返す。作図面の一覧が「XY」を札に出すのと同じ考え方)。
-        入れ物側に `role="group"` を付けないのは、開いた一覧がすでに同じ「投影」という名前の
-        group だから(`LookGroup` の注釈と同じ理由)。
+        書き出しのパネル(FR-803)。一覧の「書き出す」を選んだときだけ出す。
+        **固定の区画は増やさない**(要件§7.1)——ここはツールバーの中の浮かぶ層である。
       */}
-      <div className="pcad-toolbar__group">
-        <span className="pcad-toolbar__group-label" title={t('toolbar.projection.tooltip')}>
-          {t('toolbar.projection.groupLabel')}
-        </span>
-        <div className="pcad-segmented">
-          <ToolMenu
-            items={PROJECTION_MENU_ITEMS}
-            groupLabelKey="toolbar.projection.groupLabel"
-            groupTooltipKey="toolbar.projection.tooltip"
-            GroupIcon={PerspectiveIcon}
-            activeTool={projection}
-            /*
-              投影は必ずどちらかが効いているので、畳んだボタンの押下表示は出さない
-              (常に点いたままだと「押しっぱなし」に見える)。
-              いま効いているほうは図柄が示す。
-            */
-            showPressed={false}
-            commandGroup="projection"
-          />
-        </div>
-      </div>
+      {documentKind === 'part' ? <PartFileDialogs /> : null}
+      {documentKind === 'part' ? <ScriptToolsMenu /> : null}
+      {documentKind === 'part' && importOpen ? <ImportFormatPanel onClose={() => { setImportOpen(false); }} /> : null}
+      {documentKind === 'part' && exportOpen ? (
+        <ExportPanelHost
+          onClose={() => {
+            setExportOpen(false);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
 
-      <NamedViewsMenu />
-      <div
-        className="pcad-toolbar__group"
-        role="group"
-        aria-label={t('toolbar.displayStyle.groupLabel')}
+function HistoryGroup(): React.JSX.Element {
+  const documentKind = useAppStore(state => activeDocumentKind(state));
+  const shortcutAssignments = useAppStore(state => currentShortcutAssignments(state.displaySettings));
+  const canUndo = useAppStore((state) => state.canUndo);
+  const canRedo = useAppStore((state) => state.canRedo);
+  return (
+    <div className="pcad-segmented" role="group" aria-label={t('toolbar.history.groupLabel')}>
+      <button
+        type="button"
+        className="pcad-button pcad-button--icon"
+        title={
+          canUndo ? currentCommandLabel('history.undo', shortcutAssignments, documentKind) : t('toolbar.history.undoUnavailable')
+        }
+        aria-label={t('toolbar.history.undo')}
+        aria-disabled={!canUndo}
+        data-command-id="history.undo"
+        onClick={() => {
+          executeCommand('history.undo');
+        }}
       >
-        <span className="pcad-toolbar__group-label" title={t('toolbar.displayStyle.tooltip')}>
-          {t('toolbar.displayStyle.groupLabel')}
-        </span>
-        {/*
-          3 つの図柄がそのまま見え方(塗りだけ / 塗りと稜線 / 線だけ)を写しているので、
-          文字を添えずに図柄だけで並べる。名前は読み上げ名とツールチップが持つ。
-        */}
-        <div className="pcad-segmented">
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            data-command-id={toolbarCommandId('view', 'shaded')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'shaded'), shortcutAssignments, documentKind)}: ${t('toolbar.displayStyle.shaded')}`}
-            aria-label={t('toolbar.displayStyle.shaded')}
-            aria-pressed={displayStyle === 'shaded'}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'shaded'));
-            }}
-          >
-            <ShadedIcon />
-          </button>
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            data-command-id={toolbarCommandId('view', 'shadedWithEdges')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'shadedWithEdges'), shortcutAssignments, documentKind)}: ${t('toolbar.displayStyle.shadedWithEdges')}`}
-            aria-label={t('toolbar.displayStyle.shadedWithEdges')}
-            aria-pressed={displayStyle === 'shadedWithEdges'}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'shadedWithEdges'));
-            }}
-          >
-            <ShadedWithEdgesIcon />
-          </button>
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            data-command-id={toolbarCommandId('view', 'wireframe')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'wireframe'), shortcutAssignments, documentKind)}: ${t('toolbar.displayStyle.wireframe')}`}
-            aria-label={t('toolbar.displayStyle.wireframe')}
-            aria-pressed={displayStyle === 'wireframe'}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'wireframe'));
-            }}
-          >
-            <WireframeIcon />
-          </button>
-          {/*
-            ビューの断面表示(FR-111)。**「表示」の区画に入口 1 つだけ**を
-            足す(区画は増やさない、rules/04)。押すと今の作図面で切り、切る位置はビューポートの
-            つまみとその場の数値入力で動かす。**形は切らない**(見た目だけのクリップ)。
-            図柄は交差の印を当面そのまま使う(専用の図柄はまだ無い)。
-          */}
-          {documentKind === 'part' ? <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            data-command-id={toolbarCommandId('view', 'section')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'section'), shortcutAssignments, documentKind)}: ${t('toolbar.sectionView.tooltip')}`}
-            aria-label={t('toolbar.sectionView.label')}
-            aria-pressed={sectionViewOn}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'section'));
-            }}
-          >
-            <PlaneSectionIcon />
-          </button> : null}
-        </div>
-      </div>
+        <UndoIcon />
+      </button>
+      <button
+        type="button"
+        className="pcad-button pcad-button--icon"
+        title={
+          canRedo ? currentCommandLabel('history.redo', shortcutAssignments, documentKind) : t('toolbar.history.redoUnavailable')
+        }
+        aria-label={t('toolbar.history.redo')}
+        aria-disabled={!canRedo}
+        data-command-id="history.redo"
+        onClick={() => {
+          executeCommand('history.redo');
+        }}
+      >
+        <RedoIcon />
+      </button>
 
-      <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.support.groupLabel')}>
-        <span className="pcad-toolbar__group-label" title={t('toolbar.support.tooltip')}>
-          {t('toolbar.support.groupLabel')}
-        </span>
-        <div className="pcad-segmented">
-          {/* 方眼の図柄そのままなので文字は添えない。「続けてかく」は狭い窓でだけ畳む。 */}
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            data-command-id={toolbarCommandId('view', 'grid')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'grid'), shortcutAssignments, documentKind)}: ${t('toolbar.grid.tooltip')}`}
-            aria-label={t('toolbar.grid.label')}
-            aria-pressed={showGrid}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'grid'));
-            }}
-          >
-            <GridIcon />
-          </button>
-          {documentKind === 'part' ? <button
-            type="button"
-            className="pcad-button pcad-button--collapsible"
-            data-command-id={toolbarCommandId('view', 'chaining')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'chaining'), shortcutAssignments, documentKind)}: ${t('toolbar.chain.tooltip')}`}
-            aria-label={t('toolbar.chain.label')}
-            aria-pressed={chaining}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'chaining'));
-            }}
-          >
-            <ChainIcon />
-            <span className="pcad-button__label">{t('toolbar.chain.label')}</span>
-          </button> : null}
-        </div>
-      </div>
-
-      {documentKind === 'part' ? <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.snap.groupLabel')}>
-        <span className="pcad-toolbar__group-label" title={t('toolbar.snap.tooltip')}>
-          {t('toolbar.snap.groupLabel')}
-        </span>
-        <div className="pcad-segmented">
-          <button
-            type="button"
-            className="pcad-button pcad-button--icon"
-            data-command-id={toolbarCommandId('view', 'snap')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'snap'), shortcutAssignments, documentKind)}: ${t('toolbar.snap.tooltip')}`}
-            aria-label={t('toolbar.snap.label')}
-            aria-pressed={snapEnabled}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'snap'));
-            }}
-          >
-            <SnapIcon />
-          </button>
-          <SnapKindsMenu
-            snapEnabled={snapEnabled}
-            snapKinds={snapKinds}
-            trackAngleStep={trackAngleStep}
-          />
-        </div>
-      </div> : null}
-
-      <div className="pcad-toolbar__group" role="group" aria-label={t('toolbar.view.groupLabel')}>
-        <span className="pcad-toolbar__group-label" title={t('toolbar.view.tooltip')}>
-          {t('toolbar.view.groupLabel')}
-        </span>
-        <div className="pcad-segmented">
-          <button
-            type="button"
-            className="pcad-button pcad-button--action pcad-button--icon"
-            data-command-id={toolbarCommandId('view', 'home')}
-            title={`${currentCommandLabel(toolbarCommandId('view', 'home'), shortcutAssignments, documentKind)}: ${t('toolbar.home.tooltip')}`}
-            aria-label={t('toolbar.home.label')}
-            onClick={() => {
-              executeCommand(toolbarCommandId('view', 'home'));
-            }}
-          >
-            <HomeIcon />
-          </button>
-        </div>
-      </div>
-
-      {/*
-        表示設定(FR-908、FR-909)。歯車ひとつを視点区画の右へ置き、押すとその場に
-        テーマの見本と拡大率が開く(固定の区画は増やさない、要件§7.1)。
-        区画名を持たない図柄だけのボタンなので、名前は読み上げ名とツールチップが担う。
-        溝(.pcad-segmented)で囲まないのは、1 つしか無いことと、1440 画素の窓で
-        1 段を保つ幅の予算のため(囲むと 6 画素増える)。
-      */}
-      <SettingsPanel />
-      <HelpButton />
-      <SavePointsDialogHost />
-    </header>
+    </div>
   );
 }

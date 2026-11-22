@@ -26,6 +26,7 @@ import { createDrawingSvgPreview, createDrawingTranslationPreview } from './draw
 import { beginDrawingViewDrag, finishDrawingViewDrag, previewDrawingViewDrag, type DrawingViewDrag } from './viewDragCommands.js';
 import { drawingRepairProjection } from './referenceRepairProjection.js';
 import { currentViewControls } from '../settings/viewControlSettings.js';
+import { addsToSelection, LOCAL_SELECTION_MODIFIERS } from '../settings/selectionModifierSetting.js';
 import { drawingEditPointerMatches, drawingPaperPoint, INITIAL_DRAWING_NAVIGATION,
   type DrawingNavigationTransform } from './drawingNavigation.js';
 import { attachDrawingSurfaceInputs } from './drawingSurfaceInputs.js';
@@ -213,18 +214,23 @@ export function DrawingCanvas(): React.JSX.Element {
     repairDocumentId, repairProjection, shown, paperPoint, previewDimension, drag, dimensionSvgPreview,
     noteDrag, tableDrag, gdtDrag, viewDrag, viewSvgPreview, setDragPoint, setDimensionDragStart,
     notePlacement, setNotePlacement, fontStatus, setFontStatus, setFontAttempt, library } = useDrawingCanvas();
+  useAppStore((state) => state.displaySettings.selectionModifier); // 選択のキーの案内の文(B-08 2-5)を、設定を変えた時に描き直す
   return <div className="pcad-drawing-viewport" data-testid="drawing-viewport" ref={viewport}
     data-document-owner={repairDocumentId} data-reference-repair-hover-status={repairProjection.status}
     data-reference-repair-hover-reason={repairProjection.status === 'unavailable' ? repairProjection.reason : undefined}>
     <div className="pcad-drawing-sheet" aria-label={drawing?.name ?? t('drawing.mode')} aria-busy={busy}
       ref={container} tabIndex={0} style={{ transform: `translate(${navigation.x}px, ${navigation.y}px) scale(${navigation.scale})` }}
       onPointerDown={(event) => {
-        if (navigationControls.current?.isDragging() === true || busy || !drawingEditPointerMatches(event) || shown === null || drawing === null) return;
+        // These three tools place or accumulate without a selection shortcut.
+        const modifier = tool === 'note' || tool === 'balloon' || tool === 'dimensionSeries'
+          ? undefined : useAppStore.getState().displaySettings.selectionModifier;
+        const additive = addsToSelection(modifier, event, LOCAL_SELECTION_MODIFIERS.drawingCanvas);
+        if (navigationControls.current?.isDragging() === true || busy || !drawingEditPointerMatches(event, modifier) || shown === null || drawing === null) return;
         const hit = paperPoint(event);
         if (hit === null) return;
         if (tool === 'datum' || tool === 'gdt' || tool === 'weld') {
           const picked = source === null ? null : pickDrawingGeometry(drawing, source, shown.views, hit.point, hit.tolerance);
-          if (picked?.kind === 'subShape' && picked.ref.fingerprint.kind !== 'vertex') pickDrawingTarget(picked, event.shiftKey || event.ctrlKey);
+          if (picked?.kind === 'subShape' && picked.ref.fingerprint.kind !== 'vertex') pickDrawingTarget(picked, additive);
           else useAppStore.getState().setDrawingMessage(t(tool === 'weld' ? 'drawing.weld.pick' : 'drawing.gdt.pick'));
           event.currentTarget.focus({ preventScroll: true }); event.preventDefault(); return;
         }
@@ -232,7 +238,7 @@ export function DrawingCanvas(): React.JSX.Element {
           && hit.point[0] >= item.bounds.left - hit.tolerance && hit.point[0] <= item.bounds.right + hit.tolerance
           && hit.point[1] >= item.bounds.bottom - hit.tolerance && hit.point[1] <= item.bounds.top + hit.tolerance);
         if (tool === 'select' && pickedGdt !== undefined) {
-          const ids = event.ctrlKey || event.shiftKey ? selectedIds.includes(pickedGdt.id) ? selectedIds.filter((id) => id !== pickedGdt.id)
+          const ids = additive ? selectedIds.includes(pickedGdt.id) ? selectedIds.filter((id) => id !== pickedGdt.id)
             : [...selectedIds, pickedGdt.id] : selectedIds.includes(pickedGdt.id) ? selectedIds : [pickedGdt.id];
           useAppStore.getState().selectDrawingIds(ids);
           if (ids.includes(pickedGdt.id)) gdtDrag.current = { document: drawing, ids: new Set(ids), start: hit.point };
@@ -267,7 +273,7 @@ export function DrawingCanvas(): React.JSX.Element {
           }
           // 関連する風船は描画だけで強調する。削除の対象へ追加しない。
           const hitIds = [pickedTable.id, ...componentIds.map((id) => `component:${id}`)];
-          const ids = event.ctrlKey || event.shiftKey ? selectedIds.includes(pickedTable.id)
+          const ids = additive ? selectedIds.includes(pickedTable.id)
             ? selectedIds.filter((id) => !hitIds.includes(id)) : [...new Set([...selectedIds, ...hitIds])]
             : selectedIds.includes(pickedTable.id) ? selectedIds : hitIds;
           useAppStore.getState().selectDrawingIds(ids);
@@ -305,7 +311,7 @@ export function DrawingCanvas(): React.JSX.Element {
           && display.element.curves?.some((curve) => distanceToDrawingCurve(hit.point, curve) <= hit.tolerance) === true) : undefined);
         if (dimension !== undefined) {
           const id = dimension.element.ownerId;
-          const ids = event.ctrlKey || event.shiftKey ? selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]
+          const ids = additive ? selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]
             : selectedIds.includes(id) ? selectedIds : [id];
           useAppStore.getState().selectDrawingIds(ids);
           drag.current = ids.includes(id) ? beginDrawingDimensionDrag(id, dimension.normal, dimension.textPosition, hit.point,
@@ -316,7 +322,7 @@ export function DrawingCanvas(): React.JSX.Element {
           }
         } else {
           const picked = source === null ? null : pickDrawingGeometry(drawing, source, shown.views, hit.point, hit.tolerance);
-          if (picked !== null && tool === 'select' && selectedIds.includes(picked.viewId) && !event.shiftKey && !event.ctrlKey) {
+          if (picked !== null && tool === 'select' && selectedIds.includes(picked.viewId) && !additive) {
             const svg = container.current?.querySelector('svg');
             viewDrag.current = beginDrawingViewDrag(picked.viewId, hit.point,
               new Map(shown.displays.map((item) => [item.element.ownerId, item.normal])));
@@ -324,7 +330,7 @@ export function DrawingCanvas(): React.JSX.Element {
               viewSvgPreview.current = createDrawingTranslationPreview(svg, picked.viewId, viewDrag.current.relatedIds);
               event.currentTarget.setPointerCapture(event.pointerId);
             }
-          } else if (picked !== null) pickDrawingTarget(picked, event.shiftKey || event.ctrlKey || (useAppStore.getState().drawingTool === 'dimension' && targets.length > 0));
+          } else if (picked !== null) pickDrawingTarget(picked, additive || (useAppStore.getState().drawingTool === 'dimension' && targets.length > 0));
           else useAppStore.getState().selectDrawingIds([]);
         }
         event.currentTarget.focus({ preventScroll: true });

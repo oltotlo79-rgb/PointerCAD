@@ -1,9 +1,7 @@
 import * as THREE from 'three';
+import { SOLID_FIELD_HIGH_COLOR, SOLID_FIELD_LOW_COLOR } from './solidFieldPalette.js';
 import { solidFieldFraction, solidFieldOverlayCounts, type SolidFieldMesh } from './solidFieldView.js';
 
-/** Legend colour ramp (blue low -> red high), shared by the viewport layer and the panel legend. */
-export const SOLID_FIELD_LOW_COLOR = 0x2b5cd8;
-export const SOLID_FIELD_HIGH_COLOR = 0xd8342b;
 export function solidFieldColor(fraction: number): THREE.Color {
   const clamped = Math.min(1, Math.max(0, fraction));
   return new THREE.Color(SOLID_FIELD_LOW_COLOR).lerp(new THREE.Color(SOLID_FIELD_HIGH_COLOR), clamped);

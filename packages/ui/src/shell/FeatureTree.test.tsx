@@ -1,3 +1,4 @@
+import { plainText } from '@pointercad/model';
 import React, { Children, isValidElement, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -184,7 +185,7 @@ describe('FeatureTree failed edit consumption at the actual render boundary', ()
   it.each(editKinds)('%s failure leaves its input selectable and unconsumed at every timeline position', kind => {
     const document = fixture(kind);
     useAppStore.getState().resetDocument(document);
-    const errors = [{ featureId: 'edit-1', code: 'missingBody' as const, message: 'Edit failed' }];
+    const errors = [{ featureId: 'edit-1', code: 'missingBody' as const, text: plainText('Edit failed') }];
     for (const timelineIndex of [null, 4, 0, 1, 2, 3] as const) {
       useAppStore.setState({ partErrors: errors, timelineIndex });
       const nodes = render();

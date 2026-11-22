@@ -536,7 +536,7 @@ export function activeSketchErrors(
       kernelErrors.push({
         featureId: error.featureId,
         code: 'kernelFailed',
-        message: error.message,
+        text: error.text,
       });
     }
   }

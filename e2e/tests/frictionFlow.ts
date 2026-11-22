@@ -55,7 +55,7 @@ export async function cantileverWithFrictionInputs(): Promise<{
 /**
  * 報告書の画面検査の材料・断面の出どころ。報告書の単体(packages/ui/src/beam/beamReport.test.ts:12・:68-71。部材 2 本で 1 頁)と同じ
  * 短い文にする。出どころは表の狭い欄(packages/ui/src/beam/beamReport.ts:40・:49-54)で折り返すので、TEST_EVIDENCE の長い英文では
- * 行が伸びて 2 頁目へ送られる(packages/ui/src/beam/beamReportLayout.ts の wrap と改頁)。
+ * 行が伸びて 2 頁目へ送られる(packages/ui/src/analysisReport/reportLayout.ts の wrap と改頁)。
  */
 export const REPORT_EVIDENCE: typeof TEST_EVIDENCE = { kind: 'measured', reference: '記録 A', condition: '室温' };
 

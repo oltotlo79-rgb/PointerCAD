@@ -5,6 +5,7 @@
  * 参照の範囲は公開の `recomputePart` が作る実物を使う(型の抜け道や作り物の受領は使わない)。
  * 実カーネルの形の検査は別(Root が実 OCCT で行う)。
  */
+import { plainText } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   appendSolid,
@@ -259,9 +260,9 @@ describe('段階計算の採用(成功・1回のUndo・自動の再計算を重�
 describe('計算の失敗は文書・形・取り消しの段に触れない', () => {
   it.each([
     { kind: 'failed', failure: 'failed', settle: (call: ControlledCall) => call.settle({ ...success(call, ['first']),
-      errors: [{ featureId: 'extrude-new', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }] }) },
+      errors: [{ featureId: 'extrude-new', code: 'kernelFailed', text: plainText('ソリッドを作れませんでした') }] }) },
     { kind: 'workerBroken', failure: 'workerBroken', settle: (call: ControlledCall) => call.settle({ ...success(call, ['first']),
-      errors: [{ featureId: 'extrude-new', code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE }] }) },
+      errors: [{ featureId: 'extrude-new', code: 'workerBroken', text: plainText(KERNEL_BROKEN_MESSAGE) }] }) },
     { kind: 'missing final body', failure: 'missingBody', settle: (call: ControlledCall) => call.settle(success(call, ['first'])) },
     { kind: 'invalid final body', failure: 'invalidBody', settle: (call: ControlledCall) => {
       const result = success(call, ['first', 'extrude-new']);
@@ -617,7 +618,7 @@ describe('順番と、つまみが途中のときの差し込み', () => {
       const before = useAppStore.getState();
       expect(confirmExtrusion(candidateOf(before.document, 'k'))).toBe('pending');
       calls[1].settle({ ...success(calls[1], ['1', 'extrude-new']),
-        errors: [{ featureId: '2', code: 'kernelFailed', message: '後ろの段が作れませんでした' }] });
+        errors: [{ featureId: '2', code: 'kernelFailed', text: plainText('後ろの段が作れませんでした') }] });
       await until(() => stagedExtrusionFor(useAppStore.getState(), 'k')?.status === 'failed');
       expect(calls).toHaveLength(2);
       expect(stagedExtrusionFor(useAppStore.getState(), 'k')?.failure).toBe('failed');

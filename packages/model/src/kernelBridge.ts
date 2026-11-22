@@ -1965,9 +1965,9 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
         active,
         () => active.remote.measure(request).then((result) => toMeasureOutcome(result)),
         // 測定の結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
-        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
-        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
-      );
+        // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。止まった事は符号 workerBroken で運ぶ(0b-1c)。
+        () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }),
+        undefined, undefined, undefined, 'readonly-mesh-observation');
     },
 
     async exportShapes(steps, options): Promise<ShapeExportOutcome> {

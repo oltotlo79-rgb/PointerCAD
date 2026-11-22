@@ -1,11 +1,13 @@
 /** Called only with this recomputation's final geometry; saved fingerprints never supply values. */
 import { withinMagnitude } from '../numericTolerance.js';
+import { plainTextValue } from '../failureText.js';
 import { resolveSubShapeReference, type KernelBridge, type MeasureTarget, type SolidBody } from '../kernelBridge.js';
 import type { ResolvedPart } from '../part/resolvePart.js';
 import { readReferenceBodies } from '../part/readReferenceBodies.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import { crossVec3, dotVec3, type Vec3 } from '../sketch/vec3.js';
 import { compareMathGeometryCongruence, type MathGeometryComparisonShape } from './mathGeometryCongruence.js';
+import type { WorkerBrokenCode } from '../kernelBridge/bridgeContracts.js';
 import type { MathGeometryCurve, MathGeometryFace, MathGeometryOutcome, MathGeometryPoint, MathGeometryQuantity, MathGeometryRequest,
   MathGeometryShape } from './mathGeometryTypes.js';
 
@@ -24,7 +26,8 @@ export { SUB_SHAPE_AMBIGUITY_MARGIN as MATH_GEOMETRY_AMBIGUITY_MARGIN } from '..
 
 interface Scalar { readonly value: number; readonly unit: 'mm' | 'mm2' | 'mm3' | 'degree' | 'radian' }
 class GeometryProblem extends Error {
-  constructor(readonly reason: Extract<MathGeometryOutcome, { readonly status: 'unresolved' }>['reason'], message: string) {
+  constructor(readonly reason: Extract<MathGeometryOutcome, { readonly status: 'unresolved' }>['reason'], message: string,
+    readonly code?: WorkerBrokenCode) {
     super(message);
   }
 }
@@ -94,7 +97,7 @@ function coordinate(context: MathGeometryContext, quantity: Extract<MathGeometry
   const id = quantity.frame.featureId;
   const failure = context.resolved.references.errors.find(error => error.featureId === id);
   if (context.failedIds.has(id) || failure !== undefined) {
-    throw new GeometryProblem('failed-geometry', failure?.message ?? '参照先の座標系を正しく計算できませんでした。');
+    throw new GeometryProblem('failed-geometry', plainTextValue(failure?.text) ?? '参照先の座標系を正しく計算できませんでした。');
   }
   const frames = context.resolved.references.coordinateSystems.filter(frame => frame.featureId === id);
   if (frames.length !== 1) return missing();
@@ -258,13 +261,13 @@ async function evaluate(context: MathGeometryContext, request: MathGeometryReque
       }
       const target = measureTarget(context, quantity.shape);
       const outcome = await context.bridge.measure(context.resolved.steps, [target], 'massProperties');
-      if (outcome.kind === 'failed') throw new GeometryProblem('failed-geometry', outcome.message);
+      if (outcome.kind === 'failed') throw new GeometryProblem('failed-geometry', outcome.message, outcome.code);
       return outcome.kind === 'massProperties' ? { value: outcome.area, unit: 'mm2' } : missing();
     }
     case 'shape-distance': {
       const targets = [measureTarget(context, quantity.first), measureTarget(context, quantity.second)];
       const outcome = await context.bridge.measure(context.resolved.steps, targets, 'distance');
-      if (outcome.kind === 'failed') throw new GeometryProblem('failed-geometry', outcome.message);
+      if (outcome.kind === 'failed') throw new GeometryProblem('failed-geometry', outcome.message, outcome.code);
       return outcome.kind === 'distance' ? { value: outcome.distance, unit: 'mm' } : missing();
     }
     case 'angle': case 'plane-angle': case 'parallel': case 'perpendicular': {
@@ -318,7 +321,8 @@ export async function evaluateMathGeometry(requests: readonly MathGeometryReques
     } catch (error) {
       if (context.shouldCancel()) return null;
       outcomes.push({ ...identity, status: 'unresolved', reason: error instanceof GeometryProblem ? error.reason : 'failed-geometry',
-        message: error instanceof Error ? error.message : '図形を測定できませんでした。' });
+        message: error instanceof Error ? error.message : '図形を測定できませんでした。',
+        ...(error instanceof GeometryProblem && error.code !== undefined ? { code: error.code } : {}) });
     }
   }
   return outcomes;

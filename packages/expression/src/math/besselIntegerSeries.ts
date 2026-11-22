@@ -2,6 +2,7 @@
 import type { ExactRational } from './exactRational.js';
 import { MathInputProblem } from './mathInputContract.js';
 import { roundBesselRational } from './besselIntegerRounding.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 
 export type IntegerBesselKind = 'J' | 'I';
 export interface IntegerBesselBounds {
@@ -21,7 +22,7 @@ function validate(kind: IntegerBesselKind, order: number, input: ExactRational):
   if (kind !== 'J' && kind !== 'I') throw new MathInputProblem('unsupported', 'Bessel関数の種類に対応していません。');
   if (!Number.isSafeInteger(order)) throw new MathInputProblem('unsupported', 'この計算には整数の次数が必要です。');
   // Two additional orders are reserved for second derivatives at the public limit.
-  if (Math.abs(order) > BESSEL_INTEGER_ORDER_LIMIT + 2) throw new MathInputProblem('budget', 'Bessel関数の次数が計算範囲を超えています。');
+  if (exceedsMagnitude(order, BESSEL_INTEGER_ORDER_LIMIT + 2)) throw new MathInputProblem('budget', 'Bessel関数の次数が計算範囲を超えています。');
   const magnitude = input.numerator < 0n ? -input.numerator : input.numerator;
   if (input.denominator <= 0n || magnitude.toString(2).length > 8192 || input.denominator.toString(2).length > 8192) {
     throw new MathInputProblem('budget', 'Bessel関数の引数を正確に保持できません。');

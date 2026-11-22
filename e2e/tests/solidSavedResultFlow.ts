@@ -19,6 +19,7 @@ import { uiMessage } from './uiMessages.js';
  *   positive : after saving the input and running, the saved file holds the result with its solver input (read back with
  *              the product reader in Node), and the reopened part shows the same values with the saved-result line while
  *              no FEM worker starts.
+ *   positive : the report button writes a one-page PDF of that restored result (J-03c stage 2).
  *   negative : a material edit after reopening removes the restored result and its line.
  *   positive : saving that edit and undoing it returns to the opened part, and its saved result comes back in the open
  *              panel with the same values and line, still without a FEM run.
@@ -52,6 +53,26 @@ async function openSolidPanel(page: Page): Promise<Locator> {
   const panel = page.getByTestId('solid-analysis-panel');
   await expect(panel).toBeVisible();
   return panel;
+}
+
+/**
+ * J-03c stage 2: the report of the shown result goes through the product's PDF export (a download in the web build).
+ * The figure and the text are outlines, so only the PDF frame and the page count are read here (as the beam report flow).
+ */
+async function expectSolidReport(panel: Locator, page: Page, info: TestInfo): Promise<void> {
+  const report = panel.getByTestId('solid-report');
+  await expect(report).toBeEnabled();
+  const download = page.waitForEvent('download', { timeout: KERNEL_TIMEOUT_MS });
+  await report.click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/-solid-cad\.pdf$/u);
+  const path = info.outputPath('solid-report.pdf');
+  await file.saveAs(path);
+  const text = (await readFile(path)).toString('latin1');
+  expect(text.startsWith('%PDF-1.4\n')).toBe(true);
+  expect(text.endsWith('%%EOF\n')).toBe(true);
+  expect(text).toMatch(/\/Type\/Pages\/Kids\[\d+ 0 R\]\/Count 1>>/u);
+  expect(text.match(/\/Type\/Page\//gu)).toHaveLength(1);
 }
 
 /** The app version the web build writes into the saved result (vite define = the root package.json version). */
@@ -135,6 +156,8 @@ export async function solidSavedResultFlow(page: Page, info: TestInfo): Promise<
   await expect(panel.getByTestId('solid-saved-result'))
     .toHaveText(message('savedResult.status').replace('{version}', await appVersion()));
   expect(workers.started(), 'the reopened result is shown without a new FEM run').toBe(0);
+  // The restored result is reported like a computed one (the report reads the same current result of the saved input).
+  await expectSolidReport(panel, page, info);
 
   // Negative: a material edit drops the restored result and its line, as for a computed one.
   await textbox(panel, 'ヤング率 E (MPa)').fill('105000');

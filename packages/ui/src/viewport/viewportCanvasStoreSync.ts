@@ -8,7 +8,7 @@ import { isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
-import { faceOffsetHandleOf } from '../solid/faceOffsetHandle.js';
+import { distanceHandleOf } from '../solid/extrudeHandle.js';
 import { regionFillInputOf } from '../solid/regionPick.js';
 import { solidAnalysisLayersChanged, solidAnalysisLayersOf } from '../solidAnalysis/solidModalViewport.js';
 import type { AppState } from '../store/appState.js';
@@ -19,6 +19,7 @@ import { sameRegionFillInput } from './buildRegionFill.js';
 import type { CutPreview } from './createSolidLayer.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { cylinderBasisGuide } from './cylinderBasisGuide.js';
+import { distanceHandleScreenRect } from './distanceHandleScreenRect.js';
 import { edgeDistanceGuide } from './edgeDistanceGuide.js';
 import { planarBasisGuide } from './planarBasisGuide.js';
 import { sketchDragTimingOwnerChanged, type sketchDragTimingForE2E } from './sketchDragTiming.js';
@@ -118,7 +119,7 @@ export function syncInitialScene(sync: ViewportStoreSync): void {
   // 切断面の予告(FR-432)。切断の段が開いている間だけ出る。
   sync.showCutPreview(cutPreviewOf(initial));
   // 面の移動のつまみ(M-05 4-2a)。入力欄を開いている時だけ渡す(開いていない時の受け渡しの並びを変えない)。
-  const initialFaceHandle = faceOffsetHandleOf(initial);
+  const initialFaceHandle = distanceHandleOf(initial);
   if (initialFaceHandle !== null) scene.setFaceOffsetHandle(initialFaceHandle);
   // 球面の案内線(FR-431)。球を選んでいる間(または「いつも出す」)だけ出る。
   scene.setSphereGrid(sphereGridSpecOf(initial));
@@ -235,7 +236,7 @@ function syncAssemblyDisplay(sync: ViewportStoreSync, next: AppState, previous: 
   }
 }
 
-/** 形を変えない重ね表示(切断の予告・面の移動のつまみ・基準の案内・球面の案内線・断面・解析の場・点検の色・下絵)。 */
+/** 形を変えない重ね表示(切断の予告・距離のつまみ・基準の案内・球面の案内線・断面・解析の場・点検の色・下絵)。 */
 function syncOverlays(sync: ViewportStoreSync, next: AppState, previous: AppState): void {
   const { scene } = sync;
   /*
@@ -244,18 +245,23 @@ function syncOverlays(sync: ViewportStoreSync, next: AppState, previous: AppStat
     参照が変わってしまい、その約束が効かなくなる)。式は確定と同じく変数表と表示の単位で
     読むので、パラメータの解析・表示の単位が変わったときも組み立て直す。
   */
-  if (
+  const cutPreviewChanged =
     next.numericInput !== previous.numericInput ||
     next.selection !== previous.selection ||
     next.bodies !== previous.bodies ||
     next.document !== previous.document ||
     next.parameterAnalysis !== previous.parameterAnalysis ||
-    next.displaySettings.lengthUnit !== previous.displaySettings.lengthUnit
-  ) {
+    next.displaySettings.lengthUnit !== previous.displaySettings.lengthUnit;
+  if (cutPreviewChanged) {
     sync.showCutPreview(cutPreviewOf(next));
-    // 面の移動のつまみ(M-05 4-2a)も同じ材料(入力欄・選択・立体・式の読み方)から決まる。前後とも無い間は渡さない。
-    const faceHandle = faceOffsetHandleOf(next);
-    if (faceHandle !== null || faceOffsetHandleOf(previous) !== null) scene.setFaceOffsetHandle(faceHandle);
+  }
+  // 押し出しのつまみは今のスケッチと解決した面にも依る。前後ともつまみが無い間は渡さない。
+  if (cutPreviewChanged || next.resolvedSketch !== previous.resolvedSketch || next.sketch !== previous.sketch) {
+    const faceHandle = distanceHandleOf(next);
+    if (faceHandle !== null || distanceHandleOf(previous) !== null) scene.setFaceOffsetHandle(faceHandle);
+    // 窓が避ける箱を持たない時(押し出しを木から開いた時など)は、つまみを避けさせる。窓がつまみを覆うと掴めない。
+    const avoid = faceHandle === null || next.numericInputAvoid !== null ? null : distanceHandleScreenRect(faceHandle, point => scene.worldToScreen(point));
+    if (avoid !== null) next.setNumericInputAvoid(avoid);
   }
   /*
     球面の案内線(FR-431)。**材料が変わったときだけ**組み立て直す。

@@ -2,6 +2,7 @@ import type { Point2 } from '../types.js';
 import type { ClipCurve } from '../layout/clipRegion.js';
 import { checkedHatchArea, MAX_HATCH_POINTS, type HatchSegment } from './hatchArea.js';
 import { hatchStyle } from './hatchStyle.js';
+import { exceedsMagnitude } from '../numericTolerance.js';
 
 const JOIN_TOLERANCE = 1e-7;
 const DEFLECTION_MM = 0.01;
@@ -13,7 +14,7 @@ function curvePoints(curve: ClipCurve, remainingPoints: number): readonly Point2
   }
   const sweep = curve.endAngle - curve.startAngle;
   if (!curve.center.every(Number.isFinite) || !Number.isFinite(curve.startAngle) || !Number.isFinite(curve.radius)
-      || curve.radius <= 0 || !Number.isFinite(sweep) || Math.abs(sweep) > 2 * Math.PI + 1e-9) return [];
+      || curve.radius <= 0 || !Number.isFinite(sweep) || exceedsMagnitude(sweep, 2 * Math.PI + 1e-9)) return [];
   const maxAngle = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - DEFLECTION_MM / curve.radius)));
   const steps = Math.max(3, Math.ceil(Math.abs(sweep) / Math.max(1e-8, maxAngle)));
   if (!Number.isSafeInteger(steps) || steps + 1 > remainingPoints) return [];

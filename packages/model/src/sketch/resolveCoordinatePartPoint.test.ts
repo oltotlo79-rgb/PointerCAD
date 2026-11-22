@@ -1,3 +1,4 @@
+import { plainText } from '../failureText.js';
 import { describe, expect, it } from 'vitest';
 
 import { NO_PART_POINT, type PartPointLookup, resolvePointReference, type ResolveContext } from './resolveCoordinate.js';
@@ -33,7 +34,7 @@ describe('sketch point base resolves part reference points only through the expl
   it('a refused part point (stale or cycle-unsafe) fails with its own message', () => {
     const bridge = (): PartPointLookup => ({ kind: 'refused', message: 'unsupported reference point' });
     expect(resolvePointReference(ref('refpoint-1'), context([], bridge), 'f')).toEqual({ ok: false,
-      error: { featureId: 'f', code: 'missingBase', message: 'unsupported reference point' } });
+      error: { featureId: 'f', code: 'missingBase', text: plainText('unsupported reference point') } });
     // A refused lookup with a same-id local point is still ambiguous rather than falling back to the local point.
     expect(resolvePointReference(ref('point-1'), context([LOCAL], bridge), 'f')).toMatchObject({ ok: false,
       error: { code: 'invalidValue' } });

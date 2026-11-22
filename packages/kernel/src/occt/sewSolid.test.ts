@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { CurveSpec, SewStepSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makePlanarFace } from './makePlanarFace.js';
-import { sewSolid, type sewSolidFaces } from './sewSolid.js';
+import { sewSolid, type SewFacesReason, type sewSolidFaces } from './sewSolid.js';
 import { buildSolidBodyMesh, hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type * as SewSolidSupportModule from './sewSolidFaces.testSupport.js';
 import type * as SewSolidModule from './sewSolid.js';
@@ -612,9 +612,12 @@ describe('EX18 W14: borrowed curved faces', () => {
         const sewn = cache.get(request.key);
         if (sewn === undefined) throw new Error('Sewn cylinder is missing');
         expect(support.freeEdges(oc, sewn.shape)).toBe(0);
-        for (const invalidFaces of [faces.slice(0, 2), [...faces, faces[1]], [
-          { targetKey: source.key, query: { kind: 'vertex' as const, index: 0, position: [0, 0, 0] as const } },
-        ]]) {
+        // 断りの符号は Worker の失敗(failures[].code)へ写る(0b-2b。message は符号の文字で、利用者へ見せる文は画面の側が持つ)。
+        const invalidCases: readonly (readonly [SewFacesStepSpec['faces'], SewFacesReason])[] = [
+          [faces.slice(0, 2), 'open-shell'], [[...faces, faces[1]], 'duplicate-face'], [[
+            { targetKey: source.key, query: { kind: 'vertex' as const, index: 0, position: [0, 0, 0] as const } },
+          ], 'missing-face']];
+        for (const [invalidFaces, code] of invalidCases) {
           const invalid = await recomputeSolids({ oc, cache }, {
             steps: [{ ...source, visible: false }, { ...request, key: 'invalid-key',
               step: { kind: 'sew', faces: invalidFaces, tolerance: 1e-7 } }], generation: 3,
@@ -622,6 +625,7 @@ describe('EX18 W14: borrowed curved faces', () => {
           expect(invalid.bodies).toHaveLength(0);
           expect(invalid.failures).toHaveLength(1);
           expect(invalid.failures[0].message.length).toBeGreaterThan(0);
+          expect(invalid.failures[0].code).toBe(code);
           expect(cache.has('invalid-key')).toBe(false);
           expect(support.brepSnapshots(oc, [target.shape])).toEqual(before);
         }

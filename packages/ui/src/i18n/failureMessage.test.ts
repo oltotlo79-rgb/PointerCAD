@@ -43,7 +43,7 @@ describe('失敗の文の鍵と差し込む値から画面の文を作る(D4)', 
 
   it('model の製品のコードが返す失敗の文の鍵は、全部が文言の表にある(内部の誤りの文へ落ちない)', () => {
     const code = modelProductSources(modelSource).join('\n');
-    const namespaces = '(?:assembly[.]error|assembly[.]steel[.]reason|assembly[.]steel[.]rejection|catalog[.]rejection)';
+    const namespaces = '(?:assembly[.]error|assembly[.]steel[.]reason|assembly[.]steel[.]rejection|catalog[.]rejection|partError)';
     const literals = [...code.matchAll(new RegExp(`key: '(${namespaces}[.][A-Za-z0-9-]+)'`, 'gu'))].map((match) => match[1] ?? '');
     const templates = [...new Set([...code.matchAll(new RegExp('key: `(' + namespaces + '[.])[$][{]code[}]`', 'gu'))]
       .map((match) => match[1] ?? ''))].sort();

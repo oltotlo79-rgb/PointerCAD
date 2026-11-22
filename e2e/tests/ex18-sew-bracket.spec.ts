@@ -9,6 +9,7 @@ import {
   cancelPopover, clickWorldPoint, commitPopover, fillFields, popover, popoverInputs, popoverTitle,
   propertyPanel, selectionKindLabel, sketchTool, topFaceCenter, treeRow, type WorldPoint,
 } from './solidCaptureSupport.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /*
  * EX-18 の 2 つ目の作り方(線・面・立体の混成)を、実際の画面の道具だけで通す。
@@ -49,9 +50,7 @@ function propertyValue(page: Page, key: string): Locator {
 }
 
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page).locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 function machiningTool(page: Page, label: string): Locator {

@@ -4,8 +4,8 @@
  * 保存の形: `{ kind: 'standardPart', catalog: 'catalogItem', size: <呼び>,
  *   options: { family: <族の id>, item: <行の鍵>, <族の options の鍵>: <値>… },
  *   catalogRevision: <族の表の版>, generatorRevision: <族の形の台本の版> }`。
- * options の鍵は `family`・`item` と族の指定の鍵の**完全一致**だけを許し、余計な鍵・欠けた鍵・呼びの食い違いは
- * 型付きの拒否にする(鋼材の `findSteelProduct` と同じ厳しさ)。既存の 3 系統の保存はここを通らない。
+ * options の鍵は `family`・`item` と族の指定の鍵の**完全一致**だけを許し、余計な鍵・欠けた鍵・呼びの食い違い(行の今の呼びでも
+ * 前の呼び `formerSizes` でもない)は型付きの拒否にする(鋼材の `findSteelProduct` と同じ厳しさ)。既存の 3 系統の保存はここを通らない。
  */
 import { evaluateExpression } from '@pointercad/expression';
 
@@ -41,6 +41,11 @@ function optionValueValid(spec: CatalogOptionSpec, value: string): boolean {
   return (spec.min === undefined || number >= spec.min) && (spec.max === undefined || number <= spec.max);
 }
 
+/** 保存した部品の呼びが、行の今の呼びか前の呼び(`formerSizes`。材料の表示などを直した行の、前に保存したファイル)なら true。 */
+function sizeMatches(row: CatalogItemRow, size: string): boolean {
+  return size === row.size || (row.formerSizes ?? []).includes(size);
+}
+
 /** 保存された族の部品を、族・版・行・欄・値の順に確かめる。最初に見つかった理由で断る。 */
 function resolveCatalogItem(source: StandardPartSource, registry: CatalogRegistry): CatalogItemResolution {
   const familyId = source.options[FAMILY_KEY];
@@ -55,7 +60,7 @@ function resolveCatalogItem(source: StandardPartSource, registry: CatalogRegistr
   const fields = [
     ...Object.keys(source.options).filter((key) => !allowed.has(key)),
     ...family.options.filter((spec) => spec.optional !== true && !Object.hasOwn(source.options, spec.key)).map((spec) => spec.key),
-    ...(source.size === row.size ? [] : ['size']),
+    ...(sizeMatches(row, source.size) ? [] : ['size']),
   ];
   if (fields.length > 0) return rejected('saved-fields-mismatch', fields);
   const values = Object.fromEntries(family.options.map((spec) => [spec.key, source.options[spec.key] ?? spec.defaultValue]));
@@ -81,14 +86,14 @@ export function createCatalogItemSource(family: CatalogFamily, row: CatalogItemR
 
 /**
  * 呼びと options だけから作る(`createStandardPartSource` の `catalogItem` の道)。族が読み込み済みで行があれば
- * `createCatalogItemSource` と同じ。そうでなければ版の無い形を返し、組む時に「知らない種類」「読み込み中」
+ * `createCatalogItemSource` と同じ(前の呼びを渡した時も、作る保存の形は今の呼び)。そうでなければ版の無い形を返し、組む時に「知らない種類」「読み込み中」
  * 「呼び寸法が無い」の型付きの拒否になる(黙って別の部品にしない)。
  */
 export function catalogItemSourceFromOptions(size: string, options: Readonly<Record<string, string>>,
   registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): StandardPartSource {
   const familyId = options[FAMILY_KEY];
   const family = familyId === undefined ? undefined : registry.loaded(familyId);
-  const row = family?.rows.find((candidate) => candidate.key === options[ITEM_KEY] && candidate.size === size);
+  const row = family?.rows.find((candidate) => candidate.key === options[ITEM_KEY] && sizeMatches(candidate, size));
   if (family !== undefined && row !== undefined) return createCatalogItemSource(family, row, options);
   return { kind: 'standardPart', catalog: 'catalogItem', size, options: { ...options }, catalogRevision: '', generatorRevision: '' };
 }
@@ -97,6 +102,15 @@ export function catalogItemSourceFromOptions(size: string, options: Readonly<Rec
 export function catalogItemRejection(source: StandardPartSource,
   registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): CatalogItemRejection | null {
   return resolveCatalogItem(source, registry).rejection;
+}
+
+/**
+ * 保存された族の部品の行(確かめに通った時だけ。通らなければ null)。前の呼び(`formerSizes`)で保存した部品も今の行を返すので、部品表・切断の一覧は
+ * 同一性と表示に行の今の呼び(`row.size`)を使う(保存の値は書き換えない)。
+ */
+export function catalogItemRow(source: StandardPartSource,
+  registry: CatalogRegistry = PRODUCT_CATALOG_REGISTRY): CatalogItemRow | null {
+  return resolveCatalogItem(source, registry).item?.row ?? null;
 }
 
 /** 保存された族の部品を、族の表から普通の部品文書に組む。確かめに通らなければ null。 */

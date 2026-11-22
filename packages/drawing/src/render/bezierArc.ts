@@ -1,4 +1,5 @@
 import type { Point2 } from '../types.js';
+import { exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 
 /** 紙上の誤差。縮尺を適用した後の半径に使う(P8 §2.10訂正)。 */
 export const DEFAULT_ARC_TOLERANCE_MM = 0.001;
@@ -45,7 +46,7 @@ export function bezierArc(input: {
   const tolerance = input.toleranceMm ?? DEFAULT_ARC_TOLERANCE_MM;
   const sweep = endAngle - startAngle;
   if (![...center, radius, startAngle, endAngle, sweep, tolerance].every(Number.isFinite)
-    || radius < 0 || tolerance <= 0 || Math.abs(sweep) > 2 * Math.PI + 1e-12) return null;
+    || radius < 0 || tolerance <= 0 || exceedsMagnitude(sweep, 2 * Math.PI + 1e-12)) return null;
   const point = (angle: number): Point2 => [center[0] + radius * Math.cos(angle), center[1] + radius * Math.sin(angle)];
   const start = point(startAngle);
   if (!start.every(Number.isFinite)) return null;
@@ -60,7 +61,7 @@ export function bezierArc(input: {
   for (let i = 0; i < count; i += 1) {
     const a = startAngle + step * i, b = startAngle + step * (i + 1);
     // 円の閉鎖と隣接片の接続を同じ座標値で表す。
-    const to = i === count - 1 && Math.abs(Math.abs(sweep) - 2 * Math.PI) <= 1e-12 ? start : point(b);
+    const to = i === count - 1 && withinMagnitude(Math.abs(sweep) - 2 * Math.PI, 1e-12) ? start : point(b);
     const control1: Point2 = [from[0] - radius * k * Math.sin(a), from[1] + radius * k * Math.cos(a)];
     const control2: Point2 = [to[0] + radius * k * Math.sin(b), to[1] - radius * k * Math.cos(b)];
     if (![...to, ...control1, ...control2].every(Number.isFinite)) return null;

@@ -47,7 +47,7 @@ export async function prepareScriptTransaction(input: ScriptTransactionInput, br
       importedShapes: input.importedShapes, onResolved: (resolved) => { steps = resolved.steps; } });
     if (shouldCancel() || result.cancelled) return failure('cancelled', '処理を中止しました。');
     const firstError = result.errors[0];
-    if (firstError !== undefined) return { ok: false, error: { kind: 'cad', message: firstError.message,
+    if (firstError !== undefined) return { ok: false, error: { kind: 'cad', partError: firstError,
       location: locateScriptError(batch.locations.get(firstError.featureId) ?? '', input.sources) } };
     // A cylinder outside its target must not report that a hole was created.
     const previousIds = new Set(input.document.solids.map((solid) => solid.id));

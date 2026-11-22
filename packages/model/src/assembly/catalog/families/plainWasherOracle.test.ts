@@ -7,23 +7,31 @@ import { describe, expect, it } from 'vitest';
 
 import type { CatalogFamily } from '../types.js';
 import { CATALOG_ORACLES } from './catalogOracles.fixture.js';
-import { PLAIN_WASHER_NORMAL_FAMILY, PLAIN_WASHER_SMALL_FAMILY } from './plainWasher.js';
+import * as plainWasher from './plainWasher.js';
 
 const PLAIN_WASHER_ORACLE = CATALOG_ORACLES.plainWasher;
-const PLAIN_WASHER_EVIDENCE = PLAIN_WASHER_NORMAL_FAMILY.rows[0]?.evidence;
+const PLAIN_WASHER_EVIDENCE = plainWasher.PLAIN_WASHER_NORMAL_FAMILY.rows[0]?.evidence;
 
 type OracleRow = readonly [string, number, number, number];
 const toRow = (size: string, d1: string, d2: string, h: string): OracleRow => [size, Number(d1), Number(d2), Number(h)];
 
-const FAMILIES: readonly (readonly [string, CatalogFamily, readonly OracleRow[]])[] = [
-  ['並形', PLAIN_WASHER_NORMAL_FAMILY, PLAIN_WASHER_ORACLE.normal.map(([size, , d1, d2, h]) => toRow(size, d1, d2, h))],
-  ['小形', PLAIN_WASHER_SMALL_FAMILY, PLAIN_WASHER_ORACLE.small.map(([size, d1, d2, h]) => toRow(size, d1, d2, h))],
-];
+const FAMILIES = Object.values(plainWasher)
+  .filter((value: unknown): value is CatalogFamily => typeof value === 'object' && value !== null
+    && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows))
+  .sort((left, right) => left.id.localeCompare(right.id));
+const ORACLE_BY_ID = {
+  [plainWasher.PLAIN_WASHER_NORMAL_FAMILY.id]:
+    { form: '並形', rows: PLAIN_WASHER_ORACLE.normal.map(([size, , d1, d2, h]) => toRow(size, d1, d2, h)) },
+  [plainWasher.PLAIN_WASHER_SMALL_FAMILY.id]:
+    { form: '小形', rows: PLAIN_WASHER_ORACLE.small.map(([size, d1, d2, h]) => toRow(size, d1, d2, h)) },
+};
 
 describe('M-07 平座金 資料の表との突合せ', () => {
   it('並形 29 行・小形 21 行は、資料の行と呼び径の順も寸法も一致する', () => {
     expect([PLAIN_WASHER_ORACLE.normal.length, PLAIN_WASHER_ORACLE.small.length]).toEqual([29, 21]);
-    for (const [, family, oracle] of FAMILIES) {
+    expect(FAMILIES.map((family) => family.id).sort()).toEqual(Object.keys(ORACLE_BY_ID).sort());
+    for (const family of FAMILIES) {
+      const { rows: oracle } = ORACLE_BY_ID[family.id];
       expect(family.rows.map((row) => [row.size, row.dims.innerDiameter, row.dims.outerDiameter, row.dims.thickness]))
         .toEqual(oracle);
     }
@@ -32,7 +40,7 @@ describe('M-07 平座金 資料の表との突合せ', () => {
   it('資料の第 2 選択の呼び径は行の note に書き、内径 < 外径', () => {
     const second = new Set<string>(PLAIN_WASHER_ORACLE.normal.filter(([, choice]) => choice === '2').map(([size]) => size));
     expect(second.size).toBe(10);
-    for (const [, family] of FAMILIES) {
+    for (const family of FAMILIES) {
       for (const row of family.rows) {
         expect(row.note).toBe(second.has(row.size) ? '資料の第 2 選択の呼び径' : '');
         expect(row.dims.innerDiameter).toBeLessThan(row.dims.outerDiameter);
@@ -42,16 +50,17 @@ describe('M-07 平座金 資料の表との突合せ', () => {
   });
 
   it('出どころは資料の番号・SHA・頁だけを持ち、族の版を凍結し、形は輪で体積は π/4 (d2² − d1²) h', () => {
-    expect(FAMILIES.every(([, family]) => family.rows.every((row) => row.evidence === PLAIN_WASHER_EVIDENCE))).toBe(true);
+    expect(FAMILIES.every((family) => family.rows.every((row) => row.evidence === PLAIN_WASHER_EVIDENCE))).toBe(true);
     expect(PLAIN_WASHER_EVIDENCE?.reference).toBe(PLAIN_WASHER_ORACLE.reference);
     expect(PLAIN_WASHER_EVIDENCE?.locator).toContain(`PDF ${PLAIN_WASHER_ORACLE.page} 頁`);
     expect(PLAIN_WASHER_EVIDENCE?.title.startsWith('資料 K5-2 ')).toBe(true);
     expect(PLAIN_WASHER_EVIDENCE).not.toHaveProperty('url');
-    expect(FAMILIES.map(([, family]) => [family.id, family.kindKey, family.catalogRevision, family.generatorRevision])).toEqual([
+    expect(FAMILIES.map((family) => [family.id, family.kindKey, family.catalogRevision, family.generatorRevision])).toEqual([
       ['plain-washer-normal', 'catalog.mechanical.kind.plainWasherNormal', 'plain-washer-2026-11-r1', 'washer-1'],
       ['plain-washer-small', 'catalog.mechanical.kind.plainWasherSmall', 'plain-washer-2026-11-r1', 'washer-1'],
     ]);
-    for (const [form, family] of FAMILIES) {
+    for (const family of FAMILIES) {
+      const { form } = ORACLE_BY_ID[family.id];
       for (const row of family.rows) {
         const part = family.build(row, {});
         expect(part?.name).toBe(`平座金 ${form} ${row.size}`);

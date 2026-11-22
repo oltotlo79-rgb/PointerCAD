@@ -14,6 +14,7 @@ import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { selectedExtrudeProfiles } from '../solid/sketchRefs.js';
 import { supportsSolidOperation } from '../solid/solidOperation.js';
 import { stagedExtrusionMessageKey } from '../solid/extrudePreview.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { SolidResultSuggestion } from '../solid/SolidResultSuggestion.js';
 import { currentStagedSolid, type StagedSolidState } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -196,7 +197,7 @@ function solidStageMessage(stage: StagedSolidState | null): string | null {
     case 'ready':
       return stage.confirmRequested ? null : t('numericInput.extrudePreviewReady');
     case 'failed':
-      return stage.errors[0]?.message ?? stage.errorMessage ?? t('directEditError.failed');
+      return stage.errors[0] !== undefined ? partErrorMessage(stage.errors[0]) : stage.errorMessage ?? t('directEditError.failed');
   }
 }
 

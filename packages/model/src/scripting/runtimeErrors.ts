@@ -1,6 +1,6 @@
 import { NativeScriptException, type NativeScriptValue, type NativeScriptVm } from './nativeScriptVm.js';
 import { locateScriptError } from './scriptLocation.js';
-import type { ScriptFailure, ScriptFailureKind } from './scriptTypes.js';
+import type { ScriptFailureKind, ScriptTextFailure } from './scriptTypes.js';
 
 /** Capture intrinsics before user code; never invoke an arbitrary message/stack getter. */
 const ERROR_READER = `(() => {
@@ -26,17 +26,17 @@ const ERROR_READER = `(() => {
 
 export interface ScriptRuntimeControl {
   deadline: number;
-  failure: ScriptFailure | null;
+  failure: ScriptTextFailure | null;
   diagnostic: boolean;
 }
-export function scriptFailure(kind: ScriptFailureKind, message: string): ScriptFailure {
+export function scriptFailure(kind: ScriptFailureKind, message: string): ScriptTextFailure {
   return { kind, message, location: null };
 }
 export function createRuntimeErrorReader(vm: NativeScriptVm): NativeScriptValue {
   return vm.evalCode(ERROR_READER, 'pointercad-internal-errors.js');
 }
 export function readRuntimeError(vm: NativeScriptVm, reader: NativeScriptValue, value: NativeScriptValue,
-  control: ScriptRuntimeControl, sources: ReadonlyMap<string, string>): ScriptFailure {
+  control: ScriptRuntimeControl, sources: ReadonlyMap<string, string>): ScriptTextFailure {
   const previous = control.deadline;
   control.deadline = performance.now() + 50; control.diagnostic = true;
   const fallback = scriptFailure('runtime', '処理を完了できませんでした。エラーの内容を読み取れません。');

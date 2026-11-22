@@ -1,3 +1,4 @@
+import { plainText } from '../failureText.js';
 import {beforeAll,describe,expect,it} from 'vitest';
 import {expressionValueFromNumber as number} from '@pointercad/expression';
 import {
@@ -72,7 +73,7 @@ describe('文書の再計算で時間で止まった関数上の点を壊れた�
       const input=fixture(),before=JSON.stringify(input);
       const result=await recompute(input,stopped(ending));
       expect(result.cancelled).toBe(false);expect(result.point).toBeNull();
-      expect([...result.invalidInputs]).toEqual([['chosen',POINT_DEADLINE_MESSAGE]]);
+      expect([...result.invalidInputs]).toEqual([['chosen',plainText(POINT_DEADLINE_MESSAGE)]]);
       expect(POINT_DEADLINE_MESSAGE).not.toMatch(/選び直|範囲|精度/u);
       expect(JSON.stringify(input)).toBe(before);
       // The same document calculates the same choice again on the next recomputation.
@@ -82,6 +83,6 @@ describe('文書の再計算で時間で止まった関数上の点を壊れた�
 
   it('計算量の停止は、これまでどおり候補の選び直しを案内する',async()=>{
     const result=await recompute(fixture(),stopped({status:'stopped',reason:'budget'}));
-    expect([...result.invalidInputs]).toEqual([['chosen','選択した関数上の点の追従を確認できません。候補を選び直してください。']]);
+    expect([...result.invalidInputs]).toEqual([['chosen',plainText('選択した関数上の点の追従を確認できません。候補を選び直してください。')]]);
   });
 });

@@ -16,17 +16,22 @@ import type { AssemblyComponent } from '../../types.js';
 import { weldTestBody } from '../../welding/filletWeld.testSupport.js';
 import { createCatalogRegistry, PRODUCT_CATALOG_REGISTRY } from '../registry.js';
 import { catalogItemNominalMass, createCatalogItemSource } from '../source.js';
-import type { CatalogItemRow } from '../types.js';
+import type { CatalogFamily, CatalogItemRow } from '../types.js';
 import { ACCESSORY_BOX_RECORDS } from './accessoryBoxRows.js';
 import { CAP_FOOT_BOX_RECORDS } from './capFootBoxRows.js';
 import { CAP_FOOT_LOCK_RECORDS } from './capFootLockRows.js';
 import { CONNECTOR_BOX_RECORDS } from './connectorBoxRows.js';
 import { CONNECTOR_BOX_SERIES_RECORDS } from './connectorBoxSeriesRows.js';
 import { MOVABLE_PART_BOX_RECORDS } from './movablePartBoxRows.js';
-import { ACCESSORY_BOX_FAMILY, CAP_FOOT_BOX_FAMILY, CONNECTOR_BOX_FAMILY, MOVABLE_PART_BOX_FAMILY, PANEL_COVER_FRAME_FAMILY,
-  PANEL_PART_BOX_FAMILY } from './panelPartCatalog.js';
+import * as panelPartCatalog from './panelPartCatalog.js';
 import { PANEL_COVER_FRAME_RECORDS, PANEL_PART_RECORDS } from './panelPartRows.js';
 
+const { ACCESSORY_BOX_FAMILY, CAP_FOOT_BOX_FAMILY, CONNECTOR_BOX_FAMILY, MOVABLE_PART_BOX_FAMILY, PANEL_COVER_FRAME_FAMILY,
+  PANEL_PART_BOX_FAMILY } = panelPartCatalog;
+const FAMILIES = Object.values(panelPartCatalog)
+  .filter((value: unknown): value is CatalogFamily => typeof value === 'object' && value !== null
+    && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows))
+  .sort((left, right) => left.id.localeCompare(right.id));
 const MARK = '外形を包む形で、細部は作っていない';
 /** 可動の部品の行だけが続ける 2 つ目の簡略の印。 */
 const MOVABLE_MARK = '動く仕組みは作っていない';
@@ -34,6 +39,13 @@ const MOVABLE_MARK = '動く仕組みは作っていない';
 const CONNECTOR_RECORDS = [...CONNECTOR_BOX_RECORDS, ...CONNECTOR_BOX_SERIES_RECORDS];
 /** キャップと足の部品の族の行(21 回目の表に足回りのロックの表を続ける)。 */
 const CAP_FOOT_RECORDS = [...CAP_FOOT_BOX_RECORDS, ...CAP_FOOT_LOCK_RECORDS];
+const BOX_RECORDS_BY_ID = {
+  [PANEL_PART_BOX_FAMILY.id]: PANEL_PART_RECORDS,
+  [CONNECTOR_BOX_FAMILY.id]: CONNECTOR_RECORDS,
+  [CAP_FOOT_BOX_FAMILY.id]: CAP_FOOT_RECORDS,
+  [MOVABLE_PART_BOX_FAMILY.id]: MOVABLE_PART_BOX_RECORDS,
+  [ACCESSORY_BOX_FAMILY.id]: ACCESSORY_BOX_RECORDS,
+};
 const DENSITY: Readonly<Record<string, number>> = { aluminum: 2.68, stainless: 7.93, steel: 7.85 };
 const length = (value: number): Readonly<Record<string, string>> => ({ length: String(value) });
 
@@ -45,34 +57,30 @@ function frameRow(key: string): CatalogItemRow {
 
 describe('資料 2 のパネル扉の部品・パネル用のフレーム・コネクタ・キャップと足の部品・可動の部品・アクセサリの 6 族', () => {
   it('族の id・群・種類の鍵・版・線図・数え方・欄を凍結し、行は行の表の行を同じ順で持つ', () => {
-    expect([PANEL_PART_BOX_FAMILY, PANEL_COVER_FRAME_FAMILY, CONNECTOR_BOX_FAMILY, CAP_FOOT_BOX_FAMILY, MOVABLE_PART_BOX_FAMILY,
-      ACCESSORY_BOX_FAMILY].map((family) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision,
+    expect(FAMILIES.map((family) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision,
       family.diagram, family.stock, family.options.map((spec) => spec.key)])).toEqual([
-      ['panel-part-box', 'aluminumFrame', 'catalog.board.kind.partBox', 'panel-part-box-2026-11-r1', 'panel-part-1', 'panelPartBox', 'count', []],
+      ['accessory-box', 'aluminumFrame', 'catalog.frame.kind.accessoryBox', 'accessory-box-2026-11-r1', 'panel-part-1', 'accessoryBox', 'count', []],
+      ['cap-foot-box', 'aluminumFrame', 'catalog.frame.kind.capFootBox', 'cap-foot-box-2026-11-r1', 'panel-part-1', 'capFootBox', 'count', []],
+      ['connector-box', 'aluminumFrame', 'catalog.frame.kind.connectorBox', 'connector-box-2026-11-r1', 'panel-part-1', 'connectorBox', 'count', []],
+      ['movable-part-box', 'aluminumFrame', 'catalog.frame.kind.movableBox', 'movable-part-box-2026-11-r1', 'panel-part-1', 'movableBox', 'count', []],
       ['panel-cover-frame', 'aluminumFrame', 'catalog.board.kind.coverFrame', 'panel-cover-frame-2026-11-r1', 'panel-part-1', 'panelCoverFrame',
         'linear', ['length', 'startMiter', 'endMiter']],
-      ['connector-box', 'aluminumFrame', 'catalog.frame.kind.connectorBox', 'connector-box-2026-11-r1', 'panel-part-1', 'connectorBox', 'count', []],
-      ['cap-foot-box', 'aluminumFrame', 'catalog.frame.kind.capFootBox', 'cap-foot-box-2026-11-r1', 'panel-part-1', 'capFootBox', 'count', []],
-      ['movable-part-box', 'aluminumFrame', 'catalog.frame.kind.movableBox', 'movable-part-box-2026-11-r1', 'panel-part-1', 'movableBox', 'count', []],
-      ['accessory-box', 'aluminumFrame', 'catalog.frame.kind.accessoryBox', 'accessory-box-2026-11-r1', 'panel-part-1', 'accessoryBox', 'count', []],
+      ['panel-part-box', 'aluminumFrame', 'catalog.board.kind.partBox', 'panel-part-box-2026-11-r1', 'panel-part-1', 'panelPartBox', 'count', []],
     ]);
-    expect(PANEL_PART_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(PANEL_PART_RECORDS.map((record) => [record.key, record.size]));
-    expect(PANEL_COVER_FRAME_FAMILY.rows.map((row) => [row.key, row.size]))
-      .toEqual(PANEL_COVER_FRAME_RECORDS.map((record) => [record.key, record.size]));
-    expect(CONNECTOR_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(CONNECTOR_RECORDS.map((record) => [record.key, record.size]));
-    // キャップと足の部品の族は、21 回目の行の後に足回りのロックの行(39h)を続ける。
-    expect(CAP_FOOT_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(CAP_FOOT_RECORDS.map((record) => [record.key, record.size]));
-    expect(MOVABLE_PART_BOX_FAMILY.rows.map((row) => [row.key, row.size]))
-      .toEqual(MOVABLE_PART_BOX_RECORDS.map((record) => [record.key, record.size]));
-    expect(ACCESSORY_BOX_FAMILY.rows.map((row) => [row.key, row.size])).toEqual(ACCESSORY_BOX_RECORDS.map((record) => [record.key, record.size]));
+    const recordsById: Readonly<Record<string, readonly Pick<CatalogItemRow, 'key' | 'size'>[]>> = {
+      ...BOX_RECORDS_BY_ID, [PANEL_COVER_FRAME_FAMILY.id]: PANEL_COVER_FRAME_RECORDS,
+    };
+    expect(FAMILIES.map((family) => family.id).sort()).toEqual(Object.keys(recordsById).sort());
+    for (const family of FAMILIES) {
+      expect(family.rows.map((row) => [row.key, row.size]), family.id).toEqual(recordsById[family.id].map((record) => [record.key, record.size]));
+    }
     // コネクタの族は 2 つの章の表を合わせた行で、鍵は重ならない(同じ鍵の行は道具が除いた)。行の数は独立の読みとの鍵の照らしが守る。
     expect(new Set(CONNECTOR_BOX_FAMILY.rows.map((row) => row.key)).size).toBe(CONNECTOR_BOX_FAMILY.rows.length);
   });
 
   it('行は製造元の寸法に合わせた物を名乗り、出どころは資料の番号と頁だけ、印は「外形を包む形で、細部は作っていない」(可動の部品は「動く仕組みは作っていない」を続ける)、呼びにも「外形を包む形」', () => {
-    const marked = [...[PANEL_PART_BOX_FAMILY, PANEL_COVER_FRAME_FAMILY, CONNECTOR_BOX_FAMILY, CAP_FOOT_BOX_FAMILY, ACCESSORY_BOX_FAMILY]
-      .map((family) => [family, [MARK]] as const), [MOVABLE_PART_BOX_FAMILY, [MARK, MOVABLE_MARK]] as const];
-    for (const [family, marks] of marked) {
+    for (const family of FAMILIES) {
+      const marks = family === MOVABLE_PART_BOX_FAMILY ? [MARK, MOVABLE_MARK] : [MARK];
       for (const row of family.rows) {
         expect([row.standardLabel, row.verification, row.verified, row.simplified, row.evidence.reference], row.key)
           .toEqual(['製造元の寸法に合わせた物', 'manufacturer-catalog', true, marks, '']);
@@ -84,9 +92,8 @@ describe('資料 2 のパネル扉の部品・パネル用のフレーム・コ�
   });
 
   it('部品とコネクタは幅 × 奥行 × 高さの箱で、体積は 3 つの積、質量は資料の 1 個の値。材料が 1 つの行は箱 × 密度より軽く、部位ごとに材料の違う行は密度を持たない', () => {
-    for (const [family, records] of [[PANEL_PART_BOX_FAMILY, PANEL_PART_RECORDS], [CONNECTOR_BOX_FAMILY, CONNECTOR_RECORDS],
-      [CAP_FOOT_BOX_FAMILY, CAP_FOOT_RECORDS], [MOVABLE_PART_BOX_FAMILY, MOVABLE_PART_BOX_RECORDS],
-      [ACCESSORY_BOX_FAMILY, ACCESSORY_BOX_RECORDS]] as const) {
+    for (const family of FAMILIES.filter((candidate) => Object.hasOwn(BOX_RECORDS_BY_ID, candidate.id))) {
+      const records = BOX_RECORDS_BY_ID[family.id];
       for (const record of records) {
         const row = family.rows.find((candidate) => candidate.key === record.key);
         if (row === undefined) throw new Error(`行 ${record.key} が無い`);

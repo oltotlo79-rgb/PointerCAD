@@ -1,4 +1,4 @@
-import type { BlendSurfaceError, SurfaceThickenError } from '@pointercad/kernel';
+import type { BlendSurfaceError, EdgeDistanceHoleReason, SewFacesReason, SurfaceThickenError } from '@pointercad/kernel';
 import type { SubShapeRef, SurfaceCutFailureReason, ThickenFeature } from './types.js';
 
 /** 入力ボディを指す鍵と、式を評価した後の寸法 (mm)。 */
@@ -33,4 +33,5 @@ export interface BlendPlan<Query = SubShapeRef> {
 /** 面だけのボディの機能(厚み付け・面全体のオフセット・つなぎ面)の失敗の符号。画面の側の文の一覧(ui/src/solid/surfaceBodyFailureText.ts)の鍵。 */
 export type SurfaceBodyFailureReason = SurfaceThickenError['code'] | BlendSurfaceError['code'] | 'outside-tolerance';
 
-export type SolidFailureReason = SurfaceCutFailureReason | SurfaceBodyFailureReason;
+/** 計算部が返す立体の失敗の符号の全部。画面の側の文の一覧(ui/src/solid/surfaceBodyFailureText.ts)の鍵(0b-2 で面の縫い合わせ・辺からの距離の穴を足した)。 */
+export type SolidFailureReason = SurfaceCutFailureReason | SurfaceBodyFailureReason | SewFacesReason | EdgeDistanceHoleReason;

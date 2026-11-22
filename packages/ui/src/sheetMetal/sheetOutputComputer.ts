@@ -5,6 +5,7 @@ import { createSheetFlatSteps, recomputeSheetFlat, resolveSheetFlatOutline, shee
   type ResolvedSolidStep, type SheetUnfoldDefinition } from '@pointercad/model';
 
 import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 
 export type SheetOutputFormat = 'flatDxf' | 'flatStep' | 'foldedStep';
 export interface SheetOutputRequest {
@@ -27,7 +28,7 @@ export function createSheetOutputComputer(bridge: AssemblyKernelBridge, detached
         const result = await recomputePart(document, bridge, { partId, generation: 1, importedShapes: request.importedShapes,
           shouldCancel: cancelled, onResolved: (resolved) => { steps = resolved.steps; } });
         ensureCurrent();
-        if (result.errors.length > 0) throw new Error(result.errors[0].message);
+        if (result.errors.length > 0) throw new Error(partErrorMessage(result.errors[0]));
         if (result.cancelled || !result.bodies.some((body) => body.featureId === definition.sourceFeatureId))
           throw new Error('書き出す板金の折曲げ形状がありません。');
       } else {

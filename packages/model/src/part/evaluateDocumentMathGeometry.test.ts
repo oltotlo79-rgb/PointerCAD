@@ -2,6 +2,7 @@
  * 図形の倍精度測定値は、実際の数学計算部を通して `evaluateDocumentMath` へ渡す。
  * 図形由来の係数は小数として扱い、他の係数の厳密な原式は変えない(FR-210/FR-211)。
  */
+import { plainTextValue } from '../failureText.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluateExpression, evaluateExpressionExact, mathScalarExpression, type ExpressionValue } from '@pointercad/expression';
 import { createMathBackend, executeMathWorkRequest, type MathExecutionBackend } from '@pointercad/expression/math/worker';
@@ -201,7 +202,7 @@ describe('値が使えないときは理由付きで失敗し、古い値や別�
     expect(recompute.pendingGeometry).toEqual(new Set(['g1']));
     expect(messageOf(result, 'P')).toBe(mathGeometryPendingMessage('G'));
     expect(recompute.analysis.failures).toEqual([{ name: 'P', message: '図形の測定値「G」を計算中です。形の計算が終わると使えます。' }]);
-    expect(recompute.invalidInputs.get(pointOf(document).id)).toBe('参照する係数を計算できません: P');
+    expect(plainTextValue(recompute.invalidInputs.get(pointOf(document).id))).toBe('参照する係数を計算できません: P');
     expect(recompute.analysis.geometryDerived).toEqual(new Map([['P', ['g1']]]));
     expect(requests).toHaveLength(0);
   });
@@ -254,7 +255,7 @@ describe('値が使えないときは理由付きで失敗し、古い値や別�
     const result = await pending;
     const point = pointOf(document).id;
     expect(messageOf(result, point)).toBe(mathGeometryOutsideCoefficientMessage('G'));
-    expect(transient(result).invalidInputs.get(point)).toBe('図形の測定値は係数の式の中でだけ使えます: G');
+    expect(plainTextValue(transient(result).invalidInputs.get(point))).toBe('図形の測定値は係数の式の中でだけ使えます: G');
     expect(requests).toHaveLength(0);
   });
 

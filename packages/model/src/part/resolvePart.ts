@@ -187,6 +187,7 @@ import type {
   TransformFeature,
 } from './types.js';
 import type { BlendPlan, OffsetBodyPlan, SolidFailureReason, ThickenPlan } from './surfaceBodyPlan.js';
+import { plainText, type FailureText } from '../failureText.js';
 import type { FunctionSurfacePlan as TypeFunctionSurfacePlan } from '../functionGeometry/functionSurfaceFeature.js';
 import type { FunctionPointResolver as TypeFunctionPointResolver } from '../functionGeometry/functionPointReference.js';
 
@@ -889,7 +890,8 @@ export interface PartError {
   readonly featureId: string;
   readonly reason?: SolidFailureReason;
   readonly code: PartErrorCode;
-  readonly message: string;
+  /** 画面に出す文の鍵と値(0b-3)。文は画面の側(ui の partErrorMessage)が文言の表で作る。計算部の文は plainText で運ぶ。 */
+  readonly text: FailureText;
 }
 
 /** スケッチ1本ぶんの解決結果。再計算がこれへメッシュを足す。 */
@@ -1144,11 +1146,20 @@ interface SolidPlanContext {
 }
 
 function partError(featureId: string, code: PartErrorCode, message: string): PartError {
-  return { featureId, code, message };
+  return { featureId, code, text: plainText(message) };
 }
 
 function fail(featureId: string, code: PartErrorCode, message: string): PlanOutcome {
   return { ok: false, error: partError(featureId, code, message) };
+}
+
+/** 画面の文を鍵と値で持つ誤り(0b-3b から。文は ui の文言の表が鍵ごとに持つ)。 */
+function partErrorWith(featureId: string, code: PartErrorCode, text: FailureText): PartError {
+  return { featureId, code, text };
+}
+
+function failWith(featureId: string, code: PartErrorCode, text: FailureText): PlanOutcome {
+  return { ok: false, error: partErrorWith(featureId, code, text) };
 }
 
 /** 0 より大きい有限の数か。式が評価できなかった欄は value が NaN で来る(FR-504)。 */
@@ -1161,32 +1172,26 @@ function isPositiveFinite(value: number): boolean {
  * ------------------------------------------------------------------ */
 
 /** 選んだ面が引けない(消えた・上流が失敗した)。面取りの言い回しに揃える。 */
-const EXTRUDE_TO_FACE_MISSING_MESSAGE =
-  '押し出す先の面が見つかりません。形が大きく変わったため、選び直してください。';
+const EXTRUDE_TO_FACE_MISSING_TEXT: FailureText = { key: 'partError.extrude.toFaceMissing', parameters: {} };
 /** 面までの距離は平面でないと測れない(曲面までの距離は 1 つに決まらない)。 */
-const EXTRUDE_TO_FACE_NOT_FLAT_MESSAGE =
-  '押し出す先にできるのは平らな面だけです。面を選び直してください。';
+const EXTRUDE_TO_FACE_NOT_FLAT_TEXT: FailureText = { key: 'partError.extrude.toFaceNotFlat', parameters: {} };
 /** 向きと面が平行だと交わらないので、どこまで伸ばしても面に届かない。 */
-const EXTRUDE_TO_FACE_PARALLEL_MESSAGE =
-  '押し出す向きと面が平行です。別の面を選ぶか、押し出す向きを変えてください。';
+const EXTRUDE_TO_FACE_PARALLEL_TEXT: FailureText = { key: 'partError.extrude.toFaceParallel', parameters: {} };
 /** 面が断面の後ろ側にある(向きの先に無い)。反転すれば届く。 */
-const EXTRUDE_TO_FACE_BEHIND_MESSAGE =
-  '押し出す向きの先に面がありません。向きを反転するか、別の面を選んでください。';
+const EXTRUDE_TO_FACE_BEHIND_TEXT: FailureText = { key: 'partError.extrude.toFaceBehind', parameters: {} };
 /**
  * 「次の面まで」の相手にできる立体が 1 つも無い。
  * **文言はカーネル(`makeSolidSweep.ts` の `NO_MATERIAL_AHEAD_MESSAGE`)と 1 字も違えずに
  * 揃える**(基本形状の断りと同じ決め。片方だけ直すと理由が食い違う)。
  */
-const EXTRUDE_TO_NEXT_MISSING_MESSAGE = '押し出す先にソリッドがありません。';
+const EXTRUDE_TO_NEXT_MISSING_TEXT: FailureText = { key: 'partError.extrude.toNextMissing', parameters: {} };
 
 /**
  * 「対象を貫く」の対象が、履歴で自分より前に無い・自分自身・すでに別のところで消費されているとき。
  * 先にある立体(前方参照)は `bodyKeys` にまだ無いので「見つからない」に入る。
  */
-const EXTRUDE_THROUGH_TARGET_MISSING_MESSAGE =
-  '貫いて切る対象のソリッドが見つかりません。切るソリッドを選び直してください。';
-const EXTRUDE_THROUGH_TARGET_CONSUMED_MESSAGE =
-  '貫いて切る対象のソリッドは、すでに別のところで使われています。切るソリッドを選び直してください。';
+const EXTRUDE_THROUGH_TARGET_MISSING_TEXT: FailureText = { key: 'partError.extrude.throughTargetMissing', parameters: {} };
+const EXTRUDE_THROUGH_TARGET_CONSUMED_TEXT: FailureText = { key: 'partError.extrude.throughTargetConsumed', parameters: {} };
 
 /** 向きと面の法線がこれ以下しか噛み合っていなければ「平行」とみなす(平面の当てはめと同じ桁)。 */
 const EXTRUDE_TO_FACE_EPSILON = 1e-9;
@@ -1225,13 +1230,13 @@ function resolveExtrudeToFace(
   if (resolved === null) {
     return {
       ok: false,
-      error: partError(featureId, 'missingSubShape', EXTRUDE_TO_FACE_MISSING_MESSAGE),
+      error: partErrorWith(featureId, 'missingSubShape', EXTRUDE_TO_FACE_MISSING_TEXT),
     };
   }
   if (resolved.kind !== 'face' || resolved.surfaceKind !== 'plane' || resolved.axis === null) {
     return {
       ok: false,
-      error: partError(featureId, 'degenerate', EXTRUDE_TO_FACE_NOT_FLAT_MESSAGE),
+      error: partErrorWith(featureId, 'degenerate', EXTRUDE_TO_FACE_NOT_FLAT_TEXT),
     };
   }
   const normal = normalizeVec3(resolved.axis);
@@ -1239,14 +1244,14 @@ function resolveExtrudeToFace(
   if (withinMagnitude(denominator, EXTRUDE_TO_FACE_EPSILON)) {
     return {
       ok: false,
-      error: partError(featureId, 'degenerate', EXTRUDE_TO_FACE_PARALLEL_MESSAGE),
+      error: partErrorWith(featureId, 'degenerate', EXTRUDE_TO_FACE_PARALLEL_TEXT),
     };
   }
   const distance = dotVec3(subVec3(resolved.position, profilePoint), normal) / denominator;
   if (!Number.isFinite(distance) || distance <= 0) {
     return {
       ok: false,
-      error: partError(featureId, 'invalidValue', EXTRUDE_TO_FACE_BEHIND_MESSAGE),
+      error: partErrorWith(featureId, 'invalidValue', EXTRUDE_TO_FACE_BEHIND_TEXT),
     };
   }
   return { ok: true, distance };
@@ -1315,7 +1320,7 @@ function resolveExtrudeEnd(
       if (targetKey === null) {
         return {
           ok: false,
-          error: partError(feature.id, 'missingBody', EXTRUDE_TO_NEXT_MISSING_MESSAGE),
+          error: partErrorWith(feature.id, 'missingBody', EXTRUDE_TO_NEXT_MISSING_TEXT),
         };
       }
       return { ok: true, value: { end: { kind: 'toNext' }, distance, targetKey } };
@@ -1326,20 +1331,20 @@ function resolveExtrudeEnd(
       if (end.targetFeatureId === feature.id) {
         return {
           ok: false,
-          error: partError(feature.id, 'missingBody', EXTRUDE_THROUGH_TARGET_MISSING_MESSAGE),
+          error: partErrorWith(feature.id, 'missingBody', EXTRUDE_THROUGH_TARGET_MISSING_TEXT),
         };
       }
       if (consumed.has(end.targetFeatureId)) {
         return {
           ok: false,
-          error: partError(feature.id, 'consumedTwice', EXTRUDE_THROUGH_TARGET_CONSUMED_MESSAGE),
+          error: partErrorWith(feature.id, 'consumedTwice', EXTRUDE_THROUGH_TARGET_CONSUMED_TEXT),
         };
       }
       const targetKey = bodyKeys.get(end.targetFeatureId);
       if (targetKey === undefined) {
         return {
           ok: false,
-          error: partError(feature.id, 'missingBody', EXTRUDE_THROUGH_TARGET_MISSING_MESSAGE),
+          error: partErrorWith(feature.id, 'missingBody', EXTRUDE_THROUGH_TARGET_MISSING_TEXT),
         };
       }
       // 長さは再計算のたびにカーネルが対象の境界箱から決める。段の `distance` は入れた値のまま
@@ -1366,30 +1371,22 @@ function planExtrude(
 ): PlanOutcome {
   const face = findResolvedFace(sketches, feature.profile);
   if (face === undefined) {
-    return fail(
-      feature.id,
-      'missingProfile',
-      '押し出すもとの面が見つかりません。スケッチで面を張ってからやり直してください。',
-    );
+    return failWith(feature.id, 'missingProfile', { key: 'partError.extrude.missingProfile', parameters: {} });
   }
   const entered = feature.distance.value;
   if (!Number.isFinite(entered) || entered <= 0) {
-    return fail(feature.id, 'invalidValue', '押し出す長さは 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.extrude.distance', parameters: {} });
   }
   const samples = face.curves.flatMap((curve) => curveSamplePoints(curve));
   const normal = fitPlaneNormal(samples);
   // resolveSketch が平面に乗らない面を断るので通常は起きない。断っても止めない(FR-504)。
   if (normal === null) {
-    return fail(
-      feature.id,
-      'notPlanar',
-      '押し出す向きが決まりません。面の形が平らになっているか確かめてください。',
-    );
+    return failWith(feature.id, 'notPlanar', { key: 'partError.extrude.notPlanar', parameters: {} });
   }
   const direction = feature.reversed ? negateVec3(normal) : normal;
   const shaping = extrudeShapingOf(feature);
   if ((face.holes?.length ?? 0) > 0 && shaping.thickness !== null) {
-    return fail(feature.id, 'invalidValue', '穴つきの面は薄板の押し出しに対応していません。中実の押し出しを選んでください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.extrude.thinWithHoles', parameters: {} });
   }
 
   // 面の平面上の 1 点。断面は平らなのでどの点で測っても同じ距離になる(標本点の先頭を使う)。
@@ -1413,12 +1410,12 @@ function planExtrude(
     taperDegrees < 0 ||
     taperDegrees > MAX_TAPER_ANGLE_DEGREES
   ) {
-    return fail(feature.id, 'invalidValue', '側面の傾きは 0 以上 60 度以下にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.extrude.taper', parameters: {} });
   }
   let thin: ThinExtrudePlan | null = null;
   if (shaping.thickness !== null) {
     if (!isPositiveFinite(shaping.thickness.value)) {
-      return fail(feature.id, 'invalidValue', '壁の厚みは 0 より大きい数にしてください。');
+      return failWith(feature.id, 'invalidValue', { key: 'partError.extrude.thinWall', parameters: {} });
     }
     thin = { thickness: shaping.thickness.value, side: shaping.thicknessSide };
   }
@@ -1467,24 +1464,16 @@ function planRevolve(
 ): PlanOutcome {
   const face = findResolvedFace(sketches, feature.profile);
   if (face === undefined) {
-    return fail(
-      feature.id,
-      'missingProfile',
-      '回転させるもとの面が見つかりません。スケッチで面を張ってからやり直してください。',
-    );
+    return failWith(feature.id, 'missingProfile', { key: 'partError.revolve.missingProfile', parameters: {} });
   }
-  if ((face.holes?.length ?? 0) > 0) return fail(feature.id, 'invalidValue', '穴つきの面は回転に対応していません。穴のない面を選んでください。');
+  if ((face.holes?.length ?? 0) > 0) return failWith(feature.id, 'invalidValue', { key: 'partError.revolve.withHoles', parameters: {} });
   const degrees = feature.angle.value;
   if (!Number.isFinite(degrees) || degrees <= 0 || degrees > MAX_REVOLVE_DEGREES) {
-    return fail(feature.id, 'invalidValue', '回転の角度は 0 より大きく 360 以下にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.revolve.angle', parameters: {} });
   }
   const frame = resolveRevolveAxis(feature.axis, sketches, axisFrames);
   if (frame === null) {
-    return fail(
-      feature.id,
-      'missingProfile',
-      '回転の軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。',
-    );
+    return failWith(feature.id, 'missingProfile', { key: 'partError.revolve.missingAxis', parameters: {} });
   }
   return {
     ok: true,
@@ -1507,15 +1496,15 @@ function planSew(
 ): PlanOutcome {
   if (feature.surfaceFaces !== undefined && feature.surfaceFaces.length > 0) {
     if (feature.faces.length > 0) {
-      return fail(feature.id, 'invalidValue', 'スケッチの面とソリッド・曲面の面は一緒に縫い合わせられません。');
+      return failWith(feature.id, 'invalidValue', { key: 'partError.sew.mixedFaces', parameters: {} });
     }
     if (feature.surfaceFaces.length < 2) {
-      return fail(feature.id, 'degenerate', 'ソリッドにするには面が 2 枚以上必要です。');
+      return failWith(feature.id, 'degenerate', { key: 'solidFailure.sewFaces.insufficientFaces', parameters: {} });
     }
     const faces: { readonly targetKey: string; readonly query: SubShapeRef }[] = [];
     for (const query of feature.surfaceFaces) {
       if (subShapeKindOf(query) !== 'face') {
-        return fail(feature.id, 'invalidValue', '縫い合わせる面を選び直してください。');
+        return failWith(feature.id, 'invalidValue', { key: 'partError.sew.reselectFaces', parameters: {} });
       }
       const target = resolveMachiningTarget(feature.id, query.bodyFeatureId, bodyKeys, consumed);
       if (!target.ok) return target;
@@ -1523,35 +1512,31 @@ function planSew(
     }
     const tolerance = feature.tolerance.value;
     if (!Number.isFinite(tolerance) || tolerance <= 0) {
-      return fail(feature.id, 'invalidValue', 'つなぎ目の許容量は 0 より大きい数にしてください。');
+      return failWith(feature.id, 'invalidValue', { key: 'partError.sew.tolerance', parameters: {} });
     }
     return { ok: true, plan: { kind: 'sew', profiles: [], faces, tolerance } };
   }
   if (feature.faces.length < 2) {
-    return fail(feature.id, 'degenerate', 'ソリッドにするには面が 2 枚以上必要です。');
+    return failWith(feature.id, 'degenerate', { key: 'solidFailure.sewFaces.insufficientFaces', parameters: {} });
   }
   const profiles: (readonly ResolvedCurve[])[] = [];
   for (const reference of feature.faces) {
     const face = findResolvedFace(sketches, reference);
     if (face === undefined) {
-      return fail(
-        feature.id,
-        'missingProfile',
-        '縫い合わせるもとの面が見つかりません。スケッチで面を張ってからやり直してください。',
-      );
+      return failWith(feature.id, 'missingProfile', { key: 'partError.sew.missingProfile', parameters: {} });
     }
-    if ((face.holes?.length ?? 0) > 0) return fail(feature.id, 'invalidValue', '穴つきの面は縫合に対応していません。穴のない面を選んでください。');
+    if ((face.holes?.length ?? 0) > 0) return failWith(feature.id, 'invalidValue', { key: 'partError.sew.withHoles', parameters: {} });
     profiles.push(face.curves);
   }
   const tolerance = feature.tolerance.value;
   if (!Number.isFinite(tolerance) || tolerance <= 0) {
-    return fail(feature.id, 'invalidValue', 'つなぎ目の許容量は 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.sew.tolerance', parameters: {} });
   }
   return { ok: true, plan: { kind: 'sew', profiles, tolerance } };
 }
 
 /** 閉じた輪郭の切断の対が、同じ立体・同じ輪郭・反対の残す側になっていない。 */
-const PROFILE_CUT_PAIR_MESSAGE = '対になっている切断には、同じソリッドと輪郭、反対の残す側が必要です。';
+const PROFILE_CUT_PAIR_TEXT: FailureText = { key: 'partError.boolean.profileCutPair', parameters: {} };
 
 /** 閉じた輪郭の切断のブーリアンか。残す側は差 = 輪郭の外側、積 = 輪郭の内側。 */
 function isProfileCut(feature: BooleanFeature): boolean {
@@ -1612,29 +1597,25 @@ function planBoolean(
   consumed: ReadonlySet<string>,
 ): PlanOutcome {
   if (feature.targetFeatureId === feature.toolFeatureId) {
-    return fail(
-      feature.id,
-      'invalidValue',
-      '同じソリッドどうしは組み合わせられません。別のソリッドを選んでください。',
-    );
+    return failWith(feature.id, 'invalidValue', { key: 'partError.boolean.sameBody', parameters: {} });
   }
   // 対は消費済みのときだけ引く(結びの無い従来のブーリアンは、文書を見ずに以前と同じ判定になる)。
   const pair: ProfileCutPair = consumed.has(feature.targetFeatureId) || consumed.has(feature.toolFeatureId)
     ? profileCutPairOf(feature, solids) : { kind: 'single' };
   const sharedWithPartner = pair.kind === 'paired' && bodyKeys.has(pair.partner.id);
   const consumedElsewhere = (): PlanOutcome => pair.kind === 'broken'
-    ? fail(feature.id, 'invalidValue', PROFILE_CUT_PAIR_MESSAGE)
-    : fail(feature.id, 'consumedTwice', 'そのソリッドはすでに別のところで使われています。');
+    ? failWith(feature.id, 'invalidValue', PROFILE_CUT_PAIR_TEXT)
+    : failWith(feature.id, 'consumedTwice', { key: 'partError.body.consumedTwice', parameters: {} });
   const targetKey = bodyKeys.get(feature.targetFeatureId);
   if (targetKey === undefined) {
-    return fail(feature.id, 'missingBody', '組み合わせるもとのソリッドが見つかりません。');
+    return failWith(feature.id, 'missingBody', { key: 'partError.boolean.missingBody', parameters: {} });
   }
   if (consumed.has(feature.targetFeatureId) && !sharedWithPartner) {
     return consumedElsewhere();
   }
   const toolKey = bodyKeys.get(feature.toolFeatureId);
   if (toolKey === undefined) {
-    return fail(feature.id, 'missingBody', '組み合わせるもとのソリッドが見つかりません。');
+    return failWith(feature.id, 'missingBody', { key: 'partError.boolean.missingBody', parameters: {} });
   }
   if (consumed.has(feature.toolFeatureId) && !sharedWithPartner) {
     return consumedElsewhere();
@@ -1672,13 +1653,13 @@ export function resolveMachiningTarget(
   if (targetKey === undefined) {
     return {
       ok: false,
-      error: partError(featureId, 'missingBody', '加工するもとのソリッドが見つかりません。'),
+      error: partErrorWith(featureId, 'missingBody', { key: 'partError.machining.missingBody', parameters: {} }),
     };
   }
   if (consumed.has(targetFeatureId)) {
     return {
       ok: false,
-      error: partError(featureId, 'consumedTwice', 'そのソリッドはすでに別のところで使われています。'),
+      error: partErrorWith(featureId, 'consumedTwice', { key: 'partError.body.consumedTwice', parameters: {} }),
     };
   }
   return { ok: true, targetKey };
@@ -1727,11 +1708,7 @@ export function resolveHoleCenters(
   if (centers.length === 0) {
     return {
       ok: false,
-      error: partError(
-        featureId,
-        'missingProfile',
-        '穴の中心にする点が見つかりません。スケッチで点を作ってからやり直してください。',
-      ),
+      error: partErrorWith(featureId, 'missingProfile', { key: 'partError.hole.centerMissing', parameters: {} }),
     };
   }
   return { ok: true, centers, ...(anchors.length === centers.length ? { centerAnchors: anchors } : {}) };
@@ -1749,7 +1726,7 @@ function resolveHoleDepth(featureId: string, depth: HoleDepth): DepthOutcome {
   if (!isPositiveFinite(depth.depth.value)) {
     return {
       ok: false,
-      error: partError(featureId, 'invalidValue', '穴の深さは 0 より大きい数にしてください。'),
+      error: partErrorWith(featureId, 'invalidValue', { key: 'partError.hole.depth', parameters: {} }),
     };
   }
   return { ok: true, depth: depth.depth.value };
@@ -1780,14 +1757,14 @@ function resolveTilt(
   if (!Number.isFinite(angleDegrees) || angleDegrees < 0 || angleDegrees >= MAX_TILT_DEGREES) {
     return {
       ok: false,
-      error: partError(featureId, 'invalidValue', '傾きの角度は 0 以上 90 度未満にしてください。'),
+      error: partErrorWith(featureId, 'invalidValue', { key: 'partError.hole.tiltAngle', parameters: {} }),
     };
   }
   const azimuthDegrees = tiltAzimuth.value;
   if (!Number.isFinite(azimuthDegrees)) {
     return {
       ok: false,
-      error: partError(featureId, 'invalidValue', '傾ける向きの角度が数になっていません。'),
+      error: partErrorWith(featureId, 'invalidValue', { key: 'partError.hole.tiltAzimuth', parameters: {} }),
     };
   }
   return {
@@ -1811,10 +1788,10 @@ function resolveTilt(
  * **文言は 1 字も違えずに揃える**(基本形状・罫線面の断りと同じ扱い)。
  * model 側で先に断るのは、重い OCCT の呼び出しの前にツリーへ理由を出すためである。
  */
-const COUNTERBORE_DIAMETER_MESSAGE = 'ざぐりの径は穴の径より大きくしてください。';
-const COUNTERBORE_DEPTH_MESSAGE = 'ざぐりの深さは 0 より大きい数にしてください。';
-const COUNTERSINK_ANGLE_MESSAGE = '皿もみの角度は 0 度より大きく 180 度未満にしてください。';
-const COUNTERSINK_DIAMETER_MESSAGE = '皿もみの頭の径は穴の径より大きくしてください。';
+const COUNTERBORE_DIAMETER_TEXT: FailureText = { key: 'partError.counterbore.diameter', parameters: {} };
+const COUNTERBORE_DEPTH_TEXT: FailureText = { key: 'partError.counterbore.depth', parameters: {} };
+const COUNTERSINK_ANGLE_TEXT: FailureText = { key: 'partError.countersink.angle', parameters: {} };
+const COUNTERSINK_DIAMETER_TEXT: FailureText = { key: 'partError.countersink.diameter', parameters: {} };
 
 /** 皿もみの開き角の上限(度、含まない)。180 度では円錐が平らになり深さ 0 になる。 */
 const MAX_COUNTERSINK_DEGREES = 180;
@@ -1848,14 +1825,14 @@ function resolveHoleEntry(
       if (!Number.isFinite(diameter) || diameter <= drillDiameter) {
         return {
           ok: false,
-          error: partError(featureId, 'invalidValue', COUNTERBORE_DIAMETER_MESSAGE),
+          error: partErrorWith(featureId, 'invalidValue', COUNTERBORE_DIAMETER_TEXT),
         };
       }
       const depth = entry.depth.value;
       if (!isPositiveFinite(depth)) {
         return {
           ok: false,
-          error: partError(featureId, 'invalidValue', COUNTERBORE_DEPTH_MESSAGE),
+          error: partErrorWith(featureId, 'invalidValue', COUNTERBORE_DEPTH_TEXT),
         };
       }
       return { ok: true, entry: { kind: 'counterbore', diameter, depth } };
@@ -1869,14 +1846,14 @@ function resolveHoleEntry(
       ) {
         return {
           ok: false,
-          error: partError(featureId, 'invalidValue', COUNTERSINK_ANGLE_MESSAGE),
+          error: partErrorWith(featureId, 'invalidValue', COUNTERSINK_ANGLE_TEXT),
         };
       }
       const diameter = entry.diameter.value;
       if (!Number.isFinite(diameter) || diameter <= drillDiameter) {
         return {
           ok: false,
-          error: partError(featureId, 'invalidValue', COUNTERSINK_DIAMETER_MESSAGE),
+          error: partErrorWith(featureId, 'invalidValue', COUNTERSINK_DIAMETER_TEXT),
         };
       }
       return {
@@ -1895,11 +1872,10 @@ function resolveHoleEntry(
  * 円筒の側面の穴の断りの文言。**kernel の `makeHole.ts` と 1 字も違えずに揃える**
  * (入口の断りと同じ扱い。model が先に断るので利用者が見るのはここの文言)。
  */
-const NOT_CYLINDRICAL_MESSAGE = '円筒の側面の穴をあけられるのは円筒の面だけです。円筒の面を選び直してください。';
-const NO_CYLINDER_LOCATION_MESSAGE = '円筒の側面の穴の位置(高さと角度)が 1 つもありません。';
-const CYLINDER_LOCATION_NOT_FINITE_MESSAGE = '円筒の側面の穴の高さと角度は数にしてください。';
-const CYLINDER_UNSUPPORTED_MESSAGE =
-  '円筒の側面の穴では、中心の点・傾き・皿もみはまだ使えません。位置は高さと角度で指定してください。';
+const NOT_CYLINDRICAL_TEXT: FailureText = { key: 'partError.cylinderHole.notCylinder', parameters: {} };
+const NO_CYLINDER_LOCATION_TEXT: FailureText = { key: 'partError.cylinderHole.noLocation', parameters: {} };
+const CYLINDER_LOCATION_NOT_FINITE_TEXT: FailureText = { key: 'partError.cylinderHole.locationNotFinite', parameters: {} };
+const CYLINDER_UNSUPPORTED_TEXT: FailureText = { key: 'partError.cylinderHole.unsupported', parameters: {} };
 
 type PlanarOutcome =
   | { readonly ok: true; readonly planar: PlanarHolePlan | null }
@@ -1939,13 +1915,13 @@ function resolvePlanarHole(feature: HoleLikeFeature): PlanarOutcome {
   if (placement === undefined) return { ok: true, planar: null };
   if (placement.kind === 'edge-distance') return resolveEdgeDistanceHole(feature, placement);
   if (feature.centers.length !== 0 || feature.cylindrical !== undefined) {
-    return { ok: false, error: partError(feature.id, 'invalidValue', '面内X・Yと中心点・円筒配置は同時に指定できません。') };
+    return { ok: false, error: partErrorWith(feature.id, 'invalidValue', { key: 'partError.hole.planarConflict', parameters: {} }) };
   }
   if (feature.face.fingerprint.kind !== 'face' || feature.face.fingerprint.surfaceKind !== 'plane') {
-    return { ok: false, error: partError(feature.id, 'invalidValue', '面内X・Yには平らな面を選んでください。') };
+    return { ok: false, error: partErrorWith(feature.id, 'invalidValue', { key: 'partError.hole.planarNotPlane', parameters: {} }) };
   }
   if (placement.locations.length === 0 || placement.locations.some(p => !Number.isFinite(p.x.value) || !Number.isFinite(p.y.value))) {
-    return { ok: false, error: partError(feature.id, 'invalidValue', '面内X・Yには1つ以上の有限な位置を指定してください。') };
+    return { ok: false, error: partErrorWith(feature.id, 'invalidValue', { key: 'partError.hole.planarLocations', parameters: {} }) };
   }
   return { ok: true, planar: { kind: 'plane-face', locations: placement.locations.map(p => ({ x: p.x.value, y: p.y.value })) } };
 }
@@ -1967,21 +1943,21 @@ function resolveCylindricalHole(feature: HoleLikeFeature): CylindricalOutcome {
   }
   if (placement.kind !== 'cylinder-face' || feature.centers.length !== 0 || feature.tiltAngle.value !== 0
     || feature.tiltAzimuth.value !== 0 || holeEntryOf(feature).kind === 'countersink') {
-    return { ok: false, error: partError(feature.id, 'invalidValue', CYLINDER_UNSUPPORTED_MESSAGE) };
+    return { ok: false, error: partErrorWith(feature.id, 'invalidValue', CYLINDER_UNSUPPORTED_TEXT) };
   }
   // 面の種類は保存された指紋で分かる。円筒でなければ、平面の穴へ黙って戻さずに断る
   // (kernel も選び直した実際の面で同じ文言で断る。辺・頂点の参照は resolveHoleBase が断る)。
   if (feature.face.fingerprint.kind === 'face' && feature.face.fingerprint.surfaceKind !== 'cylinder') {
-    return { ok: false, error: partError(feature.id, 'invalidValue', NOT_CYLINDRICAL_MESSAGE) };
+    return { ok: false, error: partErrorWith(feature.id, 'invalidValue', NOT_CYLINDRICAL_TEXT) };
   }
   if (placement.locations.length === 0) {
-    return { ok: false, error: partError(feature.id, 'invalidValue', NO_CYLINDER_LOCATION_MESSAGE) };
+    return { ok: false, error: partErrorWith(feature.id, 'invalidValue', NO_CYLINDER_LOCATION_TEXT) };
   }
   const locations: { height: number; angle: number }[] = [];
   for (const location of placement.locations) {
     const height = location.height.value, angle = location.angle.value;
     if (!Number.isFinite(height) || !Number.isFinite(angle)) {
-      return { ok: false, error: partError(feature.id, 'invalidValue', CYLINDER_LOCATION_NOT_FINITE_MESSAGE) };
+      return { ok: false, error: partErrorWith(feature.id, 'invalidValue', CYLINDER_LOCATION_NOT_FINITE_TEXT) };
     }
     locations.push({ height, angle: degreesToRadians(angle) });
   }
@@ -2032,11 +2008,7 @@ function resolveHoleBase(
   if (feature.face.bodyFeatureId !== feature.targetFeatureId) {
     return {
       ok: false,
-      error: partError(
-        feature.id,
-        'invalidValue',
-        '穴をあける面は、加工するもとのソリッドの面にしてください。',
-      ),
+      error: partErrorWith(feature.id, 'invalidValue', { key: 'partError.hole.faceNotTarget', parameters: {} }),
     };
   }
   // 参照の型(SubShapeRef)は辺・頂点も表せるので、面であることをここで確かめる
@@ -2044,11 +2016,7 @@ function resolveHoleBase(
   if (subShapeKindOf(feature.face) !== 'face') {
     return {
       ok: false,
-      error: partError(
-        feature.id,
-        'invalidValue',
-        '穴をあけられるのは面だけです。面を選び直してください。',
-      ),
+      error: partErrorWith(feature.id, 'invalidValue', { key: 'partError.hole.faceOnly', parameters: {} }),
     };
   }
   const noCenters: HoleCentersOutcome = { ok: true, centers: [] };
@@ -2105,7 +2073,7 @@ function planHole(
   const base = outcome.base;
   const diameter = feature.diameter.value;
   if (!isPositiveFinite(diameter)) {
-    return fail(feature.id, 'invalidValue', '穴の直径は 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.hole.diameter', parameters: {} });
   }
   // 入口の形(FR-422)。省略された欄は `holeEntryOf` が既定で埋める。
   const entry = resolveHoleEntry(feature.id, holeEntryOf(feature), diameter);
@@ -2163,30 +2131,26 @@ function planThreadHole(
   const base = outcome.base;
   const size = findMetricThread(feature.designation);
   if (size === undefined) {
-    return fail(
-      feature.id,
-      'invalidValue',
-      'そのねじの呼びは使えません。一覧から選び直してください。',
-    );
+    return failWith(feature.id, 'invalidValue', { key: 'partError.threadHole.unknownSize', parameters: {} });
   }
   const pitch = feature.pitch.value;
   if (!isPositiveFinite(pitch)) {
-    return fail(feature.id, 'invalidValue', 'ねじのピッチは 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.threadHole.pitch', parameters: {} });
   }
   const drillDiameter = feature.drillDiameter.value;
   if (!isPositiveFinite(drillDiameter)) {
-    return fail(feature.id, 'invalidValue', '下穴の径は 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.threadHole.drillDiameter', parameters: {} });
   }
   if (drillDiameter >= size.diameter) {
-    return fail(feature.id, 'invalidValue', '下穴の径はねじの外径より小さくしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.threadHole.drillTooLarge', parameters: {} });
   }
   const threadLength = feature.threadLength.value;
   if (!isPositiveFinite(threadLength)) {
-    return fail(feature.id, 'invalidValue', 'ねじ部の長さは 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.threadHole.length', parameters: {} });
   }
   // 止まり穴のときだけ深さと比べる。貫通穴は深さが無いので比べる相手がない。
   if (base.depth !== null && threadLength > base.depth) {
-    return fail(feature.id, 'invalidValue', 'ねじ部の長さは、穴の深さ以下にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.threadHole.lengthOverDepth', parameters: {} });
   }
   // 入口の形(FR-422)。比べる相手は**下穴の径**(ざぐり・皿もみは下穴を広げるため)で、
   // 値の検査は穴とまったく同じ口を通す。カーネルの段(`ThreadStepSpec`)が `entry` を
@@ -2236,6 +2200,7 @@ function sortedUniqueTargets(targets: readonly SubShapeRef[]): readonly SubShape
 /** 面取り・パターンで「面・辺を1つも指していない」ときの断り(PartErrorCode.missingSubShape の注釈)。 */
 const MISSING_SUB_SHAPE_MESSAGE =
   '加工するもとの面(辺)が見つかりません。形が大きく変わったため、選び直してください。';
+const MISSING_SUB_SHAPE_TEXT: FailureText = { key: 'partError.machining.missingSubShape', parameters: {} };
 
 /**
  * R 面取り(FR-407)。対象のボディを消費して1つの新しいボディを作る。
@@ -2252,7 +2217,7 @@ function planFillet(
   }
   const targets = sortedUniqueTargets(feature.targets);
   if (targets.length === 0) {
-    return fail(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
+    return failWith(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_TEXT);
   }
   /*
     半径(FR-407)と可変半径(FR-426)。省略できる欄は必ず
@@ -2267,7 +2232,7 @@ function planFillet(
   if (radiusInput.kind === 'constant') {
     const radius = radiusInput.radius.value;
     if (!isPositiveFinite(radius)) {
-      return fail(feature.id, 'invalidValue', '丸める半径は 0 より大きい数にしてください。');
+      return failWith(feature.id, 'invalidValue', { key: 'partError.fillet.radius', parameters: {} });
     }
     return {
       ok: true,
@@ -2277,7 +2242,7 @@ function planFillet(
   const start = radiusInput.start.value;
   const end = radiusInput.end.value;
   if (!isPositiveFinite(start) || !isPositiveFinite(end)) {
-    return fail(feature.id, 'invalidValue', '丸める半径は 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.fillet.radius', parameters: {} });
   }
   return {
     ok: true,
@@ -2301,7 +2266,7 @@ function resolvePositiveDistance(featureId: string, distance: number): PositiveD
   if (!isPositiveFinite(distance)) {
     return {
       ok: false,
-      error: partError(featureId, 'invalidValue', '面取りの距離は 0 より大きい数にしてください。'),
+      error: partErrorWith(featureId, 'invalidValue', { key: 'partError.chamfer.distance', parameters: {} }),
     };
   }
   return { ok: true, distance };
@@ -2347,11 +2312,7 @@ function resolveChamferSize(featureId: string, size: ChamferSize): ChamferSizeOu
       ) {
         return {
           ok: false,
-          error: partError(
-            featureId,
-            'invalidValue',
-            '面取りの角度は 0 度より大きく 90 度より小さくしてください。',
-          ),
+          error: partErrorWith(featureId, 'invalidValue', { key: 'partError.chamfer.angle', parameters: {} }),
         };
       }
       return {
@@ -2378,7 +2339,7 @@ function planChamfer(
   }
   const targets = sortedUniqueTargets(feature.targets);
   if (targets.length === 0) {
-    return fail(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
+    return failWith(feature.id, 'missingSubShape', MISSING_SUB_SHAPE_TEXT);
   }
   const sizeOutcome = resolveChamferSize(feature.id, feature.size);
   if (!sizeOutcome.ok) {
@@ -2518,19 +2479,11 @@ function planSpring(
 ): PlanOutcome {
   const origin = resolveSpringOrigin(feature.origin, sketches);
   if (origin === null) {
-    return fail(
-      feature.id,
-      'missingProfile',
-      'ばねの始点にする点が見つかりません。スケッチで点を作ってからやり直してください。',
-    );
+    return failWith(feature.id, 'missingProfile', { key: 'partError.spring.missingStart', parameters: {} });
   }
   const axisFrame = resolveRevolveAxis(feature.axis, sketches, axisFrames);
   if (axisFrame === null) {
-    return fail(
-      feature.id,
-      'missingProfile',
-      'ばねの軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。',
-    );
+    return failWith(feature.id, 'missingProfile', { key: 'partError.spring.missingAxis', parameters: {} });
   }
   const tilt = resolveTilt(feature.id, feature.tiltAngle, feature.tiltAzimuth);
   if (!tilt.ok) {
@@ -2540,14 +2493,14 @@ function planSpring(
 
   const coilDiameter = feature.coilDiameter.value;
   if (!isPositiveFinite(coilDiameter)) {
-    return fail(feature.id, 'invalidValue', 'コイル径は 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.spring.coilDiameter', parameters: {} });
   }
   const wireDiameter = feature.wireDiameter.value;
   if (!isPositiveFinite(wireDiameter)) {
-    return fail(feature.id, 'invalidValue', '線径は 0 より大きい数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.spring.wireDiameter', parameters: {} });
   }
   if (wireDiameter >= coilDiameter) {
-    return fail(feature.id, 'invalidValue', '線径はコイル径より小さくしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'springError.wireTooThick', parameters: {} });
   }
 
   const resolvedLength = resolveSpringLength(
@@ -2558,16 +2511,12 @@ function planSpring(
     return fail(feature.id, 'invalidValue', resolvedLength.message);
   }
   if (resolvedLength.turns > MAX_SPRING_TURNS) {
-    return fail(feature.id, 'invalidValue', '巻数は 0 より大きく 200 以下にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.spring.turns', parameters: {} });
   }
   // ここは model が先に断る(NFR-UX-5)。カーネル(makeSpring)でも同じ検査をするが、
   // 重い掃引を走らせる前にツリーへ理由を出す。
   if (resolvedLength.pitch <= wireDiameter) {
-    return fail(
-      feature.id,
-      'invalidValue',
-      'ピッチは線径より大きくしてください。隣どうしの線がぶつかります。',
-    );
+    return failWith(feature.id, 'invalidValue', { key: 'springError.pitchTooSmall', parameters: {} });
   }
 
   return {
@@ -2792,10 +2741,10 @@ function planPattern(
 ): PlanOutcome {
   const notPatternSourceMessage = '並べる立体、穴・ねじ穴、または作成行と対になった結合・切り抜きの行を選び直してください。';
   const source = solids.find(candidate => candidate.id === feature.sourceFeatureId);
-  if (source === undefined) return fail(feature.id, 'missingBody', '並べるもとのソリッドが見つかりません。');
+  if (source === undefined) return failWith(feature.id, 'missingBody', { key: 'partError.pattern.missingSource', parameters: {} });
   if (!isPatternSource(source, solids)) return fail(feature.id, 'invalidValue', notPatternSourceMessage);
   if (source.kind === 'boolean' && !bodyKeys.has(source.targetFeatureId)) {
-    return fail(feature.id, 'missingBody', '結合・切り抜きの相手のソリッドが見つかりません。');
+    return failWith(feature.id, 'missingBody', { key: 'partError.pattern.missingTarget', parameters: {} });
   }
   const sourceTarget = resolveMachiningTarget(feature.id, feature.sourceFeatureId, bodyKeys, consumed);
   if (!sourceTarget.ok) {
@@ -2813,7 +2762,7 @@ function planPattern(
   }
   if (source.kind !== 'hole' && source.kind !== 'threadHole') {
     const toolKey = source.kind === 'boolean' ? bodyKeys.get(source.toolFeatureId) : sourceTarget.targetKey;
-    if (toolKey === undefined) return fail(feature.id, 'missingBody', '並べる工具のソリッドが見つかりません。');
+    if (toolKey === undefined) return failWith(feature.id, 'missingBody', { key: 'partError.pattern.missingTool', parameters: {} });
     const transforms = feature.placement.kind === 'points' ? transformsOutcome.transforms.slice(1) : transformsOutcome.transforms;
     return { ok: true, plan: {
       kind: 'boolean', operation: source.kind === 'boolean' ? source.operation : 'union',
@@ -2906,20 +2855,18 @@ const PRIMITIVE_CONE_RADIUS_SAME_MESSAGE = '円錐の上下の半径が同じで
 const PRIMITIVE_TORUS_MINOR_TOO_LARGE_MESSAGE =
   'トーラスの管の半径は、中心までの半径より小さくしてください。';
 /** 中心にしたスケッチの点が消えた・見つからない。 */
-const MISSING_PRIMITIVE_POINT_MESSAGE = '中心にする点が見つかりません。点を選び直してください。';
+const MISSING_PRIMITIVE_POINT_TEXT: FailureText = { key: 'partError.primitive.missingPoint', parameters: {} };
 /**
  * 中心にした頂点を持つ立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。
  * 語尾はカーネルの `MISSING_PRIMITIVE_VERTEX_MESSAGE` と揃えてある(利用者から見れば
  * 「頂点が見つからない」という同じ出来事で、model と kernel のどちらが先に気づいたかは
  * 見せる理由に関係しないため)。
  */
-const MISSING_PRIMITIVE_VERTEX_MESSAGE =
-  '中心にする頂点が見つかりません。形が大きく変わったため、選び直してください。';
+const MISSING_PRIMITIVE_VERTEX_TEXT: FailureText = { key: 'partError.primitive.missingVertex', parameters: {} };
 /** 面・辺を中心に選ぼうとした。FR-429 が中心にできるとしているのは頂点だけ。 */
-const PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE = '中心にできるのはソリッドの頂点だけです。頂点を選び直してください。';
+const PRIMITIVE_ORIGIN_NOT_VERTEX_TEXT: FailureText = { key: 'partError.primitive.originNotVertex', parameters: {} };
 /** 向き(軸)が解決できない。ばね・パターンの言い回しに揃える。 */
-const MISSING_PRIMITIVE_AXIS_MESSAGE =
-  '向きにする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
+const MISSING_PRIMITIVE_AXIS_TEXT: FailureText = { key: 'partError.primitive.missingAxis', parameters: {} };
 
 /** 「〜は 0 より大きい数にしてください。」(欄の名前を差し込む。kernel の positiveMessage と同文)。 */
 function positiveFieldMessage(fieldName: string): string {
@@ -3051,8 +2998,8 @@ export function resolveSolidOrigin(
     case 'coordinate': {
       const resolved = resolveCoordinate(origin.value, { ...PART_COORDINATE_CONTEXT, functionPoint, subShape }, featureId);
       if (!resolved.ok) {
-        // 式のエラー(値が数でない・基準が無い)をそのまま見せる。
-        return { ok: false, error: partError(featureId, 'invalidValue', resolved.error.message) };
+        // 式のエラー(値が数でない・基準が無い)をそのまま見せる(鍵と値をそのまま写す。0b-3)。
+        return { ok: false, error: { featureId, code: 'invalidValue', text: resolved.error.text } };
       }
       return { ok: true, value: { origin: resolved.value, query: null, targetKey: null } };
     }
@@ -3062,7 +3009,7 @@ export function resolveSolidOrigin(
       if (point === null) {
         return {
           ok: false,
-          error: partError(featureId, 'missingProfile', MISSING_PRIMITIVE_POINT_MESSAGE),
+          error: partErrorWith(featureId, 'missingProfile', MISSING_PRIMITIVE_POINT_TEXT),
         };
       }
       return { ok: true, value: { origin: point, query: null, targetKey: null } };
@@ -3073,14 +3020,14 @@ export function resolveSolidOrigin(
       if (subShapeKindOf(origin.ref) !== 'vertex') {
         return {
           ok: false,
-          error: partError(featureId, 'invalidValue', PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE),
+          error: partErrorWith(featureId, 'invalidValue', PRIMITIVE_ORIGIN_NOT_VERTEX_TEXT),
         };
       }
       const targetKey = bodyKeys.get(origin.ref.bodyFeatureId);
       if (targetKey === undefined) {
         return {
           ok: false,
-          error: partError(featureId, 'missingSubShape', MISSING_PRIMITIVE_VERTEX_MESSAGE),
+          error: partErrorWith(featureId, 'missingSubShape', MISSING_PRIMITIVE_VERTEX_TEXT),
         };
       }
       // ずれの欄はまだ無いので、頂点そのものを指す `[0,0,0]` を渡す(段の型の注釈)。
@@ -3110,7 +3057,7 @@ function planPrimitive(
   // 向きは回転軸(FR-402)と同じ `AxisSpec` を流用する(同じものを2つ作らない)。
   const axisFrame = resolveRevolveAxis(feature.axis, sketches, axisFrames);
   if (axisFrame === null) {
-    return fail(feature.id, 'missingProfile', MISSING_PRIMITIVE_AXIS_MESSAGE);
+    return failWith(feature.id, 'missingProfile', MISSING_PRIMITIVE_AXIS_TEXT);
   }
   const shape = resolvePrimitiveShape(feature.shape);
   if (!shape.ok) {
@@ -3142,29 +3089,25 @@ const MIN_THRU_SECTIONS = 2;
  * 断りの文言(FR-504、NFR-UX-5)。カーネル(`makeThruSections.ts`)にも同じ状況の断りが
  * あるものは**文言をそろえてある**(基本形状の断りと同じ扱い。片方だけ直すと理由が食い違う)。
  */
-const THRU_SECTIONS_TOO_FEW_MESSAGE = 'つなぐ面を 2 つ選んでください。';
-const THRU_SECTIONS_MISSING_FACE_MESSAGE =
-  'つなぐもとの面が見つかりません。スケッチで面を張ってからやり直してください。';
-const THRU_SECTIONS_MISSING_SPHERE_MESSAGE =
-  'つなぐもとの球が見つかりません。球を選び直してください。';
+const THRU_SECTIONS_TOO_FEW_TEXT: FailureText = { key: 'partError.thruSections.tooFew', parameters: {} };
+const THRU_SECTIONS_MISSING_FACE_TEXT: FailureText = { key: 'partError.thruSections.missingFace', parameters: {} };
+const THRU_SECTIONS_MISSING_SPHERE_TEXT: FailureText = { key: 'partError.thruSections.missingSphere', parameters: {} };
 /** 球は縁を持たないので、球どうしを結ぶ直線が決まらない。 */
-const THRU_SECTIONS_TWO_SPHERES_MESSAGE = '球どうしを直線でつなぐことはできません。';
+const THRU_SECTIONS_TWO_SPHERES_TEXT: FailureText = { key: 'partError.thruSections.twoSpheres', parameters: {} };
 /** ロフトは球を扱わない(球へつなぐのは罫線面だけ)。 */
-const LOFT_SPHERE_MESSAGE = 'ロフトには球を使えません。「面をつなぐ」を使ってください。';
+const LOFT_SPHERE_TEXT: FailureText = { key: 'loftError.sphere', parameters: {} };
 /** ねじれの補正は稜線を何本ずらすかなので、整数でないと意味が決まらない。 */
-const THRU_SECTIONS_TWIST_MESSAGE = 'ねじれの補正は整数にしてください。';
+const THRU_SECTIONS_TWIST_TEXT: FailureText = { key: 'partError.thruSections.twistNotInteger', parameters: {} };
 /**
  * 中心を立体の頂点で決めた球(FR-429 の 3 通りのうちの 1 つ)は、まだ相手にできない。
  * 段へ渡せるのは中心の座標そのもの(`ThruSectionPlan.sphere.center`)で、頂点の選び直しは
  * カーネルの中でしか行えないため、model にはその時点の中心が無い。
  */
-const THRU_SECTIONS_SPHERE_ORIGIN_MESSAGE =
-  '中心をソリッドの頂点で決めた球は、まだ面をつなぐ相手にできません。球の中心を座標かスケッチの点で決めてください。';
+const THRU_SECTIONS_SPHERE_ORIGIN_TEXT: FailureText = { key: 'ruledError.sphereOrigin', parameters: {} };
 /** 輪郭にできるのは面だけ(辺・頂点には外周が無い)。穴の「面だけ」と同じ守り。 */
-const THRU_SECTIONS_NOT_FACE_MESSAGE = '輪郭にできるのはソリッドの面だけです。面を選び直してください。';
+const THRU_SECTIONS_NOT_FACE_TEXT: FailureText = { key: 'partError.thruSections.notFace', parameters: {} };
 /** 面を持つ立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。 */
-const THRU_SECTIONS_MISSING_BODY_MESSAGE =
-  'つなぐもとのソリッドが見つかりません。ソリッドを選び直してください。';
+const THRU_SECTIONS_MISSING_BODY_TEXT: FailureText = { key: 'partError.thruSections.missingBody', parameters: {} };
 
 type ThruSectionOutcome =
   | { readonly ok: true; readonly section: ThruSectionPlan }
@@ -3194,7 +3137,7 @@ function resolveSphereSection(
   ) {
     return {
       ok: false,
-      error: partError(featureId, 'missingProfile', THRU_SECTIONS_MISSING_SPHERE_MESSAGE),
+      error: partErrorWith(featureId, 'missingProfile', THRU_SECTIONS_MISSING_SPHERE_TEXT),
     };
   }
   const radius = sphere.shape.radius.value;
@@ -3211,7 +3154,7 @@ function resolveSphereSection(
   if (origin.value.query !== null) {
     return {
       ok: false,
-      error: partError(featureId, 'invalidValue', THRU_SECTIONS_SPHERE_ORIGIN_MESSAGE),
+      error: partErrorWith(featureId, 'invalidValue', THRU_SECTIONS_SPHERE_ORIGIN_TEXT),
     };
   }
   return { ok: true, section: { kind: 'sphere', center: origin.value.origin, radius } };
@@ -3235,7 +3178,7 @@ function resolveRuledSection(
   switch (section.kind) {
     case 'sketchCurves': {
       const curves = findResolvedCurves(sketches, section.ref);
-      if (curves === null) return { ok: false, error: partError(featureId, 'missingProfile', THRU_SECTIONS_MISSING_FACE_MESSAGE) };
+      if (curves === null) return { ok: false, error: partErrorWith(featureId, 'missingProfile', THRU_SECTIONS_MISSING_FACE_TEXT) };
       return { ok: true, section: { kind: 'curves', curves } };
     }
     case 'sketchFace': {
@@ -3243,11 +3186,10 @@ function resolveRuledSection(
       if (face === undefined) {
         return {
           ok: false,
-          error: partError(featureId, 'missingProfile', THRU_SECTIONS_MISSING_FACE_MESSAGE),
+          error: partErrorWith(featureId, 'missingProfile', THRU_SECTIONS_MISSING_FACE_TEXT),
         };
       }
-      if ((face.holes?.length ?? 0) > 0) return { ok: false, error: partError(featureId, 'invalidValue',
-        '穴つきの面はロフト・罫線面に対応していません。穴のない断面を選んでください。') };
+      if ((face.holes?.length ?? 0) > 0) return { ok: false, error: partErrorWith(featureId, 'invalidValue', { key: 'partError.thruSections.withHoles', parameters: {} }) };
       return { ok: true, section: { kind: 'curves', curves: face.curves } };
     }
     case 'sphere':
@@ -3262,14 +3204,14 @@ function resolveRuledSection(
       if (subShapeKindOf(section.ref) !== 'face') {
         return {
           ok: false,
-          error: partError(featureId, 'invalidValue', THRU_SECTIONS_NOT_FACE_MESSAGE),
+          error: partErrorWith(featureId, 'invalidValue', THRU_SECTIONS_NOT_FACE_TEXT),
         };
       }
       const targetKey = bodyKeys.get(section.ref.bodyFeatureId);
       if (targetKey === undefined) {
         return {
           ok: false,
-          error: partError(featureId, 'missingBody', THRU_SECTIONS_MISSING_BODY_MESSAGE),
+          error: partErrorWith(featureId, 'missingBody', THRU_SECTIONS_MISSING_BODY_TEXT),
         };
       }
       // **消費しない**ので `consumed` は見ない。鍵に混ぜるのは鍵の連鎖のため。
@@ -3287,7 +3229,7 @@ function resolveThruSectionsTwist(
   if (!Number.isInteger(value)) {
     return {
       ok: false,
-      error: partError(featureId, 'invalidValue', THRU_SECTIONS_TWIST_MESSAGE),
+      error: partErrorWith(featureId, 'invalidValue', THRU_SECTIONS_TWIST_TEXT),
     };
   }
   return { ok: true, twist: value };
@@ -3329,7 +3271,7 @@ function planRuled(
   context: SolidPlanContext,
 ): PlanOutcome {
   if (feature.first.kind === 'sphere' && feature.second.kind === 'sphere') {
-    return fail(feature.id, 'degenerate', THRU_SECTIONS_TWO_SPHERES_MESSAGE);
+    return failWith(feature.id, 'degenerate', THRU_SECTIONS_TWO_SPHERES_TEXT);
   }
   const sections = resolveRuledSections(
     feature.id,
@@ -3372,10 +3314,10 @@ function planLoft(
   context: SolidPlanContext,
 ): PlanOutcome {
   if (feature.sections.length < MIN_THRU_SECTIONS) {
-    return fail(feature.id, 'missingProfile', THRU_SECTIONS_TOO_FEW_MESSAGE);
+    return failWith(feature.id, 'missingProfile', THRU_SECTIONS_TOO_FEW_TEXT);
   }
   if (feature.sections.some((section) => section.kind === 'sphere')) {
-    return fail(feature.id, 'degenerate', LOFT_SPHERE_MESSAGE);
+    return failWith(feature.id, 'degenerate', LOFT_SPHERE_TEXT);
   }
   const sections = resolveRuledSections(
     feature.id,
@@ -3499,13 +3441,13 @@ function planFaceOffset(
 }
 
 /** 鏡に映すもとの立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。 */
-const MIRROR_MISSING_BODY_MESSAGE = '鏡に映すもとのソリッドが見つかりません。ソリッドを選び直してください。';
+const MIRROR_MISSING_BODY_TEXT: FailureText = { key: 'partError.mirror.missingBody', parameters: {} };
 /** 鏡にする作業平面が引けない(任意の作業平面が消された・解決に失敗した)。 */
-const MIRROR_MISSING_PLANE_MESSAGE = '鏡にする平面が見つかりません。平面を選び直してください。';
+const MIRROR_MISSING_PLANE_TEXT: FailureText = { key: 'partError.mirror.missingPlane', parameters: {} };
 /** 鏡にできるのは面だけ(辺・頂点は平面を決めない)。 */
-const MIRROR_NOT_FACE_MESSAGE = '鏡にできるのはソリッドの平らな面だけです。面を選び直してください。';
+const MIRROR_NOT_FACE_TEXT: FailureText = { key: 'partError.mirror.notFace', parameters: {} };
 /** 曲面は鏡にならない(法線が場所によって変わる)。 */
-const MIRROR_NOT_FLAT_MESSAGE = '鏡にできるのは平らな面だけです。平らな面を選び直してください。';
+const MIRROR_NOT_FLAT_TEXT: FailureText = { key: 'partError.mirror.notFlat', parameters: {} };
 
 type MirrorPlaneOutcome =
   | { readonly ok: true; readonly origin: Vec3; readonly normal: Vec3 }
@@ -3528,23 +3470,23 @@ function resolveMirrorPlane(
     if (resolved === null) {
       return {
         ok: false,
-        error: partError(featureId, 'missingProfile', MIRROR_MISSING_PLANE_MESSAGE),
+        error: partErrorWith(featureId, 'missingProfile', MIRROR_MISSING_PLANE_TEXT),
       };
     }
     return { ok: true, origin: resolved.origin, normal: cleanZeroVec3(resolved.normal) };
   }
   if (subShapeKindOf(plane.face) !== 'face') {
-    return { ok: false, error: partError(featureId, 'invalidValue', MIRROR_NOT_FACE_MESSAGE) };
+    return { ok: false, error: partErrorWith(featureId, 'invalidValue', MIRROR_NOT_FACE_TEXT) };
   }
   const resolved = context.subShape(plane.face);
   if (resolved === null) {
     return {
       ok: false,
-      error: partError(featureId, 'missingSubShape', MIRROR_NOT_FACE_MESSAGE),
+      error: partErrorWith(featureId, 'missingSubShape', MIRROR_NOT_FACE_TEXT),
     };
   }
   if (resolved.surfaceKind !== 'plane' || resolved.axis === null) {
-    return { ok: false, error: partError(featureId, 'degenerate', MIRROR_NOT_FLAT_MESSAGE) };
+    return { ok: false, error: partErrorWith(featureId, 'degenerate', MIRROR_NOT_FLAT_TEXT) };
   }
   return {
     ok: true,
@@ -3567,7 +3509,7 @@ function planMirror(
 ): PlanOutcome {
   const targetKey = bodyKeys.get(feature.targetFeatureId);
   if (targetKey === undefined) {
-    return fail(feature.id, 'missingBody', MIRROR_MISSING_BODY_MESSAGE);
+    return failWith(feature.id, 'missingBody', MIRROR_MISSING_BODY_TEXT);
   }
   const plane = resolveMirrorPlane(feature.id, feature.plane, context);
   if (!plane.ok) {
@@ -3580,8 +3522,7 @@ function planMirror(
 }
 
 /** 移動/回転の軸が引けない(回転軸・ばねの言い回しに揃える)。 */
-const TRANSFORM_MISSING_AXIS_MESSAGE =
-  '回転の軸にする線分が見つかりません。スケッチで線分をかいてから選び直してください。';
+const TRANSFORM_MISSING_AXIS_TEXT: FailureText = { key: 'partError.revolve.missingAxis', parameters: {} };
 
 /**
  * 移動/回転(FR-424)。対象を剛体変換したボディを 1 つ作る。**対象を消費する。**
@@ -3603,7 +3544,7 @@ function planTransform(
   }
   const translation = feature.translation.map((value) => value.value);
   if (!translation.every((value) => Number.isFinite(value))) {
-    return fail(feature.id, 'invalidValue', '移動の量は数にしてください。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.transform.moveNotNumber', parameters: {} });
   }
   const moved: Vec3 = cleanZeroVec3([translation[0], translation[1], translation[2]]);
   if (feature.rotationAxis === null) {
@@ -3622,11 +3563,11 @@ function planTransform(
   }
   const frame = resolveRevolveAxis(feature.rotationAxis, sketches, context.axisFrames);
   if (frame === null) {
-    return fail(feature.id, 'missingProfile', TRANSFORM_MISSING_AXIS_MESSAGE);
+    return failWith(feature.id, 'missingProfile', TRANSFORM_MISSING_AXIS_TEXT);
   }
   const angleDegrees = feature.rotationAngle.value;
   if (!Number.isFinite(angleDegrees)) {
-    return fail(feature.id, 'invalidValue', '回転の角度が数になっていません。');
+    return failWith(feature.id, 'invalidValue', { key: 'partError.transform.angleNotNumber', parameters: {} });
   }
   return {
     ok: true,
@@ -3642,7 +3583,7 @@ function planTransform(
 }
 
 /** 拡大縮小の中心にする点が引けない(基本形状の中心の言い回しに揃える)。 */
-const SCALE_MISSING_ORIGIN_MESSAGE = '拡大縮小の中心にする点が見つかりません。点を選び直してください。';
+const SCALE_MISSING_ORIGIN_TEXT: FailureText = { key: 'partError.scale.missingOrigin', parameters: {} };
 /** 倍率の断り 3 種(範囲 MIN_SCALE 〜 MAX_SCALE)。 */
 const SCALE_NOT_POSITIVE_MESSAGE = '倍率は 0 より大きい数にしてください。';
 const SCALE_TOO_SMALL_MESSAGE = '倍率は 0.001 以上にしてください。';
@@ -3682,7 +3623,7 @@ function planScale(
   }
   const origin = context.point(feature.origin);
   if (origin === null) {
-    return fail(feature.id, 'missingProfile', SCALE_MISSING_ORIGIN_MESSAGE);
+    return failWith(feature.id, 'missingProfile', SCALE_MISSING_ORIGIN_TEXT);
   }
   if (feature.factor.kind === 'uniform') {
     const value = feature.factor.value.value;
@@ -4289,7 +4230,7 @@ function resolveSurfaceShape(
       if (operation.sections.length < MIN_THRU_SECTIONS) {
         return {
           ok: false,
-          error: partError(featureId, 'missingProfile', THRU_SECTIONS_TOO_FEW_MESSAGE),
+          error: partErrorWith(featureId, 'missingProfile', THRU_SECTIONS_TOO_FEW_TEXT),
         };
       }
       const sections: (readonly ResolvedCurve[])[] = [];
@@ -4697,11 +4638,7 @@ function planImportedSolid(
 ): PlanOutcome {
   const bytes = importedShapes.get(feature.shapeRef);
   if (bytes === undefined) {
-    return fail(
-      feature.id,
-      'missingProfile',
-      '読み込んだ形が見つかりません。ファイルを読み込み直してください。',
-    );
+    return failWith(feature.id, 'missingProfile', { key: 'partError.importedSolid.missing', parameters: {} });
   }
   return { ok: true, plan: { kind: 'importedSolid', shapeRef: feature.shapeRef, bytes } };
 }
@@ -4859,7 +4796,7 @@ const REFERENCE_ERROR_CODES: Readonly<Record<ReferenceErrorCode, PartErrorCode>>
 };
 
 function toPartError(error: ReferenceError): PartError {
-  return partError(error.featureId, REFERENCE_ERROR_CODES[error.code], error.message);
+  return { featureId: error.featureId, code: REFERENCE_ERROR_CODES[error.code], text: error.text };
 }
 
 /**
@@ -5057,7 +4994,7 @@ function laterProjectionBodyMessage(source: ProjectionSource): string {
  * 積まれ、カーネルへ頼んで埋めるのは `recomputePart` の役目。
  */
 export interface ResolvePartOptions {
-  readonly invalidInputs?: ReadonlyMap<string, string>;
+  readonly invalidInputs?: ReadonlyMap<string, FailureText>;
   /** invalidInputs のうち、計算部(Worker)が止まって作れなかった物の id。その誤りの code を workerBroken にする(0b-1b)。 */
   readonly workerBrokenInputs?: ReadonlySet<string>;
   readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
@@ -5162,11 +5099,11 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
       continue;
     }
     const invalid = options.invalidInputs?.get(feature.id);
-    if (invalid !== undefined) { errors.push(partError(feature.id, 'invalidValue', invalid)); continue; }
+    if (invalid !== undefined) { errors.push({ featureId: feature.id, code: 'invalidValue', text: invalid }); continue; }
     if (feature.kind === 'pattern') {
       patternGraph ??= recomputeHistoryDependencies(document);
       if (patternRefersToSelf(feature.id, patternGraph)) {
-        errors.push(partError(feature.id, 'circularReference', '並べる対象の参照が自分自身へ戻っています。'));
+        errors.push(partErrorWith(feature.id, 'circularReference', { key: 'partError.pattern.selfReference', parameters: {} }));
         continue;
       }
     }

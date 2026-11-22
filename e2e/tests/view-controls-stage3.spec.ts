@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { disableFilePickers } from './filePickers.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
-import { leftEmptyOrbitFlow, settingsFileRoundTripFlow, snapPauseFlow } from './viewControlsStage3Flow.js';
+import { leftEmptyOrbitFlow, selectionModifierFlow, settingsFileRoundTripFlow, snapPauseFlow } from './viewControlsStage3Flow.js';
 
 // 操作の割り当ての第 3 段(設計 B-09 3-6)。キーボード・入力・ドラッグの検査なので firefox の project でも流す。
 test.beforeEach(async ({ page }) => {
@@ -21,6 +21,13 @@ test('B-09 第 3 段: 吸着を一時止めるキーを Shift にすると、押
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/'); await waitForStartupHealth(page, info);
   await snapPauseFlow(page); expect(errors).toEqual([]);
+});
+
+test('B-08 2-5: 部品の木で選択に足す・外すキーを変え、場所ごとの動きに戻せる', async ({ page }, info) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await waitForStartupHealth(page, info);
+  await selectionModifierFlow(page); expect(errors).toEqual([]);
 });
 
 test('B-09 第 3 段: 何も無い所からの左ドラッグで回すを入れた時だけ、左ドラッグで視点が回る', async ({ page }, info) => {

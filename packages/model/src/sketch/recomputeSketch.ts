@@ -19,6 +19,7 @@ import type {
 import type { ConstraintDiagnosis } from './constraints/diagnose.js';
 import { resolveConstrainedSketch } from './constraints/solveSketch.js';
 import { mapSketchExpressions } from './mapExpressions.js';
+import { plainText } from '../failureText.js';
 import {
   closedOffsetDistance,
   createOffsetCache,
@@ -62,12 +63,12 @@ export interface SketchRecomputeOptions {
 
 /** カーネルの失敗を利用者向けの一文にする。理由はカーネルが日本語で返す。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
 function kernelFailed(featureId: string, message: string, code?: SketchFaceFailure['code']): SketchError {
-  return { featureId, code: code ?? 'kernelFailed', message: `面を作れませんでした: ${message}` };
+  return { featureId, code: code ?? 'kernelFailed', text: plainText(`面を作れませんでした: ${message}`) };
 }
 
 /** オフセットの失敗。面とは別の言い回しにして、どの操作で失敗したかを分かるようにする。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
 function offsetFailed(featureId: string, message: string, code?: SketchOffsetFailure['code']): SketchError {
-  return { featureId, code: code ?? 'kernelFailed', message: `ずらした線を作れませんでした: ${message}` };
+  return { featureId, code: code ?? 'kernelFailed', text: plainText(`ずらした線を作れませんでした: ${message}`) };
 }
 
 /**

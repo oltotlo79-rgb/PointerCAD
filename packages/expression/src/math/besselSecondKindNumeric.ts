@@ -7,6 +7,7 @@ import { besselConstants, besselLog } from './besselConstants.js';
 import { secondKindSeries } from './besselSecondSeries.js';
 import { BESSEL_FIXED_SCALE as S, fixedRational, fixedAdd, fixedSubtract, fixedNegate,
   fixedMultiply, fixedDivide, fixedTimesRational, type BesselFixedRange } from './besselFixedRange.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 
 export type SecondBesselKind = 'Y' | 'K';
 export function secondKindSequence(kind: SecondBesselKind, maximumOrder: number, input: ExactRational,
@@ -48,7 +49,7 @@ export function secondKindSequence(kind: SecondBesselKind, maximumOrder: number,
 
 export function secondBesselBound(kind: SecondBesselKind, order: number, input: ExactRational,
   check: () => void): BesselFixedRange {
-  if(!Number.isSafeInteger(order)||Math.abs(order)>130)throw new MathInputProblem('budget','Bessel関数の次数が計算範囲を超えています。');
+  if(!Number.isSafeInteger(order)||exceedsMagnitude(order, 130))throw new MathInputProblem('budget','Bessel関数の次数が計算範囲を超えています。');
   const sequence=secondKindSequence(kind,Math.abs(order),input,check);
   const value=sequence[Math.abs(order)];
   return kind==='Y'&&order<0&&order%2!==0?fixedNegate(value):value;
@@ -57,7 +58,7 @@ export function secondBesselBound(kind: SecondBesselKind, order: number, input: 
 export function secondBesselDecimal(kind: SecondBesselKind, order: number, input: ExactRational,
   check: () => void): string {
   check();
-  if(!Number.isSafeInteger(order)||Math.abs(order)>128)throw new MathInputProblem('budget','Bessel関数の次数の絶対値は128以下の整数にしてください。');
+  if(!Number.isSafeInteger(order)||exceedsMagnitude(order, 128))throw new MathInputProblem('budget','Bessel関数の次数の絶対値は128以下の整数にしてください。');
   const value=secondBesselBound(kind,order,input,check);
   const lower=roundBesselRational({numerator:value.lower,denominator:S});
   const upper=roundBesselRational({numerator:value.upper,denominator:S});

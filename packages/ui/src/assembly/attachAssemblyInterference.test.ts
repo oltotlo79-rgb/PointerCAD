@@ -147,7 +147,7 @@ describe('2 部品の隙間の自動測定', () => {
     const kernel = deferredBridge();
     detach = attachAssemblyInterference(kernel.bridge);
     useAppStore.getState().setSelection(['a', 'b']);
-    // 上限の値は attachAssemblyInterference.ts の定数(実測の最も遅い 0.47 秒の約 20 倍)。
+    // 上限の値は solid/measure.ts の MEASURE_TIMEOUT_MS(実測の最も遅い 0.47 秒の約 20 倍)。
     vi.advanceTimersByTime(9_999);
     expect(useAppStore.getState().measureErrorKey).toBeNull();
     vi.advanceTimersByTime(1);

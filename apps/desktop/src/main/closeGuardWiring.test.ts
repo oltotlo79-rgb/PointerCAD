@@ -93,7 +93,9 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
     expect(flow).toContain('process.env[${JSON.stringify(CLOSE_CONFIRM_BYPASS_ENV)}] = \'1\'');
     const products = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps', 'packages'],
       { cwd: root, encoding: 'utf8' }).split('\0')
-      .filter((name) => /\/src\/.+\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/u.test(name) && !/\.test\.[a-z]+$/u.test(name));
+      .filter((name) => /\/src\/.+\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/u.test(name) && !/\.test\.[a-z]+$/u.test(name))
+      // --cached still lists a tracked file deleted in the working tree until the deletion is committed; it holds no code.
+      .filter((name) => existsSync(resolve(root, name)));
     const mentioning = products.filter((name) => read(name).includes(CLOSE_GUARD_TEST_BYPASS_ENV));
     // 定義する closeGuard.ts だけが名前を持つ。製品のどこも印を付けない。
     expect(mentioning).toEqual(['apps/desktop/src/main/closeGuard.ts']);

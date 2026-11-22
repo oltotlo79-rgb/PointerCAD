@@ -14,7 +14,7 @@
 import { crossVec3, normalizeVec3, type ResolvedPlane, type Vec3 } from '@pointercad/model';
 import * as THREE from 'three';
 
-import type { FaceOffsetHandle } from '../solid/faceOffsetHandle.js';
+import type { DistanceHandle } from '../solid/faceOffsetHandle.js';
 import { buildCutPreviewPositions } from './buildCutPreview.js';
 import type { BodyDraw } from './solidLayerBodies.js';
 import { setVectorAttribute } from './solidLayerBuffers.js';
@@ -22,8 +22,8 @@ import { handleDiagonal, referenceAxis } from './solidLayerHelpers.js';
 import { SUB_SHAPE_LINE_RENDER_ORDER } from './solidLayerRenderOrder.js';
 import type { ThemeColors } from './themeColors.js';
 
-/** 層が描くつまみ(`FaceOffsetHandle` のうち、描くのに要る根もと `origin` と外向きの単位法線 `normal` の 2 つ)。 */
-export type FaceOffsetArrow = Pick<FaceOffsetHandle, 'origin' | 'normal'>;
+/** 層が描くつまみ(`DistanceHandle` のうち、描くのに要る根もと `origin` と外向きの単位法線 `normal` の 2 つ)。 */
+export type FaceOffsetArrow = Pick<DistanceHandle, 'origin' | 'normal'>;
 
 type ArrowLines = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 

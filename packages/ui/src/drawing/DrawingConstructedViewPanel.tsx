@@ -13,6 +13,7 @@ export function DrawingConstructedViewPanel({ drawing, view, kind, sourceViewId:
   readonly sourceViewId?: string; readonly targets: readonly DimensionTarget[];
 }): React.JSX.Element {
   const definition = view?.construction;
+  useAppStore((state) => state.displaySettings.selectionModifier); // 選択のキーの案内の文(B-08 2-5)を、設定を変えた時に描き直す
   const plane = definition !== undefined && 'plane' in definition ? definition.plane : undefined;
   const [fields, setFields] = useState(() => ({ ...initialConstructedViewFields(view, t(CONSTRUCTED_VIEW_LABELS[kind])),
     ...(view === undefined && kind === 'detail' ? { scale: '2' } : {}) }));

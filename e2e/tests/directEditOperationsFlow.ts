@@ -9,6 +9,7 @@ import { collectErrors } from './runtimeErrors.js';
 import { disableFilePickers } from './filePickers.js';
 import { openToolMenu } from './toolMenus.js';
 import { fillFields, popover, popoverInputs } from './popoverFields.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /** Real UI gestures and the product file gateway; geometry and document state are never injected.
  * Helpers follow faceOffsetFlow.ts and solid.spec.ts. Root runs the three hosts headlessly. */
@@ -103,10 +104,7 @@ function propertyValue(page: Page, key: string): Locator {
 }
 
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 async function commitPopover(page: Page): Promise<void> {

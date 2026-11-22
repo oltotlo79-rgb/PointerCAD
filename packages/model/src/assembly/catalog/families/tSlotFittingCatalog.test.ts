@@ -8,10 +8,14 @@ import { describe, expect, it } from 'vitest';
 import { findMetricThread, metricThreadPitch, threadMinorDiameter } from '../../../thread/metricThread.js';
 import { buildJointBarPart, jointBarVolume } from '../profiles/frameParts.js';
 import type { CatalogFamily, CatalogItemRow } from '../types.js';
-import { JOINT_BAR_FAMILY, KNURLED_NUT_FAMILY, STUD_FAMILY } from './tSlotFittingCatalog.js';
+import * as tSlotFittingCatalog from './tSlotFittingCatalog.js';
 import { JOINT_BAR_RECORDS, KNURLED_NUT_RECORDS, STUD_RECORDS } from './tSlotFittingRows.js';
 
-const FAMILIES: readonly CatalogFamily[] = [JOINT_BAR_FAMILY, STUD_FAMILY, KNURLED_NUT_FAMILY];
+const { JOINT_BAR_FAMILY, KNURLED_NUT_FAMILY, STUD_FAMILY } = tSlotFittingCatalog;
+const FAMILIES = Object.values(tSlotFittingCatalog)
+  .filter((value: unknown): value is CatalogFamily => typeof value === 'object' && value !== null
+    && 'id' in value && typeof value.id === 'string' && 'rows' in value && Array.isArray(value.rows))
+  .sort((left, right) => left.id.localeCompare(right.id));
 const DENSITY: Readonly<Record<string, number>> = { steel: 7.85, stainless: 7.93, brass: 8.4 };
 
 function minorOf(thread: string): number {
@@ -30,9 +34,9 @@ describe('資料 1 のジョイントバー・スタッド・ローレットナ�
     expect(FAMILIES.map((family) => [family.id, family.group, family.kindKey, family.catalogRevision, family.generatorRevision, family.stock,
       family.diagram, family.options.length, family.rows.length])).toEqual([
       ['t-slot-joint-bar', 'aluminumFrame', 'catalog.frame.kind.jointBar', 't-slot-joint-bar-2026-11-r1', 't-slot-fitting-1', 'count', 'jointBar', 0, 6],
-      ['t-slot-stud', 'aluminumFrame', 'catalog.frame.kind.tSlotStud', 't-slot-stud-2026-11-r1', 't-slot-fitting-1', 'count', 'tSlotStud', 0, 2],
       ['t-slot-knurled-nut', 'aluminumFrame', 'catalog.frame.kind.knurledNut', 't-slot-knurled-nut-2026-11-r1', 't-slot-fitting-1', 'count',
         'knurledNut', 0, 1],
+      ['t-slot-stud', 'aluminumFrame', 'catalog.frame.kind.tSlotStud', 't-slot-stud-2026-11-r1', 't-slot-fitting-1', 'count', 'tSlotStud', 0, 2],
     ]);
     for (const family of FAMILIES) {
       expect(new Set(family.rows.map((row) => row.size)).size).toBe(family.rows.length);
@@ -43,8 +47,14 @@ describe('資料 1 のジョイントバー・スタッド・ローレットナ�
         expect(row.simplified?.length ?? 0, row.key).toBeGreaterThan(0);
       }
     }
-    const records = [...JOINT_BAR_RECORDS, ...STUD_RECORDS, ...KNURLED_NUT_RECORDS];
+    const recordsById = {
+      [JOINT_BAR_FAMILY.id]: JOINT_BAR_RECORDS,
+      [STUD_FAMILY.id]: STUD_RECORDS,
+      [KNURLED_NUT_FAMILY.id]: KNURLED_NUT_RECORDS,
+    };
+    expect(FAMILIES.map((family) => family.id).sort()).toEqual(Object.keys(recordsById).sort());
     for (const family of FAMILIES) {
+      const records = recordsById[family.id];
       for (const row of family.rows) expect(row.densityMaterialId, row.key).toBe(records.find((record) => record.key === row.key)?.material);
     }
   });

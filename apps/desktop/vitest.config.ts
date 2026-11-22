@@ -1,5 +1,4 @@
-import { defaultExclude, defineConfig } from 'vitest/config';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../packages/test-utils/src/releasePerformance.js';
+import { createPackageVitestConfig } from '../../packages/test-utils/src/vitest.package.testSupport.js';
 
 /**
  * 実際の組み立て・git の取り出し・本体の読み込み・PowerShell の後片付けを行う、負荷に弱い検査。
@@ -15,15 +14,7 @@ const LOAD_SENSITIVE_TESTS = [
   'src/main/mathNoticeCheckout.test.ts',
 ];
 
-const shared = { environment: 'node', testTimeout: FUNCTIONAL_TEST_TIMEOUT_MS } as const;
+// 最初の include は全件検査と diag --all が読む対象一覧。
+const options = { include: ['src/**/*.test.ts'], serialFiles: LOAD_SENSITIVE_TESTS };
 
-export default defineConfig({
-  test: {
-    projects: [
-      // 最初の組の対象はパッケージの全部(検査の取りこぼしの単体と diag の --all は、最初の対象の一覧を読む)。
-      { test: { ...shared, name: 'desktop', include: ['src/**/*.test.ts'], exclude: [...defaultExclude, ...LOAD_SENSITIVE_TESTS] } },
-      // groupOrder 1 は上の組が終わってから始まり、fileParallelism false で 1 本ずつ流れる。
-      { test: { ...shared, name: 'desktop-serial', include: LOAD_SENSITIVE_TESTS, fileParallelism: false, sequence: { groupOrder: 1 } } },
-    ],
-  },
-});
+export default createPackageVitestConfig('desktop', options);

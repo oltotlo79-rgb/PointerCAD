@@ -1,3 +1,4 @@
+import { plainText } from '../failureText.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber as number, type ExpressionValue } from '@pointercad/expression';
 import {
@@ -236,7 +237,7 @@ describe('関数を通常の履歴として再計算する', () => {
     try {
       const result = await recomputePart(document, bridge, options(document));
       expect(generate).toHaveBeenCalled();
-      expect(result.errors).toContainEqual({ featureId: 'function', code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE });
+      expect(result.errors).toContainEqual({ featureId: 'function', code: 'workerBroken', text: plainText(KERNEL_BROKEN_MESSAGE) });
     } finally { generate.mockRestore(); }
   });
   it('関数の係数も削除確認とID予約に含め、改名で原式・参照・形を保つ', async () => {

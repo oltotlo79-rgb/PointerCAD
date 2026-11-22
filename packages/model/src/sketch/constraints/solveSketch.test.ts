@@ -1,3 +1,4 @@
+import { plainTextValue } from '../../failureText.js';
 import { expressionValueFromNumber as num, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
@@ -332,7 +333,7 @@ describe('作図面の中で解く(§0.a-0.3)', () => {
     );
     const constrained = resolveConstrainedSketch(document);
     expect(constrained.errors).toHaveLength(1);
-    expect(constrained.errors[0].message).toBe(CONSTRAINT_FREE_SKETCH_MESSAGE);
+    expect(plainTextValue(constrained.errors[0].text)).toBe(CONSTRAINT_FREE_SKETCH_MESSAGE);
     expect(constrained.diagnosis).toBeNull();
     expectVec3(segmentOf(constrained.resolved, 'line-1').to, [7, 4, 0]);
   });

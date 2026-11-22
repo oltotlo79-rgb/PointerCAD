@@ -17,6 +17,10 @@ interface SecondReading {
   readonly available: boolean;
   readonly tSlot: readonly (readonly string[])[];
   readonly sections: readonly (readonly string[])[];
+  /** 単独 H(中の空洞の形だけが違う断面)の行。58 回目の 2 本目の読みの文字と、外形は 2 回目の読み(無い fixture は空)。 */
+  readonly tSlotH: readonly (readonly string[])[];
+  /** 芯つきの形の行。外形は 62 回目、ほかは 58 回目の 2 本目の読みの文字(無い fixture は空)。 */
+  readonly tSlotCore: readonly (readonly string[])[];
 }
 
 const isRows = (value: unknown): value is readonly (readonly string[])[] => Array.isArray(value)
@@ -29,8 +33,12 @@ function readSecondReading(): SecondReading {
     throw new Error('fixture の形が違う');
   }
   const { available, tSlot, sections } = value;
-  if (typeof available !== 'boolean' || !isRows(tSlot) || !isRows(sections)) throw new Error('fixture の欄の形が違う');
-  return { available, tSlot, sections };
+  const tSlotH: unknown = 'tSlotH' in value ? value.tSlotH : [];
+  const tSlotCore: unknown = 'tSlotCore' in value ? value.tSlotCore : [];
+  if (typeof available !== 'boolean' || !isRows(tSlot) || !isRows(sections) || !isRows(tSlotH) || !isRows(tSlotCore)) {
+    throw new Error('fixture の欄の形が違う');
+  }
+  return { available, tSlot, sections, tSlotH, tSlotCore };
 }
 
 const READING = readSecondReading();
@@ -123,6 +131,96 @@ function readTSlot(cells: readonly string[]): Omit<TSlotCatalogRecord, 'size' | 
   };
 }
 
+/** 寸法線「数(端 A〜端 B)」の並び(括弧で囲まれた参考寸法は使わない)。 */
+function dimensionsOf(text: string): readonly { readonly value: number; readonly ends: string }[] {
+  return [...text.matchAll(/(\()?([0-9]+(?:\.[0-9]+)?)(\))?\(([^()〜]*)〜([^()]*)\)/gu)].flatMap((match) => (
+    match[1] !== undefined || match[3] !== undefined ? [] : [{ value: Number(match[2]), ends: `${match[4] ?? ''}|${match[5] ?? ''}` }]));
+}
+
+/** 溝の形の語(寸法線の直前に書かれた語)と、欄の番号 [口, 部屋の幅, 肩, 深さ]。-1 は溝の形でない語(壁の厚さ・芯〔コア〕の幅や高さ・溝の底どうし・ほか)。 */
+const SHAPE_WORDS: readonly (readonly [string, number])[] = [['口の幅', 0], ['部屋の上の幅', 1], ['部屋の幅', 1], ['肩の厚さ', 2], ['部屋の深さ', 3],
+  ['壁の厚さ', -1], ['芯の', -1], ['コアの', -1], ['溝の底〜溝の底', -1], ['ほか', -1]];
+/** 語と数だけの記入(「口の幅 10」)の読み取り。 */
+const SHAPE_NUMBERS: readonly (readonly [RegExp, number])[] = [[/口の幅\s*:?\s*([0-9]+(?:\.[0-9]+)?)/gu, 0],
+  [/部屋の上の幅\s*:?\s*([0-9]+(?:\.[0-9]+)?)/gu, 1], [/部屋の幅\s*:?\s*([0-9]+(?:\.[0-9]+)?)/gu, 1], [/肩の厚さ\s*:?\s*([0-9]+(?:\.[0-9]+)?)/gu, 2],
+  [/部屋の深さ\s*:?\s*([0-9]+(?:\.[0-9]+)?)/gu, 3]];
+
+/** 端の名前で溝の形の欄を当てる(口: 「口の」と左右か上下の組、部屋の幅: 「部屋の」と組、肩: 外の面と肩の内の面、深さ: 肩の内の面と溝の底)。 */
+function shapeIndexOf(ends: string): number | undefined {
+  const pair = (ends.includes('左') && ends.includes('右')) || (ends.includes('上') && ends.includes('下'));
+  if (ends.includes('口の') && pair && !ends.includes('部屋')) return 0;
+  if (ends.includes('部屋の') && pair) return 1;
+  if (ends.includes('外の面') && ends.includes('肩の内の面')) return 2;
+  return ends.includes('肩の内の面') && ends.includes('溝の底') ? 3 : undefined;
+}
+
+/**
+ * 溝の形の 4 つの寸法線 [口, 部屋の幅, 肩, 深さ]。寸法線の直前の語があればそれで、無ければ端の名前で当てる。溝の形でない語の寸法線と、語が無く端が
+ * 芯(コア)・中の空洞・隔壁の寸法線は使わない。「ほかの寸法線」の後と △ の項目も使わない。語と数だけの記入も数に入れる。当たらない寸法線・
+ * 参考寸法があるか、1 つに決まらない欄は NaN。
+ */
+function slotShapeOf(text: string): readonly number[] {
+  const body = (text.split('ほかの寸法線')[0] ?? '').replace(/△:[^;]*/gu, '');
+  const found: Set<number>[] = [new Set(), new Set(), new Set(), new Set()];
+  let unknown = false;
+  for (const match of body.matchAll(/(\()?([0-9]+(?:\.[0-9]+)?)(\))?\(([^()〜]*)〜([^()]*)\)/gu)) {
+    const before = body.slice(0, match.index).split(/[;/。]/u).at(-1) ?? '';
+    const word = SHAPE_WORDS.filter(([name]) => before.includes(name)).sort((p, q) => before.lastIndexOf(q[0]) - before.lastIndexOf(p[0]))[0];
+    const ends = `${match[4] ?? ''}|${match[5] ?? ''}`;
+    const index = word === undefined ? shapeIndexOf(ends) : word[1];
+    const reference = match[1] !== undefined || match[3] !== undefined;
+    if (!reference && (index === -1 || (index === undefined && ['コア', '芯', '空洞', '隔壁'].some((name) => ends.includes(name))))) continue;
+    if (reference || index === undefined || index < 0) unknown = true;
+    else found[index]?.add(Number(match[2]));
+  }
+  for (const [pattern, index] of SHAPE_NUMBERS) for (const match of body.matchAll(pattern)) found[index]?.add(Number(match[1]));
+  return found.map((values) => (unknown || values.size !== 1 ? NaN : [...values][0] ?? NaN));
+}
+
+/** 断面性能の記入 [断面積(記入なしは NaN), 単位質量, Ix, Iy, Zx, Zy]。読めない時は空(「×10^4mm^4」の書き方も読む)。 */
+function propertiesOf(text: string): readonly number[] {
+  const match = /断面積:([0-9.]+|記入なし)(?:mm2)?\/単位質量:([0-9.]+)kg\/m\/Ix:([0-9.]+)×104mm4\/Iy:([0-9.]+)×104mm4\/Zx:([0-9.]+)×103mm3\/Zy:([0-9.]+)×103mm3/u
+    .exec(text.replace(/\s+|\^/gu, ''));
+  return match === null ? [] : match.slice(1, 7).map((cell) => (cell === '記入なし' ? NaN : Number(cell)));
+}
+
+/**
+ * 単独 H の 1 行(tSlotH)を、製品の行と同じ欄に読み解く。外形は 2 回目の読み、ほかは 58 回目の 2 本目の読みの文字。溝の間は溝の位置の寸法線の
+ * うち端の名前に「中心」を持つ物(溝の口の中心線・芯の中心線)の 1 つの値(無ければ外形の幅)、穴は升の中心の「数-φ径」の径(「記入なし」は穴なしの 0)。
+ * 表の頁が空の行は、図の頁の箱の値(断面積なし)。芯つきの形の行(tSlotCore)も、外形を読んだ後はこの読み解き。
+ */
+function readTSlotH(cells: readonly string[]): Omit<TSlotCatalogRecord, 'size' | 'slot'> {
+  const [key = '', figurePage = '', width = '', height = '', shapeText = '', facesText = '', positionText = '', holesText = '', radiusText = '',
+    propertiesText = '', tablePage = ''] = cells;
+  const faces = /上(\d+)\s*下(\d+)\s*左(\d+)\s*右(\d+)/u.exec(facesText);
+  const gaps = new Set(dimensionsOf(positionText).filter((item) => item.ends.includes('中心')).map((item) => item.value));
+  const hole = /(?:(\d+)-)?φ([0-9.]+)/u.exec(holesText) ?? (holesText.includes('記入なし') ? [holesText, '0', '0'] : null);
+  const radius = /4-R([0-9.]+)/u.exec(radiusText);
+  const [area = NaN, mass = NaN, ix = NaN, iy = NaN, zx = NaN, zy = NaN] = propertiesOf(propertiesText);
+  if (faces === null || hole === null || radius === null || gaps.size > 1) throw new Error(`単独 H の行 ${key} を読み解けない`);
+  const counts = faces.slice(1, 5).map(Number);
+  const [opening = NaN, inner = NaN, shoulder = NaN, depth = NaN] = slotShapeOf(shapeText);
+  const onTable = tablePage !== '';
+  const slotPitch = [...gaps][0] ?? Number(width);
+  return {
+    key, figurePage: Number(figurePage), tablePage: onTable ? Number(tablePage) : null, massSource: onTable ? 'table' : 'box',
+    // 上下の面に溝が無い断面の升の列の数は、外形の幅 ÷ 溝の間(芯つきの形の 1 面溝)。
+    width: Number(width), height: Number(height), slotPitch, slotsAcross: Math.max(counts[0] ?? 0, counts[1] ?? 0) || Number(width) / slotPitch,
+    faces: ['t', 'b', 'l', 'r'].filter((_, index) => (counts[index] ?? 0) > 0).join(''), slotOpening: opening, shoulder, slotInnerWidth: inner,
+    slotDepth: depth, centerHole: Number(hole[2]), cornerRadius: Number(radius[1]), cornerHoleDiameter: 0, cornerHoleInset: 0,
+    areaMm2: onTable ? area : null, unitMassKgPerM: mass, ixCm4: ix, iyCm4: iy, zxCm3: zx, zyCm3: zy,
+  };
+}
+
+/** 芯つきの形の 1 行(tSlotCore)。外形の寸法線(62 回目の読み)の左の外の面〜右の外の面を幅、上の外の面〜下の外の面を高さにして、ほかは readTSlotH。 */
+function readTSlotCore(cells: readonly string[]): Omit<TSlotCatalogRecord, 'size' | 'slot'> {
+  const [key = '', figurePage = '', outerText = '', ...rest] = cells;
+  const outer = dimensionsOf(outerText);
+  const width = outer.find((item) => item.ends === '左の外の面|右の外の面')?.value ?? NaN;
+  const height = outer.find((item) => item.ends === '上の外の面|下の外の面')?.value ?? NaN;
+  return readTSlotH([key, figurePage, String(width), String(height), ...rest]);
+}
+
 /** 表の断面の値が、Ix と Iy の大小と Zx と Zy の大小で逆向き(入れ替わって見える)。 */
 function propertiesLookSwapped(ix: number, iy: number, zx: number, zy: number): boolean {
   return (ix - iy) * (zx - zy) < 0;
@@ -163,7 +261,10 @@ describe('資料 1 のフレームの製品の行と 2 回目の独立の読み�
   });
 
   it('溝つきの製品の行は、全部 2 回目の読みに同じ鍵の行があり、製品に使う欄が全部一致する', () => {
-    const second = new Map(READING.tSlot.map((cells) => [cells[0] ?? '', readTSlot(cells)]));
+    // 単独 H の行は、2 回目の読みの外形と 58 回目の 2 本目の読み(tSlotH)で、芯つきの形の行は 62・58 回目の 2 本目の読み(tSlotCore)で照らす。
+    const second = new Map([...READING.tSlot.map((cells) => [cells[0] ?? '', readTSlot(cells)] as const),
+      ...READING.tSlotH.map((cells) => [cells[0] ?? '', readTSlotH(cells)] as const),
+      ...READING.tSlotCore.map((cells) => [cells[0] ?? '', readTSlotCore(cells)] as const)]);
     expect(T_SLOT_CATALOG_RECORDS.map((record) => record.key).sort()).toEqual([...second.keys()].sort());
     // 呼びと溝幅は 2 回目の読みに無い(道具が決まった規則で付けた)ので、製品の行の値をそのまま添えて、ほかの欄を照らす。
     for (const record of T_SLOT_CATALOG_RECORDS) {
@@ -200,6 +301,40 @@ describe('資料 1 のフレームの製品の行と 2 回目の独立の読み�
     }
     // 印を持つ溝つきの行は、この一覧の行だけ。
     expect(T_SLOT_CATALOG_RECORDS.filter((record) => record.simplified !== undefined).map((record) => record.key)).toEqual([...NO_CORNER_HOLES]);
+  });
+
+  it('単独 H の行: 穴は升の数だけで間が溝の間と同じ、溝と穴に外の面からの寸法線が無く、表の行は断面積 × 2.70 が単位質量に合い、箱の行は断面積が記入なし', () => {
+    expect(READING.tSlotH.map((cells) => cells[0])).toEqual(['s8-50x50-htype', 's8-60x60-htype', 's8-60x90-htype', 's8-60x120-htype', 's10-80x80-htype',
+      's10-90x90-htype']);
+    for (const cells of READING.tSlotH) {
+      const [key = '', , width = '', height = '', , facesText = '', positionText = '', holesText = '', , propertiesText = '', tablePage = ''] = cells;
+      const record = readTSlotH(cells);
+      const rows = (Number(height) - Number(width)) / record.slotPitch + record.slotsAcross;
+      const holes = Number(/(?:(\d+)-)?φ/u.exec(holesText)?.[1] ?? 1);
+      const holeGaps = [...new Set(dimensionsOf(holesText).map((item) => item.value))];
+      const fromFace = [...dimensionsOf(positionText), ...dimensionsOf(holesText)].some((item) => item.ends.includes('外の面'));
+      expect([holes, holeGaps.every((gap) => gap === record.slotPitch), fromFace, /左(\d+)/u.exec(facesText)?.[1]], key)
+        .toEqual([record.slotsAcross * rows, true, false, String(rows)]);
+      const [area = NaN, mass = NaN] = propertiesOf(propertiesText);
+      if (tablePage === '') expect([Number.isNaN(area), record.massSource, record.areaMm2], key).toEqual([true, 'box', null]);
+      else expect(Math.abs(area * 2.7 / 1000 - mass), key).toBeLessThanOrEqual(0.005 + 1e-9);
+    }
+  });
+
+  it('芯つきの形の行: 外形は外の面から外の面の寸法線、穴は記入なしで中心の穴なし、左右の溝は升の数か 0、断面性能は図の頁の箱(断面積なし)', () => {
+    expect(READING.tSlotCore.map((cells) => cells[0])).toEqual(['s8-30x30-blr-core', 's8-30x30-bl-core', 's8-30x30-tb-core', 's8-30x30-l-core',
+      's8-30x60-core', 's8-30x60-tb-core', 's10-40x40-blr-core', 's10-40x40-bl-core', 's10-40x40-tb-core', 's10-40x80-tb-core', 's10-45x45-core',
+      's10-45x90-core']);
+    for (const cells of READING.tSlotCore) {
+      const [key = '', , outerText = '', , facesText = '', , holesText = '', , propertiesText = '', tablePage = ''] = cells;
+      const record = readTSlotCore(cells);
+      const counts = (/上(\d+)\s*下(\d+)\s*左(\d+)\s*右(\d+)/u.exec(facesText) ?? []).slice(1, 5).map(Number);
+      const rows = (record.height - record.width) / record.slotPitch + 1;
+      expect([holesText.includes('記入なし'), /φ/u.test(holesText), record.centerHole, Number.isInteger(rows),
+        counts.slice(2).every((count) => count === 0 || count === rows)], key).toEqual([true, false, 0, true, true]);
+      expect([tablePage, Number.isNaN(propertiesOf(propertiesText)[0] ?? 0), record.massSource, record.areaMm2], key).toEqual(['', true, 'box', null]);
+      expect(dimensionsOf(outerText).map((item) => item.ends).sort(), key).toEqual(['上の外の面|下の外の面', '左の外の面|右の外の面']);
+    }
   });
 
   it('共通フレームの製品の行は、全部 2 回目の読みに同じ鍵の行があり、寸法と表の値が全部一致する', () => {

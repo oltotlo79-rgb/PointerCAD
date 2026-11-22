@@ -1,10 +1,5 @@
-import { defineConfig } from 'vitest/config';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../test-utils/src/releasePerformance.js';
+import { createPackageVitestConfig } from '../test-utils/src/vitest.package.testSupport.js';
 
-export default defineConfig({
-  test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-    testTimeout: FUNCTIONAL_TEST_TIMEOUT_MS,
-  },
-});
+const options = { include: ['src/**/*.test.ts'] };
+
+export default createPackageVitestConfig('default', options);

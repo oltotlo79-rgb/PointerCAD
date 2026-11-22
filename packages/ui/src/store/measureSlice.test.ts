@@ -9,12 +9,14 @@ import {
   type MeasureOutcome,
 } from '@pointercad/model';
 import {
+  afterEach,
   beforeEach,
   describe,
   expect,
   it,
   vi,
 } from 'vitest';
+import { MEASURE_TIMEOUT_MS } from '../solid/measure.js';
 import type {
   PartMeasurer,
 } from '../solid/measureCommands.js';
@@ -133,6 +135,84 @@ describe('FIX-02 measurement request ordering', () => {
     return { kind: 'distance', distance: value, pointA: [0, 0, 0], pointB: [value, 0, 0], inner: false };
   }
   async function settle(): Promise<void> { for (let i = 0; i < 8; i += 1) await Promise.resolve(); }
+
+  describe('測定の待ち時間の上限', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('上限で文を出して待つのをやめ、遅い結果は出さない', async () => {
+      const { calls } = prepare();
+      useAppStore.getState().measureSelection();
+      expect(calls).toHaveLength(1);
+      vi.advanceTimersByTime(MEASURE_TIMEOUT_MS - 1);
+      expect(useAppStore.getState().measureErrorKey).toBeNull();
+      expect(useAppStore.getState().measurementRequest).not.toBeNull();
+      vi.advanceTimersByTime(1);
+      expect(useAppStore.getState().measureErrorKey).toBe('measureError.timeout');
+      expect(useAppStore.getState().measurementRequest).toBeNull();
+
+      calls[0](answer(25.4));
+      await settle();
+      expect(useAppStore.getState()).toMatchObject({
+        measurement: null, massProperties: null, measureErrorKey: 'measureError.timeout',
+      });
+    });
+
+    it('上限より前に結果が来たら時計を止める', async () => {
+      const { calls } = prepare();
+      useAppStore.getState().measureSelection();
+      vi.advanceTimersByTime(MEASURE_TIMEOUT_MS - 1);
+      calls[0](answer(25.4));
+      await settle();
+      expect(useAppStore.getState().measurement?.result.value).toBe(25.4);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(useAppStore.getState().measureErrorKey).toBeNull();
+    });
+
+    it('Esc で消した要求の期限を過ぎても文を出さない', () => {
+      const { calls } = prepare();
+      useAppStore.getState().measureSelection();
+      expect(calls).toHaveLength(1);
+      useAppStore.getState().clearMeasurement();
+      vi.advanceTimersByTime(MEASURE_TIMEOUT_MS);
+      expect(useAppStore.getState()).toMatchObject({
+        measurementRequest: null, measurement: null, measureErrorKey: null,
+      });
+    });
+
+    it('古い要求の期限が来ても次の測定を待ち続ける', async () => {
+      const { calls } = prepare();
+      useAppStore.getState().measureSelection();
+      vi.advanceTimersByTime(1);
+      useAppStore.getState().measureSelection();
+      const current = useAppStore.getState().measurementRequest;
+      vi.advanceTimersByTime(MEASURE_TIMEOUT_MS - 1);
+      expect(useAppStore.getState().measurementRequest).toBe(current);
+      expect(useAppStore.getState().measureErrorKey).toBeNull();
+      calls[1](answer(50.8));
+      calls[0](answer(25.4));
+      await settle();
+      expect(useAppStore.getState().measurement?.result.value).toBe(50.8);
+    });
+
+    it('一覧の頂点だけで測るとカーネルに頼まず結果が出る', async () => {
+      const { calls } = prepare();
+      useAppStore.setState({
+        selection: ['a#vertex:0', 'a#vertex:1'],
+        bodies: [{ ...bodyFor('a'), vertices: [
+          { index: 0, position: [0, 0, 0] },
+          { index: 1, position: [25, 0, 0] },
+        ] }],
+      });
+      useAppStore.getState().measureSelection();
+      await settle();
+      expect(calls).toHaveLength(0);
+      expect(useAppStore.getState().measurement?.result).toMatchObject({ kind: 'pointDistance', value: 25 });
+      vi.advanceTimersByTime(MEASURE_TIMEOUT_MS);
+      expect(useAppStore.getState().measureErrorKey).toBeNull();
+    });
+  });
 
   it('clearing an in-flight measurement prevents its result from returning', async () => {
     const { calls } = prepare();

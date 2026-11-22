@@ -4,6 +4,7 @@ import { choice, openFramePicker, startAssembly } from './aluminumFrameCatalogFl
 import { componentRows } from './boltedJointTestSupport.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { uiMessage, uiMessagePattern } from './uiMessages.js';
+import { fieldByMessageKey } from './fieldByLabel.js';
 
 /*
  * E-12 平面から安全柵(第 1 段): 600 × 400 の囲い(閉じる)・高さ 600・柱の間隔の上限 1000・横の材 100 と 500・パネルの板(注文の寸法の
@@ -15,8 +16,7 @@ function detailsOf(page: Page, dialog: Locator, key: string): Locator {
 }
 
 function field(page: Page, scope: Locator, key: string): Locator {
-  return scope.locator('label.pcad-field').filter({ has: page.locator('.pcad-field__label', { hasText: uiMessagePattern('catalog', key) }) })
-    .locator('input, textarea');
+  return fieldByMessageKey(page, scope, 'catalog', key, { fieldSelector: 'label.pcad-field', controlSelector: 'input, textarea' });
 }
 
 export function registerSafetyFenceTests(test: typeof base,

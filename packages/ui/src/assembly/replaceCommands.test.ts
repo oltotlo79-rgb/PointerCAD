@@ -234,6 +234,21 @@ function replacementDocument(targetKind: 'origin' | 'face'): AssemblyDocument {
 }
 
 describe('部品置換の予告と確定', () => {
+  it('選び直せない面の予告と確定に同じ新しい部品名が入り、元の文書には元の名前が残る', () => {
+    const before = replacementDocument('face');
+    const source = { kind: 'part', partRef: 'new' } as const;
+    const prepared = prepareComponentReplacement(before, 'component-1', source, [], { before: '旧', after: '新' });
+    if (prepared === null) throw new Error('置換を予告できませんでした');
+    expect(prepared.requiresConfirmation).toBe(true);
+    expect(prepared.plan.unresolvedIds).toEqual(['mate-1']);
+    expect(prepared.plan.after.components[0].name).toBe('新:1');
+    const confirmed = confirmComponentReplacement(prepared);
+    expect(confirmed).toBe(prepared.plan.after);
+    expect(confirmed.components[0]).toMatchObject({ name: '新:1', source });
+    expect(prepared.plan.before).toBe(before);
+    expect(before.components[0].name).toBe('旧:1');
+  });
+
   it('全対象を選び直せると余計な確認を要求しない', () => {
     const prepared = prepareComponentReplacement(
       replacementDocument('origin'),

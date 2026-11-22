@@ -5,6 +5,12 @@
 import type { PanelPartRecord } from './panelPartCatalog.js';
 
 export const ACCESSORY_BOX_RECORDS: readonly PanelPartRecord[] = [
+  { key: 'folding-plate-240x27x40-resin-fe', size: '折りたたみの板 240×27×40（外形を包む形・樹脂・鉄）', page: 119, kind: '折りたたみの板', material: 'mixed',
+    materialText: '樹脂・鉄', width: 240, depth: 27, height: 40, massG: null, massOmission: 'kitMassOnly', simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'folding-plate-240x32x40-resin-fe', size: '折りたたみの板 240×32×40（外形を包む形・樹脂・鉄）', page: 119, kind: '折りたたみの板', material: 'mixed',
+    materialText: '樹脂・鉄', width: 240, depth: 32, height: 40, massG: null, massOmission: 'kitMassOnly', simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'folding-plate-240x38x40-resin-fe', size: '折りたたみの板 240×38×40（外形を包む形・樹脂・鉄）', page: 119, kind: '折りたたみの板', material: 'mixed',
+    materialText: '樹脂・鉄', width: 240, depth: 38, height: 40, massG: null, massOmission: 'kitMassOnly', simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'roller-hook-152x45.6x40.7-fe', size: 'ローラのコンベヤを掛けるフック 152×45.6×40.7（外形を包む形・鉄）', page: 236, kind: 'ローラのコンベヤを掛けるフック', material: 'steel',
     width: 152, depth: 45.6, height: 40.7, massG: 281, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'roller-hook-92x45.8x40.8-fe', size: 'ローラのコンベヤを掛けるフック 92×45.8×40.8（外形を包む形・鉄）', page: 236, kind: 'ローラのコンベヤを掛けるフック', material: 'steel',
@@ -13,6 +19,8 @@ export const ACCESSORY_BOX_RECORDS: readonly PanelPartRecord[] = [
     width: 92, depth: 45.8, height: 69, massG: 191, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'roller-hook-62.5x45.8x62-fe', size: 'ローラのコンベヤを掛けるフック 62.5×45.8×62（外形を包む形・鉄）', page: 237, kind: 'ローラのコンベヤを掛けるフック', material: 'steel',
     width: 62.5, depth: 45.8, height: 62, massG: 123, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'roller-hook-120x39.4x45-al', size: 'ローラのコンベヤを掛けるフック 120×39.4×45（外形を包む形・アルミ）', page: 238, kind: 'ローラのコンベヤを掛けるフック', material: 'aluminum',
+    width: 120, depth: 39.4, height: 45, massG: 107, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'roller-hook-66x30.5x31-al-sus', size: 'ローラのコンベヤを掛けるフック 66×30.5×31（外形を包む形・アルミ・ステンレス）', page: 238, kind: 'ローラのコンベヤを掛けるフック',
     material: 'mixed', materialText: 'アルミ・ステンレス', width: 66, depth: 30.5, height: 31, massG: 48, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'roller-hook-66x30x31-al-sus', size: 'ローラのコンベヤを掛けるフック 66×30×31（外形を包む形・アルミ・ステンレス）', page: 238, kind: 'ローラのコンベヤを掛けるフック', material: 'mixed',

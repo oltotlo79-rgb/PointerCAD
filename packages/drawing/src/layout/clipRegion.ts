@@ -1,4 +1,5 @@
 import type { Point2 } from '../types.js';
+import { exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from '../numericTolerance.js';
 
 export type ClipCurve =
   | { readonly kind: 'segment'; readonly from: Point2; readonly to: Point2 }
@@ -20,7 +21,7 @@ export function drawingRegionContainsPoint(point: Point2, region: ClipRegion): b
     if (a === undefined || b === undefined) continue;
     const dx = b[0] - a[0]; const dy = b[1] - a[1];
     const cross = (point[0] - a[0]) * dy - (point[1] - a[1]) * dx;
-    if (Math.abs(cross) <= EPSILON * Math.max(1, Math.hypot(dx, dy))
+    if (withinMagnitude(cross, EPSILON * Math.max(1, Math.hypot(dx, dy)))
         && point[0] >= Math.min(a[0], b[0]) - EPSILON && point[0] <= Math.max(a[0], b[0]) + EPSILON
         && point[1] >= Math.min(a[1], b[1]) - EPSILON && point[1] <= Math.max(a[1], b[1]) + EPSILON) return true;
     if (((a[1] > point[1]) !== (b[1] > point[1])) &&
@@ -46,7 +47,7 @@ function segmentIntersectionParameters(from: Point2, to: Point2, region: ClipReg
     const a = region.points[index]; const b = region.points[(index + 1) % region.points.length];
     if (a === undefined || b === undefined) continue;
     const ex = b[0] - a[0]; const ey = b[1] - a[1];
-    const denominator = dx * ey - dy * ex; if (Math.abs(denominator) <= EPSILON) continue;
+    const denominator = dx * ey - dy * ex; if (withinMagnitude(denominator, EPSILON)) continue;
     const qx = a[0] - from[0]; const qy = a[1] - from[1];
     const t = (qx * ey - qy * ex) / denominator; const u = (qx * dy - qy * dx) / denominator;
     if (t > EPSILON && t < 1 - EPSILON && u >= -EPSILON && u <= 1 + EPSILON) result.push(t);
@@ -56,7 +57,7 @@ function segmentIntersectionParameters(from: Point2, to: Point2, region: ClipReg
 
 function clipSegment(from: Point2, to: Point2, region: ClipRegion): ClipCurve[] {
   const cuts = [0, ...segmentIntersectionParameters(from, to, region), 1].sort((a, b) => a - b)
-    .filter((value, index, all) => index === 0 || Math.abs(value - (all[index - 1] ?? value)) > EPSILON);
+    .filter((value, index, all) => index === 0 || exceedsMagnitude(value - (all[index - 1] ?? value), EPSILON));
   const result: ClipCurve[] = [];
   for (let index = 0; index + 1 < cuts.length; index += 1) {
     const a = cuts[index]; const b = cuts[index + 1]; if (a === undefined || b === undefined) continue;
@@ -77,7 +78,7 @@ function arcBoundaryAngles(curve: Extract<ClipCurve, { kind: 'arc' }>, region: C
   if (region.kind === 'circle') {
     const dx = region.center[0] - curve.center[0]; const dy = region.center[1] - curve.center[1];
     const d = Math.hypot(dx, dy);
-    if (d > EPSILON && d <= curve.radius + region.radius + EPSILON && d >= Math.abs(curve.radius - region.radius) - EPSILON) {
+    if (d > EPSILON && d <= curve.radius + region.radius + EPSILON && magnitudeAtLeast(d, Math.abs(curve.radius - region.radius) - EPSILON)) {
       const along = (curve.radius ** 2 - region.radius ** 2 + d ** 2) / (2 * d);
       const height = Math.sqrt(Math.max(0, curve.radius ** 2 - along ** 2));
       const x = curve.center[0] + along * dx / d; const y = curve.center[1] + along * dy / d;
@@ -87,7 +88,7 @@ function arcBoundaryAngles(curve: Extract<ClipCurve, { kind: 'arc' }>, region: C
     for (let index = 0; index < region.points.length; index += 1) {
       const a = region.points[index]; const b = region.points[(index + 1) % region.points.length];
       if (a === undefined || b === undefined) continue;
-      if (Math.abs(Math.hypot(a[0] - curve.center[0], a[1] - curve.center[1]) - curve.radius) <= EPSILON) points.push(a);
+      if (withinMagnitude(Math.hypot(a[0] - curve.center[0], a[1] - curve.center[1]) - curve.radius, EPSILON)) points.push(a);
       for (const t of segmentIntersectionParameters(a, b, { kind: 'circle', center: curve.center, radius: curve.radius })) {
         points.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
       }
@@ -97,10 +98,10 @@ function arcBoundaryAngles(curve: Extract<ClipCurve, { kind: 'arc' }>, region: C
 }
 
 function clipArc(curve: Extract<ClipCurve, { kind: 'arc' }>, region: ClipRegion): ClipCurve[] {
-  const sweep = curve.endAngle - curve.startAngle; if (Math.abs(sweep) <= EPSILON) return [];
+  const sweep = curve.endAngle - curve.startAngle; if (withinMagnitude(sweep, EPSILON)) return [];
   const cuts = [0, ...arcBoundaryAngles(curve, region).map((angle) => angleFraction(angle, curve.startAngle, sweep)), 1]
     .filter((value) => value >= 0 && value <= 1).sort((a, b) => a - b)
-    .filter((value, index, all) => index === 0 || Math.abs(value - (all[index - 1] ?? value)) > EPSILON);
+    .filter((value, index, all) => index === 0 || exceedsMagnitude(value - (all[index - 1] ?? value), EPSILON));
   const result: ClipCurve[] = [];
   for (let index = 0; index + 1 < cuts.length; index += 1) {
     const a = cuts[index]; const b = cuts[index + 1]; if (a === undefined || b === undefined) continue;

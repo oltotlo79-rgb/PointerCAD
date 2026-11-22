@@ -16,6 +16,7 @@ import {
   cancelPopover, commitPopover, drawRectangle, extrudeFace, fillFields, makeFace, popover, popoverInputs, popoverTitle,
   propertyPanel, selectionKindLabel, sketchTool, topFaceCenter, treeRow,
 } from './solidCaptureSupport.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /*
  * ボルト締結(追加要件6)の、通し穴＋貫通のねじ穴の画面検査。板は 2 枚とも部品の画面の実操作で作って保存し、
@@ -54,9 +55,7 @@ const REASON = {
 } as const;
 
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page).locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`, 'u') }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 /** 40×30 の板を押し出し、上面の中心の真下 (20,15,0) に点を 1 つ打つ(`boltedJointTestSupport.ts` と同じ手順)。 */

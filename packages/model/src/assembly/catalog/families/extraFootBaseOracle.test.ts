@@ -4,6 +4,8 @@
  * 板の横・縦・厚さは記入のまま。穴は組ごとの「数-径@横: 鎖/縦: 鎖」で、鎖は括弧の外の数を端から足し上げ、向こうの端に届く数は外す。
  * 1 つの穴の組は基準の穴、基準の穴のある型番の数の多い組は、基準の列と同じ数を外した横の位置が基準の行の上、基準の行と同じ数を外した
  * 縦の位置が基準の列の上の穴。2 つの群に分かれた組は、横は群ごとの列、縦は「…群 2 段」の順に端から当てる。
+ * 段ごとの列の並び(54a 回目。「並び: 下から 第1・第2列、…」か「配列(…): 第1段=第1・2列、…」)の組は、鎖を端から足し上げた位置から、
+ * めねじの記入(fixture の threads。先頭の組「M20@横: 鎖/縦: 鎖」を足し上げた所が軸)の位置を外した残りを列と段にして当てる。
  * 質量は、資料の質量が長方形の板 × 密度の 7 割以上(今のベースの板の行の決まり)で、10% 以内の時だけ行の値。めねじは作らず印。
  */
 import { readFileSync } from 'node:fs';
@@ -18,11 +20,14 @@ import { FOOT_BASE_RECORDS } from './framePartRows.js';
 
 interface FixtureRow {
   readonly key: string; readonly page: string; readonly kind: string; readonly plate: string; readonly holes: string; readonly material: string;
+  /** 段ごとの列の並びの行だけ: 鎖から外すめねじの記入(2 本目の読み)。 */
+  readonly threads?: string;
 }
 
 const FIELDS = ['key', 'page', 'kind', 'plate', 'holes', 'material'] as const;
 const isRow = (value: unknown): value is FixtureRow => typeof value === 'object' && value !== null
-  && FIELDS.every((field) => typeof Object.getOwnPropertyDescriptor(value, field)?.value === 'string');
+  && FIELDS.every((field) => typeof Object.getOwnPropertyDescriptor(value, field)?.value === 'string')
+  && ['string', 'undefined'].includes(typeof Object.getOwnPropertyDescriptor(value, 'threads')?.value);
 
 function readFixture(): readonly FixtureRow[] {
   const value: unknown = JSON.parse(readFileSync(new URL('./extraFootBaseOracle.fixture.json', import.meta.url), 'utf8'));
@@ -60,17 +65,64 @@ function sideGroups(across: string, width: number): readonly (readonly [string, 
     .map((match) => [match[2] ?? '', positions(chain(match[1] ?? ''), width)] as const);
 }
 
-/** 2 本目の読みの穴の記入 → 穴(左下からの x・y・径。並べ替えた物)。読めない時は空。 */
-function holesOf(text: string, width: number, depth: number): readonly Hole[] {
+/** 段ごとの列の並び(下の段から、各段の列の番号)。並びの記入が無ければ undefined。 */
+function arrangementOf(text: string): readonly (readonly number[])[] | undefined {
+  const named = [...text.matchAll(/第([0-9]+)段=第([0-9・]+)列/gu)];
+  if (named.length > 0) {
+    return [...named].sort((a, b) => Number(a[1]) - Number(b[1])).map((match) => (match[2] ?? '').split('・').map(Number));
+  }
+  const listed = /並び:(下から|上から)(.*)$/u.exec(text);
+  if (listed === null) return undefined;
+  const rows = (listed[2] ?? '').split('、').filter((part) => part !== '').map((part) => [...part.matchAll(/第([0-9]+)/gu)].map((match) => Number(match[1])));
+  return listed[1] === '下から' ? rows : rows.reverse();
+}
+
+/** めねじの記入の先頭の組(「M20@横:15、20(左端から軸まで)/縦:15、20(上端から軸まで)」)の軸の位置(左下からの x・y)。 */
+function threadOf(text: string, width: number, depth: number): readonly [number, number] | undefined {
+  const match = /^M[0-9]+@横:(.*)\/縦:(.*)$/u.exec(text.replace(/\s+/gu, '').split(';')[0] ?? '');
+  if (match === null) return undefined;
+  const sum = (values: readonly number[]): number => values.reduce((total, value) => total + value, 0);
+  const x = sum(chain(match[1] ?? ''));
+  const y = sum(chain(match[2] ?? ''));
+  return [(match[1] ?? '').includes('右端から') ? width - x : x, fromTop(match[2] ?? '') ? depth - y : y];
+}
+
+/** 段ごとの列の並びの組の穴: 鎖の位置からめねじの軸の位置を外した残りを列と段にする。合わない時は空。 */
+function arrangedHoles(count: number, diameter: number, across: string, up: string, threads: string, width: number,
+  depth: number): readonly Hole[] {
+  const rows = arrangementOf(up);
+  const thread = threadOf(threads, width, depth);
+  if (rows === undefined || thread === undefined) return [];
+  const chainUp = up.split(/\/(?:並び|配列)/u)[0] ?? '';
+  const columns = positions(chain(across), width).filter((x) => x !== thread[0]);
+  const levels = positions(chain(chainUp), depth).map((value) => (fromTop(chainUp) ? depth - value : value)).filter((y) => y !== thread[1]);
+  const holes = rows.flatMap((row, index) => row.map((column): Hole => [columns[column - 1] ?? NaN, levels[index] ?? NaN, diameter]));
+  return holes.length === count ? holes : [];
+}
+
+/** 2 本目の読みの穴の記入 → 穴(左下からの x・y・径。並べ替えた物)。読めない時は空。threads は段ごとの列の並びの行のめねじの記入。 */
+function holesOf(text: string, width: number, depth: number, threads = ''): readonly Hole[] {
   const holes: Hole[] = [];
   let reference: readonly [number, number] | undefined;
-  for (const group of text.replace(/\s+/gu, '').split(';')) {
+  // 「;配列(…): 第1段=…」は前の組の続き(段ごとの列の並び)。
+  const pieces: string[] = [];
+  for (const piece of text.replace(/\s+/gu, '').split(';')) {
+    if (piece.startsWith('配列') && pieces.length > 0) pieces[pieces.length - 1] += `/${piece}`;
+    else pieces.push(piece);
+  }
+  for (const group of pieces) {
     const head = /^(?:([0-9]+)-)?φ([0-9]+(?:\.[0-9]+)?)(?:\([^()]*\))?@/u.exec(group);
     if (head === null) return [];
     const count = Number(head[1] ?? 1);
     const diameter = Number(head[2]);
     const [acrossText = '', up = ''] = group.slice(head[0].length).split('/縦:');
     const across = acrossText.replace(/^横:/u, '');
+    if (arrangementOf(up) !== undefined) {
+      const members = arrangedHoles(count, diameter, across, up, threads, width, depth);
+      if (members.length === 0) return [];
+      holes.push(...members);
+      continue;
+    }
     const top = fromTop(up);
     const groups = sideGroups(across, width);
     if (count === 1 && groups.length === 0) {
@@ -121,7 +173,7 @@ describe('資料 1 の長方形の板の 39 回目の 2 本の読みで揃った
       expect(JSON.stringify(row), record.key).not.toMatch(/(?<![0-9A-Za-z])[A-Z]{3}-[A-Z0-9]{2,}/u);
       const [width = NaN, depth = NaN, thickness = NaN] = plateOf(row.plate);
       expect([record.width, record.depth, record.thickness, row.plate.includes('長方形')], record.key).toEqual([width, depth, thickness, true]);
-      const holes = holesOf(row.holes, width, depth);
+      const holes = holesOf(row.holes, width, depth, row.threads);
       expect(record.holes, record.key).toEqual(holes);
       const [materialText = '', massText = ''] = row.material.split(';');
       const material = /SUS|ステン/u.test(materialText) ? 'stainless' : 'steel';

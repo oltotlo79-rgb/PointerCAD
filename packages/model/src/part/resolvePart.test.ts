@@ -1,3 +1,4 @@
+import { plainText, plainTextValue } from '../failureText.js';
 import { allocatePatternPointSlots } from './patternPointSlots.js';
 import { buildHoleSchedule } from '../drawing/holeSchedule.js';
 import {
@@ -1082,7 +1083,7 @@ describe('resolvePart 押し出し', () => {
     expect(result.steps).toEqual([]);
     expect(codesOf(result)).toEqual(['invalidValue']);
     expect(result.errors[0].featureId).toBe('extrude-1');
-    expect(result.errors[0].message.length).toBeGreaterThan(0);
+    expect(result.errors[0].text).toEqual({ key: 'partError.extrude.distance', parameters: {} });
   });
 
   it('距離が負なら invalidValue', () => {
@@ -1656,7 +1657,7 @@ describe('resolveMachiningTarget', () => {
     }
     expect(outcome.error.code).toBe('missingBody');
     expect(outcome.error.featureId).toBe('hole-1');
-    expect(outcome.error.message.length).toBeGreaterThan(0);
+    expect(outcome.error.text).toEqual({ key: 'partError.machining.missingBody', parameters: {} });
   });
 
   it('すでに消費されていれば consumedTwice', () => {
@@ -1733,7 +1734,7 @@ describe('resolveHoleCenters', () => {
       throw new Error('テストの前提が壊れている: 失敗するはずの呼び出しが成功した');
     }
     expect(outcome.error.code).toBe('missingProfile');
-    expect(outcome.error.message).toContain('穴の中心にする点');
+    expect(outcome.error.text).toEqual({ key: 'partError.hole.centerMissing', parameters: {} });
   });
 
   it('点フィーチャーが消えていれば missingProfile', () => {
@@ -1865,7 +1866,7 @@ describe('resolvePart 穴', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('90 度未満');
+    expect(result.errors[0].text).toEqual({ key: 'partError.hole.tiltAngle', parameters: {} });
     // 穴が作れなかったので対象は消費されず、押し出しが画面に残る。
     expect(result.steps.map((step) => step.featureId)).toEqual(['extrude-1']);
     expect(result.liveBodyIds).toEqual(['extrude-1']);
@@ -1927,7 +1928,7 @@ describe('resolvePart 穴', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('もとのソリッドの面');
+    expect(result.errors[0].text).toEqual({ key: 'partError.hole.faceNotTarget', parameters: {} });
   });
 
   it('面でなく辺を指していたら invalidValue', () => {
@@ -1939,7 +1940,7 @@ describe('resolvePart 穴', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('面だけ');
+    expect(result.errors[0].text).toEqual({ key: 'partError.hole.faceOnly', parameters: {} });
   });
 
   it('対象が抑制されていれば missingBody', () => {
@@ -2179,7 +2180,7 @@ describe('resolvePart ねじ穴', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('ねじの呼び');
+    expect(result.errors[0].text).toEqual({ key: 'partError.threadHole.unknownSize', parameters: {} });
   });
 
   it('下穴の径が外径以上なら invalidValue', () => {
@@ -2191,7 +2192,7 @@ describe('resolvePart ねじ穴', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('ねじの外径より小さく');
+    expect(result.errors[0].text).toEqual({ key: 'partError.threadHole.drillTooLarge', parameters: {} });
   });
 
   it('ピッチが 0 以下なら invalidValue', () => {
@@ -2228,7 +2229,7 @@ describe('resolvePart ねじ穴', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('穴の深さ以下');
+    expect(result.errors[0].text).toEqual({ key: 'partError.threadHole.lengthOverDepth', parameters: {} });
   });
 
   it('貫通ならねじ部の長さは深さと比べない', () => {
@@ -2525,7 +2526,7 @@ describe('resolvePart ばね', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['missingProfile']);
-    expect(result.errors[0].message).toContain('始点');
+    expect(result.errors[0].text).toEqual({ key: 'partError.spring.missingStart', parameters: {} });
     expect(result.steps).toEqual([]);
   });
 
@@ -2539,7 +2540,7 @@ describe('resolvePart ばね', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['missingProfile']);
-    expect(result.errors[0].message).toContain('軸');
+    expect(result.errors[0].text).toEqual({ key: 'partError.spring.missingAxis', parameters: {} });
   });
 
   it('コイル径が 0 以下なら invalidValue', () => {
@@ -2568,7 +2569,7 @@ describe('resolvePart ばね', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('線径はコイル径より小さく');
+    expect(result.errors[0].text).toEqual({ key: 'springError.wireTooThick', parameters: {} });
   });
 
   it('ピッチが線径以下なら invalidValue(隣どうしの線がぶつかります)', () => {
@@ -2579,7 +2580,7 @@ describe('resolvePart ばね', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('隣どうしの線がぶつかります');
+    expect(result.errors[0].text).toEqual({ key: 'springError.pitchTooSmall', parameters: {} });
   });
 
   it('巻数が 201 なら invalidValue(上限 200)', () => {
@@ -2809,7 +2810,7 @@ describe('resolvePart R面取り', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['missingSubShape']);
-    expect(result.errors[0].message).toContain('見つかりません');
+    expect(result.errors[0].text).toEqual({ key: 'partError.machining.missingSubShape', parameters: {} });
   });
 
   it('対象のボディが無ければ missingBody', () => {
@@ -2935,7 +2936,7 @@ describe('resolvePart C面取り', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('90 度より小さく');
+    expect(result.errors[0].text).toEqual({ key: 'partError.chamfer.angle', parameters: {} });
   });
 
   it('角度 0 度は invalidValue', () => {
@@ -3258,12 +3259,12 @@ describe('作成行と対になった和・差のパターン', () => {
     for (const row of wrong) {
       const rejected = errors(plate, tool, row);
       expect(rejected.map(error => error.code)).toEqual(['invalidValue']);
-      expect(rejected[0].message).toContain('対になった');
+      expect(plainTextValue(rejected[0].text)).toContain('対になった');
     }
     expect(errors(plate, tool, extrudeFeature('other', fixture.faceA), seed)).toMatchObject([{ code: 'invalidValue' }]);
     const missing = errors(tool, seed);
     expect(missing.map(error => error.code)).toEqual(['missingBody']);
-    expect(missing[0].message).toContain('相手');
+    expect(missing[0].text).toEqual({ key: 'partError.pattern.missingTarget', parameters: {} });
     expect(errors(plate, tool, seed, { ...pattern, id: 'first' })).toMatchObject([{ code: 'consumedTwice' }]);
   });
 
@@ -3399,7 +3400,7 @@ describe('resolvePart パターン', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('奇数');
+    expect(plainTextValue(result.errors[0].text)).toContain('奇数');
   });
 
   it('円形パターン(Z軸・全周・個数4)の穴は回転角 π/2, π, 3π/2', () => {
@@ -3477,8 +3478,8 @@ describe('resolvePart パターン', () => {
     const result = resolvePart(withSolids(fixture.document,
       patternFeature('self', 'self', linearPlacement()),
       patternFeature('a', 'b', linearPlacement()), patternFeature('b', 'a', linearPlacement())));
-    expect(result.errors.map(({ featureId, code, message }) => [featureId, code, message])).toEqual(
-      ['self', 'a', 'b'].map(id => [id, 'circularReference', '並べる対象の参照が自分自身へ戻っています。']));
+    expect(result.errors.map(({ featureId, code, text }) => [featureId, code, text])).toEqual(
+      ['self', 'a', 'b'].map(id => [id, 'circularReference', { key: 'partError.pattern.selfReference', parameters: {} }]));
     expect(result.steps).toEqual([]);
   });
 
@@ -3890,7 +3891,7 @@ describe('投影・交差の解決順序(FR-325、§0.a-0.11、タスク25)', ()
     expect(resolved.projections).toEqual([]);
     const failure = resolved.errors.find((error) => error.featureId === 'pj1');
     expect(failure?.code).toBe('missingBody');
-    expect(failure?.message).toContain('投影のもとになるソリッドが見つかりません');
+    expect(plainTextValue(failure?.text)).toContain('投影のもとになるソリッドが見つかりません');
     // もとの立体そのものは作れている(文書は壊れない)。
     expect(resolved.steps.map((step) => step.featureId)).toEqual(['extrude-1']);
   });
@@ -3931,7 +3932,7 @@ describe('投影・交差の解決順序(FR-325、§0.a-0.11、タスク25)', ()
     expect(resolved.projections).toEqual([]);
     const failure = resolved.errors.find((error) => error.featureId === 'pj1');
     expect(failure?.code).toBe('missingBody');
-    expect(failure?.message).toContain('このスケッチを使うソリッドより前に作られたソリッドだけ');
+    expect(plainTextValue(failure?.text)).toContain('このスケッチを使うソリッドより前に作られたソリッドだけ');
     // 後ろの立体そのものは作れている(FR-504「止めずに警告する」)。
     expect(resolved.steps.map((step) => step.featureId)).toEqual(['extrude-2']);
   });
@@ -4358,7 +4359,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['missingProfile']);
-    expect(result.errors[0].message).toContain('中心にする点');
+    expect(result.errors[0].text).toEqual({ key: 'partError.primitive.missingPoint', parameters: {} });
     expect(result.steps).toEqual([]);
   });
 
@@ -4372,7 +4373,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['missingSubShape']);
-    expect(result.errors[0].message).toContain('中心にする頂点');
+    expect(result.errors[0].text).toEqual({ key: 'partError.primitive.missingVertex', parameters: {} });
     expect(result.steps).toEqual([]);
   });
 
@@ -4387,7 +4388,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('ソリッドの頂点だけ');
+    expect(result.errors[0].text).toEqual({ key: 'partError.primitive.originNotVertex', parameters: {} });
   });
 
   it('中心の式が評価できなければ invalidValue(式のエラーをそのまま見せる)', () => {
@@ -4406,7 +4407,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('数になっていません');
+    expect(result.errors[0].text).toEqual({ key: 'partError.coordinate.notFinite', parameters: { label: 'Y' } });
   });
 
   it('球の半径が -1 なら invalidValue(0 より大きい)', () => {
@@ -4414,7 +4415,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     const document = withSolids(fixture.document, primitiveFeature('sphere-1', sphereShape('-1')));
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('0 より大きい');
+    expect(plainTextValue(result.errors[0].text)).toContain('0 より大きい');
     expect(result.steps).toEqual([]);
   });
 
@@ -4426,7 +4427,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toBe('Y の長さは 0 より大きい数にしてください。');
+    expect(plainTextValue(result.errors[0].text)).toBe('Y の長さは 0 より大きい数にしてください。');
   });
 
   it('円柱の高さが数でなければ invalidValue', () => {
@@ -4437,7 +4438,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toBe('高さは 0 より大きい数にしてください。');
+    expect(plainTextValue(result.errors[0].text)).toBe('高さは 0 より大きい数にしてください。');
   });
 
   it('円錐の上半径 0(既定)は尖った円錐として通る', () => {
@@ -4461,7 +4462,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('どちらか一方を 0 より大きく');
+    expect(plainTextValue(result.errors[0].text)).toContain('どちらか一方を 0 より大きく');
   });
 
   it('円錐の半径が負なら「0 以上」で断る', () => {
@@ -4472,7 +4473,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toBe('円錐の半径は 0 以上にしてください。');
+    expect(plainTextValue(result.errors[0].text)).toBe('円錐の半径は 0 以上にしてください。');
   });
 
   it('円錐の上下の半径が同じなら、円柱を使うよう促して断る', () => {
@@ -4483,7 +4484,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toBe('円錐の上下の半径が同じです。円柱を使ってください。');
+    expect(plainTextValue(result.errors[0].text)).toBe('円錐の上下の半径が同じです。円柱を使ってください。');
   });
 
   it('トーラスの管の半径が主半径以上なら invalidValue(自己交差)', () => {
@@ -4494,7 +4495,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['invalidValue']);
-    expect(result.errors[0].message).toContain('中心までの半径より小さく');
+    expect(plainTextValue(result.errors[0].text)).toContain('中心までの半径より小さく');
   });
 
   it('トーラスの既定は主半径 20・管の半径 5', () => {
@@ -4552,7 +4553,7 @@ describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
     );
     const result = resolvePart(document);
     expect(codesOf(result)).toEqual(['missingProfile']);
-    expect(result.errors[0].message).toContain('向きにする線分');
+    expect(result.errors[0].text).toEqual({ key: 'partError.primitive.missingAxis', parameters: {} });
   });
 
   it('抑制した球は段にも liveBodyIds にも出ず、失敗としても数えない', () => {
@@ -4704,7 +4705,7 @@ describe('スケッチの球面上の点(FR-431、P5 タスク19b: resolvePart �
     expect(resolved.points).toEqual([]);
     expect(resolved.errors).toHaveLength(1);
     expect(resolved.errors[0].code).toBe('missingBase');
-    expect(resolved.errors[0].message).toBe('球が見つかりません。球を選び直してください。');
+    expect(plainTextValue(resolved.errors[0].text)).toBe('球が見つかりません。球を選び直してください。');
   });
 });
 
@@ -4895,7 +4896,7 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
     expect(result.steps).toHaveLength(2);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].code).toBe('degenerate');
-    expect(result.errors[0].message).toContain('球どうしを');
+    expect(result.errors[0].text).toEqual({ key: 'partError.thruSections.twoSpheres', parameters: {} });
   });
 
   it('抑制した球はつなぐ相手にできない(画面に無いため)', () => {
@@ -4908,7 +4909,7 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
     const result = resolvePart(document);
     expect(result.steps).toEqual([]);
     expect(result.errors[0].code).toBe('missingProfile');
-    expect(result.errors[0].message).toContain('球');
+    expect(result.errors[0].text).toEqual({ key: 'partError.thruSections.missingSphere', parameters: {} });
   });
 
   it('立体の面 2 つを結ぶと faceQuery が 2 つ乗り、targetKey が対象の段の鍵になる', () => {
@@ -4947,7 +4948,7 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
     const result = resolvePart(document);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('ソリッドの面だけ');
+    expect(result.errors[0].text).toEqual({ key: 'partError.thruSections.notFace', parameters: {} });
   });
 
   it('輪郭にした立体が無ければ断る(FR-504)', () => {
@@ -5014,7 +5015,7 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
     const result = resolvePart(document);
     expect(result.steps).toEqual([]);
     expect(result.errors[0].code).toBe('missingProfile');
-    expect(result.errors[0].message).toContain('つなぐ面を 2 つ');
+    expect(result.errors[0].text).toEqual({ key: 'partError.thruSections.tooFew', parameters: {} });
   });
 
   it('ロフトには球を置けない(§2.9.3)', () => {
@@ -5027,7 +5028,7 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
     const result = resolvePart(document);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].code).toBe('degenerate');
-    expect(result.errors[0].message).toContain('ロフトには球を使えません');
+    expect(result.errors[0].text).toEqual({ key: 'loftError.sphere', parameters: {} });
   });
 
   it('ねじれの補正が小数(1.5)なら、切り捨てずに断る', () => {
@@ -5041,7 +5042,7 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
     const result = resolvePart(document);
     expect(result.steps).toEqual([]);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('整数');
+    expect(result.errors[0].text).toEqual({ key: 'partError.thruSections.twistNotInteger', parameters: {} });
   });
 
   it('ねじれの補正は負の整数でも通る(向きを逆へずらせる)', () => {
@@ -5443,7 +5444,7 @@ describe('押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)',
     const result = resolvePart(document);
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('向きの先');
+    expect(result.errors[0].text).toEqual({ key: 'partError.extrude.toFaceBehind', parameters: {} });
   });
 
   it('選んだ面まで: 向きと面が平行なら断る', () => {
@@ -5457,7 +5458,7 @@ describe('押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)',
     );
     const result = resolvePart(document);
     expect(result.errors[0].code).toBe('degenerate');
-    expect(result.errors[0].message).toContain('平行');
+    expect(result.errors[0].text).toEqual({ key: 'partError.extrude.toFaceParallel', parameters: {} });
   });
 
   it('選んだ面まで: 平らでない面は断る', () => {
@@ -5471,7 +5472,7 @@ describe('押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)',
     );
     const result = resolvePart(document);
     expect(result.errors[0].code).toBe('degenerate');
-    expect(result.errors[0].message).toContain('平らな面');
+    expect(result.errors[0].text).toEqual({ key: 'partError.extrude.toFaceNotFlat', parameters: {} });
   });
 
   it('選んだ面が動けば距離も鍵も変わる(NFR-PF-3)', () => {
@@ -5517,7 +5518,7 @@ describe('押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)',
     const result = resolvePart(document);
     expect(result.steps).toEqual([]);
     expect(result.errors[0].code).toBe('missingBody');
-    expect(result.errors[0].message).toBe('押し出す先にソリッドがありません。');
+    expect(result.errors[0].text).toEqual({ key: 'partError.extrude.toNextMissing', parameters: {} });
   });
 
   it('テーパ 5 度は 5π/180 ラジアンで段に乗る', () => {
@@ -5540,7 +5541,7 @@ describe('押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)',
     const result = resolvePart(document);
     expect(result.steps).toEqual([]);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('60 度以下');
+    expect(result.errors[0].text).toEqual({ key: 'partError.extrude.taper', parameters: {} });
   });
 
   it('テーパの向きだけを変えても、角が 0 なら同じ鍵(形が同じだから)', () => {
@@ -5576,7 +5577,7 @@ describe('押し出しの終端・テーパ・薄板(FR-415、FR-401、FR-416)',
     );
     const result = resolvePart(document);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('0 より大きい');
+    expect(result.errors[0].text).toEqual({ key: 'partError.extrude.thinWall', parameters: {} });
   });
 });
 
@@ -5618,7 +5619,7 @@ describe('抜き勾配(FR-417)', () => {
   it('角度が 61 度なら断る(上限 60 度、§0.a-0.72)', () => {
     const result = resolvePart(draftDocument({ angle: '61' }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('60 度以下');
+    expect(plainTextValue(result.errors[0].text)).toContain('60 度以下');
   });
 
   it('角度が 0 なら断る(傾かない)', () => {
@@ -5634,19 +5635,19 @@ describe('抜き勾配(FR-417)', () => {
   it('面でないもの(辺)を指したら断る', () => {
     const result = resolvePart(draftDocument({ faces: [edgeRef('extrude-1')] }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('面だけ');
+    expect(plainTextValue(result.errors[0].text)).toContain('面だけ');
   });
 
   it('別の立体の面を指したら断る(カーネルは対象の中から選び直すため)', () => {
     const result = resolvePart(draftDocument({ faces: [sideFaceRef('extrude-9')] }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('もとのソリッドの面');
+    expect(plainTextValue(result.errors[0].text)).toContain('もとのソリッドの面');
   });
 
   it('中立面が平らでなければ断る', () => {
     const result = resolvePart(draftDocument({ neutralFace: cylinderFaceRef('extrude-1') }));
     expect(result.errors[0].code).toBe('degenerate');
-    expect(result.errors[0].message).toContain('平らな面');
+    expect(plainTextValue(result.errors[0].text)).toContain('平らな面');
   });
 });
 
@@ -5685,7 +5686,7 @@ describe('ミラー(FR-419)', () => {
     const document = mirrorDocument({ kind: 'face', face: cylinderFaceRef('extrude-1') });
     const result = resolvePart(document);
     expect(result.errors[0].code).toBe('degenerate');
-    expect(result.errors[0].message).toContain('平らな面');
+    expect(result.errors[0].text).toEqual({ key: 'partError.mirror.notFlat', parameters: {} });
   });
 
   it('鏡にできるのは面だけ(辺を指したら断る)', () => {
@@ -5807,13 +5808,13 @@ describe('移動/回転と拡大縮小(FR-424)', () => {
     const result = resolvePart(scaleDocument(uniformFactor('0')));
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('0 より大きい');
+    expect(plainTextValue(result.errors[0].text)).toContain('0 より大きい');
   });
 
   it('倍率 1001 は断る(上限 1000)', () => {
     const result = resolvePart(scaleDocument(uniformFactor('1001')));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('1000 以下');
+    expect(plainTextValue(result.errors[0].text)).toContain('1000 以下');
   });
 
   it('軸ごとの倍率の 1 つが範囲の外なら断る', () => {
@@ -6029,7 +6030,7 @@ describe('スイープ(FR-409、P5 タスク46)', () => {
     );
     expect(result.steps).toEqual([]);
     expect(result.errors[0].code).toBe('missingProfile');
-    expect(result.errors[0].message).toContain('道筋');
+    expect(plainTextValue(result.errors[0].text)).toContain('道筋');
   });
 
   it('経路の曲線が見つからなければ断る', () => {
@@ -6038,7 +6039,7 @@ describe('スイープ(FR-409、P5 タスク46)', () => {
       withSolids(fixture.document, sweepFeature('sweep-1', fixture.faceA, fixture.missing)),
     );
     expect(result.errors[0].code).toBe('missingProfile');
-    expect(result.errors[0].message).toContain('道筋');
+    expect(plainTextValue(result.errors[0].text)).toContain('道筋');
   });
 
   it('断面が見つからなければ断る(文言は「掃くもとの面」)', () => {
@@ -6046,7 +6047,7 @@ describe('スイープ(FR-409、P5 タスク46)', () => {
     const result = resolvePart(
       withSolids(fixture.document, sweepFeature('sweep-1', fixture.brokenFace, fixture.path)),
     );
-    expect(result.errors.some((error) => error.message.includes('掃くもとの面'))).toBe(true);
+    expect(result.errors.some((error) => plainTextValue(error.text)?.includes('掃くもとの面'))).toBe(true);
   });
 
   it('スイープは対象を取らないので、先に作った立体はそのまま残る', () => {
@@ -6158,14 +6159,14 @@ describe('リブ(FR-420、P5 タスク46)', () => {
     const result = resolvePart(ribDocument(fixture.flat, { thickness: '0' }));
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('0 より大きい');
+    expect(plainTextValue(result.errors[0].text)).toContain('0 より大きい');
   });
 
   it('輪郭が見つからなければ断る', () => {
     const fixture = curveFixture();
     const result = resolvePart(ribDocument(fixture.missing));
     expect(result.errors[0].code).toBe('missingProfile');
-    expect(result.errors[0].message).toContain('リブの輪郭');
+    expect(plainTextValue(result.errors[0].text)).toContain('リブの輪郭');
   });
 
   it('「材料まで伸ばす」を切ったリブは、段の extendToBody === false で作れる(42c でカーネルの段に欄が増えた)', () => {
@@ -6244,19 +6245,19 @@ describe('エンボス(FR-421、P5 タスク46)', () => {
   it('別のボディの面を指したら断る', () => {
     const result = resolvePart(embossDocument({ face: topFaceRef('extrude-9') }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('もとのソリッドの面');
+    expect(plainTextValue(result.errors[0].text)).toContain('もとのソリッドの面');
   });
 
   it('面でないもの(辺)を指したら断る', () => {
     const result = resolvePart(embossDocument({ face: edgeRef('extrude-1') }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('面だけ');
+    expect(plainTextValue(result.errors[0].text)).toContain('面だけ');
   });
 
   it('高さ 0 は断る', () => {
     const result = resolvePart(embossDocument({ height: '0' }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('0 より大きい');
+    expect(plainTextValue(result.errors[0].text)).toContain('0 より大きい');
   });
 
   it('エンボスは対象を消費するので、残るのは彫った立体だけ', () => {
@@ -6312,7 +6313,7 @@ describe('ざぐり・皿もみ(FR-422、P5 タスク46)', () => {
     );
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('ざぐりの径');
+    expect(result.errors[0].text).toEqual({ key: 'partError.counterbore.diameter', parameters: {} });
   });
 
   it('ざぐりの深さ 0 は断る', () => {
@@ -6320,7 +6321,7 @@ describe('ざぐり・皿もみ(FR-422、P5 タスク46)', () => {
       holeDocument({ kind: 'counterbore', diameter: expr('11'), depth: expr('0') }),
     );
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('ざぐりの深さ');
+    expect(result.errors[0].text).toEqual({ key: 'partError.counterbore.depth', parameters: {} });
   });
 
   it('皿もみの角度 0 度・180 度は断る', () => {
@@ -6330,15 +6331,15 @@ describe('ざぐり・皿もみ(FR-422、P5 タスク46)', () => {
     const flat = resolvePart(
       holeDocument({ kind: 'countersink', diameter: expr('12'), angle: expr('180') }),
     );
-    expect(zero.errors[0].message).toContain('皿もみの角度');
-    expect(flat.errors[0].message).toContain('皿もみの角度');
+    expect(zero.errors[0].text).toEqual({ key: 'partError.countersink.angle', parameters: {} });
+    expect(flat.errors[0].text).toEqual({ key: 'partError.countersink.angle', parameters: {} });
   });
 
   it('皿もみの頭径が穴の径以下なら断る', () => {
     const result = resolvePart(
       holeDocument({ kind: 'countersink', diameter: expr('6'), angle: expr('90') }),
     );
-    expect(result.errors[0].message).toContain('皿もみの頭の径');
+    expect(result.errors[0].text).toEqual({ key: 'partError.countersink.diameter', parameters: {} });
   });
 
   it('入口を省いた穴と「広げない」を書いた穴は、段も鍵も同じ', () => {
@@ -6462,7 +6463,7 @@ describe('外ねじ(FR-423、P5 タスク46)', () => {
     );
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('呼び径と軸の径が合いません');
+    expect(plainTextValue(result.errors[0].text)).toContain('呼び径と軸の径が合いません');
   });
 
   it('0.5mm までの差は通す(許容の境目)', () => {
@@ -6475,25 +6476,25 @@ describe('外ねじ(FR-423、P5 タスク46)', () => {
   it('平らな面にはねじを切れない', () => {
     const result = resolvePart(shaftDocument({ face: topFaceRef('extrude-1') }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('円柱の面');
+    expect(plainTextValue(result.errors[0].text)).toContain('円柱の面');
   });
 
   it('別のボディの面を指したら断る', () => {
     const result = resolvePart(shaftDocument({ face: threadFaceRef('extrude-9', 5) }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('もとのソリッドの面');
+    expect(plainTextValue(result.errors[0].text)).toContain('もとのソリッドの面');
   });
 
   it('知らない呼びは断る', () => {
     const result = resolvePart(shaftDocument({ nominal: 'M99' }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('ねじの呼び');
+    expect(plainTextValue(result.errors[0].text)).toContain('ねじの呼び');
   });
 
   it('ねじ部の長さ 0 は断る', () => {
     const result = resolvePart(shaftDocument({ length: '0' }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('ねじ部の長さ');
+    expect(plainTextValue(result.errors[0].text)).toContain('ねじ部の長さ');
   });
 
   it('外ねじは対象を消費するので、残るのはねじを切った立体だけ', () => {
@@ -6573,13 +6574,13 @@ describe('点の集まりへ複製(FR-425、P5 タスク46)', () => {
   it('点が引けなければ断る', () => {
     const { document } = pointPatternDocument(3, { missing: true });
     const result = resolvePart(document);
-    expect(result.errors.some((error) => error.message.includes('並べる点'))).toBe(true);
+    expect(result.errors.some((error) => plainTextValue(error.text)?.includes('並べる点'))).toBe(true);
   });
 
   it('点が 1 つも選ばれていなければ断る', () => {
     const { document } = pointPatternDocument(0);
     const result = resolvePart(document);
-    expect(result.errors.some((error) => error.message.includes('並べる点'))).toBe(true);
+    expect(result.errors.some((error) => plainTextValue(error.text)?.includes('並べる点'))).toBe(true);
   });
 
   it('resolvePatternTransforms は点の解決を渡さなければ断る(既定は「引けない」)', () => {
@@ -6834,7 +6835,7 @@ describe('曲面(FR-428、P5 タスク46)', () => {
     );
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('0 以外');
+    expect(plainTextValue(result.errors[0].text)).toContain('0 以外');
   });
 
   it('面でないもの(辺)を取り出そうとしたら断る', () => {
@@ -6846,7 +6847,7 @@ describe('曲面(FR-428、P5 タスク46)', () => {
       }),
     );
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('ソリッドの面だけ');
+    expect(plainTextValue(result.errors[0].text)).toContain('ソリッドの面だけ');
   });
 
   it('面を借りる立体が無ければ断る', () => {
@@ -6937,19 +6938,19 @@ describe('くり抜き(FR-418、P5 タスク46)', () => {
     const result = resolvePart(shellDocument({ thickness: '0' }));
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('壁の厚さ');
+    expect(plainTextValue(result.errors[0].text)).toContain('壁の厚さ');
   });
 
   it('面でないもの(辺)を開けようとしたら断る', () => {
     const result = resolvePart(shellDocument({ openFaces: [edgeRef('extrude-1')] }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('面だけ');
+    expect(plainTextValue(result.errors[0].text)).toContain('面だけ');
   });
 
   it('別のボディの面を開けようとしたら断る', () => {
     const result = resolvePart(shellDocument({ openFaces: [topFaceRef('extrude-9')] }));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('もとのソリッドの面');
+    expect(plainTextValue(result.errors[0].text)).toContain('もとのソリッドの面');
   });
 
   it('くり抜きは対象を消費するので、残るのはくり抜いた立体だけ', () => {
@@ -7003,7 +7004,7 @@ describe('可変半径フィレット(FR-426、P5 タスク46)', () => {
     const result = resolvePart(filletDocument('2', '0'));
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('0 より大きい');
+    expect(result.errors[0].text).toEqual({ key: 'partError.fillet.radius', parameters: {} });
   });
 });
 
@@ -7120,7 +7121,7 @@ describe('平面による切断(FR-432、P5 タスク27c)', () => {
     const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
     expect(result.steps).toHaveLength(1);
     expect(result.errors[0].code).toBe('notPlanar');
-    expect(result.errors[0].message).toContain('一直線');
+    expect(plainTextValue(result.errors[0].text)).toContain('一直線');
   });
 
   it('点+辺(垂直)は辺の向きが法線になる', () => {
@@ -7164,7 +7165,7 @@ describe('平面による切断(FR-432、P5 タスク27c)', () => {
     };
     const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
     expect(result.steps).toHaveLength(1);
-    expect(result.errors[0].message).toContain('まっすぐな辺');
+    expect(plainTextValue(result.errors[0].text)).toContain('まっすぐな辺');
   });
 
   it('点+軸(Z 軸・傾き 0)は軸そのものが法線になる', () => {
@@ -7208,7 +7209,7 @@ describe('平面による切断(FR-432、P5 タスク27c)', () => {
     };
     const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
     expect(result.errors[0].code).toBe('invalidValue');
-    expect(result.errors[0].message).toContain('0 度以上 180 度未満');
+    expect(plainTextValue(result.errors[0].text)).toContain('0 度以上 180 度未満');
   });
 
   it('点を通り既存の平らな面に平行な切断面は、面の法線と指した点になる', () => {
@@ -7234,7 +7235,7 @@ describe('平面による切断(FR-432、P5 タスク27c)', () => {
     };
     const result = resolvePart(withSolids(fixture.document, cutFeature('cut-1', plane)));
     expect(result.steps).toHaveLength(1);
-    expect(result.errors[0].message).toContain('平らな面');
+    expect(plainTextValue(result.errors[0].text)).toContain('平らな面');
   });
 
   it('作業平面(XY)を切断面にできる', () => {
@@ -7248,7 +7249,7 @@ describe('平面による切断(FR-432、P5 タスク27c)', () => {
   it('存在しない平面 id は断る', () => {
     const result = cutStep({ kind: 'workPlane', planeId: 'plane-404', offset: expr('0') });
     expect(result.steps).toHaveLength(1);
-    expect(result.errors[0].message).toContain('平面が見つかりません');
+    expect(plainTextValue(result.errors[0].text)).toContain('平面が見つかりません');
   });
 
   it('残す側を反対にすると段の keepPositive が false になる', () => {
@@ -7520,7 +7521,7 @@ describe('読み込んだ形(importedSolid、FR-802、§2.8)', () => {
       {
         featureId: 'importedSolid-1',
         code: 'missingProfile',
-        message: '読み込んだ形が見つかりません。ファイルを読み込み直してください。',
+        text: { key: 'partError.importedSolid.missing', parameters: {} },
       },
     ]);
   });
@@ -7645,7 +7646,7 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
       {
         featureId: 'hole-1',
         code: 'invalidValue',
-        message: '読み込んだ三角形の形には、穴あけや面取りはできません。',
+        text: plainText('読み込んだ三角形の形には、穴あけや面取りはできません。'),
       },
     ]);
     expect(IMPORTED_MESH_TARGET_MESSAGE).toBe(
@@ -7671,7 +7672,7 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
       shell,
     );
     const resolved = resolvePart(document);
-    expect(resolved.errors.map((error) => error.message)).toEqual([
+    expect(resolved.errors.map((error) => plainTextValue(error.text))).toEqual([
       IMPORTED_MESH_TARGET_MESSAGE,
       IMPORTED_MESH_TARGET_MESSAGE,
     ]);
@@ -7689,7 +7690,7 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
       ),
     );
     expect(asTarget.errors).toEqual([
-      { featureId: 'boolean-1', code: 'invalidValue', message: IMPORTED_MESH_TARGET_MESSAGE },
+      { featureId: 'boolean-1', code: 'invalidValue', text: plainText(IMPORTED_MESH_TARGET_MESSAGE) },
     ]);
     const asTool = resolvePart(
       withSolids(
@@ -7700,7 +7701,7 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
       ),
     );
     expect(asTool.errors).toEqual([
-      { featureId: 'boolean-1', code: 'invalidValue', message: IMPORTED_MESH_TARGET_MESSAGE },
+      { featureId: 'boolean-1', code: 'invalidValue', text: plainText(IMPORTED_MESH_TARGET_MESSAGE) },
     ]);
   });
 
@@ -7717,7 +7718,7 @@ describe('読み込んだ三角形の形(importedMesh、FR-802、§2.8、§0.a-0
     const resolved = resolvePart(document);
     expect(resolved.meshBodies).toEqual([]);
     expect(resolved.errors).toEqual([
-      { featureId: 'hole-1', code: 'missingBody', message: '加工するもとのソリッドが見つかりません。' },
+      { featureId: 'hole-1', code: 'missingBody', text: { key: 'partError.machining.missingBody', parameters: {} } },
     ]);
   });
 
@@ -7833,18 +7834,18 @@ describe('resolvePart 円筒の側面のねじ穴(EX05)', () => {
   it('使えない組み合わせ・位置なし・円筒でない面は、穴と同じ文言で先に断る', () => {
     const fixture = createFixture();
     const cases: readonly [ThreadHoleFeature, string][] = [
-      [radialTap([['12', '0']], { centers: [fixture.pointA] }), '中心の点・傾き・皿もみはまだ使えません'],
-      [radialTap([['12', '0']], { tiltAngle: expr('10') }), '中心の点・傾き・皿もみはまだ使えません'],
+      [radialTap([['12', '0']], { centers: [fixture.pointA] }), 'partError.cylinderHole.unsupported'],
+      [radialTap([['12', '0']], { tiltAngle: expr('10') }), 'partError.cylinderHole.unsupported'],
       [radialTap([['12', '0']], { entry: { kind: 'countersink', diameter: expr('8'), angle: expr('90') } }),
-        '中心の点・傾き・皿もみはまだ使えません'],
-      [radialTap([]), '位置(高さと角度)が 1 つもありません'],
-      [radialTap([['12', '0']], { face: topFaceRef('extrude-1') }), '円筒の面だけです'],
+        'partError.cylinderHole.unsupported'],
+      [radialTap([]), 'partError.cylinderHole.noLocation'],
+      [radialTap([['12', '0']], { face: topFaceRef('extrude-1') }), 'partError.cylinderHole.notCylinder'],
     ];
-    for (const [tap, message] of cases) {
+    for (const [tap, key] of cases) {
       const result = resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), tap));
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]?.featureId).toBe('thread-1');
-      expect(result.errors[0]?.message).toContain(message);
+      expect(result.errors[0]?.text).toEqual({ key, parameters: {} });
     }
   });
 });
@@ -7916,21 +7917,21 @@ describe('resolvePart 円筒の側面の穴(EX05)', () => {
   it('使えない組み合わせ・位置なし・数でない値・円筒でない面は、kernel と同じ文言で先に断る', () => {
     const fixture = createFixture();
     const cases: readonly [HoleFeature, string][] = [
-      [cylindricalHole([['12', '0']], { centers: [fixture.pointA] }), '中心の点・傾き・皿もみはまだ使えません'],
-      [cylindricalHole([['12', '0']], { tiltAngle: expr('10') }), '中心の点・傾き・皿もみはまだ使えません'],
-      [cylindricalHole([['12', '0']], { tiltAzimuth: expr('10') }), '中心の点・傾き・皿もみはまだ使えません'],
+      [cylindricalHole([['12', '0']], { centers: [fixture.pointA] }), 'partError.cylinderHole.unsupported'],
+      [cylindricalHole([['12', '0']], { tiltAngle: expr('10') }), 'partError.cylinderHole.unsupported'],
+      [cylindricalHole([['12', '0']], { tiltAzimuth: expr('10') }), 'partError.cylinderHole.unsupported'],
       [cylindricalHole([['12', '0']], { entry: { kind: 'countersink', diameter: expr('8'), angle: expr('90') } }),
-        '中心の点・傾き・皿もみはまだ使えません'],
-      [cylindricalHole([]), '位置(高さと角度)が 1 つもありません'],
-      [cylindricalHole([[notANumber('高さ'), '0']]), '高さと角度は数にしてください'],
-      [cylindricalHole([['12', notANumber('角度')]]), '高さと角度は数にしてください'],
-      [cylindricalHole([['12', '0']], { face: topFaceRef('extrude-1') }), '円筒の面だけです'],
+        'partError.cylinderHole.unsupported'],
+      [cylindricalHole([]), 'partError.cylinderHole.noLocation'],
+      [cylindricalHole([[notANumber('高さ'), '0']]), 'partError.cylinderHole.locationNotFinite'],
+      [cylindricalHole([['12', notANumber('角度')]]), 'partError.cylinderHole.locationNotFinite'],
+      [cylindricalHole([['12', '0']], { face: topFaceRef('extrude-1') }), 'partError.cylinderHole.notCylinder'],
     ];
-    for (const [hole, message] of cases) {
+    for (const [hole, key] of cases) {
       const result = resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), hole));
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]?.featureId).toBe('hole-1');
-      expect(result.errors[0]?.message).toContain(message);
+      expect(result.errors[0]?.text).toEqual({ key, parameters: {} });
     }
     // 「広げない」を明示した入口は断らない(省略と同じ)。
     expect(resolveWith(cylindricalHole([['12', '0']], { entry: { kind: 'plain' } })).errors).toEqual([]);
@@ -8143,13 +8144,14 @@ describe('resolvePart surface-face sewing', () => {
 
   it('refuses mixed sketch/surface inputs and non-face references', () => {
     const current = fixture();
-    for (const sew of [
-      { ...current.sew, faces: [current.base.faceA] },
-      { ...current.sew, surfaceFaces: [edgeRef(current.first.id), topFaceRef(current.second.id)] },
-    ]) {
+    const cases: readonly (readonly [SewFeature, string])[] = [
+      [{ ...current.sew, faces: [current.base.faceA] }, 'partError.sew.mixedFaces'],
+      [{ ...current.sew, surfaceFaces: [edgeRef(current.first.id), topFaceRef(current.second.id)] }, 'partError.sew.reselectFaces'],
+    ];
+    for (const [sew, key] of cases) {
       const result = resolvePart(withSolids(current.base.document, current.first, current.second, sew));
       expect(result.errors.map(error => error.code)).toEqual(['invalidValue']);
-      expect(result.errors[0].message.length).toBeGreaterThan(0);
+      expect(result.errors[0].text).toEqual({ key, parameters: {} });
       expect(result.steps.some(step => step.featureId === sew.id)).toBe(false);
     }
   });
@@ -8280,7 +8282,7 @@ describe('surface-face sewing takes in its surface bodies (EX-18 W15c)', () => {
  * 「pairedWith は形にも鍵にも効かない」「結びの無いブーリアンは以前と同じ」から決める。
  */
 describe('EX-04 W3 閉じた輪郭の切断の残す側(差 = 外側、積 = 内側、差と積の対 = 両方)', () => {
-  const PAIR_MESSAGE = '対になっている切断には、同じソリッドと輪郭、反対の残す側が必要です。';
+  const PAIR_TEXT = { key: 'partError.boolean.profileCutPair', parameters: {} };
 
   /** 閉じた輪郭の切断のブーリアン(輪郭の切断の入口だけが立てる requireRemoval つき)。 */
   function profileCut(
@@ -8383,11 +8385,11 @@ describe('EX-04 W3 閉じた輪郭の切断の残す側(差 = 外側、積 = 内
 
   it('壊れた対(同じ側どうし・別の相手・3 つ以上の結び・印の無いブーリアン)は二重消費を通さず理由つきで断る', () => {
     const errorsOf = (result: ResolvedPart) =>
-      result.errors.map((error) => [error.featureId, error.code, error.message]);
+      result.errors.map((error) => [error.featureId, error.code, error.text]);
     // 同じ側どうし(差と差)。
     const sameSide = resolvePart(profileCutDocument(profileCut('cut-a', 'subtract'),
       profileCut('cut-b', 'subtract', 'cut-a')));
-    expect(errorsOf(sameSide)).toEqual([['cut-b', 'invalidValue', PAIR_MESSAGE]]);
+    expect(errorsOf(sameSide)).toEqual([['cut-b', 'invalidValue', PAIR_TEXT]]);
     expect(sameSide.liveBodyIds).toEqual(['cut-a']);
     // 別の相手(輪郭の押し出しが違う)。
     const fixture = createFixture();
@@ -8396,16 +8398,16 @@ describe('EX-04 W3 閉じた輪郭の切断の残す側(差 = 外側、積 = 内
         end: { kind: 'throughTarget', targetFeatureId: 'extrude-1' } },
       profileCut('cut-a', 'subtract'),
       profileCut('cut-b', 'intersect', 'cut-a', { tool: 'extrude-3' })));
-    expect(errorsOf(otherTool)).toEqual([['cut-b', 'invalidValue', PAIR_MESSAGE]]);
+    expect(errorsOf(otherTool)).toEqual([['cut-b', 'invalidValue', PAIR_TEXT]]);
     // 3 つ以上の結び(1 つ目を 2 つが指す)。
     const triple = resolvePart(profileCutDocument(profileCut('cut-a', 'subtract'),
       profileCut('cut-b', 'intersect', 'cut-a'), profileCut('cut-c', 'intersect', 'cut-a')));
-    expect(errorsOf(triple)).toEqual([['cut-b', 'invalidValue', PAIR_MESSAGE], ['cut-c', 'invalidValue', PAIR_MESSAGE]]);
+    expect(errorsOf(triple)).toEqual([['cut-b', 'invalidValue', PAIR_TEXT], ['cut-c', 'invalidValue', PAIR_TEXT]]);
     expect(triple.liveBodyIds).toEqual(['cut-a']);
     // 印の無い(手作業の)ブーリアンに結びが書かれていても対にしない。
     const manual = resolvePart(profileCutDocument(booleanFeature('cut-a', 'subtract', 'extrude-1', 'extrude-2'),
       { ...booleanFeature('cut-b', 'intersect', 'extrude-1', 'extrude-2'), pairedWith: 'cut-a' }));
-    expect(errorsOf(manual)).toEqual([['cut-b', 'invalidValue', PAIR_MESSAGE]]);
+    expect(errorsOf(manual)).toEqual([['cut-b', 'invalidValue', PAIR_TEXT]]);
     // 結びの無い 3 つ目のブーリアンは従来どおり consumedTwice(対を口実に二重消費を通さない)。
     const third = resolvePart(profileCutDocument(profileCut('cut-a', 'subtract'),
       profileCut('cut-b', 'intersect', 'cut-a'), booleanFeature('union-9', 'union', 'extrude-1', 'extrude-2')));
@@ -8701,7 +8703,7 @@ describe('edge-distance hole placement (M-02)', () => {
     for (const [feature, message] of invalid) {
       const errors = resolvePart(documentWith(feature)).errors;
       expect(errors).toHaveLength(1);
-      expect(errors[0]?.message).toBe(message);
+      expect(plainTextValue(errors[0]?.text)).toBe(message);
     }
   });
   it('a thread hole uses the same placement path', () => {

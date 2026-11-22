@@ -1,3 +1,5 @@
+import { withinMagnitude } from './numericTolerance.js';
+
 /** Deterministic adaptive quadrature draft. Error is an estimate, not an arbitrary-function bound. */
 type StopReason = 'cancelled' | 'deadline' | 'evaluations' | 'subdivisions' | 'roundoff';
 export type IntegralEstimate =
@@ -35,7 +37,7 @@ function legendreRule(order: number): Rule {
       derivative = order * (x * current - previous) / (x * x - 1);
       const step = current / derivative;
       x -= step;
-      if (Math.abs(step) <= 2 * Number.EPSILON) { converged = true; break; }
+      if (withinMagnitude(step, 2 * Number.EPSILON)) { converged = true; break; }
     }
     if (!converged) throw new Error('Gauss-Legendre node did not converge');
     const weight = 2 / ((1 - x * x) * derivative * derivative);

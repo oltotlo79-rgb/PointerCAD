@@ -2,6 +2,7 @@ import type { Point2 } from '../types.js';
 import { createArrowTriangle, shouldUseOutwardArrows, type ArrowTriangle } from './arrow.js';
 import { DIMENSION_EXTENSION_GAP_MM, DIMENSION_EXTENSION_OVER_MM } from '../style/jisStyle.js';
 import type { DimensionLineSegment } from './geometry.js';
+import { belowMagnitude, exceedsMagnitude, withinMagnitude } from '../numericTolerance.js';
 
 interface ArcLengthDimensionInput {
   readonly center: Point2;
@@ -32,8 +33,8 @@ export function createProjectedArcLengthDimensionGeometry(input: ArcLengthDimens
   const firstRadius = Math.hypot(...a), secondRadius = Math.hypot(...b);
   if (![...input.center, ...a, ...b, input.sweep, offset, textWidth].every(Number.isFinite)
     || firstRadius === 0 || secondRadius === 0 || offset < 0 || textWidth < 0
-    || Math.abs(input.sweep) < 1e-10 || Math.abs(input.sweep) > Math.PI * 2 + 1e-7
-    || Math.abs(a[0] * b[1] - a[1] * b[0]) <= 1e-12 * firstRadius * secondRadius) return null;
+    || belowMagnitude(input.sweep, 1e-10) || exceedsMagnitude(input.sweep, Math.PI * 2 + 1e-7)
+    || withinMagnitude(a[0] * b[1] - a[1] * b[0], 1e-12 * firstRadius * secondRadius)) return null;
   // 最も短い投影半径でも補助線との隙間を確保する（斜視の楕円でも内側へ入らない）。
   const cross = Math.abs(a[0] * b[1] - a[1] * b[0]);
   const dot = a[0] * b[0] + a[1] * b[1];
@@ -55,7 +56,7 @@ export function createProjectedArcLengthDimensionGeometry(input: ArcLengthDimens
   const normal = unit(radial(input.sweep / 2));
   return {
     points,
-    extensionLines: Math.abs(Math.abs(input.sweep) - Math.PI * 2) < 1e-7 ? [] : [0, input.sweep].map((angle) => {
+    extensionLines: belowMagnitude(Math.abs(input.sweep) - Math.PI * 2, 1e-7) ? [] : [0, input.sweep].map((angle) => {
       const direction = unit(radial(angle));
       return { from: add(point(angle, 1), direction, DIMENSION_EXTENSION_GAP_MM), to: add(point(angle, factor), direction, DIMENSION_EXTENSION_OVER_MM) };
     }),

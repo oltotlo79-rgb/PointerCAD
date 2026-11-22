@@ -5,6 +5,7 @@ import { componentRows, fastenedBadges } from './boltedJointTestSupport.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { uiMessage, uiMessagePattern } from './uiMessages.js';
 import { installSaveCapture, savedDocument } from './usabilityKeyboardFlow.js';
+import { fieldByMessageKey } from './fieldByLabel.js';
 
 /*
  * E-10 パネルと扉(第 3 段):
@@ -30,8 +31,7 @@ function detailsOf(page: Page, dialog: Locator, key: string): Locator {
 }
 
 function field(page: Page, scope: Locator, key: string): Locator {
-  return scope.locator('label.pcad-field').filter({ has: page.locator('.pcad-field__label', { hasText: uiMessagePattern('catalog', key) }) })
-    .locator('input, textarea');
+  return fieldByMessageKey(page, scope, 'catalog', key, { fieldSelector: 'label.pcad-field', controlSelector: 'input, textarea' });
 }
 
 async function openSeries(page: Page, app: ElectronApplication | undefined): Promise<Locator> {

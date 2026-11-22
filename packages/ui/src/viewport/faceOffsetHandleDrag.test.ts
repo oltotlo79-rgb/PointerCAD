@@ -5,7 +5,9 @@
  * 写し方は検査用の平行投影: 画面 x = 世界 x × 10、画面 y = 世界 z × 10、光線は +Y の向き。右の端面
  * (重心 (40, 15, 5)、外向きの法線 +X)の上で、画面の x の 10 画素が距離 1 mm になる。
  */
-import type { SolidBody, SolidFaceEntry, Vec3 } from '@pointercad/model';
+import {
+  absoluteCoordinate, appendFeature, replaceSketch, resolveSketch, type SolidBody, type SolidFaceEntry, type Vec3,
+} from '@pointercad/model';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createNumericInput, reduceNumericInput } from '../sketch/numericInput.js';
@@ -251,5 +253,38 @@ describe('ビューポートの入力への結び(M-05 4-2a)', () => {
     const opened = useAppStore.getState().numericInput;
     expect(h.escape().defaultPrevented).toBe(false);
     expect(useAppStore.getState().numericInput).toBe(opened);
+  });
+});
+
+describe('押し出しのつまみを引く(M-05 4-2b)', () => {
+  it('距離の鍵を持つ欄に両側の全長を書き、0 以下の動きでは欄を書き換えない', () => {
+    resetTestStore();
+    const state = useAppStore.getState();
+    const corners: readonly Vec3[] = [[0, 0, 0], [40, 0, 0], [40, 30, 0], [0, 30, 0]];
+    const boundary = corners.map((_, index) => ({ featureId: `point-${String(index + 1)}` }));
+    const withPoints = corners.reduce((current, point, index) => appendFeature(current, {
+      id: boundary[index].featureId, name: boundary[index].featureId, planeId: 'xy', kind: 'point',
+      at: absoluteCoordinate(...point),
+    }), state.sketch);
+    const sketch = appendFeature(withPoints, { id: 'face-1', name: '面1', planeId: 'xy', kind: 'face', boundary, color: '#808080' });
+    useAppStore.setState({ document: replaceSketch(state.document, sketch), sketch, resolvedSketch: resolveSketch(sketch), selection: ['face-1'] });
+
+    const symmetric = reduceNumericInput(createNumericInput('extrude', 'extrudeDistance'), { type: 'toggle', key: 'symmetric' });
+    const tapered = reduceNumericInput(symmetric, { type: 'toggle', key: 'tapered' });
+    // 距離が先頭に固定されていても検査が通ってしまわないよう、傾きの欄を先にする。
+    state.openNumericInput({ ...tapered, fields: [...tapered.fields].reverse() }, [0, 0]);
+    const drag = createFaceOffsetHandleDrag(scene, project);
+
+    // 両側へ 10 の根もと (20, 15, 5) を掴み、z = 8 の所まで引くと欄は 16。
+    expect(drag.begin([200, 50])).toBe(true);
+    drag.move([200, 80]);
+    const edited = useAppStore.getState().numericInput;
+    expect(edited?.fields[0]).toBe(tapered.fields[1]);
+    expect(edited?.fields[1]).toMatchObject({ key: 'distance', source: '16', typed: true });
+    drag.move([200, 0.001]);
+    drag.move([200, 0]);
+    drag.move([200, -20]);
+    expect(useAppStore.getState().numericInput).toBe(edited);
+    drag.end();
   });
 });

@@ -1,3 +1,4 @@
+import { plainText } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { appendSolid, createEmptyPartDocument, findSolid, liveBodyIds, type SurfaceFeature } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
@@ -54,7 +55,7 @@ describe('surface body commands', () => {
     const edited = setSolidField(setSolidChoice(feature, 'thickenSide', 'reverse'), 'thickenAmount', expressionValueFromNumber(4));
     expect(edited).toMatchObject({ side: 'reverse', thickness: { value: 4 } });
     expect(setSolidChoice(feature, 'thickenSide', 'unknown')).toBe(feature);
-    expect(consumedIds(result.document, [{ featureId: feature.id, code: 'kernelFailed', message: 'failed' }]).has(surface.id)).toBe(false);
+    expect(consumedIds(result.document, [{ featureId: feature.id, code: 'kernelFailed', text: plainText('failed') }]).has(surface.id)).toBe(false);
   });
 
   it('preserves a signed offset expression, its editable distance and the original body', () => {

@@ -1117,7 +1117,7 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
       expect(terminated).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(terminated).toHaveBeenCalledTimes(1);
-      await expect(b).resolves.toEqual({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE });
+      await expect(b).resolves.toEqual({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' });
       expect(bridge.operationCounts()).toEqual({ success: 0, failed: 0, cancelled: 2, workerBroken: 0 });
       expect(bridge.pendingWaiters()).toBe(0);
       silentWorkers.respondWith(coldRecomputeReply());
@@ -1458,6 +1458,7 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
     await expect(pending).resolves.toEqual({
       kind: 'failed',
       message: KERNEL_BROKEN_MESSAGE,
+      code: 'workerBroken',
     });
     bridge.dispose();
   });
@@ -2097,6 +2098,19 @@ describe('current global solid backing ledger through actual Comlink clones', ()
       issuedHostEpoch: null, observedHostEpoch: null, pendingCloneBytes: null });
     expect(query).not.toHaveBeenCalled();
     expect(result.bodies[0].mesh.positions.buffer.byteLength).toBeGreaterThan(0);
+  });
+  it('keeps the host receipt epoch on measure and advances it on recompute dispatch', async () => {
+    const { bridge, document, options } = await localBox();
+    const { steps } = resolvePart(document);
+    const before = readMeshLedgerDiagnostics().host.epoch;
+    const measured = await bridge.measure(steps, [{ bodyFeatureId: steps[0].featureId, subShape: null }], 'massProperties');
+    expect(measured.kind).toBe('massProperties');
+    expect(readMeshLedgerDiagnostics().host.epoch).toBe(before);
+
+    const recomputed = await bridge.recomputeSolids(steps, { ...options, generation: options.generation + 1 });
+    expect(recomputed.bodies).toHaveLength(1);
+    expect(readMeshLedgerDiagnostics().host.changes.some(change =>
+      change.epoch > before && change.reason === 'owned-worker-dispatch-or-connection')).toBe(true);
   });
   function holdActualLedgerQueries(api: ReturnType<typeof createKernelApi>, firstQueries: number) {
     const method = api.readCurrentMeshAccounting?.bind(api);

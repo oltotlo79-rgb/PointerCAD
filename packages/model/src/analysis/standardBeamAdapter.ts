@@ -1,3 +1,6 @@
+import { catalogBeamSection } from './catalogBeamSection.js';
+import { miterEndsOf } from '../assembly/standard/profileMiter.js';
+import { STEEL_SECTION_CATALOGS } from '../assembly/standard/steelGradeRules.js';
 import type { SolidBody } from '../kernelBridge.js';
 import { findDensityMaterial } from '../appearance/densityMaterials.js';
 import { massFromVolume } from '../measure/massProperties.js';
@@ -5,7 +8,7 @@ import { catalogItemNominalMass } from '../assembly/catalog/source.js';
 import { materialOf } from '../assembly/massProperties.js';
 import { applyPlacementToDirection, applyPlacementToPoint } from '../assembly/placementMath.js';
 import { resolveConstrainedAssembly } from '../assembly/resolveConstrainedAssembly.js';
-import { partKeyOf, type ResolveAssemblyOptions, type ResolvedAssembly } from '../assembly/resolveAssembly.js';
+import { partKeyOf, type ResolveAssemblyOptions, type ResolvedAssembly, type StandardPartSource } from '../assembly/resolveAssembly.js';
 import { buildStandardPartFromSource } from '../assembly/standard/buildStandardPart.js';
 import type { AssemblyComponent, AssemblyDocument, StandardCatalogId } from '../assembly/types.js';
 import type { JointOccurrenceCommandContext } from '../assembly/jointOccurrenceSelection.js';
@@ -121,11 +124,15 @@ function solvedOccurrence(resolved: ResolvedAssembly, path: readonly string[]): 
   return current;
 }
 
+/** The current beam endpoints use the two stock planes, so catalog frames must be square-cut at both ends. */
+export function supportsStandardBeamMember(source: StandardPartSource): boolean {
+  if (source.catalog !== 'catalogItem') return STEEL_SECTION_CATALOGS.some(catalog => catalog === source.catalog);
+  return miterEndsOf(source.options).length === 0 && catalogBeamSection(source).ok;
+}
+
 function generatedLength(component: AssemblyComponent): number {
   const source = component.source;
-  if (source.kind !== 'standardPart' || ![
-    'equalAngle', 'channel', 'hBeam', 'flatBar', 'roundBar', 'steelPipe',
-  ].includes(source.catalog)) {
+  if (source.kind !== 'standardPart' || !supportsStandardBeamMember(source)) {
     throw new InputIssue('unsupported-geometry', component.id, 'Select a supported generated straight structural member');
   }
   const generated = buildStandardPartFromSource(source);

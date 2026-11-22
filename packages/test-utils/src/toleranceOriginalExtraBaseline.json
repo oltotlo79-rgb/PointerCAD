@@ -1,38 +1,4 @@
 {
-  "packages/drawing/src/dimension/arcLengthGeometry.ts": {
-    "Math.abs(input.sweep) > Math.PI * 2 + 1e-7": 1
-  },
-  "packages/drawing/src/dimension/numberText.ts": {
-    "Math.abs(value) < threshold": 1
-  },
-  "packages/drawing/src/layout/clipRegion.ts": {
-    "Math.abs(cross) <= EPSILON * Math.max(1, Math.hypot(dx, dy))": 1,
-    "Math.abs(denominator) <= EPSILON": 1,
-    "Math.abs(sweep) <= EPSILON": 1
-  },
-  "packages/drawing/src/layout/validatePolygon.ts": {
-    "Math.abs(cross(a, b, p)) <= EPSILON": 1,
-    "Math.abs(cross(a, b, c)) <= EPSILON": 1,
-    "Math.abs(twiceArea) <= EPSILON": 1
-  },
-  "packages/drawing/src/table/balloon.ts": {
-    "Math.abs(across) > sum": 1
-  },
-  "packages/expression/src/math/besselIntegerIntervals.ts": {
-    "Math.abs(order) <= BESSEL_INTEGER_ORDER_LIMIT": 1
-  },
-  "packages/expression/src/math/besselIntegerNumeric.ts": {
-    "Math.abs(order) > BESSEL_INTEGER_ORDER_LIMIT": 1
-  },
-  "packages/expression/src/math/besselIntegerSeries.ts": {
-    "Math.abs(order) > BESSEL_INTEGER_ORDER_LIMIT + 2": 1
-  },
-  "packages/expression/src/math/closedIntegrals.ts": {
-    "Math.abs(power) > EXPONENT_LIMIT": 1
-  },
-  "packages/expression/src/math/mathInputContract.ts": {
-    "Math.abs(exponent) > MATH_INPUT_LIMITS.decimalExponent": 1
-  },
   "packages/kernel/src/math/splineInterpolation.ts": {
     "Math.abs(work[row][column]) > Math.abs(work[pivot][column])": 1,
     "Math.abs(work[pivot][column]) < MIN_PIVOT": 1

@@ -8,6 +8,7 @@ import tseslint from 'typescript-eslint';
 import { FUNCTION_SIZE_BASELINE, FUNCTION_SIZE_CAP } from './eslint.functionSizeBaseline.js';
 import { DEPTH_BASELINE, DEPTH_CAP, PARAMS_BASELINE, PARAMS_CAP } from './eslint.complexityBaseline.js';
 import { workerReferencesConfig } from './eslint.workerReferences.js';
+import { failureTextKeyRule, MESSAGE_KIND_BASELINE, messageKindRule } from './eslint.messageKind.js';
 
 /**
  * 検査専用のパッケージだけは層の外側に置く。
@@ -454,7 +455,7 @@ const magnitudeComparisonRule = {
  * 許容差の lint の決まり(magnitudeComparisonRule)を効かせるパッケージ。toleranceBaseline.test.ts がこの行を読み、ここに無いパッケージと、
  * 下の TOLERANCE_BASELINE_FILES を、許容差の検査の基準(toleranceBaseline.json・toleranceOriginalExtraBaseline.json)の数で見張る。
  */
-const TOLERANCE_RULE_PACKAGES = ['kernel', 'model', 'ui', 'io', 'fem'];
+const TOLERANCE_RULE_PACKAGES = ['kernel', 'model', 'ui', 'io', 'fem', 'drawing', 'expression', 'test-utils'];
 /**
  * 決まりの対象のパッケージの中で、決まりを外し、基準の数で見張るファイル(toleranceBaseline.test.ts がこの行を読む)。
  * splineInterpolation.ts は読み込み 0 の決まり(splineArithmeticBoundary.test.ts:42-44)で正本の関数を読めない(18 回目と同じ見張り方)。
@@ -965,6 +966,25 @@ export default tseslint.config(
     ignores: ['**/*.{test,testSupport,spec,d}.{ts,tsx,mts,cts}', ...TOLERANCE_BASELINE_FILES],
     plugins: { tolerance: { rules: { comparison: magnitudeComparisonRule } } },
     rules: { 'tolerance/comparison': 'error' },
+  },
+  {
+    // 0b: 失敗の種類を、誤りの文(message)の一致で決めない。符号(code・reason)で決める(eslint.messageKind.js の注)。
+    // 今ある所は、表のファイルだけ表の数を許す(次の塊)。表に無いファイルは 0。数が表と違えば、増えても減っても断る。
+    files: ['packages/*/src/**/*.{ts,tsx,mts,cts}', 'apps/*/src/**/*.{ts,tsx,mts,cts}'],
+    ignores: ['**/*.{test,testSupport,spec,d}.{ts,tsx,mts,cts}'],
+    plugins: { 'failure-kind': { rules: { 'no-message-text-match': messageKindRule } } },
+    rules: { 'failure-kind/no-message-text-match': ['error', { allowed: 0 }] },
+  },
+  ...MESSAGE_KIND_BASELINE.map(({ file, count }) => ({
+    files: [file], rules: { 'failure-kind/no-message-text-match': ['error', { allowed: count }] },
+  })),
+  {
+    // 0b-3: 失敗の文(欄 text)の鍵を画面の一覧を通さずに読まない・JSON.stringify で文にしない(eslint.messageKind.js の注)。製品だけ。今ある所は 0。
+    // 検査の補助(test-utils の src・src/testing・*.fixture.ts)は見ない。
+    files: ['packages/*/src/**/*.{ts,tsx,mts,cts}', 'apps/*/src/**/*.{ts,tsx,mts,cts}'],
+    ignores: ['**/*.{test,testSupport,spec,d}.{ts,tsx,mts,cts}', 'packages/test-utils/src/**', '**/src/testing/**', '**/*.fixture.ts'],
+    plugins: { 'failure-text': { rules: { 'no-key-as-text': failureTextKeyRule } } },
+    rules: { 'failure-text/no-key-as-text': 'error' },
   },
   {
     // Use a separate rule so narrower syntax overrides cannot remove this guard (kernel entry: named exports only).

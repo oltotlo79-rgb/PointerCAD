@@ -8,6 +8,7 @@ import {
   cancelPopover, clickWorldPoint, commitPopover, fillFields, popover, popoverInputs, popoverTitle, propertyPanel,
   selectionKindLabel, sketchTool, topFaceCenter, treeRow,
 } from './solidCaptureSupport.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /*
  * EX-18 の 4 つ目の作り方(数式の座標)を、実際の画面の道具とプロパティの式の欄だけで通す。
@@ -38,9 +39,7 @@ function propertyValue(page: Page, key: string): Locator {
 
 /** 見出しが完全に一致する式の欄(solid.spec.ts の propertyField と同じ。「X」と「X の長さ」を取り違えない)。 */
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page).locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 function machiningTool(page: Page, label: string): Locator {

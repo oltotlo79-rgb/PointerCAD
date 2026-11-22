@@ -8,6 +8,7 @@ import type {
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import type { RgbTuple } from '../occt/xcafDocument.js';
 import type { FaceColorMap } from '../occt/xcafFaceColors.js';
+import { OCCT_LOAD_ERROR_NAME } from '../occtLoadError.js';
 import type {
   CurveSpec,
   HoleStepSpec,
@@ -2781,7 +2782,7 @@ describe('owned runSolidRecompute call envelope metadata', () => {
       expect(snapshot.records.filter(record => record.phase === 'reply-preclone')).toEqual([]);
     } finally { await api.acknowledgeMeshReply?.(owner); await api.releasePart(owner.partId); }
   });
-  it('OCCTの読み込みの失敗は元の種類と文を残した名前OcctLoadErrorで拒否し、段occt-load-throwを記録して計算の段へ進まない', async () => {
+  it('OCCTの読み込みの失敗は元の種類と文を残した共有の名前で拒否し、段occt-load-throwを記録して計算の段へ進まない', async () => {
     let loads = 0;
     const api = createKernelApi(() => { loads += 1; return Promise.reject(new TypeError('fetch failed')); });
     const steps = [extrudeStep('load', 'load', 10)];
@@ -2791,8 +2792,8 @@ describe('owned runSolidRecompute call envelope metadata', () => {
     expose(api, channel.port1);
     const remote = wrap<ReturnType<typeof createKernelApi>>(channel.port2);
     try {
-      // 名前は主スレッド(model の recomputePart.ts)との約束の文字なので、定数を経ずに文字で確かめる。
-      const expected = { name: 'OcctLoadError', message: 'カーネル(OCCT)を読み込めませんでした: TypeError: fetch failed' };
+      // 主スレッドの recomputePart と共有する名前と、元の例外の種類・文を含む文面を確かめる。
+      const expected = { name: OCCT_LOAD_ERROR_NAME, message: '形の計算の機能を読み込めませんでした: TypeError: fetch failed' };
       await expect(api.recomputeSolids({ partId: owner.partId, generation: 4, steps }, {}, undefined, undefined, owner, () => true))
         .rejects.toMatchObject(expected);
       // Comlink は Error の name・message を運ぶ(主スレッドの recomputePart は name でこの失敗だけを見分ける)。

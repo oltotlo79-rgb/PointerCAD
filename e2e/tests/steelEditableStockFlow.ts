@@ -14,6 +14,7 @@ import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { chooseSteelFlatBar50x6 } from './steelPickerFlow.js';
 import { expectSteelStockCsv, expectSteelStockCsvProvenance, expectSteelStockTableHeader,
   expectSteelStockTableRevisions, SS400_FLAT, S45C_FLAT, type SteelStockProductExpectation as Product } from './steelStockExpectation.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /*
  * EX02 from the visible 加工できる部品にする command (task155; successor of the task154 flow, whose generated input
@@ -105,9 +106,7 @@ function propertyValue(page: Page, key: string): Locator {
     .locator('xpath=following-sibling::dd[1]');
 }
 function propertyField(page: Page, label: string): Locator {
-  return page.locator('.pcad-panel--right .pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`, 'u') }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, page, label, { fieldSelector: '.pcad-panel--right .pcad-field', controlSelector: 'input.pcad-field__input' });
 }
 async function volumeOf(page: Page): Promise<number> {
   return Number((((await propertyValue(page, '体積').getAttribute('title')) ?? (await propertyValue(page, '体積').innerText()))).replaceAll(',', '').match(/[\d.]+/u)?.[0]);

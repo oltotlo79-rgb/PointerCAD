@@ -63,6 +63,7 @@ function PreviewTable({ preview }: { readonly preview: FrameSlotDraftPreview | n
 export function FrameSlotFasteningPopover(): React.JSX.Element | null {
   const draft = useAppStore((state) => state.assemblyFrameSlotDraft);
   const preview = useAppStore((state) => state.assemblyFrameSlotPreview);
+  useAppStore((state) => state.displaySettings.selectionModifier); // 選択のキーの案内の文(B-08 2-5)を、設定を変えた時に描き直す
   const root = useRef<HTMLFormElement>(null);
   const first = useRef<HTMLSelectElement>(null);
   const composing = useRef(false);

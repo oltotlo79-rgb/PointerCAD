@@ -21,6 +21,7 @@ import { EMPTY_SHORTCUT_ASSIGNMENTS, type ShortcutAssignments } from '../command
 import { readMouseButtonCommands, type MouseButtonCommands } from '../commands/pointerCommandGesture.js';
 import { readRadialCommands, type RadialCommands } from '../commands/radialCommandSettings.js';
 import { readStoredShortcutAssignments, storedShortcutFields } from './shortcutSettings.js';
+import { DEFAULT_SELECTION_MODIFIER, selectionModifierOf, type SelectionModifier } from './selectionModifierSetting.js';
 import { DEFAULT_SNAP_PAUSE_MODIFIER, snapPauseModifierOf, type SnapPauseModifier } from './snapPauseSetting.js';
 import { DEFAULT_SNAP_RADIUS, snapRadiusChoiceOf, type SnapRadiusChoice } from './snapRadiusSetting.js';
 import { DEFAULT_GRID_SETTING, gridSettingOf, type GridSetting } from './gridSetting.js';
@@ -81,6 +82,8 @@ export interface DisplaySettings {
   readonly autoSaveIntervalMs?: number;
   /** 切断の一覧の定尺・切断代(J-01)。端末に覚え、文書には保存しない。無い時は 定尺 なし・切断代 0。 */
   readonly stockCutting?: StockCuttingSettings;
+  /** 選択に足す・外す修飾キー。欄の無い旧設定は場所ごとの動き。 */
+  readonly selectionModifier?: SelectionModifier;
   /** 作図で、押している間だけ吸着と推定を止める修飾キー(B-09 3-2)。既定は 'none'(止めない)。 */
   readonly snapPauseModifier?: SnapPauseModifier;
   /** 吸着の幅(配置の補助 P-D)。点の吸着と部品の頂点への吸着の半径を決める。既定は 'medium'(今までと同じ半径)。 */
@@ -154,6 +157,7 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   numericToolDefaults: {},
   autoSaveIntervalMs: readAutoSaveIntervalMs({}),
   stockCutting: DEFAULT_STOCK_CUTTING,
+  selectionModifier: DEFAULT_SELECTION_MODIFIER,
   snapPauseModifier: DEFAULT_SNAP_PAUSE_MODIFIER,
   snapRadius: DEFAULT_SNAP_RADIUS,
   grid: DEFAULT_GRID_SETTING,
@@ -475,6 +479,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       numericToolDefaults: readNumericToolDefaults('numericToolDefaults' in parsed ? parsed.numericToolDefaults : undefined),
       autoSaveIntervalMs: readAutoSaveIntervalMs('autoSaveIntervalMs' in parsed ? { autoSaveIntervalMs: parsed.autoSaveIntervalMs } : {}),
       stockCutting: readStockCuttingSettings('stockCutting' in parsed ? parsed.stockCutting : undefined),
+      selectionModifier: selectionModifierOf('selectionModifier' in parsed ? parsed.selectionModifier : undefined) ?? DEFAULT_SELECTION_MODIFIER,
       // 知らない値は既定へ戻す(止めない側へ倒す。今までと同じ動き)。
       snapPauseModifier: snapPauseModifierOf('snapPauseModifier' in parsed ? parsed.snapPauseModifier : undefined) ?? DEFAULT_SNAP_PAUSE_MODIFIER,
       // 吸着の幅の知らない値も既定(今までと同じ半径)へ戻す。

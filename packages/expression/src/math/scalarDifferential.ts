@@ -8,6 +8,7 @@ import { ellipticPartialRanges } from './ellipticPartials.js';
 import { createScalarConditionSampler, createScalarTapeEvaluation, type ScalarTape } from './scalarMathTape.js';
 import { polygammaSample } from './polygammaIntervals.js';
 import { betaFunctionRanges } from './betaFunctionIntervals.js';
+import { exceedsMagnitude } from './numericTolerance.js';
 export interface ScalarDifferential {
   readonly value: number;
   readonly gradient: readonly number[] | null;
@@ -80,7 +81,7 @@ export function createScalarDifferential(tape: ScalarTape): (inputs: readonly nu
           case 'csc': derivative = -r / Math.tan(x * toRadians) * toRadians; break;
           case 'arcsin': derivative = 1 / (Math.sqrt(1 - x*x) * toRadians); break;
           case 'arccos': derivative = -1 / (Math.sqrt(1 - x*x) * toRadians); break;
-          case 'arctan': derivative = Math.abs(x) > 1 ? ((1/x) / x) / ((1 + (1/x)**2) * toRadians) : 1 / ((1 + x*x) * toRadians); break;
+          case 'arctan': derivative = exceedsMagnitude(x, 1) ? ((1/x) / x) / ((1 + (1/x)**2) * toRadians) : 1 / ((1 + x*x) * toRadians); break;
           case 'sinh': derivative = Math.cosh(x); break;
           case 'cosh': derivative = Math.sinh(x); break;
           case 'tanh': derivative = 1 - r*r; break;

@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { placeNewFeatures } from '../shell/timelineMove.js';
 import { t } from '../i18n/t.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { draftFromScript, fileFromDraft, newScriptDraft } from './scriptDraft.js';
 import { browserScriptStorage, readScriptLibrary } from './scriptLibrary.js';
 
@@ -39,6 +40,10 @@ function handOffPrepared(prepared: PreparedScriptTransaction): void {
     }
   };
   unsubscribe = useAppStore.subscribe(check); check();
+}
+/** 自動作図の失敗の文。部品の再計算の誤りから来た物は、部品の誤りと同じ口(partErrorMessage)で文にする(0b-2a)。 */
+export function scriptErrorText(error: ScriptFailure): string {
+  return 'partError' in error ? partErrorMessage(error.partError) : error.message;
 }
 function fail(error: ScriptFailure): void { useAppStore.setState({ scriptPhase: 'failed', scriptError: error, scriptRequestId: null, scriptController: null }); }
 export async function runScript(file?: ScriptFile): Promise<void> {

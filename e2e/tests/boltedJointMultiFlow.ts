@@ -15,6 +15,7 @@ import {
   cancelPopover, commitPopover, drawRectangle, extrudeFace, fillFields, makeFace, popover, popoverInputs, popoverTitle,
   propertyPanel, selectionKindLabel, sketchTool, treeRow, type WorldPoint,
 } from './solidCaptureSupport.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /*
  * ボルト締結をまとめて行う画面検査(J-02 P4)。板は部品の画面の実操作で作って保存し、組立へ 2 回置く
@@ -185,9 +186,7 @@ const FACES_OVERLAP = '当てる面どうしが食い込んでいます。';
 
 /** 右のプロパティの欄(見出しが label と一致する欄の入力。ex18-sew-bracket.spec.ts の同名補助と同じ探し方)。 */
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page).locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`, 'u') }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 interface PlateEdit {

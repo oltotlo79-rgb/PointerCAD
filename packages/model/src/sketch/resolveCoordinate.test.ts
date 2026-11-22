@@ -1,3 +1,4 @@
+import { plainTextValue } from '../failureText.js';
 import { expressionValueFromNumber as num } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 import { expectVec3CloseTo } from '../testing/vec3Assertions.testSupport.js';
@@ -40,7 +41,7 @@ const CONTEXT: ResolveContext = {
 
 function expectOk(outcome: ResolveOutcome<Vec3>): Vec3 {
   if (!outcome.ok) {
-    throw new Error(`解決に失敗しました: ${outcome.error.code} ${outcome.error.message}`);
+    throw new Error(`解決に失敗しました: ${outcome.error.code} ${plainTextValue(outcome.error.text)}`);
   }
   return outcome.value;
 }
@@ -296,7 +297,7 @@ describe('座標の解決(FR-301〜303)', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('missingBase');
     expect(outcome.ok ? '' : outcome.error.featureId).toBe('line-7');
-    expect(outcome.ok ? '' : outcome.error.message).toBe('基準になる直前の点がありません。');
+    expect(outcome.ok ? undefined : outcome.error.text).toEqual({ key: 'partError.coordinate.noPrevious', parameters: {} });
   });
 
   it('存在しない点・端点の参照は missingBase(FR-504)', () => {
@@ -307,7 +308,7 @@ describe('座標の解決(FR-301〜303)', () => {
     );
     expect(missingPoint.ok).toBe(false);
     expect(missingPoint.ok ? '' : missingPoint.error.code).toBe('missingBase');
-    expect(missingPoint.ok ? '' : missingPoint.error.message).toContain('point-99');
+    expect(missingPoint.ok ? undefined : missingPoint.error.text).toEqual({ key: 'partError.coordinate.missingPoint', parameters: { id: 'point-99' } });
 
     const missingVertex = resolvePointReference(
       { kind: 'vertex', featureId: 'line-3', vertex: 'center' }, // 線分に中心は無い
@@ -467,7 +468,7 @@ describe('3D スケッチの座標(FR-330、タスク10)', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('missingSubShape');
     expect(outcome.ok ? '' : outcome.error.featureId).toBe('point-1');
-    expect(outcome.ok ? '' : outcome.error.message).toContain('選び直してください');
+    expect(outcome.ok ? undefined : outcome.error.text).toEqual({ key: 'partError.coordinate.missingSubShape', parameters: {} });
   });
 
   it('作図面が無くても絶対・相対の指定はそのまま解ける(§0.a-0.4)', () => {
@@ -496,7 +497,7 @@ describe('3D スケッチの座標(FR-330、タスク10)', () => {
     const outcome = resolveCoordinate(polar, FREE_CONTEXT, 'point-9');
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('missingBase');
-    expect(outcome.ok ? '' : outcome.error.message).toContain('3D スケッチ');
+    expect(outcome.ok ? undefined : outcome.error.text).toEqual({ key: 'partError.coordinate.polarNeedsPlane', parameters: {} });
   });
 });
 
@@ -609,11 +610,11 @@ describe('球面上の点(FR-431)', () => {
     const outcome = resolvePointReference(gridPoint(95, 0), context, 'point-9');
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('invalidValue');
-    expect(outcome.ok ? '' : outcome.error.message).toContain('−90 度から 90 度');
+    expect(outcome.ok ? '' : plainTextValue(outcome.error.text)).toContain('−90 度から 90 度');
     expect(outcome.ok ? '' : outcome.error.featureId).toBe('point-9');
 
     const below = resolvePointReference(gridPoint(-95, 0), context, 'point-9');
-    expect(below.ok ? '' : below.error.message).toBe(LATITUDE_RANGE_MESSAGE);
+    expect(below.ok ? '' : plainTextValue(below.error.text)).toBe(LATITUDE_RANGE_MESSAGE);
   });
 
   it('球が消えた・球でない・別の id なら「球が見つかりません」で断る', () => {
@@ -621,13 +622,13 @@ describe('球面上の点(FR-431)', () => {
     const outcome = resolvePointReference(gridPoint(0, 0), context, 'point-9');
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('missingBase');
-    expect(outcome.ok ? '' : outcome.error.message).toBe(MISSING_SPHERE_MESSAGE);
+    expect(outcome.ok ? '' : plainTextValue(outcome.error.text)).toBe(MISSING_SPHERE_MESSAGE);
   });
 
   it('球を引く口が渡されていなければ、黙って原点へ落とさず断る', () => {
     const outcome = resolvePointReference(gridPoint(0, 0), CONTEXT, 'point-9');
     expect(outcome.ok).toBe(false);
-    expect(outcome.ok ? '' : outcome.error.message).toBe(MISSING_SPHERE_MESSAGE);
+    expect(outcome.ok ? '' : plainTextValue(outcome.error.text)).toBe(MISSING_SPHERE_MESSAGE);
   });
 
   it('緯度・経度は式のまま保たれ、評価値だけを使う(FR-202)', () => {
@@ -657,7 +658,7 @@ describe('球面上の点(FR-431)', () => {
     const outcome = resolvePointReference(reference, context, 'point-9');
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? '' : outcome.error.code).toBe('invalidValue');
-    expect(outcome.ok ? '' : outcome.error.message).toContain('緯度');
+    expect(outcome.ok ? undefined : outcome.error.text).toEqual({ key: 'partError.coordinate.notFinite', parameters: { label: '緯度' } });
   });
 
   it('球面上の点は相対座標・極座標の基準にも使える', () => {

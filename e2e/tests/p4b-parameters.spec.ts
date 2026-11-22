@@ -5,6 +5,7 @@ import { statSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { collectErrors } from './runtimeErrors.js';
 import { fillFields, popover, popoverInputs } from './popoverFields.js';
+import { fieldByLabel } from './fieldByLabel.js';
 
 /**
  * P4b(スケッチの仕上げ)完了済み機能のうち、**パラメータ表**(FR-207、FR-201、FR-502)を
@@ -77,10 +78,7 @@ function treeRow(page: Page, name: string): Locator {
 
 
 function propertyField(page: Page, label: string): Locator {
-  return propertyPanel(page)
-    .locator('.pcad-field')
-    .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
-    .locator('input.pcad-field__input');
+  return fieldByLabel(page, propertyPanel(page), label, { controlSelector: 'input.pcad-field__input' });
 }
 
 async function commitPopover(page: Page): Promise<void> {

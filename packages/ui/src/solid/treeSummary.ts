@@ -4,6 +4,7 @@ import {
   type PartDocument, type PartRecomputeError, type ReferenceError, type ReferenceFeatureKind,
   type SketchDocument, type SketchError, type SketchFeature, type SolidLabelKey,
 } from '@pointercad/model';
+import { failureMessage } from '../i18n/failureMessage.js';
 import type { MessageKey } from '../i18n/t.js';
 import { FEATURE_KIND_LABEL_KEYS, sketchTreeKindOf, type SketchTreeKind } from '../sketch/featureSummary.js';
 import { findSketchFeatureAt } from './sketchRefs.js';
@@ -212,7 +213,7 @@ export function buildReferenceSection(
 ): TreeSection {
   const rows: TreeRow[] = document.references.map((feature) => {
     const found = errors.find((error) => error.featureId === feature.id);
-    const message = found === undefined ? null : found.message;
+    const message = found === undefined ? null : failureMessage(found.text);
     return {
       id: feature.id,
       name: feature.name,

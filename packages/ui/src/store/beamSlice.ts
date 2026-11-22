@@ -347,7 +347,7 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
     state.beamRunner?.cancel();
     const saved = state.assembly.beamAnalysisInputs?.analyses.find(input => input.kind === 'standard-members');
     const occurrences = state.assemblyView?.sourceDocument === state.assembly
-      ? beamOccurrences(state.assembly, state.assemblyView.resolved) : [];
+      ? beamOccurrences(state.assembly, state.assemblyView.resolved, 'standard-members') : [];
     set({ beamSession: saved?.kind === 'standard-members' ? withOpenedBeamResult(
       restoreBeamSession(state.activeDocumentId, saved.definition, occurrences, captureBeamSource(state)?.source), state.assembly, state.assemblyOpenedAnalysisResults)
       : createBeamSession(state.activeDocumentId, createDocumentElementId()) });

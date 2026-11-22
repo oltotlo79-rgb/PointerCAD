@@ -31,6 +31,7 @@ import { STEP_TITLE_KEYS, type NumericInputStep, type NumericInputToolId } from 
 import type { SnapKind } from '../sketch/snapMath.js';
 import type { TrackKind } from '../sketch/trackMath.js';
 import { SELECTION_KIND_LABEL_KEYS } from '../solid/selectionFilter.js';
+import { partErrorMessage } from '../solid/surfaceBodyFailureText.js';
 import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
 import type { DocumentSaveOperation, FileMessage } from '../store/fileSlice.js';
 import type { TimelineRollback } from './timelineRail.js';
@@ -1132,7 +1133,7 @@ export function summarizeFailures(
     errors.length === 1
       ? t('statusBar.error')
       : fill(t('statusBar.errorSummary'), { count: String(errors.length) });
-  return `${prefix}${PREFIX_SEPARATOR}${first.message}`;
+  return `${prefix}${PREFIX_SEPARATOR}${partErrorMessage(first)}`;
 }
 
 /** 頭の言葉と本文をつないだ 1 文にする。頭の言葉が要らないものはそのまま。 */

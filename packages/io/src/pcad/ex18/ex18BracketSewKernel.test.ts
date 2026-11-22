@@ -7,6 +7,7 @@
  * Current-body face capture uses model semantic identity or uniquely resolved measured face data.
  */
 
+import { plainTextValue } from '@pointercad/model';
 import process from 'node:process';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
@@ -272,7 +273,7 @@ describe('EX-18 surface sewing through the model, codecs and real kernel', () =>
       ? { ...sew, surfaceFaces: [stale, ...(sew.surfaceFaces ?? []).slice(1)] } : feature) };
     const before = structuredClone(changed);
     const refused = await recomputePart(changed, ownedBridge());
-    expect(refused.errors.some(error => error.featureId === sew.id && error.message.length > 0)).toBe(true);
+    expect(refused.errors.some(error => error.featureId === sew.id && (plainTextValue(error.text) ?? '').length > 0)).toBe(true);
     expect(refused.bodies.some(body => body.featureId === sew.id)).toBe(false);
     expect(changed).toEqual(before);
     const restored = await recomputePart(sewnDocument, ownedBridge());

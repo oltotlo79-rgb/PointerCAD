@@ -20,6 +20,7 @@
  * OCCT の読み込みに数秒〜十数秒かかるので、この検査だけ待ち時間を長く取る。
  */
 
+import { plainTextValue } from '../failureText.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -295,7 +296,7 @@ describe('投影・交差を実カーネルで部品文書ごと解く(FR-325、
 
       const refusal = result.errors.find((error) => error.featureId === 'sc1');
       expect(refusal?.code).toBe('degenerate');
-      expect(refusal?.message).toContain('交わりません');
+      expect(plainTextValue(refusal?.text)).toContain('交わりません');
       // 板そのものは作れている(FR-504「止めずに警告する」)。
       expect(bodyOf(result, 'extrude-1').volume).toBeCloseTo(12000, 6);
     },

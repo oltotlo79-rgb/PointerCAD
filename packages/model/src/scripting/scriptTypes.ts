@@ -1,5 +1,6 @@
 /** FR-1111: 隔離した自動作図処理の公開形式と資源上限。 */
 import type {ScriptFunctionDefinition} from './scriptFunctionInput.js';
+import type { PartRecomputeError } from '../part/recomputePart.js';
 export const SCRIPT_API_VERSION = 1;
 
 export const SCRIPT_LIMITS = Object.freeze({
@@ -31,9 +32,18 @@ export interface ScriptLocation {
 }
 export type ScriptFailureKind = 'source' | 'syntax' | 'runtime' | 'memory' | 'stack'
   | 'timeout' | 'cancelled' | 'module' | 'command' | 'console' | 'cad' | 'stale' | 'worker';
-export interface ScriptFailure {
+/** 自動作図の失敗。部品の再計算の誤りから来た物は、文の代わりに元の誤りを持つ(0b-2a・0b-3a)。 */
+export type ScriptFailure = ScriptTextFailure | ScriptPartFailure;
+/** 文で伝える自動作図の失敗(検査・実行の上限・命令・取消など)。 */
+export interface ScriptTextFailure {
   readonly kind: ScriptFailureKind;
   readonly message: string;
+  readonly location: ScriptLocation | null;
+}
+/** 部品の再計算の誤りから来た自動作図の失敗。画面は部品の誤りと同じ口(ui の partErrorMessage)で文にする(誤りは文を持たない。0b-3a)。 */
+export interface ScriptPartFailure {
+  readonly kind: 'cad';
+  readonly partError: PartRecomputeError;
   readonly location: ScriptLocation | null;
 }
 export interface ScriptModule {
@@ -87,7 +97,7 @@ export interface ScriptConsoleLine {
 export type ScriptExecutionOutcome =
   | { readonly ok: true; readonly commands: readonly ScriptCommand[]; readonly console: readonly ScriptConsoleLine[];
       readonly javascriptMs: number; readonly initializationMs: number }
-  | { readonly ok: false; readonly error: ScriptFailure; readonly console: readonly ScriptConsoleLine[] };
+  | { readonly ok: false; readonly error: ScriptTextFailure; readonly console: readonly ScriptConsoleLine[] };
 
 export interface ScriptExecutionInput {
   readonly executionId: string;

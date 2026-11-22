@@ -28,19 +28,19 @@ describe('穴つきの面の解決', () => {
   });
 
   it.each([
-    ['外周の外', [circle('inner', 70)], 'invalidValue'],
-    ['外周に接する', [circle('inner', 5)], 'invalidValue'],
-    ['外周を横切る', [circle('inner', 2)], 'invalidValue'],
-    ['穴どうしが重なる', [circle('inner', 25), circle('other', 30)], 'invalidValue'],
-    ['穴どうしが接する', [circle('inner', 25), circle('other', 35)], 'invalidValue'],
-    ['穴が入れ子', [circle('inner', 30, 10), circle('other', 30)], 'invalidValue'],
-    ['別の平面', [circle('inner', 30, 5, 1)], 'notPlanar'],
-  ] as const)('%sの穴は理由を示して断る', (_, inner, code) => {
+    ['外周の外', [circle('inner', 70)], 'invalidValue', 'partError.sketchFaceHole.outsideOuter', '穴1'],
+    ['外周に接する', [circle('inner', 5)], 'invalidValue', 'partError.sketchFaceHole.touchesOuter', '穴1'],
+    ['外周を横切る', [circle('inner', 2)], 'invalidValue', 'partError.sketchFaceHole.touchesOuter', '穴1'],
+    ['穴どうしが重なる', [circle('inner', 25), circle('other', 30)], 'invalidValue', 'partError.sketchFaceHole.touchesHole', '穴2'],
+    ['穴どうしが接する', [circle('inner', 25), circle('other', 35)], 'invalidValue', 'partError.sketchFaceHole.touchesHole', '穴2'],
+    ['穴が入れ子', [circle('inner', 30, 10), circle('other', 30)], 'invalidValue', 'partError.sketchFaceHole.nested', '穴2'],
+    ['別の平面', [circle('inner', 30, 5, 1)], 'notPlanar', 'partError.sketchFaceHole.notSamePlane', '穴1'],
+  ] as const)('%sの穴は理由を示して断る', (_, inner, code, key, label) => {
     const result = resolveHoles(...inner);
     expect(result.faces).toEqual([]);
     const error = result.errors.find(item => item.featureId === 'face');
     expect(error?.code).toBe(code);
-    expect(error?.message).toContain('穴');
+    expect(error?.text).toEqual({ key, parameters: { label } });
   });
 
   it('開いた穴は面を作らない', () => {
@@ -49,6 +49,9 @@ describe('穴つきの面の解決', () => {
     const result = resolveHoles(line);
     expect(result.faces).toEqual([]);
     expect(result.errors).toContainEqual(expect.objectContaining({ featureId: 'face', code: 'notClosed' }));
+    const text = result.errors.find(error => error.featureId === 'face')?.text;
+    expect(text).toMatchObject({ key: 'partError.numberedHole', parameters: { index: '1' } });
+    expect(text?.parameters.text).toMatchObject({ key: 'partError.plainText' });
   });
 
   it('穴の参照先が消えたらmissingBaseになる', () => {

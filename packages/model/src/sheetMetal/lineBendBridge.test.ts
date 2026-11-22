@@ -1,3 +1,4 @@
+import { plainText } from '../failureText.js';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { exactExpressionValueFromNumber as n } from '@pointercad/expression';
@@ -82,8 +83,8 @@ describe('W05 actual material overlap and disconnected material boundaries', () 
       const result = await recomputePart(candidate, bridge, { partId: document.id });
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]).toMatchObject({ featureId: feature.id, code: kind === 'overlap' ? 'kernelFailed' : 'invalidValue',
-        message: kind === 'overlap' ? 'フランジが既存の板に食い込んでいます。角度・長さ・端の位置を変更してください。'
-          : 'フランジの元のパネルが見つかりません。板金の縁を選び直してください。' });
+        text: plainText(kind === 'overlap' ? 'フランジが既存の板に食い込んでいます。角度・長さ・端の位置を変更してください。'
+          : 'フランジの元のパネルが見つかりません。板金の縁を選び直してください。') });
       expect(result.bodies.some((body) => body.featureId === feature.id)).toBe(false);
       expect({ document, candidate, feature }).toEqual(before);
       const valid = createSheetFlangeFeature(document, base.id, [references[0]]);

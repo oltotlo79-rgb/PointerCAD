@@ -5,6 +5,7 @@ import { dotVector3, drawingViewBasis } from './series.js';
 import { formatDimension } from './format.js';
 import { createLinearDimensionGeometry } from './geometry.js';
 import { arrangeDimensions, type DimensionArrangementItem, type DimensionTextBox } from './placement.js';
+import { withinMagnitude } from '../numericTolerance.js';
 
 /** targetはモデルの頂点・円の参照。紙面の点だけを元寸法としない。 */
 export interface AutoDimensionPoint {
@@ -97,7 +98,7 @@ export function autoDimension(input: AutoDimensionInput): AutoDimensionResult | 
   const circles = [...input.circles].sort((a, b) => a.radius - b.radius || a.id.localeCompare(b.id, 'en'));
   const groups: AutoDimensionCircle[][] = [];
   for (const circle of circles) {
-    const group = groups.find((candidate) => candidate[0].full === circle.full && Math.abs(candidate[0].radius - circle.radius) <= TOLERANCE);
+    const group = groups.find((candidate) => candidate[0].full === circle.full && withinMagnitude(candidate[0].radius - circle.radius, TOLERANCE));
     if (group === undefined) groups.push([circle]); else group.push(circle);
   }
   for (const [index, group] of groups.entries()) {
@@ -113,9 +114,9 @@ export function autoDimension(input: AutoDimensionInput): AutoDimensionResult | 
     component(a, 1) - component(b, 1) || component(a, 0) - component(b, 0) || a.id.localeCompare(b.id, 'en'));
   const rows: AutoDimensionCircle[][] = [];
   for (const center of centers) {
-    const row = rows.find((candidate) => Math.abs(component(candidate[0], 1) - component(center, 1)) <= TOLERANCE);
+    const row = rows.find((candidate) => withinMagnitude(component(candidate[0], 1) - component(center, 1), TOLERANCE));
     if (row === undefined) rows.push([center]);
-    else if (!row.some((candidate) => Math.abs(component(candidate, 0) - component(center, 0)) <= TOLERANCE)) row.push(center);
+    else if (!row.some((candidate) => withinMagnitude(component(candidate, 0) - component(center, 0), TOLERANCE))) row.push(center);
   }
   for (const row of rows) {
     length(bottom, row[0], 1, 'holeY');

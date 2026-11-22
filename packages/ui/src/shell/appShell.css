@@ -2027,6 +2027,8 @@ button.pcad-tree__row:focus-visible {
  * 置き場は木の中。**固定区画は 5 つのまま増やさない。**
  * 行の左端の余白(`.pcad-tree__select` の padding-left 44px の内側)へ重ねて置くので、
  * 行の高さ 26px も字下げも 1 画素も変わらない。
+ * 押せる面は幅 24px(押せる面の下限。点検の基準 24px。C-03)。中心は行の左から 12px のまま
+ * (前の left 4px・幅 16px と同じ所)なので、レールと節の見た目の位置は変わらない。
  */
 .pcad-tree__row--timeline {
   position: relative;
@@ -2035,12 +2037,12 @@ button.pcad-tree__row:focus-visible {
 .pcad-timeline__stop {
   position: absolute;
   top: 0;
-  left: 4px;
+  left: 0;
   z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
+  width: 24px;
   height: 100%;
   padding: 0;
   cursor: pointer;
@@ -2319,6 +2321,8 @@ button.pcad-tree__row:focus-visible {
 .pcad-reference {
   /* 右の区画(280px)から見出しの分を残した幅。長い名前は末尾を省く。 */
   max-width: 150px;
+  /* 押せる面の下限 24px(C-03)。文字の行は 19.5px なので、高さだけを足す。 */
+  min-height: 24px;
   padding: 0;
   overflow: hidden;
   font: inherit;
@@ -2492,7 +2496,8 @@ button.pcad-tree__row:focus-visible {
   gap: 6px;
   align-items: center;
   width: 100%;
-  height: 22px;
+  /* 押せる面の下限 24px(C-03。前は 22px で、行が 2px ずつ増えた)。 */
+  height: 24px;
   font: inherit;
   color: var(--pcad-text);
   text-align: left;
@@ -3236,7 +3241,8 @@ button.pcad-tree__row:focus-visible {
 .pcad-field__suggestions > [role="option"] { padding: 3px 8px; cursor: pointer; }
 .pcad-field__suggestions > [aria-selected="true"] { background: Highlight; color: HighlightText; }
 
-.pcad-field__math { flex: none; padding: 2px 5px; }
+/* 押せる面の下限 24px(C-03)。ƒx の 2 字と左右の余白だけでは幅が 24px 前後になる。 */
+.pcad-field__math { flex: none; min-width: 24px; padding: 2px 5px; }
 
 .pcad-field__unit {
   font-size: var(--pcad-font-size-small);
@@ -3921,6 +3927,8 @@ button.pcad-tree__row:focus-visible {
   gap: var(--pcad-space-1);
   align-items: center;
   min-width: 0;
+  /* 押せる面の下限 24px(C-03)。上下の余白 2px と文字の行 19.5px では 23.5px だった。 */
+  min-height: 24px;
   padding: 2px 4px;
   color: inherit;
   font: inherit;

@@ -1,14 +1,16 @@
 /**
  * 規格部品の選ぶ窓の検索(K-07a)。今の 8 分類の行(鋼材を含む)と登録口の族の行を 1 つの並びにし、空白で区切った言葉を
  * 全部含む行を返す。選んだ行は「選び直す先」(分類・種類・材質・呼び)として窓へ渡し、窓の状態の持ち方は変えない。
- * 族の行は読み込んだ族の分だけ並ぶ(窓は検索の文字が入った時に全部の族を読む。`PickerSearch.tsx`)。
+ * 族の行は読み込んだ族の分だけ並ぶ(窓は検索の文字が入った時に全部の族を読む。`PickerSearch.tsx`)。選ぶ窓に出さない行(`listedRows`)は並べない。
  */
 import {
   ALL_STEEL_PRODUCTS, PRODUCT_CATALOG_REGISTRY, type CatalogRegistry, type FastenerDimensionSeries, type SteelSectionCatalog,
 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
-import { catalogRowLabel, familyKindKey, familyMaterials, familyPickerCategory, type FamilyPickerCategory } from './catalogFamilyChoices.js';
+import {
+  catalogRowLabel, familyKindKey, familyMaterials, familyPickerCategory, listedRows, type FamilyPickerCategory,
+} from './catalogFamilyChoices.js';
 import {
   STANDARD_PART_CATEGORIES, standardPartChoices, standardPartUsesDimensionSeries, steelShapeLabelKey, STRUCTURAL_MATERIAL_CHOICES,
   structuralPartChoices, type StandardPartCategory, type StructuralMaterialChoice,
@@ -113,7 +115,7 @@ function familyEntries(registry: CatalogRegistry): PickerSearchEntry[] {
     if (group === null || family === undefined) return [];
     const kind = t(familyKindKey(family.kindKey));
     const withMaterial = familyMaterials(family).length >= 2;
-    return family.rows.map((row) => {
+    return listedRows(family).map((row) => {
       const material = withMaterial ? row.materialLabel ?? '' : '';
       return entry(`${family.id}|${row.key}`, `${kind} ${catalogRowLabel(family, row, registry)}`,
         [row.standardLabel, material].filter((part) => part !== '').join(' · '), row.size, [row.size, row.materialLabel ?? ''],

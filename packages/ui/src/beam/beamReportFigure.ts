@@ -1,7 +1,7 @@
 import { drawingViewBasis, ISOMETRIC_DIRECTION, type Point2, type RenderPath } from '@pointercad/drawing';
 import { dot, subtract, type BeamAnalysisDocument, type BeamAnalysisResult, type Vector3 } from '@pointercad/model/beam-analysis';
 import { t } from '../i18n/t.js';
-import type { ReportFigure } from './beamReportLayout.js';
+import type { ReportFigure } from '../analysisReport/reportLayout.js';
 
 interface Segment { readonly from: Point2; readonly to: Point2; readonly id: string; readonly displaced: boolean }
 

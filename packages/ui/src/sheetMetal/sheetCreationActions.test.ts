@@ -1,3 +1,4 @@
+import { plainText } from '@pointercad/model';
 import { absoluteCoordinate, createEmptyPartDocument, replaceSketch, createSheetBaseFeature, createSheetFlangeFeature, resolvePart, sheetBoundaryEdges, recomputePart } from '@pointercad/model';
 import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -120,7 +121,7 @@ describe('実形状が成功した板金だけを文書へ確定する', () => {
     if (!changed.ok) throw new Error(changed.message);
     const failed = applySheetCreation(session, changed, true);
     initial.fake.calls[0].settle({ ...resultFor(changed.document), bodies: [bodyFor(initial.base.id)],
-      errors: [{ featureId: flange.id, code: 'kernelFailed', message: '後続の曲げが交差しています' }] });
+      errors: [{ featureId: flange.id, code: 'kernelFailed', text: plainText('後続の曲げが交差しています') }] });
     await failed; expect(useAppStore.getState().document).toBe(document);
     expect(useAppStore.getState().sheetMetalError).toContain('後続');
     const pending = applySheetCreation(session, changed, false), body = { ...bodyFor(flange.id), volume: 7200 };
@@ -169,7 +170,7 @@ describe('実形状が成功した板金だけを文書へ確定する', () => {
     const { document, session, candidate, fake, success } = setup();
     const beforeBodies = useAppStore.getState().bodies;
     const pending = applySheetCreation(session, candidate, true);
-    fake.calls[0].settle(kind === 'failure' ? { ...success, errors: [{ featureId: candidate.feature.id, code: 'kernelFailed', message: '輪郭が交差しています' }] }
+    fake.calls[0].settle(kind === 'failure' ? { ...success, errors: [{ featureId: candidate.feature.id, code: 'kernelFailed', text: plainText('輪郭が交差しています') }] }
       : kind === 'missingBody' ? { ...success, bodies: [] } : { ...success, cancelled: true });
     await pending;
     expect(useAppStore.getState().document).toBe(document); expect(useAppStore.getState().bodies).toBe(beforeBodies);

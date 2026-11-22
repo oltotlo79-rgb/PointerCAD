@@ -65,7 +65,7 @@ describe('辺からの距離の穴の再計算の段(M-02)', () => {
       expect(tapped.failures).toEqual([]);
       expect(tapped.bodies[0]?.volume).toBeCloseTo(solid - Math.PI * 2.5 * 2.5 * 10, 6);
       const parallel = await run({ ...hole, planar: { kind: 'edge-distance', edge1: right, edge2: left, locations: [{ distance1: 8, distance2: 8 }] } });
-      expect(parallel.failures).toMatchObject([{ id: 'hole', message: '辺からの距離には平行でない2本の辺を選んでください。' }]);
+      expect(parallel.failures).toMatchObject([{ id: 'hole', code: 'parallel', message: 'parallel' }]);
     } finally {
       cache.clear();
     }

@@ -1,3 +1,4 @@
+import { addsToSelection, LOCAL_SELECTION_MODIFIERS, selectionUsesMeta, type SelectionModifier } from '../settings/selectionModifierSetting.js';
 import { belowMagnitude } from '@pointercad/model';
 import { beginRadialMenuGesture, finishRadialMenuGesture, moveRadialMenuGesture, type RadialMenuGesture } from './radialMenuGesture.js';
 import { placeRadialMenu, type RadialMenuSlot, type ScreenBounds, type ScreenPoint } from './radialMenuGeometry.js';
@@ -19,6 +20,16 @@ interface RadialMenuAttachmentOptions {
   /** Drawing navigation consumes ancestor capture events; observe a click before that ancestor. */
   readonly observeDrawingDown?: boolean;
   readonly allowSelectionModifiers?: () => boolean;
+  readonly selectionModifier?: () => SelectionModifier;
+}
+
+/** A latched command accepts a held selection shortcut only when it can act on those points. */
+function acceptsMenuModifiers(event: MouseEvent, options: RadialMenuAttachmentOptions): boolean {
+  if (event.altKey) return false;
+  if (!event.shiftKey && !event.ctrlKey && !event.metaKey) return true;
+  const modifier = options.selectionModifier?.();
+  return (!event.metaKey || selectionUsesMeta(modifier)) && addsToSelection(modifier, event, LOCAL_SELECTION_MODIFIERS.radialMenu)
+    && options.allowSelectionModifiers?.() === true;
 }
 
 /** Right drag chooses on release; a short right click leaves the menu for a subsequent left click. */
@@ -55,8 +66,8 @@ export function attachRadialMenuGesture(
     if (allowed) options.choose(slot);
   };
   const down = (event: PointerEvent): void => {
-    const modifiedClick = options.clickOnly === true && options.allowSelectionModifiers?.() === true
-      && event.button === 2 && event.buttons === 2 && event.pointerType === 'mouse' && !event.altKey && !event.metaKey;
+    const modifiedClick = options.clickOnly === true && event.button === 2 && event.buttons === 2
+      && event.pointerType === 'mouse' && acceptsMenuModifiers(event, options);
     if ((!isPlainRightPointer(event) && !modifiedClick) || options.blocked()) return;
     cancel();
     const bounds = surface.getBoundingClientRect();
@@ -80,8 +91,7 @@ export function attachRadialMenuGesture(
     if (pending !== null && event.pointerId === pending.gesture.pointerId) pending = null;
     if (active === null || event.pointerId !== active.gesture.pointerId) return;
     if (active.holding !== null) { cancel(); return; }
-    if (event.button !== 0 || event.buttons !== 1 || event.altKey || event.metaKey
-      || ((event.ctrlKey || event.shiftKey) && options.allowSelectionModifiers?.() !== true)) {
+    if (event.button !== 0 || event.buttons !== 1 || !acceptsMenuModifiers(event, options)) {
       cancel(); return;
     }
     if (changed()) { cancel(); return; }
@@ -187,8 +197,7 @@ export function attachRadialMenuGesture(
   };
   const wheel = (event: WheelEvent): void => { pending = null; if (active !== null) stop(event); };
   const context = (event: MouseEvent): void => {
-    if (!event.altKey && !event.metaKey && (!event.ctrlKey && !event.shiftKey || options.allowSelectionModifiers?.() === true)
-      && !options.blocked()) event.preventDefault();
+    if (acceptsMenuModifiers(event, options) && !options.blocked()) event.preventDefault();
   };
   // The translated hint can be taller than the initial allowance. Move both visible geometry
   // and gesture sectors together, using the rendered menu and the actual owning surface.

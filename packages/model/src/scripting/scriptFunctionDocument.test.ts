@@ -71,7 +71,7 @@ describe('自動作図と関数を同じ文書で再計算する', () => {
     expect((await prepareScriptTransaction(input, bridge, () => false, undefined, calculate)).ok).toBe(false);
     const ready = await prepareScriptTransaction(input, bridge, () => false, undefined, calculate, compile);
     if (!ready.ok)
-      throw new Error(ready.error.message);
+      throw new Error(JSON.stringify(ready.error));
     try {
       const curves = ready.prepared.result.sketches[0].resolved.splines;
       expect(curves).toHaveLength(1);
@@ -114,7 +114,7 @@ describe('自動作図と関数を同じ文書で再計算する', () => {
     const ready = await prepareScriptTransaction(input, bridge, () => false, undefined, calculate);
     expect(ready.ok, JSON.stringify(ready)).toBe(true);
     if (!ready.ok)
-      throw new Error(ready.error.message);
+      throw new Error(JSON.stringify(ready.error));
     try {
       expect(ready.prepared.document.parameters[0]).toMatchObject({ mathId: coefficient.id, value: { source: '2', value: 2 } });
       expect(ready.prepared.result.errors).toEqual([]);

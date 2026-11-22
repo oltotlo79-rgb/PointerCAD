@@ -6,6 +6,7 @@ import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, interv
   type MathInterval, type IntervalValue } from './mathInterval.js';
 import { exponentialRange } from './exponentialIntervals.js';
 import { logarithmicPositiveRange } from './logarithmicIntervals.js';
+import { belowMagnitude, magnitudeAtLeast } from './numericTolerance.js';
 
 type HyperbolicOperation = 'sinh' | 'cosh' | 'tanh' | 'arsinh' | 'arcosh' | 'artanh';
 type Range = MathInterval | null;
@@ -25,7 +26,7 @@ function positive(a: Range, minimum = 0, maximum = Infinity): Range {
 }
 
 function at(operation: HyperbolicOperation, value: number): Range {
-  if (operation === 'arcosh' && value < 1 || operation === 'artanh' && Math.abs(value) >= 1) return null;
+  if (operation === 'arcosh' && value < 1 || operation === 'artanh' && magnitudeAtLeast(value, 1)) return null;
   if (value < 0) return operation === 'cosh' ? at(operation, -value) : negate(at(operation, -value));
   if (value === 0) return operation === 'cosh' ? ONE : ZERO;
   if (value === Infinity) return point(operation === 'tanh' ? 1 : Infinity);
@@ -59,7 +60,7 @@ function at(operation: HyperbolicOperation, value: number): Range {
 export function hyperbolicRange(operation: HyperbolicOperation, input: MathInterval): Range {
   if (Number.isNaN(input.lower) || Number.isNaN(input.upper) || input.lower > input.upper) return null;
   if (operation === 'arcosh' && input.lower < 1
-    || operation === 'artanh' && (input.lower <= -1 || input.upper >= 1)) return null;
+    || operation === 'artanh' && (!belowMagnitude(input.lower, 1) || !belowMagnitude(input.upper, 1))) return null;
   const minimum = operation === 'cosh'
     ? input.lower <= 0 && input.upper >= 0 ? 0 : Math.min(Math.abs(input.lower), Math.abs(input.upper)) : input.lower;
   const maximum = operation === 'cosh' ? Math.max(Math.abs(input.lower), Math.abs(input.upper)) : input.upper;

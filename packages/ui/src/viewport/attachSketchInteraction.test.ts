@@ -370,7 +370,7 @@ describe('Shift/Ctrlで追加・解除する選択とドラッグの共通判定
     { shiftKey: false, ctrlKey: true, additive: true },
     { shiftKey: true, ctrlKey: true, additive: true },
   ])('$shiftKey/$ctrlKeyでは追加=$additive', event => {
-    expect(addsToSketchSelection(event)).toBe(event.additive);
+    expect(addsToSketchSelection({ ...event, metaKey: false })).toBe(event.additive);
   });
 });
 

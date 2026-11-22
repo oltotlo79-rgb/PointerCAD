@@ -5,6 +5,7 @@ import { INPUT_SETTINGS_FILE_BYTES } from '../file/fileContracts.js';
 import { viewKeyCollisions } from './inputBindingsDraft.js';
 import type { DisplaySettings } from './settings.js';
 import { currentShortcutAssignments, storedShortcutFields } from './shortcutSettings.js';
+import { currentSelectionModifier, selectionModifierOf, type SelectionModifier } from './selectionModifierSetting.js';
 import { currentSnapPauseModifier, snapPauseModifierOf, type SnapPauseModifier } from './snapPauseSetting.js';
 import { currentSnapRadius, snapRadiusChoiceOf, type SnapRadiusChoice } from './snapRadiusSetting.js';
 import {
@@ -14,9 +15,10 @@ import {
 /**
  * 操作の割り当ての設定ファイル(`.pcadinput`。設計 B-09 3-1)の書き出しと読み込み。
  *
- * 形: `{ format, version: 1, viewControls, inputAssignments, mouseButtonCommands, radialCommands, snapPauseModifier, snapRadius }` の JSON。
+ * 形: `{ format, version: 1, viewControls, inputAssignments, mouseButtonCommands, radialCommands, snapPauseModifier, snapRadius, selectionModifier }` の JSON。
  * 吸着の幅(snapRadius、配置の補助 P-D)は、吸着を止めるキーと同じ「吸着」の欄で読む(版は 1 のまま。無いファイルは今の値のまま)。
- * 5 つの欄は端末の保存と同じ形なので、読む時も端末の設定を読む時と同じ救い出しの関数を通す(中身を信じない)。
+ * 選択に足す・外すキー(selectionModifier、B-08 2-5)も版は 1 のまま足した。吸着の幅と同じく、無いファイル・知らない値は今の値のまま。
+ * 各欄は端末の保存と同じ形なので、読む時も端末の設定を読む時と同じ救い出しの関数を通す(中身を信じない)。
  * - 断る(全部を読まず、今の割り当てを変えない): 大きすぎる・JSON でない・印が違う・版が 1 でない(未来の版を含む)・読める欄が無い。
  * - 欄ごと: 知らない操作・命令の鍵や形の違う項目は 1 件ずつ捨てて数える。欄が無ければ今のまま。欄の形が違えば、その欄だけ読まない。
  * - 値は文字・数・真偽として 1 つずつ確かめて写すだけで、実行できる物は入らない。
@@ -26,10 +28,10 @@ const FILE_FORMAT = 'pointercad-input-settings';
 /** 版を上げる時は、古い版を読む道を残して足す。読み手より新しい版は読まない(知らない意味の欄を取り違えないため)。 */
 const FILE_VERSION = 1;
 const KNOWN_FIELDS: ReadonlySet<string> = new Set(['format', 'version', 'viewControls', 'inputAssignments', 'mouseButtonCommands',
-  'radialCommands', 'snapPauseModifier', 'snapRadius']);
+  'radialCommands', 'snapPauseModifier', 'snapRadius', 'selectionModifier']);
 
 /** 窓に結果を出す欄の順。 */
-export const INPUT_SETTINGS_SECTIONS = ['view', 'keys', 'mouse', 'radial', 'snap'] as const;
+export const INPUT_SETTINGS_SECTIONS = ['view', 'keys', 'mouse', 'radial', 'snap', 'selection'] as const;
 export type InputSettingsSection = (typeof INPUT_SETTINGS_SECTIONS)[number];
 
 /** 欄ごとの読み取りの結果。absent はファイルに欄が無い、unreadable は欄の形が違って欄ごと読まなかった。 */
@@ -38,12 +40,13 @@ export interface SectionReading {
   readonly dropped: number;
 }
 
-/** 置き換えの対象の 5 つの欄(無い欄は置き換えない)。 */
+/** 置き換えの対象の欄(無い欄は置き換えない)。 */
 export interface InputSettingsValues {
   readonly viewControls?: ViewControlSettings | undefined;
   readonly shortcutAssignments?: ShortcutAssignments | undefined;
   readonly mouseButtonCommands?: MouseButtonCommands | undefined;
   readonly radialCommands?: RadialCommands | undefined;
+  readonly selectionModifier?: SelectionModifier | undefined;
   readonly snapPauseModifier?: SnapPauseModifier | undefined;
   readonly snapRadius?: SnapRadiusChoice | undefined;
 }
@@ -83,6 +86,7 @@ export function encodeInputSettingsFile(settings: DisplaySettings): Uint8Array {
     inputAssignments: storedShortcutFields(currentShortcutAssignments(settings), undefined).inputAssignments,
     mouseButtonCommands: settings.mouseButtonCommands ?? {},
     radialCommands: settings.radialCommands ?? {},
+    selectionModifier: currentSelectionModifier(settings),
     snapPauseModifier: currentSnapPauseModifier(settings),
     snapRadius: currentSnapRadius(settings),
   };
@@ -143,6 +147,13 @@ function readSnapSection(file: Readonly<Record<string, unknown>>): Section<SnapV
     present - read);
 }
 
+/** 選択に足す・外すキーの欄(B-08 2-5)。無ければ欄が無い。知らない値なら欄ごと読まない(どちらも今の値のまま)。 */
+function readSelectionSection(file: Readonly<Record<string, unknown>>): Section<SelectionModifier> {
+  if (!Object.hasOwn(file, 'selectionModifier')) return ABSENT;
+  const modifier = selectionModifierOf(file.selectionModifier);
+  return modifier === null ? UNREADABLE : readSection(modifier, 0);
+}
+
 /** 版の欄が読み手より新しい整数か(未来の版は、壊れた版と分けて知らせる)。 */
 function isFutureVersion(version: unknown): boolean {
   return typeof version === 'number' && Number.isSafeInteger(version) && version > FILE_VERSION;
@@ -164,13 +175,14 @@ export function decodeInputSettingsFile(bytes: Uint8Array): InputSettingsReading
     const salvaged = readRadialCommands(raw);
     return { value: salvaged.commands, dropped: salvaged.dropped };
   });
-  const snap = readSnapSection(parsed);
-  if (![view, keys, mouse, radial, snap].some(section => section.reading.state === 'read')) return { ok: false, reason: 'nothingReadable' };
+  const snap = readSnapSection(parsed), selection = readSelectionSection(parsed);
+  if (![view, keys, mouse, radial, snap, selection].some(section => section.reading.state === 'read')) return { ok: false, reason: 'nothingReadable' };
   return {
     ok: true,
     values: { viewControls: view.value, shortcutAssignments: keys.value, mouseButtonCommands: mouse.value, radialCommands: radial.value,
-      snapPauseModifier: snap.value?.snapPauseModifier, snapRadius: snap.value?.snapRadius },
-    sections: { view: view.reading, keys: keys.reading, mouse: mouse.reading, radial: radial.reading, snap: snap.reading },
+      selectionModifier: selection.value, snapPauseModifier: snap.value?.snapPauseModifier, snapRadius: snap.value?.snapRadius },
+    sections: { view: view.reading, keys: keys.reading, mouse: mouse.reading, radial: radial.reading, snap: snap.reading,
+      selection: selection.reading },
     unknownFields: Object.keys(parsed).filter(key => !KNOWN_FIELDS.has(key)).length,
   };
 }
@@ -208,6 +220,7 @@ export function planInputSettingsImport(current: DisplaySettings, reading: Input
     ...(values.shortcutAssignments === undefined ? {} : { shortcutAssignments: values.shortcutAssignments, shortcutAssignmentsRecovered: undefined }),
     ...(values.mouseButtonCommands === undefined ? {} : { mouseButtonCommands: values.mouseButtonCommands, mouseButtonCommandsRecovered: undefined }),
     ...(values.radialCommands === undefined ? {} : { radialCommands: values.radialCommands, radialCommandsRecovered: undefined }),
+    ...(values.selectionModifier === undefined ? {} : { selectionModifier: values.selectionModifier }),
     ...(values.snapPauseModifier === undefined ? {} : { snapPauseModifier: values.snapPauseModifier }),
     ...(values.snapRadius === undefined ? {} : { snapRadius: values.snapRadius }),
   };
@@ -218,16 +231,17 @@ export function planInputSettingsImport(current: DisplaySettings, reading: Input
   };
 }
 
-/** 置き換えの対象の 5 つの欄の今の値(元に戻すための控え)。 */
+/** 置き換えの対象の欄の今の値(元に戻すための控え)。 */
 export function inputSettingsValuesOf(settings: DisplaySettings): InputSettingsValues {
   return { viewControls: settings.viewControls, shortcutAssignments: settings.shortcutAssignments,
     mouseButtonCommands: settings.mouseButtonCommands, radialCommands: settings.radialCommands,
-    snapPauseModifier: settings.snapPauseModifier, snapRadius: settings.snapRadius };
+    selectionModifier: settings.selectionModifier, snapPauseModifier: settings.snapPauseModifier, snapRadius: settings.snapRadius };
 }
 
-/** 置き換えた後に 5 つの欄がどれも変わっていない時だけ、元に戻せる(後の変更を黙って消さない)。 */
+/** 置き換えた後に各欄がどれも変わっていない時だけ、元に戻せる(後の変更を黙って消さない)。 */
 export function canUndoInputSettings(current: DisplaySettings, written: InputSettingsValues): boolean {
   return current.viewControls === written.viewControls && current.shortcutAssignments === written.shortcutAssignments
     && current.mouseButtonCommands === written.mouseButtonCommands && current.radialCommands === written.radialCommands
+    && current.selectionModifier === written.selectionModifier
     && current.snapPauseModifier === written.snapPauseModifier && current.snapRadius === written.snapRadius;
 }

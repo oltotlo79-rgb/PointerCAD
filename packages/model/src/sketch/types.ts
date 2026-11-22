@@ -642,7 +642,9 @@ export type SketchErrorCode =
    * どれも形は描いたまま理由だけを出す(FR-504、NFR-RE-1)。
    */
   | 'constraintUnsolved'
-  | 'kernelFailed';
+  | 'kernelFailed'
+  /** Worker が壊れて応答しなかった(橋の符号 'workerBroken' を写す)。 */
+  | 'workerBroken';
 
 /** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */
 export interface SketchError {

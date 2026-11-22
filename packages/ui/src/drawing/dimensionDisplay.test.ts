@@ -1,7 +1,8 @@
 import type { Dimension, DrawingDocument, OutlinedText, Point2 } from '@pointercad/drawing';
-import { createDrawingDocument, type ResolvedDimensionTarget, type ResolvedDrawingDimension } from '@pointercad/model';
+import { createDrawingDocument, createEmptyPartDocument, resolveDrawingDimensions, type ResolvedDimensionTarget, type ResolvedDrawingDimension } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 import { displayDrawingDimension } from './dimensionDisplay.js';
+import { drawingNoteFields } from './drawingNoteFields.js';
 
 const document: DrawingDocument = { ...createDrawingDocument('図面', { sourceRef: 's', sourceKind: 'part', fileName: '', path: '', contentHash: '', importedAt: '' }),
   views: [{ id: 'v', name: '正面', kind: 'front', position: [0, 0], scale: 2, direction: [0, 1, 0], xDir: [1, 0, 0],
@@ -17,6 +18,50 @@ const outline = (text: string, sizeMm: number): OutlinedText => ({ status: 'read
 function resolved(targets: readonly ResolvedDimensionTarget[] = [line], dimension: Partial<Dimension> = {}, value = 50): ResolvedDrawingDimension {
   return { dimension: { ...base, ...dimension }, targets, value, coordinates: null, text: String(value), status: 'resolved', reason: null };
 }
+
+describe('寸法の前後の文字への係数の差し込み', () => {
+  const part = { ...createEmptyPartDocument(), parameters: [
+    { name: 'n', value: { source: '2', value: 2, display: '2' }, unit: 'none' as const, description: '' },
+    { name: 't', value: { source: 'n * 3', value: 6, display: '6' }, unit: 'mm' as const, description: '' },
+  ] };
+  const context = { resolveFields: drawingNoteFields(document, { sources: [{ metadata: document.source, document: part }] }) };
+
+  it('前の文字を差し込んでから文字の囲みを測り、入力した文字を保つ', () => {
+    const dimension = resolved([line], { prefix: '{=n}×' });
+    const display = displayDrawingDimension(document, dimension, outline, context);
+    expect(display.element.texts?.[0].text).toBe('2×50');
+    if (display.bounds === null) throw new Error('文字境界なし');
+    expect(display.bounds.right - display.bounds.left).toBe(7);
+    expect(dimension.dimension.prefix).toBe('{=n}×');
+    expect(displayDrawingDimension(document, dimension, outline).element.texts?.[0].text).toBe('{=n}×50');
+  });
+
+  it('前後の文字を差し込み、後ろの空白を保って公差の後ろに置く', () => {
+    const dimension = resolved([line], { prefix: '{=n}×', suffix: ' {=t} 通し', reference: true,
+      tolerance: { kind: 'symmetric', value: 0.1 } });
+    const display = displayDrawingDimension(document, dimension, outline, context);
+    expect(display.element.texts?.[0].text).toBe('(2×50±0.1 6 通し)');
+    expect(dimension.dimension.suffix).toBe(' {=t} 通し');
+  });
+
+  it('累進寸法の各目盛りで解けない名前を？にする', () => {
+    const paper = { ...document, dimensions: [{ ...base, measurement: 'horizontal' as const, prefix: '{=missing}×', suffix: ' {=t}',
+      series: { kind: 'progressive' as const, baseIndex: 0 }, targets: [0, 50].map((x) => ({
+        kind: 'point' as const, viewId: 'v', paperPoint: [x * 2, 0] as const, modelPoint: [x, 0, 0] as const,
+      })) }] };
+    const [dimension] = resolveDrawingDimensions(paper, { modelCenter: [0, 0, 0], instances: [] });
+    const display = displayDrawingDimension(paper, dimension, outline, context);
+    expect(display.unresolved).toBe(false);
+    expect(display.element.texts?.map((text) => text.text)).toEqual(['？×0 6', '？×50 6']);
+  });
+
+  it('座標寸法の {{ を { として表示し、座標と参考寸法の括弧を保つ', () => {
+    const dimension = { ...resolved([line], { kind: 'coordinate', measurement: 'coordinate', prefix: '{{=n} ', reference: true }),
+      value: null, coordinates: [30, 40] as const, text: '({{=n} X: 30 / Y: 40)' };
+    const display = displayDrawingDimension(document, dimension, outline, context);
+    expect(display.element.texts?.[0].text).toBe('({=n} X: 30 / Y: 40)');
+  });
+});
 
 describe('寸法の画面とSVGに共通する表示', () => {
   it.each([2.5, 3.5, 5])('基本寸法は文字高%sでも四辺に紙面1mmの余白を取り、実測値とサイズ寸法線を保つ', (textHeight) => {

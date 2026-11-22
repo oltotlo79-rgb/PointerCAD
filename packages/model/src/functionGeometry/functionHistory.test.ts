@@ -21,7 +21,7 @@ import {
 
 import { createKernelApi } from '@pointercad/kernel';
 import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
-import { createDirectKernelBridge } from '../kernelBridge.js';
+import { createDirectKernelBridge, KERNEL_BROKEN_MESSAGE } from '../kernelBridge.js';
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
 import { collectExpressionOwners } from '../part/reevaluatePart.js';
 import { prepareDocumentMathIdentity } from '../part/documentMathIdentity.js';
@@ -227,6 +227,16 @@ describe('関数を通常の履歴として再計算する', () => {
         const calculated = await original.curves.evaluate(...args); current = false; return calculated;
       } } } });
       expect(result.cancelled).toBe(true); expect(result.sketches).toEqual([]); expect(generate).not.toHaveBeenCalled();
+    } finally { generate.mockRestore(); }
+  });
+  it('関数の曲線の計算部が止まった時は、その誤りに橋の符号 workerBroken が付く(0b-1b。文では見分けない)', async () => {
+    const document = fixture();
+    const generate = vi.spyOn(bridge, 'functionSketchCurves')
+      .mockResolvedValue({ status: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' });
+    try {
+      const result = await recomputePart(document, bridge, options(document));
+      expect(generate).toHaveBeenCalled();
+      expect(result.errors).toContainEqual({ featureId: 'function', code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE });
     } finally { generate.mockRestore(); }
   });
   it('関数の係数も削除確認とID予約に含め、改名で原式・参照・形を保つ', async () => {

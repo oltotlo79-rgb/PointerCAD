@@ -6,6 +6,7 @@ import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute
 import { reopenPart } from './reopenPart.js';
 import { saveFlowFile } from './saveResponsivenessFlow.js';
 import { clickWorldPoint, commitPopover, fillFields, popover, popoverTitle, selectionKindLabel, sketchTool } from './solidCaptureSupport.js';
+import { uiMessage } from './uiMessages.js';
 
 const FEM_WORKER = /\/fem\/worker\.js$/u;
 
@@ -20,8 +21,20 @@ function input(panel: Locator, name: string): Locator { return panel.getByRole('
 async function resultValue(result: Locator, label: string): Promise<string> {
   return result.getByText(label, { exact: true }).locator('xpath=following-sibling::dd[1]').innerText();
 }
-async function run(panel: Locator): Promise<number> {
+/**
+ * The saved-result line of a result read from the file. The version is the one the build wrote into the file, so any
+ * version text is accepted between the message's own words (the line's data-origin pins it to the file).
+ */
+function savedResultStatus(): RegExp {
+  const [before, after] = uiMessage('solidAnalysis', 'solidAnalysis.savedResult.status').split('{version}')
+    .map(text => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'));
+  return new RegExp(`^${before}[0-9A-Za-z.+-]+${after}$`, 'u');
+}
+/** Starts a run and waits for its own FEM worker before reading, so a result already shown (restored) is never read. */
+async function run(panel: Locator, workers: () => number): Promise<number> {
+  const before = workers();
   await panel.getByTestId('solid-run').click();
+  await expect.poll(workers, { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(before);
   const result = panel.getByTestId('solid-results');
   await expect(result).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
   await expect(panel.locator(':scope > [role="alert"]')).toHaveCount(0);
@@ -100,7 +113,7 @@ export async function analysisStaticPersistenceFlow(page: Page, info: TestInfo, 
   await input(panel, 'ポアソン比 ν').fill('0.3');
   await selectMaterialValues(panel);
   await input(panel, '曲面の最大体積差 (mm³)').fill('1');
-  const first = await run(panel);
+  const first = await run(panel, () => started);
   await quiet();
   await panel.getByTestId('solid-save').click();
   await expect(panel.locator(':scope > [role="alert"]')).toHaveCount(0);
@@ -108,10 +121,20 @@ export async function analysisStaticPersistenceFlow(page: Page, info: TestInfo, 
   const filename = 'static-persistence.pcad';
   await saveFlowFile(page, info.outputPath(filename), app);
   // Existing helper actually reloads the editor and opens the saved bytes through the host's file gateway.
+  const workersBeforeReopen = started;
   await reopenPart(page, info, filename, app);
   panel = await openAnalysis(page);
-  await expect(panel.getByTestId('solid-results')).toHaveCount(0);
-  await expect(panel.getByTestId('solid-field-empty')).toBeVisible();
+  // The result was computed for the input saved afterwards, so it was kept when the panel closed and saved with the part
+  // (J-03b stage 2): after reopening it comes back without a FEM run, with the saved-result line of the file, and shows the
+  // same values as before saving. With a result shown, the field view replaces its empty note (SolidAnalysisPanel.tsx:167).
+  const restored = panel.getByTestId('solid-results');
+  await expect(restored).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+  const savedLine = panel.getByTestId('solid-saved-result');
+  await expect(savedLine).toHaveAttribute('data-origin', 'file');
+  await expect(savedLine).toHaveText(savedResultStatus());
+  expect(Number.parseFloat(await resultValue(restored, '最大変位量'))).toBe(first);
+  await expect(panel.getByTestId('solid-field-empty')).toHaveCount(0);
+  expect(started).toBe(workersBeforeReopen);
   await expect(panel.getByTestId('solid-fixed')).toHaveText('選択面を固定 (1)');
   await expect(panel.getByTestId('solid-loaded')).toHaveText('選択面に荷重 (1)');
   await expect(input(panel, '面荷重 Z (N/mm²)')).toHaveValue('-0.001');
@@ -122,7 +145,7 @@ export async function analysisStaticPersistenceFlow(page: Page, info: TestInfo, 
   await expect(panel.getByTestId('solid-material-young-edited')).toBeVisible();
   await expect(input(panel, '曲面の最大体積差 (mm³)')).toHaveValue('1');
   const previousWorkers = started;
-  const second = await run(panel);
+  const second = await run(panel, () => started);
   expect(started).toBeGreaterThan(previousWorkers);
   await quiet();
   // W72 uses three decimal places for its displacement ratio, avoiding an absolute zero-scale tolerance.

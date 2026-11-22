@@ -48,9 +48,13 @@ function arrowFill(arrow: ArrowTriangle): NonNullable<DrawingRenderElement['fill
   ] }] };
 }
 
+type DimensionDisplayContext = Pick<DimensionResolveContext, 'viewFrames'> & {
+  readonly resolveFields?: (text: string) => string;
+};
+
 /** 値はmodelが解いた実寸だけを使う。紙上の線の長さは表示の配置にだけ使う。 */
 export function displayDrawingDimension(document: DrawingDocument, resolved: ResolvedDrawingDimension,
-  outline: OutlineDrawingText, context: Pick<DimensionResolveContext, 'viewFrames'> = {}): DimensionDisplay {
+  outline: OutlineDrawingText, context: DimensionDisplayContext = {}): DimensionDisplay {
   const dimension = resolved.dimension;
   const first = resolved.targets[0];
   const fallback: Point2 = dimension.placement.textPosition ?? (first === undefined ? [20, 20] : center(first));
@@ -62,12 +66,24 @@ export function displayDrawingDimension(document: DrawingDocument, resolved: Res
   let seriesTexts: NonNullable<DrawingRenderElement['texts']> | null = null;
   let geometryValid = resolved.status === 'resolved' && !(dimension.basic === true
     && (dimension.reference || dimension.tolerance !== undefined || dimension.fit !== undefined));
-  const mainText = resolved.value === null ? resolved.text : formatDimension({ value: resolved.value, kind: dimension.kind,
-    prefix: dimension.prefix, fitSymbol: dimension.fit?.symbol, suffix: dimension.suffix, reference: dimension.reference });
-  const toleranceMainText = formatDimension({ value: resolved.value, kind: dimension.kind, prefix: dimension.prefix, fitSymbol: dimension.fit?.symbol });
+  const { prefix: rawPrefix = '', suffix: rawSuffix = '' } = dimension;
+  const prefix = context.resolveFields?.(rawPrefix) ?? rawPrefix;
+  const suffix = context.resolveFields?.(rawSuffix) ?? rawSuffix;
+  let mainText = resolved.text;
+  if (resolved.value !== null) {
+    mainText = formatDimension({ value: resolved.value, kind: dimension.kind,
+      prefix, fitSymbol: dimension.fit?.symbol, suffix, reference: dimension.reference });
+  } else if (resolved.coordinates !== null && (prefix !== rawPrefix || suffix !== rawSuffix)) {
+    // modelが組んだX/Yと公差の文字を保ち、前後の文字だけを入れ替える。
+    const wrapperLength = dimension.reference ? 1 : 0;
+    const coordinates = resolved.text.slice(wrapperLength + rawPrefix.length, resolved.text.length - wrapperLength - rawSuffix.length);
+    const text = `${prefix}${coordinates}${suffix}`;
+    mainText = dimension.reference ? `(${text})` : text;
+  }
+  const toleranceMainText = formatDimension({ value: resolved.value, kind: dimension.kind, prefix, fitSymbol: dimension.fit?.symbol });
   const sizeMm = document.sheet.textHeight ?? 3.5;
   const currentTolerance = resolved.displayTolerance ?? dimension.tolerance;
-  const tolerance = currentTolerance === undefined || dimension.kind === 'coordinate' || dimension.series !== undefined ? null : layoutDimensionTolerance({ mainText: toleranceMainText, suffix: dimension.suffix,
+  const tolerance = currentTolerance === undefined || dimension.kind === 'coordinate' || dimension.series !== undefined ? null : layoutDimensionTolerance({ mainText: toleranceMainText, suffix,
     reference: dimension.reference, tolerance: currentTolerance,
     sizeMm, decimals: dimension.fit === undefined ? undefined : 4, measure: (text, size) => outline(text, size).metrics });
   const metrics = outline(mainText, sizeMm).metrics;
@@ -98,7 +114,7 @@ export function displayDrawingDimension(document: DrawingDocument, resolved: Res
           curves.push({ kind: 'segment', from: [at[0] + normal[0] * side, at[1] + normal[1] * side],
             to: [at[0] + normal[0] * (distance + 2 * side), at[1] + normal[1] * (distance + 2 * side)] });
         }
-        return { text: formatDimension({ value: tick.value, kind: 'length', prefix: dimension.prefix, suffix: dimension.suffix,
+        return { text: formatDimension({ value: tick.value, kind: 'length', prefix, suffix,
           tolerance: resolved.displayTolerance, reference: dimension.reference }),
         position: [tick.textPosition[0] + shift[0], tick.textPosition[1] + shift[1]], sizeMm, anchor: 'middle', baseline: 'bottom' };
       });

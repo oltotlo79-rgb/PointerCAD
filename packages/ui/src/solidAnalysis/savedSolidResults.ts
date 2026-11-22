@@ -16,8 +16,8 @@ type SolidOutcome = Extract<CadSolidOutcome, { readonly kind: 'result' }>;
 export type SavedSolid = Extract<SavedAnalysisResult, { readonly kind: 'oofem-linear-solid-tet4' }>;
 type ReadIssue = NonNullable<Extract<ReadPcadFileResult, { readonly ok: true }>['analysisResultIssue']>;
 
-/** 保存した結果を出せない理由の符号。io の読みの断りと、ここで断る 2 つ。 */
-export type SavedSolidNotice = ReadIssue | 'inputMismatch' | 'noSolverInput';
+/** 保存した結果を出せない理由の符号。io の読みの断りと、ここで断る 2 つと、自動保存の控えから戻した時(控えに結果を入れない)。 */
+export type SavedSolidNotice = ReadIssue | 'inputMismatch' | 'noSolverInput' | 'recoveryCopy';
 
 /** 符号ごとの文(利用者の回答 2026-11-20 18:2x (3): 計算部は符号だけを返し、文は画面の側の 1 つの一覧に持つ)。 */
 export const SAVED_SOLID_NOTICE_KEYS: Readonly<Record<SavedSolidNotice, MessageKey>> = {
@@ -28,6 +28,7 @@ export const SAVED_SOLID_NOTICE_KEYS: Readonly<Record<SavedSolidNotice, MessageK
   resultTooLarge: 'solidAnalysis.savedResult.tooLarge',
   inputMismatch: 'solidAnalysis.savedResult.inputMismatch',
   noSolverInput: 'solidAnalysis.savedResult.noSolverInput',
+  recoveryCopy: 'solidAnalysis.savedResult.recovery',
 };
 
 /** 開いた部品の文書と組にした、開いた時の結果。文書が別の物になれば使わない(古い結果を今の物と見せない)。 */
@@ -36,17 +37,31 @@ export interface OpenedSolidResults {
   readonly results: ReadonlyMap<string, SavedAnalysisResult>;
   /** io が出さなかった結果があった時の符号(ファイル自体は開けた)。 */
   readonly issue: ReadIssue | null;
-}
-
-export function openedSolidResults(document: PartDocument, results: ReadonlyMap<string, SavedAnalysisResult> | undefined,
-  issue: ReadIssue | undefined): OpenedSolidResults | null {
-  const kept = results ?? new Map<string, SavedAnalysisResult>();
-  return kept.size === 0 && issue === undefined ? null : { document, results: kept, issue: issue ?? null };
+  /**
+   * 出どころ。file は開いたファイル、recovery は自動保存の控え(控えには結果を入れないので、結果が無い理由を窓に出す。
+   * 静解析の入力を保存した部品の時だけ。入力の無い部品は解析を使っていないので立てない。統括の決定 2026-11-22 09:04)、
+   * kept は窓を閉じる時に残した計算の結果(J-03b の残り。保存すると部品と一緒に残り、窓を開き直すと戻る)。
+   */
+  readonly origin: 'file' | 'recovery' | 'kept';
 }
 
 function savedDefinition(document: PartDocument) {
   const saved = document.beamAnalysisInputs?.analyses.find(value => value.kind === 'solid-cad');
   return saved?.kind === 'solid-cad' ? saved.definition : undefined;
+}
+
+export function openedSolidResults(document: PartDocument, results: ReadonlyMap<string, SavedAnalysisResult> | undefined,
+  issue: ReadIssue | undefined, origin: 'file' | 'recovery' = 'file'): OpenedSolidResults | null {
+  const kept = results ?? new Map<string, SavedAnalysisResult>();
+  const from = origin === 'recovery' && savedDefinition(document) === undefined ? 'file' : origin;
+  return kept.size === 0 && issue === undefined && from === 'file' ? null
+    : { document, results: kept, issue: issue ?? null, origin: from };
+}
+
+/** 開いた時の結果が無い時に窓へ出す理由(io の断り、または控えから戻した事)。開いた文書のままの時だけ。 */
+export function openedSolidNotice(document: PartDocument, opened: OpenedSolidResults | null): SavedSolidNotice | null {
+  if (opened === null || opened.document !== document) return null;
+  return opened.issue ?? (opened.origin === 'recovery' ? 'recoveryCopy' : null);
 }
 
 /** 今の文書でまだ使える、開いた時の立体の結果(同じ文書の物で、保存した定義の id の物だけ)。 */
@@ -57,35 +72,64 @@ export function openedSolidResult(document: PartDocument, opened: OpenedSolidRes
   return saved?.kind === 'oofem-linear-solid-tet4' ? saved : undefined;
 }
 
-/** 会話の結果が、文書に保存した定義と同じ入力から、今の形で流し終えた物か。 */
-function currentSessionResult(document: PartDocument, session: SolidAnalysisSession | null, generation: number): SolidOutcome | null {
-  const definition = savedDefinition(document), outcome = session?.result ?? null;
-  if (session === null || session.status !== 'complete' || outcome === null || definition === undefined
-    || outcome.result.source.documentId !== document.id || outcome.result.source.revision !== generation) return null;
+/**
+ * 会話の今の入力が、文書に保存した定義と同じか。保存の束へ会話の結果を入れる時と、開いた結果を会話へ戻す時の共通の照らし
+ * (窓の値を変えた後に、保存した入力の結果を今の入力の結果と見せない)。入力を読めない時と、定義が無い時は同じとしない。
+ */
+export function sessionMatchesSavedInput(document: PartDocument, session: SolidAnalysisSession): boolean {
+  const definition = savedDefinition(document);
+  if (definition === undefined) return false;
   try {
-    return JSON.stringify(solidSavedInput(session, document.id, document.parameters)) === JSON.stringify(definition) ? outcome : null;
+    return JSON.stringify(solidSavedInput(session, document.id, document.parameters)) === JSON.stringify(definition);
   } catch {
-    return null;
+    return false;
   }
 }
 
-/**
- * 店から、保存の束へ入れる立体の結果を作る(手動の保存と自動の保存の 2 か所で同じ式)。会話の結果が保存した定義と同じ入力の
- * 今の結果ならそれを入れ、そうでなく、開いた時の結果がまだ使えるならそれを入れる(開いて流し直さずに保存し直しても結果を
- * 落とさない)。版が分からない時は入れない。
- */
-export function solidResultsToSave(state: { readonly solidAnalysisSession: SolidAnalysisSession | null;
-  readonly completedGeneration: number; readonly solidOpenedResults: OpenedSolidResults | null },
-document: PartDocument, appVersion = currentAppVersion()): ReadonlyMap<string, SavedAnalysisResult> | undefined {
+/** 会話の結果が、文書に保存した定義と同じ入力から、今の形で流し終えた物か。 */
+function currentSessionResult(document: PartDocument, session: SolidAnalysisSession | null, generation: number): SolidOutcome | null {
+  const outcome = session?.result ?? null;
+  if (session === null || session.status !== 'complete' || outcome === null
+    || outcome.result.source.documentId !== document.id || outcome.result.source.revision !== generation) return null;
+  return sessionMatchesSavedInput(document, session) ? outcome : null;
+}
+
+interface SolidSaveState {
+  readonly solidAnalysisSession: SolidAnalysisSession | null;
+  readonly completedGeneration: number;
+  readonly solidOpenedResults: OpenedSolidResults | null;
+}
+
+/** 会話の今の結果を、保存の束の 1 行の形にする(保存した定義と同じ入力の、今の形の結果だけ。版が分からない時は作らない)。 */
+function currentSavedEntry(state: SolidSaveState, document: PartDocument, appVersion: string | null): SavedSolid | null {
   const definition = savedDefinition(document);
-  if (appVersion === null || definition === undefined) return undefined;
   const outcome = currentSessionResult(document, state.solidAnalysisSession, state.completedGeneration);
-  if (outcome !== null) {
-    return new Map([[definition.id, { analysisId: definition.id, kind: outcome.result.kind, analysisRevision: 0, bindingSha256: '',
-      appVersion, result: outcome.result, mesh: outcome.mesh, prepared: outcome.prepared }]]);
-  }
-  const reopened = openedSolidResult(document, state.solidOpenedResults);
-  return reopened === undefined ? undefined : new Map([[definition.id, reopened]]);
+  if (appVersion === null || definition === undefined || outcome === null) return null;
+  return { analysisId: definition.id, kind: outcome.result.kind, analysisRevision: 0, bindingSha256: '',
+    appVersion, result: outcome.result, mesh: outcome.mesh, prepared: outcome.prepared };
+}
+
+/**
+ * 店から、保存の束へ入れる立体の結果を作る(手動の保存の式)。会話の結果が保存した定義と同じ入力の今の結果ならそれを入れ、
+ * そうでなく、開いた時の結果(窓を閉じる時に残した結果を含む)がまだ使えるならそれを入れる(開いて流し直さずに保存し直しても
+ * 結果を落とさない)。版が分からない時は入れない。
+ */
+export function solidResultsToSave(state: SolidSaveState, document: PartDocument,
+  appVersion = currentAppVersion()): ReadonlyMap<string, SavedAnalysisResult> | undefined {
+  const current = currentSavedEntry(state, document, appVersion);
+  if (current !== null) return new Map([[current.analysisId, current]]);
+  const definition = savedDefinition(document), reopened = openedSolidResult(document, state.solidOpenedResults);
+  return appVersion === null || definition === undefined || reopened === undefined ? undefined : new Map([[definition.id, reopened]]);
+}
+
+/**
+ * 窓を閉じる時に残す結果(J-03b の残り)。会話の今の結果が保存の条件を満たす時だけ、この文書と組にした kept の組を返す。
+ * 閉じた後も、保存すれば部品と一緒に残り、文書が同じ物の間に窓を開き直せば、開いたファイルの結果と同じ照らしで戻る。
+ */
+export function keptSolidResults(state: SolidSaveState, document: PartDocument,
+  appVersion = currentAppVersion()): OpenedSolidResults | null {
+  const current = currentSavedEntry(state, document, appVersion);
+  return current === null ? null : { document, results: new Map([[current.analysisId, current]]), issue: null, origin: 'kept' };
 }
 
 /** 開いた結果を会話へ戻した形。保存した世代の数は、開いた後の今の世代に置き換える(文書は io の指紋で同じと確かめ済み)。 */

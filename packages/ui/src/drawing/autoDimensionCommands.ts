@@ -4,6 +4,7 @@ import { drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingDime
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { drawingFont } from './drawingFont.js';
+import { drawingNoteFields } from './drawingNoteFields.js';
 import { displayDrawingDimension, type OutlineDrawingText } from './dimensionDisplay.js';
 import { drawingCreationLayer } from './drawingCreationLayer.js';
 import { distanceToDrawingCurve } from './drawingPick.js';
@@ -11,14 +12,16 @@ import { distanceToDrawingCurve } from './drawingPick.js';
 /** 画面で見えて由来が確定した円と、モデルの頂点を自動寸法の純関数へ渡す。 */
 export function generateDrawingAutoDimensions(document: DrawingDocument, source: DrawingSourceResolution,
   projections: readonly ResolvedDrawingView[], outline: OutlineDrawingText, viewIds?: readonly string[]): DrawingDocument | null {
-  return generateAutoDimensionsResult(document, source, projections, outline, viewIds)?.document ?? null;
+  return generateAutoDimensionsResult(document, source, projections, outline, { viewIds })?.document ?? null;
 }
 
 function generateAutoDimensionsResult(document: DrawingDocument, source: DrawingSourceResolution,
-  projections: readonly ResolvedDrawingView[], outline: OutlineDrawingText, viewIds?: readonly string[]): {
+  projections: readonly ResolvedDrawingView[], outline: OutlineDrawingText,
+  { viewIds, resolveFields }: { readonly viewIds?: readonly string[]; readonly resolveFields?: (text: string) => string }): {
     readonly document: DrawingDocument; readonly unresolvedOverlapIds: readonly string[];
   } | null {
   const context = drawingDimensionContext(source);
+  const displayContext = { viewFrames: context.viewFrames, resolveFields };
   const layerId = drawingCreationLayer(document, 'layer-4');
   if (layerId === null) return null;
   let dimensions = document.dimensions;
@@ -68,7 +71,7 @@ function generateAutoDimensionsResult(document: DrawingDocument, source: Drawing
     const preserved = { ...document, dimensions: dimensions.filter((dimension) => dimension.origin === 'manual'
       || !dimension.targets.some((target) => target.viewId === view.id)) };
     const existingTextBoxes = resolveDrawingDimensions(preserved, context).flatMap((dimension) => {
-      const display = displayDrawingDimension(preserved, dimension, outline, source);
+      const display = displayDrawingDimension(preserved, dimension, outline, displayContext);
       return display.bounds === null || resolveStyle(display.element, document.layers)?.visible !== true ? []
         : [{ ownerId: dimension.dimension.id, bounds: display.bounds }];
     });
@@ -93,8 +96,10 @@ export async function runDrawingAutoDimensions(viewIds?: readonly string[]): Pro
     return false;
   }
   const current = useAppStore.getState();
-  if (current.drawing !== drawing || current.drawingSourceResolution !== source || current.drawingResolution !== resolved || current.drawingBusy) return false;
-  const result = generateAutoDimensionsResult(drawing, source, resolved.projection.views, drawingFont.outline, viewIds);
+  if (current.drawing !== drawing || current.drawingSourceResolution !== source || current.drawingResolution !== resolved
+    || current.drawingSources !== state.drawingSources || current.drawingBusy) return false;
+  const result = generateAutoDimensionsResult(drawing, source, resolved.projection.views, drawingFont.outline,
+    { viewIds, resolveFields: drawingNoteFields(drawing, current.drawingSources) });
   if (result === null) { state.setDrawingMessage(t('drawing.error.dimensionUnsupported')); return false; }
   const next = result.document;
   state.applyDrawing(next);

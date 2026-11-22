@@ -8,6 +8,7 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { displayDrawingDimension } from './dimensionDisplay.js';
 import { drawingFont } from './drawingFont.js';
+import { drawingNoteFields } from './drawingNoteFields.js';
 import { displayDrawingAnnotations } from './annotationDisplay.js';
 import { rasterDrawing, type DrawingDpi } from './rasterDrawing.js';
 import { displayDrawingTables } from './tableDisplay.js';
@@ -37,7 +38,8 @@ export async function prepareDrawingOutput(): Promise<PreparedDrawingOutput | nu
   if (await drawingFont.load() !== 'ready') throw new Error(t('drawing.error.fontFailed'));
   if (!isCurrent()) return null;
   const dimensions = resolveDrawingDimensions(drawing, drawingDimensionContext(source));
-  const displays = dimensions.map((dimension) => displayDrawingDimension(drawing, dimension, drawingFont.outline, source));
+  const displayContext = { viewFrames: source.viewFrames, resolveFields: drawingNoteFields(drawing, state.drawingSources) };
+  const displays = dimensions.map((dimension) => displayDrawingDimension(drawing, dimension, drawingFont.outline, displayContext));
   if (displays.some((display, index) => display.unresolved && dimensions[index].status === 'resolved')) {
     throw new Error(t('drawing.error.dimensionUnsupported'));
   }

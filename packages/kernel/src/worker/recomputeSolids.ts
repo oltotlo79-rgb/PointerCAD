@@ -82,6 +82,7 @@ import { meshBackingBytes, meshBackingFailureReason, type MeshBufferSnapshot, ty
 import { createSheetBodyReuse } from './sheetBodyReuse.js';
 import { createPrimitiveReuse } from './primitiveReuse.js';
 import { OriginCacheBudget, originBytes as measuredOriginBytes, originRows, withinBodyOriginBudget, withinReplyOriginBudget } from './originBudget.js';
+import { KernelStepError } from '../occt/kernelStepError.js';
 
 const originCacheBudgets = new WeakMap<ShapeCache<CachedSolid>, OriginCacheBudget>();
 
@@ -318,6 +319,12 @@ function toFailureMessage(error: unknown): string {
     return error.message;
   }
   return '幾何カーネルの内部で失敗しました。値を見直して、もう一度お試しください。';
+}
+
+/** 符号を持つ計算部の誤り(面による切断・面の厚み付け・つなぎ面・加工のもとが無い/立体が残らない)の符号。無ければ空。 */
+function failureCode(error: unknown): Pick<SolidStepFailure, 'code'> {
+  return error instanceof SurfaceCutError || error instanceof SurfaceThickenError || error instanceof BlendSurfaceError
+    || error instanceof KernelStepError ? { code: error.code } : {};
 }
 
 /**
@@ -831,12 +838,12 @@ function createStepSolid(
     case 'faceRotate': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       if (spec.face.kind !== 'face' || (spec.kind === 'faceRotate' && spec.hinge.kind !== 'edge')) {
-        throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+        throw new KernelStepError('missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
       }
       const owned = createAllocations();
       try {
         const pickedFace = pickSubShape(oc, target.shape, target.mesh, spec.face);
-        if (pickedFace === null) throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+        if (pickedFace === null) throw new KernelStepError('missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
         owned.keep(pickedFace);
         const face = owned.keep(oc.TopoDS.Face_1(pickedFace));
         if (spec.kind === 'holeTranslate') {
@@ -844,7 +851,7 @@ function createStepSolid(
           return noMarks(moved, moved.volume);
         }
         const pickedHinge = pickSubShape(oc, target.shape, target.mesh, spec.hinge);
-        if (pickedHinge === null) throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+        if (pickedHinge === null) throw new KernelStepError('missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
         owned.keep(pickedHinge);
         const hinge = owned.keep(oc.TopoDS.Edge_1(pickedHinge));
         const rotated = rotateSolidFace(oc, target.shape, face, hinge, spec.angle);
@@ -1549,8 +1556,7 @@ export async function recomputeSolids(
           rememberBodyForAppearance(step.key, step.id, cached.shape);
         } catch (error) {
           if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
-          failures.push({ id: step.id, message: toFailureMessage(error),
-            ...(error instanceof SurfaceCutError || error instanceof SurfaceThickenError || error instanceof BlendSurfaceError ? { code: error.code } : {}) });
+          failures.push({ id: step.id, message: toFailureMessage(error), ...failureCode(error) });
           failedLabels.set(step.key, step.label);
         }
       }
@@ -1622,8 +1628,7 @@ export async function recomputeSolids(
     } catch (error) {
       if (error instanceof CancelProbeError) throw error.cause;
       if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
-      failures.push({ id: step.id, message: toFailureMessage(error),
-            ...(error instanceof SurfaceCutError || error instanceof SurfaceThickenError || error instanceof BlendSurfaceError ? { code: error.code } : {}) });
+      failures.push({ id: step.id, message: toFailureMessage(error), ...failureCode(error) });
       failedLabels.set(step.key, step.label);
     }
   }
@@ -1657,7 +1662,7 @@ export async function recomputeSolids(
       bodies.sort((left, right) => (order.get(left.id) ?? total) - (order.get(right.id) ?? total));
     } catch (error) {
       if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
-      failures.push({ id: source.id, message: toFailureMessage(error) });
+      failures.push({ id: source.id, message: toFailureMessage(error), ...failureCode(error) });
     }
   }
 

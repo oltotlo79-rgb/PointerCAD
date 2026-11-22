@@ -117,6 +117,10 @@ export const CONNECTOR_BOX_RECORDS: readonly PanelPartRecord[] = [
     material: 'aluminum', width: 55, depth: 28, height: 28, massG: 64, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'straight-outer-connector-61x33x33-al', size: '外に付けるまっすぐのつなぎ 61×33×33（外形を包む形・アルミ）', page: 89, kind: '外に付けるまっすぐのつなぎ', material: 'aluminum',
     width: 61, depth: 33, height: 33, massG: 38, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'link-connector-52.6x23x23-al-fe', size: '連ねるつなぎ 52.6×23×23（外形を包む形・アルミ・鉄）', page: 293, kind: '連ねるつなぎ', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 52.6, depth: 23, height: 23, massG: 44, simplified: ['外形を包む形で、細部は作っていない'] },
+  { key: 'link-connector-62x23x23-al-fe', size: '連ねるつなぎ 62×23×23（外形を包む形・アルミ・鉄）', page: 293, kind: '連ねるつなぎ', material: 'mixed',
+    materialText: 'アルミ・鉄', width: 62, depth: 23, height: 23, massG: 47, simplified: ['外形を包む形で、細部は作っていない'] },
   { key: 'outer-connector-59.3x51x51-al-fe', size: '外に付けるつなぎ 59.3×51×51（外形を包む形・アルミ・鉄）', page: 325, kind: '外に付けるつなぎ', material: 'mixed',
     materialText: 'アルミ・鉄', width: 59.3, depth: 51, height: 51, massG: 177, simplified: ['外形を包む形で、細部は作っていない'] },
 ];

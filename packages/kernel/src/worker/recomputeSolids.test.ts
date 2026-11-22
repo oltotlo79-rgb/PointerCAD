@@ -1593,6 +1593,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
     expect(result.failures).toEqual([
       {
         id: '穴1',
+        code: 'missingSubShape',
         message: '穴をあけるもとの面が見つかりません。形が大きく変わったため、選び直してください。',
       },
     ]);
@@ -2485,6 +2486,7 @@ describe('履歴の再計算(recomputeSolids)', () => {
       expect(result.failures).toEqual([
         {
           id: '球1',
+          code: 'missingSubShape',
           message: '中心にする頂点が見つかりません。形が大きく変わったため、選び直してください。',
         },
       ]);

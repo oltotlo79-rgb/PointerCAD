@@ -51,6 +51,7 @@ import { buildBooleanShape } from './buildBooleanShape.js';
 import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
 import { readNativePlanarBasis } from './planarFaceBasis.js';
 import { isIdentityTransform, transformShape, transformsOrIdentity } from './transformShape.js';
+import { isNothingLeft, KernelStepError } from './kernelStepError.js';
 
 /** 面が選び直せなかったとき(FR-504)。 */
 const MISSING_FACE_MESSAGE =
@@ -331,20 +332,20 @@ function resolveFaceOfKind(
   if (query.kind !== 'face') {
     // 面以外(辺・頂点)の指紋が来るのは model 側の取り違えだが、
     // 利用者に見せるのは「面が見つからない」で足りる(直し方は同じ = 面を選び直す)。
-    throw new Error(MISSING_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
   }
 
   // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する。
   const scale = diagonal * 0.5;
   const match = resolveFaceReference(faces, query, scale, origins);
   if (match.status !== 'matched') {
-    throw new Error(MISSING_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
   }
 
   // 一覧は通し番号の順で来る約束だが、番号で引き直して並びに依存しないようにする。
   const info = faces.find((candidate) => candidate.index === match.match.index);
   if (info === undefined) {
-    throw new Error(MISSING_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
   }
   if (info.surfaceKind !== surfaceKind) {
     throw new Error(wrongKindMessage);
@@ -353,7 +354,7 @@ function resolveFaceOfKind(
   const face = faceAt(oc, shape, match.match.index);
   if (face === null) {
     // 一覧と形が食い違っている(別の形から作った一覧を渡している)合図。
-    throw new Error(MISSING_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
   }
   return face;
 }
@@ -539,7 +540,7 @@ function resolveCylindricalHoleFrame(
   }
 }
 
-/** 辺からの距離の穴(M-02)の断り。辺が選び直せない時は、model が選び直しを促す語尾で終える。 */
+/** 辺からの距離の穴(M-02)の断り。辺が選び直せない時の文で、投げる時に符号 missingSubShape を付ける(kernelStepError.ts)。 */
 const EDGE_DISTANCE_MISSING_EDGE_MESSAGE = '辺からの距離の辺が見つかりません。形が大きく変わったため、選び直してください。';
 type EdgeDistanceFailure = Extract<ReturnType<typeof edgeDistanceCenters>, { readonly ok: false }>['reason'];
 const EDGE_DISTANCE_MESSAGES: Readonly<Record<EdgeDistanceFailure | 'combination' | 'notLine' | 'notOnFace' | 'outside', string>> = {
@@ -580,10 +581,10 @@ function edgeDistanceOrigins(
 ): Vec3Tuple[] {
   const { face, info: faceInfo, frame: planeFrame, diagonal } = target;
   const [first, second] = [placement.edge1, placement.edge2].map((query) => {
-    if (query.kind !== 'edge') throw new Error(EDGE_DISTANCE_MISSING_EDGE_MESSAGE);
+    if (query.kind !== 'edge') throw new KernelStepError('missingSubShape', EDGE_DISTANCE_MISSING_EDGE_MESSAGE);
     const match = resolveEdgeReference(edges, query, diagonal * 0.5, origins);
     const info = match.status === 'matched' ? edges.find((candidate) => candidate.index === match.match.index) : undefined;
-    if (info === undefined) throw new Error(EDGE_DISTANCE_MISSING_EDGE_MESSAGE);
+    if (info === undefined) throw new KernelStepError('missingSubShape', EDGE_DISTANCE_MISSING_EDGE_MESSAGE);
     if (info.curveKind !== 'line') throw new Error(EDGE_DISTANCE_MESSAGES.notLine);
     if (faceInfo?.boundaryEdgeIndices !== undefined && !faceInfo.boundaryEdgeIndices.includes(info.index)) {
       throw new Error(EDGE_DISTANCE_MESSAGES.notOnFace);
@@ -986,10 +987,8 @@ function cutHoles(
   try {
     return booleanOp(oc, 'subtract', target, tools, semantic);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(reason.includes('ソリッドが残りませんでした') ? NOTHING_LEFT_MESSAGE : HOLE_FAILED_MESSAGE, {
-      cause: error,
-    });
+    if (isNothingLeft(error)) throw new KernelStepError('nothingLeft', NOTHING_LEFT_MESSAGE, { cause: error });
+    throw new Error(HOLE_FAILED_MESSAGE, { cause: error });
   }
 }
 

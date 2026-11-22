@@ -596,6 +596,8 @@ function resolvePointArrayFeature(
 export interface SketchResolveOptions {
   /** Current-generation mathematical failures. Cached fields of these owners are never resolved. */
   readonly invalidInputs?: ReadonlyMap<string, string>;
+  /** invalidInputs のうち、計算部(Worker)が止まって作れなかった物の id。その誤りの code を workerBroken にする(0b-1b。文では見分けない)。 */
+  readonly workerBrokenInputs?: ReadonlySet<string>;
   readonly workPlane?: (planeId: WorkPlaneId) => WorkPlane | null;
   /**
    * 立体の部分形状(頂点・辺・面)の選び直し(FR-330)。
@@ -806,7 +808,8 @@ function resolveHistoryStep(
 ): void {
   const invalid = options.invalidInputs?.get(feature.id);
   if (invalid !== undefined) {
-    state.errors.push({ featureId: feature.id, code: 'invalidValue', message: invalid });
+    const code = options.workerBrokenInputs?.has(feature.id) === true ? 'workerBroken' : 'invalidValue';
+    state.errors.push({ featureId: feature.id, code, message: invalid });
     // A failed point-producing step must not make "previous" silently refer to an older point.
     if (feature.kind !== 'face') {
       state.previous = null;

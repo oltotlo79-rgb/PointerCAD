@@ -3,15 +3,17 @@ import { drawingDimensionContext, resolveDrawingDimensions, type DrawingSourceRe
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { drawingFont } from './drawingFont.js';
+import { drawingNoteFields } from './drawingNoteFields.js';
 import { displayDrawingDimension, type OutlineDrawingText } from './dimensionDisplay.js';
 
 /** 文字の実囲みと各図の法線を使い、選んだ直線寸法だけを整列する。 */
 export function arrangeDrawingDimensions(document: DrawingDocument, source: DrawingSourceResolution, ids: readonly string[],
-  outline: OutlineDrawingText): { readonly document: DrawingDocument; readonly unresolvedOverlapIds: readonly string[] } | null {
+  outline: OutlineDrawingText, resolveFields?: (text: string) => string): { readonly document: DrawingDocument; readonly unresolvedOverlapIds: readonly string[] } | null {
   const selected = new Set(ids), context = drawingDimensionContext(source);
+  const displayContext = { viewFrames: context.viewFrames, resolveFields };
   const items: DimensionArrangementItem[] = [], boxes: DimensionTextBox[] = [];
   for (const resolved of resolveDrawingDimensions(document, context)) {
-    const dimension = resolved.dimension, display = displayDrawingDimension(document, resolved, outline, context);
+    const dimension = resolved.dimension, display = displayDrawingDimension(document, resolved, outline, displayContext);
     if (resolveStyle(display.element, document.layers)?.visible !== true) continue;
     if (display.bounds !== null) boxes.push({ ownerId: dimension.id, bounds: display.bounds });
     if (!selected.has(dimension.id)) continue;
@@ -40,8 +42,9 @@ export async function runDrawingDimensionArrangement(): Promise<boolean> {
   if (document === null || source === null || state.drawingBusy) return false;
   if (await drawingFont.load() !== 'ready') { state.setDrawingMessage(t('drawing.error.fontFailed')); return false; }
   const current = useAppStore.getState();
-  if (current.drawing !== document || current.drawingSourceResolution !== source || current.drawingSelectedIds !== ids || current.drawingBusy) return false;
-  const result = arrangeDrawingDimensions(document, source, ids, drawingFont.outline);
+  if (current.drawing !== document || current.drawingSourceResolution !== source || current.drawingSelectedIds !== ids
+    || current.drawingSources !== state.drawingSources || current.drawingBusy) return false;
+  const result = arrangeDrawingDimensions(document, source, ids, drawingFont.outline, drawingNoteFields(document, current.drawingSources));
   if (result === null) { state.setDrawingMessage(t('drawing.arrange.select')); return false; }
   if (JSON.stringify(result.document.dimensions) !== JSON.stringify(document.dimensions)) state.applyDrawing(result.document);
   state.selectDrawingIds(ids);

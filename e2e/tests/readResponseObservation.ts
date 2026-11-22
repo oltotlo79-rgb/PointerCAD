@@ -109,7 +109,10 @@ self.postMessage = (...args) => {
   }
   if (app === undefined) await page.route('**/assets/pcadRead.worker-*.js', async route => {
     const url = route.request().url();
-    const response = await route.fetch(), body = await response.text();
+    // One connection per fetch. Playwright's request agent keeps sockets alive across tests and the preview
+    // server closes an idle socket after its keep-alive timeout; a reused socket closed at that moment ended
+    // a CI read with "socket hang up" (run 44991756823, ubuntu shard 1, 3rd attempt). Same URL and other headers.
+    const response = await route.fetch({ headers: { ...route.request().headers(), connection: 'close' } }), body = await response.text();
     sourceAssets.push({ url, sha256: createHash('sha256').update(body).digest('hex'), bytes: Buffer.byteLength(body) });
     routed += 1;
     await route.fulfill({ response, body: prefix + body });

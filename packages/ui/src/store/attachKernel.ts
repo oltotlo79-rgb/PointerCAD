@@ -6,7 +6,6 @@ import type { PcadAttachments } from '@pointercad/io';
 import {
   affectsShape,
   documentUpTo,
-  KERNEL_BROKEN_MESSAGE,
   type PartDocument,
   type PartRecomputeOptions,
   type PartRecomputeResult,
@@ -176,7 +175,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
     if (result.cancelled) {
       return 'cancelled';
     }
-    if (result.errors.some((error) => error.message === KERNEL_BROKEN_MESSAGE)) {
+    if (result.errors.some((error) => error.code === 'workerBroken')) {
       return 'workerBroken';
     }
     return result.errors.length === 0 ? 'success' : 'failed';
@@ -551,7 +550,7 @@ function stagedFailure(
   requiredBodyIds: readonly string[],
 ): StagedSolidFailure | null {
   if (result.cancelled || result.generation !== generation) return 'incomplete';
-  if (result.errors.some((error) => error.message === KERNEL_BROKEN_MESSAGE)) return 'workerBroken';
+  if (result.errors.some((error) => error.code === 'workerBroken')) return 'workerBroken';
   if (result.errors.length !== 0) return 'failed';
   const receipt = meshReceiptOf(document, result);
   if (receipt === null || receipt.final === undefined) return 'accounting';

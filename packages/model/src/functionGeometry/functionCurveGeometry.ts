@@ -2,6 +2,7 @@ import { isRecord as record } from '../valueGuards.js';
 /** Plain model data crossing the geometry Worker. No OCCT handles or UI-only clipping. */
 import type { ResolvedSpline } from '../sketch/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
+import type { WorkerBrokenCode } from '../kernelBridge/bridgeContracts.js';
 
 /** Certified C1 cubic of one component: distinct parameter knots and 2 * knots poles (double interior knots). */
 export interface FunctionCurveSplineInput {
@@ -16,10 +17,11 @@ export interface FunctionCurveGeometryInput {
   readonly splines?: readonly FunctionCurveSplineInput[];
   readonly bounds: { readonly minimum: Vec3; readonly maximum: Vec3 };
 }
+/** failed の code は、計算部(Worker)が止まって作れなかった時だけ、橋が付ける(0b-1b。文では見分けない)。 */
 export type FunctionCurveGeometryOutcome =
   | { readonly status: 'ready'; readonly curves: readonly ResolvedSpline[] }
   | { readonly status: 'cancelled' }
-  | { readonly status: 'failed'; readonly message: string };
+  | { readonly status: 'failed'; readonly message: string; readonly code?: WorkerBrokenCode };
 export interface FunctionKernelBridge {
   functionSketchCurves(input: FunctionCurveGeometryInput): Promise<FunctionCurveGeometryOutcome>;
 }

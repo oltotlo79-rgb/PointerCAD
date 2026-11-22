@@ -16,6 +16,7 @@ import { resolveFaceReference } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
+import { KernelStepError } from './kernelStepError.js';
 
 /**
  * くり抜き(シェル、FR-418)。
@@ -145,11 +146,11 @@ function resolveOpenFaces(
   for (const query of queries) {
     if (query.kind !== 'face') {
       // 面以外の指紋が来るのは model 側の取り違えだが、利用者への直し方は同じ。
-      throw new Error(MISSING_FACE_MESSAGE);
+      throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
     }
     const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
     if (match.status !== 'matched') {
-      throw new Error(MISSING_FACE_MESSAGE);
+      throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
     }
     found.add(match.match.index);
   }
@@ -302,7 +303,7 @@ export function makeShell(
       const face = faceAt(oc, target, index);
       if (face === null) {
         // 一覧の番号が形と食い違っている(別の形から作った一覧を渡された)合図。
-        throw new Error(MISSING_FACE_MESSAGE);
+        throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
       }
       try {
         // Append_1 は面を一覧の中へ写し取るので、その場で返してよい(makeFillet.ts の

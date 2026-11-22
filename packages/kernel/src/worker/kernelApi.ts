@@ -1184,7 +1184,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
               ? null
               : pickSubShape(oc, cached.shape, cached.mesh, item.subShape);
           if (item.subShape !== null && picked === null) {
-            failures.push({ id: item.id, message: MISSING_SUB_SHAPE_MESSAGE });
+            failures.push({ id: item.id, message: MISSING_SUB_SHAPE_MESSAGE, code: 'missingSubShape' });
             continue;
           }
           try {

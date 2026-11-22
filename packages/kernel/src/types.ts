@@ -14,6 +14,7 @@ import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
 import type { ExtrudeEndSpec } from './occt/makeSolidSweep.js';
 import type { SurfaceThickenError, thickenSurfaceBody } from './occt/makeSurfaceThicken.js';
 import type { BlendSurfaceError } from './occt/blendBoundary.js';
+import type { KernelStepFailureCode } from './occt/kernelStepError.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
 import type { SurfaceCutInput, SurfaceCutReason } from './occt/makeSurfaceCut.js';
 import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
@@ -379,6 +380,8 @@ export interface SketchProjectionResult {
 export interface SketchProjectionFailure {
   readonly id: string;
   readonly message: string;
+  /** 加工のもとの面・辺が見つからない時の符号(0b-1。model が missingSubShape にする)。 */
+  readonly code?: KernelStepFailureCode;
 }
 
 /** 投影・交差の結果。1 件失敗しても止めずに残りを返す(FR-504、NFR-RE-1)。 */
@@ -752,7 +755,8 @@ export interface SolidBodyMesh {
 /** 立体を作れなかった段と、その理由。 */
 export interface SolidStepFailure {
   readonly id: string;
-  readonly code?: SurfaceCutReason | SurfaceThickenError['code'] | BlendSurfaceError['code'] | 'outside-tolerance';
+  readonly code?: SurfaceCutReason | SurfaceThickenError['code'] | BlendSurfaceError['code'] | 'outside-tolerance'
+    | KernelStepFailureCode;
   /** 利用者へそのまま見せる日本語(FR-504、NFR-RE-1)。 */
   readonly message: string;
 }

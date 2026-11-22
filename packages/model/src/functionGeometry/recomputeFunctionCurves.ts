@@ -31,6 +31,8 @@ export interface FunctionRecomputeContext {
 export interface FunctionCurvesResult {
   readonly curves: ReadonlyMap<string, readonly ResolvedCurve[]>;
   readonly invalidInputs: ReadonlyMap<string, string>;
+  /** invalidInputs のうち、計算部(Worker)が止まって曲線を作れなかった関数の曲線の id(0b-1b。その誤りの code を workerBroken にする)。 */
+  readonly workerBrokenInputs: ReadonlySet<string>;
   readonly cancelled: boolean;
 }
 function supportsFunctions(bridge: KernelBridge): bridge is KernelBridge & FunctionKernelBridge {
@@ -41,9 +43,9 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
   analysis: ParameterAnalysis | undefined, math: DocumentMathContext | undefined,
   context: FunctionRecomputeContext | undefined, previousInvalid: ReadonlyMap<string, string> | undefined,
   shouldCancel: () => boolean): Promise<FunctionCurvesResult> {
-  const curves = new Map<string, readonly ResolvedCurve[]>(), invalidInputs = new Map(previousInvalid);
+  const curves = new Map<string, readonly ResolvedCurve[]>(), invalidInputs = new Map(previousInvalid), workerBrokenInputs = new Set<string>();
   const current = () => !shouldCancel() && !math?.signal?.aborted && (math?.isCurrent() ?? true);
-  const result = (cancelled: boolean): FunctionCurvesResult => ({ curves: cancelled ? new Map() : curves, invalidInputs, cancelled });
+  const result = (cancelled: boolean): FunctionCurvesResult => ({ curves: cancelled ? new Map() : curves, invalidInputs, workerBrokenInputs, cancelled });
   let inputRevision = 0;
   for (const sketch of document.sketches) for (const feature of sketch.features) {
     if (!current()) return result(true);
@@ -66,6 +68,7 @@ export async function recomputeFunctionCurves(document: PartDocument, bridge: Ke
       }
       const geometry = await bridge.functionSketchCurves(sampled);
       if (!current() || geometry.status === 'cancelled') return result(true);
+      if (geometry.status === 'failed' && geometry.code === 'workerBroken') workerBrokenInputs.add(feature.id);
       if (geometry.status === 'failed') throw new Error(geometry.message);
       curves.set(feature.id, geometry.curves);
     } catch (error) {

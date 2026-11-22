@@ -137,6 +137,7 @@ export { makeRib, type RibInput } from './occt/makeRib.js';
 export { makeShell } from './occt/makeShell.js';
 export { makeBlendSurface } from './occt/makeBlendSurface.js';
 export { BlendSurfaceError } from './occt/blendBoundary.js';
+export type { KernelStepFailureCode } from './occt/kernelStepError.js';
 export { makeSurface, isShellShape } from './occt/makeSurface.js';
 export { thickenSurfaceBody, offsetSurfaceBody, SurfaceThickenError } from './occt/makeSurfaceThicken.js';
 export type { ThickenStepSpec, OffsetSurfaceBodyStepSpec } from './types.js';

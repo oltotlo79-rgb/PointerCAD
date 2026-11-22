@@ -118,6 +118,7 @@ function useDrawingCanvas() {
   const gdt = useMemo(() => drawing === null || source === null ? { datums: [], frames: [], unresolvedCount: 0 }
     : resolveDrawingGdt(drawing, drawingDimensionContext(source)), [drawing, source]);
   const welds = useMemo(() => drawing === null || source === null ? [] : resolveDrawingWelds(drawing, drawingDimensionContext(source)), [drawing, source]);
+  const resolveFields = useMemo(() => drawing === null ? undefined : drawingNoteFields(drawing, library), [drawing, library]);
   const annotations = useMemo(() => drawing === null || fontStatus !== 'ready' ? []
     : displayDrawingAnnotations(drawing, source ?? { bodyIds: [], center: [0, 0, 0] }, library, drawingFont.outline), [drawing, source, library, fontStatus]);
   const shown = useMemo(() => {
@@ -139,7 +140,7 @@ function useDrawingCanvas() {
     const displays = dimensions.map((dimension) => {
       const changed = preview.get(dimension.dimension.id);
       return displayDrawingDimension(document, changed === undefined ? dimension : { ...dimension, dimension: changed },
-        drawingFont.outline, { viewFrames: source?.viewFrames });
+        drawingFont.outline, { viewFrames: source?.viewFrames, resolveFields });
     });
     const views = resolution?.ok === true ? resolution.projection.views : [];
     const tables = displayDrawingTables(document, source, library, drawingFont.outline);
@@ -166,8 +167,7 @@ function useDrawingCanvas() {
         fill: primitive.fill === null ? null : SELECTION_COLOR } : { ...primitive, fill: SELECTION_COLOR };
     });
     return { svg: toSvg({ ...rendered.document, primitives }), height: rendered.document.heightMm, displays, views, tables, manufacturing };
-  }, [drawing, dimensions, annotations, resolution, selectedIds, targets, dragPoint, fontStatus, source, library, gdt, welds, repairProjection]);
-
+  }, [drawing, dimensions, annotations, resolution, selectedIds, targets, dragPoint, fontStatus, source, library, gdt, welds, repairProjection, resolveFields]);
   function paperPoint(event: React.PointerEvent): { readonly point: Point2; readonly tolerance: number } | null {
     const svg = container.current?.querySelector('svg');
     const matrix = svg?.getScreenCTM();
@@ -183,7 +183,7 @@ function useDrawingCanvas() {
     const previews = [];
     for (const dimension of changed) {
       const resolved = dimensions.find((item) => item.dimension.id === dimension.id); if (resolved === undefined) return false;
-      previews.push(displayDrawingDimension(drawing, { ...resolved, dimension }, drawingFont.outline, { viewFrames: source?.viewFrames }));
+      previews.push(displayDrawingDimension(drawing, { ...resolved, dimension }, drawingFont.outline, { viewFrames: source?.viewFrames, resolveFields }));
     }
     const changedIds = new Set(changed.map((item) => item.id));
     const attached = { ...gdt, datums: gdt.datums.filter((item) => changedIds.has(item.datum.sizeDimensionId ?? '')),
@@ -194,7 +194,7 @@ function useDrawingCanvas() {
     const rendered = renderDrawingElements(drawing, elements, { outlineText: drawingFont.outline });
     dimensionSvgPreview.current ??= createDrawingSvgPreview(svg, new Set(elements.map((element) => element.ownerId)));
     return dimensionSvgPreview.current.update(rendered.document);
-  }, [drawing, busy, shown, dimensions, gdt, source, selectedIds]);
+  }, [drawing, busy, shown, dimensions, gdt, source, selectedIds, resolveFields]);
   // 選択表示のDOMが確定した時点で差替え枠と最初の輪郭を用意する。
   // 最初のpointermoveへ全SVGの走査・退避・解析の初期費用を持ち込まない。
   useLayoutEffect(() => {

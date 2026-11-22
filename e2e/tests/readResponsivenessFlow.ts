@@ -322,6 +322,25 @@ function logReadLatencyBreakdown(spec: string, kind: string, mib: number, active
   }
 }
 
+/**
+ * Intervals between the distinct requestAnimationFrame markers that accepted keys observed, per read. Keys arrive
+ * every few ms, so a frame that comes late shows as one long interval (run 44991756823: one 130 ms frame held
+ * 29 keys). A record for passing runs too; the p95 decision does not read it.
+ */
+function observedFrameGaps(active: ReturnType<typeof readInputMetrics>['active']) {
+  const frames = new Map<string, Set<number>>();
+  for (const { readId, input } of active) {
+    if (readId === null || input.paintedAt === null) continue;
+    const markers = frames.get(readId) ?? new Set<number>();
+    markers.add(input.paintedAt); frames.set(readId, markers);
+  }
+  const gaps = [...frames.values()].flatMap(markers => {
+    const sorted = [...markers].sort((a, b) => a - b);
+    return sorted.slice(1).map((at, index) => at - sorted[index]);
+  });
+  return { maxFrameGapMs: gaps.length === 0 ? null : Math.max(...gaps), frameGapsOver50Ms: gaps.filter(gap => gap > 50).length };
+}
+
 /** Host-wide cumulative CPU counters let a failed read be aligned with the other CI worker. */
 function readHostSnapshot() {
   const cores = cpus();
@@ -484,7 +503,9 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
       samplerStaleRetries: memory?.staleRetries ?? null,
       ...residentMemorySummary(before, during, after, startedAt) }));
     // 通った回も p95 と有効な入力の数を 1 行出す(A-20。外部検査のログで余裕を見るため)。判定(下の p95 < 100)は変えない。
-    console.log('[応答記録]', JSON.stringify({ label: `読込${String(mib)}MiB ${kind} p95`, p95: metrics.p95, inputs: metrics.active.length, targetMs: 100 }));
+    // rAF の間隔の最大と 50 ms を超えた数も出す(記録だけ。遅れた 1 こまが機械の揺れか、ほかの回でも出るかを見るため)。
+    console.log('[応答記録]', JSON.stringify({ label: `読込${String(mib)}MiB ${kind} p95`, p95: metrics.p95, inputs: metrics.active.length,
+      ...observedFrameGaps(metrics.active), targetMs: 100 }));
     await command.press('Escape');
     // These counters describe the timed reads. The save/reopen proof below starts another real reader.
     expect(audit.sent).toBe(attempts.length); expect(audit.replied).toBe(attempts.length); expect(audit.terminated).toBe(attempts.length);

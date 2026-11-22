@@ -1378,7 +1378,7 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
 
     await expect(pending).resolves.toEqual({
       mesh: { faces: [] },
-      failures: [{ featureId: 'face-1', message: KERNEL_BROKEN_MESSAGE }],
+      failures: [{ featureId: 'face-1', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }],
     });
     bridge.dispose();
   });
@@ -1390,7 +1390,7 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
 
     await expect(pending).resolves.toEqual({
       bodies: [],
-      failures: [{ featureId: 'body-1', message: KERNEL_BROKEN_MESSAGE }],
+      failures: [{ featureId: 'body-1', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }],
       cacheHits: 0,
       cancelled: false,
       appearanceMatches: [],
@@ -1405,7 +1405,7 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
 
     await expect(pending).resolves.toEqual({
       results: [],
-      failures: [{ featureId: 'offset-1', message: KERNEL_BROKEN_MESSAGE }],
+      failures: [{ featureId: 'offset-1', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }],
     });
     bridge.dispose();
   });
@@ -1417,7 +1417,7 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
 
     await expect(pending).resolves.toEqual({
       results: [],
-      failures: [{ featureId: 'projection-1', message: KERNEL_BROKEN_MESSAGE }],
+      failures: [{ featureId: 'projection-1', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }],
     });
     bridge.dispose();
   });
@@ -1429,8 +1429,18 @@ describe('createKernelBridge: Worker が黙ったまま壊れたとき(§2.9)', 
 
     await expect(pending).resolves.toEqual({
       results: [],
-      failures: [{ featureId: 'projection-1', message: KERNEL_BROKEN_MESSAGE }],
+      failures: [{ featureId: 'projection-1', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }],
     });
+    bridge.dispose();
+  });
+
+  it('functionSketchCurves は止まりの断り(符号 workerBroken)で解決する', async () => {
+    const bridge = createKernelBridge();
+    const pending = bridge.functionSketchCurves({ featureId: 'function-1', components: [[[0, 0, 0], [1, 0, 0]]],
+      bounds: { minimum: [0, 0, 0], maximum: [1, 0, 0] } });
+    silentWorkers.breakCurrent();
+
+    await expect(pending).resolves.toEqual({ status: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' });
     bridge.dispose();
   });
 
@@ -2025,7 +2035,8 @@ describe('current global solid backing ledger through actual Comlink clones', ()
     expect(sent).toBe(0); expect(bridge.pendingCallbacks()).toBe(0); expect(bridge.pendingWaiters()).toBe(0);
     expect(bridge.operationStatus(result)).toBe(ending === 'workerBroken' ? 'workerBroken' : 'cancelled');
     expect(result.cancelled).toBe(ending === 'dispose');
-    expect(result.failures).toEqual(ending === 'workerBroken' ? [{ featureId: 'unsent', message: KERNEL_BROKEN_MESSAGE }] : []);
+    expect(result.failures).toEqual(ending === 'workerBroken'
+      ? [{ featureId: 'unsent', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }] : []);
     bridge.dispose();
     silentWorkers.observePostedRequests(() => undefined);
     const next = await localBox(); // Actual Comlink/current Worker baseline, then actual native recomputation.

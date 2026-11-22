@@ -307,14 +307,17 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
         const restored = store.getState().solidAnalysisSession;
         if (restored) store.setState({ solidAnalysisSession: { ...restored, revision: session.revision + 1,
           error: geometryKept ? restored.error : t('solidAnalysis.changed') } });
-        return;
+      } else {
+        // Undo/Redo always advance documentVersion (documentSlice: drafts are discarded across a history step), so the run,
+        // result and pending selection are still dropped. Only when nothing above changed (a non-shape step such as the
+        // input save itself) is it not reported as a shape or input change.
+        store.setState({ solidAnalysisSession: { ...session, status: 'editing', stage: null, result: null,
+          error: geometryKept ? session.error : t('solidAnalysis.changed') }, solidModal: invalidateSolidModal(state.solidModal),
+          solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
       }
-      // Undo/Redo always advance documentVersion (documentSlice: drafts are discarded across a history step), so the run,
-      // result and pending selection are still dropped. Only when nothing above changed (a non-shape step such as the
-      // input save itself) is it not reported as a shape or input change.
-      store.setState({ solidAnalysisSession: { ...session, status: 'editing', stage: null, result: null,
-        error: geometryKept ? session.error : t('solidAnalysis.changed') }, solidModal: invalidateSolidModal(state.solidModal),
-        solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
+      // A part reopened (or a history step back to it) brings back its saved result once its geometry has finished
+      // recomputing, not only when the panel opens. The store action is a no-op until then.
+      store.getState().restoreSavedSolidResult();
     }
   });
   return {

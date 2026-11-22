@@ -15,6 +15,7 @@ import { resolveFaceReference } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
+import { KernelStepError } from './kernelStepError.js';
 
 /**
  * 抜き勾配(FR-417)。
@@ -102,11 +103,11 @@ function resolveFaceIndex(
 ): number {
   if (query.kind !== 'face') {
     // 面以外の指紋が来るのは model 側の取り違えだが、利用者への直し方は同じ(面を選び直す)。
-    throw new Error(missingMessage);
+    throw new KernelStepError('missingSubShape', missingMessage);
   }
   const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
   if (match.status !== 'matched') {
-    throw new Error(missingMessage);
+    throw new KernelStepError('missingSubShape', missingMessage);
   }
   return match.match.index;
 }
@@ -266,7 +267,7 @@ export function makeDraft(
   // 一覧は通し番号の順で来る約束だが、番号で引き直して並びに依存しないようにする。
   const neutralInfo = tables.faces.find((candidate) => candidate.index === neutralIndex);
   if (neutralInfo === undefined) {
-    throw new Error(MISSING_NEUTRAL_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_NEUTRAL_FACE_MESSAGE);
   }
   if (neutralInfo.surfaceKind !== 'plane') {
     throw new Error(NEUTRAL_NOT_PLANAR_MESSAGE);
@@ -280,7 +281,7 @@ export function makeDraft(
     const neutralFace = faceAt(oc, target, neutralIndex);
     if (neutralFace === null) {
       // 一覧の番号が形と食い違っている(別の形から作った一覧を渡された)合図。
-      throw new Error(MISSING_NEUTRAL_FACE_MESSAGE);
+      throw new KernelStepError('missingSubShape', MISSING_NEUTRAL_FACE_MESSAGE);
     }
     keep(neutralFace);
 
@@ -299,7 +300,7 @@ export function makeDraft(
     for (const index of targetIndices) {
       const face = faceAt(oc, target, index);
       if (face === null) {
-        throw new Error(MISSING_TARGET_FACE_MESSAGE);
+        throw new KernelStepError('missingSubShape', MISSING_TARGET_FACE_MESSAGE);
       }
       try {
         // 第 5 引数 Flag は結果を変えない(上の注釈の実測)。当初の書き方どおり true。

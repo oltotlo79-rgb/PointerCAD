@@ -2515,6 +2515,13 @@ export const e2eImportBaseline = [
     "reason": "Existing e2e dependency on packages/model/src/index.js; retained as a specific migration baseline."
   },
   {
+    "consumer": "e2e/tests/solidSavedResultFlow.ts",
+    "specifier": "../../packages/io/src/index.js",
+    "target": "packages/io/src/index.js",
+    "count": 1,
+    "reason": "Read the part saved by the product with the real PCAD reader to check the static solid result and its solver input."
+  },
+  {
     "consumer": "e2e/tests/steelBendFlow.ts",
     "specifier": "../../packages/io/src/index.js",
     "target": "packages/io/src/index.js",

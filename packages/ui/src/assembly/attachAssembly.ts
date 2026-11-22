@@ -1,7 +1,7 @@
 /** 文書の寿命に沿って部品を再計算し、配置と共有形状をストアへ渡す。 */
 import {
   appearanceOf, buildStandardPartFromSource, diagnoseMatesSteps, jointFramePairFromTargets,
-  KERNEL_BROKEN_MESSAGE, partKeyOf,
+  partKeyOf,
   resolveAssembly, resolveConstrainedAssembly,
   createBodyMateTargetResolver, solveMatesSteps, runCooperative,
   type AssemblyDocument, type AssemblyKernelBridge, type ComponentSource, type EmbeddedPartAttachments, type PartDocument, type PartLibrary, type SolveMatesOutcome,
@@ -293,16 +293,23 @@ export const ASSEMBLY_CONSTRAINT_EXECUTION: AssemblyConstraintExecution = {
   schedule: slice => { setTimeout(slice, 0); },
 };
 
+/** 部品の再計算の失敗が、Worker の破損の符号を持つか(0b-1b)。 */
+function isWorkerBroken(error: { readonly code: string }): boolean {
+  return error.code === 'workerBroken';
+}
+
 /** A refusal naming the gate stage that threw, so the cleanup gate keeps it instead of an unclassified exception. */
 class AssemblyRecomputeRefusal extends Error {
   readonly stage: string;
-  constructor(stage: string, message: string) { super(message); this.stage = stage; }
+  /** 部品の再計算が Worker の破損の符号(workerBroken)で終わっていた時に真(0b-1b。文では見分けない)。 */
+  readonly workerBroken: boolean;
+  constructor(stage: string, message: string, workerBroken = false) { super(message); this.stage = stage; this.workerBroken = workerBroken; }
 }
 
 interface ObservationGates {
   readonly obsolete: (request: Request) => boolean;
   readonly gate: (request: Request, stage: string, reason?: string | null, count?: number | null) => void;
-  readonly refuse: (request: Request, stage: string, reason: string) => never;
+  readonly refuse: (request: Request, stage: string, reason: string, workerBroken?: boolean) => never;
 }
 
 /** At most this many waits for another request's reply clone within one initial observation (a count, not a time). */
@@ -516,8 +523,8 @@ export function attachAssembly(
         documentId: request.documentId.slice(0, 256), generation: request.generation, ...draft, totalMs }));
     } catch { /* Diagnostic timing never changes recomputation or publication. */ }
   };
-  function refuse(request: Request, stage: string, reason: string): never {
-    gate(request, stage, reason); throw new AssemblyRecomputeRefusal(stage, reason);
+  function refuse(request: Request, stage: string, reason: string, workerBroken = false): never {
+    gate(request, stage, reason); throw new AssemblyRecomputeRefusal(stage, reason, workerBroken);
   }
   let detached = false;
   let running = false;
@@ -670,7 +677,7 @@ export function attachAssembly(
     const bodies = new Map<string, readonly SolidBody[]>();
     const appearances = new Map<string, AppearanceInput>();
     const messages: string[] = [...catalogFailures];
-    let cacheHits = 0;
+    let cacheHits = 0, workerBroken = false;
     const partsStartedAt = performance.now();
     timing.parts = references.size;
     for (const ref of references) {
@@ -748,7 +755,7 @@ export function attachAssembly(
       bodies.set(ref, found.result.bodies);
       appearances.set(ref, found.appearances);
       messages.push(...found.result.errors.map((error) => error.message));
-      cacheHits += found.result.cacheHits; timing.cacheHits = cacheHits;
+      cacheHits += found.result.cacheHits; timing.cacheHits = cacheHits; workerBroken ||= found.result.errors.some(isWorkerBroken);
     }
     timing.partsMs = performance.now() - partsStartedAt;
     if (obsolete(request)) return;
@@ -818,14 +825,14 @@ export function attachAssembly(
       && overlay.library === request.library && overlay.documentId === request.documentId
       && overlay.version === request.version && overlay.generation === request.generation;
     gate(request, 'solver', diagnosis === null ? 'no-active-mates' : `${diagnosis.converged}:${diagnosis.complete}`, messages.length);
-    const lastOutcome = messages.some((message) => message.includes(KERNEL_BROKEN_MESSAGE)) ? 'workerBroken' :
+    const lastOutcome = workerBroken ? 'workerBroken' :
       messages.length > 0 || diagnosis?.converged === false || diagnosis?.complete === false ? 'failed' : 'success';
     const sources = new Map<string, AssemblySourceMeshOwner>();
     for (const [ref, partBodies] of bodies) {
       const entry = cache.get(ref);
       if (entry === undefined || entry.result.bodies !== partBodies || !entry.sourceOwner.current()) {
         // Preserve the actual recompute failure while refusing an unowned display publication.
-        refuse(request, 'source-owner-refused', messages.length === 0 ? t('assembly.recomputeFailed') : messages.join('\n'));
+        refuse(request, 'source-owner-refused', messages.length === 0 ? t('assembly.recomputeFailed') : messages.join('\n'), workerBroken);
       }
       sources.set(ref, entry.sourceOwner);
     }
@@ -954,7 +961,7 @@ export function attachAssembly(
             const message = error instanceof Error ? error.message : String(error);
             useAppStore.setState({ isComputing: false, errorMessage: message, recomputeProgress: null });
             useAppStore.getState().recordRecomputeCompletion(request.generation,
-              message.includes(KERNEL_BROKEN_MESSAGE) ? 'workerBroken' : 'failed');
+              error instanceof AssemblyRecomputeRefusal && error.workerBroken ? 'workerBroken' : 'failed');
           }
         }
       }

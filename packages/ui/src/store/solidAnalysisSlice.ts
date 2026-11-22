@@ -15,8 +15,8 @@ import { cancelSolidBuckling, editSolidBucklingCount, initialSolidBucklingState,
   setSolidBucklingView, startSolidBuckling, type SolidBucklingReply, type SolidBucklingRunState }
   from '../solidAnalysis/solidBucklingState.js';
 import { solidBucklingSavedInput, withSolidBucklingSaved } from '../solidAnalysis/solidBucklingSaved.js';
-import { openedSolidResult, restoreSavedSolid, type OpenedSolidResults, type SavedSolid,
-  type SolidRestore } from '../solidAnalysis/savedSolidResults.js';
+import { keptSolidResults, openedSolidResult, restoreSavedSolid, sessionMatchesSavedInput, type OpenedSolidResults,
+  type SavedSolid, type SolidRestore } from '../solidAnalysis/savedSolidResults.js';
 import { createSolidBoundaryDraft, createSolidSupport, SOLID_BOUNDARY_INDEX,
   type SolidBoundaryAxis, type SolidGravityField } from '../solidAnalysis/solidBoundaryDraft.js';
 
@@ -58,6 +58,8 @@ export interface SolidAnalysisSlice {
    * refused because its kept solver input did not match its digest, or limited because none was kept. */
   readonly solidSavedRestore: { readonly saved: SavedSolid; readonly restore: SolidRestore } | null;
   readonly setSolidOpenedResults: (opened: OpenedSolidResults | null) => void;
+  /** Tries to bring back the opened result into the current session (no-op unless it is empty, idle and on finished geometry). */
+  readonly restoreSavedSolidResult: () => void;
   readonly cancelSolidAnalysis: () => void;
   /** Changes only how the current result is shown; never cancels, re-runs or saves. Non-finite or negative scales are refused. */
   readonly setSolidAnalysisFieldView: (change: Partial<SolidFieldViewChoice>) => void;
@@ -95,21 +97,26 @@ export interface SolidAnalysisSlice {
   readonly setSolidBucklingView: (view: SolidModeDisplay, amplitudeText: string, showShape: boolean) => void;
 }
 /**
- * Opening the panel brings back the result saved with this very document: the kept solver input must match the result's
- * digest first (restoreSavedSolid), and the panel must still show the same session on the same finished geometry.
+ * Brings back the result saved with this very document into a session that has none: when the panel opens, and when the
+ * geometry finishes recomputing or a history step recreates the session while the panel is open (attachSolidAnalysis).
+ * The panel's current input must equal the saved input (the same check as saving a session result, sessionMatchesSavedInput:
+ * a value typed while the geometry recomputed keeps the saved result away), the kept solver input must match the result's
+ * digest (restoreSavedSolid), and the panel must still show the same session on the same finished geometry; a computed or
+ * running result is never replaced.
  */
 async function restoreOpenedSolid(get: () => AppState, set: (change: Partial<AppState>) => void): Promise<void> {
   const state = get(), session = state.solidAnalysisSession;
   const saved = openedSolidResult(state.document, state.solidOpenedResults);
-  if (saved === undefined || session === null || state.isComputing || state.lastOutcome !== 'success') return;
+  if (saved === undefined || session === null || session.result !== null || session.status === 'running'
+    || state.isComputing || state.lastOutcome !== 'success' || !sessionMatchesSavedInput(state.document, session)) return;
   // The shared request guard (documentRequestCore): a document, history, attachment or document switch during the digest
   // wait, or a later restore of the same kind, drops this one. The session and the finished geometry are checked beside it.
   const request = beginDocumentRequest('solidAnalysis.savedRestore', get, state);
   const generation = state.completedGeneration, restored = await restoreSavedSolid(saved, generation);
   const now = get();
   if (!request.isCurrent() || now.solidAnalysisSession !== session || now.completedGeneration !== generation) return;
-  set({ solidSavedRestore: { saved, restore: restored }, ...(restored.kind === 'restored'
-    ? { solidAnalysisSession: { ...session, status: 'complete' as const, result: restored.outcome } } : {}) });
+  set({ solidSavedRestore: { saved, restore: restored }, ...(restored.kind === 'restored' ? { solidAnalysisSession: {
+    ...session, status: 'complete' as const, stage: null, error: null, result: restored.outcome } } : {}) });
 }
 
 function boundarySession(state: AppState): SolidAnalysisSession | null {
@@ -209,6 +216,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
   solidAnalysisSession: null, solidAnalysisRunner: null,
   solidOpenedResults: null, solidSavedRestore: null,
   setSolidOpenedResults: (solidOpenedResults) => set({ solidOpenedResults, solidSavedRestore: null }),
+  restoreSavedSolidResult: () => { void restoreOpenedSolid(get, set); },
   solidModal: initialSolidModalState(),
   solidModalShared: null,
   solidBuckling: initialSolidBucklingState(),
@@ -239,8 +247,14 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
   closeSolidAnalysis: () => {
     const state = get();
     state.solidAnalysisRunner?.cancel(); state.solidAnalysisRunner?.cancelModal?.(); state.solidAnalysisRunner?.cancelBuckling?.();
+    // A freshly computed result of the saved input stays with this document (saved with it, restored on reopening the
+    // panel); a result restored from the opened file is already there and keeps its origin.
+    const restore = state.solidSavedRestore?.restore;
+    const restored = restore?.kind === 'restored' && restore.outcome === state.solidAnalysisSession?.result;
+    const kept = restored ? null : keptSolidResults(state, state.document);
     set({ solidAnalysisSession: null, solidModal: invalidateSolidModal(state.solidModal),
-      solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
+      solidBuckling: invalidateSolidBuckling(state.solidBuckling),
+      ...(kept === null ? {} : { solidOpenedResults: kept, solidSavedRestore: null }) });
   },
   editSolidAnalysis: (field, source) => {
     const state = get(), session = state.solidAnalysisSession;

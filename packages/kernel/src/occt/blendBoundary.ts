@@ -6,6 +6,7 @@ import { unitDirection } from './normalizeDirection.js';
 import { MISSING_SUB_SHAPE_MESSAGE } from './pickSubShape.js';
 import { crossVec, scaleVec } from './sketchCorner.js';
 import { boundingDiagonal, edgeAt, faceAt, facesTouchingEdge, type SubShapeTables } from './subShapes.js';
+import { KernelStepError } from './kernelStepError.js';
 
 export interface BlendEdgeSource {
   readonly shape: TopoDS_Shape;
@@ -56,7 +57,7 @@ function boundarySign(oc: OpenCascadeInstance, face: TopoDS_Face, edge: TopoDS_E
 function supportingBoundary(oc: OpenCascadeInstance, source: BlendEdgeSource, owner: Allocations) {
   const { shape, tables, query } = source;
   const resolved = resolveEdgeReference(tables.edges, query, boundingDiagonal(oc, shape) * 0.5, tables.origins);
-  if (resolved.status !== 'matched') throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+  if (resolved.status !== 'matched') throw new KernelStepError('missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
   const index = resolved.match.index;
   const touching = facesTouchingEdge(oc, shape, index);
   if (touching.length !== 1) throw new BlendSurfaceError('boundary-required');
@@ -64,7 +65,7 @@ function supportingBoundary(oc: OpenCascadeInstance, source: BlendEdgeSource, ow
   if (face === null) throw new BlendSurfaceError('boundary-required');
   owner.keep(face);
   const edge = edgeAt(oc, shape, index);
-  if (edge === null) throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+  if (edge === null) throw new KernelStepError('missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
   owner.keep(edge);
   if (oc.BRep_Tool.IsClosed_2(edge, face)) throw new BlendSurfaceError('boundary-required');
   if (oc.BRep_Tool.Degenerated(edge) || !oc.BRep_Tool.SameParameter(edge) || !oc.BRep_Tool.SameRange(edge)) {

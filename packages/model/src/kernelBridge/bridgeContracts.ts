@@ -233,6 +233,9 @@ export interface KernelHealth {
 
 /** 既存の結果の型とは別に読む、RPCの決着理由。 */
 export type KernelOperationStatus = 'success' | 'failed' | 'cancelled' | 'workerBroken';
+
+/** Worker が壊れて応答しなくなった依頼の失敗に付ける符号(0b-1b)。画面の側は文ではなくこれで見分ける。 */
+export type WorkerBrokenCode = Extract<KernelOperationStatus, 'workerBroken'>;
 export type KernelOperationCounts = Readonly<Record<KernelOperationStatus, number>>;
 
 /** 部品単位の形の寿命と、再取得が必要な鍵。欠落を通常の計算失敗と混ぜない。 */

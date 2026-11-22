@@ -11,7 +11,9 @@ import { evaluateExpression, type ExpressionValue, type EvaluateOptions } from '
 
 import type {
   KernelBridge,
+  SketchFaceFailure,
   SketchOffsetEntry,
+  SketchOffsetFailure,
   SketchOffsetRequestItem,
 } from '../kernelBridge.js';
 import type { ConstraintDiagnosis } from './constraints/diagnose.js';
@@ -58,14 +60,14 @@ export interface SketchRecomputeOptions {
   readonly offsets?: OffsetCache;
 }
 
-/** カーネルの失敗を利用者向けの一文にする。理由はカーネルが日本語で返す。 */
-function kernelFailed(featureId: string, message: string): SketchError {
-  return { featureId, code: 'kernelFailed', message: `面を作れませんでした: ${message}` };
+/** カーネルの失敗を利用者向けの一文にする。理由はカーネルが日本語で返す。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
+function kernelFailed(featureId: string, message: string, code?: SketchFaceFailure['code']): SketchError {
+  return { featureId, code: code ?? 'kernelFailed', message: `面を作れませんでした: ${message}` };
 }
 
-/** オフセットの失敗。面とは別の言い回しにして、どの操作で失敗したかを分かるようにする。 */
-function offsetFailed(featureId: string, message: string): SketchError {
-  return { featureId, code: 'kernelFailed', message: `ずらした線を作れませんでした: ${message}` };
+/** オフセットの失敗。面とは別の言い回しにして、どの操作で失敗したかを分かるようにする。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
+function offsetFailed(featureId: string, message: string, code?: SketchOffsetFailure['code']): SketchError {
+  return { featureId, code: code ?? 'kernelFailed', message: `ずらした線を作れませんでした: ${message}` };
 }
 
 /**
@@ -148,7 +150,7 @@ export async function fillOffsets(
       pendingOffsets.map((pending) => toOffsetRequest(pending, firstDistanceOf(pending))),
     );
     for (const failure of outcome.failures) {
-      errors.push(offsetFailed(failure.featureId, failure.message));
+      errors.push(offsetFailed(failure.featureId, failure.message, failure.code));
     }
     for (const entry of outcome.results) {
       const pending = byFeature.get(entry.featureId);
@@ -174,7 +176,7 @@ export async function fillOffsets(
   try {
     const outcome = await bridge.offsetSketchCurves(retries);
     for (const failure of outcome.failures) {
-      errors.push(offsetFailed(failure.featureId, failure.message));
+      errors.push(offsetFailed(failure.featureId, failure.message, failure.code));
     }
     for (const entry of outcome.results) {
       const pending = byFeature.get(entry.featureId);
@@ -228,7 +230,7 @@ export async function recomputeSketch(
   try {
     const outcome = await bridge.tessellateSketchFaces(resolved.faces);
     const failures = outcome.failures.map((failure) =>
-      kernelFailed(failure.featureId, failure.message),
+      kernelFailed(failure.featureId, failure.message, failure.code),
     );
     return {
       resolved,

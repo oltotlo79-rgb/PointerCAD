@@ -19,28 +19,10 @@ const MAXIMUM_SEWING_REPAIR_TOLERANCE_MM = 1;
  */
 
 /**
- * 値の大きさ(絶対値)が許容差を超えるか(|value| > bound)。許容差の比較を製品のあちこちに手書きせず、
- * この 1 か所に集める共通の口(kernel の中だけで使う。kernel は model を読めないため ui・model とは別に置く)。
- * 許容差は呼ぶ側が名前のある定数で渡す。値か許容差が NaN の時は false(`Math.abs(value) > bound` と同じ真偽)。
+ * 値の大きさ(絶対値)を許容差と比べる共通の口(|value| > bound ほか 4 つ)。定義は読み込みの無い純粋な部分
+ * `../math/magnitude.ts` の 1 か所だけで、kernel の中の呼出し側のためにここから出し直す(model も同じ定義を橋から読む)。
  */
-export function exceedsMagnitude(value: number, bound: number): boolean {
-  return value > bound || value < -bound;
-}
-
-/** |value| ≤ bound。 */
-export function withinMagnitude(value: number, bound: number): boolean {
-  return -bound <= value && value <= bound;
-}
-
-/** |value| < bound。 */
-export function belowMagnitude(value: number, bound: number): boolean {
-  return -bound < value && value < bound;
-}
-
-/** |value| ≥ bound。NaN を含む場合は偽。 */
-export function magnitudeAtLeast(value: number, bound: number): boolean {
-  return value >= bound || value <= -bound;
-}
+export { belowMagnitude, exceedsMagnitude, magnitudeAtLeast, withinMagnitude } from '../math/magnitude.js';
 
 /** 有限で正、かつ文書尺度に対して過大でない修復幅を返す。 */
 export function validateToleranceMm(value: number): number {

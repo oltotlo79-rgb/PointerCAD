@@ -102,6 +102,39 @@ describe('bounded pure vector subpath', () => {
   });
 });
 
+describe('bounded pure magnitude subpath (L-19)', () => {
+  const magnitude = 'packages/kernel/src/math/magnitude.ts';
+  const magnitudeSubpath = '@pointercad/kernel/math/magnitude';
+  const bridge = 'packages/model/src/kernelBridge/magnitudeMath.ts';
+  const helpers = ['withinMagnitude', 'belowMagnitude', 'exceedsMagnitude', 'magnitudeAtLeast'];
+  const declared = (name: string): readonly string[] => read(name).statements.filter(ts.isFunctionDeclaration)
+    .flatMap(node => node.name !== undefined && helpers.includes(node.name.text) ? [node.name.text] : []);
+  it('has zero imports and an explicit export entry, hence no kernel index/OCCT/Worker route for the FEM Worker', () => {
+    expect(imports(read(magnitude))).toEqual([]);
+    expect(runtimeReferences(read(magnitude))).toEqual([]);
+    const packageJson = JSON.parse(readFileSync(resolve(root, 'packages/kernel/package.json'), 'utf8')) as {
+      exports: Record<string, { readonly types: string; readonly default: string }>;
+    };
+    expect(packageJson.exports['./math/magnitude']).toEqual({
+      types: './dist/math/magnitude.d.ts', default: './src/math/magnitude.ts',
+    });
+  });
+  it('reaches model only through its dedicated bridge and kernel callers through occt/tolerances.ts', () => {
+    const users = files('packages/model/src').filter(name => imports(read(name)).some(value =>
+      value.includes(magnitudeSubpath) || /kernel[\\/]src[\\/]math[\\/]magnitude/u.test(value)));
+    expect(users.map(name => relative(root, resolve(root, name)).replaceAll('\\', '/'))).toEqual([bridge]);
+    expect(imports(read(bridge))).toEqual([`'${magnitudeSubpath}'`]);
+    expect(imports(read('packages/model/src/numericTolerance.ts'))).toEqual(["'./kernelBridge/magnitudeMath.js'"]);
+    expect(imports(read('packages/kernel/src/occt/tolerances.ts'))).toEqual(["'../math/magnitude.js'"]);
+  });
+  it('declares the four comparisons only in the pure owner', () => {
+    expect(declared(magnitude)).toEqual(helpers);
+    for (const name of ['packages/kernel/src/occt/tolerances.ts', 'packages/model/src/numericTolerance.ts', bridge]) {
+      expect(declared(name), name).toEqual([]);
+    }
+  });
+});
+
 describe('surface arc cross product uses the existing kernel helper', () => {
   it('imports crossVec as cross and does not redefine the same operation', () => {
     const source = read('packages/kernel/src/occt/surfaceArcOrigins.ts');

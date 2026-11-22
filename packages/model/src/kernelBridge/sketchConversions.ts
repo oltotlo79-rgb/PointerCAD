@@ -165,6 +165,7 @@ export function toProjectionResult(
   const failures: SketchProjectionFailure[] = outcome.failures.map((failure) => ({
     featureId: failure.id,
     message: failure.message,
+    ...(failure.code === undefined ? {} : { code: failure.code }),
   }));
 
   for (const result of outcome.results) {

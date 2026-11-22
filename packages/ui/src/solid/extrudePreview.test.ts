@@ -261,7 +261,7 @@ describe('計算の失敗は文書・形・取り消しの段に触れない', (
     { kind: 'failed', failure: 'failed', settle: (call: ControlledCall) => call.settle({ ...success(call, ['first']),
       errors: [{ featureId: 'extrude-new', code: 'kernelFailed', message: 'ソリッドを作れませんでした' }] }) },
     { kind: 'workerBroken', failure: 'workerBroken', settle: (call: ControlledCall) => call.settle({ ...success(call, ['first']),
-      errors: [{ featureId: 'extrude-new', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE }] }) },
+      errors: [{ featureId: 'extrude-new', code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE }] }) },
     { kind: 'missing final body', failure: 'missingBody', settle: (call: ControlledCall) => call.settle(success(call, ['first'])) },
     { kind: 'invalid final body', failure: 'invalidBody', settle: (call: ControlledCall) => {
       const result = success(call, ['first', 'extrude-new']);

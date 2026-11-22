@@ -8,6 +8,7 @@ import { isFilletShape, resolveFilletEdges } from './makeFillet.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, edgeAt } from './subShapes.js';
+import { KernelStepError } from './kernelStepError.js';
 
 /**
  * 半径の変わる R 面取り(FR-426)。
@@ -132,7 +133,7 @@ function resolveTargets(
     }
     const indices = resolveFilletEdges(oc, shape, tables, [entry.target], scale);
     if (indices.length === 0) {
-      throw new Error(MISSING_EDGE_MESSAGE);
+      throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
     }
     for (const index of indices) {
       // 先に書いたほうを残す。同じ辺に 2 通りの半径を渡されたとき、あとの指定で
@@ -179,7 +180,7 @@ export function makeVariableFillet(
   const scale = boundingDiagonal(oc, target) * 0.5;
   const edges = resolveTargets(oc, target, tables, input.targets, scale);
   if (edges.length === 0) {
-    throw new Error(MISSING_EDGE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
   }
 
   // 列挙値は unknown を経由してから述語ガードで絞る(makeFillet.ts の注釈)。
@@ -198,7 +199,7 @@ export function makeVariableFillet(
       const edge = edgeAt(oc, target, entry.index);
       if (edge === null) {
         // 一覧の番号が形と食い違っている(別の形から作った一覧を渡された)合図。
-        throw new Error(MISSING_EDGE_MESSAGE);
+        throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
       }
       try {
         maker.Add_3(entry.startRadius, entry.endRadius, edge);

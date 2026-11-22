@@ -16,6 +16,7 @@ import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, edgeAt, faceAt, facesTouchingEdge } from './subShapes.js';
 import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
 import { semanticOperationOrigins } from './semanticOperationOrigins.js';
+import { KernelStepError } from './kernelStepError.js';
 
 /**
  * C 面取り(FR-408)。
@@ -151,7 +152,7 @@ function addChamferedEdge(
     const edge = edgeAt(oc, shape, edgeIndex);
     if (edge === null) {
       // 一覧の番号が形と食い違っている(別の形から作った一覧を渡された)合図。
-      throw new Error(MISSING_EDGE_MESSAGE);
+      throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
     }
     keep(edge);
 
@@ -228,7 +229,7 @@ export function makeChamfer(
   const scale = boundingDiagonal(oc, target) * 0.5;
   const edgeIndices = resolveFilletEdges(oc, target, tables, spec.targets, scale);
   if (edgeIndices.length === 0) {
-    throw new Error(MISSING_EDGE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
   }
 
   const { keep, release } = createAllocations();

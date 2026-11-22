@@ -58,6 +58,7 @@ import { boxSubShapeOrigins, cylinderSubShapeOrigins, sphereSubShapeOrigins, con
 import { resolveVertexReference } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { boundingDiagonal } from './subShapes.js';
+import { KernelStepError } from './kernelStepError.js';
 
 /** これ未満の体積(mm³)は「立体にならなかった」とみなす(他の make*.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
@@ -82,8 +83,8 @@ const ORIGIN_MESSAGE = '位置または向きの値が正しくありません�
  * 基準点にする頂点が見つからなかったときの断り(FR-429、FR-504)。
  *
  * 語尾は `makeHole.ts` / `makeFillet.ts` / `makeChamfer.ts` / `pickSubShape.ts` と
- * 揃えてある(model 側の `part/recomputePart.ts` がこの語尾で `missingSubShape` へ
- * 詰め替えるため、揃えないと理由の種類が変わってしまう)。
+ * 揃えてある(利用者への言い回しを揃えるため)。理由の種類は語尾ではなく、投げる時に付ける
+ * 符号 `missingSubShape`(`kernelStepError.ts`)で、model 側の `part/recomputePart.ts` が決める。
  *
  * **頂点は当たりにくい.** 頂点の指紋は軸も大きさも持たないので、通し番号が変わると
  * 位置がぴったり同じでも 0.5 にしか届かず、しきい値 0.6 を割る
@@ -313,13 +314,13 @@ export function resolvePrimitiveOrigin(
   }
   const match = resolveVertexReference(vertices, query, boundingDiagonal(oc, shape) * 0.5, origins);
   if (match.status !== 'matched') {
-    throw new Error(MISSING_PRIMITIVE_VERTEX_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_PRIMITIVE_VERTEX_MESSAGE);
   }
   // 一覧は通し番号の順に並ぶ約束だが、並びに頼らず番号で引き当てる
   // (matchSubShape.ts の selectBest が「並びが変わっても答えを変えない」のと同じ理由)。
   const found = vertices.find((vertex) => vertex.index === match.match.index);
   if (found === undefined) {
-    throw new Error(MISSING_PRIMITIVE_VERTEX_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_PRIMITIVE_VERTEX_MESSAGE);
   }
   return offsetFromVertex(found.position, offset);
 }

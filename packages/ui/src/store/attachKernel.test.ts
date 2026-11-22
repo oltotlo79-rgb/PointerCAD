@@ -233,13 +233,39 @@ describe('新しい文書による実行中の再計算の取消(R-7b、NFR-PF-4
     const detach = attachPartRecompute(fake.recompute);
     fake.calls[0].settle({
       ...resultFor(fake.calls[0].document),
-      errors: [{ featureId: 'solid-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE }],
+      errors: [{ featureId: 'solid-1', code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE }],
     });
     await tick();
 
     const state = useAppStore.getState();
     expect(state.completedGeneration).toBe(1);
     expect(state.lastOutcome).toBe('workerBroken');
+    detach();
+  });
+
+  it('面・投影・ずらしだけが Worker 破損の符号で失敗しても workerBroken になる(0b-1b。前は文の頭に操作名が付き、当たらなかった)', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle({
+      ...resultFor(fake.calls[0].document),
+      errors: [{ featureId: 'face-1', code: 'workerBroken', message: `面を作れませんでした: ${KERNEL_BROKEN_MESSAGE}` }],
+    });
+    await tick();
+
+    expect(useAppStore.getState().lastOutcome).toBe('workerBroken');
+    detach();
+  });
+
+  it('文が Worker 破損の文と同じでも、符号が無ければ workerBroken にしない(0b-1b。文では見分けない)', async () => {
+    const fake = createFakeRecompute();
+    const detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle({
+      ...resultFor(fake.calls[0].document),
+      errors: [{ featureId: 'solid-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE }],
+    });
+    await tick();
+
+    expect(useAppStore.getState().lastOutcome).toBe('failed');
     detach();
   });
 

@@ -15,6 +15,7 @@ import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, edgeAt, edgesTouchingVertex } from './subShapes.js';
 import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
 import { semanticOperationOrigins } from './semanticOperationOrigins.js';
+import { KernelStepError } from './kernelStepError.js';
 
 /**
  * R 面取り(FR-407)。
@@ -215,7 +216,7 @@ export function makeFillet(
   const scale = boundingDiagonal(oc, target) * 0.5;
   const edgeIndices = resolveFilletEdges(oc, target, tables, spec.targets, scale);
   if (edgeIndices.length === 0) {
-    throw new Error(MISSING_EDGE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
   }
 
   // 列挙値は unknown を経由してから述語ガードで絞る(isFilletShape の注釈)。
@@ -233,7 +234,7 @@ export function makeFillet(
       const edge = edgeAt(oc, target, index);
       if (edge === null) {
         // 一覧の番号が形と食い違っている(別の形から作った一覧を渡された)合図。
-        throw new Error(MISSING_EDGE_MESSAGE);
+        throw new KernelStepError('missingSubShape', MISSING_EDGE_MESSAGE);
       }
       try {
         maker.Add_2(spec.radius, edge);

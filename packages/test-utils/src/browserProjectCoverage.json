@@ -140,6 +140,7 @@
     "solid-finite-field.spec.ts",
     "solid-finite-worker.spec.ts",
     "solid-material-authoring.spec.ts",
+    "solid-saved-result.spec.ts",
     "solid.spec.ts",
     "standard-part-search.spec.ts",
     "startup-failed-overlay-smoke.spec.ts",
@@ -206,6 +207,7 @@
     "sketch-extended.spec.ts",
     "sketch.spec.ts",
     "solid-material-authoring.spec.ts",
+    "solid-saved-result.spec.ts",
     "status-guidance.spec.ts",
     "thread.spec.ts",
     "unsaved-reload.spec.ts",
@@ -1772,6 +1774,11 @@
       "file": "solid-modal-worker.spec.ts",
       "category": "numerical-worker-representative",
       "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success"
+    },
+    {
+      "file": "solid-saved-result.spec.ts",
+      "category": "firefox-project",
+      "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI."
     },
     {
       "file": "solid-yield-worker.spec.ts",

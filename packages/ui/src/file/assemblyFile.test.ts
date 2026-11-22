@@ -335,6 +335,23 @@ describe('組立のファイルに保存した梁の静解析の結果(J-03b 段
     expect(state.assemblyOpenedAnalysisResults?.dropped).toBe(true);
     expect(state.assemblyOpenedAnalysisResults?.results.size).toBe(0);
   });
+
+  it('書き手が入れなかった結果は、保存できた知らせに理由を出す(入れた時は今までどおり保存しました)', async () => {
+    const g = gateway();
+    const { bundle } = beamResultBundle('梁の結果を保存した組立');
+    g.openPcad.mockResolvedValue({ name: 'beam.pcada', saveTargetToken: 'candidate', bytes: await writeDocumentBundle(bundle) });
+    await openAssembly(deps);
+    await saveAssembly(deps, false);
+    expect(useAppStore.getState().fileMessage).toEqual({ key: 'file.saved', failed: false });
+    // The writer's refusal reaches saveAssembly through the encoder's control, the same port the save Worker reply uses.
+    const refusing: PartFileDeps = { ...deps, encodeSave: (input, control) => {
+      control?.onAnalysisResultIssue?.('beam-1', 'resultTooLarge');
+      return encodeSaveDocument(input, control);
+    } };
+    await saveAssembly(refusing, false);
+    expect(useAppStore.getState().fileMessage).toEqual({ key: 'file.savedWithoutResult.tooLarge', failed: false });
+    expect(g.saved()).not.toBeNull();
+  });
 });
 
 describe('same-source action through actual PCAD/PCADA codecs', () => {

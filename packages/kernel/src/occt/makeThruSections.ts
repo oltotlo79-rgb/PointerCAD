@@ -182,8 +182,8 @@ const SEGMENT_COUNT_MESSAGE = '断面の分割数は 24・48・72 のいずれ�
 
 /**
  * 輪郭にする面が選び直せなかったとき(FR-504、NFR-RE-1)。
- * 語尾は `makeHole.ts` / `pickSubShape.ts` と揃えてあり、model 側が
- * この語尾で「選び直してください」の案内に詰め替える。
+ * 選び直しの案内は、この文そのものが持つ。符号 `missingSubShape`(`kernelStepError.ts`)は付けていない
+ * (語尾も 12 の「形が大きく変わったため」の文と違う)ので、model 側の `recomputePart.ts` は `kernelFailed` として扱う。
  */
 export const MISSING_SECTION_FACE_MESSAGE =
   'つなぐ面が見つかりません。形が変わったため、選び直してください。';

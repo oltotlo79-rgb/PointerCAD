@@ -1471,6 +1471,36 @@ describe('createKernelHealth(Worker が壊れたかどうかの状態機械)', (
 // ---------------------------------------------------------------------------
 
 describe('missingSubShape への詰め替え(加工するもとの面・辺が見つからない失敗)', () => {
+  it('Worker の破損の文でも、橋の符号が無ければ kernelFailed のまま(0b-1b。文では見分けない)', async () => {
+    const { document } = oneExtrude();
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({
+        bodies: [], failures: [{ featureId: 'extrude-1', message: KERNEL_BROKEN_MESSAGE }], cacheHits: 0, cancelled: false,
+      }),
+    }));
+    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE }]);
+  });
+
+  it('語尾が「選び直してください」の文でも、符号が無ければ kernelFailed のまま(0b-1。文では見分けない)', async () => {
+    const { document } = oneExtrude();
+    const message = '穴をあけるもとの面が見つかりません。形が大きく変わったため、選び直してください。';
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({ bodies: [], failures: [{ featureId: 'extrude-1', message }], cacheHits: 0, cancelled: false }),
+    }));
+    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', message }]);
+  });
+
+  it('立体が残らない符号 nothingLeft は kernelFailed のままで、理由(reason)にしない', async () => {
+    const { document } = oneExtrude();
+    const message = '穴をあけたらソリッドが残りませんでした。径か深さを小さくしてください。';
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({
+        bodies: [], failures: [{ featureId: 'extrude-1', message, code: 'nothingLeft' }], cacheHits: 0, cancelled: false,
+      }),
+    }));
+    expect(result.errors).toEqual([{ featureId: 'extrude-1', code: 'kernelFailed', message }]);
+  });
+
   it('穴が「もとの面が見つかりません」で失敗したら missingSubShape に詰め替える', async () => {
     const { document } = oneExtrude();
     const result = await recomputePart(
@@ -1482,6 +1512,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
             failures: [
               {
                 featureId: 'extrude-1',
+                code: 'missingSubShape',
                 message:
                   '穴をあけるもとの面が見つかりません。形が大きく変わったため、選び直してください。',
               },
@@ -1512,6 +1543,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
             failures: [
               {
                 featureId: 'extrude-1',
+                code: 'missingSubShape',
                 message:
                   '丸めるもとの辺が見つかりません。形が大きく変わったため、選び直してください。',
               },
@@ -1536,6 +1568,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
             failures: [
               {
                 featureId: 'extrude-1',
+                code: 'missingSubShape',
                 message:
                   '面を取るもとの辺が見つかりません。形が大きく変わったため、選び直してください。',
               },
@@ -1575,7 +1608,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
     ]);
   });
 
-  it('Worker が壊れたときの理由(KERNEL_BROKEN_MESSAGE)は kernelFailed のまま(§2.9)', async () => {
+  it('Worker が壊れたときの橋の符号 workerBroken は、PartError の code にそのまま写す(0b-1b。前は §2.9 で kernelFailed のままだった)', async () => {
     const { document } = oneExtrude();
     const result = await recomputePart(
       document,
@@ -1583,7 +1616,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
         recomputeSolids: () =>
           Promise.resolve({
             bodies: [],
-            failures: [{ featureId: 'extrude-1', message: KERNEL_BROKEN_MESSAGE }],
+            failures: [{ featureId: 'extrude-1', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }],
             cacheHits: 0,
             cancelled: false,
           }),
@@ -1591,7 +1624,7 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
     );
 
     expect(result.errors).toEqual([
-      { featureId: 'extrude-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE },
+      { featureId: 'extrude-1', code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE },
     ]);
   });
 });
@@ -2379,6 +2412,7 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
             failures: [
               {
                 featureId: 'pj1',
+                code: 'missingSubShape',
                 message: '選んだ面(辺)が見つかりません。形が大きく変わったため、選び直してください。',
               },
             ],

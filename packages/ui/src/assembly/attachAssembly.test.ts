@@ -919,7 +919,9 @@ describe('アセンブリの実経路', () => {
     const f = await fixture();
     useAppStore.getState().openAssembly(f.document, f.library);
     const fake = fakeBridge();
-    fake.recomputeSolids.mockRejectedValue(new Error(KERNEL_BROKEN_MESSAGE));
+    // 本物の橋は、Worker が壊れても拒否せず、画面に出る段ぶんの失敗(符号 workerBroken)で解決する(bridgeContracts.ts の recomputeSolids の注)。
+    fake.recomputeSolids.mockImplementation((steps) => Promise.resolve({ bodies: [], cacheHits: 0, cancelled: false, appearanceMatches: [],
+      failures: steps.filter((step) => step.visible).map((step) => ({ featureId: step.featureId, message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' as const })) }));
     const detach = attachAssembly(fake.bridge);
     await settle();
     expect(useAppStore.getState().lastOutcome).toBe('workerBroken');

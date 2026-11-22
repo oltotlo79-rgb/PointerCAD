@@ -17,6 +17,7 @@ import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 import { extractSubShapeHistory, OriginHistoryLimitError } from './subShapeHistory.js';
 import { holeOperationOrigins, type NativeHoleToolFace } from './subShapeOrigins.js';
 import { semanticOperationOrigins } from './semanticOperationOrigins.js';
+import { isNothingLeft, KernelStepError } from './kernelStepError.js';
 
 /**
  * これ未満の体積(mm³)は「何も残らなかった」とみなす。
@@ -199,12 +200,12 @@ function buildBooleanResult(
   // ソリッドが 1 つも無ければ体積を測るまでもないので、順に見て早く抜ける
   // (測るのは 1 回だけで、その値は結果と一緒に返す。BooleanResult の注釈)。
   if (!hasResultSolid(oc, shape)) {
-    throw new Error(NOTHING_LEFT_MESSAGE);
+    throw new KernelStepError('nothingLeft', NOTHING_LEFT_MESSAGE);
   }
 
   const volume = measureVolume(oc, shape);
   if (volume < MIN_SOLID_VOLUME_MM3) {
-    throw new Error(NOTHING_LEFT_MESSAGE);
+    throw new KernelStepError('nothingLeft', NOTHING_LEFT_MESSAGE);
   }
 
   if (!isValidShape(oc, shape)) {
@@ -267,7 +268,7 @@ function buildInsideResult(build: () => BooleanResult): BooleanResult {
   try {
     return build();
   } catch (error) {
-    if (error instanceof Error && error.message === NOTHING_LEFT_MESSAGE) {
+    if (isNothingLeft(error)) {
       throw new Error(NOTHING_INSIDE_MESSAGE, { cause: error });
     }
     throw error;

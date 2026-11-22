@@ -37,8 +37,11 @@ import type {
   KernelBridge,
   PartCancelToken,
   PartProgressCallback,
+  SketchFaceFailure,
+  SketchProjectionFailure,
   SketchProjectionRequestItem,
   SolidBody,
+  SolidBodyFailure,
   SolidRecomputeOutcome,
   SolidRecomputeOptions,
 } from '../kernelBridge.js';
@@ -203,31 +206,23 @@ export interface PartRecomputeOptions {
   readonly importedMeshes?: ReadonlyMap<string, EmbeddedPartMesh>;
 }
 
-/** 面を作れなかったとき(recomputeSketch と同じ文言に揃える)。 */
-function sketchKernelFailed(featureId: string, message: string): SketchError {
-  return { featureId, code: 'kernelFailed', message: `面を作れませんでした: ${message}` };
+/** 面を作れなかったとき(recomputeSketch と同じ文言に揃える)。Worker が壊れた時は橋の符号を写す(0b-1b)。 */
+function sketchKernelFailed(featureId: string, message: string, code?: SketchFaceFailure['code']): SketchError {
+  return { featureId, code: code ?? 'kernelFailed', message: `面を作れませんでした: ${message}` };
 }
-
-/**
- * カーネルの「加工するもとの面(辺)が見つかりません」の失敗を見分ける目印。
- * kernel の `SolidStepFailure` は `message` しか持たないので、
- * `makeHole.ts` / `makeFillet.ts` / `makeChamfer.ts` が共通で使うこの語尾を手がかりに
- * `missingSubShape` へ詰め替える(コミット済みの実装を Grep して、この語尾を使う失敗が
- * 他に無いことを確認済み。当初の例文とは前置き部分が食い違うが、実装を正とする)。
- */
-const MISSING_SUB_SHAPE_SUFFIX = '形が大きく変わったため、選び直してください。';
 
 /**
  * 立体を作れなかったとき。段ごとの理由はカーネルが利用者向けの日本語で返すので、
  * そのまま見せる(橋渡しは失敗理由を捨てない)。
- * `missingSubShape` かどうかは文言で見分ける(「選び直しはカーネルの
- * 中で行う」ため)。面による切断の詳細な理由コードは reason に保持する。
+ * `missingSubShape` かどうかは、カーネルの符号(`SolidBodyFailure` の code が 'missingSubShape')で決める(0b-1。文では見分けない)。
+ * Worker が壊れた時の橋の符号 'workerBroken' は、そのまま PartError の code にする(0b-1b)。
+ * 面による切断・面だけのボディの機能の詳細な理由の符号は reason に保持する。立体が残らない 'nothingLeft' は
+ * カーネルの中の言い回しの選び分けに使う符号で、画面の側には渡さない(文はカーネルが選んだ物をそのまま見せる)。
  */
-function solidKernelFailed(featureId: string, message: string, reason?: PartError['reason']): PartError {
-  const code: PartErrorCode = message.includes(MISSING_SUB_SHAPE_SUFFIX)
-    ? 'missingSubShape'
-    : 'kernelFailed';
-  return { featureId, code, message, ...(reason === undefined ? {} : { reason }) };
+function solidKernelFailed(featureId: string, message: string, code?: SolidBodyFailure['code']): PartError {
+  const partCode: PartErrorCode = code === 'missingSubShape' || code === 'workerBroken' ? code : 'kernelFailed';
+  const reason = code === undefined || code === 'missingSubShape' || code === 'nothingLeft' || code === 'workerBroken' ? undefined : code;
+  return { featureId, code: partCode, message, ...(reason === undefined ? {} : { reason }) };
 }
 
 /**
@@ -293,7 +288,7 @@ async function tessellateSketch(
     return {
       mesh: outcome.mesh,
       errors: outcome.failures.map((failure) =>
-        sketchKernelFailed(failure.featureId, failure.message),
+        sketchKernelFailed(failure.featureId, failure.message, failure.code),
       ),
     };
   } catch (error) {
@@ -307,9 +302,10 @@ async function tessellateSketch(
 }
 
 /** 投影・交差を作れなかったとき。面・オフセットとは別の言い回しで、どの操作かを分かるようにする。 */
-function projectionFailed(featureId: string, message: string): SketchError {
-  const code = message.includes(MISSING_SUB_SHAPE_SUFFIX) ? 'missingSubShape' : 'kernelFailed';
-  return { featureId, code, message: `投影・交差を作れませんでした: ${message}` };
+function projectionFailed(featureId: string, message: string, code?: SketchProjectionFailure['code']): SketchError {
+  // missingSubShape と workerBroken は kernel・橋の符号で決める(0b-1・0b-1b。文では見分けない)。
+  return { featureId, code: code === 'missingSubShape' || code === 'workerBroken' ? code : 'kernelFailed',
+    message: `投影・交差を作れませんでした: ${message}` };
 }
 
 /** 段が 1 つも無いときの結果(カーネルを呼ばない、NFR-PF-1)。 */
@@ -478,7 +474,7 @@ async function fillProjections(
     try {
       const outcome = await call(items);
       for (const failure of outcome.failures) {
-        errors.set(failure.featureId, projectionFailed(failure.featureId, failure.message));
+        errors.set(failure.featureId, projectionFailed(failure.featureId, failure.message, failure.code));
       }
       for (const entry of outcome.results) {
         const request = byFeature.get(entry.featureId);
@@ -1046,6 +1042,7 @@ async function buildShapes(
   };
   const resolveOptions: ResolvePartOptions = {
     invalidInputs,
+    workerBrokenInputs: functions.workerBrokenInputs,
     offsetCurves: (key) => offsets.get(key),
     projectedCurves: (featureId) => projectedByFeature.get(featureId) ?? null,
     functionCurves: featureId => functions.curves.get(featureId) ?? null,

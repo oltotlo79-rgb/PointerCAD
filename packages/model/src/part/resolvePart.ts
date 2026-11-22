@@ -880,7 +880,9 @@ export type PartErrorCode =
    */
   | 'circularReference'
   /** カーネルが形を作れなかった(このファイルでは使わない)。 */
-  | 'kernelFailed';
+  | 'kernelFailed'
+  /** Worker が壊れて応答しなかった(橋の符号 'workerBroken' を recomputePart が写す。このファイルでは使わない)。 */
+  | 'workerBroken';
 
 /** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */
 export interface PartError {
@@ -4885,7 +4887,7 @@ function toResolvedPartSketch(sketchId: string, constrained: ConstrainedSketch):
 function resolveSketchesAndReferences(
   document: PartDocument,
   options: Required<Pick<ResolvePartOptions, 'offsetCurves' | 'projectedCurves'>> &
-    Pick<ResolvePartOptions, 'subShape' | 'invalidInputs' | 'functionCurves'> &
+    Pick<ResolvePartOptions, 'subShape' | 'invalidInputs' | 'workerBrokenInputs' | 'functionCurves'> &
     { readonly functionPoint: ResolvePartOptions['functionPoint'] },
 ): {
   readonly sketches: readonly ResolvedPartSketch[];
@@ -4967,6 +4969,7 @@ function resolveSketchesAndReferences(
   const solveOne = (sketch: SketchDocument): ConstrainedSketch =>
     resolveConstrainedSketch(sketch, {
       invalidInputs: options.invalidInputs,
+      workerBrokenInputs: options.workerBrokenInputs,
       workPlane: (planeId) => resolver.workPlane(planeId),
       offsetCurves,
       projectedCurves,
@@ -5055,6 +5058,8 @@ function laterProjectionBodyMessage(source: ProjectionSource): string {
  */
 export interface ResolvePartOptions {
   readonly invalidInputs?: ReadonlyMap<string, string>;
+  /** invalidInputs のうち、計算部(Worker)が止まって作れなかった物の id。その誤りの code を workerBroken にする(0b-1b)。 */
+  readonly workerBrokenInputs?: ReadonlySet<string>;
   readonly offsetCurves?: (key: string) => readonly ResolvedCurve[] | null;
   /** 計算済みの投影・交差の曲線をフィーチャーの id で引く。 */
   readonly projectedCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
@@ -5109,6 +5114,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     document,
     {
       invalidInputs: options.invalidInputs,
+      workerBrokenInputs: options.workerBrokenInputs,
       offsetCurves: options.offsetCurves ?? noOffsetCurves,
       projectedCurves: options.projectedCurves ?? noProjectedCurves,
       functionCurves: options.functionCurves,

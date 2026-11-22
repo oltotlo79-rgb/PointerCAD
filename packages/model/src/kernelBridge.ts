@@ -142,6 +142,7 @@ export type {
   ShapeImportOutcome,
 } from './kernelBridge/exchangeContracts.js';
 import type {
+  WorkerBrokenCode,
   KernelBridge,
   MeshLedgerOwner, CurrentMeshLedgerInput, CurrentMeshLedgerReceipt, ReferenceMeshLeaseOptions, PartReleaseClaim, PartReleaseDisposition, SourceMeshBackingInspection,
   KernelHealth,
@@ -567,8 +568,10 @@ function cachedBodySteps(steps: readonly ResolvedSolidStep[], ids: readonly stri
   }
   return result;
 }
-function cachedBodyFailure(ids: readonly string[], message: string): SolidRecomputeOutcome {
-  return { bodies: [], failures: ids.map(featureId => ({ featureId, message })), cacheHits: 0, cancelled: false, appearanceMatches: [] };
+/** 読み直しの失敗。Worker が壊れた時だけ code に 'workerBroken' を渡す(時間切れ・空きの不足には付けない)。 */
+function cachedBodyFailure(ids: readonly string[], message: string, code?: WorkerBrokenCode): SolidRecomputeOutcome {
+  return { bodies: [], failures: ids.map(featureId => ({ featureId, message, ...(code === undefined ? {} : { code }) })),
+    cacheHits: 0, cancelled: false, appearanceMatches: [] };
 }
 
 export function createKernelHealth(): KernelHealth {
@@ -820,8 +823,9 @@ async function raceWithBroken<T>(
  */
 function brokenFailures(
   items: readonly { readonly featureId: string }[],
-): readonly { readonly featureId: string; readonly message: string }[] {
-  return items.map((item) => ({ featureId: item.featureId, message: KERNEL_BROKEN_MESSAGE }));
+): readonly { readonly featureId: string; readonly message: string; readonly code: WorkerBrokenCode }[] {
+  // 符号は、この断りの文と同じ所(Worker が止まって依頼に答えられなかった所)だけで付ける(0b-1b)。
+  return items.map((item) => ({ featureId: item.featureId, message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }));
 }
 
 /** 接続を締める。壊れた Worker への解放要求が失敗しても、後始末は続ける(NFR-RE-1)。 */
@@ -1821,7 +1825,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
           // Certified smooth components must reach the kernel, or it would build the polyline instead.
           ...(input.splines === undefined ? {} : { splines: input.splines }) })
           .then((outcome) => readFunctionCurveGeometry(outcome, input)),
-        () => ({ status: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+        () => ({ status: 'failed', message: KERNEL_BROKEN_MESSAGE, code: 'workerBroken' }),
       );
     },
 
@@ -1873,7 +1877,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
         context.shouldCancel ?? (() => false), () => connection === active && !active.closed && active.interruption === null);
       if (reservation.status !== 'reserved') {
         if (reservation.status === 'stopped' && active.interruption === 'workerBroken')
-          return rememberOperation(active, 'workerBroken', cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE));
+          return rememberOperation(active, 'workerBroken', cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken'));
         if (reservation.status === 'cancelled' || reservation.status === 'stopped') return rememberOperation(active, 'cancelled', {
           bodies: [], failures: [], cacheHits: 0, cancelled: true });
         return rememberOperation(active, 'failed', cachedBodyFailure(ids, reservation.status === 'timeout'
@@ -1883,7 +1887,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       if (connection !== active || active.closed || active.interruption !== null) {
         ledger.host.settleWithoutReply(owner.dispatchId);
         return rememberOperation(active, active.interruption ?? 'cancelled', active.interruption === 'workerBroken'
-          ? cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE) : { bodies: [], failures: [], cacheHits: 0, cancelled: true });
+          ? cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken') : { bodies: [], failures: [], cacheHits: 0, cancelled: true });
       }
       const granted = reservation.bytes;
       const callbacks = callbackScope();
@@ -1943,7 +1947,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
             throw error;
           });
         },
-        () => cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE), callbacks);
+        () => cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE, 'workerBroken'), callbacks);
     },
 
     async measure(steps, targets, kind): Promise<MeasureOutcome> {

@@ -18,6 +18,7 @@ import { measureArea, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
 import { makeCompound } from './transformShape.js';
+import { KernelStepError } from './kernelStepError.js';
 
 /**
  * エンボス・刻印(FR-421、FR-504)。
@@ -233,16 +234,16 @@ function resolvePlanarFaceIndex(
   if (query.kind !== 'face') {
     // 面以外(辺・頂点)の指紋が来るのは model 側の取り違えだが、
     // 利用者への直し方は同じ(面を選び直す)なので言い分けない。
-    throw new Error(MISSING_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
   }
   const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
   if (match.status !== 'matched') {
-    throw new Error(MISSING_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
   }
   // 一覧は通し番号の順で来る約束だが、番号で引き直して並びに依存しないようにする。
   const info = tables.faces.find((candidate) => candidate.index === match.match.index);
   if (info === undefined) {
-    throw new Error(MISSING_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
   }
   if (info.surfaceKind !== 'plane') {
     throw new Error(NOT_PLANAR_MESSAGE);
@@ -353,7 +354,7 @@ export function makeEmboss(
     const face = faceAt(oc, target, faceIndex);
     if (face === null) {
       // 一覧の番号が形と食い違っている(別の形から作った一覧を渡された)合図。
-      throw new Error(MISSING_FACE_MESSAGE);
+      throw new KernelStepError('missingSubShape', MISSING_FACE_MESSAGE);
     }
     keep(face);
 

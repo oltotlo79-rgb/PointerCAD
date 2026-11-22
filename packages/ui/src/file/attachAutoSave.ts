@@ -48,7 +48,7 @@ import { readAutoSaveIntervalMs } from '../settings/autoSaveSettings.js';
 import { cancelDocumentSaves } from './documentSaveQueue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { analysisResultsToSave } from '../beam/savedBeamResults.js';
-import { openedSolidResults, solidResultsToSave } from '../solidAnalysis/savedSolidResults.js';
+import { openedSolidResults } from '../solidAnalysis/savedSolidResults.js';
 
 // ---------------------------------------------------------------------------
 // 保管庫を選ぶ
@@ -172,8 +172,9 @@ function recoveryDocument(state: AppState, bundleParts: boolean): AutoSaveDocume
     return { kind: 'drawing', document: active.document, source };
   }
   return active.kind === 'assembly' ? createAssemblyDocumentBundle(active.document, active.library, analysisResultsToSave(state, active.document))
-    : bundleParts ? createPartDocumentBundle(active.document, currentPcadAttachments(active.document),
-      solidResultsToSave(state, active.document)) : active.document;
+    // A static solid result is not put in the recovery copy (統括の決定 2026-11-22 08:25): the copy is written on every
+    // document change, and handing the result to the save Worker stops the main thread for tens to hundreds of ms.
+    : bundleParts ? createPartDocumentBundle(active.document, currentPcadAttachments(active.document)) : active.document;
 }
 
 export interface AttachAutoSaveOptions {
@@ -429,8 +430,10 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   store.setImportedAttachments(outcome.attachments.shapes, outcome.attachments.meshes);
   store.setCanvasImages(outcome.attachments.canvases);
   store.setFileState(null, null);
-  // 控えに入っていた立体の結果も、作り直した文書と組にして戻す(J-03b 段 2。開く時と同じ)。
-  store.setSolidOpenedResults(openedSolidResults(outcome.document, outcome.analysisResults, outcome.analysisResultIssue));
+  // 控えには立体の結果を入れない。控えから戻した事を組にして置き、窓は「計算し直してください」の 1 行を出す
+  // (入れていた古い控えの結果は、開く時と同じく戻せる)。
+  store.setSolidOpenedResults(openedSolidResults(outcome.document, outcome.analysisResults, outcome.analysisResultIssue,
+    'recovery'));
   store.fileGateway.clearSaveTarget?.();
   store.setRestorePrompt(null);
   useAppStore.setState({ recoveryRecord: null });

@@ -71,6 +71,7 @@ import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './pickSubShape.js';
 import { measureArea } from './solidMesh.js';
 import { shapeBodyKind } from './shapeBodyKind.js';
 import type { SubShapeTables } from './subShapes.js';
+import { KernelStepError } from './kernelStepError.js';
 
 /** つなぐには断面が 2 つ要る(`makeThruSections.ts` と同じ決め)。 */
 const MINIMUM_SECTION_COUNT = 2;
@@ -420,7 +421,7 @@ function copyExistingFace(
   }
   const picked = pickSubShape(oc, target, tables, input.face);
   if (picked === null) {
-    throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_SUB_SHAPE_MESSAGE);
   }
   keep(picked);
   const copier = keep(new oc.BRepBuilderAPI_Copy_2(picked, true, false));

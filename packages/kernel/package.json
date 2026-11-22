@@ -78,6 +78,10 @@
       "types": "./dist/math/vectorArithmetic.d.ts",
       "default": "./src/math/vectorArithmetic.ts"
     },
+    "./math/magnitude": {
+      "types": "./dist/math/magnitude.d.ts",
+      "default": "./src/math/magnitude.ts"
+    },
     "./desktop-occt-transport": {
       "types": "./dist/occt/desktopOcctTransportContract.d.ts",
       "default": "./src/occt/desktopOcctTransportContract.ts"

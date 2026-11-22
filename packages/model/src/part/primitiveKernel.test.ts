@@ -401,8 +401,8 @@ describe('基本形状を部品文書の経路で作る(FR-429、タスク16)', 
       expect(bodyOf(result, 'extrude-1').volume).toBeCloseTo(12000, 6);
       expect(result.bodies).toHaveLength(1);
       expect(result.errors).toHaveLength(1);
-      // カーネルの断りの語尾から `recomputePart` が理由の種類を見分ける(`solidKernelFailed`)。
-      // 基本形状のためにこの詰め替えを足す必要が無いことを、この検査で固定する。
+      // カーネルが断りに付けた符号(`KernelStepError` の `missingSubShape`)から、`recomputePart` が理由の種類を決める
+      // (`solidKernelFailed`)。基本形状の頂点の断りにも符号が付いて届く事を、この検査で固定する。
       expect(result.errors[0].code).toBe('missingSubShape');
       expect(result.errors[0].message).toContain('中心にする頂点が見つかりません');
     },

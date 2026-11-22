@@ -111,3 +111,60 @@ test('J-05c 元の部品の係数を係数の表に並べ、元を取り込み�
   expect(read.document.tables[0]).toMatchObject({ kind: 'parameter', columns: ['name', 'value', 'unit', 'description'], options: { scope: 'all' } });
   expect(read.document.tables[0]).not.toHaveProperty('rows');
 });
+
+/*
+ * J-05e 寸法の前の文字の係数: `{=名前}` は描く時に元(埋め込みの部品)の係数の今の値へ置き換わり(dimensionDisplay.ts の
+ * resolveFields → drawingNoteFields.ts)、保存する文字は入力したまま。元を取り込み直すと表示の値も替わる。
+ * 部品は製品の書き手で作り、製品の読み手(io の readPcadFile)が受け付ける事を Node で確かめた(本数 4 と 6、幅 100)。
+ */
+test('J-05e 寸法の前の文字の {=本数} は元の部品の係数で描かれ、元を取り込み直すと替わり、保存は入力した文字のまま', async ({ page }, testInfo) => {
+  const empty = createEmptyPartDocument(), box = createPrimitiveFeature(empty, 'box', { kind: 'coordinate', value: absoluteCoordinate(0, 0, 0) });
+  if (box.shape.kind !== 'box') throw new Error('箱の定義なし');
+  const feature = { ...box, shape: { ...box.shape, sizeX: number(100), sizeY: number(40), sizeZ: number(60) } };
+  const count = (value: number) => ({ name: '本数', value: number(value), unit: 'none' as const, description: '穴の数' });
+  const part = synchronizeConfigurations({ ...appendSolid(empty, feature), parameters: [count(4)] });
+  const nextPart = synchronizeConfigurations({ ...part, parameters: [count(6)] });
+  const [initial, changed] = await Promise.all([writeDocumentBundle(createPartDocumentBundle(part)), writeDocumentBundle(createPartDocumentBundle(nextPart))]);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/');
+  const token = await beginRecompute(page);
+  const opening = page.waitForEvent('filechooser'); await page.getByRole('button', { name: '開く', exact: true }).click();
+  await (await opening).setFiles({ name: '本数.pcad', mimeType: 'application/zip', buffer: Buffer.from(initial) });
+  await waitForRecompute(page, token);
+  await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイル/u }).first().click();
+  await page.getByRole('button', { name: 'この部品から図面を作成', exact: true }).click();
+  await expect.poll(() => page.locator('.pcad-drawing-svg [data-view-id="view-1"] path').count(), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
+  await expect(page.locator('.pcad-statusbar')).not.toContainText('作り直しています');
+  // The same pick as the P8 test above: the middle of the 100 wide outline of view-1, then Enter places the dimension.
+  const point = await page.locator('.pcad-drawing-svg [data-view-id="view-1"][data-layer-id="layer-1"] path').evaluateAll((paths) => {
+    for (const path of paths) {
+      if (!(path instanceof SVGPathElement)) continue;
+      const a = path.getPointAtLength(0), b = path.getPointAtLength(path.getTotalLength()), matrix = path.getScreenCTM();
+      if (matrix === null || Math.abs(a.y - b.y) > 0.01 || Math.abs(a.x - b.x) < 90) continue;
+      const at = new DOMPoint((a.x + b.x) / 2, (a.y + b.y) / 2).matrixTransform(matrix); return { x: at.x, y: at.y };
+    }
+    throw new Error('幅100の実輪郭なし');
+  });
+  await page.mouse.click(point.x, point.y); await page.keyboard.press('Enter');
+  const dimension = (value: string) => page.locator(`.pcad-drawing-svg [data-owner-id="dim-1"] [aria-label="${value}"]`);
+  await expect(dimension('100')).toHaveCount(1);
+  const form = page.getByRole('form', { name: m('drawing.tolerance.title') });
+  const prefix = form.getByLabel(m('drawing.dimension.prefix'), { exact: true });
+  await prefix.fill('{=本数}×');
+  await form.getByRole('button', { name: m('drawing.action.apply'), exact: true }).click();
+  await expect(dimension('4×100')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
+  await expect(prefix).toHaveValue('{=本数}×');
+  const updating = page.waitForEvent('filechooser'); await chooseDrawingMenu(page, 'ファイル', '元の部品・アセンブリを取り込み直す');
+  await (await updating).setFiles({ name: '本数.pcad', mimeType: 'application/zip', buffer: Buffer.from(changed) });
+  await expect(dimension('6×100')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
+  await expect(dimension('4×100')).toHaveCount(0);
+  const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
+  const saved = await saving; await saved.saveAs(testInfo.outputPath('dimension-fields.pcadd'));
+  const file = await saved.path(); if (file === null) throw new Error('図面保存なし');
+  const read = await readDrawingBundle(await readFile(file));
+  if (!read.ok) throw new Error('寸法の係数の図面を読めない');
+  expect(read.document.dimensions.map(item => item.prefix)).toEqual(['{=本数}×']);
+});

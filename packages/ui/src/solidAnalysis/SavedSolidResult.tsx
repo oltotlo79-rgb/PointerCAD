@@ -1,6 +1,6 @@
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { openedSolidResult, SAVED_SOLID_NOTICE_KEYS, type SavedSolidNotice } from './savedSolidResults.js';
+import { openedSolidNotice, openedSolidResult, SAVED_SOLID_NOTICE_KEYS, type SavedSolidNotice } from './savedSolidResults.js';
 import type { SolidAnalysisSession } from './solidAnalysisSession.js';
 import { solidResultScalars } from './solidResultScalars.js';
 
@@ -16,11 +16,12 @@ export function SavedSolidResult({ session }: { readonly session: SolidAnalysisS
   const saved = openedSolidResult(document, opened);
   const restore = saved !== undefined && record?.saved === saved ? record.restore : null;
   if (session.result !== null) {
-    return saved !== undefined && restore?.kind === 'restored' && restore.outcome === session.result
-      ? <p role="status" data-testid="solid-saved-result">{t('solidAnalysis.savedResult.status').replace('{version}', saved.appVersion)}</p>
-      : null;
+    if (saved === undefined || restore?.kind !== 'restored' || restore.outcome !== session.result) return null;
+    // A result kept when the panel was closed is not a saved one yet: its line says so instead of a saved app version.
+    return <p role="status" data-testid="solid-saved-result" data-origin={opened?.origin}>{opened?.origin === 'kept'
+      ? t('solidAnalysis.savedResult.kept') : t('solidAnalysis.savedResult.status').replace('{version}', saved.appVersion)}</p>;
   }
-  const notice: SavedSolidNotice | null = saved === undefined ? (opened?.document === document ? opened.issue : null)
+  const notice: SavedSolidNotice | null = saved === undefined ? openedSolidNotice(document, opened)
     : restore !== null && restore.kind !== 'restored' ? restore.notice : saved.prepared === undefined ? 'noSolverInput' : null;
   if (notice === null) return null;
   const scalars = notice === 'noSolverInput' && saved !== undefined ? solidResultScalars(saved.result) : null;

@@ -1,5 +1,7 @@
 /** solid data exchanged through the model's kernel bridge. Types only; no Worker lifetime. */
+import type { KernelStepFailureCode } from '@pointercad/kernel';
 import type { SolidFailureReason } from '../part/surfaceBodyPlan.js';
+import type { WorkerBrokenCode } from './bridgeContracts.js';
 import type {
   SubShapeFingerprint,
   SubShapeRef,
@@ -227,7 +229,7 @@ export interface SolidBody {
 
 /** 立体を 1 つ作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
 export interface SolidBodyFailure {
-  readonly code?: SolidFailureReason;
+  readonly code?: SolidFailureReason | KernelStepFailureCode | WorkerBrokenCode;
   /** 作れなかったフィーチャーの id。 */
   readonly featureId: string;
   readonly message: string;

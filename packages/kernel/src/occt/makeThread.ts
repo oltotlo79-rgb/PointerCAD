@@ -64,6 +64,7 @@ import {
   transformShape,
   transformsOrIdentity,
 } from './transformShape.js';
+import { isNothingLeft, KernelStepError } from './kernelStepError.js';
 
 /** ピッチが 0 以下・非数のとき。 */
 const PITCH_MESSAGE = 'ねじのピッチは 0 より大きい数にしてください。';
@@ -606,10 +607,8 @@ function toJapaneseFailure<T extends OcctShapeHandle>(
   try {
     return run();
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(reason.includes('ソリッドが残りませんでした') ? nothingLeft : fallback, {
-      cause: error,
-    });
+    if (isNothingLeft(error)) throw new KernelStepError('nothingLeft', nothingLeft, { cause: error });
+    throw new Error(fallback, { cause: error });
   }
 }
 
@@ -681,16 +680,16 @@ function readShaftAxis(
   if (query.kind !== 'face') {
     // 面以外(辺・頂点)の指紋が来るのは model 側の取り違えだが、
     // 利用者に見せるのは「面が見つからない」で足りる(直し方は同じ = 面を選び直す)。
-    throw new Error(MISSING_SHAFT_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_SHAFT_FACE_MESSAGE);
   }
   // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する。
   const match = resolveFaceReference(tables.faces, query, boundingDiagonal(oc, target) * 0.5, tables.origins);
   if (match.status !== 'matched') {
-    throw new Error(MISSING_SHAFT_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_SHAFT_FACE_MESSAGE);
   }
   const info = tables.faces.find((candidate) => candidate.index === match.match.index);
   if (info === undefined) {
-    throw new Error(MISSING_SHAFT_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_SHAFT_FACE_MESSAGE);
   }
   if (info.surfaceKind !== 'cylinder') {
     throw new Error(CYLINDER_ONLY_MESSAGE);
@@ -698,7 +697,7 @@ function readShaftAxis(
   const face = faceAt(oc, target, match.match.index);
   if (face === null) {
     // 一覧と形が食い違っている(別の形から作った一覧を渡している)合図。
-    throw new Error(MISSING_SHAFT_FACE_MESSAGE);
+    throw new KernelStepError('missingSubShape', MISSING_SHAFT_FACE_MESSAGE);
   }
 
   const { keep, release } = createAllocations();

@@ -8,6 +8,7 @@ import type { BooleanResult } from './booleanOp.js';
 import { booleanOp } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { booleanMargin, boundingDiagonal } from './subShapes.js';
+import { isNothingLeft, KernelStepError } from './kernelStepError.js';
 
 /**
  * 平面による切断(FR-432、FR-424 の分割の統合)。
@@ -270,10 +271,8 @@ function intersectWithHalfSpace(
   try {
     return booleanOp(oc, 'intersect', target, halfSpace);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(reason.includes('ソリッドが残りませんでした') ? NOTHING_LEFT_MESSAGE : CUT_FAILED_MESSAGE, {
-      cause: error,
-    });
+    if (isNothingLeft(error)) throw new KernelStepError('nothingLeft', NOTHING_LEFT_MESSAGE, { cause: error });
+    throw new Error(CUT_FAILED_MESSAGE, { cause: error });
   }
 }
 
@@ -378,7 +377,7 @@ export function makeCut(
   //    見つけたときの直し方(残す側を切り替える)を利用者へ伝えるための一言を持つ。
   if (!(result.volume > MIN_SOLID_VOLUME_MM3)) {
     result.delete();
-    throw new Error(NOTHING_LEFT_MESSAGE);
+    throw new KernelStepError('nothingLeft', NOTHING_LEFT_MESSAGE);
   }
   return result;
 }

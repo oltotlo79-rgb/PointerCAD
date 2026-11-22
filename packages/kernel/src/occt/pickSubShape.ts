@@ -20,8 +20,9 @@ import { boundingDiagonal, edgeAt, faceAt, vertexAt, type SubShapeTables } from 
 
 /**
  * 指紋に合う部分形状が無かったときの断り(FR-504、NFR-RE-1)。
- * 語尾は `makeHole.ts` / `makeFillet.ts` / `makeChamfer.ts` と揃えてある
- * (model 側の `recomputePart.ts` がこの語尾で `missingSubShape` へ詰め替える)。
+ * 語尾は `makeHole.ts` / `makeFillet.ts` / `makeChamfer.ts` と揃えてある(利用者への言い回しを揃えるため)。
+ * 部品の再計算で投げる所と投影の失敗の記録は、符号 `missingSubShape`(`kernelStepError.ts`)を一緒に運び、
+ * model 側の `recomputePart.ts` は符号で理由の種類を決める(測る時の断り〔kernelApi の measure〕は種類を持たない)。
  */
 export const MISSING_SUB_SHAPE_MESSAGE =
   '選んだ面(辺)が見つかりません。形が大きく変わったため、選び直してください。';

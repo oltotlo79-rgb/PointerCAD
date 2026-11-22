@@ -6,7 +6,7 @@ import { readSolidCadSavedInput, withBeamAnalysisInputs, type SavedAnalysisResul
 import { describe, expect, it } from 'vitest';
 import { analyticalSolid } from '../fatigue/fatigueSolid.testSupport.js';
 import { t } from '../i18n/t.js';
-import { openedSolidResult, openedSolidResults, restoreSavedSolid, SAVED_SOLID_NOTICE_KEYS, solidResultsToSave,
+import { keptSolidResults, openedSolidNotice, openedSolidResult, openedSolidResults, restoreSavedSolid, SAVED_SOLID_NOTICE_KEYS, solidResultsToSave,
   type OpenedSolidResults, type SavedSolid } from './savedSolidResults.js';
 import { createSolidAnalysisSession, type SolidAnalysisSession } from './solidAnalysisSession.js';
 
@@ -76,7 +76,47 @@ describe('saved static solid results (J-03b stage 2)', () => {
     expect(openedSolidResult({ ...document }, opened)).toBeUndefined();
     expect(savedSolidResults({ ...document }, null, GENERATION, opened, VERSION)).toBeUndefined();
     expect(openedSolidResults(document, undefined, undefined)).toBeNull();
-    expect(openedSolidResults(document, undefined, 'bindingMismatch')).toEqual({ document, results: new Map(), issue: 'bindingMismatch' });
+    expect(openedSolidResults(document, undefined, 'bindingMismatch'))
+      .toEqual({ document, results: new Map(), issue: 'bindingMismatch', origin: 'file' });
+  });
+
+  it('marks a part restored from the recovery copy, which never holds the result, with its own notice', () => {
+    const { document } = documentWithInput();
+    const recovered = openedSolidResults(document, undefined, undefined, 'recovery');
+    expect(recovered).toEqual({ document, results: new Map(), issue: null, origin: 'recovery' });
+    expect(openedSolidNotice(document, recovered)).toBe('recoveryCopy');
+    expect(openedSolidNotice({ ...document }, recovered)).toBeNull();
+    expect(openedSolidNotice(document, openedSolidResults(document, undefined, 'invalidResult', 'recovery'))).toBe('invalidResult');
+    expect(openedSolidNotice(document, openedSolidResults(document, undefined, 'invalidResult'))).toBe('invalidResult');
+    expect(openedSolidNotice(document, null)).toBeNull();
+    expect(t(SAVED_SOLID_NOTICE_KEYS.recoveryCopy)).not.toBe(t(SAVED_SOLID_NOTICE_KEYS.noSolverInput));
+  });
+
+  it('says nothing about results for a part restored from the recovery copy that has no saved static input', () => {
+    const document = createEmptyPartDocument();
+    expect(openedSolidResults(document, undefined, undefined, 'recovery')).toBeNull();
+    expect(openedSolidNotice(document, openedSolidResults(document, undefined, undefined, 'recovery'))).toBeNull();
+    expect(openedSolidResults(document, undefined, 'invalidResult', 'recovery'))
+      .toEqual({ document, results: new Map(), issue: 'invalidResult', origin: 'file' });
+  });
+
+  it('keeps a finished result of the saved input when the panel closes, for saving and reopening this very document', async () => {
+    const { document, definition } = documentWithInput();
+    const { outcome, session } = await finished(document, definition);
+    const state = { solidAnalysisSession: session, completedGeneration: GENERATION, solidOpenedResults: null };
+    const kept = keptSolidResults(state, document, VERSION);
+    expect(kept).toMatchObject({ document, issue: null, origin: 'kept' });
+    expect(openedSolidResult(document, kept)?.result).toBe(outcome.result);
+    // After closing there is no session: the save still finds the kept result, and only for this document.
+    const closed = { solidAnalysisSession: null, completedGeneration: GENERATION, solidOpenedResults: kept };
+    expect(solidResultsToSave(closed, document, VERSION)?.get(definition.id)?.kind).toBe('oofem-linear-solid-tet4');
+    expect(solidResultsToSave(closed, { ...document }, VERSION)).toBeUndefined();
+    expect(openedSolidNotice(document, kept)).toBeNull();
+    // Nothing is kept for an edited input, an unknown app version or a result of another generation.
+    expect(keptSolidResults({ ...state, solidAnalysisSession: { ...session, values: { ...session.values, young: '300' } } }, document,
+      VERSION)).toBeNull();
+    expect(keptSolidResults(state, document, null)).toBeNull();
+    expect(keptSolidResults({ ...state, completedGeneration: GENERATION + 1 }, document, VERSION)).toBeNull();
   });
 
   it('restores a result whose kept solver input matches its digest, rebound to the current generation', async () => {

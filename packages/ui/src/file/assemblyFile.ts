@@ -19,6 +19,7 @@ import { hasUnsavedChanges } from './partDocumentDirty.js';
 import { recordRecentFile } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
+import { savedMessageKey, type SaveResultIssueReport } from './saveResultIssue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { analysisResultsToSave } from '../beam/savedBeamResults.js';
 
@@ -136,6 +137,7 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
   const encoding = captureSaveSnapshot({ kind: 'assembly',
     bundle: createAssemblyDocumentBundle(active.document, active.library, analysisResultsToSave(before, active.document)),
     options: { savedAt: new Date().toISOString() } });
+  const resultIssues: SaveResultIssueReport[] = [];
   return queueDocumentSave(before, async (isCurrent, control) => {
   try {
     const captured = await awaitThumbnailCapture(thumbnail, control.signal);
@@ -146,7 +148,9 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
       && current.cancelRequestCount === before.cancelRequestCount && current.recomputeCancelled === before.recomputeCancelled ? captured : null;
     const withThumbnail = encoding.kind === 'assembly' && thumbnailPng !== null
       ? { ...encoding, options: { ...encoding.options, thumbnailPng } } : encoding;
-    const bytes = await (deps.encodeSave ?? before.saveDocumentEncoder)(withThumbnail, control);
+    // A beam result the writer leaves out is named in the saved notice, as for a part (saveResultIssue.ts).
+    const bytes = await (deps.encodeSave ?? before.saveDocumentEncoder)(withThumbnail,
+      { ...control, onAnalysisResultIssue: (analysisId, issue) => { resultIssues.push({ analysisId, issue }); } });
     if (!control.beginWriting()) return;
     const saved = await before.fileGateway.savePcad(
       withPcadaExtension(active.fileName ?? active.document.name ?? t('assembly.untitled')),
@@ -162,7 +166,7 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
           useAppStore.setState({ recoverySaveState: null });
         }
       }
-    }, name);
+    }, name, savedMessageKey(resultIssues));
   } catch (error) {
     if (isCurrent()) {
       before.setFileMessage({ key: saveFailureMessageKey(error), failed: true });

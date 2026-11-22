@@ -8,6 +8,7 @@ import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { t } from '../i18n/t.js';
 import { attachSolidAnalysis } from './attachSolidAnalysis.js';
 import { boundaryMesh, context } from './solidAnalysis.testSupport.js';
+import { openedSolidResults, solidResultsToSave } from './savedSolidResults.js';
 import { solidSavedInput, type SolidField } from './solidAnalysisSession.js';
 import { SOLID_BOUNDARY_AXES, type SolidBoundaryAxis } from './solidBoundaryDraft.js';
 
@@ -439,5 +440,162 @@ describe('signed pressure through the actual attachment and public FEM request (
     expect(reopened?.loadMode).toBe('pressure');
     expect(reopened?.values.pressure).toBe('-0.75');
     expect(reopened?.result ?? null).toBeNull();
+  });
+});
+
+/** One real run through the attachment: the fake ports answer the meshing and the solve (uniform zz stress). */
+async function runOnce(rig: ReturnType<typeof install>): Promise<void> {
+  const before = rig.ports.length;
+  useAppStore.getState().solidAnalysisRunner?.run();
+  await vi.waitFor(() => expect(rig.ports[before]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
+  await rig.ports[before].reply();
+  await vi.waitFor(() => expect(rig.ports[before + 1]?.request()?.kind).toBe('analyze-solid-tet4'));
+  await rig.ports[before + 1].reply();
+  await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.status).toBe('complete'));
+}
+
+/** The saved input, a finished result of it, and that result opened with this very document (as after reopening). */
+async function openedWithSavedResult(rig: ReturnType<typeof install>) {
+  useAppStore.getState().saveSolidAnalysis();
+  await runOnce(rig);
+  const state = useAppStore.getState(), results = solidResultsToSave(state, state.document, '1.0.4');
+  const saved = results?.get('solid-cad');
+  if (saved?.kind !== 'oofem-linear-solid-tet4') throw new Error('Missing saved solid result');
+  state.setSolidOpenedResults(openedSolidResults(state.document, results, undefined));
+  return { document: state.document, saved };
+}
+
+describe('saved solid result restored without reopening the panel (J-03b stage 2)', () => {
+  it('comes back when the geometry finishes recomputing, rebound to the new generation and without the change notice', async () => {
+    const rig = install(); live.push(rig);
+    const { document, saved } = await openedWithSavedResult(rig);
+    useAppStore.getState().recordRecomputeRequest(8);
+    useAppStore.getState().applyRecompute(document, { ...resultFor(document), generation: 8, bodies: [context().body] });
+    useAppStore.getState().recordRecomputeCompletion(8, 'success');
+    await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.result?.result.source.revision).toBe(8));
+    const session = useAppStore.getState().solidAnalysisSession;
+    expect([session?.status, session?.error, session?.stage]).toEqual(['complete', null, null]);
+    expect(session?.result?.result.displacementMm).toEqual(saved.result.displacementMm);
+    expect(useAppStore.getState().solidSavedRestore?.restore.kind).toBe('restored');
+  });
+
+  it('comes back when Undo returns to the opened document, and stays away for the edited one', async () => {
+    const rig = install(); live.push(rig);
+    const { document } = await openedWithSavedResult(rig);
+    useAppStore.getState().editSolidAnalysis('young', '105000');
+    useAppStore.getState().saveSolidAnalysis();
+    expect(useAppStore.getState().document).not.toBe(document);
+    await Promise.resolve();
+    expect(useAppStore.getState().solidAnalysisSession?.result ?? null).toBeNull();
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().document).toBe(document);
+    await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.status).toBe('complete'));
+    expect(useAppStore.getState().solidAnalysisSession?.values.young).toBe('210000');
+  });
+
+  it('never replaces a computed result that the session already shows', async () => {
+    const rig = install(); live.push(rig);
+    await openedWithSavedResult(rig);
+    const session = useAppStore.getState().solidAnalysisSession;
+    useAppStore.getState().restoreSavedSolidResult();
+    await Promise.resolve();
+    expect(useAppStore.getState().solidAnalysisSession).toBe(session);
+    expect(useAppStore.getState().solidSavedRestore).toBeNull();
+  });
+
+  it('stays away while the panel holds another input than the saved one, and comes back once the input matches again', async () => {
+    const rig = install(); live.push(rig);
+    const { document } = await openedWithSavedResult(rig);
+    // Every SHA-256 digest the restore starts is collected, so the test waits until none is left instead of guessing a delay.
+    const digest = crypto.subtle.digest.bind(crypto.subtle), pending: Promise<ArrayBuffer>[] = [];
+    const spy = vi.spyOn(crypto.subtle, 'digest').mockImplementation((algorithm, data) => {
+      const value = digest(algorithm, data); pending.push(value); return value;
+    });
+    try {
+      useAppStore.getState().recordRecomputeRequest(8);
+      useAppStore.getState().editSolidAnalysis('young', '105000');
+      useAppStore.getState().applyRecompute(document, { ...resultFor(document), generation: 8, bodies: [context().body] });
+      useAppStore.getState().recordRecomputeCompletion(8, 'success');
+      useAppStore.getState().restoreSavedSolidResult();
+      await settleDigests(pending);
+      const edited = useAppStore.getState().solidAnalysisSession;
+      expect([edited?.values.young, edited?.result ?? null, useAppStore.getState().solidSavedRestore]).toEqual(['105000', null, null]);
+      useAppStore.getState().editSolidAnalysis('young', '210000');
+      useAppStore.getState().restoreSavedSolidResult();
+      await vi.waitFor(() => expect(useAppStore.getState().solidSavedRestore?.restore.kind).toBe('restored'));
+      expect(useAppStore.getState().solidAnalysisSession?.result?.result.source.revision).toBe(8);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+/** Waits until no collected digest is in flight and a timer turn has passed after the last one (so a continuation has run). */
+async function settleDigests(pending: Promise<ArrayBuffer>[]): Promise<void> {
+  let seen = -1;
+  while (seen !== pending.length) {
+    seen = pending.length;
+    await Promise.allSettled(pending);
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+}
+
+describe('solid result kept when the panel closes (J-03b remaining)', () => {
+  // The kept and opened results live beside the session; start each case without one from an earlier case.
+  beforeEach(() => { useAppStore.setState({ solidOpenedResults: null, solidSavedRestore: null }); });
+
+  it('stays with the document after closing, is saved, and comes back as the kept result when the panel reopens', async () => {
+    const rig = install(); live.push(rig);
+    useAppStore.getState().saveSolidAnalysis();
+    await runOnce(rig);
+    const document = useAppStore.getState().document;
+    useAppStore.getState().closeSolidAnalysis();
+    const closed = useAppStore.getState();
+    expect(closed.solidAnalysisSession).toBeNull();
+    expect(closed.solidOpenedResults).toMatchObject({ document, issue: null, origin: 'kept' });
+    expect(solidResultsToSave(closed, document, '1.0.4')?.get('solid-cad')?.kind).toBe('oofem-linear-solid-tet4');
+    useAppStore.getState().openSolidAnalysis();
+    await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.status).toBe('complete'));
+    expect(useAppStore.getState().solidSavedRestore?.restore.kind).toBe('restored');
+    expect(useAppStore.getState().solidOpenedResults?.origin).toBe('kept');
+  });
+
+  it('does not come back after the document changed while the panel was closed, and comes back after Undo', async () => {
+    const rig = install(); live.push(rig);
+    useAppStore.getState().saveSolidAnalysis();
+    await runOnce(rig);
+    const document = useAppStore.getState().document;
+    useAppStore.getState().closeSolidAnalysis();
+    expect(useAppStore.getState().solidOpenedResults).toMatchObject({ document, origin: 'kept' });
+    // Every SHA-256 digest a restore starts is collected, so the test waits until none is left instead of guessing a delay.
+    const digest = crypto.subtle.digest.bind(crypto.subtle), pending: Promise<ArrayBuffer>[] = [];
+    const spy = vi.spyOn(crypto.subtle, 'digest').mockImplementation((algorithm, data) => {
+      const value = digest(algorithm, data); pending.push(value); return value;
+    });
+    try {
+      // A document change while the panel is closed: a new name keeps the saved input and the shape (nothing recomputes),
+      // so only the document identity keeps the kept result away.
+      useAppStore.getState().applyDocument({ ...document, name: 'renamed' });
+      expect(useAppStore.getState().document).not.toBe(document);
+      expect([useAppStore.getState().isComputing, useAppStore.getState().lastOutcome]).toEqual([false, 'success']);
+      useAppStore.getState().openSolidAnalysis();
+      useAppStore.getState().restoreSavedSolidResult();
+      await settleDigests(pending);
+      expect([useAppStore.getState().solidAnalysisSession?.result ?? null, useAppStore.getState().solidSavedRestore]).toEqual([null, null]);
+      // Undo returns to the very document the result was kept with, and the kept result comes back (統括の決定 2026-11-22 10:05).
+      useAppStore.getState().undo();
+      expect(useAppStore.getState().document).toBe(document);
+      await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.status).toBe('complete'));
+      expect(useAppStore.getState().solidSavedRestore?.restore.kind).toBe('restored');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('keeps nothing when the shown result is not of the input saved in the document', async () => {
+    const rig = install(); live.push(rig);
+    await runOnce(rig);
+    useAppStore.getState().closeSolidAnalysis();
+    expect(useAppStore.getState().solidOpenedResults).toBeNull();
   });
 });

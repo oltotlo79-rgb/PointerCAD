@@ -13,6 +13,8 @@ import type {
 import type {
   Vec3,
 } from '../sketch/vec3.js';
+import type { KernelStepFailureCode } from '@pointercad/kernel';
+import type { WorkerBrokenCode } from './bridgeContracts.js';
 
 
 /** 面 1 枚を作れなかった理由。カーネルが日本語で返したものをそのまま持ち回る(FR-504)。 */
@@ -20,6 +22,8 @@ export interface SketchFaceFailure {
   /** 依頼した面フィーチャーの id。 */
   readonly featureId: string;
   readonly message: string;
+  /** Worker が壊れた時の符号(0b-1b)。 */
+  readonly code?: WorkerBrokenCode;
 }
 
 /**
@@ -59,6 +63,8 @@ export interface SketchOffsetEntry {
 export interface SketchOffsetFailure {
   readonly featureId: string;
   readonly message: string;
+  /** Worker が壊れた時の符号(0b-1b)。 */
+  readonly code?: WorkerBrokenCode;
 }
 
 /** オフセットの結果。1 件失敗しても残りは作る(FR-504、NFR-RE-1)。 */
@@ -104,6 +110,8 @@ export interface SketchProjectionEntry {
 export interface SketchProjectionFailure {
   readonly featureId: string;
   readonly message: string;
+  /** 加工のもとの面・辺が見つからない時の符号(kernel の SketchProjectionFailure の code。0b-1)。 */
+  readonly code?: KernelStepFailureCode | WorkerBrokenCode;
 }
 
 /** 投影・交差の結果。1 件失敗しても残りは作る(FR-504、NFR-RE-1)。 */
